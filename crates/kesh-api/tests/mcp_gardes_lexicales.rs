@@ -300,9 +300,10 @@ fn contexte_mcp_construit_par_le_repartiteur_seul() {
         sites(&sources_src(), tout, &motif),
         liste(&[(
             "mcp/repartiteur.rs",
-            // dans la tâche de l'outil, sur les copies de `cle.acces` et
-            // `etat.lecture` qu'elle possède (C-32-6-56)
-            "let ctx = ContexteMcp::nouveau(&acces, &lecture);"
+            // dans la tâche de l'outil, sur les copies de `cle.acces`,
+            // `etat.lecture` et `etat.trace` qu'elle possède (C-32-6-56 ;
+            // la trace : Story 32-9a, AC-a7)
+            "let ctx = ContexteMcp::nouveau(&acces, &lecture, &trace);"
         )])
     );
 }
@@ -549,10 +550,12 @@ fn outils_et_politique_en_leur_lieu() {
         hors.is_empty(),
         "impl McpTool hors de src/mcp/outils/ : {hors:?}"
     );
+    // Story 32-9a (AC-a9) : les seize outils du registre standard ; Story 32-9b
+    // (AC-b2) : dix-neuf.
     assert_eq!(
         sites(&sources_src(), |f| f.starts_with("mcp/outils/"), &imp).len(),
-        1,
-        "témoin : kesh_version"
+        19,
+        "témoin : kesh_version, les quinze outils de la 32-9a et les trois de la 32-9b"
     );
 
     let lecture = re(r"\bLectureOutils\s*::\s*nouvelle\b|\bLectureOutils\s*\(");
@@ -615,14 +618,26 @@ fn outils_et_politique_en_leur_lieu() {
         1
     );
     assert_eq!(sites_factices("    donnees: Donnees,", &donnees), 0);
+    // Story 32-9a (AC-a8, amendement) : `Donnees` ne se construit, dans
+    // `src/`, qu'en `mcp/sortie.rs` (la seule fabrique, `donnees`) — plus dans
+    // les outils — et en `mcp/politique.rs` (sa définition). Les outils de test
+    // de `tests/common/mcp.rs` restent hors du périmètre.
     let hors: Vec<_> = sites(
         &sources_src(),
-        |f| !f.starts_with("mcp/outils/") && f != "mcp/politique.rs",
+        |f| f != "mcp/sortie.rs" && f != "mcp/politique.rs",
         &donnees,
     );
     assert!(
         hors.is_empty(),
-        "Donnees construite hors des outils : {hors:?}"
+        "Donnees construite hors de la fabrique : {hors:?}"
+    );
+    assert_eq!(
+        sites(&sources_src(), |f| f == "mcp/sortie.rs", &donnees),
+        liste(&[(
+            "mcp/sortie.rs",
+            "Ok(Donnees::nouvelles(texte, Some(valeur)).avec_resume(resume))"
+        )]),
+        "témoin : la fabrique"
     );
 }
 
@@ -776,8 +791,30 @@ fn donnees_construites_par_la_politique_seule() {
 }
 
 // ---------------------------------------------------------------------------
-// AC-a24 — prompts_scelles
+// AC-a24 — prompts_scelles (amendée par la 32-10a-ii, AC-ii10)
 // ---------------------------------------------------------------------------
+
+/// Le code d'une source, lignes de commentaire retirées, **aplati** (sauts de
+/// ligne en espaces) — pour les formes coupées sur plusieurs lignes.
+fn code_aplati(source: &str) -> String {
+    source
+        .lines()
+        .filter(|l| !est_commentaire(l))
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+/// Les types pour lesquels une source implémente `McpPrompt`, toutes formes
+/// (générique, chemin qualifié, coupée après `impl`).
+fn impls_de_mcp_prompt(source: &str) -> Vec<String> {
+    let motif = re(
+        r"\bimpl\b\s*(<[^>{]*>)?\s*(?:[A-Za-z_][A-Za-z0-9_]*\s*::\s*)*McpPrompt\s+for\s+([A-Za-z_][A-Za-z0-9_]*)",
+    );
+    motif
+        .captures_iter(&code_aplati(source))
+        .map(|c| c[2].to_string())
+        .collect()
+}
 
 #[test]
 fn prompts_scelles() {
@@ -794,23 +831,566 @@ fn prompts_scelles() {
         ),
         0
     );
-    // Périmètre : `impl … McpPrompt for` sur tout `src/` ; `impl … Scelle for`
-    // sur `src/mcp/` seulement — `services/rapports.rs` a son propre sceau,
-    // homonyme (`impl Scelle for super::Affichage {}`), témoin vert existant.
-    let prompt = re(r"\bimpl\b[^{]*\bMcpPrompt\s+for\b");
-    assert!(
-        sites(&sources_src(), tout, &prompt).is_empty(),
-        "aucun prompt en 32-6"
+    // Story 32-10a-ii (AC-ii10, amendement en connaissance de cause) : dans
+    // tout `src/` (code seul), une implémentation de `McpPrompt` n'apparaît
+    // qu'en `mcp/prompts.rs`, **une** fois, pour `PromptEnBase`. Formes : `impl
+    // McpPrompt for`, `impl<…> McpPrompt for`, `impl prompts::McpPrompt for`,
+    // `impl crate::mcp::prompts::McpPrompt for`, sur une ligne ou coupée après
+    // `impl` — d'où la recherche sur le code **aplati** de chaque fichier.
+    for rouge in [
+        "impl McpPrompt for Faux {}",
+        "impl<T: Send> McpPrompt for Faux<T> {}",
+        "impl prompts::McpPrompt for Faux {}",
+        "impl crate::mcp::prompts::McpPrompt for Faux {}",
+        "impl\n    McpPrompt for Faux {}",
+        "impl<T>\ncrate::mcp::prompts::McpPrompt\nfor Faux<T> {}",
+    ] {
+        assert_eq!(
+            impls_de_mcp_prompt(rouge),
+            ["Faux"],
+            "rouge (factice) : {rouge:?}"
+        );
+    }
+    for vert in [
+        "pub trait McpPrompt: scelle::Scelle + Send + Sync + 'static {",
+        "// impl McpPrompt for Faux {}",
+        "fn f(p: &dyn McpPrompt) {}",
+    ] {
+        assert!(impls_de_mcp_prompt(vert).is_empty(), "vert : {vert:?}");
+    }
+    let trouves: Vec<(String, String)> = sources_src()
+        .iter()
+        .flat_map(|(f, t)| {
+            impls_de_mcp_prompt(t)
+                .into_iter()
+                .map(move |ty| (f.clone(), ty))
+        })
+        .collect();
+    assert_eq!(
+        trouves,
+        [("mcp/prompts.rs".to_string(), "PromptEnBase".to_string())],
+        "une seule implémentation de McpPrompt, PromptEnBase"
     );
-    assert!(
-        sites(&sources_src(), |f| f.starts_with("mcp/"), &motif).is_empty(),
-        "aucun sceau posé dans src/mcp/"
+    // `impl … Scelle for` dans `src/mcp/` : le sceau de `PromptEnBase`
+    // (`mcp/prompts.rs`), et, Story 32-9a (amendement en connaissance de
+    // cause, C-32-9-42), `mcp/sortie.rs`, qui porte le sceau de `ChampSur`
+    // (AC-a2) — un autre sceau, homonyme, que la garde `champ_sur_en_un_lieu`
+    // confine à ce fichier. `services/rapports.rs` a son propre sceau,
+    // homonyme (`impl Scelle for super::Affichage {}`), témoin vert existant.
+    // Le motif prend aussi la ligne d'`impl McpPrompt for`.
+    assert_eq!(
+        sites(
+            &sources_src(),
+            |f| f.starts_with("mcp/") && f != "mcp/sortie.rs",
+            &motif
+        ),
+        liste(&[
+            ("mcp/prompts.rs", "impl scelle::Scelle for PromptEnBase {}"),
+            ("mcp/prompts.rs", "impl McpPrompt for PromptEnBase {"),
+        ]),
+        "le seul sceau de prompt posé dans src/mcp/, et la seule implémentation"
     );
     assert_eq!(
         sites(&sources_src(), |f| f == "services/rapports.rs", &motif).len(),
         2,
         "témoin vert existant : le sceau des rapports, hors du périmètre"
     );
+}
+
+// ---------------------------------------------------------------------------
+// Story 32-10a-ii (AC-ii10) — prompts_lus_par_leur_service
+// ---------------------------------------------------------------------------
+
+/// Les lignes de code d'une source (commentaires retirés), jointes par des
+/// sauts de ligne : une instruction `use` sur plusieurs lignes reste lisible
+/// jusqu'à son `;`.
+fn code_seul(source: &str) -> String {
+    source
+        .lines()
+        .filter(|l| !est_commentaire(l))
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+/// Vrai si `code` nomme le dépôt `module` de `kesh_db` : forme **directe**
+/// (`repositories::module`, import ou chemin), ou **en liste**, lue jusqu'au
+/// `;` qui clôt l'instruction `use` (listes imbriquées et multi-lignes
+/// comprises ; validation P4, H4). Le module de route `routes::module::` n'est
+/// pas pris.
+fn nomme_le_depot(code: &str, module: &str) -> bool {
+    nomme_le_depot_directe(code, module) || nomme_le_depot_en_liste(code, module)
+}
+
+/// La forme **directe** : `repositories::module` (import ou chemin).
+fn nomme_le_depot_directe(code: &str, module: &str) -> bool {
+    re(&format!(r"\brepositories\s*::\s*{module}\b")).is_match(code)
+}
+
+/// La forme **en liste** : `repositories::{…module…}`, lue jusqu'au `;`.
+fn nomme_le_depot_en_liste(code: &str, module: &str) -> bool {
+    re(&format!(r"\brepositories\s*::\s*\{{[^;]*\b{module}\b")).is_match(code)
+}
+
+/// Les fichiers de `src/` (code seul) qui nomment le dépôt `module` selon
+/// `forme`.
+fn fichiers_par_forme(module: &str, forme: fn(&str, &str) -> bool) -> Vec<String> {
+    sources_src()
+        .iter()
+        .filter(|(_, t)| forme(&code_seul(t), module))
+        .map(|(f, _)| f.clone())
+        .collect()
+}
+
+/// Les fichiers de `src/` (code seul) qui nomment le dépôt `module`.
+fn fichiers_nommant_le_depot(module: &str) -> Vec<String> {
+    fichiers_par_forme(module, nomme_le_depot)
+}
+
+/// Les fichiers de `src/` qui peuvent nommer le dépôt des prompts : les deux
+/// poignées (`services/poignees.rs`, `LecturePrompts` et `EcriturePrompts`),
+/// les trois points d'entrée qui appellent `amorcer_standards` (AC-i11) et,
+/// depuis la 32-10a-iii, les routes de gestion de l'administrateur
+/// (`routes/mcp_prompts.rs`, dans `admin_routes`). Aucun outil de données,
+/// aucun service, aucune autre route ne lit les prompts : **un agent ne relit
+/// jamais une proposition**.
+const NOMMENT_LE_DEPOT_DES_PROMPTS: &[&str] = &[
+    "main.rs",
+    "routes/mcp_prompts.rs",
+    "routes/onboarding.rs",
+    "routes/test_endpoints.rs",
+    "services/poignees.rs",
+];
+
+#[test]
+fn prompts_lus_par_leur_service() {
+    // Mesure sur l'analogue existant (`api_keys`, validation P3, R2) : deux
+    // fichiers par la forme directe, un par la forme en liste — chaque motif
+    // mesuré seul (revue de code P1, A4), puis leur union.
+    assert_eq!(
+        fichiers_par_forme("api_keys", nomme_le_depot_directe),
+        ["auth/api_key.rs", "auth/bootstrap.rs"],
+        "analogue api_keys, forme directe"
+    );
+    assert_eq!(
+        fichiers_par_forme("api_keys", nomme_le_depot_en_liste),
+        ["routes/api_keys.rs"],
+        "analogue api_keys, forme en liste"
+    );
+    assert_eq!(
+        fichiers_nommant_le_depot("api_keys"),
+        ["auth/api_key.rs", "auth/bootstrap.rs", "routes/api_keys.rs"],
+        "analogue api_keys"
+    );
+    // Témoin vert existant multi-ligne (AC-ii10) : `services/factures.rs`
+    // (`use kesh_db::repositories::{` sur trois lignes, `invoice_settlements`
+    // à la deuxième), pris par la forme en liste seule.
+    let factures = std::fs::read_to_string(racine_src().join("services/factures.rs")).unwrap();
+    assert!(factures.contains(
+        "use kesh_db::repositories::{\n    company_invoice_settings, invoice_settlements,"
+    ));
+    assert!(
+        nomme_le_depot_en_liste(&code_seul(&factures), "invoice_settlements")
+            && !nomme_le_depot_directe(&code_seul(&factures), "invoice_settlements"),
+        "témoin existant : la liste multi-ligne de services/factures.rs"
+    );
+    // `repositories::*` n'apparaît nulle part.
+    assert!(sites(&sources_src(), tout, &re(r"\brepositories\s*::\s*\*")).is_empty());
+    // Témoins rouges (factices, dits tels).
+    for rouge in [
+        "use kesh_db::repositories::mcp_prompts;",
+        "let v = kesh_db::repositories::mcp_prompts::en_vigueur_par_societe(p, 1);",
+        "use kesh_db::repositories::{accounts, mcp_prompts};",
+        "use kesh_db::repositories::{\n    accounts,\n    mcp_prompts,\n};",
+        "use kesh_db::repositories::{invoices::{self}, mcp_prompts};",
+    ] {
+        assert!(nomme_le_depot(rouge, "mcp_prompts"), "rouge : {rouge:?}");
+    }
+    // Témoins verts : le module de route (existant, `lib.rs`), un nom qui
+    // prolonge le module (factice, dit tel : `\b` ne sépare pas deux
+    // caractères de mot), une autre instruction après le `;`.
+    for (vert, module) in [
+        (
+            "get(routes::api_keys::list).post(routes::api_keys::create),",
+            "api_keys",
+        ),
+        (
+            "use kesh_db::repositories::{invoice_settlements_write};",
+            "invoice_settlements",
+        ),
+        (
+            "use kesh_db::repositories::{accounts};\nlet mcp_prompts = 1;",
+            "mcp_prompts",
+        ),
+    ] {
+        assert!(!nomme_le_depot(vert, module), "vert : {vert:?}");
+    }
+    let invoices = std::fs::read_to_string(racine_src().join("routes/invoices.rs")).unwrap();
+    assert!(
+        nomme_le_depot(&code_seul(&invoices), "contacts")
+            && !nomme_le_depot(&code_seul(&invoices), "mcp_prompts"),
+        "témoin existant : la liste imbriquée de routes/invoices.rs, lue jusqu'au `;`"
+    );
+    assert_eq!(
+        fichiers_nommant_le_depot("mcp_prompts"),
+        NOMMENT_LE_DEPOT_DES_PROMPTS,
+        "le dépôt des prompts nommé hors de sa poignée et des points d'amorçage"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Story 32-10a-ii (AC-ii9) — service_des_prompts_sans_poignee_des_livres
+// ---------------------------------------------------------------------------
+
+/// Les jetons d'une poignée ou d'un accès qui mène aux livres. Le dépôt de
+/// `kesh_db` se prend aussi sous la forme en accolades,
+/// `kesh_db::{…repositories…}`, lue jusqu'au `;` (revue de code P1, B5).
+const MOTIF_LIVRES: &str = r"\bLecture\b|\bTrace\b|\bLectureOutils\b|\.\s*pool\s*\(|\bsqlx\s*::|\bkesh_db\s*::\s*repositories\b|\bkesh_db\s*::\s*\{[^;]*\brepositories\b|\bcrate\s*::\s*helpers\b|\bcrate\s*::\s*routes\b";
+
+/// Le code de production d'une source : jusqu'à sa première ligne
+/// `#[cfg(test)]`.
+fn avant_les_tests(source: &str) -> String {
+    source
+        .split("\n#[cfg(test)]")
+        .next()
+        .unwrap_or_default()
+        .to_string()
+}
+
+#[test]
+fn service_des_prompts_sans_poignee_des_livres() {
+    let motif = re(MOTIF_LIVRES);
+    let src = |f: &str| std::fs::read_to_string(racine_src().join(f)).unwrap();
+    // Témoins rouges existants, appliqués à leur fichier.
+    let cles = src("services/cles_mcp.rs");
+    assert!(cles.contains("use crate::services::poignees::{Lecture, Trace};"));
+    assert_eq!(
+        sites_factices("use crate::services::poignees::{Lecture, Trace};", &motif),
+        1
+    );
+    assert!(
+        src("services/plan_comptable.rs")
+            .contains("crate::helpers::company_for_ids(lecture.pool()")
+    );
+    assert_eq!(
+        sites_factices(
+            "    let _ = crate::helpers::company_for_ids(lecture.pool(), acces.company_id(), acces.user_id())",
+            &motif
+        ),
+        1
+    );
+    // Témoin vert existant, et factice (dit tel).
+    assert!(cles.contains("use crate::services::acces::ContexteAcces;"));
+    assert_eq!(
+        sites_factices("use crate::services::acces::ContexteAcces;", &motif),
+        0
+    );
+    assert_eq!(sites_factices("    lecture: &LecturePrompts,", &motif), 0);
+    // Rouges factices : une signature élargie (Mii9), un accès au pool (Mii11).
+    assert_eq!(sites_factices("    livres: &Lecture,", &motif), 1);
+    assert_eq!(sites_factices("    let p = lecture.pool();", &motif), 1);
+    assert_eq!(sites_factices("    sqlx::query(\"SELECT 1\")", &motif), 1);
+    // Rouges factices (revue de code P1, B5) : le dépôt en accolades, sur une
+    // ligne et imbriqué ; multi-ligne, pris sur le code aplati.
+    for rouge in [
+        "use kesh_db::{entities::Role, repositories::accounts};",
+        "use kesh_db::{entities::{Role}, repositories::{accounts}};",
+    ] {
+        assert_eq!(sites_factices(rouge, &motif), 1, "rouge : {rouge}");
+    }
+    let multi = "use kesh_db::{\n    entities::Role,\n    repositories::accounts,\n};";
+    assert_eq!(sites_factices(multi, &motif), 0, "ligne à ligne : non pris");
+    assert!(motif.is_match(&code_aplati(multi)), "aplati : pris");
+    // Vert factice : des accolades de `kesh_db` sans le dépôt.
+    assert_eq!(
+        sites_factices(
+            "use kesh_db::{entities::Role, errors::DbError}; // repositories",
+            &motif
+        ),
+        0
+    );
+
+    let code = avant_les_tests(&src("services/prompts_mcp.rs"));
+    let trouves: Vec<&str> = code
+        .lines()
+        .filter(|l| !est_commentaire(l) && motif.is_match(l))
+        .collect();
+    assert!(
+        trouves.is_empty(),
+        "le service des prompts nomme une poignée ou un accès aux livres : {trouves:?}"
+    );
+    assert!(
+        !motif.is_match(&code_aplati(&code)),
+        "le service des prompts, aplati, nomme une poignée ou un accès aux livres"
+    );
+    assert!(
+        code.contains("lecture: &LecturePrompts,"),
+        "témoin : le service lu"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Story 32-9a (refs #723) — les gardes des sorties (AC-a24)
+// ---------------------------------------------------------------------------
+
+/// `champ_sur_en_un_lieu` — dans `crates/kesh-api/src`, les jetons `ChampSur`,
+/// `Scelle` (hors de `services/rapports.rs`, dont le sceau homonyme est un
+/// autre trait, privé à ce fichier) et le chemin `scelle::` n'apparaissent
+/// qu'en `mcp/sortie.rs`. Formes : `impl ChampSur for`, `impl<…> ChampSur
+/// for`, `sortie::ChampSur`, `use …ChampSur`, `impl Scelle for`, `scelle::Scelle`,
+/// `use …scelle`. Les développements de `sortie!` et `champ_enum!` dans
+/// `mcp::outils` ne sont pas du texte des fichiers d'outils : ils ne
+/// paraissent pas ici (constaté au relevé : aucun jeton hors de `sortie.rs`).
+#[test]
+fn champ_sur_en_un_lieu() {
+    let motif = re(r"\bChampSur\b|\bScelle\b|\bscelle\s*::");
+    // Ma2 : les deux lignes (la seconde seule ne compilerait pas, E0277).
+    for rouge in [
+        "impl crate::mcp::sortie::scelle::Scelle for String {}",
+        "impl crate::mcp::sortie::ChampSur for String {}",
+        "use crate::mcp::sortie::ChampSur;",
+    ] {
+        assert_eq!(sites_factices(rouge, &motif), 1, "rouge : {rouge}");
+    }
+    // Vert, factice (dit tel) : l'emploi de la macro, qui ne nomme pas le trait.
+    assert_eq!(
+        sites_factices("sortie! { struct X { a: i64 } }", &motif),
+        0,
+        "vert"
+    );
+    // `services/rapports.rs` et `mcp/prompts.rs` portent chacun leur propre
+    // sceau, homonyme et privé : on n'y cherche que `ChampSur` et le chemin du
+    // sceau de `sortie`.
+    let homonymes = |f: &str| f == "services/rapports.rs" || f == "mcp/prompts.rs";
+    let mut hors: Vec<_> = sites(
+        &sources_src(),
+        |f| f != "mcp/sortie.rs" && !homonymes(f),
+        &motif,
+    );
+    hors.extend(sites(
+        &sources_src(),
+        homonymes,
+        &re(r"\bChampSur\b|\bsortie\s*::\s*scelle\b"),
+    ));
+    assert!(
+        hors.is_empty(),
+        "ChampSur ou son sceau hors de sortie.rs : {hors:?}"
+    );
+    assert!(
+        !sites(&sources_src(), |f| f == "mcp/sortie.rs", &motif).is_empty(),
+        "témoin : sortie.rs porte le trait"
+    );
+}
+
+/// `trace_confinee_dans_outil` — dans `src/mcp/`, le jeton `Trace` n'apparaît
+/// qu'aux sites écrits : le champ privé de `ContexteMcp`, le paramètre de
+/// `nouveau` et l'import (`mcp/outil.rs`) ; l'état et l'import du module
+/// (`mcp/mod.rs`) ; dans le répartiteur, aucun (il passe `&trace`, une copie
+/// d'`etat.trace`). Toute autre ligne rougit : `-> Option<&Trace>`,
+/// `-> impl Deref<Target = Trace>`, une fermeture `f(&Trace)`, `pub trace`.
+///
+/// ⚠️ Angles morts écrits (revue de code P1, E5) : un alias de type posé
+/// **hors** de `src/mcp/` (`pub type Tr = poignees::Trace;` dans un service),
+/// puis nommé dans `outil.rs`, échappe au jeton ; et le compte « un seul
+/// emploi de `self.trace` » ne voit pas une déstructuration
+/// (`let Self { trace, .. } = self;`). Le champ reste privé : la revue lit
+/// `outil.rs`, qui est court.
+#[test]
+fn trace_confinee_dans_outil() {
+    let motif = re(r"\bTrace\b");
+    assert_eq!(
+        sites_factices("    pub fn trace(&self) -> &Trace {", &motif),
+        1,
+        "rouge : Ma14"
+    );
+    assert_eq!(
+        sites_factices("    trace: &'a Trace,", &motif),
+        1,
+        "la déclaration du champ (factice, dite telle)"
+    );
+    assert_eq!(
+        sites_factices("    let trace = etat.trace.clone();", &motif),
+        0
+    );
+    assert_eq!(
+        sites(&sources_src(), |f| f.starts_with("mcp/"), &motif),
+        liste(&[
+            ("mcp/mod.rs", "pub(crate) trace: Trace,"),
+            (
+                "mcp/mod.rs",
+                // Story 32-10a-ii : `LecturePrompts` rejoint l'import.
+                "use crate::services::poignees::{EcritureEnvois, Lecture, LectureEnvois, LecturePrompts, Trace};"
+            ),
+            ("mcp/outil.rs", "trace: &'a Trace,"),
+            ("mcp/outil.rs", "trace: &'a Trace,"),
+            (
+                "mcp/outil.rs",
+                "use crate::services::poignees::{Lecture, Trace};"
+            ),
+        ])
+    );
+    // `afficher` ne rend jamais la trace : son corps l'emploie seulement.
+    let outil = std::fs::read_to_string(racine_src().join("mcp/outil.rs")).unwrap();
+    assert!(outil.contains("rapport.afficher(self.trace).await"));
+    assert_eq!(outil.matches("self.trace").count(), 1, "un seul emploi");
+}
+
+/// `sorties_sans_serialisation_parallele` — dans `src/mcp/outils/`, aucune
+/// ligne ne nomme `serde_json::to_`, `json!`, `to_string_pretty`,
+/// `Value::String`, `impl Serialize` ni `impl serde::Serialize` : la seule
+/// sérialisation est celle de `donnees`. Dans tout `src/mcp/`, les formes qui
+/// fabriquent un `&'static str` d'un texte lu ou contournent l'enveloppe sont
+/// interdites : `leak(`, `serialize_with`, `serde(with`, `static mut`,
+/// `OnceLock<String>`, `LazyLock<String>`.
+#[test]
+fn sorties_sans_serialisation_parallele() {
+    let outils = re(
+        r"\bserde_json\s*::\s*to_|\bjson!|\bto_string_pretty\b|\bValue\s*::\s*String\b|\bimpl\b[^{]*\bSerialize\s+for\b",
+    );
+    assert_eq!(
+        sites_factices("    let t = serde_json::to_string(&compte.name);", &outils),
+        1,
+        "rouge : Ma4b"
+    );
+    assert_eq!(
+        sites_factices("    let a: Arguments = arguments(valeur)?;", &outils),
+        0,
+        "vert : la lecture des arguments"
+    );
+    let trouves = sites(&sources_src(), |f| f.starts_with("mcp/outils/"), &outils);
+    assert!(trouves.is_empty(), "{trouves:?}");
+
+    let fabriques = re(
+        r"\bleak\s*\(|\bserialize_with\b|\bserde\s*\(\s*with\b|\bstatic\s+mut\b|\bOnceLock\s*<\s*String\b|\bLazyLock\s*<\s*String\b",
+    );
+    assert_eq!(
+        sites_factices(
+            "    let r = Resume::outil(Box::leak(e.description.into_boxed_str()));",
+            &fabriques
+        ),
+        1,
+        "rouge : Ma29"
+    );
+    assert_eq!(
+        sites_factices("    let r = Resume::outil(\"kesh_bilan\");", &fabriques),
+        0,
+        "vert (factice, dit tel)"
+    );
+    let trouves = sites(&sources_src(), |f| f.starts_with("mcp/"), &fabriques);
+    assert!(trouves.is_empty(), "{trouves:?}");
+}
+
+/// `mcp_sans_fichier` — rien dans `src/mcp/` ne lit un fichier. Formes :
+/// `std::fs`, `tokio::fs`, leurs imports groupés (`use std::{fs, io};`, revue
+/// de code P1, E5), `File::`, `OpenOptions`, `read_to_string`,
+/// `document_storage`, et tout identifiant **terminé** par `storage_path`
+/// (`pdf_storage_path` compris : sans frontière initiale, revue de code P1,
+/// A1). Le typage fait le reste : aucun type qui porte un chemin de fichier
+/// n'est rendu à `src/mcp/` (`factures_fournisseur::detail_sans_fichier`,
+/// `factures::detail_sans_fichier`, C-32-9-49).
+///
+/// Story 32-9b (#781, LOW R2 de la revue P2 de la 32-9a) : l'import groupé que
+/// rustfmt **coupe** sur plusieurs lignes (`use std::{` / `fs,` / `};`), ou
+/// **imbriqué** (`use tokio::{io::{AsyncReadExt}, fs};`, que `[^}]*` arrêtait
+/// au premier `}`), est vu par [`imports_groupes_de_fs`], sur le texte aplati,
+/// jusqu'au `;` de l'instruction.
+///
+/// ⚠️ Angles morts écrits : un alias posé **hors** de `src/mcp/` (`use
+/// tokio::fs as disque;` dans un service, réexporté) ; un champ de chemin
+/// nommé autrement (`pdf_path`, `chemin`) — le typage, non le motif, l'écarte ;
+/// un `use` de `fs` par un chemin relatif à un module qui le réexporte
+/// (`use crate::x::{fs};`).
+///
+/// Revue de code P1 de la 32-9b : `pieces::lister_tout` et
+/// `ImportedSupplierInvoice` — la pièce **entière**, empreinte, chemin et
+/// données du QR compris — sont nommés au motif (B4) : seule `PiecePublique`
+/// atteint `src/mcp/`. ⚠️ Deux angles morts de plus, écrits (B3) : un alias
+/// **de crate** (`use std as s;` ou `use ::tokio as t;`, puis `s::fs::read`),
+/// que ni le motif ligne à ligne ni [`imports_groupes_de_fs`] ne voient ; et
+/// `tower_http::services::{ServeDir, ServeFile}`, déjà importé par
+/// `mcp/mod.rs` pour servir le frontend (32-6a) — `\bFile\s*::` ne voit pas
+/// `ServeFile`, si bien qu'un outil qui servirait un fichier par ce service ne
+/// rougirait pas ; c'est la revue qui l'écarte.
+#[test]
+fn mcp_sans_fichier() {
+    let motif = re(
+        r"\bstd\s*::\s*fs\b|\btokio\s*::\s*fs\b|\b(std|tokio)\s*::\s*\{[^}]*\bfs\b|\bFile\s*::|\bOpenOptions\b|\bread_to_string\b|\bdocument_storage\b|storage_path\b|\blister_tout\b|\bImportedSupplierInvoice\b",
+    );
+    for rouge in [
+        // Ma23
+        "    let o = tokio::fs::read(&piece.storage_path).await;",
+        // A1 : le chemin du PDF figé d'une facture cliente.
+        "    let p = f.pdf_storage_path;",
+        // E5 : les imports groupés.
+        "use std::{fs, io};",
+        "use tokio::{fs, io::AsyncReadExt};",
+        // B4 (32-9b) : la pièce entière.
+        "    let toutes = pieces::lister_tout(ctx.acces(), ctx.lecture(), statut).await?;",
+        "use kesh_db::entities::imported_supplier_invoice::ImportedSupplierInvoice;",
+    ] {
+        assert_eq!(sites_factices(rouge, &motif), 1, "rouge : {rouge}");
+    }
+    for vert in [
+        "    piece_id: Option<i64>,",
+        // l'import groupé de `sortie.rs`, sans `fs`
+        "use std::{collections::BTreeSet, fmt};",
+        // l'appel de l'outil des pièces, et la projection qu'il reçoit
+        "    let page = pieces::lister(ctx.acces(), ctx.lecture(), demande)",
+        "use crate::services::pieces::{self, DemandeListePieces, PiecePublique};",
+    ] {
+        assert_eq!(
+            sites_factices(vert, &motif),
+            0,
+            "vert (factice, dit tel) : {vert}"
+        );
+    }
+    let trouves = sites(&sources_src(), |f| f.starts_with("mcp/"), &motif);
+    assert!(trouves.is_empty(), "{trouves:?}");
+
+    // Story 32-9b : les imports groupés coupés ou imbriqués, sur le texte
+    // aplati (témoins rouges et verts factices, dits tels).
+    for rouge in [
+        "use std::{\n    fs,\n    io,\n};",
+        "use tokio::{\n    io::AsyncReadExt,\n    fs as disque,\n};",
+        "use tokio::{io::{AsyncReadExt}, fs};",
+        "use ::std::{collections::BTreeSet, fs::File};",
+    ] {
+        assert_eq!(imports_groupes_de_fs(rouge), 1, "rouge : {rouge}");
+    }
+    for vert in [
+        // l'import groupé de `sortie.rs`, sans `fs`
+        "use std::{\n    collections::BTreeSet,\n    fmt,\n};",
+        // un commentaire qui le cite n'est pas un import
+        "// use std::{fs};\nuse std::fmt;",
+        // `fs` après la fin de l'instruction
+        "use std::{fmt, io};\nlet fs = 1;",
+    ] {
+        assert_eq!(
+            imports_groupes_de_fs(vert),
+            0,
+            "vert (factice, dit tel) : {vert}"
+        );
+    }
+    let groupes: Vec<String> = sources_src()
+        .into_iter()
+        .filter(|(f, _)| f.starts_with("mcp/"))
+        .filter(|(_, t)| imports_groupes_de_fs(t) > 0)
+        .map(|(f, _)| f)
+        .collect();
+    assert!(groupes.is_empty(), "import groupé de fs : {groupes:?}");
+}
+
+/// Le nombre d'imports groupés de `std` ou `tokio` qui nomment `fs`, sur le
+/// texte **aplati** (lignes de commentaire écartées d'abord), de la `{` au `;`
+/// de l'instruction — coupés ou imbriqués compris.
+fn imports_groupes_de_fs(texte: &str) -> usize {
+    let aplati = texte
+        .lines()
+        .filter(|l| !est_commentaire(l))
+        .collect::<Vec<_>>()
+        .join(" ");
+    re(r"\buse\s+(::\s*)?(std|tokio)\s*::\s*\{[^;]*\bfs\b")
+        .find_iter(&aplati)
+        .count()
 }
 
 // ---------------------------------------------------------------------------
@@ -1041,6 +1621,20 @@ const SITES_REPONSES: &[(&str, &str)] = &[
     (
         "mcp/textes.rs",
         "AppError::Validation(_) => ErreurOutil::ArgumentsInvalides {",
+    ),
+    // Story 32-9a (AC-a22, amendement nommé de l'AC-a31 de la 32-6a) : les
+    // trois bras neufs de la liste blanche.
+    (
+        "mcp/textes.rs",
+        "AppError::ReportFiscalYearNotFound { .. } => ErreurOutil::ExerciceIntrouvable,",
+    ),
+    (
+        "mcp/textes.rs",
+        "AppError::ReportPeriodOutOfFiscalYear { .. } => ErreurOutil::PeriodeHorsExercice,",
+    ),
+    (
+        "mcp/textes.rs",
+        "AppError::Database(DbError::LetteringAccountNotLetterable) => {",
     ),
     ("mcp/transport.rs", "use crate::errors::AppError;"),
     (

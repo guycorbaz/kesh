@@ -2160,6 +2160,7 @@ dependencies = [
  "kesh-core",
  "kesh-db",
  "kesh-i18n",
+ "rust_decimal",
  "serde_json",
  "sqlx",
  "thiserror 2.0.18",

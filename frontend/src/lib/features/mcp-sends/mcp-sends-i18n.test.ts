@@ -35,10 +35,16 @@
  * Aucune source de l'écran ne contient d'insertion de HTML brut.
  */
 import { describe, it, expect } from 'vitest';
-import { readFileSync, readdirSync } from 'node:fs';
-import { join } from 'node:path';
-import { findCallSites, readFallback, masquerCommentaires } from '$lib/shared/i18n-literal-reader.js';
-import { dansLePerimetreDeFichier } from '$lib/shared/i18n-harvest.js';
+import { readFileSync } from 'node:fs';
+// Story 32-10b (refs #723, AC-15 (b)) : le relevé et `ecartsAuCatalogue` vivent dans un
+// module partagé, employé aussi par la garde de l'écran des prompts — comportement inchangé.
+import {
+	catalogueDe,
+	ecartsAuCatalogue,
+	fichiersDe,
+	releveDesReplis as releve,
+	sourcesDesDossiers,
+} from '$lib/shared/i18n-repli-catalogue';
 import { MCP_ENVOI_OCTETS_MAX } from './mcp-sends-format';
 
 const RACINE_FTL = '../crates/kesh-i18n/locales';
@@ -58,71 +64,13 @@ const HTML_BRUT = '{' + '@html';
  */
 const NOMBRE_DE_CLES = 48;
 
-function fichiersDe(dossier: string): string[] {
-	const sortie: string[] = [];
-	for (const e of readdirSync(dossier, { withFileTypes: true })) {
-		const chemin = join(dossier, e.name);
-		if (e.isDirectory()) sortie.push(...fichiersDe(chemin));
-		else sortie.push(chemin);
-	}
-	return sortie;
-}
-
 /** Valeurs d'un catalogue — clés de tête et valeurs d'une ligne (aucune clé du préfixe n'en a plusieurs). */
 function catalogue(locale: string): Map<string, string> {
-	const texte = readFileSync(join(RACINE_FTL, locale, 'messages.ftl'), 'utf-8');
-	const valeurs = new Map<string, string>();
-	for (const ligne of texte.split('\n')) {
-		const m = /^([a-zA-Z][\w-]*) = ?(.*)$/.exec(ligne);
-		if (m) valeurs.set(m[1], m[2]);
-	}
-	return valeurs;
-}
-
-/** Relève, pour chaque clé littérale, l'ensemble de ses replis littéraux. */
-function releve(sources: { chemin: string; texte: string }[]): Map<string, Set<string>> {
-	const parCle = new Map<string, Set<string>>();
-	for (const { texte } of sources) {
-		const source = masquerCommentaires(texte);
-		for (const site of findCallSites(source)) {
-			if (site.arg?.kind !== 'literal') continue;
-			const repli = readFallback(source, site.afterFirstArg);
-			if (!parCle.has(site.arg.value)) parCle.set(site.arg.value, new Set());
-			parCle.get(site.arg.value)!.add(repli?.kind === 'literal' ? repli.value : '<repli non littéral>');
-		}
-	}
-	return parCle;
-}
-
-/**
- * Fonction pure : les écarts entre un relevé et un catalogue, pour un préfixe.
- * Rend la liste nommée des clés fautives (vide si tout est juste).
- */
-function ecartsAuCatalogue(
-	parCle: Map<string, Set<string>>,
-	valeurs: Map<string, string>,
-	prefixe: string,
-): string[] {
-	const ecarts: string[] = [];
-	const releves = [...parCle.keys()].filter((c) => c.startsWith(prefixe));
-	const auCatalogue = [...valeurs.keys()].filter((c) => c.startsWith(prefixe));
-	for (const cle of releves) {
-		const attendu = valeurs.get(cle);
-		const replis = [...parCle.get(cle)!];
-		if (attendu === undefined) ecarts.push(`${cle} : absente du catalogue`);
-		else if (replis.length !== 1 || replis[0] !== attendu)
-			ecarts.push(`${cle} : repli ${JSON.stringify(replis)} ≠ ${JSON.stringify(attendu)}`);
-	}
-	for (const cle of auCatalogue) {
-		if (!parCle.has(cle)) ecarts.push(`${cle} : au catalogue, demandée par aucun site littéral`);
-	}
-	return ecarts.sort();
+	return catalogueDe(RACINE_FTL, locale);
 }
 
 function sourcesDeLEcran() {
-	return DOSSIERS_ECRAN.flatMap(fichiersDe)
-		.filter((f) => dansLePerimetreDeFichier(f.split('/').pop()!))
-		.map((chemin) => ({ chemin, texte: readFileSync(chemin, 'utf-8') }));
+	return sourcesDesDossiers(DOSSIERS_ECRAN);
 }
 
 describe('écran des envois — replis égaux au catalogue (AC-C8, #758)', () => {

@@ -163,9 +163,10 @@ pub const TABLES_EXPORTEES: &[&str] = &[
 /// ⚠️ **Critère de tri, arbitré le 2026-09-23** : *« l'export CSV pour migrer
 /// vers une autre application n'a besoin que des données comptables ; seuls les
 /// backups de Kesh pour restaurer dans Kesh ont besoin de toutes les
-/// informations »*. Les douze ci-dessous sont **dans la sauvegarde**, qui porte
-/// les 42 tables (Story 32-5a : + `mcp_keys`, `mcp_server_settings` ; Story
-/// 32-8a : + `mcp_sends`).
+/// informations »*. Les quatorze ci-dessous sont **dans la sauvegarde**, qui porte
+/// les 44 tables (Story 32-5a : + `mcp_keys`, `mcp_server_settings` ; Story
+/// 32-8a : + `mcp_sends` ; Story 32-10a-i : + `mcp_prompts`,
+/// `mcp_prompt_versions`).
 pub const TABLES_HORS_EXPORT: &[(&str, &str)] = &[
     (
         "invoice_number_sequences",
@@ -197,6 +198,18 @@ pub const TABLES_HORS_EXPORT: &[(&str, &str)] = &[
         "Copies de données lues dans les livres, montrées puis éventuellement modifiées \
          avant leur envoi à un agent (Story 32-8a) : un état transitoire du serveur MCP, \
          sans valeur comptable ; la sauvegarde, elle, les emporte.",
+    ),
+    (
+        "mcp_prompts",
+        "Configuration du serveur MCP et instructions données à un agent (Story \
+         32-10a-i), sans valeur comptable ; la sauvegarde, elle, les emporte, versions à \
+         valider et refusées comprises.",
+    ),
+    (
+        "mcp_prompt_versions",
+        "Historique des prompts du serveur MCP, cf. `mcp_prompts` : sans valeur \
+         comptable ; la sauvegarde, elle, l'emporte, versions à valider et refusées \
+         comprises.",
     ),
     (
         "refresh_tokens",

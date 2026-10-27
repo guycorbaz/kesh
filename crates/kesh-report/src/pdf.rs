@@ -25,6 +25,7 @@ use kesh_db::entities::AccountRole;
 
 use crate::balance_sheet::{AccountBalance, BalanceSheet};
 use crate::errors::ReportError;
+use crate::general_ledger::FiscalYearBreak;
 use crate::income_statement::IncomeStatement;
 use crate::journal_report::JournalReport;
 use crate::trial_balance::TrialBalance;
@@ -1610,35 +1611,33 @@ pub fn render_general_ledger_pdf(
             );
         }
 
-        let mut prev_fy: Option<i64> = None;
         // Le solde à reporter si la page se termine ici : celui de la dernière
-        // ligne écrite, ou l'ouverture tant qu'aucune ne l'a été.
+        // ligne écrite, l'ouverture tant qu'aucune ne l'a été, zéro juste après
+        // une rupture d'exercice.
         let mut carry = section.opening;
 
-        for line in &section.lines {
-            // Rupture d'exercice — le solde d'un compte de résultat y repart de
-            // zéro. Se reconnaît au changement d'exercice, jamais à la date
-            // seule : plusieurs écritures partagent la date de bouclement.
-            if let Some(prev) = prev_fy
-                && prev != line.fiscal_year_id
-                && let Some(brk) = section
-                    .fiscal_year_breaks
-                    .iter()
-                    .find(|b| b.closing_fiscal_year_id == prev)
-            {
-                builder.ensure_space_for_row();
-                draw_ledger_marker(
-                    &mut builder,
-                    &format!(
-                        "{} — {}",
-                        format_swiss_date(brk.date),
-                        ctx.section_labels.ledger_fy_break
-                    ),
-                    brk.closing_balance,
-                    false,
-                );
+        // Rupture d'exercice — le solde d'un compte de résultat y repart de zéro.
+        let draw_break = |builder: &mut PdfBuilder, brk: &FiscalYearBreak| {
+            builder.ensure_space_for_row();
+            draw_ledger_marker(
+                builder,
+                &format!(
+                    "{} — {}",
+                    format_swiss_date(brk.date),
+                    ctx.section_labels.ledger_fy_break
+                ),
+                brk.closing_balance,
+                false,
+            );
+        };
+
+        for (idx, line) in section.lines.iter().enumerate() {
+            // La règle est celle de `LedgerSection::break_before` : au changement
+            // d'exercice, et en tête de section (#777).
+            if let Some(brk) = section.break_before(idx) {
+                draw_break(&mut builder, brk);
+                carry = Decimal::ZERO;
             }
-            prev_fy = Some(line.fiscal_year_id);
 
             // Saut de page : « À reporter » au pied, bandeau + « Report » en tête.
             if builder.cursor_y - 2.0 * LINE_HEIGHT_MM < MARGIN_BOTTOM_MM {
@@ -1715,6 +1714,11 @@ pub fn render_general_ledger_pdf(
             );
             builder.cursor_y -= LINE_HEIGHT_MM;
             carry = line.running_balance;
+        }
+
+        // Fin d'exercice franchie après la dernière ligne (#778).
+        for brk in section.trailing_breaks() {
+            draw_break(&mut builder, brk);
         }
 
         // Totaux de mouvements, puis solde de clôture.
@@ -2514,6 +2518,41 @@ mod tests {
         }];
         let bytes = render_general_ledger_pdf(&gl, &ctx).expect("pdf");
         assert!(!bytes.is_empty());
+    }
+
+    /// #777 / #778 — une rupture en tête de section et une rupture finale se
+    /// dessinent : le PDF qui les porte pèse plus que le même sans elles.
+    #[test]
+    fn general_ledger_pdf_renders_leading_and_trailing_breaks() {
+        let ctx = PdfContext::fr_ch_default("Test SA");
+        let sans = render_general_ledger_pdf(&ledger_with(2), &ctx).expect("pdf sans");
+        let mut gl = ledger_with(2);
+        gl.sections[0].fiscal_year_breaks = vec![
+            crate::general_ledger::FiscalYearBreak {
+                // La date de la première ligne : rupture en tête.
+                date: NaiveDate::from_ymd_opt(2026, 3, 4).unwrap(),
+                closing_fiscal_year_id: 9,
+                closing_balance: dec!(500.00),
+            },
+            crate::general_ledger::FiscalYearBreak {
+                date: NaiveDate::from_ymd_opt(2027, 1, 1).unwrap(),
+                closing_fiscal_year_id: 1,
+                closing_balance: dec!(240.00),
+            },
+        ];
+        assert!(gl.sections[0].break_before(0).is_some(), "rupture en tête");
+        assert_eq!(
+            gl.sections[0].trailing_breaks().count(),
+            1,
+            "rupture finale"
+        );
+        let avec = render_general_ledger_pdf(&gl, &ctx).expect("pdf avec");
+        assert!(
+            avec.len() > sans.len(),
+            "les deux ruptures doivent se dessiner ({} vs {})",
+            avec.len(),
+            sans.len()
+        );
     }
 
     #[test]

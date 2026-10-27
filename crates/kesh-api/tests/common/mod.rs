@@ -174,3 +174,7 @@ pub mod capture_trace;
 
 /// Le montage et les outils de test du serveur MCP (Story 32-6a).
 pub mod mcp;
+
+/// Le montage des tests des outils de lecture : sociétés piégées, témoins,
+/// parcours de l'enveloppe (Story 32-9a).
+pub mod mcp_pieges;

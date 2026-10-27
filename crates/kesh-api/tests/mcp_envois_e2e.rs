@@ -647,12 +647,17 @@ async fn kesh_version_passe_par_la_validation(pool: MySqlPool) {
     let b = banc(&pool, Registre::standard());
     let n = b.deposer(&l.requise.1, "kesh_version").await;
     assert_eq!(b.valider(&l.jwt, n, None).await.statut, StatusCode::OK);
-    let attendu = json!({
-        "version": env!("CARGO_PKG_VERSION"),
-        "lectureSeule": true,
-        "delaiInstructionS": 30.0,
-    })
-    .to_string();
+    // Story 32-9a (AC-a8) : le texte déposé est l'en-tête, une ligne vide et le
+    // JSON indenté de la sortie de `kesh_version`.
+    let attendu = format!(
+        "{TEXTE_ENTETE_DONNEES}\n\n{}",
+        serde_json::to_string_pretty(&json!({
+            "version": env!("CARGO_PKG_VERSION"),
+            "lectureSeule": true,
+            "delaiInstructionS": 30.0,
+        }))
+        .unwrap()
+    );
     let r = b.mcp(&l.requise.1, &lire_envoi(1, n)).await;
     assert_eq!(r.json(), attendu_valide(1, n, false, &attendu));
 }

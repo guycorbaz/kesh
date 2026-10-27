@@ -18,7 +18,7 @@ use rust_decimal::Decimal;
 use crate::aged_receivables::AgedReceivables;
 use crate::balance_sheet::BalanceSheet;
 use crate::errors::ReportError;
-use crate::general_ledger::GeneralLedger;
+use crate::general_ledger::{FiscalYearBreak, GeneralLedger};
 use crate::income_statement::IncomeStatement;
 use crate::journal_report::JournalReport;
 use crate::trial_balance::TrialBalance;
@@ -668,7 +668,10 @@ fn map_io_err(e: std::io::Error) -> ReportError {
 /// ⚠️ **L'ouverture et la clôture sont des LIGNES, pas des métadonnées hors
 /// tableau** : un CSV doit rester réconciliable dans un tableur, où l'on
 /// additionne une colonne. Une ouverture reléguée en en-tête obligerait à la
-/// ressaisir à la main.
+/// ressaisir à la main. Les **ruptures d'exercice** aussi, sans débit ni
+/// crédit : sur un compte de résultat dont la période franchit une fin
+/// d'exercice, la clôture est l'ouverture plus les mouvements **moins** le solde
+/// de chaque exercice clos (#778).
 ///
 /// Une section par compte, séparée par une ligne vide — le compte est répété sur
 /// chaque ligne pour que le fichier reste filtrable et triable.
@@ -711,7 +714,31 @@ pub fn render_general_ledger_csv<W: Write>(
         ])
         .map_err(map_csv_err)?;
 
-        for line in &section.lines {
+        // Rupture d'exercice : une ligne sans débit ni crédit, qui porte le solde
+        // de l'exercice clos. Sans elle, le solde progressif d'un compte de
+        // résultat retomberait à zéro sans explication, et la clôture ne
+        // s'expliquerait plus par l'ouverture et les mouvements (#777, #778).
+        let write_break = |wtr: &mut csv::Writer<W>, brk: &FiscalYearBreak| {
+            wtr.write_record([
+                &section.account_number,
+                &section.account_name,
+                &brk.date.format("%Y-%m-%d").to_string(),
+                "",
+                "",
+                "",
+                "Clôture de l'exercice — le solde repart de zéro",
+                "",
+                "",
+                "",
+                &format_amount_iso(brk.closing_balance),
+            ])
+            .map_err(map_csv_err)
+        };
+
+        for (idx, line) in section.lines.iter().enumerate() {
+            if let Some(brk) = section.break_before(idx) {
+                write_break(&mut wtr, brk)?;
+            }
             wtr.write_record([
                 &section.account_number,
                 &section.account_name,
@@ -726,6 +753,9 @@ pub fn render_general_ledger_csv<W: Write>(
                 &format_amount_iso(line.running_balance),
             ])
             .map_err(map_csv_err)?;
+        }
+        for brk in section.trailing_breaks() {
+            write_break(&mut wtr, brk)?;
         }
 
         // Total des mouvements, puis clôture.
@@ -1346,6 +1376,50 @@ mod tests {
         assert!(l[3].contains("Total des mouvements"));
         assert!(l[4].contains("Solde de clôture"));
         assert!(l[4].ends_with("1700.00"));
+    }
+
+    /// #777 / #778 — les ruptures d'exercice sont des lignes du tableau : celle
+    /// qui précède la première ligne (l'ouverture appartient à l'exercice
+    /// précédent), et celle qu'aucune ligne ne suit. Données synthétiques.
+    #[test]
+    fn general_ledger_csv_writes_fiscal_year_breaks_as_rows() {
+        use crate::general_ledger::FiscalYearBreak;
+        let mut gl = ledger_fixture();
+        let s = &mut gl.sections[0];
+        s.fiscal_year_breaks = vec![
+            FiscalYearBreak {
+                date: NaiveDate::from_ymd_opt(2026, 3, 4).unwrap(),
+                closing_fiscal_year_id: 2,
+                closing_balance: dec!(500.00),
+            },
+            FiscalYearBreak {
+                date: NaiveDate::from_ymd_opt(2027, 1, 1).unwrap(),
+                closing_fiscal_year_id: 3,
+                closing_balance: dec!(1200.00),
+            },
+        ];
+        s.lines[0].running_balance = dec!(1200.00);
+        s.closing = dec!(0);
+        let mut buf = Vec::new();
+        render_general_ledger_csv(&gl, &mut buf).expect("csv");
+        let corps = String::from_utf8(buf)
+            .expect("utf-8")
+            .replace('\u{feff}', "");
+        let l: Vec<&str> = corps.lines().collect();
+        assert!(l[1].contains("Solde d'ouverture"), "{}", l[1]);
+        assert!(
+            l[2].contains("2026-03-04"),
+            "rupture avant la ligne : {}",
+            l[2]
+        );
+        assert!(l[2].contains("Clôture de l'exercice"), "{}", l[2]);
+        assert!(l[2].ends_with("500.00"), "{}", l[2]);
+        assert!(l[3].contains("Loyer mars"), "{}", l[3]);
+        assert!(l[4].contains("2027-01-01"), "rupture finale : {}", l[4]);
+        assert!(l[4].ends_with("1200.00"), "{}", l[4]);
+        assert!(l[5].contains("Total des mouvements"), "{}", l[5]);
+        assert!(l[6].contains("Solde de clôture"), "{}", l[6]);
+        assert!(l[6].ends_with(";0.00"), "{}", l[6]);
     }
 
     /// La colonne « Exercice » porte le **nom** de l'exercice, jamais son id —

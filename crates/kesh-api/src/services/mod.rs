@@ -108,6 +108,21 @@
 //!    (`envois_mcp::lire`, sur `poignees::LectureEnvois`, pool en lecture seule
 //!    du MCP) déroge de même à R2 et R7 : sa règle est « même clé, même
 //!    société », plus étroite qu'une portée.
+//!
+//!    La lecture des **prompts du serveur MCP** (Story 32-10a-ii,
+//!    `prompts_mcp::{lister, obtenir}`) passe par sa poignée propre,
+//!    `poignees::LecturePrompts`, sur le pool en lecture seule du MCP : une
+//!    lecture, aucune écriture, qui suit R2 et R7.
+//!
+//!    Et, depuis la Story 32-10a-iii, deux écritures des **prompts du serveur
+//!    MCP** : (a) `prompts_mcp::proposer` — la version d'agent **à valider**
+//!    **et** l'entrée `mcp.tool_called` de son appel
+//!    (`serveur_mcp::entree_appel`), en **une** transaction, sur la poignée
+//!    `poignees::EcriturePrompts` (pool ordinaire), après
+//!    `exiger(EXIGENCE_PROPOSER)` ; (b) `serveur_mcp::journaliser_prompt` —
+//!    l'entrée `mcp.prompt_served` de chaque `prompts/get`, sur la `Trace`,
+//!    **fail closed** comme `journaliser_appel` (même dérogation aux règles R1,
+//!    R2 et R7). Aucune n'écrit dans les livres.
 //! 3. Aucune autre : les générateurs de `kesh-report`, `ReportPeriod::resolve`,
 //!    `resolve_scope`, `rapports::identite_societe`, `helpers::company_for_ids`,
 //!    `accounts::list_by_company` et `letterings::letterable_account_ids` ne
@@ -218,6 +233,41 @@
 //! (`rapports::balance_agee`, 32-3) : l'outil de la 32-9a l'appellera tel
 //! quel.
 //!
+//! # Le rollout de la 32-9a — la liste des exercices, sans trace
+//!
+//! | Service | Route | Exigence API / MCP |
+//! |---|---|---|
+//! | `exercices::lister` | `GET /fiscal-years` | `Consultation` / `BooksRead` |
+//!
+//! Sans lecture de la société ni borne propre : le comportement de la route
+//! est conservé (le dépôt filtre par société et borne la liste). L'inventaire
+//! clos des écritures sur les chemins de lecture s'y étend :
+//! `fiscal_years::list_by_company` ne fait qu'un `SELECT` (établi par lecture).
+//! Les autres gestionnaires de `routes/fiscal_years.rs` restent sur
+//! `state.pool`, figés par la garde (iii). La 32-9a ajoute aussi
+//! `factures_fournisseur::detail_sans_fichier`, qui appelle `detail` et ne
+//! rend de la pièce que son identifiant : aucun chemin de fichier n'atteint
+//! `src/mcp/` (C-32-9-13) ; et, à la revue de code P1 (A1, C-32-9-49),
+//! `factures::detail_sans_fichier`, qui projette la facture cliente sans son
+//! PDF figé (`pdf_storage_path` et ses trois compagnons).
+//!
+//! # Le rollout de la 32-9b — la liste des pièces importées, sans trace
+//!
+//! | Service | Route | Exigence API / MCP |
+//! |---|---|---|
+//! | `pieces::lister_tout` | `GET /imported-supplier-invoices?status=` | `Comptable` / `DocumentsRead` |
+//! | `pieces::lister` | (l'outil MCP `kesh_pieces` seul) | `Comptable` / `DocumentsRead` |
+//!
+//! L'ordre de la route est conservé : la société d'abord (`Internal` si elle
+//! manque), puis la validation du statut, puis la lecture
+//! (`imported_supplier_invoices::list_by_status`, un `SELECT`, établi par
+//! lecture). `lister` tranche la liste et la projette en `PiecePublique`, qui
+//! ne porte ni l'empreinte ni le chemin du fichier, ni aucune donnée lue du
+//! QR-code : aucun chemin de fichier n'atteint `src/mcp/` (C-32-9-13). Les
+//! autres gestionnaires de `routes/imported_supplier_invoices.rs` — l'import,
+//! la complétion, l'écart, les fournisseurs proposés, les documents — restent
+//! sur `state.pool`, figés par la garde (iii) : aucun outil ne les sert.
+//!
 //! # La lecture seule du MCP — Q11, tranchée le 2026-10-24
 //!
 //! La réponse de Guy à Q11 : la lecture seule est **tenue par l'application**
@@ -256,10 +306,13 @@ pub mod carnet;
 pub mod cles_mcp;
 pub mod ecritures;
 pub mod envois_mcp;
+pub mod exercices;
 pub mod factures;
 pub mod factures_fournisseur;
+pub mod pieces;
 pub mod plan_comptable;
 pub mod poignees;
 pub mod postes_ouverts;
+pub mod prompts_mcp;
 pub mod rapports;
 pub mod serveur_mcp;

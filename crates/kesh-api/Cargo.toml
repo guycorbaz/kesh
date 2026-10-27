@@ -108,6 +108,10 @@ ipnet = "2.12"
 # la Story 32-6a : les tests les reçoivent de là (revue P1, A6).
 reqwest = { version = "0.12", features = ["json", "multipart", "cookies"] }
 rust_decimal_macros = "1.40"
+# Story 32-9a (refs #723, AC-a14) — les fixtures piégées du serveur MCP : la
+# fonctionnalité `pieges` n'est activée que pour les tests (résolveur 3 : elle
+# n'entre pas dans `cargo build --release -p kesh-api`).
+kesh-seed = { path = "../kesh-seed", features = ["pieges"] }
 # Story 15-5e1 (choix C70) — le volet (c) du registre des routes analyse le
 # corps des handlers avec l'analyseur de Rust (déjà au Cargo.lock, 2.0.118).
 syn = { version = "2", features = ["full", "visit"] }

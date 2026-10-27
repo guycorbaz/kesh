@@ -13,7 +13,18 @@ use std::time::Duration;
 
 use crate::mcp::DELAI_OUTIL;
 use crate::mcp::outil::McpTool;
+use crate::mcp::outils::balance_agee::KeshBalanceAgee;
+use crate::mcp::outils::contacts::{KeshContact, KeshContacts};
+use crate::mcp::outils::ecritures::{KeshEcriture, KeshEcritures};
+use crate::mcp::outils::exercices::KeshExercices;
+use crate::mcp::outils::factures::{KeshEcheancier, KeshFacture, KeshFactures};
+use crate::mcp::outils::factures_fournisseur::{KeshFactureFournisseur, KeshFacturesFournisseur};
+use crate::mcp::outils::grand_livre::KeshGrandLivre;
 use crate::mcp::outils::kesh_version::KeshVersion;
+use crate::mcp::outils::pieces::KeshPieces;
+use crate::mcp::outils::plan_comptable::KeshPlanComptable;
+use crate::mcp::outils::postes_ouverts::KeshPostesOuverts;
+use crate::mcp::outils::rapports::{KeshBalance, KeshBilan, KeshCompteDeResultat};
 use crate::services::acces::Portee;
 
 /// Le nom de l'outil de relecture des envois, **hors registre** (Story 32-8b,
@@ -39,11 +50,32 @@ pub struct Registre {
 }
 
 impl Registre {
-    /// Le registre de production : `kesh_version` seul (la 32-9 l'amendera),
-    /// délai [`DELAI_OUTIL`]. Appelé en `lib.rs` seulement (garde
-    /// `registre_standard_en_un_lieu`).
+    /// Le registre de production — **dix-neuf** outils, dans cet ordre
+    /// (Story 32-9a, AC-a9 ; Story 32-9b, AC-b2) : `kesh_version`, les neuf
+    /// outils `books:read`, les six outils `invoices:read`, puis les deux outils
+    /// `contacts:read` et l'outil `documents:read` ; délai [`DELAI_OUTIL`].
+    /// Appelé en `lib.rs` seulement (garde `registre_standard_en_un_lieu`).
     pub fn standard() -> Self {
-        Self::vide().avec(Box::new(KeshVersion))
+        Self::vide()
+            .avec(Box::new(KeshVersion))
+            .avec(Box::new(KeshExercices))
+            .avec(Box::new(KeshPlanComptable))
+            .avec(Box::new(KeshEcritures))
+            .avec(Box::new(KeshEcriture))
+            .avec(Box::new(KeshGrandLivre))
+            .avec(Box::new(KeshBalance))
+            .avec(Box::new(KeshBilan))
+            .avec(Box::new(KeshCompteDeResultat))
+            .avec(Box::new(KeshPostesOuverts))
+            .avec(Box::new(KeshFactures))
+            .avec(Box::new(KeshFacture))
+            .avec(Box::new(KeshEcheancier))
+            .avec(Box::new(KeshBalanceAgee))
+            .avec(Box::new(KeshFacturesFournisseur))
+            .avec(Box::new(KeshFactureFournisseur))
+            .avec(Box::new(KeshContacts))
+            .avec(Box::new(KeshContact))
+            .avec(Box::new(KeshPieces))
     }
 
     /// Un registre sans outil, délai [`DELAI_OUTIL`] — pour les tests.

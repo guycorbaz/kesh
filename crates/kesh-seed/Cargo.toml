@@ -17,6 +17,15 @@ serde_json = "1"
 # P7: needed for tokio::time::sleep in seed_demo retry loop. The "time" feature
 # keeps this minimal — runtime is provided by sqlx (runtime-tokio-rustls).
 tokio = { version = "1", default-features = false, features = ["time"] }
+# Story 32-9a (refs #723) — montants des fixtures piégées (`pieges`). Déjà au
+# Cargo.lock (dépendance de `kesh-db`) : aucun paquet neuf.
+rust_decimal = { version = "1.41", features = ["serde-str"] }
+
+[features]
+# Story 32-9a (AC-a14, C-32-9-14) — les fixtures piégées du serveur MCP, pour
+# les tests seulement : activée par la dépendance de développement de
+# `kesh-api`, jamais par le binaire de production.
+pieges = []
 
 [dev-dependencies]
 tokio = { version = "1", features = ["full"] }

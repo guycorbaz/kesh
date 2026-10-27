@@ -763,55 +763,12 @@ fn missing_sentinels(
 // Analyse du SQL des migrations — support des garde-fous fail-loud.
 // ===========================================================================
 
-/// Retire les commentaires `--` (en ligne entière comme en fin de ligne) et
-/// découpe le SQL en statements sur les `;`.
-///
-/// **Le découpage doit être multi-ligne** : plusieurs backfills du dépôt portent
-/// leur `SELECT` sur la ligne suivant l'`INSERT`, et un détecteur mono-ligne les
-/// rate — c'est ainsi qu'une migration exposée a échappé au triage manuel.
-///
-/// **Le retrait des commentaires n'est pas cosmétique** : les migrations sont
-/// très commentées et plusieurs commentaires contiennent le mot `UPDATE` en
-/// prose. Attention en particulier à `ON UPDATE CURRENT_TIMESTAMP`, présent dans
-/// une vingtaine de migrations — c'est du DDL, pas un statement `UPDATE`.
-///
-/// # Deux limites, et elles sont OUTILLÉES et non simplement déclarées
-///
-/// Cet analyseur est **volontairement naïf** : il ne connaît ni les commentaires
-/// de bloc `/* */`, ni les littéraux entre apostrophes. Les deux limites étaient
-/// jusqu'ici de la prose ; elles sont désormais tenues par un test chacune,
-/// parce qu'une hypothèse sur le contenu du dépôt qui n'échoue pas bruyamment
-/// quand elle cesse d'être vraie est exactement le « garde-fou muet » que ce
-/// module existe pour empêcher.
-///
-/// 1. **`/* */` — risque de FAUX NÉGATIF au triage.** Un `UPDATE` enfermé dans un
-///    commentaire de bloc, ou un `;` à l'intérieur d'un tel bloc, décale le
-///    découpage et peut faire rendre `false` à [`writes_data`] : la migration
-///    échapperait alors au triage **en silence**. Tenu par
-///    `migrations_contain_no_block_comment`.
-/// 2. **`--` ou `;` dans un littéral — risque de SQL CORROMPU à l'exécution.** La
-///    troncature au premier `--` et la découpe au premier `;` ignorent les
-///    apostrophes ; un `SET label = 'poste -- 4000'` partirait tronqué à MariaDB.
-///    Le dépôt contient **déjà** un `;` littéral (`20260505000001_bank_profiles`,
-///    `IN (',', ';', '\t')`), inoffensif parce que ce fichier n'est pas rejoué —
-///    ce qui montre que le risque n'est pas théorique. Tenu, **sur le SQL
-///    réellement exécuté** et lui seul, par `registry_sql_has_no_literal_hazard`.
-fn split_statements(sql: &str) -> Vec<String> {
-    let stripped: String = sql
-        .lines()
-        .map(|line| match line.find("--") {
-            Some(idx) => &line[..idx],
-            None => line,
-        })
-        .collect::<Vec<_>>()
-        .join("\n");
-
-    stripped
-        .split(';')
-        .map(|s| s.trim().to_string())
-        .filter(|s| !s.is_empty())
-        .collect()
-}
+// Le découpage en statements ([`split_statements`]) vit dans
+// `crate::sql_lexical`, partagé avec les gardes des écritures des prompts MCP
+// (Story 32-10a-i, AC-i14) ; son comportement et ses deux limites outillées
+// (`migrations_contain_no_block_comment`, `registry_sql_has_no_literal_hazard`)
+// sont inchangés.
+use crate::sql_lexical::split_statements;
 
 /// Abrège un statement pour un message d'erreur : blancs normalisés, tronqué à
 /// 200 caractères sur une **frontière de caractère** (`char_indices`, jamais un
