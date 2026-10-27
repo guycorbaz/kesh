@@ -17,6 +17,7 @@ par union au registre de l'epic à la clôture.*
   servi tel quel) ; une route « aperçu » neuve (écart à « la 32-10b n'ajoute aucune route », et elle toucherait `routes`
   et l'audit) ; montrer le texte stocké avec la marque en légende (la marque n'y serait pas à sa place).
 - **Réversible** : oui, tant que la 32-10a-iii n'est pas développée ; ensuite, la variante B reste possible.
+- **Annoté à la validation P1 (2026-10-27)** : D1 accepté, puis **étendu** par l'orchestrateur (fiche 32-10a, `e7a90572`) — `servable`, champs rendus visibles par le serveur, texte du code d'un standard, noms et date. La **variante B est retirée** : sans l'amendement, le développement s'arrête et rend compte ; elle apportait son propre angle mort (une composition serveur modifiée sans toucher au gabarit).
 
 ### C-32-10b-2 — La marque dans le texte, encadrée, à sa place
 
@@ -41,6 +42,7 @@ par union au registre de l'epic à la clôture.*
   par le serveur (une route ou un champ de plus, hors des trois modules) ; insérer le caractère lui-même avec un style
   (il resterait invisible).
 - **Réversible** : oui.
+- **Remplacé à la validation P1 (2026-10-27)**, décision de l'orchestrateur « fermer les classes par la conception, pas par des gardes » (R1, R2 HIGH ; F1 HIGH ; E13, E14) : **l'écran n'a plus aucune logique Unicode**. Le serveur rend visibles les caractères cachés (`rendre_visible`, 32-8b) et rend le verdict `servable` ; l'écran affiche le champ visible sans transformation (test au niveau du DOM). Retirés : `segmenter`, `reconstituer`, la copie des listes de `kesh-core` et sa garde, la garde de version d'Unicode du moteur, les pastilles calculées dans le navigateur. Motif : la garde de version était irréalisable dans le job Frontend de la CI (aucun fichier Rust, Node 22), et le mode « ligne » signalait à tort le `\n\n` de toute description d'agent.
 
 ### C-32-10b-4 — Signaler, ne pas bloquer ; montrer aussi ce que le serveur admet
 
@@ -53,6 +55,7 @@ par union au registre de l'epic à la clôture.*
   légitime à caractère récent) ; ne signaler que ce que le serveur refuse (l'Administrateur ne verrait pas une espace
   fine insécable qui part à l'agent).
 - **Réversible** : oui.
+- **Remplacé à la validation P1 (2026-10-27)** : plus de comptes `refuse` et `admis`. Le verdict est celui du serveur (`servable`) ; *Approuver* est absent sur une version non servable (C-32-10b-17), le serveur refusant aussi (D2, accepté). Les caractères **admis** ne sont plus montrés (le rendu du serveur ne les vise pas) : angle mort écrit, point 3 pour Guy reformulé.
 
 ### C-32-10b-5 — On approuve la version lue, sans relecture avant le `POST`
 
@@ -94,6 +97,7 @@ par union au registre de l'epic à la clôture.*
   reprendre un texte d'agent (l'Administrateur doit pouvoir corriger une proposition) ; garder la marque sur une version
   d'administrateur (la marque dit qui a écrit, et c'est l'Administrateur).
 - **Réversible** : oui.
+- **Annoté à la validation P1 (2026-10-27)** : l'aperçu des caractères cachés de la saisie et les compteurs « N / 16 000 », « N / 500 » sont **retirés** (logique Unicode côté écran ; R13 tombe) ; une aide dit les bornes, le serveur refuse (400, saisies conservées).
 
 ### C-32-10b-9 — Pas de `+page.ts` : le 403 de l'API, affiché
 
@@ -114,6 +118,7 @@ par union au registre de l'epic à la clôture.*
 - **Écartées** : montrer le texte standard du code avant le geste (la route ne le rend pas ; demande de plus à la
   32-10a pour un gain faible : il paraît en tête de l'historique aussitôt après) ; le bouton toujours présent.
 - **Réversible** : oui.
+- **Annoté à la validation P1 (2026-10-27)** (R7, F2) : l'alternative écartée « montrer le texte standard du code avant le geste » est **retenue** — D1 étendu rend `standardDuCode`, rendu visible, que le dialogue montre avant la confirmation ; inventaire E16. La condition du bouton devient le seul drapeau `standardDiffere` du serveur, qui couvre déjà les cas énumérés (R3).
 
 ### C-32-10b-11 — Le repli égal au catalogue : G13 par préfixe si la 32-7 l'a posé, sinon un module partagé
 
@@ -170,4 +175,34 @@ par union au registre de l'epic à la clôture.*
   nom est dite, non contrôlée côté écran.
 - **Écartées** : une page `/admin/mcp/prompts/nouveau` (une route de plus pour trois champs) ; ne pas offrir la création
   (la route existerait sans écran : l'Administrateur ne pourrait écrire qu'en modifiant un standard).
+- **Réversible** : oui.
+
+### C-32-10b-17 — *Approuver* absent sur une version que le serveur ne servirait pas
+
+- **Contexte** : validation P1 (F3, E14) ; D2 accepté (le serveur refuse d'approuver une version non servable) ;
+  AC-14 (l'écran n'offre aucun geste que la route refuse).
+- **Retenu** : sur une version d'agent à valider dont `servable` (verdict du serveur, D1 étendu) est faux, pas de
+  bouton *Approuver* ; l'avis de l'AC-6 et *Refuser* seuls. Le bloc « Ce que l'agent reçoit aujourd'hui » n'est montré
+  que pour une version en vigueur servable.
+- **Écartées** : le bouton présent, le serveur répondant 409 (geste offert puis refusé) ; un blocage calculé par
+  l'écran (logique Unicode côté client, retirée).
+- **Réversible** : oui.
+
+### C-32-10b-18 — Un seul envoi à la fois sur chaque geste
+
+- **Contexte** : validation P1, F8 (double clic : deux `POST`, une erreur affichée par-dessus un succès).
+- **Retenu** : chaque bouton qui envoie est désactivé (`disabled`, `aria-busy`) de la confirmation à la réponse ; la
+  réponse remplace l'état ; test paramétré par geste, mutation M17.
+- **Écartée** : s'en remettre au 409 du serveur (le second refus s'afficherait sur un geste réussi).
+- **Réversible** : oui.
+
+### C-32-10b-19 — Le drapeau `standardDiffere` n'est pas affiché tel quel
+
+- **Contexte** : validation P1, R3 — le drapeau (AC-i5 de la 32-10a) est vrai pour tout standard personnalisé ;
+  « Le standard a changé » aurait été affiché sur chaque prompt personnalisé.
+- **Retenu** : *Personnalisé* quand la version en vigueur d'un standard n'est pas d'origine `standard` ; « Diffère du
+  standard de cette version de Kesh » seulement pour une version d'origine `standard` au drapeau levé ; le drapeau seul
+  conditionne *Revenir au texte standard*.
+- **Écartées** : afficher le drapeau sous un libellé unique (deux situations confondues) ; demander à la 32-10a un
+  second drapeau (inutile : l'origine est déjà dans la synthèse).
 - **Réversible** : oui.
