@@ -1579,6 +1579,66 @@ Partie ii : Opus 5.5 (Claude Code), en autonomie, worktree `kesh-32-10a`, branch
 
 ### Completion Notes List
 
+#### 32-10a-ii — remédiation de la revue de code P1 (2026-10-27)
+
+**Fusion** (`fff925c1`) : `origin/main` à `782bbc2f` (32-9b, #785). Trois conflits résolus par union :
+`CHANGELOG.md` (les deux entrées), `services/acces.rs` (doc des portées : `DocumentsRead` de la 32-9b, `PromptsWrite`
+sans service), `tests/services_motif.rs` — la garde (vi) compte **seize** fichiers (`pieces.rs` de la 32-9b,
+`prompts_mcp.rs` de la ii). `services/mod.rs`, `mcp_gardes_lexicales.rs`, `mcp_transport_e2e.rs` et
+`sprint-status.yaml` fusionnés sans conflit, relus. Aucun PDF en conflit (la ii n'en touche aucun).
+
+**Remédiation** (`8afeeb7e`, commit de code) — chaque prémisse vérifiée au code avant correction :
+- **MEDIUM B1 = E1 = A2** : `composer_version(origine: OrigineVersion, numero, cle_auteur, description, texte) ->
+  Result<VersionServie, RefusVersion>`, publique, seule décision « origine → marque » ; `OrigineVersion` propre aux
+  services (`From<Origine>`) ; `RefusVersion::AgentSansCle` distinct de `RefusVersion::Contenu`, contrôlé avant le
+  contenu ; `composer` privée ; `servir` l'appelle (C-32-10a-94). Tests `composer_version_par_origine` (standard, admin
+  avec et sans clé, agent avec clé — marque en toutes lettres, version 4 et clé 12 —, agent sans clé, contenu refusé par
+  origine) et `origine_de_la_base_convertie`. E3 couvert ici.
+- **B2 = A5** : `servir` revalide le nom par `nom_conforme` (C-32-10a-95) ; test `servir_revalide_le_nom_et_la_cle`.
+- **E2** : test `tri_octet_pour_octet` (`a_b`, `a1`, `a-b`), par le service et par `/mcp`.
+- **A3** : U+3164 (`Lo`) et U+2028 (`Zl`) dans `caracteres_par_champ`.
+- **A4** : `nomme_le_depot_directe` et `nomme_le_depot_en_liste` mesurés séparément sur `api_keys` (deux fichiers ; un),
+  témoin existant `services/factures.rs:31-33`.
+- **A6** : une clé de plus avant `cle_agent` dans `catalogue`, et `assert_ne!` du numéro de clé et du numéro de version.
+- **B5** : `MOTIF_LIVRES` prend `kesh_db::{…repositories…}` (lu jusqu'au `;`), rouges factices sur une ligne et
+  imbriqué ; le code de `prompts_mcp.rs` est aussi contrôlé **aplati** (forme multi-ligne) ; vert factice.
+- **E4** : politique écrite (C-32-10a-96, doc-comment de `lister`) — une version refusée est omise seule ; une ligne
+  qui viole le schéma fait échouer toute la liste.
+- **E6** : doc-comment de `valider_contenu` ; contrainte de la iii au § *À recontrôler à l'étape 0* et à T-iii0.
+- **LOW non remédiés, à tracer en issue** (demandé à l'orchestrateur) : B3 = E7 (`McpPrompt::portee()` jamais lue,
+  `arguments()` typé `&[&str]` au lieu d'objets `PromptArgument`), B4 = E5 (défenses doublées du dépôt : `nom_conforme`
+  d'`obtenir`, dont la mutation survit), B6 (générique imbriqué dans `impls_de_mcp_prompt`), E8 (trois enveloppes sur
+  le pool de trois connexions). B7 = A7 : déjà confié à la 32-11 (C-32-10a-29). A1 : traité par la fusion.
+
+**Tests neufs** (de `fff925c1` à `8afeeb7e`, `grep -cE '#\[(test|sqlx::test)'` aux deux bornes) : **4** —
+`prompts_mcp.rs` 7 → 10, `mcp_prompts_e2e.rs` 7 → 8, `mcp_gardes_lexicales.rs` 23 → 23 (tests amendés).
+
+**Mutations** (`kesh-gate-logs/3210a-ii-p1-mut-P1M*.log`, une à la fois, restaurées par `git checkout -- f && touch f`,
+diff résiduel nul vérifié) — **10 jouées, 10 tuées par le test visé**, raison lue dans la panique :
+P1M1 (version d'agent servie sans marque) et P1M2 (agent sans clé servi) → `composer_version_par_origine` ; P1M3
+(numéro et clé inversés dans la marque) → `prompts_get_corps_egaux` (« version 2 … clé n° 1 » contre « version 1 …
+clé n° 2 » : la fixture A6 tient) ; P1M4 (nom non revalidé) → `servir_revalide_le_nom_et_la_cle` (`"Admin-a"`) ; P1M5
+(tri retiré) → `tri_octet_pour_octet` — **l'ordre de la collation mesuré** : `a_b, a-b, a1` contre `a-b, a1, a_b` ;
+P1M6 (branche en accolades retirée de `MOTIF_LIVRES`) et P1M7 (`use kesh_db::{` multi-ligne ajouté au service) →
+`service_des_prompts_sans_poignee_des_livres` ; P1M8 (forme en liste lue ligne à ligne) →
+`prompts_lus_par_leur_service` (témoin `services/factures.rs`) ; P1M9 (U+3164 retiré du prédicat) et P1M10 (U+2028
+retiré) → `caracteres_par_champ`.
+
+**Gates, au dernier commit de code** (`8afeeb7e`) : bases `kesh_3210a` et `kesh_e2e_3210a` remises à zéro en
+commandes séparées (compte `kesh` : `DROP`, `CREATE DATABASE`, `sqlx migrate run` des migrations du worktree, seed) ;
+`scripts/test-fast.sh --ci` sous `flock` : **4404 passés / 4404, 7 ignorés** (fmt, clippy `-D warnings` compris ;
+`kesh-gate-logs/3210a-ii-p1-gate-complet.log`) — 4387 au gate précédent, + 4 tests neufs, le reste (13) apporté par
+la fusion de la 32-9b (différence, non mesurée à part) ; frontend : `check` 0 erreur (29 avertissements),
+`lint-i18n-ownership` vert, `test:unit` **1976 / 1976** (167 fichiers), `build` vert
+(`kesh-gate-logs/3210a-ii-p1-frontend.log`) ; **E2E complet** (port 3336, base `kesh_e2e_3210a`, dossiers neufs
+`/tmp/kesh-e2e-3210a-ii-p1/{inbox,documents,backup}` passés au backend et au runner) : **316 passés, 8 échoués,
+17 ignorés** — les sept KF-029 (`mode-expert:26`, `:41`, `onboarding-path-b:65`, `:92`, `onboarding:57`, `:77`,
+`:150`) et `sidebar-navigation.spec.ts:75`, **rejoué seul : échoue** ⇒ la KF-052 (#424), déterministe, et non une
+pollution (`docs/testing.md` § *Les échecs attendus* ; `kesh-gate-logs/3210a-ii-p1-e2e.log`,
+`3210a-ii-p1-e2e-rejeu-sidebar.log`). Compte dans la fourchette attendue (7 à 10) ; la remédiation ne touche pas le
+frontend. Backend tué par le PID de son binaire (2114807, cwd du worktree), port 3336 libre ensuite. Recette visuelle :
+sans objet. PDF : non régénérés.
+
 #### 32-10a-ii (2026-10-27)
 
 **Étape 0** (lignes lues, citées) :
@@ -1798,3 +1858,4 @@ C-32-10a-67 (une version orpheline échappe à `prompts_de_societe`, compensé d
 | 2026-10-27 | **développement 32-10a-i** | Opus 5.5, en autonomie. Étape 0 citée au Dev Agent Record (P5-H1 réfuté, H2-H8 traités ; D1 à D5, notes des 32-8b et 32-9a recontrôlées) ; migration `20261027000001_mcp_prompts` (DDL seul, `\z`), entités, dépôt (6 écritures `_in_tx` + amorçage, verrou de société d'abord), deux standards (forme `nonFiable` nommée), amorçage aux cinq points d'entrée, `sql_lexical`, gardes ; sauvegarde (44 tables), export (quatorze hors export), restauration jouée, remise à zéro ; P5 à P8 ; manuels, PDF, CHANGELOG. 44 tests neufs ; 27 mutations, 27 tuées (Mi12 après renfort du test de la remise à zéro). Gate complet 4371/4371 ; frontend 1976 ; E2E 317 passés + 7 KF-029. Choix C-32-10a-60 à 71. Prompt de revue P1 : `32-10a-i-review-prompt-p1.md` (Sonnet, B, E, A). |
 | 2026-10-27 | **Revue de code P1 (32-10a-i) — REVUE TERMINÉE** | **Sonnet ×3** (lentilles B, E, A, contexte frais, prompt `32-10a-i-review-prompt-p1.md` ; rapports `kesh-gate-logs/3210a-i-review-p1-{B,E,A}.md`) : B 0/0/0/5, E 0/0/0/9, A 0/0/0/4 ⇒ **0/0/0/18** (convergence A1 = B4 = E1 : précondition de lecture du plafond et de la numérotation). **Clôture** sur une passe sans finding au-dessus de LOW, **1 passe sur 8**. LOW tracés dans **#783** ; le point 1 et le point 4 sont reportés à l'étape 0 de la 32-10a-iii. Écart de la lentille B (`awk` en lecture seule) sans effet. Dernier commit de code `3ebd53a6` : gate complet 4371/4371, frontend 1976/1976, E2E 317 + 7 KF-029, 27 mutations tuées. *(Écrit par l'orchestrateur.)* |
 | 2026-10-27 | **développement 32-10a-ii** | Opus 5.5, en autonomie, branche `story/32-10a-ii` partie de `dbe0da15`. Étape 0 citée au Dev Agent Record : code de la 32-10a-i (dépôt, `en_vigueur`, `differe_du_standard`, standards, amorçage), D1 complément (composition dans `services/`, `LIB_NOMME_MCP` inchangé), `\r` restauré (texte contrôlé = texte servi), C-32-8-31 (description enregistrée en une ligne, servie avec `\n\n` après la marque), note de la 32-8b sur `tools/list`, prédicat de la 32-8b0 réemployé (`kesh-core` non touché), schéma `2025-11-25` relevé. Livré : `LecturePrompts` (pool en lecture seule du MCP, sans `pool()`), service `prompts_mcp` (`valider_contenu`, `marque_agent`, `composer`, `lister`, `obtenir`, `PromptServi`, `ErreurPrompts`), `PromptEnBase` seule implémentation du trait scellé amendé, `ReponseMcp::{ListePrompts, PromptRendu}`, répartiteur (`cursor` refusé, arguments ignorés, `-32603` fixe), CHANGELOG ; gardes `prompts_scelles` (amendée), `prompts_lus_par_leur_service`, `service_des_prompts_sans_poignee_des_livres` ; `e1_rien_ne_part_sous_cle_requise` amendé. 16 tests neufs ; 12 mutations (Mii2 à Mii13), 12 tuées (Mii5, Mii6 reformulées). Gate complet 4387/4387 ; frontend 1976 ; E2E 317 + 7 KF-029. Modules : trois de code et la documentation. Choix C-32-10a-80 à 93. Prompt de revue P1 : `32-10a-ii-review-prompt-p1.md` (Opus, B, E, A). |
+| 2026-10-27 | **Revue de code P1 (32-10a-ii) — REMÉDIÉE** | **Opus ×3** (lentilles B, E, A, contexte frais, prompt `32-10a-ii-review-prompt-p1.md` ; rapports `kesh-gate-logs/3210a-ii-review-p1-{B,E,A}.md`) : B 0/0/1/6, E 0/0/1/7, A 0/0/0/7 ⇒ **trend P1 : 0 CRITICAL / 0 HIGH / 2 MEDIUM / 20 LOW** en somme des lentilles, soit **un seul MEDIUM distinct** (convergence B1 = E1 = A2 : la décision « origine → marque » hors de la fonction partagée — A2 classé LOW par A ; doublons B2 = A5, B3 = E7, B4 = E5, B7 = A7, E3 ⊂ E1). Fusion préalable d'`origin/main` (32-9b, #785 ; garde (vi) à seize fichiers ; `fff925c1`). **MEDIUM remédié** : `composer_version` publique, `OrigineVersion` et `RefusVersion` propres aux services, `composer` privée (C-32-10a-94). **LOW remédiés** : B2 = A5 (nom revalidé, C-32-10a-95), E2 (tri octet pour octet testé ; collation mesurée par P1M5), E3, A3, A4, A6, B5 ; **écrits** : E4 (C-32-10a-96), E6 (doc-comment et étape 0 de la iii). **LOW à tracer en issue** (orchestrateur) : B3 = E7, B4 = E5, B6, E8 ; B7 = A7 déjà à la 32-11 ; A1 traité par la fusion. Commit de code `8afeeb7e` : 4 tests neufs ; mutations P1M1 à P1M10, 10 tuées par le test visé ; gate complet **4404/4404** ; frontend 1976 ; E2E 316 passés, 8 échoués = 7 KF-029 + KF-052 (rejouée seule : échoue). **1 passe sur 8.** La remédiation touche la production (`services/prompts_mcp.rs`) : passe suivante **ciblée**, regression hunter, **Sonnet**, sur `8afeeb7e` — `32-10a-ii-review-prompt-p2.md`, rapport `kesh-gate-logs/3210a-ii-review-p2.md`. |
