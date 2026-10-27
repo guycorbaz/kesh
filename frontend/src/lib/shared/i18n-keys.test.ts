@@ -735,7 +735,22 @@ const ATTENDU = {
 	// branche — `features/reports/GeneralLedgerView.svelte` 21 → 22 (compte sans mouvement
 	// dont l'ouverture se clôt dans la période, `reports-ledger-no-movement-closed`). Un
 	// littéral : les autres compteurs inchangés.
-	sitesTotal: 2394,
+	// Story 32-10b (refs #723, écran des prompts du serveur MCP) : **2394 → 2510** (+116),
+	// mesuré par la collecte de ce test et recompté par `grep -oE '(i18nMsg|[^a-zA-Z]msg)\('`
+	// aux deux bornes (`f2ac34d2` → HEAD de `story/32-10b`), périmètre : les fichiers touchés
+	// par la branche — `features/mcp-prompts/McpPromptDetail.svelte` 0 → 65,
+	// `McpPromptsList.svelte` 0 → 25, `mcp-prompts-format.ts` 0 → 11, `McpPromptVersion.svelte`
+	// 0 → 8, `McpPromptEditor.svelte` 0 → 7 (fichiers neufs) ; `mcp-prompts.api.ts`,
+	// `mcp-prompts.types.ts`, `shared/i18n-repli-catalogue.ts` et les deux pages
+	// `routes/(app)/admin/mcp/prompts/` 0 → 0 ; `routes/(app)/+layout.svelte` 6 → 6 (l'entrée
+	// de menu passe par `i18nKey`, `FAMILLES_RESOLUES['nav-']`). Que des littéraux : les autres
+	// compteurs inchangés.
+	// Story 32-10b, remédiation de la revue de code P1 : **2510 → 2513** (+3), recompté par
+	// le même `grep` aux deux bornes (`fd6741c6` → HEAD), périmètre : les fichiers touchés —
+	// `McpPromptDetail.svelte` 65 → 67 (`mcp-prompts-error-reread`, `mcp-prompts-retry`),
+	// `McpPromptsList.svelte` 25 → 26 (`mcp-prompts-created-open`), la page `[id]` 0 → 0.
+	// Que des littéraux : les autres compteurs inchangés.
+	sitesTotal: 2513,
 	sitesNonResolus: 31,
 	relais: 6,
 	// Story 26-1 (#620, AC3-bis) : **10 → 11** — `lib/features/bank-import/
@@ -880,7 +895,9 @@ const FAMILLES_RESOLUES: Record<string, readonly string[]> = {
 		// Story 25-1c-b1 (#378) — l'écran du journal d'audit.
 		'audit-log',
 		// Story 32-8c (refs #723) — l'écran des envois du serveur MCP.
-		'admin-mcp-sends'
+		'admin-mcp-sends',
+		// Story 32-10b (refs #723, 2026-10-27) — l'écran des prompts du serveur MCP.
+		'admin-mcp-prompts'
 	],
 	// routes/(app)/reports/+page.svelte:628 — table `labelKey` des onglets
 	'reports-': [
