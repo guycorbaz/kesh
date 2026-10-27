@@ -296,3 +296,62 @@ par union au registre de l'epic à la clôture.*
   de capture.
 - **Écarté** : une spec de captures dans `tests/e2e/` (elle tournerait dans chaque E2E complet).
 - **Réversible** : oui.
+
+## Remédiation de la revue de code P1 (2026-10-27, Opus 5.5)
+
+### C-32-10b-29 — L'écriture et la relecture, deux temps distincts
+
+- **Contexte** : B1 = E1 = A1 — un `POST` réussi suivi d'un `GET` en échec était annoncé comme l'échec du geste.
+- **Retenu** : `agir` sépare les deux ; l'écriture refusée garde son erreur ; l'écriture réussie notifie le succès
+  aussitôt, et une relecture en échec dit « Le geste a été enregistré, mais la relecture du prompt a échoué :
+  rechargez-le. » (`mcp-prompts-error-reread`) avec *Recharger* ; le détail périmé reste affiché. Test
+  `relecture_en_echec_apres_ecriture`, mutations M20 et M20b tuées.
+- **Écarté** : relancer la relecture d'office (un rejeu silencieux ; et une panne durable bouclerait).
+- **Réversible** : oui.
+
+### C-32-10b-30 — Un rechargement en échec ne détruit rien
+
+- **Contexte** : E2 = B2 = A2 — `charger` en échec mettait `detail` à nul (éditeur démonté, saisie perdue de fait,
+  aucun bouton) et oubliait `saisieAConserver` dès son début.
+- **Retenu** : au premier chargement, l'échec remplace la page par son message et un bouton *Réessayer*
+  (`mcp-prompt-load-retry`) ; à un rechargement, le détail et l'éditeur restent, l'erreur s'affiche avec *Recharger*,
+  et `saisieAConserver` n'est remis à faux qu'après une lecture réussie. Test
+  `saisie_conservee_si_le_rechargement_echoue`, mutations M21 et M21b tuées.
+- **Réversible** : oui.
+
+### C-32-10b-31 — L'erreur d'un geste de l'éditeur s'affiche près de lui, défile et prend le focus
+
+- **Contexte** : E3 — le 400 d'un caractère invisible s'affichait en haut de page, l'éditeur étant en bas.
+- **Retenu** : un seul gabarit d'alerte (`{#snippet alerte}`), rendu soit en tête de page, soit dans la zone de
+  l'éditeur (`mcp-prompt-editor-zone`) pour l'enregistrement ; dans les deux cas `scrollIntoView` puis `focus()`
+  (`tabindex="-1"`). Test `erreur_de_l_editeur_pres_de_l_editeur`, mutations M22 et M22b tuées ; capture 12 refaite.
+- **Écarté** : déplacer toutes les erreurs près de l'éditeur (celle d'une approbation y serait loin de son geste).
+- **Réversible** : oui.
+
+### C-32-10b-32 — La page est « occupée » pendant un envoi ou une lecture
+
+- **Contexte** : B3 = E8 — les gestes restaient actifs pendant un rechargement.
+- **Retenu** : `occupe = envoiEnCours || chargement` désactive tous les gestes et garde les gestionnaires ; les
+  dialogues gardent leur fermeture liée au seul envoi. Test `gestes_desactives_pendant_un_rechargement`, M23 tuée.
+- **Réversible** : oui.
+
+### C-32-10b-33 — Une création réussie n'est jamais dite en échec
+
+- **Contexte** : B7 — une navigation en échec après la création s'affichait comme une erreur de création.
+- **Retenu** : la création et la navigation sont deux temps ; une navigation en échec montre un lien « Prompt créé :
+  ouvrir son détail » (`mcp-prompts-created`) et relit la liste. Test `creation_reussie_navigation_en_echec`, M25 tuée.
+- **Réversible** : oui.
+
+### C-32-10b-34 — L'identifiant de l'URL : des chiffres décimaux seulement
+
+- **Contexte** : E9 — `Number('0x10')` rendait 16.
+- **Retenu** : `idDeLUrl` (`/^[1-9][0-9]*$/`, entier sûr), employée par la page `[id]`. M26 tuée. Le même `Number()`
+  vit dans la page des envois (`routes/(app)/admin/mcp/sends/[id]/+page.svelte:11`, 32-8c) : défaut voisin non
+  touché, signalé pour une issue.
+- **Réversible** : oui.
+
+### C-32-10b-35 — La pastille *En vigueur* hors de la police à chasse fixe
+
+- **Retenu** : seul le numéro est en chasse fixe (`<span class="font-mono">`), la cellule ne l'est plus. LOW relevé à
+  la recette visuelle du développement.
+- **Réversible** : oui.
