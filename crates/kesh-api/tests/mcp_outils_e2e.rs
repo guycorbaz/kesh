@@ -1088,9 +1088,16 @@ async fn filtres_de_kesh_contacts_transmis(pool: MySqlPool) {
         .await
         .unwrap();
     let (c, fo, x) = (a.p.client, a.p.fournisseur, x.id);
-    for (id, cree) in [(fo, "2020-01-01"), (c, "2021-01-01"), (x, "2022-01-01")] {
-        sqlx::query("UPDATE contacts SET created_at = ? WHERE id = ?")
+    // Dates de modification posées avec celles de création (une mise à jour
+    // séparée les réécrirait) : C, Fo, X — ni l'ordre par nom, ni par création.
+    for (id, cree, modifie) in [
+        (fo, "2020-01-01", "2023-02-01"),
+        (c, "2021-01-01", "2023-01-01"),
+        (x, "2022-01-01", "2023-03-01"),
+    ] {
+        sqlx::query("UPDATE contacts SET created_at = ?, updated_at = ? WHERE id = ?")
             .bind(format!("{cree} 00:00:00"))
+            .bind(format!("{modifie} 00:00:00"))
             .bind(id)
             .execute(&pool)
             .await
@@ -1133,6 +1140,21 @@ async fn filtres_de_kesh_contacts_transmis(pool: MySqlPool) {
             vec![x, c, fo],
         ),
         (json!({"search": ide}), vec![c]),
+        // Revue de code P2, R3 : le sens seul (tri par défaut, par nom), et le
+        // tri par date de modification.
+        (json!({"sortDirection": "desc"}), vec![fo, c]),
+        (
+            json!({"includeArchived": true, "sortDirection": "desc"}),
+            vec![fo, c, x],
+        ),
+        (
+            json!({"includeArchived": true, "sortBy": "updatedAt"}),
+            vec![c, fo, x],
+        ),
+        (
+            json!({"includeArchived": true, "sortBy": "updatedAt", "sortDirection": "desc"}),
+            vec![x, fo, c],
+        ),
     ] {
         assert_eq!(
             ids_de_contacts(&b, &jeton, args.clone()).await,
@@ -1140,6 +1162,20 @@ async fn filtres_de_kesh_contacts_transmis(pool: MySqlPool) {
             "kesh_contacts {args} (C {c}, Fo {fo}, X {x})"
         );
     }
+    // Revue de code P2, R1 : `actif` est lu de la ligne, non posé en dur —
+    // faux pour le contact archivé, vrai pour les deux autres.
+    let s = structure(
+        &b.appeler(&jeton, "kesh_contacts", json!({"includeArchived": true}))
+            .await,
+        "kesh_contacts",
+    );
+    let actifs: Vec<(i64, bool)> = s["contacts"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|k| (k["id"].as_i64().unwrap(), k["actif"].as_bool().unwrap()))
+        .collect();
+    assert_eq!(actifs, vec![(x, false), (c, true), (fo, true)]);
 }
 
 /// Revue de code P1 de la 32-9b, B5 — `search` de `kesh_contacts` borné à

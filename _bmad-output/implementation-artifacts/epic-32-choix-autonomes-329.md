@@ -619,6 +619,11 @@ l'étape 0. Chaque choix : contexte, option retenue, alternatives écartées, r�
 - **Retenu** : la borne est posée par l'outil — `commun::recherche_bornee`, `commun::RECHERCHE_MAX` égal à
   `services::factures::RECHERCHE_MAX` (100 caractères **rognés**), refus `ArgumentsInvalides { "search" }` au texte
   fixe, et `"maxLength":100` au schéma. La recherche est transmise telle quelle au service, qui la rogne.
+- **Écart connu (revue de code P2, R2)** : le schéma dit `maxLength: 100`, que JSON Schema applique au texte **brut**
+  (points de code, espaces compris), alors que l'outil compte le texte **rogné**. L'outil est donc plus permissif que
+  son schéma : `"  " + 100 caractères + "  "` (104 points de code) est servi par le serveur et refusé par un client qui
+  valide le schéma avant l'envoi. Même écart pour `kesh_factures`, antérieur. Assumé : le schéma ne sait pas dire
+  « après rognage », et refuser côté client un texte que le serveur sert ne perd rien.
 - **Alternatives** : borner dans `carnet::lister` (refusé : change la route de l'écran, hors du sujet d'une revue de
   l'outil) ; ne rien borner (refusé : écart de cohérence entre outils, et une chaîne de 1 Mio en `LIKE`).
 - **Réversible** : oui.
