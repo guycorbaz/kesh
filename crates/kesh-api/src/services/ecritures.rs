@@ -15,10 +15,13 @@ use kesh_core::accounting::Journal as CoreJournal;
 use kesh_core::listing::{SortBy, SortDirection};
 use kesh_db::entities::{Journal as DbJournal, JournalEntryWithLines, Role};
 use kesh_db::errors::{DbError, ModificationBlocker, map_db_error};
-use kesh_db::repositories::imported_supplier_invoices::{self, EntrySourceDocument};
-use kesh_db::repositories::journal_entries::{
-    self, JournalEntryListQuery, JournalEntryListResult, ReversalBlockerHit,
-};
+use kesh_db::repositories::imported_supplier_invoices;
+use kesh_db::repositories::journal_entries::{self, JournalEntryListQuery, ReversalBlockerHit};
+
+/// Réexportés pour l'outil MCP de la 32-9a (C-32-9-25) : `src/mcp/` ne nomme
+/// pas `kesh_db::repositories`.
+pub use kesh_db::repositories::imported_supplier_invoices::EntrySourceDocument;
+pub use kesh_db::repositories::journal_entries::JournalEntryListResult;
 use rust_decimal::Decimal;
 
 use crate::errors::AppError;

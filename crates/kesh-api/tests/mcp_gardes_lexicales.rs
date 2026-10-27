@@ -300,9 +300,10 @@ fn contexte_mcp_construit_par_le_repartiteur_seul() {
         sites(&sources_src(), tout, &motif),
         liste(&[(
             "mcp/repartiteur.rs",
-            // dans la tâche de l'outil, sur les copies de `cle.acces` et
-            // `etat.lecture` qu'elle possède (C-32-6-56)
-            "let ctx = ContexteMcp::nouveau(&acces, &lecture);"
+            // dans la tâche de l'outil, sur les copies de `cle.acces`,
+            // `etat.lecture` et `etat.trace` qu'elle possède (C-32-6-56 ;
+            // la trace : Story 32-9a, AC-a7)
+            "let ctx = ContexteMcp::nouveau(&acces, &lecture, &trace);"
         )])
     );
 }
@@ -549,10 +550,11 @@ fn outils_et_politique_en_leur_lieu() {
         hors.is_empty(),
         "impl McpTool hors de src/mcp/outils/ : {hors:?}"
     );
+    // Story 32-9a (AC-a9) : les seize outils du registre standard.
     assert_eq!(
         sites(&sources_src(), |f| f.starts_with("mcp/outils/"), &imp).len(),
-        1,
-        "témoin : kesh_version"
+        16,
+        "témoin : kesh_version et les quinze outils de la 32-9a"
     );
 
     let lecture = re(r"\bLectureOutils\s*::\s*nouvelle\b|\bLectureOutils\s*\(");
@@ -615,14 +617,26 @@ fn outils_et_politique_en_leur_lieu() {
         1
     );
     assert_eq!(sites_factices("    donnees: Donnees,", &donnees), 0);
+    // Story 32-9a (AC-a8, amendement) : `Donnees` ne se construit, dans
+    // `src/`, qu'en `mcp/sortie.rs` (la seule fabrique, `donnees`) — plus dans
+    // les outils — et en `mcp/politique.rs` (sa définition). Les outils de test
+    // de `tests/common/mcp.rs` restent hors du périmètre.
     let hors: Vec<_> = sites(
         &sources_src(),
-        |f| !f.starts_with("mcp/outils/") && f != "mcp/politique.rs",
+        |f| f != "mcp/sortie.rs" && f != "mcp/politique.rs",
         &donnees,
     );
     assert!(
         hors.is_empty(),
-        "Donnees construite hors des outils : {hors:?}"
+        "Donnees construite hors de la fabrique : {hors:?}"
+    );
+    assert_eq!(
+        sites(&sources_src(), |f| f == "mcp/sortie.rs", &donnees),
+        liste(&[(
+            "mcp/sortie.rs",
+            "Ok(Donnees::nouvelles(texte, Some(valeur)).avec_resume(resume))"
+        )]),
+        "témoin : la fabrique"
     );
 }
 
@@ -802,15 +816,216 @@ fn prompts_scelles() {
         sites(&sources_src(), tout, &prompt).is_empty(),
         "aucun prompt en 32-6"
     );
+    // Story 32-9a (amendement en connaissance de cause, C-32-9-42) :
+    // `mcp/sortie.rs` porte le sceau de `ChampSur` (AC-a2) — un autre sceau,
+    // homonyme, que la garde `champ_sur_en_un_lieu` confine à ce fichier.
     assert!(
-        sites(&sources_src(), |f| f.starts_with("mcp/"), &motif).is_empty(),
-        "aucun sceau posé dans src/mcp/"
+        sites(
+            &sources_src(),
+            |f| f.starts_with("mcp/") && f != "mcp/sortie.rs",
+            &motif
+        )
+        .is_empty(),
+        "aucun sceau de prompt posé dans src/mcp/"
     );
     assert_eq!(
         sites(&sources_src(), |f| f == "services/rapports.rs", &motif).len(),
         2,
         "témoin vert existant : le sceau des rapports, hors du périmètre"
     );
+}
+
+// ---------------------------------------------------------------------------
+// Story 32-9a (refs #723) — les gardes des sorties (AC-a24)
+// ---------------------------------------------------------------------------
+
+/// `champ_sur_en_un_lieu` — dans `crates/kesh-api/src`, les jetons `ChampSur`,
+/// `Scelle` (hors de `services/rapports.rs`, dont le sceau homonyme est un
+/// autre trait, privé à ce fichier) et le chemin `scelle::` n'apparaissent
+/// qu'en `mcp/sortie.rs`. Formes : `impl ChampSur for`, `impl<…> ChampSur
+/// for`, `sortie::ChampSur`, `use …ChampSur`, `impl Scelle for`, `scelle::Scelle`,
+/// `use …scelle`. Les développements de `sortie!` et `champ_enum!` dans
+/// `mcp::outils` ne sont pas du texte des fichiers d'outils : ils ne
+/// paraissent pas ici (constaté au relevé : aucun jeton hors de `sortie.rs`).
+#[test]
+fn champ_sur_en_un_lieu() {
+    let motif = re(r"\bChampSur\b|\bScelle\b|\bscelle\s*::");
+    // Ma2 : les deux lignes (la seconde seule ne compilerait pas, E0277).
+    for rouge in [
+        "impl crate::mcp::sortie::scelle::Scelle for String {}",
+        "impl crate::mcp::sortie::ChampSur for String {}",
+        "use crate::mcp::sortie::ChampSur;",
+    ] {
+        assert_eq!(sites_factices(rouge, &motif), 1, "rouge : {rouge}");
+    }
+    // Vert, factice (dit tel) : l'emploi de la macro, qui ne nomme pas le trait.
+    assert_eq!(
+        sites_factices("sortie! { struct X { a: i64 } }", &motif),
+        0,
+        "vert"
+    );
+    // `services/rapports.rs` et `mcp/prompts.rs` portent chacun leur propre
+    // sceau, homonyme et privé : on n'y cherche que `ChampSur` et le chemin du
+    // sceau de `sortie`.
+    let homonymes = |f: &str| f == "services/rapports.rs" || f == "mcp/prompts.rs";
+    let mut hors: Vec<_> = sites(
+        &sources_src(),
+        |f| f != "mcp/sortie.rs" && !homonymes(f),
+        &motif,
+    );
+    hors.extend(sites(
+        &sources_src(),
+        homonymes,
+        &re(r"\bChampSur\b|\bsortie\s*::\s*scelle\b"),
+    ));
+    assert!(
+        hors.is_empty(),
+        "ChampSur ou son sceau hors de sortie.rs : {hors:?}"
+    );
+    assert!(
+        !sites(&sources_src(), |f| f == "mcp/sortie.rs", &motif).is_empty(),
+        "témoin : sortie.rs porte le trait"
+    );
+}
+
+/// `trace_confinee_dans_outil` — dans `src/mcp/`, le jeton `Trace` n'apparaît
+/// qu'aux sites écrits : le champ privé de `ContexteMcp`, le paramètre de
+/// `nouveau` et l'import (`mcp/outil.rs`) ; l'état et l'import du module
+/// (`mcp/mod.rs`) ; dans le répartiteur, aucun (il passe `&trace`, une copie
+/// d'`etat.trace`). Toute autre ligne rougit : `-> Option<&Trace>`,
+/// `-> impl Deref<Target = Trace>`, une fermeture `f(&Trace)`, `pub trace`.
+///
+/// ⚠️ Angles morts écrits (revue de code P1, E5) : un alias de type posé
+/// **hors** de `src/mcp/` (`pub type Tr = poignees::Trace;` dans un service),
+/// puis nommé dans `outil.rs`, échappe au jeton ; et le compte « un seul
+/// emploi de `self.trace` » ne voit pas une déstructuration
+/// (`let Self { trace, .. } = self;`). Le champ reste privé : la revue lit
+/// `outil.rs`, qui est court.
+#[test]
+fn trace_confinee_dans_outil() {
+    let motif = re(r"\bTrace\b");
+    assert_eq!(
+        sites_factices("    pub fn trace(&self) -> &Trace {", &motif),
+        1,
+        "rouge : Ma14"
+    );
+    assert_eq!(
+        sites_factices("    trace: &'a Trace,", &motif),
+        1,
+        "la déclaration du champ (factice, dite telle)"
+    );
+    assert_eq!(
+        sites_factices("    let trace = etat.trace.clone();", &motif),
+        0
+    );
+    assert_eq!(
+        sites(&sources_src(), |f| f.starts_with("mcp/"), &motif),
+        liste(&[
+            ("mcp/mod.rs", "pub(crate) trace: Trace,"),
+            (
+                "mcp/mod.rs",
+                "use crate::services::poignees::{EcritureEnvois, Lecture, LectureEnvois, Trace};"
+            ),
+            ("mcp/outil.rs", "trace: &'a Trace,"),
+            ("mcp/outil.rs", "trace: &'a Trace,"),
+            (
+                "mcp/outil.rs",
+                "use crate::services::poignees::{Lecture, Trace};"
+            ),
+        ])
+    );
+    // `afficher` ne rend jamais la trace : son corps l'emploie seulement.
+    let outil = std::fs::read_to_string(racine_src().join("mcp/outil.rs")).unwrap();
+    assert!(outil.contains("rapport.afficher(self.trace).await"));
+    assert_eq!(outil.matches("self.trace").count(), 1, "un seul emploi");
+}
+
+/// `sorties_sans_serialisation_parallele` — dans `src/mcp/outils/`, aucune
+/// ligne ne nomme `serde_json::to_`, `json!`, `to_string_pretty`,
+/// `Value::String`, `impl Serialize` ni `impl serde::Serialize` : la seule
+/// sérialisation est celle de `donnees`. Dans tout `src/mcp/`, les formes qui
+/// fabriquent un `&'static str` d'un texte lu ou contournent l'enveloppe sont
+/// interdites : `leak(`, `serialize_with`, `serde(with`, `static mut`,
+/// `OnceLock<String>`, `LazyLock<String>`.
+#[test]
+fn sorties_sans_serialisation_parallele() {
+    let outils = re(
+        r"\bserde_json\s*::\s*to_|\bjson!|\bto_string_pretty\b|\bValue\s*::\s*String\b|\bimpl\b[^{]*\bSerialize\s+for\b",
+    );
+    assert_eq!(
+        sites_factices("    let t = serde_json::to_string(&compte.name);", &outils),
+        1,
+        "rouge : Ma4b"
+    );
+    assert_eq!(
+        sites_factices("    let a: Arguments = arguments(valeur)?;", &outils),
+        0,
+        "vert : la lecture des arguments"
+    );
+    let trouves = sites(&sources_src(), |f| f.starts_with("mcp/outils/"), &outils);
+    assert!(trouves.is_empty(), "{trouves:?}");
+
+    let fabriques = re(
+        r"\bleak\s*\(|\bserialize_with\b|\bserde\s*\(\s*with\b|\bstatic\s+mut\b|\bOnceLock\s*<\s*String\b|\bLazyLock\s*<\s*String\b",
+    );
+    assert_eq!(
+        sites_factices(
+            "    let r = Resume::outil(Box::leak(e.description.into_boxed_str()));",
+            &fabriques
+        ),
+        1,
+        "rouge : Ma29"
+    );
+    assert_eq!(
+        sites_factices("    let r = Resume::outil(\"kesh_bilan\");", &fabriques),
+        0,
+        "vert (factice, dit tel)"
+    );
+    let trouves = sites(&sources_src(), |f| f.starts_with("mcp/"), &fabriques);
+    assert!(trouves.is_empty(), "{trouves:?}");
+}
+
+/// `mcp_sans_fichier` — rien dans `src/mcp/` ne lit un fichier. Formes :
+/// `std::fs`, `tokio::fs`, leurs imports groupés (`use std::{fs, io};`, revue
+/// de code P1, E5), `File::`, `OpenOptions`, `read_to_string`,
+/// `document_storage`, et tout identifiant **terminé** par `storage_path`
+/// (`pdf_storage_path` compris : sans frontière initiale, revue de code P1,
+/// A1). Le typage fait le reste : aucun type qui porte un chemin de fichier
+/// n'est rendu à `src/mcp/` (`factures_fournisseur::detail_sans_fichier`,
+/// `factures::detail_sans_fichier`, C-32-9-49).
+///
+/// ⚠️ Angles morts écrits : un alias posé **hors** de `src/mcp/` (`use
+/// tokio::fs as disque;` dans un service, réexporté) ; un champ de chemin
+/// nommé autrement (`pdf_path`, `chemin`) — le typage, non le motif, l'écarte.
+#[test]
+fn mcp_sans_fichier() {
+    let motif = re(
+        r"\bstd\s*::\s*fs\b|\btokio\s*::\s*fs\b|\b(std|tokio)\s*::\s*\{[^}]*\bfs\b|\bFile\s*::|\bOpenOptions\b|\bread_to_string\b|\bdocument_storage\b|storage_path\b",
+    );
+    for rouge in [
+        // Ma23
+        "    let o = tokio::fs::read(&piece.storage_path).await;",
+        // A1 : le chemin du PDF figé d'une facture cliente.
+        "    let p = f.pdf_storage_path;",
+        // E5 : les imports groupés.
+        "use std::{fs, io};",
+        "use tokio::{fs, io::AsyncReadExt};",
+    ] {
+        assert_eq!(sites_factices(rouge, &motif), 1, "rouge : {rouge}");
+    }
+    for vert in [
+        "    piece_id: Option<i64>,",
+        // l'import groupé de `sortie.rs`, sans `fs`
+        "use std::{collections::BTreeSet, fmt};",
+    ] {
+        assert_eq!(
+            sites_factices(vert, &motif),
+            0,
+            "vert (factice, dit tel) : {vert}"
+        );
+    }
+    let trouves = sites(&sources_src(), |f| f.starts_with("mcp/"), &motif);
+    assert!(trouves.is_empty(), "{trouves:?}");
 }
 
 // ---------------------------------------------------------------------------
@@ -1041,6 +1256,20 @@ const SITES_REPONSES: &[(&str, &str)] = &[
     (
         "mcp/textes.rs",
         "AppError::Validation(_) => ErreurOutil::ArgumentsInvalides {",
+    ),
+    // Story 32-9a (AC-a22, amendement nommé de l'AC-a31 de la 32-6a) : les
+    // trois bras neufs de la liste blanche.
+    (
+        "mcp/textes.rs",
+        "AppError::ReportFiscalYearNotFound { .. } => ErreurOutil::ExerciceIntrouvable,",
+    ),
+    (
+        "mcp/textes.rs",
+        "AppError::ReportPeriodOutOfFiscalYear { .. } => ErreurOutil::PeriodeHorsExercice,",
+    ),
+    (
+        "mcp/textes.rs",
+        "AppError::Database(DbError::LetteringAccountNotLetterable) => {",
     ),
     ("mcp/transport.rs", "use crate::errors::AppError;"),
     (

@@ -2169,6 +2169,8 @@ const HANDLERS_MIGRES: &[(&str, &str)] = &[
     ("routes/invoices.rs", "list_invoice_settlements_handler"),
     ("routes/supplier_invoices.rs", "list_supplier_invoices"),
     ("routes/supplier_invoices.rs", "get_supplier_invoice"),
+    // Story 32-9a (AC-a12) : la liste des exercices.
+    ("routes/fiscal_years.rs", "list_fiscal_years"),
 ];
 
 /// Une ligne de [`SITES_NON_RESOLUS`] : (fichier, `pub async fn`, `async fn`
@@ -2189,6 +2191,23 @@ type SiteNonResolu = (
 /// les douze mutants des factures, l'export CSV de l'échéancier (C-32-4b-1) et
 /// les deux aides des mutants de `invoices.rs` (AC13 (iii)).
 const SITES_NON_RESOLUS: &[SiteNonResolu] = &[
+    // Story 32-9a (AC-a12) : la liste des exercices passe par
+    // `exercices::lister` ; les six autres gestionnaires — qu'aucun outil ne
+    // sert — restent sur `state.pool`.
+    (
+        "routes/fiscal_years.rs",
+        7,
+        7,
+        &[
+            "close_fiscal_year",
+            "create_fiscal_year",
+            "get_closing_checks",
+            "get_fiscal_year",
+            "reopen_fiscal_year",
+            "update_fiscal_year",
+        ],
+        &[],
+    ),
     (
         "routes/journal_entries.rs",
         7,
@@ -2590,9 +2609,10 @@ fn ac10_vi_services_sans_axum_ni_app_state() {
         .collect();
     assert_eq!(
         services.len(),
-        13,
-        "services/ : treize fichiers attendus (cinq de la 32-3, trois de la 32-4a, deux de la 32-4b, \
-         cles_mcp.rs de la 32-5b, serveur_mcp.rs de la 32-6a, envois_mcp.rs de la 32-8b), {:?}",
+        14,
+        "services/ : quatorze fichiers attendus (cinq de la 32-3, trois de la 32-4a, deux de la 32-4b, \
+         cles_mcp.rs de la 32-5b, serveur_mcp.rs de la 32-6a, envois_mcp.rs de la 32-8b, \
+         exercices.rs de la 32-9a), {:?}",
         services.iter().map(|(f, _)| f).collect::<Vec<_>>()
     );
     assert_eq!(

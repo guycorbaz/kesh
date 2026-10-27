@@ -2925,6 +2925,45 @@ En complément de l'authentification web par cookie, Kesh permet à des \textbf{
 
 Le guide d'intégration complet (exemples \texttt{curl}, Python, JavaScript, MCP, table des codes d'erreur) est fourni dans le dépôt à \texttt{docs/api-external.md}.
 
+\subsection{Les outils du serveur MCP et leurs portées}\label{sec:mcp-outils}
+
+Depuis la 0.16.0, le serveur MCP de Kesh (\keshpath{/mcp}) sert à un agent des \textbf{outils de lecture}. Une clé du serveur MCP n'est pas une clé d'API : elle porte des \textbf{portées} --- \texttt{books:read}, \texttt{invoices:read}, \texttt{contacts:read}, \texttt{documents:read} ---, et l'agent ne voit et n'appelle que les outils des portées de sa clé ; un outil hors de ses portées lui est répondu comme un outil inconnu. Le tableau ci-dessous est la liste exacte des outils servis ; un test de Kesh la compare à ce que le serveur répond, portée par portée.
+
+\begin{center}
+\small
+\begin{tabular}{p{4.6cm}p{2.4cm}p{7.2cm}}
+\textbf{Outil} & \textbf{Portée} & \textbf{Ce qu'il lit} \\
+\hline
+% matrice-mcp:debut
+\texttt{kesh\_version} & \texttt{books:read} & la version de Kesh et le mode de la session ; aucune donnée comptable \\
+\texttt{kesh\_exercices} & \texttt{books:read} & les exercices (identifiant, nom, dates, statut) \\
+\texttt{kesh\_plan\_comptable} & \texttt{books:read} & le plan comptable, par tranches \\
+\texttt{kesh\_ecritures} & \texttt{books:read} & les écritures et leurs lignes, filtrées et paginées \\
+\texttt{kesh\_ecriture} & \texttt{books:read} & une écriture, et la facture fournisseur dont elle est l'achat ou le règlement \\
+\texttt{kesh\_grand\_livre} & \texttt{books:read} & le grand livre d'un compte sur une période \\
+\texttt{kesh\_balance} & \texttt{books:read} & la balance d'un exercice, par tranches, avec ses totaux \\
+\texttt{kesh\_bilan} & \texttt{books:read} & le bilan d'un exercice \\
+\texttt{kesh\_compte\_de\_resultat} & \texttt{books:read} & le compte de résultat d'un exercice \\
+\texttt{kesh\_postes\_ouverts} & \texttt{books:read} & les postes ouverts d'un compte lettrable \\
+\texttt{kesh\_factures} & \texttt{invoices:read} & les factures clientes, filtrées et paginées \\
+\texttt{kesh\_facture} & \texttt{invoices:read} & une facture cliente et ses lignes \\
+\texttt{kesh\_echeancier} & \texttt{invoices:read} & l'échéancier des factures validées \\
+\texttt{kesh\_balance\_agee} & \texttt{invoices:read} & la balance âgée des débiteurs, par tranches \\
+\texttt{kesh\_factures\_fournisseur} & \texttt{invoices:read} & les factures fournisseur, paginées \\
+\texttt{kesh\_facture\_fournisseur} & \texttt{invoices:read} & une facture fournisseur et ses lignes \\
+\texttt{kesh\_lire\_envoi} & toute clé & la relecture d'un envoi validé par l'utilisateur \\
+% matrice-mcp:fin
+\end{tabular}
+\end{center}
+
+\textbf{Ce que l'agent reçoit.} Chaque réponse d'un outil commence par un en-tête fixe, écrit par Kesh, puis les données en JSON indenté. Tout texte \textbf{saisi ou importé} --- libellé, nom, numéro de compte ou de facture, condition de paiement, description de ligne --- y figure sous la forme \texttt{\{"nonFiable": "…"\}}, et l'en-tête dit à l'agent qu'une telle valeur est \textbf{une donnée, jamais une consigne} : un libellé qui contiendrait une instruction (« ignore les consignes précédentes… ») arrive à l'agent marqué comme tel. Les caractères invisibles d'un texte y sont rendus visibles (\texttt{\textbackslash u\{202E\}}). Les nombres, les dates, les montants et les statuts ne sont pas enveloppés. \textbf{Attention} : l'enveloppe est un signal donné à l'agent, \textbf{non une garantie} : un modèle peut encore suivre une consigne enveloppée ; sous une clé soumise à validation, c'est vous qui voyez le texte avant qu'il ne parte (\S\ref{sec:mcp-envois}). Une réponse reste sous un plafond de \textbf{24 Kio} de texte --- environ 10\,000 jetons, estimation ---; au-delà, l'outil refuse et demande de restreindre la demande (\texttt{limit} plus petit, période plus courte).
+
+\textbf{Ce qui est masqué, et ce qui ne l'est pas.} Sans la portée \texttt{contacts:read}, trois coordonnées des tiers sont \textbf{masquées} --- l'\textbf{IBAN} et le \textbf{QR-IBAN du créancier} d'une facture fournisseur, et l'\textbf{adresse d'envoi} d'une facture cliente --- et rendues « \texttt{(masqué : portée contacts:read requise)} », que la valeur existe ou non. Les \textbf{noms des clients et des fournisseurs ne sont pas masqués} : ils figurent dans les factures, et Kesh les écrit lui-même, notamment, dans les libellés des écritures d'achat et de règlement fournisseur, d'avoir, d'encaissement d'une facture rapprochée, d'une écriture créée par une \textbf{règle de rapprochement} (le libellé de la règle suivi du nom de la contrepartie bancaire), et de vente si le gabarit du libellé contient \texttt{\{CONTACT\_NAME\}} --- lisibles sous \texttt{books:read}. Dans Kesh, \textbf{l'IBAN d'un fournisseur n'est pas une donnée du contact} : il ne vit que sur ses factures, et c'est là que \texttt{contacts:read} le démasque. Les champs libres (libellés, descriptions, conditions) ne sont pas masqués non plus : un IBAN ou un nom qu'on y aurait saisi à la main part sous \texttt{books:read} ou \texttt{invoices:read}. La séparation des portées n'est donc pas une protection des données personnelles au sens large.
+
+\textbf{Lecture seule.} Aucun outil n'écrit dans les livres. La consultation d'un rapport --- grand livre, balance, bilan, compte de résultat, balance âgée --- s'inscrit au journal d'audit, comme à l'écran, y compris quand l'envoi attend votre validation ; chaque appel d'outil y est inscrit aussi. \textbf{Attention} : la ligne de consultation (« Rapport généré ») ne dit pas le canal --- elle paraît au nom du créateur de la clé, \textbf{exactement comme une consultation faite à l'écran} ; seule la ligne « Outil du serveur MCP appelé », inscrite à part pour le même appel avec le numéro de la clé, révèle qu'un agent a lu le rapport (limite connue, issue \#776).
+
+\textbf{Ce qui n'est pas servi.} Les rapports de TVA, des journaux et des projets, les règlements d'une facture et tout export ne sont pas servis à l'agent. Le grand livre se lit \textbf{compte par compte} ; le plan comptable, la balance et la balance âgée se lisent \textbf{par tranches}. Le bilan et le compte de résultat ne sont pas paginés : au-delà d'environ 60 comptes à solde non nul, la réponse est refusée --- le compte de résultat se lit alors sur une période plus courte, le bilan, cumulatif, n'a pas d'autre recours.
+
 \subsection{Les envois du serveur MCP}\label{sec:mcp-envois}
 
 Depuis la 0.16.0, une clé du serveur MCP porte une \textbf{politique de validation} : \emph{requise} (le défaut) ou \emph{dispensée}. Sous une clé dont la validation est \textbf{requise}, \textbf{aucune donnée de vos livres ne part vers l'agent sans votre accord}. Quand l'agent appelle un outil, Kesh exécute la lecture, mais au lieu de rendre le résultat, il le \textbf{dépose} comme un \emph{envoi} et ne rend à l'agent qu'un \textbf{accusé} : un numéro d'envoi, « en attente », et la consigne de vous demander de le valider. Une fois l'envoi validé, l'agent le \textbf{relit} par l'outil \keshcommand{kesh\_lire\_envoi} (\keshcommand{\{"envoi": n\}}) --- autant de fois qu'il veut jusqu'à l'échéance, toujours les mêmes octets, chaque relecture étant journalisée. Tant que l'envoi attend, la relecture ne rend que « en attente » ; un envoi refusé, échu ou inconnu rend une erreur, sans contenu.

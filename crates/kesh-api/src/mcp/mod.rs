@@ -71,6 +71,7 @@ pub mod registre;
 pub(crate) mod repartiteur;
 pub(crate) mod reponse;
 pub mod reseau;
+pub mod sortie;
 pub mod textes;
 pub(crate) mod transport;
 

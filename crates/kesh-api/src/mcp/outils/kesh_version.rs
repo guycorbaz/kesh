@@ -5,7 +5,7 @@
 use serde::Deserialize;
 
 use crate::mcp::outil::{ContexteMcp, FuturOutil, McpTool, arguments};
-use crate::mcp::politique::Donnees;
+use crate::mcp::sortie::{Resume, VersionBinaire, donnees, sortie};
 use crate::mcp::textes::depuis_app_error;
 use crate::services::acces::Portee;
 use crate::services::serveur_mcp;
@@ -17,6 +17,15 @@ pub struct KeshVersion;
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct SansArgument {}
+
+sortie! {
+    /// La sortie de `kesh_version` (Story 32-9a, AC-a8) : aucun texte libre.
+    struct Version {
+        version: VersionBinaire,
+        lecture_seule: bool,
+        delai_instruction_s: f64,
+    }
+}
 
 impl McpTool for KeshVersion {
     fn nom(&self) -> &'static str {
@@ -46,12 +55,12 @@ impl McpTool for KeshVersion {
             let etat = serveur_mcp::etat(ctx.acces(), ctx.lecture())
                 .await
                 .map_err(depuis_app_error)?;
-            let structure = serde_json::json!({
-                "version": etat.version,
-                "lectureSeule": etat.lecture_seule,
-                "delaiInstructionS": etat.delai_instruction_s,
-            });
-            Ok(Donnees::nouvelles(structure.to_string(), Some(structure)))
+            let sortie = Version {
+                version: VersionBinaire::du_binaire(),
+                lecture_seule: etat.lecture_seule,
+                delai_instruction_s: etat.delai_instruction_s,
+            };
+            donnees(Resume::outil("kesh_version"), &sortie)
         })
     }
 }
