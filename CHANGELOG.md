@@ -10,6 +10,20 @@ Le contenu est rédigé en français à destination des **fiduciaires, PME, ind�
 
 ## [0.16.0] — Non publié
 
+### Ajouté
+
+- **Les outils de lecture du serveur MCP — livres et factures** (refs
+  [#723](https://github.com/guycorbaz/kesh/issues/723)). Quinze outils, chacun dans sa portée : sous `books:read`,
+  les exercices, le plan comptable, les écritures (liste et détail), le grand livre d'un compte, la balance, le bilan,
+  le compte de résultat et les postes ouverts ; sous `invoices:read`, les factures clientes (liste, détail,
+  échéancier), la balance âgée des débiteurs et les factures fournisseur (liste et détail). Le manuel
+  d'administration en donne la liste exacte, § *Les outils du serveur MCP et leurs portées*. Aucun n'écrit ; la
+  consultation d'un rapport s'inscrit au journal d'audit. Tout texte saisi ou importé — libellé, nom, numéro,
+  condition, description — parvient à l'agent sous la forme `{"nonFiable": "…"}`, marqué comme une donnée et non une
+  consigne. Sans la portée `contacts:read`, l'IBAN et le QR-IBAN du créancier et l'adresse d'envoi d'une facture sont
+  masqués ; les noms des clients et des fournisseurs, que Kesh écrit lui-même dans les libellés, ne le sont pas. Une
+  réponse reste sous 24 Kio de texte, soit environ 10 000 jetons (estimation) ; les listes se lisent par pages.
+
 ### Modifié
 
 - ⚠️ **Sauvegarde : la 0.16.0 refuse les sauvegardes de la 0.15.0 et d'avant.** Une sauvegarde ne se réimporte que

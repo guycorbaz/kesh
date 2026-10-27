@@ -4,6 +4,12 @@
 //! `POST /api/v1/onboarding/seed-demo` ([`seed_demo`]) et
 //! `POST /api/v1/onboarding/reset` ([`reset_demo`], qui remet l'installation à
 //! zéro et inscrit son geste, Story 15-7b2).
+//!
+//! Le module [`pieges`] (fonctionnalité `pieges`, tests seulement) sème les
+//! fixtures piégées du serveur MCP (Story 32-9a).
+
+#[cfg(feature = "pieges")]
+pub mod pieges;
 
 use chrono::{Datelike, Utc};
 use kesh_db::backup::reset_cleared_tables;

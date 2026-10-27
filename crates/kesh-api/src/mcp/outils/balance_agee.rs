@@ -1,8 +1,12 @@
 //! `kesh_balance_agee` — la balance âgée des débiteurs, arrêtée à aujourd'hui
 //! (Story 32-9a, AC-a10) ; la consultation s'inscrit au journal d'audit. Le
 //! rapport rend un débiteur par client à solde ouvert : l'outil le **tranche**
-//! (défaut 40, maximum 75) et rend les totaux du rapport entier (validation P3,
+//! (défaut 38, maximum 68) et rend les totaux du rapport entier (validation P3,
 //! F2). Portée `invoices:read`.
+//!
+//! Les bornes de la fiche (40 / 75, sur un débiteur estimé à 287 octets) sont
+//! **révisées sur la mesure** (C-32-9-44) : un débiteur de la fixture ordinaire
+//! fait 331 octets (+ 15 %), et 75 débiteurs dépassaient le plafond.
 
 use serde::Deserialize;
 
@@ -14,9 +18,9 @@ use crate::services::acces::Portee;
 use crate::services::rapports::{self, Affichage};
 
 /// Débiteurs par défaut.
-pub const LIMITE_DEFAUT: i64 = 40;
+pub const LIMITE_DEFAUT: i64 = 38;
 /// Débiteurs au plus (aucun plafond de service).
-pub const LIMITE_MAX_MCP: i64 = 75;
+pub const LIMITE_MAX_MCP: i64 = 68;
 
 /// L'outil.
 pub struct KeshBalanceAgee;
@@ -81,7 +85,7 @@ impl McpTool for KeshBalanceAgee {
     }
 
     fn schema_entree(&self) -> &'static str {
-        r#"{"type":"object","properties":{"limit":{"type":"integer","minimum":1,"maximum":75,"default":40},"offset":{"type":"integer","minimum":0}},"additionalProperties":false}"#
+        r#"{"type":"object","properties":{"limit":{"type":"integer","minimum":1,"maximum":68,"default":38},"offset":{"type":"integer","minimum":0}},"additionalProperties":false}"#
     }
 
     fn portee(&self) -> Portee {
