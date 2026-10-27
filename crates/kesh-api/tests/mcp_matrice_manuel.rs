@@ -3,8 +3,9 @@
 //!
 //! Le manuel porte, entre `% matrice-mcp:debut` et `% matrice-mcp:fin`, une
 //! ligne par outil : `\texttt{<nom>} & \texttt{<portée>} & … \\`, ou
-//! `… & toute clé & … \\` pour un outil listé sous toutes les portées de
-//! lecture (`kesh_lire_envoi`). Un bloc absent, une ligne en double ou une
+//! `… & toute clé & … \\` pour un outil listé sous toutes les portées
+//! (`kesh_lire_envoi`). Les portées parcourues sont les quatre de lecture et,
+//! depuis la Story 32-10a-iii, `prompts:write` (`proposer_prompt`). Un bloc absent, une ligne en double ou une
 //! ligne que l'analyse ne lit pas rougissent.
 
 mod common;
@@ -88,7 +89,10 @@ async fn matrice_du_manuel(pool: MySqlPool) {
     let a = societe_piegee(&pool, "Société A 329", 'A').await;
     let b = banc(&pool);
     let mut par_portee: Vec<(McpScope, Vec<String>)> = Vec::new();
-    for p in LECTURE {
+    // Les quatre portées de lecture **et** `prompts:write` (Story 32-10a-iii,
+    // revue de code P1, E2) : `proposer_prompt` n'est servi que sous cette
+    // portée, et le manuel le dit.
+    for p in LECTURE.into_iter().chain([McpScope::PromptsWrite]) {
         let jeton = cle_de(&pool, &a, &[p], SendValidation::Exempt).await;
         par_portee.push((p, b.liste(&jeton).await));
     }

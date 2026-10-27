@@ -37,6 +37,17 @@ Le contenu est rédigé en français à destination des **fiduciaires, PME, ind�
   et `kesh-assistant`, l'agent qui lit la comptabilité pour l'utilisateur. Seule une version approuvée est servie ; un
   prompt écrit par un agent l'est précédé d'une marque qui le dit, et un texte portant un caractère invisible ou
   bidirectionnel ne l'est pas. Un prompt est un texte fixe : les arguments d'un client sont ignorés.
+- **Proposer un prompt, et le gérer** (refs [#723](https://github.com/guycorbaz/kesh/issues/723)). Sous la portée
+  `prompts:write`, un agent appelle l'outil `proposer_prompt` : il propose un prompt, qui devient une version « à
+  valider », jamais servie avant qu'un administrateur l'approuve — d'ici là, la version en vigueur reste servie, et
+  aucune clé ne peut approuver. L'agent n'écrit rien dans les livres, ne propose
+  jamais sur un nom en `kesh` (les prompts standard) et ne relit pas ses propositions ; au plus vingt attendent par
+  société. Sur le nom d'un prompt existant, la proposition en devient une nouvelle version, elle aussi à valider. Les
+  routes d'administration `/api/v1/admin/mcp/prompts` — une session d'Administrateur seulement, jamais une clé —
+  listent les prompts, rendent l'historique avec le texte tel qu'il serait servi, créent un prompt, enregistrent une
+  nouvelle version ou un retrait, approuvent ou refusent une proposition (l'approbation revérifie le texte) et
+  rétablissent le texte standard ; chaque geste est inscrit au journal d'audit, sans le texte. Chaque `prompts/get` y
+  est inscrit aussi ; si l'inscription échoue, rien n'est servi.
 - **Les outils de lecture du serveur MCP — contacts et pièces** (refs
   [#723](https://github.com/guycorbaz/kesh/issues/723)). Sous `contacts:read`, le carnet d'adresses (liste et
   fiche d'un contact), chaque texte enveloppé ; sous `documents:read`, la liste des pièces importées d'un statut,

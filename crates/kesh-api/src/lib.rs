@@ -247,7 +247,7 @@ pub fn build_router_avec_registre(
     // KESH-ADMIN-ROUTES-BEGIN
     // ⚠️ Bloc borné — Story 22-4a (#167). Le test `admin_pat_denied_e2e` lit CE
     // fichier par `include_str!`, compte les constructeurs de méthode entre les
-    // deux marqueurs, et exige exactement 42 (Story 32-8b). Toute route ajoutée ici sans son
+    // deux marqueurs, et exige exactement 49 (Story 32-10a-iii). Toute route ajoutée ici sans son
     // couple dans la liste du test fait ROUGIR le test : c'est le rappel qui
     // manquait, et qui a laissé 16 routes sur 19 sans garde anti-PAT.
     // Ne pas déplacer ni reformuler les marqueurs sans ajuster le test.
@@ -379,6 +379,35 @@ pub fn build_router_avec_registre(
         .route(
             "/api/v1/admin/mcp/sends/{id}/decision",
             post(routes::mcp_envois::decider_envoi),
+        )
+        // Story 32-10a-iii (refs #723) : les prompts du serveur MCP — liste,
+        // détail (historique, textes servis), prompt neuf, version
+        // d'administrateur, approbation et refus d'une proposition d'agent,
+        // retour au standard. Admin seulement, par une SESSION : aucune clé ne
+        // peut approuver (AC-iii7, P22).
+        .route(
+            "/api/v1/admin/mcp/prompts",
+            get(routes::mcp_prompts::lister_prompts).post(routes::mcp_prompts::creer_prompt),
+        )
+        .route(
+            "/api/v1/admin/mcp/prompts/{id}",
+            get(routes::mcp_prompts::detail_prompt),
+        )
+        .route(
+            "/api/v1/admin/mcp/prompts/{id}/versions",
+            post(routes::mcp_prompts::ajouter_version),
+        )
+        .route(
+            "/api/v1/admin/mcp/prompts/{id}/versions/{numero}/approve",
+            post(routes::mcp_prompts::approuver_version),
+        )
+        .route(
+            "/api/v1/admin/mcp/prompts/{id}/versions/{numero}/refuse",
+            post(routes::mcp_prompts::refuser_version),
+        )
+        .route(
+            "/api/v1/admin/mcp/prompts/{id}/standard",
+            post(routes::mcp_prompts::revenir_au_standard),
         )
         // Story 20-1 : socle templates d'e-mail (Admin-only — pas de lecture
         // Comptable+ v1, seul consommateur = section Admin dédiée 20-2).
@@ -1280,7 +1309,8 @@ pub fn build_router_avec_registre(
     // des envois (`kesh_lire_envoi`) ; le dépôt des envois écrit sur le pool
     // ordinaire. Story 32-10a-ii : la lecture des prompts (`prompts/list`,
     // `prompts/get`) est une troisième enveloppe du même pool en lecture seule
-    // (AC-ii3).
+    // (AC-ii3). Story 32-10a-iii : la proposition d'un prompt par un agent
+    // écrit sur le pool ordinaire, par sa poignée (AC-iii1).
     let delai = registre.delai();
     let pool_outils =
         kesh_db::pool::pool_lecture_seule(&state.pool, mcp::MCP_POOL_CONNEXIONS, delai);
@@ -1289,6 +1319,7 @@ pub fn build_router_avec_registre(
     let lecture_envois = services::poignees::LectureEnvois::new(pool_outils.clone());
     let lecture_prompts = services::poignees::LecturePrompts::new(pool_outils);
     let ecriture_envois = services::poignees::EcritureEnvois::new(state.pool.clone());
+    let ecriture_prompts = services::poignees::EcriturePrompts::new(state.pool.clone());
     let etat_mcp = mcp::EtatMcp {
         origines_propres: mcp::origines_propres(
             state.config.port,
@@ -1300,6 +1331,7 @@ pub fn build_router_avec_registre(
         lecture_envois,
         ecriture_envois,
         lecture_prompts,
+        ecriture_prompts,
         registre: Arc::new(registre),
         statique: fallback.clone(),
     };

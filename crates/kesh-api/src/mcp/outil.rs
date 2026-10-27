@@ -130,6 +130,9 @@ pub trait McpTool: Send + Sync + 'static {
 pub enum MotifArgument {
     /// Argument absent, inconnu, ou d'un type ou d'une valeur refusés.
     Invalide,
+    /// Un nom réservé : `proposer_prompt` sur un nom en `kesh`, réservé aux
+    /// prompts standard (Story 32-10a-iii, AC-iii2, C-32-10a-27).
+    Reserve,
 }
 
 /// L'erreur d'un outil — **aucun texte libre** (E5) : chaque variante se
@@ -164,6 +167,11 @@ pub enum ErreurOutil {
     /// Le compte demandé n'est pas lettrable : il n'a pas de postes ouverts
     /// (AC-a22).
     CompteNonLettrable,
+    /// `proposer_prompt` : la société a déjà vingt propositions de prompt à
+    /// valider (Story 32-10a-iii, AC-iii2) — une limite atteinte, journalisée
+    /// `limite_atteinte` comme [`ErreurOutil::LimiteAtteinte`], mais au texte
+    /// propre aux prompts (C-32-10a-100).
+    PropositionsTropNombreuses,
 }
 
 /// Lit les arguments d'un outil. Le type `T` doit porter

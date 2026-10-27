@@ -113,6 +113,16 @@
 //!    `prompts_mcp::{lister, obtenir}`) passe par sa poignée propre,
 //!    `poignees::LecturePrompts`, sur le pool en lecture seule du MCP : une
 //!    lecture, aucune écriture, qui suit R2 et R7.
+//!
+//!    Et, depuis la Story 32-10a-iii, deux écritures des **prompts du serveur
+//!    MCP** : (a) `prompts_mcp::proposer` — la version d'agent **à valider**
+//!    **et** l'entrée `mcp.tool_called` de son appel
+//!    (`serveur_mcp::entree_appel`), en **une** transaction, sur la poignée
+//!    `poignees::EcriturePrompts` (pool ordinaire), après
+//!    `exiger(EXIGENCE_PROPOSER)` ; (b) `serveur_mcp::journaliser_prompt` —
+//!    l'entrée `mcp.prompt_served` de chaque `prompts/get`, sur la `Trace`,
+//!    **fail closed** comme `journaliser_appel` (même dérogation aux règles R1,
+//!    R2 et R7). Aucune n'écrit dans les livres.
 //! 3. Aucune autre : les générateurs de `kesh-report`, `ReportPeriod::resolve`,
 //!    `resolve_scope`, `rapports::identite_societe`, `helpers::company_for_ids`,
 //!    `accounts::list_by_company` et `letterings::letterable_account_ids` ne

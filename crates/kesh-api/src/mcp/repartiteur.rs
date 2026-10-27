@@ -47,7 +47,9 @@ use crate::services::acces::{Canal, Portee};
 use crate::services::cles_mcp::CleMcpAuthentifiee;
 use crate::services::envois_mcp::{self, EnvoiLu, RefusDepot};
 use crate::services::prompts_mcp::ErreurPrompts;
-use crate::services::serveur_mcp::{self, IssueAppel, OUTIL_INCONNU};
+use crate::services::serveur_mcp::{
+    self, IssueAppel, IssuePrompt, OUTIL_INCONNU, PromptJournalise,
+};
 
 /// Ce qu'un appel laisse au journal (règle 1).
 enum Journal {
@@ -88,6 +90,19 @@ fn descripteur_lire_envoi() -> serde_json::Value {
         "inputSchema": serde_json::from_str::<serde_json::Value>(textes::SCHEMA_LIRE_ENVOI)
             .expect("schéma de kesh_lire_envoi : un texte JSON du binaire"),
         "annotations": { "readOnlyHint": true },
+    })
+}
+
+/// Le descripteur **statique** de `proposer_prompt` (AC-iii2, point 4) :
+/// textes du binaire seulement, `readOnlyHint: false` **explicite** — l'outil
+/// écrit une version à valider (F11). Listé sous `prompts:write` seulement.
+fn descripteur_proposer_prompt() -> serde_json::Value {
+    serde_json::json!({
+        "name": textes::OUTIL_PROPOSER_PROMPT,
+        "description": textes::DESCRIPTION_PROPOSER_PROMPT,
+        "inputSchema": serde_json::from_str::<serde_json::Value>(textes::SCHEMA_PROPOSER_PROMPT)
+            .expect("schéma de proposer_prompt : un texte JSON du binaire"),
+        "annotations": { "readOnlyHint": false },
     })
 }
 
@@ -192,8 +207,14 @@ pub(crate) async fn repartir(
             }
             // Les outils des portées de la clé, puis `kesh_lire_envoi`, pour
             // toute clé (AC-B6 ; amende l'AC-a17).
-            let mut outils = etat.registre.descripteurs_pour(&portees(cle));
+            let portees = portees(cle);
+            let mut outils = etat.registre.descripteurs_pour(&portees);
             outils.push(descripteur_lire_envoi());
+            // Story 32-10a-iii (AC-iii2, point 4) : `proposer_prompt`, sous
+            // `prompts:write` seulement, après les autres.
+            if portees.contains(&Portee::PromptsWrite) {
+                outils.push(descripteur_proposer_prompt());
+            }
             ReponseMcp::Resultat {
                 id,
                 resultat: serde_json::json!({ "tools": outils }),
@@ -225,14 +246,40 @@ pub(crate) async fn repartir(
             // Les `arguments` du client sont ignorés, jamais interpolés
             // (AC-ii6, C-32-10a-10). Inconnu, non servi, autre société, nom non
             // conforme, clé sans `books:read` : la même réponse.
-            match prompts::obtenir(etat, cle, nom).await {
-                Ok(Some(prompt)) => ReponseMcp::PromptRendu { id, prompt },
-                Ok(None) | Err(ErreurPrompts::HorsPortee) => erreur(
-                    id,
-                    textes::CODE_PARAMS_INVALIDES,
-                    textes::TEXTE_PROMPT_INCONNU,
+            //
+            // Story 32-10a-iii (AC-iii5) : chaque `prompts/get` est journalisé
+            // **avant** que la réponse parte — **fail closed** : si l'entrée ne
+            // s'écrit pas, aucun texte n'est servi. Le nom écrit est celui du
+            // catalogue (le prompt servi), jamais le nom reçu du client.
+            let id_journal = id.clone();
+            let (issue, reponse) = match prompts::obtenir(etat, cle, nom).await {
+                Ok(Some(prompt)) => (IssuePrompt::Servi, ReponseMcp::PromptRendu { id, prompt }),
+                Ok(None) | Err(ErreurPrompts::HorsPortee) => (
+                    IssuePrompt::Inconnu,
+                    erreur(
+                        id,
+                        textes::CODE_PARAMS_INVALIDES,
+                        textes::TEXTE_PROMPT_INCONNU,
+                    ),
                 ),
-                Err(ErreurPrompts::Interne) => erreur_interne(id),
+                Err(ErreurPrompts::Interne) => (IssuePrompt::Erreur, erreur_interne(id)),
+            };
+            let servi = match &reponse {
+                ReponseMcp::PromptRendu { prompt, .. } => Some(PromptJournalise {
+                    nom: prompt.nom(),
+                    numero: prompt.numero(),
+                }),
+                _ => None,
+            };
+            match serveur_mcp::journaliser_prompt(&etat.trace, cle, servi, issue).await {
+                Ok(()) => reponse,
+                Err(e) => {
+                    tracing::error!(
+                        mcp_key_id = cle.cle_id,
+                        "prompts/get : journal non écrit, aucun texte ne part : {e}"
+                    );
+                    erreur_interne(id_journal)
+                }
             }
         }
     }
@@ -323,6 +370,8 @@ fn issue_d_erreur(e: ErreurOutil) -> IssueAppel {
         ErreurOutil::ExerciceIntrouvable => IssueAppel::Introuvable,
         ErreurOutil::PeriodeHorsExercice => IssueAppel::ArgumentsInvalides,
         ErreurOutil::CompteNonLettrable => IssueAppel::ArgumentsInvalides,
+        // Story 32-10a-iii (AC-iii5) : le plafond des propositions de prompt.
+        ErreurOutil::PropositionsTropNombreuses => IssueAppel::LimiteAtteinte,
     }
 }
 
@@ -402,6 +451,36 @@ async fn relire(
     )
 }
 
+/// `proposer_prompt` : la proposition d'un prompt, **hors registre** et **hors
+/// politique** (AC-iii2, points 2 et 3 ; C-32-10a-26) — ni `autoriser`, ni
+/// `Donnees`, ni `DonneesEnvoyables`. Une proposition écrite a son entrée au
+/// journal dans sa transaction ([`Journal::DejaEcrit`]) ; un refus n'a rien
+/// écrit et se journalise ici, comme tout appel. La traduction des refus est
+/// un `match` **exhaustif** (`textes::depuis_refus_de_proposition`).
+async fn proposer_prompt(
+    etat: &EtatMcp,
+    cle: &CleMcpAuthentifiee,
+    id: IdRequete,
+    arguments: serde_json::Value,
+    debut: Instant,
+) -> (Journal, ReponseMcp) {
+    match prompts::proposer(etat, cle, debut, arguments).await {
+        Ok(accuse) => (Journal::DejaEcrit, ReponseMcp::Accuse { id, accuse }),
+        Err(refus) => {
+            let (outil, e) = match textes::depuis_refus_de_proposition(refus) {
+                // Hors portée : le chemin d'un outil inconnu, nom inconnu au
+                // journal (inatteignable ici, la portée étant contrôlée avant).
+                ErreurOutil::Inconnu => (OUTIL_INCONNU, ErreurOutil::Inconnu),
+                e => (textes::OUTIL_PROPOSER_PROMPT, e),
+            };
+            (
+                a_ecrire(issue_d_erreur(e), outil, None),
+                reponse_d_erreur(id, e),
+            )
+        }
+    }
+}
+
 /// `tools/call` : nom réservé, ou outil dans les portées → politique →
 /// exécution sous délai → politique → envoi ou dépôt (AC-a15, AC-a18, AC-a20 ;
 /// AC-B1, AC-B5, AC-B6). Rend ce qu'il reste à journaliser — l'issue et le nom
@@ -432,6 +511,13 @@ async fn traiter_appel(
     };
     if nom == NOM_LIRE_ENVOI {
         return relire(etat, cle, id, arguments).await;
+    }
+    // Story 32-10a-iii (AC-iii2, point 3) : le nom réservé de la proposition,
+    // **et** la portée `prompts:write` — contrôlée avant tout le reste, comme
+    // `outil_pour`. Sans la portée, le nom suit le chemin d'un outil inconnu
+    // (le registre ne le porte pas : `proposer_prompt_hors_registre`).
+    if nom == textes::OUTIL_PROPOSER_PROMPT && portees(cle).contains(&Portee::PromptsWrite) {
+        return proposer_prompt(etat, cle, id, arguments, debut).await;
     }
     let Some(outil) = etat.registre.outil_pour(nom, &portees(cle)) else {
         return (

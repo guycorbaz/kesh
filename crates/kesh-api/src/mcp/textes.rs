@@ -17,6 +17,49 @@ use kesh_db::errors::DbError;
 use crate::errors::AppError;
 use crate::mcp::outil::{ErreurOutil, MotifArgument};
 
+/// Le nom de l'outil de proposition d'un prompt (Story 32-10a-iii, AC-iii2) —
+/// défini par le service, qui l'écrit au journal de l'appel.
+pub use crate::services::prompts_mcp::OUTIL_PROPOSER_PROMPT;
+use crate::services::prompts_mcp::RefusProposition;
+
+/// La description statique de `proposer_prompt` (`tools/list`, AC-iii2) —
+/// exacte sur le nom d'un prompt existant (revue de code P1, E6 = A3 ;
+/// C-32-10a-106) : la proposition s'ajoute à **tout** prompt non standard de la
+/// société, prompt d'administrateur ou retiré compris, et reste à valider ; la
+/// version en vigueur reste servie d'ici là (règle de Guy : « un agent ne peut
+/// pas directement modifier un prompt validé »).
+pub const DESCRIPTION_PROPOSER_PROMPT: &str = "Propose un prompt à l'administrateur de Kesh : \
+     une version « à valider », jamais servie avant qu'il l'approuve dans Kesh ; d'ici là, la \
+     version en vigueur du prompt reste servie, inchangée. Le nom suit \
+     [a-z0-9_-] (1 à 64 caractères) et ne commence pas par « kesh », réservé aux prompts \
+     standard ; sur le nom d'un prompt existant — écrit par un administrateur ou retiré \
+     compris —, la proposition en devient une nouvelle version, elle aussi à valider. Ne \
+     recopiez aucune donnée des livres dans un prompt.";
+
+/// Le schéma d'entrée de `proposer_prompt` (AC-iii2) : trois chaînes, aucun
+/// autre champ.
+pub const SCHEMA_PROPOSER_PROMPT: &str = r#"{"type":"object","properties":{"nom":{"type":"string","pattern":"^[a-z0-9_-]{1,64}$"},"description":{"type":"string","maxLength":500},"texte":{"type":"string","maxLength":16000}},"required":["nom","description","texte"],"additionalProperties":false}"#;
+
+/// Texte d'outil : `proposer_prompt` sur un nom en `kesh` (AC-iii3,
+/// C-32-10a-27).
+pub const TEXTE_NOM_RESERVE: &str = "Nom réservé : un nom commençant par « kesh » est réservé \
+     aux prompts standard de Kesh. Proposez sous un autre nom.";
+
+/// Texte d'outil : trop de propositions de prompt attendent (AC-iii3).
+pub const TEXTE_PROPOSITIONS_TROP_NOMBREUSES: &str = "Trop de propositions de prompt attendent \
+     l'approbation d'un administrateur ; rien n'est enregistré. Demandez-lui de traiter celles \
+     qui attendent.";
+
+/// Le bloc de texte de l'accusé d'une proposition (AC-iii3, C-32-10a-17).
+/// Seule valeur interpolée : le nom **validé** (`[a-z0-9_-]`) — ni numéro, ni
+/// texte, ni description.
+pub fn texte_accuse_proposition(nom: &str) -> String {
+    format!(
+        "Proposition du prompt « {nom} » enregistrée : elle attend l'approbation d'un \
+         administrateur de Kesh et n'est pas servie avant. Ne la proposez pas de nouveau."
+    )
+}
+
 /// Code JSON-RPC : JSON illisible.
 pub const CODE_JSON_INVALIDE: i64 = -32700;
 /// Code JSON-RPC : message qui n'est pas une requête valide.
@@ -207,6 +250,10 @@ pub(crate) fn texte_erreur_outil(e: ErreurOutil) -> Option<&'static str> {
             motif: MotifArgument::Invalide,
             ..
         } => Some(TEXTE_ARGUMENTS_INVALIDES),
+        ErreurOutil::ArgumentsInvalides {
+            motif: MotifArgument::Reserve,
+            ..
+        } => Some(TEXTE_NOM_RESERVE),
         ErreurOutil::Inconnu => None,
         ErreurOutil::Introuvable => Some(TEXTE_INTROUVABLE),
         ErreurOutil::Interne => Some(TEXTE_ERREUR_INTERNE),
@@ -215,6 +262,30 @@ pub(crate) fn texte_erreur_outil(e: ErreurOutil) -> Option<&'static str> {
         ErreurOutil::ExerciceIntrouvable => Some(TEXTE_EXERCICE_INTROUVABLE),
         ErreurOutil::PeriodeHorsExercice => Some(TEXTE_PERIODE_HORS_EXERCICE),
         ErreurOutil::CompteNonLettrable => Some(TEXTE_COMPTE_NON_LETTRABLE),
+        ErreurOutil::PropositionsTropNombreuses => Some(TEXTE_PROPOSITIONS_TROP_NOMBREUSES),
+    }
+}
+
+/// La traduction d'un refus de proposition (`proposer_prompt`, Story
+/// 32-10a-iii, AC-iii2 point 1) en erreur d'outil — un `match`
+/// **exhaustif** : une variante ajoutée à `RefusProposition` sans bras ne
+/// compile pas. Aucune `AppError` n'arrive par ce chemin :
+/// [`depuis_app_error`] et sa liste blanche ne changent pas. Public pour le
+/// test `traduction_des_refus_de_proposition` (`tests/mcp_traduction.rs`).
+#[doc(hidden)]
+pub fn depuis_refus_de_proposition(r: RefusProposition) -> ErreurOutil {
+    match r {
+        RefusProposition::HorsPortee => ErreurOutil::Inconnu,
+        RefusProposition::ArgumentsInvalides { champ } => ErreurOutil::ArgumentsInvalides {
+            argument: champ,
+            motif: MotifArgument::Invalide,
+        },
+        RefusProposition::NomReserve => ErreurOutil::ArgumentsInvalides {
+            argument: "nom",
+            motif: MotifArgument::Reserve,
+        },
+        RefusProposition::PlafondAtteint => ErreurOutil::PropositionsTropNombreuses,
+        RefusProposition::Interne => ErreurOutil::Interne,
     }
 }
 

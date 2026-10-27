@@ -64,6 +64,7 @@ use std::time::Duration;
 
 use tower_http::services::{ServeDir, ServeFile};
 
+use crate::services::poignees::EcriturePrompts;
 use crate::services::poignees::{EcritureEnvois, Lecture, LectureEnvois, LecturePrompts, Trace};
 
 pub mod outil;
@@ -125,6 +126,9 @@ pub struct EtatMcp {
     /// La lecture des prompts (`prompts/list`, `prompts/get`), sur le pool en
     /// lecture seule du MCP (Story 32-10a-ii, AC-ii3).
     pub(crate) lecture_prompts: LecturePrompts,
+    /// La proposition d'un prompt par un agent (`proposer_prompt`), sur le
+    /// pool ordinaire (Story 32-10a-iii, AC-iii1) ; aucun pool visible.
+    pub(crate) ecriture_prompts: EcriturePrompts,
     /// Les outils servis et leur délai.
     pub(crate) registre: Arc<Registre>,
     /// Le service du repli statique, pour la réponse de route absente.

@@ -488,10 +488,26 @@ fn ecrite(
 // ---------------------------------------------------------------------------
 // Écritures — liste close
 // ---------------------------------------------------------------------------
+//
+// ⚠️ PRÉCONDITION DE L'APPELANT (#783 point 1, Story 32-10a-iii) : le plafond
+// (`COUNT` des versions à valider), la numérotation (`MAX(number) + 1`) et le
+// contrôle de la dernière version (`MAX(number)`) sont des lectures SIMPLES,
+// faites sous le verrou de société. En `REPEATABLE READ`, InnoDB fige la vue
+// d'une transaction à sa PREMIÈRE lecture simple : ces lectures ne sont justes
+// que si l'appelant n'a RIEN lu dans sa transaction avant le premier appel de
+// ce dépôt (dont le premier acte, `SELECT … FOR UPDATE` sur la société, est une
+// lecture verrouillante qui ne fige aucune vue). Lire avant — même la table des
+// prompts — rendrait le plafond et la numérotation faux, en silence. Les
+// appelants d'aujourd'hui (`EcriturePrompts::proposer`, `routes/mcp_prompts.rs`)
+// lisent l'historique sur le pool, hors de la transaction ; test de concurrence
+// `plafond_juste_apres_l_attente_du_verrou` (`kesh-api/tests/mcp_prompts_e2e.rs`).
+// Cf. `docs/MULTI-TENANT-SCOPING-PATTERNS.md`, Pattern 5.
 
 /// Crée un prompt d'administrateur et sa version 1 (`admin`, approuvée).
 /// Refuse avant le verrou un nom non conforme ou en `kesh`, un contenu hors des
 /// bornes ; sous le verrou de société, un nom déjà pris.
+///
+/// Précondition : rien n'est lu dans `tx` avant cet appel (en tête de section).
 pub async fn creer_prompt_admin_in_tx(
     tx: &mut Tx<'_>,
     company_id: i64,
@@ -544,6 +560,8 @@ pub async fn creer_prompt_admin_in_tx(
 /// Ajoute une version d'administrateur (`admin`, approuvée) — un texte ou un
 /// retrait — à un prompt de la société, standard compris (il est alors
 /// **personnalisé**). Verrou optimiste sur `version_attendue`.
+///
+/// Précondition : rien n'est lu dans `tx` avant cet appel (en tête de section).
 pub async fn ajouter_version_admin_in_tx(
     tx: &mut Tx<'_>,
     company_id: i64,
@@ -585,6 +603,9 @@ pub async fn ajouter_version_admin_in_tx(
 /// [`crate::entities::mcp_prompt::PLAFOND_A_VALIDER`] en production). Sur un nom
 /// existant, ajoute la version à ce prompt ; sur un nom neuf, crée le prompt et
 /// sa version 1.
+///
+/// Précondition : rien n'est lu dans `tx` avant cet appel (en tête de section)
+/// — sans quoi le plafond se compte sur une vue d'avant l'attente du verrou.
 #[allow(clippy::too_many_arguments)]
 pub async fn proposer_version_agent_in_tx(
     tx: &mut Tx<'_>,
@@ -731,6 +752,8 @@ async fn decider(
 
 /// Approuve une proposition d'agent **à valider** qui est la **dernière**
 /// version du prompt ; verrou optimiste sur `version_attendue`.
+///
+/// Précondition : rien n'est lu dans `tx` avant cet appel (en tête de section).
 pub async fn approuver_in_tx(
     tx: &mut Tx<'_>,
     company_id: i64,
@@ -753,6 +776,8 @@ pub async fn approuver_in_tx(
 
 /// Refuse une proposition d'agent **à valider**, dernière ou non ; verrou
 /// optimiste sur `version_attendue`.
+///
+/// Précondition : rien n'est lu dans `tx` avant cet appel (en tête de section).
 pub async fn refuser_in_tx(
     tx: &mut Tx<'_>,
     company_id: i64,
@@ -777,6 +802,8 @@ pub async fn refuser_in_tx(
 /// qui redevient la version en vigueur (le prompt cesse d'être personnalisé).
 /// Refuse un prompt non standard, et un `standard` qui ne porte pas le nom du
 /// prompt.
+///
+/// Précondition : rien n'est lu dans `tx` avant cet appel (en tête de section).
 pub async fn revenir_au_standard_in_tx(
     tx: &mut Tx<'_>,
     company_id: i64,
