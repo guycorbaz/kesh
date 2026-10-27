@@ -1,6 +1,6 @@
 # Story 32.11 : brancher un agent, de bout en bout
 
-Status: ready-for-dev
+Status: review
 
 *Fiche rédigée le 2026-10-27, en autonomie (Opus 5.5), worktree `kesh-32-11`, branche `story/32-11` partie de
 `origin/main` `ed981c7d` (32-1 à 32-6c et 32-8 fusionnées ; 32-7, 32-9a, 32-9b, 32-10a et 32-10b non fusionnées, leurs
@@ -931,9 +931,177 @@ se joue (AC-A2).*
 
 ### Agent Model Used
 
+Opus 5.5 (`claude-opus-5-5`), en autonomie, le 2026-10-27 ; worktree `kesh-32-10a`, branche `story/32-11`, `main`
+fusionnée à `cee46531` par l'orchestrateur. Aucun `claude`, aucun `socat` (réponse 1 de Guy).
+
 ### Completion Notes List
 
+**Étape 0 (T-0)**, lignes lues au code de `cee46531` :
+- **Fusions** : `git log --oneline origin/main` porte 32-7 (`186302d9`), 32-10b (`46bcfc4f`), 32-10a-iii (`006e8790`),
+  32-10a-ii (`209e978f`), 32-9b (`782bbc2f`), 32-10a-i (`dbe0da15`), 32-9a (`cb432098`) — aucune ne manque.
+- **Serveur** : ordre des contrôles `mcp/mod.rs:11-34` (douze étapes, inchangé) ; `VERSIONS_SERVIES = ["2025-11-25",
+  "2025-06-18"]` (`mod.rs`) ; `MCP_CORPS_MAX = 1024 * 1024`, `DELAI_OUTIL = 30 s`, `MCP_POOL_CONNEXIONS = 3` ;
+  négociation `repartiteur.rs` (`.find(…).copied().unwrap_or(VERSIONS_SERVIES[0])`) ; méthodes servies : `initialize`,
+  `ping`, `tools/list`, `tools/call`, `prompts/list`, `prompts/get` (`Methode::depuis`) ; outil inconnu ou hors portée :
+  `CODE_PARAMS_INVALIDES` (-32602), « Outil inconnu. » ; message de type réponse : `RequeteInvalide` (400, -32600, sans
+  `id`, `transport.rs`) ; argument de `kesh_lire_envoi` : `envoi` (`ArgsLireEnvoi`, `deny_unknown_fields`) ; la clé se
+  contrôle à l'étape 7, avant le corps (étape 10). Registre standard : 19 outils (`registre.rs:58-78`) ; sous
+  `books:read`, onze avec `kesh_lire_envoi`.
+- **`proposer_prompt`** : hors registre, sous `prompts:write` seulement, hors `politique::autoriser`
+  (`repartiteur.rs`, `traiter_appel` → `proposer_prompt` → `prompts::proposer`). **`textes::INSTRUCTIONS`** dit encore
+  « Serveur MCP de Kesh, en lecture seule : les outils lisent les livres dans les portées de la clé, sans jamais les
+  modifier » (`textes.rs`) : **constat**, issue demandée (AC-A7), code non touché.
+- **Lecture seule** : `kesh-db/src/pool.rs`, `after_connect` → `SET SESSION TRANSACTION READ ONLY` (par l'application,
+  même utilisateur MariaDB) — d'où la phrase de `sec:mcp-fonctionnement` (vi).
+- **Validation** : `politique::autoriser` rend `Depot` pour `Required`, quel que soit l'outil du registre —
+  `kesh_version` compris (test `kesh_version_passe_par_la_validation`, `mcp_envois_e2e.rs:645`).
+- **Prompts** : standards `kesh-developpement` et `kesh-assistant` (`mcp_prompt_standards.rs:24`, `:52`) ; une version
+  d'Administrateur est en vigueur sans approbation (constaté au parcours, P5 b) ; le routeur de test n'amorce pas :
+  `mcp_contrat.rs` appelle `depot::amorcer_standards(pool, STANDARDS)`, comme `mcp_prompts_e2e.rs:217`.
+- **Liste des envois** : `LISTE_MAX = 200` (`kesh-db/src/repositories/mcp_sends.rs:33`).
+- **Manuel d'administration** : `sec:mcp` (l. 3020) range `sec:mcp-activer`, `-cles`, `-validation`, `-filtre`,
+  `-origin`, `-outils`, `-envois`, `-prompts`, `-journal`, `-erreurs`, `-client` ; `sec:mcp-client` « n'est pas
+  éprouvée », **aucun Hermes** (`grep -n -i hermes docs/manual/fr/*.tex README.md website/*.html docs/api-external.md` →
+  rien) ; le compte des routes, l. 2938 : « 129 des 135 » et « 129 + 4 + 2 = 135 », égal à la partition
+  (`audit_route_registry.rs:904-938` : 135, 129, 4, 2) → **AC-C4 déjà vraie** (écrite par la 32-10b) ; #765 (5) et
+  #773 (9) déjà dits (l. 2238, section de la sauvegarde, et l. 3224 dans `sec:mcp-envois`, « au dépôt suivant », numéros au dernier commit) ; #768 (1) et #773 (8) non
+  dits → ajoutés.
+- **Manuel utilisateur** : *Traçabilité* l. 3123, *FAQ* l. 3242 ; #776 déjà dit au tableau (l. 3169-3177).
+- **Issues** (`gh issue view <n> --json state`) : #759, #761, #765, #768, #770, #773, #776, #801 **ouvertes**.
+- **Textes publics** : `README.md:233`, `roadmap.html:43`, `:223`, `:375`, `api-external.md:185`, `:833` tels que la
+  fiche les relève (§ 9 à la l. 833, non 831).
+- **Spécification `2025-11-25`** lue le 2026-10-27 (pages *basic*, *lifecycle*, *transports*, *ping*, *tools*,
+  *prompts*, *authorization*, *schema*, et JSON-RPC 2.0) : phrases citées dans `mcp_contrat.rs` ; rangement au
+  registre, C-32-11-31 — K5, `GET` de K20, K13 et K21 (« 202 ou 4xx ») promus `CLAUSE`.
+- **LOW B1 de la validation P5** (retirer K5 des énumérations de l'AC-A8 et de l'AC-B5) : **sa prémisse est tombée** à
+  l'étape 0 — K5 est promu `CLAUSE` (« If the server accepts the input, the server **MUST** return HTTP status code 202
+  Accepted with no body ») ; l'énumération « K1 à K3, K5 à K7 et K14 » est juste telle quelle, laissée.
+
+**Tests rouges d'abord.** Le test de contrat porte sur un code existant : il est vert à sa première exécution (21/21) ;
+sa capacité à rougir est prouvée par les mutations (M1 à M22), non par un rouge préalable. La garde de l'AC-T1, de
+même (le compte était déjà juste) : rouge prouvé par MT1 et MT2.
+
+**Le parcours (AC-A1 à AC-A5)**, journal `kesh-gate-logs/3211/parcours.log` : instance du binaire du worktree, port
+3341, base `kesh_3211` vide, version `/health` « 0.15.0 » (crates non encore portées à 0.16.0), `curl 8.18.0`. P0 :
+exercice id 1 (2026), comptes 24/49/54/65, E1–E3 → 201 ×3, bilan à l'écran 20’432.05 / 17’345.10 / 3’086.95. P1 à
+P11 joués ; 9 requêtes R01–R09, chacune envoyée une fois (`envois.log`) ; **un** envoi (n° 1) déposé, modifié d'une
+ligne (« Banque » → « Banque (intitulé modifié au parcours 32-11) ») et validé. AC-A5 :
+(a) R03 = les onze outils `books:read` ; (b) `grep -cE '20432\.05'` et `'17345\.10'` → 0 dans R01, R03, R04, R05, R06
+(R02 vide), témoin R07 : 1 et 1 (format du texte de `kesh_bilan` : `"20432.0500"`) ; (c) `jq -j
+'.result.content[1].text' reponses/R07.json` puis `cmp` avec le texte noté → identiques ; (d) journal d'audit : 20 lignes
+au nom de `admin`, dont « Outil du serveur MCP appelé » ×2, « Envoi du serveur MCP validé », « Prompt du serveur MCP
+servi », « Rapport généré » ×2 (21:12 l'écran, 21:13 l'agent, indiscernables hors l'heure — #776) ; CSV exporté ;
+(e) R08, R09 → 401, sans `WWW-Authenticate`. Moitiés serveur : (h) `protocolVersion` « 2025-11-25 » ; (a) aucun
+`Mcp-Session-Id` ; (f) aucun `WWW-Authenticate`. Journal du serveur : 7 lignes DEBUG `kesh_api::mcp::reseau`,
+`client=127.0.0.1 verdict="admis"`. Captures 00 à 23 (`captures/`), secrets masqués (C-32-11-30).
+
+**La restauration (AC-E1, AC-E2)**, `restauration.log` : seconde instance, port 3342, base `kesh_3211_r` vide,
+assistant → *Restaurer une sauvegarde* → import réussi ; constatés à l'écran : serveur activé, clé `parcours-3211`
+active, `kesh-assistant` « Personnalisé », historique n° 2 et n° 1, envoi n° 1 « Validé — modifié », bilan 20’432.05 /
+17’345.10. `<X_R>` = 1 lu à l'écran (valeur de l'option « Exercice 2026 » des Rapports). E01 → 200, E02 → 200 (11
+outils), E03 → envoi n° 2 déposé, validé tel quel à l'écran, E04 → relecture, bloc 2 = texte affiché (`cmp`). Clé
+révoquée sur la seconde instance ; instances arrêtées par PID ; bases `kesh_3211` et `kesh_3211_r` supprimées.
+
+**Le rejeu depuis le PDF (AC-A6)**, `t8/parcours-t8.log` : base `kesh_3211_t8` neuve, port 3341, P0 et requêtes
+depuis la fiche, gestes d'écran depuis le PDF (menu *Administration → …* cliqué). **Trois écarts**, tous corrigés au
+manuel (commit `5933b0fd`, PDF régénéré) : (1) le texte sous *Serveur activé* ne devient « Activé : … » **qu'après**
+*Enregistrer* ; (2) un envoi validé tel quel porte « Envoyé tel quel. » ; (3) le PDF imprimait `{”envoi” : 1}`
+(guillemets typographiques) — corrigé par `\keshcommand`. 9 requêtes, un envoi (validé tel quel), R08/R09 → 401.
+
+**Le test de contrat (AC-B1 à AC-B4)** : `crates/kesh-api/tests/mcp_contrat.rs`, **21 cas** (`#[sqlx::test]`, K1 à
+K22 sans K4), routeur de production par `oneshot`, `MockConnectInfo`, aucun réseau ; `enveloppe_conforme` sur chaque
+réponse JSON, `sans_session` sur chaque `Rendu`. Contrôle de l'oracle : `grep -nE 'attendu_|\btextes\b'
+crates/kesh-api/tests/mcp_contrat.rs` → deux lignes, **toutes deux de commentaire** (l. 21 et 23 : « ⛔ Les attendus
+sont des littéraux… », « …ni de son module de textes… ») ; aucune ligne de code.
+
+**La garde du compte (AC-T1)** : `le_manuel_dit_le_compte_du_registre` (`audit_route_registry.rs`), verte (129 des
+135 ; 129 + 4 + 2 = 135). Aucun recyclage constaté : le retrait pré-déclaré n'a pas lieu.
+
+**Les manuels (AC-C1 à AC-C9)** : `sec:mcp-fonctionnement` (première de `sec:mcp`), `sec:mcp-brancher` (après
+`sec:mcp-client`, dix gestes et *Après une restauration*), `sec:mcp-client` amendée (« non éprouvée » reste),
+`sec:mcp-envois` (#773 (8), #768 (1)), renvoi de `sec:api-keys` ; `sec:agent-mcp` au manuel utilisateur ; brochure.
+AC-C6 : #759 et #776 en (vi), #770 (5) par renvoi à `sec:mcp-journal-filtre`, #765 (5) et #773 (9) déjà dits, #761
+rien. AC-C9, `LC_ALL=fr_FR.UTF-8 pdftotext … - | tr '\n' ' ' | tr -s ' ' | grep -cF '<motif>'`, base = PDF de
+`origin/main` (`git show origin/main:…`) → régénéré : admin `Comment fonctionne le serveur MCP` 0 → 1, `Brancher un
+agent, pas à pas` 0 → 1, `parcours d’une requête` 0 → 1, `Après une restauration` 0 → 1, `issue #759` 0 → 1 ;
+utilisateur `L’agent IA et le serveur MCP` 0 → 1, `/kesh:kesh-assistant` 0 → 1 ; brochure `Serveur MCP intégré`
+0 → 1, `MCP server` 1 → 0. Rendus déjà par la base, donc **non probants** et remplacés (C-32-11-33) : `2025-11-25`,
+`#776` (admin et utilisateur), `Brancher un agent`, `129 des 135`. `??` → 0 et U+FFFD → 0 dans les trois PDF ;
+`Hermes` → 0. (Ce relevé a été fait au PDF de `d02acb38` ; celui de `5933b0fd` ne change que le geste 1, 6 et le rendu
+de `{"envoi": 1}`, vérifié par `grep -oF '{"envoi": 1}'`.)
+
+**Les textes publics (AC-D1 à AC-D5)** : `api-external.md` § 6.4 réécrit (serveur intégré, `kesh_pat_` refusée sur
+`/mcp`, voie générique « sans la validation avant envoi ni le journal des appels du serveur MCP », exemple marqué) et
+§ 9 (« serveur MCP Kesh-natif » retiré) ; `README.md:233` (« en lecture seule des livres », montré à l'Administrateur
+sous une clé requise, dispensée sans montrer, prompt proposé) ; `roadmap.html` l. 43 (la seule formule), 223, 375 ;
+CHANGELOG, entrée « Brancher un agent sur Kesh », sans nommer Claude Code. AC-D5 : `grep -n -i -E 'MCP|agent'
+README.md website/*.html docs/api-external.md` relu — aucune phrase ne dit que l'agent écrit dans les livres ; restent
+« read-only MCP server » nulle part (`grep -nF "read-only MCP" website/*.html` → rien).
+
+**Mutations (T-9)** — `kesh-gate-logs/3211/mutations/mutations.py`, journaux `campagne-2.log` et
+`campagne-3-M17.log` (la première campagne, `campagne.log`, a été interrompue : elle compilait tous les binaires de
+`kesh-api` à chaque mutation, et M1 n'y compilait pas — motif corrigé) ; chaque mutation : motif unique vérifié,
+`touch`, `cargo nextest run -p kesh-api --test <binaire>`, restauration `git checkout --` + `touch` ; `git diff`
+après campagne : rien hors du registre. **24 jouées, 24 tuées par le cas nommé** : M1 (K1, K3), M2 (K3), M3, M4 (K1),
+M5 (K1 et tous les cas JSON), M6 (K5), M7 (K6, K18), M8, M9 (K7), M10 (K8, K9), M11 (K11 seul — K12 reste vert, comme
+prévu), M12 (K6 et tous), M13 (K15), M14 (K17), M15 (K19), M16 (K10), M17 (K10, rejouée sur un motif unique
+`"Envoi n° {n} en attente…`), M18 (K10), M19 (K13), M20 (K14), M21 (K1), M22 (K17), MT1 (AC-T1), MT2 (AC-T1 et
+`the_registry_partition…`).
+
+**Gates** (au dernier commit de code, bases `kesh_3211` (migrée, seedée) et `kesh_e2e_3211` remises à zéro par
+DROP/CREATE, sans toucher au conteneur) :
+- gate ciblé entre les étapes : `binary(mcp_contrat) | binary(mcp_gardes_lexicales)` 44/44 ; `binary(audit_route_registry)
+  | binary(textes_coherents) | binary(configuration_transmise) | binary(mcp_matrice_manuel) | binary(mcp_gardes_lexicales)`
+  89/89 ; clippy `-p kesh-api --tests -D warnings` vert ;
+- **gate complet** `scripts/test-fast.sh --ci` à `74cefac4`, sous verrou : **4456 / 4456**, 7 ignorés, 180 binaires
+  (`kesh-gate-logs/3211/gate-complet.log`) ;
+- frontend : `npm run check` 0 erreur (29 avertissements, inchangés), `lint-i18n-ownership` PASS, `test:unit`
+  **2150 / 2150** (181 fichiers), `build` vert (`gate-frontend.log`) ;
+- **E2E complet** à `74cefac4` (backend du worktree, port 3341, `kesh_e2e_3211`, `KESH_TEST_MODE`, dossiers
+  `/tmp/kesh-e2e-3211-e2e/…` passés au backend et au runner, arrêt par PID) : **325 passés, 7 échoués, 17 ignorés**
+  (13,3 min ; `kesh-gate-logs/3211/e2e-complet.log`). Les sept, jugés fichier par fichier contre `docs/testing.md`
+  § *Les échecs attendus* : `mode-expert.spec.ts:26`, `:41`, `onboarding-path-b.spec.ts:65`, `:92`,
+  `onboarding.spec.ts:57`, `:77`, `:150` — les sept KF-029 (#97) ; aucun autre.
+
+**Défauts observés (AC-A7), issues demandées à l'orchestrateur** — rien n'est corrigé ici :
+1. `textes::INSTRUCTIONS` (`crates/kesh-api/src/mcp/textes.rs`) dit « Serveur MCP de Kesh, en lecture seule : les outils
+   lisent les livres … sans jamais les modifier » ; depuis la 32-10a, `proposer_prompt` (portée `prompts:write`) écrit
+   une version de prompt. « Lecture seule » n'est vrai que des livres (P3, texte de la poignée ; la 32-11 ne touche pas
+   la production).
+2. L'écran *Serveur MCP* : le texte sous *Serveur activé* décrit l'état **enregistré**, non la case : cochée et non
+   enregistrée, la case montre « Désactivé : /mcp répond comme une adresse qui n'existe pas. » (P4, cosmétique ;
+   constaté au rejeu, le manuel dit le comportement réel).
+3. Confirmé, déjà tracé : #776 (« Rapport généré » de l'agent indiscernable de celui de l'écran).
+
+**Écarts aux consignes, déclarés** : (a) la brochure a d'abord été amendée par un script `python3` de remplacement
+(motifs uniques vérifiés) ; le changement a été **annulé** (`git checkout --`) et refait à l'outil d'édition, avant tout
+commit ; (b) au relevé de l'étape 0, une commande a passé `grep -cE 'L.{1,3}agent IA…'` (quantificateur) sur les PDF
+aplatis, sous `timeout 60` — terminée sans incident, remplacée ensuite par `grep -cF` ; (c) des scripts jetables de
+`kesh-gate-logs/3211/` ont été retouchés par `sed -i` (aucun fichier du dépôt) ; (d) un geste d'écran (P11) a été
+rejoué une fois en entier, le premier essai ayant cherché un dialogue qui n'existe pas (la révocation n'avait pas eu
+lieu) — aucune requête MCP rejouée.
+
+**Mode d'emploi de la recette de Guy (AC-A8)**, remis à l'orchestrateur : sur une démonstration de la 0.16.0 (jamais
+ses livres), depuis le PDF § *Brancher un agent, pas à pas* ; d'abord la capture : `socat -v
+TCP-LISTEN:<port de capture>,bind=127.0.0.1,reuseaddr,fork TCP:127.0.0.1:<port de Kesh> 2>
+/home/gcorbaz/devel/kesh-gate-logs/3211/capture-recette.log`, l'URL du client sur le port de capture ; `claude
+--version` ; `claude mcp add --transport http --scope local kesh http://127.0.0.1:<port de capture>/mcp --header
+"Authorization: Bearer <clé>"` ; `/mcp` ; `/kesh:kesh-assistant (MCP)` ; « donne-moi le bilan de l'exercice » ;
+valider à l'écran ; « l'envoi est validé » ; révoquer, puis une question de plus. À trancher depuis la capture : (a)
+`initialize` puis `tools/list` sans session ; (b) `Origin` envoyée ? (403 si refusée) ; (c) `progressToken` ; (d)
+combien de relectures d'un envoi en attente ; (e) repli de version ; (f) découverte OAuth après le 401 ; (g) forme du
+prompt ; (h) `protocolVersion` demandée. Masquer le `Bearer` de la capture avant tout partage.
+
 ### File List
+
+- `crates/kesh-api/tests/mcp_contrat.rs` (neuf)
+- `crates/kesh-api/tests/audit_route_registry.rs`
+- `docs/manual/fr/admin-manual.tex`, `docs/manual/fr/admin-manual.pdf`
+- `docs/manual/fr/user-manual.tex`, `docs/manual/fr/user-manual.pdf`
+- `docs/manual/fr/marketing-brochure.tex`, `docs/manual/fr/marketing-brochure.pdf`
+- `docs/api-external.md`, `README.md`, `website/roadmap.html`, `CHANGELOG.md`
+- `_bmad-output/implementation-artifacts/32-11-brancher-un-agent.md`, `epic-32-choix-autonomes-3211.md`,
+  `32-11-review-prompt-p1.md`, `sprint-status.yaml`
 
 ## Change Log
 
@@ -945,3 +1113,4 @@ se joue (AC-A2).*
 | 2026-10-27 | validation P3 | Lentilles R et F (Sonnet 5.5, contexte frais, prompt `3211-validate-prompt-p3.md`) ; rapports `kesh-gate-logs/3211-validate-p3-R.md` (0/0/1/6) et `-F.md` (0/0/0/7). **Trend : P2 0/0/9/13 → P3 0/0/1/13** (somme des deux lentilles ; doublons F2 = R4, F1 = R6, F7 = R3, comptés une fois par lentille). Remédiation par l'agent de spécification, décisions de l'orchestrateur, minimale. **R1 (MEDIUM)** — vrai (AC-D4 : « joué sur une démonstration » alors que `claude` n'est pas lancé) : l'entrée du CHANGELOG décrit ce que la story livre (le serveur décrit au manuel, le parcours joué en client HTTP, le test de contrat) et dit : « la configuration de Claude Code est décrite au manuel, non éprouvée avant la recette ». **R2** — l'epic reçoit une ligne datée à la § *Release v0.16.0* (recette de Guy, AC-A8) et une annotation à la § 32-11 ; « déjà prévue » du point 1 devient « inscrite à la release ». **R3 = F7** — les Dev Notes nomment les dossiers `/tmp/kesh-e2e-3211*` (§ 4 de `docs/agents-orchestration.md`) ; le `.keshbackup` de P10 va sous `kesh-gate-logs/3211/export/` (AC-A4) ; la clé d'amorçage passe par un fichier d'en-tête (`amorcage/cle-amorcage.entete`), non en clair. **R4 = F2** — AC-A5 (c) vise le bloc texte de données de R07 (second bloc de `result.content`, `reponse.rs:60-70`) et nomme l'outil de décodage au journal. **F3** — R07 écrite après R06, une fois `<n>` connu. **F4** — l'interdit des Dev Notes couvre aussi P0 et `GET /health`. **F5** — fait 14 : plus de « à reconstater », la version se relève à la recette ; Dev Notes : pas même `claude --version` ni `--help`. **F6** — le rejeu T-8 écrit sous `kesh-gate-logs/3211/t8/` et ne réécrit rien du premier passage. **R5** — fait 13 : la commande est bornée (`sed -n 2928,2990p … | grep`). **R6 = F1** — AC-B2 : « cite en MUST » ne vise que K15 et K17 ; K5 et K20 sont à retrouver en MUST sur la page. **R7** — fait 6 renvoie à C-32-11-29 ; AC-A8 : le secret de la clé dans `capture-recette.log` se masque avant tout partage, la capture reste hors du dépôt. **Écarts des lentilles** : chacune a lancé une redirection interdite (R : vers `/dev/null` ; F : `2>&1 | head`), sans fichier écrit, comptes refaits sans redirection. **Symptômes grepés** (valeurs) hors Change Log : `joué sur une démonstration`, `reconstater`, `écrites avant`, `reponses-t8`, `déjà prévue` → aucun résidu ; `claude --version` (fait 14, Dev Notes qui l'interdisent) ; `C-32-11-6` → seulement les entrées historiques du registre. **Aucune entrée passée réécrite** (Change Log : une ligne ajoutée). **Décomptes inchangés**, recomptés par `grep -c` : **33 AC**, **11 tâches**, **22 mutations**, **22 cas K**, **12 gestes**, **9 requêtes**, **16 faits**, **5 points**, **29 choix**, **4 modules**. **Passe 3 sur 8.** Prompt de la P4 : `3211-validate-prompt-p4.md` (**Opus**, passe ciblée, une lentille *regression hunter* sur ce seul commit). |
 | 2026-10-27 | validation P4 | Passe ciblée, une lentille *regression hunter* (Opus 5.5, contexte frais, prompt `3211-validate-prompt-p4.md`) sur le seul commit `fe66c4f8` ; rapport `kesh-gate-logs/3211-validate-p4.md` (0/0/2/6, aucun écart au prompt). **Trend : P3 0/0/1/13 → P4 0/0/2/6.** ⚠️ **Signal D5 (recyclage) déclaré : la remédiation P3 a recyclé** — les deux MEDIUM naissent d'elle (A1 de la phrase neuve du CHANGELOG, A2 de son propre Change Log). Remédiation par l'agent de spécification, décisions de l'orchestrateur, **en retirant plutôt qu'en corrigeant**. **A1 (MEDIUM) — retrait** : l'AC-D4 ne nomme plus Claude Code ; l'entrée décrit ce que la story livre (le fonctionnement du serveur MCP et le parcours d'administration joué sur une démonstration, la restauration comprise, le test de contrat en CI, le manuel utilisateur, `docs/api-external.md`) ; la phrase sur Claude Code s'écrit **à la release, par l'orchestrateur, après la recette de Guy** — ajouté à l'AC-A8 et, en annotation datée, à l'epic § *Release v0.16.0*. **A2 (MEDIUM) — annotation datée, entrée P3 non réécrite** : trois affirmations de l'entrée P3 étaient fausses au 2026-10-27. (a) « `joué sur une démonstration` … aucun résidu » : la valeur reste dans l'AC-D4, coupée par un retour à la ligne (l. 549-550 à `fe66c4f8`) — le grep avait cherché une phrase ; elle y est gardée volontairement (le parcours HTTP est joué sur une démonstration). (b) « `déjà prévue` … aucun résidu » : la valeur reste au registre (C-32-11-29, *Retenu*) ; une ligne datée l'amende, la recette étant inscrite à la § *Release v0.16.0* depuis la P3. (c) l'AC-D4 ne contenait ni « client HTTP » ni « test de contrat » : le premier n'y est toujours pas (le CHANGELOG ne décrit pas l'outil du parcours), le second y est désormais. **A3** — le fichier `amorcage/cle-amorcage.entete` est nommé en P0 (a), à l'AC-A4 et dans « La clé dans les journaux ». **A4** — T-1 reçoit `/tmp/kesh-e2e-3211-t8/…`, `kesh-gate-logs/3211/export/` et `t8/`. **A5** — fait 13 : la ligne rendue est préfixée `14:` (relative à la fenêtre), le calcul 2928 + 14 − 1 = 2941 est écrit. **A6** — fait 14 : la version de `claude` est demandée par l'AC-A8 (ajout) et l'AC-C2, à la recette. **A7** — K5 et K20 (`GET`) passent sous `DECISION_KESH` « à retrouver en MUST sur la page » dans le tableau et dans la règle de rangement de l'AC-B2. **A8** — AC-E2 : `<X_R>` se lit à l'écran, aucune requête de plus. **Écarts** : aucun relevé par la lentille ; l'agent de spécification a lancé, par mégarde, un `cat` redirigé vers `/dev/null` sans effet (aucun fichier écrit). **Symptômes grepés, mot à mot** (`Claude Code`, `éprouvée`, `prévue`, `démonstration`) : l'entrée de l'AC-D4 ne nomme plus Claude Code ; les autres occurrences de « éprouvée » (l. 123, 466, 556, 851, 872) concernent `sec:mcp-client` ou cette annotation, non le CHANGELOG ; « prévue » ne subsiste qu'à l'epic l. 537 (autre sujet) et au registre, amendé. **Aucune entrée passée réécrite** (Change Log : une ligne ajoutée ; registre et epic : une annotation datée chacun, aucune ligne retirée). **Décomptes inchangés**, recomptés par `grep -c` à la source : **33 AC** (A 8, B 6, C 9, D 5, E 3, T 2), **11 tâches**, **22 mutations**, **22 cas K**, **12 gestes**, **9 requêtes**, **16 faits**, **5 points**, **29 choix** ; **4 modules** relus, non recomptés par commande. **Passe 4 sur 8.** Prompt de la P5 : `3211-validate-prompt-p5.md` (**Sonnet**, passe ciblée, une lentille *regression hunter* sur ce seul commit). |
 | 2026-10-27 | **validation P5 — VALIDATION TERMINÉE** | **Sonnet**, passe ciblée *regression hunter* sur `a3ba388f` (prompt `3211-validate-prompt-p5.md` ; rapport `kesh-gate-logs/3211-validate-p5.md`) : **0/0/0/1**. **Trend** : P1 (Sonnet ×2) 0/1/5/16 → P2 (Opus ×2) 0/0/9/13 → P3 (Sonnet ×2) 0/0/1/13 → P4 (Opus, ciblée) 0/0/2/6 → **P5 (Sonnet, ciblée) 0/0/0/1**. **Recyclage déclaré** en P2 (montage `claude -p`, retiré au profit du parcours en client HTTP) et en P4 (phrase du CHANGELOG, retirée : écrite à la release après la recette de Guy). **Clôture** sur une passe sans finding au-dessus de LOW, **5 passes sur 8**. Le LOW B1 va au § *À recontrôler à l'étape 0*. Écarts des lentilles (redirections sans écriture, `claude --version` en P1) déclarés à leurs entrées. Développement **après toutes les autres stories de l'Epic 32** ; points 1 et 3 soumis à Guy (variante `claude -p`, recommandation non). *(Écrit par l'orchestrateur.)* |
+| 2026-10-27 | développement | Opus 5.5, en autonomie (worktree `kesh-32-10a`, `main` fusionnée à `cee46531`). Commits `ab397c3a` (test de contrat), `d02acb38` (manuels, textes publics, garde du compte, PDF), `5933b0fd` (corrections du rejeu depuis le PDF), `74cefac4` (registre), puis ce compte rendu. Étape 0 : toutes les stories de l'epic fusionnées ; spécification `2025-11-25` lue, K5, `GET` de K20, K13 et K21 promus `CLAUSE` (C-32-11-31) ; LOW B1 de la P5 : prémisse tombée (K5 promu), énumérations laissées ; AC-C4 déjà vraie. Parcours P0 à P11 joué en client HTTP (9 requêtes, un envoi), restauration jouée (4 requêtes, un envoi), rejeu T-8 depuis le PDF (9 requêtes, un envoi, trois écarts corrigés au manuel). **22 tests neufs** de `cee46531` à `HEAD` (21 cas `#[sqlx::test]` dans `mcp_contrat.rs`, K4 retiré ; 1 `#[test]` dans `audit_route_registry.rs`, 12 → 13). Mutations 24/24 tuées. Gate complet 4456/4456 ; front 2150/2150 ; E2E 325 + 7 KF-029. Choix C-32-11-30 à 36. Défauts demandés en issue : `INSTRUCTIONS` « en lecture seule » (P3), texte sous *Serveur activé* (P4). Prompt de revue P1 : `32-11-review-prompt-p1.md` (Sonnet, B, E, A). |
