@@ -90,8 +90,10 @@ impl McpTool for KeshGrandLivre {
          Un compte à la fois ; lignes paginées par limit et offset (nombreLignes donne le \
          total). Si la réponse est trop grosse, réduisez limit. Sur un compte de produits ou \
          de charges, le solde courant repart de zéro à chaque rupture d'exercice (ruptures : \
-         date, exercice clos, son solde) et cloture est le solde de l'exercice en cours à la \
-         fin de la période, non l'ouverture plus les totaux."
+         date, exercice clos, son solde), et cloture est le solde de l'exercice en cours à \
+         la fin de la période : il vaut l'ouverture plus les totaux, sauf quand la période \
+         franchit une fin d'exercice (le cumul reste alors dans les totaux). Sur un compte \
+         d'actif ou de passif, cloture vaut toujours l'ouverture plus les totaux."
     }
 
     fn schema_entree(&self) -> &'static str {
@@ -192,7 +194,8 @@ mod tests {
 
     /// #778 — un agent qui additionne ouverture et totaux n'obtient pas `cloture`
     /// sur un compte de résultat à cheval sur deux exercices : la description le
-    /// lui dit, et nomme `ruptures`.
+    /// lui dit, et nomme `ruptures`. Revue P2 (P2-R-2) : elle ne le nie que dans ce
+    /// cas — sur un seul exercice, ou sur un compte de bilan, l'identité vaut.
     #[test]
     fn la_description_definit_cloture_et_ruptures() {
         let d = KeshGrandLivre.description();
@@ -201,5 +204,16 @@ mod tests {
             "{d}"
         );
         assert!(d.contains("ruptures"), "{d}");
+        assert!(
+            d.contains(
+                "il vaut l'ouverture plus les totaux, sauf quand la période franchit une fin \
+                 d'exercice"
+            ),
+            "la négation de l'identité doit rester conditionnée : {d}"
+        );
+        assert!(
+            d.contains("cloture vaut toujours l'ouverture plus les totaux"),
+            "compte de bilan : {d}"
+        );
     }
 }

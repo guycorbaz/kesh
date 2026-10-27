@@ -34,8 +34,9 @@
 //! l'identité de la section (`closing = opening + mouvements` sur une période
 //! d'un seul exercice ; la même, moins le solde des ruptures, quand la période
 //! franchit une fin d'exercice — cf. ci-dessous), les totaux s'additionneraient,
-//! le rapport serait intérieurement cohérent et extérieurement faux. C'est pourquoi les tests de concordance
-//! appellent réellement `generate_balance_sheet`, `generate_trial_balance` et
+//! le rapport serait intérieurement cohérent et extérieurement faux. C'est
+//! pourquoi les tests de concordance appellent réellement
+//! `generate_balance_sheet`, `generate_trial_balance` et
 //! `generate_income_statement`.
 //!
 //! # Le solde de clôture et les fins d'exercice franchies
