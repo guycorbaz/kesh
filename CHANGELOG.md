@@ -133,6 +133,21 @@ Le contenu est rédigé en français à destination des **fiduciaires, PME, ind�
 - **Sauvegarde automatique — le refus d'un réglage hors domaine parle la langue de l'instance** : un réglage refusé par le serveur (fréquence autre que 6, 12, 24 ou 168 heures, ou nombre de sauvegardes conservées hors de 1 à 60) était annoncé en français quelle que soit la langue de l'installation ; il l'est désormais en français, en allemand, en italien ou en anglais ([#711](https://github.com/guycorbaz/kesh/issues/711)).
 - **Sauvegarde automatique — l'écran ne perd plus ni une saisie ni un état** ([#711](https://github.com/guycorbaz/kesh/issues/711)). Une modification du réglage non enregistrée n'est plus effacée par « Sauvegarder maintenant », et si un autre administrateur a enregistré entre-temps, « Enregistrer » le signale (« Recharger ») au lieu d'écraser son réglage. Quand la réponse du serveur ne parvient pas (délai dépassé, connexion coupée, proxy qui abandonne l'attente) ou qu'il rend une erreur interne, l'écran ne dit plus que la sauvegarde « n'a pas pu être lancée » : il dit qu'elle a peut-être été écrite, et relit l'état et la liste des sauvegardes. Le bandeau de l'application ne s'éteint plus sur une lecture manquée, et ne revient plus à un état ancien sur une réponse tardive ; quand l'horloge du serveur a reculé, il dit que la dernière sauvegarde réussie est datée après l'heure du serveur, au lieu d'annoncer « aucune sauvegarde réussie depuis » une date future. La mention « trop grande pour être restaurée par l'écran » donne la limite en Mio et dans l'unité des tailles listées (Mo, Go).
 
+### Sécurité
+
+- **Dépendances mises à jour** ([#792](https://github.com/guycorbaz/kesh/issues/792)). Côté serveur, `rustls` 0.23.46,
+  `rustls-webpki` 0.103.16, `webpki-roots` 1.0.11, `h2` 0.4.20 et `crossbeam-epoch` 0.9.21 corrigent les avis RustSec
+  publiés depuis la 0.15.0 (RUSTSEC-2026-0346 à 0349 et RUSTSEC-2026-0382, entre autres) ; les autres bibliothèques
+  suivent dans leurs versions compatibles. Côté interface, la correction des avis npm sans changement de version
+  majeure : Vite 7.3.7, Svelte 5.57.3, Vitest 4.1.12, SvelteKit 2.70.3, et avec eux `devalue`, `undici`, `postcss`,
+  `nanoid` et `esbuild`. ⚠️ **Restent connus** : six avis npm de sévérité basse sur `cookie` < 0.7.0, embarqué par
+  SvelteKit 2, dont la correction demande SvelteKit 3 ; côté serveur, `quick-xml` (lecture des relevés CAMT.053,
+  [#789](https://github.com/guycorbaz/kesh/issues/789), prévue juste après cette version), `zip`
+  ([#790](https://github.com/guycorbaz/kesh/issues/790) — l'extraction visée par les avis n'est pas employée par Kesh),
+  `lopdf` ([#791](https://github.com/guycorbaz/kesh/issues/791) — Kesh ne lit aucun PDF reçu) et `rsa`, tiré par le
+  pilote de base de données, sans version corrigée à ce jour
+  ([#252](https://github.com/guycorbaz/kesh/issues/252)).
+
 ## [0.15.0] — 2026-10-24
 
 Epic 31, **une sauvegarde qui restaure tout** ([#503](https://github.com/guycorbaz/kesh/issues/503)) : le fichier `.keshbackup` emporte désormais les pièces — documents fournisseur importés et PDF figés des factures émises —, Kesh fait lui-même sa sauvegarde complète à intervalle régulier, réglée dans *Administration → Sauvegarde complète*, les sauvegardes du serveur se listent et se téléchargent depuis l'écran, et une installation neuve se restaure depuis l'assistant. Le manuel d'administration décrit la **répétition d'une clôture sur une copie** isolée, avant de clore pour de bon. S'y ajoutent quatre correctifs courts — la démonstration valide une facture avec TVA, l'infobulle de *Réouvrir*, la communication du QR-code dans la langue de la facture, les refus du journal d'audit traduits — et, en interne, un smoke E2E sur chaque PR et Rust 1.97.1.
