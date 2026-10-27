@@ -934,6 +934,22 @@ l. 254-272.
 - **L'E2E voisin** (`mcp-sends.spec.ts`) : `preparer` et la création d'une clé à deux portées (`books:read`,
   `prompts:write`) par `POST /api/v1/admin/mcp/keys`.
 
+- **Amendement de l'AC-12 : la saisie survit au 409** (décision du Project Lead, 2026-10-27, KF-055 #796). Une
+  proposition d'agent relève la `version` du prompt. L'enregistrement d'une modification en cours de l'administrateur
+  peut donc échouer en 409 sans que l'administrateur ait rien fait de travers. L'AC-12 dit aujourd'hui « une saisie
+  non enregistrée est perdue » : **cela ne vaut plus pour l'éditeur**.
+  - Sur un 409 rendu à l'enregistrement d'une nouvelle version, *Recharger* relit le détail. La saisie de
+    l'administrateur (description et texte) reste **disponible** : par exemple, elle est gardée dans l'éditeur et
+    l'historique rechargé est affiché à côté, ou elle est proposée par un geste *Reprendre ma saisie*. Le choix est au
+    développement, et se consigne.
+  - **Aucun envoi automatique** : l'administrateur réenregistre lui-même, après avoir vu la version qui a fait
+    échouer son enregistrement.
+  - Un test le prouve (`saisie_conservee_apres_409`), avec une mutation qui vide la saisie au rechargement.
+  - Les 409 des gestes sans saisie (approuver, refuser, retirer, revenir au standard) restent régis par l'AC-12 tel
+    qu'il est écrit.
+  - *Écrit par l'orchestrateur après la validation : cette note est relue à l'étape 0 et par la revue de code P1, qui
+    la contrôle comme une remédiation.*
+
 - **LOW de la validation P5 (à corriger à l'étape 0, ligne lue citée au Change Log)** :
   - J1 : la note « D1, champs du détail » est à la 32-10a `a157255b` (l. ≈1541), non à `8e7ea39d` ; l'inscrire aussi à la liste des commits d'amendements.
   - J2 : les sélecteurs de zone sont **ancrés** en début de valeur (`[data-testid^="servi-"]`), puisque `non-servi-` contient `servi-`.
