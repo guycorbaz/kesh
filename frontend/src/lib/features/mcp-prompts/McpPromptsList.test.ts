@@ -234,9 +234,14 @@ describe('McpPromptsList — remédiation de la revue de code P1', () => {
 			version: 1,
 		});
 		mockGoto.mockRejectedValueOnce(new Error('navigation interrompue'));
+		// La liste se relit pour montrer le prompt créé (sans cette réponse, la relecture
+		// rendait `undefined` : erreur non gérée constatée au gate complet).
+		mockApi.listMcpPrompts.mockResolvedValueOnce([ligne(42, { nom: 'mon-prompt' })]);
 		await fireEvent.click(r.getByTestId('mcp-prompts-create-submit'));
 		const cree = await r.findByTestId('mcp-prompts-created');
 		expect(cree.getAttribute('href')).toBe('/admin/mcp/prompts/42');
 		expect(r.queryByTestId('mcp-prompts-create-error')).toBeNull();
+		await r.findByTestId('mcp-prompts-row-42');
+		expect(mockApi.listMcpPrompts).toHaveBeenCalledTimes(2);
 	});
 });
