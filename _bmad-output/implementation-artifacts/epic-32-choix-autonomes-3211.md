@@ -31,6 +31,7 @@ alternatives écartées, réversibilité.
 - **Écartées** : « jouer tout ce que le manuel décrit » (sans fin, et le DSM n'est pas sur la station) ; un parcours
   minimal sans restauration (l'epic l'exige).
 - **Réversible** : oui, par une décision écrite.
+- **Amendé le 2026-10-27 (validation P1, R1, F1, F3)** : douze gestes, P0 à P11 — P0, l'amorçage, ajouté (C-32-11-25) — et deux conditionnels nommés, P3-direct et P-pièges ; la liste de l'AC-A2 est la seule source des gestes, les variantes des Dev Notes en sont retirées.
 
 ### C-32-11-3 — Un défaut révélé par le parcours ne se corrige pas dans la 32-11
 
@@ -66,6 +67,7 @@ alternatives écartées, réversibilité.
 - **Écartées** : `claude mcp add` sur la configuration de Guy, puis `remove` (une écriture dans ses fichiers, et ses
   serveurs MCP propres chargés pendant le parcours).
 - **Réversible** : oui.
+- **Amendé le 2026-10-27 (validation P1, F2)** : « il n'écrit jamais `~/.claude.json`, `~/.claude/` » devient « il n'y écrit jamais **lui-même** » : `claude`, lancé avec l'authentification de Guy, écrit ses sessions dans le magasin habituel de Guy, ce qui est accepté et déclaré (C-32-11-26). `claude mcp add` ne s'éprouve plus du tout : la condition « variable qui déplace le dossier de configuration » est retirée, un tel dossier retirant l'authentification.
 
 ### C-32-11-6 — Les échanges se capturent par un mandataire `socat`, sans changer le produit
 
@@ -88,6 +90,7 @@ alternatives écartées, réversibilité.
 - **Écartées** : instantanés des réponses de Kesh (auto-certifiants) ; le `schema.json` officiel validé par une
   dépendance `jsonschema` (absente du dépôt ; Q2, réexaminé avec le SDK).
 - **Réversible** : oui (Q2).
+- **Amendé le 2026-10-27 (validation P1, F4, R2, R3)** : voir C-32-11-27 — les « clés closes » et la présence d'`isError` sont des décisions de Kesh, non des clauses.
 
 ### C-32-11-8 — Un binaire neuf `mcp_contrat`, liste close K1 à K22, recoupement des tests existants assumé
 
@@ -99,6 +102,7 @@ alternatives écartées, réversibilité.
 - **Écartées** : déplacer les cas existants dans le contrat (réécriture de tests verts, risque de test muet) ; ajouter
   des cas à `mcp_transport_e2e.rs` (2081 lignes, rangé par garde).
 - **Réversible** : oui.
+- **Amendé le 2026-10-27 (validation P1, R2, F6)** : le réemploi de `tests/common/mcp.rs` **exclut** les aides `attendu_*`, qui tirent leur attendu de `mcp::textes` (C-32-11-27).
 
 ### C-32-11-9 — La fixture ne porte que des requêtes réellement envoyées par Claude Code, avec un témoin
 
@@ -250,6 +254,7 @@ alternatives écartées, réversibilité.
 - **Écartées** : `kesh_plan_comptable` seul (un appel, mais rien de #776 à observer) ; plusieurs clés (hors du périmètre
   clos).
 - **Réversible** : oui.
+- **Amendé le 2026-10-27 (validation P1, F1)** : l'agent n'appelle plus `kesh_exercices` ni « ce qu'il choisit » : la consigne de P6, écrite à la fiche, lui donne l'identifiant d'exercice lu en P0 et lui fait appeler `kesh_bilan` seul — **un** envoi, validé modifié en P7.
 
 ### C-32-11-24 — Les libellés piégés : un appel conditionnel, sur un binaire de parcours
 
@@ -259,4 +264,46 @@ alternatives écartées, réversibilité.
   démonstration publique inchangée ; constat écrit, rien corrigé.
 - **Écartées** : les jouer d'office (la décision appartient à Guy, ouverte à la 32-9) ; les ajouter à la démonstration
   publique (C-32-9-14 l'écarte).
+- **Réversible** : oui.
+
+### C-32-11-25 — L'amorçage P0 : trois écritures synthétiques par l'API, avec un témoin positif
+
+- **Contexte** (validation P1, R1, HIGH) : la démonstration ne porte aucune écriture (fait 16) ; le bilan n'a aucun
+  montant non nul, et le contrôle « aucun montant ne part avant la validation » (AC-A5 (b)) rendait « rien » quel que
+  soit le serveur — un test muet.
+- **Retenu** : un geste P0, avant P1, joué depuis la fiche : une clé d'API `read-write` créée à l'écran, trois
+  `POST /api/v1/journal-entries` aux montants fixés par la fiche (bilan attendu : 1020 à 20 432.05, 2800 à 17 345.10),
+  la clé révoquée ensuite, le bilan constaté à l'écran ; P0 parle à Kesh directement, avant le lancement de `socat`.
+  Un **témoin positif** : le même `grep` doit trouver les montants dans la part de `socat.log` postérieure à P7.
+- **Écartées** : la saisie à l'écran (*Saisie des écritures*, trois formulaires : plus de gestes d'écran et de
+  captures pour rien que le manuel ne décrit) ; un SQL direct (contourne l'application, et l'AC-A1 charge la
+  démonstration par l'écran) ; la fonctionnalité `pieges` de `kesh-seed` (elle ne sert que P-pièges, Q3).
+- **Réversible** : oui.
+
+### C-32-11-26 — L'isolation du client : un dossier de lancement neuf, un fichier MCP jetable, un plafond
+
+- **Contexte** (validation P1, F2) : lancé depuis le worktree, l'agent d'essai chargerait le `CLAUDE.md` de Kesh et
+  ses skills ; un dossier de configuration jetable retirerait l'authentification de Guy ; rien ne bornait le coût.
+- **Retenu** : `kesh-gate-logs/3211/cwd/`, neuf, hors de tout dépôt et sans `CLAUDE.md` parent ; `--mcp-config` et
+  `--strict-mcp-config` ; aucun dossier de configuration jetable — l'authentification et le magasin de sessions de Guy
+  restent, déclarés ; `--allowedTools` et `--disallowedTools` ; `--max-turns 8` par session, un budget si `claude -p`
+  en offre un, et arrêt si aucun plafond n'existe. Tout comportement de `claude` se constate à l'étape 0.
+- **Écartées** : le dossier de configuration jetable avec une clé d'API facturée à part (change la facturation et le
+  montage, Q1) ; neutraliser `~/.claude/CLAUDE.md` et les hooks de Guy (aucune option connue sans retirer
+  l'authentification ; ce qui reste chargé se cite au journal).
+- **Réversible** : oui (Q1).
+
+### C-32-11-27 — L'oracle du contrat : `CLAUSE` pour ce que la spécification exige, `DECISION_KESH` pour le reste, attendus en littéraux
+
+- **Contexte** (validation P1, F4, R2, R3) : les listes closes de clés, la présence d'`isError`, l'absence de session
+  et la forme de l'accusé étaient écrites comme des clauses ; la spécification les laisse au serveur (session « MAY »,
+  spike § 1.1 ; `isError` et propriétés supplémentaires à constater au schéma). Et les aides `attendu_*` de
+  `tests/common/mcp.rs` tirent leur attendu de `mcp::textes`.
+- **Retenu** : chaque assertion rangée sous `CLAUSE` (clés requises, types, valeurs imposées) ou `DECISION_KESH`
+  (listes closes, `isError` présent, pas de `Mcp-Session-Id`, K10, K12, K17, K19, K22, `readOnlyHint`) ; attendus en
+  littéraux dans le test ; aides `attendu_*` et `mcp::textes` interdits au contrat, prouvé par les mutations M17 et
+  M18 (un mot changé dans les textes de production fait rougir K10), sans garde de texte nouvelle ; tout ce qui touche
+  au schéma officiel constaté à l'étape 0 sur la page de la spécification.
+- **Écartées** : une garde qui lirait le source de `mcp_contrat.rs` (garde de texte nouvelle, contraire à la clôture
+  de la fiche) ; le schéma officiel validé par `jsonschema` (Q2).
 - **Réversible** : oui.

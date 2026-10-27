@@ -523,6 +523,11 @@ d'administration (*Brancher un agent*, configuration de Claude Code), manuel uti
 qu'on lui montre avant l'envoi), brochure (`marketing-brochure.tex:480`). Une **restauration jouée** de bout en bout
 (clés, réglages, prompts).
 
+*(Annoté le 2026-10-27, validation P1 de la fiche 32-11, R8, sur demande 6 de la fiche 32-7 : « configuration de
+Claude Code » ci-dessus ne veut pas dire que la 32-11 l'écrit — elle appartient à la **32-7** (`sec:mcp-client`,
+C-32-7-22) ; la 32-11 l'**éprouve** par le parcours et l'**amende en place** (fiche 32-11, AC-C3). Le texte d'origine
+est laissé tel quel.)*
+
 Modules : `kesh-api/tests`, docs (`api-external.md`), manuels FR (admin, utilisateur, brochure) — **3**. **AC** : le
 parcours est décrit pas à pas au manuel **et rejoué depuis le PDF** ; le test de contrat rougit si une réponse s'écarte
 de la révision figée ; aucun texte ne promet une écriture. **Risque** : moyen — documentation exécutée (31-4) ; la fiche
