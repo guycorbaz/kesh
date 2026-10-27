@@ -350,3 +350,74 @@ ligne cités sont ceux de `966baed5`. Ce qui revient à Guy est à la fiche, § 
   cliqué) — l'écran n'a aucun rendu propre à ce cas, le 400 est générique ; le test vérifierait surtout le serveur,
   et ajouterait une recette SQL de plus à la base de démonstration.
 - **Réversible** : oui — une capture et un cas de test à ajouter en développement ou en revue.
+
+## Choix du développement (2026-10-27, worktree `kesh-32-10a`, branche `story/32-7`)
+
+### C-32-7-28 — G13 par préfixe : trois préfixes, sur le module partagé de la 32-10b
+
+- **Contexte** : la fiche (AC-14 (a), C-32-7-21) prescrit `PREFIXES_REPLI_EGAL_AU_CATALOGUE = ['mcp-server-']` et une
+  fonction pure `ecartsAuCatalogue`. Entre-temps, la 32-10b a extrait cette fonction et le relevé dans
+  `frontend/src/lib/shared/i18n-repli-catalogue.ts` (employé par les gardes des écrans des envois et des prompts) ;
+  l'orchestrateur demande de le substituer par la liste de préfixes si la fiche l'introduit, sinon de le réemployer.
+- **Retenu** : l'extension vit dans `i18n-repli-divergent-actif.test.ts`, sur le module partagé (`releveDesReplis`,
+  `sourcesDesDossiers(['src'])`, `ecartsAuCatalogue`, `catalogueDe`) — aucune copie (DRY) ; la liste porte les **trois**
+  préfixes `mcp-server-` (95), `mcp-sends-` (48) et `mcp-prompts-` (94), chacun avec son compte écrit en dur ; le relevé
+  couvre tout `src/`, non le seul dossier d'un écran.
+- **Écartées** : une fonction pure locale à G13 (doublon du module) ; retirer les sections 1 des gardes des écrans
+  des envois et des prompts (elles contrôlent aussi les quatre catalogues et la clé de menu, ce que G13 ne fait pas :
+  les retirer perdrait des contrôles).
+- **Réversible** : oui.
+
+### C-32-7-29 — `SecretUnique` est admise nommément par la garde « aucune classe dans `src/` »
+
+- **Contexte** : `i18n-libelle-en-dur.test.ts` exige qu'aucune classe ne vive dans `src/` (prémisse de sa limite
+  « méthodes de classe ») ; la fiche fixe une classe `SecretUnique` (AC-11, garde G-b sur `new SecretUnique`).
+- **Retenu** : une liste `CLASSES_ADMISES` d'une entrée, `secret-unique.svelte.ts`, avec son motif : ses trois méthodes
+  ne rendent aucun libellé. Toute autre classe rougit toujours.
+- **Écartées** : une fabrique (`creerSecretUnique()`) au lieu d'une classe — contraire à la signature fixée par la
+  fiche et à la forme de G-b.
+- **Réversible** : oui.
+
+### C-32-7-30 — le déplacement de sous-sections du manuel par coupe de lignes, vérifié
+
+- **Contexte** : `sec:mcp` devait se placer après *Sécurité* et avant *Monitoring*, et y ranger `sec:mcp-outils`,
+  `sec:mcp-envois` et `sec:mcp-prompts` sans changer leurs étiquettes. Ces trois sous-sections (≈ 33 Ko) étaient au
+  milieu de *Sécurité*, suivies de cinq autres (RBAC, journal d'audit, OLICo, pare-feu, mises à jour, ≈ 12 Ko).
+- **Retenu** : déplacer les cinq sous-sections de *Sécurité* avant les trois sous-sections MCP, par une coupe de lignes
+  (`head`/`sed -n`/`tail`), sans aucune substitution de motif, vérifiée par l'égalité des multiensembles de lignes
+  (`diff <(sort avant) <(sort après)` vide, 3611 lignes des deux côtés) ; la `\section{Le serveur MCP}` et les
+  sous-sections neuves se sont ensuite écrites à l'outil d'édition.
+- **Écartées** : recopier 12 à 33 Ko par l'outil d'édition (risque de recopie inexacte, que l'égalité des lignes
+  exclut ici) ; ranger le reste sous une « Sécurité (suite) ».
+- **Réversible** : oui (git).
+
+### C-32-7-31 — la phrase de `documents:read` nomme la facture fournisseur liée, et `invoices:read` l'adresse courriel
+
+- **Contexte** (étape 0) : la fiche (AC-10, R4 (a)) écrivait « le nom du fichier, le type et l'état de chaque pièce
+  importée, sans son contenu », en retirant « rattachements » ; le code de la 32-9b rend aussi `taille_octets`,
+  `importee_le`, `qr_lu` et `facture_fournisseur_id` (`crates/kesh-api/src/mcp/outils/pieces.rs:47-56`). Et
+  « l'adresse d'envoi » masquée sans `contacts:read` est l'adresse **courriel** d'envoi (`emailed_to`,
+  `mcp/outils/factures.rs:472`).
+- **Retenu** : réécrire selon le code (règle de la fiche, tête) — « le nom du fichier, le type, la taille, l'état et la
+  facture fournisseur liée de chaque pièce importée, sans son contenu » ; « l'adresse courriel d'envoi d'une facture » ;
+  aux quatre locales et au bloc `% mcp-portees:` du manuel.
+- **Réversible** : oui.
+
+### C-32-7-32 — l'erreur « hors `ApiError` » n'a pas de capture réelle
+
+- **Contexte** : la capture (24) prescrit l'erreur générique hors `ApiError` à l'enregistrement des réglages ; dans un
+  vrai navigateur, `api-client.ts` convertit toute panne réseau en `ApiError` traduite (`toFetchApiError`, l. 312-321) :
+  le générique n'est atteignable qu'en simulation.
+- **Retenu** : le cas est tenu par le test Vitest (AC-5 (f)) ; la capture (24) montre l'erreur réseau réelle (requête
+  `PUT` interrompue), déclarée telle.
+- **Réversible** : oui.
+
+### C-32-7-33 — la navigation entre les trois écrans MCP : le menu et deux liens de l'écran Serveur MCP
+
+- **Contexte** : l'orchestrateur demande que l'entrée de menu et la navigation tiennent ensemble `/admin/mcp`,
+  `/admin/mcp/sends` et `/admin/mcp/prompts`.
+- **Retenu** : l'entrée `nav-admin-mcp` immédiatement avant `nav-admin-mcp-sends` (les trois se suivent au groupe
+  *Administration*), et deux liens en tête de l'écran *Serveur MCP* vers les deux autres. Les écrans des envois et des
+  prompts ne sont pas touchés (leurs clés appartiennent à leurs stories).
+- **Écartées** : un lien retour dans les écrans des envois et des prompts — clés et tests d'autres features.
+- **Réversible** : oui.
