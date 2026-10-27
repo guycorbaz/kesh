@@ -88,7 +88,10 @@ impl McpTool for KeshGrandLivre {
         "Lit le grand livre d'un compte (accountId, requis) entre deux dates (from, to, \
          requises) : solde d'ouverture, lignes avec contreparties et solde courant, totaux. \
          Un compte à la fois ; lignes paginées par limit et offset (nombreLignes donne le \
-         total). Si la réponse est trop grosse, réduisez limit."
+         total). Si la réponse est trop grosse, réduisez limit. Sur un compte de produits ou \
+         de charges, le solde courant repart de zéro à chaque rupture d'exercice (ruptures : \
+         date, exercice clos, son solde) et cloture est le solde de l'exercice en cours à la \
+         fin de la période, non l'ouverture plus les totaux."
     }
 
     fn schema_entree(&self) -> &'static str {
@@ -180,5 +183,23 @@ fn section(s: kesh_report::general_ledger::LedgerSection) -> Section {
             })
             .collect(),
         nombre_lignes: s.line_count,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// #778 — un agent qui additionne ouverture et totaux n'obtient pas `cloture`
+    /// sur un compte de résultat à cheval sur deux exercices : la description le
+    /// lui dit, et nomme `ruptures`.
+    #[test]
+    fn la_description_definit_cloture_et_ruptures() {
+        let d = KeshGrandLivre.description();
+        assert!(
+            d.contains("cloture est le solde de l'exercice en cours"),
+            "{d}"
+        );
+        assert!(d.contains("ruptures"), "{d}");
     }
 }

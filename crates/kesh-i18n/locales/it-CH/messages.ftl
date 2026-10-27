@@ -2600,6 +2600,7 @@ reports-ledger-unnatural = Saldo contrario alla natura del conto
 reports-ledger-unnatural-hint = Questo conto presenta un saldo dal lato opposto alla sua natura. Da verificare.
 reports-ledger-fy-break = Chiusura dell'esercizio — il saldo riparte da zero
 reports-ledger-no-movement = Nessun movimento nel periodo. Il saldo di apertura resta dovuto.
+reports-ledger-no-movement-closed = Nessun movimento nel periodo. L'esercizio del saldo di apertura si chiude nel periodo: il saldo riparte da zero.
 reports-ledger-empty = Nessun conto da visualizzare per questo periodo.
 reports-ledger-open-from-balance = Vedi il dettaglio nel libro mastro
 reports-ledger-truncated = Sono visualizzate solo le prime { $shown } righe su { $total }. L'esportazione le contiene tutte.

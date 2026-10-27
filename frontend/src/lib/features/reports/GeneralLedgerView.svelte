@@ -252,12 +252,21 @@
 							</td>
 						</tr>
 					{:else}
-						<tr>
+						<!-- #777/#778 — « l'ouverture reste due » est faux quand une rupture
+						     finale la clôt dans la période : le message le dit alors. -->
+						<tr data-testid="ledger-no-movement">
 							<td class="px-2 py-2 text-sm italic text-gray-500" colspan={COLUMN_COUNT}>
-								{i18nMsg(
-									'reports-ledger-no-movement',
-									"Aucun mouvement sur la période. Le solde d'ouverture reste dû.",
-								)}
+								{#if trailingBreaks(s).length > 0}
+									{i18nMsg(
+										'reports-ledger-no-movement-closed',
+										"Aucun mouvement sur la période. L'exercice de l'ouverture se clôt dans la période : le solde repart de zéro.",
+									)}
+								{:else}
+									{i18nMsg(
+										'reports-ledger-no-movement',
+										"Aucun mouvement sur la période. Le solde d'ouverture reste dû.",
+									)}
+								{/if}
 							</td>
 						</tr>
 					{/each}

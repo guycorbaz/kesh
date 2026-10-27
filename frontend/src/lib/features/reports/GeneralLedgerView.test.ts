@@ -153,6 +153,19 @@ describe('GeneralLedgerView', () => {
 			dto: dto({ sections: [{ ...s, accountNumber: '3000', lines: [], lineCount: 0 }] }),
 		});
 		expect(vide.container.querySelectorAll('[data-testid="ledger-fy-break"]')).toHaveLength(1);
+		// P1 de la revue : l'ouverture ne « reste » pas « due » quand une rupture
+		// finale la clôt — le message dit la clôture, puis la rupture la montre.
+		const msg = vide.container.querySelector('[data-testid="ledger-no-movement"]')?.textContent ?? '';
+		expect(msg).toContain('Aucun mouvement');
+		expect(msg).toContain('le solde repart de zéro');
+		expect(msg).not.toContain('reste dû');
+	});
+
+	it('sans rupture finale, un compte sans mouvement dit que l’ouverture reste due', () => {
+		const { getByTestId } = render(GeneralLedgerView, {
+			dto: dto({ sections: [section({ lines: [], lineCount: 0, closing: '500.00' })] }),
+		});
+		expect(getByTestId('ledger-no-movement').textContent).toContain('reste dû');
 	});
 
 	it('préfixe la pièce de son exercice dès que la période en traverse deux', () => {

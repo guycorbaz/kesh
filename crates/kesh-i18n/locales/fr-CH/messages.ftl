@@ -2663,6 +2663,7 @@ reports-ledger-unnatural = Solde contre nature
 reports-ledger-unnatural-hint = Ce compte présente un solde du côté opposé à sa nature. À vérifier.
 reports-ledger-fy-break = Clôture de l'exercice — le solde repart de zéro
 reports-ledger-no-movement = Aucun mouvement sur la période. Le solde d'ouverture reste dû.
+reports-ledger-no-movement-closed = Aucun mouvement sur la période. L'exercice de l'ouverture se clôt dans la période : le solde repart de zéro.
 reports-ledger-empty = Aucun compte à afficher sur cette période.
 reports-ledger-open-from-balance = Voir le détail dans le grand livre
 reports-ledger-truncated = Seules les { $shown } premières lignes sur { $total } sont affichées. L'export les contient toutes.
