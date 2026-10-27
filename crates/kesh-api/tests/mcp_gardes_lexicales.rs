@@ -790,8 +790,30 @@ fn donnees_construites_par_la_politique_seule() {
 }
 
 // ---------------------------------------------------------------------------
-// AC-a24 — prompts_scelles
+// AC-a24 — prompts_scelles (amendée par la 32-10a-ii, AC-ii10)
 // ---------------------------------------------------------------------------
+
+/// Le code d'une source, lignes de commentaire retirées, **aplati** (sauts de
+/// ligne en espaces) — pour les formes coupées sur plusieurs lignes.
+fn code_aplati(source: &str) -> String {
+    source
+        .lines()
+        .filter(|l| !est_commentaire(l))
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+/// Les types pour lesquels une source implémente `McpPrompt`, toutes formes
+/// (générique, chemin qualifié, coupée après `impl`).
+fn impls_de_mcp_prompt(source: &str) -> Vec<String> {
+    let motif = re(
+        r"\bimpl\b\s*(<[^>{]*>)?\s*(?:[A-Za-z_][A-Za-z0-9_]*\s*::\s*)*McpPrompt\s+for\s+([A-Za-z_][A-Za-z0-9_]*)",
+    );
+    motif
+        .captures_iter(&code_aplati(source))
+        .map(|c| c[2].to_string())
+        .collect()
+}
 
 #[test]
 fn prompts_scelles() {
@@ -808,30 +830,235 @@ fn prompts_scelles() {
         ),
         0
     );
-    // Périmètre : `impl … McpPrompt for` sur tout `src/` ; `impl … Scelle for`
-    // sur `src/mcp/` seulement — `services/rapports.rs` a son propre sceau,
-    // homonyme (`impl Scelle for super::Affichage {}`), témoin vert existant.
-    let prompt = re(r"\bimpl\b[^{]*\bMcpPrompt\s+for\b");
-    assert!(
-        sites(&sources_src(), tout, &prompt).is_empty(),
-        "aucun prompt en 32-6"
+    // Story 32-10a-ii (AC-ii10, amendement en connaissance de cause) : dans
+    // tout `src/` (code seul), une implémentation de `McpPrompt` n'apparaît
+    // qu'en `mcp/prompts.rs`, **une** fois, pour `PromptEnBase`. Formes : `impl
+    // McpPrompt for`, `impl<…> McpPrompt for`, `impl prompts::McpPrompt for`,
+    // `impl crate::mcp::prompts::McpPrompt for`, sur une ligne ou coupée après
+    // `impl` — d'où la recherche sur le code **aplati** de chaque fichier.
+    for rouge in [
+        "impl McpPrompt for Faux {}",
+        "impl<T: Send> McpPrompt for Faux<T> {}",
+        "impl prompts::McpPrompt for Faux {}",
+        "impl crate::mcp::prompts::McpPrompt for Faux {}",
+        "impl\n    McpPrompt for Faux {}",
+        "impl<T>\ncrate::mcp::prompts::McpPrompt\nfor Faux<T> {}",
+    ] {
+        assert_eq!(
+            impls_de_mcp_prompt(rouge),
+            ["Faux"],
+            "rouge (factice) : {rouge:?}"
+        );
+    }
+    for vert in [
+        "pub trait McpPrompt: scelle::Scelle + Send + Sync + 'static {",
+        "// impl McpPrompt for Faux {}",
+        "fn f(p: &dyn McpPrompt) {}",
+    ] {
+        assert!(impls_de_mcp_prompt(vert).is_empty(), "vert : {vert:?}");
+    }
+    let trouves: Vec<(String, String)> = sources_src()
+        .iter()
+        .flat_map(|(f, t)| {
+            impls_de_mcp_prompt(t)
+                .into_iter()
+                .map(move |ty| (f.clone(), ty))
+        })
+        .collect();
+    assert_eq!(
+        trouves,
+        [("mcp/prompts.rs".to_string(), "PromptEnBase".to_string())],
+        "une seule implémentation de McpPrompt, PromptEnBase"
     );
-    // Story 32-9a (amendement en connaissance de cause, C-32-9-42) :
-    // `mcp/sortie.rs` porte le sceau de `ChampSur` (AC-a2) — un autre sceau,
-    // homonyme, que la garde `champ_sur_en_un_lieu` confine à ce fichier.
-    assert!(
+    // `impl … Scelle for` dans `src/mcp/` : le sceau de `PromptEnBase`
+    // (`mcp/prompts.rs`), et, Story 32-9a (amendement en connaissance de
+    // cause, C-32-9-42), `mcp/sortie.rs`, qui porte le sceau de `ChampSur`
+    // (AC-a2) — un autre sceau, homonyme, que la garde `champ_sur_en_un_lieu`
+    // confine à ce fichier. `services/rapports.rs` a son propre sceau,
+    // homonyme (`impl Scelle for super::Affichage {}`), témoin vert existant.
+    // Le motif prend aussi la ligne d'`impl McpPrompt for`.
+    assert_eq!(
         sites(
             &sources_src(),
             |f| f.starts_with("mcp/") && f != "mcp/sortie.rs",
             &motif
-        )
-        .is_empty(),
-        "aucun sceau de prompt posé dans src/mcp/"
+        ),
+        liste(&[
+            ("mcp/prompts.rs", "impl scelle::Scelle for PromptEnBase {}"),
+            ("mcp/prompts.rs", "impl McpPrompt for PromptEnBase {"),
+        ]),
+        "le seul sceau de prompt posé dans src/mcp/, et la seule implémentation"
     );
     assert_eq!(
         sites(&sources_src(), |f| f == "services/rapports.rs", &motif).len(),
         2,
         "témoin vert existant : le sceau des rapports, hors du périmètre"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Story 32-10a-ii (AC-ii10) — prompts_lus_par_leur_service
+// ---------------------------------------------------------------------------
+
+/// Les lignes de code d'une source (commentaires retirés), jointes par des
+/// sauts de ligne : une instruction `use` sur plusieurs lignes reste lisible
+/// jusqu'à son `;`.
+fn code_seul(source: &str) -> String {
+    source
+        .lines()
+        .filter(|l| !est_commentaire(l))
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+/// Vrai si `code` nomme le dépôt `module` de `kesh_db` : forme **directe**
+/// (`repositories::module`, import ou chemin), ou **en liste**, lue jusqu'au
+/// `;` qui clôt l'instruction `use` (listes imbriquées et multi-lignes
+/// comprises ; validation P4, H4). Le module de route `routes::module::` n'est
+/// pas pris.
+fn nomme_le_depot(code: &str, module: &str) -> bool {
+    let directe = re(&format!(r"\brepositories\s*::\s*{module}\b"));
+    let en_liste = re(&format!(r"\brepositories\s*::\s*\{{[^;]*\b{module}\b"));
+    directe.is_match(code) || en_liste.is_match(code)
+}
+
+/// Les fichiers de `src/` (code seul) qui nomment le dépôt `module`.
+fn fichiers_nommant_le_depot(module: &str) -> Vec<String> {
+    sources_src()
+        .iter()
+        .filter(|(_, t)| nomme_le_depot(&code_seul(t), module))
+        .map(|(f, _)| f.clone())
+        .collect()
+}
+
+/// Les fichiers de `src/` qui peuvent nommer le dépôt des prompts : la poignée
+/// (`services/poignees.rs`, `LecturePrompts`) et les trois points d'entrée
+/// qui appellent `amorcer_standards` (AC-i11). La 32-10a-iii y ajoutera
+/// `routes/mcp_prompts.rs`. Aucun outil de données, aucun service, aucune autre
+/// route ne lit les prompts : **un agent ne relit jamais une proposition**.
+const NOMMENT_LE_DEPOT_DES_PROMPTS: &[&str] = &[
+    "main.rs",
+    "routes/onboarding.rs",
+    "routes/test_endpoints.rs",
+    "services/poignees.rs",
+];
+
+#[test]
+fn prompts_lus_par_leur_service() {
+    // Mesure sur l'analogue existant (`api_keys`, validation P3, R2) : deux
+    // fichiers par la forme directe, un par la forme en liste.
+    assert_eq!(
+        fichiers_nommant_le_depot("api_keys"),
+        ["auth/api_key.rs", "auth/bootstrap.rs", "routes/api_keys.rs"],
+        "analogue api_keys"
+    );
+    // `repositories::*` n'apparaît nulle part.
+    assert!(sites(&sources_src(), tout, &re(r"\brepositories\s*::\s*\*")).is_empty());
+    // Témoins rouges (factices, dits tels).
+    for rouge in [
+        "use kesh_db::repositories::mcp_prompts;",
+        "let v = kesh_db::repositories::mcp_prompts::en_vigueur_par_societe(p, 1);",
+        "use kesh_db::repositories::{accounts, mcp_prompts};",
+        "use kesh_db::repositories::{\n    accounts,\n    mcp_prompts,\n};",
+        "use kesh_db::repositories::{invoices::{self}, mcp_prompts};",
+    ] {
+        assert!(nomme_le_depot(rouge, "mcp_prompts"), "rouge : {rouge:?}");
+    }
+    // Témoins verts : le module de route (existant, `lib.rs`), un nom qui
+    // prolonge le module (factice, dit tel : `\b` ne sépare pas deux
+    // caractères de mot), une autre instruction après le `;`.
+    for (vert, module) in [
+        (
+            "get(routes::api_keys::list).post(routes::api_keys::create),",
+            "api_keys",
+        ),
+        (
+            "use kesh_db::repositories::{invoice_settlements_write};",
+            "invoice_settlements",
+        ),
+        (
+            "use kesh_db::repositories::{accounts};\nlet mcp_prompts = 1;",
+            "mcp_prompts",
+        ),
+    ] {
+        assert!(!nomme_le_depot(vert, module), "vert : {vert:?}");
+    }
+    let invoices = std::fs::read_to_string(racine_src().join("routes/invoices.rs")).unwrap();
+    assert!(
+        nomme_le_depot(&code_seul(&invoices), "contacts")
+            && !nomme_le_depot(&code_seul(&invoices), "mcp_prompts"),
+        "témoin existant : la liste imbriquée de routes/invoices.rs, lue jusqu'au `;`"
+    );
+    assert_eq!(
+        fichiers_nommant_le_depot("mcp_prompts"),
+        NOMMENT_LE_DEPOT_DES_PROMPTS,
+        "le dépôt des prompts nommé hors de sa poignée et des points d'amorçage"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Story 32-10a-ii (AC-ii9) — service_des_prompts_sans_poignee_des_livres
+// ---------------------------------------------------------------------------
+
+/// Les jetons d'une poignée ou d'un accès qui mène aux livres.
+const MOTIF_LIVRES: &str = r"\bLecture\b|\bTrace\b|\bLectureOutils\b|\.\s*pool\s*\(|\bsqlx\s*::|\bkesh_db\s*::\s*repositories\b|\bcrate\s*::\s*helpers\b|\bcrate\s*::\s*routes\b";
+
+/// Le code de production d'une source : jusqu'à sa première ligne
+/// `#[cfg(test)]`.
+fn avant_les_tests(source: &str) -> String {
+    source
+        .split("\n#[cfg(test)]")
+        .next()
+        .unwrap_or_default()
+        .to_string()
+}
+
+#[test]
+fn service_des_prompts_sans_poignee_des_livres() {
+    let motif = re(MOTIF_LIVRES);
+    let src = |f: &str| std::fs::read_to_string(racine_src().join(f)).unwrap();
+    // Témoins rouges existants, appliqués à leur fichier.
+    let cles = src("services/cles_mcp.rs");
+    assert!(cles.contains("use crate::services::poignees::{Lecture, Trace};"));
+    assert_eq!(
+        sites_factices("use crate::services::poignees::{Lecture, Trace};", &motif),
+        1
+    );
+    assert!(
+        src("services/plan_comptable.rs")
+            .contains("crate::helpers::company_for_ids(lecture.pool()")
+    );
+    assert_eq!(
+        sites_factices(
+            "    let _ = crate::helpers::company_for_ids(lecture.pool(), acces.company_id(), acces.user_id())",
+            &motif
+        ),
+        1
+    );
+    // Témoin vert existant, et factice (dit tel).
+    assert!(cles.contains("use crate::services::acces::ContexteAcces;"));
+    assert_eq!(
+        sites_factices("use crate::services::acces::ContexteAcces;", &motif),
+        0
+    );
+    assert_eq!(sites_factices("    lecture: &LecturePrompts,", &motif), 0);
+    // Rouges factices : une signature élargie (Mii9), un accès au pool (Mii11).
+    assert_eq!(sites_factices("    livres: &Lecture,", &motif), 1);
+    assert_eq!(sites_factices("    let p = lecture.pool();", &motif), 1);
+    assert_eq!(sites_factices("    sqlx::query(\"SELECT 1\")", &motif), 1);
+
+    let code = avant_les_tests(&src("services/prompts_mcp.rs"));
+    let trouves: Vec<&str> = code
+        .lines()
+        .filter(|l| !est_commentaire(l) && motif.is_match(l))
+        .collect();
+    assert!(
+        trouves.is_empty(),
+        "le service des prompts nomme une poignée ou un accès aux livres : {trouves:?}"
+    );
+    assert!(
+        code.contains("lecture: &LecturePrompts,"),
+        "témoin : le service lu"
     );
 }
 
@@ -924,7 +1151,8 @@ fn trace_confinee_dans_outil() {
             ("mcp/mod.rs", "pub(crate) trace: Trace,"),
             (
                 "mcp/mod.rs",
-                "use crate::services::poignees::{EcritureEnvois, Lecture, LectureEnvois, Trace};"
+                // Story 32-10a-ii : `LecturePrompts` rejoint l'import.
+                "use crate::services::poignees::{EcritureEnvois, Lecture, LectureEnvois, LecturePrompts, Trace};"
             ),
             ("mcp/outil.rs", "trace: &'a Trace,"),
             ("mcp/outil.rs", "trace: &'a Trace,"),

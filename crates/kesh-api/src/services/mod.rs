@@ -108,6 +108,11 @@
 //!    (`envois_mcp::lire`, sur `poignees::LectureEnvois`, pool en lecture seule
 //!    du MCP) déroge de même à R2 et R7 : sa règle est « même clé, même
 //!    société », plus étroite qu'une portée.
+//!
+//!    La lecture des **prompts du serveur MCP** (Story 32-10a-ii,
+//!    `prompts_mcp::{lister, obtenir}`) passe par sa poignée propre,
+//!    `poignees::LecturePrompts`, sur le pool en lecture seule du MCP : une
+//!    lecture, aucune écriture, qui suit R2 et R7.
 //! 3. Aucune autre : les générateurs de `kesh-report`, `ReportPeriod::resolve`,
 //!    `resolve_scope`, `rapports::identite_societe`, `helpers::company_for_ids`,
 //!    `accounts::list_by_company` et `letterings::letterable_account_ids` ne
@@ -280,5 +285,6 @@ pub mod factures_fournisseur;
 pub mod plan_comptable;
 pub mod poignees;
 pub mod postes_ouverts;
+pub mod prompts_mcp;
 pub mod rapports;
 pub mod serveur_mcp;

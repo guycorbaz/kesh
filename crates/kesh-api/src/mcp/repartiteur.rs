@@ -39,12 +39,14 @@ use serde::Deserialize;
 use crate::mcp::EtatMcp;
 use crate::mcp::outil::{ContexteMcp, ErreurOutil, MotifArgument, arguments};
 use crate::mcp::politique::{self, Sortie};
+use crate::mcp::prompts::{self, ListePrompts};
 use crate::mcp::registre::NOM_LIRE_ENVOI;
 use crate::mcp::reponse::{IdRequete, ReponseEnvoi, ReponseMcp};
 use crate::mcp::textes;
 use crate::services::acces::{Canal, Portee};
 use crate::services::cles_mcp::CleMcpAuthentifiee;
 use crate::services::envois_mcp::{self, EnvoiLu, RefusDepot};
+use crate::services::prompts_mcp::ErreurPrompts;
 use crate::services::serveur_mcp::{self, IssueAppel, OUTIL_INCONNU};
 
 /// Ce qu'un appel laisse au journal (règle 1).
@@ -198,16 +200,52 @@ pub(crate) async fn repartir(
             }
         }
         Methode::ToolsCall => appeler(etat, cle, id, params).await,
-        Methode::PromptsList => ReponseMcp::Resultat {
-            id,
-            resultat: serde_json::json!({ "prompts": [] }),
-        },
-        Methode::PromptsGet => erreur(
-            id,
-            textes::CODE_PARAMS_INVALIDES,
-            textes::TEXTE_PROMPT_INCONNU,
-        ),
+        Methode::PromptsList => {
+            // La liste n'est pas paginée : un `cursor` est refusé, comme pour
+            // `tools/list` (AC-ii5).
+            if params.get("cursor").is_some() {
+                return params_invalides(id);
+            }
+            // Hors politique (AC-a15, AC-ii9) : un prompt n'est pas une donnée
+            // lue. Une clé sans `books:read` reçoit une liste vide, non une
+            // erreur (aucun oracle).
+            match prompts::lister(etat, cle).await {
+                Ok(liste) => ReponseMcp::ListePrompts { id, liste },
+                Err(ErreurPrompts::HorsPortee) => ReponseMcp::ListePrompts {
+                    id,
+                    liste: ListePrompts::vide(),
+                },
+                Err(ErreurPrompts::Interne) => erreur_interne(id),
+            }
+        }
+        Methode::PromptsGet => {
+            let Some(nom) = params.get("name").and_then(|n| n.as_str()) else {
+                return params_invalides(id);
+            };
+            // Les `arguments` du client sont ignorés, jamais interpolés
+            // (AC-ii6, C-32-10a-10). Inconnu, non servi, autre société, nom non
+            // conforme, clé sans `books:read` : la même réponse.
+            match prompts::obtenir(etat, cle, nom).await {
+                Ok(Some(prompt)) => ReponseMcp::PromptRendu { id, prompt },
+                Ok(None) | Err(ErreurPrompts::HorsPortee) => erreur(
+                    id,
+                    textes::CODE_PARAMS_INVALIDES,
+                    textes::TEXTE_PROMPT_INCONNU,
+                ),
+                Err(ErreurPrompts::Interne) => erreur_interne(id),
+            }
+        }
     }
+}
+
+/// L'erreur interne fixe d'une méthode des prompts (le détail est au journal
+/// du serveur).
+fn erreur_interne(id: IdRequete) -> ReponseMcp {
+    erreur(
+        id,
+        textes::CODE_ERREUR_INTERNE,
+        textes::TEXTE_ERREUR_INTERNE,
+    )
 }
 
 /// `tools/call` : la tâche de l'appel, attendue par le gestionnaire (règle du
