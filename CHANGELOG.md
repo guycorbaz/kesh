@@ -48,6 +48,13 @@ Le contenu est rédigé en français à destination des **fiduciaires, PME, ind�
   nouvelle version ou un retrait, approuvent ou refusent une proposition (l'approbation revérifie le texte) et
   rétablissent le texte standard ; chaque geste est inscrit au journal d'audit, sans le texte. Chaque `prompts/get` y
   est inscrit aussi ; si l'inscription échoue, rien n'est servi.
+- **L'écran des prompts du serveur MCP** (**Administration → Prompts du serveur MCP** ; refs
+  [#723](https://github.com/guycorbaz/kesh/issues/723)) : la liste des prompts et de leur version en vigueur,
+  l'historique complet de chacun, le texte **tel que Kesh le servirait** — marque d'un prompt d'agent comprise,
+  caractères invisibles écrits sous leur code par le serveur —, l'approbation ou le refus des propositions d'un agent
+  sur la version lue, l'écriture d'une nouvelle version, le retrait et le retour au texte standard, qui montre le
+  texte du code avant le geste. Rien n'est écrasé : chaque geste ajoute une version. Le manuel d'administration le
+  décrit, § *Les prompts du serveur MCP*.
 - **Les outils de lecture du serveur MCP — contacts et pièces** (refs
   [#723](https://github.com/guycorbaz/kesh/issues/723)). Sous `contacts:read`, le carnet d'adresses (liste et
   fiche d'un contact), chaque texte enveloppé ; sous `documents:read`, la liste des pièces importées d'un statut,
