@@ -19,7 +19,7 @@ use crate::entities::{
 };
 use crate::errors::{DbError, map_db_error};
 use crate::repositories::MAX_LIST_LIMIT;
-use crate::repositories::{api_keys, audit_log};
+use crate::repositories::{api_keys, audit_log, mcp_keys};
 
 const FIND_BY_ID_SQL: &str = "SELECT id, name, first_name, last_name, address, address_street, address_building, \
             address_postal_code, address_city, address_country, ide_number, org_type, \
@@ -239,12 +239,16 @@ pub async fn reset_to_stub_in_tx(tx: &mut Transaction<'_, MySql>, id: i64) -> Re
     Ok(())
 }
 
-/// Une clé d'API **active** et **orpheline** révoquée par
-/// [`reattach_orphan_principals_in_tx`] — ce que l'entrée d'audit en dit.
+/// Une clé **active** et **orpheline** révoquée par
+/// [`reattach_orphan_principals_in_tx`] — ce que l'entrée d'audit en dit. La
+/// même forme sert aux deux natures de clé ([`RevokedApiKey`],
+/// [`RevokedMcpKey`]), qui paraissent chacune **dans sa propre liste** du
+/// détail (`api_keys_revoked`, `mcp_keys_revoked` — C-32-5-12, C-32-5-45).
 ///
-/// **Aucune empreinte** : `api_keys` ne porte que `key_hash`, jamais rendu.
+/// **Aucune empreinte** : `api_keys` et `mcp_keys` ne portent que `key_hash`,
+/// jamais rendu.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
-pub struct RevokedApiKey {
+pub struct RevokedKey {
     pub id: i64,
     pub name: String,
     pub created_by_user_id: i64,
@@ -252,27 +256,117 @@ pub struct RevokedApiKey {
     pub last_used_at: Option<NaiveDateTime>,
 }
 
+/// Une clé d'API (`api_keys`) révoquée par la règle des principaux orphelins.
+pub type RevokedApiKey = RevokedKey;
+
+/// Une clé du serveur MCP (`mcp_keys`) révoquée par la règle des principaux
+/// orphelins — Story 32-5d (#723).
+pub type RevokedMcpKey = RevokedKey;
+
 /// Ce que [`reattach_orphan_principals_in_tx`] a fait.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct OrphanPrincipals {
     /// Les utilisateurs orphelins **rattachés** à la cible (vide sans cible).
     pub user_ids: Vec<i64>,
-    /// Les clés actives orphelines **révoquées**, cible ou non.
+    /// Les clés d'API actives orphelines **révoquées**, cible ou non.
     pub api_keys_revoked: Vec<RevokedApiKey>,
-    /// Le nombre de clés orphelines — révoquées ici ou avant — **repointées**
-    /// vers la cible (0 sans cible).
+    /// Le nombre de clés d'API orphelines — révoquées ici ou avant —
+    /// **repointées** vers la cible (0 sans cible).
     pub api_keys_repointed: u64,
+    /// Les clés MCP actives orphelines **révoquées**, cible ou non — Story
+    /// 32-5d.
+    pub mcp_keys_revoked: Vec<RevokedMcpKey>,
+    /// Le nombre de clés MCP orphelines — révoquées ici ou avant —
+    /// **repointées** vers la cible (0 sans cible) — Story 32-5d.
+    pub mcp_keys_repointed: u64,
 }
 
 impl OrphanPrincipals {
-    /// `true` si rien n'a été rattaché, révoqué ni repointé.
+    /// `true` si rien n'a été rattaché, révoqué ni repointé — clés MCP
+    /// comprises (une clé MCP orpheline seule suffit à rendre `false`).
     pub fn is_empty(&self) -> bool {
-        self.user_ids.is_empty() && self.api_keys_revoked.is_empty() && self.api_keys_repointed == 0
+        self.user_ids.is_empty()
+            && self.api_keys_revoked.is_empty()
+            && self.api_keys_repointed == 0
+            && self.mcp_keys_revoked.is_empty()
+            && self.mcp_keys_repointed == 0
     }
 }
 
+/// Une ligne de clé active orpheline verrouillée : ce qu'il faut pour la
+/// révoquer (`company_id`, `version`) et pour la décrire ([`RevokedKey`]).
+struct LockedOrphanKey {
+    company_id: i64,
+    version: i32,
+    key: RevokedKey,
+}
+
+/// Verrouille (`FOR UPDATE`, par `id`) les clés **actives** orphelines de
+/// `table` — `api_keys` ou `mcp_keys`, deux tables aux mêmes colonnes pour ce
+/// qu'on en lit. `table` est toujours un littéral de ce module.
+async fn lock_active_orphan_keys(
+    tx: &mut Transaction<'_, MySql>,
+    table: &'static str,
+) -> Result<Vec<LockedOrphanKey>, DbError> {
+    #[allow(clippy::type_complexity)]
+    let rows: Vec<(
+        i64,
+        i64,
+        i32,
+        String,
+        i64,
+        NaiveDateTime,
+        Option<NaiveDateTime>,
+    )> = sqlx::query_as(&format!(
+        "SELECT t.id, t.company_id, t.version, t.name, t.created_by_user_id, \
+                    t.created_at, t.last_used_at \
+             FROM {table} t WHERE t.revoked_at IS NULL AND {ORPHAN} ORDER BY t.id FOR UPDATE"
+    ))
+    .fetch_all(&mut **tx)
+    .await
+    .map_err(map_db_error)?;
+    Ok(rows
+        .into_iter()
+        .map(
+            |(id, company_id, version, name, created_by_user_id, created_at, last_used_at)| {
+                LockedOrphanKey {
+                    company_id,
+                    version,
+                    key: RevokedKey {
+                        id,
+                        name,
+                        created_by_user_id,
+                        created_at,
+                        last_used_at,
+                    },
+                }
+            },
+        )
+        .collect())
+}
+
+/// Repointe vers `target` **toutes** les lignes orphelines de `table`
+/// (`users`, `api_keys` ou `mcp_keys` — littéral de ce module), sans toucher
+/// d'autre colonne. Rend le nombre de lignes écrites.
+async fn repoint_orphans(
+    tx: &mut Transaction<'_, MySql>,
+    table: &'static str,
+    target: i64,
+) -> Result<u64, DbError> {
+    Ok(sqlx::query(&format!(
+        "UPDATE {table} t SET t.company_id = ? WHERE {ORPHAN}"
+    ))
+    .bind(target)
+    .execute(&mut **tx)
+    .await
+    .map_err(map_db_error)?
+    .rows_affected())
+}
+
 /// Prédicat d'**orphelin** : le `company_id` de la ligne `t` ne désigne aucune
-/// société. Partagé par les sélections et les `UPDATE` ci-dessous.
+/// société. Partagé par les sélections et les `UPDATE` de la règle des
+/// principaux orphelins ([`lock_active_orphan_keys`], [`repoint_orphans`],
+/// [`reattach_orphan_principals_in_tx`]).
 const ORPHAN: &str = "NOT EXISTS (SELECT 1 FROM companies c WHERE c.id = t.company_id)";
 
 /// La règle **unique** des principaux orphelins — Story 15-7b2 (AC 4, choix
@@ -286,25 +380,28 @@ const ORPHAN: &str = "NOT EXISTS (SELECT 1 FROM companies c WHERE c.id = t.compa
 /// 2. les **clés d'API actives** orphelines sont verrouillées, puis
 ///    **révoquées** (`api_keys::revoke_in_tx`, `version + 1`) — **quelle que
 ///    soit la cible** : une clé a pu naître pendant une démonstration, et la
-///    repointer active la **réveillerait** sur la société vivante ;
+///    repointer active la **réveillerait** sur la société vivante ; puis,
+///    de même, les **clés MCP actives** orphelines, **après** les clés d'API
+///    (`mcp_keys::revoke_in_tx`) — Story 32-5d (C-32-5-12) ;
 /// 3. si `target = Some(c)` : les utilisateurs orphelins sont rattachés à `c`
 ///    (`rows_affected` égal au nombre verrouillé, sinon `DbError::Invariant`),
-///    et **toutes** les clés orphelines — révoquées à l'instant ou avant — sont
-///    repointées vers `c` sans toucher `version` ni `revoked_at` : elles
-///    paraissent, révoquées, sur la page des clés de la société ;
-///    `target = None` : ni rattachement ni repointage, les clés restent
-///    révoquées sur leur `company_id` mort, repointées plus tard par le même
-///    appel.
+///    et **toutes** les clés orphelines, d'API puis MCP — révoquées à
+///    l'instant ou avant — sont repointées vers `c` sans toucher `version` ni
+///    `revoked_at` : elles paraissent, révoquées, sur la page des clés de la
+///    société ; `target = None` : ni rattachement ni repointage, les clés
+///    restent révoquées sur leur `company_id` mort, repointées plus tard par le
+///    même appel.
 ///
-/// Ainsi **aucune clé orpheline ne redevient active par aucun chemin**.
+/// Ainsi **aucune clé orpheline, d'API ou MCP, ne redevient active par aucun
+/// chemin**.
 ///
 /// Appelants : `kesh_seed::reset_demo` (`Some`), la branche « aucune société »
 /// du choix de la langue (`routes::onboarding`, `Some` de la société créée), et
 /// — Story 15-7b3 — la réparation au démarrage et à la restauration.
 ///
 /// **Pré-condition** : l'appelant tient `companies` (`FOR UPDATE`, Pattern 5)
-/// et `target`, s'il est donné, existe. Ordre des verrous : `users` puis
-/// `api_keys`. **Ne commite jamais.**
+/// et `target`, s'il est donné, existe. Ordre des verrous : `users`, puis
+/// `api_keys`, puis `mcp_keys`. **Ne commite jamais.**
 pub async fn reattach_orphan_principals_in_tx(
     tx: &mut Transaction<'_, MySql>,
     target: Option<i64>,
@@ -316,34 +413,18 @@ pub async fn reattach_orphan_principals_in_tx(
     .await
     .map_err(map_db_error)?;
 
-    #[allow(clippy::type_complexity)]
-    let keys: Vec<(
-        i64,
-        i64,
-        i32,
-        String,
-        i64,
-        NaiveDateTime,
-        Option<NaiveDateTime>,
-    )> = sqlx::query_as(&format!(
-        "SELECT t.id, t.company_id, t.version, t.name, t.created_by_user_id, \
-                    t.created_at, t.last_used_at \
-             FROM api_keys t WHERE t.revoked_at IS NULL AND {ORPHAN} ORDER BY t.id FOR UPDATE"
-    ))
-    .fetch_all(&mut **tx)
-    .await
-    .map_err(map_db_error)?;
+    let api_orphans = lock_active_orphan_keys(tx, "api_keys").await?;
+    let mut api_keys_revoked = Vec::with_capacity(api_orphans.len());
+    for o in api_orphans {
+        api_keys::revoke_in_tx(tx, o.company_id, o.key.id, o.version).await?;
+        api_keys_revoked.push(o.key);
+    }
 
-    let mut api_keys_revoked = Vec::with_capacity(keys.len());
-    for (id, company_id, version, name, created_by_user_id, created_at, last_used_at) in keys {
-        api_keys::revoke_in_tx(tx, company_id, id, version).await?;
-        api_keys_revoked.push(RevokedApiKey {
-            id,
-            name,
-            created_by_user_id,
-            created_at,
-            last_used_at,
-        });
+    let mcp_orphans = lock_active_orphan_keys(tx, "mcp_keys").await?;
+    let mut mcp_keys_revoked = Vec::with_capacity(mcp_orphans.len());
+    for o in mcp_orphans {
+        mcp_keys::revoke_in_tx(tx, o.company_id, o.key.id, o.version).await?;
+        mcp_keys_revoked.push(o.key);
     }
 
     let Some(target) = target else {
@@ -351,36 +432,27 @@ pub async fn reattach_orphan_principals_in_tx(
             user_ids: Vec::new(),
             api_keys_revoked,
             api_keys_repointed: 0,
+            mcp_keys_revoked,
+            mcp_keys_repointed: 0,
         });
     };
 
-    let attached = sqlx::query(&format!(
-        "UPDATE users t SET t.company_id = ? WHERE {ORPHAN}"
-    ))
-    .bind(target)
-    .execute(&mut **tx)
-    .await
-    .map_err(map_db_error)?
-    .rows_affected();
+    let attached = repoint_orphans(tx, "users", target).await?;
     if attached != user_ids.len() as u64 {
         return Err(DbError::Invariant(format!(
             "rattachement des utilisateurs orphelins : {attached} ligne(s) écrite(s), {} verrouillée(s)",
             user_ids.len()
         )));
     }
-    let api_keys_repointed = sqlx::query(&format!(
-        "UPDATE api_keys t SET t.company_id = ? WHERE {ORPHAN}"
-    ))
-    .bind(target)
-    .execute(&mut **tx)
-    .await
-    .map_err(map_db_error)?
-    .rows_affected();
+    let api_keys_repointed = repoint_orphans(tx, "api_keys", target).await?;
+    let mcp_keys_repointed = repoint_orphans(tx, "mcp_keys", target).await?;
 
     Ok(OrphanPrincipals {
         user_ids,
         api_keys_revoked,
         api_keys_repointed,
+        mcp_keys_revoked,
+        mcp_keys_repointed,
     })
 }
 
@@ -560,10 +632,10 @@ async fn delete_stubs_under_savepoints(
 ///    [`reattach_orphan_principals_in_tx`], et ce qui sérialise deux instances
 ///    démarrant sur la même base **dès qu'elle porte au moins une société** —
 ///    sur une table vide, ce verrou ne tient aucune ligne ; la sérialisation
-///    passe alors par les lectures verrouillantes de `users` puis `api_keys`
-///    de la règle des principaux, et la seconde, relisant après le `commit`
-///    de la première, ne trouve plus de clé active orpheline — raisonné, non
-///    testé (revue P1, B-3)) ;
+///    passe alors par les lectures verrouillantes de `users`, puis
+///    `api_keys`, puis `mcp_keys` de la règle des principaux, et la seconde,
+///    relisant après le `commit` de la première, ne trouve plus de clé active
+///    orpheline — raisonné, non testé (revue P1, B-3)) ;
 /// 2. **démarrage seulement**, s'il y a plus d'une société : supprime les
 ///    sociétés provisoires (`is_stub = TRUE`) qu'**aucune ligne d'aucune
 ///    table** ne désigne ([`company_referencing_columns`]) — si toutes le
@@ -575,8 +647,8 @@ async fn delete_stubs_under_savepoints(
 /// 3. société de rattachement : `Some` s'il en reste **exactement une** ;
 /// 4. **installation sans utilisateur** : rien de plus — `info!` si des
 ///    sociétés ont été supprimées, **sans** entrée d'audit (personne pour la
-///    signer ; aucune clé ne peut exister sans son créateur,
-///    `fk_api_keys_created_by`) — `Ok(None)` ;
+///    signer ; aucune clé, d'API ou MCP, ne peut exister sans son créateur,
+///    `fk_api_keys_created_by`, `fk_mcp_keys_created_by`) — `Ok(None)` ;
 /// 5. [`reattach_orphan_principals_in_tx`] avec la société de l'étape 3 : la
 ///    règle unique de la 15-7b2 (clés actives orphelines **révoquées** quel
 ///    que soit le nombre de sociétés, puis, avec une cible, utilisateurs
@@ -681,6 +753,8 @@ pub async fn repair_installation_in_tx(
         "user_ids": principals.user_ids,
         "api_keys_revoked": principals.api_keys_revoked,
         "api_keys_repointed": principals.api_keys_repointed,
+        "mcp_keys_revoked": principals.mcp_keys_revoked,
+        "mcp_keys_repointed": principals.mcp_keys_repointed,
         "trigger": trigger.code(),
     });
     if let RepairTrigger::Restore {

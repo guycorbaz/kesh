@@ -10,16 +10,34 @@ Le contenu est rédigé en français à destination des **fiduciaires, PME, ind�
 
 ## [0.16.0] — Non publié
 
+### Ajouté
+
+- **La validation avant envoi du serveur MCP.** Sous une clé du serveur MCP dont la validation est requise (le
+  défaut), aucune donnée des livres ne part vers l'agent sans l'accord d'un Administrateur : ce que l'agent demande
+  est déposé comme un *envoi*, et l'écran **Administration → Envois du serveur MCP** montre le texte exact qui
+  partira. On l'envoie tel quel, on le modifie avant de l'envoyer, ou on le refuse ; l'agent le relit ensuite par
+  `kesh_lire_envoi`. Un envoi échoit 24 heures après la demande ; il pèse au plus 24 Kio, et une clé en a au plus 20
+  en attente. Les caractères invisibles y sont montrés par leur code, et refusés dans une version modifiée. Le manuel
+  d'administration le décrit, § *Les envois du serveur MCP*, avec ce que la validation ne couvre pas.
+
 ### Modifié
 
 - ⚠️ **Sauvegarde : la 0.16.0 refuse les sauvegardes de la 0.15.0 et d'avant.** Une sauvegarde ne se réimporte que
-  dans une version de Kesh qui porte **les mêmes tables** qu'elle ; la 0.16.0 en ajoute deux — les clés et les
-  réglages du futur serveur MCP, qui entrent au fichier `.keshbackup` (activation comprise) et restent hors de l'export
-  global. Une sauvegarde plus ancienne se restaure avec la version qui l'a produite, dont le manuel se trouve dans le
+  dans une version de Kesh qui porte **les mêmes tables** qu'elle ; la 0.16.0 en ajoute trois — les clés, les réglages
+  et les envois du serveur MCP, qui entrent au fichier `.keshbackup` (activation et contenu des envois compris)
+  et restent hors de l'export global. Une sauvegarde plus ancienne se restaure avec la version qui l'a produite, dont le manuel se trouve dans le
   dépôt, au tag de cette version ; ensuite, on met à jour. **Après la mise à jour vers la 0.16.0, prenez sans attendre
   une sauvegarde complète** : les sauvegardes précédentes, automatiques comprises, ne s'y importent plus. Pour la même
   raison, l'import ne rejoue plus aucune reprise de données d'une version antérieure (le lettrage des pièces de la
   0.13 était la dernière) : le manuel d'administration le dit, § *Reprises de données rejouées à l'import*.
+- **La description d'un compte bancaire refuse aussi les caractères invisibles qu'elle laissait passer** (marques de
+  format de certaines écritures, sélecteurs de variante), les caractères d'usage privé — tel le logo Apple collé depuis
+  un Mac — et les caractères non attribués, dont un emoji plus récent qu'Unicode 17.0 ; les emojis qui portent un
+  sélecteur de variante (U+FE0E, U+FE0F) ou un liant invisible (U+200D), tel `⚠️`, l'étaient déjà ; les autres, drapeaux
+  de pays et teints compris, restent admis (un drapeau de subdivision, tel celui de l'Écosse, porte des balises
+  invisibles et est refusé). Une description déjà enregistrée n'est pas modifiée ; si elle porte un de ces
+  caractères, le prochain enregistrement du compte par sa modification — même pour en changer un autre champ — demande
+  de la corriger.
 
 ### Corrigé
 

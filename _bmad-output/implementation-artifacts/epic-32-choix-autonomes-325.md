@@ -589,3 +589,187 @@ liste) est fermée par C-32-5-37.
   l'état que laisse #528 —, si bien que seule la jointure à `companies` refuse la clé. Ma4c est rejouée (mutation mx5).
 - **Réversible** : oui.
 
+## Développement de la 32-5d (2026-10-25, Opus 5.5, en autonomie)
+
+### C-32-5-45 — Une seule forme de clé révoquée, deux listes au détail
+
+- **Contexte** : AC-d2 demande `mcp_keys_revoked: Vec<RevokedMcpKey>` (aucun condensat) ; `RevokedApiKey`
+  (`companies.rs:247` à `d993106c`) a exactement les champs voulus (id, nom, créateur, dates). C-32-5-12 écarte de
+  **mêler** les deux natures de clé dans une même liste, non de partager une forme.
+- **Retenu** : une structure `RevokedKey` (mêmes champs, `Serialize`), et deux alias publics `RevokedApiKey` et
+  `RevokedMcpKey` ; les deux listes restent distinctes dans `OrphanPrincipals` et au détail d'audit
+  (`api_keys_revoked`, `mcp_keys_revoked`). Les tests qui construisent `companies::RevokedApiKey { … }` compilent
+  inchangés.
+- **Écartées** : deux structures identiques (code dupliqué, règle DRY) ; une liste unique avec un champ de nature
+  (C-32-5-12 l'écarte : le JSON d'audit changerait de sens en silence).
+- **Conséquence** : le compilateur ne distingue pas une clé d'API révoquée d'une clé MCP révoquée — seul le nom du
+  champ les sépare. Les tests à égalité stricte (AC-d2) le gardent.
+- **Réversible** : oui.
+
+### C-32-5-46 — Deux aides privées pour la règle des orphelins, la table en littéral
+
+- **Contexte** : étendre la règle aux clés MCP dupliquait la sélection verrouillante et le `UPDATE` de repointage.
+- **Retenu** : `lock_active_orphan_keys(tx, table)` et `repoint_orphans(tx, table, target)`, privées à
+  `companies.rs`, `table: &'static str` (toujours un littéral du module : `users`, `api_keys`, `mcp_keys`) ; la
+  révocation reste celle de chaque dépôt (`api_keys::revoke_in_tx`, `mcp_keys::revoke_in_tx`, verrou optimiste
+  propre). L'ordre des verrous `users → api_keys → mcp_keys` est celui des appels.
+- **Écartée** : un `enum` de table (plus lourd pour trois littéraux d'un même module).
+- **Réversible** : oui.
+
+### C-32-5-47 — Les deux montages d'orphelins, et les consommateurs éprouvés au-delà de la fiche
+
+- **Contexte** : la fiche nomme le montage commun `installations_atteintes.rs:38-41` ; `onboarding_audit_e2e.rs` a
+  **son propre** montage, `make_orphans` (l. 2268-2292 à `d993106c`), que la fiche ne nomme pas. Et les tests (i)/(ii)
+  de l'AC-d2 portent sur la règle et sur `repair_installation_in_tx` : un consommateur (`kesh_seed::reset_demo`,
+  `routes::onboarding`) qui oublierait les deux champs ne rougirait que par les attentes à égalité stricte où il n'y a
+  rien à révoquer (`[]`, `0`).
+- **Retenu** : `make_orphans` orpheline aussi `mcp_keys` (boucle sur les trois tables) ; les tests 6a (remise à zéro
+  d'une installation #528) et 6c (choix de la langue sans société) montent une clé MCP réelle (`generate_mcp_key`)
+  avant le montage, et vérifient qu'elle est révoquée, rattachée, refusée par `authentifier` (401), et qu'elle paraît au
+  détail (`installation.reset`, `company.created`, ce dernier à égalité stricte). Le montage de `bootstrap.rs`
+  (`montage_1`) n'ajoute pas de clé MCP : le démarrage n'écrit les deux champs qu'au journal du serveur
+  (`tracing::info!`, que rien ne capture) et délègue l'entrée d'audit à `repair_installation_in_tx`, éprouvée par
+  `repair_with_only_an_orphan_mcp_key` ; ses attentes strictes reçoivent `[]` et `0`.
+- **Réversible** : oui.
+
+### C-32-5-48 — Le manuel ne renvoie pas à une page des clés MCP qui n'existe pas encore
+
+- **Contexte** : AC-d3 ; la réparation dit des clés d'API qu'« elles paraissent, révoquées, sur la page des clés ».
+  Aucun écran ne liste encore les clés MCP (32-7).
+- **Retenu** : les clés MCP font l'objet d'une phrase à part (« depuis la 0.16.0, les clés du serveur MCP qui la
+  désignaient sont traitées de même : révoquées, puis rattachées à la société »), sans la page ; la remise à zéro dit
+  qu'elle conserve les clés du serveur MCP (« revoyez-les » s'y applique : une clé de démonstration garde son accès en
+  lecture aux livres de production) et que le serveur MCP est **désactivé** ; le détail d'`installation.repaired` porte
+  les deux natures de clé « en deux listes distinctes ». La 32-7, qui écrit l'écran et la section *Le serveur MCP*,
+  reprend ces passages pour y renvoyer (report déjà inscrit à sa section du fichier d'epic).
+- **Réversible** : oui.
+
+### C-32-5-49 — Pas d'entrée de CHANGELOG pour la partie d
+
+- **Contexte** : le CHANGELOG de la 0.16.0 annonce déjà les clés et réglages « du futur serveur MCP » (32-5a). Avant
+  la 32-5c, aucune clé MCP ne se crée hors des tests ; le comportement de la partie d n'a donc aucun effet observable
+  sur une installation.
+- **Retenu** : aucune ligne neuve ; la 32-5c (création des clés) ou la 32-7 (écran) écrira l'entrée qui annonce les clés
+  du serveur MCP, et la conservation à la remise à zéro peut y figurer. Le manuel, lui, est corrigé ici (C-32-5-22),
+  parce qu'il décrit le comportement du code.
+- **Écartée** : une ligne « la remise à zéro conserve les clés MCP » qui annoncerait un effet sur des clés que personne
+  ne peut encore créer.
+- **Réversible** : oui (une ligne à ajouter).
+
+### C-32-5-50 — Trois mutations de plus que la fiche
+
+- **Contexte** : Md1 à Md4 couvrent la partition, la révocation, `is_empty` et le détail de la réparation ; ni l'oubli
+  des champs par `kesh_seed::reset_demo` ou par `routes::onboarding`, ni l'absence de repointage des clés MCP.
+- **Retenu** : md5 (`kesh-seed` sans `mcp_keys_revoked`), md6 (`routes/onboarding.rs` sans `mcp_keys_revoked`), md7
+  (`mcp_keys_repointed` forcé à 0, sans `UPDATE`) — jouées comme Md1 à Md4.
+- **Réversible** : sans objet.
+
+## Développement de la 32-5c (2026-10-25, Opus 5.5, en autonomie)
+
+### C-32-5-51 — Ce que rendent les routes des clés
+
+- **Contexte** : AC-c1 exige « jamais de condensat ni de secret » ; C-32-5-37 rend une clé lisible même si elle porte
+  des portées inconnues de cette version ; la route des clés d'API rend `id`, `name`, `scope`, dates et `version`.
+- **Retenu** : `McpKeyResponse` — `id`, `name`, `scopes` (connues, ordre canonique), `unknownScopes` (ce que la version
+  ne reconnaît pas, jamais accordé), `sendValidation`, `createdByUserId`, `createdAt`, `lastUsedAt`, `revokedAt`,
+  `expiresAt`, `version` ; aucun champ pour le condensat. La création rend ces champs **aplatis** plus `key` (le secret,
+  une seule fois), 201. Le `PUT` de politique rend la clé relue (200). Les dates sont rendues comme celles des clés
+  d'API (`NaiveDateTime`, sans `Z`), par cohérence avec la page des clés d'API que la 32-7 imitera.
+- **Écartées** : taire les portées inconnues (une clé qui n'authentifie plus sans que l'écran dise pourquoi) ; rendre
+  les dates avec `Z` comme `backup-schedule` (deux conventions pour deux sortes de clés).
+- **Réversible** : oui, avant la 32-7.
+
+### C-32-5-52 — Le nom d'une clé, rogné par le prédicat existant de `kesh-core` (B1 = E4)
+
+- **Contexte** : le `CHECK` de `mcp_keys.name` ne voit que `[:space:]` ; la fiche demande de refuser un nom fait de
+  blancs Unicode et de caractères de largeur nulle ; la fiche 32-10a (non fusionnée) prévoit de faire évoluer le
+  prédicat des invisibles de `kesh-core`.
+- **Retenu** : `name.trim_matches(kesh_core::text::is_invisible)` — blancs Unicode (U+00A0, U+3000), contrôles, largeur
+  nulle (U+200B, U+FEFF, U+2060…) retirés **aux bords**, nom refusé s'il ne reste rien ; borne de 255 **caractères**
+  sur le nom rogné. Le prédicat n'est ni recopié ni modifié : son évolution par la 32-10a s'appliquera ici d'elle-même.
+- **Écartées** : `char::is_whitespace` seul (laisse passer U+200B) ; un prédicat local (une seconde définition de
+  « invisible », que le module de `kesh-core` dit unique).
+- **Réversible** : oui.
+
+### C-32-5-53 — Pas de migration pour `CHECK (version >= 1)` sur `mcp_server_settings` (B3)
+
+- **Contexte** : une ligne de réglages à `version = 0` (SQL à la main, sauvegarde fabriquée) serait lue comme existante
+  et rendue `version: 0` ; tout `PUT` à `version: 0` tente alors un `INSERT`, la clé primaire le refuse, et la route
+  rend 409 **à chaque fois**. La contrainte demanderait une migration (🗄️ : fichier neuf, ligne de
+  `migrations.sha384`, squash régénéré, audit d'idempotence, compteurs de P6 84 → 85, gate complet sous l'exception
+  `kesh-db`) dans une partie déclarée « non 🗄️ » au découpage.
+- **Retenu** : **pas de migration** ici. Raisons : l'état n'est atteignable que par une écriture hors de Kesh (aucune
+  route n'écrit `version = 0`, le défaut de la colonne est 1, le dépôt n'incrémente jamais vers 0) ; il ne fausse
+  aucune donnée ni aucun accès (le serveur garde ses réglages lus) ; il se répare par la remise à zéro ou par le SQL qui
+  le crée. La route **ne fait pas confiance** à la version lue pour écrire : c'est le verrou du dépôt qui décide (C-32-5-54),
+  si bien qu'aucun écrasement n'est possible. Écrit au doc-comment de `routes/mcp_server_settings.rs`.
+- **À tracer** : une issue (P3, dette) « `mcp_server_settings.version` sans `CHECK (version >= 1)` » — l'agent n'a pas
+  accès à `gh` ; demandé à l'orchestrateur. La contrainte a sa place dans la prochaine migration qui touche la table
+  (la 32-6 ou la 32-8, déjà 🗄️).
+- **Écartées** : la migration maintenant (coût 🗄️ pour un état fabriqué) ; un `UPDATE … WHERE version = 0` de
+  rattrapage dans la route (un chemin d'écriture de plus, pour le même état).
+- **Réversible** : oui (une migration suivante).
+
+### C-32-5-54 — L'« avant » de l'audit des réglages se lit hors verrou ; aucun pré-contrôle de version à la route
+
+- **Contexte** : `mcp_server_settings.updated` porte l'avant et l'après ; le dépôt ne lit pas sous verrou ; un
+  pré-contrôle « version lue == version présentée » à la route rendrait le verrou du dépôt **invisible aux tests** (il
+  masquerait toute régression de `save_in_tx`, dont Mc4).
+- **Retenu** : la route lit l'avant (`get_or_defaults`), puis appelle `save_in_tx`, qui seul décide du conflit. Une
+  écriture réussie à `version = n` part de la ligne de version `n` ; l'avant lu est donc exact, sauf pour un client qui
+  présenterait une version qu'aucune lecture ne lui a rendue, en concurrence avec un autre écrivain (l'avant serait
+  alors celui d'une version plus ancienne d'un cran). Dit au doc-comment du handler. Mc4 se joue donc **sur le dépôt**.
+- **Écartée** : lire l'avant `FOR UPDATE` (une fonction de dépôt de plus, 🗄️, pour un écart d'audit sur une entrée
+  fabriquée).
+- **Réversible** : oui.
+
+### C-32-5-55 — Les origines : `url`, et « sans chemin » lu sur le texte saisi
+
+- **Contexte** : C-32-5-19 fixe `http(s)://hôte[:port]`, sans chemin, en minuscules ; `url` est déjà une dépendance
+  directe de `kesh-api` (Story 15-13a) ; `Url::parse` rend le chemin `/` pour `http://h` comme pour `http://h/`.
+- **Retenu** : refus si le schéma n'est ni `http` ni `https`, si l'autorité saisie est vide ou contient `/`, `?`, `#`,
+  `@`, `\` ou un blanc, ou si `url` ne l'analyse pas (port hors de 0-65535 compris) ; forme stockée :
+  `url.origin().ascii_serialization()` — minuscules, **port par défaut retiré** (`https://nas.local:443` →
+  `https://nas.local`), nom international en `xn--`. C'est la forme qu'un en-tête `Origin` porte, que la 32-6 comparera.
+- **Écartée** : un analyseur maison de l'autorité (une seconde implémentation d'une notation normée, comme C-32-5-19
+  l'écarte pour les plages).
+- **Réversible** : oui.
+
+### C-32-5-56 — Les bornes des listes
+
+- **Contexte** : AC-c4 — 64 entrées, 255 caractères l'une, doublons retirés.
+- **Retenu** : les 64 entrées se comptent sur la liste **reçue** (avant dédoublonnage) ; les 255 caractères sur l'entrée
+  reçue, avant rognage ; chaque entrée est rognée de ses blancs (`str::trim`) avant analyse ; le dédoublonnage porte sur
+  la forme **canonique** (`10.0.0.1` et `10.0.0.1/32` sont un doublon), la première occurrence gardée, l'ordre conservé.
+  Les plages et les mandataires suivent la même règle (adresse, sinon réseau sans bits d'hôte).
+- **Réversible** : oui.
+
+### C-32-5-57 — Un changement de politique identique s'écrit et se trace
+
+- **Contexte** : `PUT …/send-validation` avec la politique déjà en place.
+- **Retenu** : il s'écrit (version + 1) et s'inscrit au journal (`before == after`), comme tout enregistrement : la
+  route ne compare pas, et le client qui l'envoie reçoit la version nouvelle. Pas de 304 ni de court-circuit.
+- **Réversible** : oui.
+
+### C-32-5-58 — Pas d'entrée de CHANGELOG pour la partie c
+
+- **Contexte** : C-32-5-49 (partie d) : la fonction « serveur MCP » n'est pas encore utilisable ; la 32-5a porte
+  l'entrée ⚠️ de la limite de Q4.
+- **Retenu** : rien au CHANGELOG ici. Les routes existent, mais sans écran (32-7) ni endpoint `/mcp` (32-6) une clé ne
+  sert à rien ; l'entrée « serveur MCP » s'écrit avec la story qui le rend utilisable. `docs/api-external.md` dit dès
+  maintenant qu'une clé `kesh_mcp_…` n'est pas une clé d'API (AC-c7).
+- **Réversible** : oui (une ligne).
+
+### C-32-5-59 — Deux mutations de plus que la fiche ; un test de langue de plus
+
+- **Retenu** : mc7 (le nom rogné par `str::trim` au lieu du prédicat des invisibles — tue B1) et mc8 (origine à chemin
+  admise — tue C-32-5-55) ; un test `mcp_settings_host_bits_refusal_in_german` (`i18n_e2e.rs`) : le refus à deux
+  paramètres rendu en `de-CH`, sans marques d'isolation — G9 ne contrôle que le repli français.
+- **Réversible** : sans objet.
+
+### C-32-5-60 — Les doc-comments `bootstrap.rs:74-75` et `admin.rs:501-502` ne sont pas touchés
+
+- **Contexte** : A1 de la revue de la 32-5d (tracé #738) ; consigne : les corriger **si** la partie touche ces fichiers.
+- **Retenu** : la 32-5c ne touche ni `auth/bootstrap.rs` ni `routes/admin.rs` ; les deux doc-comments restent à #738.
+- **Réversible** : sans objet.
+

@@ -1882,9 +1882,18 @@ async fn grand_livre_les_deux_regimes(pool: MySqlPool) {
 /// Exceptions écrites de la garde (v-1) : (fichier relatif à `src/`, ligne
 /// réduite de ses blancs de tête et de fin). **Vide en 32-3** ; un faux rouge
 /// s'y inscrit, jamais par un motif affaibli.
-const EXCEPTIONS_V1: &[(&str, &str)] = &[];
+const EXCEPTIONS_V1: &[(&str, &str)] = &[
+    // Story 32-6a (AC-a26) — un faux rouge : le chemin du module
+    // `kesh_db::pool` (la fabrique du pool des outils du MCP), non l'accesseur
+    // `pool` d'une poignée.
+    (
+        "lib.rs",
+        "kesh_db::pool::pool_lecture_seule(&state.pool, mcp::MCP_POOL_CONNEXIONS, delai);",
+    ),
+];
 
-/// Les deux fabriques de poignées, au câblage de `lib.rs` (v-2).
+/// Les cinq fabriques de poignées, au câblage de `lib.rs` (v-2) — trois
+/// jusqu'à la 32-8b, qui ajoute les deux poignées des envois.
 const FABRIQUES_V2: &[(&str, &str)] = &[
     (
         "lib.rs",
@@ -1893,6 +1902,24 @@ const FABRIQUES_V2: &[(&str, &str)] = &[
     (
         "lib.rs",
         "services::poignees::Trace::new(self.pool.clone())",
+    ),
+    // Story 32-6a (AC-a26) — la lecture des outils du MCP, sur le pool en
+    // lecture seule, enveloppée une fois dans `LectureOutils` ; Story 32-8b
+    // (AC-B15, point 3) — le pool, lié une fois, est cloné pour la seconde
+    // enveloppe.
+    (
+        "lib.rs",
+        "mcp::LectureOutils::nouvelle(services::poignees::Lecture::new(pool_outils.clone()));",
+    ),
+    // Story 32-8b (AC-B10) — les deux poignées des envois du serveur MCP : la
+    // relecture sur le pool en lecture seule, le dépôt sur le pool ordinaire.
+    (
+        "lib.rs",
+        "let lecture_envois = services::poignees::LectureEnvois::new(pool_outils);",
+    ),
+    (
+        "lib.rs",
+        "let ecriture_envois = services::poignees::EcritureEnvois::new(state.pool.clone());",
     ),
 ];
 
@@ -1910,7 +1937,8 @@ const RESIDUS_VI: &[(&str, &str)] = &[
 ];
 
 const MOTIF_V1: &str = r"\.\s*pool\s*\(|::\s*pool\b";
-const MOTIF_V2: &str = r"\bLecture::new\(|\bTrace::new\(";
+const MOTIF_V2: &str =
+    r"\bLecture::new\(|\bTrace::new\(|\bLectureEnvois::new\(|\bEcritureEnvois::new\(";
 const MOTIF_VI: &str = r"axum|AppState|CurrentUser";
 
 fn racine_src() -> PathBuf {
@@ -2063,6 +2091,12 @@ fn ac10_temoins_des_motifs() {
     assert!(
         !v2.is_match("DetailsTrace::new(p)"),
         "(v-2) : frontière de mot"
+    );
+    // Story 32-8b (AC-B10) : les poignées des envois.
+    assert!(v2.is_match("LectureEnvois::new(p)") && v2.is_match("x::EcritureEnvois::new(p)"));
+    assert!(
+        !v2.is_match("DetailsLectureEnvois::new(p)"),
+        "(v-2) : frontière de mot, poignées des envois"
     );
     let vi = regex::Regex::new(MOTIF_VI).unwrap();
     assert!(
@@ -2532,8 +2566,9 @@ fn ac10_v1_aucun_acces_au_pool_hors_des_services() {
     );
 }
 
-/// AC10 (v-2) — `Lecture::new(`/`Trace::new(` aux deux seules lignes du câblage
-/// de `lib.rs`.
+/// AC10 (v-2) — `Lecture::new(`/`Trace::new(` aux seules lignes du câblage de
+/// `lib.rs` (deux en 32-3 ; trois depuis la 32-6a, la lecture des outils du MCP ;
+/// cinq depuis la 32-8b, les poignées des envois).
 #[test]
 fn ac10_v2_les_poignees_ne_se_fabriquent_qu_au_cablage() {
     let motif = regex::Regex::new(MOTIF_V2).unwrap();
@@ -2555,9 +2590,9 @@ fn ac10_vi_services_sans_axum_ni_app_state() {
         .collect();
     assert_eq!(
         services.len(),
-        11,
-        "services/ : onze fichiers attendus (cinq de la 32-3, trois de la 32-4a, deux de la 32-4b, \
-         cles_mcp.rs de la 32-5b), {:?}",
+        13,
+        "services/ : treize fichiers attendus (cinq de la 32-3, trois de la 32-4a, deux de la 32-4b, \
+         cles_mcp.rs de la 32-5b, serveur_mcp.rs de la 32-6a, envois_mcp.rs de la 32-8b), {:?}",
         services.iter().map(|(f, _)| f).collect::<Vec<_>>()
     );
     assert_eq!(

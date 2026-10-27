@@ -597,18 +597,18 @@ passages du manuel qui les décrivent (C-32-5-22).
 - [x] **T-b4** — mutations Mb1 à Mb6, gates.
 
 ### 32-5c
-- [ ] **T-c0** — recontrôle des faits 4, 5, 12, 13, 18 ; 32-5d fusionnée (ordre imposé, C-32-5-27).
-- [ ] **T-c1** — routes, gardes, validation (AC-c1 à AC-c4) ; `ipnet` en dépendance directe (même version).
-- [ ] **T-c2** — audit, libellés, quatre locales (AC-c5) ; AC-c6.
-- [ ] **T-c3** — documentation (AC-c7).
-- [ ] **T-c4** — mutations Mc1 à Mc6, gates.
+- [x] **T-c0** — recontrôle des faits 4, 5, 12, 13, 18 ; 32-5d fusionnée (ordre imposé, C-32-5-27).
+- [x] **T-c1** — routes, gardes, validation (AC-c1 à AC-c4) ; `ipnet` en dépendance directe (même version).
+- [x] **T-c2** — audit, libellés, quatre locales (AC-c5) ; AC-c6.
+- [x] **T-c3** — documentation (AC-c7).
+- [x] **T-c4** — mutations Mc1 à Mc6, gates.
 
 ### 32-5d
-- [ ] **T-d0** — recontrôle des faits 8, 9, 17 ; 32-5b fusionnée.
-- [ ] **T-d1** — remise à zéro (AC-d1).
-- [ ] **T-d2** — principaux orphelins, quatre consommateurs, montage, textes de l'ordre des verrous (AC-d2).
-- [ ] **T-d3** — manuel, PDF (AC-d3).
-- [ ] **T-d4** — mutations Md1 à Md4, gates.
+- [x] **T-d0** — recontrôle des faits 8, 9, 17 ; 32-5b fusionnée.
+- [x] **T-d1** — remise à zéro (AC-d1).
+- [x] **T-d2** — principaux orphelins, quatre consommateurs, montage, textes de l'ordre des verrous (AC-d2).
+- [x] **T-d3** — manuel, PDF (AC-d3).
+- [x] **T-d4** — mutations Md1 à Md4, gates.
 
 ## Tests et mutations prévus
 
@@ -941,6 +941,10 @@ développement fait chaque correction **à l'étape 0**, et la déclare au Chang
 - **32-5a** : Opus 5.5 (Claude Code), en autonomie, worktree `kesh-32-5`, départ `deb3b250`.
 - **32-5b** : Opus 5.5 (Claude Code), en autonomie, worktree `kesh-32-5b`, branche `story/32-5b`, départ `b723e3d9`
   (32-5a, 32-4a et 32-4b fusionnées).
+- **32-5d** : Opus 5.5 (Claude Code), en autonomie, worktree `kesh-32-5d`, branche `story/32-5d`, départ `d993106c`
+  (32-5a et 32-5b fusionnées).
+- **32-5c** : Opus 5.5 (Claude Code), en autonomie, worktree `kesh-32-5c`, branche `story/32-5c`, départ `fa5b3468`
+  (32-5a, 32-5b et 32-5d fusionnées).
 
 ### Statut des parties
 
@@ -951,7 +955,14 @@ développement fait chaque correction **à l'étape 0**, et la déclare au Chang
   sur #738), gate complet et E2E complet au dernier commit de code `e64ef129`. Clé `32-5b-authentification-cle-mcp` à
   `done` dans `sprint-status.yaml`. *(Statut au développement, le 2026-10-25 : `review`, dernier commit de code
   `3afa49e8`.)*
-- **32-5d, 32-5c** — `ready-for-dev`, dans l'ordre a → b → d → c (C-32-5-27).
+- **32-5d — `done`** (2026-10-25) : revue de code terminée en P1 (0 finding au-dessus de LOW ; LOW tracés sur #738),
+  gate complet et E2E complet au dernier commit de code `f123f12d`. Clé `32-5d-cle-mcp-principal` à `done` dans
+  `sprint-status.yaml`. *(Statut au développement, le 2026-10-25 : `review` — annoté au développement de la 32-5c.)*
+- **32-5c — `done`** (2026-10-25) : revue de code terminée en P2 ciblée (0 finding au-dessus de LOW ; LOW tracés sur
+  #738, défaut d'`api_keys.rs` sur #755), gate complet (4113) et E2E complet au dernier commit de code `277b7b88` ;
+  11 mutations jouées, 11 tuées. Clé `32-5c-routes-gestion-cles-mcp` à `done` dans `sprint-status.yaml`. *(Statut au
+  développement, le 2026-10-25 : `review`, dernier commit de code `30989e3e` ; au départ : `ready-for-dev`, après la
+  32-5d, C-32-5-27.)*
 
 ### Étape 0 — recontrôle (ligne lue citée)
 
@@ -1049,6 +1060,95 @@ Points de *À recontrôler à l'étape 0 du développement* :
   le dépôt, non le service).
 - **Points P7-6, P8-1 à P8-4** : propres à la partie a (manuel, fiche d'epic, registre), traités à son étape 0 ; aucun
   ne concerne la partie b.
+
+#### 32-5d (le 2026-10-25, contre `d993106c`)
+
+`git log -1` au départ : `d993106c Story 32-5b : l'authentification par clé MCP (refs #723) (#752)` — 32-5a (`b723e3d9`)
+et 32-5b fusionnées. Les lignes ci-dessous sont celles de `d993106c` (`git show d993106c:<fichier> | sed -n …`) ; la fiche
+citait `e59d63e8`, et la 32-5a a déplacé plusieurs passages.
+
+- **Fait 8** (`backup.rs`) : doc de `RESET_PRESERVED_TABLES` l. 105-117 (la fiche : 99-110), dont l. 111 « les clés
+  d'API — un principal n'est pas une donnée de la société » ; la liste l. 118-125, **six** noms (`api_keys`,
+  `companies`, `onboarding_state`, `password_reset_tokens`, `refresh_tokens`, `users`) ; `reset_cleared_tables` l. 136 ;
+  « les six tables » l. 855 (la fiche : 848-851) ; règle 4, doc l. 916-919 « sont exactement `users` et `api_keys` »,
+  assertion l. 1039-1041 `BTreeSet::from(["api_keys", "users"]),` (la fiche : 1025-1036). `mcp_keys` est bien à
+  `TABLES_TO_TRUNCATE` depuis la 32-5a (l. 78, enfant de `companies` et `users`) : la remise à zéro la **vide** à
+  `d993106c`, ce que la fiche annonçait (« jusqu'à 32-5d, la remise à zéro vide `mcp_keys` »). `kesh-seed` : toujours
+  aucun test de base (fait 8, inchangé).
+- **Fait 9** (`companies.rs`) : `RevokedApiKey` l. 247, `OrphanPrincipals` l. 257, `is_empty` l. 269-271
+  (`self.user_ids.is_empty() && self.api_keys_revoked.is_empty() && self.api_keys_repointed == 0`) ;
+  `reattach_orphan_principals_in_tx` l. 308 (la fiche : 278-385), ordre des verrous l. 306-307 « `users` puis
+  `api_keys` » ; les **quatre** consommateurs : `companies.rs:682-683`, `kesh-seed/src/lib.rs:646-647`,
+  `routes/onboarding.rs:1245-1246`, `auth/bootstrap.rs:432-433` (inchangés). Tests à égalité stricte :
+  `onboarding_audit_e2e.rs:2090-2091` (la fiche : 2055-2070) et `:2491-2492` (6c ; la fiche : 2460-2472), lectures de
+  champ `:2385-2388`, `:2430` ; `bootstrap.rs:1237-1238`, `:1307`, `:1336` (inchangés) ;
+  `companies_repository.rs:619-862` (inchangés). Montage commun `installations_atteintes.rs:39-40` (la fiche : 38-41).
+  **Écart non nommé par la fiche** : `onboarding_audit_e2e.rs` a **son propre** montage d'orphelins, `make_orphans`
+  (l. 2268-2292, `UPDATE api_keys` l. 2286), distinct de celui de `installations_atteintes.rs` — traité de même
+  (C-32-5-47). Ordre des verrous écrit à : `companies.rs:563`, `kesh-seed/src/lib.rs:489`, `bootstrap.rs:11-12`,
+  `routes/admin.rs:510-511`, et **`MULTI-TENANT-SCOPING-PATTERNS.md:339-340`** (la fiche : 327-328).
+- **Fait 17** (manuels, inchangés depuis la 32-5a sur ces passages) : `admin-manual.tex:1414` « Elle \textbf{conserve}
+  les utilisateurs et les clés d'API » ; `:1416` « \textbf{révoque} les clés d'API qui la désignaient » ; **`:2467`**
+  (la fiche : 2461) « Les clés d'API qui la désignaient sont \textbf{révoquées} » ; `user-manual.tex:190` « \textbf{conserve}
+  les utilisateurs et les clés d'API » ; **`:3204`** (la fiche : 3202) « les utilisateurs ou clés d'API rattachés à la
+  société » ; **`:3213`** (la fiche : 3209-3212) « les clés d'API révoquées ». Le manuel ne porte encore aucune section
+  *Le serveur MCP* (32-7) : `grep -n 'MCP' admin-manual.tex` → l. 2230, 2237, 2249, 2324 (sauvegarde, 32-5a) et 2925.
+- **32-5b** : `mcp_keys::revoke_in_tx(tx, company_id, id, version)` existe (`repositories/mcp_keys.rs:275`, verrou
+  optimiste `revoked_at IS NULL`) ; `find_active_auth_by_key_hash` joint `companies` **et** exige
+  `u.company_id = k.company_id` (C-32-5-43) : une clé repointée **avec** son créateur rattaché à la même société
+  reste compatible avec la règle des orphelins, qui rattache utilisateurs et clés à la même cible.
+- **§ *À recontrôler à l'étape 0 du développement*** : P7-6, P8-1 à P8-4 et `user-manual.tex:1914` sont propres à la
+  partie a, traités à son étape 0 (ci-dessus) ; **aucun ne concerne la partie d**. § *Pour la 32-5b* et § *Pour la
+  32-5c* : rien pour la partie d (E3, sur `EXEMPT_MIGRATIONS`, ne la concerne pas : la 32-5d ne touche pas
+  `post_restore.rs`). Aucune section « Pour la 32-5d » n'existe.
+
+#### 32-5c (le 2026-10-25, contre `fa5b3468`)
+
+`git log -1` au départ : `fa5b3468 Story 32-5d : remise à zéro et réparation — les clés MCP conservées, révoquées si
+orphelines ; manuels (refs #723) (#753)` — 32-5a, 32-5b et 32-5d fusionnées (ordre a → b → d → c tenu). Les lignes
+ci-dessous sont celles de `fa5b3468` ; la fiche citait `e59d63e8`.
+
+- **Fait 4** (`routes/api_keys.rs`, inchangé) : `:95` `pub(crate) fn ensure_not_pat(current_user: &CurrentUser) ->
+  Result<(), AppError> {` ; `:104` `pub async fn list(` ; `:116` `pub async fn create(` ; `:205` `pub async fn revoke(` ;
+  montées `lib.rs:808` `"/api/v1/settings/api-keys",` et `:812` (la fiche : 803-813).
+- **Fait 5** : marqueurs `lib.rs:222` `// KESH-ADMIN-ROUTES-BEGIN` et `:403` `// KESH-ADMIN-ROUTES-END` (la fiche :
+  221, 402) ; `:225` « exige exactement 33 (Story 31-1c) » ; `admin_pat_denied_e2e.rs:46` « Les **33 constructeurs de
+  méthode** », et les « 33 » de `:323`, `:382`, `:409`, `:769` (lignes de la fiche, inchangées) ; doc `:795-797` « Les 8
+  `get` … les 25 méthodes mutantes … ces vingt-cinq-là » ; `:831` `// (5, 23) → (8, 25) : Story 31-1c` ; `:834`
+  `(8, 25),` ; `:885` `discriminating, 6,`. `audit_route_registry.rs` : doc `:27` « les 124 routes », `:31-32` « (124
+  routes) … (127) » ; `:768` `assert_eq!(LIB_ROUTES.len(), 124, …` ; `:771` `traced, 118,` ; `:795` `127,` ;
+  `:1107` `rejouees, 25,` ; `:1118` `exemptees, 3` ; `:1120` `sans_ecriture, 99,` (message « 98 routes de lib.rs ») ;
+  `:1129` `assert_eq!(tout.len(), 127);`. Les quatre routes mutantes neuves n'écrivent pas au journal comptable :
+  classe `SansEcritureAuJournal` (99 → 103), `rejouees` 25 et `exemptees` 3 inchangés.
+- **Fait 12** : `audit_labels.rs:26` `"api_key",`, `:79-80` `"api_key.created",` `"api_key.revoked",` ;
+  `fr-CH/messages.ftl:2731-2732` (inchangés) ; manuel d'administration **`:2935`** (la fiche : 2929) « 108 des 114
+  routes à verbe mutant au moment de la rédaction » et « 108 + 4 + 2 = 114 » — périmé avant même cette partie (le
+  registre comptait déjà 118 tracées sur 124 à `fa5b3468`).
+- **Fait 13** (`routes/backup_schedule.rs`) : `:128` `pub async fn update_backup_schedule(` (la fiche : 124-149) ;
+  `:141` `"admin-backup-schedule-error-out-of-domain",` ; G9 `textes_coherents.rs:822-823` (fichier → clé, 1 site).
+- **Fait 18** : `Cargo.lock:1872-1873` `name = "ipnet"` / `version = "2.12.0"` ; `git grep -n ipnet fa5b3468 --
+  'crates/*/Cargo.toml' | wc -l` → 0.
+- **Q11** (`lib.rs:147-150`, `:158-161`) : « réalisés par la 32-6, sans second compte MariaDB » et « la lecture seule du
+  MCP (Q11, tranchée le 2026-10-24, réalisée par la 32-6) » — **déjà corrigés par la 32-4b, rien refait** (consigne de
+  l'orchestrateur ; l'AC-c2 les mentionnait encore).
+- **§ *Pour la 32-5c*** :
+  - **E5** (`docs/api-external.md:29`) : « Une clé Kesh a toujours la forme **`kesh_pat_`** » — réécrit (AC-c7) ; `:183`
+    (« Il n'existe pas de serveur MCP « Kesh-natif » en v0.2 ») et `:829` (« Hors périmètre (non planifié pour v0.2) :
+    … serveur MCP Kesh-natif ») **relus, laissés** : AC-c7 les réserve à la 32-11, et aucun endpoint `/mcp` n'existe
+    avant la 32-6.
+  - **B1 = E4** : traité par `validate_name` (C-32-5-52), avec ses cas U+00A0, U+3000, U+200B, U+FEFF, U+2060.
+  - **B3** : décidé — **pas de migration** (C-32-5-53), une issue demandée à l'orchestrateur.
+  - **E3** : `EXEMPT_MIGRATIONS` non touché par la 32-5c — relu, constaté (les cinq justifications `Durable` « sans
+    objet depuis 20261025000001 » n'ont toujours pas le marqueur `Hors fenêtre`), **reporté** à la prochaine story
+    qui touche le registre.
+  - **B2** (`cles_mcp_e2e.rs`) et **A2** (`services_motif.rs`) : fichiers non touchés — reportés tels quels.
+- **A1 de la 32-5d** (`bootstrap.rs:74-75` « clés d'API orphelines révoquées » ; `admin.rs:501-502` « des utilisateurs
+  et des clés d'API désignant une société effacée ») : fichiers non touchés par la 32-5c, **non corrigés**, restent à
+  #738 (C-32-5-60).
+- **Prédicat des invisibles** : `kesh-core/src/text.rs:33` `pub fn is_invisible(c: char) -> bool {` — employé tel quel
+  (C-32-5-52), non réécrit (la 32-10a le fera évoluer).
+- **`url`** : déjà dépendance directe (`crates/kesh-api/Cargo.toml`, Story 15-13a) — employé pour les origines
+  (C-32-5-55), aucun paquet neuf.
 
 ### Completion Notes List
 
@@ -1228,6 +1328,203 @@ ajoutés). `Portee::` dans `crates/` : 43 occurrences sur 41 lignes → **39 sur
 `services_rollout.rs` 16 → 14, `src/` 14 → 14, les cinq autres dans les deux fichiers de tests neufs ou complétés).
 Fichiers de `services/` : 10 → 11. Aucune migration, aucun fichier de `docs/` ni de `frontend/`.
 
+#### 32-5d
+
+- **Remise à zéro (AC-d1)** : `mcp_keys` entre à `RESET_PRESERVED_TABLES` (sept tables, ordre alphabétique tenu) ; la
+  doc dit que `mcp_server_settings` reste vidée — serveur **désactivé** après une remise à zéro (C-32-5-11) ; règle 4
+  du test de partition : `{api_keys, mcp_keys, users}` (doc et message) ; « six » → « sept » au test 10. Test neuf
+  `reset_keeps_mcp_keys_that_authenticate_and_disables_the_server` (`onboarding_audit_e2e.rs`) : une clé MCP réelle
+  (`generate_mcp_key`) authentifie avant (contrôle de montage) **et après** `reset_demo` — même `cle_id`, même société,
+  même créateur, même canal —, `mcp_server_settings` passe d'une ligne activée à zéro ligne, `get_or_defaults` rend
+  `enabled = false`. Le test de la remise à zéro (`reset_clears_every_company_table_and_traces_itself`) : `mcp_keys`
+  rejoint les deux listes d'instantanés, le détail d'`installation.reset` porte `mcp_keys_revoked: []` et
+  `mcp_keys_repointed: 0`, et deux assertions de plus (`mcp_keys` inchangée en nombre, `mcp_server_settings` à 0).
+- **Principaux orphelins (AC-d2)** : `reattach_orphan_principals_in_tx` traite les clés MCP après les clés d'API
+  (verrou, révocation par `mcp_keys::revoke_in_tx`, repointage) par deux aides privées communes aux trois tables
+  (C-32-5-46) ; `RevokedKey` et ses alias `RevokedApiKey`/`RevokedMcpKey` (C-32-5-45) ; `OrphanPrincipals` gagne
+  `mcp_keys_revoked` et `mcp_keys_repointed`, pris par `is_empty`. Les **quatre** consommateurs écrivent toujours les
+  deux champs (`installation.repaired`, `installation.reset`, `company.created`, le journal du serveur au démarrage).
+  Doc-comments et textes de l'ordre des verrous `users → api_keys → mcp_keys` : `companies.rs` (doc de la règle et
+  étape 1 de la réparation), `kesh-seed/src/lib.rs`, `bootstrap.rs` (doc du module), `routes/admin.rs` (commentaire de
+  l'import), `routes/onboarding.rs` (commentaire), `MULTI-TENANT-SCOPING-PATTERNS.md:339-340`. Montages : le commun
+  (`installations_atteintes.rs`) **et** `make_orphans` d'`onboarding_audit_e2e.rs` (C-32-5-47) orphelinent `mcp_keys`.
+  Tests : (i) `reattach_orphans_with_a_target_revokes_then_repoints_mcp_keys` et
+  `reattach_orphans_without_target_only_revokes_mcp_keys` (clés MCP active, déjà révoquée et saine à côté des
+  orphelins d'API ; l'authentification au dépôt refusée pour l'orpheline, admise pour la saine — contrôle positif) ;
+  (ii) `repair_with_only_an_orphan_mcp_key` (la clé MCP seule orpheline : entrée `installation.repaired` à égalité
+  stricte) ; `reattach_without_orphans_writes_nothing` instantane aussi `mcp_keys` ; les tests 6a et 6c montent une
+  clé MCP réelle, la voient révoquée, rattachée, refusée par `authentifier` (401) et nommée au détail. Attentes strictes
+  complétées : `bootstrap.rs` (trois tests), `onboarding_audit_e2e.rs` (remise à zéro, 6c).
+- **Manuels (AC-d3)** : `admin-manual.tex` — réinitialisation (l. 1414 : conserve aussi les clés du serveur MCP,
+  « revoyez-les », une clé de démonstration garde son accès en lecture aux livres de production, serveur MCP
+  désactivé), défaut #528 (l. 1416), § *Réparation de l'installation* (l. 2467, et son détail l. 2472 : deux listes
+  distinctes) ; `user-manual.tex` — l. 190, l. 3204-3205, l. 3214-3215. Aucune phrase ne renvoie à une page des clés MCP
+  (C-32-5-48). PDF régénérés par `make fr` sous le verrou (`325d-make-fr.log`) ; le PDF de la brochure, régénéré sans
+  changement de source, est restauré. Contrôle par grep, `.tex` et PDF aplati (`pdftotext … | tr '\n' ' ' | tr -s ' '`),
+  sorties :
+  - PDF admin : « conserve les utilisateurs, les clés d’API et, depuis la 0.16.0, les clés du serveur MCP » ; « garde son
+    accès en lecture aux livres de production » ; « le serveur MCP est désactivé » ; « les clés du serveur MCP qui la
+    désignaient sont traitées de même : révoquées, puis rattachées à la société » ; « les clés du serveur MCP qui la
+    désignaient le sont de même — révoquées, puis rattachées à la société. Recréez » ; « en deux listes distinctes » ;
+  - PDF utilisateur : « conserve les utilisateurs, les clés d’API et les clés du serveur MCP ; elle désactive le serveur
+    MCP » ; « utilisateurs, clés d’API ou clés du serveur MCP rattachés à la société » ; « les clés d’API et les clés du
+    serveur MCP révoquées » ;
+  - absences (PDF aplatis) : « conserve les utilisateurs et les clés d.API » → 0 (admin), 0 (utilisateur) ;
+    « utilisateurs ou clés d.API rattachés » ou « les clés d.API révoquées et les sociétés » → 0 (utilisateur) ;
+  - `.tex` : `grep -noE "clés du serveur MCP[^.]{0,80}" admin-manual.tex` → l. 1414, 1416, 2467 ;
+    `grep -noE "serveur MCP[^.]{0,60}" user-manual.tex` → l. 190, 3204, 3214.
+- **CHANGELOG** : non touché (C-32-5-49).
+
+**Gates (32-5d)** — journaux `kesh-gate-logs/325d-*` :
+
+- **ciblé** pendant l'itération : `cargo fmt --check` ; `cargo clippy --workspace --all-targets -D warnings` — un
+  premier rouge (`clippy::doc_lazy_continuation`, un item « 2 bis » de liste de doc, `325d-clippy-1.log`), corrigé,
+  puis vert (`325d-clippy-2.log`) ; nextest sur `companies_repository`, `onboarding_audit_e2e`, `admin_full_import_e2e`,
+  les tests unitaires de `kesh-db` et de `kesh-seed`, et ceux de `bootstrap` de `kesh-api` : **598 réussis**
+  (`325d-cible-1.log`) ;
+- **gate complet** au dernier commit de code `f123f12d` (lancé à `20cbf50a`, qui n'ajoute que les manuels),
+  `kesh_325d` remise à zéro juste avant (base, migrations, seed) : `scripts/test-fast.sh --ci` — garde des droits
+  conforme, `cargo fmt --check`, `cargo clippy --all-targets -D warnings`, nextest **4089 réussis, 7 ignorés**
+  (`325d-gate-complet.log`) ; 4085 au dernier gate de la 32-5b, + 4 tests neufs. `cargo build --workspace
+  --all-targets` n'a pas tourné à part (clippy `--all-targets` et la compilation de nextest le couvrent). Exception
+  `kesh-db` tenue ;
+- **frontend** : non touché ; **build seul** (`npm run build`) vert (`325d-front-build.log`) ;
+- **E2E complet** : `kesh_e2e_325d` reconstruite (base, migrations, seed `scripts/seed-dev-db.sql`), dossier neuf
+  `/tmp/kesh-e2e-325d/{inbox,documents,backup}`, binaire `target/debug/kesh-api` reconstruit (08:03:43) après le dernier
+  commit de code (07:32:43), aucun changement de `crates/` ni de `frontend/` entre `f123f12d` et `20cbf50a`
+  (`git diff --stat` vide) ; processus vérifié (`/proc/1345872/exe` → le binaire du worktree), port 3329, `/health`
+  `{"db":true,…,"status":"ok","version":"0.15.0"}` ; runner avec `KESH_INBOX_DIR` et `KESH_DOCUMENTS_DIR` ; **315 passés,
+  7 échecs, 17 ignorés** (12,8 min, `325d-e2e.log`) ; les 7 échecs sont les **7 KF-029** (`mode-expert.spec.ts:26`,
+  `:41` ; `onboarding-path-b.spec.ts:65`, `:92` ; `onboarding.spec.ts:57`, `:77`, `:150`), jugés contre
+  `docs/testing.md` § *Les échecs attendus* ; KF-052 ne s'est pas déclenchée. Backend arrêté par son PID.
+
+**Mutations (32-5d)** — `325d-mutations.log` (et `325d-mut-<id>.log` par mutation), une à la fois, motif vérifié
+**unique** (compté avant écriture), seuls les binaires concernés relinkés (`-E` sur `companies_repository`,
+`onboarding_audit_e2e`, les tests `bootstrap` de `kesh-api`, et pour Md1 les tests de partition de `kesh-db`),
+restauration `git checkout --` puis `touch`, diff résiduel nul vérifié après chacune : **7 jouées, 7 tuées**.
+
+| # | Mutation | Rougit |
+|---|---|---|
+| Md1 | `mcp_keys` retirée de `RESET_PRESERVED_TABLES` | `reset_partition_is_guarded_by_the_schema`, `reset_keeps_mcp_keys_that_authenticate_and_disables_the_server`, `reset_clears_every_company_table_and_traces_itself`, `reset_reattaches_the_orphans_of_a_528_installation` |
+| Md2 | `mcp_keys::revoke_in_tx` retiré de la règle | `reattach_orphans_with_a_target_revokes_then_repoints_mcp_keys`, `reattach_orphans_without_target_only_revokes_mcp_keys`, `repair_with_only_an_orphan_mcp_key`, `reset_reattaches_…`, `language_without_company_reattaches_and_revokes` |
+| Md3 | `is_empty` ignore les clés MCP | `repair_with_only_an_orphan_mcp_key` |
+| Md4 | `repair_installation_in_tx` sans `mcp_keys_revoked` au détail | `repair_with_only_an_orphan_mcp_key`, et trois tests de `bootstrap` (`startup_repairs_orphan_principals`, `…_with_two_companies_…`, `…_without_any_company_…`) |
+| md5 | `kesh_seed::reset_demo` sans `mcp_keys_revoked` (C-32-5-50) | `reset_clears_every_company_table_and_traces_itself`, `reset_reattaches_the_orphans_of_a_528_installation` |
+| md6 | `routes::onboarding` sans `mcp_keys_revoked` | `language_without_company_reattaches_and_revokes` |
+| md7 | clés MCP non repointées (`mcp_keys_repointed = 0`, sans `UPDATE`) | `reattach_orphans_with_a_target_…_mcp_keys`, `repair_with_only_an_orphan_mcp_key`, `reset_reattaches_…`, `language_without_…` |
+
+Non jouées, déclarées : l'ordre des verrous (raisonné, non testé — *Ce que les gardes ne voient pas*) ; le journal du
+serveur au démarrage (`tracing::info!`, aucune capture de `tracing` dans le dépôt) ; une mutation de
+`reset_partition_covers_the_canonical_list_in_order` (vraie par construction, sa doc le dit).
+
+**Décomptes** (recomptés, périmètre `d993106c..f123f12d`, code seul) : **10 fichiers** modifiés (`git diff
+--name-status`, hors la fiche) — 9 sous `crates/` (dont 4 de `kesh-db`) et `docs/MULTI-TENANT-SCOPING-PATTERNS.md` ;
+aucun fichier neuf. **4 tests neufs** (`grep -cE '#\[(sqlx::|tokio::)?test'` aux deux bornes) :
+`companies_repository.rs` 31 → 34, `onboarding_audit_e2e.rs` 47 → 48, `bootstrap.rs` 20 → 20, `backup.rs` 28 → 28 —
+cohérent avec 4085 → 4089 au gate complet. Commit des manuels (`f123f12d..20cbf50a`) : 4 fichiers
+(`{admin-manual,user-manual}.{tex,pdf}`).
+
+#### 32-5c
+
+- **Routes (AC-c1)** : `routes/mcp_keys.rs` — `list_mcp_keys`, `create_mcp_key` (201, secret une fois),
+  `revoke_mcp_key` (204, verrou optimiste, 404 hors société), `set_mcp_key_send_validation` (200, la clé relue) ;
+  `routes/mcp_server_settings.rs` — `get_mcp_server_settings` (défauts et `version: 0` sans ligne, aucune écriture),
+  `update_mcp_server_settings` (remplacement complet, verrou du dépôt). Réponses : C-32-5-51. Les six couples dans le
+  bloc `admin_routes` de `lib.rs`, au-dessus des deux couches ; aucun handler ne porte `ensure_not_pat`.
+- **Gardes (AC-c2)** : `admin_pat_denied_e2e.rs` — `ADMIN_COUPLES` 33 → **39**, doc et commentaires « 33 » → 39,
+  `(8, 25)` → **`(10, 29)`** avec sa ligne de généalogie, doc « Les 10 `get` … les 29 … vingt-neuf-là »,
+  `discriminating` 6 → **8** ; `lib.rs` « exige exactement 39 (Story 32-5c) ». `audit_route_registry.rs` — quatre
+  entrées `Traced`/`SansEcritureAuJournal` ; `LIB_ROUTES` 124 → **128**, registre 127 → **131** (doc d'en-tête, assertion,
+  `tout.len()`), `traced` 118 → **122** avec sa généalogie, `sans_ecriture` 99 → **103** (« 102 routes de lib.rs »),
+  `rejouees` 25 et `exemptees` 3 inchangés. Comptable, clé MCP et absence d'authentification, sur les six couples :
+  `c2_a_comptable_an_mcp_key_and_no_authentication_are_refused_everywhere` (avec un témoin Administrateur).
+- **Validation (AC-c3, AC-c4)** : nom rogné par `kesh_core::text::is_invisible` (C-32-5-52), portées strictes et
+  normalisées (`McpScopes::parse`), politique exacte, expiration future, version ≥ 1 ; plages et mandataires par
+  `IpAddr` puis `ipnet::IpNet`, bits d'hôte refusés avec la forme attendue ; origines par `url` (C-32-5-55) ; bornes et
+  doublons (C-32-5-56). 12 messages traduits (`t`/`t_args`), repli égal à fr-CH : G9 étendue à deux fichiers.
+  `ipnet = "2.12"` en dépendance directe de `kesh-api` ; `Cargo.lock` : une ligne (`"ipnet"` aux dépendances de
+  `kesh-api`), version 2.12.0 inchangée. B3 : pas de migration (C-32-5-53) ; l'« avant » de l'audit lu hors verrou
+  (C-32-5-54).
+- **Audit (AC-c5)** : `mcp_key.created` (nom, portées, politique), `mcp_key.revoked` (idem),
+  `mcp_key.send_validation_changed` (nom, avant, après), `mcp_server_settings.updated` (avant, après ; `entity_id` = la
+  société) — chacune dans la transaction de son écriture ; types `mcp_key`, `mcp_server_settings` et les quatre actions
+  à `audit_labels.rs` (triés) ; 6 libellés par locale. Le test cherche le jeton, son condensat et le préfixe dans
+  chaque détail, puis dans tout `audit_log`.
+- **AC-c6** : `c1_c6_a_created_key_authenticates_with_its_scopes_and_policy` — la clé créée par la route authentifie
+  (même id, société, créateur, portées `{books:read, invoices:read}` après doublon, `required`), puis `exempt` après le
+  `PUT`, puis 401 après le `DELETE` ; versions périmées et clé révoquée → 409.
+- **Documentation (AC-c7)** : `docs/api-external.md` § *Format de la clé* — « Une clé d'API a toujours la forme
+  `kesh_pat_` … » et un avertissement : une clé `kesh_mcp_…` n'est pas une clé d'API, `/api/v1` la refuse en 401 ;
+  § 6.4 et § 9 relus, laissés (32-11). Manuel d'administration `:2935` : « 122 des 128 routes à verbe mutant » et
+  « 122 + 4 + 2 = 128 ». **Commande du recompte** : `sed -n '307,490p' crates/kesh-api/tests/audit_route_registry.rs |
+  grep -cE '^\s+\("(post|put|delete|patch)",'` → 127, plus l'entrée écrite sur plusieurs lignes
+  (`journal_entries::reverse_journal_entry_at_next_fiscal_year_start`, `Traced`) → **128** ; même filtre suivi de
+  `grep -c ', Traced, '` → 121 + 1 = **122** ; `', Exempt('` → 4 ; `', NoMatter('` → 2 ; confirmés par
+  `the_registry_partition_is_what_the_story_declares` (vert). PDF régénéré par `make fr` sous le verrou
+  (`325c-make-fr.log`) ; les PDF du manuel utilisateur et de la brochure, régénérés sans changement de source, sont
+  **restaurés** (`git checkout --`). PDF aplati (`325c-admin-manual-aplati.txt`, `pdftotext … | tr '\n' ' ' | tr -s
+  ' '`) : présents « audit_log — 122 des 128 routes à verbe mutant au moment de la rédactio[n] » et
+  « 122 + 4 + 2 = 128 » ; absents « 108 des 114 » et « 108 + 4 + 2 » (`grep -oE` → rien).
+- **CHANGELOG** : non touché (C-32-5-58).
+- ⚠️ **Écart à la consigne, déclaré** : les trois fichiers neufs (`routes/mcp_keys.rs`, `routes/mcp_server_settings.rs`,
+  `tests/mcp_admin_routes_e2e.rs`) ont été créés par l'outil **Write** (création de fichier, aucune commande du shell) ;
+  toutes les modifications de fichiers existants l'ont été par l'outil Edit ; `cargo fmt --all` a reformaté les fichiers
+  neufs. Les mutations seules ont été écrites par `perl -pi`, puis restaurées.
+
+**Gates (32-5c)** — journaux `kesh-gate-logs/325c-*` :
+
+- **ciblé** pendant l'itération : `cargo fmt --all`, `cargo clippy -p kesh-api --all-targets -D warnings` vert ;
+  nextest sur `mcp_admin_routes_e2e`, `admin_pat_denied_e2e`, `audit_route_registry`, `audit_label_registry`,
+  `textes_coherents`, `i18n_e2e`, `audit_log_e2e`, les tests unitaires `mcp` de `kesh-api` et le paquet `kesh-i18n` :
+  premier run **87 réussis, 2 échecs** (`325c-cible-1.log` : `details_json` lu en `BLOB`, corrigé par
+  `CAST(… AS CHAR)` dans deux requêtes du test), second run **142 réussis** (`325c-cible-2.log`) ;
+- **gate complet** au dernier commit de code `30989e3e` (lancé à `4f2bd87e`, qui n'ajoute que `docs/`), `kesh_325c`
+  remise à zéro juste avant (base, migrations, seed) : `scripts/test-fast.sh --ci` — garde des droits conforme,
+  `cargo fmt --check`, `cargo clippy --all-targets -D warnings`, nextest **4111 réussis, 7 ignorés**
+  (`325c-gate-complet.log`) ; 4089 au dernier gate de la 32-5d, + 22 tests neufs. `cargo build --workspace
+  --all-targets` n'a pas tourné à part (clippy `--all-targets` et la compilation de nextest le couvrent) ;
+- **frontend** (aucun fichier de `frontend/` touché ; les quatre catalogues le sont, d'où la série entière, comme le
+  demande la fiche) : `npm run check` 0 erreur, 29 avertissements préexistants ; `lint-i18n-ownership` vert ;
+  `test:unit` 163 fichiers, **1939 tests** verts ; `npm run build` vert (`325c-front-gates.log`) ;
+- **E2E complet** : `kesh_e2e_325c` reconstruite (base, migrations, seed `scripts/seed-dev-db.sql`), dossier neuf
+  `/tmp/kesh-e2e-325c/{inbox,documents,backup}`, binaire `target/debug/kesh-api` reconstruit (09:51:57) après le dernier
+  commit (09:43:44), aucun changement de `crates/` ni de `frontend/` entre `30989e3e` et `4f2bd87e` ; processus vérifié
+  (`/proc/2207864/exe` → le binaire du worktree), port 3330, `/health`
+  `{"db":true,…,"status":"ok","version":"0.15.0"}` ; runner avec `KESH_INBOX_DIR`, `KESH_DOCUMENTS_DIR` et
+  `KESH_ADMIN_BACKUP_DIR` ; **315 passés, 7 échecs, 17 ignorés** (12,9 min, `325c-e2e.log`) ; les 7 échecs sont les
+  **7 KF-029** (`mode-expert.spec.ts:26`, `:41` ; `onboarding-path-b.spec.ts:65`, `:92` ; `onboarding.spec.ts:57`,
+  `:77`, `:150`), jugés contre `docs/testing.md` § *Les échecs attendus* ; KF-052 ne s'est pas déclenchée. Backend
+  arrêté par son PID.
+
+**Mutations (32-5c)** — `325c-mutations.log` (et `325c-mut-<id>.log` par mutation), une à la fois, motif vérifié
+**unique** (`grep -cF` → 1 avant écriture), seuls les binaires concernés relinkés (`mcp_admin_routes_e2e`, les tests
+unitaires `mcp` de `kesh-api`, plus `admin_pat_denied_e2e` pour Mc1, `mcp_keys_repository` pour Mc4, `i18n_e2e` pour
+Mc5), restauration `git checkout --` puis `touch`, diff résiduel nul vérifié après chacune : **8 jouées, 8 tuées**.
+
+| # | Mutation | Rougit |
+|---|---|---|
+| Mc1 | `.post(create_mcp_key)` retiré du bloc, la route montée à côté des clés d'API (Comptable) | `block_declares_exactly_the_listed_couples`, `every_admin_couple_denies_a_read_write_pat`, `c2_a_comptable_an_mcp_key_and_no_authentication_are_refused_everywhere` |
+| Mc2 | le condensat dans la réponse de liste (`unknownScopes`) | `c1_the_list_never_carries_the_secret_nor_its_hash` |
+| Mc3 | `keyHash` au détail de `mcp_key.created` | `c5_the_key_audit_entries_never_carry_the_secret_nor_its_hash` |
+| Mc4 | `save_in_tx` à `version = 0` en `INSERT … ON DUPLICATE KEY UPDATE` (écrasement, sur le dépôt — C-32-5-54) | `c4_settings_defaults_save_and_optimistic_lock`, `settings_save_inserts_at_version_zero_then_updates_under_lock` (`kesh-db`) |
+| Mc5 | réseau à bits d'hôte accepté (`if false && …`) | `a_network_with_host_bits_is_refused_with_the_expected_form`, `c4_an_invalid_entry_writes_nothing`, `mcp_settings_host_bits_refusal_in_german` |
+| Mc6 | portée inconnue filtrée avant `McpScopes::parse` (`books:write` accepté à côté d'une portée connue) | `c3_an_invalid_key_request_writes_nothing_and_traces_nothing`, `c3_an_unknown_scope_is_named_in_the_message` |
+| mc7 | nom rogné par `str::trim` (C-32-5-59) | `name_is_trimmed_of_unicode_blanks_and_zero_width_characters`, `a_name_of_invisible_characters_only_is_refused`, `c3_an_invalid_key_request_…`, `c1_c6_…` |
+| mc8 | origine à chemin admise (`/` retiré du refus) | `origins_are_canonical_and_pathless`, `c4_an_invalid_entry_writes_nothing` |
+
+Non jouées, déclarées : l'ordre « audit dans la transaction » (raisonné : `insert_in_tx` sur la même `tx`, aucune
+mutation écrite) ; la lecture hors verrou de l'« avant » (C-32-5-54, écart d'audit sur une version fabriquée seulement,
+non testable sans concurrence forcée).
+
+**Décomptes** (recomptés, périmètre `fa5b3468..30989e3e`, code seul) : **16 fichiers** (`git diff --name-status`) —
+3 neufs, 13 modifiés, aucun de `kesh-db` ni de `frontend/`, aucune migration. **22 tests neufs** (`grep -cE
+'#\[(sqlx::|tokio::)?test'` aux deux bornes) : `mcp_admin_routes_e2e.rs` 0 → 9, `routes/mcp_keys.rs` 0 → 5,
+`routes/mcp_server_settings.rs` 0 → 7, `i18n_e2e.rs` 5 → 6 ; `admin_pat_denied_e2e.rs` 18 → 18,
+`audit_route_registry.rs` 11 → 11, `textes_coherents.rs` 19 → 19 (tests modifiés, non ajoutés) — cohérent avec
+4089 → 4111 au gate complet. **18 clés i18n neuves par locale** (`grep -cE '^(admin-mcp-|audit-log-(entity|action)-mcp)'`,
+0 → 18 dans chacun des quatre catalogues) : 12 messages de refus, 2 types, 4 actions. Commit de la documentation
+(`30989e3e..4f2bd87e`) : 3 fichiers (`docs/api-external.md`, `docs/manual/fr/admin-manual.{tex,pdf}`).
+
 ### File List
 
 #### 32-5a
@@ -1254,6 +1551,37 @@ Fichiers de `services/` : 10 → 11. Aucune migration, aucun fichier de `docs/` 
 - Artefacts : cette fiche, `epic-32-choix-autonomes-325.md` (C-32-5-38 à 42), `sprint-status.yaml`,
   `325b-review-prompt-p1.md`.
 - Aucun fichier de `docs/`, de `frontend/` ni de `crates/kesh-db/migrations/`.
+
+#### 32-5d
+
+- Neufs : aucun (code).
+- Modifiés : `crates/kesh-db/src/{backup.rs, repositories/companies.rs}` ;
+  `crates/kesh-db/tests/{companies_repository.rs, support/installations_atteintes.rs}` ; `crates/kesh-seed/src/lib.rs` ;
+  `crates/kesh-api/src/auth/bootstrap.rs` ; `crates/kesh-api/src/routes/{onboarding.rs, admin.rs (commentaire)}` ;
+  `crates/kesh-api/tests/onboarding_audit_e2e.rs` ; `docs/MULTI-TENANT-SCOPING-PATTERNS.md` ;
+  `docs/manual/fr/{admin-manual,user-manual}.{tex,pdf}`.
+- Prévu par la fiche et **non touché** : `admin_full_import_e2e.rs` (son attente d'`installation.repaired` lit les champs
+  un à un, sans égalité stricte : `:3440-3443` ; elle reste vraie, et son montage — le commun, qui orpheline désormais
+  aussi `mcp_keys` — y passe sans clé MCP).
+- Artefacts : cette fiche, `epic-32-choix-autonomes-325.md` (C-32-5-45 à 50), `sprint-status.yaml`,
+  `325d-review-prompt-p1.md`.
+- Aucune migration, aucun fichier de `frontend/`, ni `CHANGELOG.md` (C-32-5-49) ; PDF de la brochure régénéré par
+  `make fr` sans changement de source, **restauré** (`git checkout --`).
+
+#### 32-5c
+
+- Neufs : `crates/kesh-api/src/routes/{mcp_keys.rs, mcp_server_settings.rs}`,
+  `crates/kesh-api/tests/mcp_admin_routes_e2e.rs`.
+- Modifiés : `Cargo.lock` ; `crates/kesh-api/Cargo.toml` ; `crates/kesh-api/src/{lib.rs, audit_labels.rs,
+  routes/mod.rs}` ; `crates/kesh-api/tests/{admin_pat_denied_e2e.rs, audit_route_registry.rs, i18n_e2e.rs,
+  textes_coherents.rs}` ; `crates/kesh-i18n/locales/{fr-CH,de-CH,it-CH,en-CH}/messages.ftl` ; `docs/api-external.md` ;
+  `docs/manual/fr/admin-manual.{tex,pdf}`.
+- Prévu par la fiche et **non touché** : aucun. Touchés hors prévision : `tests/i18n_e2e.rs` (C-32-5-59) et
+  `tests/textes_coherents.rs` (G9, exigée par AC-c3).
+- Artefacts : cette fiche, `epic-32-choix-autonomes-325.md` (C-32-5-51 à 60), `sprint-status.yaml`,
+  `325c-review-prompt-p1.md`.
+- Aucune migration, aucun fichier de `kesh-db` ni de `frontend/`, ni `CHANGELOG.md` (C-32-5-58) ; PDF du manuel
+  utilisateur et de la brochure régénérés par `make fr` sans changement de source, **restaurés**.
 
 ## Change Log
 
@@ -1721,4 +2049,108 @@ Fichiers de `services/` : 10 → 11. Aucune migration, aucun fichier de `docs/` 
     par les tests de la 32-3 et de la 32-4).
   - **Reports** : § *Pour la 32-5c* (E5, B2, A2 de la revue P1) ; #738 (S1, S2).
   - Clé `32-5b-authentification-cle-mcp` à **`done`** ; 32-5d et 32-5c `ready-for-dev`, dans cet ordre (C-32-5-27).
+- **2026-10-25 — Développement 32-5d** (Opus 5.5, en autonomie, worktree `kesh-32-5d`, départ `d993106c` ; dernier
+  commit de code `f123f12d`, manuels à `20cbf50a`).
+  - **Étape 0** au Dev Agent Record (§ *32-5d*), ligne lue citée à `d993106c` : faits 8, 9, 17 — lignes déplacées par
+    la 32-5a relevées (`backup.rs`, `companies.rs`, `onboarding_audit_e2e.rs`, `admin-manual.tex:2467`,
+    `user-manual.tex:3204`, `:3213`, `MULTI-TENANT-SCOPING-PATTERNS.md:339-340`) ; un second montage d'orphelins
+    (`make_orphans`), inconnu de la fiche, traité (C-32-5-47) ; aucun point de *À recontrôler à l'étape 0* ne concerne
+    la partie d.
+  - **Livré** : AC-d1 à AC-d3 (Dev Agent Record, *Completion Notes* § *32-5d*). Registre : C-32-5-45 à C-32-5-50.
+  - **Gates** au dernier commit de code : ciblé 598 réussis ; gate complet, `kesh_325d` remise à zéro juste avant,
+    **4089 réussis, 7 ignorés** ; build du frontend vert ; E2E complet **315 passés, 7 échecs (les 7 KF-029), 17
+    ignorés**, binaire reconstruit après le commit et vérifié.
+  - **Mutations** : Md1 à Md4 et md5 à md7 (C-32-5-50) — **7 jouées, 7 tuées**.
+  - **Décomptes** (périmètre `d993106c..f123f12d`, code) : 10 fichiers modifiés, aucun neuf ; 4 tests neufs. Manuels :
+    4 fichiers (`.tex` et `.pdf` des deux manuels) ; PDF de la brochure restauré.
+  - **CHANGELOG** : non touché (C-32-5-49).
+  - Clé `32-5d-cle-mcp-principal` à **`review`** ; prompt de revue P1 : `325d-review-prompt-p1.md` (Sonnet, lentilles B,
+    E, A).
+- **2026-10-25 — Revue de code de la 32-5d — REVUE TERMINÉE en P1** (Sonnet ×3, lentilles B, E, A, contexte frais,
+  lecture seule, prompt `325d-review-prompt-p1.md`, rapports `kesh-gate-logs/325d-review-p1-{B,E,A}.md`) : B
+  **0/0/0/2**, E **0/0/0/3**, A **0/0/0/3** — aucun finding au-dessus de LOW dès la première passe. AC-d1 à AC-d3
+  tenus ; ordre des verrous cohérent aux cinq sites ; manuels vrais contre le code, PDF aplatis conformes. LOW non
+  traités (B1 = A2, B2, E1 = A3, E2, E3, A1) **tracés sur #738**. Gates au dernier commit de code `f123f12d` : complet
+  4089/4089 (7 ignorés, lancé à `20cbf50a`, qui ne diffère que par les manuels), E2E 315 passés et les 7 KF-029.
+  Mutations de la partie d : 7 jouées, 7 tuées. Statut `done`.
+- **2026-10-25 — Développement 32-5c** (Opus 5.5, en autonomie, worktree `kesh-32-5c`, départ `fa5b3468` ; dernier
+  commit de code `30989e3e`, documentation à `4f2bd87e`).
+  - **Étape 0** au Dev Agent Record (§ *32-5c*), ligne lue citée à `fa5b3468` : faits 4, 5, 12, 13, 18 — lignes
+    déplacées relevées (`lib.rs:222`/`:403`, `admin-manual.tex:2935`, `backup_schedule.rs:128`) ; doc-comments Q11 déjà
+    corrigés par la 32-4b, rien refait ; § *Pour la 32-5c* : E5 et B1 traités, B3 décidé (pas de migration,
+    C-32-5-53), E3, B2 et A2 relus et reportés (fichiers non touchés) ; A1 de la 32-5d (`bootstrap.rs:74-75`,
+    `admin.rs:501-502`) non corrigé, fichiers non touchés (C-32-5-60, #738).
+  - **Livré** : AC-c1 à AC-c7 (Dev Agent Record, *Completion Notes* § *32-5c*). Registre : C-32-5-51 à C-32-5-60.
+  - **Gates** au dernier commit de code : ciblé 142 réussis (après un premier run à 2 échecs de lecture `BLOB` du test,
+    corrigés) ; gate complet, `kesh_325c` remise à zéro juste avant, **4111 réussis, 7 ignorés** ; frontend (`check`,
+    `lint-i18n-ownership`, `test:unit` 1939, `build`) vert ; E2E complet **315 passés, 7 échecs (les 7 KF-029), 17
+    ignorés**, binaire reconstruit après le commit et vérifié, port 3330.
+  - **Mutations** : Mc1 à Mc6, mc7 et mc8 (C-32-5-59) — **8 jouées, 8 tuées** ; Mc4 jouée sur le dépôt (C-32-5-54).
+  - **Décomptes** (périmètre `fa5b3468..30989e3e`, code) : 16 fichiers (3 neufs, 13 modifiés) ; 22 tests neufs ; 18 clés
+    i18n neuves par locale. Documentation : 3 fichiers ; PDF du manuel utilisateur et de la brochure restaurés.
+  - **Manuel** (AC-c7) : compte recompté depuis `LIB_ROUTES` — commande au Dev Agent Record ; « 108 des 114 » (périmé
+    dès `fa5b3468`) → « 122 des 128 ».
+  - **CHANGELOG** : non touché (C-32-5-58).
+  - **Demandes à l'orchestrateur** : une issue pour B3 (`mcp_server_settings.version` sans `CHECK (version >= 1)`,
+    C-32-5-53).
+  - Clé `32-5c-routes-gestion-cles-mcp` à **`review`** ; prompt de revue P1 : `325c-review-prompt-p1.md` (Sonnet,
+    lentilles B, E, A).
+- **2026-10-25 — Revue de code P1 de la 32-5c** (passe complète, trois lentilles en contexte frais, **Sonnet** ×3,
+  lecture seule, prompt `325c-review-prompt-p1.md`, rapports `kesh-gate-logs/325c-review-p1-{B,E,A}.md`) : B
+  **0/0/1/8**, E **0/0/0/8**, A **0/0/0/3**. Remédiation (Opus 5.5, commit `277b7b88`, arbitrage de l'orchestrateur) :
+  - **B1 = A1 (MEDIUM)** — `docs/api-external.md:35` disait aussi « Depuis la 0.16.0, l'Administrateur peut créer des
+    clés du serveur MCP » et « une clé d'API n'ouvre pas le serveur MCP » (aucun `/mcp` monté, aucun écran ; § 6.4 et § 9
+    du même fichier disaient le contraire). Réduit à : « Une clé `kesh_mcp_…` n'est pas une clé d'API : présentée à
+    `/api/v1`, elle est refusée en `401`. » `grep -niF "serveur MCP" docs/api-external.md` → l. 181, 183, 185, 187, 831
+    (§ 6.4 et § 9, laissés à la 32-11) : plus aucune phrase qui les contredise.
+  - **B4 = E3 = A2 (LOW)** — la portée inconnue recopiée au message de refus n'était bornée que par la taille du corps :
+    `cite()` et `SCOPE_CITED_MAX_CHARS = 64` (coupure sur une frontière de caractère, `…`) ; test
+    `an_unknown_scope_is_cited_within_bounds`.
+  - **E1 = B9 (LOW)** — une expiration au-delà du `9999-12-31` (UTC) : refus traduit
+    `admin-mcp-keys-error-expiry-out-of-range` (quatre catalogues ; G9 étendue : 8 clés pour `mcp_keys.rs`, 13 en
+    tout pour les deux fichiers de la 32-5c) ; test `c3_an_expiry_beyond_year_9999_is_refused_not_a_500`.
+    ⚠️ **Constats d'exécution qui corrigent la prémisse des rapports** : (i) une année à cinq chiffres
+    (`+10000-01-01T00:00:00Z`) est refusée par l'extracteur JSON avant le handler (premier gate ciblé,
+    `325c-p1-cible-1.log`) — la forme atteignable est une date de l'an 9999 dont le fuseau la porte au-delà en UTC
+    (`9999-12-31T23:59:59-05:00`) ; (ii) sans la garde (mutation Mp2), cette clé n'est **pas** un 500 : elle est créée
+    en **201 avec `expiresAt: null`**, c'est-à-dire **permanente** (`325c-mut-Mp2.log`). Le premier libellé
+    (« l'an 9999 ») faisait rougir `les_comptes_cites_en_exemple_existent_dans_les_plans_livres` (9999 lu comme un
+    compte) : réécrit en « le 9999-12-31 (UTC) », forme déjà admise par la garde
+    (`audit-log-query-error-date-out-of-range`).
+  - **`routes/api_keys.rs` porte le même défaut** (`:140-146` : seul `exp <= Utc::now()` est contrôlé ; colonne
+    `api_keys.expires_at DATETIME(3)`, `20260605000001_api_keys.sql:25`) — **non corrigé**, signalé à l'orchestrateur
+    pour traçage ; effet attendu par analogie (même conversion, même type de colonne) : PAT créé sans expiration —
+    **non exécuté** sur cette route.
+  - **Tracés sur #738 par l'orchestrateur, non traités ici** : B2 = E4, B3 = E5, B5 = E2, B6, B7 = E6, B8, E7, E8, A3.
+  - **Gates** au dernier commit de code `277b7b88` : ciblé — premier run 142/144 (les deux rouges ci-dessus), second
+    **144 réussis** (`325c-p1-cible-2.log`) ; clippy workspace `-D warnings` vert ; **gate complet**, `kesh_325c` remise
+    à zéro juste avant, **4113 réussis, 7 ignorés** (`325c-p1-gate-complet.log` ; 4111 + 2 tests neufs) ; build du
+    frontend vert (`325c-p1-front-build.log`) ; **E2E complet**, `kesh_e2e_325c` reconstruite, dossier neuf
+    `/tmp/kesh-e2e-325c-p1/`, binaire reconstruit à 10:32:54 après le commit (10:20:07), vérifié (`/proc/2586278/exe`),
+    port 3330 : **315 passés, 7 échecs (les 7 KF-029), 17 ignorés** (13,0 min, `325c-p1-e2e.log`) ; backend arrêté par
+    son PID.
+  - **Mutations** (`325c-mutations-p1.log`) : **3 jouées, 3 tuées** — Mp1a (`cite` sans borne) et Mp1b (la portée
+    recopiée sans `cite`) par `an_unknown_scope_is_cited_within_bounds` ; Mp2 (garde de l'an 9999 neutralisée) par
+    `c3_an_expiry_beyond_year_9999_is_refused_not_a_500`.
+  - **Décomptes** (périmètre `7200ac0d..277b7b88`) : 8 fichiers ; 2 tests neufs (`routes/mcp_keys.rs` 5 → 6,
+    `mcp_admin_routes_e2e.rs` 9 → 10) ; 1 clé i18n neuve par locale (18 → 19).
+    *(Annoté le 2026-10-25, revue P2, R-décomptes : le périmètre de « 9 → 10 » est celui des **attributs**
+    `grep -cE '#\[sqlx::test'` — 9 à `7200ac0d`, 10 à `277b7b88`. Le « 10 → 11 » de la passe P2 compte toutes les
+    occurrences de la chaîne `sqlx::test` (`grep -c 'sqlx::test'`), dont la mention du doc-comment de tête, l. 16. Le
+    « +1 » est le même.)*
+  - Passe suivante : **P2 ciblée** (regression hunter, Sonnet), prompt `325c-review-prompt-p2.md` (commit `4a1b9623`),
+    rapport attendu `kesh-gate-logs/325c-review-p2.md`.
+- **2026-10-25 — Revue de code P2 de la 32-5c — REVUE TERMINÉE** (passe **ciblée**, regression hunter, contexte frais,
+  **Sonnet**, lecture seule, sur `277b7b88` ; prompt `325c-review-prompt-p2.md`, rapport `kesh-gate-logs/325c-review-p2.md`) :
+  **0/0/0/2** — aucun finding au-dessus de LOW ; la remédiation de la P1 ne touche plus la production après elle.
+  - **Trend** : P1 complète, Sonnet ×3 — B **0/0/1/8**, E **0/0/0/8**, A **0/0/0/3** → P2 ciblée, Sonnet **0/0/0/2**.
+  - **LOW non traités, tracés sur #738** par l'orchestrateur : R1 et R2 de la P2 ; B2 = E4, B3 = E5, B5 = E2, B6,
+    B7 = E6, B8, E7, E8, A3 de la P1. Le défaut d'expiration de `routes/api_keys.rs` (même chemin que E1 = B9) : **#755**.
+    B3 de la revue de la 32-5a (`CHECK (version >= 1)`, C-32-5-53) : issue demandée à l'orchestrateur.
+  - **Gates** au dernier commit de code `277b7b88` : gate complet **4113 réussis, 7 ignorés** ; E2E complet **315 passés,
+    7 échecs (les 7 KF-029), 17 ignorés**.
+  - **Mutations de la partie c** : **11 jouées, 11 tuées** (Mc1 à Mc6, mc7, mc8 au développement ; Mp1a, Mp1b, Mp2 à la
+    remédiation de la P1).
+  - Statut **`done`** ; clé `32-5c-routes-gestion-cles-mcp` à `done` dans `sprint-status.yaml`. Les quatre parties de la
+    Story 32-5 sont `done`.
 

@@ -5,30 +5,21 @@
 //! Chaque connexion du pool passe `SET SESSION TRANSACTION READ ONLY` : toute
 //! écriture y est refusée par MariaDB (erreur 1792, témoin
 //! `ac9_temoin_la_lecture_de_test_refuse_l_ecriture` de `services_motif.rs`).
-//! Aucun privilège requis. C'est le mode de session que la connexion du MCP
-//! emploiera (Q11, tranchée le 2026-10-24 ; réalisé par la 32-6), sur un pool
-//! de test et sans la fabrication de production (`AppState::lecture()`).
+//! Aucun privilège requis. Depuis la Story 32-6a (C-32-6-26), le pool est
+//! fabriqué par **la fabrique de production** du pool des outils du MCP,
+//! `kesh_db::pool::pool_lecture_seule` — si bien que les tests de services
+//! s'exécutent sur la connexion même que le MCP emploie (chaque emprunt part
+//! d'une connexion neuve, fermée à sa restitution).
 
 use kesh_api::services::poignees::Lecture;
 use sqlx::MySqlPool;
 
 /// Pool dont chaque connexion passe `SET SESSION TRANSACTION READ ONLY` — mêmes
-/// options de connexion que le pool du test, aucun privilège requis.
+/// options de connexion que le pool du test, aucun privilège requis, quatre
+/// connexions au plus, délai d'instruction de production (signature inchangée
+/// depuis la 32-4a).
 pub async fn pool_lecture_seule(pool: &MySqlPool) -> MySqlPool {
-    let options = (*pool.connect_options()).clone();
-    sqlx::mysql::MySqlPoolOptions::new()
-        .max_connections(4)
-        .after_connect(|conn, _meta| {
-            Box::pin(async move {
-                sqlx::query("SET SESSION TRANSACTION READ ONLY")
-                    .execute(&mut *conn)
-                    .await?;
-                Ok(())
-            })
-        })
-        .connect_with(options)
-        .await
-        .expect("pool en lecture seule")
+    kesh_db::pool::pool_lecture_seule(pool, 4, kesh_api::mcp::DELAI_OUTIL)
 }
 
 /// Une `Lecture` sur [`pool_lecture_seule`].

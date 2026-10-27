@@ -21,8 +21,9 @@
 use sqlx::MySqlPool;
 
 /// **État orphelin de #528** (Story 15-7b3, montage commun des tests) : porte
-/// `users.company_id` et **toutes** les lignes d'`api_keys` — y compris les
-/// clés déjà révoquées — à `dead_company_id`, un id qu'aucune société ne porte.
+/// `users.company_id` et **toutes** les lignes d'`api_keys` et de `mcp_keys`
+/// (ces dernières depuis la Story 32-5d) — y compris les clés déjà révoquées —
+/// à `dead_company_id`, un id qu'aucune société ne porte.
 ///
 /// Écrit sur une connexion **détachée du pool** (`detach()` : elle n'y revient
 /// jamais), `FOREIGN_KEY_CHECKS = 0` de session, fermée en fin de montage —
@@ -38,6 +39,7 @@ pub async fn rendre_principaux_orphelins(pool: &MySqlPool, dead_company_id: i64)
     for sql in [
         "UPDATE users SET company_id = ?",
         "UPDATE api_keys SET company_id = ?",
+        "UPDATE mcp_keys SET company_id = ?",
     ] {
         sqlx::query(sql)
             .bind(dead_company_id)

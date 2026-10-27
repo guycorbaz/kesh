@@ -73,8 +73,13 @@ pub const TABLES_TO_TRUNCATE: &[&str] = &[
     "journal_entries",
     "audit_log",
     "api_keys", // Story 17-2a (#100) — enfant de companies + users (RESTRICT).
+    // Story 32-8a (#723) — envois du serveur MCP en attente de validation :
+    // enfant de mcp_keys + companies + users (RESTRICT), sans enfant propre ;
+    // vidé AVANT `mcp_keys`, son parent. Vidé à la remise à zéro (absent de
+    // `RESET_PRESERVED_TABLES`) : un envoi est une donnée de la société.
+    "mcp_sends",
     // Story 32-5a (#723) — clés du serveur MCP : enfant de companies + users
-    // (RESTRICT), sans enfant propre ; sa place suit celle d'`api_keys`.
+    // (RESTRICT) ; sa place suit celle d'`api_keys`.
     "mcp_keys",
     "company_invoice_settings",
     // Story 32-5a (#723) — réglages du serveur MCP : une ligne par société au
@@ -108,8 +113,11 @@ pub const TABLES_TO_TRUNCATE: &[&str] = &[
 /// La société (remise à l'état provisoire **en place**, #528), l'état
 /// d'onboarding (remis à zéro **en place**), les utilisateurs et ce qui ne
 /// dépend que d'eux (sessions, jetons de réinitialisation de mot de passe), et
-/// les clés d'API — un principal n'est pas une donnée de la société. Tout le
-/// reste de [`TABLES_TO_TRUNCATE`] est vidé : [`reset_cleared_tables`].
+/// les clés — d'API et, depuis la Story 32-5d (C-32-5-11), du serveur MCP
+/// (`mcp_keys`) : un principal n'est pas une donnée de la société. Tout le
+/// reste de [`TABLES_TO_TRUNCATE`] est vidé : [`reset_cleared_tables`] —
+/// `mcp_server_settings` compris, si bien qu'après une remise à zéro le
+/// serveur MCP est **désactivé** et ses clés demeurent.
 ///
 /// ⚠️ **La partition est gardée sur le schéma**, et non sur cette liste : le test
 /// `reset_partition_is_guarded_by_the_schema` lit les clés étrangères
@@ -118,6 +126,7 @@ pub const TABLES_TO_TRUNCATE: &[&str] = &[
 pub const RESET_PRESERVED_TABLES: &[&str] = &[
     "api_keys",
     "companies",
+    "mcp_keys",
     "onboarding_state",
     "password_reset_tokens",
     "refresh_tokens",
@@ -852,12 +861,13 @@ mod tests {
         );
     }
 
-    /// Story 15-7b2, test 10 — la partition de la remise à zéro : les six tables
-    /// conservées sont des tables canoniques, et conservées ∪ vidées redonne
-    /// [`TABLES_TO_TRUNCATE`] **dans son ordre**.
+    /// Story 15-7b2, test 10 — la partition de la remise à zéro : les sept tables
+    /// conservées (six, plus `mcp_keys` depuis la 32-5d) sont des tables
+    /// canoniques, et conservées ∪ vidées redonne [`TABLES_TO_TRUNCATE`] **dans
+    /// son ordre**.
     ///
     /// ⚠️ Vrai en partie **par construction** ([`reset_cleared_tables`] est
-    /// dérivée) : seule l'appartenance des six noms mord (renommage d'une table).
+    /// dérivée) : seule l'appartenance des sept noms mord (renommage d'une table).
     /// La garde de la partition est le test suivant, qui lit le schéma.
     #[test]
     fn reset_partition_covers_the_canonical_list_in_order() {
@@ -914,9 +924,11 @@ mod tests {
     ///   vidée (le vidage se fait sous `FOREIGN_KEY_CHECKS=0` : une telle clé
     ///   laisserait une référence pendante).
     /// - **Règle 4** : les tables conservées qui portent une clé vers
-    ///   `companies` sont exactement `users` et `api_keys` — le fait sur lequel
-    ///   repose la règle des principaux orphelins
-    ///   (`companies::reattach_orphan_principals_in_tx`).
+    ///   `companies` sont exactement `users`, `api_keys` et `mcp_keys` (cette
+    ///   dernière depuis la Story 32-5d) — le fait sur lequel repose la règle
+    ///   des principaux orphelins
+    ///   (`companies::reattach_orphan_principals_in_tx`), qui traite ces trois
+    ///   tables et elles seules.
     ///
     /// Angle mort assumé : une future table enfant de `users` **et** de
     /// `companies` rejoint `companies` directement et serait vidée — voulu pour
@@ -1037,8 +1049,9 @@ mod tests {
             .collect();
         assert_eq!(
             to_companies,
-            BTreeSet::from(["api_keys", "users"]),
-            "règle 4 : principaux portant une clé vers companies"
+            BTreeSet::from(["api_keys", "mcp_keys", "users"]),
+            "règle 4 : principaux portant une clé vers companies — toute table \
+             conservée de plus doit entrer à la règle des principaux orphelins"
         );
     }
 
