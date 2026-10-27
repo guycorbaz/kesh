@@ -693,3 +693,66 @@
 - **Alternatives** : omettre la ligne incohérente (changer le dépôt de la 32-10a-i pour rendre des `Result` par
   ligne) — plus de code, et une corruption silencieuse.
 - **Réversible** : oui.
+
+## Choix du développement de la 32-10a-iii (2026-10-27, Opus 5.5, en autonomie)
+
+### C-32-10a-100 — Une variante d'erreur d'outil propre au plafond des prompts
+
+- **Contexte** : la fiche (AC-iii2, point 1) fait gagner à `ErreurOutil` une variante `LimiteAtteinte` ; la 32-8b l'a
+  déjà créée, avec le texte des **envois** (« Trop d'envois attendent la validation… »), faux pour une proposition de
+  prompt.
+- **Retenu** : une variante neuve, `ErreurOutil::PropositionsTropNombreuses`, au texte propre
+  (`TEXTE_PROPOSITIONS_TROP_NOMBREUSES`), journalisée `limite_atteinte` comme celle des envois (`issue_d_erreur`) —
+  l'issue fermée de l'AC-iii5 ne change pas ; `MotifArgument::Reserve` (texte `TEXTE_NOM_RESERVE`) comme prévu.
+- **Alternatives** : réemployer `LimiteAtteinte` (texte faux) ; la paramétrer (champ libre, contraire à l'AC-a20).
+- **Réversible** : oui.
+
+### C-32-10a-101 — Le nom de l'outil défini par le service, réexporté par `mcp::textes`
+
+- **Retenu** : `OUTIL_PROPOSER_PROMPT` est une constante de `services::prompts_mcp` (le service l'écrit au journal de
+  l'appel, `entree_appel` exigeant un `&'static str`) ; `mcp::textes` la réexporte (`pub use`), sans que
+  `services/` nomme `crate::mcp`. La traduction des refus, `depuis_refus_de_proposition`, vit dans `mcp::textes`
+  (publique `#[doc(hidden)]`, comme `depuis_app_error`) pour être éprouvée par `tests/mcp_traduction.rs`.
+- **Réversible** : oui.
+
+### C-32-10a-102 — Les routes lisent l'historique hors de la transaction, puis appellent le dépôt en premier
+
+- **Contexte** : #783 point 1 (précondition de lecture en `REPEATABLE READ`) ; D2 (revalider avant d'approuver) et
+  F8 (savoir si le prompt a une version approuvée, pour le détail d'audit du refus) demandent une lecture préalable.
+- **Retenu** : ces lectures (`mcp_prompts::historique`) se font sur le **pool**, hors de la transaction ; chaque
+  transaction appelle le dépôt **avant toute lecture**. Sûr parce qu'une version ne change jamais de contenu et qu'un
+  état décidé est terminal : une approbation concurrente ne peut que faire omettre un nom devenu servi (le sens
+  prudent). La précondition est écrite au doc-comment d'`EcriturePrompts::proposer` et en tête de
+  `routes/mcp_prompts.rs`, et prouvée par `plafond_juste_apres_l_attente_du_verrou` (mutation Miii13 tuée).
+- **Alternatives** : rendre les lectures du dépôt verrouillantes (touche `kesh-db`, hors des modules de la iii).
+- **Réversible** : oui.
+
+### C-32-10a-103 — La documentation hors de la partie iii
+
+- **Contexte** : la note #783 point 1 demande aussi d'écrire la précondition au Pattern 5 de
+  `docs/MULTI-TENANT-SCOPING-PATTERNS.md` ; la règle d'inclusion appellerait une ligne de CHANGELOG ; le compte « N des
+  M routes à verbe mutant » du manuel (D5, déjà faux) change. La documentation serait un **sixième** module (fiche,
+  § *Le découpage* : iii = 5 modules sans la documentation), ce qu'interdit la consigne de l'orchestrateur.
+- **Retenu** : rien n'est écrit dans `docs/`, le manuel ni le CHANGELOG par la iii ; la précondition vit dans les
+  doc-comments de `kesh-api` (C-32-10a-102). **Demandé à l'orchestrateur** : la ligne du Pattern 5 et l'entrée du
+  CHANGELOG (proposition d'un agent, routes de gestion, journal de `prompts/get`) — dans la PR de la iii ou à la
+  32-10b, qui porte déjà le manuel et le compte des routes (`admin-manual.tex` ≈ l. 3022 : « 122 des 128 », registre
+  après la iii : 135 routes, 129 tracées).
+- **Réversible** : oui.
+
+### C-32-10a-104 — La forme du détail (D1) : textes enregistrés et servis, chacun exact et visible
+
+- **Retenu** : pour chaque version, `description` et `texte` **enregistrés** (`{exact, visible}`, nuls pour un
+  retrait), `servable` = `composer_version(…).is_ok()`, `descriptionServie` et `texteServi` (`{exact, visible}`, nuls
+  si non servable), noms de l'auteur, du décideur et de la clé, `cleRevoquee`, `creeLe`, `decideLe` ; au prompt,
+  `version`, `numeroEnVigueur`, `standardDiffere`, `standardDuCode` (`{description, texte}` rendus, nul hors standard
+  ou standard retiré du code), `modifieLe`. Les noms de champs suivent ceux de D1 (français, camelCase). Les textes
+  enregistrés rendus visibles laissent l'écran montrer une version non servable sans logique Unicode.
+- **Réversible** : oui (la 32-10b n'est pas encore écrite).
+
+### C-32-10a-105 — Le service refuse le nom en `kesh` avant le dépôt (défense doublée)
+
+- **Retenu** : `proposer` contrôle `nom_conforme` et `nom_reserve` (AC-iii3) bien que le dépôt les contrôle aussi
+  avant le verrou ; la mutation du seul contrôle du service (Miii11a) **survit** — attendu, déclaré ; la mutation des
+  deux (Miii11b) est tuée. Même situation que B4 = E5 de la ii.
+- **Réversible** : oui.
