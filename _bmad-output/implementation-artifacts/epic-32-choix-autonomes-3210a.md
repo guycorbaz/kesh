@@ -799,6 +799,11 @@
   vingt** propositions à valider par société (au-delà, plus aucune proposition), et la révocation de la clé ; un
   refus des propositions en trop rend la dernière approuvable. À dire à l'administrateur par la 32-10b.
 - **Réversible** : oui (refuser la proposition sur un prompt d'administrateur : une ligne au dépôt).
+- *Annotation du 2026-10-27 (décision de Guy, transmise par l'orchestrateur)* : Guy maintient le comportement en
+  l'état — « on laisse comme ça et on traitera le cas échéant ». Les deux effets de bord (le 409 sur une modification
+  en cours de l'administrateur, la proposition antérieure rendue non approuvable) sont tracés par la **KF-055, issue
+  #796**. Pour la 32-10b : en cas de 409, l'écran de modification d'un prompt conserve le texte saisi (note d'étape 0
+  de la fiche).
 
 ### C-32-10a-107 — Un geste de l'administrateur écrit le nom d'un prompt d'agent jamais approuvé (revue de code P1, B7 = A6)
 
