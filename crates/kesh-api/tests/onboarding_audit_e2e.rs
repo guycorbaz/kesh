@@ -2189,6 +2189,18 @@ async fn reset_clears_every_company_table_and_traces_itself(pool: MySqlPool) {
         kesh_db::entities::mcp_prompt_standards::STANDARDS.len(),
         "aucun prompt hors de la société"
     );
+    // Mi12 : une version conservée par la remise à zéro resterait orpheline,
+    // invisible de `prompts_de_societe` (qui part des prompts) — d'où le compte
+    // de la table entière.
+    let versions: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM mcp_prompt_versions")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(
+        versions as usize,
+        kesh_db::entities::mcp_prompt_standards::STANDARDS.len(),
+        "une version par standard, aucune autre"
+    );
     let mut preserved_after = Vec::new();
     for t in [
         "users",
