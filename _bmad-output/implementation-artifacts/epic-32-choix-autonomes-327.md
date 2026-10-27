@@ -473,3 +473,16 @@ ligne cités sont ceux de `966baed5`. Ce qui revient à Guy est à la fiche, § 
 - **Retenu** : `kesh_mcp_SECRET_factice_0123456789` dans les trois fichiers de test ; aucun test unitaire n'exige le
   format exact (seul l'E2E le vérifie, sur le secret réel de la base de test).
 - **Réversible** : oui.
+
+## Choix de la remédiation de la revue de code P2 (2026-10-27)
+
+### C-32-7-39 — la borne 9999 se teste sous un fuseau négatif, dans le test du composant
+
+- **Contexte** (revue P2, P2-1) : le second disjoint de la garde B3 (`!/^\d{4}-/.test(expiresAt)`, une fin de journée
+  locale qui bascule en l'an 10000 en UTC) n'était atteint par aucun test ; `10000-01-01` est déjà refusé par
+  `finDeJourneeLocale`.
+- **Retenu** : un test de `McpKeysSection.test.ts` sous `TZ=America/New_York`, posé et rétabli dans le test, avec deux
+  témoins (le décalage de 300 min ; `new Date(9999, 11, 31, 23, 59, 59, 999).toISOString()` commence par `+010000-`) ;
+  saisie `9999-12-31` → erreur, aucun `POST`. Mutation M36 (le seul disjoint retiré) tuée par ce test.
+- **Écartées** : déplacer la garde dans `mcp-time.ts` (changement de code de production pour un défaut de test).
+- **Réversible** : oui.
