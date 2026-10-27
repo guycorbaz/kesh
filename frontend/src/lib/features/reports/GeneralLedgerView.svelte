@@ -9,7 +9,12 @@
 	import LetteringCodeLink from '$lib/features/open-items/LetteringCodeLink.svelte';
 	import { openItemsHref } from '$lib/features/open-items/open-items';
 	import { formatReportAmount, formatSwissDate } from './reports.api';
-	import type { GeneralLedgerDto, LedgerLine, LedgerSection } from './reports.types';
+	import type {
+		FiscalYearBreak,
+		GeneralLedgerDto,
+		LedgerLine,
+		LedgerSection,
+	} from './reports.types';
 
 	interface Props {
 		dto: GeneralLedgerDto;
@@ -87,16 +92,46 @@
 
 	/**
 	 * La rupture d'exercice à afficher AVANT la ligne d'indice `idx`, s'il y en
-	 * a une. Elle se reconnaît au changement d'exercice entre deux lignes
-	 * consécutives — jamais à la date seule : plusieurs écritures peuvent
-	 * partager la date de bouclement.
+	 * a une — même règle que `LedgerSection::break_before` (kesh-report), qui
+	 * sert le PDF et le CSV.
+	 *
+	 * Une rupture précède la première ligne de son nouvel exercice et en porte la
+	 * date. Entre deux lignes, elle se reconnaît au changement d'exercice : c'est
+	 * celle qui clôt l'exercice de la ligne précédente — jamais à la date seule.
+	 * En tête de section, aucune ligne précédente ne dit quel exercice se clôt :
+	 * c'est alors la rupture datée du jour de la ligne, qui clôt un autre
+	 * exercice que le sien (#777 — l'ouverture appartient à l'exercice qui
+	 * contient le début de la période, et la première ligne peut tomber dans le
+	 * suivant).
 	 */
 	function breakBefore(section: LedgerSection, idx: number) {
-		if (idx === 0) return null;
-		const prev = section.lines[idx - 1];
 		const cur = section.lines[idx];
-		if (prev.fiscalYearId === cur.fiscalYearId) return null;
-		return section.fiscalYearBreaks.find((b) => b.closingFiscalYearId === prev.fiscalYearId) ?? null;
+		if (idx > 0) {
+			const prev = section.lines[idx - 1];
+			if (prev.fiscalYearId === cur.fiscalYearId) return null;
+			return (
+				section.fiscalYearBreaks.find((b) => b.closingFiscalYearId === prev.fiscalYearId) ?? null
+			);
+		}
+		return (
+			section.fiscalYearBreaks.find(
+				(b) => b.date === cur.entryDate && b.closingFiscalYearId !== cur.fiscalYearId,
+			) ?? null
+		);
+	}
+
+	/**
+	 * Les ruptures qu'aucune ligne ne suit : une fin d'exercice franchie après la
+	 * dernière ligne de la période (#778). Elles s'affichent sous les lignes —
+	 * toutes, quand la section n'en a aucune. Ce sont celles que `breakBefore`
+	 * ne place devant aucune ligne : chaque rupture s'affiche une fois, aucune ne
+	 * se perd (même règle que `LedgerSection::trailing_breaks`).
+	 */
+	function trailingBreaks(section: LedgerSection) {
+		const placees = new Set(
+			section.lines.map((_, idx) => breakBefore(section, idx)?.closingFiscalYearId),
+		);
+		return section.fiscalYearBreaks.filter((b) => !placees.has(b.closingFiscalYearId));
 	}
 
 	/** Un montant nul ne s'écrit pas : une colonne débit/crédit reste vide. */
@@ -117,6 +152,19 @@
 			: `${l.fiscalYearName}/${l.entryNumber}`;
 	}
 </script>
+
+{#snippet fyBreak(brk: FiscalYearBreak)}
+	<tr class="border-y bg-indigo-50 text-xs text-indigo-900" data-testid="ledger-fy-break">
+		<td class="px-2 py-1" colspan={BALANCE_LABEL_SPAN}>
+			{formatSwissDate(brk.date)} — {i18nMsg(
+				'reports-ledger-fy-break',
+				"Clôture de l'exercice — le solde repart de zéro",
+			)}
+		</td>
+		<td class="px-2 py-1 text-right font-mono">{fmt(brk.closingBalance)}</td>
+		{#each { length: AFTER_BALANCE }, i (i)}<td class="px-2 py-1"></td>{/each}
+	</tr>
+{/snippet}
 
 <section class="space-y-6" data-testid="general-ledger">
 	<header class="text-sm text-gray-600">
@@ -188,16 +236,7 @@
 					{#each s.lines as l, idx (l.lineId)}
 						{@const brk = breakBefore(s, idx)}
 						{#if brk}
-							<tr class="border-y bg-indigo-50 text-xs text-indigo-900">
-								<td class="px-2 py-1" colspan={BALANCE_LABEL_SPAN}>
-									{formatSwissDate(brk.date)} — {i18nMsg(
-										'reports-ledger-fy-break',
-										"Clôture de l'exercice — le solde repart de zéro",
-									)}
-								</td>
-								<td class="px-2 py-1 text-right font-mono">{fmt(brk.closingBalance)}</td>
-								{#each { length: AFTER_BALANCE }, i (i)}<td class="px-2 py-1"></td>{/each}
-							</tr>
+							{@render fyBreak(brk)}
 						{/if}
 						<tr class="border-b last:border-b-0">
 							<td class="px-2 py-1 whitespace-nowrap">{formatSwissDate(l.entryDate)}</td>
@@ -221,6 +260,9 @@
 								)}
 							</td>
 						</tr>
+					{/each}
+					{#each trailingBreaks(s) as brk (brk.closingFiscalYearId)}
+						{@render fyBreak(brk)}
 					{/each}
 				</tbody>
 				<tfoot>
