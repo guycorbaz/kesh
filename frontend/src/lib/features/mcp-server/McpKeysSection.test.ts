@@ -273,6 +273,26 @@ describe('créer une clé (AC-9, AC-10)', () => {
 		expect(mockApi.createMcpKey).not.toHaveBeenCalled();
 	});
 
+	it('le 31.12.9999 sous un fuseau négatif (au-delà de 9999 en UTC) est refusé à l’écran (revue P2, P2-1)', async () => {
+		const tzAvant = process.env.TZ;
+		process.env.TZ = 'America/New_York';
+		try {
+			// témoin : le fuseau a pris, et la fin de journée locale bascule bien en l'an 10000
+			expect(new Date(2026, 11, 31, 12).getTimezoneOffset()).toBe(300);
+			expect(new Date(9999, 11, 31, 23, 59, 59, 999).toISOString().startsWith('+010000-')).toBe(true);
+			const vue = await monter([]);
+			await ouvrirEtRemplir(vue);
+			await fireEvent.input(vue.getByTestId('mcp-server-form-expires'), { target: { value: '9999-12-31' } });
+			expect((vue.getByTestId('mcp-server-form-expires') as HTMLInputElement).value).toBe('9999-12-31');
+			await fireEvent.click(vue.getByTestId('mcp-server-form-submit'));
+			expect(vue.getByTestId('mcp-server-form-error').textContent).toContain('Date d’expiration invalide');
+			expect(mockApi.createMcpKey).not.toHaveBeenCalled();
+		} finally {
+			if (tzAvant === undefined) delete process.env.TZ;
+			else process.env.TZ = tzAvant;
+		}
+	});
+
 	it('(c) double soumission impossible', async () => {
 		const vue = await monter([]);
 		await ouvrirEtRemplir(vue);
