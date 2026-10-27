@@ -30,6 +30,7 @@ par union au registre de l'epic à la clôture.*
   pour « alléger » (contraire à la propriété).
 - **Réversible** : oui.
 - **Annoté à la validation P2 (2026-10-27)** : l'**encadré séparé est retiré** (R1, F6 ; consigne « retirer plutôt qu'enrichir ») : la marque se lit dans le texte servi rendu visible, à sa place, sans traitement de l'écran — ni encadré, ni comparaison au début du texte, ni avis « marque manquante ». La pastille *Écrit par un agent*, tirée de l'origine de la version, reste hors du `<pre>`. La preuve : l'égalité du `textContent` avec le champ visible sur une version d'agent.
+- **Annoté à la validation P3 (2026-10-27)** (F7, R2) : le titre (« encadrée ») et le « Retenu » ci-dessus sont **périmés** depuis la P2 ; ce qui vaut est l'annotation P2. Ils restent écrits comme trace du choix d'origine.
 
 ### C-32-10b-3 — Un signalement des caractères cachés côté écran, miroir gardé de `kesh-core`
 
@@ -88,6 +89,7 @@ par union au registre de l'epic à la clôture.*
 - **Écartée** : toujours recalculer côté écran (une seconde implémentation d'une règle du serveur).
 - **Réversible** : oui.
 - **Annoté à la validation P2 (2026-10-27)** : le repli « sinon, par la règle » est **retiré** (R5) : `numeroEnVigueur` est rendu par le serveur (note `20a02a86`) et figure à la liste d'arrêt de l'étape 0 ; l'écran ne recalcule rien.
+- **Annoté à la validation P3 (2026-10-27)** (F7) : le titre (« sinon par la règle, en fonction pure ») et le « Retenu » ci-dessus sont **périmés** depuis la P2 ; ce qui vaut est l'annotation P2.
 
 ### C-32-10b-8 — L'éditeur : valeurs exactes, aperçu des caractères cachés, avis P26, retrait
 
@@ -123,6 +125,7 @@ par union au registre de l'epic à la clôture.*
 - **Réversible** : oui.
 - **Annoté à la validation P1 (2026-10-27)** (R7, F2) : l'alternative écartée « montrer le texte standard du code avant le geste » est **retenue** — D1 étendu rend `standardDuCode`, rendu visible, que le dialogue montre avant la confirmation ; inventaire E16. La condition du bouton devient le seul drapeau `standardDiffere` du serveur, qui couvre déjà les cas énumérés (R3).
 - **Annoté à la validation P2 (2026-10-27)** : la condition devient `standardDiffere && standardDuCode !== null` (F5, R11 : un standard que le binaire ne porte plus a le drapeau levé, aucun texte du code, et la route le refuse) ; le cas « version d'agent approuvée » sur un standard est retiré, inatteignable (C-32-10a-27).
+- **Annoté à la validation P3 (2026-10-27)** (F7) : l'énumération du « Retenu » (« à version d'agent en vigueur, ou au standard changé ») est **périmée** ; la condition est celle de l'annotation P2.
 
 ### C-32-10b-11 — Le repli égal au catalogue : G13 par préfixe si la 32-7 l'a posé, sinon un module partagé
 
@@ -192,6 +195,7 @@ par union au registre de l'epic à la clôture.*
   l'écran (logique Unicode côté client, retirée).
 - **Réversible** : oui.
 - **Annoté à la validation P2 (2026-10-27)** : le refus du serveur est un **400**, « le même code que la création » (D2, note `20a02a86` ; R4), non un 409 ; l'AC-12 le range sous le 400.
+- **Annoté à la validation P3 (2026-10-27)** (F6) : le bloc « Ce que l'agent reçoit aujourd'hui » s'appelle désormais *Texte servi par Kesh* (il ne suppose pas le serveur MCP activé).
 
 ### C-32-10b-18 — Un seul envoi à la fois sur chaque geste
 
@@ -201,6 +205,7 @@ par union au registre de l'epic à la clôture.*
 - **Écartée** : s'en remettre au 409 du serveur (le second refus s'afficherait sur un geste réussi).
 - **Réversible** : oui.
 - **Annoté à la validation P2 (2026-10-27)** : **un seul** état d'envoi pour **tous** les gestes de la page, comme la 32-8c (`McpSendDetail.svelte:47`) — F8 ; le test `gestes_desactives_pendant_l_envoi` asserte l'état `disabled` de chaque geste (F3, R13 : compter les appels ne tuait pas M17) ; le retrait du retour anticipé du gestionnaire est déclaré mutation équivalente, non jouée.
+- **Annoté à la validation P3 (2026-10-27)** (R2, R5, F4, F10) : « la réponse remplace l'état », au « Retenu », est **retiré** depuis la P2 (non testé) ; la mutation du retour anticipé **ne l'est pas** (voir l'annotation P2) — Svelte appelle le gestionnaire délégué même sur un bouton désactivé — : elle devient **M18**, tuée par deux `click` envoyés par `fireEvent` et un seul `POST` attendu. Pendant l'envoi, les dialogues ne se ferment pas (les trois réglages de `McpSendDetail.svelte:345-347`).
 
 ### C-32-10b-19 — Le drapeau `standardDiffere` n'est pas affiché tel quel
 
@@ -212,3 +217,4 @@ par union au registre de l'epic à la clôture.*
 - **Écartées** : afficher le drapeau sous un libellé unique (deux situations confondues) ; demander à la 32-10a un
   second drapeau (inutile : l'origine est déjà dans la synthèse).
 - **Réversible** : oui.
+- **Annoté à la validation P3 (2026-10-27)** (R2, F7) : « le drapeau seul conditionne *Revenir au texte standard* » est **périmé** depuis la P2 ; la condition est `standardDiffere && standardDuCode !== null` (C-32-10b-10, annotation P2).
