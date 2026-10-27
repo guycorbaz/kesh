@@ -32,6 +32,8 @@
 	let texte = $state('');
 	let envoiEnCours = $state(false);
 	let erreurDeCreation = $state<string | null>(null);
+	/** Le prompt créé quand la navigation vers son détail a échoué (revue de code P1, B7). */
+	let creeSansNavigation = $state<number | null>(null);
 
 	async function charger() {
 		chargement = true;
@@ -49,17 +51,31 @@
 		void charger();
 	});
 
-	/** La création : les valeurs EXACTES de la saisie ; un seul envoi à la fois. */
+	/**
+	 * La création : les valeurs EXACTES de la saisie ; un seul envoi à la fois. La création
+	 * et la navigation sont deux temps : une navigation en échec ne se dit pas en échec de
+	 * création (le prompt existe) — l'écran offre un lien vers lui (revue de code P1, B7).
+	 */
 	async function creer(event?: Event) {
 		event?.preventDefault();
 		if (envoiEnCours) return;
 		envoiEnCours = true;
 		erreurDeCreation = null;
+		creeSansNavigation = null;
+		let ecrite;
 		try {
-			const ecrite = await createMcpPrompt({ nom, description, texte });
-			await goto(`/admin/mcp/prompts/${ecrite.promptId}`);
+			ecrite = await createMcpPrompt({ nom, description, texte });
 		} catch (err) {
 			erreurDeCreation = erreurDeGeste(err).message;
+			envoiEnCours = false;
+			return;
+		}
+		try {
+			await goto(`/admin/mcp/prompts/${ecrite.promptId}`);
+		} catch {
+			creeSansNavigation = ecrite.promptId;
+			formulaireOuvert = false;
+			void charger();
 		} finally {
 			envoiEnCours = false;
 		}
@@ -92,6 +108,14 @@
 			'Un prompt est une consigne que vous choisissez de donner à un agent depuis son client MCP. Il n’ouvre aucun droit : l’agent reste borné par les portées de sa clé. Une proposition d’un agent n’est servie qu’après votre approbation.',
 		)}
 	</p>
+
+	{#if creeSansNavigation !== null}
+		<p class="text-sm" role="status">
+			<a class="text-primary underline" href="/admin/mcp/prompts/{creeSansNavigation}" data-testid="mcp-prompts-created">
+				{i18nMsg('mcp-prompts-created-open', 'Prompt créé : ouvrir son détail')}
+			</a>
+		</p>
+	{/if}
 
 	{#if formulaireOuvert}
 		<form class="space-y-3 rounded-md border border-border p-4" onsubmit={creer} data-testid="mcp-prompts-create-form">

@@ -356,7 +356,11 @@ describe('McpPromptDetail — l’historique (AC-8)', () => {
 		expect((r.getByTestId('mcp-prompt-editor-description') as HTMLInputElement).value).toBe('description agent 2');
 		expect((r.getByTestId('mcp-prompt-editor-text') as HTMLTextAreaElement).value).toBe('texte agent 2');
 		expect(r.getByTestId('mcp-prompt-editor-agent-origin')).toBeTruthy();
-		expect(r.queryByTestId('mcp-prompt-history-reuse-')).toBeNull();
+		// Revue P1, E7 : l'assertion précédente visait un identifiant inexistant. Reprendre
+		// la v1 (d'administrateur) remet son texte et retire l'avis P26.
+		await fireEvent.click(r.getByTestId('mcp-prompt-history-reuse-1'));
+		expect((r.getByTestId('mcp-prompt-editor-text') as HTMLTextAreaElement).value).toBe('texte 1');
+		expect(r.queryByTestId('mcp-prompt-editor-agent-origin')).toBeNull();
 	});
 });
 
@@ -684,4 +688,135 @@ describe('McpPromptDetail — un seul envoi à la fois (AC-7, C-32-10b-18)', () 
 			attente.liberer({ ...ECRITE });
 		});
 	}
+});
+
+describe('McpPromptDetail — remédiation de la revue de code P1', () => {
+	const PANNE = { status: 500, code: 'INTERNAL_ERROR', message: 'Panne du serveur.' };
+
+	// M20 (B1 = E1 = A1) : une écriture réussie suivie d'une relecture en échec.
+	it('relecture_en_echec_apres_ecriture — le succès est dit, Recharger offert, jamais un échec du geste', async () => {
+		const { notifySuccess } = await import('$lib/shared/utils/notify');
+		const r = await monter(detail([v(1), agent(2)], { version: 7 }));
+		mockApi.approveMcpPromptVersion.mockResolvedValueOnce({ ...ECRITE, numero: 2 });
+		mockApi.getMcpPrompt.mockRejectedValueOnce(PANNE);
+		await fireEvent.click(r.getByTestId('mcp-prompt-approve-2'));
+		await fireEvent.click(await r.findByTestId('mcp-prompt-approve-confirm'));
+		const erreur = await r.findByTestId('mcp-prompt-error');
+		expect(erreur.textContent).toContain(
+			'Le geste a été enregistré, mais la relecture du prompt a échoué : rechargez-le.',
+		);
+		expect(erreur.textContent).not.toContain('Panne du serveur.');
+		expect(vi.mocked(notifySuccess)).toHaveBeenCalledWith('Version n° 2 approuvée.');
+		expect(r.getByTestId('mcp-prompt-reload')).toBeTruthy();
+		// Recharger relit, et l'écran montre l'état du serveur.
+		mockApi.getMcpPrompt.mockResolvedValueOnce(
+			detail([v(1), agent(2, { etat: 'approved' })], { version: 8, numeroEnVigueur: 2 }),
+		);
+		await fireEvent.click(r.getByTestId('mcp-prompt-reload'));
+		await r.findByTestId('mcp-prompt-in-force-badge-2');
+		expect(r.queryByTestId('mcp-prompt-error')).toBeNull();
+		expect(mockApi.approveMcpPromptVersion).toHaveBeenCalledTimes(1);
+	});
+
+	// M21 (E2 = B2 = A2) : l'amendement de l'AC-12 hors du chemin nominal.
+	it('saisie_conservee_si_le_rechargement_echoue — le détail reste, la saisie aussi, Recharger encore offert', async () => {
+		const r = await monter(detail([v(1)], { version: 7 }));
+		const t = r.getByTestId('mcp-prompt-editor-text') as HTMLTextAreaElement;
+		t.value = 'ma saisie précieuse';
+		await fireEvent.input(t);
+		mockApi.addMcpPromptVersion.mockRejectedValueOnce({ status: 409, code: 'OPTIMISTIC_LOCK_CONFLICT', message: 'x' });
+		await fireEvent.click(r.getByTestId('mcp-prompt-editor-save'));
+		await r.findByTestId('mcp-prompt-reload');
+		// Le rechargement échoue : rien ne disparaît.
+		mockApi.getMcpPrompt.mockRejectedValueOnce(PANNE);
+		await fireEvent.click(r.getByTestId('mcp-prompt-reload'));
+		await waitFor(() => expect(r.getByTestId('mcp-prompt-error').textContent).toContain('Panne du serveur.'));
+		expect(r.queryByTestId('mcp-prompt-load-error')).toBeNull();
+		expect(r.getByTestId('mcp-prompt-title')).toBeTruthy();
+		expect((r.getByTestId('mcp-prompt-editor-text') as HTMLTextAreaElement).value).toBe('ma saisie précieuse');
+		// On réessaie : le rechargement réussit, la saisie est toujours gardée.
+		mockApi.getMcpPrompt.mockResolvedValueOnce(detail([v(1), agent(2)], { version: 8 }));
+		await fireEvent.click(r.getByTestId('mcp-prompt-reload'));
+		await r.findByTestId('mcp-prompt-editor-kept');
+		expect((r.getByTestId('mcp-prompt-editor-text') as HTMLTextAreaElement).value).toBe('ma saisie précieuse');
+		expect(mockApi.addMcpPromptVersion).toHaveBeenCalledTimes(1);
+	});
+
+	it('premier chargement en échec : un bouton pour réessayer', async () => {
+		mockApi.getMcpPrompt.mockRejectedValueOnce(PANNE);
+		const r = render(McpPromptDetail, { id: 4 });
+		await r.findByTestId('mcp-prompt-load-error');
+		mockApi.getMcpPrompt.mockResolvedValueOnce(detail([v(1)]));
+		await fireEvent.click(r.getByTestId('mcp-prompt-load-retry'));
+		await r.findByTestId('mcp-prompt-title');
+	});
+
+	// M22 (E3) : l'erreur d'un geste de l'éditeur, là où l'on agit.
+	it('erreur_de_l_editeur_pres_de_l_editeur — 400 et 409, focalisée', async () => {
+		const r = await monter(detail([v(1)]));
+		mockApi.addMcpPromptVersion.mockRejectedValueOnce({
+			status: 400,
+			code: 'VALIDATION_ERROR',
+			message: 'Le texte du prompt contient un caractère invisible.',
+		});
+		await fireEvent.click(r.getByTestId('mcp-prompt-editor-save'));
+		const erreur = await r.findByTestId('mcp-prompt-error');
+		const zone = r.getByTestId('mcp-prompt-editor-zone');
+		expect(zone.contains(erreur)).toBe(true);
+		expect(r.getAllByTestId('mcp-prompt-error')).toHaveLength(1);
+		await waitFor(() => expect(document.activeElement).toBe(erreur));
+		// Un geste hors de l'éditeur garde son erreur en tête de page.
+		cleanup();
+		const r2 = await monter(detail([v(1), agent(2)]));
+		mockApi.refuseMcpPromptVersion.mockRejectedValueOnce({ status: 409, code: 'OPTIMISTIC_LOCK_CONFLICT', message: 'x' });
+		await fireEvent.click(r2.getByTestId('mcp-prompt-refuse-2'));
+		await fireEvent.click(await r2.findByTestId('mcp-prompt-refuse-confirm'));
+		const e2 = await r2.findByTestId('mcp-prompt-error');
+		expect(r2.getByTestId('mcp-prompt-editor-zone').contains(e2)).toBe(false);
+		await waitFor(() => expect(document.activeElement).toBe(e2));
+	});
+
+	// M23 (B3 = E8) : pendant un rechargement, aucun geste.
+	it('gestes_desactives_pendant_un_rechargement', async () => {
+		const r = await monter(detail([v(1), agent(2)]));
+		mockApi.refuseMcpPromptVersion.mockRejectedValueOnce({ status: 409, code: 'OPTIMISTIC_LOCK_CONFLICT', message: 'x' });
+		await fireEvent.click(r.getByTestId('mcp-prompt-refuse-2'));
+		await fireEvent.click(await r.findByTestId('mcp-prompt-refuse-confirm'));
+		await r.findByTestId('mcp-prompt-reload');
+		const attente = enAttente<Detail>();
+		mockApi.getMcpPrompt.mockReturnValueOnce(attente.p);
+		await fireEvent.click(r.getByTestId('mcp-prompt-reload'));
+		for (const id of ['mcp-prompt-approve-2', 'mcp-prompt-refuse-2', 'mcp-prompt-editor-save', 'mcp-prompt-withdraw']) {
+			await waitFor(() => expect((r.getByTestId(id) as HTMLButtonElement).disabled, id).toBe(true));
+		}
+		await fireEvent.click(r.getByTestId('mcp-prompt-editor-save'));
+		expect(mockApi.addMcpPromptVersion).not.toHaveBeenCalled();
+		attente.liberer(detail([v(1), agent(2)], { version: 8 }));
+		await waitFor(() => expect((r.getByTestId('mcp-prompt-editor-save') as HTMLButtonElement).disabled).toBe(false));
+	});
+
+	// M24 (B5 = E6) : un dialogue ne se ferme pas pendant l'envoi.
+	it('dialogue_ne_se_ferme_pas_pendant_l_envoi — Échap et croix', async () => {
+		const r = await monter(detail([v(1), agent(2)]));
+		// Témoin : hors envoi, Échap ferme le dialogue (sans quoi le test serait vide).
+		await fireEvent.click(r.getByTestId('mcp-prompt-refuse-2'));
+		const temoin = await r.findByTestId('mcp-prompt-refuse-dialog');
+		expect(temoin.querySelector('[data-slot="dialog-close"]')).not.toBeNull();
+		await fireEvent.keyDown(document.activeElement ?? temoin, { key: 'Escape' });
+		await waitFor(() => expect(r.queryByTestId('mcp-prompt-refuse-dialog')).toBeNull());
+		// Pendant l'envoi : Échap ne ferme rien, la croix n'est plus offerte.
+		const attente = enAttente<unknown>();
+		mockApi.refuseMcpPromptVersion.mockReturnValueOnce(attente.p as ReturnType<typeof api.refuseMcpPromptVersion>);
+		await fireEvent.click(r.getByTestId('mcp-prompt-refuse-2'));
+		await fireEvent.click(await r.findByTestId('mcp-prompt-refuse-confirm'));
+		await waitFor(() =>
+			expect((r.getByTestId('mcp-prompt-refuse-confirm') as HTMLButtonElement).disabled).toBe(true),
+		);
+		const dialogue = r.getByTestId('mcp-prompt-refuse-dialog');
+		expect(dialogue.querySelector('[data-slot="dialog-close"]')).toBeNull();
+		await fireEvent.keyDown(document.activeElement ?? dialogue, { key: 'Escape' });
+		await new Promise((res) => setTimeout(res, 20));
+		expect(r.getByTestId('mcp-prompt-refuse-dialog')).toBeTruthy();
+		attente.liberer({ ...ECRITE });
+	});
 });

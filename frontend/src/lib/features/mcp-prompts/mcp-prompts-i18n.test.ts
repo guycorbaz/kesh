@@ -48,8 +48,9 @@ const HTML_BRUT = '{' + '@html';
  * Le nombre exact de clés `mcp-prompts-` : borne anti-test-muet (un relevé qui se
  * viderait et un catalogue vidé du préfixe resteraient égaux). Recompté à la main :
  * `grep -c '^mcp-prompts-' crates/kesh-i18n/locales/fr-CH/messages.ftl`.
+ * 91 → 94 à la remédiation de la revue de code P1 (`-error-reread`, `-retry`, `-created-open`).
  */
-const NOMBRE_DE_CLES = 91;
+const NOMBRE_DE_CLES = 94;
 
 describe('écran des prompts — replis égaux au catalogue (AC-15, #758)', () => {
 	const fr = catalogueDe(RACINE_FTL, 'fr-CH');

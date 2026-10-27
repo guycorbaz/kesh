@@ -1938,6 +1938,9 @@ mcp-prompts-standard-toast = Prompt revenu au texte standard.
 mcp-prompts-error-conflict = Ce prompt a changé depuis son affichage : rechargez-le avant d’agir.
 mcp-prompts-error-not-found = Prompt introuvable.
 mcp-prompts-error-forbidden = Réservé à l’Administrateur.
+mcp-prompts-error-reread = Le geste a été enregistré, mais la relecture du prompt a échoué : rechargez-le.
+mcp-prompts-retry = Réessayer
+mcp-prompts-created-open = Prompt créé : ouvrir son détail
 # Story 17-3d — import/restauration complète d'installation (.keshbackup, Admin)
 nav-admin-restore = Restaurer / Importer
 admin-restore-page-title = Restauration / import d'installation

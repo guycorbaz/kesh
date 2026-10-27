@@ -22,6 +22,17 @@ import type {
 // montrée à l'heure locale) : une seule fonction, réemployée (C-32-10b-23).
 export { dateLocale } from '$lib/features/mcp-sends/mcp-sends-format';
 
+/**
+ * L'identifiant d'un prompt lu dans l'URL : des chiffres décimaux seulement, sans zéro de
+ * tête, entier sûr ; `NaN` sinon (revue de code P1, E9 — `Number('0x10')` rendait 16).
+ * Le composant de détail rend `NaN` « Prompt introuvable », sans appel.
+ */
+export function idDeLUrl(brut: string): number {
+	if (!/^[1-9][0-9]*$/.test(brut)) return Number.NaN;
+	const n = Number(brut);
+	return Number.isSafeInteger(n) ? n : Number.NaN;
+}
+
 /** Le libellé d'une origine. */
 export function origineAffichee(origine: Origine): string {
 	switch (origine) {

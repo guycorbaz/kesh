@@ -29,7 +29,7 @@
   ou valeur de champ seulement, jamais d'insertion de HTML brut.
 -->
 <script lang="ts">
-	import { onMount } from 'svelte';
+	import { onMount, tick } from 'svelte';
 	import { Button } from '$lib/components/ui/button';
 	import * as Dialog from '$lib/components/ui/dialog';
 	import { i18nMsg } from '$lib/shared/utils/i18n.svelte';
@@ -73,6 +73,13 @@
 	let envoiEnCours = $state(false);
 	let gesteEnCours = $state<Geste | null>(null);
 	let erreur = $state<ErreurDeGeste | null>(null);
+	/** Vrai si l'erreur vient d'un geste de l'éditeur : elle s'affiche près de lui (revue P1, E3). */
+	let erreurPresDeLEditeur = $state(false);
+	/**
+	 * La page est occupée : un envoi ou une lecture est en cours. Tous les gestes sont alors
+	 * désactivés (C-32-10b-18 ; et pendant un rechargement, revue de code P1, B3 = E8).
+	 */
+	const occupe = $derived(envoiEnCours || chargement);
 	/** Vrai si le dernier 409 est venu de l'enregistrement d'une saisie : elle survit au rechargement. */
 	let saisieAConserver = $state(false);
 	/** Vrai après un rechargement qui a conservé la saisie : l'écran le dit. */
@@ -118,11 +125,17 @@
 		if (!garderSaisie) preRemplir(versionEnVigueur(d));
 	}
 
+	/**
+	 * Lit le détail. Au premier chargement, un échec remplace la page par son message (et
+	 * *Réessayer*). Un **rechargement** en échec, lui, garde le détail affiché et la saisie
+	 * — conservée ou non — et dit l'erreur avec *Recharger* encore offert : l'amendement de
+	 * l'AC-12 tient aussi quand la relecture tombe en panne (revue de code P1, E2 = B2 = A2).
+	 * `saisieAConserver` n'est remis à faux qu'après une lecture réussie.
+	 */
 	async function charger(garderSaisie = false) {
 		chargement = true;
 		erreurDeChargement = null;
 		erreur = null;
-		saisieAConserver = false;
 		if (!Number.isSafeInteger(id) || id < 1) {
 			detail = null;
 			erreurDeChargement = i18nMsg('mcp-prompts-error-not-found', 'Prompt introuvable.');
@@ -130,10 +143,16 @@
 			return;
 		}
 		try {
-			poser(await getMcpPrompt(id), garderSaisie);
+			const d = await getMcpPrompt(id);
+			saisieAConserver = false;
+			poser(d, garderSaisie);
 		} catch (err) {
-			detail = null;
-			erreurDeChargement = erreurDeGeste(err).message;
+			const e = erreurDeGeste(err);
+			if (detail === null) {
+				erreurDeChargement = e.message;
+			} else {
+				void afficherErreur({ message: e.message, recharger: true }, garderSaisie);
+			}
 		} finally {
 			chargement = false;
 		}
@@ -145,7 +164,24 @@
 
 	/** *Recharger*, après un 409 : la saisie survit si le 409 est venu de son enregistrement. */
 	function recharger() {
+		if (occupe) return;
 		void charger(saisieAConserver);
+	}
+
+	/** L'élément de l'erreur affichée, pour l'amener sous les yeux (revue de code P1, E3). */
+	let elementErreur = $state<HTMLElement | null>(null);
+
+	/**
+	 * Affiche une erreur, près de l'éditeur si elle vient d'un geste de l'éditeur — sinon en
+	 * tête de page —, puis la fait défiler dans la vue et lui donne le focus : un refus du
+	 * serveur ne passe jamais inaperçu (revue de code P1, E3).
+	 */
+	async function afficherErreur(e: ErreurDeGeste, presDeLEditeur: boolean) {
+		erreur = e;
+		erreurPresDeLEditeur = presDeLEditeur;
+		await tick();
+		elementErreur?.scrollIntoView?.({ block: 'center' });
+		elementErreur?.focus();
 	}
 
 	function fermerDialogues() {
@@ -156,25 +192,49 @@
 	}
 
 	/**
-	 * Un geste : un seul à la fois ; l'écriture, PUIS la relecture. Un 409 rendu
-	 * à l'enregistrement d'une saisie la garde pour le rechargement ; aucun envoi
-	 * n'est jamais rejoué.
+	 * Un geste : un seul à la fois, et jamais pendant un rechargement ; l'écriture, PUIS la
+	 * relecture — **deux temps distincts** (revue de code P1, B1 = E1 = A1) :
+	 * - l'écriture refusée : son erreur ; un 409 rendu à l'enregistrement d'une saisie la
+	 *   garde pour le rechargement ;
+	 * - l'écriture réussie : le succès est notifié aussitôt ; si la relecture échoue
+	 *   ensuite, l'écran dit que le geste a eu lieu et offre *Recharger* — il n'annonce
+	 *   jamais l'échec d'un geste qui a eu lieu.
+	 * Aucun envoi n'est jamais rejoué.
 	 */
 	async function agir(geste: Geste, ecrire: () => Promise<unknown>, succes: string) {
-		if (envoiEnCours) return;
+		if (occupe) return;
 		envoiEnCours = true;
 		gesteEnCours = geste;
 		erreur = null;
 		saisieConservee = false;
+		const presDeLEditeur = geste === 'enregistrer';
 		try {
-			await ecrire();
+			try {
+				await ecrire();
+			} catch (err) {
+				const e = erreurDeGeste(err);
+				saisieAConserver = presDeLEditeur && e.recharger;
+				fermerDialogues();
+				void afficherErreur(e, presDeLEditeur);
+				return;
+			}
 			fermerDialogues();
-			poser(await getMcpPrompt(id), false);
 			notifySuccess(succes);
-		} catch (err) {
-			erreur = erreurDeGeste(err);
-			saisieAConserver = geste === 'enregistrer' && erreur.recharger;
-			fermerDialogues();
+			saisieAConserver = false;
+			try {
+				poser(await getMcpPrompt(id), false);
+			} catch {
+				void afficherErreur(
+					{
+						message: i18nMsg(
+							'mcp-prompts-error-reread',
+							'Le geste a été enregistré, mais la relecture du prompt a échoué : rechargez-le.',
+						),
+						recharger: true,
+					},
+					presDeLEditeur,
+				);
+			}
 		} finally {
 			envoiEnCours = false;
 			gesteEnCours = null;
@@ -182,7 +242,7 @@
 	}
 
 	function confirmerApprobation() {
-		if (envoiEnCours || !detail || !aApprouver) return;
+		if (occupe || !detail || !aApprouver) return;
 		// Le numéro et la `version` DE L'OBJET AFFICHÉ — jamais une relecture.
 		const { numero } = aApprouver;
 		const version = detail.version;
@@ -194,7 +254,7 @@
 	}
 
 	function confirmerRefus() {
-		if (envoiEnCours || !detail || !aRefuser) return;
+		if (occupe || !detail || !aRefuser) return;
 		const { numero } = aRefuser;
 		const version = detail.version;
 		void agir(
@@ -205,7 +265,7 @@
 	}
 
 	function enregistrer(description: string, texte: string) {
-		if (envoiEnCours || !detail) return;
+		if (occupe || !detail) return;
 		const version = detail.version;
 		void agir(
 			'enregistrer',
@@ -215,7 +275,7 @@
 	}
 
 	function confirmerRetrait() {
-		if (envoiEnCours || !detail) return;
+		if (occupe || !detail) return;
 		const version = detail.version;
 		void agir(
 			'retirer',
@@ -225,7 +285,7 @@
 	}
 
 	function confirmerStandard() {
-		if (envoiEnCours || !detail) return;
+		if (occupe || !detail) return;
 		const version = detail.version;
 		void agir(
 			'standard',
@@ -257,9 +317,11 @@
 		<div
 			class="rounded-md border border-destructive bg-destructive/10 px-3 py-2 text-sm text-destructive"
 			role="alert"
-			data-testid="mcp-prompt-load-error"
 		>
-			{erreurDeChargement}
+			<p data-testid="mcp-prompt-load-error">{erreurDeChargement}</p>
+			<Button variant="outline" onclick={() => charger()} disabled={chargement} data-testid="mcp-prompt-load-retry">
+				{i18nMsg('mcp-prompts-retry', 'Réessayer')}
+			</Button>
 		</div>
 	{:else if detail}
 		<div class="flex flex-wrap items-center gap-2">
@@ -288,19 +350,27 @@
 			<dd data-testid="mcp-prompt-modified">{dateLocale(detail.modifieLe)}</dd>
 		</dl>
 
-		{#if erreur}
+		<!-- L'erreur d'un geste : ici, en tête de page — sauf celle d'un geste de l'éditeur,
+		     rendue près de lui (revue de code P1, E3). Un seul site de rendu, deux places. -->
+		{#snippet alerte(e: ErreurDeGeste)}
 			<div
 				class="space-y-2 rounded-md border border-destructive bg-destructive/10 px-3 py-2 text-sm text-destructive"
 				role="alert"
+				tabindex="-1"
+				bind:this={elementErreur}
 				data-testid="mcp-prompt-error"
 			>
-				<p>{erreur.message}</p>
-				{#if erreur.recharger}
-					<Button variant="outline" onclick={recharger} disabled={envoiEnCours} data-testid="mcp-prompt-reload">
+				<p>{e.message}</p>
+				{#if e.recharger}
+					<Button variant="outline" onclick={recharger} disabled={occupe} data-testid="mcp-prompt-reload">
 						{i18nMsg('mcp-prompts-reload', 'Recharger')}
 					</Button>
 				{/if}
 			</div>
+		{/snippet}
+
+		{#if erreur && !erreurPresDeLEditeur}
+			{@render alerte(erreur)}
 		{/if}
 
 		<section class="space-y-2" data-testid="mcp-prompt-served-block">
@@ -369,7 +439,7 @@
 							{#if peutApprouver(detail, v)}
 								<Button
 									onclick={() => (aApprouver = v)}
-									disabled={envoiEnCours}
+									disabled={occupe}
 									data-testid="mcp-prompt-approve-{v.numero}"
 								>
 									{i18nMsg('mcp-prompts-approve', 'Approuver')}
@@ -379,7 +449,7 @@
 								<Button
 									variant="destructive"
 									onclick={() => (aRefuser = v)}
-									disabled={envoiEnCours}
+									disabled={occupe}
 									data-testid="mcp-prompt-refuse-{v.numero}"
 								>
 									{i18nMsg('mcp-prompts-refuse', 'Refuser')}
@@ -415,8 +485,8 @@
 					<tbody>
 						{#each historique as v (v.numero)}
 							<tr class="border-b border-border align-top" data-testid="mcp-prompt-history-row-{v.numero}">
-								<td class="py-2 pr-4 font-mono">
-									{v.numero}
+								<td class="py-2 pr-4">
+									<span class="font-mono">{v.numero}</span>
 									{#if detail.numeroEnVigueur === v.numero}
 										<span class="pastille pastille-succes ml-1" data-testid="mcp-prompt-in-force-badge-{v.numero}">
 											{i18nMsg('mcp-prompts-badge-in-force', 'En vigueur')}
@@ -452,7 +522,7 @@
 											variant="outline"
 											size="sm"
 											onclick={() => preRemplir(v)}
-											disabled={envoiEnCours}
+											disabled={occupe}
 											data-testid="mcp-prompt-history-reuse-{v.numero}"
 										>
 											{i18nMsg('mcp-prompts-reuse', 'Reprendre cette version')}
@@ -482,35 +552,41 @@
 			</div>
 		</section>
 
-		{#if saisieConservee}
-			<div
-				class="rounded-md border border-warning bg-warning/10 px-3 py-2 text-sm"
-				role="note"
-				data-testid="mcp-prompt-editor-kept"
-			>
-				{i18nMsg(
-					'mcp-prompts-editor-kept',
-					'Votre saisie est conservée dans l’éditeur. Relisez l’historique rechargé avant de l’enregistrer de nouveau.',
-				)}
-			</div>
-		{/if}
+		<div class="space-y-2" data-testid="mcp-prompt-editor-zone">
+			{#if erreur && erreurPresDeLEditeur}
+				{@render alerte(erreur)}
+			{/if}
 
-		<McpPromptEditor
-			bind:description={editeurDescription}
-			bind:texte={editeurTexte}
-			origine={editeurOrigine}
-			{numeroSuivant}
-			{envoiEnCours}
-			occupe={gesteEnCours === 'enregistrer'}
-			onEnregistrer={enregistrer}
-		/>
+			{#if saisieConservee}
+				<div
+					class="rounded-md border border-warning bg-warning/10 px-3 py-2 text-sm"
+					role="note"
+					data-testid="mcp-prompt-editor-kept"
+				>
+					{i18nMsg(
+						'mcp-prompts-editor-kept',
+						'Votre saisie est conservée dans l’éditeur. Relisez l’historique rechargé avant de l’enregistrer de nouveau.',
+					)}
+				</div>
+			{/if}
+
+			<McpPromptEditor
+				bind:description={editeurDescription}
+				bind:texte={editeurTexte}
+				origine={editeurOrigine}
+				{numeroSuivant}
+				envoiEnCours={occupe}
+				occupe={gesteEnCours === 'enregistrer'}
+				onEnregistrer={enregistrer}
+			/>
+		</div>
 
 		<div class="flex flex-wrap gap-2" data-testid="mcp-prompt-actions">
 			{#if enVigueur === null || enVigueur.nature !== 'withdrawal'}
 				<Button
 					variant="destructive"
 					onclick={() => (dialogueRetrait = true)}
-					disabled={envoiEnCours}
+					disabled={occupe}
 					data-testid="mcp-prompt-withdraw"
 				>
 					{i18nMsg('mcp-prompts-withdraw', 'Retirer ce prompt')}
@@ -520,7 +596,7 @@
 				<Button
 					variant="outline"
 					onclick={() => (dialogueStandard = true)}
-					disabled={envoiEnCours}
+					disabled={occupe}
 					data-testid="mcp-prompt-restore-standard"
 				>
 					{i18nMsg('mcp-prompts-restore-standard', 'Revenir au texte standard')}
@@ -557,14 +633,14 @@
 						<Button
 							variant="outline"
 							onclick={() => (aApprouver = null)}
-							disabled={envoiEnCours}
+							disabled={occupe}
 							data-testid="mcp-prompt-approve-cancel"
 						>
 							{i18nMsg('mcp-prompts-cancel', 'Annuler')}
 						</Button>
 						<Button
 							onclick={confirmerApprobation}
-							disabled={envoiEnCours}
+							disabled={occupe}
 							aria-busy={gesteEnCours === 'approuver' ? 'true' : undefined}
 							data-testid="mcp-prompt-approve-confirm"
 						>
@@ -596,13 +672,13 @@
 						{i18nMsg('mcp-prompts-refuse-dialog-body', 'Un refus est définitif ; la version reste à l’historique.')}
 					</p>
 					<Dialog.Footer>
-						<Button variant="outline" onclick={() => (aRefuser = null)} disabled={envoiEnCours}>
+						<Button variant="outline" onclick={() => (aRefuser = null)} disabled={occupe}>
 							{i18nMsg('mcp-prompts-cancel', 'Annuler')}
 						</Button>
 						<Button
 							variant="destructive"
 							onclick={confirmerRefus}
-							disabled={envoiEnCours}
+							disabled={occupe}
 							aria-busy={gesteEnCours === 'refuser' ? 'true' : undefined}
 							data-testid="mcp-prompt-refuse-confirm"
 						>
@@ -631,13 +707,13 @@
 					)}
 				</p>
 				<Dialog.Footer>
-					<Button variant="outline" onclick={() => (dialogueRetrait = false)} disabled={envoiEnCours}>
+					<Button variant="outline" onclick={() => (dialogueRetrait = false)} disabled={occupe}>
 						{i18nMsg('mcp-prompts-cancel', 'Annuler')}
 					</Button>
 					<Button
 						variant="destructive"
 						onclick={confirmerRetrait}
-						disabled={envoiEnCours}
+						disabled={occupe}
 						aria-busy={gesteEnCours === 'retirer' ? 'true' : undefined}
 						data-testid="mcp-prompt-withdraw-confirm"
 					>
@@ -672,12 +748,12 @@
 					)}
 				</p>
 				<Dialog.Footer>
-					<Button variant="outline" onclick={() => (dialogueStandard = false)} disabled={envoiEnCours}>
+					<Button variant="outline" onclick={() => (dialogueStandard = false)} disabled={occupe}>
 						{i18nMsg('mcp-prompts-cancel', 'Annuler')}
 					</Button>
 					<Button
 						onclick={confirmerStandard}
-						disabled={envoiEnCours}
+						disabled={occupe}
 						aria-busy={gesteEnCours === 'standard' ? 'true' : undefined}
 						data-testid="mcp-prompt-standard-confirm"
 					>

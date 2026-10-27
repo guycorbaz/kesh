@@ -166,3 +166,13 @@ describe('mcp-prompts-format', () => {
 		});
 	});
 });
+
+describe('idDeLUrl (revue de code P1, E9)', () => {
+	it('seuls des chiffres décimaux, sans zéro de tête', async () => {
+		const { idDeLUrl } = await import('./mcp-prompts-format');
+		expect(idDeLUrl('4')).toBe(4);
+		expect(idDeLUrl('120')).toBe(120);
+		for (const brut of ['0x10', '1e1', ' 4', '4 ', '04', '0', '-1', '1.5', '', 'abc', '99999999999999999999'])
+			expect(Number.isNaN(idDeLUrl(brut)), brut).toBe(true);
+	});
+});

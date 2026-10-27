@@ -745,7 +745,12 @@ const ATTENDU = {
 	// `routes/(app)/admin/mcp/prompts/` 0 → 0 ; `routes/(app)/+layout.svelte` 6 → 6 (l'entrée
 	// de menu passe par `i18nKey`, `FAMILLES_RESOLUES['nav-']`). Que des littéraux : les autres
 	// compteurs inchangés.
-	sitesTotal: 2510,
+	// Story 32-10b, remédiation de la revue de code P1 : **2510 → 2513** (+3), recompté par
+	// le même `grep` aux deux bornes (`fd6741c6` → HEAD), périmètre : les fichiers touchés —
+	// `McpPromptDetail.svelte` 65 → 67 (`mcp-prompts-error-reread`, `mcp-prompts-retry`),
+	// `McpPromptsList.svelte` 25 → 26 (`mcp-prompts-created-open`), la page `[id]` 0 → 0.
+	// Que des littéraux : les autres compteurs inchangés.
+	sitesTotal: 2513,
 	sitesNonResolus: 31,
 	relais: 6,
 	// Story 26-1 (#620, AC3-bis) : **10 → 11** — `lib/features/bank-import/

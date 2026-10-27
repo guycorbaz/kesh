@@ -1863,6 +1863,9 @@ mcp-prompts-standard-toast = Prompt returned to the standard text.
 mcp-prompts-error-conflict = This prompt has changed since it was displayed: reload it before acting.
 mcp-prompts-error-not-found = Prompt not found.
 mcp-prompts-error-forbidden = Reserved for the Administrator.
+mcp-prompts-error-reread = The action was saved, but reloading the prompt failed: reload it.
+mcp-prompts-retry = Try again
+mcp-prompts-created-open = Prompt created: open its detail
 # Story 17-3d — full installation import / restore (.keshbackup, Admin)
 nav-admin-restore = Restore / Import
 admin-restore-page-title = Installation restore / import

@@ -213,3 +213,30 @@ describe('McpPromptsList', () => {
 		liberer({ promptId: 1, nom: 'x', numero: 1, origine: 'admin', nature: 'text', etat: 'approved', version: 1 });
 	});
 });
+
+describe('McpPromptsList — remédiation de la revue de code P1', () => {
+	// M25 (B7) : une navigation en échec n'est pas une création en échec.
+	it('creation_reussie_navigation_en_echec — aucune erreur de création, un lien vers le prompt créé', async () => {
+		mockApi.listMcpPrompts.mockResolvedValueOnce([]);
+		const r = render(McpPromptsList);
+		await r.findByTestId('mcp-prompts-title');
+		await fireEvent.click(r.getByTestId('mcp-prompts-new'));
+		const nom = r.getByTestId('mcp-prompts-create-name') as HTMLInputElement;
+		nom.value = 'mon-prompt';
+		await fireEvent.input(nom);
+		mockApi.createMcpPrompt.mockResolvedValueOnce({
+			promptId: 42,
+			nom: 'mon-prompt',
+			numero: 1,
+			origine: 'admin',
+			nature: 'text',
+			etat: 'approved',
+			version: 1,
+		});
+		mockGoto.mockRejectedValueOnce(new Error('navigation interrompue'));
+		await fireEvent.click(r.getByTestId('mcp-prompts-create-submit'));
+		const cree = await r.findByTestId('mcp-prompts-created');
+		expect(cree.getAttribute('href')).toBe('/admin/mcp/prompts/42');
+		expect(r.queryByTestId('mcp-prompts-create-error')).toBeNull();
+	});
+});
