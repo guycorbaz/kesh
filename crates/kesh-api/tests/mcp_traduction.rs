@@ -13,7 +13,12 @@ use kesh_api::mcp::textes::{
     TEXTE_ARGUMENTS_INVALIDES, TEXTE_COMPTE_NON_LETTRABLE, TEXTE_ERREUR_INTERNE,
     TEXTE_EXERCICE_INTROUVABLE, TEXTE_INTROUVABLE, TEXTE_PERIODE_HORS_EXERCICE, depuis_app_error,
 };
+use kesh_api::mcp::textes::{
+    TEXTE_NOM_RESERVE, TEXTE_PROPOSITIONS_TROP_NOMBREUSES, depuis_refus_de_proposition,
+    texte_accuse_proposition,
+};
 use kesh_api::mcp::{ErreurOutil, MotifArgument};
+use kesh_api::services::prompts_mcp::RefusProposition;
 use kesh_db::errors::DbError;
 
 const PIEGE: &str = "PIEGE_APP_326";
@@ -85,6 +90,64 @@ fn traduction_des_erreurs_de_service() {
         assert_eq!(depuis_app_error(e), ErreurOutil::Interne, "{texte}");
     }
     assert_eq!(n, 8, "plusieurs familles éprouvées");
+}
+
+/// Story 32-10a-iii (AC-iii2, point 1) — chaque refus de proposition rend son
+/// erreur d'outil. `attendu` est un `match` **exhaustif**, sans bras `_` : une
+/// variante ajoutée à `RefusProposition` sans bras ne compile pas. Les corps
+/// HTTP de chaque refus sont comparés entiers par `mcp_prompts_e2e.rs`
+/// (`proposition_refus_corps_egaux`) ; `traduction_des_erreurs_de_service`
+/// reste inchangé (aucune `AppError` n'arrive par ce chemin).
+#[test]
+fn traduction_des_refus_de_proposition() {
+    fn attendu(r: RefusProposition) -> ErreurOutil {
+        match r {
+            RefusProposition::HorsPortee => ErreurOutil::Inconnu,
+            RefusProposition::ArgumentsInvalides { champ } => ErreurOutil::ArgumentsInvalides {
+                argument: champ,
+                motif: MotifArgument::Invalide,
+            },
+            RefusProposition::NomReserve => ErreurOutil::ArgumentsInvalides {
+                argument: "nom",
+                motif: MotifArgument::Reserve,
+            },
+            RefusProposition::PlafondAtteint => ErreurOutil::PropositionsTropNombreuses,
+            RefusProposition::Interne => ErreurOutil::Interne,
+        }
+    }
+    let refus = [
+        RefusProposition::HorsPortee,
+        RefusProposition::ArgumentsInvalides { champ: "nom" },
+        RefusProposition::ArgumentsInvalides {
+            champ: "description",
+        },
+        RefusProposition::ArgumentsInvalides { champ: "texte" },
+        RefusProposition::ArgumentsInvalides {
+            champ: "(arguments)",
+        },
+        RefusProposition::NomReserve,
+        RefusProposition::PlafondAtteint,
+        RefusProposition::Interne,
+    ];
+    for r in refus {
+        assert_eq!(depuis_refus_de_proposition(r), attendu(r), "{r:?}");
+    }
+    // Les textes, épinglés par un littéral (aucune valeur reçue n'y entre).
+    assert_eq!(
+        TEXTE_NOM_RESERVE,
+        "Nom réservé : un nom commençant par « kesh » est réservé aux prompts standard de \
+         Kesh. Proposez sous un autre nom."
+    );
+    assert_eq!(
+        TEXTE_PROPOSITIONS_TROP_NOMBREUSES,
+        "Trop de propositions de prompt attendent l'approbation d'un administrateur ; rien \
+         n'est enregistré. Demandez-lui de traiter celles qui attendent."
+    );
+    assert_eq!(
+        texte_accuse_proposition("mon_prompt"),
+        "Proposition du prompt « mon_prompt » enregistrée : elle attend l'approbation d'un \
+         administrateur de Kesh et n'est pas servie avant. Ne la proposez pas de nouveau."
+    );
 }
 
 /// Le texte d'outil est une constante : le message de l'erreur n'y est jamais.

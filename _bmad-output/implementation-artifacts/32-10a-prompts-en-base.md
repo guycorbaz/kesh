@@ -1575,7 +1575,7 @@ Partie ii : Opus 5.5 (Claude Code), en autonomie, worktree `kesh-32-10a`, branch
 |---|---|
 | 32-10a-i | done |
 | 32-10a-ii | done |
-| 32-10a-iii | ready-for-dev |
+| 32-10a-iii | in-progress |
 
 ### Completion Notes List
 

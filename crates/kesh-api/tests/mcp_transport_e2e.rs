@@ -152,6 +152,30 @@ fn descripteur_lire_envoi() -> serde_json::Value {
     })
 }
 
+/// Le descripteur attendu de `proposer_prompt` (Story 32-10a-iii, AC-iii2,
+/// point 4), écrit en toutes lettres — `readOnlyHint: false` explicite.
+fn descripteur_proposer_prompt() -> serde_json::Value {
+    json!({
+        "name": "proposer_prompt",
+        "description": "Propose un prompt à l'administrateur de Kesh : une version « à \
+                        valider », jamais servie avant qu'il l'approuve dans Kesh. Le nom suit \
+                        [a-z0-9_-] (1 à 64 caractères) et ne commence pas par « kesh », réservé \
+                        aux prompts standard ; sur un nom déjà proposé, la proposition en devient \
+                        une nouvelle version. Ne recopiez aucune donnée des livres dans un prompt.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "nom": { "type": "string", "pattern": "^[a-z0-9_-]{1,64}$" },
+                "description": { "type": "string", "maxLength": 500 },
+                "texte": { "type": "string", "maxLength": 16000 },
+            },
+            "required": ["nom", "description", "texte"],
+            "additionalProperties": false,
+        },
+        "annotations": { "readOnlyHint": false },
+    })
+}
+
 fn sans_id(mut v: serde_json::Value) -> serde_json::Value {
     v.as_object_mut().unwrap().remove("id");
     v
@@ -1143,6 +1167,29 @@ fn registre_standard_inventaire() {
     );
 }
 
+/// Story 32-10a-iii (AC-iii2, point 5) — `proposer_prompt` n'est pas un
+/// `McpTool` : il n'entre pas au registre standard, et son nom n'entre en
+/// collision avec aucun outil du registre (ni avec le nom réservé de la
+/// relecture). `registre_coherent` reste inchangé : aucun outil du registre
+/// n'a la portée `PromptsWrite`.
+#[test]
+fn proposer_prompt_hors_registre() {
+    let inventaire = Registre::standard().inventaire();
+    assert!(
+        inventaire
+            .iter()
+            .all(|(n, _, _)| *n != OUTIL_PROPOSER_PROMPT),
+        "proposer_prompt au registre"
+    );
+    assert_eq!(OUTIL_PROPOSER_PROMPT, "proposer_prompt");
+    assert!(!kesh_api::mcp::registre::NOMS_RESERVES.contains(&OUTIL_PROPOSER_PROMPT));
+    assert!(
+        inventaire
+            .iter()
+            .all(|(_, _, p)| *p != Portee::PromptsWrite)
+    );
+}
+
 #[test]
 fn registre_coherent() {
     let inventaire = Registre::standard().inventaire();
@@ -1567,6 +1614,45 @@ async fn tools_list_filtre(pool: MySqlPool) {
         r.json(),
         attendu_erreur(1, -32602, TEXTE_PARAMS_INVALIDES),
         "cursor"
+    );
+
+    // Story 32-10a-iii (AC-iii2, point 4) : `books:read` seule → la liste
+    // ci-dessus, sans `proposer_prompt` ; `books:read` + `prompts:write` → la
+    // même, suivie du descripteur de `proposer_prompt`, corps égal.
+    let sans = b.mcp(Some(&jeton), LISTE).await.json();
+    assert!(
+        !sans.to_string().contains("proposer_prompt"),
+        "books:read seule"
+    );
+    let (_, ecrivain) = cle(
+        &pool,
+        c,
+        u,
+        &[McpScope::BooksRead, McpScope::PromptsWrite],
+        SendValidation::Required,
+    )
+    .await;
+    let avec = b.mcp(Some(&ecrivain), LISTE).await.json();
+    let mut attendu = sans.clone();
+    attendu["result"]["tools"]
+        .as_array_mut()
+        .unwrap()
+        .push(descripteur_proposer_prompt());
+    assert_eq!(avec, attendu, "books:read + prompts:write");
+    // `prompts:write` seule : `kesh_lire_envoi`, puis `proposer_prompt`.
+    let (_, seule) = cle(
+        &pool,
+        c,
+        u,
+        &[McpScope::PromptsWrite],
+        SendValidation::Exempt,
+    )
+    .await;
+    let r = b.mcp(Some(&seule), LISTE).await.json();
+    assert_eq!(
+        r["result"]["tools"],
+        json!([descripteur_lire_envoi(), descripteur_proposer_prompt()]),
+        "prompts:write seule"
     );
 
     let (livres_o, _) = Compteur::nouveau("livres", Portee::BooksRead);

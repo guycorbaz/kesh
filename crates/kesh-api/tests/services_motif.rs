@@ -1929,6 +1929,12 @@ const FABRIQUES_V2: &[(&str, &str)] = &[
         "lib.rs",
         "let ecriture_envois = services::poignees::EcritureEnvois::new(state.pool.clone());",
     ),
+    // Story 32-10a-iii (AC-iii1) — l'écriture des prompts par un agent
+    // (`proposer_prompt`), sur le pool ordinaire.
+    (
+        "lib.rs",
+        "let ecriture_prompts = services::poignees::EcriturePrompts::new(state.pool.clone());",
+    ),
 ];
 
 /// Les deux lignes de code de `services/` qui nomment `axum`, `AppState` ou
@@ -1945,7 +1951,7 @@ const RESIDUS_VI: &[(&str, &str)] = &[
 ];
 
 const MOTIF_V1: &str = r"\.\s*pool\s*\(|::\s*pool\b";
-const MOTIF_V2: &str = r"\bLecture::new\(|\bTrace::new\(|\bLectureEnvois::new\(|\bEcritureEnvois::new\(|\bLecturePrompts::new\(";
+const MOTIF_V2: &str = r"\bLecture::new\(|\bTrace::new\(|\bLectureEnvois::new\(|\bEcritureEnvois::new\(|\bLecturePrompts::new\(|\bEcriturePrompts::new\(";
 const MOTIF_VI: &str = r"axum|AppState|CurrentUser";
 
 fn racine_src() -> PathBuf {
@@ -2101,6 +2107,9 @@ fn ac10_temoins_des_motifs() {
     );
     // Story 32-10a-ii (AC-ii3) : la poignée des prompts.
     assert!(v2.is_match("x::LecturePrompts::new(p)"));
+    // Story 32-10a-iii (AC-iii1) : la poignée d'écriture des prompts.
+    assert!(v2.is_match("x::EcriturePrompts::new(p)"));
+    assert!(!v2.is_match("AutreEcriturePrompts::new(p)"));
     assert!(!v2.is_match("AutreLecturePrompts::new(p)"));
     // Story 32-8b (AC-B10) : les poignées des envois.
     assert!(v2.is_match("LectureEnvois::new(p)") && v2.is_match("x::EcritureEnvois::new(p)"));

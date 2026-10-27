@@ -17,16 +17,19 @@
 mod common;
 
 use std::collections::BTreeSet;
+use std::time::{Duration, Instant};
 
 use axum::Router;
+use axum::http::StatusCode;
 use kesh_api::mcp::Registre;
 use kesh_api::mcp::textes::*;
 use kesh_api::services::acces::{ContexteAcces, Portee};
-use kesh_api::services::poignees::LecturePrompts;
-use kesh_api::services::prompts_mcp::{self, ErreurPrompts, marque_agent};
+use kesh_api::services::cles_mcp::authentifier;
+use kesh_api::services::poignees::{EcriturePrompts, Lecture, LecturePrompts, Trace};
+use kesh_api::services::prompts_mcp::{self, ErreurPrompts, RefusProposition, marque_agent};
 use kesh_db::entities::mcp_prompt::{Contenu, PLAFOND_A_VALIDER, VersionEcrite};
 use kesh_db::entities::mcp_prompt_standards::{KESH_ASSISTANT, KESH_DEVELOPPEMENT, STANDARDS};
-use kesh_db::entities::{McpScope, SendValidation};
+use kesh_db::entities::{McpScope, Role, SendValidation};
 use kesh_db::repositories::mcp_prompts as depot;
 use serde_json::{Value, json};
 use sqlx::MySqlPool;
@@ -653,4 +656,633 @@ async fn service_sur_lecture_seule(pool: MySqlPool) {
             .is_none(),
         "le prompt de l'autre société"
     );
+}
+
+// ===========================================================================
+// Story 32-10a-iii — la proposition d'un agent, le journal de `prompts/get`
+// ===========================================================================
+
+const PIEGE_TEXTE: &str = "PIEGE_TEXTE_3210A";
+const PIEGE_DESC: &str = "PIEGE_DESC_3210A";
+const PIEGE_NOM: &str = "PIEGE_NOM_3210A";
+
+/// Les arguments d'une proposition.
+fn args(nom: &str, description: &str, texte: &str) -> Value {
+    json!({ "nom": nom, "description": description, "texte": texte })
+}
+
+/// L'accusé attendu d'une proposition de `nom` (AC-iii3) : le nom validé
+/// seul.
+fn accuse(nom: &str) -> Value {
+    json!({"jsonrpc":"2.0","id":1,"result":{
+        "content": [{"type": "text", "text": texte_accuse_proposition(nom)}],
+        "structuredContent": {"nom": nom, "etat": "a_valider"},
+        "isError": false,
+    }})
+}
+
+/// Les lignes d'une action du journal d'audit, dans l'ordre, sans `dureeMs`
+/// (dont le type est contrôlé).
+async fn journal(pool: &MySqlPool, action: &str) -> Vec<Value> {
+    let lignes: Vec<String> = sqlx::query_scalar(
+        "SELECT CAST(details_json AS CHAR) FROM audit_log WHERE action = ? ORDER BY id",
+    )
+    .bind(action)
+    .fetch_all(pool)
+    .await
+    .unwrap();
+    lignes
+        .into_iter()
+        .map(|d| {
+            let mut v: Value = serde_json::from_str(&d).unwrap();
+            if let Some(duree) = v.as_object_mut().unwrap().remove("dureeMs") {
+                assert!(duree.is_u64(), "dureeMs entier");
+            }
+            v
+        })
+        .collect()
+}
+
+/// Tout le journal d'audit, détails et libellés d'auteur, en texte.
+async fn audit_en_texte(pool: &MySqlPool) -> String {
+    let lignes: Vec<(String, Option<String>, String)> = sqlx::query_as(
+        "SELECT action, CAST(details_json AS CHAR), actor_label FROM audit_log ORDER BY id",
+    )
+    .fetch_all(pool)
+    .await
+    .unwrap();
+    format!("{lignes:?}")
+}
+
+/// Le nombre de versions à valider de la base.
+async fn a_valider(pool: &MySqlPool) -> i64 {
+    sqlx::query_scalar("SELECT COUNT(*) FROM mcp_prompt_versions WHERE state = 'pending'")
+        .fetch_one(pool)
+        .await
+        .unwrap()
+}
+
+/// Le nombre de versions de la base.
+async fn versions(pool: &MySqlPool) -> i64 {
+    sqlx::query_scalar("SELECT COUNT(*) FROM mcp_prompt_versions")
+        .fetch_one(pool)
+        .await
+        .unwrap()
+}
+
+/// Une société servie, son Administrateur, une clé `books:read` +
+/// `prompts:write` (`required`), sa session, et les standards amorcés.
+struct Ecrivain {
+    c: i64,
+    u: i64,
+    cle: i64,
+    jeton: String,
+    jwt: String,
+}
+
+async fn ecrivain(pool: &MySqlPool) -> Ecrivain {
+    let (c, u) = livres(pool).await;
+    activer(pool, c).await;
+    depot::amorcer_standards(pool, STANDARDS).await.unwrap();
+    let (cle, jeton) = cle(
+        pool,
+        c,
+        u,
+        &[McpScope::BooksRead, McpScope::PromptsWrite],
+        SendValidation::Required,
+    )
+    .await;
+    Ecrivain {
+        c,
+        u,
+        cle,
+        jeton,
+        jwt: session(u, Role::Admin, c),
+    }
+}
+
+impl Banc {
+    async fn proposer(&self, jeton: &str, a: Value) -> Rendu {
+        self.mcp(jeton, &appel(1, OUTIL_PROPOSER_PROMPT, a)).await
+    }
+
+    async fn api(&self, methode: &str, chemin: &str, jwt: &str, corps: Option<Value>) -> Rendu {
+        envoyer(&self.app, requete_api(methode, chemin, Some(jwt), corps)).await
+    }
+}
+
+// ---------------------------------------------------------------------------
+// AC-iii3 — la proposition, son accusé et son audit
+// ---------------------------------------------------------------------------
+
+/// Une proposition servie, **sous une clé `required`** (la politique ne
+/// s'applique pas, Miii10) : l'accusé, égal ; une version `pending` à la clé,
+/// au contenu **normalisé** (`\r\n` → `\n`) ; **exactement une** ligne au
+/// journal, `mcp.tool_called`, détail égal ; aucun piège dans la réponse ni au
+/// journal (Miii4).
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn proposition_servie_accuse_et_audit(pool: MySqlPool) {
+    let e = ecrivain(&pool).await;
+    let b = banc(&pool);
+    let texte = format!("Ligne 1 {PIEGE_TEXTE}\r\nLigne 2");
+    let r = b
+        .proposer(&e.jeton, args("mon-prompt", PIEGE_DESC, &texte))
+        .await;
+    assert_eq!(r.json(), accuse("mon-prompt"));
+    let corps = String::from_utf8_lossy(&r.corps).to_string();
+    assert!(!corps.contains(PIEGE_TEXTE) && !corps.contains(PIEGE_DESC));
+    let (origine, etat, cle, description, enregistre): (
+        String,
+        String,
+        Option<i64>,
+        String,
+        String,
+    ) = sqlx::query_as(
+        "SELECT v.origin, v.state, v.author_mcp_key_id, v.description, v.body \
+             FROM mcp_prompt_versions v JOIN mcp_prompts p ON p.id = v.prompt_id \
+             WHERE p.name = 'mon-prompt' AND p.company_id = ?",
+    )
+    .bind(e.c)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(
+        (origine.as_str(), etat.as_str(), cle),
+        ("agent", "pending", Some(e.cle))
+    );
+    assert_eq!(description, PIEGE_DESC);
+    assert_eq!(
+        enregistre,
+        format!("Ligne 1 {PIEGE_TEXTE}\nLigne 2"),
+        "le contenu normalisé"
+    );
+    assert_eq!(
+        journal(&pool, "mcp.tool_called").await,
+        vec![json!({
+            "cleMcpId": e.cle,
+            "outil": "proposer_prompt",
+            "issue": "servi",
+            "validation": "required",
+        })]
+    );
+    let audit = audit_en_texte(&pool).await;
+    assert!(!audit.contains(PIEGE_TEXTE) && !audit.contains(PIEGE_DESC));
+    // Une seconde proposition sur le même nom : une nouvelle version à valider
+    // du même prompt (C-32-10a-27 : un nom non standard existant).
+    let r = b
+        .proposer(&e.jeton, args("mon-prompt", "Autre", "Autre texte"))
+        .await;
+    assert_eq!(r.json(), accuse("mon-prompt"));
+    assert_eq!(a_valider(&pool).await, 2);
+}
+
+/// Chaque refus : corps égal, rien d'écrit, une ligne au journal (fail
+/// closed), le piège nulle part (AC-iii2, point 1 ; AC-iii3 ; Miii1, Miii3,
+/// Miii11).
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn proposition_refus_corps_egaux(pool: MySqlPool) {
+    let e = ecrivain(&pool).await;
+    let b = banc(&pool);
+    let (_, lecteur) = cle(
+        &pool,
+        e.c,
+        e.u,
+        &[McpScope::BooksRead],
+        SendValidation::Exempt,
+    )
+    .await;
+    let avant = versions(&pool).await;
+    let invalides = attendu_outil_en_erreur(1, TEXTE_ARGUMENTS_INVALIDES);
+    let reserve = attendu_outil_en_erreur(1, TEXTE_NOM_RESERVE);
+    let cas: Vec<(&str, &str, Value, Value)> = vec![
+        // Sans `prompts:write` : le chemin d'un outil inconnu.
+        (
+            "sans portée",
+            &lecteur,
+            args("p", "d", PIEGE_TEXTE),
+            attendu_erreur(1, -32602, TEXTE_OUTIL_INCONNU),
+        ),
+        (
+            "champ en trop",
+            &e.jeton,
+            json!({"nom": "p", "description": "d", "texte": PIEGE_TEXTE, "x": 1}),
+            invalides.clone(),
+        ),
+        (
+            "texte absent",
+            &e.jeton,
+            json!({"nom": "p", "description": "d"}),
+            invalides.clone(),
+        ),
+        (
+            "description sur deux lignes",
+            &e.jeton,
+            args("p", "a\nb", PIEGE_TEXTE),
+            invalides.clone(),
+        ),
+        (
+            "texte bidirectionnel",
+            &e.jeton,
+            args("p", "d", &format!("{PIEGE_TEXTE}\u{202E}")),
+            invalides.clone(),
+        ),
+        (
+            "nom non conforme",
+            &e.jeton,
+            args("Mon-Prompt", "d", PIEGE_TEXTE),
+            invalides.clone(),
+        ),
+        (
+            "kesh-assistant",
+            &e.jeton,
+            args(KESH_ASSISTANT.nom, "d", PIEGE_TEXTE),
+            reserve.clone(),
+        ),
+        (
+            "kesh-developpement",
+            &e.jeton,
+            args(KESH_DEVELOPPEMENT.nom, "d", PIEGE_TEXTE),
+            reserve.clone(),
+        ),
+        (
+            "keshx",
+            &e.jeton,
+            args("keshx", "d", PIEGE_TEXTE),
+            reserve.clone(),
+        ),
+    ];
+    for (motif, jeton, a, attendu) in &cas {
+        let r = b.proposer(jeton, a.clone()).await;
+        assert_eq!(&r.json(), attendu, "{motif}");
+        assert!(
+            !String::from_utf8_lossy(&r.corps).contains(PIEGE_TEXTE),
+            "{motif}"
+        );
+    }
+    assert_eq!(versions(&pool).await, avant, "aucun refus n'écrit");
+    let issues: Vec<(String, String)> = journal(&pool, "mcp.tool_called")
+        .await
+        .into_iter()
+        .map(|d| {
+            (
+                d["outil"].as_str().unwrap().to_string(),
+                d["issue"].as_str().unwrap().to_string(),
+            )
+        })
+        .collect();
+    let attendues: Vec<(String, String)> = std::iter::once(("(inconnu)", "inconnu"))
+        .chain(std::iter::repeat_n(
+            ("proposer_prompt", "arguments_invalides"),
+            8,
+        ))
+        .map(|(o, i)| (o.to_string(), i.to_string()))
+        .collect();
+    assert_eq!(issues, attendues);
+    // Le standard est toujours servi tel quel.
+    assert_eq!(
+        b.obtenir(&e.jeton, json!({"name": KESH_ASSISTANT.nom}))
+            .await,
+        get_attendu(KESH_ASSISTANT.description, KESH_ASSISTANT.texte)
+    );
+
+    // Le plafond : vingt propositions à valider, la vingt et unième refusée.
+    for n in 0..PLAFOND_A_VALIDER {
+        let nom = format!("p{n:02}");
+        assert_eq!(
+            b.proposer(&e.jeton, args(&nom, "d", "t")).await.json(),
+            accuse(&nom)
+        );
+    }
+    assert_eq!(a_valider(&pool).await, i64::from(PLAFOND_A_VALIDER));
+    let r = b.proposer(&e.jeton, args("p99", "d", PIEGE_TEXTE)).await;
+    assert_eq!(
+        r.json(),
+        attendu_outil_en_erreur(1, TEXTE_PROPOSITIONS_TROP_NOMBREUSES)
+    );
+    assert_eq!(a_valider(&pool).await, i64::from(PLAFOND_A_VALIDER));
+    let derniere = journal(&pool, "mcp.tool_called").await.pop().unwrap();
+    assert_eq!(
+        derniere,
+        json!({"cleMcpId": e.cle, "outil": "proposer_prompt", "issue": "limite_atteinte",
+               "validation": "required"})
+    );
+    assert!(!audit_en_texte(&pool).await.contains(PIEGE_TEXTE));
+}
+
+/// AC-iii3 — la version et son audit dans **une** transaction (Miii12) :
+/// `audit_log` cachée, la proposition rend l'erreur interne fixe et **aucune**
+/// version n'est enregistrée.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn proposition_et_audit_dans_la_meme_transaction(pool: MySqlPool) {
+    let e = ecrivain(&pool).await;
+    let b = banc(&pool);
+    let avant = versions(&pool).await;
+    sqlx::query("ALTER TABLE audit_log RENAME TO audit_log_cachee_3210a")
+        .execute(&pool)
+        .await
+        .unwrap();
+    let r = b.proposer(&e.jeton, args("p", "d", PIEGE_TEXTE)).await;
+    assert_eq!(r.json(), attendu_outil_en_erreur(1, TEXTE_ERREUR_INTERNE));
+    sqlx::query("ALTER TABLE audit_log_cachee_3210a RENAME TO audit_log")
+        .execute(&pool)
+        .await
+        .unwrap();
+    assert_eq!(versions(&pool).await, avant, "aucune version enregistrée");
+    assert!(journal(&pool, "mcp.tool_called").await.is_empty());
+}
+
+/// #783 point 1 — la précondition de lecture d'`EcriturePrompts::proposer` :
+/// rien n'est lu dans sa transaction avant le verrou de société. Dix-neuf
+/// propositions ; une transaction du test tient le verrou et pose la
+/// vingtième ; la proposition du service **attend** ce verrou, puis voit la
+/// vingtième validée et rend « plafond atteint ». Une lecture simple faite
+/// avant le verrou figerait la vue d'avant (dix-neuf) : la vingt et unième
+/// passerait.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn plafond_juste_apres_l_attente_du_verrou(pool: MySqlPool) {
+    let e = ecrivain(&pool).await;
+    for n in 0..PLAFOND_A_VALIDER - 1 {
+        proposer(&pool, e.c, e.cle, &format!("p{n:02}"), "d", "t").await;
+    }
+    let cle_auth = authentifier(
+        &Lecture::new(pool.clone()),
+        &Trace::new(pool.clone()),
+        &e.jeton,
+    )
+    .await
+    .unwrap();
+    let mut tenue = pool.begin().await.unwrap();
+    depot::proposer_version_agent_in_tx(
+        &mut tenue,
+        e.c,
+        e.cle,
+        "p-vingt",
+        "d",
+        "t",
+        PLAFOND_A_VALIDER,
+    )
+    .await
+    .unwrap();
+    let ecriture = EcriturePrompts::new(pool.clone());
+    let tache = tokio::spawn(async move {
+        prompts_mcp::proposer(
+            &cle_auth,
+            &ecriture,
+            Instant::now(),
+            args("p-vingt-et-un", "d", "t"),
+        )
+        .await
+        .map(|a| a.nom().to_string())
+    });
+    tokio::time::sleep(Duration::from_millis(500)).await;
+    assert!(
+        !tache.is_finished(),
+        "la proposition attend le verrou de société"
+    );
+    tenue.commit().await.unwrap();
+    let issue = tache.await.unwrap();
+    assert_eq!(issue, Err(RefusProposition::PlafondAtteint));
+    assert_eq!(a_valider(&pool).await, i64::from(PLAFOND_A_VALIDER));
+}
+
+// ---------------------------------------------------------------------------
+// AC-iii4 — jamais servi avant l'approbation
+// ---------------------------------------------------------------------------
+
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn jamais_servi_avant_l_approbation(pool: MySqlPool) {
+    let e = ecrivain(&pool).await;
+    let b = banc(&pool);
+    let avant = b.liste(&e.jeton).await;
+    let r = b
+        .proposer(&e.jeton, args("neuf", "Description neuve", "Texte neuf"))
+        .await;
+    assert_eq!(r.json(), accuse("neuf"));
+    assert_eq!(b.liste(&e.jeton).await, avant, "rien de neuf à la liste");
+    assert_eq!(
+        b.obtenir(&e.jeton, json!({"name": "neuf"})).await,
+        inconnu()
+    );
+    // Les standards ne se proposent pas, et restent servis.
+    for s in [KESH_ASSISTANT, KESH_DEVELOPPEMENT] {
+        let r = b.proposer(&e.jeton, args(s.nom, "d", "t")).await;
+        assert_eq!(r.json(), attendu_outil_en_erreur(1, TEXTE_NOM_RESERVE));
+        assert_eq!(
+            b.obtenir(&e.jeton, json!({"name": s.nom})).await,
+            get_attendu(s.description, s.texte)
+        );
+    }
+    let prompt_id: i64 = sqlx::query_scalar("SELECT id FROM mcp_prompts WHERE name = 'neuf'")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    // L'approbation par la route : servi, avec sa marque.
+    let detail = b
+        .api(
+            "GET",
+            &format!("/api/v1/admin/mcp/prompts/{prompt_id}"),
+            &e.jwt,
+            None,
+        )
+        .await
+        .json();
+    let r = b
+        .api(
+            "POST",
+            &format!("/api/v1/admin/mcp/prompts/{prompt_id}/versions/1/approve"),
+            &e.jwt,
+            Some(json!({"version": detail["version"]})),
+        )
+        .await;
+    assert_eq!(r.statut, StatusCode::OK);
+    let marque = marque_agent(1, e.cle);
+    assert_eq!(
+        b.obtenir(&e.jeton, json!({"name": "neuf"})).await,
+        get_attendu(
+            &format!("{marque}\n\nDescription neuve"),
+            &format!("{marque}\n\nTexte neuf")
+        )
+    );
+    // Une proposition suivante, refusée : rien ne change.
+    let servi = b.obtenir(&e.jeton, json!({"name": "neuf"})).await;
+    b.proposer(&e.jeton, args("neuf", "Autre", "Autre")).await;
+    let detail = b
+        .api(
+            "GET",
+            &format!("/api/v1/admin/mcp/prompts/{prompt_id}"),
+            &e.jwt,
+            None,
+        )
+        .await
+        .json();
+    let r = b
+        .api(
+            "POST",
+            &format!("/api/v1/admin/mcp/prompts/{prompt_id}/versions/2/refuse"),
+            &e.jwt,
+            Some(json!({"version": detail["version"]})),
+        )
+        .await;
+    assert_eq!(r.statut, StatusCode::OK);
+    assert_eq!(b.obtenir(&e.jeton, json!({"name": "neuf"})).await, servi);
+}
+
+// ---------------------------------------------------------------------------
+// AC-iii5 — le journal de `prompts/get`
+// ---------------------------------------------------------------------------
+
+/// Une ligne `mcp.prompt_served` par `prompts/get`, détail **exactement**
+/// `{cleMcpId, prompt, numero, issue}` ; le nom reçu du client n'est jamais
+/// écrit ; `prompts/list` n'est pas journalisé (Miii5).
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn prompts_get_journalise(pool: MySqlPool) {
+    let cat = catalogue(&pool).await;
+    let b = banc(&pool);
+    b.liste(&cat.jeton).await;
+    assert!(journal(&pool, "mcp.prompt_served").await.is_empty());
+    let cle_lecteur: i64 = cat.cle_agent;
+    assert_eq!(
+        b.obtenir(&cat.jeton, json!({"name": "agent-ok"})).await,
+        get_attendu(
+            &marquee(&cat, "Prompt de l'agent"),
+            &marquee(&cat, TEXTE_AGENT)
+        )
+    );
+    assert_eq!(
+        b.obtenir(&cat.jeton, json!({"name": PIEGE_NOM})).await,
+        inconnu()
+    );
+    assert_eq!(
+        b.obtenir(&cat.jeton, json!({"name": "agent-attente"}))
+            .await,
+        inconnu()
+    );
+    let (sans_id, sans_jeton) = cle(
+        &pool,
+        cat.c,
+        cat.u,
+        &[McpScope::InvoicesRead],
+        SendValidation::Exempt,
+    )
+    .await;
+    assert_eq!(
+        b.obtenir(&sans_jeton, json!({"name": "agent-ok"})).await,
+        inconnu()
+    );
+    assert_eq!(
+        journal(&pool, "mcp.prompt_served").await,
+        vec![
+            json!({"cleMcpId": cle_lecteur, "prompt": "agent-ok", "numero": cat.agent.numero,
+                   "issue": "servi"}),
+            json!({"cleMcpId": cle_lecteur, "prompt": "(inconnu)", "numero": null,
+                   "issue": "inconnu"}),
+            json!({"cleMcpId": cle_lecteur, "prompt": "(inconnu)", "numero": null,
+                   "issue": "inconnu"}),
+            json!({"cleMcpId": sans_id, "prompt": "(inconnu)", "numero": null,
+                   "issue": "inconnu"}),
+        ]
+    );
+    let (entity_type, entity_id): (String, i64) = sqlx::query_as(
+        "SELECT entity_type, entity_id FROM audit_log WHERE action = 'mcp.prompt_served' \
+         ORDER BY id LIMIT 1",
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!((entity_type.as_str(), entity_id), ("mcp_key", cle_lecteur));
+    assert!(!audit_en_texte(&pool).await.contains(PIEGE_NOM));
+}
+
+/// Fail closed (Miii5) : le journal indisponible, rien n'est servi — l'erreur
+/// interne fixe, sans le texte du prompt.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn prompts_get_journal_indisponible_rien_ne_part(pool: MySqlPool) {
+    let cat = catalogue(&pool).await;
+    let b = banc(&pool);
+    sqlx::query("ALTER TABLE audit_log RENAME TO audit_log_cachee_3210a")
+        .execute(&pool)
+        .await
+        .unwrap();
+    let r = b
+        .mcp(
+            &cat.jeton,
+            &json!({"jsonrpc":"2.0","id":1,"method":"prompts/get",
+                    "params":{"name":"admin-a"}})
+            .to_string(),
+        )
+        .await;
+    sqlx::query("ALTER TABLE audit_log_cachee_3210a RENAME TO audit_log")
+        .execute(&pool)
+        .await
+        .unwrap();
+    assert_eq!(
+        r.json(),
+        attendu_erreur(1, -32603, TEXTE_ERREUR_INTERNE),
+        "rien ne part sans journal"
+    );
+    assert!(!String::from_utf8_lossy(&r.corps).contains("Texte"));
+}
+
+// ---------------------------------------------------------------------------
+// AC-iii12 — aucun texte de prompt au journal du serveur
+// ---------------------------------------------------------------------------
+
+/// Une proposition, une proposition refusée par la validation, une
+/// approbation, un `prompts/get` et une version invalide servie : aucun piège
+/// (texte, description) dans les évènements capturés ; **témoins** : le
+/// `debug!` de la décision du filtre d'adresse, émis par le serveur pendant
+/// chaque requête vers `/mcp`, et l'`error!` de la version invalide sont
+/// captés (Miii8). *(Le témoin de `jeton_jamais_journalise`, la requête sans
+/// `MCP-Protocol-Version`, n'est pas émis ici : `post_mcp` pose l'en-tête.)*
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn textes_jamais_journalises(pool: MySqlPool) {
+    let e = ecrivain(&pool).await;
+    let b = banc(&pool);
+    let capture = CaptureTrace::installer();
+    b.proposer(&e.jeton, args("piege", PIEGE_DESC, PIEGE_TEXTE))
+        .await;
+    let r = b
+        .proposer(
+            &e.jeton,
+            args("piege-bis", PIEGE_DESC, &format!("{PIEGE_TEXTE}\u{202E}")),
+        )
+        .await;
+    assert_eq!(
+        r.json(),
+        attendu_outil_en_erreur(1, TEXTE_ARGUMENTS_INVALIDES)
+    );
+    let prompt_id: i64 = sqlx::query_scalar("SELECT id FROM mcp_prompts WHERE name = 'piege'")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    let detail = b
+        .api(
+            "GET",
+            &format!("/api/v1/admin/mcp/prompts/{prompt_id}"),
+            &e.jwt,
+            None,
+        )
+        .await
+        .json();
+    let r = b
+        .api(
+            "POST",
+            &format!("/api/v1/admin/mcp/prompts/{prompt_id}/versions/1/approve"),
+            &e.jwt,
+            Some(json!({"version": detail["version"]})),
+        )
+        .await;
+    assert_eq!(r.statut, StatusCode::OK);
+    b.obtenir(&e.jeton, json!({"name": "piege"})).await;
+    // Une version invalide en base (écrite hors de Kesh) : non servie,
+    // journalisée sans son texte.
+    ecrire_hors_de_kesh(&pool, prompt_id, 1, &format!("{PIEGE_TEXTE}\u{202E}")).await;
+    assert_eq!(
+        b.obtenir(&e.jeton, json!({"name": "piege"})).await,
+        inconnu()
+    );
+    capture.exiger("décision du filtre d'adresse");
+    capture.exiger(&format!("prompt_id={prompt_id}"));
+    capture.exiger_absent(PIEGE_TEXTE);
+    capture.exiger_absent(PIEGE_DESC);
 }

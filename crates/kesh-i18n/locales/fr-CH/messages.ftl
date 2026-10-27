@@ -1767,6 +1767,25 @@ mcp-send-version-invalid = Version invalide : un entier supérieur ou égal à 1
 mcp-send-content-with-refusal = Un refus ne porte pas de contenu.
 mcp-send-content-too-large = Le contenu modifié dépasse la taille d'un envoi (24 576 octets).
 mcp-send-content-hidden-character = Le contenu modifié contient un caractère invisible ou de contrôle : retirez-le avant de valider.
+# Story 32-10a-iii (refs #723) — les prompts du serveur MCP (routes /api/v1/admin/mcp/prompts).
+mcp-prompt-version-invalid = Version invalide : un entier supérieur ou égal à 1 est attendu.
+mcp-prompt-name-invalid = Nom de prompt invalide : de 1 à 64 caractères parmi les minuscules non accentuées, les chiffres, le tiret et le souligné.
+mcp-prompt-name-reserved = Nom de prompt réservé : un nom commençant par « kesh » est réservé aux prompts standard de Kesh.
+mcp-prompt-name-taken = Un prompt de ce nom existe déjà.
+mcp-prompt-description-empty = La description du prompt est vide.
+mcp-prompt-description-too-long = La description du prompt dépasse 500 caractères.
+mcp-prompt-description-hidden-character = La description du prompt contient un saut de ligne, une tabulation ou un caractère invisible, bidirectionnel ou de contrôle : retirez-le.
+mcp-prompt-text-empty = Le texte du prompt est vide.
+mcp-prompt-text-too-long = Le texte du prompt dépasse 16 000 caractères.
+mcp-prompt-text-hidden-character = Le texte du prompt contient un caractère invisible, bidirectionnel ou de contrôle : retirez-le.
+mcp-prompt-text-required = Une version de texte porte une description et un texte.
+mcp-prompt-withdrawal-with-content = Un retrait ne porte ni description ni texte.
+mcp-prompt-agent-without-key = Cette proposition n'a pas de clé auteur : le serveur ne la servirait pas.
+mcp-prompt-not-latest = Cette version n'est plus la dernière du prompt : relisez l'historique avant de l'approuver.
+mcp-prompt-already-decided = Cette version a déjà été approuvée ou refusée.
+mcp-prompt-not-a-proposal = Seule une proposition d'agent s'approuve ou se refuse.
+mcp-prompt-standard-unknown = Ce prompt standard n'est plus dans cette version de Kesh : aucun texte du code où revenir.
+mcp-prompt-not-standard = Ce prompt n'est pas un prompt standard : il n'a pas de texte du code.
 admin-mcp-settings-error-too-many-entries = Liste trop longue : 64 entrées au plus.
 admin-mcp-settings-error-entry-too-long = Entrée trop longue : 255 caractères au plus.
 admin-mcp-settings-error-network-invalid = Adresse ou réseau invalide : { $entry }. Formes attendues : une adresse (192.168.1.10) ou un réseau (192.168.1.0/24).
@@ -2671,7 +2690,8 @@ reports-ledger-instruction = Choisissez une période, puis cliquez sur Générer
 
 # --- Journal d'audit — route, vocabulaire et export (Story 25-1c-a) ---
 # ----------------------------------------------------------------------
-# 28 types d'entité, 93 actions, 2 types d'auteur.
+# 33 types d'entité, 133 actions, 2 types d'auteur (recomptés à la Story 32-10a-iii :
+# 32 et 127 avant elle, + 1 type et + 6 actions des prompts du serveur MCP).
 #
 audit-log-entity-account = Compte
 audit-log-entity-api-key = Clé API
@@ -2695,6 +2715,7 @@ audit-log-entity-invoice = Facture
 audit-log-entity-journal-entry = Écriture
 audit-log-entity-lettering = Lettrage
 audit-log-entity-mcp-key = Clé du serveur MCP
+audit-log-entity-mcp-prompt = Prompt du serveur MCP
 audit-log-entity-mcp-send = Envoi du serveur MCP
 audit-log-entity-mcp-server-settings = Réglages du serveur MCP
 audit-log-entity-payment-batch = Lot de paiement
@@ -2809,6 +2830,12 @@ audit-log-action-api-key-revoked = Clé API révoquée
 audit-log-action-mcp-key-created = Clé du serveur MCP créée
 audit-log-action-mcp-key-revoked = Clé du serveur MCP révoquée
 audit-log-action-mcp-key-send-validation-changed = Validation avant envoi d'une clé du serveur MCP modifiée
+audit-log-action-mcp-prompt-created = Prompt du serveur MCP créé
+audit-log-action-mcp-prompt-standard-restored = Prompt du serveur MCP rendu à son texte standard
+audit-log-action-mcp-prompt-version-approved = Proposition de prompt du serveur MCP approuvée
+audit-log-action-mcp-prompt-version-created = Version d'un prompt du serveur MCP enregistrée
+audit-log-action-mcp-prompt-version-refused = Proposition de prompt du serveur MCP refusée
+audit-log-action-mcp-prompt-served = Prompt du serveur MCP servi
 audit-log-action-mcp-send-approved = Envoi du serveur MCP validé
 audit-log-action-mcp-send-refused = Envoi du serveur MCP refusé
 audit-log-action-mcp-server-settings-updated = Réglages du serveur MCP modifiés
