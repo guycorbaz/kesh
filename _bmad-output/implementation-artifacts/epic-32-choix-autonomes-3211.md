@@ -430,3 +430,47 @@ alternatives écartées, réversibilité.
   rejeu, par l'utilisateur `kesh` ; instances arrêtées par PID. `kesh_e2e_3211` reste pour l'E2E.
 - **Écartées** : garder les bases jusqu'à la revue (les preuves sont les journaux, les réponses et les captures).
 - **Réversible** : non (les bases sont jetables ; les preuves restent sous `kesh-gate-logs/3211/`).
+
+*Entrées de la remédiation de la revue de code P1 (Opus 5.5, 2026-10-27).*
+
+### C-32-11-37 — Le `Content-Type` des réponses au contrat (B1)
+
+- **Contexte** : aucun cas ne vérifiait l'en-tête de la réponse, alors que la page *transports* en fait un MUST.
+- **Retenu** : dans `enveloppe_conforme`, pour la réponse à une requête dont l'`id` est lu, `CLAUSE` — « If the input is
+  a JSON-RPC *request*, the server **MUST** either return `Content-Type: text/event-stream`, to initiate an SSE stream,
+  or `Content-Type: application/json`, to return one JSON object. » (*Sending Messages to the Server*, point 5) ; pour
+  toute réponse JSON, `DECISION_KESH` : exactement `application/json` (32-6a, jamais de SSE). Mutation **MR1**
+  (`reponse.rs`, `jsonrpc` rend `text/plain`) : tuée par K6 et tous les cas à `id`.
+- **Écartées** : vérifier l'en-tête dans un cas seul (K1) — l'enveloppe le voit sur chaque réponse.
+- **Réversible** : oui.
+
+### C-32-11-38 — L'`id` d'une erreur dont l'`id` n'a pu être lu : absent ou `null` (B2 = A6)
+
+- **Contexte** : JSON-RPC 2.0 § 5 (« If there was an error in detecting the id in the Request object (e.g. Parse
+  error/Invalid Request), it MUST be Null. ») et le schéma MCP (`JSONRPCErrorResponse.id?: RequestId`, `RequestId` =
+  `string | number`) se contredisent sur la forme.
+- **Retenu** : `CLAUSE` sur ce que les deux admettent ensemble — `id` absent **ou** `null` ; `DECISION_KESH`
+  (C-32-6-42) : absent. Mutation **MR2** (`CORPS_REQUETE_INVALIDE` portant `"id":null`) : la `CLAUSE` reste verte, la
+  `DECISION_KESH` rougit (K19, K21) — la frontière tient.
+- **Écartées** : garder « absent » sous `CLAUSE` (une décision de Kesh, non une exigence).
+- **Réversible** : oui.
+
+### C-32-11-39 — Toute assertion porte une marque ; K13 et le 4xx de K21 rangés (B4, B5 = E2, A6)
+
+- **Retenu** : deux marques de plus, hors protocole — `TEMOIN` (ce qui empêche un passage à vide : K9, K14) et
+  `MONTAGE` (amorçage, route de décision de l'Administrateur) ; le statut 200 d'une réponse JSON-RPC est
+  `DECISION_KESH` (la page impose le `Content-Type`, non le statut) ; K8 vérifie désormais le contenu (`DECISION_KESH` :
+  un bloc, l'en-tête des données, `structuredContent` aux clés `delaiInstructionS`, `lectureSeule`, `version`) ; K13 :
+  `-32601` passe sous `DECISION_KESH` (le code n'est donné que dans un tableau de JSON-RPC § 5.1, sans MUST) ; K11 prend
+  l'`id` 11 ; K21 : la `CLAUSE` admet « un statut d'erreur HTTP » (4xx ou 5xx), le 400 restant `DECISION_KESH`.
+- **Réversible** : oui.
+
+### C-32-11-40 — Ce que la remédiation P1 ne prend pas
+
+- **E5** (K9, K12, K16, K20, K21, K22 sans mutation dédiée) : angle mort déjà écrit au § *Ce que les gardes ne voient
+  pas* ; MR2 touche désormais K21. **A3** (le `.keshbackup` de P10 et celui du rejeu restés sous
+  `kesh-gate-logs/3211/export/` et `t8/export/`) : supprimer demanderait `rm`, interdit ; fichiers hors dépôt, clés
+  révoquées — à retirer par l'orchestrateur ou Guy. **A2** (capture 13 du premier passage blanche) : non refaite — la
+  première instance et sa base n'existent plus ; l'état *En attente* est établi par `parcours.log` (P7, 21:13:51) et par
+  la capture 13 du rejeu (`t8/captures/13-P7-envoi-en-attente.png`).
+- **Réversible** : oui.
