@@ -1491,16 +1491,241 @@ déjà portée par la fiche 32-10a, l. 1455-1459.)*
 
 ### Agent Model Used
 
+32-9a : Opus 5.5 (Claude Code), en autonomie, 2026-10-26 → 2026-10-27, worktree `kesh-32-9`, branche `story/32-9a`
+(la branche de fiche `story/32-9` fusionnée avec `main` à `7d83a31d`, puis avec `main` à `ed981c7d` — 32-8c — avant
+les gates du dernier commit de code).
+
 ### Statut des parties
 
 | Partie | Statut |
 |---|---|
-| 32-9a | ready-for-dev |
+| 32-9a | review |
 | 32-9b | ready-for-dev |
 
 ### Completion Notes List
 
+#### 32-9a — étape 0 (T-a0), lignes lues citées
+
+Le code fusionné a bougé depuis la fiche ; chaque nom emprunté relu à sa source :
+
+- **`Donnees`** (`mcp/politique.rs:161-187`) : `Donnees::nouvelles(texte: String, structure: Option<Value>)` et
+  `avec_resume(String)` — **aucun `BlocContenu`** ; `texte_a_valider` rend `d.texte.clone()` (`:243-245`) ;
+  `en_resultat` pose un bloc `text` et `structuredContent` (`:286-297`). `sortie::donnees` l'emploie tel quel
+  (C-32-9-47).
+- **`AppelOutil`** retiré par la 32-8b : `serveur_mcp::journaliser_appel(trace, cle, outil: &'static str, issue,
+  duree_ms, envoi)` (`services/serveur_mcp.rs:212-219`), appelé au répartiteur seulement.
+- **Le pool** s'appelle `pool_outils` (`lib.rs:1283-1287`) ; `LectureOutils::nouvelle` en un lieu (garde inchangée).
+- **`kesh_lire_envoi`** hors registre (`registre.rs:22`, `NOMS_RESERVES`), listé **après** les outils du registre
+  pour toute clé (`repartiteur.rs`, `Methode::ToolsList`).
+- **`MCP_ENVOI_OCTETS_MAX = 24_576`** déjà (`services/envois_mcp.rs:55`) ; `MCP_ENVOI_RESUME_OCTETS_MAX = 1_024`
+  (`:58`) ; `rendre_visible` public et idempotent (`:75-85`, test `rendre_visible_par_famille`). Le grep de la valeur
+  (`grep -rnE '65[ _]?53[0-9]|64 ?Kio|64 ?\* ?1024'` sur `crates/kesh-api/src`, `crates/kesh-db/src`, les manuels et le
+  `CHANGELOG.md`) ne rend qu'un faux positif, `admin-manual.tex:841` (« Borne [1, 65535] » du port SMTP) — H5-P5 et
+  H6-P5 constatés : rien à amender.
+- **L'outil s'exécute dans une tâche `tokio::spawn`** qui possède le contexte d'accès et la lecture
+  (`repartiteur.rs`, C-32-6-56) : la `Trace` y entre par une copie d'`etat.trace` (AC-a7).
+- **`max_statement_time`** s'applique **à chaque instruction** (`kesh_db::pool::pool_lecture_seule`) : un outil à
+  plusieurs instructions (`ecritures::detail` : société, écriture, quatre lectures en transaction ; `echeances` : deux
+  lectures en parallèle par `tokio::join!` sur un pool de trois connexions ; chaque rapport : la période puis le
+  générateur) peut durer plus que le délai d'une instruction ; le délai de Kesh (30 s, `DELAI_OUTIL`) borne l'appel.
+  Aucune requête n'a été ajoutée hors des services ; #759 trace la limite, inchangée.
+- **Le journal du filtre d'adresse (32-6c)** existe (`admin-manual.tex`, `sec:mcp-journal-filtre`) : sans effet sur
+  la 32-9a.
+- **`ErreurOutil`** : `ArgumentsInvalides { argument, motif }`, `Inconnu`, `Introuvable`, `Interne`,
+  `TropVolumineux`, `LimiteAtteinte` (`mcp/outil.rs`) ; `MotifArgument::Invalide` seul ; `texte_erreur_outil`
+  exhaustif (`textes.rs`) ; le `match` des issues du journal, `issue_d_erreur`, **exhaustif** (`repartiteur.rs`) : les
+  trois variantes neuves y gagnent leur bras (`Introuvable`, `ArgumentsInvalides`, `ArgumentsInvalides`), sans bras `_`.
+- **`AppError::ReportFiscalYearNotFound { fiscal_year_id }`** (`errors.rs:1070`), **`ReportPeriodOutOfFiscalYear { fy_start,
+  fy_end, requested_start, requested_end }`** (`:1082`), **`DbError::LetteringAccountNotLetterable`**
+  (`kesh-db/src/errors.rs:1178`) — sortie de `postes_ouverts::lister` en `AppError::Database(…)` par `?`.
+- **`tools/list`** : la 32-10a n'est pas fusionnée (`mcp/prompts.rs` sans implémentation, `prompts/list` → `[]`) :
+  `HORS_REGISTRE = [NOM_LIRE_ENVOI]`.
+- **Les tests à amender**, recomptés : `mcp_transport_e2e.rs` — `attendu_version_delai`, `initialize_ping_prompts`
+  (`INSTRUCTIONS` épinglé par un littéral, et `TEXTE_ENTETE_DONNEES`), `registre_standard_inventaire`,
+  `tools_list_filtre`, `e1_rien_ne_part_sous_cle_requise` ; `arguments_et_params` passe par `attendu_version` ;
+  `mcp_envois_e2e.rs` — `kesh_version_passe_par_la_validation` ; `cle_requise_deposee` relu, inchangé ;
+  `mcp_traduction.rs` — trois bras ; `mcp_gardes_lexicales.rs` — `contexte_mcp_construit_par_le_repartiteur_seul`,
+  `outils_et_politique_en_leur_lieu`, `reponses_par_rendre_seul` (trois lignes), `prompts_scelles` (C-32-9-42) ;
+  `services_motif.rs` — `HANDLERS_MIGRES`, `SITES_NON_RESOLUS` (`routes/fiscal_years.rs` : 7 / 7, six gestionnaires
+  sur `state.pool`), le compte de `services/` (13 → 14).
+- **`kesh_version`** rend aussi `delaiInstructionS` (`f64`, C-32-6-54) : `f64` admis à `ChampSur` (C-32-9-40).
+- **Sérialisations** : `rust_decimal` en `serde-str` (`crates/kesh-api/Cargo.toml:47`) — un montant est une chaîne
+  (`"123.45"`, test `donnees_une_seule_source`) ; `NaiveDate` en `AAAA-MM-JJ` ; `serde_json` sans `preserve_order` —
+  les clés sortent triées. ⚠️ `Decimal` a une méthode **inhérente** `serialize()` (octets) : `Montant` appelle
+  `Serialize::serialize(&self.0, …)` (constaté à la compilation, E0061).
+- **Les énumérations admises** dérivent `Serialize` sur des variantes sans champ : `AccountType`
+  (`entities/account.rs:11`), `AccountRole` (`:89`), `Journal` (`journal_entry.rs:32`), `FiscalYearStatus`
+  (`fiscal_year.rs:17-18`) ; les miroirs locaux (`Sens`, `StatutFacture`, `StatutFactureFournisseur`, `TypeReglement`,
+  `NaturePiece`, `MotifOuvert`, `EtatPiece`, `OrigineLettrage`) dérivent `Serialize`, construits par `match` exhaustif
+  ou table écrite.
+- **Le sceau** `pub(in crate::mcp) mod scelle` atteint depuis un développement de `sortie!` dans `mcp::outils` :
+  compilé (`cargo check -p kesh-api`). `ChampSur` est `pub(in crate::mcp)` (un trait public à supertrait restreint
+  lèverait `private_bounds`).
+- **Ce que `semer` pose par les dépôts** : la facture est **validée** (`invoices::validate_invoice`,
+  `repositories/invoices.rs:2038`), envoyée (`mark_emailed`, `:2634`, lie toute chaîne), suspendue
+  (`set_dunning_pause`, `:2513`) ; son **numéro** est calculé du format (`{YEAR}-{INVOICE_NUMBER}`), non posable :
+  exemption (C-32-9-46). La facture fournisseur lie IBAN, QR-IBAN, référence tels quels (`create_in_tx`) ; l'écriture
+  d'achat porte le nom piégé du fournisseur (constaté : `inventaire_couvert`, ligne `fournisseur_nom` sous
+  `kesh_ecritures` J2). La pièce : `imported_supplier_invoices::create` (`:31`) puis `attach_in_tx` (`:261`), qui
+  appelle `mark_completed` (`:410`) ; `find_source_document_of_entry` (`:379`) la rend (`pieceSource` sous
+  `kesh_ecriture` J2). Exercice renommé par `fiscal_years::update_name` (`:547`). `piece.numeroFacture` : exemption
+  (posé pour un règlement seulement, H3-P5).
+- **Le résolveur 3** (`Cargo.toml:14`) : `cargo tree -e features,no-dev -p kesh-api -i kesh-seed` rend
+  `kesh-seed feature "default"` seulement ; `cargo tree -e features` (arêtes de développement comprises) rend
+  `kesh-seed feature "pieges"` — la fonctionnalité n'entre pas dans `cargo build --release -p kesh-api`
+  (`Dockerfile:6`).
+- **`societe_complete`** : `companies::create` (`companies.rs:38`), `bulk_create_from_chart`, `create_for_seed`, puis
+  `lock_vat_role_accounts_in_tx`, `insert_with_defaults_in_tx`, `designate_vat_accounts_in_tx`,
+  `seed_default_swiss_rates_in_tx` — appelables sans l'onboarding (constaté : les sociétés A et B des tests).
+- **L'action d'audit** d'un rapport affiché : `report.generated` (`services/rapports.rs:802`, `:874`, `:946`,
+  `:1053`) — `aucun_outil_n_ecrit` compte `action LIKE 'report.%'`.
+- **La section *Le serveur MCP* de la 32-7** : absente ; `sec:mcp-outils` est une `\subsection` neuve de
+  `\section{Sécurité}`, après *Clés API (PAT)* et avant *RBAC et permissions* ; la 32-8c, fusionnée ensuite, y a ajouté
+  `sec:mcp-envois` juste après — renvoi posé.
+- **Les motifs des gardes**, greppés sur le dépôt réel (`sites(...)` des tests, sorties au gate) :
+  `champ_sur_en_un_lieu` — hors `sortie.rs`, seuls les sceaux homonymes de `mcp/prompts.rs` (`pub trait Scelle {}`,
+  `pub trait McpPrompt: scelle::Scelle …`) et de `services/rapports.rs` (C-32-9-42) ; `trace_confinee_dans_outil` —
+  cinq lignes (`mcp/mod.rs` : champ et import ; `mcp/outil.rs` : champ, paramètre, import) ;
+  `sorties_sans_serialisation_parallele`, `mcp_sans_fichier` — vides dans leur périmètre (témoins verts factices, dits
+  tels).
+- **Constats LOW de la P5**, corrigés à la fiche : H1-P5 (en-tête : « le commit `5f6733be` »), H2-P5 (entrée P4
+  annotée), H3-P5 (ligne d'inventaire scindée), H4-P5 (`0P329{M}{nn}`, 8 caractères, dans la règle et l'esquisse) ;
+  H5-P5 et H6-P5 constatés (ci-dessus). **Note de l'orchestrateur** : la configuration de Claude Code
+  (`sec:mcp-client`) appartient à la 32-7 (C-32-7-22) — § *Le manuel* corrigé.
+- **Modules** : 5 (`kesh-api/mcp`, `kesh-api/services`, `kesh-api/routes`, `kesh-seed`, le manuel avec le
+  `CHANGELOG.md`) ; aucun fichier de `kesh-db`.
+
+#### 32-9a — ce qui est livré
+
+- **`mcp/sortie.rs`** : `ChampSur` scellé, `exige`, `sortie!` (sans attribut de champ), `champ_enum!`,
+  `TexteNonFiable` (`{"nonFiable": …}`, `rendre_visible`, `Debug` sans le texte), `Date`, `Montant`, `Horodatage`,
+  `VersionBinaire`, `Code<E>` (`depuis_str`, `parmi`), `Tiers` (`Visible`, `Absent`, `Masque`), `PORTEE_DES_TIERS`,
+  `tiers_visibles`, `Resume`, `texte_et_valeur` et `donnees` — neuf tests purs.
+- **`ContexteMcp`** : champ privé `trace`, `nouveau` à trois paramètres, `afficher`, `tiers_visibles` (bras
+  `Canal::Api` fermé).
+- **Seize outils** au registre, dans l'ordre de l'AC-a9. **Les champs rendus**, arrêtés : `kesh_exercices` —
+  `exercices[] {id, nom, debut, fin, statut}` ; `kesh_plan_comptable` — `comptes[] {id, numero, nom, typeDeCompte,
+  parentId, actif, role, imputable, lettrable}`, `total`, `limit`, `offset` ; `kesh_ecritures` — `ecritures[] {id,
+  numero, exerciceId, date, journal, libelle, contrePasse, lignes[] {id, compteId, ordre, debit, credit, projetId,
+  lettrage}}`, `total`, `limit`, `offset` ; `kesh_ecriture` — `ecriture` (idem), `contrePasseePar`, `pieceSource
+  {factureFournisseurId, numeroFactureFournisseur}` ; `kesh_grand_livre` — `du`, `au`, `limit`, `offset`,
+  `sections[] {compteId, numero, nom, typeDeCompte, actif, sens, ouverture, lignes[] {ligneId, ecritureId, date,
+  exerciceId, exercice, numeroEcriture, journal, libelle, contreparties[], debit, credit, soldeCourant, codeLettrage},
+  totalDebit, totalCredit, cloture, soldeInhabituel, ruptures[] {date, exerciceClosId, soldeDeCloture},
+  nombreLignes}` ; `kesh_balance` — `periode {exerciceId, debut, fin}`, `lignes[] {compteId, numero, nom,
+  typeDeCompte, actif, ouverture, debit, credit, solde, cloture}`, `total`, `limit`, `offset`, `totalDebit`,
+  `totalCredit`, `equilibree`, `reportBenefice`, `ouvertureEquilibree` ; `kesh_bilan` — `periode`, `actifs[]`,
+  `passifs[]`, `fondsPropres[]` (`{compteId, numero, nom, typeDeCompte, actif, solde, role}`), `totalActifs`,
+  `totalPassifs`, `totalFondsPropres`, `report`, `resultat`, `equationTenue` ; `kesh_compte_de_resultat` — `periode`,
+  `produits[]`, `charges[]`, `totalProduits`, `totalCharges`, `resultat` ; `kesh_postes_ouverts` — `compteId`,
+  `numeroCompte`, `au`, `solde`, `totalOuvert`, `total`, `limit`, `offset`, `postes[] {ligneId, ecritureId,
+  numeroEcriture, exerciceId, exercice, date, journal, libelle, debit, credit, piece {nature, id, numero, factureId,
+  numeroFacture}, lettrage, codeLettrage, origineLettrage, lettreLe, motif, etatPiece, resteDu, lettrableALaMain,
+  enPeriodeOuverte}` ; `kesh_factures` / `kesh_echeancier` — `factures[] {id, clientId, client, numero, statut, date,
+  echeance, conditions, montantHt, totalTtc, montantRegle, resteDu, payeeLe, suspendueLe, noteSuspension}`, `total`,
+  `limit`, `offset` (et, pour l'échéancier, `resume {impayeesNombre, impayeesTotal, echuesNombre, echuesTotal}`) ;
+  `kesh_facture` — `{id, clientId, numero, statut, date, echeance, conditions, montantHt, arrondi, ecritureId, payeeLe,
+  envoyeeLe, envoyeeA (Tiers), projetId, suspendueLe, noteSuspension, montantRegle, resteDu, lignes[] {id, position,
+  description, quantite, prixUnitaire, tauxTva, total, compteProduitId}}` ; `kesh_balance_agee` — `au`, `lignes[]
+  {clientId, client, tranches {nonEchu, de1A30Jours, de31A60Jours, de61A90Jours, plusDe90Jours, total}}`, `total`,
+  `limit`, `offset`, `totaux` ; `kesh_factures_fournisseur` — `factures[] {id, fournisseurId, fournisseur, numero,
+  statut, date, echeance, montant}`, `total`, `limit`, `offset` ; `kesh_facture_fournisseur` — `{id, fournisseurId,
+  numero, statut, date, echeance, montant, ibanCreancier (Tiers), qrIbanCreancier (Tiers), referencePaiement,
+  montantAttendu, projetId, ecritureAchatId, reglement {type, compteBancaireId, compteId, ecritureId}, payeeLe,
+  pieceId, lignes[] {id, position, description, quantite, prixUnitaire, tauxTva, total, compteChargeId}}`.
+- **Services** : `exercices::lister` (neuf) et `list_fiscal_years` migré ; `factures_fournisseur::detail_sans_fichier`
+  et `FicheFactureFournisseur` ; les `pub use` (`postes_ouverts`, `ecritures`, `factures`, `factures_fournisseur`).
+- **Trois erreurs de demande** : `ExerciceIntrouvable`, `PeriodeHorsExercice`, `CompteNonLettrable`, leurs textes, la
+  liste blanche et les issues.
+- **`kesh_seed::pieges`** (fonctionnalité `pieges`) : `MOTIF_PIEGE`, `CHAMPS` (17 lignes de la 32-9a), `texte`,
+  `texte_seme`, `identifiant`, `societe_complete`, `semer`, `Pieges`.
+- **Le manuel d'administration** (`sec:mcp-outils`, matrice entre `% matrice-mcp:debut` et `% matrice-mcp:fin`) et son
+  PDF ; le `CHANGELOG.md` (`### Ajouté`).
+- **Tests** : 45 neufs, de `origin/main` à `HEAD` (`grep -cE '#\[(test|sqlx::test)'` aux deux bornes) —
+  `mcp_outils_e2e.rs` 16, `mcp_enveloppe_e2e.rs` 12, `mcp_matrice_manuel.rs` 2, `mcp_gardes_lexicales.rs` 17 → 21,
+  `services_rollout.rs` 21 → 22, `mcp/sortie.rs` 9, `mcp/outils/commun.rs` 1 ; amendés : cf. étape 0.
+
+#### 32-9a — les tailles (T-a2), mesurées sur la sortie réelle
+
+`tailles_mesurees` (fixture ordinaire : libellé de 55 caractères, nom de compte de 34, nom de tiers de 22) — élément
+mesuré (page de deux moins page d'un) et texte d'un appel par défaut et au maximum :
+
+| Outil | Élément | Défaut → texte | Maximum → texte |
+|---|---|---|---|
+| `kesh_plan_comptable` | 312 o | 40 → 12 849 o | 70 → 22 239 o |
+| `kesh_ecritures` | 691 o | 12 → 8 633 o | 22 → 15 543 o |
+| `kesh_grand_livre` | 625 o | 15 → 10 328 o | 30 → 19 748 o |
+| `kesh_balance` | 356 o | 30 → 11 274 o | 55 → 20 199 o |
+| `kesh_postes_ouverts` | 651 o | 12 → 8 355 o | 24 → 16 203 o |
+| `kesh_factures` | 543 o | 20 → 11 200 o | 40 → 22 060 o |
+| `kesh_echeancier` | 543 o | 20 → 11 330 o | 40 → 22 190 o |
+| `kesh_balance_agee` | 330 o | **38** → 13 125 o | **68** → 23 053 o |
+| `kesh_factures_fournisseur` | 305 o | 40 → 12 540 o | 70 → 21 663 o |
+| `kesh_bilan` / `kesh_compte_de_resultat` | — | 1 416 o / 1 086 o (non paginés) | — |
+
+Écarts à la fiche : le seul au-delà de 15 % est la **balance âgée** (330-331 o contre 287, + 15 %) : bornes révisées
+à 38 / 68 (C-32-9-44). Les autres éléments s'écartent de moins de 15 % (écriture 691 contre 922 : plus petite).
+**Les jetons ne sont pas comptés** : aucun tokenizer local sur la station (`tiktoken`, `tokenizers`, `transformers`
+absents, `python3 -I -c "import …"` → `ModuleNotFoundError`) — la valeur reste **estimée** (2,5 octets par jeton,
+hypothèse prudente : 23 053 o ≈ 9 200 jetons).
+
+#### 32-9a — les mutations (T-a7)
+
+Journal : `/home/gcorbaz/devel/kesh-gate-logs/329a-mutations.log` (script
+`scratchpad/329a/mutations-329a.py` : motif vérifié unique, cibles de test restreintes, restauration
+`git checkout --` + `touch`, `git diff` vide vérifié après chacune). **33 / 33** : Ma1, Ma2, Ma4, Ma4b, Ma5 à Ma25,
+Ma27, Ma28a, Ma28b, Ma29, Ma30 tuées chacune par le ou les tests nommés de la fiche (sortie nextest : la ligne `FAIL`
+du test nommé) ; Ma3 (E0277, `String: ChampSur`), Ma3b (E0605, `non-primitive cast`, rejouée avec
+`#[derive(Serialize)]` pour l'isoler) et Ma26 (`no rules expected #`) refusées à la compilation. ⚠️ **Ma9 survivait
+à `tools_list_par_portee`** dans sa première version (l'attendu était tiré du registre, comparé à lui-même) — tuée
+par `matrice_du_manuel` et `autorisation_par_outil` seulement ; le test compare désormais à des listes **écrites**,
+et Ma9 rejouée est tuée par `tools_list_par_portee`. Ma21 est tuée par `ac10_i_ii_handlers_sans_le_pool` (le test de
+`services_motif.rs` qui lit `HANDLERS_MIGRES`).
+
+#### 32-9a — les gates, au dernier commit de code (`4a9b15aa`, `main` à `ed981c7d` fusionnée)
+
+Bases `kesh_329a` et `kesh_e2e_329a` remises à zéro par le compte `kesh` (commandes séparées : `DROP DATABASE`,
+`CREATE DATABASE`, `sqlx migrate run`, seed), sans redémarrer le conteneur ; travaux lourds sous
+`flock kesh-gate-logs/.gate.lock` et `scripts/mem-guard.sh`.
+
+- **Backend** : `scripts/test-fast.sh --ci` (fmt, clippy `-D warnings`, nextest) — **4 321 / 4 321**, 7 ignorés,
+  `exit=0` (`kesh-gate-logs/329a-gate-complet.log`).
+- **Frontend** : `npm run check` 0 erreur (29 avertissements, préexistants, `design-system`), `lint-i18n-ownership`
+  PASS, `test:unit` **1 976 / 1 976** (167 fichiers), `build` vert (`kesh-gate-logs/329a-front.log`).
+- **E2E complet** : backend sur le port **3333**, dossiers neufs `/tmp/kesh-e2e-329a/{inbox,documents,backup}` passés
+  au backend et au runner — **317 passés, 17 ignorés, 7 échecs**, exactement les sept de la KF-029 (#97) :
+  `mode-expert.spec.ts:26`, `:41`, `onboarding-path-b.spec.ts:65`, `:92`, `onboarding.spec.ts:57`, `:77`, `:150` ;
+  aucun autre (`kesh-gate-logs/329a-e2e.log`). Backend arrêté par son PID.
+- **Mutations** : 33 / 33 (§ ci-dessus), jouées avant la fusion de la 32-8c, qui ne touche aucun fichier qu'elles
+  mutent.
+- **Manuel** : `make fr` (après `touch` du `.tex`), PDF contrôlé aplati — la matrice (`kesh_lire_envoi toute clé`,
+  `kesh_balance_agee invoices:read`…), l'enveloppe `{"nonFiable": "…"}`, « 24 Kio de texte — environ 10 000 jetons,
+  estimation », « Les noms des clients et des fournisseurs ne sont […] pas masqués », le renvoi « avant qu'il ne parte
+  (§9.6) » vers `sec:mcp-envois`. Les PDF du manuel utilisateur et de la brochure, régénérés à un octet près, ne sont
+  pas commités.
+
+#### 32-9a — écarts et constats
+
+- ⚠️ **Consigne 14** : un test (`ac_a12_exercices_refus_controle_positif_lecture_seule`, `services_rollout.rs`) a été
+  ajouté par `cat >>` et non par l'outil Edit — contenu relu, compilé, vert ; aucun autre fichier de code n'a été
+  écrit par script (les mutations exceptées, prévues par la consigne).
+- `aucun_outil_n_ecrit` : `CHECKSUM TABLE` instable sur `accounts` (C-32-9-45).
+- Les tests montent leurs sociétés par `societe_complete` (C-32-9-41).
+
 ### File List
+
+Neufs : `crates/kesh-api/src/mcp/sortie.rs`, `crates/kesh-api/src/mcp/outils/{commun,exercices,plan_comptable,
+ecritures,grand_livre,rapports,postes_ouverts,factures,balance_agee,factures_fournisseur}.rs`,
+`crates/kesh-api/src/services/exercices.rs`, `crates/kesh-seed/src/pieges.rs`,
+`crates/kesh-api/tests/{mcp_outils_e2e,mcp_enveloppe_e2e,mcp_matrice_manuel}.rs`,
+`crates/kesh-api/tests/common/mcp_pieges.rs`, `_bmad-output/implementation-artifacts/32-9a-review-prompt-p1.md`.
+Modifiés : `crates/kesh-api/src/mcp/{mod,outil,registre,repartiteur,textes}.rs`,
+`crates/kesh-api/src/mcp/outils/{mod,kesh_version}.rs`,
+`crates/kesh-api/src/services/{mod,ecritures,postes_ouverts,factures,factures_fournisseur}.rs`,
+`crates/kesh-api/src/routes/fiscal_years.rs`, `crates/kesh-api/Cargo.toml`, `crates/kesh-seed/{Cargo.toml,src/lib.rs}`,
+`Cargo.lock`, `crates/kesh-api/tests/{mcp_transport_e2e,mcp_envois_e2e,mcp_traduction,mcp_gardes_lexicales,
+services_rollout,services_motif}.rs`, `crates/kesh-api/tests/common/mod.rs`, `docs/manual/fr/admin-manual.{tex,pdf}`,
+`CHANGELOG.md`, la fiche, le registre des choix, `sprint-status.yaml`.
 
 ## Change Log
 
@@ -1512,3 +1737,4 @@ déjà portée par la fiche 32-10a, l. 1455-1459.)*
 | 2026-10-25 | validation P3 | **Sonnet ×2** (lentilles R et F, contexte frais, prompt `329-validate-prompt-p3.md` ; rapports `kesh-gate-logs/329-validate-p3-{R,F}.md`) : R 0/0/1/8, F 0/0/2/6 ⇒ **trend P1 0/2/7/22 → P2 0/2/9/19 → P3 0/0/3/14** (doublons R1 = F8, R4 = F3, R6 = F2, comptés une fois par lentille). Sévérité en baisse (HIGH → 0). Origines : R1 = F8, R4, R5, R7, R8, F3, F4, F6 viennent de la remédiation de la P2 ; F1, F2 = R6, R2, R3, R9, F5, F7 de la rédaction d'origine. **MEDIUM remédiés** : **R1 = F8** — la note pour la 32-8 alignée sur la note jumelle que l'orchestrateur a corrigée dans la fiche 32-8 (commit `ef7756af` de `story/32-8`, l. 1538-1545) : **grep de la valeur** (`grep -nE '65 ?536|65 ?537|64 ?Kio'`) sur la fiche et le code, non une liste ; si la 32-8c est fusionnée, ce qui touche le frontend, `kesh-i18n` et son manuel est relevé et **déclaré, non amendé** — modules de la 32-9a recomptés : **5** ; **F1** — `semer` pose deux comptes piégés, K1 (`Asset`, lettrable, non bancaire) et K2 (`Expense`), liés par l'écriture piégée ; `TEMOINS` porte plusieurs **jeux d'arguments** par outil ; nouveau § *Les jeux d'arguments de l'inventaire*, qui donne pour chaque ligne à piège le jeu qui la fait sortir (dont le compte `Payable` pour le libellé du fournisseur et la contrepartie) ; **F2 = R6** — `kesh_balance_agee` tranchée dans l'outil (40 / 75, totaux du rapport entier), au tableau des tailles, au manuel (5) et à la Q4. **LOW** : R2 (`accounts.rs:224`), R3 (lignes de la fiche 32-6 décalées de + 7 à `ecb26dc8`), R4 = F3 (T-a7 : Ma1 à Ma30, Mb3 à T-b5), R5 (registre C-32-9-8 annoté : `MotifArgument::Invalide`), R7 (contrainte `:36-50`), R8 (« notamment » au manuel ; grep `\w*description\w*` qui voit `reconciliation.rs:4130`), R9 (`### Ajouté` du `CHANGELOG.md` par la 32-9a, compté avec le manuel — **écart à la convention de la 32-8 déclaré**, à trancher), F4 (ligne de Ma2), F5 (`outils_bornes_a_la_societe` symétrique, témoin vert, `introuvable_indiscernable` nommé, mutation Ma30), F6 (test du motif dans `kesh-api`, qui a `regex`), F7 (`file_hash` et `storage_path` factices et distincts). **Recomptes** (`grep -c`) : 31 AC (24 / 7), 16 tâches (10 / 6), **39 mutations** (32 / 7 : Ma1 à Ma30, Ma3b, Ma4b ; Mb1 à Mb7), C-32-9-1 à 32 (C-32-9-8 annoté) ; modules **5 / 5**. **Grep du symptôme** : `Touchés dans la fiche 32-8`, `Ma1 à Ma28`, `accounts.rs:223`, `36-42`, `un compte au numéro (T) et au nom (L) piégés`, `description(: ` sans `\w*` — aucun résidu hors historique. **3 passes sur 8.** La remédiation ne touche que la fiche et son registre : la passe suivante est **ciblée** (regression hunter, Opus), prompt `329-validate-prompt-p4.md`, commité à part. *(Annoté le 2026-10-25, validation P4, L1 : les lignes de la fiche 32-6 décalées de + 7 valent à `5f6733be`, non à `ecb26dc8` ; l'en-tête fixe désormais `5f6733be` comme seul état de référence.)* |
 | 2026-10-25 | validation P4 | **Opus**, passe **ciblée** « regression hunter » sur `e2bea882..09367214` (prompt `329-validate-prompt-p4.md` ; rapport `kesh-gate-logs/329-validate-p4.md`) : **0 / 0 / 3 / 7**. ⚠️ **Recyclage déclaré** : les trois MEDIUM et les sept LOW sont **nés de la remédiation de la P3** (`09367214`) ; consigne de l'orchestrateur appliquée — chaque correction sous la forme la plus simple, qui ne puisse pas en appeler une autre (retrait, citation plutôt que recopie). **H1** — les numéros piégés de K1 et K2 deviennent `0P329{M}{nn}` (forme T préfixée de `0`) : le plan et la balance trient par numéro (`accounts.rs:391`, `:399` ; `trial_balance.rs:173`), aucun plan de démonstration n'a de numéro en `0` (`grep -c` → 0, 0, 0), `0` se range avant `1` à `9` : K1 et K2 sortent en tête quelle que soit la taille du plan, sans `offset` calculé ; le motif non ancré reconnaît `P329A01` dans `0P329A01` (mesuré). **H2** — la note pour la 32-8 **cite** désormais la note de la fiche 32-8 (commit `8747944d`, qui fait foi) au lieu de la recopier ; motif `65[ _]?53[0-9]|64 ?Kio|64 ?\* ?1024`, `65 530` → `24 570`. **H3** — si la 32-8c est fusionnée avant elle, la 32-9a amende **elle-même** le manuel (administration et utilisateur) et le `CHANGELOG.md`, dans son module « manuel » ; seuls le frontend et `kesh-i18n` sont relevés et déclarés ; 5 modules. **LOW** : L1 (un seul état de référence pour la fiche 32-6, `5f6733be`, à l'en-tête et au registre ; `l. 516` → `523`, `l. 710` → `717` ; entrée P3 annotée), L2 (CHANGELOG : l. 11, `### Modifié` et `### Corrigé`, « sous ≈ 10 000 jetons »), L3 (`piece.numeroFacture` : exemption, posé pour un règlement seulement), L4 (`kesh_pieces` J2 : témoin du filtre, sans ligne d'inventaire), L5 (une ligne d'inventaire nomme la liste de ses couples (outil, jeu)), L6 (le compte du CHANGELOG avec le manuel, accepté par l'orchestrateur : convention, tableau du découpage, C-32-9-1 annoté, `sprint-status.yaml`), L7 (Ma28 dédoublée en Ma28a / Ma28b ; la fixture porte plus de 75 clients débiteurs). **Recomptes** (`grep -c`) : 31 AC (24 / 7), 16 tâches (10 / 6), **40 lignes de mutation** (33 / 7 : Ma1 à Ma30 avec Ma28a et Ma28b, Ma3b, Ma4b ; Mb1 à Mb7), C-32-9-1 à 32 (C-32-9-1, C-32-9-8 annotés) ; modules **5 / 5**. **Grep du symptôme** : `65 ?536|65 ?537`, `| Ma28 |`, `P329A01` est ASCII, `nomme **son** jeu`, `soumis à l'orchestrateur.`, `qu'un ### Modifié`, `ne le pose que pour une facture cliente validée`, `ecb26dc8` (hors historique) — aucun résidu hors entrées datées. **4 passes sur 8.** La remédiation ne touche que la fiche, son registre et le registre de sprint : passe suivante **ciblée** (regression hunter, Sonnet), `329-validate-prompt-p5.md`, commité à part. *(Annoté le 2026-10-27, étape 0 de la 32-9a, H2-P5 : seul C-32-9-1 a été annoté en P4 ; l'annotation de C-32-9-8 date de la P3.)* |
 | 2026-10-25 | validation P5 — **VALIDATION TERMINÉE** | **Sonnet**, passe **ciblée** « regression hunter » sur `fdf37bcd..e9dc5af7` (prompt `329-validate-prompt-p5.md` ; rapport `kesh-gate-logs/329-validate-p5.md`) : **0 / 0 / 0 / 6**. **Trend** : P1 (Sonnet ×2, R et F) 0/2/7/22 → P2 (Opus ×2) 0/2/9/19 → P3 (Sonnet ×2) 0/0/3/14 → P4 (Opus, ciblée) 0/0/3/7 → **P5 (Sonnet, ciblée) 0/0/0/6**. **Recyclage déclaré** en P2 (la plupart des findings nés de la remédiation de la P1) et en P4 (tous nés de celle de la P3). **Clôture** sur une passe sans finding au-dessus de LOW (`CLAUDE.md`, décision Q3 (c)), **5 passes sur 8**. Les six LOW (H1-P5 à H6-P5) ne sont pas remédiés à la fiche : ils vont au § *À recontrôler à l'étape 0*, chacun avec sa correction attendue. Seule retouche : la note pour la 32-8 cite la note de la fiche 32-8 « telle que corrigée » au commit `81cbd3f5`, sans plage de lignes. |
+| 2026-10-27 | développement 32-9a — **REVUE À LANCER** | **Opus 5.5**, en autonomie, branche `story/32-9a` (`story/32-9` + `main` à `7d83a31d`, puis `main` à `ed981c7d` fusionnée avant les gates). Étape 0 au Dev Agent Record (lignes citées) : `BlocContenu` absent (`Donnees::nouvelles(texte, structure)`, C-32-9-47), `AppelOutil` retiré, `pool_outils`, `kesh_lire_envoi` hors registre et listé en dernier, `MCP_ENVOI_OCTETS_MAX` déjà à 24 576, `max_statement_time` par instruction (#759), `kesh_version` à `f64` (C-32-9-40) ; aucune prémisse fausse, **5 modules**. Livré : `mcp/sortie.rs`, `ContexteMcp` amendé, seize outils au registre, `exercices::lister` et `list_fiscal_years` migré, `detail_sans_fichier`, trois erreurs de demande, `kesh_seed::pieges`, `sec:mcp-outils` du manuel et son PDF, `### Ajouté` du `CHANGELOG.md` ; fiche corrigée (`sec:mcp-client` à la 32-7 ; H1-P5 à H4-P5 ; H5-P5, H6-P5 constatés). **45 tests neufs** (de `origin/main` à `HEAD`, `grep -cE '#\[(test\|sqlx::test)'` aux deux bornes) ; tests de la 32-6 et de la 32-8 amendés. **Mutations 33 / 33** (Ma3, Ma3b, Ma26 refusées à la compilation ; Ma9 survivait à `tools_list_par_portee`, test réécrit, rejouée tuée). **Tailles** mesurées ; balance âgée révisée 40 / 75 → **38 / 68** (C-32-9-44) ; jetons **estimés** (aucun tokenizer local). **Gates** au dernier commit de code : backend 4 321 / 4 321 ; frontend check 0 erreur, lint PASS, 1 976 / 1 976, build ; **E2E 317 passés + 7 KF-029**, aucun autre. Choix C-32-9-40 à C-32-9-48. Écart déclaré : un test ajouté par `cat >>` (consigne 14). Prompt de revue P1 : `32-9a-review-prompt-p1.md` (Opus, lentilles B, E, A, passe complète). |
