@@ -565,3 +565,45 @@ l'étape 0. Chaque choix : contexte, option retenue, alternatives écartées, r�
   (ligne, solde courant) et ruptures à la lecture d'un seul tenant. Et `pagination_transmise` exige, pour les neuf
   outils paginés, que la page `offset = 1` d'un élément égale le second élément de la page `offset = 0` de deux.
 - **Réversible** : oui.
+
+## Choix du développement de la 32-9b (2026-10-27, Opus 5.5)
+
+*Numérotés à partir de C-32-9-60 (consigne de l'orchestrateur : la 32-10a se développe en parallèle).*
+
+### C-32-9-60 — L'adresse d'affichage d'un contact porte le piège de la rue
+
+- **Contexte** : la fiche piégeait `contacts.address` (500, forme L). Au code, `contacts::create` **ignore**
+  `NewContact.address` et lie à sa place la chaîne composée des quatre composants
+  (`derive_contact_address_display`, `kesh-db/src/repositories/contacts.rs:255-261`, `entities/contact.rs:29-47`) :
+  la colonne n'est pas posable par le dépôt.
+- **Retenu** : aucune ligne `address` dans `CHAMPS` ; la ligne d'inventaire `contacts[].adresse` est un `nf` dont le
+  piège est `client_rue` — le texte composé par Kesh porte celui de la rue (comme le libellé d'achat porte le nom du
+  fournisseur, « K+S »). Numéros 18 à 28 pour les onze colonnes du client, 29 à 39 pour la pièce P2.
+- **Alternatives** : poser `address` par SQL (refusé : les pièges s'écrivent par les dépôts de production) ; l'exempter
+  (refusé : elle porte bien un texte saisi).
+- **Réversible** : oui.
+
+### C-32-9-61 — Le fichier des pièces entre à l'inventaire des sites non résolus
+
+- **Contexte** : la fiche ne demandait que `list_imported` à `HANDLERS_MIGRES` (Mb2). La 32-9a avait aussi porté
+  `routes/fiscal_years.rs` à `SITES_NON_RESOLUS`.
+- **Retenu** : `routes/imported_supplier_invoices.rs` à `SITES_NON_RESOLUS` — 9 `pub async fn`, 12 `async fn`, les huit
+  autres gestionnaires sur `state.pool` (import, complétion, écart, fournisseurs proposés, documents), aucune aide ;
+  un gestionnaire neuf ou une lecture du pool hors corps rougit.
+- **Réversible** : oui (retirer la ligne).
+
+### C-32-9-62 — Mb7 mute la lecture de la société de `lister_tout`
+
+- **Contexte** : la fiche nomme Mb7 « `pieces::lister` sans la lecture de la société » ; `lister` délègue à
+  `lister_tout`, qui porte la seule lecture.
+- **Retenu** : la mutation retire la lecture dans `lister_tout` (`company.id` → `acces.company_id()`) ; elle est tuée
+  par `ac_b1_pieces_la_societe_est_lue_d_abord`, qui éprouve les deux fonctions.
+- **Réversible** : oui.
+
+### C-32-9-63 — Les pièges du contact sur le seul client C
+
+- **Contexte** : la fiche dit « les champs de C et de Fo » pour `kesh_contacts` J1 et `kesh_contact` J1, J2.
+- **Retenu** : C (personne physique) porte chaque champ piégé ; Fo ne porte que son nom piégé (32-9a), qui sort par
+  `kesh_contact` J2. Une seconde série sur Fo doublerait les numéros sans éprouver un chemin de plus (même projection,
+  même requête) ; `ide_number` est en outre unique par société.
+- **Réversible** : oui.
