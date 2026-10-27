@@ -259,12 +259,49 @@ fn sans_session(r: &Rendu) {
     );
 }
 
-/// L'enveloppe d'une réponse JSON (AC-B3). `Some(id)` : la réponse à une
-/// **requête** dont l'`id` a été lu — `id` présent et égal ; `None` : erreur de
-/// transport dont l'`id` n'a pu être lu.
-fn enveloppe_conforme(r: &Rendu, id_attendu: Option<i64>) -> Value {
+/// Ce qu'on attend de l'`id` d'une réponse.
+#[derive(Clone, Copy)]
+enum IdAttendu {
+    /// La réponse à une **requête** dont l'`id` a été lu : présent et égal.
+    Lu(i64),
+    /// Une erreur de transport sans `id` : la marque dépend du **fondement**,
+    /// cas par cas (revue de code P2, R1 ; C-32-11-41).
+    SansId(Fondement),
+}
+
+use IdAttendu::{Lu, SansId};
+
+/// Le fondement d'une erreur de transport rendue sans `id`.
+#[derive(Clone, Copy)]
+enum Fondement {
+    /// K15 — TRANSPORTS, *Security Warning* : « If the `Origin` header is
+    /// present and invalid, servers **MUST** respond with HTTP 403 Forbidden.
+    /// The HTTP response body **MAY** comprise a JSON-RPC *error response* that
+    /// has no `id` ».
+    OrigineRefusee,
+    /// K19 — JSON-RPC § 5, membre `id` : « If there was an error in detecting
+    /// the id in the Request object (e.g. Parse error/Invalid Request), it MUST
+    /// be Null. » (un lot n'est pas un objet `Request` : son `id` n'est pas lu).
+    RequeteInvalide,
+    /// K21 — TRANSPORTS, *Sending Messages to the Server*, point 4 : « If the
+    /// server cannot accept the input, it **MUST** return an HTTP error status
+    /// code (e.g., 400 Bad Request). The HTTP response body **MAY** comprise a
+    /// JSON-RPC *error response* that has no `id`. »
+    EntreeNonAcceptee,
+    /// K16 — **aucune phrase** n'autorise l'`id` absent sur un 401 : la requête
+    /// est bien formée, son `id` lisible ; Kesh refuse **avant de lire le corps**
+    /// (`transport.rs`, étape 7, avant l'étape 10 ; C-32-6-27). BASIC, *Error
+    /// Responses*, dit l'inverse : « Error responses **MUST** include the same ID
+    /// as the request they correspond to (except in error cases where the ID
+    /// could not be read due a malformed request). » — tension écrite, issue
+    /// demandée (C-32-11-41) ; l'assertion est une **décision de Kesh**.
+    RefusAvantLeCorps,
+}
+
+/// L'enveloppe d'une réponse JSON (AC-B3).
+fn enveloppe_conforme(r: &Rendu, id_attendu: IdAttendu) -> Value {
     let type_contenu = r.en_tete("content-type").unwrap_or_default();
-    if id_attendu.is_some() {
+    if let Lu(_) = id_attendu {
         // CLAUSE — TRANSPORTS, *Sending Messages to the Server*, point 5 : « If
         // the input is a JSON-RPC *request*, the server **MUST** either return
         // `Content-Type: text/event-stream`, to initiate an SSE stream, or
@@ -296,15 +333,22 @@ fn enveloppe_conforme(r: &Rendu, id_attendu: Option<i64>) -> Value {
         // Responses* : « Error responses **MUST** include the same ID as the
         // request they correspond to (except in error cases where the ID could
         // not be read due a malformed request). »
-        Some(id) => assert_eq!(o.get("id"), Some(&json!(id)), "CLAUSE : même id"),
-        None => {
-            // CLAUSE, sur ce que les deux textes admettent ensemble : JSON-RPC
-            // § 5, membre `id` : « If there was an error in detecting the id in
-            // the Request object (e.g. Parse error/Invalid Request), it MUST be
-            // Null. » ; SCHEMA, `JSONRPCErrorResponse` : `id?: RequestId`
-            // (facultatif), et TRANSPORTS, *Security Warning* : « a JSON-RPC
-            // *error response* that has no `id` ». Les deux se contredisent sur
-            // la forme ; l'`id` est donc **absent ou `null`** (C-32-11-38).
+        Lu(id) => assert_eq!(o.get("id"), Some(&json!(id)), "CLAUSE : même id"),
+        SansId(Fondement::RefusAvantLeCorps) => {
+            // DECISION_KESH (C-32-6-27, C-32-11-41) : aucune phrase ne fonde
+            // l'absence d'`id` sur un 401 — voir `Fondement::RefusAvantLeCorps`.
+            assert!(
+                !o.contains_key("id"),
+                "DECISION_KESH : 401 sans id, refusé avant la lecture du corps (C-32-6-27) : {v}"
+            );
+        }
+        SansId(_) => {
+            // CLAUSE, par le fondement de l'appelant (`Fondement`), sur ce que
+            // les textes admettent ensemble : JSON-RPC § 5 demande `null`, le
+            // schéma MCP (`JSONRPCErrorResponse` : `id?: RequestId`, facultatif,
+            // `RequestId` = `string | number`) et TRANSPORTS (« a JSON-RPC *error
+            // response* that has no `id` ») l'omettent : l'`id` est donc
+            // **absent ou `null`** (C-32-11-38).
             assert!(
                 o.get("id").is_none_or(Value::is_null),
                 "CLAUSE : id absent ou null pour une erreur sans id lisible : {v}"
@@ -381,7 +425,7 @@ async fn k01_initialize_version_servie(pool: MySqlPool) {
         .post(Some(&b.dispensee), &initialize(1, "2025-11-25"))
         .await;
     assert_eq!(r.statut, StatusCode::OK, "{STATUT_200}");
-    let v = enveloppe_conforme(&r, Some(1));
+    let v = enveloppe_conforme(&r, Lu(1));
     let res = &v["result"];
     assert_eq!(
         res["protocolVersion"], "2025-11-25",
@@ -437,7 +481,7 @@ async fn k02_initialize_version_ancienne_servie(pool: MySqlPool) {
         .post(Some(&b.dispensee), &initialize(2, "2025-06-18"))
         .await;
     assert_eq!(r.statut, StatusCode::OK, "{STATUT_200}");
-    let v = enveloppe_conforme(&r, Some(2));
+    let v = enveloppe_conforme(&r, Lu(2));
     assert_eq!(v["result"]["protocolVersion"], "2025-06-18", "CLAUSE");
 }
 
@@ -452,7 +496,7 @@ async fn k03_initialize_version_non_servie(pool: MySqlPool) {
         .post(Some(&b.dispensee), &initialize(3, "2024-11-05"))
         .await;
     assert_eq!(r.statut, StatusCode::OK, "{STATUT_200}");
-    let v = enveloppe_conforme(&r, Some(3));
+    let v = enveloppe_conforme(&r, Lu(3));
     let rendue = v["result"]["protocolVersion"].as_str().unwrap_or_default();
     assert!(
         VERSIONS.contains(&rendue),
@@ -488,7 +532,7 @@ async fn k06_ping(pool: MySqlPool) {
     let b = banc(&pool).await;
     let r = b.post(Some(&b.dispensee), &requete_simple(6, "ping")).await;
     assert_eq!(r.statut, StatusCode::OK, "{STATUT_200}");
-    let v = enveloppe_conforme(&r, Some(6));
+    let v = enveloppe_conforme(&r, Lu(6));
     assert_eq!(v["result"], json!({}), "CLAUSE : result vide");
 }
 
@@ -508,7 +552,7 @@ async fn k07_tools_list(pool: MySqlPool) {
         .post(Some(&b.dispensee), &requete_simple(7, "tools/list"))
         .await;
     assert_eq!(r.statut, StatusCode::OK, "{STATUT_200}");
-    let v = enveloppe_conforme(&r, Some(7));
+    let v = enveloppe_conforme(&r, Lu(7));
     let outils = v["result"]["tools"]
         .as_array()
         .expect("CLAUSE : tools est un tableau");
@@ -550,7 +594,7 @@ async fn k08_tools_call_kesh_version(pool: MySqlPool) {
         .post(Some(&b.dispensee), &appel(8, "kesh_version", json!({})))
         .await;
     assert_eq!(r.statut, StatusCode::OK, "{STATUT_200}");
-    let v = enveloppe_conforme(&r, Some(8));
+    let v = enveloppe_conforme(&r, Lu(8));
     let blocs = resultat_d_outil(&v["result"], false);
     // DECISION_KESH (32-9a, AC-a3 et AC-a8) : un seul bloc, l'en-tête fixe des
     // données puis le JSON de la sortie, qui dit la version du binaire et le mode
@@ -571,6 +615,23 @@ async fn k08_tools_call_kesh_version(pool: MySqlPool) {
         structure["lectureSeule"].is_boolean(),
         "DECISION_KESH : lectureSeule booléen : {v}"
     );
+    // La version : celle du paquet `kesh-api`, lue ici par le crate de test
+    // (`env!` à la compilation du test), non tirée du serveur.
+    assert_eq!(
+        structure["version"],
+        env!("CARGO_PKG_VERSION"),
+        "DECISION_KESH : la version du binaire : {v}"
+    );
+    // Le texte porte, après l'en-tête et une ligne vide, le JSON de la même
+    // sortie (32-9a, AC-a3).
+    let (_, json_du_texte) = texte
+        .split_once("\n\n")
+        .unwrap_or_else(|| panic!("DECISION_KESH : en-tête, ligne vide, puis le JSON : {texte}"));
+    assert_eq!(
+        serde_json::from_str::<Value>(json_du_texte).ok().as_ref(),
+        Some(structure),
+        "DECISION_KESH : le texte porte le JSON de la sortie : {texte}"
+    );
 }
 
 /// K9. Comme K8, sur un **outil de données** (32-9a) : le texte porte la
@@ -585,7 +646,7 @@ async fn k09_tools_call_outil_de_donnees(pool: MySqlPool) {
         )
         .await;
     assert_eq!(r.statut, StatusCode::OK, "{STATUT_200}");
-    let v = enveloppe_conforme(&r, Some(9));
+    let v = enveloppe_conforme(&r, Lu(9));
     let blocs = resultat_d_outil(&v["result"], false);
     assert!(
         blocs.iter().any(|b| b["text"]
@@ -610,7 +671,7 @@ async fn k10_envoi_a_valider(pool: MySqlPool) {
         )
         .await;
     assert_eq!(r.statut, StatusCode::OK, "{STATUT_200}");
-    let v = enveloppe_conforme(&r, Some(10));
+    let v = enveloppe_conforme(&r, Lu(10));
     let blocs = resultat_d_outil(&v["result"], false);
     let n = v["result"]["structuredContent"]["envoi"]
         .as_i64()
@@ -668,7 +729,7 @@ async fn k10_envoi_a_valider(pool: MySqlPool) {
         )
         .await;
     assert_eq!(r.statut, StatusCode::OK, "{STATUT_200}");
-    let v = enveloppe_conforme(&r, Some(11));
+    let v = enveloppe_conforme(&r, Lu(11));
     let blocs = resultat_d_outil(&v["result"], false);
     let relecture = format!(
         "Envoi n° {n} validé par l'utilisateur, qui l'a modifié avant l'envoi. Le bloc suivant \
@@ -705,7 +766,7 @@ async fn k11_outil_inconnu(pool: MySqlPool) {
         )
         .await;
     assert_eq!(r.statut, StatusCode::OK, "{STATUT_200}");
-    let v = enveloppe_conforme(&r, Some(11));
+    let v = enveloppe_conforme(&r, Lu(11));
     assert_eq!(
         v["error"],
         json!({ "code": -32602, "message": "Outil inconnu." }),
@@ -727,7 +788,7 @@ async fn k12_outil_hors_portee(pool: MySqlPool) {
     let hors_portee = b
         .post(Some(&b.dispensee), &appel(12, "kesh_factures", json!({})))
         .await;
-    enveloppe_conforme(&hors_portee, Some(12));
+    enveloppe_conforme(&hors_portee, Lu(12));
     assert_eq!(
         hors_portee, inconnu,
         "DECISION_KESH : hors portée = inconnu, réponse pour réponse"
@@ -751,7 +812,7 @@ async fn k13_methode_non_servie(pool: MySqlPool) {
         .post(Some(&b.dispensee), &requete_simple(13, "resources/list"))
         .await;
     assert_eq!(r.statut, StatusCode::OK, "{STATUT_200}");
-    let v = enveloppe_conforme(&r, Some(13));
+    let v = enveloppe_conforme(&r, Lu(13));
     assert_eq!(v["error"]["code"], -32601, "DECISION_KESH : -32601");
     assert_eq!(
         v["error"]["message"], "Méthode non servie.",
@@ -773,7 +834,7 @@ async fn k14_prompts(pool: MySqlPool) {
         .post(Some(&b.dispensee), &requete_simple(14, "prompts/list"))
         .await;
     assert_eq!(r.statut, StatusCode::OK, "{STATUT_200}");
-    let v = enveloppe_conforme(&r, Some(14));
+    let v = enveloppe_conforme(&r, Lu(14));
     let prompts = v["result"]["prompts"]
         .as_array()
         .expect("CLAUSE : prompts est un tableau");
@@ -801,7 +862,7 @@ async fn k14_prompts(pool: MySqlPool) {
         )
         .await;
     assert_eq!(r.statut, StatusCode::OK, "{STATUT_200}");
-    let v = enveloppe_conforme(&r, Some(15));
+    let v = enveloppe_conforme(&r, Lu(15));
     let messages = v["result"]["messages"]
         .as_array()
         .expect("CLAUSE : messages est un tableau");
@@ -848,7 +909,7 @@ async fn k15_origine_etrangere(pool: MySqlPool) {
     );
     let r = b.post_avec(h, &requete_simple(15, "ping")).await;
     assert_eq!(r.statut, StatusCode::FORBIDDEN, "CLAUSE : 403");
-    let v = enveloppe_conforme(&r, None);
+    let v = enveloppe_conforme(&r, SansId(Fondement::OrigineRefusee));
     assert_eq!(
         v["error"],
         json!({ "code": -32003, "message": "Origine refusée." }),
@@ -860,14 +921,17 @@ async fn k15_origine_etrangere(pool: MySqlPool) {
 /// `WWW-Authenticate` — la clé `kesh_mcp_` est hors de l'autorisation OAuth de
 /// MCP (AUTHORIZATION, *Protocol Requirements* : « Authorization is
 /// **OPTIONAL** for MCP implementations. ») : rien de cette page ne s'applique
-/// en MUST à un serveur qui ne la met pas en œuvre.
+/// en MUST à un serveur qui ne la met pas en œuvre. Le corps est une erreur
+/// JSON-RPC **sans `id`** pour une requête bien formée : tension avec BASIC,
+/// *Error Responses* (`Fondement::RefusAvantLeCorps`, C-32-11-41) — toutes les
+/// assertions de K16 sont `DECISION_KESH`.
 #[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn k16_sans_authorization(pool: MySqlPool) {
     let b = banc(&pool).await;
     let r = b.post(None, &requete_simple(16, "ping")).await;
     assert_eq!(r.statut, StatusCode::UNAUTHORIZED, "DECISION_KESH : 401");
     assert_eq!(r.en_tete("www-authenticate"), None, "DECISION_KESH");
-    let v = enveloppe_conforme(&r, None);
+    let v = enveloppe_conforme(&r, SansId(Fondement::RefusAvantLeCorps));
     assert_eq!(
         v["error"],
         json!({ "code": -32001, "message": "Non authentifié." }),
@@ -913,7 +977,7 @@ async fn k18_version_absente(pool: MySqlPool) {
         )
         .await;
     assert_eq!(r.statut, StatusCode::OK, "DECISION_KESH : admis");
-    let v = enveloppe_conforme(&r, Some(18));
+    let v = enveloppe_conforme(&r, Lu(18));
     assert_eq!(
         v["result"],
         json!({}),
@@ -935,7 +999,7 @@ async fn k19_lot(pool: MySqlPool) {
         )
         .await;
     assert_eq!(r.statut, StatusCode::BAD_REQUEST, "DECISION_KESH : 400");
-    let v = enveloppe_conforme(&r, None);
+    let v = enveloppe_conforme(&r, SansId(Fondement::RequeteInvalide));
     assert_eq!(v["error"]["code"], -32600, "DECISION_KESH : -32600");
 }
 
@@ -966,8 +1030,10 @@ async fn k20_get_et_delete(pool: MySqlPool) {
 /// the input is a JSON-RPC *response* or *notification*: If the server accepts
 /// the input, the server **MUST** return HTTP status code 202 Accepted with no
 /// body. If the server cannot accept the input, it **MUST** return an HTTP
-/// error status code (e.g., 400 Bad Request). » — d'où « 202 sans corps, ou un
-/// statut d'erreur HTTP » (4xx ou 5xx : la phrase ne dit pas laquelle).
+/// error status code (e.g., 400 Bad Request). The HTTP response body **MAY**
+/// comprise a JSON-RPC *error response* that has no `id`. » — d'où « 202 sans
+/// corps, ou un statut d'erreur HTTP » (4xx ou 5xx : la phrase ne dit pas
+/// laquelle) et l'`id` absent permis (`Fondement::EntreeNonAcceptee`).
 /// DECISION_KESH (C-32-6-42, report B4 de la 32-6) : 400, `-32600` sans `id`.
 #[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn k21_message_de_type_reponse(pool: MySqlPool) {
@@ -986,7 +1052,7 @@ async fn k21_message_de_type_reponse(pool: MySqlPool) {
         r.statut
     );
     assert_eq!(r.statut, StatusCode::BAD_REQUEST, "DECISION_KESH : 400");
-    let v = enveloppe_conforme(&r, None);
+    let v = enveloppe_conforme(&r, SansId(Fondement::EntreeNonAcceptee));
     assert_eq!(v["error"]["code"], -32600, "DECISION_KESH : -32600");
 }
 
