@@ -12,6 +12,10 @@ Le contenu est rédigé en français à destination des **fiduciaires, PME, ind�
 
 ### Ajouté
 
+- **Brancher un agent sur Kesh** : le manuel d'administration décrit le fonctionnement du serveur MCP et le parcours
+  d'administration, joué sur une démonstration, restauration d'une sauvegarde comprise ; un test de contrat du serveur
+  tourne en CI ; le manuel utilisateur dit ce que l'agent peut lire et ce qu'on montre avant l'envoi ;
+  `docs/api-external.md` renvoie au serveur intégré.
 - **La validation avant envoi du serveur MCP.** Sous une clé du serveur MCP dont la validation est requise (le
   défaut), aucune donnée des livres ne part vers l'agent sans l'accord d'un Administrateur : ce que l'agent demande
   est déposé comme un *envoi*, et l'écran **Administration → Envois du serveur MCP** montre le texte exact qui

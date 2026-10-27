@@ -264,6 +264,9 @@
 //!   jetons complet, macros comprises, de chaque `.rs` de production) ; elle
 //!   n'est pas introduite ici.
 
+#[path = "common/manuel.rs"]
+mod manuel;
+
 use std::collections::{BTreeMap, BTreeSet};
 
 /// Statut d'examen d'une route mutante au regard du journal d'audit.
@@ -940,6 +943,49 @@ fn the_registry_partition_is_what_the_story_declares() {
         LIB_ROUTES.len() + TEST_ENDPOINT_ROUTES.len(),
         138,
         "le registre est plus large que l'inventaire, et c'est voulu"
+    );
+}
+
+/// Story 32-11 (AC-T1, C-32-11-10) : le manuel d'administration dit le compte
+/// **du registre**, recalculé ici depuis la partition — « N des M routes à verbe
+/// mutant » et « N + E + R = M », chacune **exactement une fois**. Trois
+/// stories de l'Epic 32 avaient laissé ce compte faux, rien ne le reliant au
+/// registre.
+#[test]
+fn le_manuel_dit_le_compte_du_registre() {
+    let compter = |filtre: fn(&Status) -> bool| LIB_ROUTES.iter().filter(|r| filtre(&r.2)).count();
+    let traced = compter(|s| *s == Traced);
+    let exempt = compter(|s| matches!(s, Exempt(_)));
+    let no_matter = compter(|s| matches!(s, NoMatter(_)));
+    let total = LIB_ROUTES.len();
+
+    let chemin = concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../docs/manual/fr/admin-manual.tex"
+    );
+    let source = std::fs::read_to_string(chemin).expect("manuel d'administration");
+    let texte = manuel::normaliser(&source);
+
+    let phrase = regex::Regex::new(r"(\d+) des (\d+) routes à verbe mutant").unwrap();
+    let trouvees: Vec<(usize, usize)> = phrase
+        .captures_iter(&texte)
+        .map(|c| (c[1].parse().unwrap(), c[2].parse().unwrap()))
+        .collect();
+    assert_eq!(
+        trouvees,
+        [(traced, total)],
+        "le manuel doit dire une seule fois « {traced} des {total} routes à verbe mutant »"
+    );
+
+    let somme = regex::Regex::new(r"(\d+) \+ (\d+) \+ (\d+) = (\d+)").unwrap();
+    let trouvees: Vec<[usize; 4]> = somme
+        .captures_iter(&texte)
+        .map(|c| std::array::from_fn(|i| c[i + 1].parse().unwrap()))
+        .collect();
+    assert_eq!(
+        trouvees,
+        [[traced, exempt, no_matter, total]],
+        "le manuel doit dire une seule fois « {traced} + {exempt} + {no_matter} = {total} »"
     );
 }
 
