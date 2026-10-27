@@ -352,3 +352,81 @@ alternatives écartées, réversibilité.
 - **Réversible** : oui (point 1).
 
 *(Amendé le 2026-10-27, validation P4 de la fiche, A2 : « déjà prévue » (C-32-11-29, Retenu) est devenu vrai depuis la P3 — la recette de Guy est **inscrite à la § *Release v0.16.0* de l'epic** (ligne datée du 2026-10-27), non plus seulement attendue. Le texte du choix est laissé tel quel.)*
+
+---
+
+*Entrées du développement (Opus 5.5, en autonomie, 2026-10-27, worktree `kesh-32-10a`, branche `story/32-11`).*
+
+### C-32-11-30 — Les gestes d'écran par un pilote Playwright jetable, et les secrets masqués dans les captures
+
+- **Contexte** (AC-A1, AC-A4) : les gestes d'écran se jouent par le navigateur ; le secret d'une clé est affiché une
+  fois, et les captures vivent hors du dépôt.
+- **Retenu** : un pilote jetable (`kesh-gate-logs/3211/pw.cjs`, un fichier par geste sous `gestes/` puis `t8/gestes/`),
+  Chromium de Playwright, thème clair ; le secret n'est écrit qu'au fichier d'en-tête et **masqué dans la capture**
+  (« kesh_mcp_(masqué pour la capture) ») ; au rejeu T-8, le menu *Administration → …* est cliqué comme le PDF le dit.
+- **Écartées** : la capture du secret en clair (l'AC-A2 P2 dit « le secret se lit une fois (capture) ») — une capture
+  porterait un secret, même de démonstration, que rien n'oblige à garder.
+- **Réversible** : oui.
+
+### C-32-11-31 — Le rangement des cas K après lecture de la révision 2025-11-25
+
+- **Contexte** (AC-B2, § *À recontrôler*) : les pages *basic*, *lifecycle*, *transports*, *ping*, *tools*, *prompts*,
+  *authorization* et *schema* de la révision `2025-11-25`, et la spécification JSON-RPC 2.0, lues le 2026-10-27.
+- **Retenu** : **promus `CLAUSE`** — K5 (« If the server accepts the input, the server **MUST** return HTTP status code
+  202 Accepted with no body »), le `GET` de K20 (« The server **MUST** either return `Content-Type: text/event-stream`
+  […] or else return HTTP 405 Method Not Allowed »), K21 sous la forme « 202 sans corps, ou un statut d'erreur 4xx »
+  (« If the server cannot accept the input, it **MUST** return an HTTP error status code (e.g., 400 Bad Request) »),
+  K13 (*basic* : « All messages […] **MUST** follow the JSON-RPC 2.0 specification » ; JSON-RPC § 5.1 : `-32601` « Method
+  not found »), les clés requises du schéma (*basic* : le schéma est « the source of truth for all protocol messages
+  and structures ») ; **restés `DECISION_KESH`** — K3 « la plus récente » (SHOULD), K11 `-32602` (exemple seulement),
+  K14 `role` (énumération du schéma, sans MUST), le corps sans `id` de K15 (MAY), K16 (*authorization* :
+  « Authorization is **OPTIONAL** »), K18 (SHOULD), K19, le `DELETE` de K20 (MAY), K22 ; la branche `None` de l'AC-B3 exige
+  l'`id` **absent** (`JSONRPCErrorResponse.id?: RequestId`, `RequestId` = `string | number`, jamais `null`).
+- **Écartées** : promouvoir `role` sur la foi du type du schéma (la fiche n'admet qu'une phrase en MUST).
+- **Réversible** : oui (une révision nouvelle se relit).
+
+### C-32-11-32 — L'outil de données de K9 et K10 : `kesh_plan_comptable`, sur un compte que pose le test
+
+- **Contexte** (AC-B4) : K9 et K10 veulent un outil de données de la 32-9a et une donnée posée par le test.
+- **Retenu** : `kesh_plan_comptable`, sans argument, sur un compte « Compte du contrat CONTRAT_3211 » posé par
+  `common::mcp::compte` ; aucune écriture à fabriquer, et le texte de la donnée se cherche tel quel.
+- **Écartées** : `kesh_bilan` (il faudrait un exercice et des écritures en fixture, pour la même preuve).
+- **Réversible** : oui.
+
+### C-32-11-33 — Les motifs du PDF remplacés quand la base les rendait déjà
+
+- **Contexte** (AC-C9) : à l'étape 0, les PDF de `origin/main` (`186302d9`) rendent déjà `2025-11-25`, `#776` (admin et
+  utilisateur), `Brancher un agent` (admin, dans `sec:mcp-client`) et `129 des 135`.
+- **Retenu** : motifs neufs, chacun 0 à la base et 1 au PDF régénéré — admin : `Comment fonctionne le serveur MCP`,
+  `Brancher un agent, pas à pas`, `parcours d’une requête`, `Après une restauration`, `issue #759` ; utilisateur :
+  `L’agent IA et le serveur MCP`, `/kesh:kesh-assistant` ; brochure : `Serveur MCP intégré` (0 → 1) et `MCP server`
+  (1 → 0). Tous par `grep -cF` (motifs fixes, apostrophe typographique écrite telle quelle), sous `LC_ALL=fr_FR.UTF-8`.
+  AC-C4 déclarée **déjà vraie** (la 32-10b a écrit « 129 des 135 », recompté).
+- **Écartées** : `grep -cE 'L.{1,3}agent…'` (quantificateur sur la ligne aplatie, déconseillé par le prompt).
+- **Réversible** : oui.
+
+### C-32-11-34 — Le message « Réglages enregistrés. » paraphrasé, non cité
+
+- **Contexte** (AC-T2) : la garde G2 `aucun_renvoi_au_menu_reglages` (`textes_coherents.rs`) interdit le mot
+  « Réglages » capitalisé dans les manuels ; citer le statut de l'écran l'a fait rougir.
+- **Retenu** : « l'écran confirme l'enregistrement et date la dernière modification » — la garde reste sans
+  modification.
+- **Écartées** : inscrire l'exception à la garde (l'AC-T2 ne l'admet que justifiée ; une paraphrase exacte suffit).
+- **Réversible** : oui.
+
+### C-32-11-35 — La forme d'un prompt dans Claude Code : `/kesh:kesh-assistant (MCP)`
+
+- **Contexte** (AC-C2, AC-C7) : la documentation de Claude Code (spike § 2.1, l. 253) donne
+  `/servername:promptname (MCP)` ; `sec:mcp-client` nomme le serveur `kesh` dans `claude mcp add`.
+- **Retenu** : `/kesh:kesh-assistant (MCP)`, « le nom du serveur donné à `claude mcp add` précédant celui du prompt »,
+  marqué « non éprouvé ».
+- **Écartées** : `/kesh-demo:…` (nom du fichier jetable de la spike, absent du manuel).
+- **Réversible** : oui (recette de Guy).
+
+### C-32-11-36 — Les bases du parcours supprimées à la fin de chaque phase
+
+- **Contexte** (AC-E2 : « les deux bases supprimées » ; AC-A6 : base `kesh_3211_t8`).
+- **Retenu** : `DROP DATABASE` de `kesh_3211` et `kesh_3211_r` après la restauration, de `kesh_3211_t8` après le
+  rejeu, par l'utilisateur `kesh` ; instances arrêtées par PID. `kesh_e2e_3211` reste pour l'E2E.
+- **Écartées** : garder les bases jusqu'à la revue (les preuves sont les journaux, les réponses et les captures).
+- **Réversible** : non (les bases sont jetables ; les preuves restent sous `kesh-gate-logs/3211/`).
