@@ -30,6 +30,14 @@ Le contenu est rédigé en français à destination des **fiduciaires, PME, ind�
   consigne. Sans la portée `contacts:read`, l'IBAN et le QR-IBAN du créancier et l'adresse d'envoi d'une facture sont
   masqués ; les noms des clients et des fournisseurs, que Kesh écrit lui-même dans les libellés, ne le sont pas. Une
   réponse reste sous 24 Kio de texte, soit environ 10 000 jetons (estimation) ; les listes se lisent par pages.
+- **Les outils de lecture du serveur MCP — contacts et pièces** (refs
+  [#723](https://github.com/guycorbaz/kesh/issues/723)). Sous `contacts:read`, le carnet d'adresses (liste et
+  fiche d'un contact), chaque texte enveloppé ; sous `documents:read`, la liste des pièces importées d'un statut,
+  **leurs métadonnées seulement** — nom et type du fichier, taille, date d'import, facture fournisseur créée, et le
+  fait qu'un QR-code y a été lu ; `kesh_pieces` ne rend ni le fichier ni rien de ce qui a été lu du QR-code. Une fois
+  la pièce complétée, l'IBAN, la référence et le montant lus de son QR-code appartiennent à la facture fournisseur
+  créée, que `kesh_facture_fournisseur` rend — la référence et le montant sous `invoices:read`, l'IBAN (ou le
+  QR-IBAN) sous `contacts:read` seulement. Le contenu des pièces viendra dans une version ultérieure.
 
 ### Modifié
 

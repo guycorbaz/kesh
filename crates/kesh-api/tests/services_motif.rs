@@ -2171,6 +2171,8 @@ const HANDLERS_MIGRES: &[(&str, &str)] = &[
     ("routes/supplier_invoices.rs", "get_supplier_invoice"),
     // Story 32-9a (AC-a12) : la liste des exercices.
     ("routes/fiscal_years.rs", "list_fiscal_years"),
+    // Story 32-9b (AC-b1) : la liste des pièces importées.
+    ("routes/imported_supplier_invoices.rs", "list_imported"),
 ];
 
 /// Une ligne de [`SITES_NON_RESOLUS`] : (fichier, `pub async fn`, `async fn`
@@ -2191,6 +2193,28 @@ type SiteNonResolu = (
 /// les douze mutants des factures, l'export CSV de l'échéancier (C-32-4b-1) et
 /// les deux aides des mutants de `invoices.rs` (AC13 (iii)).
 const SITES_NON_RESOLUS: &[SiteNonResolu] = &[
+    // Story 32-9b (AC-b1, C-32-9-61) : la liste des pièces passe par
+    // `pieces::lister_tout` ; les huit autres gestionnaires — l'import, la
+    // complétion, l'écart, les fournisseurs proposés, les documents, qu'aucun
+    // outil ne sert — restent sur `state.pool`. Les trois `async fn` non
+    // publiques (`complete_import_once`, `attach_source_document_once`,
+    // `detach_source_document_once`) reçoivent le pool en paramètre.
+    (
+        "routes/imported_supplier_invoices.rs",
+        9,
+        12,
+        &[
+            "attach_source_document",
+            "complete_import",
+            "detach_source_document",
+            "discard_import",
+            "get_imported_source_document",
+            "get_supplier_candidates",
+            "get_supplier_invoice_source_document",
+            "post_inbox_import",
+        ],
+        &[],
+    ),
     // Story 32-9a (AC-a12) : la liste des exercices passe par
     // `exercices::lister` ; les six autres gestionnaires — qu'aucun outil ne
     // sert — restent sur `state.pool`.
@@ -2609,10 +2633,10 @@ fn ac10_vi_services_sans_axum_ni_app_state() {
         .collect();
     assert_eq!(
         services.len(),
-        14,
-        "services/ : quatorze fichiers attendus (cinq de la 32-3, trois de la 32-4a, deux de la 32-4b, \
+        15,
+        "services/ : quinze fichiers attendus (cinq de la 32-3, trois de la 32-4a, deux de la 32-4b, \
          cles_mcp.rs de la 32-5b, serveur_mcp.rs de la 32-6a, envois_mcp.rs de la 32-8b, \
-         exercices.rs de la 32-9a), {:?}",
+         exercices.rs de la 32-9a, pieces.rs de la 32-9b), {:?}",
         services.iter().map(|(f, _)| f).collect::<Vec<_>>()
     );
     assert_eq!(

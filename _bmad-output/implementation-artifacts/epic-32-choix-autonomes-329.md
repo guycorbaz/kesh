@@ -565,3 +565,99 @@ l'étape 0. Chaque choix : contexte, option retenue, alternatives écartées, r�
   (ligne, solde courant) et ruptures à la lecture d'un seul tenant. Et `pagination_transmise` exige, pour les neuf
   outils paginés, que la page `offset = 1` d'un élément égale le second élément de la page `offset = 0` de deux.
 - **Réversible** : oui.
+
+## Choix du développement de la 32-9b (2026-10-27, Opus 5.5)
+
+*Numérotés à partir de C-32-9-60 (consigne de l'orchestrateur : la 32-10a se développe en parallèle).*
+
+### C-32-9-60 — L'adresse d'affichage d'un contact porte le piège de la rue
+
+- **Contexte** : la fiche piégeait `contacts.address` (500, forme L). Au code, `contacts::create` **ignore**
+  `NewContact.address` et lie à sa place la chaîne composée des quatre composants
+  (`derive_contact_address_display`, `kesh-db/src/repositories/contacts.rs:255-261`, `entities/contact.rs:29-47`) :
+  la colonne n'est pas posable par le dépôt.
+- **Retenu** : aucune ligne `address` dans `CHAMPS` ; la ligne d'inventaire `contacts[].adresse` est un `nf` dont le
+  piège est `client_rue` — le texte composé par Kesh porte celui de la rue (comme le libellé d'achat porte le nom du
+  fournisseur, « K+S »). Numéros 18 à 28 pour les onze colonnes du client, 29 à 39 pour la pièce P2.
+- **Alternatives** : poser `address` par SQL (refusé : les pièges s'écrivent par les dépôts de production) ; l'exempter
+  (refusé : elle porte bien un texte saisi).
+- **Réversible** : oui.
+- *(Annoté le 2026-10-27, revue de code P1 de la 32-9b, B1 : la ligne `nf` à `client_rue` passait à vide — le piège
+  sortait aussi par `rue`, elle ne pouvait rougir seule. Elle devient une exemption ; la valeur composée et son
+  enveloppe sont lues par `projections_des_contacts_et_des_pieces`, C-32-9-65.)*
+
+### C-32-9-61 — Le fichier des pièces entre à l'inventaire des sites non résolus
+
+- **Contexte** : la fiche ne demandait que `list_imported` à `HANDLERS_MIGRES` (Mb2). La 32-9a avait aussi porté
+  `routes/fiscal_years.rs` à `SITES_NON_RESOLUS`.
+- **Retenu** : `routes/imported_supplier_invoices.rs` à `SITES_NON_RESOLUS` — 9 `pub async fn`, 12 `async fn`, les huit
+  autres gestionnaires sur `state.pool` (import, complétion, écart, fournisseurs proposés, documents), aucune aide ;
+  un gestionnaire neuf ou une lecture du pool hors corps rougit.
+- **Réversible** : oui (retirer la ligne).
+
+### C-32-9-62 — Mb7 mute la lecture de la société de `lister_tout`
+
+- **Contexte** : la fiche nomme Mb7 « `pieces::lister` sans la lecture de la société » ; `lister` délègue à
+  `lister_tout`, qui porte la seule lecture.
+- **Retenu** : la mutation retire la lecture dans `lister_tout` (`company.id` → `acces.company_id()`) ; elle est tuée
+  par `ac_b1_pieces_la_societe_est_lue_d_abord`, qui éprouve les deux fonctions.
+- **Réversible** : oui.
+
+### C-32-9-63 — Les pièges du contact sur le seul client C
+
+- **Contexte** : la fiche dit « les champs de C et de Fo » pour `kesh_contacts` J1 et `kesh_contact` J1, J2.
+- **Retenu** : C (personne physique) porte chaque champ piégé ; Fo ne porte que son nom piégé (32-9a), qui sort par
+  `kesh_contact` J2. Une seconde série sur Fo doublerait les numéros sans éprouver un chemin de plus (même projection,
+  même requête) ; `ide_number` est en outre unique par société.
+- **Réversible** : oui.
+
+### C-32-9-64 — La recherche de `kesh_contacts` bornée dans l'outil, non dans le service
+
+- **Contexte** : revue de code P1 de la 32-9b, B5 = E5 — `search` sans borne au schéma comme au service, quand
+  `kesh_factures` borne à 100 caractères (`services/factures.rs:46`, `RECHERCHE_MAX`). Le service du carnet sert aussi
+  l'écran (`GET /api/v1/contacts`), qui n'a jamais eu de borne.
+- **Retenu** : la borne est posée par l'outil — `commun::recherche_bornee`, `commun::RECHERCHE_MAX` égal à
+  `services::factures::RECHERCHE_MAX` (100 caractères **rognés**), refus `ArgumentsInvalides { "search" }` au texte
+  fixe, et `"maxLength":100` au schéma. La recherche est transmise telle quelle au service, qui la rogne.
+- **Écart connu (revue de code P2, R2)** : le schéma dit `maxLength: 100`, que JSON Schema applique au texte **brut**
+  (points de code, espaces compris), alors que l'outil compte le texte **rogné**. L'outil est donc plus permissif que
+  son schéma : `"  " + 100 caractères + "  "` (104 points de code) est servi par le serveur et refusé par un client qui
+  valide le schéma avant l'envoi. Même écart pour `kesh_factures`, antérieur. Assumé : le schéma ne sait pas dire
+  « après rognage », et refuser côté client un texte que le serveur sert ne perd rien.
+- **Alternatives** : borner dans `carnet::lister` (refusé : change la route de l'écran, hors du sujet d'une revue de
+  l'outil) ; ne rien borner (refusé : écart de cohérence entre outils, et une chaîne de 1 Mio en `LIKE`).
+- **Réversible** : oui.
+
+### C-32-9-65 — Les projections lues champ par champ ; l'adresse exemptée de l'inventaire
+
+- **Contexte** : revue de code P1 de la 32-9b, B1 — l'inventaire cherche un piège n'importe où dans la sortie ; une
+  transposition de deux champs piégés, un champ non textuel faux ou `adresse: None` passaient.
+- **Retenu** : `projections_des_contacts_et_des_pieces` compare l'**objet entier** de `kesh_contact` (C et Fo), des
+  éléments de `kesh_contacts`, et de `kesh_pieces` (P2 et P1) à la valeur posée, relue en base pour l'adresse composée,
+  l'instant d'import et la taille ; les drapeaux se croisent entre C et Fo. La ligne d'inventaire `adresse` devient une
+  exemption qui nomme ce test.
+- **Alternatives** : rendre `verifier_inventaire` sensible au chemin (refusé ici : toucherait toutes les lignes de la
+  32-9a pour un défaut de la 32-9b).
+- **Réversible** : oui.
+
+### C-32-9-66 — Les tailles des pièces semées distinctes de tout identifiant
+
+- **Contexte** : P1 et P2 avaient `byte_size` 1 et 2, soit leurs identifiants dans une base neuve : la mutation
+  `taille_octets: id` survivait à tout test qui lirait la taille.
+- **Retenu** : 4 101 et 4 202 dans `kesh_seed::pieges` ; le test B1 vérifie, en témoin, qu'aucune taille ne vaut
+  l'identifiant d'une pièce ou de la facture fournisseur.
+- **Réversible** : oui.
+
+### C-32-9-67 — La complétion d'une pièce QR éprouvée par la route, avec les exemples publics SIX/ISO
+
+- **Contexte** : revue de code P1 de la 32-9b, E1 — le manuel promettait qu'aucune donnée du QR n'atteint l'agent ;
+  la complétion les recopie dans la facture fournisseur. Les pièges de P2 ne s'y prêtent pas : sa référence est `NON`
+  (non recopiée) et son IBAN un texte piégé.
+- **Retenu** : `qr_d_une_piece_completee_lu_par_la_facture_fournisseur` pose sa propre pièce QR (IBAN
+  `CH9300762011623852957` et référence SCOR `RF18539007547034`, exemples publics déjà employés par
+  `inbox_import_e2e.rs` ; nom, adresse, message et facturation à des marques ASCII), la complète par
+  `POST /api/v1/imported-supplier-invoices/{id}/complete` sous une session forgée, puis lit `kesh_facture_fournisseur`
+  sous `invoices:read`, puis avec `contacts:read`.
+- **Alternatives** : compléter P2 elle-même (refusé : sa référence `NON` n'est pas recopiée, et P2 reste, dans la
+  fixture, la pièce « à compléter ») ; appeler `complete_import_once` directement (refusé : privée, et la route est le chemin réel).
+- **Réversible** : oui.

@@ -1115,7 +1115,8 @@ fn registre_standard_inventaire() {
         .into_iter()
         .map(|(n, _, _)| n)
         .collect();
-    // Story 32-9a (AC-a9) : seize outils, dans cet ordre.
+    // Story 32-9a (AC-a9) : seize outils, dans cet ordre ; Story 32-9b
+    // (AC-b2) : les trois des contacts et des pièces, à la fin (dix-neuf).
     assert_eq!(
         noms,
         vec![
@@ -1135,6 +1136,9 @@ fn registre_standard_inventaire() {
             "kesh_balance_agee",
             "kesh_factures_fournisseur",
             "kesh_facture_fournisseur",
+            "kesh_contacts",
+            "kesh_contact",
+            "kesh_pieces",
         ]
     );
 }
@@ -1542,11 +1546,17 @@ async fn tools_list_filtre(pool: MySqlPool) {
             "kesh_lire_envoi",
         ]
     );
+    // Story 32-9b (AC-b2) : sous `contacts:read` seule, les deux outils du
+    // carnet, puis `kesh_lire_envoi` (elle valait `[kesh_lire_envoi]` depuis la
+    // 32-8b) ; chaque descripteur annoté `readOnlyHint: true`.
     let r = b.mcp(Some(&contacts), LISTE).await;
-    assert_eq!(
-        r.json(),
-        json!({"jsonrpc":"2.0","id":1,"result":{"tools":[descripteur_lire_envoi()]}})
-    );
+    let outils = r.json()["result"]["tools"].as_array().unwrap().clone();
+    let noms: Vec<&str> = outils.iter().map(|o| o["name"].as_str().unwrap()).collect();
+    assert_eq!(noms, ["kesh_contacts", "kesh_contact", "kesh_lire_envoi"]);
+    assert_eq!(outils.last(), Some(&descripteur_lire_envoi()));
+    for o in &outils {
+        assert_eq!(o["annotations"], json!({"readOnlyHint": true}), "{o}");
+    }
     let r = b
         .mcp(
             Some(&jeton),
