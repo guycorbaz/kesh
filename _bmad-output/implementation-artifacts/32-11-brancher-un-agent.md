@@ -831,6 +831,20 @@ Une inscription à une liste fermée de garde (AC-T2) touche `tests/textes_coher
    ligne de l'E32 de l'autre. *Ma recommandation : les corriger tous deux à l'audit des documents de la release
    0.16.0*, comme le `CLAUDE.md` l'a été, sans réécrire le CHANGELOG publié.
 
+### Réponses de Guy (2026-10-27, versées par l'orchestrateur)
+
+1. **Non** (« je suis ta recommandation ») : aucun agent ne lance `claude` ; le montage par défaut (client HTTP par
+   `curl`, AC-A1, AC-A2) est retenu, et l'**Annexe** reste une variante écartée. Les gestes de Claude Code et la capture
+   de ses requêtes réelles sont la recette de Guy (AC-A8).
+2. **(a)** (« ok pour a ») : l'oracle du test de contrat est fait des clauses recopiées à la main (AC-B2, AC-B4) ; ni
+   `schema.json` versionné ni dépendance `jsonschema` pour la 0.16.0.
+3. **Sans objet**, le point 1 ayant reçu non : l'observation d'un agent réel devant un libellé piégé reste l'angle mort
+   écrit au § *Ce que les gardes ne voient pas*.
+4. **Oui** (« point 4 : ok ») : un défaut révélé par le parcours ne se corrige jamais dans la 32-11 ; elle observe,
+   écrit et demande l'issue, la correction est une story courte à part.
+5. **Oui** (« point 5 : OK ») : la ligne v0.15.0 du `README.md` et l'introduction de `website/roadmap.html` se corrigent
+   à l'audit des documents de la release 0.16.0, non dans la 32-11.
+
 ## À recontrôler à l'étape 0 du développement
 
 - **Fusions** : `git log --oneline origin/main` porte la 32-7, la 32-9a, la 32-9b, la 32-10a (ses parties) et la 32-10b ;
