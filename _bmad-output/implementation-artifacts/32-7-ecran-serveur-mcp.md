@@ -1,6 +1,6 @@
 # Story 32.7 : l'écran « Serveur MCP » (Administration) et la section du manuel
 
-Status: ready-for-dev
+Status: review
 
 *Fiche rédigée le 2026-10-25, en autonomie (Opus 5.5), worktree `kesh-32-7`, branche `story/32-7` partie de `main`
 `966baed5` (toute la 32-5 fusionnée ; 32-6, 32-8, 32-9 et 32-10a non fusionnées). Registre :
@@ -937,20 +937,20 @@ au Dev Agent Record. Il en va de même d'un test qui s'adosse à un outillage (u
 
 ## Tâches
 
-- [ ] **T0 — étape 0** (§ *À recontrôler à l'étape 0*) : chaque point relu, ligne citée au Dev Agent Record ; les
+- [x] **T0 — étape 0** (§ *À recontrôler à l'étape 0*) : chaque point relu, ligne citée au Dev Agent Record ; les
   mesures des gardes G-a et G-b refaites ; la fusion des neuf prérequis (32-6a, 32-6b, 32-8a, 32-8b0, 32-8b, 32-8c,
   32-9a, 32-9b, 32-10a) **constatée** par `git log --oneline origin/main` — s'il en manque une, arrêt et rapport à
   l'orchestrateur ; l'état de la 32-10b constaté (non prérequis).
-- [ ] **T1 — la couche d'API et les dates** : `mcp-server.types.ts`, `mcp-server.api.ts`, `mcp-time.ts` et leurs tests
+- [x] **T1 — la couche d'API et les dates** : `mcp-server.types.ts`, `mcp-server.api.ts`, `mcp-time.ts` et leurs tests
   (AC-3, AC-4).
-- [ ] **T2 — les réglages** : `McpSettingsSection` et ses tests (AC-5, AC-6, AC-7).
-- [ ] **T3 — les clés** : `secret-unique.svelte.ts`, `McpKeysSection`, `McpKeySecretNotice` et leurs tests (AC-8 à
+- [x] **T2 — les réglages** : `McpSettingsSection` et ses tests (AC-5, AC-6, AC-7).
+- [x] **T3 — les clés** : `secret-unique.svelte.ts`, `McpKeysSection`, `McpKeySecretNotice` et leurs tests (AC-8 à
   AC-13).
-- [ ] **T4 — la route, la navigation, l'i18n, les gardes lexicales** (AC-1, AC-2, AC-14, AC-15).
-- [ ] **T5 — l'E2E et la recette visuelle** (AC-16, AC-17).
-- [ ] **T6 — le manuel, les renvois, les PDF, le CHANGELOG, README et site** (AC-18 à AC-24).
-- [ ] **T7 — la garde G23** (AC-25).
-- [ ] **T8 — mutations, gates, Dev Agent Record, prompt de la revue de code P1.**
+- [x] **T4 — la route, la navigation, l'i18n, les gardes lexicales** (AC-1, AC-2, AC-14, AC-15).
+- [x] **T5 — l'E2E et la recette visuelle** (AC-16, AC-17).
+- [x] **T6 — le manuel, les renvois, les PDF, le CHANGELOG, README et site** (AC-18 à AC-24).
+- [x] **T7 — la garde G23** (AC-25).
+- [x] **T8 — mutations, gates, Dev Agent Record, prompt de la revue de code P1.**
 
 ## Tests et mutations prévus
 
@@ -1408,9 +1408,130 @@ C-32-7-3). Elles restent ici barrées pour l'historique.)*
 
 ### Agent Model Used
 
+Opus 5.5, en autonomie, 2026-10-27 — worktree `kesh-32-10a`, branche `story/32-7`, `main` fusionnée à `e901a992`.
+Choix : C-32-7-28 à C-32-7-33 au registre.
+
+### Étape 0 — ce qui a été relu au code (ligne citée)
+
+- **Prérequis** : `git log --oneline origin/main` porte 32-6a (`7e47bff4`), 32-6b (`cd86dc74`), 32-6c (`7d83a31d`),
+  32-8a (`c5287dec`), 32-8b0 (`aa61fdae`), 32-8b (`89b9819b`), 32-8c (`ed981c7d`), 32-9a (`cb432098`), 32-9b
+  (`782bbc2f`), 32-10a-i/ii/iii (`dbe0da15`, `209e978f`, `006e8790`) et 32-10b (`46bcfc4f`).
+- **Routes de la 32-5c inchangées** : `crates/kesh-api/src/lib.rs:350-364` ; `McpKeyResponse` aux mêmes onze champs
+  (`routes/mcp_keys.rs:56-73`) ; `McpServerSettingsResponse`, `routes/mcp_server_settings.rs:63-102`.
+- **Défauts et portées** : `DEFAULT_ALLOWED_NETWORKS` (`kesh-db/src/entities/mcp_server_settings.rs:26-34`, sans
+  `100.64.0.0/10`) ; `McpScope::ALL` et `as_str` (`entities/mcp_key.rs:48-64`).
+- **`/admin/mcp/sends`, `/admin/mcp/prompts`** : présents ; entrées `nav-admin-mcp-sends` et `nav-admin-mcp-prompts`
+  à `+layout.svelte:170-182` ; `nav-admin-mcp` posée immédiatement avant la première. **`'admin-mcp-sends'` figurait
+  déjà à `FAMILLES_RESOLUES['nav-']`** (32-8c ; `'admin-mcp-prompts'` par la 32-10b) — contraire à l'« état attendu »
+  de C-32-7-26, sans conséquence ; la 32-7 n'ajoute que `'admin-mcp'`. `sitesTotal` lu à **2513**.
+- **`seedTestState`** : `TABLES_TO_TRUNCATE` porte `mcp_keys` et `mcp_server_settings` (`kesh-db/src/backup.rs:92`,
+  `:97`) : aucun `afterAll`.
+- **32-6a** (relevé délégué à une lentille de lecture, chaque ligne utilisée recontrôlée) : route absente serveur
+  désactivé (`mcp/transport.rs:95-97`, `reponse.rs:225`) ; 401 fixe `TEXTE_NON_AUTHENTIFIE` (`mcp/textes.rs:78-79`),
+  rendu aussi pour un Bearer absent (`transport.rs:131-132`) ; 403 d'une origine ni propre ni admise, ou répétée
+  (`transport.rs:106-111`, `reseau.rs:278-283`) ; versions `2025-11-25`/`2025-06-18` (`mcp/mod.rs:100`) ; corps 1 Mio
+  → **413** (`mod.rs:93`, `transport.rs:166-168`) ; délai 30 s (`mod.rs:97`) ; notification 202, réponse 400 ;
+  connexion neuve **par emprunt** du pool (`kesh-db/src/pool.rs:114`) ; `X-Forwarded-For` de droite à gauche,
+  mandataires seulement (`reseau.rs:72-92`) ; mandataire invalide → société écartée, filtre ou non
+  (`reseau.rs:118-130`) ; ligne illisible → société non servie (`services/serveur_mcp.rs:47-51`) ; requête anonyme qui
+  lit la base (`transport.rs:84`). ⚠️ **AC-6 (c) — prémisse inexacte, conclusion juste** : filtre désactivé, `decider`
+  calcule le client (donc lit `X-Forwarded-For`) **avant** de rendre *admis*, pour le journal (`reseau.rs:133-135`) ;
+  la décision n'en dépend pas : l'avertissement (c) reste absent filtre désactivé. `GET /mcp/` rend la page de
+  l'application, `POST /mcp/` 405 (essayé au `curl` sur le backend du worktree) : le manuel le dit ainsi.
+- **`last_used_at`** : refus du créateur `services/cles_mcp.rs:94-99`, pose `:101` (avant les étapes 8 et 9 du
+  transport). Désactivation : `routes/users.rs:366`, `:442` ne révoquent que les sessions.
+- **Journal** : actions `audit_labels.rs:156-168` ; `mcp.tool_called` (`serveur_mcp.rs:190-202`) ;
+  `mcp.prompt_served` (`:298`) ; `mcp_send.*` (`routes/mcp_envois.rs:247`, `:255`) ; consultation d'un rapport en
+  `report.generated`, au mieux (`mcp/outils/rapports.rs:2-3`). ⚠️ **Écart à la fiche (AC-18 (6))** : « un panic n'est
+  pas journalisé » est **faux** pour un outil — la tâche qui panique s'inscrit avec l'issue `erreur`
+  (`mcp/repartiteur.rs:564-575`) ; le manuel le dit ainsi.
+- **Validation avant envoi** : 24 h (`services/envois_mcp.rs:61-62`), 20 en attente (`:65`) ; seules les données
+  (`Ok(Ok(Ok(…)))`) passent par la politique (`repartiteur.rs:576-602`).
+- **Portées (AC-10)** — phrases **réécrites selon le code** (C-32-7-31) : `kesh_pieces` rend aussi taille, date,
+  `qr_lu` et `facture_fournisseur_id` (`mcp/outils/pieces.rs:47-56`) ; l'adresse masquée est l'adresse **courriel**
+  d'envoi (`mcp/outils/factures.rs:472`) ; `prompts:write` (`services/prompts_mcp.rs:553`) ; `kesh_echeancier` existe
+  (`mcp/registre.rs:72`).
+- **Réparations** : remise à zéro refusée en production au-delà de l'étape 2 (`kesh-seed/src/lib.rs:576-577`) ;
+  réparation #528 sans `mcp_server_settings` (`kesh-db/src/repositories/companies.rs:674-757`) ; `validate_settings`
+  (`routes/mcp_server_settings.rs:185-195`) ; adresse mappée stockée en `/128` (`:113-114`).
+- **Manuel** : G2 (`aucun_renvoi_au_menu_reglages`, jusqu'à `textes_coherents.rs:186`) — aucun « Réglages » capitalisé
+  écrit ; G3-bis non touchée (aucun catalogue n'écrit « Administration → Serveur MCP ») ; recettes `sec:reverse-proxy`
+  (l. 307), `sec:traefik` (l. 398), `sec:synology` (l. 535) ; `sec:env-vars` (l. 706) ; `sec:mcp-journal-filtre`
+  (32-6c) existe : le `keshwarning` y renvoie, avec la mise en garde sur la passerelle d'un port publié. L. 440
+  « Traefik y accède via réseau Docker » relue (P6-4) ; adresse de Traefik non fixe dite au manuel (P6-3).
+- **Réponses de Guy** : **Hermes retiré** — le manuel ne nomme que Claude Code (« la configuration de ce client n'est
+  pas éprouvée ») ; `command grep -rn 'Hermes\|hermes' docs/manual/fr/*.tex frontend/src crates/kesh-i18n/locales` →
+  rien. Créateur non affiché. P7-1/P7-2 : la phrase de garde « à condition que seul Traefik soit déclaré » est gardée ;
+  « ce mandataire » est levé (« l'adresse sous laquelle Kesh voit ce mandataire »), sans prescrire la passerelle — la
+  mise en garde l'interdit au contraire.
+- **AC-20 (constaté, non corrigé)** : « 129 des 135 » (`admin-manual.tex:2938`) reste juste (aucune route neuve) ;
+  `docs/api-external.md:833` dit encore le serveur MCP « hors périmètre » — **faux à cette date**, à la 32-11 ;
+  `marketing-brochure.tex:480`, `README.md:233`, `website/roadmap.html:375` : annonce de la 0.16.0, laissés à la
+  32-11. **AC-23** : `command grep -n 'MCP' README.md website/*.html` → ces seules lignes ; rien ne nomme l'écran
+  absent.
+- **toast** : `svelte-sonner` 1.1.0, `dist/toast-state.svelte.js:213-226`, dix entrées, toutes simulées. jsdom 29.0.2,
+  sans `indexedDB` : stub conservé.
+- **Mesures des gardes** : sur le périmètre de la story, `command grep -rnE
+  'localStorage|sessionStorage|indexedDB|caches\.|document\.cookie|console\.|\{@html'` hors tests → rien. G-b : un
+  seul site, `McpKeysSection.svelte` (bloc d'instance).
+
 ### Completion Notes List
 
+- **Tests rouges d'abord** (sorties : `kesh-gate-logs/327/rouge-*.log`) : T2 `McpSettingsSection.test.ts`, T3
+  `McpKeysSection.test.ts`, T4 `admin-mcp-page.test.ts` (composants absents, aucun test chargé) ; G23 (« 3 écart(s) :
+  bloc absent : % mcp-reseaux-defaut:debut ; \label{sec:mcp-filtre} absent ; bloc absent : % mcp-portees:debut »).
+  ⚠️ **Écart** : pour T1 (`mcp-server.api.ts`, `mcp-time.ts`, `secret-unique.svelte.ts`), le code a été écrit avant
+  les tests ; leur pouvoir de détection est établi par les mutations M2, M3, M7, M9 (tuées).
+- **Rouges rencontrés en route, corrigés** : `i18n-libelle-en-dur.test.ts` (aucune classe dans `src/` → C-32-7-29) ;
+  G18 `une_installation_une_societe` (trois phrases de l'AC-18 (4) et (5) → fragments assumés, 18 → 21) ;
+  `configuration_transmise::fantomes` (`KESH_MCP_KEY` lu comme une variable de Kesh → l'exemple devient `${CLE_MCP}`) ;
+  `npm run check` (types des aides de test).
+- **Mutations** M1 à M26 : **26 tuées sur 26**, chacune par le test visé (journaux `kesh-gate-logs/327/327-mut-M<n>.log`,
+  `mutations-campagne*.log` ; `git status --porcelain` vide après la campagne, restauration `git checkout -- f` +
+  `touch`). ⚠️ Une première campagne lançait Vitest avec des chemins faux (« No test files found ») : vingt mutations
+  « tuées » à vide, rejouées avec les bons chemins — toutes tuées par leur test. M4 et M12 font aussi rougir des tests
+  voisins (file d'attente des simulacres décalée) ; le test visé est parmi eux.
+- **Gates réellement exécutés** :
+  - backend complet, `scripts/test-fast.sh --ci` sur `kesh_327` remise à zéro : run 1 **4433/4434** (échec
+    `configuration_transmise::fantomes`, corrigé au manuel) ; run 2 au dernier commit de code et de manuel, **4434
+    passés, 0 échec, 7 ignorés** (`gate-backend-2.log`) ;
+  - frontend : `npm run check` 0 erreur (29 avertissements, aucun dans les fichiers de la story),
+    `lint-i18n-ownership` PASS, `npm run test:unit` **181 fichiers, 2139 tests verts**, `npm run build` vert
+    (`gate-frontend-1.log`) ;
+  - E2E complet (base `kesh_e2e_327` reconstruite, dossiers `/tmp/kesh-e2e-327-4`, port 3340) : **325 passés, 7
+    échoués, 17 ignorés** — les sept KF-029 (#97) : `mode-expert.spec.ts:26`, `:41`, `onboarding-path-b.spec.ts:65`,
+    `:92`, `onboarding.spec.ts:57`, `:77`, `:150` ; ni KF-052 ni pollution ; `mcp-server.spec.ts` 5/5
+    (`e2e-complet-2.log`). *(Un premier run — 311/19/17 — a tourné contre un backend resté vivant de la session de
+    captures, aux dossiers d'entrée différents : ses douze échecs en plus — `inbox-import`, `supplier-documents`,
+    `backup-restore-new-install`, `invoices.spec.ts:539` — venaient du montage (port occupé, second backend mort au
+    démarrage), non du code ; il ne compte pas.)*
+  - manuels : `make fr`, deux PDF régénérés ; contrôle aplati, `command grep -cE` sans `-i` : les quinze motifs de
+    l'AC-21 à **0** sur le PDF de la base et à **1** au PDF régénéré, **sauf `Le serveur MCP`, qui rendait déjà 1 à la
+    base** (`admin-manual.tex:656`, 32-6c) — remplacé par **`porte un serveur MCP`** (0 → 1) ; `user-manual.pdf` :
+    `Le serveur MCP` 0 → 1 ; `??` → 0 ; `mcp_server_settings` rendu avec ses soulignés (`pdf-motifs-*.log`).
+- **Recette visuelle** : 30 captures, thème clair, `kesh-gate-logs/327-captures/` (01 à 29 ; 02 et 23 réunies ; 11 en
+  deux ; 16 et 17 réunies ; 22 en trois : chargement, échec, ligne rétablie). Recette (22) : `UPDATE … SET
+  allowed_networks = '[1]'` → **1** ligne touchée, rétablie ensuite. ⚠️ (24) montre l'erreur réseau réelle, le
+  générique hors `ApiError` n'étant atteignable qu'en simulation (C-32-7-32). La clé de la capture (12) est révoquée ;
+  toutes les clés de la base de captures le sont (« clés non révoquées : 0 »).
+- **Décomptes** (de `e901a992` à `HEAD`) : Vitest **+66** tests neufs (feature 58, route 4, G13 par préfixe 4) ;
+  Rust **+2** (`g23_les_fonctions_pures`, `le_serveur_mcp_dit_vrai`) ; **96** clés i18n par locale (95 `mcp-server-`
+  + `nav-admin-mcp`) ; `sitesTotal` 2513 → **2617** (+104, recompté par fichier).
+
 ### File List
+
+- `frontend/src/lib/features/mcp-server/` (neuf) : `mcp-server.types.ts`, `mcp-server.api.ts`, `mcp-time.ts`,
+  `mcp-reglages.ts`, `secret-unique.svelte.ts`, `McpServerPanel.svelte`, `McpSettingsSection.svelte`,
+  `McpKeysSection.svelte`, `McpKeySecretNotice.svelte` ; tests `mcp-server.api.test.ts`, `mcp-time.test.ts`,
+  `secret-unique.test.ts`, `McpSettingsSection.test.ts`, `McpKeysSection.test.ts`, `mcp-server-gardes.test.ts`
+- `frontend/src/routes/(app)/admin/mcp/{+page.ts,+page.svelte,admin-mcp-page.test.ts}` (neufs)
+- `frontend/src/routes/(app)/+layout.svelte`
+- `frontend/src/lib/shared/{i18n-repli-divergent-actif,i18n-keys,i18n-libelle-en-dur}.test.ts`
+- `frontend/tests/e2e/mcp-server.spec.ts` (neuf)
+- `crates/kesh-i18n/locales/{fr,de,it,en}-CH/messages.ftl`
+- `crates/kesh-api/tests/textes_coherents.rs`
+- `docs/manual/fr/{admin-manual,user-manual}.{tex,pdf}`, `CHANGELOG.md`
+- `_bmad-output/implementation-artifacts/{32-7-ecran-serveur-mcp.md,epic-32-choix-autonomes-327.md,sprint-status.yaml,32-7-review-prompt-p1.md}`
 
 ## Change Log
 
@@ -1425,3 +1546,4 @@ C-32-7-3). Elles restent ici barrées pour l'historique.)*
 | 2026-10-25 | validation P6 | **Opus** (lentille unique *regression hunter*, contexte frais, passe ciblée sur le commit de la remédiation P5, prompt `327-validate-prompt-p6.md` ; rapport `kesh-gate-logs/327-validate-p6.md`) ⇒ **trend P5 0/0/2/7 → P6 0/0/1/3**. Les quatre findings naissent de la remédiation P5. **P6-1 (MEDIUM)** : la phrase du `keshwarning` prescrivait de déclarer « la passerelle » comme mandataire, moins prudente que sa source (AC-6 (1), « peuvent paraître ») et dangereuse (`reseau.rs:63-86` : un pair déclaré voit lire son `X-Forwarded-For` ; le relais de Docker n'en pose pas). **Remédiation par retrait** (consigne de l'orchestrateur, passe 6 sur 8) : le second cas retiré aux trois sites vivants (`keshwarning` de l'AC-18 (4), *Ce que les gardes ne voient pas*, demande 11), annotés ; la phrase descriptive « il peut voir la passerelle » et la demande 11 restent ; une phrase de garde reprise de la fiche 32-6, l. 1007-1008 (« à condition que seul Traefik soit déclaré »). ⚠️ **P6-1 rouvre la décision R1 = F1 de l'orchestrateur (validation P5) sur ce seul second cas** ; le premier (Traefik) tient. **P6-2, P6-3, P6-4 (LOW) renvoyés au § *À recontrôler à l'étape 0*, non remédiés au corps de la fiche**, chacun avec sa correction attendue (borne de G2 jusqu'à la l. 186 ; adresse de Traefik non fixe ; citation de la l. 440). **Contrôles après retrait** : `command grep -nF 'passerelle'` sur la fiche → restent la description (l. 59, 325, 766), l'annotation P5 annotée, les sites retirés qui le disent, et les entrées P4/P5 ; `command grep -nF '172.17.0.1'` → l. 766 seule (la phrase descriptive) ; les quinze motifs de l'AC-21 rejoués sur `admin-manual.pdf` de `966baed5` (`git diff --stat HEAD -- docs` vide) : tous à **0**, inchangés ; `user-manual.pdf` : `Le serveur MCP` 0. Aucune entrée passée réécrite. Remédiation sur la fiche seulement ; **6 passes sur 8** ; passe suivante **ciblée** (P7, **Sonnet**, une lentille *regression hunter* sur le seul commit de ce retrait, `327-validate-prompt-p7.md`). |
 | 2026-10-25 | validation P7 — **VALIDATION TERMINÉE** | **Sonnet** (lentille unique *regression hunter*, passe ciblée sur `f1063a00..0c9a7469`, prompt `327-validate-prompt-p7.md` ; rapport `kesh-gate-logs/327-validate-p7.md`) : **0/0/0/2**. **Trend** : P1 (Sonnet ×2) 0/0/5/19 → P2 (Opus ×2) 0/0/5/25 → P3 (Sonnet ×2) 0/0/2/9 → P4 (Opus ×2) 0/0/3/17 → P5 (Sonnet ×2) 0/0/2/7 → P6 (Opus, ciblée) 0/0/1/3 → **P7 (Sonnet, ciblée) 0/0/0/2**. **Recyclage déclaré** en P2 (C-32-7-21), P5 (exemple `127.0.0.1/32` prescrit par l'orchestrateur en P4) et P6 (né du retrait de la P5) ; signal D5 porté au Project Lead, story non découpée (4 modules, défauts recyclés limités au manuel). **Clôture** sur une passe sans finding au-dessus de LOW (`CLAUDE.md`, décision Q3 (c)), **7 passes sur 8**. Les deux LOW P7-1 et P7-2 ne sont pas remédiés au corps de la fiche (dès la P6, l'orchestrateur ne remédie plus) : ils vont au § *À recontrôler à l'étape 0*, avec leur correction attendue. *(Écrit par l'orchestrateur.)* |
 | 2026-10-25 | réponses de Guy | Point 4 accepté (créateur non affiché) ; **Hermes retiré du périmètre** (AC-18 (8), point 5 et Q9 sans objet) ; vérification de DSM renvoyée à la mise à jour, journaux portés par la Story 32-6c. Inscrit au § *À recontrôler à l'étape 0* — **aucune remédiation du corps de la fiche** (dès la P6 l'orchestrateur ne remédie plus ; un retrait se fait au développement, ligne lue citée). *(Écrit par l'orchestrateur.)* |
+| 2026-10-27 | développement | **Opus 5.5**, en autonomie (worktree `kesh-32-10a`, `main` fusionnée à `e901a992`). Écran `/admin/mcp` (réglages, avertissements, encadré, clés, secret affiché une fois), menu, 96 clés i18n × 4, gardes G-a/G-b, G13 par préfixe (trois préfixes, module partagé de la 32-10b), G23, G18 amendée (18 → 21) ; `\section{Le serveur MCP}` et ses huit sous-sections neuves, `sec:mcp-outils`/`-envois`/`-prompts` rangées dessous, renvois de l'AC-19, PDF, CHANGELOG ; E2E. Étape 0 au Dev Agent Record, ligne lue citée ; **écarts déclarés** : phrases de portée réécrites selon le code (C-32-7-31), « un panic n'est pas journalisé » faux pour un outil (`repartiteur.rs:564-575`), 413 au-delà de 1 Mio, `/mcp/` 405 pour un client, motif PDF `Le serveur MCP` remplacé par `porte un serveur MCP` (déjà présent à la base), capture (24) sur l'erreur réseau réelle (C-32-7-32), T1 écrite avant ses tests. Mutations **26/26 tuées**. Gates : backend complet **4434/4434** (7 ignorés), Vitest **2139/2139** (181 fichiers), `check`, `lint-i18n-ownership`, `build` verts, E2E complet **325 / 7 KF-029 / 17 ignorés** ; 30 captures. Choix C-32-7-28 à 33. Prompt de revue P1 : `32-7-review-prompt-p1.md` (Opus, B/E/A). |
