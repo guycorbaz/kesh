@@ -404,6 +404,56 @@ async fn fetch_counterparts(
     Ok(map)
 }
 
+/// Le solde progressif d'un compte, ligne après ligne — **une seule règle**,
+/// appliquée aux lignes sautées par `offset` comme aux lignes rendues.
+///
+/// ⚠️ C'est ce partage qui rend une page juste au-delà de la première (#775) :
+/// le solde de départ d'une page est l'ouverture **plus** les lignes qui la
+/// précèdent, prises dans le même ordre et avec les mêmes remises à zéro. Une
+/// règle recopiée pour les lignes sautées pourrait diverger de celle des lignes
+/// rendues sans que rien ne le signale ; une règle partagée ne le peut pas.
+struct Cumul {
+    account_type: AccountType,
+    /// Compte de RÉSULTAT : le solde repart de zéro à chaque exercice franchi.
+    /// Compte de BILAN : la chaîne est continue.
+    resets: bool,
+    running: Decimal,
+    /// Exercice de la **dernière ligne lue**, sautée ou rendue. `None` avant la
+    /// première : la première ligne ne pose donc jamais de rupture.
+    current_fy: Option<i64>,
+}
+
+impl Cumul {
+    fn new(account_type: AccountType, opening: Decimal) -> Self {
+        Self {
+            account_type,
+            resets: !is_bilan(account_type),
+            running: opening,
+            current_fy: None,
+        }
+    }
+
+    /// Ajoute une ligne au solde. Rend la rupture d'exercice franchie **avant**
+    /// elle, s'il y en a une — la remise à zéro est alors déjà faite.
+    fn avance(&mut self, r: &RawLine) -> Option<FiscalYearBreak> {
+        let mut rupture = None;
+        if self.resets
+            && let Some(fy) = self.current_fy
+            && r.fiscal_year_id != fy
+        {
+            rupture = Some(FiscalYearBreak {
+                date: r.entry_date,
+                closing_fiscal_year_id: fy,
+                closing_balance: self.running,
+            });
+            self.running = Decimal::ZERO;
+        }
+        self.current_fy = Some(r.fiscal_year_id);
+        self.running += signed(self.account_type, r.debit, r.credit);
+        rupture
+    }
+}
+
 /// Options de rendu du grand livre.
 #[derive(Debug, Clone, Default)]
 pub struct LedgerOptions {
@@ -411,6 +461,8 @@ pub struct LedgerOptions {
     pub account_ids: Option<Vec<i64>>,
     /// Rendre aussi les comptes sans mouvement **et** sans solde.
     pub include_zero: bool,
+    /// Lignes sautées **par compte**. Le solde progressif de la page en tient
+    /// compte : il part de l'ouverture plus ces lignes (#775).
     pub offset: i64,
     /// Écrêté à [`MAX_LEDGER_LIMIT`]. **`None` ⇒ aucune borne** — c'est ce que
     /// prend l'export, qui doit rendre le livre entier. L'appelant qui veut le
@@ -468,27 +520,31 @@ pub async fn generate(
         // Sur un compte de RÉSULTAT, franchir une fin d'exercice remet le solde à
         // zéro : sinon le progressif affiché sur deux ans ne veut rien dire. Sur
         // un compte de BILAN, la chaîne est continue.
-        let resets = !is_bilan(acc.account_type);
-        let mut running = opening;
-        let mut current_fy = raw.first().map(|r| r.fiscal_year_id);
+        let mut cumul = Cumul::new(acc.account_type, opening);
+
+        // ⚠️ #775 — au-delà de la première page, le solde de départ n'est PAS
+        // l'ouverture : c'est l'ouverture plus les lignes sautées par `offset`.
+        // Elles sont lues par `fetch_lines` lui-même — même requête, même
+        // `ORDER BY` — puis passées dans le même `Cumul` : les remises à zéro des
+        // exercices franchis s'y appliquent, et l'exercice courant s'initialise
+        // sur la dernière ligne sautée, si bien qu'une rupture qui tombe pile à
+        // la frontière de deux pages est posée sur la page suivante. Les
+        // ruptures franchies DANS les lignes sautées appartiennent aux pages
+        // précédentes : elles ne sont pas rendues ici.
+        let sautees = offset.min(line_count);
+        if sautees > 0 {
+            for r in fetch_lines(pool, company_id, acc.account_id, period, 0, Some(sautees)).await?
+            {
+                cumul.avance(&r);
+            }
+        }
+
         let mut breaks = Vec::new();
         let mut lines = Vec::with_capacity(raw.len());
 
         for r in raw {
-            if resets
-                && let Some(fy) = current_fy
-                && r.fiscal_year_id != fy
-            {
-                breaks.push(FiscalYearBreak {
-                    date: r.entry_date,
-                    closing_fiscal_year_id: fy,
-                    closing_balance: running,
-                });
-                running = Decimal::ZERO;
-            }
-            current_fy = Some(r.fiscal_year_id);
-
-            running += signed(acc.account_type, r.debit, r.credit);
+            breaks.extend(cumul.avance(&r));
+            let running = cumul.running;
 
             lines.push(LedgerLine {
                 line_id: r.line_id,
