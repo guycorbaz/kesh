@@ -107,6 +107,67 @@ describe('GeneralLedgerView', () => {
 		expect(html.indexOf('le solde repart de zéro')).toBeLessThan(html.indexOf('Loyer février'));
 	});
 
+	it('#777 — pose la rupture qui clôt l’ouverture AVANT la première ligne d’un exercice postérieur', () => {
+		const s = section({
+			accountType: 'Revenue',
+			balanceSide: 'credit',
+			opening: '400.00',
+			lines: [
+				line({ lineId: 1, fiscalYearId: 2, entryDate: '2026-02-01', runningBalance: '100.00' }),
+			],
+			fiscalYearBreaks: [{ date: '2026-02-01', closingFiscalYearId: 1, closingBalance: '400.00' }],
+			closing: '100.00',
+		});
+		const { getByTestId, getAllByTestId } = render(GeneralLedgerView, {
+			dto: dto({ sections: [s] }),
+		});
+		expect(getAllByTestId('ledger-fy-break')).toHaveLength(1);
+		const rows = Array.from(getByTestId('ledger-section-1020').querySelectorAll('tbody tr'));
+		// ouverture, rupture, ligne
+		expect(rows[1].getAttribute('data-testid')).toBe('ledger-fy-break');
+		expect(rows[1].textContent).toContain('400.00');
+		expect(rows[2].textContent).toContain('Loyer mars');
+	});
+
+	it('#778 — rend sous les lignes la fin d’exercice franchie après la dernière', () => {
+		const s = section({
+			accountType: 'Revenue',
+			balanceSide: 'credit',
+			lines: [line({ lineId: 1, fiscalYearId: 1, entryDate: '2025-09-01', runningBalance: '700.00' })],
+			fiscalYearBreaks: [{ date: '2026-01-01', closingFiscalYearId: 1, closingBalance: '700.00' }],
+			closing: '0.00',
+		});
+		const { getByTestId, getAllByTestId } = render(GeneralLedgerView, {
+			dto: dto({ sections: [s] }),
+		});
+		expect(getAllByTestId('ledger-fy-break')).toHaveLength(1);
+		const rows = Array.from(getByTestId('ledger-section-1020').querySelectorAll('tbody tr'));
+		// ouverture, ligne, rupture finale
+		expect(rows).toHaveLength(3);
+		expect(rows[2].getAttribute('data-testid')).toBe('ledger-fy-break');
+		expect(rows[2].textContent).toContain('01.01.2026');
+		expect(getByTestId('ledger-closing').textContent).toContain('0.00');
+
+		// Sans aucune ligne, la rupture se rend quand même.
+		const vide = render(GeneralLedgerView, {
+			dto: dto({ sections: [{ ...s, accountNumber: '3000', lines: [], lineCount: 0 }] }),
+		});
+		expect(vide.container.querySelectorAll('[data-testid="ledger-fy-break"]')).toHaveLength(1);
+		// P1 de la revue : l'ouverture ne « reste » pas « due » quand une rupture
+		// finale la clôt — le message dit la clôture, puis la rupture la montre.
+		const msg = vide.container.querySelector('[data-testid="ledger-no-movement"]')?.textContent ?? '';
+		expect(msg).toContain('Aucun mouvement');
+		expect(msg).toContain('le solde repart de zéro');
+		expect(msg).not.toContain('reste dû');
+	});
+
+	it('sans rupture finale, un compte sans mouvement dit que l’ouverture reste due', () => {
+		const { getByTestId } = render(GeneralLedgerView, {
+			dto: dto({ sections: [section({ lines: [], lineCount: 0, closing: '500.00' })] }),
+		});
+		expect(getByTestId('ledger-no-movement').textContent).toContain('reste dû');
+	});
+
 	it('préfixe la pièce de son exercice dès que la période en traverse deux', () => {
 		const mono = render(GeneralLedgerView, { dto: dto() });
 		// Un seul exercice : le numéro nu suffit, et le préfixe serait du bruit.
