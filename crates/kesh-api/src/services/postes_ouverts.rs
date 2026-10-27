@@ -9,7 +9,14 @@
 use chrono::NaiveDate;
 use kesh_db::entities::Role;
 use kesh_db::errors::map_db_error;
-use kesh_db::repositories::letterings::{self, OpenItems};
+use kesh_db::repositories::letterings;
+
+/// Réexportés pour l'outil MCP de la 32-9a (C-32-9-25) : `src/mcp/` ne nomme
+/// pas `kesh_db::repositories`.
+pub use kesh_db::repositories::journal_entries::{DocumentKind, DocumentOwner};
+pub use kesh_db::repositories::letterings::{
+    DocumentState, OpenItem, OpenItems, OpenReason, Origin,
+};
 
 use crate::errors::AppError;
 use crate::services::acces::{ContexteAcces, Exigence, Portee};

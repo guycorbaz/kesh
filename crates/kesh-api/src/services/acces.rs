@@ -21,13 +21,17 @@ use crate::middleware::auth::CurrentUser;
 /// donnent les services. Ce que chaque portée ouvre aux services :
 ///
 /// - `BooksRead` — plan comptable, écritures, postes ouverts, rapports
-///   comptables (32-3, 32-4a) ;
+///   comptables (32-3, 32-4a) ; et les prompts servis par `prompts/list` et
+///   `prompts/get` (`prompts_mcp`, 32-10a-ii, C-32-10a-16) ;
 /// - `InvoicesRead` — factures clientes et fournisseur, échéancier,
 ///   règlements, balance âgée des débiteurs (32-3, 32-4b, C-32-4b-3) ;
 /// - `ContactsRead` — carnet d'adresses, données personnelles (32-4a,
 ///   C-32-4a-4) ;
-/// - `DocumentsRead`, `PromptsWrite` — aucun service encore (les pièces et les
-///   prompts viennent avec les stories suivantes de l'Epic 32).
+/// - `DocumentsRead` — la liste des pièces importées, métadonnées seules
+///   (32-9b, `services::pieces`) ;
+/// - `PromptsWrite` — la proposition d'un prompt par un agent, une version
+///   **à valider** qu'aucune clé ne peut approuver (`prompts_mcp::proposer`,
+///   32-10a-iii).
 pub use kesh_db::entities::McpScope as Portee;
 
 /// Canal par lequel arrive une lecture.
@@ -60,8 +64,9 @@ pub struct Exigence {
 ///
 /// Champs privés : un contexte ne se construit que par [`ContexteAcces::depuis_api`]
 /// (l'API) ou [`ContexteAcces::mcp`] — en production par
-/// `services::cles_mcp::authentifier` (Story 32-5b), que la 32-6 appellera, et
-/// par les tests.
+/// `services::cles_mcp::authentifier` (Story 32-5b), qu'appelle la garde de
+/// `/mcp` (Story 32-6a), et par les tests (garde
+/// `contexte_acces_mcp_construit_par_authentifier_seul`).
 #[derive(Debug, Clone)]
 pub struct ContexteAcces {
     company_id: i64,

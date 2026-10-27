@@ -38,6 +38,8 @@ use crate::AppState;
 use crate::errors::{AppError, t};
 use crate::middleware::auth::CurrentUser;
 use crate::routes::api_keys::ensure_not_pat;
+use crate::services::acces::ContexteAcces;
+use crate::services::exercices;
 
 // ---------------------------------------------------------------------------
 // DTOs
@@ -200,12 +202,13 @@ fn map_reopen_error(err: DbError) -> AppError {
 // ---------------------------------------------------------------------------
 
 /// `GET /api/v1/fiscal-years` — liste les exercices de la company courante,
-/// triés `start_date DESC`.
+/// triés `start_date DESC` — par le service `exercices::lister` (Story 32-9a).
 pub async fn list_fiscal_years(
     State(state): State<AppState>,
     Extension(current_user): Extension<CurrentUser>,
 ) -> Result<Json<Vec<FiscalYearResponse>>, AppError> {
-    let list = fiscal_years::list_by_company(&state.pool, current_user.company_id).await?;
+    let acces = ContexteAcces::depuis_api(&current_user);
+    let list = exercices::lister(&acces, &state.lecture()).await?;
     Ok(Json(
         list.into_iter().map(FiscalYearResponse::from).collect(),
     ))

@@ -30,6 +30,9 @@ pub mod invoice_reminder;
 pub mod invoice_settlement;
 pub mod journal_entry;
 pub mod mcp_key;
+pub mod mcp_prompt;
+pub mod mcp_prompt_standards;
+pub mod mcp_send;
 pub mod mcp_server_settings;
 pub mod onboarding;
 pub mod password_reset_token;
@@ -74,6 +77,10 @@ pub use journal_entry::{
 };
 pub use mcp_key::{
     McpKey, McpScope, McpScopeError, McpScopes, NewMcpKey, SendValidation, StoredMcpScopes,
+};
+pub use mcp_send::{
+    Decision, EnvoiDecide, EnvoiDetail, EnvoiPourCle, EnvoiResume, ErreurDecision, ErreurDepot,
+    EtatEnvoi, NouvelEnvoi,
 };
 pub use mcp_server_settings::{McpServerSettings, McpServerSettingsUpdate};
 pub use onboarding::{OnboardingState, UiMode};

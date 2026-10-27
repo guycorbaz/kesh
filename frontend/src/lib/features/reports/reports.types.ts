@@ -290,6 +290,11 @@ export interface LedgerPeriod {
 
 /** Fin d'exercice traversée : sur un compte de résultat, le solde y repart de zéro. */
 export interface FiscalYearBreak {
+	/**
+	 * Date de la première ligne du nouvel exercice ; pour une rupture qu'aucune
+	 * ligne ne suit (fin d'exercice franchie après la dernière), premier jour de
+	 * l'exercice en cours à la fin de la période.
+	 */
 	date: string;
 	closingFiscalYearId: number;
 	closingBalance: string;
@@ -331,6 +336,12 @@ export interface LedgerSection {
 	lines: LedgerLine[];
 	totalDebit: string;
 	totalCredit: string;
+	/**
+	 * Solde de clôture. Compte de résultat dont la période franchit une fin
+	 * d'exercice : le solde de l'exercice en cours à la fin de la période — le
+	 * dernier solde progressif, ruptures comprises (#778) —, et non ouverture
+	 * plus mouvements.
+	 */
 	closing: string;
 	/** Solde du côté opposé à la nature du compte : l'anomalie à voir. */
 	unnaturalBalance: boolean;

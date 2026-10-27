@@ -19,6 +19,13 @@
 //! 5. Bootstrap (`ensure_admin_user`) : à **chaque** démarrage, réparation
 //!    de l'installation (Story 15-7b3 — #528, #542 ; non bloquante), puis
 //!    création de l'administrateur si la table users est vide.
+//!    Prompts standard du serveur MCP (Story 32-10a-i, AC-i11) —
+//!    `amorcer_standards` les installe dans chaque société, ou les met au
+//!    texte de cette version là où ils ne sont pas personnalisés ; **après**
+//!    le bootstrap, qui pose la société provisoire d'une base vide. Non
+//!    fatal : un échec est journalisé et le démarrage continue (les standards
+//!    reviennent au démarrage suivant). Garde : `amorcage_au_demarrage`
+//!    (`tests/prompts_amorcage.rs`).
 //! 6. Build router + axum::serve.
 
 use std::sync::Arc;
@@ -34,6 +41,7 @@ use kesh_api::{
     mail::{self, Mailer},
     middleware::rate_limit::RateLimiter,
 };
+use kesh_db::entities::mcp_prompt_standards::STANDARDS;
 use sqlx::mysql::MySqlPoolOptions;
 
 #[tokio::main]
@@ -196,6 +204,23 @@ async fn main() {
             std::process::exit(1);
         }
     };
+
+    // 5a. Prompts standard du serveur MCP (Story 32-10a-i, AC-i11) : après le
+    //     bootstrap, qui crée la société provisoire d'une base vide. Non
+    //     fatal ; le rapport est compté, sans texte.
+    match kesh_db::repositories::mcp_prompts::amorcer_standards(&pool, STANDARDS).await {
+        Ok(r) => tracing::info!(
+            societes = r.societes,
+            creations = r.creations,
+            mises_a_jour = r.mises_a_jour,
+            retraits = r.retraits,
+            "prompts standard du serveur MCP amorcés"
+        ),
+        Err(e) => tracing::error!(
+            "amorçage des prompts standard du serveur MCP en échec (non fatal, repris au \
+             prochain démarrage) : {e}"
+        ),
+    }
 
     // 5b. Pré-chauffage du DUMMY_HASH — fait au démarrage pour que toute
     // défaillance d'Argon2 (OsRng indisponible) apparaisse ici et pas

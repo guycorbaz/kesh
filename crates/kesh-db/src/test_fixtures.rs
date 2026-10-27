@@ -645,6 +645,60 @@ pub async fn sonde_verrou_nowait(pool: &MySqlPool, sql: &str, id: i64) -> bool {
     }
 }
 
+/// Une version de prompt telle que les tests la comparent : `(origin, state,
+/// nature, body)`.
+pub type VersionComparee = (String, String, String, Option<String>);
+
+/// Les prompts d'une société, triés par nom : `(name, is_standard, versions par
+/// numéro)` — Story 32-10a-i (AC-i11, AC-i12). Comparé par les tests à
+/// [`prompts_standard_seuls`].
+pub async fn prompts_de_societe(
+    pool: &MySqlPool,
+    company_id: i64,
+) -> Result<Vec<(String, bool, Vec<VersionComparee>)>, sqlx::Error> {
+    let prompts: Vec<(i64, String, bool)> = sqlx::query_as(
+        "SELECT id, name, is_standard FROM mcp_prompts WHERE company_id = ? ORDER BY name",
+    )
+    .bind(company_id)
+    .fetch_all(pool)
+    .await?;
+    let mut sortie = Vec::with_capacity(prompts.len());
+    for (id, name, is_standard) in prompts {
+        let versions: Vec<VersionComparee> = sqlx::query_as(
+            "SELECT origin, state, nature, body FROM mcp_prompt_versions \
+             WHERE prompt_id = ? ORDER BY number",
+        )
+        .bind(id)
+        .fetch_all(pool)
+        .await?;
+        sortie.push((name, is_standard, versions));
+    }
+    Ok(sortie)
+}
+
+/// Ce que porte une société que **seul** l'amorçage a touchée : un prompt
+/// standard par entrée de `STANDARDS`, une seule version, `standard`,
+/// approuvée, au texte du code — et rien d'autre.
+pub fn prompts_standard_seuls() -> Vec<(String, bool, Vec<VersionComparee>)> {
+    let mut v: Vec<_> = crate::entities::mcp_prompt_standards::STANDARDS
+        .iter()
+        .map(|s| {
+            (
+                s.nom.to_string(),
+                true,
+                vec![(
+                    "standard".to_string(),
+                    "approved".to_string(),
+                    "text".to_string(),
+                    Some(s.texte.to_string()),
+                )],
+            )
+        })
+        .collect();
+    v.sort_by(|a, b| a.0.cmp(&b.0));
+    v
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

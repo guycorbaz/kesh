@@ -73,8 +73,22 @@ pub const TABLES_TO_TRUNCATE: &[&str] = &[
     "journal_entries",
     "audit_log",
     "api_keys", // Story 17-2a (#100) — enfant de companies + users (RESTRICT).
+    // Story 32-8a (#723) — envois du serveur MCP en attente de validation :
+    // enfant de mcp_keys + companies + users (RESTRICT), sans enfant propre ;
+    // vidé AVANT `mcp_keys`, son parent. Vidé à la remise à zéro (absent de
+    // `RESET_PRESERVED_TABLES`) : un envoi est une donnée de la société.
+    "mcp_sends",
+    // Story 32-10a-i (#723) — versions des prompts du serveur MCP : enfant de
+    // mcp_prompts + mcp_keys + users (RESTRICT), sans enfant propre ; vidé
+    // AVANT `mcp_prompts` et `mcp_keys`, ses parents. Vidé à la remise à zéro
+    // (absent de `RESET_PRESERVED_TABLES`), puis la route ré-amorce les
+    // standards.
+    "mcp_prompt_versions",
+    // Story 32-10a-i (#723) — prompts du serveur MCP : enfant de companies
+    // (RESTRICT), parent de `mcp_prompt_versions` ; vidé après elle.
+    "mcp_prompts",
     // Story 32-5a (#723) — clés du serveur MCP : enfant de companies + users
-    // (RESTRICT), sans enfant propre ; sa place suit celle d'`api_keys`.
+    // (RESTRICT) ; sa place suit celle d'`api_keys`.
     "mcp_keys",
     "company_invoice_settings",
     // Story 32-5a (#723) — réglages du serveur MCP : une ligne par société au

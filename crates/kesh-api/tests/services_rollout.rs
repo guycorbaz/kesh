@@ -2917,3 +2917,427 @@ async fn ac324b_d_detail_et_echeances_ne_lisent_pas_la_societe(pool: MySqlPool) 
     }
     assert!(echecs.is_empty(), "{}", echecs.join("\n"));
 }
+
+// ============================================================
+// Story 32-9a (AC-a12) — le service des exercices (règle R7)
+// ============================================================
+
+/// AC-a12 — `exercices::lister` : (i) une clé MCP sans `BooksRead` (aucune
+/// portée, chacune des autres seule, les autres ensemble) est refusée **avant
+/// toute lecture** — sur une `Lecture` dont le pool ne joint aucun serveur, le
+/// refus vient d'`exiger`, une lecture aurait rendu une erreur de base ; (ii)
+/// contrôle positif sous `BooksRead` et sous l'API (`Consultation`) ; (iii)
+/// exécution sur la `Lecture` en lecture seule.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn ac_a12_exercices_refus_controle_positif_lecture_seule(pool: MySqlPool) {
+    use kesh_api::services::exercices;
+    let s = societe(&pool).await;
+    let injoignable = Lecture::new(
+        sqlx::mysql::MySqlPoolOptions::new()
+            .acquire_timeout(std::time::Duration::from_millis(200))
+            .connect_lazy("mysql://x:y@127.0.0.1:1/z")
+            .unwrap(),
+    );
+    let autres: Vec<Portee> = TOUTES
+        .into_iter()
+        .filter(|p| *p != Portee::BooksRead)
+        .collect();
+    let mut jeux: Vec<Vec<Portee>> = vec![Vec::new(), autres.clone()];
+    jeux.extend(autres.iter().map(|p| vec![*p]));
+    for portees in &jeux {
+        let acces = mcp_societe(s.company_id, s.admin_user_id, portees);
+        let r = exercices::lister(&acces, &injoignable).await.map(drop);
+        assert!(est_interdit(&r), "{portees:?} : {}", resume(&r));
+    }
+    // Témoin : la même lecture, sous la bonne portée, échoue sur la base.
+    let acces = mcp_societe(s.company_id, s.admin_user_id, &[Portee::BooksRead]);
+    let r = exercices::lister(&acces, &injoignable).await.map(drop);
+    assert!(!est_interdit(&r) && r.is_err(), "témoin : {}", resume(&r));
+
+    let lecture = Lecture::new(pool.clone());
+    let liste = exercices::lister(&acces, &lecture)
+        .await
+        .expect("BooksRead");
+    assert_eq!(
+        liste.iter().map(|f| f.id).collect::<Vec<_>>(),
+        vec![s.fiscal_year_id]
+    );
+    let api = api_societe(s.company_id, s.admin_user_id, Role::Consultation);
+    assert_eq!(exercices::lister(&api, &lecture).await.unwrap().len(), 1);
+    let seule = lecture_seule(&pool).await;
+    assert_eq!(exercices::lister(&acces, &seule).await.unwrap().len(), 1);
+}
+
+// ============================================================
+// Story 32-9b (AC-b1) — le service des pièces
+// ============================================================
+
+/// `n` pièces à compléter de la société `s`, posées par le dépôt, sans fichier
+/// ; la première porte un QR-code (les sept colonnes « tout ou rien »). Rend
+/// leurs identifiants, dans l'ordre de création.
+async fn poser_pieces(pool: &MySqlPool, s: &SeededCompany, n: usize) -> Vec<i64> {
+    use kesh_db::entities::imported_supplier_invoice::NewImportedSupplierInvoice;
+    use kesh_db::repositories::imported_supplier_invoices;
+    let mut ids = Vec::new();
+    for i in 0..n {
+        let qr = i == 0;
+        let p = imported_supplier_invoices::create(
+            pool,
+            &NewImportedSupplierInvoice {
+                company_id: s.company_id,
+                file_hash: format!("{:0>64}", format!("329b{i}")),
+                storage_path: format!("329b/{i}.pdf"),
+                original_filename: format!("piece-synthetique-{i}.pdf"),
+                mime_type: "application/pdf".into(),
+                byte_size: 70_000 + i64::try_from(i).unwrap(),
+                creditor_iban: qr.then(|| "CH4431999123000889012".into()),
+                is_qr_iban: qr.then_some(false),
+                creditor_address_type: qr.then(|| "S".into()),
+                creditor_name: qr.then(|| "Créancier synthétique".into()),
+                creditor_line1: None,
+                creditor_line2: None,
+                creditor_postal_code: None,
+                creditor_town: None,
+                creditor_country: qr.then(|| "CH".into()),
+                reference_type: qr.then(|| "NON".into()),
+                reference_value: None,
+                amount: None,
+                currency: qr.then(|| "CHF".into()),
+                unstructured_message: None,
+                billing_information: None,
+            },
+        )
+        .await
+        .expect("pièce synthétique");
+        ids.push(p.id);
+    }
+    ids
+}
+
+/// AC-b1 (R7) — `pieces::lister` et `pieces::lister_tout` : (i) une clé MCP
+/// sans `DocumentsRead` (aucune portée, chacune des autres seule, les autres
+/// ensemble) est refusée **avant toute lecture** — sur une `Lecture` dont le
+/// pool ne joint aucun serveur — et **avant la validation** (statut absent) ;
+/// témoin : sous `DocumentsRead`, la même lecture échoue sur la base ; (ii)
+/// l'API exige `Comptable` (le RBAC de `comptable_routes`) : `Consultation`
+/// refusé, `Comptable` et `Admin` servis ; (iii) exécution sur la `Lecture` en
+/// lecture seule.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn ac_b1_pieces_refus_controle_positif_lecture_seule(pool: MySqlPool) {
+    use kesh_api::services::pieces::{self, DemandeListePieces};
+    let s = societe(&pool).await;
+    poser_pieces(&pool, &s, 3).await;
+    let injoignable = Lecture::new(
+        sqlx::mysql::MySqlPoolOptions::new()
+            .acquire_timeout(std::time::Duration::from_millis(200))
+            .connect_lazy("mysql://x:y@127.0.0.1:1/z")
+            .unwrap(),
+    );
+    let autres: Vec<Portee> = TOUTES
+        .into_iter()
+        .filter(|p| *p != Portee::DocumentsRead)
+        .collect();
+    let mut jeux: Vec<Vec<Portee>> = vec![Vec::new(), autres.clone()];
+    jeux.extend(autres.iter().map(|p| vec![*p]));
+    for portees in &jeux {
+        let acces = mcp_societe(s.company_id, s.admin_user_id, portees);
+        for statut in [Some("to_complete".to_string()), None] {
+            let r = pieces::lister(
+                &acces,
+                &injoignable,
+                DemandeListePieces {
+                    statut: statut.clone(),
+                    ..Default::default()
+                },
+            )
+            .await
+            .map(drop);
+            assert!(est_interdit(&r), "lister {portees:?} : {}", resume(&r));
+            let r = pieces::lister_tout(&acces, &injoignable, statut)
+                .await
+                .map(drop);
+            assert!(est_interdit(&r), "lister_tout {portees:?} : {}", resume(&r));
+        }
+    }
+    let acces = mcp_societe(s.company_id, s.admin_user_id, &[Portee::DocumentsRead]);
+    let r = pieces::lister_tout(&acces, &injoignable, Some("to_complete".into()))
+        .await
+        .map(drop);
+    assert!(!est_interdit(&r) && r.is_err(), "témoin : {}", resume(&r));
+
+    let lecture = Lecture::new(pool.clone());
+    let demande = || DemandeListePieces {
+        statut: Some("to_complete".into()),
+        ..Default::default()
+    };
+    let page = pieces::lister(&acces, &lecture, demande())
+        .await
+        .expect("DocumentsRead");
+    assert_eq!((page.items.len(), page.total), (3, 3));
+    let consultation = api_societe(s.company_id, s.admin_user_id, Role::Consultation);
+    let r = pieces::lister_tout(&consultation, &lecture, Some("to_complete".into()))
+        .await
+        .map(drop);
+    assert!(est_interdit(&r), "API Consultation : {}", resume(&r));
+    for role in [Role::Comptable, Role::Admin] {
+        let api = api_societe(s.company_id, s.admin_user_id, role);
+        assert_eq!(
+            pieces::lister_tout(&api, &lecture, Some("to_complete".into()))
+                .await
+                .unwrap()
+                .len(),
+            3,
+            "{role:?}"
+        );
+    }
+    let seule = lecture_seule(&pool).await;
+    assert_eq!(
+        pieces::lister(&acces, &seule, demande())
+            .await
+            .unwrap()
+            .total,
+        3
+    );
+}
+
+/// AC-b1 — la validation du statut (message d'avant la 32-9b, mot pour mot)
+/// et la tranche de `lister` (écrêtage, `total` du statut entier, ordre de
+/// `lister_tout`).
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn ac_b1_pieces_validation_et_tranche(pool: MySqlPool) {
+    use kesh_api::services::pieces::{self, DemandeListePieces};
+    let s = societe(&pool).await;
+    poser_pieces(&pool, &s, 5).await;
+    let acces = mcp_societe(s.company_id, s.admin_user_id, &[Portee::DocumentsRead]);
+    let lecture = Lecture::new(pool.clone());
+    for (statut, recu) in [(None, ""), (Some("PIEGE"), "PIEGE"), (Some(""), "")] {
+        let r = pieces::lister_tout(&acces, &lecture, statut.map(str::to_string)).await;
+        assert_eq!(
+            message_de_validation(&r),
+            Ok(format!(
+                "Paramètre 'status' requis et ∈ {{to_complete, completed, discarded}} (reçu : '{recu}')"
+            )),
+            "{statut:?}"
+        );
+    }
+    let toutes: Vec<i64> = pieces::lister_tout(&acces, &lecture, Some("to_complete".into()))
+        .await
+        .unwrap()
+        .into_iter()
+        .map(|p| p.id)
+        .collect();
+    assert_eq!(toutes.len(), 5);
+    let page = |limit: Option<i64>, offset: Option<i64>| DemandeListePieces {
+        statut: Some("to_complete".into()),
+        limit,
+        offset,
+    };
+    let p = pieces::lister(&acces, &lecture, page(Some(2), Some(1)))
+        .await
+        .unwrap();
+    assert_eq!(
+        p.items.iter().map(|x| x.id).collect::<Vec<_>>(),
+        toutes[1..3].to_vec(),
+        "la tranche [1, 3)"
+    );
+    assert_eq!((p.total, p.limit, p.offset), (5, 2, 1));
+    for (limit, offset, attendus) in [
+        (None, None, (pieces::LIMITE_DEFAUT, 0)),
+        (Some(0), Some(-3), (1, 0)),
+        (Some(1000), Some(4), (pieces::LIMITE_MAX, 4)),
+    ] {
+        let p = pieces::lister(&acces, &lecture, page(limit, offset))
+            .await
+            .unwrap();
+        assert_eq!((p.limit, p.offset), attendus, "{limit:?} {offset:?}");
+        assert_eq!(p.total, 5);
+    }
+    let p = pieces::lister(&acces, &lecture, page(Some(1000), Some(4)))
+        .await
+        .unwrap();
+    assert_eq!(
+        p.items.iter().map(|x| x.id).collect::<Vec<_>>(),
+        [toutes[4]]
+    );
+    let vide = pieces::lister(
+        &acces,
+        &lecture,
+        DemandeListePieces {
+            statut: Some("discarded".into()),
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+    assert_eq!((vide.items.len(), vide.total), (0, 0));
+}
+
+/// AC-b1 (motif de `ac324b_c_la_societe_est_lue_d_abord`) — la société est
+/// lue **avant** la validation et la lecture : sous un jeton orphelin (société
+/// inexistante), `DocumentsRead`, un statut valide **ou invalide** rend
+/// `Internal`, comme avant la 32-9b.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn ac_b1_pieces_la_societe_est_lue_d_abord(pool: MySqlPool) {
+    use kesh_api::services::pieces::{self, DemandeListePieces};
+    let s = societe(&pool).await;
+    poser_pieces(&pool, &s, 1).await;
+    let lecture = Lecture::new(pool.clone());
+    let acces = mcp_societe(INEXISTANT, s.admin_user_id, &[Portee::DocumentsRead]);
+    for statut in [Some("to_complete".to_string()), Some("PIEGE".into()), None] {
+        let r = pieces::lister_tout(&acces, &lecture, statut.clone())
+            .await
+            .map(drop);
+        assert!(est_interne(&r), "lister_tout {statut:?} : {}", resume(&r));
+        let r = pieces::lister(
+            &acces,
+            &lecture,
+            DemandeListePieces {
+                statut: statut.clone(),
+                ..Default::default()
+            },
+        )
+        .await
+        .map(drop);
+        assert!(est_interne(&r), "lister {statut:?} : {}", resume(&r));
+    }
+}
+
+/// AC-b1 — la projection `PiecePublique` lit **la valeur de chaque champ** :
+/// chacun égale le champ de l'`ImportedSupplierInvoice` rendue par
+/// `lister_tout`, sur deux pièces aux valeurs toutes distinctes (une avec QR,
+/// une sans ; une rattachée, une non) — une transposition entre deux champs
+/// de même type (`id`, `byte_size`, `supplier_invoice_id` ; le nom et le
+/// type du fichier) rougit.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn ac_b1_piece_publique_lit_chaque_champ(pool: MySqlPool) {
+    use kesh_api::services::pieces::{self, DemandeListePieces, PiecePublique};
+    let livres = poser_livres(&pool).await;
+    let s = &livres.s;
+    let ids = poser_pieces(&pool, s, 2).await;
+    // La seconde (sans QR) rattachée à la facture fournisseur, son import daté
+    // à part : chaque champ diffère de son voisin.
+    sqlx::query(
+        "UPDATE imported_supplier_invoices SET supplier_invoice_id = ?, status = 'completed', \
+         created_at = '2026-03-04 05:06:07.000' WHERE id = ?",
+    )
+    .bind(livres.facture_fournisseur_id)
+    .bind(ids[1])
+    .execute(&pool)
+    .await
+    .unwrap();
+    let acces = mcp_societe(s.company_id, s.admin_user_id, &[Portee::DocumentsRead]);
+    let lecture = Lecture::new(pool.clone());
+    let mut vus = 0;
+    for statut in ["to_complete", "completed"] {
+        let entieres = pieces::lister_tout(&acces, &lecture, Some(statut.into()))
+            .await
+            .unwrap();
+        let page = pieces::lister(
+            &acces,
+            &lecture,
+            DemandeListePieces {
+                statut: Some(statut.into()),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        assert_eq!(page.items.len(), entieres.len());
+        for (e, p) in entieres.iter().zip(&page.items) {
+            let attendu = PiecePublique {
+                id: e.id,
+                status: e.status.clone(),
+                supplier_invoice_id: e.supplier_invoice_id,
+                original_filename: e.original_filename.clone(),
+                mime_type: e.mime_type.clone(),
+                byte_size: e.byte_size,
+                created_at: e.created_at,
+                qr_lu: e.creditor_iban.is_some(),
+            };
+            assert_eq!(p, &attendu, "{statut}");
+            // Témoins : les valeurs voisines diffèrent.
+            assert_ne!(e.id, e.byte_size);
+            assert_ne!(Some(e.id), e.supplier_invoice_id);
+            assert_ne!(e.original_filename, e.mime_type);
+            vus += 1;
+        }
+    }
+    assert_eq!(vus, 2);
+    let qr: Vec<bool> = pieces::lister(
+        &acces,
+        &lecture,
+        DemandeListePieces {
+            statut: Some("to_complete".into()),
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap()
+    .items
+    .iter()
+    .map(|p| p.qr_lu)
+    .collect();
+    assert_eq!(qr, [true], "la pièce à QR");
+}
+
+/// #781 (revue de code P2 de la 32-9a, R1) — `factures::detail_sans_fichier`
+/// lit **la valeur de chaque champ** non textuel aussi : sur une facture dont
+/// `paid_at`, `emailed_at` et `dunning_paused_at` portent trois instants
+/// distincts (et `emailed_to`, `dunning_paused_note` deux textes distincts),
+/// chaque champ de la projection égale celui de `detail` — une transposition
+/// entre deux horodatages rougit.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn detail_sans_fichier_lit_chaque_champ(pool: MySqlPool) {
+    let livres = poser_livres(&pool).await;
+    let s = &livres.s;
+    sqlx::query(
+        "UPDATE invoices SET paid_at = '2026-06-02 10:00:00.000', \
+         emailed_at = '2026-06-03 11:00:00.000', emailed_to = 'synthetique@exemple.invalid', \
+         dunning_paused_at = '2026-06-04 12:00:00.000', dunning_paused_note = 'Note synthétique', \
+         payment_terms = '30 jours' WHERE id = ?",
+    )
+    .bind(livres.facture_reglee_id)
+    .execute(&pool)
+    .await
+    .unwrap();
+    let acces = mcp_societe(s.company_id, s.admin_user_id, &[Portee::InvoicesRead]);
+    let lecture = Lecture::new(pool.clone());
+    let entiere = factures::detail(&acces, &lecture, livres.facture_reglee_id)
+        .await
+        .unwrap();
+    let p = factures::detail_sans_fichier(&acces, &lecture, livres.facture_reglee_id)
+        .await
+        .unwrap();
+    let (e, f) = (&entiere.facture, &p.facture);
+    assert_eq!(f.id, e.id);
+    assert_eq!(f.contact_id, e.contact_id);
+    assert_eq!(f.invoice_number, e.invoice_number);
+    assert_eq!(f.status, e.status);
+    assert_eq!(f.date, e.date);
+    assert_eq!(f.due_date, e.due_date);
+    assert_eq!(f.payment_terms, e.payment_terms);
+    assert_eq!(f.total_amount, e.total_amount);
+    assert_eq!(f.rounding_amount, e.rounding_amount);
+    assert_eq!(f.journal_entry_id, e.journal_entry_id);
+    assert_eq!(f.paid_at, e.paid_at);
+    assert_eq!(f.emailed_at, e.emailed_at);
+    assert_eq!(f.emailed_to, e.emailed_to);
+    assert_eq!(f.project_id, e.project_id);
+    assert_eq!(f.dunning_paused_at, e.dunning_paused_at);
+    assert_eq!(f.dunning_paused_note, e.dunning_paused_note);
+    assert_eq!(p.lignes.len(), entiere.lignes.len());
+    assert_eq!(
+        (p.montant_regle, p.reste_du),
+        (entiere.montant_regle, entiere.reste_du)
+    );
+    // Témoins : les trois instants sont posés et distincts, comme les deux
+    // textes et les deux montants voisins — sans quoi une transposition
+    // passerait.
+    let instants = [e.paid_at, e.emailed_at, e.dunning_paused_at];
+    assert!(instants.iter().all(Option::is_some), "{instants:?}");
+    assert!(instants[0] != instants[1] && instants[1] != instants[2] && instants[0] != instants[2]);
+    assert_ne!(e.emailed_to, e.dunning_paused_note);
+    assert_ne!(e.payment_terms, e.emailed_to);
+    assert_ne!(e.total_amount, e.rounding_amount);
+    assert_ne!(p.montant_regle, p.reste_du);
+}

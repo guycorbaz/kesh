@@ -24,12 +24,13 @@
 //! ⚠️ Comparer des NOMBRES ne détecterait pas une route retirée pendant qu'une
 //! autre est ajoutée : le compte resterait égal et la dérive invisible. Le test
 //! `admin_pat_denied_e2e` peut compter, lui, parce qu'il opère sur un bloc clos
-//! entre marqueurs ; les 128 routes sont réparties dans tout le fichier.
+//! entre marqueurs ; les 135 routes sont réparties dans tout le fichier.
 //!
 //! # Deux fichiers, deux volets
 //!
-//! L'ensemble clos de l'INVENTAIRE est celui de `lib.rs` (128 routes) ; celui du
-//! REGISTRE est plus large (131), car trois routes mutantes vivent dans
+//! L'ensemble clos de l'INVENTAIRE est celui de `lib.rs` (135 routes à la
+//! Story 32-10a-iii, dont `/mcp`, monté par `route_service` — Story 32-6a) ;
+//! celui du REGISTRE est plus large (138), car trois routes mutantes vivent dans
 //! `routes/test_endpoints.rs` et sont montées par un `nest()`. D'où :
 //!
 //! - volet « route absente du registre » → sur les **deux** fichiers, faute de
@@ -334,6 +335,27 @@ const LIB_ROUTES: &[(&str, &str, Status, Rejeu)] = &[
     ("delete", "mcp_keys::revoke_mcp_key", Traced, SansEcritureAuJournal),
     ("put", "mcp_keys::set_mcp_key_send_validation", Traced, SansEcritureAuJournal),
     ("put", "mcp_server_settings::update_mcp_server_settings", Traced, SansEcritureAuJournal),
+    // Story 32-8b (refs #723) — la décision d'un envoi du serveur MCP
+    // (`mcp_send.approved` / `.refused`), dans la transaction de la décision.
+    // Elle n'écrit pas au journal comptable.
+    ("post", "mcp_envois::decider_envoi", Traced, SansEcritureAuJournal),
+    // Story 32-10a-iii (refs #723) — les prompts du serveur MCP : prompt neuf
+    // (`mcp_prompt.created`), version d'administrateur (`.version_created`),
+    // approbation et refus d'une proposition (`.version_approved`,
+    // `.version_refused`), retour au standard (`.standard_restored`) — chacune
+    // dans la transaction de son écriture, verrou de société d'abord. Aucune
+    // n'écrit au journal comptable.
+    ("post", "mcp_prompts::creer_prompt", Traced, SansEcritureAuJournal),
+    ("post", "mcp_prompts::ajouter_version", Traced, SansEcritureAuJournal),
+    ("post", "mcp_prompts::approuver_version", Traced, SansEcritureAuJournal),
+    ("post", "mcp_prompts::refuser_version", Traced, SansEcritureAuJournal),
+    ("post", "mcp_prompts::revenir_au_standard", Traced, SansEcritureAuJournal),
+    // Story 32-6a (refs #723) — l'endpoint `/mcp`, monté par `route_service`
+    // (toute méthode, dont `POST`). Ses outils ne lisent qu'en lecture seule ;
+    // il écrit la dernière utilisation de la clé et, depuis la 32-6b, l'entrée
+    // `mcp.tool_called` de chaque appel d'outil (`serveur_mcp::journaliser_appel`,
+    // fail closed). Le rejeu parle du journal comptable : `/mcp` n'y écrit rien.
+    ("route_service", "mcp::recevoir", Traced, SansEcritureAuJournal),
     ("put", "email_templates::update_email_template", Traced, SansEcritureAuJournal),
     ("delete", "email_templates::restore_email_template_default", Traced, SansEcritureAuJournal),
     ("put", "companies::update_company_email", Traced, SansEcritureAuJournal),
@@ -502,8 +524,46 @@ const TEST_ENDPOINT_ROUTES: &[(&str, &str, Status, Rejeu)] = &[
 /// serait alors identique à celui d'avant l'ajout, et le diff resterait **vert
 /// sur une route mutante que personne n'a examinée**. C'est le faux vert que
 /// l'AC 11 nommait, et il a été vérifié empiriquement en passe 1 de revue.
+///
+/// Story 32-6a (AC-a6, refs #723) — **lignes de commentaire retirées**, et
+/// `route_service(` lu comme un verbe : son argument est ce qui suit la
+/// **première virgule** (le chemin écarté), rogné, jusqu'à `.with_state` ou à la
+/// `)` fermante — si bien que `route_service("/mcp", routes::mcp::recevoir
+/// .with_state(e))` rend `("route_service", "mcp::recevoir")`, sur une ligne
+/// comme coupée par rustfmt. Un argument qui ne commence pas par `routes::` va
+/// à l'inventaire des non-résolus, comme pour les autres verbes.
 fn extract_counted(source: &str, pattern_prefix: &str) -> BTreeMap<(String, String), usize> {
     let mut out: BTreeMap<(String, String), usize> = BTreeMap::new();
+    let source: String = source
+        .lines()
+        .filter(|l| !l.trim_start().starts_with("//"))
+        .collect::<Vec<_>>()
+        .join("\n");
+    let source = source.as_str();
+    {
+        let needle = "route_service(";
+        let mut rest = source;
+        while let Some(pos) = rest.find(needle) {
+            let after = &rest[pos + needle.len()..];
+            if let Some(virgule) = after.find(',') {
+                let apres = &after[virgule + 1..];
+                let fin = apres.find(')').unwrap_or(apres.len());
+                let mut arg = &apres[..fin];
+                if let Some(w) = arg.find(".with_state") {
+                    arg = &arg[..w];
+                }
+                let arg = arg.trim();
+                if arg.starts_with(pattern_prefix) {
+                    *out.entry((
+                        "route_service".to_string(),
+                        arg.trim_start_matches(pattern_prefix).to_string(),
+                    ))
+                    .or_insert(0) += 1;
+                }
+            }
+            rest = &rest[pos + needle.len()..];
+        }
+    }
     for verb in ["post", "put", "delete", "patch"] {
         let needle = format!("{verb}(");
         let mut rest = source;
@@ -682,6 +742,26 @@ fn every_mutating_route_of_test_endpoints_is_in_the_registry() {
 /// Fonction pure, pour que la garde ci-dessous soit **éprouvable sur une source
 /// factice** : muter `lib.rs` pour la tester ne compile pas, et un test qui ne
 /// compile pas ne rougit pas — il se tait.
+///
+/// Story 32-6a (AC-a6) — est aussi un handler un `routes::…` qui suit
+/// `route_service("…", ` : blancs et sauts de ligne admis entre
+/// `route_service(`, le littéral du chemin et la virgule (forme coupée par
+/// rustfmt) ; l'argument est alors lu par `extract_counted`.
+fn suit_route_service(avant: &str) -> bool {
+    let Some(sans_virgule) = avant.trim_end().strip_suffix(',') else {
+        return false;
+    };
+    let Some(sans_guillemet) = sans_virgule.trim_end().strip_suffix('"') else {
+        return false;
+    };
+    let Some(ouverture) = sans_guillemet.rfind('"') else {
+        return false;
+    };
+    sans_guillemet[..ouverture]
+        .trim_end()
+        .ends_with("route_service(")
+}
+
 fn appels_non_handlers(source: &str) -> Vec<String> {
     let mut appels: Vec<String> = Vec::new();
     let mut reste = source;
@@ -695,7 +775,8 @@ fn appels_non_handlers(source: &str) -> Vec<String> {
                 let avant = &reste[..pos];
                 let est_handler = ["post(", "put(", "delete(", "patch(", "get("]
                     .iter()
-                    .any(|c| avant.ends_with(c));
+                    .any(|c| avant.ends_with(c))
+                    || suit_route_service(avant);
                 if !est_handler {
                     appels.push(chemin.to_string());
                 }
@@ -757,6 +838,52 @@ fn the_third_file_guard_sees_forms_that_are_not_named_router() {
     }
 }
 
+/// Story 32-6a (AC-a6) — le détecteur lit `route_service(`, éprouvé sur une
+/// source factice : la forme sur une ligne, coupée par rustfmt, à argument non
+/// `routes::` (non résolu), en commentaire (ignorée).
+#[test]
+fn the_detector_reads_route_service() {
+    let une_ligne = r#"        .route_service("/x", routes::a::b.with_state(e))"#;
+    let cle = ("route_service".to_string(), "a::b".to_string());
+    assert_eq!(
+        extract_counted(une_ligne, "routes::"),
+        BTreeMap::from([(cle.clone(), 1)])
+    );
+    assert!(appels_non_handlers(une_ligne).is_empty());
+
+    let rustfmt = "    main_router = main_router.route_service(\n        \"/x\",\n        routes::a::b.with_state(e),\n    );";
+    assert_eq!(
+        extract_counted(rustfmt, "routes::"),
+        BTreeMap::from([(cle.clone(), 1)])
+    );
+    assert!(
+        appels_non_handlers(rustfmt).is_empty(),
+        "témoin vert, multi-ligne"
+    );
+
+    let non_resolu = r#"        .route_service("/x", users::h.with_state(e))"#;
+    assert!(extract_counted(non_resolu, "routes::").is_empty());
+    assert_eq!(
+        extract_counted(non_resolu, "")
+            .into_keys()
+            .collect::<Vec<_>>(),
+        vec![("route_service".to_string(), "users::h".to_string())],
+        "rouge : un argument non `routes::` va à l'inventaire des non-résolus"
+    );
+
+    assert!(
+        extract_counted(r#"        // .route_service("/x", routes::a::b)"#, "").is_empty(),
+        "une ligne de commentaire n'est pas lue"
+    );
+
+    // Témoin discriminant : la même forme, sans la reconnaissance de
+    // `route_service(`, est un « appel non-handler » inconnu.
+    assert_eq!(
+        appels_non_handlers(r#"        .nest_service("/x", routes::a::b.with_state(e))"#),
+        vec!["routes::a::b.with_state".to_string()]
+    );
+}
+
 #[test]
 fn the_registry_partition_is_what_the_story_declares() {
     // ⚠️ Ce test recompte la ventilation DEPUIS la source plutôt que de la
@@ -774,10 +901,15 @@ fn the_registry_partition_is_what_the_story_declares() {
         .filter(|(_, _, s, _)| matches!(s, NoMatter(_)))
         .count();
 
-    assert_eq!(LIB_ROUTES.len(), 128, "l'inventaire porte sur 128 routes");
+    assert_eq!(
+        LIB_ROUTES.len(),
+        135,
+        "l'inventaire porte sur 135 routes (+ 1 : `/mcp`, 32-6a ; + 1 : la décision d'un \
+         envoi MCP, 32-8b ; + 5 : les routes mutantes des prompts du serveur MCP, 32-10a-iii)"
+    );
     assert_eq!(traced + exempt + no_matter, LIB_ROUTES.len());
     assert_eq!(
-        traced, 122,
+        traced, 129,
         "73 tracées avant la 25-1b, plus ses 14, plus la dévalidation (25-2-b-1, #440), \
          plus l'annulation d'un règlement client (25-3-a-1) et fournisseur (25-3-a-2, #414), \
          plus l'annulation d'un rapprochement (25-3-b, #418), plus le solde du reste \
@@ -794,7 +926,10 @@ fn the_registry_partition_is_what_the_story_declares() {
          rattachement et le détachement d'un document fournisseur (30-2c, #685), plus le \
          réglage et « Sauvegarder maintenant » de la sauvegarde automatique (31-1c, #503), \
          plus la création, la révocation et la politique de validation d'une clé du serveur \
-         MCP et l'enregistrement de ses réglages (32-5c, refs #723)"
+         MCP et l'enregistrement de ses réglages (32-5c, refs #723), plus chaque appel \
+         d'outil MCP (32-6b, #723), plus la décision d'un envoi du serveur MCP (32-8b, \
+         refs #723), plus les cinq routes mutantes des prompts du serveur MCP (32-10a-iii, \
+         refs #723)"
     );
     assert_eq!(exempt, 4, "4 routes d'auth (#435)");
     assert_eq!(
@@ -803,7 +938,7 @@ fn the_registry_partition_is_what_the_story_declares() {
     );
     assert_eq!(
         LIB_ROUTES.len() + TEST_ENDPOINT_ROUTES.len(),
-        131,
+        138,
         "le registre est plus large que l'inventaire, et c'est voulu"
     );
 }
@@ -1128,17 +1263,19 @@ fn the_replay_partition_is_what_the_story_declares() {
     );
     assert_eq!(exemptees, 3, "full_import, /seed, /reset");
     assert_eq!(
-        sans_ecriture, 103,
-        "102 routes de lib.rs (la remise à zéro y est entrée, 15-7b2 ; la suppression d'un \
+        sans_ecriture, 110,
+        "109 routes de lib.rs (la remise à zéro y est entrée, 15-7b2 ; la suppression d'un \
          import, 27-1 ; l'annulation d'un rejet, 28-5a ; la clôture et la réouverture d'un \
          compte bancaire, 28-4a ; le rattachement d'une transaction à un règlement, 29-8 ; \
          le rattachement et le détachement d'un document fournisseur, 30-2c ; le réglage et \
          « Sauvegarder maintenant » de la sauvegarde automatique, 31-1c ; les quatre routes \
-         mutantes des clés et des réglages du serveur MCP, 32-5c), \
+         mutantes des clés et des réglages du serveur MCP, 32-5c ; + 1 : `/mcp`, 32-6a ; la \
+         décision d'un envoi du serveur MCP, 32-8b ; les cinq routes mutantes des prompts \
+         du serveur MCP, 32-10a-iii), \
          plus /password-reset-token de test_endpoints.rs"
     );
     assert_eq!(rejouees + exemptees + sans_ecriture, tout.len());
-    assert_eq!(tout.len(), 131);
+    assert_eq!(tout.len(), 138);
 }
 
 /// Visiteur `syn` d'un fichier de routes : relève chaque appel à la primitive

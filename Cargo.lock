@@ -2030,6 +2030,7 @@ dependencies = [
  "serde_json",
  "thiserror 2.0.18",
  "unicode-normalization",
+ "unicode-properties",
 ]
 
 [[package]]
@@ -2159,6 +2160,7 @@ dependencies = [
  "kesh-core",
  "kesh-db",
  "kesh-i18n",
+ "rust_decimal",
  "serde_json",
  "sqlx",
  "thiserror 2.0.18",

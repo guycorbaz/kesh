@@ -1882,9 +1882,19 @@ async fn grand_livre_les_deux_regimes(pool: MySqlPool) {
 /// Exceptions écrites de la garde (v-1) : (fichier relatif à `src/`, ligne
 /// réduite de ses blancs de tête et de fin). **Vide en 32-3** ; un faux rouge
 /// s'y inscrit, jamais par un motif affaibli.
-const EXCEPTIONS_V1: &[(&str, &str)] = &[];
+const EXCEPTIONS_V1: &[(&str, &str)] = &[
+    // Story 32-6a (AC-a26) — un faux rouge : le chemin du module
+    // `kesh_db::pool` (la fabrique du pool des outils du MCP), non l'accesseur
+    // `pool` d'une poignée.
+    (
+        "lib.rs",
+        "kesh_db::pool::pool_lecture_seule(&state.pool, mcp::MCP_POOL_CONNEXIONS, delai);",
+    ),
+];
 
-/// Les deux fabriques de poignées, au câblage de `lib.rs` (v-2).
+/// Les six fabriques de poignées, au câblage de `lib.rs` (v-2) — trois
+/// jusqu'à la 32-8b, qui ajoute les deux poignées des envois ; la 32-10a-ii y
+/// ajoute la lecture des prompts.
 const FABRIQUES_V2: &[(&str, &str)] = &[
     (
         "lib.rs",
@@ -1893,6 +1903,37 @@ const FABRIQUES_V2: &[(&str, &str)] = &[
     (
         "lib.rs",
         "services::poignees::Trace::new(self.pool.clone())",
+    ),
+    // Story 32-6a (AC-a26) — la lecture des outils du MCP, sur le pool en
+    // lecture seule, enveloppée une fois dans `LectureOutils` ; Story 32-8b
+    // (AC-B15, point 3) — le pool, lié une fois, est cloné pour la seconde
+    // enveloppe.
+    (
+        "lib.rs",
+        "mcp::LectureOutils::nouvelle(services::poignees::Lecture::new(pool_outils.clone()));",
+    ),
+    // Story 32-8b (AC-B10) — les deux poignées des envois du serveur MCP : la
+    // relecture sur le pool en lecture seule, le dépôt sur le pool ordinaire.
+    (
+        "lib.rs",
+        // Story 32-10a-ii : le pool est cloné pour une troisième enveloppe.
+        "let lecture_envois = services::poignees::LectureEnvois::new(pool_outils.clone());",
+    ),
+    // Story 32-10a-ii (AC-ii3) — la lecture des prompts du serveur MCP, sur le
+    // pool en lecture seule.
+    (
+        "lib.rs",
+        "let lecture_prompts = services::poignees::LecturePrompts::new(pool_outils);",
+    ),
+    (
+        "lib.rs",
+        "let ecriture_envois = services::poignees::EcritureEnvois::new(state.pool.clone());",
+    ),
+    // Story 32-10a-iii (AC-iii1) — l'écriture des prompts par un agent
+    // (`proposer_prompt`), sur le pool ordinaire.
+    (
+        "lib.rs",
+        "let ecriture_prompts = services::poignees::EcriturePrompts::new(state.pool.clone());",
     ),
 ];
 
@@ -1910,7 +1951,7 @@ const RESIDUS_VI: &[(&str, &str)] = &[
 ];
 
 const MOTIF_V1: &str = r"\.\s*pool\s*\(|::\s*pool\b";
-const MOTIF_V2: &str = r"\bLecture::new\(|\bTrace::new\(";
+const MOTIF_V2: &str = r"\bLecture::new\(|\bTrace::new\(|\bLectureEnvois::new\(|\bEcritureEnvois::new\(|\bLecturePrompts::new\(|\bEcriturePrompts::new\(";
 const MOTIF_VI: &str = r"axum|AppState|CurrentUser";
 
 fn racine_src() -> PathBuf {
@@ -2064,6 +2105,18 @@ fn ac10_temoins_des_motifs() {
         !v2.is_match("DetailsTrace::new(p)"),
         "(v-2) : frontière de mot"
     );
+    // Story 32-10a-ii (AC-ii3) : la poignée des prompts.
+    assert!(v2.is_match("x::LecturePrompts::new(p)"));
+    // Story 32-10a-iii (AC-iii1) : la poignée d'écriture des prompts.
+    assert!(v2.is_match("x::EcriturePrompts::new(p)"));
+    assert!(!v2.is_match("AutreEcriturePrompts::new(p)"));
+    assert!(!v2.is_match("AutreLecturePrompts::new(p)"));
+    // Story 32-8b (AC-B10) : les poignées des envois.
+    assert!(v2.is_match("LectureEnvois::new(p)") && v2.is_match("x::EcritureEnvois::new(p)"));
+    assert!(
+        !v2.is_match("DetailsLectureEnvois::new(p)"),
+        "(v-2) : frontière de mot, poignées des envois"
+    );
     let vi = regex::Regex::new(MOTIF_VI).unwrap();
     assert!(
         vi.is_match("use axum::Router;") && vi.is_match("&AppState") && vi.is_match("CurrentUser")
@@ -2135,6 +2188,10 @@ const HANDLERS_MIGRES: &[(&str, &str)] = &[
     ("routes/invoices.rs", "list_invoice_settlements_handler"),
     ("routes/supplier_invoices.rs", "list_supplier_invoices"),
     ("routes/supplier_invoices.rs", "get_supplier_invoice"),
+    // Story 32-9a (AC-a12) : la liste des exercices.
+    ("routes/fiscal_years.rs", "list_fiscal_years"),
+    // Story 32-9b (AC-b1) : la liste des pièces importées.
+    ("routes/imported_supplier_invoices.rs", "list_imported"),
 ];
 
 /// Une ligne de [`SITES_NON_RESOLUS`] : (fichier, `pub async fn`, `async fn`
@@ -2155,6 +2212,45 @@ type SiteNonResolu = (
 /// les douze mutants des factures, l'export CSV de l'échéancier (C-32-4b-1) et
 /// les deux aides des mutants de `invoices.rs` (AC13 (iii)).
 const SITES_NON_RESOLUS: &[SiteNonResolu] = &[
+    // Story 32-9b (AC-b1, C-32-9-61) : la liste des pièces passe par
+    // `pieces::lister_tout` ; les huit autres gestionnaires — l'import, la
+    // complétion, l'écart, les fournisseurs proposés, les documents, qu'aucun
+    // outil ne sert — restent sur `state.pool`. Les trois `async fn` non
+    // publiques (`complete_import_once`, `attach_source_document_once`,
+    // `detach_source_document_once`) reçoivent le pool en paramètre.
+    (
+        "routes/imported_supplier_invoices.rs",
+        9,
+        12,
+        &[
+            "attach_source_document",
+            "complete_import",
+            "detach_source_document",
+            "discard_import",
+            "get_imported_source_document",
+            "get_supplier_candidates",
+            "get_supplier_invoice_source_document",
+            "post_inbox_import",
+        ],
+        &[],
+    ),
+    // Story 32-9a (AC-a12) : la liste des exercices passe par
+    // `exercices::lister` ; les six autres gestionnaires — qu'aucun outil ne
+    // sert — restent sur `state.pool`.
+    (
+        "routes/fiscal_years.rs",
+        7,
+        7,
+        &[
+            "close_fiscal_year",
+            "create_fiscal_year",
+            "get_closing_checks",
+            "get_fiscal_year",
+            "reopen_fiscal_year",
+            "update_fiscal_year",
+        ],
+        &[],
+    ),
     (
         "routes/journal_entries.rs",
         7,
@@ -2532,8 +2628,9 @@ fn ac10_v1_aucun_acces_au_pool_hors_des_services() {
     );
 }
 
-/// AC10 (v-2) — `Lecture::new(`/`Trace::new(` aux deux seules lignes du câblage
-/// de `lib.rs`.
+/// AC10 (v-2) — `Lecture::new(`/`Trace::new(` aux seules lignes du câblage de
+/// `lib.rs` (deux en 32-3 ; trois depuis la 32-6a, la lecture des outils du MCP ;
+/// cinq depuis la 32-8b, les poignées des envois).
 #[test]
 fn ac10_v2_les_poignees_ne_se_fabriquent_qu_au_cablage() {
     let motif = regex::Regex::new(MOTIF_V2).unwrap();
@@ -2555,9 +2652,10 @@ fn ac10_vi_services_sans_axum_ni_app_state() {
         .collect();
     assert_eq!(
         services.len(),
-        11,
-        "services/ : onze fichiers attendus (cinq de la 32-3, trois de la 32-4a, deux de la 32-4b, \
-         cles_mcp.rs de la 32-5b), {:?}",
+        16,
+        "services/ : seize fichiers attendus (cinq de la 32-3, trois de la 32-4a, deux de la 32-4b, \
+         cles_mcp.rs de la 32-5b, serveur_mcp.rs de la 32-6a, envois_mcp.rs de la 32-8b, \
+         exercices.rs de la 32-9a, pieces.rs de la 32-9b, prompts_mcp.rs de la 32-10a-ii), {:?}",
         services.iter().map(|(f, _)| f).collect::<Vec<_>>()
     );
     assert_eq!(

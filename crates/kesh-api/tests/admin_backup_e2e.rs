@@ -455,6 +455,239 @@ async fn mcp_tables_roundtrip_column_by_column_and_enabled_server_stays_enabled(
 }
 
 // ============================================================
+// Story 32-10a-i (AC-i13) — les prompts et leur historique font l'aller-retour
+// ============================================================
+
+const MCP_PROMPTS_COLUMNS: [&str; 7] = [
+    "id",
+    "company_id",
+    "name",
+    "is_standard",
+    "version",
+    "created_at",
+    "updated_at",
+];
+
+const MCP_PROMPT_VERSIONS_COLUMNS: [&str; 13] = [
+    "id",
+    "prompt_id",
+    "number",
+    "origin",
+    "state",
+    "nature",
+    "description",
+    "body",
+    "author_user_id",
+    "author_mcp_key_id",
+    "decided_by_user_id",
+    "decided_at",
+    "created_at",
+];
+
+/// Les deux tables des prompts, colonne par colonne.
+async fn prompts_snapshot(pool: &MySqlPool) -> [Vec<Vec<Option<String>>>; 2] {
+    [
+        column_snapshot(pool, "mcp_prompts", &MCP_PROMPTS_COLUMNS, "id").await,
+        column_snapshot(
+            pool,
+            "mcp_prompt_versions",
+            &MCP_PROMPT_VERSIONS_COLUMNS,
+            "id",
+        )
+        .await,
+    ]
+}
+
+/// Les prompts et **tout leur historique** — une version `standard` amorcée,
+/// une version d'administrateur, un retrait, une proposition d'agent à
+/// valider, une refusée, une approuvée, toutes écrites par le dépôt —
+/// reviennent **égaux ligne pour ligne, colonne pour colonne** (identifiants,
+/// numéros, origines, états, natures, textes, auteurs, décisions, dates à la
+/// milliseconde). Entre l'export et l'import, trois écritures par le dépôt —
+/// une version d'administrateur ajoutée, la proposition à valider refusée, un
+/// prompt neuf — doivent **disparaître**. L'import **n'amorce pas** : il
+/// restaure (AC-i11, validation P4 H3). Tue la mutation Mi13 sous ses deux
+/// formes (table sautée au vidage et à l'insertion, ou à l'insertion seule).
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn prompts_roundtrip_ligne_pour_ligne(pool: MySqlPool) {
+    use kesh_db::entities::mcp_prompt::{Contenu, PLAFOND_A_VALIDER};
+    use kesh_db::entities::mcp_prompt_standards::STANDARDS;
+    use kesh_db::repositories::mcp_prompts as depot;
+
+    let app = spawn_app(pool.clone()).await;
+    let seeded = seed_accounting_company(&pool).await.expect("seed");
+    let (c, u) = (seeded.company_id, seeded.admin_user_id);
+    let jwt = forge_jwt(u, "Admin", c);
+    let mut tx = pool.begin().await.unwrap();
+    let cle = mcp_keys::create_in_tx(
+        &mut tx,
+        NewMcpKey {
+            company_id: c,
+            created_by_user_id: u,
+            name: "Agent rédacteur".into(),
+            key_hash: "d".repeat(64),
+            scopes: McpScopes::new([McpScope::PromptsWrite]).unwrap(),
+            send_validation: SendValidation::Required,
+            expires_at: None,
+        },
+    )
+    .await
+    .unwrap()
+    .id;
+    tx.commit().await.unwrap();
+
+    // Montage, par le dépôt seul.
+    depot::amorcer_standards(&pool, STANDARDS).await.unwrap();
+    let standard: (i64, i32) = sqlx::query_as(
+        "SELECT id, version FROM mcp_prompts WHERE name = 'kesh-assistant' AND company_id = ?",
+    )
+    .bind(c)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    let mut tx = pool.begin().await.unwrap();
+    depot::ajouter_version_admin_in_tx(
+        &mut tx,
+        c,
+        standard.0,
+        standard.1,
+        u,
+        &Contenu::Texte {
+            description: "Assistant de l'administrateur.".into(),
+            texte: "PIEGE_ADMIN_3210A — « accents » et 🙂.".into(),
+        },
+    )
+    .await
+    .unwrap();
+    let retire = depot::creer_prompt_admin_in_tx(&mut tx, c, u, "retire", "D.", "T.")
+        .await
+        .unwrap();
+    depot::ajouter_version_admin_in_tx(&mut tx, c, retire.prompt_id, 1, u, &Contenu::Retrait)
+        .await
+        .unwrap();
+    for (nom, texte) in [
+        ("agent-attente", "PIEGE_PENDING_3210A"),
+        ("agent-refuse", "Refusé."),
+        ("agent-approuve", "Approuvé."),
+    ] {
+        depot::proposer_version_agent_in_tx(
+            &mut tx,
+            c,
+            cle,
+            nom,
+            "Proposé.",
+            texte,
+            PLAFOND_A_VALIDER,
+        )
+        .await
+        .unwrap();
+    }
+    tx.commit().await.unwrap();
+    for (nom, approuver) in [("agent-refuse", false), ("agent-approuve", true)] {
+        let id: i64 =
+            sqlx::query_scalar("SELECT id FROM mcp_prompts WHERE name = ? AND company_id = ?")
+                .bind(nom)
+                .bind(c)
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        let mut tx = pool.begin().await.unwrap();
+        if approuver {
+            depot::approuver_in_tx(&mut tx, c, id, 1, 1, u)
+                .await
+                .unwrap();
+        } else {
+            depot::refuser_in_tx(&mut tx, c, id, 1, 1, u).await.unwrap();
+        }
+        tx.commit().await.unwrap();
+    }
+    // Témoin : un second amorçage n'écrit rien.
+    let avant_amorcage = prompts_snapshot(&pool).await;
+    depot::amorcer_standards(&pool, STANDARDS).await.unwrap();
+    assert_eq!(prompts_snapshot(&pool).await, avant_amorcage);
+
+    let exporte = prompts_snapshot(&pool).await;
+    let servis_avant = depot::en_vigueur_par_societe(&pool, c).await.unwrap();
+    assert!(
+        !exporte[0].is_empty() && !exporte[1].is_empty(),
+        "montage peuplé"
+    );
+    let etats: std::collections::BTreeSet<_> = exporte[1]
+        .iter()
+        .map(|l| (l[3].clone(), l[4].clone(), l[5].clone()))
+        .collect();
+    for attendu in [
+        ("standard", "approved", "text"),
+        ("admin", "approved", "text"),
+        ("admin", "approved", "withdrawal"),
+        ("agent", "pending", "text"),
+        ("agent", "refused", "text"),
+        ("agent", "approved", "text"),
+    ] {
+        let a = (
+            Some(attendu.0.to_string()),
+            Some(attendu.1.to_string()),
+            Some(attendu.2.to_string()),
+        );
+        assert!(etats.contains(&a), "montage : {attendu:?}");
+    }
+
+    let backup = export_backup(&app, &jwt).await;
+
+    // Trois écritures par le dépôt entre l'export et l'import.
+    let standard_v: i32 = sqlx::query_scalar("SELECT version FROM mcp_prompts WHERE id = ?")
+        .bind(standard.0)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    let attente: i64 =
+        sqlx::query_scalar("SELECT id FROM mcp_prompts WHERE name = 'agent-attente'")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    let mut tx = pool.begin().await.unwrap();
+    depot::ajouter_version_admin_in_tx(
+        &mut tx,
+        c,
+        standard.0,
+        standard_v,
+        u,
+        &Contenu::Texte {
+            description: "Après l'export.".into(),
+            texte: "PIEGE_APRES_EXPORT_3210A".into(),
+        },
+    )
+    .await
+    .unwrap();
+    depot::refuser_in_tx(&mut tx, c, attente, 1, 1, u)
+        .await
+        .unwrap();
+    depot::creer_prompt_admin_in_tx(&mut tx, c, u, "neuf-apres-export", "D.", "T.")
+        .await
+        .unwrap();
+    tx.commit().await.unwrap();
+    assert_ne!(
+        prompts_snapshot(&pool).await,
+        exporte,
+        "témoin : l'état modifié diffère de l'état exporté"
+    );
+
+    import_backup(&app, &jwt, backup).await;
+
+    let restaure = prompts_snapshot(&pool).await;
+    assert_eq!(restaure[0], exporte[0], "mcp_prompts : ligne pour ligne");
+    assert_eq!(
+        restaure[1], exporte[1],
+        "mcp_prompt_versions : ligne pour ligne"
+    );
+    assert_eq!(
+        depot::en_vigueur_par_societe(&pool, c).await.unwrap(),
+        servis_avant,
+        "les versions en vigueur d'avant l'export"
+    );
+}
+
+// ============================================================
 // AC22 — round-trip exhaustif sur données riches
 // ============================================================
 

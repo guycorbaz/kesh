@@ -14,7 +14,11 @@ use kesh_db::entities::Role;
 use kesh_db::entities::company::Company;
 use kesh_db::entities::contact::{Contact, ContactType};
 use kesh_db::errors::DbError;
-use kesh_db::repositories::contacts::{self, ContactListQuery, ContactListResult, ContactSortBy};
+use kesh_db::repositories::contacts::{self, ContactListQuery, ContactListResult};
+
+/// Réexporté pour l'outil MCP `kesh_contacts` de la 32-9b (C-32-9-25) :
+/// `src/mcp/` ne nomme pas `kesh_db::repositories`.
+pub use kesh_db::repositories::contacts::ContactSortBy;
 
 use crate::errors::AppError;
 use crate::services::acces::{ContexteAcces, Exigence, Portee};

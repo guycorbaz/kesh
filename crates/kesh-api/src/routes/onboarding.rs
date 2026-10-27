@@ -42,6 +42,28 @@ async fn best_effort_rollback(tx: sqlx::Transaction<'_, sqlx::MySql>) {
     }
 }
 
+/// Installe les prompts standard du serveur MCP dans chaque société (Story
+/// 32-10a-i, AC-i11) — à la fin d'un point d'entrée qui crée une société,
+/// **après** la validation de sa transaction. **Non fatal** : l'opération
+/// est faite, elle répond comme avant ; un échec est journalisé, sans texte de
+/// prompt, et les standards reviennent au démarrage suivant (`main.rs`).
+async fn amorcer_prompts_standard(pool: &sqlx::MySqlPool) {
+    use kesh_db::entities::mcp_prompt_standards::STANDARDS;
+    match kesh_db::repositories::mcp_prompts::amorcer_standards(pool, STANDARDS).await {
+        Ok(r) => tracing::info!(
+            societes = r.societes,
+            creations = r.creations,
+            mises_a_jour = r.mises_a_jour,
+            retraits = r.retraits,
+            "prompts standard du serveur MCP amorcés"
+        ),
+        Err(e) => tracing::error!(
+            "amorçage des prompts standard du serveur MCP en échec (non fatal, repris au \
+             prochain démarrage) : {e}"
+        ),
+    }
+}
+
 /// P6-M1: Parse a boolean-like environment variable.
 ///
 /// Accepts (case-insensitive) `"1"`, `"true"`, `"yes"`, `"on"` as `true`.
@@ -125,6 +147,11 @@ pub struct LanguageRequest {
 ///
 /// Story 15-7a2 : une transaction (`onboarding_state → companies`), trace
 /// `company.created` ou `company.updated {instance_language}` puis l'étape.
+///
+/// Story 32-10a-i (AC-i11) : sur une base sans société, cette route crée la
+/// société provisoire ; après la validation de la transaction, elle installe
+/// donc les prompts standard du serveur MCP ([`amorcer_prompts_standard`],
+/// non fatal, idempotent).
 pub async fn set_language(
     State(state): State<AppState>,
     Extension(current_user): Extension<CurrentUser>,
@@ -138,7 +165,9 @@ pub async fn set_language(
     get_or_init_state(&state).await?;
     let mut tx = state.pool.begin().await.map_err(map_db_error)?;
     let result = language_in_tx(&mut tx, &current_user, lang).await;
-    conclude_step(&state.pool, tx, result).await
+    let reponse = conclude_step(&state.pool, tx, result).await?;
+    amorcer_prompts_standard(&state.pool).await;
+    Ok(reponse)
 }
 
 /// Corps transactionnel de [`set_language`].
@@ -252,7 +281,7 @@ pub async fn seed_demo(
 /// POST /api/v1/onboarding/reset — remet l'installation à zéro et **inscrit son
 /// geste** au journal d'audit (Story 15-7b2, #434, #279, #528).
 ///
-/// Toute l'opération est dans `kesh_seed::reset_demo` : **une** transaction
+/// Tout l'effacement est dans `kesh_seed::reset_demo` : **une** transaction
 /// par essai, rejouée sur interblocage, qui verrouille `onboarding_state`,
 /// évalue **sous ce verrou** les trois gardes — étape ≥ 7 (finalisation,
 /// irréversible) ⇒ `400 ONBOARDING_STEP_ALREADY_COMPLETED` ; installation de
@@ -260,8 +289,13 @@ pub async fn seed_demo(
 /// avec le drapeau ; au-delà de l'étape 2 sans `KESH_PRODUCTION_RESET` ⇒ `403`
 /// —, vide toutes les données de la société, la remet à l'état provisoire en
 /// place, rattache les principaux orphelins, remet l'état à zéro et écrit
-/// `installation.reset`. Le handler ne porte plus ni transaction ni garde : la
-/// seule copie des gardes est celle de la transaction qui efface.
+/// `installation.reset`. Le handler ne porte ni transaction ni garde : la
+/// seule copie des gardes est celle de la transaction qui efface. **Après**
+/// elle (Story 32-10a-i, AC-i11), il réinstalle les prompts standard du
+/// serveur MCP, que la remise à zéro a vidés avec les données de la société
+/// ([`amorcer_prompts_standard`] : une transaction par société, hors de celle
+/// de `reset_demo`, sans entrée d'audit ; non fatal — en cas d'échec, ils
+/// reviennent au démarrage suivant).
 ///
 /// `KESH_PRODUCTION_RESET` : une démonstration est toujours à l'étape 3, si
 /// bien que **toute sortie d'une démonstration** exige ce drapeau — posé par
@@ -293,6 +327,7 @@ pub async fn reset(
         // `map_db_error`) : 500 générique.
         kesh_seed::SeedError::Sqlx(e) => AppError::Internal(format!("Reset demo failed: {e}")),
     })?;
+    amorcer_prompts_standard(&state.pool).await;
 
     let updated = get_or_init_state(&state).await?;
     Ok(Json(response_with_stub(&state.pool, updated).await?))
