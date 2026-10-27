@@ -616,7 +616,9 @@ pub async fn semer(
             storage_path: format!("pieges-329/{company_id}-{marque}.pdf"),
             original_filename: "piece-329.pdf".into(),
             mime_type: "application/pdf".into(),
-            byte_size: 1,
+            // Une taille qu'aucun identifiant ne vaut (revue de code P1 de la
+            // 32-9b, B1 : `taille_octets: id` passait quand P1 avait l'id 1).
+            byte_size: 4_101,
             creditor_iban: None,
             is_qr_iban: None,
             creditor_address_type: None,
@@ -655,7 +657,7 @@ pub async fn semer(
             storage_path: format!("pieges-329/{company_id}-{marque}-qr.pdf"),
             original_filename: seme(marque, "piece_nom_fichier"),
             mime_type: seme(marque, "piece_type_mime"),
-            byte_size: 2,
+            byte_size: 4_202,
             creditor_iban: Some(seme(marque, "piece_qr_iban")),
             is_qr_iban: Some(false),
             creditor_address_type: Some("S".into()),

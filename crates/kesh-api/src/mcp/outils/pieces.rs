@@ -8,6 +8,14 @@
 //! référence, montant, message), ni le fichier : `pieces::lister` rend des
 //! `PiecePublique`, qui ne portent ni l'un ni l'autre. Le contenu d'une pièce
 //! viendra en 0.17.0.
+//!
+//! ⚠️ La promesse vaut pour **cet outil**, non pour la surface entière
+//! (revue de code P1 de la 32-9b, E1) : la complétion d'une pièce recopie dans
+//! la facture fournisseur l'IBAN, la référence (QRR, SCOR) et le montant lus
+//! de son QR (`routes/imported_supplier_invoices.rs`, `complete_import_once`),
+//! que `kesh_facture_fournisseur` rend sous `invoices:read` — l'IBAN sous
+//! `contacts:read` seulement. Éprouvé par
+//! `qr_d_une_piece_completee_lu_par_la_facture_fournisseur`.
 
 use serde::Deserialize;
 

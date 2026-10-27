@@ -324,7 +324,7 @@ facture (`InvoiceSettlement.settlement_type`, `write_off_nature`) ne sont rendus
 
 | Outil | Champ rendu | Source | Prov. | Traitement | Piège |
 |---|---|---|---|---|---|
-| `kesh_contacts`, `kesh_contact` | `nom`, `prenom`, `nomDeFamille`, `adresse`, `rue`, `batiment`, `npa`, `localite`, `pays`, `email`, `telephone`, `ide`, `numeroClient`, `conditions` | `Contact.{name, first_name, last_name, address, address_street, address_building, address_postal_code, address_city, address_country, email, phone, ide_number, client_number, default_payment_terms}` | S | NF (la portée **est** `contacts:read` : pas de `Tiers`) | selon la largeur (§ ci-dessous) ; `pays` E (deux caractères) ; le dépôt lie courriel et IDE tels quels (`contacts.rs:252-300`), la validation étant à la route : piégés |
+| `kesh_contacts`, `kesh_contact` | `nom`, `prenom`, `nomDeFamille`, `adresse`, `rue`, `batiment`, `npa`, `localite`, `pays`, `email`, `telephone`, `ide`, `numeroClient`, `conditions` | `Contact.{name, first_name, last_name, address, address_street, address_building, address_postal_code, address_city, address_country, email, phone, ide_number, client_number, default_payment_terms}` | S | NF (la portée **est** `contacts:read` : pas de `Tiers`) | selon la largeur (§ ci-dessous) ; `pays` E (deux caractères) ; le dépôt lie courriel et IDE tels quels (`contacts.rs:252-300`), la validation étant à la route : piégés. *(Annoté le 2026-10-27, revue de code P1 de la 32-9b, A1 et B1 : `adresse` n'a pas de piège propre — le dépôt la compose des composants (C-32-9-60) ; à l'inventaire, sa ligne est exemptée, et sa valeur lue par `projections_des_contacts_et_des_pieces`.)* |
 | `kesh_contacts` | — | `PageContacts.societe`, `FicheContact.societe` | A | **non rendus** : la société de l'installation, sans usage pour l'agent | — |
 | `kesh_pieces` | `nomFichier` | `ImportedSupplierInvoice.original_filename` | I | NF | L |
 | `kesh_pieces` | `typeMime` | `.mime_type` | K/I | NF | L (le dépôt lie toute chaîne) |
@@ -414,7 +414,7 @@ l'identifiant, sans quoi ils le coupent. La longueur se compte en **caractères*
 | `supplier_invoices.payment_reference` | 64 (`:39`) | C |
 | `supplier_invoice_lines.description` | 1000 (`:83`) | L |
 | `contacts.first_name`, `.last_name` (32-9b) | 70 (`20260705000002_person_names.sql:11-12`) | C |
-| `contacts.address` (32-9b) | 500 (`20260414000001_contacts.sql:11`) | L |
+| `contacts.address` (32-9b) | 500 (`20260414000001_contacts.sql:11`) | L — *retirée (annoté le 2026-10-27, revue de code P1 de la 32-9b, A1) : non posable, composée par le dépôt des composants (C-32-9-60) ; aucune ligne de `CHAMPS`* |
 | `contacts.address_street` (32-9b) | 70 (`20260705000001_structured_addresses.sql`, bloc des contacts — ligne à T-b0) | C |
 | `contacts.address_building`, `.address_postal_code` (32-9b) | 16 (idem) | C |
 | `contacts.address_city` (32-9b) | 35 (idem) | C |
@@ -1203,6 +1203,29 @@ Chaque mutation se joue sur une copie, se constate tuée par le test **nommé**,
   primitif (`char` scellé sans `ChampSur`, E0119, Ma31) ; aucune garde n'inventorie ses sites.
 - **La lecture seule est mesurée par somme de contrôle** (`aucun_outil_n_ecrit`, C-32-9-45) : l'échange des contenus
   de deux lignes d'une table, ou un `|` déplacé d'une colonne à la voisine, ne change pas la somme.
+- **Les données du QR d'une pièce complétée** (revue de code P1 de la 32-9b, E1). `pieces_sans_donnees_du_qr` ne voit
+  que P2, **à compléter** : la complétion recopie l'IBAN, la référence (QRR, SCOR) et le montant du QR dans la facture
+  fournisseur (`complete_import_once`), que `kesh_facture_fournisseur` rend — la promesse « rien du QR » ne vaut donc
+  que pour `kesh_pieces`, et le manuel le dit désormais. Ce chemin est éprouvé à part, par
+  `qr_d_une_piece_completee_lu_par_la_facture_fournisseur` (pièce QR complétée par la route ; référence et montant sous
+  `invoices:read`, IBAN masqué puis visible sous `contacts:read` ; nom, adresse, message et facturation sortis
+  d'aucun outil, parmi les jeux de `TEMOINS` et les deux outils des factures fournisseur) ; une pièce complétée par un
+  autre chemin, ou un champ du QR recopié demain ailleurs, ne serait vu que s'il passait par ces outils-là.
+- **Les champs non textuels du QR de P2 ne sont pas piégés** (E3) : `amount` (42,00), `currency`, `reference_type`,
+  `is_qr_iban`, `creditor_address_type`, `creditor_country` portent des valeurs ordinaires que `MOTIF_PIEGE` ne
+  reconnaît pas ; un `montant` ou un `typeReference` ajouté à `PieceSortie` ne ferait pas rougir
+  `pieces_sans_donnees_du_qr`. Le filet est ailleurs : la déstructuration exhaustive de `From<ImportedSupplierInvoice>
+  for PiecePublique` oblige à décider du champ, et le littéral de `ac_b1_piece_publique_lit_chaque_champ` comme
+  l'objet entier de `projections_des_contacts_et_des_pieces` rougissent à toute clé en plus.
+- **`mcp_sans_fichier`, deux formes de plus** (B3) : un alias **de crate** (`use std as s;`, `use ::tokio as t;`, puis
+  `s::fs::read`) ; et `tower_http::services::{ServeDir, ServeFile}`, importé par `mcp/mod.rs` pour le frontend (32-6a)
+  — `\bFile\s*::` ne voit pas `ServeFile`. Écrits en tête du test ; la revue les écarte.
+- **La transmission des filtres des outils de la 32-9a** (E2 = B2) : `filtres_de_kesh_contacts_transmis` éprouve ceux
+  de `kesh_contacts` ; des outils de la 32-9a, les arguments `amountMin`/`amountMax`, `dateFrom`/`dateTo`, `status`,
+  `paused`, `dueBefore`, `inclureArchives` et `asOf` ne paraissent, parmi les tests MCP, que dans `TEMOINS`
+  (`grep -lF` sur `tests/mcp_*.rs` et `common/mcp_pieges.rs`), c'est-à-dire sous l'acceptation du schéma — tracé pour
+  une issue, à recenser outil par outil (`kesh_ecritures`, `kesh_factures`, `kesh_echeancier`, `kesh_plan_comptable`,
+  `kesh_postes_ouverts`).
 
 ## Dev Notes
 
@@ -1752,7 +1775,10 @@ Opus 5.5, en autonomie, 2026-10-27, worktree `kesh-32-9`, branche `story/32-9b` 
   (rue 70, bâtiment 16, NPA 16, localité 35, pays 2), `20260414000001_contacts.sql` (courriel 320, téléphone 50, IDE 12,
   conditions 100), `20260810000001_contacts_client_number.sql` (numéro de client 50) ; pièces
   `20260629000001_imported_supplier_invoices.sql:37-57`, contrainte « tout ou rien »
-  `20261015000001_imported_documents_without_qr.sql:41-48`, `UNIQUE (company_id, file_hash)`.
+  `20261015000001_imported_documents_without_qr.sql:41-48`, `UNIQUE (company_id, file_hash)`. *(Annoté le
+  2026-10-27, revue de code P1 de la 32-9b, A2 : relu, la contrainte `chk_imported_si_qr_all_or_nothing` occupe
+  `:43-50` — l'`ALTER TABLE` commence l. 35 ; les `:36-50` de l'AC-a14 et de l'AC-b3 couvrent l'instruction,
+  non la seule contrainte.)*
 - **La route** : `list_imported` lisait la société (`get_company_for`), puis validait, puis lisait — ordre conservé dans
   `lister_tout` ; montée en `comptable_routes` (`Comptable`).
 - **Les énumérations** : `ContactType`, `Salutation` (`entities/contact.rs:53`, `:110`) et `Language` (`company.rs:73-75`,
@@ -1850,7 +1876,9 @@ Bases `kesh_329b` et `kesh_e2e_329b` remises à zéro par le compte `kesh`, en c
 - **Une commande refusée** (seed E2E chaîné à un `rm -rf` de dossiers E2E) : l'agent s'est arrêté ; reprise sur
   consigne de l'orchestrateur, sans `rm`, dossiers neufs `/tmp/kesh-e2e-329b-a/`.
 - `kesh_contacts` : la recherche (`search`) n'a pas de borne de longueur — `carnet::lister` et la route n'en ont pas
-  non plus ; le schéma n'en déclare aucune (comportement de l'écran conservé).
+  non plus ; le schéma n'en déclare aucune (comportement de l'écran conservé). *(Annoté le 2026-10-27, revue de code
+  P1, B5 = E5 : l'outil la borne désormais à 100 caractères rognés, au schéma et à l'outil — le service et l'écran
+  restent sans borne, C-32-9-64.)*
 - Choix C-32-9-60 à C-32-9-63 au registre.
 
 ### File List

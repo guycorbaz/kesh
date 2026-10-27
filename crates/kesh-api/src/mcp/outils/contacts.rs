@@ -11,7 +11,7 @@
 use serde::Deserialize;
 
 use crate::mcp::outil::{ContexteMcp, FuturOutil, McpTool, arguments};
-use crate::mcp::outils::commun::{SensDuTri, decalage, limite};
+use crate::mcp::outils::commun::{SensDuTri, decalage, limite, recherche_bornee};
 use crate::mcp::sortie::{Resume, TexteNonFiable, donnees, sortie};
 use crate::mcp::textes::depuis_app_error;
 use crate::services::acces::Portee;
@@ -208,7 +208,7 @@ impl McpTool for KeshContacts {
     }
 
     fn schema_entree(&self) -> &'static str {
-        r#"{"type":"object","properties":{"search":{"type":"string"},"contactType":{"type":"string","enum":["Personne","Entreprise"]},"isClient":{"type":"boolean"},"isSupplier":{"type":"boolean"},"includeArchived":{"type":"boolean"},"sortBy":{"type":"string","enum":["name","createdAt","updatedAt"]},"sortDirection":{"type":"string","enum":["asc","desc"]},"limit":{"type":"integer","minimum":1,"maximum":22,"default":12},"offset":{"type":"integer","minimum":0}},"additionalProperties":false}"#
+        r#"{"type":"object","properties":{"search":{"type":"string","maxLength":100},"contactType":{"type":"string","enum":["Personne","Entreprise"]},"isClient":{"type":"boolean"},"isSupplier":{"type":"boolean"},"includeArchived":{"type":"boolean"},"sortBy":{"type":"string","enum":["name","createdAt","updatedAt"]},"sortDirection":{"type":"string","enum":["asc","desc"]},"limit":{"type":"integer","minimum":1,"maximum":22,"default":12},"offset":{"type":"integer","minimum":0}},"additionalProperties":false}"#
     }
 
     fn portee(&self) -> Portee {
@@ -224,8 +224,11 @@ impl McpTool for KeshContacts {
             let a: ArgumentsListe = arguments(valeur)?;
             let limit = limite(a.limit, LIMITE_DEFAUT, LIMITE_MAX_MCP)?;
             let offset = decalage(a.offset)?;
+            // Le service du carnet ne borne pas la recherche (l'écran est
+            // inchangé) ; l'outil la borne comme `kesh_factures` (C-32-9-64).
+            let search = recherche_bornee(a.search)?;
             let resume = Resume::outil("kesh_contacts")
-                .recherche_fournie("search", a.search.is_some())
+                .recherche_fournie("search", search.is_some())
                 .code("contactType", a.contact_type.map(TypeArg::code))
                 .booleen("isClient", a.is_client)
                 .booleen("isSupplier", a.is_supplier)
@@ -235,7 +238,7 @@ impl McpTool for KeshContacts {
                 .entier("limit", Some(limit))
                 .entier("offset", Some(offset));
             let demande = DemandeListeContacts {
-                search: a.search,
+                search,
                 contact_type: a.contact_type.map(TypeArg::du_service),
                 is_client: a.is_client,
                 is_supplier: a.is_supplier,

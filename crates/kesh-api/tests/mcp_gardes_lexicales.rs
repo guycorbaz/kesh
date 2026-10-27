@@ -1006,10 +1006,21 @@ fn sorties_sans_serialisation_parallele() {
 /// nommé autrement (`pdf_path`, `chemin`) — le typage, non le motif, l'écarte ;
 /// un `use` de `fs` par un chemin relatif à un module qui le réexporte
 /// (`use crate::x::{fs};`).
+///
+/// Revue de code P1 de la 32-9b : `pieces::lister_tout` et
+/// `ImportedSupplierInvoice` — la pièce **entière**, empreinte, chemin et
+/// données du QR compris — sont nommés au motif (B4) : seule `PiecePublique`
+/// atteint `src/mcp/`. ⚠️ Deux angles morts de plus, écrits (B3) : un alias
+/// **de crate** (`use std as s;` ou `use ::tokio as t;`, puis `s::fs::read`),
+/// que ni le motif ligne à ligne ni [`imports_groupes_de_fs`] ne voient ; et
+/// `tower_http::services::{ServeDir, ServeFile}`, déjà importé par
+/// `mcp/mod.rs` pour servir le frontend (32-6a) — `\bFile\s*::` ne voit pas
+/// `ServeFile`, si bien qu'un outil qui servirait un fichier par ce service ne
+/// rougirait pas ; c'est la revue qui l'écarte.
 #[test]
 fn mcp_sans_fichier() {
     let motif = re(
-        r"\bstd\s*::\s*fs\b|\btokio\s*::\s*fs\b|\b(std|tokio)\s*::\s*\{[^}]*\bfs\b|\bFile\s*::|\bOpenOptions\b|\bread_to_string\b|\bdocument_storage\b|storage_path\b",
+        r"\bstd\s*::\s*fs\b|\btokio\s*::\s*fs\b|\b(std|tokio)\s*::\s*\{[^}]*\bfs\b|\bFile\s*::|\bOpenOptions\b|\bread_to_string\b|\bdocument_storage\b|storage_path\b|\blister_tout\b|\bImportedSupplierInvoice\b",
     );
     for rouge in [
         // Ma23
@@ -1019,6 +1030,9 @@ fn mcp_sans_fichier() {
         // E5 : les imports groupés.
         "use std::{fs, io};",
         "use tokio::{fs, io::AsyncReadExt};",
+        // B4 (32-9b) : la pièce entière.
+        "    let toutes = pieces::lister_tout(ctx.acces(), ctx.lecture(), statut).await?;",
+        "use kesh_db::entities::imported_supplier_invoice::ImportedSupplierInvoice;",
     ] {
         assert_eq!(sites_factices(rouge, &motif), 1, "rouge : {rouge}");
     }
@@ -1026,6 +1040,9 @@ fn mcp_sans_fichier() {
         "    piece_id: Option<i64>,",
         // l'import groupé de `sortie.rs`, sans `fs`
         "use std::{collections::BTreeSet, fmt};",
+        // l'appel de l'outil des pièces, et la projection qu'il reçoit
+        "    let page = pieces::lister(ctx.acces(), ctx.lecture(), demande)",
+        "use crate::services::pieces::{self, DemandeListePieces, PiecePublique};",
     ] {
         assert_eq!(
             sites_factices(vert, &motif),

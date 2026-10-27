@@ -582,6 +582,9 @@ l'étape 0. Chaque choix : contexte, option retenue, alternatives écartées, r�
 - **Alternatives** : poser `address` par SQL (refusé : les pièges s'écrivent par les dépôts de production) ; l'exempter
   (refusé : elle porte bien un texte saisi).
 - **Réversible** : oui.
+- *(Annoté le 2026-10-27, revue de code P1 de la 32-9b, B1 : la ligne `nf` à `client_rue` passait à vide — le piège
+  sortait aussi par `rue`, elle ne pouvait rougir seule. Elle devient une exemption ; la valeur composée et son
+  enveloppe sont lues par `projections_des_contacts_et_des_pieces`, C-32-9-65.)*
 
 ### C-32-9-61 — Le fichier des pièces entre à l'inventaire des sites non résolus
 
@@ -606,4 +609,50 @@ l'étape 0. Chaque choix : contexte, option retenue, alternatives écartées, r�
 - **Retenu** : C (personne physique) porte chaque champ piégé ; Fo ne porte que son nom piégé (32-9a), qui sort par
   `kesh_contact` J2. Une seconde série sur Fo doublerait les numéros sans éprouver un chemin de plus (même projection,
   même requête) ; `ide_number` est en outre unique par société.
+- **Réversible** : oui.
+
+### C-32-9-64 — La recherche de `kesh_contacts` bornée dans l'outil, non dans le service
+
+- **Contexte** : revue de code P1 de la 32-9b, B5 = E5 — `search` sans borne au schéma comme au service, quand
+  `kesh_factures` borne à 100 caractères (`services/factures.rs:46`, `RECHERCHE_MAX`). Le service du carnet sert aussi
+  l'écran (`GET /api/v1/contacts`), qui n'a jamais eu de borne.
+- **Retenu** : la borne est posée par l'outil — `commun::recherche_bornee`, `commun::RECHERCHE_MAX` égal à
+  `services::factures::RECHERCHE_MAX` (100 caractères **rognés**), refus `ArgumentsInvalides { "search" }` au texte
+  fixe, et `"maxLength":100` au schéma. La recherche est transmise telle quelle au service, qui la rogne.
+- **Alternatives** : borner dans `carnet::lister` (refusé : change la route de l'écran, hors du sujet d'une revue de
+  l'outil) ; ne rien borner (refusé : écart de cohérence entre outils, et une chaîne de 1 Mio en `LIKE`).
+- **Réversible** : oui.
+
+### C-32-9-65 — Les projections lues champ par champ ; l'adresse exemptée de l'inventaire
+
+- **Contexte** : revue de code P1 de la 32-9b, B1 — l'inventaire cherche un piège n'importe où dans la sortie ; une
+  transposition de deux champs piégés, un champ non textuel faux ou `adresse: None` passaient.
+- **Retenu** : `projections_des_contacts_et_des_pieces` compare l'**objet entier** de `kesh_contact` (C et Fo), des
+  éléments de `kesh_contacts`, et de `kesh_pieces` (P2 et P1) à la valeur posée, relue en base pour l'adresse composée,
+  l'instant d'import et la taille ; les drapeaux se croisent entre C et Fo. La ligne d'inventaire `adresse` devient une
+  exemption qui nomme ce test.
+- **Alternatives** : rendre `verifier_inventaire` sensible au chemin (refusé ici : toucherait toutes les lignes de la
+  32-9a pour un défaut de la 32-9b).
+- **Réversible** : oui.
+
+### C-32-9-66 — Les tailles des pièces semées distinctes de tout identifiant
+
+- **Contexte** : P1 et P2 avaient `byte_size` 1 et 2, soit leurs identifiants dans une base neuve : la mutation
+  `taille_octets: id` survivait à tout test qui lirait la taille.
+- **Retenu** : 4 101 et 4 202 dans `kesh_seed::pieges` ; le test B1 vérifie, en témoin, qu'aucune taille ne vaut
+  l'identifiant d'une pièce ou de la facture fournisseur.
+- **Réversible** : oui.
+
+### C-32-9-67 — La complétion d'une pièce QR éprouvée par la route, avec les exemples publics SIX/ISO
+
+- **Contexte** : revue de code P1 de la 32-9b, E1 — le manuel promettait qu'aucune donnée du QR n'atteint l'agent ;
+  la complétion les recopie dans la facture fournisseur. Les pièges de P2 ne s'y prêtent pas : sa référence est `NON`
+  (non recopiée) et son IBAN un texte piégé.
+- **Retenu** : `qr_d_une_piece_completee_lu_par_la_facture_fournisseur` pose sa propre pièce QR (IBAN
+  `CH9300762011623852957` et référence SCOR `RF18539007547034`, exemples publics déjà employés par
+  `inbox_import_e2e.rs` ; nom, adresse, message et facturation à des marques ASCII), la complète par
+  `POST /api/v1/imported-supplier-invoices/{id}/complete` sous une session forgée, puis lit `kesh_facture_fournisseur`
+  sous `invoices:read`, puis avec `contacts:read`.
+- **Alternatives** : compléter P2 elle-même (refusé : sa référence `NON` n'est pas recopiée, et P2 reste, dans la
+  fixture, la pièce « à compléter ») ; appeler `complete_import_once` directement (refusé : privée, et la route est le chemin réel).
 - **Réversible** : oui.
