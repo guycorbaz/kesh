@@ -2927,7 +2927,7 @@ Le guide d'intégration complet (exemples \texttt{curl}, Python, JavaScript, MCP
 
 \subsection{Les outils du serveur MCP et leurs portées}\label{sec:mcp-outils}
 
-Depuis la 0.16.0, le serveur MCP de Kesh (\keshpath{/mcp}) sert à un agent des \textbf{outils de lecture}. Une clé du serveur MCP n'est pas une clé d'API : elle porte des \textbf{portées} --- \texttt{books:read}, \texttt{invoices:read}, \texttt{contacts:read}, \texttt{documents:read} ---, et l'agent ne voit et n'appelle que les outils des portées de sa clé ; un outil hors de ses portées lui est répondu comme un outil inconnu. Le tableau ci-dessous est la liste exacte des outils servis ; un test de Kesh la compare à ce que le serveur répond, portée par portée.
+Depuis la 0.16.0, le serveur MCP de Kesh (\keshpath{/mcp}) sert à un agent des \textbf{outils de lecture} et un seul outil qui écrit, \texttt{proposer\_prompt} : il \textbf{propose} un prompt, sans rien écrire dans les livres --- la proposition attend l'approbation d'un administrateur et n'est jamais servie avant. Une clé du serveur MCP n'est pas une clé d'API : elle porte des \textbf{portées} --- \texttt{books:read}, \texttt{invoices:read}, \texttt{contacts:read}, \texttt{documents:read}, \texttt{prompts:write} ---, et l'agent ne voit et n'appelle que les outils des portées de sa clé ; un outil hors de ses portées lui est répondu comme un outil inconnu. Le tableau ci-dessous est la liste exacte des outils servis ; un test de Kesh la compare à ce que le serveur répond, portée par portée.
 
 \begin{center}
 \small
@@ -2955,6 +2955,7 @@ Depuis la 0.16.0, le serveur MCP de Kesh (\keshpath{/mcp}) sert à un agent des 
 \texttt{kesh\_contact} & \texttt{contacts:read} & un contact du carnet d'adresses \\
 \texttt{kesh\_pieces} & \texttt{documents:read} & les pièces importées d'un statut, leurs métadonnées seulement \\
 \texttt{kesh\_lire\_envoi} & toute clé & la relecture d'un envoi validé par l'utilisateur \\
+\texttt{proposer\_prompt} & \texttt{prompts:write} & ne lit rien : propose un prompt, une version « à valider » qu'un administrateur approuve ou refuse \\
 % matrice-mcp:fin
 \end{tabular}
 \end{center}

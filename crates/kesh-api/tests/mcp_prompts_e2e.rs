@@ -1045,6 +1045,59 @@ async fn plafond_juste_apres_l_attente_du_verrou(pool: MySqlPool) {
     assert_eq!(a_valider(&pool).await, i64::from(PLAFOND_A_VALIDER));
 }
 
+/// AC-iii3, R7 — le service `proposer` refuse une clé sans `prompts:write`
+/// **avant tout** : avant de lire ses arguments (des arguments invalides
+/// rendent `HorsPortee`, non `ArgumentsInvalides`) et avant le verrou de
+/// société (une transaction du test le tient : le refus revient sans attendre).
+/// Rien n'est écrit. Appel direct du service, sans le répartiteur, qui filtre
+/// déjà la portée (revue de code P1, E1).
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn proposer_refuse_hors_portee_avant_tout(pool: MySqlPool) {
+    let e = ecrivain(&pool).await;
+    let (_, lecteur) = cle(
+        &pool,
+        e.c,
+        e.u,
+        &[McpScope::BooksRead],
+        SendValidation::Exempt,
+    )
+    .await;
+    let cle_auth = authentifier(
+        &Lecture::new(pool.clone()),
+        &Trace::new(pool.clone()),
+        &lecteur,
+    )
+    .await
+    .unwrap();
+    let avant = versions(&pool).await;
+    let mut tenue = pool.begin().await.unwrap();
+    sqlx::query("SELECT id FROM companies WHERE id = ? FOR UPDATE")
+        .bind(e.c)
+        .execute(&mut *tenue)
+        .await
+        .unwrap();
+    let ecriture = EcriturePrompts::new(pool.clone());
+    for a in [
+        args("valide", "d", PIEGE_TEXTE),
+        json!({"nom": "x", "description": "d", "texte": "t", "en_trop": 1}),
+    ] {
+        let issue = tokio::time::timeout(
+            Duration::from_secs(1),
+            prompts_mcp::proposer(&cle_auth, &ecriture, Instant::now(), a.clone()),
+        )
+        .await
+        .unwrap_or_else(|_| panic!("le refus attend le verrou de société : {a}"));
+        assert_eq!(
+            issue.map(|r| r.nom().to_string()),
+            Err(RefusProposition::HorsPortee),
+            "{a}"
+        );
+    }
+    tenue.commit().await.unwrap();
+    assert_eq!(versions(&pool).await, avant, "rien d'écrit");
+    assert!(journal(&pool, "mcp.tool_called").await.is_empty());
+}
+
 // ---------------------------------------------------------------------------
 // AC-iii4 — jamais servi avant l'approbation
 // ---------------------------------------------------------------------------

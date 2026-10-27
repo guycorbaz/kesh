@@ -739,6 +739,11 @@
   32-10b, qui porte déjà le manuel et le compte des routes (`admin-manual.tex` ≈ l. 3022 : « 122 des 128 », registre
   après la iii : 135 routes, 129 tracées).
 - **Réversible** : oui.
+- *Annotation du 2026-10-27 (remédiation de la revue de code P1, décision de l'orchestrateur sur A1, A2, E2)* : la
+  ligne du Pattern 5, une phrase de doc-comment sur les écritures de `repositories/mcp_prompts.rs` (commentaire
+  seulement, d'où le gate complet), l'entrée du CHANGELOG et la phrase et la ligne `proposer_prompt` de la matrice du
+  manuel d'administration (`sec:mcp-outils`, PDF régénéré) sont **écrites par la iii**. Reste à la 32-10b : le compte
+  « N des M routes à verbe mutant » (D5).
 
 ### C-32-10a-104 — La forme du détail (D1) : textes enregistrés et servis, chacun exact et visible
 
@@ -755,4 +760,45 @@
 - **Retenu** : `proposer` contrôle `nom_conforme` et `nom_reserve` (AC-iii3) bien que le dépôt les contrôle aussi
   avant le verrou ; la mutation du seul contrôle du service (Miii11a) **survit** — attendu, déclaré ; la mutation des
   deux (Miii11b) est tuée. Même situation que B4 = E5 de la ii.
+- **Réversible** : oui.
+
+### C-32-10a-106 — Une proposition s'ajoute à tout prompt non standard ; l'approbation fait garde (revue de code P1, E6 = A3)
+
+- **Contexte** : `proposer_version_agent_in_tx` ajoute une version `pending` à **tout** prompt non standard existant de
+  la société — prompt d'administrateur, prompt retiré, prompt dont toutes les versions ont été refusées ; C-32-10a-27
+  ne refuse que les noms en `kesh`. La description servie à l'agent disait « sur un nom déjà proposé ».
+- **Retenu** (décision de l'orchestrateur ; question soumise à Guy à part) : **le comportement reste tel quel** — rien
+  n'est servi sans l'approbation d'un administrateur, qui fait garde. La description de `proposer_prompt` est rendue
+  exacte (« sur le nom d'un prompt existant — écrit par un administrateur ou retiré compris —, la proposition en
+  devient une nouvelle version, elle aussi à valider »).
+- **Les deux effets, et leurs bornes** : chaque proposition incrémente la `version` du prompt, donc (1) fait échouer en
+  **409** une édition en cours de l'administrateur sur ce prompt (il relit et recommence), et (2) rend **non
+  approuvable** (`PasLaDerniere`, 409) la proposition antérieure encore à valider sur le même prompt, d'une autre clé
+  comprise — une clé peut ainsi tenir en échec l'approbation des propositions d'une autre. Borne : le **plafond de
+  vingt** propositions à valider par société (au-delà, plus aucune proposition), et la révocation de la clé ; un
+  refus des propositions en trop rend la dernière approuvable. À dire à l'administrateur par la 32-10b.
+- **Réversible** : oui (refuser la proposition sur un prompt d'administrateur : une ligne au dépôt).
+
+### C-32-10a-107 — Un geste de l'administrateur écrit le nom d'un prompt d'agent jamais approuvé (revue de code P1, B7 = A6)
+
+- **Contexte** : F8 (P14) omet le `nom` du détail d'audit du **refus** d'une proposition d'un prompt qui n'a aucune
+  version approuvée. `mcp_prompt.version_created` (nouvelle version ou **retrait** de l'administrateur) écrit toujours
+  `nom`, y compris sur un prompt créé par une proposition d'agent jamais approuvée.
+- **Retenu** : gardé tel quel — c'est un geste **de l'administrateur**, qui a vu le nom et l'a fait sien en agissant
+  sur ce prompt ; le nom entre au journal exporté comme celui d'un prompt qu'il aurait créé. AC-iii9 ne restreint F8
+  qu'au refus. Reste écrit de P14 : un retrait posé pour écarter une proposition laisse son nom au journal ; le
+  **refus** est le geste qui ne le laisse pas, à dire à l'administrateur par la 32-10b.
+- **Alternatives** : appliquer la règle de `detail_du_refus` à `version_created` (un détail d'audit qui dépend de
+  l'historique, pour un cas étroit).
+- **Réversible** : oui.
+
+### C-32-10a-108 — `proposer_prompt` n'est pas un nom réservé du registre : angle mort écrit (revue de code P1, B3)
+
+- **Contexte** : `registre::NOMS_RESERVES` ne porte que `kesh_lire_envoi` ; un outil de registre nommé
+  `proposer_prompt` serait masqué pour une clé `prompts:write` (le répartiteur résout le nom réservé d'abord) et servi
+  aux autres, et `tools/list` le listerait deux fois. `proposer_prompt_hors_registre` ne l'éprouve que sur
+  `Registre::standard()`.
+- **Retenu** : **angle mort écrit**, aucun code — inatteignable aujourd'hui (aucun outil du registre n'a ce nom, et le
+  test le fige pour le registre de production), et l'AC-iii2 interdit de toucher `registre.rs`. Une story qui touche
+  `registre.rs` ajoute le nom à `NOMS_RESERVES`.
 - **Réversible** : oui.
