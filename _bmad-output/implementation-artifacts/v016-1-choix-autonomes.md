@@ -37,7 +37,8 @@ option retenue, alternatives écartées, réversibilité.
 - **Coût assumé** : un client qui exploitait `structuredContent` par programme (aucun client externe connu ; rien ne le
   documentait, ni manuel ni `docs/api-external.md`) doit lire le JSON du bloc de texte, après l'en-tête et une ligne vide,
   pour une sortie d'outil ; pour un accusé ou une relecture d'envoi et pour l'accusé d'une proposition, les champs retirés
-  n'existent plus en JSON et se lisent dans la phrase de Kesh (« Envoi n° N … » ; texte validé au second bloc) —
+  n'existent plus en JSON et se lisent dans la phrase de Kesh, propre à chaque accusé et à chaque relecture (`textes.rs` ;
+  texte validé au second bloc) —
   écrit au CHANGELOG (*Modifié*) et au § *Passer à la 0.16.1*. *(Rectifié à la validation P1 : le dépôt en porte un
   consommateur, la spec Playwright `frontend/tests/e2e/mcp-sends.spec.ts`, qui suit le correctif — fiche, AC-5.)* Claude Code reçoit le JSON indenté au lieu du JSON compact :
   le plafond `MCP_ENVOI_OCTETS_MAX` portait déjà sur ce texte (C-32-9-7), aucune réponse ne grossit au-delà.
@@ -148,8 +149,10 @@ option retenue, alternatives écartées, réversibilité.
   prompt selon (g), garde (f) et ce que la recette n'a pas vu ; la phrase sur le **contenu reçu à la relecture** reste
   marquée « à confirmer avec Claude Code sur la 0.16.1 ». **La release** (orchestrateur) la lève si les deux critères
   décidables C1 (le modèle recopie une ligne-marqueur placée dans le texte validé, clé requise) et C2 (le modèle rend le
-  bilan aux totaux de la capture, clé dispensée), joués avec Claude Code **avant le tag** contre le binaire de la branche de
-  release lancé en local, réussissent (fiche, § *Ce que la release doit contenir*, point 3, qui fait foi) — sinon elle reste, et l'issue #811 ne se ferme pas sur la seule foi du test. Les observations
+  montant inventé et distinctif d'une écriture de démonstration, clé dispensée), joués avec Claude Code **avant le tag** contre le binaire de la branche de
+  release lancé en local, réussissent ; la réserve de l'accusé (item 5) se lève sur un troisième critère, C3 (le modèle
+  rend le chemin `/admin/mcp/sends/<n>` que seul le texte de l'accusé porte) ; le comportement observé de (d) ne se lève sur
+  aucun (fiche, § *Ce que la release doit contenir*, point 3, qui fait foi) — sinon elle reste, et l'issue #811 ne se ferme pas sur la seule foi du test. Les observations
   de (d) faites en 0.16.0, où l'agent ne recevait vraisemblablement de l'accusé que son état (inférence tirée de #811), se versent avec cette réserve écrite.
 - **Écartées** : déclarer (d) établi dès le correctif (consigne de l'orchestrateur, prise à la lettre : affirmerait une
   observation qui n'a pas eu lieu) ; garder tout (d) en « non éprouvé » (efface ce que la recette a vu).
