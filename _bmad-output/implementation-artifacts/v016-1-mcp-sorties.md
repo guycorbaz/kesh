@@ -61,8 +61,8 @@ dans le mode que le manuel recommande, et que le manuel dise enfin ce que la rec
    modèle n'a reçu que `{"envoi":1,"etat":"en_attente"}`, et il a pourtant expliqué l'attente et rappelé `kesh_lire_envoi`
    après l'accord (observation (d)) — mais la description statique de l'outil, servie par `tools/list`, dit aussi « À
    appeler quand l'utilisateur a traité l'envoi, non en boucle. » (`textes.rs:188-191`) et suffit à expliquer ce geste.
-   Rien ne montre que la mise en garde `nonFiable` atteigne le modèle ; seule la recette de la release (point 3) le
-   vérifiera. Ce qui est sûr : un canal statique a rendu le défaut de l'accusé invisible à la recette (C-v016-1-3).
+   Rien ne montre que la mise en garde `nonFiable` atteigne le modèle ; seule la recette de la release (point 3) peut
+   le montrer. Ce qui est sûr : un canal statique a rendu le défaut de l'accusé invisible à la recette (C-v016-1-3).
 6. ⚠️ **Prémisse non établie, à ne pas affirmer** : que Claude Code transmette `content` quand `structuredContent` est
    **absent**. C'est la règle du schéma (`CallToolResult.content` requis, `structuredContent` facultatif), mais la recette
    ne l'a pas vu : la capture (`kesh-gate-logs/3211/capture-recette.log`) ne contient **aucune** réponse sans
@@ -230,12 +230,12 @@ l'observation et porte « observé avec Claude Code 2.1.312 » :
 | item 3, l. 3336 | `/mcp` « (non éprouvé) » | (a), (e), (h) observés : `initialize` en `2025-11-25` après une sonde `2026-07-28` refusée en `400` texte, puis `tools/list` et `prompts/list`, sans session. **Ce que montre `/mcp` reste « non éprouvé »** (la recette ne le rapporte pas) |
 | item 4, l. 3337 | `/kesh:kesh-assistant (MCP)` « (non éprouvé) » | **corrigé selon (g)** : (g) rapporte au menu `kesh:kesh-assistant` et, comme commande envoyée, `/mcp__kesh-direct__kesh-assistant` — la forme `/kesh:kesh-assistant (MCP)` du manuel n'est pas celle observée (le commentaire ne dit rien d'un suffixe, il ne faut donc pas affirmer son absence). Phrase : « Dans Claude Code, le menu le montre sous la forme \texttt{<serveur>:kesh-assistant} (par exemple \texttt{kesh:kesh-assistant}), où \texttt{<serveur>} est le nom donné au serveur ; la commande envoyée est \texttt{/mcp\_\_<serveur>\_\_kesh-assistant}, et Kesh reçoit \texttt{prompts/get} sans argument *(observé avec Claude Code 2.1.312)*. » — les deux formes concrètes de (g) généralisées par `<serveur>`, rien de plus |
 | item 5, l. 3338 | « Ce que l'agent vous en dit (non éprouvé) » | (d), **avec sa réserve** : « l'agent explique l'attente et demande qu'on le prévienne *(observé avec Claude Code 2.1.312 sur la 0.16.0 ; ce client ne transmettant alors au modèle que le contenu structuré quand il y en a un — constat de l'issue \#811 —, l'agent ne recevait vraisemblablement de l'accusé que son état ; ce que le texte de l'accusé produit est à confirmer sur la 0.16.1)* » |
-| item 7, l. 3340 | « Combien de fois un agent relit … (non éprouvé) » | (d), même réserve : une relecture par envoi, après l'accord, sans boucle ; une de plus sur demande explicite *(observé sur la 0.16.0, où la consigne « ne le rappelez pas en boucle » de l'accusé n'atteignait vraisemblablement pas le modèle, pour la même raison)*. « S'il relit avant votre décision … (non éprouvé au parcours : décrit d'après le code) » **reste**. La réception du texte validé : « *(à confirmer avec Claude Code sur la 0.16.1 ; en 0.16.0, ce contenu ne l'atteignait pas, issue \#811)* » — levée par la recette de la release (point 3), avant le tag |
+| item 7, l. 3340 | « Combien de fois un agent relit … (non éprouvé) » | (d), même réserve : une relecture par envoi, après l'accord, sans boucle ; une de plus sur demande explicite *(observé sur la 0.16.0, où la consigne « ne le rappelez pas en boucle » de l'accusé n'atteignait vraisemblablement pas le modèle, pour la même raison)*. « S'il relit avant votre décision … (non éprouvé au parcours : décrit d'après le code) » **reste**. La réception du texte validé : « *(à confirmer avec Claude Code sur la 0.16.1 ; en 0.16.0, ce contenu ne l'atteignait pas, issue \#811)* » — levée par la recette de la release (point 3, sur la candidate), avant le tag final |
 | item 10, l. 3343 | 401 et OAuth « (non éprouvé) » | **reste** — (f) non observé |
 | `sec:mcp-origin`, l. 3167 | « Un client qui n'envoie pas d'Origin n'est pas concerné. » | ajouter : Claude Code 2.1.312 n'en envoie pas (b) |
 | `sec:mcp-outils`, « Ce que l'agent reçoit », l. 3209 | « Chaque réponse d'un outil commence par un en-tête fixe… » | ajouter : depuis la 0.16.1, la réponse ne porte **que** ce texte, aucun contenu structuré (#811) ; et la forme des **montants, quantités et taux** (« au moins deux décimales, sans zéro final superflu au-delà » — exemples `0.00`, `123.45`, `0.0125` ; une quantité `2` sort `2.00`, un taux `7.7` sort `7.70`) ; ne pas écrire « tout nombre décimal » : le délai `delaiInstructionS` de `kesh_version` est un nombre à virgule flottante, qui sort `30.0` |
 | `sec:mcp-envois`, 3e puce du détail, l. 3227 | « La donnée structurée que l'outil produit aussi n'est pas envoyée… » | retirer la phrase (il n'y a plus de donnée structurée), et réécrire la phrase qui la précède, « C'est ce texte, et lui seul, que l'agent relira », que l'ajout contredirait : « C'est ce texte que l'agent relira, précédé d'une ligne de Kesh qui annonce l'envoi validé. » — la puce décrit l'écran d'un envoi, donc d'une clé requise : pas de « sous toute clé » ici (la règle générale est dite à `sec:mcp-outils`) |
-| nouveau `\subsubsection{Passer à la 0.16.1}` avant `sec:maj-0-16-0` (l. 2480) | — | comme les sections sœurs (l. 2482) : on tire l'image et on redémarre ; « Depuis une version antérieure à la 0.16.0, appliquez d'abord la section suivante (\S\ref{sec:maj-0-16-0}) » ; le rappel de sauvegarde d'avant mise à jour (l. 2485, en plus court) ; aucune migration ; la 0.16.0 redémarre sur une base passée par la 0.16.1 ; un `.keshbackup` de l'une s'importe dans l'autre (mêmes tables) ; aucun réglage ; un client MCP n'a rien à changer — sauf une intégration qui lisait `structuredContent` : pour une sortie d'outil, elle lit le JSON du bloc de texte, après l'en-tête et une ligne vide ; pour un accusé ou une relecture d'envoi, le numéro et l'état ne sont plus en JSON, ils se lisent dans la phrase de Kesh — chaque cas a la sienne (« Envoi n° N en attente de validation… » à l'accusé, « L'envoi n° N attend encore… » à la relecture en attente, « Envoi n° N validé… » à la relecture validée, dont le texte validé est le second bloc ; refus, échéance et numéro inconnu ont leur propre phrase, `textes.rs`) ; pour l'accusé d'une proposition de prompt, son nom et son état sont dans la phrase. **Chaque affirmation vérifiée**, ligne lue citée au Dev Agent Record : pas de migration (`git diff --stat main -- crates/kesh-db/migrations` vide) ; la 0.16.0 démarre sur la base (appel `crates/kesh-api/src/main.rs:122`, comparaison au seul `kesh_version_min_required` dans `crates/kesh-db/src/version.rs:222-230`, inchangé à `0.14.0`) ; l'import croisé (`routes/admin.rs:217`, même comparaison ; `kesh_version` du manifeste informative, l. 247 et 582) |
+| nouveau `\subsubsection{Passer à la 0.16.1}` avant `sec:maj-0-16-0` (l. 2480) | — | comme les sections sœurs (l. 2482) : on tire l'image et on redémarre ; « Depuis une version antérieure à la 0.16.0, appliquez d'abord la section suivante (\S\ref{sec:maj-0-16-0}) » ; le rappel de sauvegarde d'avant mise à jour (l. 2485, en plus court) ; aucune migration ; la 0.16.0 redémarre sur une base passée par la 0.16.1 ; un `.keshbackup` de l'une s'importe dans l'autre (mêmes tables) ; aucun réglage ; un client MCP n'a rien à changer — sauf une intégration qui lisait `structuredContent` : pour une sortie d'outil, elle lit le JSON du bloc de texte, après l'en-tête et une ligne vide ; pour un accusé ou une relecture d'envoi, le numéro et l'état ne sont plus en JSON, ils se lisent dans la phrase de Kesh — chaque cas a la sienne (« Envoi n° N en attente de validation… » à l'accusé, « L'envoi n° N attend encore… » à la relecture en attente, « Envoi n° N validé… » à la relecture validée, dont le texte validé est le second bloc ; refus, échéance et numéro inconnu, qui n'en ont jamais porté, gardent leur phrase, `textes.rs`) ; pour l'accusé d'une proposition de prompt, son nom et son état sont dans la phrase. **Chaque affirmation vérifiée**, ligne lue citée au Dev Agent Record : pas de migration (`git diff --stat main -- crates/kesh-db/migrations` vide) ; la 0.16.0 démarre sur la base (appel `crates/kesh-api/src/main.rs:122`, comparaison au seul `kesh_version_min_required` dans `crates/kesh-db/src/version.rs:222-230`, inchangé à `0.14.0`) ; l'import croisé (`routes/admin.rs:217`, même comparaison ; `kesh_version` du manifeste informative, l. 247 et 582) |
 
 **Manuel utilisateur FR** (`docs/manual/fr/user-manual.tex`, § *L'agent IA et le serveur MCP*, l. 3242) : le paragraphe
 *Invoquer un prompt* (l. 3268-3273) porte la **même** forme contredite (`/kesh:kesh-assistant (MCP)`, « non éprouvé ») ;
@@ -310,7 +310,9 @@ rougit au gate, c'est le filet.
 5. Mutations (§ *Tests et mutations*), sous verrou, restauration `git checkout -- <f> && touch <f>`.
    Les tests de **taille** (`tailles_mesurees`, `mcp_outils_e2e.rs:1342` ; `plafond_au_maximum`, `:1385` ; les `limit`
    mesurés du même fichier) se relisent : un montant `0.0000` devenu `0.00`, ou `0` devenu `0.00`, change la longueur du
-   texte ; un écart dû à cette seule cause se recale, et se dit au Dev Agent Record avec l'ancienne et la nouvelle valeur.
+   texte ; un écart dû à cette seule cause se recale **côté test** (la fixture de `fixture_tailles`), et se dit au Dev
+   Agent Record avec l'ancienne et la nouvelle valeur. Ni une constante `LIMITE_*` de `src/mcp/outils/` ni un plafond
+   (`13_312`, `23_552`) ne bouge sans être déclaré comme un changement de la story.
 6. Gate complet backend, gate frontend (une spec E2E touchée, `mcp-sends.spec.ts` ; aucun fichier de `frontend/src/` :
    `npm run check` et `lint` la couvrent, Vitest non), **E2E Playwright complet** au dernier commit de code (recette
    `docs/testing.md`, port et bases attribués par l'orchestrateur), `mcp-sends.spec.ts` verte et nommée au bilan, échecs
@@ -326,14 +328,14 @@ rougit au gate, c'est le filet.
 | M4 | réinsérer la structure dans `DonneesEnvoyables::en_resultat` (champ rétabli) | K23 (S1), garde, `mcp_outils_e2e:683` |
 | M5 | construire la clé par concaténation dans `Valide` (`format!("structured{}", "Content")` en clé de `Map`) | K23 (S4) et `attendu_valide` — **pas** la garde (angle mort assumé, AC-4) |
 | M6 | retirer le second bloc de `Valide` | K23 (T de S4), `attendu_valide` |
-| M7 | `Montant` sans `normalize` : l'échelle portée à 2 **seulement si elle est inférieure** (`if d.scale() < 2 { d.rescale(2) }`, sans `normalize` ; un `rescale(2)` inconditionnel arrondirait et ne rendrait jamais `123.4500`) | `montant_forme_unique` (`123.4500`), `bilan_montants_une_seule_forme` (`"0.0000"`) |
+| M7 | `Montant` sans `normalize` : l'échelle portée à 2 **seulement si elle est inférieure** (`if d.scale() < 2 { d.rescale(2) }`, sans `normalize` ; un `rescale(2)` inconditionnel arrondirait et ne rendrait jamais `123.4500`) | `montant_forme_unique` (rouge au premier cas qui diffère, `Decimal::new(0, 4)` → `"0.0000"`), `bilan_montants_une_seule_forme` (`"0.0000"`) |
 | M8 | `Montant` sans `rescale(2)` | `montant_forme_unique` (`"0"`), e2e bilan (`"0"`) |
-| M9 | `Montant` en `round_dp(2)` | `montant_forme_unique` (`0.0125`) |
+| M9 | `Montant` en `round_dp(2)` | `montant_forme_unique` (rouge au premier cas qui diffère, `Decimal::ZERO` → `"0"`) |
 | M10 | `structure` de `mcp_pieges` qui rend `Value::Null` | les tests d'enveloppe (preuve que l'aide dérivée est lue) |
 | M11 | remettre `"structuredContent": {…}` à `EnAttente` (S3) | K23 (S3), garde, `attendu_en_attente` |
 | M12 | ajouter `"structuredContent": {}` au `json!` d'`OutilEnErreur` (S9) | K23 (S9), garde |
 | M13 | retirer l'en-tête du texte des données, là où il est construit (`sortie.rs:434`, `format!("{TEXTE_ENTETE_DONNEES}\n\n{joli}")` dans `texte_et_valeur`) | `structure` de `mcp_pieges` (panique sur l'en-tête absent), donc les tests d'enveloppe et d'outils ; `mcp_enveloppe_e2e.rs:638` et `mcp_outils_e2e.rs:673-679` ; K8 et K23 (S1) s'ils lisent l'en-tête — l'ensemble rouge constaté et nommé au Dev Agent Record |
-| M15 | ajouter `"structuredContent": {}` au `json!` de `un_bloc` (`reponse.rs:41-46`, sert S6 à S8) | K23 (S6, S8), garde, `echeance_ne_transmet_rien` (S7) |
+| M15 | ajouter `"structuredContent": {}` au `json!` de `un_bloc` (`reponse.rs:42-47`, sert S6 à S8) | K23 (S6, S8), garde, `echeance_ne_transmet_rien` (S7) |
 | M14 | rétablir `structuredContent` à la relecture validée **et** lancer `mcp-sends.spec.ts` seule | la spec (clés exactes) — preuve que le témoin E2E voit la clé |
 
 Chaque mutation : motif vérifié unique, résultat (test rouge nommé) au Dev Agent Record ; une mutation qui ne rougit
@@ -358,38 +360,31 @@ des échecs attendus).
 
 ## Ce que la release doit contenir (orchestrateur ; ne pas prescrire au développeur)
 
-L'ordre compte : la recette (point 3) se joue **avant** que les textes ne soient figés et que le tag ne déclenche
-`release.yml` (qui ne construit l'image qu'au `push` du tag) — sinon lever une réserve du manuel exigerait une 0.16.2.
+L'ordre compte : la recette (point 3) se joue sur une **release candidate**, avant que les textes ne soient figés et
+que le tag final ne déclenche `release.yml` — sinon lever une réserve du manuel exigerait une 0.16.2.
 
 1. `scripts/prepare-release.sh 0.16.1` : dix crates à 0.16.1, CHANGELOG daté, rappels lus ; aucune migration, donc
    `kesh_version_min_required` inchangé et aucune exemption du registre de rejeu touchée (à constater).
 2. Le paragraphe introductif du CHANGELOG relu après datation ; la ligne « observé avec Claude Code 2.1.312 ». La date posée par le script se **recontrôle au point 8** : si le tag tombe un autre jour (la recette du point 3 peut le repousser), redater l’entrée et `\keshReleaseDate`.
-3. **Recette courte avec Claude Code, avant le tag**, contre le **binaire de la branche de release lancé en local**
-   (`cargo run -p kesh-api`, base neuve, aucune donnée réelle), par le Project Lead guidé par l'orchestrateur, capture
-   par relais comme le 2026-10-28, **version de Claude Code relevée** (`claude --version`) et écrite au CHANGELOG et au
-   manuel si elle diffère de 2.1.312. Deux critères **décidables**, les seuls qui lèvent la réserve et ferment #811 :
-   - **C1, clé requise** : un outil, puis, à l'écran, une validation **modifiée** dont le texte porte une ligne-marqueur
-     inventée pour la recette (par exemple `MARQUEUR-0161-<quatre chiffres>`) ; après la relecture, on demande au modèle
-     de recopier la ligne-marqueur. Réussi si sa réponse la reproduit exactement (le marqueur n'existe nulle part
-     ailleurs que dans le texte validé).
-   - **C2, clé dispensée** (le chemin direct, le seul que la recette du 2026-10-28 a vu marcher, et que le correctif fait
-     passer de `structuredContent` à `content` seul) : sur la base neuve, une écriture de démonstration d'un montant
-     **inventé et distinctif** (par exemple `4321.09`, aucune donnée réelle), puis `kesh_bilan` ; réussi si le modèle rend
-     ce montant, sous la forme `4321.09`. (Un bilan tout à zéro ne discrimine pas : la recette du 2026-10-28 rendait déjà
-     `"0"`.)
-   - **C3, l'accusé** (clé requise, juste après le dépôt de C1, avant la validation) : on demande au modèle quel chemin de
-     Kesh l'accusé lui indique ; réussi s'il rend `/admin/mcp/sends/<n>` — ce chemin n'est écrit que dans le texte de
-     l'accusé (`textes.rs:199-204`), ni dans `INSTRUCTIONS` ni dans la description de l'outil.
-   **Observés sans être critères** (ils ne se décident pas sur une phrase du modèle) : combien de fois il relit, ce qu'il
-   dit de l'attente, ce qu'il fait de la mise en garde de l'en-tête ; ils vont au commentaire de recette, comme le
-   2026-10-28, et ne lèvent rien.
-   Chaque réserve se lève sur **son** critère : celle de l'item 7 (réception du texte validé) sur C1 ; celle de l'item 5
-   (ce que le texte de l'accusé produit : réduite à « l'agent reçoit le texte de l'accusé ») sur C3 ; la dernière phrase
-   de l'entrée *Corrigé* du CHANGELOG et la réserve du README (AC-10) sur C1 **et** C2. Le comportement observé de (d)
-   — expliquer l'attente, relire une fois — garde sa mention « observé sur la 0.16.0 » tant que la recette ne le revoit
-   pas : un critère réussi ne vaut pas observation de ce comportement. Si l'un échoue : #811 reste
-   ouverte, le manuel, le CHANGELOG **et le README** gardent la réserve, et l'opportunité de publier se pose au Project
-   Lead (C2 en échec serait une régression par rapport à la 0.16.0).
+3. **Une release candidate `v0.16.1-rc1`, puis la recette Claude Code.** Les points 1, 2, 4 et 5 faits, les textes
+   gardant leur réserve (« à confirmer… sur la 0.16.1 »), l'orchestrateur pose le tag `v0.16.1-rc1` — convention des tags
+   `v0.1.0-rc1` à `-rc3` : Cargo reste à `0.16.1`, et le smoke compare la base du tag à `/health`
+   (`.github/workflows/release.yml:139-143`). ⚠️ **Avant ce tag**, `release.yml` se corrige : il étiquette et pousse
+   `:latest` pour tout tag (l. 64, 159) et crée une GitHub Release qui n'est pas marquée pré-release (l. 161-165) ; un tag portant un
+   suffixe `-rcN` ne pousse que `gcorbaz/kesh:0.16.1-rc1` et marque sa release `prerelease`. Le changement va à la PR de
+   release, revu comme elle. L'image candidate s'installe sur une **base neuve** (aucune donnée réelle) ; le Project
+   Lead y joue la recette, guidé par l'orchestrateur, capture par relais comme le 2026-10-28, version de Claude Code
+   relevée (`claude --version`) et écrite au CHANGELOG et au manuel si elle diffère de 2.1.312.
+   Les URL du point 4 désignent `v0.16.1`, qui n'existe pas encore pendant la candidate : c'est attendu, la garde G19
+   ne compare qu'à `\keshVersion`.
+   **Le protocole de la recette ne s'écrit pas dans cette fiche** (décision du Project Lead, 2026-10-28) : il s'écrit à
+   la préparation de la candidate, dans un document de release hors dépôt (`kesh-gate-logs/rel0161/recette.md`), qui
+   dit, pour chaque réserve — items 5 et 7 de l'AC-8, dernière phrase de l'entrée *Corrigé* du CHANGELOG (AC-9),
+   README (AC-10) —, l'observation qui la lève et la conduite si elle manque. Il reprend ce que les passes de validation
+   ont appris (rapports `kesh-gate-logs/v0161-validate-p{2,3,4}*.md`). La règle, seule, est ici : **une réserve ne se
+   lève que sur une observation de la recette**, et rien de ce qu'elle n'a pas vu ne se retire. Si la recette lève les
+   réserves, les textes se réécrivent (manuel, CHANGELOG, README, PDF) et le tag final `v0.16.1` se pose (point 8) ;
+   sinon, les réserves restent, #811 reste ouverte, et l'opportunité de publier se pose au Project Lead.
 4. `docs/manual/shared/kesh-style.sty` : `\keshVersion{0.16.1}`, `\keshReleaseDate{…}`, `\keshTargetRelease{v0.16}`
    (inchangé) ; URL `raw.githubusercontent.com/guycorbaz/kesh/v0.16.1/…` des manuels, du README et de `website/` (garde
    G19, `textes_coherents.rs`).
@@ -404,10 +399,11 @@ L'ordre compte : la recette (point 3) se joue **avant** que les textes ne soient
    même avec #811 et #812 fermées, le tag en portera **187** au moins. L'objectif sera manqué ; c'est un objectif, non
    une barrière (règle de release du 2026-10-24) — l'écart et sa cause s'écrivent à la PR de release, et aucune issue ne se
    ferme pour le chiffre.
-8. PR de release, puis tag `v0.16.1` ; Docker : image `0.16.1` = `:latest`, smoke `/health` (version `0.16.1`).
+8. PR de release, tag `v0.16.1-rc1` et recette (point 3), puis tag `v0.16.1` ; Docker : image `0.16.1` = `:latest`,
+   smoke `/health` (version `0.16.1`).
 9. La PR de story porte `refs #811`, `refs #812` (jamais de mot-clé de fermeture, ni dans ses commits ni dans son corps).
-10. La **PR de release** porte `closes #812` ; `closes #811` **seulement** si le point 3 a rendu C1 et C2 réussis,
-    `refs #811` sinon.
+10. La **PR de release** porte `closes #812` ; `closes #811` **seulement** si la recette du point 3 a levé la réserve
+    de la réception (item 7 de l'AC-8, CHANGELOG, README), `refs #811` sinon.
 
 ## Dev Notes
 
@@ -502,3 +498,19 @@ selon le code.
   (M15 sur `un_bloc`), R3 (M7 précisée), R4 (tests de taille), R5 (doc-comments de `reponse.rs` hors liste). Aucun
   finding rejeté. Hors dépôt, signalé au Project Lead : la capture de la recette porte la clé (révoquée) en clair, alors
   que le commentaire de recette de #723 dit « Bearer jamais cité ».
+- 2026-10-28 — validation P4 (Opus, passe ciblée sur le diff `324b6986..0e1f25f3`, prompt
+  `v016-1-validate-prompt-p4.md`, rapport hors dépôt `kesh-gate-logs/v0161-validate-p4.md`) : 0/0/3/5 — 3 MEDIUM, 5 LOW
+  (tendance 8 → 6 → 1 → 3 au-dessus de LOW). Les trois MEDIUM portent sur les critères de la recette de la release
+  (C3 absent de l'introduction du point 3 et de la conduite d'échec ; C3 indécidable si Claude Code a le dépôt, où le
+  chemin `/admin/mcp/sends` est écrit ailleurs ; C2 sans consigne de recopie), et **naissent tous de la remédiation P3** :
+  signal de découpage (recyclage) déclaré au Project Lead. Sur sa décision, le protocole de la recette **sort de la
+  fiche** : le point 3 ne garde que la règle (une réserve ne se lève que sur une observation de la recette), la recette
+  se joue sur une release candidate `v0.16.1-rc1` (convention `v0.1.0-rc1`), et `release.yml`, qui pousse `:latest`
+  pour tout tag et ne marque aucune release `prerelease`, se corrige avant ce tag ; le protocole s'écrira à la
+  préparation de la candidate, hors dépôt, avec les leçons des passes P2 à P4. Points 8 et 10, AC-8 item 7, registre
+  C-v016-1-7 et C-v016-1-10 alignés. LOW remédiés : P4-4 (absorbé par l'alignement du registre), P4-5 (M7 et M9 :
+  rouge au premier cas qui diffère), P4-6 (refus, échéance et numéro inconnu n'ont jamais porté de JSON), P4-7
+  (recalage côté fixture, ni constante `LIMITE_*` ni plafond), P4-8 (`reponse.rs:42-47` à M15 ; l'entrée P3 reste telle
+  quelle). Aucun finding rejeté. Prémisses relues : `release.yml:6`, `:64`, `:139-143`, `:159`, `:161-165` ; tags
+  `v0.1.0-rc1` à `-rc3` (`git tag -l`) ; `prepare-release.sh:39-42` (refuse un suffixe, d'où Cargo à `0.16.1` et le
+  seul tag en `-rc1`) ; `fixture_tailles` (`mcp_outils_e2e.rs:785`).

@@ -147,12 +147,12 @@ option retenue, alternatives écartées, réversibilité.
   une observation** : le correctif ne rend pas (d) établi à lui seul.
 - **Retenu** : le développeur retire les « non éprouvé » établis par la recette (tableau de l'AC-8), corrige la forme du
   prompt selon (g), garde (f) et ce que la recette n'a pas vu ; la phrase sur le **contenu reçu à la relecture** reste
-  marquée « à confirmer avec Claude Code sur la 0.16.1 ». **La release** (orchestrateur) la lève si les deux critères
-  décidables C1 (le modèle recopie une ligne-marqueur placée dans le texte validé, clé requise) et C2 (le modèle rend le
-  montant inventé et distinctif d'une écriture de démonstration, clé dispensée), joués avec Claude Code **avant le tag** contre le binaire de la branche de
-  release lancé en local, réussissent ; la réserve de l'accusé (item 5) se lève sur un troisième critère, C3 (le modèle
-  rend le chemin `/admin/mcp/sends/<n>` que seul le texte de l'accusé porte) ; le comportement observé de (d) ne se lève sur
-  aucun (fiche, § *Ce que la release doit contenir*, point 3, qui fait foi) — sinon elle reste, et l'issue #811 ne se ferme pas sur la seule foi du test. Les observations
+  marquée « à confirmer avec Claude Code sur la 0.16.1 ». **La release** (orchestrateur) la lève, avec les réserves de l'item 5, du CHANGELOG et du README, sur une
+  recette Claude Code jouée contre une release candidate `v0.16.1-rc1`, avant le tag final ; une réserve ne se lève que
+  sur une observation de cette recette, dont le protocole s'écrit à la préparation de la candidate, hors de la fiche
+  (fiche, § *Ce que la release doit contenir*, point 3, qui fait foi ; décision du Project Lead du 2026-10-28). Le
+  comportement observé de (d) garde sa mention « observé sur la 0.16.0 » tant que la recette ne le revoit pas ; sans
+  recette qui lève la réserve, l'issue #811 ne se ferme pas sur la seule foi du test. Les observations
   de (d) faites en 0.16.0, où l'agent ne recevait vraisemblablement de l'accusé que son état (inférence tirée de #811), se versent avec cette réserve écrite.
 - **Écartées** : déclarer (d) établi dès le correctif (consigne de l'orchestrateur, prise à la lettre : affirmerait une
   observation qui n'a pas eu lieu) ; garder tout (d) en « non éprouvé » (efface ce que la recette a vu).
@@ -186,5 +186,6 @@ option retenue, alternatives écartées, réversibilité.
 - **Retenu** : la liste de la fiche, § *Ce que la release doit contenir* ; le développeur écrit la section
   `## [0.16.1] — Non publié` du CHANGELOG, le § *Passer à la 0.16.1* du manuel et la ligne du README qui dit la recette ;
   il ne touche ni aux versions Cargo, ni aux macros de `kesh-style.sty`, ni aux PDF, ni aux URL `raw.githubusercontent`,
-  ni au site.
+  ni au site, ni à `.github/workflows/release.yml` (la candidate `v0.16.1-rc1` et son correctif de `:latest` relèvent
+  de la release, point 3).
 - **Réversible** : oui.
