@@ -371,7 +371,9 @@ que le tag final ne déclenche `release.yml` — sinon lever une réserve du man
    `v0.1.0-rc1` à `-rc3` : Cargo reste à `0.16.1`, et le smoke compare la base du tag à `/health`
    (`.github/workflows/release.yml:139-143`). ⚠️ **Avant ce tag**, `release.yml` se corrige : il étiquette et pousse
    `:latest` pour tout tag (l. 64, 159) et crée une GitHub Release qui n'est pas marquée pré-release (l. 161-165) ; un tag portant un
-   suffixe `-rcN` ne pousse que `gcorbaz/kesh:0.16.1-rc1` et marque sa release `prerelease`. Le changement va à la PR de
+   suffixe `-rcN` ne pousse que `gcorbaz/kesh:0.16.1-rc1` et marque sa release `prerelease` ; `docs/ci.md` (l. 18,
+   163-164) et le manuel d'administration (`admin-manual.tex:2435`), qui disent qu'un tag pousse toujours `:latest`, se
+   corrigent avec lui. Le changement va à la PR de
    release, revu comme elle. L'image candidate s'installe sur une **base neuve** (aucune donnée réelle) ; le Project
    Lead y joue la recette, guidé par l'orchestrateur, capture par relais comme le 2026-10-28, version de Claude Code
    relevée (`claude --version`) et écrite au CHANGELOG et au manuel si elle diffère de 2.1.312.
@@ -399,11 +401,19 @@ que le tag final ne déclenche `release.yml` — sinon lever une réserve du man
    même avec #811 et #812 fermées, le tag en portera **187** au moins. L'objectif sera manqué ; c'est un objectif, non
    une barrière (règle de release du 2026-10-24) — l'écart et sa cause s'écrivent à la PR de release, et aucune issue ne se
    ferme pour le chiffre.
-8. PR de release, tag `v0.16.1-rc1` et recette (point 3), puis tag `v0.16.1` ; Docker : image `0.16.1` = `:latest`,
-   smoke `/health` (version `0.16.1`).
+8. **L'ordre des gestes.** La PR de release s'ouvre avec les points 1, 2, 4 à 6 et la correction de `release.yml`, et
+   **ne se fusionne pas avant le verdict de la recette** : `main`, le site (`deploy-pages`), le README et les versions
+   Cargo n'annoncent rien avant lui. Le tag `v0.16.1-rc1` se pose sur la tête de la branche de release, PR ouverte (le
+   workflow exécuté est celui du commit tagué, correction comprise). Aussitôt la candidate publiée, on constate que
+   `gcorbaz/kesh:latest` n'a pas bougé (même condensé qu'avant le tag) et que la release GitHub `v0.16.1-rc1` est
+   marquée pré-version ; sinon, on corrige avant la recette. Après la recette, sur la même branche : les textes
+   réécrits ou laissés selon le point 3, puis les points 2, 4 et 5 rejoués — date du CHANGELOG et `\keshReleaseDate`
+   au jour du tag final, PDF régénérés. Puis fusion, et tag `v0.16.1` sur le commit de fusion de `main` ; Docker :
+   image `0.16.1` = `:latest`, smoke `/health` (version `0.16.1`).
 9. La PR de story porte `refs #811`, `refs #812` (jamais de mot-clé de fermeture, ni dans ses commits ni dans son corps).
-10. La **PR de release** porte `closes #812` ; `closes #811` **seulement** si la recette du point 3 a levé la réserve
-    de la réception (item 7 de l'AC-8, CHANGELOG, README), `refs #811` sinon.
+10. La **PR de release** porte `closes #812` ; `closes #811` **seulement** si la recette du point 3 a levé les réserves
+    de la réception (items 5 et 7 de l'AC-8, CHANGELOG, README), `refs #811` sinon ; le corps de la PR s'écrit après le
+    verdict, avant la fusion (point 8).
 
 ## Dev Notes
 
@@ -514,3 +524,12 @@ selon le code.
   quelle). Aucun finding rejeté. Prémisses relues : `release.yml:6`, `:64`, `:139-143`, `:159`, `:161-165` ; tags
   `v0.1.0-rc1` à `-rc3` (`git tag -l`) ; `prepare-release.sh:39-42` (refuse un suffixe, d'où Cargo à `0.16.1` et le
   seul tag en `-rc1`) ; `fixture_tailles` (`mcp_outils_e2e.rs:785`).
+- 2026-10-28 — validation P5 (Sonnet, passe ciblée sur le diff `e9d2eefe..687cf600`, prompt
+  `v016-1-validate-prompt-p5.md`, rapport hors dépôt `kesh-gate-logs/v0161-validate-p5.md`) : 0/0/1/5 — 1 MEDIUM, 5 LOW
+  (tendance 8 → 6 → 1 → 3 → 1 au-dessus de LOW). Remédiés : P5-1 (point 8 : PR de release fusionnée seulement après le
+  verdict, tag `-rc1` sur la tête de la branche, tag final sur le commit de fusion), P5-2 (registre C-v016-1-3 : la
+  recette « peut le montrer »), P5-3 (`docs/ci.md:18`, `:163-164` et `admin-manual.tex:2435` corrigés avec
+  `release.yml`), P5-4 (points 2, 4 et 5 rejoués après la recette), P5-5 (`closes #811` sur les items 5 et 7), P5-6
+  (`:latest` et la pré-version constatés après la candidate). Prémisses relues : `docs/ci.md:18`, `:163-164` ;
+  `admin-manual.tex:2435` ; registre l. 75-76. Aucun finding rejeté. **Dernière remédiation de l'orchestrateur** : dès la
+  P6, ce qui reste se retire ou se renvoie au développement.

@@ -72,8 +72,8 @@ option retenue, alternatives écartées, réversibilité.
   n'a reçu de l'accusé que `{"envoi":1,"etat":"en_attente"}`, et pourtant il a expliqué l'attente et rappelé
   `kesh_lire_envoi` après l'accord (#723, observation (d)) — mais la description de `kesh_lire_envoi`, servie par
   `tools/list` (`textes.rs:188-191` : « À appeler quand l'utilisateur a traité l'envoi, non en boucle. »), suffit à
-  expliquer ce geste ; rien ne montre que la mise en garde `nonFiable` atteigne le modèle (la recette de la release le
-  vérifie, fiche, point 3). Mais deux choses ne passent par aucun autre canal : l'explication de la valeur
+  expliquer ce geste ; rien ne montre que la mise en garde `nonFiable` atteigne le modèle (la recette de la release peut
+  le montrer, fiche, point 3). Mais deux choses ne passent par aucun autre canal : l'explication de la valeur
   masquée (« Une valeur « (masqué : portée contacts:read requise) » est retenue par Kesh. ») et le chemin
   `/admin/mcp/sends/n` de l'accusé.
 - **Retenu** : c'est un **défaut de la même classe** (un texte que Kesh écrit pour l'agent n'atteint pas l'agent),
