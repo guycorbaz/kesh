@@ -8,10 +8,27 @@ Le contenu est rédigé en français à destination des **fiduciaires, PME, ind�
 
 ---
 
-## [0.16.0] — Non publié
+## [0.16.0] — 2026-10-28
+
+Epic 32, **le serveur MCP de Kesh** ([#723](https://github.com/guycorbaz/kesh/issues/723)) : un serveur MCP intégré, par lequel un agent IA du réseau local — un client MCP comme Claude Code — **lit** les livres. Il est **désactivé par défaut** et se règle dans *Administration → Serveur MCP* (activation, filtre d'adresse, mandataires de confiance), avec des **clés dédiées à portées fines** dont le secret ne s'affiche qu'une fois. Aucun outil n'écrit dans les livres. Sous une clé à validation requise (le défaut), ce que l'agent demande est **montré à l'Administrateur avant de partir** (*Envois du serveur MCP*) ; chaque appel d'outil est journalisé. Les prompts que Kesh sert à l'agent sont tenus en base avec leur historique ; un agent peut en proposer une version, qu'un Administrateur approuve ou refuse (*Prompts du serveur MCP*). Un test de contrat du protocole tourne en CI. S'y ajoutent deux correctifs du grand livre (comptes de résultat sur plusieurs exercices, [#777](https://github.com/guycorbaz/kesh/issues/777), [#778](https://github.com/guycorbaz/kesh/issues/778)) et la mise à jour des dépendances (voir *Sécurité*).
+
+⚠️ **Le branchement d'un vrai client n'a pas été éprouvé avant cette publication.** Le parcours d'administration, la restauration et le protocole ont été joués et testés, mais l'essai avec Claude Code lui-même, prévu en recette, ne l'a pas encore été : le manuel d'administration marque « non éprouvé » ce qui en dépend.
+
+⚠️ **Aucun livre réel n'est encore tenu dans Kesh**, et aucun exercice réel n'y a été clôturé ; la TVA n'est pas opposable (dix défauts critiques ouverts, jalon « Vague 2 ») : la comptabilité d'un assujetti ne se tient pas dans Kesh.
+
+⚠️ **À faire en passant à la 0.16.0** — le détail est au manuel d'administration, *Passer à la 0.16.0* :
+
+1. **Sauvegarder avant la mise à jour** : la base, une sauvegarde d'installation `.keshbackup` et le dossier des documents. La 0.16.0 ajoute trois migrations **non breaking** (`20261025000001_mcp_keys_and_server_settings`, `20261025000002_mcp_sends`, `20261027000001_mcp_prompts`) : `kesh_version_min_required` ne change pas, mais, comme toute migration, elles **empêchent la 0.15.0 de démarrer** sur une base migrée — **le retour à la 0.15.0 passe uniquement par la sauvegarde d'avant la mise à jour**.
+2. **Prendre une nouvelle sauvegarde complète juste après** : une sauvegarde d'installation ne se réimporte que dans une version qui porte les mêmes tables, si bien qu'un `.keshbackup` de la 0.15.0 ne s'importe pas dans la 0.16.0.
+
+Le compose ne change pas et aucune variable de `.env` n'est ajoutée : le serveur MCP se règle dans l'interface.
 
 ### Ajouté
 
+- **Brancher un agent sur Kesh** : le manuel d'administration décrit le fonctionnement du serveur MCP et le parcours
+  d'administration, joué sur une démonstration, restauration d'une sauvegarde comprise ; un test de contrat du serveur
+  tourne en CI ; le manuel utilisateur dit ce que l'agent peut lire et ce qu'on montre avant l'envoi ;
+  `docs/api-external.md` renvoie au serveur intégré.
 - **La validation avant envoi du serveur MCP.** Sous une clé du serveur MCP dont la validation est requise (le
   défaut), aucune donnée des livres ne part vers l'agent sans l'accord d'un Administrateur : ce que l'agent demande
   est déposé comme un *envoi*, et l'écran **Administration → Envois du serveur MCP** montre le texte exact qui
@@ -37,6 +54,24 @@ Le contenu est rédigé en français à destination des **fiduciaires, PME, ind�
   et `kesh-assistant`, l'agent qui lit la comptabilité pour l'utilisateur. Seule une version approuvée est servie ; un
   prompt écrit par un agent l'est précédé d'une marque qui le dit, et un texte portant un caractère invisible ou
   bidirectionnel ne l'est pas. Un prompt est un texte fixe : les arguments d'un client sont ignorés.
+- **Proposer un prompt, et le gérer** (refs [#723](https://github.com/guycorbaz/kesh/issues/723)). Sous la portée
+  `prompts:write`, un agent appelle l'outil `proposer_prompt` : il propose un prompt, qui devient une version « à
+  valider », jamais servie avant qu'un administrateur l'approuve — d'ici là, la version en vigueur reste servie, et
+  aucune clé ne peut approuver. L'agent n'écrit rien dans les livres, ne propose
+  jamais sur un nom en `kesh` (les prompts standard) et ne relit pas ses propositions ; au plus vingt attendent par
+  société. Sur le nom d'un prompt existant, la proposition en devient une nouvelle version, elle aussi à valider. Les
+  routes d'administration `/api/v1/admin/mcp/prompts` — une session d'Administrateur seulement, jamais une clé —
+  listent les prompts, rendent l'historique avec le texte tel qu'il serait servi, créent un prompt, enregistrent une
+  nouvelle version ou un retrait, approuvent ou refusent une proposition (l'approbation revérifie le texte) et
+  rétablissent le texte standard ; chaque geste est inscrit au journal d'audit, sans le texte. Chaque `prompts/get` y
+  est inscrit aussi ; si l'inscription échoue, rien n'est servi.
+- **L'écran des prompts du serveur MCP** (**Administration → Prompts du serveur MCP** ; refs
+  [#723](https://github.com/guycorbaz/kesh/issues/723)) : la liste des prompts et de leur version en vigueur,
+  l'historique complet de chacun, le texte **tel que Kesh le servirait** — marque d'un prompt d'agent comprise,
+  caractères invisibles écrits sous leur code par le serveur —, l'approbation ou le refus des propositions d'un agent
+  sur la version lue, l'écriture d'une nouvelle version, le retrait et le retour au texte standard, qui montre le
+  texte du code avant le geste. Rien n'est écrasé : chaque geste ajoute une version. Le manuel d'administration le
+  décrit, § *Les prompts du serveur MCP*.
 - **Les outils de lecture du serveur MCP — contacts et pièces** (refs
   [#723](https://github.com/guycorbaz/kesh/issues/723)). Sous `contacts:read`, le carnet d'adresses (liste et
   fiche d'un contact), chaque texte enveloppé ; sous `documents:read`, la liste des pièces importées d'un statut,
@@ -45,6 +80,11 @@ Le contenu est rédigé en français à destination des **fiduciaires, PME, ind�
   la pièce complétée, l'IBAN, la référence et le montant lus de son QR-code appartiennent à la facture fournisseur
   créée, que `kesh_facture_fournisseur` rend — la référence et le montant sous `invoices:read`, l'IBAN (ou le
   QR-IBAN) sous `contacts:read` seulement. Le contenu des pièces viendra dans une version ultérieure.
+- **Administration → Serveur MCP** (refs [#723](https://github.com/guycorbaz/kesh/issues/723)) : activer le serveur,
+  régler son filtre d'adresse, créer, révoquer et régler les clés du serveur MCP ; une réinitialisation des données de
+  démonstration conserve ces clés et efface les réglages du serveur, qui repart désactivé ; manuel d'administration,
+  § *Le serveur MCP*. Le secret d'une clé n'est affiché qu'une fois, à sa création ; l'écran dit ce que le filtre
+  d'adresse ne garantit pas (derrière un mandataire non déclaré, il n'arrête personne).
 
 ### Modifié
 
@@ -75,6 +115,22 @@ Le contenu est rédigé en français à destination des **fiduciaires, PME, ind�
   qui la précèdent, avec les mêmes remises à zéro aux exercices franchis ; une lecture page après page rend, ligne
   pour ligne, les soldes d'une lecture entière. L'écran et les exports PDF et CSV, qui ne paginent pas, n'étaient pas
   touchés.
+- **Grand livre — l'ouverture d'un compte de produits ou de charges ne se reporte plus dans l'exercice suivant**
+  ([#777](https://github.com/guycorbaz/kesh/issues/777)). Quand la période commençait dans un exercice et que la
+  première écriture du compte tombait dans le suivant, le solde d'ouverture s'ajoutait aux mouvements du nouvel
+  exercice, sans ligne de rupture : par exemple, une ouverture de 400 suivie d'une vente de 100 l'exercice suivant
+  affichait un solde de 500 au lieu de 100. Une rupture clôt désormais l'exercice de l'ouverture avant la première
+  écriture, et le solde repart de zéro — à l'écran, dans les exports PDF et CSV, et par l'API. Les comptes d'actif et
+  de passif n'étaient pas touchés.
+- **Grand livre — le solde de clôture d'un compte de produits ou de charges suit les fins d'exercice**
+  ([#778](https://github.com/guycorbaz/kesh/issues/778)). Sur une période qui franchit une fin d'exercice, le solde
+  de clôture valait l'ouverture plus tous les mouvements de la période, sans la remise à zéro que le solde progressif
+  appliquait — 720 là où la dernière ligne affichait 120. Il est désormais le **solde de l'exercice en cours à la fin
+  de la période** : le dernier solde progressif, remis à zéro à chaque fin d'exercice franchie, et zéro si cet
+  exercice n'a aucune écriture dans la période. Le cumul de la période reste lisible dans le total des mouvements. Une
+  fin d'exercice franchie après la dernière écriture a désormais elle aussi sa ligne de rupture, et l'export CSV écrit
+  chaque rupture comme une ligne du tableau. Pour un compte d'actif ou de passif, rien ne change. Le manuel
+  utilisateur le dit, § *Grand livre*.
 - **Manuels et brochure : la répétition d'une clôture dit vrai, et les signes s'impriment**
   ([#714](https://github.com/guycorbaz/kesh/issues/714)). Dans le manuel d'administration, § *Répéter une clôture sur
   une copie*, sans qu'aucune commande change : ce que les deux exports écrivent sur la production (journal d'audit,
@@ -89,6 +145,21 @@ Le contenu est rédigé en français à destination des **fiduciaires, PME, ind�
   (U+FFFD) dans les trois PDF.
 - **Sauvegarde automatique — le refus d'un réglage hors domaine parle la langue de l'instance** : un réglage refusé par le serveur (fréquence autre que 6, 12, 24 ou 168 heures, ou nombre de sauvegardes conservées hors de 1 à 60) était annoncé en français quelle que soit la langue de l'installation ; il l'est désormais en français, en allemand, en italien ou en anglais ([#711](https://github.com/guycorbaz/kesh/issues/711)).
 - **Sauvegarde automatique — l'écran ne perd plus ni une saisie ni un état** ([#711](https://github.com/guycorbaz/kesh/issues/711)). Une modification du réglage non enregistrée n'est plus effacée par « Sauvegarder maintenant », et si un autre administrateur a enregistré entre-temps, « Enregistrer » le signale (« Recharger ») au lieu d'écraser son réglage. Quand la réponse du serveur ne parvient pas (délai dépassé, connexion coupée, proxy qui abandonne l'attente) ou qu'il rend une erreur interne, l'écran ne dit plus que la sauvegarde « n'a pas pu être lancée » : il dit qu'elle a peut-être été écrite, et relit l'état et la liste des sauvegardes. Le bandeau de l'application ne s'éteint plus sur une lecture manquée, et ne revient plus à un état ancien sur une réponse tardive ; quand l'horloge du serveur a reculé, il dit que la dernière sauvegarde réussie est datée après l'heure du serveur, au lieu d'annoncer « aucune sauvegarde réussie depuis » une date future. La mention « trop grande pour être restaurée par l'écran » donne la limite en Mio et dans l'unité des tailles listées (Mo, Go).
+
+### Sécurité
+
+- **Dépendances mises à jour** ([#792](https://github.com/guycorbaz/kesh/issues/792)). Côté serveur, `rustls` 0.23.46,
+  `rustls-webpki` 0.103.16, `webpki-roots` 1.0.11, `h2` 0.4.20 et `crossbeam-epoch` 0.9.21 corrigent les avis RustSec
+  publiés depuis la 0.15.0 (RUSTSEC-2026-0346 à 0349 et RUSTSEC-2026-0382, entre autres) ; les autres bibliothèques
+  suivent dans leurs versions compatibles. Côté interface, la correction des avis npm sans changement de version
+  majeure : Vite 7.3.7, Svelte 5.57.3, Vitest 4.1.12, SvelteKit 2.70.3, et avec eux `devalue`, `undici`, `postcss`,
+  `nanoid` et `esbuild`. ⚠️ **Restent connus** : six avis npm de sévérité basse sur `cookie` < 0.7.0, embarqué par
+  SvelteKit 2, dont la correction demande SvelteKit 3 ; côté serveur, `quick-xml` (lecture des relevés CAMT.053,
+  [#789](https://github.com/guycorbaz/kesh/issues/789), prévue juste après cette version), `zip`
+  ([#790](https://github.com/guycorbaz/kesh/issues/790) — l'extraction visée par les avis n'est pas employée par Kesh),
+  `lopdf` ([#791](https://github.com/guycorbaz/kesh/issues/791) — Kesh ne lit aucun PDF reçu) et `rsa`, tiré par le
+  pilote de base de données, sans version corrigée à ce jour
+  ([#252](https://github.com/guycorbaz/kesh/issues/252)).
 
 ## [0.15.0] — 2026-10-24
 

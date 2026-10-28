@@ -29,8 +29,9 @@ use crate::middleware::auth::CurrentUser;
 ///   C-32-4a-4) ;
 /// - `DocumentsRead` — la liste des pièces importées, métadonnées seules
 ///   (32-9b, `services::pieces`) ;
-/// - `PromptsWrite` — aucun service encore (la proposition d'un prompt par un
-///   agent vient avec les stories suivantes de l'Epic 32).
+/// - `PromptsWrite` — la proposition d'un prompt par un agent, une version
+///   **à valider** qu'aucune clé ne peut approuver (`prompts_mcp::proposer`,
+///   32-10a-iii).
 pub use kesh_db::entities::McpScope as Portee;
 
 /// Canal par lequel arrive une lecture.

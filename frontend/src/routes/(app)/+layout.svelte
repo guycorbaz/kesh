@@ -167,11 +167,25 @@
 					fallback: 'Restaurer / Importer',
 					href: '/admin/restore',
 				},
+				// Story 32-7 (refs #723) — l'écran du serveur MCP : activation, filtre
+				// d'adresse et clés ; tenu avec les deux écrans suivants (envois, prompts).
+				{
+					i18nKey: 'nav-admin-mcp',
+					fallback: 'Serveur MCP',
+					href: '/admin/mcp',
+				},
 				// Story 32-8c (refs #723) — les envois du serveur MCP à valider.
 				{
 					i18nKey: 'nav-admin-mcp-sends',
 					fallback: 'Envois du serveur MCP',
 					href: '/admin/mcp/sends',
+				},
+				// Story 32-10b (refs #723) — les prompts du serveur MCP, leur historique
+				// et l'approbation des propositions d'un agent.
+				{
+					i18nKey: 'nav-admin-mcp-prompts',
+					fallback: 'Prompts du serveur MCP',
+					href: '/admin/mcp/prompts',
 				},
 			],
 		},

@@ -693,3 +693,138 @@
 - **Alternatives** : omettre la ligne incohérente (changer le dépôt de la 32-10a-i pour rendre des `Result` par
   ligne) — plus de code, et une corruption silencieuse.
 - **Réversible** : oui.
+
+## Choix du développement de la 32-10a-iii (2026-10-27, Opus 5.5, en autonomie)
+
+### C-32-10a-100 — Une variante d'erreur d'outil propre au plafond des prompts
+
+- **Contexte** : la fiche (AC-iii2, point 1) fait gagner à `ErreurOutil` une variante `LimiteAtteinte` ; la 32-8b l'a
+  déjà créée, avec le texte des **envois** (« Trop d'envois attendent la validation… »), faux pour une proposition de
+  prompt.
+- **Retenu** : une variante neuve, `ErreurOutil::PropositionsTropNombreuses`, au texte propre
+  (`TEXTE_PROPOSITIONS_TROP_NOMBREUSES`), journalisée `limite_atteinte` comme celle des envois (`issue_d_erreur`) —
+  l'issue fermée de l'AC-iii5 ne change pas ; `MotifArgument::Reserve` (texte `TEXTE_NOM_RESERVE`) comme prévu.
+- **Alternatives** : réemployer `LimiteAtteinte` (texte faux) ; la paramétrer (champ libre, contraire à l'AC-a20).
+- **Réversible** : oui.
+
+### C-32-10a-101 — Le nom de l'outil défini par le service, réexporté par `mcp::textes`
+
+- **Retenu** : `OUTIL_PROPOSER_PROMPT` est une constante de `services::prompts_mcp` (le service l'écrit au journal de
+  l'appel, `entree_appel` exigeant un `&'static str`) ; `mcp::textes` la réexporte (`pub use`), sans que
+  `services/` nomme `crate::mcp`. La traduction des refus, `depuis_refus_de_proposition`, vit dans `mcp::textes`
+  (publique `#[doc(hidden)]`, comme `depuis_app_error`) pour être éprouvée par `tests/mcp_traduction.rs`.
+- **Réversible** : oui.
+
+### C-32-10a-102 — Les routes lisent l'historique hors de la transaction, puis appellent le dépôt en premier
+
+- **Contexte** : #783 point 1 (précondition de lecture en `REPEATABLE READ`) ; D2 (revalider avant d'approuver) et
+  F8 (savoir si le prompt a une version approuvée, pour le détail d'audit du refus) demandent une lecture préalable.
+- **Retenu** : ces lectures (`mcp_prompts::historique`) se font sur le **pool**, hors de la transaction ; chaque
+  transaction appelle le dépôt **avant toute lecture**. Sûr parce qu'une version ne change jamais de contenu et qu'un
+  état décidé est terminal : une approbation concurrente ne peut que faire omettre un nom devenu servi (le sens
+  prudent). La précondition est écrite au doc-comment d'`EcriturePrompts::proposer` et en tête de
+  `routes/mcp_prompts.rs`, et prouvée par `plafond_juste_apres_l_attente_du_verrou` (mutation Miii13 tuée).
+- **Alternatives** : rendre les lectures du dépôt verrouillantes (touche `kesh-db`, hors des modules de la iii).
+- **Réversible** : oui.
+
+### C-32-10a-103 — La documentation hors de la partie iii
+
+- **Contexte** : la note #783 point 1 demande aussi d'écrire la précondition au Pattern 5 de
+  `docs/MULTI-TENANT-SCOPING-PATTERNS.md` ; la règle d'inclusion appellerait une ligne de CHANGELOG ; le compte « N des
+  M routes à verbe mutant » du manuel (D5, déjà faux) change. La documentation serait un **sixième** module (fiche,
+  § *Le découpage* : iii = 5 modules sans la documentation), ce qu'interdit la consigne de l'orchestrateur.
+- **Retenu** : rien n'est écrit dans `docs/`, le manuel ni le CHANGELOG par la iii ; la précondition vit dans les
+  doc-comments de `kesh-api` (C-32-10a-102). **Demandé à l'orchestrateur** : la ligne du Pattern 5 et l'entrée du
+  CHANGELOG (proposition d'un agent, routes de gestion, journal de `prompts/get`) — dans la PR de la iii ou à la
+  32-10b, qui porte déjà le manuel et le compte des routes (`admin-manual.tex` ≈ l. 3022 : « 122 des 128 », registre
+  après la iii : 135 routes, 129 tracées).
+- **Réversible** : oui.
+- *Annotation du 2026-10-27 (remédiation de la revue de code P1, décision de l'orchestrateur sur A1, A2, E2)* : la
+  ligne du Pattern 5, une phrase de doc-comment sur les écritures de `repositories/mcp_prompts.rs` (commentaire
+  seulement, d'où le gate complet), l'entrée du CHANGELOG et la phrase et la ligne `proposer_prompt` de la matrice du
+  manuel d'administration (`sec:mcp-outils`, PDF régénéré) sont **écrites par la iii**. Reste à la 32-10b : le compte
+  « N des M routes à verbe mutant » (D5).
+
+### C-32-10a-104 — La forme du détail (D1) : textes enregistrés et servis, chacun exact et visible
+
+- **Retenu** : pour chaque version, `description` et `texte` **enregistrés** (`{exact, visible}`, nuls pour un
+  retrait), `servable` = `composer_version(…).is_ok()`, `descriptionServie` et `texteServi` (`{exact, visible}`, nuls
+  si non servable), noms de l'auteur, du décideur et de la clé, `cleRevoquee`, `creeLe`, `decideLe` ; au prompt,
+  `version`, `numeroEnVigueur`, `standardDiffere`, `standardDuCode` (`{description, texte}` rendus, nul hors standard
+  ou standard retiré du code), `modifieLe`. Les noms de champs suivent ceux de D1 (français, camelCase). Les textes
+  enregistrés rendus visibles laissent l'écran montrer une version non servable sans logique Unicode.
+- **Réversible** : oui (la 32-10b n'est pas encore écrite).
+
+### C-32-10a-105 — Le service refuse le nom en `kesh` avant le dépôt (défense doublée)
+
+- **Retenu** : `proposer` contrôle `nom_conforme` et `nom_reserve` (AC-iii3) bien que le dépôt les contrôle aussi
+  avant le verrou ; la mutation du seul contrôle du service (Miii11a) **survit** — attendu, déclaré ; la mutation des
+  deux (Miii11b) est tuée. Même situation que B4 = E5 de la ii.
+- **Réversible** : oui.
+
+### C-32-10a-106 — Une proposition s'ajoute à tout prompt non standard ; l'approbation fait garde (revue de code P1, E6 = A3)
+
+- **Contexte** : `proposer_version_agent_in_tx` ajoute une version `pending` à **tout** prompt non standard existant de
+  la société — prompt d'administrateur, prompt retiré, prompt dont toutes les versions ont été refusées ; C-32-10a-27
+  ne refuse que les noms en `kesh`. La description servie à l'agent disait « sur un nom déjà proposé ».
+- **Fondement — la règle de Guy** (transmise par l'orchestrateur le 2026-10-27), citée mot pour mot : « le prompt
+  proposé par l'agent doit être validé et approuvé par un utilisateur, et un agent ne peut pas directement modifier un
+  prompt validé ». Une proposition reste une version « à valider », jamais servie avant l'approbation d'un
+  administrateur, et **aucune écriture d'agent ne modifie la version en vigueur**.
+- **Vérifié au code** (`c96fea3b`, lignes lues) :
+  - `prompts/get` et `prompts/list` ne servent que la version **approuvée** de plus grand numéro, de nature texte :
+    `NUMERO_EN_VIGUEUR_SQL` (`kesh-db/src/repositories/mcp_prompts.rs:59-60`, `… WHERE x.prompt_id = p.id AND x.state
+    = 'approved'`), employé par `requete_en_vigueur` (`:259`, `:265`), qu'appellent `en_vigueur_par_societe` (`:274`)
+    et `en_vigueur_par_nom` (`:300`) — les seules lectures de `LecturePrompts` (`kesh-api/src/services/poignees.rs:94`,
+    `:103`).
+  - L'outil n'a qu'un chemin d'écriture : `mcp/prompts.rs:227` → `prompts_mcp::proposer` → `EcriturePrompts::proposer`
+    (`poignees.rs:187`, seule méthode d'écriture de la poignée) → `proposer_version_agent_in_tx` (`mcp_prompts.rs:610`),
+    qui **insère** une version `Etat::EnAttente` (`:660`) — elle ne met à jour aucune version existante ; son seul
+    `UPDATE` est celui du verrou optimiste du prompt (`inserer_version`, `:436`).
+  - Le seul `UPDATE mcp_prompt_versions` du dépôt (`:727`, état et décision) est dans `decider`, appelé par
+    `approuver_in_tx`/`refuser_in_tx`, qu'appelle **seule** la route d'approbation ou de refus
+    (`routes/mcp_prompts.rs:719` et le refus), dans `admin_routes` : session d'Administrateur, PAT 403, clé MCP 401.
+    `ajouter_version_admin_in_tx` (`:638`) et `revenir_au_standard_in_tx` (`:825`) ne sont appelés que par les routes.
+    **Aucun chemin d'agent n'approuve ni ne remplace la version en vigueur.**
+- **Retenu** (décision de l'orchestrateur, conforme à la règle) : **le comportement reste tel quel** — rien
+  n'est servi sans l'approbation d'un administrateur, qui fait garde. La description de `proposer_prompt` est rendue
+  exacte et dit en clair que la proposition attend l'approbation et que la version en vigueur reste servie d'ici là
+  (« … jamais servie avant qu'il l'approuve dans Kesh ; d'ici là, la version en vigueur du prompt reste servie,
+  inchangée … sur le nom d'un prompt existant — écrit par un administrateur ou retiré compris —, la proposition en
+  devient une nouvelle version, elle aussi à valider »).
+- **Les deux effets, et leurs bornes** : chaque proposition incrémente la `version` du prompt, donc (1) fait échouer en
+  **409** une édition en cours de l'administrateur sur ce prompt (il relit et recommence), et (2) rend **non
+  approuvable** (`PasLaDerniere`, 409) la proposition antérieure encore à valider sur le même prompt, d'une autre clé
+  comprise — une clé peut ainsi tenir en échec l'approbation des propositions d'une autre. Borne : le **plafond de
+  vingt** propositions à valider par société (au-delà, plus aucune proposition), et la révocation de la clé ; un
+  refus des propositions en trop rend la dernière approuvable. À dire à l'administrateur par la 32-10b.
+- **Réversible** : oui (refuser la proposition sur un prompt d'administrateur : une ligne au dépôt).
+- *Annotation du 2026-10-27 (décision de Guy, transmise par l'orchestrateur)* : Guy maintient le comportement en
+  l'état — « on laisse comme ça et on traitera le cas échéant ». Les deux effets de bord (le 409 sur une modification
+  en cours de l'administrateur, la proposition antérieure rendue non approuvable) sont tracés par la **KF-055, issue
+  #796**. Pour la 32-10b : en cas de 409, l'écran de modification d'un prompt conserve le texte saisi (note d'étape 0
+  de la fiche).
+
+### C-32-10a-107 — Un geste de l'administrateur écrit le nom d'un prompt d'agent jamais approuvé (revue de code P1, B7 = A6)
+
+- **Contexte** : F8 (P14) omet le `nom` du détail d'audit du **refus** d'une proposition d'un prompt qui n'a aucune
+  version approuvée. `mcp_prompt.version_created` (nouvelle version ou **retrait** de l'administrateur) écrit toujours
+  `nom`, y compris sur un prompt créé par une proposition d'agent jamais approuvée.
+- **Retenu** : gardé tel quel — c'est un geste **de l'administrateur**, qui a vu le nom et l'a fait sien en agissant
+  sur ce prompt ; le nom entre au journal exporté comme celui d'un prompt qu'il aurait créé. AC-iii9 ne restreint F8
+  qu'au refus. Reste écrit de P14 : un retrait posé pour écarter une proposition laisse son nom au journal ; le
+  **refus** est le geste qui ne le laisse pas, à dire à l'administrateur par la 32-10b.
+- **Alternatives** : appliquer la règle de `detail_du_refus` à `version_created` (un détail d'audit qui dépend de
+  l'historique, pour un cas étroit).
+- **Réversible** : oui.
+
+### C-32-10a-108 — `proposer_prompt` n'est pas un nom réservé du registre : angle mort écrit (revue de code P1, B3)
+
+- **Contexte** : `registre::NOMS_RESERVES` ne porte que `kesh_lire_envoi` ; un outil de registre nommé
+  `proposer_prompt` serait masqué pour une clé `prompts:write` (le répartiteur résout le nom réservé d'abord) et servi
+  aux autres, et `tools/list` le listerait deux fois. `proposer_prompt_hors_registre` ne l'éprouve que sur
+  `Registre::standard()`.
+- **Retenu** : **angle mort écrit**, aucun code — inatteignable aujourd'hui (aucun outil du registre n'a ce nom, et le
+  test le fige pour le registre de production), et l'AC-iii2 interdit de toucher `registre.rs`. Une story qui touche
+  `registre.rs` ajoute le nom à `NOMS_RESERVES`.
+- **Réversible** : oui.

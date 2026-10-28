@@ -1,6 +1,6 @@
 # Story 32.10a : les prompts MCP en base 🗄️
 
-Status: ready-for-dev
+Status: done
 
 *Fiche rédigée le 2026-10-25, en autonomie (Opus 5.5), worktree `kesh-32-10a`, branche `story/32-10a` partie de `main`
 `d993106c` (32-5a et 32-5b fusionnées). Registre : `epic-32-choix-autonomes-3210a.md` (C-32-10a-1 à C-32-10a-34). Clé
@@ -1036,14 +1036,14 @@ d'une, c'est un écart déclaré, qui touche `routes` et l'audit.
 - [x] **T-ii4** — gardes (AC-ii10) ; mutations Mii2 à Mii13 (Mii1 retirée), gates.
 
 ### 32-10a-iii
-- [ ] **T-iii0** — étape 0 : 32-10a-ii et 32-6b fusionnées ; recomptes d'`admin_pat_denied_e2e.rs`,
+- [x] **T-iii0** — étape 0 : 32-10a-ii et 32-6b fusionnées ; recomptes d'`admin_pat_denied_e2e.rs`,
   `audit_route_registry.rs`, `audit_labels.rs`, `FABRIQUES_V2` ; les deux contraintes de la revue de code P1 de la ii
   (§ *À recontrôler à l'étape 0* : contenu normalisé enregistré, `composer_version` à la route de détail).
-- [ ] **T-iii1** — `EcriturePrompts`, `proposer_prompt`, service `proposer` (AC-iii1 à AC-iii4).
-- [ ] **T-iii2** — journal (AC-iii5).
-- [ ] **T-iii3** — routes de gestion, gardes, validation, audit, libellés, registre des routes (AC-iii6 à AC-iii10).
-- [ ] **T-iii4** — tests de l'approbation par mégarde, journal du serveur, inventaire (AC-iii11 à AC-iii13) ; mutations
-  Miii1 à Miii12, gates.
+- [x] **T-iii1** — `EcriturePrompts`, `proposer_prompt`, service `proposer` (AC-iii1 à AC-iii4).
+- [x] **T-iii2** — journal (AC-iii5).
+- [x] **T-iii3** — routes de gestion, gardes, validation, audit, libellés, registre des routes (AC-iii6 à AC-iii10).
+- [x] **T-iii4** — tests de l'approbation par mégarde, journal du serveur, inventaire (AC-iii11 à AC-iii13) ; mutations
+  Miii1 à Miii12 (et Miii13 à Miii16, gardes neuves), gates.
 
 ## Tests et mutations prévus
 
@@ -1544,6 +1544,8 @@ propres amendements de ces fichiers s'écrivent sur cet état, recompté à l'é
   - **D1, champs du détail (validation P4 de la 32-10b, 2026-10-27)** : `GET /api/v1/admin/mcp/prompts/{id}` rend aussi la `version` du prompt (le verrou de l'approbation, AC-7 de la 32-10b) et, pour chaque version, `numero`, `origine`, `etat` et `nature`.
   - Ces amendements (D1, D1 étendu, D2) restent dans les modules déjà comptés de la 32-10a-iii (routes de gestion, `services/`), sans en ajouter un. S'ils les font dépasser, s'arrêter et rendre compte.
 
+- **Pour la 32-10b (revue de code P1 de la 32-10a-iii, E6 = A3 ; décision de Guy du 2026-10-27, KF-055, issue #796)** — à constater à l'étape 0 : une proposition d'agent sur le nom d'un prompt existant incrémente sa `version` (C-32-10a-106). **En cas de 409, l'écran de modification d'un prompt conserve le texte saisi** : l'administrateur relit l'historique et réenregistre sans retaper. L'écran dit aussi qu'une proposition antérieure encore à valider n'est plus approuvable quand une version plus récente existe (la refuser, puis approuver la dernière). Guy maintient le comportement : « on laisse comme ça et on traitera le cas échéant ».
+
 - **Pour la 32-10a-iii (revue de code P1 de la 32-10a-ii, 2026-10-27 ; E1, E6, B1, A2)** — deux contraintes, à
   constater à l'étape 0 :
   - **La iii enregistre le contenu normalisé**, celui que rend `services::prompts_mcp::valider_contenu`
@@ -1568,6 +1570,8 @@ propres amendements de ces fichiers s'écrivent sur cet état, recompté à l'é
 Partie i : Opus 5.5 (Claude Code), en autonomie, worktree `kesh-32-10a`, branche `story/32-10a-dev`, 2026-10-27.
 Partie ii : Opus 5.5 (Claude Code), en autonomie, worktree `kesh-32-10a`, branche `story/32-10a-ii`, partie de
 `origin/main` à `dbe0da15` (32-10a-i fusionnée), 2026-10-27.
+Partie iii : Opus 5.5 (Claude Code), en autonomie, worktree `kesh-32-10a`, branche `story/32-10a-iii`, partie de
+`origin/main` à `209e978f` (32-10a-i et 32-10a-ii fusionnées), 2026-10-27.
 
 ### Statut des parties
 
@@ -1575,9 +1579,89 @@ Partie ii : Opus 5.5 (Claude Code), en autonomie, worktree `kesh-32-10a`, branch
 |---|---|
 | 32-10a-i | done |
 | 32-10a-ii | done |
-| 32-10a-iii | ready-for-dev |
+| 32-10a-iii | done |
 
 ### Completion Notes List
+
+#### 32-10a-iii (2026-10-27)
+
+**Étape 0** (lignes lues, citées) :
+- Base : `git log -1` → `209e978f` (« Story 32-10a-ii … (#787) »), branche `story/32-10a-iii`, copie propre. La 32-6b est
+  fusionnée : `journaliser_appel` (`services/serveur_mcp.rs`, avant développement `:212`), `IssueAppel` à douze
+  variantes dont **`LimiteAtteinte` déjà présente** (32-8b), `entree_appel(cle: &CleMcpAuthentifiee, outil:
+  &'static str, issue, duree_ms, envoi)` (`:178-184`) — appelée par la iii avec `envoi: None`.
+- **`composer_version` et `RefusVersion`** publics (`services/prompts_mcp.rs:256`, `:229`) : la route de détail les
+  appelle (`routes/mcp_prompts.rs`, `version_detail`), `servable` = `composer_version(…).is_ok()`, jamais
+  `valider_contenu` seule ; D2 aussi (`revalider`). Aucune copie.
+- **Contenu normalisé enregistré** (E6 de la revue P1 de la ii) : `proposer`, `creer_prompt`, `contenu_de` passent
+  `ContenuPrompt::description()` / `::texte()` au dépôt ; test `validation_des_ecritures` (16 005 caractères reçus dont
+  cinq `\r\n` → 201, forme normalisée relue en base).
+- **#783 point 1** (lu `repositories/mcp_prompts.rs:589-660` : `verrouiller_societe` puis `SELECT COUNT(*)` simple, puis
+  `inserer_version` et son `MAX(number) + 1` simple, `:394-400`) : la précondition est tenue par construction —
+  `EcriturePrompts::proposer` ouvre la transaction et appelle le dépôt aussitôt ; les routes lisent l'historique sur le
+  pool, hors transaction (C-32-10a-102) ; écrite aux doc-comments (`services/poignees.rs`, en tête de
+  `routes/mcp_prompts.rs`) ; **test de concurrence** `plafond_juste_apres_l_attente_du_verrou` (mutation Miii13 : une
+  lecture simple avant le verrou → `Ok("p-vingt-et-un")` au lieu de `PlafondAtteint`, tuée). La ligne du Pattern 5 de
+  `docs/MULTI-TENANT-SCOPING-PATTERNS.md` : non écrite (sixième module), demandée (C-32-10a-103).
+- **#783 point 4** (la clé de la société) : `cles_mcp::authentifier` (`services/cles_mcp.rs:73-117`) ne rend une
+  `CleMcpAuthentifiee` que pour une clé dont `company_id` est celui de son créateur (requête
+  `find_active_auth_by_key_hash`, jointure `u.company_id = k.company_id`), et `CleMcpAuthentifiee` ne se construit que
+  là (garde `contexte_acces_mcp_construit_par_authentifier_seul`) ; `proposer` tire société **et** clé de la même
+  `CleMcpAuthentifiee`. Mutation Miii15 (société décalée) tuée.
+- **D1, D1 étendu, son complément, champs du détail** : `historique` rend les noms et la révocation de la clé
+  (`entities/mcp_prompt.rs:266`, `VersionHistorique`) ; `en_vigueur`, `differe_du_standard`, `contenu_attendu`
+  (`:441`, `:464`, `:450`) ; composition dans `services/` (garde N1 inchangée, `LIB_NOMME_MCP` non élargi). Forme :
+  C-32-10a-104. Test `detail_texte_servi_egal_a_prompts_get` (égalité octet pour octet avec `prompts/get`).
+- **D2** : `revalider` (400, mêmes messages que la création) ; test `approbation_revalide_le_contenu`, Miii14 tuée.
+- **D5** : `admin-manual.tex:3022` porte « 122 des 128 » ; registre après la iii : 135 routes, 129 tracées — non
+  touché (32-10b, C-32-10a-103).
+- **Le `\r` restauré** : traité en ii (C-32-10a-81) ; la iii enregistre le contenu normalisé.
+- **Recomptes** : `ADMIN_COUPLES` 42 → 49, répartition `(12, 30)` → `(14, 35)`, `discriminating` 10 → 12 ;
+  `audit_route_registry.rs` 130 → 135 routes, 124 → 129 tracées, 105 → 110 sans écriture au journal, 133 → 138 au
+  registre ; `audit_labels.rs` 32 → 33 types, 127 → 133 actions (`awk '/^pub const ENTITY_TYPES/,/^\];/' … | grep -cE
+  '^\s+"[a-z_]+",'` → 33 ; idem `ACTIONS` → 133 ; `grep -c '^audit-log-entity-'` et `'^audit-log-action-'` → 33 et 133
+  dans les quatre locales) ; commentaire de `fr-CH/messages.ftl` réécrit (« 28 types, 93 actions » était faux) ;
+  `FABRIQUES_V2` + `EcriturePrompts::new`, `MOTIF_V2` + `\bEcriturePrompts::new\(`.
+- **Modules** : `mcp`, `services`, `routes` (`lib.rs` compris), `audit_labels`, `kesh-i18n` — **cinq** ; `kesh-db` non
+  touché (`git diff origin/main --stat -- crates/kesh-db` vide), `registre.rs` et `politique.rs` non touchés.
+
+**Ce qui est livré** : `EcriturePrompts` (une méthode, sans `pool()`) ; service `prompts_mcp::proposer`
+(`EXIGENCE_PROPOSER`, arguments stricts, contenu normalisé, nom, écriture et audit `mcp.tool_called` dans une
+transaction) ; `proposer_prompt` hors registre et hors politique, listé sous `prompts:write` après `kesh_lire_envoi`
+(`readOnlyHint: false`), accusé constant au nom validé ; `prompts/get` journalisé (`mcp.prompt_served`, fail closed) ;
+sept routes `admin_routes` ; audit sans texte (F8 tenu par `detail_du_refus`) ; six actions et un type, libellés et 18
+messages `mcp-prompt-*` dans les quatre locales ; registres recomptés. Choix C-32-10a-100 à C-32-10a-105.
+
+**Tests** (périmètre `origin/main..HEAD`, `#[test]`/`#[sqlx::test]` recomptés aux deux bornes) : **18 fonctions
+neuves** — `tests/mcp_prompts_e2e.rs` 8 → 16, `tests/mcp_prompts_admin_e2e.rs` 0 → 7 (neuf),
+`tests/mcp_traduction.rs` 2 → 3, `tests/mcp_transport_e2e.rs` 36 → 37 (`proposer_prompt_hors_registre`),
+`services/serveur_mcp.rs` 1 → 2 ; amendés : `tools_list_filtre`, `prompts_lus_par_leur_service`, `ac10_v2_*` et les
+témoins de `MOTIF_V2`, les compteurs d'`admin_pat_denied_e2e.rs` et d'`audit_route_registry.rs`.
+
+**Mutations** (`kesh-gate-logs/mutations-3210aiii.py`, journaux `3210a-iii-mut-<id>.log`, bilan
+`3210a-iii-mutations.log` ; une à la fois, restaurées par `git checkout -- f && touch f`, diff nul vérifié) — **20
+jouées, 19 tuées, 1 survit (attendue)** : Miii1 à Miii12 (Miii5 sous trois formes : best-effort, non journalisé, nom du
+client ; Miii6 sous deux : texte au détail, nom d'une proposition jamais approuvée ; Miii11 sous deux) et quatre
+gardes neuves — Miii13 (lecture avant le verrou), Miii14 (D2), Miii15 (société de la clé), Miii16 (D1). **Miii2**
+est tuée par la contrainte `chk_mcp_prompt_versions_agent`, non par l'assertion de l'AC-iii4 (montages en échec) ;
+**Miii11a** (contrôle du préfixe retiré du seul service) **survit** — défense doublée, le dépôt refuse avant le verrou
+(C-32-10a-105) ; Miii11b (les deux) tuée. ⚠️ La première série a été interrompue par un délai pendant Miii16 : le
+fichier muté a été restauré (`git checkout -- routes/mcp_prompts.rs && touch`, diff nul), Miii16 rejouée seule.
+
+**Gates, au dernier commit de code** (`6784e077`) : base `kesh_3210aiii` remise à zéro (compte `kesh` : `DROP`,
+`CREATE DATABASE`, `sqlx migrate run` des migrations du worktree, seed, en commandes séparées) ;
+`scripts/test-fast.sh --ci` sous `flock` : **4422 passés / 4422, 7 ignorés** (fmt, clippy `-D warnings` compris ;
+4404 au gate de la ii + 18 tests neufs ; `kesh-gate-logs/3210a-iii-gate-complet.log`) ; frontend : `check` 0 erreur
+(29 avertissements), `lint-i18n-ownership` vert, `test:unit` **1976 / 1976** (167 fichiers), `build` vert
+(`3210a-iii-frontend.log`) ; **E2E complet** (port 3338, base `kesh_e2e_3210aiii`, dossiers
+`/tmp/kesh-e2e-3210aiii-a/{inbox,documents,backup}`) : un premier run sans les dossiers passés au **runner** a rendu
+11 échecs (les sept KF-029 et quatre specs qui comparent le dossier du runner à celui du backend :
+`backup-restore-new-install:140`, `:262`, `inbox-import:59`, `supplier-documents:78` — erreur de montage,
+`3210a-iii-e2e.log`) ; **rejoué en entier** avec les dossiers passés au runner : **317 passés, 7 échoués, 17 ignorés**
+— exactement les sept KF-029 (`mode-expert:26`, `:41`, `onboarding-path-b:65`, `:92`, `onboarding:57`, `:77`, `:150`)
+(`3210a-iii-e2e-b.log`). Au démarrage : « prompts standard du serveur MCP amorcés societes=1 creations=2 ». Backend
+tué par le PID de son binaire (4015817, cwd du worktree), port 3338 libre ensuite. PDF : non régénérés (aucun `.tex`
+touché, C-32-10a-103). Recette visuelle : sans objet (aucun écran ; l'écran est la 32-10b).
 
 #### 32-10a-ii — remédiation de la revue de code P1 (2026-10-27)
 
@@ -1818,6 +1902,19 @@ C-32-10a-67 (une version orpheline échappe à `prompts_de_societe`, compensé d
 
 ### File List
 
+**32-10a-iii** :
+
+- `crates/kesh-api/src/services/{poignees.rs, prompts_mcp.rs, serveur_mcp.rs, acces.rs, mod.rs}`
+- `crates/kesh-api/src/mcp/{mod.rs, outil.rs, prompts.rs, repartiteur.rs, reponse.rs, textes.rs}`
+- `crates/kesh-api/src/routes/mcp_prompts.rs` (neuf), `routes/mod.rs`, `crates/kesh-api/src/lib.rs`,
+  `crates/kesh-api/src/audit_labels.rs`
+- `crates/kesh-i18n/locales/{fr-CH,de-CH,it-CH,en-CH}/messages.ftl`
+- `crates/kesh-api/tests/mcp_prompts_admin_e2e.rs` (neuf), `tests/{mcp_prompts_e2e.rs, mcp_traduction.rs,
+  mcp_transport_e2e.rs, mcp_gardes_lexicales.rs, services_motif.rs, admin_pat_denied_e2e.rs,
+  audit_route_registry.rs}`
+- `_bmad-output/implementation-artifacts/{32-10a-prompts-en-base.md, epic-32-choix-autonomes-3210a.md,
+  32-10a-iii-review-prompt-p1.md (neuf), sprint-status.yaml}`
+
 **32-10a-ii** :
 
 - `crates/kesh-api/src/services/prompts_mcp.rs` (neuf), `services/{mod.rs, poignees.rs, acces.rs}`
@@ -1860,3 +1957,6 @@ C-32-10a-67 (une version orpheline échappe à `prompts_de_societe`, compensé d
 | 2026-10-27 | **développement 32-10a-ii** | Opus 5.5, en autonomie, branche `story/32-10a-ii` partie de `dbe0da15`. Étape 0 citée au Dev Agent Record : code de la 32-10a-i (dépôt, `en_vigueur`, `differe_du_standard`, standards, amorçage), D1 complément (composition dans `services/`, `LIB_NOMME_MCP` inchangé), `\r` restauré (texte contrôlé = texte servi), C-32-8-31 (description enregistrée en une ligne, servie avec `\n\n` après la marque), note de la 32-8b sur `tools/list`, prédicat de la 32-8b0 réemployé (`kesh-core` non touché), schéma `2025-11-25` relevé. Livré : `LecturePrompts` (pool en lecture seule du MCP, sans `pool()`), service `prompts_mcp` (`valider_contenu`, `marque_agent`, `composer`, `lister`, `obtenir`, `PromptServi`, `ErreurPrompts`), `PromptEnBase` seule implémentation du trait scellé amendé, `ReponseMcp::{ListePrompts, PromptRendu}`, répartiteur (`cursor` refusé, arguments ignorés, `-32603` fixe), CHANGELOG ; gardes `prompts_scelles` (amendée), `prompts_lus_par_leur_service`, `service_des_prompts_sans_poignee_des_livres` ; `e1_rien_ne_part_sous_cle_requise` amendé. 16 tests neufs ; 12 mutations (Mii2 à Mii13), 12 tuées (Mii5, Mii6 reformulées). Gate complet 4387/4387 ; frontend 1976 ; E2E 317 + 7 KF-029. Modules : trois de code et la documentation. Choix C-32-10a-80 à 93. Prompt de revue P1 : `32-10a-ii-review-prompt-p1.md` (Opus, B, E, A). |
 | 2026-10-27 | **Revue de code P1 (32-10a-ii) — REMÉDIÉE** | **Opus ×3** (lentilles B, E, A, contexte frais, prompt `32-10a-ii-review-prompt-p1.md` ; rapports `kesh-gate-logs/3210a-ii-review-p1-{B,E,A}.md`) : B 0/0/1/6, E 0/0/1/7, A 0/0/0/7 ⇒ **trend P1 : 0 CRITICAL / 0 HIGH / 2 MEDIUM / 20 LOW** en somme des lentilles, soit **un seul MEDIUM distinct** (convergence B1 = E1 = A2 : la décision « origine → marque » hors de la fonction partagée — A2 classé LOW par A ; doublons B2 = A5, B3 = E7, B4 = E5, B7 = A7, E3 ⊂ E1). Fusion préalable d'`origin/main` (32-9b, #785 ; garde (vi) à seize fichiers ; `fff925c1`). **MEDIUM remédié** : `composer_version` publique, `OrigineVersion` et `RefusVersion` propres aux services, `composer` privée (C-32-10a-94). **LOW remédiés** : B2 = A5 (nom revalidé, C-32-10a-95), E2 (tri octet pour octet testé ; collation mesurée par P1M5), E3, A3, A4, A6, B5 ; **écrits** : E4 (C-32-10a-96), E6 (doc-comment et étape 0 de la iii). **LOW à tracer en issue** (orchestrateur) : B3 = E7, B4 = E5, B6, E8 ; B7 = A7 déjà à la 32-11 ; A1 traité par la fusion. Commit de code `8afeeb7e` : 4 tests neufs ; mutations P1M1 à P1M10, 10 tuées par le test visé ; gate complet **4404/4404** ; frontend 1976 ; E2E 316 passés, 8 échoués = 7 KF-029 + KF-052 (rejouée seule : échoue). **1 passe sur 8.** La remédiation touche la production (`services/prompts_mcp.rs`) : passe suivante **ciblée**, regression hunter, **Sonnet**, sur `8afeeb7e` — `32-10a-ii-review-prompt-p2.md`, rapport `kesh-gate-logs/3210a-ii-review-p2.md`. |
 | 2026-10-27 | **Revue de code (32-10a-ii) — REVUE TERMINÉE EN 2 PASSES** | **Trend** : P1 (Opus ×3, lentilles B, E, A, passe complète ; rapports `kesh-gate-logs/3210a-ii-review-p1-{B,E,A}.md`) B 0/0/1/6, E 0/0/1/7, A 0/0/0/7 ⇒ **0/0/2/20** en somme des lentilles, un seul MEDIUM distinct (B1 = E1 = A2, la décision « origine → marque » hors de la fonction partagée) → P2 (**Sonnet**, passe ciblée, une lentille *regression hunter*, sur le seul commit de remédiation `8afeeb7e` ; prompt `32-10a-ii-review-prompt-p2.md`, rapport `kesh-gate-logs/3210a-ii-review-p2.md`) **0/0/0/3** (R1 : deux gardes de `composer_version` couvertes par le test mais sans mutation jouée ; R2 : `From<Origine>` public, le doc-comment du module à préciser ; R3, antérieur : `interne` journalise le `{e}` d'un `DbError` de décodage). **Clôture** sur une passe sans finding au-dessus de LOW (règle du 2026-10-23). **Modèles** : Opus (P1), Sonnet (P2). Aucun reclassement de sévérité. **LOW tracés** dans l'issue **#786** : les quatre de la P1 non remédiés (B3 = E7, B4 = E5, B6, E8) au corps, les trois de la P2 (R1 à R3) en commentaire ; B7 = A7 reste à la 32-11 (C-32-10a-29). **Gates du dernier commit de code `8afeeb7e`** (mesurés à la remédiation P1, rien de code depuis) : gate complet **4404/4404**, 7 ignorés ; frontend **1976/1976** ; E2E complet **316 passés + 7 KF-029 + KF-052** (`sidebar-navigation.spec.ts:75`, rejouée seule : échoue). **2 passes sur 8.** Partie ii → `done`. |
+| 2026-10-27 | **développement 32-10a-iii** | Opus 5.5, en autonomie, branche `story/32-10a-iii` partie de `209e978f`. Étape 0 citée au Dev Agent Record (32-6b fusionnée, `LimiteAtteinte` déjà livrée par la 32-8b → C-32-10a-100 ; `composer_version` réemployé par la route de détail et par D2 ; contenu normalisé enregistré ; #783 points 1 et 4 recontrôlés, précondition prouvée par un test de concurrence ; D1, D2, D5, `\r` restauré) ; `EcriturePrompts`, service `proposer`, `proposer_prompt` (hors registre et hors politique, sous `prompts:write`), journal de `prompts/get` fail closed, sept routes de gestion (cinq mutantes), audit sans texte, six actions et un type (33 types, 133 actions), 18 messages dans les quatre locales, registres recomptés (49 couples admin, 135 routes, 129 tracées). 18 tests neufs ; 20 mutations jouées, 19 tuées, Miii11a survit (défense doublée, déclarée). Gate complet **4422/4422** (7 ignorés), front 1976/1976, E2E **317 passés + 7 KF-029** (rejoué après un premier run au montage incomplet). Choix C-32-10a-100 à 105 ; documentation (Pattern 5, CHANGELOG, compte des routes du manuel) hors des cinq modules, demandée à l'orchestrateur. Revue P1 à lancer : `32-10a-iii-review-prompt-p1.md` (Opus, B, E, A). |
+| 2026-10-27 | **Revue de code P1 (32-10a-iii) — REMÉDIÉE** | **Opus ×3** (lentilles B, E, A, contexte frais, prompt `32-10a-iii-review-prompt-p1.md` ; rapports `kesh-gate-logs/3210a-iii-review-p1-{B,E,A}.md`) : A 0/0/1/5, B 0/0/0/7, E 0/0/2/5 ⇒ **trend P1 : 0 CRITICAL / 0 HIGH / 3 MEDIUM / 17 LOW** en somme des lentilles (A1, E1, E2 ; doublons B6 = E4 = A4, B1 = E3, B7 = A6, E6 = A3). Remédiation (décisions de l'orchestrateur), commits de code `c96fea3b` et `592adf53` : **A1** précondition de lecture au Pattern 5 de `docs/MULTI-TENANT-SCOPING-PATTERNS.md` et en **commentaire** de `kesh-db/src/repositories/mcp_prompts.rs` (aucune ligne de code de `kesh-db`) ; **E1** test `proposer_refuse_hors_portee_avant_tout` (appel direct du service, clé `books:read`, arguments valides et invalides, verrou de société tenu, délai d'une seconde) ; **E2** manuel d'administration (`sec:mcp-outils` : phrase et ligne `proposer_prompt`), `mcp_matrice_manuel.rs` étendu à `PromptsWrite`, PDF régénéré (`make fr`, seul `admin-manual.pdf` change) et contrôlé aplati ; **A2** entrée du CHANGELOG ; **E6 = A3** description de `proposer_prompt` exacte et **règle de Guy** (« le prompt proposé par l'agent doit être validé et approuvé par un utilisateur, et un agent ne peut pas directement modifier un prompt validé ») dite à l'agent, au manuel et au CHANGELOG, vérifiée au code (lignes citées à C-32-10a-106) ; effets de bord maintenus par Guy, KF-055 (#796), note d'étape 0 pour la 32-10b (le texte saisi conservé sur 409) ; **B7 = A6** et **B3** consignés (C-32-10a-107, C-32-10a-108). LOW laissés pour issue : B1 = E3, B2, B4, B5, B6 = E4 = A4, A5, E5, E7. Grep du symptôme : « liste exacte », « outils de lecture » (`.tex`, PDF aplatis, README, site : seule la phrase corrigée ; README:233 et `roadmap.html` à la 32-11) ; « déjà proposé » → vide. **Mutations** P1M1 (`exiger` retiré) et P1M2 (`exiger` après les arguments) tuées par `proposer_refuse_hors_portee_avant_tout`, P1M3 (matrice ramenée aux portées de lecture) tuée par `matrice_du_manuel`. **Gates au dernier commit de code** (`592adf53`) : base remise à zéro, `test-fast.sh --ci` sous `flock` **4423/4423** (7 ignorés ; 4422 + 1) ; front 1976/1976, check 0 erreur, lint i18n vert, build vert ; **E2E complet** (dossiers neufs `/tmp/kesh-e2e-3210aiii-b/*` passés au backend et au runner) : 315 passés, 9 échoués, 17 ignorés — les sept KF-029, et `products.spec.ts:109` et `sidebar-navigation.spec.ts:75`, **rejoués seuls : verts** (pollution d'état, dans la fourchette 7 à 10 de `docs/testing.md`) ; backend tué par son PID (461266). Passe P2 ciblée à lancer : `32-10a-iii-review-prompt-p2.md` (Sonnet, regression hunter, sur `c96fea3b^..592adf53`, PDF aplati nommé). |
+| 2026-10-27 | **Revue de code (32-10a-iii) — REVUE TERMINÉE EN 2 PASSES** | **Trend** : P1 (**Opus ×3**, passe complète, lentilles A, B, E ; rapports `kesh-gate-logs/3210a-iii-review-p1-{A,B,E}.md`) A 0/0/1/5, B 0/0/0/7, E 0/0/2/5 ⇒ 0/0/3/17 en somme des lentilles → P2 (**Sonnet**, passe ciblée, une lentille regression hunter, sur la remédiation `c96fea3b^..592adf53` ; prompt `32-10a-iii-review-prompt-p2.md` ; rapport `kesh-gate-logs/3210a-iii-review-p2.md`) **0/0/0/2** (R1, R2, nés de la remédiation). **Clôture** sur une passe sans finding au-dessus de LOW. Modèles : Opus 5.5 (développement, remédiation, P1), Sonnet (P2). LOW de la P1 (B1 = E3, B2, B4, B5, B6 = E4 = A4, A5, E5, E7) et de la P2 (R1, R2) → **issue #794** ; effets de bord d'une proposition (409, proposition antérieure non approuvable), maintenus par Guy → **KF-055, issue #796**. **Gates du dernier commit de code** (`592adf53`) : gate complet **4423/4423** (7 ignorés), front **1976/1976**, E2E **315 passés, 9 échoués** — les sept KF-029, plus `products.spec.ts:109` et `sidebar-navigation.spec.ts:75`, verts rejoués seuls. Partie iii : **done** ; la 32-10a est entière (i, ii, iii **done**). |

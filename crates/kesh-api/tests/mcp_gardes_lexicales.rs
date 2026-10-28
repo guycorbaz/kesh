@@ -946,13 +946,16 @@ fn fichiers_nommant_le_depot(module: &str) -> Vec<String> {
     fichiers_par_forme(module, nomme_le_depot)
 }
 
-/// Les fichiers de `src/` qui peuvent nommer le dépôt des prompts : la poignée
-/// (`services/poignees.rs`, `LecturePrompts`) et les trois points d'entrée
-/// qui appellent `amorcer_standards` (AC-i11). La 32-10a-iii y ajoutera
-/// `routes/mcp_prompts.rs`. Aucun outil de données, aucun service, aucune autre
-/// route ne lit les prompts : **un agent ne relit jamais une proposition**.
+/// Les fichiers de `src/` qui peuvent nommer le dépôt des prompts : les deux
+/// poignées (`services/poignees.rs`, `LecturePrompts` et `EcriturePrompts`),
+/// les trois points d'entrée qui appellent `amorcer_standards` (AC-i11) et,
+/// depuis la 32-10a-iii, les routes de gestion de l'administrateur
+/// (`routes/mcp_prompts.rs`, dans `admin_routes`). Aucun outil de données,
+/// aucun service, aucune autre route ne lit les prompts : **un agent ne relit
+/// jamais une proposition**.
 const NOMMENT_LE_DEPOT_DES_PROMPTS: &[&str] = &[
     "main.rs",
+    "routes/mcp_prompts.rs",
     "routes/onboarding.rs",
     "routes/test_endpoints.rs",
     "services/poignees.rs",

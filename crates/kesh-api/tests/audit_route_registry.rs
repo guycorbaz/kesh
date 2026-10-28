@@ -24,13 +24,13 @@
 //! ⚠️ Comparer des NOMBRES ne détecterait pas une route retirée pendant qu'une
 //! autre est ajoutée : le compte resterait égal et la dérive invisible. Le test
 //! `admin_pat_denied_e2e` peut compter, lui, parce qu'il opère sur un bloc clos
-//! entre marqueurs ; les 129 routes sont réparties dans tout le fichier.
+//! entre marqueurs ; les 135 routes sont réparties dans tout le fichier.
 //!
 //! # Deux fichiers, deux volets
 //!
-//! L'ensemble clos de l'INVENTAIRE est celui de `lib.rs` (129 routes, dont
-//! `/mcp`, monté par `route_service` — Story 32-6a) ; celui du
-//! REGISTRE est plus large (132), car trois routes mutantes vivent dans
+//! L'ensemble clos de l'INVENTAIRE est celui de `lib.rs` (135 routes à la
+//! Story 32-10a-iii, dont `/mcp`, monté par `route_service` — Story 32-6a) ;
+//! celui du REGISTRE est plus large (138), car trois routes mutantes vivent dans
 //! `routes/test_endpoints.rs` et sont montées par un `nest()`. D'où :
 //!
 //! - volet « route absente du registre » → sur les **deux** fichiers, faute de
@@ -264,6 +264,9 @@
 //!   jetons complet, macros comprises, de chaque `.rs` de production) ; elle
 //!   n'est pas introduite ici.
 
+#[path = "common/manuel.rs"]
+mod manuel;
+
 use std::collections::{BTreeMap, BTreeSet};
 
 /// Statut d'examen d'une route mutante au regard du journal d'audit.
@@ -339,6 +342,17 @@ const LIB_ROUTES: &[(&str, &str, Status, Rejeu)] = &[
     // (`mcp_send.approved` / `.refused`), dans la transaction de la décision.
     // Elle n'écrit pas au journal comptable.
     ("post", "mcp_envois::decider_envoi", Traced, SansEcritureAuJournal),
+    // Story 32-10a-iii (refs #723) — les prompts du serveur MCP : prompt neuf
+    // (`mcp_prompt.created`), version d'administrateur (`.version_created`),
+    // approbation et refus d'une proposition (`.version_approved`,
+    // `.version_refused`), retour au standard (`.standard_restored`) — chacune
+    // dans la transaction de son écriture, verrou de société d'abord. Aucune
+    // n'écrit au journal comptable.
+    ("post", "mcp_prompts::creer_prompt", Traced, SansEcritureAuJournal),
+    ("post", "mcp_prompts::ajouter_version", Traced, SansEcritureAuJournal),
+    ("post", "mcp_prompts::approuver_version", Traced, SansEcritureAuJournal),
+    ("post", "mcp_prompts::refuser_version", Traced, SansEcritureAuJournal),
+    ("post", "mcp_prompts::revenir_au_standard", Traced, SansEcritureAuJournal),
     // Story 32-6a (refs #723) — l'endpoint `/mcp`, monté par `route_service`
     // (toute méthode, dont `POST`). Ses outils ne lisent qu'en lecture seule ;
     // il écrit la dernière utilisation de la clé et, depuis la 32-6b, l'entrée
@@ -892,13 +906,13 @@ fn the_registry_partition_is_what_the_story_declares() {
 
     assert_eq!(
         LIB_ROUTES.len(),
-        130,
-        "l'inventaire porte sur 130 routes (+ 1 : `/mcp`, 32-6a ; + 1 : la décision d'un \
-         envoi MCP, 32-8b)"
+        135,
+        "l'inventaire porte sur 135 routes (+ 1 : `/mcp`, 32-6a ; + 1 : la décision d'un \
+         envoi MCP, 32-8b ; + 5 : les routes mutantes des prompts du serveur MCP, 32-10a-iii)"
     );
     assert_eq!(traced + exempt + no_matter, LIB_ROUTES.len());
     assert_eq!(
-        traced, 124,
+        traced, 129,
         "73 tracées avant la 25-1b, plus ses 14, plus la dévalidation (25-2-b-1, #440), \
          plus l'annulation d'un règlement client (25-3-a-1) et fournisseur (25-3-a-2, #414), \
          plus l'annulation d'un rapprochement (25-3-b, #418), plus le solde du reste \
@@ -917,6 +931,7 @@ fn the_registry_partition_is_what_the_story_declares() {
          plus la création, la révocation et la politique de validation d'une clé du serveur \
          MCP et l'enregistrement de ses réglages (32-5c, refs #723), plus chaque appel \
          d'outil MCP (32-6b, #723), plus la décision d'un envoi du serveur MCP (32-8b, \
+         refs #723), plus les cinq routes mutantes des prompts du serveur MCP (32-10a-iii, \
          refs #723)"
     );
     assert_eq!(exempt, 4, "4 routes d'auth (#435)");
@@ -926,8 +941,51 @@ fn the_registry_partition_is_what_the_story_declares() {
     );
     assert_eq!(
         LIB_ROUTES.len() + TEST_ENDPOINT_ROUTES.len(),
-        133,
+        138,
         "le registre est plus large que l'inventaire, et c'est voulu"
+    );
+}
+
+/// Story 32-11 (AC-T1, C-32-11-10) : le manuel d'administration dit le compte
+/// **du registre**, recalculé ici depuis la partition — « N des M routes à verbe
+/// mutant » et « N + E + R = M », chacune **exactement une fois**. Trois
+/// stories de l'Epic 32 avaient laissé ce compte faux, rien ne le reliant au
+/// registre.
+#[test]
+fn le_manuel_dit_le_compte_du_registre() {
+    let compter = |filtre: fn(&Status) -> bool| LIB_ROUTES.iter().filter(|r| filtre(&r.2)).count();
+    let traced = compter(|s| *s == Traced);
+    let exempt = compter(|s| matches!(s, Exempt(_)));
+    let no_matter = compter(|s| matches!(s, NoMatter(_)));
+    let total = LIB_ROUTES.len();
+
+    let chemin = concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../docs/manual/fr/admin-manual.tex"
+    );
+    let source = std::fs::read_to_string(chemin).expect("manuel d'administration");
+    let texte = manuel::normaliser(&source);
+
+    let phrase = regex::Regex::new(r"(\d+) des (\d+) routes à verbe mutant").unwrap();
+    let trouvees: Vec<(usize, usize)> = phrase
+        .captures_iter(&texte)
+        .map(|c| (c[1].parse().unwrap(), c[2].parse().unwrap()))
+        .collect();
+    assert_eq!(
+        trouvees,
+        [(traced, total)],
+        "le manuel doit dire une seule fois « {traced} des {total} routes à verbe mutant »"
+    );
+
+    let somme = regex::Regex::new(r"(\d+) \+ (\d+) \+ (\d+) = (\d+)").unwrap();
+    let trouvees: Vec<[usize; 4]> = somme
+        .captures_iter(&texte)
+        .map(|c| std::array::from_fn(|i| c[i + 1].parse().unwrap()))
+        .collect();
+    assert_eq!(
+        trouvees,
+        [[traced, exempt, no_matter, total]],
+        "le manuel doit dire une seule fois « {traced} + {exempt} + {no_matter} = {total} »"
     );
 }
 
@@ -1251,18 +1309,19 @@ fn the_replay_partition_is_what_the_story_declares() {
     );
     assert_eq!(exemptees, 3, "full_import, /seed, /reset");
     assert_eq!(
-        sans_ecriture, 105,
-        "104 routes de lib.rs (la remise à zéro y est entrée, 15-7b2 ; la suppression d'un \
+        sans_ecriture, 110,
+        "109 routes de lib.rs (la remise à zéro y est entrée, 15-7b2 ; la suppression d'un \
          import, 27-1 ; l'annulation d'un rejet, 28-5a ; la clôture et la réouverture d'un \
          compte bancaire, 28-4a ; le rattachement d'une transaction à un règlement, 29-8 ; \
          le rattachement et le détachement d'un document fournisseur, 30-2c ; le réglage et \
          « Sauvegarder maintenant » de la sauvegarde automatique, 31-1c ; les quatre routes \
          mutantes des clés et des réglages du serveur MCP, 32-5c ; + 1 : `/mcp`, 32-6a ; la \
-         décision d'un envoi du serveur MCP, 32-8b), \
+         décision d'un envoi du serveur MCP, 32-8b ; les cinq routes mutantes des prompts \
+         du serveur MCP, 32-10a-iii), \
          plus /password-reset-token de test_endpoints.rs"
     );
     assert_eq!(rejouees + exemptees + sans_ecriture, tout.len());
-    assert_eq!(tout.len(), 133);
+    assert_eq!(tout.len(), 138);
 }
 
 /// Visiteur `syn` d'un fichier de routes : relève chaque appel à la primitive

@@ -180,11 +180,11 @@ const created = await fetch(`${BASE}/contacts`, {
 
 ### 6.4 Agent IA / serveur MCP
 
-L'API de Kesh est consommable par **tout client HTTP**, donc par tout agent IA ou serveur MCP (*Model Context Protocol*) capable d'appeler des API REST avec un en-tête d'authentification.
+> ℹ️ **Depuis la 0.16.0, Kesh a son propre serveur MCP** (*Model Context Protocol*), sur `/mcp`, avec ses propres clés `kesh_mcp_…` : désactivé par défaut, portées fines, données montrées à un Administrateur avant de partir sous une clé à validation requise, chaque appel journalisé. C'est la voie à préférer pour brancher un agent IA ; elle est décrite au manuel d'administration, § *Le serveur MCP*. Une clé d'API (`kesh_pat_…`) y est refusée (`401`), comme une clé `kesh_mcp_…` l'est ici (§ 2).
 
-> ℹ️ **Il n'existe pas de serveur MCP « Kesh-natif » en v0.2.** Pour exposer Kesh à un agent, utilisez un serveur MCP HTTP générique (ou un client d'API custom) et injectez-y l'en-tête `Authorization`.
+L'API de Kesh reste consommable par **tout client HTTP**, donc aussi par un serveur MCP générique capable d'appeler des API REST avec un en-tête d'authentification. Cette voie reste possible, mais elle passe **sans** la validation avant envoi ni le journal des appels du serveur MCP : l'agent lit tout ce que la clé d'API ouvre, sans que personne ne voie ce qui part.
 
-Exemple de configuration d'un serveur MCP HTTP générique pointant vers Kesh (le format exact dépend du serveur MCP utilisé) :
+Exemple de configuration d'un serveur MCP HTTP générique pointant vers l'API de Kesh — **cette voie-là seulement**, non le serveur MCP de Kesh (le format exact dépend du serveur MCP utilisé) :
 
 ```json
 {
@@ -257,6 +257,8 @@ Les principales ressources accessibles via l'API (liste non exhaustive — toute
 - Montants en chaînes décimales. L'écart `gap` est arrondi au centime (livres et relevé arrondis d'abord, demi loin de zéro) ; c'est le même que `statementGap` de `GET /bank-accounts`, `null` s'il est nul ou ne se calcule pas.
 
 **Le plan comptable dit quels comptes se lettrent** *(depuis la v0.13.0)* : chaque compte de `GET /accounts` — archivés compris — et des réponses de `POST /accounts`, `PUT /accounts/{id}`, `PUT /accounts/{id}/archive` et `PUT /accounts/{id}/reactivate` porte `letterable` (booléen) : vrai pour un compte d'actif ou de passif qu'aucun compte bancaire — archivé compris — ne désigne. Le **Grand livre**, `GET /reports/general-ledger`, porte depuis la v0.13.0 `letteringCode` par ligne (le code du groupe de lettrage, `null` si la ligne est ouverte) ; ses exports CSV et PDF sont inchangés.
+
+**Le Grand livre et les fins d'exercice** *(depuis la v0.16.0, [#777](https://github.com/guycorbaz/kesh/issues/777), [#778](https://github.com/guycorbaz/kesh/issues/778))* : sur un compte de produits ou de charges (`accountType` `Revenue` ou `Expense`), `GET /reports/general-ledger` pose une rupture (`fiscalYearBreaks`) à chaque **changement d'exercice** dans la période — entre deux lignes du compte, et aussi avant la première ligne et après la dernière (ci-dessous) —, et le solde progressif y repart de zéro. Il y en a une par changement : un exercice intermédiaire où le compte n'a aucune ligne n'en donne pas (son solde est nul). L'`opening` appartient à l'exercice qui contient `from` : si la première ligne tombe dans un exercice suivant, une rupture la précède, datée du jour de cette ligne, qui clôt l'ouverture. Une fin d'exercice franchie après la dernière ligne de la période donne une rupture rendue sur la seule dernière page (celle qui porte la dernière ligne, ou la première si la période n'en a aucune), datée du **premier jour** de l'exercice en cours à `to`. Quand la période franchit une fin d'exercice, `closing` est le **solde de l'exercice en cours à `to`** — le dernier solde progressif, ruptures comprises, `0` si cet exercice n'a aucune ligne dans la période — et non plus `opening` plus les mouvements ; le cumul de la période reste dans `totalDebit` et `totalCredit`, et, **sur une lecture entière** — toutes les pages réunies, `lineCount` disant combien de lignes ; sans `limit`, une page en porte au plus 500 —, `closing` égale `opening` + mouvements − la somme des `closingBalance` des ruptures. Une page ne porte que les ruptures franchies dans ses propres lignes (plus, sur la dernière, la rupture finale) : l'identité ne se vérifie pas page par page. Un compte d'actif ou de passif n'a jamais de rupture, et sa clôture reste `opening` plus les mouvements. L'export CSV écrit désormais chaque rupture comme une ligne (libellé « Clôture de l'exercice — le solde repart de zéro », sans débit ni crédit, le solde de l'exercice clos dans `SoldeProgressif`).
 
 **Les lignes d'une écriture portent leur lettrage** *(depuis la v0.13.0)* : dans toute réponse qui expose les lignes (`GET /journal-entries`, `GET /journal-entries/{id}`, et les réponses de `POST`, `PUT` et de la contre-passation), chaque ligne porte trois champs, **toujours présents** : `letteringKey` (la clé du groupe de lettrage), `letteringCode` (son code affiché, `AA` pour la clé 27) et `letteringOrigin` (`manual`, posé par les routes du lettrage, ou `reversal`, posé par la contre-passation, ou `document`, posé par Kesh sur les lignes d'une facture client soldée — il suit ses règlements et son avoir, voir « Lettrer des lignes ») — tous trois `null` quand la ligne est **ouverte**.
 
@@ -828,7 +830,7 @@ La même sémantique de remplacement s'applique à **`PUT /api/v1/invoices/:id`*
 >
 > ⚠️ **Dans quelle version ?** Cette fermeture est livrée depuis la **v0.10.0** (entrée [#167](https://github.com/guycorbaz/kesh/issues/167) du [CHANGELOG](../CHANGELOG.md)). Jusqu'à la v0.9.0 incluse, une clé `read-write` créée par un Administrateur atteint les routes d'administration : sur une telle version, traitez une clé d'origine Administrateur comme un secret d'administrateur, et mettez Kesh à jour.
 
-Hors périmètre (non planifié pour v0.2) : OAuth/SSO, webhooks, serveur MCP Kesh-natif (cf. `epic-17.md` — « Hors scope »).
+Hors périmètre (non planifié pour v0.2) : OAuth/SSO, webhooks (cf. `epic-17.md` — « Hors scope »).
 
 ---
 

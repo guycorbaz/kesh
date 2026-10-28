@@ -20,10 +20,15 @@
 //! (C-32-10a-10) : un prompt est un texte fixe, les arguments d'un client sont
 //! ignorés, jamais interpolés.
 
+use std::time::Instant;
+
 use crate::mcp::EtatMcp;
+use crate::mcp::textes;
 use crate::services::acces::Portee;
 use crate::services::cles_mcp::CleMcpAuthentifiee;
-use crate::services::prompts_mcp::{self, ErreurPrompts, PromptServi};
+use crate::services::prompts_mcp::{
+    self, AccuseServi, ErreurPrompts, PromptServi, RefusProposition,
+};
 
 mod scelle {
     /// Le sceau : privé à `mcp::prompts`.
@@ -54,6 +59,7 @@ pub trait McpPrompt: scelle::Scelle + Send + Sync + 'static {
 /// partir d'un `&PromptServi` que seuls les services construisent.
 pub struct PromptEnBase {
     nom: String,
+    numero: i32,
     description: String,
     texte: String,
 }
@@ -63,6 +69,7 @@ impl PromptEnBase {
     pub(in crate::mcp) fn depuis(p: &PromptServi) -> Self {
         Self {
             nom: p.nom().to_string(),
+            numero: p.numero(),
             description: p.description().to_string(),
             texte: p.texte().to_string(),
         }
@@ -125,6 +132,17 @@ pub(crate) struct PromptRendu {
 }
 
 impl PromptRendu {
+    /// Le nom du prompt servi — celui du catalogue, que le service a
+    /// revalidé (journal de `prompts/get`, AC-iii5).
+    pub(in crate::mcp) fn nom(&self) -> &str {
+        self.prompt.nom()
+    }
+
+    /// Le numéro de la version servie (journal de `prompts/get`, AC-iii5).
+    pub(in crate::mcp) fn numero(&self) -> i32 {
+        self.prompt.numero
+    }
+
     /// Le `result` de `prompts/get` : `{"description", "messages": [{"role":
     /// "user", "content": {"type": "text", "text"}}]}` (`GetPromptResult` de la
     /// révision `2025-11-25`).
@@ -160,4 +178,52 @@ pub(in crate::mcp) async fn obtenir(
     Ok(servi.map(|p| PromptRendu {
         prompt: PromptEnBase::depuis(&p),
     }))
+}
+
+// ---------------------------------------------------------------------------
+// L'accusé de `proposer_prompt` — Story 32-10a-iii (AC-iii2, AC-iii3)
+// ---------------------------------------------------------------------------
+
+/// La charge de l'accusé d'une proposition : le nom **validé** seul. Construit
+/// à partir d'un [`AccuseServi`] — que seul le service construit — par
+/// [`AccuseProposition::depuis`] ; ni `Serialize`, ni `Default`, ni `Debug`, ni
+/// `Clone`. Aucune donnée lue n'y entre (spike § 5.3.1, E2 : l'accusé ne passe
+/// pas par la validation).
+pub(crate) struct AccuseProposition {
+    nom: String,
+}
+
+impl AccuseProposition {
+    /// La seule fabrique.
+    pub(in crate::mcp) fn depuis(a: &AccuseServi) -> Self {
+        Self {
+            nom: a.nom().to_string(),
+        }
+    }
+
+    /// Le `result` du `tools/call` : un bloc de texte constant où n'entre que
+    /// le nom validé, `structuredContent` `{"nom", "etat": "a_valider"}`,
+    /// `isError: false` (C-32-10a-17).
+    pub(in crate::mcp) fn en_resultat(&self) -> serde_json::Value {
+        serde_json::json!({
+            "content": [{
+                "type": "text",
+                "text": textes::texte_accuse_proposition(&self.nom),
+            }],
+            "structuredContent": { "nom": self.nom, "etat": "a_valider" },
+            "isError": false,
+        })
+    }
+}
+
+/// `proposer_prompt` : la proposition de l'agent de la clé, par le service
+/// (portée `prompts:write`, contenu, nom, version et audit en une transaction).
+pub(in crate::mcp) async fn proposer(
+    etat: &EtatMcp,
+    cle: &CleMcpAuthentifiee,
+    debut: Instant,
+    arguments: serde_json::Value,
+) -> Result<AccuseProposition, RefusProposition> {
+    let accuse = prompts_mcp::proposer(cle, &etat.ecriture_prompts, debut, arguments).await?;
+    Ok(AccuseProposition::depuis(&accuse))
 }

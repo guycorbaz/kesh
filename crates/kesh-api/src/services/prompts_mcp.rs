@@ -26,19 +26,31 @@
 //!   hors de Kesh, n'est pas servie) et rend des [`PromptServi`], à champs
 //!   privés, construits ici seulement : ni `AppError` ni un type de `kesh_db`
 //!   ne sort vers `src/mcp/`.
+//! - **La proposition d'un agent** — [`proposer`] (Story 32-10a-iii) : la
+//!   portée `prompts:write`, le contenu validé et **normalisé**, le nom hors du
+//!   préfixe `kesh`, puis la version **à valider** et l'audit de l'appel dans
+//!   une seule transaction, par [`EcriturePrompts`] (poignée sans pool
+//!   visible). Rend un [`AccuseServi`] (le nom seul) ou un
+//!   [`RefusProposition`] énuméré : ni `AppError` ni un type de `kesh_db` ne
+//!   sort vers `src/mcp/`.
 //!
 //! ⛔ **Aucun évènement `tracing` ne porte une description ni un texte** :
 //! identifiants et numéros seulement (C-32-10a-12, P15).
 
 use std::fmt;
+use std::time::Instant;
 
 use kesh_db::entities::Role;
 use kesh_db::entities::mcp_prompt::{
-    DESCRIPTION_MAX, Origine, TEXTE_MAX, VersionEnVigueur, nom_conforme,
+    DESCRIPTION_MAX, ErreurEcriturePrompt, Origine, PLAFOND_A_VALIDER, TEXTE_MAX, VersionEnVigueur,
+    nom_conforme, nom_reserve,
 };
+use serde::Deserialize;
 
 use crate::services::acces::{ContexteAcces, Exigence, Portee};
-use crate::services::poignees::LecturePrompts;
+use crate::services::cles_mcp::CleMcpAuthentifiee;
+use crate::services::poignees::{EcriturePrompts, LecturePrompts};
+use crate::services::serveur_mcp::{IssueAppel, entree_appel};
 
 /// Ce que lire les prompts exige (C-32-10a-16) : la portée `books:read` d'une
 /// clé MCP ; sur le canal API, l'Administrateur (aucune route ne la sert en
@@ -451,6 +463,161 @@ pub async fn obtenir(
         .await
         .map_err(interne)?
         .and_then(servir))
+}
+
+// ---------------------------------------------------------------------------
+// La proposition d'un prompt par un agent — Story 32-10a-iii (AC-iii1 à AC-iii3)
+// ---------------------------------------------------------------------------
+
+/// Le nom de l'outil de proposition (AC-iii2) — un texte du binaire, nom
+/// réservé hors du registre, comme `kesh_lire_envoi`. `mcp::textes` le
+/// réexporte.
+pub const OUTIL_PROPOSER_PROMPT: &str = "proposer_prompt";
+
+/// Ce que proposer un prompt exige (C-32-10a-7) : la portée `prompts:write`
+/// d'une clé MCP ; sur le canal API, l'Administrateur (aucune route ne sert ce
+/// service : l'administrateur écrit par les routes de gestion).
+pub const EXIGENCE_PROPOSER: Exigence = Exigence {
+    role_api: Role::Admin,
+    portee_mcp: Some(Portee::PromptsWrite),
+};
+
+/// Les arguments de `proposer_prompt` — désérialisés **strictement** : tout
+/// autre champ est refusé. Ni `Debug` ni `Serialize` (ils portent le texte).
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ArgsProposer {
+    nom: String,
+    description: String,
+    texte: String,
+}
+
+/// L'accusé d'une proposition écrite : le **nom validé** seul — ni numéro, ni
+/// texte, ni description (C-32-10a-17). Champ privé, construit en ce fichier
+/// seulement.
+pub struct AccuseServi {
+    nom: String,
+}
+
+impl AccuseServi {
+    /// Le nom validé (`[a-z0-9_-]{1,64}`, hors du préfixe `kesh`).
+    pub fn nom(&self) -> &str {
+        &self.nom
+    }
+}
+
+/// Le refus d'une proposition — **énuméré**, sans champ libre (AC-iii2,
+/// point 0). Aucun ne porte le texte reçu.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RefusProposition {
+    /// La clé n'a pas la portée `prompts:write`.
+    HorsPortee,
+    /// Un argument est refusé ; `champ` est un nom du binaire (`nom`,
+    /// `description`, `texte` ou `(arguments)`).
+    ArgumentsInvalides {
+        /// L'argument en cause.
+        champ: &'static str,
+    },
+    /// Le nom commence par `kesh` — réservé aux prompts standard, existants ou
+    /// non (C-32-10a-27).
+    NomReserve,
+    /// La société a déjà [`PLAFOND_A_VALIDER`] propositions à valider.
+    PlafondAtteint,
+    /// Erreur de la base ; le détail est au journal du serveur, la
+    /// transaction est annulée.
+    Interne,
+}
+
+/// Le champ d'un refus de contenu, nommé comme l'argument de l'outil.
+fn champ_de(c: ChampPrompt) -> &'static str {
+    match c {
+        ChampPrompt::Description => "description",
+        ChampPrompt::Texte => "texte",
+    }
+}
+
+/// La proposition d'un prompt par l'agent de la clé `cle` (AC-iii3) : une
+/// version **à valider**, jamais servie avant l'approbation d'un
+/// administrateur.
+///
+/// Dans l'ordre : (1) `exiger(EXIGENCE_PROPOSER)` — la portée `prompts:write`,
+/// avant tout le reste ; (2) les arguments, désérialisés strictement ; (3)
+/// [`valider_contenu`] — c'est le contenu **normalisé** qui est enregistré
+/// (revue de code P1 de la 32-10a-ii, E6), jamais le texte reçu ; (4) le nom,
+/// conforme et hors du préfixe `kesh` — ces refus ne lisent pas la base et
+/// précèdent tout verrou ; (5) la version et l'entrée d'audit de l'appel
+/// (`mcp.tool_called`, issue `servi`, [`entree_appel`]) **dans une seule
+/// transaction** ([`EcriturePrompts::proposer`]) : si l'audit échoue, aucune
+/// version n'est enregistrée.
+///
+/// La politique de validation de la clé ne s'applique pas (C-32-10a-26) : une
+/// proposition n'est pas une donnée lue. `debut` est l'instant où le
+/// répartiteur a reçu l'appel (la durée journalisée).
+pub async fn proposer(
+    cle: &CleMcpAuthentifiee,
+    ecriture: &EcriturePrompts,
+    debut: Instant,
+    arguments: serde_json::Value,
+) -> Result<AccuseServi, RefusProposition> {
+    cle.acces
+        .exiger(EXIGENCE_PROPOSER)
+        .map_err(|_| RefusProposition::HorsPortee)?;
+    let args: ArgsProposer =
+        serde_json::from_value(arguments).map_err(|_| RefusProposition::ArgumentsInvalides {
+            champ: "(arguments)",
+        })?;
+    let contenu = valider_contenu(&args.description, &args.texte).map_err(|e| {
+        RefusProposition::ArgumentsInvalides {
+            champ: champ_de(e.champ),
+        }
+    })?;
+    if !nom_conforme(&args.nom) {
+        return Err(RefusProposition::ArgumentsInvalides { champ: "nom" });
+    }
+    if nom_reserve(&args.nom) {
+        return Err(RefusProposition::NomReserve);
+    }
+    let resultat = ecriture
+        .proposer(
+            cle.acces.company_id(),
+            cle.cle_id,
+            &args.nom,
+            contenu.description(),
+            contenu.texte(),
+            PLAFOND_A_VALIDER,
+            |_| {
+                let duree_ms = u64::try_from(debut.elapsed().as_millis()).unwrap_or(u64::MAX);
+                entree_appel(
+                    cle,
+                    OUTIL_PROPOSER_PROMPT,
+                    IssueAppel::Servi,
+                    duree_ms,
+                    None,
+                )
+            },
+        )
+        .await;
+    match resultat {
+        Ok(ecrite) => Ok(AccuseServi { nom: ecrite.nom }),
+        Err(ErreurEcriturePrompt::PlafondAtteint) => Err(RefusProposition::PlafondAtteint),
+        Err(ErreurEcriturePrompt::NomReserve) => Err(RefusProposition::NomReserve),
+        Err(ErreurEcriturePrompt::NomInvalide) => {
+            Err(RefusProposition::ArgumentsInvalides { champ: "nom" })
+        }
+        Err(ErreurEcriturePrompt::ContenuInvalide) => {
+            Err(RefusProposition::ArgumentsInvalides { champ: "texte" })
+        }
+        Err(e) => {
+            // Le message d'une erreur du dépôt ne porte ni la description ni
+            // le texte (énumération sans chaîne libre ; une erreur de base
+            // nomme une contrainte, non une valeur).
+            tracing::error!(
+                mcp_key_id = cle.cle_id,
+                "proposer_prompt : proposition non écrite, transaction annulée : {e}"
+            );
+            Err(RefusProposition::Interne)
+        }
+    }
 }
 
 #[cfg(test)]

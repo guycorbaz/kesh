@@ -12,7 +12,7 @@ use tower::ServiceExt;
 
 use crate::mcp::EtatMcp;
 use crate::mcp::politique::DonneesEnvoyables;
-use crate::mcp::prompts::{ListePrompts, PromptRendu};
+use crate::mcp::prompts::{AccuseProposition, ListePrompts, PromptRendu};
 use crate::mcp::textes;
 use crate::services::envois_mcp::{AccuseEnvoi, ContenuValide};
 
@@ -167,6 +167,15 @@ pub(crate) enum ReponseMcp {
         /// Le prompt servi.
         prompt: PromptRendu,
     },
+    /// 200, `result` de `proposer_prompt` — l'accusé d'une proposition,
+    /// construit d'un [`AccuseProposition`] (Story 32-10a-iii, AC-iii2) :
+    /// aucune donnée lue.
+    Accuse {
+        /// L'`id` reçu.
+        id: IdRequete,
+        /// L'accusé.
+        accuse: AccuseProposition,
+    },
     /// 200, `result` d'un outil en erreur (`isError: true`), texte fixe.
     OutilEnErreur {
         /// L'`id` reçu.
@@ -271,6 +280,7 @@ pub(crate) async fn rendre(etat: &EtatMcp, r: ReponseMcp) -> Response {
         ReponseMcp::Envoi { id, envoi } => jsonrpc(id, "result", envoi.en_resultat()),
         ReponseMcp::ListePrompts { id, liste } => jsonrpc(id, "result", liste.en_resultat()),
         ReponseMcp::PromptRendu { id, prompt } => jsonrpc(id, "result", prompt.en_resultat()),
+        ReponseMcp::Accuse { id, accuse } => jsonrpc(id, "result", accuse.en_resultat()),
         ReponseMcp::OutilEnErreur { id, texte } => jsonrpc(
             id,
             "result",
