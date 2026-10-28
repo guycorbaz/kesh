@@ -8,7 +8,7 @@ Le contenu est rédigé en français à destination des **fiduciaires, PME, ind�
 
 ---
 
-## [0.16.0] — Non publié
+## [0.16.0] — 2026-10-28
 
 Epic 32, **le serveur MCP de Kesh** ([#723](https://github.com/guycorbaz/kesh/issues/723)) : un serveur MCP intégré, par lequel un agent IA du réseau local — un client MCP comme Claude Code — **lit** les livres. Il est **désactivé par défaut** et se règle dans *Administration → Serveur MCP* (activation, filtre d'adresse, mandataires de confiance), avec des **clés dédiées à portées fines** dont le secret ne s'affiche qu'une fois. Aucun outil n'écrit dans les livres. Sous une clé à validation requise (le défaut), ce que l'agent demande est **montré à l'Administrateur avant de partir** (*Envois du serveur MCP*) ; chaque appel d'outil est journalisé. Les prompts que Kesh sert à l'agent sont tenus en base avec leur historique ; un agent peut en proposer une version, qu'un Administrateur approuve ou refuse (*Prompts du serveur MCP*). Un test de contrat du protocole tourne en CI. S'y ajoutent deux correctifs du grand livre (comptes de résultat sur plusieurs exercices, [#777](https://github.com/guycorbaz/kesh/issues/777), [#778](https://github.com/guycorbaz/kesh/issues/778)) et la mise à jour des dépendances (voir *Sécurité*).
 
