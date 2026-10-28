@@ -35,7 +35,9 @@ option retenue, alternatives écartées, réversibilité.
   - (d) déclarer un `outputSchema` par outil : quinze schémas à tenir (déjà écarté, C-32-9-6) et ne règle pas les
     textes d'accusé.
 - **Coût assumé** : un client qui exploitait `structuredContent` par programme (aucun client externe connu ; rien ne le
-  documentait, ni manuel ni `docs/api-external.md`) doit lire le JSON du bloc de texte, après l'en-tête et une ligne vide —
+  documentait, ni manuel ni `docs/api-external.md`) doit lire le JSON du bloc de texte, après l'en-tête et une ligne vide,
+  pour une sortie d'outil ; pour un accusé ou une relecture d'envoi et pour l'accusé d'une proposition, les champs retirés
+  n'existent plus en JSON et se lisent dans la phrase de Kesh (« Envoi n° N … » ; texte validé au second bloc) —
   écrit au CHANGELOG (*Modifié*) et au § *Passer à la 0.16.1*. *(Rectifié à la validation P1 : le dépôt en porte un
   consommateur, la spec Playwright `frontend/tests/e2e/mcp-sends.spec.ts`, qui suit le correctif — fiche, AC-5.)* Claude Code reçoit le JSON indenté au lieu du JSON compact :
   le plafond `MCP_ENVOI_OCTETS_MAX` portait déjà sur ce texte (C-32-9-7), aucune réponse ne grossit au-delà.
@@ -85,11 +87,13 @@ option retenue, alternatives écartées, réversibilité.
 
 - **Contexte** : l'inventaire des sites qui produisent un `result` de `tools/call` est clos à `reponse.rs:278-291` :
   `ReponseMcp::Outil`, `Envoi` (six variantes de `ReponseEnvoi`), `Accuse`, `OutilEnErreur` ; `ReponseMcp::Resultat`
-  ne sert qu'`initialize`, `ping` et `tools/list` (`repartiteur.rs:187-221`) ; `appeler` ne rend que les quatre premiers
-  (`repartiteur.rs:300-608`). Rien, dans les types, n'empêche un futur site de reposer la clé.
-- **Retenu** : (1) une **garde lexicale** dans `tests/mcp_gardes_lexicales.rs` : la chaîne `structuredContent` n'apparaît
-  dans **aucun** fichier de `crates/kesh-api/src/` hors commentaires — elle couvre tout site futur, quel que soit son
-  type ; (2) un **cas de contrat** `k23_un_seul_canal` dans `tests/mcp_contrat.rs`, qui parcourt par HTTP
+  ne sert qu'`initialize`, `ping` et `tools/list` (`repartiteur.rs:187-221`) ; `appeler` rend les quatre premiers et
+  `ReponseMcp::Erreur`, qui ne porte pas de `result` (`repartiteur.rs:300-608`) — sans effet sur l'inventaire. Rien, dans les types, n'empêche un futur site de reposer la clé.
+- **Retenu** : (1) une **garde lexicale** dans `tests/mcp_gardes_lexicales.rs` : le motif `(?i)structured_?content` ne
+  paraît dans **aucune** ligne de code de `crates/kesh-api/src/` hors commentaires — il voit la clé JSON et le champ Rust
+  `structured_content` qu'un `rename_all = "camelCase"` sérialiserait en `structuredContent` (forme probable d'un SDK) ;
+  il ne voit pas une clé construite par concaténation, ni une clé posée par une dépendance hors de `src/` (un SDK qui
+  l'émettrait de lui-même) ; (2) un **cas de contrat** `k23_un_seul_canal` dans `tests/mcp_contrat.rs`, qui parcourt par HTTP
   chaque site joignable (tableau de l'AC-3) et vérifie I et T. L'angle mort de la garde (une clé construite par
   concaténation, `format!("structured{}", …)`) est écrit à la fiche et couvert par (2).
 - **Écartées** : un type `ResultatOutil` fermé qui remplacerait les `serde_json::json!` des quatre sites (refonte de
@@ -104,9 +108,9 @@ option retenue, alternatives écartées, réversibilité.
 - **Retenu** : `Donnees::nouvelles(texte: String)` (un seul paramètre), champ retiré ; `sortie::donnees` passe le seul
   texte ; `texte_et_valeur` garde sa signature (son test `donnees_une_seule_source` la lit) ; les outils de test de
   `tests/common/mcp.rs` (l. 380, 409, 463, 496, 599) suivent. L'aide `mcp_pieges::structure` (l. 121-129) **dérive**
-  désormais la valeur du texte (le JSON après la première ligne vide), ce qui garde la sémantique de vingt-neuf des trente
-  et un appels qui l'emploient ; les deux qui comparaient le texte à la sérialisation de la structure deviendraient des
-  tautologies et se réécrivent (fiche, AC-5). Le champ `Fixe.structure` des outils de test part avec lui, et
+  désormais la valeur du texte (le JSON après la première ligne vide), ce qui garde la sémantique des trente et un appels
+  qui l'emploient ; les deux qui comparent le texte à sa re-sérialisation épinglent toujours sa forme canonique indentée
+  (`serde_json` sans `preserve_order`) et restent (fiche, AC-5 ; rectifié à la validation P2). Le champ `Fixe.structure` des outils de test part avec lui, et
   `une_seule_representation` (AC-B2 de la 32-8) perd son cas structuré, tenu désormais par construction (fiche, AC-2).
 - **Écartées** : garder le champ sous `#[allow(dead_code)]` (champ mort délibéré) ; supprimer `texte_et_valeur` (perd
   le test d'unicité de la source).
@@ -118,7 +122,8 @@ option retenue, alternatives écartées, réversibilité.
   base garde l'échelle de sa colonne (`DECIMAL(19,4)` le plus souvent, aussi `DECIMAL(18,2)`, `(5,2)`, `(7,2)`), une
   somme calculée non — d'où `"report": "0.0000"` et `"resultat": "0"` dans le même bilan (#812). `Montant` porte aussi
   des quantités et des taux de TVA (`factures.rs:236-238`, `factures_fournisseur.rs:88-90`). `Decimal` n'est pas
-  `ChampSur` (`sortie.rs:59-87`) : **tout** nombre décimal d'une sortie passe par `Montant` — l'inventaire est clos par
+  `ChampSur` (`sortie.rs:59-87`) : **tout `Decimal`** d'une sortie passe par `Montant` (le seul autre nombre non entier, le `f64`
+  `delaiInstructionS` de `kesh_version`, `ChampSur` à `sortie.rs:70`, n'est pas un montant et sort `30.0`) — l'inventaire est clos par
   le typage (57 lignes `Montant(` et deux `.map(Montant)` dans `src/mcp/outils/` ; hors de ce dossier, seulement la
   définition et un test de `sortie.rs`, l. 197 et 572 — `grep -rn "Montant(" crates/kesh-api/src`).
 - **Retenu** : `Montant` sérialise `d.normalize()`, puis, si l'échelle obtenue est inférieure à 2, la porte à 2
@@ -141,11 +146,11 @@ option retenue, alternatives écartées, réversibilité.
   une observation** : le correctif ne rend pas (d) établi à lui seul.
 - **Retenu** : le développeur retire les « non éprouvé » établis par la recette (tableau de l'AC-8), corrige la forme du
   prompt selon (g), garde (f) et ce que la recette n'a pas vu ; la phrase sur le **contenu reçu à la relecture** reste
-  marquée « à confirmer avec Claude Code sur la 0.16.1 ». **La release** (orchestrateur) la lève si une relecture
-  d'envoi validé **et** un appel direct sous clé dispensée, joués avec Claude Code **avant le tag** contre le binaire de
-  la branche de release lancé en local (fiche, § *Ce que la release doit contenir*, point 3), montrent au modèle le texte
-  validé et les données — sinon elle reste, et l'issue #811 ne se ferme pas sur la seule foi du test. Les observations
-  de (d) faites en 0.16.0, où l'agent ne recevait de l'accusé que son état, se versent avec cette réserve écrite.
+  marquée « à confirmer avec Claude Code sur la 0.16.1 ». **La release** (orchestrateur) la lève si les deux critères
+  décidables C1 (le modèle recopie une ligne-marqueur placée dans le texte validé, clé requise) et C2 (le modèle rend le
+  bilan aux totaux de la capture, clé dispensée), joués avec Claude Code **avant le tag** contre le binaire de la branche de
+  release lancé en local, réussissent (fiche, § *Ce que la release doit contenir*, point 3, qui fait foi) — sinon elle reste, et l'issue #811 ne se ferme pas sur la seule foi du test. Les observations
+  de (d) faites en 0.16.0, où l'agent ne recevait vraisemblablement de l'accusé que son état (inférence tirée de #811), se versent avec cette réserve écrite.
 - **Écartées** : déclarer (d) établi dès le correctif (consigne de l'orchestrateur, prise à la lettre : affirmerait une
   observation qui n'a pas eu lieu) ; garder tout (d) en « non éprouvé » (efface ce que la recette a vu).
 - **Réversible** : oui.
