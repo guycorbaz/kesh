@@ -1,4 +1,4 @@
-# Prompt — validation P5 de la fiche v016-1 (correctif 0.16.1 : #811, #812), passe ciblée, une lentille, Opus
+# Prompt — validation P5 de la fiche v016-1 (correctif 0.16.1 : #811, #812), passe ciblée, une lentille, Sonnet
 
 Tu valides la **dernière remédiation** de la fiche de la Story v016-1 de Kesh (comptabilité suisse, Rust/Axum,
 SvelteKit, MariaDB 10.11) : le correctif 0.16.1 du serveur MCP (#811 : retirer `structuredContent` de tout résultat de
