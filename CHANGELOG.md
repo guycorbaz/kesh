@@ -10,6 +10,19 @@ Le contenu est rédigé en français à destination des **fiduciaires, PME, ind�
 
 ## [0.16.0] — Non publié
 
+Epic 32, **le serveur MCP de Kesh** ([#723](https://github.com/guycorbaz/kesh/issues/723)) : un serveur MCP intégré, par lequel un agent IA du réseau local — un client MCP comme Claude Code — **lit** les livres. Il est **désactivé par défaut** et se règle dans *Administration → Serveur MCP* (activation, filtre d'adresse, mandataires de confiance), avec des **clés dédiées à portées fines** dont le secret ne s'affiche qu'une fois. Aucun outil n'écrit dans les livres. Sous une clé à validation requise (le défaut), ce que l'agent demande est **montré à l'Administrateur avant de partir** (*Envois du serveur MCP*) ; chaque appel d'outil est journalisé. Les prompts que Kesh sert à l'agent sont tenus en base avec leur historique ; un agent peut en proposer une version, qu'un Administrateur approuve ou refuse (*Prompts du serveur MCP*). Un test de contrat du protocole tourne en CI. S'y ajoutent deux correctifs du grand livre (comptes de résultat sur plusieurs exercices, [#777](https://github.com/guycorbaz/kesh/issues/777), [#778](https://github.com/guycorbaz/kesh/issues/778)) et la mise à jour des dépendances (voir *Sécurité*).
+
+⚠️ **Le branchement d'un vrai client n'a pas été éprouvé avant cette publication.** Le parcours d'administration, la restauration et le protocole ont été joués et testés, mais l'essai avec Claude Code lui-même, prévu en recette, ne l'a pas encore été : le manuel d'administration marque « non éprouvé » ce qui en dépend.
+
+⚠️ **Aucun livre réel n'est encore tenu dans Kesh**, et aucun exercice réel n'y a été clôturé ; la TVA n'est pas opposable (dix défauts critiques ouverts, jalon « Vague 2 ») : la comptabilité d'un assujetti ne se tient pas dans Kesh.
+
+⚠️ **À faire en passant à la 0.16.0** — le détail est au manuel d'administration, *Passer à la 0.16.0* :
+
+1. **Sauvegarder avant la mise à jour** : la base, une sauvegarde d'installation `.keshbackup` et le dossier des documents. La 0.16.0 ajoute trois migrations **non breaking** (`20261025000001_mcp_keys_and_server_settings`, `20261025000002_mcp_sends`, `20261027000001_mcp_prompts`) : `kesh_version_min_required` ne change pas, mais, comme toute migration, elles **empêchent la 0.15.0 de démarrer** sur une base migrée — **le retour à la 0.15.0 passe uniquement par la sauvegarde d'avant la mise à jour**.
+2. **Prendre une nouvelle sauvegarde complète juste après** : une sauvegarde d'installation ne se réimporte que dans une version qui porte les mêmes tables, si bien qu'un `.keshbackup` de la 0.15.0 ne s'importe pas dans la 0.16.0.
+
+Le compose ne change pas et aucune variable de `.env` n'est ajoutée : le serveur MCP se règle dans l'interface.
+
 ### Ajouté
 
 - **Brancher un agent sur Kesh** : le manuel d'administration décrit le fonctionnement du serveur MCP et le parcours

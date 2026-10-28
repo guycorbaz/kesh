@@ -223,7 +223,7 @@ cd /opt/kesh
 Télécharger le fichier de référence depuis le dépôt officiel, \textbf{au tag de la version que décrit ce manuel} (\texttt{v\keshVersion}) --- non à la branche \texttt{main}, qui peut être en avance sur l'image publiée ; pour une autre version, remplacez le tag dans l'adresse :
 
 \begin{lstlisting}[language=bash]
-curl -fsSL https://raw.githubusercontent.com/guycorbaz/kesh/v0.15.0/docker-compose.yml \
+curl -fsSL https://raw.githubusercontent.com/guycorbaz/kesh/v0.16.0/docker-compose.yml \
     -o docker-compose.yml
 \end{lstlisting}
 
@@ -234,7 +234,7 @@ Ce fichier désigne l'image publiée \texttt{gcorbaz/kesh:latest} : \keshcommand
 Copier le fichier d'exemple et l'adapter :
 
 \begin{lstlisting}[language=bash]
-curl -fsSL https://raw.githubusercontent.com/guycorbaz/kesh/v0.15.0/.env.example \
+curl -fsSL https://raw.githubusercontent.com/guycorbaz/kesh/v0.16.0/.env.example \
     -o .env
 \end{lstlisting}
 
@@ -570,7 +570,7 @@ Télécharger le \keshpath{docker-compose.yml} canonique depuis le dépôt Kesh,
 
 \begin{lstlisting}[language=bash]
 cd /volume1/docker/kesh
-DEPOT=https://raw.githubusercontent.com/guycorbaz/kesh/v0.15.0
+DEPOT=https://raw.githubusercontent.com/guycorbaz/kesh/v0.16.0
 curl -fsSL "$DEPOT/docker-compose.prod.yml" -o docker-compose.yml
 curl -fsSL "$DEPOT/.env.example" -o .env
 
@@ -1703,7 +1703,7 @@ Les exports ne doivent pas rester dans le dossier de téléchargements : Synolog
 \Needspace{15\baselineskip}
     \item \textbf{Compose et \keshpath{.env.example} au tag de la version relevée, et variables qu'il lit.} Remplacez \texttt{0.15.0} par la version relevée. Les exemples de cette sous-section portent \texttt{0.15.0}, la version de ce manuel ; une production qui satisfait le prérequis porte \textbf{0.15.0 ou plus} : à une version suivante, l'exemple recopié tel quel donnerait une copie qui n'est pas celle de la production. Le contrôle~9 arrête une \textbf{image} d'une autre version ; le tag de \keshcommand{DEPOT}, lui, n'est contrôlé par rien : remplacez les deux.
 \begin{lstlisting}[language=bash]
-DEPOT=https://raw.githubusercontent.com/guycorbaz/kesh/v0.15.0
+DEPOT=https://raw.githubusercontent.com/guycorbaz/kesh/v0.16.0
 curl -fsSL "$DEPOT/docker-compose.yml" -o "$COPIE/docker-compose.yml"
 curl -fsSL "$DEPOT/.env.example" -o "$COPIE/.env"
 grep -oE '\$\{?[A-Za-z_][A-Za-z0-9_]*' "$COPIE/docker-compose.yml" \
@@ -2022,7 +2022,7 @@ Les deux scripts sont des fichiers du dépôt Kesh, \keshpath{scripts/synology/k
 
 \begin{lstlisting}[language=bash]
 cd /volume1/docker/kesh
-DEPOT=https://raw.githubusercontent.com/guycorbaz/kesh/v0.15.0
+DEPOT=https://raw.githubusercontent.com/guycorbaz/kesh/v0.16.0
 curl -fsSLO "$DEPOT/scripts/synology/kesh-dump.sh"
 curl -fsSLO "$DEPOT/scripts/synology/kesh-restore.sh"
 chmod 700 kesh-dump.sh kesh-restore.sh
@@ -2476,6 +2476,23 @@ L'opération s'inscrit au journal d'audit sous \emph{Réparation de l'installati
 La session ouverte doit être \textbf{rouverte} --- reconnexion, ou au plus la durée de session plus une minute ; d'ici là, certains écrans de la société répondent par une erreur, d'autres s'affichent vides. Si le journal du serveur porte « réparation de l'installation au démarrage » suivi d'une erreur, voir la section \emph{Dépannage}.
 
 \textbf{Limite} : les données de démonstration laissées par une réinitialisation antérieure (taux de TVA, réglages de facturation, contacts, articles, factures, avoirs) qui désignent la société effacée restent en base, invisibles et inertes (\#546).
+
+\subsubsection{Passer à la 0.16.0}\label{sec:maj-0-16-0}
+
+La 0.16.0 ne demande ni nouveau compose ni nouvelle variable de \keshpath{.env} : on tire l'image et on redémarre (\S\ref{sec:mise-a-jour}). Depuis une version antérieure à la 0.15.0, appliquez d'abord la section suivante (\S\ref{sec:maj-0-15-0}).
+
+\begin{sloppypar}
+\textbf{Sauvegardez avant la mise à jour} (étape 1 de la procédure, \S\ref{sec:mise-a-jour}) : la base (dump, ou volume avec \keshpath{docker-compose.yml}), une sauvegarde d'installation \keshpath{.keshbackup} et le dossier des documents (\texttt{KESH\_DOCUMENTS\_DIR}). La 0.16.0 ajoute trois migrations \textbf{non breaking} --- les clés et les réglages du serveur MCP, ses envois, ses prompts --- ; \texttt{kesh\_version\_min\_required} ne change pas.
+\end{sloppypar}
+
+\paragraph{Ce qui change au démarrage.} Rien de visible : le \textbf{serveur MCP est désactivé} et aucune clé MCP n'existe tant qu'un Administrateur ne les a pas créées (\S\ref{sec:mcp}). Les prompts standards de Kesh sont amorcés en base, sans effet tant que le serveur est désactivé.
+
+\paragraph{Les sauvegardes d'avant.} Une sauvegarde d'installation ne se réimporte que dans une version qui porte les mêmes tables qu'elle (\emph{Exporter (sauvegarde complète)}, paragraphe \emph{Compatibilité}) : un \keshpath{.keshbackup} pris sous la 0.15.0 \textbf{ne s'importe pas dans la 0.16.0}. La mise à jour garde vos données en place ; la sauvegarde d'avant sert au retour à la 0.15.0, non à une restauration dans la 0.16.0. Prenez une nouvelle sauvegarde complète juste après la mise à jour.
+
+\paragraph{Retour à la 0.15.0.}\label{sec:maj-0-16-0-retour}\mbox{}\\
+\begin{sloppypar}
+Comme toute migration, celles de la 0.16.0 empêchent la 0.15.0 de démarrer sur la base migrée, et une sauvegarde d'installation de la 0.16.0 ne s'importe pas dans une 0.15.x : \textbf{le retour à la 0.15.0 passe uniquement par la sauvegarde d'avant la mise à jour} --- base, \keshpath{.keshbackup} et dossier des documents ---, et ce qui a été saisi depuis est perdu.
+\end{sloppypar}
 
 \subsubsection{Passer à la 0.15.0}\label{sec:maj-0-15-0}
 
