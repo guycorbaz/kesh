@@ -8,7 +8,20 @@ Le contenu est rédigé en français à destination des **fiduciaires, PME, ind�
 
 ---
 
-## [0.16.0] — Non publié
+## [0.16.0] — 2026-10-28
+
+Epic 32, **le serveur MCP de Kesh** ([#723](https://github.com/guycorbaz/kesh/issues/723)) : un serveur MCP intégré, par lequel un agent IA du réseau local — un client MCP comme Claude Code — **lit** les livres. Il est **désactivé par défaut** et se règle dans *Administration → Serveur MCP* (activation, filtre d'adresse, mandataires de confiance), avec des **clés dédiées à portées fines** dont le secret ne s'affiche qu'une fois. Aucun outil n'écrit dans les livres. Sous une clé à validation requise (le défaut), ce que l'agent demande est **montré à l'Administrateur avant de partir** (*Envois du serveur MCP*) ; chaque appel d'outil est journalisé. Les prompts que Kesh sert à l'agent sont tenus en base avec leur historique ; un agent peut en proposer une version, qu'un Administrateur approuve ou refuse (*Prompts du serveur MCP*). Un test de contrat du protocole tourne en CI. S'y ajoutent deux correctifs du grand livre (comptes de résultat sur plusieurs exercices, [#777](https://github.com/guycorbaz/kesh/issues/777), [#778](https://github.com/guycorbaz/kesh/issues/778)) et la mise à jour des dépendances (voir *Sécurité*).
+
+⚠️ **Le branchement d'un vrai client n'a pas été éprouvé avant cette publication.** Le parcours d'administration, la restauration et le protocole ont été joués et testés, mais l'essai avec Claude Code lui-même, prévu en recette, ne l'a pas encore été : le manuel d'administration marque « non éprouvé » ce qui en dépend.
+
+⚠️ **Aucun livre réel n'est encore tenu dans Kesh**, et aucun exercice réel n'y a été clôturé ; la TVA n'est pas opposable (dix défauts critiques ouverts, jalon « Vague 2 ») : la comptabilité d'un assujetti ne se tient pas dans Kesh.
+
+⚠️ **À faire en passant à la 0.16.0** — le détail est au manuel d'administration, *Passer à la 0.16.0* :
+
+1. **Sauvegarder avant la mise à jour** : la base, une sauvegarde d'installation `.keshbackup` et le dossier des documents. La 0.16.0 ajoute trois migrations **non breaking** (`20261025000001_mcp_keys_and_server_settings`, `20261025000002_mcp_sends`, `20261027000001_mcp_prompts`) : `kesh_version_min_required` ne change pas, mais, comme toute migration, elles **empêchent la 0.15.0 de démarrer** sur une base migrée — **le retour à la 0.15.0 passe uniquement par la sauvegarde d'avant la mise à jour**.
+2. **Prendre une nouvelle sauvegarde complète juste après** : une sauvegarde d'installation ne se réimporte que dans une version qui porte les mêmes tables, si bien qu'un `.keshbackup` de la 0.15.0 ne s'importe pas dans la 0.16.0.
+
+Le compose ne change pas et aucune variable de `.env` n'est ajoutée : le serveur MCP se règle dans l'interface.
 
 ### Ajouté
 
@@ -132,6 +145,21 @@ Le contenu est rédigé en français à destination des **fiduciaires, PME, ind�
   (U+FFFD) dans les trois PDF.
 - **Sauvegarde automatique — le refus d'un réglage hors domaine parle la langue de l'instance** : un réglage refusé par le serveur (fréquence autre que 6, 12, 24 ou 168 heures, ou nombre de sauvegardes conservées hors de 1 à 60) était annoncé en français quelle que soit la langue de l'installation ; il l'est désormais en français, en allemand, en italien ou en anglais ([#711](https://github.com/guycorbaz/kesh/issues/711)).
 - **Sauvegarde automatique — l'écran ne perd plus ni une saisie ni un état** ([#711](https://github.com/guycorbaz/kesh/issues/711)). Une modification du réglage non enregistrée n'est plus effacée par « Sauvegarder maintenant », et si un autre administrateur a enregistré entre-temps, « Enregistrer » le signale (« Recharger ») au lieu d'écraser son réglage. Quand la réponse du serveur ne parvient pas (délai dépassé, connexion coupée, proxy qui abandonne l'attente) ou qu'il rend une erreur interne, l'écran ne dit plus que la sauvegarde « n'a pas pu être lancée » : il dit qu'elle a peut-être été écrite, et relit l'état et la liste des sauvegardes. Le bandeau de l'application ne s'éteint plus sur une lecture manquée, et ne revient plus à un état ancien sur une réponse tardive ; quand l'horloge du serveur a reculé, il dit que la dernière sauvegarde réussie est datée après l'heure du serveur, au lieu d'annoncer « aucune sauvegarde réussie depuis » une date future. La mention « trop grande pour être restaurée par l'écran » donne la limite en Mio et dans l'unité des tailles listées (Mo, Go).
+
+### Sécurité
+
+- **Dépendances mises à jour** ([#792](https://github.com/guycorbaz/kesh/issues/792)). Côté serveur, `rustls` 0.23.46,
+  `rustls-webpki` 0.103.16, `webpki-roots` 1.0.11, `h2` 0.4.20 et `crossbeam-epoch` 0.9.21 corrigent les avis RustSec
+  publiés depuis la 0.15.0 (RUSTSEC-2026-0346 à 0349 et RUSTSEC-2026-0382, entre autres) ; les autres bibliothèques
+  suivent dans leurs versions compatibles. Côté interface, la correction des avis npm sans changement de version
+  majeure : Vite 7.3.7, Svelte 5.57.3, Vitest 4.1.12, SvelteKit 2.70.3, et avec eux `devalue`, `undici`, `postcss`,
+  `nanoid` et `esbuild`. ⚠️ **Restent connus** : six avis npm de sévérité basse sur `cookie` < 0.7.0, embarqué par
+  SvelteKit 2, dont la correction demande SvelteKit 3 ; côté serveur, `quick-xml` (lecture des relevés CAMT.053,
+  [#789](https://github.com/guycorbaz/kesh/issues/789), prévue juste après cette version), `zip`
+  ([#790](https://github.com/guycorbaz/kesh/issues/790) — l'extraction visée par les avis n'est pas employée par Kesh),
+  `lopdf` ([#791](https://github.com/guycorbaz/kesh/issues/791) — Kesh ne lit aucun PDF reçu) et `rsa`, tiré par le
+  pilote de base de données, sans version corrigée à ce jour
+  ([#252](https://github.com/guycorbaz/kesh/issues/252)).
 
 ## [0.15.0] — 2026-10-24
 
