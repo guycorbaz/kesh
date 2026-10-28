@@ -463,6 +463,23 @@ selon le code.
 7. Que `serde_json` reste sans `preserve_order` (`Cargo.lock`, ses dépendances ; aucun `features = ["preserve_order"]`
    dans le workspace) : c'est ce qui fait épingler la forme canonique aux deux assertions gardées de l'AC-5.
 
+
+## Renvoyé à la préparation de la release (validation P6, non remédié dans la fiche)
+
+Constats de la P6 (`kesh-gate-logs/v0161-validate-p6.md`), venus après la dernière passe où l'orchestrateur remédie
+lui-même : la fiche n'est pas corrigée, l'orchestrateur les traite en écrivant le protocole de la candidate (point 3),
+et dit au document de release, ligne lue citée, comment chacun est réglé.
+
+1. **P6-1 (MEDIUM)** : le tag final `v0.16.1`, posé sur le commit de squash, reconstruit l'image ; rien ne vérifie
+   qu'elle porte le code que la candidate a éprouvé. À constater avant le tag final :
+   `git diff --stat v0.16.1-rc1 <commit de fusion> -- crates/ frontend/ Dockerfile Cargo.lock rust-toolchain.toml` vide ;
+   sinon, nouvelle candidate `-rc2` et recette rejouée.
+2. P6-2 (LOW) : de `docs/ci.md`, seule la l. 164 dit qu'un tag pousse `:latest` ; les l. 18 et 163 restent vraies.
+3. P6-3 (LOW) : au point 8, la fusion et le tag final restent subordonnés à la décision du Project Lead quand une
+   réserve demeure (point 3).
+4. P6-4 (LOW) : si la candidate a déplacé `:latest`, le rétablir sur le condensé de la 0.16.0, relevé avant le tag.
+5. P6-5 (LOW) : `admin-manual.tex:2437` dit les PDF attachés à la release GitHub, ce que `release.yml` ne fait pas —
+   corrigé au même geste que la l. 2435, ou ouvert en issue.
 ## Dev Agent Record
 
 ### Agent Model Used
@@ -533,3 +550,9 @@ selon le code.
   (`:latest` et la pré-version constatés après la candidate). Prémisses relues : `docs/ci.md:18`, `:163-164` ;
   `admin-manual.tex:2435` ; registre l. 75-76. Aucun finding rejeté. **Dernière remédiation de l'orchestrateur** : dès la
   P6, ce qui reste se retire ou se renvoie au développement.
+- 2026-10-28 — validation P6 (Opus, passe ciblée sur le diff `cd011a49..aacaa953`, prompt
+  `v016-1-validate-prompt-p6.md`, rapport hors dépôt `kesh-gate-logs/v0161-validate-p6.md`) : 0/0/1/4 — 1 MEDIUM, 4 LOW
+  (tendance 8 → 6 → 1 → 3 → 1 → 1 au-dessus de LOW). Sixième passe : l'orchestrateur ne remédie plus. Les cinq
+  constats portent sur la procédure de release, qu'il exécute lui-même ; ils sont **renvoyés à la préparation de la
+  release** (§ *Renvoyé à la préparation de la release*), sans correction de la fiche. Prémisse de P6-1 relue : dépôt
+  fusionné en squash (`CLAUDE.md`, § *Issue Tracking Rule*), image reconstruite au tag (`release.yml:55-69`).
