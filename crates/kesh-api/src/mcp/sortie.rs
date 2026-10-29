@@ -201,6 +201,14 @@ impl ChampSur for Date {}
 /// `"100.00"`, `8.10` sort `"8.10"`, `0.0125` sort `"0.0125"`. **Aucune
 /// décimale réelle ne se perd** : `normalize` ne retire que des zéros finals,
 /// et `rescale` vers une échelle plus grande n'ajoute que des zéros.
+///
+/// **La borne** (revue de code P1, A5 et B6) : `rescale` ne rend jamais
+/// d'erreur ; quand la mantisse multipliée par cent ne tient plus dans les
+/// 96 bits d'un `Decimal` — au-delà d'environ 7,9·10^26 (2^96 / 100) —, il
+/// s'arrête à l'échelle la plus grande qu'il peut représenter, et la valeur
+/// sort alors avec moins de deux décimales, sans rien perdre d'elle-même
+/// (`rust_decimal` 1.43.0, doc de `rescale`). Inatteignable depuis la base :
+/// les colonnes sont en `DECIMAL(19,4)`, quinze chiffres entiers au plus.
 pub struct Montant(pub Decimal);
 
 impl Serialize for Montant {
@@ -427,10 +435,16 @@ impl Resume {
 // La fabrique (AC-a3)
 // ---------------------------------------------------------------------------
 
-/// Le texte et la valeur d'une sortie — **pure**. Le texte égale
+/// Le texte d'une sortie, et la valeur dont il dérive — **pure**. Le texte égale
 /// `TEXTE_ENTETE_DONNEES + "\n\n" + to_string_pretty(valeur)` ; au-delà de
 /// `MCP_ENVOI_OCTETS_MAX` octets, [`ErreurOutil::TropVolumineux`], sous les
 /// deux politiques (C-32-9-7).
+///
+/// Depuis la 0.16.1, la valeur n'est plus émise (#811) : la production
+/// ([`donnees`]) n'en garde que le texte ; un seul test de ce module la lit,
+/// `donnees_une_seule_source`, pour établir que le texte dérive d'une seule
+/// sérialisation. Elle est rendue plutôt que recalculée parce
+/// qu'elle est déjà construite — le texte en est le rendu (C-v016-1-15).
 pub(in crate::mcp) fn texte_et_valeur<T: ChampSur>(
     sortie: &T,
 ) -> Result<(String, serde_json::Value), ErreurOutil> {
@@ -450,8 +464,10 @@ pub(in crate::mcp) fn texte_et_valeur<T: ChampSur>(
 }
 
 /// Les données d'un outil — **la seule fabrique** : une source sérialisée une
-/// fois (C-32-9-6), le seul texte qui en dérive (v016-1, C-v016-1-5 ; la valeur
-/// n'est plus émise), et le résumé de la demande.
+/// fois (C-32-9-6), le seul texte qui en dérive, et le résumé de la demande.
+/// La valeur intermédiaire que rend [`texte_et_valeur`] est construite pour
+/// produire ce texte, puis abandonnée : elle n'est plus émise (v016-1,
+/// C-v016-1-5 et C-v016-1-15 ; #811).
 pub(in crate::mcp) fn donnees<T: ChampSur>(
     resume: Resume,
     sortie: &T,
@@ -621,6 +637,12 @@ mod tests {
             (Decimal::new(125, 4), "0.0125"),
             (Decimal::new(810, 2), "8.10"),
             (Decimal::new(-5, 1), "-0.50"),
+            // Revue de code P1, E3 : une échelle normalisée de trois, que le
+            // seuil `scale() < 2` ne doit pas toucher — un seuil plus haut
+            // (`< 4`, `<= 3`) l'arrondirait en `1.13` ; et la quantité `2.5000`
+            // des colonnes, normalisée à une décimale puis portée à deux.
+            (Decimal::new(1_125, 3), "1.125"),
+            (Decimal::new(25_000, 4), "2.50"),
         ] {
             assert_eq!(forme(d), serde_json::json!(attendu), "{d:?}");
         }

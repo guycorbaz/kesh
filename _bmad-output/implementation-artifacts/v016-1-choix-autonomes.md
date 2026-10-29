@@ -189,6 +189,9 @@ option retenue, alternatives écartées, réversibilité.
   ni au site, ni à `.github/workflows/release.yml` (la candidate `v0.16.1-rc1` et son correctif de `:latest` relèvent
   de la release, point 3).
 - **Réversible** : oui.
+- *(Annoté le 2026-10-29, revue de code P1, A4 : « ni aux PDF » a été dépassé par la consigne postérieure de
+  l'orchestrateur — les PDF des manuels FR modifiés sont régénérés et commités par le développement, C-v016-1-11 ; le
+  reste de ce choix tient.)*
 
 ---
 
@@ -248,4 +251,49 @@ option retenue, alternatives écartées, réversibilité.
   E1 reste vraie, pour le seul bloc texte) ; `epic-24-retro-2026-09-10.md:121` (sans rapport) et `sprint-status.yaml`.
 - **Écartées** : réécrire les décisions (un relevé daté se corrige par annotation) ; tout annoter (les récits de passe
   et les prompts sont des relevés de leur date).
+- **Réversible** : oui.
+
+---
+
+*Choix de la remédiation de la revue de code P1 (2026-10-29, Opus 5.5, autonomie).*
+
+### C-v016-1-15 — `texte_et_valeur` garde la valeur ; les doc-comments disent qu'elle n'est plus émise
+
+- **Contexte** : B5 et E4 — `sortie::donnees` jette la valeur que rend `texte_et_valeur` (`let (texte, _) =
+  texte_et_valeur(sortie)?;`), un seul test la lit (`donnees_une_seule_source`, `sortie.rs`) ; `taille_pour`
+  et `donnees_plafond` ne lisent que le texte.
+- **Retenu** : garder la signature (C-v016-1-5, AC-2 l'avait gardée) ; la valeur est de toute façon construite — le texte
+  est son rendu `to_string_pretty` —, la rendre ne coûte rien, et `donnees_une_seule_source` y établit que le texte
+  dérive d'une seule sérialisation. Les doc-comments de `texte_et_valeur` et de `donnees` disent désormais que la valeur
+  n'est plus émise et qui la lit.
+- **Écartées** : retirer la valeur (le test perdrait sa preuve « une seule source », ou devrait recalculer la valeur à
+  côté — deux sérialisations, précisément ce qu'il réfute) ; laisser les doc-comments (« Le texte et la valeur d'une
+  sortie » laissait croire à deux sorties).
+- **Réversible** : oui.
+
+### C-v016-1-16 — B2 : les lignes du bilan viennent d'une écriture passée dans le même test
+
+- **Contexte** : B2 propose d'affirmer qu'au moins une ligne de section est lue. Prémisse lue au journal du rouge de
+  l'étape 0 (`v0161-etape0-rouges.log:493`) : sur l'exercice sans écriture, `"actifs":[]`, `"passifs":[]`,
+  `"fondsPropres":[]` — la boucle passait **effectivement** à vide, et l'assertion proposée, posée telle quelle,
+  rougirait toujours.
+- **Retenu** : garder la première moitié (bilan vide, cinq champs à `"0.00"`), puis passer une écriture de `10.0000`
+  (échelle des colonnes `DECIMAL(19,4)`) d'un actif postable à un passif postable, relire le bilan, exiger **au moins
+  une** ligne et que chaque solde lu soit `"10.00"` ou `"-10.00"` (le signe n'est pas l'objet du test).
+- **Écartées** : asserter que les sections sont vides (vrai aujourd'hui, mais n'établit rien de la forme d'un solde de
+  ligne) ; un second test (même montage, dupliqué).
+- **Réversible** : oui.
+
+### C-v016-1-17 — A5 et B6 : la borne de `rescale` au doc-comment seul
+
+- **Contexte** : au-delà d'une mantisse d'environ 7,9·10^26, `rescale(2)` s'arrête court et la valeur sort avec moins de
+  deux décimales (`rust_decimal-1.43.0/src/decimal.rs`, doc de `rescale` : « This function never fails. Consequently,
+  if a scale is provided that is unable to be represented using the given mantissa, then the maximum possible scale is
+  used »).
+- **Retenu** : la borne est écrite au doc-comment de `Montant`, avec la raison pour laquelle elle est inatteignable
+  (colonnes `DECIMAL(19,4)`) ; le manuel (`sec:mcp-outils`) et le CHANGELOG restent tels quels : un lecteur du manuel ou
+  des notes de version ne manipule que des montants de la base, pour lesquels « au moins deux décimales » est vrai
+  sans exception, et la précision n'y ajouterait qu'une réserve sans objet.
+- **Écartées** : la réserve au manuel et au CHANGELOG (alourdit pour un cas inatteignable) ; un test de la borne (il
+  épinglerait un comportement de la dépendance, non de Kesh).
 - **Réversible** : oui.

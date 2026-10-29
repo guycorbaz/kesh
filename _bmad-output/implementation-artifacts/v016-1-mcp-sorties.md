@@ -246,6 +246,9 @@ justifiée au Dev Agent Record.
 Le PDF n'est **pas** régénéré par le développeur (release, point 5). Pour vérifier que le `.tex` compile, `make fr` sous
 verrou est permis, mais il **réécrit les PDF versionnés** : les restaurer aussitôt (`git checkout -- docs/manual/fr/*.pdf`)
 et constater, avant chaque commit, que `git status --porcelain` ne porte aucun `.pdf`.
+*(Annoté le 2026-10-29, revue de code P1, A4 : le développement a régénéré et commité `admin-manual.pdf` et
+`user-manual.pdf` sur consigne postérieure de l'orchestrateur — C-v016-1-11 ; ce paragraphe, relevé de la validation,
+reste tel quel.)*
 
 **AC-9 — `CHANGELOG.md`** : une section `## [0.16.1] — Non publié` (forme que `scripts/prepare-release.sh:237` attend)
 au-dessus de `[0.16.0]`, avec une phrase d'introduction (correctif de l'Epic 32, aucune migration, retour à la 0.16.0 sans
@@ -436,7 +439,8 @@ Cinq modules : au seuil, non au-delà — pas de découpage. Aucune migration, a
 
 Les revues lisent l'AC-8 contre le **commentaire de recette de #723** (source des observations) et contre le code ;
 elles vérifient qu'aucun « non éprouvé » n'a été retiré sans observation citée, et qu'aucun n'a été laissé là où la
-recette a vu. Le PDF n'est pas régénéré dans la story : la revue relit le `.tex`.
+recette a vu. Le PDF n'est pas régénéré dans la story : la revue relit le `.tex`. *(Annoté le 2026-10-29, revue de
+code P1, A4 : les PDF ont été régénérés et commités par le développement, C-v016-1-11 ; la revue relit aussi le PDF.)*
 
 ### Références
 
