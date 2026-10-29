@@ -2433,8 +2433,9 @@ Les versions de Kesh sont publiées sur GitHub avec un tag \texttt{vX.Y.Z} (vers
 
 \begin{itemize}
     \item Une nouvelle image Docker \texttt{gcorbaz/kesh:X.Y.Z} et \texttt{gcorbaz/kesh:latest} sont poussées sur Docker Hub.
+    \item Une version candidate, au tag \texttt{vX.Y.Z-rcN}, ne pousse que \texttt{gcorbaz/kesh:X.Y.Z-rcN} : elle ne déplace pas \texttt{gcorbaz/kesh:latest}, et sa release GitHub est marquée pré-version. Elle sert aux essais ; ne l'installez pas pour tenir des livres.
     \item Un changelog (\keshpath{CHANGELOG.md}) liste les nouveautés, corrections de bugs et changements compatibilité.
-    \item Les manuels (admin, utilisateur, brochure marketing) sont rebuild en PDF et attachés au release GitHub.
+    \item Les manuels (admin, utilisateur, brochure marketing) sont régénérés en PDF et versionnés dans le dépôt, sous \keshpath{docs/manual/fr/}, au tag de la release ; ils ne sont pas joints à la release GitHub.
     \item Les notes de breaking changes sont mises en évidence avec instructions de migration.
 \end{itemize}
 
