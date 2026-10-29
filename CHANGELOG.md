@@ -8,7 +8,7 @@ Le contenu est rédigé en français à destination des **fiduciaires, PME, ind�
 
 ---
 
-## [0.16.1] — Non publié
+## [0.16.1] — 2026-10-29
 
 Correctif de l'Epic 32, le serveur MCP de Kesh ([#723](https://github.com/guycorbaz/kesh/issues/723)) : ce que le serveur rend à l'agent. Il n'ajoute **aucune migration** : la 0.16.0 redémarre sur une base passée par la 0.16.1, et une sauvegarde de l'une s'importe dans l'autre — le retour à la 0.16.0 ne demande aucune sauvegarde particulière, au-delà de celle que toute mise à jour réclame. Le compose et le `.env` ne changent pas.
 
@@ -17,6 +17,7 @@ Correctif de l'Epic 32, le serveur MCP de Kesh ([#723](https://github.com/guycor
 ### Modifié
 
 - **Les réponses d'outil du serveur MCP ne portent plus de contenu structuré** (`structuredContent`) : le texte est le seul canal. Une intégration qui le lisait lit, pour une sortie d'outil, le JSON du bloc de texte, après l'en-tête et une ligne vide ; pour un accusé ou une relecture d'envoi, et pour l'accusé d'une proposition de prompt, la phrase de Kesh, propre à chaque cas (le texte validé au second bloc). Le détail est au manuel d'administration, *Passer à la 0.16.1*.
+- **Une version candidate ne déplace plus `gcorbaz/kesh:latest`** : un tag `vX.Y.Z-rcN` ne publie que `gcorbaz/kesh:X.Y.Z-rcN`, et sa release GitHub est marquée pré-version. Une installation qui suit `:latest` ne reçoit que les versions publiées.
 
 ### Corrigé
 
