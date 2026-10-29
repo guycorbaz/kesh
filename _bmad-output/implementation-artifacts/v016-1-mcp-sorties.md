@@ -1,6 +1,6 @@
 # Story v016-1 : correctif 0.16.1 — ce que le serveur MCP rend à l'agent
 
-Status: review
+Status: done
 
 *Fiche rédigée le 2026-10-28, en autonomie (Opus 5.5), worktree `/home/gcorbaz/devel/kesh-0161`, branche
 `story/v016-1-mcp-sorties` partie de `main` `43926368` (release v0.16.0 et rétrospective de l'Epic 32 fusionnées).
@@ -883,3 +883,11 @@ Log. Ce qui a tourné :
   `:77`, `:150`), aucun autre ; `mcp-sends.spec.ts:149` et `:216` verts ; backend arrêté par son PID.
   Prompt de la revue P3 : `v016-1-review-prompt-p3.md` (Sonnet, passe ciblée, une lentille, rapport
   `kesh-gate-logs/v0161-review-p3.md`).
+- 2026-10-29 — revue de code P3 (Sonnet, passe ciblée, une lentille, prompt `v016-1-review-prompt-p3.md`, rapport hors
+  dépôt `kesh-gate-logs/v0161-review-p3.md`) : 0/0/0/4 — 4 LOW, aucun né d'une régression de la remédiation P2. **Revue
+  de code terminée** sur cette passe (tendance au-dessus de LOW : 2 → 3 → 0 ; modèles Sonnet, Opus, Sonnet ciblée ;
+  15 → 17 → 4 findings). Les quatre LOW (« en attente » cité comme rendu, `admin-manual.tex:3231` et `:3350` ;
+  « donc éprouvé » sans la forme 0.16.1, `:3341` ; en-tête fixe « d'un outil » au lieu « d'un outil de lecture »,
+  `:3219` ; un mot au-delà de la marge p. 129, antérieur) ne sont pas remédiés : une remédiation après la dernière passe
+  ne serait relue par personne, et ces paragraphes se réécrivent à la préparation de la release, après la recette ;
+  tracés en **#814** (P3, documentation). Prémisse de P3-1 relue : `textes.rs:208-211`. Statut `done`.
