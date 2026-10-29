@@ -230,7 +230,7 @@ l'observation et porte « observé avec Claude Code 2.1.312 » :
 | item 3, l. 3336 | `/mcp` « (non éprouvé) » | (a), (e), (h) observés : `initialize` en `2025-11-25` après une sonde `2026-07-28` refusée en `400` texte, puis `tools/list` et `prompts/list`, sans session. **Ce que montre `/mcp` reste « non éprouvé »** (la recette ne le rapporte pas) |
 | item 4, l. 3337 | `/kesh:kesh-assistant (MCP)` « (non éprouvé) » | **corrigé selon (g)** : (g) rapporte au menu `kesh:kesh-assistant` et, comme commande envoyée, `/mcp__kesh-direct__kesh-assistant` — la forme `/kesh:kesh-assistant (MCP)` du manuel n'est pas celle observée (le commentaire ne dit rien d'un suffixe, il ne faut donc pas affirmer son absence). Phrase : « Dans Claude Code, le menu le montre sous la forme \texttt{<serveur>:kesh-assistant} (par exemple \texttt{kesh:kesh-assistant}), où \texttt{<serveur>} est le nom donné au serveur ; la commande envoyée est \texttt{/mcp\_\_<serveur>\_\_kesh-assistant}, et Kesh reçoit \texttt{prompts/get} sans argument *(observé avec Claude Code 2.1.312)*. » — les deux formes concrètes de (g) généralisées par `<serveur>`, rien de plus |
 | item 5, l. 3338 | « Ce que l'agent vous en dit (non éprouvé) » | (d), **avec sa réserve** : « l'agent explique l'attente et demande qu'on le prévienne *(observé avec Claude Code 2.1.312 sur la 0.16.0 ; ce client ne transmettant alors au modèle que le contenu structuré quand il y en a un — constat de l'issue \#811 —, l'agent ne recevait vraisemblablement de l'accusé que son état ; ce que le texte de l'accusé produit est à confirmer sur la 0.16.1)* » |
-| item 7, l. 3340 | « Combien de fois un agent relit … (non éprouvé) » | (d), même réserve : une relecture par envoi, après l'accord, sans boucle ; une de plus sur demande explicite *(observé sur la 0.16.0, où la consigne « ne le rappelez pas en boucle » de l'accusé n'atteignait vraisemblablement pas le modèle, pour la même raison)*. « S'il relit avant votre décision … (non éprouvé au parcours : décrit d'après le code) » **reste**. La réception du texte validé : « *(à confirmer avec Claude Code sur la 0.16.1 ; en 0.16.0, ce contenu ne l'atteignait pas, issue \#811)* » — levée par la recette de la release (point 3, sur la candidate), avant le tag final |
+| item 7, l. 3340 | « Combien de fois un agent relit … (non éprouvé) » | (d), même réserve : une relecture par envoi, après l'accord, sans boucle ; une de plus sur demande explicite *(observé sur la 0.16.0, où la consigne « ne le rappelez pas en boucle » de l'accusé n'atteignait vraisemblablement pas le modèle, pour la même raison)*. « S'il relit avant votre décision … (non éprouvé au parcours : décrit d'après le code) » **reste**. La réception du texte validé : « *(à confirmer avec Claude Code sur la 0.16.1 ; en 0.16.0, ce contenu ne l'atteignait pas, issue \#811)* » — levée par la recette de la release (point 3, sur la candidate), avant le tag final *(annoté le 2026-10-29, revue de code P2, E6 = A2 : la règle générale de l'AC-8 — « observé avec Claude Code 2.1.312 » — prime sur cette cellule ; le manuel porte « observé avec Claude Code 2.1.312 sur la 0.16.0, où… »)* |
 | item 10, l. 3343 | 401 et OAuth « (non éprouvé) » | **reste** — (f) non observé |
 | `sec:mcp-origin`, l. 3167 | « Un client qui n'envoie pas d'Origin n'est pas concerné. » | ajouter : Claude Code 2.1.312 n'en envoie pas (b) |
 | `sec:mcp-outils`, « Ce que l'agent reçoit », l. 3209 | « Chaque réponse d'un outil commence par un en-tête fixe… » | ajouter : depuis la 0.16.1, la réponse ne porte **que** ce texte, aucun contenu structuré (#811) ; et la forme des **montants, quantités et taux** (« au moins deux décimales, sans zéro final superflu au-delà » — exemples `0.00`, `123.45`, `0.0125` ; une quantité `2` sort `2.00`, un taux `7.7` sort `7.70`) ; ne pas écrire « tout nombre décimal » : le délai `delaiInstructionS` de `kesh_version` est un nombre à virgule flottante, qui sort `30.0` |
@@ -801,3 +801,85 @@ Log. Ce qui a tourné :
   commit de code, `scripts/test-fast.sh --ci` 4460/4460 (7 ignorés), `npm run check`, `lint-i18n-ownership`, `make fr`,
   PDF aplatis, E2E complet 325 passés / 7 échecs KF-029, `mcp-sends.spec.ts` verte. Choix C-v016-1-15 à 17. Prompt de la
   revue P2 : `v016-1-review-prompt-p2.md` (Opus, passe complète, axe 5 sur la remédiation).
+- 2026-10-29 — revue de code P2 (Opus, passe complète, trois lentilles B, E, A, prompt `v016-1-review-prompt-p2.md`,
+  rapports hors dépôt `kesh-gate-logs/v0161-review-p2-{B,E,A}.md`) : B 0/0/2/3, E 0/0/1/5, A 0/0/0/6 — 3 MEDIUM
+  distincts (B1 = E2 = A1, B2, E1 ; E2 et A1, LOW à leur lentille, sont le même constat que B1), 11 LOW. **Motif** : les
+  trois MEDIUM portent sur des phrases du manuel qui disaient ce que l'agent « reçoit » ou « relit », deux écrites par
+  cette story ou sa remédiation P1. Remédiation (Opus 5.5, commit `f6b338a9`), partie du symptôme et non de la liste
+  (`grep -nE "agent (re)?(reçoit|relit|relira|lit)" docs/manual/fr/*.tex`, puis `reçoi[tv]`, `parvient`, `atteign`,
+  `transmet`, `apprend`), chaque prémisse relue avant d'appliquer :
+  - **B1 = E2 = A1** (MEDIUM, appliqué) — lu `admin-manual.tex:3219`, « Depuis la 0.16.1, la réponse ne porte
+    \textbf{que} ce texte, sous toute clé », et `reponse.rs:53` (`Self::Depose(accuse) => un_bloc(textes::texte_envoi_depose(…), false)`),
+    `:55-63` (`Valide` : deux blocs) : faux sous une clé requise. Paragraphe renommé « Ce que Kesh rend à l'agent » :
+    clé dispensée, en-tête et JSON ; clé requise, l'accusé, puis à la relecture validée la phrase et le texte validé ;
+    « quelle que soit la politique de la clé, … que des blocs de texte (`content`) et l'indication d'erreur (`isError`),
+    et aucun contenu structuré », réserve « à confirmer avec Claude Code sur la 0.16.1 » gardée. Les deux deux-points
+    enchaînés disparaissent.
+  - **B2** (MEDIUM, appliqué) — lu `git show d3b3b649:crates/kesh-api/src/mcp/reponse.rs`, l. 53 et 59,
+    `"structuredContent": { "envoi": n, "etat": "en_attente" },` : « son numéro et son état » à l'item 5
+    (`admin-manual.tex:3348`) et au CHANGELOG (l. 15). Grep de la valeur (`que son état`, `que par son état`) : aucun
+    autre site.
+  - **E1** (MEDIUM, appliqué) — lus `admin-manual.tex:3237`, « C'est ce texte que l'agent relira », et
+    `user-manual.tex:3264`, « l'agent relit ensuite ce qui a été validé, et seulement cela » : chacune dit désormais ce
+    que Kesh rend à la relecture et porte la réserve « à confirmer avec Claude Code sur la 0.16.1 ; en 0.16.0, il ne
+    l'atteignait pas, issue #811 ».
+  - **B3 = E5** (LOW, appliqué) — lu `sortie.rs:211`, « les colonnes sont en `DECIMAL(19,4)`, quinze chiffres entiers au
+    plus », et recompté `grep -ohiE "DECIMAL *\( *[0-9]+ *, *[0-9]+ *\)" crates/kesh-db/migrations/*.sql` : 25
+    `(19,4)`, 4 `(18,2)`, 3 `(7,2)`, 7 `(5,2)` ; doc-comment réécrit (« seize chiffres entiers au plus »), C-v016-1-17
+    annoté.
+  - **B4** (LOW, appliqué) — lu `mcp_outils_e2e.rs:1526-1543` : la seconde moitié ne relisait que les soldes de ligne ;
+    `totalActifs == "10.00"` et `totalPassifs ∈ {"10.00", "-10.00"}` ajoutés après l'écriture, verts.
+  - **B5** (LOW, appliqué, mécanique) — lu `mcp_contrat.rs:1121`, seul `assert_eq!(r.statut, StatusCode::OK, "{STATUT_200}")`
+    de `k23_un_seul_canal` : la même assertion posée avant chaque `enveloppe_conforme` des appels 232, 233, 234, 236,
+    237, 238 et 239.
+  - **E3** (LOW, appliqué) — lu `CHANGELOG.md:23`, « Le contenu validé est rendu dans le texte, seul canal du serveur
+    MCP », et `git show d3b3b649:…/reponse.rs` (le texte validé déjà au second bloc) : titre « La relecture d'un envoi
+    validé n'est plus accompagnée d'un contenu structuré qui ne portait pas le contenu validé » (C-v016-1-19).
+  - **E4** (LOW, appliqué) — lu `admin-manual.tex:2488` (*Les clients MCP*), sans « modifié », et `textes.rs:217-223`
+    (`", qui l'a modifié avant l'envoi"`) : la phrase dit où se lit le booléen.
+  - **E6 = A2** (LOW, appliqué) — lu `admin-manual.tex:3350`, « *(observé sur la 0.16.0, où …)* » : « observé avec
+    Claude Code 2.1.312 sur la 0.16.0 » ; la règle générale de l'AC-8 prime sur sa cellule de l'item 7, annotée (datée) sans être réécrite.
+  - **A3** (LOW, appliqué) — lu `admin-manual.tex:3348`, « il appelle l'outil \texttt{kesh\_bilan} avec l'identifiant de
+    l'exercice », sans marque, et le commentaire de recette (aucune observation ne relève l'outil appelé) : « *(non
+    éprouvé : l'outil appelé n'a pas été relevé à la recette)* » ; les « non éprouvé » du manuel d'administration passent
+    de 7 à 8 (`grep -oF`, `.tex` et PDF).
+  - **A4** (LOW, appliqué) — lu `sprint-status.yaml:554`, « revue de code P1 à lancer » : commentaire daté ajouté en
+    tête (P1 remédiée, P2 remédiée, P3 à lancer), le relevé passé laissé.
+  - **A5** (LOW, appliqué) — lu `git log -1 --format=%ad 20355dac` (2026-10-29) et `git grep -cF "dépassé le 2026-10-28
+    par la v016-1"` (18 occurrences, 11 fichiers, toutes écrites par cette branche) : date portée au 2026-10-29, la date
+    du code qui les rend fausses ; recompté 18 / 11 après, 0 de l'ancienne. Ce sont des textes de cette branche, non des
+    relevés passés.
+  - **A6** (LOW, **rien changé**, tranché par l'orchestrateur) — `README.md:49` porte sa réserve (« que Claude Code
+    transmette ce contenu au modèle reste à confirmer par la recette de la release »), et la release se préparera sur
+    cette branche : rien n'atteint `main` avant le verdict de la recette.
+  Aucun finding rejeté.
+
+  **Phrases réécrites hors findings** (relecture entière de `sec:mcp` et de `sec:agent-mcp`, C-v016-1-18) :
+  `admin-manual.tex:3066` (« Kesh ne rend à l'agent qu'un accusé »), `:3138` (« Kesh répond à l'agent par le refus
+  d'une clé inconnue »), `:3219` (« l'en-tête précise… », « est rendu marqué comme tel »), `:3223` (« Kesh sert le
+  carnet d'adresses », « il sert la liste des pièces importées »), `:3231` (« l'agent le relit en appelant l'outil… :
+  Kesh lui rend le contenu validé »), `:3243` (« la phrase de Kesh qui précède le texte dit qu'il a été modifié »),
+  `:3256` (« Kesh rend le code, jamais le caractère »), `:3309` (« l'appel rend une erreur »), `:3319` (« l'outil rend
+  une erreur »), `:3324` (« ce que Kesh lui répond »), `:3348` (« Kesh ne lui rend aucune donnée » ; réserve harmonisée
+  « à confirmer avec Claude Code sur la 0.16.1 »), `:3350` (« Kesh lui rend », « Kesh rend « en attente » », « que ces
+  deux blocs atteignent l'agent ») ; `user-manual.tex:3261` (« Kesh ne rend pas tout de suite à l'agent ce qu'il
+  demande ») ; `CHANGELOG.md:15` (réserve harmonisée). Laissées : les réponses du transport (« reçoit `403` »,
+  « reçoit `202` »…), qui ne sont pas des réceptions par le modèle, et le libellé d'écran « Envoi n° 1 validé : l'agent
+  peut le relire. ».
+
+  Gates réellement exécutés : gate ciblé `cargo fmt --check`, `cargo clippy --workspace --all-targets -D warnings`,
+  `nextest binary(mcp_contrat) | binary(mcp_outils_e2e)` 43/43 (`v0161-r2-cible1.log`) ; au dernier commit de code
+  (`f6b338a9`), base `kesh_v0161` reconstruite, `scripts/test-fast.sh --ci` sous verrou : 4460 exécutés, 4460 passés, 7
+  ignorés (`v0161-r2-gate-backend.log`) ; `npm run check` (0 erreur, 29 avertissements) et `lint-i18n-ownership` PASS
+  (`v0161-r2-gate-frontend.log`) ; `make fr` sous verrou, deux PDF stables en deux passes (`v0161-r2-make-fr.log`) ; PDF
+  aplatis (`grep -oF` des phrases réécrites : chacune ×1 ; « sous toute clé », « l’agent relira », « l’agent
+  apprend », « l’agent relit ensuite » ×0 ; « non éprouvé » ×8, « observé avec Claude Code 2.1.312 » ×6, « à
+  confirmer avec Claude Code sur la 0.16.1 » ×4 au PDF d'administration, ×1 au PDF utilisateur) ; `pdftotext -bbox`
+  (`v0161-r2-bbox-{admin,user}-manual.txt`) : pages touchées 95, 123, 127-131, 135, 137 (administration) et 106
+  (utilisateur) — au-delà de x = 524, p. 129 « l’Administrateur. » et p. 135 trois mots, lignes non touchées, comme au
+  relevé R1 ; p. 106 aucun ; E2E complet (base `kesh_e2e_v0161` reconstruite, dossiers neufs `/tmp/kesh-e2e-v0161-r2-1/`, port
+  3161, `v0161-e2e-r2-1.log`) : 325 passés, 7 échecs, 17 ignorés — les sept de la KF-029 (#97) de `docs/testing.md`
+  § *Les échecs attendus* (`mode-expert.spec.ts:26`, `:41`, `onboarding-path-b.spec.ts:65`, `:92`, `onboarding.spec.ts:57`,
+  `:77`, `:150`), aucun autre ; `mcp-sends.spec.ts:149` et `:216` verts ; backend arrêté par son PID.
+  Prompt de la revue P3 : `v016-1-review-prompt-p3.md` (Sonnet, passe ciblée, une lentille, rapport
+  `kesh-gate-logs/v0161-review-p3.md`).
