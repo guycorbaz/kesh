@@ -635,7 +635,14 @@ async fn pieges_toujours_enveloppes(pool: MySqlPool) {
             let r = b.appeler(&jeton, outil, args.clone()).await;
             let s = structure(&r, outil);
             assert_eq!(fautes(&s, &motif), Vec::<String>::new(), "{outil} {args}");
-            assert_eq!(texte(&r), texte_attendu(&s), "{outil} : une seule source");
+            // `structure` dérive `s` du texte (v016-1) : l'égalité épingle que le
+            // texte émis est la forme canonique indentée de sa propre valeur
+            // (`serde_json` sans `preserve_order` : clés triées, deux espaces).
+            assert_eq!(
+                texte(&r),
+                texte_attendu(&s),
+                "{outil} : forme canonique indentée"
+            );
         }
     }
 }

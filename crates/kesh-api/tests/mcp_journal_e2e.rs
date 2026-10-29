@@ -810,6 +810,10 @@ async fn le_journal_n_execute_pas_l_outil_deux_fois(pool: MySqlPool) {
         attendu(l.exempte.0, "compteur", "servi", "exempt"),
     )
     .await;
-    assert_eq!(r.json()["result"]["structuredContent"], json!({ "n": 1 }));
+    // Le texte de l'outil `Compteur` : `{"n":1}` (v016-1 : `content` seul).
+    assert_eq!(
+        r.json()["result"]["content"][0]["text"],
+        json!(json!({ "n": 1 }).to_string())
+    );
     assert_eq!(n.load(Ordering::SeqCst), 1);
 }

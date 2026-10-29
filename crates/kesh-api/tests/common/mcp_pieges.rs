@@ -118,14 +118,35 @@ impl Banc {
     }
 }
 
-/// Le `structuredContent` d'une réponse servie ; panique si elle ne l'est pas.
+/// L'en-tête littéral du bloc de texte d'une sortie d'outil — recopié, non tiré
+/// de `textes`, pour que [`structure`] panique si le serveur cesse de l'écrire.
+const ENTETE_DONNEES: &str = "Données lues dans les livres de Kesh, en lecture seule.";
+
+/// La valeur d'une réponse servie, **dérivée du texte** (v016-1, C-v016-1-5 :
+/// plus de `structuredContent` depuis la 0.16.1) : l'unique bloc, son en-tête,
+/// une ligne vide, puis le JSON lu par `serde_json::from_str`. Panique si la
+/// réponse n'est pas servie, n'a pas un seul bloc, ne commence pas par l'en-tête
+/// ou ne porte pas de JSON lisible.
 pub fn structure(reponse: &Value, contexte: &str) -> Value {
     assert_eq!(
         reponse["result"]["isError"],
         json!(false),
         "{contexte} : non servi : {reponse}"
     );
-    reponse["result"]["structuredContent"].clone()
+    let blocs = reponse["result"]["content"]
+        .as_array()
+        .unwrap_or_else(|| panic!("{contexte} : content absent : {reponse}"));
+    assert_eq!(blocs.len(), 1, "{contexte} : un seul bloc : {reponse}");
+    let texte = blocs[0]["text"].as_str().unwrap_or_default();
+    assert!(
+        texte.starts_with(ENTETE_DONNEES),
+        "{contexte} : en-tête des données absent : {texte}"
+    );
+    let (_, json_du_texte) = texte
+        .split_once("\n\n")
+        .unwrap_or_else(|| panic!("{contexte} : en-tête, ligne vide, puis le JSON : {texte}"));
+    serde_json::from_str(json_du_texte)
+        .unwrap_or_else(|e| panic!("{contexte} : JSON illisible ({e}) : {json_du_texte}"))
 }
 
 /// Les jeux d'arguments d'un outil, sur les pièges d'une société.

@@ -37,7 +37,6 @@ use common::mcp::*;
 
 const PIEGE_E1: &str = "PIEGE_E1_328";
 const PIEGE_BLOC: &str = "PIEGE_BLOC1_328";
-const PIEGE_STRUCT: &str = "PIEGE_STRUCT_328";
 const PIEGE_RESUME: &str = "PIEGE_RESUME_328";
 const PIEGE_MODIF: &str = "PIEGE_MODIF_328";
 
@@ -184,6 +183,11 @@ fn code_d_erreur(r: &Rendu) -> String {
 // AC-B2 — une seule représentation, le texte
 // ---------------------------------------------------------------------------
 
+/// Le texte seul est déposé et relu ; le résumé va à l'écran, jamais à
+/// l'agent. L'AC-B2 de la 32-8, pour la donnée structurée, est tenu **par
+/// construction** depuis la 0.16.1 (v016-1, C-v016-1-5) : `Donnees` n'a plus
+/// de champ structuré, si bien que le piège `PIEGE_STRUCT` qu'y posait ce test
+/// est parti avec lui.
 #[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn une_seule_representation(pool: MySqlPool) {
     let l = livres_servis(&pool).await;
@@ -191,7 +195,6 @@ async fn une_seule_representation(pool: MySqlPool) {
     let outil = Fixe {
         nom: "piege_struct",
         texte: texte.clone(),
-        structure: Some(json!({ "x": PIEGE_STRUCT })),
         resume: Some(PIEGE_RESUME.to_string()),
         n: Default::default(),
     };
@@ -214,9 +217,7 @@ async fn une_seule_representation(pool: MySqlPool) {
     let r = b.mcp(&l.requise.1, &lire_envoi(1, n)).await;
     assert_eq!(r.json(), attendu_valide(1, n, false, &texte));
     let corps = String::from_utf8_lossy(&r.corps);
-    for piege in [PIEGE_STRUCT, PIEGE_RESUME] {
-        assert!(!corps.contains(piege), "{piege} envoyé");
-    }
+    assert!(!corps.contains(PIEGE_RESUME), "{PIEGE_RESUME} envoyé");
 }
 
 // ---------------------------------------------------------------------------
@@ -253,14 +254,12 @@ async fn taille_des_envois(pool: MySqlPool) {
     let resume_long = Fixe {
         nom: "resume_long",
         texte: "court".into(),
-        structure: None,
         resume: Some("r".repeat(MCP_ENVOI_RESUME_OCTETS_MAX + 1)),
         n: Default::default(),
     };
     let resume_borne = Fixe {
         nom: "resume_borne",
         texte: "court".into(),
-        structure: None,
         resume: Some("r".repeat(MCP_ENVOI_RESUME_OCTETS_MAX)),
         n: Default::default(),
     };
@@ -886,7 +885,6 @@ async fn decision_journalisee_sans_contenu(pool: MySqlPool) {
     let outil = Fixe {
         nom: "piege",
         texte: texte_piege(),
-        structure: None,
         resume: Some(PIEGE_RESUME.to_string()),
         n: Default::default(),
     };
@@ -1126,7 +1124,6 @@ async fn contenu_jamais_dans_le_journal_du_serveur(pool: MySqlPool) {
     let outil = Fixe {
         nom: "piege",
         texte: texte_piege(),
-        structure: None,
         resume: Some(PIEGE_RESUME.to_string()),
         n: Default::default(),
     };

@@ -670,6 +670,8 @@ async fn cle_dispensee_sert_chaque_outil(pool: MySqlPool) {
     let b = banc(&pool);
     for (outil, _, _) in TEMOINS {
         let r = b.appeler(&jeton, outil, premier_jeu(outil, &a.p)).await;
+        // `structure` dérive `s` du texte (v016-1) : l'égalité épingle la forme
+        // canonique indentée du texte émis.
         let s = structure(&r, outil);
         assert_eq!(
             texte(&r),
@@ -677,12 +679,12 @@ async fn cle_dispensee_sert_chaque_outil(pool: MySqlPool) {
                 "{TEXTE_ENTETE_DONNEES}\n\n{}",
                 serde_json::to_string_pretty(&s).unwrap()
             ),
-            "{outil}"
+            "{outil} : forme canonique indentée"
         );
         assert_eq!(
             r["result"].as_object().unwrap().len(),
-            3,
-            "{outil} : content, structuredContent, isError"
+            2,
+            "{outil} : content, isError (v016-1, C-v016-1-1)"
         );
     }
 }
@@ -1402,4 +1404,154 @@ async fn plafond_au_maximum(pool: MySqlPool) {
     args["limit"] = json!(1);
     let r = b.appeler(&jeton, "kesh_ecritures", args).await;
     assert_eq!(r["result"]["isError"], json!(false));
+}
+
+// ---------------------------------------------------------------------------
+// Story v016-1 (AC-7, #812) — une seule forme de montant
+// ---------------------------------------------------------------------------
+
+/// Sur un exercice **sans écriture**, chaque montant de `kesh_bilan` — les
+/// totaux, le report, le résultat et le solde de chaque ligne — sort sous la
+/// même chaîne `"0.00"` (C-v016-1-6). Avant la 0.16.1, un montant lu en base
+/// gardait l'échelle de sa colonne (`"0.0000"`) et une somme calculée la sienne
+/// (`"0"`), dans le même objet (#812). Le JSON est lu dans le texte, après
+/// l'en-tête et la ligne vide. Un bilan vide ne listant aucune ligne, une
+/// écriture de 10.0000 est ensuite passée, et le solde de chaque ligne lue —
+/// une au moins — doit sortir `"10.00"` ou `"-10.00"` (revue de code P1, B2),
+/// comme les totaux des actifs et des passifs (revue de code P2, B4).
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn bilan_montants_une_seule_forme(pool: MySqlPool) {
+    let c = kesh_seed::pieges::societe_complete(&pool, "Société vide v0161")
+        .await
+        .expect("société");
+    let u = common::mcp::administrateur(&pool, c, "admin-v0161").await;
+    common::mcp::activer(&pool, c).await;
+    let exercice: i64 = sqlx::query_scalar("SELECT id FROM fiscal_years WHERE company_id = ?")
+        .bind(c)
+        .fetch_one(&pool)
+        .await
+        .expect("l'exercice de la société");
+    let ecritures: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM journal_entries WHERE company_id = ?")
+            .bind(c)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(ecritures, 0, "montage : un exercice sans écriture");
+    let (_, jeton) = common::mcp::cle(&pool, c, u, &LECTURE, SendValidation::Exempt).await;
+    let r = banc(&pool)
+        .appeler(&jeton, "kesh_bilan", json!({"fiscalYearId": exercice}))
+        .await;
+    let t = texte(&r);
+    let (_, json_du_texte) = t.split_once("\n\n").expect("en-tête, ligne vide, JSON");
+    let s: Value = serde_json::from_str(json_du_texte).expect("le JSON du texte");
+    let mut montants = Vec::new();
+    for champ in [
+        "totalActifs",
+        "totalPassifs",
+        "totalFondsPropres",
+        "report",
+        "resultat",
+    ] {
+        montants.push((champ.to_string(), s[champ].clone()));
+    }
+    for section in ["actifs", "passifs", "fondsPropres"] {
+        for (i, l) in s[section].as_array().expect(section).iter().enumerate() {
+            montants.push((format!("{section}[{i}].solde"), l["solde"].clone()));
+        }
+    }
+    let fautifs: Vec<_> = montants
+        .iter()
+        .filter(|(_, v)| *v != json!("0.00"))
+        .collect();
+    assert!(
+        fautifs.is_empty(),
+        "#812 : chaque montant du bilan vide vaut \"0.00\" : {fautifs:?} — {s}"
+    );
+
+    // Un bilan sans écriture ne liste aucune ligne : la boucle des sections
+    // ci-dessus y passe à vide (revue de code P1, B2). Une écriture de 10.0000
+    // — l'échelle de la colonne `DECIMAL(19,4)` — d'un actif à un passif fait
+    // paraître des lignes ; au moins une doit être lue, et chaque solde sortir
+    // sous la même forme, `"10.00"` ou `"-10.00"`.
+    let comptes = accounts::list_by_company(&pool, c, false).await.unwrap();
+    let premier = |t: AccountType| {
+        comptes
+            .iter()
+            .find(|a| a.active && a.postable && a.account_type == t)
+            .map(|a| a.id)
+            .expect("un compte postable du type")
+    };
+    let (actif, passif) = (premier(AccountType::Asset), premier(AccountType::Liability));
+    let debut: chrono::NaiveDate =
+        sqlx::query_scalar("SELECT start_date FROM fiscal_years WHERE id = ?")
+            .bind(exercice)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    let dix = Decimal::new(100_000, 4);
+    journal_entries::create(
+        &pool,
+        exercice,
+        u,
+        NewJournalEntry {
+            company_id: c,
+            entry_date: debut,
+            journal: Journal::OD,
+            description: "Écriture v0161".into(),
+            project_id: None,
+            lines: vec![
+                NewJournalEntryLine {
+                    account_id: actif,
+                    debit: dix,
+                    credit: Decimal::ZERO,
+                    project_id: None,
+                },
+                NewJournalEntryLine {
+                    account_id: passif,
+                    debit: Decimal::ZERO,
+                    credit: dix,
+                    project_id: None,
+                },
+            ],
+        },
+    )
+    .await
+    .expect("l'écriture de 10.0000");
+    let r = banc(&pool)
+        .appeler(&jeton, "kesh_bilan", json!({"fiscalYearId": exercice}))
+        .await;
+    let t = texte(&r);
+    let (_, json_du_texte) = t.split_once("\n\n").expect("en-tête, ligne vide, JSON");
+    let s: Value = serde_json::from_str(json_du_texte).expect("le JSON du texte");
+    let mut soldes = Vec::new();
+    for section in ["actifs", "passifs", "fondsPropres"] {
+        for (i, l) in s[section].as_array().expect(section).iter().enumerate() {
+            soldes.push((format!("{section}[{i}].solde"), l["solde"].clone()));
+        }
+    }
+    assert!(
+        !soldes.is_empty(),
+        "montage : l'écriture fait paraître au moins une ligne — {s}"
+    );
+    let fautifs: Vec<_> = soldes
+        .iter()
+        .filter(|(_, v)| *v != json!("10.00") && *v != json!("-10.00"))
+        .collect();
+    assert!(
+        fautifs.is_empty(),
+        "#812 : chaque solde de ligne sort \"10.00\" ou \"-10.00\" : {fautifs:?} — {s}"
+    );
+    // Les totaux sont des sommes calculées — le lieu même où #812 rendait `"0"`
+    // à côté de `"0.0000"` — et ne s'éprouvent qu'ici à une valeur non nulle,
+    // la seule où la forme d'une somme se distingue (revue de code P2, B4).
+    assert_eq!(
+        s["totalActifs"],
+        json!("10.00"),
+        "#812 : le total des actifs, somme calculée — {s}"
+    );
+    assert!(
+        s["totalPassifs"] == json!("10.00") || s["totalPassifs"] == json!("-10.00"),
+        "#812 : le total des passifs, somme calculée, \"10.00\" ou \"-10.00\" — {s}"
+    );
 }

@@ -8,6 +8,22 @@ Le contenu est rédigé en français à destination des **fiduciaires, PME, ind�
 
 ---
 
+## [0.16.1] — 2026-10-29
+
+Correctif de l'Epic 32, le serveur MCP de Kesh ([#723](https://github.com/guycorbaz/kesh/issues/723)) : ce que le serveur rend à l'agent. Il n'ajoute **aucune migration** : la 0.16.0 redémarre sur une base passée par la 0.16.1, et une sauvegarde de l'une s'importe dans l'autre — le retour à la 0.16.0 ne demande aucune sauvegarde particulière, au-delà de celle que toute mise à jour réclame. Le compose et le `.env` ne changent pas.
+
+**Observé avec Claude Code 2.1.312** (recette du 2026-10-28, sur la 0.16.0, base neuve sans donnée réelle) : le client se branche en transport HTTP, portée `local`, la clé en en-tête `Authorization`, sans identifiant de session ; il sonde d'abord une révision plus récente, que Kesh refuse, puis ouvre la session en `2025-11-25` ; il n'envoie pas d'en-tête `Origin` ; le prompt `kesh-assistant` paraît à son menu sous la forme `<serveur>:kesh-assistant` ; l'agent explique l'attente d'un envoi et le relit une fois après l'accord, sans boucle — sur la 0.16.0, où l'accusé ne l'atteignait vraisemblablement que par son numéro et son état ([#811](https://github.com/guycorbaz/kesh/issues/811)) : ce que le texte de l'accusé produit reste à confirmer avec Claude Code sur la 0.16.1. La même recette a montré que le contenu validé d'un envoi n'atteignait pas l'agent ([#811](https://github.com/guycorbaz/kesh/issues/811)), et que les montants sortaient sous plusieurs formes ([#812](https://github.com/guycorbaz/kesh/issues/812)). Le manuel d'administration retire les « non éprouvé » que la recette a levés et garde les autres.
+
+### Modifié
+
+- **Les réponses d'outil du serveur MCP ne portent plus de contenu structuré** (`structuredContent`) : le texte est le seul canal. Une intégration qui le lisait lit, pour une sortie d'outil, le JSON du bloc de texte, après l'en-tête et une ligne vide ; pour un accusé ou une relecture d'envoi, et pour l'accusé d'une proposition de prompt, la phrase de Kesh, propre à chaque cas (le texte validé au second bloc). Le détail est au manuel d'administration, *Passer à la 0.16.1*.
+- **Une version candidate ne déplace plus `gcorbaz/kesh:latest`** : un tag `vX.Y.Z-rcN` ne publie que `gcorbaz/kesh:X.Y.Z-rcN`, et sa release GitHub est marquée pré-version. Une installation qui suit `:latest` ne reçoit que les versions publiées.
+
+### Corrigé
+
+- **La relecture d'un envoi validé n'est plus accompagnée d'un contenu structuré qui ne portait pas le contenu validé** ([#811](https://github.com/guycorbaz/kesh/issues/811)). Kesh ne rend plus qu'un seul canal, le texte, sur tout appel d'outil : le contenu validé, l'en-tête des données et les consignes que Kesh écrit pour l'agent y sont tous. Que Claude Code transmette ce texte au modèle en l'absence de contenu structuré reste à confirmer par la recette de la release.
+- **Une seule forme pour les montants, quantités et taux** du serveur MCP ([#812](https://github.com/guycorbaz/kesh/issues/812)) : au moins deux décimales, sans zéro final superflu au-delà — `0.00`, `123.45`, `0.0125` —, là où un même bilan rendait `0.0000` et `0`.
+
 ## [0.16.0] — 2026-10-28
 
 Epic 32, **le serveur MCP de Kesh** ([#723](https://github.com/guycorbaz/kesh/issues/723)) : un serveur MCP intégré, par lequel un agent IA du réseau local — un client MCP comme Claude Code — **lit** les livres. Il est **désactivé par défaut** et se règle dans *Administration → Serveur MCP* (activation, filtre d'adresse, mandataires de confiance), avec des **clés dédiées à portées fines** dont le secret ne s'affiche qu'une fois. Aucun outil n'écrit dans les livres. Sous une clé à validation requise (le défaut), ce que l'agent demande est **montré à l'Administrateur avant de partir** (*Envois du serveur MCP*) ; chaque appel d'outil est journalisé. Les prompts que Kesh sert à l'agent sont tenus en base avec leur historique ; un agent peut en proposer une version, qu'un Administrateur approuve ou refuse (*Prompts du serveur MCP*). Un test de contrat du protocole tourne en CI. S'y ajoutent deux correctifs du grand livre (comptes de résultat sur plusieurs exercices, [#777](https://github.com/guycorbaz/kesh/issues/777), [#778](https://github.com/guycorbaz/kesh/issues/778)) et la mise à jour des dépendances (voir *Sécurité*).
