@@ -642,6 +642,38 @@ champ (C-v016-1-12) ; `donnees_une_seule_source` à `:568` et non `:567`.
 **Défauts observés, hors périmètre** : aucun neuf. `reminders.spec.ts:235` est un cas de la pollution déjà décrite
 par `docs/testing.md` (rien à ouvrir) ; le format REST de #813 est déjà tracé.
 
+**Remédiation de la revue de code P1 (2026-10-29, Opus 5.5, commit `d2b65bc0`).** Le détail des findings est au Change
+Log. Ce qui a tourné :
+- *Mutation `scale() < 3`* (prescrite ; appliquée par l'outil Edit sur `sortie.rs:217`, filtre `binary(/^mcp/) |
+  test(/^mcp::/)`, sous verrou, restaurée par `git checkout -- sortie.rs && touch sortie.rs`, `git status` propre) :
+  **224 passés, 0 échec** (`v0161-mutations/R1-lt3.log`) — **équivalente, démontrée** : après `normalize`, une échelle de
+  2 est déjà à deux décimales et `rescale(2)` n'y change rien, une échelle de 3 ou plus n'est touchée ni par `< 2` ni par
+  `< 3`. La variante que visait E3 est `scale() < 4` (ou `<= 3`), qui arrondit une échelle de 3 : jouée de même, **tuée**
+  par `montant_forme_unique` seul — `left: String("1.13")`, `right: String("1.125")`, 223 passés, 1 échec
+  (`R1-lt4.log`). Avec les huit cas d'avant (échelles 0, 1, 2 et 4), elle aurait survécu : déduit des échelles, non joué.
+- *Gate ciblé* après patch : `fmt`, `clippy --workspace --all-targets -D warnings` (`v0161-r1-clippy.log`), nextest
+  `binary(mcp_outils_e2e) | test(/^mcp::sortie::/)` : 31 passés (`v0161-r1-cible1.log`).
+- *Gate complet au dernier commit de code* (`d2b65bc0`), base `kesh_v0161` reconstruite avant (drop, create, migrations
+  du worktree, seed) : `scripts/test-fast.sh --ci` sous verrou — garde des droits conforme, fmt, clippy, **nextest 4460
+  exécutés, 4460 passés, 7 ignorés** (`v0161-r1-gate-backend.log`, 188 s ; aucun test ajouté, deux cas et une seconde
+  moitié dans des tests existants) ; frontend `npm run check` (0 erreur, 29 avertissements préexistants) et
+  `lint-i18n-ownership` (PASS) (`v0161-r1-gate-frontend.log`) — aucun fichier frontend touché, Vitest et build non
+  rejoués.
+- *PDF* : `make fr` sous verrou (`v0161-r1-make-fr.log`, admin et utilisateur stables en 2 passes), aplatis et contrôlés
+  par `grep -oF` sous `timeout 60` : utilisateur `/mcp__<serveur>__kesh-assistant` ×1 (0 avant), mot à `xMax` 390,67
+  (`pdftotext -bbox`, 595,84 avant) ; administration « préfère le contenu structuré » ×0, « lit donc le même texte » ×0,
+  « que le bloc de texte (content) » ×1, « à confirmer avec Claude Code sur la 0.16.1 » ×2 (1 avant), « observé avec
+  Claude Code 2.1.312 » ×5, « non éprouvé » ×7. Débordements : aucun `Overfull \hbox` des journaux LaTeX dans un
+  paragraphe que la story touche (admin l. 2480-2489, 3177, 3219, 3237, 3324, 3341, 3346-3348, 3350 ; utilisateur
+  l. 3270-3276) ; aucun mot au-delà de `xMax` 524 sur la page du paragraphe utilisateur ; les quatre mots au-delà au
+  manuel d'administration (p. 132 `kesh-developpement`, p. 135 `Content-Type:` ×2 et `»),`) sont dans des paragraphes
+  non touchés (`v0161-r1-bbox-*.txt`).
+- *E2E complet* (recette `docs/testing.md`, port 3161, dossiers neufs `/tmp/kesh-e2e-v0161-r1-1/`, base
+  `kesh_e2e_v0161` reconstruite) : **325 passés, 7 échoués, 17 ignorés** (14,1 min, `v0161-e2e-r1-1.log`) ; les sept
+  sont les KF-029 (#97) de `docs/testing.md` — `mode-expert.spec.ts:26`, `:41`, `onboarding-path-b.spec.ts:65`, `:92`,
+  `onboarding.spec.ts:57`, `:77`, `:150` ; **`mcp-sends.spec.ts` : ses deux tests passés** (l. 149 et 216). Backend
+  arrêté par son PID (1240105).
+
 ### File List
 
 - `crates/kesh-api/src/mcp/politique.rs`, `reponse.rs`, `prompts.rs`, `sortie.rs`
@@ -731,3 +763,41 @@ par `docs/testing.md` (rien à ouvrir) ; le format REST de #813 est déjà trac�
   annotations des relevés de l'Epic 32 ; quinze mutations, quinze tuées ; gate backend 4460/4460 (7 ignorés), Vitest
   2150, E2E 324 passés / 8 échecs attendus ; choix C-v016-1-11 à 14 ; prompt de revue P1 `v016-1-review-prompt-p1.md`.
   Statut `review`.
+- 2026-10-29 — revue de code P1 (Sonnet, trois lentilles B, E, A, prompt `v016-1-review-prompt-p1.md`, rapports hors
+  dépôt `kesh-gate-logs/v0161-review-p1-{B,E,A}.md`) : B 0/0/1/5, E 0/0/1/3, A 0/0/0/5 — 2 MEDIUM, 13 LOW ; B3, LOW à
+  sa lentille, reclassé MEDIUM par l'orchestrateur comme le même constat que E1. Remédiation (Opus 5.5, commit
+  `d2b65bc0`), chaque prémisse relue avant d'appliquer :
+  - **B1** (MEDIUM, appliqué) — lu `user-manual.tex:3273`, `\texttt{/mcp\_\_<serveur>\_\_kesh-assistant}` en fin de
+    ligne, et le mot à `xMax="595.841620"` du rapport B : la commande passe seule sur sa ligne (`center`), PDF
+    régénéré, chaîne entière ×1, `xMax` 390,67.
+  - **B3 = E1** (MEDIUM, appliqué) — lu `admin-manual.tex:3219`, « un client qui préfère le contenu structuré quand il en
+    trouve un, comme Claude Code 2.1.312, lit donc le même texte qu'un autre » : la phrase dit ce que Kesh rend (le seul
+    bloc `content`) et porte la réserve des items 5 et 7 (« à confirmer avec Claude Code sur la 0.16.1 »). Grep de la
+    valeur (`préfère le contenu structuré`, `lit donc le même texte`, `structur`, puis `atteint`, `transmet`) sur `docs/`,
+    `CHANGELOG.md`, `README.md`, `website/` : seule autre phrase qui affirmait la lecture côté client, le titre du
+    CHANGELOG (E2 = A1) ; README l. 49 et items 5 et 7 déjà réservés.
+  - **B2** (LOW, appliqué autrement que proposé) — lu `v0161-etape0-rouges.log:493`, `"actifs":[]`, `"passifs":[]`,
+    `"fondsPropres":[]` : la boucle passait à vide, et l'assertion proposée rougirait toujours ; une écriture de
+    `10.0000` fait paraître des lignes, au moins une exigée, chaque solde `"10.00"` ou `"-10.00"` (C-v016-1-16).
+  - **E2 = A1** (LOW, appliqué) — lu `CHANGELOG.md:23`, « **Le contenu validé atteint l'agent** » : titre neutre, vrai
+    dans les deux issues de la recette.
+  - **A2** (LOW, appliqué) — lu `CHANGELOG.md:15`, « le relit une fois après l'accord, sans boucle. » : réserve de (d)
+    ajoutée, comme à l'item 5.
+  - **E3** (LOW, appliqué) — lu `sortie.rs:217`, `if d.scale() < 2 {`, et les échelles des huit cas (0, 1, 2, 4) : cas
+    `1.125` et `2.5000` ajoutés ; la mutation `< 3` est équivalente (démontrée, 224/224 verts), la mutation `< 4` est
+    tuée par `1.125` (Dev Agent Record).
+  - **B5 = E4** (LOW, appliqué) — lu `sortie.rs:459`, `let (texte, _) = texte_et_valeur(sortie)?;` : valeur gardée,
+    doc-comments de `texte_et_valeur` et de `donnees` réécrits (C-v016-1-15).
+  - **A5 = B6** (LOW, appliqué) — lu `rust_decimal-1.43.0/src/decimal.rs`, doc de `rescale`, « This function never fails.
+    Consequently, if a scale is provided that is unable to be represented using the given mantissa, then the maximum
+    possible scale is used » : borne écrite au doc-comment de `Montant` ; manuel et CHANGELOG laissés (C-v016-1-17).
+  - **A4** (LOW, appliqué) — lus l'AC-8 (« Le PDF n'est **pas** régénéré par le développeur »), les Dev Notes (« Le PDF
+    n'est pas régénéré dans la story ») et C-v016-1-10 (« ni aux PDF ») : trois annotations datées, renvoi à
+    C-v016-1-11, aucun relevé réécrit.
+  - **A3 et B4** (LOW, **rejetés**) — prémisse « l'en-tête `Authorization: Bearer` est déduit, non observé » réfutée par
+    l'orchestrateur sur la capture de la recette (`grep -ciF "authorization: bearer"` rend 27), que le développement ne
+    lit pas : l'en-tête est observé ; phrases inchangées (`admin-manual.tex:3324`, `CHANGELOG.md:15`).
+  Gates réellement exécutés : gate ciblé (fmt, clippy workspace, 31 tests) ; mutations `< 3` et `< 4` ; au dernier
+  commit de code, `scripts/test-fast.sh --ci` 4460/4460 (7 ignorés), `npm run check`, `lint-i18n-ownership`, `make fr`,
+  PDF aplatis, E2E complet 325 passés / 7 échecs KF-029, `mcp-sends.spec.ts` verte. Choix C-v016-1-15 à 17. Prompt de la
+  revue P2 : `v016-1-review-prompt-p2.md` (Opus, passe complète, axe 5 sur la remédiation).
