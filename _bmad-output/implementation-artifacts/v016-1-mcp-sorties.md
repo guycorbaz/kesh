@@ -556,3 +556,7 @@ et dit au document de release, ligne lue citée, comment chacun est réglé.
   constats portent sur la procédure de release, qu'il exécute lui-même ; ils sont **renvoyés à la préparation de la
   release** (§ *Renvoyé à la préparation de la release*), sans correction de la fiche. Prémisse de P6-1 relue : dépôt
   fusionné en squash (`CLAUDE.md`, § *Issue Tracking Rule*), image reconstruite au tag (`release.yml:55-69`).
+- 2026-10-29 — **validation terminée** sur décision du Project Lead (« v016-1 validé », 2026-10-29), au terme de la P6 :
+  six passes, tendance 8 → 6 → 1 → 3 → 1 → 1 au-dessus de LOW. Le dernier MEDIUM (P6-1) n'est pas remédié dans la fiche :
+  il porte sur la procédure de release et reste au § *Renvoyé à la préparation de la release*, que l'orchestrateur
+  traite au protocole de la candidate. Statut inchangé, `ready-for-dev`.
