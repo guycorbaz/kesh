@@ -609,12 +609,9 @@ fn outils_et_politique_en_leur_lieu() {
     );
 
     let donnees = re(r"\bDonnees\s*::\s*nouvelles\b|\bDonnees\s*\{");
+    assert_eq!(sites_factices("    Ok(Donnees::nouvelles(t))", &donnees), 1);
     assert_eq!(
-        sites_factices("    Ok(Donnees::nouvelles(t, None))", &donnees),
-        1
-    );
-    assert_eq!(
-        sites_factices("    let d = Donnees { texte, structure };", &donnees),
+        sites_factices("    let d = Donnees { texte, resume };", &donnees),
         1
     );
     assert_eq!(sites_factices("    donnees: Donnees,", &donnees), 0);
@@ -635,7 +632,7 @@ fn outils_et_politique_en_leur_lieu() {
         sites(&sources_src(), |f| f == "mcp/sortie.rs", &donnees),
         liste(&[(
             "mcp/sortie.rs",
-            "Ok(Donnees::nouvelles(texte, Some(valeur)).avec_resume(resume))"
+            "Ok(Donnees::nouvelles(texte).avec_resume(resume))"
         )]),
         "témoin : la fabrique"
     );

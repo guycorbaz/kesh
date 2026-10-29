@@ -670,6 +670,8 @@ async fn cle_dispensee_sert_chaque_outil(pool: MySqlPool) {
     let b = banc(&pool);
     for (outil, _, _) in TEMOINS {
         let r = b.appeler(&jeton, outil, premier_jeu(outil, &a.p)).await;
+        // `structure` dérive `s` du texte (v016-1) : l'égalité épingle la forme
+        // canonique indentée du texte émis.
         let s = structure(&r, outil);
         assert_eq!(
             texte(&r),
@@ -677,12 +679,12 @@ async fn cle_dispensee_sert_chaque_outil(pool: MySqlPool) {
                 "{TEXTE_ENTETE_DONNEES}\n\n{}",
                 serde_json::to_string_pretty(&s).unwrap()
             ),
-            "{outil}"
+            "{outil} : forme canonique indentée"
         );
         assert_eq!(
             r["result"].as_object().unwrap().len(),
-            3,
-            "{outil} : content, structuredContent, isError"
+            2,
+            "{outil} : content, isError (v016-1, C-v016-1-1)"
         );
     }
 }

@@ -3,9 +3,10 @@
 //!
 //! **Une seule fabrique** : un outil ne rend ses données que par [`donnees`],
 //! qui sérialise **une fois** une structure déclarée par [`sortie!`] en une
-//! `serde_json::Value`, puis en tire les deux représentations — le contenu
-//! structuré, et **un** bloc de texte (`TEXTE_ENTETE_DONNEES`, une ligne vide,
-//! le JSON indenté de la même valeur). Dans `src/`, `Donnees::nouvelles` n'est
+//! `serde_json::Value`, puis en tire **un** bloc de texte
+//! (`TEXTE_ENTETE_DONNEES`, une ligne vide, le JSON indenté de la valeur) — le
+//! seul canal : depuis la 0.16.1, aucun contenu structuré ne part à côté
+//! (v016-1, C-v016-1-1 et C-v016-1-5 ; #811). Dans `src/`, `Donnees::nouvelles` n'est
 //! appelé qu'ici (garde `outils_et_politique_en_leur_lieu`).
 //!
 //! **Le typage ferme la classe « un texte libre sort sans enveloppe »** : une
@@ -192,14 +193,24 @@ impl Serialize for Date {
 impl scelle::Scelle for Date {}
 impl ChampSur for Date {}
 
-/// Un montant, en chaîne décimale — la forme de l'API (`rust_decimal`,
-/// fonctionnalité `serde-str`).
+/// Un montant — ou une quantité, un taux —, en chaîne décimale (`rust_decimal`,
+/// fonctionnalité `serde-str`), sous **une seule forme** (v016-1, C-v016-1-6 ;
+/// #812) : la valeur normalisée (`normalize` retire les zéros finals et rend
+/// `-0` en `0`), portée à deux décimales si elle en a moins (`rescale(2)`).
+/// `0.0000` et `0` sortent `"0.00"`, `123.4500` sort `"123.45"`, `100` sort
+/// `"100.00"`, `8.10` sort `"8.10"`, `0.0125` sort `"0.0125"`. **Aucune
+/// décimale réelle ne se perd** : `normalize` ne retire que des zéros finals,
+/// et `rescale` vers une échelle plus grande n'ajoute que des zéros.
 pub struct Montant(pub Decimal);
 
 impl Serialize for Montant {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        let mut d = self.0.normalize();
+        if d.scale() < 2 {
+            d.rescale(2);
+        }
         // `Decimal::serialize` inhérente rend des octets : le trait, nommé.
-        Serialize::serialize(&self.0, serializer)
+        Serialize::serialize(&d, serializer)
     }
 }
 impl scelle::Scelle for Montant {}
@@ -438,13 +449,14 @@ pub(in crate::mcp) fn texte_et_valeur<T: ChampSur>(
     Ok((texte, valeur))
 }
 
-/// Les données d'un outil — **la seule fabrique** : une source, deux
-/// représentations dérivées (C-32-9-6), et le résumé de la demande.
+/// Les données d'un outil — **la seule fabrique** : une source sérialisée une
+/// fois (C-32-9-6), le seul texte qui en dérive (v016-1, C-v016-1-5 ; la valeur
+/// n'est plus émise), et le résumé de la demande.
 pub(in crate::mcp) fn donnees<T: ChampSur>(
     resume: Resume,
     sortie: &T,
 ) -> Result<Donnees, ErreurOutil> {
-    let (texte, valeur) = texte_et_valeur(sortie)?;
+    let (texte, _) = texte_et_valeur(sortie)?;
     let mut resume = resume.texte();
     if resume.len() > MCP_ENVOI_RESUME_OCTETS_MAX {
         // Inatteignable par construction (test `resume_borne`) ; tronqué à une
@@ -455,7 +467,7 @@ pub(in crate::mcp) fn donnees<T: ChampSur>(
         }
         resume.truncate(n);
     }
-    Ok(Donnees::nouvelles(texte, Some(valeur)).avec_resume(resume))
+    Ok(Donnees::nouvelles(texte).avec_resume(resume))
 }
 
 #[cfg(test)]

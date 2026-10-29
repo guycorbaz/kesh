@@ -596,16 +596,23 @@ async fn k08_tools_call_kesh_version(pool: MySqlPool) {
     assert_eq!(r.statut, StatusCode::OK, "{STATUT_200}");
     let v = enveloppe_conforme(&r, Lu(8));
     let blocs = resultat_d_outil(&v["result"], false);
-    // DECISION_KESH (32-9a, AC-a3 et AC-a8) : un seul bloc, l'en-tête fixe des
-    // données puis le JSON de la sortie, qui dit la version du binaire et le mode
-    // de la session ; la même sortie en `structuredContent`.
+    // DECISION_KESH (32-9a, AC-a3 et AC-a8 ; v016-1, C-v016-1-1) : un seul bloc,
+    // l'en-tête fixe des données puis, après une ligne vide, le JSON de la
+    // sortie, qui dit la version du binaire et le mode de la session — le seul
+    // canal, aucun `structuredContent` (K23).
     assert_eq!(blocs.len(), 1, "DECISION_KESH : un seul bloc : {v}");
     let texte = blocs[0]["text"].as_str().unwrap_or_default();
     assert!(
         texte.starts_with("Données lues dans les livres de Kesh, en lecture seule."),
         "DECISION_KESH : en-tête des données : {texte}"
     );
-    let structure = &v["result"]["structuredContent"];
+    let (_, json_du_texte) = texte
+        .split_once("\n\n")
+        .unwrap_or_else(|| panic!("DECISION_KESH : en-tête, ligne vide, puis le JSON : {texte}"));
+    let lu = serde_json::from_str::<Value>(json_du_texte).unwrap_or_else(|e| {
+        panic!("DECISION_KESH : le texte porte le JSON de la sortie ({e}) : {texte}")
+    });
+    let structure = &lu;
     assert_eq!(
         cles(structure),
         ["delaiInstructionS", "lectureSeule", "version"],
@@ -621,16 +628,6 @@ async fn k08_tools_call_kesh_version(pool: MySqlPool) {
         structure["version"],
         env!("CARGO_PKG_VERSION"),
         "DECISION_KESH : la version du binaire : {v}"
-    );
-    // Le texte porte, après l'en-tête et une ligne vide, le JSON de la même
-    // sortie (32-9a, AC-a3).
-    let (_, json_du_texte) = texte
-        .split_once("\n\n")
-        .unwrap_or_else(|| panic!("DECISION_KESH : en-tête, ligne vide, puis le JSON : {texte}"));
-    assert_eq!(
-        serde_json::from_str::<Value>(json_du_texte).ok().as_ref(),
-        Some(structure),
-        "DECISION_KESH : le texte porte le JSON de la sortie : {texte}"
     );
 }
 
@@ -673,13 +670,17 @@ async fn k10_envoi_a_valider(pool: MySqlPool) {
     assert_eq!(r.statut, StatusCode::OK, "{STATUT_200}");
     let v = enveloppe_conforme(&r, Lu(10));
     let blocs = resultat_d_outil(&v["result"], false);
-    let n = v["result"]["structuredContent"]["envoi"]
-        .as_i64()
+    // Le numéro se lit au préfixe « Envoi n° » du texte (v016-1, C-v016-1-9).
+    let n: i64 = blocs[0]["text"]
+        .as_str()
+        .and_then(|t| t.strip_prefix("Envoi n° "))
+        .and_then(|t| t.split(' ').next())
+        .and_then(|t| t.parse().ok())
         .unwrap_or_else(|| panic!("DECISION_KESH : accusé de dépôt attendu : {v}"));
     assert_eq!(
-        v["result"]["structuredContent"],
-        json!({ "envoi": n, "etat": "en_attente" }),
-        "DECISION_KESH : structuredContent de l'accusé"
+        cles(&v["result"]),
+        ["content", "isError"],
+        "DECISION_KESH (v016-1, C-v016-1-1) : clés exactes de l'accusé"
     );
     let accuse = format!(
         "Envoi n° {n} en attente de validation : rien n'est encore parti. L'utilisateur doit \
@@ -746,9 +747,9 @@ async fn k10_envoi_a_valider(pool: MySqlPool) {
         "DECISION_KESH : le second bloc est le texte validé"
     );
     assert_eq!(
-        v["result"]["structuredContent"],
-        json!({ "envoi": n, "etat": "valide", "modifie": true }),
-        "DECISION_KESH : structuredContent de la relecture"
+        cles(&v["result"]),
+        ["content", "isError"],
+        "DECISION_KESH (v016-1, C-v016-1-1) : clés exactes de la relecture"
     );
 }
 

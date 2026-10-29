@@ -11,10 +11,12 @@
 //! [`EnvoiAValider`] illisible, que sa seule méthode dépose et qui ne rend
 //! qu'un numéro.
 //!
-//! **Une seule représentation, le texte** (C-32-8-4, E1, M-2) : sous une clé
-//! `required`, seul le texte de l'outil ([`texte_a_valider`]) est déposé et
-//! relu ; la donnée structurée n'est **ni déposée, ni montrée, ni envoyée** ;
-//! le résumé ([`Donnees::avec_resume`]) va à l'écran seulement.
+//! **Une seule représentation, le texte** (C-32-8-4, E1, M-2 ; v016-1,
+//! C-v016-1-1 et C-v016-1-5) : `Donnees` ne porte qu'un bloc de texte ; sous
+//! une clé `required`, c'est lui ([`texte_a_valider`]) qui est déposé et relu,
+//! sous une clé `exempt` lui qui part — depuis la 0.16.1, aucun résultat ne
+//! porte de contenu structuré (#811) ; le résumé ([`Donnees::avec_resume`]) va
+//! à l'écran seulement.
 //!
 //! ⛔ Ce que tient le compilateur : `Donnees` n'a aucun accesseur public — ses
 //! champs ne se lisent qu'ici ; `DonneesEnvoyables`, `EnvoiAValider` et les
@@ -36,18 +38,15 @@ use crate::services::poignees::EcritureEnvois;
 #[derive(Clone)]
 pub struct Donnees {
     texte: String,
-    structure: Option<serde_json::Value>,
     resume: Option<String>,
 }
 
 impl Donnees {
-    /// Les données d'un outil : un bloc de texte et, s'il y a lieu, le contenu
-    /// structuré (que le texte, selon la révision `2025-11-25`, doit aussi
-    /// sérialiser).
-    pub fn nouvelles(texte: String, structure: Option<serde_json::Value>) -> Self {
+    /// Les données d'un outil : un bloc de texte, le seul canal (v016-1,
+    /// C-v016-1-5 ; #811).
+    pub fn nouvelles(texte: String) -> Self {
         Self {
             texte,
-            structure,
             resume: None,
         }
     }
@@ -113,8 +112,8 @@ pub(crate) fn autoriser(validation: SendValidation) -> Autorisation {
 /// Le texte unique d'un envoi à valider : le bloc de texte de l'outil, tel
 /// quel. `Donnees` n'a qu'un bloc de texte — aucune variante non textuelle
 /// (image, ressource) n'existe à la 32-8b : le cas « bloc non textuel refusé »
-/// de l'AC-B2 est sans objet (constaté au Change Log). La donnée structurée et
-/// le résumé n'y entrent jamais.
+/// de l'AC-B2 est sans objet (constaté au Change Log). Le résumé n'y entre
+/// jamais.
 fn texte_a_valider(d: &Donnees) -> String {
     d.texte.clone()
 }
@@ -156,18 +155,12 @@ impl EnvoiAValider {
 }
 
 impl DonneesEnvoyables {
-    /// Le `result` d'un `tools/call` servi : un bloc de texte, le contenu
-    /// structuré s'il y en a, `isError: false`.
+    /// Le `result` d'un `tools/call` servi : un bloc de texte et
+    /// `isError: false`, rien d'autre (v016-1, C-v016-1-1 ; #811).
     pub(in crate::mcp) fn en_resultat(self) -> serde_json::Value {
-        let mut resultat = serde_json::Map::new();
-        resultat.insert(
-            "content".into(),
-            serde_json::json!([{ "type": "text", "text": self.donnees.texte }]),
-        );
-        if let Some(structure) = self.donnees.structure {
-            resultat.insert("structuredContent".into(), structure);
-        }
-        resultat.insert("isError".into(), serde_json::Value::Bool(false));
-        serde_json::Value::Object(resultat)
+        serde_json::json!({
+            "content": [{ "type": "text", "text": self.donnees.texte }],
+            "isError": false,
+        })
     }
 }
