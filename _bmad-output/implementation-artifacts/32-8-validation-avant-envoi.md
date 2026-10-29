@@ -250,6 +250,7 @@ une version publiée ; aucun gate ne les lit (`textes_coherents.rs` ne garde auc
   `\u{XXXX}`, C-32-8-5). C'est ce texte que l'écran montre, que l'utilisateur modifie, que la base garde et que
   `kesh_lire_envoi` rend. La donnée structurée (`structuredContent`) n'est **ni déposée ni envoyée** sous une clé
   `required` : il n'existe aucune seconde représentation qui pourrait diverger de la première (E1, M-2).
+  *(dépassé le 2026-10-28 par la v016-1, C-v016-1-1 : `content` seul depuis la 0.16.1 ; la donnée structurée n'existe plus, `Donnees` n'a qu'un texte, C-v016-1-5)*
 - **La politique à deux sorties** (C-32-8-6). `autoriser(validation) -> Autorisation` (`Envoi` ou `Depot`) ;
   `appliquer(Autorisation, Donnees) -> Sortie` (`Envoyer(DonneesEnvoyables)` ou `Deposer(EnvoiAValider)`).
   `EnvoiAValider` ne se lit nulle part : sa seule méthode le **dépose** et rend un `AccuseEnvoi` — un numéro, aucune
@@ -543,6 +544,7 @@ porte **seule** le prédicat, défini **exactement** selon l'AC-ii1 de la fiche 
     `{"x":"PIEGE_STRUCT_328"}` et un résumé `"PIEGE_RESUME_328"`, sous une clé `required` → `content` en base **égal** à
     `"PIEGE_BLOC1_328\n\nbloc 2"`, `summary` égal à `"PIEGE_RESUME_328"` ; après validation tel quel, le corps de
     `kesh_lire_envoi` est **égal** à la réponse attendue, et ne porte ni `PIEGE_STRUCT_328` ni `PIEGE_RESUME_328`.
+    *(dépassé le 2026-10-28 par la v016-1, C-v016-1-1 : `content` seul depuis la 0.16.1 ; `structure` et `PIEGE_STRUCT_328` retirés, le cas est tenu par construction, C-v016-1-5)*
 15. **AC-B3 — rendre visible** (C-32-8-5). Le prédicat est **`kesh_core::text::is_hidden_in_text`** de la 32-8b0
     (AC-02), employé tel quel au dépôt et à la décision — aucune fonction locale ne le recopie ni ne l'enveloppe (DRY ;
     validation P1, R17) ; `services::envois_mcp::rendre_visible(s: &str) -> String` remplace chaque caractère dont
@@ -611,6 +613,7 @@ porte **seule** le prédicat, défini **exactement** selon l'AC-ii1 de la fiche 
     `mcp_sends`) ; `limite_d_envois_en_attente` (vingt dépôts, le vingt et unième refusé, corps égal ; après la
     validation d'un des vingt, un dépôt passe) ; `cle_dispensee_servie` (32-6a) **inchangé** : sous `exempt`, aucune
     ligne déposée.
+    *(dépassé le 2026-10-28 par la v016-1, C-v016-1-1 : `content` seul depuis la 0.16.1 ; l'accusé ne porte plus de `structuredContent`, le numéro se lit dans son texte, C-v016-1-9)*
 18. **AC-B6 — `kesh_lire_envoi`, hors registre** (C-32-8-7, C-32-8-8, C-32-8-9). Nom réservé, constante
     `NOM_LIRE_ENVOI`. **Pas** un `McpTool`, **pas** au `Registre` ; le répartiteur le résout **avant** le registre ;
     `registre_coherent` (AC-a16) refuse un outil du registre à nom réservé **de la 32-8** (`kesh_lire_envoi` ; ce que la
@@ -638,6 +641,7 @@ porte **seule** le prédicat, défini **exactement** selon l'AC-ii1 de la fiche 
     `Echu`, `Inconnu` → `isError: true`, bloc unique `TEXTE_ENVOI_REFUSE(X)`, `TEXTE_ENVOI_ECHU(X)`,
     `TEXTE_ENVOI_INCONNU(X)`, sans `structuredContent`. Les seules valeurs interpolées sont l'**entier** `X` et le
     **booléen** `modifie`. Le numéro `X` d'un `Inconnu` est celui que l'agent a fourni (un entier déjà analysé).
+    *(dépassé le 2026-10-28 par la v016-1, C-v016-1-1 : `content` seul depuis la 0.16.1 ; `Valide` et `EnAttente` ne portent plus de `structuredContent`)*
 19. **AC-B7 — la propriété centrale, éprouvée** (`mcp_envois_e2e.rs`, HTTP réel ; clé `required`, outil **piégé** de la
     32-6a dont le texte porte `PIEGE_E1_328`) :
     - `modification_recue_octet_pour_octet` : dépôt ; `GET` du détail par une session d'Administrateur → contenu `C1` ;

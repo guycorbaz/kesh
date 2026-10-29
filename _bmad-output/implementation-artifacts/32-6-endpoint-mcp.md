@@ -677,6 +677,7 @@ Il en va de même des tests qui reposent sur un outillage existant (une capture,
     champ (construite par `Registre::standard()`, sans pool). *(Amendé le 2026-10-25, revue de code P1, E1, C-32-6-54 :
     la même requête lit aussi `@@session.max_statement_time`, rendu en `delaiInstructionS` — un réglage de la session,
     non une donnée des livres.)*
+    *(dépassé le 2026-10-28 par la v016-1, C-v016-1-1 : `content` seul depuis la 0.16.1 ; la sortie de `kesh_version` ne part plus qu'en texte)*
 
 **A.8 — L'inventaire et ses gardes**
 

@@ -227,6 +227,7 @@ standard est portée par la 32-10a (C-32-9-21).
   `Value` ; `structuredContent` = cette valeur ; **un** bloc texte = `TEXTE_ENTETE_DONNEES`, une ligne vide,
   `to_string_pretty` de la même valeur. Sous `required`, la 32-8 dépose ce texte, qui porte toute la donnée ; sous
   `exempt`, les deux partent et disent la même chose.
+  *(dépassé le 2026-10-28 par la v016-1, C-v016-1-1 : `content` seul depuis la 0.16.1 ; plus de `structuredContent`, le texte seul part sous les deux politiques)*
 - **Le plafond** (C-32-9-7). Un bloc texte de plus de `MCP_ENVOI_OCTETS_MAX` octets → `ErreurOutil::TropVolumineux`,
   sous les deux politiques. Les défauts et les `maximum` de pagination sont **mesurés** (C-32-9-8, § *Les tailles
   mesurées*) : un appel par défaut tient sous ≈ 12 Kio, un appel au maximum sous ≈ 22 Kio, sur une fixture ordinaire — « sous 10 000 jetons » (spike), à 2,5 octets par jeton, sous un plafond ramené à 24 576 octets ;
@@ -822,6 +823,7 @@ sorties **citées au Dev Agent Record**. Un test qui s'adosse à un outillage ex
     `structuredContent` contient `\u{202E}` et `\u{E0049}` en clair et **aucun** caractère où `is_hidden_in_text` est
     vrai. Test `evasion_json_impossible` : la description d'évasion relue est **égale**, dans son enveloppe, au texte
     semé.
+    *(dépassé le 2026-10-28 par la v016-1, C-v016-1-1 : `content` seul depuis la 0.16.1 ; la valeur se lit dans le texte, `mcp_pieges::structure` la dérive)*
 16. **AC-a16 — les tiers** (C-32-9-9 ; décision de Guy du 2026-10-25). Tests : `coordonnees_masquees_sans_contacts_read`
     — clé `exempt` à `invoices:read` **seule** (la seule clé à portées partielles de ces tests) : dans `kesh_facture`
     (`envoyeeA`) et `kesh_facture_fournisseur` (`ibanCreancier`, `qrIbanCreancier`), chaque champ `Tiers` vaut
@@ -889,6 +891,7 @@ sorties **citées au Dev Agent Record**. Un test qui s'adosse à un outillage ex
     **≤ 23 552 octets** (23 Kio) pour l'appel au maximum ; les tailles sont aussi citées au Dev Agent Record.
     `plafond_au_maximum` : les mêmes objets, **chaque colonne libre remplie à sa largeur** (validation P2, L5), appel au
     maximum → corps **égal** à la réponse `TropVolumineux` attendue (le refus pour taille est dit et éprouvé).
+    *(dépassé le 2026-10-28 par la v016-1, C-v016-1-1 : `content` seul depuis la 0.16.1 ; sous `exempt`, `content` et `isError` seuls)*
 22. **AC-a22 — les erreurs** (validation P1, R12 ; **amendement nommé de l'AC-a18 et de l'AC-a20 de la 32-6a**, liste
     blanche de `depuis_app_error` et variantes d'`ErreurOutil`). Trois erreurs que l'agent provoque par une demande
     fausse rendaient « erreur interne » ; elles rendent désormais un texte fixe compréhensible, sans recopier une valeur :

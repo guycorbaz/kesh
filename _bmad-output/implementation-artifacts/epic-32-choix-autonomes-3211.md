@@ -457,6 +457,8 @@ alternatives écartées, réversibilité.
 
 ### C-32-11-39 — Toute assertion porte une marque ; K13 et le 4xx de K21 rangés (B4, B5 = E2, A6)
 
+*(dépassé le 2026-10-28 par la v016-1, C-v016-1-1 : `content` seul depuis la 0.16.1 ; K8 lit les clés de la sortie dans le JSON du texte)*
+
 - **Retenu** : deux marques de plus, hors protocole — `TEMOIN` (ce qui empêche un passage à vide : K9, K14) et
   `MONTAGE` (amorçage, route de décision de l'Administrateur) ; le statut 200 d'une réponse JSON-RPC est
   `DECISION_KESH` (la page impose le `Content-Type`, non le statut) ; K8 vérifie désormais le contenu (`DECISION_KESH` :
@@ -498,6 +500,8 @@ alternatives écartées, réversibilité.
 - **Réversible** : oui.
 
 ### C-32-11-42 — K8 vérifie la version et le JSON du texte (R2)
+
+*(dépassé le 2026-10-28 par la v016-1, C-v016-1-1 : `content` seul depuis la 0.16.1 ; K8 compare la version au JSON du texte, seul canal)*
 
 - **Retenu** : `structuredContent.version` égale `env!("CARGO_PKG_VERSION")` lu par le crate de test, et le texte
   porte, après l'en-tête et une ligne vide, un JSON égal à `structuredContent`. `DECISION_KESH` (32-9a, AC-a3, AC-a8).

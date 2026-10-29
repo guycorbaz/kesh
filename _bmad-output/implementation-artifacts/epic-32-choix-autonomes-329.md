@@ -79,6 +79,8 @@ l'étape 0. Chaque choix : contexte, option retenue, alternatives écartées, r�
 
 ### C-32-9-6 — Une seule source : la structure, d'où `structuredContent` et le bloc texte
 
+*(dépassé le 2026-10-28 par la v016-1, C-v016-1-1 : `content` seul depuis la 0.16.1 ; la valeur est sérialisée une fois, seul le texte en part)*
+
 - **Contexte** : E1 de la spike et l'AC-B2 de la 32-8 : sous `required`, seul le texte part, et il doit porter toute
   la donnée ; sous `exempt`, `structuredContent` et le texte partent tous deux.
 - **Retenu** : `donnees` sérialise la structure **une fois** en `serde_json::Value` ; `structuredContent` est cette
