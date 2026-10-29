@@ -216,7 +216,7 @@
 
 ### C-32-10a-17 — `proposer_prompt` : un outil à part du répartiteur, sans lecture ; un accusé sans numéro
 
-*(dépassé le 2026-10-28 par la v016-1, C-v016-1-1 : `content` seul depuis la 0.16.1 ; l'accusé `{nom, etat}` ne part plus en JSON, il se lit dans sa phrase)*
+*(dépassé le 2026-10-29 par la v016-1, C-v016-1-1 : `content` seul depuis la 0.16.1 ; l'accusé `{nom, etat}` ne part plus en JSON, il se lit dans sa phrase)*
 
 - **Contexte** : un `McpTool` reçoit `ContexteMcp` (lecture seule) et rend des `Donnees` soumises à la politique ;
   `proposer_prompt` écrit et n'envoie rien des livres (spike E2) ; l'esquisse de la spike proposait un trait

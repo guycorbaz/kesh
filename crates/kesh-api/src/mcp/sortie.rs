@@ -208,7 +208,10 @@ impl ChampSur for Date {}
 /// s'arrête à l'échelle la plus grande qu'il peut représenter, et la valeur
 /// sort alors avec moins de deux décimales, sans rien perdre d'elle-même
 /// (`rust_decimal` 1.43.0, doc de `rescale`). Inatteignable depuis la base :
-/// les colonnes sont en `DECIMAL(19,4)`, quinze chiffres entiers au plus.
+/// les colonnes décimales sont en `DECIMAL(19,4)`, `DECIMAL(18,2)`,
+/// `DECIMAL(7,2)` ou `DECIMAL(5,2)` (recompté dans `crates/kesh-db/migrations/`
+/// le 2026-10-29), seize chiffres entiers au plus ; une somme de telles valeurs
+/// en reste à des ordres de grandeur.
 pub struct Montant(pub Decimal);
 
 impl Serialize for Montant {

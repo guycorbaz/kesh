@@ -858,7 +858,7 @@ montage) lit d'abord ce que l'outillage **capte**, et porte un **témoin** qui p
        `mcp_sans_pool` reste verte (la poignée ne laisse voir aucun pool hors de `services`).
     7. **Journal (32-6b)** : AC-iii5.
     L'outil ne reçoit **ni** `Lecture` **ni** `LectureOutils`.
-    *(dépassé le 2026-10-28 par la v016-1, C-v016-1-1 : `content` seul depuis la 0.16.1 ; l'accusé ne porte plus de `structuredContent`, le nom et l'état sont dans sa phrase)*
+    *(dépassé le 2026-10-29 par la v016-1, C-v016-1-1 : `content` seul depuis la 0.16.1 ; l'accusé ne porte plus de `structuredContent`, le nom et l'état sont dans sa phrase)*
 29. **AC-iii3 — le service `proposer`, et la proposition écrite avec son audit dans la même transaction** (validation
     P2, F3, décision de l'orchestrateur). `exiger(EXIGENCE_PROPOSER)` (`portee_mcp: Some(PromptsWrite)`) d'abord ;
     arguments désérialisés strictement (tout autre champ → `ArgumentsInvalides`) ; `valider_contenu` (AC-ii2) ; nom
@@ -881,7 +881,7 @@ montage) lit d'abord ce que l'outillage **capte**, et porte un **témoin** qui p
     audit_log RENAME TO audit_log_cachee_3210a` par le pool ordinaire (patron d'AC-b3 de la 32-6b), puis
     `proposer_prompt` → corps égal à l'erreur interne fixe **et** aucune version `pending` ajoutée (compte relu après avoir
     rétabli la table).
-    *(dépassé le 2026-10-28 par la v016-1, C-v016-1-1 : `content` seul depuis la 0.16.1 ; l'accusé : `content` et `isError` seuls)*
+    *(dépassé le 2026-10-29 par la v016-1, C-v016-1-1 : `content` seul depuis la 0.16.1 ; l'accusé : `content` et `isError` seuls)*
 30. **AC-iii4 — jamais servi avant l'approbation.** Bout en bout (`mcp_prompts_e2e.rs`) : une proposition sur un nom
     neuf, puis `prompts/list` → corps égal à celui d'avant ; `prompts/get` de ce nom → la réponse d'un nom inconnu ; une
     proposition sur le standard `kesh-assistant`, puis sur `kesh-developpement` → refusées (nom réservé, aucune version

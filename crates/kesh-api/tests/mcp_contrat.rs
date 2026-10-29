@@ -1151,6 +1151,7 @@ async fn k23_un_seul_canal(pool: MySqlPool) {
             &appel(232, "kesh_plan_comptable", json!({})),
         )
         .await;
+    assert_eq!(r.statut, StatusCode::OK, "{STATUT_200}");
     let v = enveloppe_conforme(&r, Lu(232));
     un_seul_canal(&v, "S2");
     let blocs = resultat_d_outil(&v["result"], false);
@@ -1178,6 +1179,7 @@ async fn k23_un_seul_canal(pool: MySqlPool) {
             &appel(233, "kesh_lire_envoi", json!({ "envoi": n })),
         )
         .await;
+    assert_eq!(r.statut, StatusCode::OK, "{STATUT_200}");
     let v = enveloppe_conforme(&r, Lu(233));
     un_seul_canal(&v, "S3");
     let blocs = resultat_d_outil(&v["result"], false);
@@ -1225,6 +1227,7 @@ async fn k23_un_seul_canal(pool: MySqlPool) {
             &appel(234, "kesh_lire_envoi", json!({ "envoi": n })),
         )
         .await;
+    assert_eq!(r.statut, StatusCode::OK, "{STATUT_200}");
     let v = enveloppe_conforme(&r, Lu(234));
     un_seul_canal(&v, "S4");
     let blocs = resultat_d_outil(&v["result"], false);
@@ -1251,6 +1254,7 @@ async fn k23_un_seul_canal(pool: MySqlPool) {
             &appel(236, "kesh_plan_comptable", json!({})),
         )
         .await;
+    assert_eq!(r.statut, StatusCode::OK, "{STATUT_200}");
     let v = enveloppe_conforme(&r, Lu(236));
     let m: i64 = texte(&resultat_d_outil(&v["result"], false)[0])
         .strip_prefix("Envoi n° ")
@@ -1264,6 +1268,7 @@ async fn k23_un_seul_canal(pool: MySqlPool) {
             &appel(237, "kesh_lire_envoi", json!({ "envoi": m })),
         )
         .await;
+    assert_eq!(r.statut, StatusCode::OK, "{STATUT_200}");
     let v = enveloppe_conforme(&r, Lu(237));
     un_seul_canal(&v, "S6");
     let blocs = resultat_d_outil(&v["result"], true);
@@ -1283,6 +1288,7 @@ async fn k23_un_seul_canal(pool: MySqlPool) {
             &appel(238, "kesh_lire_envoi", json!({ "envoi": inconnu })),
         )
         .await;
+    assert_eq!(r.statut, StatusCode::OK, "{STATUT_200}");
     let v = enveloppe_conforme(&r, Lu(238));
     un_seul_canal(&v, "S8");
     let blocs = resultat_d_outil(&v["result"], true);
@@ -1299,6 +1305,7 @@ async fn k23_un_seul_canal(pool: MySqlPool) {
             &appel(239, "kesh_lire_envoi", json!({ "envoi": 0 })),
         )
         .await;
+    assert_eq!(r.statut, StatusCode::OK, "{STATUT_200}");
     let v = enveloppe_conforme(&r, Lu(239));
     un_seul_canal(&v, "S9");
     let blocs = resultat_d_outil(&v["result"], true);

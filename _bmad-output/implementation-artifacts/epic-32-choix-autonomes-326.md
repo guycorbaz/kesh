@@ -543,7 +543,7 @@ cités sont ceux de `b723e3d9`. Chaque choix : contexte, option retenue, alterna
 
 ### C-32-6-46 — `Donnees::nouvelles(texte, structure)`, et une variante `ErreurOutil::Inconnu`
 
-*(dépassé le 2026-10-28 par la v016-1, C-v016-1-1 : `content` seul depuis la 0.16.1 ; `Donnees::nouvelles(texte)`, C-v016-1-5)*
+*(dépassé le 2026-10-29 par la v016-1, C-v016-1-1 : `content` seul depuis la 0.16.1 ; `Donnees::nouvelles(texte)`, C-v016-1-5)*
 
 - **Contexte** : l'esquisse donnait `Donnees::nouvelles(resume, contenu, structure)` et `ErreurOutil { ArgumentsInvalides,
   Introuvable, Interne }`, « indicative dans la forme ». La révision `2025-11-25` veut qu'un résultat structuré soit aussi

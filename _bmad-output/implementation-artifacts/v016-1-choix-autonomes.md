@@ -297,3 +297,35 @@ option retenue, alternatives écartées, réversibilité.
 - **Écartées** : la réserve au manuel et au CHANGELOG (alourdit pour un cas inatteignable) ; un test de la borne (il
   épinglerait un comportement de la dépendance, non de Kesh).
 - **Réversible** : oui.
+
+*(Annoté le 2026-10-29, revue de code P2, B3 = E5 : les colonnes ne sont pas toutes en `DECIMAL(19,4)` — recompté dans
+`crates/kesh-db/migrations/` : 25 `DECIMAL(19,4)`, 4 `DECIMAL(18,2)`, 3 `DECIMAL(7,2)`, 7 `DECIMAL(5,2)` ; seize chiffres
+entiers au plus. Le doc-comment de `Montant` le dit désormais ; la conclusion (borne inatteignable) ne change pas.)*
+
+### C-v016-1-18 — Revue de code P2 : le manuel dit ce que Kesh rend, la réception par le client reste réservée
+
+- **Contexte** : les trois MEDIUM de la P2 (B1 = E2 = A1, B2, E1) portent sur des phrases du manuel qui disaient ce que
+  l'agent « reçoit » ou « relit », dont deux écrites par cette story ou sa remédiation. La consigne de l'orchestrateur :
+  partir du symptôme (`grep -nE "agent (re)?(reçoit|relit|relira|lit)"`), non de la liste des findings.
+- **Retenu** : dans le chapitre MCP du manuel d'administration et le paragraphe des envois du manuel utilisateur, toute
+  phrase qui disait ce que l'agent reçoit d'un outil se réécrit en ce que **Kesh rend**, cas par cas (clé dispensée :
+  en-tête et données ; clé requise : l'accusé, puis à la relecture validée deux blocs ; refus, échéance, erreur) ; là où
+  elle affirmait une réception par Claude Code que la recette n'a pas vue, elle porte la réserve, sous une seule forme,
+  « à confirmer avec Claude Code sur la 0.16.1 ». Le titre du paragraphe de `sec:mcp-outils` devient « Ce que Kesh rend
+  à l'agent ». Les réponses du **transport** (401, 403, 202…) ne sont pas des réceptions par le modèle : les phrases
+  « reçoit \texttt{403} » restent, sauf celle de `sec:mcp-cles` (« l'agent reçoit le refus d'une clé inconnue »), réécrite
+  par cohérence. Item 5 (A3) : l'outil appelé par l'agent n'est relevé par aucune observation (a) à (h) — marqué « non
+  éprouvé », ce qui porte à huit les « non éprouvé » du manuel d'administration.
+- **Écartées** : corriger les seules phrases des findings (le motif mesuré est qu'une liste rate la phrase voisine — E1
+  a trouvé `user-manual.tex:3264`, que le relevé de l'AC-8 ne pouvait pas trouver) ; réécrire les réponses du transport.
+- **Réversible** : oui (texte seul).
+
+### C-v016-1-19 — Revue de code P2, E3 : le titre *Corrigé* de #811 dit ce qui change
+
+- **Contexte** : le titre « Le contenu validé est rendu dans le texte, seul canal du serveur MCP » présentait comme
+  corrigé ce qui valait déjà en 0.16.0 (le texte validé était au second bloc) ; ce qui change est le retrait du contenu
+  structuré qui l'accompagnait.
+- **Retenu** : « La relecture d'un envoi validé n'est plus accompagnée d'un contenu structuré qui ne portait pas le
+  contenu validé » — vrai dans les deux issues de la recette, sans affirmer la réception.
+- **Écartée** : laisser le titre à la réécriture de la release (point 3) : un titre trompeur ne doit pas attendre.
+- **Réversible** : oui ; l'orchestrateur le réécrit au besoin au point 3 de la release.

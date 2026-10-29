@@ -384,7 +384,7 @@ esquissée à l'**Annexe**.*
     `mcp::textes`. `grep -nE 'attendu_|\btextes\b' crates/kesh-api/tests/mcp_contrat.rs` → aucune ligne de code (une
     ligne de commentaire rendue se cite et se justifie), sortie citée au Dev Agent Record (contrôle de revue, non
     garde) — la forme `use kesh_api::mcp::{textes::…}` y est prise.
-    *(dépassé le 2026-10-28 par la v016-1, C-v016-1-1 : `content` seul depuis la 0.16.1 ; K10 : clés exactes `content`, `isError`, numéro lu dans le texte ; K23 tient l'invariant)*
+    *(dépassé le 2026-10-29 par la v016-1, C-v016-1-1 : `content` seul depuis la 0.16.1 ; K10 : clés exactes `content`, `isError`, numéro lu dans le texte ; K23 tient l'invariant)*
 11. **AC-B3 — L'enveloppe JSON-RPC, sur chaque réponse JSON du binaire** : une fonction
     `enveloppe_conforme(rendu: &Rendu, id_attendu: Option<i64>)` (`Rendu`, en-têtes comprises, `tests/common/mcp.rs:252`),
     appelée par **chaque cas dont la réponse est JSON** ; l'assertion d'en-tête (`DECISION_KESH` ci-dessous) se fait sur

@@ -3258,10 +3258,12 @@ serveur MCP et leurs portées}. \textbf{L'agent ne modifie pas les livres}~: auc
 n'est jamais servi avant qu'un Administrateur l'ait approuvé, et qu'il peut aussi refuser.
 
 \paragraph{Ce qu'on vous montre avant l'envoi.} Sous une clé à validation \textbf{requise} (le
-défaut), rien de ce que l'agent demande ne lui parvient tout de suite~: Kesh lui répond
+défaut), Kesh ne rend pas tout de suite à l'agent ce qu'il demande~: il lui répond
 «~envoi n°~N en attente~», et un Administrateur voit, à l'écran \emph{Envois du serveur MCP},
 le \textbf{texte exact} qui partira. Il l'envoie tel quel, le modifie avant de l'envoyer, ou le
-refuse~; l'agent relit ensuite ce qui a été validé, et seulement cela. Sous une clé
+refuse~; quand l'agent relit l'envoi, Kesh lui rend ce qui a été validé, et seulement
+cela \emph{(que ce texte atteigne l'agent est à confirmer avec Claude Code sur la 0.16.1~; en
+0.16.0, il ne l'atteignait pas, issue \#811)}. Sous une clé
 \textbf{dispensée}, les données partent \textbf{sans être montrées}~; chaque appel reste
 journalisé.
 

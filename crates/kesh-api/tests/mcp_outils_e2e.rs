@@ -1417,7 +1417,8 @@ async fn plafond_au_maximum(pool: MySqlPool) {
 /// (`"0"`), dans le même objet (#812). Le JSON est lu dans le texte, après
 /// l'en-tête et la ligne vide. Un bilan vide ne listant aucune ligne, une
 /// écriture de 10.0000 est ensuite passée, et le solde de chaque ligne lue —
-/// une au moins — doit sortir `"10.00"` ou `"-10.00"` (revue de code P1, B2).
+/// une au moins — doit sortir `"10.00"` ou `"-10.00"` (revue de code P1, B2),
+/// comme les totaux des actifs et des passifs (revue de code P2, B4).
 #[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn bilan_montants_une_seule_forme(pool: MySqlPool) {
     let c = kesh_seed::pieges::societe_complete(&pool, "Société vide v0161")
@@ -1540,5 +1541,17 @@ async fn bilan_montants_une_seule_forme(pool: MySqlPool) {
     assert!(
         fautifs.is_empty(),
         "#812 : chaque solde de ligne sort \"10.00\" ou \"-10.00\" : {fautifs:?} — {s}"
+    );
+    // Les totaux sont des sommes calculées — le lieu même où #812 rendait `"0"`
+    // à côté de `"0.0000"` — et ne s'éprouvent qu'ici à une valeur non nulle,
+    // la seule où la forme d'une somme se distingue (revue de code P2, B4).
+    assert_eq!(
+        s["totalActifs"],
+        json!("10.00"),
+        "#812 : le total des actifs, somme calculée — {s}"
+    );
+    assert!(
+        s["totalPassifs"] == json!("10.00") || s["totalPassifs"] == json!("-10.00"),
+        "#812 : le total des passifs, somme calculée, \"10.00\" ou \"-10.00\" — {s}"
     );
 }
