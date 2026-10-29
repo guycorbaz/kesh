@@ -189,3 +189,63 @@ option retenue, alternatives écartées, réversibilité.
   ni au site, ni à `.github/workflows/release.yml` (la candidate `v0.16.1-rc1` et son correctif de `:latest` relèvent
   de la release, point 3).
 - **Réversible** : oui.
+
+---
+
+*Choix du développement (2026-10-29, Opus 5.5, autonomie).*
+
+### C-v016-1-11 — Les PDF des manuels sont régénérés et commités par le développement
+
+- **Contexte** : la fiche (AC-8, dernier paragraphe) et C-v016-1-10 disent que le développeur ne régénère pas les PDF
+  (release, point 5) ; le prompt de développement de l'orchestrateur, postérieur, prescrit : « les PDF modifiés se
+  régénèrent (`make fr` dans `docs/manual/`, sous le verrou) et se commitent ; le contrôle se fait sur le PDF aplati ».
+- **Retenu** : la consigne de l'orchestrateur, la plus récente — `admin-manual.pdf` et `user-manual.pdf` régénérés et
+  commités ; `marketing-brochure.pdf`, que `make fr` réécrit aussi sans que son source ait changé, restauré
+  (`git checkout --`). Les macros de `kesh-style.sty` ne bougent pas : la page de titre dit encore 0.16.0, et la release
+  (point 5) régénère les trois PDF après le bump. Le contrôle du PDF aplati est au Dev Agent Record.
+- **Écartées** : ne pas régénérer (contredit le prompt ; la revue n'aurait que le `.tex`) ; régénérer la brochure
+  aussi (un PDF modifié sans changement de source, du bruit au diff).
+- **Réversible** : oui (la release régénère de toute façon).
+
+### C-v016-1-12 — M4 : la structure réinsérée sans rétablir le champ
+
+- **Contexte** : M4 dit « réinsérer la structure dans `DonneesEnvoyables::en_resultat` (champ rétabli) ». Rétablir le
+  champ `Donnees.structure` touche `politique.rs`, `sortie.rs` et six constructeurs de test : la mutation ne serait plus
+  un motif unique sur un fichier, et ses compilations échouées ne prouveraient rien.
+- **Retenu** : M4 réinsère dans `en_resultat` une clé `structuredContent` dont la valeur est le JSON relu du texte
+  (`split_once("\n\n")`, `from_str`) — la même valeur, au même lieu, que l'ancien champ portait ; le comportement
+  observable est celui de la 0.16.0 au site S1.
+- **Écartées** : rétablir le champ (mutation multi-fichiers, sans gain de preuve).
+- **Réversible** : oui.
+
+### C-v016-1-13 — Le bilan « sans écriture » : une société complète neuve, son absence d'écriture vérifiée
+
+- **Contexte** : `bilan_montants_une_seule_forme` (AC-7) demande un exercice sans écriture ; les sociétés de
+  `mcp_pieges` sont semées d'écritures.
+- **Retenu** : `kesh_seed::pieges::societe_complete` (plan comptable, exercice de l'année, réglages, aucune écriture),
+  un administrateur, le serveur activé, une clé dispensée aux quatre portées de lecture ; le test **vérifie** au montage
+  que la société ne porte aucune écriture (`COUNT(*)` de `journal_entries`), et lit le JSON dans le texte (après
+  l'en-tête et la ligne vide), si bien qu'il a rougi avant le correctif sur la seule forme des montants
+  (`"0"`, `"0.0000"`), non sur la lecture de `structuredContent`.
+- **Écartées** : la démonstration (porte des écritures selon le seed) ; lire `structuredContent` (le test aurait dû
+  changer avec le correctif de #811).
+- **Réversible** : oui.
+
+### C-v016-1-14 — Les relevés de l'Epic 32 : ce qui s'annote, ce qui reste
+
+- **Contexte** : tâche 4 — partir du symptôme (`structuredContent`, « donnée structurée ») dans `_bmad-output/`, hors
+  fichiers `v016-1-*`, et trier.
+- **Retenu** : s'annotent, sans réécriture, les **décisions** et les **critères d'acceptation** que la 0.16.1 rend faux
+  — C-32-6-46, C-32-8-4, C-32-9-6, C-32-10a-17, C-32-11-39, C-32-11-42 ; E1 de la spike (§ 5.3.1) ; à la fiche 32-8, la
+  note « Une seule représentation », AC-B2, AC-B5, AC-B6 ; à la fiche 32-9, la note « Une source, deux représentations »,
+  AC-a15, AC-a21 ; à la fiche 32-6, AC-a28 ; à la fiche 32-10a, AC-iii2 et la note de l'accusé ; à la fiche 32-11, la
+  décision de K10. Restent tels quels, relevés de leur date (numéros de ligne de `d3b3b649`, avant les
+  annotations) : les récits de passe et les prompts de revue (32-8
+  l. 1509, 1616 ; 32-10a l. 1527 ; `32-11-review-prompt-p3.md`), les relevés « ce que le code dit » (32-8 l. 186, 296 ;
+  32-9 l. 51, 66, 1549 ; 32-6 l. 780, 868), les esquisses de code déjà déclarées indicatives (spike l. 772 ; 32-6
+  l. 1182), le diagramme de la 32-9 (l. 242, couvert par l'annotation de la note voisine), le tableau D7 de la 32-8
+  (l. 978, couvert par l'annotation d'AC-B2), le plan de la spike (l. 955) et le registre de la spike (C-32-2, l. 317 :
+  E1 reste vraie, pour le seul bloc texte) ; `epic-24-retro-2026-09-10.md:121` (sans rapport) et `sprint-status.yaml`.
+- **Écartées** : réécrire les décisions (un relevé daté se corrige par annotation) ; tout annoter (les récits de passe
+  et les prompts sont des relevés de leur date).
+- **Réversible** : oui.

@@ -1,6 +1,6 @@
 # Story v016-1 : correctif 0.16.1 — ce que le serveur MCP rend à l'agent
 
-Status: in-progress
+Status: review
 
 *Fiche rédigée le 2026-10-28, en autonomie (Opus 5.5), worktree `/home/gcorbaz/devel/kesh-0161`, branche
 `story/v016-1-mcp-sorties` partie de `main` `43926368` (release v0.16.0 et rétrospective de l'Epic 32 fusionnées).
@@ -484,9 +484,171 @@ et dit au document de release, ligne lue citée, comment chacun est réglé.
 
 ### Agent Model Used
 
+Opus 5.5 (`claude-opus-5-5`), autonomie, 2026-10-29 — worktree `/home/gcorbaz/devel/kesh-0161`, base `kesh_v0161`,
+E2E `kesh_e2e_v0161`, port 3161, cible `target/` du worktree.
+
 ### Completion Notes List
 
+**Étape 0 — § *À recontrôler*, point par point (lignes lues à `d3b3b649`).**
+
+1. *Numéros de ligne* : confirmés — S1 `politique.rs:157-172` (clé à `:168`), S2 `reponse.rs:49-56` (clé `:53`), S3
+   `:57-61` (`:59`), S4 `:62-76` (`:70`), S5 `prompts.rs:207-216` (`:213`), S6-S8 `reponse.rs:77-79` (`un_bloc`
+   `:42-47`), S9 `:284-291` ; `sortie.rs:197` (`Montant`), `:434` (`format!("{TEXTE_ENTETE_DONNEES}\n\n{joli}")`), `:458`
+   (`Ok(Donnees::nouvelles(texte, Some(valeur)).avec_resume(resume))`) ; `donnees_une_seule_source` est à `:568` (la fiche
+   disait 567-592 : le `#[test]` est à 567). Sites de test : conformes au tableau (`common/mcp.rs:380, 409, 463, 496,
+   599, 557-560, 574, 614-623, 626-648` ; `mcp_envois_e2e.rs:40, 194, 256, 263, 889, 1129` ; `mcp_transport_e2e.rs:118,
+   1553` ; `mcp_journal_e2e.rs:813` ; `mcp_outils_e2e.rs:673-686` ; `mcp_prompts_e2e.rs:679` ; `mcp_gardes_lexicales.rs:
+   613, 617, 638` ; `mcp_contrat.rs:608-633, 672-679, 744-748`).
+2. *Aucun autre site* : `repartiteur.rs` — `ReponseMcp::Resultat` aux seules l. 187, 200, 218 (`initialize`, `ping`,
+   `tools/list`) ; `appeler` (l. 300) et `relire` (l. 404) ne rendent que `OutilEnErreur`, `Outil`, `Envoi`, `Accuse`,
+   `Erreur` (`grep -n "ReponseMcp::" repartiteur.rs`).
+3. *`rust_decimal` 1.43.0* (`Cargo.lock:3385-3386`) : `normalize` « Strips any trailing zero's from a `Decimal` and
+   converts -0 to 0 » (`decimal.rs:1399`) ; `rescale` « Rescaling to a higher scale preserves the value » (`:1026`) ;
+   `from_parts` efface le signe d'un zéro (`:540-553`, `if lo == 0 && mid == 0 && hi == 0 { false }`) ; `Neg`
+   (`:2609-2616`) pose le signe par `set_sign_negative` : `-Decimal::new(0, 4)` est un zéro négatif (témoin du test).
+4. *Le rouge de l'AC-7* : reproduit tel que la recette l'a vu, sur un exercice sans écriture —
+   `[("totalActifs", String("0")), ("totalPassifs", String("0")), ("totalFondsPropres", String("0")), ("report",
+   String("0.0000")), ("resultat", String("0"))]` (journal `kesh-gate-logs/v0161-etape0-rouges.log`).
+5. *Observation (g)* (#723, commentaire de recette du 2026-10-28, lu par `gh issue view 723 --comments`) : « Menu :
+   `kesh:kesh-assistant`, `kesh-direct:kesh-assistant`… ; commande envoyée : `/mcp__kesh-direct__kesh-assistant` ;
+   `prompts/get` sans argument, cadre repris par le modèle. »
+6. *Motif de la garde* : avant correctif, `(?i)structured_?content` ne rend, en code de `src/`, que les cinq lignes
+   attendues (`politique.rs:168`, `prompts.rs:213`, `reponse.rs:53, 59, 70`) — constaté par le rouge de la garde ; la
+   sixième occurrence de `src/` (`prompts.rs:205`) est un doc-comment, exclu.
+7. *`serde_json` sans `preserve_order`* : `Cargo.lock:3610-3620`, dépendances `itoa`, `memchr`, `serde`,
+   `serde_core`, `zmij` — aucune `indexmap` ; aucun `preserve_order` dans un `Cargo.toml` du workspace.
+
+**Rouges constatés avant tout patch** (commit `9979706d`, journal `v0161-etape0-rouges.log`, nextest : 4 exécutés,
+4 échoués) :
+- `k23_un_seul_canal` — rouge au site S1 : `left: ["content", "isError", "structuredContent"]`, `right: ["content",
+  "isError"]` ;
+- `structured_content_nulle_part` — rouge, les cinq lignes du point 6 ;
+- `bilan_montants_une_seule_forme` — rouge, sortie du point 4 ;
+- `montant_forme_unique` — rouge au premier cas, `left: String("0.0000")`, `right: String("0.00")`.
+Le rouge propre de S2, S3, S4 et S5 est constaté par les mutations M2, M11, M1 et M3 (ci-dessous).
+
+**Le correctif.** #811 : les cinq lignes retirées ; `Depose` et `EnAttente` passent par `un_bloc` ;
+`DonneesEnvoyables::en_resultat` est un `json!` à deux clés ; `Donnees::nouvelles(texte)`, champ `structure` retiré ;
+`sortie::donnees` ne garde de `texte_et_valeur` que le texte (signature et test inchangés). #812 : `Montant` sérialise
+`normalize()`, porté par `rescale(2)` si l'échelle est inférieure à 2. Aucun texte de `textes.rs` ne change ;
+`textes_envoi_epingles_par_un_litteral` et K1 verts sans retouche.
+
+**`grep -rn -i "structur" crates/kesh-api/src/mcp/`, relu en entier (15 occurrences)** : `politique.rs:18`,
+`prompts.rs:205`, `sortie.rs:8` — doc-comments réécrits qui disent l'**absence** (C-v016-1-1) ; `textes.rs:163`
+(« le JSON indenté de la structure » : la structure `sortie!`, source du texte, toujours vraie) ; `sortie.rs:5, 13, 17,
+51, 90, 478, 483, 629` (la structure `sortie!` et les structures de test) ; `sortie.rs:307` (« coordonnée structurée
+d'un tiers ») ; `outils/contacts.rs:140`, `outils/pieces.rs:64` (« Déstructuration »). `mcp/mod.rs` n'en parle pas.
+
+**Site par site, le test qui le couvre (AC-3)** : S1 — K23, `cle_dispensee_sert_chaque_outil` (`len() == 2`),
+`attendu_version_delai` (`mcp_transport_e2e.rs`) ; S2 — K23, K10, `attendu_depose` ; S3 — K23, `attendu_en_attente`,
+`mcp-sends.spec.ts` (second test) ; S4 — K23, K10, `attendu_valide`, `mcp-sends.spec.ts` ; S5 — `accuse`
+(`mcp_prompts_e2e.rs`, égalité du corps entier) ; S6 — K23, `attendu_refuse`, `mcp-sends.spec.ts` ; S7 —
+`echeance_ne_transmet_rien` (`attendu_echu`) ; S8 — K23, `attendu_inconnu` ; S9 — K23, `attendu_outil_en_erreur`. Aucun
+site sans test ; la garde AC-4 couvre les cinq sites à clé littérale.
+
+**`une_seule_representation`** : `PIEGE_STRUCT`, sa constante et la ligne `structure` retirés ; la preuve sur
+`PIEGE_RESUME` gardée ; doc-comment : l'AC-B2 de la 32-8, pour la donnée structurée, est tenu par construction depuis
+la 0.16.1 (C-v016-1-5).
+
+**Tests de taille** : `tailles_mesurees` et `plafond_au_maximum` restent verts sans retouche — **aucun recalage**,
+aucune constante `LIMITE_*` ni plafond (`13_312`, `23_552`) touché.
+
+**Mutations** (campagne sous verrou, `kesh-gate-logs/v0161-mutations/`, `muter.py` motif vérifié unique, restauration
+`git checkout -- <f> && touch <f>`, filtre `binary(/^mcp/) | test(/^mcp::/)`, 224 tests par run ; `git status` propre
+après la campagne). **Quinze jouées, quinze tuées** :
+
+| # | Rougit (extrait ; liste complète au `bilan.txt`) |
+|---|---|
+| M1 | K23, K10, garde, `tel_quel_recu_octet_pour_octet`, `une_seule_representation` (`attendu_valide`) — 12 tests |
+| M2 | K23, K10, garde, `cle_requise_deposee`, `cle_requise_depose_chaque_outil` (`attendu_depose`) — 31 tests |
+| M3 | garde, `proposition_servie_accuse_et_audit`, `jamais_servi_avant_l_approbation`, `proposition_refus_corps_egaux` (`accuse`) — 4 |
+| M4 | K23, garde, `cle_dispensee_sert_chaque_outil` (`mcp_outils_e2e`, l'ex-`:683`), `cle_dispensee_servie` — 10 |
+| M5 | K23, K10, `tel_quel_recu_octet_pour_octet` (`attendu_valide`) — 11 ; **la garde reste verte** (angle mort assumé, AC-4) |
+| M6 | K23, K10, `tel_quel_recu_octet_pour_octet` (`attendu_valide`) — 14 |
+| M7 | `montant_forme_unique`, `bilan_montants_une_seule_forme` — 2 |
+| M8 | `montant_forme_unique`, `bilan_montants_une_seule_forme` — 2 |
+| M9 | `montant_forme_unique`, `bilan_montants_une_seule_forme` — 2 |
+| M10 | les tests d'enveloppe (`pieges_toujours_enveloppes`…) et d'outils (`tailles_mesurees`…) — 17 |
+| M11 | K23, garde, `e1_rien_ne_part_sous_cle_requise` (`attendu_en_attente`), `chaque_appel_est_journalise` — 4 |
+| M12 | K23, garde, `arguments_de_kesh_lire_envoi`, `erreurs_de_demande_comprehensibles` — 24 |
+| M13 | K8, K23 (S1, l'en-tête), `donnees_une_seule_source`, `pieges_toujours_enveloppes` (`mcp_enveloppe_e2e`), `cle_dispensee_sert_chaque_outil`, `bilan_montants_une_seule_forme` (via `structure`/`split_once`) — 30 |
+| M15 | K23, garde, `echeance_ne_transmet_rien` (S7), `refus_ne_transmet_rien` — 31 |
+| M14 | M1 rejouée, **`mcp-sends.spec.ts` seule** : le premier test rougit — `Error: v016-1 : clés exactes content, isError`, `+ "structuredContent"` ; le second (relecture en attente, non mutée) passe (`v0161-mutations/M14.log`, `v0161-e2e-3.log`) |
+
+M4 réinsère la clé sans rétablir le champ (C-v016-1-12).
+
+**Textes.** Manuel d'administration : les lieux du tableau de l'AC-8, chacun cité « observé avec Claude Code
+2.1.312 » sur son observation ((a)/(e)/(h) item 3, (b) `sec:mcp-origin`, (g) item 4, (d) items 5 et 7 avec leur
+réserve) ; *Passer à la 0.16.1* (`sec:maj-0-16-1`), chaque affirmation vérifiée : `git diff --stat main --
+crates/kesh-db/migrations` vide ; `main.rs:122` (`check_downgrade_protection(&pool, env!("CARGO_PKG_VERSION"))`),
+`version.rs:222-230` (lecture du seul `kesh_version_min_required`), dernière valeur posée `'0.14.0'`
+(`20261015000001_imported_documents_without_qr.sql:54`) ; `routes/admin.rs:216-219` (`check_import_version_compat` sur
+le seul `kesh_version_min_required` du manifeste), `kesh_version` du manifeste informatif (l. 247 et 582) ; les
+phrases par cas tirées de `textes.rs:197-243`. `delaiInstructionS` en `30.0` : `f64` sérialisé par `serde_json`
+(`attendu_version_delai`, `mcp_transport_e2e.rs:102-107`). Manuel utilisateur : *Invoquer un prompt*.
+`grep -nE "éprouv|structur|kesh-assistant" user-manual.tex` après patch : les « structur » restants sont d'autres sujets
+(plan comptable, adresse structurée, référence structurée, bilan CO 959a) ; aucun « éprouvé » restant ;
+`kesh-assistant` aux seules l. 3269-3272 réécrites. « non éprouvé » restants dans `admin-manual.tex` : `sec:mcp-client`
+(la phrase « les autres restent marqués »), intro de `sec:mcp-brancher`, item 3 (`/mcp`), item 7 (« décrit d'après le
+code »), item 10 (401, (f) non observé), *Après une restauration* (restauration sur l'installation même), filtre (un
+Traefik non déclaré) — chacun hors des observations (a) à (h). PDF régénérés (C-v016-1-11) et contrôlés aplatis,
+`grep -oF` sous `timeout 60` : « observé avec Claude Code 2.1.312 » ×5, « Passer à la 0.16.1 » ×2, « Claude Code n’en
+envoie pas » ×1, « au moins deux décimales » ×1, « à confirmer avec Claude Code sur la 0.16.1 » ×1,
+`mcp__<serveur>__kesh-assistant` ×1, « précédé d’une ligne de Kesh qui annonce l’envoi validé » ×1, « aucun contenu
+structuré ne l’accompagne (issue #811) » ×1 ; « donnée structurée » ×0 ; au manuel utilisateur `kesh:kesh-assistant`
+×1, `mcp__<serveur>__kesh` ×1, « kesh-assistant (MCP) » ×0. CHANGELOG `## [0.16.1] — Non publié`, *Modifié* puis
+*Corrigé* ; README l. 49.
+
+**Grep de la valeur des symptômes** (`structuredContent`, `donnée structurée`, `contenu structuré`, `non éprouvé`,
+`0.0000`) sur `docs/`, `README.md`, `CHANGELOG.md`, `website/`, `crates/`, `frontend/` : restent les commentaires et
+messages qui disent l'absence (code et tests de la story), le manuel et le CHANGELOG ; `website/` n'en porte aucun ;
+`0.0000` ne subsiste que dans l'API REST (`docs/api-external.md`, `project_reports_e2e.rs`, `inbox_import_e2e.rs`) —
+hors MCP, #813.
+
+**Annotations des relevés de l'Epic 32** (liste triée, C-v016-1-14) : `planning-artifacts/epic-32-spike-mcp.md` (E1,
+§ 5.3.1) ; `32-6-endpoint-mcp.md` (AC-a28) ; `32-8-validation-avant-envoi.md` (note « Une seule représentation »,
+AC-B2, AC-B5, AC-B6) ; `32-9-outils-de-lecture.md` (note « Une source, deux représentations », AC-a15, AC-a21) ;
+`32-10a-prompts-en-base.md` (AC-iii2, note de l'accusé d'AC-iii3) ; `32-11-brancher-un-agent.md` (décision de K10) ;
+`epic-32-choix-autonomes-326.md` (C-32-6-46), `-328.md` (C-32-8-4), `-329.md` (C-32-9-6), `-3210a.md` (C-32-10a-17),
+`-3211.md` (C-32-11-39, C-32-11-42) — dix-huit annotations, onze fichiers, `git diff d3b3b649 -- _bmad-output` sans
+ligne retirée hors fichiers `v016-1-*` et `sprint-status.yaml`. Laissés, avec leur motif : C-v016-1-14.
+
+**Gates réellement exécutés, au dernier commit de code** (`de6d3507` ; `20355dac` ne touche que textes, PDF et
+`_bmad-output/`) :
+- backend `scripts/test-fast.sh --ci` sous verrou, base `kesh_v0161` remise à zéro avant (drop, create, migrations du
+  worktree, seed) : fmt, clippy `-D warnings`, garde des droits, **nextest 4460 exécutés, 4460 passés, 7 ignorés**
+  (`v0161-gate-backend.log`, 204 s) — 4456 au journal de la release 0.16.0, plus les quatre tests de la story ;
+  `#[test]`/`#[sqlx::test]` de `crates/` : 4279 à `d3b3b649`, 4283 à `HEAD` ;
+- frontend sous verrou : `npm run check` (0 erreur, 29 avertissements préexistants), `lint-i18n-ownership`, **Vitest
+  181 fichiers, 2150 tests passés**, `npm run build` (`v0161-gate-frontend.log`) ;
+- **E2E Playwright complet** (recette `docs/testing.md`, port 3161, dossiers `/tmp/kesh-e2e-v0161-1/`, base
+  `kesh_e2e_v0161` reconstruite) : **324 passés, 8 échoués, 17 ignorés** (15,3 min, `v0161-e2e-1.log`). Les huit,
+  fichier par fichier contre `docs/testing.md` § *Les échecs attendus* : `mode-expert.spec.ts:26`, `:41`,
+  `onboarding-path-b.spec.ts:65`, `:92`, `onboarding.spec.ts:57`, `:77`, `:150` — les sept KF-029 (#97) ;
+  `reminders.spec.ts:235` (`page.fill` en délai dépassé au login) — **rejoué seul : passé** (`v0161-e2e-2.log`), donc
+  pollution d'état entre specs ; 7 + 1 dans la fourchette 7 à 10. **`mcp-sends.spec.ts` : ses deux tests passés**
+  (l. 149 et 216).
+- Gate ciblé intermédiaire : `binary(/^mcp/) | test(/^mcp::/)`, 224 passés (`v0161-cible1.log`).
+
+Tout backend lancé a été arrêté par son PID (757371, 898486, 904579) ; aucun ne reste.
+
+**Écarts à la fiche** : PDF régénérés et commités (C-v016-1-11, consigne de l'orchestrateur) ; M4 sans rétablir le
+champ (C-v016-1-12) ; `donnees_une_seule_source` à `:568` et non `:567`.
+
+**Défauts observés, hors périmètre** : aucun neuf. `reminders.spec.ts:235` est un cas de la pollution déjà décrite
+par `docs/testing.md` (rien à ouvrir) ; le format REST de #813 est déjà tracé.
+
 ### File List
+
+- `crates/kesh-api/src/mcp/politique.rs`, `reponse.rs`, `prompts.rs`, `sortie.rs`
+- `crates/kesh-api/tests/mcp_contrat.rs`, `mcp_gardes_lexicales.rs`, `mcp_outils_e2e.rs`, `mcp_envois_e2e.rs`,
+  `mcp_enveloppe_e2e.rs`, `mcp_transport_e2e.rs`, `mcp_journal_e2e.rs`, `mcp_prompts_e2e.rs`, `common/mcp.rs`,
+  `common/mcp_pieges.rs`
+- `frontend/tests/e2e/mcp-sends.spec.ts`
+- `docs/manual/fr/admin-manual.tex`, `admin-manual.pdf`, `user-manual.tex`, `user-manual.pdf`
+- `CHANGELOG.md`, `README.md`
+- `_bmad-output/implementation-artifacts/v016-1-mcp-sorties.md`, `v016-1-choix-autonomes.md`,
+  `v016-1-review-prompt-p1.md`, `sprint-status.yaml`, et les onze relevés annotés listés ci-dessus
 
 ## Change Log
 
@@ -560,3 +722,8 @@ et dit au document de release, ligne lue citée, comment chacun est réglé.
   six passes, tendance 8 → 6 → 1 → 3 → 1 → 1 au-dessus de LOW. Le dernier MEDIUM (P6-1) n'est pas remédié dans la fiche :
   il porte sur la procédure de release et reste au § *Renvoyé à la préparation de la release*, que l'orchestrateur
   traite au protocole de la candidate. Statut inchangé, `ready-for-dev`.
+- 2026-10-29 — développement (Opus 5.5, autonomie) : #811 (aucun `structuredContent`, K23, garde lexicale), #812
+  (`Montant` normalisé, deux décimales au moins), manuels FR et PDF, CHANGELOG `[0.16.1] — Non publié`, README,
+  annotations des relevés de l'Epic 32 ; quinze mutations, quinze tuées ; gate backend 4460/4460 (7 ignorés), Vitest
+  2150, E2E 324 passés / 8 échecs attendus ; choix C-v016-1-11 à 14 ; prompt de revue P1 `v016-1-review-prompt-p1.md`.
+  Statut `review`.
