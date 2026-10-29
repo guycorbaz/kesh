@@ -1,6 +1,6 @@
 # Story v016-1 : correctif 0.16.1 — ce que le serveur MCP rend à l'agent
 
-Status: ready-for-dev
+Status: in-progress
 
 *Fiche rédigée le 2026-10-28, en autonomie (Opus 5.5), worktree `/home/gcorbaz/devel/kesh-0161`, branche
 `story/v016-1-mcp-sorties` partie de `main` `43926368` (release v0.16.0 et rétrospective de l'Epic 32 fusionnées).

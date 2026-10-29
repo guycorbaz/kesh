@@ -591,6 +591,29 @@ mod tests {
         );
     }
 
+    /// Story v016-1 (AC-7, #812) : une seule forme de montant — normalisé, au
+    /// moins deux décimales (C-v016-1-6).
+    #[test]
+    fn montant_forme_unique() {
+        let forme = |d: Decimal| serde_json::to_value(Montant(d)).unwrap();
+        // Un zéro négatif : `Neg` pose le bit de signe sur un zéro, là où
+        // `Decimal::from_parts(0, 0, 0, true, 4)` l'efface.
+        let z = -Decimal::new(0, 4);
+        assert!(z.is_sign_negative(), "témoin : un zéro négatif");
+        for (d, attendu) in [
+            (Decimal::new(0, 4), "0.00"),
+            (Decimal::ZERO, "0.00"),
+            (z, "0.00"),
+            (Decimal::new(1_234_500, 4), "123.45"),
+            (Decimal::new(100, 0), "100.00"),
+            (Decimal::new(125, 4), "0.0125"),
+            (Decimal::new(810, 2), "8.10"),
+            (Decimal::new(-5, 1), "-0.50"),
+        ] {
+            assert_eq!(forme(d), serde_json::json!(attendu), "{d:?}");
+        }
+    }
+
     /// Le texte d'une structure `Textes` à un texte de `n` caractères ASCII.
     fn taille_pour(n: usize) -> usize {
         let s = Textes {

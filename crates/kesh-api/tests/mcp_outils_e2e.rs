@@ -1403,3 +1403,64 @@ async fn plafond_au_maximum(pool: MySqlPool) {
     let r = b.appeler(&jeton, "kesh_ecritures", args).await;
     assert_eq!(r["result"]["isError"], json!(false));
 }
+
+// ---------------------------------------------------------------------------
+// Story v016-1 (AC-7, #812) — une seule forme de montant
+// ---------------------------------------------------------------------------
+
+/// Sur un exercice **sans écriture**, chaque montant de `kesh_bilan` — les
+/// totaux, le report, le résultat et le solde de chaque ligne — sort sous la
+/// même chaîne `"0.00"` (C-v016-1-6). Avant la 0.16.1, un montant lu en base
+/// gardait l'échelle de sa colonne (`"0.0000"`) et une somme calculée la sienne
+/// (`"0"`), dans le même objet (#812). Le JSON est lu dans le texte, après
+/// l'en-tête et la ligne vide.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn bilan_montants_une_seule_forme(pool: MySqlPool) {
+    let c = kesh_seed::pieges::societe_complete(&pool, "Société vide v0161")
+        .await
+        .expect("société");
+    let u = common::mcp::administrateur(&pool, c, "admin-v0161").await;
+    common::mcp::activer(&pool, c).await;
+    let exercice: i64 = sqlx::query_scalar("SELECT id FROM fiscal_years WHERE company_id = ?")
+        .bind(c)
+        .fetch_one(&pool)
+        .await
+        .expect("l'exercice de la société");
+    let ecritures: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM journal_entries WHERE company_id = ?")
+            .bind(c)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(ecritures, 0, "montage : un exercice sans écriture");
+    let (_, jeton) = common::mcp::cle(&pool, c, u, &LECTURE, SendValidation::Exempt).await;
+    let r = banc(&pool)
+        .appeler(&jeton, "kesh_bilan", json!({"fiscalYearId": exercice}))
+        .await;
+    let t = texte(&r);
+    let (_, json_du_texte) = t.split_once("\n\n").expect("en-tête, ligne vide, JSON");
+    let s: Value = serde_json::from_str(json_du_texte).expect("le JSON du texte");
+    let mut montants = Vec::new();
+    for champ in [
+        "totalActifs",
+        "totalPassifs",
+        "totalFondsPropres",
+        "report",
+        "resultat",
+    ] {
+        montants.push((champ.to_string(), s[champ].clone()));
+    }
+    for section in ["actifs", "passifs", "fondsPropres"] {
+        for (i, l) in s[section].as_array().expect(section).iter().enumerate() {
+            montants.push((format!("{section}[{i}].solde"), l["solde"].clone()));
+        }
+    }
+    let fautifs: Vec<_> = montants
+        .iter()
+        .filter(|(_, v)| *v != json!("0.00"))
+        .collect();
+    assert!(
+        fautifs.is_empty(),
+        "#812 : chaque montant du bilan vide vaut \"0.00\" : {fautifs:?} — {s}"
+    );
+}
