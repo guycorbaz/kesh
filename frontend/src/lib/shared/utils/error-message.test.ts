@@ -92,3 +92,50 @@ describe('errorMessageOf (Story 28-2, AC1/AC8)', () => {
 		expect(errorMessageOf({ code: 'X', message: '', status: 500 })).toBe('Unerwarteter Fehler.');
 	});
 });
+
+describe('errorMessageOf avec un repli (Story v017-2, #809, AC-1)', () => {
+	const REPLI = 'Erreur lors de la sauvegarde des coordonnées';
+	let consoleError: ReturnType<typeof vi.spyOn>;
+
+	beforeEach(() => {
+		consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
+	});
+
+	afterEach(() => {
+		consoleError.mockRestore();
+	});
+
+	it('ApiError à message → ce message, et non le repli, sans journalisation', () => {
+		const err = { code: 'VALIDATION_ERROR', message: 'adresse : le pays…', status: 400 };
+		expect(errorMessageOf(err, REPLI)).toBe('adresse : le pays…');
+		expect(consoleError).not.toHaveBeenCalled();
+	});
+
+	it.each([
+		['message vide', ''],
+		['message blanc', '  '],
+		['message non-chaîne', 42],
+	])('ApiError au %s → le repli, sans journalisation', (_nom, message) => {
+		expect(errorMessageOf({ code: 'X', message, status: 400 }, REPLI)).toBe(REPLI);
+		expect(consoleError).not.toHaveBeenCalled();
+	});
+
+	it('TypeError → le repli, et la valeur journalisée', () => {
+		const panne = new TypeError('Failed to fetch');
+		expect(errorMessageOf(panne, REPLI)).toBe(REPLI);
+		expect(consoleError).toHaveBeenCalledWith('[errorMessageOf]', panne);
+	});
+
+	it.each([
+		['vide', ''],
+		['blanc', '   '],
+	])('repli %s → traité comme absent : le générique', (_nom, repli) => {
+		expect(errorMessageOf(new TypeError('x'), repli)).toBe(GENERIQUE_FR);
+		expect(errorMessageOf({ code: 'X', message: '', status: 400 }, repli)).toBe(GENERIQUE_FR);
+	});
+
+	it('sans repli → inchangé (le générique)', () => {
+		expect(errorMessageOf(new TypeError('x'))).toBe(GENERIQUE_FR);
+		expect(errorMessageOf(new TypeError('x'), undefined)).toBe(GENERIQUE_FR);
+	});
+});

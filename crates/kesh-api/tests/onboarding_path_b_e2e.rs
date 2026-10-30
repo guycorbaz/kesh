@@ -212,6 +212,69 @@ async fn coordinates_validates_ide(pool: MySqlPool) {
     assert_eq!(body["error"]["code"], "VALIDATION_ERROR");
 }
 
+/// Story v017-2 (#809, AC-8) — le contrat du refus que l'assistant affiche désormais :
+/// un pays écrit en toutes lettres (« Suisse ») est refusé en 400 `VALIDATION_ERROR`,
+/// avec un motif qui dit la forme attendue, et l'étape n'avance pas.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn coordinates_rejects_country_name(pool: MySqlPool) {
+    let app = spawn_app(pool.clone()).await;
+    create_test_company(&pool).await;
+    ensure_admin_user(&pool, &test_config()).await.unwrap();
+    let token = login(&app).await;
+    advance_to_step_2(&app, &token).await;
+
+    for (path, body) in [
+        ("/api/v1/onboarding/start-production", None),
+        (
+            "/api/v1/onboarding/org-type",
+            Some(json!({ "orgType": "Pme" })),
+        ),
+        (
+            "/api/v1/onboarding/accounting-language",
+            Some(json!({ "language": "FR" })),
+        ),
+    ] {
+        let mut req = app
+            .client
+            .post(app.url(path))
+            .header("Authorization", auth(&token));
+        if let Some(b) = body {
+            req = req.json(&b);
+        }
+        let resp = req.send().await.unwrap();
+        assert_eq!(resp.status(), 200, "{path}");
+    }
+
+    let resp = app
+        .client
+        .post(app.url("/api/v1/onboarding/coordinates"))
+        .header("Authorization", auth(&token))
+        .json(&json!({ "name": "Test SA", "address": {"street":"Rue Test","building":"1","postalCode":"1000","city":"Lausanne","country":"Suisse"}, "ideNumber": null }))
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(resp.status(), 400);
+    let body: serde_json::Value = resp.json().await.unwrap();
+    assert_eq!(body["error"]["code"], "VALIDATION_ERROR");
+    let message = body["error"]["message"].as_str().unwrap_or_default();
+    assert!(
+        message.contains("code ISO à 2 lettres"),
+        "motif inattendu : {message}"
+    );
+
+    let resp = app
+        .client
+        .get(app.url("/api/v1/onboarding/state"))
+        .header("Authorization", auth(&token))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 200);
+    let body: serde_json::Value = resp.json().await.unwrap();
+    assert_eq!(body["stepCompleted"], 5);
+}
+
 #[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn full_path_b_flow(pool: MySqlPool) {
     let app = spawn_app(pool.clone()).await;
