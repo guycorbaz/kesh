@@ -448,3 +448,35 @@ fiches.*
 - **Écartées** : la dérive `strum::EnumIter` (dépendance nouvelle pour un seul test) ; `std::mem::variant_count`
   (instable) ; le seul couple `index`/`COUNT` (circulaire dans le cas ci-dessus).
 - **Réversible** : oui.
+
+### C-v016-2-21 — L'analyse du corps vit dans `kesh-core` (développement de la 2a, 2026-10-30)
+
+- **Contexte** : la parente dit « la route analyse ces chaînes vers le type de `kesh-core` ». L'analyse (dates strictes
+  `AAAA-MM-JJ`, nombres stricts, sens, absence ≡ chaîne vide) est pure, et ses refus portent les ensembles fermés de
+  `kesh-core`.
+- **Retenu** : le type reçu (`ManualStatementRaw`, `ManualLineRaw`, `Deserialize`, `Option<String>`) et
+  `parse_manual_statement` vivent dans `kesh_core::bank_imports::manual`, à côté de `validate_manual_statement` ; la
+  route ne fait que les appeler et traduire l'erreur. Les refus de forme (`required`, `invalid_date`, `invalid_number`,
+  `unknown_direction`, et `too_many_lines` avant l'analyse des lignes) viennent de l'analyse, les règles 1 à 6 de la
+  validation ; une partie entière de plus de treize chiffres significatifs rend `too_many_digits` dès l'analyse (elle
+  pourrait déborder `Decimal`).
+- **Écartées** : l'analyse dans la route (non testable sans HTTP, et les codes de refus s'y écriraient une seconde fois).
+- **Réversible** : oui.
+
+### C-v016-2-22 — La sauvegarde 0.16.x : moyen (a), le manifeste récrit (développement de la 2a, 2026-10-30)
+
+- **Contexte** : AC-3-bis, moyens (a) ou (b), par ordre de préférence.
+- **Retenu** : (a) — `full_import_accepts_a_0_16_backup` exporte depuis la 0.17.0 une base peuplée d'un import CAMT à
+  soldes, d'un import CSV et de transactions (une rapprochée), récrit le manifeste (`keshVersion` `0.16.1`,
+  `keshVersionMinRequired` `0.14.0`) et l'importe. Licite parce que la 0.17.0 n'ajoute ni table ni colonne
+  (`bank_imports_manual_source_adds_no_table`) : les données d'une 0.16.x ont exactement cette forme.
+- **Écartées** : (b) une fixture générée au tag `v0.16.1-rc1` (un worktree de plus, et une preuve qui n'ajoute rien
+  tant que le schéma ne change pas).
+- **Réversible** : oui ; (b) s'imposera le jour où une version ajoutera une colonne aux tables bancaires.
+
+### C-v016-2-23 — Le statut de la ligne `v0.17.0` du README : « 🚧 Candidate » (développement de la 2a, 2026-10-30)
+
+- **Contexte** : C-v016-2-19 (c) laisse le sigle à l'orchestrateur, « p. ex. 🚧 Candidate ».
+- **Retenu** : `🚧 Candidate`, la ligne renommée `v0.17.0`, la phrase « Aucune migration » remplacée par la migration et
+  la sauvegarde d'avant la mise à jour, la candidate `0.16.1-rc1` nommée.
+- **Réversible** : oui (bascule à « ✅ Publiée » au tag final, liste B de la release).

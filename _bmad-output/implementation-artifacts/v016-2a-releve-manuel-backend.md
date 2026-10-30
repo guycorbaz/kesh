@@ -1,6 +1,6 @@
 # Story v016-2a : saisir un relevé bancaire à la main — le backend
 
-Status: in-progress
+Status: review
 
 *Sous-fiche issue du découpage de la Story v016-2 à la validation P2 (2026-10-30, décision de l'orchestrateur,
 C-v016-2-18). Worktree `/home/gcorbaz/devel/kesh-0162`, branche `story/v016-2-releve-manuel` (partie de `c5101b07`), la 2a d'abord,
@@ -442,9 +442,217 @@ attendus*. Ne déclarer que ce qui a tourné, chiffres recomptés.
 
 ### Agent Model Used
 
+Opus 5.5 (Claude Code, agent de développement, autonomie), 2026-10-30. Worktree `/home/gcorbaz/devel/kesh-0162`, bases
+`kesh_v0162a` et `kesh_e2e_v0162a`, port 3162, cible `kesh-0162/target`. Journaux : `kesh-gate-logs/v0162a/`.
+
+### Étape 0
+
+**Les cinq LOW de la validation P5** (`kesh-gate-logs/v0162a-validate-p5.md`), appliqués avant tout code (commits
+`89415374`, `6aa01f11`) : P1 — AC-4 et M23-bis annotés (renvoi à **C-v016-2-20**, forme non circulaire : `index()`,
+`COUNT`, `ALL.len() == COUNT`, `ALL[i].index() == i`, **et** décompte des variantes dans le texte source, sans lequel une
+variante ajoutée avec son bras sans toucher ni `ALL` ni `COUNT` reste verte — constat du développement) ; P2 — `:88`
+(historique) et `:285` (« les 52 migrations restantes » → 53) ajoutés à la liste de l'AC-2 ; P3 — `:190` ôté de la
+liste de la 2b (l'annotation du registre, `:370`, avait été posée par l'agent de fiche à `a458b560`) ; P4 — parente,
+table des mutations, « M23, M23-bis, M24 » ; P5 — AC-11 : seule `-has-pending-transactions` dit « importées » et se
+récrit ; `-has-transactions` (« Les imports dont aucune transaction n'est rapprochée peuvent être supprimés (Quotidien →
+Importer des relevés) ») ne dit rien de faux d'un relevé saisi — il figure à la liste des imports de cette page et s'y
+supprime — : **laissé tel quel**, `bank_accounts_e2e.rs:2485` inchangé (précision de l'orchestrateur).
+
+**§ *À recontrôler*, ligne lue :**
+- `routes/bank_imports.rs:83-98` — `async fn create_import_or_roll_back<'c>(…)` : `create_with_transactions` puis
+  `tx.rollback()` et `import_create_error(e)` sur erreur — conforme ; rendue `pub(crate)`. `:389-398` — `enum
+  ConfirmDuplicateLines { #[default] Skip, Import }` — conforme (l'import ignore par défaut ; la saisie ne le fait pas).
+  `:1154-1180` — pré-vol `find_by_id_for_company`, `archived` → `BankAccountNotFound`, `is_closed()` →
+  `BankAccountClosed` — repris tel quel par `check_statement`. `:1259-1278` — `validate_balance` toléré sur
+  `confirm_balance_mismatch` — non réutilisé (C-v016-2-4). `:1484-1576` — `delete` refuse toute clé
+  (`ApiKeyOperationForbidden`), trace `bank_import.deleted` avec `"source_format": import.source_format.as_str()` —
+  inchangé ; testé sur un `MANUAL`. `:1698-1750` — `insert_canonical_audit_log` : littéral `"bank_import.created"` ;
+  devenu `action.code()` (`ImportAuditAction`). `:978-984` — `source_format_tag_for_kesh_core` : `match` exhaustif,
+  bras `Manual` ajouté.
+- `bank_accounts.rs:1798-1804` (dépôt) — `ROW_NUMBER() OVER (PARTITION BY bank_account_id ORDER BY period_to DESC,
+  imported_at DESC, id DESC)` sur `closing_balance IS NOT NULL` : ordre repris par `previous_statement_closing`.
+  `closing_checks.rs:455-470` — `has_balance_statement` = `EXISTS (… closing_balance IS NOT NULL)` : un relevé saisi,
+  à solde, le rend vrai (testé, AC-18).
+- `entities/bank_import.rs:53-60` — `other => Err(format!("BankImportSourceFormat inconnu : {other}"))` : fonde
+  C-v016-2-2.
+- `routes/admin.rs:217-223` — `check_import_version_compat(&parsed.manifest.kesh_version_min_required,
+  env!("CARGO_PKG_VERSION"))`, `DowngradeRefused` → `ImportVersionIncompatible` (409).
+- `audit_label_registry.rs` — `SITES_INDIRECTS: &[(&str, &str, &[&str])]` (fichier, motif, codes) ; `PAS_DES_CODES` à
+  `:585` (une entrée) ; `retenir_si_code` lu ; registre des routes : tuples `(verbe, "module::handler", Status,
+  Rejeu)`.
+- `routes/bank_accounts.rs:196-226` — la macro (bras `JsonDataError | JsonSyntaxError`, `MissingJsonContentType`, `_`),
+  extraite sans changement de comportement ; `routes/bank_imports.rs:1756-1779` — clés des transactions existantes,
+  extraites en `existing_dedup_keys`.
+- `config.rs:877-882` — `KESH_BANK_IMPORT_MAX_MB`, défaut 10, borne `(1..=100)`.
+- `migrations_upgrade_path.rs:122-125` (`assert_eq!(total, 86, …)`), `:213` (`total - 52`), `:541`/`:545` (binaire
+  `"0.14.0"`, `Aligned`), `:557`, `:573`, `:656` — tous recalés (ci-dessous). `audit_label_registry.rs:585`, `:648`,
+  `post_restore.rs:1214-1219` (`assert_eq!(EXEMPT_MIGRATIONS.len(), 21, …)`) — idem.
+
 ### Completion Notes List
 
+**Rouges constatés avant le code** (journaux `kesh-gate-logs/v0162a/`) : ⚠️ *écart à la tâche 2* — les tests n'ont pas
+été **commités** rouges : le code a été écrit dans la foulée, et le rouge de chaque groupe a été constaté en remplaçant
+temporairement l'implémentation par un bouchon (copie, puis restauration et `touch`), ce que les journaux montrent :
+- `kesh-core` (AC-4, AC-5) : corps des cinq fonctions publiques remplacés par `todo!()` — **18 rouges, 4 verts** (les
+  quatre tests d'ensembles fermés, qui ne dépendent pas des fonctions) ;
+- dépôt (AC-6, AC-7) : `previous_statement_closing` → `Ok(None)`, `overlapping_statements` → `Ok(vec![])` — **4 rouges**
+  (les quatre tests neufs), 9 verts ;
+- e2e HTTP (AC-10, AC-11) : routes démontées (`lib.rs` renommé) — `create_records_header_lines_and_one_trace` et
+  `create_refuses_an_unbalanced_statement` rouges, **405** au lieu de 201/422 (`rouge-e2e.log`) ;
+- montée (AC-2, AC-2-bis) : la migration relevant à `'0.14.0'` au lieu de `'0.17.0'` — **8 rouges** sur 18
+  (`M16-like.log` : inventaire, `Aligned`, `DowngradeRefused 0.16.1`, `0.13.4`, `BinaryAhead`, `debit_sign`,
+  `fresh_install`, `preserves_existing_rows`).
+
+**Ce qui s'écarte de la lettre de la fiche, et pourquoi** :
+- l'analyse du corps vit dans `kesh-core` (**C-v016-2-21**) ;
+- les tests de dépôt AC-6/AC-7 sont dans `crates/kesh-db/tests/bank_imports_repository.rs` (squash), non dans
+  `src/repositories/bank_imports.rs` ;
+- M5 (« doublons filtrés au lieu de refusés ») est jouée sous la forme « doublons acceptés sans refus » (`if false`) —
+  le même test la tue, un filtre n'ayant pas de site dans la saisie (aucune option « ignorer ») ;
+- M23 (« une variante retirée de `ALL` ») : `ALL` est un tableau de longueur fixe (`[Self; 11]`) ; retirer une entrée
+  rougit à la **compilation** — la mutation jouée remplace donc `UnknownDirection` par un doublon de `TooManyDigits`
+  (longueur gardée), rouge à l'exécution ;
+- ⚠️ trois éditions par script (assertions d'unicité) sur des fichiers `.rs`, contraires à « Edit uniquement » : la
+  variante `Manual` de `SourceFormatTag` (`kesh-core/src/bank_imports.rs`, trois remplacements), et l'ajout en fin de
+  fichier des tests AC-3/AC-3-bis (`admin_full_import_e2e.rs`, par `cat >>`) ; les catalogues `.ftl`, le CHANGELOG, les
+  manuels, le README et `api-external.md` aussi, par remplacements à motif vérifié unique. Diffs relus.
+
+**Migration et P1–P8** :
+- P1/P2 : une instruction, la dernière, version figée `'0.17.0'` ; P2-bis : les dix `Cargo.toml` à `0.17.0` au **même
+  commit** `2b14e90f` (`grep -n '^version' crates/*/Cargo.toml` : dix fois `0.17.0`), `Cargo.lock` régénéré par le build.
+- P5 recompté depuis la source : `ls crates/kesh-db/migrations/*.sql | wc -l` → **87** ; `grep -c '^| \`20'
+  docs/migrations-idempotence-audit.md` → **87** ; en-tête de section et ligne *Total* → 87 ; partition **`yes` 11** (10 →
+  11, verdict de la nouvelle : migration sans DDL, `UPDATE` constant à point fixe), **`tracked-by-sqlx` 76**
+  (inchangé), **`no` 0** ; 11 + 76 + 0 = 87.
+- P6 : `grep -rn "migrations.len()\|apply_migrations_up_to" crates/` → **46** à `c5101b07`, **49** après (+3 : deux
+  lignes de l'appel d'AC-2-bis, une de `bank_imports_manual_source_adds_no_table`). Tous les sites résolvent par version
+  (`migrations_before`) sauf la fenêtre d'upgrade de `upgrade_path_preserves_data`, positionnelle **assumée** et gardée
+  par `assert_eq!(total, 87)` ; elle passe à `total - 53`, frontière 34 inchangée (87 − 53 = 34). Occurrences de
+  `\b(52|53|86|87)\b|total - 5[23]` triées : `:44` (52 → 53), `:46` (86 → 87), `:63-64` (52 → 53), `:88` (historique,
+  laissée), `:121` (historique, ligne ajoutée « = 87 »), `:124-125` (86 → 87), `:128` (52 → 53), `:136` (86 → 87),
+  `:143` (52 → 53), `:146` (51/86 → 52/87), `:206` (historique, ligne « 52 → 53 » ajoutée dessous), `:213`, `:216`
+  (52 → 53), `:285` (52 → 53).
+- P7 : entrée `EXEMPT_MIGRATIONS` `Durable` ; compteur `post_restore.rs` **21 → 22**, ligne d'historique ajoutée.
+- P8 : `migrations.sha384` porte `20261030000001 eb50b39a…931c03c1f` (= `sha384sum`) ; squash régénéré
+  (`scripts/regen-test-schema.sh` : `_kesh_version = (1, '0.17.0', '0.1.0')`). Les mutations de la migration (M16,
+  M17) n'ont tourné que sur des bases éphémères.
+- Sémantique des tests de version relue : `Aligned` à `0.17.0` ; `DowngradeRefused` à `0.16.1` (test neuf) et à
+  `0.13.4` (seuil 0.17.0) ; `BinaryAhead` passé à un binaire `0.18.0` (un `0.15.0` serait devenu un refus) ;
+  `fresh_install` et `debit_sign` lisent `0.17.0`.
+
+**Compteurs de garde recalés** (ancienne → nouvelle valeur) : `audit_route_registry.rs` — `LIB_ROUTES.len()` 135 → 137,
+`traced` 129 → 130, `no_matter` 2 → 3, `LIB_ROUTES + TEST_ENDPOINT_ROUTES` 138 → 140, `sans_ecriture` 110 → 112 (et
+son message « 109 » → « 111 »), `tout.len()` 138 → 140, en-tête 135/138 → 137/140 ; `audit_label_registry.rs` —
+`SITES_INDIRECTS.len()` 8 → 9, « Huit sites » → « Neuf », « neuvième forme » → « dixième », « les huit vrais » →
+« neuf », « HUIT fichiers » → « NEUF », motif du message `six|sept|huit` → `…|neuf`, `PAS_DES_CODES` 1 → 2
+(`"upload.xml"`) ; `post_restore.rs` 21 → 22 ; `migrations_upgrade_path.rs` `total` 86 → 87, fenêtre 52 → 53 ;
+`bank_account_closed_inventory.rs` étendu à `bank_statements_manual.rs` (un appel de l'aide, `.await?`, zéro appel
+direct), `REGISTRE` et `FENETRE` **inchangés** ; `textes_coherents.rs` +4 clés (les quatre messages neufs) ;
+manuel d'administration `:2966` « 129 des 135 » → « 130 des 137 », « 129 + 4 + 2 = 135 » → « 130 + 4 + 3 = 137 ».
+
+**Tri des `0.16.1`** (`git grep -n '0\.16\.1' -- crates frontend/src docs scripts README.md CHANGELOG.md website`, PDF
+aplatis) :
+- **corrigées** : les dix `Cargo.toml` ; les neuf commentaires (`mcp/politique.rs:17`, `mcp/prompts.rs:206`,
+  `mcp/sortie.rs:8`, `:446`, `tests/mcp_outils_e2e.rs:1415`, `tests/mcp_transport_e2e.rs:110`,
+  `tests/common/mcp_pieges.rs:126`, `tests/common/mcp.rs:556`, `tests/mcp_envois_e2e.rs:188`) ; CHANGELOG (en-tête
+  `[0.16.1] — 2026-10-29` → `[0.17.0] — Non publié`, phrase « aucune migration » remplacée, « sur la 0.16.1 » et
+  « *Passer à la 0.16.1* ») ; `admin-manual.tex` § *Passer à la 0.16.1* (`:2481-2490`, renommé `sec:maj-0-17-0` ; aucun
+  `\ref{sec:maj-0-16-1}` ailleurs), `:3220` (deux), `:3238`, `:3349`, `:3351` ; `user-manual.tex:3265` ; `README.md:49`
+  et `:235`. ⚠️ `:3349` portait aussi « à confirmer avec Claude Code sur la 0.16.1 » (quatre occurrences de la phrase au
+  `.tex`, non trois) ;
+- **historiques, gardées** : la candidate `0.16.1-rc1` (CHANGELOG `:13`, `:15`, README `:235`, `admin-manual.tex` § 0.17.0,
+  `docs/ci.md:163`, `:169`) ; les tests qui posent `0.16.1` comme version antérieure refusée ou comme manifeste 0.16.x ;
+- **release, tag final (B)** : `kesh-style.sty:72` (`\keshVersion`), les cinq URL `raw.githubusercontent.com/…/v0.16.1`
+  du manuel d'administration (`:226`, `:237`, `:573`, `:1706`, `:2025`), `website/index.html:70` — garde G19 verte.
+
+**Les messages serveur** : `bank-accounts-errors-has-pending-transactions` récrit (repli `errors.rs` et quatre
+catalogues) ; le Vitest qui le recopie en simulacre (`bank-accounts-page.test.ts:502`) est à la 2b.
+`bank-accounts-errors-has-transactions` : inchangé (étape 0, P5).
+
+**PDF** (`make admin user`, sous verrou ; `make-manuels-1.log` : trois passes chacun, stables), contrôlés aplatis
+(`grep -oF … | wc -l`) : `admin-manual.pdf` — `Passer à la 0.17.0` 2 (titre et table), `130 des 137` 1,
+`130 + 4 + 3 = 137` 1, `ne lirait plus, les données écrites par la nouvelle` 1, `20261030000001` 1, `Passer à la
+0.16.1` 0, `129 des 135` 0 ; `user-manual.pdf` — `Claude Code sur la 0.17.0` 1, `Claude Code sur la 0.16.1` 0.
+
+### Gates (réellement exécutés, au dernier commit de code `2b14e90f`)
+
+- **Backend** (`kesh-gate-logs/v0162a/gate-1.log`, sous verrou) : base `kesh_v0162a` supprimée, recréée, migrée (87) et
+  seedée ; `scripts/test-fast.sh --ci` — garde des droits conforme, `cargo fmt --check` et `cargo clippy --workspace
+  --all-targets -D warnings` verts, nextest **4511 exécutés, 4511 passés, 7 ignorés** ; puis `cargo build --workspace
+  --all-targets` vert. (Gates ciblés antérieurs : `kesh-db` complet 1444/1444, `kesh-db-1.log` ; `api-cible-2.log` 282
+  dont un rouge corrigé — le test AC-3-bis, dont le relevé saisi après la restauration tombait, à juste titre, sur
+  l'écart de solde de départ.)
+- **Frontend** (`front-e2e-1.log`, sous verrou) : `npm run check` — 0 erreur, 29 avertissements (préexistants,
+  `npm-check.log`) ; `npm run lint-i18n-ownership` — PASS ; `npm run test:unit` — **181 fichiers, 2150 tests, tous
+  verts** (`vitest-1.log`) ; `npm run build` — vert.
+- **Démarrage réel contre une base persistante (P8)** : `kesh_e2e_v0162a`, créée et seedée en début de développement
+  (86 migrations, `min_required` 0.14.0) — au démarrage du binaire `0.17.0` : **87** migrations, `min_required` 0.17.0,
+  `last_applied` 0.17.0 ; `/health` : `"version":"0.17.0"`, `"db":true`.
+- **E2E complet** (`e2e-1.log`, recette `docs/testing.md`, port 3162, dossiers neufs `/tmp/kesh-e2e-v0162a-1/`
+  passés au backend et au runner) : **325 passés, 7 échoués, 17 ignorés** (13,2 min). Les sept échecs, jugés fichier
+  par fichier contre § *Les échecs attendus* : `mode-expert.spec.ts:26`, `:41`, `onboarding-path-b.spec.ts:65`, `:92`,
+  `onboarding.spec.ts:57`, `:77`, `:150` — les sept de la **KF-029 (#97)** ; aucun échec hors liste. Backend arrêté par
+  son PID (85026).
+
+### Mutations
+
+Campagne sous verrou, au commit `2b14e90f`, une à la fois (`kesh-gate-logs/v0162a/muter.py`, journaux
+`v0162a/mutations/M*.log`, bilan `bilan.txt`) : motif vérifié unique, nextest ciblé, restauration par
+`git checkout -- <f>` puis `touch` ; `git status` après la campagne : seuls les fichiers de `_bmad-output/` en cours.
+**21 jouées, 21 tuées, aucune survivante, aucune rouge à la compilation** :
+
+| # | Test(s) rouge(s) |
+|---|---|
+| M1 (tolérance d'un centime) | `rule_6_balance_is_exact` |
+| M2 (débit positif) | `create_records_header_lines_and_one_trace` |
+| M3 (règle 3 retirée) | `rule_3_booking_date_inside_period_value_date_free`, `create_refuses_invalid_strings_with_field_and_reason` |
+| M4 (`normalize()` retiré) | `rule_5_decimals_after_normalize` |
+| M5 (doublons acceptés sans refus) | `duplicate_lines_are_refused_then_all_recorded` |
+| M6 (écart de solde de départ toujours confirmé) | `opening_balance_gap_needs_confirmation` |
+| M7 (`<` → `<=`) | `previous_statement_closing_exclusions` |
+| M8 (`period_to ASC`) | `previous_statement_closing_takes_the_latest_period_to` |
+| M9 (sens omis de l'empreinte) | `canonical_bytes_are_sensitive_to_every_field` |
+| M10 (`Csv` au lieu de `Manual`) | `create_records_header_lines_and_one_trace` |
+| M11 (`bank_import.created`) | `create_records_header_lines_and_one_trace` |
+| M12 (l'aperçu écrit une trace) | `preview_writes_nothing_and_warns` |
+| M16 (`'0.17.0'` → `'0.16.1'`) | 8 : `…only_raises_min_required`, `…preserves_existing_rows`, `downgrade_protection_refuses_0_16_1`, `…aligned…`, `…binary_ahead…`, `…refuses_0_13_4`, `bank_profiles_debit_sign…`, `migrations_kesh_version_initial_row` |
+| M17 (`UPDATE bank_imports SET statement_id = NULL` ajouté) | `…only_raises_min_required`, `…preserves_existing_rows` |
+| M18 (arme `"CSV"` retirée) | `bank_imports_manual_source_preserves_existing_rows`, `full_import_accepts_a_0_16_backup` |
+| M20 (création montée hors Comptable+) | `roles_and_api_keys` |
+| M21 (doublon de relevé toujours confirmé) | `duplicate_statement_needs_confirmation` |
+| M22 (commit avant la trace) | `create_writes_nothing_when_the_trace_fails` |
+| M23 (`UnknownDirection` remplacé dans `ALL`) | `all_is_indexed_and_counted`, `reason_codes_are_pinned_to_the_closed_set` |
+| M23-bis (variante `Extra` et son bras d'`index`, `ALL` et `COUNT` intacts) | `all_covers_every_declared_variant` **seul** — `all_is_indexed_and_counted` y reste vert : la circularité que C-v016-2-20 relève, mesurée |
+| M24 (`Content-Type` absent → `415`) | `body_rejections_are_400_validation_error` |
+
+M16 et M17 n'ont tourné que sur des bases éphémères (`#[sqlx::test]`) ; aucun démarrage contre `kesh_v0162a` ni
+`kesh_e2e_v0162a` pendant la campagne (l'E2E l'a précédée).
+
+### Défauts observés hors périmètre
+
+Aucun nouveau. Rappels de la fiche : l'issue « L'import d'un fichier ne signale pas une période déjà saisie à la main »
+(C-v016-2-6) reste à ouvrir par l'orchestrateur (liste C de la parente) ; #829 (les deux autres copies de l'extracteur)
+est déjà ouverte.
+
 ### File List
+
+- Nouveaux : `crates/kesh-core/src/bank_imports/manual.rs`, `manual_tests.rs` ;
+  `crates/kesh-db/migrations/20261030000001_bank_imports_manual_source.sql` ; `crates/kesh-api/src/extractors.rs`,
+  `src/routes/bank_statements_manual.rs`, `tests/bank_statements_manual_e2e.rs` ;
+  `_bmad-output/implementation-artifacts/v016-2a-review-prompt-p1.md`.
+- `kesh-core` : `src/bank_imports.rs`, `Cargo.toml`. `kesh-db` : `src/entities/bank_import.rs`,
+  `src/repositories/bank_imports.rs`, `src/post_restore.rs`, `migrations.sha384`, `test-schema/0001_schema_squash.sql`,
+  `tests/bank_imports_repository.rs`, `tests/bank_accounts_repository.rs`, `tests/migrations_upgrade_path.rs`,
+  `tests/migrations_fresh_install.rs`, `Cargo.toml`. `kesh-api` : `src/lib.rs`, `src/routes/mod.rs`,
+  `src/routes/bank_imports.rs`, `src/routes/bank_accounts.rs`, `src/errors.rs`, `src/audit_labels.rs`,
+  `src/mcp/{politique,prompts,sortie}.rs` (commentaires), `tests/{admin_full_import_e2e,audit_route_registry,
+  audit_label_registry,bank_account_closed_inventory,textes_coherents,mcp_outils_e2e,mcp_transport_e2e,mcp_envois_e2e}.rs`,
+  `tests/common/{mcp,mcp_pieges}.rs`, `Cargo.toml`. Les sept autres `Cargo.toml`, `Cargo.lock`.
+- `kesh-i18n` : `locales/{fr,de,it,en}-CH/messages.ftl`.
+- Textes : `CHANGELOG.md`, `README.md`, `docs/api-external.md`, `docs/migrations-idempotence-audit.md`,
+  `docs/manual/fr/admin-manual.{tex,pdf}`, `docs/manual/fr/user-manual.{tex,pdf}`.
+- Fiches : cette sous-fiche, `v016-2-releve-manuel.md` (P4), `v016-2b-releve-manuel-ecran.md` (P3),
+  `v016-2-choix-autonomes.md` (C-v016-2-20 à 23), `sprint-status.yaml`.
 
 ## Change Log
 
@@ -482,3 +690,9 @@ attendus*. Ne déclarer que ce qui a tourné, chiffres recomptés.
     `bank-accounts-errors-has-*` passent à la 2a (AC-11).
   - **LOW non pris** : aucun.
   Prochaine étape : validation P5 ciblée (`v016-2a-validate-prompt-p5.md`, Sonnet).
+- 2026-10-30 — **Développement** (Opus 5.5, autonomie ; Dev Agent Record ci-dessus) : étape 0 (cinq LOW de la P5,
+  C-v016-2-20, annotations datées de l'AC-4 et de M23-bis) ; `kesh-core`, `kesh-db` (migration `20261030000001`, dix
+  crates à 0.17.0 au même commit), `kesh-api`, textes et PDF, commit `2b14e90f` ; gate backend 4511/4511 (7 ignorés),
+  Vitest 2150/2150, E2E 325 passés / 7 échecs attendus (KF-029), démarrage réel sur base persistante (86 → 87),
+  mutations 21/21 tuées. Choix C-v016-2-20 à 23. Statut `review`. Prochaine étape : revue de code P1
+  (`v016-2a-review-prompt-p1.md`, Sonnet, lentilles B, E, A).
