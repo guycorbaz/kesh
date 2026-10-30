@@ -128,6 +128,11 @@ figurent aussi parmi les questions à soumettre à Guy avant la validation (fich
 
 ### C-v016-2-6 — Doublons et chevauchements : signaler, ne jamais fusionner
 
+*Annoté le 2026-10-30, validation P1 (R9) : « saisi d'abord, importé ensuite » compte **trois** cas, non un — référence
+égale des deux côtés ou absente des deux côtés : la clé est la même, le doublon est reconnu et **ignoré par défaut** à
+l'import ; références différentes ou une seule présente : non reconnu, le mouvement entre deux fois. La fiche (AC-27,
+§ *Ce que les gardes ne voient pas*) porte la version corrigée.*
+
 - **Contexte** : l'empreinte d'une ligne est `(booking_date, amount, première référence non vide parmi reference →
   end_to_end_id → transaction_id, compte)` (`dedup_key_scalar`, `kesh-core/src/bank_imports.rs`), comparée aux
   transactions de la fenêtre `[du, au]` du compte (`find_in_dedup_window`, `bank_transactions.rs:83-112`). À
@@ -261,6 +266,11 @@ figurent aussi parmi les questions à soumettre à Guy avant la validation (fich
 
 ### C-v016-2-14 — Pas de découpage
 
+*Annoté le 2026-10-30, validation P1 (R5) : au grain des exemples de la règle, la story touche **six** modules, non
+cinq (`frontend/src/lib/features/journal-entries` en plus) ; le seuil est franchi. Décision de l'orchestrateur : pas de
+découpage ; la dérogation est écrite à la fiche (§ *Dérogation règle de splitting*). Le texte ci-dessous est celui de la
+première rédaction.*
+
 - **Contexte** : règle de splitting préventif (plus de cinq modules distincts).
 - **Retenu** : une seule story. Modules : `kesh-core` (`bank_imports`), `kesh-db` (entité, dépôt, une migration),
   `kesh-api` (routes, erreurs, audit), `kesh-i18n` (catalogues), `frontend` (`features/bank-import`, une page) — **cinq**,
@@ -323,3 +333,31 @@ figurent aussi parmi les questions à soumettre à Guy avant la validation (fich
   0.16.0 ni ne relit par le code) ; prouver la restauration croisée par la seule égalité des inventaires de tables (ne
   prouve pas la relecture) ; une fixture tirée de la base du NAS (données réelles : interdit, dépôt public).
 - **Réversible** : sans objet — c'est une contrainte, non un choix de conception.
+
+### C-v016-2-17 — Remédiation de la validation P1 (2026-10-30)
+
+- **Contexte** : validation P1 (Sonnet, lentilles R et F), 0 CRITICAL, 0 HIGH, 12 MEDIUM, 17 LOW ; chaque prémisse
+  vérifiée au code (fiche, Change Log, entrée « Validation P1 »).
+- **Retenu** :
+  - **la piste** : `insert_canonical_audit_log` reçoit `ImportAuditAction` (défini dans `routes/bank_imports.rs`, deux
+    littéraux dans son `match`) ; une entrée `SITES_INDIRECTS` pour ce fichier avec les deux codes — la seule forme qui
+    passe les deux sens de `audit_label_registry.rs` (`:534-545`) ;
+  - **les longueurs** en caractères (`chars().count()`), non en octets : `VARCHAR(255)` compte des caractères en
+    MariaDB ; précédent `routes/api_keys.rs:130` ;
+  - **l'empreinte canonique** encodée champ par champ, longueur sur quatre octets gros-boutiens puis octets UTF-8 ;
+  - **dates et montants en chaînes** analysées par la route, pour que toute faute de forme rende
+    `BANK_STATEMENT_INVALID` avec son rang ; ensembles fermés de `field` et `reason` ;
+  - **`isValidAmount`** à options (`maxDecimals`, `maxIntegerDigits`, `allowNegative`, `allowEmpty`), défauts du journal
+    inchangés ;
+  - **les rangs** : le formulaire retire les lignes vides et traduit tout rang du serveur en ligne de l'écran ;
+  - **l'E2E** sur un compte bancaire propre à l'exécution (IBAN synthétique unique), sans relevé antérieur ;
+  - **la release** en deux temps : macros, URL G19 et PDF restent à 0.16.1 jusqu'au tag final (décision de
+    l'orchestrateur, comme pour la `0.16.1-rc1`) ; `prepare-release.sh` au tag final seulement ;
+  - **pas de découpage** (décision de l'orchestrateur), dérogation écrite ;
+  - **Q7, Q8** (équilibre exact ; CHF seule, comptes en devise → #233) : choix gardés en attendant la réponse de Guy.
+- **Écartées** : longueurs en octets (refuse à tort un texte accentué que la base accepte) ; séparateur textuel dans
+  l'empreinte (collision par contenu) ; une seconde expression régulière de montant (DRY) ; refuser les lignes vides
+  internes (moins commode qu'une correspondance de rangs) ; bumper les macros à la candidate (décision de l'orchestrateur ;
+  le manuel de la candidate serait titré juste, mais les URL viseraient un tag `v0.17.0` encore inexistant — les deux
+  options laissent, pendant la candidate, des URL vers un tag qui n'existe pas, ce que les notes de la candidate disent).
+- **Réversible** : oui, avant le développement.
