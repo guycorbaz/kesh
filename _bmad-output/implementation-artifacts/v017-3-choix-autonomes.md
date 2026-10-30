@@ -239,6 +239,10 @@ silencieuse ; un appariement propose, il ne crée jamais).
 - *Amendement du 2026-10-30 (validation P2 de la 3b, C-v017-3-24)* : la matrice de l'amendement précédent est
   **retirée** ; voir C-v017-3-24.
 
+- *Amendement du 2026-10-30 (validation P3 de la 3b, R8 = F4)* : depuis C-v017-3-24, l'avertissement ne porte **plus
+  la conduite** à l'écran (ni la matrice, ni la phrase « si un bouton d'annulation manque ») ; elle est au manuel
+  (`sec:facture-fournisseur-sous-centime`). Et depuis C-v017-3-26, il ne s'affiche pas pour une facture annulée.
+
 ### C-v017-3-15 — v017-3b : ordre des refus de la complétion d'une pièce importée
 
 - **Contexte** : la complétion compare `Σ TTC` des lignes au montant du QR **avant** `create_in_tx`
@@ -254,6 +258,9 @@ silencieuse ; un appariement propose, il ne crée jamais).
   négative avant toute positivité (rendant le code du centime là où la saisie rend celui de la positivité). La passe de
   forme des lignes (positivité, centime, TVA) devient **une** fonction pure de `kesh-db`, `purchase_lines_form`, appelée
   par `create_in_tx` et par la complétion, avant `AMOUNT_MISMATCH` : un ordre, deux chemins.
+
+- *Amendement du 2026-10-30 (validation P3 de la 3b, R8 = F4)* : « un cas `AMOUNT_MISMATCH` à lignes au centime le
+  remplace » ne vaut plus : le cas (a) du même test (`inbox_import_e2e.rs:1365`, `:1373`) le garde déjà (R12 de la P2).
 
 ### C-v017-3-16 — Voisin non mécanique : la somme de contrôle du pain.001
 
@@ -308,6 +315,9 @@ silencieuse ; un appariement propose, il ne crée jamais).
   dépendance est écrite dans la fiche, avec les sections du manuel communes aux deux, réconciliées à la réunion des
   branches. Si la 3a n'était pas livrée, la seconde voie de la conduite se retire.
 - **Réversible** : oui.
+
+- *Amendement du 2026-10-30 (validation P3 de la 3b, F4)* : « la conduite “payée” » se lit désormais « la voie 7 du
+  manuel » (`sec:facture-fournisseur-sous-centime`) : l'écran ne prescrit plus de geste.
 
 ### C-v017-3-21 — v017-3a : un rattachement sans retour est admis, mais annoncé ; la règle de blocage n'est pas dupliquée
 
@@ -381,6 +391,9 @@ silencieuse ; un appariement propose, il ne crée jamais).
 - **Écartées** : corriger la matrice une passe de plus (chaque correction a fait naître la suivante).
 - **Réversible** : oui (une matrice pourra revenir dans une story dédiée si l'usage le demande).
 
+- *Amendement du 2026-10-30 (validation P3 de la 3b, F1)* : « quel que soit l'état (annulée comprise) » est remplacé par
+  C-v017-3-26.
+
 ### C-v017-3-25 — v017-3a : découpage — l'avertissement des propositions part en v017-3c, hors de la 0.17.0
 
 - **Contexte** (validation P2 de la 3a) : la sévérité ne baisse pas (P1 : 1 HIGH, 12 MEDIUM ; P2 : 12 MEDIUM), et une part
@@ -397,3 +410,16 @@ silencieuse ; un appariement propose, il ne crée jamais).
 - **Écartées** : remédier une passe de plus (chaque remédiation de ces deux formes a fait naître la suivante) ; retirer
   aussi `cancelBlockedBy` (le rattachement deviendrait silencieusement irréversible, ce que l'orchestrateur exclut).
 - **Réversible** : oui (la 3c se planifie à part).
+
+### C-v017-3-26 — v017-3b : pas d'avertissement pour une facture annulée ; un texte vrai dans tous les autres états
+
+- **Contexte** (validation P3 de la 3b, F1) : l'avertissement statique s'affichait « quel que soit l'état, annulée
+  comprise » et disait « son règlement ne pourra pas être rapproché automatiquement d'un relevé bancaire ». Une facture
+  annulée n'a plus de règlement (détaché, `[id]/+page.svelte:620-628`) ; une facture réglée par compte interne n'a pas de
+  débit au relevé ; « automatiquement » suggère un chemin manuel qui n'existe pas.
+- **Retenu** (décision de l'orchestrateur, 2026-10-30) : l'avertissement ne s'affiche pas pour une facture annulée (le
+  règlement détaché resté au grand livre est décrit au manuel, voie 3) ; ailleurs, le texte est une condition vraie
+  dans tous les cas : « Le total de cette facture ({amount}) n'est pas au centime : un paiement bancaire de ce montant
+  ne pourra être rapproché d'aucune transaction de relevé. Voir le manuel, § … ». Vitest, captures et mutations suivent.
+- **Écartées** : garder l'annulée avec un texte neutre (l'avertissement inviterait à un traitement inutile).
+- **Réversible** : oui.
