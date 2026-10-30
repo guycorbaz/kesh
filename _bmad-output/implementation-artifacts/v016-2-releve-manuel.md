@@ -5,7 +5,8 @@ Status: ready-for-dev
 *Fiche rédigée le 2026-10-30, en autonomie (Opus 5.5), worktree `/home/gcorbaz/devel/kesh-0162`, branche
 `story/v016-2-releve-manuel` partie de `c5101b07` (tête de `story/v016-1-mcp-sorties`, candidate `v0.16.1-rc1`, PR #815
 brouillon) ; la story se fusionne sur cette branche de release. Registre : `v016-2-choix-autonomes.md` (C-v016-2-1 à
-C-v016-2-14). Clé courte : `v0162`. Issue : **#816** (enhancement), en `refs` seulement, dans les commits **et** dans la
+C-v016-2-15). **Amendée le 2026-10-30 : la release devient la 0.17.0** (décision du Project Lead, C-v016-2-15) — la
+clé et le nom de la story restent `v016-2-releve-manuel`. Clé courte : `v0162`. Issue : **#816** (enhancement), en `refs` seulement, dans les commits **et** dans la
 PR de la story ; la fermeture se porte sur la **PR de release** (§ *Ce que la release doit contenir*). Les numéros de
 ligne cités sont ceux de `c5101b07`.*
 
@@ -24,8 +25,11 @@ contrôle, que ce relevé a été tapé et non importé.
   saisi produit des transactions rapprochables, comme un import ; (2) soldes de départ et d'arrivée contrôlés contre la
   somme des lignes ; (3) une saisie se distingue d'un import dans la piste de contrôle ; (4) les manuels décrivent les
   deux voies.
-- **Décision du Project Lead du 2026-10-30** : la fonctionnalité entre dans la **0.16.1**, par une candidate
-  `v0.16.1-rc2` (la recette Claude Code de la rc1 se rejoue sur la rc2).
+- **Décision du Project Lead du 2026-10-30** : la fonctionnalité entre dans la release en cours. *Première rédaction :
+  la 0.16.1, par une candidate `v0.16.1-rc2`.* **Amendement du même jour (C-v016-2-15)** : la release devient la
+  **0.17.0** — elle réunit le correctif v016-1 (#811, #812), publié comme candidate `v0.16.1-rc1` mais jamais en version
+  finale, et cette story ; première candidate `v0.17.0-rc1`, sur laquelle la recette Claude Code et les tests se jouent
+  une seule fois.
 - Voisinage : **#418** (annuler un rapprochement, fermée) et **#526** (une transaction rejetée se retrouve et se
   dé-rejette, fermée) — le circuit dont un relevé saisi hérite ; **#671** (P2, ouverte) et **#687** (P3, ouverte) —
   défauts du rapprochement, sans lien avec l'origine d'une transaction : ni aggravés ni réglés ici.
@@ -88,7 +92,7 @@ contrôle, que ce relevé a été tapé et non importé.
 | # | Décision | Registre |
 |---|---|---|
 | D1 | Un relevé saisi est un import de `source_format = 'MANUAL'`, créé par `create_with_transactions` ; aucune table, aucune colonne | C-v016-2-1 |
-| D2 | Une migration dont la seule instruction relève `kesh_version_min_required` à `0.16.1` | C-v016-2-2 **(Q1)** |
+| D2 | Une migration dont la seule instruction relève `kesh_version_min_required` à `0.17.0` ; les dix crates passent à `0.17.0` dans le même commit (P2-bis) | C-v016-2-2, C-v016-2-15 **(Q1)** |
 | D3 | Entête : compte, période, numéro facultatif, soldes signés ; lignes : date, valeur facultative, libellé, contrepartie et référence facultatives, montant positif + sens ; deux décimales ; 0 à 500 lignes ; CHF | C-v016-2-3 **(Q4)** |
 | D4 | Équilibre **exact**, bloquant, sans confirmation ; dates de comptabilisation dans la période | C-v016-2-4 |
 | D5 | Solde de départ ≠ clôture du relevé précédent : signalé à l'aperçu, confirmation exigée à la création, jamais bloqué | C-v016-2-5 **(Q3)** |
@@ -165,20 +169,32 @@ doublons de lignes, écart de solde de départ — dans cet ordre, le premier qu
   (minuscules) refusé.
 - **AC-2** — Migration `crates/kesh-db/migrations/20261030000001_bank_imports_manual_source.sql` : un en-tête qui dit
   pourquoi (C-v016-2-2), puis **une seule** instruction, `UPDATE _kesh_version SET kesh_version_min_required =
-  '0.16.1' WHERE id = 1;`. P5 : une ligne à `docs/migrations-idempotence-audit.md` (verdict, justification) et les
+  '0.17.0' WHERE id = 1;`. **P2-bis, dans le même commit que la migration** : les dix crates du workspace
+  (`crates/*/Cargo.toml`, `version = "0.16.1"` à `c5101b07`) passent à `version = "0.17.0"`, et `Cargo.lock` suit
+  (régénéré par le build, non édité à la main) ; contrôle : `grep -n '^version' crates/*/Cargo.toml` rend dix fois
+  `0.17.0`. Puis **greper la valeur** `grep -rn "0\.16\.1" crates frontend/src docs scripts README.md CHANGELOG.md
+  website --exclude-dir=node_modules` et trier chaque occurrence à la main : à `c5101b07`, hors `Cargo.toml`, `crates/`
+  ne la porte qu'en commentaires « depuis la 0.16.1 » qui datent le correctif v016-1 (`mcp/prompts.rs:206`,
+  `mcp/sortie.rs:8`, `:446`, `mcp/politique.rs:17`, `tests/mcp_transport_e2e.rs:110`, `tests/mcp_outils_e2e.rs:1415`,
+  `tests/mcp_envois_e2e.rs:188`, `tests/common/mcp_pieges.rs:126`, `tests/common/mcp.rs:556`) — ils passent à « la
+  0.17.0 », version qui livre le correctif ; aucun test ne fige `"0.16.1"` en littéral (ceux qui lisent la version
+  passent par `env!("CARGO_PKG_VERSION")`). Les occurrences des manuels, du README, du site et des macros relèvent de
+  la release (§ *Ce que la release doit contenir*), sauf le § *Passer à la 0.16.1* (AC-29). Le tri, occurrence par
+  occurrence, au Dev Agent Record. P5 : une ligne à `docs/migrations-idempotence-audit.md` (verdict, justification) et les
   **deux** sites du total recomptés (`ls crates/kesh-db/migrations/*.sql | wc -l` → 87 ;
   `grep -c '^| \`20' docs/migrations-idempotence-audit.md` → 87), les trois compteurs de partition recomptés depuis le
   tableau. P6 : `grep -rn "migrations.len()\|apply_migrations_up_to" crates/` (46 occurrences à `c5101b07`), chaque site
   inspecté, sa conclusion au Dev Agent Record. P7 : entrée `EXEMPT_MIGRATIONS` (`crates/kesh-db/src/post_restore.rs`,
   `ExemptionBasis::Durable`, justification « UPDATE sur _kesh_version (bump kesh_version_min_required), table système
   jamais restaurée. La migration ne porte aucune autre instruction. »). Squash régénéré par
-  `scripts/regen-test-schema.sh` (sa ligne `_kesh_version` passe à `'0.16.1'`), `test_schema_guard` vert. Les tests qui
+  `scripts/regen-test-schema.sh` (sa ligne `_kesh_version` passe à `'0.17.0'`), `test_schema_guard` vert. Les tests qui
   figent le dernier bump (`migrations_fresh_install.rs:230-247`, `migrations_upgrade_path.rs:537-569`, et ce que
-  `grep -rn "0\.14\.0" crates --include=*.rs` rend d'autre) passent à `0.16.1`, avec leur commentaire ; un test
-  `check_downgrade_protection(&pool, "0.16.0")` → `DowngradeRefused`.
+  `grep -rn "0\.14\.0" crates --include=*.rs` rend d'autre) passent à `0.17.0`, avec leur commentaire ; un test
+  `check_downgrade_protection(&pool, "0.16.1")` → `DowngradeRefused` (la dernière version antérieure, candidate
+  comprise : la `v0.16.1-rc1` porte la version Cargo `0.16.1`).
 - **AC-3** — La sauvegarde et la restauration : un `.keshbackup` exporté d'une base qui porte un relevé `MANUAL` se
   réimporte dans la même version, relevé et transactions identiques (`source_format`, soldes, lignes) ; son manifeste
-  porte `kesh_version_min_required = "0.16.1"`. Test : l'aller-retour, sur le patron des tests d'import d'installation
+  porte `kesh_version_min_required = "0.17.0"`. Test : l'aller-retour, sur le patron des tests d'import d'installation
   existants (`admin_full_import_e2e.rs` ou voisin — à citer au Dev Agent Record).
 
 ### La validation (fonction pure, `kesh-core`)
@@ -331,11 +347,28 @@ doublons de lignes, écart de solde de départ — dans cet ordre, le premier qu
   `grep -n "CAMT.053 porte\|CSV n'en a\|deux formats\|relevé importé\|un relevé a été importé" docs/manual/fr/user-manual.tex`.
   Les manuels DE/IT/EN ne sont pas traduits dans cette version : rien à y faire.
 - **AC-28** — `docs/api-external.md` : les deux routes (tableau des ressources, `:223`), le corps, les codes nouveaux
-  (tableau des codes d'erreur), la phrase « *(Depuis la v0.16.1.)* ».
-- **AC-29** — Le CHANGELOG `[0.16.1]` gagne une section **`### Ajouté`** (avant *Modifié*) : la saisie d'un relevé à la
-  main, en une entrée, `refs` [#816] par un lien, sans mot-clé de fermeture. **Le reste du CHANGELOG, l'en-tête de la
-  section `[0.16.1]` et le § *Passer à la 0.16.1* du manuel d'administration se récrivent à la release** (ils disent
-  « aucune migration ») : le développeur ne les touche pas, il les signale (§ *Ce que la release doit contenir*).
+  (tableau des codes d'erreur), la phrase « *(Depuis la v0.17.0.)* ».
+- **AC-29** — **CHANGELOG et § de mise à jour, passés à la 0.17.0** (C-v016-2-15), dans le commit de la migration ou
+  le suivant :
+  1. l'entrée `## [0.16.1] — 2026-10-29` devient `## [0.17.0] — Non publié` (forme que `scripts/prepare-release.sh`
+     date à la release — la lire, ne pas l'exécuter) ;
+  2. elle gagne une section **`### Ajouté`** (en tête des sections) : la saisie d'un relevé à la main, en une entrée,
+     `refs` [#816] par un lien, sans mot-clé de fermeture ; les sections *Modifié* et *Corrigé* (#811, #812) restent ;
+  3. son en-tête se récrit : la phrase « Il n'ajoute **aucune migration** : la 0.16.0 redémarre sur une base passée par
+     la 0.16.1, et une sauvegarde de l'une s'importe dans l'autre — le retour à la 0.16.0 ne demande aucune sauvegarde
+     particulière […] » est **supprimée** et remplacée par : la 0.17.0 ajoute **une migration**
+     (`20261030000001_bank_imports_manual_source`) qui relève `kesh_version_min_required` à **0.17.0** — la 0.16.x ne
+     démarre plus sur une base passée par la 0.17.0, une sauvegarde de la 0.17.0 ne s'importe plus dans une 0.16.x, et
+     le retour passe par la sauvegarde d'avant la mise à jour (base, `.keshbackup`, dossier des documents) ;
+  4. une **note sur la candidate `0.16.1-rc1`** : publiée en pré-version le 2026-10-29 (`gcorbaz/kesh:0.16.1-rc1`,
+     `:latest` non déplacé), non poursuivie ; son contenu (#811, #812) est livré par la 0.17.0 ; une installation passée
+     par la rc1 se met à jour vers la 0.17.0 comme depuis la 0.16.0 ;
+  5. au manuel d'administration, `\subsubsection{Passer à la 0.16.1}\label{sec:maj-0-16-1}` (`admin-manual.tex:2481`)
+     devient *Passer à la 0.17.0* (`sec:maj-0-17-0`, chaque `\ref` suivi : `grep -rn "maj-0-16-1" docs`), et son texte
+     dit la migration et la sauvegarde d'avant la mise à jour comme le point 3, au `.tex` ; le PDF se régénère à la
+     release (macros).
+  Le développeur ne touche **ni** les macros `\keshVersion`…, **ni** les URL `raw.githubusercontent.com/…/v0.16.1`,
+  **ni** la feuille de route du README, **ni** le site : ils suivent le bump de `\keshVersion` (garde G19) à la release.
 - **AC-30** — README, section *Fonctionnalités*, ligne *Import bancaire* (`README.md:41`) : « **saisie manuelle d'un
   relevé** quand la banque n'en fournit pas de fichier ✓ ». La feuille de route ne change pas (une ligne de version
   est l'affaire de la release).
@@ -346,7 +379,9 @@ doublons de lignes, écart de solde de départ — dans cet ordre, le premier qu
    lue citée. Créer la base `kesh_v0162` (et `kesh_e2e_v0162`) selon `docs/agents-orchestration.md` § 4.
 2. **Tests rouges d'abord** (§ *Tests et mutations*), commités rouges avec un message qui le dit.
 3. `kesh-core` : variante `Manual` ; module `manual` (AC-4, AC-5).
-4. `kesh-db` : variante `Manual` (AC-1) ; migration, audit, P6, P7, squash (AC-2) ; deux lectures (AC-6, AC-7).
+4. `kesh-db` : variante `Manual` (AC-1) ; migration **et**, dans le même commit, les dix crates en `0.17.0` (P2-bis),
+   audit, P6, P7, squash, tri des occurrences de `0.16.1` (AC-2) ; deux lectures (AC-6, AC-7) ; CHANGELOG `[0.17.0]` et
+   § *Passer à la 0.17.0* (AC-29).
 5. `kesh-api` : erreurs (`errors.rs` : variantes, codes, statuts, clés i18n), module de routes, montage, audit,
    registres (AC-9 à AC-15) ; tests HTTP (AC-10 à AC-18).
 6. `frontend` : types, `manual-statement.ts`, généralisation de `isValidAmount`, `ManualStatementForm.svelte`, page,
@@ -386,7 +421,7 @@ Fichiers prévus : `crates/kesh-core/src/bank_imports.rs` (ou `bank_imports/manu
 | M13 | `manual-statement.ts` : les débits ajoutés au lieu d'être retranchés | Vitest AC-21 |
 | M14 | *Enregistrer* actif quand l'écart est non nul | Vitest AC-21 |
 | M15 | aperçu non périmé par une modification du formulaire | Vitest AC-22 |
-| M16 | migration : `'0.16.1'` → `'0.16.0'` | AC-2 (test `DowngradeRefused` et `min_required`) |
+| M16 | migration : `'0.17.0'` → `'0.16.1'` | AC-2 (test `DowngradeRefused` sur `0.16.1` et `min_required`) |
 
 Chaque mutation : le test qui rougit et la raison, au Dev Agent Record. Une mutation **survivante** est un défaut de test
 à corriger, non à déclarer.
@@ -412,26 +447,28 @@ tourné, chiffres recomptés.
   du même montant le même jour.
 - **L'heure du serveur** : aucun contrôle de date future ; une année tapée de travers (2062) passe si l'équilibre tient.
   La tuile et K3 la montreraient. Écarté délibérément (C-v016-2-3).
-- **Un binaire 0.16.1-rc1** accepte une sauvegarde de la rc2 (même version Cargo, C-v016-2-2) et n'en lira pas les
-  relevés saisis.
+- *(Première rédaction : « Un binaire 0.16.1-rc1 accepte une sauvegarde de la rc2 ». Levé par l'amendement
+  C-v016-2-15 : avec `min_required = 0.17.0`, la rc1, de version Cargo `0.16.1`, refuse la base et les sauvegardes de la
+  0.17.0.)*
 
 ## Ce que la release doit contenir (orchestrateur ; ne pas prescrire au développeur)
 
-1. **CHANGELOG `[0.16.1]`** : récrire l'en-tête — la version **ajoute une migration**
-   (`20261030000001_bank_imports_manual_source`) qui **relève `kesh_version_min_required` à 0.16.1** : la 0.16.0 ne
-   démarre plus sur une base passée par la 0.16.1, et une sauvegarde de la 0.16.1 ne s'importe plus dans la 0.16.0 ; le
-   retour à la 0.16.0 passe par la sauvegarde d'avant la mise à jour (base, `.keshbackup`, dossier des documents).
-   Garder l'entrée *Ajouté* posée par la story. Si Guy retient Q1 (b), l'en-tête actuel reste vrai à la migration près —
-   à arbitrer avant.
-2. **Manuel d'administration**, § *Passer à la 0.16.1* (`admin-manual.tex:2481`) : même récriture ; vérifier les
-   phrases « aucune migration » au `.tex` **et** au PDF aplati.
-3. Macros `\keshVersion`, `\keshReleaseDate`, `\keshTargetRelease`, URL `raw.githubusercontent.com/…/v0.16.1`, garde
-   G19 ; PDF des trois manuels régénérés.
-4. README : ligne de la 0.16.1 de la feuille de route (la saisie manuelle et la migration) ; site `website/`
-   (`index.html`, `roadmap.html`) si la fonctionnalité y est listée.
-5. Candidate `v0.16.1-rc2` : notes de pré-version — la migration, l'effet sur le retour à la rc1 (une base passée par la
-   rc2 ne redémarre pas en rc1 ; une sauvegarde de la rc2 s'importe en rc1 mais ses relevés saisis n'y sont pas
-   lisibles), la recette Claude Code à rejouer.
+*Amendé le 2026-10-30 (C-v016-2-15) : la release est la **0.17.0**, première candidate `v0.17.0-rc1`. Le CHANGELOG
+`[0.17.0]` et le § *Passer à la 0.17.0* sont posés par le développeur (AC-29) ; la release les relit.*
+
+1. **CHANGELOG `[0.17.0]`** : relire ce que pose AC-29 (sections *Ajouté* #816, *Modifié*, *Corrigé* #811 et #812 ;
+   la phrase « aucune migration » supprimée ; la migration et le retour par la sauvegarde ; la note sur la candidate
+   `0.16.1-rc1`, publiée en pré-version puis non poursuivie). Si Guy retient Q1 (b), la migration et ses phrases
+   tombent — à arbitrer avant le développement.
+2. **Manuel d'administration**, § *Passer à la 0.17.0* (ancien *Passer à la 0.16.1*, `admin-manual.tex:2481`) : relu
+   au `.tex` **et** au PDF aplati ; plus aucune phrase « aucune migration » pour cette version.
+3. Macros `\keshVersion{0.17.0}`, `\keshReleaseDate`, `\keshTargetRelease{v0.17}`, URL
+   `raw.githubusercontent.com/…/v0.16.1` portées à `v0.17.0` (garde G19) ; PDF des trois manuels régénérés.
+4. README : la ligne `v0.16.1` de la feuille de route devient la ligne `v0.17.0` (saisie manuelle, correctif MCP,
+   migration) ; site `website/` (`index.html`, `roadmap.html`) si la fonctionnalité ou la 0.16.1 y figurent.
+5. Candidate `v0.17.0-rc1` : notes de pré-version — la migration et le retour par la sauvegarde ; la `0.16.1-rc1` non
+   poursuivie (une installation passée par elle se met à jour normalement ; la rc1 refuse ensuite la base, sa version
+   Cargo étant `0.16.1`) ; la recette Claude Code et les tests joués une seule fois, sur cette candidate.
 6. `scripts/prepare-release.sh` (pré-vol, exemptions datées) relancé après la fusion de la story.
 7. PR de release : `closes #816` dans le **titre ou le corps**, à côté de `closes #811` et `closes #812`.
 8. Décompte des issues au tag (objectif, non barrière) ; l'issue demandée ci-dessous comprise.
@@ -491,9 +528,10 @@ qui le comptent comme seule trace de création d'un import : vues, tests, manuel
 
 Tranchées au registre ; listées ici pour être soumises à Guy **avant** la validation.
 
-- **Q1 (C-v016-2-2)** — Une migration qui relève `kesh_version_min_required` à 0.16.1 : la 0.16.0 refuse alors la base
-  et les sauvegardes de la 0.16.1. Sans elle (option b), la 0.16.0 redémarrerait mais rendrait une erreur sur les
-  écrans d'import dès qu'un relevé saisi existe, et une sauvegarde de la 0.16.1 s'y importerait sans s'y lire. Retenu :
+- **Q1 (C-v016-2-2, C-v016-2-15)** — Une migration qui relève `kesh_version_min_required` à 0.17.0 : la 0.16.x
+  (candidate `0.16.1-rc1` comprise) refuse alors la base et les sauvegardes de la 0.17.0. Sans elle (option b), la
+  0.16.0 redémarrerait mais rendrait une erreur sur les écrans d'import dès qu'un relevé saisi existe, et une sauvegarde
+  de la 0.17.0 s'y importerait sans s'y lire. Retenu :
   la migration. D'accord, sachant que l'en-tête du CHANGELOG de la rc1 (« aucune migration ») change ?
 - **Q2 (C-v016-2-7)** — Corriger une faute (date, libellé) après l'enregistrement : retenu, supprimer le relevé et le
   ressaisir. Faut-il, dès cette version, un bouton « Corriger » qui rouvre le relevé prérempli et le **remplace** en une
@@ -519,3 +557,10 @@ Tranchées au registre ; listées ici pour être soumises à Guy **avant** la va
 - 2026-10-30 — Fiche créée (Opus 5.5, autonomie), registre C-v016-2-1 à 14, prompt de validation P1
   (`v016-2-validate-prompt-p1.md`). Prochaine étape : questions Q1–Q6 à Guy, puis validation P1 (Sonnet, lentilles R
   et F).
+- 2026-10-30 — **Amendement (C-v016-2-15)** : la release devient la **0.17.0** (décision du Project Lead), première
+  candidate `v0.17.0-rc1`. La migration relève `min_required` à `0.17.0` ; les dix crates passent à `0.17.0` dans le
+  même commit (P2-bis) ; le tri des occurrences de `0.16.1` est prescrit (AC-2) ; le CHANGELOG `[0.16.1]` devient
+  `[0.17.0]` et le § *Passer à la 0.16.1* devient *Passer à la 0.17.0*, posés par le développeur (AC-29) ; § *Ce que la
+  release doit contenir*, M16, Q1 et la limite de la rc1 mis à jour. Occurrences de `0.16.1` laissées à dessein :
+  l'historique (`c5101b07`, candidate `v0.16.1-rc1`, recette de la rc1, première rédaction de l'origine), les versions
+  sources d'un remplacement prescrit, et `0.16.1` comme version antérieure refusée.

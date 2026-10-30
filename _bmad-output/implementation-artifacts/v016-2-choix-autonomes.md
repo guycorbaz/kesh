@@ -1,4 +1,6 @@
-# Release 0.16.1 — registre des choix autonomes de la Story v016-2
+# Release 0.17.0 — registre des choix autonomes de la Story v016-2
+
+*(Première rédaction : « Release 0.16.1 ». La release est devenue la 0.17.0 le 2026-10-30, C-v016-2-15.)*
 
 Registre propre à la story (`docs/agents-orchestration.md` § 1), à verser **par union** à l'historique des correctifs au
 merge. Fiche : `v016-2-releve-manuel.md`. Numérotation `C-v016-2-k`. Issue : **#816** (enhancement), en `refs`
@@ -35,7 +37,10 @@ figurent aussi parmi les questions à soumettre à Guy avant la validation (fich
 - **Réversible** : oui tant qu'aucun relevé n'est saisi ; ensuite, la valeur `MANUAL` est dans les données (voir
   C-v016-2-2).
 
-### C-v016-2-2 — Une migration qui relève `kesh_version_min_required` à 0.16.1 (Q)
+### C-v016-2-2 — Une migration qui relève `kesh_version_min_required` (Q)
+
+*Amendé le 2026-10-30 par C-v016-2-15 : la valeur relevée est `0.17.0`, et non `0.16.1` ; les dix crates passent à
+`0.17.0` dans le commit de la migration. Le texte ci-dessous est celui de la première rédaction (0.16.1).*
 
 - **Contexte** : une ligne `source_format = 'MANUAL'` ne se décode pas dans un binaire 0.16.0 ou antérieur
   (`from_str`, `entities/bank_import.rs:53-60` : `other => Err(...)`). Sans migration, la 0.16.0 **redémarre** sur une
@@ -65,7 +70,7 @@ figurent aussi parmi les questions à soumettre à Guy avant la validation (fich
   manuel d'administration deviennent faux et se récrivent à la release (fiche, § *Ce que la release doit contenir*).
   ⚠️ La rc1 porte déjà la version Cargo `0.16.1` : une sauvegarde de la rc2 s'importe dans la rc1 (même version), où
   un relevé saisi ne se lit pas — la rc1 n'est qu'une candidate, installée sur une base neuve ; à écrire dans les notes
-  de la rc2.
+  de la rc2. *(Levé par C-v016-2-15 : avec `0.17.0`, la rc1, de version Cargo `0.16.1`, refuse base et sauvegardes.)*
 - **Réversible** : non une fois publiée (P8) ; avant publication, oui.
 
 ### C-v016-2-3 — Le relevé : ce qu'on saisit
@@ -261,7 +266,35 @@ figurent aussi parmi les questions à soumettre à Guy avant la validation (fich
   `kesh-api` (routes, erreurs, audit), `kesh-i18n` (catalogues), `frontend` (`features/bank-import`, une page) — **cinq**,
   pas plus, tous du seul domaine de l'import bancaire ; la route est mince (elle compose des fonctions existantes). Un
   découpage backend / frontend ne livrerait rien d'utilisable seul et doublerait le cycle de revue d'une release
-  candidate attendue (rc2).
+  candidate attendue (rc2 à la première rédaction ; `v0.17.0-rc1` depuis C-v016-2-15).
 - **Écartées** : `v016-2a` (backend) puis `v016-2b` (écran, manuels, E2E).
 - **Réversible** : si la validation montre une non-convergence (sévérité qui stagne sur des défauts recyclés), découper
   selon cette ligne.
+
+### C-v016-2-15 — La release devient la 0.17.0 (amendement du 2026-10-30, décision du Project Lead)
+
+- **Contexte** : décision de Guy du 2026-10-30, transmise par l'orchestrateur après la première rédaction de la fiche :
+  la release n'est plus la 0.16.1 mais la **0.17.0**. Elle réunit le correctif v016-1 (#811, #812), publié comme
+  candidate `v0.16.1-rc1` le 2026-10-29 mais jamais en version finale, et cette story ; première candidate
+  `v0.17.0-rc1` ; la recette Claude Code et les tests se jouent une seule fois, sur elle. À `c5101b07`, les dix crates
+  portent `version = "0.16.1"` (`grep -n '^version' crates/*/Cargo.toml`), et `CHANGELOG.md:11` porte
+  `## [0.16.1] — 2026-10-29`, dont l'en-tête dit « Il n'ajoute **aucune migration** ».
+- **Retenu** :
+  - la migration de C-v016-2-2 relève `kesh_version_min_required` à **`0.17.0`** ; **P2-bis** : les dix crates passent
+    à `0.17.0` **dans le même commit** que la migration (fiche, AC-2), sinon le binaire refuserait de démarrer sur sa
+    propre base ; le développeur grepe la valeur `0.16.1` et trie chaque occurrence à la main (à `c5101b07`, dans
+    `crates/`, hors `Cargo.toml`, seulement des commentaires « depuis la 0.16.1 » qui datent le correctif v016-1 : ils
+    passent à la 0.17.0) ;
+  - le test de refus de version porte sur `0.16.1` (la `v0.16.1-rc1` en est une), non plus sur `0.16.0` ;
+  - le CHANGELOG `[0.16.1]` devient `[0.17.0] — Non publié`, avec *Ajouté* (#816), *Modifié* et *Corrigé* (#811,
+    #812) ; la phrase « aucune migration » est supprimée ; une note dit la candidate `0.16.1-rc1`, publiée en pré-version
+    puis non poursuivie ; le § *Passer à la 0.16.1* du manuel d'administration devient *Passer à la 0.17.0* — posés par
+    le **développeur** (fiche, AC-29), parce qu'ils décrivent la migration qu'il écrit ; macros, URL `v0.16.1`, PDF,
+    feuille de route et site restent à la release (garde G19) ;
+  - le nom et la clé de la story restent `v016-2-releve-manuel` / `v0162`.
+- **Conséquence heureuse** : la limite « une sauvegarde de la rc2 s'importe dans la rc1 sans s'y lire » (C-v016-2-2)
+  tombe : `0.16.1 < 0.17.0`, la rc1 refuse la base et les sauvegardes de la 0.17.0.
+- **Écartées** : garder `min_required = '0.16.1'` avec des crates en 0.17.0 (la rc1, de version `0.16.1`, accepterait
+  alors les sauvegardes de la 0.17.0 sans en lire les relevés saisis) ; laisser le CHANGELOG à la release (il dirait
+  « aucune migration » sur la branche jusque-là, et la migration est l'affaire du développeur).
+- **Réversible** : avant publication de `v0.17.0-rc1`, oui ; ensuite, non (P8).

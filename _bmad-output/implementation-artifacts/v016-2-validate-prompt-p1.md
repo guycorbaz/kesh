@@ -6,7 +6,9 @@ retient qu'un relevé saisi est un **import de `source_format = 'MANUAL'`**, cr�
 l'import (`bank_imports::create_with_transactions`), avec un contrôle d'équilibre **exact**, un solde de départ attendu
 signalé et à confirmer, des doublons de lignes sans option « ignorer », une action d'audit propre
 (`bank_import.entered_manually`), et **une migration** dont la seule instruction relève `kesh_version_min_required` à
-`0.16.1`. La story entre dans la release 0.16.1 (candidate rc2).
+`0.17.0`, les dix crates passant à `0.17.0` dans le même commit (P2-bis). La story entre dans la release **0.17.0**
+(première candidate `v0.17.0-rc1`), qui réunit aussi le correctif v016-1 (#811, #812), publié comme candidate
+`v0.16.1-rc1` mais jamais en version finale (amendement du 2026-10-30, C-v016-2-15).
 
 Worktree `/home/gcorbaz/devel/kesh-0162`, branche `story/v016-2-releve-manuel`, partie de `c5101b07`. Langue du rapport :
 **français**. Modèle : **Sonnet**. Passe **complète** (première passe de validation). **Contexte frais** : ne t'appuie
@@ -15,7 +17,7 @@ sur aucune passe antérieure, ni sur ce que la fiche dit d'elle-même.
 ## À lire
 
 1. La fiche `_bmad-output/implementation-artifacts/v016-2-releve-manuel.md`, **en entier**.
-2. Le registre `_bmad-output/implementation-artifacts/v016-2-choix-autonomes.md` (C-v016-2-1 à C-v016-2-14).
+2. Le registre `_bmad-output/implementation-artifacts/v016-2-choix-autonomes.md` (C-v016-2-1 à C-v016-2-15).
 3. L'issue, **en lecture seule** : `gh issue view 816 --json title,body,comments` ; pour le voisinage, `gh issue view`
    de 418, 526, 671, 687 (`--json title,state,body`).
 4. Le code du circuit bancaire : `crates/kesh-db/migrations/20260504000001_bank_imports.sql` et les migrations `bank_*`
@@ -31,12 +33,12 @@ sur aucune passe antérieure, ni sur ce que la fiche dit d'elle-même.
    `frontend/src/routes/(app)/bank-import/`, `frontend/tests/e2e/reconciliation-amount-due.spec.ts`.
 5. Le **manuel** : `docs/manual/fr/user-manual.tex` § *Tableau de bord* (l. 218-290), *Préparation de la clôture*
    (autour de l. 803), *Import bancaire* (l. 2037-2290), *Réconciliation bancaire* (l. 2290-2513) ;
-   `docs/manual/fr/admin-manual.tex` § *Passer à la 0.16.1* (l. 2481) et *Sauvegarde et restauration* (l. 1477) ;
+   `docs/manual/fr/admin-manual.tex` § *Passer à la 0.16.1* (l. 2481 ; la fiche le fait devenir *Passer à la 0.17.0*) et *Sauvegarde et restauration* (l. 1477) ;
    les PDF correspondants, lus aplatis **vers la sortie standard seulement** :
    `pdftotext docs/manual/fr/user-manual.pdf - | tr '\n' ' ' | tr -s ' '`.
 6. Pour les règles : `CLAUDE.md` du worktree (*Migration breaking policy* P1 à P8, *Un appariement automatique propose,
    il ne crée jamais*, *Règle de splitting préventif*, *Recette visuelle*, *Issue Tracking Rule*, liste de contrôle
-   pré-release), `docs/agents-orchestration.md`, `CHANGELOG.md` § `[0.16.1]`, `docs/api-external.md`.
+   pré-release), `docs/agents-orchestration.md`, `CHANGELOG.md` § `[0.16.1]` (que la fiche fait devenir `[0.17.0]`), `docs/api-external.md`.
 
 ## Deux lentilles, en contexte frais chacune
 
@@ -54,8 +56,9 @@ L'orchestrateur lance **deux agents distincts** sur ce même prompt ; chacun ne 
   `source_format`, `filename`, `file_hash` ou `statement_id` (`grep -rn` sur `crates/` et `frontend/src`) : un
   `match` non exhaustif, un affichage, un export, un test qui énumère les trois valeurs actuelles.
 - **La migration (C-v016-2-2, AC-2)** : le raisonnement tient-il au code (le décodage d'une valeur inconnue échoue-t-il
-  bien, et où rend-il une erreur) ? Le relèvement de `min_required` est-il conforme à P1/P2/P2-bis (crates déjà en
-  0.16.1 ?) et la procédure de P5, P6, P7, P8 et du squash est-elle complète ? Le triage P7 proposé
+  bien, et où rend-il une erreur) ? Le relèvement de `min_required` à `0.17.0` est-il conforme à P1/P2/P2-bis (les dix
+  crates passent-ils bien à `0.17.0` dans le même commit, et le tri prescrit des occurrences de `0.16.1` est-il
+  complet : `grep -rn "0\.16\.1" crates frontend/src docs scripts README.md CHANGELOG.md website`) ? et la procédure de P5, P6, P7, P8 et du squash est-elle complète ? Le triage P7 proposé
   (`ExemptionBasis::Durable`, justification) est-il celui des précédents (`20261009000001`, `20261015000001`) et passe-t-il
   `every_data_backfill_migration_is_triaged` et les contrôles de fenêtre ? Les tests qui figent `0.14.0` sont-ils tous
   nommés (`grep -rn "0\.14\.0" crates`) ? L'option (b) « aucune migration » est-elle écartée pour une raison vraie ?
@@ -84,11 +87,14 @@ L'orchestrateur lance **deux agents distincts** sur ce même prompt ; chacun ne 
   « relevé importé », « un relevé a été importé », « importez », « doublons », « ignorer », le contrôle K3) ? La
   sous-section prescrite promet-elle quelque chose que le code prescrit ne tiendra pas ? La conduite « la banque passe
   au CAMT » est-elle juste ?
-- **Le CHANGELOG, le § *Passer à la 0.16.1*, le README, `docs/api-external.md` (AC-28 à AC-30, § *Ce que la release doit
-  contenir*)** : l'en-tête actuel de `[0.16.1]` (« aucune migration ») devient-il faux, et la fiche le dit-elle sans
-  le faire corriger au développeur ? La liste de la release manque-t-elle un geste de la liste de contrôle pré-release
+- **Le CHANGELOG `[0.17.0]`, le § *Passer à la 0.17.0*, le README, `docs/api-external.md` (AC-28 à AC-30, § *Ce que la release doit
+  contenir*)** : la fiche fait-elle bien supprimer la phrase « aucune migration » de l'en-tête de `[0.16.1]`, renommer
+  l'entrée en `[0.17.0] — Non publié` (forme attendue par `scripts/prepare-release.sh`, à lire sans l'exécuter), ajouter
+  *Ajouté* (#816) et la note sur la candidate `0.16.1-rc1` ? Le partage entre ce que pose le développeur (AC-29) et ce
+  qui reste à la release (macros, URL, PDF, feuille de route, site) tient-il avec la garde G19 de
+  `crates/kesh-api/tests/textes_coherents.rs` ? La liste de la release manque-t-elle un geste de la liste de contrôle pré-release
   de `CLAUDE.md` pour une version **avec** migration (sauvegarde avant mise à jour, `prepare-release.sh`, exemptions
-  datées, macros, URL, PDF, site) ? Les notes de la rc2 couvrent-elles le retour à la rc1 ?
+  datées, macros, URL, PDF, site) ? Les notes de `v0.17.0-rc1` couvrent-elles le sort d'une installation passée par la `0.16.1-rc1` ?
 - **L'écran (AC-19 à AC-25)** : les critères sont-ils décidables par un test ? La règle « *Enregistrer* inactif »
   (écart, ligne invalide, aperçu périmé) est-elle complète et sans contradiction avec le serveur (deux décimales, dates
   dans la période, une ligne vide ignorée) ? La généralisation de `isValidAmount` laisse-t-elle intact le journal ?
