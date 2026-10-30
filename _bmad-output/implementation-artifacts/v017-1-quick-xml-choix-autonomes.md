@@ -20,6 +20,11 @@ cités sont ceux de `c5101b07`. Chaque choix : contexte, option retenue, alterna
   à courte échéance ; (b) rester en 0.39 et contourner (`with_checks(false)` dans `attr_string`) — ne couvre pas
   RUSTSEC-2026-0195, pour lequel l'avis dit qu'il n'existe aucun contournement propre.
 - **Réversible** : oui — revenir à `"0.41"` ne demande que de défaire l'adaptation #963 ; AC9 resterait le juge.
+- **Nuance (validation P1, F-7, 2026-10-30)** : #977 n'est un déni de service qu'en debug — 0.39.4 `src/name.rs:668`
+  `self.nesting_level += 1;` sur un `u16` panique sous `overflow-checks` et déborde **en silence** en release (résolution
+  d'espace de noms faussée, sans arrêt). L'argument décisif pour 0.42 reste le plafond global (#980) et une seule montée ;
+  le risque que 0.42 ajoute sur des données gardées est #963 (types `&str`, validation UTF-8 de toute l'entrée), dont la
+  seule garantie est la caractérisation AC9 et dont la seule divergence admise est C-v017-1-11.
 
 ### C-v017-1-2 — `kesh-payment` monte aussi, bien qu'aucun avis ne l'atteigne
 
@@ -37,7 +42,7 @@ cités sont ceux de `c5101b07`. Chaque choix : contexte, option retenue, alterna
   par laquelle la montée peut altérer la détection de doublons est la sortie du parseur (la `DuplicateKey` de ligne en
   dérive ; le hash de fichier, non). Les messages d'erreur de `quick-xml` changent d'une version à l'autre et ne sont ni
   stockés ni montrés tels quels à l'écran (`BANK_IMPORT_MALFORMED_XML` et sa clé i18n).
-- **Retenu** : références `golden/*.json` de la sortie entière (`serde_json`) pour tout fichier CAMT du dépôt et trois
+- **Retenu** : références `camt053_golden/*.json` de la sortie entière (`serde_json`) pour tout fichier CAMT du dépôt et quatre
   fixtures neuves, produites **avant** la montée dans un commit sans code ; les erreurs comparées par variant, et par
   message seulement quand Kesh le rédige.
 - **Écartées** : (a) relire les tests existants seulement — ils assertent quelques champs, pas la sortie entière, et
@@ -51,7 +56,7 @@ cités sont ceux de `c5101b07`. Chaque choix : contexte, option retenue, alterna
   le test d'attributs ne se termine pas en un temps raisonnable ; un test qui pend bloque nextest.
 - **Retenu** : parse dans `std::thread::spawn`, attente `recv_timeout(10 s)` ; 200 000 attributs (≈ 2,4 Mo < 10 MiB par
   défaut), 10 000 déclarations, 70 000 niveaux. Le délai est la seule assertion d'AC5 ; AC6 asserte le refus ; AC7
-  l'absence de panique.
+  le refus sans panique (`Timeout` et `Disconnected` distingués — remédiation P1, R-3).
 - **Écartées** : (a) mesurer le temps et comparer à un seuil serré — instable entre poste et CI ; (b) mesurer
   l'allocation (allocateur compteur) — infrastructure lourde pour un comportement que le refus borne déjà ; (c) tests
   `#[ignore]` — un test qui ne tourne pas se tait.
@@ -85,7 +90,7 @@ cités sont ceux de `c5101b07`. Chaque choix : contexte, option retenue, alterna
   (`mod.rs:473` pour `Nm`). Un « Dupont & Fils » devient « Fils ». Le corriger changerait la sortie du parseur — et la
   `DuplicateKey` d'une ligne dont la référence porte une entité —, ce que la contrainte du 2026-10-30 interdit ici.
 - **Retenu** : figer le comportement actuel dans `v04_characterization.xml` avec un commentaire qui renvoie à l'issue ;
-  **issue demandée** (bug, P2 : contrepartie et libellés faux sans effet sur les montants ; la correction doit dire ce
+  **tracé par #819** (bug, P2 : contrepartie et libellés faux sans effet sur les montants ; la correction doit dire ce
   qu'il advient de la détection de doublons de ligne pour les relevés déjà importés).
 - **Écartées** : corriger ici — non mécanique, change des données dérivées.
 - **Réversible** : oui.
@@ -94,13 +99,15 @@ cités sont ceux de `c5101b07`. Chaque choix : contexte, option retenue, alterna
 
 - **Contexte** : `parse_camt053` est appelé dans le gestionnaire async (`routes/bank_imports.rs:1045`, `:1249`), sans
   `spawn_blocking`. Même linéaire, un parse de 100 MiB occupe un fil de l'exécuteur.
-- **Retenu** : hors périmètre ; **issue demandée** (P3, défense en profondeur : `spawn_blocking` pour CAMT et CSV).
+- **Retenu** : hors périmètre ; **tracé par #820** (P3, défense en profondeur : `spawn_blocking` pour CAMT et CSV).
 - **Écartées** : l'intégrer — touche deux gestionnaires et les chemins d'erreur, non mécanique.
 - **Réversible** : —
 
 ### C-v017-1-9 — `\r` dans un texte pain.001 : écart assumé
 
-- **Contexte** : 0.42 échappe `\r` en `&#13;` dans `BytesText::new` (#990). Sous 0.39, un `\r` sortait brut — qu'un
+- **Contexte** : 0.42 échappe `\r` en `&#13;` dans `BytesText::new` (#990 ; établi dans la source 0.42.0 :
+  `src/escape.rs:109` ajoute `b'\r'` à l'ensemble échappé, `src/events/mod.rs:586-587` `BytesText::new` =
+  `from_escaped(escape(content))` ; 0.39.4 `src/escape.rs:106` n'échappait que `< > & ' "`). Sous 0.39, un `\r` sortait brut — qu'un
   lecteur XML normalise en `\n`. L'écriture 0.42 est la plus fidèle. Le fichier pain.001 est régénéré à la demande, non
   stocké.
 - **Retenu** : la référence d'AC12 n'inclut pas de `\r` ; l'écart est écrit dans le commentaire du test.
@@ -116,3 +123,25 @@ cités sont ceux de `c5101b07`. Chaque choix : contexte, option retenue, alterna
 - **Écartées** : un test `#[ignore]` lisant un chemin en variable d'environnement (modèle `ubs_fichier_reel.rs`) —
   envisageable, mais comparer avant/après exige deux binaires ; le condensé suffit.
 - **Réversible** : oui.
+
+### C-v017-1-11 — Un fichier non UTF-8 hors du texte lu est désormais refusé : divergence admise
+
+*(Ajouté le 2026-10-30, remédiation de la validation P1 — F-1 et R-5 ; décision de l'orchestrateur.)*
+
+- **Contexte** : sous 0.39.4, seul le texte des éléments est décodé (`camt053/mod.rs:235`, `t.decode()` sur les
+  `Event::Text`) ; un octet non UTF-8 dans un commentaire, une section CDATA, une instruction ou une valeur d'attribut non
+  lue passait, et le relevé s'importait. 0.42.0 valide l'UTF-8 de chaque section lue (`src/reader/buffered_reader.rs:297`
+  pour les sections `<!…>`, `:240`, `:588`) et refuse le fichier entier. Le parse précédant la recherche du hash
+  (`routes/bank_imports.rs:1036-1045`), un tel fichier déjà importé en 0.16 serait, réimporté, refusé au lieu d'être
+  signalé en doublon. Les données en base ne sont pas touchées.
+- **Retenu** : divergence **admise** — la norme ISO 20022 impose l'UTF-8 aux messages XML ; un fichier qui ne l'est pas
+  n'est pas un relevé conforme. Elle est **prouvée et écrite** : fixture `v04_latin1_hors_texte.xml` (référence 0.39
+  consignée sous `v04_latin1_hors_texte.0.39.json`), exception nominative dans AC9, refus
+  `BANK_IMPORT_MALFORMED_XML` asserté par AC8, phrase au CHANGELOG (AC14), ligne au § *Ce que les gardes ne voient pas*.
+  Rattaché : la normalisation des valeurs d'attribut (`normalized_value`, 0.42 `src/events/attributes.rs:75`, `:85`) ne
+  change qu'un `Ccy` portant un blanc littéral, qui n'est pas un code de devise — écrit, non figé.
+- **Écartées** : (a) prétraiter l'entrée pour retirer ou transcoder les octets hors texte — code de plus, sur un chemin
+  d'entrée hostile, pour tolérer un fichier non conforme ; (b) activer la fonctionnalité `encoding` de `quick-xml`
+  (`DecodingReader`) — change aussi la lecture des fichiers Latin-1 **dans** le texte, aujourd'hui refusés : élargissement
+  hors objet.
+- **Réversible** : oui (un prétraitement pourrait s'ajouter plus tard sans toucher aux données).
