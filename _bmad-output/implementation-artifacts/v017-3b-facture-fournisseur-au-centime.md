@@ -6,7 +6,7 @@ Status: ready-for-dev
 `story/v017-3-rapprochement-attente` partie de `c5101b07` (tête de la candidate `v0.16.1-rc1`) ; la story se fusionne
 dans la release **0.17.0**. Sous-story de `v017-3-rapprochement-attente`, découpée avec **v017-3a** (#671) — motif :
 C-v017-3-1. Registre : `v017-3-choix-autonomes.md` (C-v017-3-1, C-v017-3-13 à C-v017-3-17, C-v017-3-18 à C-v017-3-20 ajoutés à la
-validation P1, C-v017-3-24 à la validation P2 — **simplification** : la matrice de conduite est retirée ; C-v017-3-26 à la validation P3). Clé courte : `v0173b`.
+validation P1, C-v017-3-24 à la validation P2 — **simplification** : la matrice de conduite est retirée ; C-v017-3-26 à la validation P3, C-v017-3-27 à la validation P4). Clé courte : `v0173b`.
 Issue : **#687** (P3, bug), en `refs` seulement dans les commits. Les numéros de ligne cités sont ceux de `c5101b07`.*
 
 **Aucune migration. Aucune version bumpée. Aucune donnée existante réécrite** (contrainte du Project Lead du
@@ -66,9 +66,10 @@ existante.
 | D4 | pain.001 (`CtrlSum`) : hors périmètre, #822 | C-v017-3-16 |
 | D5 | Les montants sous le centime s'affichent aux quatre décimales (`formatExactAmount`), un seul `hasSubCentime` | C-v017-3-18 |
 | D6 | Le formulaire garde son patron (refus au clic, message de cause) ; le bouton n'est pas désactivé | C-v017-3-19 |
-| D8 | *(Validation P2.)* **Simplification** : la matrice de conduite par état est retirée ; un avertissement **unique et statique** sur la fiche, quel que soit l'état ; le manuel décrit les voies et leurs limites dans une section à `\label` | C-v017-3-24 |
+| D8 | *(Validation P2.)* **Simplification** : la matrice de conduite par état est retirée ; un avertissement **unique et statique** sur la fiche, quel que soit l'état *(« quel que soit l'état » remplacé par C-v017-3-26 / D10 — annotation de la validation P4, C4)* ; le manuel décrit les voies et leurs limites dans une section à `\label` | C-v017-3-24 |
 | D9 | *(Validation P2, R2.)* La passe de forme des lignes (positivité, puis centime, puis TVA) est **une** fonction, appelée par la saisie et par la complétion, dans le même ordre | C-v017-3-15 (amendé) |
 | D10 | *(Validation P3.)* L'avertissement ne s'affiche **pas** pour une facture annulée ; son texte est une condition vraie dans tous les autres états, sans « automatiquement » | C-v017-3-26 |
+| D11 | *(Validation P4.)* Les décimales exactes ne s'affichent que sur la **fiche** de la facture (TTC, lignes, sélecteur de document) ; la **liste** garde son format, limite écrite et issue demandée | C-v017-3-27 |
 | D7 | **Dépendance à la v017-3a** : la 3b est livrée dans la même release ; la voie 7 du manuel (AC-16) la suppose | C-v017-3-20 |
 
 ## Critères d'acceptation
@@ -83,7 +84,10 @@ existante.
   avant `normalize`) admis ; `0.1 × 0.1` (`0.01`) admis ; `0.3 × 0.1` (`0.03`) admis.
   *(Validation P3, R4.)* Chemin et visibilité : la fonction est `pub` et **ré-exportée** par `accounting/mod.rs` (`pub use
   purchase::purchase_line_total;`, à côté de `pub use vat::line_vat_amount;`, `mod.rs:22`), de sorte que
-  `kesh_core::accounting::purchase_line_total` soit le chemin employé partout.
+  `kesh_core::accounting::purchase_line_total` soit le chemin employé partout. *(Validation P4, C10 — tranche le choix
+  laissé ouvert plus haut.)* Le module est **`accounting/purchase.rs`**, déclaré `pub mod purchase;` à côté de `pub mod
+  balance; pub mod vat;` (`mod.rs:18-19`) ; la ré-exportation porte aussi le type d'erreur : `pub use
+  purchase::{purchase_line_total, LineNotInCentimes};` (`kesh-db` le nomme pour sa conversion).
 
 ### La création (`kesh-db`, `kesh-api`)
 
@@ -107,7 +111,8 @@ existante.
   `SUPPLIER_INVOICE_LINE_NOT_IN_CENTIMES`, `details { line, lineTotal }`, message fr-CH « La ligne {line} donne un
   montant de {lineTotal}, qui n'est pas au centime. Saisissez la ligne au montant facturé par le fournisseur, au
   centime. » *(validation P3, F6 : l'exemple « quantité 1 et le montant de la ligne » est retiré — lu à la lettre,
-  `1 × 99.9999` est refusé de même ; les trois textes du refus portent désormais la même formule de remède)* ; repli d'`errors.rs` égal au catalogue fr-CH ; quatre locales.
+  `1 × 99.9999` est refusé de même ; les trois textes du refus portent désormais la même formule de remède — *exact pour deux d'entre eux seulement, le message
+  au clic est aligné à la validation P4, C5 (AC-12)*)* ; repli d'`errors.rs` égal au catalogue fr-CH ; quatre locales.
   *(Validation P1, F10.)* La garde **G9** de `crates/kesh-api/tests/textes_coherents.rs` (`:710-760`, table fermée
   fichier → clés et constantes de réécriture des variables Fluent) reçoit l'entrée de cette clé **et** la réécriture de
   ses deux variables (`{ $line }` → `{line}`, `{ $lineTotal }` → `{line_total}` ou la forme que la table emploie), faute
@@ -182,7 +187,13 @@ existante.
   joué dans `kesh_v0173b`, aux captures de l'AC-14 — jamais dans une base de Guy. *(Validation P3, R7.)* Véhicule : le
   montage s'écrit **une fois** en SQL, dans un fichier lu par l'aide de test (`include_str!`) et rangé hors de `src/` ;
   pour la base de démonstration, le même fichier est joué à la main sur `kesh_v0173b` (copie de travail dans
-  `/home/gcorbaz/devel/kesh-gate-logs/v0173b/montage-sous-centime.sql`, nommée au Dev Agent Record).
+  `/home/gcorbaz/devel/kesh-gate-logs/v0173b/montage-sous-centime.sql`, nommée au Dev Agent Record). *(Validation P4,
+  C9.)* Le SQL ne lie aucun `?` : il s'écrit sur des **variables de session** posées en tête (`SET @invoice_id := (SELECT
+  id FROM supplier_invoices WHERE supplier_invoice_number = '…' AND company_id = …);`, puis l'écriture d'achat et ses
+  lignes retrouvées par `purchase_journal_entry_id`), de sorte que l'aide de test pose `@invoice_id` puis joue le même
+  texte, et que le client `mariadb` le joue tel quel. Sur la base de démonstration, l'étape (1) — créer la facture
+  `1 × 100.00` — et le paiement de l'état « payée » se font **par l'écran** ; seule la mise à `100.0040` passe par le
+  fichier.
 - **AC-10** — *(Réécrit à la validation P2, C-v017-3-24 : la matrice de conduite par état, ses conditions sur
   `cancellable`, `settlementCancellable`, `lastConfirmedBatch`, `settlementType` et `canManage`, et leurs tests sont
   **retirés**.)* La fiche de la facture (`frontend/src/routes/(app)/supplier-invoices/[id]/+page.svelte`, total `:386`)
@@ -216,6 +227,25 @@ existante.
   même facture ne se lit pas à deux formats. Le sélecteur de document (`AttachDocumentPicker.svelte:155`, `:164`) reste
   au format courant : il montre le montant d'un **document** à traiter et le total d'une facture à rattacher, au centime
   par construction après la story.
+  *(Validation P4, C1, C2, C-v017-3-27 — remplace, dans les deux paragraphes ci-dessus, ce qui touche la liste, le
+  sélecteur et le véhicule de test.)* **La fiche de la facture est la seule page** où l'affichage passe aux décimales
+  exactes (`formatExactAmount`) : la cellule TTC (`:386`), les cellules **prix unitaire** et **total de ligne**
+  (`[id]/+page.svelte:501`, `:503`) **et** le **total de la facture** dans le sélecteur de document
+  (`AttachDocumentPicker.svelte:164`, `invoiceTotal={invoice.totalAmount}` passé par `[id]/+page.svelte:457`). La
+  justification écrite à la P3 pour laisser le sélecteur au format courant était **fausse** (C1) : ce total est celui de
+  la facture affichée, donc précisément la facture existante sous le centime. Le montant du QR du document
+  (`AttachDocumentPicker.svelte:155`) reste au format courant : il est au centime par le contrôle d'import
+  (`docs/api-external.md:717`, `QR_AMOUNT_OUT_OF_RANGE`). **La page de liste** (`supplier-invoices/+page.svelte:93`)
+  **garde son format** dans cette story : limite écrite (L4) et issue demandée (§ *Issues à ouvrir*, point 4) ; le test
+  « la liste rend 100.0040 », la capture de la liste et la mutation M16 sur la liste sont **retirés**.
+  *(C2.)* La prémisse « `find frontend/src/routes -name "*.test.ts"` ne rend aucun banc pour cette page » (§ F9 ci-dessus)
+  est **fausse** : deux bancs rendent cette page, `frontend/src/routes/(app)/supplier-invoices/[id]/supplier-settlement-page.test.ts`
+  et `…/supplier-document-page.test.ts` (chacun `import Page from "./+page.svelte";`, `:80`). Le composant extrait reste
+  (testabilité ciblée de l'avertissement), mais **l'intégration** se prouve au banc existant
+  `supplier-settlement-page.test.ts` : une facture `100.0040` **annulée** → aucun avertissement (la page transmet bien le
+  statut) ; `100.0040` ouverte → avertissement, TTC et cellules de lignes « 100.0040 » ; et, dans
+  `supplier-document-page.test.ts`, le sélecteur ouvert sur une facture `100.0040` sans document → « Total de la facture :
+  100.0040 ». M16 est rattachée à ces deux bancs.
 - **AC-11** — *(Réécrit à la validation P2, C-v017-3-24.)* Ce que le manuel affirme se **prouve** (§ AC-16) : un test HTTP
   joue la voie nominale sur la fixture de l'AC-9 payée depuis la fiche par virement — annulation du règlement (`POST
   /supplier-invoices/{id}/settlement/cancel`), puis de la facture (`POST /supplier-invoices/{id}/cancel`), ressaisie au
@@ -237,7 +267,8 @@ existante.
   *(Validation P1, F1, C-v017-3-19.)* Le formulaire **garde son patron** : le bouton *Enregistrer* n'est désactivé que
   pendant l'enregistrement (`disabled={saving}`, `:579`) ; `linesInvalid` est lu au clic (`submit()`, `:203`). Au clic,
   une ligne sous le centime fait afficher dans `supplier-invoice-form-error` un message **dédié** (clé nouvelle :
-  « Une ligne n'est pas au centime : corrigez-la avant d'enregistrer. »), non le message générique
+  « Une ligne n'est pas au centime : corrigez-la avant d'enregistrer. » — *validation P4, C5 : remplacé par « Une ligne
+  n'est pas au centime : saisissez-la au montant facturé par le fournisseur, au centime. »*), non le message générique
   `supplier-invoices-err-lines` ; rien n'est envoyé. Le contrôle est une fonction pure de `supplier-invoice-form.ts`
   (`big.js`, jamais `parseFloat`), miroir de `purchase_line_total`, avec ses tests Vitest des mêmes cas que l'AC-1 ;
   *(F11)* elle rend « pas de refus » pour une saisie vide ou illisible (`try/catch`, comme `amountMismatch`), accepte la
@@ -252,7 +283,7 @@ existante.
   dédié) ; une ligne à la fois structurellement invalide et sous le centime reçoit donc le message générique. *(F11.)* Le
   miroir lit une quantité **vide** comme `1`, comme l'envoi (`SupplierInvoiceForm.svelte:218`, `quantity: l.quantity ||
   '1'`). *(Validation P3, R9.)* La virgule n'est **pas** normalisée à l'envoi : défaut préexistant, issue à ouvrir
-  (§ *Issues à ouvrir*, point 3).
+  (§ *Issues à ouvrir*, point 3) — *ouverte depuis : **#830** (validation P4, C8)*.
 - **AC-13** — i18n : clés nouvelles dans les **quatre** catalogues ; `npm run lint-i18n-ownership` vert ;
   *(F10)* la constante `CLES_RELEVEES` de `frontend/src/lib/shared/i18n-un-repli-par-cle.test.ts` (`:180`, 344 à
   `c5101b07`) se **recompte** depuis le FTL fr-CH, avec son commentaire daté. *(Validation P2, F8 — corrige la phrase
@@ -274,7 +305,8 @@ existante.
   facture sous le centime **ouverte** et **annulée**, avec l'avertissement ; une fiche au centime, sans. *(Validation P3,
   F1, F5 — remplace la liste de fiches ci-dessus.)* La fiche sous le centime **ouverte** et **payée**, avec
   l'avertissement et les lignes aux quatre décimales ; **annulée**, sans avertissement ; au centime, sans ; la **liste**
-  avec un total à quatre décimales. Captures dans
+  avec un total à quatre décimales. *(Validation P4, C-v017-3-27 : la capture de la liste est retirée ; s'ajoute le
+  sélecteur de document ouvert sur une facture `100.0040`.)* Captures dans
   `/home/gcorbaz/devel/kesh-gate-logs/v0173b/captures/`, listées au Dev Agent Record.
 - **AC-15** — E2E : *(F7)* la spec qui porte déjà les parcours du formulaire — `frontend/tests/e2e/supplier-documents.spec.ts`
   (ou `inbox-import.spec.ts`), avec l'assistant `fillFirstInvoiceLine` — gagne un test : une ligne `3 × 33.3333`
@@ -299,7 +331,9 @@ existante.
        pas ; un paiement bancaire de ce montant ne pourra être rapproché d'aucune transaction de relevé ; ouverte, elle
        peut retenir la proposition d'une règle d'affectation pour un débit à 5 centimes près **lorsqu'elle porte un
        indice** — la référence du paiement ou le nom du fournisseur (`routes/reconciliation.rs:1243-1244`, comme le dit
-       déjà `user-manual.tex:2450`) *(corrigé à la validation P3, R1)* (L1) ;
+       déjà `user-manual.tex:2450`) *(corrigé à la validation P3, R1)* — *ou, par prudence, quand deux cents factures
+       ouvertes au moins tombent dans l'écart de 5 centimes (`masking_full`, `routes/reconciliation.rs:1253-1255`,
+       `SUPPLIER_MASKING_LIMIT = 200`, `repositories/reconciliation.rs:907` ; précisé à la validation P4, C6)* (L1) ;
     2. **ouverte** : l'annuler, puis la ressaisir au montant facturé ;
     3. **payée** : annuler le règlement, **puis** la facture, dans cet ordre (R3) — annuler d'abord la facture laisse le
        règlement au grand livre, détaché ; si c'est arrivé, l'écriture de règlement détachée se contre-passe depuis le
@@ -308,7 +342,9 @@ existante.
        l'être (F1) ;
     4. **exercice clôturé** : l'annulation suppose la **réouverture** de l'exercice par un Administrateur (R4,
        `routes/fiscal_years.rs:11`) ; si on ne la veut pas, la facture reste telle quelle — ses livres sont justes, seul
-       le rapprochement automatique de son règlement est perdu ;
+       le rapprochement automatique de son règlement est perdu *(validation P4, C3 : remplacé par « un paiement bancaire
+       de ce montant ne pourra être rapproché d'aucune transaction de relevé » — la formule de l'avertissement ;
+       « automatique » suggérait un chemin manuel qui n'existe pas)* ;
     5. **lot pain.001** : un lot en cours dont le fichier n'a pas été transmis (ou que la banque a refusé, #822) s'annule
        avant la facture ; un lot **exécuté** par la banque se confirme, puis la facture suit la voie « payée » ; si la
        banque a passé le lot en **un seul** débit, la transaction ne se rattache à aucune facture seule (#823) (F2, F4) ;
@@ -338,7 +374,8 @@ existante.
   (refus de la complétion : « … `AMOUNT_MISMATCH` (le total TTC des lignes doit égaler exactement le montant du QR) ») :
   le nouveau code s'y ajoute, **avant** `AMOUNT_MISMATCH`, avec le refus de positivité. *(Validation P3, F2 — précise
   l'emplacement : `docs/api-external.md` n'a **pas** de « tableau des codes » pour `POST /supplier-invoices`.)* Un
-  paragraphe neuf, « Les lignes d'une facture fournisseur se saisissent au centime », après `:733` (coordonnées de
+  paragraphe neuf, « Les lignes d'une facture fournisseur se saisissent au centime », après `:733` *(validation P4, C7 : lire « après le paragraphe « Sont **acceptés** » de `:745`, qui clôt le bloc des
+  coordonnées de paiement — `:733` en est la première ligne, suivie de son tableau `:735-743` »)* (coordonnées de
   paiement), porte un tableau de deux lignes — le code `SUPPLIER_INVOICE_LINE_NOT_IN_CENTIMES` et la borne de quatre
   décimales (`VALIDATION_ERROR`) — et la phrase « changement de contrat ».
 - **AC-18** — `CHANGELOG.md` : *(F9)* la section `## [0.17.0]` n'existe pas à `c5101b07` (elle est créée par la
@@ -381,7 +418,7 @@ existante.
 | M13 | complétion : `purchase_lines_form` remplacé par le seul `purchase_line_total` | AC-6 (`-1 × 33.3333` rendrait le code du centime) |
 | M14 | fiche : `formatExactAmount` remplacé par le format à deux décimales dans la cellule TTC | Vitest AC-10 |
 | M15 | conversion : bornes d'échelle déplacées **après** le `match` sur la source de paiement | AC-5 (quantité `1.00001` et IBAN invalide → `INVALID_PAYMENT_DETAILS`) — *validation P3, R5* |
-| M16 | liste : `formatExactAmount` remplacé par le format à deux décimales | Vitest AC-10 (liste) — *validation P3, F5* |
+| M16 | ~~liste~~ fiche : `formatExactAmount` remplacé par le format à deux décimales dans les cellules de lignes (`:501`, `:503`) ou le total du sélecteur (`AttachDocumentPicker.svelte:164`) | *(Rattachée à la validation P4, C2, C-v017-3-27 — la liste garde son format.)* `supplier-settlement-page.test.ts` (lignes), `supplier-document-page.test.ts` (sélecteur) |
 | M17 | avertissement : texte remplacé par l'ancien (« … rapproché automatiquement … ») | Vitest AC-10 (texte exact) — *validation P3, F1* |
 
 ## Gates
@@ -399,11 +436,17 @@ lettre. Ne déclarer que ce qui a tourné.
   Ouverte, elle **masque** aussi la règle d'affectation d'un débit à 5 centimes près **lorsqu'elle porte un indice**
   (référence du paiement ou nom du fournisseur) : `repositories/reconciliation.rs:934` sélectionne les factures
   masquantes (`BETWEEN ? AND ?`, T-b9), la décision est à `routes/reconciliation.rs:1243-1244` (« un indice […] suffit —
-  jamais le montant seul ») ; comme le dit déjà `user-manual.tex:2450`.
+  jamais le montant seul ») ; comme le dit déjà `user-manual.tex:2450`. *(Validation P4, C6.)* La condition exacte : la
+  règle est masquée si une masquante non candidate porte un indice **ou** si la liste des masquantes est pleine
+  (`masking_full = masking.len() >= SUPPLIER_MASKING_LIMIT`, `routes/reconciliation.rs:1253-1255`, limite 200,
+  `repositories/reconciliation.rs:907`) — cas quasi théorique, que le manuel actuel ne dit pas.
 - **L2 — Une facture réelle sous le centime** : si un fournisseur facture réellement un montant sous le centime (cas non
   rencontré en Suisse pour un montant payable), la saisie exige de la ramener au centime — le montant payable l'est
   toujours.
 - **L3 — L'API externe** : un client qui envoyait des lignes sous le centime reçoit désormais un `400` (AC-17).
+- **L4 — La liste des factures** *(validation P4, C-v017-3-27)* : la page de liste
+  (`supplier-invoices/+page.svelte:93`) affiche le total d'une facture existante sous le centime arrondi à deux
+  décimales ; seule sa fiche le montre exact. Issue demandée (§ *Issues à ouvrir*, point 4).
 
 ## À recontrôler à l'étape 0 du développement
 
@@ -445,11 +488,11 @@ manuel.
 ## Collision avec la story parallèle v016-2
 
 Aucun fichier métier commun. Fusion mécanique : `errors.rs` (variante et code), les quatre catalogues i18n,
-`docs/api-external.md` (tableau des codes), `CHANGELOG.md` (`## [0.17.0]` : la v016-2a **renomme** `[0.16.1]` — *« crée » corrigé à la validation P3* —, la 3b écrit
+`docs/api-external.md` (tableau des codes *— emplacement réel : AC-17, annotation de la validation P4, C4*), `CHANGELOG.md` (`## [0.17.0]` : la v016-2a **renomme** `[0.16.1]` — *« crée » corrigé à la validation P3* —, la 3b écrit
 sous un en-tête provisoire : deux sections à fusionner — AC-18), `user-manual.tex` (sections distinctes) et
 son PDF (à régénérer après fusion).
 
-## Issues à ouvrir (demandées par la validation P1)
+## Issues à ouvrir (demandées par les validations P1, P3 et P4)
 
 1. **« Facture fournisseur : ni plafond de quantité, de prix ou de total de ligne, ni multiplication contrôlée »** (R6,
    P3). Constat : `grep -nE "MAX_|limits" crates/kesh-api/src/routes/supplier_invoices.rs crates/kesh-api/src/routes/imported_supplier_invoices.rs`
@@ -467,11 +510,18 @@ son PDF (à régénérer après fusion).
 **pas** le `checked_mul` dans cette story : il reste à #825.
 
 *(Validation P3, R9.)* 3. **« Formulaire de facture fournisseur : une virgule décimale est acceptée à la saisie mais
-envoyée telle quelle »** (P3). Constat : `isValidAmount` admet la virgule (`frontend/src/lib/features/journal-entries/balance.ts:23`,
+envoyée telle quelle »** (P3) — *ouverte depuis : **#830** (validation P4, C8)*. Constat : `isValidAmount` admet la virgule (`frontend/src/lib/features/journal-entries/balance.ts:23`,
 `AMOUNT_RE = /^\d{1,15}([.,]\d{1,4})?$/`) ; `SupplierInvoiceForm.svelte:218-219` envoie `quantity` et `unitPrice` bruts ;
 le `Decimal` du serveur ne lit pas « 12,50 » (refus de désérialisation), et `sumTtc` (`new Big('12,50')`) lève et ignore
 la ligne dans le total vivant. Défaut préexistant, hors de #687 ; le miroir de l'AC-12, qui normalise la virgule, ne
 l'aggrave pas. L'AC-12 le rappelle en une phrase.
+
+*(Validation P4, C-v017-3-27.)* 4. **« La liste des factures fournisseur arrondit à deux décimales un total sous le
+centime »** (P4). Constat : `frontend/src/routes/(app)/supplier-invoices/+page.svelte:93` affiche `totalAmount` par
+`formatSupplierInvoiceTotal`, qui fait `formatSwissAmount(new Big(d))` à deux décimales (`supplier-invoice-helpers.ts:11-14`,
+`journal-entries/balance.ts:93-96`) : une facture enregistrée avant la 0.17.0 à `100.0040` s'y lit « 100.00 », alors que
+sa fiche (v017-3b) l'affiche « 100.0040 » et l'avertit. Aucun banc ne rend cette page. Remède : `formatExactAmount`,
+avec un banc neuf de la page de liste.
 
 ## LOW non pris
 
@@ -490,7 +540,7 @@ Les MEDIUM F1 à F6, R3 et R4 sont **absorbés** par la simplification : leurs c
 - **Q1 (C-v017-3-13)** — Refuser une ligne dont le montant n'est pas au centime, plutôt que de l'arrondir en silence ou
   de régler avec une ligne d'arrondi : d'accord ?
 - **Q2 (C-v017-3-14, C-v017-3-24)** — Une facture existante sous le centime n'est ni modifiée ni bloquée : sa fiche porte
-  un avertissement statique qui renvoie au manuel, où les voies (annuler, ressaisir, et leurs limites) sont décrites. Voulez-vous en plus une liste de ces factures (un filtre), ou l'avertissement
+  un avertissement statique *(sauf pour une facture annulée — C-v017-3-26, annotation de la validation P4, C4)* qui renvoie au manuel, où les voies (annuler, ressaisir, et leurs limites) sont décrites. Voulez-vous en plus une liste de ces factures (un filtre), ou l'avertissement
   suffit-il ?
 
 ## Dev Agent Record
@@ -548,3 +598,15 @@ Les MEDIUM F1 à F6, R3 et R4 sont **absorbés** par la simplification : leurs c
   la **fiche 3a** (`v017-3a…md`, « facture existante sous le centime, conduite », F4) n'est pas touchée ici (3a en
   validation P3) : signalée à l'orchestrateur. Prochaine étape : validation P4 ciblée (`v017-3b-validate-prompt-p4.md`,
   Opus, une lentille).
+- 2026-10-30 — **Validation P4** (ciblée, Opus, une lentille) : 0 CRITICAL, 0 HIGH, 3 MEDIUM, 7 LOW ; les trois MEDIUM
+  naissent de la remédiation P3. **Décision de l'orchestrateur C-v017-3-27** : la fiche de la facture est la seule page
+  aux décimales exactes (TTC, lignes `:501`, `:503`, et total du sélecteur de document — la justification fausse de la
+  P3 est retirée, C1) ; la prémisse « aucun banc » est corrigée (deux bancs, `supplier-settlement-page.test.ts` et
+  `supplier-document-page.test.ts`), l'intégration et M16 y sont rattachées (C2) ; la liste garde son format — test,
+  capture et mutation de la liste retirés, limite L4 et issue demandée (point 4). C3 : la voie 4 du manuel reprend la
+  formule de l'avertissement ; `automati` grepé dans la fiche et le registre — restent les citations historiques (ancien
+  texte de l'AC-10, D10, M17, C-v017-3-26), et la règle « Un appariement automatique » du registre, sans rapport. LOW :
+  phrases contredites marquées « remplacé par C-v017-3-26 » sans réécrire leur texte (C4) ; message au clic aligné (C5) ;
+  condition exacte avec `masking_full` (C6) ; emplacement `api-external.md` après `:745` (C7) ; #830 citée (C8) ;
+  variables de session et étapes par l'écran pour le montage (C9) ; `accounting/purchase.rs` et ré-exportation de
+  `LineNotInCentimes` (C10). Prochaine étape : validation P5 ciblée (`v017-3b-validate-prompt-p5.md`, Sonnet).

@@ -394,6 +394,10 @@ silencieuse ; un appariement propose, il ne crée jamais).
 - *Amendement du 2026-10-30 (validation P3 de la 3b, F1)* : « quel que soit l'état (annulée comprise) » est remplacé par
   C-v017-3-26.
 
+- *Amendement du 2026-10-30 (validation P4 de la 3b, C4)* : « aucune logique d'état à l'écran, donc aucune mutation,
+  aucun Vitest, aucune capture par état » est remplacé par C-v017-3-26, qui réintroduit une condition d'état (annulée) avec
+  son Vitest, sa mutation et ses captures.
+
 ### C-v017-3-25 — v017-3a : découpage — l'avertissement des propositions part en v017-3c, hors de la 0.17.0
 
 - **Contexte** (validation P2 de la 3a) : la sévérité ne baisse pas (P1 : 1 HIGH, 12 MEDIUM ; P2 : 12 MEDIUM), et une part
@@ -423,3 +427,16 @@ silencieuse ; un appariement propose, il ne crée jamais).
   ne pourra être rapproché d'aucune transaction de relevé. Voir le manuel, § … ». Vitest, captures et mutations suivent.
 - **Écartées** : garder l'annulée avec un texte neutre (l'avertissement inviterait à un traitement inutile).
 - **Réversible** : oui.
+
+### C-v017-3-27 — v017-3b : les décimales exactes sur la seule fiche de la facture
+
+- **Contexte** (validation P4 de la 3b, C1, C2) : la remédiation P3 a étendu `formatExactAmount` à la liste et aux
+  lignes, laissé le sélecteur de document au format courant sur une justification fausse, et affirmé qu'aucun banc ne
+  rendait la page de la fiche — alors que `supplier-settlement-page.test.ts` et `supplier-document-page.test.ts` la
+  rendent. Le périmètre d'affichage s'étendait à chaque passe.
+- **Retenu** (décision de l'orchestrateur, 2026-10-30) : seule la **fiche** de la facture passe aux décimales exactes —
+  TTC, cellules de lignes (`:501`, `:503`) et total de la facture dans le sélecteur de document
+  (`AttachDocumentPicker.svelte:164`) ; l'intégration se prouve aux deux bancs existants. La **liste** garde son format :
+  limite écrite et issue demandée (P4).
+- **Écartées** : passer aussi la liste (aucun banc, le périmètre continuerait de s'étendre).
+- **Réversible** : oui (l'issue de la liste).
