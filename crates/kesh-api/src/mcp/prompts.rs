@@ -203,7 +203,7 @@ impl AccuseProposition {
 
     /// Le `result` du `tools/call` : un bloc de texte constant où n'entre que
     /// le nom validé, `isError: false` (C-32-10a-17). Aucun `structuredContent`
-    /// depuis la 0.16.1 (v016-1, C-v016-1-1 ; #811) : le nom et l'état se lisent
+    /// depuis la 0.17.0 (v016-1, C-v016-1-1 ; #811) : le nom et l'état se lisent
     /// dans la phrase de Kesh.
     pub(in crate::mcp) fn en_resultat(&self) -> serde_json::Value {
         serde_json::json!({

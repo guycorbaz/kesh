@@ -1130,6 +1130,10 @@ bank-import-labels-bank-profile-auto-matched = rilevato automaticamente
 bank-import-labels-bank-profile-auto-detect-placeholder = Rilevamento automatico
 # Story 27-3 (#626) — aperçu recalculé au changement de profil, empreinte périmée.
 bank-import-errors-preview-stale = Il profilo, il file o il conto sono cambiati dopo l'anteprima: ricalcolatela prima di importare.
+bank-import-manual-errors-invalid = L'estratto inserito contiene un valore mancante o non valido.
+bank-import-manual-errors-unbalanced = Il saldo iniziale, più gli accrediti e meno gli addebiti, non dà il saldo finale.
+bank-import-manual-errors-duplicate-lines = Alcune righe di questo estratto esistono già su questo conto. Correggerle, o confermare per registrarle comunque.
+bank-import-manual-errors-opening-balance-gap = Il saldo iniziale differisce dal saldo finale dell'estratto precedente. Verificarlo, o confermare per registrarlo comunque.
 bank-import-labels-preview-recomputing = Ricalcolo dell'anteprima…
 bank-import-labels-preview-recomputed = Il profilo, il file o il conto sono cambiati dopo l'anteprima: Kesh la ricalcola. Verificate il risultato prima di confermare.
 # Story 27-3 (C-27-3-25) — libellés de l'écran d'import, jusque-là en dur.
@@ -1372,7 +1376,7 @@ bank-accounts-errors-cannot-archive-primary = Il conto principale non può esser
 bank-accounts-errors-closed = Questo conto bancario è chiuso: è in sola lettura. Per registrarvi un'operazione, riaprirlo prima (Amministrazione → Conti bancari).
 bank-accounts-errors-not-closed = Questo conto bancario non è chiuso.
 bank-accounts-errors-cannot-close-primary = Il conto principale non può essere chiuso: designare prima un altro conto come principale (è quello che figura sulla fattura QR).
-bank-accounts-errors-has-pending-transactions = Questo conto contiene transazioni importate non riconciliate. Riconciliarle, o eliminare l'importazione se non contiene alcuna transazione riconciliata, prima di chiudere il conto.
+bank-accounts-errors-has-pending-transactions = Questo conto contiene transazioni di estratti, importati o inseriti a mano, non riconciliate. Riconciliarle, o eliminare l'estratto se non contiene alcuna transazione riconciliata, prima di chiudere il conto.
 bank-accounts-errors-has-open-payment-batches = Un lotto di pagamento generato su questo conto non è né confermato né annullato. Confermarlo o annullarlo prima di chiudere il conto.
 bank-accounts-errors-onboarding-not-complete = L'onboarding deve essere completato (passo 7) prima di poter gestire i conti bancari.
 # Story v014-1 — CRUD UI labels & actions (F3 Pass 1 code review parity DE/IT/EN)
@@ -2826,6 +2830,7 @@ audit-log-action-bank-account-closed = Conto bancario chiuso
 audit-log-action-bank-account-reopened = Conto bancario riaperto
 audit-log-action-bank-import-created = Importazione bancaria effettuata
 audit-log-action-bank-import-deleted = Importazione bancaria eliminata
+audit-log-action-bank-import-entered-manually = Estratto bancario inserito a mano
 audit-log-action-bank-profile-created = Profilo bancario creato
 audit-log-action-bank-profile-updated = Profilo bancario aggiornato
 audit-log-action-bank-profile-deleted = Profilo bancario eliminato

@@ -1130,6 +1130,10 @@ bank-import-labels-bank-profile-auto-matched = auto-detected
 bank-import-labels-bank-profile-auto-detect-placeholder = Auto-detect
 # Story 27-3 (#626) — aperçu recalculé au changement de profil, empreinte périmée.
 bank-import-errors-preview-stale = The profile, file or account has changed since the preview: recompute it before importing.
+bank-import-manual-errors-invalid = The entered statement contains a missing or invalid value.
+bank-import-manual-errors-unbalanced = The opening balance, plus credits and minus debits, does not give the closing balance.
+bank-import-manual-errors-duplicate-lines = Some lines of this statement already exist on this account. Correct them, or confirm to save them anyway.
+bank-import-manual-errors-opening-balance-gap = The opening balance differs from the closing balance of the previous statement. Check it, or confirm to save it anyway.
 bank-import-labels-preview-recomputing = Recomputing the preview…
 bank-import-labels-preview-recomputed = The profile, file or account has changed since the preview: Kesh recomputes it. Check the result before confirming.
 # Story 27-3 (C-27-3-25) — libellés de l'écran d'import, jusque-là en dur.
@@ -1372,7 +1376,7 @@ bank-accounts-errors-cannot-archive-primary = The primary account cannot be arch
 bank-accounts-errors-closed = This bank account is closed: it is read-only. To record a transaction on it, reopen it first (Administration → Bank accounts).
 bank-accounts-errors-not-closed = This bank account is not closed.
 bank-accounts-errors-cannot-close-primary = The primary account cannot be closed: first designate another account as primary (it is the one shown on the QR-bill).
-bank-accounts-errors-has-pending-transactions = This account has imported transactions that are not reconciled. Reconcile them, or delete the import if it contains no reconciled transaction, before closing the account.
+bank-accounts-errors-has-pending-transactions = This account has transactions from imported or manually entered statements that are not reconciled. Reconcile them, or delete the statement if it contains no reconciled transaction, before closing the account.
 bank-accounts-errors-has-open-payment-batches = A payment batch generated on this account is neither confirmed nor cancelled. Confirm or cancel it before closing the account.
 bank-accounts-errors-onboarding-not-complete = Onboarding must be completed (step 7) before bank accounts can be managed.
 # Story v014-1 — CRUD UI labels & actions (F3 Pass 1 code review parity DE/IT/EN)
@@ -2831,6 +2835,7 @@ audit-log-action-bank-account-closed = Bank account closed
 audit-log-action-bank-account-reopened = Bank account reopened
 audit-log-action-bank-import-created = Bank import completed
 audit-log-action-bank-import-deleted = Bank import deleted
+audit-log-action-bank-import-entered-manually = Bank statement entered manually
 audit-log-action-bank-profile-created = Bank profile created
 audit-log-action-bank-profile-updated = Bank profile updated
 audit-log-action-bank-profile-deleted = Bank profile deleted

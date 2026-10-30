@@ -1191,6 +1191,10 @@ bank-import-labels-bank-profile-auto-matched = auto-détecté
 bank-import-labels-bank-profile-auto-detect-placeholder = Auto-détection
 # Story 27-3 (#626) — aperçu recalculé au changement de profil, empreinte périmée.
 bank-import-errors-preview-stale = Le profil, le fichier ou le compte a changé depuis la prévisualisation : recalculez-la avant d'importer.
+bank-import-manual-errors-invalid = Le relevé saisi contient une valeur absente ou invalide.
+bank-import-manual-errors-unbalanced = Le solde de départ, augmenté des crédits et diminué des débits, ne donne pas le solde d'arrivée.
+bank-import-manual-errors-duplicate-lines = Des lignes de ce relevé existent déjà sur ce compte. Corrigez-les, ou confirmez pour les enregistrer quand même.
+bank-import-manual-errors-opening-balance-gap = Le solde de départ diffère du solde d'arrivée du relevé précédent. Vérifiez-le, ou confirmez pour l'enregistrer quand même.
 bank-import-labels-preview-recomputing = Recalcul de la prévisualisation…
 bank-import-labels-preview-recomputed = Le profil, le fichier ou le compte a changé depuis la prévisualisation : Kesh la recalcule. Vérifiez le résultat avant de confirmer.
 # Story 27-3 (C-27-3-25) — libellés de l'écran d'import, jusque-là en dur.
@@ -1436,7 +1440,7 @@ bank-accounts-errors-cannot-archive-primary = Le compte principal ne peut pas ê
 bank-accounts-errors-closed = Ce compte bancaire est clos : il est en lecture seule. Pour y enregistrer une opération, rouvrez d'abord le compte (Administration → Comptes bancaires).
 bank-accounts-errors-not-closed = Ce compte bancaire n'est pas clos.
 bank-accounts-errors-cannot-close-primary = Le compte principal ne peut pas être clos : désignez d'abord un autre compte comme principal (c'est lui que porte la QR-facture).
-bank-accounts-errors-has-pending-transactions = Ce compte porte des transactions importées qui ne sont pas rapprochées. Rapprochez-les, ou supprimez l'import s'il ne contient aucune transaction rapprochée, avant de clore le compte.
+bank-accounts-errors-has-pending-transactions = Ce compte porte des transactions de relevés, importés ou saisis, qui ne sont pas rapprochées. Rapprochez-les, ou supprimez le relevé s'il ne contient aucune transaction rapprochée, avant de clore le compte.
 bank-accounts-errors-has-open-payment-batches = Un lot de paiement généré sur ce compte n'est ni confirmé ni annulé. Confirmez-le ou annulez-le avant de clore le compte.
 bank-accounts-errors-onboarding-not-complete = L'onboarding doit être terminé (étape 7 complétée) avant de pouvoir gérer les comptes bancaires.
 # Story v014-1 — CRUD UI labels & actions
@@ -2892,6 +2896,7 @@ audit-log-action-bank-account-closed = Compte bancaire clos
 audit-log-action-bank-account-reopened = Compte bancaire rouvert
 audit-log-action-bank-import-created = Import bancaire effectué
 audit-log-action-bank-import-deleted = Import bancaire supprimé
+audit-log-action-bank-import-entered-manually = Relevé bancaire saisi à la main
 audit-log-action-bank-profile-created = Profil bancaire créé
 audit-log-action-bank-profile-updated = Profil bancaire modifié
 audit-log-action-bank-profile-deleted = Profil bancaire supprimé

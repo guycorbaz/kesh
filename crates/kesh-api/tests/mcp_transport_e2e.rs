@@ -107,7 +107,7 @@ fn attendu_version_delai(id: i64, delai_s: f64) -> serde_json::Value {
     });
     // Story 32-9a (AC-a8) : le bloc de texte est l'en-tête, une ligne vide et
     // le JSON indenté de la même valeur (`sortie::donnees`) — le seul canal
-    // depuis la 0.16.1 (v016-1, C-v016-1-1).
+    // depuis la 0.17.0 (v016-1, C-v016-1-1).
     let texte = format!(
         "{TEXTE_ENTETE_DONNEES}\n\n{}",
         serde_json::to_string_pretty(&s).unwrap()

@@ -20,6 +20,7 @@ pub mod config;
 pub mod document_storage;
 pub mod errors;
 pub mod exports;
+pub(crate) mod extractors;
 pub mod helpers;
 pub mod inbox_import;
 pub mod logging;
@@ -803,6 +804,25 @@ pub fn build_router_avec_registre(
         .route(
             "/api/v1/bank-imports/{id}",
             delete(routes::bank_imports::delete),
+        )
+        // Story v016-2a (#816) : saisir un relevé à la main (Comptable+, clés
+        // `read-write` comme l'import). Corps JSON borné par la même limite
+        // que l'import (500 lignes pleines approchent 2,1 Mo).
+        .route(
+            "/api/v1/bank-imports/manual/preview",
+            post(routes::bank_statements_manual::preview).layer(
+                axum::extract::DefaultBodyLimit::max(
+                    (state.config.bank_import_max_mib as usize) * 1024 * 1024,
+                ),
+            ),
+        )
+        .route(
+            "/api/v1/bank-imports/manual",
+            post(routes::bank_statements_manual::create).layer(
+                axum::extract::DefaultBodyLimit::max(
+                    (state.config.bank_import_max_mib as usize) * 1024 * 1024,
+                ),
+            ),
         )
         // Story 8-2 : write profils CSV (Comptable+).
         .route("/api/v1/bank-profiles", post(routes::bank_profiles::create))

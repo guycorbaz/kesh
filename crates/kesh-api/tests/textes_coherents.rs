@@ -799,6 +799,11 @@ fn les_replis_rust_suivent_le_catalogue() {
                 ("bank-import-csv-errors-mixed-currencies", 1, DEVISES),
                 // Story 27-3 (#626) — refus d'une empreinte d'aperçu périmée.
                 ("bank-import-errors-preview-stale", 1, &[]),
+                // Story v016-2a (#816) — les quatre refus de la saisie manuelle.
+                ("bank-import-manual-errors-invalid", 1, &[]),
+                ("bank-import-manual-errors-unbalanced", 1, &[]),
+                ("bank-import-manual-errors-duplicate-lines", 1, &[]),
+                ("bank-import-manual-errors-opening-balance-gap", 1, &[]),
                 // Story 28-5a (#526) — refus de l'annulation d'un rejet.
                 ("reconciliation-errors-transaction-not-rejected", 1, &[]),
                 // Story 29-8 (#670) — refus du rattachement à un règlement.

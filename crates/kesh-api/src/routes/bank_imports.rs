@@ -80,7 +80,9 @@ pub(crate) fn import_create_error(e: DbError) -> AppError {
 /// ne les rendrait qu'au retour de la connexion au pool — autant d'attente en
 /// plus pour un demandeur d'exclusif en file (clôture, réouverture, `PATCH`,
 /// route de gestion). Rend la transaction et l'entête sur succès.
-async fn create_import_or_roll_back<'c>(
+/// Story v016-2a (#816) : `pub(crate)`, appelée aussi par la saisie d'un relevé
+/// (`routes/bank_statements_manual.rs`) — même garde, même annulation.
+pub(crate) async fn create_import_or_roll_back<'c>(
     mut tx: sqlx::Transaction<'c, sqlx::MySql>,
     new_import: NewBankImport,
     new_txs: Vec<NewBankTransaction>,
@@ -980,6 +982,7 @@ fn source_format_tag_for_kesh_core(fmt: BankImportSourceFormat) -> SourceFormatT
         BankImportSourceFormat::Camt053V04 => SourceFormatTag::Camt053V04,
         BankImportSourceFormat::Camt053V08 => SourceFormatTag::Camt053V08,
         BankImportSourceFormat::Csv => SourceFormatTag::Csv,
+        BankImportSourceFormat::Manual => SourceFormatTag::Manual,
     }
 }
 
@@ -1376,6 +1379,7 @@ pub async fn create(
 
     insert_canonical_audit_log(
         &mut tx,
+        ImportAuditAction::Created,
         current_user.user_id,
         current_user.api_key_id,
         header.id,
@@ -1579,13 +1583,13 @@ async fn delete_once(
 // Helpers
 // ---------------------------------------------------------------------------
 
-fn compute_sha256_hex(bytes: &[u8]) -> String {
+pub(crate) fn compute_sha256_hex(bytes: &[u8]) -> String {
     let hash = Sha256::digest(bytes);
     crate::util::hex_encode(&hash)
 }
 
 /// Story 8-3 — sérialise un `BankImport` existant en payload preview.
-fn duplicate_file_payload(existing: &BankImport) -> DuplicateFilePayload {
+pub(crate) fn duplicate_file_payload(existing: &BankImport) -> DuplicateFilePayload {
     DuplicateFilePayload {
         existing_import_id: existing.id,
         existing_filename: existing.filename.clone(),
@@ -1694,9 +1698,15 @@ fn apply_duplicate_lines_filter(
 ///
 /// Une seule entrée audit par import, quel que soit le nombre de
 /// modifiers actifs. Cf. spec §audit-log-actions.
+///
+/// Story v016-2a (#816) : l'action est un paramètre ([`ImportAuditAction`]) —
+/// `bank_import.created` pour un fichier, `bank_import.entered_manually` pour un
+/// relevé saisi à la main (C-v016-2-10). Le site devient indirect ; ses deux
+/// codes sont déclarés à `SITES_INDIRECTS` (`tests/audit_label_registry.rs`).
 #[allow(clippy::too_many_arguments)]
-async fn insert_canonical_audit_log(
+pub(crate) async fn insert_canonical_audit_log(
     tx: &mut sqlx::Transaction<'_, sqlx::MySql>,
+    action: ImportAuditAction,
     user_id: i64,
     actor_api_key_id: Option<i64>,
     import_id: i64,
@@ -1740,7 +1750,7 @@ async fn insert_canonical_audit_log(
         NewAuditLogEntry::for_actor(
             user_id,
             actor_api_key_id,
-            "bank_import.created",
+            action.code(),
             "bank_imports",
             import_id,
             Some(details),
@@ -1750,17 +1760,37 @@ async fn insert_canonical_audit_log(
     Ok(())
 }
 
-/// Story 8-3 — wrapper qui mappe `&[ImportedTransaction]` → drafts +
-/// `&[BankTransaction]` → `(id, DuplicateKey)` puis appelle
-/// [`detect_duplicate_lines`]. Retourne les warnings sérialisables.
-fn detect_duplicate_lines_for_imported(
-    new_txs: &[kesh_import::ImportedTransaction],
-    bank_account_id: i64,
+/// Action canonique de la trace de création d'un relevé (Story v016-2a, #816,
+/// C-v016-2-10) : un fichier importé ou un relevé saisi à la main. Les deux
+/// littéraux vivent dans ce `match`, que l'inventaire des sites indirects de
+/// `tests/audit_label_registry.rs` lit dans ce fichier.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum ImportAuditAction {
+    /// `POST /api/v1/bank-imports` — fichier CAMT.053 ou CSV.
+    Created,
+    /// `POST /api/v1/bank-imports/manual` — relevé saisi à la main.
+    EnteredManually,
+}
+
+impl ImportAuditAction {
+    /// Code d'action écrit dans `audit_log.action`.
+    pub(crate) fn code(self) -> &'static str {
+        match self {
+            Self::Created => "bank_import.created",
+            Self::EnteredManually => "bank_import.entered_manually",
+        }
+    }
+}
+
+/// Story v016-2a (#816) — les clés de doublon des transactions **existantes**
+/// de la fenêtre, `(id, DuplicateKey)`, telles que les compare
+/// [`detect_duplicate_lines`]. Partagée par l'import d'un fichier
+/// ([`detect_duplicate_lines_for_imported`]) et la saisie d'un relevé
+/// (`routes/bank_statements_manual.rs`).
+pub(crate) fn existing_dedup_keys(
     existing: &[kesh_db::entities::BankTransaction],
-) -> Vec<DuplicateLineWarning> {
-    let drafts: Vec<BankTransactionDraft> =
-        new_txs.iter().map(BankTransactionDraft::from).collect();
-    let existing_keys: Vec<(i64, DuplicateKey)> = existing
+) -> Vec<(i64, DuplicateKey)> {
+    existing
         .iter()
         .map(|t| {
             (
@@ -1775,7 +1805,20 @@ fn detect_duplicate_lines_for_imported(
                 ),
             )
         })
-        .collect();
+        .collect()
+}
+
+/// Story 8-3 — wrapper qui mappe `&[ImportedTransaction]` → drafts +
+/// `&[BankTransaction]` → `(id, DuplicateKey)` puis appelle
+/// [`detect_duplicate_lines`]. Retourne les warnings sérialisables.
+fn detect_duplicate_lines_for_imported(
+    new_txs: &[kesh_import::ImportedTransaction],
+    bank_account_id: i64,
+    existing: &[kesh_db::entities::BankTransaction],
+) -> Vec<DuplicateLineWarning> {
+    let drafts: Vec<BankTransactionDraft> =
+        new_txs.iter().map(BankTransactionDraft::from).collect();
+    let existing_keys = existing_dedup_keys(existing);
     detect_duplicate_lines(&drafts, bank_account_id, &existing_keys)
         .into_iter()
         .map(|d: DuplicateLine| DuplicateLineWarning {
@@ -1786,7 +1829,7 @@ fn detect_duplicate_lines_for_imported(
         .collect()
 }
 
-fn import_to_response(import: kesh_db::entities::BankImport) -> BankImportResponse {
+pub(crate) fn import_to_response(import: kesh_db::entities::BankImport) -> BankImportResponse {
     BankImportResponse {
         id: import.id,
         bank_account_id: import.bank_account_id,
@@ -2262,6 +2305,7 @@ async fn create_csv(
 
     insert_canonical_audit_log(
         &mut tx,
+        ImportAuditAction::Created,
         current_user.user_id,
         current_user.api_key_id,
         header.id,

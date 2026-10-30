@@ -345,6 +345,69 @@ pub async fn find_by_id_for_company(
     .map_err(map_db_error)
 }
 
+/// Story v016-2a (#816, AC-6) — le relevé **à solde** du compte qui précède
+/// `before` : `closing_balance IS NOT NULL` et `period_to < before`
+/// (strictement), le plus tardif selon `period_to DESC, imported_at DESC, id
+/// DESC` — l'ordre du relevé de référence de la tuile
+/// (`bank_accounts::list_with_balances`). Rend `(id, period_to,
+/// closing_balance)`.
+///
+/// Sert à confronter le solde de départ d'un relevé saisi à la clôture du
+/// relevé précédent (C-v016-2-5). Lecture seule, **sans verrou** : l'écart de
+/// solde de départ est un avertissement, non une garde.
+pub async fn previous_statement_closing<'e, E>(
+    executor: E,
+    company_id: i64,
+    bank_account_id: i64,
+    before: chrono::NaiveDate,
+) -> Result<Option<(i64, chrono::NaiveDate, rust_decimal::Decimal)>, DbError>
+where
+    E: sqlx::Executor<'e, Database = MySql>,
+{
+    sqlx::query_as::<_, (i64, chrono::NaiveDate, rust_decimal::Decimal)>(
+        "SELECT id, period_to, closing_balance FROM bank_imports \
+         WHERE company_id = ? AND bank_account_id = ? \
+           AND closing_balance IS NOT NULL AND period_to < ? \
+         ORDER BY period_to DESC, imported_at DESC, id DESC \
+         LIMIT 1",
+    )
+    .bind(company_id)
+    .bind(bank_account_id)
+    .bind(before)
+    .fetch_optional(executor)
+    .await
+    .map_err(map_db_error)
+}
+
+/// Story v016-2a (#816, AC-7) — les relevés du compte dont la période
+/// chevauche `[from, to]` (`period_from <= to AND period_to >= from` : des
+/// bornes jointives chevauchent), saisis ou importés, du plus ancien au plus
+/// récent. Information de l'aperçu d'un relevé saisi, sans confirmation.
+pub async fn overlapping_statements<'e, E>(
+    executor: E,
+    company_id: i64,
+    bank_account_id: i64,
+    from: chrono::NaiveDate,
+    to: chrono::NaiveDate,
+) -> Result<Vec<BankImport>, DbError>
+where
+    E: sqlx::Executor<'e, Database = MySql>,
+{
+    sqlx::query_as::<_, BankImport>(&format!(
+        "SELECT {COLUMNS} FROM bank_imports \
+         WHERE company_id = ? AND bank_account_id = ? \
+           AND period_from <= ? AND period_to >= ? \
+         ORDER BY period_from, id"
+    ))
+    .bind(company_id)
+    .bind(bank_account_id)
+    .bind(to)
+    .bind(from)
+    .fetch_all(executor)
+    .await
+    .map_err(map_db_error)
+}
+
 /// Issue de [`delete_unreconciled_in_tx`] (Story 27-1, #632).
 #[derive(Debug)]
 pub enum DeleteBankImportOutcome {

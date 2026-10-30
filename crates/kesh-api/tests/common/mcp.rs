@@ -553,7 +553,7 @@ impl McpTool for Panique {
 /// Outil de test de la 32-8b (AC-B15, point 11) : rend un texte et un résumé
 /// **fixés** — les pièges de l'AC-B2, les caractères cachés de l'AC-B3, un
 /// texte de taille réglable pour l'AC-B4 — et compte ses exécutions. (Son champ
-/// `structure` est parti avec celui de `Donnees` à la 0.16.1, v016-1,
+/// `structure` est parti avec celui de `Donnees` à la 0.17.0, v016-1,
 /// C-v016-1-5.)
 pub struct Fixe {
     pub nom: &'static str,

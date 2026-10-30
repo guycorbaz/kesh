@@ -1130,6 +1130,10 @@ bank-import-labels-bank-profile-auto-matched = automatisch erkannt
 bank-import-labels-bank-profile-auto-detect-placeholder = Automatische Erkennung
 # Story 27-3 (#626) — aperçu recalculé au changement de profil, empreinte périmée.
 bank-import-errors-preview-stale = Profil, Datei oder Konto haben sich seit der Vorschau geändert: Berechnen Sie die Vorschau vor dem Import neu.
+bank-import-manual-errors-invalid = Der erfasste Kontoauszug enthält einen fehlenden oder ungültigen Wert.
+bank-import-manual-errors-unbalanced = Der Anfangssaldo zuzüglich der Gutschriften und abzüglich der Belastungen ergibt nicht den Schlusssaldo.
+bank-import-manual-errors-duplicate-lines = Zeilen dieses Kontoauszugs sind auf diesem Konto bereits vorhanden. Korrigieren Sie sie oder bestätigen Sie, um sie trotzdem zu speichern.
+bank-import-manual-errors-opening-balance-gap = Der Anfangssaldo weicht vom Schlusssaldo des vorherigen Kontoauszugs ab. Prüfen Sie ihn oder bestätigen Sie, um ihn trotzdem zu speichern.
 bank-import-labels-preview-recomputing = Die Vorschau wird neu berechnet…
 bank-import-labels-preview-recomputed = Profil, Datei oder Konto haben sich seit der Vorschau geändert: Kesh berechnet sie neu. Prüfen Sie das Ergebnis vor dem Bestätigen.
 # Story 27-3 (C-27-3-25) — libellés de l'écran d'import, jusque-là en dur.
@@ -1372,7 +1376,7 @@ bank-accounts-errors-cannot-archive-primary = Das Hauptkonto kann nicht archivie
 bank-accounts-errors-closed = Dieses Bankkonto ist aufgelöst: Es ist schreibgeschützt. Um darauf einen Vorgang zu erfassen, eröffnen Sie es zuerst wieder (Administration → Bankkonten).
 bank-accounts-errors-not-closed = Dieses Bankkonto ist nicht aufgelöst.
 bank-accounts-errors-cannot-close-primary = Das Hauptkonto kann nicht aufgelöst werden: Bestimmen Sie zuerst ein anderes Konto als Hauptkonto (es ist dasjenige, das die QR-Rechnung trägt).
-bank-accounts-errors-has-pending-transactions = Dieses Konto enthält importierte Transaktionen, die nicht abgeglichen sind. Gleichen Sie sie ab oder löschen Sie den Import, wenn er keine abgeglichene Transaktion enthält, bevor Sie das Konto auflösen.
+bank-accounts-errors-has-pending-transactions = Dieses Konto enthält Transaktionen aus importierten oder erfassten Kontoauszügen, die nicht abgeglichen sind. Gleichen Sie sie ab oder löschen Sie den Kontoauszug, wenn er keine abgeglichene Transaktion enthält, bevor Sie das Konto auflösen.
 bank-accounts-errors-has-open-payment-batches = Ein auf diesem Konto erstellter Zahlungslauf ist weder bestätigt noch storniert. Bestätigen oder stornieren Sie ihn, bevor Sie das Konto auflösen.
 bank-accounts-errors-onboarding-not-complete = Das Onboarding muss abgeschlossen sein (Schritt 7), bevor Bankkonten verwaltet werden können.
 # Story v014-1 — CRUD UI labels & actions (F3 Pass 1 code review parity DE/IT/EN)
@@ -2825,6 +2829,7 @@ audit-log-action-bank-account-closed = Bankkonto aufgelöst
 audit-log-action-bank-account-reopened = Bankkonto wieder eröffnet
 audit-log-action-bank-import-created = Bankimport durchgeführt
 audit-log-action-bank-import-deleted = Bankimport gelöscht
+audit-log-action-bank-import-entered-manually = Kontoauszug manuell erfasst
 audit-log-action-bank-profile-created = Bankprofil erstellt
 audit-log-action-bank-profile-updated = Bankprofil aktualisiert
 audit-log-action-bank-profile-deleted = Bankprofil gelöscht

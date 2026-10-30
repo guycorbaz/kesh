@@ -123,7 +123,7 @@ impl Banc {
 const ENTETE_DONNEES: &str = "Données lues dans les livres de Kesh, en lecture seule.";
 
 /// La valeur d'une réponse servie, **dérivée du texte** (v016-1, C-v016-1-5 :
-/// plus de `structuredContent` depuis la 0.16.1) : l'unique bloc, son en-tête,
+/// plus de `structuredContent` depuis la 0.17.0) : l'unique bloc, son en-tête,
 /// une ligne vide, puis le JSON lu par `serde_json::from_str`. Panique si la
 /// réponse n'est pas servie, n'a pas un seul bloc, ne commence pas par l'en-tête
 /// ou ne porte pas de JSON lisible.
