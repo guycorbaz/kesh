@@ -79,16 +79,16 @@ pub fn parse(xml: &[u8]) -> Result<Vec<ImportedStatement>, CamtError> {
                     "élément racine <Document> introuvable".into(),
                 ));
             }
-            Ok((ns, Event::Start(start))) if start.local_name().as_ref() == b"Document" => {
+            Ok((ns, Event::Start(start))) if start.local_name().as_ref() == "Document" => {
+                // Depuis quick-xml 0.42, l'URI et le préfixe sont déjà du texte :
+                // le lecteur valide l'UTF-8 de toute l'entrée.
                 let uri = match ns {
-                    ResolveResult::Bound(Namespace(b)) => std::str::from_utf8(b)
-                        .map_err(|e| CamtError::MalformedXml(e.to_string()))?
-                        .to_owned(),
+                    ResolveResult::Bound(Namespace(uri)) => uri.to_owned(),
                     ResolveResult::Unbound => String::new(),
                     ResolveResult::Unknown(prefix) => {
                         return Err(CamtError::MalformedXml(format!(
                             "préfixe namespace non lié : {}",
-                            String::from_utf8_lossy(&prefix)
+                            prefix
                         )));
                     }
                 };
@@ -143,7 +143,7 @@ pub(crate) fn parse_with_version<R: std::io::BufRead>(
                 break;
             }
             Ok(Event::Start(start)) => {
-                let local = local_name(start.local_name().as_ref())?;
+                let local = local_name(start.local_name().as_ref().as_bytes())?;
 
                 match local.as_str() {
                     "Stmt" => {
@@ -176,7 +176,7 @@ pub(crate) fn parse_with_version<R: std::io::BufRead>(
                         // À l'ouverture, `Amt` n'est pas encore poussé sur
                         // `path` : `path.last()` est son parent.
                         let parent = path.last().map(String::as_str);
-                        if let Some(ccy) = attr_string(&start, b"Ccy")?
+                        if let Some(ccy) = attr_string(&start, "Ccy")?
                             && let Some(s) = sb.as_mut()
                             && let Some(n) = s.ntry.as_mut()
                         {
@@ -193,7 +193,7 @@ pub(crate) fn parse_with_version<R: std::io::BufRead>(
                 path.push(local);
             }
             Ok(Event::End(end)) => {
-                let local = local_name(end.local_name().as_ref())?;
+                let local = local_name(end.local_name().as_ref().as_bytes())?;
 
                 match local.as_str() {
                     "Bal" => {
@@ -231,10 +231,13 @@ pub(crate) fn parse_with_version<R: std::io::BufRead>(
                 path.pop();
             }
             Ok(Event::Text(t)) => {
-                let decoded = t
-                    .decode()
-                    .map_err(|e| CamtError::MalformedXml(e.to_string()))?;
-                let unescaped = quick_xml::escape::unescape(&decoded)
+                // Le texte tel que lu, SANS normalisation des fins de ligne
+                // (`into_inner`, l'équivalent de l'ancien `decode()` de
+                // quick-xml 0.39) : `xml10_content()` normaliserait un CRLF
+                // intérieur, et changerait la sortie d'un relevé déjà importé
+                // (Story v017-1, AC9). Le lecteur a déjà validé l'UTF-8.
+                let raw = t.into_inner();
+                let unescaped = quick_xml::escape::unescape(&raw)
                     .map_err(|e| CamtError::MalformedXml(e.to_string()))?;
                 let txt = unescaped.trim();
                 if !txt.is_empty()
@@ -683,19 +686,31 @@ fn finalize_statement(
     })
 }
 
+/// Nom local d'un élément, en `String`.
+///
+/// Depuis quick-xml 0.42, le lecteur valide l'UTF-8 de toute l'entrée avant
+/// de rendre un événement : un nom non UTF-8 n'arrive plus jusqu'ici, et la
+/// branche d'erreur est une défense qui ne se déclenche pas. Elle reste, avec
+/// son message, tant que le parseur reçoit des octets (Story v017-1).
 fn local_name(bytes: &[u8]) -> Result<String, CamtError> {
     std::str::from_utf8(bytes)
         .map(String::from)
         .map_err(|e| CamtError::MalformedXml(format!("nom de tag non UTF-8 : {e}")))
 }
 
-fn attr_string(start: &BytesStart, name: &[u8]) -> Result<Option<String>, CamtError> {
+/// Valeur du premier attribut de nom local `name`, dés-échappée (entités
+/// prédéfinies et références de caractère) **sans** normalisation des blancs.
+///
+/// `quick_xml::escape::unescape` sur la valeur brute reproduit exactement
+/// l'ancien `unescape_value` de quick-xml 0.39 ; `normalized_value`, qui le
+/// remplace en 0.42, changerait un `\t`, `\r` ou `\n` littéral en espace — et
+/// la devise d'une transaction déjà importée (Story v017-1, AC9, C-v017-1-11).
+fn attr_string(start: &BytesStart, name: &str) -> Result<Option<String>, CamtError> {
     for attr in start.attributes() {
         match attr {
             Ok(attr) => {
                 if attr.key.local_name().as_ref() == name {
-                    let value = attr
-                        .unescape_value()
+                    let value = quick_xml::escape::unescape(&attr.value)
                         .map_err(|e| CamtError::MalformedXml(e.to_string()))?
                         .into_owned();
                     return Ok(Some(value));
