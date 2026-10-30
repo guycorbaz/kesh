@@ -5,7 +5,7 @@ Status: split
 *Fiche rédigée le 2026-10-30, en autonomie (Opus 5.5), worktree `/home/gcorbaz/devel/kesh-0162`, branche
 `story/v016-2-releve-manuel` partie de `c5101b07` (tête de `story/v016-1-mcp-sorties`, candidate `v0.16.1-rc1`, PR #815
 brouillon) ; la story se fusionne sur cette branche de release. Registre : `v016-2-choix-autonomes.md` (C-v016-2-1 à
-C-v016-2-19 ; borne portée à la validation P5 de la 2b). **Amendée le 2026-10-30 : la release devient la 0.17.0** (décision du Project Lead, C-v016-2-15) — la
+C-v016-2-20 ; borne portée aux validations P5, puis P7, de la 2b). **Amendée le 2026-10-30 : la release devient la 0.17.0** (décision du Project Lead, C-v016-2-15) — la
 clé et le nom de la story restent `v016-2-releve-manuel`. **Contrainte du Project Lead du même jour (C-v016-2-16)** :
 les données de l'installation `v0.16.1-rc1` du NAS se gardent — montée sans perte, sauvegarde 0.16.x importable, rien
 de jetable sur la base de Guy (AC-2-bis, AC-3-bis, AC-29, § *Ce que la release doit contenir*). **Remédiée après la

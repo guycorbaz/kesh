@@ -5,7 +5,7 @@ Status: ready-for-dev
 *Sous-fiche issue du découpage de la Story v016-2 à la validation P2 (2026-10-30, décision de l'orchestrateur,
 C-v016-2-18). **Dépend de la `v016-2a`** (l'API, les codes, l'audit, la migration) : elle se développe après sa fusion
 sur la branche. Worktree `/home/gcorbaz/devel/kesh-0162`, branche `story/v016-2-releve-manuel` (partie de `c5101b07`), la 2a d'abord,
-puis la 2b. Registre **commun** : `v016-2-choix-autonomes.md` (C-v016-2-1 à C-v016-2-19). Issue : **#816**, en `refs`
+puis la 2b. Registre **commun** : `v016-2-choix-autonomes.md` (C-v016-2-1 à C-v016-2-20 ; borne portée à la validation P7, P4). Issue : **#816**, en `refs`
 seulement ; la fermeture se porte sur la PR de release. Les numéros de ligne cités sont ceux de `c5101b07`.
 **Contexte, décisions, contrat de l'API (corps, réponse de l'aperçu, codes d'erreur, ensembles fermés, ordre des
 refus), limites, liste de la release et questions au Project Lead : fiche parente `v016-2-releve-manuel.md`** — ils
@@ -142,11 +142,17 @@ l'entrée *Ajouté* du CHANGELOG et la ligne *Fonctionnalités* du README.
   d'un autre domaine réutilisée — pas de `journal-entry-form-*`). Gardes qui rougiront et se recomptent depuis la
   source (validation P1, F8) : `frontend/src/lib/shared/i18n-keys.test.ts` (`ATTENDU.sitesTotal`, cardinalité exacte),
   `i18n-un-repli-par-cle.test.ts`, `i18n-repli-divergent-actif.test.ts` (*glose corrigée à la validation P6, P2 :* divergences **actives** entre deux
-  replis ou plus d'une clé au catalogue ; l'égalité repli = valeur `fr-CH` n'y est tenue que par G13, pour les clés
+  replis ou plus **d'une même clé** déjà servie par le catalogue — *précisé à la validation P7, P3* ; l'égalité repli = valeur `fr-CH` n'y est tenue que par G13, pour les clés
   **nommées** de `REPLIS_A_SITE_UNIQUE`, et par les préfixes de `PREFIXES_REPLI_EGAL_AU_CATALOGUE`, `:279`) — d'où :
   chaque **clé statique neuve** de l'écran (`bank-import-manual-*` hors la famille `-reason-`, et `bank-import-detail-*`),
-  presque toutes à site unique, est **ajoutée nommément** à `REPLIS_A_SITE_UNIQUE` (aucun préfixe ajouté à
-  `PREFIXES_REPLI_EGAL_AU_CATALOGUE`), la liste nommée recopiée au Dev Agent Record ; **angle mort assumé** : la famille
+  presque toutes à site unique, **et** chaque **clé existante dont le texte est récrit** — ici
+  `bank-import-labels-list-col-imported-at` et `bank-import-labels-list-col-filename` (`BankImportList.svelte:24-25`,
+  `fr-CH:1215-1216`, repli et catalogue au même commit ; validation P7, P2 ; les autres `bank-import-labels-*` de l'AC-23
+  sont réemployées sans changement de texte) — est **ajoutée nommément** à `REPLIS_A_SITE_UNIQUE` (aucun préfixe ajouté à
+  `PREFIXES_REPLI_EGAL_AU_CATALOGUE`), la liste nommée recopiée au Dev Agent Record, et le décompte du commentaire de
+  G13 (`:210`) recompté sur elle ; **sauf** une clé statique dont le site n'est pas un `i18nMsg('<clé>', '<repli
+  littéral>')` (G13 la ferait rougir) : elle s'écrit au Dev Agent Record avec la garde qui la tient, ou, s'il n'y en a
+  aucune, en issue demandée (validation P7, P5) ; **angle mort assumé** : la famille
   dynamique `bank-import-manual-reason-` n'a pas de site littéral (clé composée d'un gabarit) et échappe à G13 — elle est
   gardée par le test croisé (égalité de la table et de `ManualStatementReason::ALL`) et par le Vitest de couverture de la
   table,
@@ -318,10 +324,17 @@ inchangées. Ne déclarer que ce qui a tourné, chiffres recomptés.
 
 ## À recontrôler à l'étape 0 du développement
 
-- ⛔ **Point bloquant** (validation P6, P1) : le registre `v016-2-choix-autonomes.md` porte **C-v016-2-20**, et l'AC-4 et
-  la mutation M23-bis de `v016-2a-releve-manuel-backend.md` prescrivent `index()` par `match` exhaustif sans joker,
-  `COUNT` défini à côté, `ALL.len() == COUNT` et `ALL[i].index() == i`. Si ce n'est pas le cas, le développeur de la
-  2b **s'arrête et le signale** à l'orchestrateur, sans écrire le test croisé de l'AC-24.
+- ⛔ **Point bloquant** (validation P6, P1 ; *récrit à la validation P7, P1, sur C-v016-2-20 tel que le registre le porte,
+  `v016-2-choix-autonomes.md:434-450`*) : le développeur de la 2b vérifie, **dans le code commité de la 2a** (non dans la
+  fiche), pour `ManualStatementReason` au moins (`crates/kesh-core/src/bank_imports/manual.rs` et ses tests) : `index()`
+  par `match` exhaustif sans joker ; `pub const COUNT` à côté ; `pub const ALL` ; un test `ALL.len() == COUNT` et
+  `ALL[i].index() == i` ; **et** la pièce maîtresse de C-v016-2-20, le test qui compte les variantes **dans le texte
+  source** de l'énumération (`include_str!("manual.rs")`) et l'égale à `COUNT` et à `ALL.len()` — sans lui, une variante
+  ajoutée avec son bras d'`index`, `ALL` et `COUNT` inchangés, laisse les deux premières assertions vertes (registre
+  `:442-447`). Relevé au 2026-10-30 dans l'arbre de travail, **non encore commité** : `manual.rs:84` (`COUNT`), `:87`
+  (`ALL`), `:102` (`index`), `manual_tests.rs:133` (`all_is_indexed_and_counted`), `:153` (`include_str!`), `:173`
+  (`all_covers_every_declared_variant`) — à relire au commit, noms compris. Si l'un manque, le développeur de la 2b
+  **s'arrête et le signale** à l'orchestrateur, sans écrire le test croisé de l'AC-24.
 - Que `GET /companies/current` ne rend que les comptes ni archivés ni clos (`docs/api-external.md:240`).
 - `frontend/src/routes/(app)/supplier-invoices/import/+page.ts` — le patron de garde Comptable+ (`load()` redirige un rôle
   autre que Admin/Comptable vers `/`), à reprendre pour `/bank-import/manual` *(les deux puces jumelles fusionnées à la
@@ -404,3 +417,17 @@ inchangées. Ne déclarer que ce qui a tourné, chiffres recomptés.
     l'AC-23 remise en ordre, « ces deux-là »), P6 (parente, liste C point 10 au pluriel).
   - **LOW non pris** : aucun.
   Prochaine étape : validation P7 ciblée (`v016-2b-validate-prompt-p7.md`, Sonnet).
+- 2026-10-30 — **Validation P7** (ciblée, Sonnet ; rapport `kesh-gate-logs/v0162b-validate-p7.md`) : **0 CRITICAL, 0 HIGH,
+  2 MEDIUM, 3 LOW**. Lignes lues : registre `v016-2-choix-autonomes.md:434-450` (C-v016-2-20, commité en `89415374`) ;
+  `crates/kesh-core/src/bank_imports/manual.rs:84`, `:87`, `:102` et `manual_tests.rs:133`, `:153`, `:173` (arbre de
+  travail de la 2a, non commité au moment de la remédiation) ; `BankImportList.svelte:24-25` ; `grep -n "bank-import-labels-"`
+  sur la 2b (`:97`, `:100`) ; `i18n-repli-divergent-actif.test.ts:142`, `:210`. Remédiation minimale (avant-dernière passe).
+  Traitement :
+  - **MEDIUM** — P1 : point bloquant récrit sur C-v016-2-20 tel que versé — vérification dans le **code commité** de la 2a,
+    test de comptage par `include_str!` compris ; arrêt et signalement maintenus. P2 : les deux en-têtes de liste récrits
+    (`list-col-imported-at`, `list-col-filename`) entrent nommément à `REPLIS_A_SITE_UNIQUE` ; les autres
+    `bank-import-labels-*` de l'AC-23 sont réemployées sans changement de texte.
+  - **LOW appliqués** — P3 (« d'une même clé »), P4 (borne C-v016-2-20 dans la 2b et la parente), P5 (clé statique sans
+    repli littéral : Dev Agent Record avec sa garde, ou issue).
+  - **LOW non pris** : aucun.
+  Prochaine étape : validation P8 ciblée (`v016-2b-validate-prompt-p8.md`, Opus), dernière passe permise.
