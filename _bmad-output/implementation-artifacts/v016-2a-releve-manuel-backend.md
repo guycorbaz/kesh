@@ -150,7 +150,7 @@ commit de leur `.tex`. **Livrable seul** : l'API se teste de bout en bout en HTT
   `kesh-api` le lit) ; et un test lie `ALL` à l'**énumération** : une fonction fait un `match` **exhaustif sans joker**
   sur chaque variante et vérifie que `ALL` la contient — le compilateur force alors la mise à jour du test pour toute
   variante neuve (mutation M23-bis). Même dispositif pour `ManualStatementField`.
-  *(Remplacé à l'étape 0 du développement — validation P5, P1, et précision de l'orchestrateur, C-v016-2-20 : la forme
+  *(Annotation du 2026-10-30, étape 0 du développement, renvoi à **C-v016-2-20** — validation P5, P1, et précision de l'orchestrateur, C-v016-2-20 : la forme
   ci-dessus est circulaire, le `match` ne visitant que les variantes qu'on lui passe.)* **Forme retenue** : une méthode
   `index(self) -> usize` par `match` exhaustif sans joker, qui rend la position de la variante ; une constante `COUNT`
   écrite **à côté** de ce `match` ; un test qui vérifie `ALL.len() == COUNT` et `ALL[i].index() == i` pour tout `i` ;
@@ -396,7 +396,7 @@ Fichiers prévus : `crates/kesh-core/src/bank_imports.rs` (ou `bank_imports/manu
 | M21 | `confirmDuplicateFile` ignoré (toujours vrai) | AC-11 (`BANK_IMPORT_DUPLICATE_FILE`) |
 | M23 | `ManualStatementReason::ALL` : une variante retirée de la constante | test d'épinglage (AC-4) |
 | M24 | extracteur partagé : bras `MissingJsonContentType` rendu en `415` | AC-11 (`Content-Type` absent → `400`) *(« tests de `bank_accounts` » retiré à la validation P4, P5 : aucun n'atteint ce bras)* |
-| M23-bis | une variante ajoutée à `ManualStatementReason`, absente de `ALL` | test d'exhaustivité par `match` sans joker (AC-4) — rouge à la compilation ou à l'assertion |
+| M23-bis | une variante ajoutée à `ManualStatementReason`, absente de `ALL` | test d'exhaustivité par `match` sans joker (AC-4) — rouge à la compilation ou à l'assertion *(annotation du 2026-10-30, étape 0, renvoi à **C-v016-2-20** : la mutation ajoute la variante **et** son bras d'`index`, sans toucher `ALL` ; rouge **à l'exécution** par `ALL.len() == COUNT`, `ALL[i].index() == i` et le décompte des variantes dans le texte source)* |
 | M22 | « un échec de la trace n'écrit rien » : `tx.commit()` avant l'écriture de la trace | AC-10 : test qui fait échouer la trace par un **déclencheur** `BEFORE INSERT ON audit_log` restreint à l'action `bank_import.entered_manually` (`SIGNAL SQLSTATE '45000'`), patron `FAIL_TRIGGER` de `onboarding_audit_e2e.rs:871`, puis `COUNT(*)` de `bank_imports` et `bank_transactions` = 0. *(Première rédaction : « `user_id` inexistant » — faux à la validation P2, R2 : l'entête échoue d'abord sur `fk_bank_imports_user`, et la trace n'a plus de clé étrangère depuis la 25-1a, `audit_log.rs:78-93`.)* |
 
 **M16 et M17 mutent un fichier de migration** (P8 ; validation P2, R13) : tests `#[sqlx::test]` seulement, **aucun
