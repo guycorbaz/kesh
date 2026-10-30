@@ -165,7 +165,9 @@ test('un Comptable saisit un relevé de trois lignes, le rapproche et le retrouv
 
 	// 4. Retour à la liste : le relevé en tête, « Saisie manuelle ».
 	await expect(page).toHaveURL(/\/bank-import$/);
-	await expect(page.getByText('Relevé enregistré : 3 transaction(s).')).toBeVisible();
+	// La notification (svelte-sonner), visée par son attribut et non par son libellé traduit
+	// (garde `e2e-selecteurs-traduits.test.ts`, KF-043) ; son nombre de transactions.
+	await expect(page.locator('[data-sonner-toast]').first()).toContainText('3');
 	const premiere = page.getByTestId('bank-import-list-row').first();
 	await expect(premiere).toHaveAttribute('data-source-format', 'MANUAL');
 	await expect(premiere.getByTestId('bank-import-list-link')).toHaveText('Saisie manuelle');
@@ -277,7 +279,7 @@ test('recette visuelle de la saisie d’un relevé (AC-25)', async ({ page }, te
 	await page.getByTestId('bank-import-manual-verify').click();
 	await expect(page.getByTestId('bank-import-manual-preview-ok')).toBeVisible();
 	await page.getByTestId('bank-import-manual-save').click();
-	await expect(page.getByText('Relevé enregistré : 3 transaction(s).')).toBeVisible();
+	await expect(page.locator('[data-sonner-toast]').first()).toBeVisible();
 	await capture(page, testInfo, '09-notification-succes-et-liste');
 	const premiere = page.getByTestId('bank-import-list-row').first();
 	const importId = Number(await premiere.getAttribute('data-import-id'));
@@ -370,7 +372,7 @@ test('recette visuelle de la saisie d’un relevé (AC-25)', async ({ page }, te
 		await page.goto(`/bank-import/${id2}`);
 		await page.getByTestId('bank-import-delete-button').click();
 		await page.getByTestId('bank-import-delete-submit').click();
-		await expect(page.getByText(`Relevé saisi à la main du ${demain} au ${demain} supprimé.`)).toBeVisible();
+		await expect(page.locator('[data-sonner-toast]').first()).toContainText(demain);
 		await capture(page, testInfo, '17-notification-de-suppression');
 
 		// Le refus d'un compte clos à la saisie.

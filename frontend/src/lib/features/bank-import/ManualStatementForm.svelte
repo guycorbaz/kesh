@@ -467,7 +467,7 @@
 							<td>
 								<button
 									type="button"
-									class="text-destructive underline"
+									class="px-1 text-text-muted hover:text-text"
 									data-testid="bank-import-manual-remove-line"
 									aria-label={i18nMsg('bank-import-manual-remove-line', 'Retirer la ligne { $line }', {
 										line: i + 1,
