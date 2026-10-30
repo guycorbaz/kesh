@@ -8,6 +8,14 @@ Le contenu est rédigé en français à destination des **fiduciaires, PME, ind�
 
 ---
 
+## [0.17.0]
+
+<!-- En-tête provisoire (Story v017-1) : l'orchestrateur le fusionne avec les entrées des autres stories de la 0.17.0. -->
+
+### Sécurité
+
+- **La bibliothèque XML `quick-xml` passe de 0.39 à 0.42** ([#789](https://github.com/guycorbaz/kesh/issues/789)) : les deux défauts signalés sur l'import d'un relevé CAMT.053 sont corrigés — un temps de calcul quadratique sur les attributs d'un élément (avis RUSTSEC-2026-0194) et une allocation de mémoire non bornée par les déclarations d'espace de noms (avis RUSTSEC-2026-0195). D'autres durcissements de l'import restent à faire ([#820](https://github.com/guycorbaz/kesh/issues/820)). **Un relevé se lit exactement comme avant** : l'empreinte d'un fichier déjà importé et la détection des doublons de fichier et de ligne ne changent pas. Seule exception : un fichier qui n'est pas en UTF-8 — ce qu'exige la norme ISO 20022 —, accepté jusqu'ici quand les octets fautifs se trouvaient hors du texte lu (commentaire, section CDATA, attribut ignoré), est désormais refusé comme XML mal formé.
+
 ## [0.16.1] — 2026-10-29
 
 Correctif de l'Epic 32, le serveur MCP de Kesh ([#723](https://github.com/guycorbaz/kesh/issues/723)) : ce que le serveur rend à l'agent. Il n'ajoute **aucune migration** : la 0.16.0 redémarre sur une base passée par la 0.16.1, et une sauvegarde de l'une s'importe dans l'autre — le retour à la 0.16.0 ne demande aucune sauvegarde particulière, au-delà de celle que toute mise à jour réclame. Le compose et le `.env` ne changent pas.
