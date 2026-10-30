@@ -5,7 +5,7 @@ Status: ready-for-dev
 *Sous-fiche issue du découpage de la Story v016-2 à la validation P2 (2026-10-30, décision de l'orchestrateur,
 C-v016-2-18). **Dépend de la `v016-2a`** (l'API, les codes, l'audit, la migration) : elle se développe après sa fusion
 sur la branche. Worktree `/home/gcorbaz/devel/kesh-0162`, branche `story/v016-2-releve-manuel` (partie de `c5101b07`), la 2a d'abord,
-puis la 2b. Registre **commun** : `v016-2-choix-autonomes.md` (C-v016-2-1 à C-v016-2-18). Issue : **#816**, en `refs`
+puis la 2b. Registre **commun** : `v016-2-choix-autonomes.md` (C-v016-2-1 à C-v016-2-19). Issue : **#816**, en `refs`
 seulement ; la fermeture se porte sur la PR de release. Les numéros de ligne cités sont ceux de `c5101b07`.
 **Contexte, décisions, contrat de l'API (corps, réponse de l'aperçu, codes d'erreur, ensembles fermés, ordre des
 refus), limites, liste de la release et questions au Project Lead : fiche parente `v016-2-releve-manuel.md`** — ils
@@ -49,13 +49,18 @@ l'entrée *Ajouté* du CHANGELOG et la ligne *Fonctionnalités* du README.
   (un aperçu qui a rendu `BANK_STATEMENT_INVALID` ou `_UNBALANCED` ne compte pas) ;
   ou une case de confirmation **exigée** par l'aperçu n'est pas cochée ; et (validation P3, R2) aucun compte n'est
   choisi, ou une borne de la période est vide ou illisible — « hors période » n'est alors pas évalué. La raison est dite
-  à côté du bouton : **une seule**, la première dans l'ordre de cette liste à partir de « aucun compte », puis :
-  période, soldes, lignes (la première ligne fautive), écart, aperçu, cases. *Vérifier* est actif dès qu'un compte et
+  à côté du bouton : **une seule**, la première dans cette séquence *(récrite seule et complète à la validation P4,
+  P6)* : compte ; période (vide, illisible, inversée) ; numéro du relevé ; soldes ; nombre de lignes ; première ligne
+  fautive ; écart ; aperçu ; cases. *Vérifier* est actif dès qu'un compte et
   une période lisible sont saisis, même si l'écart n'est pas nul ou qu'une ligne est fautive — si bien que les erreurs
   du serveur de l'AC-22 sont atteintes par l'usage normal. Pour M14, le test pose un **aperçu réussi** sur un formulaire
   déséquilibré et attend la raison « écart ». *(Validation P3, R6 :)* la date de valeur n'est pas contrôlée par le
   client (un `<input type="date">` la rend lisible ou vide) ; une faute de serveur désigne **la cellule** (ligne et
-  colonne, `field` traduit par l'en-tête de colonne déjà affiché) et le message est le libellé du `reason`. Le format
+  colonne, `field` traduit par l'en-tête de colonne déjà affiché) et le message est le libellé du `reason` ; un `field`
+  d'**entête** (`line` nul : période, numéro, soldes, `lines`) désigne le champ du formulaire, traduit par son libellé
+  (validation P4, P5 ; Vitest). *Asymétrie de taille* (validation P4, P4) : le client admet 500 lignes pleines
+  (≈ 2,1 Mo), le serveur refuse un corps au-delà de `KESH_BANK_IMPORT_MAX_MB` (minimum 1 Mio) en `400
+  VALIDATION_ERROR` sans `field`. Le format
   se contrôle par `isValidAmount` **généralisée** (validation P1, R3/F4) : options `maxDecimals` (défaut 4, deux ici),
   `maxIntegerDigits` (défaut 15, treize ici), `allowNegative` (défaut non ; oui pour les soldes, non pour les montants
   de ligne) et `allowEmpty` (défaut oui, comme le journal ; non pour les soldes) — **aucune seconde expression
@@ -75,7 +80,10 @@ l'entrée *Ajouté* du CHANGELOG et la ligne *Fonctionnalités* du README.
   désignée. *(Validation P3, R5 :)* la réponse de l'aperçu est liée à l'**instantané** du corps envoyé — une réponse qui
   arrive après une modification est ignorée (patron `loadSeq` de `[id]/+page.svelte`) — ; la table de correspondance des
   rangs est celle de cet instantané ; le formulaire est figé pendant un envoi, et *Enregistrer* porte la garde
-  `submitting` (patron `DeleteBankImportAction.svelte`).
+  `submitting` (patron `DeleteBankImportAction.svelte`). *(Validation P4, P4 :)* un `400 VALIDATION_ERROR` sans `field`
+  (corps rejeté par l'extracteur de la 2a — en pratique, trop volumineux) s'affiche par une clé **générique** de l'écran
+  (`bank-import-manual-*`, « relevé refusé : trop volumineux ou illisible »), ne désigne aucune ligne, ne montre pas le
+  message français du serveur et ne rend pas l'aperçu « réussi » ; Vitest.
 - **AC-23** — Succès : notification, retour à `/bank-import`, le relevé en tête de la liste. Dans la liste
   (`BankImportList.svelte`) et au détail (`/bank-import/[id]`), un import `MANUAL` s'affiche **« Saisie manuelle »** (et
   son numéro s'il en a un) au lieu du `filename`, et son format **« Saisie manuelle »** au lieu de `MANUAL` ; la boîte de
@@ -95,10 +103,17 @@ l'entrée *Ajouté* du CHANGELOG et la ligne *Fonctionnalités* du README.
   transactions », « Transactions », les en-têtes du tableau, le `<h1>` « Détail import bancaire » **et** le `<h2>`
   « Import #{id} », **et** (validation P3, R10 = F5) le `<title>` (`:88`), le lien « ← Retour aux imports » (`:92`) et
   les trois messages `'Identifiant invalide'` (`:62`), `'Import introuvable.'` (`:74`), `'Erreur inattendue.'` (`:76`) ;
-  et les textes d'interface qui disent « importée » (validation P3, F4) — `homepage-bank-no-transactions` (`:166`),
-  `bank-accounts-errors-has-pending-transactions` (`:1439`), `bank-accounts-errors-has-transactions` (`:1433`),
-  `bank-accounts-close-dialog-body` (`:1473`) — se récrivent pour valoir aussi d'un relevé saisi, comme le manuel
-  (AC-27). Le refus « relevé identique » (`BANK_IMPORT_DUPLICATE_FILE`) porte le message serveur « Ce fichier a
+  et les textes d'interface qui disent « importée » (validation P3, F4 ; **frontière récrite à la validation P4, P1**) :
+  à la **2b**, `bank-accounts-close-dialog-body` (`fr-CH:1473`, `de-CH`/`it-CH`/`en-CH:1409`) et
+  `fiscal-years-checks-k2-help` (`fr-CH:997`, `de-CH`/`it-CH`/`en-CH:946`) avec son repli
+  `frontend/src/lib/features/fiscal-years/closing-checks-labels.ts:48` — pendant d'écran de la phrase K2 du manuel
+  (`user-manual.tex:802`) — se récrivent pour valoir aussi d'un relevé saisi, comme le manuel (AC-27) ; les deux
+  **messages serveur** `bank-accounts-errors-has-transactions` et `bank-accounts-errors-has-pending-transactions`, dont
+  le repli vit dans `errors.rs` (`:2714-2721`, `:2776-2780`), sont à la **2a** (son AC-11 : repli, quatre catalogues,
+  `bank_accounts_e2e.rs:2485`) ; la 2b n'en garde que le Vitest qui recopie le texte
+  (`frontend/src/routes/(app)/bank-accounts/bank-accounts-page.test.ts:502`), à suivre. `homepage-bank-no-transactions`
+  n'est employée nulle part (clé morte, `grep -rn "no-transactions" frontend/src crates/*/src` hors `.ftl` : rien) :
+  elle n'est **pas** récrite (LOW non pris de la validation P4). Le refus « relevé identique » (`BANK_IMPORT_DUPLICATE_FILE`) porte le message serveur « Ce fichier a
   déjà été importé » (`errors.rs:2354-2358`) : l'écran de saisie affiche sa propre clé `bank-import-manual-*` et ne
   montre pas ce message.
 - **AC-24** — i18n de l'écran : toutes les clés nouvelles du frontend (`bank-import-manual-*`, `bank-import-detail-*`,
@@ -114,8 +129,11 @@ l'entrée *Ajouté* du CHANGELOG et la ligne *Fonctionnalités* du README.
   ajuster : `i18n-keys.test.ts:773` (`sitesGabarit`, 11 → 12), `:960` (`SITES_GABARIT_ATTENDUS`, une ligne neuve),
   `i18n-libelle-en-dur.test.ts:250` (`CANDIDATES_ATTENDUES`, 71 → à recompter si la table expose une fonction
   `…Label`), et `i18n-entrees-a-variables.test.ts` (clés à variables). **Test croisé des `reason`** (décision de
-  l'orchestrateur à la validation P3, R1) : la table TypeScript des `reason` (fichier de `features/bank-import/`) est
-  lue par un **test Rust** (`crates/kesh-api/tests/`, patron `lire` de `textes_coherents.rs:46-48`), qui extrait ses
+  l'orchestrateur à la validation P3, R1) : la table TypeScript des `reason` est
+  lue par un **test Rust** — *forme imposée à la validation P4, P2 :* fichier
+  `frontend/src/lib/features/bank-import/manual-statement-reason-label.ts`, **un seul** objet
+  `export const MANUAL_STATEMENT_REASON_LABELS = {` … `};`, une entrée par ligne, clé littérale en début de ligne
+  (`^\s*'?([a-z_]+)'?\s*:`), sans commentaire dans le bloc ; le test panique si le bloc est introuvable ou vide — (`crates/kesh-api/tests/`, patron `lire` de `textes_coherents.rs:46-48`), qui extrait ses
   clés et les égale, dans les deux sens, à `ManualStatementReason::ALL` mappé par `code()` (2a, AC-4) ; le Vitest de
   couverture de la table reste, mais ne fait plus foi seul.
 - **AC-25** — Recette visuelle (`CLAUDE.md` § *Recette visuelle*, thème clair) : captures, sur une base de
@@ -137,16 +155,17 @@ l'entrée *Ajouté* du CHANGELOG et la ligne *Fonctionnalités* du README.
   que commente `createJournalEntryViaApi`), la ligne rapprochée datée du jour, les deux autres de la veille, sauf un
   1ᵉʳ janvier (alors du jour aussi), dans l'exercice ouvert du seed et dans
   la fenêtre de proposition (au plus 30 jours, Story 28-7, `reconciliation-amount-due.spec.ts:80-81`) — ; sur un
-  **compte bancaire propre à l'exécution** (`wiredBankAccountViaApi` avec un IBAN suisse synthétique **unique**, clé
-  MOD-97 calculée, **et `isPrimary: false`** — l'aide crée aujourd'hui un compte principal
-  (`helpers/api-fixtures.ts:190`), ce qui ferait d'un compte neuf le principal de la société du seed à chaque
-  exécution : elle gagne un paramètre `isPrimary`, défaut `true`, `false` ici ; validation P2, R11), si bien qu'aucun relevé antérieur n'existe et qu'aucun avertissement de solde de départ ne peut
-  surgir d'une exécution à l'autre ; ouvre `/bank-import`, suit le lien, saisit un relevé de **trois** lignes dont un crédit égal au TTC de la
+  compte bancaire créé par `wiredBankAccountViaApi` avec un IBAN suisse **synthétique fixe** (valide, comme les autres
+  specs) — *récrit à la validation P4, P8 :* la base est tronquée en `beforeAll` et le preset `with-company` ne crée aucun
+  compte bancaire, si bien qu'aucun relevé antérieur n'existe et qu'aucun avertissement de solde de départ ne peut
+  surgir ; le paramètre `isPrimary` et l'IBAN « unique » de la P2 n'ont plus de motif et sont **retirés** ; ouvre `/bank-import`, suit le lien, saisit un relevé de **trois** lignes dont un crédit égal au TTC de la
   facture, constate l'écart, corrige le solde d'arrivée, *Vérifier*, *Enregistrer* ; retrouve le relevé « Saisie
   manuelle » dans la liste ; ouvre `/reconciliation`, choisit le compte, accepte la proposition de la facture ; ouvre
   `/audit-log`, filtre sur l'action « Relevé bancaire saisi à la main » **et** sur le type et l'identifiant de l'entité
-  (l'import créé), et retrouve l'entrée. L'IBAN synthétique est produit par une aide `helpers/` qui calcule la clé MOD-97
-  (validée côté serveur par `kesh-qrbill/src/validation.rs:40`, CH/LI, 21 caractères). Un second test : un
+  (l'import créé), et retrouve l'entrée. L'IBAN est validé à la création du compte par
+  `kesh_core::types::Iban::new` (`routes/bank_accounts.rs:352`, `kesh-core/src/types/iban.rs`, ISO 13616, table des
+  longueurs par pays) — *citation corrigée à la validation P4, P7 : `kesh-qrbill/src/validation.rs:40` est celle de la
+  QR-facture*. Un second test : un
   utilisateur Consultation ne voit pas le lien.
 - **AC-27** — Manuel utilisateur FR (`docs/manual/fr/user-manual.tex`, PDF régénéré) : une sous-section
   *Saisir un relevé à la main* (`\label{sec:releve-manuel}`) dans *Import bancaire* — quand l'employer (un compte sans
@@ -224,8 +243,8 @@ l'entrée *Ajouté* du CHANGELOG et la ligne *Fonctionnalités* du README.
 Fichiers prévus : `frontend/src/lib/features/bank-import/manual-statement.test.ts`, `ManualStatementForm.test.ts`, la
 table et le test des `reason`, les tests existants de `BankImportList`, `DeleteBankImportAction`, de la page détail,
 `journal-entries/balance.test.ts` (défauts inchangés), `frontend/src/lib/shared/i18n-keys.test.ts` ;
-`frontend/tests/e2e/bank-manual-statement.spec.ts`, `frontend/tests/e2e/helpers/api-fixtures.ts` (`isPrimary`, `createUser`
-extraite, IBAN MOD-97) ; `crates/kesh-api/tests/` (test croisé des `reason`, AC-24).
+`frontend/tests/e2e/bank-manual-statement.spec.ts`, `frontend/tests/e2e/helpers/api-fixtures.ts` (`createUser`
+extraite) ; `crates/kesh-api/tests/` (test croisé des `reason`, AC-24).
 
 | # | Mutation (une à la fois, motif vérifié unique, restauration `git checkout -- f && touch f`) | Doit rougir |
 |---|---|---|
@@ -257,9 +276,10 @@ inchangées. Ne déclarer que ce qui a tourné, chiffres recomptés.
 
 | Module | Fichiers |
 |---|---|
-| `frontend` | `src/lib/features/bank-import/{ManualStatementForm.svelte, manual-statement.ts, *.test.ts, bank-import.api.ts, bank-import.types.ts, BankImportList.svelte, DeleteBankImportAction.svelte}`, la table des `reason`, `src/lib/features/journal-entries/balance.ts`, `src/routes/(app)/bank-import/+page.svelte`, `src/routes/(app)/bank-import/manual/+page.svelte` (+ `+page.ts`, garde), `src/routes/(app)/bank-import/[id]/+page.svelte`, `src/lib/shared/i18n-keys.test.ts`, `src/lib/shared/i18n-libelle-en-dur.test.ts`, `tests/e2e/bank-manual-statement.spec.ts`, `tests/e2e/helpers/api-fixtures.ts` (et une aide `createUser`, une aide d'IBAN), `tests/e2e/audit-log.spec.ts` (`createUser` extraite) |
+| `frontend` | `src/lib/features/bank-import/{ManualStatementForm.svelte, manual-statement.ts, *.test.ts, bank-import.api.ts, bank-import.types.ts, BankImportList.svelte, DeleteBankImportAction.svelte}`, la table des `reason`, `src/lib/features/journal-entries/balance.ts`, `src/routes/(app)/bank-import/+page.svelte`, `src/routes/(app)/bank-import/manual/+page.svelte` (+ `+page.ts`, garde), `src/routes/(app)/bank-import/[id]/+page.svelte`, `src/lib/shared/i18n-keys.test.ts`, `src/lib/shared/i18n-libelle-en-dur.test.ts`, `tests/e2e/bank-manual-statement.spec.ts`, `tests/e2e/helpers/api-fixtures.ts` (l'aide `createUser` extraite), `tests/e2e/audit-log.spec.ts` (`createUser` extraite) |
 | `kesh-api` (tests) | le test croisé des `reason` (AC-24) |
-| `kesh-i18n` | `locales/{fr,de,it,en}-CH/messages.ftl` (clés de l'écran ; `:166`, `:1433`, `:1439`, `:1473` récrites) |
+| `kesh-i18n` | `locales/{fr,de,it,en}-CH/messages.ftl` (clés de l'écran ; `bank-accounts-close-dialog-body` et `fiscal-years-checks-k2-help` récrites — numéros par catalogue à l'AC-23) |
+| `frontend` (autres) | `src/lib/features/fiscal-years/closing-checks-labels.ts` (`:48`), `src/routes/(app)/bank-accounts/bank-accounts-page.test.ts` (`:502`) |
 | docs | `docs/manual/fr/user-manual.tex` (+ PDF), `docs/manual/fr/admin-manual.tex:82` (+ PDF), `CHANGELOG.md` (*Ajouté*), `README.md:41` |
 
 ## À recontrôler à l'étape 0 du développement
@@ -272,8 +292,10 @@ inchangées. Ne déclarer que ce qui a tourné, chiffres recomptés.
   `:113-118` ; `BankImportList.svelte:24-25` ; `helpers/api-fixtures.ts:100-105`, `:190` ; `audit-log.spec.ts:52` ;
   `reconciliation-amount-due.spec.ts:80-81` ; `kesh-core/src/bank_imports.rs:365-377` ;
   `kesh-import/src/camt053/mod.rs:405`, `:412`, `:426-428`, `:629-630` ; `errors.rs:2354-2358` ;
-  `i18n-keys.test.ts:773`, `:882`, `:960` ; `i18n-libelle-en-dur.test.ts:250` ; `messages.ftl:166`, `:1433`, `:1439`,
-  `:1473` ; `user-manual.tex:1971-1973`, `:2277`.
+  `i18n-keys.test.ts:773`, `:882`, `:960` ; `i18n-libelle-en-dur.test.ts:250` ; `messages.ftl` (`fr-CH:997`, `:1473` ;
+  `de-CH`/`it-CH`/`en-CH:946`, `:1409`) ; `closing-checks-labels.ts:48` ; `bank-accounts-page.test.ts:502` ;
+  `user-manual.tex:1971-1973`, `:2277` ; et (validation P4, P7) `routes/bank_accounts.rs:352`, `kesh-core/src/types/iban.rs`,
+  `textes_coherents.rs:46-48`, `helpers/test-state.ts` (base tronquée).
 
 ## Dev Agent Record
 
@@ -303,3 +325,16 @@ inchangées. Ne déclarer que ce qui a tourné, chiffres recomptés.
     F9 (phrase d'ouverture et entrée *Ajouté*), F10 (captures), F11 (apostrophe typographique), F12 (limites au manuel).
   - **LOW non pris** : aucun.
   Prochaine étape : validation P4 ciblée (`v016-2b-validate-prompt-p4.md`, Opus).
+- 2026-10-30 — **Validation P4** (ciblée, Opus ; rapport `kesh-gate-logs/v0162b-validate-p4.md`) : **0 CRITICAL, 0 HIGH,
+  1 MEDIUM, 9 LOW**. Prémisses vérifiées au code (`errors.rs:2715`, `:2777` ; `bank_accounts_e2e.rs:2485` ;
+  `bank-accounts-page.test.ts:502` ; `closing-checks-labels.ts:48` ; numéros des quatre catalogues ;
+  `homepage-bank-no-transactions` sans usage ; `routes/bank_accounts.rs:352`). Traitement :
+  - **MEDIUM** — P1 : décision de l'orchestrateur — les deux messages serveur `bank-accounts-errors-has-*` passent à la
+    2a (repli `errors.rs`, `bank_accounts_e2e.rs:2485`), la 2b garde le Vitest `bank-accounts-page.test.ts:502` ;
+    `fiscal-years-checks-k2-help` et son repli ajoutés ; numéros par catalogue.
+  - **LOW appliqués** — P2 (forme de la table TypeScript, `ALL` public : 2a), P3 (exhaustivité de `ALL` : 2a, M23-bis),
+    P4 (`400 VALIDATION_ERROR` sans `field` : message générique, asymétrie de taille écrite), P5 (`field` d'entête), P6
+    (séquence de la raison), P7 (citation de l'IBAN, « À recontrôler »), P8 (`isPrimary` et IBAN unique retirés, motif
+    caduc), P9 (parente : 2a), P10 (registre C-v016-2-19 ; borne -19).
+  - **LOW non pris** : `homepage-bank-no-transactions`, clé morte, non récrite et sans issue (décision de l'orchestrateur).
+  Prochaine étape : validation P5 ciblée (`v016-2b-validate-prompt-p5.md`, Sonnet).

@@ -167,7 +167,8 @@ invalide rend à l'aperçu **la même** erreur qu'à la création (une seule fon
 un décimal), `period_inverted` (r. 1), `too_many_lines` (r. 2), `out_of_period` (r. 3), `too_long` (r. 4),
 `not_positive` (r. 5, montant), `too_many_decimals` (r. 5), `too_many_digits` (r. 5), `unknown_direction` }. Dates et
 montants arrivent en **chaînes** et sont analysés par la route, afin que toute faute de forme rende ce code avec son
-rang (et non un rejet Axum sans ligne). Côté frontend, une table `reason → clé i18n` littérale
+rang (et non un rejet Axum sans ligne) *(annoté à la validation P4, 2a P6 = 2b P9 : toute faute de forme **d'une
+chaîne** ; un champ d'un autre type JSON rend `400 VALIDATION_ERROR` sans `field`, ci-dessous)*. Côté frontend, une table `reason → clé i18n` littérale
 (`bank-import-manual-reason-*`, une clé par `reason`) et un test de couverture réciproque (chaque `reason` du serveur a
 sa clé, chaque clé a son `reason`), sur le patron de `CSV_LINE_ERROR_LABELS` — *(citation corrigée à la validation P2,
 F12)* la table vit dans `frontend/src/lib/features/bank-import/csv-line-error-label.ts:23`, son test de couverture dans
@@ -182,14 +183,15 @@ dans les deux sens (2b, AC-24).
 
 **Type d'entrée de la route et extracteur** (validation P2, R3) : tous les champs du relevé et des lignes en
 `Option<String>` (dates, montants, sens, textes), `lines: Option<Vec<…>>`, seul `bankAccountId: i64` requis — si bien que
-tout champ **chaîne** absent, vide ou mal formé atteint `BANK_STATEMENT_INVALID` avec son `field` et son `reason` *(limite
+tout champ chaîne **requis** absent ou vide, ou tout champ chaîne mal formé *(précisé à la validation P4, 2b P9 : un
+champ facultatif vide vaut absence)*, atteint `BANK_STATEMENT_INVALID` avec son `field` et son `reason` *(limite
 écrite à la validation P3, 2a R2 : un champ d'un autre type JSON que chaîne, `lines` qui n'est pas un tableau,
 `bankAccountId` absent ou non entier rendent `400 VALIDATION_ERROR` sans `field` ni `reason`)* ; la route analyse ces
 chaînes vers le type de `kesh-core`. Le corps passe par l'extracteur de `routes/bank_accounts.rs:196-226`,
 **extrait dans un module partagé** et réutilisé tel quel (décision de l'orchestrateur à la validation P3, 2a R1 ; rejet →
 `400 VALIDATION_ERROR`) et **jamais** par le `Json` nu d'Axum 0.8, qui rend
 `422` sur une erreur de données — le statut des refus métier. Taille : 500 lignes de 500 + 255 + 255 caractères de
-quatre octets approchent 2,1 Mo, au-delà de la limite par défaut d'Axum (2 Mio, `413`) : les deux routes se montent avec
+quatre octets approchent 2,1 Mo, au-delà de la limite par défaut d'Axum (2 Mio ; rejet que l'extracteur rend en `400`, *annoté à la validation P4, 2a P6*) : les deux routes se montent avec
 `DefaultBodyLimit::max(bank_import_max_mib)` comme l'import (`lib.rs:792-803`).
 
 Ordre des refus à la création, chacun **sans écriture** : authentification et rôle (middlewares) ; corps JSON illisible ou
@@ -340,7 +342,8 @@ n'existera pas.*
 **C. Communs**
 
 9. PR de release : `closes #816` dans le **titre ou le corps**, à côté de `closes #811` et `closes #812`.
-10. Décompte des issues au tag (objectif, non barrière) ; l'issue demandée ci-dessous comprise.
+10. Décompte des issues au tag (objectif, non barrière) ; l'issue demandée ci-dessous comprise, et **#829** (les trois
+    copies de l'extracteur, ouverte pendant la validation P3 — ne pas la rouvrir ; validation P4, 2a P7).
 11. Issue à ouvrir (demandée par la fiche) : **« L'import d'un fichier ne signale pas une période déjà saisie à la main »**
    — enhancement ; C-v016-2-6.
 
@@ -479,3 +482,10 @@ se consignent ici, datées, à leur arrivée ; une réponse qui change un choix 
   Statut de cette fiche : `split`. Sous-fiches `v016-2a-releve-manuel-backend.md` et `v016-2b-releve-manuel-ecran.md`
   (`ready-for-dev`). Prochaine étape : validation P3, un prompt par sous-fiche (`v016-2a-validate-prompt-p3.md`,
   `v016-2b-validate-prompt-p3.md`, Sonnet, passe complète).
+- 2026-10-30 — **Validation P3** des sous-fiches *(entrée ajoutée à la validation P4, 2a P1)* : remédiée aux Change Logs
+  de `v016-2a-releve-manuel-backend.md` et `v016-2b-releve-manuel-ecran.md` ; les trois décisions de l'orchestrateur
+  (règle unique `400` et extracteur partagé, épinglage Rust des `reason` et `field` avec test croisé, statut de candidate
+  de `README.md:235`) sont au registre, **C-v016-2-19**. Cette fiche parente y a été touchée (§ *Ensembles fermés*,
+  § *Type d'entrée*, § *Ordre des refus*, liste B de la release, § *Propagation*, table des mutations).
+- 2026-10-30 — **Validation P4** des sous-fiches (ciblée, Opus) : remédiée aux Change Logs des deux sous-fiches ;
+  ici, annotations de `:169`, `:185`, `:192` et #829 au point 10 de la liste C.

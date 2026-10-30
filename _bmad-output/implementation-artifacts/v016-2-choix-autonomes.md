@@ -362,7 +362,8 @@ première rédaction.*
     MariaDB ; précédent `routes/api_keys.rs:130` ;
   - **l'empreinte canonique** encodée champ par champ, longueur sur quatre octets gros-boutiens puis octets UTF-8 ;
   - **dates et montants en chaînes** analysées par la route, pour que toute faute de forme rende
-    `BANK_STATEMENT_INVALID` avec son rang ; ensembles fermés de `field` et `reason` ;
+    `BANK_STATEMENT_INVALID` avec son rang *(annoté à la validation P4, 2a P6 : sauf un champ d'un autre type JSON que
+    chaîne, rendu en `400 VALIDATION_ERROR` sans `field` — validation P3, 2a R2)* ; ensembles fermés de `field` et `reason` ;
   - **`isValidAmount`** à options (`maxDecimals`, `maxIntegerDigits`, `allowNegative`, `allowEmpty`), défauts du journal
     inchangés ;
   - **les rangs** : le formulaire retire les lignes vides et traduit tout rang du serveur en ligne de l'écran ;
@@ -399,4 +400,31 @@ première rédaction.*
     commun.
 - **Écartées** : la story unique avec dérogation (hors de l'exception de la règle) ; trois sous-fiches (la 2a ne se
   scinde pas sans séparer la migration de la route qui écrit la valeur nouvelle).
+- **Réversible** : oui, avant le développement de la 2a.
+
+### C-v016-2-19 — Remédiation de la validation P3 : trois décisions de l'orchestrateur (2026-10-30)
+
+*Entrée écrite à la validation P4 (2a P1 = 2b P10) : ces décisions, prises à la P3, n'avaient d'écrit que dans les
+fiches.*
+
+- **Contexte** : validation P3 des sous-fiches (Sonnet), trois MEDIUM — 2a R1 (la parente promettait `415` sans
+  `Content-Type` et `413` au-delà de la limite, que l'extracteur prescrit ne rend pas), 2a F1 (`README.md:235` dirait
+  « Aucune migration » et « ✅ Publiée » pendant la candidate), 2b R1 (l'ensemble fermé des `reason` n'existait qu'en
+  prose, la table TypeScript et son test en étant une copie sans lien avec le serveur).
+- **Retenu** :
+  - **(a) une règle unique `400 VALIDATION_ERROR`** pour tout rejet du corps — JSON illisible, `Content-Type` absent,
+    dépassement de la limite —, alignée sur l'existant ; la macro `impl_validation_extractor` de
+    `routes/bank_accounts.rs:196-226` **extraite** dans un module partagé (`src/extractors.rs`), réutilisée par
+    `bank_accounts.rs` (comportement inchangé) et par la route de saisie ; un test par cas ; les deux autres copies
+    (`test_endpoints.rs:111-…`, `reconciliation.rs:914-…`) tracées en #829 ;
+  - **(b) l'épinglage Rust** : `ManualStatementReason` et `ManualStatementField` dans `kesh-core` (`code()`, `pub const
+    ALL`, hors `cfg(test)`), un test qui les épingle sur les chaînes littérales de la parente, un test d'exhaustivité
+    (`match` sans joker) qui lie `ALL` à l'énumération, et, posé par la 2b, un test Rust qui lit la table TypeScript et
+    l'égale à `ManualStatementReason::ALL` dans les deux sens ;
+  - **(c) `README.md:235`** : la phrase « Aucune migration … » retirée, un statut de candidate (non « ✅ Publiée »)
+    pendant `v0.17.0-rc1`, la bascule à « ✅ Publiée » au tag final (liste B de la release).
+- **Écartées** : (a) les statuts natifs d'Axum `415` et `413` par un extracteur propre (un second comportement à côté
+  de l'existant, et une quatrième copie ou une variante de la macro) ; une copie locale de la macro (DRY) ; (b) une
+  liste recopiée côté TypeScript seule, sans lien avec le serveur (verte par construction, D4-ter) ; (c) « ✅ Publiée »
+  posé dès la candidate, ou la ligne laissée en `v0.16.1` jusqu'au tag.
 - **Réversible** : oui, avant le développement de la 2a.

@@ -4,7 +4,7 @@ Status: ready-for-dev
 
 *Sous-fiche issue du découpage de la Story v016-2 à la validation P2 (2026-10-30, décision de l'orchestrateur,
 C-v016-2-18). Worktree `/home/gcorbaz/devel/kesh-0162`, branche `story/v016-2-releve-manuel` (partie de `c5101b07`), la 2a d'abord,
-puis la 2b. Registre **commun** : `v016-2-choix-autonomes.md` (C-v016-2-1 à C-v016-2-18). Issue : **#816**, en `refs`
+puis la 2b. Registre **commun** : `v016-2-choix-autonomes.md` (C-v016-2-1 à C-v016-2-19). Issue : **#816**, en `refs`
 seulement ; la fermeture se porte sur la PR de release. Les numéros de ligne cités sont ceux de `c5101b07`.
 **Contexte, décisions, contrat de l'API (corps, réponse de l'aperçu, codes d'erreur, ensembles fermés, ordre des
 refus), limites, liste de la release et questions au Project Lead : fiche parente `v016-2-releve-manuel.md`** — ils
@@ -66,8 +66,13 @@ commit de leur `.tex`. **Livrable seul** : l'API se teste de bout en bout en HTT
   `check_downgrade_protection(&pool, "0.16.1")` → `DowngradeRefused` (la dernière version antérieure, candidate
   comprise : la `v0.16.1-rc1` porte la version Cargo `0.16.1`). **Sites nommés à la validation P3 (R4)** :
   `migrations_upgrade_path.rs:122-125` (`assert_eq!(total, 86, …)` → 87, avec sa ligne d'historique) **et** `:213`
-  (`total - 52` → `total - 53`, du même pas, la frontière 34 inchangée — le piège que l'en-tête du fichier rappelle,
-  `:44`) ; `:541`, `:557`, `:573` (`db_min` `"0.14.0"`) et `:656` (`assert_eq!(min_required, "0.14.0")`, dans un test qui
+  (`total - 52` → `total - 53`, du même pas, la frontière 34 inchangée — le piège que rappelle le message d'assertion
+  d'`apply_migrations_up_to`, `:42-50`, *et non « l'en-tête du fichier » : corrigé à la validation P4, P2*) ; **toutes les
+  copies de ces valeurs** se trouvent par `grep -nE '\b(52|53|86|87)\b|total - 5[23]'
+  crates/kesh-db/tests/migrations_upgrade_path.rs` (à `c5101b07` : `:44`, `:46`, `:63-64`, `:121`, `:124-125`, `:128`,
+  `:136`, `:143`, `:146`, `:206`, `:213`, `:216`), chaque occurrence triée au Dev Agent Record, avec la ligne
+  d'historique « Story v016-2a : 52 → 53, frontière inchangée (87 - 53 = 34) » sous `:206` ; `:541` et `:545` (version
+  **du binaire** `"0.14.0"`, cas `Aligned`), `:557`, `:573` (`db_min` `"0.14.0"`) et `:656` (`assert_eq!(min_required, "0.14.0")`, dans un test qui
   rejoue toutes les migrations) ; le nouveau `bank_statements_manual_e2e.rs` monte le squash
   (`#[sqlx::test(migrations = "../kesh-db/test-schema")]`), sans quoi `test_schema_guard.rs`
   (`every_sqlx_test_attribute_is_accounted_for`) rougit.
@@ -139,7 +144,11 @@ commit de leur `.tex`. **Livrable seul** : l'API se teste de bout en bout en HTT
   `code() -> &'static str` et une constante `ALL` ; l'erreur de validation les porte, et la route sérialise `code()`. Un
   test Rust **épingle** les deux ensembles sur les chaînes **littérales** de la parente (§ *Ensembles fermés*) : `ALL`
   mappé par `code()` égale, dans les deux sens, la liste écrite dans le test. La 2b ajoutera le test croisé qui lit sa
-  table TypeScript et la compare à `ManualStatementReason::ALL`.
+  table TypeScript et la compare à `ManualStatementReason::ALL`. *(Validation P4, 2a P8 = 2b P3 et 2b P2 :)* `ALL` est
+  `pub const`, **hors** `cfg(test)`, atteignable depuis `kesh_core` par un chemin public (un test d'intégration de
+  `kesh-api` le lit) ; et un test lie `ALL` à l'**énumération** : une fonction fait un `match` **exhaustif sans joker**
+  sur chaque variante et vérifie que `ALL` la contient — le compilateur force alors la mise à jour du test pour toute
+  variante neuve (mutation M23-bis). Même dispositif pour `ManualStatementField`.
 - **AC-5** — L'empreinte canonique est **stable** (même entrée → mêmes octets, quel que soit l'ordre d'émission des
   champs JSON côté client, `"50"` ≡ `"50.00"`) et **sensible** à chacun des champs qu'elle porte : un test par champ
   (compte, bornes, numéro, chaque solde, et pour une ligne : date, valeur, libellé, contrepartie, référence, montant,
@@ -177,7 +186,7 @@ commit de leur `.tex`. **Livrable seul** : l'API se teste de bout en bout en HTT
   partagé de `kesh-api` (p. ex. `src/extractors.rs`), réutilisé par `bank_accounts.rs` — comportement **inchangé**, tests
   existants verts — et par la route de saisie ; aucune copie. Une seule règle : tout rejet du corps, `Content-Type`
   absent et dépassement de la limite compris, rend `400 VALIDATION_ERROR` (bras `MissingJsonContentType` et `_` de la
-  macro). Avec `KESH_BANK_IMPORT_MAX_MB` réglé à son minimum (1, `config.rs:876`), un relevé de 500 lignes pleines
+  macro). Avec `KESH_BANK_IMPORT_MAX_MB` réglé à son minimum (1, `config.rs:877-882`), un relevé de 500 lignes pleines
   (≈ 2,1 Mo) est refusé ainsi : limite assumée, écrite à `docs/api-external.md`.
 - **AC-10** — Création réussie : `201` et le `BankImportResponse` de l'import (`sourceFormat: "MANUAL"`,
   `filename: "saisie-manuelle-<du>-<au>"`, `statementId`, soldes, `transactionCount`) ; en base, l'entête et **toutes**
@@ -196,7 +205,12 @@ commit de leur `.tex`. **Livrable seul** : l'API se teste de bout en bout en HTT
   de la limite, JSON illisible, un champ d'un autre type JSON que chaîne (`"amount": 50`), `lines` qui n'est pas un
   tableau, `bankAccountId` absent ou non entier — la limite de « toute faute de forme rend `BANK_STATEMENT_INVALID` » :
   elle ne vaut que pour une chaîne absente, vide ou mal formée. Les messages serveur des codes nouveaux (`errors.rs`, `t("…")`) ont leurs
-  clés aux **quatre** catalogues, parité verte.
+  clés aux **quatre** catalogues, parité verte. *(Frontière écrite à la validation P4, 2b P1 :)* les deux messages
+  serveur qui disent « importée » sont **à la 2a** — `bank-accounts-errors-has-transactions` (repli
+  `errors.rs:2714-2721`) et `bank-accounts-errors-has-pending-transactions` (repli `errors.rs:2776-2780`) : repli **et**
+  valeur aux quatre catalogues (`fr-CH` `:1433`, `:1439` ; `de-CH`, `it-CH`, `en-CH` `:1369`, `:1375`) récrits pour
+  valoir aussi d'un relevé saisi, et le test qui épingle le texte, `crates/kesh-api/tests/bank_accounts_e2e.rs:2485`,
+  suivi. Le Vitest qui le recopie (`bank-accounts-page.test.ts:502`) est à la 2b.
 - **AC-12** — L'aperçu n'écrit rien (aucune ligne d'aucune table, trace comprise) et rend les quatre avertissements ;
   il rend `BANK_STATEMENT_INVALID` et `BANK_STATEMENT_UNBALANCED` comme la création ; compte archivé, clos ou étranger :
   mêmes refus que la création.
@@ -221,14 +235,16 @@ commit de leur `.tex`. **Livrable seul** : l'API se teste de bout en bout en HTT
   alors dans le fichier. Le module `bank_statements_manual.rs` ne passe que `ImportAuditAction::EnteredManually`, sans
   littéral d'action. **Et** (validation P2, R1) : inscrire `bank_imports.rs` fait lire au tamis du sens 2
   (`retenir_si_code`, `:648-…`) le littéral `"upload.xml"` (`bank_imports.rs:473`, `:603`, nom par défaut d'un envoi
-  multipart) ; il entre à `PAS_DES_CODES` (constante à `:585`, commentaire `:575-584`) avec ce motif, et « huit » devient « neuf » dans les deux
-  commentaires qui comptent les fichiers inventoriés (`:20`, `:579`). Gate ciblé : `binary(audit_label_registry)`.
+  multipart) ; il entre à `PAS_DES_CODES` (constante à `:585`, commentaire `:575-584`) avec ce motif, et « huit » devient « neuf » *(liste complétée à la validation P4, P3 :)*
+  aux `:20`, `:379` (« les huit vrais ») et `:579`, à l'assertion `SITES_INDIRECTS.len()` (`:919-921`, 8 → 9) et au motif
+  de son message (`:925`, `six|sept|huit` gagne `neuf`) — recomptés par `grep -niE '\b(huit|neuf)\b'`. Gate ciblé : `binary(audit_label_registry)`.
   **Compteurs figés du registre des routes** (R2), à recompter, non à ajuster de confiance :
   `audit_route_registry.rs:909` (`LIB_ROUTES.len()`, 135 → 137), `:915` (`traced`, 129 → 130), `:939` (`no_matter`,
   2 → 3), `:944` (138 → 140), `:1324` (`assert_eq!(tout.len(), 138)` → 140), `:1312` (`sans_ecriture`, 110 → 112, et son message « 109 routes de
   lib.rs » → 111 ; validation P2, R8), et les commentaires d'en-tête (l. 27-33) ; et (validation P3, F6) `:910`
   (« l'inventaire porte sur 135 routes ») et les énumérations des messages de `traced` (`:916-937`) et de
-  `sans_ecriture` (`:1313`), complétées de « la saisie manuelle d'un relevé ».
+  `sans_ecriture` (`:1313`), complétées de « la saisie manuelle d'un relevé » ; et (validation P4, P4) le message de
+  `no_matter` (`:940`, « deux routes mutantes qui ne mutent rien » → « trois », l'aperçu de la saisie nommé).
   Le test `le_manuel_dit_le_compte_du_registre` (`:955`) lit `docs/manual/fr/admin-manual.tex:2966` : la phrase devient
   « 130 des 137 routes à verbe mutant », « trois autres routes qui n'écrivent rien parce qu'elles ne modifient rien »,
   « 130 + 4 + 3 = 137 » (vérifier au `.tex` la forme exacte que le test exige).
@@ -366,7 +382,8 @@ Fichiers prévus : `crates/kesh-core/src/bank_imports.rs` (ou `bank_imports/manu
 | M20 | `POST /bank-imports/manual` monté hors du groupe Comptable+ | AC-13 (Consultation → `403`) |
 | M21 | `confirmDuplicateFile` ignoré (toujours vrai) | AC-11 (`BANK_IMPORT_DUPLICATE_FILE`) |
 | M23 | `ManualStatementReason::ALL` : une variante retirée de la constante | test d'épinglage (AC-4) |
-| M24 | extracteur partagé : bras `MissingJsonContentType` rendu en `415` | AC-11 (`Content-Type` absent → `400`) ; tests de `bank_accounts` |
+| M24 | extracteur partagé : bras `MissingJsonContentType` rendu en `415` | AC-11 (`Content-Type` absent → `400`) *(« tests de `bank_accounts` » retiré à la validation P4, P5 : aucun n'atteint ce bras)* |
+| M23-bis | une variante ajoutée à `ManualStatementReason`, absente de `ALL` | test d'exhaustivité par `match` sans joker (AC-4) — rouge à la compilation ou à l'assertion |
 | M22 | « un échec de la trace n'écrit rien » : `tx.commit()` avant l'écriture de la trace | AC-10 : test qui fait échouer la trace par un **déclencheur** `BEFORE INSERT ON audit_log` restreint à l'action `bank_import.entered_manually` (`SIGNAL SQLSTATE '45000'`), patron `FAIL_TRIGGER` de `onboarding_audit_e2e.rs:871`, puis `COUNT(*)` de `bank_imports` et `bank_transactions` = 0. *(Première rédaction : « `user_id` inexistant » — faux à la validation P2, R2 : l'entête échoue d'abord sur `fk_bank_imports_user`, et la trace n'a plus de clé étrangère depuis la 25-1a, `audit_log.rs:78-93`.)* |
 
 **M16 et M17 mutent un fichier de migration** (P8 ; validation P2, R13) : tests `#[sqlx::test]` seulement, **aucun
@@ -391,9 +408,9 @@ attendus*. Ne déclarer que ce qui a tourné, chiffres recomptés.
 |---|---|
 | `kesh-core` | `src/bank_imports.rs` (et `src/bank_imports/manual.rs` si le module devient un dossier ; validation P3, R7) |
 | `kesh-db` | `src/entities/bank_import.rs`, `src/repositories/bank_imports.rs`, `migrations/20261030000001_bank_imports_manual_source.sql`, `migrations.sha384`, `src/post_restore.rs`, `test-schema/0001_schema_squash.sql` (régénéré), `tests/migrations_fresh_install.rs`, `tests/migrations_upgrade_path.rs`, `tests/bank_accounts_repository.rs`, `docs/migrations-idempotence-audit.md` |
-| `kesh-api` | `src/extractors.rs` (nouveau, la macro extraite de `routes/bank_accounts.rs`), `src/routes/bank_accounts.rs`, `src/routes/bank_statements_manual.rs` (nouveau), `src/routes/mod.rs`, `src/routes/bank_imports.rs`, `src/lib.rs`, `src/errors.rs`, `src/audit_labels.rs`, `tests/bank_statements_manual_e2e.rs` (nouveau), `tests/audit_route_registry.rs`, `tests/audit_label_registry.rs`, `tests/bank_account_closed_inventory.rs`, `tests/admin_full_import_e2e.rs` |
+| `kesh-api` | `src/extractors.rs` (nouveau, la macro extraite de `routes/bank_accounts.rs`), `src/routes/bank_accounts.rs`, `src/routes/bank_statements_manual.rs` (nouveau), `src/routes/mod.rs`, `src/routes/bank_imports.rs`, `src/lib.rs`, `src/errors.rs`, `src/audit_labels.rs`, `tests/bank_statements_manual_e2e.rs` (nouveau), `tests/audit_route_registry.rs`, `tests/audit_label_registry.rs`, `tests/bank_account_closed_inventory.rs`, `tests/admin_full_import_e2e.rs`, `tests/bank_accounts_e2e.rs` (`:2485`) |
 | crates (P2-bis) | les dix `crates/*/Cargo.toml`, `Cargo.lock` ; les neuf commentaires « depuis la 0.16.1 » |
-| `kesh-i18n` | `locales/{fr,de,it,en}-CH/messages.ftl` (messages serveur, libellé d'audit) |
+| `kesh-i18n` | `locales/{fr,de,it,en}-CH/messages.ftl` (messages serveur, libellé d'audit, et les deux `bank-accounts-errors-has-*`) |
 | docs | `docs/api-external.md` (`:87`, `:223`, `:243`, `:826`, `:853`, `:866`, `:878`), `CHANGELOG.md`, `README.md` (`:49`, `:235`), `docs/manual/fr/admin-manual.tex` (+ PDF), `docs/manual/fr/user-manual.tex:3265` (+ PDF) |
 
 ## À recontrôler à l'étape 0 du développement
@@ -405,7 +422,7 @@ attendus*. Ne déclarer que ce qui a tourné, chiffres recomptés.
 - `routes/admin.rs:217-223` — le refus d'une sauvegarde de `min_required` supérieur.
 - La forme d'inscription à `SITES_INDIRECTS` (`tests/audit_label_registry.rs`) et au registre des routes.
 - `routes/bank_accounts.rs:196-226` (la macro à extraire), `routes/bank_imports.rs:1756-1779` (clés existantes),
-  `config.rs:876` (bornes de la limite), `migrations_upgrade_path.rs:122-125`, `:213`, `:541`, `:557`, `:573`, `:656`,
+  `config.rs:877-882` (bornes de la limite), `migrations_upgrade_path.rs:122-125`, `:213`, `:541`, `:557`, `:573`, `:656`,
   `audit_label_registry.rs:585`, `:648`, `post_restore.rs:1214-1219` (ajoutés à la validation P3).
 
 ## Dev Agent Record
@@ -438,3 +455,17 @@ attendus*. Ne déclarer que ce qui a tourné, chiffres recomptés.
   - **LOW non pris** — les deux autres copies de l'extracteur (`routes/test_endpoints.rs:122-138`,
     `routes/reconciliation.rs:928-…`) ne sont pas factorisées par cette story (périmètre minimal) : issue demandée.
   Prochaine étape : validation P4 ciblée (`v016-2a-validate-prompt-p4.md`, Opus).
+- 2026-10-30 — **Validation P4** (ciblée, Opus ; rapport `kesh-gate-logs/v0162a-validate-p4.md`) : **0 CRITICAL, 0 HIGH,
+  1 MEDIUM, 7 LOW**. Prémisses vérifiées au code (`migrations_upgrade_path.rs` par le grep des valeurs ;
+  `audit_label_registry.rs:379`, `:919-925` ; `audit_route_registry.rs:940` ; `config.rs:877-882` ;
+  `test_endpoints.rs:111`, `reconciliation.rs:914` ; `gh issue view 829` : OPEN). Traitement :
+  - **MEDIUM** — P1 : décisions de l'orchestrateur à la P3 versées au registre (**C-v016-2-19**), borne portée à -19 en
+    tête de la 2a et de la 2b, entrée P3 au Change Log de la parente.
+  - **LOW appliqués** — P2 (copies de `52` et `86` par le grep des valeurs, `:42-50`, `:541`/`:545` binaire), P3
+    (`:379`, `:919-921` 8 → 9, `:925`), P4 (`:940`), P5 (M24), P6 (parente `:169`, `:192` et registre annotés), P7
+    (`config.rs:877-882` ; le « LOW non pris » de la P3 — « issue demandée » — est **tracé en #829**, ouverte, citée au
+    point 10 de la liste C de la parente ; `test_endpoints.rs:111-…`, `reconciliation.rs:914-…`), P8 (exhaustivité de
+    `ALL` par `match` sans joker, M23-bis). Ajout (2b P1, décision de l'orchestrateur) : les deux messages serveur
+    `bank-accounts-errors-has-*` passent à la 2a (AC-11).
+  - **LOW non pris** : aucun.
+  Prochaine étape : validation P5 ciblée (`v016-2a-validate-prompt-p5.md`, Sonnet).
