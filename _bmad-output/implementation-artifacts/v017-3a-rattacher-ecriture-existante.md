@@ -92,10 +92,10 @@ D15 y vont ; la numérotation des autres est gardée.*
 | D6 | *(Passée à la v017-3c.)* | C-v017-3-7, C-v017-3-25 |
 | D7 | Un dialogue, deux sections ; bouton « Rattacher à une écriture existante » sur toute ligne CHF non nulle | C-v017-3-8 |
 | D8 | L'annulation d'un rattachement suit le classement existant (contre-passe une écriture saisie, annule un règlement) | C-v017-3-9 **(Q4)** |
-| D9 | Hors périmètre, chacun tracé : une transaction pour plusieurs écritures et le second côté d'un virement (#823) ; ancien compte du grand livre, autre compte bancaire (issue demandée) ; frais de rappel (#401) | C-v017-3-10 **(Q5)** |
+| D9 | Hors périmètre, chacun tracé : une transaction pour plusieurs écritures et le second côté d'un virement (#823) ; ancien compte du grand livre, autre compte bancaire (issue demandée — *#827, validation P4, C3*) ; frais de rappel (#401) | C-v017-3-10 **(Q5)** |
 | D10 | Données existantes intouchées ; une transaction rejetée se rattache après *Annuler le rejet*, ou directement par l'API | C-v017-3-11 |
 | D11 | Trace `reconciliation.entry_linked` ; refus `409 RECONCILIATION_ENTRY_NOT_LINKABLE` | C-v017-3-12 |
-| D12 | Chaque écriture candidate porte le motif qui empêche **aujourd'hui** d'annuler le rattachement (la fonction de blocage de l'annulation, réutilisée) ; le dialogue le dit comme une **vérité datée** — « tant que … subsiste » —, avec le moyen de le lever, sans promesse inconditionnelle de contre-passation | C-v017-3-21 (amendé) |
+| D12 | Chaque écriture candidate porte le motif qui empêche **aujourd'hui** d'annuler le rattachement (la fonction de blocage de l'annulation, réutilisée) ; le dialogue le dit comme une **vérité datée** — « tant que … subsiste » —, avec le moyen de le lever, sans promesse inconditionnelle de contre-passation *(validation P4, C3 : formule remplacée par « Ce rattachement ne pourra pas être annulé tant que dure l'obstacle suivant. » ; « avec le moyen de le lever » ne vaut pas pour `INVOICE_CREDITED`, L10)* | C-v017-3-21 (amendé) |
 | D13 | *(Passée à la v017-3c.)* | C-v017-3-22, C-v017-3-25 |
 | D14 | Une seule fonction de blocage de l'annulation, extraite de `cancel_blocker` (`reconciliation_cancel.rs:232`) | C-v017-3-21 |
 | D15 | *(Passée à la v017-3c.)* | C-v017-3-23, C-v017-3-25 |
@@ -226,6 +226,43 @@ produit multiplierait les lignes).
   d'arrêt de l'étape 0, sur cette formulation** : si l'étape 0 trouve un geste qui tient une ligne `journal_entries` puis
   **verrouille** (`FOR UPDATE`, `LOCK IN SHARE MODE`, `UPDATE`, `DELETE`) une ligne de `bank_transactions`, le dire au Dev
   Agent Record et **s'arrêter**.
+  **(b), réécrit à la validation P4 (C1, C9) — remplace le paragraphe P3 ci-dessus pour la raison et pour le critère
+  d'arrêt.** La raison P3 (« aucun geste qui tient `journal_entries` ne verrouille ensuite `bank_transactions` ») est
+  **fausse** : cinq gestes créent une écriture **puis** mettent à jour la transaction, et le lot d'acceptation lettre (il
+  verrouille des en-têtes d'écriture, `letterings.rs:243-244`, jointure `… JOIN journal_entries je … FOR UPDATE`) avant
+  de mettre à jour la transaction suivante, dans une seule transaction SQL (`SAVEPOINT`/`RELEASE SAVEPOINT`, qui ne rend
+  aucun verrou). « Le verrou nommé ne couvre qu'eux » est faux aussi. Vérifié au code (lignes lues, `c5101b07`), chacun
+  de ces gestes tient **le verrou nommé du compte de la transaction qu'il écrit**, pris **avant** l'écriture puis la
+  transaction :
+  - lot d'acceptation — `with_account_lock(&mut tx_outer, company_id, bank_account_id, …, async move |tx_inner|
+    { accept_batch(tx_inner, company_id, bank_account_id, …` (`routes/reconciliation.rs:1760-1770`) ; dans le lot,
+    `accept_one_invoice` (`:1991`), `accept_one_split` (`:2008`), `accept_one_rule` (`:2025`),
+    `accept_one_supplier_invoice` (`:2041`) relisent la transaction par
+    `find_pending_by_id_for_account(…, bank_account_id, …)` (`accept_one_invoice`, `:2309-2312` — le compte verrouillé),
+    puis créent l'écriture (`journal_entries::create_in_tx`, `:2743` ; `:3721` ; `:4169` ; `pay_in_tx_as` pour le
+    fournisseur) et mettent à jour la transaction (`UPDATE bank_transactions`, `:2810` ; `:3739` ; `:4218` ; `:3373`) ;
+  - rapprochement manuel — `with_account_lock(&mut tx_outer, company_id, bank_account_id, …` (`:4965-4969`), relecture
+    `find_strictly_pending_by_id_for_account` dans la closure, puis écriture (`:5038`) et `UPDATE` (`:5046`) ;
+  - éclatement manuel — `with_account_lock(…, bank_account_id, …` (`:5455-5459`), même relecture, écriture (`:5502`) et
+    `UPDATE` (`:5509`).
+  **La règle exacte** : *tout geste qui tient une ligne `journal_entries` puis verrouille une ligne de `bank_transactions`
+  tient le verrou nommé du compte de cette ligne, et n'écrit aucune transaction d'un autre compte ; les gestes sans
+  verrou nommé (routes du journal — contre-passation, modification, suppression d'une écriture —, suppression d'un
+  import) ne prennent jamais une ligne de `bank_transactions` après une ligne de `journal_entries`.* Les premiers sont
+  donc sérialisés avec `link_entry_in_tx` sur le même compte (qui tient ce verrou, `t → je`) ; pour les seconds :
+  `reverse_in_tx_inner` (`journal_entries.rs:2741-2745`) lit `bank_transactions` par `reversal_blockers`, qui appelle
+  `document_owners` (`:2212`, appel `:2415` ; la sous-requête `… FROM bank_transactions` est à `:2278`, **lecture
+  ordinaire**) — *citation P3 « `:2278` dans `reversal_blockers` » corrigée (C9)* ; `delete_once`
+  (`routes/bank_imports.rs:1507-1518`) ne touche pas `journal_entries`. *(C9.)* La suppression d'une écriture
+  (`delete_in_tx`) fait poser par InnoDB, au titre de la clé étrangère `ON DELETE SET NULL`
+  (`20260504000001_bank_imports.sql:82-83`), des verrous **implicites** sur l'index de `matched_entry_id` qu'il parcourt,
+  même sans ligne trouvée : verrou d'intervalle sur `matched_entry_id = je`, compatible avec les verrous de ligne par clé
+  primaire de `link_entry_in_tx`, sans cycle possible (la garde `MatchedBankTransaction` a refusé la suppression d'une
+  écriture rapprochée) ; le doc-comment le dit. **Critère d'arrêt de l'étape 0** : un geste qui tient une ligne
+  `journal_entries` puis verrouille (`FOR UPDATE`, `LOCK IN SHARE MODE`, `UPDATE`, `DELETE`, ou verrou implicite d'une
+  clé étrangère sur une ligne **trouvée**) une ligne de `bank_transactions` **sans** tenir le verrou nommé du compte de
+  cette ligne. Si l'étape 0 en trouve un, l'écrire au Dev Agent Record avec le raisonnement qui exclut ou non le cycle
+  **pour ce geste**, et s'arrêter s'il ne l'exclut pas.
 - **AC-4** — Tests `#[sqlx::test]` de `link_entry_in_tx` : nominal (état final `reconciled`, `matched_entry_id`, rejet
   remis à `NULL`, une trace, ses détails) ; chaque refus sans écriture (transaction absente, d'une autre société,
   rapprochée, en EUR ; écriture absente, d'une autre société, non candidate ; compte bancaire clos **dans** la
@@ -276,12 +313,18 @@ produit multiplierait les lignes).
   `cancelBlockedBy = "FISCAL_YEAR_CLOSED"` ; une écriture dont un compte est archivé, `"ACCOUNT_ARCHIVED"` et le numéro
   du compte ; une écriture d'exercice ouvert, `null`.
   *(Validation P3, R5.)* **Coût** : `entry_cancel_blocker` coûte, par candidate, le classement (deux lectures),
-  l'exercice, le lettrage figé, `reversal_blockers` (trois sous-requêtes) et l'exercice du jour — de huit à douze
+  l'exercice, le lettrage figé, `reversal_blockers` (trois sous-requêtes — *validation P4, C7 : deux allers-retours, la
+  requête à deux sous-requêtes scalaires puis `document_owners` à cinq blocs `UNION ALL`*) et l'exercice du jour — de huit à douze
   requêtes ; pour 50 candidates, de l'ordre de 500 requêtes à chaque ouverture du dialogue. **Mesure** : sur la base de
   test `kesh_v0173a`, une transaction avec **50** écritures candidates (montage synthétique, jamais une base de Guy),
   `GET …/entry-candidates` en moins de **1 s** (trois mesures, écrites au Dev Agent Record). Au-delà : une section
   *Performance debt* (constat, chiffres, propriétaire) et une issue demandée à l'orchestrateur, avec pour remède nommé
   le calcul du motif **à la sélection** d'une candidate (une route de lecture par écriture) ou une lecture groupée.
+  *(Validation P4, C7.)* Le montage mêle **trois** sortes de candidates — écritures saisies (bras « écriture propre »),
+  règlements fournisseur (bras le plus coûteux) et règlements client par compte interne — en proportions écrites au Dev
+  Agent Record. La base de test est en **tmpfs** : la mesure est une **borne basse**, qui ne dit rien du NAS ; le Dev
+  Agent Record le dit. L'exercice du jour (rang 5) est le même pour toutes les candidates : lecture factorisable, notée
+  comme telle (non faite ici).
 - **AC-6** — `POST /api/v1/reconciliation/transactions/{id}/link-entry`, corps `{ "journalEntryId": 211 }`, rôle
   Comptable, clés `read-write` admises (comme `link`) ; réponse `200` `{ bankTransactionId, journalEntryId }`. Refus,
   chacun sans écriture : `400 VALIDATION_ERROR` (absent ou `≤ 0`) → `404 NOT_FOUND` → `link_preflight` → `409
@@ -364,6 +407,8 @@ produit multiplierait les lignes).
     *(validation P3, F6 — remplace la phrase ci-dessus)* « Aujourd'hui, Kesh ne voit aucun obstacle : annuler ce
     rapprochement contre-passerait cette écriture (ou annulerait le règlement qu'elle porte). Une clôture d'exercice, une
     période verrouillée ou un exercice postérieur clos pourraient l'empêcher plus tard. » ;
+    *(validation P4, C2 — « plus tard » remplacé)* « … pourraient l'empêcher, dès aujourd'hui sans que Kesh le voie, ou
+    plus tard. » ;
   - écriture choisie, `cancelBlockedBy ≠ null` : « Tant que la raison suivante subsiste, ce rattachement ne pourra pas
     être annulé : » suivi du texte **existant** du motif, rendu par `reconciliationCancelMessage(code, label)`
     (`reconciliation-cancel.ts:38`, **réutilisée**, DRY — elle dit déjà le moyen de lever le motif : rouvrir les
@@ -375,7 +420,7 @@ produit multiplierait les lignes).
     majuscule parasite derrière un deux-points. La parenthèse « elle dit déjà le moyen de lever le motif » est
     **inexacte** pour deux codes : `INVOICE_CREDITED` (« … il ne s'annule pas » — aucun moyen ; état hérité d'avant la
     0.12.1, `invoice_settlements_write.rs:776-785`, rare) et `LETTERING_ALL_LINES_IN_CLOSED_PERIODS` (moyen long, que le
-    texte décrit) ; pour `INVOICE_CREDITED`, l'introduction reste vraie (« tant que dure »), et L9 le dit ;
+    texte décrit) ; pour `INVOICE_CREDITED`, l'introduction reste vraie (« tant que dure »), et L9 le dit *(lire « L10 » — validation P4, C3)* ;
   - *(validation P2, F14)* la section des règlements de factures clients ne porte pas ce calcul (elle reste celle de la
     29-8) : l'asymétrie se dit au manuel (AC-18).
   Le code `RECONCILIATION_ENTRY_NOT_LINKABLE` entre dans l'ensemble `RELIRE_SUR` (`LinkSettlementModal.svelte:53-57`) —
@@ -401,6 +446,9 @@ produit multiplierait les lignes).
      l'affecter. » — le cas que l'utilisateur verra pour chaque débit réellement non comptabilisé ; aucune mention de
      règlement client.
   Vitest des quatre cas, texte asserté ; captures des quatre (AC-16).
+  *(Validation P4, C8.)* Vitest aussi : *Rattacher* reste **inactif** tant que la case `entry-cancel-blocked-ack` n'est
+  pas cochée pour une candidate dont `cancelBlockedBy` n'est pas `null` (tue M29) ; **aucune** candidate n'est
+  présélectionnée à l'ouverture, ni dans une section ni dans l'autre (tue M30).
   **Tests et clés existants à récrire**, nommés : `ReconciliationProposals.test.ts:1030-1038` (le bouton sur un débit :
   attendu `['1','2']` pour `100.03` et `-50.00`, toujours absent pour `0.00` et l'EUR) ; `reconciliation-link.spec.ts:177`
   (inchangé : un seul bouton par ligne) ; les clés `reconciliation-link-no-entry` (`messages.ftl:1397`), `-modal-title`,
@@ -411,6 +459,9 @@ produit multiplierait les lignes).
   touché : le mock (`:12-15`, `getLinkCandidates` et `linkTransaction` seulement) gagne `getEntryCandidates` et
   `linkEntry` ; l'attente de `link-empty` (`:123`, « Enregistrez d'abord le règlement depuis la fiche ») suit le texte
   récrit ; la relecture sur course (`:216`, `getLinkCandidates` appelé deux fois) relit désormais **les deux** listes ; le
+  *(validation P4, C6 : lire `:124` pour l'attente de `link-empty`, et `:193`, `:215`, `:319` pour les trois
+  `toHaveBeenCalledTimes(2)` ; le `beforeEach` donne à `getEntryCandidates` une valeur par défaut — liste vide —, sans
+  quoi tout test existant qui ne la paramètre pas reçoit `undefined` à l'ouverture d'un crédit)* ; le
   test des replis (`:357-370`), qui lit `LinkSettlementModal.svelte` **par son nom** et ne contrôle que les clés
   préfixées `reconciliation-link-`, suit le composant s'il est renommé, et toutes les clés neuves portent ce préfixe.
   *(F10.)* Les commentaires de `ReconciliationProposals.svelte:21` (« une ligne de crédit en CHF porte un troisième
@@ -507,7 +558,9 @@ produit multiplierait les lignes).
   **Le filet**, au `.tex` **et** au PDF aplati (`pdftotext docs/manual/fr/user-manual.pdf - | tr '\n' ' ' | tr -s ' '`),
   *(validation P2, F2 : élargi, les fragments de la P1 étaient muets sur `rattachée`, `rattache à ce règlement`,
   `issues \#671`)* : le fragment **`rattach`** (environ soixante lignes, triées à la main, sort de chacune au Dev Agent
-  Record — *validation P3, F10 : 44 lignes au `.tex`, 45 fragments au PDF aplati ; filet exécuté, sortie ci-dessous*),
+  Record — *validation P3, F10 : 44 lignes au `.tex`, 45 fragments au PDF aplati ; filet exécuté, sortie ci-dessous* ;
+  *validation P4, C4 : au PDF, compter les **occurrences** (`grep -oi "rattach" | wc -l` → **49**), non les fragments, la
+  fenêtre `.\{40\}rattach.\{40\}` avalant quatre occurrences voisines*),
   et *(R2 = F1)* `Rattacher à`, `crédit en CHF`, **`\#671`** nu (et `#671` au PDF), `déjà réglée`, `sans transaction`, `ne sait pas encore`, `acceptez rien`,
   `relie au relevé`, `sans écriture` ; les deux apostrophes (`'`, `’`) pour tout fragment qui en porte. Les manuels
   DE/IT/EN ne sont pas traduits dans cette version. *(F7.)* Chaque renvoi à un reste pointe **son** issue ; `#671` ne
@@ -586,7 +639,10 @@ produit multiplierait les lignes).
 
   Commande PDF : `pdftotext docs/manual/fr/user-manual.pdf - | tr '\n' ' ' | tr -s ' ' | grep -oi ".\{40\}rattach.\{40\}"`
   — **45 fragments** (le sommaire et la sous-section 14.3 en ajoutent un par rapport au `.tex`) ; aucun ne sort de la
-  table ci-dessus.
+  table ci-dessus. *(Validation P4, C4 : l'explication est inexacte. Le PDF porte **49** occurrences ; la fenêtre de
+  quarante caractères en consomme quatre dans le fragment précédent — `:2300`, `:2354`, `:2394`/`:2396`, `:3337`, toutes
+  déjà dans la table. Au développement : `grep -oi "rattach" | wc -l` pour le compte, et une fenêtre sans consommation
+  (`.\{0,40\}rattach`) contrôlée contre ce compte.)*
 
   <details><summary>Sortie PDF (45 fragments)</summary>
 
@@ -723,7 +779,7 @@ l'AC-13. Un test qui ne compile pas parce que la fonction n'existe pas compte co
 | M22 | liste : `cancelBlockedBy` toujours `null` | AC-5 (exercice clôturé), AC-8.5 |
 | M23 | dialogue : `RECONCILIATION_ENTRY_NOT_LINKABLE` absent de `RELIRE_SUR` | Vitest AC-13 (course) |
 | M24 | repli d'`errors.rs` altéré d'un mot | G9 (`textes_coherents.rs`, AC-7) |
-| M25 | dialogue : phrase « tant que … subsiste » remplacée par une promesse inconditionnelle de contre-passation | Vitest AC-13 |
+| M25 | dialogue : phrase « tant que … subsiste » remplacée par une promesse inconditionnelle de contre-passation *(validation P4, C3 : la phrase visée est désormais l'introduction « Ce rattachement ne pourra pas être annulé tant que dure l'obstacle suivant. »)* | Vitest AC-13 |
 | M26 | liste : `cancelBlockedLabel` toujours `null` | AC-5 (compte archivé) |
 | M27 | `transaction_can_be_linked_to_entry` : condition « en CHF » retirée | AC-2.11 (EUR → liste vide) — *validation P3, R6* |
 | M28 | geste : étape 4.3 (`ensure_open_in_tx`) retirée | AC-4 (compte clos dans la transaction) — *validation P3, R6* |
@@ -754,7 +810,8 @@ check`, `npm run lint-i18n-ownership`, `npm run build`, et la **suite E2E compl�
   n'est plus celui du compte bancaire, ou sur un autre compte bancaire **à compte du grand livre distinct**, n'a pas de
   mouvement sur le compte lié actuel. *(Validation P2, R1.)* Deux comptes bancaires qui **partagent** un compte du grand
   livre voient au contraire, chacun, les écritures non rapprochées de l'autre parmi leurs candidates (AC-2.12) : faux
-  candidats de la classe L6, datés et non présélectionnés. Issue demandée (ancien compte, autre compte).
+  candidats de la classe L6, datés et non présélectionnés. Issue demandée (ancien compte, autre compte) — *#827
+  (validation P4, C3)*.
 - **L4 — Frais de rappel** (**#401**) : le paiement dépasse le règlement ; ni la 29-8 (au-delà de 5 centimes) ni la 3a
   (montant exact) ne le prennent.
 - **L5 — Règlement fournisseur sous le centime** (#687) : son mouvement n'égale jamais une transaction ; la v017-3b
@@ -821,6 +878,10 @@ de **réconciliation** en commun. Points de fusion :
    à fusionner à la main ; le PDF se **régénère** après fusion.
 7-bis. *(Validation P3, F4, R7.)* **Mêmes lignes, non voisines** — conflits de texte certains, à recompter ou fusionner à
    la main : `README.md:41` (la v016-2b le récrit, `v016-2b-releve-manuel-ecran.md:203`, AC-30 ; la 3a aussi, AC-20-bis) ;
+   *(validation P4, C5 : les fiches v016-2 bougent — se citent par leur AC et leur commit de lecture, non par leur ligne ;
+   lues au commit `f823efb5` de la branche v016-2 : v016-2a AC-15 (compteurs d'`audit_route_registry.rs`), AC-28
+   (`docs/api-external.md`) ; v016-2b AC-30 (`README.md:41`) et sa liste des tests à récrire (`i18n-keys.test.ts`,
+   `sitesTotal`) ; les cotes `:203`, `:109`, `:397` et `:226-229` de cette section valent à ce commit seulement)*
    `frontend/src/lib/shared/i18n-keys.test.ts`, `ATTENDU.sitesTotal` (`:767`), cardinalité exacte que les deux stories
    changent (`v016-2b-releve-manuel-ecran.md:109`) : à **recompter** après réunion, jamais additionner ;
    `docs/api-external.md:243` et `:878` (listes que la v016-2a étend aussi, `v016-2a-releve-manuel-backend.md:397`).
@@ -895,8 +956,10 @@ Tranchées au registre ; listées pour être soumises à Guy.
 - **Q4 (C-v017-3-9, C-v017-3-21)** — *Annuler le rapprochement* d'une transaction rattachée à une écriture saisie
   **contre-passe** cette écriture (#672 garde le geste « défaire le seul lien », qui demande une migration). Et un
   rattachement dont l'annulation est empêchée (exercice clôturé…) reste admis, le dialogue disant « tant que … subsiste »
-  et le moyen de lever le motif. Acceptable pour la 0.17.0 ?
-- **Q5 (C-v017-3-10)** — Les restes sont tracés (#823, #401, une issue à ouvrir) ; l'avertissement des propositions est
+  et le moyen de lever le motif. Acceptable pour la 0.17.0 ? *(Validation P4, C3 : le dialogue dit « Ce rattachement ne
+  pourra pas être annulé tant que dure l'obstacle suivant. », puis le motif ; le moyen de le lever n'existe pas pour
+  `INVOICE_CREDITED`, cas hérité et rare.)*
+- **Q5 (C-v017-3-10)** — Les restes sont tracés (#823, #401, une issue à ouvrir *— #827, et la 3c est #828 ; validation P4, C3*) ; l'avertissement des propositions est
   renvoyé à la v017-3c, hors de la 0.17.0. Fermer #671 à la release ?
 
 ## Dev Agent Record
@@ -961,3 +1024,16 @@ Tranchées au registre ; listées pour être soumises à Guy.
   captures (F9) ; commentaires de l'écran, décompte 44 (F10). Le résidu signalé par la 3b (colonne 3b du tableau commun)
   était déjà corrigé à la validation P2 : la colonne renvoie à `sec:facture-fournisseur-sous-centime` (vérifié). Prochaine
   étape : validation P4 ciblée (`v017-3a-validate-prompt-p4.md`, Opus, une lentille).
+- 2026-10-30 — **Validation P4** (ciblée, Opus, une lentille) : 0 CRITICAL, 0 HIGH, 1 MEDIUM, 8 LOW. **C1 (MEDIUM)** :
+  le point (b) de l'AC-3 réécrit en P3 était faux — cinq gestes créent l'écriture puis mettent à jour la transaction, et
+  le lot lettre puis met à jour. Vérifié au code, ligne lue citée pour chacun (lot d'acceptation et ses quatre
+  `accept_one_*`, rapprochement manuel, éclatement manuel) : chacun tient le verrou nommé du compte de la transaction
+  qu'il écrit, pris avant l'écriture puis la transaction. (b) se réécrit sur la règle exacte (« tout geste qui tient `je`
+  puis verrouille `bt` tient le verrou nommé du compte de cette `bt` ; les gestes sans verrou nommé ne prennent jamais
+  `bt` après `je` »), et le critère d'arrêt devient « un geste qui verrouille `bt` après `je` **sans** tenir le verrou
+  nommé ». Aucun geste ne contredit la règle. C9 : `document_owners` (`:2212`) pour la ligne `:2278`, et le verrou
+  implicite de `ON DELETE SET NULL`. LOW : phrase sans motif (C2) ; formule et issues propagées à D9, D12, M25, L3, Q4,
+  Q5, AC-13 (L10) et au registre C-v017-3-25 (C3) ; compte du PDF en occurrences, 49 (C4) ; fiches v016-2 citées par AC et
+  commit (C5) ; citations de `LinkSettlementModal.test.ts` et valeur par défaut du mock (C6) ; montage mêlé, borne basse
+  en tmpfs, exercice du jour factorisable (C7) ; Vitest qui tuent M29 et M30 (C8). Prochaine étape : validation P5
+  ciblée (`v017-3a-validate-prompt-p5.md`, Sonnet).

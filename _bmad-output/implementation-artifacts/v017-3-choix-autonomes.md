@@ -427,6 +427,9 @@ silencieuse ; un appariement propose, il ne crée jamais).
   aussi `cancelBlockedBy` (le rattachement deviendrait silencieusement irréversible, ce que l'orchestrateur exclut).
 - **Réversible** : oui (la 3c se planifie à part).
 
+- *Amendement du 2026-10-30 (validation P4 de la 3a, C3)* : l'issue de la v017-3c est ouverte, **#828** ; celle du
+  reste (ancien compte, autre compte bancaire), **#827**.
+
 ### C-v017-3-26 — v017-3b : pas d'avertissement pour une facture annulée ; un texte vrai dans tous les autres états
 
 - **Contexte** (validation P3 de la 3b, F1) : l'avertissement statique s'affichait « quel que soit l'état, annulée
