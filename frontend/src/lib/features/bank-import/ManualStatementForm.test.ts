@@ -226,6 +226,25 @@ describe('ManualStatementForm', () => {
 		expect(saveDisabled(c)).toBe(true);
 	});
 
+	it('un 409 RECONCILIATION_ACCOUNT_LOCKED à l’enregistrement : message générique, l’aperçu reste, on peut réessayer', async () => {
+		mockApi.previewManualStatement.mockResolvedValue(previewOk());
+		mockApi.createManualStatement.mockRejectedValueOnce({
+			status: 409,
+			code: 'RECONCILIATION_ACCOUNT_LOCKED',
+			message: 'Réessayez dans quelques secondes.',
+			details: { bankAccountId: 3, retryAfterSeconds: 5 },
+		});
+		const { container: c } = render(ManualStatementForm, { props: { bankAccounts: ACCOUNTS } });
+		await fill(c);
+		await fireEvent.click(q(c, 'bank-import-manual-verify')!);
+		await flush();
+		await fireEvent.click(q(c, 'bank-import-manual-save')!);
+		await flush();
+		expect(q(c, 'bank-import-manual-error')?.textContent).toContain('Réessayez dans quelques secondes.');
+		expect(qa(c, 'bank-import-manual-line').every((r) => r.dataset.error === 'false')).toBe(true);
+		expect(saveDisabled(c)).toBe(false);
+	});
+
 	it('un 400 VALIDATION_ERROR sans field : message générique, aucune ligne désignée, aperçu non réussi', async () => {
 		mockApi.previewManualStatement.mockRejectedValue({
 			status: 400,

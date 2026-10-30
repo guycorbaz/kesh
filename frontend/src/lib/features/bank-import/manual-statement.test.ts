@@ -372,4 +372,14 @@ describe('describeManualError — les autres refus (AC-22)', () => {
 		).toEqual({ kind: 'message', message: 'Déséquilibré (traduit)' });
 		expect(describeManualError(new Error('réseau'), [0])).toEqual({ kind: 'unexpected' });
 	});
+
+	it('409 RECONCILIATION_ACCOUNT_LOCKED (verrou du compte, v016-2a) : son message générique, aucune ligne', () => {
+		const message = 'Compte bancaire en cours de réconciliation par un autre utilisateur. Réessayez dans quelques secondes.';
+		expect(
+			describeManualError(
+				{ status: 409, code: 'RECONCILIATION_ACCOUNT_LOCKED', message, details: { bankAccountId: 3, retryAfterSeconds: 5 } },
+				[0, 1],
+			),
+		).toEqual({ kind: 'message', message });
+	});
 });
