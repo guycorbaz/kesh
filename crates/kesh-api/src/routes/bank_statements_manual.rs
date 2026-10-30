@@ -39,9 +39,12 @@ use kesh_core::bank_imports::manual::{
     parse_manual_statement, validate_manual_statement,
 };
 use kesh_core::bank_imports::{BankTransactionDraft, detect_duplicate_lines};
-use kesh_db::entities::{BankAccount, BankImportSourceFormat, NewBankImport, NewBankTransaction};
+use kesh_db::entities::{
+    BankAccount, BankImport, BankImportSourceFormat, NewBankImport, NewBankTransaction,
+};
 use kesh_db::errors::DbError;
 use kesh_db::repositories::{bank_accounts, bank_imports, bank_transactions};
+use kesh_reconciliation::{ReconciliationError, with_account_lock};
 
 use crate::AppState;
 use crate::errors::AppError;
@@ -204,6 +207,18 @@ pub async fn preview(
 /// la trace n'écrit rien. Les doublons de lignes ne sont **jamais** ignorés en
 /// silence : sans `confirmDuplicateLines`, refus ; avec, toutes les lignes sont
 /// enregistrées (C-v016-2-6).
+///
+/// **Sous le verrou nommé du compte bancaire** (revue de code P1, E2) : le
+/// contrôle « relevé identique », celui des doublons de lignes et l'`INSERT` se
+/// font sous `with_account_lock` — le verrou des gestes de rapprochement,
+/// `GET_LOCK('reconcile:<base>:<société>:<compte>')` —, pris sur une connexion
+/// **dédiée** et rendu seulement **après le commit** de la création : deux
+/// enregistrements identiques simultanés donnent un relevé et un refus de
+/// doublon, la seconde transaction ne naissant qu'une fois la première
+/// commitée. Sans ce verrou, chacune lisait une base où l'autre n'avait rien
+/// écrit (aucune unicité de `(company_id, file_hash)` depuis la Story 8-3). Un
+/// verrou tenu plus de [`MANUAL_STATEMENT_LOCK_TIMEOUT_SECS`] secondes rend
+/// `409 RECONCILIATION_ACCOUNT_LOCKED`, sans écriture.
 pub async fn create(
     State(state): State<AppState>,
     Extension(current_user): Extension<CurrentUser>,
@@ -212,10 +227,85 @@ pub async fn create(
     let checked = check_statement(&state, &current_user, &raw).await?;
     let company_id = current_user.company_id;
     let bank_id = checked.account.id;
+
+    let mut lock_tx = state
+        .pool
+        .begin()
+        .await
+        .map_err(|e| AppError::Database(DbError::Sqlx(e)))?;
+    let mut outcome: Option<Result<BankImport, AppError>> = None;
+    let slot = &mut outcome;
+    let (pool, user, body) = (&state.pool, &current_user, &raw);
+    let locked = with_account_lock(
+        &mut lock_tx,
+        company_id,
+        bank_id,
+        MANUAL_STATEMENT_LOCK_TIMEOUT_SECS,
+        async move |_held| {
+            *slot = Some(create_under_lock(pool, user, body, &checked).await);
+            Ok(())
+        },
+    )
+    .await;
+    drop(lock_tx);
+
+    match (outcome, locked) {
+        (Some(created), Ok(())) => {
+            let header = created?;
+            Ok((StatusCode::CREATED, Json(import_to_response(header))))
+        }
+        // La création a conclu (commitée ou annulée) ; seul le `RELEASE_LOCK`
+        // a échoué. Le verrou suit la session de la connexion. Annoncer un
+        // échec d'une création commitée serait faux (P2) : on rend son issue.
+        (Some(created), Err(e)) => {
+            tracing::error!(error = ?e, bank_account_id = bank_id, "saisie d'un relevé : libération du verrou du compte en échec");
+            let header = created?;
+            Ok((StatusCode::CREATED, Json(import_to_response(header))))
+        }
+        (
+            None,
+            Err(ReconciliationError::AccountLocked {
+                bank_account_id,
+                timeout_secs,
+            }),
+        ) => Err(AppError::ReconciliationAccountLocked {
+            bank_account_id,
+            timeout_secs,
+        }),
+        (None, Err(ReconciliationError::Database(e))) => Err(AppError::Database(DbError::Sqlx(e))),
+        (None, other) => {
+            tracing::error!(?other, "saisie d'un relevé : verrou du compte non acquis");
+            Err(AppError::Internal(
+                "verrou du compte bancaire non acquis".to_string(),
+            ))
+        }
+    }
+}
+
+/// Délai d'attente du verrou nommé du compte bancaire — celui des gestes de
+/// rapprochement (`routes/reconciliation.rs`, `LOCK_TIMEOUT_SECS`).
+pub const MANUAL_STATEMENT_LOCK_TIMEOUT_SECS: u32 = 5;
+
+/// Limite de corps **propre** aux deux routes de saisie (revue de code P1,
+/// E1), indépendante de `KESH_BANK_IMPORT_MAX_MB` : 500 lignes pleines — un
+/// libellé de 500 caractères, une contrepartie et une référence de 255, tous
+/// de quatre octets — pèsent environ 2,1 Mo avec les clés JSON ; 3 Mio laissent
+/// la marge. Au-delà, l'extracteur partagé rend `400 VALIDATION_ERROR`.
+pub const MANUAL_STATEMENT_BODY_LIMIT_BYTES: usize = 3 * 1024 * 1024;
+
+/// La création proprement dite, sous le verrou du compte : sa propre
+/// transaction, conclue (commit ou annulation) avant que le verrou soit rendu.
+async fn create_under_lock(
+    pool: &sqlx::MySqlPool,
+    current_user: &CurrentUser,
+    raw: &ManualStatementRaw,
+    checked: &CheckedStatement,
+) -> Result<BankImport, AppError> {
+    let company_id = current_user.company_id;
+    let bank_id = checked.account.id;
     let input = &checked.input;
 
-    let mut tx = state
-        .pool
+    let mut tx = pool
         .begin()
         .await
         .map_err(|e| AppError::Database(DbError::Sqlx(e)))?;
@@ -371,7 +461,7 @@ pub async fn create(
         .await
         .map_err(|e| AppError::Database(DbError::Sqlx(e)))?;
 
-    Ok((StatusCode::CREATED, Json(import_to_response(header))))
+    Ok(header)
 }
 
 // ---------------------------------------------------------------------------
@@ -501,5 +591,8 @@ where
 
 /// Montant en chaîne à deux décimales (`"50.00"`, `"-0.01"`).
 fn amount_string(d: Decimal) -> String {
+    // Un zéro négatif (`"-0"` saisi) s'écrit `0.00`, non `-0.00` (revue de code
+    // P1, E6).
+    let d = if d.is_zero() { Decimal::ZERO } else { d };
     format!("{:.2}", d)
 }

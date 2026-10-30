@@ -156,6 +156,12 @@ fn all_is_indexed_and_counted() {
 /// capitale suivi d'une virgule. Ne dépend ni de `ALL` ni de `COUNT` : une
 /// variante ajoutée avec son bras d'`index`, sans toucher `ALL`, rougit ici
 /// (mutation M23-bis, C-v016-2-20).
+///
+/// ⚠️ **Limite** (revue de code P1, A6) : seules les variantes **unitaires**
+/// écrites `Nom,` sur leur ligne sont comptées. Une variante à champs
+/// (`Nom(u8),`, `Nom { … },`) ou deux variantes sur une ligne échapperaient au
+/// décompte ; les deux énumérations sont unitaires et `Copy`, et le resteront
+/// tant que `code()` rend une chaîne fixe par variante.
 fn count_source_variants(name: &str) -> usize {
     let src = include_str!("manual.rs");
     let start = src
@@ -465,8 +471,9 @@ fn rule_5_decimals_after_normalize() {
             let amount: Decimal = s.parse().unwrap();
             r.closing_balance = Some((dec!(1000.00) - dec!(320.25) + amount).to_string());
         }
-        let p = parse_manual_statement(&r).unwrap();
-        let res = validate_manual_statement(&p);
+        // Depuis la revue de code P1 (B1), un excès de décimales est refusé dès
+        // l'analyse, avec le même rang, le même champ et le même motif.
+        let res = parse_manual_statement(&r).and_then(|p| validate_manual_statement(&p));
         if ok {
             assert!(res.is_ok(), "{s} doit être admis : {res:?}");
         } else {
@@ -481,6 +488,145 @@ fn rule_5_decimals_after_normalize() {
             );
         }
     }
+}
+
+/// La règle 5 porte aussi sur une entrée construite sans passer par l'analyse :
+/// un montant d'échelle 3 sans décimale significative (`50.000`) est admis —
+/// c'est ce qui distingue la règle de sa mutation M4 (`normalize()` retiré),
+/// l'analyse ôtant désormais elle-même les zéros finals.
+#[test]
+fn rule_5_scale_is_checked_after_normalize_on_the_domain_input() {
+    let mut i = input();
+    i.lines[1].amount = Decimal::new(50_000, 3);
+    assert_eq!(i.lines[1].amount.scale(), 3);
+    assert!(validate_manual_statement(&i).is_ok());
+    i.opening_balance = Decimal::new(1_000_000, 3);
+    assert!(validate_manual_statement(&i).is_ok());
+}
+
+/// Revue de code P1 (B1 = A1 = E3) — la lecture est **exacte** : au-delà de deux
+/// décimales significatives, le refus est `too_many_decimals`, jamais un arrondi
+/// silencieux (`str::parse::<Decimal>` arrondissait au-delà de 28 décimales).
+#[test]
+fn parse_reads_amounts_exactly_and_refuses_long_fractions() {
+    use ManualStatementReason as R;
+    let amount_of = |s: &str| {
+        let mut r = raw();
+        r.lines.as_mut().unwrap()[1].amount = Some(s.into());
+        parse_manual_statement(&r).map(|p| p.lines[1].amount)
+    };
+    let reason_of = |s: &str| match amount_of(s) {
+        Err(ManualStatementError::Invalid { reason, .. }) => Some(reason),
+        _ => None,
+    };
+    // 29 et 30 décimales, queue non nulle : refusées, jamais arrondies.
+    assert_eq!(
+        reason_of("50.00000000000000000000000000001"),
+        Some(R::TooManyDecimals)
+    );
+    assert_eq!(
+        reason_of("0.99999999999999999999999999999"),
+        Some(R::TooManyDecimals)
+    );
+    assert_eq!(
+        reason_of("0.00000000000000000000000000004"),
+        Some(R::TooManyDecimals)
+    );
+    assert_eq!(reason_of("50.001"), Some(R::TooManyDecimals));
+    // Zéros finals, en nombre quelconque : la valeur exacte.
+    assert_eq!(
+        amount_of("50.000000000000000000000000000000").unwrap(),
+        dec!(50)
+    );
+    assert_eq!(amount_of("50.0100").unwrap(), dec!(50.01));
+    // Formes (E6).
+    assert_eq!(amount_of("0005.00").unwrap(), dec!(5));
+    for bad in ["+5", "5.", ".5", "-", "5.5.5", "1e3", "5 0"] {
+        assert_eq!(reason_of(bad), Some(R::InvalidNumber), "{bad}");
+    }
+    // `-0` : un montant de ligne nul est refusé à la règle 5 ; un solde `-0`
+    // vaut 0.
+    let mut r = raw();
+    r.lines.as_mut().unwrap()[1].amount = Some("-0".into());
+    let p = parse_manual_statement(&r).unwrap();
+    assert_eq!(
+        validate_manual_statement(&p).unwrap_err(),
+        invalid(
+            Some(2),
+            ManualStatementField::Amount,
+            ManualStatementReason::NotPositive
+        )
+    );
+    let mut r = raw();
+    r.lines = Some(vec![]);
+    r.opening_balance = Some("-0".into());
+    r.closing_balance = Some("0.00".into());
+    let p = parse_manual_statement(&r).unwrap();
+    assert!(p.opening_balance.is_zero());
+    assert!(validate_manual_statement(&p).is_ok());
+    assert_eq!(
+        manual_statement_canonical_bytes(&p),
+        {
+            let mut q = p.clone();
+            q.opening_balance = Decimal::ZERO;
+            manual_statement_canonical_bytes(&q)
+        },
+        "-0 et 0 ont la même empreinte"
+    );
+    // Un montant négatif reste lu exactement.
+    let mut r = raw();
+    r.opening_balance = Some("-1250.40".into());
+    assert_eq!(
+        parse_manual_statement(&r).unwrap().opening_balance,
+        dec!(-1250.40)
+    );
+}
+
+/// Revue de code P1 (E1) — au-delà de 501 éléments, `lines` n'est plus
+/// matérialisé : la désérialisation en retient 501, et le relevé est refusé
+/// `too_many_lines` comme avant.
+#[test]
+fn lines_are_capped_at_deserialization() {
+    let body = |n: usize| {
+        format!(
+            r#"{{"bankAccountId":3,"periodFrom":"2026-09-01","periodTo":"2026-09-30",
+                 "openingBalance":"0","closingBalance":"0","lines":[{}]}}"#,
+            vec!["{}"; n].join(",")
+        )
+    };
+    let r: ManualStatementRaw = serde_json::from_str(&body(5000)).unwrap();
+    assert_eq!(
+        r.lines.as_ref().unwrap().len(),
+        MANUAL_STATEMENT_MAX_LINES + 1
+    );
+    assert_eq!(
+        parse_manual_statement(&r).unwrap_err(),
+        invalid(
+            None,
+            ManualStatementField::Lines,
+            ManualStatementReason::TooManyLines
+        )
+    );
+    let r: ManualStatementRaw = serde_json::from_str(&body(500)).unwrap();
+    assert_eq!(r.lines.as_ref().unwrap().len(), 500);
+    let r: ManualStatementRaw = serde_json::from_str(&body(0)).unwrap();
+    assert_eq!(r.lines.as_ref().unwrap().len(), 0);
+    // `null` et absence : `None` ; une autre forme : rejet du corps.
+    let r: ManualStatementRaw =
+        serde_json::from_str(r#"{"bankAccountId":3,"lines":null}"#).unwrap();
+    assert!(r.lines.is_none());
+    let r: ManualStatementRaw = serde_json::from_str(r#"{"bankAccountId":3}"#).unwrap();
+    assert!(r.lines.is_none());
+    assert!(
+        serde_json::from_str::<ManualStatementRaw>(r#"{"bankAccountId":3,"lines":"non"}"#).is_err()
+    );
+    // Un élément retenu d'un autre type reste un rejet du corps.
+    assert!(
+        serde_json::from_str::<ManualStatementRaw>(
+            r#"{"bankAccountId":3,"lines":[{"amount":50}]}"#
+        )
+        .is_err()
+    );
 }
 
 #[test]

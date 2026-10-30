@@ -235,7 +235,10 @@ pub struct ManualStatementRaw {
     pub opening_balance: Option<String>,
     #[serde(default)]
     pub closing_balance: Option<String>,
-    #[serde(default)]
+    /// Au plus `MANUAL_STATEMENT_MAX_LINES + 1` lignes sont **retenues** à la
+    /// désérialisation ([`deserialize_capped_lines`]) : au-delà, les éléments
+    /// sont lus et jetés, et la 501e suffit à `too_many_lines`.
+    #[serde(default, deserialize_with = "deserialize_capped_lines")]
     pub lines: Option<Vec<ManualLineRaw>>,
     /// Ignoré par l'aperçu.
     #[serde(default)]
@@ -646,6 +649,57 @@ pub fn manual_statement_to_drafts(
 // Aides privées
 // ---------------------------------------------------------------------------
 
+/// Désérialise `lines` en ne **retenant** que `MANUAL_STATEMENT_MAX_LINES + 1`
+/// éléments : les suivants sont lus et jetés (`IgnoredAny`), si bien que la
+/// mémoire ne dépend plus de la taille du corps — un corps fait de milliers de
+/// `{}` ne se matérialise plus en autant de `ManualLineRaw` avant le refus
+/// `too_many_lines` (revue de code P1 de la v016-2a, E1). Un élément jeté
+/// d'une autre forme qu'un objet n'est pas contrôlé : le relevé est de toute
+/// façon refusé (`too_many_lines`).
+fn deserialize_capped_lines<'de, D>(deserializer: D) -> Result<Option<Vec<ManualLineRaw>>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    use serde::de::{IgnoredAny, SeqAccess, Visitor};
+
+    struct Capped;
+
+    impl<'de> Visitor<'de> for Capped {
+        type Value = Option<Vec<ManualLineRaw>>;
+
+        fn expecting(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+            f.write_str("un tableau de lignes ou null")
+        }
+
+        fn visit_none<E: serde::de::Error>(self) -> Result<Self::Value, E> {
+            Ok(None)
+        }
+
+        fn visit_unit<E: serde::de::Error>(self) -> Result<Self::Value, E> {
+            Ok(None)
+        }
+
+        fn visit_some<D2: serde::Deserializer<'de>>(self, d: D2) -> Result<Self::Value, D2::Error> {
+            d.deserialize_seq(Capped)
+        }
+
+        fn visit_seq<A: SeqAccess<'de>>(self, mut seq: A) -> Result<Self::Value, A::Error> {
+            let cap = MANUAL_STATEMENT_MAX_LINES + 1;
+            let mut lines = Vec::with_capacity(seq.size_hint().unwrap_or(0).min(cap));
+            while lines.len() < cap {
+                match seq.next_element::<ManualLineRaw>()? {
+                    Some(l) => lines.push(l),
+                    None => return Ok(Some(lines)),
+                }
+            }
+            while seq.next_element::<IgnoredAny>()?.is_some() {}
+            Ok(Some(lines))
+        }
+    }
+
+    deserializer.deserialize_option(Capped)
+}
+
 /// Texte facultatif : `trim`, et une chaîne vide ou faite de blancs vaut absence.
 fn optional_text(s: Option<&str>) -> Option<String> {
     s.map(str::trim)
@@ -683,11 +737,23 @@ fn parse_required_decimal(s: Option<&str>) -> Result<Decimal, ManualStatementRea
 }
 
 /// Nombre décimal strict : un `-` facultatif, des chiffres, et au plus une
-/// partie décimale introduite par un point. Une partie entière de plus de
-/// treize chiffres significatifs rend `too_many_digits` sans tenter
-/// l'analyse (elle pourrait déborder `Decimal`).
+/// partie décimale introduite par un point (`+5`, `5.`, `.5`, `1e3` refusés).
+/// Une partie entière de plus de treize chiffres significatifs rend
+/// `too_many_digits`, une partie décimale de plus de deux chiffres
+/// significatifs (zéros finaux ôtés) `too_many_decimals` — l'une et l'autre
+/// **avant** l'analyse numérique.
+///
+/// ⚠️ Revue de code P1 de la v016-2a (B1 = A1 = E3) : `str::parse::<Decimal>`
+/// **arrondit** au-delà de 28 décimales (`rust_decimal`, `parse_str_radix_10`
+/// avec `ROUND = true`) — `"50.00000000000000000000000000001"` y devenait `50`
+/// et passait la règle 5. La partie décimale est donc bornée sur le **texte**,
+/// puis le nombre est lu par `Decimal::from_str_exact`, qui refuse tout
+/// arrondi : aucun montant n'est altéré en silence.
 fn parse_decimal(s: &str) -> Result<Decimal, ManualStatementReason> {
-    let unsigned = s.strip_prefix('-').unwrap_or(s);
+    let (negative, unsigned) = match s.strip_prefix('-') {
+        Some(rest) => (true, rest),
+        None => (false, s),
+    };
     let (int_part, frac_part) = match unsigned.split_once('.') {
         Some((i, f)) => (i, Some(f)),
         None => (unsigned, None),
@@ -700,8 +766,24 @@ fn parse_decimal(s: &str) -> Result<Decimal, ManualStatementReason> {
     if significant > MANUAL_AMOUNT_MAX_INTEGER_DIGITS as usize {
         return Err(ManualStatementReason::TooManyDigits);
     }
-    s.parse::<Decimal>()
-        .map_err(|_| ManualStatementReason::InvalidNumber)
+    let frac = frac_part.unwrap_or("").trim_end_matches('0');
+    if frac.len() > MANUAL_AMOUNT_MAX_DECIMALS as usize {
+        return Err(ManualStatementReason::TooManyDecimals);
+    }
+    // Au plus treize chiffres entiers et deux décimales : la lecture exacte ne
+    // peut ni déborder ni arrondir.
+    let int = match int_part.trim_start_matches('0') {
+        "" => "0",
+        i => i,
+    };
+    let canonical = if frac.is_empty() {
+        int.to_string()
+    } else {
+        format!("{int}.{frac}")
+    };
+    let value =
+        Decimal::from_str_exact(&canonical).map_err(|_| ManualStatementReason::InvalidNumber)?;
+    Ok(if negative { -value } else { value })
 }
 
 /// Règle 5 : au plus deux décimales **après `normalize()`**, au plus treize
