@@ -1,6 +1,6 @@
 # Story v017-1 : release 0.17.0 — quick-xml 0.39 → 0.42, les deux dénis de service de l'import CAMT.053
 
-Status: ready-for-dev
+Status: in-progress
 
 <!-- Fiche créée le 2026-10-30 (Opus 5.5, autonomie), worktree `kesh-0171`, branche `story/v017-1-quick-xml`,
      partie de `c5101b07` (tête de la candidate 0.16.1-rc1). Issue : #789 (P1, sécurité), en `refs` seulement.
@@ -269,8 +269,9 @@ d'AC5 continue de tourner après l'échec et ralentit les tests suivants du bina
     seconds par leur forme (liste de cinq motifs écrite en dur) et un **garde d'inventaire** dans le même fichier lit
     `src/camt053/mod.rs` (`include_str!`), **retire d'abord les commentaires** (`//` jusqu'à la fin de ligne, `/* … */`),
     puis compte les `CamtError::MalformedXml(` dont l'argument — jusqu'à la parenthèse fermante appariée, blancs et
-    sauts de ligne compris — **ne correspond pas** à l'expression `^\s*\w+\s*\.\s*to_string\(\)\s*$` (un relais,
-    quel que soit le nom de la variable et la coupe de `rustfmt` ; `regex` est déjà une dépendance de `kesh-import`) :
+    sauts de ligne compris — **ne correspond pas** à l'expression `^\s*\w+\s*\.\s*to_string\(\)\s*,?\s*$` (un relais,
+    quel que soit le nom de la variable et la coupe de `rustfmt`, virgule finale comprise — `rustfmt` en ajoute une
+    quand il coupe un appel sur plusieurs lignes, `mod.rs:78-80` ; validation P4, P4-3 ; `regex` est déjà une dépendance de `kesh-import`) :
     le compte doit valoir la longueur de la liste, si bien qu'un sixième message de Kesh fait rougir
     le garde au lieu de passer en « variant seul » (C-v017-1-3 ; validation P2, F-4). Le commit B peut faire disparaître
     des **relais** (`:85`, `:236`) ; il ne touche à aucun message de Kesh.
@@ -295,7 +296,8 @@ d'AC5 continue de tourner après l'échec et ralentit les tests suivants du bina
     R-4) :
     - chaque `<Ntry>` est **complet** : `Ntry/Amt` avec texte et `Ccy`, `BookgDt`, `CdtDbtInd` — sans quoi
       `emit_transactions` rend `MissingRequiredField` (`amount`, `currency` : `n.currency` n'est posé que par un
-      `Ntry/Amt` à `Ccy` ouvert **avant** le `TxDtls`, bras `"Amt"`, `(Some("Ntry"), None)`) et les marqueurs
+      `Ntry/Amt` à `Ccy` ouvert **hors d'un** `TxDtls` — aucun `TxDtls` ouvert à cet instant, `current_txdtls` étant
+      remis à `None` à `</TxDtls>` (`mod.rs:206-210`) —, bras `"Amt"`, `(Some("Ntry"), None)`) et les marqueurs
       n'existent pas (validation P3, P3-3) ;
     - `Ntry` n° 1, **sans** `TxDtls` : `<Amt Ccy="C&#72;F">` (référence de caractère dans la valeur d'attribut : 0.39
       lit `CHF`), `<NtryRef>` à entités (`&amp;`, `&lt;`), `<AddtlNtryInf>` en section CDATA ;
@@ -310,7 +312,7 @@ d'AC5 continue de tourner après l'échec et ralentit les tests suivants du bina
       quelles et commentées (« comportement de 0.16, défaut tracé par #819 ; ne pas corriger ici ») ;
   - `v04_latin1.xml` : déclaré `encoding="ISO-8859-1"`, un nom accentué encodé en Latin-1 dans un `<Nm>` lu ; le test
     **asserte** `Err(MalformedXml)` sous les deux versions, en plus de la référence (validation P2, F-5) ;
-  - `v04_latin1_declare_ascii.xml` : déclaré `encoding="ISO-8859-1"`, contenu **tout ASCII**, fins de ligne **LF** — la forme ISO-8859-1 qui
+  - `v04_latin1_declare_ascii.xml` : déclaré `encoding="ISO-8859-1"`, contenu **tout ASCII**, fins de ligne **LF**, indentation **par espaces** (une tabulation compterait au contrôle des octets) — la forme ISO-8859-1 qui
     s'importe aujourd'hui ; référence `Ok` sous les deux versions (validation P2, F-6) ;
   - `v04_latin1_hors_texte.xml` : relevé valide **dont tout le texte est ASCII**, mais portant un octet `0xE9`
     (Latin-1) dans un **commentaire**, dans une section **CDATA** d'`<AddtlNtryInf>` et dans la valeur de
@@ -454,8 +456,9 @@ git diff --stat $A HEAD -- crates/kesh-import/tests/camt053_golden.rs crates/kes
   crates/kesh-import/tests/fixtures/camt053 crates/kesh-import/tests/fixtures/camt053_golden \
   'frontend/tests/e2e/fixtures/camt053_*.xml' crates/kesh-payment/tests/pain001_special_chars.rs \
   crates/kesh-payment/tests/fixtures                                                               # vide
-# (4) aucune fixture préexistante ni pain001_sample.xml modifiée par la story, A compris (les ajouts passent)
-git diff --stat --diff-filter=M $BASE HEAD -- crates/kesh-import/tests/fixtures/camt053 \
+# (4) aucune fixture préexistante ni pain001_sample.xml modifiée, supprimée ni renommée par la story, A compris
+#     (les ajouts passent ; filtre minuscule `a` = tout sauf les ajouts — validation P4, P4-1)
+git diff --stat --diff-filter=a $BASE HEAD -- crates/kesh-import/tests/fixtures/camt053 \
   'frontend/tests/e2e/fixtures/camt053_*.xml' crates/kesh-payment/tests/fixtures/pain001_sample.xml      # vide
 ```
 
@@ -468,9 +471,16 @@ git ls-files 'crates/*/src/*' | wc -l                                       # > 
 git diff --stat $A HEAD -- 'crates/*/src/*'                                  # non vide : le commit B adapte mod.rs
 git diff --stat --diff-filter=A $BASE HEAD -- crates/kesh-import/tests/fixtures/camt053   # non vide : les cinq ajouts
 git ls-files 'frontend/tests/e2e/fixtures/camt053_*.xml' | wc -l             # 4
+# sonde des chemins littéraux de (3) (validation P4, P4-2) : A les crée sous ces noms exacts
+git diff --stat --diff-filter=A $BASE $A -- crates/kesh-import/tests/camt053_golden.rs \
+  crates/kesh-import/tests/camt053_hostile.rs crates/kesh-import/tests/fixtures/camt053 \
+  crates/kesh-import/tests/fixtures/camt053_golden crates/kesh-payment/tests/pain001_special_chars.rs \
+  crates/kesh-payment/tests/fixtures
+# doit nommer camt053_golden.rs, camt053_hostile.rs, les cinq .xml neufs, des camt053_golden/*.json,
+# pain001_special_chars.rs et pain001_special_chars.xml
 ```
 
-La commande (1) affiche sa phrase, (2) à (4) sont **vides**, les quatre sondes rendent ce qui est indiqué ; les huit
+La commande (1) affiche sa phrase, (2) à (4) sont **vides**, les cinq sondes rendent ce qui est indiqué ; les neuf
 sorties sont copiées au Change Log. Les
 lentilles de revue les rejouent. Le commit A ne touche aucun fichier sous `crates/*/src/` (AC10 au commit C, AC12 en test
 d'intégration) ; après lui, aucun fichier de la caractérisation ne bouge (la seule dépendance à la version, l'exception
@@ -670,3 +680,16 @@ avis (`grep -rln "quick-xml\|quick_xml\|RUSTSEC" docs website README.md` : aucun
     deux avis) et renvoie à #820 pour le reste.
   - **P3-6 (LOW), appliqué** — `v04_latin1_declare_ascii.xml` en LF, compte attendu exactement 0.
   - **Aucun finding rejeté.**
+- 2026-10-30 — **Validation P4** (Opus, passe ciblée sur la remédiation P3, une lentille ; rapport
+  `kesh-gate-logs/v017-1-quick-xml-validate-p4.md`). Décompte : 0 CRITICAL, 0 HIGH, **0 MEDIUM**, 4 LOW : la
+  validation est terminée. Les quatre LOW sont appliqués à l'étape 0 du développement (Opus 5.5), prémisses relues :
+  - **P4-1 (LOW), appliqué** — contrôle (4) en `--diff-filter=a` (tout sauf les ajouts) : une suppression ou un
+    renommage de fixture préexistante se voit.
+  - **P4-2 (LOW), appliqué** — cinquième sonde : `git diff --stat --diff-filter=A $BASE $A` sur les chemins littéraux
+    de (3) ; « neuf sorties » au lieu de huit.
+  - **P4-3 (LOW), appliqué** — ligne lue : `mod.rs:78-80` (`return Err(CamtError::MalformedXml(` /
+    `"élément racine <Document> introuvable".into(),` / `));`) montre la virgule finale de `rustfmt` ; l'expression du
+    garde devient `^\s*\w+\s*\.\s*to_string\(\)\s*,?\s*$`.
+  - **P4-4 (LOW), appliqué** — (a) ligne lue `mod.rs:183-185` (`match (parent, n.current_txdtls.as_mut())` …
+    `(Some("Ntry"), None) => n.currency = Some(ccy),`) et `:206-210` (`n.current_txdtls.take()`) : « ouvert hors d'un
+    `TxDtls` » ; (b) `v04_latin1_declare_ascii.xml` indentée par espaces.
