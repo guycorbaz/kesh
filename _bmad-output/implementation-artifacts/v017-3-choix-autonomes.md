@@ -296,6 +296,10 @@ silencieuse ; un appariement propose, il ne crée jamais).
 - **Écartées** : une troisième fonction de format (DRY).
 - **Réversible** : oui.
 
+- *Amendement du 2026-10-30 (validation P5 de la 3b, C1)* : « et la liste » est remplacé par C-v017-3-27 — seule la
+  **fiche** de la facture passe aux décimales exactes (TTC, cellules de lignes, et total de la facture dans le sélecteur de
+  document, `AttachDocumentPicker.svelte:164`, qui s'y ajoute) ; la liste garde son format (#831).
+
 ### C-v017-3-19 — v017-3b : le formulaire garde son patron de refus au clic
 
 - **Contexte** (validation P1, F1) : le bouton *Enregistrer* n'est désactivé que pendant l'enregistrement
@@ -445,6 +449,6 @@ silencieuse ; un appariement propose, il ne crée jamais).
 - **Retenu** (décision de l'orchestrateur, 2026-10-30) : seule la **fiche** de la facture passe aux décimales exactes —
   TTC, cellules de lignes (`:501`, `:503`) et total de la facture dans le sélecteur de document
   (`AttachDocumentPicker.svelte:164`) ; l'intégration se prouve aux deux bancs existants. La **liste** garde son format :
-  limite écrite et issue demandée (P4).
+  limite écrite et issue demandée (P4) — *ouverte depuis : #831 (validation P5, C2)*.
 - **Écartées** : passer aussi la liste (aucun banc, le périmètre continuerait de s'étendre).
 - **Réversible** : oui (l'issue de la liste).
