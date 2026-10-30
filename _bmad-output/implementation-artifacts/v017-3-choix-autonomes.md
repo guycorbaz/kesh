@@ -142,6 +142,9 @@ silencieuse ; un appariement propose, il ne crée jamais).
   contrainte des données demande de ne pas en multiplier) ; un dé-rapprochement « lien seul » sans colonne (il ne
   saurait pas distinguer un lien posé par la 3a d'une écriture créée par la réconciliation).
 - **Réversible** : oui (#672).
+- *Amendement du 2026-10-30 (validation P1 de la 3a, R6)* : « visible et réparable » est faux quand l'annulation est
+  refusée (exercice clôturé, lettrage figé, compte archivé, aucun exercice ouvert aujourd'hui —
+  `settlement_cancellation.rs:87-182`) : voir C-v017-3-21.
 
 ### C-v017-3-10 — v017-3a : ce qui reste hors périmètre, et son issue
 
@@ -153,6 +156,8 @@ silencieuse ; un appariement propose, il ne crée jamais).
   pain.001 d'**une** facture est couvert. Issue demandée : « Une transaction bancaire qui règle plusieurs écritures (lot
   de paiement, paiement groupé) ne se rattache pas ». Proposition à l'orchestrateur : #671 se ferme à la PR de release
   (`closes #671`) une fois l'issue du reste ouverte, avec un commentaire qui dit le partage.
+- *Amendement du 2026-10-30 (validation P1 de la 3a)* : l'issue du reste est ouverte, **#823** ; le second côté d'un
+  virement entre comptes propres garde un avertissement (C-v017-3-22).
 - **Écartées** : une table de liens N:1 dans la 0.17.0 (migration, schéma, annulation, sauvegarde : une story à elle
   seule).
 - **Réversible** : oui.
@@ -275,4 +280,45 @@ silencieuse ; un appariement propose, il ne crée jamais).
 - **Retenu** (précision de l'orchestrateur, 2026-10-30) : la 3b est livrée dans la même release que la 3a ; la
   dépendance est écrite dans la fiche, avec les sections du manuel communes aux deux, réconciliées à la réunion des
   branches. Si la 3a n'était pas livrée, la seconde voie de la conduite se retire.
+- **Réversible** : oui.
+
+### C-v017-3-21 — v017-3a : un rattachement sans retour est admis, mais annoncé ; la règle de blocage n'est pas dupliquée
+
+- **Contexte** (validation P1, R6 ; orientation de l'orchestrateur : « un rattachement ne doit jamais devenir définitif
+  sans que l'utilisateur le sache ») : l'annulation d'un rapprochement passe par `cancel_blocker`
+  (`reconciliation_cancel.rs:232-270`) puis, pour une écriture propre, `settlement_entry_cancel_blocker`
+  (`settlement_cancellation.rs:87-182` : exercice clôturé, lettrage figé, compte archivé, aucun exercice ouvert
+  aujourd'hui). La règle de la 3a n'a pas de filtre d'exercice : rattacher l'écriture d'un exercice clôturé est le cas
+  d'usage naturel de #671 (relevé importé après la clôture), et le rattachement ne pourra plus s'annuler.
+- **Retenu** : ne **pas** filtrer ces candidates (le filtre écarterait le cas légitime) ; chaque candidate porte
+  `cancelBlockedBy`, calculé par **la** fonction de blocage de l'annulation : `cancel_blocker` est scindée en une lecture
+  par écriture (`entry_cancel_blocker`), qu'elle appelle et que la liste appelle avec `unlinking = None`. Le dialogue
+  dit, pour une telle candidate, que le rattachement ne pourra pas être annulé et pourquoi, exige une case à cocher, et ne
+  promet aucune contre-passation. Test : écriture d'exercice clôturé candidate avec `FISCAL_YEAR_CLOSED`, puis annulation
+  refusée avec ce même motif.
+- **Écartées** : (b) ne proposer que les écritures dont l'annulation serait admise (préférence de l'orchestrateur) —
+  écarte le cas d'usage principal, la transaction resterait en attente pour toujours, ce que #671 combat ; (c) un
+  prédicteur à part — seconde règle, qui dériverait.
+- **Réversible** : oui.
+
+### C-v017-3-22 — v017-3a : l'autre côté d'un virement entre comptes propres garde un avertissement
+
+- **Contexte** (validation P1, R7) : après rattachement du côté A d'une écriture `D banque B / C banque A`, la condition 4
+  écarte l'écriture pour la transaction de B : sans autre mesure, B perd tout avertissement et se laisse affecter en
+  double — le défaut que la story combat.
+- **Retenu** : `alreadyBooked.matchedElsewhereCount`, lu par un second mode du **même** constructeur de requête (condition
+  4 retournée : rapprochée d'une transaction d'un **autre** compte bancaire ; condition 6 retirée) ; l'avertissement
+  conseille de rejeter ; la confirmation s'applique. Le traitement (rattacher les deux côtés) relève de #823.
+- **Écartées** : ne pas compter comme rapprochée une écriture qui touche un autre compte bancaire (rouvre l'invariant
+  « une écriture, une transaction » sur lequel reposent l'annulation et la tuile).
+- **Réversible** : oui.
+
+### C-v017-3-23 — v017-3a : le coût se mesure sur un historique volumineux
+
+- **Contexte** (validation P1, R5) : la somme par écriture parcourt tout l'historique du compte à chaque appel, jusqu'à
+  trois fois par transaction de la page.
+- **Retenu** : mesure à 1 000, 5 000 et 20 000 écritures synthétiques, 500 transactions en attente ; seuil : 3 s à
+  20 000, ou pente plus que linéaire ; au-delà, section *Performance debt* et issue, remède nommé (« une lecture par
+  page ») mais non implémenté ici.
+- **Écartées** : implémenter d'emblée la lecture par page (seconde forme de la règle, avant toute mesure).
 - **Réversible** : oui.
