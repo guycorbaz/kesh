@@ -1,6 +1,6 @@
 # Story v017-3a : une transaction déjà comptabilisée se rattache à son écriture
 
-Status: in-progress
+Status: review
 
 *Fiche rédigée le 2026-10-30, en autonomie (Opus 5.5), worktree `/home/gcorbaz/devel/kesh-0173`, branche
 `story/v017-3-rapprochement-attente` partie de `c5101b07` (tête de la candidate `v0.16.1-rc1`) ; la story se fusionne
@@ -979,9 +979,233 @@ Tranchées au registre ; listées pour être soumises à Guy.
 
 ### Agent Model Used
 
+Opus 5.5 (Claude Code), en autonomie, worktree `/home/gcorbaz/devel/kesh-0174`, branche
+`story/v017-3a-rattacher-ecriture` partie de `899f564a`. Bases `kesh_v0173a` (gate) et `kesh_e2e_v0173a` (E2E), port
+3175. Journaux hors dépôt : `/home/gcorbaz/devel/kesh-gate-logs/v0173a-*`. Commits : `af560b78` (tests rouges, étape 0),
+`d054bb14` (code, textes, PDF — **dernier commit de code**), puis ce compte rendu.
+
+### Étape 0 — recontrôle, ligne lue citée
+
+**Les six LOW de la validation P5** (`kesh-gate-logs/v017-3a-validate-p5.md`, 0/0/0/6 — résultat porté ici, la P5
+n'ayant pas d'entrée au Change Log), appliqués à la fiche avant tout code, en annotations datées dans l'AC-3 (b) et
+l'AC-18 (les entrées passées ne sont pas réécrites) :
+- **C1** — « cinq gestes » → **six** : `grep -n "UPDATE bank_transactions" routes/reconciliation.rs` rend `:2810`,
+  `:3373`, `:3739`, `:4218`, `:5046`, `:5509` (plus `:4595` rejet et `:6013` annulation du rejet, qui ne créent pas
+  d'écriture).
+- **C2** — `find_pending_by_id_for_account` (facture `:2309`, fournisseur `:3234`),
+  `find_strictly_pending_by_id_for_account` (éclatement `:3622`, règle `:4024`), toujours avec le `bank_account_id`
+  verrouillé.
+- **C3** — le verrou d'en-têtes du lot est `SYNC_DOCUMENT_LINES_SQL` (`letterings.rs:1463-1469`) ; `:240-244` est celui
+  de la création d'un lettrage manuel.
+- **C4** — « sérialisés » remplacé : exclusion mutuelle pendant les instructions, `RELEASE_LOCK` avant le commit
+  (`reconciliation_link.rs:287-290` de `c5101b07`, `kesh-reconciliation/src/mutex.rs:67`).
+- **C5** — `ON DELETE SET NULL` : verrou d'intervalle qui n'attend jamais, mais peut bloquer l'`UPDATE` du
+  rattachement ; repris au doc-comment de `link_entry_in_tx`.
+- **C6** — « l'issue demandée » → **#827** aux trois consignes de l'AC-18 (points 2 et 5).
+
+**§ *À recontrôler à l'étape 0*, point par point** (lignes lues à `899f564a`, code identique à `c5101b07`) :
+- `reconciliation_link.rs:77-79` (`transaction_can_be_linked`), `:150-175` (`candidates_sql`), `:329-448`
+  (`link_in_tx`) — conformes ; `routes/reconciliation.rs:6083-6100` (`link_preflight`), `:6228-6301`
+  (`post_link_transaction`, `link_once`) — conformes.
+- `reconciliation_cancel.rs:232-270` (`cancel_blocker`) — scindée (D14) ; `:11-28` récrit ;
+  `settlement_cancellation.rs:87-182` (`settlement_entry_cancel_blocker`) inchangée, appelée.
+- **AC-3 (a)** confirmé : `update_in_tx` prend `je … FOR UPDATE` en premier acte (`journal_entries.rs:1457-1459`), garde
+  d'écriture sous ce verrou (`:1540-1541`) ; `delete_in_tx` (`:1819`, verrou `:1831-1835`) ; `reverse_in_tx_inner`
+  (`:2741-2745`, puis `reversal_blockers` `:2802`).
+- **AC-3 (b), inventaire par fonction** — sites qui écrivent ou verrouillent `bank_transactions` dans `crates/*/src`
+  (hors `#[cfg(test)]`) : `UPDATE` aux six acceptations/rapprochements de `routes/reconciliation.rs`, chacun sous
+  `with_account_lock` du compte de la transaction écrite (`:1760-1770`, `:4965-4969`, `:5455-5459`) ; `:4595` (rejet,
+  sous verrou nommé, ne touche pas `je`) ; `:6013` (annulation du rejet, idem) ; `reconciliation_link.rs`
+  (`link_in_tx`, `link_entry_in_tx`, sous verrou nommé, `t` avant `je`) ; `reconciliation_cancel.rs` `cancel_in_tx`
+  (`t` `FOR UPDATE` d'abord, `UPDATE` d'une ligne tenue, sous verrou nommé). `FOR UPDATE` : `reconciliation.rs:1227`,
+  `bank_imports.rs:421` (suppression d'un import : en-tête puis transactions, aucune ligne `journal_entries`),
+  `reconciliation_cancel.rs:202`. `INSERT` : `bank_imports.rs:151` (import, sans `journal_entries`). `DELETE` en masse :
+  `backup.rs:677`, `kesh-seed/src/lib.rs:612` (import d'installation, remise à zéro : gestes exclusifs
+  d'administration). Aucun `LOCK IN SHARE MODE`/`FOR SHARE` sur `bank_transactions`. Lectures ordinaires ailleurs
+  (`settlement_cancellation.rs:141`, `bank_accounts.rs:1290/1438/1769/1781`, `closing_checks.rs:440/461`,
+  `document_owners`). **Aucun geste ne tient une ligne `journal_entries` puis ne verrouille une ligne de
+  `bank_transactions` sans tenir le verrou nommé du compte de cette ligne : le critère d'arrêt n'est pas atteint.**
+  Remarque neuve (non bloquante) : `link_in_tx` (29-8) et `link_entry_in_tx` peuvent viser la **même** écriture quand
+  deux comptes bancaires partagent un compte du grand livre (AC-2.12) ; tous deux prennent `je` `FOR UPDATE` avant leur
+  première lecture ordinaire, aucun ne prend `s` après `je` : sérialisés sans cycle (dit aux deux doc-comments).
+- `errors.rs:440-452` (codes de fil), `reconciliation-cancel.ts`, `reconciliation.types.ts:154-190` — réutilisés.
+- `supplier_invoices.rs:761-1013` : l'écriture de règlement crédite le compte lié de la banque — confirmé par AC-2.8.
+- Registres aux valeurs du moment : `bank_account_closed_inventory.rs` `sites.len() 33`, `gardes_non_verrouillantes 11` ;
+  `audit_route_registry.rs` `135 / 129 / 138 / 110 / 138`, prose « dix-sept » ; `admin-manual.tex:2966` « 129 des 135 ».
+- `LinkSettlementModal.svelte:53-57` (`RELIRE_SUR`) ; `ReconciliationProposals.svelte:237-239` (`canLink`) ;
+  `i18n-keys.test.ts:767` (`sitesTotal: 2619`) ; `textes_coherents.rs:805`.
+- *Annuler le rejet* (28-5b) : `POST /reconciliation/transactions/{id}/unreject`, exercé par AC-4.
+
+**Rouges constatés avant tout patch** (commit `af560b78`, tests seuls) :
+- Rust (`kesh-gate-logs/v0173a-rust-rouges.log`, code remis de côté par `git stash`, puis `cargo test --no-run`) :
+  `error[E0432]: unresolved imports kesh_db::repositories::reconciliation_link::EntryCandidate,
+  …::find_entry_candidates` (binaire `reconciliation_link_entry_e2e`) ; `error[E0425]: cannot find function
+  transaction_can_be_linked_to_entry` (×7) et `entry_candidates_sql` (×2) (tests unitaires de `kesh-db`).
+- Vitest (`kesh-gate-logs/v0173a-vitest-rouges.log`) : **12 échecs, 67 réussites** (`LinkSettlementModal.test.ts`,
+  `ReconciliationProposals.test.ts`), dont `expected 'Aucun règlement par virement sur ce c…'` et `Unable to find an
+  element by: [data-testid="entry-candidate-radio"]`.
+
 ### Completion Notes List
 
+- **Module** : la règle, la lecture et le geste vivent dans `reconciliation_link.rs`, à la suite de la 29-8 (AC-1).
+  `transaction_can_be_linked_to_entry` s'écrit `!t.amount.is_zero() && t.currency == "CHF"` (`is_zero` ignore le
+  signe : `-0.00` est nul) ; M8 devient donc `t.amount > Decimal::ZERO`.
+- **Tests** : 30 tests dans `crates/kesh-api/tests/reconciliation_link_entry_e2e.rs` (AC-2.1 à 2.12, AC-4, AC-5, AC-6,
+  AC-8 (a) (b) (c) et 8.1 à 8.5, AC-22, T-race-1 à 3) + une mesure ignorée (`mesure_cout_50_candidates`) ; 2 tests
+  unitaires dans `reconciliation_link.rs` ; Vitest : 11 tests neufs ou récrits dans `LinkSettlementModal.test.ts`, 1
+  récrit dans `ReconciliationProposals.test.ts` ; Playwright : `reconciliation-link-entry.spec.ts`. Le refus de
+  l'annulation d'un paiement fournisseur depuis la fiche, pour une écriture rattachée, est `409
+  MATCHED_BANK_TRANSACTION` (AC-8.4, asserté par `ac8_b_un_reglement_fournisseur`).
+- **AC-21** — `git diff 899f564a -- crates/kesh-db/migrations` vide ; écritures nouvelles hors tests : l'`UPDATE
+  bank_transactions` de `link_entry_in_tx` (la trace passe par `audit_log::insert_in_tx`, aucun `INSERT` neuf) ; les
+  autres lignes rendues par `grep -nE '^\+.*\b(UPDATE|INSERT|DELETE)\b'` sont des doc-comments et le texte de l'erreur.
+- **AC-22** — `ac22_la_lecture_ne_change_rien` : statut, lien, marqueur de rejet, version et `updated_at` de la
+  transaction, statut/règlement/version de la facture, nombre de traces : identiques après la page de propositions et la
+  liste ; le rattachement ne se fait que par le `POST`.
+- **Mesure de coût (AC-5)** — `mesure_cout_50_candidates` (`kesh-gate-logs/v0173a-mesure.log`), 50 candidates par
+  mesure : **débit** (25 écritures saisies + 25 règlements fournisseur payés depuis la fiche) **38, 46, 39 ms** ;
+  **crédit** (25 écritures saisies + 25 règlements client par compte interne) **49, 40, 72 ms**. Les trois sortes ne
+  peuvent pas être candidates d'une même transaction (signe opposé) : deux montages. Base éphémère du serveur de dev,
+  non `kesh_v0173a` elle-même (écart : le montage par les routes est celui des tests). **Borne basse** (tmpfs) : ne dit
+  rien du NAS. Sous la seconde : ni dette de performance ni issue. L'exercice du jour reste factorisable (non fait).
+- **Écarts à la fiche** : (1) tests de la règle au dépôt dans le fichier de test HTTP (C-v017-3-40) ; (2) dialogue
+  gardé sous son nom (C-v017-3-41) ; (3) journal affiché par son code (C-v017-3-44) ; (4) la puce « règlement
+  fournisseur sous le centime » renvoie à **#687**, non à `sec:facture-fournisseur-sous-centime`, label qui n'existe
+  que dans la branche v017-3b (un `\ref` rendrait « ?? ») — à remplacer à la réunion ; (5) mesure sur base éphémère ;
+  (6) **une édition de `ReconciliationProposals.test.ts` par un script Python de remplacement** (motifs vérifiés
+  uniques, diff relu) au lieu de l'outil d'édition — contraire à la consigne ; aucune autre édition de code par script
+  (`cargo fmt` pour la mise en forme) ; (7) **la campagne de mutations a effacé une version non commitée de ce Dev
+  Agent Record** : le script restaurait par `git checkout --` **tous** les fichiers modifiés de l'arbre
+  (`git diff --name-only`), et non le seul fichier muté ; ce compte rendu a été réécrit à l'identique après la campagne.
+  Aucun fichier de code n'était modifié hors commit à ce moment (vérifié : arbre propre sous `crates` et
+  `frontend/src` avant et après chaque mutation).
+- **Défaut voisin relevé, non traité** : le commentaire (6 bis) de `cancel_in_tx` disait l'état « règlement sur un autre
+  compte bancaire que la transaction » non produit par le code ; le rattachement à l'écriture d'un règlement par virement
+  sur un autre compte partageant le compte du grand livre (AC-2.12, L3) le produit désormais — commentaire annoté ; le
+  cycle à quatre qu'il décrit reste raisonné, non joué.
+
+### Gates réellement exécutés
+
+- **Ciblés en cours de travail** : `reconciliation_link_entry_e2e` 30/30 (après ajout du compte créanciers au montage —
+  trois rouges `ConfigurationRequired("default_payable_account_id")` au premier passage, `v0173a-cible1.log`,
+  `cible2.log`) ; `binary(audit_route_registry) | binary(bank_account_closed_inventory) | binary(textes_coherents) |
+  binary(audit_label_registry) | binary(reconciliation_link_e2e) | binary(reconciliation_cancel) | (kesh-db lib
+  reconciliation)` → **101 / 101** (`v0173a-cible3.log`) ; Vitest `features/reconciliation/` 241 / 241 ;
+  `cargo clippy --workspace --all-targets -D warnings` : 0 avertissement.
+- **Gate complet au commit de code `d054bb14`**, base `kesh_v0173a` reconstruite d'abord, sous verrou
+  (`v0173a-gate-1*.log`) : `scripts/test-fast.sh --ci` (fmt, clippy, droits, nextest) → **4492 exécutés, 4492 réussis,
+  8 ignorés** ; `cargo build --workspace --all-targets` vert ; `npm run check` 0 erreur, 29 avertissements (aucun dans
+  un fichier touché) ; `npm run lint-i18n-ownership` vert ; `npm run test:unit` **2160 / 2160** (181 fichiers) ;
+  `npm run build` vert.
+- **E2E complet au même commit** (`v0173a-e2e-1-runner.log`, base `kesh_e2e_v0173a` reconstruite, port 3175, dossiers
+  `/tmp/kesh-e2e-v0173a-1/` passés au backend et au runner, backend tué par son PID) : **324 réussis, 9 échoués, 17
+  ignorés** (13,7 min). Échecs, fichier par fichier contre `docs/testing.md` § *Les échecs attendus* :
+  `mode-expert.spec.ts:26`, `:41`, `onboarding-path-b.spec.ts:65`, `:92`, `onboarding.spec.ts:57`, `:77`, `:150` —
+  **KF-029 (#97)** ; `sidebar-navigation.spec.ts:75` — **KF-052 (#424)**, échoue aussi rejoué seul (déterministe) ;
+  `fiscal-year-closing-journey.spec.ts:166` — délai dépassé dans le `beforeEach` (`seedTestState`), **passe rejoué
+  seul** (`v0173a-e2e-2-runner.log`, base reconstruite : 5 réussis, 1 échoué = `sidebar:75`) : le variable. Compte
+  7 + 1 + 1 = 9, dans la fourchette 7 à 10. La spec neuve `reconciliation-link-entry.spec.ts` est **verte**.
+- **Captures** (AC-16, thème clair, `kesh_e2e_v0173a`, harnais hors dépôt `kesh-gate-logs/v0173a/captures-spec/`,
+  1 réussi, `v0173a-e2e-3-runner.log`) dans `kesh-gate-logs/v0173a/captures/` : `01-ligne-debit-bouton-renomme`,
+  `02-debit-une-section`, `03-ecriture-choisie-phrase-datee`, `04-ligne-disparue-apres-rattachement`,
+  `05-credit-deux-sections`, `06-cas2-reglements-vides-ecriture`, `07-cas3-ecritures-vides-reglement`,
+  `08-cas1-deux-listes-vides`, `09-cas4-debit-sans-candidate`, `10-exercice-cloture-case-non-cochee`,
+  `11-exercice-cloture-case-cochee`, `12-compte-archive-numero`, `13-erreur-course-relecture`, et
+  `v017-3a-dialogue-debit-choisi` (spec E2E). ⚠️ Les états 10 à 13 sont obtenus en **interceptant la réponse** de l'API
+  (`page.route`) : l'écran est réel, le motif est forgé ; le serveur est éprouvé par `ac5_le_motif_d_annulation` et
+  `ac8_5_un_motif_date_et_non_definitif`. (Le dossier contient aussi des captures d'autres specs, écrites pendant l'E2E
+  complet par `KESH_E2E_CAPTURES_DIR`.)
+
+### Mutations
+
+Campagne sous verrou après `d054bb14` (`kesh-gate-logs/v0173a-mutations/`, `muter.py`, `campagne.sh`,
+`campagne-front.sh`, `bilan.txt`, un journal par mutation) : application par motif vérifié (unique, ou premier site
+après le marqueur de la fonction visée), test rejoué, restauration `git checkout -- <f> && touch <f>`. **27 mutations,
+27 tuées, aucune survivante, aucune équivalente** (M2, M7, M13, M15, M21 retirées ou passées à la v017-3c par la fiche) :
+
+| # | Rougit |
+|---|---|
+| M1 | `ac2_2_le_signe_du_mouvement` |
+| M2bis | `ac2_1`, `ac2_2` (et `ac2_10`, `ac2_12`, même filtre) |
+| M3 | `ac2_5_une_ecriture_deja_rapprochee`, `ac4_deux_rattachements_successifs` |
+| M4, M5 | `ac2_6_contre_passee_et_contre_passation` |
+| M6 | `ac2_7_le_domaine_de_la_29_8` |
+| M7bis | `ac2_12_comptes_bancaires_partageant_le_grand_livre` |
+| M8 | `ac2_1`, `ac2_10`, `ac2_12`, test unitaire `transaction_can_be_linked_to_entry_is_a_non_zero_chf_amount` |
+| M9, M19 | `ac2_10_le_tri_et_la_limite` |
+| M10 | `t_race_3` — `200` au lieu de `409` (la vue née avant le verrou rattache) |
+| M11 | `ac4_une_transaction_rejetee_se_rattache` |
+| M12 | `ac8_a_une_ecriture_saisie` |
+| M17 | `ac4_la_candidate_designee_est_rattachee` |
+| M18 | `ac2_9_une_autre_societe` |
+| M20 | `t_race_3` — « moins de 1 requête(s) contenant ["journal_entries", "FOR UPDATE"] vue(s) en cours » |
+| M22 | `ac5_le_motif_d_annulation`, `ac8_5_un_motif_date_et_non_definitif` |
+| M24 | `textes_coherents::les_replis_rust_suivent_le_catalogue` (repli de `reconciliation-errors-entry-not-linkable`) |
+| M26 | `ac5_le_motif_d_annulation` |
+| M27 | `ac2_11_eur_ou_nulle`, test unitaire |
+| M28 | `ac4_compte_clos_pendant_l_attente_du_verrou` |
+| M14 | Vitest « le bouton est sur une ligne en CHF non nulle, débit compris… » |
+| M16 | Vitest « …Rattacher appelle linkEntry et non link (M16) » (+ 2) |
+| M23 | Vitest « 409 RECONCILIATION_ENTRY_NOT_LINKABLE : les deux listes sont relues… (M23) » |
+| M25 | Vitest « les replis des textes égalent le catalogue fr-CH » et « …l'introduction datée… (M25, M29) » |
+| M29 | Vitest « …Rattacher inactif tant que la case n'est pas cochée (M25, M29) », « la case se décoche… » |
+| M30 | Vitest « un débit : … rien de présélectionné », « un crédit : … aucune présélection… (M30) » |
+
+### Filet `rattach` (AC-18)
+
+Au `.tex` : `grep -n -i "rattach" docs/manual/fr/user-manual.tex` → **62 lignes** (97 occurrences). Tri :
+
+| Lignes | Sort |
+|---|---|
+| `:264`, `:265`, `:270`, `:272`, `:273` | point 10 (tuile), récrit |
+| `:690`, `:1426`, `:1431`, `:1714`, `:1899`, `:2651`, `:2959`, `:3250`, `:3259`, `:3507` | sans rapport (transitoire, lettrage d'avoir, paiement à rattacher, pièce, projet, MCP, sous-compte) |
+| `:1294`, `:2304`, `:2322`, `:2393` | inchangées (« rattachez la transaction au règlement », vrai de la 29-8) |
+| `:1404` | point 12 (« issue \#401 » seule) |
+| `:1638`–`:1640` | point 1, récrit |
+| `:1963`, `:1965` | point 7 |
+| `:2294` | point 8 |
+| `:2302` | point 13 (nom du bouton) |
+| `:2308` | point 11 (lot d'une facture / de plusieurs, #823) |
+| `:2338`, `:2339`, `:2345`, `:2348` | point 2 (encadré récrit) |
+| `:2365`, `:2368` | points 14 et 7 (`:2368` « rattachées à une écriture existante ») |
+| `:2374`, `:2377` | points 7 (jumeau) et 15 |
+| `:2395`–`:2423` | sous-section récrite (AC-18, point 5) |
+| `:2466` | point 3 |
+| `:2477`, `:2481`, `:2482`, `:2484`, `:2496`, `:2497`, `:2502`–`:2506` | point 6 |
+| `:3358`, `:3359` | points 4 et 16 |
+| `:3504` | point 9 |
+
+Au PDF aplati (`timeout 60 pdftotext docs/manual/fr/user-manual.pdf - | tr '\n' ' ' | tr -s ' ' | grep -oiF "rattach" |
+wc -l`) : **73 occurrences** (49 à `c5101b07`). Motifs fixes au PDF : `#671` 0, `Rattacher à un règlement` 0, `Rattacher
+à une écriture existante` 8, `ne sait pas encore` 0, `issue demandée` 0, `??` 0, `acceptez rien` 1 (« N'acceptez
+**rien** de ce qu'elle propose pour ce débit », encadré — légitime). Au `.tex` : `\#671` 0, `crédit en CHF` 0,
+`Rattacher à un règlement` 0. Manuel d'administration, PDF : `130 des 136` 1, `link-entry` 1. Les deux PDF sont
+régénérés par `make admin user` (sous verrou) et commités avec leur `.tex` (`d054bb14`).
+
 ### File List
+
+Ajoutés : `crates/kesh-api/tests/reconciliation_link_entry_e2e.rs`,
+`frontend/tests/e2e/reconciliation-link-entry.spec.ts`,
+`_bmad-output/implementation-artifacts/v017-3a-review-prompt-p1.md`.
+
+Modifiés : `crates/kesh-db/src/repositories/reconciliation_link.rs`, `reconciliation_cancel.rs`, `bank_accounts.rs`,
+`bank_imports.rs` (doc-comments) ; `crates/kesh-db/tests/reconciliation_cancel.rs` (doc) ;
+`crates/kesh-api/src/routes/reconciliation.rs`, `errors.rs`, `lib.rs`, `audit_labels.rs` ;
+`crates/kesh-api/tests/audit_route_registry.rs`, `bank_account_closed_inventory.rs`, `textes_coherents.rs`,
+`reconciliation_e2e.rs` (doc) ; `crates/kesh-i18n/locales/{fr,de,it,en}-CH/messages.ftl` ;
+`frontend/src/lib/features/reconciliation/LinkSettlementModal.svelte`, `LinkSettlementModal.test.ts`,
+`ReconciliationProposals.svelte`, `ReconciliationProposals.test.ts`, `reconciliation.api.ts`, `reconciliation.types.ts` ;
+`frontend/src/lib/shared/i18n-keys.test.ts` ; `docs/manual/fr/user-manual.tex` et `.pdf`, `admin-manual.tex` et `.pdf` ;
+`docs/api-external.md` ; `CHANGELOG.md` ; `README.md` ; la fiche, `v017-3-choix-autonomes.md` (C-v017-3-40 à 45),
+`sprint-status.yaml`.
+
+**Compteurs de garde recalés** (recomptés depuis le registre, non additionnés) : `audit_route_registry.rs` —
+`LIB_ROUTES.len()` 135 → **136**, `traced` 129 → **130**, `LIB_ROUTES + TEST_ENDPOINT_ROUTES` 138 → **139**,
+`sans_ecriture` 110 → **111** (« 109 » → « 110 routes de lib.rs »), `tout.len()` 138 → **139**, prose « (135) / (138) »
+→ « (136) / (139) », « dix-sept » → « dix-huit » routes rejouées ; `bank_account_closed_inventory.rs` — `sites.len()` 33
+→ **34**, `gardes_non_verrouillantes` 11 → **12** ; `i18n-keys.test.ts` — `sitesTotal` 2619 → **2635**
+(`LinkSettlementModal.svelte` 15 → 31, `grep -o "i18nMsg("` aux deux bornes) ; `admin-manual.tex` « 129 des 135 … 129 +
+4 + 2 = 135 » → « 130 des 136 … 130 + 4 + 2 = 136 » (`le_manuel_dit_le_compte_du_registre` vert).
 
 ## Change Log
 
@@ -1050,3 +1274,11 @@ Tranchées au registre ; listées pour être soumises à Guy.
   commit (C5) ; citations de `LinkSettlementModal.test.ts` et valeur par défaut du mock (C6) ; montage mêlé, borne basse
   en tmpfs, exercice du jour factorisable (C7) ; Vitest qui tuent M29 et M30 (C8). Prochaine étape : validation P5
   ciblée (`v017-3a-validate-prompt-p5.md`, Sonnet).
+- 2026-10-30 — **Développement** (Opus 5.5, autonomie, worktree `kesh-0174`). Étape 0 : LOW C1 à C6 de la validation P5
+  (0/0/0/6) appliqués ; point (b) de l'AC-3 refait par fonction, critère d'arrêt non atteint. Tests rouges commités
+  (`af560b78`), puis code, textes et PDF (`d054bb14`). Gate complet au dernier commit de code : nextest 4492/4492 (8
+  ignorés), Vitest 2160/2160, `check`, lint, `build` verts ; E2E complet 324 réussis / 9 échoués (7 KF-029, KF-052, un
+  variable qui passe seul), spec neuve verte ; mesure de coût 38 à 72 ms pour 50 candidates ; 27 mutations, 27 tuées ;
+  captures 01 à 13. Choix C-v017-3-40 à 45. Écarts déclarés au Dev Agent Record (dont une édition de test par script et
+  un compte rendu réécrit après une restauration trop large de la campagne de mutations). Prochaine étape : revue de
+  code P1 (`v017-3a-review-prompt-p1.md`, Sonnet, lentilles B, E, A).
