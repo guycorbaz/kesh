@@ -1,6 +1,6 @@
 # Story v016-2b : saisir un relevé bancaire à la main — l'écran
 
-Status: ready-for-dev
+Status: in-progress
 
 *Sous-fiche issue du découpage de la Story v016-2 à la validation P2 (2026-10-30, décision de l'orchestrateur,
 C-v016-2-18). **Dépend de la `v016-2a`** (l'API, les codes, l'audit, la migration) : elle se développe après sa fusion
@@ -145,9 +145,10 @@ l'entrée *Ajouté* du CHANGELOG et la ligne *Fonctionnalités* du README.
   replis ou plus **d'une même clé** déjà servie par le catalogue — *précisé à la validation P7, P3* ; l'égalité repli = valeur `fr-CH` n'y est tenue que par G13, pour les clés
   **nommées** de `REPLIS_A_SITE_UNIQUE`, et par les préfixes de `PREFIXES_REPLI_EGAL_AU_CATALOGUE`, `:279`) — d'où :
   chaque **clé statique neuve** de l'écran (`bank-import-manual-*` hors la famille `-reason-`, et `bank-import-detail-*`),
-  presque toutes à site unique, **et** chaque **clé existante dont le texte est récrit** — ici
+  presque toutes à site unique, **et** chaque **clé existante dont le texte est récrit** — ici, outre les deux de l'AC-23 (étape 0, validation P8, P3),
   `bank-import-labels-list-col-imported-at` et `bank-import-labels-list-col-filename` (`BankImportList.svelte:24-25`,
-  `fr-CH:1215-1216`, repli et catalogue au même commit ; validation P7, P2 ; les autres `bank-import-labels-*` de l'AC-23
+  `fr-CH:1215-1216`, `de-CH`/`it-CH`/`en-CH:1154-1155` — *ajouté à l'étape 0 du développement, validation P8, P1 :* les
+  **quatre** catalogues —, repli et catalogue au même commit ; validation P7, P2 ; les autres `bank-import-labels-*` de l'AC-23
   sont réemployées sans changement de texte) — est **ajoutée nommément** à `REPLIS_A_SITE_UNIQUE` (aucun préfixe ajouté à
   `PREFIXES_REPLI_EGAL_AU_CATALOGUE`), la liste nommée recopiée au Dev Agent Record, et le décompte du commentaire de
   G13 (`:210`) recompté sur elle ; **sauf** une clé statique dont le site n'est pas un `i18nMsg('<clé>', '<repli
@@ -318,7 +319,7 @@ inchangées. Ne déclarer que ce qui a tourné, chiffres recomptés.
 |---|---|
 | `frontend` | `src/lib/features/bank-import/{ManualStatementForm.svelte, manual-statement.ts, *.test.ts, bank-import.api.ts, bank-import.types.ts, BankImportList.svelte, DeleteBankImportAction.svelte}`, la table des `reason`, `src/lib/features/journal-entries/balance.ts`, `src/routes/(app)/bank-import/+page.svelte`, `src/routes/(app)/bank-import/manual/+page.svelte` (+ `+page.ts`, garde), `src/routes/(app)/bank-import/[id]/+page.svelte`, `src/lib/shared/i18n-keys.test.ts`, `src/lib/shared/i18n-libelle-en-dur.test.ts`, `tests/e2e/bank-manual-statement.spec.ts`, `tests/e2e/helpers/api-fixtures.ts` (l'aide `createUser` extraite), `tests/e2e/audit-log.spec.ts` (`createUser` extraite) |
 | `kesh-api` (tests) | le test croisé des `reason` (AC-24) |
-| `kesh-i18n` | `locales/{fr,de,it,en}-CH/messages.ftl` (clés de l'écran ; `bank-accounts-close-dialog-body` et `fiscal-years-checks-k2-help` récrites — numéros par catalogue à l'AC-23) |
+| `kesh-i18n` | `locales/{fr,de,it,en}-CH/messages.ftl` (clés de l'écran ; `bank-accounts-close-dialog-body` et `fiscal-years-checks-k2-help` récrites — numéros par catalogue à l'AC-23 ; `bank-import-labels-list-col-imported-at` et `bank-import-labels-list-col-filename` récrites, `fr-CH:1215-1216`, `de-CH`/`it-CH`/`en-CH:1154-1155` — étape 0, validation P8, P1) |
 | `frontend` (autres) | `src/lib/features/fiscal-years/closing-checks-labels.ts` (`:48`), `src/routes/(app)/bank-accounts/+page.svelte` (`:838-839`, repli), `src/routes/(app)/bank-accounts/bank-accounts-page.test.ts` (`:502`), `src/lib/shared/i18n-repli-divergent-actif.test.ts` (`REPLIS_A_SITE_UNIQUE`) |
 | docs | `docs/manual/fr/user-manual.tex` (+ PDF), `docs/manual/fr/admin-manual.tex:82` (+ PDF), `CHANGELOG.md` (*Ajouté*), `README.md:41` |
 
@@ -343,7 +344,8 @@ inchangées. Ne déclarer que ce qui a tourné, chiffres recomptés.
   ajoutée avec son bras d'`index`, `ALL` et `COUNT` inchangés, laisse les deux premières assertions vertes (registre
   `:442-447`). Relevé au 2026-10-30 dans l'arbre de travail, **non encore commité** : `manual.rs:84` (`COUNT`), `:87`
   (`ALL`), `:102` (`index`), `manual_tests.rs:133` (`all_is_indexed_and_counted`), `:153` (`include_str!`), `:173`
-  (`all_covers_every_declared_variant`) — à relire au commit, noms compris. Si l'un manque, le développeur de la 2b
+  (`all_covers_every_declared_variant`) — à relire au commit, noms compris *(étape 0, validation P8, P4 : les noms relevés
+  sont indicatifs ; ce qui manque s'entend d'un élément, non d'un nom)*. Si l'un manque, le développeur de la 2b
   **s'arrête et le signale** à l'orchestrateur, sans écrire le test croisé de l'AC-24.
 - Que `GET /companies/current` ne rend que les comptes ni archivés ni clos (`docs/api-external.md:240`).
 - `frontend/src/routes/(app)/supplier-invoices/import/+page.ts` — le patron de garde Comptable+ (`load()` redirige un rôle
@@ -353,8 +355,8 @@ inchangées. Ne déclarer que ce qui a tourné, chiffres recomptés.
   `:113-118` ; `BankImportList.svelte:24-25` ; `helpers/api-fixtures.ts:100-105` *(`:190`, ligne d'`isPrimary`, ôtée à l'étape 0 de la 2a — validation P5 de la 2a, P3)* ; `audit-log.spec.ts:52` ;
   `reconciliation-amount-due.spec.ts:80-81` ; `kesh-core/src/bank_imports.rs:365-377` ;
   `kesh-import/src/camt053/mod.rs:405`, `:412`, `:426-428`, `:629-630` ; `errors.rs:2354-2358` ;
-  `i18n-keys.test.ts:773`, `:882`, `:960` ; `i18n-libelle-en-dur.test.ts:250` ; `messages.ftl` (`fr-CH:997`, `:1473` ;
-  `de-CH`/`it-CH`/`en-CH:946`, `:1409`) ; `closing-checks-labels.ts:48` ; `bank-accounts-page.test.ts:502` ; `bank-accounts/+page.svelte:838-839` et
+  `i18n-keys.test.ts:773`, `:882`, `:960` ; `i18n-libelle-en-dur.test.ts:250` ; `messages.ftl` (`fr-CH:997`, `:1215-1216`, `:1473` ;
+  `de-CH`/`it-CH`/`en-CH:946`, `:1154-1155`, `:1409`) ; `closing-checks-labels.ts:48` ; `bank-accounts-page.test.ts:502` ; `bank-accounts/+page.svelte:838-839` et
   `i18n-repli-divergent-actif.test.ts` (`TOLEREES`, `REPLIS_A_SITE_UNIQUE`, ajoutés à la validation P5) ;
   `user-manual.tex:1971-1973`, `:2277` ; et (validation P4, P7) `routes/bank_accounts.rs:352`, `kesh-core/src/types/iban.rs`,
   `textes_coherents.rs:46-48`, `helpers/test-state.ts` (base tronquée).
@@ -450,3 +452,32 @@ inchangées. Ne déclarer que ce qui a tourné, chiffres recomptés.
   ciblée, 0/0/2/4 → P7 Sonnet ciblée, 0/0/2/3 → P8 Opus ciblée, 0/0/1/3. Modèles : rotation Sonnet ↔ Opus, contexte frais
   à chaque passe ; aucune passe Haiku. Statut : `ready-for-dev` ; le point bloquant de C-v016-2-20 demeure — le
   développement de la 2b attend le commit du code de la 2a.
+- 2026-10-30 — **Développement, étape 0** (Opus 5.5, autonomie ; worktree `/home/gcorbaz/devel/kesh-0163`, branche
+  `story/v016-2b-releve-manuel-ecran`, partie de `285d2fde`). Statut `in-progress`.
+  - **Point bloquant (C-v016-2-20), vérifié dans le code commité de la 2a** (`git show HEAD:…`, commit `2b14e90f`) —
+    **tous les éléments présents**, aucun arrêt : `manual.rs:84` `pub const COUNT: usize = 11;` ; `:87`
+    `pub const ALL: [Self; 11] = [` ; `:102` `pub fn index(self) -> usize {`, bras `Self::Required => 0` à
+    `Self::UnknownDirection => 10`, aucun `_ =>` ; `:119` `pub fn code(self) -> &'static str {` ;
+    `manual_tests.rs:140` `fn all_is_indexed_and_counted() {` (`assert_eq!(ManualStatementReason::ALL.len(),
+    ManualStatementReason::COUNT)`, `assert_eq!(r.index(), i, …)`) ; `:160` `let src = include_str!("manual.rs");` dans
+    `count_source_variants` ; `:180` `fn all_covers_every_declared_variant() {` (`assert_eq!(n, 11, …)`,
+    `assert_eq!(n, ManualStatementReason::COUNT)`, `assert_eq!(n, ManualStatementReason::ALL.len())`). Les numéros de la
+    fiche (`:133`, `:153`, `:173`) étaient ceux de l'arbre non commité : décalés de sept lignes au commit, éléments
+    identiques.
+  - **Renvoi de la validation P8**, appliqué : P1 (MEDIUM) — AC-24, table *Fichiers touchés* (ligne `kesh-i18n`) et liste
+    des citations complétées des deux en-têtes et des numéros des quatre catalogues ; la réécriture des catalogues et du
+    repli se fait au commit de code. Lignes lues (à `285d2fde`, décalées de +4 en `fr-CH` par les clés de la 2a) :
+    `fr-CH:1219` `bank-import-labels-list-col-imported-at = Date import`, `:1220` `… -filename = Fichier` ;
+    `de-CH:1158-1159` `Importdatum`, `Datei` ; `it-CH:1158-1159` `Data importazione`, `File` ; `en-CH:1158-1159`
+    `Import date`, `File` ; `BankImportList.svelte:24-25`. P2 (LOW) — le Vitest V13
+    (`BankImportUpload.test.ts:735` `const FR_TEXTS = [`, `'Date import',` `'Fichier',`, `:845`) se récrit avec les
+    nouveaux textes au même commit. P3 (LOW) — AC-24 : « ici, outre les deux de l'AC-23 ». P4 (LOW) — point bloquant :
+    « les noms relevés sont indicatifs ».
+  - **Autres lignes de « À recontrôler », lues** : `docs/api-external.md:240` (« `GET /companies/current` ne rend que
+    les comptes ni archivés ni clos, sans paramètre ») ; `supplier-invoices/import/+page.ts` (`if (browser && role !==
+    'Admin' && role !== 'Comptable') { throw redirect(302, '/'); }`) ; `audit-log.spec.ts:52` (`async function
+    createUser(page, role)`) ; `reconciliation-amount-due.spec.ts:80-81` (fenêtre de 30 jours) ;
+    `textes_coherents.rs:46-48` (`fn lire`) ; `closing-checks-labels.ts:46-49` (repli K2) ;
+    `bank-accounts/+page.svelte:836-839` (repli de la boîte de clôture) ; `bank-accounts-page.test.ts:502` (message
+    `has-pending-transactions` en simulacre : la 2a l'a récrit, `fr-CH:1443`, le Vitest suit) ;
+    `fr-CH:997` (K2), `:1477` (boîte de clôture, +4) ; `de-CH`/`it-CH`/`en-CH:946`, `:1413` (+4).
