@@ -1,6 +1,6 @@
 # Story v016-2b : saisir un relevé bancaire à la main — l'écran
 
-Status: in-progress
+Status: review
 
 *Sous-fiche issue du découpage de la Story v016-2 à la validation P2 (2026-10-30, décision de l'orchestrateur,
 C-v016-2-18). **Dépend de la `v016-2a`** (l'API, les codes, l'audit, la migration) : elle se développe après sa fusion
@@ -365,9 +365,135 @@ inchangées. Ne déclarer que ce qui a tourné, chiffres recomptés.
 
 ### Agent Model Used
 
+Opus 5.5 (Claude Code, agent de développement, autonomie), 2026-10-30/31. Worktree `/home/gcorbaz/devel/kesh-0163`,
+branche `story/v016-2b-releve-manuel-ecran` (partie de `285d2fde`, la v016-2a revue fusionnée en `c87d0be7`), bases
+`kesh_v0162b` et `kesh_e2e_v0162b`, port 3163, cible `kesh-0163/target`. Journaux : `kesh-gate-logs/v0162b/`.
+
+### Étape 0
+
+Au Change Log (entrée « Développement, étape 0 ») : point bloquant C-v016-2-20 **présent** dans le code commité de la 2a
+(lignes citées), renvois P8 (MEDIUM P1, LOW P2 à P4) appliqués, autres lignes de « À recontrôler » lues.
+
 ### Completion Notes List
 
+**Rouges d'abord** (commit `b61da862`, `rouge-1.log`) : `manual-statement.test.ts`, `manual-statement-reason-label.test.ts`
+et `ManualStatementForm.test.ts` commités avant le code — **3 fichiers rouges, 0 test exécuté** (« Failed to resolve import
+"./manual-statement" »). Puis le code : les trois verts au premier passage (67 tests avec `balance.test.ts`).
+
+**Ce qui est livré** : AC-19 (lien, garde `+page.ts` patron de `supplier-invoices/import`) ; AC-20 à AC-22
+(`manual-statement.ts` pur, `ManualStatementForm.svelte`, `isValidAmount` généralisée par options sur **une** expression
+paramétrée, défauts du journal inchangés) ; AC-23 (`bank-import-display.ts`, liste, détail entièrement en clés, variantes
+`bank-import-manual-delete-*`, notification de suppression propre ; K2 et boîte de clôture récrites — « rouvrir » gardé ;
+`bank-accounts-page.test.ts:502` suit le message récrit par la 2a) ; AC-24 (clés aux quatre catalogues, gardes recalées,
+G24) ; AC-25 (captures) ; AC-26 (E2E) ; AC-27 (manuel utilisateur + PDF, `admin-manual.tex:82` + PDF) ; AC-29-bis
+(CHANGELOG *Ajouté*, phrase d'ouverture complétée) ; AC-30 (README). Après la fusion de la 2a revue : le `409
+RECONCILIATION_ACCOUNT_LOCKED` s'affiche par son message serveur (générique, traduit), sans ligne désignée, l'aperçu
+gardé pour réessayer — deux tests ajoutés (commit `test(v016-2b) : le 409…`).
+
+**Compteurs de garde recalés** (ancienne → nouvelle valeur, recomptés) : `i18n-keys.test.ts` — `sitesTotal` 2619 → 2711
+(+92, `grep -oE '(i18nMsg|[^a-zA-Z]msg)\('` aux deux bornes `285d2fde` → tête, ventilation par fichier au commentaire),
+`sitesGabarit` 11 → 12, `SITES_GABARIT_ATTENDUS` +1 ligne, `MOTIFS_DYNAMIQUES` 9 → 10 préfixes (+`bank-import-manual-reason-`,
+11 valeurs), `CARDINALITES` +1 (lue depuis `MANUAL_STATEMENT_REASON_LABELS`) ; `i18n-libelle-en-dur.test.ts` —
+`CANDIDATES_ATTENDUES` 71 → 76, `conforme` 57 → 62 (cinq déclarations nommées) ; `i18n-repli-divergent-actif.test.ts` —
+`REPLIS_A_SITE_UNIQUE` 13 → 91 entrées (4 clés récrites + 74 clés statiques neuves : 60 `bank-import-manual-*` hors
+`-reason-`, 14 `bank-import-detail-*`), décompte du commentaire « treize » → « quatre-vingt-onze » (`awk … | grep -cE` :
+91). Liste nommée : celle du fichier (`:217-…`), égale à l'ensemble des clés `bank-import-(manual|detail)-*` hors
+`-reason-`/`-errors-` du catalogue fr-CH (`diff` vide). **Aucune clé statique sans repli littéral.** Angle mort assumé :
+la famille `bank-import-manual-reason-` (gabarit), tenue par `MOTIFS_DYNAMIQUES`/`CARDINALITES`, le Vitest de couverture
+et G24. `textes_coherents.rs` : G24 ajoutée (deux tests).
+
+**Le manuel** (`make user admin`, sous verrou, `make-manuels-1.log` : trois passes chacun, stables, 0 référence
+indéfinie) ; PDF aplati (`grep -oF … | wc -l`) : `Saisir un relevé à la main` 4, `Si la banque passe un jour au CAMT` 2,
+`Ma banque ne propose ni CAMT.053 ni CSV` 2, `à partir du lendemain` 1, `n’offre pas` 2, `Seul le CAMT` 0, `Seuls les
+relevés` 0, `Kesh supporte deux formats` 0, `??` 0 ; admin : `saisie à la main d’un relevé` 1. Filet du `.tex` aplati
+trié (`user-tex-plat.txt`) : les occurrences restantes de `deux formats` (« deux formats de fichier … et accepte aussi
+un relevé saisi »), `CSV n'en a` (trois, justes), `le nom du fichier` (cinq, dont une hors sujet — l'import de factures —,
+les autres complétées de « ou Saisie manuelle »), `réimport` (quatre, chacune de fichiers), `importé` (justes ou
+complétées). `:2216` relu : juste (préambule CSV). Sites récrits : `:49`, `:232`, `:255-258`, `:802`, `:813`, `:814`,
+`:821`, `:1925`, `:1958-1959`, `:1973`, `:2012`, `:2023-2024`, `:2029`, `:2039-2041`, `:2046-2052`, `:2094-2095`,
+`:2097-…` (supprimer), `:2120-2121`, `:2126`, `:2277`, `:2292`, `:2462`, `:2470`, plus la sous-section et la FAQ.
+
+**Écarts à la fiche, et pourquoi** :
+- ⚠️ Éditions hors de l'outil d'édition : `bank-import.types.ts` (ajout en fin par `cat >>`), `bank-import.api.ts`
+  (remplacement à motif vérifié unique par `python3`), et l'ajout en fin de trois fichiers de tests
+  (`DeleteBankImportAction.test.ts`, `bank-import-detail-page.test.ts`, `bank-import-page.test.ts`) et de
+  `BankImportList.test.ts` (créé) par `cat`. Diffs relus ; tout le reste par Edit/Write.
+- Mes choix, prévus C-v016-2-24 à 27, sont **renumérotés C-v016-2-25 à 28** à la fusion de la 2a revue (qui a pris
+  C-v016-2-24), sur instruction de l'orchestrateur.
+- Le test croisé des `reason` vit dans `textes_coherents.rs` (G24), non dans un fichier neuf (C-v016-2-27).
+- Les captures sont prises par un troisième test E2E, sauté hors `KESH_E2E_CAPTURES_DIR` (C-v016-2-28).
+- Deux gardes ont rougi au gate complet après fusion, sur mon code : l'inventaire des boutons rouges (le « × » de retrait
+  portait `text-destructive`) et `e2e-selecteurs-traduits.test.ts` (deux `getByText` sur un libellé traduit dans la
+  spec) — corrigés au commit `67ad0971`, puis gate et E2E rejoués.
+- Un fichier vide a peut-être été créé hors du scratchpad : `/tmp/claude-1000/a.txt` (redirection d'un `sort` dans une
+  commande de comparaison) — non supprimé (aucun `rm`), sans contenu de données.
+
+### Gates (réellement exécutés, au dernier commit de code `67ad0971`, après fusion de `920ddb4d`)
+
+Sous verrou (`gate-complet-3.log`) :
+- **Mutations** (`muter.py`, journaux `mutations/M*.log`, bilan `mutations/bilan.txt`) : **10 jouées, 10 tuées, 0
+  survivante** ; `git status` propre après la campagne (hors ce prompt non suivi).
+- **Base** `kesh_v0162b` supprimée, recréée, migrée (87 + celles de la 2a revue : aucune nouvelle), seedée.
+- **Backend** `scripts/test-fast.sh --ci` (`gate-1.log`) : garde des droits, `fmt`, `clippy -D warnings` verts ;
+  nextest **4521 exécutés, 4521 passés, 7 ignorés**.
+- **Frontend** : `npm run check` 0 erreur, 29 avertissements (préexistants, aucun sur un fichier de la story) ;
+  `lint-i18n-ownership` PASS ; `npm run test:unit` **185 fichiers, 2200 tests, tous verts** (`vitest-1.log`) ; `npm run
+  build` vert.
+- **E2E complet** (`e2e-1.log`, recette `docs/testing.md`, port 3163, base persistante `kesh_e2e_v0162b` à 87 migrations,
+  `/health` `version 0.17.0`, dossiers neufs `/tmp/kesh-e2e-v0162b-2/` passés au backend et au runner) : **327 passés,
+  7 échoués, 18 ignorés** (13,4 min). Les sept échecs, jugés fichier par fichier contre § *Les échecs attendus* :
+  `mode-expert.spec.ts:26`, `:41`, `onboarding-path-b.spec.ts:65`, `:92`, `onboarding.spec.ts:57`, `:77`, `:150` — les
+  sept de la **KF-029 (#97)** ; aucun hors liste. Le parcours neuf `bank-manual-statement.spec.ts` : 2 passés, le test de
+  captures ignoré (attendu). Backend arrêté par son PID.
+- **Captures** rejouées après le dernier commit (`e2e-spec-2.log`, 3 passés).
+
+### Mutations
+
+| # | Mutation jouée | Test(s) rouge(s) |
+|---|---|---|
+| M13 | débits ajoutés (`.plus(totalDebits)`) | `computeManualTotals` ×2, `saveBlockReason` ×2 (`manual-statement.test.ts`) |
+| M14 | raison « écart » seulement si l'écart est nul… absente (`gap === null`) | `M14 — un aperçu réussi…` (logique et formulaire) |
+| M15 | `previewFresh` sans comparaison de clé | `M15 — une modification après l'aperçu le périme…`, et M29 |
+| M19 | cases forcées à `false` dans le corps | `M19 — les cases cochées partent dans le corps…` |
+| M25 | `screenRowOf` rend le rang tel quel | `M25 — le rang 1-based…`, les deux « CETTE ligne », `M25` du formulaire |
+| M26 | `toFixed(2)` → `toString()` | `M26 — « -120,50 » part en « -120.50 »`, et M19 (`openingBalance` `1000.00`) |
+| M27 | défaut `allowEmpty` inversé | `balance.test.ts` : `accepte chaîne vide` et trois `computeBalance` |
+| M28 | lien affiché à tout rôle (`{#if true}`) | `Consultation ⇒ aucun lien (M28)`, `aucun utilisateur ⇒ aucun lien (M28)` |
+| M29 | réponse d'aperçu liée à la clé courante | `M29 — une réponse d'aperçu arrivée après une modification…` |
+| M30 | `unknown_direction` retirée de la table | `g24_la_table_des_reason_egale_l_ensemble_ferme_du_serveur` (Rust) |
+
+### Captures (AC-25, thème clair, base E2E du worktree)
+
+`/home/gcorbaz/devel/kesh-gate-logs/v0162b/captures/` : `01-bank-import-lien`, `02-formulaire-vide`,
+`03-soldes-vides-sans-ecart`, `04-desequilibre-ecart`, `05-ligne-invalide-raison`, `06-erreur-serveur-ligne-designee`,
+`07-equilibre-verifie`, `08-apercu-perime`, `09-notification-succes-et-liste`, `10-detail-releve-saisi`,
+`11-boite-de-suppression`, `12-avertissements-identique-doublons-chevauchement`, `13-cases-cochees`,
+`14-avertissement-solde-de-depart`, `15-releve-rapproche-suppression-bloquee`, `16-erreur-de-suppression`,
+`17-notification-de-suppression`, `18-refus-compte-clos`, `19-journal-audit-filtre-action`, `20-consultation-sans-lien`.
+Manque déclaré : l'erreur de suppression « rapprochée entre-temps » (409) n'a pas de capture propre (couverte par le
+Vitest de `DeleteBankImportAction`).
+
+### Défauts observés hors périmètre
+
+Aucun nouveau. Rappels : issues de la liste C de la parente (période déjà saisie à l'import ; clé morte
+`homepage-bank-no-transactions`) à ouvrir par l'orchestrateur.
+
 ### File List
+
+- Nouveaux : `frontend/src/lib/features/bank-import/{ManualStatementForm.svelte, ManualStatementForm.test.ts,
+  manual-statement.ts, manual-statement.test.ts, manual-statement-reason-label.ts, manual-statement-reason-label.test.ts,
+  bank-import-display.ts, BankImportList.test.ts}`, `frontend/src/routes/(app)/bank-import/manual/{+page.svelte,+page.ts}`,
+  `frontend/tests/e2e/bank-manual-statement.spec.ts`, `v016-2b-review-prompt-p1.md`.
+- Modifiés : `frontend/src/lib/features/bank-import/{BankImportList.svelte, BankImportUpload.test.ts,
+  DeleteBankImportAction.svelte, DeleteBankImportAction.test.ts, bank-import.api.ts, bank-import.types.ts}`,
+  `frontend/src/lib/features/journal-entries/balance.ts`, `frontend/src/lib/features/fiscal-years/closing-checks-labels.ts`,
+  `frontend/src/lib/shared/{i18n-keys,i18n-libelle-en-dur,i18n-repli-divergent-actif}.test.ts`,
+  `frontend/src/routes/(app)/bank-accounts/{+page.svelte, bank-accounts-page.test.ts}`,
+  `frontend/src/routes/(app)/bank-import/{+page.svelte, bank-import-page.test.ts, [id]/+page.svelte,
+  [id]/bank-import-detail-page.test.ts}`, `frontend/tests/e2e/{audit-log.spec.ts, helpers/api-fixtures.ts}`,
+  `crates/kesh-api/tests/textes_coherents.rs`, `crates/kesh-i18n/locales/{fr,de,it,en}-CH/messages.ftl`,
+  `docs/manual/fr/{user-manual,admin-manual}.{tex,pdf}`, `CHANGELOG.md`, `README.md`.
+- Fiches : cette sous-fiche, `v016-2-choix-autonomes.md` (C-v016-2-25 à 28), `sprint-status.yaml`.
 
 ## Change Log
 
@@ -481,3 +607,10 @@ inchangées. Ne déclarer que ce qui a tourné, chiffres recomptés.
     `bank-accounts/+page.svelte:836-839` (repli de la boîte de clôture) ; `bank-accounts-page.test.ts:502` (message
     `has-pending-transactions` en simulacre : la 2a l'a récrit, `fr-CH:1443`, le Vitest suit) ;
     `fr-CH:997` (K2), `:1477` (boîte de clôture, +4) ; `de-CH`/`it-CH`/`en-CH:946`, `:1413` (+4).
+- 2026-10-31 — **Développement** (Opus 5.5, autonomie ; Dev Agent Record ci-dessus) : rouges d'abord (`b61da862`), écran,
+  détail, suppression, catalogues, G24 (`74d61d2c`), manuels et PDF (`3599d922`) ; fusion de la v016-2a revue
+  (`c87d0be7`, conflits du registre et de `sprint-status.yaml` résolus par union, choix renumérotés C-v016-2-25 à 28) ;
+  409 `RECONCILIATION_ACCOUNT_LOCKED` couvert ; deux gardes rougies au gate corrigées (`67ad0971`). Gate au dernier
+  commit de code : nextest 4521/4521 (7 ignorés), Vitest 2200/2200, E2E 327 passés / 7 échecs attendus (KF-029),
+  mutations 10/10 tuées, 20 captures. Statut `review`. Prochaine étape : revue de code P1
+  (`v016-2b-review-prompt-p1.md`, Sonnet, B/E/A).
