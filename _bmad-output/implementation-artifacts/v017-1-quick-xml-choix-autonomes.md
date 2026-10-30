@@ -160,3 +160,82 @@ cités sont ceux de `c5101b07`. Chaque choix : contexte, option retenue, alterna
   (`DecodingReader`) — change aussi la lecture des fichiers Latin-1 **dans** le texte, aujourd'hui refusés : élargissement
   hors objet.
 - **Réversible** : oui (un prétraitement pourrait s'ajouter plus tard sans toucher aux données).
+
+---
+
+*Choix du développement (Opus 5.5, autonomie, 2026-10-30).*
+
+### C-v017-1-12 — Forme des références de caractérisation
+
+- **Contexte** : AC9 compare la sortie entière d'un `Ok` et, pour un `Err`, le variant et sa charge, sauf les
+  relais de `quick-xml` comparés au variant seul.
+- **Retenu** : une référence JSON par fichier — `{"ok": <Vec<ImportedStatement>>}` ou
+  `{"err": {"variant": "<nom>", "payload": <chaîne | null>}}`, `payload` à `null` pour un relais ; un message
+  `MalformedXml` est « de Kesh » s'il **contient** l'un des cinq motifs de `KESH_MESSAGES` (trois sont des préfixes,
+  `.CdtDbtInd inattendu : ` est intérieur au message). Comparaison du texte rendu (`to_string_pretty` + fin de ligne),
+  diff imprimé en clair à l'échec.
+- **Écartées** : deux fichiers par entrée (sortie / erreur) — plus de fichiers pour rien ; comparer des `Value`
+  désérialisées — perd la lisibilité du diff.
+- **Réversible** : oui (tests seulement).
+
+### C-v017-1-13 — Bornes minimales et références orphelines, plutôt que des comptes exacts
+
+- **Contexte** : un test qui parcourt un dossier peut passer à vide (dossier déplacé, motif faux) ; un compte exact
+  obligerait chaque story qui ajoute une fixture à toucher ce test, alors que « après A, rien ne bouge » ne vaut que
+  pour cette story.
+- **Retenu** : `MIN_CRATE_FIXTURES = 19` et `MIN_FRONTEND_FIXTURES = 4` (bornes basses) ; une fixture neuve sans
+  référence fait rougir (référence absente) ; le test `every_reference_has_an_input` fait rougir une référence
+  orpheline (fixture renommée ou retirée).
+- **Écartées** : comptes exacts (`assert_eq!(19, …)`) — friction pour les stories suivantes sans gain de détection.
+- **Réversible** : oui.
+
+### C-v017-1-14 — Relevé hostile : `Ntry/Amt` à `Ccy="CHF"` par défaut, et `#[track_caller]`
+
+- **Contexte** : au premier rouge du commit A, AC6 (a)(b) et AC6 (c) rougissaient pour une **mauvaise cause** —
+  `MissingRequiredField("stmt[0].ntry[0].currency")` — parce que le gabarit ne portait pas de `Ccy` sur le
+  `Ntry/Amt`. La fiche (AC5 à AC7) dit qu'un rouge d'une autre cause invalide le test et se corrige avant A.
+- **Retenu** : `Injection::ntry_amt: Option<String>`, `None` valant ` Ccy="CHF"` (le relevé complet de la fiche) ;
+  AC5 seul le remplace (hostile sans `Ccy`, témoin à trois attributs et `Ccy="CHF"`). `parse_borne` porte
+  `#[track_caller]` : le message d'échec nomme la ligne de l'appel, ce qui distingue dans le journal rouge le témoin
+  d'AC5 (l. 145, vert) du document hostile (l. 155, rouge de délai).
+- **Écartées** : un témoin dans un test séparé — la fiche le veut dans le même test.
+- **Réversible** : oui.
+
+### C-v017-1-15 — Le retrait des commentaires du garde d'inventaire respecte les chaînes
+
+- **Contexte** : la fiche prescrit de retirer `//…` et `/* … */` avant de compter ; la validation P4 a relevé qu'un
+  retrait naïf tronquerait une chaîne contenant `//` (une URL), sans défaut aujourd'hui.
+- **Retenu** : un retrait qui saute les chaînes `"…"` (échappements compris) : un `//` dans une chaîne n'ouvre pas de
+  commentaire. Expression des relais : `^\s*\w+\s*\.\s*to_string\(\)\s*,?\s*$` (P4-3). Le garde exige aussi qu'au
+  moins un relais soit reconnu (sinon l'expression ne verrait plus rien) et que chaque motif soit encore écrit.
+- **Écartées** : un vrai lexeur Rust (`syn`) — dépendance de plus pour un garde.
+- **Réversible** : oui.
+
+### C-v017-1-16 — `fn local_name` garde sa signature en octets
+
+- **Contexte** : en 0.42, `local_name()` rend un `&str` ; la fiche demande de garder la fonction et son message.
+- **Retenu** : signature inchangée (`&[u8]`), appels en `.as_ref().as_bytes()` ; doc-comment qui dit que la branche
+  d'erreur ne se déclenche plus (le lecteur valide l'UTF-8) et pourquoi elle reste. Aucun message de Kesh ne change.
+- **Écartées** : passer à `&str` et supprimer `from_utf8` — ferait disparaître un message de Kesh, que le garde
+  d'inventaire compte (et que la fiche dit de garder).
+- **Réversible** : oui.
+
+### C-v017-1-17 — AC10 dans un module de tests neuf ; AC11 compte les transactions par le parseur
+
+- **Contexte** : `routes/bank_imports.rs` a un module de tests (`import_create_error_tests`), dédié à une autre
+  fonction ; AC11 exige « autant de doublons de ligne que de transactions du fichier ».
+- **Retenu** : module neuf `file_hash_tests` (AC10) ; dans AC11, le nombre de transactions est lu par
+  `kesh_import::parse_camt053` sur le fichier posté (et doit être non nul), non écrit en dur.
+- **Écartées** : une constante `1` — vraie aujourd'hui, muette si la fixture change.
+- **Réversible** : oui.
+
+### C-v017-1-18 — Contrôle des octets : `command grep`, non `grep`
+
+- **Contexte** : dans le shell de l'agent, `grep` est une **fonction** qui appelle `ugrep -I` (fichiers binaires
+  ignorés) ; `LC_ALL=C grep -c $'\xe9' v04_latin1.xml` y rend un code 1 sans sortie, alors que l'octet est présent
+  (`od -c` : `C l 351 m e n t`).
+- **Retenu** : le contrôle des octets d'AC9 s'exécute en `command grep` (le binaire `grep`), sortie versée au journal
+  `kesh-gate-logs/v017-1-octets-fixtures.txt` et au Change Log ; les commandes de la fiche, en `grep` nu, sont justes
+  hors de ce shell.
+- **Écartées** : modifier la fiche — l'écart tient à l'environnement de l'agent, non à la commande.
+- **Réversible** : —
