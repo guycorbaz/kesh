@@ -33,7 +33,7 @@ contexte, option retenue, alternatives écartées, réversibilité.
   l'étape** à la place du générique, sans écarter un message blanc ni journaliser.
 - **Retenu** : `errorMessageOf(err: unknown, repli?: string): string` — si `repli` est fourni, il remplace le générique
   dans les règles 2 (message vide ou blanc) et 3 (valeur qui n'est pas une `ApiError`, toujours journalisée) ; sans
-  `repli`, comportement inchangé pour les 27 fichiers qui l'appellent. Les onze sites de l'assistant l'appellent avec
+  `repli`, comportement inchangé pour les 23 fichiers qui l'appellent (`grep -rln "errorMessageOf(" frontend/src`, hors le module et les `.test.ts`). Les onze sites de l'assistant l'appellent avec
   le message de leur étape. Le message d'une `ApiError` est affiché **quel que soit son statut** (400 de validation,
   403, 409, réseau `status: 0`, 500 « Erreur interne ») : règle de la 28-2, déjà celle du compte bancaire.
 - **Écartées** : (a) `errorMessageOf(err)` nu — perd le contexte de l'étape pour une panne imprévue ; (b) un utilitaire
