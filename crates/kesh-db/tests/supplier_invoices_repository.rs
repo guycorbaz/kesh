@@ -2992,3 +2992,196 @@ async fn pay_sets_paid_at_to_the_payment_date(pool: MySqlPool) {
         "paid_at = la date du paiement, à minuit"
     );
 }
+
+// ---------------------------------------------------------------------------
+// Story v017-3b (#687) — une ligne de facture fournisseur naît au centime.
+// ---------------------------------------------------------------------------
+
+/// Une ligne de la facture de test : quantité, prix, taux, compte 4000.
+fn line(
+    ctx: &Ctx,
+    quantity: Decimal,
+    unit_price: Decimal,
+    vat_rate: Decimal,
+) -> NewSupplierInvoiceLine {
+    NewSupplierInvoiceLine {
+        description: "Prestation".into(),
+        quantity,
+        unit_price,
+        vat_rate,
+        expense_account_id: ctx.seeded.accounts["4000"],
+    }
+}
+
+/// La facture de test, aux lignes données.
+fn with_lines(ctx: &Ctx, lines: Vec<NewSupplierInvoiceLine>) -> NewSupplierInvoice {
+    NewSupplierInvoice {
+        lines,
+        ..one_line(ctx, dec!(1), dec!(0))
+    }
+}
+
+/// Ce que la création écrit : factures, écritures, traces `supplier_invoice.created`.
+async fn written(pool: &MySqlPool, company_id: i64) -> (i64, i64, i64) {
+    let count = |sql: &'static str| async move {
+        sqlx::query_scalar::<_, i64>(sql)
+            .bind(company_id)
+            .fetch_one(pool)
+            .await
+            .unwrap()
+    };
+    (
+        count("SELECT COUNT(*) FROM supplier_invoices WHERE company_id = ?").await,
+        count("SELECT COUNT(*) FROM journal_entries WHERE company_id = ?").await,
+        sqlx::query_scalar::<_, i64>(
+            "SELECT COUNT(*) FROM audit_log WHERE action = 'supplier_invoice.created'",
+        )
+        .fetch_one(pool)
+        .await
+        .unwrap(),
+    )
+}
+
+/// AC-4 (v017-3b) — le refus au niveau du dépôt : la ligne fautive est nommée
+/// par son rang 1-based et son montant normalisé, et rien n'est écrit.
+/// Tue M3 (l'appel retiré de `create_in_tx`).
+#[sqlx::test(migrations = "./test-schema")]
+async fn create_refuses_a_line_not_in_centimes(pool: MySqlPool) {
+    let ctx = setup(&pool).await;
+    let company = ctx.seeded.company_id;
+    let avant = written(&pool, company).await;
+
+    let cas: [(Vec<NewSupplierInvoiceLine>, usize, Decimal); 3] = [
+        (
+            vec![line(&ctx, dec!(3), dec!(33.3333), dec!(0))],
+            1,
+            dec!(99.9999),
+        ),
+        (
+            vec![
+                line(&ctx, dec!(1), dec!(10.00), dec!(8.1)),
+                line(&ctx, dec!(1.5), dec!(3.333), dec!(0)),
+            ],
+            2,
+            dec!(4.9995),
+        ),
+        // Deux lignes sous le centime dont la SOMME l'est (0.01) : la règle
+        // porte sur chaque ligne, non sur le total (validation P1, R7).
+        (
+            vec![
+                line(&ctx, dec!(1), dec!(0.005), dec!(0)),
+                line(&ctx, dec!(1), dec!(0.005), dec!(0)),
+            ],
+            1,
+            dec!(0.005),
+        ),
+    ];
+    for (lines, rang, montant) in cas {
+        let err =
+            supplier_invoices::create(&pool, with_lines(&ctx, lines), ctx.seeded.admin_user_id)
+                .await
+                .expect_err("la ligne n'est pas au centime");
+        match err {
+            DbError::SupplierLineNotInCentimes { line, line_total } => {
+                assert_eq!(line, rang);
+                assert_eq!(line_total, montant);
+                assert_eq!(line_total.to_string(), montant.normalize().to_string());
+            }
+            other => panic!("attendu SupplierLineNotInCentimes, reçu {other:?}"),
+        }
+        assert_eq!(written(&pool, company).await, avant, "rien n'est écrit");
+    }
+}
+
+/// AC-4 (v017-3b, validation P2, R1) — un produit négatif ET sous le centime
+/// sort en refus de **positivité**, jamais en « pas au centime ». Tue M10.
+#[sqlx::test(migrations = "./test-schema")]
+async fn create_judges_positivity_before_the_centime(pool: MySqlPool) {
+    let ctx = setup(&pool).await;
+    for (q, p) in [(dec!(-1), dec!(33.3333)), (dec!(1), dec!(-0.005))] {
+        let err = supplier_invoices::create(
+            &pool,
+            with_lines(&ctx, vec![line(&ctx, q, p, dec!(0))]),
+            ctx.seeded.admin_user_id,
+        )
+        .await
+        .expect_err("ligne négative");
+        match err {
+            DbError::IllegalStateTransition(m) => {
+                assert!(m.contains("strictement positifs"), "{m}")
+            }
+            other => panic!("attendu le refus de positivité pour {q} × {p}, reçu {other:?}"),
+        }
+    }
+}
+
+/// AC-4 (v017-3b) — invariant : une facture créée a un TTC au centime, que la
+/// ligne créanciers de son écriture d'achat égale.
+#[sqlx::test(migrations = "./test-schema")]
+async fn a_created_invoice_has_a_total_in_centimes(pool: MySqlPool) {
+    let ctx = setup(&pool).await;
+    let cas = vec![
+        vec![line(&ctx, dec!(1), dec!(99.95), dec!(0))],
+        vec![line(&ctx, dec!(2), dec!(0.125), dec!(8.1))],
+        vec![
+            line(&ctx, dec!(3), dec!(12.35), dec!(2.6)),
+            line(&ctx, dec!(0.5), dec!(7.30), dec!(8.1)),
+            line(&ctx, dec!(4), dec!(2.5000), dec!(0)),
+        ],
+    ];
+    for (i, lines) in cas.into_iter().enumerate() {
+        let mut new = with_lines(&ctx, lines);
+        new.supplier_invoice_number = Some(format!("FF-C-{i}"));
+        let created = supplier_invoices::create(&pool, new, ctx.seeded.admin_user_id)
+            .await
+            .expect("lignes au centime");
+        let total = created.invoice.total_amount;
+        assert!(
+            total.normalize().scale() <= 2,
+            "TTC {total} sous le centime"
+        );
+        let payable: Decimal = sqlx::query_scalar(
+            "SELECT credit FROM journal_entry_lines WHERE entry_id = ? AND credit > 0",
+        )
+        .bind(created.invoice.purchase_journal_entry_id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(payable, total, "la ligne créanciers égale le TTC");
+    }
+}
+
+/// D9 (v017-3b) — la passe de forme, seule : l'ordre positivité → centime →
+/// TVA, ligne par ligne, et les `line_total` rendus.
+#[test]
+fn purchase_lines_form_orders_its_refusals() {
+    let l = |q: Decimal, p: Decimal, t: Decimal| NewSupplierInvoiceLine {
+        description: "x".into(),
+        quantity: q,
+        unit_price: p,
+        vat_rate: t,
+        expense_account_id: 1,
+    };
+    assert_eq!(
+        supplier_invoices::purchase_lines_form(&[l(dec!(2), dec!(0.125), dec!(8.1))]).unwrap(),
+        vec![dec!(0.250)]
+    );
+    // Centime avant la TVA, sur la même ligne.
+    assert!(matches!(
+        supplier_invoices::purchase_lines_form(&[l(dec!(3), dec!(33.3333), dec!(101))]),
+        Err(DbError::SupplierLineNotInCentimes { line: 1, .. })
+    ));
+    // La TVA d'une ligne antérieure avant le centime d'une ligne ultérieure.
+    assert!(matches!(
+        supplier_invoices::purchase_lines_form(&[
+            l(dec!(1), dec!(1), dec!(101)),
+            l(dec!(3), dec!(33.3333), dec!(0)),
+        ]),
+        Err(DbError::IllegalStateTransition(_))
+    ));
+    // Positivité avant le centime.
+    assert!(matches!(
+        supplier_invoices::purchase_lines_form(&[l(dec!(-1), dec!(33.3333), dec!(0))]),
+        Err(DbError::IllegalStateTransition(_))
+    ));
+}

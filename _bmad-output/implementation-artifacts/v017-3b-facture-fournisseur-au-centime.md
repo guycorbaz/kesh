@@ -1,6 +1,6 @@
 # Story v017-3b : une facture fournisseur naît au centime ; celle qui ne l'est pas est signalée, non modifiée
 
-Status: ready-for-dev
+Status: in-progress
 
 *Fiche rédigée le 2026-10-30, en autonomie (Opus 5.5), worktree `/home/gcorbaz/devel/kesh-0173`, branche
 `story/v017-3-rapprochement-attente` partie de `c5101b07` (tête de la candidate `v0.16.1-rc1`) ; la story se fusionne
@@ -201,6 +201,16 @@ existante.
   banque à `100.00`, état qu'aucune 0.16.x ne produit. Pour la capture du sélecteur, (4) déposer un document dans
   l'inbox de `kesh_v0173b` (`KESH_INBOX_DIR` du backend de démonstration), qui apparaît « à traiter » et rend le
   sélecteur non vide.
+  *(Étape 0 du développement — les quatre LOW de la validation P6, appliqués.)* **(C1)** L'étape (4) se lit : déposer un
+  document dans le `KESH_INBOX_DIR` du backend de démonstration, **puis** *Quotidien* → *Documents à traiter* →
+  « Importer le dossier » ; le document apparaît alors « à traiter » et rend le sélecteur non vide (le dépôt seul ne
+  suffit pas : `inbox_import.rs:3`, « Sur déclenchement manuel (`POST /api/v1/inbox-import`) »). **(C2)** Un seul
+  véhicule : le fichier SQL **ne porte pas** de `SET @invoice_id` ; l'aide de test le pose elle-même, et l'opérateur de
+  la base de démonstration tape `SET @invoice_id := (SELECT id FROM supplier_invoices WHERE …);` puis joue le fichier
+  dans la même session (`source …`) — « tel quel » est retiré. **(C3)** Précédents de `raw_sql` **multi-instructions** :
+  `onboarding_audit_e2e.rs:3022` et `:3085` (`:903` n'en porte qu'une). **(C4)** (3 bis) Pour l'état « annulée »,
+  annuler par l'écran **après** le fichier ; **une facture par état** (le fichier se joue une fois par facture, chacune
+  sous son `@invoice_id`). Lignes lues au Dev Agent Record.
 - **AC-10** — *(Réécrit à la validation P2, C-v017-3-24 : la matrice de conduite par état, ses conditions sur
   `cancellable`, `settlementCancellable`, `lastConfirmedBatch`, `settlementType` et `canManage`, et leurs tests sont
   **retirés**.)* La fiche de la facture (`frontend/src/routes/(app)/supplier-invoices/[id]/+page.svelte`, total `:386`)

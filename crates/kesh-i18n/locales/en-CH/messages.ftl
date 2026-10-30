@@ -2511,6 +2511,11 @@ supplier-invoices-qr-field-iban = IBAN
 supplier-invoices-qr-field-qr-iban = QR-IBAN
 supplier-invoices-qr-field-amount = QR amount
 supplier-invoices-subcentime = The QR amount ({$amount}) contains fractions of a centime — unreachable with centime-exact lines. Recommendation: remove this document from the list.
+# Story v017-3b (#687) — the manual section title stays in French (manuals not translated).
+supplier-invoices-errors-line-not-in-centimes = Line { $line } gives an amount of { $lineTotal }, which is not to the centime. Enter the line at the amount invoiced by the supplier, to the centime.
+supplier-invoices-line-not-in-centimes = The line amount ({ $lineTotal }) is not to the centime. Enter the line at the amount invoiced by the supplier, to the centime.
+supplier-invoices-err-line-not-in-centimes = A line is not to the centime: enter it at the amount invoiced by the supplier, to the centime.
+supplier-invoices-subcentime-total-warning = The total of this invoice ({ $amount }) is not to the centime: a bank payment of this amount cannot be matched to any statement transaction. See the manual, § « Une facture fournisseur au total sous le centime ».
 supplier-invoices-sum-ttc = Line total incl. VAT
 supplier-invoices-target = QR amount
 supplier-invoices-mismatch = difference to correct

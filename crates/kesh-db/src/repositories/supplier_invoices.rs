@@ -237,6 +237,47 @@ pub async fn list(
     Ok((items, total))
 }
 
+/// La passe de **forme** des lignes d'une facture fournisseur — Story v017-3b
+/// (#687, D9) : pure, sans I/O ni verrou.
+///
+/// Pour chaque ligne, **dans cet ordre** : positivité de la quantité, du prix et
+/// du produit (`IllegalStateTransition`, « strictement positifs ») ; puis le
+/// montant au centime ([`kesh_core::accounting::purchase_line_total`],
+/// [`DbError::SupplierLineNotInCentimes`] avec le rang 1-based) ; puis les bornes
+/// du taux de TVA. Le premier refus l'emporte, ligne par ligne. Rend les
+/// `line_total` dans l'ordre des lignes : l'appelant ne refait **aucun** second
+/// produit.
+///
+/// **Un seul ordre, deux chemins** : [`create_in_tx`] l'appelle avant tout
+/// verrou, et la complétion d'une pièce importée
+/// (`POST /imported-supplier-invoices/{id}/complete`) l'appelle avant son
+/// contrôle `AMOUNT_MISMATCH`, de sorte qu'une même ligne y reçoit le même refus.
+/// `pub` : la route de `kesh-api` l'appelle, et les tests d'intégration de
+/// `crates/kesh-db/tests/` l'atteignent.
+pub fn purchase_lines_form(
+    lines: &[crate::entities::NewSupplierInvoiceLine],
+) -> Result<Vec<Decimal>, DbError> {
+    let mut totals = Vec::with_capacity(lines.len());
+    for line in lines {
+        let line_total = line.quantity * line.unit_price;
+        if line.quantity <= Decimal::ZERO
+            || line.unit_price <= Decimal::ZERO
+            || line_total <= Decimal::ZERO
+        {
+            return Err(DbError::IllegalStateTransition(
+                "chaque ligne doit avoir une quantité et un prix strictement positifs".into(),
+            ));
+        }
+        if line.vat_rate < Decimal::ZERO || line.vat_rate > Decimal::from(100) {
+            return Err(DbError::IllegalStateTransition(
+                "taux de TVA hors bornes (0-100)".into(),
+            ));
+        }
+        totals.push(line_total);
+    }
+    Ok(totals)
+}
+
 /// Enregistre une facture fournisseur et poste son écriture d'achat (single-step,
 /// pool-owning). Délègue le cœur à [`create_in_tx`] dans une transaction qu'elle
 /// possède puis commit — patron identique à [`pay`]/[`pay_in_tx`].

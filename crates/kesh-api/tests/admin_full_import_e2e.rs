@@ -4433,3 +4433,135 @@ async fn full_import_restores_mcp_sends_byte_for_byte(pool: MySqlPool) {
         .unwrap();
     assert_eq!(compte, 2);
 }
+
+// ---------------------------------------------------------------------------
+// Story v017-3b (#687, AC-19) — une sauvegarde portant une facture fournisseur
+// au TTC sous le centime se restaure à l'identique (contrainte « données à
+// garder » du 2026-10-30, § 2).
+// ---------------------------------------------------------------------------
+
+#[path = "../../kesh-db/tests/support/sous_centime.rs"]
+mod sous_centime;
+
+/// L'état écrit d'une facture fournisseur : TTC, lignes, lignes d'écriture
+/// d'achat et de règlement, montants à quatre décimales.
+async fn supplier_invoice_state(pool: &MySqlPool, id: i64) -> Vec<String> {
+    sqlx::query_scalar::<_, String>(
+        "SELECT CONCAT('facture ', total_amount, ' ', status, ' ', purchase_journal_entry_id, ' ', \
+                COALESCE(settlement_journal_entry_id, '-')) FROM supplier_invoices WHERE id = ? \
+         UNION ALL SELECT CONCAT('ligne ', quantity, ' ', unit_price, ' ', line_total) \
+           FROM supplier_invoice_lines WHERE supplier_invoice_id = ? \
+         UNION ALL SELECT CONCAT('écriture ', jel.entry_id, ' ', jel.account_id, ' ', jel.debit, ' ', jel.credit) \
+           FROM journal_entry_lines jel JOIN supplier_invoices si \
+             ON jel.entry_id IN (si.purchase_journal_entry_id, si.settlement_journal_entry_id) \
+          WHERE si.id = ? ORDER BY 1",
+    )
+    .bind(id)
+    .bind(id)
+    .bind(id)
+    .fetch_all(pool)
+    .await
+    .unwrap()
+}
+
+/// AC-19 (v017-3b) — deux factures montées comme une base 0.16.x à `100.0040`,
+/// l'une ouverte, l'autre payée : exportées, **altérées** après l'export, puis
+/// réimportées, chacune se relit à l'identique de l'export. La restauration
+/// réécrit donc les `100.0040` (`INSERT` générique de `backup.rs`), sans passer
+/// par `create_in_tx`, dont la garde du centime les refuserait.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn full_import_restores_a_supplier_invoice_under_the_centime(pool: MySqlPool) {
+    use kesh_db::entities::{NewSupplierInvoice, NewSupplierInvoiceLine, SettlementChoice};
+    use kesh_db::repositories::supplier_invoices;
+
+    let app = spawn_app(pool.clone()).await;
+    let biz = seed_business(&pool, "SC").await;
+    let company = biz.ctx.company_id;
+    let le = chrono::NaiveDate::from_ymd_opt(2026, 3, 15).unwrap();
+    let supplier: i64 = sqlx::query_scalar(
+        "INSERT INTO contacts (company_id, contact_type, name, is_supplier) \
+         VALUES (?, 'Entreprise', 'Fournisseur v017-3b', TRUE) RETURNING id",
+    )
+    .bind(company)
+    .fetch_one(&pool)
+    .await
+    .expect("fournisseur");
+    let mut ids = Vec::new();
+    for numero in ["FF-0-16-OUVERTE", "FF-0-16-PAYEE"] {
+        let id = supplier_invoices::create(
+            &pool,
+            NewSupplierInvoice {
+                company_id: company,
+                contact_id: supplier,
+                supplier_invoice_number: Some(numero.into()),
+                invoice_date: le,
+                due_date: None,
+                creditor_iban: None,
+                creditor_qr_iban: None,
+                payment_reference: None,
+                expected_payment_amount: None,
+                project_id: None,
+                lines: vec![NewSupplierInvoiceLine {
+                    description: "Achat".into(),
+                    quantity: dec!(1),
+                    unit_price: dec!(100.00),
+                    vat_rate: dec!(0),
+                    expense_account_id: biz.accounts["4000"],
+                }],
+            },
+            biz.ctx.user_id,
+        )
+        .await
+        .expect("facture fournisseur")
+        .invoice
+        .id;
+        sous_centime::amener_sous_le_centime(&pool, id).await;
+        ids.push(id);
+    }
+    supplier_invoices::pay(
+        &pool,
+        company,
+        ids[1],
+        SettlementChoice::InternalAccount {
+            account_id: biz.accounts["1000"],
+        },
+        le,
+        biz.ctx.user_id,
+    )
+    .await
+    .expect("paiement de la facture sous le centime");
+
+    let mut avant = Vec::new();
+    for &id in &ids {
+        let etat = supplier_invoice_state(&pool, id).await;
+        assert!(
+            etat.iter().filter(|l| l.contains("100.0040")).count() >= 3,
+            "montage : {etat:?}"
+        );
+        avant.push(etat);
+    }
+
+    let backup = export_backup(&app, &biz.ctx.jwt).await;
+    // Altérées APRÈS l'export : seule la restauration peut les ramener.
+    sqlx::raw_sql(
+        "UPDATE supplier_invoice_lines SET unit_price = 1, line_total = 1; \
+         UPDATE supplier_invoices SET total_amount = 1; \
+         UPDATE journal_entry_lines SET debit = 1 WHERE debit = 100.0040; \
+         UPDATE journal_entry_lines SET credit = 1 WHERE credit = 100.0040;",
+    )
+    .execute(&pool)
+    .await
+    .unwrap();
+    assert_ne!(supplier_invoice_state(&pool, ids[0]).await, avant[0]);
+
+    let (manifest, data) = unzip(&backup);
+    import_ok(&app, &biz.ctx.jwt, &manifest, &data).await;
+
+    for (id, etat) in ids.iter().zip(&avant) {
+        assert_eq!(
+            &supplier_invoice_state(&pool, *id).await,
+            etat,
+            "la facture {id} se relit à l'identique"
+        );
+    }
+}

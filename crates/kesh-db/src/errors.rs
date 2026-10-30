@@ -761,6 +761,20 @@ pub enum DbError {
         minimum: rust_decimal::Decimal,
     },
 
+    /// Une ligne de facture fournisseur dont `quantité × prix` n'est pas au
+    /// centime (Story v017-3b, #687) : refusée à la saisie comme à la
+    /// complétion d'une pièce importée, par la passe de forme
+    /// [`crate::repositories::supplier_invoices::purchase_lines_form`].
+    ///
+    /// Défaut de saisie → HTTP **400** `SUPPLIER_INVOICE_LINE_NOT_IN_CENTIMES`.
+    /// `line` est le rang **1-based** de la ligne ; `line_total` le produit
+    /// **normalisé** (`4.9995`, jamais `4.999500`), que le message nomme.
+    #[error("La ligne {line} donne un montant de {line_total}, qui n'est pas au centime")]
+    SupplierLineNotInCentimes {
+        line: usize,
+        line_total: rust_decimal::Decimal,
+    },
+
     /// La date fournie ne tombe pas dans l'exercice courant de l'entité
     /// modifiée. Story 3.3 : empêche le déplacement d'une écriture vers
     /// un autre exercice via un simple changement de date.
@@ -1419,6 +1433,7 @@ impl DbError {
             Self::RoundingAccountNotConfigured { .. } => "ROUNDING_ACCOUNT_NOT_CONFIGURED",
             Self::WriteOffAccountNotConfigured { .. } => "WRITE_OFF_ACCOUNT_NOT_CONFIGURED",
             Self::InvoiceBelowMinimum { .. } => "INVOICE_BELOW_MINIMUM",
+            Self::SupplierLineNotInCentimes { .. } => "SUPPLIER_INVOICE_LINE_NOT_IN_CENTIMES",
             Self::DateOutsideFiscalYear => "DATE_OUTSIDE_FISCAL_YEAR",
             Self::AccountHasEntries { .. } => "ACCOUNT_HAS_ENTRIES",
             Self::AccountRoleAlreadyAssigned { .. } => "ACCOUNT_ROLE_ALREADY_ASSIGNED",
