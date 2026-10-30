@@ -8,6 +8,15 @@ Le contenu est rédigé en français à destination des **fiduciaires, PME, ind�
 
 ---
 
+## [0.17.0] — Non publié
+
+<!-- En-tête provisoire de la Story v017-3b : l'orchestrateur le fusionne avec la section
+     [0.17.0] issue du renommage de [0.16.1] par la v016-2a. -->
+
+### Corrigé
+
+- **Une ligne de facture fournisseur dont le montant n'est pas au centime est refusée** ([#687](https://github.com/guycorbaz/kesh/issues/687)), à la saisie comme à la création de la facture d'un document à traiter : la quantité et le prix portent quatre décimales au plus, et leur produit doit tomber au centime (« 3 × 33.3333 », soit 99.9999, est refusé ; « 2 × 0.125 », soit 0.25, est accepté). Une telle ligne écrivait au journal, puis au compte de la banque au règlement, un montant qu'aucun relevé ne porte : la réconciliation ne proposait jamais la facture. Le formulaire signale la ligne sous elle et n'envoie rien. Par l'API, une ligne de facture fournisseur dont le montant n'est pas au centime, ou dont la quantité ou le prix dépasse quatre décimales, est refusée en `400` (`SUPPLIER_INVOICE_LINE_NOT_IN_CENTIMES`, `VALIDATION_ERROR`) : c'est un changement de contrat. **Les factures existantes ne sont pas modifiées** : une facture enregistrée avant cette version avec un total sous le centime reste lisible, payable et annulable ; sa fiche l'affiche aux décimales exactes et la signale, en renvoyant au manuel utilisateur (« Une facture fournisseur au total sous le centime »), qui décrit comment la remplacer.
+
 ## [0.16.1] — 2026-10-29
 
 Correctif de l'Epic 32, le serveur MCP de Kesh ([#723](https://github.com/guycorbaz/kesh/issues/723)) : ce que le serveur rend à l'agent. Il n'ajoute **aucune migration** : la 0.16.0 redémarre sur une base passée par la 0.16.1, et une sauvegarde de l'une s'importe dans l'autre — le retour à la 0.16.0 ne demande aucune sauvegarde particulière, au-delà de celle que toute mise à jour réclame. Le compose et le `.env` ne changent pas.
