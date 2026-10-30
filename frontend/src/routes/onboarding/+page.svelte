@@ -7,6 +7,7 @@
 	import { modeState } from '$lib/app/stores/mode.svelte';
 	import { authState } from '$lib/app/stores/auth.svelte';
 	import { isApiError } from '$lib/shared/utils/api-client';
+	import { errorMessageOf } from '$lib/shared/utils/error-message';
 	import { toast } from 'svelte-sonner';
 
 	function msg(key: string, fallback: string): string {
@@ -31,13 +32,19 @@
 	});
 
 	// --- Step handlers ---
+	//
+	// Story v017-2 (#809) : chaque `catch` lie l'erreur et affiche le motif du refus
+	// du serveur, par `errorMessageOf(err, <message de l'étape>)` — le message de
+	// l'étape ne s'affiche plus que si le serveur ne donne pas de motif lisible (panne
+	// réseau, message vide). La garde `onboarding-catch-guard.test.ts` interdit le
+	// retour d'un `catch` sans liaison dans ce fichier.
 
 	async function chooseLanguage(lang: string) {
 		try {
 			await onboardingState.setLanguage(lang);
 			await loadI18nMessages();
-		} catch {
-			toast.error('Erreur lors du choix de langue');
+		} catch (err) {
+			toast.error(errorMessageOf(err, msg('onboarding-language-error', 'Erreur lors du choix de langue')));
 		}
 	}
 
@@ -45,8 +52,8 @@
 		try {
 			await onboardingState.setMode(mode);
 			modeState.value = mode;
-		} catch {
-			toast.error(msg('onboarding-mode-error', 'Erreur lors du choix de mode'));
+		} catch (err) {
+			toast.error(errorMessageOf(err, msg('onboarding-mode-error', 'Erreur lors du choix de mode')));
 		}
 	}
 
@@ -54,32 +61,38 @@
 		try {
 			await onboardingState.seedDemo();
 			goto('/');
-		} catch {
-			toast.error(msg('onboarding-demo-load-error', 'Erreur lors du chargement des données de démo'));
+		} catch (err) {
+			toast.error(
+				errorMessageOf(err, msg('onboarding-demo-load-error', 'Erreur lors du chargement des données de démo'))
+			);
 		}
 	}
 
 	async function chooseProductionPath() {
 		try {
 			await onboardingState.startProduction();
-		} catch {
-			toast.error(msg('onboarding-setup-start-error', 'Erreur lors du démarrage de la configuration'));
+		} catch (err) {
+			toast.error(
+				errorMessageOf(err, msg('onboarding-setup-start-error', 'Erreur lors du démarrage de la configuration'))
+			);
 		}
 	}
 
 	async function chooseOrgType(orgType: string) {
 		try {
 			await onboardingState.setOrgType(orgType);
-		} catch {
-			toast.error(msg('onboarding-org-type-error', 'Erreur lors du choix du type'));
+		} catch (err) {
+			toast.error(errorMessageOf(err, msg('onboarding-org-type-error', 'Erreur lors du choix du type')));
 		}
 	}
 
 	async function chooseAccountingLang(lang: string) {
 		try {
 			await onboardingState.setAccountingLanguage(lang);
-		} catch {
-			toast.error(msg('onboarding-accounting-lang-error', 'Erreur lors du choix de la langue comptable'));
+		} catch (err) {
+			toast.error(
+				errorMessageOf(err, msg('onboarding-accounting-lang-error', 'Erreur lors du choix de la langue comptable'))
+			);
 		}
 	}
 
@@ -123,8 +136,10 @@
 				},
 				coordIde.trim() || null
 			);
-		} catch {
-			toast.error(msg('onboarding-address-save-error', 'Erreur lors de la sauvegarde des coordonnées'));
+		} catch (err) {
+			toast.error(
+				errorMessageOf(err, msg('onboarding-address-save-error', 'Erreur lors de la sauvegarde des coordonnées'))
+			);
 		}
 	}
 
@@ -136,12 +151,14 @@
 	// P9: distinguish bank-step errors from finalize() errors so the user gets an
 	// actionable message and doesn't end up stuck at /onboarding step 7 with the
 	// bank account already saved.
+	//
+	// Story v017-2 (#809, AC-4) : la branche comparait le code à `VALIDATION`, code
+	// que le serveur ne rend jamais (`VALIDATION_ERROR`, `errors.rs`) ; le refus « comptes
+	// 1100/3000 manquants » s'affichait donc « Finalisation échouée ». Toute erreur autre
+	// que « déjà finalisé » passe désormais par `errorMessageOf` : le motif du serveur,
+	// sinon le message de la finalisation.
 	function reportFinalizeError(err: unknown) {
-		if (!isApiError(err)) {
-			toast.error(msg('onboarding-finalize-error', 'Finalisation échouée — réessayez.'));
-			return;
-		}
-		if (err.code === 'ONBOARDING_STEP_ALREADY_COMPLETED') {
+		if (isApiError(err) && err.code === 'ONBOARDING_STEP_ALREADY_COMPLETED') {
 			toast.error(
 				msg(
 					'onboarding-already-finalized',
@@ -150,13 +167,7 @@
 			);
 			return;
 		}
-		if (err.code === 'VALIDATION') {
-			// Backend signalled a configuration gap (e.g. accounts 1100/3000 missing).
-			// Show the backend message verbatim so the user sees the remediation.
-			toast.error(err.message);
-			return;
-		}
-		toast.error(msg('onboarding-finalize-error', 'Finalisation échouée — réessayez.'));
+		toast.error(errorMessageOf(err, msg('onboarding-finalize-error', 'Finalisation échouée — réessayez.')));
 	}
 
 	// P6-L7: defense-in-depth — never navigate to / unless the backend confirmed
@@ -188,9 +199,7 @@
 			);
 		} catch (err) {
 			toast.error(
-				isApiError(err) && err.message
-					? err.message
-					: msg('onboarding-bank-save-error', 'Erreur lors de la sauvegarde du compte bancaire')
+				errorMessageOf(err, msg('onboarding-bank-save-error', 'Erreur lors de la sauvegarde du compte bancaire'))
 			);
 			return;
 		}
@@ -207,9 +216,7 @@
 			await onboardingState.skipBank();
 		} catch (err) {
 			toast.error(
-				isApiError(err) && err.message
-					? err.message
-					: msg('onboarding-bank-skip-error', 'Erreur lors du saut du compte bancaire')
+				errorMessageOf(err, msg('onboarding-bank-skip-error', 'Erreur lors du saut du compte bancaire'))
 			);
 			return;
 		}
@@ -355,7 +362,18 @@
 				</div>
 				<div>
 					<label for="coord-country" class="mb-1 block text-xs text-text-muted">{msg('field-country', 'Pays')}</label>
-					<Input id="coord-country" bind:value={coordCountry} placeholder="CH" />
+					<Input
+						id="coord-country"
+						bind:value={coordCountry}
+						placeholder="CH"
+						aria-describedby="coord-country-hint"
+					/>
+					<!-- Story v017-2 (#809, AC-6) : la forme attendue, sous le champ et non dans le
+					     libellé (cellule d'un tiers de grille). Pas de maxlength : « Suisse » doit
+					     atteindre le serveur et revenir expliqué, non être tronqué en « Su », accepté. -->
+					<p id="coord-country-hint" class="mt-1 text-xs text-text-muted">
+						{msg('onboarding-field-country-hint', 'code ISO à deux lettres, ex. CH, FR, DE')}
+					</p>
 				</div>
 			</div>
 		</fieldset>

@@ -176,8 +176,13 @@ const PREFIXES = [
  * `onboarding-restore-link` (relais `msg` de `routes/onboarding/+page.svelte`),
  * `onboarding-restore-back` (`routes/onboarding/restore/+page.svelte`). Recompté : `git diff`
  * du FTL fr-CH, préfixes du domaine.
+ *
+ * ⚠️ **344 → 346, +2 nommées** (Story v017-2, #809) — l'assistant affiche le motif d'un
+ * refus, deux clés au préfixe `onboarding-`, relais `msg` de `routes/onboarding/+page.svelte` :
+ * `onboarding-language-error` (S1, au lieu du littéral) et `onboarding-field-country-hint`
+ * (indication sous le champ Pays). Recompté : `git diff` du FTL fr-CH, préfixes du domaine.
  */
-const CLES_RELEVEES = 344;
+const CLES_RELEVEES = 346;
 
 
 /** Relève, pour chaque clé du domaine, l'ensemble de ses replis littéraux distincts. */

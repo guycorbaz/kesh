@@ -764,7 +764,15 @@ const ATTENDU = {
 	// même `grep` aux deux bornes (`f9b154f8` → HEAD), périmètre : les fichiers touchés —
 	// `McpKeysSection.svelte` 60 → 61 (`mcp-server-form-expires-invalid`, B3),
 	// `McpSettingsSection.svelte` 33 → 34 (`mcp-server-settings-retry`, E3). Que des littéraux.
-	sitesTotal: 2619,
+	// Story v017-2 (#809, l'assistant affiche le motif d'un refus) : **2619 → 2620** (+1),
+	// mesuré par la collecte de ce test et recompté par `grep -oE '(i18nMsg|[^a-zA-Z]msg)\('`
+	// aux deux bornes (`c5101b07` → HEAD de `story/v017-2-assistant-motif`), périmètre : les
+	// fichiers touchés par la branche — `routes/onboarding/+page.svelte` 59 → 60 (+1 S1,
+	// `onboarding-language-error` au lieu du littéral ; +1 indication du pays,
+	// `onboarding-field-country-hint` ; −1 `onboarding-finalize-error`, écrit une fois au lieu
+	// de deux dans `reportFinalizeError`) ; `shared/utils/error-message.ts` 1 → 1. Que des
+	// littéraux : les autres compteurs inchangés.
+	sitesTotal: 2620,
 	sitesNonResolus: 31,
 	relais: 6,
 	// Story 26-1 (#620, AC3-bis) : **10 → 11** — `lib/features/bank-import/
