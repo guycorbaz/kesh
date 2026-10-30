@@ -8,6 +8,14 @@ Le contenu est rédigé en français à destination des **fiduciaires, PME, ind�
 
 ---
 
+## [0.17.0]
+
+<!-- En-tête provisoire de la Story v017-2 (#809) : à fusionner par l'orchestrateur avec les autres stories de la 0.17.0. -->
+
+### Corrigé
+
+- **L'assistant d'installation affiche, à chacune de ses étapes de saisie, finalisation comprise, le motif d'un refus tel que le serveur le donne**, au lieu d'un message générique ; le champ Pays indique la forme attendue (code ISO à deux lettres) ([#809](https://github.com/guycorbaz/kesh/issues/809)).
+
 ## [0.16.1] — 2026-10-29
 
 Correctif de l'Epic 32, le serveur MCP de Kesh ([#723](https://github.com/guycorbaz/kesh/issues/723)) : ce que le serveur rend à l'agent. Il n'ajoute **aucune migration** : la 0.16.0 redémarre sur une base passée par la 0.16.1, et une sauvegarde de l'une s'importe dans l'autre — le retour à la 0.16.0 ne demande aucune sauvegarde particulière, au-delà de celle que toute mise à jour réclame. Le compose et le `.env` ne changent pas.

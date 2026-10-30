@@ -155,7 +155,8 @@ fixée à l'onboarding et n'est pas modifiable depuis un menu.
 \textbf{Les traductions allemande, italienne et anglaise n'ont pas été relues
 par des locuteurs natifs.} Depuis la version 0.11.0, les quatre catalogues
 portent rigoureusement les mêmes libellés, et des contrôles automatiques
-empêchent qu'un écran retombe silencieusement sur le français. Un glossaire fixe
+empêchent qu'un écran retombe silencieusement sur le français --- certains refus
+du serveur restent toutefois rédigés en français (\#710). Un glossaire fixe
 la terminologie comptable suisse (MWST, \emph{Geschäftsjahr}, \emph{aliquota})
 et des contrôles systématiques ont écarté les confusions de sens --- mais
 \textbf{rien ne garantit le naturel de la langue}. Si vous relevez une
@@ -198,7 +199,7 @@ Si vous souhaitez \textbf{tenir votre comptabilité réelle}, choisissez le mode
 \begin{enumerate}
     \item \textbf{Type d'organisation} : indépendant, association ou PME. Ce choix détermine le plan comptable que Kesh met en place (voir ci-dessous) ; il ne se modifie plus après l'onboarding.
     \item \textbf{Langue comptable} : langue des comptes et des rapports, indépendante de la langue de l'interface (utile si vous travaillez en français mais produisez des rapports en allemand, par exemple).
-    \item \textbf{Coordonnées légales} : raison sociale (ou nom pour un indépendant), adresse, et IDE (CHE-XXX.XXX.XXX), facultatif quel que soit le type d'organisation --- une entité inscrite au registre du commerce a intérêt à le renseigner.
+    \item \textbf{Coordonnées légales} : raison sociale (ou nom pour un indépendant), adresse (le pays en code ISO à deux lettres, CH par défaut), et IDE (CHE-XXX.XXX.XXX), facultatif quel que soit le type d'organisation --- une entité inscrite au registre du commerce a intérêt à le renseigner. Si Kesh refuse une saisie --- par exemple un pays écrit en toutes lettres au lieu de son code ---, l'assistant affiche le motif que le serveur donne, \textbf{qui peut être rédigé en français quelle que soit la langue de l'interface} (\#710)~; corrigez le champ et continuez.
     \item \textbf{Compte bancaire} : nom de la banque, IBAN et QR-IBAN éventuel (cette étape peut être passée et complétée plus tard ; les autres champs d'un compte, dont sa description, se règlent ensuite, cf. \S\ref{sec:comptes-bancaires}).
 \end{enumerate}
 
