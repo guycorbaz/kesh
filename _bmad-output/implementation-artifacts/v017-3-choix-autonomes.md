@@ -210,6 +210,10 @@ silencieuse ; un appariement propose, il ne crée jamais).
 - **Écartées** : (b) refuser le paiement par virement d'une telle facture (casse la confirmation d'un lot déjà parti à
   la banque) ; (c) une migration qui arrondit (réécriture silencieuse, interdite).
 - **Réversible** : oui.
+- *Amendement du 2026-10-30 (validation P1 de la 3b, R1 = F5)* : la conduite dépend de l'état ; elle devient une
+  matrice (ouverte, ouverte dans un lot en cours, payée, annulée) et finit par « si un bouton d'annulation manque, la
+  raison est indiquée plus bas ». L'annulation du règlement d'une facture payée par un lot **confirmé** est admise
+  (`supplier_invoices.rs:1547-1551`).
 
 ### C-v017-3-15 — v017-3b : ordre des refus de la complétion d'une pièce importée
 
@@ -230,6 +234,8 @@ silencieuse ; un appariement propose, il ne crée jamais).
   La 3b ferme la source pour les factures nouvelles ; les factures existantes restent exposées.
 - **Retenu** : hors périmètre (autre crate, autre geste) ; issue demandée, P3 : « pain.001 : `CtrlSum` arrondit la
   somme au lieu de sommer les montants arrondis ».
+- *Amendement du 2026-10-30 (validation P1 de la 3b, F8)* : l'issue est ouverte, **#822** (P3) ; la question à Guy est
+  retirée.
 - **Réversible** : sans objet.
 
 ### C-v017-3-17 — Mots-clés et CHANGELOG
@@ -237,4 +243,36 @@ silencieuse ; un appariement propose, il ne crée jamais).
 - **Retenu** : commits en `refs #671` / `refs #687` seulement. Proposition : la PR de release porte `closes #687` ;
   `closes #671` si l'issue du reste (C-v017-3-10) est ouverte, `refs #671` sinon. CHANGELOG : entrées sous
   `## [0.17.0]`, section *Corrigé*, que l'orchestrateur fusionne ; aucune version bumpée, aucune migration.
+- **Réversible** : oui.
+
+### C-v017-3-18 — v017-3b : un montant sous le centime s'affiche aux quatre décimales ; un seul `hasSubCentime`
+
+- **Contexte** (validation P1, R2 = F2) : la fiche d'une facture affiche son total par `formatSupplierInvoiceTotal`, à
+  deux décimales (`supplier-invoice-helpers.ts:11-14`, `balance.ts:93-96`) : `100.0040` se lit « 100.00 », à côté d'un
+  avertissement qui dit le contraire. `formatExactAmount` existe (`invoices/invoice-helpers.ts:82-89`) ; deux
+  `hasSubCentime` homonymes coexistent (`invoices/invoice-helpers.ts:73`, `supplier-invoices/supplier-invoice-form.ts:63`).
+- **Retenu** : l'avertissement, la cellule TTC de la fiche et la liste passent par `formatExactAmount` ; les deux
+  `hasSubCentime` se réduisent à un (déplacé vers un module partagé si l'import entre domaines l'exige).
+- **Écartées** : une troisième fonction de format (DRY).
+- **Réversible** : oui.
+
+### C-v017-3-19 — v017-3b : le formulaire garde son patron de refus au clic
+
+- **Contexte** (validation P1, F1) : le bouton *Enregistrer* n'est désactivé que pendant l'enregistrement
+  (`SupplierInvoiceForm.svelte:579`, `disabled={saving}`) ; `linesInvalid` est lu au clic (`:203`), avec un message
+  générique ; `inbox-import.spec.ts:102-103` s'appuie sur ce patron.
+- **Retenu** : refus au clic, avec un message **dédié** (une ligne n'est pas au centime) et le message sous la ligne ;
+  le bouton reste actif.
+- **Écartées** : désactiver le bouton (changement de contrat de l'écran, tests existants à reprendre, sans gain pour
+  cette story).
+- **Réversible** : oui.
+
+### C-v017-3-20 — v017-3b : la dépendance à la v017-3a est écrite
+
+- **Contexte** (validation P1, R10 = F3) : la conduite « payée » (« …ou depuis sa fiche avant de rattacher la
+  transaction ») suppose le rattachement d'un débit à une écriture, que seule la 3a livre ; à `c5101b07`, le manuel dit
+  le contraire (`user-manual.tex:1634-1639`, `:2409`).
+- **Retenu** (précision de l'orchestrateur, 2026-10-30) : la 3b est livrée dans la même release que la 3a ; la
+  dépendance est écrite dans la fiche, avec les sections du manuel communes aux deux, réconciliées à la réunion des
+  branches. Si la 3a n'était pas livrée, la seconde voie de la conduite se retire.
 - **Réversible** : oui.
