@@ -203,6 +203,12 @@ silencieuse ; un appariement propose, il ne crée jamais).
     centime au grand livre du fournisseur.
 - **Réversible** : oui (une garde).
 
+- *Amendement du 2026-10-30 (validation P2 de la 3b, R5 = F14)* : la phrase du contexte « le TTC est donc sous le
+  centime **exactement** quand une ligne l'est » est inexacte — deux lignes sous le centime peuvent se compenser. La
+  règle par ligne reste juste, pour une autre raison : chaque ligne écrit au journal une ligne de charge à son
+  `line_total` (`supplier_invoices.rs:140-145`) ; une ligne sous le centime écrit donc une ligne de journal sous le
+  centime même quand le total est au centime.
+
 ### C-v017-3-14 — v017-3b : l'existant n'est pas modifié ; il est signalé, et son traitement décrit (Q)
 
 - **Contexte** : contrainte du Project Lead du 2026-10-30 : une facture fournisseur existante au TTC sous le centime
@@ -220,6 +226,9 @@ silencieuse ; un appariement propose, il ne crée jamais).
   raison est indiquée plus bas ». L'annulation du règlement d'une facture payée par un lot **confirmé** est admise
   (`supplier_invoices.rs:1547-1551`).
 
+- *Amendement du 2026-10-30 (validation P2 de la 3b, C-v017-3-24)* : la matrice de l'amendement précédent est
+  **retirée** ; voir C-v017-3-24.
+
 ### C-v017-3-15 — v017-3b : ordre des refus de la complétion d'une pièce importée
 
 - **Contexte** : la complétion compare `Σ TTC` des lignes au montant du QR **avant** `create_in_tx`
@@ -230,6 +239,11 @@ silencieuse ; un appariement propose, il ne crée jamais).
   lignes au centime le remplace.
 - **Écartées** : garder `AMOUNT_MISMATCH` en premier — son message (« le total ne correspond pas ») cache la cause.
 - **Réversible** : oui.
+
+- *Amendement du 2026-10-30 (validation P2 de la 3b, R2)* : la garde de ligne de la complétion jugeait une ligne
+  négative avant toute positivité (rendant le code du centime là où la saisie rend celui de la positivité). La passe de
+  forme des lignes (positivité, centime, TVA) devient **une** fonction pure de `kesh-db`, `purchase_lines_form`, appelée
+  par `create_in_tx` et par la complétion, avant `AMOUNT_MISMATCH` : un ordre, deux chemins.
 
 ### C-v017-3-16 — Voisin non mécanique : la somme de contrôle du pain.001
 
@@ -271,6 +285,9 @@ silencieuse ; un appariement propose, il ne crée jamais).
 - **Écartées** : désactiver le bouton (changement de contrat de l'écran, tests existants à reprendre, sans gain pour
   cette story).
 - **Réversible** : oui.
+
+- *Amendement du 2026-10-30 (validation P2 de la 3b, F5 = R7)* : le contrôle de centime est un prédicat distinct de
+  `linesInvalid`, lu **après** lui dans `submit()` : le message générique d'abord, le message dédié ensuite.
 
 ### C-v017-3-20 — v017-3b : la dépendance à la v017-3a est écrite
 
@@ -322,3 +339,19 @@ silencieuse ; un appariement propose, il ne crée jamais).
   page ») mais non implémenté ici.
 - **Écartées** : implémenter d'emblée la lecture par page (seconde forme de la règle, avant toute mesure).
 - **Réversible** : oui.
+
+### C-v017-3-24 — v017-3b : la matrice de conduite est retirée ; un avertissement statique, le manuel pour les voies
+
+- **Contexte** (validation P2 de la 3b) : la sévérité stagne (11 → 11 MEDIUM), et la plupart des défauts portent sur la
+  matrice de conduite état par état introduite à la remédiation P1 — certains en naissent (F1 à F6, R3, R4 de la P2 :
+  séquence qui laisse la facture pire qu'avant, lot déjà transmis, compte interne, état « lot confirmé » non observable,
+  rôle Lecteur, facture annulée après paiement, exercice clôturé). C'est le recyclage que vise la règle de découpage ;
+  déclaré à Guy par l'orchestrateur.
+- **Retenu** (décision de l'orchestrateur, 2026-10-30) : le cœur reste — refus à la saisie et à la complétion (AC-1 à
+  AC-7), une fonction de `kesh-core`, restauration (AC-19), aucune donnée réécrite. Pour une facture existante sous le
+  centime, un avertissement **unique et statique** sur sa fiche, quel que soit l'état (annulée comprise) et le rôle, qui
+  ne promet aucun bouton et renvoie au manuel ; `formatExactAmount` pour le montant. Le manuel porte une sous-section à
+  `\label{sec:facture-fournisseur-sous-centime}` qui décrit en prose les voies et leurs limites. Aucune logique d'état à
+  l'écran, donc aucune mutation, aucun Vitest, aucune capture par état.
+- **Écartées** : corriger la matrice une passe de plus (chaque correction a fait naître la suivante).
+- **Réversible** : oui (une matrice pourra revenir dans une story dédiée si l'usage le demande).
