@@ -61,7 +61,7 @@ cités sont ceux de `c5101b07`. Chaque choix : contexte, option retenue, alterna
 - **Retenu** : parse dans `std::thread::spawn`, attente `recv_timeout(10 s)` ; 200 000 attributs (≈ 2,4 Mo < 10 MiB par
   défaut), 10 000 déclarations, 70 000 niveaux. Le délai est la seule assertion d'AC5 ; AC6 asserte le refus ; AC7
   le refus sans panique (`Timeout` et `Disconnected` distingués — remédiation P1, R-3).
-  AC5 porte un témoin (même construction, 3 attributs et `Ccy="CHF"`, rend `Ok`), pour ne pas devenir vert à vide
+  AC5 porte un témoin (même construction, 3 attributs et `Ccy="CHF"` sur un `<Ntry>` complet, rend `Ok`), pour ne pas devenir vert à vide
   (remédiation P2, F-9) ; les documents d'AC6 partent du relevé complet d'AC6 (c) (remédiation P2, R-8).
 - **Écartées** : (a) mesurer le temps et comparer à un seuil serré — instable entre poste et CI ; (b) mesurer
   l'allocation (allocateur compteur) — infrastructure lourde pour un comportement que le refus borne déjà ; (c) tests
