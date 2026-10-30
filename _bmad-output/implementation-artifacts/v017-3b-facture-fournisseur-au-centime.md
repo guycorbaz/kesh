@@ -1,6 +1,6 @@
 # Story v017-3b : une facture fournisseur naît au centime ; celle qui ne l'est pas est signalée, non modifiée
 
-Status: in-progress
+Status: review
 
 *Fiche rédigée le 2026-10-30, en autonomie (Opus 5.5), worktree `/home/gcorbaz/devel/kesh-0173`, branche
 `story/v017-3-rapprochement-attente` partie de `c5101b07` (tête de la candidate `v0.16.1-rc1`) ; la story se fusionne
@@ -567,9 +567,135 @@ Les MEDIUM F1 à F6, R3 et R4 sont **absorbés** par la simplification : leurs c
 
 ### Agent Model Used
 
+Claude Opus 5.5 (agent de développement, autonomie), 2026-10-30.
+
 ### Completion Notes List
 
+**Étape 0 — lignes lues.**
+
+- *Validation P6, C1* : `crates/kesh-api/src/inbox_import.rs:3` — « //! Sur déclenchement manuel (`POST
+  /api/v1/inbox-import`), lit `KESH_INBOX_DIR`, » : le dépôt seul ne suffit pas ; appliqué à l'AC-9 (annotation
+  « Étape 0 »). *C2* : un seul véhicule — le fichier ne pose pas `@invoice_id` (C-v017-3-28). *C3* :
+  `onboarding_audit_e2e.rs:3022-3025` (`CREATE TABLE reset_retry_probe … ; INSERT INTO reset_retry_probe VALUES (1),
+  (2);`) et `:3085-3093` (trois instructions et un déclencheur). *C4* : (3 bis) l'annulée après le fichier, une facture
+  par état.
+- § *À recontrôler* : `supplier_invoices.rs` — la passe de forme (`:399-414` à `c5101b07`) était bien la première,
+  l'étape (0) du projet la précède et verrouille (`validate_taggable_in_tx`) : écrit au doc-comment ;
+  `routes/invoices.rs:483-507` (deux refus d'échelle, factorisés en `limits::line_scale_error`, C-v017-3-33) ;
+  `routes/limits.rs:31` (`scale_within` ne normalise pas) ; lot confirmé : `supplier_invoices.rs:1548-1550` — « Le lot
+  confirmé qui l'a éventuellement réglée **n'est pas modifié** » ; règlement détaché contre-passable :
+  `[id]/+page.svelte:620-627` — « ce paiement n'est plus « libre » … (il reste contre-passable) » et
+  `supplier_invoices.rs:1274-1279` (« l'écriture de règlement n'a plus de propriétaire ») ; détachement d'un document :
+  `routes/imported_supplier_invoices.rs:629-633` — « Le document repasse « à traiter » avec ses données QR … Tout
+  statut de facture est accepté » ; réouverture : `routes/fiscal_years.rs:11` (`POST …/reopen`, Admin) ; masquage
+  de la règle : cotes de la fiche, non relues au-delà ; mappings `DbError` → `AppError` : le `match` d'`errors.rs` est
+  exhaustif (le compilateur l'a imposé, `E0004`), `error_code()` de `kesh-db` aussi.
+- Voies du manuel établies : 2, 3 (contre-passation depuis la fiche d'écriture), 4, 5 (« un lot peut aussi être annulé
+  tant qu'il n'est pas confirmé », manuel § pain.001 ; lot confirmé puis annulation du règlement, encadré du même §),
+  6, 8. La voie 7 suppose la v017-3a (C-v017-3-35). « Un seul débit pour un lot » (#823) est écrit sans le numéro.
+
+**Rouges constatés avant tout patch** (`kesh-gate-logs/v0173b/rouges-etape0.log`, `rouges-etape0-api.log`,
+`rouges-vitest.log`) :
+
+- kesh-core, stub qui rend toujours le produit : 7 exécutés, 4 verts, **3 rouges** (`un_produit_a_quatre_decimales_est_refuse`,
+  `une_quantite_decimale_dont_le_produit_n_est_pas_au_centime_est_refusee`, `le_produit_refuse_est_normalise`).
+- kesh-db, passe de forme extraite sans la garde : 61 exécutés, **2 rouges** (`create_refuses_a_line_not_in_centimes`,
+  `purchase_lines_form_orders_its_refusals`) ; `create_judges_positivity_before_the_centime` et
+  `a_created_invoice_has_a_total_in_centimes` verts d'emblée (comportement existant gardé).
+- kesh-api : d'abord **ne compile pas** (`E0004`, variante non couverte) ; avec la seule conversion : 35 exécutés,
+  **2 rouges** (`post_refuses_a_line_not_in_centimes` : `201` au lieu de `400` ; `complete_amount_mismatch_and_sub_centime_blocked` :
+  `AMOUNT_MISMATCH` au lieu du code du centime). AC-9, AC-11 et AC-19 verts d'emblée : ils gardent un comportement
+  existant (une facture sous le centime reste lisible, payable, annulable, restaurable).
+- Vitest (5 fichiers) : **20 rouges**, 56 verts.
+
+**Recensement de l'AC-7** : `grep -rlE "NewSupplierInvoiceLine|supplier-invoices\"|/complete" crates/*/tests
+frontend/tests/e2e crates/kesh-seed/src` (22 fichiers), puis prix à plus de deux décimales : seul le test (b)
+d'`inbox_import_e2e.rs` créait une ligne sous le centime par une route — adapté (code attendu). `kesh-seed/src/pieges.rs`
+(`cent = Decimal::new(100, 0)`, `:503`) est au centime. T-b9 insère déjà directement. Le gate complet le confirme.
+
+**AC-8** : `git diff c5101b07 -- 'crates/*/src' | grep -nE '^\+.*\b(UPDATE|INSERT|DELETE)\b'` → vide ; aucun fichier
+sous `crates/kesh-db/migrations/`.
+
+**Gates réellement exécutés, au dernier commit de code (`bbb13896`, textes compris sur disque)** :
+
+- `cargo fmt --all -- --check` et `cargo clippy --workspace --all-targets -- -D warnings` : verts.
+- `scripts/test-fast.sh --ci` sous verrou, base `kesh_v0173b` remise à zéro juste avant : **4475 exécutés, 4475
+  verts, 7 ignorés** (`kesh-gate-logs/v0173b/gate-complet-1.log`).
+- Frontend : `npm run check` 0 erreur (29 avertissements, aucun dans un fichier de la story) ;
+  `npm run lint-i18n-ownership` vert ; `npm run test:unit` **183 fichiers, 2175 tests verts** ; `npm run build` vert.
+- E2E complet (recette `docs/testing.md`, port 3174, base `kesh_e2e_v0173b` neuve, dossiers
+  `/tmp/kesh-e2e-v0173b-1/`) : **326 réussis, 7 échecs, 17 ignorés** ; les sept échecs sont exactement ceux de la
+  KF-029 (#97) — `mode-expert.spec.ts:26`, `:41`, `onboarding-path-b.spec.ts:65`, `:92`, `onboarding.spec.ts:57`,
+  `:77`, `:150` ; aucun autre. Le test neuf `supplier-documents.spec.ts` « E8 » est vert.
+- Manuel : `make user` sous verrou (`make-user-1.log`), aucune référence non résolue ; PDF aplati contrôlé par
+  fragments (`grep -oF … | wc -l`) : « Une facture fournisseur au total sous le centime » 2, « Une ligne se saisit au
+  centime » 1, « 3 × 33.3333 » 1, « ne se produit plus que pour une facture enregistrée avant » 1, « une ligne qui
+  n’est pas au centime » 1 (apostrophe typographique ; 0 en apostrophe droite), « Kesh ne la modifie pas » 1,
+  « 100.0040, non 100.00 » 1, `§??` 0.
+
+**Compteurs de garde recalés** : `CLES_RELEVEES` 344 → 348 (`i18n-un-repli-par-cle.test.ts`) ; `sitesTotal` 2619 →
+2623 (`i18n-keys.test.ts`), recomptés par `grep -oE '(i18nMsg|[^a-zA-Z]msg)\('` aux deux bornes. G9
+(`textes_coherents.rs`) reçoit la clé `supplier-invoices-errors-line-not-in-centimes` et ses deux variables.
+
+**Mutations** (`kesh-gate-logs/v0173b/mutations.sh`, sous verrou, motif unique vérifié, restauration `git checkout`
+puis `touch` ; `mutations/resume.txt`) : **M1** tuée (`l_echelle_se_juge_apres_normalisation`) ; **M2** tuée
+(`un_produit_a_quatre_decimales_est_refuse`) ; **M3** tuée (`create_refuses_a_line_not_in_centimes`) ; **M4**
+**survivante assumée** (garde déplacée après les réglages : aucun test ne voit un verrou) ; **M5** et **M13** tuées
+(`complete_amount_mismatch_and_sub_centime_blocked`, cas (b) et (c)) ; **M6**, **M6bis**, **M15** (rouge sur
+`INVALID_PAYMENT_DETAILS` au lieu de `VALIDATION_ERROR`) et **M9** tuées (`post_refuses_a_line_not_in_centimes`) ;
+**M10** tuée (`create_judges_positivity_before_the_centime`) ; **M7** tuée (Vitest du composant et banc de la page) ;
+**M11**, **M14**, **M17** tuées (Vitest du composant) ; **M8**, **M12** tuées (Vitest du formulaire) ; **M16** jouée
+en deux : cellules de lignes (banc `supplier-settlement-page`) et total du sélecteur (banc `supplier-document-page`),
+tuées. 19 jouées, 18 tuées, 1 survivante assumée.
+
+**Captures** (thème clair, base E2E `kesh_e2e_v0173b` après l'E2E — la connexion à la base de démonstration
+fraîchement semée n'a pas abouti, `captures-prepare-1.log`) dans `kesh-gate-logs/v0173b/captures/` :
+`01-formulaire-ligne-refusee`, `02-formulaire-message-au-clic`, `03-refus-serveur-sous-la-ligne` (réponse simulée),
+`04-fiche-ouverte-sous-centime`, `05-fiche-payee-sous-centime`, `06-fiche-annulee-sans-avertissement`,
+`07-fiche-au-centime-sans-avertissement`, `08-selecteur-document-100.0040`, `09-completion-qr-ligne-refusee`. Le
+montage s'est joué par la copie de travail `kesh-gate-logs/v0173b/montage-sous-centime.sql`, `SET @invoice_id`
+devant, une facture par état, le paiement et l'annulation après.
+
+**Défaut observé, hors périmètre** (capture 02) : le « Total TTC des lignes » vivant du formulaire s'affiche à deux
+décimales (`formatSwissAmount(sumTtc(…))`) — « 100.00 » pour une ligne à 99.9999, sous le message qui dit 99.9999.
+Rien n'est enregistré ; issue demandée (P4).
+
+**Choix** : C-v017-3-28 à C-v017-3-35 au registre.
+
+**Écarts à la fiche** : le module est `accounting/purchase.rs` (AC-1) ; la fixture est jouée sur le pool par un seul
+`raw_sql`, sans `pool.acquire()` (C-v017-3-28) ; le composant se place dans le `<dd>` (C-v017-3-32) ; les cellules de
+lignes de la fiche ont des `testid` neufs `supplier-invoice-detail-line-*` ; pour les captures, la création et le
+paiement des factures de démonstration passent par l'API, non par l'écran (même état) ; le refus serveur affiché est
+capturé par une réponse simulée (le miroir du formulaire l'empêche d'atteindre le serveur) ; la ligne « règlement sous
+le centime » du § *Rattacher* (tableau des sections communes) n'existe pas à `c5101b07` — rien à y renvoyer dans
+cette branche.
+
 ### File List
+
+- `crates/kesh-core/src/accounting/purchase.rs` (neuf), `crates/kesh-core/src/accounting/mod.rs`
+- `crates/kesh-db/src/errors.rs`, `crates/kesh-db/src/repositories/supplier_invoices.rs`,
+  `crates/kesh-db/src/repositories/reconciliation.rs` (doc-comment)
+- `crates/kesh-db/tests/supplier_invoices_repository.rs`, `crates/kesh-db/tests/reconciliation_repository.rs`
+  (doc-comment), `crates/kesh-db/tests/support/montage-sous-centime.sql` (neuf),
+  `crates/kesh-db/tests/support/sous_centime.rs` (neuf)
+- `crates/kesh-api/src/errors.rs`, `crates/kesh-api/src/routes/limits.rs`, `crates/kesh-api/src/routes/invoices.rs`,
+  `crates/kesh-api/src/routes/supplier_invoices.rs`, `crates/kesh-api/src/routes/imported_supplier_invoices.rs`,
+  `crates/kesh-api/src/routes/reconciliation.rs` (doc-comment)
+- `crates/kesh-api/tests/supplier_settlement_cancel_e2e.rs`, `crates/kesh-api/tests/inbox_import_e2e.rs`,
+  `crates/kesh-api/tests/admin_full_import_e2e.rs`, `crates/kesh-api/tests/textes_coherents.rs`
+- `crates/kesh-i18n/locales/{fr-CH,de-CH,it-CH,en-CH}/messages.ftl`
+- `frontend/src/lib/features/supplier-invoices/SupplierInvoiceTotal.svelte` (neuf) et `SupplierInvoiceTotal.test.ts`
+  (neuf), `supplier-invoice-form.ts`, `supplier-invoice-form.test.ts` (neuf), `SupplierInvoiceForm.svelte`,
+  `SupplierInvoiceForm.test.ts`
+- `frontend/src/lib/features/invoices/invoice-helpers.ts`,
+  `frontend/src/lib/features/imported-supplier-invoices/AttachDocumentPicker.svelte`
+- `frontend/src/routes/(app)/supplier-invoices/[id]/+page.svelte`, `supplier-settlement-page.test.ts`,
+  `supplier-document-page.test.ts`
+- `frontend/src/lib/shared/i18n-keys.test.ts`, `frontend/src/lib/shared/i18n-un-repli-par-cle.test.ts`
+- `frontend/tests/e2e/supplier-documents.spec.ts`
+- `docs/manual/fr/user-manual.tex`, `docs/manual/fr/user-manual.pdf`, `docs/api-external.md`, `CHANGELOG.md`
+- `_bmad-output/implementation-artifacts/v017-3-choix-autonomes.md`, `sprint-status.yaml`, cette fiche,
+  `v017-3b-review-prompt-p1.md` (neuf)
 
 ## Change Log
 
@@ -639,3 +765,8 @@ Les MEDIUM F1 à F6, R3 et R4 sont **absorbés** par la simplification : leurs c
   D11, AC-10, L4, point 4 et au registre (C2) ; une seule connexion et `raw_sql` (C3) ; ordre de la recette de
   démonstration et dépôt d'un document pour le sélecteur (C4) ; cotes `:1252-1258` (C5) ; M16 restaurée dans son texte
   d'origine puis annotée (C6). Prochaine étape : validation P6 ciblée (`v017-3b-validate-prompt-p6.md`, Opus).
+- 2026-10-30 — **Développement** (Opus 5.5, autonomie). Étape 0 : les quatre LOW de la validation P6 appliqués (C1 à
+  C4, lignes lues au Dev Agent Record) ; tests rouges commités (`a95ddae2`) ; implémentation (`bbb13896`) ; manuel,
+  PDF, API externe, CHANGELOG (`docs(v0173b)`). Gate complet 4475/4475 (7 ignorés), Vitest 2175/2175, E2E 326 réussis
+  et les sept échecs de la KF-029, 18 mutations tuées sur 19 (M4 survivante assumée). Choix C-v017-3-28 à 35.
+  Prochaine étape : revue de code P1 (`v017-3b-review-prompt-p1.md`, Sonnet, lentilles B, E, A).
