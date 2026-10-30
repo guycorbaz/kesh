@@ -104,7 +104,9 @@ un `catch` muet à l'enseigne de #809. Le panneau est nommé par #644 : hors pé
   Avec `repli` : `ApiError` à message chaîne non blanche → ce message, sans journalisation ; `ApiError` à message vide,
   blanc ou non-chaîne → `repli`, sans journalisation ; toute autre valeur → `repli`, **et** `console.error` comme
   aujourd'hui. Un `repli` vide ou blanc est traité comme absent (générique). Le doc-comment du module décrit le
-  paramètre.
+  paramètre, et sa règle 1 est corrigée (validation P2, F5) : « le serveur l'a déjà traduit » devient « le serveur l'a
+  traduit, sauf les refus de validation écrits en dur dans les routes, rendus tels quels (#710) »
+  (`error-message.ts:20-22`).
 - **AC-2 — Les sept étapes à `catch` nu (S1 à S7) affichent le motif.** Chaque site lie l'erreur et appelle
   `toast.error(errorMessageOf(err, <repli de l'étape>))`, le repli étant le message d'aujourd'hui, clé et texte
   inchangés (tableau ci-dessus). **S1** passe par une clé neuve, `onboarding-language-error` (validation P1, F10 :
@@ -112,14 +114,24 @@ un `catch` muet à l'enseigne de #809. Le panneau est nommé par #644 : hors pé
   littéral) : repli `'Erreur lors du choix de langue'`, valeurs aux quatre locales en AC-7.
 - **AC-3 — Le compte bancaire (S8, S10) passe par la même règle**, sans changement visible pour une `ApiError` à
   message : seuls changent le message blanc (repli au lieu d'un toast blanc) et la journalisation d'une panne imprévue.
-- **AC-4 — La finalisation (S9, S11) dit son motif.** `reportFinalizeError` : `ONBOARDING_STEP_ALREADY_COMPLETED` garde
-  `onboarding-already-finalized` ; **tout le reste** rend `errorMessageOf(err, msg('onboarding-finalize-error', …))`. La
+- **AC-4 — La finalisation (S9, S11) dit son motif.** `reportFinalizeError` prend **exactement** cette forme
+  (validation P2, R1 — elle fixe le décompte des sites i18n) :
+  ```ts
+  function reportFinalizeError(err: unknown) {
+  	if (isApiError(err) && err.code === 'ONBOARDING_STEP_ALREADY_COMPLETED') {
+  		toast.error(msg('onboarding-already-finalized', "L'onboarding est déjà finalisé. Veuillez recharger la page."));
+  		return;
+  	}
+  	toast.error(errorMessageOf(err, msg('onboarding-finalize-error', 'Finalisation échouée — réessayez.')));
+  }
+  ```
+  — une seule écriture de `onboarding-finalize-error` au lieu de deux (`+page.svelte:141` et `:159`). La
   comparaison à `'VALIDATION'` disparaît. Un 400 `VALIDATION_ERROR` « Impossible de pré-remplir les comptes… » s'affiche
   tel quel. **Limite déclarée (validation P1, R3) : le motif s'affiche, la reprise n'est pas traitée.** Après une banque
   enregistrée ou sautée, l'état vaut 7 ; `+page.svelte` n'a pas de branche pour l'étape 7 (la chaîne `{#if}` s'arrête à
   `stepCompleted === 6`) et `+layout.ts:30` redirige vers `/` dès `!isDemo && step >= 7`. Un refus de la finalisation
   laisse donc le toast sur un écran vide, sans bouton de reprise — défaut préexistant, **#821** (P3), hors périmètre.
-  La consigne du refus « comptes 1100/3000 » (« Veuillez ajouter ces comptes… », `routes/onboarding.rs:874`) n'est pas
+  La consigne du refus « comptes 1100/3000 » (« Veuillez ajouter ces comptes… », `routes/onboarding.rs:874-875`) n'est pas
   exécutable dans l'assistant (#44 ; validation P1, F8).
 - **AC-5 — Garde lexicale de l'assistant** (C-v017-2-9). Un test Vitest lit `frontend/src/routes/onboarding/+page.svelte`,
   commentaires masqués (réutiliser `masquerCommentaires` de `$lib/shared/i18n-literal-reader.js`), et échoue si :
@@ -135,8 +147,10 @@ un `catch` muet à l'enseigne de #809. Le panneau est nommé par #644 : hors pé
 - **AC-6 — Une indication sous le champ** (C-v017-2-4) : la clé neuve `onboarding-field-country-hint` rendue dans un
   `<p id="coord-country-hint" class="mt-1 text-xs text-text-muted">` **sous** l'`Input` du pays, relié par
   `aria-describedby="coord-country-hint"`. Pas dans le libellé, contrairement à l'IDE (`+page.svelte:363-366`) : la
-  cellule du pays occupe un tiers de la grille (`grid-cols-3`, `:339`), et le texte allemand y ferait passer le libellé
-  sur plusieurs lignes, décalant le champ de ses voisins (validation P1, F4). Le champ **n'a pas** de `maxlength` (une saisie en toutes lettres doit atteindre le
+  cellule du pays occupe un tiers de la grille (`grid-cols-3`, `:339` ; seule sur sa rangée, `:356`), et un libellé
+  `text-xs` qui porterait l'indication y passerait sur plusieurs lignes ; sous le champ, le libellé reste court et
+  l'indication se relie par `aria-describedby` (validation P1, F4 ; raison corrigée en P2, F3 — le champ n'a pas de
+  voisin sur sa rangée). Le champ **n'a pas** de `maxlength` (une saisie en toutes lettres doit atteindre le
   serveur et revenir expliquée, non être tronquée en deux lettres acceptées). Valeur initiale `CH` et `placeholder`
   inchangés.
 - **AC-7 — Les quatre locales** portent les deux clés neuves, repli du code égal à la valeur fr-CH :
@@ -164,12 +178,18 @@ un `catch` muet à l'enseigne de #809. Le panneau est nommé par #644 : hors pé
 - **AC-9 — Manuel utilisateur** (`docs/manual/fr/user-manual.tex:201`) : la puce *Coordonnées légales* précise
   « adresse (le pays en code ISO à deux lettres, CH par défaut) » et ajoute une phrase vraie au code : si Kesh refuse
   une saisie, l'assistant affiche le motif que le serveur donne, **qui peut être rédigé en français quelle que soit la
-  langue choisie** (#710) ; on corrige le champ et on continue (validation P1, F2). PDF régénéré (`make fr` dans
+  langue de l'interface** (#710 ; « de l'interface » et non « choisie » : validation P2, F2 — la langue de l'interface
+  est `KESH_LANG`, non le choix de l'assistant) ; on corrige le champ et on continue (validation P1, F2). PDF régénéré (`make fr` dans
   `docs/manual/`, sous `scripts/mem-guard.sh`) et contrôlé aplati, **zéro avant, un après**, sur deux fragments sans
-  ligature (`ff`, `ffi`) ni apostrophe, absents du PDF actuel (validation P1, F6) :
-  `pdftotext docs/manual/fr/user-manual.pdf - | tr '\n' ' ' | tr -s ' ' | grep -cF "code ISO à deux lettres"` et le même
-  `grep -cF` sur un fragment de la phrase ajoutée choisi à la rédaction (par exemple « quelle que soit la langue
-  choisie ») — fragment et deux comptes cités au Dev Agent Record. La capture `onboarding-production.png` (légende
+  ligature (`ff`, `ffi`) ni apostrophe, absents du PDF actuel (validation P1, F6), **comptés en occurrences** et non en
+  lignes (validation P2, F7 — la sortie aplatie tient sur une ligne, `grep -c` y rend 0 ou 1) :
+  `pdftotext docs/manual/fr/user-manual.pdf - | tr '\n' ' ' | tr -s ' ' | grep -oF "code ISO à deux lettres" | wc -l` et
+  la même commande sur un fragment de la phrase ajoutée, choisi **après lecture du PDF régénéré** (une césure peut couper
+  un mot) — fragment et deux comptes cités au Dev Agent Record. Le même paragraphe reçoit une incise à l'avertissement
+  du § *Choix de la langue* (`user-manual.tex:155-158`, « des contrôles automatiques empêchent qu'un écran retombe
+  silencieusement sur le français ») : « — certains refus du serveur restent toutefois rédigés en français (#710) »
+  (validation P2, F6). Les phrases du même § qui disent la langue « choisie lors de l'onboarding » (`:144-151`) sont
+  fausses au code (`KESH_LANG`) : **non traitées ici**, issue demandée (§ *Issues à ouvrir*). La capture `onboarding-production.png` (légende
   `user-manual.tex:196`) n'existe pas au dépôt (`docs/manual/fr/screenshots/` ne porte que `_placeholder.png`) : la
   légende reste exacte, l'image absente n'est pas traitée ici (validation P1, F5). Le manuel d'administration
   (`admin-manual.tex:1069, 1419`) ne détaille pas les champs : inchangé — à vérifier, non à supposer.
@@ -185,14 +205,22 @@ un `catch` muet à l'enseigne de #809. Le panneau est nommé par #644 : hors pé
 1. **Étape 0** — recontrôler les prémisses 1 à 7 et l'inventaire (`grep` ci-dessus) sur la tête de la branche ;
    lister au Dev Agent Record toute ligne qui a bougé.
 2. **Tests rouges d'abord** (AC-1, AC-2 à AC-5, AC-6, AC-8), puis le code.
-3. `error-message.ts` (AC-1) ; `+page.svelte` (AC-2 à AC-4, AC-6) ; locales (AC-7).
+3. `error-message.ts` (AC-1) ; `+page.svelte` (AC-2 à AC-4, AC-6) ; locales (AC-7). Deux gardes i18n à décompte
+   **exact** suivent (validation P2, R1) : `frontend/src/lib/shared/i18n-un-repli-par-cle.test.ts:180`
+   `CLES_RELEVEES = 344` → **346** (les deux clés neuves, préfixe `onboarding-`, nommées dans le bloc daté au-dessus) ;
+   `frontend/src/lib/shared/i18n-keys.test.ts:767` `sitesTotal: 2619` → valeur **recomptée** aux deux bornes
+   (`c5101b07` → HEAD) par `grep -oE '(i18nMsg|[^a-zA-Z]msg)\(' frontend/src/routes/onboarding/+page.svelte | wc -l`,
+   avec un bloc daté sur le modèle de la 31-1b (`:700-707`) ; attendu **+1** pour `+page.svelte` (+1 S1, +1
+   indication, −1 finalisation, forme d'AC-4), à confirmer à la mesure et non à aligner sur elle.
 4. Test d'intégration (AC-8).
 5. E2E (§ *E2E*) et captures (§ *Captures*).
 6. Manuel et PDF (AC-9), CHANGELOG (AC-10).
-7. Propagation : `grep -rn "'VALIDATION'" frontend/src` (vide après) ; `grep -rn "catch {" frontend/src/routes/onboarding`
-   (vide après) ; `grep -rn "onboarding-field-country-hint\|onboarding-language-error" crates/kesh-i18n/locales frontend/src`
-   (quatre locales + un site chacune) ; `grep -rnF "Erreur lors du choix de langue" frontend/src` (le seul repli de
-   `msg(…)`).
+7. Propagation, tests exclus (validation P2, R2 — la garde AC-5 et les tests portent ces chaînes à dessein) :
+   `grep -rn --exclude='*.test.ts' "'VALIDATION'" frontend/src` (vide après) ;
+   `grep -rn --exclude='*.test.ts' "catch {" frontend/src/routes/onboarding` (vide après) ;
+   `grep -rn --exclude='*.test.ts' "onboarding-field-country-hint\|onboarding-language-error" crates/kesh-i18n/locales frontend/src`
+   (quatre locales + un site chacune) ; `grep -rnF --exclude='*.test.ts' "Erreur lors du choix de langue" frontend/src`
+   (le seul repli de `msg(…)`).
 
 ## Tests et mutations prévus
 
@@ -209,7 +237,9 @@ d'`onboarding-restore-link.test.ts` (mocks de `onboarding.api`, `i18n.svelte` à
   et `console.error` appelé ; pour S1, S7, S8 en plus : rejet par une `ApiError` au message `'  '` → le repli de
   l'étape ;
 - S9 et S11 : `setBankAccount` / `skipBank` résolus, `finalize` rejette `VALIDATION_ERROR` « MOTIF-FIN » → `'MOTIF-FIN'` ;
-  rejette `ONBOARDING_STEP_ALREADY_COMPLETED` → le texte d'`onboarding-already-finalized` ; rejette une `TypeError` →
+  rejette `ONBOARDING_STEP_ALREADY_COMPLETED` **avec le message simulé `'MOTIF-DEJA'`** → le texte
+  d'`onboarding-already-finalized`, et non `'MOTIF-DEJA'` (le message distinct rend le test discriminant ; validation
+  P2, R4) ; rejette une `TypeError` →
   `onboarding-finalize-error` ;
 - mise en œuvre (validation P1, R5) : `_loading` est un état de module, et `finalize` relâche son verrou par
   `setTimeout(0)` après un rejet (`onboarding.svelte.ts:156-170`) — un `it` par scénario de finalisation, ou une
@@ -232,7 +262,7 @@ périmé » — pour Vitest, relancer suffit) :
 |---|---|---|
 | M1 | S7 remis en `catch { toast.error(msg('onboarding-address-save-error', …)) }` | test S7 ; garde AC-5 |
 | M2 | S5 remis en `catch {` nu | test S5 ; garde AC-5 |
-| M3 | `errorMessageOf` ignore `repli` (rend toujours le générique) | cas repli d'`error-message.test.ts` ; tests TypeError de S1/S7/S8 |
+| M3 | `errorMessageOf` ignore `repli` (rend toujours le générique) | cas repli d'`error-message.test.ts` ; tous les tests TypeError (S1-S8, S10, et S9/S11) et message blanc (S1, S7, S8) (validation P2, R3) |
 | M4 | `errorMessageOf` rend `repli` même pour une ApiError à message | cas « ApiError → message » avec repli ; tous les tests MOTIF-Sk |
 | M5 | `reportFinalizeError` rétablit `if (err.code === 'VALIDATION')` et le générique sinon | tests S9/S11 « MOTIF-FIN » |
 | M6 | retrait de l'indication du pays | test AC-6 |
@@ -241,6 +271,7 @@ périmé » — pour Vitest, relancer suffit) :
 | M9 | S8 : `errorMessageOf(err)` sans repli | test TypeError de S8 |
 | M10 | S5 reçoit le repli de S2 (`onboarding-mode-error`) ; puis, séparément, S10 appelle `errorMessageOf(err)` sans repli | test TypeError de S5 ; test TypeError de S10 (validation P1, R2) |
 | M11 | S1 rétablit le littéral sans clé (`errorMessageOf(err, 'Erreur lors du choix de langue')`) | test TypeError de S1 : la simulation d'`i18nMsg` est un `vi.fn` qui rend le repli **et** enregistre ses appels ; le test exige un appel avec `'onboarding-language-error'` (le texte seul ne distingue pas la clé du littéral) |
+| M12 | `reportFinalizeError` perd sa branche `ONBOARDING_STEP_ALREADY_COMPLETED` (tout passe par `errorMessageOf`) | tests S9/S11 « ALREADY_COMPLETED » : `'MOTIF-DEJA'` affiché au lieu d'`onboarding-already-finalized` (validation P2, R4) |
 
 Chaque mutation se déclare au Dev Agent Record avec le test qui a rougi, la sortie citée.
 
@@ -252,7 +283,8 @@ connexion `changeme` par `#username`/`#password` et `button[type="submit"]`, com
 l'orchestrateur) : `authedApiContext(page)` (`helpers/test-state.ts:174`), puis, dans l'ordre et en vérifiant chaque
 statut 200, `POST /api/v1/onboarding/language` `{ language: 'FR' }`, `/mode` `{ mode: 'guided' }`,
 `/start-production`, `/org-type` `{ orgType: 'Independant' }`, `/accounting-language` `{ language: 'FR' }` (corps de
-`onboarding.api.ts`) ; puis `page.goto('/onboarding')` (rechargement complet : l'état se relit, étape 5). Sur l'écran :
+`onboarding.api.ts`), le contexte libéré par `try { … } finally { await disposeContextSafe(ctx); }`
+(`helpers/test-state.ts:92, 125` ; validation P2, R7) ; puis `page.goto('/onboarding')` (rechargement complet : l'état se relit, étape 5). Sur l'écran :
 `#coord-name`, `#coord-npa` `1000`, `#coord-city` `Lausanne`, `#coord-country` `Suisse`, soumission par
 `page.locator('form button[type="submit"]')` → **un toast `[data-sonner-toast]` contient « code ISO à 2 lettres »** et
 `#coord-country` reste visible ; `#coord-country` `CH`, soumission → `#bank-name` visible. Aucun sélecteur de texte
@@ -269,7 +301,16 @@ P1, F9).
 Sur la base E2E (`kesh_e2e`, preset `fresh`), jamais sur la base du NAS, rangées sous
 `/home/gcorbaz/devel/kesh-gate-logs/v0172/` : (1) l'étape des coordonnées, indication du pays visible ; (2) le toast du
 refus « Suisse » avec son motif ; (3) un refus d'IDE (`CHE-000`) avec son motif ; (4) l'étape des coordonnées en
-**de-CH** (le libellé le plus long, validation P1, F4). Jointes au Dev Agent Record et au prompt
+**de-CH** (le libellé le plus long, validation P1, F4) ; (5) la finalisation refusée — toast du motif sur l'écran vide
+(#821) —, provoquée par `page.route('**/api/v1/onboarding/finalize', …)` qui rend `400`
+`{ error: { code: 'VALIDATION_ERROR', message: … } }` (le plan livré porte 1100/3000, l'état ne s'atteint pas autrement ;
+validation P2, F4).
+
+⚠️ **La langue de l'interface est celle de l'installation, `KESH_LANG`** (`crates/kesh-api/src/config.rs:848`,
+`routes/i18n.rs:20-22`), non le choix de l'étape 0, qui ne pose que la langue des documents. La capture (4) se prend
+donc sur un backend E2E **relancé avec `KESH_LANG=de`** (même base `kesh_e2e`, preset `fresh`, état amené à l'étape 5
+par l'API comme dans la spec), et elle doit montrer le libellé `Land` et l'indication allemande ; « choisir Deutsch à
+l'étape 0 » ne suffit pas (validation P2, F1). Le backend se relance ensuite sans `KESH_LANG` pour la suite E2E. Jointes au Dev Agent Record et au prompt
 de la revue de code.
 
 ## Gates
@@ -298,6 +339,8 @@ commit de code. Le Dev Agent Record n'affirme que ce qui a tourné.
 - `frontend/src/lib/shared/utils/error-message.ts` (+ `.test.ts`) — utilitaire partagé, paramètre optionnel seulement.
 - `frontend/src/routes/onboarding/+page.svelte`, tests neufs `onboarding-motif.test.ts`, `onboarding-catch-guard.test.ts`.
 - `crates/kesh-i18n/locales/{fr,de,it,en}-CH/messages.ftl` — deux clés.
+- `frontend/src/lib/shared/i18n-un-repli-par-cle.test.ts` (`CLES_RELEVEES`) et `frontend/src/lib/shared/i18n-keys.test.ts`
+  (`sitesTotal`), compteurs et blocs datés (tâche 3).
 - `crates/kesh-api/tests/onboarding_path_b_e2e.rs` — un test.
 - `frontend/tests/e2e/onboarding-motif.spec.ts` ; `docs/testing.md` (une ligne, tableau des presets).
 - `docs/manual/fr/user-manual.tex` (+ PDF), `CHANGELOG.md`.
@@ -320,6 +363,20 @@ atomique), `#44` (ajout des comptes manquants à la finalisation), `#817`, `#818
 - **#817** — pays contrôlé à la forme seulement (C-v017-2-8), P2.
 - **#818** — chargement de l'assistant en échec silencieux (`+layout.ts:33`, C-v017-2-7), P3.
 - **#821** — finalisation refusée : écran vide, sans reprise (validation P1, R3), P3.
+
+### Issues à ouvrir (par l'orchestrateur)
+
+- **Manuel utilisateur : la langue de l'interface n'est pas choisie à l'assistant, elle est celle de l'installation
+  (`KESH_LANG`)** — bug/documentation, P3 proposé (manuel qui décrit autre chose que le code). Constat (validation P2,
+  F2) : `docs/manual/fr/user-manual.tex:144-151`, § *Choix de la langue*, écrit « La langue est choisie lors de
+  l'**onboarding** » et, dans la note, « la langue est fixée à l'onboarding et n'est pas modifiable depuis un menu ». Or
+  les messages de l'interface sont servis dans la locale de l'installation : `crates/kesh-api/src/routes/i18n.rs:20-22`
+  (`let locale = &state.config.locale;`), `crates/kesh-api/src/config.rs:848`
+  (`env_nonempty("KESH_LANG").unwrap_or_else(|| "fr".into())`), et `frontend/src/lib/shared/utils/i18n.svelte.ts:41-45`
+  appelle `/api/v1/i18n/messages` sans paramètre. Le choix de l'étape 0 de l'assistant ne pose que
+  `companies.instance_language`, la langue des documents (`routes/onboarding.rs:1238-1298`). Le manuel d'administration le
+  dit juste (`admin-manual.tex:757`, `KESH_LANG` « Locale de l'instance »). Attendu : récrire le § (langue de l'interface
+  = `KESH_LANG`, réglée par l'administrateur ; choix de l'assistant = langue des documents), PDF régénéré.
 
 ### Commentaires d'issue à poser (par l'orchestrateur)
 
@@ -359,5 +416,20 @@ atomique), `#44` (ajout des comptes manquants à la finalisation), `#817`, `#818
     touchés), F10 (clé `onboarding-language-error` aux quatre locales au lieu du littéral de S1, mutation M11 ;
     l'étape 0 ne porte plus la condition).
   - LOW non pris : aucun.
+- 2026-10-30 — **Validation P2** (Opus, lentilles R et F en contexte frais ; rapports
+  `kesh-gate-logs/v017-2-assistant-motif-validate-p2-{R,F}.md`) : 0 CRITICAL, 0 HIGH, 2 MEDIUM, 13 LOW. Remédiation
+  (Opus 5.5), chaque prémisse relue au code (`i18n-un-repli-par-cle.test.ts:180, 262`, `i18n-keys.test.ts:767`,
+  `routes/i18n.rs:20-22`, `config.rs:848`, `user-manual.tex:144-158`, `test-state.ts:92, 125`) :
+  - MEDIUM, appliqués : **R1** les deux gardes i18n à décompte exact nommées (tâche 3, fichiers touchés :
+    `CLES_RELEVEES` 344 → 346, `sitesTotal` recompté aux deux bornes) et la forme d'AC-4 fixée (une seule écriture
+    d'`onboarding-finalize-error`) ; **F1** capture de-CH sur un backend relancé avec `KESH_LANG=de`.
+  - LOW appliqués : R2 (`grep` de propagation hors tests), R3 (M3 : tous les tests TypeError et message blanc — oubli de
+    propagation de P1-R2), R4 (message simulé `'MOTIF-DEJA'`, mutation M12), R5 = F8 (registre C-v017-2-1 annoté : 14
+    lignes dont un commentaire, 13 sites — oubli de propagation de P1-R7), R6 (`onboarding.rs:874-875`), R7
+    (`disposeContextSafe`), F2 (« langue de l'interface » ; issue demandée sur le § *Choix de la langue*), F3 (raison
+    d'AC-6 corrigée), F4 (capture de la finalisation refusée par `page.route`), F5 (règle 1 du doc-comment
+    d'`errorMessageOf`), F6 (incise à l'avertissement du manuel, #710), F7 (comptes en occurrences, `grep -oF | wc -l`).
+  - LOW non pris : aucun. Registre propagé : C-v017-2-1, -2, -3, -4 annotés. Prochaine : validation P3 (Sonnet, passe
+    ciblée sur `git diff 8c7e3287..HEAD`, prompt `v017-2-assistant-motif-validate-prompt-p3.md`).
   - Issues : #817, #818, #821 ouvertes par l'orchestrateur ; la fiche les cite. Prochaine : validation P2 (Opus,
     passe complète, prompt `v017-2-assistant-motif-validate-prompt-p2.md`).

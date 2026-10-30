@@ -24,6 +24,10 @@ contexte, option retenue, alternatives écartées, réversibilité.
   #809 ; (b) #644 entier — vingt sites d'autres écrans, décision site par site non mécanique (cf. le corps de #644),
   hors du budget d'une story de correction.
 - **Réversible** : oui.
+- *Annoté le 2026-10-30, validation P2 (R5, F8 ; correction P1-R7 non propagée ici) : la commande ci-dessus rend
+  **quatorze** lignes, dont un commentaire (`onboarding.svelte.ts:156`) ; filtrée
+  (`… | grep -vE ':[0-9]+:\s*//'`), **treize** — onze sites d'affichage, la relance (`:163`), le silence du chargement
+  (`+layout.ts:33`). Le « douze » du contexte comptait les sites sans la relance.*
 
 ### C-v017-2-2 — La règle d'affichage : `errorMessageOf` reçoit un repli optionnel
 
@@ -40,6 +44,9 @@ contexte, option retenue, alternatives écartées, réversibilité.
   local à la page — une troisième écriture de la même règle (DRY) ; (c) n'afficher le motif que pour `status < 500` —
   règle nouvelle que rien ne demande, et un 500 rend déjà un message traduit.
 - **Réversible** : oui (paramètre optionnel).
+- *Annoté le 2026-10-30, validation P2 (F5) : la règle 1 du doc-comment (« le serveur l'a déjà traduit »,
+  `error-message.ts:20-22`) se corrige avec le paramètre — les refus de validation écrits en dur sont rendus tels quels
+  (#710).*
 
 ### C-v017-2-3 — `reportFinalizeError` : la branche `'VALIDATION'` est morte ; intégrée
 
@@ -53,6 +60,9 @@ contexte, option retenue, alternatives écartées, réversibilité.
   message propre ; tout le reste passe par `errorMessageOf(err, <message de finalisation>)`.
 - **Écartée** : corriger le seul littéral en `'VALIDATION_ERROR'` — garde une seconde écriture de la règle.
 - **Réversible** : oui.
+- *Annoté le 2026-10-30, validation P2 (R1, R4) : la forme est fixée dans AC-4 (une branche `ALREADY_COMPLETED`, puis
+  une seule écriture `errorMessageOf(err, msg('onboarding-finalize-error', …))`), ce qui rend décidable le décompte de
+  `sitesTotal` (`i18n-keys.test.ts:767`) ; la branche gardée est prouvée par la mutation M12.*
 
 ### C-v017-2-4 — Le champ Pays : une indication, sans sélecteur, sans `maxlength`, sans contrôle client
 
@@ -76,6 +86,10 @@ contexte, option retenue, alternatives écartées, réversibilité.
 - *Amendé le 2026-10-30, validation P1 (F4) : l'indication se place **sous** le champ (`<p id="coord-country-hint">`,
   `aria-describedby`), non dans le libellé — la cellule du pays occupe un tiers de la grille, et le texte allemand y
   ferait passer le libellé sur plusieurs lignes. Capture de-CH ajoutée.*
+- *Annoté le 2026-10-30, validation P2 (F3, F1) : la raison « décalant le champ de ses voisins » est fausse — le pays est
+  seul sur sa rangée (`+page.svelte:356`) ; la raison retenue est la longueur d'un libellé `text-xs` dans une cellule
+  d'un tiers. La capture de-CH exige un backend lancé avec `KESH_LANG=de` : la langue de l'interface est celle de
+  l'installation (`config.rs:848`, `routes/i18n.rs:20-22`), non le choix de l'étape 0.*
 
 ### C-v017-2-5 — Le motif s'affiche en français pour un utilisateur DE/IT/EN ; renvoyé à #710
 
