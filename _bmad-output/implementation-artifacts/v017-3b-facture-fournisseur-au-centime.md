@@ -1,6 +1,6 @@
 # Story v017-3b : une facture fournisseur naît au centime ; celle qui ne l'est pas est signalée, non modifiée
 
-Status: review
+Status: done
 
 *Fiche rédigée le 2026-10-30, en autonomie (Opus 5.5), worktree `/home/gcorbaz/devel/kesh-0173`, branche
 `story/v017-3-rapprochement-attente` partie de `c5101b07` (tête de la candidate `v0.16.1-rc1`) ; la story se fusionne
@@ -658,7 +658,7 @@ devant, une facture par état, le paiement et l'annulation après.
 
 **Défaut observé, hors périmètre** (capture 02) : le « Total TTC des lignes » vivant du formulaire s'affiche à deux
 décimales (`formatSwissAmount(sumTtc(…))`) — « 100.00 » pour une ligne à 99.9999, sous le message qui dit 99.9999.
-Rien n'est enregistré ; issue demandée (P4).
+Rien n'est enregistré ; ouverte depuis : **#835**.
 
 **Choix** : C-v017-3-28 à C-v017-3-35 au registre.
 
@@ -770,3 +770,8 @@ cette branche.
   PDF, API externe, CHANGELOG (`docs(v0173b)`). Gate complet 4475/4475 (7 ignorés), Vitest 2175/2175, E2E 326 réussis
   et les sept échecs de la KF-029, 18 mutations tuées sur 19 (M4 survivante assumée). Choix C-v017-3-28 à 35.
   Prochaine étape : revue de code P1 (`v017-3b-review-prompt-p1.md`, Sonnet, lentilles B, E, A).
+- 2026-10-30 — **Revue de code P1** (Sonnet, lentilles B, E, A ; prompt `v017-3b-review-prompt-p1.md`) :
+  0 CRITICAL, 0 HIGH, 0 MEDIUM, **14 LOW** (B 3, E 2, A 9) — rapports
+  `kesh-gate-logs/v017-3b-review-p1-{B,E,A}.md`. Boucle close en **une passe** (aucun finding au-dessus de LOW). Les
+  LOW non corrigés sont tracés en **#836** ; le total vivant du formulaire, à deux décimales, en **#835**. Aucun code
+  modifié après la revue. Statut : `done`.
