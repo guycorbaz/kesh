@@ -806,13 +806,14 @@ pub fn build_router_avec_registre(
             delete(routes::bank_imports::delete),
         )
         // Story v016-2a (#816) : saisir un relevé à la main (Comptable+, clés
-        // `read-write` comme l'import). Corps JSON borné par la même limite
-        // que l'import (500 lignes pleines approchent 2,1 Mo).
+        // `read-write` comme l'import). Corps JSON borné par une limite PROPRE,
+        // indépendante de `KESH_BANK_IMPORT_MAX_MB` (revue de code P1, E1) :
+        // 500 lignes pleines approchent 2,1 Mo, la limite est de 3 Mio.
         .route(
             "/api/v1/bank-imports/manual/preview",
             post(routes::bank_statements_manual::preview).layer(
                 axum::extract::DefaultBodyLimit::max(
-                    (state.config.bank_import_max_mib as usize) * 1024 * 1024,
+                    routes::bank_statements_manual::MANUAL_STATEMENT_BODY_LIMIT_BYTES,
                 ),
             ),
         )
@@ -820,7 +821,7 @@ pub fn build_router_avec_registre(
             "/api/v1/bank-imports/manual",
             post(routes::bank_statements_manual::create).layer(
                 axum::extract::DefaultBodyLimit::max(
-                    (state.config.bank_import_max_mib as usize) * 1024 * 1024,
+                    routes::bank_statements_manual::MANUAL_STATEMENT_BODY_LIMIT_BYTES,
                 ),
             ),
         )

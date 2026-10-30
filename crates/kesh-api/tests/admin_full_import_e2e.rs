@@ -4557,8 +4557,9 @@ async fn full_import_round_trip_keeps_a_manual_statement(pool: MySqlPool) {
 /// Moyen retenu (a) : la sauvegarde est exportée par la 0.17.0, puis son
 /// manifeste — non signé (`admin_backup/manifest.rs`), seules les tables
 /// portant un `sha256` — est récrit comme l'écrirait une 0.16.x. Licite parce
-/// que la 0.17.0 n'ajoute aucune table ni colonne
-/// (`bank_imports_manual_source_adds_no_table`, `migrations_upgrade_path.rs`) :
+/// que la 0.17.0 n'ajoute aucune table (`bank_imports_manual_source_adds_no_table`)
+/// ni colonne (`bank_imports_manual_source_only_raises_min_required` : l'unique
+/// migration n'a aucun DDL), tous deux dans `migrations_upgrade_path.rs` :
 /// les données d'une 0.16.x ont la forme de celles-ci.
 #[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn full_import_accepts_a_0_16_backup(pool: MySqlPool) {
@@ -4695,8 +4696,13 @@ async fn full_import_accepts_a_0_16_backup(pool: MySqlPool) {
     assert_eq!(resp.status(), 201, "{}", resp.text().await.unwrap());
 }
 
-/// AC-3-bis, le sens inverse : une sauvegarde de la 0.17.0 est refusée par un
-/// binaire 0.16.1 (`409 IMPORT_VERSION_INCOMPATIBLE` au handler).
+/// AC-3-bis, le sens inverse : la **fonction de compatibilité** que le handler
+/// d'import appelle (`routes/admin.rs`, `check_import_version_compat`, dont le
+/// `DowngradeRefused` devient `409 IMPORT_VERSION_INCOMPATIBLE`) refuse, pour
+/// un binaire `0.16.1`, le `min_required` `0.17.0` qu'écrit la 0.17.0 (lu dans
+/// un vrai export par `full_import_round_trip_keeps_a_manual_statement`). Le
+/// handler lui-même n'est pas joué : un binaire `0.16.1` ne se monte pas dans
+/// ce test (revue de code P1, B3).
 #[test]
 fn a_0_17_backup_is_refused_by_a_0_16_1_binary() {
     assert!(matches!(

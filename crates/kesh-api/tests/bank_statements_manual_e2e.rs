@@ -550,7 +550,8 @@ async fn body_rejections_are_400_validation_error(pool: MySqlPool) {
             .header("Content-Type", "application/json")
             .body("{ pas du json"),
     ));
-    // Au-delà de la limite (10 Mio par défaut).
+    // Au-delà de la limite (3 Mio, propre aux deux routes depuis la revue de
+    // code P1, E1 ; la borne exacte : `body_limit_is_its_own`).
     let mut huge = body(c.bank_account_id);
     huge["lines"][0]["details"] = json!("x".repeat(11 * 1024 * 1024));
     attempts.push((
@@ -649,6 +650,10 @@ async fn account_refusals_write_nothing(pool: MySqlPool) {
     ] {
         let (s, r) = post(&app, path, &c.jwt, &body(c.bank_account_id)).await;
         assert_eq!((s, code(&r)), (409, "BANK_ACCOUNT_CLOSED"), "{path}");
+        assert_eq!(
+            r["error"]["details"]["bankAccountId"], c.bank_account_id,
+            "charge utile du refus (revue de code P1, A2)"
+        );
     }
     // Compte archivé.
     sqlx::query("UPDATE bank_accounts SET closed_on = NULL, archived = TRUE WHERE id = ?")
@@ -683,6 +688,10 @@ async fn duplicate_statement_needs_confirmation(pool: MySqlPool) {
     let (s, r) = create(&app, &c.jwt, &body(c.bank_account_id)).await;
     assert_eq!((s, code(&r)), (422, "BANK_IMPORT_DUPLICATE_FILE"), "{r}");
     assert_eq!(r["error"]["details"]["existingImportId"], first["id"]);
+    assert_eq!(
+        r["error"]["details"]["existingFilename"],
+        "saisie-manuelle-2026-09-01-2026-09-30"
+    );
     assert_eq!(counts(&pool).await, before);
 
     // Même relevé, ordre des clés et `"50"` au lieu de `"50.00"` : même empreinte.
@@ -1249,4 +1258,339 @@ async fn manual_statement_feeds_the_tile_and_k3(pool: MySqlPool) {
         !after.to_string().contains("NO_BALANCE_STATEMENT"),
         "après la saisie, plus de NO_BALANCE_STATEMENT — {after}"
     );
+}
+
+/// Revue de code P1 (A3) — `statementGap` suit les écritures : les livres à
+/// 700.00 contre un relevé saisi à 729.75 donnent un écart de −29.75.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn manual_statement_gap_follows_the_ledger(pool: MySqlPool) {
+    let c = setup(&pool).await;
+    let app = spawn_app(pool.clone()).await;
+    let je = sqlx::query(
+        "INSERT INTO journal_entries (company_id, fiscal_year_id, entry_number, entry_date, \
+         journal, description) VALUES (?, ?, 1, '2026-09-10', 'Banque', 'Apport')",
+    )
+    .bind(c.company_id)
+    .bind(c.fiscal_year_id)
+    .execute(&pool)
+    .await
+    .unwrap()
+    .last_insert_id() as i64;
+    for (order, account, debit, credit) in [
+        (1, c.bank_ledger_account_id, dec!(700.00), Decimal::ZERO),
+        (2, c.revenue_account_id, Decimal::ZERO, dec!(700.00)),
+    ] {
+        sqlx::query(
+            "INSERT INTO journal_entry_lines (entry_id, account_id, line_order, debit, credit) \
+             VALUES (?, ?, ?, ?, ?)",
+        )
+        .bind(je)
+        .bind(account)
+        .bind(order)
+        .bind(debit)
+        .bind(credit)
+        .execute(&pool)
+        .await
+        .unwrap();
+    }
+    let (s, r) = create(&app, &c.jwt, &body(c.bank_account_id)).await;
+    assert_eq!(s, 201, "{r}");
+    let accounts: Value = app
+        .client
+        .get(app.url("/api/v1/bank-accounts"))
+        .bearer_auth(&c.jwt)
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    let list = accounts
+        .as_array()
+        .cloned()
+        .or_else(|| accounts["items"].as_array().cloned())
+        .expect("liste des comptes");
+    let a = list
+        .iter()
+        .find(|a| a["id"] == c.bank_account_id)
+        .expect("le compte");
+    assert_eq!(a["statementClosingBalance"], "729.75", "{a}");
+    assert_eq!(
+        a["statementGap"], "-29.75",
+        "livres 700.00, relevé 729.75 : {a}"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Revue de code P1 — la limite de corps (E1), le verrou du compte (E2), l'ordre
+// des refus (E4)
+// ---------------------------------------------------------------------------
+
+/// Un corps JSON de **exactement** `len` octets : le relevé de septembre, son
+/// premier libellé complété de `x`.
+fn body_of_len(bank_account_id: i64, len: usize) -> String {
+    let mut b = body(bank_account_id);
+    b["lines"][0]["details"] = json!("");
+    let base = b.to_string().len();
+    assert!(len >= base, "montage : {len} < {base}");
+    b["lines"][0]["details"] = json!("x".repeat(len - base));
+    let s = b.to_string();
+    assert_eq!(s.len(), len, "montage : longueur du corps");
+    s
+}
+
+/// E1 — la limite de corps est **propre** aux deux routes (3 Mio), indépendante
+/// de `KESH_BANK_IMPORT_MAX_MB` : à la limite, le corps est lu (le libellé trop
+/// long rend `BANK_STATEMENT_INVALID`) ; un octet au-delà, `400
+/// VALIDATION_ERROR` sans `field`, comme tout rejet du corps. Et un relevé de
+/// 500 lignes pleines, en caractères de quatre octets, passe sous la limite.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn body_limit_is_its_own(pool: MySqlPool) {
+    use kesh_api::routes::bank_statements_manual::MANUAL_STATEMENT_BODY_LIMIT_BYTES as LIMIT;
+    assert_eq!(LIMIT, 3 * 1024 * 1024);
+    let c = setup(&pool).await;
+    let app = spawn_app(pool.clone()).await;
+    let before = counts(&pool).await;
+    for path in [
+        "/api/v1/bank-imports/manual",
+        "/api/v1/bank-imports/manual/preview",
+    ] {
+        for (len, want_status, want_code) in [
+            (LIMIT, 400, "BANK_STATEMENT_INVALID"),
+            (LIMIT + 1, 400, "VALIDATION_ERROR"),
+        ] {
+            let resp = app
+                .client
+                .post(app.url(path))
+                .bearer_auth(&c.jwt)
+                .header("Content-Type", "application/json")
+                .body(body_of_len(c.bank_account_id, len))
+                .send()
+                .await
+                .unwrap();
+            let status = resp.status().as_u16();
+            let r: Value = resp.json().await.unwrap_or(Value::Null);
+            assert_eq!((status, code(&r)), (want_status, want_code), "{path} {len}");
+            if want_code == "VALIDATION_ERROR" {
+                assert!(r["error"]["details"]["field"].is_null());
+            } else {
+                assert_eq!(r["error"]["details"]["reason"], "too_long");
+            }
+        }
+    }
+    assert_eq!(counts(&pool).await, before);
+
+    // 500 lignes pleines : 500 + 255 + 255 caractères de quatre octets.
+    let line = json!({
+        "bookingDate": "2026-09-10",
+        "details": "𝄞".repeat(500),
+        "counterpartyName": "𝄞".repeat(255),
+        "reference": "𝄞".repeat(255),
+        "amount": "1.00",
+        "direction": "credit"
+    });
+    let full = json!({
+        "bankAccountId": c.bank_account_id,
+        "periodFrom": "2026-09-01", "periodTo": "2026-09-30",
+        "openingBalance": "0", "closingBalance": "500.00",
+        "lines": vec![line; 500],
+        "confirmDuplicateLines": true
+    });
+    let size = full.to_string().len();
+    assert!(size > 2_000_000 && size < LIMIT, "montage : {size} octets");
+    let (s, r) = create(&app, &c.jwt, &full).await;
+    assert_eq!(s, 201, "{r}");
+    assert_eq!(r["transactionCount"], 500);
+}
+
+/// Le nom du verrou des gestes de rapprochement (`kesh_reconciliation::mutex`,
+/// `reconcile:<base>:<société>:<compte>`), tenu par une connexion de test.
+async fn take_account_lock(conn: &mut sqlx::MySqlConnection, company: i64, bank: i64) -> String {
+    let db: String = sqlx::query_scalar("SELECT DATABASE()")
+        .fetch_one(&mut *conn)
+        .await
+        .unwrap();
+    let name = format!("reconcile:{db}:{company}:{bank}");
+    let got: Option<i32> = sqlx::query_scalar("SELECT GET_LOCK(?, 5)")
+        .bind(&name)
+        .fetch_one(&mut *conn)
+        .await
+        .unwrap();
+    assert_eq!(got, Some(1), "montage : verrou pris");
+    name
+}
+
+/// E2 — **entrelacement forcé** : une connexion de test tient le verrou du
+/// compte ; le `POST` de la saisie est **vu en attente** sur `GET_LOCK`
+/// (`PROCESSLIST`) ; la connexion enregistre alors, dans sa propre transaction,
+/// un relevé de **même empreinte**, commite, puis rend le verrou. Le `POST`
+/// doit rendre `422 BANK_IMPORT_DUPLICATE_FILE` : ses contrôles ne lisent la
+/// base qu'une fois le verrou acquis, donc après le commit. Un seul relevé.
+/// Rougit sans le verrou (mutation M25) : le `POST` n'attend jamais.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn create_waits_for_the_account_lock_and_sees_the_committed_twin(pool: MySqlPool) {
+    use kesh_core::bank_imports::manual::{
+        ManualStatementRaw, manual_statement_canonical_bytes, parse_manual_statement,
+    };
+    use sha2::{Digest, Sha256};
+    let c = setup(&pool).await;
+    let app = spawn_app(pool.clone()).await;
+    let b = body(c.bank_account_id);
+    let raw: ManualStatementRaw = serde_json::from_value(b.clone()).unwrap();
+    let hash: String = Sha256::digest(manual_statement_canonical_bytes(
+        &parse_manual_statement(&raw).unwrap(),
+    ))
+    .iter()
+    .map(|x| format!("{x:02x}"))
+    .collect();
+
+    let mut held = pool.acquire().await.unwrap();
+    let name = take_account_lock(&mut held, c.company_id, c.bank_account_id).await;
+
+    let client = app.client.clone();
+    let url = app.url("/api/v1/bank-imports/manual");
+    let jwt = c.jwt.clone();
+    let request = tokio::spawn(async move {
+        let r = client
+            .post(url)
+            .bearer_auth(jwt)
+            .json(&b)
+            .send()
+            .await
+            .unwrap();
+        let st = r.status().as_u16();
+        (st, r.json::<Value>().await.unwrap_or(Value::Null))
+    });
+    let seen = kesh_db::test_fixtures::attendre_une_requete_en_cours(&pool, &["GET_LOCK"], || {
+        request.is_finished()
+    })
+    .await;
+    if !seen {
+        let (st, r) = request.await.unwrap();
+        panic!("la saisie n'a jamais attendu le verrou du compte : rendu {st} {r}");
+    }
+
+    {
+        use kesh_db::entities::{BankImportSourceFormat, NewBankImport};
+        use sqlx::Connection;
+        let mut tx = held.begin().await.unwrap();
+        kesh_db::repositories::bank_imports::create_with_transactions(
+            &mut tx,
+            NewBankImport {
+                company_id: c.company_id,
+                bank_account_id: c.bank_account_id,
+                filename: "saisie-manuelle-2026-09-01-2026-09-30".into(),
+                file_hash: hash,
+                source_format: BankImportSourceFormat::Manual,
+                statement_id: Some("9/2026".into()),
+                period_from: NaiveDate::from_ymd_opt(2026, 9, 1).unwrap(),
+                period_to: NaiveDate::from_ymd_opt(2026, 9, 30).unwrap(),
+                opening_balance: Some(dec!(1000.00)),
+                closing_balance: Some(dec!(729.75)),
+                transaction_count: 0,
+                imported_by_user_id: c.user_id,
+            },
+            vec![],
+        )
+        .await
+        .unwrap();
+        tx.commit().await.unwrap();
+    }
+    let released: Option<i32> = sqlx::query_scalar("SELECT RELEASE_LOCK(?)")
+        .bind(&name)
+        .fetch_one(&mut *held)
+        .await
+        .unwrap();
+    assert_eq!(released, Some(1));
+
+    let (st, r) = request.await.unwrap();
+    assert_eq!((st, code(&r)), (422, "BANK_IMPORT_DUPLICATE_FILE"), "{r}");
+    let (imports, txs, _) = counts(&pool).await;
+    assert_eq!(
+        (imports, txs),
+        (1, 0),
+        "un seul relevé, celui de la connexion de test"
+    );
+}
+
+/// E2 — deux enregistrements identiques **lancés ensemble** : exactement un
+/// `201` et un `422 BANK_IMPORT_DUPLICATE_FILE`, un seul relevé en base.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn two_identical_simultaneous_creations_give_one_statement(pool: MySqlPool) {
+    let c = setup(&pool).await;
+    let app = spawn_app(pool.clone()).await;
+    let b = body(c.bank_account_id);
+    let ((s1, r1), (s2, r2)) = tokio::join!(create(&app, &c.jwt, &b), create(&app, &c.jwt, &b));
+    let mut statuses = [s1, s2];
+    statuses.sort();
+    assert_eq!(statuses, [201, 422], "{r1} / {r2}");
+    let refused = if s1 == 422 { &r1 } else { &r2 };
+    assert_eq!(code(refused), "BANK_IMPORT_DUPLICATE_FILE");
+    let (imports, txs, _) = counts(&pool).await;
+    assert_eq!((imports, txs), (1, 2));
+}
+
+/// E4 — l'ordre des refus dans la transaction : relevé identique, puis doublons
+/// de lignes, puis écart de solde de départ ; chaque confirmation découvre le
+/// refus suivant, et rien ne s'écrit avant la dernière.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn refusals_come_in_order_file_lines_gap(pool: MySqlPool) {
+    let c = setup(&pool).await;
+    let app = spawn_app(pool.clone()).await;
+    // Août, clôture 900.00 : le relevé de septembre (départ 1000.00) a un écart.
+    let aug = json!({
+        "bankAccountId": c.bank_account_id,
+        "periodFrom": "2026-08-01", "periodTo": "2026-08-31",
+        "openingBalance": "900.00", "closingBalance": "900.00", "lines": []
+    });
+    let (s, r) = create(&app, &c.jwt, &aug).await;
+    assert_eq!(s, 201, "{r}");
+    let mut sept = body(c.bank_account_id);
+    sept["confirmOpeningBalanceGap"] = json!(true);
+    let (s, r) = create(&app, &c.jwt, &sept).await;
+    assert_eq!(s, 201, "{r}");
+
+    // Le même relevé de septembre : identique, en doublon ligne à ligne, et en
+    // écart de solde de départ.
+    let mut again = body(c.bank_account_id);
+    let before = counts(&pool).await;
+    let mut seen = Vec::new();
+    for confirm in [
+        "confirmDuplicateFile",
+        "confirmDuplicateLines",
+        "confirmOpeningBalanceGap",
+    ] {
+        let (s, r) = create(&app, &c.jwt, &again).await;
+        assert_eq!(s, 422, "{r}");
+        seen.push(code(&r).to_string());
+        assert_eq!(counts(&pool).await, before, "rien d'écrit");
+        again[confirm] = json!(true);
+    }
+    assert_eq!(
+        seen,
+        [
+            "BANK_IMPORT_DUPLICATE_FILE",
+            "BANK_STATEMENT_DUPLICATE_LINES",
+            "BANK_STATEMENT_OPENING_BALANCE_GAP"
+        ]
+    );
+    let (s, r) = create(&app, &c.jwt, &again).await;
+    assert_eq!(s, 201, "{r}");
+    let d = common::audit_details(
+        &pool,
+        "bank_imports",
+        r["id"].as_i64().unwrap(),
+        "bank_import.entered_manually",
+    )
+    .await
+    .unwrap();
+    assert_eq!(
+        d["modifiers"],
+        json!([
+            "duplicate_file",
+            "duplicate_lines_imported",
+            "opening_balance_gap"
+        ])
+    );
+    assert_eq!(d["expected_opening_balance"], "900.00");
 }
