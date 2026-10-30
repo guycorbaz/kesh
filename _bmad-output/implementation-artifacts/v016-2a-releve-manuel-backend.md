@@ -396,7 +396,7 @@ Fichiers prévus : `crates/kesh-core/src/bank_imports.rs` (ou `bank_imports/manu
 | M21 | `confirmDuplicateFile` ignoré (toujours vrai) | AC-11 (`BANK_IMPORT_DUPLICATE_FILE`) |
 | M23 | `ManualStatementReason::ALL` : une variante retirée de la constante | test d'épinglage (AC-4) |
 | M24 | extracteur partagé : bras `MissingJsonContentType` rendu en `415` | AC-11 (`Content-Type` absent → `400`) *(« tests de `bank_accounts` » retiré à la validation P4, P5 : aucun n'atteint ce bras)* |
-| M23-bis | une variante ajoutée à `ManualStatementReason`, absente de `ALL` | test d'exhaustivité par `match` sans joker (AC-4) — rouge à la compilation ou à l'assertion *(annotation du 2026-10-30, étape 0, renvoi à **C-v016-2-20** : la mutation ajoute la variante **et** son bras d'`index`, sans toucher `ALL` ; rouge **à l'exécution** par `ALL.len() == COUNT`, `ALL[i].index() == i` et le décompte des variantes dans le texte source)* |
+| M23-bis | une variante ajoutée à `ManualStatementReason`, absente de `ALL` | test d'exhaustivité par `match` sans joker (AC-4) — rouge à la compilation ou à l'assertion *(annotation du 2026-10-30, étape 0, renvoi à **C-v016-2-20** : la mutation ajoute la variante **et** son bras d'`index`, sans toucher `ALL` ; rouge **à l'exécution** par `ALL.len() == COUNT`, `ALL[i].index() == i` et le décompte des variantes dans le texte source)* *(annotation du 2026-10-30, revue de code P1, A6 : **mesuré**, seul le décompte du texte source rougit — `ALL.len() == COUNT` et `ALL[i].index() == i` restent verts, ce qui est la circularité que C-v016-2-20 relève ; journal `mutations/M23-bis.log`)* |
 | M22 | « un échec de la trace n'écrit rien » : `tx.commit()` avant l'écriture de la trace | AC-10 : test qui fait échouer la trace par un **déclencheur** `BEFORE INSERT ON audit_log` restreint à l'action `bank_import.entered_manually` (`SIGNAL SQLSTATE '45000'`), patron `FAIL_TRIGGER` de `onboarding_audit_e2e.rs:871`, puis `COUNT(*)` de `bank_imports` et `bank_transactions` = 0. *(Première rédaction : « `user_id` inexistant » — faux à la validation P2, R2 : l'entête échoue d'abord sur `fk_bank_imports_user`, et la trace n'a plus de clé étrangère depuis la 25-1a, `audit_log.rs:78-93`.)* |
 
 **M16 et M17 mutent un fichier de migration** (P8 ; validation P2, R13) : tests `#[sqlx::test]` seulement, **aucun
@@ -628,6 +628,27 @@ Campagne sous verrou, au commit `2b14e90f`, une à la fois (`kesh-gate-logs/v016
 M16 et M17 n'ont tourné que sur des bases éphémères (`#[sqlx::test]`) ; aucun démarrage contre `kesh_v0162a` ni
 `kesh_e2e_v0162a` pendant la campagne (l'E2E l'a précédée).
 
+### Revue P1 — gates et mutations de la remédiation (commit `be899fd6`)
+
+- **Rouges** : les tests neufs ont été constatés rouges par leurs mutations (ci-dessous), non par des commits rouges —
+  même écart que pour le développement.
+- **Ciblé** (`p1-cible-1.log`, `p1-cible-2.log`) : `bank_statements_manual_e2e` 20/20 ; puis 164/164 sur
+  `bank_statements_manual_e2e`, `admin_full_import_e2e`, `textes_coherents`, `bank_account_closed_inventory` et les tests
+  `bank_imports` de `kesh-core` ; clippy `--workspace --all-targets -D warnings` vert (`p1-clippy.log`).
+- **Complet** (`tout-p1.log`, sous verrou) : base `kesh_v0162a` remise à zéro ; `test-fast.sh --ci` — nextest
+  **4519 exécutés, 4519 passés, 7 ignorés** (`gate-2.log` ; 4511 + 8 tests neufs : trois de `kesh-core`, cinq e2e) ;
+  `cargo build --workspace --all-targets` vert ; Vitest **181 fichiers, 2150 tests** (`vitest-2.log`) ; `npm run build`
+  vert ; **démarrage réel** sur la base persistante `kesh_e2e_v0162a` (87 migrations avant et après, aucun refus de
+  checksum, `/health` 0.17.0) ; **E2E complet** (`e2e-2.log`, dossiers `/tmp/kesh-e2e-v0162a-2/`) : **325 passés,
+  7 échoués, 17 ignorés** — les sept de la KF-029 (#97), mêmes fichiers et lignes qu'au développement ; backend arrêté
+  par son PID (2564605).
+- **Mutations neuves** (`muter_p1.py`, `mutations/bilan-p1.txt`) : **5 jouées, 5 tuées** — M25 (verrou retiré) :
+  `create_waits_for_the_account_lock_and_sees_the_committed_twin` et `two_identical_simultaneous_creations_give_one_statement` ;
+  M26 (limite de l'import sur la création) : `body_limit_is_its_own` ; M27 (borne des décimales retirée) :
+  `parse_reads_amounts_exactly_and_refuses_long_fractions` ; M28 (plafond de lecture retiré) :
+  `lines_are_capped_at_deserialization` ; M29 (doublons de lignes ignorés quand l'écart n'est pas confirmé) :
+  `refusals_come_in_order_file_lines_gap`. `git status` après la campagne : seuls les comptes rendus en cours.
+
 ### Défauts observés hors périmètre
 
 Aucun nouveau. Rappels de la fiche : l'issue « L'import d'un fichier ne signale pas une période déjà saisie à la main »
@@ -696,3 +717,37 @@ est déjà ouverte.
   Vitest 2150/2150, E2E 325 passés / 7 échecs attendus (KF-029), démarrage réel sur base persistante (86 → 87),
   mutations 21/21 tuées. Choix C-v016-2-20 à 23. Statut `review`. Prochaine étape : revue de code P1
   (`v016-2a-review-prompt-p1.md`, Sonnet, lentilles B, E, A).
+- 2026-10-30 — **Revue P1** (Sonnet, lentilles B, E, A, contexte frais ; rapports
+  `kesh-gate-logs/v0162a-review-p1-{B,E,A}.md`) : **0 CRITICAL, 0 HIGH, 2 MEDIUM, 14 LOW** (B : 0/0/0/4 ; E : 0/0/2/4 ;
+  A : 0/0/0/6). Prémisses vérifiées au code avant chaque remède : `rust_decimal-1.43.0/src/str.rs` (`FromStr` →
+  `parse_str_radix_10`, `ROUND = true` ; `from_str_exact` sans arrondi) ; `bank_accounts.rs` (verrou partagé du compte,
+  `LOCK IN SHARE MODE`) et l'absence d'unicité de `(company_id, file_hash)` ; `crates/kesh-reconciliation/src/mutex.rs`
+  (`with_account_lock` : `GET_LOCK('reconcile:<base>:<société>:<compte>')`, `RELEASE_LOCK` avant le retour, le commit
+  étant à l'appelant) ; la désérialisation complète de `lines` avant `parse_manual_statement`. Traitement (décisions de
+  l'orchestrateur, **C-v016-2-24**), commit `be899fd6` :
+  - **MEDIUM** — E2 : création sous `with_account_lock`, sur une connexion **dédiée**, verrou rendu **après** le commit de
+    la transaction de création ; tests `create_waits_for_the_account_lock_and_sees_the_committed_twin` (entrelacement
+    forcé, sonde `PROCESSLIST` sur `GET_LOCK`) et `two_identical_simultaneous_creations_give_one_statement` ; mutation
+    M25 (verrou retiré). Le même défaut sur l'import d'un fichier : **issue demandée**. E1 : limite de corps propre,
+    **3 Mio** (500 lignes pleines en caractères de quatre octets pèsent ~2,1 Mo : l'exemple de 1 Mio refuserait un relevé
+    légitime ; mesuré par `body_limit_is_its_own`, 2,07 Mo → `201`), indépendante de `KESH_BANK_IMPORT_MAX_MB`, et
+    `lines` ne retenant que 501 éléments à la lecture (`deserialize_capped_lines`) ; mutations M26, M28.
+  - **LOW appliqués** — B1 = A1 = E3 : lecture exacte (`parse_reads_amounts_exactly_and_refuses_long_fractions`, 29 et
+    30 décimales ; M27) ; la garde de M4 passe par une entrée de domaine d'échelle 3
+    (`rule_5_scale_is_checked_after_normalize_on_the_domain_input`), l'analyse ôtant désormais les zéros finals ; A2
+    (`bankAccountId` du refus de compte clos, `existingFilename`) ; A3 (`manual_statement_gap_follows_the_ledger`, écart
+    −29.75) ; E4 (`refusals_come_in_order_file_lines_gap` ; M29) ; E6 (`-0`, `+5`, `5.`, `.5`, `0005.00` ; `amount_string`
+    n'écrit plus `-0.00`) ; B3 (doc-comment de `a_0_17_backup_is_refused_by_a_0_16_1_binary` : la fonction de
+    compatibilité, non le handler) ; A5 (docstring et annotation datée de C-v016-2-22) ; A6 (annotation datée de M23-bis,
+    limite de `count_source_variants` écrite) ; A4 — lignes lues à `c5101b07`, complément de l'étape 0 :
+    `migrations_upgrade_path.rs:557` et `:573` `assert_eq!(db_min.to_string(), "0.14.0");`, `:656`
+    `assert_eq!(min_required, "0.14.0");` ; `audit_label_registry.rs:585` `const PAS_DES_CODES: &[(&str, &str)] = &[(`,
+    `:648` `fn retenir_si_code(contenu: &str) -> Option<String> {`.
+  - **LOW non pris, à tracer** — E5 (vraisemblance des dates : année 0000, durée de période ; bornes jointives hors de la
+    garde d'écart) : issue demandée ; B2 : l'entrée *Ajouté* du CHANGELOG est prescrite à la 2b (AC-29-bis,
+    `v016-2b-releve-manuel-ecran.md:255`) — vérifié, rien à faire ici ; B4 : le titre de `cc41b988` (« validation close »,
+    sans `#`) est à écarter du message de squash de la PR ; E6, second point (`"confirmDuplicateFile": null` →
+    `400 VALIDATION_ERROR`) : comportement écrit, non changé (contrat partagé avec la 2b).
+  Contrat de l'API inchangé, hors le refus de taille (toujours `400 VALIDATION_ERROR`, à 3 Mio) et le `409
+  RECONCILIATION_ACCOUNT_LOCKED` sous contention. Gates et mutations de la remédiation : au Dev Agent Record (§ *Revue
+  P1*). Prochaine étape : revue P2 ciblée (`v016-2a-review-prompt-p2.md`, Opus, une lentille).

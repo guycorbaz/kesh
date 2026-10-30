@@ -465,6 +465,10 @@ fiches.*
 
 ### C-v016-2-22 — La sauvegarde 0.16.x : moyen (a), le manifeste récrit (développement de la 2a, 2026-10-30)
 
+*Annoté le 2026-10-30, revue de code P1 (A5) : « ni colonne » ne s'appuie pas sur `bank_imports_manual_source_adds_no_table`,
+qui ne compare que l'inventaire des tables, mais sur `bank_imports_manual_source_only_raises_min_required` (l'unique migration
+n'a aucun DDL) ; la docstring du test est corrigée.*
+
 - **Contexte** : AC-3-bis, moyens (a) ou (b), par ordre de préférence.
 - **Retenu** : (a) — `full_import_accepts_a_0_16_backup` exporte depuis la 0.17.0 une base peuplée d'un import CAMT à
   soldes, d'un import CSV et de transactions (une rapprochée), récrit le manifeste (`keshVersion` `0.16.1`,
@@ -480,3 +484,25 @@ fiches.*
 - **Retenu** : `🚧 Candidate`, la ligne renommée `v0.17.0`, la phrase « Aucune migration » remplacée par la migration et
   la sauvegarde d'avant la mise à jour, la candidate `0.16.1-rc1` nommée.
 - **Réversible** : oui (bascule à « ✅ Publiée » au tag final, liste B de la release).
+
+### C-v016-2-24 — Remédiation de la revue de code P1 : verrou, limite de corps, lecture exacte (2026-10-30)
+
+- **Contexte** : revue de code P1 (Sonnet, B, E, A), 0/0/2/14 ; décisions de l'orchestrateur sur E2, E1 et B1 = A1 = E3.
+- **Retenu** :
+  - **E2** — la création (relevé identique, doublons de lignes, écart de solde de départ, `INSERT`, trace) se fait sous
+    `kesh_reconciliation::with_account_lock`, le verrou nommé des gestes de rapprochement, pris sur une connexion
+    **dédiée** et rendu **après** le commit de la transaction de création (la transaction de la seconde requête naît
+    après le commit de la première) ; délai 5 s, `409 RECONCILIATION_ACCOUNT_LOCKED` au-delà. Un échec du seul
+    `RELEASE_LOCK` après une création conclue rend l'issue de la création (journalisé), non une erreur : annoncer en échec
+    une création commitée serait un P2. L'import d'un fichier a le même défaut : **issue demandée**, non corrigé ici.
+  - **E1** — limite de corps **propre** aux deux routes, `MANUAL_STATEMENT_BODY_LIMIT_BYTES` = **3 Mio** (500 lignes
+    pleines en caractères de quatre octets pèsent ~2,1 Mo : 1 Mio, l'exemple de l'orchestrateur, refuserait un relevé
+    légitime), indépendante de `KESH_BANK_IMPORT_MAX_MB` ; **et** `lines` désérialisé par un visiteur qui ne retient que
+    501 éléments (les suivants lus par `IgnoredAny`) : la mémoire ne dépend plus du corps.
+  - **B1 = A1 = E3** — `parse_decimal` borne la partie décimale **sur le texte** (zéros finals ôtés, > 2 chiffres →
+    `too_many_decimals`) et lit par `Decimal::from_str_exact` : aucun arrondi silencieux.
+- **Écartées** : le verrou rendu avant le commit (forme de `with_account_lock` employée par le rapprochement, qui garde ses
+  lignes par `FOR UPDATE` ; ici, une fenêtre entre la libération et le commit où la seconde lirait une base sans la
+  première) ; `SELECT … FOR UPDATE` sur le compte (interdit à cet endroit : `LOCK IN SHARE MODE`, `bank_accounts.rs`) ;
+  une limite de 1 Mio.
+- **Réversible** : oui.
