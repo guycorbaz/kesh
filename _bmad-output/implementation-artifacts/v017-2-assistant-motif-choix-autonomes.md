@@ -188,3 +188,42 @@ contexte, option retenue, alternatives écartées, réversibilité.
   exige l'appel d'`i18nMsg` avec la clé).
 - **Écartée** : garder le littéral en corrigeant seulement la justification.
 - **Réversible** : oui.
+
+---
+
+*Choix du développement (Opus 5.5, autonomie, 2026-10-30).*
+
+### C-v017-2-14 — Le test serveur (AC-8) est vert dès l'écriture ; sa preuve est la mutation M15
+
+- **Contexte** : AC-8 fixe un contrat que le serveur tient déjà (aucun code serveur ne change). Le test ne peut donc pas
+  être rouge avant le correctif.
+- **Retenu** : l'écrire, le constater vert, et le prouver par M15 (contrôle du pays retiré d'`address_input.rs`). M15
+  rougit sur le **code** d'erreur (`DATA_LENGTH_OR_RANGE`, la colonne refuse « Suisse ») et non sur le statut, qui reste
+  400 : c'est l'assertion `VALIDATION_ERROR` qui porte la preuve, l'assertion du motif la complète.
+- **Écartée** : affaiblir le test au seul statut — M15 survivrait.
+- **Réversible** : oui.
+
+### C-v017-2-15 — Le paragraphe du manuel reste dans la puce *Coordonnées légales*
+
+- **Contexte** : AC-9 demande d'« ajouter une phrase » à la puce. Une phrase hors de l'énumération aurait demandé de
+  couper la liste (`\setcounter{enumi}`).
+- **Retenu** : la phrase dans la puce, après l'IDE, avec l'exemple du pays écrit en toutes lettres.
+- **Écartée** : un paragraphe entre deux `enumerate` — rupture de la numérotation, sans gain de lisibilité.
+- **Réversible** : oui.
+
+### C-v017-2-16 — `make fr` régénère trois PDF ; seuls ceux dont la source change se commitent
+
+- **Contexte** : `make fr` reconstruit aussi `admin-manual.pdf` et `marketing-brochure.pdf`, dont les octets changent
+  (dates de production) sans que leur source change.
+- **Retenu** : restaurer ces deux PDF (`git checkout --` dans le worktree) et ne commiter que `user-manual.pdf`.
+- **Écartée** : commiter les trois — un diff binaire sans changement de contenu, qui brouille la revue.
+- **Réversible** : oui.
+
+### C-v017-2-17 — Captures : une spec Playwright hors dépôt, un délai d'une seconde avant les toasts
+
+- **Contexte** : les captures se prennent sur la base E2E du worktree ; aucune spec de capture n'existe au dépôt, et un
+  fichier ajouté sous `tests/e2e/` entrerait dans la suite (et ne pourrait pas s'effacer : `rm` interdit).
+- **Retenu** : la spec et sa configuration vivent sous `kesh-gate-logs/v0172/capture-spec/` (non versionnées), les
+  aides de `tests/e2e/helpers/test-state.ts` importées par chemin absolu ; un délai d'une seconde avant chaque capture
+  de toast, faute de quoi l'animation d'entrée le coupe au bord de l'écran.
+- **Réversible** : oui.

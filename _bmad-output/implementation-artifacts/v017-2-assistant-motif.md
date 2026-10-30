@@ -1,6 +1,6 @@
 # Story v017-2 : l'assistant d'installation dit pourquoi le serveur refuse
 
-Status: in-progress
+Status: review
 
 *Fiche rédigée le 2026-10-30, en autonomie (Opus 5.5), worktree `/home/gcorbaz/devel/kesh-0172`, branche
 `story/v017-2-assistant-motif` partie de `c5101b07` (tête de la candidate 0.16.1-rc1). Release **0.17.0**. Registre :
@@ -404,9 +404,125 @@ Aucune à ce jour (la seule demandée est devenue #824, ci-dessus).
 
 ### Agent Model Used
 
+Opus 5.5 (`claude-opus-5-5`), autonomie, 2026-10-30. Journaux hors dépôt : `kesh-gate-logs/v0172/`.
+
 ### Completion Notes List
 
+**Étape 0.**
+
+- *Les sept LOW de la validation P3*, appliqués à la fiche (commit `28ee3cfb`) : **P3-1** puce « Issues : #817… »
+  replacée sous l'entrée P1 du Change Log, annotée ; **P3-2** annotation datée sous l'entrée P2 (« 13 bruts, 12
+  distincts ») et commentaire de `sprint-status.yaml` — l'entrée P2 n'est pas réécrite ; **P3-3** lu
+  `api-client.ts:236` « `message` présent dans le corps est repris tel quel (le serveur l'a traduit). » → AC-1 et
+  *Fichiers touchés* complétés, **code corrigé** (commit `73df507a`, même incise #710) ; **P3-4** AC-9 : « Le § *Choix
+  de la langue* reçoit en outre… », `user-manual.tex:154-168` (lu : `\begin{keshwarning}` l. 154), `\#710`, compte
+  « avant » sur le PDF versionné ; **P3-5** lu `+page.svelte:9` (`isApiError` seul importé des utilitaires) → import
+  d'`errorMessageOf` nommé en tâche 3, **fait au code** ; **P3-6** mutations M13, M14, M15 ajoutées au tableau,
+  **jouées** (ci-dessous) ; **P3-7** #824 cité en AC-9 et déplacé aux *Issues ouvertes* ; citation corrigée en
+  `routes/onboarding.rs:1246-1304` (lu par `awk` : `async fn ensure_company_with_language_in_tx(` l. 1246, `}` l. 1304).
+- *Prémisses 1 à 7 et inventaire*, recontrôlés sur `6abf47dd` : `git diff c5101b07 --stat -- frontend crates docs` vide
+  (aucune ligne de code n'a bougé depuis la fiche) ; l'inventaire filtré rend les treize lignes attendues
+  (`+page.svelte:39, 48, 57, 65, 73, 81, 126, 189, 200, 208, 219`, `+layout.ts:33`, `onboarding.svelte.ts:163`) ;
+  `grep -rn "'VALIDATION'" frontend/src crates` → `+page.svelte:153` seul ; `errors.rs:1538-1540`
+  `build_response(StatusCode::BAD_REQUEST, "VALIDATION_ERROR", &msg)` ; `routes/onboarding.rs:871-876` (refus
+  1100/3000), `:526-545` (validation avant `pool.begin()`) ; `address_input.rs:66-71` (message du pays) — tous
+  conformes à la fiche.
+- *Rouges constatés avant tout patch* (`kesh-gate-logs/v0172/rouges-etape0.txt`, tests écrits, code inchangé) :
+  `Tests 25 failed | 34 passed (59)` sur les trois fichiers — garde AC-5 (1), `error-message.test.ts` (4 : message
+  vide, blanc, non-chaîne, TypeError avec repli), `onboarding-motif.test.ts` (20 sur 28 : « ApiError → message » de
+  S1 à S7, TypeError de S1 à S8 et S10, message blanc de S8, MOTIF-FIN de S9 et S11, AC-6). Verts **dès avant** le
+  correctif, et c'est attendu : S8 et S10 « ApiError → message » (le motif s'affichait déjà), S1 et S7 « message
+  blanc » (l'ancien code affichait déjà le texte de l'étape), et les quatre scénarios ALREADY_COMPLETED / TypeError de
+  la finalisation (l'ancien `reportFinalizeError` les traitait déjà) — ces derniers sont prouvés par M3 et M12.
+  `coordinates_rejects_country_name` est vert dès l'écriture (le serveur tient déjà le contrat) : prouvé par M15
+  (C-v017-2-14).
+
+**Ce qui est livré** — AC-1 à AC-10 tels que prescrits ; `reportFinalizeError` a exactement la forme d'AC-4. Compteurs
+de garde recalés : `sitesTotal` **2619 → 2620** (`+page.svelte` 59 → 60, mesuré aux deux bornes `c5101b07` → HEAD par
+`grep -oE '(i18nMsg|[^a-zA-Z]msg)\(' … | wc -l`, et par la collecte du test) ; `CLES_RELEVEES` **344 → 346** (deux clés
+neuves, `git diff` du FTL fr-CH). Propagation (tâche 7, tests exclus) : `'VALIDATION'` → vide ; `catch {` dans
+`routes/onboarding` → vide ; les deux clés → quatre locales et un site chacune ; « Erreur lors du choix de langue » →
+le seul repli de `msg(…)` (`+page.svelte:47`) ; « serveur l'a (déjà )traduit » → les deux sites, tous deux corrigés.
+
+**Tests ajoutés** (périmètre `6abf47dd` → HEAD) : Vitest **41** — `onboarding-motif.test.ts` 28 (neuf « ApiError →
+motif », neuf « TypeError → repli de l'étape », trois « message blanc », six de finalisation, un AC-6),
+`onboarding-catch-guard.test.ts` 5 (le fichier, quatre témoins), `error-message.test.ts` 18 → 26 (+8) ; Rust **1**
+(`coordinates_rejects_country_name`) ; E2E **1** (`onboarding-motif.spec.ts`).
+
+**Mutations** (sous verrou ; `kesh-gate-logs/v0172/mutations.py`, sortie `mutations-vitest.txt` ; M15 :
+`mutation-M15.txt`) — chaque motif vérifié unique, restauré par `git checkout --` puis `touch` ; `git status` vide
+après la campagne. **Quinze jouées (M10 en deux), toutes tuées** :
+
+| # | Rouges (test qui a rougi) |
+|---|---|
+| M1 | S7 « ApiError → motif », S7 « TypeError », garde AC-5 |
+| M2 | S5 « ApiError → motif », S5 « TypeError », garde AC-5 |
+| M3 | 18 : les neuf TypeError S1-S8/S10, les trois messages blancs, S9/S11 TypeError, les quatre cas repli d'`error-message.test.ts` |
+| M4 | 12 : « ApiError → ce message, et non le repli », les neuf « ApiError → motif », MOTIF-FIN de S9 et S11 |
+| M5 | S9 et S11 « VALIDATION_ERROR → son motif » |
+| M6 | AC-6 |
+| M7 | AC-6 |
+| M8 | plancher de la garde (+ les trois témoins qui exigent un recueil) |
+| M9 | S8 « TypeError », S8 « message blanc » |
+| M10a / M10b | S5 « TypeError » / S10 « TypeError » |
+| M11 | S1 « TypeError » (l'appel d'`i18nMsg` avec `onboarding-language-error` manque) |
+| M12 | S9 et S11 « ALREADY_COMPLETED » |
+| M13 | « repli vide / blanc → le générique » |
+| M14 | « TypeError → le repli, et la valeur journalisée », et les neuf TypeError de l'assistant |
+| M15 | `coordinates_rejects_country_name` : `left: String("DATA_LENGTH_OR_RANGE")`, `right: "VALIDATION_ERROR"` (le statut reste 400 — la colonne refuse la valeur longue ; c'est l'assertion du code qui tue) |
+
+**Gates, au dernier commit de code (`73df507a` ; les commits suivants ne touchent que tests E2E, docs, manuel) :**
+
+- backend `scripts/test-fast.sh` (fmt, clippy `-D warnings`, nextest ; base `kesh_v0172` remise à zéro avant) :
+  **4461 exécutés, 4461 passés, 7 ignorés** (`test-fast.log`) ;
+- frontend : `npm run check` **0 erreur, 29 avertissements** (aucun dans `onboarding`) ; `lint-i18n-ownership` PASS ;
+  `npm run test:unit` **183 fichiers, 2191 tests, tous verts** ; `npm run build` vert ;
+- **E2E complet** (backend sur le port 3172, base `kesh_e2e_v0172`, dossiers `/tmp/kesh-e2e-v0172-full1/`) :
+  **326 passés, 7 échoués, 17 ignorés** (`e2e-complet.log`). Les sept échecs, jugés fichier par fichier contre
+  `docs/testing.md` § *Les échecs attendus* : `mode-expert.spec.ts:26`, `:41`, `onboarding-path-b.spec.ts:65`, `:92`,
+  `onboarding.spec.ts:57`, `:77`, `:150` — les sept KF-029 (#97), ni KF-052 ni pollution. La spec neuve
+  `onboarding-motif.spec.ts:56` passe (1,7 s).
+- ciblés en cours de route : `binary(onboarding_path_b_e2e)` 8/8 ; Vitest des fichiers touchés 130/130 ;
+  `e2e-selecteurs-traduits.test.ts` 3/3.
+
+**Manuel** (`make fr` sous verrou et `mem-guard`, `make-fr.log`) : seul `user-manual.pdf` commité (C-v017-2-16).
+Comptes sur le PDF aplati, `grep -oF … | wc -l`, avant = `git show HEAD:docs/manual/fr/user-manual.pdf` (avant le
+commit `348dd9a0`), après = le PDF régénéré : « code ISO à deux lettres » **0 → 1** ; fragment de la phrase ajoutée
+« motif que le serveur » **0 → 1** (choisi après lecture du PDF régénéré, sans césure) ; « certains refus du serveur »
+(incise du § *Choix de la langue*) **0 → 1**. Le manuel d'administration (`admin-manual.tex:1069, 1419`) ne détaille pas
+les champs de l'assistant : vérifié, inchangé.
+
+**Captures** (thème clair, base `kesh_e2e_v0172`, `kesh-gate-logs/v0172/captures/`) : `1-coordonnees-indication-pays.png`,
+`2-refus-pays-motif.png` (toast « adresse : le pays doit être un code ISO à 2 lettres (ex. CH) »),
+`3-refus-ide-motif.png`, `4-coordonnees-de-CH.png` (backend relancé sur le port 3173 avec `KESH_LANG=de` : libellé
+`Land`, indication allemande sur trois lignes dans la cellule d'un tiers), `5-finalisation-refusee-motif.png` (motif du
+refus 1100/3000 sur l'écran vide, #821). Spec de capture : `kesh-gate-logs/v0172/capture-spec/` (C-v017-2-17).
+Tous les backends lancés ont été tués par PID ; aucun ne reste.
+
+**Écarts à la fiche.**
+
+- Les deux fichiers de test `onboarding-catch-guard.test.ts` (une ligne : position de la parenthèse ; retrait d'un
+  `export`) et `error-message.test.ts` (ajout du bloc « avec un repli » en fin de fichier) ont été édités une fois
+  par un script `python3` au lieu de l'outil d'édition, contrairement à `docs/agents-orchestration.md` § 7. Contrôlé
+  ensuite par lecture et par les tests ; aucun fichier de production n'a été édité ainsi.
+- M5 et M9/M10b sont jouées sous la forme exacte de la fiche ; M4 est jouée en « le repli a priorité dès qu'il est
+  donné », ce qui revient à « rend `repli` même pour une ApiError à message ».
+
+**Défauts observés (issues à demander).** Le toast d'un IDE invalide répète le mot : « IDE invalide : Numéro IDE
+invalide : 9 chiffres attendus après CHE, trouvé 3 » (capture 3 ; `routes/onboarding.rs:538`
+`format!("IDE invalide : {e}")` sur le message de `kesh-core`) — cosmétique, P4 proposé, voisin de #710.
+
 ### File List
+
+- `frontend/src/lib/shared/utils/error-message.ts`, `error-message.test.ts`, `api-client.ts` (doc-comment)
+- `frontend/src/routes/onboarding/+page.svelte`, `onboarding-motif.test.ts` (neuf), `onboarding-catch-guard.test.ts` (neuf)
+- `frontend/src/lib/shared/i18n-keys.test.ts`, `i18n-un-repli-par-cle.test.ts`
+- `crates/kesh-i18n/locales/{fr,de,it,en}-CH/messages.ftl`
+- `crates/kesh-api/tests/onboarding_path_b_e2e.rs`
+- `frontend/tests/e2e/onboarding-motif.spec.ts` (neuf), `docs/testing.md`
+- `docs/manual/fr/user-manual.tex`, `user-manual.pdf`, `CHANGELOG.md`
+- `_bmad-output/implementation-artifacts/v017-2-assistant-motif.md`, `-choix-autonomes.md` (C-v017-2-14 à 17),
+  `-review-prompt-p1.md` (neuf), `sprint-status.yaml`
 
 ## Change Log
 
@@ -449,3 +565,8 @@ Aucune à ce jour (la seule demandée est devenue #824, ci-dessus).
     ciblée sur `git diff 8c7e3287..HEAD`, prompt `v017-2-assistant-motif-validate-prompt-p3.md`).
   - *Annoté le 2026-10-30, validation P3 (P3-2) : « 13 LOW » sont **13 bruts, 12 distincts** — R5 et F8 sont le même
     défaut.*
+- 2026-10-30 — **Développement** (Opus 5.5, autonomie ; commits `28ee3cfb` étape 0, `73df507a` code, `348dd9a0` E2E,
+  manuel, CHANGELOG, puis le compte rendu). Étape 0 : les sept LOW de la validation P3 appliqués. AC-1 à AC-10 livrés ;
+  41 tests Vitest, 1 Rust, 1 E2E ajoutés ; mutations M1 à M15 toutes tuées ; gate backend 4461/4461 (7 ignorés),
+  Vitest 2191/2191, E2E 326 passés / 7 échecs KF-029 attendus / 17 ignorés ; cinq captures. Choix C-v017-2-14 à 17.
+  Prochaine : revue de code P1 (Sonnet, trois lentilles, prompt `v017-2-assistant-motif-review-prompt-p1.md`).
