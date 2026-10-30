@@ -73,6 +73,9 @@ contexte, option retenue, alternatives écartées, réversibilité.
   - un contrôle côté client (`/^[A-Za-z]{2}$/`) : seconde écriture d'une règle du serveur, qui n'attrape pas plus que
     lui.
 - **Réversible** : oui.
+- *Amendé le 2026-10-30, validation P1 (F4) : l'indication se place **sous** le champ (`<p id="coord-country-hint">`,
+  `aria-describedby`), non dans le libellé — la cellule du pays occupe un tiers de la grille, et le texte allemand y
+  ferait passer le libellé sur plusieurs lignes. Capture de-CH ajoutée.*
 
 ### C-v017-2-5 — Le motif s'affiche en français pour un utilisateur DE/IT/EN ; renvoyé à #710
 
@@ -102,6 +105,10 @@ contexte, option retenue, alternatives écartées, réversibilité.
 - **Retenu** : ni l'un ni l'autre ; le premier demande un état d'erreur et une reprise (non mécanique) → **issue à
   ouvrir** (P3) ; le second reste à #644 (composant partagé avec `/admin/restore`).
 - **Réversible** : oui.
+- *Annoté le 2026-10-30, validation P1 (R7) : la ligne `AdminRestorePanel.svelte:84` est celle que cite #644 ; à
+  `c5101b07`, les `catch` du panneau sont `:157` (affiche `importErrorMessage(err)`) et `:181` (silence voulu). Issue du
+  chargement ouverte : **#818** (P3). Défaut voisin relevé en P1 (R3), même traitement : la finalisation refusée laisse
+  un écran vide (étape 7 sans branche, `+layout.ts:30`) → **#821** (P3), limite déclarée en AC-4.*
 
 ### C-v017-2-8 — Défaut voisin : le pays n'est contrôlé qu'à la forme ; issue à ouvrir, non intégré
 
@@ -116,6 +123,7 @@ contexte, option retenue, alternatives écartées, réversibilité.
   écrans et deux crates, et une adresse existante invalide deviendrait inenregistrable (à examiner avec les données à
   garder de la 0.16.1-rc1).
 - **Réversible** : —
+- *Annoté le 2026-10-30, validation P1 : issue ouverte, **#817** (P2).*
 
 ### C-v017-2-9 — Garde de non-régression : lexicale et locale à l'assistant
 
@@ -135,6 +143,10 @@ contexte, option retenue, alternatives écartées, réversibilité.
   KF-029 reste ouverte, non touchée.
 - **Écartée** : réparer `onboarding-path-b` — #97 a d'autres causes (bannière, redirections).
 - **Réversible** : oui.
+- *Amendé le 2026-10-30, validation P1 (F1, consigne de l'orchestrateur) : l'état est amené à l'étape 5 **par l'API**
+  (`authedApiContext`), seul l'écran des coordonnées se joue par l'interface, par sélecteurs d'`id` — la garde
+  `e2e-selecteurs-traduits.test.ts` refuserait des sélecteurs de texte dans un fichier neuf, et trois boutons de
+  l'assistant n'ont pas de `data-testid`. Aucun `data-testid` ajouté.*
 
 ### C-v017-2-11 — Le contrat du refus se fixe aussi au serveur
 
@@ -149,3 +161,16 @@ contexte, option retenue, alternatives écartées, réversibilité.
 - **Retenu** : la story ne touche que le frontend, un test serveur, les locales et le manuel. Sur un refus, le serveur
   n'écrit rien : la validation (`routes/onboarding.rs:526-541`) précède l'ouverture de la transaction (`:545`). Aucune
   table, aucune migration, aucun bump.
+- *Amendé le 2026-10-30, validation P1 (R1) : « le serveur n'écrit rien » vaut pour toutes les étapes **sauf la
+  démonstration** — `kesh-seed/src/lib.rs:162-172` : les quatre premières validations de `seed-demo` commitent avant la
+  dernière transaction, et le rejeu rend 500 (#538). Défaut préexistant ; la story ne change aucune écriture.*
+
+### C-v017-2-13 — Le littéral de S1 devient une clé (validation P1, F10)
+
+- **Contexte** : la fiche gardait `'Erreur lors du choix de langue'` en dur, « faute de catalogue avant le choix de la
+  langue ». Or `msg(clé, repli)` retombe sur son repli quand le catalogue manque : l'argument ne tenait pas, et c'était
+  le dernier message en dur de l'écran.
+- **Retenu** : clé `onboarding-language-error` aux quatre locales, repli égal à la valeur fr-CH ; mutation M11 (le test
+  exige l'appel d'`i18nMsg` avec la clé).
+- **Écartée** : garder le littéral en corrigeant seulement la justification.
+- **Réversible** : oui.
