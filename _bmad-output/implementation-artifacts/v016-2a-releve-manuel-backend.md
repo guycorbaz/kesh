@@ -1,6 +1,6 @@
 # Story v016-2a : saisir un relevé bancaire à la main — le backend
 
-Status: review
+Status: done
 
 *Sous-fiche issue du découpage de la Story v016-2 à la validation P2 (2026-10-30, décision de l'orchestrateur,
 C-v016-2-18). Worktree `/home/gcorbaz/devel/kesh-0162`, branche `story/v016-2-releve-manuel` (partie de `c5101b07`), la 2a d'abord,
@@ -751,3 +751,8 @@ est déjà ouverte.
   Contrat de l'API inchangé, hors le refus de taille (toujours `400 VALIDATION_ERROR`, à 3 Mio) et le `409
   RECONCILIATION_ACCOUNT_LOCKED` sous contention. Gates et mutations de la remédiation : au Dev Agent Record (§ *Revue
   P1*). Prochaine étape : revue P2 ciblée (`v016-2a-review-prompt-p2.md`, Opus, une lentille).
+- 2026-10-31 — **Revue de code close en deux passes** : P1 (Sonnet, lentilles B, E, A) **0 CRITICAL, 0 HIGH, 2 MEDIUM,
+  14 LOW**, remédiée (`be899fd6`, C-v016-2-24) ; P2 ciblée (Opus, une lentille sur le diff de la remédiation ; rapport
+  `kesh-gate-logs/v0162a-review-p2.md`) **0 CRITICAL, 0 HIGH, 0 MEDIUM, 7 LOW** — les deux écarts de la remédiation (limite
+  de 3 Mio, verrou rendu après le commit) jugés justifiés. LOW de la P2 tracés : P2-1 en **#842**, les autres en **#843**.
+  Trend : P1 2 MEDIUM → P2 0 au-dessus de LOW. Statut `done`.
