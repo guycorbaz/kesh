@@ -1,0 +1,55 @@
+{
+  "ok": [
+    {
+      "account_iban": "CH4431999123000889012",
+      "closing_balance": "10300.00",
+      "currency": "CHF",
+      "opening_balance": "10000.00",
+      "period_from": "2026-05-01",
+      "period_to": "2026-05-31",
+      "source_format": {
+        "kind": "camt053",
+        "version": "001.04"
+      },
+      "statement_id": "STMT-SUBTX",
+      "transactions": [
+        {
+          "amount": "100.00",
+          "booking_date": "2026-05-15",
+          "counterparty_iban": null,
+          "counterparty_name": "Client A",
+          "currency": "CHF",
+          "details": "Facture A-001",
+          "end_to_end_id": "E2E-SUB-001",
+          "reference": null,
+          "transaction_id": "BANK-SUB-001",
+          "value_date": "2026-05-15"
+        },
+        {
+          "amount": "150.00",
+          "booking_date": "2026-05-15",
+          "counterparty_iban": null,
+          "counterparty_name": "Client B",
+          "currency": "CHF",
+          "details": "Facture B-002",
+          "end_to_end_id": "E2E-SUB-002",
+          "reference": null,
+          "transaction_id": "BANK-SUB-002",
+          "value_date": "2026-05-15"
+        },
+        {
+          "amount": "50.00",
+          "booking_date": "2026-05-15",
+          "counterparty_iban": null,
+          "counterparty_name": "Client C",
+          "currency": "CHF",
+          "details": "Facture C-003",
+          "end_to_end_id": "E2E-SUB-003",
+          "reference": null,
+          "transaction_id": "BANK-SUB-003",
+          "value_date": "2026-05-15"
+        }
+      ]
+    }
+  ]
+}

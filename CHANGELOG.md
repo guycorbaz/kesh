@@ -10,11 +10,15 @@ Le contenu est rédigé en français à destination des **fiduciaires, PME, ind�
 
 ## [0.17.0]
 
-<!-- En-tête provisoire de la Story v017-2 (#809) : à fusionner par l'orchestrateur avec les autres stories de la 0.17.0. -->
+<!-- En-tête provisoire de la release 0.17.0 : réunion par l'orchestrateur des entrées des stories (v017-2, v017-1, puis les suivantes) ; la section [0.16.1] ci-dessous sera renommée par la v016-2a. -->
 
 ### Corrigé
 
 - **L'assistant d'installation affiche, à chacune de ses étapes de saisie, finalisation comprise, le motif d'un refus tel que le serveur le donne**, au lieu d'un message générique ; le champ Pays indique la forme attendue (code ISO à deux lettres) ([#809](https://github.com/guycorbaz/kesh/issues/809)).
+
+### Sécurité
+
+- **La bibliothèque XML `quick-xml` passe de 0.39 à 0.42** ([#789](https://github.com/guycorbaz/kesh/issues/789)) : les deux défauts signalés sur l'import d'un relevé CAMT.053 sont corrigés — un temps de calcul quadratique sur les attributs d'un élément (avis RUSTSEC-2026-0194) et une allocation de mémoire non bornée par les déclarations d'espace de noms (avis RUSTSEC-2026-0195). D'autres durcissements de l'import restent à faire ([#820](https://github.com/guycorbaz/kesh/issues/820)). **Un relevé se lit exactement comme avant** : l'empreinte d'un fichier déjà importé et la détection des doublons de fichier et de ligne ne changent pas. Seule exception : un fichier qui n'est pas en UTF-8 — ce qu'exige la norme ISO 20022 —, accepté jusqu'ici quand les octets fautifs se trouvaient hors du texte lu (commentaire, section CDATA, attribut ignoré), est désormais refusé comme XML mal formé.
 
 ## [0.16.1] — 2026-10-29
 

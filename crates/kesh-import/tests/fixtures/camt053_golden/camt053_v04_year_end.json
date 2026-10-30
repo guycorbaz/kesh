@@ -1,0 +1,31 @@
+{
+  "ok": [
+    {
+      "account_iban": "CH4431999123000889012",
+      "closing_balance": "100.00",
+      "currency": "CHF",
+      "opening_balance": "0.00",
+      "period_from": "2025-12-01",
+      "period_to": "2025-12-31",
+      "source_format": {
+        "kind": "camt053",
+        "version": "001.04"
+      },
+      "statement_id": "STMT-YE-001",
+      "transactions": [
+        {
+          "amount": "100.00",
+          "booking_date": "2025-12-15",
+          "counterparty_iban": null,
+          "counterparty_name": "Client Synthétique SA",
+          "currency": "CHF",
+          "details": "Prestation décembre 2025",
+          "end_to_end_id": "E2E-YE-2025-001",
+          "reference": null,
+          "transaction_id": "BANK-TX-YE-1",
+          "value_date": "2025-12-15"
+        }
+      ]
+    }
+  ]
+}

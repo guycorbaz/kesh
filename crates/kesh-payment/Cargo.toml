@@ -6,7 +6,7 @@ license.workspace = true
 
 [dependencies]
 chrono = { version = "0.4", features = ["serde"] }
-quick-xml = "0.39"
+quick-xml = "0.42"
 rust_decimal = { version = "1.41", features = ["serde-str"] }
 thiserror = "2"
 

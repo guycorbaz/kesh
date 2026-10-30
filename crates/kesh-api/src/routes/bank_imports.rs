@@ -2305,3 +2305,25 @@ mod import_create_error_tests {
         ));
     }
 }
+
+#[cfg(test)]
+mod file_hash_tests {
+    use super::*;
+
+    /// Empreinte de `frontend/tests/e2e/fixtures/camt053_v04_minimal.xml`,
+    /// relevée par `sha256sum` le 2026-10-30 (Story v017-1).
+    const MINIMAL_SHA256: &str = "83b03aedf3b2a1cc7745a59c3f93cd565c2d8d9fc3bb00c88d0c5ebdaa3e6eaa";
+
+    /// AC10 (Story v017-1, #789) — l'empreinte anti-doublon d'un fichier est le
+    /// SHA-256 de ses **octets reçus**, en hexadécimal minuscule. Elle ne passe
+    /// pas par le parseur : la montée de quick-xml ne peut pas la changer, et
+    /// ce test ne peut pas rougir par elle. Il fixe l'invariant contre une
+    /// modification future de `compute_sha256_hex` — qui ferait passer pour
+    /// neuf un fichier déjà importé dans des livres tenus.
+    #[test]
+    fn file_hash_is_sha256_of_received_bytes() {
+        let bytes =
+            include_bytes!("../../../../frontend/tests/e2e/fixtures/camt053_v04_minimal.xml");
+        assert_eq!(compute_sha256_hex(bytes), MINIMAL_SHA256);
+    }
+}
