@@ -16,7 +16,7 @@ le CHANGELOG (*Ajouté*), le README (*Fonctionnalités*). Le backend (routes, co
 il n'est pas l'objet de cette revue, sauf là où l'écran en dépend.
 
 Worktree `/home/gcorbaz/devel/kesh-0163`, branche `story/v016-2b-releve-manuel-ecran`. Le diff à relire, **aplati** :
-`git -C /home/gcorbaz/devel/kesh-0163 diff 285d2fde...HEAD` (`285d2fde` = tête de la v016-2a développée). Langue du
+`git -C /home/gcorbaz/devel/kesh-0163 diff 920ddb4d...HEAD` (`920ddb4d` = la v016-2a revue, fusionnée en `c87d0be7` ; ses propres commits ne sont pas l objet de cette revue). Langue du
 rapport : français. Modèle : **Sonnet**. Passe **complète**. Contexte frais : ne t'appuie sur aucune passe antérieure.
 
 ⚠️ **Les propriétés centrales.**
@@ -32,7 +32,7 @@ Lis d'abord (lentilles E et A ; la lentille B lit le diff avant) : la sous-fiche
 `_bmad-output/implementation-artifacts/v016-2b-releve-manuel-ecran.md` — **AC-19 à AC-27, AC-29-bis, AC-30**, *Tests et
 mutations prévus*, *À recontrôler à l'étape 0*, le **Dev Agent Record** et le **Change Log** ; la fiche parente
 `v016-2-releve-manuel.md` (§ *Le corps de requête*, *Réponse de l'aperçu*, *Codes d'erreur*, *Ensembles fermés*, *Ordre
-des refus*, *Ce que les gardes ne voient pas*) ; le registre `v016-2-choix-autonomes.md`, **C-v016-2-24 à 27** ; la
+des refus*, *Ce que les gardes ne voient pas*) ; le registre `v016-2-choix-autonomes.md`, **C-v016-2-25 à 28** (C-v016-2-24 est la remédiation de la revue de la 2a) ; la
 contrainte `/home/gcorbaz/devel/kesh-gate-logs/prompts/v017-donnees-a-garder.md`. Le Dev Agent Record déclare des rouges,
 des gates, des mutations, un E2E et des captures : **ne les prends pas pour argent comptant**, recoupe-les avec les
 journaux hors dépôt (lecture seule) sous `/home/gcorbaz/devel/kesh-gate-logs/v0162b/` (rouges, gates, `mutations/`, E2E,
@@ -109,7 +109,7 @@ journaux hors dépôt (lecture seule) sous `/home/gcorbaz/devel/kesh-gate-logs/v
 Pour chaque AC (**AC-19 à AC-27, AC-29-bis, AC-30**), « tenu », « non tenu » ou « non vérifiable en lecture seule », avec
 la preuve. L'étape 0 : point bloquant vérifié au code commité (ligne citée), renvois P8 appliqués ? Les mutations M13 à
 M30 : chacune tuée **par le test nommé** (journaux `mutations/`) ? Les compteurs recalés se recomptent-ils ? Les choix
-**C-v016-2-24 à 27** contredisent-ils un AC ? Chaque nombre du Dev Agent Record (Vitest, nextest, E2E et échecs
+**C-v016-2-25 à 28** (C-v016-2-24 est la remédiation de la revue de la 2a) contredisent-ils un AC ? Chaque nombre du Dev Agent Record (Vitest, nextest, E2E et échecs
 nominatifs contre `docs/testing.md` § *Les échecs attendus*) se recompte-t-il depuis sa source, avec son périmètre ? Les
 captures couvrent-elles l'énumération de l'AC-25 (et les manques sont-ils déclarés) ? `sprint-status.yaml` : `review`.
 
