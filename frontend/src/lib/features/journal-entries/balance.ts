@@ -13,19 +13,55 @@
 import Big from 'big.js';
 
 /**
- * Format accepté : 1-15 chiffres entiers + optionnellement un séparateur
- * décimal suivi de 1 à 4 chiffres. Accepte virgule ou point ; la
- * normalisation en point se fait avant parse.
+ * Options de format d'un montant — Story v016-2b (#816) : le relevé saisi à la
+ * main contrôle ses soldes (signés, requis, treize chiffres, deux décimales) et
+ * ses montants de ligne (deux décimales, treize chiffres) par la **même**
+ * expression que le journal, paramétrée, et non par une seconde expression.
+ * Les défauts sont ceux du journal : `DECIMAL(19,4)`, quinze chiffres entiers,
+ * sans signe, vide admis.
+ */
+export interface AmountFormatOptions {
+	/** Décimales au plus (défaut 4). */
+	maxDecimals?: number;
+	/** Chiffres entiers au plus (défaut 15). */
+	maxIntegerDigits?: number;
+	/** Admet un `-` en tête (défaut non). */
+	allowNegative?: boolean;
+	/** La chaîne vide est valide (défaut oui, comme le journal). */
+	allowEmpty?: boolean;
+}
+
+const AMOUNT_FORMAT_DEFAULTS: Required<AmountFormatOptions> = {
+	maxDecimals: 4,
+	maxIntegerDigits: 15,
+	allowNegative: false,
+	allowEmpty: true,
+};
+
+/**
+ * L'expression d'un format, la seule du module, paramétrée par ses options. Par
+ * défaut : 1-15 chiffres entiers + optionnellement un séparateur décimal suivi de
+ * 1 à 4 chiffres. Accepte virgule ou point ; la normalisation en point se fait
+ * avant parse.
  *
  * P8 : exige au moins 1 chiffre après le séparateur pour rejeter les
  * formes ambigües comme `"100,"` (ni entier ni décimal complet).
  */
-const AMOUNT_RE = /^\d{1,15}([.,]\d{1,4})?$/;
+function amountRegExp(o: Required<AmountFormatOptions>): RegExp {
+	const sign = o.allowNegative ? '-?' : '';
+	return new RegExp(`^${sign}\\d{1,${o.maxIntegerDigits}}([.,]\\d{1,${o.maxDecimals}})?$`);
+}
 
-/** Retourne `true` si `raw` est vide ou conforme à AMOUNT_RE. */
-export function isValidAmount(raw: string): boolean {
-	if (raw === '') return true;
-	return AMOUNT_RE.test(raw);
+const AMOUNT_RE = amountRegExp(AMOUNT_FORMAT_DEFAULTS);
+
+/**
+ * Retourne `true` si `raw` est conforme au format — par défaut celui du journal
+ * (vide admis, 1-15 chiffres, 1-4 décimales, virgule ou point, sans signe).
+ */
+export function isValidAmount(raw: string, options?: AmountFormatOptions): boolean {
+	const o = options ? { ...AMOUNT_FORMAT_DEFAULTS, ...options } : AMOUNT_FORMAT_DEFAULTS;
+	if (raw === '') return o.allowEmpty;
+	return (options ? amountRegExp(o) : AMOUNT_RE).test(raw);
 }
 
 /** Parse un montant (string avec virgule ou point) en `Big`. Vide → 0. */

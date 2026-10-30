@@ -140,3 +140,66 @@ export interface BankImportListResponse {
 	offset: number;
 	limit: number;
 }
+
+// Story v016-2b (#816) — relevé saisi à la main (`POST /api/v1/bank-imports/manual`
+// et `/manual/preview`, contrat de la fiche parente `v016-2-releve-manuel.md`).
+
+/** Une ligne du corps : montant positif et sens ; textes facultatifs à `null`. */
+export interface ManualStatementLineBody {
+	bookingDate: string;
+	valueDate: string | null;
+	details: string;
+	counterpartyName: string | null;
+	reference: string | null;
+	amount: string | null;
+	direction: 'debit' | 'credit' | null;
+}
+
+/** Corps de l'aperçu et de la création — montants et soldes en chaînes décimales. */
+export interface ManualStatementBody {
+	bankAccountId: number;
+	periodFrom: string;
+	periodTo: string;
+	statementNumber: string | null;
+	openingBalance: string;
+	closingBalance: string;
+	lines: ManualStatementLineBody[];
+	confirmDuplicateFile: boolean;
+	confirmDuplicateLines: boolean;
+	confirmOpeningBalanceGap: boolean;
+}
+
+/** Doublon signalé par l'aperçu : `line` est le rang 1-based dans le tableau envoyé. */
+export interface ManualDuplicateLineWarning {
+	line: number;
+	existingTransactionId: number;
+	key: string;
+}
+
+export interface ManualOpeningBalanceGap {
+	expected: string;
+	entered: string;
+	previousImportId: number;
+	previousPeriodTo: string;
+}
+
+export interface ManualOverlappingStatement {
+	importId: number;
+	periodFrom: string;
+	periodTo: string;
+	sourceFormat: string;
+}
+
+/** Réponse de l'aperçu (`200`, aucune écriture). */
+export interface ManualStatementPreviewResponse {
+	totalCredits: string;
+	totalDebits: string;
+	computedClosingBalance: string;
+	transactionCount: number;
+	warnings: {
+		duplicateFile: DuplicateFilePayload | null;
+		duplicateLines: ManualDuplicateLineWarning[];
+		openingBalanceGap: ManualOpeningBalanceGap | null;
+		overlappingStatements: ManualOverlappingStatement[];
+	};
+}

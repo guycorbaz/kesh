@@ -207,9 +207,11 @@ function valeurDuCatalogueFr(cle: string): string | undefined {
  * G13 (Story 15-14a, #569 et #547) — les replis frontend **à site unique** suivent le catalogue.
  *
  * ⚠️ La garde ci-dessus ne voit pas ces clés : elle ne retient que celles qui portent **au
- * moins deux** replis distincts (`parTexte.size > 1`). Chacune des treize clés ci-dessous n'a
- * qu'un site d'appel ; un repli resté à l'ancien texte n'y rougirait pas, et l'écran
- * l'afficherait dès que le catalogue manque (premier rendu, catalogue non chargé).
+ * moins deux** replis distincts (`parTexte.size > 1`). Chacune des quatre-vingt-onze clés
+ * ci-dessous n'a qu'un texte de repli (un site d'appel, ou plusieurs qui disent la même
+ * chose) ; un repli resté à l'ancien texte n'y rougirait pas, et l'écran l'afficherait dès
+ * que le catalogue manque (premier rendu, catalogue non chargé). *(« treize » jusqu'à la
+ * Story v016-2b, qui en ajoute soixante-dix-huit : 13 + 78 = 91, recompté sur la liste.)*
  *
  * Le tableau attendu à UN élément est l'anti-test-muet : un relevé vide, une clé disparue du
  * catalogue (`[undefined]`) ou un second repli divergent rougissent tous.
@@ -233,6 +235,93 @@ const REPLIS_A_SITE_UNIQUE: readonly string[] = [
 	'settlement-cancel-blocked-lettering-closed',
 	'reconciliation-cancel-blocked-lettering-closed',
 	'supplier-invoices-cancel-blocked-lettering-closed',
+	// Story v016-2b (#816, AC-23, AC-24) — quatre clés existantes au texte récrit pour valoir
+	// aussi d'un relevé saisi : les deux en-têtes de la liste, la boîte de clôture d'un compte
+	// (qui garde « rouvrir », G8) et l'aide de K2 — repli et catalogue au même commit.
+	'bank-import-labels-list-col-imported-at',
+	'bank-import-labels-list-col-filename',
+	'bank-accounts-close-dialog-body',
+	'fiscal-years-checks-k2-help',
+	// Story v016-2b — les clés statiques neuves de l'écran de saisie, du détail et de la
+	// suppression d'un relevé saisi (60 `bank-import-manual-*` hors la famille dynamique
+	// `bank-import-manual-reason-`, gardée par `MOTIFS_DYNAMIQUES` et le test Rust croisé ;
+	// 14 `bank-import-detail-*`). Toutes à repli littéral ; aucun préfixe ajouté à
+	// `PREFIXES_REPLI_EGAL_AU_CATALOGUE` (les `bank-import-manual-errors-*` de la 2a sont des
+	// messages serveur, sans site frontend).
+	'bank-import-detail-back',
+	'bank-import-detail-col-reference',
+	'bank-import-detail-col-status',
+	'bank-import-detail-entered-at',
+	'bank-import-detail-error-invalid-id',
+	'bank-import-detail-error-not-found',
+	'bank-import-detail-file',
+	'bank-import-detail-heading',
+	'bank-import-detail-imported-at',
+	'bank-import-detail-manual-name',
+	'bank-import-detail-manual-name-numbered',
+	'bank-import-detail-source-format',
+	'bank-import-detail-statement',
+	'bank-import-detail-title',
+	'bank-import-manual-add-line',
+	'bank-import-manual-back',
+	'bank-import-manual-blocked-account',
+	'bank-import-manual-blocked-balances',
+	'bank-import-manual-blocked-confirmations',
+	'bank-import-manual-blocked-gap',
+	'bank-import-manual-blocked-line',
+	'bank-import-manual-blocked-line-count',
+	'bank-import-manual-blocked-period',
+	'bank-import-manual-blocked-period-inverted',
+	'bank-import-manual-blocked-preview',
+	'bank-import-manual-blocked-statement-number',
+	'bank-import-manual-closing-balance',
+	'bank-import-manual-col-booking-date',
+	'bank-import-manual-col-counterparty',
+	'bank-import-manual-col-credit',
+	'bank-import-manual-col-debit',
+	'bank-import-manual-col-details',
+	'bank-import-manual-col-reference',
+	'bank-import-manual-col-value-date',
+	'bank-import-manual-computed-closing',
+	'bank-import-manual-confirm-duplicate-file',
+	'bank-import-manual-confirm-duplicate-lines',
+	'bank-import-manual-confirm-opening-gap',
+	'bank-import-manual-delete-blocked',
+	'bank-import-manual-delete-button',
+	'bank-import-manual-delete-dialog-body',
+	'bank-import-manual-delete-dialog-title',
+	'bank-import-manual-delete-error-not-found',
+	'bank-import-manual-delete-error-reconciled',
+	'bank-import-manual-delete-success',
+	'bank-import-manual-entered-closing',
+	'bank-import-manual-error-cell',
+	'bank-import-manual-error-duplicate-file',
+	'bank-import-manual-error-field',
+	'bank-import-manual-error-rejected',
+	'bank-import-manual-error-rows',
+	'bank-import-manual-field-amount',
+	'bank-import-manual-field-lines',
+	'bank-import-manual-gap',
+	'bank-import-manual-info-overlap',
+	'bank-import-manual-intro',
+	'bank-import-manual-link',
+	'bank-import-manual-opening-balance',
+	'bank-import-manual-optional',
+	'bank-import-manual-page-title',
+	'bank-import-manual-period-from',
+	'bank-import-manual-period-to',
+	'bank-import-manual-preview-ok',
+	'bank-import-manual-preview-stale',
+	'bank-import-manual-remove-line',
+	'bank-import-manual-save',
+	'bank-import-manual-statement-number',
+	'bank-import-manual-success',
+	'bank-import-manual-total-credits',
+	'bank-import-manual-total-debits',
+	'bank-import-manual-verify',
+	'bank-import-manual-warning-duplicate-file',
+	'bank-import-manual-warning-duplicate-lines',
+	'bank-import-manual-warning-opening-gap',
 ];
 
 describe('les replis frontend à site unique suivent le catalogue fr-CH (G13)', () => {

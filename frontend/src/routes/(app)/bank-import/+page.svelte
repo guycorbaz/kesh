@@ -8,6 +8,13 @@
 	import type { BankImportResponse } from '$lib/features/bank-import/bank-import.types';
 	import type { BankAccountOptionSource } from '$lib/features/bank-accounts/format';
 	import type { CompanyCurrentResponse } from '$lib/features/settings/settings.types';
+	import { authState } from '$lib/app/stores/auth.svelte';
+
+	// Story v016-2b (#816, AC-19) — le lien de saisie, pour l'Admin et le Comptable
+	// seulement ; `/bank-import/manual` renvoie les autres rôles (`+page.ts`).
+	let canEnterManually = $derived(
+		authState.currentUser?.role === 'Admin' || authState.currentUser?.role === 'Comptable',
+	);
 
 	// Story 26-2b (#622, C-26-2-18) — type partagé : `description` obligatoire.
 	let bankAccounts = $state<Array<BankAccountOptionSource & { id: number }>>([]);
@@ -56,6 +63,14 @@
 	<div class="mt-6">
 		<BankImportUpload {bankAccounts} {onSuccess} />
 	</div>
+
+	{#if canEnterManually}
+		<p class="mt-4 text-sm">
+			<a href="/bank-import/manual" class="text-primary underline" data-testid="bank-import-manual-link">
+				{i18nMsg('bank-import-manual-link', 'Saisir un relevé à la main')}
+			</a>
+		</p>
+	{/if}
 
 	<section class="mt-10">
 		<h2 class="text-lg font-semibold">

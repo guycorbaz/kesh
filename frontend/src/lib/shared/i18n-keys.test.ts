@@ -25,6 +25,7 @@ import { describe, it, expect } from 'vitest';
 
 import { IMPORT_ERROR_LABELS } from '$lib/features/imported-supplier-invoices/error-label';
 import { CSV_LINE_ERROR_LABELS } from '$lib/features/bank-import/csv-line-error-label';
+import { MANUAL_STATEMENT_REASON_LABELS } from '$lib/features/bank-import/manual-statement-reason-label';
 import { readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 // Seul import de production autorisé (AC7 / D1-bis) : un utilitaire de lecture, sans
@@ -764,22 +765,40 @@ const ATTENDU = {
 	// même `grep` aux deux bornes (`f9b154f8` → HEAD), périmètre : les fichiers touchés —
 	// `McpKeysSection.svelte` 60 → 61 (`mcp-server-form-expires-invalid`, B3),
 	// `McpSettingsSection.svelte` 33 → 34 (`mcp-server-settings-retry`, E3). Que des littéraux.
-	sitesTotal: 2619,
+	// Story v016-2b (refs #816, saisir un relevé à la main) : **2619 → 2711** (+92), mesuré
+	// par la collecte de ce test et recompté par `grep -oE '(i18nMsg|[^a-zA-Z]msg)\('` aux
+	// deux bornes (`285d2fde` → tête de `story/v016-2b-releve-manuel-ecran`), périmètre : les
+	// fichiers touchés hors tests — `features/bank-import/ManualStatementForm.svelte` 0 → 51,
+	// `bank-import-display.ts` 0 → 3, `manual-statement-reason-label.ts` 0 → 1 (le gabarit
+	// ci-dessous), `DeleteBankImportAction.svelte` 8 → 14, `BankImportList.svelte` 5 → 5 ;
+	// `routes/(app)/bank-import/[id]/+page.svelte` 4 → 28, `bank-import/+page.svelte` 4 → 5,
+	// `bank-import/manual/+page.svelte` 0 → 6 ; `bank-accounts/+page.svelte` 73 → 73,
+	// `fiscal-years/closing-checks-labels.ts` 20 → 20 (replis récrits). `sitesNonResolus`
+	// et `relais` inchangés.
+	sitesTotal: 2711,
 	sitesNonResolus: 31,
 	relais: 6,
 	// Story 26-1 (#620, AC3-bis) : **10 → 11** — `lib/features/bank-import/
 	// csv-line-error-label.ts` (`bank-import-csv-errors-`), table littérale des codes
 	// d'erreur de ligne CSV, patron d'`imported-supplier-invoices/error-label.ts`.
-	sitesGabarit: 11,
+	// Story v016-2b (#816, AC-24) : **11 → 12** — `lib/features/bank-import/
+	// manual-statement-reason-label.ts` (`bank-import-manual-reason-`), table littérale des
+	// `reason` d'un refus `BANK_STATEMENT_INVALID`, même patron.
+	sitesGabarit: 12,
 	litterauxMin: 1050,
 	clesDepuisTsMin: 5
 } as const;
 
 /**
- * Les 9 préfixes dynamiques et leurs valeurs, **écrites en dur**.
+ * Les 10 préfixes dynamiques et leurs valeurs, **écrites en dur**.
  *
  * (Story 26-1 : 8 → 9, avec `bank-import-csv-errors-` — les six codes d'erreur de ligne
  * de l'import CSV, dont `amount-sign-mismatch`.)
+ *
+ * (Story v016-2b, #816 : 9 → 10, avec `bank-import-manual-reason-` — les onze `reason`
+ * d'un refus `BANK_STATEMENT_INVALID`. ⚠️ Cette liste recopie l'ensemble fermé ; ce qui le
+ * lie au serveur est le test Rust croisé de `crates/kesh-api/tests/textes_coherents.rs`,
+ * qui égale la table de production à `ManualStatementReason::ALL`.)
  *
  * ⚠️ Les lire depuis le code de production ferait qu'une carte vidée par erreur rendrait
  * le test vert à vide — le mode d'échec du test muet. La contrepartie est l'assertion de
@@ -830,6 +849,12 @@ const MOTIFS_DYNAMIQUES: Record<string, readonly string[]> = {
 		'row-too-short', 'amount-sign-mismatch',
 		// Story 27-2 (#624) — cellule Devise illisible.
 		'invalid-currency'
+	],
+	// Story v016-2b (#816, AC-24) — `lib/features/bank-import/manual-statement-reason-label.ts`.
+	'bank-import-manual-reason-': [
+		'required', 'invalid-date', 'invalid-number', 'period-inverted', 'too-many-lines',
+		'out-of-period', 'too-long', 'not-positive', 'too-many-decimals', 'too-many-digits',
+		'unknown-direction'
 	]
 };
 
@@ -879,7 +904,9 @@ const CARDINALITES: Record<string, number> = {
 	'imported-supplier-invoices-error-': Object.keys(IMPORT_ERROR_LABELS).length,
 	'bank-import-info-': 3,
 	// Story 26-1 : LUE depuis la production, comme la carte des erreurs d'import.
-	'bank-import-csv-errors-': Object.keys(CSV_LINE_ERROR_LABELS).length
+	'bank-import-csv-errors-': Object.keys(CSV_LINE_ERROR_LABELS).length,
+	// Story v016-2b (#816) : LUE depuis la production, comme les deux précédentes.
+	'bank-import-manual-reason-': Object.keys(MANUAL_STATEMENT_REASON_LABELS).length
 };
 
 /**
@@ -949,9 +976,10 @@ const FAMILLES_RESOLUES: Record<string, readonly string[]> = {
 };
 
 /**
- * Les 11 sites de gabarit, **confrontés et non produits**.
+ * Les 12 sites de gabarit, **confrontés et non produits**.
  *
- * (Story 26-1 : 10 → 11, `csv-line-error-label.ts`.)
+ * (Story 26-1 : 10 → 11, `csv-line-error-label.ts`. Story v016-2b, #816 : 11 → 12,
+ * `manual-statement-reason-label.ts`.)
  *
  * ⚠️ Le développeur ne doit pas *fabriquer* cette liste par l'extraction — c'est elle
  * qui a déjà échoué cinq fois. Il la *compare*. Un simple compte laisserait d'ailleurs
@@ -968,7 +996,8 @@ const SITES_GABARIT_ATTENDUS: readonly string[] = [
 	'routes/(app)/journal-entries/+page.svelte  journal-',
 	'routes/(app)/settings/vat-rates/+page.svelte  vat-category-',
 	'lib/features/imported-supplier-invoices/error-label.ts  imported-supplier-invoices-error-',
-	'lib/features/bank-import/csv-line-error-label.ts  bank-import-csv-errors-'
+	'lib/features/bank-import/csv-line-error-label.ts  bank-import-csv-errors-',
+	'lib/features/bank-import/manual-statement-reason-label.ts  bank-import-manual-reason-'
 ];
 
 /**
@@ -1169,7 +1198,7 @@ describe('garde i18n — les clés demandées existent au catalogue', () => {
 		}
 	});
 
-	it('les 9 préfixes dynamiques sont déclarés, et leurs 11 sites confrontés', () => {
+	it('les 10 préfixes dynamiques sont déclarés, et leurs 12 sites confrontés', () => {
 		expect([...new Set(releve.gabarits)].sort()).toEqual([...SITES_GABARIT_ATTENDUS].sort());
 		expect(releve.gabarits.length).toBe(ATTENDU.sitesGabarit);
 		const prefixesVus = new Set(releve.gabarits.map((g) => g.split('  ')[1]));

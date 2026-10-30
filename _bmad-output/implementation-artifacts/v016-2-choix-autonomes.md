@@ -480,3 +480,59 @@ fiches.*
 - **Retenu** : `🚧 Candidate`, la ligne renommée `v0.17.0`, la phrase « Aucune migration » remplacée par la migration et
   la sauvegarde d'avant la mise à jour, la candidate `0.16.1-rc1` nommée.
 - **Réversible** : oui (bascule à « ✅ Publiée » au tag final, liste B de la release).
+
+### C-v016-2-24 — L'écran de saisie : raisons, lignes à deux montants, aperçu périmé (développement de la 2b, 2026-10-30)
+
+- **Contexte** : AC-20 à AC-22 fixent la séquence de la raison unique, l'instantané de l'aperçu et la table des rangs,
+  sans dire le texte des raisons, ni ce que part dans le corps d'une ligne à deux montants ou sans montant, ni comment
+  l'écran montre un aperçu périmé.
+- **Retenu** :
+  - dix raisons, une clé chacune (`bank-import-manual-blocked-*`) : compte ; période vide ou illisible ; période
+    inversée (la séquence « période (vide, illisible, inversée) » en deux messages) ; numéro ; soldes ; nombre de
+    lignes ; ligne fautive (son rang affiché, une phrase qui dit les quatre règles) ; écart ; aperçu ; cases ;
+  - une ligne à deux montants part avec le montant du débit et **sans sens** (`direction: null`), une ligne sans montant
+    sans montant : le serveur la désigne (`required`), et l'écran la marque déjà fautive ;
+  - un montant ou un solde hors forme part **tel que saisi** (trimé), pour que le serveur le désigne ; au format, il
+    part normalisé (`toFixed(2)`) ;
+  - un aperçu dont le relevé a changé tombe (cases décochées) et un avis « le relevé a changé depuis la vérification »
+    s'affiche jusqu'à la vérification suivante ; un refus affiché tombe de même ;
+  - un refus de **création** qui demande une case (relevé identique, doublons, écart de solde de départ, apparus depuis
+    l'aperçu) retire l'aperçu : on vérifie de nouveau pour voir la case.
+- **Écartées** : une raison générique « formulaire incomplet » (contraire à l'AC-21) ; bloquer « Vérifier » sur une ligne
+  fautive (contraire à l'AC-21, les refus du serveur ne seraient plus atteints) ; garder l'aperçu après un 422 de
+  création (la case nouvelle ne s'afficherait pas).
+- **Réversible** : oui.
+
+### C-v016-2-25 — Les textes : en-têtes de la liste, variantes de suppression, détail (développement de la 2b, 2026-10-30)
+
+- **Contexte** : AC-23 demande des en-têtes « qui valent pour les deux origines » et des variantes propres de la boîte
+  de suppression, sans en fixer ni les mots ni le nom des clés.
+- **Retenu** : en-têtes « Enregistré le » et « Relevé » (de-CH « Gespeichert am », « Auszug » ; it-CH « Registrato il »,
+  « Estratto » ; en-CH « Recorded on », « Statement ») ; les variantes de suppression sous `bank-import-manual-delete-*`
+  (et non `bank-import-delete-manual-*`), si bien que toutes les clés statiques neuves de l'écran tombent sous la
+  famille `bank-import-manual-*` que nomme l'AC-24 ; au détail, « Saisie manuelle » sert de nom **et** de format (une
+  seule clé, `bank-import-detail-manual-name`, rendue par `bank-import-display.ts`, source unique de la règle côté
+  frontend) ; le titre « Détail du relevé bancaire » et le `<h2>` « Relevé #… » valent pour les deux origines.
+- **Écartées** : garder « Fichier » pour un relevé saisi (faux) ; une clé de format distincte au même texte (DRY).
+- **Réversible** : oui (textes).
+
+### C-v016-2-26 — Le test croisé des `reason` vit dans `textes_coherents.rs` (G24) (développement de la 2b, 2026-10-30)
+
+- **Contexte** : AC-24 place le test croisé dans `crates/kesh-api/tests/`, sur le patron `lire` de
+  `textes_coherents.rs:46-48`.
+- **Retenu** : deux tests ajoutés à `textes_coherents.rs` (garde **G24**, inscrite au tableau d'en-tête), qui réemploient
+  `racine()` et `lire()` : `g24_l_extracteur_de_la_table_des_reason` (témoins vert et rouges de l'extracteur : bloc
+  absent, non fermé, vide) et `g24_la_table_des_reason_egale_l_ensemble_ferme_du_serveur` (égalité des deux ensembles
+  dans les deux sens, absence de doublon, `COUNT`).
+- **Écartées** : un fichier de test neuf (un binaire de plus à lier, et une seconde copie de `lire`, contraire au DRY).
+- **Réversible** : oui.
+
+### C-v016-2-27 — La recette visuelle est un test E2E sauté hors captures (développement de la 2b, 2026-10-30)
+
+- **Contexte** : AC-25 énumère une vingtaine d'états à capturer, sur une base de démonstration.
+- **Retenu** : un troisième test de `bank-manual-statement.spec.ts`, `test.skip` sauf si `KESH_E2E_CAPTURES_DIR` est posé
+  (patron de `backup-schedule.spec.ts`), qui parcourt les états et les capture ; il tourne sur la base E2E du worktree,
+  jamais sur une installation réelle.
+- **Écartées** : des captures prises à la main (non rejouables) ; un parcours de captures exécuté à chaque suite E2E
+  (quatre minutes de plus pour des images que personne ne regarde).
+- **Réversible** : oui.
