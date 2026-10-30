@@ -1,0 +1,240 @@
+# Release 0.17.0 — registre des choix autonomes de la Story v017-3 (v017-3a et v017-3b)
+
+Registre propre à la story (`docs/agents-orchestration.md` § 1), à verser **par union** au merge. Fiches :
+`v017-3a-rattacher-ecriture-existante.md` (#671) et `v017-3b-facture-fournisseur-au-centime.md` (#687). Numérotation
+`C-v017-3-k`, commune aux deux sous-stories. Issues en `refs` seulement dans les commits. Les numéros de ligne cités
+sont ceux de `c5101b07` (tête de la candidate `v0.16.1-rc1`, point de départ de toutes les branches de la 0.17.0).
+Chaque choix : contexte, option retenue, alternatives écartées, réversibilité. Les choix marqués **(Q)** figurent aussi
+parmi les questions à soumettre à Guy (fiches, § *Questions au Project Lead*).
+
+Rédigé le 2026-10-30 en autonomie (Opus 5.5), sous la contrainte du Project Lead du même jour
+(`kesh-gate-logs/prompts/v017-donnees-a-garder.md` : les données de la 0.16.1-rc1 se gardent ; aucune réécriture
+silencieuse ; un appariement propose, il ne crée jamais).
+
+---
+
+### C-v017-3-1 — Découper : v017-3a (#671) et v017-3b (#687)
+
+- **Contexte** : le mandat demande une story pour les deux issues, et autorise le découpage. #671 est un défaut de
+  **réconciliation** (une transaction déjà comptabilisée par un autre chemin reste en attente) ; #687 est un défaut de
+  **saisie d'une facture fournisseur** (un TTC sous le centime). Ensemble, elles touchent `kesh-db` (rapprochement **et**
+  factures fournisseur), `kesh-api` (routes de réconciliation **et** de factures fournisseur, erreurs, registres
+  d'audit), `kesh-core`, `kesh-i18n`, le `frontend` (réconciliation **et** factures fournisseur) et deux sections du
+  manuel : plus de cinq modules métier de premier niveau (`CLAUDE.md` § *Règle de splitting préventif*, premier
+  critère).
+- **Retenu** : deux sous-stories, sans dépendance de code entre elles. **v017-3a** : rattacher une transaction en attente
+  à une écriture existante du compte de la banque, et l'avertissement « semble déjà comptabilisée ». **v017-3b** : une
+  facture fournisseur ne naît plus avec un total sous le centime ; une facture existante ainsi n'est pas modifiée, elle
+  est signalée et son traitement est décrit. Lien fonctionnel, écrit dans les deux fiches : la règle de la 3a exige un
+  montant **égal** ; un règlement fournisseur sous le centime (#687) n'y sera donc jamais candidat — c'est la 3b qui
+  ferme la source, et le manuel de la 3a renvoie à la conduite de la 3b pour l'existant.
+- **Écartées** : (b) une seule story — deux modèles mentaux adversariaux dans une passe, signal de non-convergence
+  probable ; (c) traiter #687 en ajustant la règle de la 3a (comparer `ROUND(M, 2)`) — le compte de la banque des
+  livres différerait alors du relevé de dixièmes de centime, en silence.
+- **Réversible** : oui (organisation du travail).
+
+### C-v017-3-2 — v017-3a : rattacher à une **écriture** existante, par un couple de routes neuf (Q)
+
+- **Contexte** : #671 énumère les chemins qui comptabilisent un mouvement bancaire sans poser de lien : règlement
+  fournisseur depuis la fiche (`supplier_invoices::pay_in_tx_as`, `supplier_invoices.rs:761-1018`, qui écrit `D 2000 /
+  C banque` sans lire `bank_transactions`), écriture saisie au journal, règlement client par compte interne sur le
+  compte du grand livre de la banque, lot pain.001, paiement groupé. La Story 29-8 a posé le seul geste qui lie une
+  écriture **existante** (`reconciliation_link::link_in_tx`, `reconciliation_link.rs:329`), restreint aux règlements
+  clients par virement. Précision du Project Lead sur #671 (2026-10-23) : avertir et **demander** — garder en attente,
+  rejeter, rattacher à l'écriture existante — jamais affecter d'office ; le danger visé est la **seconde** écriture.
+- **Retenu** : un rattachement **à une écriture du journal**, quelle qu'elle soit, dont le mouvement sur le compte du
+  grand livre **actuel** du compte bancaire égale exactement le montant signé de la transaction : `GET …/transactions/
+  {id}/entry-candidates` et `POST …/transactions/{id}/link-entry`. Les routes de la 29-8 (`link-candidates`, `link`)
+  ne changent pas de contrat. Rien ne s'écrit au journal ; la transaction passe `reconciled` en pointant l'écriture.
+- **Écartées** :
+  - (b) élargir la réponse de `link-candidates` à des écritures (candidats hétérogènes, `settlementId` facultatif) :
+    change un contrat d'API documenté (`docs/api-external.md:675-677`) ;
+  - (c) un statut « écartée » non compté par la clôture du compte (piste (c) de #670, déjà écartée par C-29-8-3) :
+    migration breaking, et faux rattachement muet ;
+  - (d) un rattachement « fournisseur » seul, symétrique exact de la 29-8 : ne couvre ni l'écriture manuelle ni le
+    compte interne, que #671 nomme.
+- **Réversible** : oui avant publication ; ensuite, les routes sont un contrat.
+
+### C-v017-3-3 — v017-3a : montant **exact**, sans tolérance
+
+- **Contexte** : la 29-8 admet un écart de 0 à 5 centimes (client qui a payé un peu trop, la fiche refusant le
+  trop-perçu, C-29-8-5). Ce motif n'existe pas pour une écriture quelconque : l'utilisateur choisit le montant qu'il
+  saisit.
+- **Retenu** : `M = t.amount` en décimal exact, signe compris (`SUM(debit) − SUM(credit)` des lignes de l'écriture sur
+  le compte lié actuel). Un crédit de la banque appelle un débit du compte de banque ; un débit, un crédit.
+- **Écartées** : la tolérance de la réconciliation — elle laisserait au compte de la banque un écart que rien ne
+  signale à l'utilisateur, alors que la 29-8 le justifie et l'affiche.
+- **Réversible** : oui (une condition de la requête).
+
+### C-v017-3-4 — v017-3a : aucune fenêtre de dates ; la proximité trie (Q)
+
+- **Contexte** : la 29-8 n'a pas de fenêtre (C-29-8-6) : un règlement saisi le jour où l'on remarque le paiement peut
+  précéder ou suivre la transaction de plusieurs semaines, et Guy importe un relevé par mois. Pour une écriture
+  quelconque, une fenêtre réduirait les faux avertissements (loyer du mois précédent non rapproché) sans les supprimer
+  (même montant chaque mois).
+- **Retenu** : pas de fenêtre ; tri par jours d'écart croissants, puis identifiant ; 50 au plus, filtre et tri dans la
+  requête avant `LIMIT`. La date de chaque candidate s'affiche ; rien n'est présélectionné.
+- **Écartées** : ±60 jours, ±1 an — une écriture d'un relevé importé en retard (plusieurs mois) ne serait plus
+  proposée, et ce serait le cas le plus coûteux à retrouver.
+- **Réversible** : oui.
+
+### C-v017-3-5 — v017-3a : le domaine de la 29-8 est exclu de la liste des écritures
+
+- **Contexte** : une écriture de règlement client par virement sur le même compte bancaire est déjà offerte par la 29-8
+  (avec sa tolérance, sa trace `reconciliation.linked`, son libellé facture/client).
+- **Retenu** : la liste des écritures exclut toute écriture qui est l'écriture d'un `invoice_settlements` de type
+  `bank_transfer` dont `settlement_bank_account_id` est le compte de la transaction. Le dialogue montre les deux listes,
+  disjointes. Un règlement client par **compte interne** (non couvert par la 29-8) entre dans la liste des écritures.
+- **Écartées** : montrer l'écriture deux fois (deux traces différentes pour un même état) ; exclure tout
+  `invoice_settlements` (le compte interne resterait sans remède).
+- **Réversible** : oui.
+
+### C-v017-3-6 — v017-3a : ni écriture contre-passée, ni contre-passation
+
+- **Contexte** : `journal_entries.reverses_entry_id` (`20260828000002_journal_entries_reversal.sql`, `UNIQUE`) relie une
+  contre-passation à son origine. Une écriture contre-passée et sa contre-passation touchent toutes deux le compte de la
+  banque ; leur somme est nulle.
+- **Retenu** : sont exclues l'écriture qui contre-passe (`reverses_entry_id IS NOT NULL`) et l'écriture contre-passée
+  (`EXISTS` d'une écriture qui la désigne). Un rattachement à l'une d'elles marquerait comptabilisé un mouvement que
+  les livres ne portent plus.
+- **Écartées** : aucune.
+- **Réversible** : oui.
+
+### C-v017-3-7 — v017-3a : l'avertissement « semble déjà comptabilisée » est un **avis**, et l'action se confirme (Q)
+
+- **Contexte** : précision du Project Lead sur #671 (2026-10-23) ; règle *Un appariement automatique propose, il ne crée
+  jamais*. Un montant égal ne prouve rien (loyer mensuel) : un refus serveur bloquerait des cas légitimes.
+- **Retenu** : `GET /reconciliation/proposals` porte, par transaction, un champ additif `alreadyBooked` (`null` ou
+  `{ settlementCount, entryCount }`), compté par **les deux mêmes fonctions** que les listes du dialogue (aucune
+  seconde règle). L'écran affiche l'avertissement sur la ligne, avec le bouton du dialogue ; *Accepter*, *Affecter
+  manuellement* et *Éclater* sur une sélection qui contient une telle ligne passent par une **confirmation** qui la
+  nomme. *Rejeter* ne demande rien (c'est la consigne d'attente). Le serveur ne refuse rien : un appel d'API direct
+  reste libre, comme aujourd'hui.
+- **Écartées** :
+  - (b) masquer les propositions d'une telle ligne (comme le `notice` de la 30-1b) : un faux avertissement priverait
+    l'utilisateur de la proposition juste ;
+  - (c) un refus serveur à l'acceptation : même objection, et une règle d'écran déguisée en garde comptable.
+- **Réversible** : oui.
+
+### C-v017-3-8 — v017-3a : un seul dialogue, deux sections ; le bouton change de nom
+
+- **Contexte** : `LinkSettlementModal.svelte` (29-8) n'est offert que sur un crédit en CHF
+  (`ReconciliationProposals.svelte:237-239`, `canLink`).
+- **Retenu** : le bouton devient « Rattacher à une écriture existante », offert sur toute ligne CHF non nulle ; le
+  dialogue montre « Règlements de factures clients » (crédits seulement, liste de la 29-8 inchangée) puis « Écritures
+  passées sur le compte de la banque » ; un seul choix parmi les deux ; *Rattacher* appelle la route de la section
+  choisie. Le composant est généralisé (DRY), ses `data-testid` existants gardés.
+- **Écartées** : deux boutons, deux dialogues — l'utilisateur ne sait pas d'avance par quel chemin le mouvement a été
+  comptabilisé.
+- **Réversible** : oui.
+
+### C-v017-3-9 — v017-3a : annuler un rattachement suit le classement existant (Q)
+
+- **Contexte** : `reconciliation_cancel` classe l'écriture liée — règlement client, règlement fournisseur, ou écriture
+  propre — et défait ce qui la possède (`reconciliation_cancel.rs:57-79`) : le règlement est annulé, l'écriture propre
+  contre-passée. #672 (ouverte) : aucun geste ne défait **le seul lien** ; distinguer un rattachement d'une acceptation
+  exige de mémoriser l'origine du lien, donc une migration.
+- **Retenu** : rien ne change à l'annulation. Annuler le rapprochement d'une transaction rattachée à une écriture
+  saisie au journal **contre-passe** cette écriture ; rattachée à un règlement fournisseur, **annule le règlement**
+  (la facture redevient ouverte). C'est visible et réparable ; le manuel le dit avant le geste, et le dialogue de
+  rattachement le rappelle. #672 garde le besoin.
+- **Écartées** : une colonne d'origine du lien (migration ; la 0.17.0 n'en porte qu'une, celle de la v016-2, et la
+  contrainte des données demande de ne pas en multiplier) ; un dé-rapprochement « lien seul » sans colonne (il ne
+  saurait pas distinguer un lien posé par la 3a d'une écriture créée par la réconciliation).
+- **Réversible** : oui (#672).
+
+### C-v017-3-10 — v017-3a : ce qui reste hors périmètre, et son issue
+
+- **Contexte** : `bank_transactions.matched_entry_id` est une seule colonne : une transaction pointe **une** écriture.
+- **Retenu** : restent non couverts, écrits au manuel et dans une issue à ouvrir : (1) un paiement qui règle
+  **plusieurs** écritures (lot pain.001 de plusieurs factures débité en une ligne, paiement groupé de plusieurs factures
+  réglées séparément) ; (2) un règlement passé sur un **ancien** compte du grand livre du compte bancaire ; (3) un
+  règlement saisi sur **un autre** compte bancaire ; (4) un paiement qui inclut les frais de rappel (#401). Un lot
+  pain.001 d'**une** facture est couvert. Issue demandée : « Une transaction bancaire qui règle plusieurs écritures (lot
+  de paiement, paiement groupé) ne se rattache pas ». Proposition à l'orchestrateur : #671 se ferme à la PR de release
+  (`closes #671`) une fois l'issue du reste ouverte, avec un commentaire qui dit le partage.
+- **Écartées** : une table de liens N:1 dans la 0.17.0 (migration, schéma, annulation, sauvegarde : une story à elle
+  seule).
+- **Réversible** : oui.
+
+### C-v017-3-11 — v017-3a : les données existantes ne sont pas touchées
+
+- **Contexte** : contrainte du Project Lead du 2026-10-30 ; consigne d'usage de #671 (2026-10-23) : une transaction déjà
+  comptabilisée « se rejette, elle ne s'affecte pas ». La base du NAS peut donc porter des transactions **rejetées**
+  (`auto_match_rejected_at` posé, `status = 'pending'`) qui attendent ce geste.
+- **Retenu** : aucune migration, aucune écriture hors du geste de l'utilisateur. Une transaction rejetée se rattache
+  par la même voie que dans la 29-8 : *Annuler le rejet* dans le détail de l'import (28-5b), puis le dialogue ; l'API
+  admet aussi le rattachement direct d'une transaction rejetée (trace `was_previously_rejected`). Testé sur une
+  fixture qui reproduit l'état d'une base 0.16.x.
+- **Écartées** : un rattachement automatique des transactions dont une écriture unique correspond (interdit par la
+  règle d'appariement) ; une liste dédiée des rejetées « qui semblent comptabilisées » (élargissement : demander
+  l'issue si besoin).
+- **Réversible** : sans objet.
+
+### C-v017-3-12 — v017-3a : noms de l'action d'audit et du code d'erreur
+
+- **Retenu** : trace `reconciliation.entry_linked` (« Transaction rattachée à une écriture ») ; refus `409
+  RECONCILIATION_ENTRY_NOT_LINKABLE` (un seul code pour toutes les conditions de la règle, comme
+  `RECONCILIATION_SETTLEMENT_NOT_LINKABLE`, C-29-8-10).
+- **Écartées** : réutiliser `reconciliation.linked` — son libellé et ses détails nomment un règlement et une facture.
+- **Réversible** : oui avant publication.
+
+### C-v017-3-13 — v017-3b : refuser à la création une ligne sous le centime (Q)
+
+- **Contexte** : `create_in_tx` calcule `line_total = quantity × unit_price` sans arrondi ni borne d'échelle
+  (`supplier_invoices.rs:400`, `:426`) ; la TVA est arrondie au centime par ligne (`kesh-core/src/accounting/vat.rs:40-44`) ;
+  le TTC est donc sous le centime **exactement** quand une ligne l'est. Le formulaire borne quantité et prix à quatre
+  décimales (`frontend/.../journal-entries/balance.ts:23`), le serveur ne borne rien. Pistes de #687 : arrondir ou
+  refuser à la création ; régler avec une ligne d'arrondi.
+- **Retenu** : refuser, au serveur, toute ligne dont `quantity × unit_price` n'est pas au centime (`400
+  SUPPLIER_INVOICE_LINE_NOT_IN_CENTIMES`, ligne désignée), aux deux routes de création (saisie, complétion d'une pièce
+  importée), par une fonction pure unique de `kesh-core`, appelée par `create_in_tx` ; et borner quantité et prix à
+  quatre décimales (`MAX_DECIMAL_SCALE`, comme la facture client). Le TTC est alors au centime par construction. Une
+  facture fournisseur reprend ce que le fournisseur facture, qui est au centime : la ligne se saisit au montant facturé.
+- **Écartées** :
+  - (b) arrondir `line_total` au centime en silence : change le HT et la TVA saisis, sans le dire ;
+  - (c) régler avec une ligne d'arrondi (#476 côté client) : refonte de `pay_in_tx_as`, partagé par la fiche, la
+    confirmation d'un lot et l'acceptation 30-1b ; et le total d'une facture d'achat resterait faux d'un dixième de
+    centime au grand livre du fournisseur.
+- **Réversible** : oui (une garde).
+
+### C-v017-3-14 — v017-3b : l'existant n'est pas modifié ; il est signalé, et son traitement décrit (Q)
+
+- **Contexte** : contrainte du Project Lead du 2026-10-30 : une facture fournisseur existante au TTC sous le centime
+  n'est pas modifiée d'office.
+- **Retenu** : aucune migration, aucun `UPDATE` ; le paiement d'une telle facture **n'est pas refusé** (un lot
+  pain.001 déjà généré qui la contient doit pouvoir être confirmé). La fiche de la facture affiche un avertissement qui
+  dit la conséquence (son règlement ne pourra jamais être rapproché d'un relevé) et la conduite : **ouverte**, l'annuler
+  et la ressaisir au centime ; **payée**, annuler le règlement, puis la facture, la ressaisir, puis la régler par la
+  réconciliation ou depuis la fiche suivie du rattachement (v017-3a).
+- **Écartées** : (b) refuser le paiement par virement d'une telle facture (casse la confirmation d'un lot déjà parti à
+  la banque) ; (c) une migration qui arrondit (réécriture silencieuse, interdite).
+- **Réversible** : oui.
+
+### C-v017-3-15 — v017-3b : ordre des refus de la complétion d'une pièce importée
+
+- **Contexte** : la complétion compare `Σ TTC` des lignes au montant du QR **avant** `create_in_tx`
+  (`imported_supplier_invoices.rs:250-275`, `AMOUNT_MISMATCH`) ; son test (b) (`inbox_import_e2e.rs:1375`) utilise
+  `3 × 33.3333 = 99.9999`.
+- **Retenu** : la garde de ligne vient **avant** `AMOUNT_MISMATCH` (elle désigne la cause : une ligne sous le centime ne
+  peut atteindre aucun montant de QR au centime) ; le test (b) attend le nouveau code ; un cas `AMOUNT_MISMATCH` à
+  lignes au centime le remplace.
+- **Écartées** : garder `AMOUNT_MISMATCH` en premier — son message (« le total ne correspond pas ») cache la cause.
+- **Réversible** : oui.
+
+### C-v017-3-16 — Voisin non mécanique : la somme de contrôle du pain.001
+
+- **Contexte** : `kesh-payment/src/pain001/mod.rs:148-150` calcule `CtrlSum` comme l'arrondi de la somme **non
+  arrondie**, alors que chaque `InstdAmt` est arrondi un à un (`:124-126`, `round_dp(2)`, arrondi bancaire par défaut de
+  `rust_decimal`). Avec des TTC sous le centime, `CtrlSum` peut différer de `Σ InstdAmt` : la banque rejette le fichier.
+  La 3b ferme la source pour les factures nouvelles ; les factures existantes restent exposées.
+- **Retenu** : hors périmètre (autre crate, autre geste) ; issue demandée, P3 : « pain.001 : `CtrlSum` arrondit la
+  somme au lieu de sommer les montants arrondis ».
+- **Réversible** : sans objet.
+
+### C-v017-3-17 — Mots-clés et CHANGELOG
+
+- **Retenu** : commits en `refs #671` / `refs #687` seulement. Proposition : la PR de release porte `closes #687` ;
+  `closes #671` si l'issue du reste (C-v017-3-10) est ouverte, `refs #671` sinon. CHANGELOG : entrées sous
+  `## [0.17.0]`, section *Corrigé*, que l'orchestrateur fusionne ; aucune version bumpée, aucune migration.
+- **Réversible** : oui.
