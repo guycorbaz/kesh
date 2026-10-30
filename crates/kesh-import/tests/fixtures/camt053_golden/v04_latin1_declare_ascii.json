@@ -1,0 +1,31 @@
+{
+  "ok": [
+    {
+      "account_iban": "CH9300762011623852957",
+      "closing_balance": null,
+      "currency": "CHF",
+      "opening_balance": null,
+      "period_from": "2026-10-01",
+      "period_to": "2026-10-31",
+      "source_format": {
+        "kind": "camt053",
+        "version": "001.04"
+      },
+      "statement_id": "LATIN1ASCII-STMT",
+      "transactions": [
+        {
+          "amount": "42.50",
+          "booking_date": "2026-10-15",
+          "counterparty_iban": null,
+          "counterparty_name": "Clement SA",
+          "currency": "CHF",
+          "details": "Remboursement octobre",
+          "end_to_end_id": "E2E-LATIN1ASCII-1",
+          "reference": null,
+          "transaction_id": "LATIN1ASCII-TX-1",
+          "value_date": null
+        }
+      ]
+    }
+  ]
+}

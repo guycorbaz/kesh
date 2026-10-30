@@ -1,0 +1,31 @@
+{
+  "ok": [
+    {
+      "account_iban": "CH5604835012345678009",
+      "closing_balance": "2750.00",
+      "currency": "CHF",
+      "opening_balance": "2500.00",
+      "period_from": "2026-05-01",
+      "period_to": "2026-05-31",
+      "source_format": {
+        "kind": "camt053",
+        "version": "001.08"
+      },
+      "statement_id": "STMT-V08",
+      "transactions": [
+        {
+          "amount": "250.00",
+          "booking_date": "2026-05-20",
+          "counterparty_iban": null,
+          "counterparty_name": "Bobst SA",
+          "currency": "CHF",
+          "details": "Remboursement avance",
+          "end_to_end_id": "E2E-V08-001",
+          "reference": null,
+          "transaction_id": "BANK-TX-V08-001",
+          "value_date": "2026-05-20"
+        }
+      ]
+    }
+  ]
+}
