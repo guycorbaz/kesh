@@ -311,7 +311,7 @@ inchangées. Ne déclarer que ce qui a tourné, chiffres recomptés.
   autre que Admin/Comptable vers `/`), à reprendre pour `/bank-import/manual` *(les deux puces jumelles fusionnées à la
   validation P3, R9 = F8)*.
 - Les citations des AC (ajoutées à la validation P3, R9 = F8) : `[id]/+page.svelte:37`, `:62`, `:74`, `:76`, `:88`, `:92`,
-  `:113-118` ; `BankImportList.svelte:24-25` ; `helpers/api-fixtures.ts:100-105`, `:190` ; `audit-log.spec.ts:52` ;
+  `:113-118` ; `BankImportList.svelte:24-25` ; `helpers/api-fixtures.ts:100-105` *(`:190`, ligne d'`isPrimary`, ôtée à l'étape 0 de la 2a — validation P5 de la 2a, P3)* ; `audit-log.spec.ts:52` ;
   `reconciliation-amount-due.spec.ts:80-81` ; `kesh-core/src/bank_imports.rs:365-377` ;
   `kesh-import/src/camt053/mod.rs:405`, `:412`, `:426-428`, `:629-630` ; `errors.rs:2354-2358` ;
   `i18n-keys.test.ts:773`, `:882`, `:960` ; `i18n-libelle-en-dur.test.ts:250` ; `messages.ftl` (`fr-CH:997`, `:1473` ;

@@ -430,3 +430,21 @@ fiches.*
   liste recopiée côté TypeScript seule, sans lien avec le serveur (verte par construction, D4-ter) ; (c) « ✅ Publiée »
   posé dès la candidate, ou la ligne laissée en `v0.16.1` jusqu'au tag.
 - **Réversible** : oui, avant le développement de la 2a.
+
+### C-v016-2-20 — L'exhaustivité de `ALL` sans circularité (développement de la 2a, étape 0, 2026-10-30)
+
+- **Contexte** : validation P5 de la 2a (P1) et de la 2b (P2) : un `match` exhaustif sans joker appelé en itérant `ALL`,
+  ou un tableau écrit à la main égalé à `ALL`, reste circulaire — on ajoute le bras (ou la ligne) sans ajouter la
+  variante à `ALL`, et le test reste vert. Précision de l'orchestrateur : forme `index()` + `COUNT` + test.
+- **Retenu** (pour `ManualStatementReason` et `ManualStatementField`, `kesh-core/src/bank_imports/manual.rs`) :
+  - `index(self) -> usize` par `match` exhaustif sans joker ; `pub const COUNT` écrit à côté ; `pub const ALL` ;
+  - un test : `ALL.len() == COUNT` et `ALL[i].index() == i` pour tout `i` (ordre et absence de doublon) ;
+  - **en plus**, constat fait au développement : si l'on ajoute une variante et son bras d'`index` (indice `COUNT`)
+    sans toucher **ni** `ALL` **ni** `COUNT`, les deux assertions précédentes restent vertes ; un second test compte
+    donc les variantes **dans le texte source** de l'énumération (`include_str!("manual.rs")`, corps de
+    `pub enum ManualStatementReason { … }`, une variante par identifiant en tête de ligne hors commentaire) et l'égale à
+    `COUNT` et à `ALL.len()`. Il ne dépend que du fichier, non de `ALL` : M23-bis (variante et bras ajoutés, `ALL`
+    inchangée) rougit à l'exécution.
+- **Écartées** : la dérive `strum::EnumIter` (dépendance nouvelle pour un seul test) ; `std::mem::variant_count`
+  (instable) ; le seul couple `index`/`COUNT` (circulaire dans le cas ci-dessus).
+- **Réversible** : oui.

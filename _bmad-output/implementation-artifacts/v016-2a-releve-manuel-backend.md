@@ -1,10 +1,10 @@
 # Story v016-2a : saisir un relevé bancaire à la main — le backend
 
-Status: ready-for-dev
+Status: in-progress
 
 *Sous-fiche issue du découpage de la Story v016-2 à la validation P2 (2026-10-30, décision de l'orchestrateur,
 C-v016-2-18). Worktree `/home/gcorbaz/devel/kesh-0162`, branche `story/v016-2-releve-manuel` (partie de `c5101b07`), la 2a d'abord,
-puis la 2b. Registre **commun** : `v016-2-choix-autonomes.md` (C-v016-2-1 à C-v016-2-19). Issue : **#816**, en `refs`
+puis la 2b. Registre **commun** : `v016-2-choix-autonomes.md` (C-v016-2-1 à C-v016-2-19 ; C-v016-2-20 et suivants au développement). Issue : **#816**, en `refs`
 seulement ; la fermeture se porte sur la PR de release. Les numéros de ligne cités sont ceux de `c5101b07`.
 **Contexte, décisions, contrat de l'API (corps, réponse de l'aperçu, codes d'erreur, ensembles fermés, ordre des
 refus), limites, liste de la release et questions au Project Lead : fiche parente `v016-2-releve-manuel.md`** — ils
@@ -70,7 +70,8 @@ commit de leur `.tex`. **Livrable seul** : l'API se teste de bout en bout en HTT
   d'`apply_migrations_up_to`, `:42-50`, *et non « l'en-tête du fichier » : corrigé à la validation P4, P2*) ; **toutes les
   copies de ces valeurs** se trouvent par `grep -nE '\b(52|53|86|87)\b|total - 5[23]'
   crates/kesh-db/tests/migrations_upgrade_path.rs` (à `c5101b07` : `:44`, `:46`, `:63-64`, `:121`, `:124-125`, `:128`,
-  `:136`, `:143`, `:146`, `:206`, `:213`, `:216`), chaque occurrence triée au Dev Agent Record, avec la ligne
+  `:136`, `:143`, `:146`, `:206`, `:213`, `:216` ; *complété à l'étape 0, validation P5, P2 :* `:88`, historique, à
+  laisser, et `:285`, « appliquer les 52 migrations restantes », à passer à 53), chaque occurrence triée au Dev Agent Record, avec la ligne
   d'historique « Story v016-2a : 52 → 53, frontière inchangée (87 - 53 = 34) » sous `:206` ; `:541` et `:545` (version
   **du binaire** `"0.14.0"`, cas `Aligned`), `:557`, `:573` (`db_min` `"0.14.0"`) et `:656` (`assert_eq!(min_required, "0.14.0")`, dans un test qui
   rejoue toutes les migrations) ; le nouveau `bank_statements_manual_e2e.rs` monte le squash
@@ -149,6 +150,13 @@ commit de leur `.tex`. **Livrable seul** : l'API se teste de bout en bout en HTT
   `kesh-api` le lit) ; et un test lie `ALL` à l'**énumération** : une fonction fait un `match` **exhaustif sans joker**
   sur chaque variante et vérifie que `ALL` la contient — le compilateur force alors la mise à jour du test pour toute
   variante neuve (mutation M23-bis). Même dispositif pour `ManualStatementField`.
+  *(Remplacé à l'étape 0 du développement — validation P5, P1, et précision de l'orchestrateur, C-v016-2-20 : la forme
+  ci-dessus est circulaire, le `match` ne visitant que les variantes qu'on lui passe.)* **Forme retenue** : une méthode
+  `index(self) -> usize` par `match` exhaustif sans joker, qui rend la position de la variante ; une constante `COUNT`
+  écrite **à côté** de ce `match` ; un test qui vérifie `ALL.len() == COUNT` et `ALL[i].index() == i` pour tout `i` ;
+  **et**, pour qu'une variante neuve ajoutée avec son bras sans toucher ni `ALL` ni `COUNT` rougisse aussi, un test qui
+  compte les variantes **dans le texte source** de l'énumération (`include_str!` du fichier, corps de `pub enum …`) et
+  l'égale à `ALL.len()` et à `COUNT`. M23-bis rougit **à l'exécution**.
 - **AC-5** — L'empreinte canonique est **stable** (même entrée → mêmes octets, quel que soit l'ordre d'émission des
   champs JSON côté client, `"50"` ≡ `"50.00"`) et **sensible** à chacun des champs qu'elle porte : un test par champ
   (compte, bornes, numéro, chaque solde, et pour une ligne : date, valeur, libellé, contrepartie, référence, montant,
@@ -210,7 +218,12 @@ commit de leur `.tex`. **Livrable seul** : l'API se teste de bout en bout en HTT
   `errors.rs:2714-2721`) et `bank-accounts-errors-has-pending-transactions` (repli `errors.rs:2776-2780`) : repli **et**
   valeur aux quatre catalogues (`fr-CH` `:1433`, `:1439` ; `de-CH`, `it-CH`, `en-CH` `:1369`, `:1375`) récrits pour
   valoir aussi d'un relevé saisi, et le test qui épingle le texte, `crates/kesh-api/tests/bank_accounts_e2e.rs:2485`,
-  suivi. Le Vitest qui le recopie (`bank-accounts-page.test.ts:502`) est à la 2b.
+  suivi. *(Précisé à l'étape 0, validation P5, P5, et précision de l'orchestrateur :)* seul
+  `-has-pending-transactions` dit « importées » — « Ce compte porte des transactions importées qui ne sont pas
+  rapprochées » — et se récrit (transactions de relevés, importés ou saisis). `-has-transactions` (« Les imports dont
+  aucune transaction n'est rapprochée peuvent être supprimés (Quotidien → Importer des relevés) ») ne dit rien de faux
+  d'un relevé saisi : il figure à la liste des imports de cette page et s'y supprime ; il reste **tel quel**, avec
+  `bank_accounts_e2e.rs:2485`. Le Vitest qui le recopie (`bank-accounts-page.test.ts:502`) est à la 2b.
 - **AC-12** — L'aperçu n'écrit rien (aucune ligne d'aucune table, trace comprise) et rend les quatre avertissements ;
   il rend `BANK_STATEMENT_INVALID` et `BANK_STATEMENT_UNBALANCED` comme la création ; compte archivé, clos ou étranger :
   mêmes refus que la création.

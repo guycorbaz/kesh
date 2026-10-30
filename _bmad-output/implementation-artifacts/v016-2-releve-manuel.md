@@ -258,7 +258,7 @@ seule** sous-fiche, sous son numéro d'origine :
 |---|---|
 | M1, M2, M3, M4, M5, M6, M7, M8, M9, M10, M11, M12, M16, M17, M18, M20, M21, M22 | `v016-2a` |
 | M13, M14, M15, M19 | `v016-2b` |
-| M23, M24 (ajoutées à la validation P3) | `v016-2a` |
+| M23, M24 (ajoutées à la validation P3), M23-bis (ajoutée à la validation P4 ; ligne complétée à l'étape 0 de la 2a, validation P5, P4) | `v016-2a` |
 | M25 à M30 (ajoutées à la validation P3) | `v016-2b` |
 
 ## Ce que les gardes ne voient pas
