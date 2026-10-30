@@ -1,6 +1,6 @@
 # Story v017-2 : l'assistant d'installation dit pourquoi le serveur refuse
 
-Status: review
+Status: done
 
 *Fiche rédigée le 2026-10-30, en autonomie (Opus 5.5), worktree `/home/gcorbaz/devel/kesh-0172`, branche
 `story/v017-2-assistant-motif` partie de `c5101b07` (tête de la candidate 0.16.1-rc1). Release **0.17.0**. Registre :
@@ -570,3 +570,8 @@ invalide : 9 chiffres attendus après CHE, trouvé 3 » (capture 3 ; `routes/onb
   41 tests Vitest, 1 Rust, 1 E2E ajoutés ; mutations M1 à M15 toutes tuées ; gate backend 4461/4461 (7 ignorés),
   Vitest 2191/2191, E2E 326 passés / 7 échecs KF-029 attendus / 17 ignorés ; cinq captures. Choix C-v017-2-14 à 17.
   Prochaine : revue de code P1 (Sonnet, trois lentilles, prompt `v017-2-assistant-motif-review-prompt-p1.md`).
+- 2026-10-30 — **Revue de code P1** (Sonnet, trois lentilles B, E, A en contexte frais ; rapports
+  `kesh-gate-logs/v017-2-assistant-motif-review-p1-{B,E,A}.md`) : 0 CRITICAL, 0 HIGH, 0 MEDIUM, 10 LOW — B 3, E 4, A 3.
+  Boucle close **en une passe** (aucun finding au-dessus de LOW). Les LOW non corrigés sont tracés en **#833** ; le
+  toast de l'IDE qui répète « IDE invalide » est tracé en **#832**. Aucun code touché après le développement. Statut
+  `done`.
