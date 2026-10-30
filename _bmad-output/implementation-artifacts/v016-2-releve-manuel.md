@@ -173,19 +173,29 @@ sa clé, chaque clé a son `reason`), sur le patron de `CSV_LINE_ERROR_LABELS` �
 F12)* la table vit dans `frontend/src/lib/features/bank-import/csv-line-error-label.ts:23`, son test de couverture dans
 `csv-line-error-label.test.ts:22`, et sa famille est déclarée à `MOTIFS_DYNAMIQUES` et comptée à `CARDINALITES` de
 `frontend/src/lib/shared/i18n-keys.test.ts` (`:882`) : la famille `bank-import-manual-reason-` y reçoit les deux mêmes
-entrées.
+entrées. **Épinglage côté Rust** (décision de l'orchestrateur à la validation P3, 2b R1) : le patron cité compare sa
+table à une liste **recopiée** dans son test (`csv-line-error-label.test.ts`), sans lien avec le serveur ; ici, les
+ensembles fermés vivent dans deux énumérations de `kesh-core` (`ManualStatementReason`, `ManualStatementField`, `code()`,
+`ALL`) qu'un test Rust épingle sur ces chaînes (2a, AC-4), et un test Rust de la 2b lit la table TypeScript (fichier du
+dépôt, patron `lire` de `crates/kesh-api/tests/textes_coherents.rs:46-48`) et l'égale à `ManualStatementReason::ALL`
+dans les deux sens (2b, AC-24).
 
 **Type d'entrée de la route et extracteur** (validation P2, R3) : tous les champs du relevé et des lignes en
 `Option<String>` (dates, montants, sens, textes), `lines: Option<Vec<…>>`, seul `bankAccountId: i64` requis — si bien que
-tout champ absent ou mal formé atteint `BANK_STATEMENT_INVALID` avec son `field` et son `reason` ; la route analyse ces
-chaînes vers le type de `kesh-core`. Le corps passe par un extracteur sur le patron `BodyExtractor` de
-`routes/bank_accounts.rs:198-226` (rejet → `400 VALIDATION_ERROR`) et **jamais** par le `Json` nu d'Axum 0.8, qui rend
+tout champ **chaîne** absent, vide ou mal formé atteint `BANK_STATEMENT_INVALID` avec son `field` et son `reason` *(limite
+écrite à la validation P3, 2a R2 : un champ d'un autre type JSON que chaîne, `lines` qui n'est pas un tableau,
+`bankAccountId` absent ou non entier rendent `400 VALIDATION_ERROR` sans `field` ni `reason`)* ; la route analyse ces
+chaînes vers le type de `kesh-core`. Le corps passe par l'extracteur de `routes/bank_accounts.rs:196-226`,
+**extrait dans un module partagé** et réutilisé tel quel (décision de l'orchestrateur à la validation P3, 2a R1 ; rejet →
+`400 VALIDATION_ERROR`) et **jamais** par le `Json` nu d'Axum 0.8, qui rend
 `422` sur une erreur de données — le statut des refus métier. Taille : 500 lignes de 500 + 255 + 255 caractères de
 quatre octets approchent 2,1 Mo, au-delà de la limite par défaut d'Axum (2 Mio, `413`) : les deux routes se montent avec
 `DefaultBodyLimit::max(bank_import_max_mib)` comme l'import (`lib.rs:792-803`).
 
 Ordre des refus à la création, chacun **sans écriture** : authentification et rôle (middlewares) ; corps JSON illisible ou
-de mauvaise forme (`400 VALIDATION_ERROR`, extracteur ci-dessus ; `415` sans `Content-Type`, `413` au-delà de la limite) ; compte (`404`, `409`, pré-vol sur le pool comme l'import, `routes/bank_imports.rs:1161-1180`) ;
+de mauvaise forme, `Content-Type` absent ou corps au-delà de la limite — tous en `400 VALIDATION_ERROR` (extracteur
+ci-dessus ; *la première rédaction annonçait `415` et `413`, que l'extracteur ne rend pas — corrigé à la validation P3,
+2a R1*) ; compte (`404`, `409`, pré-vol sur le pool comme l'import, `routes/bank_imports.rs:1161-1180`) ;
 `BANK_STATEMENT_INVALID` ; `BANK_STATEMENT_UNBALANCED` ; puis, **dans** la transaction ouverte, relevé identique,
 doublons de lignes, écart de solde de départ — dans cet ordre, le premier qui manque de sa confirmation l'emporte.
 
@@ -246,6 +256,8 @@ seule** sous-fiche, sous son numéro d'origine :
 |---|---|
 | M1, M2, M3, M4, M5, M6, M7, M8, M9, M10, M11, M12, M16, M17, M18, M20, M21, M22 | `v016-2a` |
 | M13, M14, M15, M19 | `v016-2b` |
+| M23, M24 (ajoutées à la validation P3) | `v016-2a` |
+| M25 à M30 (ajoutées à la validation P3) | `v016-2b` |
 
 ## Ce que les gardes ne voient pas
 
@@ -318,7 +330,8 @@ n'existera pas.*
 7. Macros `\keshVersion{0.17.0}`, `\keshReleaseDate{<date de publication Docker Hub du final>}`,
    `\keshTargetRelease{v0.17}`, URL `raw.githubusercontent.com/…/v0.16.1` portées à `v0.17.0` (garde G19) ; PDF des
    trois manuels régénérés.
-8. README : la ligne de feuille de route est déjà passée à `v0.17.0` au développement (AC-29 point 8) — la relire ;
+8. README : la ligne de feuille de route est déjà passée à `v0.17.0` au développement (AC-29 point 8 de la 2a), sous
+   un statut de candidate — la relire, et **basculer son statut à « ✅ Publiée »** au tag final (validation P3, 2a F1) ;
    site `website/` : `index.html` (`:70` porte `0.16.1`), `roadmap.html`, **`issues.html`** (liste des KF
    et de la feuille de route connue, liste de contrôle pré-release du `CLAUDE.md`, point 3) ; brochure
    (`marketing-brochure.tex:165`, `:388`, « Import natif des extraits CAMT.053 … et CSV ») si le positionnement le
@@ -346,7 +359,8 @@ solde ».
 ### Propagation
 
 Après chaque correctif de texte, greper la **valeur** : `deux formats`, `Seul le CAMT`, `Seuls les relevés`,
-`CSV n'en a`, `aucune migration` (pour le signaler à la release, non pour le corriger), `bank_import.created` (les sites
+`CSV n'en a` *(au PDF aplati, l'apostrophe est typographique : greper `n’en a` ou `n.en a` en `grep -E` — validation P3,
+2b F11)*, `aucune migration` (pour le signaler à la release, non pour le corriger), `bank_import.created` (les sites
 qui le comptent comme seule trace de création d'un import : vues, tests, manuels).
 
 ### Références

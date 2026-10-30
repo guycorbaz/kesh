@@ -278,6 +278,8 @@ seulement, jamais l'origine. La conclusion tient.*
 
 ### C-v016-2-14 — Pas de découpage
 
+*Annoté le 2026-10-30, validation P3 (2a R6) : **levé par C-v016-2-18** (découpage en v016-2a et v016-2b).*
+
 *Annoté le 2026-10-30, validation P1 (R5) : au grain des exemples de la règle, la story touche **six** modules, non
 cinq (`frontend/src/lib/features/journal-entries` en plus) ; le seuil est franchi. Décision de l'orchestrateur : pas de
 découpage ; la dérogation est écrite à la fiche (§ *Dérogation règle de splitting*). Le texte ci-dessous est celui de la
@@ -367,7 +369,8 @@ première rédaction.*
   - **l'E2E** sur un compte bancaire propre à l'exécution (IBAN synthétique unique), sans relevé antérieur ;
   - **la release** en deux temps : macros, URL G19 et PDF restent à 0.16.1 jusqu'au tag final (décision de
     l'orchestrateur, comme pour la `0.16.1-rc1`) ; `prepare-release.sh` au tag final seulement ;
-  - **pas de découpage** (décision de l'orchestrateur), dérogation écrite ;
+  - **pas de découpage** (décision de l'orchestrateur), dérogation écrite *(annoté à la validation P3, 2a R6 : levé par
+    C-v016-2-18)* ;
   - **Q7, Q8** (équilibre exact ; CHF seule, comptes en devise → #233) : choix gardés en attendant la réponse de Guy.
 - **Écartées** : longueurs en octets (refuse à tort un texte accentué que la base accepte) ; séparateur textuel dans
   l'empreinte (collision par contenu) ; une seconde expression régulière de montant (DRY) ; refuser les lignes vides
