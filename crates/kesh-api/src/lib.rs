@@ -861,6 +861,17 @@ pub fn build_router_avec_registre(
             "/api/v1/reconciliation/transactions/{id}/link",
             post(routes::reconciliation::post_link_transaction),
         )
+        // Story v017-3a (#671) : rattacher une transaction à une écriture déjà
+        // passée (Comptable+, clés API d'écriture admises) — la liste des
+        // écritures candidates, puis le rattachement.
+        .route(
+            "/api/v1/reconciliation/transactions/{id}/entry-candidates",
+            get(routes::reconciliation::get_entry_candidates),
+        )
+        .route(
+            "/api/v1/reconciliation/transactions/{id}/link-entry",
+            post(routes::reconciliation::post_link_entry),
+        )
         // Story 8-5a-zero : configuration `bank_account.journal_account_id`
         // (Comptable+ pour la mutation, foundation FR45/FR48).
         // Story v014-1 : CRUD complet post-onboarding (POST/PUT/DELETE).

@@ -1308,7 +1308,7 @@ reconciliation-labels-select-transaction = Sélectionner la transaction du { $da
 reconciliation-labels-select-transaction-no-counterparty = Sélectionner la transaction du { $date }, { $amount } { $currency }
 # Story 29-9 (#649, AC1, AC3) — sous la liste, s'il reste des transactions plus anciennes.
 reconciliation-labels-more-hidden = Seules les { $count } transactions en attente les plus récentes sont affichées : il en reste de plus anciennes.
-reconciliation-labels-more-capped = Les { $max } transactions en attente les plus récentes sont affichées, le maximum que cette page montre à la fois. Il en reste de plus anciennes : elles apparaîtront à mesure que celles-ci seront acceptées, affectées manuellement, éclatées ou rattachées à un règlement.
+reconciliation-labels-more-capped = Les { $max } transactions en attente les plus récentes sont affichées, le maximum que cette page montre à la fois. Il en reste de plus anciennes : elles apparaîtront à mesure que celles-ci seront acceptées, affectées manuellement, éclatées ou rattachées à une écriture existante.
 # Story 15-5c (#492) — libellés des refus d'un lot de rapprochement (`failed[]`).
 reconciliation-failed-account-not-found = Un compte de contrepartie est introuvable ou archivé.
 reconciliation-failed-account-not-postable = Compte non imputable : { $numbers }. Un compte de regroupement, de résultat ou de clôture ne reçoit pas d’écriture : choisissez un compte imputable.
@@ -1370,6 +1370,7 @@ reconciliation-errors-invoice-not-eligible = Cette facture n'est pas éligible �
 reconciliation-errors-transaction-not-rejected = Cette transaction n'est pas rejetée : son rejet a peut-être déjà été annulé, ou elle a été rapprochée.
 # Story 29-8 (#670) — refus du rattachement à un règlement (409).
 reconciliation-errors-settlement-not-linkable = Ce règlement ne peut pas être rattaché à cette transaction : la transaction n'est pas un crédit en CHF, ou le règlement n'est pas un virement sur ce compte bancaire (un règlement par espèces ou autre compte, ou un solde, ne l'est pas), son montant ne correspond pas, il est déjà rapproché, ou il a été passé sur un ancien compte du grand livre.
+reconciliation-errors-entry-not-linkable = Cette écriture ne peut pas être rattachée à cette transaction : la transaction n'est pas en CHF ou son montant est nul, ou le mouvement de l'écriture sur le compte de la banque n'égale pas le montant de la transaction, ou elle est déjà rapprochée, contre-passée, ou c'est un règlement de facture client à rattacher comme tel.
 reconciliation-toast-accept-success = { $count } transaction(s) réconciliée(s) avec succès.
 reconciliation-toast-reject-success = { $count } transaction(s) rejetée(s) avec succès.
 
@@ -1393,11 +1394,24 @@ reconciliation-split-balance-indicator = Balance
 reconciliation-split-error-imbalance = L'éclatement n'équilibre pas le montant de la transaction.
 
 # Story 29-8 (#670) — rattacher une transaction au règlement saisi depuis la fiche.
-reconciliation-link-button-label = Rattacher à un règlement
-reconciliation-link-modal-title = Rattacher à un règlement déjà enregistré
-reconciliation-link-no-entry = Le rattachement ne passe aucune écriture : il relie la transaction au règlement déjà enregistré.
-reconciliation-link-loading = Chargement des règlements…
-reconciliation-link-empty = Aucun règlement par virement sur ce compte bancaire, au montant de cette transaction, n'attend de transaction. Enregistrez d'abord le règlement depuis la fiche de la facture, sur ce compte bancaire.
+reconciliation-link-button-label = Rattacher à une écriture existante
+reconciliation-link-modal-title = Rattacher à une écriture existante
+reconciliation-link-no-entry = Le rattachement ne passe aucune écriture : il relie la transaction à une écriture déjà passée.
+reconciliation-link-loading = Chargement…
+reconciliation-link-empty = Aucun règlement de facture client ni aucune écriture du compte de la banque ne correspond à cette transaction. Enregistrez d'abord le règlement depuis la fiche de la facture, ou saisissez l'écriture, puis revenez ici.
+reconciliation-link-section-settlements = Règlements de factures clients
+reconciliation-link-section-entries = Écritures passées sur le compte de la banque
+reconciliation-link-settlements-empty = Aucun règlement de facture client ne correspond.
+reconciliation-link-entries-empty = Aucune écriture du compte de la banque ne correspond.
+reconciliation-link-entries-empty-debit = Aucune écriture du compte de la banque ne correspond à ce débit. S'il est déjà comptabilisé par un autre chemin, rejetez-le plutôt que de l'affecter.
+reconciliation-link-col-entry-number = N°
+reconciliation-link-col-entry-date = Date de l'écriture
+reconciliation-link-col-journal = Journal
+reconciliation-link-col-description = Libellé
+reconciliation-link-choose-entry = Choisir cette écriture
+reconciliation-link-entry-cancel-today = Aujourd'hui, Kesh ne voit aucun obstacle : annuler ce rapprochement contre-passerait cette écriture (ou annulerait le règlement qu'elle porte). Une clôture d'exercice, une période verrouillée ou un exercice postérieur clos pourraient l'empêcher, dès aujourd'hui sans que Kesh le voie, ou plus tard.
+reconciliation-link-entry-cancel-blocked-intro = Ce rattachement ne pourra pas être annulé tant que dure l'obstacle suivant.
+reconciliation-link-entry-cancel-blocked-ack = J'ai compris : tant que cet obstacle dure, ce rattachement ne pourra pas être annulé.
 reconciliation-link-col-invoice = Facture
 reconciliation-link-col-client = Client
 reconciliation-link-col-settled-on = Date du règlement
@@ -2905,6 +2919,7 @@ audit-log-action-bank-profile-updated = Profil bancaire modifié
 audit-log-action-bank-profile-deleted = Profil bancaire supprimé
 audit-log-action-reconciliation-accepted = Réconciliation acceptée
 audit-log-action-reconciliation-cancelled = Rapprochement annulé
+audit-log-action-reconciliation-entry-linked = Transaction rattachée à une écriture
 audit-log-action-reconciliation-linked = Transaction rattachée à un règlement
 audit-log-action-reconciliation-rejected = Réconciliation rejetée
 audit-log-action-reconciliation-manual-matched = Réconciliation manuelle effectuée

@@ -1245,7 +1245,7 @@ reconciliation-labels-select-transaction = Select the transaction of { $date }, 
 reconciliation-labels-select-transaction-no-counterparty = Select the transaction of { $date }, { $amount } { $currency }
 # Story 29-9 (#649, AC1, AC3) — below the list, when older transactions remain.
 reconciliation-labels-more-hidden = Only the { $count } most recent pending transactions are shown: there are older ones.
-reconciliation-labels-more-capped = The { $max } most recent pending transactions are shown, the most this page shows at once. There are older ones: they will appear as these are accepted, assigned manually, split or linked to a payment.
+reconciliation-labels-more-capped = The { $max } most recent pending transactions are shown, the most this page shows at once. There are older ones: they will appear as these are accepted, assigned manually, split or linked to an existing entry.
 # Story 15-5c (#492) — labels for the refusals of a reconciliation batch (`failed[]`).
 reconciliation-failed-account-not-found = A counterpart account cannot be found or is archived.
 reconciliation-failed-account-not-postable = Non-postable account: { $numbers }. A grouping, result or closing account takes no entries: choose a postable account.
@@ -1306,6 +1306,7 @@ reconciliation-errors-invoice-not-eligible = This invoice is not eligible for re
 reconciliation-errors-transaction-not-rejected = This transaction is not rejected: its rejection may already have been undone, or it has been reconciled.
 # Story 29-8 (#670) — refus du rattachement à un règlement (409).
 reconciliation-errors-settlement-not-linkable = This payment cannot be linked to this transaction: the transaction is not a credit in CHF, or the payment is not a transfer to this bank account (a payment in cash or by another account, or a write-off, is not), its amount does not match, it is already reconciled, or it was posted to a former ledger account.
+reconciliation-errors-entry-not-linkable = This entry cannot be linked to this transaction: the transaction is not in CHF or its amount is zero, or the entry's movement on the bank's ledger account does not equal the transaction amount, or it is already reconciled, reversed, or it is a client invoice payment to be linked as such.
 reconciliation-toast-accept-success = { $count } transaction(s) reconciled successfully.
 reconciliation-toast-reject-success = { $count } transaction(s) rejected successfully.
 
@@ -1329,11 +1330,24 @@ reconciliation-split-balance-indicator = Balance
 reconciliation-split-error-imbalance = The split does not balance the transaction amount.
 
 # Story 29-8 (#670) — rattacher une transaction au règlement saisi depuis la fiche.
-reconciliation-link-button-label = Link to a payment
-reconciliation-link-modal-title = Link to a payment already recorded
-reconciliation-link-no-entry = Linking posts no entry: it ties the transaction to the payment already recorded.
-reconciliation-link-loading = Loading payments…
-reconciliation-link-empty = No bank-transfer payment on this bank account, for the amount of this transaction, is waiting for a transaction. First record the payment from the invoice, on this bank account.
+reconciliation-link-button-label = Link to an existing entry
+reconciliation-link-modal-title = Link to an existing entry
+reconciliation-link-no-entry = Linking posts no entry: it ties the transaction to an entry already posted.
+reconciliation-link-loading = Loading…
+reconciliation-link-empty = No client invoice payment and no entry on the bank's ledger account matches this transaction. First record the payment from the invoice, or post the entry, then come back here.
+reconciliation-link-section-settlements = Client invoice payments
+reconciliation-link-section-entries = Entries posted to the bank's ledger account
+reconciliation-link-settlements-empty = No client invoice payment matches.
+reconciliation-link-entries-empty = No entry on the bank's ledger account matches.
+reconciliation-link-entries-empty-debit = No entry on the bank's ledger account matches this debit. If it is already booked another way, reject it rather than assigning it.
+reconciliation-link-col-entry-number = No.
+reconciliation-link-col-entry-date = Entry date
+reconciliation-link-col-journal = Journal
+reconciliation-link-col-description = Description
+reconciliation-link-choose-entry = Choose this entry
+reconciliation-link-entry-cancel-today = Today Kesh sees no obstacle: cancelling this reconciliation would reverse this entry (or cancel the payment it carries). A year-end closing, a locked period or a later closed financial year could prevent it, already today without Kesh seeing it, or later.
+reconciliation-link-entry-cancel-blocked-intro = This link cannot be cancelled for as long as the following obstacle lasts.
+reconciliation-link-entry-cancel-blocked-ack = Understood: for as long as this obstacle lasts, this link cannot be cancelled.
 reconciliation-link-col-invoice = Invoice
 reconciliation-link-col-client = Client
 reconciliation-link-col-settled-on = Payment date
@@ -2843,6 +2857,7 @@ audit-log-action-bank-profile-updated = Bank profile updated
 audit-log-action-bank-profile-deleted = Bank profile deleted
 audit-log-action-reconciliation-accepted = Reconciliation accepted
 audit-log-action-reconciliation-cancelled = Reconciliation cancelled
+audit-log-action-reconciliation-entry-linked = Transaction linked to an entry
 audit-log-action-reconciliation-linked = Transaction linked to a payment
 audit-log-action-reconciliation-rejected = Reconciliation rejected
 audit-log-action-reconciliation-manual-matched = Manual reconciliation completed

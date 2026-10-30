@@ -783,7 +783,18 @@ const ATTENDU = {
 	// réunies par fusion, sont **mesurées** sur l'arbre réuni par la collecte de ce test —
 	// non additionnées : **2619 → 2624** (+5 = +1 de la v017-2, +4 de la v017-3b ; mesuré
 	// après la fusion de `story/v017-3-rapprochement-attente`, bornes `99566298` → arbre réuni).
-	sitesTotal: 2624,
+	// Story v017-3a (#671, AC-13) : **2619 → 2635** (+16), recompté le 2026-10-30 par
+	// `grep -o "i18nMsg("` aux deux bornes (`af560b78` → HEAD de
+	// `story/v017-3a-rattacher-ecriture`), périmètre : les fichiers touchés —
+	// `LinkSettlementModal.svelte` 15 → 31 (les deux sections, leurs colonnes et listes vides,
+	// la phrase du jour, l'introduction datée et sa case), `ReconciliationProposals.svelte`
+	// 29 → 29. Que des littéraux. ⚠️ La v016-2b change aussi ce compteur : à **recompter**
+	// après réunion, jamais additionner.
+	// Release 0.17.0, après la fusion de `story/v017-3a-rattacher-ecriture` (2026-10-31) :
+	// mesuré sur l'arbre réuni des trois stories (v017-2, v017-3b, v017-3a) par la collecte de
+	// ce test, non additionné : **2619 → 2640** (+21 = +1 v017-2, +4 v017-3b, +16 v017-3a ;
+	// bornes `99566298` → arbre réuni). La v016-2b le changera encore : à remesurer.
+	sitesTotal: 2640,
 	sitesNonResolus: 31,
 	relais: 6,
 	// Story 26-1 (#620, AC3-bis) : **10 → 11** — `lib/features/bank-import/

@@ -1245,7 +1245,7 @@ reconciliation-labels-select-transaction = Selezionare la transazione del { $dat
 reconciliation-labels-select-transaction-no-counterparty = Selezionare la transazione del { $date }, { $amount } { $currency }
 # Story 29-9 (#649, AC1, AC3) — sotto l'elenco, se restano transazioni più vecchie.
 reconciliation-labels-more-hidden = Sono mostrate solo le { $count } transazioni in sospeso più recenti: ne restano di più vecchie.
-reconciliation-labels-more-capped = Sono mostrate le { $max } transazioni in sospeso più recenti, il massimo che questa pagina mostra alla volta. Ne restano di più vecchie: appariranno man mano che queste saranno accettate, assegnate manualmente, suddivise o collegate a un pagamento.
+reconciliation-labels-more-capped = Sono mostrate le { $max } transazioni in sospeso più recenti, il massimo che questa pagina mostra alla volta. Ne restano di più vecchie: appariranno man mano che queste saranno accettate, assegnate manualmente, suddivise o collegate a una scrittura esistente.
 # Story 15-5c (#492) — etichette dei rifiuti di un lotto di riconciliazione (`failed[]`).
 reconciliation-failed-account-not-found = Un conto di contropartita è introvabile o archiviato.
 reconciliation-failed-account-not-postable = Conto non registrabile: { $numbers }. Un conto di raggruppamento, di risultato o di chiusura non riceve scritture: scegliere un conto registrabile.
@@ -1306,6 +1306,7 @@ reconciliation-errors-invoice-not-eligible = Questa fattura non è idonea alla r
 reconciliation-errors-transaction-not-rejected = Questa transazione non è rifiutata: il rifiuto potrebbe essere già stato annullato, oppure è stata riconciliata.
 # Story 29-8 (#670) — refus du rattachement à un règlement (409).
 reconciliation-errors-settlement-not-linkable = Questo pagamento non può essere collegato a questa transazione: la transazione non è un accredito in CHF, oppure il pagamento non è un bonifico su questo conto bancario (un pagamento in contanti o tramite altro conto, o un saldo, non lo è), il suo importo non corrisponde, è già riconciliato, oppure è stato registrato su un precedente conto di contabilità generale.
+reconciliation-errors-entry-not-linkable = Questa scrittura non può essere collegata a questa transazione: la transazione non è in CHF o il suo importo è nullo, oppure il movimento della scrittura sul conto della banca non è uguale all'importo della transazione, oppure è già riconciliata, stornata, oppure è un pagamento di fattura cliente da collegare come tale.
 reconciliation-toast-accept-success = { $count } transazione/i riconciliata/e con successo.
 reconciliation-toast-reject-success = { $count } transazione/i rifiutata/e con successo.
 
@@ -1329,11 +1330,24 @@ reconciliation-split-balance-indicator = Saldo
 reconciliation-split-error-imbalance = La suddivisione non bilancia l'importo della transazione.
 
 # Story 29-8 (#670) — rattacher une transaction au règlement saisi depuis la fiche.
-reconciliation-link-button-label = Collega a un pagamento
-reconciliation-link-modal-title = Collega a un pagamento già registrato
-reconciliation-link-no-entry = Il collegamento non registra alcuna scrittura: collega la transazione al pagamento già registrato.
-reconciliation-link-loading = Caricamento dei pagamenti…
-reconciliation-link-empty = Nessun pagamento tramite bonifico su questo conto bancario, dell'importo di questa transazione, attende una transazione. Registrate prima il pagamento dalla scheda della fattura, su questo conto bancario.
+reconciliation-link-button-label = Collega a una scrittura esistente
+reconciliation-link-modal-title = Collega a una scrittura esistente
+reconciliation-link-no-entry = Il collegamento non registra alcuna scrittura: collega la transazione a una scrittura già registrata.
+reconciliation-link-loading = Caricamento…
+reconciliation-link-empty = Nessun pagamento di fattura cliente né alcuna scrittura sul conto della banca corrisponde a questa transazione. Registrate prima il pagamento dalla scheda della fattura, o registrate la scrittura, poi tornate qui.
+reconciliation-link-section-settlements = Pagamenti di fatture clienti
+reconciliation-link-section-entries = Scritture registrate sul conto della banca
+reconciliation-link-settlements-empty = Nessun pagamento di fattura cliente corrisponde.
+reconciliation-link-entries-empty = Nessuna scrittura sul conto della banca corrisponde.
+reconciliation-link-entries-empty-debit = Nessuna scrittura sul conto della banca corrisponde a questo addebito. Se è già contabilizzato per un'altra via, rifiutatelo invece di assegnarlo.
+reconciliation-link-col-entry-number = N.
+reconciliation-link-col-entry-date = Data della scrittura
+reconciliation-link-col-journal = Giornale
+reconciliation-link-col-description = Descrizione
+reconciliation-link-choose-entry = Scegli questa scrittura
+reconciliation-link-entry-cancel-today = Oggi Kesh non vede alcun ostacolo: annullare questa riconciliazione stornerebbe questa scrittura (o annullerebbe il pagamento che porta). Una chiusura d'esercizio, un periodo bloccato o un esercizio successivo chiuso potrebbero impedirlo, già oggi senza che Kesh lo veda, o più tardi.
+reconciliation-link-entry-cancel-blocked-intro = Questo collegamento non potrà essere annullato finché dura l'ostacolo seguente.
+reconciliation-link-entry-cancel-blocked-ack = Ho capito: finché questo ostacolo dura, questo collegamento non potrà essere annullato.
 reconciliation-link-col-invoice = Fattura
 reconciliation-link-col-client = Cliente
 reconciliation-link-col-settled-on = Data del pagamento
@@ -2838,6 +2852,7 @@ audit-log-action-bank-profile-updated = Profilo bancario aggiornato
 audit-log-action-bank-profile-deleted = Profilo bancario eliminato
 audit-log-action-reconciliation-accepted = Riconciliazione accettata
 audit-log-action-reconciliation-cancelled = Riconciliazione annullata
+audit-log-action-reconciliation-entry-linked = Transazione collegata a una scrittura
 audit-log-action-reconciliation-linked = Transazione collegata a un pagamento
 audit-log-action-reconciliation-rejected = Riconciliazione rifiutata
 audit-log-action-reconciliation-manual-matched = Riconciliazione manuale effettuata

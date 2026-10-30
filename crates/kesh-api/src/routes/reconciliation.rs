@@ -6258,46 +6258,312 @@ pub async fn post_link_transaction(
         .map(Json)
 }
 
-/// Une tentative du rattachement : transaction neuve, verrou nommé du compte,
-/// [`kesh_db::repositories::reconciliation_link::link_in_tx`], conclusion par
+/// Une tentative d'un geste de rattachement (Story 29-8, Story v017-3a) :
+/// transaction neuve, verrou nommé du compte, le geste `f`, conclusion par
 /// [`conclude_locked_attempt`] (un refus ne rend rien de partiel : rien n'a été
-/// écrit avant lui).
-async fn link_once(
+/// écrit avant lui). Factorisée pour [`link_once`] et [`link_entry_once`], qui
+/// ne diffèrent que par le geste appelé et la réponse (DRY, fiche v017-3a,
+/// AC-6).
+async fn locked_link_attempt<T, F>(
     pool: &sqlx::MySqlPool,
-    req: kesh_db::repositories::reconciliation_link::LinkRequest,
-) -> Result<LinkResponse, AppError> {
-    use kesh_db::repositories::reconciliation_link::{LinkRefusal, Linked, link_in_tx};
+    company_id: i64,
+    bank_account_id: i64,
+    flow: &'static str,
+    f: F,
+) -> Result<T, AppError>
+where
+    F: AsyncFnOnce(&mut sqlx::Transaction<'_, sqlx::MySql>) -> Result<T, ReconciliationError>,
+{
     let mut tx = pool
         .begin()
         .await
         .map_err(|e| AppError::Database(DbError::Sqlx(e)))?;
-    let lock_result: Result<Result<Linked, LinkRefusal>, ReconciliationError> = with_account_lock(
-        &mut tx,
+    let lock_result =
+        with_account_lock(&mut tx, company_id, bank_account_id, LOCK_TIMEOUT_SECS, f).await;
+    conclude_locked_attempt(tx, lock_result, flow).await
+}
+
+/// Le refus d'un rattachement, en erreur de l'API : `NotFound` et `NotPending`
+/// communs aux deux gestes, `NotLinkable` propre à chacun (`not_linkable`).
+fn link_refusal_error(
+    refusal: kesh_db::repositories::reconciliation_link::LinkRefusal,
+    bank_transaction_id: i64,
+    not_linkable: AppError,
+) -> AppError {
+    use kesh_db::repositories::reconciliation_link::LinkRefusal;
+    match refusal {
+        LinkRefusal::NotFound => AppError::Database(DbError::NotFound),
+        LinkRefusal::NotPending => AppError::ReconciliationTransactionNotPending {
+            bank_transaction_id,
+        },
+        LinkRefusal::NotLinkable => not_linkable,
+    }
+}
+
+/// Une tentative du rattachement à un règlement, par [`locked_link_attempt`]
+/// et [`kesh_db::repositories::reconciliation_link::link_in_tx`].
+async fn link_once(
+    pool: &sqlx::MySqlPool,
+    req: kesh_db::repositories::reconciliation_link::LinkRequest,
+) -> Result<LinkResponse, AppError> {
+    use kesh_db::repositories::reconciliation_link::link_in_tx;
+    let outcome = locked_link_attempt(
+        pool,
         req.company_id,
         req.bank_account_id,
-        LOCK_TIMEOUT_SECS,
+        "post_link",
         async move |tx_inner| {
             link_in_tx(tx_inner, req)
                 .await
                 .map_err(ReconciliationError::Db)
         },
     )
-    .await;
-    match conclude_locked_attempt(tx, lock_result, "post_link").await? {
+    .await?;
+    match outcome {
         Ok(linked) => Ok(LinkResponse {
             bank_transaction_id: req.bank_transaction_id,
             journal_entry_id: linked.journal_entry_id,
             invoice_id: linked.invoice_id,
             settlement_id: linked.settlement_id,
         }),
-        Err(LinkRefusal::NotFound) => Err(AppError::Database(DbError::NotFound)),
-        Err(LinkRefusal::NotPending) => Err(AppError::ReconciliationTransactionNotPending {
+        Err(refusal) => Err(link_refusal_error(
+            refusal,
+            req.bank_transaction_id,
+            AppError::ReconciliationSettlementNotLinkable {
+                bank_transaction_id: req.bank_transaction_id,
+                settlement_id: req.settlement_id,
+            },
+        )),
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Story v017-3a (#671) — rattacher une transaction à une écriture déjà passée
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Une écriture rattachable, telle que l'API la rend.
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct EntryCandidateResponse {
+    pub journal_entry_id: i64,
+    pub entry_number: i64,
+    pub fiscal_year_id: i64,
+    pub entry_date: NaiveDate,
+    /// Le code du journal (`Achats`, `Ventes`, `Banque`, `Caisse`, `OD`).
+    pub journal: &'static str,
+    pub description: String,
+    /// `M`, signé, à deux décimales (égal au montant de la transaction).
+    pub amount: String,
+    pub days_apart: i64,
+    /// Le code du premier motif qui, **au moment de la lecture**, empêcherait
+    /// d'annuler ce rattachement — ceux de `SettlementCancelBlocker::code()`
+    /// —, ou `null`. Un instantané (angle mort L9 de la fiche) : calculé par
+    /// **la** fonction de blocage de l'annulation
+    /// (`reconciliation_cancel::entry_cancel_blocker`), sans seconde
+    /// précédence. Les trois codes fournisseur de tête ne sortent pas pour une
+    /// candidate (le classement exige une facture `paid`, qu'aucun lot
+    /// `generated` ne contient).
+    pub cancel_blocked_by: Option<&'static str>,
+    /// Le numéro du compte archivé (rang 4), comme
+    /// `GET /reconciliation/transactions/{id}`.
+    pub cancel_blocked_label: Option<String>,
+}
+
+/// Réponse de `GET …/entry-candidates`.
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct EntryCandidatesResponse {
+    pub bank_transaction_id: i64,
+    pub candidates: Vec<EntryCandidateResponse>,
+}
+
+/// `GET /api/v1/reconciliation/transactions/{id}/entry-candidates` — les
+/// écritures déjà passées auxquelles la transaction se rattache (Comptable+,
+/// Story v017-3a, #671). Lecture.
+///
+/// Ordre des refus, **identique à celui du `POST`** et à la 29-8 : `404
+/// NOT_FOUND` (inexistante ou d'une autre société) → pré-vol
+/// ([`link_preflight`], réutilisé : archivé, clos, non lié) → `404
+/// RECONCILIATION_TRANSACTION_NOT_PENDING`. Une transaction nulle ou hors CHF
+/// rend `200` et une liste vide. La règle et le tri sont ceux de
+/// [`kesh_db::repositories::reconciliation_link::find_entry_candidates`] ;
+/// rien n'est présélectionné, rien n'est écrit.
+///
+/// La liste et les motifs d'annulation sont lus dans **une** transaction de
+/// lecture (un instantané), sans verrou.
+///
+/// ⚠️ **Coût** : le motif coûte, par candidate, de huit à douze requêtes (le
+/// classement, l'exercice, le lettrage figé, `reversal_blockers`, l'exercice
+/// du jour) — de l'ordre de 500 pour 50 candidates. Mesuré au développement
+/// (fiche v017-3a, AC-5, Dev Agent Record) ; l'exercice du jour, identique
+/// pour toutes, serait factorisable.
+pub async fn get_entry_candidates(
+    State(state): State<AppState>,
+    Extension(current_user): Extension<CurrentUser>,
+    axum::extract::Path(id): axum::extract::Path<i64>,
+) -> Result<Json<EntryCandidatesResponse>, AppError> {
+    let company_id = current_user.company_id;
+    let bank_account_id = bank_account_of_transaction(&state.pool, company_id, id).await?;
+    let bank_ledger_account_id = link_preflight(&state.pool, company_id, bank_account_id).await?;
+    let mut tx = state
+        .pool
+        .begin()
+        .await
+        .map_err(|e| AppError::Database(DbError::Sqlx(e)))?;
+    let t = reconciliation_repo::find_pending_by_id_for_account(
+        &mut *tx,
+        company_id,
+        bank_account_id,
+        id,
+    )
+    .await?
+    .ok_or(AppError::Database(DbError::NotFound))?;
+    if kesh_db::repositories::bank_imports::is_reconciled(t.status.as_str(), t.matched_entry_id) {
+        return Err(AppError::ReconciliationTransactionNotPending {
+            bank_transaction_id: id,
+        });
+    }
+    let found = kesh_db::repositories::reconciliation_link::find_entry_candidates(
+        &mut *tx,
+        company_id,
+        &t,
+        bank_ledger_account_id,
+    )
+    .await?;
+    let mut candidates = Vec::with_capacity(found.len());
+    for c in found {
+        let hit = kesh_db::repositories::reconciliation_cancel::entry_cancel_blocker(
+            &mut tx,
+            company_id,
+            c.journal_entry_id,
+            None,
+        )
+        .await?;
+        candidates.push(EntryCandidateResponse {
+            journal_entry_id: c.journal_entry_id,
+            entry_number: c.entry_number,
+            fiscal_year_id: c.fiscal_year_id,
+            entry_date: c.entry_date,
+            journal: c.journal.as_str(),
+            description: c.description,
+            amount: c.amount.to_string(),
+            days_apart: c.days_apart,
+            cancel_blocked_by: hit.as_ref().map(|h| h.0.code()),
+            cancel_blocked_label: hit.and_then(|h| h.2),
+        });
+    }
+    tx.commit()
+        .await
+        .map_err(|e| AppError::Database(DbError::Sqlx(e)))?;
+    Ok(Json(EntryCandidatesResponse {
+        bank_transaction_id: id,
+        candidates,
+    }))
+}
+
+/// Corps de `POST …/link-entry`. `journalEntryId` absent se lit `None` et rend
+/// `400 VALIDATION_ERROR`, comme une valeur `≤ 0`.
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LinkEntryBody {
+    #[serde(default)]
+    pub journal_entry_id: Option<i64>,
+}
+
+/// Réponse de `POST …/link-entry`.
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LinkEntryResponse {
+    pub bank_transaction_id: i64,
+    pub journal_entry_id: i64,
+}
+
+/// `POST /api/v1/reconciliation/transactions/{id}/link-entry` — rattache la
+/// transaction à l'écriture `journalEntryId` (Comptable+, clés API d'écriture
+/// admises, Story v017-3a, #671). La transaction passe `reconciled`, pointant
+/// l'écriture ; **aucune** écriture, aucun règlement, aucun lettrage ; trace
+/// `reconciliation.entry_linked`.
+///
+/// Ordre des refus, chacun sans rien écrire (le `403` du rôle et de la clé
+/// `read` vient avant, au middleware) : `400 VALIDATION_ERROR` →
+/// `404 NOT_FOUND` (transaction) → pré-vol ([`link_preflight`]) → `409
+/// RECONCILIATION_ACCOUNT_LOCKED` → sous ce verrou, dans
+/// [`kesh_db::repositories::reconciliation_link::link_entry_in_tx`] : `404
+/// NOT_FOUND` (transaction disparue), `404
+/// RECONCILIATION_TRANSACTION_NOT_PENDING`, `409
+/// RECONCILIATION_ENTRY_NOT_LINKABLE` (condition 1, avant toute lecture de
+/// l'écriture), `404 NOT_FOUND` (écriture absente ou d'une autre société),
+/// `409 BANK_ACCOUNT_CLOSED`, `409 RECONCILIATION_ENTRY_NOT_LINKABLE`
+/// (conditions 2 à 6), `409 OPTIMISTIC_LOCK_CONFLICT` (défensif).
+///
+/// ⚠️ **Rejouée sur interblocage** (opération `reconciliation::link_entry`)
+/// bien qu'elle n'écrive rien au journal : classée `Traced,
+/// SansEcritureAuJournal` au registre `audit_route_registry.rs`, point (vi).
+pub async fn post_link_entry(
+    State(state): State<AppState>,
+    Extension(current_user): Extension<CurrentUser>,
+    axum::extract::Path(id): axum::extract::Path<i64>,
+    Json(body): Json<LinkEntryBody>,
+) -> Result<Json<LinkEntryResponse>, AppError> {
+    let journal_entry_id = match body.journal_entry_id {
+        Some(e) if e > 0 => e,
+        _ => {
+            return Err(AppError::Validation(
+                "journalEntryId doit être strictement positif".into(),
+            ));
+        }
+    };
+    let company_id = current_user.company_id;
+    let bank_account_id = bank_account_of_transaction(&state.pool, company_id, id).await?;
+    let bank_ledger_account_id = link_preflight(&state.pool, company_id, bank_account_id).await?;
+    let req = kesh_db::repositories::reconciliation_link::LinkEntryRequest {
+        company_id,
+        bank_account_id,
+        bank_transaction_id: id,
+        journal_entry_id,
+        bank_ledger_account_id,
+        user_id: current_user.user_id,
+        actor_api_key_id: current_user.api_key_id,
+    };
+    crate::retry::retry_app_on_deadlock("reconciliation::link_entry", || {
+        link_entry_once(&state.pool, req)
+    })
+    .await
+    .map(Json)
+}
+
+/// Une tentative du rattachement à une écriture, par [`locked_link_attempt`]
+/// et [`kesh_db::repositories::reconciliation_link::link_entry_in_tx`].
+async fn link_entry_once(
+    pool: &sqlx::MySqlPool,
+    req: kesh_db::repositories::reconciliation_link::LinkEntryRequest,
+) -> Result<LinkEntryResponse, AppError> {
+    use kesh_db::repositories::reconciliation_link::link_entry_in_tx;
+    let outcome = locked_link_attempt(
+        pool,
+        req.company_id,
+        req.bank_account_id,
+        "post_link_entry",
+        async move |tx_inner| {
+            link_entry_in_tx(tx_inner, req)
+                .await
+                .map_err(ReconciliationError::Db)
+        },
+    )
+    .await?;
+    match outcome {
+        Ok(linked) => Ok(LinkEntryResponse {
             bank_transaction_id: req.bank_transaction_id,
+            journal_entry_id: linked.journal_entry_id,
         }),
-        Err(LinkRefusal::NotLinkable) => Err(AppError::ReconciliationSettlementNotLinkable {
-            bank_transaction_id: req.bank_transaction_id,
-            settlement_id: req.settlement_id,
-        }),
+        Err(refusal) => Err(link_refusal_error(
+            refusal,
+            req.bank_transaction_id,
+            AppError::ReconciliationEntryNotLinkable {
+                bank_transaction_id: req.bank_transaction_id,
+                journal_entry_id: req.journal_entry_id,
+            },
+        )),
     }
 }
 
