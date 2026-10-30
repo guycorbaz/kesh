@@ -109,14 +109,19 @@ l'entrée *Ajouté* du CHANGELOG et la ligne *Fonctionnalités* du README.
   `frontend/src/lib/features/fiscal-years/closing-checks-labels.ts:48` — pendant d'écran de la phrase K2 du manuel
   (`user-manual.tex:802`) —, **et** (validation P5, P1) le repli de `bank-accounts-close-dialog-body`,
   `frontend/src/routes/(app)/bank-accounts/+page.svelte:838-839` (identique aujourd'hui à `fr-CH:1473`), se récrivent
-  **ensemble, au même commit que le catalogue**. Mécanique des gardes, lue dans
+  pour valoir aussi d'un relevé saisi, comme le manuel (AC-27), **ensemble, au même commit que le catalogue** ; la
+  valeur `fr-CH` récrite de `bank-accounts-close-dialog-body` **garde le verbe « rouvrir »** — la clé est une exemption de
+  G8 et G8-bis (`crates/kesh-i18n/src/loader.rs:1193`, `:1308`), qui exigent qu'elle prescrive encore une réouverture
+  (validation P6, P3). Mécanique des gardes, lue dans
   `frontend/src/lib/shared/i18n-repli-divergent-actif.test.ts` : son premier test ne retient que les clés présentes au
   catalogue `fr-CH` qui portent **au moins deux** replis distincts (`parTexte.size > 1`), hors `TOLEREES` (l'allowlist,
-  dont chaque entrée doit rester divergente) ; une clé à **un seul** site d'appel, comme celle-ci, ne le fait donc pas
+  dont chaque entrée doit rester divergente) ; une clé à **un seul** site d'appel, comme ces deux-là, ne le fait donc pas
   rougir si seul le catalogue change — l'écran afficherait l'ancien repli tant que le catalogue n'est pas chargé. C'est
   ce que garde G13 (`REPLIS_A_SITE_UNIQUE`, même fichier : repli égal à la valeur `fr-CH`) ; les deux clés récrites
-  ici y sont **ajoutées** si leur site d'appel est lu par `findCallSites` (sinon, l'écrire au Dev Agent Record). Avant de
-  clore la liste, greper la valeur de repli dans `frontend/src` ; elles se récrivent pour valoir aussi d'un relevé saisi, comme le manuel (AC-27) ; les deux
+  ici y sont **ajoutées** — leurs sites d'appel sont lus par `findCallSites` : des `i18nMsg('<clé>', '<repli>')`
+  littéraux dans des `.svelte`/`.ts` hors `.test.` (`i18n-harvest.js:32`, `i18n-literal-reader.js:491` ; écrit au
+  présent à la validation P6, P4) —, et le décompte du commentaire de G13 (`:210`, « treize clés ») est **recompté** sur
+  la liste finale. Avant de clore la liste, greper la valeur de repli dans `frontend/src` ; les deux
   **messages serveur** `bank-accounts-errors-has-transactions` et `bank-accounts-errors-has-pending-transactions`, dont
   le repli vit dans `errors.rs` (`:2714-2721`, `:2776-2780`), sont à la **2a** (son AC-11 : repli, quatre catalogues,
   `bank_accounts_e2e.rs:2485`) ; la 2b n'en garde que le Vitest qui recopie le texte
@@ -136,7 +141,15 @@ l'entrée *Ajouté* du CHANGELOG et la ligne *Fonctionnalités* du README.
   balisage ; `npm run lint-i18n-ownership` vert (préfixe `bank-import-` admis pour `features/bank-import/`, aucune clé
   d'un autre domaine réutilisée — pas de `journal-entry-form-*`). Gardes qui rougiront et se recomptent depuis la
   source (validation P1, F8) : `frontend/src/lib/shared/i18n-keys.test.ts` (`ATTENDU.sitesTotal`, cardinalité exacte),
-  `i18n-un-repli-par-cle.test.ts`, `i18n-repli-divergent-actif.test.ts` (repli = valeur `fr-CH`),
+  `i18n-un-repli-par-cle.test.ts`, `i18n-repli-divergent-actif.test.ts` (*glose corrigée à la validation P6, P2 :* divergences **actives** entre deux
+  replis ou plus d'une clé au catalogue ; l'égalité repli = valeur `fr-CH` n'y est tenue que par G13, pour les clés
+  **nommées** de `REPLIS_A_SITE_UNIQUE`, et par les préfixes de `PREFIXES_REPLI_EGAL_AU_CATALOGUE`, `:279`) — d'où :
+  chaque **clé statique neuve** de l'écran (`bank-import-manual-*` hors la famille `-reason-`, et `bank-import-detail-*`),
+  presque toutes à site unique, est **ajoutée nommément** à `REPLIS_A_SITE_UNIQUE` (aucun préfixe ajouté à
+  `PREFIXES_REPLI_EGAL_AU_CATALOGUE`), la liste nommée recopiée au Dev Agent Record ; **angle mort assumé** : la famille
+  dynamique `bank-import-manual-reason-` n'a pas de site littéral (clé composée d'un gabarit) et échappe à G13 — elle est
+  gardée par le test croisé (égalité de la table et de `ManualStatementReason::ALL`) et par le Vitest de couverture de la
+  table,
   `i18n-libelle-en-dur.test.ts`, `MOTIFS_DYNAMIQUES` et `CARDINALITES` (famille `bank-import-manual-reason-`), et la
   parité des catalogues (`crates/kesh-i18n/src/loader.rs`, `parity_between_locales`). *(Les clés des messages serveur
   et du libellé d'audit sont posées par la 2a, AC-11 et AC-15.)* *(Validation P3, R3 :)* compteurs à recompter, non à
@@ -152,11 +165,10 @@ l'entrée *Ajouté* du CHANGELOG et la ligne *Fonctionnalités* du README.
   mappé par `code()` (2a, AC-4) ; le test panique si le bloc est introuvable ou vide *(phrase remise en ordre à la
   validation P5, P6)*. **Forme de la valeur** (P6) : le tuple `[suffixe, repli]` du patron `CSV_LINE_ERROR_LABELS`
   (suffixe en tirets, famille `bank-import-manual-reason-` de `MOTIFS_DYNAMIQUES`) ; une entrée par ligne, **repli
-  compris** — aucune ligne de continuation qui commencerait par un mot suivi de `:`. **Garantie de la 2a** (validation
-  P5, P2) : le test croisé s'appuie sur la forme non circulaire que la 2a prescrit à son développeur pour lier `ALL` à
-  l'énumération (`index()` par `match` exhaustif sans joker, `COUNT` défini à côté, `ALL[i].index() == i` ; choix
-  C-v016-2-20, que le développeur de la 2a écrit) — sans elle, une variante absente de `ALL` serait absente aussi de
-  la table et du test croisé ; le Vitest de
+  compris** — aucune ligne de continuation qui commencerait par un mot suivi de `:`. **Garantie de la 2a** — *rattachement de la
+  P5 remplacé à la validation P6 (P1)* : le test croisé suppose que `ALL` est lié à l'énumération par une forme non
+  circulaire ; ce que la 2b en tient pour acquis est **seulement ce qui est versionné**, vérifié au point bloquant de la
+  liste « À recontrôler à l'étape 0 » ci-dessous ; le Vitest de
   couverture de la table reste, mais ne fait plus foi seul.
 - **AC-25** — Recette visuelle (`CLAUDE.md` § *Recette visuelle*, thème clair) : captures, sur une base de
   démonstration, de `/bank-import` (le lien), du formulaire vide, d'un relevé de trois lignes **déséquilibré** (écart
@@ -306,6 +318,10 @@ inchangées. Ne déclarer que ce qui a tourné, chiffres recomptés.
 
 ## À recontrôler à l'étape 0 du développement
 
+- ⛔ **Point bloquant** (validation P6, P1) : le registre `v016-2-choix-autonomes.md` porte **C-v016-2-20**, et l'AC-4 et
+  la mutation M23-bis de `v016-2a-releve-manuel-backend.md` prescrivent `index()` par `match` exhaustif sans joker,
+  `COUNT` défini à côté, `ALL.len() == COUNT` et `ALL[i].index() == i`. Si ce n'est pas le cas, le développeur de la
+  2b **s'arrête et le signale** à l'orchestrateur, sans écrire le test croisé de l'AC-24.
 - Que `GET /companies/current` ne rend que les comptes ni archivés ni clos (`docs/api-external.md:240`).
 - `frontend/src/routes/(app)/supplier-invoices/import/+page.ts` — le patron de garde Comptable+ (`load()` redirige un rôle
   autre que Admin/Comptable vers `/`), à reprendre pour `/bank-import/manual` *(les deux puces jumelles fusionnées à la
@@ -376,3 +392,15 @@ inchangées. Ne déclarer que ce qui a tourné, chiffres recomptés.
     disait « sans issue » n'est pas réécrite).
   - **LOW non pris** : aucun.
   Prochaine étape : validation P6 ciblée (`v016-2b-validate-prompt-p6.md`, Opus).
+- 2026-10-30 — **Validation P6** (ciblée, Opus ; rapport `kesh-gate-logs/v0162b-validate-p6.md`) : **0 CRITICAL, 0 HIGH,
+  2 MEDIUM, 4 LOW**. Prémisses vérifiées au code (`i18n-repli-divergent-actif.test.ts:142`, `:210`, `:279` ;
+  `crates/kesh-i18n/src/loader.rs:1193`, `:1308` ; la 2a et le registre au commit `a458b560` : aucune C-v016-2-20).
+  Remédiation minimale (sixième passe, plafond à huit). Traitement :
+  - **MEDIUM** — P1 : décision de l'orchestrateur — point bloquant en tête de « À recontrôler » (C-v016-2-20 au registre,
+    AC-4 et M23-bis de la 2a sous la forme `index()`, `COUNT`, `ALL[i].index() == i`, sinon arrêt et signalement) ; le
+    rattachement de l'AC-24 renvoie à ce point. P2 : glose de la garde corrigée ; clés statiques neuves ajoutées
+    nommément à `REPLIS_A_SITE_UNIQUE`, sans préfixe ; angle mort de la famille `bank-import-manual-reason-` écrit.
+  - **LOW appliqués** — P3 (« rouvrir » gardé, G8/G8-bis), P4 (« treize » recompté, condition au présent), P5 (phrase de
+    l'AC-23 remise en ordre, « ces deux-là »), P6 (parente, liste C point 10 au pluriel).
+  - **LOW non pris** : aucun.
+  Prochaine étape : validation P7 ciblée (`v016-2b-validate-prompt-p7.md`, Sonnet).

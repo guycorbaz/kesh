@@ -342,7 +342,8 @@ n'existera pas.*
 **C. Communs**
 
 9. PR de release : `closes #816` dans le **titre ou le corps**, à côté de `closes #811` et `closes #812`.
-10. Décompte des issues au tag (objectif, non barrière) ; l'issue demandée ci-dessous comprise, et **#829** (les trois
+10. Décompte des issues au tag (objectif, non barrière) ; les deux issues demandées ci-dessous (points 11 et 12) comprises *(pluriel : validation P6 de la 2b, P6)*,
+    et **#829** (les trois
     copies de l'extracteur, ouverte pendant la validation P3 — ne pas la rouvrir ; validation P4, 2a P7).
 11. Issue à ouvrir (demandée par la fiche) : **« L'import d'un fichier ne signale pas une période déjà saisie à la main »**
    — enhancement ; C-v016-2-6.
