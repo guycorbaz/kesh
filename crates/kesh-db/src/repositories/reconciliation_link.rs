@@ -499,4 +499,30 @@ mod tests {
         assert_eq!(one.replace(" AND s.id = ?", ""), all);
         assert!(!all.contains("FOR UPDATE"), "lecture ordinaire (C-29-8-17)");
     }
+
+    /// Story v017-3a, condition 1 : une transaction en CHF de montant non nul,
+    /// crédit **ou débit** — `-0.00` compris comme nul (tue M8, M27).
+    #[test]
+    fn transaction_can_be_linked_to_entry_is_a_non_zero_chf_amount() {
+        assert!(transaction_can_be_linked_to_entry(&tx("0.01", "CHF")));
+        assert!(transaction_can_be_linked_to_entry(&tx("-250.00", "CHF")));
+        assert!(transaction_can_be_linked_to_entry(&tx("-0.01", "CHF")));
+        assert!(!transaction_can_be_linked_to_entry(&tx("0.00", "CHF")));
+        assert!(!transaction_can_be_linked_to_entry(&tx("-0.00", "CHF")));
+        assert!(!transaction_can_be_linked_to_entry(&tx("-250.00", "EUR")));
+        assert!(!transaction_can_be_linked_to_entry(&tx("250.00", "EUR")));
+    }
+
+    /// Story v017-3a (AC-1) : la requête restreinte du geste est la requête de
+    /// la liste plus `AND e.id = ?`, sans verrou — un seul texte pour les
+    /// conditions 2 à 6.
+    #[test]
+    fn the_restricted_entry_query_is_the_list_query_plus_the_entry() {
+        let all = entry_candidates_sql(false);
+        let one = entry_candidates_sql(true);
+        assert_eq!(one.replace(" AND e.id = ?", ""), all);
+        assert_ne!(one, all);
+        assert!(!all.contains("FOR UPDATE"), "lecture ordinaire");
+        assert!(!one.contains("FOR UPDATE"), "lecture ordinaire");
+    }
 }

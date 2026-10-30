@@ -1,6 +1,6 @@
 # Story v017-3a : une transaction déjà comptabilisée se rattache à son écriture
 
-Status: ready-for-dev
+Status: in-progress
 
 *Fiche rédigée le 2026-10-30, en autonomie (Opus 5.5), worktree `/home/gcorbaz/devel/kesh-0173`, branche
 `story/v017-3-rapprochement-attente` partie de `c5101b07` (tête de la candidate `v0.16.1-rc1`) ; la story se fusionne
@@ -228,8 +228,12 @@ produit multiplierait les lignes).
   Agent Record et **s'arrêter**.
   **(b), réécrit à la validation P4 (C1, C9) — remplace le paragraphe P3 ci-dessus pour la raison et pour le critère
   d'arrêt.** La raison P3 (« aucun geste qui tient `journal_entries` ne verrouille ensuite `bank_transactions` ») est
-  **fausse** : cinq gestes créent une écriture **puis** mettent à jour la transaction, et le lot d'acceptation lettre (il
-  verrouille des en-têtes d'écriture, `letterings.rs:243-244`, jointure `… JOIN journal_entries je … FOR UPDATE`) avant
+  **fausse** : cinq gestes *(lire **six** — étape 0 du développement, C1 de la validation P5 : quatre `accept_one_*`,
+  rapprochement et éclatement manuels)* créent une écriture **puis** mettent à jour la transaction, et le lot d'acceptation lettre (il
+  verrouille des en-têtes d'écriture, `letterings.rs:243-244` *(étape 0, C3 de la P5 : pour le lot, la requête de verrou
+  est `SYNC_DOCUMENT_LINES_SQL`, `letterings.rs:1463-1469`, `… STRAIGHT_JOIN journal_entries je … ORDER BY jel.id FOR
+  UPDATE`, atteinte par `sync_invoice_in_tx` puis `sync_document_in_tx` ; `:240-244` est celle de la création d'un
+  lettrage manuel)*, jointure `… JOIN journal_entries je … FOR UPDATE`) avant
   de mettre à jour la transaction suivante, dans une seule transaction SQL (`SAVEPOINT`/`RELEASE SAVEPOINT`, qui ne rend
   aucun verrou). « Le verrou nommé ne couvre qu'eux » est faux aussi. Vérifié au code (lignes lues, `c5101b07`), chacun
   de ces gestes tient **le verrou nommé du compte de la transaction qu'il écrit**, pris **avant** l'écriture puis la
@@ -238,7 +242,10 @@ produit multiplierait les lignes).
     { accept_batch(tx_inner, company_id, bank_account_id, …` (`routes/reconciliation.rs:1760-1770`) ; dans le lot,
     `accept_one_invoice` (`:1991`), `accept_one_split` (`:2008`), `accept_one_rule` (`:2025`),
     `accept_one_supplier_invoice` (`:2041`) relisent la transaction par
-    `find_pending_by_id_for_account(…, bank_account_id, …)` (`accept_one_invoice`, `:2309-2312` — le compte verrouillé),
+    `find_pending_by_id_for_account(…, bank_account_id, …)` (`accept_one_invoice`, `:2309-2312` — le compte verrouillé)
+    *(étape 0, C2 de la P5 : `find_pending_by_id_for_account` pour la facture, `:2309`, et le fournisseur, `:3234` ;
+    `find_strictly_pending_by_id_for_account` pour l'éclatement, `:3622`, et la règle, `:4024` — toujours avec le
+    `bank_account_id` verrouillé ; `:1991`, `:2008`, `:2025`, `:2041` sont les sites d'appel du `match`)*,
     puis créent l'écriture (`journal_entries::create_in_tx`, `:2743` ; `:3721` ; `:4169` ; `pay_in_tx_as` pour le
     fournisseur) et mettent à jour la transaction (`UPDATE bank_transactions`, `:2810` ; `:3739` ; `:4218` ; `:3373`) ;
   - rapprochement manuel — `with_account_lock(&mut tx_outer, company_id, bank_account_id, …` (`:4965-4969`), relecture
@@ -249,7 +256,10 @@ produit multiplierait les lignes).
   tient le verrou nommé du compte de cette ligne, et n'écrit aucune transaction d'un autre compte ; les gestes sans
   verrou nommé (routes du journal — contre-passation, modification, suppression d'une écriture —, suppression d'un
   import) ne prennent jamais une ligne de `bank_transactions` après une ligne de `journal_entries`.* Les premiers sont
-  donc sérialisés avec `link_entry_in_tx` sur le même compte (qui tient ce verrou, `t → je`) ; pour les seconds :
+  donc sérialisés avec `link_entry_in_tx` sur le même compte (qui tient ce verrou, `t → je`) *(étape 0, C4 de la P5 :
+  « sérialisés » est inexact — exclusion mutuelle **pendant les instructions** ; `with_account_lock` rend le verrou
+  (`RELEASE_LOCK`) avant le commit de la route, `reconciliation_link.rs:287-290`, `kesh-reconciliation/src/mutex.rs:67` ;
+  après la libération, le geste n'attend plus rien, il commite — l'absence de cycle tient)* ; pour les seconds :
   `reverse_in_tx_inner` (`journal_entries.rs:2741-2745`) lit `bank_transactions` par `reversal_blockers`, qui appelle
   `document_owners` (`:2212`, appel `:2415` ; la sous-requête `… FROM bank_transactions` est à `:2278`, **lecture
   ordinaire**) — *citation P3 « `:2278` dans `reversal_blockers` » corrigée (C9)* ; `delete_once`
@@ -258,7 +268,10 @@ produit multiplierait les lignes).
   (`20260504000001_bank_imports.sql:82-83`), des verrous **implicites** sur l'index de `matched_entry_id` qu'il parcourt,
   même sans ligne trouvée : verrou d'intervalle sur `matched_entry_id = je`, compatible avec les verrous de ligne par clé
   primaire de `link_entry_in_tx`, sans cycle possible (la garde `MatchedBankTransaction` a refusé la suppression d'une
-  écriture rapprochée) ; le doc-comment le dit. **Critère d'arrêt de l'étape 0** : un geste qui tient une ligne
+  écriture rapprochée) ; le doc-comment le dit. *(Étape 0, C5 de la P5 : verrou d'**intervalle**, qui n'attend jamais —
+  d'où l'absence de cycle côté suppression ; mais il **bloque** l'`UPDATE` de `link_entry_in_tx` (insertion dans l'index
+  secondaire, verrou d'insertion), comme le documente `reconciliation_link.rs:290-293` : le rattachement peut attendre la
+  fin de la suppression ; la suppression n'attend rien. Non prouvé par test, comme C-29-8-25.)* **Critère d'arrêt de l'étape 0** : un geste qui tient une ligne
   `journal_entries` puis verrouille (`FOR UPDATE`, `LOCK IN SHARE MODE`, `UPDATE`, `DELETE`, ou verrou implicite d'une
   clé étrangère sur une ligne **trouvée**) une ligne de `bank_transactions` **sans** tenir le verrou nommé du compte de
   cette ligne. Si l'étape 0 en trouve un, l'écrire au Dev Agent Record avec le raisonnement qui exclut ou non le cycle
@@ -512,17 +525,17 @@ produit multiplierait les lignes).
      dépense payée depuis la fiche, par un lot d'**une** facture ou par une écriture saisie **se rattache** (même dans un
      exercice clôturé, avec la vérité datée de D12) ; « laissez la transaction en attente (issue #671) » disparaît ;
      restent en attente, avec la consigne de **rejeter**, les cas de D9, chacun renvoyé à **son** issue (lot de plusieurs
-     factures et second côté d'un virement : #823 ; ancien compte et autre compte bancaire : l'issue demandée ; frais de
+     factures et second côté d'un virement : #823 ; ancien compte et autre compte bancaire : #827 ; frais de
      rappel : #401) ;
   3. § des règles d'affectation, `:2450` — « Une dépense déjà réglée … ne la masque pas : voyez l'encadré » et
      « *Affecter manuellement* ne convient que si … » : renvoi au rattachement ;
   4. diagnostic, `:3337-3338` — « n'acceptez rien pour ce débit (encadré …) » : « rattachez-la (§…) » ;
   5. la liste « Ce qui ne se rattache pas », `:2402-2409`, puce par puce : `:2402` « (issue #671) » → les issues de
      chaque puce ; `:2404` (plus de 5 centimes) **gardée**, précisée « pour un règlement de facture client ; une écriture
-     se rattache au montant exact » ; `:2405` (autre compte bancaire) **gardée**, renvoi à l'issue demandée ; `:2406`
+     se rattache au montant exact » ; `:2405` (autre compte bancaire) **gardée**, renvoi à #827 ; `:2406`
      (compte interne) **supprimée** — un règlement par compte interne sur le compte de la banque se rattache désormais
      (AC-2.7) ; `:2407` (plusieurs factures) **gardée**, renvoi à #823 ; `:2408` **scindée** — l'écriture saisie au
-     journal se rattache, l'ancien compte reste (issue demandée) ; `:2409` (un débit) **supprimée** ; ajoutées : le
+     journal se rattache, l'ancien compte reste (#827) ; `:2409` (un débit) **supprimée** ; ajoutées : le
      second côté d'un virement entre comptes propres (#823) et le règlement fournisseur sous le centime (renvoi à
      `sec:facture-fournisseur-sous-centime`, v017-3b) ;
   6. § *Annuler un rapprochement*, `:2462-2484` : une transaction rattachée à une **écriture saisie** — l'annulation la
