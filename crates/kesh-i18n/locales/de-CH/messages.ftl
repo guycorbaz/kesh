@@ -1244,7 +1244,7 @@ reconciliation-labels-select-transaction = Transaktion vom { $date }, { $amount 
 reconciliation-labels-select-transaction-no-counterparty = Transaktion vom { $date }, { $amount } { $currency } auswählen
 # Story 29-9 (#649, AC1, AC3) — unter der Liste, wenn ältere Transaktionen bleiben.
 reconciliation-labels-more-hidden = Nur die { $count } neuesten offenen Transaktionen werden angezeigt: Es gibt noch ältere.
-reconciliation-labels-more-capped = Die { $max } neuesten offenen Transaktionen werden angezeigt, das Maximum, das diese Seite auf einmal zeigt. Es gibt noch ältere: Sie erscheinen, sobald diese akzeptiert, manuell zugewiesen, aufgeteilt oder einer Zahlung zugeordnet werden.
+reconciliation-labels-more-capped = Die { $max } neuesten offenen Transaktionen werden angezeigt, das Maximum, das diese Seite auf einmal zeigt. Es gibt noch ältere: Sie erscheinen, sobald diese akzeptiert, manuell zugewiesen, aufgeteilt oder einer bestehenden Buchung zugeordnet werden.
 # Story 15-5c (#492) — Bezeichnungen der Ablehnungen eines Abgleich-Stapels (`failed[]`).
 reconciliation-failed-account-not-found = Ein Gegenkonto ist nicht auffindbar oder archiviert.
 reconciliation-failed-account-not-postable = Nicht bebuchbares Konto: { $numbers }. Ein Sammel-, Ergebnis- oder Abschlusskonto nimmt keine Buchung auf: Wählen Sie ein bebuchbares Konto.
@@ -1305,6 +1305,7 @@ reconciliation-errors-invoice-not-eligible = Diese Rechnung ist für den Abgleic
 reconciliation-errors-transaction-not-rejected = Diese Transaktion ist nicht abgelehnt: Die Ablehnung wurde möglicherweise bereits aufgehoben, oder sie wurde abgestimmt.
 # Story 29-8 (#670) — refus du rattachement à un règlement (409).
 reconciliation-errors-settlement-not-linkable = Diese Zahlung kann dieser Transaktion nicht zugeordnet werden: Die Transaktion ist keine Gutschrift in CHF, oder die Zahlung ist keine Überweisung auf dieses Bankkonto (eine Zahlung bar oder über ein anderes Konto, oder eine Ausbuchung, ist es nicht), ihr Betrag stimmt nicht überein, sie ist bereits abgestimmt, oder sie wurde auf einem früheren Hauptbuchkonto gebucht.
+reconciliation-errors-entry-not-linkable = Diese Buchung kann dieser Transaktion nicht zugeordnet werden: Die Transaktion ist nicht in CHF oder ihr Betrag ist null, oder die Bewegung der Buchung auf dem Bankkonto im Hauptbuch entspricht nicht dem Betrag der Transaktion, oder sie ist bereits abgestimmt, storniert, oder es ist eine Zahlung einer Kundenrechnung, die als solche zuzuordnen ist.
 reconciliation-toast-accept-success = { $count } Transaktion(en) erfolgreich abgeglichen.
 reconciliation-toast-reject-success = { $count } Transaktion(en) erfolgreich abgelehnt.
 
@@ -1328,11 +1329,24 @@ reconciliation-split-balance-indicator = Saldo
 reconciliation-split-error-imbalance = Die Aufteilung gleicht den Transaktionsbetrag nicht aus.
 
 # Story 29-8 (#670) — rattacher une transaction au règlement saisi depuis la fiche.
-reconciliation-link-button-label = Einer Zahlung zuordnen
-reconciliation-link-modal-title = Einer bereits erfassten Zahlung zuordnen
-reconciliation-link-no-entry = Die Zuordnung bucht nichts: Sie verbindet die Transaktion mit der bereits erfassten Zahlung.
-reconciliation-link-loading = Zahlungen werden geladen…
-reconciliation-link-empty = Keine Überweisungszahlung auf diesem Bankkonto mit dem Betrag dieser Transaktion wartet auf eine Transaktion. Erfassen Sie die Zahlung zuerst auf der Rechnung, auf diesem Bankkonto.
+reconciliation-link-button-label = Einer bestehenden Buchung zuordnen
+reconciliation-link-modal-title = Einer bestehenden Buchung zuordnen
+reconciliation-link-no-entry = Die Zuordnung bucht nichts: Sie verbindet die Transaktion mit einer bereits erfassten Buchung.
+reconciliation-link-loading = Wird geladen…
+reconciliation-link-empty = Keine Kundenzahlung und keine Buchung auf dem Bankkonto im Hauptbuch entspricht dieser Transaktion. Erfassen Sie zuerst die Zahlung auf der Rechnung oder die Buchung, und kommen Sie dann hierher zurück.
+reconciliation-link-section-settlements = Zahlungen von Kundenrechnungen
+reconciliation-link-section-entries = Buchungen auf dem Bankkonto im Hauptbuch
+reconciliation-link-settlements-empty = Keine Zahlung einer Kundenrechnung entspricht.
+reconciliation-link-entries-empty = Keine Buchung auf dem Bankkonto im Hauptbuch entspricht.
+reconciliation-link-entries-empty-debit = Keine Buchung auf dem Bankkonto im Hauptbuch entspricht dieser Belastung. Ist sie bereits auf einem anderen Weg gebucht, lehnen Sie sie ab, statt sie zuzuweisen.
+reconciliation-link-col-entry-number = Nr.
+reconciliation-link-col-entry-date = Buchungsdatum
+reconciliation-link-col-journal = Journal
+reconciliation-link-col-description = Text
+reconciliation-link-choose-entry = Diese Buchung wählen
+reconciliation-link-entry-cancel-today = Heute sieht Kesh kein Hindernis: Den Abgleich aufzuheben, würde diese Buchung stornieren (oder die Zahlung aufheben, die sie trägt). Ein Jahresabschluss, eine gesperrte Periode oder ein abgeschlossenes späteres Geschäftsjahr könnten es verhindern, schon heute, ohne dass Kesh es sieht, oder später.
+reconciliation-link-entry-cancel-blocked-intro = Diese Zuordnung kann nicht aufgehoben werden, solange das folgende Hindernis besteht.
+reconciliation-link-entry-cancel-blocked-ack = Verstanden: Solange dieses Hindernis besteht, kann diese Zuordnung nicht aufgehoben werden.
 reconciliation-link-col-invoice = Rechnung
 reconciliation-link-col-client = Kunde
 reconciliation-link-col-settled-on = Zahlungsdatum
@@ -2830,6 +2844,7 @@ audit-log-action-bank-profile-updated = Bankprofil aktualisiert
 audit-log-action-bank-profile-deleted = Bankprofil gelöscht
 audit-log-action-reconciliation-accepted = Abstimmung akzeptiert
 audit-log-action-reconciliation-cancelled = Abgleich aufgehoben
+audit-log-action-reconciliation-entry-linked = Transaktion einer Buchung zugeordnet
 audit-log-action-reconciliation-linked = Transaktion einer Zahlung zugeordnet
 audit-log-action-reconciliation-rejected = Abstimmung abgelehnt
 audit-log-action-reconciliation-manual-matched = Manueller Abgleich durchgeführt

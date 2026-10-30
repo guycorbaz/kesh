@@ -1002,6 +1002,25 @@ pub enum AppError {
         settlement_id: i64,
     },
 
+    /// Story v017-3a (#671) — le rattachement à une écriture déjà passée
+    /// (`POST /reconciliation/transactions/{id}/link-entry`) vise une écriture
+    /// que la règle n'admet pas : la transaction n'est pas en CHF ou son
+    /// montant est nul, ou le mouvement de l'écriture sur le compte du grand
+    /// livre de la banque n'égale pas le montant, ou l'écriture est déjà
+    /// rapprochée, contre-passée ou contre-passation, ou c'est un règlement
+    /// client par virement sur ce compte bancaire (rattaché par `…/link`) —
+    /// **un seul code** pour les conditions 1 à 6. L'écran n'offre que des
+    /// candidates : ce refus ne se voit que par une course ou un appel direct ;
+    /// relire les listes. → `409 RECONCILIATION_ENTRY_NOT_LINKABLE`,
+    /// `details.bankTransactionId` et `details.journalEntryId`.
+    #[error(
+        "Écriture non rattachable : transaction={bank_transaction_id}, écriture={journal_entry_id}"
+    )]
+    ReconciliationEntryNotLinkable {
+        bank_transaction_id: i64,
+        journal_entry_id: i64,
+    },
+
     // ----- Story 8-5a-bis — split FR48 -----
     /// `sum(splits) != tx.amount.abs()` (Decimal exact, pas de tolérance)
     /// → `400 RECONCILIATION_SPLIT_IMBALANCE`. Body `details = {
@@ -2907,6 +2926,29 @@ impl IntoResponse for AppError {
                         "details": {
                             "bankTransactionId": bank_transaction_id,
                             "settlementId": settlement_id,
+                        },
+                    }
+                });
+                (StatusCode::CONFLICT, Json(body)).into_response()
+            }
+
+            // Story v017-3a (#671) — rattachement à une écriture refusé par la
+            // règle. Repli égal mot pour mot au catalogue fr-CH (G9).
+            AppError::ReconciliationEntryNotLinkable {
+                bank_transaction_id,
+                journal_entry_id,
+            } => {
+                let msg = t(
+                    "reconciliation-errors-entry-not-linkable",
+                    "Cette écriture ne peut pas être rattachée à cette transaction : la transaction n'est pas en CHF ou son montant est nul, ou le mouvement de l'écriture sur le compte de la banque n'égale pas le montant de la transaction, ou elle est déjà rapprochée, contre-passée, ou c'est un règlement de facture client à rattacher comme tel.",
+                );
+                let body = serde_json::json!({
+                    "error": {
+                        "code": "RECONCILIATION_ENTRY_NOT_LINKABLE",
+                        "message": msg,
+                        "details": {
+                            "bankTransactionId": bank_transaction_id,
+                            "journalEntryId": journal_entry_id,
                         },
                     }
                 });

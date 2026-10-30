@@ -455,3 +455,64 @@ silencieuse ; un appariement propose, il ne crée jamais).
   limite écrite et issue demandée (P4) — *ouverte depuis : #831 (validation P5, C2)*.
 - **Écartées** : passer aussi la liste (aucun banc, le périmètre continuerait de s'étendre).
 - **Réversible** : oui (l'issue de la liste).
+
+### C-v017-3-40 — v017-3a : les tests de la règle au dépôt vivent dans le fichier de test HTTP
+
+- **Contexte** (développement, AC-2) : la fiche demande des tests `#[sqlx::test]` de `find_entry_candidates`, une
+  condition par test ; leurs montages (facture validée et réglée, facture fournisseur payée, lot pain.001 confirmé,
+  écriture saisie, contre-passation) passent par les routes. Aucun fichier de `crates/kesh-db/tests/` ne porte ces
+  montages ; la 29-8 a testé sa règle dans `kesh-api/tests/reconciliation_link_e2e.rs`.
+- **Retenu** : un seul fichier neuf, `crates/kesh-api/tests/reconciliation_link_entry_e2e.rs` ; les tests AC-2
+  appellent `find_entry_candidates` **directement** (fonction du dépôt) sur des états montés par les routes, les
+  autres passent par HTTP. Le montage de la 29-8 y est recopié (chaque fichier de test est un binaire). Les deux
+  fonctions pures (`transaction_can_be_linked_to_entry`, `entry_candidates_sql`) ont leurs tests unitaires dans
+  `reconciliation_link.rs`.
+- **Écartées** : un fichier `kesh-db/tests/` qui recopierait par SQL ou par les fonctions de dépôt tout le montage
+  des règlements (plus de code, moins de fidélité au chemin réel) ; un module commun de montage (toucherait le
+  fichier de la 29-8 pour rien).
+- **Réversible** : oui.
+
+### C-v017-3-41 — v017-3a : le dialogue garde son nom de fichier
+
+- **Contexte** (AC-13 : « généralisé, renommé s'il le faut — le dire »).
+- **Retenu** : `LinkSettlementModal.svelte` garde son nom et ses `data-testid` (`link-settlement-modal`,
+  `link-settlement-button`) ; son en-tête dit qu'il porte les deux sections. Le test des replis le lit par son nom :
+  rien à suivre.
+- **Écartées** : le renommer (`LinkEntryModal`) — diff plus large, collision accrue avec la v017-3b et la v017-3c,
+  qui le reprend.
+- **Réversible** : oui.
+
+### C-v017-3-42 — v017-3a : la tentative verrouillée est factorisée pour les deux rattachements
+
+- **Contexte** (AC-6 : « si `link_once` et `link_entry_once` ne diffèrent que par l'appel intérieur et la réponse,
+  factoriser et le dire »). Ils ne diffèrent que par cela.
+- **Retenu** : `locked_link_attempt` (transaction neuve, `with_account_lock`, `conclude_locked_attempt`) et
+  `link_refusal_error` (les refus `NotFound`/`NotPending` communs, `NotLinkable` propre à chacun), appelés par
+  `link_once` (29-8, comportement inchangé — ses 24 tests verts) et `link_entry_once`.
+- **Écartées** : recopier `link_once` (DRY).
+- **Réversible** : oui.
+
+### C-v017-3-43 — v017-3a : la liste des écritures et ses motifs d'annulation dans une seule transaction de lecture
+
+- **Contexte** (AC-5) : `cancelBlockedBy` se calcule par candidate (`entry_cancel_blocker`, plusieurs requêtes).
+- **Retenu** : `GET …/entry-candidates` ouvre **une** transaction de lecture (un instantané, aucun verrou), y lit la
+  transaction, la liste et chaque motif, puis la referme — patron de `reconciliation_cancel::get_view`. Le pré-vol
+  reste sur le pool, comme la 29-8.
+- **Écartées** : lectures sur le pool, chacune dans son instantané (une réponse qui pourrait se contredire).
+- **Réversible** : oui.
+
+### C-v017-3-44 — v017-3a : le journal de l'écriture s'affiche par son code
+
+- **Contexte** (AC-13, colonne « journal » de la section des écritures). L'écran des écritures traduit le code par une
+  fonction locale (`journalLabel`, `routes/(app)/journal-entries/+page.svelte:303`), non partagée.
+- **Retenu** : le dialogue affiche le **code** (`Banque`, `OD`, …), tel que l'API le rend.
+- **Écartées** : extraire `journalLabel` dans un module partagé (déplacement hors périmètre, gardes i18n à recompter).
+- **Réversible** : oui — un défaut cosmétique pour une installation non française.
+
+### C-v017-3-45 — v017-3a : la case de l'obstacle se décoche à chaque changement de choix
+
+- **Contexte** (AC-13 : *Rattacher* exige la case `entry-cancel-blocked-ack` pour une candidate à motif).
+- **Retenu** : la case est remise à vide à chaque changement de choix et à chaque relecture des listes : une
+  reconnaissance donnée pour une écriture ne vaut pas pour une autre.
+- **Écartées** : garder la case cochée (reconnaissance transférée d'office).
+- **Réversible** : oui.

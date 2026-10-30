@@ -764,7 +764,14 @@ const ATTENDU = {
 	// même `grep` aux deux bornes (`f9b154f8` → HEAD), périmètre : les fichiers touchés —
 	// `McpKeysSection.svelte` 60 → 61 (`mcp-server-form-expires-invalid`, B3),
 	// `McpSettingsSection.svelte` 33 → 34 (`mcp-server-settings-retry`, E3). Que des littéraux.
-	sitesTotal: 2619,
+	// Story v017-3a (#671, AC-13) : **2619 → 2635** (+16), recompté le 2026-10-30 par
+	// `grep -o "i18nMsg("` aux deux bornes (`af560b78` → HEAD de
+	// `story/v017-3a-rattacher-ecriture`), périmètre : les fichiers touchés —
+	// `LinkSettlementModal.svelte` 15 → 31 (les deux sections, leurs colonnes et listes vides,
+	// la phrase du jour, l'introduction datée et sa case), `ReconciliationProposals.svelte`
+	// 29 → 29. Que des littéraux. ⚠️ La v016-2b change aussi ce compteur : à **recompter**
+	// après réunion, jamais additionner.
+	sitesTotal: 2635,
 	sitesNonResolus: 31,
 	relais: 6,
 	// Story 26-1 (#620, AC3-bis) : **10 → 11** — `lib/features/bank-import/

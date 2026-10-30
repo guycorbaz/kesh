@@ -374,7 +374,10 @@ impl Ctx {
         self.ecriture(
             date,
             "Dépense payée",
-            &[(self.compte("4000"), montant, "0"), (self.ledger, "0", montant)],
+            &[
+                (self.compte("4000"), montant, "0"),
+                (self.ledger, "0", montant),
+            ],
         )
         .await
     }
@@ -384,7 +387,10 @@ impl Ctx {
         self.ecriture(
             date,
             "Recette encaissée",
-            &[(self.ledger, montant, "0"), (self.compte("3000"), "0", montant)],
+            &[
+                (self.ledger, montant, "0"),
+                (self.compte("3000"), "0", montant),
+            ],
         )
         .await
     }
@@ -469,7 +475,13 @@ impl Ctx {
     }
 
     /// Règle par virement sur `bank`, depuis la fiche.
-    async fn regler_virement(&self, facture: i64, bank: i64, montant: &str, le: &str) -> (i64, i64) {
+    async fn regler_virement(
+        &self,
+        facture: i64,
+        bank: i64,
+        montant: &str,
+        le: &str,
+    ) -> (i64, i64) {
         self.regler_avec(
             facture,
             json!({
@@ -483,7 +495,13 @@ impl Ctx {
     }
 
     /// Règle par **compte interne** `compte`, depuis la fiche.
-    async fn regler_interne(&self, facture: i64, compte: i64, montant: &str, le: &str) -> (i64, i64) {
+    async fn regler_interne(
+        &self,
+        facture: i64,
+        compte: i64,
+        montant: &str,
+        le: &str,
+    ) -> (i64, i64) {
         self.regler_avec(
             facture,
             json!({
@@ -499,6 +517,16 @@ impl Ctx {
     /// Une facture fournisseur ouverte de `montant` (sans TVA), IBAN du
     /// créancier posé (exigé par un lot de paiement).
     async fn facture_fournisseur(&self, numero: &str, montant: &str) -> i64 {
+        // Le seed ne pose pas de compte fournisseurs par défaut : montage de
+        // `supplier_settlement_cancel_e2e.rs::open_invoice`.
+        sqlx::query(
+            "UPDATE company_invoice_settings SET default_payable_account_id = ? WHERE company_id = ?",
+        )
+        .bind(self.compte("2000"))
+        .bind(self.company_id())
+        .execute(&self.pool)
+        .await
+        .unwrap();
         let fournisseur = self.contact("Fournisseur SA", false).await;
         let id = supplier_invoices::create(
             &self.pool,
@@ -570,7 +598,9 @@ impl Ctx {
             )
             .await;
         assert_eq!(s, 200, "lot : {b}");
-        let batch = b["batch"]["id"].as_i64().unwrap_or_else(|| panic!("lot créé : {b}"));
+        let batch = b["batch"]["id"]
+            .as_i64()
+            .unwrap_or_else(|| panic!("lot créé : {b}"));
         let (s, b) = self
             .post(
                 &format!("/api/v1/payment-batches/{batch}/confirm"),
@@ -633,15 +663,11 @@ impl Ctx {
     /// La règle, **au dépôt** : les candidates de la transaction `tx` du compte
     /// `bank`, pour le compte du grand livre `ledger`.
     async fn regle_sur(&self, bank: i64, tx: i64, ledger: i64) -> Vec<EntryCandidate> {
-        let t = reconciliation::find_pending_by_id_for_account(
-            &self.pool,
-            self.company_id(),
-            bank,
-            tx,
-        )
-        .await
-        .unwrap()
-        .expect("transaction");
+        let t =
+            reconciliation::find_pending_by_id_for_account(&self.pool, self.company_id(), bank, tx)
+                .await
+                .unwrap()
+                .expect("transaction");
         find_entry_candidates(&self.pool, self.company_id(), &t, ledger)
             .await
             .unwrap()
@@ -828,7 +854,10 @@ async fn ac2_2_le_signe_du_mouvement(pool: MySqlPool) {
     let credit = ctx.transaction(bank, "80.00", "2026-06-18").await;
     let debit = ctx.transaction(bank, "-80.00", "2026-06-18").await;
     let c = ctx.regle_sur(bank, credit, ctx.ledger).await;
-    assert_eq!(c.iter().map(|c| c.journal_entry_id).collect::<Vec<_>>(), vec![e]);
+    assert_eq!(
+        c.iter().map(|c| c.journal_entry_id).collect::<Vec<_>>(),
+        vec![e]
+    );
     assert_eq!(c[0].amount.to_string(), "80.00");
     assert!(ctx.regle(bank, debit).await.is_empty());
 }
@@ -854,7 +883,10 @@ async fn ac2_4_un_autre_compte_du_grand_livre(pool: MySqlPool) {
     ctx.ecriture(
         "2026-06-18",
         "Sur un autre compte",
-        &[(ctx.compte("4000"), "250.00", "0"), (ctx.compte("1100"), "0", "250.00")],
+        &[
+            (ctx.compte("4000"), "250.00", "0"),
+            (ctx.compte("1100"), "0", "250.00"),
+        ],
     )
     .await;
     let t = ctx.transaction(bank, "-250.00", "2026-06-18").await;
@@ -888,7 +920,11 @@ async fn ac2_5_une_ecriture_deja_rapprochee(pool: MySqlPool) {
     let e = ctx.depense("2026-06-18", "250.00").await;
     let t1 = ctx.transaction(bank, "-250.00", "2026-06-18").await;
     let t2 = ctx.transaction(bank, "-250.00", "2026-06-19").await;
-    assert_eq!(ctx.regle(bank, t2).await, vec![e], "témoin : candidate avant le lien");
+    assert_eq!(
+        ctx.regle(bank, t2).await,
+        vec![e],
+        "témoin : candidate avant le lien"
+    );
     sqlx::query(
         "UPDATE bank_transactions SET status = 'reconciled', matched_entry_id = ? WHERE id = ?",
     )
@@ -914,7 +950,10 @@ async fn ac2_6_contre_passee_et_contre_passation(pool: MySqlPool) {
     let r = b["id"].as_i64().unwrap();
     let debit = ctx.transaction(bank, "-250.00", "2026-06-18").await;
     let credit = ctx.transaction(bank, "250.00", "2026-06-18").await;
-    assert!(ctx.regle(bank, debit).await.is_empty(), "l'écriture contre-passée");
+    assert!(
+        ctx.regle(bank, debit).await.is_empty(),
+        "l'écriture contre-passée"
+    );
     assert!(
         !ctx.regle(bank, credit).await.contains(&r),
         "la contre-passation (D 1020 250)"
@@ -941,7 +980,10 @@ async fn ac2_7_le_domaine_de_la_29_8(pool: MySqlPool) {
         .await
         .unwrap();
     assert_eq!(
-        liste_29_8.iter().map(|c| c.settlement_id).collect::<Vec<_>>(),
+        liste_29_8
+            .iter()
+            .map(|c| c.settlement_id)
+            .collect::<Vec<_>>(),
         vec![sid],
         "présent de la liste de la 29-8"
     );
@@ -978,7 +1020,10 @@ async fn ac2_8_reglements_fournisseur(pool: MySqlPool) {
     let b = ctx.facture_fournisseur("FF-4", "20.00").await;
     ctx.lot_confirme(bank, &[a, b], "2026-07-02").await;
     let t_somme = ctx.transaction(bank, "-50.00", "2026-07-02").await;
-    assert!(ctx.regle(bank, t_somme).await.is_empty(), "L1 : aucune écriture n'égale la somme");
+    assert!(
+        ctx.regle(bank, t_somme).await.is_empty(),
+        "L1 : aucune écriture n'égale la somme"
+    );
 }
 
 /// AC-2.9 — une autre société : absente (tue M18). ⚠️ **Fixture SQL
@@ -1025,7 +1070,10 @@ async fn ac2_10_le_tri_et_la_limite(pool: MySqlPool) {
     let t = ctx.transaction(bank, "-33.00", "2026-06-15").await;
     let rendues = ctx.regle_sur(bank, t, ctx.ledger).await;
     assert_eq!(
-        rendues.iter().map(|c| c.journal_entry_id).collect::<Vec<_>>(),
+        rendues
+            .iter()
+            .map(|c| c.journal_entry_id)
+            .collect::<Vec<_>>(),
         vec![a, c, b]
     );
     assert_eq!(
@@ -1042,7 +1090,10 @@ async fn ac2_10_le_tri_et_la_limite(pool: MySqlPool) {
     let t51 = ctx.transaction(bank, "-12.34", "2026-04-20").await;
     let rendues = ctx.regle(bank, t51).await;
     assert_eq!(rendues.len(), 50);
-    assert!(!rendues.contains(&ids[0]), "la plus lointaine (50 jours) est coupée");
+    assert!(
+        !rendues.contains(&ids[0]),
+        "la plus lointaine (50 jours) est coupée"
+    );
 }
 
 /// AC-2.11 — une transaction en EUR, ou de montant nul : liste vide
@@ -1052,7 +1103,9 @@ async fn ac2_11_eur_ou_nulle(pool: MySqlPool) {
     let ctx = monter(&pool).await;
     let bank = ctx.banque(IBAN_A).await;
     ctx.depense("2026-06-18", "250.00").await;
-    let eur = ctx.transaction_en(bank, "-250.00", "EUR", "2026-06-18").await;
+    let eur = ctx
+        .transaction_en(bank, "-250.00", "EUR", "2026-06-18")
+        .await;
     assert!(ctx.regle(bank, eur).await.is_empty());
     let nulle = ctx.transaction(bank, "0.00", "2026-06-18").await;
     assert!(ctx.regle(bank, nulle).await.is_empty());
@@ -1103,7 +1156,10 @@ async fn ac8_a_une_ecriture_saisie(pool: MySqlPool) {
         )
         .await;
     assert_refus(s, &b, 412, "BANK_ACCOUNT_HAS_PENDING_TRANSACTIONS");
-    assert_eq!(k2(&ctx, ctx.seeded.fiscal_year_id).await, ("attention".to_string(), 1));
+    assert_eq!(
+        k2(&ctx, ctx.seeded.fiscal_year_id).await,
+        ("attention".to_string(), 1)
+    );
 
     let (s, b) = ctx.candidates(t).await;
     assert_eq!(s, 200, "{b}");
@@ -1129,9 +1185,10 @@ async fn ac8_a_une_ecriture_saisie(pool: MySqlPool) {
     assert_eq!(ctx.ecritures().await, ecritures, "aucune écriture");
     let actions = common::audit_actions(&pool, "bank_transaction", t).await;
     assert_eq!(actions, vec!["reconciliation.entry_linked".to_string()]);
-    let details = common::audit_details(&pool, "bank_transaction", t, "reconciliation.entry_linked")
-        .await
-        .expect("trace");
+    let details =
+        common::audit_details(&pool, "bank_transaction", t, "reconciliation.entry_linked")
+            .await
+            .expect("trace");
     assert_eq!(
         details,
         json!({
@@ -1145,7 +1202,10 @@ async fn ac8_a_une_ecriture_saisie(pool: MySqlPool) {
     );
 
     // 8.2 — K2.
-    assert_eq!(k2(&ctx, ctx.seeded.fiscal_year_id).await, ("ok".to_string(), 0));
+    assert_eq!(
+        k2(&ctx, ctx.seeded.fiscal_year_id).await,
+        ("ok".to_string(), 0)
+    );
     // 8.4 — la contre-passation directe est refusée.
     let (s, b) = ctx.contre_passer(e).await;
     assert_refus(s, &b, 409, "MATCHED_BANK_TRANSACTION");
@@ -1228,7 +1288,9 @@ async fn ac8_c_un_reglement_client_par_compte_interne(pool: MySqlPool) {
     let ctx = monter(&pool).await;
     let bank = ctx.banque(IBAN_A).await;
     let f = ctx.facture("2026-06-01").await;
-    let (sid, e) = ctx.regler_interne(f, ctx.ledger, "108.10", "2026-06-20").await;
+    let (sid, e) = ctx
+        .regler_interne(f, ctx.ledger, "108.10", "2026-06-20")
+        .await;
     let t = ctx.transaction(bank, "108.10", "2026-06-20").await;
     assert_eq!(ctx.ids_candidates(t).await, vec![e]);
     let (s, b) = ctx.rattacher(t, e).await;
@@ -1273,9 +1335,10 @@ async fn ac4_une_transaction_rejetee_se_rattache(pool: MySqlPool) {
             .await
             .unwrap();
     assert_eq!(rejete, None);
-    let details = common::audit_details(&pool, "bank_transaction", t, "reconciliation.entry_linked")
-        .await
-        .unwrap();
+    let details =
+        common::audit_details(&pool, "bank_transaction", t, "reconciliation.entry_linked")
+            .await
+            .unwrap();
     assert_eq!(details["was_previously_rejected"], true);
 }
 
@@ -1350,7 +1413,9 @@ async fn ac6_les_refus(pool: MySqlPool) {
     let (s, b) = ctx.rattacher(t, autre).await;
     assert_non_rattachable(s, &b);
     for (montant, devise) in [("-250.00", "EUR"), ("0.00", "CHF")] {
-        let tx = ctx.transaction_en(bank, montant, devise, "2026-06-18").await;
+        let tx = ctx
+            .transaction_en(bank, montant, devise, "2026-06-18")
+            .await;
         let (s, b) = ctx.candidates(tx).await;
         assert_eq!(s, 200, "{b}");
         assert_eq!(b["candidates"], json!([]));
@@ -1434,9 +1499,9 @@ async fn ac4_compte_clos_pendant_l_attente_du_verrou(pool: MySqlPool) {
         .unwrap();
     assert_eq!(pris, Some(1));
     let client = ctx.app.client.clone();
-    let url = ctx
-        .app
-        .url(&format!("/api/v1/reconciliation/transactions/{t}/link-entry"));
+    let url = ctx.app.url(&format!(
+        "/api/v1/reconciliation/transactions/{t}/link-entry"
+    ));
     let jwt = ctx.jwt.clone();
     let requete = tokio::spawn(async move {
         let r = client
@@ -1672,7 +1737,10 @@ async fn ac5_le_motif_d_annulation(pool: MySqlPool) {
         .ecriture(
             "2026-01-05",
             "Sur un compte bientôt archivé",
-            &[(ctx.compte("3000"), "62.00", "0"), (ctx.ledger, "0", "62.00")],
+            &[
+                (ctx.compte("3000"), "62.00", "0"),
+                (ctx.ledger, "0", "62.00"),
+            ],
         )
         .await;
     ctx.clore_exercice_sql(ctx.seeded.fiscal_year_id).await;
@@ -1832,9 +1900,9 @@ async fn t_race_3_le_second_attend_le_verrou_de_l_ecriture(pool: MySqlPool) {
     assert_eq!(pris, Some(e));
 
     let client = ctx.app.client.clone();
-    let url = ctx
-        .app
-        .url(&format!("/api/v1/reconciliation/transactions/{t2}/link-entry"));
+    let url = ctx.app.url(&format!(
+        "/api/v1/reconciliation/transactions/{t2}/link-entry"
+    ));
     let jwt = ctx.jwt.clone();
     let requete = tokio::spawn(async move {
         let r = client
@@ -1923,11 +1991,16 @@ async fn ac22_la_lecture_ne_change_rien(pool: MySqlPool) {
         .await
         .unwrap()
     };
-    let (avant_t, avant_f, avant_audit) =
-        (lire_t().await, lire_f().await, common::audit_count(&pool).await);
+    let (avant_t, avant_f, avant_audit) = (
+        lire_t().await,
+        lire_f().await,
+        common::audit_count(&pool).await,
+    );
 
     let (s, b) = ctx
-        .get(&format!("/api/v1/reconciliation/proposals?bankAccountId={bank}"))
+        .get(&format!(
+            "/api/v1/reconciliation/proposals?bankAccountId={bank}"
+        ))
         .await;
     assert_eq!(s, 200, "{b}");
     let (s, b) = ctx.candidates(t).await;
@@ -1936,10 +2009,63 @@ async fn ac22_la_lecture_ne_change_rien(pool: MySqlPool) {
 
     assert_eq!(lire_t().await, avant_t, "transaction inchangée");
     assert_eq!(lire_f().await, avant_f, "facture inchangée");
-    assert_eq!(common::audit_count(&pool).await, avant_audit, "aucune trace");
+    assert_eq!(
+        common::audit_count(&pool).await,
+        avant_audit,
+        "aucune trace"
+    );
     assert_eq!(ctx.etat(t).await, ("pending".to_string(), None));
 
     let (s, b) = ctx.rattacher(t, e).await;
     assert_eq!(s, 200, "{b}");
     assert_eq!(ctx.etat(t).await, ("reconciled".to_string(), Some(e)));
+}
+
+// ============================================================
+// AC-5 — la mesure de coût (ignorée par défaut)
+// ============================================================
+
+/// AC-5, mesure — `GET …/entry-candidates` rend **50** candidates en moins
+/// d'une seconde, trois mesures, pour chacun des deux sens :
+/// - un **débit** : 25 écritures saisies (bras « écriture propre ») et 25
+///   règlements fournisseur payés depuis la fiche (bras le plus coûteux) ;
+/// - un **crédit** : 25 écritures saisies et 25 règlements client par compte
+///   interne sur le compte de la banque.
+///
+/// ⚠️ Les trois sortes ne peuvent pas être candidates d'**une même**
+/// transaction : un règlement fournisseur débite la banque, un règlement client
+/// la crédite — d'où deux montages. ⚠️ **Borne basse** : la base de test est
+/// en tmpfs, la mesure ne dit rien du NAS. Montage synthétique, base
+/// éphémère du serveur de dev. Ignorée par défaut (une mesure de durée n'est
+/// pas un garde de CI) : `cargo nextest run --run-ignored ignored-only -E
+/// 'test(mesure_cout)'`. Les durées s'impriment (`--no-capture`).
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+#[ignore = "mesure de coût, AC-5 de la fiche v017-3a — à lancer à la main"]
+async fn mesure_cout_50_candidates(pool: MySqlPool) {
+    let ctx = monter(&pool).await;
+    let bank = ctx.banque(IBAN_A).await;
+    for k in 0..25u64 {
+        let jour = (d("2026-03-01") + chrono::Days::new(k)).to_string();
+        ctx.depense(&jour, "100.00").await;
+        let fi = ctx.facture_fournisseur(&format!("FF-{k}"), "100.00").await;
+        ctx.payer_fournisseur(fi, bank, &jour).await;
+        ctx.recette(&jour, "108.10").await;
+        let f = ctx.facture("2026-02-01").await;
+        ctx.regler_interne(f, ctx.ledger, "108.10", &jour).await;
+    }
+    for (sens, montant) in [("débit", "-100.00"), ("crédit", "108.10")] {
+        let t = ctx.transaction(bank, montant, "2026-04-15").await;
+        for essai in 1..=3 {
+            let debut = std::time::Instant::now();
+            let (s, b) = ctx.candidates(t).await;
+            let duree = debut.elapsed();
+            assert_eq!(s, 200, "{b}");
+            assert_eq!(b["candidates"].as_array().unwrap().len(), 50, "{sens}");
+            println!("MESURE {sens} essai {essai} : {} ms", duree.as_millis());
+            assert!(
+                duree < std::time::Duration::from_secs(1),
+                "{sens} : {duree:?}"
+            );
+        }
+    }
 }
