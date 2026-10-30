@@ -367,7 +367,9 @@ première rédaction.*
   - **`isValidAmount`** à options (`maxDecimals`, `maxIntegerDigits`, `allowNegative`, `allowEmpty`), défauts du journal
     inchangés ;
   - **les rangs** : le formulaire retire les lignes vides et traduit tout rang du serveur en ligne de l'écran ;
-  - **l'E2E** sur un compte bancaire propre à l'exécution (IBAN synthétique unique), sans relevé antérieur ;
+  - **l'E2E** sur un compte bancaire propre à l'exécution (IBAN synthétique unique), sans relevé antérieur *(annoté à la
+    validation P5 de la 2b, P4 : IBAN synthétique **fixe**, la base étant tronquée par `seedTestState('with-company')`,
+    qui ne crée aucun compte bancaire — cf. 2b, AC-26)* ;
   - **la release** en deux temps : macros, URL G19 et PDF restent à 0.16.1 jusqu'au tag final (décision de
     l'orchestrateur, comme pour la `0.16.1-rc1`) ; `prepare-release.sh` au tag final seulement ;
   - **pas de découpage** (décision de l'orchestrateur), dérogation écrite *(annoté à la validation P3, 2a R6 : levé par

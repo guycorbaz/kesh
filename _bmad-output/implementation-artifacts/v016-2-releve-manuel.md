@@ -5,7 +5,7 @@ Status: split
 *Fiche rédigée le 2026-10-30, en autonomie (Opus 5.5), worktree `/home/gcorbaz/devel/kesh-0162`, branche
 `story/v016-2-releve-manuel` partie de `c5101b07` (tête de `story/v016-1-mcp-sorties`, candidate `v0.16.1-rc1`, PR #815
 brouillon) ; la story se fusionne sur cette branche de release. Registre : `v016-2-choix-autonomes.md` (C-v016-2-1 à
-C-v016-2-18). **Amendée le 2026-10-30 : la release devient la 0.17.0** (décision du Project Lead, C-v016-2-15) — la
+C-v016-2-19 ; borne portée à la validation P5 de la 2b). **Amendée le 2026-10-30 : la release devient la 0.17.0** (décision du Project Lead, C-v016-2-15) — la
 clé et le nom de la story restent `v016-2-releve-manuel`. **Contrainte du Project Lead du même jour (C-v016-2-16)** :
 les données de l'installation `v0.16.1-rc1` du NAS se gardent — montée sans perte, sauvegarde 0.16.x importable, rien
 de jetable sur la base de Guy (AC-2-bis, AC-3-bis, AC-29, § *Ce que la release doit contenir*). **Remédiée après la
@@ -346,6 +346,11 @@ n'existera pas.*
     copies de l'extracteur, ouverte pendant la validation P3 — ne pas la rouvrir ; validation P4, 2a P7).
 11. Issue à ouvrir (demandée par la fiche) : **« L'import d'un fichier ne signale pas une période déjà saisie à la main »**
    — enhancement ; C-v016-2-6.
+12. Issue à ouvrir (validation P5 de la 2b, P7 — on trace toujours) : **« Clé i18n morte :
+   `homepage-bank-no-transactions` »** — dette, P4 ; constat : la clé (« Aucune transaction importée ») figure aux quatre
+   catalogues (`fr-CH:166`, et `:166` des trois autres) et n'est employée par aucun site (`grep -rn "no-transactions"
+   frontend/src crates/*/src` hors `.ftl` : rien) ; à supprimer des quatre catalogues, ou à récrire si elle est
+   réemployée (elle dirait alors « importée » d'un relevé saisi).
 
 ## Dev Notes (communes aux deux sous-fiches)
 

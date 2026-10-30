@@ -107,13 +107,27 @@ l'entrée *Ajouté* du CHANGELOG et la ligne *Fonctionnalités* du README.
   à la **2b**, `bank-accounts-close-dialog-body` (`fr-CH:1473`, `de-CH`/`it-CH`/`en-CH:1409`) et
   `fiscal-years-checks-k2-help` (`fr-CH:997`, `de-CH`/`it-CH`/`en-CH:946`) avec son repli
   `frontend/src/lib/features/fiscal-years/closing-checks-labels.ts:48` — pendant d'écran de la phrase K2 du manuel
-  (`user-manual.tex:802`) — se récrivent pour valoir aussi d'un relevé saisi, comme le manuel (AC-27) ; les deux
+  (`user-manual.tex:802`) —, **et** (validation P5, P1) le repli de `bank-accounts-close-dialog-body`,
+  `frontend/src/routes/(app)/bank-accounts/+page.svelte:838-839` (identique aujourd'hui à `fr-CH:1473`), se récrivent
+  **ensemble, au même commit que le catalogue**. Mécanique des gardes, lue dans
+  `frontend/src/lib/shared/i18n-repli-divergent-actif.test.ts` : son premier test ne retient que les clés présentes au
+  catalogue `fr-CH` qui portent **au moins deux** replis distincts (`parTexte.size > 1`), hors `TOLEREES` (l'allowlist,
+  dont chaque entrée doit rester divergente) ; une clé à **un seul** site d'appel, comme celle-ci, ne le fait donc pas
+  rougir si seul le catalogue change — l'écran afficherait l'ancien repli tant que le catalogue n'est pas chargé. C'est
+  ce que garde G13 (`REPLIS_A_SITE_UNIQUE`, même fichier : repli égal à la valeur `fr-CH`) ; les deux clés récrites
+  ici y sont **ajoutées** si leur site d'appel est lu par `findCallSites` (sinon, l'écrire au Dev Agent Record). Avant de
+  clore la liste, greper la valeur de repli dans `frontend/src` ; elles se récrivent pour valoir aussi d'un relevé saisi, comme le manuel (AC-27) ; les deux
   **messages serveur** `bank-accounts-errors-has-transactions` et `bank-accounts-errors-has-pending-transactions`, dont
   le repli vit dans `errors.rs` (`:2714-2721`, `:2776-2780`), sont à la **2a** (son AC-11 : repli, quatre catalogues,
   `bank_accounts_e2e.rs:2485`) ; la 2b n'en garde que le Vitest qui recopie le texte
-  (`frontend/src/routes/(app)/bank-accounts/bank-accounts-page.test.ts:502`), à suivre. `homepage-bank-no-transactions`
+  (`frontend/src/routes/(app)/bank-accounts/bank-accounts-page.test.ts:502`) — *précisé à la validation P5, P3 :* ce
+  Vitest recopie le texte de `has-pending-transactions` dans une valeur de mock (`mockRejectedValue`) et ne dépend pas
+  du catalogue ; il ne se met à jour que si la 2a récrit ce message, pour rester un exemple vrai. La formulation cible
+  des deux messages serveur revient à la 2a (constat P5 transmis : seul `has-pending-transactions` dit « importées »,
+  `fr-CH:1439` ; `has-transactions`, `:1433`, ne le dit pas). `homepage-bank-no-transactions`
   n'est employée nulle part (clé morte, `grep -rn "no-transactions" frontend/src crates/*/src` hors `.ftl` : rien) :
-  elle n'est **pas** récrite (LOW non pris de la validation P4). Le refus « relevé identique » (`BANK_IMPORT_DUPLICATE_FILE`) porte le message serveur « Ce fichier a
+  elle n'est **pas** récrite (LOW non pris de la validation P4) ; *(validation P5, P7 :)* elle est **tracée** — issue à
+  ouvrir, parente, liste C de la release, point 12. Le refus « relevé identique » (`BANK_IMPORT_DUPLICATE_FILE`) porte le message serveur « Ce fichier a
   déjà été importé » (`errors.rs:2354-2358`) : l'écran de saisie affiche sa propre clé `bank-import-manual-*` et ne
   montre pas ce message.
 - **AC-24** — i18n de l'écran : toutes les clés nouvelles du frontend (`bank-import-manual-*`, `bank-import-detail-*`,
@@ -133,8 +147,16 @@ l'entrée *Ajouté* du CHANGELOG et la ligne *Fonctionnalités* du README.
   lue par un **test Rust** — *forme imposée à la validation P4, P2 :* fichier
   `frontend/src/lib/features/bank-import/manual-statement-reason-label.ts`, **un seul** objet
   `export const MANUAL_STATEMENT_REASON_LABELS = {` … `};`, une entrée par ligne, clé littérale en début de ligne
-  (`^\s*'?([a-z_]+)'?\s*:`), sans commentaire dans le bloc ; le test panique si le bloc est introuvable ou vide — (`crates/kesh-api/tests/`, patron `lire` de `textes_coherents.rs:46-48`), qui extrait ses
-  clés et les égale, dans les deux sens, à `ManualStatementReason::ALL` mappé par `code()` (2a, AC-4) ; le Vitest de
+  (`^\s*'?([a-z_]+)'?\s*:`), sans commentaire dans le bloc — (`crates/kesh-api/tests/`, patron `lire` de
+  `textes_coherents.rs:46-48`), qui extrait ses clés et les égale, dans les deux sens, à `ManualStatementReason::ALL`
+  mappé par `code()` (2a, AC-4) ; le test panique si le bloc est introuvable ou vide *(phrase remise en ordre à la
+  validation P5, P6)*. **Forme de la valeur** (P6) : le tuple `[suffixe, repli]` du patron `CSV_LINE_ERROR_LABELS`
+  (suffixe en tirets, famille `bank-import-manual-reason-` de `MOTIFS_DYNAMIQUES`) ; une entrée par ligne, **repli
+  compris** — aucune ligne de continuation qui commencerait par un mot suivi de `:`. **Garantie de la 2a** (validation
+  P5, P2) : le test croisé s'appuie sur la forme non circulaire que la 2a prescrit à son développeur pour lier `ALL` à
+  l'énumération (`index()` par `match` exhaustif sans joker, `COUNT` défini à côté, `ALL[i].index() == i` ; choix
+  C-v016-2-20, que le développeur de la 2a écrit) — sans elle, une variante absente de `ALL` serait absente aussi de
+  la table et du test croisé ; le Vitest de
   couverture de la table reste, mais ne fait plus foi seul.
 - **AC-25** — Recette visuelle (`CLAUDE.md` § *Recette visuelle*, thème clair) : captures, sur une base de
   démonstration, de `/bank-import` (le lien), du formulaire vide, d'un relevé de trois lignes **déséquilibré** (écart
@@ -279,7 +301,7 @@ inchangées. Ne déclarer que ce qui a tourné, chiffres recomptés.
 | `frontend` | `src/lib/features/bank-import/{ManualStatementForm.svelte, manual-statement.ts, *.test.ts, bank-import.api.ts, bank-import.types.ts, BankImportList.svelte, DeleteBankImportAction.svelte}`, la table des `reason`, `src/lib/features/journal-entries/balance.ts`, `src/routes/(app)/bank-import/+page.svelte`, `src/routes/(app)/bank-import/manual/+page.svelte` (+ `+page.ts`, garde), `src/routes/(app)/bank-import/[id]/+page.svelte`, `src/lib/shared/i18n-keys.test.ts`, `src/lib/shared/i18n-libelle-en-dur.test.ts`, `tests/e2e/bank-manual-statement.spec.ts`, `tests/e2e/helpers/api-fixtures.ts` (l'aide `createUser` extraite), `tests/e2e/audit-log.spec.ts` (`createUser` extraite) |
 | `kesh-api` (tests) | le test croisé des `reason` (AC-24) |
 | `kesh-i18n` | `locales/{fr,de,it,en}-CH/messages.ftl` (clés de l'écran ; `bank-accounts-close-dialog-body` et `fiscal-years-checks-k2-help` récrites — numéros par catalogue à l'AC-23) |
-| `frontend` (autres) | `src/lib/features/fiscal-years/closing-checks-labels.ts` (`:48`), `src/routes/(app)/bank-accounts/bank-accounts-page.test.ts` (`:502`) |
+| `frontend` (autres) | `src/lib/features/fiscal-years/closing-checks-labels.ts` (`:48`), `src/routes/(app)/bank-accounts/+page.svelte` (`:838-839`, repli), `src/routes/(app)/bank-accounts/bank-accounts-page.test.ts` (`:502`), `src/lib/shared/i18n-repli-divergent-actif.test.ts` (`REPLIS_A_SITE_UNIQUE`) |
 | docs | `docs/manual/fr/user-manual.tex` (+ PDF), `docs/manual/fr/admin-manual.tex:82` (+ PDF), `CHANGELOG.md` (*Ajouté*), `README.md:41` |
 
 ## À recontrôler à l'étape 0 du développement
@@ -293,7 +315,8 @@ inchangées. Ne déclarer que ce qui a tourné, chiffres recomptés.
   `reconciliation-amount-due.spec.ts:80-81` ; `kesh-core/src/bank_imports.rs:365-377` ;
   `kesh-import/src/camt053/mod.rs:405`, `:412`, `:426-428`, `:629-630` ; `errors.rs:2354-2358` ;
   `i18n-keys.test.ts:773`, `:882`, `:960` ; `i18n-libelle-en-dur.test.ts:250` ; `messages.ftl` (`fr-CH:997`, `:1473` ;
-  `de-CH`/`it-CH`/`en-CH:946`, `:1409`) ; `closing-checks-labels.ts:48` ; `bank-accounts-page.test.ts:502` ;
+  `de-CH`/`it-CH`/`en-CH:946`, `:1409`) ; `closing-checks-labels.ts:48` ; `bank-accounts-page.test.ts:502` ; `bank-accounts/+page.svelte:838-839` et
+  `i18n-repli-divergent-actif.test.ts` (`TOLEREES`, `REPLIS_A_SITE_UNIQUE`, ajoutés à la validation P5) ;
   `user-manual.tex:1971-1973`, `:2277` ; et (validation P4, P7) `routes/bank_accounts.rs:352`, `kesh-core/src/types/iban.rs`,
   `textes_coherents.rs:46-48`, `helpers/test-state.ts` (base tronquée).
 
@@ -338,3 +361,18 @@ inchangées. Ne déclarer que ce qui a tourné, chiffres recomptés.
     caduc), P9 (parente : 2a), P10 (registre C-v016-2-19 ; borne -19).
   - **LOW non pris** : `homepage-bank-no-transactions`, clé morte, non récrite et sans issue (décision de l'orchestrateur).
   Prochaine étape : validation P5 ciblée (`v016-2b-validate-prompt-p5.md`, Sonnet).
+- 2026-10-30 — **Validation P5** (ciblée, Sonnet ; rapport `kesh-gate-logs/v0162b-validate-p5.md`) : **0 CRITICAL, 0 HIGH,
+  2 MEDIUM, 5 LOW**. Prémisses vérifiées au code (`bank-accounts/+page.svelte:837-840` ; `i18n-repli-divergent-actif.test.ts`
+  : en-tête, `TOLEREES` `:51`, premier test `:147-151`, G13 `REPLIS_A_SITE_UNIQUE`). *Prémisse de P1 corrigée en
+  partie* : récrire le catalogue seul ne fait **pas** rougir la garde des divergences actives (elle ne retient que les clés
+  à deux replis distincts et plus) — la clé à site unique relève de G13 ; le remède demandé tient. Traitement :
+  - **MEDIUM** — P1 : repli `bank-accounts/+page.svelte:838-839` à l'AC-23, aux fichiers touchés et à « À recontrôler »,
+    récrit au même commit que le catalogue, clé ajoutée à `REPLIS_A_SITE_UNIQUE` ; P2 : décision de l'orchestrateur — la
+    forme non circulaire est prescrite au développeur de la 2a (C-v016-2-20) ; la 2b écrit seulement que son test croisé
+    s'appuie sur cette garantie (AC-24).
+  - **LOW appliqués** — P3 (côté 2b : le Vitest `:502` n'est qu'un mock ; la formulation des messages serveur revient à la
+    2a, constat transmis), P4 (registre `:370` annoté), P5 (borne de la parente à -19), P6 (phrase de l'AC-24 remise en
+    ordre, forme de la valeur), P7 (`homepage-bank-no-transactions` tracée : parente, liste C, point 12 — l'entrée P4 qui la
+    disait « sans issue » n'est pas réécrite).
+  - **LOW non pris** : aucun.
+  Prochaine étape : validation P6 ciblée (`v016-2b-validate-prompt-p6.md`, Opus).
