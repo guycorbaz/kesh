@@ -55,6 +55,9 @@ silencieuse ; un appariement propose, il ne crée jamais).
     compte interne, que #671 nomme.
 - **Réversible** : oui avant publication ; ensuite, les routes sont un contrat.
 
+- *Amendement du 2026-10-30 (validation P2 de la 3a, R8)* : la citation `supplier_invoices.rs:761-1018` du contexte
+  se lit `:761-1013` (la fonction s'arrête là ; `:1018` est le titre de la section suivante).
+
 ### C-v017-3-3 — v017-3a : montant **exact**, sans tolérance
 
 - **Contexte** : la 29-8 admet un écart de 0 à 5 centimes (client qui a payé un peu trop, la fiche refusant le
@@ -116,6 +119,9 @@ silencieuse ; un appariement propose, il ne crée jamais).
   - (c) un refus serveur à l'acceptation : même objection, et une règle d'écran déguisée en garde comptable.
 - **Réversible** : oui.
 
+- *Amendement du 2026-10-30 (validation P2 de la 3a, C-v017-3-25)* : ce choix **passe à la v017-3c**, hors de la release
+  0.17.0 ; la v017-3a ne porte plus d'avertissement sur les propositions.
+
 ### C-v017-3-8 — v017-3a : un seul dialogue, deux sections ; le bouton change de nom
 
 - **Contexte** : `LinkSettlementModal.svelte` (29-8) n'est offert que sur un crédit en CHF
@@ -161,6 +167,10 @@ silencieuse ; un appariement propose, il ne crée jamais).
 - **Écartées** : une table de liens N:1 dans la 0.17.0 (migration, schéma, annulation, sauvegarde : une story à elle
   seule).
 - **Réversible** : oui.
+
+- *Amendement du 2026-10-30 (validation P2 de la 3a, F7)* : chaque reste a son issue — (1) et le second côté d'un virement :
+  #823 ; (2) et (3) : une issue à ouvrir (texte prêt dans la fiche 3a, § *Issues*) ; (4) : #401. La phrase « aucune autre »
+  de la remédiation P1 ne vaut plus.
 
 ### C-v017-3-11 — v017-3a : les données existantes ne sont pas touchées
 
@@ -318,6 +328,14 @@ silencieuse ; un appariement propose, il ne crée jamais).
   prédicteur à part — seconde règle, qui dériverait.
 - **Réversible** : oui.
 
+- *Amendement du 2026-10-30 (validation P2 de la 3a, R2, F3, F4)* : « ne pourra pas être annulé » était faux — chaque
+  motif se lève (réouverture d'exercice, réactivation du compte, exercice du jour créé, annulation du solde), et une
+  candidate sans motif aujourd'hui peut en recevoir un demain. Le motif devient une **vérité datée** : « Tant que la
+  raison suivante subsiste, ce rattachement ne pourra pas être annulé : » suivi du texte existant
+  (`reconciliationCancelMessage`, qui dit le moyen de lever) ; pour une candidate sans motif, « Aujourd'hui, annuler …
+  contre-passerait cette écriture …, tant que son exercice reste ouvert ». Codes de fil (`SettlementCancelBlocker::code()`),
+  `cancelBlockedLabel` ajouté. Les angles morts du prédicteur et les motifs de propriété vont à L9.
+
 ### C-v017-3-22 — v017-3a : l'autre côté d'un virement entre comptes propres garde un avertissement
 
 - **Contexte** (validation P1, R7) : après rattachement du côté A d'une écriture `D banque B / C banque A`, la condition 4
@@ -330,6 +348,11 @@ silencieuse ; un appariement propose, il ne crée jamais).
   « une écriture, une transaction » sur lequel reposent l'annulation et la tuile).
 - **Réversible** : oui.
 
+- *Amendement du 2026-10-30 (validation P2 de la 3a, C-v017-3-25)* : ce choix **passe à la v017-3c**, avec un
+  correctif (R1 = F6) : le second mode ne compte que les écritures rapprochées d'un compte bancaire dont le compte du
+  grand livre **diffère** de celui de `t` ; sans quoi deux comptes bancaires partageant un compte du grand livre feraient
+  conseiller de rejeter une transaction non comptabilisée.
+
 ### C-v017-3-23 — v017-3a : le coût se mesure sur un historique volumineux
 
 - **Contexte** (validation P1, R5) : la somme par écriture parcourt tout l'historique du compte à chaque appel, jusqu'à
@@ -339,6 +362,8 @@ silencieuse ; un appariement propose, il ne crée jamais).
   page ») mais non implémenté ici.
 - **Écartées** : implémenter d'emblée la lecture par page (seconde forme de la règle, avant toute mesure).
 - **Réversible** : oui.
+
+- *Amendement du 2026-10-30 (validation P2 de la 3a, C-v017-3-25)* : ce choix **passe à la v017-3c**, avec la mesure.
 
 ### C-v017-3-24 — v017-3b : la matrice de conduite est retirée ; un avertissement statique, le manuel pour les voies
 
@@ -355,3 +380,20 @@ silencieuse ; un appariement propose, il ne crée jamais).
   l'écran, donc aucune mutation, aucun Vitest, aucune capture par état.
 - **Écartées** : corriger la matrice une passe de plus (chaque correction a fait naître la suivante).
 - **Réversible** : oui (une matrice pourra revenir dans une story dédiée si l'usage le demande).
+
+### C-v017-3-25 — v017-3a : découpage — l'avertissement des propositions part en v017-3c, hors de la 0.17.0
+
+- **Contexte** (validation P2 de la 3a) : la sévérité ne baisse pas (P1 : 1 HIGH, 12 MEDIUM ; P2 : 12 MEDIUM), et une part
+  des défauts naît de la remédiation P1 : `cancelBlockedBy` et ses codes (F3, F4, R2, R9), `matchedElsewhereCount` (F5,
+  F6, R1). C'est le recyclage que vise la règle de découpage ; déclaré à Guy par l'orchestrateur.
+- **Retenu** (décision de l'orchestrateur, 2026-10-30) : la **v017-3a** garde le cœur de #671 et reste dans la release
+  0.17.0 — routes `entry-candidates` et `link-entry`, section « écritures » du dialogue, règle de candidature, verrous et
+  courses, registres, audit, manuel, `api-external.md` ; la mention d'irréversibilité y devient une vérité datée
+  (C-v017-3-21 amendé). La **v017-3c** (`v017-3c-avertissements-propositions.md`, `backlog`, hors de la 0.17.0) reçoit
+  `alreadyBooked` et ses deux modes, l'avertissement, les confirmations, la mesure de coût (C-v017-3-7, 22, 23) et les
+  findings qui s'y rattachent (R1, F5, F6, F14, F16 en partie). Une issue est à ouvrir pour elle (corps prêt dans sa
+  fiche) ; le commentaire posé sur #823 (« l'autre côté garde un avertissement ») se corrige (texte prêt dans la fiche
+  3a, § *Issues*).
+- **Écartées** : remédier une passe de plus (chaque remédiation de ces deux formes a fait naître la suivante) ; retirer
+  aussi `cancelBlockedBy` (le rattachement deviendrait silencieusement irréversible, ce que l'orchestrateur exclut).
+- **Réversible** : oui (la 3c se planifie à part).
