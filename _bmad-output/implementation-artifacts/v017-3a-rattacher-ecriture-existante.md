@@ -1,6 +1,6 @@
 # Story v017-3a : une transaction déjà comptabilisée se rattache à son écriture
 
-Status: review
+Status: done
 
 *Fiche rédigée le 2026-10-30, en autonomie (Opus 5.5), worktree `/home/gcorbaz/devel/kesh-0173`, branche
 `story/v017-3-rapprochement-attente` partie de `c5101b07` (tête de la candidate `v0.16.1-rc1`) ; la story se fusionne
@@ -1282,3 +1282,8 @@ Modifiés : `crates/kesh-db/src/repositories/reconciliation_link.rs`, `reconcili
   captures 01 à 13. Choix C-v017-3-40 à 45. Écarts déclarés au Dev Agent Record (dont une édition de test par script et
   un compte rendu réécrit après une restauration trop large de la campagne de mutations). Prochaine étape : revue de
   code P1 (`v017-3a-review-prompt-p1.md`, Sonnet, lentilles B, E, A).
+- 2026-10-30 — **Revue de code P1** (Sonnet, trois lentilles B, E, A, prompt `v017-3a-review-prompt-p1.md`, rapports
+  `kesh-gate-logs/v017-3a-review-p1-{B,E,A}.md`) : B 0/0/0/2, E 0/0/0/7, A 0/0/0/6 — **0 CRITICAL, 0 HIGH, 0 MEDIUM, 15
+  LOW**. Boucle close en **une passe** (aucun finding au-dessus de LOW). Les LOW non corrigés sont tracés en **#839** ;
+  le cycle de verrous de l'annulation entre deux comptes bancaires partageant un compte du grand livre (défaut voisin du
+  Dev Agent Record), en **#838**. Aucun code touché après `d054bb14`. Story `done`.
