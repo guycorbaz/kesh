@@ -324,6 +324,16 @@ inchangées. Ne déclarer que ce qui a tourné, chiffres recomptés.
 
 ## À recontrôler à l'étape 0 du développement
 
+- ⛔ **Renvoyé de la validation P8 (clôture au plafond)** — rapport `/home/gcorbaz/devel/kesh-gate-logs/v0162b-validate-p8.md`,
+  P1 (MEDIUM) et P2 à P4 (LOW), **à appliquer** et à déclarer au Change Log, ligne lue citée : les deux en-têtes
+  `bank-import-labels-list-col-imported-at` et `bank-import-labels-list-col-filename` se récrivent dans les **quatre**
+  catalogues (`fr-CH:1215-1216`, `de-CH`/`it-CH`/`en-CH:1154-1155`), au même commit que leur repli
+  (`BankImportList.svelte:24-25`) ; la ligne `kesh-i18n` de la table « Fichiers touchés » et la liste « Les citations des
+  AC » ci-dessous sont complétées de ces deux clés et de ces numéros ; le Vitest V13
+  (`frontend/src/lib/features/bank-import/BankImportUpload.test.ts:735`, `FR_TEXTS`, et `:845`) est récrit avec les
+  nouveaux textes ; à l'AC-24, « ici » se lit « ici, outre les deux clés de l'AC-23 » (quatre clés existantes récrites
+  en tout) ; au point bloquant, « noms compris » ne fait pas arrêter sur un simple renommage — ce qui compte, ce sont
+  les éléments (index sans joker, `COUNT`, `ALL`, les deux assertions, le test de comptage par `include_str!`).
 - ⛔ **Point bloquant** (validation P6, P1 ; *récrit à la validation P7, P1, sur C-v016-2-20 tel que le registre le porte,
   `v016-2-choix-autonomes.md:434-450`*) : le développeur de la 2b vérifie, **dans le code commité de la 2a** (non dans la
   fiche), pour `ManualStatementReason` au moins (`crates/kesh-core/src/bank_imports/manual.rs` et ses tests) : `index()`
@@ -431,3 +441,12 @@ inchangées. Ne déclarer que ce qui a tourné, chiffres recomptés.
     repli littéral : Dev Agent Record avec sa garde, ou issue).
   - **LOW non pris** : aucun.
   Prochaine étape : validation P8 ciblée (`v016-2b-validate-prompt-p8.md`, Opus), dernière passe permise.
+- 2026-10-30 — **Validation P8 : clôture au plafond** (ciblée, Opus ; rapport `kesh-gate-logs/v0162b-validate-p8.md`) :
+  **0 CRITICAL, 0 HIGH, 1 MEDIUM, 3 LOW**. Huitième passe : la validation se clôt au plafond, selon la règle du
+  `CLAUDE.md` (décision de Guy du 2026-10-24) — **aucune remédiation dans la fiche** ; **MEDIUM P8-P1 et LOW P8-P2 à P4
+  renvoyés à l'étape 0 du développement**, en tête de « À recontrôler », à déclarer au Change Log ligne lue citée.
+  Trend des huit passes de la story (CRITICAL/HIGH/MEDIUM/LOW) : P1 Sonnet, fiche unique, 0/0/12/17 → P2 Opus, fiche
+  unique, 0/0/10/17 → (découpage) P3 Sonnet, 2b, 0/0/1/21 → P4 Opus ciblée, 0/0/1/9 → P5 Sonnet ciblée, 0/0/2/5 → P6 Opus
+  ciblée, 0/0/2/4 → P7 Sonnet ciblée, 0/0/2/3 → P8 Opus ciblée, 0/0/1/3. Modèles : rotation Sonnet ↔ Opus, contexte frais
+  à chaque passe ; aucune passe Haiku. Statut : `ready-for-dev` ; le point bloquant de C-v016-2-20 demeure — le
+  développement de la 2b attend le commit du code de la 2a.
