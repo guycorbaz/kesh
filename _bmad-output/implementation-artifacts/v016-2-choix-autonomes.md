@@ -128,6 +128,14 @@ figurent aussi parmi les questions à soumettre à Guy avant la validation (fich
 
 ### C-v016-2-6 — Doublons et chevauchements : signaler, ne jamais fusionner
 
+*Annoté le 2026-10-30, validation P2 (R4 = F1) : l'annotation P1 ci-dessous est **fausse pour le CAMT**. La clé d'une
+ligne prend le **premier identifiant non vide** parmi référence, identifiant de bout en bout et identifiant de
+transaction (`kesh-core/src/bank_imports.rs:365-377`) ; une ligne CAMT en porte presque toujours un
+(`kesh-import/src/camt053/mod.rs:412`, `:629-630`). Une ligne saisie sans référence y entre donc presque toujours deux
+fois ; le cas « absente des deux côtés » ne vaut que pour un CSV sans identifiant. La première rédaction ci-dessous
+(« une ligne saisie sans référence n'a pas la même empreinte que la même ligne du fichier, qui en porte une ») disait
+juste.*
+
 *Annoté le 2026-10-30, validation P1 (R9) : « saisi d'abord, importé ensuite » compte **trois** cas, non un — référence
 égale des deux côtés ou absente des deux côtés : la clé est la même, le doublon est reconnu et **ignoré par défaut** à
 l'import ; références différentes ou une seule présente : non reconnu, le mouvement entre deux fois. La fiche (AC-27,
@@ -257,6 +265,10 @@ l'import ; références différentes ou une seule présente : non reconnu, le mo
 
 ### C-v016-2-13 — MCP : rien à changer, et la prémisse se corrige
 
+*Annoté le 2026-10-30, validation P2 (R9) : « aucun outil ne lit `bank_transactions` » est faux dans sa forme absolue —
+`postes_ouverts` la lit indirectement (`document_owners`, `journal_entries.rs:2276-2279`), `id` et `matched_entry_id`
+seulement, jamais l'origine. La conclusion tient.*
+
 - **Contexte** : le mandat suppose que les outils MCP lisent les transactions bancaires. Au code, **aucun** outil ne lit
   `bank_transactions` ni `bank_imports` (`grep -rln "bank_transactions\|bank_imports" crates/kesh-api/src/mcp/` : rien ;
   les quinze outils de `mcp/outils/` lisent livres, factures, contacts, pièces).
@@ -327,7 +339,8 @@ première rédaction.*
   - **la sauvegarde d'avant mise à jour** — base, `.keshbackup`, dossier des documents — est écrite au § *Passer à la
     0.17.0* (AC-29) et dans les notes de `v0.17.0-rc1` : le retour à la rc1 ne passe que par elle ;
   - **rien de jetable sur la base du NAS** : recette Claude Code, écriture de démonstration `4321.09`, clés de recette,
-    captures se jouent sur une installation jetable (§ *Ce que la release doit contenir*, point 5-bis). La fiche ne
+    captures se jouent sur une installation jetable (§ *Ce que la release doit contenir*, point 5-bis — *point 5 du bloc A
+    depuis la remédiation P1*). La fiche ne
     prescrivait aucune écriture sur la base du NAS ; la règle est désormais écrite.
 - **Écartées** : se fier au test `upgrade_path_preserves_data` existant (il ne pose pas de lignes bancaires dans l'état
   0.16.0 ni ne relit par le code) ; prouver la restauration croisée par la seule égalité des inventaires de tables (ne
@@ -341,7 +354,8 @@ première rédaction.*
 - **Retenu** :
   - **la piste** : `insert_canonical_audit_log` reçoit `ImportAuditAction` (défini dans `routes/bank_imports.rs`, deux
     littéraux dans son `match`) ; une entrée `SITES_INDIRECTS` pour ce fichier avec les deux codes — la seule forme qui
-    passe les deux sens de `audit_label_registry.rs` (`:534-545`) ;
+    passe les deux sens de `audit_label_registry.rs` (`:534-545`) *(annoté à la validation P2, R1 : **avec** l'exclusion
+    de `"upload.xml"` à `PAS_DES_CODES`, que le tamis du sens 2 retient dès que le fichier est inventorié)* ;
   - **les longueurs** en caractères (`chars().count()`), non en octets : `VARCHAR(255)` compte des caractères en
     MariaDB ; précédent `routes/api_keys.rs:130` ;
   - **l'empreinte canonique** encodée champ par champ, longueur sur quatre octets gros-boutiens puis octets UTF-8 ;
@@ -361,3 +375,25 @@ première rédaction.*
   le manuel de la candidate serait titré juste, mais les URL viseraient un tag `v0.17.0` encore inexistant — les deux
   options laissent, pendant la candidate, des URL vers un tag qui n'existe pas, ce que les notes de la candidate disent).
 - **Réversible** : oui, avant le développement.
+
+### C-v016-2-18 — Le découpage en v016-2a et v016-2b (validation P2, 2026-10-30)
+
+- **Contexte** : la validation P2 (R6 = F4) relève que la § *Dérogation règle de splitting* invoquait des motifs que la
+  règle n'admet pas : au-delà de cinq modules, le `CLAUDE.md` ne garde la story unique que pour un cycle de dépendance
+  Cargo ou des fusions intermédiaires impossibles à tester en isolation — et la ligne de repli de la fiche montrait un
+  découpage sans cycle, dont la première moitié se teste seule en HTTP.
+- **Retenu** (décision de l'orchestrateur ; Guy informé — s'il préfère une story unique, un amendement suivra) :
+  - **`v016-2a-releve-manuel-backend`** : `kesh-core`, `kesh-db` (migration, bump 0.17.0 des crates par P2-bis, montée
+    sans perte AC-2-bis, sauvegarde 0.16.x AC-3-bis), `kesh-api` (routes, erreurs, audit, registres),
+    `docs/api-external.md`, tests Rust, CHANGELOG et manuel d'administration liés à la migration et à la version
+    (AC-1 à AC-18, AC-28, AC-29 hors son point 2) ;
+  - **`v016-2b-releve-manuel-ecran`** : frontend, clés de l'écran, manuel utilisateur, E2E, captures, entrée *Ajouté* du
+    CHANGELOG, README *Fonctionnalités* (AC-19 à AC-27, AC-29-bis — l'ancien point 2 de l'AC-29 —, AC-30) ; elle dépend
+    de la 2a ;
+  - même worktree, même branche, la 2a d'abord ; la fiche d'origine devient la **parente** (`split`), qui garde le
+    contexte, les décisions, le contrat de l'API, les limites, la liste de la release et les questions Q1 à Q8 ; chaque
+    AC dans une seule sous-fiche, sous son numéro d'origine (table de correspondance de la parente) ; ce registre reste
+    commun.
+- **Écartées** : la story unique avec dérogation (hors de l'exception de la règle) ; trois sous-fiches (la 2a ne se
+  scinde pas sans séparer la migration de la route qui écrit la valeur nouvelle).
+- **Réversible** : oui, avant le développement de la 2a.
