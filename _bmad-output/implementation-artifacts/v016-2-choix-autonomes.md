@@ -298,3 +298,28 @@ figurent aussi parmi les questions à soumettre à Guy avant la validation (fich
   alors les sauvegardes de la 0.17.0 sans en lire les relevés saisis) ; laisser le CHANGELOG à la release (il dirait
   « aucune migration » sur la branche jusque-là, et la migration est l'affaire du développeur).
 - **Réversible** : avant publication de `v0.17.0-rc1`, oui ; ensuite, non (P8).
+
+### C-v016-2-16 — Les données de la 0.16.1-rc1 se gardent (contrainte du Project Lead du 2026-10-30)
+
+- **Contexte** : Guy, le 2026-10-30 : « 0.16.1 contient des données que j'aimerais garder : prends-y garde lors des
+  développements. » L'installation du NAS tourne en `v0.16.1-rc1` (schéma de la 0.16.0, 86 migrations) et passera à
+  `v0.17.0-rc1`. La migration de C-v016-2-2 ne porte qu'un `UPDATE _kesh_version` ; aucun test ne prouve aujourd'hui
+  qu'une base 0.16.x **peuplée** d'imports bancaires se relit à l'identique après elle, ni qu'une sauvegarde 0.16.x
+  s'importe dans la 0.17.0 (`check_import_version_compat`, `routes/admin.rs:216-231`, ne refuse que si le
+  `min_required` du manifeste dépasse le binaire ; la 0.16.x écrit `0.14.0`).
+- **Retenu** :
+  - **montée sans perte** (fiche, AC-2-bis) : un test monte jusqu'à la migration exclue, pose des imports CAMT et CSV,
+    des transactions `pending`, `reconciled` et rejetée, applique la suite, et relit tout à l'identique en base **et**
+    par le code (décodage `from_str` compris) ; la migration ne porte aucune autre instruction que le relèvement,
+    établi par test ;
+  - **restauration croisée** (AC-3-bis) : la 0.17.0 n'ajoute aucune table (établi par test) ; une sauvegarde au
+    manifeste de 0.16.x s'importe et se relit ; l'inverse est refusé ;
+  - **la sauvegarde d'avant mise à jour** — base, `.keshbackup`, dossier des documents — est écrite au § *Passer à la
+    0.17.0* (AC-29) et dans les notes de `v0.17.0-rc1` : le retour à la rc1 ne passe que par elle ;
+  - **rien de jetable sur la base du NAS** : recette Claude Code, écriture de démonstration `4321.09`, clés de recette,
+    captures se jouent sur une installation jetable (§ *Ce que la release doit contenir*, point 5-bis). La fiche ne
+    prescrivait aucune écriture sur la base du NAS ; la règle est désormais écrite.
+- **Écartées** : se fier au test `upgrade_path_preserves_data` existant (il ne pose pas de lignes bancaires dans l'état
+  0.16.0 ni ne relit par le code) ; prouver la restauration croisée par la seule égalité des inventaires de tables (ne
+  prouve pas la relecture) ; une fixture tirée de la base du NAS (données réelles : interdit, dépôt public).
+- **Réversible** : sans objet — c'est une contrainte, non un choix de conception.

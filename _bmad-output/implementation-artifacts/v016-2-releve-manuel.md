@@ -6,7 +6,9 @@ Status: ready-for-dev
 `story/v016-2-releve-manuel` partie de `c5101b07` (tête de `story/v016-1-mcp-sorties`, candidate `v0.16.1-rc1`, PR #815
 brouillon) ; la story se fusionne sur cette branche de release. Registre : `v016-2-choix-autonomes.md` (C-v016-2-1 à
 C-v016-2-15). **Amendée le 2026-10-30 : la release devient la 0.17.0** (décision du Project Lead, C-v016-2-15) — la
-clé et le nom de la story restent `v016-2-releve-manuel`. Clé courte : `v0162`. Issue : **#816** (enhancement), en `refs` seulement, dans les commits **et** dans la
+clé et le nom de la story restent `v016-2-releve-manuel`. **Contrainte du Project Lead du même jour (C-v016-2-16)** :
+les données de l'installation `v0.16.1-rc1` du NAS se gardent — montée sans perte, sauvegarde 0.16.x importable, rien
+de jetable sur la base de Guy (AC-2-bis, AC-3-bis, AC-29, § *Ce que la release doit contenir*). Clé courte : `v0162`. Issue : **#816** (enhancement), en `refs` seulement, dans les commits **et** dans la
 PR de la story ; la fermeture se porte sur la **PR de release** (§ *Ce que la release doit contenir*). Les numéros de
 ligne cités sont ceux de `c5101b07`.*
 
@@ -192,10 +194,43 @@ doublons de lignes, écart de solde de départ — dans cet ordre, le premier qu
   `grep -rn "0\.14\.0" crates --include=*.rs` rend d'autre) passent à `0.17.0`, avec leur commentaire ; un test
   `check_downgrade_protection(&pool, "0.16.1")` → `DowngradeRefused` (la dernière version antérieure, candidate
   comprise : la `v0.16.1-rc1` porte la version Cargo `0.16.1`).
+- **AC-2-bis — Montée sans perte depuis une base 0.16.x peuplée** (C-v016-2-16). L'installation du NAS tourne en
+  `v0.16.1-rc1` (schéma de la 0.16.0, 86 migrations ; v016-1 n'en ajoute aucune) et porte des données à garder. Un test
+  `#[sqlx::test(migrations = false)]` de `crates/kesh-db/tests/migrations_upgrade_path.rs`, sur le patron de
+  `imported_documents_without_qr_preserves_existing_rows` (`:668-…`), monte le schéma **jusqu'à la migration
+  exclue** (`common::migrations_before(20261030000001, "bank_imports_manual_source")` — résolution par version, P6),
+  puis insère, dans une société de test : un import `CAMT053_V04` à soldes, un import `CSV` sans solde, leurs
+  transactions (au moins une `pending`, une `reconciled` avec `matched_entry_id` vers une écriture, une rejetée —
+  `auto_match_rejected_at` posé), et lit `_kesh_version`. Il applique ensuite **le reste** des migrations et vérifie :
+  1. chaque ligne de `bank_imports` et de `bank_transactions` se relit **colonne par colonne à l'identique** (même
+     comparaison avant/après, `version` et `updated_at` compris : la migration ne touche aucune ligne) ;
+  2. les mêmes lignes se relisent **par le code applicatif** : `bank_imports::find_by_id_for_company` (donc
+     `BankImportSourceFormat::from_str` sur `CAMT053_V04` et `CSV`) et `bank_transactions::list_by_import` réussissent
+     et rendent les valeurs posées ;
+  3. le rapprochement tient : `status`, `matched_entry_id`, l'écriture liée et ses lignes inchangées ;
+  4. `_kesh_version.kesh_version_min_required` vaut `0.17.0` ; `kesh_version_last_applied` inchangé (le boot l'écrit,
+     non la migration).
+  Et, inventaire décidable : la migration ne porte **aucune** instruction autre que l'`UPDATE _kesh_version` — un test
+  (ou l'assertion du triage P7) lit le fichier décommenté et l'établit ; ni `DROP`, ni `ALTER`, ni écriture d'une table
+  applicative.
 - **AC-3** — La sauvegarde et la restauration : un `.keshbackup` exporté d'une base qui porte un relevé `MANUAL` se
   réimporte dans la même version, relevé et transactions identiques (`source_format`, soldes, lignes) ; son manifeste
   porte `kesh_version_min_required = "0.17.0"`. Test : l'aller-retour, sur le patron des tests d'import d'installation
   existants (`admin_full_import_e2e.rs` ou voisin — à citer au Dev Agent Record).
+- **AC-3-bis — Une sauvegarde `.keshbackup` faite en 0.16.x s'importe dans la 0.17.0** (C-v016-2-16). La 0.17.0
+  n'ajoute **aucune table** : un test l'établit (l'inventaire des tables applicatives après le `MIGRATOR` complet égale
+  celui de `migrations_before(20261030000001, …)`). Un test e2e de `crates/kesh-api/tests/` importe dans la 0.17.0 une
+  sauvegarde **dont le manifeste est celui d'une 0.16.x** (`keshVersion` `0.16.1`, `keshVersionMinRequired` `0.14.0`),
+  portant un import CAMT, un import CSV, des transactions dont une rapprochée : `200`, puis chaque import et chaque
+  transaction se relit à l'identique par `GET /api/v1/bank-imports` et `GET /api/v1/bank-imports/{id}` ; la base garde
+  `min_required = 0.17.0` (`_kesh_version` n'est pas restaurée) ; un relevé saisi se crée ensuite normalement. Moyen,
+  par ordre de préférence, le choix et sa raison au Dev Agent Record : (a) exporter depuis la 0.17.0 puis réécrire le
+  manifeste comme l'écrirait une 0.16.x, si le format de l'archive le permet sans contourner sa vérification
+  d'intégrité (lire `parse_and_verify`) ; (b) sinon, une fixture `.keshbackup` **synthétique** produite par un binaire
+  `0.16.1-rc1` sur une installation **jetable** (jamais celle du NAS, jamais de données réelles), versée sous
+  `crates/kesh-api/tests/fixtures/`, avec sa recette de production en commentaire. Le sens inverse reste refusé :
+  une sauvegarde de la 0.17.0 dans un binaire `0.16.1` → `409` (`ImportVersionIncompatible`), testé par
+  `check_import_version_compat("0.17.0", "0.16.1")`.
 
 ### La validation (fonction pure, `kesh-core`)
 
@@ -365,7 +400,10 @@ doublons de lignes, écart de solde de départ — dans cet ordre, le premier qu
      par la rc1 se met à jour vers la 0.17.0 comme depuis la 0.16.0 ;
   5. au manuel d'administration, `\subsubsection{Passer à la 0.16.1}\label{sec:maj-0-16-1}` (`admin-manual.tex:2481`)
      devient *Passer à la 0.17.0* (`sec:maj-0-17-0`, chaque `\ref` suivi : `grep -rn "maj-0-16-1" docs`), et son texte
-     dit la migration et la sauvegarde d'avant la mise à jour comme le point 3, au `.tex` ; le PDF se régénère à la
+     dit la migration et la sauvegarde d'avant la mise à jour comme le point 3, au `.tex` — **sauvegarde complète
+     (base, `.keshbackup`, dossier des documents) avant la mise à jour** ; le retour à la `0.16.1-rc1` (ou à la 0.16.0)
+     ne passe **que** par elle ; une sauvegarde `.keshbackup` faite en 0.16.x s'importe dans la 0.17.0 (AC-3-bis), non
+     l'inverse ; le PDF se régénère à la
      release (macros).
   Le développeur ne touche **ni** les macros `\keshVersion`…, **ni** les URL `raw.githubusercontent.com/…/v0.16.1`,
   **ni** la feuille de route du README, **ni** le site : ils suivent le bump de `\keshVersion` (garde G19) à la release.
@@ -422,6 +460,8 @@ Fichiers prévus : `crates/kesh-core/src/bank_imports.rs` (ou `bank_imports/manu
 | M14 | *Enregistrer* actif quand l'écart est non nul | Vitest AC-21 |
 | M15 | aperçu non périmé par une modification du formulaire | Vitest AC-22 |
 | M16 | migration : `'0.17.0'` → `'0.16.1'` | AC-2 (test `DowngradeRefused` sur `0.16.1` et `min_required`) |
+| M17 | migration : ajouter `UPDATE bank_imports SET statement_id = NULL;` avant le relèvement | AC-2-bis (relecture à l'identique ; inventaire des instructions) |
+| M18 | `BankImportSourceFormat::from_str` : arme `"CSV"` retirée | AC-2-bis point 2, AC-3-bis (relecture applicative) |
 
 Chaque mutation : le test qui rougit et la raison, au Dev Agent Record. Une mutation **survivante** est un défaut de test
 à corriger, non à déclarer.
@@ -466,9 +506,15 @@ tourné, chiffres recomptés.
    `raw.githubusercontent.com/…/v0.16.1` portées à `v0.17.0` (garde G19) ; PDF des trois manuels régénérés.
 4. README : la ligne `v0.16.1` de la feuille de route devient la ligne `v0.17.0` (saisie manuelle, correctif MCP,
    migration) ; site `website/` (`index.html`, `roadmap.html`) si la fonctionnalité ou la 0.16.1 y figurent.
-5. Candidate `v0.17.0-rc1` : notes de pré-version — la migration et le retour par la sauvegarde ; la `0.16.1-rc1` non
+5. Candidate `v0.17.0-rc1` : notes de pré-version — **avant la mise à jour, une sauvegarde complète** (base,
+   `.keshbackup`, dossier des documents) de l'installation `0.16.1-rc1` ; le retour à la rc1 ne passe que par elle
+   (`min_required` 0.17.0) ; une sauvegarde `.keshbackup` de la 0.16.x s'importe dans la 0.17.0 ; la migration ; la `0.16.1-rc1` non
    poursuivie (une installation passée par elle se met à jour normalement ; la rc1 refuse ensuite la base, sa version
    Cargo étant `0.16.1`) ; la recette Claude Code et les tests joués une seule fois, sur cette candidate.
+5-bis. **Rien de jetable sur la base du NAS** (C-v016-2-16) : la recette Claude Code, toute écriture de démonstration
+   (`4321.09` compris), les clés de recette et les captures se jouent sur une installation **jetable** ; la base de
+   Guy ne reçoit que la mise à jour elle-même, après sa sauvegarde. Aucune procédure de cette fiche n'écrit dans la base
+   du NAS (les captures d'AC-25 se prennent sur une base de démonstration, l'E2E sur `kesh_e2e_v0162`).
 6. `scripts/prepare-release.sh` (pré-vol, exemptions datées) relancé après la fusion de la story.
 7. PR de release : `closes #816` dans le **titre ou le corps**, à côté de `closes #811` et `closes #812`.
 8. Décompte des issues au tag (objectif, non barrière) ; l'issue demandée ci-dessous comprise.
@@ -564,3 +610,8 @@ Tranchées au registre ; listées ici pour être soumises à Guy **avant** la va
   release doit contenir*, M16, Q1 et la limite de la rc1 mis à jour. Occurrences de `0.16.1` laissées à dessein :
   l'historique (`c5101b07`, candidate `v0.16.1-rc1`, recette de la rc1, première rédaction de l'origine), les versions
   sources d'un remplacement prescrit, et `0.16.1` comme version antérieure refusée.
+- 2026-10-30 — **Contrainte du Project Lead (C-v016-2-16)** : les données de l'installation `v0.16.1-rc1` du NAS se
+  gardent. Ajoutés : AC-2-bis (montée depuis une base 0.16.x peuplée, imports CAMT et CSV, transactions et rapprochements
+  relus à l'identique, en base et par le code ; la migration ne porte que le relèvement), AC-3-bis (une sauvegarde
+  `.keshbackup` 0.16.x s'importe dans la 0.17.0, aucune table ajoutée), M17 et M18 ; AC-29 et les notes de la candidate
+  disent la sauvegarde complète d'avant la mise à jour ; point 5-bis de la release : rien de jetable sur la base du NAS.

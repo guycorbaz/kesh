@@ -17,7 +17,7 @@ sur aucune passe antérieure, ni sur ce que la fiche dit d'elle-même.
 ## À lire
 
 1. La fiche `_bmad-output/implementation-artifacts/v016-2-releve-manuel.md`, **en entier**.
-2. Le registre `_bmad-output/implementation-artifacts/v016-2-choix-autonomes.md` (C-v016-2-1 à C-v016-2-15).
+2. Le registre `_bmad-output/implementation-artifacts/v016-2-choix-autonomes.md` (C-v016-2-1 à C-v016-2-16).
 3. L'issue, **en lecture seule** : `gh issue view 816 --json title,body,comments` ; pour le voisinage, `gh issue view`
    de 418, 526, 671, 687 (`--json title,state,body`).
 4. Le code du circuit bancaire : `crates/kesh-db/migrations/20260504000001_bank_imports.sql` et les migrations `bank_*`
@@ -62,6 +62,17 @@ L'orchestrateur lance **deux agents distincts** sur ce même prompt ; chacun ne 
   (`ExemptionBasis::Durable`, justification) est-il celui des précédents (`20261009000001`, `20261015000001`) et passe-t-il
   `every_data_backfill_migration_is_triaged` et les contrôles de fenêtre ? Les tests qui figent `0.14.0` sont-ils tous
   nommés (`grep -rn "0\.14\.0" crates`) ? L'option (b) « aucune migration » est-elle écartée pour une raison vraie ?
+- **Les données à garder (C-v016-2-16, AC-2-bis, AC-3-bis)** — axe obligatoire. Contrainte de Guy : les données de
+  l'installation `v0.16.1-rc1` du NAS se gardent (mandat de l'orchestrateur :
+  `/home/gcorbaz/devel/kesh-gate-logs/prompts/v017-donnees-a-garder.md`, en lecture). Les critères sont-ils décidables
+  et suffisants : la montée depuis une base 0.16.0 **peuplée** (imports CAMT et CSV, transactions `pending`,
+  `reconciled`, rejetées, écritures liées) se relit-elle à l'identique en base **et** par le code (`from_str`) ? Le
+  patron cité (`migrations_upgrade_path.rs`, `common::migrations_before`) le permet-il ? L'import d'une sauvegarde
+  `.keshbackup` de 0.16.x dans la 0.17.0 est-il prouvable comme prescrit — lis `parse_and_verify` et le format de
+  l'archive pour juger l'option (a) (manifeste réécrit) contre (b) (fixture produite sur une installation jetable) ?
+  La 0.17.0 n'ajoute-t-elle vraiment aucune table ? La sauvegarde d'avant mise à jour est-elle écrite dans les notes de
+  la candidate **et** au manuel ? Une procédure de la fiche ou de la release (recette, démonstration `4321.09`, clés,
+  captures, E2E) peut-elle écrire dans la base du NAS ? Les mutations M17 et M18 rougissent-elles les bons tests ?
 - **La validation et l'équilibre (AC-4, AC-5)** : chaque règle est-elle décidable, testable et compatible avec les
   colonnes (`DECIMAL(18,2)`, `VARCHAR(255)` en **octets**, `TEXT`) ? L'empreinte canonique est-elle sans ambiguïté
   (deux relevés différents peuvent-ils produire les mêmes octets ?) et compatible avec `chk_bank_imports_hash_len` ?
