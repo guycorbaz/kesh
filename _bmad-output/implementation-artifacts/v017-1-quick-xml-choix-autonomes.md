@@ -42,9 +42,13 @@ cités sont ceux de `c5101b07`. Chaque choix : contexte, option retenue, alterna
   par laquelle la montée peut altérer la détection de doublons est la sortie du parseur (la `DuplicateKey` de ligne en
   dérive ; le hash de fichier, non). Les messages d'erreur de `quick-xml` changent d'une version à l'autre et ne sont ni
   stockés ni montrés tels quels à l'écran (`BANK_IMPORT_MALFORMED_XML` et sa clé i18n).
-- **Retenu** : références `camt053_golden/*.json` de la sortie entière (`serde_json`) pour tout fichier CAMT du dépôt et quatre
-  fixtures neuves, produites **avant** la montée dans un commit sans code ; les erreurs comparées par variant, et par
-  message seulement quand Kesh le rédige.
+- **Retenu** : références `camt053_golden/*.json` de la sortie entière (`serde_json`) pour tout fichier CAMT du dépôt et cinq
+  fixtures neuves, produites **avant** la montée dans un commit sans code de production ; les erreurs comparées par
+  variant et charge entière, sauf les `MalformedXml` qui relaient une erreur de bibliothèque (`e.to_string()`),
+  comparés au variant seul. *(Révisé le 2026-10-30, validation P2, F-4 : la règle d'origine — « par message seulement
+  quand Kesh le rédige », sur trois préfixes énumérés — était une énumération ouverte et incomplète (`mod.rs:512`, qui
+  embarque une valeur lue, et `:689` en manquaient) ; elle est inversée et tenue close par un garde d'inventaire qui
+  compte les sites de `mod.rs`. Fixtures : quatre à la P1, cinq à la P2 (`v04_latin1_declare_ascii.xml`, F-6).)*
 - **Écartées** : (a) relire les tests existants seulement — ils assertent quelques champs, pas la sortie entière, et
   aucune fixture ne porte BOM, CRLF intérieur, CDATA, entités ni Latin-1 ; (b) comparer aussi les messages de
   `quick-xml` — rougirait sans changement de donnée ; (c) `insta` — dépendance de plus pour quatre lignes de comparaison.
@@ -57,6 +61,8 @@ cités sont ceux de `c5101b07`. Chaque choix : contexte, option retenue, alterna
 - **Retenu** : parse dans `std::thread::spawn`, attente `recv_timeout(10 s)` ; 200 000 attributs (≈ 2,4 Mo < 10 MiB par
   défaut), 10 000 déclarations, 70 000 niveaux. Le délai est la seule assertion d'AC5 ; AC6 asserte le refus ; AC7
   le refus sans panique (`Timeout` et `Disconnected` distingués — remédiation P1, R-3).
+  AC5 porte un témoin (même construction, 3 attributs et `Ccy="CHF"`, rend `Ok`), pour ne pas devenir vert à vide
+  (remédiation P2, F-9) ; les documents d'AC6 partent du relevé complet d'AC6 (c) (remédiation P2, R-8).
 - **Écartées** : (a) mesurer le temps et comparer à un seuil serré — instable entre poste et CI ; (b) mesurer
   l'allocation (allocateur compteur) — infrastructure lourde pour un comportement que le refus borne déjà ; (c) tests
   `#[ignore]` — un test qui ne tourne pas se tait.
@@ -110,7 +116,8 @@ cités sont ceux de `c5101b07`. Chaque choix : contexte, option retenue, alterna
   `from_escaped(escape(content))` ; 0.39.4 `src/escape.rs:106` n'échappait que `< > & ' "`). Sous 0.39, un `\r` sortait brut — qu'un
   lecteur XML normalise en `\n`. L'écriture 0.42 est la plus fidèle. Le fichier pain.001 est régénéré à la demande, non
   stocké.
-- **Retenu** : la référence d'AC12 n'inclut pas de `\r` ; l'écart est écrit dans le commentaire du test.
+- **Retenu** : la référence d'AC12 n'inclut pas de `\r` ; l'écart est écrit dans le commentaire du test (test
+  d'intégration `crates/kesh-payment/tests/pain001_special_chars.rs` depuis la validation P2).
 - **Écartées** : filtrer `\r` en amont — changement de comportement hors objet.
 - **Réversible** : oui.
 
@@ -118,8 +125,11 @@ cités sont ceux de `c5101b07`. Chaque choix : contexte, option retenue, alterna
 
 - **Contexte** : la caractérisation porte sur des fixtures synthétiques ; un fichier bancaire réel pourrait porter une
   forme qu'elles n'ont pas. Les relevés de Guy sont dans `~/kesh-test/`, qu'aucun agent n'ouvre.
-- **Retenu** : contrôle **facultatif**, par l'orchestrateur ou Guy, en local, rapporté « conforme / non conforme » sans
-  chiffre, condensé de sortie écrit dans `$GATE_LOGS` seulement.
+- **Retenu** : contrôle par **Guy, sur son installation, après la sauvegarde complète d'avant mise à jour** : réimporter
+  en aperçu, sur la 0.17.0-rc1, un CAMT.053 réel déjà importé ; l'aperçu doit signaler le doublon de fichier et les
+  doublons de ligne. Rapporté « conforme / non conforme », sans chiffre ; porté par l'orchestrateur aux notes de la
+  candidate. *(Révisé le 2026-10-30, validation P2, F-10 : la version d'origine le laissait « facultatif, à
+  l'orchestrateur ou à Guy », par un condensé dans `$GATE_LOGS`.)*
 - **Écartées** : un test `#[ignore]` lisant un chemin en variable d'environnement (modèle `ubs_fichier_reel.rs`) —
   envisageable, mais comparer avant/après exige deux binaires ; le condensé suffit.
 - **Réversible** : oui.
@@ -131,15 +141,20 @@ cités sont ceux de `c5101b07`. Chaque choix : contexte, option retenue, alterna
 - **Contexte** : sous 0.39.4, seul le texte des éléments est décodé (`camt053/mod.rs:235`, `t.decode()` sur les
   `Event::Text`) ; un octet non UTF-8 dans un commentaire, une section CDATA, une instruction ou une valeur d'attribut non
   lue passait, et le relevé s'importait. 0.42.0 valide l'UTF-8 de chaque section lue (`src/reader/buffered_reader.rs:297`
-  pour les sections `<!…>`, `:240`, `:588`) et refuse le fichier entier. Le parse précédant la recherche du hash
-  (`routes/bank_imports.rs:1036-1045`), un tel fichier déjà importé en 0.16 serait, réimporté, refusé au lieu d'être
-  signalé en doublon. Les données en base ne sont pas touchées.
+  pour les sections `<!…>`, `:240`, `:588`) et refuse le fichier entier. En **aperçu**, le parse (`routes/bank_imports.rs:1045`)
+  précède la recherche du hash (`:1081`) : un tel fichier déjà importé en 0.16 serait, réimporté, refusé au lieu d'être
+  signalé en doublon ; à la **création**, la recherche (`:1237`) précède le parse (`:1249`), et le doublon est signalé
+  d'abord. Les données en base ne sont pas touchées. *(Précisé le 2026-10-30, validation P2, R-6/F-7 ; et R-5 : 0.39.4
+  décodait aussi les noms d'élément, l'URI de `<Document>` et la valeur du `Ccy` lu, non le seul texte.)*
 - **Retenu** : divergence **admise** — la norme ISO 20022 impose l'UTF-8 aux messages XML ; un fichier qui ne l'est pas
   n'est pas un relevé conforme. Elle est **prouvée et écrite** : fixture `v04_latin1_hors_texte.xml` (référence 0.39
   consignée sous `v04_latin1_hors_texte.0.39.json`), exception nominative dans AC9, refus
   `BANK_IMPORT_MALFORMED_XML` asserté par AC8, phrase au CHANGELOG (AC14), ligne au § *Ce que les gardes ne voient pas*.
-  Rattaché : la normalisation des valeurs d'attribut (`normalized_value`, 0.42 `src/events/attributes.rs:75`, `:85`) ne
-  change qu'un `Ccy` portant un blanc littéral, qui n'est pas un code de devise — écrit, non figé.
+  **C'est la seule divergence admise.** *(Révisé le 2026-10-30, validation P2, R-3 : la version P1 y rattachait la
+  normalisation des valeurs d'attribut — `normalized_value` — sur une prémisse fausse, la devise d'une transaction
+  n'étant pas validée (`kesh-core/src/bank_imports.rs:469` ne valide que celle du relevé). L'adaptation prescrite est
+  désormais `quick_xml::escape::unescape(&attr.value)`, qui reproduit exactement la 0.39 ; un `Ccy` à tabulation est
+  figé par AC9. Exception conditionnée par la version lue au `Cargo.lock` et écrite dès le commit A, R-2/F-2.)*
 - **Écartées** : (a) prétraiter l'entrée pour retirer ou transcoder les octets hors texte — code de plus, sur un chemin
   d'entrée hostile, pour tolérer un fichier non conforme ; (b) activer la fonctionnalité `encoding` de `quick-xml`
   (`DecodingReader`) — change aussi la lecture des fichiers Latin-1 **dans** le texte, aujourd'hui refusés : élargissement
