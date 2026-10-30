@@ -172,6 +172,10 @@ silencieuse ; un appariement propose, il ne crée jamais).
   #823 ; (2) et (3) : une issue à ouvrir (texte prêt dans la fiche 3a, § *Issues*) ; (4) : #401. La phrase « aucune autre »
   de la remédiation P1 ne vaut plus.
 
+- *Amendement du 2026-10-30 (validation P3 de la 3a, R8)* : l'amendement P1 ci-dessus (« le second côté … garde un
+  avertissement (C-v017-3-22) ») ne vaut plus depuis C-v017-3-25 : l'avertissement est passé à la v017-3c (#828) ; dans la
+  0.17.0, le second côté n'en porte aucun. Les issues du reste sont ouvertes : #823, #827 ; #401.
+
 ### C-v017-3-11 — v017-3a : les données existantes ne sont pas touchées
 
 - **Contexte** : contrainte du Project Lead du 2026-10-30 ; consigne d'usage de #671 (2026-10-23) : une transaction déjà
@@ -345,6 +349,10 @@ silencieuse ; un appariement propose, il ne crée jamais).
   (`reconciliationCancelMessage`, qui dit le moyen de lever) ; pour une candidate sans motif, « Aujourd'hui, annuler …
   contre-passerait cette écriture …, tant que son exercice reste ouvert ». Codes de fil (`SettlementCancelBlocker::code()`),
   `cancelBlockedLabel` ajouté. Les angles morts du prédicteur et les motifs de propriété vont à L9.
+
+- *Amendement du 2026-10-30 (validation P3 de la 3a, R4)* : « chaque motif se lève » est faux pour `INVOICE_CREDITED`
+  (« il ne s'annule pas », état hérité d'avant la 0.12.1) ; l'introduction du dialogue devient « Ce rattachement ne pourra
+  pas être annulé tant que dure l'obstacle suivant. », vraie pour tous les motifs (fiche, AC-13, L10).
 
 ### C-v017-3-22 — v017-3a : l'autre côté d'un virement entre comptes propres garde un avertissement
 

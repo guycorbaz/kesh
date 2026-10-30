@@ -212,6 +212,20 @@ produit multiplierait les lignes).
   `NotLinkable` ne vient qu'en 4.4). L'inventaire se refait **par fonction**, jamais par un grep mono-ligne (le
   détecteur de la première rédaction était muet). Si l'étape 0 contredit (a) ou (b), le dire au Dev Agent Record et
   **s'arrêter** : la conception est à revoir, pas à contourner.
+  **(b), réécrit à la validation P3 (R1) — remplace les deux paragraphes ci-dessus pour la raison et pour le critère
+  d'arrêt.** L'affirmation « **tous** ces gestes tiennent le **même verrou nommé** du compte » est **fausse** : la
+  suppression d'un import (`delete_once`, `crates/kesh-api/src/routes/bank_imports.rs:1507-1518`, `pool.begin()` sans
+  `with_account_lock`) et les routes du journal (contre-passation, modification, suppression d'une écriture) ne le
+  prennent pas. La vraie raison de l'absence de cycle avec `t → je` : **aucun geste qui tient une ligne
+  `journal_entries` ne verrouille ensuite `bank_transactions`** — `reverse_in_tx_inner` (`journal_entries.rs:2741-2745`)
+  lit `bank_transactions` par `reversal_blockers` **sans verrou** (sous-requête ordinaire, `:2278`) ; `update_in_tx`
+  (`:1457-1459`) et `delete_in_tx` (`:1831-1835`) n'écrivent pas `bank_transactions` (le `ON DELETE SET NULL` ne trouve
+  aucune ligne, la garde ayant déjà refusé une écriture rapprochée) ; la suppression d'un import ne prend aucun verrou
+  sur `journal_entries`. Les gestes qui prennent `bt` **puis** `je` (`reconciliation_cancel::cancel_in_tx`, `link_in_tx`,
+  `link_entry_in_tx`) tiennent, eux, le verrou nommé et sont rejoués ; le verrou nommé ne couvre qu'eux. **Critère
+  d'arrêt de l'étape 0, sur cette formulation** : si l'étape 0 trouve un geste qui tient une ligne `journal_entries` puis
+  **verrouille** (`FOR UPDATE`, `LOCK IN SHARE MODE`, `UPDATE`, `DELETE`) une ligne de `bank_transactions`, le dire au Dev
+  Agent Record et **s'arrêter**.
 - **AC-4** — Tests `#[sqlx::test]` de `link_entry_in_tx` : nominal (état final `reconciled`, `matched_entry_id`, rejet
   remis à `NULL`, une trace, ses détails) ; chaque refus sans écriture (transaction absente, d'une autre société,
   rapprochée, en EUR ; écriture absente, d'une autre société, non candidate ; compte bancaire clos **dans** la
@@ -261,6 +275,13 @@ produit multiplierait les lignes).
   « réactivez-le » ne dit pas lequel (F3). Tests : une écriture d'un exercice clôturé est **candidate** avec
   `cancelBlockedBy = "FISCAL_YEAR_CLOSED"` ; une écriture dont un compte est archivé, `"ACCOUNT_ARCHIVED"` et le numéro
   du compte ; une écriture d'exercice ouvert, `null`.
+  *(Validation P3, R5.)* **Coût** : `entry_cancel_blocker` coûte, par candidate, le classement (deux lectures),
+  l'exercice, le lettrage figé, `reversal_blockers` (trois sous-requêtes) et l'exercice du jour — de huit à douze
+  requêtes ; pour 50 candidates, de l'ordre de 500 requêtes à chaque ouverture du dialogue. **Mesure** : sur la base de
+  test `kesh_v0173a`, une transaction avec **50** écritures candidates (montage synthétique, jamais une base de Guy),
+  `GET …/entry-candidates` en moins de **1 s** (trois mesures, écrites au Dev Agent Record). Au-delà : une section
+  *Performance debt* (constat, chiffres, propriétaire) et une issue demandée à l'orchestrateur, avec pour remède nommé
+  le calcul du motif **à la sélection** d'une candidate (une route de lecture par écriture) ou une lecture groupée.
 - **AC-6** — `POST /api/v1/reconciliation/transactions/{id}/link-entry`, corps `{ "journalEntryId": 211 }`, rôle
   Comptable, clés `read-write` admises (comme `link`) ; réponse `200` `{ bankTransactionId, journalEntryId }`. Refus,
   chacun sans écriture : `400 VALIDATION_ERROR` (absent ou `≤ 0`) → `404 NOT_FOUND` → `link_preflight` → `409
@@ -340,11 +361,21 @@ produit multiplierait les lignes).
   inconditionnelle :
   - écriture choisie, `cancelBlockedBy = null` : « Aujourd'hui, annuler ce rapprochement contre-passerait cette écriture
     (ou annulerait le règlement qu'elle porte), tant que son exercice reste ouvert. » ;
+    *(validation P3, F6 — remplace la phrase ci-dessus)* « Aujourd'hui, Kesh ne voit aucun obstacle : annuler ce
+    rapprochement contre-passerait cette écriture (ou annulerait le règlement qu'elle porte). Une clôture d'exercice, une
+    période verrouillée ou un exercice postérieur clos pourraient l'empêcher plus tard. » ;
   - écriture choisie, `cancelBlockedBy ≠ null` : « Tant que la raison suivante subsiste, ce rattachement ne pourra pas
     être annulé : » suivi du texte **existant** du motif, rendu par `reconciliationCancelMessage(code, label)`
     (`reconciliation-cancel.ts:38`, **réutilisée**, DRY — elle dit déjà le moyen de lever le motif : rouvrir les
     exercices, réactiver le compte, créer l'exercice du jour, annuler le solde) ; *Rattacher* exige alors une case à
     cocher (`data-testid="entry-cancel-blocked-ack"`) qui reprend la même vérité datée ;
+    *(validation P3, R4, F5 — corrige les deux points ci-dessus.)* **Gabarit** : une clé d'introduction neuve,
+    `reconciliation-link-entry-cancel-blocked-intro` (« Ce rattachement ne pourra pas être annulé tant que dure l'obstacle
+    suivant. »), **phrase complète**, puis le texte du motif dans un **paragraphe distinct** : ni second deux-points, ni
+    majuscule parasite derrière un deux-points. La parenthèse « elle dit déjà le moyen de lever le motif » est
+    **inexacte** pour deux codes : `INVOICE_CREDITED` (« … il ne s'annule pas » — aucun moyen ; état hérité d'avant la
+    0.12.1, `invoice_settlements_write.rs:776-785`, rare) et `LETTERING_ALL_LINES_IN_CLOSED_PERIODS` (moyen long, que le
+    texte décrit) ; pour `INVOICE_CREDITED`, l'introduction reste vraie (« tant que dure »), et L9 le dit ;
   - *(validation P2, F14)* la section des règlements de factures clients ne porte pas ce calcul (elle reste celle de la
     29-8) : l'asymétrie se dit au manuel (AC-18).
   Le code `RECONCILIATION_ENTRY_NOT_LINKABLE` entre dans l'ensemble `RELIRE_SUR` (`LinkSettlementModal.svelte:53-57`) —
@@ -357,11 +388,34 @@ produit multiplierait les lignes).
   `link-entries-empty`), l'autre sa liste ; `link-no-entry` (« aucune écriture », que l'E2E existant asserte,
   `reconciliation-link.spec.ts:179`) garde son sens — le rappel que le rattachement ne passe aucune écriture — et n'est
   pas confondu avec ces testids. Vitest des trois cas.
+  *(Validation P3, F3 — remplace les cas ci-dessus : ils sont **quatre**.)*
+  1. **crédit, deux listes vides** → `link-empty`, récrit : « Aucun règlement de facture client ni aucune écriture du
+     compte de la banque ne correspond à cette transaction. Enregistrez d'abord le règlement depuis la fiche de la
+     facture, ou saisissez l'écriture, puis revenez ici. » ;
+  2. **crédit, règlements vides, écritures non vides** → la section règlements porte `link-settlements-empty` (« Aucun
+     règlement de facture client ne correspond. »), la section écritures sa liste ;
+  3. **crédit, écritures vides, règlements non vides** → la section écritures porte `link-entries-empty` (« Aucune
+     écriture du compte de la banque ne correspond. »), la section règlements sa liste ;
+  4. **débit** (une seule section) **sans candidate** → `link-entries-empty-debit` : « Aucune écriture du compte de la
+     banque ne correspond à ce débit. S'il est déjà comptabilisé par un autre chemin, rejetez-le plutôt que de
+     l'affecter. » — le cas que l'utilisateur verra pour chaque débit réellement non comptabilisé ; aucune mention de
+     règlement client.
+  Vitest des quatre cas, texte asserté ; captures des quatre (AC-16).
   **Tests et clés existants à récrire**, nommés : `ReconciliationProposals.test.ts:1030-1038` (le bouton sur un débit :
   attendu `['1','2']` pour `100.03` et `-50.00`, toujours absent pour `0.00` et l'EUR) ; `reconciliation-link.spec.ts:177`
   (inchangé : un seul bouton par ligne) ; les clés `reconciliation-link-no-entry` (`messages.ftl:1397`), `-modal-title`,
   `-empty` ; *(validation P2, F11)* le compteur `sitesTotal` de `frontend/src/lib/shared/i18n-keys.test.ts` (`:653` et
   son historique daté), recompté par `grep -o "i18nMsg("` aux deux bornes.
+  *(Validation P3, F7 : la constante est à `:767`, `sitesTotal: 2619` ; `:653` est un commentaire d'historique daté.)*
+  *(Validation P3, F2.)* **`frontend/src/lib/features/reconciliation/LinkSettlementModal.test.ts`**, le fichier le plus
+  touché : le mock (`:12-15`, `getLinkCandidates` et `linkTransaction` seulement) gagne `getEntryCandidates` et
+  `linkEntry` ; l'attente de `link-empty` (`:123`, « Enregistrez d'abord le règlement depuis la fiche ») suit le texte
+  récrit ; la relecture sur course (`:216`, `getLinkCandidates` appelé deux fois) relit désormais **les deux** listes ; le
+  test des replis (`:357-370`), qui lit `LinkSettlementModal.svelte` **par son nom** et ne contrôle que les clés
+  préfixées `reconciliation-link-`, suit le composant s'il est renommé, et toutes les clés neuves portent ce préfixe.
+  *(F10.)* Les commentaires de `ReconciliationProposals.svelte:21` (« une ligne de crédit en CHF porte un troisième
+  bouton, « Rattacher à un règlement » »), `:76` et `:577-578` (« lignes de crédit en CHF seulement ») se récrivent avec
+  celui de `canLink`.
 - **AC-14** — *(Retirée à la validation P2 : la confirmation avant *Accepter*, *Affecter*, *Éclater* est passée à la
   v017-3c.)*
 - **AC-15** — i18n : toutes les clés nouvelles ou récrites dans les **quatre** catalogues
@@ -372,7 +426,9 @@ produit multiplierait les lignes).
   (un crédit qui a un règlement client et une écriture) ; le dialogue d'un débit (une seule section) ; un crédit sans
   règlement mais avec une écriture ; les deux listes vides ; une liste vide sur deux ; une écriture choisie avec la
   phrase datée de contre-passation ; une écriture d'exercice clôturé avec sa case ; l'erreur de course et la
-  relecture ; la ligne disparue après rattachement. Captures dans `/home/gcorbaz/devel/kesh-gate-logs/v0173a/captures/`,
+  relecture ; la ligne disparue après rattachement. *(Validation P3, F3, F9.)* S'ajoutent : les **quatre** cas de
+  listes vides (dont le débit sans candidate) ; un motif `ACCOUNT_ARCHIVED` avec le numéro du compte
+  (`cancelBlockedLabel`) ; la page de propositions avec le bouton **renommé** sur une ligne de débit. Captures dans `/home/gcorbaz/devel/kesh-gate-logs/v0173a/captures/`,
   listées au Dev Agent Record et jointes au prompt de revue.
 
 ### Le parcours (Playwright)
@@ -435,13 +491,154 @@ produit multiplierait les lignes).
       vrai pour un lot de plusieurs factures débité en une ligne (#823), faux pour un lot d'**une** facture, qui se
       rattache ;
   12. *(F1)* `:1403` (frais de rappel : « (issues \#671 et \#401) ») : « (issue \#401) ».
+  13. *(Validation P3, R2 = F1)* `:2300` (« … puis rattachez la transaction à ce règlement (\emph{Rattacher à un
+      règlement}, …) ») : le nom du bouton devient « Rattacher à une écriture existante » ;
+  14. *(R2 = F1)* `:2354` (« une ligne de crédit en CHF se rattache aussi au règlement déjà saisi depuis la fiche
+      (\emph{Rattacher à un règlement}, …) ») : toute ligne en CHF de montant non nul se rattache à une écriture déjà
+      passée (règlement saisi depuis une fiche, écriture saisie au journal) ; nom du bouton ;
+  15. *(R2 = F1)* `:2366` (« ou, pour un crédit en CHF dont le règlement a déjà été saisi depuis la fiche de la facture,
+      \emph{Rattacher à un règlement} ») : « ou, pour une transaction déjà comptabilisée par un autre chemin, \emph{Rattacher à
+      une écriture existante} » ;
+  16. *(R2 = F1)* `:3337` : outre « n'acceptez rien » (point 4), la phrase « Puis rattachez la transaction à ce règlement
+      (\emph{Rattacher à un règlement} sur sa ligne, …) » prend le nom du bouton.
+  Le nom du bouton change donc à `:2300`, `:2354`, `:2366`, `:2388`, `:3337` ; le titre de la sous-section (`:2384`) suit
+  l'AC-18 ; le libellé d'audit cité à `:2394` (« Transaction rattachée à un règlement ») reste vrai pour la 29-8 et gagne
+  celui de la 3a (« Transaction rattachée à une écriture »).
   **Le filet**, au `.tex` **et** au PDF aplati (`pdftotext docs/manual/fr/user-manual.pdf - | tr '\n' ' ' | tr -s ' '`),
   *(validation P2, F2 : élargi, les fragments de la P1 étaient muets sur `rattachée`, `rattache à ce règlement`,
   `issues \#671`)* : le fragment **`rattach`** (environ soixante lignes, triées à la main, sort de chacune au Dev Agent
-  Record), **`\#671`** nu (et `#671` au PDF), `déjà réglée`, `sans transaction`, `ne sait pas encore`, `acceptez rien`,
+  Record — *validation P3, F10 : 44 lignes au `.tex`, 45 fragments au PDF aplati ; filet exécuté, sortie ci-dessous*),
+  et *(R2 = F1)* `Rattacher à`, `crédit en CHF`, **`\#671`** nu (et `#671` au PDF), `déjà réglée`, `sans transaction`, `ne sait pas encore`, `acceptez rien`,
   `relie au relevé`, `sans écriture` ; les deux apostrophes (`'`, `’`) pour tout fragment qui en porte. Les manuels
   DE/IT/EN ne sont pas traduits dans cette version. *(F7.)* Chaque renvoi à un reste pointe **son** issue ; `#671` ne
   reste que dans l'historique du CHANGELOG.
+  **Filet `rattach` exécuté à la validation P3** (sur `c5101b07`, sortie copiée ; le tri à la main se refait au
+  développement et va au Dev Agent Record). Commande `.tex` : `grep -n -i "rattach" docs/manual/fr/user-manual.tex` —
+  **44 lignes** ; sort de chacune :
+
+  | Lignes | Sort |
+  |---|---|
+  | `:264`, `:265`, `:270` | point 10 (tuile) |
+  | `:689`, `:1425`, `:1430`, `:1713`, `:1898`, `:2485`, `:2630`, `:2938`, `:3229`, `:3238`, `:3486` | sans rapport (transitoire, lettrage d'un avoir, paiement à rattacher à une facture, pièce, projet, MCP, sous-compte) |
+  | `:1293`, `:2302`, `:2320`, `:2382` | inchangées : « rattachez la transaction à ce règlement » reste vrai pour un règlement client (29-8) ; leur `\ref` suit le label |
+  | `:1403` | point 12 |
+  | `:1962`, `:1963`, `:2357`, `:2363` | point 7 |
+  | `:2292` | point 8 |
+  | `:2300` | point 13 |
+  | `:2354` | point 14 |
+  | `:2366` | point 15 |
+  | `:2384`–`:2409` | la sous-section récrite (corps de l'AC-18) et point 5 |
+  | `:2450` | point 3 |
+  | `:2464`, `:2465`, `:2478`, `:2479` | point 6 |
+  | `:3337` | points 4 et 16 |
+  | `:3483` | point 9 |
+
+  <details><summary>Sortie `.tex` (44 lignes, extraits autour de « rattach »)</summary>
+
+  ```
+  264: … transaction rattachée à un règlement saisi depuis la fiche de la facture…
+  265: … (\S\ref{sec rattacher-reglement}) garde la date du règlement, et la correction s'y appliq…
+  270: …textbf{issue d'un rapprochement ou d'un rattachement} est ainsi corrigée   une…
+  689: … Une \textbf{transitoire} rattache à l'exercice qui se termine ce qui lui appartient mais …
+  1293: … seul. Si le virement est déjà importé, rattachez ensuite la transaction au règlement (\S\…
+  1403: …nt de plus de 5 centimes, \textbf{ne se rattache pas} à lui (\S\ref{sec rattacher-reglemen…
+  1425: …cte, hors la marque de lettrage, qui la rattache à l'avoir (principe d'intangibilité compt…
+  1430: …cte, hors la marque de lettrage, qui la rattache à l'avoir).…
+  1713: … doit ou qui attend d'être rattachée à la bonne facture. Ces paiements se retrouvent parmi…
+  1898: …cument}. Un règlement annulé n'est plus rattaché à la facture, pas plus que celui d'une…
+  1962: …           rapprochée manuellement, ou rattachée au règlement saisi depuis la fiche de la…
+  1963: …           facture (\S\ref{sec rattacher-reglement}), ou que son import n'est pas supprimé…
+  2292: …epuis la fiche de la facture se \textbf{rattache} à ce règlement, sans aucune écriture (\S…
+  2300: …ef{sec reglement-client}), \textbf{puis rattachez la transaction à ce règlement} (\emph{Ra…
+  2302: …l'échéance et le dernier rappel) --- en rattachant ensuite la transaction à ce règlement (…
+  2320: …ue (\S\ref{sec reglement-client}), puis rattachez la transaction à ce règlement (\S\ref{se…
+  2354: …clater}~; une ligne de crédit en CHF se rattache aussi au règlement déjà saisi depuis la f…
+  2357: …es, affectées manuellement, éclatées ou rattachées à un règlement.…
+  2363: …ptée, affectée manuellement, éclatée ou rattachée à un règlement déjà enregistré (\S\ref{s…
+  2366: …si depuis la fiche de la facture, \emph{Rattacher à un règlement} (\S\ref{sec rattacher-re…
+  2382: …re (\S\ref{sec reglement-client}), puis rattachez-y la transaction (\S\ref{sec rattacher-r…
+  2384: … \subsection{Rattacher une transaction à un règlement déjà enregistré}\label{sec rattacher…
+  2386: …trop, imputation choisie à la main). Le rattachement relie la transaction à ce règlement~ …
+  2388: …} Sur la ligne de la transaction, \emph{Rattacher à un règlement} (lignes de crédit en CHF…
+  2394: … \textbf{Aucune écriture.} Le rattachement ne passe aucune écriture, aucun règlement, aucu…
+  2396: … \textbf{Une transaction rejetée} se rattache par la même voie~  \emph{Annulez d'abord le …
+  2398: …{Un règlement d'un exercice clôturé} se rattache~  un paiement de décembre rapproché en ja…
+  2400: … \textbf{Défaire un rattachement.} \emph{Annuler le rapprochement} (\S\ref{sec annuler-rap…
+  2402: … \textbf{Ce qui ne se rattache pas} (issue \#671)~ …
+  2407: …istrées séparément~  une transaction se rattache à un seul règlement~;…
+  2409: …urnisseur, ou un lot de paiement, ne se rattache pas --- saisissez plutôt la facture fourn…
+  2450: …puis la fiche de la facture client puis rattachez-y la transaction (\S\ref{sec rattacher-r…
+  2464: … client}, ou qu'une transaction a été rattachée à son règlement…
+  2465: … (\S\ref{sec rattacher-reglement}), le même bouton apparaît aussi sur la fiche de la factu…
+  2478: …en va de même d'une transaction \textbf{rattachée} à un règlement…
+  2479: …      saisi depuis la fiche (\S\ref{sec rattacher-reglement})~  le règlement est retiré…
+  2485: …           prête à être rattachée à la bonne pièce.…
+  2630: …sans pièce} --- le règlement n'est plus rattaché…
+  2938: … Kesh permet de rattacher chaque opération comptable à un \textbf{projet} pour l'analyser…
+  3229: …dministration, § \emph{Le serveur MCP}) rattachés à la société. Les numéros…
+  3238: … nomme les utilisateurs rattachés, les clés d'API et les clés du serveur MCP…
+  3337: …ait due, sans que rien le signale. Puis rattachez la transaction à ce règlement (\emph{Rat…
+  3483: … saisi depuis la fiche de la facture se rattache à ce règlement, sans écriture.…
+  3486: …s-compte (auxiliaire)] Compte de détail rattaché à un compte principal (ex. 1100.1 pour un…
+  ```
+
+  </details>
+
+  Commande PDF : `pdftotext docs/manual/fr/user-manual.pdf - | tr '\n' ' ' | tr -s ' ' | grep -oi ".\{40\}rattach.\{40\}"`
+  — **45 fragments** (le sommaire et la sous-section 14.3 en ajoutent un par rapport au `.tex`) ; aucun ne sort de la
+  table ci-dessus.
+
+  <details><summary>Sortie PDF (45 fragments)</summary>
+
+  ```
+  79 14.2 Réconciliation manuelle 81 14.3 Rattacher une transaction à un règlement déjà e
+  t à la date de valeur — une transaction rattachée à un règlement saisi depuis la fiche 
+  riture issue d’un rapprochement ou d’un rattachement est ainsi corrigée : une écriture 
+  oires de fin d’exercice Une transitoire rattache à l’exercice qui se termine ce qui lui
+   seul. Si le virement est déjà importé, rattachez ensuite la transaction au règlement (
+   règlement de plus de 5 centimes, ne se rattache pas à lui (§14.3) : elle reste en atte
+  cte, hors la marque de lettrage, qui la rattache à l’avoir (principe d’intangibilité co
+  cte, hors la marque de lettrage, qui la rattache à l’avoir). L’avoir est consultable da
+  rnisseur vous doit ou qui attend d’être rattachée à la bonne facture. Ces paiements se 
+  ocument. Un règlement annulé n’est plus rattaché à la facture, pas plus que celui d’une
+  e n’est pas rapprochée manuellement, ou rattachée au règlement saisi depuis la fiche de
+  gistré depuis la fiche de la facture se rattache à ce règlement, sans aucune écriture (
+  is la fiche de la facture (§10.9), puis rattachez la transaction à ce règlement (Rattac
+   dû depuis la fiche de la facture, puis rattachez la transaction à ce règlement (§14.3)
+  s l’échéance et le dernier rappel) — en rattachant ensuite la transaction à ce règlemen
+  iche de la facture voulue (§10.9), puis rattachez la transaction à ce règlement (§14.3)
+  Éclater ; une ligne de crédit en CHF se rattache aussi au règlement déjà saisi depuis l
+  es, affectées manuellement, éclatées ou rattachées à un règlement. Cochez les transacti
+  ptée, affectée manuellement, éclatée ou rattachée à un règlement déjà enregistré (§14.3
+  té saisi depuis la fiche de la facture, Rattacher à un règlement (§14.3). © Équipe Kesh
+  is la fiche de la facture (§10.9), puis rattachez-y la transaction (§14.3). © Équipe Ke
+  éconciliation bancaire Kesh 0.16.1 14.3 Rattacher une transaction à un règlement déjà e
+  trop, imputation choisie à la main). Le rattachement relie la transaction à ce règlemen
+   geste. Sur la ligne de la transaction, Rattacher à un règlement (lignes de crédit en C
+  ice : cochez celui qui correspond, puis Rattacher. Le bilan dit « 1 opération(s) réussi
+  c — règlement annulé depuis la fiche ou rattaché entre-temps, transaction rapprochée ai
+  h le dit et relit la liste ; rien n’est rattaché. Les conditions. Le règlement doit êtr
+  écriture manuelle). Aucune écriture. Le rattachement ne passe aucune écriture, aucun rè
+  inscrit au journal d’audit (Transaction rattachée à un règlement). Une transaction reje
+  . Un règlement d’un exercice clôturé se rattache : un paiement de décembre rapproché en
+  un exercice clôturé (§14.6). Défaire un rattachement. Annuler le rapprochement (§14.6) 
+  ation bancaire Kesh 0.16.1 Ce qui ne se rattache pas (issue #671) : • un paiement qui d
+  istrées séparément : une transaction se rattache à un seul règlement ; • une transactio
+  urnisseur, ou un lot de paiement, ne se rattache pas — saisissez plutôt la facture four
+  puis la fiche de la facture client puis rattachez-y la transaction (§14.3). Affecter ma
+  ure client, ou qu’une transaction a été rattachée à son règlement (§14.3), le même bout
+  nt). Il en va de même d’une transaction rattachée à un règlement saisi depuis la fiche 
+  ît dans la réconciliation, prête à être rattachée à la bonne pièce. Le journal d’audit 
+  es sans pièce — le règlement n’est plus rattaché à sa facture — et sont de nouveau prop
+  té analytique par projet Kesh permet de rattacher chaque opération comptable à un proje
+  uel d’administration, § Le serveur MCP) rattachés à la société. Les numéros des entrées
+  ctif. Son détail nomme les utilisateurs rattachés, les clés d’API et les clés du serveu
+  ait due, sans que rien le signale. Puis rattachez la transaction à ce règlement (Rattac
+   saisi depuis la fiche de la facture se rattache à ce règlement, sans écriture. © Équip
+  us-compte (auxiliaire) Compte de détail rattaché à un compte principal (ex. 1100.1 pour
+  ```
+
+  </details>
 - **AC-19** — `docs/api-external.md` : les deux routes (après `:675-677`) avec `cancelBlockedBy` et `cancelBlockedLabel`,
   le code `RECONCILIATION_ENTRY_NOT_LINKABLE` au tableau des codes (après `:868`), la route ajoutée à la liste des routes
   rejouées (`:878`) ; `:626` (« ⚠️ Dépense déjà réglée par un autre chemin (angle mort, #671) … Laisser la transaction
@@ -449,7 +646,9 @@ produit multiplierait les lignes).
   routes refusées sur compte clos, « rattachement d'une transaction à un règlement et liste de ses candidats ») gagne les
   deux routes neuves ; « *(Depuis la v0.17.0.)* ». Filet `grep -n "#671\|jusqu'au rattachement\|rattach" docs/api-external.md`.
   *(Le champ `alreadyBooked` des propositions n'y entre pas : v017-3c.)*
-- **AC-20** — `CHANGELOG.md` : section **Corrigé**, une entrée (`refs` [#671] par un lien, sans mot-clé de fermeture)
+- **AC-20** — `CHANGELOG.md` : section **Corrigé** *(validation P3, F8 : **Ajouté**, comme le précédent de la 29-8,
+  `CHANGELOG.md:343-346` — deux routes, un code d'erreur, un bouton renommé ; l'entrée dit aussi que les transactions
+  restées en attente se règlent désormais par ce geste)*, une entrée (`refs` [#671] par un lien, sans mot-clé de fermeture)
   qui dit le rattachement à une écriture et ce qui reste (D9, avec les issues). *(Réécrit à la validation P2, F15.)* À
   `c5101b07`, la tête du journal est `## [0.16.1] — 2026-10-29` ; la **v016-2a la renomme** `## [0.17.0] — Non publié`
   (sa fiche, AC-29 point 1). Dans cette branche, l'entrée s'écrit sous un en-tête **provisoire** `## [0.17.0] — Non
@@ -462,6 +661,10 @@ produit multiplierait les lignes).
 - **AC-20-bis** — *(Validation P2, F10.)* `README.md:41`, *Fonctionnalités* : « rattachement d'une transaction au
   règlement déjà saisi depuis la fiche de la facture » devient « rattachement d'une transaction à une écriture déjà
   passée (règlement saisi depuis une fiche, écriture saisie au journal) ».
+  *(Validation P3, F7 : la ligne porte en réalité `**rattachement d'une transaction au règlement** déjà saisi depuis la
+  fiche de la facture, sans nouvelle écriture` — gras fermé au milieu. Le remplacement garde le balisage et « sans
+  nouvelle écriture », vrai de la 3a aussi : `**rattachement d'une transaction à une écriture déjà passée** (règlement
+  saisi depuis une fiche, écriture saisie au journal), sans nouvelle écriture`. Collision avec la v016-2b, § *Collision*.)*
 
 ### Les données existantes (contrainte du 2026-10-30)
 
@@ -515,13 +718,17 @@ l'AC-13. Un test qui ne compile pas parce que la fonction n'existe pas compte co
 | M17 | geste : restriction `AND e.id = ?` retirée (la première candidate est rattachée) | AC-4 (deux candidates, la seconde désignée) |
 | M18 | règle : `e.company_id = ?` retiré | AC-2.9 (*validation P2, R4 : fixture SQL directe, seule à le tuer*) |
 | M19 | règle : `LIMIT 50` retiré | AC-2.10 |
-| M20 | geste : `FOR UPDATE` de l'étape 4.2 retiré | T-race-3 (le second n'attend plus), T-race-1 |
+| M20 | geste : `FOR UPDATE` de l'étape 4.2 retiré | T-race-3 (le second n'attend plus) — *validation P3, R3 : T-race-1 ne le tue pas (`with_account_lock` sérialise deux gestes du même compte ; `reconciliation_link_e2e.rs:1344-1346`)* |
 | M21 | *(Passée à la v017-3c.)* | — |
 | M22 | liste : `cancelBlockedBy` toujours `null` | AC-5 (exercice clôturé), AC-8.5 |
 | M23 | dialogue : `RECONCILIATION_ENTRY_NOT_LINKABLE` absent de `RELIRE_SUR` | Vitest AC-13 (course) |
 | M24 | repli d'`errors.rs` altéré d'un mot | G9 (`textes_coherents.rs`, AC-7) |
 | M25 | dialogue : phrase « tant que … subsiste » remplacée par une promesse inconditionnelle de contre-passation | Vitest AC-13 |
 | M26 | liste : `cancelBlockedLabel` toujours `null` | AC-5 (compte archivé) |
+| M27 | `transaction_can_be_linked_to_entry` : condition « en CHF » retirée | AC-2.11 (EUR → liste vide) — *validation P3, R6* |
+| M28 | geste : étape 4.3 (`ensure_open_in_tx`) retirée | AC-4 (compte clos dans la transaction) — *validation P3, R6* |
+| M29 | dialogue : *Rattacher* actif sans la case `entry-cancel-blocked-ack` | Vitest AC-13 — *validation P3, F9* |
+| M30 | dialogue : première candidate présélectionnée | Vitest AC-13 (rien de présélectionné) — *validation P3, F9* |
 
 Chaque mutation : le test qui rougit et la raison, au Dev Agent Record. Une mutation **survivante** est un défaut de test
 à corriger.
@@ -559,6 +766,10 @@ check`, `npm run lint-i18n-ownership`, `npm run build`, et la **suite E2E compl�
   l'écriture d'ouverture est candidate. Elle s'affiche avec son libellé ; rien n'est présélectionné.
 - **L8 — Rejetées** : le dialogue n'est offert que depuis la liste des propositions, d'où les rejetées sont exclues ; une
   transaction rejetée selon la consigne d'attente se rattache après *Annuler le rejet*.
+- **L10 — `INVOICE_CREDITED`** *(validation P3, R4)* : ce motif ne se lève pas (« … il ne s'annule pas ») ; état hérité
+  d'avant la 0.12.1 (`invoice_settlements_write.rs:776-785`), rare. Le dialogue le dit par l'introduction « tant que dure
+  l'obstacle suivant », vraie sans promettre de levée ; « chaque motif se lève » (registre, amendement P2 de C-v017-3-21)
+  est faux pour lui.
 - **L9 — `cancelBlockedBy` est un instantané** *(réécrit à la validation P2, R2, R9)* : le motif est lu **au moment de la
   liste**. Il peut apparaître après le rattachement (clôture ultérieure de l'exercice, le cas même de #671 l'année
   suivante) ou disparaître (réouverture, compte réactivé, exercice du jour créé) : le dialogue le dit par la formule
@@ -592,7 +803,7 @@ check`, `npm run lint-i18n-ownership`, `npm run build`, et la **suite E2E compl�
 de **réconciliation** en commun. Points de fusion :
 
 1. **`crates/kesh-api/tests/audit_route_registry.rs`** — la v016-2a ajoute deux routes mutantes (sa fiche,
-   `:198-201` : `LIB_ROUTES` 135 → 137, `traced` 129 → 130, `no_matter` 2 → 3, `:944` 138 → 140, `sans_ecriture` 110 →
+   `:198-201` *(citation corrigée à la validation P3, F4 : AC-15, `:226-229`)* : `LIB_ROUTES` 135 → 137, `traced` 129 → 130, `no_matter` 2 → 3, `:944` 138 → 140, `sans_ecriture` 110 →
    112, `tout.len()` 138 → 140), la v017-3a une. Ils réécrivent les **mêmes** assertions et la même prose : à la
    réunion, les compteurs se **recomptent depuis le registre fusionné**, jamais par addition des deux diffs.
 2. **`docs/manual/fr/admin-manual.tex:2966`** (« 129 des 135 routes … ») et son PDF, que lit
@@ -608,6 +819,11 @@ de **réconciliation** en commun. Points de fusion :
 7. `crates/kesh-api/src/errors.rs`, `audit_labels.rs` (liste triée), `lib.rs` (montage), les quatre catalogues i18n,
    `docs/api-external.md`, `docs/manual/fr/user-manual.tex` (sections distinctes) et son PDF : insertions voisines,
    à fusionner à la main ; le PDF se **régénère** après fusion.
+7-bis. *(Validation P3, F4, R7.)* **Mêmes lignes, non voisines** — conflits de texte certains, à recompter ou fusionner à
+   la main : `README.md:41` (la v016-2b le récrit, `v016-2b-releve-manuel-ecran.md:203`, AC-30 ; la 3a aussi, AC-20-bis) ;
+   `frontend/src/lib/shared/i18n-keys.test.ts`, `ATTENDU.sitesTotal` (`:767`), cardinalité exacte que les deux stories
+   changent (`v016-2b-releve-manuel-ecran.md:109`) : à **recompter** après réunion, jamais additionner ;
+   `docs/api-external.md:243` et `:878` (listes que la v016-2a étend aussi, `v016-2a-releve-manuel-backend.md:397`).
 8. **Synergie** : un compte sans relevé électronique (v016-2) dont Guy a passé les mouvements au journal produira des
    transactions `MANUAL` en attente **déjà comptabilisées** — exactement le cas de la v017-3a, qui ne lit pas
    `source_format`. Un test de l'une sur un relevé de l'autre est souhaitable après la réunion (à l'orchestrateur).
@@ -641,10 +857,10 @@ avertissement. Aucun fichier de la 3a n'attend la 3c.
 | Une transaction pour plusieurs écritures (lot de plusieurs factures, paiement groupé) | **#823** (ouverte) |
 | Second côté d'un virement entre comptes propres | **#823** (ouverte) — correction de commentaire à poser, ci-dessous |
 | Paiement qui inclut les frais de rappel | **#401** (ouverte) |
-| Règlement passé sur un **ancien** compte du grand livre, ou sur un **autre** compte bancaire | **à ouvrir**, ci-dessous |
-| Avertissement sur les propositions, confirmations, coût | **à ouvrir** pour la v017-3c (corps prêt dans sa fiche) |
+| Règlement passé sur un **ancien** compte du grand livre, ou sur un **autre** compte bancaire | **#827** (ouverte depuis — *validation P3, R8*) |
+| Avertissement sur les propositions, confirmations, coût | **#828** (ouverte depuis, v017-3c — *validation P3, R8*) |
 
-**Issue à ouvrir** — titre : « Rapprochement : un mouvement comptabilisé sur un ancien compte du grand livre de la
+**Issue à ouvrir** *(ouverte depuis : #827)* — titre : « Rapprochement : un mouvement comptabilisé sur un ancien compte du grand livre de la
 banque, ou sur un autre compte bancaire, ne se rattache pas à sa transaction ». Corps : « Constat (fiche v017-3a, #671,
 2026-10-30). La v017-3a rattache une transaction en attente à une écriture dont le mouvement sur le compte du grand
 livre **actuel** de son compte bancaire l'égale. Deux cas restent en attente pour toujours : (1) le compte du grand
@@ -731,3 +947,17 @@ Tranchées au registre ; listées pour être soumises à Guy.
   patron d'un débit pour l'E2E (F13) ; asymétrie dite (F14) ; CHANGELOG provisoire et § *Passer à la 0.17.0* (F15, F9) ;
   listes vides, trois cas (F16) ; AC-2.12 sur les comptes partagés (R1, côté 3a). Prochaine étape : validation P3
   complète (`v017-3a-validate-prompt-p3.md`, Sonnet, lentilles R et F).
+- 2026-10-30 — **Validation P3** (Sonnet, lentilles R et F) : R 0/0/2/6, F 0/0/4/6 — 0 CRITICAL, 0 HIGH, 6 MEDIUM,
+  12 LOW (P2 : 12 MEDIUM). Prémisses vérifiées au code ; aucun finding rejeté. R1 : l'AC-3 (b) est réécrit sur la vraie
+  raison — aucun geste qui tient `journal_entries` ne verrouille ensuite `bank_transactions`, `reversal_blockers` lit sans
+  verrou ; l'affirmation sur le verrou nommé est retirée (`delete_once` ne le prend pas) ; critère d'arrêt de l'étape 0
+  reformulé. R2 = F1 : `:2300`, `:2354`, `:2366`, `:3337` ajoutés (points 13 à 16) ; filet `rattach` exécuté au `.tex` (44
+  lignes) et au PDF aplati (45 fragments), sortie et tri copiés dans la fiche. F2 : `LinkSettlementModal.test.ts` nommé
+  (mock, `link-empty`, relecture, replis). F3 : quatre cas de listes vides, textes, Vitest, captures. F4, R7 : collisions
+  sur les mêmes lignes (`README.md:41`, `sitesTotal`, `api-external.md:243`, `:878`), citation `:226-229`. R5 : coût de
+  `cancelBlockedBy` écrit, AC de mesure (50 candidates, moins de 1 s), dette et issue au-delà. LOW : M20 (R3) ;
+  `INVOICE_CREDITED`, L10 (R4) ; M27, M28 (R6) ; #827 et #828, C-v017-3-10 annoté (R8) ; gabarit de la phrase du motif
+  (F5) ; phrase sans motif (F6) ; citations `README.md:41`, `sitesTotal:767` (F7) ; CHANGELOG en *Ajouté* (F8) ; M29, M30,
+  captures (F9) ; commentaires de l'écran, décompte 44 (F10). Le résidu signalé par la 3b (colonne 3b du tableau commun)
+  était déjà corrigé à la validation P2 : la colonne renvoie à `sec:facture-fournisseur-sous-centime` (vérifié). Prochaine
+  étape : validation P4 ciblée (`v017-3a-validate-prompt-p4.md`, Opus, une lentille).

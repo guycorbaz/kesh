@@ -7,7 +7,7 @@ l'orchestrateur déclarée à Guy (C-v017-3-25, découpage). **Hors de la releas
 portait jusqu'à sa validation P2 — ses anciens AC-10, AC-11, AC-12, AC-14, D6, D13, D15, mutations M13, M15, M21 et sa
 question Q2 — avec les findings de la P2 qui s'y rattachent (R1, F5, F6, F14, F16 en partie). Elle sera complétée
 (`bmad-create-story`) et validée quand elle sera planifiée. Registre : `v017-3-choix-autonomes.md` (C-v017-3-7,
-C-v017-3-22, C-v017-3-23, C-v017-3-25). Issue : **à ouvrir** (§ *Issue*). Dépend de la **v017-3a** fusionnée.*
+C-v017-3-22, C-v017-3-23, C-v017-3-25). Issue : **#828** (ouverte le 2026-10-30 ; § *Issue*). Dépend de la **v017-3a** fusionnée.*
 
 ## Story
 
@@ -78,7 +78,7 @@ rien n'est refusé. Préférez-vous qu'une ligne signalée ne propose plus rien,
 
 ## Issue
 
-*À ouvrir par l'orchestrateur ; labels proposés : `enhancement`, P2.*
+*Ouverte : **#828** (`enhancement`, P2). Texte d'origine ci-dessous.*
 
 **Titre** : « Rapprochement : signaler une transaction qui semble déjà comptabilisée, et confirmer avant de l'affecter »
 
