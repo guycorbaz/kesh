@@ -10,11 +10,12 @@ Le contenu est rédigé en français à destination des **fiduciaires, PME, ind�
 
 ## [0.17.0]
 
-<!-- En-tête provisoire de la release 0.17.0 : réunion par l'orchestrateur des entrées des stories (v017-2, v017-1, puis les suivantes) ; la section [0.16.1] ci-dessous sera renommée par la v016-2a. -->
+<!-- En-tête provisoire de la release 0.17.0 : réunion par l'orchestrateur des entrées des stories (v017-2, v017-1, v017-3b, puis les suivantes) ; la section [0.16.1] ci-dessous sera renommée par la v016-2a. -->
 
 ### Corrigé
 
 - **L'assistant d'installation affiche, à chacune de ses étapes de saisie, finalisation comprise, le motif d'un refus tel que le serveur le donne**, au lieu d'un message générique ; le champ Pays indique la forme attendue (code ISO à deux lettres) ([#809](https://github.com/guycorbaz/kesh/issues/809)).
+- **Une ligne de facture fournisseur dont le montant n'est pas au centime est refusée** ([#687](https://github.com/guycorbaz/kesh/issues/687)), à la saisie comme à la création de la facture d'un document à traiter : la quantité et le prix portent quatre décimales au plus, et leur produit doit tomber au centime (« 3 × 33.3333 », soit 99.9999, est refusé ; « 2 × 0.125 », soit 0.25, est accepté). Une telle ligne écrivait au journal, puis au compte de la banque au règlement, un montant qu'aucun relevé ne porte : la réconciliation ne proposait jamais la facture. Le formulaire signale la ligne sous elle et n'envoie rien. Par l'API, une ligne de facture fournisseur dont le montant n'est pas au centime, ou dont la quantité ou le prix dépasse quatre décimales, est refusée en `400` (`SUPPLIER_INVOICE_LINE_NOT_IN_CENTIMES`, `VALIDATION_ERROR`) : c'est un changement de contrat. **Les factures existantes ne sont pas modifiées** : une facture enregistrée avant cette version avec un total sous le centime reste lisible, payable et annulable ; sa fiche l'affiche aux décimales exactes et la signale, en renvoyant au manuel utilisateur (« Une facture fournisseur au total sous le centime »), qui décrit comment la remplacer.
 
 ### Sécurité
 

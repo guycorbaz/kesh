@@ -2506,6 +2506,11 @@ supplier-invoices-qr-field-iban = IBAN
 supplier-invoices-qr-field-qr-iban = QR-IBAN
 supplier-invoices-qr-field-amount = QR-Betrag
 supplier-invoices-subcentime = Der QR-Betrag ({$amount}) enthält Bruchteile von Rappen — mit rappengenauen Zeilen nicht erreichbar. Empfehlung: dieses Dokument aus der Liste entfernen.
+# Story v017-3b (#687) — der Titel des Handbuchabschnitts bleibt französisch (Handbücher nicht übersetzt).
+supplier-invoices-errors-line-not-in-centimes = Zeile { $line } ergibt einen Betrag von { $lineTotal }, der nicht auf den Rappen genau ist. Erfassen Sie die Zeile mit dem vom Lieferanten verrechneten Betrag, auf den Rappen genau.
+supplier-invoices-line-not-in-centimes = Der Betrag der Zeile ({ $lineTotal }) ist nicht auf den Rappen genau. Erfassen Sie die Zeile mit dem vom Lieferanten verrechneten Betrag, auf den Rappen genau.
+supplier-invoices-err-line-not-in-centimes = Eine Zeile ist nicht auf den Rappen genau: Erfassen Sie sie mit dem vom Lieferanten verrechneten Betrag, auf den Rappen genau.
+supplier-invoices-subcentime-total-warning = Der Total dieser Rechnung ({ $amount }) ist nicht auf den Rappen genau: Eine Bankzahlung dieses Betrags kann keiner Kontoauszugstransaktion zugeordnet werden. Siehe Handbuch, § « Une facture fournisseur au total sous le centime ».
 supplier-invoices-sum-ttc = Total der Zeilen inkl. MWST
 supplier-invoices-target = QR-Betrag
 supplier-invoices-mismatch = Abweichung zu korrigieren

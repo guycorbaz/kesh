@@ -12,6 +12,12 @@
 //! Story 30-1a (#686, AC-a9, T-a17) — les bornes de `POST /payment-batches` :
 //! une liste vide ne crée aucun lot, plus de 500 identifiants est un `400`.
 //!
+//! Story v017-3b (#687, AC-5, AC-9, AC-11) — une ligne de facture fournisseur
+//! naît au centime (refus de `POST /supplier-invoices`, bornes d'échelle), et
+//! une facture **existante** sous le centime reste lisible, payable, annulable,
+//! sans être modifiée ; la voie nominale du manuel la remplace par une facture
+//! au centime.
+//!
 //! Pré-requis : MariaDB démarré.
 
 use std::net::SocketAddr;
@@ -30,6 +36,8 @@ use sqlx::MySqlPool;
 
 #[path = "../../kesh-db/tests/support/document_group.rs"]
 mod document_group;
+#[path = "../../kesh-db/tests/support/sous_centime.rs"]
+mod sous_centime;
 
 const TEST_JWT_SECRET: &[u8] = b"test-secret-32-bytes-minimum-test-secret-padding";
 const TEST_ADMIN_PASSWORD: &str = "admin123";
@@ -107,6 +115,13 @@ async fn login(app: &TestApp, username: &str, password: &str) -> String {
 
 /// Une facture fournisseur de 100.00 (TVA 0), ouverte ; rend son id.
 async fn open_invoice(pool: &MySqlPool, seeded: &SeededCompany) -> i64 {
+    let supplier = supplier(pool, seeded).await;
+    open_invoice_of(pool, seeded, supplier, "FF-1").await
+}
+
+/// Le compte fournisseurs par défaut posé, et un fournisseur ; rend son id.
+/// Extrait d'`open_invoice` par la Story v017-3b (#687), qui en crée plusieurs.
+async fn supplier(pool: &MySqlPool, seeded: &SeededCompany) -> i64 {
     // Le seed ne pose pas de compte fournisseurs par défaut : montage repris de
     // `kesh-db/tests/supplier_invoices_repository.rs::setup`.
     sqlx::query(
@@ -117,7 +132,7 @@ async fn open_invoice(pool: &MySqlPool, seeded: &SeededCompany) -> i64 {
     .execute(pool)
     .await
     .unwrap();
-    let supplier = contacts::create(
+    contacts::create(
         pool,
         seeded.admin_user_id,
         NewContact {
@@ -146,13 +161,22 @@ async fn open_invoice(pool: &MySqlPool, seeded: &SeededCompany) -> i64 {
     )
     .await
     .unwrap()
-    .id;
+    .id
+}
+
+/// Une facture fournisseur de 100.00 (TVA 0), ouverte, du fournisseur donné.
+async fn open_invoice_of(
+    pool: &MySqlPool,
+    seeded: &SeededCompany,
+    supplier: i64,
+    number: &str,
+) -> i64 {
     supplier_invoices::create(
         pool,
         NewSupplierInvoice {
             company_id: seeded.company_id,
             contact_id: supplier,
-            supplier_invoice_number: Some("FF-1".into()),
+            supplier_invoice_number: Some(number.into()),
             invoice_date: NaiveDate::from_ymd_opt(2026, 6, 15).unwrap(),
             due_date: None,
             creditor_iban: None,
@@ -846,5 +870,324 @@ async fn create_batch_bounds_its_list(pool: MySqlPool) {
         body["batch"]["items"].as_array().map(Vec::len),
         Some(1),
         "{body}"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Story v017-3b (#687) — une ligne de facture fournisseur naît au centime ;
+// celle qui ne l'est pas est signalée, non modifiée.
+// ---------------------------------------------------------------------------
+
+/// Le corps de `POST /supplier-invoices` à une ligne, montants en chaînes.
+fn body_one_line(seeded: &SeededCompany, supplier: i64, quantity: &str, unit_price: &str) -> Value {
+    json!({
+        "contactId": supplier,
+        "supplierInvoiceNumber": "FF-NEUVE",
+        "invoiceDate": "2026-06-15",
+        "lines": [{
+            "description": "Prestation",
+            "quantity": quantity,
+            "unitPrice": unit_price,
+            "vatRate": "0",
+            "expenseAccountId": seeded.accounts["4000"],
+        }],
+    })
+}
+
+/// Ce que la création écrit : factures, écritures, traces `supplier_invoice.created`.
+async fn written(pool: &MySqlPool, company_id: i64) -> (i64, i64, i64) {
+    let invoices: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM supplier_invoices WHERE company_id = ?")
+            .bind(company_id)
+            .fetch_one(pool)
+            .await
+            .unwrap();
+    let entries: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM journal_entries WHERE company_id = ?")
+            .bind(company_id)
+            .fetch_one(pool)
+            .await
+            .unwrap();
+    let traces: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM audit_log WHERE action = 'supplier_invoice.created'",
+    )
+    .fetch_one(pool)
+    .await
+    .unwrap();
+    (invoices, entries, traces)
+}
+
+/// AC-5 (v017-3b) — `POST /supplier-invoices` : une ligne sous le centime est
+/// refusée en `400 SUPPLIER_INVOICE_LINE_NOT_IN_CENTIMES` (rang, montant
+/// normalisé) ; une quantité ou un prix à plus de quatre décimales en `400
+/// VALIDATION_ERROR` qui nomme la ligne et le champ ; un produit négatif en refus
+/// de positivité ; rien n'est écrit ; la saisie au centime passe. Tue M2, M3, M6,
+/// M6bis, M9, M10.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn post_refuses_a_line_not_in_centimes(pool: MySqlPool) {
+    let seeded = seed_accounting_company(&pool).await.unwrap();
+    let supplier = supplier(&pool, &seeded).await;
+    let app = spawn_app(pool.clone()).await;
+    let token = login(&app, "admin", TEST_ADMIN_PASSWORD).await;
+    let avant = written(&pool, seeded.company_id).await;
+
+    let resp = post(
+        &app,
+        &token,
+        "/api/v1/supplier-invoices",
+        body_one_line(&seeded, supplier, "3", "33.3333"),
+    )
+    .await;
+    assert_eq!(resp.status(), 400);
+    let v: Value = resp.json().await.unwrap();
+    assert_eq!(v["error"]["code"], "SUPPLIER_INVOICE_LINE_NOT_IN_CENTIMES");
+    assert_eq!(v["error"]["details"]["line"], 1);
+    assert_eq!(v["error"]["details"]["lineTotal"], "99.9999");
+    assert_eq!(
+        v["error"]["message"],
+        "La ligne 1 donne un montant de 99.9999, qui n’est pas au centime. Saisissez la ligne au montant facturé par le fournisseur, au centime."
+    );
+    assert_eq!(written(&pool, seeded.company_id).await, avant);
+
+    // Validation P1, R5 : `1.00001 × 10` = `10.0001` n'est PAS au centime ; seule
+    // la borne de quantité fait sortir `VALIDATION_ERROR` plutôt que le code du
+    // centime. `100000 × 0.00001` = `1.00000` EST au centime : seule la borne de
+    // prix l'arrête (MariaDB stockerait le prix à `0.0000`).
+    for (q, p, fragment) in [
+        ("1.00001", "10", "la quantité"),
+        ("100000", "0.00001", "le prix unitaire"),
+    ] {
+        let resp = post(
+            &app,
+            &token,
+            "/api/v1/supplier-invoices",
+            body_one_line(&seeded, supplier, q, p),
+        )
+        .await;
+        assert_eq!(resp.status(), 400, "{q} × {p}");
+        let v: Value = resp.json().await.unwrap();
+        assert_eq!(v["error"]["code"], "VALIDATION_ERROR", "{q} × {p}");
+        let message = v["error"]["message"].as_str().unwrap();
+        assert!(message.contains("Ligne 1"), "{message}");
+        assert!(message.contains(fragment), "{message}");
+        assert_eq!(written(&pool, seeded.company_id).await, avant);
+    }
+
+    // Validation P3, R5 : les bornes avant les coordonnées de paiement. Tue M15.
+    let mut body = body_one_line(&seeded, supplier, "1.00001", "10");
+    body["creditorIban"] = json!("CH00 0000 0000 0000 0000 0");
+    let v: Value = post(&app, &token, "/api/v1/supplier-invoices", body)
+        .await
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(v["error"]["code"], "VALIDATION_ERROR", "{v}");
+
+    // Validation P2, R1 : le produit négatif sort en refus de positivité.
+    let resp = post(
+        &app,
+        &token,
+        "/api/v1/supplier-invoices",
+        body_one_line(&seeded, supplier, "-1", "33.3333"),
+    )
+    .await;
+    assert_eq!(resp.status(), 409);
+    let v: Value = resp.json().await.unwrap();
+    assert_eq!(v["error"]["code"], "ILLEGAL_STATE_TRANSITION");
+    assert_eq!(written(&pool, seeded.company_id).await, avant);
+
+    // La saisie au centime, inchangée.
+    let resp = post(
+        &app,
+        &token,
+        "/api/v1/supplier-invoices",
+        body_one_line(&seeded, supplier, "2", "0.125"),
+    )
+    .await;
+    assert_eq!(resp.status(), 201);
+    let v: Value = resp.json().await.unwrap();
+    assert_eq!(v["totalAmount"], "0.2500");
+}
+
+/// L'état d'une facture tel qu'il est écrit : TTC, lignes, et toutes les lignes
+/// d'écriture de son achat et de son règlement éventuel.
+async fn etat(pool: &MySqlPool, id: i64) -> Vec<String> {
+    sqlx::query_scalar::<_, String>(
+        "SELECT CONCAT('facture ', total_amount, ' ', status) FROM supplier_invoices WHERE id = ? \
+         UNION ALL SELECT CONCAT('ligne ', quantity, ' ', unit_price, ' ', line_total) \
+           FROM supplier_invoice_lines WHERE supplier_invoice_id = ? \
+         UNION ALL SELECT CONCAT('écriture ', jel.entry_id, ' ', jel.account_id, ' ', jel.debit, ' ', jel.credit) \
+           FROM journal_entry_lines jel JOIN supplier_invoices si \
+             ON jel.entry_id IN (si.purchase_journal_entry_id, si.settlement_journal_entry_id) \
+          WHERE si.id = ?",
+    )
+    .bind(id)
+    .bind(id)
+    .bind(id)
+    .fetch_all(pool)
+    .await
+    .unwrap()
+}
+
+/// La ligne de l'écriture `entry` au compte `account` : (débit, crédit).
+async fn entry_line(
+    pool: &MySqlPool,
+    entry: i64,
+    account: i64,
+) -> (rust_decimal::Decimal, rust_decimal::Decimal) {
+    sqlx::query_as(
+        "SELECT debit, credit FROM journal_entry_lines WHERE entry_id = ? AND account_id = ?",
+    )
+    .bind(entry)
+    .bind(account)
+    .fetch_one(pool)
+    .await
+    .unwrap()
+}
+
+/// AC-9 (v017-3b) — une facture **existante** au TTC sous le centime, comme une
+/// base 0.16.x : lisible (fiche et liste), payable depuis la fiche (le paiement
+/// n'est PAS refusé — C-v017-3-14), son règlement annulable, puis elle-même
+/// annulable ouverte ; aucune lecture ne la modifie, aucun geste ne réécrit son
+/// montant.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn an_existing_invoice_under_the_centime_stays_usable_and_unmodified(pool: MySqlPool) {
+    let seeded = seed_accounting_company(&pool).await.unwrap();
+    let supplier = supplier(&pool, &seeded).await;
+    let id = open_invoice_of(&pool, &seeded, supplier, "FF-0-16").await;
+    sous_centime::amener_sous_le_centime(&pool, id).await;
+    let ledger = ledger_1020(&pool, &seeded).await;
+    let bank = bank_linked_to(&pool, &seeded, ledger).await;
+    let app = spawn_app(pool.clone()).await;
+    let token = login(&app, "admin", TEST_ADMIN_PASSWORD).await;
+
+    let avant = etat(&pool, id).await;
+    let v: Value = get(&app, &token, &format!("/api/v1/supplier-invoices/{id}"))
+        .await
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(v["totalAmount"], "100.0040");
+    assert_eq!(v["lines"][0]["lineTotal"], "100.0040");
+    let liste: Value = get(&app, &token, "/api/v1/supplier-invoices")
+        .await
+        .json()
+        .await
+        .unwrap();
+    let item = liste["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|i| i["id"] == id)
+        .expect("la facture est listée");
+    assert_eq!(item["totalAmount"], "100.0040");
+    assert_eq!(
+        etat(&pool, id).await,
+        avant,
+        "les lectures ne modifient rien"
+    );
+
+    // Payée depuis la fiche par virement : le règlement écrit la banque au TTC.
+    let resp = post(
+        &app,
+        &token,
+        &format!("/api/v1/supplier-invoices/{id}/pay"),
+        json!({
+            "settlementType": "bank_transfer",
+            "bankAccountId": bank,
+            "paymentDate": "2026-06-20"
+        }),
+    )
+    .await;
+    assert_eq!(resp.status(), 200, "le paiement n'est pas refusé");
+    let v: Value = resp.json().await.unwrap();
+    assert_eq!(v["status"], "paid");
+    assert_eq!(v["totalAmount"], "100.0040", "le montant n'est pas réécrit");
+    let settlement = v["settlementJournalEntryId"].as_i64().unwrap();
+    assert_eq!(
+        entry_line(&pool, settlement, ledger).await,
+        (rust_decimal::Decimal::ZERO, dec!(100.0040)),
+        "la ligne de banque porte le TTC tel quel"
+    );
+
+    // Le règlement s'annule, puis la facture, ouverte.
+    let resp = post(
+        &app,
+        &token,
+        &format!("/api/v1/supplier-invoices/{id}/settlement/cancel"),
+        json!({}),
+    )
+    .await;
+    assert_eq!(resp.status(), 200);
+    let resp = post(
+        &app,
+        &token,
+        &format!("/api/v1/supplier-invoices/{id}/cancel"),
+        json!({}),
+    )
+    .await;
+    assert_eq!(resp.status(), 200);
+    let v: Value = resp.json().await.unwrap();
+    assert_eq!(v["status"], "cancelled");
+    assert_eq!(v["totalAmount"], "100.0040");
+    assert_eq!(v["lines"][0]["lineTotal"], "100.0040");
+}
+
+/// AC-11 (v017-3b) — la voie nominale du manuel, prouvée : la facture sous le
+/// centime, payée par virement, se traite en annulant le règlement **puis** la
+/// facture ; ressaisie au centime et réglée, sa ligne de banque est au centime.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn the_manual_s_nominal_path_replaces_it_by_an_invoice_in_centimes(pool: MySqlPool) {
+    let seeded = seed_accounting_company(&pool).await.unwrap();
+    let supplier = supplier(&pool, &seeded).await;
+    let id = open_invoice_of(&pool, &seeded, supplier, "FF-0-16").await;
+    sous_centime::amener_sous_le_centime(&pool, id).await;
+    let ledger = ledger_1020(&pool, &seeded).await;
+    let bank = bank_linked_to(&pool, &seeded, ledger).await;
+    let app = spawn_app(pool.clone()).await;
+    let token = login(&app, "admin", TEST_ADMIN_PASSWORD).await;
+    let virement = json!({
+        "settlementType": "bank_transfer",
+        "bankAccountId": bank,
+        "paymentDate": "2026-06-20"
+    });
+
+    let pay = format!("/api/v1/supplier-invoices/{id}/pay");
+    assert_eq!(
+        post(&app, &token, &pay, virement.clone()).await.status(),
+        200
+    );
+    for path in [
+        format!("/api/v1/supplier-invoices/{id}/settlement/cancel"),
+        format!("/api/v1/supplier-invoices/{id}/cancel"),
+    ] {
+        let resp = post(&app, &token, &path, json!({})).await;
+        assert_eq!(resp.status(), 200, "{path}");
+    }
+
+    let resp = post(
+        &app,
+        &token,
+        "/api/v1/supplier-invoices",
+        body_one_line(&seeded, supplier, "1", "100.00"),
+    )
+    .await;
+    assert_eq!(resp.status(), 201);
+    let nouvelle = resp.json::<Value>().await.unwrap()["id"].as_i64().unwrap();
+    let resp = post(
+        &app,
+        &token,
+        &format!("/api/v1/supplier-invoices/{nouvelle}/pay"),
+        virement,
+    )
+    .await;
+    assert_eq!(resp.status(), 200);
+    let v: Value = resp.json().await.unwrap();
+    let settlement = v["settlementJournalEntryId"].as_i64().unwrap();
+    let (_, credit) = entry_line(&pool, settlement, ledger).await;
+    assert_eq!(credit, dec!(100.00));
+    assert!(
+        credit.normalize().scale() <= 2,
+        "ligne de banque au centime"
     );
 }

@@ -29,6 +29,7 @@ use crate::errors::AppError;
 use crate::helpers::get_company_for;
 use crate::middleware::auth::CurrentUser;
 use crate::routes::ListResponse;
+use crate::routes::limits::{MAX_DECIMAL_SCALE, line_scale_error, scale_within};
 use crate::services::acces::ContexteAcces;
 use crate::services::factures_fournisseur::{self, DemandeListeFacturesFournisseur};
 
@@ -465,11 +466,31 @@ impl CreateSupplierInvoiceRequest {
     /// construisent leur `NewSupplierInvoice` ici, projet compris, et nulle part
     /// ailleurs. Porte la validation de l'AC12-bis (source [`PaymentSource::Body`])
     /// et le refus `QR_FIELDS_FROM_DOCUMENT` (source [`PaymentSource::Document`]).
+    ///
+    /// Story v017-3b (#687, AC-2) — **avant** le `match` sur la source de
+    /// paiement : la quantité et le prix de chaque ligne portent au plus
+    /// [`MAX_DECIMAL_SCALE`] décimales **après `normalize()`** (`400
+    /// VALIDATION_ERROR` qui nomme la ligne et le champ), ligne par ligne, la
+    /// quantité avant le prix. Un défaut de saisie de ligne se dit avant un
+    /// défaut de coordonnées. ⚠️ Écart voulu avec la facture client, qui juge
+    /// l'échelle **sans** normaliser (`routes/invoices.rs`) : `2.50000` y est
+    /// refusé, accepté ici — la valeur est la même, et MariaDB la stocke sans
+    /// perte. Sans cette borne, une quantité ou un prix à cinq décimales était
+    /// arrondi en silence par la colonne `DECIMAL(19,4)` alors que `line_total`
+    /// était calculé sur la valeur reçue.
     pub(crate) fn to_new_supplier_invoice(
         &self,
         company_id: i64,
         source: PaymentSource,
     ) -> Result<kesh_db::entities::NewSupplierInvoice, AppError> {
+        for (index, line) in self.lines.iter().enumerate() {
+            if !scale_within(&line.quantity.normalize(), MAX_DECIMAL_SCALE) {
+                return Err(line_scale_error(index, "la quantité"));
+            }
+            if !scale_within(&line.unit_price.normalize(), MAX_DECIMAL_SCALE) {
+                return Err(line_scale_error(index, "le prix unitaire"));
+            }
+        }
         let (payment, expected_payment_amount) = match source {
             PaymentSource::Body => (
                 validate_payment_details(

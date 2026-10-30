@@ -1401,7 +1401,50 @@ async fn complete_amount_mismatch_and_sub_centime_blocked(pool: MySqlPool) {
         .unwrap();
     assert_eq!(r2.status(), 400);
     let b2: Value = r2.json().await.unwrap();
-    assert_eq!(b2["error"]["code"], "AMOUNT_MISMATCH");
+    // Story v017-3b (#687, AC-6) : la garde de ligne passe AVANT `AMOUNT_MISMATCH`
+    // — la ligne sous le centime est nommée, non l'écart au QR. Tue M5.
+    assert_eq!(b2["error"]["code"], "SUPPLIER_INVOICE_LINE_NOT_IN_CENTIMES");
+    assert_eq!(b2["error"]["details"]["line"], 1);
+    assert_eq!(b2["error"]["details"]["lineTotal"], "99.9999");
+    assert_eq!(staging_status(&pool, s2).await, "to_complete");
+
+    // (c) Story v017-3b (AC-6, validation P2, R2) — la complétion passe par la
+    // MÊME passe de forme que la saisie : un produit négatif et sous le centime
+    // y reçoit le refus de positivité, comme `POST /supplier-invoices`. Tue M13.
+    let s3 = seed_staging(
+        &pool,
+        ctx.seeded.company_id,
+        "CHF",
+        false,
+        "NON",
+        None,
+        Some(dec!(100.00)),
+        "C",
+        "z.png",
+    )
+    .await;
+    let r3 = app
+        .client
+        .post(app.url(&format!("/api/v1/imported-supplier-invoices/{s3}/complete")))
+        .bearer_auth(&ctx.jwt)
+        .json(&complete_body(
+            ctx.supplier_id,
+            ctx.seeded.accounts["4000"],
+            dec!(-1),
+            dec!(33.3333),
+            dec!(0),
+        ))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(r3.status(), 409);
+    let b3: Value = r3.json().await.unwrap();
+    assert_eq!(b3["error"]["code"], "ILLEGAL_STATE_TRANSITION");
+    assert_eq!(staging_status(&pool, s3).await, "to_complete");
+    assert_eq!(
+        supplier_invoice_count(&pool, ctx.seeded.company_id).await,
+        0
+    );
 }
 
 #[sqlx::test(migrations = "../kesh-db/test-schema")]

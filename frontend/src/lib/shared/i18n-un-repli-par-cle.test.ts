@@ -181,8 +181,21 @@ const PREFIXES = [
  * refus, deux clés au préfixe `onboarding-`, relais `msg` de `routes/onboarding/+page.svelte` :
  * `onboarding-language-error` (S1, au lieu du littéral) et `onboarding-field-country-hint`
  * (indication sous le champ Pays). Recompté : `git diff` du FTL fr-CH, préfixes du domaine.
+ *
+ * ⚠️ **344 → 348, +4 nommées** (Story v017-3b, #687, 2026-10-30) — une ligne de facture
+ * fournisseur au centime, toutes au préfixe `supplier-invoices-` et appelées par `i18nMsg`
+ * littéral : `-errors-line-not-in-centimes` (`supplier-invoice-form.ts`, le texte du refus
+ * serveur), `-line-not-in-centimes` et `-err-line-not-in-centimes`
+ * (`SupplierInvoiceForm.svelte`), `-subcentime-total-warning` (`SupplierInvoiceTotal.svelte`).
+ * Recompté depuis les SOURCES : les appels neufs de ces trois fichiers.
+ *
+ * ⚠️ **Release 0.17.0** (branche `release/0.17.0`, 2026-10-31) : les deux stories ci-dessus,
+ * parties toutes deux de 344, sont réunies par fusion ; la valeur est **mesurée** par ce
+ * test sur l'arbre réuni, non additionnée : **344 → 350** (+6 = les 2 de la v017-2 et les 4 de
+ * la v017-3b, aucune clé commune ; mesuré après la fusion de
+ * `story/v017-3-rapprochement-attente`, bornes `99566298` → arbre réuni).
  */
-const CLES_RELEVEES = 346;
+const CLES_RELEVEES = 350;
 
 
 /** Relève, pour chaque clé du domaine, l'ensemble de ses replis littéraux distincts. */

@@ -2544,6 +2544,12 @@ supplier-invoices-qr-field-iban = IBAN
 supplier-invoices-qr-field-qr-iban = QR-IBAN
 supplier-invoices-qr-field-amount = Montant du QR
 supplier-invoices-subcentime = Le montant du QR ({$amount}) contient des sous-centimes — impossible à atteindre par des lignes centime-exactes. Recommandation : retirer ce document de la liste.
+# Story v017-3b (#687) — une ligne de facture fournisseur naît au centime ; une facture
+# existante au total sous le centime est signalée sur sa fiche.
+supplier-invoices-errors-line-not-in-centimes = La ligne { $line } donne un montant de { $lineTotal }, qui n’est pas au centime. Saisissez la ligne au montant facturé par le fournisseur, au centime.
+supplier-invoices-line-not-in-centimes = Le montant de la ligne ({ $lineTotal }) n’est pas au centime. Saisissez la ligne au montant facturé par le fournisseur, au centime.
+supplier-invoices-err-line-not-in-centimes = Une ligne n’est pas au centime : saisissez-la au montant facturé par le fournisseur, au centime.
+supplier-invoices-subcentime-total-warning = Le total de cette facture ({ $amount }) n’est pas au centime : un paiement bancaire de ce montant ne pourra être rapproché d’aucune transaction de relevé. Voir le manuel, § « Une facture fournisseur au total sous le centime ».
 supplier-invoices-sum-ttc = Total TTC des lignes
 supplier-invoices-target = montant du QR
 supplier-invoices-mismatch = écart à corriger

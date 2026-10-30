@@ -772,7 +772,18 @@ const ATTENDU = {
 	// `onboarding-field-country-hint` ; −1 `onboarding-finalize-error`, écrit une fois au lieu
 	// de deux dans `reportFinalizeError`) ; `shared/utils/error-message.ts` 1 → 1. Que des
 	// littéraux : les autres compteurs inchangés.
-	sitesTotal: 2620,
+	// Story v017-3b (#687, 2026-10-30) : **2619 → 2623** (+4), recompté par le même `grep` aux
+	// deux bornes (`899f564a` → HEAD de la branche), périmètre : les fichiers touchés —
+	// `supplier-invoice-form.ts` 16 → 17 (`-errors-line-not-in-centimes`),
+	// `SupplierInvoiceForm.svelte` 42 → 44 (`-err-line-not-in-centimes`,
+	// `-line-not-in-centimes`), `SupplierInvoiceTotal.svelte` 0 → 1 (fichier neuf,
+	// `-subcentime-total-warning`) ; `[id]/+page.svelte` 50 → 50 et
+	// `AttachDocumentPicker.svelte` 15 → 15. Que des littéraux.
+	// Release 0.17.0 (branche `release/0.17.0`, 2026-10-31) : les deux stories ci-dessus,
+	// réunies par fusion, sont **mesurées** sur l'arbre réuni par la collecte de ce test —
+	// non additionnées : **2619 → 2624** (+5 = +1 de la v017-2, +4 de la v017-3b ; mesuré
+	// après la fusion de `story/v017-3-rapprochement-attente`, bornes `99566298` → arbre réuni).
+	sitesTotal: 2624,
 	sitesNonResolus: 31,
 	relais: 6,
 	// Story 26-1 (#620, AC3-bis) : **10 → 11** — `lib/features/bank-import/

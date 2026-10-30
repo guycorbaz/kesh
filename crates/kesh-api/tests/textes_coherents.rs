@@ -812,6 +812,13 @@ fn les_replis_rust_suivent_le_catalogue() {
                 ("bank-accounts-errors-has-pending-transactions", 1, &[]),
                 ("bank-accounts-errors-has-open-payment-batches", 1, &[]),
                 ("bank-accounts-errors-cannot-archive-primary", 1, &[]),
+                // Story v017-3b (#687) — une ligne de facture fournisseur qui
+                // n'est pas au centime.
+                (
+                    "supplier-invoices-errors-line-not-in-centimes",
+                    1,
+                    &[("{ $line }", "{line}"), ("{ $lineTotal }", "{line_total}")],
+                ),
             ],
         ),
         (

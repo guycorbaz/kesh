@@ -3950,6 +3950,32 @@ impl IntoResponse for AppError {
                         &t_args("error-invoice-below-minimum", &fallback, &args),
                     )
                 }
+                // Story v017-3b (#687) — une ligne de facture fournisseur qui n'est
+                // pas au centime. **La seule conversion** vers le code : la saisie
+                // et la complétion d'une pièce importée la subissent par `?` depuis
+                // `purchase_lines_form`. Défaut de saisie → 400. Le montant voyage
+                // normalisé (`99.9999`), le rang 1-based.
+                DbError::SupplierLineNotInCentimes { line, line_total } => {
+                    let line_total = line_total.normalize().to_string();
+                    let fallback = format!(
+                        "La ligne {line} donne un montant de {line_total}, qui n’est pas au centime. Saisissez la ligne au montant facturé par le fournisseur, au centime."
+                    );
+                    let mut args = FluentArgs::new();
+                    args.set("line", line.to_string());
+                    args.set("lineTotal", line_total.clone());
+                    let body = serde_json::json!({
+                        "error": {
+                            "code": "SUPPLIER_INVOICE_LINE_NOT_IN_CENTIMES",
+                            "message": t_args(
+                                "supplier-invoices-errors-line-not-in-centimes",
+                                &fallback,
+                                &args,
+                            ),
+                            "details": { "line": line, "lineTotal": line_total },
+                        }
+                    });
+                    (StatusCode::BAD_REQUEST, Json(body)).into_response()
+                }
                 DbError::PeriodLocked {
                     locked_through,
                     attempted,

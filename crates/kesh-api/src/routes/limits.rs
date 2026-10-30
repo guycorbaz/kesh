@@ -32,6 +32,17 @@ pub fn scale_within(value: &Decimal, max_scale: u32) -> bool {
     value.scale() <= max_scale
 }
 
+/// Le refus d'une valeur de ligne à plus de [`MAX_DECIMAL_SCALE`] décimales —
+/// `field` est le nom du champ, article compris (« la quantité », « le prix
+/// unitaire »), `index` le rang **0-based** de la ligne. Un seul texte pour la
+/// facture client et la facture fournisseur (Story v017-3b, #687).
+pub fn line_scale_error(index: usize, field: &str) -> crate::errors::AppError {
+    crate::errors::AppError::Validation(format!(
+        "Ligne {} : {field} doit avoir au plus {MAX_DECIMAL_SCALE} décimales",
+        index + 1
+    ))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -2507,6 +2507,11 @@ supplier-invoices-qr-field-iban = IBAN
 supplier-invoices-qr-field-qr-iban = QR-IBAN
 supplier-invoices-qr-field-amount = Importo del QR
 supplier-invoices-subcentime = L'importo del QR ({$amount}) contiene frazioni di centesimo — irraggiungibile con righe al centesimo esatto. Raccomandazione: togliere questo documento dall'elenco.
+# Story v017-3b (#687) — il titolo della sezione del manuale resta in francese (manuali non tradotti).
+supplier-invoices-errors-line-not-in-centimes = La riga { $line } dà un importo di { $lineTotal }, che non è al centesimo. Registrate la riga all'importo fatturato dal fornitore, al centesimo.
+supplier-invoices-line-not-in-centimes = L'importo della riga ({ $lineTotal }) non è al centesimo. Registrate la riga all'importo fatturato dal fornitore, al centesimo.
+supplier-invoices-err-line-not-in-centimes = Una riga non è al centesimo: registratela all'importo fatturato dal fornitore, al centesimo.
+supplier-invoices-subcentime-total-warning = Il totale di questa fattura ({ $amount }) non è al centesimo: un pagamento bancario di questo importo non potrà essere riconciliato con alcuna transazione dell'estratto. Vedi il manuale, § « Une facture fournisseur au total sous le centime ».
 supplier-invoices-sum-ttc = Totale delle righe IVA inclusa
 supplier-invoices-target = importo del QR
 supplier-invoices-mismatch = differenza da correggere

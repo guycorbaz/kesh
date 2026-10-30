@@ -445,3 +445,66 @@ describe("fiche facture fournisseur — la contrepartie n’est pas le compte cr
     expect(queryByTestId("pay-no-eligible-bank")).toBeNull();
   });
 });
+
+// Story v017-3b (#687, AC-10, C-v017-3-26, C-v017-3-27) — une facture EXISTANTE au
+// total sous le centime : la fiche l'affiche aux décimales exactes et l'avertit,
+// sauf annulée. L'intégration de `SupplierInvoiceTotal` dans la page.
+describe("fiche facture fournisseur — total sous le centime", () => {
+  const ligne = {
+    position: 1,
+    description: "Prestation",
+    quantity: "1.0000",
+    unitPrice: "100.0040",
+    vatRate: "0.00",
+    lineTotal: "100.0040",
+    expenseAccountId: 1,
+  };
+
+  it("ouverte, 100.0040 ⇒ l'avertissement, le TTC et les cellules de lignes exacts (M14, M16)", async () => {
+    getMock.mockResolvedValue(
+      inv({
+        status: "open",
+        totalAmount: "100.0040",
+        lines: [ligne],
+        settlementType: null,
+        settlementAccountId: null,
+        settlementJournalEntryId: null,
+        paidAt: null,
+      }),
+    );
+    const { findByTestId, getAllByTestId } = render(Page);
+    expect(
+      (await findByTestId("supplier-invoice-subcentime-warning")).textContent,
+    ).toContain("100.0040");
+    expect(
+      (await findByTestId("supplier-invoice-total")).textContent?.trim(),
+    ).toBe("100.0040");
+    expect(
+      getAllByTestId("supplier-invoice-detail-line-unit-price")[0].textContent?.trim(),
+    ).toBe("100.0040");
+    expect(
+      getAllByTestId("supplier-invoice-detail-line-total")[0].textContent?.trim(),
+    ).toBe("100.0040");
+  });
+
+  it("annulée, 100.0040 ⇒ aucun avertissement : la page transmet le statut (M7)", async () => {
+    getMock.mockResolvedValue(
+      inv({
+        status: "cancelled",
+        totalAmount: "100.0040",
+        lines: [ligne],
+        settlementType: null,
+        settlementAccountId: null,
+        settlementJournalEntryId: null,
+        paidAt: null,
+        cancellable: false,
+        settlementCancellable: false,
+      }),
+    );
+    const { findByTestId, queryByTestId } = render(Page);
+    expect(
+      (await findByTestId("supplier-invoice-total")).textContent?.trim(),
+    ).toBe("100.0040");
+    expect(queryByTestId("supplier-invoice-subcentime-warning")).toBeNull();
+  });
+});

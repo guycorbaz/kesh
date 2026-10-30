@@ -1585,6 +1585,17 @@ fournisseur au crédit) et ouvre la fiche de la facture créée. Pour créer la 
 d'un document reçu dans le dossier d'import, voir \S\ref{sec:import-factures}~: la même
 saisie s'y fait à côté du document.
 
+\paragraph{Une ligne se saisit au centime.} Depuis la version~0.17.0, la quantité et le prix
+d'une ligne portent \textbf{quatre décimales au plus}, et leur produit --- le montant de la
+ligne --- doit tomber \textbf{au centime}~: «~2 × 0.125~» (0.25) est accepté, «~3 × 33.3333~»
+(99.9999) est refusé. Le montant de chaque ligne est écrit tel quel au journal, et le total de
+la facture l'est au compte de la banque quand vous la payez~: un montant sous le centime ne
+correspondrait à aucune transaction d'un relevé, et la réconciliation ne pourrait jamais le
+proposer. Une ligne refusée est signalée sous elle, avec son montant~; à l'enregistrement, le
+formulaire le rappelle et n'envoie rien. Saisissez la ligne au montant facturé par le
+fournisseur, qui est toujours au centime. Une facture enregistrée avant la version~0.17.0 avec
+un total sous le centime n'est pas modifiée~: voir \S\ref{sec:facture-fournisseur-sous-centime}.
+
 Le fournisseur n'existe pas encore~? \textbf{« Nouveau fournisseur »} ouvre un panneau
 sur la page même~: type (entreprise par défaut), nom, adresse. Kesh signale les contacts
 au nom proche déjà enregistrés --- il ne bloque rien, deux fournisseurs peuvent porter des
@@ -1699,6 +1710,53 @@ réconciliation l'a réglée (\S\ref{sec:matching-fournisseur})~: annulez d'abor
 depuis le détail de l'import bancaire (\S\ref{sec:annuler-rapprochement}), qui retire aussi le
 paiement.
 
+\subsubsection{Une facture fournisseur au total sous le centime}\label{sec:facture-fournisseur-sous-centime}
+
+Depuis la version~0.17.0, chaque ligne d'une facture fournisseur se saisit \textbf{au centime}
+(\S\ref{sec:saisie-facture-fournisseur}). Une facture enregistrée \textbf{avant} a pu garder un
+total à plus de deux décimales --- une quantité ou un prix fractionnaire, «~1 × 100.004~» par
+exemple. Kesh \textbf{ne la modifie pas}~: elle reste lisible, payable et annulable. Sa fiche
+l'affiche aux décimales exactes (100.0040, non 100.00) et porte un avertissement qui renvoie
+ici, sauf si elle est annulée. La liste des factures, elle, arrondit encore ce total à deux
+décimales.
+
+\textbf{Pourquoi la traiter.} Son règlement écrit au compte de la banque le total tel quel~:
+un paiement bancaire de ce montant ne pourra être rapproché d'aucune transaction de relevé, qui
+est toujours au centime. La réconciliation ne la propose jamais pour un débit
+(\S\ref{sec:matching-fournisseur}). Tant qu'elle est ouverte, elle peut en outre retenir la
+proposition d'une règle d'affectation pour un débit égal à son total à 5~centimes près, lorsque
+la référence du paiement ou le nom du fournisseur la désigne (\S\ref{sec:regles-affectation}).
+Ses livres sont justes~; c'est le rapprochement de son paiement qui ne se fera pas.
+
+\textbf{La remplacer par une facture au centime}, selon son état~:
+\begin{itemize}
+    \item \textbf{ouverte}~: annulez-la (\S\ref{sec:annuler-facture-fournisseur}), puis saisissez
+          de nouveau la facture au montant facturé par le fournisseur, au centime~;
+    \item \textbf{payée}~: annulez d'abord le \textbf{règlement}, \textbf{puis} la facture, dans
+          cet ordre, puis ressaisissez-la. Annuler d'abord la facture laisse son règlement au
+          grand livre, détaché~; si c'est arrivé, l'écriture de règlement détachée se contre-passe
+          depuis sa fiche d'écriture (\S\ref{sec:contre-passation}). Si l'achat est dans un
+          exercice clôturé et le règlement dans un exercice ouvert, n'annulez pas le règlement
+          tant que la facture ne peut pas l'être~;
+    \item \textbf{dans un exercice clôturé}~: l'annulation suppose la réouverture de l'exercice
+          par un administrateur (\S\ref{sec:reouverture-exercice}). Si vous ne la voulez pas, la
+          facture reste telle quelle~: un paiement bancaire de ce montant ne pourra être rapproché
+          d'aucune transaction de relevé~;
+    \item \textbf{dans un lot pain.001}~: un lot en cours dont le fichier n'a pas été transmis
+          --- ou que la banque a refusé --- s'annule avant la facture (\S\ref{sec:paiements-fournisseurs})~;
+          un lot \textbf{exécuté} par la banque se confirme, puis la facture suit la voie
+          «~payée~». Si la banque a passé le lot en un seul débit, la transaction du relevé ne se
+          rattache à aucune facture seule~;
+    \item \textbf{réglée par un compte interne} (caisse, carte)~: aucun débit n'est au relevé, rien
+          n'est à rapprocher~; la remplacer n'est utile que pour un grand livre au centime.
+\end{itemize}
+
+\textbf{Après la ressaisie}, la nouvelle facture se règle par la réconciliation du débit déjà au
+relevé (\S\ref{sec:matching-fournisseur}), ou depuis sa fiche puis en rattachant la transaction du
+relevé à l'écriture de ce règlement (\S\ref{sec:rattacher-reglement}). Un \textbf{document joint}
+à l'ancienne facture s'en détache depuis sa fiche~: il redevient «~à traiter~»
+(\S\ref{sec:import-factures}), et la nouvelle facture se crée depuis lui.
+
 \subsection{Annuler une facture fournisseur}
 \label{sec:annuler-facture-fournisseur}
 
@@ -1758,6 +1816,10 @@ la \textbf{confirmation est refusée}, sans rien écrire~; deux issues~: relier 
 bancaire à son propre compte de banque puis confirmer, ou annuler le lot et régler la facture
 depuis sa fiche. Le fichier \texttt{pain.001} a pu être exécuté par la banque~: c'est alors la
 première qu'il faut choisir.
+
+Une facture enregistrée avant la version~0.17.0 avec un total à plus de deux décimales
+entre dans un lot~; le fichier en porte le montant arrondi au centime, et la banque peut refuser
+un lot qui en contient (\S\ref{sec:facture-fournisseur-sous-centime}).
 
 \begin{keshwarning}[title=\faExclamationTriangle\ Annuler le règlement d'une facture payée par lot]
 Le règlement d'une facture payée par un lot \textbf{confirmé} peut être annulé --- le cas
@@ -1844,7 +1906,8 @@ Vérifiez avant de retenir.
 \end{keshwarning}
 
 À l'enregistrement, le document quitte la liste et l'écran ouvre la fiche de la facture
-créée. Un refus --- total différent du QR, coordonnée de paiement invalide (sous le champ
+créée. Un refus --- une ligne qui n'est pas au centime (\S\ref{sec:saisie-facture-fournisseur}),
+total différent du QR, coordonnée de paiement invalide (sous le champ
 concerné), compte créanciers ou TVA récupérable non imputable
 (\S\ref{sec:saisie-facture-fournisseur}), exercice fermé, document traité entre-temps
 dans une autre session --- s'affiche sans perdre la saisie, et le document reste dans la
@@ -2302,7 +2365,7 @@ La réconciliation consiste à passer en comptabilité les transactions bancaire
 
 \paragraph{Une facture datée de plus d'un jour après le paiement n'est pas proposée.}\label{sec:facture-posterieure} Un paiement ne peut pas précéder la facture qu'il règle de \textbf{plus d'un jour}. Depuis la version~0.13.3, la proposition applique la même règle que l'acceptation, sur la même date --- la \textbf{date de valeur} de la transaction, à défaut sa date de comptabilisation~: une facture datée de \textbf{plus d'un jour après} le paiement n'est donc plus proposée, et une facture proposée n'est plus refusée parce qu'elle serait postérieure au paiement. Ce refus ne se voit plus que si la facture a été \textbf{redatée} entre l'affichage des propositions et leur acceptation~: la ligne apparaît alors dans les \emph{Échecs partiels} avec le motif «~Le paiement est daté de plus d'un jour avant la facture~». De même, si un \textbf{rappel est annulé} entre l'affichage des propositions et leur acceptation, la date qui fait courir les 30 jours peut reculer, et la facture être refusée pour un paiement trop tardif~: la ligne apparaît dans les \emph{Échecs partiels}, avec le motif générique de la facture non éligible. Le règlement saisi depuis la fiche de la facture, ou depuis la page des échéances, refuse lui aussi un règlement daté avant la facture~: l'écran n'accepte aucune date antérieure à la date de la facture, et son calendrier n'en propose aucune. Il n'a en revanche aucune limite de 30 jours~: c'est par lui qu'on enregistre un paiement que la réconciliation ne propose pas (reçu plus de 30 jours après l'échéance et le dernier rappel) --- en rattachant ensuite la transaction à ce règlement (\S\ref{sec:rattacher-reglement}). Vérifiez la date de la facture~: si le paiement est réellement antérieur --- un acompte, par exemple ---, il ne règle pas cette facture.
 
-\paragraph{Un débit~: les factures fournisseur.}\label{sec:matching-fournisseur} Depuis la version~0.14.0, une transaction \textbf{débitrice} en CHF reçoit les factures \textbf{fournisseur ouvertes} (\S\ref{sec:factures-fournisseurs}) qui pourraient lui correspondre --- c'est le processus pour qui saisit après coup les factures des paiements de son relevé~: saisir la facture \textbf{ouverte}, puis laisser la réconciliation la régler. Une facture fournisseur est \textbf{candidate} si elle est ouverte, si son \textbf{total} (TTC) est \textbf{exactement} égal au montant du débit --- le paiement d'une facture fournisseur est toujours du total, sans paiement partiel ni tolérance~; un total à plus de deux décimales n'est jamais proposé ---, si elle n'est \textbf{pas engagée dans un lot de paiement en cours} (\S\ref{sec:paiements-fournisseurs}), et si le paiement tombe \textbf{au plus 7 jours avant la date de la facture} (un achat payé en ligne, facturé à l'expédition) et \textbf{au plus un an après la plus tardive de sa date et de son échéance} --- sa date seule, si elle n'a pas d'échéance. La date à laquelle la facture a été \textbf{saisie} ne compte pas~: une facture saisie des mois après le paiement est proposée. Elle est notée comme une facture client, à une différence près~: la \textbf{référence} du paiement compte si elle est \textbf{égale} à la référence de paiement de la facture (la référence QR ou SCOR qu'elle porte) ou à son numéro --- espaces ignorés, majuscules ou minuscules indifférentes ---, en entier et sur six caractères au moins~; un numéro court («~1~», «~Loyer~») ou une référence qui n'en contient qu'une partie ne compte pas. À score égal, la facture échue la première passe en tête (\S\ref{sec:imputation-score-egal}).
+\paragraph{Un débit~: les factures fournisseur.}\label{sec:matching-fournisseur} Depuis la version~0.14.0, une transaction \textbf{débitrice} en CHF reçoit les factures \textbf{fournisseur ouvertes} (\S\ref{sec:factures-fournisseurs}) qui pourraient lui correspondre --- c'est le processus pour qui saisit après coup les factures des paiements de son relevé~: saisir la facture \textbf{ouverte}, puis laisser la réconciliation la régler. Une facture fournisseur est \textbf{candidate} si elle est ouverte, si son \textbf{total} (TTC) est \textbf{exactement} égal au montant du débit --- le paiement d'une facture fournisseur est toujours du total, sans paiement partiel ni tolérance~; un total à plus de deux décimales n'est jamais proposé, ce qui depuis la version~0.17.0 ne se produit plus que pour une facture enregistrée avant (\S\ref{sec:facture-fournisseur-sous-centime}) ---, si elle n'est \textbf{pas engagée dans un lot de paiement en cours} (\S\ref{sec:paiements-fournisseurs}), et si le paiement tombe \textbf{au plus 7 jours avant la date de la facture} (un achat payé en ligne, facturé à l'expédition) et \textbf{au plus un an après la plus tardive de sa date et de son échéance} --- sa date seule, si elle n'a pas d'échéance. La date à laquelle la facture a été \textbf{saisie} ne compte pas~: une facture saisie des mois après le paiement est proposée. Elle est notée comme une facture client, à une différence près~: la \textbf{référence} du paiement compte si elle est \textbf{égale} à la référence de paiement de la facture (la référence QR ou SCOR qu'elle porte) ou à son numéro --- espaces ignorés, majuscules ou minuscules indifférentes ---, en entier et sur six caractères au moins~; un numéro court («~1~», «~Loyer~») ou une référence qui n'en contient qu'une partie ne compte pas. À score égal, la facture échue la première passe en tête (\S\ref{sec:imputation-score-egal}).
 
 \textbf{Un lot de paiement en cours sur ce compte.} Si une facture fournisseur ouverte du montant \textbf{exact} du débit figure dans un lot de paiement \textbf{en cours} (fichier généré, non confirmé) sur le compte bancaire de la transaction, la ligne ne propose \textbf{rien} --- ni facture, ni règle --- et dit pourquoi, en nommant la facture et le lot~: ce débit est peut-être le paiement de ce lot, et accepter une autre facture du même montant (la mensualité suivante, typiquement) réglerait deux fois la même dépense. Si le débit est bien le paiement du lot, \textbf{annulez le lot}~: la facture sera alors proposée ici. Sinon, affectez la transaction à la main. Ne \textbf{confirmez} pas le lot pour ce débit~: la confirmation enregistre son propre paiement, qui resterait sans transaction (voir l'encadré «~Dépense déjà réglée~» ci-dessous). Un lot \textbf{oublié} --- fichier généré mais jamais transmis à la banque --- retient ainsi, tant qu'il reste en cours, tout débit de ce montant sur ce compte, sans limite de date~: annulez-le (\S\ref{sec:paiements-fournisseurs}).
 
@@ -3327,7 +3390,7 @@ Oui, si :
 \begin{itemize}
     \item Aucune facture validée et non payée n'a un \textbf{reste dû} égal au montant de la transaction --- à l'arrondi au centime près, un demi-centime au plus au-dessous ---, ou supérieur de 5 centimes au plus (\S\ref{sec:algorithme-matching})~: un client qui a payé trop, même de quelques centimes, n'est pas proposé~; une règle d'affectation ne l'est pas non plus à la place de sa facture, si la référence du paiement ou le nom du client la désigne.
     \item La transaction tombe \textbf{plus de 30 jours après l'échéance} de la facture (ou après sa date, si elle n'a pas d'échéance) \textbf{et plus de 30 jours après son dernier rappel}~: une facture payée tard et sans rappel récent n'est pas proposée (\S\ref{sec:algorithme-matching}). À l'inverse, une facture datée de plus d'un jour \textbf{après} le paiement n'est pas proposée (\S\ref{sec:facture-posterieure}).
-    \item La transaction n'est pas en CHF~: seules les transactions en CHF reçoivent une facture candidate. Un \textbf{débit} ne reçoit jamais une facture client, seulement une facture \textbf{fournisseur ouverte} dont le total est exactement son montant, datée au plus 7 jours après lui et échue au plus un an avant (\S\ref{sec:matching-fournisseur})~; un débit dont le montant est celui d'une facture d'un lot de paiement en cours sur ce compte ne propose rien, et le dit.
+    \item La transaction n'est pas en CHF~: seules les transactions en CHF reçoivent une facture candidate. Un \textbf{débit} ne reçoit jamais une facture client, seulement une facture \textbf{fournisseur ouverte} dont le total est exactement son montant, datée au plus 7 jours après lui et échue au plus un an avant (\S\ref{sec:matching-fournisseur})~--- une facture enregistrée avant la version~0.17.0 avec un total à plus de deux décimales n'est jamais proposée (\S\ref{sec:facture-fournisseur-sous-centime})~; un débit dont le montant est celui d'une facture d'un lot de paiement en cours sur ce compte ne propose rien, et le dit.
     \item Le score de la facture est nul~: la référence de la transaction ne contient pas le \textbf{numéro de la facture}, le nom de la contrepartie ne correspond pas au nom du client, et le montant n'est pas exactement le reste dû au centime.
     \item Aucune règle d'affectation ne correspond --- ou la règle qui correspondrait est écartée parce que son compte de contrepartie a été archivé ou est devenu non imputable. Une règle n'est d'ailleurs affichée que s'il n'y a \textbf{aucune} facture candidate.
 \end{itemize}

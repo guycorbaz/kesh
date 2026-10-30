@@ -69,9 +69,19 @@ export function dueToCentime(raw: string): Big {
  * `true` si le montant porte une **fraction de centime** (10.0050, 0.0040) —
  * comparaison de VALEURS en big.js, jamais de chaînes : « 68.1000 » n'en a
  * pas. Même condition que le serveur (`amount != amount_due_to_centime(amount)`).
+ *
+ * **La seule définition** (Story v017-3b, #687, validation P2, F10) : l'homonyme de
+ * `supplier-invoices/supplier-invoice-form.ts` s'y est réduit, avec son contrat —
+ * `null`, `undefined` ou une valeur illisible rendent `false` au lieu de lever, ce
+ * dont dépend le rendu du formulaire de facture fournisseur (montant du QR absent).
  */
-export function hasSubCentime(raw: string): boolean {
-	return !new Big(raw).eq(dueToCentime(raw));
+export function hasSubCentime(raw: string | null | undefined): boolean {
+	if (!raw) return false;
+	try {
+		return !new Big(raw).eq(dueToCentime(raw));
+	} catch {
+		return false;
+	}
 }
 
 /**
