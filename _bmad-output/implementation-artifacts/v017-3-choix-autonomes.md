@@ -455,3 +455,79 @@ silencieuse ; un appariement propose, il ne crée jamais).
   limite écrite et issue demandée (P4) — *ouverte depuis : #831 (validation P5, C2)*.
 - **Écartées** : passer aussi la liste (aucun banc, le périmètre continuerait de s'étendre).
 - **Réversible** : oui (l'issue de la liste).
+
+### C-v017-3-28 — v017-3b (développement) : le montage SQL d'une facture 0.16.x, un seul véhicule
+
+- **Contexte** (validation P6, C2) : la fiche hésitait entre un `SET @invoice_id` en tête du fichier et une variable
+  posée par l'aide de test sur une connexion acquise.
+- **Retenu** : `crates/kesh-db/tests/support/montage-sous-centime.sql` ne pose **pas** `@invoice_id` ; l'aide
+  `sous_centime.rs` préfixe `SET @invoice_id := <id>;` au texte et joue le tout par **un** `sqlx::raw_sql` (une
+  connexion, plusieurs instructions — précédents `onboarding_audit_e2e.rs:3022`, `:3085`), puis relit les quatre
+  valeurs et échoue si le montage n'a pas porté. Chaque `UPDATE` est gardé par la valeur d'origine (`100.00`) et le
+  statut `open`. L'opérateur de démonstration tape le `SET` puis `source` le fichier.
+- **Écartées** : `pool.acquire()` puis deux exécutions (inutile, `raw_sql` tient la session) ; le `SET` dans le fichier
+  (littéraux inconnus d'un test éphémère).
+- **Réversible** : oui (fichier de test).
+
+### C-v017-3-29 — v017-3b (développement) : les tests HTTP dans le banc fournisseur existant
+
+- **Contexte** : AC-5, AC-9 et AC-11 demandent des tests HTTP de `POST /supplier-invoices`, du paiement et des
+  annulations.
+- **Retenu** : `crates/kesh-api/tests/supplier_settlement_cancel_e2e.rs` (le banc HTTP des factures fournisseur), dont
+  `open_invoice` est découpé en `supplier` et `open_invoice_of` ; AC-19 dans `admin_full_import_e2e.rs`, AC-6 dans le
+  test (b) existant d'`inbox_import_e2e.rs`, complété d'un cas (c).
+- **Écartées** : un binaire de test neuf (une compilation de plus, et une copie de plus du montage de l'application).
+- **Réversible** : oui.
+
+### C-v017-3-30 — v017-3b (développement) : AC-19 altère la base après l'export
+
+- **Contexte** : exporter puis réimporter sur la même base prouverait peu — la base porte déjà les `100.0040`.
+- **Retenu** : après l'export, un `UPDATE` ramène lignes, TTC et lignes d'écriture à `1` ; l'import doit rendre l'état
+  d'avant l'export, ligne pour ligne (TTC, lignes de facture, lignes d'achat et de règlement, identifiants d'écriture).
+  La restauration réécrit donc les `100.0040` sans passer par `create_in_tx`, dont la garde les refuserait.
+- **Réversible** : oui.
+
+### C-v017-3-31 — v017-3b (développement) : un refus serveur désigne sa ligne, sous elle
+
+- **Contexte** (AC-12) : `SubmitError.field` s'étend d'une désignation de ligne.
+- **Retenu** : `field: 'line'` et `line` (rang 1-based du serveur) ; le formulaire affiche le message sous la ligne
+  désignée (`supplier-invoice-line-server-error`), effacé au clic suivant ; un rang hors des lignes retombe en tête du
+  formulaire. Le texte est celui de la clé d'`errors.rs` (`supplier-invoices-errors-line-not-in-centimes`).
+- **Écartées** : le message en tête seulement (la ligne n'était pas désignée).
+- **Réversible** : oui.
+
+### C-v017-3-32 — v017-3b (développement) : le composant du TTC dans la cellule, des `testid` propres à la fiche
+
+- **Contexte** (AC-10, F9) : l'avertissement et la cellule TTC vivent dans un composant ; la page rend un `<dl>`.
+- **Retenu** : `SupplierInvoiceTotal.svelte` se place **dans** le `<dd>` du TTC (le montant, puis l'avertissement sous
+  lui) — un `<p>` est un contenu permis d'un `<dd>`. Les cellules de lignes de la fiche reçoivent
+  `supplier-invoice-detail-line-unit-price` et `-detail-line-total` : `supplier-invoice-line-unit-price` est déjà le
+  champ du formulaire de saisie.
+- **Écartées** : l'avertissement hors du `<dl>` (le composant ne porterait plus les deux, F9).
+- **Réversible** : oui.
+
+### C-v017-3-33 — v017-3b (développement) : le texte du refus d'échelle, une fonction pour deux factures
+
+- **Contexte** (AC-2 : « à reprendre sans recopier si une fonction s'en dégage »).
+- **Retenu** : `routes/limits.rs::line_scale_error(index, champ)` rend le `VALIDATION_ERROR` « Ligne N : la quantité
+  doit avoir au plus 4 décimales » ; la facture client (`routes/invoices.rs`) et la facture fournisseur l'emploient. Le
+  jugement reste distinct : la facture fournisseur normalise avant de compter les décimales, la facture client non
+  (écart voulu, écrit au doc-comment de `to_new_supplier_invoice`).
+- **Réversible** : oui.
+
+### C-v017-3-34 — v017-3b (développement) : `purchase_line_total` rend le produit brut, refuse le produit normalisé
+
+- **Contexte** (AC-1) : le produit admis peut porter une échelle 4 (`10.0000`).
+- **Retenu** : admis, le produit est rendu **tel quel** (la valeur stockée et écrite au journal ne change pas d'octet par
+  rapport à avant la story) ; refusé, l'erreur porte le produit **normalisé** (`4.9995`).
+- **Réversible** : oui.
+
+### C-v017-3-35 — v017-3b (développement) : la voie 7 du manuel renvoie au rattachement, à réconcilier avec la 3a
+
+- **Contexte** (D7, C-v017-3-20) : la voie « régler depuis la fiche puis rattacher la transaction » suppose la 3a, qui
+  se développe dans un autre worktree ; le manuel de cette branche dit encore qu'un débit ne se rattache pas
+  (`user-manual.tex`, § *Rattacher*, « un débit … ne se rattache pas »).
+- **Retenu** : la sous-section `sec:facture-fournisseur-sous-centime` renvoie à `\ref{sec:rattacher-reglement}` ; la
+  contradiction avec l'ancien texte du § *Rattacher* est assumée dans cette branche et se résout à la réunion (le
+  texte de la 3a remplace celui-là). Si la 3a n'était pas livrée, la phrase se retire.
+- **Réversible** : oui.

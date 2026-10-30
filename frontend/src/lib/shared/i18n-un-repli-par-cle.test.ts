@@ -176,8 +176,15 @@ const PREFIXES = [
  * `onboarding-restore-link` (relais `msg` de `routes/onboarding/+page.svelte`),
  * `onboarding-restore-back` (`routes/onboarding/restore/+page.svelte`). Recompté : `git diff`
  * du FTL fr-CH, préfixes du domaine.
+ *
+ * ⚠️ **344 → 348, +4 nommées** (Story v017-3b, #687, 2026-10-30) — une ligne de facture
+ * fournisseur au centime, toutes au préfixe `supplier-invoices-` et appelées par `i18nMsg`
+ * littéral : `-errors-line-not-in-centimes` (`supplier-invoice-form.ts`, le texte du refus
+ * serveur), `-line-not-in-centimes` et `-err-line-not-in-centimes`
+ * (`SupplierInvoiceForm.svelte`), `-subcentime-total-warning` (`SupplierInvoiceTotal.svelte`).
+ * Recompté depuis les SOURCES : les appels neufs de ces trois fichiers.
  */
-const CLES_RELEVEES = 344;
+const CLES_RELEVEES = 348;
 
 
 /** Relève, pour chaque clé du domaine, l'ensemble de ses replis littéraux distincts. */

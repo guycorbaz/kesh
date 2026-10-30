@@ -764,7 +764,14 @@ const ATTENDU = {
 	// même `grep` aux deux bornes (`f9b154f8` → HEAD), périmètre : les fichiers touchés —
 	// `McpKeysSection.svelte` 60 → 61 (`mcp-server-form-expires-invalid`, B3),
 	// `McpSettingsSection.svelte` 33 → 34 (`mcp-server-settings-retry`, E3). Que des littéraux.
-	sitesTotal: 2619,
+	// Story v017-3b (#687, 2026-10-30) : **2619 → 2623** (+4), recompté par le même `grep` aux
+	// deux bornes (`899f564a` → HEAD de la branche), périmètre : les fichiers touchés —
+	// `supplier-invoice-form.ts` 16 → 17 (`-errors-line-not-in-centimes`),
+	// `SupplierInvoiceForm.svelte` 42 → 44 (`-err-line-not-in-centimes`,
+	// `-line-not-in-centimes`), `SupplierInvoiceTotal.svelte` 0 → 1 (fichier neuf,
+	// `-subcentime-total-warning`) ; `[id]/+page.svelte` 50 → 50 et
+	// `AttachDocumentPicker.svelte` 15 → 15. Que des littéraux.
+	sitesTotal: 2623,
 	sitesNonResolus: 31,
 	relais: 6,
 	// Story 26-1 (#620, AC3-bis) : **10 → 11** — `lib/features/bank-import/

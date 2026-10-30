@@ -11,10 +11,11 @@
 	import { supplierSettlementCancelMessage } from '$lib/features/supplier-invoices/settlement-cancel';
 	import { supplierInvoiceCancelMessage } from '$lib/features/supplier-invoices/invoice-cancel';
 	import { authState } from '$lib/app/stores/auth.svelte';
-	import {
-		formatSupplierInvoiceTotal,
-		supplierInvoiceStatusLabel,
-	} from '$lib/features/supplier-invoices/supplier-invoice-helpers';
+	import { supplierInvoiceStatusLabel } from '$lib/features/supplier-invoices/supplier-invoice-helpers';
+	// Story v017-3b (#687, C-v017-3-27) — la fiche est la seule page aux décimales
+	// exactes : TTC, prix unitaire et total de ligne, total du sélecteur de document.
+	import { formatExactAmount } from '$lib/features/invoices/invoice-helpers';
+	import SupplierInvoiceTotal from '$lib/features/supplier-invoices/SupplierInvoiceTotal.svelte';
 	import type { SupplierInvoiceResponse } from '$lib/features/supplier-invoices/supplier-invoices.types';
 	import { listBankAccounts } from '$lib/features/bank-accounts/bank-accounts.api';
 	import type { BankAccountSummary } from '$lib/features/bank-accounts/bank-accounts.api';
@@ -383,7 +384,7 @@
 		<dt class="text-text-muted">{i18nMsg('supplier-invoices-col-due', 'Échéance')}</dt>
 		<dd>{invoice.dueDate ?? '—'}</dd>
 		<dt class="text-text-muted">{i18nMsg('supplier-invoices-col-total', 'TTC')}</dt>
-		<dd>{formatSupplierInvoiceTotal(invoice.totalAmount)}</dd>
+		<dd><SupplierInvoiceTotal totalAmount={invoice.totalAmount} status={invoice.status} /></dd>
 		{#if projectLabel}
 			<dt class="text-text-muted">{i18nMsg('supplier-invoices-detail-project', 'Projet analytique')}</dt>
 			<dd data-testid="supplier-invoice-project">{projectLabel}</dd>
@@ -498,9 +499,13 @@
 				<tr class="border-b">
 					<td class="py-2">{line.description}</td>
 					<td class="py-2 text-right">{line.quantity}</td>
-					<td class="py-2 text-right">{formatSupplierInvoiceTotal(line.unitPrice)}</td>
+					<td class="py-2 text-right" data-testid="supplier-invoice-detail-line-unit-price"
+						>{formatExactAmount(line.unitPrice)}</td
+					>
 					<td class="py-2 text-right">{line.vatRate}%</td>
-					<td class="py-2 text-right">{formatSupplierInvoiceTotal(line.lineTotal)}</td>
+					<td class="py-2 text-right" data-testid="supplier-invoice-detail-line-total"
+						>{formatExactAmount(line.lineTotal)}</td
+					>
 				</tr>
 			{/each}
 		</tbody>

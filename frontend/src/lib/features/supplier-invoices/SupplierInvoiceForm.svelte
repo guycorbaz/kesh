@@ -48,11 +48,13 @@
 		amountMismatch,
 		describeSubmitError,
 		emptyLine,
-		hasSubCentime,
+		firstLineNotInCentimes,
+		lineNotInCentimes,
 		linesInvalid,
 		paymentFields,
 		sumTtc,
 	} from './supplier-invoice-form';
+	import { hasSubCentime } from '$lib/features/invoices/invoice-helpers';
 	import SupplierCreatePanel from './SupplierCreatePanel.svelte';
 
 	interface Props {
@@ -108,6 +110,8 @@
 	let formError = $state('');
 	let ibanError = $state('');
 	let referenceError = $state('');
+	/** Story v017-3b (#687) — un refus serveur qui désigne une ligne (rang 0-based). */
+	let lineServerError = $state<{ index: number; message: string } | null>(null);
 
 	/** Adresse pré-remplie du panneau : QR de type `S` seulement (C-30-2-8). */
 	const prefillAddress = $derived<StructuredAddress | null>(
@@ -196,6 +200,7 @@
 		formError = '';
 		ibanError = '';
 		referenceError = '';
+		lineServerError = null;
 		if (!fContactId) {
 			formError = i18nMsg('supplier-invoices-err-supplier', 'Sélectionnez un fournisseur.');
 			return;
@@ -204,6 +209,16 @@
 			formError = i18nMsg(
 				'supplier-invoices-err-lines',
 				'Chaque ligne requiert une description, un montant et un compte de charge.',
+			);
+			return;
+		}
+		// Story v017-3b (#687, C-v017-3-19) — APRÈS `linesInvalid` : une ligne à la fois
+		// incomplète et sous le centime reçoit le message générique. Le bouton n'est pas
+		// désactivé : le refus se dit au clic, avec sa cause.
+		if (firstLineNotInCentimes(fLines) !== null) {
+			formError = i18nMsg(
+				'supplier-invoices-err-line-not-in-centimes',
+				'Une ligne n’est pas au centime : saisissez-la au montant facturé par le fournisseur, au centime.',
 			);
 			return;
 		}
@@ -236,6 +251,8 @@
 			const e = describeSubmitError(err);
 			if (e.field === 'iban') ibanError = e.message;
 			else if (e.field === 'reference') referenceError = e.message;
+			else if (e.field === 'line' && e.line !== undefined && e.line >= 1 && e.line <= fLines.length)
+				lineServerError = { index: e.line - 1, message: e.message };
 			else formError = e.message;
 		} finally {
 			saving = false;
@@ -499,6 +516,7 @@
 	<div>
 		<div class="mb-2 text-sm font-medium">{i18nMsg('supplier-invoices-lines', 'Lignes')}</div>
 		{#each fLines as line, idx (idx)}
+			{@const subCentime = lineNotInCentimes(line)}
 			<div class="mb-2 grid grid-cols-12 gap-2" data-testid="supplier-invoice-line">
 				<input
 					class="col-span-4 rounded border px-2 py-1 text-sm"
@@ -547,6 +565,20 @@
 					disabled={fLines.length === 1}>✕</button
 				>
 			</div>
+			{#if subCentime !== null}
+				<p class="mb-2 text-sm text-destructive" data-testid="supplier-invoice-line-subcentime">
+					{i18nMsg(
+						'supplier-invoices-line-not-in-centimes',
+						'Le montant de la ligne ({ $lineTotal }) n’est pas au centime. Saisissez la ligne au montant facturé par le fournisseur, au centime.',
+						{ lineTotal: subCentime },
+					)}
+				</p>
+			{/if}
+			{#if lineServerError?.index === idx}
+				<p class="mb-2 text-sm text-destructive" role="alert" data-testid="supplier-invoice-line-server-error">
+					{lineServerError.message}
+				</p>
+			{/if}
 		{/each}
 		<button type="button" class="text-sm text-primary" data-testid="supplier-invoice-add-line" onclick={addLine}>
 			+ {i18nMsg('supplier-invoices-add-line', 'Ajouter une ligne')}

@@ -430,3 +430,78 @@ describe('SupplierInvoiceForm — Entrée dans le panneau « Nouveau fournisseur
 		await waitFor(() => expect(onSubmit).toHaveBeenCalledTimes(1));
 	});
 });
+
+describe('SupplierInvoiceForm — une ligne au centime (Story v017-3b, #687, AC-12)', () => {
+	const DEDIE =
+		'Une ligne n’est pas au centime : saisissez-la au montant facturé par le fournisseur, au centime.';
+
+	async function setQty(container: HTMLElement, value: string) {
+		const qty = container.querySelector('[data-testid="supplier-invoice-line-qty"]') as HTMLInputElement;
+		await fireEvent.input(qty, { target: { value } });
+	}
+
+	it('affiche le message de ligne sous une ligne qui n’est pas au centime', async () => {
+		const { container, getByTestId, queryByTestId } = renderForm({});
+		await fillLine(container, '33.3333');
+		await setQty(container, '3');
+		expect(getByTestId('supplier-invoice-line-subcentime').textContent?.trim()).toBe(
+			'Le montant de la ligne (99.9999) n’est pas au centime. Saisissez la ligne au montant facturé par le fournisseur, au centime.',
+		);
+		await setQty(container, '1');
+		await fillLine(container, '99.99');
+		expect(queryByTestId('supplier-invoice-line-subcentime')).toBeNull();
+	});
+
+	it('au clic, affiche le message DÉDIÉ et n’envoie rien (M8, M12) ; corrigée, la saisie part', async () => {
+		const { container, getByTestId, onSubmit } = renderForm({});
+		await selectSupplier(container, '1');
+		await fillLine(container, '33.3333');
+		await setQty(container, '3');
+		expect((getByTestId('supplier-invoice-submit') as HTMLButtonElement).disabled).toBe(false);
+		await fireEvent.click(getByTestId('supplier-invoice-submit'));
+		await tick();
+		expect(getByTestId('supplier-invoice-form-error').textContent?.trim()).toBe(DEDIE);
+		expect(onSubmit).not.toHaveBeenCalled();
+
+		await setQty(container, '1');
+		await fillLine(container, '99.99');
+		await fireEvent.click(getByTestId('supplier-invoice-submit'));
+		await waitFor(() => expect(onSubmit).toHaveBeenCalledTimes(1));
+	});
+
+	it('une ligne à la fois incomplète et sous le centime reçoit le message générique', async () => {
+		const { container, getByTestId, onSubmit } = renderForm({});
+		await selectSupplier(container, '1');
+		await fillLine(container, '33.3333');
+		await setQty(container, '3');
+		await fireEvent.input(getByTestId('supplier-invoice-line-desc'), { target: { value: '' } });
+		await fireEvent.click(getByTestId('supplier-invoice-submit'));
+		await tick();
+		expect(getByTestId('supplier-invoice-form-error').textContent?.trim()).toBe(
+			'Chaque ligne requiert une description, un montant et un compte de charge.',
+		);
+		expect(onSubmit).not.toHaveBeenCalled();
+	});
+
+	it('un refus serveur désigne sa ligne, traduit, sans perdre la saisie', async () => {
+		const { container, getByTestId, getAllByTestId } = renderForm({
+			onSubmit: async () => {
+				throw {
+					code: 'SUPPLIER_INVOICE_LINE_NOT_IN_CENTIMES',
+					status: 400,
+					message: 'serveur',
+					details: { line: 1, lineTotal: '0.005' },
+				};
+			},
+		});
+		await selectSupplier(container, '1');
+		await fillLine(container, '10.00');
+		await fireEvent.click(getByTestId('supplier-invoice-submit'));
+		await waitFor(() =>
+			expect(getAllByTestId('supplier-invoice-line-server-error')[0].textContent?.trim()).toBe(
+				'La ligne 1 donne un montant de 0.005, qui n’est pas au centime. Saisissez la ligne au montant facturé par le fournisseur, au centime.',
+			),
+		);
+		expect((getByTestId('supplier-invoice-line-unit-price') as HTMLInputElement).value).toBe('10.00');
+	});
+});

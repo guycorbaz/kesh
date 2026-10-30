@@ -246,6 +246,13 @@ async fn complete_import_once(
         // l'« extension future » de la 12-5c), validation de l'AC12-bis.
         let new = req.to_new_supplier_invoice(company_id, source)?;
 
+        // (5 bis) Story v017-3b (#687, AC-6, D9) — la passe de FORME des lignes,
+        //     la même fonction et le même ordre que la saisie (positivité →
+        //     centime → TVA), AVANT `AMOUNT_MISMATCH` : une ligne sous le centime
+        //     se nomme, au lieu d'un écart au QR qu'elle rendait inatteignable.
+        //     Son refus passe par la seule conversion `DbError` → `AppError`.
+        let line_totals = supplier_invoices::purchase_lines_form(&new.lines)?;
+
         // (6) Réconciliation montant (F2) : si le QR porte un montant (jamais un
         //     document sans QR, dont `amount` est `None` — Story 30-2a), exiger
         //     l'égalité EXACTE Σ lignes TTC == staging.amount (pleine précision,
@@ -255,8 +262,8 @@ async fn complete_import_once(
         if let Some(qr_amount) = staging.amount {
             let mut sum_ht = Decimal::ZERO;
             let mut sum_vat = Decimal::ZERO;
-            for l in &new.lines {
-                let line_total = l.quantity * l.unit_price;
+            // Les `line_total` de la passe de forme : aucun second produit.
+            for (l, &line_total) in new.lines.iter().zip(&line_totals) {
                 sum_ht += line_total;
                 sum_vat += line_vat_amount(line_total, l.vat_rate);
             }

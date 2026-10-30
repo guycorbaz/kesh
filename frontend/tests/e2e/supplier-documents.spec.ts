@@ -286,6 +286,44 @@ test.describe('Créer la facture à côté du document (Story 30-2b)', () => {
 });
 
 /**
+ * Story v017-3b (#687, AC-15) — une ligne qui n'est pas au centime : signalée sous elle,
+ * refusée au clic par le message dédié sans rien enregistrer ; corrigée, la facture se crée.
+ * La valeur traverse la frontière HTTP : seul un E2E le montre de bout en bout.
+ */
+test.describe('Une ligne au centime (Story v017-3b)', () => {
+	test('E8 — 3 × 33.3333 refusée à la saisie, 1 × 99.99 enregistrée', async ({ page }) => {
+		await login(page);
+		const expenseAccountId = await ensurePayableAndExpense(page);
+		const supplierId = await createSupplierViaApi(page, `Fournisseur E8 ${token()}`);
+
+		await page.goto('/supplier-invoices/new');
+		// Le fournisseur d'abord : le formulaire le refuse avant les lignes.
+		await page.getByTestId('supplier-invoice-supplier').selectOption(String(supplierId));
+		await fillFirstInvoiceLine(page, 'Prestation E8', '33.3333', expenseAccountId);
+		// `fillFirstInvoiceLine` ne remplit pas la quantité.
+		const line = page.getByTestId('supplier-invoice-line').first();
+		await line.getByTestId('supplier-invoice-line-qty').fill('3');
+		await expect(page.getByTestId('supplier-invoice-line-subcentime')).toHaveText(
+			'Le montant de la ligne (99.9999) n’est pas au centime. Saisissez la ligne au montant facturé par le fournisseur, au centime.',
+		);
+
+		await page.getByTestId('supplier-invoice-submit').click();
+		await expect(page.getByTestId('supplier-invoice-form-error')).toHaveText(
+			'Une ligne n’est pas au centime : saisissez-la au montant facturé par le fournisseur, au centime.',
+		);
+		await expect(page).toHaveURL(/\/supplier-invoices\/new$/);
+
+		await line.getByTestId('supplier-invoice-line-qty').fill('1');
+		await line.getByTestId('supplier-invoice-line-unit-price').fill('99.99');
+		await expect(page.getByTestId('supplier-invoice-line-subcentime')).toHaveCount(0);
+		await page.getByTestId('supplier-invoice-submit').click();
+		await expect(page).toHaveURL(/\/supplier-invoices\/\d+$/);
+		const { inv } = await invoiceAndDocumentStatus(page, invoiceIdFromUrl(page));
+		expect(inv.totalAmount).toBe('99.9900');
+	});
+});
+
+/**
  * Story 30-2c — joindre un document après coup, le détacher (parcours E4 → E5 → E7).
  *
  * ⚠️ **`describe.serial`, avec son motif** (patron `open-items.spec.ts`) : les trois

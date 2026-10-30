@@ -58,7 +58,14 @@ pub fn purchase_line_total(
     unit_price: Decimal,
 ) -> Result<Decimal, LineNotInCentimes> {
     let line_total = quantity * unit_price;
-    Ok(line_total)
+    let normalized = line_total.normalize();
+    if normalized.scale() <= 2 {
+        Ok(line_total)
+    } else {
+        Err(LineNotInCentimes {
+            line_total: normalized,
+        })
+    }
 }
 
 #[cfg(test)]

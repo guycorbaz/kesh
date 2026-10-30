@@ -341,7 +341,8 @@ fn client_triples(
 /// Les triplets de `propose_matches` pour des factures **fournisseur**
 /// (Story 30-1b) : le montant est le **TTC** — le règlement est binaire
 /// (C-30-1-5) ; un TTC à plus de deux décimales n'égale jamais un relevé
-/// (angle mort L2, #687).
+/// (angle mort L2, #687 — depuis la v0.17.0, le cas d'une facture enregistrée
+/// avant : la création refuse une ligne sous le centime).
 fn supplier_triples(
     invoices: &[kesh_db::entities::SupplierInvoice],
     contacts: &HashMap<i64, kesh_db::entities::Contact>,
