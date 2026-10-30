@@ -1,6 +1,6 @@
 # Story v017-2 : l'assistant d'installation dit pourquoi le serveur refuse
 
-Status: ready-for-dev
+Status: in-progress
 
 *Fiche rédigée le 2026-10-30, en autonomie (Opus 5.5), worktree `/home/gcorbaz/devel/kesh-0172`, branche
 `story/v017-2-assistant-motif` partie de `c5101b07` (tête de la candidate 0.16.1-rc1). Release **0.17.0**. Registre :
@@ -106,7 +106,8 @@ un `catch` muet à l'enseigne de #809. Le panneau est nommé par #644 : hors pé
   aujourd'hui. Un `repli` vide ou blanc est traité comme absent (générique). Le doc-comment du module décrit le
   paramètre, et sa règle 1 est corrigée (validation P2, F5) : « le serveur l'a déjà traduit » devient « le serveur l'a
   traduit, sauf les refus de validation écrits en dur dans les routes, rendus tels quels (#710) »
-  (`error-message.ts:20-22`).
+  (`error-message.ts:20-22`). La même affirmation, écrite au doc-comment de `parseErrorResponse`
+  (`api-client.ts:236`, « repris tel quel (le serveur l'a traduit) »), reçoit la même incise (validation P3, P3-3).
 - **AC-2 — Les sept étapes à `catch` nu (S1 à S7) affichent le motif.** Chaque site lie l'erreur et appelle
   `toast.error(errorMessageOf(err, <repli de l'étape>))`, le repli étant le message d'aujourd'hui, clé et texte
   inchangés (tableau ci-dessus). **S1** passe par une clé neuve, `onboarding-language-error` (validation P1, F10 :
@@ -185,11 +186,12 @@ un `catch` muet à l'enseigne de #809. Le panneau est nommé par #644 : hors pé
   lignes (validation P2, F7 — la sortie aplatie tient sur une ligne, `grep -c` y rend 0 ou 1) :
   `pdftotext docs/manual/fr/user-manual.pdf - | tr '\n' ' ' | tr -s ' ' | grep -oF "code ISO à deux lettres" | wc -l` et
   la même commande sur un fragment de la phrase ajoutée, choisi **après lecture du PDF régénéré** (une césure peut couper
-  un mot) — fragment et deux comptes cités au Dev Agent Record. Le même paragraphe reçoit une incise à l'avertissement
-  du § *Choix de la langue* (`user-manual.tex:155-158`, « des contrôles automatiques empêchent qu'un écran retombe
-  silencieusement sur le français ») : « — certains refus du serveur restent toutefois rédigés en français (#710) »
-  (validation P2, F6). Les phrases du même § qui disent la langue « choisie lors de l'onboarding » (`:144-151`) sont
-  fausses au code (`KESH_LANG`) : **non traitées ici**, issue demandée (§ *Issues à ouvrir*). La capture `onboarding-production.png` (légende
+  un mot) — le compte « avant » se mesure alors sur le PDF versionné (`git show HEAD:docs/manual/fr/user-manual.pdf`,
+  validation P3, P3-4) ; fragment et deux comptes cités au Dev Agent Record. Le § *Choix de la langue* reçoit en outre
+  une incise à son avertissement (`user-manual.tex:154-168`, « des contrôles automatiques empêchent qu'un écran retombe
+  silencieusement sur le français ») : « — certains refus du serveur restent toutefois rédigés en français (\#710) »
+  (validation P2, F6 ; `\#` et non `#` dans le `.tex`, validation P3, P3-4). Les phrases du même § qui disent la langue
+  « choisie lors de l'onboarding » (`:144-151`) sont fausses au code (`KESH_LANG`) : **non traitées ici**, **#824**. La capture `onboarding-production.png` (légende
   `user-manual.tex:196`) n'existe pas au dépôt (`docs/manual/fr/screenshots/` ne porte que `_placeholder.png`) : la
   légende reste exacte, l'image absente n'est pas traitée ici (validation P1, F5). Le manuel d'administration
   (`admin-manual.tex:1069, 1419`) ne détaille pas les champs : inchangé — à vérifier, non à supposer.
@@ -205,7 +207,8 @@ un `catch` muet à l'enseigne de #809. Le panneau est nommé par #644 : hors pé
 1. **Étape 0** — recontrôler les prémisses 1 à 7 et l'inventaire (`grep` ci-dessus) sur la tête de la branche ;
    lister au Dev Agent Record toute ligne qui a bougé.
 2. **Tests rouges d'abord** (AC-1, AC-2 à AC-5, AC-6, AC-8), puis le code.
-3. `error-message.ts` (AC-1) ; `+page.svelte` (AC-2 à AC-4, AC-6) ; locales (AC-7). Deux gardes i18n à décompte
+3. `error-message.ts` (AC-1) ; `+page.svelte` (AC-2 à AC-4, AC-6 — importer `errorMessageOf` de
+   `$lib/shared/utils/error-message`, validation P3, P3-5) ; locales (AC-7). Deux gardes i18n à décompte
    **exact** suivent (validation P2, R1) : `frontend/src/lib/shared/i18n-un-repli-par-cle.test.ts:180`
    `CLES_RELEVEES = 344` → **346** (les deux clés neuves, préfixe `onboarding-`, nommées dans le bloc daté au-dessus) ;
    `frontend/src/lib/shared/i18n-keys.test.ts:767` `sitesTotal: 2619` → valeur **recomptée** aux deux bornes
@@ -272,6 +275,9 @@ périmé » — pour Vitest, relancer suffit) :
 | M10 | S5 reçoit le repli de S2 (`onboarding-mode-error`) ; puis, séparément, S10 appelle `errorMessageOf(err)` sans repli | test TypeError de S5 ; test TypeError de S10 (validation P1, R2) |
 | M11 | S1 rétablit le littéral sans clé (`errorMessageOf(err, 'Erreur lors du choix de langue')`) | test TypeError de S1 : la simulation d'`i18nMsg` est un `vi.fn` qui rend le repli **et** enregistre ses appels ; le test exige un appel avec `'onboarding-language-error'` (le texte seul ne distingue pas la clé du littéral) |
 | M12 | `reportFinalizeError` perd sa branche `ONBOARDING_STEP_ALREADY_COMPLETED` (tout passe par `errorMessageOf`) | tests S9/S11 « ALREADY_COMPLETED » : `'MOTIF-DEJA'` affiché au lieu d'`onboarding-already-finalized` (validation P2, R4) |
+| M13 | `errorMessageOf` rend un `repli` blanc tel quel (plus de retour au générique) | cas « repli blanc → générique » d'`error-message.test.ts` (validation P3, P3-6) |
+| M14 | `errorMessageOf` ne journalise plus une valeur non `ApiError` quand un `repli` est fourni | cas « TypeError → repli + `console.error` » d'`error-message.test.ts` ; tests TypeError de l'assistant (validation P3, P3-6) |
+| M15 | contrôle du pays retiré d'`address_input.rs` (`check_lengths`, la condition `country.len() != 2 …`) — restauré **et touché** | `coordinates_rejects_country_name` (validation P3, P3-6) |
 
 Chaque mutation se déclare au Dev Agent Record avec le test qui a rougi, la sortie citée.
 
@@ -337,6 +343,7 @@ commit de code. Le Dev Agent Record n'affirme que ce qui a tourné.
 ### Fichiers touchés (prévus) et modules
 
 - `frontend/src/lib/shared/utils/error-message.ts` (+ `.test.ts`) — utilitaire partagé, paramètre optionnel seulement.
+- `frontend/src/lib/shared/utils/api-client.ts` — un doc-comment (`:236`, validation P3, P3-3), aucun code.
 - `frontend/src/routes/onboarding/+page.svelte`, tests neufs `onboarding-motif.test.ts`, `onboarding-catch-guard.test.ts`.
 - `crates/kesh-i18n/locales/{fr,de,it,en}-CH/messages.ftl` — deux clés.
 - `frontend/src/lib/shared/i18n-un-repli-par-cle.test.ts` (`CLES_RELEVEES`) et `frontend/src/lib/shared/i18n-keys.test.ts`
@@ -363,10 +370,15 @@ atomique), `#44` (ajout des comptes manquants à la finalisation), `#817`, `#818
 - **#817** — pays contrôlé à la forme seulement (C-v017-2-8), P2.
 - **#818** — chargement de l'assistant en échec silencieux (`+layout.ts:33`, C-v017-2-7), P3.
 - **#821** — finalisation refusée : écran vide, sans reprise (validation P1, R3), P3.
+- **#824** — manuel utilisateur : la langue de l'interface n'est pas choisie à l'assistant, elle est celle de
+  l'installation (`KESH_LANG`), P3 (validation P2, F2 ; déplacée ici le 2026-10-30, validation P3, P3-7). Constat
+  d'origine conservé ci-dessous.
 
 ### Issues à ouvrir (par l'orchestrateur)
 
-- **Manuel utilisateur : la langue de l'interface n'est pas choisie à l'assistant, elle est celle de l'installation
+Aucune à ce jour (la seule demandée est devenue #824, ci-dessus).
+
+- *(Ouverte depuis : #824.)* **Manuel utilisateur : la langue de l'interface n'est pas choisie à l'assistant, elle est celle de l'installation
   (`KESH_LANG`)** — bug/documentation, P3 proposé (manuel qui décrit autre chose que le code). Constat (validation P2,
   F2) : `docs/manual/fr/user-manual.tex:144-151`, § *Choix de la langue*, écrit « La langue est choisie lors de
   l'**onboarding** » et, dans la note, « la langue est fixée à l'onboarding et n'est pas modifiable depuis un menu ». Or
@@ -374,7 +386,7 @@ atomique), `#44` (ajout des comptes manquants à la finalisation), `#817`, `#818
   (`let locale = &state.config.locale;`), `crates/kesh-api/src/config.rs:848`
   (`env_nonempty("KESH_LANG").unwrap_or_else(|| "fr".into())`), et `frontend/src/lib/shared/utils/i18n.svelte.ts:41-45`
   appelle `/api/v1/i18n/messages` sans paramètre. Le choix de l'étape 0 de l'assistant ne pose que
-  `companies.instance_language`, la langue des documents (`routes/onboarding.rs:1238-1298`). Le manuel d'administration le
+  `companies.instance_language`, la langue des documents (`routes/onboarding.rs:1246-1304`, `ensure_company_with_language_in_tx` ; citée `:1238-1298` jusqu'à la P3, P3-7). Le manuel d'administration le
   dit juste (`admin-manual.tex:757`, `KESH_LANG` « Locale de l'instance »). Attendu : récrire le § (langue de l'interface
   = `KESH_LANG`, réglée par l'administrateur ; choix de l'assistant = langue des documents), PDF régénéré.
 
@@ -416,6 +428,10 @@ atomique), `#44` (ajout des comptes manquants à la finalisation), `#817`, `#818
     touchés), F10 (clé `onboarding-language-error` aux quatre locales au lieu du littéral de S1, mutation M11 ;
     l'étape 0 ne porte plus la condition).
   - LOW non pris : aucun.
+  - Issues : #817, #818, #821 ouvertes par l'orchestrateur ; la fiche les cite. Prochaine : validation P2 (Opus,
+    passe complète, prompt `v017-2-assistant-motif-validate-prompt-p2.md`).
+    *(Puce replacée sous son entrée le 2026-10-30, validation P3, P3-1 : la remédiation P2 avait inséré son entrée
+    avant elle.)*
 - 2026-10-30 — **Validation P2** (Opus, lentilles R et F en contexte frais ; rapports
   `kesh-gate-logs/v017-2-assistant-motif-validate-p2-{R,F}.md`) : 0 CRITICAL, 0 HIGH, 2 MEDIUM, 13 LOW. Remédiation
   (Opus 5.5), chaque prémisse relue au code (`i18n-un-repli-par-cle.test.ts:180, 262`, `i18n-keys.test.ts:767`,
@@ -431,5 +447,5 @@ atomique), `#44` (ajout des comptes manquants à la finalisation), `#817`, `#818
     d'`errorMessageOf`), F6 (incise à l'avertissement du manuel, #710), F7 (comptes en occurrences, `grep -oF | wc -l`).
   - LOW non pris : aucun. Registre propagé : C-v017-2-1, -2, -3, -4 annotés. Prochaine : validation P3 (Sonnet, passe
     ciblée sur `git diff 8c7e3287..HEAD`, prompt `v017-2-assistant-motif-validate-prompt-p3.md`).
-  - Issues : #817, #818, #821 ouvertes par l'orchestrateur ; la fiche les cite. Prochaine : validation P2 (Opus,
-    passe complète, prompt `v017-2-assistant-motif-validate-prompt-p2.md`).
+  - *Annoté le 2026-10-30, validation P3 (P3-2) : « 13 LOW » sont **13 bruts, 12 distincts** — R5 et F8 sont le même
+    défaut.*
