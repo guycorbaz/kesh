@@ -1,6 +1,6 @@
 # Story v017-1 : release 0.17.0 — quick-xml 0.39 → 0.42, les deux dénis de service de l'import CAMT.053
 
-Status: review
+Status: done
 
 <!-- Fiche créée le 2026-10-30 (Opus 5.5, autonomie), worktree `kesh-0171`, branche `story/v017-1-quick-xml`,
      partie de `c5101b07` (tête de la candidate 0.16.1-rc1). Issue : #789 (P1, sécurité), en `refs` seulement.
@@ -837,3 +837,8 @@ restent à #820.
   AC13 : `git diff --stat c5101b07 HEAD -- crates/kesh-db/migrations crates/kesh-i18n docs/manual frontend/src` vide,
   aucune ligne `^[+-]version` dans les `crates/*/Cargo.toml` ; aucun mot-clé de fermeture dans les messages de commit.
   Prochaine : revue de code P1 (Sonnet, trois lentilles, `v017-1-quick-xml-review-prompt-p1.md`).
+- 2026-10-30 — **Revue de code P1** (Sonnet, passe complète, trois lentilles en contexte frais ; rapports
+  `kesh-gate-logs/v017-1-quick-xml-review-p1-{B,E,A}.md`). Décompte : **B** 0 CRITICAL, 0 HIGH, 0 MEDIUM, 4 LOW
+  (B1 à B4) ; **E** 0/0/0/2 (E1, E2) ; **A** 0/0/0/4 (A1 à A4) — soit **0 MEDIUM+ et 10 LOW**. La boucle se clôt
+  **en une passe** (aucun finding au-dessus de LOW, aucune remédiation). Les LOW non corrigés sont tracés par **#834**.
+  Statut : `done`.
