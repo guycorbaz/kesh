@@ -645,3 +645,103 @@ worktree `kesh-0175`). Les entrées précédentes restent telles qu'écrites.*
   blancs ignorés, doublons fondus ; inconnue ou vide → `400 VALIDATION_ERROR`) ; le dépôt `list` reçoit `&[&str]`
   (vide = tous). L'outil MCP passe une liste vide.
 - **Réversible** : oui.
+
+## Développement de la v017-4b (écran) — 2026-10-31
+
+### C-v017-4-52 — Les confirmations du cycle sont des dialogues, et le refus s'affiche sous le bouton
+
+- **Contexte** : AC-22 (« confirmation ») ; la fiche fournisseur confirmait jusqu'ici par `window.confirm`, la fiche
+  client par des dialogues ; l'AC-31 demande les captures des trois confirmations.
+- **Retenu** : trois `Dialog` (patron de `invoices/[id]/+page.svelte`) — *Valider*, *Dévalider*, *Supprimer le
+  brouillon* —, chacun disant ce qui va s'écrire. Un refus **ferme** le dialogue et s'affiche **sous son bouton**
+  (`…-validate-error`, `…-unvalidate-error`, `…-delete-error`), jamais dans `errorMsg` ; un refus d'écran périmé
+  (`ILLEGAL_STATE_TRANSITION`, `OPTIMISTIC_LOCK_CONFLICT`) relit la facture.
+- **Écartée** : `window.confirm` (une confirmation native ne se capture pas, et n'est pas traduite par l'écran).
+- **Réversible** : oui.
+
+### C-v017-4-53 — Les messages de la dévalidation : les textes du serveur pour la pièce, des textes propres pour l'écriture
+
+- **Contexte** : AC-25 (`supplierInvoiceUnvalidateMessage(code, label)`).
+- **Retenu** : les trois motifs propres à la pièce (`SUPPLIER_INVOICE_PAID`, `…_IN_PAYMENT_BATCH`,
+  `MATCHED_BANK_TRANSACTION`) reprennent **les clés du serveur** (`error-supplier-invoice-unvalidate-blocked-*`, espace
+  global `error-`) et leur suffixe ` (<numéro>)`, `label` étant `details.documentNumber` ; l'état, la version et les
+  refus de `delete_in_tx` (`FISCAL_YEAR_CLOSED`, `LATER_FISCAL_YEAR_CLOSED`, `ENTRY_IS_REVERSED`, `PERIOD_LOCKED`,
+  `ENTRY_LETTERED`) ont sept clés `supplier-invoices-unvalidate-blocked-*` qui disent ce qui empêche **la dévalidation**
+  et qui le lève — les textes du serveur parlent d'« écriture » —, la réouverture d'exercice avec son ordre et sa borne
+  (gardes G8 et bornes de `kesh-i18n`) ; un code hors de la précédence rend le repli `supplier-invoices-unvalidate-error`.
+  La fiche passe **tout** refus de la dévalidation par cette fonction.
+- **Écartées** : afficher `err.message` (l'AC-25 prescrit la fonction) ; reprendre les clés génériques
+  (`error-fiscal-year-closed-generic`…), qui ne disent pas quoi faire pour dévalider.
+- **Limite** : les dates d'un `PERIOD_LOCKED` et le nom de l'exercice d'un `LATER_FISCAL_YEAR_CLOSED`, que porte le
+  message du serveur, ne sont pas repris.
+- **Réversible** : oui.
+
+### C-v017-4-54 — Un seul texte pour l'échéance antérieure, au format suisse à l'écran
+
+- **Retenu** : le refus du formulaire et celui du serveur (`SUPPLIER_INVOICE_DUE_BEFORE_INVOICE_DATE`) s'affichent sous
+  l'échéance par la **clé du serveur** (`error-supplier-invoice-due-before-invoice-date`), dates au format suisse
+  (`formatSwissDate`) ; le refus du formulaire est vivant (signalé dès la saisie) et bloque l'envoi.
+- **Réversible** : oui.
+
+### C-v017-4-55 — La date vide a son message sous le champ ; `aria-required`, non `required`
+
+- **Retenu** : avec un document (`document !== null` ou `hasDocument`), l'aide « Date de la facture, telle qu'imprimée
+  sur le document » s'affiche ; une date vide rend `supplier-invoices-err-invoice-date` **sous le champ**
+  (`supplier-invoice-date-error`), avant le contrôle de l'échéance et des lignes. L'attribut natif `required` est écarté :
+  la validation du navigateur passerait avant le message de Kesh (et bloquerait la soumission implicite sans rien dire).
+- **Réversible** : oui.
+
+### C-v017-4-56 — `decimalForServer` garde les décimales saisies ; un montant attendu illisible part tel quel
+
+- **Retenu** : quantité, prix et montant attendu lus une fois par `parseAmount`, envoyés avec un point et le nombre de
+  décimales saisi (« 12,50 » → `"12.50"`) ; quantité vide → `"1"` ; un montant attendu hors format part tel quel et le
+  serveur le refuse (le formulaire ne le contrôlait pas avant, keshnote du manuel inchangée). `lineNotInCentimes` et
+  `sumTtc` lisent par la même fonction (DRY).
+- **Réversible** : oui.
+
+### C-v017-4-57 — La page d'édition rend un brouillon lisible même si ses références ont bougé
+
+- **Retenu** : le fournisseur du brouillon est ajouté à la liste par `getContact` s'il n'y est pas ; les comptes de
+  charge des lignes restent proposés même devenus inactifs ou non imputables (la validation les jugera) ; le taux de TVA
+  lu (`8.10`, `0.00`) est aligné sur la valeur d'une option (`formLineFromResponse`). Le formulaire lit `initial` une
+  fois, au montage.
+- **Réversible** : oui.
+
+### C-v017-4-58 — Le lien de K8 mène à la liste des factures fournisseurs
+
+- **Contexte** : K4 mène à `/invoices?status=draft&dateFrom…` ; la liste fournisseur n'a pas de filtre par l'URL.
+- **Retenu** : chaque brouillon de K8 mène à sa fiche ; le lien du contrôle, à `/supplier-invoices` (les brouillons y
+  portent leur badge).
+- **Écartée** : un filtre d'URL neuf sur la liste (hors périmètre).
+- **Réversible** : oui.
+
+### C-v017-4-59 — « Brouillon enregistré. » à la création comme à la complétion
+
+- **Contexte** : AC-24 (e) nomme la complétion ; la page `new` enregistre les deux par une seule fonction et une seule
+  clé (`imported-supplier-invoices-completed`).
+- **Retenu** : la même notification, vraie dans les deux cas (la création aussi rend un brouillon). La valeur de la clé
+  change aux quatre catalogues ; la ligne « créé(e) » du glossaire, qui la citait comme attestation, est annotée.
+- **Réversible** : oui.
+
+### C-v017-4-60 — La date de la facture se pose dans le helper E2E
+
+- **Retenu** : `fillFirstInvoiceLine` (`helpers/inbox.ts`) pose la date du jour si le champ est vide (validation P2,
+  F3 : « un seul endroit ») ; les specs qui posent une date gardent la leur.
+- **Réversible** : oui.
+
+### C-v017-4-61 — Ce que l'inventaire « ouverte » laisse
+
+- **Retenu** : la règle Q4 vise les textes de l'écran, des manuels et de l'API. Restent : les commentaires et
+  doc-comments de **tests et de code Rust** de la 4a (`reconciliation_e2e.rs`, `services_rollout.rs`…, hors périmètre
+  écran), la ligne **historique** de la v0.14.0 du README (`:232`), les « factures ouvertes » de l'accueil (factures
+  **client**), le poste ouvert (« la dette redevient ouverte »), l'exercice ouvert.
+- **Réversible** : oui.
+
+### C-v017-4-62 — La capture « refus d'annulation d'un brouillon » n'existe pas à l'écran
+
+- **Contexte** : le mandat de développement demande la capture du « refus d'annulation d'un brouillon » ; l'AC-22
+  prescrit l'**absence** du bloc *Annuler la facture* sur un brouillon (M21-bis), et l'AC-25 dit que le motif
+  `SUPPLIER_INVOICE_DRAFT` n'est pas affiché par la fiche.
+- **Retenu** : la fiche d'un brouillon (sans bloc d'annulation) et le **refus de dévalidation** (AC-31) sont capturés ;
+  écart déclaré au rapport.
+- **Réversible** : oui.
