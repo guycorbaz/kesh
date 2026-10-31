@@ -112,6 +112,32 @@ pub fn render_scale(width_pt: f32, height_pt: f32, max_dimension: u16) -> Option
     )
 }
 
+/// Échelle du second rendu **s'il apporte une image autre que le premier**
+/// (revue de code P1, E-3 ; C-v017-5-19) : `render_scale`, sauf quand le premier
+/// rendu a déjà donné cette image-là — chaque côté y étant ramené à
+/// `min(1, max_dimension / côté)` (`apply_to_page` de `pdfium-render`, qui ne
+/// garde pas les proportions sans facteur d'échelle), le second redonnerait
+/// exactement le premier quand ces deux facteurs égalent tous deux l'échelle du
+/// second temps (page plus grande que la borne dans les deux sens, aux mêmes
+/// proportions que la borne). Une page plus grande que la borne dans un seul sens,
+/// **déformée** au premier temps, garde son second rendu, sans déformation.
+pub(crate) fn echelle_du_second_temps(
+    width_pt: f32,
+    height_pt: f32,
+    max_dimension: u16,
+) -> Option<f32> {
+    let s = render_scale(width_pt, height_pt, max_dimension)?;
+    let borne = f32::from(max_dimension);
+    let premier_l = (borne / width_pt).min(1.0);
+    let premier_h = (borne / height_pt).min(1.0);
+    let identique = |a: f32| (a - s).abs() <= 1e-6 * s.max(1.0);
+    if identique(premier_l) && identique(premier_h) {
+        None
+    } else {
+        Some(s)
+    }
+}
+
 /// Les deux temps du rendu d'une page PDF (Story v017-5, #854, C-v017-5-2).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Temps {
@@ -321,9 +347,14 @@ pub(crate) fn decode_spc_from_pdf_bytes_observed(
         let config = match temps {
             Temps::Premier => bornes(PdfRenderConfig::new()),
             // Second temps : `render_scale`, sous les mêmes bornes ; pas d'image
-            // quand la page n'a pas de dimension exploitable.
+            // quand la page n'a pas de dimension exploitable, ni quand le premier
+            // rendu a déjà donné la même image (`echelle_du_second_temps`).
             Temps::Second => {
-                match render_scale(page.width().value, page.height().value, cfg.max_dimension) {
+                match echelle_du_second_temps(
+                    page.width().value,
+                    page.height().value,
+                    cfg.max_dimension,
+                ) {
                     Some(s) => bornes(PdfRenderConfig::new().scale_page_by_factor(s)),
                     None => return Ok(None),
                 }
@@ -536,6 +567,35 @@ mod tests {
         assert_eq!(render_scale(595.276, 841.89, 0), None);
     }
 
+    // `echelle_du_second_temps` (revue de code P1, E-3) : pas de second rendu quand
+    // il redonnerait l'image du premier.
+
+    #[test]
+    fn second_temps_a4_garde_son_rendu() {
+        let s = echelle_du_second_temps(595.276, 841.89, 2000).expect("second rendu utile");
+        assert!(proche(s, 2.3756), "échelle {s}");
+    }
+
+    #[test]
+    fn second_temps_page_plus_grande_que_la_borne_dans_les_deux_sens_aux_memes_proportions() {
+        // 3000 × 3000 pt : le premier rendu la ramène déjà à 2000 × 2000 px, à
+        // l'échelle 2000 / 3000 ; le second redonnerait la même image.
+        assert_eq!(echelle_du_second_temps(3000.0, 3000.0, 2000), None);
+    }
+
+    #[test]
+    fn second_temps_page_deformee_au_premier_rendu_garde_son_rendu() {
+        // 2500 × 1000 pt : le premier rendu ramène la largeur seule (0,8) et laisse la
+        // hauteur à 1,0 — image déformée ; le second la rend à 0,8 dans les deux sens.
+        let s = echelle_du_second_temps(2500.0, 1000.0, 2000).expect("second rendu utile");
+        assert!(proche(s, 0.8), "échelle {s}");
+    }
+
+    #[test]
+    fn second_temps_sans_dimension_exploitable() {
+        assert_eq!(echelle_du_second_temps(0.0, 841.89, 2000), None);
+    }
+
     /// T1-bis — la grandeur causale (AC-4) : pour le QR des fixtures, moins de
     /// 2,5 px par module au premier rendu (72 dpi), plus de 4 au second.
     #[test]
@@ -571,7 +631,8 @@ mod tests {
     }
 
     /// T2 — chacun des trois scans, décodé depuis ses octets JPEG et rééchantillonné
-    /// aux dimensions du second rendu d'une A4 (1414 × 2000), est lu (AC-4).
+    /// aux dimensions du second rendu d'une A4 (1414 × 2000), est lu (AC-4). Les octets
+    /// sont ceux du **générateur** ; T3-bis établit qu'ils égalent ceux des fixtures.
     #[test]
     fn t2_scans_lus_au_second_rendu() {
         for (nom, dpi) in synthetique::FIXTURES_QR {
@@ -617,6 +678,32 @@ mod tests {
             assert_facture_synthetique(&lu);
             eprintln!("T3 {nom} : lu en {:?}", debut.elapsed());
         }
+    }
+
+    /// T3-bis (revue de code P1, B-3) — les fixtures **versionnées**, sans pdfium : le
+    /// flux JPEG de chaque PDF est extrait des octets du fichier. Il est identique à
+    /// celui que T2 et T3 régénèrent (les fixtures ne divergent pas du générateur) ;
+    /// celui d'un scan à QR est lu à sa résolution native et rééchantillonné à
+    /// 1414 × 2000 ; celui de la page sans QR ne livre aucune QR-facture.
+    #[test]
+    fn t3_bis_fixtures_versionnees_lues_sans_pdfium() {
+        for (nom, dpi) in synthetique::FIXTURES_QR {
+            let jpeg = synthetique::jpeg_de_fixture(nom);
+            assert!(
+                jpeg == synthetique::jpeg_qr_facture(dpi),
+                "{nom} : le flux JPEG versionné diverge du générateur — régénérer les fixtures"
+            );
+            let natif = decode_spc_from_image_bytes(&jpeg)
+                .unwrap_or_else(|e| panic!("{nom} : {e}"))
+                .unwrap_or_else(|| panic!("{nom} : non lu à la résolution native"));
+            assert_facture_synthetique(&natif);
+            let second = lire_reechantillonne(&jpeg, 1414, 2000)
+                .unwrap_or_else(|e| panic!("{nom} : {e}"))
+                .unwrap_or_else(|| panic!("{nom} : non lu à 1414 × 2000"));
+            assert_facture_synthetique(&second);
+        }
+        let sans_qr = synthetique::jpeg_de_fixture(synthetique::FIXTURE_SANS_QR);
+        assert!(matches!(decode_spc_from_image_bytes(&sans_qr), Ok(None)));
     }
 
     /// Décode un PDF en comptant les rendus du second temps.
@@ -872,6 +959,8 @@ mod tests {
         NonSpc,
         /// Une erreur de rendu.
         Erreur,
+        /// Pas d'image à ce temps (`Ok(None)`).
+        Rien,
     }
 
     fn image_de(f: Faux) -> Result<Option<DynamicImage>, String> {
@@ -884,6 +973,7 @@ mod tests {
             Faux::SpcInvalide => qr("SPC\n0200\n1\nPAS-UN-IBAN"),
             Faux::NonSpc => qr("https://exemple.invalid/produit/0001"),
             Faux::Erreur => Err("page illisible (simulée)".into()),
+            Faux::Rien => Ok(None),
         }
     }
 
@@ -1011,5 +1101,31 @@ mod tests {
         let (r, appels) = jouer(&plan, 1, 20);
         assert!(matches!(r, Ok(None)), "{}", decrire(&r));
         assert_eq!(seconds(&appels), vec![0]);
+    }
+
+    /// (h) Revue de code P1, B-2 — une page sans image au premier temps (`Ok(None)`)
+    /// reste rendue au second ; sa QR-facture y est lue.
+    #[test]
+    fn t10_h_page_sans_image_au_premier_temps_rendue_au_second() {
+        let plan = [(Faux::Rien, Faux::Spc)];
+        let (r, appels) = jouer(&plan, 1, 20);
+        assert!(matches!(r, Ok(Some(_))), "{}", decrire(&r));
+        assert_eq!(seconds(&appels), vec![0]);
+    }
+
+    /// (i) Revue de code P1, B-2 — une QR-facture inexploitable trouvée au seul second
+    /// temps est rendue en erreur : le document passe de `none` à `unreadable`.
+    #[test]
+    fn t10_i_inexploitable_au_second_temps() {
+        let plan = [(Faux::Vide, Faux::SpcInvalide)];
+        let (r, _) = jouer(&plan, 1, 20);
+        assert!(
+            matches!(
+                r,
+                Err(DecodeError::InvalidSpcPayload(_)) | Err(DecodeError::InvalidIban(_))
+            ),
+            "{}",
+            decrire(&r)
+        );
     }
 }

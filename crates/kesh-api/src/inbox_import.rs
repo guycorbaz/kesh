@@ -178,7 +178,8 @@ pub async fn run_inbox_import(
     // la requête, hyper abandonne ce futur à son prochain `await` : le
     // `RELEASE_LOCK` du point (2) n'est jamais exécuté, et une connexion rendue
     // au pool garderait le verrou dans sa session — jusqu'à dix minutes
-    // d'inactivité, ou indéfiniment si elle resservait ; l'import suivant
+    // d'inactivité (`idle_timeout` par défaut de `sqlx`), ou jusqu'à trente
+    // minutes après sa création si elle resservait (`max_lifetime`) ; l'import suivant
     // répondait 409, ou 200 en reprenant la même session (verrou ré-entrant)
     // sans la libérer. Fermée, la session s'achève et MariaDB rend le verrou.
     // Coût : une connexion neuve par import.
@@ -566,7 +567,8 @@ async fn process_one_file(
             }
             // Rien réactivé : la transaction n'a rien à valider.
             let _ = tx.rollback().await;
-            // Race : la row n'est plus `discarded` → traité comme doublon.
+            // Race : la row n'est plus `discarded`, ou porte désormais un QR
+            // (garde de `reactivate_to_complete_with_qr`) → traité comme doublon.
             return dispose_failed(path, failed_dir, file_name, &disambig, ERR_DUPLICATE, None);
         }
         Some(_) => {

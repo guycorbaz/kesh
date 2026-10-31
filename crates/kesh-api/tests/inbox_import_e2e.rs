@@ -3148,6 +3148,12 @@ async fn import_abandoned_by_client_releases_run_lock(pool: MySqlPool) {
         }
     }
     let restants = dernier.len();
+    // Assertion de montage (revue de code P1, B-1 = E-4) : le passage a bien été
+    // interrompu côté serveur — sans quoi aucun chemin de fuite n'est exercé.
+    assert!(
+        restants > 0,
+        "le passage est allé au bout malgré l'abandon : le test n'exerce plus rien"
+    );
     let traites: i64 =
         sqlx::query_scalar("SELECT COUNT(*) FROM imported_supplier_invoices WHERE company_id = ?")
             .bind(ctx.seeded.company_id)

@@ -562,6 +562,22 @@ pub(crate) fn lire_fixture(nom: &str) -> Vec<u8> {
     std::fs::read(chemin_fixture(nom)).unwrap_or_else(|e| panic!("fixture {nom} : {e}"))
 }
 
+/// Le flux JPEG (filtre DCT, sans autre compression) d'une fixture versionnée, extrait
+/// du PDF sans pdfium : du marqueur SOI (`FF D8 FF`) au dernier EOI (`FF D9`). Chaque
+/// fixture porte une seule image (revue de code P1, B-3).
+pub(crate) fn jpeg_de_fixture(nom: &str) -> Vec<u8> {
+    let pdf = lire_fixture(nom);
+    let debut = pdf
+        .windows(3)
+        .position(|w| w == [0xFF, 0xD8, 0xFF])
+        .unwrap_or_else(|| panic!("{nom} : aucun flux JPEG"));
+    let fin = pdf
+        .windows(2)
+        .rposition(|w| w == [0xFF, 0xD9])
+        .unwrap_or_else(|| panic!("{nom} : flux JPEG sans fin"));
+    pdf[debut..fin + 2].to_vec()
+}
+
 /// Nom des trois fixtures à QR, par résolution de scan.
 pub(crate) const FIXTURES_QR: [(&str, f32); 3] = [
     ("qr-scan-150dpi.pdf", 150.0),
@@ -593,19 +609,32 @@ mod tests {
     #[test]
     #[ignore = "générateur des fixtures versionnées — à lancer à la main"]
     fn ecrire_fixtures() {
-        for (nom, dpi) in FIXTURES_QR {
-            let pdf = pdf_qr_scan(dpi, DEGRADATION, QUALITE_JPEG);
+        // Revue de code P1, A1 : les quatre PDF sont engendrés et leur taille
+        // contrôlée AVANT d'en écrire un seul — un dépassement laisse le jeu de
+        // fixtures entier inchangé, au lieu d'en mêler deux générations.
+        let mut jeu: Vec<(&str, Vec<u8>)> = FIXTURES_QR
+            .iter()
+            .map(|(nom, dpi)| (*nom, pdf_qr_scan(*dpi, DEGRADATION, QUALITE_JPEG)))
+            .collect();
+        jeu.push((
+            FIXTURE_SANS_QR,
+            pdf_sans_qr(DPI_SANS_QR, DEGRADATION, QUALITE_JPEG_SANS_QR),
+        ));
+        for (nom, pdf) in &jeu {
             eprintln!("{nom} : {} octets", pdf.len());
-            assert!(pdf.len() <= PLAFOND_FIXTURE, "{nom} dépasse 1 Mio");
-            std::fs::write(chemin_fixture(nom), &pdf).unwrap();
         }
-        let pdf = pdf_sans_qr(DPI_SANS_QR, DEGRADATION, QUALITE_JPEG_SANS_QR);
-        eprintln!("{FIXTURE_SANS_QR} : {} octets", pdf.len());
+        let trop_gros: Vec<&str> = jeu
+            .iter()
+            .filter(|(_, pdf)| pdf.len() > PLAFOND_FIXTURE)
+            .map(|(nom, _)| *nom)
+            .collect();
         assert!(
-            pdf.len() <= PLAFOND_FIXTURE,
-            "{FIXTURE_SANS_QR} dépasse 1 Mio"
+            trop_gros.is_empty(),
+            "dépassent 1 Mio, rien n'est écrit : {trop_gros:?}"
         );
-        std::fs::write(chemin_fixture(FIXTURE_SANS_QR), &pdf).unwrap();
+        for (nom, pdf) in &jeu {
+            std::fs::write(chemin_fixture(nom), pdf).unwrap();
+        }
     }
 
     /// Les fixtures versionnées tiennent sous le plafond de 1 Mio.
