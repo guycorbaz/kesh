@@ -817,7 +817,15 @@ const ATTENDU = {
 	// la v017-1 n'en a pas) par la collecte de ce test, non additionné : **2619 → 2735**
 	// (+116 = +1 v017-2, +4 v017-3b, +16 v017-3a, +95 v016-2b, aucun site commun ; bornes
 	// `336608f2` et `4cd761ea` → arbre réuni).
-	sitesTotal: 2735,
+	// Story v017-4b (#849) : **2735 → 2790** (+55), recompté par `grep -o 'i18nMsg('` aux
+	// deux bornes (`1d9f81a5` → tête), périmètre : les fichiers touchés hors tests —
+	// `supplier-invoices/[id]/+page.svelte` 50 → 73, `[id]/edit/+page.svelte` 0 → 9 (neuf),
+	// `supplier-invoice-unvalidate.ts` 0 → 11 (neuf), `SupplierInvoiceForm.svelte` 44 → 47,
+	// `supplier-invoice-form.ts` 17 → 19, `supplier-invoice-helpers.ts` 3 → 4,
+	// `invoice-cancel.ts` 7 → 8, `supplier-invoices/+page.svelte` 11 → 12,
+	// `FiscalYearChecks.svelte` 26 → 28, `closing-checks-labels.ts` 20 → 22. Que des
+	// littéraux ; `sitesNonResolus` et `relais` inchangés.
+	sitesTotal: 2790,
 	sitesNonResolus: 31,
 	relais: 6,
 	// Story 26-1 (#620, AC3-bis) : **10 → 11** — `lib/features/bank-import/

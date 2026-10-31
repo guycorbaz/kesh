@@ -149,7 +149,7 @@ describe("fiche facture fournisseur — annuler le règlement", () => {
       await findByTestId("supplier-invoice-settlement-cancel"),
     );
     await waitFor(() => expect(cancelSettlementMock).toHaveBeenCalledWith(9));
-    // Revenue « ouverte » : le formulaire de paiement revient, le motif « non
+    // Revenue « validée » : le formulaire de paiement revient, le motif « non
     // payée » ne s'affiche PAS à côté de lui.
     await waitFor(() =>
       expect(queryByTestId("supplier-invoice-pay")).not.toBeNull(),
@@ -302,7 +302,7 @@ describe("fiche facture fournisseur — annuler la facture (Story 25-3-c)", () =
     expect(queryByTestId("supplier-invoice-settlement-entry")).toBeNull();
   });
 
-  it("confirmation d'une facture ouverte ⇒ sans le paragraphe du paiement", async () => {
+  it("confirmation d'une facture validée ⇒ sans le paragraphe du paiement", async () => {
     getMock.mockResolvedValue(inv({ status: "open", settlementJournalEntryId: null }));
     cancelInvoiceMock.mockResolvedValue(inv({ status: "cancelled", cancellable: false }));
     const { findByTestId } = render(Page);
@@ -460,7 +460,7 @@ describe("fiche facture fournisseur — total sous le centime", () => {
     expenseAccountId: 1,
   };
 
-  it("ouverte, 100.0040 ⇒ l'avertissement, le TTC et les cellules de lignes exacts (M14, M16)", async () => {
+  it("validée, 100.0040 ⇒ l'avertissement, le TTC et les cellules de lignes exacts (M14, M16)", async () => {
     getMock.mockResolvedValue(
       inv({
         status: "open",

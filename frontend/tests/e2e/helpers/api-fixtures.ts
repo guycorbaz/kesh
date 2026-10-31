@@ -240,7 +240,7 @@ export async function wiredBankAccountViaApi(page: Page, iban: string): Promise<
 }
 
 /**
- * Story 30-1b (#686) — un fournisseur et une facture fournisseur **ouverte** d'une ligne
+ * Story 30-1b (#686) — un fournisseur et une facture fournisseur **validée** d'une ligne
  * (sans TVA) de `amount`, créés par l'API (patron de `payment-batches.spec.ts`). Le compte
  * créanciers est désigné aux réglages s'il ne l'est pas (le seed `with-company` ne le désigne
  * pas). `paymentReference` et `number` sont facultatifs (la facture « sans QR » n'en porte

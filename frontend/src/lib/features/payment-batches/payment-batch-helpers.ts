@@ -59,7 +59,8 @@ export function paymentBatchStatusLabel(status: PaymentBatchStatus): string {
  * ⚠️ **Huit codes. Les six premiers libellés sont RELEVÉS, pas inventés** : `SUPPLIER_INVOICE_NOT_FOUND` sur
  * `reminders-error-invoice-not-found`, les deux IBAN sur
  * `imported-supplier-invoices-error-invalid-iban` — **sans** « du créancier », qui ne
- * s'applique pas ici —, et *ouverte* est en partie A du glossaire. `NO_PAYMENT_COORDINATES`
+ * s'applique pas ici —, et *validée* (« non validée ») nomme l'état `open` d'une facture
+ * fournisseur depuis la Story v017-4b (décision Q4, C-v017-4-24 ; il disait « non ouverte »). `NO_PAYMENT_COORDINATES`
  * dit `Keine Zahlungsverbindung` en allemand : c'est le terme bancaire, et non le calque
  * `Zahlungskoordinaten`.
  *
@@ -88,7 +89,7 @@ export function failedItemLabel(code: string): string {
 		case 'SUPPLIER_INVOICE_NOT_FOUND':
 			return i18nMsg('payment-batches-failed-supplier-invoice-not-found', 'Facture introuvable');
 		case 'SUPPLIER_INVOICE_NOT_OPEN':
-			return i18nMsg('payment-batches-failed-supplier-invoice-not-open', 'Facture non ouverte');
+			return i18nMsg('payment-batches-failed-supplier-invoice-not-open', 'Facture non validée');
 		case 'NO_PAYMENT_COORDINATES':
 			return i18nMsg(
 				'payment-batches-failed-no-payment-coordinates',

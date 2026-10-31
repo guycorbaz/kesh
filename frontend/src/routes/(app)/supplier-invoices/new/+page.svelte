@@ -3,7 +3,8 @@
 
   - `/supplier-invoices/new` : le formulaire seul, avec le scan navigateur 12.4 ; le
     bouton « Enregistrer une facture » de la liste y mène ; après enregistrement,
-    l'écran va à la fiche de la facture créée.
+    l'écran va à la fiche du **brouillon** créé (Story v017-4b, #849), qui se valide
+    depuis sa fiche.
   - `/supplier-invoices/new?document=<id>` : l'aperçu du document fixe à gauche, le
     formulaire à droite, empilés sous 1024 px ; **le document reste visible pendant
     toute la saisie** (pas de modal). Le document se lit dans la liste des documents à
@@ -137,10 +138,14 @@
 		}
 	});
 
-	/** Enregistre ; une erreur remonte au formulaire, qui l'affiche sans perdre la saisie. */
+	/**
+	 * Enregistre ; une erreur remonte au formulaire, qui l'affiche sans perdre la saisie.
+	 * Story v017-4b (#849, AC-24 (e)) : la création comme la complétion enregistrent un
+	 * **brouillon**, sans écriture — la notification le dit.
+	 */
 	async function save(req: CreateSupplierInvoiceRequest) {
 		const created = doc ? await completeImport(doc.id, req) : await createSupplierInvoice(req);
-		notifySuccess(i18nMsg('imported-supplier-invoices-completed', 'Facture créée.'));
+		notifySuccess(i18nMsg('imported-supplier-invoices-completed', 'Brouillon enregistré.'));
 		await goto(`/supplier-invoices/${created.id}`);
 	}
 </script>

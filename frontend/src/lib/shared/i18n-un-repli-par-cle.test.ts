@@ -194,8 +194,15 @@ const PREFIXES = [
  * test sur l'arbre réuni, non additionnée : **344 → 350** (+6 = les 2 de la v017-2 et les 4 de
  * la v017-3b, aucune clé commune ; mesuré après la fusion de
  * `story/v017-3-rapprochement-attente`, bornes `99566298` → arbre réuni).
+ *
+ * ⚠️ **Story v017-4b** (#849) : **350 → 384** (+34), recompté aux deux bornes (`1d9f81a5` →
+ * tête) par extraction des clés littérales des `i18nMsg` des sources hors tests, aux préfixes
+ * de ce relevé : 34 clés neuves, toutes `supplier-invoices-` — 24 de l'écran du cycle (liste,
+ * fiche, édition, formulaire), 7 `-unvalidate-blocked-*` et `-unvalidate-error` (les refus de
+ * la dévalidation), `-status-draft`, et `-cancel-blocked-draft` (posée au catalogue par la 4a,
+ * appelée par l'écran depuis la 4b) ; 24 + 7 + 1 + 1 + 1 = 34. Aucune retirée.
  */
-const CLES_RELEVEES = 350;
+const CLES_RELEVEES = 384;
 
 
 /** Relève, pour chaque clé du domaine, l'ensemble de ses replis littéraux distincts. */

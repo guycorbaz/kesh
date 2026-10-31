@@ -224,6 +224,11 @@ export async function ensurePayableAndExpense(page: Page): Promise<number> {
 /**
  * Story 30-2b — remplit la première ligne du formulaire de facture fournisseur
  * (`SupplierInvoiceForm`) : description, prix unitaire, compte de charge (quantité 1, TVA 0).
+ *
+ * Story v017-4b (#853, AC-24 (b), AC-30) — à côté d'un document, la date de facture
+ * démarre **vide** et doit se saisir : le helper la pose à la date du jour si elle est
+ * vide (la date que le formulaire proposait jusqu'à la 0.17.0), sans toucher une date
+ * déjà saisie. Un seul endroit, plutôt que spec par spec (validation P2, F3).
  */
 export async function fillFirstInvoiceLine(
 	page: Page,
@@ -231,6 +236,10 @@ export async function fillFirstInvoiceLine(
 	unitPrice: string,
 	expenseAccountId: number,
 ): Promise<void> {
+	const date = page.getByTestId('supplier-invoice-date');
+	if ((await date.inputValue()) === '') {
+		await date.fill(new Date().toISOString().slice(0, 10));
+	}
 	const line = page.getByTestId('supplier-invoice-line').first();
 	await line.getByTestId('supplier-invoice-line-desc').fill(description);
 	await line.getByTestId('supplier-invoice-line-unit-price').fill(unitPrice);

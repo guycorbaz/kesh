@@ -28,13 +28,19 @@ export function formatSupplierInvoiceTotal(d: string | null | undefined): string
  * -dessus de « Payée », sur chaque ligne de la liste et en badge sur chaque fiche.
  * Trouvé en passe 4 de revue, par deux lentilles indépendantes.
  *
- * Les trois termes n'ont demandé aucun arbitrage : `ouverte` et `payée` sont en
- * partie A du glossaire, et `annulée` est attesté par `invoice-status-cancelled`.
+ * Les trois termes n'ont demandé aucun arbitrage : `payée` est en partie A du
+ * glossaire, et `annulée` est attesté par `invoice-status-cancelled`.
+ *
+ * Story v017-4b (#849, AC-21) — `draft` s'affiche « Brouillon » (glossaire, partie A) ;
+ * l'état stocké `open` s'affiche **« Validée »** (décision Q4, C-v017-4-24 : la valeur
+ * de `invoice-status-validated` de chaque catalogue) — il ne se nomme plus « ouverte ».
  */
 export function supplierInvoiceStatusLabel(status: SupplierInvoiceStatus): string {
 	switch (status) {
+		case 'draft':
+			return i18nMsg('supplier-invoices-status-draft', 'Brouillon');
 		case 'open':
-			return i18nMsg('supplier-invoices-status-open', 'Ouverte');
+			return i18nMsg('supplier-invoices-status-open', 'Validée');
 		case 'paid':
 			return i18nMsg('supplier-invoices-status-paid', 'Payée');
 		case 'cancelled':

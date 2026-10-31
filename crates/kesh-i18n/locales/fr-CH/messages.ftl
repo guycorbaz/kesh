@@ -884,7 +884,7 @@ reconciliation-cancel-button = Annuler le rapprochement
 reconciliation-cancel-loading = Lecture du rapprochement…
 reconciliation-cancel-confirm-entry = Une écriture inverse datée d'aujourd'hui sera passée, et la transaction redeviendra à rapprocher.
 reconciliation-cancel-confirm-invoice = Une écriture inverse datée d'aujourd'hui sera passée, le règlement de la facture { $invoice } sera retiré et la facture redeviendra à régler ; la transaction redeviendra à rapprocher.
-reconciliation-cancel-confirm-supplier-invoice = Une écriture inverse datée d'aujourd'hui sera passée, le paiement de la facture fournisseur { $invoice } sera retiré et la facture redeviendra ouverte, à payer ; la transaction redeviendra à rapprocher.
+reconciliation-cancel-confirm-supplier-invoice = Une écriture inverse datée d'aujourd'hui sera passée, le paiement de la facture fournisseur { $invoice } sera retiré et la facture redeviendra validée, à payer ; la transaction redeviendra à rapprocher.
 reconciliation-cancel-confirm-submit = Confirmer l'annulation
 reconciliation-cancel-dismiss = Fermer
 reconciliation-cancel-done = Rapprochement annulé.
@@ -1035,6 +1035,11 @@ fiscal-years-checks-k7-help = L’exercice qui suit, où se passent les écritur
 fiscal-years-checks-k7-ok = « { $name } » suit cet exercice.
 fiscal-years-checks-k7-attention = Aucun exercice ne suit celui-ci : créez l’exercice suivant pour y passer les écritures de l’année qui vient.
 fiscal-years-checks-k7-link = Créer l’exercice suivant
+# Story v017-4b (#849, AC-26) — K8, les brouillons fournisseur de l'exercice.
+fiscal-years-checks-k8-title = Factures fournisseur en brouillon
+fiscal-years-checks-k8-help = Les factures fournisseur datées dans l’exercice et jamais validées : leur achat n’est pas en comptabilité.
+fiscal-years-checks-k8-attention = { $count } facture(s) fournisseur en brouillon datée(s) dans l’exercice.
+fiscal-years-checks-k8-link = Ouvrir les factures fournisseurs
 fiscal-years-checks-reminder-none = Aucun point à vérifier.
 fiscal-years-checks-reminder-count = { $count } point(s) à vérifier :
 fiscal-years-checks-reminder-error = Les contrôles préalables n’ont pas pu être lus. Vous pouvez clôturer quand même, ou les consulter plus tard depuis « Préparer la clôture ».
@@ -1443,7 +1448,7 @@ reconciliation-failed-supplier-invoice-in-batch = Cette facture fournisseur figu
 reconciliation-failed-amount-mismatch = Le montant de la transaction diffère du total de la facture fournisseur : un paiement fournisseur règle le total exact.
 reconciliation-failed-supplier-payment-hold = Une autre facture fournisseur de ce montant figure dans un lot de paiement en cours sur ce compte : cette transaction en est peut-être le paiement. Annulez le lot si c’est le cas, sinon affectez la transaction à la main.
 reconciliation-failed-rule-masked-payment-batch = La règle n’est pas appliquée : une facture fournisseur de ce montant figure dans un lot de paiement en cours sur ce compte. Si cette transaction en est le paiement, annulez le lot, puis acceptez ici la facture proposée. N’utilisez « Affecter manuellement » que si ce débit ne règle aucune facture saisie.
-reconciliation-failed-rule-masked-invoice-candidate = La règle n’est pas appliquée : une facture fournisseur ouverte correspond à cette transaction. Rechargez la page et acceptez la facture proposée si ce débit la règle. N’utilisez « Affecter manuellement » que si ce débit ne règle aucune facture saisie.
+reconciliation-failed-rule-masked-invoice-candidate = La règle n’est pas appliquée : une facture fournisseur validée correspond à cette transaction. Rechargez la page et acceptez la facture proposée si ce débit la règle. N’utilisez « Affecter manuellement » que si ce débit ne règle aucune facture saisie.
 reconciliation-failed-rule-masked-overpaid = La règle n’est pas appliquée : une facture client que ce paiement dépasse de quelques centimes lui correspond. Enregistrez le règlement depuis la fiche de la facture, puis rattachez-y la transaction. N’utilisez « Affecter manuellement » que si ce paiement ne règle aucune facture.
 reconciliation-failed-rule-masked = La règle n’est pas appliquée : une facture correspond à cette transaction. Rechargez la page et traitez la facture. N’utilisez « Affecter manuellement » que si cette transaction ne règle aucune facture saisie.
 reconciliation-failed-transaction-not-pending = Cette transaction n’est plus en attente de rapprochement.
@@ -2499,7 +2504,7 @@ error-invoice-pdf-header-overflow = L'en-tête du document ne tient pas sur la p
 # ⚠️ `-col-total` (TTC) et `-line-total` (HT) sont DEUX clés depuis cette story : elles n'en
 # faisaient qu'une, pour deux grandeurs différentes, et c'est la traduction qui l'aurait activé.
 imported-supplier-invoices-amount = Montant
-imported-supplier-invoices-completed = Facture créée.
+imported-supplier-invoices-completed = Brouillon enregistré.
 imported-supplier-invoices-completed-reload-failed = Import effectué, mais la liste n’a pas pu être rechargée — actualisez la page.
 imported-supplier-invoices-discard = Retirer de la liste
 imported-supplier-invoices-discard-confirm = Retirer ce document de la liste ? Le fichier reste conservé.
@@ -2575,9 +2580,9 @@ supplier-invoices-cancel-blocked-in-payment-batch = Cette facture figure dans un
 
 ## Story 25-3-a-2 (#414) — annuler un règlement fournisseur
 supplier-invoices-settlement-cancel-button = Annuler le règlement
-supplier-invoices-settlement-cancel-confirm = Annuler ce règlement ? Une écriture inverse datée d'aujourd'hui sera passée au grand livre, et la facture redeviendra ouverte, à payer.
+supplier-invoices-settlement-cancel-confirm = Annuler ce règlement ? Une écriture inverse datée d'aujourd'hui sera passée au grand livre, et la facture redeviendra validée, à payer.
 supplier-invoices-settlement-cancel-batch-warning = Cette facture figure dans le lot de paiement n° { $batch }, confirmé le { $date }. Si la banque a exécuté cet ordre, elle a déjà été payée : corrigez alors par un nouveau règlement direct, jamais par un nouveau lot.
-supplier-invoices-settlement-cancelled = Règlement annulé : l'écriture inverse a été passée et la facture est de nouveau ouverte.
+supplier-invoices-settlement-cancelled = Règlement annulé : l'écriture inverse a été passée et la facture est de nouveau validée, à payer.
 supplier-invoices-settlement-entry-link = Voir l'écriture de règlement
 supplier-invoices-settlement-cancel-blocked-not-paid = Cette facture fournisseur n'est pas payée : il n'y a pas de règlement à annuler.
 supplier-invoices-col-date = Date
@@ -2638,9 +2643,45 @@ supplier-invoices-scan-no-qr = Aucun QR-code détecté sur cette image.
 supplier-invoices-scan-ok = QR-facture lue — coordonnées pré-remplies.
 supplier-invoices-scan-running = Lecture…
 supplier-invoices-scan-too-large = Image trop volumineuse (max 15 Mo).
-supplier-invoices-status-open = Ouverte
+supplier-invoices-status-draft = Brouillon
+supplier-invoices-status-open = Validée
 supplier-invoices-status-paid = Payée
 supplier-invoices-status-cancelled = Annulée
+# Story v017-4b (#849) — l'écran du cycle brouillon → validée → payée : liste, fiche,
+# édition d'un brouillon, formulaire (#853, #830, #835). L'état stocké `open` se nomme
+# « validée » (décision Q4, C-v017-4-24).
+supplier-invoices-show-cancelled = Afficher les factures annulées
+supplier-invoices-purchase-entry-link = Voir l'écriture d'achat
+supplier-invoices-draft-info = Brouillon : rien n’est encore passé au journal. Corrigez-le si besoin, puis validez-le.
+supplier-invoices-edit = Modifier
+supplier-invoices-validate = Valider
+supplier-invoices-unvalidate = Dévalider
+supplier-invoices-delete-draft = Supprimer le brouillon
+supplier-invoices-validate-confirm-title = Valider la facture ?
+supplier-invoices-validate-confirm-body = L’écriture d’achat sera passée au journal, datée du jour de la facture. Validée, la facture peut être payée ; pour la corriger ensuite, il faudra la dévalider.
+supplier-invoices-unvalidate-confirm-title = Dévalider la facture ?
+supplier-invoices-unvalidate-confirm-body = Son écriture d’achat sera supprimée du journal, et la numérotation des écritures gardera un trou. La facture redeviendra un brouillon modifiable, à valider de nouveau.
+supplier-invoices-delete-confirm-title = Supprimer le brouillon ?
+supplier-invoices-delete-confirm-body = Ce brouillon sera supprimé définitivement. S’il a un document, celui-ci reviendra dans les documents à traiter.
+supplier-invoices-validated = Facture validée : l'écriture d'achat a été passée au journal.
+supplier-invoices-unvalidated = Facture dévalidée : son écriture d'achat a été supprimée, elle est de nouveau un brouillon.
+supplier-invoices-deleted = Brouillon supprimé.
+supplier-invoices-unvalidate-blocked-stale = La facture a été modifiée entre-temps : rechargez la page, puis réessayez.
+supplier-invoices-unvalidate-blocked-not-validated = Cette facture n’est plus validée : rechargez la page pour voir son état.
+supplier-invoices-unvalidate-blocked-fiscal-year-closed = L’écriture d’achat de cette facture appartient à un exercice clôturé : pour pouvoir la dévalider, un administrateur doit rouvrir les exercices clôturés jusqu’à celui-ci, en commençant par le plus récent.
+supplier-invoices-unvalidate-blocked-later-fiscal-year-closed = Un exercice postérieur à celui de cette facture est clôturé : pour pouvoir la dévalider, un administrateur doit rouvrir les exercices postérieurs clôturés, en commençant par le plus récent.
+supplier-invoices-unvalidate-blocked-reversed = L’écriture d’achat de cette facture a été contre-passée : elle ne peut plus être supprimée, et la facture ne se dévalide pas.
+supplier-invoices-unvalidate-blocked-period-locked = L’écriture d’achat de cette facture est datée sous le verrou de période : pour pouvoir la dévalider, un administrateur doit faire reculer le verrou avant sa date.
+supplier-invoices-unvalidate-blocked-lettered = L’écriture d’achat de cette facture est lettrée : délettrez-la d’abord, puis dévalidez la facture.
+supplier-invoices-unvalidate-error = La facture n’a pas pu être dévalidée.
+supplier-invoices-edit-title = Modifier le brouillon
+supplier-invoices-edit-not-draft = Seul un brouillon se modifie : dévalidez d’abord la facture.
+supplier-invoices-back-to-invoice = Revenir à la facture
+supplier-invoices-updated = Brouillon enregistré.
+supplier-invoices-save-draft = Enregistrer le brouillon
+supplier-invoices-field-date-help = Date de la facture, telle qu’imprimée sur le document
+supplier-invoices-err-invoice-date = Saisissez la date de la facture, telle qu’imprimée sur le document.
+supplier-invoices-err-stale = Cette facture a été modifiée entre-temps : rechargez la page, puis refaites votre correction.
 # Story 30-2b (#685) — la facture se crée à côté du document (page `/supplier-invoices/new`,
 # composant `SupplierInvoiceForm`). Les 23 clés du formulaire de complétion en ligne de la page
 # d'import (`imported-supplier-invoices-add-line`, `-complete`, `-completed-hint`, `-err-*` sauf
@@ -2757,7 +2798,7 @@ payment-batches-failed-counterparty-is-claim-account = Le compte bancaire du lot
 payment-batches-failed-purchase-entry-malformed = Écriture d'achat sans ligne de crédit : facture à vérifier
 payment-batches-failed-no-payment-coordinates = Pas de coordonnées de paiement (IBAN/QR-IBAN)
 payment-batches-failed-supplier-invoice-not-found = Facture introuvable
-payment-batches-failed-supplier-invoice-not-open = Facture non ouverte
+payment-batches-failed-supplier-invoice-not-open = Facture non validée
 payment-batches-status-cancelled = Annulé
 payment-batches-status-confirmed = Confirmé
 payment-batches-status-generated = Créé
@@ -2846,7 +2887,7 @@ payment-batches-line-amount = Montant
 payment-batches-lot = Lot
 payment-batches-msg-id = MsgId
 payment-batches-new = Créer un lot de virements
-payment-batches-no-open = Aucune facture fournisseur ouverte.
+payment-batches-no-open = Aucune facture fournisseur validée à payer.
 payment-batches-open = ouvrir et télécharger le fichier
 payment-batches-payment-date = Date de règlement effective
 payment-batches-rejected = Factures non incluses :

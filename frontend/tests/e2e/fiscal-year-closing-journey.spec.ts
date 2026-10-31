@@ -154,12 +154,15 @@ async function balanceOf(
 	return line ? line.balance : '0';
 }
 
-/** Ouvre « Préparer la clôture » de l'exercice, attend les sept lignes. */
+/**
+ * Ouvre « Préparer la clôture » de l'exercice, attend les huit lignes (Story v017-4b,
+ * AC-26 : K8, les brouillons fournisseur, s'ajoute en dernier).
+ */
 async function openChecks(page: Page, fyId: number) {
 	await page.goto('/settings/fiscal-years');
 	await page.getByTestId(`fiscal-year-checks-${fyId}`).click();
 	const dialog = page.getByTestId('fiscal-year-checks-dialog');
-	await expect(dialog.locator('[data-testid^="fiscal-year-checks-row-"]')).toHaveCount(7);
+	await expect(dialog.locator('[data-testid^="fiscal-year-checks-row-"]')).toHaveCount(8);
 	return dialog;
 }
 

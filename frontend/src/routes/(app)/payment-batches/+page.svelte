@@ -45,9 +45,12 @@
 
 	onMount(async () => {
 		try {
+			// Story v017-4b (#849, AC-27) : le serveur ne rend que les factures validées
+			// (`status=open`, AC-15) — sans quoi brouillons et annulées prendraient la place
+			// de factures à payer dans la fenêtre de 200 ; le filtre client reste en défense.
 			const [, invRes, banks] = await Promise.all([
 				reload(),
-				listSupplierInvoices({ limit: 200 }),
+				listSupplierInvoices({ limit: 200, status: ['open'] }),
 				listBankAccounts(),
 			]);
 			openInvoices = invRes.items.filter((i) => i.status === 'open');
@@ -86,8 +89,8 @@
 			});
 			fSelected = new Set();
 			await reload();
-			// Recharger les factures ouvertes (celles incluses sont maintenant verrouillées).
-			const invRes = await listSupplierInvoices({ limit: 200 });
+			// Recharger les factures validées (celles incluses sont maintenant verrouillées).
+			const invRes = await listSupplierInvoices({ limit: 200, status: ['open'] });
 			openInvoices = invRes.items.filter((i) => i.status === 'open');
 		} catch (err) {
 			if (isApiError(err)) formError = err.message;
@@ -147,7 +150,7 @@
 			</div>
 			{#if openInvoices.length === 0}
 				<p class="text-sm text-text-muted">
-					{i18nMsg('payment-batches-no-open', 'Aucune facture fournisseur ouverte.')}
+					{i18nMsg('payment-batches-no-open', 'Aucune facture fournisseur validée à payer.')}
 				</p>
 			{:else}
 				<div class="max-h-64 overflow-y-auto rounded border">

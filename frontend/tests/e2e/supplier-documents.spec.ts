@@ -354,10 +354,17 @@ test.describe.serial('Joindre puis détacher un document (Story 30-2c)', () => {
 		await page.getByTestId('supplier-invoice-submit').click();
 		await expect(page).toHaveURL(/\/supplier-invoices\/\d+$/);
 		invoiceId = invoiceIdFromUrl(page);
+		// Story v017-4b (#849, AC-30) : l'enregistrement crée un BROUILLON, sans écriture ;
+		// E7 lit l'écriture d'achat : la facture se valide depuis sa fiche.
+		await expect(page.getByTestId('supplier-invoice-status')).toHaveText('Brouillon');
+		await page.getByTestId('supplier-invoice-validate').click();
+		await page.getByTestId('supplier-invoice-validate-confirm').click();
+		await expect(page.getByTestId('supplier-invoice-status')).toHaveText('Validée');
 		const { inv, docStatus } = await invoiceAndDocumentStatus(page, invoiceId);
 		expect(inv.contactId).toBe(supplierId);
 		expect(docStatus, 'une facture sans document n’en a pas').toBe(404);
 		purchaseEntryId = inv.purchaseJournalEntryId;
+		expect(purchaseEntryId, 'la validation a passé l’écriture d’achat').toBeGreaterThan(0);
 		// Story 30-2c (AC18) : la fiche propose de joindre, et ne propose rien d'autre.
 		await expect(page.getByTestId('supplier-invoice-attach')).toBeVisible();
 		await expect(page.getByTestId('supplier-invoice-source-document')).toHaveCount(0);
@@ -505,7 +512,14 @@ async function createInvoiceAndAttachViaApi(
 			},
 		});
 		expect(created.status(), `création : ${await created.text()}`).toBe(201);
-		const inv = await created.json();
+		const draft = await created.json();
+		// Story v017-4b (#849, AC-30) : la création rend un brouillon, sans écriture ; E6
+		// lit l'écriture d'achat — la facture se valide d'abord.
+		const validated = await ctx.post(`/api/v1/supplier-invoices/${draft.id}/validate`, {
+			data: { version: draft.version },
+		});
+		expect(validated.status(), `validation : ${await validated.text()}`).toBe(200);
+		const inv = await validated.json();
 		const attached = await ctx.post(`/api/v1/supplier-invoices/${inv.id}/source-document`, {
 			data: { importedSupplierInvoiceId: importedId },
 		});

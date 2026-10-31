@@ -337,7 +337,7 @@ export function failedProposalLabel(code: string, details?: unknown): string {
 			if (reason === 'invoice_candidate') {
 				return i18nMsg(
 					'reconciliation-failed-rule-masked-invoice-candidate',
-					'La règle n’est pas appliquée : une facture fournisseur ouverte correspond à cette transaction. Rechargez la page et acceptez la facture proposée si ce débit la règle. N’utilisez « Affecter manuellement » que si ce débit ne règle aucune facture saisie.'
+					'La règle n’est pas appliquée : une facture fournisseur validée correspond à cette transaction. Rechargez la page et acceptez la facture proposée si ce débit la règle. N’utilisez « Affecter manuellement » que si ce débit ne règle aucune facture saisie.'
 				);
 			}
 			if (reason === 'invoice_slightly_overpaid') {

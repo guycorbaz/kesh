@@ -79,10 +79,15 @@ vi.mock(
 
 import Page from "./+page.svelte";
 
+// Story v017-4b — `sourceDocument` porte aussi l'identifiant du document, l'origine
+// du lien et son QR (contrat de la 4a) : un document joint après coup, sans QR.
 const DOC = {
+  importedSupplierInvoiceId: 7,
   originalFilename: "facture-orage.png",
   mimeType: "image/png",
   byteSize: 1234,
+  linkOrigin: "attachment" as const,
+  qr: null,
 };
 
 function inv(
