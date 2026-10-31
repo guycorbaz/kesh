@@ -1412,7 +1412,7 @@ async fn plafond_au_maximum(pool: MySqlPool) {
 
 /// Sur un exercice **sans écriture**, chaque montant de `kesh_bilan` — les
 /// totaux, le report, le résultat et le solde de chaque ligne — sort sous la
-/// même chaîne `"0.00"` (C-v016-1-6). Avant la 0.16.1, un montant lu en base
+/// même chaîne `"0.00"` (C-v016-1-6). Avant la 0.17.0, un montant lu en base
 /// gardait l'échelle de sa colonne (`"0.0000"`) et une somme calculée la sienne
 /// (`"0"`), dans le même objet (#812). Le JSON est lu dans le texte, après
 /// l'en-tête et la ligne vide. Un bilan vide ne listant aucune ligne, une

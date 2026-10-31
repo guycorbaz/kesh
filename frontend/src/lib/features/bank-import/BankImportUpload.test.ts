@@ -747,8 +747,10 @@ describe('Écran d’import — libellés traduits (Story 27-3, AC17)', () => {
 		'statement(s)',
 		'Montant',
 		'Détails',
-		'Date import',
-		'Fichier',
+		// Story v016-2b (#816, validation P8, P2) : les en-têtes de la liste valent pour
+		// les deux origines — « Date import » → « Enregistré le », « Fichier » → « Relevé ».
+		'Enregistré le',
+		'Relevé',
 		'Erreur inattendue',
 		'Chargement',
 	];

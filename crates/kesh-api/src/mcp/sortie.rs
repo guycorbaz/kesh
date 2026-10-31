@@ -5,7 +5,7 @@
 //! qui sérialise **une fois** une structure déclarée par [`sortie!`] en une
 //! `serde_json::Value`, puis en tire **un** bloc de texte
 //! (`TEXTE_ENTETE_DONNEES`, une ligne vide, le JSON indenté de la valeur) — le
-//! seul canal : depuis la 0.16.1, aucun contenu structuré ne part à côté
+//! seul canal : depuis la 0.17.0, aucun contenu structuré ne part à côté
 //! (v016-1, C-v016-1-1 et C-v016-1-5 ; #811). Dans `src/`, `Donnees::nouvelles` n'est
 //! appelé qu'ici (garde `outils_et_politique_en_leur_lieu`).
 //!
@@ -443,7 +443,7 @@ impl Resume {
 /// `MCP_ENVOI_OCTETS_MAX` octets, [`ErreurOutil::TropVolumineux`], sous les
 /// deux politiques (C-32-9-7).
 ///
-/// Depuis la 0.16.1, la valeur n'est plus émise (#811) : la production
+/// Depuis la 0.17.0, la valeur n'est plus émise (#811) : la production
 /// ([`donnees`]) n'en garde que le texte ; un seul test de ce module la lit,
 /// `donnees_une_seule_source`, pour établir que le texte dérive d'une seule
 /// sérialisation. Elle est rendue plutôt que recalculée parce

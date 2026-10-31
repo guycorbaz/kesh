@@ -185,7 +185,7 @@ fn code_d_erreur(r: &Rendu) -> String {
 
 /// Le texte seul est déposé et relu ; le résumé va à l'écran, jamais à
 /// l'agent. L'AC-B2 de la 32-8, pour la donnée structurée, est tenu **par
-/// construction** depuis la 0.16.1 (v016-1, C-v016-1-5) : `Donnees` n'a plus
+/// construction** depuis la 0.17.0 (v016-1, C-v016-1-5) : `Donnees` n'a plus
 /// de champ structuré, si bien que le piège `PIEGE_STRUCT` qu'y posait ce test
 /// est parti avec lui.
 #[sqlx::test(migrations = "../kesh-db/test-schema")]

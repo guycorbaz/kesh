@@ -4565,3 +4565,281 @@ async fn full_import_restores_a_supplier_invoice_under_the_centime(pool: MySqlPo
         );
     }
 }
+
+// ============================================================
+// Story v016-2a (#816) — un relevé saisi à la main se sauvegarde et se
+// restaure (AC-3), et une sauvegarde de la 0.16.x s'importe dans la 0.17.0
+// (AC-3-bis, contrainte du Project Lead du 2026-10-30, C-v016-2-16).
+// ============================================================
+
+/// Un compte bancaire lié à un compte de banque du plan, et un exercice ouvert.
+async fn v0162a_bank_account(pool: &MySqlPool, company_id: i64) -> (i64, i64, i64) {
+    let ledger = sqlx::query(
+        "INSERT INTO accounts (company_id, number, name, account_type, active, postable) \
+         VALUES (?, '1020', 'Banque', 'Asset', 1, 1)",
+    )
+    .bind(company_id)
+    .execute(pool)
+    .await
+    .unwrap()
+    .last_insert_id() as i64;
+    let bank = sqlx::query(
+        "INSERT INTO bank_accounts (company_id, bank_name, iban, is_primary, journal_account_id) \
+         VALUES (?, 'Banque Exemple', 'CH4431999123000889012', TRUE, ?)",
+    )
+    .bind(company_id)
+    .bind(ledger)
+    .execute(pool)
+    .await
+    .unwrap()
+    .last_insert_id() as i64;
+    let fy = sqlx::query(
+        "INSERT INTO fiscal_years (company_id, name, start_date, end_date, status) \
+         VALUES (?, 'Exercice 2026', '2026-01-01', '2026-12-31', 'Open')",
+    )
+    .bind(company_id)
+    .execute(pool)
+    .await
+    .unwrap()
+    .last_insert_id() as i64;
+    (bank, ledger, fy)
+}
+
+/// La liste des imports et chaque détail (transactions comprises), tels que
+/// l'API les rend — ce qu'un utilisateur relit après une restauration.
+async fn v0162a_imports_as_served(app: &TestApp, jwt: &str) -> Vec<Value> {
+    let resp = app
+        .client
+        .get(app.url("/api/v1/bank-imports?limit=100"))
+        .header("Authorization", format!("Bearer {jwt}"))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 200);
+    let list: Value = resp.json().await.unwrap();
+    let mut out = vec![list["items"].clone()];
+    for item in list["items"].as_array().unwrap() {
+        let resp = app
+            .client
+            .get(app.url(&format!("/api/v1/bank-imports/{}", item["id"])))
+            .header("Authorization", format!("Bearer {jwt}"))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), 200);
+        out.push(resp.json().await.unwrap());
+    }
+    out
+}
+
+fn v0162a_manual_body(bank_account_id: i64, from: &str, to: &str) -> Value {
+    serde_json::json!({
+        "bankAccountId": bank_account_id,
+        "periodFrom": from, "periodTo": to,
+        "statementNumber": "S-1",
+        "openingBalance": "100.00", "closingBalance": "90.00",
+        "lines": [
+            { "bookingDate": from, "details": "Frais", "amount": "10.00", "direction": "debit" }
+        ]
+    })
+}
+
+/// AC-3 — l'aller-retour d'un relevé `MANUAL` : exporté, réimporté dans la
+/// même version, relevé et transactions identiques ; le manifeste porte
+/// `keshVersionMinRequired = "0.17.0"`.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn full_import_round_trip_keeps_a_manual_statement(pool: MySqlPool) {
+    let app = spawn_app(pool.clone()).await;
+    let admin = seed_admin(&pool, "Manuel").await;
+    let (bank, _, _) = v0162a_bank_account(&pool, admin.company_id).await;
+    let resp = app
+        .client
+        .post(app.url("/api/v1/bank-imports/manual"))
+        .header("Authorization", format!("Bearer {}", admin.jwt))
+        .json(&v0162a_manual_body(bank, "2026-09-01", "2026-09-30"))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 201, "{}", resp.text().await.unwrap());
+
+    let before = v0162a_imports_as_served(&app, &admin.jwt).await;
+    assert_eq!(before[0][0]["sourceFormat"], "MANUAL", "montage");
+    let backup = export_backup(&app, &admin.jwt).await;
+    let (manifest, _) = unzip(&backup);
+    assert_eq!(manifest["keshVersionMinRequired"], "0.17.0");
+
+    // La base change après l'export ; l'import la remet à l'état sauvegardé.
+    sqlx::query("UPDATE bank_imports SET statement_id = 'modifié'")
+        .execute(&pool)
+        .await
+        .unwrap();
+    let resp = post_import(&app, &admin.jwt, backup).await;
+    assert_eq!(resp.status(), 200, "{}", resp.text().await.unwrap());
+    assert_eq!(v0162a_imports_as_served(&app, &admin.jwt).await, before);
+}
+
+/// AC-3-bis — une sauvegarde dont le manifeste est celui d'une 0.16.x
+/// (`keshVersion` `0.16.1`, `keshVersionMinRequired` `0.14.0`), portant un
+/// import CAMT à soldes, un import CSV et des transactions dont une
+/// rapprochée, s'importe dans la 0.17.0 : `200`, puis chaque import et chaque
+/// transaction se relit à l'identique par l'API ; la base garde
+/// `min_required = 0.17.0` (`_kesh_version` n'est pas restaurée) ; un relevé
+/// saisi se crée ensuite normalement.
+///
+/// Moyen retenu (a) : la sauvegarde est exportée par la 0.17.0, puis son
+/// manifeste — non signé (`admin_backup/manifest.rs`), seules les tables
+/// portant un `sha256` — est récrit comme l'écrirait une 0.16.x. Licite parce
+/// que la 0.17.0 n'ajoute aucune table (`bank_imports_manual_source_adds_no_table`)
+/// ni colonne (`bank_imports_manual_source_only_raises_min_required` : l'unique
+/// migration n'a aucun DDL), tous deux dans `migrations_upgrade_path.rs` :
+/// les données d'une 0.16.x ont la forme de celles-ci.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn full_import_accepts_a_0_16_backup(pool: MySqlPool) {
+    let app = spawn_app(pool.clone()).await;
+    let admin = seed_admin(&pool, "Seize").await;
+    let (bank, ledger, fy) = v0162a_bank_account(&pool, admin.company_id).await;
+    let entry = sqlx::query(
+        "INSERT INTO journal_entries (company_id, fiscal_year_id, entry_number, entry_date, \
+         journal, description) VALUES (?, ?, 1, '2026-09-15', 'Banque', 'Encaissement')",
+    )
+    .bind(admin.company_id)
+    .bind(fy)
+    .execute(&pool)
+    .await
+    .unwrap()
+    .last_insert_id() as i64;
+    let revenue = sqlx::query(
+        "INSERT INTO accounts (company_id, number, name, account_type, active, postable) \
+         VALUES (?, '3200', 'Ventes', 'Revenue', 1, 1)",
+    )
+    .bind(admin.company_id)
+    .execute(&pool)
+    .await
+    .unwrap()
+    .last_insert_id() as i64;
+    for (order, account, debit, credit) in [(1, ledger, "50.00", "0"), (2, revenue, "0", "50.00")] {
+        sqlx::query(
+            "INSERT INTO journal_entry_lines (entry_id, account_id, line_order, debit, credit) \
+             VALUES (?, ?, ?, ?, ?)",
+        )
+        .bind(entry)
+        .bind(account)
+        .bind(order)
+        .bind(debit)
+        .bind(credit)
+        .execute(&pool)
+        .await
+        .unwrap();
+    }
+    let camt = sqlx::query(
+        "INSERT INTO bank_imports (company_id, bank_account_id, filename, file_hash, \
+         source_format, statement_id, period_from, period_to, opening_balance, closing_balance, \
+         transaction_count, imported_by_user_id) VALUES (?, ?, 'releve-09.xml', REPEAT('a', 64), \
+         'CAMT053_V04', 'STMT-09', '2026-09-01', '2026-09-30', 1000.00, 1050.00, 2, ?)",
+    )
+    .bind(admin.company_id)
+    .bind(bank)
+    .bind(admin.user_id)
+    .execute(&pool)
+    .await
+    .unwrap()
+    .last_insert_id() as i64;
+    let csv = sqlx::query(
+        "INSERT INTO bank_imports (company_id, bank_account_id, filename, file_hash, \
+         source_format, period_from, period_to, transaction_count, imported_by_user_id) \
+         VALUES (?, ?, 'releve-10.csv', REPEAT('b', 64), 'CSV', '2026-10-01', '2026-10-31', 1, ?)",
+    )
+    .bind(admin.company_id)
+    .bind(bank)
+    .bind(admin.user_id)
+    .execute(&pool)
+    .await
+    .unwrap()
+    .last_insert_id() as i64;
+    sqlx::query(
+        "INSERT INTO bank_transactions (company_id, import_id, bank_account_id, booking_date, \
+         value_date, amount, currency, reference, details, counterparty_name, status, \
+         matched_entry_id) VALUES \
+         (?, ?, ?, '2026-09-15', '2026-09-15', 50.00, 'CHF', 'F-1', 'Virement reçu', \
+          'Client Exemple SA', 'reconciled', ?), \
+         (?, ?, ?, '2026-09-20', NULL, -4.80, 'CHF', NULL, 'Frais', NULL, 'pending', NULL), \
+         (?, ?, ?, '2026-10-05', NULL, 12.50, 'CHF', NULL, 'Intérêts', NULL, 'pending', NULL)",
+    )
+    .bind(admin.company_id)
+    .bind(camt)
+    .bind(bank)
+    .bind(entry)
+    .bind(admin.company_id)
+    .bind(camt)
+    .bind(bank)
+    .bind(admin.company_id)
+    .bind(csv)
+    .bind(bank)
+    .execute(&pool)
+    .await
+    .unwrap();
+
+    let before = v0162a_imports_as_served(&app, &admin.jwt).await;
+    assert_eq!(
+        before[0].as_array().unwrap().len(),
+        2,
+        "montage : deux imports"
+    );
+    let backup = export_backup(&app, &admin.jwt).await;
+    let (mut manifest, data) = unzip(&backup);
+    manifest["keshVersion"] = Value::from("0.16.1");
+    manifest["keshVersionMinRequired"] = Value::from("0.14.0");
+    let backup_016 = rezip(&manifest, &data);
+
+    // La base diverge de la sauvegarde avant l'import.
+    sqlx::query("DELETE FROM bank_transactions WHERE import_id = ?")
+        .bind(csv)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let resp = post_import(&app, &admin.jwt, backup_016).await;
+    assert_eq!(resp.status(), 200, "{}", resp.text().await.unwrap());
+    assert_eq!(
+        v0162a_imports_as_served(&app, &admin.jwt).await,
+        before,
+        "chaque import et chaque transaction se relit à l'identique"
+    );
+    let min_required: String =
+        sqlx::query_scalar("SELECT kesh_version_min_required FROM _kesh_version WHERE id = 1")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(min_required, "0.17.0", "_kesh_version n'est pas restaurée");
+
+    // Le relevé saisi suit le CAMT restauré (clôture 1050.00) : le solde de
+    // départ y est confronté, preuve que le relevé restauré se relit aussi
+    // par la saisie.
+    let mut body = v0162a_manual_body(bank, "2026-11-01", "2026-11-30");
+    body["openingBalance"] = Value::from("1050.00");
+    body["closingBalance"] = Value::from("1040.00");
+    let resp = app
+        .client
+        .post(app.url("/api/v1/bank-imports/manual"))
+        .header("Authorization", format!("Bearer {}", admin.jwt))
+        .json(&body)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 201, "{}", resp.text().await.unwrap());
+}
+
+/// AC-3-bis, le sens inverse : la **fonction de compatibilité** que le handler
+/// d'import appelle (`routes/admin.rs`, `check_import_version_compat`, dont le
+/// `DowngradeRefused` devient `409 IMPORT_VERSION_INCOMPATIBLE`) refuse, pour
+/// un binaire `0.16.1`, le `min_required` `0.17.0` qu'écrit la 0.17.0 (lu dans
+/// un vrai export par `full_import_round_trip_keeps_a_manual_statement`). Le
+/// handler lui-même n'est pas joué : un binaire `0.16.1` ne se monte pas dans
+/// ce test (revue de code P1, B3).
+#[test]
+fn a_0_17_backup_is_refused_by_a_0_16_1_binary() {
+    assert!(matches!(
+        kesh_db::version::check_import_version_compat("0.17.0", "0.16.1"),
+        Err(kesh_db::version::VersionError::DowngradeRefused { .. })
+    ));
+    assert!(kesh_db::version::check_import_version_compat("0.14.0", "0.17.0").is_ok());
+}

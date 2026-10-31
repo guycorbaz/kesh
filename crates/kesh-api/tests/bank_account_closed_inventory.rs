@@ -651,6 +651,32 @@ fn both_import_calls_map_the_archived_account() {
             &suite[..fin]
         );
     }
+
+    // Story v016-2a (#816, AC-8) — la saisie d'un relevé à la main passe par la
+    // même aide : un appel de `create_import_or_roll_back(tx,` suivi de
+    // `.await?`, et aucun appel direct de `create_with_transactions`.
+    let chemin = racine_crates().join("kesh-api/src/routes/bank_statements_manual.rs");
+    let source = std::fs::read_to_string(chemin).expect("bank_statements_manual.rs");
+    let aplati: String = decouper(&source)
+        .1
+        .chars()
+        .filter(|c| !c.is_whitespace())
+        .collect();
+    assert_eq!(
+        aplati.matches(appel).count(),
+        0,
+        "la saisie ne doit pas appeler create_with_transactions directement"
+    );
+    let m = aplati.matches(aide).count();
+    assert_eq!(m, 1, "un appel de l'aide attendu (saisie), {m} trouvés");
+    let q = aplati.find(aide).expect("appel de l'aide");
+    let suite = &aplati[q..];
+    let fin = suite.find(';').expect("fin d'instruction");
+    assert!(
+        suite[..fin].ends_with(").await?"),
+        "l'appel de l'aide de la saisie sans `.await?` : {}",
+        &suite[..fin]
+    );
 }
 
 /// T29b-7 (Story 29-4b, T6-bis, R-5 de la passe ciblée P2 de la 29-4a, #651) —

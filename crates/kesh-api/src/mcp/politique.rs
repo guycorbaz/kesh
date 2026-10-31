@@ -14,7 +14,7 @@
 //! **Une seule représentation, le texte** (C-32-8-4, E1, M-2 ; v016-1,
 //! C-v016-1-1 et C-v016-1-5) : `Donnees` ne porte qu'un bloc de texte ; sous
 //! une clé `required`, c'est lui ([`texte_a_valider`]) qui est déposé et relu,
-//! sous une clé `exempt` lui qui part — depuis la 0.16.1, aucun résultat ne
+//! sous une clé `exempt` lui qui part — depuis la 0.17.0, aucun résultat ne
 //! porte de contenu structuré (#811) ; le résumé ([`Donnees::avec_resume`]) va
 //! à l'écran seulement.
 //!

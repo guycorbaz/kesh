@@ -46,7 +46,7 @@
 
 \subsection{Qu'est-ce que Kesh ?}
 
-Kesh est un logiciel de comptabilité et de gestion conçu pour les PME, indépendants et associations en Suisse. Il vous permet de tenir votre comptabilité en partie double, d'émettre des factures avec QR Bill conformes au standard suisse, d'importer vos relevés bancaires (CAMT.053 et CSV), de réconcilier automatiquement vos paiements et de générer tous les rapports légaux nécessaires.
+Kesh est un logiciel de comptabilité et de gestion conçu pour les PME, indépendants et associations en Suisse. Il vous permet de tenir votre comptabilité en partie double, d'émettre des factures avec QR Bill conformes au standard suisse, d'importer vos relevés bancaires (CAMT.053 et CSV) --- ou de les saisir à la main quand la banque n'en fournit aucun fichier ---, de réconcilier automatiquement vos paiements et de générer tous les rapports légaux nécessaires.
 
 \subsection{Pour qui est ce manuel ?}
 
@@ -230,7 +230,7 @@ tuiles de synthèse :
     \textbf{reste dû} total, dont la part échue. S'y ajoute, pour un comptable ou un
     administrateur, le nombre de factures à rappeler.
     \item \textbf{Comptes bancaires} — pour chaque compte, son \textbf{solde comptable} et,
-    si un relevé a été importé, le solde de ce relevé et l'écart entre les deux
+    si un relevé a été importé ou saisi, le solde de ce relevé et l'écart entre les deux
     (détails ci-dessous).
 \end{itemize}
 
@@ -253,10 +253,10 @@ compte du grand livre partagé par plusieurs comptes bancaires. Un compte bancai
 se lit sur l'écran \emph{Comptes bancaires} (\emph{Afficher les comptes clos},
 \S\ref{sec:clore-compte-bancaire}) et au plan comptable.
 
-Quand un relevé a été importé, la tuile affiche aussi \emph{Relevé du \dots} : le solde de
-clôture du relevé CAMT.053 \textbf{dont la période se termine le plus tard} (et non du dernier importé), à sa
-date --- il se recalcule quand un import est supprimé (\S\ref{sec:supprimer-import}). Seuls les relevés \textbf{CAMT.053}
-portent un solde de clôture — un import CSV n'en a pas (\S\ref{sec:import-bancaire}). Si
+Quand un relevé a été importé ou saisi, la tuile affiche aussi \emph{Relevé du \dots} : le solde de
+clôture du relevé \textbf{dont la période se termine le plus tard} (et non du dernier enregistré), à sa
+date --- il se recalcule quand un relevé est supprimé (\S\ref{sec:supprimer-import}). Les relevés \textbf{CAMT.053}
+et les relevés \textbf{saisis à la main} (\S\ref{sec:releve-manuel}) portent un solde de clôture — un import CSV n'en a pas (\S\ref{sec:import-bancaire}). Si
 le solde comptable à cette date diffère du relevé, la tuile affiche l'\textbf{écart}
 (solde comptable − relevé) : typiquement un mouvement bancaire pas encore rapproché.
 
@@ -801,7 +801,7 @@ Le panneau \textbf{ne bloque rien}~: la clôture garde son seul refus, l'exercic
 
 \begin{description}
     \item[Exercices antérieurs] Un exercice plus ancien est encore ouvert~: le panneau nomme le plus ancien, qu'il faut clôturer d'abord. C'est le seul contrôle qui bloque, et c'est la clôture elle-même qui bloque (le bouton \emph{Clôturer} est alors désactivé).
-    \item[Transactions bancaires à rapprocher] Des transactions importées, datées (date de comptabilisation bancaire) dans l'exercice, attendent leur rapprochement --- y compris celles que vous avez écartées des propositions. Lien~: \emph{Réconciliation bancaire} (\S\ref{sec:reconciliation}).
+    \item[Transactions bancaires à rapprocher] Des transactions bancaires, importées ou saisies à la main, datées (date de comptabilisation bancaire) dans l'exercice, attendent leur rapprochement --- y compris celles que vous avez écartées des propositions. Lien~: \emph{Réconciliation bancaire} (\S\ref{sec:reconciliation}).
     \item[Relevés bancaires de fin d'exercice] Pour chaque compte bancaire, le relevé qui \textbf{se termine au plus tard le dernier jour de l'exercice} est comparé aux livres~: relevé manquant, relevé arrêté trop tôt, ou écart entre le solde du relevé et le solde comptable à sa date. Lien~: \emph{Comptes bancaires}.
     \item[Factures en brouillon] Des factures client datées dans l'exercice n'ont jamais été validées~: elles ne sont pas en comptabilité. Lien~: la liste des factures, filtrée sur les brouillons de l'exercice.
     \item[Documents fournisseur à traiter] Des documents déposés dans le dossier d'import, avec ou sans QR-code, attendent qu'une facture en soit créée, ou d'être retirés de la liste (\S\ref{sec:import-factures}). Lien~: \emph{Ouvrir les documents à traiter}.
@@ -812,15 +812,15 @@ Le panneau \textbf{ne bloque rien}~: la clôture garde son seul refus, l'exercic
 \paragraph{Ce que les contrôles ne disent pas.}
 \begin{itemize}
     \item Les \textbf{documents fournisseur à traiter} ne sont pas bornés à l'exercice~: un document importé n'a pas de date comptable, seulement sa date d'import. Tous sont comptés --- y compris un document qui n'est pas une facture, tant qu'il n'est pas retiré de la liste.
-    \item Les \textbf{relevés de fin d'exercice} ne se comparent que pour les relevés CAMT, qui portent un solde~; un fichier CSV n'en porte pas (\S\ref{sec:import-bancaire}). Un compte alimenté par CSV seulement, un compte sans compte de grand livre lié, ou dont le compte lié est partagé avec un autre compte bancaire, est dit « non vérifiable », sans compter comme point à vérifier.
-    \item Ce contrôle n'examine que les comptes qui ont, dans l'exercice, une transaction importée, un relevé ou une écriture sur leur compte de grand livre lié --- et ni les comptes archivés, ni ceux clôturés avant le début de l'exercice. Pour un compte clôturé pendant l'exercice, un relevé arrêté à sa date de clôture suffit.
+    \item Les \textbf{relevés de fin d'exercice} ne se comparent que pour les relevés qui portent un solde --- un CAMT ou un relevé saisi à la main (\S\ref{sec:releve-manuel})~; un fichier CSV n'en porte pas (\S\ref{sec:import-bancaire}). Un compte alimenté par CSV seulement, un compte sans compte de grand livre lié, ou dont le compte lié est partagé avec un autre compte bancaire, est dit « non vérifiable », sans compter comme point à vérifier.
+    \item Ce contrôle n'examine que les comptes qui ont, dans l'exercice, une transaction importée ou saisie, un relevé ou une écriture sur leur compte de grand livre lié --- et ni les comptes archivés, ni ceux clôturés avant le début de l'exercice. Pour un compte clôturé pendant l'exercice, un relevé arrêté à sa date de clôture suffit.
     \item Le relevé comparé est celui qui \textbf{se termine au plus tard le dernier jour de l'exercice}~: un relevé à cheval sur la fin d'année (du 15 au 15, ou une période choisie à l'export) ne compte pas, et le compte reste « relevé arrêté trop tôt » ou « relevé manquant ». Importez un relevé \textbf{arrêté au dernier jour de l'exercice}.
     \item L'écart se calcule après avoir arrondi \textbf{chacun des deux soldes} (livres et relevé) au centime, un demi-centime s'arrondissant en s'éloignant de zéro~; un écart nul après cet arrondi n'est pas signalé, tout autre l'est au centime près. Ce n'est donc pas un seuil sur la différence brute~: des livres à 100,004 et un relevé à 99,996 (différence brute 0,008) ne donnent aucun écart, des livres à 100,005 et un relevé à 100,004 (différence brute 0,001) donnent 0,01 --- comme sur la page d'accueil, qui lit le même écart.
     \item Les \textbf{factures en brouillon} et les \textbf{écritures incohérentes} sont toutes comptées, mais le panneau n'en \textbf{liste que les vingt premières} (par date). Pour les brouillons, le lien ouvre la liste complète~; pour les écritures, les suivantes apparaissent une fois les premières corrigées.
     \item Seules les \textbf{factures client} en brouillon sont comptées, non les avoirs~: Kesh émet un avoir en une seule étape, sans brouillon (\S\ref{sec:avoirs})~; un avoir en brouillon ne pourrait venir que de données posées hors de Kesh.
     \item L'\textbf{exercice suivant} est le premier qui commence après la fin de celui-ci, même s'il laisse un trou~: un exercice 2028 créé sans exercice 2027 compte comme suivant d'un exercice 2026, et le contrôle n'a alors rien à signaler.
     \item Les \textbf{écritures incohérentes} ne peuvent provenir que de données héritées ou restaurées~: aucun chemin d'écriture actuel de Kesh n'en produit. Le contrôle ne vérifie pas que le compte de chaque ligne appartient bien au plan comptable du dossier de l'écriture (état que seule une intervention directe en base produirait).
-    \item Le panneau lit l'exercice \textbf{à un instant}~: il ne suit pas les saisies concurrentes. Un contrôle sans rien à signaler peut ne plus l'être une seconde plus tard (une transaction importée entre-temps).
+    \item Le panneau lit l'exercice \textbf{à un instant}~: il ne suit pas les saisies concurrentes. Un contrôle sans rien à signaler peut ne plus l'être une seconde plus tard (une transaction importée ou saisie entre-temps).
     \item Aucun contrôle ne repère une \textbf{transitoire oubliée}~: une écriture de régularisation que vous n'avez pas contre-passée au début de l'exercice suivant ne se distingue d'aucune autre (\S\ref{sec:transitoires}).
 \end{itemize}
 
@@ -1987,7 +1987,7 @@ le manuel administrateur.
 %%─────────────────────────────────────────────────────────────────────────────
 \section{Comptes bancaires}\label{sec:comptes-bancaires}
 
-Les comptes bancaires de la société se gèrent dans \emph{Administration} → \emph{Comptes bancaires} : on y crée, modifie, clôt et archive un compte, et on le lie au plan comptable. Un compte qui porte des transactions importées ne s'archive pas (\S\ref{sec:supprimer-import}) : pour le retirer de l'usage en gardant son historique, on le \textbf{clôt} (\S\ref{sec:clore-compte-bancaire}). Chaque compte porte :
+Les comptes bancaires de la société se gèrent dans \emph{Administration} → \emph{Comptes bancaires} : on y crée, modifie, clôt et archive un compte, et on le lie au plan comptable. Un compte qui porte des transactions, importées ou saisies, ne s'archive pas (\S\ref{sec:supprimer-import}) : pour le retirer de l'usage en gardant son historique, on le \textbf{clôt} (\S\ref{sec:clore-compte-bancaire}). Chaque compte porte :
 
 \begin{itemize}
     \item la \textbf{banque} ;
@@ -2020,8 +2020,8 @@ Elle est informative~: c'est l'état du compte, non sa date, qui refuse les écr
     \item si le compte est le \textbf{compte principal}~: désignez d'abord un autre compte
           principal --- c'est lui que porte la QR-facture. Sur la ligne du compte principal, le
           bouton \emph{Clore} est désactivé et le dit~;
-    \item s'il porte des \textbf{transactions importées non rapprochées}~: rapprochez-les, ou
-          supprimez l'import s'il ne contient aucune transaction rapprochée
+    \item s'il porte des \textbf{transactions, importées ou saisies, non rapprochées}~:
+          rapprochez-les, ou supprimez le relevé s'il ne contient aucune transaction rapprochée
           (\S\ref{sec:supprimer-import}). Une transaction \textbf{rejetée} à la réconciliation
           compte comme non rapprochée~: elle empêche la clôture tant qu'elle n'est pas
           rapprochée manuellement, ou rattachée à une écriture existante --- le règlement
@@ -2036,7 +2036,8 @@ Elle est informative~: c'est l'état du compte, non sa date, qui refuse les écr
 \paragraph{Ce qui devient impossible.} Sur un compte clos, Kesh refuse --- à l'écran comme par
 une clé d'API~:
 \begin{itemize}
-    \item l'import d'un relevé, et la suppression d'un import~;
+    \item l'import d'un relevé ou sa saisie à la main, et la suppression d'un relevé, importé ou
+          saisi~;
     \item le rapprochement de ses transactions, et l'annulation d'un rapprochement~;
     \item le règlement par virement sur ce compte, d'une facture client ou fournisseur, et
           l'annulation d'un tel règlement~;
@@ -2075,7 +2076,7 @@ réouverture avec la date de clôture levée.
 
 \paragraph{Deux précisions.}
 \begin{itemize}
-    \item Les boutons \emph{Supprimer l'import}, \emph{Annuler le rapprochement} et
+    \item Les boutons \emph{Supprimer l'import} (ou \emph{Supprimer le relevé}), \emph{Annuler le rapprochement} et
           \emph{Annuler le rejet} (détail d'un import), \emph{Annuler le règlement} (fiche d'une
           facture client ou fournisseur) et \emph{Annuler la facture} (facture fournisseur
           payée par ce compte) restent affichés pour un compte clos~: c'est l'enregistrement
@@ -2087,12 +2088,13 @@ réouverture avec la date de clôture levée.
           termine \textbf{avant}, et la clôture en tient compte (elle peut alors être refusée,
           par exemple si l'opération a remis une transaction à rapprocher), ou bien elle est
           \textbf{refusée} avec le message ci-dessus. Pour un import, le refus peut venir après
-          l'analyse du relevé~: rouvrir le compte, puis réimporter.
+          l'analyse du relevé~: rouvrir le compte, puis réimporter (ou, pour un relevé saisi à la
+          main, le vérifier et l'enregistrer de nouveau).
 \end{itemize}
 
 \paragraph{Clôture et archivage.} L'archivage retire un compte des sélecteurs et de l'usage
 --- il ne reparaît sur cette page que par \emph{Afficher les archivés} ---, et un compte archivé
-ne se rouvre pas~; il n'est permis qu'à un compte sans transaction importée. La clôture est le
+ne se rouvre pas~; il n'est permis qu'à un compte sans transaction, importée ou saisie. La clôture est le
 geste pour un compte qui a servi. Un compte clos ne s'archive pas~: rouvrez-le d'abord. Le
 \textbf{compte principal} s'archive quand tous les autres comptes sont archivés \emph{ou clos}~:
 la société reste alors sans compte principal, donc sans IBAN pour la QR-facture, et
@@ -2102,9 +2104,11 @@ comptes clos ou archivés sont masqués, dit lesquels et renvoie au bouton qui l
 %%─────────────────────────────────────────────────────────────────────────────
 \section{Import bancaire}\label{sec:import-bancaire}
 
-L'import bancaire est l'étape clé pour automatiser votre comptabilité. Kesh supporte deux formats.
-Seul le CAMT.053 porte le \textbf{solde de clôture} du relevé, que le tableau de bord confronte
-au solde comptable ; un import CSV n'en a pas :
+L'import bancaire est l'étape clé pour automatiser votre comptabilité. Kesh lit deux formats de
+fichier, le CAMT.053 et le CSV, et accepte aussi un relevé \textbf{saisi à la main}, pour un compte
+dont la banque ne fournit aucun fichier (\S\ref{sec:releve-manuel}). Le CAMT.053 et le relevé saisi
+portent le \textbf{solde de clôture} du relevé, que le tableau de bord confronte au solde
+comptable ; un import CSV n'en a pas :
 
 \subsection{Import CAMT.053 (ISO 20022)}
 
@@ -2115,7 +2119,9 @@ plupart des banques suisses le proposent, pas toutes : certaines offres d'e-bank
 que le CSV ou le MT940. À défaut de CAMT.053, importez le relevé en \textbf{CSV avec un profil
 banque} (\S\ref{sec:import-csv}). Le CSV ne porte pas le solde de clôture : le \textbf{contrôle du
 solde se fait alors à la main} après l'import, en rapprochant le solde comptable du compte du
-solde de l'extrait. Le format \textbf{MT940 n'est pas lu} par Kesh.
+solde de l'extrait. Le format \textbf{MT940 n'est pas lu} par Kesh. Si la banque ne fournit, pour
+ce compte, ni CAMT.053 ni CSV --- le relevé n'existe que sur papier ou en PDF ---,
+\textbf{saisissez-le à la main} (\S\ref{sec:releve-manuel}).
 
 \subsubsection{Récupération du fichier CAMT.053}
 
@@ -2157,20 +2163,24 @@ qui \textbf{chevauchent un import précédent} sont \textbf{ignorées par défau
 même}. Une devise non supportée bloque l'import — relevé CAMT.053, ou CSV dont le profil lit la
 colonne Devise ; un CSV dont le profil ne la lit pas est supposé en CHF, et la prévisualisation le
 dit (\S\ref{sec:import-csv}). \emph{Annuler} abandonne sans rien enregistrer.
-L'import confirmé rejoint la liste \emph{Imports précédents} de la même page (date, fichier,
-période, nombre de transactions) ; le nom du fichier ouvre le détail de l'import.
+L'import confirmé rejoint la liste \emph{Imports précédents} de la même page (date
+d'enregistrement, relevé --- le nom du fichier, ou «~Saisie manuelle~» pour un relevé saisi ---,
+période, nombre de transactions) ; ce nom ouvre le détail du relevé.
 
 \subsubsection{Supprimer un import}\label{sec:supprimer-import}
 
 Un import fautif --- mauvais compte, mauvais fichier, profil CSV mal réglé --- se supprime
 \textbf{entier}, avec toutes ses transactions, tant qu'\textbf{aucune} n'est rapprochée~; le
-même fichier peut ensuite être réimporté.
+même fichier peut ensuite être réimporté. Un relevé \textbf{saisi à la main} se supprime de même,
+puis se ressaisit (\S\ref{sec:releve-manuel}).
 
 \begin{itemize}
     \item \textbf{Où}~: \emph{Quotidien} → \emph{Importer des relevés}, liste \emph{Imports
-          précédents}, puis le nom du fichier~: le détail de l'import porte le bouton
-          \emph{Supprimer l'import}. Kesh demande confirmation en nommant le fichier, la période
-          et le nombre de transactions~; \emph{Supprimer définitivement} confirme.
+          précédents}, puis le nom du fichier (ou «~Saisie manuelle~»)~: le détail porte le
+          bouton \emph{Supprimer l'import} (\emph{Supprimer le relevé} pour un relevé saisi).
+          Kesh demande confirmation en nommant le fichier (pour un relevé saisi, «~le relevé
+          saisi à la main~»), la période et le nombre de transactions~; \emph{Supprimer
+          définitivement} confirme.
     \item \textbf{Qui}~: le Comptable et l'Administrateur~; le rôle Consultation ne voit pas le
           bouton. La suppression se fait à l'écran~: une clé d'API ne peut pas supprimer un
           import (manuel d'administration, § \emph{Clés API}).
@@ -2184,15 +2194,18 @@ même fichier peut ensuite être réimporté.
     \item \textbf{Ce qui part}~: l'import et \textbf{toutes} ses transactions, rejetées
           comprises. Rien ne change au grand livre, puisqu'aucune n'est rapprochée.
     \item \textbf{Ce qui reste}~: une trace \emph{Import bancaire supprimé} au journal
-          d'audit, avec le fichier, la période et le nombre de transactions.
+          d'audit, avec le fichier (pour un relevé saisi, son nom technique
+          \texttt{saisie-manuelle-}\emph{du}\texttt{-}\emph{au}), la période et le nombre de
+          transactions.
     \item \textbf{Ce qui suit}~: le même fichier se réimporte sans l'avertissement «~fichier
           déjà importé~», s'il n'en reste aucun autre import (un fichier importé deux fois
           garde l'avertissement tant que l'un des deux imports subsiste). La tuile
           \emph{Relevé du \dots} de \emph{Comptes bancaires} reprend le relevé restant
-          \textbf{portant un solde de clôture} (un CAMT.053) dont la période se termine le plus
-          tard, ou disparaît s'il n'en reste aucun (\S\ref{sec:solde-comptable}). Un
-          compte bancaire qui porte des transactions importées ne s'archive pas~; supprimer ses
-          imports peut le rendre archivable \textbf{s'il ne lui reste aucune transaction}, sous
+          \textbf{portant un solde de clôture} (un CAMT.053 ou un relevé saisi) dont la période
+          se termine le plus tard, ou disparaît s'il n'en reste aucun
+          (\S\ref{sec:solde-comptable}). Un compte bancaire qui porte des transactions,
+          importées ou saisies, ne s'archive pas~; supprimer ses relevés peut le rendre
+          archivable \textbf{s'il ne lui reste aucune transaction}, sous
           les autres conditions de l'archivage (dont celle du compte principal). Pour retirer
           de l'usage un compte qui a servi, sans rien supprimer, le geste est la
           \textbf{clôture} (\S\ref{sec:clore-compte-bancaire}).
@@ -2327,6 +2340,101 @@ Un import CSV déjà confirmé avec un mauvais profil se supprime comme un impor
 qu'aucune de ses transactions n'est rapprochée, puis se réimporte avec le bon profil
 (\S\ref{sec:supprimer-import}).
 
+\subsection{Saisir un relevé à la main}\label{sec:releve-manuel}
+
+Certaines banques ne fournissent, pour un compte donné, ni CAMT.053 ni CSV~: le relevé n'existe
+que sur papier ou en PDF. Pour ce compte, \textbf{saisissez le relevé à la main}~: il entre alors
+dans le même circuit qu'un relevé importé --- transactions à rapprocher, propositions,
+annulation, suppression, solde de clôture confronté aux livres sur la tuile du tableau de bord
+(\S\ref{sec:solde-comptable}) et au contrôle de clôture (\S\ref{sec:preparer-cloture}). N'employez
+cette voie que pour un compte sans relevé électronique~: un fichier, quand il existe, s'importe.
+
+\begin{enumerate}
+    \item \emph{Quotidien} → \emph{Importer des relevés}, puis le lien \emph{Saisir un relevé à la
+    main} (le Comptable et l'Administrateur~; le rôle Consultation ne le voit pas).
+    \item Choisir le \textbf{compte bancaire} (les comptes ni archivés ni clos), la
+    \textbf{période} (du, au), le \textbf{numéro du relevé} s'il en porte un (facultatif), le
+    \textbf{solde de départ} et le \textbf{solde d'arrivée} tels qu'imprimés --- signés, deux
+    décimales au plus, la virgule ou le point.
+    \item Saisir les \textbf{lignes}, comme sur le papier~: \emph{Date} (de comptabilisation,
+    dans la période), \emph{Valeur} (facultative, libre), \emph{Libellé} (requis, 500 caractères
+    au plus), \emph{Contrepartie} et \emph{Référence} (facultatives, 255 caractères au plus ---
+    la contrepartie et la référence aident les propositions et les règles d'affectation),
+    puis le montant dans \emph{Débit} \textbf{ou} dans \emph{Crédit}~: un seul des deux, positif,
+    deux décimales au plus. \emph{Ajouter une ligne} en ajoute une~; la croix la retire. Une
+    ligne laissée entièrement vide est ignorée.
+    \item Sous la table, Kesh affiche à chaque frappe le total des débits, le total des crédits,
+    le \textbf{solde calculé} (départ + crédits − débits), le solde d'arrivée saisi et
+    l'\textbf{écart}. Tant qu'un solde est vide, aucun écart ne s'affiche~: un solde vide n'est
+    pas zéro.
+    \item \emph{Vérifier}~: Kesh contrôle le relevé et dit ce qu'il a trouvé, sans rien
+    enregistrer (ci-dessous). Toute modification du relevé après la vérification demande de
+    vérifier de nouveau.
+    \item \emph{Enregistrer}. Le relevé paraît en tête des \emph{Imports précédents}, sous le
+    nom «~Saisie manuelle~» (et son numéro s'il en a un)~; son détail dit «~Saisie manuelle~»
+    comme format.
+\end{enumerate}
+
+\paragraph{Le contrôle d'équilibre est exact.} \emph{Enregistrer} reste inactif tant que le solde
+calculé ne donne pas \textbf{au centime près} le solde d'arrivée~: aucune tolérance, aucune
+confirmation «~malgré l'écart~». Un relevé papier dont les soldes ne se retrouvent pas (page
+manquante, ligne illisible, report) ne s'enregistre pas tant que la ligne manquante n'est pas
+saisie. Le bouton reste aussi inactif tant qu'il manque le compte, la période, un solde, qu'une
+ligne est incomplète, que la vérification n'a pas réussi ou qu'une confirmation qu'elle demande
+n'est pas cochée~; la raison --- une seule, la première --- est dite à côté du bouton.
+\emph{Vérifier}, lui, est actif dès que le compte et la période sont saisis~: une valeur refusée
+par Kesh y est désignée par sa ligne et sa colonne.
+
+\paragraph{Ce que la vérification signale.} Chaque avertissement qui l'exige porte une case à
+cocher avant d'enregistrer~:
+\begin{itemize}
+    \item \textbf{Relevé identique} --- même compte, même période, même numéro, mêmes soldes et
+          mêmes lignes, dans le même ordre, qu'un relevé saisi déjà enregistré~: à confirmer.
+    \item \textbf{Lignes en double} --- une ligne dont l'empreinte (date, montant, référence ou
+          identifiant, compte~: \emph{Détection des doublons}, ci-dessous) égale celle d'une
+          transaction déjà enregistrée sur ce compte~: la saisie \textbf{n'offre pas
+          «~ignorer~»}~; corrigez la ligne, ou confirmez pour l'enregistrer avec toutes les
+          autres.
+    \item \textbf{Solde de départ attendu} --- le solde de départ diffère du solde d'arrivée du
+          relevé précédent~: Kesh dit le solde attendu et la fin de ce relevé, et demande
+          confirmation~; il ne bloque jamais.
+    \item \textbf{Relevés qui chevauchent} la période~: une simple information.
+\end{itemize}
+
+\paragraph{Corriger un relevé saisi.} Un relevé saisi ne se modifie pas~: on le
+\textbf{supprime} entier, puis on le \textbf{ressaisit} (\S\ref{sec:supprimer-import}). Si une
+de ses transactions est déjà rapprochée, annulez d'abord ce rapprochement
+(\S\ref{sec:annuler-rapprochement}). La piste de contrôle garde les deux gestes~: \emph{Relevé
+bancaire saisi à la main} à l'enregistrement, \emph{Import bancaire supprimé} à la suppression.
+
+\paragraph{Si la banque passe un jour au CAMT.} Une ligne déjà saisie est reconnue dans un
+fichier par sa date, son montant et le \textbf{premier identifiant non vide} parmi la référence,
+l'identifiant de bout en bout et l'identifiant de transaction (casse et blancs ignorés). Or une
+ligne saisie ne porte que la référence que vous y avez tapée, et une ligne d'un fichier CAMT
+porte presque toujours un identifiant~: \textbf{n'attendez pas que l'import reconnaisse une ligne
+déjà saisie} --- une ligne saisie sans référence y entre presque toujours \textbf{deux fois}. Elle
+n'est reconnue (et alors ignorée par défaut à l'import) que si la référence saisie égale ce premier
+identifiant. Un fichier CSV sans colonne d'identifiant, lui, reconnaît une ligne saisie sans
+référence. La voie normale est donc d'importer les fichiers \textbf{à partir du lendemain} de la
+dernière période saisie~; à défaut, supprimez le relevé saisi (non rapproché, ou après
+l'annulation de chacun de ses rapprochements) avant d'importer la même période. L'import d'un
+fichier ne signale pas une période déjà saisie à la main.
+
+\paragraph{Limites.}
+\begin{itemize}
+    \item \textbf{En CHF}~: les montants se saisissent et s'enregistrent en francs suisses, et
+          l'écran le dit. Kesh ne connaît pas encore de compte en devise étrangère (\#233) et ne
+          contrôle donc rien~: ne saisissez pas ici le relevé d'un compte tenu dans une autre
+          devise.
+    \item \textbf{500 lignes} au plus par relevé~; un relevé plus long se saisit en plusieurs
+          périodes.
+    \item Un \textbf{compte clos} refuse la saisie, comme l'import
+          (\S\ref{sec:clore-compte-bancaire}).
+    \item Le solde de départ n'est comparé qu'au \textbf{relevé précédent qui porte un solde}
+          --- un CAMT.053 ou un relevé saisi, non un import CSV --- et dont la période finit
+          \textbf{avant} le premier jour de la nouvelle.
+\end{itemize}
+
 \subsection{Détection des doublons}
 
 \keshscreenshot{import-doublons.png}{Avertissement de détection de doublons lors d'un ré-import de fichier bancaire.}  % TODO capture: ecran doublons
@@ -2342,6 +2450,8 @@ Kesh détecte les transactions déjà importées en comparant une empreinte calc
 
 Le libellé n'en fait pas partie. Les doublons ne sont pas écartés en silence : l'aperçu les signale, et vous choisissez de les \textbf{ignorer} (choix par défaut) ou de les \textbf{importer quand même}. Un fichier déjà importé en entier est signalé à part, et ne s'importe qu'après confirmation.
 
+Un relevé \textbf{saisi à la main} suit la même empreinte, mais n'offre pas «~ignorer~»~: une ligne en double se \textbf{corrige}, ou s'enregistre après confirmation, avec toutes les autres (\S\ref{sec:releve-manuel}).
+
 \subsection{Rejet partiel}
 
 Si un fichier contient un mélange de lignes valides et invalides (date ou montant illisible, par exemple), l'aperçu liste les lignes invalides — leur numéro, leur code et un message — et rien n'est importé tant que vous ne cochez pas \textbf{« Importer les lignes valides quand même »}. Vous pouvez aussi corriger le fichier source et le redéposer : les lignes déjà importées seront alors signalées comme doublons.
@@ -2355,7 +2465,7 @@ Importez vos relevés bancaires \textbf{au moins une fois par semaine} pour faci
 %%─────────────────────────────────────────────────────────────────────────────
 \section{Réconciliation bancaire}\label{sec:reconciliation}
 
-La réconciliation consiste à passer en comptabilité les transactions bancaires importées. Kesh \textbf{crée} l'écriture, soit en réglant une facture --- une facture \textbf{client} pour un crédit, une facture \textbf{fournisseur} pour un débit (\S\ref{sec:matching-fournisseur}) ---, soit en imputant la transaction à un compte de contrepartie --- par une règle d'affectation, manuellement ou en l'éclatant sur plusieurs comptes ---, sauf dans un cas~: une transaction \textbf{déjà comptabilisée} --- règlement enregistré depuis la fiche d'une facture, client ou fournisseur, écriture saisie au journal --- se \textbf{rattache} à cette écriture déjà passée, sans aucune écriture nouvelle (\S\ref{sec:rattacher-reglement}).
+La réconciliation consiste à passer en comptabilité les transactions bancaires, importées ou saisies à la main. Kesh \textbf{crée} l'écriture, soit en réglant une facture --- une facture \textbf{client} pour un crédit, une facture \textbf{fournisseur} pour un débit (\S\ref{sec:matching-fournisseur}) ---, soit en imputant la transaction à un compte de contrepartie --- par une règle d'affectation, manuellement ou en l'éclatant sur plusieurs comptes ---, sauf dans un cas~: une transaction \textbf{déjà comptabilisée} --- règlement enregistré depuis la fiche d'une facture, client ou fournisseur, écriture saisie au journal --- se \textbf{rattache} à cette écriture déjà passée, sans aucune écriture nouvelle (\S\ref{sec:rattacher-reglement}).
 
 \subsection{Réconciliation automatique}
 
@@ -2435,7 +2545,7 @@ Cochez les transactions à traiter, puis cliquez sur l'un des deux boutons plac�
 
 \begin{itemize}
     \item \emph{Accepter (N)} --- N est le nombre de lignes cochées --- accepte, pour chaque ligne, \textbf{la candidate affichée}. Pour une facture, l'écriture de règlement est créée (Débit banque / Crédit débiteurs). Si la transaction solde une facture dont le reste porte plus de deux décimales, l'écart d'arrondi passe en troisième ligne, comme pour un règlement manuel (\S\ref{sec:reglement-client}) ; sans compte de différences d'arrondi, la ligne apparaît dans les \emph{Échecs partiels} avec le message «~aucun compte de différences d'arrondi utilisable n'est désigné~» --- désignez-en un dans \emph{Administration} → \emph{Facturation}. La proposition échoue aussi, avec son libellé, si le compte bancaire est lié au \textbf{compte débiteurs} de la facture (reliez-le à son propre compte de banque) ou si le compte de différences d'arrondi désigné \textbf{est} le compte débiteurs (un administrateur doit en désigner un autre dans \emph{Administration} → \emph{Facturation})~: l'écriture serait nulle. Pour une \textbf{facture fournisseur}, Kesh passe le paiement de la fiche, par virement depuis le compte de l'import~: l'écriture Débit créanciers / Crédit banque du total, datée de la \textbf{date de paiement} de la transaction (sa date de valeur, à défaut sa date de comptabilisation), dans l'exercice ouvert qui la couvre~; la facture passe \emph{payée} à cette date et est lettrée avec son achat (\S\ref{sec:regler-facture-fournisseur}). La proposition échoue, avec son libellé, si le compte bancaire est lié au \textbf{compte créanciers} de la facture, si une \textbf{autre} facture du même montant est entre-temps entrée dans un lot de paiement en cours sur ce compte, ou si la facture a été payée ou mise dans un lot entre-temps. Pour une règle, l'écriture est passée entre la banque et le compte de contrepartie de la règle~; depuis la version~0.14.0, l'acceptation d'une règle est \textbf{refusée} quand une facture la défend --- une facture fournisseur candidate, une facture fournisseur du même montant dans un lot en cours sur ce compte, ou une facture client que le paiement dépasse de quelques centimes et que la référence ou le nom du client désigne~: la page avait été chargée avant la saisie de la facture, par exemple. Rechargez la page~; pour imputer délibérément la transaction malgré cette facture, utilisez \emph{Affecter manuellement} --- jamais, toutefois, pour le débit d'une dépense déjà réglée (encadré ci-dessus).
-    \item \emph{Rejeter} écarte \textbf{la transaction} de la réconciliation --- qu'elle ait une proposition ou non --- \textbf{sans la passer en comptabilité}~: elle est marquée comme revue et \textbf{quitte la liste} de la réconciliation. Elle reste dans le \textbf{détail de son import} (\emph{Quotidien} → \emph{Importer des relevés}, liste \emph{Imports précédents}, puis le nom du fichier), avec le statut «~pending~» et la mention «~Rejetée le~\dots~»~; elle compte comme non rapprochée et empêche la clôture de son compte bancaire (\S\ref{sec:clore-compte-bancaire}). Le bouton \emph{Annuler le rejet} de sa ligne la rend de nouveau \textbf{proposable}~: elle revient dans la liste de la réconciliation --- parmi les plus anciennes s'il le faut, que le bouton \emph{Afficher aussi les plus anciennes} fait paraître jusqu'à la 500\textsuperscript{e} transaction en attente (voir plus haut) ; au-delà, elle ne reparaît qu'à mesure que les premières sont traitées ---, où elle peut de nouveau être acceptée, affectée manuellement, éclatée ou rattachée à un règlement déjà enregistré ou à une écriture existante (\S\ref{sec:rattacher-reglement})~; le geste ne passe aucune écriture et s'inscrit au journal d'audit (\emph{Rejet de réconciliation annulé}). Le Comptable et l'Administrateur voient le bouton~; le rôle Consultation voit la mention seule. La page \emph{Réconciliation} le rappelle sous la liste.
+    \item \emph{Rejeter} écarte \textbf{la transaction} de la réconciliation --- qu'elle ait une proposition ou non --- \textbf{sans la passer en comptabilité}~: elle est marquée comme revue et \textbf{quitte la liste} de la réconciliation. Elle reste dans le \textbf{détail de son import} (\emph{Quotidien} → \emph{Importer des relevés}, liste \emph{Imports précédents}, puis le nom du fichier, ou «~Saisie manuelle~»), avec le statut «~pending~» et la mention «~Rejetée le~\dots~»~; elle compte comme non rapprochée et empêche la clôture de son compte bancaire (\S\ref{sec:clore-compte-bancaire}). Le bouton \emph{Annuler le rejet} de sa ligne la rend de nouveau \textbf{proposable}~: elle revient dans la liste de la réconciliation --- parmi les plus anciennes s'il le faut, que le bouton \emph{Afficher aussi les plus anciennes} fait paraître jusqu'à la 500\textsuperscript{e} transaction en attente (voir plus haut) ; au-delà, elle ne reparaît qu'à mesure que les premières sont traitées ---, où elle peut de nouveau être acceptée, affectée manuellement, éclatée ou rattachée à un règlement déjà enregistré ou à une écriture existante (\S\ref{sec:rattacher-reglement})~; le geste ne passe aucune écriture et s'inscrit au journal d'audit (\emph{Rejet de réconciliation annulé}). Le Comptable et l'Administrateur voient le bouton~; le rôle Consultation voit la mention seule. La page \emph{Réconciliation} le rappelle sous la liste.
 \end{itemize}
 
 Pour imputer une transaction autrement qu'à la candidate affichée, utilisez les boutons de sa ligne~: \emph{Affecter manuellement} ou \emph{Éclater} (ci-dessous) --- ou, pour une transaction déjà comptabilisée par un autre chemin, \emph{Rattacher à une écriture existante} (\S\ref{sec:rattacher-reglement}).
@@ -2540,7 +2650,7 @@ Une règle dont le \textbf{compte de contrepartie} a été archivé, ou est deve
 Un rapprochement accepté par erreur --- mauvaise facture, mauvais compte de contrepartie ---,
 ou un \textbf{rattachement} à la mauvaise écriture (\S\ref{sec:rattacher-reglement}),
 s'annule. On le fait depuis le \textbf{détail de l'import bancaire} (\emph{Quotidien} → \emph{Importer des relevés}, liste
-\emph{Imports précédents}, puis le nom du fichier)~: chaque transaction rapprochée y porte un lien vers son écriture et un
+\emph{Imports précédents}, puis le nom du fichier, ou «~Saisie manuelle~»)~: chaque transaction rapprochée y porte un lien vers son écriture et un
 bouton \emph{Annuler le rapprochement}. Quand le rapprochement a réglé une \textbf{facture
 client}, ou qu'une transaction a été rattachée à son règlement
 (\S\ref{sec:rattacher-reglement}), le même bouton apparaît aussi sur la fiche de la facture, à
@@ -3347,7 +3457,7 @@ défaut), Kesh ne rend pas tout de suite à l'agent ce qu'il demande~: il lui r�
 «~envoi n°~N en attente~», et un Administrateur voit, à l'écran \emph{Envois du serveur MCP},
 le \textbf{texte exact} qui partira. Il l'envoie tel quel, le modifie avant de l'envoyer, ou le
 refuse~; quand l'agent relit l'envoi, Kesh lui rend ce qui a été validé, et seulement
-cela \emph{(que ce texte atteigne l'agent est à confirmer avec Claude Code sur la 0.16.1~; en
+cela \emph{(que ce texte atteigne l'agent est à confirmer avec Claude Code sur la 0.17.0~; en
 0.16.0, il ne l'atteignait pas, issue \#811)}. Sous une clé
 \textbf{dispensée}, les données partent \textbf{sans être montrées}~; chaque appel reste
 journalisé.
@@ -3403,6 +3513,14 @@ Vérifiez que la somme des débits égale exactement la somme des crédits (à 1
     \item Vérifiez la date des transactions : si elles sont toutes antérieures à la date de début de votre exercice, elles sont ignorées.
     \item Consultez les logs d'import (lien \emph{Voir détails} sur l'import) pour identifier d'éventuelles erreurs de parsing.
 \end{itemize}
+
+\subsection{Ma banque ne propose ni CAMT.053 ni CSV, que faire ?}
+
+Pour ce compte, saisissez le relevé à la main~: \emph{Quotidien} → \emph{Importer des relevés},
+puis \emph{Saisir un relevé à la main} (\S\ref{sec:releve-manuel}). Le relevé saisi se rapproche
+comme un relevé importé, et son solde de clôture se confronte aux livres. Si la banque propose
+un jour un fichier, lisez d'abord le paragraphe \emph{Si la banque passe un jour au CAMT} de
+cette section~: une ligne déjà saisie n'y est presque jamais reconnue.
 
 \subsection{Une transaction bancaire ne propose aucun match automatique, est-ce normal ?}\label{sec:faq-aucun-match}
 

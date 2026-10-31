@@ -35,6 +35,8 @@ use rust_decimal::Decimal;
 use crate::errors::CoreError;
 use crate::types::Money;
 
+pub mod manual;
+
 /// Brouillon de transaction bancaire — image projetée d'un
 /// [`ImportedTransaction`] dans le vocabulaire domaine `kesh-core`.
 ///
@@ -107,7 +109,8 @@ impl From<&ImportedTransaction> for BankTransactionDraft {
 /// tenant courant, hash du fichier, timestamp serveur, user du JWT).
 ///
 /// Le champ [`SourceFormatTag`] est une projection finie pour la base
-/// (`ENUM('CAMT053_V04', 'CAMT053_V08', 'CSV')`) — il évite d'embarquer
+/// (`'CAMT053_V04'`, `'CAMT053_V08'`, `'CSV'`, et `'MANUAL'` pour un relevé
+/// saisi à la main depuis la v016-2a ; la colonne est un `VARCHAR(32)`) — il évite d'embarquer
 /// la `String` arbitraire de `kesh_import::SourceFormat::Camt053 { version }`.
 ///
 /// `imported_by_user_id` est passé en paramètre par le caller (handler
@@ -146,6 +149,10 @@ pub enum SourceFormatTag {
     /// La distinction par profil bancaire spécifique vit dans
     /// `audit_log.details_json.bank_profile_id` (cf. Limitation L4).
     Csv,
+    /// Story v016-2a (#816) — relevé saisi à la main (aucun fichier).
+    /// Seul `kesh_core::bank_imports::manual` le produit ; aucun chemin
+    /// d'import de fichier ne peut le rendre (`from_imported`).
+    Manual,
 }
 
 impl SourceFormatTag {
@@ -155,6 +162,7 @@ impl SourceFormatTag {
             Self::Camt053V04 => "CAMT053_V04",
             Self::Camt053V08 => "CAMT053_V08",
             Self::Csv => "CSV",
+            Self::Manual => "MANUAL",
         }
     }
 }

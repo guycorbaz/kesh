@@ -32,10 +32,8 @@ use crate::audit::AuditActor;
 use axum::Extension;
 use axum::Json;
 use axum::extract::Query;
-use axum::extract::rejection::JsonRejection;
-use axum::extract::{FromRequest, Path, Request, State};
+use axum::extract::{Path, State};
 use axum::http::StatusCode;
-use axum::response::{IntoResponse, Response};
 use kesh_db::entities::account::AccountType;
 use kesh_db::entities::audit_log::NewAuditLogEntry;
 use kesh_db::entities::bank_account::{
@@ -191,41 +189,10 @@ pub struct BankAccountWithBalance {
 // Body extractors (convertit serde rejection en AppError::Validation 400)
 // ===========================================================================
 
-/// Macro factor extractor : convertit serde rejection en `AppError::Validation`
-/// (400 standard Kesh) au lieu du 422 Axum natif.
-macro_rules! impl_validation_extractor {
-    ($extractor:ident, $body:ident, $field_doc:expr) => {
-        pub struct $extractor(pub $body);
-
-        impl<S> FromRequest<S> for $extractor
-        where
-            S: Send + Sync,
-        {
-            type Rejection = Response;
-
-            async fn from_request(req: Request, state: &S) -> Result<Self, Self::Rejection> {
-                match Json::<$body>::from_request(req, state).await {
-                    Ok(Json(body)) => Ok(Self(body)),
-                    Err(rej) => {
-                        let message = match &rej {
-                            JsonRejection::JsonDataError(_) | JsonRejection::JsonSyntaxError(_) => {
-                                format!("corps JSON malformé ou champ requis manquant ({})", $field_doc)
-                            }
-                            JsonRejection::MissingJsonContentType(_) => {
-                                "Content-Type attendu : application/json".to_string()
-                            }
-                            _ => {
-                                tracing::warn!(rejection = %rej, "BodyExtractor: unhandled JsonRejection");
-                                "requête invalide (corps non-parsable)".to_string()
-                            }
-                        };
-                        Err(AppError::Validation(message).into_response())
-                    }
-                }
-            }
-        }
-    };
-}
+// La macro vit dans `crate::extractors` depuis la Story v016-2a (C-v016-2-19) :
+// elle convertit tout rejet du corps en `AppError::Validation` (400 standard
+// Kesh) au lieu du 422 Axum natif.
+use crate::extractors::impl_validation_extractor;
 
 impl_validation_extractor!(
     PatchJournalLinkBodyExtractor,
