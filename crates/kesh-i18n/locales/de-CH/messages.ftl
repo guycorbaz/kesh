@@ -1181,6 +1181,7 @@ bank-import-manual-error-rejected = Auszug abgelehnt: zu gross oder unlesbar.
 bank-import-manual-error-duplicate-file = Ein identischer Auszug ist bereits gespeichert: Prüfen Sie den Auszug erneut und bestätigen Sie, um ihn trotzdem zu speichern.
 bank-import-manual-preview-ok = Prüfung erfolgreich: Der Auszug ist ausgeglichen.
 bank-import-manual-preview-stale = Der Auszug wurde seit der Prüfung geändert: Prüfen Sie ihn erneut.
+bank-import-manual-preview-outdated-server = Die Lage des Kontos hat sich in Kesh seit der Prüfung geändert: Prüfen Sie den Auszug erneut und bestätigen Sie dann.
 bank-import-manual-warning-duplicate-file = Ein identischer Auszug (gleiches Konto, gleiche Periode, Nummer, Salden und Zeilen) ist bereits gespeichert: Auszug #{ $id }.
 bank-import-manual-confirm-duplicate-file = Diesen Auszug trotzdem speichern
 bank-import-manual-warning-duplicate-lines = Diese Zeilen sind auf diesem Konto bereits vorhanden: { $lines }. Sie werden nie übersprungen: Korrigieren Sie sie oder bestätigen Sie, um sie zu speichern.

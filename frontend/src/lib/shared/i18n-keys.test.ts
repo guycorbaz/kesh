@@ -779,7 +779,10 @@ const ATTENDU = {
 	// même `grep` aux deux bornes (`9f576786` → tête), périmètre : les fichiers touchés —
 	// `ManualStatementForm.svelte` 51 → 52 (`bank-import-manual-warning-duplicate-lines-generic`),
 	// `bank-import/manual/+page.svelte` 6 → 7 (`bank-import-manual-load-error`). Que des littéraux.
-	sitesTotal: 2713,
+	// Remédiation de la revue de code P2 : **2713 → 2714** (+1), même `grep` aux deux bornes
+	// (`c3f9d6e2` → tête) — `ManualStatementForm.svelte` 52 → 53
+	// (`bank-import-manual-preview-outdated-server`). Un littéral.
+	sitesTotal: 2714,
 	sitesNonResolus: 31,
 	relais: 6,
 	// Story 26-1 (#620, AC3-bis) : **10 → 11** — `lib/features/bank-import/

@@ -1181,6 +1181,7 @@ bank-import-manual-error-rejected = Statement refused: too large or unreadable.
 bank-import-manual-error-duplicate-file = An identical statement is already saved: check the statement again, then confirm to save it anyway.
 bank-import-manual-preview-ok = Check passed: the statement balances.
 bank-import-manual-preview-stale = The statement has changed since the check: check it again.
+bank-import-manual-preview-outdated-server = The account's situation has changed in Kesh since the check: check the statement again, then confirm.
 bank-import-manual-warning-duplicate-file = An identical statement (same account, period, number, balances and lines) is already saved: statement #{ $id }.
 bank-import-manual-confirm-duplicate-file = Save this statement anyway
 bank-import-manual-warning-duplicate-lines = These lines already exist on this account: { $lines }. They are never skipped: correct them, or confirm to save them.

@@ -1181,6 +1181,7 @@ bank-import-manual-error-rejected = Estratto rifiutato: troppo voluminoso o ille
 bank-import-manual-error-duplicate-file = Un estratto identico è già registrato: verificate di nuovo l'estratto, poi confermate per registrarlo comunque.
 bank-import-manual-preview-ok = Verifica riuscita: l'estratto è in pareggio.
 bank-import-manual-preview-stale = L'estratto è cambiato dopo la verifica: verificatelo di nuovo.
+bank-import-manual-preview-outdated-server = La situazione del conto è cambiata in Kesh dopo la verifica: verificate di nuovo l'estratto, poi confermate.
 bank-import-manual-warning-duplicate-file = Un estratto identico (stesso conto, periodo, numero, saldi e righe) è già registrato: estratto #{ $id }.
 bank-import-manual-confirm-duplicate-file = Registrare comunque questo estratto
 bank-import-manual-warning-duplicate-lines = Queste righe esistono già su questo conto: { $lines }. Non vengono mai ignorate: correggetele, o confermate per registrarle.

@@ -1961,14 +1961,17 @@ const OUVERTURE_DES_REASON: &str = "export const MANUAL_STATEMENT_REASON_LABELS"
 /// commentaire) est une erreur, non une ligne ignorée. Erreur aussi si le bloc est
 /// introuvable, non fermé, ou vide — jamais un ensemble vide muet.
 fn cles_de_la_table_des_reason(source: &str) -> Result<Vec<String>, String> {
-    let debut = if source.starts_with(OUVERTURE_DES_REASON) {
-        0
-    } else {
-        source
-            .find(&format!("\n{OUVERTURE_DES_REASON}"))
-            .map(|i| i + 1)
-            .ok_or_else(|| format!("déclaration `{OUVERTURE_DES_REASON}` introuvable"))?
-    };
+    // Revue de code P2, P7 : l'ouverture en début de ligne, suivie exactement de `:`, ` ` ou
+    // `=` — une déclaration `…_LABELS_V2` n'est pas la table.
+    let declaration = Regex::new(&format!(
+        r"(?m)^{}[:= ]",
+        regex::escape(OUVERTURE_DES_REASON)
+    ))
+    .expect("motif valide");
+    let debut = declaration
+        .find(source)
+        .map(|m| m.start())
+        .ok_or_else(|| format!("déclaration `{OUVERTURE_DES_REASON}` introuvable"))?;
     let bloc = &source[debut..];
     let fin = bloc
         .find("\n};")
@@ -2032,6 +2035,12 @@ fn g24_l_extracteur_de_la_table_des_reason() {
         "export const MANUAL_STATEMENT_REASON_LABELS = {\n\trequired: [\n\t\t'required',\n\t],\n};"
     )
     .is_err());
+    // Revue de code P2, P7 — une déclaration au nom prolongé, avant la vraie, n'est pas la table.
+    let prolonge = "export const MANUAL_STATEMENT_REASON_LABELS_V2 = {\n\tautre: ['a', 'b'],\n};\nexport const MANUAL_STATEMENT_REASON_LABELS: R = {\n\trequired: ['required', 'a'],\n};\n";
+    assert_eq!(
+        cles_de_la_table_des_reason(prolonge),
+        Ok(vec!["required".to_string()])
+    );
 }
 
 /// **G24** (Story v016-2b, #816, AC-24, décision de l'orchestrateur à la validation P3,

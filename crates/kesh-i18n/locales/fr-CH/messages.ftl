@@ -1242,6 +1242,7 @@ bank-import-manual-error-rejected = Relevé refusé : trop volumineux ou illisib
 bank-import-manual-error-duplicate-file = Un relevé identique est déjà enregistré : vérifiez de nouveau le relevé, puis confirmez pour l’enregistrer quand même.
 bank-import-manual-preview-ok = Vérification réussie : le relevé est équilibré.
 bank-import-manual-preview-stale = Le relevé a changé depuis la vérification : vérifiez-le de nouveau.
+bank-import-manual-preview-outdated-server = La situation du compte a changé dans Kesh depuis la vérification : vérifiez de nouveau le relevé, puis confirmez.
 bank-import-manual-warning-duplicate-file = Un relevé identique (même compte, période, numéro, soldes et lignes) est déjà enregistré : relevé #{ $id }.
 bank-import-manual-confirm-duplicate-file = Enregistrer quand même ce relevé
 bank-import-manual-warning-duplicate-lines = Ces lignes existent déjà sur ce compte : { $lines }. Elles ne sont jamais ignorées : corrigez-les, ou confirmez pour les enregistrer.

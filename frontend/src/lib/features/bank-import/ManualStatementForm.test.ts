@@ -300,6 +300,38 @@ describe('ManualStatementForm', () => {
 		expect(q(c, 'bank-import-manual-block-reason')?.textContent).toContain('sans séparateur de milliers');
 	});
 
+	// Revue de code P2, P1 (mutation M33) — un refus de création qui demande une case : le relevé
+	// n'a pas changé, c'est la situation du compte côté Kesh ; l'avis le dit, l'aperçu tombe.
+	const REFUS_A_CASE: [string, Record<string, unknown>][] = [
+		['BANK_IMPORT_DUPLICATE_FILE', { existingImportId: 4, existingFilename: 'f' }],
+		['BANK_STATEMENT_DUPLICATE_LINES', { lines: [{ line: 2, existingTransactionId: 9 }] }],
+		[
+			'BANK_STATEMENT_OPENING_BALANCE_GAP',
+			{ expected: '990.00', entered: '1000.00', previousImportId: 4, previousPeriodTo: '2026-08-31' },
+		],
+	];
+	for (const [code, details] of REFUS_A_CASE) {
+		it(`M33 — ${code} à l’enregistrement : « la situation du compte a changé », pas « le relevé a changé »`, async () => {
+			mockApi.previewManualStatement.mockResolvedValue(previewOk());
+			mockApi.createManualStatement.mockRejectedValueOnce({ status: 422, code, message: 'refus traduit', details });
+			const { container: c } = render(ManualStatementForm, { props: { bankAccounts: ACCOUNTS } });
+			await fill(c);
+			await fireEvent.click(q(c, 'bank-import-manual-verify')!);
+			await flush();
+			await fireEvent.click(q(c, 'bank-import-manual-save')!);
+			await flush();
+			expect(q(c, 'bank-import-manual-preview-outdated-server')?.textContent).toContain(
+				'La situation du compte a changé dans Kesh depuis la vérification',
+			);
+			expect(q(c, 'bank-import-manual-preview-stale')).toBeNull();
+			expect(q(c, 'bank-import-manual-preview-ok')).toBeNull();
+			expect(q(c, 'bank-import-manual-block-reason')?.dataset.reason).toBe('preview');
+			if (code === 'BANK_STATEMENT_DUPLICATE_LINES') {
+				expect(qa(c, 'bank-import-manual-line').map((r) => r.dataset.error)).toEqual(['false', 'true']);
+			}
+		});
+	}
+
 	it('un 409 RECONCILIATION_ACCOUNT_LOCKED à l’enregistrement : message générique, l’aperçu reste, on peut réessayer', async () => {
 		mockApi.previewManualStatement.mockResolvedValue(previewOk());
 		mockApi.createManualStatement.mockRejectedValueOnce({

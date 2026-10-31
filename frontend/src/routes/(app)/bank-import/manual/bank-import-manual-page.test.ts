@@ -31,7 +31,7 @@ vi.mock('$lib/shared/utils/api-client', async (importOriginal) => ({
 // Le formulaire est remplacé par un témoin qui expose `onSaved`.
 const saved = vi.hoisted(() => ({ onSaved: null as null | ((i: unknown) => void) }));
 vi.mock('$lib/features/bank-import/ManualStatementForm.svelte', async () => {
-	const Temoin = (await import('./TemoinFormulaire.test-helper.svelte')).default;
+	const Temoin = (await import('./TemoinFormulaire.test.helper.svelte')).default;
 	return { default: Temoin };
 });
 
@@ -61,7 +61,14 @@ describe('/bank-import/manual — garde Comptable+', () => {
 	it('Consultation et sans utilisateur ⇒ redirection vers l’accueil ; Admin et Comptable passent', () => {
 		for (const r of ['Consultation', null]) {
 			role.value = r;
-			expect(() => load()).toThrow();
+			// Revue de code P2, P4 : la redirection exacte (302 vers `/`), non une exception quelconque.
+			let leve: unknown = null;
+			try {
+				load();
+			} catch (e) {
+				leve = e;
+			}
+			expect(leve).toMatchObject({ status: 302, location: '/' });
 		}
 		for (const r of ['Admin', 'Comptable']) {
 			role.value = r;

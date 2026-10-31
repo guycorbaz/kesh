@@ -16,13 +16,15 @@
     « une réponse tardive ne compte pas » (revue de code P1, B3) ;
   - aperçu réussi (`previewFresh`) tant que la clé du relevé courant égale celle
     de l'instantané : toute modification d'un champ du relevé, et tout retrait ou
-    ajout d'une ligne, même vide, le périme (cases décochées) ; cocher une case ne
-    le périme pas ;
+    ajout d'une ligne qui déplace une ligne remplie, le périme (cases décochées) ;
+    une ligne vide ajoutée ou retirée en fin de tableau ne déplace rien et ne le
+    périme pas, et c'est voulu (revue de code P2, P2) ; cocher une case ne le
+    périme pas ;
   - « Enregistrer » (`save`, garde `submitting`) : envoie le corps courant, cases
     comprises ; après un succès, le formulaire reste figé jusqu'à la navigation. Un
     refus qui demande une confirmation (relevé identique, doublons, écart de solde
-    de départ apparus depuis l'aperçu) retire l'aperçu et l'annonce périmé : il faut
-    vérifier de nouveau pour voir la case.
+    de départ apparus côté Kesh depuis l'aperçu) retire l'aperçu et dit que la
+    situation du compte a changé : il faut vérifier de nouveau pour voir la case.
   Les refus du serveur désignent la cellule (ligne de l'écran, par la table des
   rangs de l'instantané) ou le champ d'entête ; un `400 VALIDATION_ERROR` sans
   `field` s'affiche par un message générique.
@@ -86,7 +88,8 @@
 	let previewStale = $state(false);
 	let previewing = $state(false);
 	let submitting = $state(false);
-	let error = $state<{ view: ManualErrorView; key: string } | null>(null);
+	/** Le refus affiché ; `serverChanged` : un refus de création qui demande une nouvelle vérification. */
+	let error = $state<{ view: ManualErrorView; key: string; serverChanged?: boolean } | null>(null);
 
 	const built = $derived(
 		buildManualStatementBody(form, { confirmDuplicateFile, confirmDuplicateLines, confirmOpeningBalanceGap }),
@@ -176,11 +179,13 @@
 		try {
 			imported = await createManualStatement(sent.body);
 		} catch (err) {
-			error = { view: describeManualError(err, sent.rowMap), key };
 			const code = (err as { code?: unknown })?.code;
-			if (typeof code === 'string' && NEEDS_NEW_PREVIEW.has(code)) {
+			const needsNewPreview = typeof code === 'string' && NEEDS_NEW_PREVIEW.has(code);
+			// Revue de code P2, P1 : le relevé saisi n'a pas changé, c'est la situation du compte
+			// côté Kesh — l'avis le dit (`serverChanged`), il ne prétend pas que le relevé a changé.
+			error = { view: describeManualError(err, sent.rowMap), key, serverChanged: needsNewPreview };
+			if (needsNewPreview) {
 				preview = null;
-				previewStale = true;
 				resetConfirmations();
 			}
 			submitting = false;
@@ -559,6 +564,15 @@
 			{i18nMsg(
 				'bank-import-manual-preview-stale',
 				'Le relevé a changé depuis la vérification : vérifiez-le de nouveau.',
+			)}
+		</p>
+	{/if}
+
+	{#if error?.serverChanged}
+		<p class="mt-4 text-sm text-text-muted" data-testid="bank-import-manual-preview-outdated-server">
+			{i18nMsg(
+				'bank-import-manual-preview-outdated-server',
+				'La situation du compte a changé dans Kesh depuis la vérification : vérifiez de nouveau le relevé, puis confirmez.',
 			)}
 		</p>
 	{/if}
