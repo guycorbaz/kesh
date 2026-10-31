@@ -4,7 +4,7 @@ Status: ready-for-dev
 
 *Sous-fiche issue du découpage de la Story v017-4 à sa rédaction (2026-10-31, C-v017-4-1). Worktree
 `/home/gcorbaz/devel/kesh-0175`, branche `story/v017-4-facture-fournisseur-brouillon` (partie de `8e126cfd`) ; la 4a
-d'abord, puis la 4b. Registre **commun** : `v017-4-choix-autonomes.md` (C-v017-4-1 à 40 ; C-v017-4-41 et suivants au
+d'abord, puis la 4b. Registre **commun** : `v017-4-choix-autonomes.md` (C-v017-4-1 à 42 ; C-v017-4-43 et suivants au
 développement). Issues : **#849**, #853 — en `refs` seulement. **Le texte des AC, le contexte, les décisions, le
 contrat de l'API, les codes d'erreur, la précédence, les verrous, l'inventaire clos, les limites et les questions au
 Project Lead sont dans la fiche parente `v017-4-facture-fournisseur-brouillon.md`** : ils valent ici sans être recopiés.
@@ -75,3 +75,6 @@ qu'avec la 4b, sur la même branche.
 - 2026-10-31 — Validation P3 remédiée dans la fiche parente (C-v017-4-37 à 40) : rejeu gardé sur la création, le `PUT` et
   le `DELETE` ; décodage tolérant de `payment_batches.rs:378-385` ; tests pilotés de M20 et M20-quater ; repli du
   `MODIFY COLUMN` au nom neuf ; tâche des artefacts E2E. Prochaine : validation P4.
+- 2026-10-31 — Validation P4 remédiée dans la fiche parente (C-v017-4-41, 42) : clé et texte du motif brouillon posés à
+  l'AC-13 ; test piloté du `DELETE` au niveau du dépôt, plus un test de route ; `retry_app_on_deadlock` pour le `PUT` ;
+  point (vi) à vingt-deux. Prochaine : validation P5 (ciblée).

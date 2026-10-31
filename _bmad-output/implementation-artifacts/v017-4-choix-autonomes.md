@@ -531,3 +531,28 @@ avec une validation aux comptes croisés. L'enveloppe est **gardée** (C-v017-4-
   à l'inverse de l'annulation fournisseur : elle suit sa fonction sœur `invoices::unvalidate`, dont les empêchements
   propres à la pièce précèdent ceux de `delete_in_tx`.
 - **Réversible** : oui.
+
+---
+
+*Les choix C-v017-4-41 et 42 consignent la remédiation de la validation P4 (2026-10-31 ; rapports
+`kesh-gate-logs/v0174-validate-p4-{R,F}.md`). Les entrées précédentes restent telles qu'écrites.*
+
+### C-v017-4-41 — Le test piloté du `DELETE` porte sur le dépôt, sans l'enveloppe de rejeu (F2)
+
+- **Contexte** : C-v017-4-38 (test piloté) et C-v017-4-37 (rejeu du `DELETE`) sont justes chacun ; ensemble, au niveau
+  de la route, l'enveloppe rejouerait le `DELETE` sacrifié par InnoDB et le mutant M20-quater survivrait.
+- **Retenu** (arbitrage) : le test qui tue M20-quater appelle `supplier_invoices::delete_draft` (dépôt), sans
+  `retry_on_deadlock`, et asserte l'absence de `DbError` d'interblocage des deux côtés ; un second test, de route,
+  constate que l'enveloppe rend `204`/`200` et jamais `500` — il ne tue pas le mutant.
+- **Réversible** : oui.
+
+### C-v017-4-42 — Un seul texte pour le motif « brouillon », posé par la 4a ; l'édition passe au formulaire ce qui convient (F1, F3)
+
+- **Retenu** : (1) la clé `supplier-invoices-cancel-blocked-draft` et son texte (« Cette facture est un brouillon : elle
+  ne s'annule pas, car rien n'a été passé au journal. ») sont posés à l'AC-13 (4a), parce que le serveur et l'écran
+  partagent un texte par motif (`errors.rs:4565-4566`) ; le texte ne prescrit aucune suppression, un Comptable ou une clé
+  `read-write` ne pouvant pas supprimer ; l'AC-25 réutilise la clé. (2) À l'édition, le formulaire reçoit l'objet `qr`
+  seulement si `linkOrigin === 'completion'` et `qr !== null`, sinon `null` ; le scan navigateur est caché dès que la
+  facture a un document (prop `hasDocument`) ; la prop `document` est un `Pick` de douze champs.
+- **Écartées** : la clé posée par la 4b (deux propriétaires) ; un texte qui invite à supprimer.
+- **Réversible** : oui.

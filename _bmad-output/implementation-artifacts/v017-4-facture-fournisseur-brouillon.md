@@ -5,7 +5,7 @@ Status: split
 *Fiche rédigée le 2026-10-31, en autonomie (Opus 5.5), worktree `/home/gcorbaz/devel/kesh-0175`, branche
 `story/v017-4-facture-fournisseur-brouillon` partie de `8e126cfd` (tête de `release/0.17.0`, candidate
 `v0.17.0-rc1`) ; la story se fusionne sur la branche de release. Registre : `v017-4-choix-autonomes.md`
-(C-v017-4-1 à C-v017-4-40). **Remédiée après la validation P3** (2026-10-31, Change Log ; C-v017-4-37 à 40). **Remédiée après la validation P2** (2026-10-31, Change Log ; C-v017-4-34 à 36). **Remédiée après la validation P1** (2026-10-31, Change Log ; C-v017-4-26 à 33). **Amendée le même jour par les décisions de l'orchestrateur sur Q1 à Q5** (C-v017-4-21 à 25, § *Questions au Project Lead*). **Découpée dès la rédaction** en `v017-4a` (backend) et `v017-4b` (écran) — § *Découpage*,
+(C-v017-4-1 à C-v017-4-42). **Remédiée après la validation P4** (2026-10-31, Change Log ; C-v017-4-41, 42). **Remédiée après la validation P3** (2026-10-31, Change Log ; C-v017-4-37 à 40). **Remédiée après la validation P2** (2026-10-31, Change Log ; C-v017-4-34 à 36). **Remédiée après la validation P1** (2026-10-31, Change Log ; C-v017-4-26 à 33). **Amendée le même jour par les décisions de l'orchestrateur sur Q1 à Q5** (C-v017-4-21 à 25, § *Questions au Project Lead*). **Découpée dès la rédaction** en `v017-4a` (backend) et `v017-4b` (écran) — § *Découpage*,
 C-v017-4-1 ; cette fiche porte le contexte, les décisions, le contrat et le texte de **tous** les AC, que les
 sous-fiches répartissent par numéro. **Complétée le même jour** sur décision du Project Lead (C-v017-4-20) : #853,
 #830, #835 et #831, quatre défauts du même formulaire. Clé courte : `v0174`. Issues : **#849** (CR, P2), #853, #830,
@@ -186,8 +186,8 @@ verrou optimiste ; l'ordre `exercice clos` puis `postérieur` est celui que `del
 | Route | Ordre des verrous | Rejeu | Registre `audit_route_registry.rs` |
 |---|---|---|---|
 | `POST /supplier-invoices` (brouillon) | **aucun verrou exclusif** : la passe d'enregistrement lit fournisseur, projet et comptes **sans verrou** — le projet par une lecture ordinaire (existe, de la société, non archivé), **pas** par `validate_taggable_in_tx` (sentinelle `companies` et projet `FOR UPDATE`, `supplier_invoices.rs:424` — citation corrigée à la validation P3, R7), le jugement d'archivage étant refait sous verrou à la validation *(validation P2, R7)* ; seule l'insertion, qui garde les verrous **partagés** de ses clés étrangères (société, fournisseur, projet, comptes des lignes) — *(la phrase « compatibles entre eux, d'où l'absence d'enveloppe » de la P2 était fausse : validation P3, R2)* | ~~sans enveloppe~~ *(révisé à la validation P3, R2 ; C-v017-4-37)* **enveloppe gardée** : `retry_on_deadlock("supplier_invoices::create", …)` (`routes/supplier_invoices.rs:641`) reste — les verrous partagés de l'insertion ne sont **pas** compatibles avec tout : une ligne posée sur les comptes A puis B tient S(A) et attend S(B) quand une validation aux comptes B puis A tient X(B) et attend X(A) (cycle), et la clé étrangère `company_id` attend tout porteur de la sentinelle exclusive (`bank_accounts.rs:1617`) | `Traced, SansEcritureAuJournal` (reclassée depuis `Traced, Rejouee`, `:425`) |
-| `POST …/complete` | inchangé : le document `FOR UPDATE`, puis l'insertion | **gardé** (`retry_app_on_deadlock`, inchangé) | *(validation P2, R6)* reclassée de `Traced, Rejouee` (`:430`) en `Traced, SansEcritureAuJournal` — la colonne dit « écrit au journal » (`audit_route_registry.rs:43-45`), non « a une enveloppe » ; elle reste rejouée, et le décompte du point **(vi)** (« dix-huit routes `SansEcritureAuJournal` sont rejouées quand même », `:158`) passe à dix-neuf ; le point **(ii)** est recompté avec les scénarios de la validation et de la dévalidation |
-| `PUT /supplier-invoices/{id}` | la facture `FOR UPDATE` ; puis le document joint en **lecture ordinaire** (ses données de QR et `link_origin` ne changent qu'avec un détachement, bénin) ; lignes `DELETE` puis `INSERT` | **`retry_on_deadlock("supplier_invoices::update", …)`** *(validation P3, R2 : même cycle que la création, par les clés étrangères des lignes)* | `Traced, SansEcritureAuJournal` (rejouée quand même, point (vi)) |
+| `POST …/complete` | inchangé : le document `FOR UPDATE`, puis l'insertion | **gardé** (`retry_app_on_deadlock`, inchangé) | *(validation P2, R6)* reclassée de `Traced, Rejouee` (`:430`) en `Traced, SansEcritureAuJournal` — la colonne dit « écrit au journal » (`audit_route_registry.rs:43-45`), non « a une enveloppe » ; elle reste rejouée, et le décompte du point **(vi)** (« dix-huit routes `SansEcritureAuJournal` sont rejouées quand même », `:158`) passe à **vingt-deux** — complétion, création, `PUT`, `DELETE` (validation P4, R1 = F4 ; première rédaction : « dix-neuf », antérieure à C-v017-4-37), valeur à reconfirmer au développement ; le point **(ii)** est recompté avec les scénarios de la validation et de la dévalidation |
+| `PUT /supplier-invoices/{id}` | la facture `FOR UPDATE` ; puis le document joint en **lecture ordinaire** (ses données de QR et `link_origin` ne changent qu'avec un détachement, bénin) ; lignes `DELETE` puis `INSERT` | **`retry_app_on_deadlock("supplier_invoices::update", …)`** — enveloppe `AppError` (`crates/kesh-api/src/retry.rs:40`), la transaction vivant dans la route comme celle de la complétion, parce que les règles « document » extraites (AC-7) rendent des `AppError` qu'une fermeture `DbError` ne peut pas rendre (corrigé à la validation P4, R2 ; `retry_on_deadlock`, `kesh-db/src/retry.rs:150`, si le développement garde la transaction au dépôt — à dire au Dev Agent Record) *(validation P3, R2 : même cycle que la création, par les clés étrangères des lignes)* | `Traced, SansEcritureAuJournal` (rejouée quand même, point (vi)) |
 | `DELETE /supplier-invoices/{id}` | *(réécrit à la validation P2, R1 = F1 ; C-v017-4-34)* **la facture d'abord, puis `detach_in_tx`** : la facture `FOR UPDATE`, son statut, les articles de lot en lecture verrouillante, **puis** `detach_in_tx` (qui verrouille l'entrée de `uq_imported_supplier_invoice` du brouillon, ou son intervalle), puis le `DELETE`. C'est l'ordre « facture → entrée d'unicité » de `attach_in_tx` (document neuf, facture, sentinelle, `UPDATE` qui insère la clé) : un rattachement concurrent attend la facture, le `DELETE` atteint l'index sans conflit. L'ordre inverse est **celui que le doc-comment de `detach_in_tx` interdit** (`imported_supplier_invoices.rs:311-314` : « un détachement qui demanderait la facture **après** le document formerait un cycle avec [`attach_in_tx`] (document neuf, puis facture, puis entrée d'unicité) ») | **`retry_on_deadlock("supplier_invoices::delete", …)`** *(validation P3, R2 ; C-v017-4-37)* : l'ordre de `attach_in_tx` évite le cycle avec le rattachement, l'enveloppe couvre le reste (articles de lot, clés étrangères) — aucune limite résiduelle sur une base en production | `Traced, SansEcritureAuJournal` |
 | `POST …/validate` | la facture `FOR UPDATE`, puis exactement l'ordre (0) à (5) du doc-comment de l'actuel `create_in_tx` (`supplier_invoices.rs:325-387`) — comptes de charge `FOR UPDATE`, réglages, comptes désignés partagés, exercice, journal. Cycle **connu** avec la confirmation d'un lot et l'acceptation d'un lot de rapprochement (sentinelle `companies` partagée puis facture suivante) | **`retry_on_deadlock("supplier_invoices::validate", …)`** | `Traced, Rejouee` |
 | `POST …/unvalidate` | la facture `FOR UPDATE` ; lots `generated` et rapprochement en **lecture verrouillante** (`LOCK IN SHARE MODE`, patron de `lock_for_bank_settlement_in_tx` (c)) ; `UPDATE` ; `delete_in_tx` (écriture et exercice, exercices postérieurs, lignes) | **`retry_on_deadlock("supplier_invoices::unvalidate", …)`** | `Traced, Rejouee` |
@@ -318,8 +318,10 @@ Record avec leur sortie rouge), sauf mention. Tests Rust de dépôt et d'API : s
      fk_supplier_invoices_purchase_je_v2 FOREIGN KEY (purchase_journal_entry_id) REFERENCES journal_entries(id) ON DELETE
      RESTRICT;` —, de sorte qu'un échec ne laisse jamais la table sans sa clé. L'essai joue, sur la base jetable, **les
      trois** formes dans l'ordre (le `MODIFY` seul, le repli au même nom, le repli au nom neuf) et inscrit chaque résultat
-     au Dev Agent Record ; la migration retient la première qui passe ; le nom effectif de la clé se propage au squash et
-     au contrôle P8 ; *(réécrit à la validation P2, R5 ; C-v017-4-35)* les `CHECK` des points 2 à 4 suivent
+     au Dev Agent Record ; la migration retient la première qui passe ; le nom effectif de la clé se propage au squash (régénéré ; `test_schema_guard`) — *(validation P4, R4 : non au
+     contrôle P8, `migrations.sha384` ne portant que des empreintes)* ; si le repli au nom neuf est retenu, l'index
+     implicite garde son nom `fk_supplier_invoices_purchase_je` (`DROP FOREIGN KEY` ne retire pas l'index) à côté de la
+     contrainte `…_v2` : écart de noms bénin, écrit à l'en-tête de la migration ; *(réécrit à la validation P2, R5 ; C-v017-4-35)* les `CHECK` des points 2 à 4 suivent
      le précédent du dépôt — « MariaDB : un CHECK ne se modifie pas en place → DROP CONSTRAINT + ADD CONSTRAINT, chacun
      dans son instruction » (`20261001000004_invoice_settlements_write_off.sql:17-19`) —, avec une précaution de plus :
      la contrainte de statut est posée sous un **nom neuf**, **avant** le retrait de l'ancienne. Instruction A :
@@ -391,9 +393,10 @@ Record avec leur sortie rouge), sauf mention. Tests Rust de dépôt et d'API : s
   fournisseur **ouverte**, **payée** et **annulée**, et au moins un document lié. *(Validation P2, R2 ; C-v017-4-36.)* La
   sauvegarde forgée **ne porte pas** `link_origin` : le test retire la colonne des `column_names` et de chaque ligne de
   `imported_supplier_invoices` (et recalcule l'empreinte de la table si le manifeste la porte) — *(outils nommés à la
-  validation P3, R6)* `ouvrir_tout` (`admin_full_import_e2e.rs:3622`), `recrire_table(…, "imported_supplier_invoices",
-  |o| { o.remove("link_origin"); })` (`:3687`, qui récrit les lignes et l'empreinte mais **pas** `columnNames`), le retrait
-  de `"link_origin"` de `manifest["tables"]["imported_supplier_invoices"]["columnNames"]` à la main, puis `rezip_tout`
+  validation P3, R6 ; lignes et outil corrigés à la validation P4, R3 = F6)* `ouvrir_tout` (`admin_full_import_e2e.rs:3632`),
+  `recrire_table(…, "imported_supplier_invoices", |o| { o.remove("link_origin"); })` (`:3684`, qui récrit les lignes et
+  l'empreinte mais **pas** `columnNames`), `strip_column(&mut manifest, "imported_supplier_invoices", "link_origin")`
+  (`:930`, qui retire la colonne du manifeste et vérifie qu'elle y était), puis `rezip_tout`
   (`:3653`, qui garde `files/` ; `rezip`, `:263`, ne l'écrit pas et perdrait le document lié) — c'est ce retrait qui
   exerce le chemin « colonne absente de la source » (`admin_backup/import.rs:606-611`) qu'exige la contrainte « données à
   garder » ; après l'import, `link_origin` vaut `NULL` ; le doc-comment `:4689-4695` (« la 0.17.0 n'ajoute … ni colonne »)
@@ -483,12 +486,16 @@ Record avec leur sortie rouge), sauf mention. Tests Rust de dépôt et d'API : s
   *(Test déterministe, validation P3, R1 = F3 ; C-v017-4-38.)* `attach_in_tx` étant atomique, deux appels libres ne
   produisent l'entrelacement fautif qu'au hasard. Le test le pilote : A = une transaction qui rejoue **à la main** les
   étapes (1) à (3) de `attach_in_tx` (document neuf `FOR UPDATE`, facture `FOR UPDATE`, sentinelle) **sans** `mark_completed` ;
-  B = `delete_draft` lancé dans une tâche ; attente que B soit bloqué par `attendre_une_requete_en_cours(&pool,
+  B = la fonction du **dépôt** `supplier_invoices::delete_draft`, **sans** l'enveloppe de rejeu (validation P4, F2 ; C-v017-4-41 :
+  au niveau de la route, l'enveloppe rejouerait B si InnoDB le sacrifiait, et le mutant survivrait), lancée dans une tâche ; attente que B soit bloqué par `attendre_une_requete_en_cours(&pool,
   &["FROM supplier_invoices WHERE id", "FOR UPDATE"], …)` (`test_fixtures.rs`, patron de
   `supplier_document_attachment.rs:330`, sonde par `PROCESSLIST`, sans privilège `PROCESS`) ; A appelle alors
-  `mark_completed` et commite. Assertions : A et B aboutissent, aucune erreur 1213 ni `500` ; le document est rendu « à
+  `mark_completed` et commite. Assertions : A et B aboutissent, **aucune `DbError` d'interblocage** d'un côté ni de l'autre ; le document est rendu « à
   traiter » et le brouillon supprimé. Sous M20-quater, B a posé le verrou d'intervalle de `uq_imported_supplier_invoice`
-  avant d'attendre la facture, et `mark_completed` de A l'attend : interblocage — le test rougit **à coup sûr**. Retenu
+  avant d'attendre la facture, et `mark_completed` de A l'attend : interblocage — le test rougit **à coup sûr**, quelle
+  que soit la victime, parce que ni A ni B n'est rejoué. **Un second test, au niveau de la route** (`DELETE
+  /supplier-invoices/{id}` avec la même chorégraphie), constate que l'enveloppe rend `204` (ou `200`) et jamais `500` ; il
+  ne sert pas à tuer le mutant. Retenu
   plutôt que le protocole « intervalle tenu puis `FOR UPDATE NOWAIT` sur la facture » de F3, qui exigeait une sonde
   `INNODB_TRX`/`INNODB_LOCK_WAITS` (privilège `PROCESS`, interdit par `docs/agents-orchestration.md` § 6.1) et ne prouve
   que l'ordre, non l'absence d'interblocage ; un refus annule aussi le détachement (test :
@@ -534,7 +541,13 @@ Record avec leur sortie rouge), sauf mention. Tests Rust de dépôt et d'API : s
   `rejeu_interblocage_e2e.rs:865` : le rejeu de la **validation** remplace celui de la création (§ *Verrous et rejeu*).
 - **AC-13 — Un brouillon ne s'annule pas.** Variante `SettlementCancelBlocker::SupplierInvoiceDraft`, code
   `SUPPLIER_INVOICE_DRAFT`, rang 1 de `supplier_invoice_cancel_blocker` avant `SupplierInvoiceCancelled` ; `POST
-  …/cancel` d'un brouillon → `409`, rien n'est écrit ; message aux quatre catalogues.
+  …/cancel` d'un brouillon → `409`, rien n'est écrit. *(Validation P4, F1 ; C-v017-4-42.)* Le texte du motif est posé
+  **ici**, en 4a, parce que le serveur et l'écran partagent un seul texte par motif (`errors.rs:4565-4566` : « Mêmes clés
+  que l'écran (`features/supplier-invoices/invoice-cancel.ts`) : un seul texte par motif ») : bras
+  `SettlementCancelBlocker::SupplierInvoiceDraft` de `supplier_invoice_cancel_blocked_text`, clé
+  **`supplier-invoices-cancel-blocked-draft`**, texte fr-CH **« Cette facture est un brouillon : elle ne s'annule pas,
+  car rien n'a été passé au journal. »** — vrai pour un Comptable, une clé `read-write` et un brouillon de L8, qui ne
+  peuvent pas le supprimer ; aucune suppression n'est prescrite —, aux quatre catalogues. L'AC-25 réutilise cette clé.
 - **AC-14 — #853, au serveur.** `to_new_supplier_invoice` refuse `dueDate < invoiceDate` :
   `400 SUPPLIER_INVOICE_DUE_BEFORE_INVOICE_DATE`, `details { invoiceDate, dueDate }` au format `AAAA-MM-JJ`, message qui
   dit les deux dates ; une échéance égale ou absente passe. Testé sur la création, la complétion (document sans QR et
@@ -569,7 +582,8 @@ Record avec leur sortie rouge), sauf mention. Tests Rust de dépôt et d'API : s
   `the_registry_partition_is_what_the_story_declares` (`LIB_ROUTES.len(), 138` → 142 ; `traced, 131` → 135) et
   `the_replay_partition_is_what_the_story_declares` (`rejouees, 25` ; `sans_ecriture, 113` → 117 ; `tout.len(), 141` →
   145) — valeurs à reconfirmer au développement —, le point (vi) de l'en-tête (« dix-huit routes `SansEcritureAuJournal`
-  sont rejouées quand même ») recompté avec la création, le `PUT`, le `DELETE` et la complétion rejoués (C-v017-4-37), et
+  sont rejouées quand même ») recompté avec la création, le `PUT`, le `DELETE` et la complétion rejoués (C-v017-4-37) —
+  dix-huit → **vingt-deux** (validation P4, R1 = F4), à reconfirmer —, et
   `le_manuel_dit_le_compte_du_registre` (`:978`), qui garde la phrase du manuel d'administration (AC-20).
   *(Validation P3, R11.)* Le message de `pay` d'un non-validé, `supplier_invoices.rs:828` (« seule une facture ouverte
   peut être réglée »), devient « seule une facture validée peut être réglée » (rendu à l'AC-5 (5)). Chaque code d'erreur neuf : variante `DbError` ou `AppError`, réponse dans
@@ -580,7 +594,10 @@ Record avec leur sortie rouge), sauf mention. Tests Rust de dépôt et d'API : s
   précédence de la dévalidation, `details`) ; ⚠️ *depuis la v0.17.0*, `POST /supplier-invoices` et la complétion
   créent un **brouillon** sans écriture — **changement de contrat**, avec la conduite d'une intégration (valider après
   créer) ; `purchaseJournalEntryId` nullable ; § *Documents à traiter* (`:788-792`) ; contrôles de clôture : « sept »
-  → « huit » et K8 (`:255-256`) ; tableau des codes d'erreur (`:907` et suivantes) ; § *Interblocages* (`:953`) ;
+  → « huit » et K8 (`:255-256`) ; tableau des codes d'erreur (`:907` et suivantes) ; § *Interblocages* (`:953`) — *(précisé à la validation P4, F5)* la création et la complétion restent rejouées mais
+  passent dans la queue « n'écrivent pas au journal mais… » ; `PUT /supplier-invoices/{id}` s'y ajoute (rejoué, ouvert
+  aux clés, n'écrit pas au journal) ; `validate` et `unvalidate` s'ajoutent aux routes qui écrivent au journal ; le
+  `DELETE`, fermé aux clés, n'y figure pas ;
   filtre `status` de la liste ; `SUPPLIER_INVOICE_DUE_BEFORE_INVOICE_DATE`. *(Complété à la validation P1, F16, R9.)*
   `:823` (`sourceDocument`, à trois états : `PUT`, `validate`, `unvalidate` s'ajoutent à la liste des réponses, et les
   champs neufs de F5) ; `:827` (« quel que soit son statut (ouverte… ») : brouillon compris ; *(validation P3, F1)* `:837` (« **Deux** opérations
@@ -683,11 +700,17 @@ Record avec leur sortie rouge), sauf mention. Tests Rust de dépôt et d'API : s
   complétion avec QR, sans QR, joint après coup. *(Validation P2, F8.)* `sourceDocument.qr` porte exactement les champs
   que le formulaire lit d'un `ImportedSupplierInvoice` (`SupplierInvoiceForm.svelte:66-67`, `:118-124`, `:409`) :
   `creditorIban`, `isQrIban`, `referenceType`, `referenceValue`, `amount`, `currency`, `creditorName`,
-  `creditorAddressType`, `creditorLine1`, `creditorLine2`, `creditorPostalCode`, `creditorTown`, `creditorCountry` ; la
+  `creditorAddressType`, `creditorLine1`, `creditorLine2`, `creditorPostalCode`, `creditorTown`, `creditorCountry` —
+  *(validation P4, F3)* `referenceType` reste au contrat mais n'est **pas** lu par le formulaire, qui en lit **douze** ; la
   page d'édition les passe au formulaire, dont la prop `document` devient *(validation P3, F8)* un
-  `Pick<ImportedSupplierInvoice, …>` de **ces treize champs** — les seuls qu'il lit (`SupplierInvoiceForm.svelte:85`,
+  `Pick<ImportedSupplierInvoice, …>` de **ces douze champs** — les seuls qu'il lit (`SupplierInvoiceForm.svelte:85`,
   `:87`, `:118-124`, `:318-343`, `:409`) — : la page de complétion lui passe le document entier (qui les contient),
-  l'édition l'objet `qr` ; aucun champ inventé (`storagePath`, `fileHash`). À l'édition, `initial.invoiceDate`
+  l'édition, *(précisé à la validation P4, F3 ; C-v017-4-42)* **selon le cas** : l'objet `qr` si `linkOrigin ===
+  'completion'` et `qr !== null` (mode « document avec QR ») ; sinon `null` (passer `qr` à un document joint après coup
+  serait le mutant M34). Le scan navigateur, que le formulaire offre quand `document === null` (`SupplierInvoiceForm.svelte:271`),
+  est **caché** pour toute facture qui a un document (prop neuve `hasDocument`, vraie dès que `sourceDocument !== null`) :
+  un brouillon né d'un document **sans** QR s'édite donc comme à sa complétion — tout se saisit, sans scan ; un document
+  joint après coup, de même. Aucun champ inventé (`storagePath`, `fileHash`). À l'édition, `initial.invoiceDate`
   **prime** sur la règle « date vide avec un document » de l'AC-24 (b). Succès → fiche ; refus → saisie
   intacte, message à sa place (patron AC16 de la 30-2b) ; `OPTIMISTIC_LOCK_CONFLICT` → message qui invite à recharger.
 - **AC-24 — Le formulaire.** (a) bouton « Enregistrer le brouillon » à la création, « Enregistrer » à l'édition ;
@@ -714,16 +737,16 @@ Record avec leur sortie rouge), sauf mention. Tests Rust de dépôt et d'API : s
   `supplier-invoice-form.test.ts`.
 - **AC-25 — Messages des refus.** Une fonction pure `supplierInvoiceUnvalidateMessage(code, label)` — la signature du
   patron `supplierInvoiceCancelMessage(code, label)` (`invoice-cancel.ts:32-35`, corrigé à la validation P1, F12) — rend
-  un message par code de la dévalidation (§ *Précédence*) et un repli générique. `SUPPLIER_INVOICE_DRAFT` **n'est pas**
+  un message par code de la dévalidation (§ *Précédence*) et un repli générique. ~~`SUPPLIER_INVOICE_DRAFT` **n'est pas**
   ajouté à `supplierInvoiceCancelMessage` : la fiche n'affiche pas le bloc d'annulation d'un brouillon (AC-22), le
-  message serait mort (F12) ; *(validation P2, F9)* mais la valeur entre à l'union `SupplierInvoiceCancelCode`
-  (`invoice-cancel.ts`, « l'union ne porte que ce qu'il **peut** rendre ») — le serveur la rend (AC-5 (7)). *(Tranché au
-  code à la validation P3, F2 ; C-v017-4-40 — remplace « rendue par le repli générique », qui n'existe pas : le
-  `default` de `supplierInvoiceCancelMessage` est une garde d'exhaustivité `never`, `invoice-cancel.ts:74-77`.)* Le
-  serveur rend bien la valeur sur ce chemin (`GET` de la fiche d'un brouillon) : l'union la porte, **avec** un `case
-  "SUPPLIER_INVOICE_DRAFT"` et son texte (clé neuve `supplier-invoices-cancel-blocked-draft`, « Un brouillon ne s'annule
-  pas : supprimez-le, ou validez-le d'abord. », quatre catalogues) ; l'AC-22 ne l'affiche pas, le type reste exhaustif
-  et vrai. Tests unitaires : chaque code.
+  message serait mort (F12).~~ *(Phrase de la P1 rayée à la validation P4, F1 : elle contredisait le remède de la P3.)*
+  `SUPPLIER_INVOICE_DRAFT` entre à l'union `SupplierInvoiceCancelCode` (`invoice-cancel.ts`, « l'union ne porte que ce
+  qu'il **peut** rendre ») — le serveur la rend sur le `GET` d'un brouillon (AC-5 (7)) — **avec** un `case
+  "SUPPLIER_INVOICE_DRAFT"` dans `supplierInvoiceCancelMessage`, dont le `default` est une garde d'exhaustivité `never`
+  (`invoice-cancel.ts:74-77`, validation P3, F2). Le `case` **réutilise** la clé et le texte posés par la 4a à l'AC-13
+  (`supplier-invoices-cancel-blocked-draft`), son repli en dur égal au catalogue fr-CH (`invoice-cancel.ts:13-14`) ; la
+  4b ne crée aucune clé pour ce motif (C-v017-4-42). L'AC-22 ne l'affiche pas ; le type reste exhaustif et vrai. Tests
+  unitaires : chaque code.
 - **AC-26 — Écran de clôture.** `closing-checks-labels.ts`, `FiscalYearChecks.svelte` et leurs types : K8, libellé,
   liste avec liens vers les fiches ; fixtures et bancs (`FiscalYearChecks.test.ts`, `closing-checks.test-fixtures.ts`,
   et *(validation P3, R10 = F6)* `routes/(app)/settings/fiscal-years/fiscal-years-page.test.ts:460`, `toHaveLength(7)` → 8)
@@ -861,7 +884,7 @@ Chacune posée sur une base éphémère, tuée par le test nommé, restaurée pa
 | M20 | `validate_in_tx` sans le verrou de la facture en premier | AC-10 — test **piloté** (validation P3, R1) : le perdant reçoit le **code** `ILLEGAL_STATE_TRANSITION` (le mutant rend `OPTIMISTIC_LOCK_CONFLICT`) ; « une seule écriture » ne suffit pas (R4) |
 | M20-bis | `total_amount` du brouillon calculé hors de `purchase_invoice_totals` (somme HT seule) | AC-6 (a) *(validation P1, R2)* |
 | M20-ter | `PUT` : règles de la complétion appliquées à un document joint après coup | AC-8, cas de Guy *(R5)* |
-| M20-quater | *(inversée à la validation P2, R1 = F1)* `DELETE` : `detach_in_tx` (le document) **avant** la facture | AC-9 — test **piloté** (validation P3, R1 = F3) : attache rejouée à la main jusqu'à la sentinelle, `DELETE` bloqué sur la facture, puis `mark_completed` — le mutant interbloque à coup sûr, l'ordre prescrit non |
+| M20-quater | *(inversée à la validation P2, R1 = F1)* `DELETE` : `detach_in_tx` (le document) **avant** la facture | AC-9 — test **piloté**, au niveau du **dépôt**, sans enveloppe (validation P3, R1 = F3 ; P4, F2) : attache rejouée à la main jusqu'à la sentinelle, `DELETE` bloqué sur la facture, puis `mark_completed` — le mutant interbloque à coup sûr, l'ordre prescrit non |
 | M21 | fiche : bloc *Payer* affiché pour un brouillon | AC-22 |
 | M21-bis | fiche : bloc *Annuler la facture* affiché pour un brouillon | AC-22 *(F12)* |
 | M22 | fiche : *Supprimer* offert au Comptable | AC-22 |
@@ -892,8 +915,10 @@ Chacune posée sur une base éphémère, tuée par le test nommé, restaurée pa
   de vérifier le relevé.
 - **L5** — l'avis « date de facture postérieure au dépôt de plus de quelques jours » (#853, point 3) n'est pas fait :
   il part dans une issue neuve, ouverte par l'orchestrateur (C-v017-4-25).
-- **L8** — *(validation P3, R9 ; C-v017-4-40)* un brouillon qui garde l'**historique d'un lot** (validé, mis en lot,
-  réglé, règlement annulé, dévalidé) **n'est pas supprimable** (`SUPPLIER_INVOICE_HAS_PAYMENT_BATCH_HISTORY` ;
+- **L8** — *(validation P3, R9 ; C-v017-4-40)* un brouillon qui garde l'**historique d'un lot** — validé puis placé dans un
+  lot, **quel que soit le sort du lot** : le plus souvent **annulé** (l'annulation garde ses articles,
+  `payment_batches.rs:697`, aucun `DELETE FROM payment_batch_items`), ou confirmé puis règlement annulé ; puis dévalidé
+  (chemins complétés à la validation P4, F7) — **n'est pas supprimable** (`SUPPLIER_INVOICE_HAS_PAYMENT_BATCH_HISTORY` ;
   `payment_batch_items` en `RESTRICT`, `20260628000002_payment_batches.sql:54`) : l'historique de l'ordre transmis à la
   banque se garde. Son chemin : le corriger et le valider, ou, s'il n'est pas dû, le valider puis l'**annuler** ; K8 le
   compte tant qu'il reste brouillon. Le manuel le dit (§ neuve du brouillon, AC-29 (2)).
@@ -1043,3 +1068,17 @@ Q2 oui, L1 aux notes de la candidate ; Q3 non ; Q4 « Validée » à l'écran, q
     F9 (phrases du CHANGELOG par migration).
   R2 et R3 changeant des règles d'exécution, la P4 est **complète** (`v017-4-validate-prompt-p4.md`, Opus, lentilles R et
   F, axe obligatoire sur cette remédiation).
+- 2026-10-31 — **Validation P4** (Opus, lentilles R et F, contexte frais ; rapports `kesh-gate-logs/v0174-validate-p4-{R,F}.md`) :
+  **0 CRITICAL, 0 HIGH, 2 MEDIUM, 10 LOW** (R : 0/0/0/4 ; F : 0/0/2/6 ; R1 = F4, R3 = F6). Prémisses lues au code :
+  `errors.rs:4565-4566` ; `admin_full_import_e2e.rs:930`, `:3632`, `:3684` ; `kesh-api/src/retry.rs:40` ;
+  `SupplierInvoiceForm.svelte:271` (aucune lecture de `referenceType`) ; `payment_batches.rs` (aucun `DELETE FROM
+  payment_batch_items`). Aucun finding rejeté. Arbitrages de l'orchestrateur appliqués (C-v017-4-41, 42) :
+  - **MEDIUM** — F1 (phrase contraire de l'AC-25 rayée ; clé `supplier-invoices-cancel-blocked-draft` et son texte posés
+    en 4a à l'AC-13, sans prescrire de suppression ; l'AC-25 la réutilise) ; F2 (test piloté du `DELETE` au niveau du
+    dépôt, sans enveloppe ; second test de route qui constate `204`/`200` et jamais `500`).
+  - **LOW, tous appliqués** — R1 = F4 (« vingt-deux »), R2 (`retry_app_on_deadlock` pour le `PUT`), R3 = F6 (lignes, et
+    `strip_column`), R4 (squash, non P8 ; index gardé sous l'ancien nom), F3 (douze champs ; ce que l'édition passe dans
+    chaque cas ; scan caché dès qu'il y a un document), F5 (§ *Interblocages*), F7 (L8 : le lot annulé), F8 (la 4b nomme
+    l'exception de l'AC-30).
+  La remédiation ne touche que la rédaction et le niveau d'un test, aucune règle d'exécution : la P5 est **ciblée**
+  (`v017-4-validate-prompt-p5.md`, Sonnet, sur le diff de cette remédiation).

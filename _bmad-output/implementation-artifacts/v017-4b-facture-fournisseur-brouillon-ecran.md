@@ -23,7 +23,8 @@ catalogues, le manuel utilisateur et son PDF, l'E2E, les captures, le CHANGELOG 
 
 ## Critères d'acceptation
 
-**AC-21 à AC-32** de la fiche parente, sous leur numéro d'origine. Mutations **M21 à M34**, M21-bis compris (M31 ajoutée par la décision
+**AC-21 à AC-32** de la fiche parente, sous leur numéro d'origine — *(validation P4, F8)* l'AC-30 **hors** de ce que la
+4a livre (helper `createSupplierInvoiceViaApi` qui valide, helper du relevé saisi par l'API, étapes API de la spec neuve). Mutations **M21 à M34**, M21-bis compris (M31 ajoutée par la décision
 Q4, C-v017-4-24 : l'état validé s'affiche « Validée » aux quatre locales, et aucun texte de l'écran, des manuels ni de
 l'API ne le nomme plus « ouverte » — AC-21, AC-29).
 
@@ -35,7 +36,7 @@ l'API ne le nomme plus « ouverte » — AC-21, AC-29).
 - [ ] Liste (AC-21) ; fiche (AC-22) ; édition (AC-23) ; formulaire (AC-24) ; messages (AC-25) ; clôture (AC-26) ;
       lots (AC-27) ; i18n (AC-28).
 - [ ] Manuel utilisateur et PDF (AC-29).
-- [ ] E2E neuf et specs adaptées (AC-30) ; captures (AC-31) ; CHANGELOG et README (AC-32).
+- [ ] E2E : étapes par l'écran de la spec neuve et specs adaptées (AC-30, sa part 4b) ; captures (AC-31) ; CHANGELOG et README (AC-32).
 - [ ] Mutations M21 à M34 (M21-bis compris).
 - [ ] Gates frontend, gate complet et **E2E complet** au dernier commit de code de la 4b — il couvre aussi la 4a
       (dérogation, C-v017-4-31).
@@ -59,3 +60,6 @@ l'API ne le nomme plus « ouverte » — AC-21, AC-29).
 - 2026-10-31 — Validation P3 remédiée dans la fiche parente (C-v017-4-37 à 40) : `case "SUPPLIER_INVOICE_DRAFT"` et son
   texte, `Pick` de treize champs pour le document du formulaire, `fiscal-years-page.test.ts:460`, `README.md:47`, limite L8
   au manuel ; l'AC-30 commence dans la 4a. Prochaine : validation P4.
+- 2026-10-31 — Validation P4 remédiée dans la fiche parente (C-v017-4-41, 42) : la clé du motif brouillon est posée par
+  la 4a (AC-13), l'AC-25 la réutilise ; ce que l'édition passe au formulaire selon le cas, scan caché avec un document ;
+  exception de l'AC-30 nommée. Prochaine : validation P5 (ciblée).
