@@ -106,3 +106,14 @@ réversibilité.
   qui mélangent les deux sont récrits ; le § récrit rattache « langue de l'instance » à « langue des documents ».
 - **Écartées** : renommer « langue de l'instance » partout — récriture du manuel, hors périmètre.
 - **Réversible** : oui.
+
+## Annotations de la validation P2 (2026-10-31)
+
+- *C-v017-6-1 annoté le 2026-10-31 (validation P2, P8)* : « les cinq sites, même remède (`e.to_string()`) » vaut pour l'IDE
+  et l'IBAN (trois sites) ; les deux sites QR-IBAN passent par un helper (voir l'annotation de C-v017-6-2). S'y ajoute le
+  message de `qr_iban.rs:42-43` (« QR-IBAN doit être … »), de la même classe, intégré (P9).
+- *C-v017-6-3 annoté le 2026-10-31 (validation P2, P8)* : « quatre sites » de la phrase fausse vaut au kickoff de la
+  fiche ; l'inventaire par la valeur en compte dix (voir la fiche, § 9).
+- *C-v017-6-9 et C-v017-6-10 précisés le 2026-10-31 (validation P2, P1, P2)* : « documents » = la facture, son PDF et son
+  e-mail d'envoi (limite : #859 pour l'avoir, la réinitialisation, les rapports) ; « installation » pour `KESH_LANG`,
+  « instance » absent des phrases récrites.

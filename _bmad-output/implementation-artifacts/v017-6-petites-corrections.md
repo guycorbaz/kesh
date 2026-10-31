@@ -85,8 +85,12 @@ afin de ne pas chercher à l'assistant un réglage qu'il n'a pas.
    `routes/i18n.rs:20-22` (`let locale = &state.config.locale;`), remplie depuis `KESH_LANG` (`config.rs:845-848`,
    `env_nonempty("KESH_LANG").unwrap_or_else(|| "fr".into())`). L'étape 0 de l'assistant (`set_language`,
    `routes/onboarding.rs:155-175`) ne règle que `instance_language` de la société : la **langue des documents** — celle
-   de la facture, du PDF figé et de l'e-mail quand le contact n'a pas sa propre langue
+   de la facture, de son PDF figé et de son e-mail d'envoi quand le contact n'a pas sa propre langue
    (`routes/invoice_email.rs:71`, `contact.language.unwrap_or(company.instance_language)` ; `routes/issued_invoice_pdf.rs:342`).
+   **Et rien d'autre** (validation P2, P1) : le PDF d'un avoir suit `KESH_LANG` (`credit_notes.rs:346, 351, 357`), le courrier
+   de réinitialisation du mot de passe aussi (`auth.rs:862`), les rapports `accounting_language` (`reports.rs:919`). Écart
+   tracé en **#859** (bug), limite citée au manuel, au guide et au CHANGELOG ; le libellé « Langue des documents » reste
+   (C-v017-6-9), sans aide de champ à *Paramètres* (aucune n'existe pour ce champ).
    Le frontend recharge les messages après le choix (`+page.svelte:44-47`, `loadI18nMessages`) mais le serveur les sert
    dans la locale de l'installation : le choix ne change pas l'interface.
 8. **Le manuel d'administration le dit correctement à une ligne, et faux à une autre** : `admin-manual.tex:757`, tableau
@@ -98,7 +102,7 @@ afin de ne pas chercher à l'assistant un réglage qu'il n'a pas.
    valeur** (validation P1, P2), non par la formulation : `grep -rniE "langue.{0,20}interface|interface.{0,40}(onboarding|assistant)|(onboarding|assistant).{0,60}interface" docs README.md website`
    et les équivalents des trois autres langues (`Oberflächensprache`, `lingua dell.interfaccia`, `interface language`) dans
    `docs/`, `README.md`, `website/`, `crates/kesh-i18n/locales/`, `frontend/src` — plus l'ancienne recherche de formulation
-   (`choisie.*langue`, `fixée`). **Huit** sites faux, sur sept fichiers :
+   (`choisie.*langue`, `fixée`). **Dix** sites faux, sur **onze** fichiers distincts (quatre catalogues, le composant Svelte, deux manuels, le guide, le README, `company.rs`, `i18n.rs`) :
 
    | Site | Texte | Verdict |
    |---|---|---|
@@ -109,7 +113,8 @@ afin de ne pas chercher à l'assistant un réglage qu'il n'a pas.
    | `user-manual.tex:164-166` | `keshwarning` : « aux utilisateurs ayant choisi une autre langue » | **faux depuis la récriture** : l'utilisateur ne choisit pas la langue (P6) ; une phrase retouchée |
    | `admin-manual.tex:1410` | « Langue de l'interface, puis mode » (étape 0 de l'assistant) | **faux** — non nommé par l'issue (P2) |
    | `docs/user-guide/fr/getting-started.md:26` | « 1. Langue de l'interface (français, allemand, italien, anglais) » (étape 0) | **faux** — non nommé par l'issue (P2) |
-   | `crates/kesh-i18n/locales/{fr,de,it,en}-CH/messages.ftl:180` ; `frontend/src/routes/(app)/settings/+page.svelte:305` | `settings-field-instance-language` = « Langue de l'interface » / « Oberflächensprache » / « Lingua dell'interfaccia » / « Interface language » ; repli Svelte « Langue interface » ; l'écran *Paramètres* affiche `instanceLanguage` sous ce libellé | **faux — la racine du défaut** (P3) : c'est `instance_language`, la langue des documents |
+   | `crates/kesh-db/src/entities/company.rs:164` ; `crates/kesh-api/src/routes/i18n.rs:3` | doc-comments : `instance_language` « Langue de l'interface utilisateur » ; `i18n.rs` « langue de l'instance » pour `KESH_LANG` | **faux** (validation P2, P6) : doc-comments seuls, retouchés (AC-4) |
+| `crates/kesh-i18n/locales/{fr,de,it,en}-CH/messages.ftl:180` ; `frontend/src/routes/(app)/settings/+page.svelte:305` | `settings-field-instance-language` = « Langue de l'interface » / « Oberflächensprache » / « Lingua dell'interfaccia » / « Interface language » ; repli Svelte « Langue interface » ; l'écran *Paramètres* affiche `instanceLanguage` sous ce libellé | **faux — la racine du défaut** (P3) : c'est `instance_language`, la langue des documents |
    | `user-manual.tex:183-184, 201, 1140, 3392` ; `admin-manual.tex:1069, 1418` ; `messages.ftl:136` (`onboarding-accounting-lang-desc`, « découplée de la langue de l'interface ») et `user-manual.tex:149` (annonce du sélecteur) | « langue de l'installation », « langue comptable indépendante de l'interface », « langue de l'instance » | conformes |
    | `docs/kesh-specifications.txt:491, 1457, 1546, 2246, 2454, 2816` | spécification historique (FR76, UX-DR27 : langue interface = profil) | hors périmètre : document de conception, non un texte livré |
    | `website/*.html`, `marketing-brochure.tex`, `docs/manual/{de,en,it}/README.md` | aucune occurrence | sans objet |
@@ -118,8 +123,8 @@ afin de ne pas chercher à l'assistant un réglage qu'il n'a pas.
    `de/it/en-CH` sont, eux, à tenir (libellé de *Paramètres*, AC-6).
 10. **L'incise de la v017-2** : la même sous-section porte, dans le `keshwarning` (l. 156-163), « certains refus du
     serveur restent toutefois rédigés en français (\#710) ». **Elle est juste et ne bouge pas** : elle parle des refus de
-    validation écrits en dur, indépendants de la locale. Le correctif de #832 ne la touche pas. (La phrase de l'étape 4
-    de l'assistant, l. 202, qui cite le motif « qui peut être rédigé en français quelle que soit la langue de
+    validation écrits en dur, indépendants de la locale. Le correctif de #832 ne la touche pas. (La phrase de l'étape des coordonnées
+    de l'assistant, l. 202, troisième point de la liste du chemin B, qui cite le motif « qui peut être rédigé en français quelle que soit la langue de
     l'interface », reste également vraie.) Elle ne doit pas être **contredite** par la récriture : la phrase neuve dit
     que l'interface est dans la langue de l'installation, et la mise en garde dit que certains refus échappent à cette
     langue — les deux tiennent ensemble. **Mais la même `keshwarning` dit** « aux utilisateurs ayant choisi une autre
@@ -127,8 +132,10 @@ afin de ne pas chercher à l'assistant un réglage qu'il n'a pas.
 11. **Vocabulaire** (validation P1, P4). Deux termes, chacun à un sens fixé : **« langue des documents »** désigne
     `instance_language` (réglée à l'assistant et dans *Paramètres*, héritée par les contacts) ; **« langue de l'interface »**
     désigne `KESH_LANG` (réglée par l'administrateur). Le manuel appelle aussi la première « langue de l'instance »
-    (`user-manual.tex:1140, 1181-1182` ; clé `contact-form-language-inherited`) : le § récrit le dit une fois, sans rebaptiser
-    ces passages. Seuls les passages qui **mélangent** les deux termes sont récrits.
+    (`user-manual.tex:1140, 1181-1182` ; clé `contact-form-language-inherited`) : ces passages ne sont pas rebaptisés.
+    **« Instance » ne figure dans aucune des phrases récrites** (validation P2, P2) : `KESH_LANG` est « de l'installation »
+    (`admin-manual.tex:757` compris), `instance_language` est « des documents ». « Documents » = la facture, son PDF et son
+    e-mail d'envoi, rien de plus (limite : #859). Seuls les passages qui **mélangent** les termes sont récrits.
 
 ## Critères d'acceptation
 
@@ -139,7 +146,10 @@ afin de ne pas chercher à l'assistant un réglage qu'il n'a pas.
   le forme, sans second préfixe. Les deux sites QR-IBAN (`onboarding.rs:607`, `bank_accounts.rs:327`) passent par **un
   helper unique** (DRY) de `kesh-api`, à placer dans `crates/kesh-api/src/util.rs` : `CoreError::InvalidIban(m)` (erreur
   d'IBAN propagée par `QrIban::new`) → `format!("QR-IBAN invalide : {m}")` ; toute autre variante → `e.to_string()`
-  (elle porte déjà « QR-IBAN invalide »). Le champ désigné reste le bon, le `starts_with("QR-IBAN invalide")` existant
+  (elle porte déjà « QR-IBAN invalide »). **Même classe, intégrée** (validation P2, P9) : `qr_iban.rs:42-43` écrit
+  « QR-IBAN doit être suisse ou liechtensteinois », ce qui servait « QR-IBAN invalide : QR-IBAN doit être … » ; le message
+  de `kesh-core` devient « doit être suisse ou liechtensteinois » (un test unitaire de `kesh-core` fige
+  `err.to_string() == "QR-IBAN invalide : doit être suisse ou liechtensteinois"`, mutation M6 : remettre l'ancien texte). Le champ désigné reste le bon, le `starts_with("QR-IBAN invalide")` existant
   (`bank_accounts_e2e.rs:2135`) reste vrai. Le doc-comment de `CoreError` (`errors.rs:13`) est amendé : ces messages sont
   servis tels quels par `kesh-api` (#710), la phrase « Ne jamais exposer … » est retirée ou nuancée. Le doc-comment du site de l'assistant
   (`onboarding.rs:535`, « Validate IDE via kesh-core if provided ») dit que le message de `kesh-core` porte déjà le
@@ -167,7 +177,9 @@ afin de ne pas chercher à l'assistant un réglage qu'il n'a pas.
   `bank_accounts.rs:327` → (d) rougit. Le développeur consigne pour chacune le test qui rougit ; après chaque
   restauration, **toucher le fichier** (binaire périmé, mémoire `mutation-restauree-binaire-perime`).
 - **AC-4 — Aucun autre site de code serveur ne change.** `git diff --stat`, côté code serveur : `routes/onboarding.rs`,
-  `routes/bank_accounts.rs`, `util.rs`, `kesh-core/src/errors.rs` (doc-comment) et les deux fichiers de test seulement. Les messages de `contacts.rs:322` et des sites « hors classe » (§ 3) sont
+  `routes/bank_accounts.rs`, `util.rs`, `kesh-core/src/errors.rs` (doc-comment) et `kesh-core/src/types/qr_iban.rs` (message et son test), les doc-comments de
+  `kesh-db/src/entities/company.rs:164` (« Langue des documents : celle de la facture, de son PDF et de son e-mail d'envoi
+  quand le contact n'a pas la sienne ») et de `routes/i18n.rs:3` (« langue de l'installation ») et les deux fichiers de test seulement. Les messages de `contacts.rs:322` et des sites « hors classe » (§ 3) sont
   intouchés.
 
 ### #824 — le manuel
@@ -176,15 +188,17 @@ afin de ne pas chercher à l'assistant un réglage qu'il n'a pas.
   l'interface » = `KESH_LANG` ; « langue des documents » = `instance_language`). Il dit, sans rien promettre de plus :
   (i) l'interface est servie dans **la langue de l'installation**, réglée par l'administrateur (`KESH_LANG`, `fr` par
   défaut ; manuel d'administration, tableau des variables d'environnement) ; (ii) l'assistant d'onboarding, à son premier
-  écran (choix de la langue), ne règle **que la langue des documents** — celle des factures, des PDF et des courriers,
-  quand le contact n'a pas sa propre langue (dite \emph{langue de l'instance} ailleurs dans ce manuel) —, non celle de
-  l'interface ; (iii) la langue de l'interface ne se change pas depuis un menu, et un sélecteur reste prévu. Texte
+  écran (choix de la langue), ne règle **que la langue des documents** — celle des factures, de leur PDF et de leur e-mail d'envoi,
+  quand le contact n'a pas sa propre langue —, non celle de l'interface ; « instance » n'y figure pas (§ 11),
+  ni « PDF » ou « courriers » sans qualificatif, et la limite est citée : le PDF d'un avoir et le courrier de réinitialisation suivent la langue de
+  l'installation, #859 ; (iii) la langue de l'interface ne se change pas depuis un menu, et un sélecteur reste prévu. Texte
   prescrit (le développeur peut l'ajuster sans en changer le sens) :
   > Kesh gère le français, l'allemand, l'italien et l'anglais pour les messages du système. L'interface s'affiche dans
   > la \textbf{langue de l'installation}, que fixe l'administrateur (variable \texttt{KESH\_LANG}, français par défaut ;
-  > voir le manuel d'administration). Le premier écran de l'assistant d'onboarding ne règle pas cette langue : il règle
-  > celle des \textbf{documents} (factures, PDF, courriers), employée quand un contact n'a pas sa propre langue --- la
-  > \emph{langue de l'instance} des chapitres sur les factures et les contacts.
+  > voir le manuel d'administration). Le tout premier écran de l'assistant d'onboarding, avant le choix du mode, ne règle pas
+  > cette langue : il règle celle des \textbf{documents}, c'est-à-dire des factures, de leur PDF et de leur e-mail d'envoi,
+  > employée quand un contact n'a pas sa propre langue. Le PDF d'un avoir et le courrier de réinitialisation du mot de
+  > passe suivent, eux, la langue de l'installation (\#859).
   >
   > `keshnote` : Un sélecteur permettant de changer la langue de l'interface depuis un menu est prévu pour une version
   > ultérieure : dans la version actuelle, elle ne se change pas depuis l'application.
@@ -201,11 +215,11 @@ afin de ne pas chercher à l'assistant un réglage qu'il n'a pas.
     (P7) ;
   - `admin-manual.tex:1410` devient « \textbf{Langue des documents} (la langue de l'interface est celle de
     l'installation, \texttt{KESH\_LANG}), puis \textbf{mode} (guidé ou expert). » ; `admin-manual.tex:757`, « Locale de
-    l'instance » devient « Langue de l'interface (locale de l'instance) » (P4) ; PDF d'administration régénéré
+    l'instance » devient « Langue de l'interface (locale de l'installation) » (P4, P2-P2) ; PDF d'administration régénéré
     (`make admin`) ;
   - `docs/user-guide/fr/getting-started.md:26` devient « 1. **Langue des documents** (français, allemand, italien,
-    anglais) --- celle des factures, PDF et courriers ; la langue de l'interface est celle de l'installation
-    (`KESH_LANG`). » ;
+    anglais) --- celle des factures, de leur PDF et de leur e-mail d'envoi ; la langue de l'interface est celle de
+    l'installation (`KESH_LANG`) ; le PDF d'un avoir et le courrier de réinitialisation suivent cette dernière (#859). » ;
   - **l'écran *Paramètres*** (P3) : `settings-field-instance-language` se lit « **Langue des documents** » (fr-CH),
     « Dokumentensprache » (de-CH), « Lingua dei documenti » (it-CH), « Document language » (en-CH), aux lignes 180 des
     quatre `messages.ftl`, et le repli Svelte (`settings/+page.svelte:305`) devient `'Langue des documents'` — égal à la
@@ -215,15 +229,16 @@ afin de ne pas chercher à l'assistant un réglage qu'il n'a pas.
 - **AC-7 — Le contrôle des manuels se fait sur le PDF, aux deux bornes** (P5). Le PDF porte l'apostrophe typographique
   `’` : un fragment écrit avec `'` rend zéro **avant** comme après. Après `make user` et `make admin`, aplatir
   (`pdftotext <pdf> - | tr '\n' ' ' | tr -s ' '`) et compter **avant** (PDF du commit de départ, `git show
-  HEAD:docs/manual/fr/user-manual.pdf | pdftotext - - | …`) et **après**, par `grep -oF "<fragment>" | wc -l`, les deux
+  8e126cfd:docs/manual/fr/user-manual.pdf | pdftotext - - | …`, jamais `HEAD`) et **après**, par `grep -oF "<fragment>" | wc -l`, les deux
   graphies (`’` et `'`) de chaque fragment : `fixée à l’onboarding` (avant ≥ 2, après 0), `choisie lors de l’onboarding`
-  (avant ≥ 1, après 0) pour le manuel utilisateur ; `Langue de l’interface, puis` pour le manuel d'administration
-  (avant ≥ 1, après 0) ; et la phrase neuve présente (après ≥ 1). **Attendu : avant > 0, après = 0** — un zéro aux deux
-  bornes est un contrôle muet. Recopier les huit décomptes au Dev Agent Record. La macro `\keshVersion` n'est **pas**
+  (avant ≥ 1, après 0) et `ayant choisi une autre langue` (avant 1, après 0) pour le manuel utilisateur ; `Langue de l’interface, puis` et
+  `Locale de l’instance` (avant 1 chacun, après 0) pour le manuel d'administration ; et les phrases neuves présentes
+  (après ≥ 1) : `langue de l’installation, que fixe` (utilisateur) et `locale de l’installation` (administration). **Attendu : avant > 0, après = 0** — un zéro aux deux
+  bornes est un contrôle muet. Recopier les décomptes au Dev Agent Record. La macro `\keshVersion` n'est **pas**
   bumpée. Les `.tex`, PDF, `README.md` et guide voyagent dans le même commit que leur motif.
 - **AC-8 — Grep de la valeur, pas de la formulation** (*Propagation post-patch*). Après la récriture, les deux relevés de
   § 9 (`grep -rniE "langue.{0,20}interface|interface.{0,40}(onboarding|assistant)|(onboarding|assistant).{0,60}interface" docs README.md website`
-  et son équivalent sur `crates/kesh-i18n/locales` et `frontend/src`, plus `choisie.*langue|fixée` sur `docs README.md`)
+  et son équivalent sur `crates/kesh-i18n/locales` et `frontend/src`, plus `(choisie|choisi).{0,40}langue|langue.{0,40}(choisie|fixée)` sur `docs README.md`, qui retrouve la ligne 146 du manuel)
   sont rejoués ; chaque ligne restante est triée à la main au Dev Agent Record (attendues : les « conformes » du
   tableau § 9, et la spécification historique).
 
@@ -233,11 +248,12 @@ afin de ne pas chercher à l'assistant un réglage qu'il n'a pas.
   « **Un refus d'IDE, d'IBAN ou de QR-IBAN ne répète plus son mot** ([#832](…)) : « Numéro IDE invalide : … » et non
   « IDE invalide : Numéro IDE invalide : … », à l'assistant d'installation comme à la création d'un compte bancaire. »
   La seconde : « **Les textes disent d'où vient la langue** ([#824](…)) : la langue de l'interface est celle de
-  l'installation (`KESH_LANG`) ; l'assistant ne règle que la langue des documents, ce que l'écran *Paramètres*, les
-  manuels et le guide de démarrage affichent désormais. » Liens comme aux puces voisines. L'intro « La 0.17.0 réunit six
+  l'installation (`KESH_LANG`) ; l'assistant ne règle que la langue des documents — celle des factures, de leur PDF et de leur e-mail d'envoi —, ce que
+  l'écran *Paramètres*, les manuels et le guide de démarrage affichent désormais ; le PDF d'un avoir et le courrier de
+  réinitialisation suivent encore la langue de l'installation ([#859](…)). » Liens comme aux puces voisines. L'intro « La 0.17.0 réunit six
   stories » (l. 13) est **laissée** : son décompte appartient à la PR de release.
 - **AC-10 — Aucun mot-clé de fermeture** dans les messages de commit (`refs #832`, `refs #824` seulement ; contrôle par
-  `git log origin/main..HEAD --format=%B | grep -niE '\b(close[sd]?|fix(e[sd])?|resolve[sd]?) #[0-9]'` vide).
+  `git log 8e126cfd..HEAD --format=%B | grep -niE '\b(close[sd]?|fix(e[sd])?|resolve[sd]?) #[0-9]'` vide).
 - **AC-11 — Le gate** (le frontend est touché : un libellé et un repli). `fmt` + `clippy` workspace, puis **gate backend
   complet** (`scripts/test-fast.sh` sous le verrou, base remise à zéro d'abord) ; côté frontend, `npm run check`,
   `npm run lint-i18n-ownership`, `npm run test:unit`, `npm run build`, puis **l'E2E complet au dernier commit de code**
@@ -247,8 +263,8 @@ afin de ne pas chercher à l'assistant un réglage qu'il n'a pas.
 
 ## Tâches
 
-1. Tests rouges d'abord (AC-2), commit « tests rouges ». 2. Correctif des cinq sites et helper QR-IBAN (AC-1), mutations
-M1 à M5 et M3-bis (AC-3). 3. Libellé de *Paramètres*, quatre locales, repli (AC-6). 4. Manuels `.tex`, PDF, `README.md`,
+1. Tests rouges d'abord (AC-2), commit « tests rouges ». 2. Correctif des cinq sites, helper QR-IBAN et message de `qr_iban.rs` (AC-1), mutations
+M1 à M5, M3-bis et M6 (AC-3). 3. Libellé de *Paramètres*, quatre locales, repli (AC-6). 4. Manuels `.tex`, PDF, `README.md`,
 guide (AC-5 à AC-8). 5. CHANGELOG (AC-9). 6. Gate complet et E2E (AC-11), captures, Dev Agent Record, `sprint-status.yaml`.
 
 ## Dérogation règle de splitting
@@ -258,6 +274,7 @@ documentation — quatre modules au plus, tous mécaniques ; le critère « plus
 
 ## Issues à ouvrir ou à commenter
 
+- **#859** (déjà ouverte) : citée comme limite (AC-5, guide, CHANGELOG) ; rien à poser.
 - **#832** et **#824** : le complément de la fiche a **déjà été publié** en commentaire le 2026-10-31 (validation P1, P9) ;
   l'orchestrateur le met à jour si le périmètre élargi (QR-IBAN par helper ; huit sites faux dont *Paramètres*, le
   manuel d'administration et le guide) doit y figurer. Rien à poser par la fiche.
@@ -278,3 +295,10 @@ documentation — quatre modules au plus, tous mécaniques ; le critère « plus
   P7 à P12 : README, doc-comment de `CoreError`, section des commentaires d'issue, motif de grep réel + `import.rs:281,
   338`, « assistant d'onboarding », AC-4 « côté code ». Prochaine : validation P2 (Sonnet, une lentille R+F,
   `v017-6-validate-prompt-p2.md`).
+- 2026-10-31 — **Validation P2** (Sonnet, une lentille R+F, `v0176-validate-p2.md`) : 0 CRITICAL, 0 HIGH, 2 MEDIUM, 8 LOW,
+  tous remédiés. P1 (MEDIUM) : « langue des documents » bornée à la facture, son PDF et son e-mail d'envoi (AC-5, guide,
+  CHANGELOG), limite #859. P2 (MEDIUM) : « installation » pour `KESH_LANG` (`admin-manual.tex:757` compris), « instance »
+  retiré des phrases récrites. P3 : motif d'AC-8. P4 : plage `8e126cfd..HEAD`. P5 : onze fichiers (après l'ajout de P6).
+  P6 : `company.rs:164` et `i18n.rs:3` à l'inventaire et à AC-4. P7 : fragments d'AC-7 complétés, référence `8e126cfd`.
+  P8 : C-v017-6-1 et -3 annotés. P9 : message de `qr_iban.rs` intégré (M6). P10 : repères. Prochaine : validation P3
+  (Opus, ciblée sur cette remédiation, `v017-6-validate-prompt-p3.md`).
