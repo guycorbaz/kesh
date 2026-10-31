@@ -177,7 +177,7 @@ settings-field-name = Nome
 settings-field-address = Indirizzo
 settings-field-ide = IDI
 settings-field-org-type = Tipo di organizzazione
-settings-field-instance-language = Lingua dell'interfaccia
+settings-field-instance-language = Lingua dei documenti
 settings-field-accounting-language = Lingua contabile
 search-coming-soon = Ricerca presto disponibile
 

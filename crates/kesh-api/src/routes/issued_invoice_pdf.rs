@@ -332,9 +332,11 @@ async fn load(ctx: &PdfContext<'_>, invoice_id: i64) -> Result<Invoice, AppError
         .ok_or(AppError::Database(DbError::NotFound))
 }
 
-/// La langue du client, sinon celle de l'installation — la règle de l'e-mail
-/// (arbitrage 2). Un contact introuvable laisse `render_document` produire son
-/// erreur habituelle : on rend alors dans la langue de l'installation.
+/// La langue du client, sinon la langue des documents (`instance_language`) —
+/// la règle de l'e-mail (arbitrage 2). Un contact introuvable laisse
+/// `render_document` produire son erreur habituelle : on rend alors dans la
+/// langue des documents. Ni l'une ni l'autre n'est la langue de l'installation
+/// (`KESH_LANG`).
 async fn client_language(ctx: &PdfContext<'_>, invoice: &Invoice) -> Result<Language, AppError> {
     Ok(
         match contacts::find_by_id(ctx.pool, invoice.contact_id).await? {

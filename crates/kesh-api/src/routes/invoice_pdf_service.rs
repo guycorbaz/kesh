@@ -4,9 +4,10 @@
 //!
 //! Charge la facture validée (scopée à la company), les lignes, le contact,
 //! le compte bancaire primary, puis délègue à `kesh-qrbill` pour produire le
-//! PDF. La `locale` est un paramètre : le handler HTTP passe
-//! `state.config.locale` (iso-comportement Story 5.3), l'envoi e-mail
-//! passera la langue du contact.
+//! PDF. La `locale` est un paramètre : la langue des documents du débiteur,
+//! celle du contact ou, à défaut, `instance_language`. Le PDF de la facture,
+//! téléchargé comme envoyé, passe par `issued_invoice_pdf` (`client_language`),
+//! qui le fige ; les rappels, par `invoice_email` (`resolve_language`).
 //!
 //! Héberge aussi les helpers PDF partagés avec `credit_notes.rs`
 //! (`MAX_LINES_PER_PDF`, `build_i18n`, `map_qrbill_error`,

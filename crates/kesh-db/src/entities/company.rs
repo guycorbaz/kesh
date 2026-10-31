@@ -161,7 +161,10 @@ pub struct Company {
     pub org_type: OrgType,
     /// Langue des libellés comptables (noms de comptes, etc.).
     pub accounting_language: Language,
-    /// Langue de l'interface utilisateur.
+    /// Langue des documents : celle de la facture, de son PDF et de son e-mail
+    /// d'envoi, de ses rappels et des conditions de paiement, quand le contact
+    /// n'a pas la sienne. Ce n'est **pas** la langue de l'interface, qui est
+    /// celle de l'installation (`KESH_LANG`).
     pub instance_language: Language,
     /// E-mail de contact de la société (Story 20-3b1). Sert de `Reply-To`
     /// aux e-mails métier (envoi de factures). `None` = Reply-To omis.

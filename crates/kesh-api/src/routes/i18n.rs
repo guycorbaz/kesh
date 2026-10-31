@@ -1,6 +1,7 @@
 //! Handler pour `/api/v1/i18n/messages` (story 2.1).
 //!
-//! Retourne toutes les traductions dans la langue de l'instance.
+//! Retourne toutes les traductions dans la langue de l'installation
+//! (`KESH_LANG`, `state.config.locale`) : la langue de l'interface.
 
 use axum::Json;
 use axum::extract::State;
@@ -16,7 +17,8 @@ pub struct I18nResponse {
     pub messages: HashMap<String, String>,
 }
 
-/// `GET /api/v1/i18n/messages` — Retourne les traductions pour la locale instance.
+/// `GET /api/v1/i18n/messages` — Retourne les traductions dans la langue de
+/// l'installation (`KESH_LANG`).
 pub async fn get_messages(State(state): State<AppState>) -> Json<I18nResponse> {
     let locale = &state.config.locale;
     let messages = state.i18n.all_messages(locale);
