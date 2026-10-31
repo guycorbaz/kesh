@@ -4843,3 +4843,292 @@ fn a_0_17_backup_is_refused_by_a_0_16_1_binary() {
     ));
     assert!(kesh_db::version::check_import_version_compat("0.14.0", "0.17.0").is_ok());
 }
+
+// ============================================================
+// Story v017-4a (#849, AC-3) — les sauvegardes et les factures fournisseur
+// ============================================================
+
+/// Le décor fournisseur d'une société de test : exercice 2026, comptes (banque,
+/// TVA récupérable, créanciers, charges), réglages, fournisseur, compte
+/// bancaire lié. Synthétique. Rend `(fournisseur, charges, compte bancaire)`.
+async fn v0174a_decor(pool: &MySqlPool, company_id: i64) -> (i64, i64, i64) {
+    sqlx::query(
+        "INSERT INTO fiscal_years (company_id, name, start_date, end_date, status) \
+         VALUES (?, 'Exercice 2026', '2026-01-01', '2026-12-31', 'Open')",
+    )
+    .bind(company_id)
+    .execute(pool)
+    .await
+    .unwrap();
+    let mut acc = BTreeMap::new();
+    for (number, name, kind) in [
+        ("1020", "Banque", "Asset"),
+        ("1170", "TVA récupérable", "Asset"),
+        ("2000", "Créanciers", "Liability"),
+        ("4000", "Charges", "Expense"),
+    ] {
+        let id = sqlx::query(
+            "INSERT INTO accounts (company_id, number, name, account_type, active, postable) \
+             VALUES (?, ?, ?, ?, 1, 1)",
+        )
+        .bind(company_id)
+        .bind(number)
+        .bind(name)
+        .bind(kind)
+        .execute(pool)
+        .await
+        .unwrap()
+        .last_insert_id() as i64;
+        acc.insert(number, id);
+    }
+    sqlx::query(
+        "INSERT INTO company_invoice_settings (company_id, default_payable_account_id, \
+         default_vat_recoverable_account_id) VALUES (?, ?, ?)",
+    )
+    .bind(company_id)
+    .bind(acc["2000"])
+    .bind(acc["1170"])
+    .execute(pool)
+    .await
+    .unwrap();
+    let supplier = sqlx::query(
+        "INSERT INTO contacts (company_id, contact_type, name, is_supplier) \
+         VALUES (?, 'Entreprise', 'Fournisseur sauvegardé SA', TRUE)",
+    )
+    .bind(company_id)
+    .execute(pool)
+    .await
+    .unwrap()
+    .last_insert_id() as i64;
+    let bank = sqlx::query(
+        "INSERT INTO bank_accounts (company_id, bank_name, iban, is_primary, journal_account_id) \
+         VALUES (?, 'Banque Exemple', 'CH9300762011623852957', TRUE, ?)",
+    )
+    .bind(company_id)
+    .bind(acc["1020"])
+    .execute(pool)
+    .await
+    .unwrap()
+    .last_insert_id() as i64;
+    (supplier, acc["4000"], bank)
+}
+
+/// `POST` puis le corps JSON de la réponse, statut vérifié.
+async fn v0174a_post(app: &TestApp, jwt: &str, path: &str, body: Value, expected: u16) -> Value {
+    let resp = app
+        .client
+        .post(app.url(path))
+        .header("Authorization", format!("Bearer {jwt}"))
+        .json(&body)
+        .send()
+        .await
+        .unwrap();
+    let status = resp.status().as_u16();
+    let text = resp.text().await.unwrap();
+    assert_eq!(status, expected, "{path} : {text}");
+    serde_json::from_str(&text).unwrap_or(Value::Null)
+}
+
+/// Une facture fournisseur créée (brouillon), puis validée si `valider`.
+async fn v0174a_invoice(
+    app: &TestApp,
+    jwt: &str,
+    supplier: i64,
+    expense: i64,
+    numero: &str,
+    valider: bool,
+) -> Value {
+    let created = v0174a_post(
+        app,
+        jwt,
+        "/api/v1/supplier-invoices",
+        serde_json::json!({
+            "contactId": supplier, "supplierInvoiceNumber": numero, "invoiceDate": "2026-06-15",
+            "creditorIban": "CH5604835012345678009",
+            "lines": [{ "description": "Fourniture", "quantity": "1", "unitPrice": "100.00",
+                        "vatRate": "8.1", "expenseAccountId": expense }],
+        }),
+        201,
+    )
+    .await;
+    if !valider {
+        return created;
+    }
+    v0174a_post(
+        app,
+        jwt,
+        &format!("/api/v1/supplier-invoices/{}/validate", created["id"]),
+        serde_json::json!({ "version": created["version"] }),
+        200,
+    )
+    .await
+}
+
+async fn v0174a_get(app: &TestApp, jwt: &str, id: &Value) -> Value {
+    let resp = app
+        .client
+        .get(app.url(&format!("/api/v1/supplier-invoices/{id}")))
+        .header("Authorization", format!("Bearer {jwt}"))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 200);
+    resp.json().await.unwrap()
+}
+
+/// AC-3 (a) — une sauvegarde **sans** la colonne `link_origin` (forme de la
+/// 0.16.x, puis forme de la rc1), portant des factures fournisseur ouverte,
+/// payée et annulée et un document lié, s'importe dans la 0.17.0 : `200`,
+/// chaque facture se relit à l'identique par `GET`, `link_origin` vaut `NULL`,
+/// et la facture ouverte se dévalide puis se revalide.
+async fn v0174a_backup_without_link_origin(pool: MySqlPool, version: &str, min_required: &str) {
+    let app = spawn_app(pool.clone()).await;
+    let admin = seed_admin(&pool, "Sans origine").await;
+    let (supplier, expense, bank) = v0174a_decor(&pool, admin.company_id).await;
+    let open = v0174a_invoice(&app, &admin.jwt, supplier, expense, "FF-O", true).await;
+    let paid = v0174a_invoice(&app, &admin.jwt, supplier, expense, "FF-P", true).await;
+    v0174a_post(
+        &app,
+        &admin.jwt,
+        &format!("/api/v1/supplier-invoices/{}/pay", paid["id"]),
+        serde_json::json!({ "settlementType": "bank_transfer", "bankAccountId": bank,
+                            "paymentDate": "2026-06-20" }),
+        200,
+    )
+    .await;
+    let cancelled = v0174a_invoice(&app, &admin.jwt, supplier, expense, "FF-A", true).await;
+    v0174a_post(
+        &app,
+        &admin.jwt,
+        &format!("/api/v1/supplier-invoices/{}/cancel", cancelled["id"]),
+        serde_json::json!({}),
+        200,
+    )
+    .await;
+    let doc = sqlx::query(
+        "INSERT INTO imported_supplier_invoices (company_id, file_hash, storage_path, \
+         original_filename, mime_type, byte_size) \
+         VALUES (?, REPEAT('c', 64), 'doc-v0174a.pdf', 'doc.pdf', 'application/pdf', 10)",
+    )
+    .bind(admin.company_id)
+    .execute(&pool)
+    .await
+    .unwrap()
+    .last_insert_id() as i64;
+    v0174a_post(
+        &app,
+        &admin.jwt,
+        &format!("/api/v1/supplier-invoices/{}/source-document", open["id"]),
+        serde_json::json!({ "importedSupplierInvoiceId": doc }),
+        200,
+    )
+    .await;
+
+    let ids = [
+        open["id"].clone(),
+        paid["id"].clone(),
+        cancelled["id"].clone(),
+    ];
+    let mut before = Vec::new();
+    for id in &ids {
+        before.push(v0174a_get(&app, &admin.jwt, id).await);
+    }
+    let backup = export_backup(&app, &admin.jwt).await;
+    let (mut manifest, mut data, fichiers) = ouvrir_tout(&backup);
+    manifest["keshVersion"] = Value::from(version);
+    manifest["keshVersionMinRequired"] = Value::from(min_required);
+    recrire_table(
+        &mut manifest,
+        &mut data,
+        "imported_supplier_invoices",
+        |o| {
+            o.remove("link_origin");
+        },
+    );
+    strip_column(&mut manifest, "imported_supplier_invoices", "link_origin");
+    let ancienne = rezip_tout(&manifest, &data, &fichiers);
+
+    let resp = post_import(&app, &admin.jwt, ancienne).await;
+    assert_eq!(resp.status(), 200, "{}", resp.text().await.unwrap());
+    for (id, b) in ids.iter().zip(&before) {
+        let mut apres = v0174a_get(&app, &admin.jwt, id).await;
+        let mut avant = b.clone();
+        // L'origine du lien ne survit pas à une sauvegarde qui ne la porte pas.
+        for v in [&mut apres, &mut avant] {
+            if let Some(sd) = v.get_mut("sourceDocument").and_then(Value::as_object_mut) {
+                sd.remove("linkOrigin");
+            }
+        }
+        assert_eq!(apres, avant, "facture {id} relue à l'identique");
+    }
+    let origin: Option<String> =
+        sqlx::query_scalar("SELECT link_origin FROM imported_supplier_invoices WHERE id = ?")
+            .bind(doc)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(origin, None, "colonne absente de la source : NULL");
+
+    let o = v0174a_get(&app, &admin.jwt, &open["id"]).await;
+    let d = v0174a_post(
+        &app,
+        &admin.jwt,
+        &format!("/api/v1/supplier-invoices/{}/unvalidate", open["id"]),
+        serde_json::json!({ "version": o["version"] }),
+        200,
+    )
+    .await;
+    assert_eq!(d["status"], "draft");
+    let r = v0174a_post(
+        &app,
+        &admin.jwt,
+        &format!("/api/v1/supplier-invoices/{}/validate", open["id"]),
+        serde_json::json!({ "version": d["version"] }),
+        200,
+    )
+    .await;
+    assert_eq!(r["status"], "open");
+}
+
+/// AC-3 (a) — forme de la 0.16.x.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn full_import_accepts_a_0_16_backup_with_supplier_invoices(pool: MySqlPool) {
+    v0174a_backup_without_link_origin(pool, "0.16.1", "0.14.0").await;
+}
+
+/// AC-3 (a) — forme de la rc1 (même version Cargo, sans `link_origin`).
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn full_import_accepts_an_rc1_backup_with_supplier_invoices(pool: MySqlPool) {
+    v0174a_backup_without_link_origin(pool, "0.17.0", "0.17.0").await;
+}
+
+/// AC-3 (b) — aller-retour dans la 0.17.0 d'une base qui porte un brouillon et
+/// une facture validée : chaque facture identique, le brouillon reste
+/// brouillon, sans écriture.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn full_import_round_trip_keeps_a_draft(pool: MySqlPool) {
+    let app = spawn_app(pool.clone()).await;
+    let admin = seed_admin(&pool, "Brouillon").await;
+    let (supplier, expense, _) = v0174a_decor(&pool, admin.company_id).await;
+    let draft = v0174a_invoice(&app, &admin.jwt, supplier, expense, "FF-B", false).await;
+    let open = v0174a_invoice(&app, &admin.jwt, supplier, expense, "FF-V", true).await;
+    let before = [
+        v0174a_get(&app, &admin.jwt, &draft["id"]).await,
+        v0174a_get(&app, &admin.jwt, &open["id"]).await,
+    ];
+    let backup = export_backup(&app, &admin.jwt).await;
+    sqlx::query("DELETE FROM supplier_invoice_lines WHERE supplier_invoice_id = ?")
+        .bind(draft["id"].as_i64().unwrap())
+        .execute(&pool)
+        .await
+        .unwrap();
+    let resp = post_import(&app, &admin.jwt, backup).await;
+    assert_eq!(resp.status(), 200, "{}", resp.text().await.unwrap());
+    let after = [
+        v0174a_get(&app, &admin.jwt, &draft["id"]).await,
+        v0174a_get(&app, &admin.jwt, &open["id"]).await,
+    ];
+    assert_eq!(after, before);
+    assert_eq!(after[0]["status"], "draft");
+    assert_eq!(after[0]["purchaseJournalEntryId"], Value::Null);
+}

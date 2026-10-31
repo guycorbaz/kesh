@@ -1600,3 +1600,129 @@ async fn t_a7_k4_liste_bornee_et_ordonnee(pool: MySqlPool) {
         other => panic!("{other:?}"),
     }
 }
+
+// ---------------------------------------------------------------------------
+// Story v017-4a (#849, AC-16) — K8 `DRAFT_SUPPLIER_INVOICES`
+// ---------------------------------------------------------------------------
+
+/// Pose une facture fournisseur à la main, datée `date`, de statut `status`
+/// (`draft` : sans écriture ; sinon une écriture de façade).
+async fn supplier_invoice(
+    pool: &MySqlPool,
+    seeded: &SeededCompany,
+    contact: i64,
+    numero: Option<&str>,
+    date: NaiveDate,
+    status: &str,
+) -> i64 {
+    let entry: Option<i64> = if status == "draft" {
+        None
+    } else {
+        let n: i64 = sqlx::query_scalar(
+            "SELECT COALESCE(MAX(entry_number), 0) + 1 FROM journal_entries WHERE company_id = ?",
+        )
+        .bind(seeded.company_id)
+        .fetch_one(pool)
+        .await
+        .unwrap();
+        Some(
+            sqlx::query_scalar(
+                "INSERT INTO journal_entries (company_id, fiscal_year_id, entry_number, \
+                 entry_date, journal, description) VALUES (?, ?, ?, ?, 'Achats', 'Achat') \
+                 RETURNING id",
+            )
+            .bind(seeded.company_id)
+            .bind(seeded.fiscal_year_id)
+            .bind(n)
+            .bind(date)
+            .fetch_one(pool)
+            .await
+            .unwrap(),
+        )
+    };
+    sqlx::query_scalar(
+        "INSERT INTO supplier_invoices (company_id, contact_id, supplier_invoice_number, status, \
+         invoice_date, total_amount, purchase_journal_entry_id) \
+         VALUES (?, ?, ?, ?, ?, 10, ?) RETURNING id",
+    )
+    .bind(seeded.company_id)
+    .bind(contact)
+    .bind(numero)
+    .bind(status)
+    .bind(date)
+    .bind(entry)
+    .fetch_one(pool)
+    .await
+    .unwrap()
+}
+
+/// AC-16 — K8, **huitième et dernier** contrôle (les index de K1 à K7 ne
+/// bougent pas) : `info`, `attention` dès qu'un brouillon fournisseur est daté
+/// dans Y ; `count` exact ; la liste `{id, label, date}` par date puis `id` ;
+/// un brouillon de Y+1 et une facture validée de Y sont ignorés. Tue M16.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn t_k8_brouillons_fournisseur_dans_l_exercice(pool: MySqlPool) {
+    let seeded = company(&pool).await;
+    let contact: i64 = sqlx::query_scalar(
+        "INSERT INTO contacts (company_id, contact_type, name, is_supplier) \
+         VALUES (?, 'Entreprise', 'Fournisseur K8 SA', TRUE) RETURNING id",
+    )
+    .bind(seeded.company_id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    let c0 = checks(&pool, seeded.company_id, seeded.fiscal_year_id).await;
+    let j0 = serde_json::to_value(&c0).unwrap();
+    assert_eq!(j0["checks"].as_array().unwrap().len(), 8, "huit contrôles");
+    assert_eq!(j0["checks"][7]["code"], "DRAFT_SUPPLIER_INVOICES");
+    assert_eq!(j0["checks"][7]["severity"], "info");
+    assert_eq!(j0["checks"][7]["status"], "ok");
+    assert_eq!(
+        j0["checks"][6]["code"], "NEXT_FISCAL_YEAR",
+        "K7 reste à l'index 6"
+    );
+
+    let b2 = supplier_invoice(
+        &pool,
+        &seeded,
+        contact,
+        Some("FF-2"),
+        ymd(2026, 9, 1),
+        "draft",
+    )
+    .await;
+    let b1 = supplier_invoice(&pool, &seeded, contact, None, ymd(2026, 3, 1), "draft").await;
+    supplier_invoice(
+        &pool,
+        &seeded,
+        contact,
+        Some("FF-3"),
+        ymd(2027, 1, 5),
+        "draft",
+    )
+    .await;
+    supplier_invoice(
+        &pool,
+        &seeded,
+        contact,
+        Some("FF-4"),
+        ymd(2026, 5, 5),
+        "open",
+    )
+    .await;
+
+    let c = checks(&pool, seeded.company_id, seeded.fiscal_year_id).await;
+    let j = serde_json::to_value(&c).unwrap();
+    let k8 = &j["checks"][7];
+    assert_eq!(k8["status"], "attention", "{k8}");
+    assert_eq!(k8["count"], 2, "M16 : seuls les brouillons de Y : {k8}");
+    let items = k8["details"]["invoices"]
+        .as_array()
+        .expect("liste, forme de K4");
+    assert_eq!(items.len(), 2, "{k8}");
+    assert_eq!(items[0]["id"], b1);
+    assert_eq!(items[0]["label"], "Fournisseur K8 SA");
+    assert_eq!(items[0]["date"], "2026-03-01");
+    assert_eq!(items[1]["id"], b2);
+    assert_eq!(items[1]["label"], "FF-2 — Fournisseur K8 SA");
+}

@@ -1172,3 +1172,501 @@ async fn bank_imports_manual_source_adds_no_table(pool: MySqlPool) {
     kesh_db::MIGRATOR.run(&pool).await.unwrap();
     assert_eq!(application_tables(&pool).await, before);
 }
+
+// ---------------------------------------------------------------------------
+// Story v017-4a (#849, AC-2) — `20261031000001_supplier_invoices_draft` : la
+// montée sans perte d'une base peuplée, depuis la 0.16.x et depuis la rc1.
+// ---------------------------------------------------------------------------
+
+const DRAFT_VERSION: i64 = 20261031000001;
+const DRAFT_LABEL: &str = "supplier_invoices_draft";
+
+/// Les colonnes d'une table, dans l'ordre du schéma.
+async fn columns_of(pool: &MySqlPool, table: &str) -> Vec<String> {
+    sqlx::query_scalar(
+        "SELECT COLUMN_NAME FROM information_schema.COLUMNS \
+         WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? ORDER BY ORDINAL_POSITION",
+    )
+    .bind(table)
+    .fetch_all(pool)
+    .await
+    .unwrap()
+}
+
+/// [`table_snapshot`] sur une liste de colonnes **fixée avant la montée** : une
+/// colonne ajoutée par la migration (`link_origin`) n'entre pas dans la
+/// comparaison, toutes les autres, si.
+async fn table_snapshot_on(pool: &MySqlPool, table: &str, columns: &[String]) -> Vec<String> {
+    let parts: Vec<String> = columns
+        .iter()
+        .map(|c| format!("'{c}=', IFNULL(CAST(`{c}` AS CHAR), '∅')"))
+        .collect();
+    sqlx::query_scalar(&format!(
+        "SELECT CONCAT_WS('|', {}) FROM `{table}` ORDER BY id",
+        parts.join(", ")
+    ))
+    .fetch_all(pool)
+    .await
+    .unwrap()
+}
+
+/// Le décor d'une base de la 0.16.x ou de la rc1, semé par le SQL et par les
+/// fonctions du dépôt dont le chemin ne touche aucune colonne neuve (paiement,
+/// annulation, lots) — comme les a écrits le binaire de ces versions.
+struct DecorMontee {
+    company_id: i64,
+    user_id: i64,
+    fy_id: i64,
+    expense: i64,
+    open_id: i64,
+    open_vat_id: i64,
+    paid_id: i64,
+    cancelled_id: i64,
+    paid_cancelled_id: i64,
+    completed_id: i64,
+    attached_id: i64,
+    batch_id: i64,
+    completed_doc: i64,
+    attached_doc: i64,
+}
+
+/// Une facture **ouverte** telle que la créait la rc1 : son écriture d'achat
+/// (journal Achats), puis la ligne `open`, en une transaction.
+async fn facture_ouverte_rc1(
+    pool: &MySqlPool,
+    d: &DecorMontee,
+    contact: i64,
+    payable: i64,
+    vat_account: i64,
+    numero: &str,
+    ht: rust_decimal::Decimal,
+    taux: rust_decimal::Decimal,
+) -> i64 {
+    use kesh_db::entities::{Journal, NewJournalEntry, NewJournalEntryLine};
+    use rust_decimal::Decimal;
+    let tva = kesh_core::accounting::line_vat_amount(ht, taux);
+    let ttc = ht + tva;
+    let mut lines = vec![NewJournalEntryLine {
+        account_id: d.expense,
+        debit: ht,
+        credit: Decimal::ZERO,
+        project_id: None,
+    }];
+    if tva > Decimal::ZERO {
+        lines.push(NewJournalEntryLine {
+            account_id: vat_account,
+            debit: tva,
+            credit: Decimal::ZERO,
+            project_id: None,
+        });
+    }
+    lines.push(NewJournalEntryLine {
+        account_id: payable,
+        debit: Decimal::ZERO,
+        credit: ttc,
+        project_id: None,
+    });
+    let mut tx = pool.begin().await.unwrap();
+    let je = kesh_db::repositories::journal_entries::create_in_tx(
+        &mut tx,
+        d.fy_id,
+        d.user_id,
+        NewJournalEntry {
+            company_id: d.company_id,
+            entry_date: chrono::NaiveDate::from_ymd_opt(2026, 6, 15).unwrap(),
+            journal: Journal::Achats,
+            description: format!("Facture fournisseur {numero} - Fournisseur montée SA"),
+            project_id: None,
+            lines,
+        },
+        false,
+    )
+    .await
+    .expect("écriture d'achat de la rc1");
+    let id: i64 = sqlx::query_scalar(
+        "INSERT INTO supplier_invoices (company_id, contact_id, supplier_invoice_number, status, \
+         invoice_date, due_date, total_amount, creditor_iban, purchase_journal_entry_id) \
+         VALUES (?, ?, ?, 'open', '2026-06-15', '2026-07-15', ?, 'CH5604835012345678009', ?) \
+         RETURNING id",
+    )
+    .bind(d.company_id)
+    .bind(contact)
+    .bind(numero)
+    .bind(ttc)
+    .bind(je.entry.id)
+    .fetch_one(&mut *tx)
+    .await
+    .unwrap();
+    sqlx::query(
+        "INSERT INTO supplier_invoice_lines (supplier_invoice_id, position, description, \
+         quantity, unit_price, vat_rate, line_total, expense_account_id) \
+         VALUES (?, 0, 'Fourniture', 1, ?, ?, ?, ?)",
+    )
+    .bind(id)
+    .bind(ht)
+    .bind(taux)
+    .bind(ht)
+    .bind(d.expense)
+    .execute(&mut *tx)
+    .await
+    .unwrap();
+    tx.commit().await.unwrap();
+    id
+}
+
+/// Monte le schéma jusqu'avant `frontiere`, sème le décor, applique le reste, et
+/// vérifie les cinq points de l'AC-2.
+async fn draft_migration_preserves_a_populated_base(pool: MySqlPool, frontiere: (i64, &str)) {
+    use kesh_db::entities::{NewPaymentBatch, SettlementChoice};
+    use kesh_db::repositories::{payment_batches, supplier_invoices};
+    use rust_decimal_macros::dec;
+
+    apply_migrations_up_to(&pool, common::migrations_before(frontiere.0, frontiere.1))
+        .await
+        .expect("montage du schéma d'avant");
+    let entry_nullable: String = sqlx::query_scalar(
+        "SELECT IS_NULLABLE FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() \
+         AND TABLE_NAME = 'supplier_invoices' AND COLUMN_NAME = 'purchase_journal_entry_id'",
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(
+        entry_nullable, "NO",
+        "montage : schéma d'avant la migration"
+    );
+
+    // --- Semis (SQL, fixtures synthétiques) ---
+    let company_id: i64 = sqlx::query_scalar(
+        "INSERT INTO companies (name, address, org_type, accounting_language, instance_language) \
+         VALUES ('Société v017-4a', 'Rue 1', 'Pme', 'FR', 'FR') RETURNING id",
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    let user_id: i64 = sqlx::query_scalar(
+        "INSERT INTO users (username, password_hash, role, company_id) \
+         VALUES ('v0174a', ?, 'Comptable', ?) RETURNING id",
+    )
+    .bind("$argon2id$v=19$m=19456,t=2,p=1$dGVzdHNhbHQ$dGVzdGhhc2h0ZXN0aGFzaHRlc3RoYXNo")
+    .bind(company_id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    let fy_id: i64 = sqlx::query_scalar(
+        "INSERT INTO fiscal_years (company_id, name, start_date, end_date) \
+         VALUES (?, 'Exercice 2026', '2026-01-01', '2026-12-31') RETURNING id",
+    )
+    .bind(company_id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    let mut acc = std::collections::HashMap::new();
+    for (number, name, kind) in [
+        ("1020", "Banque", "Asset"),
+        ("1170", "TVA récupérable", "Asset"),
+        ("2000", "Créanciers", "Liability"),
+        ("4000", "Achats", "Expense"),
+    ] {
+        let id: i64 = sqlx::query_scalar(
+            "INSERT INTO accounts (company_id, number, name, account_type) \
+             VALUES (?, ?, ?, ?) RETURNING id",
+        )
+        .bind(company_id)
+        .bind(number)
+        .bind(name)
+        .bind(kind)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        acc.insert(number, id);
+    }
+    sqlx::query(
+        "INSERT INTO company_invoice_settings (company_id, default_payable_account_id, \
+         default_vat_recoverable_account_id) VALUES (?, ?, ?)",
+    )
+    .bind(company_id)
+    .bind(acc["2000"])
+    .bind(acc["1170"])
+    .execute(&pool)
+    .await
+    .unwrap();
+    let contact: i64 = sqlx::query_scalar(
+        "INSERT INTO contacts (company_id, contact_type, name, is_supplier) \
+         VALUES (?, 'Entreprise', 'Fournisseur montée SA', TRUE) RETURNING id",
+    )
+    .bind(company_id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    let bank_id: i64 = sqlx::query_scalar(
+        "INSERT INTO bank_accounts (company_id, bank_name, iban, is_primary, journal_account_id) \
+         VALUES (?, 'Banque Exemple', 'CH9300762011623852957', TRUE, ?) RETURNING id",
+    )
+    .bind(company_id)
+    .bind(acc["1020"])
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+
+    let mut d = DecorMontee {
+        company_id,
+        user_id,
+        fy_id,
+        expense: acc["4000"],
+        open_id: 0,
+        open_vat_id: 0,
+        paid_id: 0,
+        cancelled_id: 0,
+        paid_cancelled_id: 0,
+        completed_id: 0,
+        attached_id: 0,
+        batch_id: 0,
+        completed_doc: 0,
+        attached_doc: 0,
+    };
+    let (p, v) = (acc["2000"], acc["1170"]);
+    d.open_id = facture_ouverte_rc1(&pool, &d, contact, p, v, "FF-O", dec!(100), dec!(0)).await;
+    d.open_vat_id =
+        facture_ouverte_rc1(&pool, &d, contact, p, v, "FF-T", dec!(1000), dec!(8.1)).await;
+    d.paid_id = facture_ouverte_rc1(&pool, &d, contact, p, v, "FF-P", dec!(200), dec!(0)).await;
+    d.cancelled_id =
+        facture_ouverte_rc1(&pool, &d, contact, p, v, "FF-A", dec!(300), dec!(0)).await;
+    d.paid_cancelled_id =
+        facture_ouverte_rc1(&pool, &d, contact, p, v, "FF-PA", dec!(400), dec!(0)).await;
+    d.completed_id =
+        facture_ouverte_rc1(&pool, &d, contact, p, v, "FF-C", dec!(150), dec!(0)).await;
+    d.attached_id = facture_ouverte_rc1(&pool, &d, contact, p, v, "FF-J", dec!(250), dec!(0)).await;
+    let batched = facture_ouverte_rc1(&pool, &d, contact, p, v, "FF-L", dec!(500), dec!(0)).await;
+    let day = chrono::NaiveDate::from_ymd_opt(2026, 6, 20).unwrap();
+    let virement = SettlementChoice::BankTransfer {
+        bank_account_id: bank_id,
+    };
+    supplier_invoices::pay(&pool, company_id, d.paid_id, virement.clone(), day, user_id)
+        .await
+        .expect("payée (lettrage de pièce)");
+    supplier_invoices::cancel(&pool, company_id, d.cancelled_id, user_id)
+        .await
+        .expect("annulée (contre-passation)");
+    supplier_invoices::pay(
+        &pool,
+        company_id,
+        d.paid_cancelled_id,
+        virement.clone(),
+        day,
+        user_id,
+    )
+    .await
+    .expect("payée");
+    supplier_invoices::cancel(&pool, company_id, d.paid_cancelled_id, user_id)
+        .await
+        .expect("payée puis annulée (règlement détaché)");
+    for (hash, invoice) in [("h-c", d.completed_id), ("h-j", d.attached_id)] {
+        let id: i64 = sqlx::query_scalar(
+            "INSERT INTO imported_supplier_invoices (company_id, file_hash, storage_path, \
+             original_filename, mime_type, byte_size, status, supplier_invoice_id) \
+             VALUES (?, ?, ?, ?, 'application/pdf', 10, 'completed', ?) RETURNING id",
+        )
+        .bind(company_id)
+        .bind(hash)
+        .bind(format!("{hash}.pdf"))
+        .bind(format!("{hash}.pdf"))
+        .bind(invoice)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        if hash == "h-c" {
+            d.completed_doc = id;
+        } else {
+            d.attached_doc = id;
+        }
+    }
+    let outcome = payment_batches::create_batch(
+        &pool,
+        NewPaymentBatch {
+            company_id,
+            bank_account_id: bank_id,
+            requested_execution_date: day,
+            supplier_invoice_ids: vec![batched],
+        },
+        user_id,
+    )
+    .await
+    .expect("lot");
+    d.batch_id = outcome.batch.expect("lot créé").batch.id;
+    payment_batches::confirm_batch(&pool, company_id, d.batch_id, day, user_id)
+        .await
+        .expect("lot confirmé");
+
+    let watched = [
+        "supplier_invoices",
+        "supplier_invoice_lines",
+        "imported_supplier_invoices",
+        "payment_batches",
+        "payment_batch_items",
+        "journal_entries",
+        "journal_entry_lines",
+        "audit_log",
+    ];
+    let mut before = Vec::new();
+    for t in watched {
+        let cols = columns_of(&pool, t).await;
+        before.push((t, cols.clone(), table_snapshot_on(&pool, t, &cols).await));
+    }
+    let statuses: Vec<String> =
+        sqlx::query_scalar("SELECT status FROM supplier_invoices ORDER BY id")
+            .fetch_all(&pool)
+            .await
+            .unwrap();
+    assert_eq!(
+        statuses,
+        [
+            "open",
+            "open",
+            "paid",
+            "cancelled",
+            "cancelled",
+            "open",
+            "open",
+            "paid"
+        ],
+        "montage : les quatre statuts semés"
+    );
+
+    // --- La montée ---
+    kesh_db::MIGRATOR
+        .run(&pool)
+        .await
+        .expect("la montée doit passer sur une base peuplée");
+
+    // 1. — colonne par colonne, à l'identique (`version`, `updated_at` compris).
+    for (t, cols, b) in &before {
+        assert_eq!(
+            &table_snapshot_on(&pool, t, cols).await,
+            b,
+            "table {t} modifiée par la montée"
+        );
+    }
+
+    // 2. — relue par le code : get, list, vue de règlement.
+    let (items, total) = supplier_invoices::list(&pool, company_id, &[], 50, 0)
+        .await
+        .expect("liste");
+    assert_eq!(total, 8);
+    assert_eq!(items.len(), 8);
+    for (id, status) in [
+        (d.open_id, "open"),
+        (d.paid_id, "paid"),
+        (d.cancelled_id, "cancelled"),
+        (d.paid_cancelled_id, "cancelled"),
+        (batched, "paid"),
+    ] {
+        let (inv, _) = supplier_invoices::get(&pool, company_id, id)
+            .await
+            .expect("relecture")
+            .expect("présente");
+        assert_eq!(inv.status, status);
+        assert!(inv.purchase_journal_entry_id.is_some());
+        let view = supplier_invoices::get_settlement_view(&pool, company_id, id)
+            .await
+            .expect("vue")
+            .expect("présente");
+        assert_eq!(view.invoice.status, status);
+    }
+
+    // 4. — le seuil et l'origine des liens.
+    let min: String =
+        sqlx::query_scalar("SELECT kesh_version_min_required FROM _kesh_version WHERE id = 1")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(min, "0.17.0");
+    let origins: Vec<Option<String>> =
+        sqlx::query_scalar("SELECT link_origin FROM imported_supplier_invoices ORDER BY id")
+            .fetch_all(&pool)
+            .await
+            .unwrap();
+    assert_eq!(
+        origins,
+        vec![None, None],
+        "lien antérieur à la 0.17.0 : nul"
+    );
+
+    // 3. et 5. — le cas de Guy : la facture ouverte, puis celle à document joint,
+    // se dévalident, se modifient, se revalident.
+    for (id, numero) in [(d.open_id, "FF-O"), (d.attached_id, "FF-J")] {
+        let (inv, _) = supplier_invoices::get(&pool, company_id, id)
+            .await
+            .unwrap()
+            .unwrap();
+        let u = supplier_invoices::unvalidate(&pool, company_id, id, inv.version, user_id)
+            .await
+            .expect("dévalidée");
+        assert_eq!(u.invoice.status, "draft");
+        assert_eq!(u.invoice.purchase_journal_entry_id, None);
+        let m = supplier_invoices::update_draft(
+            &pool,
+            company_id,
+            id,
+            u.invoice.version,
+            kesh_db::entities::NewSupplierInvoice {
+                company_id,
+                contact_id: contact,
+                supplier_invoice_number: Some(numero.into()),
+                invoice_date: chrono::NaiveDate::from_ymd_opt(2026, 6, 15).unwrap(),
+                due_date: None,
+                creditor_iban: Some("CH9300762011623852957".into()),
+                creditor_qr_iban: None,
+                payment_reference: None,
+                expected_payment_amount: None,
+                project_id: None,
+                lines: vec![kesh_db::entities::NewSupplierInvoiceLine {
+                    description: "Total corrigé".into(),
+                    quantity: dec!(1),
+                    unit_price: dec!(99.95),
+                    vat_rate: dec!(0),
+                    expense_account_id: d.expense,
+                }],
+            },
+            user_id,
+        )
+        .await
+        .expect("modifiée");
+        assert_eq!(m.invoice.total_amount, dec!(99.95));
+        let r = supplier_invoices::validate(&pool, company_id, id, m.invoice.version, user_id)
+            .await
+            .expect("revalidée");
+        assert_eq!(r.invoice.status, "open");
+        assert!(r.invoice.purchase_journal_entry_id.is_some());
+    }
+    let _ = (
+        d.open_vat_id,
+        d.completed_doc,
+        d.attached_doc,
+        d.completed_id,
+    );
+}
+
+/// AC-2 (a) — depuis l'état 0.16.x (avant `20261030000001`).
+#[sqlx::test(migrations = false)]
+async fn draft_migration_preserves_a_populated_016_base(pool: MySqlPool) {
+    draft_migration_preserves_a_populated_base(pool, (MANUAL_SOURCE_VERSION, MANUAL_SOURCE_LABEL))
+        .await;
+}
+
+/// AC-2 (b) — depuis l'état de la rc1 (avant `20261031000001`).
+#[sqlx::test(migrations = false)]
+async fn draft_migration_preserves_a_populated_rc1_base(pool: MySqlPool) {
+    draft_migration_preserves_a_populated_base(pool, (DRAFT_VERSION, DRAFT_LABEL)).await;
+}
+
+/// AC-3 (c) — la migration n'ajoute aucune table.
+#[sqlx::test(migrations = false)]
+async fn draft_migration_adds_no_table(pool: MySqlPool) {
+    apply_migrations_up_to(&pool, common::migrations_before(DRAFT_VERSION, DRAFT_LABEL))
+        .await
+        .unwrap();
+    let before = application_tables(&pool).await;
+    kesh_db::MIGRATOR.run(&pool).await.unwrap();
+    assert_eq!(application_tables(&pool).await, before);
+}
