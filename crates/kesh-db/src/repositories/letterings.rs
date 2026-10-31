@@ -1881,8 +1881,10 @@ async fn discover_supplier_invoice_document(
         .await
         .map_err(map_db_error)?
         .ok_or(DbError::NotFound)?;
-    // Story v017-4a (#849) — un brouillon n'a pas d'écriture d'achat ; ce
-    // chemin (le paiement) ne l'atteint jamais, le statut étant refusé avant.
+    // Story v017-4a (#849) — un brouillon n'a pas d'écriture d'achat ; aucun des
+    // trois chemins qui mènent ici — le paiement, l'annulation de la facture
+    // (`cancel_in_tx`) et l'annulation du règlement — ne l'atteint : chacun
+    // refuse le statut avant.
     // L'atteindre serait un état incohérent : `Invariant` explicite.
     let Some(purchase_entry_id) = purchase_entry_id else {
         return Err(DbError::Invariant(format!(

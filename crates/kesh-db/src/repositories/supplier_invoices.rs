@@ -896,6 +896,15 @@ pub async fn unvalidate(
 /// après `invoices::unvalidate` : la facture supprime **sa** propre écriture,
 /// sous ses propres gardes.
 ///
+/// ⚠️ *Lecture avant le premier acte de `delete_in_tx`* (revue P1, B4 = E-4) :
+/// `fetch_lines`, lecture ordinaire pour l'instantané d'audit, précède le verrou
+/// d'écriture et d'exercice de `delete_in_tx`, dont le doc-comment exige l'inverse
+/// (« une lecture ordinaire placée avant le verrou figerait une vue antérieure »).
+/// L'écart est assumé, comme dans `invoices::unvalidate` : la contre-passation de
+/// l'écriture d'achat ne passe que par `cancel_in_tx`, qui attend le verrou de la
+/// facture tenu ici, si bien que `reversed_by` ne peut changer pendant la
+/// transaction ; et `books_locked_through` est lu sans verrou par conception.
+///
 /// [`SupplierUnvalidationBlocker::Paid`]: crate::errors::SupplierUnvalidationBlocker::Paid
 pub async fn unvalidate_in_tx(
     tx: &mut sqlx::Transaction<'_, sqlx::MySql>,
@@ -916,7 +925,12 @@ pub async fn unvalidate_in_tx(
     let refus = |blocker, document_id| DbError::SupplierInvoiceNotUnvalidatable {
         blocker,
         document_id,
-        document_label: inv.supplier_invoice_number.clone(),
+        // Revue P1, E-6 : un numéro vide ou blanc vaut absent — sinon le message
+        // finirait par « () » et `documentNumber` vaudrait `""` (même règle que K8).
+        document_label: inv
+            .supplier_invoice_number
+            .clone()
+            .filter(|n| !n.trim().is_empty()),
     };
     match inv.status.as_str() {
         "open" => {}

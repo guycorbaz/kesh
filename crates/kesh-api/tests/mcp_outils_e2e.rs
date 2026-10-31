@@ -1555,3 +1555,61 @@ async fn bilan_montants_une_seule_forme(pool: MySqlPool) {
         "#812 : le total des passifs, somme calculée, \"10.00\" ou \"-10.00\" — {s}"
     );
 }
+
+// ---------------------------------------------------------------------------
+// Story v017-4a (#849, AC-17) — un brouillon lu par les outils
+// ---------------------------------------------------------------------------
+
+/// AC-17 (revue P1, A-2) — la facture fournisseur des pièges, **dévalidée**,
+/// redevient un brouillon : la fiche (`kesh_facture_fournisseur`) rend
+/// `statut: "draft"` et `ecritureAchatId` **présent et nul** — non omis —, et la
+/// liste (`kesh_factures_fournisseur`, sans filtre de statut) la rend aussi,
+/// `statut: "draft"`.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn un_brouillon_lu_par_les_outils(pool: MySqlPool) {
+    let a = societe_piegee(&pool, "Société A 329", 'A').await;
+    let id = a.p.facture_fournisseur;
+    let jeton = cle_de(&pool, &a, &LECTURE, SendValidation::Exempt).await;
+    let b = banc(&pool);
+
+    // Avant : validée, l'écriture d'achat est nommée.
+    let avant = structure(
+        &b.appeler(&jeton, "kesh_facture_fournisseur", json!({"id": id}))
+            .await,
+        "kesh_facture_fournisseur (validée)",
+    );
+    assert_eq!(avant["statut"], json!("open"), "{avant}");
+    assert!(avant["ecritureAchatId"].is_i64(), "{avant}");
+
+    let version: i32 = sqlx::query_scalar("SELECT version FROM supplier_invoices WHERE id = ?")
+        .bind(id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    supplier_invoices::unvalidate(&pool, a.c, id, version, a.u)
+        .await
+        .expect("dévalidation");
+
+    let fiche = structure(
+        &b.appeler(&jeton, "kesh_facture_fournisseur", json!({"id": id}))
+            .await,
+        "kesh_facture_fournisseur (brouillon)",
+    );
+    assert_eq!(fiche["statut"], json!("draft"), "{fiche}");
+    assert_eq!(
+        fiche.get("ecritureAchatId"),
+        Some(&Value::Null),
+        "ecritureAchatId présent et nul : {fiche}"
+    );
+
+    let liste = structure(
+        &b.appeler(&jeton, "kesh_factures_fournisseur", json!({}))
+            .await,
+        "kesh_factures_fournisseur",
+    );
+    let ligne = elements("kesh_factures_fournisseur", &liste)
+        .iter()
+        .find(|f| f["id"] == json!(id))
+        .unwrap_or_else(|| panic!("le brouillon est listé : {liste}"));
+    assert_eq!(ligne["statut"], json!("draft"), "{ligne}");
+}

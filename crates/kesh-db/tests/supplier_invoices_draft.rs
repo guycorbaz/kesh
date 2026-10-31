@@ -535,15 +535,137 @@ async fn validation_refusals_write_nothing(pool: MySqlPool) {
     assert_eq!(etat(&pool, d.invoice.id).await, ("draft".into(), None, 1));
 }
 
+/// Insère un projet analytique (non archivé) et rend son id.
+async fn projet(pool: &MySqlPool, company_id: i64, code: &str) -> i64 {
+    sqlx::query(
+        "INSERT INTO projects (company_id, code, name, archived, version) VALUES (?, ?, ?, FALSE, 0)",
+    )
+    .bind(company_id)
+    .bind(code)
+    .bind(code)
+    .execute(pool)
+    .await
+    .unwrap()
+    .last_insert_id() as i64
+}
+
+/// Valide le brouillon `d` et attend un refus ; vérifie que rien n'est écrit.
+async fn validation_refusee(
+    pool: &MySqlPool,
+    seeded: &SeededCompany,
+    d: &supplier_invoices::SupplierInvoiceWithLines,
+) -> DbError {
+    let avant = nb_ecritures(pool, seeded.company_id).await;
+    let err = supplier_invoices::validate(
+        pool,
+        seeded.company_id,
+        d.invoice.id,
+        d.invoice.version,
+        seeded.admin_user_id,
+    )
+    .await
+    .expect_err("validation refusée");
+    assert_eq!(
+        nb_ecritures(pool, seeded.company_id).await,
+        avant,
+        "aucune écriture"
+    );
+    assert_eq!(etat(pool, d.invoice.id).await, ("draft".into(), None, 1));
+    assert_eq!(
+        nb_audits(pool, "supplier_invoice.validated", d.invoice.id).await,
+        0
+    );
+    err
+}
+
+/// Pose `colonne` (`active` ou `postable`) du compte `compte`.
+async fn poser_compte(pool: &MySqlPool, compte: i64, colonne: &str, valeur: bool) {
+    sqlx::query(&format!("UPDATE accounts SET {colonne} = ? WHERE id = ?"))
+        .bind(valeur)
+        .bind(compte)
+        .execute(pool)
+        .await
+        .unwrap();
+}
+
+/// AC-10, C-v017-4-48 (revue P1, A-3) — la validation **refait sous verrou** les
+/// contrôles de saisie : un compte de charge devenu inactif, puis non imputable,
+/// puis un projet archivé **depuis l'enregistrement du brouillon** sont refusés à
+/// la validation, qui n'écrit rien. Sans ce re-contrôle, le brouillon passerait
+/// avec un compte ou un projet invalide (mutations M-A3a et M-A3b).
+#[sqlx::test(migrations = "./test-schema")]
+async fn validation_rechecks_accounts_and_project_changed_since_the_draft(pool: MySqlPool) {
+    let (seeded, f) = decor(&pool).await;
+    let compte = seeded.accounts["4000"];
+
+    // (a) compte de charge devenu inactif.
+    let d = brouillon(&pool, &seeded, f, "FF-INACTIF", dec!(10)).await;
+    poser_compte(&pool, compte, "active", false).await;
+    let err = validation_refusee(&pool, &seeded, &d).await;
+    assert!(matches!(err, DbError::InactiveOrInvalidAccounts), "{err:?}");
+    poser_compte(&pool, compte, "active", true).await;
+
+    // (b) compte de charge devenu non imputable.
+    let d = brouillon(&pool, &seeded, f, "FF-NON-IMPUTABLE", dec!(10)).await;
+    poser_compte(&pool, compte, "postable", false).await;
+    let err = validation_refusee(&pool, &seeded, &d).await;
+    match &err {
+        DbError::AccountsNotPostable(liste) => assert!(
+            format!("{liste:?}").contains("4000"),
+            "le compte 4000 doit être nommé : {liste:?}"
+        ),
+        autre => panic!("AccountsNotPostable attendu : {autre:?}"),
+    }
+    poser_compte(&pool, compte, "postable", true).await;
+
+    // (c) projet archivé depuis l'enregistrement.
+    let p = projet(&pool, seeded.company_id, "P-ARCHIVE").await;
+    let mut nouveau = nouvelle(
+        &seeded,
+        f,
+        "FF-PROJET",
+        jour(2026, 6, 15),
+        &[(dec!(10), dec!(0))],
+    );
+    nouveau.project_id = Some(p);
+    let d = supplier_invoices::create_draft(&pool, nouveau, seeded.admin_user_id)
+        .await
+        .expect("brouillon avec projet");
+    sqlx::query("UPDATE projects SET archived = TRUE WHERE id = ?")
+        .bind(p)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let err = validation_refusee(&pool, &seeded, &d).await;
+    assert!(matches!(err, DbError::IllegalStateTransition(_)), "{err:?}");
+}
+
 /// AC-10 — **course pilotée** (M20) : A valide le brouillon sans valider sa
 /// transaction ; B, seconde validation, attend la facture ; A valide ; B relit
-/// `open` sous le verrou et rend `IllegalStateTransition`. Sans le verrou
-/// initial, B aurait lu `draft` par une lecture ordinaire et rendrait
-/// `OptimisticLockConflict`.
+/// `open` sous le verrou et rend `IllegalStateTransition`.
+///
+/// Le brouillon porte un **projet** (revue P1, E-3) : sous M20 (pas de verrou
+/// initial sur la facture), B lit `draft` par une lecture ordinaire, puis attend
+/// la sentinelle `companies … FOR UPDATE` de l'étape (0), que A tient — la sonde
+/// la voit ; A valide ; B rend alors `OptimisticLockConflict`, et c'est
+/// l'assertion de code qui rougit. Sans projet, B bloquait plus tôt, sur
+/// l'`INSERT IGNORE` des réglages, que la sonde ne reconnaît pas : la mutation
+/// n'était tuée que par le délai de la sonde.
 #[sqlx::test(migrations = "./test-schema")]
 async fn concurrent_validations_the_loser_reads_validated_under_the_lock(pool: MySqlPool) {
     let (seeded, f) = decor(&pool).await;
-    let d = brouillon(&pool, &seeded, f, "FF-C", dec!(40)).await;
+    let p = projet(&pool, seeded.company_id, "P-COURSE").await;
+    let mut nouveau = nouvelle(
+        &seeded,
+        f,
+        "FF-C",
+        jour(2026, 6, 15),
+        &[(dec!(40), dec!(0))],
+    );
+    nouveau.project_id = Some(p);
+    let d = supplier_invoices::create_draft(&pool, nouveau, seeded.admin_user_id)
+        .await
+        .expect("brouillon avec projet");
     let (c, id, v, u) = (
         seeded.company_id,
         d.invoice.id,
@@ -670,6 +792,30 @@ async fn unvalidation_status_refusals(pool: MySqlPool) {
         bloque(&err),
         Some(SupplierUnvalidationBlocker::Paid),
         "{err:?}"
+    );
+    // Le refus nomme la pièce par son numéro ; un numéro blanc vaut absent
+    // (revue P1, E-6) — ni « () » au message, ni `documentNumber: ""`.
+    assert!(
+        matches!(&err, DbError::SupplierInvoiceNotUnvalidatable { document_label: Some(n), .. } if n == "FF-P"),
+        "{err:?}"
+    );
+    sqlx::query("UPDATE supplier_invoices SET supplier_invoice_number = '  ' WHERE id = ?")
+        .bind(paid)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let err = supplier_invoices::unvalidate(&pool, c, paid, version, u)
+        .await
+        .expect_err("payée, numéro blanc");
+    assert!(
+        matches!(
+            &err,
+            DbError::SupplierInvoiceNotUnvalidatable {
+                document_label: None,
+                ..
+            }
+        ),
+        "E-6 : un numéro blanc vaut absent : {err:?}"
     );
 
     let d = brouillon(&pool, &seeded, f, "FF-D", dec!(10)).await;

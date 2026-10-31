@@ -1029,9 +1029,11 @@ async fn put_of_a_draft_with_a_pre_017_link_imposes_nothing(pool: MySqlPool) {
     assert_eq!(p["sourceDocument"]["linkOrigin"], Value::Null, "{p}");
 }
 
-/// AC-17 — l'outil MCP de la fiche lit un brouillon : `statut: draft`,
-/// `ecritureAchatId: null`. (Le contrat MCP complet est tenu par
-/// `mcp_outils_e2e.rs` ; ici, le seul brouillon, par le service.)
+/// AC-17 — garde de table seulement : un brouillon créé par l'API porte le statut
+/// `draft`, et ce code figure parmi les statuts connus de l'outil MCP. Ce test
+/// n'appelle **pas** l'outil : la lecture d'un brouillon par l'outil (`statut:
+/// "draft"`, `ecritureAchatId` présent et nul) est prouvée par
+/// `mcp_outils_e2e.rs::un_brouillon_lu_par_les_outils` (revue P1, A-2).
 #[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn the_mcp_service_reads_a_draft(pool: MySqlPool) {
     let c = setup(&pool).await;
