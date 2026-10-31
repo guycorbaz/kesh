@@ -131,6 +131,13 @@ NAS.)*
   anonymisée — interdit.
 - **Réversible** : oui.
 
+- **Amendé à la validation P3** *(écrit à la validation P4, finding P4 : l'en-tête du « Retenu » y renvoyait sans qu'il
+  existe)* : fixtures lues **à l'exécution** par `std::fs::read(concat!(env!("CARGO_MANIFEST_DIR"), …))` — non par
+  `include_bytes!`, comme le disait l'amendement P2 ci-dessus, qui empêcherait de compiler les tests avant que le
+  générateur ait produit les fichiers ; qualité JPEG **60 au moins** ; `scan-sans-qr.pdf` repasse à 200 dpi s'il dépasse
+  1 Mio, et, s'il le dépasse encore, issue demandée — le plafond ne se relève pas en silence ; le banc engendre sa page à
+  300 dpi en mémoire ; palier (3) des branches d'arrêt **binarisé avant l'encodage JPEG**.
+
 ### C-v017-5-6 — Le chemin PDF ne se teste pas en CI : la preuve pdfium se joue en local, avec la bibliothèque épinglée
 
 - **Contexte** : `libpdfium.so` n'est ni sur la station (`ls /usr/local/lib/libpdfium*` : absent, `ldconfig -p` : rien)
@@ -148,7 +155,7 @@ NAS.)*
 - **Écartées** : (b) installer pdfium en CI — changement d'outillage hors périmètre ; tracé en **#856**.
 - **Réversible** : oui.
 
-### C-v017-5-7 — Ce que l'écran dit : « Aucune QR-facture lue » (« Aucun QR lu » jusqu'à la validation P2), par les valeurs des clés existantes
+### C-v017-5-7 — Ce que l'écran dit : « Aucune QR-facture exploitable » (« Aucun QR lu » puis « Aucune QR-facture lue » jusqu'aux validations P2 et P3), par les valeurs des clés existantes
 
 - **Contexte** : le badge « Sans QR-code » et la mention « sans QR-code » du rapport affirment un fait sur le document
   que Kesh ne connaît pas : il sait seulement qu'il n'a **lu** aucun QR. Le badge couvre aussi le QR inexploitable
@@ -179,6 +186,12 @@ NAS.)*
   « No usable QR-bill ») — vrai dans les quatre cas où le badge s'affiche (aucun QR, QR non SPC, QR-facture refusée,
   erreur de rendu). Il fait foi tant que le Project Lead n'a pas répondu à Q1. À l'API, la valeur `none` se décrit
   toujours « aucune QR-facture lue » : elle ne couvre que les deux premiers cas.
+- **Amendé à la validation P4** (P3, arbitrage de l'orchestrateur) : l'énumération omettait le cas de #854 lui-même —
+  une QR-facture **présente mais non détectée** (`qr_decode.rs:93`, `:112` ; `inbox_import.rs:564`), qui sort `none`.
+  Cinq cas, donc : aucun QR ; QR d'un autre usage ; QR-facture non détectée ; QR-facture lue puis refusée ; erreur de
+  rendu. Le libellé retenu reste vrai dans les cinq. À l'API, `none` se décrit : « aucune QR-facture n'a été détectée —
+  le document peut ne porter aucun QR, un QR d'un autre usage, ou une QR-facture que la lecture n'a pas trouvée » ; la
+  phrase « elle ne couvre que les deux premiers cas » ci-dessus est remplacée par : elle couvre les trois premiers.
 
 ### C-v017-5-8 — Relire une pièce déjà importée : à la réactivation, pas par un bouton (bouton tracé en #858)
 
@@ -241,7 +254,9 @@ NAS.)*
   le seuil n'est pas franchi. **Dérogation règle de splitting**, au cas où un lecteur compterait `entities` et
   `repositories` à part (six) : la relecture à la réactivation n'a de sens qu'avec le décodeur qu'elle applique, et
   `QrColumns` existe pour que l'import et la réactivation projettent les mêmes colonnes ; les séparer livrerait une
-  projection sans consommateur. Risque accepté : une story à six fichiers de code `kesh-db`/`kesh-api` liés.)*
+  projection sans consommateur. Risque accepté : une story à six modules de code `kesh-db`/`kesh-api` liés (cinq fichiers de production :
+  `qr_decode.rs`, `inbox_import.rs`, `entities/imported_supplier_invoice.rs`, `entities/mod.rs`,
+  `repositories/imported_supplier_invoices.rs`).)*
   (`CLAUDE.md` § *Règle de splitting préventif*).
 - **Retenu** : une story. La relecture à la réactivation est ce qui rend le correctif utile aux pièces déjà importées ;
   la séparer laisserait livrer un décodeur meilleur que personne ne peut appliquer à l'existant.

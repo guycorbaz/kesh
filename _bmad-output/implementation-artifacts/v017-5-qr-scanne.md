@@ -110,7 +110,10 @@ près** — `printpdf` tire un identifiant d'instance et date le document à cha
 (`printpdf-0.7.0/src/pdf_document.rs:793`, `pdf_metadata.rs:58`). La preuve porte sur le **décodage** (lu, non lu).
 **Plafond : 1 Mio par fixture** ; pour le tenir sur les trois fixtures **à QR**, le développement peut baisser la qualité
 JPEG (jamais sous 60) ou restreindre le bruit à la section paiement ; `scan-sans-qr.pdf` garde son bruit sur toute la
-page (qualité seule) et, s'il dépasse 1 Mio à la qualité 60, passe à 200 dpi — il ne doit prouver que `Ok(None)`. Valeurs retenues et tailles au Dev Agent Record. Aucune donnée réelle : IBAN et QR-IBAN d'exemple
+page (qualité seule) et, s'il dépasse 1 Mio à la qualité 60, passe à 200 dpi — il ne doit prouver que `Ok(None)` ;
+s'il dépasse **encore** 1 Mio à 200 dpi, le développement s'arrête et **demande une issue** : le plafond n'est jamais
+relevé en silence. Le banc, lui, engendre la page de D1 **à 300 dpi en mémoire** quelle que soit la résolution de la
+fixture versionnée, pour ne pas sous-estimer le pire document. Valeurs retenues et tailles au Dev Agent Record. Aucune donnée réelle : IBAN et QR-IBAN d'exemple
 SIX (`CH9300762011623852957`, déjà employé par `qr_decode.rs:211`), noms et adresses fictifs.
 
 **AC-2 — La reproduction, rouge d'abord.** Au **premier commit** de la story (fixtures, générateur, tests, banc, la boucle
@@ -225,7 +228,7 @@ et T4, **T4 fait foi**.
 lu, lui, **dès la première passe** — point d'accroche : `qr_decode.rs` expose `pub(crate) fn
 decode_spc_from_pdf_bytes_observed(bytes, cfg, on_render: &mut dyn FnMut(usize, Temps))`, appelé par
 `decode_spc_from_pdf_bytes` avec un observateur vide ; T4 et le banc passent un compteur d'appels au second temps, qui
-doit rester à 0 ; `Ok(None)` pour `scan-sans-qr.pdf`. Sortie copiée au Dev Agent Record. Le test cassé
+doit rester à 0 pour le témoin vectoriel (T4) et pour D4 (banc) — D1 à D3 doivent en compter un par page ; `Ok(None)` pour `scan-sans-qr.pdf`. Sortie copiée au Dev Agent Record. Le test cassé
 `decode_spc_from_pdf_single_page` (`qr_decode.rs:301-313`) lit désormais `qr-scan-300dpi.pdf` par le chemin absolu d'AC-1 —
 correction mécanique (C-v017-5-6).
 
@@ -310,10 +313,12 @@ ou retiré) — **jamais** en relâchant une borne (C-v017-5-4).
 
 Le libellé reprend celui du badge voisin (`badge-qr` : « QR-facture », « QR-Rechnung », « Fattura QR », « QR-bill ») et
 est vrai dans **chacun** des cas où le badge s'affiche (toute ligne sans données QR stockées, `+page.svelte:293`) :
-(1) document sans QR, (2) QR d'un autre usage, lu puis écarté par `first_spc`, (3) QR-facture lue puis refusée
-(`INVALID_SPC_PAYLOAD`, `INVALID_IBAN`, `FIELD_TOO_LONG`, `QR_AMOUNT_OUT_OF_RANGE`), (4) erreur de rendu
-(`PDF_RENDER_ERROR`, bibliothèque absente ou cap de pages compris) — dans aucun, Kesh ne dispose d'une QR-facture
-exploitable. « Aucune QR-facture lue » serait faux au cas (3) (C-v017-5-7 ; libellé soumis au Project Lead, Q1 ; tant
+(1) document sans QR, (2) QR d'un autre usage, lu puis écarté par `first_spc`, (3) **QR-facture présente mais non
+détectée** — le cas de #854 : `rxing` ne trouve rien (`qr_decode.rs:93`), `first_spc` rend `Ok(None)` (`:112`), rangé en
+`none` (`inbox_import.rs:564`) —, (4) QR-facture lue puis refusée (`INVALID_SPC_PAYLOAD`, `INVALID_IBAN`,
+`FIELD_TOO_LONG`, `QR_AMOUNT_OUT_OF_RANGE`), (5) erreur de rendu (`PDF_RENDER_ERROR`, bibliothèque absente ou cap de
+pages compris) — dans aucun, Kesh ne dispose d'une QR-facture exploitable. « Aucune QR-facture lue » serait faux au
+cas (4) (C-v017-5-7 ; libellé soumis au Project Lead, Q1 ; tant
 qu'il n'a pas répondu, ce libellé fait foi). Les replis de
 `+page.svelte:237`, `:312` et `AttachDocumentPicker.svelte:148` égalent la valeur fr-CH, et les **deux clés sont
 ajoutées à `REPLIS_A_SITE_UNIQUE`** (`frontend/src/lib/shared/i18n-repli-divergent-actif.test.ts:222`, garde G13, qui
@@ -329,12 +334,12 @@ tr '\n' ' ' | tr -s ' ' | grep -oF … | wc -l`, qui voit aussi une expression c
 |---|---|
 | `fr-CH/messages.ftl:2538`, `:2552` ; replis `+page.svelte:237`, `:312`, `AttachDocumentPicker.svelte:148` ; commentaire `+page.svelte:12` ; `README.md:44` ; `user-manual.tex:1851`, `:1857` ; tests `import-page.test.ts:112`, `:127`, `:162`, `:185`, `supplier-documents.spec.ts:94`, `:104`, `:107` | **libellé d'écran : changé** |
 | `fr-CH/messages.ftl:2533` (commentaire 30-2a), `+page.svelte:10`, `user-manual.tex:807`, `:1609`, `admin-manual.tex:818`, `:885-886` (coupé sur deux lignes), `:2541`, `marketing-brochure.tex:396`, `:446`, `api-external.md:255`, `:774`, `README.md:232`, `crates/kesh-db/migrations/20261015000001_imported_documents_without_qr.sql:10` (intouchable, P8) | **emploi générique** (« un document avec ou sans QR-code ») : conservé |
-| autres formes « sans QR » : `user-manual.tex:1844` (« un document scanné sans QR »), `:1889` (« Document sans QR : tout se saisit »), `:1898` (« Sans QR, rien n'est proposé »), `admin-manual.tex:886`, `:905`, `:2546`, `:2551` | **conservées** : elles désignent un document **entré sans données QR** (ce que le formulaire et l'API voient), vrai que le document porte un QR ou non ; seule `:1844`, qui parle d'un document scanné, gagne « (ou dont la QR-facture n'a pas pu être lue) » |
+| autres formes « sans QR » : `user-manual.tex:1844` (« un document scanné sans QR »), `:1889` (« Document sans QR : tout se saisit »), `:1898` (« Sans QR, rien n'est proposé »), `admin-manual.tex:886`, `:905`, `:1492`, `:2546`, `:2551` | **conservées** : elles désignent un document **entré sans données QR** (ce que le formulaire et l'API voient), vrai que le document porte un QR ou non ; seule `:1844`, qui parle d'un document scanné, gagne « (ou dont la QR-facture n'a pas pu être lue) » |
 
 Le grep (`.tex` et PDF) se rejoue après le patch : aucune occurrence de la première ligne ne doit subsister. **Limite
-assumée** : la liste ne distingue pas les cas (1) à (4) — tous portent le même badge, la cause n'étant pas stockée
-(C-v017-5-7) ; seul le rapport d'import, à l'instant de l'import, les sépare : « aucune QR-facture exploitable » pour (1)
-et (2), « QR illisible » et son code pour (3) et (4).
+assumée** : la liste ne distingue pas les cas (1) à (5) — tous portent le même badge, la cause n'étant pas stockée
+(C-v017-5-7) ; le rapport d'import, à l'instant de l'import, sépare seulement (1) à (3) — « aucune QR-facture
+exploitable », sans pouvoir les distinguer entre eux — de (4) et (5) — « QR illisible » et son code.
 
 ### Relire une pièce déjà importée
 
@@ -394,9 +399,13 @@ PDF régénéré :
 - un paragraphe **neuf**, *Un import long*, au même endroit : les documents scannés sans QR-facture lisible demandent
   plus de temps (deux rendus par page) ; déposez-les **par petits lots** ; l'écran attend la réponse jusqu'à cinq
   minutes, **mais un proxy inversé peut couper plus tôt** (sur un NAS Synology, le délai du portail DSM n'est pas
-  documenté) ; si l'écran affiche « Le serveur ne répond pas. Réessayez ultérieurement. » (`error-timeout`,
-  `fr-CH/messages.ftl:2251`) ou « Erreur inattendue lors de l'import. » (`imported-supplier-invoices-import-failed`,
-  `:2509`), attendez un moment, rechargez la page — en cas d'erreur, la liste n'est pas rechargée
+  documenté) ; l'écran affiche alors, selon le cas (`+page.svelte:103-106` affiche le message de l'`ApiError`, toujours
+  présent) : « Le serveur ne répond pas. Réessayez ultérieurement. » quand l'écran abandonne lui-même au bout de cinq
+  minutes (`error-timeout`, `api-client.ts:320`, `fr-CH/messages.ftl:2251`) ; « Erreur serveur (504) » quand un proxy
+  coupe et répond par une page d'erreur (`error-server-status`, `api-client.ts:243-247`, `messages.ftl:2252`) ;
+  « Impossible de contacter le serveur. Vérifiez votre connexion. » quand la connexion est fermée sans réponse
+  (`error-network`, `api-client.ts:316-321`, `messages.ftl:2250`) — le repli « Erreur inattendue lors de l’import. »
+  ne sort pas de ce chemin et n'est pas cité ; dans chacun de ces cas, attendez un moment, rechargez la page — en cas d'erreur, la liste n'est pas rechargée
   (`+page.svelte:96-108`) — puis relancez *Importer le dossier* : les documents déjà traités sont dans la liste, les
   autres sont restés dans le dossier et sont repris — la phrase exacte suit le résultat d'AC-6-bis (si le verrou fuit,
   elle dit ce que l'utilisateur voit et renvoie à l'administrateur) ;
@@ -421,10 +430,11 @@ PDF régénéré :
   ce qui se passe est celui qu'établit AC-6-bis (import interrompu au fichier en cours, fichiers restants repris au
   passage suivant ; et, si le verrou fuit, la conduite et l'issue) ; pour des documents scannés nombreux, réduire
   `KESH_INBOX_MAX_FILES_PER_RUN` (défaut 200) ou faire déposer par petits lots ;
-- les emplois génériques (l. 818, 885-886, 2541) et les formes « sans QR » (l. 886, 905, 2546, 2551) restent.
+- les emplois génériques (l. 818, 885-886, 2541) et les formes « sans QR » (l. 886, 905, 1492, 2546, 2551) restent.
 
-**AC-12 — `docs/api-external.md`** l. 778 : `none` devient « aucune QR-facture lue (aucun QR, ou un QR qui n'est pas
-une QR-facture) » — à l'API, `none` et `unreadable` restent distincts ; la dernière phrase (« Un document
+**AC-12 — `docs/api-external.md`** l. 778 : `none` devient « aucune QR-facture n'a été détectée — le document peut ne
+porter aucun QR, un QR d'un autre usage, ou une QR-facture que la lecture n'a pas trouvée » — à l'API, `none` et
+`unreadable` restent distincts ; la dernière phrase (« Un document
 **réactivé** … porte `present` ou `none` selon ce qui a été stocké ») est remplacée par : « *Depuis la v0.17.0*, un
 document **réactivé** — retiré de la liste puis redéposé — est relu s'il n'avait aucune donnée QR : `present`, `none` ou
 `unreadable` (avec `qrError`) selon cette lecture ; sinon `present`. » ; et, à la route `POST /api/v1/inbox-import`, une
@@ -541,7 +551,7 @@ Mutations sous verrou de gate, motif vérifié unique, restauration par `git che
 Aucune spec neuve : la relecture se prouve en Rust (T6, T7, T9) — un même fichier ne peut pas être illisible puis lisible
 pour une même version, et l'E2E n'a pas pdfium. `supplier-documents.spec.ts` (E2-a, l. 94-107) suit le texte : titre,
 assertion du rapport, et une assertion du **texte du badge** (`imported-badge-no-qr` contient « Aucune QR-facture
-lue »). E2E complet au **dernier commit de code** (`docs/testing.md`, 7 à 10 échecs attendus jugés fichier par fichier).
+exploitable »). E2E complet au **dernier commit de code** (`docs/testing.md`, 7 à 10 échecs attendus jugés fichier par fichier).
 
 ## Captures (thème clair)
 
@@ -551,7 +561,8 @@ sélecteur de document à joindre (`AttachDocumentPicker`) avec le badge ; (4) *
 synthétique « Aucune QR-facture exploitable », puis, après retrait et redépôt, « QR-facture » dans la liste ; le rapport de
 cette réactivation ne porte que le **compte** des documents importés — une ligne `present` n'y est pas listée
 (`+page.svelte:224-226`) (colonnes QR vidées en SQL sur la base de démonstration) ; (5) en `de-CH` (`KESH_LANG=de`) : le badge et le rapport ;
-(6) le message de l'écran quand l'import dépasse son délai, s'il est simulé (client à délai court, AC-6-bis). Jointes au Dev Agent Record
+(6) le message de l'écran quand l'import dépasse son délai, s'il est simulé (client à délai court, AC-6-bis) — et,
+si l'installation jetable est derrière un proxy dont on peut abaisser le délai, le message de la coupure par le proxy. Jointes au Dev Agent Record
 et au prompt de revue de code.
 
 ## Gates
@@ -643,18 +654,20 @@ conduite au délai dépassé (AC-6-bis, exécutée). Contrôler le **PDF** aplat
 ## Questions au Project Lead
 
 - **Q1** — Le badge de la liste disait « Sans QR-code ». Il s'affiche pour toute pièce **sans données de QR
-  enregistrées**, c'est-à-dire dans quatre cas, que la liste ne distingue pas :
+  enregistrées**, c'est-à-dire dans cinq cas, que la liste ne distingue pas :
   1. le document ne porte aucun QR — au rapport d'import : « aucune QR-facture exploitable » ;
   2. il porte un QR d'un autre usage (lien, code produit), lu puis écarté — au rapport : « aucune QR-facture
      exploitable » ;
-  3. il porte une QR-facture lue puis refusée (IBAN invalide, valeur trop longue, montant hors limites) — au rapport :
+  3. il porte une QR-facture que la lecture n'a pas trouvée (le cas de vos deux factures communales scannées) — au
+     rapport : « aucune QR-facture exploitable » ;
+  4. il porte une QR-facture lue puis refusée (IBAN invalide, valeur trop longue, montant hors limites) — au rapport :
      « QR illisible » et le motif ;
-  4. le PDF n'a pas pu être rendu (bibliothèque absente, trop de pages) — au rapport : « QR illisible » et le motif.
-  « Sans QR-code » est faux aux cas 2 et 3 ; « Aucun QR lu » aux cas 2 et 3 ; « Aucune QR-facture lue » au cas 3.
+  5. le PDF n'a pas pu être rendu (bibliothèque absente, trop de pages) — au rapport : « QR illisible » et le motif.
+  « Sans QR-code » est faux aux cas 2, 3 et 4 ; « Aucun QR lu » aux cas 2 et 4 ; « Aucune QR-facture lue » au cas 4.
   La fiche retient **« Aucune QR-facture exploitable »** (de « Keine verwertbare QR-Rechnung », it « Nessuna fattura QR
-  utilizzabile », en « No usable QR-bill »), vrai dans les quatre cas ; tant que vous n'avez pas répondu, il fait foi.
-  **Limite** : la liste ne dit pas lequel des quatre cas ; seul le rapport, au moment de l'import, le dit. Ce libellé
-  vous convient-il, ou en préférez-vous un autre ?
+  utilizzabile », en « No usable QR-bill »), vrai dans les cinq cas ; tant que vous n'avez pas répondu, il fait foi.
+  **Limite** : la liste ne dit pas lequel des cinq cas ; le rapport, au moment de l'import, sépare seulement les cas 1
+  à 3 des cas 4 et 5. Ce libellé vous convient-il, ou en préférez-vous un autre ?
 - **Q2** — Vos deux factures communales déjà importées : après la mise à jour, le redépôt (Télécharger, Retirer,
   déposer, Importer) est un geste de votre part sur vos livres, et vous rapportez seulement « lues » ou « non lues »
   (§ *Fermeture de #854*). Cela vous convient-il ?
@@ -713,3 +726,12 @@ conduite au délai dépassé (AC-6-bis, exécutée). Contrôler le **PDF** aplat
   pdfium), R8, R9, F3 à F10, F12 à F15 ; F11 : texte de l'issue P4 (pages de plus de 2000 pt) remis à l'orchestrateur.
   À l'API, `none` reste « aucune QR-facture lue » (AC-12). Registre : C-v017-5-2, -5, -7, -10 amendés. Prochaine étape :
   validation P4 ciblée (`v017-5-validate-prompt-p4.md`, Opus, sur le diff de cette remédiation).
+- 2026-10-31 — **Validation P4** (Opus, passe ciblée sur la remédiation P3) : 0 CRITICAL, 0 HIGH, 3 MEDIUM (P1 à P3),
+  6 LOW (P4 à P9). Remédiation (Opus 5.5), prémisses lues au code (`api-client.ts:243-247`, `:316-321` ;
+  `fr-CH/messages.ftl:2250-2252` ; `+page.svelte:103-106` ; `qr_decode.rs:93`, `:112` ; `inbox_import.rs:564` ;
+  `admin-manual.tex:1492`) : le libellé de l'E2E, coupé sur deux lignes, corrigé après recherche sur la fiche aplatie
+  (P1) ; AC-10 ne cite plus que les trois messages que l'écran affiche, cas par cas (P2) ; cinquième cas, « QR-facture
+  présente mais non détectée », ajouté à AC-7, à la limite assumée, à Q1 et à C-v017-5-7, et `none` redéfini à l'API
+  (P3) ; registre C-v017-5-5 (amendement P3), C-v017-5-7 (titre), C-v017-5-10 (« six modules ») ; `admin-manual.tex:1492`
+  à l'inventaire (P7) ; compteur du second temps nuancé (P8) ; dépassement à 200 dpi → issue demandée, D1 à 300 dpi en
+  mémoire (P9). Prochaine étape : validation P5 ciblée (`v017-5-validate-prompt-p5.md`, Sonnet).
