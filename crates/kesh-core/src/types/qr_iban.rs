@@ -40,7 +40,7 @@ impl QrIban {
 
         if !iban.is_swiss() {
             return Err(CoreError::InvalidQrIban(
-                "QR-IBAN doit être suisse ou liechtensteinois".into(),
+                "doit être suisse ou liechtensteinois".into(),
             ));
         }
 
@@ -131,6 +131,19 @@ mod tests {
     fn german_iban_rejected() {
         let result = QrIban::new("DE89 3704 0044 0532 0130 00");
         assert!(result.is_err());
+    }
+
+    /// Story v017-6 (#832) — le motif ne répète pas le nom du champ : le
+    /// `Display` de `InvalidQrIban` porte déjà « QR-IBAN invalide : », servi tel
+    /// quel par `kesh-api`. Égalité exacte (avant : « QR-IBAN invalide : QR-IBAN
+    /// doit être suisse ou liechtensteinois »).
+    #[test]
+    fn foreign_iban_message_names_the_field_once() {
+        let err = QrIban::new("DE89 3704 0044 0532 0130 00").unwrap_err();
+        assert_eq!(
+            err.to_string(),
+            "QR-IBAN invalide : doit être suisse ou liechtensteinois"
+        );
     }
 
     #[test]

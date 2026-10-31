@@ -754,7 +754,7 @@ hexadécimal).
     KESH\_PORT & Port d'écoute (0/invalide $\to$ 80). & \texttt{80} \\
     KESH\_STATIC\_DIR & Répertoire du SPA compilé servi en fallback. Fixé par l'image Docker (\texttt{/app/static}) ; \texttt{frontend/build} hors Docker. & \texttt{frontend/build} \\
     KESH\_LOCALES\_DIR & Répertoire des traductions (FTL). Fixé par l'image Docker (\texttt{/app/locales}) ; dossier du dépôt hors Docker. & \emph{embarqué} \\
-    KESH\_LANG & Locale de l'instance (\texttt{fr}/\texttt{de}/\texttt{it}/\texttt{en}). & \texttt{fr} \\
+    KESH\_LANG & Langue de l'interface (locale de l'installation : \texttt{fr}/\texttt{de}/\texttt{it}/\texttt{en}). & \texttt{fr} \\
     \bottomrule
 \end{tabularx}
 
@@ -1407,7 +1407,7 @@ WARN config: KESH_COOKIE_SECURE=false -- cookies session emis SANS le
 Une fois connecté, l'\textbf{assistant d'onboarding} (wizard) configure la company provisoire — il n'y a pas d'écran séparé de création de société :
 
 \begin{enumerate}
-    \item \textbf{Langue} de l'interface, puis \textbf{mode} (guidé ou expert).
+    \item \textbf{Langue des documents} (la langue de l'interface est celle de l'installation, \texttt{KESH\_LANG}), puis \textbf{mode} (guidé ou expert).
     \item \textbf{Parcours} : données de démonstration (exploration) ou configuration de production.
 
     \textbf{Sortir de la démonstration} : la seule voie est la réinitialisation (bouton \emph{Réinitialiser pour la production} de la bannière de démonstration), et elle n'est permise que si l'exploitant l'a autorisée. Posez \texttt{KESH\_PRODUCTION\_RESET=true} (\texttt{1}, \texttt{yes}, \texttt{on} aussi) dans le fichier \keshpath{.env}, puis \keshcommand{docker compose up -d} --- et non « redémarrer », ni \keshcommand{docker compose restart}, qui ne relit pas \keshpath{.env} : la variable n'atteindrait pas le conteneur et le bouton resterait refusé. Réinitialisez, puis \textbf{retirez} la variable et refaites \keshcommand{docker compose up -d}. Sans elle, le bouton est \textbf{refusé (403), même à l'administrateur}, avec un message qui accuse à tort le rôle (\#534). Il n'existe pas d'autre passage de la démonstration à la production sur la même installation : c'est un choix de sécurité --- une installation ne se vide pas sans un geste de l'exploitant.

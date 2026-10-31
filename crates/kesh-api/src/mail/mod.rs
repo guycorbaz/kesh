@@ -71,7 +71,7 @@ pub trait Mailer: Send + Sync {
     ///
     /// - `to` : adresse destinataire (email du compte).
     /// - `reset_url` : lien complet `{base}/reset-password?token=...` (token brut).
-    /// - `locale` : langue de l'instance (DC10 — pas de locale per-utilisateur).
+    /// - `locale` : langue de l'installation (DC10 — pas de locale per-utilisateur).
     ///
     /// Le sujet/corps sont rendus via Fluent (`email-password-reset-subject` /
     /// `email-password-reset-body`). En cas d'échec → [`AppError::SmtpSendFailed`]

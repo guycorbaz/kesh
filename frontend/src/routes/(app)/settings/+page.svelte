@@ -302,7 +302,7 @@
 					</div>
 				{/if}
 				<div>
-					<dt class="font-medium text-text-muted">{msg('settings-field-instance-language', 'Langue interface')}</dt>
+					<dt class="font-medium text-text-muted">{msg('settings-field-instance-language', 'Langue des documents')}</dt>
 					<dd>{data.company.instanceLanguage}</dd>
 				</div>
 				<!-- Story 20-3b2 : e-mail de contact (Reply-To des factures envoyées). -->

@@ -23,7 +23,7 @@ Si vous oubliez votre mot de passe, le manuel administrateur explique la procéd
 
 Après la connexion, l'onboarding vous guide, dans cet ordre :
 
-1. **Langue de l'interface** (français, allemand, italien, anglais).
+1. **Langue des documents** (français, allemand, italien, anglais) — celle des factures, de leur PDF et de leur e-mail d'envoi, de leurs rappels et des conditions de paiement ; la langue de l'interface est celle de l'installation (`KESH_LANG`) ; le PDF d'un avoir et le courrier de réinitialisation suivent cette dernière (#859).
 2. **Mode d'utilisation** — *Guidé* ou *Expert*.
 3. **Chemin** — explorer Kesh avec des données de démonstration, ou le configurer pour la production. Les étapes suivantes sont celles du chemin production.
 4. **Type d'organisation** (indépendant, association, PME) — il détermine le plan comptable que Kesh met en place.

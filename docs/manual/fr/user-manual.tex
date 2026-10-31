@@ -143,12 +143,21 @@ L'interface Kesh est organisée comme suit :
 \subsection{Choix de la langue}
 
 Kesh gère le français, l'allemand, l'italien et l'anglais pour les messages du
-système. La langue est choisie lors de l'\textbf{onboarding}.
+système. L'interface s'affiche dans la \textbf{langue de l'installation}, que
+fixe l'administrateur (variable \texttt{KESH\_LANG}, français par défaut ; voir
+le manuel d'administration). Le tout premier écran de l'assistant d'onboarding,
+avant le choix du mode, ne règle pas cette langue : il règle celle des
+\textbf{documents}, c'est-à-dire des factures, de leur PDF et de leur e-mail
+d'envoi, de leurs rappels et des conditions de paiement, employée quand un
+contact n'a pas sa propre langue (la \emph{langue de l'instance} des chapitres
+sur les factures et les contacts). Le PDF d'un avoir et le courrier de
+réinitialisation du mot de passe suivent, eux, la langue de l'installation
+(\#859).
 
 \begin{keshnote}
-Un sélecteur permettant de changer la langue de l'interface en cours de session
-est prévu pour une version ultérieure : dans la version actuelle, la langue est
-fixée à l'onboarding et n'est pas modifiable depuis un menu.
+Un sélecteur permettant de changer la langue de l'interface depuis un menu est
+prévu pour une version ultérieure : dans la version actuelle, elle ne se change
+pas depuis l'application.
 \end{keshnote}
 
 \begin{keshwarning}
@@ -163,7 +172,7 @@ et des contrôles systématiques ont écarté les confusions de sens --- mais
 formulation maladroite ou fautive, signalez-la sur \keshWebsite.
 
 \emph{Avant la version 0.11.0}, une partie des écrans affichait du
-\textbf{français} aux utilisateurs ayant choisi une autre langue --- non pas un
+\textbf{français} aux installations réglées dans une autre langue --- non pas un
 message d'erreur, mais du français correct, sans qu'aucun avertissement ne le
 signale.
 \end{keshwarning}
@@ -3729,7 +3738,7 @@ Fonctionnalités non encore disponibles :
     \item Mono-devise CHF (multi-devises prévu pour une version ultérieure).
     \item Décompte TVA au format officiel AFC / e-décompte ESTV (les montants du décompte Kesh sont à reporter manuellement sur le formulaire AFC).
     \item Avoir \emph{partiel} et avoir sur facture \emph{déjà encaissée}, même en partie (l'avoir total sur une facture sans aucun règlement est, lui, disponible — cf. \S\ref{sec:avoirs}).
-    \item Sélecteur de langue dans l'interface (la langue est fixée à l'onboarding ; le changement en cours de session est prévu pour une version ultérieure).
+    \item Sélecteur de langue dans l'interface (la langue de l'interface est celle de l'installation, \texttt{KESH\_LANG} ; le sélecteur est prévu pour une version ultérieure).
     \item Pas de signature électronique qualifiée (QES) sur les exports (verdict (b) de la recherche réglementaire, prévu Epic 14).
     \item Format PDF standard, non PDF/A (migration prévue selon ISO 19005).
 \end{itemize}

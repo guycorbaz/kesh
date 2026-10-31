@@ -210,6 +210,13 @@ async fn coordinates_validates_ide(pool: MySqlPool) {
     assert_eq!(resp.status(), 400);
     let body: serde_json::Value = resp.json().await.unwrap();
     assert_eq!(body["error"]["code"], "VALIDATION_ERROR");
+    // Story v017-6 (#832) — le message de `kesh-core` nomme déjà le champ : la
+    // route ne le préfixe pas une seconde fois (« IDE invalide : Numéro IDE
+    // invalide : … » avant le correctif). Égalité exacte, entrée synthétique.
+    assert_eq!(
+        body["error"]["message"],
+        "Numéro IDE invalide : doit commencer par CHE"
+    );
 }
 
 /// Story v017-2 (#809, AC-8) — le contrat du refus que l'assistant affiche désormais :
@@ -527,6 +534,43 @@ async fn bank_account_validates_iban(pool: MySqlPool) {
     assert_eq!(resp.status(), 400);
     let body: serde_json::Value = resp.json().await.unwrap();
     assert_eq!(body["error"]["code"], "VALIDATION_ERROR");
+
+    // Story v017-6 (#832) — chaque refus dit son mot une fois, et désigne le
+    // bon champ. Égalités exactes, entrées synthétiques ; l'IBAN valide est
+    // l'exemple de la suite (`full_path_b_flow`), son QR-IID 00762 hors plage.
+    let cas = [
+        // (b) IBAN mal formé : le message de `kesh-core`, sans second préfixe.
+        (
+            json!({ "bankName": "UBS", "iban": "BAD", "qrIban": null }),
+            "IBAN invalide : trop court",
+        ),
+        // (c) QR-IBAN mal formé : `QrIban::new` propage l'erreur d'IBAN, que la
+        // route étiquette du champ QR-IBAN (sinon « IBAN invalide : … »).
+        (
+            json!({ "bankName": "UBS", "iban": "CH93 0076 2011 6238 5295 7", "qrIban": "BAD" }),
+            "QR-IBAN invalide : trop court",
+        ),
+        // (c, second cas) IBAN valide hors de la plage QR-IID : toute autre
+        // variante passe telle quelle.
+        (
+            json!({ "bankName": "UBS", "iban": "CH93 0076 2011 6238 5295 7", "qrIban": "CH93 0076 2011 6238 5295 7" }),
+            "QR-IBAN invalide : QR-IID 762 hors plage 30000-31999",
+        ),
+    ];
+    for (corps, attendu) in cas {
+        let resp = app
+            .client
+            .post(app.url("/api/v1/onboarding/bank-account"))
+            .header("Authorization", auth(&token))
+            .json(&corps)
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), 400, "corps {corps}");
+        let body: serde_json::Value = resp.json().await.unwrap();
+        assert_eq!(body["error"]["code"], "VALIDATION_ERROR", "corps {corps}");
+        assert_eq!(body["error"]["message"], attendu, "corps {corps}");
+    }
 }
 
 /// Story v011-2 (Issue #120) — fresh install : pas de `create_test_company`, le

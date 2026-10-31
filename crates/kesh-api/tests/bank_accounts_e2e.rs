@@ -2143,6 +2143,16 @@ async fn ordre_des_refus_de_forme(pool: MySqlPool) {
             message.starts_with(debut),
             "corps {corps} : attendu « {debut}… », obtenu « {message} »"
         );
+        // Story v017-6 (#832) — le refus dit son mot une fois : « QR-IBAN
+        // invalide » ne contient « IBAN invalide » qu'une fois, l'ancien
+        // « QR-IBAN invalide : IBAN invalide : trop court » deux fois.
+        if debut.ends_with("IBAN invalide") {
+            assert_eq!(
+                message.matches("IBAN invalide").count(),
+                1,
+                "corps {corps} : le refus répète son mot : « {message} »"
+            );
+        }
     }
 }
 

@@ -531,11 +531,13 @@ pub async fn set_coordinates(
     // Adresse structurée requise (créancier QR-bill type S, #213).
     let address = body.address.validate_required()?;
 
-    // Validate IDE via kesh-core if provided
+    // Validate IDE via kesh-core if provided. Le message de `kesh-core` nomme
+    // déjà le champ (« Numéro IDE invalide : … ») : servi tel quel, sans second
+    // préfixe (Story v017-6, #832).
     let normalized_ide = match &body.ide_number {
         Some(ide) if !ide.trim().is_empty() => {
             let che = kesh_core::types::CheNumber::new(ide)
-                .map_err(|e| AppError::Validation(format!("IDE invalide : {e}")))?;
+                .map_err(|e| AppError::Validation(e.to_string()))?;
             Some(che.as_str().to_string())
         }
         _ => None,
@@ -596,15 +598,15 @@ pub async fn set_bank_account(
         ));
     }
 
-    // Validate IBAN via kesh-core
-    let iban = kesh_core::types::Iban::new(&body.iban)
-        .map_err(|e| AppError::Validation(format!("IBAN invalide : {e}")))?;
+    // Validate IBAN via kesh-core — message servi tel quel, il nomme déjà le
+    // champ (Story v017-6, #832).
+    let iban =
+        kesh_core::types::Iban::new(&body.iban).map_err(|e| AppError::Validation(e.to_string()))?;
 
     // Validate QR-IBAN via kesh-core if provided
     let normalized_qr = match &body.qr_iban {
         Some(qr) if !qr.trim().is_empty() => {
-            let qr_iban = kesh_core::types::QrIban::new(qr)
-                .map_err(|e| AppError::Validation(format!("QR-IBAN invalide : {e}")))?;
+            let qr_iban = kesh_core::types::QrIban::new(qr).map_err(crate::util::refus_qr_iban)?;
             Some(qr_iban.as_iban().as_str().to_string())
         }
         _ => None,
