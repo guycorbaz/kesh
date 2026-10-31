@@ -127,3 +127,25 @@ réversibilité.
 - *C-v017-6-10 annoté le 2026-10-31 (validation P3, P2)* : le *Retenu* d'origine est **rétabli** — le § récrit rattache
   « langue de l'instance » à « langue des documents » en une incise ; l'annotation de la P2 ne vaut que pour `KESH_LANG` :
   « instance » ne le désigne jamais, il peut désigner la langue des documents.
+
+## Annotations de l'étape 0 du développement (2026-10-31)
+
+- *Annotation P3 ci-dessus corrigée le 2026-10-31 (validation P4, P1)* : « appelée aussi aux lignes 410, 461, 1147 »
+  désigne les déclarations des fonctions (`preview_reminder_email`, `send_reminder`, `send_one_batch_reminder`) ; les
+  lignes d'appel de `resolve_language` sont `invoice_email.rs:430, 546, 1230` (lu : `grep -n "resolve_language"
+  crates/kesh-api/src/routes/invoice_email.rs`). La borne ne change pas.
+
+### C-v017-6-11 — Les deux doc-comments de la validation P4 (P3) entrent à l'inventaire, qui passe à quinze sites
+
+- **Contexte** : la validation P4 (P3, LOW) a trouvé deux doc-comments faux hors de l'inventaire : `routes/i18n.rs:19`
+  (« les traductions pour la locale instance », alors que `get_messages` lit `state.config.locale`, `KESH_LANG`) et
+  `routes/invoice_pdf_service.rs:7-9` (« le handler HTTP passe `state.config.locale` », alors que `get_invoice_pdf`
+  délègue à `issued_invoice_pdf::get_or_freeze`, qui rend dans `client_language`, `issued_invoice_pdf.rs:150, 255,
+  338-343`). Le mandat de développement les intègre.
+- **Retenu** : les corriger (doc-comments seuls, mécaniques) et les ajouter au § 9 et à l'AC-4. Le décompte du tableau
+  validé, recompté (P4, P2), est **treize** sites (sept lignes de textes, cinq doc-comments, une ligne catalogues et
+  repli) ; avec les deux ajouts, **quinze** sites sur **quinze** fichiers (`invoice_pdf_service.rs` est un fichier neuf ;
+  `i18n.rs` y était déjà). La dérogation compte cinq doc-comments dans `kesh-api` à la fiche validée (P4, P4), sept avec
+  les ajouts.
+- **Écartées** : les tracer en issue — plus coûteux qu'un commentaire, et le mandat les intègre.
+- **Réversible** : oui.

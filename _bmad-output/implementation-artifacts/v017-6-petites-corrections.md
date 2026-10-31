@@ -1,6 +1,6 @@
 # Story v017-6 : deux petites corrections — le refus qui se répète (#832) et la langue de l'interface au manuel (#824)
 
-Status: ready-for-dev
+Status: in-progress
 
 *Fiche rédigée le 2026-10-31 (remédiée le même jour à la validation P1 : voir le Change Log), en autonomie (Sonnet 5.5), worktree `/home/gcorbaz/devel/kesh-0177`, branche
 `story/v017-6-petites-corrections` partie de `8e126cfd` (tête de `release/0.17.0`). Release **0.17.0**. Registre :
@@ -88,7 +88,7 @@ afin de ne pas chercher à l'assistant un réglage qu'il n'a pas.
    de la facture, de son PDF figé et de son e-mail d'envoi, de ses rappels (e-mail et PDF) et des libellés des conditions
    de paiement, quand le contact n'a pas sa propre langue (`routes/invoice_email.rs:71`,
    `contact.language.unwrap_or(company.instance_language)`, fonction `resolve_language` appelée aussi par
-   `invoice_email.rs:410, 461, 1147` (rappels), `routes/invoices.rs:697` (conditions de paiement) et `routes/contacts.rs:519` ;
+   `invoice_email.rs:430, 546, 1230` (rappels ; lignes d'appel, corrigées à l'étape 0 du développement, validation P4, P1), `routes/invoices.rs:697` (conditions de paiement) et `routes/contacts.rs:519` ;
    `routes/issued_invoice_pdf.rs:342`). **Hors de cette borne** (validation P2, P1 ; borne élargie à la validation P3, P1) : le PDF d'un avoir suit `KESH_LANG` (`credit_notes.rs:346, 351, 357`), le courrier
    de réinitialisation du mot de passe aussi (`auth.rs:862`), les rapports `accounting_language` (`reports.rs:919`). Écart
    tracé en **#859** (bug), limite citée au manuel, au guide et au CHANGELOG ; le libellé « Langue des documents » reste
@@ -104,7 +104,7 @@ afin de ne pas chercher à l'assistant un réglage qu'il n'a pas.
    valeur** (validation P1, P2), non par la formulation : `grep -rniE "langue.{0,20}interface|interface.{0,40}(onboarding|assistant)|(onboarding|assistant).{0,60}interface" docs README.md website`
    et les équivalents des trois autres langues (`Oberflächensprache`, `lingua dell.interfaccia`, `interface language`) dans
    `docs/`, `README.md`, `website/`, `crates/kesh-i18n/locales/`, `frontend/src` — plus l'ancienne recherche de formulation
-   (`choisie.*langue`, `fixée`). **Douze** sites faux, sur **quatorze** fichiers distincts (quatre catalogues, le composant Svelte, deux manuels, le guide, le README, `company.rs`, `i18n.rs`, `backup_schedule.rs`, `smtp.rs`, `mail/mod.rs`) :
+   (`choisie.*langue`, `fixée`). **Quinze** sites faux, sur **quinze** fichiers distincts (quatre catalogues, le composant Svelte, deux manuels, le guide, le README, `company.rs`, `i18n.rs`, `backup_schedule.rs`, `smtp.rs`, `mail/mod.rs`, `invoice_pdf_service.rs`) — treize au tableau validé (recompté à l'étape 0, validation P4, P2 : sept lignes de textes, cinq doc-comments, une ligne catalogues et repli), et deux doc-comments ajoutés à l'étape 0 (validation P4, P3 : `i18n.rs:19`, `invoice_pdf_service.rs:7-9`) :
 
    | Site | Texte | Verdict |
    |---|---|---|
@@ -116,6 +116,7 @@ afin de ne pas chercher à l'assistant un réglage qu'il n'a pas.
    | `admin-manual.tex:1410` | « Langue de l'interface, puis mode » (étape 0 de l'assistant) | **faux** — non nommé par l'issue (P2) |
    | `docs/user-guide/fr/getting-started.md:26` | « 1. Langue de l'interface (français, allemand, italien, anglais) » (étape 0) | **faux** — non nommé par l'issue (P2) |
    | `crates/kesh-db/src/entities/company.rs:164` ; `crates/kesh-api/src/routes/i18n.rs:3` ; `routes/backup_schedule.rs:125` ; `mail/smtp.rs:102` ; `mail/mod.rs:74` | doc-comments : `instance_language` « Langue de l'interface utilisateur » ; `i18n.rs` « langue de l'instance » pour `KESH_LANG` | **faux** (validation P2, P6) : doc-comments seuls, retouchés (AC-4) |
+   | `crates/kesh-api/src/routes/i18n.rs:19` ; `routes/invoice_pdf_service.rs:7-9` | « les traductions pour la locale instance » (`KESH_LANG`) ; « le handler HTTP passe `state.config.locale` » (périmé : le PDF de la facture suit `client_language`, `issued_invoice_pdf.rs:150, 255, 338-343`) | **faux** (validation P4, P3 ; ajoutés à l'étape 0) : doc-comments seuls, retouchés (AC-4) |
    | `crates/kesh-i18n/locales/{fr,de,it,en}-CH/messages.ftl:180` ; `frontend/src/routes/(app)/settings/+page.svelte:305` | `settings-field-instance-language` = « Langue de l'interface » / « Oberflächensprache » / « Lingua dell'interfaccia » / « Interface language » ; repli Svelte « Langue interface » ; l'écran *Paramètres* affiche `instanceLanguage` sous ce libellé | **faux — la racine du défaut** (P3) : c'est `instance_language`, la langue des documents |
    | `user-manual.tex:183-184, 201, 1140, 3392` ; `admin-manual.tex:1069, 1418` ; `messages.ftl:136` (`onboarding-accounting-lang-desc`, « découplée de la langue de l'interface ») et `user-manual.tex:149` (annonce du sélecteur) | « langue de l'installation », « langue comptable indépendante de l'interface », « langue de l'instance » | conformes |
    | `docs/kesh-specifications.txt:491, 1457, 1546, 2246, 2454, 2816` | spécification historique (FR76, UX-DR27 : langue interface = profil) | hors périmètre : document de conception, non un texte livré |
@@ -184,7 +185,8 @@ afin de ne pas chercher à l'assistant un réglage qu'il n'a pas.
   `routes/bank_accounts.rs`, `util.rs`, `kesh-core/src/errors.rs` (doc-comment) et `kesh-core/src/types/qr_iban.rs` (message et son test), les doc-comments de
   `kesh-db/src/entities/company.rs:164` (« Langue des documents : celle de la facture, de son PDF et de son e-mail d'envoi, de ses rappels et des conditions de
   paiement, quand le contact n'a pas la sienne ») et de `routes/i18n.rs:3`, `routes/backup_schedule.rs:125`, `mail/smtp.rs:102` et `mail/mod.rs:74` (« langue de l'instance »
-  devient « langue de l'installation » : ces quatre commentaires parlent de `KESH_LANG`) et les deux fichiers de test seulement.
+  devient « langue de l'installation » : ces quatre commentaires parlent de `KESH_LANG`), ceux de `routes/i18n.rs:19` et
+  `routes/invoice_pdf_service.rs:7-9` (ajoutés à l'étape 0, validation P4, P3) et les deux fichiers de test seulement.
   Les doc-comments sont inventoriés par `grep -rn "langue de l'instance" crates --include=*.rs` (quatre sites, tous classés ; le
   même relevé sur le manuel et les catalogues rend les passages de § 11). Les messages de `contacts.rs:322` et des sites « hors classe » (§ 3) sont
   intouchés.
@@ -215,7 +217,7 @@ afin de ne pas chercher à l'assistant un réglage qu'il n'a pas.
   (validation P1, P6) : « aux utilisateurs ayant choisi une autre langue » (`:165-166`) devient « aux installations
   réglées dans une autre langue » — l'utilisateur ne choisit pas la langue. Le reste est inchangé, y compris l'incise
   #710.
-- **AC-6 — Les autres sites suivent** (inventaire § 9, **douze** sites faux dont le § ci-dessus) :
+- **AC-6 — Les autres sites suivent** (inventaire § 9, **quinze** sites faux dont le § ci-dessus ; treize à la fiche validée, deux doc-comments ajoutés à l'étape 0) :
   - `user-manual.tex:3732` devient « Sélecteur de langue dans l'interface (la langue de l'interface est celle de
     l'installation, \texttt{KESH\_LANG} ; le sélecteur est prévu pour une version ultérieure). » ;
   - `README.md:53` devient « **Multilingue** — interface et messages en FR/DE/IT/EN (langue de l'installation,
@@ -278,7 +280,7 @@ guide (AC-5 à AC-8). 5. CHANGELOG (AC-9). 6. Gate complet et E2E (AC-11), captu
 ## Dérogation règle de splitting
 
 Dérogation assumée (validation P3, P7) : la story touche cinq crates ou modules de code — `kesh-api` (cinq sites de message,
-un helper, quatre doc-comments), `kesh-core` (un message, son test, un doc-comment), `kesh-db` (un doc-comment),
+un helper, cinq doc-comments à la fiche validée — validation P4, P4 —, sept avec les deux ajoutés à l'étape 0), `kesh-core` (un message, son test, un doc-comment), `kesh-db` (un doc-comment),
 `kesh-i18n` (quatre valeurs), le frontend (un repli) — et la documentation, soit six ensembles ; le critère « plus de cinq
 modules » est atteint. Ils sont **tous mécaniques** (un texte, une valeur, un commentaire), sans logique partagée ni ordre
 imposé ; un découpage en deux stories (#832, #824) coûterait deux cycles de revue pour des changements disjoints. Risque
@@ -289,7 +291,7 @@ accepté : la revue lit le diff fichier par fichier.
 - **#859** (déjà ouverte) : citée comme limite (AC-5, guide, CHANGELOG) ; sa borne a été corrigée par l'orchestrateur à la
   validation P3 (les rappels et les conditions de paiement suivent `instance_language`) ; rien à poser.
 - **#832** et **#824** : le complément de la fiche a **déjà été publié** en commentaire le 2026-10-31 (validation P1, P9) ;
-  l'orchestrateur le met à jour si le périmètre élargi (QR-IBAN par helper ; douze sites faux depuis la P3, huit à la P1, dont *Paramètres*, le
+  l'orchestrateur le met à jour si le périmètre élargi (QR-IBAN par helper ; quinze sites faux à l'étape 0 du développement, douze à la P3, huit à la P1, dont *Paramètres*, le
   manuel d'administration et le guide) doit y figurer. Rien à poser par la fiche.
 - Aucune issue neuve : le message reste en français en dur (#710, déjà ouverte) ; le libellé de *Paramètres* est intégré
   (C-v017-6-9), non tracé à part.
