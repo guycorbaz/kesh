@@ -929,10 +929,10 @@ fn the_registry_partition_is_what_the_story_declares() {
          la création d'un relevé saisi à la main, v016-2a)"
     );
     assert_eq!(traced + exempt + no_matter, LIB_ROUTES.len());
+    // Release 0.17.0 (2026-10-31) : 130 dans la v017-3a ET dans la v016-2a (chacune +1
+    // depuis 129) — git a fusionné la ligne identique sans conflit ; **131 mesuré** sur
+    // l'arbre réuni.
     assert_eq!(
-        // Release 0.17.0 (2026-10-31) : 130 dans la v017-3a ET dans la v016-2a (chacune +1
-        // depuis 129) — git a fusionné la ligne identique sans conflit ; **131 mesuré** sur
-        // l'arbre réuni.
         traced, 131,
         "73 tracées avant la 25-1b, plus ses 14, plus la dévalidation (25-2-b-1, #440), \
          plus l'annulation d'un règlement client (25-3-a-1) et fournisseur (25-3-a-2, #414), \
