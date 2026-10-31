@@ -1,6 +1,6 @@
 # Story v017-4a : factures fournisseur — brouillon, validée, payée — le backend
 
-Status: ready-for-dev
+Status: in-progress
 
 *Sous-fiche issue du découpage de la Story v017-4 à sa rédaction (2026-10-31, C-v017-4-1). Worktree
 `/home/gcorbaz/devel/kesh-0175`, branche `story/v017-4-facture-fournisseur-brouillon` (partie de `8e126cfd`) ; la 4a

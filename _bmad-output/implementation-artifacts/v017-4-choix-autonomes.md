@@ -531,6 +531,11 @@ avec une validation aux comptes croisés. L'enveloppe est **gardée** (C-v017-4-
   à l'inverse de l'annulation fournisseur : elle suit sa fonction sœur `invoices::unvalidate`, dont les empêchements
   propres à la pièce précèdent ceux de `delete_in_tx`.
 - **Réversible** : oui.
+- *Annotation du 2026-10-31 (étape 0 du développement de la 4a, validation P5, P5)* : au point (3), « valider puis
+  annuler » désigne l'annulation de la **facture** une fois validée (motif : elle n'est pas due), non celle du lot ; et
+  l'historique de lot qui rend un brouillon non supprimable naît **quel que soit le sort du lot** — annulé (ses articles
+  restent, `payment_batches.rs:697`) ou confirmé puis règlement annulé —, comme la fiche le dit à la limite L8 depuis la
+  validation P4 (F7).
 
 ---
 

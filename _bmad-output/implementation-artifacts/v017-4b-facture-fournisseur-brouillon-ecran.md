@@ -24,7 +24,7 @@ catalogues, le manuel utilisateur et son PDF, l'E2E, les captures, le CHANGELOG 
 ## Critères d'acceptation
 
 **AC-21 à AC-32** de la fiche parente, sous leur numéro d'origine — *(validation P4, F8)* l'AC-30 **hors** de ce que la
-4a livre (helper `createSupplierInvoiceViaApi` qui valide, helper du relevé saisi par l'API, étapes API de la spec neuve). Mutations **M21 à M34**, M21-bis compris (M31 ajoutée par la décision
+4a livre (helper `createSupplierInvoiceViaApi` qui valide, helper du relevé saisi par l'API, étapes API de la spec neuve). Mutations **M21 à M35**, M21-bis compris (M35 ajoutée à l'étape 0 de la 4a, validation P5, P1 : `hasDocument`, défaut `false`, scan offert ssi `document === null && !hasDocument`, banc et en-tête du composant — fiche parente, AC-23) (M31 ajoutée par la décision
 Q4, C-v017-4-24 : l'état validé s'affiche « Validée » aux quatre locales, et aucun texte de l'écran, des manuels ni de
 l'API ne le nomme plus « ouverte » — AC-21, AC-29).
 
@@ -37,7 +37,7 @@ l'API ne le nomme plus « ouverte » — AC-21, AC-29).
       lots (AC-27) ; i18n (AC-28).
 - [ ] Manuel utilisateur et PDF (AC-29).
 - [ ] E2E : étapes par l'écran de la spec neuve et specs adaptées (AC-30, sa part 4b) ; captures (AC-31) ; CHANGELOG et README (AC-32).
-- [ ] Mutations M21 à M34 (M21-bis compris).
+- [ ] Mutations M21 à M35 (M21-bis compris).
 - [ ] Gates frontend, gate complet et **E2E complet** au dernier commit de code de la 4b — il couvre aussi la 4a
       (dérogation, C-v017-4-31).
 
