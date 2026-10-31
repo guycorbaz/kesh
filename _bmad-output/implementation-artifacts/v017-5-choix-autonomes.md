@@ -34,7 +34,7 @@ restantes sont dans la fiche (§ *Questions au Project Lead*).
   (C-v017-5-3). (c) « La bibliothèque PDF manque » — elle rendrait `PDF_RENDER_ERROR` (`unreadable`), non `none`.
 - **Réversible** : oui (diagnostic) ; la fiche prescrit ce qui le réfute.
 
-### C-v017-5-2 — Le remède : un rendu en deux temps — 72 dpi, puis, si la page ne livre aucun QR, la plus haute résolution que la borne existante permet, plafonnée à 300 dpi
+### C-v017-5-2 — Le remède : un rendu en deux temps — 72 dpi, puis, si aucune page ne livre de QR-facture, la plus haute résolution que la borne existante permet, plafonnée à 300 dpi
 
 *(Récrit à la validation P1, sur décision de l'orchestrateur — finding R4 : le choix d'origine, « un seul rendu par
 page » à `render_scale`, multipliait par 5,6 le coût de **chaque** page, QR vectoriels compris, alors qu'un import traite
@@ -60,6 +60,15 @@ NAS.)*
   attendu sur une source de 150 à 300 dpi rendue déjà à 171 dpi ; il reste ouvert **seulement** si T4 l'exige (fiche,
   AC-2, branche d'arrêt (iii)) ; (e) relever `max_dimension` — interdit par le mandat.
 - **Réversible** : oui (une constante, une fonction, un second appel de rendu).
+- **Amendé à la validation P2** (R2, R3, arbitrage de l'orchestrateur) : les deux temps se jouent **par document**, non
+  page par page — **première passe** sur toutes les pages à 72 dpi (arrêt à la première QR-facture), **seconde passe**
+  sur les pages dont le premier rendu a réussi, seulement si **aucune** page n'a livré de QR-facture. Page par page, une
+  facture née numérique de trois pages, QR en dernière page — cas courant —, payait le second rendu des pages 1 et 2.
+  Une **erreur du second rendu** n'est pas une erreur du document : journalisée, la page compte comme sans QR-facture,
+  si bien que le diagnostic d'un document ne change jamais à cause du second temps. Le déclencheur est l'absence de
+  **QR-facture** (payload `SPC\n0200`), non de QR : un QR d'un autre usage est lu puis écarté (`first_spc`). Le
+  défaut de production du nombre de fichiers par passage est lu à `config.rs:1011-1030` (`config.rs:524`, cité plus
+  haut, est la configuration de test ; même valeur, 200, borne 10 000).
 
 ### C-v017-5-3 — Le décodeur : format QR seul ; tout autre essai seulement sur preuve d'une fixture
 
@@ -88,6 +97,9 @@ NAS.)*
   la charge de la machine : un même document lu un jour, « aucun QR lu » le lendemain. Une borne structurelle (pages ×
   pixels) est décidable ; une borne d'horloge ne l'est pas.
 - **Réversible** : oui.
+- **Amendé à la validation P2** (F1, R8, arbitrage de l'orchestrateur) : l'absence de borne d'horloge côté serveur
+  reste ; mais le **délai du client** passe dans la story (C-v017-5-14), et la conduite quand le client ou le proxy
+  abandonne est **vérifiée par une exécution** (fiche, AC-6-bis).
 
 ### C-v017-5-5 — Les fixtures : synthétiques, produites une fois et versionnées comme données
 
@@ -108,6 +120,11 @@ NAS.)*
   comparés) », impossible — `printpdf-0.7.0` tire un identifiant d'instance (`pdf_document.rs:791`, `utils.rs`, graine
   globale du processus) et date le document (`pdf_metadata.rs:58`) à chaque écriture ; et elle ne bornait pas la
   taille de fichiers versionnés dans un dépôt public.)*
+  *(Amendé à la validation P2, R5, R9, R7, R12 : le QR est dessiné par `kesh_qrbill::generator::render_qr_image`,
+  niveau M de la norme SIX — non par `rxing::qrcode::QRCodeWriter`, niveau L par défaut, `qr_code_writer.rs:80` —, payload
+  d'au moins 280 octets UTF-8, version **12 à 15** (au-delà, le second rendu tomberait sous 4 px par module) ; fixtures
+  lues par `include_bytes!` depuis `CARGO_MANIFEST_DIR` ; `scan-sans-qr.pdf` garde son bruit sur toute la page ; T2 et T3
+  décodent les octets JPEG.)*
 - **Écartées** : (b) ImageMagick / `img2pdf` — outils hors dépôt, non reproductibles en CI ; (c) une pièce réelle
   anonymisée — interdit.
 - **Réversible** : oui.
@@ -129,7 +146,7 @@ NAS.)*
 - **Écartées** : (b) installer pdfium en CI — changement d'outillage hors périmètre ; tracé en **#856**.
 - **Réversible** : oui.
 
-### C-v017-5-7 — Ce que l'écran dit : « Aucun QR lu », par les valeurs des clés existantes
+### C-v017-5-7 — Ce que l'écran dit : « Aucune QR-facture lue » (« Aucun QR lu » jusqu'à la validation P2), par les valeurs des clés existantes
 
 - **Contexte** : le badge « Sans QR-code » et la mention « sans QR-code » du rapport affirment un fait sur le document
   que Kesh ne connaît pas : il sait seulement qu'il n'a **lu** aucun QR. Le badge couvre aussi le QR inexploitable
@@ -145,6 +162,14 @@ NAS.)*
   lu » — impossible sans lire le texte du document (#854 le dit) ; (d) changer la valeur `none` de l'API — rupture de
   contrat pour un mot.
 - **Réversible** : oui.
+
+- **Amendé à la validation P2** (F3, F2, arbitrage de l'orchestrateur) : « Aucun QR lu » est faux pour un document qui
+  porte un autre QR qu'une QR-facture, lu puis écarté par `first_spc`. Libellé retenu : **« Aucune QR-facture lue »**
+  (de « Keine QR-Rechnung gelesen », it « Nessuna fattura QR letta », en « No QR-bill read » ; minuscule au rapport),
+  calqué sur le badge voisin `badge-qr` (« QR-facture », « QR-Rechnung », « Fattura QR », « QR-bill ») — exact dans tous
+  les cas où il s'affiche ; soumis au Project Lead (fiche, Q1). Les deux clés sont ajoutées à `REPLIS_A_SITE_UNIQUE`
+  (garde G13 de `i18n-repli-divergent-actif.test.ts:222`) : aucune autre garde ne compare ces replis au catalogue.
+  Écartée : « Aucun QR lu » (faux pour un QR non SPC) ; « QR non lu » (même défaut).
 
 ### C-v017-5-8 — Relire une pièce déjà importée : à la réactivation, pas par un bouton (bouton tracé en #858)
 
@@ -240,4 +265,33 @@ NAS.)*
   payload nommé (celui de `render_spc_qr_png`, `qr_decode.rs:210-227`) et une branche d'arrêt s'il n'est pas lu au
   commit rouge.
 - **Écartées** : (b) garder le témoin négatif en CI — fragile par construction.
+- **Réversible** : oui.
+
+### C-v017-5-14 — Le délai du client s'aligne sur celui du proxy
+
+*(Ajouté à la validation P2 — F1, R8, arbitrage de l'orchestrateur.)*
+
+- **Contexte** : `triggerInboxImport` (`imported-supplier-invoices.api.ts:27-29`) emploie le délai par défaut du client,
+  **30 s** (`api-client.ts:42`) ; le proxy documenté coupe à **300 s** (`admin-manual.tex:341`). La story double le rendu
+  des pages sans QR-facture : l'écran abandonnerait un import de quelques documents scannés.
+- **Retenu** : `INBOX_IMPORT_TIMEOUT_MS = 300_000`, exporté par `imported-supplier-invoices.api.ts`, et `{ timeoutMs:
+  INBOX_IMPORT_TIMEOUT_MS, retry: false }` (`CallOptions`, `api-client.ts:59-64`) ; test Vitest ; coût mesuré contre 30 s
+  et 300 s ; conduite à l'abandon (sort de l'import, verrou `RELEASE_LOCK`, `inbox_import.rs:199-207`) vérifiée par
+  exécution ; si le verrou fuit, issue P2 demandée, correction dans la story seulement si mécanique.
+- **Écartées** : (b) `LONG_OPERATION_TIMEOUT_MS` (une heure, `api-client.ts:53`) — au-delà du proxy, l'écran attendrait
+  une réponse qui ne viendra jamais ; (c) laisser 30 s et tracer — l'écran annoncerait en échec un import qui se
+  poursuit.
+- **Réversible** : oui.
+
+### C-v017-5-15 — La boucle des deux passes est extraite sur un rendeur injecté, et testée en CI
+
+*(Ajouté à la validation P2 — R4, arbitrage de l'orchestrateur.)*
+
+- **Contexte** : la logique des deux passes (ordre, déclencheur, QR-facture inexploitable, erreurs de rendu des deux
+  temps, cap) ne dépend de pdfium que par « rendre la page *p* au temps *t* » ; écrite dans `decode_spc_from_pdf_bytes`,
+  elle ne serait testée que par T4, en local.
+- **Retenu** : `decode_pages(page_count, max_pages, render: FnMut(usize, Temps) -> Result<Option<DynamicImage>,
+  String>)`, appelée en production avec un rendeur pdfium ; tests d'hôte avec un faux rendeur (T10), qui tuent en CI les
+  mutations des deux passes (M11, M12, M12a à M12d). T4 reste la preuve de bout en bout.
+- **Écartées** : (b) garder la boucle dans la fonction pdfium — logique centrale non testée en CI (#856).
 - **Réversible** : oui.
