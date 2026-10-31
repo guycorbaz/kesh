@@ -1955,6 +1955,7 @@ dependencies = [
  "lettre",
  "pdfium-render",
  "percent-encoding",
+ "printpdf",
  "proc-macro2",
  "quote",
  "regex",

@@ -187,7 +187,7 @@ NAS.)*
   erreur de rendu). Il fait foi tant que le Project Lead n'a pas répondu à Q1. À l'API, la valeur `none` se décrit
   toujours « aucune QR-facture lue » : elle ne couvre que les deux premiers cas.
 - **Amendé à la validation P4** (P3, arbitrage de l'orchestrateur) : l'énumération omettait le cas de #854 lui-même —
-  une QR-facture **présente mais non détectée** (`qr_decode.rs:93`, `:112` ; `inbox_import.rs:564`), qui sort `none`.
+  une QR-facture **présente mais non détectée** (`qr_decode.rs:92`, `:112` ; `inbox_import.rs:564`), qui sort `none`.
   Cinq cas, donc : aucun QR ; QR d'un autre usage ; QR-facture non détectée ; QR-facture lue puis refusée ; erreur de
   rendu. Le libellé retenu reste vrai dans les cinq. À l'API, `none` se décrit : « aucune QR-facture n'a été détectée —
   le document peut ne porter aucun QR, un QR d'un autre usage, ou une QR-facture que la lecture n'a pas trouvée » ; la
@@ -254,7 +254,7 @@ NAS.)*
   le seuil n'est pas franchi. **Dérogation règle de splitting**, au cas où un lecteur compterait `entities` et
   `repositories` à part (six) : la relecture à la réactivation n'a de sens qu'avec le décodeur qu'elle applique, et
   `QrColumns` existe pour que l'import et la réactivation projettent les mêmes colonnes ; les séparer livrerait une
-  projection sans consommateur. Risque accepté : une story à six modules de code `kesh-db`/`kesh-api` liés (cinq fichiers de production :
+  projection sans consommateur. Risque accepté : une story à six modules de code (quatre dans `kesh-db`/`kesh-api`, cinq fichiers de production :
   `qr_decode.rs`, `inbox_import.rs`, `entities/imported_supplier_invoice.rs`, `entities/mod.rs`,
   `repositories/imported_supplier_invoices.rs`).)*
   (`CLAUDE.md` § *Règle de splitting préventif*).
@@ -327,4 +327,30 @@ NAS.)*
   String>)`, appelée en production avec un rendeur pdfium ; tests d'hôte avec un faux rendeur (T10), qui tuent en CI les
   mutations des deux passes (M11, M12, M12a à M12d). T4 reste la preuve de bout en bout.
 - **Écartées** : (b) garder la boucle dans la fonction pdfium — logique centrale non testée en CI (#856).
+- **Réversible** : oui.
+
+### C-v017-5-16 — Les paliers de dégradation joués par le développement, dans leur ordre ; le palier 2 retenu
+
+*(Ajouté au développement, 2026-10-31.)*
+
+- **Contexte** : avec la dégradation d'AC-1 (flou 0,1 mm, bruit ± 12), T4 au code d'avant **lit** les trois scans :
+  branche d'arrêt (i). La fiche confie l'ordre des paliers à l'orchestrateur ; le mandat de développement dit
+  « si la fixture ne reproduit pas la cause, **même après les paliers de dégradation écrits d'avance** », arrête-toi.
+- **Retenu** : les paliers joués **dans l'ordre écrit**, cumulatifs comme la fiche les écrit (« puis »), sans régler
+  aucun autre paramètre : palier 1 (bruit ± 24) — 150 et 200 dpi encore lus ; palier 2 (+ flou 0,2 mm) — les trois scans
+  non lus à 72 dpi, toujours lus à 1414 × 2000 (T2) et à la résolution native (T3). Le palier 2 devient celui des
+  fixtures ; le palier 3 n'est pas joué. Journaux : `kesh-gate-logs/v0175/rouge-t4.log`, `palier1.log`, `palier2*.log`.
+- **Écartées** : (b) s'arrêter dès la dégradation d'AC-1 — le mandat nomme les paliers comme partie de la reproduction ;
+  (c) régler bruit ou flou à la main jusqu'au rouge — interdit (AC-2 (i)).
+- **Réversible** : oui (une constante, `DEGRADATION`, et quatre fichiers de données).
+
+### C-v017-5-17 — Le plafond de 1 Mio tenu par les deux moyens prescrits
+
+- **Contexte** : au palier 2, `qr-scan-300dpi.pdf` (1 606 339 octets, qualité 65) et `scan-sans-qr.pdf` (1 610 809 octets,
+  qualité 65 ; 1 417 096 à la qualité 60) dépassent 1 Mio.
+- **Retenu** : pour les trois scans à QR, **bruit restreint à la section paiement** (dès 192 mm du haut ; flou sur
+  toute la page), qualité 65 ; pour la page sans QR, bruit sur toute la page, qualité **60**, puis **200 dpi** (AC-1).
+  Le banc engendre sa page D1 à 300 dpi en mémoire, à la qualité 60.
+- **Écartées** : (b) qualité sous 60 — interdit ; (c) relever le plafond — interdit ; (d) bruit restreint sur la page
+  sans QR — AC-1 l'exclut.
 - **Réversible** : oui.

@@ -1,6 +1,6 @@
 # Story v017-5 : lire le QR d'une facture QR scannée
 
-Status: ready-for-dev
+Status: in-progress
 
 *Fiche rédigée le 2026-10-31, en autonomie (Opus 5.5), worktree `/home/gcorbaz/devel/kesh-0176`, branche
 `story/v017-5-qr-scanne` partie de `8e126cfd` (tête de `release/0.17.0`). Release **0.17.0**, candidate suivante
@@ -236,7 +236,7 @@ correction mécanique (C-v017-5-6).
 **avec le même banc et les mêmes fixtures**, au commit rouge (première passe seule) **et** au dernier commit de code :
 (a) le temps de rendu + décodage **par page** de chaque fixture, médiane de 5 passages ; (b) quatre documents
 « pire cas » de 20 pages, engendrés en mémoire par le banc (non versionnés), chaque page subissant les deux passes sans
-QR-facture : **D1** 20 × la page de `scan-sans-qr.pdf` ; **D2** 20 pages **carrées** (842 × 842 pt) scannées sans QR
+QR-facture : **D1** 20 × une page engendrée en mémoire à 300 dpi, de même facture que `scan-sans-qr.pdf` (AC-1) ; **D2** 20 pages **carrées** (842 × 842 pt) scannées sans QR
 (2000 × 2000 px au second temps, soit 1,41 fois les pixels d'une A4) ; **D3** 20 pages A4 portant chacune une douzaine
 de QR **non SPC** (`GenericMultipleBarcodeReader` relance la recherche autour de chaque code trouvé,
 `rxing-0.7.1/src/multi/generic_multiple_barcode_reader.rs:113`, `MAX_DEPTH = 4`) ; **D4** une facture née numérique de
@@ -314,7 +314,7 @@ ou retiré) — **jamais** en relâchant une borne (C-v017-5-4).
 Le libellé reprend celui du badge voisin (`badge-qr` : « QR-facture », « QR-Rechnung », « Fattura QR », « QR-bill ») et
 est vrai dans **chacun** des cas où le badge s'affiche (toute ligne sans données QR stockées, `+page.svelte:293`) :
 (1) document sans QR, (2) QR d'un autre usage, lu puis écarté par `first_spc`, (3) **QR-facture présente mais non
-détectée** — le cas de #854 : `rxing` ne trouve rien (`qr_decode.rs:93`), `first_spc` rend `Ok(None)` (`:112`), rangé en
+détectée** — le cas de #854 : `rxing` ne trouve rien (`qr_decode.rs:92`), `first_spc` rend `Ok(None)` (`:112`), rangé en
 `none` (`inbox_import.rs:564`) —, (4) QR-facture lue puis refusée (`INVALID_SPC_PAYLOAD`, `INVALID_IBAN`,
 `FIELD_TOO_LONG`, `QR_AMOUNT_OUT_OF_RANGE`), (5) erreur de rendu (`PDF_RENDER_ERROR`, bibliothèque absente ou cap de
 pages compris) — dans aucun, Kesh ne dispose d'une QR-facture exploitable. « Aucune QR-facture lue » serait faux au
@@ -334,7 +334,7 @@ tr '\n' ' ' | tr -s ' ' | grep -oF … | wc -l`, qui voit aussi une expression c
 |---|---|
 | `fr-CH/messages.ftl:2538`, `:2552` ; replis `+page.svelte:237`, `:312`, `AttachDocumentPicker.svelte:148` ; commentaire `+page.svelte:12` ; `README.md:44` ; `user-manual.tex:1851`, `:1857` ; tests `import-page.test.ts:112`, `:127`, `:162`, `:185`, `supplier-documents.spec.ts:94`, `:104`, `:107` | **libellé d'écran : changé** |
 | `fr-CH/messages.ftl:2533` (commentaire 30-2a), `+page.svelte:10`, `user-manual.tex:807`, `:1609`, `admin-manual.tex:818`, `:885-886` (coupé sur deux lignes), `:2541`, `marketing-brochure.tex:396`, `:446`, `api-external.md:255`, `:774`, `README.md:232`, `crates/kesh-db/migrations/20261015000001_imported_documents_without_qr.sql:10` (intouchable, P8) | **emploi générique** (« un document avec ou sans QR-code ») : conservé |
-| autres formes « sans QR » : `user-manual.tex:1844` (« un document scanné sans QR »), `:1889` (« Document sans QR : tout se saisit »), `:1898` (« Sans QR, rien n'est proposé »), `admin-manual.tex:886`, `:905`, `:1492`, `:2546`, `:2551` | **conservées** : elles désignent un document **entré sans données QR** (ce que le formulaire et l'API voient), vrai que le document porte un QR ou non ; seule `:1844`, qui parle d'un document scanné, gagne « (ou dont la QR-facture n'a pas pu être lue) » |
+| autres formes « sans QR » : `user-manual.tex:1844` (« un document scanné sans QR »), `:1889` (« Document sans QR : tout se saisit »), `:1898` (« Sans QR, rien n'est proposé »), `admin-manual.tex:886`, `:905`, `:1492`, `:2546`, `:2551`, `:2555` | **conservées** : elles désignent un document **entré sans données QR** (ce que le formulaire et l'API voient), vrai que le document porte un QR ou non ; seule `:1844`, qui parle d'un document scanné, gagne « (ou dont la QR-facture n'a pas pu être lue) » |
 
 Le grep (`.tex` et PDF) se rejoue après le patch : aucune occurrence de la première ligne ne doit subsister. **Limite
 assumée** : la liste ne distingue pas les cas (1) à (5) — tous portent le même badge, la cause n'étant pas stockée
@@ -399,7 +399,7 @@ PDF régénéré :
 - un paragraphe **neuf**, *Un import long*, au même endroit : les documents scannés sans QR-facture lisible demandent
   plus de temps (deux rendus par page) ; déposez-les **par petits lots** ; l'écran attend la réponse jusqu'à cinq
   minutes, **mais un proxy inversé peut couper plus tôt** (sur un NAS Synology, le délai du portail DSM n'est pas
-  documenté) ; l'écran affiche alors, selon le cas (`+page.svelte:103-106` affiche le message de l'`ApiError`, toujours
+  documenté) ; l'écran affiche alors, selon le cas (`+page.svelte:106-109` affiche le message de l'`ApiError`, toujours
   présent) : « Le serveur ne répond pas. Réessayez ultérieurement. » quand l'écran abandonne lui-même au bout de cinq
   minutes (`error-timeout`, `api-client.ts:320`, `fr-CH/messages.ftl:2251`) ; « Erreur serveur (504) » quand un proxy
   coupe et répond par une page d'erreur (`error-server-status`, `api-client.ts:243-247`, `messages.ftl:2252`) ;
@@ -430,7 +430,7 @@ PDF régénéré :
   ce qui se passe est celui qu'établit AC-6-bis (import interrompu au fichier en cours, fichiers restants repris au
   passage suivant ; et, si le verrou fuit, la conduite et l'issue) ; pour des documents scannés nombreux, réduire
   `KESH_INBOX_MAX_FILES_PER_RUN` (défaut 200) ou faire déposer par petits lots ;
-- les emplois génériques (l. 818, 885-886, 2541) et les formes « sans QR » (l. 886, 905, 1492, 2546, 2551) restent.
+- les emplois génériques (l. 818, 885-886, 2541) et les formes « sans QR » (l. 886, 905, 1492, 2546, 2551, 2555) restent.
 
 **AC-12 — `docs/api-external.md`** l. 778 : `none` devient « aucune QR-facture n'a été détectée — le document peut ne
 porter aucun QR, un QR d'un autre usage, ou une QR-facture que la lecture n'a pas trouvée » — à l'API, `none` et
@@ -676,7 +676,123 @@ conduite au délai dépassé (AC-6-bis, exécutée). Contrôler le **PDF** aplat
 
 ### Agent Model Used
 
+Opus 5.5 (Claude Code), autonomie, worktree `/home/gcorbaz/devel/kesh-0176`, 2026-10-31.
+
 ### Completion Notes List
+
+#### Étape 0 — les cinq LOW de la validation P5, lignes lues
+
+- **P1** (AC-6, D1) — ligne lue (fiche, l. 239) : « QR-facture : **D1** 20 × la page de `scan-sans-qr.pdf` ; » →
+  récrite « D1 20 × une page engendrée en mémoire à 300 dpi, de même facture que `scan-sans-qr.pdf` (AC-1) ».
+- **P2** (citation de `+page.svelte`) — `grep -nF "isApiError(err) && err.message"` rend `107:` ; le `notifyError(` s'ouvre
+  l. 106 et se ferme l. 109 (lu, `sed -n 100,112p`). AC-10 cite désormais `:106-109`.
+- **P3** (`qr_decode.rs:93`) — `grep -nF "Err(_) => Vec::new()" crates/kesh-api/src/qr_decode.rs` rend
+  `92:        Err(_) => Vec::new(),`. Corrigé en `:92` à AC-7 (fiche) et à C-v017-5-7 (registre, amendement P4).
+- **P4** (`admin-manual.tex:2555`) — `sed -n 2555p` : « … reste accepté) : sans QR, elle applique la même validation … ».
+  Ajouté à l'inventaire d'AC-7 et à la liste des formes conservées d'AC-11.
+- **P5** (C-v017-5-10) — ligne lue (registre) : « Risque accepté : une story à six modules de code `kesh-db`/`kesh-api`
+  liés (cinq fichiers de production : … ». Récrite « six modules de code (quatre dans `kesh-db`/`kesh-api`, cinq
+  fichiers de production : … ».
+- Les citations `:93` et `:103-106` de l'entrée datée « Validation P4 » du Change Log ne sont pas réécrites (relevé
+  daté) : elles se lisent `:92` et `:106-109`.
+
+#### Étape 0 — « § À recontrôler à l'étape 0 »
+
+La fiche ne porte **aucune** section de ce nom (`grep -n "recontrôler"` sur la fiche et le registre : aucune sortie).
+À la place, les prémisses de § *Ce que le code dit* ont été relues au code de `8e126cfd` : `qr_decode.rs:163-165`
+(rendu sans facteur d'échelle), `:46-53` (`DecodeConfig::default`), `:84-94` (`detect_multiple_in_luma`),
+`inbox_import.rs:172-207` (verrou de run, `RELEASE_LOCK` après `process_inbox`), `:476-537` (réactivation avant le
+décodage), `:539-576` (décodage), `imported_supplier_invoices.rs:480-499` (`reactivate_to_complete`) ;
+`sqlx-core-0.8.6/src/pool/connection.rs:199-210` et `:275-320` (une `PoolConnection` abandonnée **retourne au pool**
+après un `ping`, sans `close_on_drop` ; `after_release` n'est pas posé par le pool de production, `main.rs:82-85`).
+Toutes exactes.
+
+#### Commit rouge — la reproduction (AC-1, AC-2)
+
+**pdfium** : release `chromium/7920` du `Dockerfile`, installée sous
+`/home/gcorbaz/devel/kesh-gate-logs/pdfium-7920/` par les commandes de la tâche 1 (`sha256sum -c` : `pdfium-linux-x64.tgz:
+OK`) ; `libpdfium.so` : SHA-256 `687dce861f959c7097d47c5864509d51a926a71b38322596a8ee3e7a99c6b96e`.
+
+**Branche d'arrêt (i), déclenchée puis franchie par les paliers écrits d'avance.** Avec la dégradation d'AC-1 (flou
+0,1 mm, bruit ± 12), T4 au code d'avant **lit** les trois scans (journal `kesh-gate-logs/v0175/rouge-t4.log`) :
+
+```
+T4 (α) sonde : 595 × 842 px, 13 niveaux de gris sur plus de 1 % des pixels
+T4 (β) qr-scan-150dpi.pdf : LU (rendus au second temps : 0)
+T4 (β) qr-scan-200dpi.pdf : LU (rendus au second temps : 0)
+T4 (β) qr-scan-300dpi.pdf : LU (rendus au second temps : 0)
+T4 (β) scan-sans-qr.pdf : Ok(None) (rendus au second temps : 0)
+T4 (γ) témoin vectoriel : LU (rendus au second temps : 0)
+T2-diag qr-scan-{150,200,300}dpi.pdf à 595 × 842 : LU (les trois)
+```
+
+Le mandat (« même après les paliers de dégradation écrits d'avance ») a été lu comme l'ordre de jouer les paliers
+d'AC-2 (i), **dans leur ordre**, sans régler aucun paramètre sur le résultat (C-v017-5-16) :
+
+| palier | dégradation | T4 au code d'avant (pdfium) | T2-diag (595 × 842) | journal |
+|---|---|---|---|---|
+| 0 (AC-1) | flou 0,1 mm, bruit ± 12 | 3 scans **lus** | 3 lus | `rouge-t4.log` |
+| 1 | flou 0,1 mm, bruit **± 24** | 150 et 200 dpi **lus** | 3 lus | `palier1.log` |
+| 2 | flou **0,2 mm**, bruit ± 24 | **3 scans non lus** (`Ok(None)`) | 3 non lus | `palier2.log`, `palier2d.log` |
+
+Le palier 2 est le premier qui reproduit le défaut : il devient celui des fixtures (`DEGRADATION`,
+`qr_decode_synthetique.rs`). Le palier 3 (binarisation) n'a pas été joué.
+
+**Plafond de 1 Mio** (AC-1), tenu par les moyens prescrits, sans le relever : au palier 2, `qr-scan-300dpi.pdf` pesait
+1 606 339 octets (qualité 65) → **bruit restreint à la section paiement** pour les trois fixtures à QR (le QR et la croix
+y sont tout entiers) ; `scan-sans-qr.pdf`, bruit sur toute la page, pesait 1 610 809 octets (qualité 65), puis
+1 417 096 (qualité **60**) → **200 dpi** (AC-1). Valeurs retenues : qualité JPEG 65 pour les scans à QR, 60 pour la page
+sans QR ; graine fixe `0x5EED_0854_0000_0001`.
+
+| fixture | octets |
+|---|---|
+| `qr-scan-150dpi.pdf` | 237 575 |
+| `qr-scan-200dpi.pdf` | 388 270 |
+| `qr-scan-300dpi.pdf` | 774 286 |
+| `scan-sans-qr.pdf` (200 dpi) | 652 699 |
+
+Payload synthétique : ≥ 280 octets, QR de version 12 à 15 (test `payload_synthetique_version_12_a_15`, vert).
+
+**T4 au commit rouge** (fixtures du palier 2) — commande :
+`LD_LIBRARY_PATH=/home/gcorbaz/devel/kesh-gate-logs/pdfium-7920/lib cargo test -p kesh-api --lib -- --ignored
+--nocapture qr_decode::tests::t4_pdfium qr_decode::tests::t2_diag` :
+
+```
+T4 (α) sonde : 595 × 842 px, 12 niveaux de gris sur plus de 1 % des pixels
+T4 (β) qr-scan-150dpi.pdf : Ok(None) (rendus au second temps : 0)
+T4 (β) qr-scan-200dpi.pdf : Ok(None) (rendus au second temps : 0)
+T4 (β) qr-scan-300dpi.pdf : Ok(None) (rendus au second temps : 0)
+T4 (β) scan-sans-qr.pdf : Ok(None) (rendus au second temps : 0)
+T4 (γ) témoin vectoriel : LU (rendus au second temps : 0)
+T2-diag qr-scan-150dpi.pdf à 595 × 842 : non lu
+T2-diag qr-scan-200dpi.pdf à 595 × 842 : non lu
+T2-diag qr-scan-300dpi.pdf à 595 × 842 : non lu
+test qr_decode::tests::t4_pdfium_scans_synthetiques ... FAILED   (scans non lus : les trois)
+```
+
+Sonde verte, témoin vectoriel lu : le chemin pdfium fonctionne, et la QR-facture scannée n'est pas lue au premier temps.
+
+**Tests d'hôte au commit rouge** (`cargo test -p kesh-api --lib qr_decode`, journal `rouge-hote2.log`) :
+`12 passed; 14 failed; 5 ignored`. Rouges : les onze cas de T1 (`render_scale_*`, la fonction rend `Some(1.0)`),
+T1-bis (`grandeur_causale_pixels_par_module` — il passe par `render_scale`, d'où son rouge), T10 (b) et (g). Verts :
+T10 (a), (c), (d), (e), (f) ; T2 (lu à 1414 × 2000 depuis les octets JPEG) ; T3 (lu à la résolution native) ;
+`fixtures_sous_le_plafond`, `payload_synthetique_version_12_a_15`, et les tests d'avant. Durée du module en profil de
+test : 12,1 s (T2 et T3 compris, trois scans chacun) — sous les 30 s : le scan à 300 dpi reste en CI.
+
+**Banc au commit rouge** (première passe seule ; binaire `--release` copié en `kesh-gate-logs/v0175/banc-binaire-rouge`,
+sous verrou et `mem-guard`, `/usr/bin/time -v`, journal `banc-rouge.log`) :
+
+| mesure | commit rouge |
+|---|---|
+| `qr-scan-150dpi.pdf`, médiane par page | 26,8 ms (`Ok(None)`) |
+| `qr-scan-200dpi.pdf` | 30,0 ms (`Ok(None)`) |
+| `qr-scan-300dpi.pdf` | 37,1 ms (`Ok(None)`) |
+| `scan-sans-qr.pdf` | 28,4 ms (`Ok(None)`) |
+| D1 (20 × A4 sans QR, 300 dpi, en mémoire) | 779 ms (39,0 ms par page) |
+| D2 (20 × carrée 842 pt, 200 dpi) | 722 ms (36,1 ms par page) |
+| D3 (20 × A4 à douze QR non SPC, 200 dpi) | 1 230 ms (61,5 ms par page) |
+| D4 (facture vectorielle de 3 pages, QR en page 3) | 38,9 ms, lue, 0 rendu au second temps |
+| pointe de mémoire résidente du binaire | 189 552 Kio |
 
 ### File List
 
