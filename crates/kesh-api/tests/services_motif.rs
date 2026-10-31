@@ -2303,15 +2303,23 @@ const SITES_NON_RESOLUS: &[SiteNonResolu] = &[
             "with_draft_rounding_preview",
         ],
     ),
+    // Story v017-4a (#849) : 7 → 11 `pub async fn`, 8 → 13 `async fn` — le
+    // `PUT` (et sa tentative `update_supplier_invoice_once`, qui reçoit le
+    // pool en paramètre), le `DELETE`, la validation et la dévalidation d'une
+    // facture fournisseur, mutants qu'aucun outil ne sert.
     (
         "routes/supplier_invoices.rs",
-        7,
-        8,
+        11,
+        13,
         &[
             "cancel_supplier_invoice",
             "cancel_supplier_invoice_settlement",
             "create_supplier_invoice",
+            "delete_supplier_invoice",
             "pay_supplier_invoice",
+            "unvalidate_supplier_invoice",
+            "update_supplier_invoice",
+            "validate_supplier_invoice",
         ],
         &[],
     ),

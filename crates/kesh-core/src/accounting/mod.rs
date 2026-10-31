@@ -20,5 +20,5 @@ pub mod purchase;
 pub mod vat;
 
 pub use balance::{BalancedEntry, Journal, JournalEntryDraft, JournalEntryLineDraft, validate};
-pub use purchase::{LineNotInCentimes, purchase_line_total};
+pub use purchase::{LineNotInCentimes, purchase_invoice_totals, purchase_line_total};
 pub use vat::line_vat_amount;

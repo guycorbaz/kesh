@@ -561,3 +561,87 @@ avec une validation aux comptes croisés. L'enveloppe est **gardée** (C-v017-4-
   facture a un document (prop `hasDocument`) ; la prop `document` est un `Pick` de douze champs.
 - **Écartées** : la clé posée par la 4b (deux propriétaires) ; un texte qui invite à supprimer.
 - **Réversible** : oui.
+
+---
+
+*Les choix C-v017-4-43 et suivants consignent le développement de la 4a (2026-10-31, Opus 5.5, autonomie ;
+worktree `kesh-0175`). Les entrées précédentes restent telles qu'écrites.*
+
+### C-v017-4-43 — La migration retient le `MODIFY COLUMN` seul (essais sur MariaDB 10.11)
+
+- **Contexte** : AC-1 (1), C-v017-4-39 — trois formes à essayer dans l'ordre sur une base jetable à l'état 87.
+- **Mesuré** (bases `kesh_v0174a_mig1` à `3`, MariaDB 10.11 du conteneur partagé) : (1) `MODIFY COLUMN … BIGINT NULL`
+  seul → **accepté**, la clé `fk_supplier_invoices_purchase_je` gardée sous son nom ; (2) repli au même nom (`DROP
+  FOREIGN KEY`, `MODIFY`, `ADD CONSTRAINT` du même nom, une instruction) → **refusé**, `ERROR 1005 (HY000) … errno:
+  121 "Duplicate key on write or update"`, la table intacte (`NOT NULL`, clé présente) ; (3) repli au nom neuf →
+  accepté, et l'index implicite **prend** le nom `fk_supplier_invoices_purchase_je_v2` (contrairement à ce que la fiche
+  supposait : « l'index garde son nom »).
+- **Retenu** : la forme (1), la première qui passe. Les `CHECK` suivent l'ordre de C-v017-4-35 (le neuf posé avant le
+  retrait de l'ancien), essayés de même sur `kesh_v0174a_mig1` : acceptés.
+- **Réversible** : non une fois publiée.
+
+### C-v017-4-44 — Le `PUT` : la route tient la transaction ; le dépôt expose `lock_draft_in_tx` et `update_draft_in_tx`
+
+- **Contexte** : P4 de la validation P5 ; les règles « document » rendent des `AppError`.
+- **Retenu** : `lock_draft_in_tx` (facture `FOR UPDATE`, statut puis version) est appelé par la route **avant** la
+  lecture ordinaire du document et les règles ; `update_draft_in_tx` le rappelle (second `FOR UPDATE`, aucun verrou
+  neuf) puis remplace. `update_draft` (pool) les compose pour les tests. Enveloppe `retry_app_on_deadlock("supplier_invoices::update")`.
+- **Écartée** : un rappel passé au dépôt (fermeture `AppError` dans `kesh-db`, qui ne connaît pas `AppError`).
+- **Réversible** : oui.
+
+### C-v017-4-45 — Une variante `DbError::SupplierInvoiceNotUnvalidatable`, `details { documentId, documentNumber }` pour ses trois motifs
+
+- **Contexte** : AC-11 ; la fiche dit « forme existante » pour `SUPPLIER_INVOICE_IN_PAYMENT_BATCH`.
+- **Retenu** : un enum `SupplierUnvalidationBlocker` (`Paid`, `InPaymentBatch`, `MatchedBankTransaction`) et une
+  réponse de la forme de `InvoiceNotUnvalidatable` (code du motif, message suffixé du numéro, `details` avec le lot ou
+  la transaction) pour les trois — le code `SUPPLIER_INVOICE_IN_PAYMENT_BATCH` est le même que celui de l'annulation ;
+  sa réponse porte en plus `details`, ajout sans retrait.
+- **Écartée** : réemployer `UnvalidationBlocker` (facture client) — ses `match` exhaustifs auraient reçu des motifs
+  qui ne la concernent pas.
+- **Réversible** : oui.
+
+### C-v017-4-46 — K8 a la forme de K4 ; son libellé est converti en `utf8mb4`
+
+- **Retenu** : `CheckDetails::DraftSupplierInvoices(DraftDetails)` — `{ "invoices": [{ id, label, date }] }`, la forme
+  de K4 (l'écran réutilise son rendu). Le libellé `CASE … CONCAT(numéro, ' — ', fournisseur)` est enveloppé d'un
+  `CAST(… AS CHAR CHARACTER SET utf8mb4)` : sans lui, MariaDB le rendait en `VARBINARY` (décodage refusé, mesuré au
+  premier gate).
+- **Réversible** : oui.
+
+### C-v017-4-47 — Les audits de la suppression d'un brouillon s'écrivent au dépôt
+
+- **Retenu** : `delete_draft_in_tx` écrit `imported_supplier_invoice.detached` (si un document est rendu) puis
+  `supplier_invoice.deleted`, par `NewAuditLogEntry::user` — la route est fermée aux clés, l'acteur est toujours un
+  utilisateur ; le test piloté appelle le dépôt nu et voit les mêmes traces.
+- **Réversible** : oui.
+
+### C-v017-4-48 — La validation refait sous verrou les contrôles de saisie, et réécrit `total_amount`
+
+- **Retenu** : `validate_in_tx` relit les lignes du brouillon et reprend l'ancien corps de la création — fournisseur,
+  forme des lignes, comptes de charge `FOR UPDATE` (actif, type, imputable), projet par `validate_taggable_in_tx` —, puis
+  `UPDATE … total_amount = <TTC de la génération>` : égal au total du brouillon par construction (même fonction pure),
+  réécrit pour que la facture validée et son écriture ne puissent diverger. Un brouillon migré d'une facture
+  antérieure à la v017-3b, dont une ligne n'est pas au centime, est refusé à la revalidation (voulu : #687).
+- **Réversible** : oui.
+
+### C-v017-4-49 — La fixture du lettrage pose la facture selon le schéma
+
+- **Contexte** : `lettering_documents.rs` (support) sert des tests de rattrapage montés sur un schéma **antérieur** à
+  `20261031000001`, où un brouillon ne s'insère pas (`purchase_journal_entry_id NOT NULL`).
+- **Retenu** : la fixture lit `IS_NULLABLE` ; sur l'ancien schéma, elle pose l'écriture d'achat et la ligne `open`
+  comme la création d'avant la 0.17.0 ; sur le courant, `create_validated`.
+- **Réversible** : oui.
+
+### C-v017-4-50 — L'AC-30 de la 4a : un helper de relevé saisi neuf, non `decor()`
+
+- **Retenu** : `createManualDebitStatementViaApi` (`helpers/api-fixtures.ts`) — une ligne de débit, solde de départ
+  `0.00`, arrivée `-montant`, équilibré au centime, confirmations posées (relevé identique, lignes, écart de solde).
+  `decor()` de `reconciliation-supplier.spec.ts` lit une fixture CAMT d'un montant figé.
+- **Réversible** : oui.
+
+### C-v017-4-51 — Le filtre `status` de la liste se lit au service
+
+- **Retenu** : `services::factures_fournisseur::statuts_du_filtre` (absent → tous ; valeurs séparées par des virgules,
+  blancs ignorés, doublons fondus ; inconnue ou vide → `400 VALIDATION_ERROR`) ; le dépôt `list` reçoit `&[&str]`
+  (vide = tous). L'outil MCP passe une liste vide.
+- **Réversible** : oui.

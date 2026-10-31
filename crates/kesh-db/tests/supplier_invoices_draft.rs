@@ -174,7 +174,7 @@ async fn a_draft_writes_no_entry_and_carries_the_ttc(pool: MySqlPool) {
     assert_eq!(d.invoice.total_amount, dec!(118.41), "M20-bis");
     assert_eq!(d.lines.len(), 2);
     let snapshot: serde_json::Value = sqlx::query_scalar(
-        "SELECT details FROM audit_log WHERE action = 'supplier_invoice.created' AND entity_id = ?",
+        "SELECT details_json FROM audit_log WHERE action = 'supplier_invoice.created' AND entity_id = ?",
     )
     .bind(d.invoice.id)
     .fetch_one(&pool)
@@ -616,7 +616,7 @@ async fn unvalidation_deletes_the_purchase_entry(pool: MySqlPool) {
     assert_eq!(reste, 0);
     assert_eq!(nb_audits(&pool, "journal_entry.deleted", je).await, 1);
     let details: serde_json::Value = sqlx::query_scalar(
-        "SELECT details FROM audit_log WHERE action = 'supplier_invoice.unvalidated' \
+        "SELECT details_json FROM audit_log WHERE action = 'supplier_invoice.unvalidated' \
          AND entity_id = ?",
     )
     .bind(v.invoice.id)
@@ -780,7 +780,7 @@ async fn unvalidation_precedence_version_batch_match_fiscal_year(pool: MySqlPool
     assert_eq!(lien, Some(je), "la transaction garde son lien");
 
     sqlx::query(
-        "UPDATE bank_transactions SET matched_entry_id = NULL, status = 'unmatched' WHERE id = ?",
+        "UPDATE bank_transactions SET matched_entry_id = NULL, status = 'pending' WHERE id = ?",
     )
     .bind(tx)
     .execute(&pool)

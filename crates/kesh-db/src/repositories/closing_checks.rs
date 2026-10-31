@@ -1,8 +1,10 @@
 //! Préparer la clôture d'un exercice — les **contrôles préalables**, en lecture
 //! seule (Story 29-1a, #232).
 //!
-//! [`for_fiscal_year`] rend, pour un exercice `Y`, **exactement** sept
-//! contrôles, dans cet ordre (l'ensemble clos de la fiche, AC1) :
+//! [`for_fiscal_year`] rend, pour un exercice `Y`, **exactement** huit
+//! contrôles, dans cet ordre (l'ensemble clos de la fiche, AC1 ; K8 ajouté en
+//! **dernier** par la Story v017-4a, #849, pour que les index de K1 à K7 ne
+//! bougent pas) :
 //!
 //! | Code | Sévérité | `attention` quand… |
 //! |---|---|---|
@@ -13,9 +15,10 @@
 //! | K5 `IMPORTED_SUPPLIER_INVOICES_TO_COMPLETE` | `info` | une pièce fournisseur importée attend d'être complétée |
 //! | K6 `INCONSISTENT_ENTRIES` | `anomaly` | une écriture incohérente (déséquilibrée, à moins de deux lignes, hors de son exercice, ou d'un autre exercice datée dans Y) |
 //! | K7 `NEXT_FISCAL_YEAR` | `info` | aucun exercice ne suit Y |
+//! | K8 `DRAFT_SUPPLIER_INVOICES` | `info` | une facture fournisseur en brouillon est datée dans Y |
 //!
 //! `count` vaut le nombre de points relevés : transactions (K2), comptes en
-//! défaut (K3), factures (K4), pièces (K5), écritures distinctes (K6) ; pour
+//! défaut (K3), factures (K4, K8), pièces (K5), écritures distinctes (K6) ; pour
 //! K1 et K7, `1` quand le contrôle est en `attention`, `0` sinon.
 //!
 //! Rien ne **bloque** : la clôture garde son unique refus existant (K1,
@@ -117,8 +120,8 @@ pub struct ClosingChecks {
     pub start_date: NaiveDate,
     /// Dernier jour de Y.
     pub end_date: NaiveDate,
-    /// **Toujours sept** contrôles, dans l'ordre de l'AC1 (table de la doc du
-    /// module).
+    /// **Toujours huit** contrôles, dans l'ordre de l'AC1 (table de la doc du
+    /// module ; K8 en dernier, Story v017-4a).
     pub checks: Vec<ClosingCheck>,
 }
 
@@ -159,6 +162,8 @@ pub enum CheckCode {
     InconsistentEntries,
     /// K7 — l'exercice qui suit Y.
     NextFiscalYear,
+    /// K8 — factures fournisseur en brouillon, datées dans Y (Story v017-4a).
+    DraftSupplierInvoices,
 }
 
 /// Sévérité d'un contrôle, sérialisée en minuscules. Seul `blocking` (K1)
@@ -207,6 +212,8 @@ pub enum CheckDetails {
     InconsistentEntries(InconsistentDetails),
     /// K7.
     NextFiscalYear(NextFiscalYearDetails),
+    /// K8 — même forme que K4 (`{ "invoices": [{ id, label, date }] }`).
+    DraftSupplierInvoices(DraftDetails),
 }
 
 /// Un exercice nommé (K1).
@@ -481,6 +488,22 @@ const DRAFT_LIST_SQL: &str = "SELECT i.id, c.name, i.date FROM invoices i \
      WHERE i.company_id = ? AND i.status = 'draft' AND i.date BETWEEN ? AND ? \
      ORDER BY i.date ASC, i.id ASC LIMIT ?";
 
+/// K8 (Story v017-4a, #849) : les factures fournisseur en brouillon datées
+/// dans Y.
+const DRAFT_SUPPLIER_COUNT_SQL: &str = "SELECT CAST(COUNT(*) AS SIGNED) FROM supplier_invoices \
+     WHERE company_id = ? AND status = 'draft' AND invoice_date BETWEEN ? AND ?";
+
+/// K8 : les premières, libellées « <numéro> — <fournisseur> », ou le seul
+/// fournisseur sans numéro (un numéro vide vaut absent).
+const DRAFT_SUPPLIER_LIST_SQL: &str = "SELECT si.id, \
+     CAST(CASE WHEN si.supplier_invoice_number IS NULL OR TRIM(si.supplier_invoice_number) = '' \
+          THEN c.name ELSE CONCAT(si.supplier_invoice_number, ' — ', c.name) END \
+          AS CHAR CHARACTER SET utf8mb4), \
+     si.invoice_date FROM supplier_invoices si \
+     INNER JOIN contacts c ON c.id = si.contact_id \
+     WHERE si.company_id = ? AND si.status = 'draft' AND si.invoice_date BETWEEN ? AND ? \
+     ORDER BY si.invoice_date ASC, si.id ASC LIMIT ?";
+
 /// K5 : pièces fournisseur importées à compléter — **non borné à l'exercice**.
 const IMPORTED_SQL: &str = "SELECT CAST(COUNT(*) AS SIGNED) FROM imported_supplier_invoices \
      WHERE company_id = ? AND status = 'to_complete'";
@@ -527,13 +550,15 @@ const ALL_SQL: &[&str] = &[
     DRAFT_LIST_SQL,
     IMPORTED_SQL,
     INCONSISTENT_SQL,
+    DRAFT_SUPPLIER_COUNT_SQL,
+    DRAFT_SUPPLIER_LIST_SQL,
 ];
 
 // ---------------------------------------------------------------------------
 // La lecture
 // ---------------------------------------------------------------------------
 
-/// Les sept contrôles de l'exercice `fiscal_year_id` de la société, dans
+/// Les huit contrôles de l'exercice `fiscal_year_id` de la société, dans
 /// l'ordre de l'AC1, lus sur `conn` — la connexion d'un
 /// [`crate::snapshot::ReadSnapshot`] (voir la doc du module).
 ///
@@ -560,6 +585,7 @@ pub async fn for_fiscal_year(
         imported_supplier_invoices_to_complete(conn, company_id).await?,
         inconsistent_entries(conn, company_id, &y).await?,
         next_fiscal_year(conn, company_id, &y).await?,
+        draft_supplier_invoices(conn, company_id, &y).await?,
     ];
     Ok(ClosingChecks {
         fiscal_year_id: y.id,
@@ -769,6 +795,46 @@ async fn draft_invoices(
         status: status_of(count > 0),
         count,
         details: CheckDetails::DraftInvoices(DraftDetails { invoices }),
+    })
+}
+
+/// K8 — factures fournisseur en brouillon datées dans Y (Story v017-4a, #849,
+/// AC-16 ; C-v017-4-13, C-v017-4-26) : `info` — un brouillon n'est pas au
+/// journal, les rapports ne le voient pas (limite L3) ; seule la clôture le
+/// signale. Même forme que K4.
+async fn draft_supplier_invoices(
+    conn: &mut MySqlConnection,
+    company_id: i64,
+    y: &FiscalYear,
+) -> Result<ClosingCheck, DbError> {
+    let count: i64 = sqlx::query_scalar(DRAFT_SUPPLIER_COUNT_SQL)
+        .bind(company_id)
+        .bind(y.start_date)
+        .bind(y.end_date)
+        .fetch_one(&mut *conn)
+        .await
+        .map_err(map_db_error)?;
+    let invoices = if count == 0 {
+        Vec::new()
+    } else {
+        let rows: Vec<(i64, String, NaiveDate)> = sqlx::query_as(DRAFT_SUPPLIER_LIST_SQL)
+            .bind(company_id)
+            .bind(y.start_date)
+            .bind(y.end_date)
+            .bind(MAX_LISTED as i64)
+            .fetch_all(&mut *conn)
+            .await
+            .map_err(map_db_error)?;
+        rows.into_iter()
+            .map(|(id, label, date)| DraftInvoiceRef { id, label, date })
+            .collect()
+    };
+    Ok(ClosingCheck {
+        code: CheckCode::DraftSupplierInvoices,
+        severity: Severity::Info,
+        status: status_of(count > 0),
+        count,
+        details: CheckDetails::DraftSupplierInvoices(DraftDetails { invoices }),
     })
 }
 

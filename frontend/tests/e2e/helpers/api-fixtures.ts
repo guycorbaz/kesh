@@ -305,7 +305,65 @@ export async function createSupplierInvoiceViaApi(
 			},
 		});
 		expect(invRes.ok(), `facture fournisseur : ${invRes.status()} ${await invRes.text()}`).toBeTruthy();
-		return { supplierId, supplierInvoiceId: (await invRes.json()).id as number };
+		const draft = (await invRes.json()) as { id: number; version: number };
+		// Story v017-4a (#849) : la création rend un BROUILLON ; la facture se
+		// valide ensuite, comme la créait la 0.17.0-rc1 (validée, à payer).
+		const valRes = await ctx.post(`/api/v1/supplier-invoices/${draft.id}/validate`, {
+			data: { version: draft.version },
+		});
+		expect(valRes.ok(), `validation : ${valRes.status()} ${await valRes.text()}`).toBeTruthy();
+		return { supplierId, supplierInvoiceId: draft.id };
+	} finally {
+		await disposeContextSafe(ctx);
+	}
+}
+
+/**
+ * Story v017-4a (#849, AC-30) — un relevé **saisi à la main** par l'API
+ * (`POST /api/v1/bank-imports/manual`) : une seule ligne de **débit** de `amount`, datée
+ * `bookingDate`, sur le compte bancaire `bankAccountId` ; solde de départ `0.00`, solde
+ * d'arrivée `-amount` — **équilibré au centime**. La période couvre le mois de la date.
+ * Rend l'identifiant de l'import.
+ */
+export async function createManualDebitStatementViaApi(
+	page: Page,
+	opts: {
+		bankAccountId: number;
+		bookingDate: string;
+		amount: string;
+		counterpartyName: string | null;
+		details: string;
+	},
+): Promise<number> {
+	const ctx = await authedApiContext(page);
+	try {
+		const [y, m] = opts.bookingDate.split('-');
+		const lastDay = new Date(Date.UTC(Number(y), Number(m), 0)).getUTCDate();
+		const cents = Math.round(Number(opts.amount) * 100);
+		const closing = (-cents / 100).toFixed(2);
+		const res = await ctx.post('/api/v1/bank-imports/manual', {
+			data: {
+				bankAccountId: opts.bankAccountId,
+				periodFrom: `${y}-${m}-01`,
+				periodTo: `${y}-${m}-${String(lastDay).padStart(2, '0')}`,
+				openingBalance: '0.00',
+				closingBalance: closing,
+				lines: [
+					{
+						bookingDate: opts.bookingDate,
+						details: opts.details,
+						counterpartyName: opts.counterpartyName,
+						amount: opts.amount,
+						direction: 'debit',
+					},
+				],
+				confirmDuplicateFile: true,
+				confirmDuplicateLines: true,
+				confirmOpeningBalanceGap: true,
+			},
+		});
+		expect(res.status(), `relevé saisi : ${await res.text()}`).toBe(201);
+		return (await res.json()).id as number;
 	} finally {
 		await disposeContextSafe(ctx);
 	}

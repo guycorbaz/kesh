@@ -67,6 +67,13 @@ pub struct ImportedSupplierInvoice {
     pub version: i32,
     pub created_at: chrono::NaiveDateTime,
     pub updated_at: chrono::NaiveDateTime,
+    /// D'où vient le lien à la facture (Story v017-4a, #849, C-v017-4-29) :
+    /// `completion` (la facture est née de la complétion de ce document),
+    /// `attachment` (document joint après coup), ou `None` — aucun lien, ou un
+    /// lien antérieur à la 0.17.0 (aucun backfill : la base ne dit pas d'où il
+    /// vient, limite L7). Seul `completion` impose au `PUT` du brouillon les
+    /// règles de la complétion. Cf. [`LinkOrigin`].
+    pub link_origin: Option<String>,
 }
 
 impl ImportedSupplierInvoice {
@@ -74,6 +81,35 @@ impl ImportedSupplierInvoice {
     /// `creditor_iban`, représentant des sept colonnes « tout ou rien ».
     pub fn has_qr(&self) -> bool {
         self.creditor_iban.is_some()
+    }
+
+    /// La facture liée est-elle **née de la complétion** de ce document ?
+    /// (Story v017-4a, AC-8.) Faux pour un document joint après coup et pour un
+    /// lien antérieur à la 0.17.0.
+    pub fn born_from_completion(&self) -> bool {
+        self.link_origin.as_deref() == Some(LinkOrigin::Completion.as_str())
+    }
+}
+
+/// L'origine du lien d'un document à sa facture (Story v017-4a, #849) —
+/// l'ensemble fermé de la contrainte `chk_imported_si_link_origin`. Passée à
+/// [`crate::repositories::imported_supplier_invoices::mark_completed`] par ses
+/// deux appelants : la complétion et le rattachement.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LinkOrigin {
+    /// La facture est née de la complétion du document.
+    Completion,
+    /// Le document a été joint à une facture existante.
+    Attachment,
+}
+
+impl LinkOrigin {
+    /// La valeur stockée.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Completion => "completion",
+            Self::Attachment => "attachment",
+        }
     }
 }
 

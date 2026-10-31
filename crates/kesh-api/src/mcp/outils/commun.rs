@@ -135,7 +135,9 @@ pub const STATUTS_FACTURE: &[(&str, StatutFacture)] = &[
 #[derive(Debug, Clone, Copy, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub enum StatutFactureFournisseur {
-    /// Ouverte.
+    /// Brouillon, sans écriture d'achat (Story v017-4a, #849, AC-17).
+    Draft,
+    /// Validée, à payer (valeur stockée `open`).
     Open,
     /// Payée.
     Paid,
@@ -145,6 +147,7 @@ pub enum StatutFactureFournisseur {
 
 /// La table du statut d'une facture fournisseur.
 pub const STATUTS_FACTURE_FOURNISSEUR: &[(&str, StatutFactureFournisseur)] = &[
+    ("draft", StatutFactureFournisseur::Draft),
     ("open", StatutFactureFournisseur::Open),
     ("paid", StatutFactureFournisseur::Paid),
     ("cancelled", StatutFactureFournisseur::Cancelled),

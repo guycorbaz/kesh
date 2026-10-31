@@ -796,7 +796,7 @@ mod tests {
             payment_reference: payment_reference.map(String::from),
             expected_payment_amount: None,
             project_id: None,
-            purchase_journal_entry_id: 999,
+            purchase_journal_entry_id: Some(999),
             settlement_type: None,
             settlement_bank_account_id: None,
             settlement_account_id: None,

@@ -896,7 +896,7 @@ async fn fixture_tailles(pool: &MySqlPool, s: &Societe, large: bool) {
         )
         .await
         .unwrap();
-        supplier_invoices::create(
+        supplier_invoices::create_validated(
             pool,
             NewSupplierInvoice {
                 company_id: s.c,

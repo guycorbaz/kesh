@@ -786,8 +786,38 @@ async fn validation_is_replayed_when_it_is_the_deadlock_victim(pool: MySqlPool) 
 }
 
 // ============================================================
-// Test 5 — saisie fournisseur victime (choix C66)
+// Test 5 — validation d'une facture fournisseur victime (choix C66 ;
+// Story v017-4a, #849 : la saisie crée un brouillon sans écriture, c'est la
+// VALIDATION qui prend l'ordre de l'AC5 — le montage est le même)
 // ============================================================
+
+/// Un brouillon de facture fournisseur créé par la route (aucune écriture) ;
+/// rend `(id, version)`.
+async fn brouillon_fournisseur(ctx: &Contexte, fournisseur: i64, charge: i64) -> (i64, i64) {
+    let (status, corps) = requete(
+        ctx,
+        reqwest::Method::POST,
+        "/api/v1/supplier-invoices",
+        Some(json!({
+            "contactId": fournisseur,
+            "invoiceDate": aujourd_hui().to_string(),
+            "lines": [{
+                "description": "Fournitures",
+                "quantity": "1",
+                "unitPrice": "50.00",
+                "vatRate": "0",
+                "expenseAccountId": charge,
+            }],
+        })),
+    )
+    .await;
+    assert_eq!(status, 201, "brouillon : {corps}");
+    assert_eq!(corps["status"], "draft", "{corps}");
+    (
+        corps["id"].as_i64().unwrap(),
+        corps["version"].as_i64().unwrap(),
+    )
+}
 
 #[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn supplier_invoice_is_replayed_when_it_is_the_deadlock_victim(pool: MySqlPool) {
@@ -804,6 +834,7 @@ async fn supplier_invoice_is_replayed_when_it_is_the_deadlock_victim(pool: MySql
     .unwrap();
     let charge = ctx.compte("4000");
     let exercice = exercice_du_jour(&pool, ctx.company_id()).await;
+    let (facture, version) = brouillon_fournisseur(&ctx, fournisseur, charge).await;
     let capture = CaptureRejeu::installer();
 
     let mut lourde = transaction_lourde(&pool).await;
@@ -813,23 +844,13 @@ async fn supplier_invoice_is_replayed_when_it_is_the_deadlock_victim(pool: MySql
         .await
         .unwrap();
 
-    // La route tient la ligne des réglages et le compte de charge (ordre de
-    // l'AC5), puis attend l'exercice.
+    // La route tient la facture, la ligne des réglages et le compte de charge
+    // (ordre de l'AC5), puis attend l'exercice.
     let route = requete_en_tache(
         &ctx,
         reqwest::Method::POST,
-        "/api/v1/supplier-invoices",
-        Some(json!({
-            "contactId": fournisseur,
-            "invoiceDate": aujourd_hui().to_string(),
-            "lines": [{
-                "description": "Fournitures",
-                "quantity": "1",
-                "unitPrice": "50.00",
-                "vatRate": "0",
-                "expenseAccountId": charge,
-            }],
-        })),
+        &format!("/api/v1/supplier-invoices/{facture}/validate"),
+        Some(json!({ "version": version })),
     );
     let (status, corps) = victime(
         &pool,
@@ -841,7 +862,8 @@ async fn supplier_invoice_is_replayed_when_it_is_the_deadlock_victim(pool: MySql
     )
     .await;
 
-    assert_eq!(status, 201, "⛔ l'interblocage doit être rejoué : {corps}");
+    assert_eq!(status, 200, "⛔ l'interblocage doit être rejoué : {corps}");
+    assert_eq!(corps["status"], "open", "{corps}");
     assert_eq!(
         compter(
             &pool,
@@ -862,7 +884,76 @@ async fn supplier_invoice_is_replayed_when_it_is_the_deadlock_victim(pool: MySql
         1,
         "une seule écriture d'achat"
     );
-    capture.exiger_un_rejeu("supplier_invoices::create");
+    capture.exiger_un_rejeu("supplier_invoices::validate");
+}
+
+/// Story v017-4a (#849) — la **dévalidation** d'une facture fournisseur,
+/// victime : la route tient la facture (`FOR UPDATE`, puis l'`UPDATE` qui la
+/// ramène au brouillon) et attend l'écriture d'achat et son exercice
+/// (`delete_in_tx`, étape 2), que tient la transaction lourde ; celle-ci
+/// demande alors la facture — cycle. La route rejouée aboutit : brouillon,
+/// écriture supprimée.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn supplier_invoice_unvalidation_is_replayed_when_it_is_the_deadlock_victim(pool: MySqlPool) {
+    let ctx = monter(&pool).await;
+    let fournisseur = contact(&pool, &ctx, "Fournisseur du rejeu", true).await;
+    sqlx::query(
+        "UPDATE company_invoice_settings SET default_payable_account_id = ? WHERE company_id = ?",
+    )
+    .bind(ctx.compte("2000"))
+    .bind(ctx.company_id())
+    .execute(&pool)
+    .await
+    .unwrap();
+    let charge = ctx.compte("4000");
+    let exercice = exercice_du_jour(&pool, ctx.company_id()).await;
+    let (facture, version) = brouillon_fournisseur(&ctx, fournisseur, charge).await;
+    let (status, validee) = requete(
+        &ctx,
+        reqwest::Method::POST,
+        &format!("/api/v1/supplier-invoices/{facture}/validate"),
+        Some(json!({ "version": version })),
+    )
+    .await;
+    assert_eq!(status, 200, "{validee}");
+    let capture = CaptureRejeu::installer();
+
+    let mut lourde = transaction_lourde(&pool).await;
+    sqlx::query("SELECT id FROM fiscal_years WHERE id = ? FOR UPDATE")
+        .bind(exercice)
+        .fetch_one(&mut *lourde)
+        .await
+        .unwrap();
+
+    let route = requete_en_tache(
+        &ctx,
+        reqwest::Method::POST,
+        &format!("/api/v1/supplier-invoices/{facture}/unvalidate"),
+        Some(json!({ "version": validee["version"] })),
+    );
+    let (status, corps) = victime(
+        &pool,
+        lourde,
+        route,
+        &["fiscal_year_id", "FOR UPDATE"],
+        "SELECT id FROM supplier_invoices WHERE id = ? FOR UPDATE",
+        facture,
+    )
+    .await;
+
+    assert_eq!(status, 200, "⛔ l'interblocage doit être rejoué : {corps}");
+    assert_eq!(corps["status"], "draft", "{corps}");
+    assert_eq!(
+        compter(
+            &pool,
+            "SELECT COUNT(*) FROM journal_entries WHERE company_id = ?",
+            ctx.company_id()
+        )
+        .await,
+        0,
+        "l'écriture d'achat est supprimée"
+    );
+    capture.exiger_un_rejeu("supplier_invoices::unvalidate");
 }
 
 // ============================================================
@@ -2286,7 +2377,7 @@ async fn payment_batch_creation_is_replayed_when_it_is_the_deadlock_victim(pool:
     .execute(&pool)
     .await
     .unwrap();
-    let facture = kesh_db::repositories::supplier_invoices::create(
+    let facture = kesh_db::repositories::supplier_invoices::create_validated(
         &pool,
         kesh_db::entities::NewSupplierInvoice {
             company_id: ctx.company_id(),

@@ -1728,7 +1728,7 @@ async fn lettering_pieces(pool: &MySqlPool, biz: &Business) -> LetteringPieces {
     .await
     .expect("fournisseur");
     let supplier_invoice = |numero: &'static str| async move {
-        supplier_invoices::create(
+        supplier_invoices::create_validated(
             pool,
             NewSupplierInvoice {
                 company_id: company,
@@ -1814,9 +1814,11 @@ async fn lettering_pieces(pool: &MySqlPool, biz: &Business) -> LetteringPieces {
     let pieces = LetteringPieces {
         sale_entry,
         settlement_entry,
-        purchase_entry: paid.purchase_journal_entry_id,
+        purchase_entry: paid.purchase_journal_entry_id.expect("écriture d'achat"),
         payment_entry,
-        cancelled_purchase_entry: cancelled.purchase_journal_entry_id,
+        cancelled_purchase_entry: cancelled
+            .purchase_journal_entry_id
+            .expect("écriture d'achat"),
         manual_entry: manual.entry.id,
         receivable,
         payable,
@@ -4488,7 +4490,7 @@ async fn full_import_restores_a_supplier_invoice_under_the_centime(pool: MySqlPo
     .expect("fournisseur");
     let mut ids = Vec::new();
     for numero in ["FF-0-16-OUVERTE", "FF-0-16-PAYEE"] {
-        let id = supplier_invoices::create(
+        let id = supplier_invoices::create_validated(
             &pool,
             NewSupplierInvoice {
                 company_id: company,
@@ -4689,10 +4691,14 @@ async fn full_import_round_trip_keeps_a_manual_statement(pool: MySqlPool) {
 /// Moyen retenu (a) : la sauvegarde est exportée par la 0.17.0, puis son
 /// manifeste — non signé (`admin_backup/manifest.rs`), seules les tables
 /// portant un `sha256` — est récrit comme l'écrirait une 0.16.x. Licite parce
-/// que la 0.17.0 n'ajoute aucune table (`bank_imports_manual_source_adds_no_table`)
-/// ni colonne (`bank_imports_manual_source_only_raises_min_required` : l'unique
-/// migration n'a aucun DDL), tous deux dans `migrations_upgrade_path.rs` :
-/// les données d'une 0.16.x ont la forme de celles-ci.
+/// que la 0.17.0 n'ajoute aucune table (`bank_imports_manual_source_adds_no_table`,
+/// `draft_migration_adds_no_table`), tous deux dans `migrations_upgrade_path.rs`.
+/// ⚠️ *Corrigé à la Story v017-4a (#849)* : ce doc-comment disait « ni colonne »
+/// — vrai de la seule `20261030000001` ; `20261031000001` ajoute
+/// `imported_supplier_invoices.link_origin`. Ce test-ci ne porte aucun document,
+/// la colonne y est vide ; le chemin « colonne absente de la source » est exercé
+/// par `full_import_accepts_a_0_16_backup_with_supplier_invoices`, qui la retire
+/// du manifeste et des lignes.
 #[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn full_import_accepts_a_0_16_backup(pool: MySqlPool) {
     let app = spawn_app(pool.clone()).await;

@@ -1,9 +1,13 @@
 //! Repository des factures fournisseurs & règlement binaire — Story 12.2 (#191).
 //!
-//! - [`create`] : enregistre une facture fournisseur (chemin A). Single-step
-//!   transactionnel : poste l'écriture d'achat (D charge / D impôt préalable
-//!   1171 / C créanciers 2000, réutilise la logique TVA Epic 18) et passe la
-//!   facture en `open`.
+//! - Le cycle **brouillon → validée → payée** (Story v017-4a, #849) :
+//!   [`create_draft`] enregistre un brouillon **sans écriture** ;
+//!   [`update_draft`] le remplace ; [`delete_draft`] le supprime ;
+//!   [`validate`] poste l'écriture d'achat (D charge / D impôt préalable /
+//!   C créanciers, logique TVA Epic 18) et passe la facture en `open`
+//!   (« validée ») ; [`unvalidate`] supprime l'écriture et ramène le brouillon
+//!   (règle de la facture client). [`create_validated`] compose création et
+//!   validation, pour les seeds et les tests.
 //! - [`pay`] : règlement binaire. Poste `D 2000 / C contrepartie` (virement →
 //!   `bank_account.journal_account_id` ; compte interne → compte libre) et
 //!   passe en `paid`. Le compte débité ET le montant sont relus depuis la
@@ -122,21 +126,20 @@ fn generate_purchase_journal_lines(
     payable_account_id: i64,
     recoverable_account_id: Option<i64>,
 ) -> Result<(GeneratedLines, Decimal), DbError> {
-    use kesh_core::accounting::vat::line_vat_amount;
-
     // Story 15-5d (C39) — les rôles de réglage effectivement écrits : les
     // créanciers toujours, la TVA récupérable dans la seule branche qui l'écrit.
     let mut roles: BTreeSet<DesignatedRole> = BTreeSet::new();
     roles.insert(DesignatedRole::Payable);
 
-    let mut total_ht = Decimal::ZERO;
-    let mut total_vat = Decimal::ZERO;
+    // Story v017-4a (#849, C-v017-4-27) — les sommes viennent de la fonction pure
+    // unique de `kesh-core`, celle qui donne aussi son total au brouillon : la
+    // validation écrit le montant que le brouillon affichait (DRY).
+    let pairs: Vec<(Decimal, Decimal)> = lines.iter().map(|(ht, rate, _)| (*ht, *rate)).collect();
+    let (_, total_vat, total_ttc) = kesh_core::accounting::purchase_invoice_totals(&pairs);
     let mut entry_lines: Vec<NewJournalEntryLine> = Vec::with_capacity(lines.len() + 2);
 
     // (0..N) Débit charge par ligne (HT).
-    for (line_total, vat_rate, expense_account_id) in lines {
-        total_ht += *line_total;
-        total_vat += line_vat_amount(*line_total, *vat_rate);
+    for (line_total, _, expense_account_id) in lines {
         entry_lines.push(NewJournalEntryLine {
             account_id: *expense_account_id,
             debit: *line_total,
@@ -160,7 +163,6 @@ fn generate_purchase_journal_lines(
     }
 
     // (N+1) Crédit créanciers 2000 (TTC).
-    let total_ttc = total_ht + total_vat;
     entry_lines.push(NewJournalEntryLine {
         account_id: payable_account_id,
         debit: Decimal::ZERO,
@@ -205,34 +207,55 @@ pub async fn get(
     Ok(Some((inv, lines)))
 }
 
-/// Liste paginée des factures fournisseurs d'une company (les plus récentes d'abord).
+/// Les statuts d'une facture fournisseur — l'ensemble fermé de
+/// `chk_supplier_invoices_status_v2` (Story v017-4a).
+pub const SUPPLIER_INVOICE_STATUSES: [&str; 4] = ["draft", "open", "paid", "cancelled"];
+
+/// Liste paginée des factures fournisseurs d'une company (les plus récentes
+/// d'abord). `statuses` filtre par statut (Story v017-4a, AC-15) ; **vide =
+/// tous** — la route refuse un filtre vide ou inconnu avant d'appeler. `total`
+/// compte le filtre.
 pub async fn list(
     pool: &MySqlPool,
     company_id: i64,
+    statuses: &[&str],
     limit: i64,
     offset: i64,
 ) -> Result<(Vec<SupplierInvoiceListItem>, i64), DbError> {
-    let total: i64 =
-        sqlx::query_scalar("SELECT COUNT(*) FROM supplier_invoices WHERE company_id = ?")
-            .bind(company_id)
-            .fetch_one(pool)
-            .await
-            .map_err(map_db_error)?;
+    let filter = if statuses.is_empty() {
+        String::new()
+    } else {
+        format!(
+            " AND si.status IN ({})",
+            statuses.iter().map(|_| "?").collect::<Vec<_>>().join(", ")
+        )
+    };
+    let count_sql =
+        format!("SELECT COUNT(*) FROM supplier_invoices si WHERE si.company_id = ?{filter}");
+    let mut count = sqlx::query_scalar::<_, i64>(&count_sql).bind(company_id);
+    for s in statuses {
+        count = count.bind(*s);
+    }
+    let total: i64 = count.fetch_one(pool).await.map_err(map_db_error)?;
 
     // JOIN contacts pour le nom du fournisseur (AC11). INNER JOIN sûr : contact_id
     // est une FK RESTRICT non-nullable.
-    let items = sqlx::query_as::<_, SupplierInvoiceListItem>(
+    let items_sql = format!(
         "SELECT si.id, si.contact_id, c.name AS contact_name, si.supplier_invoice_number, \
          si.status, si.invoice_date, si.due_date, si.total_amount \
          FROM supplier_invoices si JOIN contacts c ON c.id = si.contact_id \
-         WHERE si.company_id = ? ORDER BY si.invoice_date DESC, si.id DESC LIMIT ? OFFSET ?",
-    )
-    .bind(company_id)
-    .bind(limit)
-    .bind(offset)
-    .fetch_all(pool)
-    .await
-    .map_err(map_db_error)?;
+         WHERE si.company_id = ?{filter} ORDER BY si.invoice_date DESC, si.id DESC LIMIT ? OFFSET ?"
+    );
+    let mut q = sqlx::query_as::<_, SupplierInvoiceListItem>(&items_sql).bind(company_id);
+    for s in statuses {
+        q = q.bind(*s);
+    }
+    let items = q
+        .bind(limit)
+        .bind(offset)
+        .fetch_all(pool)
+        .await
+        .map_err(map_db_error)?;
 
     Ok((items, total))
 }
@@ -248,8 +271,9 @@ pub async fn list(
 /// `line_total` dans l'ordre des lignes : l'appelant ne refait **aucun** second
 /// produit.
 ///
-/// **Un seul ordre, deux chemins** : [`create_in_tx`] l'appelle avant tout
-/// verrou, et la complétion d'une pièce importée
+/// **Un seul ordre, deux chemins** : la saisie l'appelle (le brouillon,
+/// [`create_draft_in_tx`] et [`update_draft_in_tx`], puis [`validate_in_tx`]),
+/// et la complétion d'une pièce importée
 /// (`POST /imported-supplier-invoices/{id}/complete`) l'appelle avant son
 /// contrôle `AMOUNT_MISMATCH`, de sorte qu'une même ligne y reçoit le même refus.
 /// `pub` : la route de `kesh-api` l'appelle, et les tests d'intégration de
@@ -286,46 +310,718 @@ pub fn purchase_lines_form(
     Ok(totals)
 }
 
-/// Enregistre une facture fournisseur et poste son écriture d'achat (single-step,
-/// pool-owning). Délègue le cœur à [`create_in_tx`] dans une transaction qu'elle
-/// possède puis commit — patron identique à [`pay`]/[`pay_in_tx`].
-pub async fn create(
+// ---------------------------------------------------------------------------
+// Story v017-4a (#849) — le cycle brouillon → validée → payée
+// ---------------------------------------------------------------------------
+
+/// Exécute `$body` dans une transaction possédée `$tx` : `COMMIT` sur succès,
+/// `ROLLBACK` sinon — l'enveloppe commune des fonctions `pool` de ce cycle.
+macro_rules! in_own_tx {
+    ($pool:expr, |$tx:ident| $body:expr) => {{
+        let mut $tx = $pool.begin().await.map_err(map_db_error)?;
+        match $body {
+            Ok(v) => {
+                $tx.commit().await.map_err(map_db_error)?;
+                Ok(v)
+            }
+            Err(e) => {
+                let _ = $tx.rollback().await;
+                Err(e)
+            }
+        }
+    }};
+}
+
+/// Enregistre un **brouillon** (Story v017-4a, AC-6), transaction comprise —
+/// cf. [`create_draft_in_tx`].
+pub async fn create_draft(
     pool: &MySqlPool,
     new: NewSupplierInvoice,
     user_id: i64,
 ) -> Result<SupplierInvoiceWithLines, DbError> {
-    let mut tx = pool.begin().await.map_err(map_db_error)?;
-    let result = create_in_tx(&mut tx, new, user_id).await;
-
-    match result {
-        Ok(v) => {
-            tx.commit().await.map_err(map_db_error)?;
-            Ok(v)
-        }
-        Err(e) => {
-            let _ = tx.rollback().await;
-            Err(e)
-        }
-    }
+    in_own_tx!(pool, |tx| create_draft_in_tx(&mut tx, new, user_id).await)
 }
 
-/// Cœur de l'enregistrement d'une facture fournisseur, **tx-aware** (DC6 12-5c).
+/// Enregistre une facture **et la valide** dans une même transaction
+/// (Story v017-4a, AC-12) : [`create_draft_in_tx`] puis [`validate_in_tx`] —
+/// aucun corps dupliqué. **Pour les seeds et les tests** : aucune route ne
+/// l'appelle (une facture se saisit en brouillon, puis se valide).
+pub async fn create_validated(
+    pool: &MySqlPool,
+    new: NewSupplierInvoice,
+    user_id: i64,
+) -> Result<SupplierInvoiceWithLines, DbError> {
+    in_own_tx!(pool, |tx| create_validated_in_tx(&mut tx, new, user_id)
+        .await)
+}
+
+/// [`create_validated`] dans une transaction fournie.
+pub async fn create_validated_in_tx(
+    tx: &mut sqlx::Transaction<'_, sqlx::MySql>,
+    new: NewSupplierInvoice,
+    user_id: i64,
+) -> Result<SupplierInvoiceWithLines, DbError> {
+    let company_id = new.company_id;
+    let draft = create_draft_in_tx(tx, new, user_id).await?;
+    validate_in_tx(
+        tx,
+        company_id,
+        draft.invoice.id,
+        draft.invoice.version,
+        user_id,
+    )
+    .await
+}
+
+/// Les contrôles **de saisie** d'une facture fournisseur, communs à la
+/// création d'un brouillon et à son `PUT` (Story v017-4a, AC-6, AC-8 ;
+/// C-v017-4-4), dans l'ordre de l'ancienne création : lignes non vides, projet
+/// (existe, de la société, non archivé), fournisseur, **forme** des lignes
+/// ([`purchase_lines_form`]), comptes de charge (de la société, actifs, de type
+/// charge, imputables — les non imputables nommés ensemble).
 ///
-/// Aucun `begin`/`commit` interne — l'appelant gère la transaction. Réutilisé par
-/// [`create`] (wrapper pool-owning) **ET** par la complétion atomique 12-5c
-/// (`POST /imported-supplier-invoices/{id}/complete`), qui exécute la création de
-/// la facture dans **la même transaction** que le `SELECT … FOR UPDATE` du staging
-/// et l'`UPDATE status='completed'` → impossible d'aboutir à une double facture
-/// (pas de fenêtre non-atomique entre un COMMIT et l'UPDATE du staging).
+/// ⛔ **Aucun verrou** (C-v017-4-28) : le projet est lu par une lecture
+/// ordinaire, non par `projects::validate_taggable_in_tx` (sentinelle
+/// `companies` et projet `FOR UPDATE`) ; les comptes de même. Les jugements qui
+/// comptent pour le journal (projet archivé, compte archivé ou non imputable
+/// entre-temps) sont **refaits sous verrou** à la validation ([`validate_in_tx`]).
+/// Les contrôles liés à l'écriture (exercice, réglages, comptes désignés) ne
+/// sont pas faits ici : un brouillon hors de tout exercice s'enregistre.
 ///
-/// `company_id` est destructuré depuis `new.company_id` (jamais un paramètre
-/// séparé — source unique). Retourne [`SupplierInvoiceWithLines`] (kesh-db) ; le
-/// handler HTTP construit `SupplierInvoiceResponse` (kesh-api) via `from_parts`.
+/// Rend les `line_total` de la passe de forme, dans l'ordre des lignes.
+async fn check_draft_input_in_tx(
+    tx: &mut sqlx::Transaction<'_, sqlx::MySql>,
+    new: &NewSupplierInvoice,
+) -> Result<Vec<Decimal>, DbError> {
+    if new.lines.is_empty() {
+        return Err(DbError::IllegalStateTransition(
+            "une facture fournisseur doit avoir au moins une ligne".into(),
+        ));
+    }
+    if let Some(pid) = new.project_id {
+        let archived: Option<bool> =
+            sqlx::query_scalar("SELECT archived FROM projects WHERE id = ? AND company_id = ?")
+                .bind(pid)
+                .bind(new.company_id)
+                .fetch_optional(&mut **tx)
+                .await
+                .map_err(map_db_error)?;
+        match archived {
+            None => return Err(DbError::NotFound),
+            Some(true) => {
+                return Err(DbError::IllegalStateTransition(
+                    "le projet analytique est archivé".into(),
+                ));
+            }
+            Some(false) => {}
+        }
+    }
+    let supplier: Option<bool> =
+        sqlx::query_scalar("SELECT is_supplier FROM contacts WHERE id = ? AND company_id = ?")
+            .bind(new.contact_id)
+            .bind(new.company_id)
+            .fetch_optional(&mut **tx)
+            .await
+            .map_err(map_db_error)?;
+    if !supplier.ok_or(DbError::NotFound)? {
+        return Err(DbError::IllegalStateTransition(
+            "le contact n'est pas un fournisseur".into(),
+        ));
+    }
+    let line_totals = purchase_lines_form(&new.lines)?;
+    let mut non_postable: Vec<NonPostableAccount> = Vec::new();
+    for line in &new.lines {
+        let acct: Option<(bool, bool, String, String)> = sqlx::query_as(
+            "SELECT active, postable, account_type, number FROM accounts \
+             WHERE id = ? AND company_id = ?",
+        )
+        .bind(line.expense_account_id)
+        .bind(new.company_id)
+        .fetch_optional(&mut **tx)
+        .await
+        .map_err(map_db_error)?;
+        match acct {
+            Some((true, true, ref t, _)) if t == "Expense" => {}
+            Some((true, false, ref t, number)) if t == "Expense" => {
+                non_postable.push(NonPostableAccount {
+                    account_id: line.expense_account_id,
+                    account_number: number,
+                });
+            }
+            _ => return Err(DbError::InactiveOrInvalidAccounts),
+        }
+    }
+    if !non_postable.is_empty() {
+        return Err(DbError::accounts_not_postable(non_postable));
+    }
+    Ok(line_totals)
+}
+
+/// Le TTC d'un brouillon, par la fonction pure unique de `kesh-core`
+/// ([`kesh_core::accounting::purchase_invoice_totals`], C-v017-4-27).
+fn draft_total(lines: &[crate::entities::NewSupplierInvoiceLine], totals: &[Decimal]) -> Decimal {
+    let pairs: Vec<(Decimal, Decimal)> = lines
+        .iter()
+        .zip(totals)
+        .map(|(l, t)| (*t, l.vat_rate))
+        .collect();
+    kesh_core::accounting::purchase_invoice_totals(&pairs).2
+}
+
+/// Insère les lignes d'une facture, positions renumérotées depuis 0.
+async fn insert_lines(
+    tx: &mut sqlx::Transaction<'_, sqlx::MySql>,
+    invoice_id: i64,
+    lines: &[crate::entities::NewSupplierInvoiceLine],
+    totals: &[Decimal],
+) -> Result<(), DbError> {
+    for (position, (line, line_total)) in lines.iter().zip(totals).enumerate() {
+        sqlx::query(
+            "INSERT INTO supplier_invoice_lines \
+             (supplier_invoice_id, position, description, quantity, unit_price, vat_rate, \
+              line_total, expense_account_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+        )
+        .bind(invoice_id)
+        .bind(position as i32)
+        .bind(&line.description)
+        .bind(line.quantity)
+        .bind(line.unit_price)
+        .bind(line.vat_rate)
+        .bind(*line_total)
+        .bind(line.expense_account_id)
+        .execute(&mut **tx)
+        .await
+        .map_err(map_db_error)?;
+    }
+    Ok(())
+}
+
+/// Relit une facture et ses lignes dans la transaction.
+async fn reread(
+    tx: &mut sqlx::Transaction<'_, sqlx::MySql>,
+    company_id: i64,
+    id: i64,
+) -> Result<SupplierInvoiceWithLines, DbError> {
+    let invoice = sqlx::query_as::<_, SupplierInvoice>(FIND_SCOPED_SQL)
+        .bind(id)
+        .bind(company_id)
+        .fetch_one(&mut **tx)
+        .await
+        .map_err(map_db_error)?;
+    let lines = fetch_lines(tx, id).await?;
+    Ok(SupplierInvoiceWithLines { invoice, lines })
+}
+
+/// Enregistre un **brouillon** de facture fournisseur, **sans écriture**
+/// (Story v017-4a, #849, AC-6 ; C-v017-4-4), dans la transaction fournie.
+///
+/// Contrôles de saisie de [`check_draft_input_in_tx`], sans verrou ; total
+/// (`total_amount`, TTC) par la fonction pure de `kesh-core` ; `INSERT` en
+/// `'draft'`, `purchase_journal_entry_id` nul ; lignes ; audit
+/// `supplier_invoice.created` (instantané, **sans** `journalEntryId`).
+///
+/// Réutilisé par la route `POST /supplier-invoices` et par la complétion d'un
+/// document (`POST /imported-supplier-invoices/{id}/complete`), qui l'appelle
+/// dans **la même transaction** que le verrou du document et `mark_completed`
+/// (DC6 12-5c : jamais de double facture).
+///
+/// # Verrous
+///
+/// **Aucun verrou exclusif** : les lectures sont ordinaires ; seule
+/// l'insertion prend les verrous **partagés** de ses clés étrangères (société,
+/// fournisseur, projet, comptes des lignes). Ils ne sont pas compatibles avec
+/// tout — une validation aux comptes croisés tient l'exclusif —, d'où le rejeu
+/// gardé de la route (`retry_on_deadlock("supplier_invoices::create", …)`,
+/// C-v017-4-37).
+pub async fn create_draft_in_tx(
+    tx: &mut sqlx::Transaction<'_, sqlx::MySql>,
+    new: NewSupplierInvoice,
+    user_id: i64,
+) -> Result<SupplierInvoiceWithLines, DbError> {
+    let line_totals = check_draft_input_in_tx(tx, &new).await?;
+    let total = draft_total(&new.lines, &line_totals);
+    let inv_id: i64 = sqlx::query(
+        "INSERT INTO supplier_invoices \
+         (company_id, contact_id, supplier_invoice_number, status, invoice_date, due_date, \
+          total_amount, creditor_iban, creditor_qr_iban, payment_reference, \
+          expected_payment_amount, project_id, purchase_journal_entry_id) \
+         VALUES (?, ?, ?, 'draft', ?, ?, ?, ?, ?, ?, ?, ?, NULL)",
+    )
+    .bind(new.company_id)
+    .bind(new.contact_id)
+    .bind(&new.supplier_invoice_number)
+    .bind(new.invoice_date)
+    .bind(new.due_date)
+    .bind(total)
+    .bind(&new.creditor_iban)
+    .bind(&new.creditor_qr_iban)
+    .bind(&new.payment_reference)
+    .bind(new.expected_payment_amount)
+    .bind(new.project_id)
+    .execute(&mut **tx)
+    .await
+    .map_err(map_db_error)?
+    .last_insert_id() as i64;
+    insert_lines(tx, inv_id, &new.lines, &line_totals).await?;
+    let created = reread(tx, new.company_id, inv_id).await?;
+    audit_log::insert_in_tx(
+        &mut *tx,
+        NewAuditLogEntry::user(
+            user_id,
+            "supplier_invoice.created".to_string(),
+            "supplier_invoice".to_string(),
+            inv_id,
+            Some(serde_json::json!({
+                "supplierInvoice": snapshot_json(&created.invoice, &created.lines),
+            })),
+        ),
+    )
+    .await?;
+    Ok(created)
+}
+
+/// Verrouille la facture `id` (`FOR UPDATE`) et exige qu'elle soit un
+/// **brouillon** à la version `version` (Story v017-4a, AC-8) : facture
+/// absente ou d'une autre société → [`DbError::NotFound`] ; pas un brouillon →
+/// [`DbError::IllegalStateTransition`] (avant la version) ; version périmée →
+/// [`DbError::OptimisticLockConflict`].
+///
+/// Appelée par la route `PUT` **avant** les règles « document » (qui lisent le
+/// document joint), puis de nouveau par [`update_draft_in_tx`] — le second
+/// `FOR UPDATE` ne prend aucun verrou neuf.
+pub async fn lock_draft_in_tx(
+    tx: &mut sqlx::Transaction<'_, sqlx::MySql>,
+    company_id: i64,
+    id: i64,
+    version: i32,
+) -> Result<SupplierInvoice, DbError> {
+    let inv = sqlx::query_as::<_, SupplierInvoice>(&format!("{FIND_SCOPED_SQL} FOR UPDATE"))
+        .bind(id)
+        .bind(company_id)
+        .fetch_optional(&mut **tx)
+        .await
+        .map_err(map_db_error)?
+        .ok_or(DbError::NotFound)?;
+    if inv.status != "draft" {
+        return Err(DbError::IllegalStateTransition(format!(
+            "seul un brouillon se modifie (statut actuel : '{}')",
+            inv.status
+        )));
+    }
+    if inv.version != version {
+        return Err(DbError::OptimisticLockConflict);
+    }
+    Ok(inv)
+}
+
+/// Modifie un brouillon, transaction comprise — cf. [`update_draft_in_tx`].
+/// Pour les tests et le dépôt : la route tient sa propre transaction, où les
+/// règles « document » passent entre le verrou et la modification.
+pub async fn update_draft(
+    pool: &MySqlPool,
+    company_id: i64,
+    id: i64,
+    version: i32,
+    new: NewSupplierInvoice,
+    user_id: i64,
+) -> Result<SupplierInvoiceWithLines, DbError> {
+    in_own_tx!(pool, |tx| update_draft_in_tx(
+        &mut tx, company_id, id, version, new, user_id
+    )
+    .await)
+}
+
+/// **Remplace** un brouillon (Story v017-4a, #849, AC-8 ; C-v017-4-5) : en-tête
+/// et **toutes** les lignes (supprimées puis réinsérées, positions depuis 0),
+/// mêmes contrôles qu'à la création, `version + 1`, aucune écriture au journal,
+/// audit `supplier_invoice.updated` (instantanés avant et après).
+///
+/// `new.company_id` est ignoré au profit de `company_id` (la société de la
+/// requête). Ordre des verrous : la facture `FOR UPDATE`
+/// ([`lock_draft_in_tx`]), puis les clés étrangères des lignes insérées.
+pub async fn update_draft_in_tx(
+    tx: &mut sqlx::Transaction<'_, sqlx::MySql>,
+    company_id: i64,
+    id: i64,
+    version: i32,
+    mut new: NewSupplierInvoice,
+    user_id: i64,
+) -> Result<SupplierInvoiceWithLines, DbError> {
+    lock_draft_in_tx(tx, company_id, id, version).await?;
+    new.company_id = company_id;
+    let before_lines = fetch_lines(tx, id).await?;
+    let before = sqlx::query_as::<_, SupplierInvoice>(FIND_SCOPED_SQL)
+        .bind(id)
+        .bind(company_id)
+        .fetch_one(&mut **tx)
+        .await
+        .map_err(map_db_error)?;
+    let line_totals = check_draft_input_in_tx(tx, &new).await?;
+    let total = draft_total(&new.lines, &line_totals);
+    let rows = sqlx::query(
+        "UPDATE supplier_invoices SET contact_id = ?, supplier_invoice_number = ?, \
+         invoice_date = ?, due_date = ?, total_amount = ?, creditor_iban = ?, \
+         creditor_qr_iban = ?, payment_reference = ?, expected_payment_amount = ?, \
+         project_id = ?, version = version + 1 \
+         WHERE id = ? AND company_id = ? AND version = ? AND status = 'draft'",
+    )
+    .bind(new.contact_id)
+    .bind(&new.supplier_invoice_number)
+    .bind(new.invoice_date)
+    .bind(new.due_date)
+    .bind(total)
+    .bind(&new.creditor_iban)
+    .bind(&new.creditor_qr_iban)
+    .bind(&new.payment_reference)
+    .bind(new.expected_payment_amount)
+    .bind(new.project_id)
+    .bind(id)
+    .bind(company_id)
+    .bind(version)
+    .execute(&mut **tx)
+    .await
+    .map_err(map_db_error)?
+    .rows_affected();
+    if rows != 1 {
+        return Err(DbError::OptimisticLockConflict);
+    }
+    sqlx::query("DELETE FROM supplier_invoice_lines WHERE supplier_invoice_id = ?")
+        .bind(id)
+        .execute(&mut **tx)
+        .await
+        .map_err(map_db_error)?;
+    insert_lines(tx, id, &new.lines, &line_totals).await?;
+    let after = reread(tx, company_id, id).await?;
+    audit_log::insert_in_tx(
+        &mut *tx,
+        NewAuditLogEntry::user(
+            user_id,
+            "supplier_invoice.updated".to_string(),
+            "supplier_invoice".to_string(),
+            id,
+            Some(serde_json::json!({
+                "before": snapshot_json(&before, &before_lines),
+                "after": snapshot_json(&after.invoice, &after.lines),
+            })),
+        ),
+    )
+    .await?;
+    Ok(after)
+}
+
+/// Ce que rend la suppression d'un brouillon.
+#[derive(Debug, Clone)]
+pub struct DeletedDraft {
+    /// Le document qui était joint, rendu « à traiter », s'il y en avait un.
+    pub detached_document_id: Option<i64>,
+}
+
+/// Supprime un brouillon, transaction comprise — cf. [`delete_draft_in_tx`].
+/// **Sans enveloppe de rejeu** : la route l'enveloppe ; le test piloté de
+/// l'ordre des verrous (M20-quater) l'appelle nu, pour qu'un interblocage se
+/// voie.
+pub async fn delete_draft(
+    pool: &MySqlPool,
+    company_id: i64,
+    id: i64,
+    user_id: i64,
+) -> Result<DeletedDraft, DbError> {
+    in_own_tx!(pool, |tx| delete_draft_in_tx(
+        &mut tx, company_id, id, user_id
+    )
+    .await)
+}
+
+/// Supprime un **brouillon** de facture fournisseur (Story v017-4a, #849,
+/// AC-9 ; C-v017-4-6, C-v017-4-34) ; son document joint, s'il en a un, est
+/// rendu « à traiter ».
+///
+/// Refus : validée → [`DbError::SupplierInvoiceMustBeUnvalidatedFirst`] ;
+/// payée, annulée → [`DbError::IllegalStateTransition`] ; présente dans un lot
+/// de paiement, quel que soit le sort du lot →
+/// [`DbError::SupplierInvoiceHasPaymentBatchHistory`] (limite L8 : jamais une
+/// erreur de clé étrangère). Un refus annule tout, détachement compris.
+///
+/// # Ordre des verrous — la facture d'abord, puis le document
+///
+/// La facture `FOR UPDATE`, son statut, les articles de lot en lecture
+/// verrouillante, **puis** [`super::imported_supplier_invoices::detach_in_tx`]
+/// (l'entrée de `uq_imported_supplier_invoice`, ou son intervalle), puis le
+/// `DELETE`. C'est l'ordre « facture → entrée d'unicité » de
+/// [`super::imported_supplier_invoices::attach_in_tx`] : un rattachement
+/// concurrent attend la facture. L'ordre inverse formerait un cycle avec lui
+/// (doc-comment de `detach_in_tx`) — test piloté
+/// `deleting_a_draft_during_an_attachment_does_not_deadlock` (M20-quater).
+///
+/// Audits `imported_supplier_invoice.detached` (si un document est rendu) puis
+/// `supplier_invoice.deleted` (instantané), dans la transaction.
+pub async fn delete_draft_in_tx(
+    tx: &mut sqlx::Transaction<'_, sqlx::MySql>,
+    company_id: i64,
+    id: i64,
+    user_id: i64,
+) -> Result<DeletedDraft, DbError> {
+    let inv = sqlx::query_as::<_, SupplierInvoice>(&format!("{FIND_SCOPED_SQL} FOR UPDATE"))
+        .bind(id)
+        .bind(company_id)
+        .fetch_optional(&mut **tx)
+        .await
+        .map_err(map_db_error)?
+        .ok_or(DbError::NotFound)?;
+    match inv.status.as_str() {
+        "draft" => {}
+        "open" => return Err(DbError::SupplierInvoiceMustBeUnvalidatedFirst),
+        other => {
+            return Err(DbError::IllegalStateTransition(format!(
+                "seul un brouillon se supprime (statut actuel : '{other}')"
+            )));
+        }
+    }
+    let batch: Option<i64> = sqlx::query_scalar(
+        "SELECT payment_batch_id FROM payment_batch_items WHERE supplier_invoice_id = ? \
+         ORDER BY payment_batch_id DESC LIMIT 1 LOCK IN SHARE MODE",
+    )
+    .bind(id)
+    .fetch_optional(&mut **tx)
+    .await
+    .map_err(map_db_error)?;
+    if let Some(payment_batch_id) = batch {
+        return Err(DbError::SupplierInvoiceHasPaymentBatchHistory { payment_batch_id });
+    }
+    let detached = super::imported_supplier_invoices::detach_in_tx(tx, company_id, id).await?;
+    if let Some(doc) = &detached {
+        audit_log::insert_in_tx(
+            &mut *tx,
+            NewAuditLogEntry::user(
+                user_id,
+                "imported_supplier_invoice.detached".to_string(),
+                "imported_supplier_invoice".to_string(),
+                doc.id,
+                Some(serde_json::json!({
+                    "supplier_invoice_id": id,
+                    "original_filename": doc.original_filename,
+                })),
+            ),
+        )
+        .await?;
+    }
+    let lines = fetch_lines(tx, id).await?;
+    audit_log::insert_in_tx(
+        &mut *tx,
+        NewAuditLogEntry::user(
+            user_id,
+            "supplier_invoice.deleted".to_string(),
+            "supplier_invoice".to_string(),
+            id,
+            Some(serde_json::json!({ "supplierInvoice": snapshot_json(&inv, &lines) })),
+        ),
+    )
+    .await?;
+    sqlx::query("DELETE FROM supplier_invoice_lines WHERE supplier_invoice_id = ?")
+        .bind(id)
+        .execute(&mut **tx)
+        .await
+        .map_err(map_db_error)?;
+    let rows = sqlx::query(
+        "DELETE FROM supplier_invoices WHERE id = ? AND company_id = ? AND status = 'draft'",
+    )
+    .bind(id)
+    .bind(company_id)
+    .execute(&mut **tx)
+    .await
+    .map_err(map_db_error)?
+    .rows_affected();
+    if rows != 1 {
+        return Err(DbError::Invariant(
+            "delete_draft_in_tx : brouillon verrouillé, aucune ligne supprimée".into(),
+        ));
+    }
+    Ok(DeletedDraft {
+        detached_document_id: detached.map(|d| d.id),
+    })
+}
+
+/// Valide un brouillon, transaction comprise — cf. [`validate_in_tx`].
+pub async fn validate(
+    pool: &MySqlPool,
+    company_id: i64,
+    id: i64,
+    version: i32,
+    user_id: i64,
+) -> Result<SupplierInvoiceWithLines, DbError> {
+    in_own_tx!(pool, |tx| validate_in_tx(
+        &mut tx, company_id, id, version, user_id
+    )
+    .await)
+}
+
+/// Dévalide une facture, transaction comprise — cf. [`unvalidate_in_tx`].
+pub async fn unvalidate(
+    pool: &MySqlPool,
+    company_id: i64,
+    id: i64,
+    version: i32,
+    user_id: i64,
+) -> Result<SupplierInvoiceWithLines, DbError> {
+    in_own_tx!(pool, |tx| unvalidate_in_tx(
+        &mut tx, company_id, id, version, user_id
+    )
+    .await)
+}
+
+/// **Dévalide** une facture fournisseur validée (Story v017-4a, #849, AC-11 ;
+/// C-v017-4-8) : elle redevient brouillon, et son écriture d'achat est
+/// **supprimée** — la règle de la facture client (`invoices::unvalidate`), non
+/// une contre-passation. Le trou de numérotation est assumé (limite L2) ; le
+/// journal d'audit garde l'écriture (`journal_entry.deleted`).
+///
+/// # Précédence (testée paire par paire)
+///
+/// `NotFound` → statut (payée : [`SupplierUnvalidationBlocker::Paid`] ;
+/// brouillon ou annulée : `IllegalStateTransition`) → version → lot
+/// `generated` → écriture rapprochée → puis les refus de
+/// [`super::journal_entries::delete_in_tx`] : exercice clos, exercice
+/// postérieur clos, écriture contre-passée (inatteignable), période
+/// verrouillée, lettrage.
 ///
 /// # Ordre des verrous
 ///
-/// Doc-comment canonique de l'ordre des verrous côté achat (Story 15-5e1, AC5),
-/// numéroté comme les étapes du code :
+/// La facture `FOR UPDATE` ; les articles de lot `generated` et la transaction
+/// rapprochée en **lecture verrouillante** (`LOCK IN SHARE MODE`, patron de
+/// [`lock_for_bank_settlement_in_tx`] (c)) ; l'`UPDATE` ; puis `delete_in_tx`
+/// (écriture et exercice, exercices postérieurs, lignes). Rejouée par la route
+/// (`retry_on_deadlock("supplier_invoices::unvalidate", …)`).
+///
+/// ⚠️ **Second appelant de `delete_in_tx` avec `enforce_ownership = false`**,
+/// après `invoices::unvalidate` : la facture supprime **sa** propre écriture,
+/// sous ses propres gardes.
+///
+/// [`SupplierUnvalidationBlocker::Paid`]: crate::errors::SupplierUnvalidationBlocker::Paid
+pub async fn unvalidate_in_tx(
+    tx: &mut sqlx::Transaction<'_, sqlx::MySql>,
+    company_id: i64,
+    id: i64,
+    version: i32,
+    user_id: i64,
+) -> Result<SupplierInvoiceWithLines, DbError> {
+    use crate::errors::SupplierUnvalidationBlocker;
+
+    let inv = sqlx::query_as::<_, SupplierInvoice>(&format!("{FIND_SCOPED_SQL} FOR UPDATE"))
+        .bind(id)
+        .bind(company_id)
+        .fetch_optional(&mut **tx)
+        .await
+        .map_err(map_db_error)?
+        .ok_or(DbError::NotFound)?;
+    let refus = |blocker, document_id| DbError::SupplierInvoiceNotUnvalidatable {
+        blocker,
+        document_id,
+        document_label: inv.supplier_invoice_number.clone(),
+    };
+    match inv.status.as_str() {
+        "open" => {}
+        "paid" => return Err(refus(SupplierUnvalidationBlocker::Paid, None)),
+        other => {
+            return Err(DbError::IllegalStateTransition(format!(
+                "seule une facture validée se dévalide (statut actuel : '{other}')"
+            )));
+        }
+    }
+    if inv.version != version {
+        return Err(DbError::OptimisticLockConflict);
+    }
+    let je_id = inv.purchase_journal_entry_id.ok_or_else(|| {
+        DbError::Invariant("facture fournisseur validée sans écriture d'achat".into())
+    })?;
+    let batch: Option<i64> = sqlx::query_scalar(
+        "SELECT pb.id FROM payment_batch_items pbi \
+         JOIN payment_batches pb ON pb.id = pbi.payment_batch_id \
+         WHERE pbi.supplier_invoice_id = ? AND pb.status = 'generated' LIMIT 1 \
+         LOCK IN SHARE MODE",
+    )
+    .bind(id)
+    .fetch_optional(&mut **tx)
+    .await
+    .map_err(map_db_error)?;
+    if let Some(batch_id) = batch {
+        return Err(refus(
+            SupplierUnvalidationBlocker::InPaymentBatch,
+            Some(batch_id),
+        ));
+    }
+    let matched: Option<i64> = sqlx::query_scalar(
+        "SELECT id FROM bank_transactions WHERE matched_entry_id = ? LIMIT 1 LOCK IN SHARE MODE",
+    )
+    .bind(je_id)
+    .fetch_optional(&mut **tx)
+    .await
+    .map_err(map_db_error)?;
+    if let Some(tx_id) = matched {
+        return Err(refus(
+            SupplierUnvalidationBlocker::MatchedBankTransaction,
+            Some(tx_id),
+        ));
+    }
+    let lines = fetch_lines(tx, id).await?;
+    let snapshot = snapshot_json(&inv, &lines);
+    // Un seul `UPDATE` : deux tiendraient un état qui viole
+    // `chk_supplier_invoices_entry_iff_not_draft`.
+    let rows = sqlx::query(
+        "UPDATE supplier_invoices SET status = 'draft', purchase_journal_entry_id = NULL, \
+         version = version + 1 \
+         WHERE id = ? AND company_id = ? AND version = ? AND status = 'open'",
+    )
+    .bind(id)
+    .bind(company_id)
+    .bind(version)
+    .execute(&mut **tx)
+    .await
+    .map_err(map_db_error)?
+    .rows_affected();
+    if rows != 1 {
+        return Err(DbError::OptimisticLockConflict);
+    }
+    // L'écriture part APRÈS que la facture a lâché sa référence (clé étrangère
+    // `RESTRICT`).
+    super::journal_entries::delete_in_tx(tx, company_id, je_id, user_id, None, false).await?;
+    audit_log::insert_in_tx(
+        &mut *tx,
+        NewAuditLogEntry::user(
+            user_id,
+            "supplier_invoice.unvalidated".to_string(),
+            "supplier_invoice".to_string(),
+            id,
+            Some(serde_json::json!({
+                "supplierInvoice": snapshot,
+                "purchaseJournalEntryId": je_id,
+            })),
+        ),
+    )
+    .await?;
+    reread(tx, company_id, id).await
+}
+
+/// **Valide** un brouillon de facture fournisseur (Story v017-4a, #849, AC-10 ;
+/// C-v017-4-7), dans la transaction fournie : l'écriture d'achat est passée —
+/// **la même** que passait la création de la 0.17.0-rc1 pour les mêmes données
+/// —, la facture devient `open` (« validée »), `version + 1`, audit
+/// `supplier_invoice.validated` (`journalEntryId`).
+///
+/// Refus : facture absente → `NotFound` ; pas un brouillon →
+/// `IllegalStateTransition` (lu **sous le verrou** : le perdant de deux
+/// validations concurrentes relit `open` et rend ce code, non
+/// `OptimisticLockConflict` — test piloté, M20) ; version périmée →
+/// `OptimisticLockConflict` ; puis les refus de l'ancienne création, contrôles
+/// de saisie refaits sous verrou compris (projet archivé depuis
+/// l'enregistrement, compte devenu inactif ou non imputable) : exercice,
+/// réglages, comptes désignés. Un refus n'écrit rien.
+///
+/// Aucun `begin`/`commit` interne. Réutilisé par [`create_validated_in_tx`].
+///
+/// # Ordre des verrous
+///
+/// **La facture `FOR UPDATE` d'abord**, puis l'ordre canonique côté achat
+/// (Story 15-5e1, AC5), numéroté comme les étapes du code :
 ///
 /// ```text
 /// (0)    projects / companies   projet analytique : sentinelle companies puis
@@ -381,31 +1077,54 @@ pub async fn create(
 /// fournisseur. Les comptes de charge ne sont
 /// pas triés : les cycles qui restent (deux saisies aux comptes croisés, une
 /// charge imputée au compte d'arrondi contre un règlement client par compte
-/// interne avec écart) sont couverts par le **rejeu des routes** — la saisie
-/// (`POST /supplier-invoices`, Story 15-5e1) et la complétion d'une facture
-/// importée (15-5e2). La règle générale est écrite au doc-comment de
-/// [`super::invoices::validate_invoice`].
-pub async fn create_in_tx(
+/// interne avec écart) sont couverts par le **rejeu des routes** — la
+/// validation (`POST /supplier-invoices/{id}/validate`, Story v017-4a ; la
+/// saisie jusqu'à la 0.17.0-rc1, Story 15-5e1). Cycle **connu** avec la
+/// confirmation d'un lot et l'acceptation d'un lot de rapprochement (sentinelle
+/// `companies` partagée, puis facture suivante) : rejoué de même. La règle
+/// générale est écrite au doc-comment de [`super::invoices::validate_invoice`].
+pub async fn validate_in_tx(
     tx: &mut sqlx::Transaction<'_, sqlx::MySql>,
-    new: NewSupplierInvoice,
+    company_id: i64,
+    id: i64,
+    version: i32,
     user_id: i64,
 ) -> Result<SupplierInvoiceWithLines, DbError> {
     use crate::entities::{Journal, NewJournalEntry};
     use crate::repositories::{company_invoice_settings, fiscal_years, journal_entries};
 
-    let NewSupplierInvoice {
-        company_id,
-        contact_id,
-        supplier_invoice_number,
-        invoice_date,
-        due_date,
-        creditor_iban,
-        creditor_qr_iban,
-        payment_reference,
-        expected_payment_amount,
-        project_id,
-        lines,
-    } = new;
+    // (−1) La facture, sous verrou ; son statut, puis sa version.
+    let inv = sqlx::query_as::<_, SupplierInvoice>(&format!("{FIND_SCOPED_SQL} FOR UPDATE"))
+        .bind(id)
+        .bind(company_id)
+        .fetch_optional(&mut **tx)
+        .await
+        .map_err(map_db_error)?
+        .ok_or(DbError::NotFound)?;
+    if inv.status != "draft" {
+        return Err(DbError::IllegalStateTransition(format!(
+            "seul un brouillon se valide (statut actuel : '{}')",
+            inv.status
+        )));
+    }
+    if inv.version != version {
+        return Err(DbError::OptimisticLockConflict);
+    }
+    let contact_id = inv.contact_id;
+    let supplier_invoice_number = inv.supplier_invoice_number.clone();
+    let invoice_date = inv.invoice_date;
+    let project_id = inv.project_id;
+    let lines: Vec<crate::entities::NewSupplierInvoiceLine> = fetch_lines(tx, id)
+        .await?
+        .into_iter()
+        .map(|l| crate::entities::NewSupplierInvoiceLine {
+            description: l.description,
+            quantity: l.quantity,
+            unit_price: l.unit_price,
+            vat_rate: l.vat_rate,
+            expense_account_id: l.expense_account_id,
+        })
+        .collect();
 
     if lines.is_empty() {
         return Err(DbError::IllegalStateTransition(
@@ -441,8 +1160,6 @@ pub async fn create_in_tx(
 
     // (2) Valider lignes : montant HT > 0, compte de charge company-scoped + actif.
     let mut pairs: Vec<(Decimal, Decimal, i64)> = Vec::with_capacity(lines.len());
-    let mut computed_lines: Vec<(Decimal, &crate::entities::NewSupplierInvoiceLine)> =
-        Vec::with_capacity(lines.len());
     // Story 15-5a (choix C22) — DEUX passes : la FORME de toutes les lignes
     // d'abord (refus immédiat, dans l'ordre des lignes), puis les COMPTES. Les
     // comptes non imputables sont collectés pour être tous nommés par un seul
@@ -509,7 +1226,6 @@ pub async fn create_in_tx(
             _ => return Err(DbError::InactiveOrInvalidAccounts),
         }
         pairs.push((line_total, line.vat_rate, line.expense_account_id));
-        computed_lines.push((line_total, line));
     }
     if !non_postable.is_empty() {
         return Err(DbError::accounts_not_postable(non_postable));
@@ -575,79 +1291,45 @@ pub async fn create_in_tx(
     )
     .await?;
 
-    // (6) INSERT supplier_invoices (status='open').
-    let inv_id: i64 = sqlx::query(
-        "INSERT INTO supplier_invoices \
-         (company_id, contact_id, supplier_invoice_number, status, invoice_date, due_date, \
-          total_amount, creditor_iban, creditor_qr_iban, payment_reference, \
-          expected_payment_amount, project_id, purchase_journal_entry_id) \
-         VALUES (?, ?, ?, 'open', ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+    // (6) La facture devient `open` (« validée ») ; son total est celui de la
+    //     fonction pure (identique au brouillon, par construction) ; un seul
+    //     `UPDATE`, sous la contrainte « écriture si et seulement si non
+    //     brouillon ».
+    let rows = sqlx::query(
+        "UPDATE supplier_invoices SET status = 'open', purchase_journal_entry_id = ?, \
+         total_amount = ?, version = version + 1 \
+         WHERE id = ? AND company_id = ? AND version = ? AND status = 'draft'",
     )
-    .bind(company_id)
-    .bind(contact_id)
-    .bind(&supplier_invoice_number)
-    .bind(invoice_date)
-    .bind(due_date)
-    .bind(total_ttc)
-    .bind(&creditor_iban)
-    .bind(&creditor_qr_iban)
-    .bind(&payment_reference)
-    .bind(expected_payment_amount)
-    .bind(project_id)
     .bind(je.entry.id)
+    .bind(total_ttc)
+    .bind(id)
+    .bind(company_id)
+    .bind(version)
     .execute(&mut **tx)
     .await
     .map_err(map_db_error)?
-    .last_insert_id() as i64;
-
-    // (7) INSERT supplier_invoice_lines.
-    for (position, (line_total, line)) in computed_lines.iter().enumerate() {
-        sqlx::query(
-            "INSERT INTO supplier_invoice_lines \
-             (supplier_invoice_id, position, description, quantity, unit_price, vat_rate, \
-              line_total, expense_account_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-        )
-        .bind(inv_id)
-        .bind(position as i32)
-        .bind(&line.description)
-        .bind(line.quantity)
-        .bind(line.unit_price)
-        .bind(line.vat_rate)
-        .bind(*line_total)
-        .bind(line.expense_account_id)
-        .execute(&mut **tx)
-        .await
-        .map_err(map_db_error)?;
+    .rows_affected();
+    if rows != 1 {
+        return Err(DbError::OptimisticLockConflict);
     }
 
-    // (8) Relire + audit.
-    let inv = sqlx::query_as::<_, SupplierInvoice>(FIND_SCOPED_SQL)
-        .bind(inv_id)
-        .bind(company_id)
-        .fetch_one(&mut **tx)
-        .await
-        .map_err(map_db_error)?;
-    let inv_lines = fetch_lines(&mut *tx, inv_id).await?;
-
+    // (7) Relire + audit.
+    let validated = reread(tx, company_id, id).await?;
     audit_log::insert_in_tx(
         &mut *tx,
         NewAuditLogEntry::user(
             user_id,
-            "supplier_invoice.created".to_string(),
+            "supplier_invoice.validated".to_string(),
             "supplier_invoice".to_string(),
-            inv_id,
+            id,
             Some(serde_json::json!({
-                "supplierInvoice": snapshot_json(&inv, &inv_lines),
+                "supplierInvoice": snapshot_json(&validated.invoice, &validated.lines),
                 "journalEntryId": je.entry.id,
             })),
         ),
     )
     .await?;
-
-    Ok(SupplierInvoiceWithLines {
-        invoice: inv,
-        lines: inv_lines,
-    })
+    Ok(validated)
 }
 
 /// Garde [Story 12.3] : refuse une mutation directe (`pay`/`cancel`) si la
@@ -825,20 +1507,22 @@ pub async fn pay_in_tx_as(
         .ok_or(DbError::NotFound)?;
     if inv.status != "open" {
         return Err(DbError::IllegalStateTransition(format!(
-            "seule une facture ouverte peut être réglée (statut actuel : '{}')",
+            "seule une facture validée peut être réglée (statut actuel : '{}')",
             inv.status
         )));
     }
+    let purchase_entry_id = inv.purchase_journal_entry_id.ok_or_else(|| {
+        DbError::Invariant("facture fournisseur validée sans écriture d'achat".into())
+    })?;
 
     // (2) Compte débité (créanciers) ET montant = ligne de crédit de l'écriture
     //     d'achat → solde 2000 garanti à 0 quelle que soit l'évolution des settings.
     //     Lecteur partagé avec la création d'un lot (Story 15-6b).
-    let (payable_account_id, ttc) =
-        purchase_payable_line(tx, company_id, inv.purchase_journal_entry_id)
-            .await?
-            .ok_or_else(|| {
-                DbError::Invariant("écriture d'achat sans ligne de crédit créanciers".into())
-            })?;
+    let (payable_account_id, ttc) = purchase_payable_line(tx, company_id, purchase_entry_id)
+        .await?
+        .ok_or_else(|| {
+            DbError::Invariant("écriture d'achat sans ligne de crédit créanciers".into())
+        })?;
 
     // (3) Contrepartie selon le choix binaire (company-scoped).
     let (counterparty_account_id, settlement_type, bank_account_id, internal_account_id, journal) =
@@ -1252,8 +1936,8 @@ pub async fn lock_for_bank_settlement_in_tx(
 /// ou `None` (Story 25-3-c, #454).
 ///
 /// ⚠️ **La précédence est composée ICI**, non par l'ordre de déclaration de
-/// [`SettlementCancelBlocker`] : rang 1, la facture est déjà `cancelled` (coupe
-/// court) ; rangs 2 à 5 (dont le 2 bis, le lettrage de pièce figé par la
+/// [`SettlementCancelBlocker`] : rang 1, la facture est un brouillon (Story
+/// v017-4a), puis déjà `cancelled` (coupe court) ; rangs 2 à 5 (dont le 2 bis, le lettrage de pièce figé par la
 /// période — Story 15-1a2-0), la **queue commune** évaluée sur l'écriture d'**achat**
 /// ([`super::settlement_cancellation::settlement_entry_cancel_blocker`], aucun
 /// jumeau) ; rang 6, **en dernier**, un lot de paiement `generated` — le lever
@@ -1273,7 +1957,7 @@ pub async fn supplier_invoice_cancel_blocker(
 ) -> Result<Option<super::settlement_cancellation::SettlementCancelHit>, DbError> {
     use crate::errors::SettlementCancelBlocker;
 
-    let row: Option<(String, i64)> = sqlx::query_as(
+    let row: Option<(String, Option<i64>)> = sqlx::query_as(
         "SELECT status, purchase_journal_entry_id FROM supplier_invoices \
          WHERE id = ? AND company_id = ?",
     )
@@ -1283,6 +1967,15 @@ pub async fn supplier_invoice_cancel_blocker(
     .await
     .map_err(map_db_error)?;
     let (status, purchase_entry) = row.ok_or(DbError::NotFound)?;
+    // Rang 1 (Story v017-4a, AC-13) : un brouillon n'a rien passé au journal,
+    // il ne s'annule pas — il se corrige ou se supprime. Coupe court.
+    if status == "draft" {
+        return Ok(Some((
+            SettlementCancelBlocker::SupplierInvoiceDraft,
+            None,
+            None,
+        )));
+    }
     if status == "cancelled" {
         return Ok(Some((
             SettlementCancelBlocker::SupplierInvoiceCancelled,
@@ -1290,6 +1983,9 @@ pub async fn supplier_invoice_cancel_blocker(
             None,
         )));
     }
+    let purchase_entry = purchase_entry.ok_or_else(|| {
+        DbError::Invariant("facture fournisseur validée sans écriture d'achat".into())
+    })?;
     if let Some(hit) = super::settlement_cancellation::settlement_entry_cancel_blocker(
         conn,
         company_id,
@@ -1349,6 +2045,16 @@ pub async fn cancel_in_tx(
         .await
         .map_err(map_db_error)?
         .ok_or(DbError::NotFound)?;
+    //     Story v017-4a (AC-13) — un brouillon n'a pas d'écriture d'achat : le
+    //     rang 1 le refuse avant toute lecture de l'écriture.
+    if inv.status == "draft" {
+        return Err(DbError::SupplierInvoiceNotCancellable {
+            blocker: SettlementCancelBlocker::SupplierInvoiceDraft,
+        });
+    }
+    let purchase_entry_id = inv.purchase_journal_entry_id.ok_or_else(|| {
+        DbError::Invariant("facture fournisseur validée sans écriture d'achat".into())
+    })?;
     //     Sa valeur est GARDÉE (Story 15-1a2-ii) : c'est l'exercice tenu de la
     //     dissolution de l'étape (2 bis).
     let purchase_fiscal_year_id: i64 = sqlx::query_scalar(
@@ -1356,7 +2062,7 @@ pub async fn cancel_in_tx(
          JOIN fiscal_years fy ON fy.id = je.fiscal_year_id \
          WHERE je.id = ? AND je.company_id = ? FOR UPDATE",
     )
-    .bind(inv.purchase_journal_entry_id)
+    .bind(purchase_entry_id)
     .bind(company_id)
     .fetch_optional(&mut **tx)
     .await
@@ -1379,7 +2085,8 @@ pub async fn cancel_in_tx(
     //     socle, qui les refuse avec son erreur canonique (400 qui NOMME les
     //     comptes archivés).
     if let Some((
-        blocker @ (SettlementCancelBlocker::SupplierInvoiceCancelled
+        blocker @ (SettlementCancelBlocker::SupplierInvoiceDraft
+        | SettlementCancelBlocker::SupplierInvoiceCancelled
         | SettlementCancelBlocker::FiscalYearClosed
         | SettlementCancelBlocker::DocumentLetteringInClosedPeriods
         | SettlementCancelBlocker::SupplierInvoiceInPaymentBatch),
@@ -1414,7 +2121,7 @@ pub async fn cancel_in_tx(
     let reversal = journal_entries::reverse_owned_in_tx(
         tx,
         company_id,
-        inv.purchase_journal_entry_id,
+        purchase_entry_id,
         user_id,
         ReversalAuthority::SupplierPurchase {
             supplier_invoice_id: id,
@@ -1455,7 +2162,7 @@ pub async fn cancel_in_tx(
     // (5) L'audit du GESTE — seule trace du règlement détaché.
     let mut details = serde_json::json!({
         "previousStatus": inv.status,
-        "purchaseJournalEntryId": inv.purchase_journal_entry_id,
+        "purchaseJournalEntryId": purchase_entry_id,
         "reversalJournalEntryId": reversal.entry.id,
     });
     if let Some(settlement_entry) = inv.settlement_journal_entry_id {

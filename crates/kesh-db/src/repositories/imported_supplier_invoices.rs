@@ -6,7 +6,7 @@
 //! en **12-5c** ; ce module n'expose que le CRUD de base, scopé multi-tenant.
 
 use crate::entities::imported_supplier_invoice::{
-    ImportedSupplierInvoice, NewImportedSupplierInvoice,
+    ImportedSupplierInvoice, LinkOrigin, NewImportedSupplierInvoice,
 };
 use crate::errors::{DbError, map_db_error};
 use sqlx::MySqlPool;
@@ -290,8 +290,18 @@ pub async fn attach_in_tx(
     // (3) Sentinelle de la société, APRÈS le document et la facture (C-30-2-46).
     super::bank_accounts::acquire_company_sentinel_lock(tx, company_id).await?;
 
-    // (4) Le lien : l'unicité refuse une facture qui a déjà un document.
-    match mark_completed(tx, company_id, imported_id, supplier_invoice_id).await {
+    // (4) Le lien : l'unicité refuse une facture qui a déjà un document. Son
+    //     origine est `attachment` (Story v017-4a) : un document joint après
+    //     coup n'impose rien au `PUT` d'un brouillon.
+    match mark_completed(
+        tx,
+        company_id,
+        imported_id,
+        supplier_invoice_id,
+        LinkOrigin::Attachment,
+    )
+    .await
+    {
         Ok(()) => Ok(Ok(staging)),
         Err(DbError::UniqueConstraintViolation(msg))
             if msg.contains(UNIQUE_SUPPLIER_INVOICE_KEY) =>
@@ -304,7 +314,8 @@ pub async fn attach_in_tx(
 
 /// Détache le document de la facture fournisseur `supplier_invoice_id`, **dans
 /// la transaction fournie**, sans `COMMIT` (Story 30-2c, AC24) : le document
-/// repasse `to_complete`, son lien est remis à `NULL`. Rend la ligne du document
+/// repasse `to_complete`, son lien et son origine (`link_origin`, Story
+/// v017-4a) sont remis à `NULL`. Rend la ligne du document
 /// telle que lue sous verrou (pour l'audit), ou `None` si la facture n'a pas de
 /// document — facture inconnue, d'une autre société ou sans document.
 ///
@@ -337,7 +348,7 @@ pub async fn detach_in_tx(
     };
     let affected = sqlx::query(
         "UPDATE imported_supplier_invoices \
-         SET status = 'to_complete', supplier_invoice_id = NULL \
+         SET status = 'to_complete', supplier_invoice_id = NULL, link_origin = NULL \
          WHERE id = ? AND company_id = ? AND status = 'completed'",
     )
     .bind(staging.id)
@@ -405,20 +416,26 @@ where
 
 /// Marque une facture importée `completed` et lie la facture fournisseur réelle
 /// (AC7 step 7). À appeler **dans la transaction de complétion**, après
-/// `supplier_invoices::create_in_tx`. Le `WHERE status='to_complete'` est une
-/// défense en profondeur (la garde principale est le `FOR UPDATE` + check amont).
+/// `supplier_invoices::create_draft_in_tx`, ou par [`attach_in_tx`]. Le
+/// `WHERE status='to_complete'` est une défense en profondeur (la garde
+/// principale est le `FOR UPDATE` + check amont).
+///
+/// Story v017-4a (#849, AC-7) — l'**origine** du lien est posée dans le même
+/// `UPDATE` : `Completion` par la complétion, `Attachment` par le rattachement.
 pub async fn mark_completed(
     tx: &mut sqlx::Transaction<'_, sqlx::MySql>,
     company_id: i64,
     id: i64,
     supplier_invoice_id: i64,
+    origin: LinkOrigin,
 ) -> Result<(), DbError> {
     let affected = sqlx::query(
         "UPDATE imported_supplier_invoices \
-         SET status = 'completed', supplier_invoice_id = ? \
+         SET status = 'completed', supplier_invoice_id = ?, link_origin = ? \
          WHERE id = ? AND company_id = ? AND status = 'to_complete'",
     )
     .bind(supplier_invoice_id)
+    .bind(origin.as_str())
     .bind(id)
     .bind(company_id)
     .execute(&mut **tx)
@@ -484,7 +501,7 @@ pub async fn reactivate_to_complete(
 ) -> Result<bool, DbError> {
     let affected = sqlx::query(
         "UPDATE imported_supplier_invoices \
-         SET status = 'to_complete', supplier_invoice_id = NULL \
+         SET status = 'to_complete', supplier_invoice_id = NULL, link_origin = NULL \
          WHERE id = ? AND company_id = ? AND status = 'discarded'",
     )
     .bind(id)

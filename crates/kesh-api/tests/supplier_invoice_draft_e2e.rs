@@ -237,6 +237,15 @@ fn code(b: &Value) -> &str {
     b["error"]["code"].as_str().unwrap_or("")
 }
 
+/// Un montant de la réponse (chaîne décimale, échelle de la colonne), comparé
+/// en valeur : `"25.5000"` vaut `25.50`.
+fn montant(v: &Value) -> Decimal {
+    v.as_str()
+        .unwrap_or_else(|| panic!("montant attendu en chaîne : {v}"))
+        .parse()
+        .unwrap()
+}
+
 async fn nb_ecritures(pool: &MySqlPool, company_id: i64) -> i64 {
     sqlx::query_scalar("SELECT COUNT(*) FROM journal_entries WHERE company_id = ?")
         .bind(company_id)
@@ -429,7 +438,7 @@ async fn put_replaces_a_draft(pool: MySqlPool) {
     assert_eq!(p["supplierInvoiceNumber"], "FF-P2");
     assert_eq!(p["invoiceDate"], "2026-06-18");
     assert_eq!(p["dueDate"], "2026-07-18");
-    assert_eq!(p["totalAmount"], "25.50");
+    assert_eq!(montant(&p["totalAmount"]), dec!(25.50));
     assert_eq!(p["version"], 2);
     assert_eq!(p["status"], "draft");
 
@@ -509,7 +518,7 @@ async fn put_of_a_draft_born_from_a_qr_document_keeps_the_qr_rules(pool: MySqlPo
         b["sourceDocument"]["qr"]["creditorIban"],
         "CH9300762011623852957"
     );
-    assert_eq!(b["sourceDocument"]["qr"]["amount"], "100.00");
+    assert_eq!(montant(&b["sourceDocument"]["qr"]["amount"]), dec!(100.00));
     assert!(b["sourceDocument"].get("storagePath").is_none());
 
     let id = b["id"].clone();
@@ -545,7 +554,7 @@ async fn put_of_a_draft_born_from_a_qr_document_keeps_the_qr_rules(pool: MySqlPo
     let (s, p) = envoyer(&c, reqwest::Method::PUT, &chemin, &c.admin, Some(juste)).await;
     assert_eq!(s, 200, "{p}");
     assert_eq!(p["creditorIban"], "CH9300762011623852957");
-    assert_eq!(p["expectedPaymentAmount"], "100.00");
+    assert_eq!(montant(&p["expectedPaymentAmount"]), dec!(100.00));
 }
 
 /// AC-8 — **le cas de Guy** : une facture validée, un document joint après
@@ -592,7 +601,7 @@ async fn put_of_a_draft_with_an_attached_document_imposes_nothing(pool: MySqlPoo
     .await;
     assert_eq!(s, 200, "M20-ter : {p}");
     assert_eq!(p["creditorIban"], "CH9300762011623852957");
-    assert_eq!(p["totalAmount"], "82.00");
+    assert_eq!(montant(&p["totalAmount"]), dec!(82.00));
     let r = valider(&c, &p).await;
     assert_eq!(r["status"], "open");
 }
@@ -1039,4 +1048,73 @@ async fn the_mcp_service_reads_a_draft(pool: MySqlPool) {
             .any(|(code, _)| *code == "draft"),
         "le statut `draft` est connu de l'outil MCP"
     );
+}
+
+/// AC-9 — **non-régression de route** (étape 0 de la 4a, validation P5, P2) :
+/// le `DELETE` HTTP d'un brouillon aboutit (`204`, jamais `500`) pendant un
+/// rattachement concurrent, rejoué à la main jusqu'à la sentinelle puis conclu.
+/// Sous l'ordre prescrit, aucun interblocage ne se forme : ce test est vert avec
+/// ou sans l'enveloppe de rejeu et **ne prouve rien sur elle** ; le mutant
+/// M20-quater est tué au dépôt (`deleting_a_draft_during_an_attachment_does_not_deadlock`).
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn delete_route_during_an_attachment_ends_in_204(pool: MySqlPool) {
+    use kesh_db::entities::imported_supplier_invoice::LinkOrigin;
+    use kesh_db::test_fixtures::attendre_une_requete_en_cours;
+
+    let c = setup(&pool).await;
+    let company = c.seeded.company_id;
+    let b = creer(&c, "FF-RT", "10.00").await;
+    let id = b["id"].as_i64().unwrap();
+    let doc = document(&pool, company, "rt1", None).await;
+
+    let mut a = pool.begin().await.unwrap();
+    for (sql, cle) in [
+        (
+            "SELECT id FROM imported_supplier_invoices WHERE id = ? AND company_id = ? FOR UPDATE",
+            doc,
+        ),
+        (
+            "SELECT id FROM supplier_invoices WHERE id = ? AND company_id = ? FOR UPDATE",
+            id,
+        ),
+    ] {
+        let _: Option<i64> = sqlx::query_scalar(sql)
+            .bind(cle)
+            .bind(company)
+            .fetch_optional(&mut *a)
+            .await
+            .unwrap();
+    }
+    let _: Option<i64> = sqlx::query_scalar("SELECT id FROM companies WHERE id = ? FOR UPDATE")
+        .bind(company)
+        .fetch_optional(&mut *a)
+        .await
+        .unwrap();
+
+    let url = c.app.url(&format!("/api/v1/supplier-invoices/{id}"));
+    let client = c.app.client.clone();
+    let jeton = c.admin.clone();
+    let route = tokio::spawn(async move {
+        client
+            .delete(url)
+            .bearer_auth(jeton)
+            .send()
+            .await
+            .unwrap()
+            .status()
+            .as_u16()
+    });
+    let vu = attendre_une_requete_en_cours(
+        &pool,
+        &["FROM supplier_invoices WHERE id", "FOR UPDATE"],
+        || route.is_finished(),
+    )
+    .await;
+    assert!(vu, "le DELETE devait attendre la facture");
+    imported_supplier_invoices::mark_completed(&mut a, company, doc, id, LinkOrigin::Attachment)
+        .await
+        .expect("le rattachement aboutit");
+    a.commit().await.unwrap();
+    let status = route.await.unwrap();
+    assert_eq!(status, 204, "jamais 500");
 }
