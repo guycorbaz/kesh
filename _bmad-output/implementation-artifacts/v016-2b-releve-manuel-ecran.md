@@ -652,4 +652,30 @@ Aucun nouveau. Rappels : issues de la liste C de la parente (période déjà sai
   (KF-029 : `mode-expert.spec.ts:26`, `:41`, `onboarding-path-b.spec.ts:65`, `:92`, `onboarding.spec.ts:57`, `:77`,
   `:150`) ; mutations **12 jouées, 12 tuées** (M13 à M30, M31, M32) ; captures rejouées (20). Prochaine étape : revue P2
   ciblée (`v016-2b-review-prompt-p2.md`, Opus, une lentille).
+- 2026-10-31 — **Revue de code P2** (ciblée, Opus, une lentille ; rapport `kesh-gate-logs/v0162b-review-p2.md`) : **0 CRITICAL,
+  0 HIGH, 1 MEDIUM, 6 LOW**. Prémisses vérifiées au code (`ManualStatementForm.svelte:180-184` `previewStale = true` sur un
+  refus de création à case, et `:557-562` l'avis « Le relevé a changé » ; `manual-statement.ts:276-277` et `:502-505`, une
+  ligne vide en fin ne change pas la table des rangs ; `bank-import-manual-page.test.ts:51` `toThrow()` nu ;
+  `boutons-rouges-inventory.test.ts:179` filtre `.test.` ; `textes_coherents.rs` ancre par préfixe). Traitement
+  (décisions de l'orchestrateur) :
+  - **MEDIUM** — P1 (né de la remédiation B5) : sur `BANK_IMPORT_DUPLICATE_FILE`, `BANK_STATEMENT_DUPLICATE_LINES` ou
+    `BANK_STATEMENT_OPENING_BALANCE_GAP` à l'enregistrement, l'écran ne dit plus « le relevé a changé » : le refus porte
+    `serverChanged`, et un avis propre (`bank-import-manual-preview-outdated-server`, « La situation du compte a changé
+    dans Kesh depuis la vérification : vérifiez de nouveau le relevé, puis confirmez. ») s'affiche avec lui et tombe
+    avec lui ; clé aux quatre catalogues, repli égal au fr-CH, `REPLIS_A_SITE_UNIQUE` 93 → 94 ; trois Vitest (un par
+    code) ; mutation **M33** (l'ancien avis remis) tuée par les trois.
+  - **LOW appliqués** — P2 (en-tête du composant : une ligne vide ajoutée ou retirée en fin de tableau ne périme rien,
+    et c'est voulu ; *note : l'entrée « Revue de code P1 » ci-dessus écrit « retirer ou ajouter une ligne, vide comprise,
+    périme l'aperçu » — à lire « … une ligne qui déplace une ligne remplie »*), P4 (la garde : redirection exacte
+    `{ status: 302, location: '/' }`), P5 (témoin renommé `TemoinFormulaire.test.helper.svelte`, hors des gardes qui
+    écartent `.test.`), P7 (G24 : ancre `(?m)^<ouverture>[:= ]`, témoin d'un nom prolongé placé avant la table).
+  - **LOW non pris, issues demandées** — P3 (après un succès, l'écran reste figé si la navigation échoue ou si `onSaved`
+    manque), P6 (un rang inconnu sur un refus de cellule n'est pas journalisé et devient un refus d'entête).
+  Compteurs : `sitesTotal` 2713 → 2714 (`ManualStatementForm.svelte` 52 → 53). Gate au dernier commit de code (`853d23c1`) :
+  nextest 4521/4521 (7 ignorés), Vitest 186 fichiers 2215/2215, `check` 0 erreur, lint PASS, build vert ; mutations
+  **13 jouées, 13 tuées** (M13 à M33) ; E2E complet **326 passés, 8 échoués, 18 ignorés** : les sept KF-029
+  (`mode-expert.spec.ts:26`, `:41`, `onboarding-path-b.spec.ts:65`, `:92`, `onboarding.spec.ts:57`, `:77`, `:150`) et
+  `fiscal-year-closing-journey.spec.ts:166` (délai dépassé dans le `beforeEach` `seedTestState`) — **rejouée seule : 2
+  passés** (`e2e-rejeu-closing.log`), donc la pollution que `docs/testing.md` § *Les échecs attendus* admet (0 à 2), sans
+  rapport avec le diff. Prochaine étape : revue P3 ciblée (`v016-2b-review-prompt-p3.md`, Sonnet).
 
