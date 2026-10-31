@@ -354,3 +354,26 @@ NAS.)*
 - **Écartées** : (b) qualité sous 60 — interdit ; (c) relever le plafond — interdit ; (d) bruit restreint sur la page
   sans QR — AC-1 l'exclut.
 - **Réversible** : oui.
+
+### C-v017-5-18 — Le verrou de run fuit à l'abandon : la connexion du verrou est fermée à sa restitution
+
+*(Ajouté au développement, 2026-10-31 — AC-6-bis.)*
+
+- **Contexte** : T12 (client à délai de 2 s, douze PNG de bruit) montre que hyper **abandonne** le gestionnaire à
+  l'abandon du client : l'import s'arrête au fichier en cours (7 documents traités, 5 restés dans le dossier). Avec un
+  pool **réglé comme la production** (`main.rs:82-85` : `max_connections(5)`, délais par défaut de `sqlx`, dont
+  `idle_timeout` de dix minutes), `IS_FREE_LOCK` vaut **0** une fois le passage arrêté : la `PoolConnection` du verrou,
+  abandonnée sans `RELEASE_LOCK`, **retourne au pool** (`sqlx-core-0.8.6/src/pool/connection.rs:199-210`, `:275-330`)
+  en gardant le verrou dans sa session ; et le second import répond **200** en reprenant cette même session (verrou
+  ré-entrant) sans le rendre — exactement le piège que la fiche prévoyait. Avec le pool de `#[sqlx::test]`, qui ferme
+  toute connexion inactive au bout d'une seconde (`sqlx-mysql-0.8.6/src/testing/mod.rs:181`), le premier essai de T12
+  était **vert à tort**.
+- **Retenu** : correction **mécanique**, autorisée par AC-6-bis — `lock_conn.close_on_drop()` juste après l'acquisition
+  (`inbox_import.rs`) : la connexion du verrou est fermée à sa restitution, normale ou abandonnée ; la session s'achève et
+  MariaDB rend le verrou. Coût : une connexion neuve par import. T12 tourne avec un pool réglé comme la production, et
+  le dit en tête. Issue P2 **demandée** à l'orchestrateur (fuite constatée, corrigée dans la story) pour la trace.
+- **Écartées** : (b) une garde `Drop` qui `detach()` la connexion — même effet, plus de code ; (c) `tokio::spawn` du
+  passage — change la conduite à l'abandon (le passage irait au bout sans client), hors périmètre (#855) ; (d) ne rien
+  corriger — l'écran annoncerait un import déjà en cours pendant jusqu'à dix minutes après un délai dépassé, que la
+  story rend plus probable.
+- **Réversible** : oui (une ligne).

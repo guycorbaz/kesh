@@ -55,10 +55,11 @@ use crate::errors::AppError;
 use crate::qr_decode::{self, DecodeConfig, DecodeError};
 use kesh_db::entities::audit_log::NewAuditLogEntry;
 use kesh_db::entities::imported_supplier_invoice::{
-    NewImportedSupplierInvoice, check_scanned_fits_columns,
+    NewImportedSupplierInvoice, QrColumns, check_scanned_fits_columns,
 };
 use kesh_db::errors::{DbError, map_db_error};
 use kesh_db::repositories::{audit_log, imported_supplier_invoices};
+use kesh_qrbill::ScannedQrBill;
 
 // --- Catalogue des `error_code` per-fichier (constantes canoniques) ----------
 //
@@ -172,6 +173,16 @@ pub async fn run_inbox_import(
     let mut lock_conn = pool.acquire().await.map_err(|e| {
         AppError::Internal(format!("inbox import: acquisition connexion verrou: {e}"))
     })?;
+    // Story v017-5 (#854, AC-6-bis) — la connexion du verrou est FERMÉE à sa
+    // restitution, jamais rendue au pool. Quand le client (ou un proxy) abandonne
+    // la requête, hyper abandonne ce futur à son prochain `await` : le
+    // `RELEASE_LOCK` du point (2) n'est jamais exécuté, et une connexion rendue
+    // au pool garderait le verrou dans sa session — jusqu'à dix minutes
+    // d'inactivité, ou indéfiniment si elle resservait ; l'import suivant
+    // répondait 409, ou 200 en reprenant la même session (verrou ré-entrant)
+    // sans la libérer. Fermée, la session s'achève et MariaDB rend le verrou.
+    // Coût : une connexion neuve par import.
+    lock_conn.close_on_drop();
 
     let db_name: Option<String> = sqlx::query_scalar("SELECT DATABASE()")
         .fetch_one(&mut *lock_conn)
@@ -482,16 +493,47 @@ async fn process_one_file(
             // d'entrée : elle rend `Accepted` sans rien créer. Sans sa trace, la
             // piste garderait `discarded` pour dernière trace d'une pièce
             // redevenue `to_complete` — elle dirait le contraire de la base.
+            //
+            // Story v017-5 (#854, AC-8, C-v017-5-8) — une ligne SANS données QR
+            // est RELUE (même décodeur que l'import) AVANT la transaction : le
+            // rendu ne tient aucune connexion. Une ligne qui porte déjà un QR est
+            // réactivée sans décodage ; ses colonnes ne sont jamais réécrites.
+            let relu = !existing.has_qr();
+            let lecture = if relu {
+                match lire_qr(&ext, &bytes, config) {
+                    // Une pièce déjà archivée ne se refuse jamais à la relecture
+                    // (`ImageDecode`, impossible à octets égaux sauf changement de
+                    // la crate `image`) : réactivée sans QR, rapport `none`.
+                    Err(DecodeError::ImageDecode(_)) => LectureQr::Aucune,
+                    autre => LectureQr::classer(autre),
+                }
+            } else {
+                LectureQr::DejaStockee
+            };
+            let (qr, qr_error) = lecture.rapport();
             let mut tx = pool
                 .begin()
                 .await
                 .map_err(|e| AppError::Database(map_db_error(e)))?;
-            let reactivated = imported_supplier_invoices::reactivate_to_complete(
-                &mut tx,
-                company_id,
-                existing.id,
-            )
-            .await?;
+            let reactivated = match &lecture {
+                LectureQr::Exploitable(scanned) => {
+                    imported_supplier_invoices::reactivate_to_complete_with_qr(
+                        &mut tx,
+                        company_id,
+                        existing.id,
+                        &QrColumns::from_scanned(scanned),
+                    )
+                    .await?
+                }
+                _ => {
+                    imported_supplier_invoices::reactivate_to_complete(
+                        &mut tx,
+                        company_id,
+                        existing.id,
+                    )
+                    .await?
+                }
+            };
             if reactivated {
                 audit_log::insert_in_tx(
                     &mut tx,
@@ -504,6 +546,8 @@ async fn process_one_file(
                         Some(serde_json::json!({
                             "original_filename": file_name,
                             "file_hash": file_hash,
+                            "qr": qr,
+                            "qr_reread": relu,
                         })),
                     ),
                 )
@@ -512,16 +556,12 @@ async fn process_one_file(
                     .await
                     .map_err(|e| AppError::Database(map_db_error(e)))?;
                 remove_inbox_file(path);
-                // Story 30-2a — le rapport dit ce que porte la ligne STOCKÉE :
-                // un QR inexploitable n'a pas été stocké, il redevient `none`.
+                // Story v017-5 — le rapport dit le résultat de la relecture ;
+                // une ligne qui portait déjà un QR, `present`.
                 return Ok(FileOutcome::Accepted {
                     id: existing.id,
-                    qr: if existing.has_qr() {
-                        QrStatus::Present
-                    } else {
-                        QrStatus::Absent
-                    },
-                    qr_error: None,
+                    qr,
+                    qr_error,
                 });
             }
             // Rien réactivé : la transaction n'a rien à valider.
@@ -537,17 +577,7 @@ async fn process_one_file(
     }
 
     // (6) Décodage (12-5b) : PDF vs image.
-    let decode_result = if ext == "pdf" {
-        qr_decode::decode_spc_from_pdf_bytes(
-            &bytes,
-            DecodeConfig {
-                max_pages: config.inbox_max_pdf_pages,
-                ..DecodeConfig::default()
-            },
-        )
-    } else {
-        qr_decode::decode_spc_from_image_bytes(&bytes)
-    };
+    let decode_result = lire_qr(&ext, &bytes, config);
     // (6-bis) Story 30-2a (AC1, AC2) — un document sans QR, ou dont le QR est
     // inexploitable, ENTRE sans ses données QR. Le contrôle pur des colonnes
     // (`check_scanned_fits_columns`) tranche AVANT l'archivage : un QR lisible
@@ -556,23 +586,21 @@ async fn process_one_file(
     // plus souvent corrompue ; angle mort assumé : la crate `image` refuse aussi
     // quelques images qu'un navigateur afficherait (plus de
     // `MAX_IMAGE_DIMENSION` pixels de côté, variantes JPEG peu courantes).
-    let (scanned, qr, qr_error) = match decode_result {
-        Ok(Some(s)) => match check_scanned_fits_columns(&s) {
-            Ok(()) => (Some(s), QrStatus::Present, None),
-            Err(mismatch) => (None, QrStatus::Unreadable, Some(mismatch.code())),
-        },
-        Ok(None) => (None, QrStatus::Absent, None),
-        Err(DecodeError::ImageDecode(_)) => {
-            return dispose_failed(
-                path,
-                failed_dir,
-                file_name,
-                &disambig,
-                ERR_UNSUPPORTED_FILE_TYPE,
-                None,
-            );
-        }
-        Err(e) => (None, QrStatus::Unreadable, Some(map_decode_error(&e))),
+    if matches!(decode_result, Err(DecodeError::ImageDecode(_))) {
+        return dispose_failed(
+            path,
+            failed_dir,
+            file_name,
+            &disambig,
+            ERR_UNSUPPORTED_FILE_TYPE,
+            None,
+        );
+    }
+    let lecture = LectureQr::classer(decode_result);
+    let (qr, qr_error) = lecture.rapport();
+    let scanned = match lecture {
+        LectureQr::Exploitable(s) => Some(*s),
+        _ => None,
     };
 
     // (7) Archivage du justificatif (12-5b) — nom = `{sha256hex}.{ext}`.
@@ -759,6 +787,60 @@ fn map_decode_error(e: &DecodeError) -> &'static str {
         DecodeError::PdfRender(_) => ERR_PDF_RENDER_ERROR,
         DecodeError::InvalidSpcPayload(_) => ERR_INVALID_SPC_PAYLOAD,
         DecodeError::InvalidIban(_) => ERR_INVALID_IBAN,
+    }
+}
+
+/// Décode le QR d'un fichier déposé, PDF ou image — la seule lecture, partagée
+/// par l'import et la relecture à la réactivation (Story v017-5, #854, AC-8).
+fn lire_qr(ext: &str, bytes: &[u8], config: &Config) -> Result<Option<ScannedQrBill>, DecodeError> {
+    if ext == "pdf" {
+        qr_decode::decode_spc_from_pdf_bytes(
+            bytes,
+            DecodeConfig {
+                max_pages: config.inbox_max_pdf_pages,
+                ..DecodeConfig::default()
+            },
+        )
+    } else {
+        qr_decode::decode_spc_from_image_bytes(bytes)
+    }
+}
+
+/// Ce qu'une lecture apporte à la ligne de staging (Story 30-2a ; Story v017-5
+/// pour la réactivation).
+enum LectureQr {
+    /// QR-facture lue et tenant dans les colonnes : ses données s'écrivent.
+    Exploitable(Box<ScannedQrBill>),
+    /// QR-facture trouvée mais inexploitable : le code du rapport (`qrError`).
+    Inexploitable(&'static str),
+    /// Aucune QR-facture détectée.
+    Aucune,
+    /// Réactivation d'une ligne qui porte déjà un QR : rien n'est relu.
+    DejaStockee,
+}
+
+impl LectureQr {
+    /// Classe le résultat d'un décodage. `ImageDecode` est traité par l'appelant
+    /// avant (refus à l'import, `Aucune` à la réactivation) ; s'il arrive ici, il
+    /// est rangé comme inexploitable, avec son code.
+    fn classer(r: Result<Option<ScannedQrBill>, DecodeError>) -> Self {
+        match r {
+            Ok(Some(s)) => match check_scanned_fits_columns(&s) {
+                Ok(()) => Self::Exploitable(Box::new(s)),
+                Err(mismatch) => Self::Inexploitable(mismatch.code()),
+            },
+            Ok(None) => Self::Aucune,
+            Err(e) => Self::Inexploitable(map_decode_error(&e)),
+        }
+    }
+
+    /// L'état du QR au rapport, et son code quand il est inexploitable.
+    fn rapport(&self) -> (QrStatus, Option<&'static str>) {
+        match self {
+            Self::Exploitable(_) | Self::DejaStockee => (QrStatus::Present, None),
+            Self::Inexploitable(code) => (QrStatus::Unreadable, Some(code)),
+            Self::Aucune => (QrStatus::Absent, None),
+        }
     }
 }
 

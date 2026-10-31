@@ -887,16 +887,16 @@ mod tests {
         }
     }
 
+    /// Résultat d'un décodage.
+    type Issue = Result<Option<ScannedQrBill>, DecodeError>;
+
     /// Joue `decode_pages` sur un plan `(premier temps, second temps)` par page ;
     /// rend le résultat et la suite des appels.
     fn jouer(
         plan: &[(Faux, Faux)],
         page_count: usize,
         max_pages: usize,
-    ) -> (
-        Result<Option<ScannedQrBill>, DecodeError>,
-        Vec<(usize, Temps)>,
-    ) {
+    ) -> (Issue, Vec<(usize, Temps)>) {
         let mut appels = Vec::new();
         let r = decode_pages(page_count, max_pages, |i, t| {
             appels.push((i, t));
