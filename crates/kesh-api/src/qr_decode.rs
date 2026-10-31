@@ -99,8 +99,17 @@ pub const MAX_RENDER_DPI: f32 = 300.0;
 /// `None` — pas de second rendu — pour une dimension nulle, négative ou non finie,
 /// ou une borne nulle (garde explicite : `f32::min` ignore un `NaN`).
 pub fn render_scale(width_pt: f32, height_pt: f32, max_dimension: u16) -> Option<f32> {
-    let _ = (width_pt, height_pt, max_dimension, MAX_RENDER_DPI);
-    Some(1.0)
+    if !(width_pt.is_finite() && width_pt > 0.0 && height_pt.is_finite() && height_pt > 0.0)
+        || max_dimension == 0
+    {
+        return None;
+    }
+    let borne = f32::from(max_dimension);
+    Some(
+        (borne / width_pt)
+            .min(borne / height_pt)
+            .min(MAX_RENDER_DPI / 72.0),
+    )
 }
 
 /// Les deux temps du rendu d'une page PDF (Story v017-5, #854, C-v017-5-2).
@@ -122,8 +131,18 @@ pub(crate) enum Temps {
 ///    au premier temps ; la première QR-facture exploitable est rendue, une
 ///    QR-facture inexploitable est rendue en erreur aussitôt ; une erreur de rendu
 ///    est retenue (`last_render_err`) et la page est marquée ;
-/// 2. **fin** : au-delà du cap, `PdfRender` (la dernière erreur de rendu, ou le
+/// 2. **seconde passe**, seulement si aucune page de la première n'a livré de
+///    QR-facture : les mêmes pages, dans l'ordre, **sauf** celles dont le premier
+///    rendu a échoué, au second temps ; même conduite pour une QR-facture
+///    exploitable ou inexploitable. Une erreur du second rendu est journalisée et
+///    la page compte comme sans QR-facture : elle ne change **jamais** le
+///    diagnostic du document ;
+/// 3. **fin** : au-delà du cap, `PdfRender` (la dernière erreur de rendu, ou le
 ///    message du cap) ; sinon la dernière erreur de rendu ; sinon `Ok(None)`.
+///
+/// Un document dont une page livre une QR-facture au premier temps coûte donc ce
+/// qu'il coûtait avant la story ; seul un document sans QR-facture au premier
+/// temps paie la seconde passe.
 pub(crate) fn decode_pages<R>(
     page_count: usize,
     max_pages: usize,
@@ -138,8 +157,24 @@ where
     // dernière erreur de rendu pour la remonter SEULEMENT si aucune page ne porte
     // de QR (sinon on renverrait à tort `Ok(None)` alors qu'une page était illisible).
     let mut last_render_err: Option<String> = None;
-    for i in 0..limite {
+    let mut rendue = vec![false; limite];
+    for (i, ok) in rendue.iter_mut().enumerate() {
         match render(i, Temps::Premier) {
+            Ok(Some(img)) => {
+                *ok = true;
+                if let Some(scanned) = first_spc(&decode_qr_from_image(&img))? {
+                    return Ok(Some(scanned));
+                }
+            }
+            Ok(None) => *ok = true,
+            Err(e) => {
+                last_render_err = Some(format!("rendu page {i}: {e}"));
+            }
+        }
+    }
+    // Seconde passe : aucune page n'a livré de QR-facture au premier temps.
+    for (i, _) in rendue.iter().enumerate().filter(|(_, ok)| **ok) {
+        match render(i, Temps::Second) {
             Ok(Some(img)) => {
                 if let Some(scanned) = first_spc(&decode_qr_from_image(&img))? {
                     return Ok(Some(scanned));
@@ -147,7 +182,9 @@ where
             }
             Ok(None) => {}
             Err(e) => {
-                last_render_err = Some(format!("rendu page {i}: {e}"));
+                // La page s'est rendue au premier temps : l'échec du second rendu
+                // n'est pas une erreur du document. Aucun contenu au journal.
+                tracing::warn!(page = i, erreur = %e, "second rendu d'une page PDF impossible");
             }
         }
     }
@@ -168,10 +205,21 @@ where
 }
 
 /// Décode **tous** les QR présents sur une image (ordre `rxing`).
+///
+/// Story v017-5 (#854, C-v017-5-3) : format QR seul (`PossibleFormats`) et
+/// `TryHarder` — mesure de coût, sans effet sur ce que Kesh retient (seul un
+/// payload `SPC\n0200` compte, `first_spc`).
 pub fn decode_qr_from_image(img: &DynamicImage) -> Vec<String> {
     let luma = img.to_luma8();
     let (w, h) = luma.dimensions();
-    match rxing::helpers::detect_multiple_in_luma(luma.into_raw(), w, h) {
+    let mut hints = rxing::DecodeHints {
+        PossibleFormats: Some(std::collections::HashSet::from([
+            rxing::BarcodeFormat::QR_CODE,
+        ])),
+        TryHarder: Some(true),
+        ..rxing::DecodeHints::default()
+    };
+    match rxing::helpers::detect_multiple_in_luma_with_hints(luma.into_raw(), w, h, &mut hints) {
         Ok(results) => results
             .into_iter()
             .map(|r| r.getText().to_string())
