@@ -1,0 +1,47 @@
+# Story v017-4b : factures fournisseur — brouillon, validée, payée — l'écran
+
+Status: ready-for-dev
+
+*Sous-fiche issue du découpage de la Story v017-4 à sa rédaction (2026-10-31, C-v017-4-1). Même worktree et même
+branche que la `v017-4a` ; **dépend de la 4a** (routes, codes, K8) : développement après le commit de son code.
+Registre **commun** : `v017-4-choix-autonomes.md`. Issues : **#849**, #853, #830, #835, #831 — en `refs` seulement.
+**Le texte des AC et tout le contexte sont dans la fiche parente `v017-4-facture-fournisseur-brouillon.md`.** Les
+numéros de ligne cités sont ceux de `8e126cfd`.*
+
+## Story
+
+En tant que Guy, je veux voir et conduire à l'écran le cycle d'une facture fournisseur — un brouillon que je corrige,
+que je valide, que je dévalide au besoin —, et que le formulaire ne me laisse plus enregistrer une échéance avant la
+date, une date du jour qui n'est pas celle du document, une virgule que le serveur ne lit pas, ni ne m'affiche un
+total arrondi qui contredit son propre message.
+
+## Périmètre
+
+Le frontend (liste et son banc neuf, fiche, page d'édition `/supplier-invoices/[id]/edit`, `SupplierInvoiceForm` et
+ses helpers — #853, #830, #835 —, liste — #831 —, écran de clôture, écran des lots), les clés de l'écran aux quatre
+catalogues, le manuel utilisateur et son PDF, l'E2E, les captures, le CHANGELOG (*Ajouté*, *Corrigé*) et le README.
+
+## Critères d'acceptation
+
+**AC-21 à AC-32** de la fiche parente, sous leur numéro d'origine. Mutations **M21 à M30**.
+
+## Tâches
+
+- [ ] Étape 0 — vérifier au code commité de la 4a les routes, codes et formes de réponse que l'écran consomme ; tout
+      écart au Change Log.
+- [ ] Bancs rouges d'abord (commit séparé) : liste (neuf), fiche, formulaire, helpers, messages, clôture, lots.
+- [ ] Liste (AC-21) ; fiche (AC-22) ; édition (AC-23) ; formulaire (AC-24) ; messages (AC-25) ; clôture (AC-26) ;
+      lots (AC-27) ; i18n (AC-28).
+- [ ] Manuel utilisateur et PDF (AC-29).
+- [ ] E2E neuf et specs adaptées (AC-30) ; captures (AC-31) ; CHANGELOG et README (AC-32).
+- [ ] Mutations M21 à M30.
+- [ ] Gates frontend, gate complet et E2E complet au dernier commit de code.
+
+## Dev Agent Record
+
+*(À remplir au développement.)*
+
+## Change Log
+
+- 2026-10-31 — Sous-fiche créée au découpage de la v017-4 (C-v017-4-1). Prochaine étape : validation P1 de la fiche
+  parente et des deux sous-fiches (`v017-4-validate-prompt-p1.md`).
