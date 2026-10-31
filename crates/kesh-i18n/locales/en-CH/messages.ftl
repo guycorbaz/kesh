@@ -2508,7 +2508,7 @@ imported-supplier-invoices-error-field-too-long = A QR-bill field exceeds the al
 # Story 30-2a (#685) — "Documents to process": a document comes in with or without a QR code.
 imported-supplier-invoices-error-qr-amount-out-of-range = QR amount outside the permitted limits
 imported-supplier-invoices-badge-qr = QR-bill
-imported-supplier-invoices-badge-no-qr = No QR code
+imported-supplier-invoices-badge-no-qr = No usable QR-bill
 imported-supplier-invoices-imported-on = Imported on {$date}
 imported-supplier-invoices-preview = Preview
 imported-supplier-invoices-preview-close = Close preview
@@ -2522,7 +2522,7 @@ imported-supplier-invoices-attach-qr-amount = QR amount: { $amount }
 imported-supplier-invoices-attach-invoice-total = Invoice total: { $total }
 imported-supplier-invoices-attach-submit = Attach
 imported-supplier-invoices-attach-confirm = Attach the document “{ $file }” to this invoice?
-imported-supplier-invoices-report-no-qr = no QR code
+imported-supplier-invoices-report-no-qr = no usable QR-bill
 imported-supplier-invoices-report-qr-unreadable = QR unreadable
 imported-supplier-invoices-qr-unreadable-hint = Document accepted without the QR data: when creating the invoice, enter the IBAN and the reference by hand.
 supplier-invoices-add-line = Add a line

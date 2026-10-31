@@ -91,7 +91,7 @@ test.describe('Documents à traiter', () => {
 		await expect(img).toHaveAttribute('src', /^blob:/);
 	});
 
-	test('E2-a — un PNG sans QR : badge « Sans QR-code », aperçu <img>, le fichier a quitté le dossier', async ({
+	test('E2-a — un PNG sans QR : badge « Aucune QR-facture exploitable », aperçu <img>, le fichier a quitté le dossier', async ({
 		page,
 	}) => {
 		await login(page);
@@ -100,11 +100,15 @@ test.describe('Documents à traiter', () => {
 
 		const row = await importAndFindRow(page, name);
 		await expect(row.getByTestId('imported-badge-no-qr')).toBeVisible();
+		// Story v017-5 (#854, AC-7) : le badge dit ce que Kesh sait, non ce que porte le document.
+		await expect(row.getByTestId('imported-badge-no-qr')).toContainText(
+			'Aucune QR-facture exploitable',
+		);
 		await expect(row.getByTestId('imported-badge-qr')).toHaveCount(0);
-		// Le rapport dit « sans QR-code » pour ce fichier.
+		// Le rapport dit « aucune QR-facture exploitable » pour ce fichier.
 		await expect(
 			page.getByTestId('inbox-import-accepted-row').filter({ hasText: name }),
-		).toContainText('sans QR-code');
+		).toContainText('aucune QR-facture exploitable');
 		expect(await stillInInbox(name), 'le fichier quitte le dossier dès l’import').toBe(false);
 
 		await row.getByTestId('imported-preview').click();

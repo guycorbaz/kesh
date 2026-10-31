@@ -145,7 +145,10 @@
 							{:else}
 								<div class="mt-1">
 									<span class="rounded bg-muted px-2 py-0.5 text-xs font-medium"
-										>{i18nMsg('imported-supplier-invoices-badge-no-qr', 'Sans QR-code')}</span
+										>{i18nMsg(
+											'imported-supplier-invoices-badge-no-qr',
+											'Aucune QR-facture exploitable',
+										)}</span
 									>
 								</div>
 							{/if}
