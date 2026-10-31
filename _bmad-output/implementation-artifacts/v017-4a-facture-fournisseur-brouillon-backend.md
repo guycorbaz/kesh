@@ -1,6 +1,6 @@
 # Story v017-4a : factures fournisseur — brouillon, validée, payée — le backend
 
-Status: review
+Status: done
 
 *Sous-fiche issue du découpage de la Story v017-4 à sa rédaction (2026-10-31, C-v017-4-1). Worktree
 `/home/gcorbaz/devel/kesh-0175`, branche `story/v017-4-facture-fournisseur-brouillon` (partie de `8e126cfd`) ; la 4a
@@ -344,3 +344,5 @@ Le journal `mutations.log` de la première campagne (24 mutations) ne garde ni d
   l'AC-12, tri P6 au Dev Agent Record), E-3 (M20 tuée par l'assertion), B1 (ligne d'audit et Dev Notes), B2 (manuel et
   PDF), B3, B4 = E-4 (doc-comments), E-6 (numéro blanc, une ligne de production, testée), A-5, A-6, A-7 (sous-fiche
   4b), A-8. Gate complet 4638/4638. Prochaine : revue P2 ciblée (`v017-4a-review-prompt-p2.md`, Sonnet, une lentille).
+
+- **2026-10-31 — Revue de code P2 (Sonnet, ciblée)** : 0 CRITICAL, 0 HIGH, 0 MEDIUM, 4 LOW. Boucle close en deux passes (P1 Opus 0/0/6/12 → P2 Sonnet 0/0/0/4). LOW de la P2 tracés en #865, dont F1 : M-A3a n est équivalente que pour un compte inactif, inconnu ou d une autre société, pas pour le type. Statut : `done`.
