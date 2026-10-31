@@ -56,3 +56,6 @@ l'API ne le nomme plus « ouverte » — AC-21, AC-29).
 - 2026-10-31 — Validation P2 remédiée dans la fiche parente (C-v017-4-34 à 36) : prix vide refusé par le formulaire,
   specs de complétion et `fillFirstInvoiceLine` (date), règle du QR verrouillé et L7 au manuel, « deux voies » et clés
   `read-write`, lien d'écriture d'achat sur la fiche, union `SupplierInvoiceCancelCode`. Prochaine : validation P3.
+- 2026-10-31 — Validation P3 remédiée dans la fiche parente (C-v017-4-37 à 40) : `case "SUPPLIER_INVOICE_DRAFT"` et son
+  texte, `Pick` de treize champs pour le document du formulaire, `fiscal-years-page.test.ts:460`, `README.md:47`, limite L8
+  au manuel ; l'AC-30 commence dans la 4a. Prochaine : validation P4.

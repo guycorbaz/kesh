@@ -478,3 +478,56 @@ touche qu'**après** la facture ; c'est le cycle que le doc-comment de `detach_i
   #830 ne peut plus lire `0` ; (3) la complétion est reclassée `SansEcritureAuJournal` et reste rejouée (R6) ; (4) M12b,
   mutant équivalent, est retirée (R4).
 - **Réversible** : oui.
+
+---
+
+*Les choix C-v017-4-37 à 40 consignent la remédiation de la validation P3 (2026-10-31 ; rapports
+`kesh-gate-logs/v0174-validate-p3-{R,F}.md`) et les arbitrages de l'orchestrateur. Les entrées précédentes restent telles
+qu'écrites.*
+
+*Annotation datée du 2026-10-31 (validation P3, R2) au **Retenu** de **C-v017-4-28** : « création reclassée `Traced,
+SansEcritureAuJournal`, **son enveloppe de rejeu retirée** » était faux sur le second point — les verrous partagés de
+l'insertion (clés étrangères des lignes sur les comptes, `company_id` contre la sentinelle exclusive) forment un cycle
+avec une validation aux comptes croisés. L'enveloppe est **gardée** (C-v017-4-37) ; le classement
+`SansEcritureAuJournal` reste juste.*
+
+### C-v017-4-37 — Le rejeu se garde sur la création, le `PUT` et le `DELETE` (R2 ; révise C-v017-4-28 et C-v017-4-34)
+
+- **Retenu** (arbitrage de l'orchestrateur : « ne crée pas de limite résiduelle sur une base en production ») :
+  `retry_on_deadlock` sur la création (gardé), le `PUT` et le `DELETE` (ajoutés) ; la transaction annulée n'écrit rien,
+  le rejeu est sûr. Le `DELETE` garde son ordre (facture puis document), qui évite le cycle avec le rattachement ;
+  l'enveloppe couvre les autres. Les trois restent `SansEcritureAuJournal` au registre, rejouées « quand même » (point
+  (vi) recompté).
+- **Écartée** : la limite écrite d'un `500` transitoire sur un geste de saisie.
+- **Réversible** : oui.
+
+### C-v017-4-38 — Tests pilotés des courses ; décodage tolérant des lots (R1 = F3, R3 = F4)
+
+- **Retenu** : (1) les tests de M20-quater (`DELETE`) et de M20 (validation) sont **pilotés** : attache rejouée à la main
+  jusqu'à la sentinelle, ou validation non commitée, puis attente du blocage de l'autre geste par
+  `attendre_une_requete_en_cours` (`PROCESSLIST`), puis reprise ; le mutant rougit à coup sûr. Écarté : le protocole de F
+  (intervalle tenu, sonde `INNODB_TRX`, `FOR UPDATE NOWAIT`) — `INNODB_TRX` exige le privilège `PROCESS`, interdit par
+  `docs/agents-orchestration.md` § 6.1, et il ne prouve que l'ordre, non l'absence d'interblocage. (2)
+  `payment_batches.rs:378-385` : dernier champ du tuple en `Option<i64>`, l'écriture extraite après le contrôle de
+  statut ; un brouillon sort en `failed[]` `SUPPLIER_INVOICE_NOT_OPEN` (§ *Pattern batch*), testé.
+- **Réversible** : oui.
+
+### C-v017-4-39 — Le repli du `MODIFY COLUMN` sous un nom neuf de clé étrangère (R5)
+
+- **Retenu** : l'essai joue trois formes — `MODIFY` seul, repli au même nom, repli au nom neuf
+  `fk_supplier_invoices_purchase_je_v2` (une instruction : `DROP FOREIGN KEY`, `MODIFY`, `ADD CONSTRAINT` au nom neuf) —
+  et la migration retient la première qui passe ; chaque résultat au Dev Agent Record. Même logique que C-v017-4-35 pour
+  le `CHECK` : jamais un état sans garde.
+- **Écartée** : `DROP`, `MODIFY`, `ADD` en trois instructions — un échec entre elles laisserait la colonne sans clé.
+- **Réversible** : non une fois publiée.
+
+### C-v017-4-40 — Quatre conduites écrites (F2, R7, R9)
+
+- **Retenu** : (1) `SUPPLIER_INVOICE_DRAFT` entre à l'union `SupplierInvoiceCancelCode` **avec** son `case` et son
+  texte — le serveur la rend sur le `GET` d'un brouillon, et la fonction est exhaustive (`never`,
+  `invoice-cancel.ts:74-77`) ; (2) `link_origin` n'est pas exposé à l'outil MCP des pièces (`PiecePublique`) — l'agent n'en
+  a pas l'usage ; (3) un brouillon à historique de lot n'est pas supprimable (limite L8 ; son chemin : valider puis
+  corriger, ou valider puis annuler) ; (4) la précédence de la dévalidation met le lot `generated` avant l'exercice clos,
+  à l'inverse de l'annulation fournisseur : elle suit sa fonction sœur `invoices::unvalidate`, dont les empêchements
+  propres à la pièce précèdent ceux de `delete_in_tx`.
+- **Réversible** : oui.
