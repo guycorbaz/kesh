@@ -75,3 +75,34 @@ réversibilité.
 - **Retenu** : n'ajouter que les deux puces *Corrigé* ; l'intro se recompte à la PR de release (qui seule voit l'ensemble).
 - **Écartées** : la réécrire ici — conflit de fusion certain avec les autres stories de la release.
 - **Réversible** : oui.
+
+---
+
+## Annotations de la validation P1 (2026-10-31)
+
+- *C-v017-6-2 annoté le 2026-10-31 (validation P1, P1)* : la prémisse « le message de `kesh-core` nomme déjà le champ »
+  est **fausse pour le QR-IBAN** : `QrIban::new` propage l'erreur `InvalidIban` d'un IBAN mal formé (`qr_iban.rs:36-39`).
+  Aux deux sites QR-IBAN, un helper commun (`util.rs`) écrit « QR-IBAN invalide : {m} » pour `InvalidIban(m)` et
+  `e.to_string()` pour les autres variantes ; ne pas préfixer reste le choix pour l'IDE et l'IBAN.
+- *C-v017-6-5 levé le 2026-10-31 (validation P1, P2, P4)* : le manuel d'administration est corrigé à `admin-manual.tex:1410`
+  (il attribuait la langue de l'interface à l'assistant) et précisé à `:757`.
+- *C-v017-6-7 annoté le 2026-10-31 (validation P1, P3)* : le frontend est touché (libellé de *Paramètres* et repli) ;
+  Vitest, build, E2E complet et deux captures sont exigés (AC-11).
+
+### C-v017-6-9 — Le libellé de l'écran *Paramètres* est corrigé dans la story
+
+- **Contexte** : `settings-field-instance-language` s'intitule « Langue de l'interface » (et ses trois traductions) alors
+  qu'il affiche `instance_language`, la langue des documents : c'est la racine du défaut du manuel.
+- **Retenu** : « Langue des documents » (fr-CH), « Dokumentensprache », « Lingua dei documenti », « Document language »,
+  repli Svelte égal à la valeur fr-CH. Décision de l'orchestrateur à la validation P1.
+- **Écartées** : une issue distincte — le texte du manuel serait en contradiction avec l'écran à la sortie de la 0.17.0.
+- **Réversible** : oui.
+
+### C-v017-6-10 — Vocabulaire : deux termes, un sens chacun
+
+- **Contexte** : « langue de l'instance » (manuel, clé `contact-form-language-inherited`) désigne la langue des documents ;
+  « Locale de l'instance » (`admin-manual.tex:757`) désigne `KESH_LANG`.
+- **Retenu** : « langue des documents » = `instance_language` ; « langue de l'interface » = `KESH_LANG`. Seuls les passages
+  qui mélangent les deux sont récrits ; le § récrit rattache « langue de l'instance » à « langue des documents ».
+- **Écartées** : renommer « langue de l'instance » partout — récriture du manuel, hors périmètre.
+- **Réversible** : oui.
