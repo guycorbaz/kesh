@@ -1,6 +1,6 @@
 # Story v016-2b : saisir un relevé bancaire à la main — l'écran
 
-Status: review
+Status: done
 
 *Sous-fiche issue du découpage de la Story v016-2 à la validation P2 (2026-10-30, décision de l'orchestrateur,
 C-v016-2-18). **Dépend de la `v016-2a`** (l'API, les codes, l'audit, la migration) : elle se développe après sa fusion
@@ -678,4 +678,14 @@ Aucun nouveau. Rappels : issues de la liste C de la parente (période déjà sai
   `fiscal-year-closing-journey.spec.ts:166` (délai dépassé dans le `beforeEach` `seedTestState`) — **rejouée seule : 2
   passés** (`e2e-rejeu-closing.log`), donc la pollution que `docs/testing.md` § *Les échecs attendus* admet (0 à 2), sans
   rapport avec le diff. Prochaine étape : revue P3 ciblée (`v016-2b-review-prompt-p3.md`, Sonnet).
+- 2026-10-31 — **Revue de code close en trois passes.** Trend (CRITICAL/HIGH/MEDIUM/LOW) : P1 Sonnet, complète, trois
+  lentilles B/E/A, **0/0/4/18**, remédiée (`aab01c28`, `29ae8812`) → P2 Opus, ciblée sur la remédiation P1, **0/0/1/6**,
+  remédiée (`853d23c1`) → P3 Sonnet, ciblée sur la remédiation P2 (rapport `kesh-gate-logs/v0162b-review-p3.md`),
+  **0/0/0/3** : la boucle se clôt sur une passe sans finding au-dessus de LOW. Modèles : rotation Sonnet ↔ Opus, contexte
+  frais à chaque passe, aucune passe Haiku. LOW non corrigés tracés : **#845** (les trois LOW de la P3, avec P3 et P6 de
+  la P2, E5, E7 et B10 de la P1) ; les deux issues de la liste C de la parente sont ouvertes : #837 et #844. Capture
+  ajoutée (P3, P3-P3, recette visuelle) : `kesh-gate-logs/v0162b/captures/21-avis-situation-du-compte-changee.png` —
+  l'avis « La situation du compte a changé dans Kesh depuis la vérification … », prise sur la base E2E du worktree par
+  `kesh-gate-logs/v0162b/capture-avis.mjs` (création interceptée en `422 BANK_STATEMENT_DUPLICATE_LINES`, aucun code
+  touché), backend arrêté par son PID. Statut : `done`.
 
