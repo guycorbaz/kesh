@@ -168,6 +168,11 @@ Après les refus propres de `unvalidate`, ceux de `delete_in_tx`, inchangés : `
 rendait la création : `FISCAL_YEAR_INVALID`, `ACCOUNT_NOT_POSTABLE`, `INACTIVE_OR_INVALID_ACCOUNTS`,
 `CONFIGURATION_REQUIRED`, `DESIGNATED_ACCOUNTS_NOT_POSTABLE`, les refus du projet analytique. Chaque message neuf a sa
 clé dans les quatre catalogues et un repli `errors.rs` égal au catalogue fr-CH.
+*(Annoté le 2026-10-31, revue de code P1 de la 4a, E-1 : `DESIGNATED_ACCOUNTS_NOT_POSTABLE` n'est pas un code du fil —
+la variante `DbError::DesignatedAccountsNotPostable` se sérialise en `ACCOUNT_NOT_POSTABLE` (`errors.rs:1504`) ; et la
+liste omettait `LATER_FISCAL_YEAR_CLOSED` et `PERIOD_LOCKED`, que la validation rend par
+`journal_entries::create_in_tx`, un brouillon s'enregistrant sans contrôle d'exercice ni de période. La phrase reste telle
+qu'écrite ; `docs/api-external.md` porte la liste juste.)*
 
 ### Précédence des refus de la dévalidation (testée paire par paire)
 
@@ -970,6 +975,15 @@ Après chaque correctif, greper la **valeur** : `\bopen\b` et `'open'` dans les 
 près de `checks` ; `87`/`88` et `53`/`54` (AC-1) ; `22`/`23` (`post_restore.rs`) ; « une migration » (CHANGELOG, admin
 manual) ; « six stories » ; *(validation P1)* « ouverte »/« ouvertes »/« offen »/« aperta » (par la valeur, tout le
 dépôt, F2) ; « Facture créée » (F13) ; *(validation P3, F5)* « sept contrôles » en prose (`grep -rn "sept contr"`).
+
+### Ce que le seuil `min_required` exclut (revue de code P1 de la 4a, B1, 2026-10-31)
+
+Le seuil `kesh_version_min_required = '0.17.0'` de la migration exclut la 0.16.x. Il **n'exclut pas** la 0.17.0-rc1 :
+son binaire porte la même version Cargo (`0.17.0`), si bien que ni `check_downgrade_protection` (démarrage) ni
+`check_import_version_compat` (import, `routes/admin.rs`) ne la refusent. La rc1 est exclue par deux autres
+mécanismes : au démarrage, `sqlx` refuse une migration appliquée qu'il ne connaît pas ; à l'import, la colonne
+`link_origin` est inconnue de sa destination (`ImportSchemaMismatch`, `admin_backup/import.rs`). L'en-tête du `.sql`, qui
+dit le contraire, reste tel quel (P8) ; la ligne d'audit le dit.
 
 ### Références
 

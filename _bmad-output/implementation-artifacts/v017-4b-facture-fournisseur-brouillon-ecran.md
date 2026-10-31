@@ -28,6 +28,13 @@ catalogues, le manuel utilisateur et son PDF, l'E2E, les captures, le CHANGELOG 
 Q4, C-v017-4-24 : l'état validé s'affiche « Validée » aux quatre locales, et aucun texte de l'écran, des manuels ni de
 l'API ne le nomme plus « ouverte » — AC-21, AC-29).
 
+*(Ajouté le 2026-10-31, revue de code P1 de la 4a, A-7.)* **L'inventaire des specs E2E de l'AC-30 s'étend à deux specs
+qu'il omettait**, relevées à l'E2E complet de la 4a (huitième ligne du panneau de clôture, K8 ; `expected 7, received
+8`) : `fiscal-year-closing-journey.spec.ts:162` (helper `openChecks`, appelé `:212`) et `fiscal-years.spec.ts:498`
+(test `:474`, clair et sombre) et `:543` (test `:519`). Les autres échecs contractuels de cet E2E sont déjà à
+l'inventaire : `payment-batches.spec.ts:122`, `supplier-invoices.spec.ts:135`, `:168`, `:197`,
+`supplier-documents.spec.ts:401`, `:442` (Dev Agent Record de la 4a, § *E2E complet*).
+
 ## Tâches
 
 - [ ] Étape 0 — vérifier au code commité de la 4a les routes, codes et formes de réponse que l'écran consomme ; tout

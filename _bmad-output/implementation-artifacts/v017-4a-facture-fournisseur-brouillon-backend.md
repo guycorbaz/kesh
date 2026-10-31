@@ -96,7 +96,7 @@ rouges ; `acd07ecc` implémentation ; `d82a5975` PDF du manuel d'administration 
 - Le binaire **rc1** (construit depuis `8e126cfd`, `kesh-gate-logs/v0174a/kesh-api-rc1`) a peuplé une base neuve de
   données synthétiques (`peupler-rc1.sh`) : huit factures fournisseur (ouverte, ouverte avec TVA, payée, annulée,
   payée-annulée, née d'une complétion, document rattaché, lot confirmé). État figé en `rc1-etat87.sql` (87 migrations).
-- Le binaire **neuf** a démarré dessus, appliqué la 88e, et l'instantané des 45 tables (`instantane.sh`) est
+- Le binaire **neuf** a démarré dessus, appliqué la 88e, et l'instantané des 46 tables (`instantane.sh`) *(« 45 » jusqu'à la revue P1, A-5 ; recompté : `grep -c '^==' instantane-avant.txt` = 46)* est
   **identique** avant et après, à une colonne près : `_kesh_version.updated_at` (horodatage du démarrage).
   `link_origin` est `NULL` sur les deux documents.
 - **Le cas de Guy**, joué par l'API (`cas-de-guy.sh`, `.log`) : factures 1 et 7 dévalidées (brouillon, écriture
@@ -193,6 +193,8 @@ C-v017-4-43 à C-v017-4-51 (`v017-4-choix-autonomes.md`).
    `closing_checks_e2e` (huit codes).
 4. **M20** tuée par le délai de la sonde, non par l'assertion : sous mutation, B bloque plus tôt (sur l'`INSERT
    IGNORE` des réglages) et la sonde ne voit pas le `FOR UPDATE` attendu ; le test rougit, pour une raison voisine.
+   *(Levé à la revue P1, E-3 : le brouillon du test porte un projet ; M20 est désormais tuée par l'assertion — § *Revue
+   P1*.)*
 5. **Audits du `DELETE`** écrits au dépôt (C-v017-4-47), non à la route.
 6. **`SUPPLIER_INVOICE_IN_PAYMENT_BATCH`** porte désormais `details` aussi à l'annulation (ajout sans retrait,
    C-v017-4-45).
@@ -200,8 +202,118 @@ C-v017-4-43 à C-v017-4-51 (`v017-4-choix-autonomes.md`).
    la complétion crée un brouillon, le refus d'exercice clos se lit à la **validation**.
 8. **E2E** : le mandat exige l'E2E complet au dernier commit de code de la 4a ; la sous-fiche le renvoyait à la 4b
    (dérogation C-v017-4-31). Joué ici ; il reste à rejouer au dernier commit de code de la 4b.
+9. *(Revue P1, A-8.)* **AC-3 (a)** demandait d'**étendre** le test v016-2a (`admin_full_import_e2e.rs`) : deux tests
+   neufs l'ont été à la place (`full_import_accepts_a_0_16_backup_with_supplier_invoices`,
+   `full_import_accepts_an_rc1_backup_with_supplier_invoices`), l'ancien ne gagnant qu'un doc-comment corrigé ; le fond
+   (colonne retirée du manifeste et des lignes, `link_origin` nul après import, dévalidation puis revalidation) est tenu.
+10. *(Revue P1, A-8.)* **AC-2 (5)** (« se modifie par `PUT` … aucune règle de la complétion ne s'impose ») est joué au
+    **dépôt** (`migrations_upgrade_path.rs`, `update_draft`), où les règles « document » de la route ne s'appliquent
+    jamais ; la preuve par la route vient de `put_of_a_draft_with_a_pre_017_link_imposes_nothing`
+    (`supplier_invoice_draft_e2e.rs`, lien nul avec QR, par `PUT`) et du démarrage réel (`cas-de-guy.log`, IBAN
+    changé pour la facture 7).
+11. *(Revue P1, A-3.)* **M-A3a, mutation équivalente** : retirer le refus du compte de charge inactif de
+    `validate_in_tx` ne change rien d'observable — `journal_entries::create_in_tx` refuse le compte archivé avec le même
+    code, `InactiveOrInvalidAccounts` (`journal_entries.rs:165-166`), et la transaction est annulée. Le re-contrôle
+    `active` de la validation est une défense en profondeur ; le refus de la non-imputabilité (`enforce_postable =
+    false` côté journal) et celui du projet (`new.project_id` non revalidé par le journal, `journal_entries.rs:300-305`)
+    ne le sont pas, et leurs mutations sont tuées.
 
 Aucun incident mémoire (pas de 137) pendant le développement.
+
+### Revue P1 — remédiation (2026-10-31)
+
+#### AC-4 — inventaire clos des lecteurs, recompté à `e7400d76` (revue P1, A-4)
+
+Commande 1 de la fiche : `grep -rn 'purchase_journal_entry_id' crates --include=*.rs | grep -v '/tests/'` → **29**
+lignes (27 à `8e126cfd`), dans 12 fichiers (`kesh-gate-logs/v0174a/inventaire-ac4-ecriture.txt`). Chaque site :
+
+| Site (à `e7400d76`) | Devant un brouillon | Verdict |
+|---|---|---|
+| `entities/supplier_invoice.rs:45` | `Option<i64>` | adapté |
+| `routes/supplier_invoices.rs:87`, `:234` | `purchaseJournalEntryId: null` (AC-4, `get()` asserté) | adapté |
+| `repositories/supplier_invoices.rs:38`, `:49`, `:2589` (`FIND_SCOPED_SQL`, colonnes de liste, `list_all_by_company`) | colonne lue en `Option` | adapté (type) |
+| `repositories/supplier_invoices.rs:85` (`snapshot_json`) | `null` à l'audit | adapté (type) |
+| `repositories/supplier_invoices.rs:520`, `:547` (`create_draft_in_tx`) | insère `NULL` | neuf |
+| `repositories/supplier_invoices.rs:947`, `:984` (`unvalidate_in_tx`) | `Invariant` si `open` sans écriture (inatteignable, CHECK) ; remet `NULL` | neuf |
+| `repositories/supplier_invoices.rs:1313` (`validate_in_tx`) | pose l'écriture | neuf |
+| `repositories/supplier_invoices.rs:1528` (`pay_in_tx_as`) | statut refusé avant ; `Invariant` sinon | adapté |
+| `repositories/supplier_invoices.rs:1975` (`supplier_invoice_cancel_blocker`) | rang 1 `SUPPLIER_INVOICE_DRAFT` avant toute lecture de l'écriture | adapté |
+| `repositories/supplier_invoices.rs:2069` (`cancel_in_tx`) | refus du brouillon (`:2064`) avant ; `Invariant` sinon | adapté |
+| `repositories/letterings.rs:1847` (`SYNC_SUPPLIER_INVOICE_SQL`) | jamais atteint (statut refusé par les trois appelants) ; `Invariant` explicite | adapté |
+| `repositories/payment_batches.rs:377`, `:394` | `Option<i64>`, extraite après `status != "open"` (`:406`) → `failed[]` | adapté (C-v017-4-38) |
+| `repositories/journal_entries.rs:2082` (doc), `:2262-2263` (`document_owners`) | `NULL IN (…)` ne correspond à rien | sans effet |
+| `repositories/journal_entries.rs:2776` (`reverse_in_tx_inner`) | `= ?` sur une écriture existante : un brouillon n'en a pas | sans effet |
+| `repositories/imported_supplier_invoices.rs:406` (`find_source_document_of_entry`) | `= ?` sur une écriture : un brouillon n'en a pas | sans effet |
+| `routes/reconciliation.rs:3410` (`accept_one_supplier_invoice`, audit) | refus `NotOpen` avant | sans effet |
+| `exports/csv_tables.rs:1216`, `:1243` | cellule vide (`fmt_opt_i64`) | adapté |
+| `mcp/outils/factures_fournisseur.rs:235` | `ecritureAchatId: null` (testé, A-2) | adapté |
+| `kesh-reconciliation/src/matching.rs:799` | champ de test, `Some(999)` | adapté (type) |
+| `kesh-seed/src/pieges.rs:690` | `create_validated`, `ok_or` `Invariant` | adapté |
+
+Commande 2 de la fiche (`status\s*(=|<>|!=|IN)|\.status\s*(==|!=)|status == "`) sur les fichiers de l'inventaire :
+**123** lignes dans 14 fichiers (dont 0 dans `routes/supplier_invoices.rs`, `csv_tables.rs` et les deux fichiers MCP).
+Celles qui jugent une **facture fournisseur** :
+
+| Site | Lit | Verdict |
+|---|---|---|
+| `repositories/reconciliation.rs:825`, `:885`, `:935` | `si.status = 'open'` | brouillon exclu des propositions |
+| `repositories/contacts.rs:401` | `si.status <> 'cancelled'` | brouillon **compté** (C-v017-4-11) |
+| `repositories/journal_entries.rs:1090` | `si.status = 'cancelled'` | sans effet |
+| `repositories/payment_batches.rs:406`, `:420` | `status != "open"`, lot `generated` | brouillon → `failed[]` `SUPPLIER_INVOICE_NOT_OPEN` |
+| `repositories/reconciliation_cancel.rs:117` | `status = 'paid'` | sans effet (un brouillon n'a pas de règlement) |
+| `repositories/closing_checks.rs:504` | `si.status = 'draft'` | K8, neuf |
+| `routes/reconciliation.rs:2383` | `invoice.status != "validated"` (facture **client**) | hors sujet |
+| `repositories/supplier_invoices.rs` — `:229` (filtre de liste), `:605`, `:666`, `:826` (`PUT`, `DELETE`), `:953`, `:984-986` (dévalidation), `:1118`, `:1313-1315` (validation), `:1393`, `:1522`, `:1700-1703` (paiement), `:1885`, `:1914` (lot), `:1986`, `:1993` (motif d'annulation), `:2064`, `:2149-2152` (annulation), `:2283`, `:2345`, `:2425-2428` (annulation du règlement) | statut | neufs (gestes du brouillon) ou refus du brouillon avant tout effet |
+
+Les autres lignes de la commande 2 jugent d'autres tables (factures client, transactions, documents, exercices, lots,
+avoirs) : sans objet.
+
+#### AC-12 — fichiers de test d'API, triés (revue P1, A-4)
+
+- Création par HTTP (`grep -rln '"/api/v1/supplier-invoices"' crates/kesh-api/tests`, à `e7400d76`, 6 fichiers) :
+  `admin_full_import_e2e.rs` (tests `v0174a` neufs : créent, valident) ; `inbox_import_e2e.rs` (valide) ;
+  `rejeu_interblocage_e2e.rs` (valide ; rejeu de la validation) ; `services_rollout.rs` (lecture de liste seulement :
+  sans objet) ; `supplier_invoice_draft_e2e.rs` (neuf) ; `supplier_settlement_cancel_e2e.rs` (valide avant de payer).
+- Complétion (`grep -rln '/complete' crates/kesh-api/tests`, 5 fichiers) : `inbox_import_e2e.rs` (valide) ;
+  `mcp_enveloppe_e2e.rs` (complète puis lit les coordonnées par l'outil, sans payer : sans objet) ;
+  `mcp_transport_e2e.rs` et `opening_balances_e2e.rs` (autres routes `…/complete` : sans objet) ;
+  `supplier_invoice_draft_e2e.rs` (neuf).
+- `grep -rn "create_validated" crates/kesh-api/src` → 0 : aucune route ne l'appelle.
+
+#### P6 — sites positionnels (revue P1, A-4)
+
+`grep -rn "migrations.len()\|apply_migrations_up_to" crates/` : un seul site **positionnel**,
+`migrations_upgrade_path.rs:124` (`total`) et `:217` (`total - 54`), au couplage assumé et gardé par `assert_eq!(total,
+88)` (`:126`) ; tous les autres appels (`migrations_upgrade_path.rs:614`, `:693`, `:900`, `:1163`, `:1327`, `:1669` ;
+`accounts_role_backfill.rs`, `audit_log_company_id_backfill.rs`, `invoice_lines_revenue_account_backfill.rs`,
+`closing_accounts_backfill.rs`, `lettering_documents_backfill.rs`, `journal_entry_number_sequences_bootstrap.rs`)
+résolvent **par version** (`migrations_before`). Copies de `migrations_upgrade_path.rs` par `grep -nE
+'\b(53|54|87|88)\b|total - 5[34]'` : `:44`, `:46`, `:63-64` (fenêtre courante, mises à jour — écart 2), `:88`, `:89`
+(historiques, laissées), `:122-123`, `:209-210` (lignes d'historique, `:123` et `:210` ajoutées), `:126-127`, `:130`,
+`:138`, `:145`, `:147-148`, `:217`, `:220`, `:289` (valeurs courantes, mises à jour).
+
+#### Mutations de la revue P1 (`mutations-p1.log`, diff et lignes de l'échec journalisés — A-6)
+
+| Mutation | Diff | Verdict |
+|---|---|---|
+| M-A3a | `validate_in_tx` : `_ => return Err(InactiveOrInvalidAccounts)` → `_ => {}` | **survit — équivalente** (écart 11) |
+| M-A3b | `validate_in_tx` : `if !non_postable.is_empty()` → `if false && …` | tuée — `validation_rechecks_accounts_and_project_changed_since_the_draft` (`:567`, la validation passe) |
+| M-A3c | `validate_in_tx` : `validate_taggable_in_tx(…)` retiré | tuée — même test (`:567`) |
+| M20 (rejouée) | `validate_in_tx` : `{FIND_SCOPED_SQL} FOR UPDATE` → `{FIND_SCOPED_SQL}` | tuée **par l'assertion** — `concurrent_validations_the_loser_reads_validated_under_the_lock` (`:689`, « le perdant doit relire `open` sous le verrou : OptimisticLockConflict »), en 0,18 s |
+
+Le journal `mutations.log` de la première campagne (24 mutations) ne garde ni diff ni message ; il reste tel quel.
+
+#### Gates de la remédiation
+
+- Gate ciblé après le code (`p1-cible-1.log`) : `cargo fmt`, `cargo clippy --workspace --all-targets -D warnings`, puis
+  `binary(supplier_invoices_draft) | binary(mcp_outils_e2e) | binary(supplier_invoice_draft_e2e)` — 58 lancés, 58 réussis.
+- **Gate complet** au dernier commit de code (`e7400d76`), base `kesh_v0174a` remise à zéro, `scripts/test-fast.sh
+  --ci` (`nextest-p1.log`) : **4638 lancés, 4638 réussis, 8 ignorés** — 4636 + les deux tests neufs
+  (`validation_rechecks_accounts_and_project_changed_since_the_draft`, `un_brouillon_lu_par_les_outils`) ; `cargo build
+  --workspace --all-targets` vert (`build-p1.log`).
+- Frontend et helpers E2E non touchés : ni Vitest ni E2E rejoués (consigne de l'orchestrateur).
+- PDF du manuel d'administration régénéré (`make-admin-p1.log`) ; contrôle aplati : « verrou de période, ligne lettrée
+  — 409 ENTRY_LETTERED, à délettrer d'abord » et « période, et une ligne lettrée ».
 
 ## Change Log
 
@@ -225,3 +337,10 @@ Aucun incident mémoire (pas de 137) pendant le développement.
   gate complet vert (4636/4636), Vitest 2291, E2E complet 322 / 17 (7 KF-029, 10 à la charge de la 4b). Choix
   C-v017-4-43 à 51. Statut `review`. Prochaine : revue de code P1 (`v017-4a-review-prompt-p1.md`, Opus, lentilles
   B, E, A).
+- 2026-10-31 — Revue de code P1 (Opus, lentilles B, E, A : 0 CRITICAL, 0 HIGH, 6 MEDIUM, 12 LOW) remédiée : A-3 (test
+  des refus de la validation après changement d'état ; M-A3b et M-A3c tuées, M-A3a équivalente), A-2 (brouillon lu par
+  l'outil MCP), E-1, E-2, E-5, A-1 (`api-external.md` : codes réels de la validation, rangées `ACCOUNT_NOT_POSTABLE` et
+  `INVALID_PAYMENT_DETAILS`, `PUT`, règle Q4 ; fiche parente annotée `:169`), A-4 (inventaire de l'AC-4, liste de
+  l'AC-12, tri P6 au Dev Agent Record), E-3 (M20 tuée par l'assertion), B1 (ligne d'audit et Dev Notes), B2 (manuel et
+  PDF), B3, B4 = E-4 (doc-comments), E-6 (numéro blanc, une ligne de production, testée), A-5, A-6, A-7 (sous-fiche
+  4b), A-8. Gate complet 4638/4638. Prochaine : revue P2 ciblée (`v017-4a-review-prompt-p2.md`, Sonnet, une lentille).
