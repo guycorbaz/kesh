@@ -46,7 +46,8 @@ NAS.)*
   une A4 portrait, **171 dpi** (2000 / 11,69 in) — **4,0 à 5,4 px par module** pour 57 à 77 modules (309,8 px / 77 et
   / 57), assez pour un QR scanné de 150 à 300 dpi : au-delà de la résolution source, un rendu plus fin n'apporte aucune
   information. Le rendu actuel (72 dpi) lit les QR vectoriels (constat de #854 : la facture d'assurance est lue).
-- **Retenu** : pour chaque page, (1) le **rendu actuel**, inchangé (échelle 1,0, bornes `max_dimension`) ; (2)
+- **Retenu** *(remplacé, pour l'ordre des passes, par l'amendement de la validation P2 ci-dessous : deux passes par
+  document)* : pour chaque page, (1) le **rendu actuel**, inchangé (échelle 1,0, bornes `max_dimension`) ; (2)
   **seulement si** ce rendu ne livre aucun payload SPC, un second rendu à `render_scale(largeur_pt, hauteur_pt,
   max_dimension) -> Option<f32>` = `min(max_dimension / largeur, max_dimension / hauteur, MAX_RENDER_DPI / 72)`,
   `MAX_RENDER_DPI = 300`, appliqué par `scale_page_by_factor`, bornes `set_maximum_width/height` conservées ; `None`
@@ -105,7 +106,8 @@ NAS.)*
 
 - **Contexte** : le mandat exige une fixture synthétique — une QR-facture générée par Kesh, rastérisée, floue et
   bruitée, dans un PDF image — et interdit tout document réel.
-- **Retenu** : un générateur de test (`#[cfg(test)]`) qui (1) construit un payload par `kesh_qrbill::build_payload`
+- **Retenu** *(précisé par les amendements des validations P1 à P3 ci-dessous : 280 octets UTF-8, version 12 à 15,
+  qualité JPEG 60 au moins, fixtures lues à l'exécution)* : un générateur de test (`#[cfg(test)]`) qui (1) construit un payload par `kesh_qrbill::build_payload`
   (IBAN d'exemple SIX déjà employé par les tests, noms fictifs ; référence QRR, adresses structurées, débiteur final et
   message, pour un payload d'**au moins 280 caractères** et un QR de **version ≥ 12**), (2) le dessine sur une page A4 en
   niveaux de gris à 150, 200 ou 300 dpi, à la place que lui donne la norme (section paiement en bas, QR de 46 mm à
@@ -151,7 +153,7 @@ NAS.)*
 - **Contexte** : le badge « Sans QR-code » et la mention « sans QR-code » du rapport affirment un fait sur le document
   que Kesh ne connaît pas : il sait seulement qu'il n'a **lu** aucun QR. Le badge couvre aussi le QR inexploitable
   (`+page.svelte:293-315`, `{#if hasQr(row)}` … `{:else}` : tout ce qui n'a pas de données QR stockées) ; le manuel le dit (`user-manual.tex:1857`).
-- **Retenu** : changer les **valeurs** de `imported-supplier-invoices-badge-no-qr` et `-report-no-qr` dans les quatre
+- **Retenu** *(libellé remplacé par les amendements des validations P2 et P3 ci-dessous)* : changer les **valeurs** de `imported-supplier-invoices-badge-no-qr` et `-report-no-qr` dans les quatre
   locales — fr « Aucun QR lu » / « aucun QR lu », de « Kein QR-Code gelesen » / « kein QR-Code gelesen », it « Nessun
   codice QR letto » / « nessun codice QR letto », en « No QR code read » / « no QR code read » — et les replis égaux des
   deux composants ; **clés inchangées**, valeur d'API `none` inchangée (contrat). Le serveur MCP dit déjà `qr_lu`
@@ -170,6 +172,13 @@ NAS.)*
   les cas où il s'affiche ; soumis au Project Lead (fiche, Q1). Les deux clés sont ajoutées à `REPLIS_A_SITE_UNIQUE`
   (garde G13 de `i18n-repli-divergent-actif.test.ts:222`) : aucune autre garde ne compare ces replis au catalogue.
   Écartée : « Aucun QR lu » (faux pour un QR non SPC) ; « QR non lu » (même défaut).
+
+- **Amendé à la validation P3** (F1, arbitrage de l'orchestrateur) : « Aucune QR-facture lue » est faux quand une
+  QR-facture a été lue puis refusée (`check_scanned_fits_columns`, `inbox_import.rs:555-559`). Libellé retenu :
+  **« Aucune QR-facture exploitable »** (de « Keine verwertbare QR-Rechnung », it « Nessuna fattura QR utilizzabile », en
+  « No usable QR-bill ») — vrai dans les quatre cas où le badge s'affiche (aucun QR, QR non SPC, QR-facture refusée,
+  erreur de rendu). Il fait foi tant que le Project Lead n'a pas répondu à Q1. À l'API, la valeur `none` se décrit
+  toujours « aucune QR-facture lue » : elle ne couvre que les deux premiers cas.
 
 ### C-v017-5-8 — Relire une pièce déjà importée : à la réactivation, pas par un bouton (bouton tracé en #858)
 
@@ -224,6 +233,15 @@ NAS.)*
   (une fonction), `kesh-i18n` (deux valeurs × quatre locales), le frontend (deux replis et leurs tests), la
   documentation. Cinq modules de code (deux dans `kesh-api`), dont deux par des valeurs de texte, et la documentation —
   pas « plus de cinq »
+  *(Recompté à la validation P3, F8 : l'extraction de `QrColumns` ajoute `kesh-db/entities` (et son `mod.rs`) au
+  dépôt `kesh-db/repositories` ; les deux portent la même table, `imported_supplier_invoices`, et se comptent comme un
+  seul module métier, « kesh-db / documents importés » ; côté frontend, la route d'import, la fonctionnalité
+  `imported-supplier-invoices` et la garde i18n sont un seul module métier, « documents à traiter ». Cinq modules métier
+  de code : `qr_decode`, `inbox_import`, kesh-db / documents importés, `kesh-i18n`, frontend / documents à traiter —
+  le seuil n'est pas franchi. **Dérogation règle de splitting**, au cas où un lecteur compterait `entities` et
+  `repositories` à part (six) : la relecture à la réactivation n'a de sens qu'avec le décodeur qu'elle applique, et
+  `QrColumns` existe pour que l'import et la réactivation projettent les mêmes colonnes ; les séparer livrerait une
+  projection sans consommateur. Risque accepté : une story à six fichiers de code `kesh-db`/`kesh-api` liés.)*
   (`CLAUDE.md` § *Règle de splitting préventif*).
 - **Retenu** : une story. La relecture à la réactivation est ce qui rend le correctif utile aux pièces déjà importées ;
   la séparer laisserait livrer un décodeur meilleur que personne ne peut appliquer à l'existant.
