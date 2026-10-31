@@ -1,6 +1,6 @@
 # Story v017-5 : lire le QR d'une facture QR scannée
 
-Status: in-progress
+Status: review
 
 *Fiche rédigée le 2026-10-31, en autonomie (Opus 5.5), worktree `/home/gcorbaz/devel/kesh-0176`, branche
 `story/v017-5-qr-scanne` partie de `8e126cfd` (tête de `release/0.17.0`). Release **0.17.0**, candidate suivante
@@ -794,7 +794,210 @@ sous verrou et `mem-guard`, `/usr/bin/time -v`, journal `banc-rouge.log`) :
 | D4 (facture vectorielle de 3 pages, QR en page 3) | 38,9 ms, lue, 0 rendu au second temps |
 | pointe de mémoire résidente du binaire | 189 552 Kio |
 
+#### Le correctif (AC-3 à AC-5)
+
+`render_scale` (garde explicite `is_finite`, `> 0`, borne non nulle ; `min` des trois termes), seconde passe de
+`decode_pages` sur les pages rendues au premier temps, seulement sans QR-facture à la première passe ; une erreur du
+second rendu journalisée (`tracing::warn!`, numéro de page et message pdfium, aucun contenu) ; décodeur
+`detect_multiple_in_luma_with_hints` avec `PossibleFormats = {QR_CODE}` et `TryHarder`. **Aucun échelon
+supplémentaire** (AC-4) : T2 lit les trois scans sans lui — non écrit, M5 sans objet.
+
+**T4 au correctif** (même commande, journal `kesh-gate-logs/v0175/vert-t4.log`) :
+
+```
+T4 (α) sonde : 595 × 842 px, 12 niveaux de gris sur plus de 1 % des pixels
+T4 (β) qr-scan-150dpi.pdf : LU (rendus au second temps : 1)
+T4 (β) qr-scan-200dpi.pdf : LU (rendus au second temps : 1)
+T4 (β) qr-scan-300dpi.pdf : LU (rendus au second temps : 1)
+T4 (β) scan-sans-qr.pdf : Ok(None) (rendus au second temps : 1)
+T4 (γ) témoin vectoriel : LU (rendus au second temps : 0)
+T2-diag qr-scan-{150,200,300}dpi.pdf à 595 × 842 : non lu (les trois)
+test qr_decode::tests::t4_pdfium_scans_synthetiques ... ok
+test qr_decode::tests::decode_spc_from_pdf_single_page ... ok
+```
+
+IBAN, montant et référence égaux au payload (assertions de T4). Le test réparé `decode_spc_from_pdf_single_page` lit
+`qr-scan-300dpi.pdf` et passe. Tests d'hôte du module : `26 passed; 0 failed; 5 ignored` (9,0 s, journal
+`vert-hote.log`).
+
+**Banc au correctif** (binaire `--release`, sous verrou et `mem-guard`, `/usr/bin/time -v`, journal `banc-vert.log`) :
+
+| mesure | commit rouge | correctif | plafond |
+|---|---|---|---|
+| `qr-scan-150dpi.pdf`, médiane par page | 26,8 ms (non lu) | 60,7 ms (**lu**) | ≤ 1,0 s ✓ |
+| `qr-scan-200dpi.pdf` | 30,0 ms (non lu) | 67,6 ms (**lu**) | ✓ |
+| `qr-scan-300dpi.pdf` | 37,1 ms (non lu) | 81,1 ms (**lu**) | ✓ |
+| `scan-sans-qr.pdf` (deux passes) | 28,4 ms | 60,8 ms | ✓ |
+| D1, 20 × A4 sans QR à 300 dpi | 779 ms | 1 523 ms (76,2 ms par page), 20 rendus au second temps | — |
+| D2, 20 × carrée 842 pt à 200 dpi | 722 ms | 1 574 ms (78,7 ms par page), 20 | — |
+| D3, 20 × A4 à douze QR non SPC | 1 230 ms | **7 295 ms** (364,7 ms par page), 20 | pire document ≤ 20 s ✓ |
+| D4, facture vectorielle de 3 pages | 38,9 ms | 12,5 ms, 0 rendu au second temps | ± 10 % : **hors bande, vers le bas** |
+| pointe de mémoire résidente | 189 552 Kio | 200 100 Kio (+10,3 Mio) | ≤ + 128 Mio ✓ |
+
+Pire document : D3, 7,3 s. **D4 sort de la bande de ± 10 % par le bas** (− 68 %) : le premier temps n'a pas changé de
+travail, mais le décodeur n'essaie plus que le format QR (M4, mesuré ci-dessous) ; une seule mesure par document. Écart
+déclaré : le plafond visait une régression, c'est une baisse.
+
+**Contre les deux délais** (station de développement, 32 cœurs ; un rendu et un décodage par fil, le passage étant
+séquentiel) : une page scannée sans QR-facture coûte 61 à 81 ms (fixtures, D1, D2), jusqu'à 365 ms quand elle porte une
+douzaine de QR d'un autre usage (D3). Sous **30 s** : environ 390 pages scannées (D1), 80 dans le pire cas (D3) ; sous
+**300 s** : environ 3 900 pages (D1), 820 (D3). **Projection pour un NAS** (facteur **× 10 déclaré, non mesuré** — un
+processeur de NAS d'entrée de gamme contre cette station) : environ 39 pages sous 30 s et 390 sous 300 s ; 8 et 80 dans
+le pire cas.
+
+#### L'abandon de la requête (AC-6-bis) — vérifié par exécution : le verrou **fuyait**
+
+Test d'intégration `import_abandoned_by_client_releases_run_lock` (T12, `tests/inbox_import_e2e.rs`) : douze PNG de
+bruit de 1500 × 1500, client `reqwest` à délai de 2 s, attente d'un dossier stable pendant 2 s, `IS_FREE_LOCK` sur une
+connexion neuve hors du pool, second import. Commande : `cargo nextest run -p kesh-api -E
+'test(import_abandoned_by_client_releases_run_lock)' --no-capture`.
+
+1. Premier essai, **pool de `#[sqlx::test]`** : vert — mais ce pool ferme toute connexion inactive au bout d'une seconde
+   (`sqlx-mysql-0.8.6/src/testing/mod.rs:181`) ; la production n'a pas ce réglage (`main.rs:82-85`, délais par défaut
+   de `sqlx`, `idle_timeout` de dix minutes, `sqlx-core-0.8.6/src/pool/options.rs:161`). Vert à tort.
+2. **Pool réglé comme la production**, code d'avant la garde (journal `t12-rouge.log`) :
+
+```
+T12 : abandon après 2s ; 5 fichier(s) dans le dossier à l'abandon, 5 après stabilisation (4.12s) ; 7 document(s) dans la liste
+T12 : IS_FREE_LOCK('kesh_inbox_import:_sqlx_test_…') = Some(0)
+T12 : second import → 200 {"accepted":[… bruit-04 … bruit-00, "qr":"none" …],"failed":[]…}
+test import_abandoned_by_client_releases_run_lock ... FAILED   (le verrou de run a fui après l'abandon)
+```
+
+   Le verrou **fuit** : la connexion, rendue au pool sans `RELEASE_LOCK`, le garde ; et le second import répond **200**
+   parce qu'il reprend cette même session (verrou ré-entrant) — sans la libérer. Ce que l'on voit aussi : hyper
+   **abandonne** le gestionnaire à l'abandon du client — le passage s'arrête au fichier en cours (7 traités, 5 restés,
+   repris par le second import, aucun doublon).
+3. **Correction mécanique** (C-v017-5-18) : `lock_conn.close_on_drop()` après l'acquisition. Même test (journal
+   `t12-vert.log`) : `IS_FREE_LOCK … = Some(1)`, second import **200**, douze documents, dossier vide, aucun
+   `DUPLICATE` — **verrou libéré**.
+
+Issue P2 demandée à l'orchestrateur (la fuite existait depuis la 12-5c ; corrigée ici). Les deux manuels disent la
+conduite (AC-10, AC-11).
+
+#### La relecture (AC-8, AC-9)
+
+`lire_qr` (une seule lecture, import et réactivation) et `LectureQr` (classement : exploitable, inexploitable avec son
+code, aucune, déjà stockée) dans `inbox_import.rs` ; `QrColumns::from_scanned` extraite de
+`NewImportedSupplierInvoice::from_scanned` (champs plats gardés) ; `reactivate_to_complete_with_qr` (une instruction,
+garde `status = 'discarded' AND creditor_iban IS NULL`, `supplier_invoice_id = NULL`). La relecture se fait **avant**
+la transaction (le rendu ne tient aucune connexion). Trace `reactivated` : `qr`, `qr_reread`. T6
+(`reactivation_rereads_a_document_without_qr_data`), T7 (`reactivation_never_rewrites_stored_qr_and_duplicates_stay`),
+T9 (`reactivate_with_qr_writes_only_empty_discarded_rows`) verts ; `import_no_qr_duplicate_and_reactivation` vert,
+avec l'assertion `"qr_reread": true` ajoutée.
+
+#### Mutations (campagne sous verrou de gate, `kesh-gate-logs/v0175/mutations.py`, journaux `mutations/*.log`)
+
+Chaque mutation : motif vérifié unique (le script s'arrête sinon), test ciblé rejoué, restauration par
+`git checkout -- <fichier>` puis `touch` ; `git status` propre à la fin de la campagne. Une mutation est tuée quand la
+commande échoue **sur un test** (nextest : code 100 ; Vitest : 1) — aucune n'a échoué à la compilation.
+
+| # | Mutation | Tuée par |
+|---|---|---|
+| M1 | `render_scale` rend `Some(1.0)` | les onze T1, T1-bis |
+| M2 | plafond `MAX_RENDER_DPI` retiré du `min` | T1 A6 portrait, page minuscule |
+| M3 | borne `max_dimension` retirée du `min` | T1 A4 portrait, A4 paysage, A3, section paiement |
+| M3a | garde `is_finite` retirée | T1 hauteur infinie |
+| M4 | `PossibleFormats` retiré | **aucun test fonctionnel** (déclarée) — coût mesuré ci-dessous |
+| M5 | échelon supplémentaire | sans objet : non écrit (AC-4) |
+| M6 | réactivation sans relecture | T6 ; `import_no_qr_duplicate_and_reactivation` |
+| M7 | garde `creditor_iban IS NULL` retirée **et** relecture forcée | T7 (`creditor_name` réécrit) |
+| M7a | garde retirée seule | T9 |
+| M8 | rapport = statut stocké | T6 |
+| M9 | trace sans `"qr_reread"` | T6, T7, `import_no_qr_duplicate_and_reactivation` |
+| M10 | valeur fr-CH du badge à « Sans QR-code » | G13 |
+| M10a | repli de `+page.svelte` (rapport) à « sans QR-code » | G13 |
+| M11 | seconde passe retirée | T10 (b), (g) — en CI ; T4 au commit rouge (local) |
+| M12 | première passe retirée | T10 (a), (b), (c), (d) |
+| M12a | passes page par page | T10 (a), (b) |
+| M12b | second temps après une QR-facture inexploitable | T10 (c) |
+| M12c | erreur du second rendu rangée dans `last_render_err` | T10 (e) |
+| M12d | page en erreur au premier temps rendue au second | T10 (d) |
+| M12e | seconde passe sur `page_count` | T10 (f) |
+| M13 | colonnes facultatives (ligne 1, ligne 2, code postal, localité) non écrites | T6, T9 |
+| M13a | `reference_value` non écrite | T6, T9 |
+| M13b | `supplier_invoice_id = NULL` omis | T9 |
+| M14 | `triggerInboxImport` sans options | T11 |
+| M-verrou | `close_on_drop` retiré (mutation ajoutée, C-v017-5-18) | T12 |
+
+Vingt-trois mutations jouées, toutes tuées ; M4 déclarée sans test fonctionnel ; M5 sans objet.
+
+**M4, le chiffre** (banc `--release` avec `PossibleFormats` retiré, restauré ensuite ; journal `banc-m4.log`) : médianes
+par page 305 / 194 / 222 / 159 ms (contre 61 / 68 / 81 / 61 ms au correctif) ; D1 3,5 s, D2 3,7 s, **D3 17,6 s** (contre
+7,3 s, à 2,4 s du plafond de 20 s) ; D4 48,0 ms (38,9 ms au commit rouge, 12,5 ms au correctif) ; pointe 204 852 Kio.
+Sans le format QR seul, la seconde passe coûterait 2,5 à 3 fois plus, et D4 revient dans l'ordre de sa mesure rouge :
+c'est `PossibleFormats` qui fait sortir D4 de sa bande par le bas.
+
+#### Gates au dernier commit de code (`9c26f50d`)
+
+- **Backend** : `scripts/test-fast.sh` (fmt, clippy `-D warnings`, nextest), base `kesh_v0175` remise à zéro avant,
+  sous verrou — **4610 exécutés, 4610 passés, 12 ignorés** (journal `gate-final.log`). Gate complet aussi joué en cours
+  de travail après le commit de la relecture (`kesh-db` touché) : 4610/4610, 12 ignorés (`gate-relecture2.log`) ; le
+  premier essai (`gate-relecture.log`) avait échoué à **clippy** (`large_enum_variant` sur `LectureQr`,
+  `type_complexity` sur un test) — corrigé (`Box`, alias de type) avant le second.
+- **Frontend** : `npm run check` 0 erreur (29 avertissements, préexistants, dans des fichiers que la story ne touche
+  pas) ; `npm run lint-i18n-ownership` PASS ; `npm run test:unit` **191 fichiers, 2293 tests passés** ; `npm run build`
+  vert.
+- **E2E complet** (montage de `docs/testing.md`, port 3175, base `kesh_e2e_v0175` reconstruite, dossiers
+  `/tmp/kesh-e2e-v0175-1/`, backend tué par PID) : **330 passés, 7 échecs, 18 ignorés** (13,5 min). Les sept échecs, un
+  à un contre `docs/testing.md` § *Les échecs attendus* : `mode-expert.spec.ts:26`, `:41`,
+  `onboarding-path-b.spec.ts:65`, `:92`, `onboarding.spec.ts:57`, `:77`, `:150` — **KF-029 (#97)**, tous attendus ;
+  aucun autre. `supplier-documents.spec.ts:94` (E2-a, badge « Aucune QR-facture exploitable ») vert.
+- **Local seulement** (déclarés comme tels) : T4, T2-diag, `decode_spc_from_pdf_single_page`, le banc, avec
+  `libpdfium` épinglée.
+
+#### Captures (thème clair, `kesh-gate-logs/v0175/captures/`)
+
+Backend de la branche avec `libpdfium` chargée, base `kesh_e2e_v0175` après seed `with-data`, fixtures synthétiques
+seulement : `1-2-liste-et-rapport-fr.png` (ligne « QR-facture » d'un scan à 200 dpi lu au second temps, ligne « Aucune
+QR-facture exploitable », rapport « aucune QR-facture exploitable ») ; `3-selecteur-fr.png` (sélecteur de document à
+joindre, les deux badges) ; `4a-avant-relecture-fr.png`, `4b-apres-relecture-rapport-fr.png`,
+`4c-apres-relecture-ligne-fr.png` (même pièce, colonnes QR vidées en SQL, puis retirée, redéposée, relue :
+« QR-facture ») ; `5-liste-et-rapport-de.png` (`KESH_LANG=de` : « Keine verwertbare QR-Rechnung ») ;
+`6a-proxy-504-fr.png` (« Erreur serveur (504) », réponse 504 HTML simulée) et `6b-connexion-fermee-fr.png` (connexion
+fermée sans réponse, simulée). Le message du délai de cinq minutes de l'écran n'est pas capturé (non simulable sans
+attendre cinq minutes).
+
+#### Écarts à la fiche
+
+1. **Fixtures au palier 2** (C-v017-5-16) et non à la dégradation d'AC-1 ; plafond tenu par le bruit restreint à la
+   section paiement et la page sans QR à 200 dpi, qualité 60 (C-v017-5-17).
+2. **T1-bis rouge au commit rouge** : il passe par `render_scale` (la fiche ne prescrivait pas son état rouge).
+3. **D4 hors de sa bande de ± 10 %, vers le bas** (− 68 %), expliqué par M4.
+4. **AC-6-bis : le verrou fuyait** ; correction mécanique dans la story (C-v017-5-18), mutation `M-verrou` ajoutée.
+   T12 tourne avec un pool réglé comme la production (le pool de `#[sqlx::test]` masquait la fuite).
+5. **§ « À recontrôler à l'étape 0 »** absent de la fiche : les prémisses de § *Ce que le code dit* ont été relues à sa
+   place.
+6. **Édition par script** : contrairement à `docs/agents-orchestration.md` § 7, trois modifications de code ont été
+   faites hors de l'outil d'édition, toutes sur du code **neuf** de la story, avant tout commit : un remplacement
+   `python3` dans `qr_decode_synthetique.rs` (factorisation de `dessiner_modules`), et l'ajout de T12 en fin de
+   `tests/inbox_import_e2e.rs` par `cat >>`. Fichiers relus et formatés (`cargo fmt`) ; aucun dégât constaté.
+7. **Gates ciblés hors verrou** avant la consigne de l'orchestrateur sur la saturation mémoire (fixtures, tests ciblés,
+   Vitest ciblé, `npm run check`) ; tout ce qui a suivi la consigne est passé sous verrou et `mem-guard`. Aucun OOM
+   subi par cette story.
+
 ### File List
+
+- `crates/kesh-api/src/qr_decode.rs` — `MAX_RENDER_DPI`, `render_scale`, `Temps`, `decode_pages` (deux passes),
+  `decode_spc_from_pdf_bytes_observed`, décodeur QR seul ; tests T1, T1-bis, T2, T2-diag, T3, T4, T10, banc.
+- `crates/kesh-api/src/qr_decode_synthetique.rs` (neuf, tests seulement) — générateur des scans synthétiques.
+- `crates/kesh-api/src/inbox_import.rs` — `lire_qr`, `LectureQr`, relecture à la réactivation, trace, `close_on_drop`.
+- `crates/kesh-api/tests/inbox_import_e2e.rs` — T6, T7, T12 ; assertion ajoutée à
+  `import_no_qr_duplicate_and_reactivation`.
+- `crates/kesh-api/tests/fixtures/{qr-scan-150dpi,qr-scan-200dpi,qr-scan-300dpi,scan-sans-qr}.pdf` (neufs).
+- `crates/kesh-api/Cargo.toml`, `Cargo.lock` (une ligne : `printpdf` en `dev-dependencies`).
+- `crates/kesh-db/src/entities/imported_supplier_invoice.rs` (`QrColumns`), `entities/mod.rs`,
+  `repositories/imported_supplier_invoices.rs` (`reactivate_to_complete_with_qr`),
+  `crates/kesh-db/tests/imported_supplier_invoices_repository.rs` (T9).
+- `crates/kesh-i18n/locales/{fr-CH,de-CH,it-CH,en-CH}/messages.ftl`.
+- `frontend/src/lib/features/imported-supplier-invoices/imported-supplier-invoices.api.ts` (+ `.api.test.ts`, neuf,
+  T11), `AttachDocumentPicker.svelte`, `frontend/src/routes/(app)/supplier-invoices/import/+page.svelte`,
+  `import-page.test.ts`, `frontend/src/lib/shared/i18n-repli-divergent-actif.test.ts`,
+  `frontend/tests/e2e/supplier-documents.spec.ts`.
+- `docs/manual/fr/user-manual.tex` (+ `.pdf`), `docs/manual/fr/admin-manual.tex` (+ `.pdf`), `docs/api-external.md`,
+  `README.md`, `CHANGELOG.md`.
+- `_bmad-output/implementation-artifacts/v017-5-qr-scanne.md`, `v017-5-choix-autonomes.md` (C-v017-5-16 à 18),
+  `v017-5-review-prompt-p1.md` (neuf), `sprint-status.yaml`.
 
 ## Change Log
 
@@ -851,3 +1054,10 @@ sous verrou et `mem-guard`, `/usr/bin/time -v`, journal `banc-rouge.log`) :
   (P3) ; registre C-v017-5-5 (amendement P3), C-v017-5-7 (titre), C-v017-5-10 (« six modules ») ; `admin-manual.tex:1492`
   à l'inventaire (P7) ; compteur du second temps nuancé (P8) ; dépassement à 200 dpi → issue demandée, D1 à 300 dpi en
   mémoire (P9). Prochaine étape : validation P5 ciblée (`v017-5-validate-prompt-p5.md`, Sonnet).
+- 2026-10-31 — **Développement** (Opus 5.5, autonomie). Étape 0 : les cinq LOW de la validation P5 appliqués (lignes
+  lues au Dev Agent Record ; les citations `:93` et `:103-106` de l'entrée « Validation P4 » ci-dessus se lisent `:92`
+  et `:106-109`). Commit rouge `67727ad1` (fixtures au palier 2 des branches d'arrêt, la dégradation d'AC-1 étant lue à
+  72 dpi), correctif `4c823ed3`, relecture et garde du verrou de run `3531cc00` (AC-6-bis : fuite constatée, corrigée
+  par `close_on_drop`), textes et manuels `9c26f50d`. Gates : backend 4610/4610, Vitest 2293, E2E 330 + les 7 de la
+  KF-029 ; 23 mutations tuées, M4 déclarée. Registre C-v017-5-16 à 18. Prochaine étape : revue de code P1
+  (`v017-5-review-prompt-p1.md`, Opus, B, E et A).
