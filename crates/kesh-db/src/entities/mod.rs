@@ -62,7 +62,7 @@ pub use email_template::{EffectiveEmailTemplate, EmailTemplate, EmailTemplateTyp
 pub use email_template_defaults::default_template;
 pub use fiscal_year::{FiscalYear, FiscalYearStatus, NewFiscalYear};
 pub use imported_supplier_invoice::{
-    DocumentMeta, ImportedSupplierInvoice, NewImportedSupplierInvoice,
+    DocumentMeta, ImportedSupplierInvoice, NewImportedSupplierInvoice, QrColumns,
 };
 pub use invoice::{Invoice, InvoiceLine, InvoiceUpdate, NewInvoice, NewInvoiceLine};
 pub use invoice_number_sequence::InvoiceNumberSequence;

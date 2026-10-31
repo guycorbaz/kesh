@@ -23,9 +23,26 @@ import type {
 	InboxImportReport,
 } from './imported-supplier-invoices.types';
 
-/** Déclenche un run d'import du dossier inbox. HTTP 200 `{accepted, failed, warnings}` ; 409 si déjà en cours. */
+/**
+ * Délai de l'écran pour un import du dossier (Story v017-5, #854, C-v017-5-14) : cinq
+ * minutes, aligné sur `proxy_read_timeout 300s` du proxy nginx documenté au manuel
+ * d'administration. L'import traite tout le dossier en une seule requête, et un document
+ * scanné sans QR-facture lisible coûte deux rendus par page : le délai par défaut du
+ * client (30 s) abandonnerait un import qui se poursuit côté serveur.
+ */
+export const INBOX_IMPORT_TIMEOUT_MS = 300_000;
+
+/**
+ * Déclenche un run d'import du dossier inbox. HTTP 200 `{accepted, failed, warnings}` ; 409 si
+ * déjà en cours. Délai de cinq minutes, aucun rejeu : un import abandonné s'arrête au fichier en
+ * cours, et le relancer aussitôt pourrait trouver son verrou pas encore rendu.
+ */
 export async function triggerInboxImport(): Promise<InboxImportReport> {
-	return apiClient.post('/api/v1/inbox-import', {});
+	return apiClient.post(
+		'/api/v1/inbox-import',
+		{},
+		{ timeoutMs: INBOX_IMPORT_TIMEOUT_MS, retry: false },
+	);
 }
 
 /** Liste les factures importées filtrées par statut (status obligatoire côté API). */

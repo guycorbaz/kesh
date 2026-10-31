@@ -918,9 +918,38 @@ comme \texttt{/data/inbox} est souvent un lien symbolique vers
 démarrage pour que le contrôle anti-traversal fonctionne — aucune action requise.
 
 \paragraph{Réglage \texttt{KESH\_INBOX\_MAX\_PDF\_PAGES}.} Le décodage des PDF
-rend chaque page en image (via la bibliothèque native pdfium) jusqu'à trouver le
-QR. Augmentez cette borne si vos factures dépassent 20 pages ; diminuez-la pour
-limiter la charge sur des PDF volumineux.
+rend chaque page en image (via la bibliothèque native pdfium) jusqu'à trouver une
+QR-facture. Les pages, jusqu'à cette borne, sont rendues d'abord à 72~dpi~; depuis la
+0.17.0, si aucune ne livre de QR-facture, celles qui se sont rendues le sont une seconde
+fois, à la plus haute résolution que permet la borne de 2000~pixels par côté, au plus
+300~dpi (environ 170~dpi pour une A4)~; une page qui dépasse déjà cette borne dans les deux
+sens, aux mêmes proportions, n'est pas rendue une seconde fois, son premier rendu donnant la
+même image. Sur des scans de test, ce second rendu lit des QR-factures que le premier
+manquait~; une pièce réelle peut encore y échapper. Un document sans QR-facture lisible coûte donc \textbf{deux rendus par
+page}~: mesuré sur une station de développement, de l'ordre de 0,1~s par page scannée
+(0,4~s pour une page portant une douzaine de QR d'un autre usage), et sensiblement plus
+sur un NAS. Augmentez cette borne si vos factures dépassent 20 pages ; diminuez-la pour
+limiter la charge sur des PDF volumineux. La relever augmente ce coût d'autant~: elle va
+jusqu'à 500, et un seul document de quelques dizaines de pages scannées peut alors, à lui
+seul, dépasser le délai de l'écran.
+
+\paragraph{La durée d'un import.} L'import d'un dossier se fait en \textbf{une seule
+requête} synchrone~: l'écran \emph{Documents à traiter} l'attend jusqu'à 300~s, comme le
+proxy nginx de l'exemple documenté (\texttt{proxy\_read\_timeout 300s},
+\S\ref{sec:reverse-proxy}). \textbf{Derrière le proxy inversé de DSM} (Application Portal),
+aucun délai n'est documenté~: un import long peut y être coupé plus tôt --- vérifiez, pour
+la version de DSM utilisée, le délai que le proxy admet, comme pour la sauvegarde
+d'installation. Quand le navigateur ou le proxy abandonne la requête, \textbf{l'import
+s'arrête au fichier en cours}~: les documents déjà traités sont dans la liste, les autres
+restent dans le dossier et sont repris à l'import suivant (le fichier en cours peut y
+revenir en échec comme doublon, il est déjà dans la liste). Depuis la 0.17.0, la
+connexion à la base qui tient le verrou de l'import est fermée à l'abandon, ce qui rend
+le verrou~; jusqu'à la 0.16.x, elle retournait au pool en le gardant, et l'import suivant
+pouvait répondre « Un import est déjà en cours » jusqu'à ce que cette connexion soit
+fermée (après dix minutes d'inactivité, ou trente minutes après son ouverture si elle
+resservait~; issue \#863). Pour des
+documents scannés nombreux, faites-les déposer par petits lots, ou réduisez
+\texttt{KESH\_INBOX\_MAX\_FILES\_PER\_RUN} (défaut 200).
 
 \paragraph{Limitations connues.}
 \begin{itemize}
@@ -2486,11 +2515,17 @@ La 0.17.0 ne demande ni nouveau compose ni nouvelle variable de \keshpath{.env} 
 \textbf{Avant la mise à jour, une sauvegarde complète} : la base, une sauvegarde d'installation \keshpath{.keshbackup} et le dossier des documents (étape 1 de la procédure, \S\ref{sec:mise-a-jour}). La 0.17.0 ajoute \textbf{une migration}, \texttt{20261030000001\_bank\_imports\_manual\_source}, qui relève la version minimale exigée (\texttt{kesh\_version\_min\_required}) à \textbf{0.17.0} : un relevé saisi à la main porte une origine qu'une 0.16.x ne sait pas lire. Elle ne modifie aucune ligne existante. En conséquence, une 0.16.x --- la \texttt{0.16.1-rc1} comprise --- \textbf{refuse de démarrer} sur une base passée par la 0.17.0, et refuse d'importer une sauvegarde de la 0.17.0 : \textbf{le retour à la 0.16.1-rc1, ou à la 0.16.0, ne passe que par la sauvegarde d'avant la mise à jour}. Dans l'autre sens, un \keshpath{.keshbackup} fait en 0.16.x s'importe dans la 0.17.0 (mêmes tables). Aucun réglage ne change.
 \end{sloppypar}
 
+\paragraph{Les documents à traiter déjà importés.} La 0.17.0 rend une seconde fois les pages d'un PDF sans QR-facture lisible au premier rendu (\S\ref{sec:inbox-import})~; sur des scans de test, elle lit ainsi des QR-factures que les versions précédentes manquaient, mais une pièce réelle peut encore y échapper. Les documents importés avant la mise à jour \textbf{ne sont pas relus} d'eux-mêmes~: aucune donnée existante n'est réécrite. Pour en faire relire un, l'utilisateur le télécharge, le retire de la liste, le redépose dans le dossier d'import et relance l'import (manuel utilisateur, \emph{Faire relire le QR d'un document}).
+
 \paragraph{Les clients MCP.} Un client MCP n'a rien à changer. Seule une intégration qui lisait le \textbf{contenu structuré} (\texttt{structuredContent}) des réponses d'outil doit s'adapter, la 0.17.0 n'en émettant plus (issue \#811, \S\ref{sec:mcp-outils}) : pour une sortie d'outil, elle lit le JSON du bloc de texte, après l'en-tête et une ligne vide ; pour un accusé ou une relecture d'envoi, le numéro et l'état ne sont plus en JSON, ils se lisent dans la phrase de Kesh, propre à chaque cas --- « Envoi n° N en attente de validation\ldots » à l'accusé, « L'envoi n° N attend encore\ldots » à la relecture en attente, « Envoi n° N validé\ldots » à la relecture validée --- qui dit aussi si l'envoi a été modifié (« \ldots, qui l'a modifié avant l'envoi », absent pour un envoi tel quel) ---, dont le texte validé est le second bloc ; le refus, l'échéance et le numéro inconnu, qui n'en ont jamais porté, gardent leur phrase ; pour l'accusé d'une proposition de prompt, son nom et son état sont dans la phrase. Les montants changent de forme (\S\ref{sec:mcp-outils}, issue \#812) sans changer de valeur.
 
 \paragraph{Intégrations par l'API (0.17.0).}\mbox{}\\
 \begin{sloppypar}
 \textbf{Un refus nouveau sur des routes existantes} (issue \#687) : \texttt{POST /api/v1/supplier-invoices} et la complétion d'un document à traiter refusent une ligne de facture fournisseur dont le montant (quantité × prix) n'est pas au centime, en \texttt{400 SUPPLIER\_INVOICE\_LINE\_NOT\_IN\_CENTIMES}, et une quantité ou un prix à plus de quatre décimales, en \texttt{400 VALIDATION\_ERROR}~; une intégration qui créait de telles lignes doit les arrondir elle-même au montant facturé. Les factures existantes ne sont pas modifiées. Les autres refus ne changent pas de code.
+\end{sloppypar}
+
+\begin{sloppypar}
+\textbf{La réactivation d'un document relu} (issue \#854) : \texttt{POST /api/v1/inbox-import} relit désormais un document à traiter \textbf{sans données QR} quand il est réactivé (retiré de la liste puis redéposé), et son entrée du rapport dit le résultat de cette lecture --- \texttt{present}, \texttt{none} ou \texttt{unreadable} avec \texttt{qrError} ---, là où elle disait jusqu'ici \texttt{present} ou \texttt{none} selon ce qui avait été stocké. La trace \texttt{imported\_supplier\_invoice.reactivated} porte en plus \texttt{qr} et \texttt{qr\_reread}. Le détail est dans \texttt{docs/api-external.md}.
 \end{sloppypar}
 
 \begin{sloppypar}

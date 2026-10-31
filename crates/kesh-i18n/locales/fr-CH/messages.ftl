@@ -2535,7 +2535,7 @@ imported-supplier-invoices-error-field-too-long = Un champ du QR dépasse la lon
 # `qrError` du contrôle du montant ; les autres clés neuves servent le badge, l'aperçu et le rapport.
 imported-supplier-invoices-error-qr-amount-out-of-range = Montant du QR hors des limites admises
 imported-supplier-invoices-badge-qr = QR-facture
-imported-supplier-invoices-badge-no-qr = Sans QR-code
+imported-supplier-invoices-badge-no-qr = Aucune QR-facture exploitable
 imported-supplier-invoices-imported-on = Importé le {$date}
 imported-supplier-invoices-preview = Aperçu
 imported-supplier-invoices-preview-close = Fermer l’aperçu
@@ -2549,7 +2549,7 @@ imported-supplier-invoices-attach-qr-amount = Montant du QR : { $amount }
 imported-supplier-invoices-attach-invoice-total = Total de la facture : { $total }
 imported-supplier-invoices-attach-submit = Joindre
 imported-supplier-invoices-attach-confirm = Joindre le document « { $file } » à cette facture ?
-imported-supplier-invoices-report-no-qr = sans QR-code
+imported-supplier-invoices-report-no-qr = aucune QR-facture exploitable
 imported-supplier-invoices-report-qr-unreadable = QR illisible
 imported-supplier-invoices-qr-unreadable-hint = Document accepté sans les données du QR : en créant la facture, saisissez l’IBAN et la référence à la main.
 supplier-invoices-add-line = Ajouter une ligne

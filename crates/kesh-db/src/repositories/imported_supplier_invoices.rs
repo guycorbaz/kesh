@@ -6,7 +6,7 @@
 //! en **12-5c** ; ce module n'expose que le CRUD de base, scopé multi-tenant.
 
 use crate::entities::imported_supplier_invoice::{
-    ImportedSupplierInvoice, NewImportedSupplierInvoice,
+    ImportedSupplierInvoice, NewImportedSupplierInvoice, QrColumns,
 };
 use crate::errors::{DbError, map_db_error};
 use sqlx::MySqlPool;
@@ -487,6 +487,52 @@ pub async fn reactivate_to_complete(
          SET status = 'to_complete', supplier_invoice_id = NULL \
          WHERE id = ? AND company_id = ? AND status = 'discarded'",
     )
+    .bind(id)
+    .bind(company_id)
+    .execute(&mut **tx)
+    .await
+    .map_err(map_db_error)?
+    .rows_affected();
+    Ok(affected > 0)
+}
+
+/// Réactive une facture importée `discarded` **sans données QR** et y écrit les
+/// quinze colonnes QR relues du fichier redéposé (Story v017-5, #854,
+/// C-v017-5-9) — **une seule** instruction, comme [`reactivate_to_complete`]
+/// (statut `to_complete`, `supplier_invoice_id` remis à `NULL`), gardée par
+/// `status = 'discarded' AND creditor_iban IS NULL` : une ligne qui porte déjà un
+/// QR n'est **jamais** réécrite, et une ligne qui n'est plus `discarded` non plus.
+/// Retourne `true` si une ligne a été réactivée. Ne commite jamais.
+pub async fn reactivate_to_complete_with_qr(
+    tx: &mut Transaction<'_, MySql>,
+    company_id: i64,
+    id: i64,
+    qr: &QrColumns,
+) -> Result<bool, DbError> {
+    let affected = sqlx::query(
+        "UPDATE imported_supplier_invoices \
+         SET status = 'to_complete', supplier_invoice_id = NULL, \
+             creditor_iban = ?, is_qr_iban = ?, creditor_address_type = ?, creditor_name = ?, \
+             creditor_line1 = ?, creditor_line2 = ?, creditor_postal_code = ?, creditor_town = ?, \
+             creditor_country = ?, reference_type = ?, reference_value = ?, amount = ?, \
+             currency = ?, unstructured_message = ?, billing_information = ? \
+         WHERE id = ? AND company_id = ? AND status = 'discarded' AND creditor_iban IS NULL",
+    )
+    .bind(&qr.creditor_iban)
+    .bind(qr.is_qr_iban)
+    .bind(&qr.creditor_address_type)
+    .bind(&qr.creditor_name)
+    .bind(&qr.creditor_line1)
+    .bind(&qr.creditor_line2)
+    .bind(&qr.creditor_postal_code)
+    .bind(&qr.creditor_town)
+    .bind(&qr.creditor_country)
+    .bind(&qr.reference_type)
+    .bind(&qr.reference_value)
+    .bind(qr.amount)
+    .bind(&qr.currency)
+    .bind(&qr.unstructured_message)
+    .bind(&qr.billing_information)
     .bind(id)
     .bind(company_id)
     .execute(&mut **tx)

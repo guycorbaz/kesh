@@ -207,14 +207,16 @@ function valeurDuCatalogueFr(cle: string): string | undefined {
  * G13 (Story 15-14a, #569 et #547) — les replis frontend **à site unique** suivent le catalogue.
  *
  * ⚠️ La garde ci-dessus ne voit pas ces clés : elle ne retient que celles qui portent **au
- * moins deux** replis distincts (`parTexte.size > 1`). Chacune des quatre-vingt-quatorze clés
+ * moins deux** replis distincts (`parTexte.size > 1`). Chacune des quatre-vingt-seize clés
  * ci-dessous n'a qu'un texte de repli (un site d'appel, ou plusieurs qui disent la même
  * chose) ; un repli resté à l'ancien texte n'y rougirait pas, et l'écran l'afficherait dès
  * que le catalogue manque (premier rendu, catalogue non chargé). *(« treize » jusqu'à la
  * Story v016-2b, qui en ajoute soixante-dix-huit : 13 + 78 = 91, recompté sur la liste ; 93 à la
  * remédiation de sa revue P1, avec `bank-import-manual-warning-duplicate-lines-generic` et
  * `bank-import-manual-load-error` ; 94 à celle de sa revue P2, avec
- * `bank-import-manual-preview-outdated-server`.)*
+ * `bank-import-manual-preview-outdated-server` ; 96 à la Story v017-5, avec
+ * `imported-supplier-invoices-badge-no-qr` et `imported-supplier-invoices-report-no-qr`,
+ * recompté sur la liste.)*
  *
  * Le tableau attendu à UN élément est l'anti-test-muet : un relevé vide, une clé disparue du
  * catalogue (`[undefined]`) ou un second repli divergent rougissent tous.
@@ -328,6 +330,11 @@ const REPLIS_A_SITE_UNIQUE: readonly string[] = [
 	'bank-import-manual-load-error',
 	'bank-import-manual-preview-outdated-server',
 	'bank-import-manual-warning-opening-gap',
+	// Story v017-5 (#854, AC-7) — le badge et la mention du rapport d'un document sans données
+	// QR (« Aucune QR-facture exploitable ») : le préfixe `imported-supplier-invoices-` n'est pas
+	// à `PREFIXES_REPLI_EGAL_AU_CATALOGUE`, et aucune autre garde ne comparait ces replis.
+	'imported-supplier-invoices-badge-no-qr',
+	'imported-supplier-invoices-report-no-qr',
 ];
 
 describe('les replis frontend à site unique suivent le catalogue fr-CH (G13)', () => {
