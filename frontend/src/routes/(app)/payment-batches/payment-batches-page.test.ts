@@ -16,8 +16,9 @@ vi.mock('$lib/features/payment-batches/payment-batches.api', () => ({
 	createPaymentBatch: vi.fn(),
 	listPaymentBatches: () => Promise.resolve({ items: [], total: 0 }),
 }));
+const listSupplierInvoicesMock = vi.fn();
 vi.mock('$lib/features/supplier-invoices/supplier-invoices.api', () => ({
-	listSupplierInvoices: () => Promise.resolve({ items: [], total: 0 }),
+	listSupplierInvoices: (q: unknown) => listSupplierInvoicesMock(q),
 }));
 const listBankAccountsMock = vi.fn<() => Promise<BankAccountSummary[]>>();
 vi.mock('$lib/features/bank-accounts/bank-accounts.api', () => ({
@@ -51,6 +52,7 @@ describe('page des lots de virements — compte source (Story 26-2b, D4)', () =>
 	beforeEach(() => {
 		vi.clearAllMocks();
 		listBankAccountsMock.mockResolvedValue([compte(1, 'Personnel'), compte(2, null)]);
+		listSupplierInvoicesMock.mockResolvedValue({ items: [], total: 0 });
 	});
 
 	it('l’option nomme le compte décrit, et garde « banque — IBAN » sans description', async () => {
@@ -62,5 +64,49 @@ describe('page des lots de virements — compte source (Story 26-2b, D4)', () =>
 		);
 		expect(labels).toContain(`UBS — Personnel — ${compte(1, null).iban}`);
 		expect(labels).toContain(`UBS — ${compte(2, null).iban}`);
+	});
+});
+
+// Story v017-4b (#849, AC-27) — l'écran des lots ne propose jamais un brouillon : il
+// demande au serveur les seules factures validées (`status=open`, AC-15), et garde le
+// filtre client en défense.
+describe('page des lots de virements — factures proposées (Story v017-4b, AC-27)', () => {
+	function facture(id: number, status: 'draft' | 'open' | 'paid' | 'cancelled') {
+		return {
+			id,
+			contactId: 1,
+			contactName: `Fournisseur ${id}`,
+			supplierInvoiceNumber: `FF-${id}`,
+			status,
+			invoiceDate: '2026-05-10',
+			dueDate: null,
+			totalAmount: '100.00',
+		};
+	}
+
+	beforeEach(() => {
+		vi.clearAllMocks();
+		listBankAccountsMock.mockResolvedValue([compte(1, 'Personnel')]);
+	});
+
+	it('demande les factures validées au serveur (M30)', async () => {
+		listSupplierInvoicesMock.mockResolvedValue({ items: [], total: 0 });
+		render(Page);
+		await vi.waitFor(() => expect(listSupplierInvoicesMock).toHaveBeenCalled());
+		expect(listSupplierInvoicesMock.mock.calls[0][0]).toEqual({ limit: 200, status: ['open'] });
+	});
+
+	it('un brouillon rendu malgré tout n’est jamais proposé (défense)', async () => {
+		listSupplierInvoicesMock.mockResolvedValue({
+			items: [facture(1, 'draft'), facture(2, 'open')],
+			total: 2,
+		});
+		const { findByTestId, findAllByTestId } = render(Page);
+		await fireEvent.click(await findByTestId('payment-batch-new'));
+		const boxes = await findAllByTestId('payment-batch-invoice-checkbox');
+		expect(boxes).toHaveLength(1);
+		const form = await findByTestId('payment-batch-form');
+		expect(form.textContent).toContain('Fournisseur 2');
+		expect(form.textContent).not.toContain('Fournisseur 1');
 	});
 });

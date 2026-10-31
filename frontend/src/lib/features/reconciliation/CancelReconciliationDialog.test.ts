@@ -158,7 +158,8 @@ describe('CancelReconciliationDialog — règlement fournisseur (Story 30-1b, T-
 			supplierInvoiceNumber: 'FF-2026-0042',
 		});
 		expect(t).toContain('facture fournisseur FF-2026-0042');
-		expect(t).toContain('redeviendra ouverte, à payer');
+		// Story v017-4b (#849, décision Q4) : l'état `open` se nomme « validée ».
+		expect(t).toContain('redeviendra validée, à payer');
 		expect(t).not.toContain('redeviendra à régler');
 	});
 

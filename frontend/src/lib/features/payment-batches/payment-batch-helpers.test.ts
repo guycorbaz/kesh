@@ -61,7 +61,8 @@ describe('failedItemLabel', () => {
 	// suivant.
 	it('mappe les huit codes sur leur repli français', () => {
 		expect(failedItemLabel('SUPPLIER_INVOICE_NOT_FOUND')).toBe('Facture introuvable');
-		expect(failedItemLabel('SUPPLIER_INVOICE_NOT_OPEN')).toBe('Facture non ouverte');
+		// Story v017-4b (#849, décision Q4) : « non validée », plus « non ouverte ».
+		expect(failedItemLabel('SUPPLIER_INVOICE_NOT_OPEN')).toBe('Facture non validée');
 		expect(failedItemLabel('NO_PAYMENT_COORDINATES')).toBe(
 			'Pas de coordonnées de paiement (IBAN/QR-IBAN)'
 		);

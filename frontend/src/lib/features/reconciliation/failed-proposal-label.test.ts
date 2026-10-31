@@ -342,7 +342,8 @@ describe('failedProposalLabel', () => {
 	// compterait la charge ou le produit deux fois (encadré L1 du manuel).
 	it.each([
 		['payment_batch', 'reconciliation-failed-rule-masked-payment-batch', 'lot de paiement', 'acceptez ici la facture proposée'],
-		['invoice_candidate', 'reconciliation-failed-rule-masked-invoice-candidate', 'facture fournisseur ouverte', 'acceptez la facture proposée'],
+		// Story v017-4b (#849, décision Q4) : l'état `open` se nomme « validée ».
+		['invoice_candidate', 'reconciliation-failed-rule-masked-invoice-candidate', 'facture fournisseur validée', 'acceptez la facture proposée'],
 		['invoice_slightly_overpaid', 'reconciliation-failed-rule-masked-overpaid', 'quelques centimes', 'rattachez-y la transaction'],
 		[undefined, 'reconciliation-failed-rule-masked', 'une facture correspond', 'traitez la facture'],
 	])('T-b28 — RECONCILIATION_RULE_MASKED (%s) ⇒ %s', (reason, key, contenu, geste) => {
