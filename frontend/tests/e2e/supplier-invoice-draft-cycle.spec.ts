@@ -59,6 +59,22 @@ async function decor(ctx: APIRequestContext): Promise<{
 }> {
 	const accounts = (await (await ctx.get('/api/v1/accounts')).json()) as Account[];
 	const expenses = accounts.filter((a) => a.accountType === 'Expense' && a.active && a.postable);
+	// Le seed `with-company` ne porte qu'un compte de charge imputable : le second (le
+	// « bon ») se crée ici, sous un numéro absent du plan.
+	if (expenses.length < 2) {
+		const number = ['6990', '6991', '6992'].find((n) => !accounts.some((a) => a.number === n));
+		const created = await ctx.post('/api/v1/accounts', {
+			data: {
+				number,
+				name: 'Charges cycle brouillon',
+				accountType: 'Expense',
+				postable: true,
+				role: null,
+			},
+		});
+		expect(created.ok(), `compte de charge : ${created.status()} ${await created.text()}`).toBeTruthy();
+		expenses.push((await created.json()) as Account);
+	}
 	expect(expenses.length, 'deux comptes de charge imputables').toBeGreaterThanOrEqual(2);
 	const payable = accounts.find((a) => a.number === '2000');
 	const settings = await (await ctx.get('/api/v1/company/invoice-settings')).json();
