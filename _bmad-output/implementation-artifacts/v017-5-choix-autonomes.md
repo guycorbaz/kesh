@@ -343,6 +343,12 @@ NAS.)*
 - **Écartées** : (b) s'arrêter dès la dégradation d'AC-1 — le mandat nomme les paliers comme partie de la reproduction ;
   (c) régler bruit ou flou à la main jusqu'au rouge — interdit (AC-2 (i)).
 - **Réversible** : oui (une constante, `DEGRADATION`, et quatre fichiers de données).
+- *Annotation datée du 2026-10-31, revue de code P1 (A1)* : au palier 1 et au premier essai du palier 2, le générateur a
+  paniqué sur la fixture à 300 dpi **après** avoir écrit les précédentes ; `qr-scan-300dpi.pdf` et `scan-sans-qr.pdf`
+  sont restés ceux du palier 0, et T4 les a relus (`palier1.log`, `palier2.log` : « qr-scan-300dpi.pdf : LU »). La
+  conclusion tient : au palier 1, les fixtures à 150 et 200 dpi, régénérées, étaient encore lues ; le palier 2 est
+  prouvé par **`palier2d.log`**, sur les quatre fixtures finales. Le générateur contrôle désormais toutes les tailles
+  avant d'en écrire une.
 
 ### C-v017-5-17 — Le plafond de 1 Mio tenu par les deux moyens prescrits
 
@@ -353,6 +359,36 @@ NAS.)*
   Le banc engendre sa page D1 à 300 dpi en mémoire, à la qualité 60.
 - **Écartées** : (b) qualité sous 60 — interdit ; (c) relever le plafond — interdit ; (d) bruit restreint sur la page
   sans QR — AC-1 l'exclut.
+- **Réversible** : oui.
+- *Annotation datée du 2026-10-31, revue de code P1 (question de la lentille B)* — **la restriction du bruit ne règle
+  aucun paramètre sur le résultat.** (1) Elle a été décidée sur la **taille** (1 606 339 octets), après que le palier 2,
+  bruit sur toute la page, eut déjà reproduit le défaut : `palier2.log` montre les fixtures à 150 et 200 dpi non lues à
+  72 dpi, et T2-diag, sur le générateur en mémoire avec le bruit sur toute la page, les trois non lues. (2) Elle ne
+  touche pas la zone qui décide : la section paiement, où sont tout le QR et la croix, garde son bruit de ± 24 et son
+  flou de 0,2 mm ; seul le haut de la page (au-dessus de 192 mm), sans QR, perd son bruit. Une réserve : le tirage du
+  bruit sur le QR n'est pas le même octet pour octet (la suite pseudo-aléatoire ne parcourt plus le haut de la page) —
+  même loi, autre réalisation. (3) Les fixtures finales **échouent au premier temps et sont lues au second** :
+  `palier2d.log` (code d'avant : les trois scans `Ok(None)`), `vert-t4.log` (correctif : les trois lus, un rendu au
+  second temps chacun), et T4 rejoué au dernier commit de code de la remédiation P1 (Dev Agent Record).
+
+### C-v017-5-19 — Pas de second rendu quand le premier a déjà donné la même image
+
+*(Ajouté à la remédiation de la revue de code P1 — E-3, ordonné par l'orchestrateur.)*
+
+- **Contexte** : E-3 avançait qu'une page de plus de 2000 pt de côté se rend au second temps en doublon du premier.
+  Prémisse relue dans `pdfium-render-0.8.37/src/pdf/document/page/render_config.rs:763-822` : **à moitié vraie**. Sans
+  facteur d'échelle, `apply_to_page` ne garde pas les proportions (`do_maintain_aspect_ratio = false`) et réduit chaque
+  côté séparément à la borne ; le second rendu, à `scale_page_by_factor`, les garde. Le second redonne donc exactement
+  le premier **seulement** quand les deux facteurs du premier, `min(1, borne / côté)`, égalent l'échelle du second —
+  page plus grande que la borne dans les deux sens aux proportions de la borne, ou page à l'échelle 1. Une page plus
+  grande que la borne dans un seul sens est **déformée** au premier temps : son second rendu, sans déformation, n'est
+  pas un doublon. La consigne littérale (« pas de second rendu dès que l'échelle est ≤ 1 ») aurait retiré le seul rendu
+  non déformé de ces pages, contre AC-3 (« le second temps la rend sans déformation »).
+- **Retenu** : `echelle_du_second_temps` (fonction pure, `qr_decode.rs`) — `render_scale`, sauf quand le premier rendu
+  a donné la même image (`None`, pas de second rendu). Tests d'hôte : A4 (2,3756), 3000 × 3000 pt (`None`),
+  2500 × 1000 pt (0,8, gardé), dimension nulle (`None`) ; mutation M15 (filtre retiré).
+- **Écartées** : (b) `None` dès que l'échelle est ≤ 1 — supprime le rendu non déformé (ci-dessus) ; (c) laisser le
+  doublon en angle mort — coût sans contrepartie, même borné.
 - **Réversible** : oui.
 
 ### C-v017-5-18 — Le verrou de run fuit à l'abandon : la connexion du verrou est fermée à sa restitution

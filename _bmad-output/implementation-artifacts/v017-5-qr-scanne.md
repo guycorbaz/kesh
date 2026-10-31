@@ -4,7 +4,7 @@ Status: review
 
 *Fiche rédigée le 2026-10-31, en autonomie (Opus 5.5), worktree `/home/gcorbaz/devel/kesh-0176`, branche
 `story/v017-5-qr-scanne` partie de `8e126cfd` (tête de `release/0.17.0`). Release **0.17.0**, candidate suivante
-(décision de Guy du 2026-10-31). Registre : `v017-5-choix-autonomes.md` (C-v017-5-1 à C-v017-5-15). Clé courte :
+(décision de Guy du 2026-10-31). Registre : `v017-5-choix-autonomes.md` (C-v017-5-1 à C-v017-5-19). Clé courte :
 `v0175`. Issue : **#854** (bug, P2), en `refs` seulement — dans les commits **et dans la PR de release** : #854 ne se
 ferme qu'au constat du Project Lead sur son installation (§ *Fermeture de #854*). Les numéros de ligne sont ceux de `8e126cfd` ; ceux des dépendances, ceux de `~/.cargo/registry`
 (`pdfium-render-0.8.37`, `rxing-0.7.1`, `printpdf-0.7.0`).*
@@ -735,6 +735,16 @@ d'AC-2 (i), **dans leur ordre**, sans régler aucun paramètre sur le résultat 
 | 1 | flou 0,1 mm, bruit **± 24** | 150 et 200 dpi **lus** | 3 lus | `palier1.log` |
 | 2 | flou **0,2 mm**, bruit ± 24 | **3 scans non lus** (`Ok(None)`) | 3 non lus | `palier2.log`, `palier2d.log` |
 
+> *Annotation datée du 2026-10-31, revue de code P1 (A1) — ce tableau affirme plus que ce qui a tourné.* Le générateur
+> écrivait chaque fixture avant de contrôler la suivante : au palier 1 (`palier1.log`) et au premier essai du palier 2
+> (`palier2.log`), il a paniqué sur `qr-scan-300dpi.pdf` (1 613 827 puis 1 606 339 octets), si bien que
+> `qr-scan-300dpi.pdf` et `scan-sans-qr.pdf` n'ont **pas** été régénérés : T4 y relisait ceux du palier 0. D'où, dans
+> `palier2.log`, « qr-scan-300dpi.pdf : LU ». Ce qui vaut : au palier 1, la ligne T4 ne vaut que pour 150 et 200 dpi
+> (régénérées, encore lues) ; la colonne T2-diag, elle, porte sur le générateur en mémoire (dégradation complète) et
+> vaut pour les trois. Au palier 2, `palier2.log` ne prouve rien pour 300 dpi ; **la preuve du palier 2 est
+> `palier2d.log`**, joué sur les quatre fixtures finales (les trois scans en `Ok(None)` au premier temps, T2-diag
+> non lu). Depuis la remédiation P1, le générateur contrôle toutes les tailles avant d'écrire une seule fixture.
+
 Le palier 2 est le premier qui reproduit le défaut : il devient celui des fixtures (`DEGRADATION`,
 `qr_decode_synthetique.rs`). Le palier 3 (binarisation) n'a pas été joué.
 
@@ -976,6 +986,35 @@ attendre cinq minutes).
    Vitest ciblé, `npm run check`) ; tout ce qui a suivi la consigne est passé sous verrou et `mem-guard`. Aucun OOM
    subi par cette story.
 
+#### Remédiation de la revue de code P1 (2026-10-31)
+
+Revue P1 (Opus, B, E, A) : 0 CRITICAL, 0 HIGH, 1 MEDIUM (A1), 14 LOW (B-1 à B-5, E-1 à E-4, A2 à A6). Prémisse de
+chaque finding relue au code avant remède ; E-3 n'était **qu'à moitié vraie** (C-v017-5-19).
+
+- **A1** : générateur à contrôle préalable de toutes les tailles ; annotations datées du tableau des paliers et de
+  C-v017-5-16 ; réponse à la question de B en annotation de C-v017-5-17 (la restriction du bruit a été décidée sur la
+  taille, après la reproduction, et laisse la section paiement entière dégradée).
+- **E-3** : `echelle_du_second_temps` — le second rendu est omis seulement quand il redonnerait le premier (page plus
+  grande que la borne dans les deux sens aux proportions de la borne, ou page à l'échelle 1) ; une page plus grande
+  dans un seul sens, déformée au premier temps, garde son second rendu (lu dans `render_config.rs:763-822`). Quatre
+  tests d'hôte ; mutation **M15** tuée par `second_temps_page_plus_grande_que_la_borne_dans_les_deux_sens_aux_memes_proportions`.
+- **B-2** : T10 (h) (`Ok(None)` au premier temps, lu au second) et (i) (inexploitable au seul second temps) ; mutation
+  **M16** (`Ok(None) => *ok = true` → `{}`) tuée par T10 (h).
+- **B-3** : **T3-bis**, non ignoré : extrait le flux JPEG de chaque fixture versionnée (sans pdfium), l'exige identique
+  au générateur, le lit à la résolution native et à 1414 × 2000 ; la page sans QR rend `Ok(None)`.
+- **B-1 = E-4** : `assert!(restants > 0)` dans T12. **E-1, E-2, B-5** : commentaires corrigés.
+- **B-4 = A5** : manuels et README disent le fait (« sur des scans de test… une pièce réelle peut encore y échapper »).
+  **A3** : trace `reactivated` documentée dans `api-external.md`. **A4** : entrée CHANGELOG propre à **#863** ; le
+  manuel d'administration la cite. **A6** : en-tête de la fiche (C-v017-5-1 à 19).
+- **A2** : T4 et le banc **rejoués au dernier commit de code** (`dee8f982` ; le journal porte `25b2367a`, commit de
+  textes seulement) — `p1-t4.log` : sonde verte, trois scans lus au second temps (un rendu chacun), sans QR `Ok(None)`,
+  témoin vectoriel lu sans second temps, `decode_spc_from_pdf_single_page` vert ; `p1-banc.log` : médianes 57 / 65 /
+  80 / 58 ms par page, D1 1,48 s, D2 1,54 s, D3 7,19 s, D4 11,0 ms (0 second rendu), pointe 198 944 Kio.
+
+Gates au dernier commit de code : **backend** `test-fast.sh`, base remise à zéro — **4617 exécutés, 4617 passés, 12
+ignorés** (`p1-gate.log`) ; **frontend** check 0 erreur (29 avertissements préexistants), lint PASS, **Vitest 191
+fichiers, 2293 tests**, build vert ; **E2E complet** (base `kesh_e2e_v0175` reconstruite, `/tmp/kesh-e2e-v0175-4/`, backend tué par PID) : **330 passés, 7 échecs, 18 ignorés** — `mode-expert.spec.ts:26`, `:41`, `onboarding-path-b.spec.ts:65`, `:92`, `onboarding.spec.ts:57`, `:77`, `:150`, tous **KF-029 (#97)**, attendus ; E2-a vert (`p1-e2e-run.log`).
+
 ### File List
 
 - `crates/kesh-api/src/qr_decode.rs` — `MAX_RENDER_DPI`, `render_scale`, `Temps`, `decode_pages` (deux passes),
@@ -1061,3 +1100,13 @@ attendre cinq minutes).
   par `close_on_drop`), textes et manuels `9c26f50d`. Gates : backend 4610/4610, Vitest 2293, E2E 330 + les 7 de la
   KF-029 ; 23 mutations tuées, M4 déclarée. Registre C-v017-5-16 à 18. Prochaine étape : revue de code P1
   (`v017-5-review-prompt-p1.md`, Opus, B, E et A).
+- 2026-10-31 — **Revue de code P1** (Opus, lentilles B, E, A, contexte frais) : 0 CRITICAL, 0 HIGH, 1 MEDIUM (A1),
+  14 LOW (B-1 à B-5, E-1 à E-4, A2 à A6). Remédiation (Opus 5.5), prémisses relues au code et dans les dépendances
+  (`render_config.rs:763-822` : E-3 à moitié vraie, C-v017-5-19 ; `sqlx-core-0.8.6/src/pool/options.rs:161-162` :
+  E-1) : générateur à contrôle préalable des tailles et annotations datées des paliers (A1, sans réécrire les
+  entrées) ; réponse à la question de B en annotation de C-v017-5-17 ; second rendu omis quand il redonnerait le
+  premier (E-3, M15) ; T10 (h), (i) (B-2, M16) ; T3-bis sur les fixtures versionnées sans pdfium (B-3) ;
+  `restants > 0` dans T12 (B-1 = E-4) ; commentaires E-1, E-2, B-5 ; textes au fait (B-4 = A5), trace `reactivated` à
+  l'API (A3), #863 au CHANGELOG (A4), en-tête (A6) ; T4 et banc rejoués au dernier commit de code (A2). Gates :
+  backend 4617/4617, Vitest 2293, E2E 330 + les 7 de la KF-029. Commits `dee8f982` (code), `25b2367a` (textes, PDF).
+  Prochaine étape : revue de code P2 ciblée (`v017-5-review-prompt-p2.md`, Sonnet, une lentille).
