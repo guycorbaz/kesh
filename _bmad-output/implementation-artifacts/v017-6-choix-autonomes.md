@@ -149,3 +149,39 @@ réversibilité.
   les ajouts.
 - **Écartées** : les tracer en issue — plus coûteux qu'un commentaire, et le mandat les intègre.
 - **Réversible** : oui.
+
+## Choix du développement (2026-10-31)
+
+### C-v017-6-12 — `issued_invoice_pdf.rs:335-337` entre aussi : « l'installation » y désignait `instance_language`
+
+- **Contexte** : en vérifiant le doc-comment neuf de `invoice_pdf_service.rs`, le grep de la valeur
+  (`grep -rn "langue de l'installation" crates --include=*.rs`) a rendu `issued_invoice_pdf.rs:335, 337` : « La langue du
+  client, sinon celle de l'installation […] on rend alors dans la langue de l'installation », au-dessus de
+  `client_language`, qui rend `ctx.company.instance_language` (`:342`). Avec le vocabulaire de C-v017-6-10,
+  « installation » désigne `KESH_LANG` : le commentaire dit l'inverse du code.
+- **Retenu** : le corriger (« sinon la langue des documents (`instance_language`) […] Ni l'une ni l'autre n'est la langue
+  de l'installation »). Doc-comment seul, mécanique, même classe que les sept de l'AC-4. L'inventaire passe à **seize**
+  sites sur **seize** fichiers.
+- **Écartées** : une issue — plus coûteux que le commentaire ; le laisser — le seul commentaire du dépôt qui inverse les
+  deux termes après la story.
+- **Réversible** : oui.
+
+### C-v017-6-13 — Trois ajustements de forme aux textes prescrits
+
+- **Contexte** : l'AC-5 et l'AC-6 permettent d'ajuster le texte « sans en changer le sens ».
+- **Retenu** : (a) le guide `getting-started.md` emploie le tiret cadratin « — » (douze occurrences dans le fichier),
+  non le `---` du LaTeX prescrit ; (b) le README lie `#710` comme ses puces voisines lient leurs issues ; (c) la puce
+  #832 du CHANGELOG ajoute une phrase : « Un QR-IBAN mal formé est refusé au nom du QR-IBAN (« QR-IBAN invalide : trop
+  court »), et non de l'IBAN » — le cas que le helper règle, invisible sans elle.
+- **Écartées** : recopier `---` dans un fichier Markdown, où il s'affiche tel quel.
+- **Réversible** : oui.
+
+### C-v017-6-14 — M3-bis jouée aux deux sites QR-IBAN, séparément
+
+- **Contexte** : l'AC-3 décrit M3-bis comme « rendre au site QR-IBAN le message nu » et attend que (c) **et** (d)
+  rougissent ; (c) est à l'assistant (`onboarding.rs`), (d) au compte bancaire (`bank_accounts.rs`) : une seule mutation
+  d'un site ne peut pas rougir les deux.
+- **Retenu** : M3-bis (site de l'assistant) et M3-bis-ba (site du compte bancaire), chacune jouée seule ; la première
+  rougit (c), la seconde (d) — par le `starts_with("QR-IBAN invalide")` existant, avant même le décompte neuf.
+- **Écartées** : muter les deux sites à la fois — on ne saurait pas quel test tue quelle mutation.
+- **Réversible** : oui.
