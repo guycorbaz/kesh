@@ -53,3 +53,6 @@ l'API ne le nomme plus « ouverte » — AC-21, AC-29).
 - 2026-10-31 — Validation P1 remédiée dans la fiche parente (C-v017-4-26 à 33) : inventaire des « ouverte » par la valeur
   sur tout le dépôt, phrases du manuel réécrites (« saisissez, puis validez »), specs et helper E2E nommés, montant attendu
   et prix vide (#830), données du QR lues dans `sourceDocument`, M32 à M34. Prochaine : validation P2.
+- 2026-10-31 — Validation P2 remédiée dans la fiche parente (C-v017-4-34 à 36) : prix vide refusé par le formulaire,
+  specs de complétion et `fillFirstInvoiceLine` (date), règle du QR verrouillé et L7 au manuel, « deux voies » et clés
+  `read-write`, lien d'écriture d'achat sur la fiche, union `SupplierInvoiceCancelCode`. Prochaine : validation P3.

@@ -4,7 +4,7 @@ Status: ready-for-dev
 
 *Sous-fiche issue du découpage de la Story v017-4 à sa rédaction (2026-10-31, C-v017-4-1). Worktree
 `/home/gcorbaz/devel/kesh-0175`, branche `story/v017-4-facture-fournisseur-brouillon` (partie de `8e126cfd`) ; la 4a
-d'abord, puis la 4b. Registre **commun** : `v017-4-choix-autonomes.md` (C-v017-4-1 à 20 ; C-v017-4-21 et suivants au
+d'abord, puis la 4b. Registre **commun** : `v017-4-choix-autonomes.md` (C-v017-4-1 à 36 ; C-v017-4-37 et suivants au
 développement). Issues : **#849**, #853 — en `refs` seulement. **Le texte des AC, le contexte, les décisions, le
 contrat de l'API, les codes d'erreur, la précédence, les verrous, l'inventaire clos, les limites et les questions au
 Project Lead sont dans la fiche parente `v017-4-facture-fournisseur-brouillon.md`** : ils valent ici sans être recopiés.
@@ -23,7 +23,10 @@ doc-comment —, lettrage et lots — types), `kesh-api` (routes `PUT`, `DELETE`
 liste, création et complétion en brouillon, règles « document » extraites, erreurs, audit, MCP, export CSV, registres),
 `kesh-i18n` (messages d'erreur, libellés d'audit, quatre catalogues), `kesh-seed`, `docs/api-external.md`,
 `docs/migrations-idempotence-audit.md`, les tests Rust, et les textes liés à la migration : CHANGELOG (en-tête et
-*Modifié*), manuel d'administration et son PDF. **Livrable seul** : le cycle se teste de bout en bout en HTTP.
+*Modifié*), manuel d'administration et son PDF. *(Corrigé à la validation P2, F10, R13 : la première rédaction disait
+« livrable seul ».)* **Testable seule en HTTP, publiée avec la 4b** (dérogation C-v017-4-31) ; elle écrit aussi le
+helper E2E `createSupplierInvoiceViaApi` qui valide, le helper du relevé saisi par l'API et les étapes par l'API de la
+spec `supplier-invoice-draft-cycle.spec.ts`, qu'elle joue en E2E ciblés.
 
 ## Critères d'acceptation
 
@@ -62,3 +65,6 @@ qu'avec la 4b, sur la même branche.
 - 2026-10-31 — Validation P1 remédiée dans la fiche parente (Change Log de la parente ; C-v017-4-26 à 33) : K8 en dernier,
   total du brouillon en `kesh-core`, régime de verrous et de rejeu, règles de la complétion au `PUT` selon `link_origin`,
   `sourceDocument` enrichi, dérogation E2E, règle « Validée » aux textes de la 4a. Prochaine : validation P2.
+- 2026-10-31 — Validation P2 remédiée dans la fiche parente (C-v017-4-34 à 36) : `DELETE` dans l'ordre facture puis
+  document, contrainte de statut sous un nom neuf, sauvegarde 0.16.x forgée sans `link_origin`, codes réels de la
+  réconciliation, M12b retirée ; la 4a écrit les helpers E2E et les étapes API de la spec neuve. Prochaine : validation P3.

@@ -433,3 +433,48 @@ précédentes restent telles qu'écrites ; celles que ces choix modifient sont n
 - **Retenu** : L1 (rc2 → rc1) s'écrit aux notes de la candidate `v0.17.0-rc2` ; ni le CHANGELOG `[0.17.0]` ni le manuel
   d'administration, qui décrivent la version publiée, ne la portent. Précise C-v017-4-22.
 - **Réversible** : oui.
+
+---
+
+*Les choix C-v017-4-34 à 36 consignent la remédiation de la validation P2 (2026-10-31 ; rapports
+`kesh-gate-logs/v0174-validate-p2-{R,F}.md`) et les arbitrages de l'orchestrateur. Les entrées précédentes restent telles
+qu'écrites.*
+
+*Annotation datée du 2026-10-31 (validation P2, R1 = F1) à **C-v017-4-28** : l'ordre retenu pour `DELETE` — « document
+puis facture, l'ordre de `attach_in_tx` » — était **faux** : le document que verrouille `attach_in_tx` en premier est le
+document **neuf**, et la ressource partagée avec un `DELETE` est l'entrée de `uq_imported_supplier_invoice`, qu'il ne
+touche qu'**après** la facture ; c'est le cycle que le doc-comment de `detach_in_tx` interdit
+(`imported_supplier_invoices.rs:311-314`). Remplacé par C-v017-4-34.*
+
+### C-v017-4-34 — `DELETE` d'un brouillon : la facture d'abord, puis `detach_in_tx` (révise C-v017-4-28)
+
+- **Contexte** : R1 (HIGH) et F1 convergent ; doc-comment de `detach_in_tx`, `imported_supplier_invoices.rs:311-314` :
+  « un détachement qui demanderait la facture **après** le document formerait un cycle avec [`attach_in_tx`] (document
+  neuf, puis facture, puis entrée d'unicité) ».
+- **Retenu** (arbitrage de l'orchestrateur) : facture `FOR UPDATE`, statut, articles de lot, **puis** `detach_in_tx`,
+  puis `DELETE` — l'ordre « facture → entrée d'unicité » que le code sait sûr ; sans enveloppe. M20-quater inversée
+  (mutant : le document avant la facture).
+- **Écartée** : l'ordre inverse sous enveloppe de rejeu — accepter un cycle qu'un ordre évite.
+- **Réversible** : oui.
+
+### C-v017-4-35 — La contrainte de statut sous un nom neuf, posée avant le retrait de l'ancienne
+
+- **Contexte** : R5 ; précédent du dépôt, `20261001000004_invoice_settlements_write_off.sql:17-19` : « un CHECK ne se
+  modifie pas en place → DROP CONSTRAINT + ADD CONSTRAINT, chacun dans son instruction » — dans cet ordre, un échec entre
+  les deux laisse la colonne sans garde.
+- **Retenu** (arbitrage) : `chk_supplier_invoices_status_v2` (et les deux `CHECK` neufs) par une première instruction,
+  le retrait de `chk_supplier_invoices_status` par une seconde. Un échec à mi-chemin sur la base de Guy laisse `status`
+  gardé par les deux contraintes, jamais par aucune.
+- **Écartées** : `DROP` puis `ADD` du même nom (le précédent tel quel) ; les deux dans une seule instruction (conflit de
+  nom non éprouvé sur MariaDB 10.11).
+- **Réversible** : non une fois publiée ; le nom `_v2` reste.
+
+### C-v017-4-36 — Les preuves de la P2 : sauvegarde sans la colonne, prix vide refusé au formulaire
+
+- **Retenu** (arbitrages) : (1) la sauvegarde 0.16.x forgée de l'AC-3 (a) **ne porte pas** `link_origin` — c'est la
+  preuve que demande la contrainte « données à garder » (R2) ; (2) le prix vide est refusé par le formulaire
+  (`isValidAmount(l.unitPrice, { allowEmpty: false })` au site de `linesInvalid`), mécanique, avec un banc qui tue M33
+  — et non seulement par le serveur (F2), motif : l'erreur se dit à sa place, sans aller-retour, et la lecture unique de
+  #830 ne peut plus lire `0` ; (3) la complétion est reclassée `SansEcritureAuJournal` et reste rejouée (R6) ; (4) M12b,
+  mutant équivalent, est retirée (R4).
+- **Réversible** : oui.
