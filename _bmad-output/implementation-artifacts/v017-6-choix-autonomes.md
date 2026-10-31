@@ -117,3 +117,13 @@ réversibilité.
 - *C-v017-6-9 et C-v017-6-10 précisés le 2026-10-31 (validation P2, P1, P2)* : « documents » = la facture, son PDF et son
   e-mail d'envoi (limite : #859 pour l'avoir, la réinitialisation, les rapports) ; « installation » pour `KESH_LANG`,
   « instance » absent des phrases récrites.
+
+## Annotations de la validation P3 (2026-10-31)
+
+- *C-v017-6-9 et C-v017-6-10 corrigés le 2026-10-31 (validation P3, P1)* : « documents » = la facture, son PDF et son
+  e-mail d'envoi, **ses rappels (e-mail et PDF) et les libellés des conditions de paiement** (`resolve_language`,
+  `invoice_email.rs:71`, appelée aussi aux lignes 410, 461, 1147, `invoices.rs:697`, `contacts.rs:519`). La formule « rien
+  de plus » de l'annotation précédente est retirée ; la limite #859 (avoir, réinitialisation, rapports) reste.
+- *C-v017-6-10 annoté le 2026-10-31 (validation P3, P2)* : le *Retenu* d'origine est **rétabli** — le § récrit rattache
+  « langue de l'instance » à « langue des documents » en une incise ; l'annotation de la P2 ne vaut que pour `KESH_LANG` :
+  « instance » ne le désigne jamais, il peut désigner la langue des documents.
