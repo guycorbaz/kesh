@@ -1,6 +1,6 @@
 # Story v017-6 : deux petites corrections — le refus qui se répète (#832) et la langue de l'interface au manuel (#824)
 
-Status: review
+Status: done
 
 *Fiche rédigée le 2026-10-31 (remédiée le même jour à la validation P1 : voir le Change Log), en autonomie (Sonnet 5.5), worktree `/home/gcorbaz/devel/kesh-0177`, branche
 `story/v017-6-petites-corrections` partie de `8e126cfd` (tête de `release/0.17.0`). Release **0.17.0**. Registre :
@@ -470,3 +470,5 @@ pour que Playwright ne charge pas deux copies de `@playwright/test`).
   doc-comments, manuels et PDF, guide, README, CHANGELOG). Gate backend 4584/4584 (8 ignorés), Vitest 2291/2291, E2E
   330 passés + les 7 KF-029, quatre captures. Choix C-v017-6-11 à 14. Prochaine : revue de code P1 (Sonnet, B/E/A,
   `v017-6-review-prompt-p1.md`).
+
+- **2026-10-31 — Revue de code P1 (Sonnet, lentilles B, E, A)** : 0 CRITICAL, 0 HIGH, 0 MEDIUM ; 12 LOW (B : 4, E : 4, A : 4), aucun appelant de correctif. Boucle close en une passe. LOW tracés en #862 (harmonisation de `contact-form-language-inherited`, doc-comment `InvalidQrIban`, motifs `kesh-core`, commentaire de test, couverture HTTP du QR-IBAN étranger, titre du premier écran de l assistant) et #861 (coque non traduite). E1 (« langue de l instance » au manuel, l. 1149) n est pas un défaut : le vocabulaire C-v017-6-10 l admet pour la langue des documents. Statut : `done`.
