@@ -349,3 +349,87 @@ celles que ces décisions modifient sont nommées ci-dessous.*
 - **Retenu** : `closes #853` à la PR de release ; son point 3 (avis sur une date de facture bien postérieure au dépôt)
   part dans une issue neuve, ouverte par l'orchestrateur. Limite L5.
 - **Réversible** : oui.
+
+---
+
+*Les choix C-v017-4-26 à 33 consignent la remédiation de la validation P1 (2026-10-31 ; rapports
+`kesh-gate-logs/v0174-validate-p1-{R,F}.md`) et les décisions de l'orchestrateur qui l'accompagnent. Les entrées
+précédentes restent telles qu'écrites ; celles que ces choix modifient sont nommées.*
+
+### C-v017-4-26 — K8 rendu en dernier (R1 ; précise C-v017-4-13)
+
+- **Contexte** : C-v017-4-13 plaçait K8 après K4 ; deux tests indexent `checks` par position
+  (`closing_checks_e2e.rs:258`, `kesh-db/tests/closing_checks.rs:322`), et le contrat dit « dans cet ordre ».
+- **Retenu** (décision de l'orchestrateur) : K8 s'ajoute **en dernier** ; K1 à K7 inchangés ; ses requêtes à `ALL_SQL`
+  (`closing_checks.rs:522`), garde T-a2 verte ; total 7 → 8.
+- **Écartée** : après K4 — décale K5 à K7 pour un intégrateur qui lit par position.
+- **Réversible** : oui avant publication.
+
+### C-v017-4-27 — Une fonction pure unique pour le total d'une facture fournisseur (R2)
+
+- **Contexte** : `total_ttc` n'existe que comme sortie de `generate_purchase_journal_lines`
+  (`supplier_invoices.rs:120-178`), qui exige le compte de TVA récupérable dès que la TVA est positive ; un brouillon ne
+  juge pas les réglages.
+- **Retenu** (décision) : `kesh_core::accounting::purchase_invoice_totals`, pure, appelée par l'enregistrement du
+  brouillon **et** par la génération de l'écriture ; test d'un brouillon à TVA sans compte de TVA récupérable : il
+  s'enregistre, sa validation exige les réglages.
+- **Écartées** : un second calcul au dépôt (divergerait un jour de la ligne `C 2000`) ; exiger les réglages au brouillon.
+- **Réversible** : oui.
+
+### C-v017-4-28 — Régime de verrous et de rejeu par route (R3)
+
+- **Retenu** (décision) : tableau du § *Verrous et rejeu* de la fiche parente. Enregistrement (création, `PUT`) : lecture
+  sans verrou des références, jugement définitif sous verrous à la validation ; création reclassée `Traced,
+  SansEcritureAuJournal`, son enveloppe de rejeu retirée ; `rejeu_interblocage_e2e.rs:865` porté sur la validation.
+  `DELETE` : **document puis facture**, l'ordre de `attach_in_tx`, sans enveloppe — l'ordre unique supprime le cycle que
+  le doc-comment de `detach_in_tx` interdit. Validation et dévalidation rejouées.
+- **Écartées** : `DELETE` facture puis document sous enveloppe de rejeu — un cycle connu qu'on accepte alors qu'un ordre
+  l'évite ; garder les `FOR UPDATE` des comptes à l'enregistrement — verrous exclusifs sans écriture qui en dépende.
+- **Réversible** : oui.
+
+### C-v017-4-29 — Les règles de la complétion ne valent au `PUT` que pour un document né de la complétion (R5 ; révise C-v017-4-5)
+
+- **Contexte** : C-v017-4-5 appliquait ces règles « quel que soit le chemin qui a joint » le document ; or
+  `attach_in_tx` joint un document sans aucune d'elles, et le `PUT` d'une facture de Guy à document joint après coup
+  aurait remplacé ses coordonnées de paiement en silence.
+- **Retenu** (décision) : une colonne `imported_supplier_invoices.link_origin` (`completion`, `attachment`, `NULL` =
+  antérieur), posée par la complétion et le rattachement, remise à `NULL` par le détachement, ajoutée par la migration de
+  la story (nullable, sans backfill) ; le `PUT` applique les règles de la complétion **seulement** si `link_origin =
+  'completion'`. Test du cas de Guy : facture validée, document joint, dévalidée, éditée, revalidée. Limite L7 : un lien
+  antérieur n'impose rien.
+- **Écartées** : déduire l'origine du journal d'audit (fusionné à la restauration, fragile) ; comparer les coordonnées de
+  la facture à celles du QR (heuristique) ; appliquer les règles à tout document (changement silencieux de destination
+  de paiement).
+- **Réversible** : la colonne non une fois publiée ; son usage, oui.
+
+### C-v017-4-30 — `sourceDocument` porte ce que l'édition d'un brouillon né d'un QR doit afficher (F5)
+
+- **Retenu** (décision : un champ plutôt qu'une route) : `sourceDocument` gagne `importedSupplierInvoiceId`,
+  `linkOrigin` et `qr` (les champs du mode QR du formulaire, `null` sans QR) ; la 4b les consomme. Un champ : la fiche
+  et la page d'édition lisent déjà la facture dans un seul instantané ; une route de plus serait une seconde lecture, et
+  la liste des documents n'est pas bornée.
+- **Écartées** : une route `GET …/source-document/details` ; `listImported('completed').find(…)` à l'écran.
+- **Réversible** : oui (ajout de champs).
+
+### C-v017-4-31 — Dérogation : la 4a ne se publie qu'avec la 4b (R6)
+
+- **Retenu** (décision) : même branche, publication commune ; la 4a joue gate backend, Vitest et E2E ciblés de ses
+  routes ; l'E2E complet se joue au dernier commit de code de la 4b et couvre les deux.
+- **Écartées** : déplacer l'adaptation des specs dans la 4a — elle n'empêcherait pas l'écran de créer des brouillons
+  qu'il ne sait pas valider.
+- **Réversible** : oui (organisation).
+
+### C-v017-4-32 — « Validée » : inventaire par la valeur sur tout le dépôt ; « saisissez, puis validez » (F1, F2, F6, R9)
+
+- **Retenu** (décision) : le tri des « ouverte » (et `offen`, `aperta`, `open` en prose) se fait **par la valeur** sur
+  `crates/`, `frontend/` (sources, bancs, E2E), `docs/` (manuels, `api-external.md`, glossaire), les quatre catalogues,
+  `README.md`, `website/` ; le parcours de Guy s'écrit « saisissez, puis validez la facture » ; la règle vaut pour les
+  textes de la 4a (`api-external.md`, manuel d'administration, CHANGELOG) ; le contrôle du PDF compte toutes les formes
+  relevées par F6, apostrophe typographique comprise (F7).
+- **Réversible** : oui.
+
+### C-v017-4-33 — La limite L1 va aux notes de la candidate seulement (F17)
+
+- **Retenu** : L1 (rc2 → rc1) s'écrit aux notes de la candidate `v0.17.0-rc2` ; ni le CHANGELOG `[0.17.0]` ni le manuel
+  d'administration, qui décrivent la version publiée, ne la portent. Précise C-v017-4-22.
+- **Réversible** : oui.

@@ -27,7 +27,9 @@ liste, création et complétion en brouillon, règles « document » extraites, 
 
 ## Critères d'acceptation
 
-**AC-1 à AC-20** de la fiche parente, sous leur numéro d'origine. Mutations **M1 à M20**.
+**AC-1 à AC-20** de la fiche parente, sous leur numéro d'origine. Mutations **M1 à M20**, dont M12a à M12c et M20-bis à
+M20-quater (validation P1). **Dérogation écrite** (fiche parente, § *Découpage*, C-v017-4-31) : la 4a ne se publie
+qu'avec la 4b, sur la même branche.
 
 ## Tâches
 
@@ -35,7 +37,8 @@ liste, création et complétion en brouillon, règles « document » extraites, 
       clos*) ; tout écart au Change Log, ligne lue citée.
 - [ ] Tests rouges d'abord (commit séparé, sortie rouge au Dev Agent Record) : AC-1 (contraintes), AC-2 (deux montées),
       AC-3, AC-5 à AC-16.
-- [ ] Migration, P5 à P8, squash, `migrations.sha384` (AC-1).
+- [ ] Migration (dont la colonne `link_origin`, et le repli du `MODIFY COLUMN` joué deux fois), P5 à P8, squash,
+      `migrations.sha384` (AC-1).
 - [ ] Entité et lecteurs de l'écriture d'achat (AC-4) ; inventaire clos tenu au Dev Agent Record.
 - [ ] Dépôt : `create_draft_in_tx`, `update_draft`, `delete_draft`, `validate_in_tx`, `unvalidate`, `create_validated*`
       composé (AC-6 à AC-12) ; tête `SupplierInvoiceDraft` (AC-13).
@@ -44,7 +47,9 @@ liste, création et complétion en brouillon, règles « document » extraites, 
 - [ ] Appelants des tests et du seed (AC-12).
 - [ ] `api-external.md` (AC-19) ; CHANGELOG, manuel d'administration et PDF (AC-20).
 - [ ] Mutations M1 à M20.
-- [ ] Gate complet (base reconstruite) et E2E complet au dernier commit de code ; décomptes recomptés.
+- [ ] Gate complet backend (base reconstruite), Vitest et **E2E ciblés** de ses routes au dernier commit de code de la
+      4a ; l'**E2E complet** se joue au dernier commit de code de la **4b** (dérogation, C-v017-4-31) — le Dev Agent Record
+      le dit ainsi ; décomptes recomptés.
 
 ## Dev Agent Record
 
@@ -54,3 +59,6 @@ liste, création et complétion en brouillon, règles « document » extraites, 
 
 - 2026-10-31 — Sous-fiche créée au découpage de la v017-4 (C-v017-4-1). Prochaine étape : validation P1 de la fiche
   parente et des deux sous-fiches (`v017-4-validate-prompt-p1.md`).
+- 2026-10-31 — Validation P1 remédiée dans la fiche parente (Change Log de la parente ; C-v017-4-26 à 33) : K8 en dernier,
+  total du brouillon en `kesh-core`, régime de verrous et de rejeu, règles de la complétion au `PUT` selon `link_origin`,
+  `sourceDocument` enrichi, dérogation E2E, règle « Validée » aux textes de la 4a. Prochaine : validation P2.

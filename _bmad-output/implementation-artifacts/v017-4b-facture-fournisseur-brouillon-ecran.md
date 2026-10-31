@@ -23,7 +23,7 @@ catalogues, le manuel utilisateur et son PDF, l'E2E, les captures, le CHANGELOG 
 
 ## Critères d'acceptation
 
-**AC-21 à AC-32** de la fiche parente, sous leur numéro d'origine. Mutations **M21 à M31** (M31 ajoutée par la décision
+**AC-21 à AC-32** de la fiche parente, sous leur numéro d'origine. Mutations **M21 à M34**, M21-bis compris (M31 ajoutée par la décision
 Q4, C-v017-4-24 : l'état validé s'affiche « Validée » aux quatre locales, et aucun texte de l'écran, des manuels ni de
 l'API ne le nomme plus « ouverte » — AC-21, AC-29).
 
@@ -36,8 +36,9 @@ l'API ne le nomme plus « ouverte » — AC-21, AC-29).
       lots (AC-27) ; i18n (AC-28).
 - [ ] Manuel utilisateur et PDF (AC-29).
 - [ ] E2E neuf et specs adaptées (AC-30) ; captures (AC-31) ; CHANGELOG et README (AC-32).
-- [ ] Mutations M21 à M31.
-- [ ] Gates frontend, gate complet et E2E complet au dernier commit de code.
+- [ ] Mutations M21 à M34 (M21-bis compris).
+- [ ] Gates frontend, gate complet et **E2E complet** au dernier commit de code de la 4b — il couvre aussi la 4a
+      (dérogation, C-v017-4-31).
 
 ## Dev Agent Record
 
@@ -49,3 +50,6 @@ l'API ne le nomme plus « ouverte » — AC-21, AC-29).
   parente et des deux sous-fiches (`v017-4-validate-prompt-p1.md`).
 - 2026-10-31 — Décisions sur Q1 à Q5 (C-v017-4-21 à 25) : libellé « Validée » et inventaire des « ouverte » (AC-21,
   AC-29), M31 ; masquage des annulées confirmé (AC-21) ; pas de « Enregistrer et valider ».
+- 2026-10-31 — Validation P1 remédiée dans la fiche parente (C-v017-4-26 à 33) : inventaire des « ouverte » par la valeur
+  sur tout le dépôt, phrases du manuel réécrites (« saisissez, puis validez »), specs et helper E2E nommés, montant attendu
+  et prix vide (#830), données du QR lues dans `sourceDocument`, M32 à M34. Prochaine : validation P2.
