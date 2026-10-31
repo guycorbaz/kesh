@@ -616,3 +616,40 @@ Aucun nouveau. Rappels : issues de la liste C de la parente (période déjà sai
   commit de code : nextest 4521/4521 (7 ignorés), Vitest 2200/2200, E2E 327 passés / 7 échecs attendus (KF-029),
   mutations 10/10 tuées, 20 captures. Statut `review`. Prochaine étape : revue de code P1
   (`v016-2b-review-prompt-p1.md`, Sonnet, B/E/A).
+- 2026-10-31 — **Revue de code P1** (Sonnet, lentilles B, E, A, contexte frais ; rapports
+  `kesh-gate-logs/v0162b-review-p1-{B,E,A}.md`) : **0 CRITICAL, 0 HIGH, 4 MEDIUM, 18 LOW** (B 0/0/2/8, E 0/0/1/6, A 0/0/1/4 ;
+  recoupements B2 = E1, B1 = A2, A3 = E3, B4 = E4 = A5, B7 ⊂ A1). Prémisses vérifiées au code avant chaque remède (lignes
+  lues : `manual-statement.ts:313-316` `manualSnapshotKey` sans `rowMap` ; `ManualStatementForm.svelte:304-308`
+  `screenLines` et son `?? l - 1`, `:401`, `:524`, `:547`, `:562`, `:582` `bg-error-soft`/`bg-warning-soft` ;
+  `frontend/src/app.css:12-35` sans `--color-error-soft` ni `--color-warning-soft` ; `jetons-non-definis.test.ts:118-119` ;
+  `manual-statement-reason-label.ts:9` (mention dans le commentaire) et `:21` (déclaration) ; `manual.rs:621`
+  `currency: "CHF"` ; `user-manual.tex:2359` ; `:141-160` `seq` inatteignable). Traitement (décisions de l'orchestrateur) :
+  - **MEDIUM** — B2 = E1 : la table des rangs entre dans `manualSnapshotKey` (signature : le corps construit) ; retirer
+    ou ajouter une ligne, vide comprise, périme l'aperçu et le refus ; deux Vitest, mutation **M32**. A1 (et B7) :
+    `screenRowsOf`, seule traduction d'une liste de rangs, partagée par `describeManualError` et l'avertissement ; un
+    rang inconnu est journalisé (`console.error`) et l'écran dit un texte générique (clé neuve
+    `bank-import-manual-warning-duplicate-lines-generic`), « Lignes concernées » omis si aucune ligne ; Vitest de
+    formulaire (ligne vide au milieu, doublon après : « … : 3. »), mutation **M31**. B1 = A2 : jetons définis
+    (`bg-destructive/10`, `border-destructive`, `text-destructive`, `bg-warning/10`) ; la tolérance de
+    `jetons-non-definis.test.ts` **reste**, `error-soft`/`warning-soft` étant encore employés hors de la story
+    (`BankImportUpload.svelte`, `bank-accounts/+page.svelte`, `supplier-invoices`, `BankProfileForm.svelte`, le bandeau
+    d'erreur antérieur du détail) ; captures 06 et 12 reprises.
+  - **LOW appliqués** — A3 = E3 (manuel : « En CHF », aucun refus promis, #233 ; `.tex` et PDF ; l'écran dit « CHF » :
+    introduction aux quatre catalogues, libellés des soldes et des colonnes, totaux), B3 (`seq` retiré, la clé tient la
+    propriété, en-tête récrit), B4 = E4 = A5 (G24 ancrée sur la déclaration, toute ligne non-entrée est une erreur,
+    trois témoins neufs), B5 (refus de création à case : l'aperçu tombe et l'avis « périmé » s'affiche), B6 (succès :
+    formulaire figé jusqu'à la navigation, `onSaved` hors du `try`), B8 (notification bornée `/\b3\s+transaction/`), B9
+    (échec du chargement des comptes dit, clé neuve `bank-import-manual-load-error` ; Vitest de la page : garde, échec,
+    `onSaved`), E2 (solde hors forme marqué `aria-invalid`, « sans séparateur de milliers » aux quatre catalogues), E6
+    (`break-all` sur le nom, liste et détail), A4 (AC-21 annotée : 3 Mio), et le texte de l'avertissement « relevé
+    identique » complété du numéro (aligné sur le manuel).
+  - **LOW non pris, issues demandées** — E5 (aucune garde G13 sur les replis de la famille dynamique
+    `bank-import-manual-reason-`, même trou que `bank-import-csv-errors-`), E7 (`amountRegExp` invalide pour
+    `maxDecimals: 0` ou `maxIntegerDigits: 0`, latent), B10 (un message de commit de la 2a dit « close », inerte).
+  Compteurs recalés : `sitesTotal` 2711 → 2713 (`ManualStatementForm.svelte` 51 → 52, `manual/+page.svelte` 6 → 7) ;
+  `REPLIS_A_SITE_UNIQUE` 91 → 93. Gate au dernier commit de code de la remédiation : nextest 4521/4521 (7 ignorés),
+  Vitest 186 fichiers 2212/2212, `check` 0 erreur, lint PASS, build vert ; E2E complet 327 passés / 7 échecs attendus
+  (KF-029 : `mode-expert.spec.ts:26`, `:41`, `onboarding-path-b.spec.ts:65`, `:92`, `onboarding.spec.ts:57`, `:77`,
+  `:150`) ; mutations **12 jouées, 12 tuées** (M13 à M30, M31, M32) ; captures rejouées (20). Prochaine étape : revue P2
+  ciblée (`v016-2b-review-prompt-p2.md`, Opus, une lentille).
+
