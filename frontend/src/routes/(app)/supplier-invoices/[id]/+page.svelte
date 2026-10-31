@@ -285,9 +285,34 @@
 
 	/** Un refus qui dit l'écran périmé : la facture a changé depuis sa lecture. */
 	function isStaleState(err: unknown): boolean {
+		// Revue P1 (B-3, E-3) : `SUPPLIER_INVOICE_PAID` (dévalider une facture payée
+		// entre-temps) et `SUPPLIER_INVOICE_MUST_BE_UNVALIDATED_FIRST` (supprimer un
+		// « brouillon » validé entre-temps) disent eux aussi l'écran périmé.
 		return (
 			isApiError(err) &&
-			(err.code === 'ILLEGAL_STATE_TRANSITION' || err.code === 'OPTIMISTIC_LOCK_CONFLICT')
+			(err.code === 'ILLEGAL_STATE_TRANSITION' ||
+				err.code === 'OPTIMISTIC_LOCK_CONFLICT' ||
+				err.code === 'SUPPLIER_INVOICE_PAID' ||
+				err.code === 'SUPPLIER_INVOICE_MUST_BE_UNVALIDATED_FIRST')
+		);
+	}
+
+	/** Efface les refus des gestes du cycle (revue P1, B-2) : au début de chaque geste. */
+	function clearCycleErrors() {
+		validateError = '';
+		unvalidateError = '';
+		deleteError = '';
+	}
+
+	/**
+	 * Revue P1 (E-2 = A-1, limite L4) — le lot confirmé qui a payé la facture avant que son
+	 * règlement soit annulé : la banque a pu exécuter l'ordre.
+	 */
+	function confirmedBatchWarning(batch: { id: number; confirmedAt: string | null }): string {
+		return i18nMsg(
+			'supplier-invoices-unvalidate-batch-warning',
+			'Cette facture a été payée par le lot de paiement n° { $batch }, confirmé le { $date }, puis son règlement a été annulé. Si la banque a exécuté cet ordre, vérifiez le relevé avant de changer son montant.',
+			{ batch: batch.id, date: formatSwissDate((batch.confirmedAt ?? '').slice(0, 10)) },
 		);
 	}
 
@@ -299,7 +324,7 @@
 	async function confirmValidate() {
 		if (!invoice || validating) return;
 		validating = true;
-		validateError = '';
+		clearCycleErrors();
 		try {
 			invoice = await validateSupplierInvoice(invoice.id, invoice.version);
 			validateOpen = false;
@@ -327,7 +352,7 @@
 	async function confirmUnvalidate() {
 		if (!invoice || unvalidating) return;
 		unvalidating = true;
-		unvalidateError = '';
+		clearCycleErrors();
 		try {
 			invoice = await unvalidateSupplierInvoice(invoice.id, invoice.version);
 			unvalidateOpen = false;
@@ -340,8 +365,15 @@
 		} catch (err) {
 			unvalidateOpen = false;
 			if (isApiError(err)) {
-				const d = err.details as { documentNumber?: string | null } | undefined;
-				unvalidateError = supplierInvoiceUnvalidateMessage(err.code, d?.documentNumber ?? null);
+				// `label` : le numéro du document qui empêche (trois motifs propres à la
+				// pièce) ; ou, revue P1 (E-4), le nom de l'exercice postérieur clos.
+				const d = err.details as
+					| { documentNumber?: string | null; fiscalYearName?: string | null }
+					| undefined;
+				unvalidateError = supplierInvoiceUnvalidateMessage(
+					err.code,
+					d?.documentNumber ?? d?.fiscalYearName ?? null,
+				);
 			} else {
 				unvalidateError = supplierInvoiceUnvalidateMessage('', null);
 			}
@@ -358,7 +390,7 @@
 	async function confirmDelete() {
 		if (!invoice || deleting) return;
 		deleting = true;
-		deleteError = '';
+		clearCycleErrors();
 		try {
 			await deleteSupplierInvoice(invoice.id);
 			deleteOpen = false;
@@ -581,39 +613,49 @@
 					{/if}
 				</div>
 			{/if}
-			{#if validateError}
-				<p class="text-sm text-destructive" role="alert" data-testid="supplier-invoice-validate-error">
-					{validateError}
-				</p>
-			{/if}
-			{#if deleteError}
-				<p class="text-sm text-destructive" role="alert" data-testid="supplier-invoice-delete-error">
-					{deleteError}
-				</p>
-			{/if}
 		</div>
-	{:else if invoice.status === 'open' && canManage}
+	{:else if invoice.status === 'open'}
 		<!-- Story v017-4b (#849, AC-22) : dévalider — Administrateur et Comptable. L'écran
-		     ne rejoue pas les empêchements : le serveur refuse, la fiche dit le motif. -->
+		     ne rejoue pas les empêchements : le serveur refuse, la fiche dit le motif.
+		     Revue P1 (E-2 = A-1, limite L4) : une facture payée par un lot CONFIRMÉ dont le
+		     règlement a été annulé se dévalide ; la fiche nomme ce lot et dit de vérifier le
+		     relevé avant de changer le montant — risque de double paiement. -->
 		<div class="mb-6 space-y-2" data-testid="supplier-invoice-unvalidate-block">
-			<Button
-				variant="outline"
-				data-testid="supplier-invoice-unvalidate"
-				disabled={unvalidating}
-				onclick={() => (unvalidateOpen = true)}
-			>
-				{i18nMsg('supplier-invoices-unvalidate', 'Dévalider')}
-			</Button>
-			{#if unvalidateError}
-				<p class="text-sm text-destructive" role="alert" data-testid="supplier-invoice-unvalidate-error">
-					{unvalidateError}
+			{#if invoice.lastConfirmedBatch}
+				<p
+					class="rounded border border-warning bg-warning-soft p-2 text-sm"
+					data-testid="supplier-invoice-confirmed-batch-warning"
+				>
+					{confirmedBatchWarning(invoice.lastConfirmedBatch)}
 				</p>
+			{/if}
+			{#if canManage}
+				<Button
+					variant="outline"
+					data-testid="supplier-invoice-unvalidate"
+					disabled={unvalidating}
+					onclick={() => (unvalidateOpen = true)}
+				>
+					{i18nMsg('supplier-invoices-unvalidate', 'Dévalider')}
+				</Button>
 			{/if}
 		</div>
 	{/if}
-	{#if invoice.status === 'draft' && unvalidateError}
-		<!-- Un refus d'écran périmé a relu la facture, devenue brouillon : le motif reste
-		     lisible. -->
+	<!-- Revue P1 (E-1 = A-6) : les refus des gestes du cycle se rendent HORS des blocs de
+	     statut — un refus d'écran périmé relit la facture, dont le statut a changé, et le
+	     motif doit rester lisible quel que soit l'état relu. Chaque geste efface ceux d'avant
+	     (B-2). -->
+	{#if validateError}
+		<p class="mb-6 text-sm text-destructive" role="alert" data-testid="supplier-invoice-validate-error">
+			{validateError}
+		</p>
+	{/if}
+	{#if deleteError}
+		<p class="mb-6 text-sm text-destructive" role="alert" data-testid="supplier-invoice-delete-error">
+			{deleteError}
+		</p>
+	{/if}
+	{#if unvalidateError}
 		<p class="mb-6 text-sm text-destructive" role="alert" data-testid="supplier-invoice-unvalidate-error">
 			{unvalidateError}
 		</p>
@@ -917,6 +959,15 @@
 				'Son écriture d’achat sera supprimée du journal, et la numérotation des écritures gardera un trou. La facture redeviendra un brouillon modifiable, à valider de nouveau.',
 			)}
 		</p>
+		<!-- Revue P1 (E-2 = A-1, L4) : la confirmation rappelle le lot confirmé. -->
+		{#if invoice?.lastConfirmedBatch}
+			<p
+				class="rounded border border-warning bg-warning-soft p-2 text-sm"
+				data-testid="supplier-invoice-unvalidate-dialog-batch-warning"
+			>
+				{confirmedBatchWarning(invoice.lastConfirmedBatch)}
+			</p>
+		{/if}
 		<Dialog.Footer>
 			<Button variant="outline" onclick={() => (unvalidateOpen = false)}>
 				{i18nMsg('common-cancel', 'Annuler')}

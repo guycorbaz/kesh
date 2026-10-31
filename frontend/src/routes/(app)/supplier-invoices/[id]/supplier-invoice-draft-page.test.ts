@@ -213,8 +213,16 @@ describe('fiche — actions par statut et par rôle', () => {
 		},
 	);
 
-	it.each(['paid', 'cancelled'] as const)('%s : ni Dévalider, ni Modifier, ni Valider, ni Supprimer', async (s) => {
-		const v = await rendered(s, 'Admin');
+	// Revue P1 (A-7) : chaque statut × chaque rôle.
+	it.each([
+		['paid', 'Admin'],
+		['paid', 'Comptable'],
+		['paid', 'Consultation'],
+		['cancelled', 'Admin'],
+		['cancelled', 'Comptable'],
+		['cancelled', 'Consultation'],
+	] as const)('%s (%s) : ni Dévalider, ni Modifier, ni Valider, ni Supprimer', async (s, r) => {
+		const v = await rendered(s, r);
 		for (const id of [
 			'supplier-invoice-unvalidate',
 			'supplier-invoice-edit',
@@ -319,5 +327,114 @@ describe('fiche — les gestes du cycle', () => {
 			),
 		);
 		expect(gotoMock).not.toHaveBeenCalled();
+	});
+});
+
+// ---------------------------------------------------------------------------
+// Revue de code P1 (E-1 = A-6, B-2, B-3 = E-3, E-2 = A-1)
+// ---------------------------------------------------------------------------
+
+describe('fiche — refus d’écran périmé et lot confirmé (revue P1)', () => {
+	it('un refus de Valider qui relit une facture devenue validée reste lisible (E-1)', async () => {
+		const v = await rendered('draft', 'Comptable');
+		validateMock.mockRejectedValue({
+			code: 'ILLEGAL_STATE_TRANSITION',
+			status: 409,
+			message: 'Transition d’état interdite',
+		});
+		getMock.mockResolvedValue(ofStatus('open'));
+		await fireEvent.click(v.getByTestId('supplier-invoice-validate'));
+		await v.findByTestId('supplier-invoice-validate-dialog');
+		await fireEvent.click(v.getByTestId('supplier-invoice-validate-confirm'));
+		await waitFor(() =>
+			expect(v.getByTestId('supplier-invoice-status').textContent?.trim()).toBe('Validée'),
+		);
+		expect(v.getByTestId('supplier-invoice-validate-error').textContent?.trim()).toBe(
+			'Transition d’état interdite',
+		);
+	});
+
+	it('un refus de Supprimer « déjà validée » relit la fiche et reste lisible (E-1, E-3)', async () => {
+		const v = await rendered('draft', 'Admin');
+		deleteMock.mockRejectedValue({
+			code: 'SUPPLIER_INVOICE_MUST_BE_UNVALIDATED_FIRST',
+			status: 409,
+			message: 'Cette facture fournisseur est validée.',
+		});
+		getMock.mockResolvedValue(ofStatus('open'));
+		await fireEvent.click(v.getByTestId('supplier-invoice-delete'));
+		await v.findByTestId('supplier-invoice-delete-dialog');
+		await fireEvent.click(v.getByTestId('supplier-invoice-delete-confirm'));
+		await waitFor(() =>
+			expect(v.getByTestId('supplier-invoice-status').textContent?.trim()).toBe('Validée'),
+		);
+		expect(v.getByTestId('supplier-invoice-delete-error').textContent?.trim()).toBe(
+			'Cette facture fournisseur est validée.',
+		);
+		expect(v.queryByTestId('supplier-invoice-delete')).toBeNull();
+	});
+
+	it('un refus de Dévalider « payée » relit la fiche, qui ne propose plus de payer (B-3)', async () => {
+		const v = await rendered('open', 'Comptable');
+		unvalidateMock.mockRejectedValue({
+			code: 'SUPPLIER_INVOICE_PAID',
+			status: 409,
+			message: 'serveur',
+			details: { documentId: null, documentNumber: null },
+		});
+		getMock.mockResolvedValue(ofStatus('paid'));
+		await fireEvent.click(v.getByTestId('supplier-invoice-unvalidate'));
+		await v.findByTestId('supplier-invoice-unvalidate-dialog');
+		await fireEvent.click(v.getByTestId('supplier-invoice-unvalidate-confirm'));
+		await waitFor(() =>
+			expect(v.getByTestId('supplier-invoice-status').textContent?.trim()).toBe('Payée'),
+		);
+		expect(v.queryByTestId('supplier-invoice-pay')).toBeNull();
+		expect(v.getByTestId('supplier-invoice-unvalidate-error').textContent?.trim()).toBe(
+			"Cette facture fournisseur est payée : annulez d'abord son règlement.",
+		);
+	});
+
+	it('un refus périmé s’efface au geste réussi suivant (B-2)', async () => {
+		const v = await rendered('open', 'Comptable');
+		unvalidateMock.mockRejectedValueOnce({
+			code: 'ILLEGAL_STATE_TRANSITION',
+			status: 409,
+			message: 'x',
+		});
+		getMock.mockResolvedValue(ofStatus('draft'));
+		await fireEvent.click(v.getByTestId('supplier-invoice-unvalidate'));
+		await v.findByTestId('supplier-invoice-unvalidate-dialog');
+		await fireEvent.click(v.getByTestId('supplier-invoice-unvalidate-confirm'));
+		await v.findByTestId('supplier-invoice-unvalidate-error');
+		validateMock.mockResolvedValue(ofStatus('open'));
+		await fireEvent.click(await v.findByTestId('supplier-invoice-validate'));
+		await v.findByTestId('supplier-invoice-validate-dialog');
+		await fireEvent.click(v.getByTestId('supplier-invoice-validate-confirm'));
+		await waitFor(() =>
+			expect(v.getByTestId('supplier-invoice-status').textContent?.trim()).toBe('Validée'),
+		);
+		expect(v.queryByTestId('supplier-invoice-unvalidate-error')).toBeNull();
+	});
+
+	it('une facture validée payée puis désengagée d’un lot confirmé : la fiche et la confirmation nomment le lot (E-2 = A-1)', async () => {
+		role.value = 'Comptable';
+		getMock.mockResolvedValue({
+			...ofStatus('open'),
+			lastConfirmedBatch: { id: 12, confirmedAt: '2026-06-20T10:00:00' },
+		});
+		const v = render(Page);
+		const warning = await v.findByTestId('supplier-invoice-confirmed-batch-warning');
+		const attendu =
+			'Cette facture a été payée par le lot de paiement n° 12, confirmé le 20.06.2026, puis son règlement a été annulé. Si la banque a exécuté cet ordre, vérifiez le relevé avant de changer son montant.';
+		expect(warning.textContent?.trim()).toBe(attendu);
+		await fireEvent.click(v.getByTestId('supplier-invoice-unvalidate'));
+		const dialog = await v.findByTestId('supplier-invoice-unvalidate-dialog');
+		expect(dialog.textContent).toContain(attendu);
+	});
+
+	it('sans lot confirmé, aucun avertissement', async () => {
+		const v = await rendered('open', 'Comptable');
+		expect(v.queryByTestId('supplier-invoice-confirmed-batch-warning')).toBeNull();
 	});
 });

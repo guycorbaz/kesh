@@ -45,7 +45,9 @@ function withLabel(base: string, label: string | null): string {
 /**
  * Le message d'un refus de la dévalidation. `code` est celui de la réponse (`err.code`) ;
  * `label`, le numéro du document qui empêche (`details.documentNumber`), n'est lu que
- * pour les trois motifs propres à la pièce. Un code hors de la précédence rend le repli.
+ * pour les trois motifs propres à la pièce — et, revue P1 (E-4), comme nom de l'exercice
+ * postérieur clos (`details.fiscalYearName`) pour `LATER_FISCAL_YEAR_CLOSED`. Un code hors
+ * de la précédence rend le repli.
  */
 export function supplierInvoiceUnvalidateMessage(code: string, label: string | null): string {
 	switch (code) {
@@ -89,6 +91,15 @@ export function supplierInvoiceUnvalidateMessage(code: string, label: string | n
 				'L’écriture d’achat de cette facture appartient à un exercice clôturé : pour pouvoir la dévalider, un administrateur doit rouvrir les exercices clôturés jusqu’à celui-ci, en commençant par le plus récent.',
 			);
 		case 'LATER_FISCAL_YEAR_CLOSED':
+			// Revue P1 (E-4) : le serveur nomme l'exercice postérieur clos
+			// (`details.fiscalYearName`) ; l'écran le reprend quand il l'a.
+			if (label) {
+				return i18nMsg(
+					'supplier-invoices-unvalidate-blocked-later-fiscal-year-closed-named',
+					'L’exercice postérieur « { $name } » est clôturé : pour pouvoir dévalider cette facture, un administrateur doit rouvrir les exercices postérieurs clôturés, en commençant par le plus récent.',
+					{ name: label },
+				);
+			}
 			return i18nMsg(
 				'supplier-invoices-unvalidate-blocked-later-fiscal-year-closed',
 				'Un exercice postérieur à celui de cette facture est clôturé : pour pouvoir la dévalider, un administrateur doit rouvrir les exercices postérieurs clôturés, en commençant par le plus récent.',

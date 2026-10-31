@@ -61,8 +61,11 @@ describe('failedItemLabel', () => {
 	// suivant.
 	it('mappe les huit codes sur leur repli français', () => {
 		expect(failedItemLabel('SUPPLIER_INVOICE_NOT_FOUND')).toBe('Facture introuvable');
-		// Story v017-4b (#849, décision Q4) : « non validée », plus « non ouverte ».
-		expect(failedItemLabel('SUPPLIER_INVOICE_NOT_OPEN')).toBe('Facture non validée');
+		// Story v017-4b (#849, revue P1, B-1) : le serveur rend ce code pour un brouillon, une
+		// facture payée ou annulée — « non validée » était faux pour une facture payée.
+		expect(failedItemLabel('SUPPLIER_INVOICE_NOT_OPEN')).toBe(
+			'Facture qui n’est pas à payer (brouillon, payée ou annulée)',
+		);
 		expect(failedItemLabel('NO_PAYMENT_COORDINATES')).toBe(
 			'Pas de coordonnées de paiement (IBAN/QR-IBAN)'
 		);

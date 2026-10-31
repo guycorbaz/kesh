@@ -69,6 +69,7 @@ vi.mock('$lib/features/vat-rates/vat-rates.api', () => ({ listVatRates: vi.fn(as
 vi.mock('$lib/features/projects/projects.api', () => ({ listProjects: vi.fn(async () => []) }));
 
 import Page from './+page.svelte';
+import { listProjects } from '$lib/features/projects/projects.api';
 
 const QR: SupplierInvoiceSourceQr = {
 	creditorIban: 'CH4431999123000889012',
@@ -254,5 +255,34 @@ describe('page d’édition d’un brouillon', () => {
 		);
 		expect((getByTestId('supplier-invoice-line-unit-price') as HTMLInputElement).value).toBe('80.00');
 		expect(gotoMock).not.toHaveBeenCalled();
+	});
+
+	// Revue P1 (B-7) : un projet archivé n'est offert que s'il est celui du brouillon.
+	it('les projets archivés ne sont offerts que s’ils sont celui du brouillon', async () => {
+		const p = (id: number, code: string, archived: boolean) => ({
+			id,
+			parentId: null,
+			code,
+			name: code,
+			description: null,
+			archived,
+			startDate: null,
+			endDate: null,
+			version: 1,
+			createdAt: '2026-01-01T00:00:00',
+		});
+		vi.mocked(listProjects).mockResolvedValueOnce([
+			p(1, 'ACTIF', false),
+			p(2, 'ARCHIVE-DU-BROUILLON', true),
+			p(3, 'ARCHIVE-AUTRE', true),
+		]);
+		getMock.mockResolvedValue(draft({ projectId: 2 }));
+		const { findByTestId } = render(Page);
+		const sel = (await findByTestId('supplier-invoice-project')) as HTMLSelectElement;
+		const codes = [...sel.options].map((o) => o.textContent ?? '');
+		expect(codes.some((c) => c.includes('ACTIF'))).toBe(true);
+		expect(codes.some((c) => c.includes('ARCHIVE-DU-BROUILLON'))).toBe(true);
+		expect(codes.some((c) => c.includes('ARCHIVE-AUTRE'))).toBe(false);
+		expect(sel.value).toBe('2');
 	});
 });

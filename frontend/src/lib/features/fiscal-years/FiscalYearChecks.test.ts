@@ -178,6 +178,24 @@ describe('FiscalYearChecks — contenus et liens', () => {
 		).toBe('/supplier-invoices');
 		const row = screen.getByTestId('fiscal-year-checks-row-DRAFT_SUPPLIER_INVOICES');
 		expect(row.textContent).toMatch(/Factures fournisseur en brouillon/);
+		expect(screen.queryByTestId('fiscal-year-checks-k8-more')).toBeNull();
+	});
+
+	// Revue P1 (E-10) : le serveur nomme vingt brouillons au plus ; les autres se disent.
+	it('K8 : au-delà des brouillons nommés, « … et N autre(s) »', () => {
+		render(FiscalYearChecks, {
+			loadState: 'ready',
+			checks: closingChecks({
+				DRAFT_SUPPLIER_INVOICES: {
+					status: 'attention',
+					count: 23,
+					details: { invoices: [{ id: 31, label: 'FF-31', date: '2026-03-04' }] }
+				}
+			})
+		});
+		expect(screen.getByTestId('fiscal-year-checks-k8-more').textContent?.trim()).toBe(
+			'… et 22 autre(s), dans la liste des factures fournisseurs.'
+		);
 	});
 
 	it('K5 : lien vers les documents à traiter (Story 30-2a : textes neufs, lien inchangé)', () => {

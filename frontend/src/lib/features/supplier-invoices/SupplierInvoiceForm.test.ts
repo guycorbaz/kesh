@@ -758,3 +758,71 @@ describe('SupplierInvoiceForm — l’édition d’un brouillon (AC-23)', () => 
 		expect((avec.getByTestId('supplier-invoice-iban') as HTMLInputElement).readOnly).toBe(false);
 	});
 });
+
+describe('SupplierInvoiceForm — revue de code P1 (B-8, B-9 = E-5, E-6, E-7)', () => {
+	it('sans document, une date vide a un message qui ne parle pas d’un document (E-6)', async () => {
+		const { container, getByTestId, onSubmit } = renderForm({ document: null });
+		await selectSupplier(container, '1');
+		await setDate(container, '');
+		await fillLine(container, '10.00');
+		await fireEvent.click(getByTestId('supplier-invoice-submit'));
+		await tick();
+		expect(getByTestId('supplier-invoice-date-error').textContent?.trim()).toBe(
+			'Saisissez la date de la facture.',
+		);
+		expect(onSubmit).not.toHaveBeenCalled();
+	});
+
+	it('le montant attendu du brouillon se pré-remplit lisible (B-8)', () => {
+		const { getByTestId } = renderForm({
+			document: null,
+			initial: initial({ expectedPaymentAmount: '100.2000' }),
+		});
+		expect((getByTestId('supplier-invoice-expected-amount') as HTMLInputElement).value).toBe(
+			'100.20',
+		);
+	});
+
+	it('corriger la date de facture efface le refus serveur de l’échéance (B-9 = E-5)', async () => {
+		const { container, getByTestId, queryByTestId } = renderForm({
+			document: null,
+			onSubmit: async () => {
+				throw {
+					code: 'SUPPLIER_INVOICE_DUE_BEFORE_INVOICE_DATE',
+					status: 400,
+					message: 'serveur',
+					details: { invoiceDate: '2026-05-10', dueDate: '2026-05-01' },
+				};
+			},
+		});
+		await selectSupplier(container, '1');
+		await fillLine(container, '10.00');
+		await fireEvent.click(getByTestId('supplier-invoice-submit'));
+		await waitFor(() => expect(getByTestId('supplier-invoice-due-error')).not.toBeNull());
+		await setDate(container, '2026-04-30');
+		expect(queryByTestId('supplier-invoice-due-error')).toBeNull();
+	});
+
+	it('le taux d’une ligne absent des taux actifs reste proposé et choisi (E-7)', () => {
+		const { getByTestId } = renderForm({
+			document: null,
+			vatRates: [{ id: 1, rate: '8.10' }],
+			initial: initial({
+				lines: [
+					{
+						position: 0,
+						description: 'Ancienne',
+						quantity: '1.0000',
+						unitPrice: '10.0000',
+						vatRate: '7.70',
+						lineTotal: '10.00',
+						expenseAccountId: 40,
+					},
+				],
+			}),
+		});
+		const sel = getByTestId('supplier-invoice-line-vat') as HTMLSelectElement;
+		expect([...sel.options].map((o) => o.value)).toContain('7.70');
+		expect(sel.value).toBe('7.70');
+	});
+});

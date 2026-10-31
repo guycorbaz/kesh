@@ -54,17 +54,27 @@
 		}
 	}
 
+	/**
+	 * Revue P1 (B-4 = E-8) — le jeton de la dernière lecture : deux bascules rapprochées de
+	 * la case lancent deux lectures ; seule la réponse de la plus récente s'affiche, sans
+	 * quoi la case pourrait dire « masquées » au-dessus d'une liste qui les montre.
+	 */
+	let requestSeq = 0;
+
 	async function load() {
+		const seq = ++requestSeq;
 		errorMsg = '';
 		try {
 			const res = await listSupplierInvoices(
 				showCancelled ? { limit: 100 } : { limit: 100, status: WITHOUT_CANCELLED },
 			);
+			if (seq !== requestSeq) return;
 			items = res.items;
 		} catch (err) {
+			if (seq !== requestSeq) return;
 			if (isApiError(err)) errorMsg = err.message;
 		} finally {
-			loading = false;
+			if (seq === requestSeq) loading = false;
 		}
 	}
 

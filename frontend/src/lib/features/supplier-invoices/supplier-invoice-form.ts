@@ -205,6 +205,24 @@ export function formatLiveTotal(total: Big): string {
 }
 
 /**
+ * Story v017-4b (AC-23) — un montant lu du serveur (`100.2000`), rendu lisible au
+ * formulaire : sans zéros inutiles, avec au moins `minDecimals` décimales (`100.2000` →
+ * `100.20` pour 2, `1.0000` → `1` pour 0, `33.3333` gardé). Une valeur illisible est
+ * rendue telle quelle.
+ */
+export function readableAmount(raw: string, minDecimals: number): string {
+	try {
+		const b = new Big(raw);
+		const s = b.toFixed();
+		const dot = s.indexOf('.');
+		const decimals = dot === -1 ? 0 : s.length - dot - 1;
+		return decimals < minDecimals ? b.toFixed(minDecimals) : s;
+	} catch {
+		return raw;
+	}
+}
+
+/**
  * Story v017-4b (AC-23) — une ligne lue du serveur, rendue au formulaire : quantité sans
  * zéros inutiles (`1.0000` → `1`), prix à deux décimales au moins (`100.2000` →
  * `100.20`, `33.3333` gardé), taux aligné sur la valeur d'une option de la liste (`0.00`
@@ -214,17 +232,7 @@ export function formLineFromResponse(
 	line: SupplierInvoiceLineResponse,
 	vatRates: { rate: string }[],
 ): CreateSupplierInvoiceLineRequest {
-	const readable = (raw: string, minDecimals: number): string => {
-		try {
-			const b = new Big(raw);
-			const s = b.toFixed();
-			const dot = s.indexOf('.');
-			const decimals = dot === -1 ? 0 : s.length - dot - 1;
-			return decimals < minDecimals ? b.toFixed(minDecimals) : s;
-		} catch {
-			return raw;
-		}
-	};
+	const readable = readableAmount;
 	let vatRate = line.vatRate;
 	try {
 		const r = new Big(line.vatRate);

@@ -295,6 +295,16 @@
 										</li>
 									{/each}
 								</ul>
+								<!-- Revue P1 (E-10) : le serveur n'en nomme que vingt ; les autres se disent. -->
+								{#if check.count > (check.details.invoices ?? []).length}
+									<p class="text-xs" data-testid="fiscal-year-checks-k8-more">
+										{i18nMsg(
+											'fiscal-years-checks-k8-more',
+											'… et { $n } autre(s), dans la liste des factures fournisseurs.',
+											{ n: check.count - (check.details.invoices ?? []).length }
+										)}
+									</p>
+								{/if}
 								<a class="text-xs text-primary underline" href="/supplier-invoices" data-testid="fiscal-year-checks-link-{check.code}">
 									{i18nMsg('fiscal-years-checks-k8-link', 'Ouvrir les factures fournisseurs')}
 								</a>

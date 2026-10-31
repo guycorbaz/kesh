@@ -83,4 +83,42 @@ describe('liste des factures fournisseurs', () => {
 		const totals = await findAllByTestId('supplier-invoice-row-total');
 		expect(totals.map((t) => t.textContent?.trim())).toEqual(['100.0040', '100.00']);
 	});
+
+	// Revue P1 (B-4 = E-8) : deux bascules rapprochées, réponses croisées — la liste est
+	// celle de la DERNIÈRE bascule.
+	it('une réponse périmée ne remplace pas celle de la dernière bascule', async () => {
+		const { findByTestId, findAllByTestId } = render(Page);
+		const box = (await findByTestId('supplier-invoices-show-cancelled')) as HTMLInputElement;
+		await findAllByTestId('supplier-invoice-row');
+		let resolveFirst: (v: unknown) => void = () => {};
+		listMock.mockImplementationOnce(
+			() =>
+				new Promise((r) => {
+					resolveFirst = r;
+				}),
+		);
+		listMock.mockImplementationOnce(async () => ({
+			items: [item({ id: 3, status: 'draft', supplierInvoiceNumber: 'FF-DERNIERE' })],
+			total: 1,
+			offset: 0,
+			limit: 100,
+		}));
+		await fireEvent.click(box); // cochée : lecture lente
+		await fireEvent.click(box); // décochée : lecture rapide
+		await waitFor(() => expect(listMock).toHaveBeenCalledTimes(3));
+		resolveFirst({
+			items: [item({ id: 4, status: 'cancelled', supplierInvoiceNumber: 'FF-PERIMEE' })],
+			total: 1,
+			offset: 0,
+			limit: 100,
+		});
+		await waitFor(async () => {
+			const rows = await findAllByTestId('supplier-invoice-row');
+			expect(rows.map((r) => r.textContent)).toEqual([expect.stringContaining('FF-DERNIERE')]);
+		});
+		await new Promise((r) => setTimeout(r, 20));
+		const rows = await findAllByTestId('supplier-invoice-row');
+		expect(rows.map((r) => r.textContent)).toEqual([expect.stringContaining('FF-DERNIERE')]);
+		expect(box.checked).toBe(false);
+	});
 });

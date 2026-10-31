@@ -68,6 +68,7 @@
 		firstLineNotInCentimes,
 		formatLiveTotal,
 		formLineFromResponse,
+		readableAmount,
 		lineNotInCentimes,
 		linesForServer,
 		linesInvalid,
@@ -171,7 +172,9 @@
 			dueDate: init.dueDate ?? '',
 			iban: init.creditorQrIban ?? init.creditorIban ?? '',
 			reference: init.paymentReference ?? '',
-			expectedAmount: init.expectedPaymentAmount ?? '',
+			// Revue P1 (B-8) : lisible comme le prix (`100.0000` → `100.00`).
+			expectedAmount:
+				init.expectedPaymentAmount == null ? '' : readableAmount(init.expectedPaymentAmount, 2),
 			projectId: init.projectId,
 			lines:
 				init.lines.length > 0
@@ -180,6 +183,16 @@
 		};
 	}
 	const start = startState();
+
+	/**
+	 * Revue P1 (E-7) — les taux des lignes du brouillon qui ne sont plus dans la liste des
+	 * taux actifs (taux expiré) : proposés quand même, sans quoi le `<select>` les
+	 * afficherait vides alors que le total vivant et l'envoi les emploient.
+	 */
+	const extraRates = start.lines
+		.map((l) => l.vatRate)
+		.filter((r, i, all) => r !== '0' && all.indexOf(r) === i)
+		.filter((r) => !vatRates.some((v) => v.rate === r));
 
 	let fContactId = $state<number | null>(start.contactId);
 	let fNumber = $state(start.number);
@@ -310,10 +323,14 @@
 		// Story v017-4b (#853, AC-24 (b), validation P1, F8) — une date vide a SON message,
 		// sous le champ, et non celui des lignes.
 		if (!fInvoiceDate.trim()) {
-			dateError = i18nMsg(
-				'supplier-invoices-err-invoice-date',
-				'Saisissez la date de la facture, telle qu’imprimée sur le document.',
-			);
+			// Revue P1 (E-6) : sans document, le message ne parle pas d'un document.
+			dateError =
+				document !== null || hasDocument
+					? i18nMsg(
+							'supplier-invoices-err-invoice-date',
+							'Saisissez la date de la facture, telle qu’imprimée sur le document.',
+						)
+					: i18nMsg('supplier-invoices-err-invoice-date-plain', 'Saisissez la date de la facture.');
 			return;
 		}
 		// L'échéance antérieure : déjà signalée sous son champ, elle bloque l'envoi.
@@ -538,7 +555,12 @@
 				aria-required="true"
 				aria-invalid={dateError !== ''}
 				bind:value={fInvoiceDate}
-				oninput={() => (dateError = '')}
+				oninput={() => {
+					dateError = '';
+					// Revue P1 (B-9 = E-5) : le refus serveur de l'échéance portait les dates
+					// d'avant ; corriger la date de facture l'efface aussi.
+					dueServerError = '';
+				}}
 			/>
 			<!-- Story v017-4b (#853, AC-24 (b)) : avec un document, la date démarre vide et
 			     l'aide dit laquelle saisir. -->
@@ -686,6 +708,9 @@
 					bind:value={line.vatRate}
 				>
 					<option value="0">0%</option>
+					{#each extraRates as r (r)}
+						<option value={r}>{r}%</option>
+					{/each}
 					{#each vatRates as r (r.id)}
 						<option value={r.rate}>{r.rate}%</option>
 					{/each}

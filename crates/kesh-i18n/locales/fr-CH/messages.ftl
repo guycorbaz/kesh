@@ -1040,6 +1040,7 @@ fiscal-years-checks-k8-title = Factures fournisseur en brouillon
 fiscal-years-checks-k8-help = Les factures fournisseur datées dans l’exercice et jamais validées : leur achat n’est pas en comptabilité.
 fiscal-years-checks-k8-attention = { $count } facture(s) fournisseur en brouillon datée(s) dans l’exercice.
 fiscal-years-checks-k8-link = Ouvrir les factures fournisseurs
+fiscal-years-checks-k8-more = … et { $n } autre(s), dans la liste des factures fournisseurs.
 fiscal-years-checks-reminder-none = Aucun point à vérifier.
 fiscal-years-checks-reminder-count = { $count } point(s) à vérifier :
 fiscal-years-checks-reminder-error = Les contrôles préalables n’ont pas pu être lus. Vous pouvez clôturer quand même, ou les consulter plus tard depuis « Préparer la clôture ».
@@ -2682,6 +2683,10 @@ supplier-invoices-save-draft = Enregistrer le brouillon
 supplier-invoices-field-date-help = Date de la facture, telle qu’imprimée sur le document
 supplier-invoices-err-invoice-date = Saisissez la date de la facture, telle qu’imprimée sur le document.
 supplier-invoices-err-stale = Cette facture a été modifiée entre-temps : rechargez la page, puis refaites votre correction.
+# Story v017-4b, revue P1 (E-2 = A-1, E-4, E-6).
+supplier-invoices-unvalidate-batch-warning = Cette facture a été payée par le lot de paiement n° { $batch }, confirmé le { $date }, puis son règlement a été annulé. Si la banque a exécuté cet ordre, vérifiez le relevé avant de changer son montant.
+supplier-invoices-unvalidate-blocked-later-fiscal-year-closed-named = L’exercice postérieur « { $name } » est clôturé : pour pouvoir dévalider cette facture, un administrateur doit rouvrir les exercices postérieurs clôturés, en commençant par le plus récent.
+supplier-invoices-err-invoice-date-plain = Saisissez la date de la facture.
 # Story 30-2b (#685) — la facture se crée à côté du document (page `/supplier-invoices/new`,
 # composant `SupplierInvoiceForm`). Les 23 clés du formulaire de complétion en ligne de la page
 # d'import (`imported-supplier-invoices-add-line`, `-complete`, `-completed-hint`, `-err-*` sauf
@@ -2798,7 +2803,7 @@ payment-batches-failed-counterparty-is-claim-account = Le compte bancaire du lot
 payment-batches-failed-purchase-entry-malformed = Écriture d'achat sans ligne de crédit : facture à vérifier
 payment-batches-failed-no-payment-coordinates = Pas de coordonnées de paiement (IBAN/QR-IBAN)
 payment-batches-failed-supplier-invoice-not-found = Facture introuvable
-payment-batches-failed-supplier-invoice-not-open = Facture non validée
+payment-batches-failed-supplier-invoice-not-open = Facture qui n’est pas à payer (brouillon, payée ou annulée)
 payment-batches-status-cancelled = Annulé
 payment-batches-status-confirmed = Confirmé
 payment-batches-status-generated = Créé

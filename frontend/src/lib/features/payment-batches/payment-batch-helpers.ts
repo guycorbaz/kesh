@@ -59,8 +59,10 @@ export function paymentBatchStatusLabel(status: PaymentBatchStatus): string {
  * ⚠️ **Huit codes. Les six premiers libellés sont RELEVÉS, pas inventés** : `SUPPLIER_INVOICE_NOT_FOUND` sur
  * `reminders-error-invoice-not-found`, les deux IBAN sur
  * `imported-supplier-invoices-error-invalid-iban` — **sans** « du créancier », qui ne
- * s'applique pas ici —, et *validée* (« non validée ») nomme l'état `open` d'une facture
- * fournisseur depuis la Story v017-4b (décision Q4, C-v017-4-24 ; il disait « non ouverte »). `NO_PAYMENT_COORDINATES`
+ * s'applique pas ici. `SUPPLIER_INVOICE_NOT_OPEN` dit, depuis la Story v017-4b, « Facture qui
+ * n'est pas à payer (brouillon, payée ou annulée) » : le serveur le rend pour tout statut autre
+ * que `open` (`payment_batches.rs`), et « non validée » — la première rédaction de la 4b, d'après
+ * la décision Q4 — était faux pour une facture payée (revue P1, B-1). `NO_PAYMENT_COORDINATES`
  * dit `Keine Zahlungsverbindung` en allemand : c'est le terme bancaire, et non le calque
  * `Zahlungskoordinaten`.
  *
@@ -89,7 +91,9 @@ export function failedItemLabel(code: string): string {
 		case 'SUPPLIER_INVOICE_NOT_FOUND':
 			return i18nMsg('payment-batches-failed-supplier-invoice-not-found', 'Facture introuvable');
 		case 'SUPPLIER_INVOICE_NOT_OPEN':
-			return i18nMsg('payment-batches-failed-supplier-invoice-not-open', 'Facture non validée');
+			return i18nMsg('payment-batches-failed-supplier-invoice-not-open',
+				'Facture qui n’est pas à payer (brouillon, payée ou annulée)',
+			);
 		case 'NO_PAYMENT_COORDINATES':
 			return i18nMsg(
 				'payment-batches-failed-no-payment-coordinates',

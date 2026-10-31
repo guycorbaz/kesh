@@ -109,7 +109,9 @@
 					a.accountType === 'Expense' && ((a.active && a.postable) || lineAccounts.has(a.id)),
 			);
 			vatRates = ratesRes;
-			projects = projectsRes;
+			// Revue P1 (B-7) : un projet archivé n'est offert que s'il est celui du brouillon
+			// (lisible), jamais comme choix neuf — la validation le refuserait.
+			projects = projectsRes.filter((p) => !p.archived || p.id === inv.projectId);
 			invoice = inv;
 		} catch (err) {
 			loadError =

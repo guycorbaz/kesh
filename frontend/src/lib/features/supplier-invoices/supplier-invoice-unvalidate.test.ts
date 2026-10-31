@@ -11,7 +11,8 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 vi.mock('$lib/shared/utils/i18n.svelte', () => ({
-	i18nMsg: (_k: string, fallback: string) => fallback,
+	i18nMsg: (_k: string, fallback: string, args?: Record<string, string | number>) =>
+		args ? fallback.replace(/\{\s*\$(\w+)\s*\}/g, (_, n) => String(args[n] ?? '')) : fallback,
 }));
 
 import {
@@ -83,7 +84,22 @@ describe('supplierInvoiceUnvalidateMessage', () => {
 	])('%s : son texte, mot pour mot le FTL fr-CH, sans suffixe', (code, cle) => {
 		const attendu = valeurFr(cle);
 		expect(attendu).toBeDefined();
-		expect(supplierInvoiceUnvalidateMessage(code, 'ignoré')).toBe(attendu);
+		expect(supplierInvoiceUnvalidateMessage(code, null)).toBe(attendu);
+		// Le libellé n'est lu que par les motifs propres à la pièce, et par l'exercice
+		// postérieur nommé (ci-dessous).
+		if (code !== 'LATER_FISCAL_YEAR_CLOSED') {
+			expect(supplierInvoiceUnvalidateMessage(code, 'ignoré')).toBe(attendu);
+		}
+	});
+
+	// Revue P1 (E-4) — le nom de l'exercice postérieur clos, que le serveur donne dans
+	// `details.fiscalYearName`, est repris.
+	it('LATER_FISCAL_YEAR_CLOSED nommé : le texte du catalogue, le nom substitué', () => {
+		const gabarit = valeurFr('supplier-invoices-unvalidate-blocked-later-fiscal-year-closed-named');
+		expect(gabarit).toBeDefined();
+		expect(supplierInvoiceUnvalidateMessage('LATER_FISCAL_YEAR_CLOSED', 'Exercice 2027')).toBe(
+			gabarit!.replace('{ $name }', 'Exercice 2027'),
+		);
 	});
 
 	it('un code inconnu rend le repli générique, égal au catalogue', () => {
