@@ -775,7 +775,11 @@ const ATTENDU = {
 	// `bank-import/manual/+page.svelte` 0 → 6 ; `bank-accounts/+page.svelte` 73 → 73,
 	// `fiscal-years/closing-checks-labels.ts` 20 → 20 (replis récrits). `sitesNonResolus`
 	// et `relais` inchangés.
-	sitesTotal: 2711,
+	// Story v016-2b, remédiation de la revue de code P1 : **2711 → 2713** (+2), recompté par le
+	// même `grep` aux deux bornes (`9f576786` → tête), périmètre : les fichiers touchés —
+	// `ManualStatementForm.svelte` 51 → 52 (`bank-import-manual-warning-duplicate-lines-generic`),
+	// `bank-import/manual/+page.svelte` 6 → 7 (`bank-import-manual-load-error`). Que des littéraux.
+	sitesTotal: 2713,
 	sitesNonResolus: 31,
 	relais: 6,
 	// Story 26-1 (#620, AC3-bis) : **10 → 11** — `lib/features/bank-import/

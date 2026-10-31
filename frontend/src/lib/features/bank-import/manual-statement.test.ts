@@ -6,7 +6,7 @@
 //
 // Chaque bloc nomme la mutation de la fiche qu'il attrape (M13, M14, M25, M26).
 
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import {
 	buildManualStatementBody,
 	canVerify,
@@ -18,6 +18,7 @@ import {
 	manualSnapshotKey,
 	saveBlockReason,
 	screenRowOf,
+	screenRowsOf,
 	type ManualLineInput,
 	type ManualStatementInput,
 } from './manual-statement';
@@ -280,13 +281,44 @@ describe('buildManualStatementBody (AC-20, AC-21, AC-22, M26)', () => {
 			confirmDuplicateLines: true,
 			confirmOpeningBalanceGap: true,
 		});
-		expect(manualSnapshotKey(a.body)).toBe(manualSnapshotKey(b.body));
+		expect(manualSnapshotKey(a)).toBe(manualSnapshotKey(b));
 		const c = buildManualStatementBody(input({ statementNumber: 'x' }), {
 			confirmDuplicateFile: false,
 			confirmDuplicateLines: false,
 			confirmOpeningBalanceGap: false,
 		});
-		expect(manualSnapshotKey(c.body)).not.toBe(manualSnapshotKey(a.body));
+		expect(manualSnapshotKey(c)).not.toBe(manualSnapshotKey(a));
+	});
+
+	it('M32 — retirer une ligne vide ne change pas le corps, mais périme l’instantané (table des rangs)', () => {
+		const sans = { confirmDuplicateFile: false, confirmDuplicateLines: false, confirmOpeningBalanceGap: false };
+		const lignes = input().lines;
+		const avecVide = buildManualStatementBody(input({ lines: [lignes[0], line(), lignes[1], lignes[2]] }), sans);
+		const sansVide = buildManualStatementBody(input(), sans);
+		expect(avecVide.body).toEqual(sansVide.body);
+		expect(avecVide.rowMap).toEqual([0, 2, 3]);
+		expect(manualSnapshotKey(avecVide)).not.toBe(manualSnapshotKey(sansVide));
+	});
+});
+
+describe('screenRowsOf — la seule traduction d’une liste de rangs (revue P1, A1)', () => {
+	it('traduit chaque rang par la table ; un rang inconnu rend null, jamais le rang brut', () => {
+		const err = vi.spyOn(console, 'error').mockImplementation(() => {});
+		expect(screenRowsOf([0, 2, 3], [2, 3])).toEqual([2, 3]);
+		expect(screenRowsOf([0, 2, 3], [2, 9])).toBeNull();
+		expect(err).toHaveBeenCalledTimes(1);
+		err.mockRestore();
+	});
+
+	it('un refus de doublons dont un rang est inconnu ne désigne aucune ligne', () => {
+		const err = vi.spyOn(console, 'error').mockImplementation(() => {});
+		expect(
+			describeManualError(
+				{ status: 422, code: 'BANK_STATEMENT_DUPLICATE_LINES', message: 'm', details: { lines: [{ line: 7 }] } },
+				[0],
+			),
+		).toEqual({ kind: 'rows', rows: [], message: 'm' });
+		err.mockRestore();
 	});
 });
 

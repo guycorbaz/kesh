@@ -134,7 +134,7 @@
 			{#if isManualImport(detail)}
 				<!-- Story v016-2b (#816, AC-23) : un relevé saisi n'a pas de fichier. -->
 				<dt>{i18nMsg('bank-import-detail-statement', 'Relevé')}</dt>
-				<dd data-testid="detail-filename">{importDisplayName(detail)}</dd>
+				<dd class="break-all" data-testid="detail-filename">{importDisplayName(detail)}</dd>
 				<dt>{i18nMsg('bank-import-detail-entered-at', 'Saisi le')}</dt>
 				<dd>{detail.importedAt}</dd>
 			{:else}

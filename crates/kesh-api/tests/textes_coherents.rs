@@ -1954,23 +1954,40 @@ const TABLE_DES_REASON: &str =
 /// Ouverture du seul objet de la table (forme imposée à la validation P4 de la fiche, P2).
 const OUVERTURE_DES_REASON: &str = "export const MANUAL_STATEMENT_REASON_LABELS";
 
-/// Les clés de la table : le bloc qui suit `OUVERTURE_DES_REASON` jusqu'à la première
-/// ligne `};`, une entrée par ligne, clé littérale en tête (`^\s*'?([a-z_]+)'?\s*:`).
-/// Erreur si le bloc est introuvable, non fermé, ou vide — jamais un ensemble vide muet.
+/// Les clés de la table : le bloc qui suit la **déclaration** — la ligne qui **commence** par
+/// `OUVERTURE_DES_REASON`, non une mention dans un commentaire (revue de code P1, B4 = E4 =
+/// A5) — jusqu'à la première ligne `};`. Chaque ligne non vide du bloc doit être une entrée
+/// `clé: [` (clé `[A-Za-z0-9_]+`, citée ou non) : une ligne d'une autre forme (continuation,
+/// commentaire) est une erreur, non une ligne ignorée. Erreur aussi si le bloc est
+/// introuvable, non fermé, ou vide — jamais un ensemble vide muet.
 fn cles_de_la_table_des_reason(source: &str) -> Result<Vec<String>, String> {
-    let debut = source
-        .find(OUVERTURE_DES_REASON)
-        .ok_or_else(|| format!("`{OUVERTURE_DES_REASON}` introuvable"))?;
+    let debut = if source.starts_with(OUVERTURE_DES_REASON) {
+        0
+    } else {
+        source
+            .find(&format!("\n{OUVERTURE_DES_REASON}"))
+            .map(|i| i + 1)
+            .ok_or_else(|| format!("déclaration `{OUVERTURE_DES_REASON}` introuvable"))?
+    };
     let bloc = &source[debut..];
     let fin = bloc
         .find("\n};")
         .ok_or_else(|| "fin de la table (`};`) introuvable".to_string())?;
-    let cle = Regex::new(r"^\s*'?([a-z_]+)'?\s*:").expect("motif valide");
-    let cles: Vec<String> = bloc[..fin]
-        .lines()
-        .skip(1)
-        .filter_map(|l| cle.captures(l).map(|c| c[1].to_string()))
-        .collect();
+    let entree = Regex::new(r"^'?([A-Za-z0-9_]+)'?\s*:\s*\[").expect("motif valide");
+    let mut cles = Vec::new();
+    for ligne in bloc[..fin].lines().skip(1).map(str::trim) {
+        if ligne.is_empty() {
+            continue;
+        }
+        match entree.captures(ligne) {
+            Some(c) => cles.push(c[1].to_string()),
+            None => {
+                return Err(format!(
+                    "ligne de la table qui n'est pas une entrée : {ligne}"
+                ));
+            }
+        }
+    }
     if cles.is_empty() {
         return Err("table des `reason` vide".to_string());
     }
@@ -1996,6 +2013,25 @@ fn g24_l_extracteur_de_la_table_des_reason() {
     assert!(
         cles_de_la_table_des_reason("export const MANUAL_STATEMENT_REASON_LABELS = {\n};").is_err()
     );
+    // Revue de code P1 (B4 = E4 = A5) — une mention de l'ouverture dans un commentaire, avant
+    // la déclaration, n'est pas la table : l'extracteur part de la déclaration.
+    let mention = "/**\n * `export const MANUAL_STATEMENT_REASON_LABELS = {` … `};`\n * piege: x\n */\nimport { a } from 'b';\nexport const MANUAL_STATEMENT_REASON_LABELS: R = {\n\trequired: ['required', 'a'],\n};\n";
+    assert_eq!(
+        cles_de_la_table_des_reason(mention),
+        Ok(vec!["required".to_string()])
+    );
+    // Une clé hors `[a-z_]` est lue (elle rougira à l'égalité), une ligne de continuation
+    // est une erreur, non une ligne ignorée.
+    assert_eq!(
+        cles_de_la_table_des_reason(
+            "export const MANUAL_STATEMENT_REASON_LABELS = {\n\tTooLong2: ['x', 'y'],\n};"
+        ),
+        Ok(vec!["TooLong2".to_string()])
+    );
+    assert!(cles_de_la_table_des_reason(
+        "export const MANUAL_STATEMENT_REASON_LABELS = {\n\trequired: [\n\t\t'required',\n\t],\n};"
+    )
+    .is_err());
 }
 
 /// **G24** (Story v016-2b, #816, AC-24, décision de l'orchestrateur à la validation P3,

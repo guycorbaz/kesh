@@ -307,12 +307,15 @@ export function buildManualStatementBody(
 }
 
 /**
- * L'instantané d'un corps, **sans** les cases : un aperçu vaut pour l'état du relevé
- * qu'il a vu ; cocher ou décocher une case ne le périme pas (AC-22).
+ * L'instantané d'un corps, **sans** les cases mais **avec la table des rangs** : un aperçu
+ * vaut pour l'état du relevé qu'il a vu ; cocher ou décocher une case ne le périme pas
+ * (AC-22). La table des rangs y entre (revue de code P1, B2 = E1) : retirer ou ajouter une
+ * ligne **vide** ne change pas le corps, mais déplace les lignes de l'écran — l'aperçu et
+ * le refus affichés, qui désignent des lignes, sont alors périmés.
  */
-export function manualSnapshotKey(body: ManualStatementBody): string {
-	const { confirmDuplicateFile: _f, confirmDuplicateLines: _l, confirmOpeningBalanceGap: _g, ...rest } = body;
-	return JSON.stringify(rest);
+export function manualSnapshotKey(built: BuiltManualBody): string {
+	const { confirmDuplicateFile: _f, confirmDuplicateLines: _l, confirmOpeningBalanceGap: _g, ...rest } = built.body;
+	return JSON.stringify({ body: rest, rowMap: built.rowMap });
 }
 
 /**
@@ -324,13 +327,36 @@ export function screenRowOf(rowMap: readonly number[], serverLine: number | null
 	return rowMap[serverLine - 1];
 }
 
+/**
+ * Des rangs du serveur (doublons de l'aperçu ou d'un refus) traduits en lignes de l'écran
+ * (0-based) — la **seule** traduction d'une liste de rangs (revue de code P1, A1). Un rang
+ * que la table ne connaît pas est un défaut (le serveur répond sur le corps envoyé) : il est
+ * journalisé, et la fonction rend `null` pour que l'écran dise un texte générique — jamais
+ * le rang envoyé tel quel.
+ */
+export function screenRowsOf(
+	rowMap: readonly number[],
+	serverLines: readonly (number | null | undefined)[],
+): number[] | null {
+	const rows: number[] = [];
+	for (const line of serverLines) {
+		const row = screenRowOf(rowMap, line);
+		if (row === null) {
+			console.error('relevé saisi : rang du serveur hors de la table des rangs', line, rowMap.length);
+			return null;
+		}
+		rows.push(row);
+	}
+	return rows;
+}
+
 /** Lecture d'un refus du serveur, pour l'affichage (AC-22). */
 export type ManualErrorView =
 	/** `BANK_STATEMENT_INVALID` sur une ligne : la cellule (ligne affichée, 0-based). */
 	| { kind: 'cell'; row: number; field: string; reason: string }
 	/** `BANK_STATEMENT_INVALID` sur l'entête : le champ du formulaire. */
 	| { kind: 'field'; field: string; reason: string }
-	/** Doublons refusés : les lignes affichées, et le message traduit du serveur. */
+	/** Doublons refusés : les lignes affichées (vide si un rang est inconnu), et le message traduit du serveur. */
 	| { kind: 'rows'; rows: number[]; message: string }
 	/** `400 VALIDATION_ERROR` sans `field` : corps rejeté (trop volumineux ou illisible). */
 	| { kind: 'rejected' }
@@ -370,8 +396,11 @@ export function describeManualError(err: unknown, rowMap: readonly number[]): Ma
 		}
 		case 'BANK_STATEMENT_DUPLICATE_LINES': {
 			const lines = Array.isArray(d.lines) ? (d.lines as { line?: number }[]) : [];
-			const rows = lines.map((l) => screenRowOf(rowMap, l.line)).filter((r): r is number => r !== null);
-			return { kind: 'rows', rows, message: err.message };
+			const rows = screenRowsOf(
+				rowMap,
+				lines.map((l) => l.line),
+			);
+			return { kind: 'rows', rows: rows ?? [], message: err.message };
 		}
 		case 'BANK_IMPORT_DUPLICATE_FILE':
 			return { kind: 'duplicate-file' };

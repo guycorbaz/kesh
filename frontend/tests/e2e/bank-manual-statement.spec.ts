@@ -150,13 +150,13 @@ test('un Comptable saisit un relevé de trois lignes, le rapproche et le retrouv
 		closing: '1800',
 		lignes: troisLignes(today),
 	});
-	await expect(page.getByTestId('bank-import-manual-gap')).toHaveText('-67.90');
+	await expect(page.getByTestId('bank-import-manual-gap')).toHaveText('-67.90 CHF');
 	await expect(page.getByTestId('bank-import-manual-save')).toBeDisabled();
 	await expect(page.getByTestId('bank-import-manual-block-reason')).toHaveAttribute('data-reason', 'gap');
 
 	// 3. Le solde corrigé, la vérification, l'enregistrement.
 	await page.getByTestId('bank-import-manual-closing-balance').fill('1867,90');
-	await expect(page.getByTestId('bank-import-manual-gap')).toHaveText('0.00');
+	await expect(page.getByTestId('bank-import-manual-gap')).toHaveText('0.00 CHF');
 	await expect(page.getByTestId('bank-import-manual-block-reason')).toHaveAttribute('data-reason', 'preview');
 	await page.getByTestId('bank-import-manual-verify').click();
 	await expect(page.getByTestId('bank-import-manual-preview-ok')).toBeVisible();
@@ -166,8 +166,9 @@ test('un Comptable saisit un relevé de trois lignes, le rapproche et le retrouv
 	// 4. Retour à la liste : le relevé en tête, « Saisie manuelle ».
 	await expect(page).toHaveURL(/\/bank-import$/);
 	// La notification (svelte-sonner), visée par son attribut et non par son libellé traduit
-	// (garde `e2e-selecteurs-traduits.test.ts`, KF-043) ; son nombre de transactions.
-	await expect(page.locator('[data-sonner-toast]').first()).toContainText('3');
+	// (garde `e2e-selecteurs-traduits.test.ts`, KF-043) ; son nombre de transactions, borné
+	// (revue de code P1, B8 : un « 3 » nu passait pour toute date ou tout nombre).
+	await expect(page.locator('[data-sonner-toast]').first()).toContainText(/\b3\s+transaction/);
 	const premiere = page.getByTestId('bank-import-list-row').first();
 	await expect(premiere).toHaveAttribute('data-source-format', 'MANUAL');
 	await expect(premiere.getByTestId('bank-import-list-link')).toHaveText('Saisie manuelle');
@@ -249,7 +250,7 @@ test('recette visuelle de la saisie d’un relevé (AC-25)', async ({ page }, te
 	// Déséquilibré : écart affiché, Enregistrer inactif, raison « écart ».
 	await page.getByTestId('bank-import-manual-opening-balance').fill('1000');
 	await page.getByTestId('bank-import-manual-closing-balance').fill('1800');
-	await expect(page.getByTestId('bank-import-manual-gap')).toHaveText('-67.90');
+	await expect(page.getByTestId('bank-import-manual-gap')).toHaveText('-67.90 CHF');
 	await capture(page, testInfo, '04-desequilibre-ecart');
 
 	// Une ligne invalide : la raison à côté du bouton.

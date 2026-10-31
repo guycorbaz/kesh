@@ -226,6 +226,80 @@ describe('ManualStatementForm', () => {
 		expect(saveDisabled(c)).toBe(true);
 	});
 
+	const AVEC_VIDE: [string, string, string, string][] = [
+		['2026-09-03', 'Assurance', '130', ''],
+		['', '', '', ''],
+		['2026-09-15', 'Virement reçu', '', '50'],
+	];
+
+	it('M32 — retirer la ligne vide qui précède la ligne désignée périme le refus affiché (revue P1, B2 = E1)', async () => {
+		mockApi.previewManualStatement.mockRejectedValue({
+			status: 400,
+			code: 'BANK_STATEMENT_INVALID',
+			message: 'm',
+			details: { line: 2, field: 'details', reason: 'too_long' },
+		});
+		const { container: c } = render(ManualStatementForm, { props: { bankAccounts: ACCOUNTS } });
+		await fill(c, { lines: AVEC_VIDE });
+		await fireEvent.click(q(c, 'bank-import-manual-verify')!);
+		await flush();
+		expect(q(c, 'bank-import-manual-error')).not.toBeNull();
+		await fireEvent.click(qa(c, 'bank-import-manual-remove-line')[1]);
+		await flush();
+		// Sans la table des rangs dans la clé, le refus resterait et désignerait la mauvaise ligne.
+		expect(q(c, 'bank-import-manual-error')).toBeNull();
+		expect(qa(c, 'bank-import-manual-line').map((r) => r.dataset.error)).toEqual(['false', 'false']);
+	});
+
+	it('M32 — retirer une ligne vide après un aperçu réussi le périme', async () => {
+		mockApi.previewManualStatement.mockResolvedValue(previewOk());
+		const { container: c } = render(ManualStatementForm, { props: { bankAccounts: ACCOUNTS } });
+		await fill(c, { lines: AVEC_VIDE });
+		await fireEvent.click(q(c, 'bank-import-manual-verify')!);
+		await flush();
+		expect(q(c, 'bank-import-manual-preview-ok')).not.toBeNull();
+		await fireEvent.click(qa(c, 'bank-import-manual-remove-line')[1]);
+		await flush();
+		expect(q(c, 'bank-import-manual-preview-ok')).toBeNull();
+		expect(q(c, 'bank-import-manual-block-reason')?.dataset.reason).toBe('preview');
+	});
+
+	it('M31 — un doublon de l’aperçu sur la ligne qui suit une ligne vide est dit sous son rang affiché (revue P1, A1)', async () => {
+		mockApi.previewManualStatement.mockResolvedValue(
+			previewOk({ duplicateLines: [{ line: 2, existingTransactionId: 7, key: 'k' }] }),
+		);
+		const { container: c } = render(ManualStatementForm, { props: { bankAccounts: ACCOUNTS } });
+		await fill(c, { lines: AVEC_VIDE });
+		await fireEvent.click(q(c, 'bank-import-manual-verify')!);
+		await flush();
+		expect(q(c, 'bank-import-manual-warning-duplicate-lines')?.textContent).toContain(
+			'Ces lignes existent déjà sur ce compte : 3.',
+		);
+	});
+
+	it('un rang de doublon inconnu de la table : texte générique, aucun rang brut', async () => {
+		const err = vi.spyOn(console, 'error').mockImplementation(() => {});
+		mockApi.previewManualStatement.mockResolvedValue(
+			previewOk({ duplicateLines: [{ line: 9, existingTransactionId: 7, key: 'k' }] }),
+		);
+		const { container: c } = render(ManualStatementForm, { props: { bankAccounts: ACCOUNTS } });
+		await fill(c);
+		await fireEvent.click(q(c, 'bank-import-manual-verify')!);
+		await flush();
+		const texte = q(c, 'bank-import-manual-warning-duplicate-lines')?.textContent ?? '';
+		expect(texte).toContain('Des lignes de ce relevé existent déjà sur ce compte.');
+		expect(texte).not.toContain('9');
+		err.mockRestore();
+	});
+
+	it('un solde à séparateur de milliers est marqué invalide (revue P1, E2)', async () => {
+		const { container: c } = render(ManualStatementForm, { props: { bankAccounts: ACCOUNTS } });
+		await fill(c, { opening: "1'000" });
+		expect(q(c, 'bank-import-manual-opening-balance')?.getAttribute('aria-invalid')).toBe('true');
+		expect(q(c, 'bank-import-manual-closing-balance')?.getAttribute('aria-invalid')).toBe('false');
+		expect(q(c, 'bank-import-manual-block-reason')?.textContent).toContain('sans séparateur de milliers');
+	});
+
 	it('un 409 RECONCILIATION_ACCOUNT_LOCKED à l’enregistrement : message générique, l’aperçu reste, on peut réessayer', async () => {
 		mockApi.previewManualStatement.mockResolvedValue(previewOk());
 		mockApi.createManualStatement.mockRejectedValueOnce({

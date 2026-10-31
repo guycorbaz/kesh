@@ -9,16 +9,19 @@
     (`manual-statement.ts`) ; « Enregistrer » inactif avec **une** raison, la
     première de la séquence de l'AC-21 ;
   - « Vérifier » (`verify`) : prend un INSTANTANÉ du corps (clé sans les cases,
-    table des rangs) et appelle l'aperçu ; le formulaire est figé pendant l'envoi.
-    Chaque demande porte un numéro (`seq`) : seule la dernière pose son résultat.
-    La réponse est liée à l'instantané envoyé — si le relevé a changé entre-temps,
-    l'aperçu est aussitôt périmé (patron `loadSeq` de `bank-import/[id]`) ;
+    avec la table des rangs) et appelle l'aperçu ; le formulaire est figé pendant
+    l'envoi, si bien qu'une seule vérification est en vol. La réponse est liée à la
+    clé de l'instantané envoyé — si le relevé a changé entre-temps, l'aperçu est
+    aussitôt périmé : c'est la clé, non un numéro de séquence, qui tient la propriété
+    « une réponse tardive ne compte pas » (revue de code P1, B3) ;
   - aperçu réussi (`previewFresh`) tant que la clé du relevé courant égale celle
-    de l'instantané : toute modification d'un champ du relevé le périme (cases
-    décochées) ; cocher une case ne le périme pas ;
+    de l'instantané : toute modification d'un champ du relevé, et tout retrait ou
+    ajout d'une ligne, même vide, le périme (cases décochées) ; cocher une case ne
+    le périme pas ;
   - « Enregistrer » (`save`, garde `submitting`) : envoie le corps courant, cases
-    comprises. Un refus qui demande une confirmation (relevé identique, doublons,
-    écart de solde de départ apparus depuis l'aperçu) retire l'aperçu : il faut
+    comprises ; après un succès, le formulaire reste figé jusqu'à la navigation. Un
+    refus qui demande une confirmation (relevé identique, doublons, écart de solde
+    de départ apparus depuis l'aperçu) retire l'aperçu et l'annonce périmé : il faut
     vérifier de nouveau pour voir la case.
   Les refus du serveur désignent la cellule (ligne de l'écran, par la table des
   rangs de l'instantané) ou le champ d'entête ; un `400 VALIDATION_ERROR` sans
@@ -28,7 +31,7 @@
 	import Big from 'big.js';
 	import { Button } from '$lib/components/ui/button';
 	import { i18nMsg } from '$lib/shared/utils/i18n.svelte';
-	import { formatSwissAmount } from '$lib/features/journal-entries/balance';
+	import { formatSwissAmount, isValidAmount } from '$lib/features/journal-entries/balance';
 	import {
 		bankAccountOptionLabel,
 		type BankAccountOptionSource,
@@ -45,7 +48,8 @@
 		lineFaults,
 		manualSnapshotKey,
 		saveBlockReason,
-		screenRowOf,
+		screenRowsOf,
+		MANUAL_BALANCE_FORMAT,
 		type ManualBlockReason,
 		type ManualErrorView,
 		type ManualLineCell,
@@ -83,13 +87,11 @@
 	let previewing = $state(false);
 	let submitting = $state(false);
 	let error = $state<{ view: ManualErrorView; key: string } | null>(null);
-	/** Numéro de la dernière vérification lancée (variable ordinaire, patron `loadSeq`). */
-	let seq = 0;
 
 	const built = $derived(
 		buildManualStatementBody(form, { confirmDuplicateFile, confirmDuplicateLines, confirmOpeningBalanceGap }),
 	);
-	const currentKey = $derived(manualSnapshotKey(built.body));
+	const currentKey = $derived(manualSnapshotKey(built));
 	const previewFresh = $derived(preview !== null && preview.key === currentKey);
 	const warnings = $derived(previewFresh && preview ? preview.response.warnings : null);
 	const confirmationsMissing = $derived(
@@ -140,7 +142,6 @@
 
 	async function verify(): Promise<void> {
 		if (frozen || !canVerify(form)) return;
-		const mySeq = ++seq;
 		const sent = built;
 		const key = currentKey;
 		previewing = true;
@@ -150,13 +151,11 @@
 		resetConfirmations();
 		try {
 			const response = await previewManualStatement(sent.body);
-			if (mySeq !== seq) return;
 			preview = { key, rowMap: sent.rowMap, response };
 		} catch (err) {
-			if (mySeq !== seq) return;
 			error = { view: describeManualError(err, sent.rowMap), key };
 		} finally {
-			if (mySeq === seq) previewing = false;
+			previewing = false;
 		}
 	}
 
@@ -173,19 +172,24 @@
 		error = null;
 		const sent = built;
 		const key = currentKey;
+		let imported: BankImportResponse;
 		try {
-			const imported = await createManualStatement(sent.body);
-			onSaved?.(imported);
+			imported = await createManualStatement(sent.body);
 		} catch (err) {
 			error = { view: describeManualError(err, sent.rowMap), key };
 			const code = (err as { code?: unknown })?.code;
 			if (typeof code === 'string' && NEEDS_NEW_PREVIEW.has(code)) {
 				preview = null;
+				previewStale = true;
 				resetConfirmations();
 			}
-		} finally {
 			submitting = false;
+			return;
 		}
+		// Revue de code P1, B6 : le relevé est enregistré — le formulaire reste figé
+		// jusqu'à la navigation (aucun second envoi), et une exception du rappel n'est pas
+		// lue comme un refus du serveur.
+		onSaved?.(imported);
 	}
 
 	/** Le libellé d'un champ du corps : celui du formulaire ou de l'en-tête de colonne. */
@@ -238,7 +242,7 @@
 			case 'balances':
 				return i18nMsg(
 					'bank-import-manual-blocked-balances',
-					"Saisissez les soldes de départ et d'arrivée : deux décimales au plus, treize chiffres avant la virgule.",
+					"Saisissez les soldes de départ et d'arrivée, sans séparateur de milliers : deux décimales au plus, treize chiffres avant la virgule.",
 				);
 			case 'line-count':
 				return i18nMsg('bank-import-manual-blocked-line-count', 'Un relevé saisi compte 500 lignes au plus.');
@@ -278,6 +282,8 @@
 					reason: manualStatementReasonLabel(v.reason),
 				});
 			case 'rows':
+				// Revue de code P1, B7 : sans ligne traduite, pas de phrase « Lignes concernées : . ».
+				if (v.rows.length === 0) return v.message;
 				return `${v.message} ${i18nMsg('bank-import-manual-error-rows', 'Lignes concernées : { $lines }.', {
 					lines: v.rows.map((r) => r + 1).join(', '),
 				})}`;
@@ -300,9 +306,20 @@
 	const isFaulty = (i: number, cell: ManualLineCell) => faults[i]?.includes(cell) ?? false;
 	/** Un montant du serveur (chaîne décimale) au format suisse. */
 	const swiss = (s: string) => formatSwissAmount(new Big(s));
-	/** Les rangs envoyés (1-based) d'avertissements, en lignes de l'écran (1-based). */
-	const screenLines = (lines: number[], rowMap: readonly number[]) =>
-		lines.map((l) => (screenRowOf(rowMap, l) ?? l - 1) + 1).join(', ');
+	/** Un solde non vide hors forme (revue de code P1, E2) : marqué comme une cellule. */
+	const badBalance = (raw: string) => raw.trim() !== '' && !isValidAmount(raw.trim(), MANUAL_BALANCE_FORMAT);
+	/**
+	 * Les doublons de l'aperçu, en lignes de l'écran (1-based), par la traduction partagée
+	 * `screenRowsOf` (revue de code P1, A1) ; `null` si un rang est inconnu — texte générique.
+	 */
+	const duplicateScreenLines = $derived.by(() => {
+		if (!preview || !warnings || warnings.duplicateLines.length === 0) return null;
+		const rows = screenRowsOf(
+			preview.rowMap,
+			warnings.duplicateLines.map((d) => d.line),
+		);
+		return rows === null ? null : rows.map((r) => r + 1).join(', ');
+	});
 </script>
 
 <section data-testid="bank-import-manual-form">
@@ -357,25 +374,33 @@
 			/>
 		</div>
 		<div>
-			<label class="block text-sm font-medium" for="manual-opening">{fieldLabel('openingBalance')}</label>
+			<label class="block text-sm font-medium" for="manual-opening">{fieldLabel('openingBalance')} (CHF)</label>
 			<input
 				id="manual-opening"
 				type="text"
 				inputmode="decimal"
 				data-testid="bank-import-manual-opening-balance"
 				bind:value={form.openingBalance}
-				class="{cellClass(error?.view.kind === 'field' && error.view.field === 'openingBalance')} text-right tabular-nums"
+				aria-invalid={badBalance(form.openingBalance)}
+				class="{cellClass(
+					badBalance(form.openingBalance) ||
+						(error?.view.kind === 'field' && error.view.field === 'openingBalance'),
+				)} text-right tabular-nums"
 			/>
 		</div>
 		<div>
-			<label class="block text-sm font-medium" for="manual-closing">{fieldLabel('closingBalance')}</label>
+			<label class="block text-sm font-medium" for="manual-closing">{fieldLabel('closingBalance')} (CHF)</label>
 			<input
 				id="manual-closing"
 				type="text"
 				inputmode="decimal"
 				data-testid="bank-import-manual-closing-balance"
 				bind:value={form.closingBalance}
-				class="{cellClass(error?.view.kind === 'field' && error.view.field === 'closingBalance')} text-right tabular-nums"
+				aria-invalid={badBalance(form.closingBalance)}
+				class="{cellClass(
+					badBalance(form.closingBalance) ||
+						(error?.view.kind === 'field' && error.view.field === 'closingBalance'),
+				)} text-right tabular-nums"
 			/>
 		</div>
 
@@ -388,8 +413,8 @@
 						<th class="text-left">{fieldLabel('details')}</th>
 						<th class="text-left">{fieldLabel('counterpartyName')}</th>
 						<th class="text-left">{fieldLabel('reference')}</th>
-						<th class="text-right">{i18nMsg('bank-import-manual-col-debit', 'Débit')}</th>
-						<th class="text-right">{i18nMsg('bank-import-manual-col-credit', 'Crédit')}</th>
+						<th class="text-right">{i18nMsg('bank-import-manual-col-debit', 'Débit')} (CHF)</th>
+						<th class="text-right">{i18nMsg('bank-import-manual-col-credit', 'Crédit')} (CHF)</th>
 						<th></th>
 					</tr>
 				</thead>
@@ -398,7 +423,7 @@
 						<tr
 							data-testid="bank-import-manual-line"
 							data-error={serverRows.includes(i) ? 'true' : 'false'}
-							class={serverRows.includes(i) ? 'bg-error-soft' : ''}
+							class={serverRows.includes(i) ? 'bg-destructive/10 outline outline-1 outline-destructive' : ''}
 						>
 							<td>
 								<input
@@ -490,22 +515,22 @@
 	<dl class="mt-6 grid max-w-md grid-cols-2 gap-1 text-sm" data-testid="bank-import-manual-totals">
 		<dt>{i18nMsg('bank-import-manual-total-debits', 'Total des débits')}</dt>
 		<dd class="text-right tabular-nums" data-testid="bank-import-manual-total-debits">
-			{formatSwissAmount(totals.totalDebits)}
+			{formatSwissAmount(totals.totalDebits)} CHF
 		</dd>
 		<dt>{i18nMsg('bank-import-manual-total-credits', 'Total des crédits')}</dt>
 		<dd class="text-right tabular-nums" data-testid="bank-import-manual-total-credits">
-			{formatSwissAmount(totals.totalCredits)}
+			{formatSwissAmount(totals.totalCredits)} CHF
 		</dd>
 		{#if totals.computedClosing !== null}
 			<dt>{i18nMsg('bank-import-manual-computed-closing', 'Solde calculé')}</dt>
 			<dd class="text-right tabular-nums" data-testid="bank-import-manual-computed-closing">
-				{formatSwissAmount(totals.computedClosing)}
+				{formatSwissAmount(totals.computedClosing)} CHF
 			</dd>
 		{/if}
 		{#if totals.enteredClosing !== null}
 			<dt>{i18nMsg('bank-import-manual-entered-closing', "Solde d'arrivée saisi")}</dt>
 			<dd class="text-right tabular-nums" data-testid="bank-import-manual-entered-closing">
-				{formatSwissAmount(totals.enteredClosing)}
+				{formatSwissAmount(totals.enteredClosing)} CHF
 			</dd>
 		{/if}
 		{#if totals.gap !== null}
@@ -514,14 +539,14 @@
 				class="text-right font-semibold tabular-nums {totals.gap.eq(0) ? 'text-success' : 'text-error'}"
 				data-testid="bank-import-manual-gap"
 			>
-				{formatSwissAmount(totals.gap)}
+				{formatSwissAmount(totals.gap)} CHF
 			</dd>
 		{/if}
 	</dl>
 
 	{#if error}
 		<div
-			class="mt-4 rounded border border-error bg-error-soft p-3 text-sm text-error"
+			class="mt-4 rounded border border-destructive bg-destructive/10 p-3 text-sm text-destructive"
 			role="alert"
 			data-testid="bank-import-manual-error"
 		>
@@ -544,11 +569,11 @@
 				{i18nMsg('bank-import-manual-preview-ok', 'Vérification réussie : le relevé est équilibré.')}
 			</p>
 			{#if warnings.duplicateFile}
-				<div class="rounded border border-warning bg-warning-soft p-3 text-sm" data-testid="bank-import-manual-warning-duplicate-file">
+				<div class="rounded border border-warning bg-warning/10 p-3 text-sm" data-testid="bank-import-manual-warning-duplicate-file">
 					<p>
 						{i18nMsg(
 							'bank-import-manual-warning-duplicate-file',
-							'Un relevé identique (même compte, période, soldes et lignes) est déjà enregistré : relevé #{ $id }.',
+							'Un relevé identique (même compte, période, numéro, soldes et lignes) est déjà enregistré : relevé #{ $id }.',
 							{ id: warnings.duplicateFile.existingImportId },
 						)}
 					</p>
@@ -559,18 +584,20 @@
 				</div>
 			{/if}
 			{#if warnings.duplicateLines.length > 0}
-				<div class="rounded border border-warning bg-warning-soft p-3 text-sm" data-testid="bank-import-manual-warning-duplicate-lines">
+				<div class="rounded border border-warning bg-warning/10 p-3 text-sm" data-testid="bank-import-manual-warning-duplicate-lines">
 					<p>
-						{i18nMsg(
-							'bank-import-manual-warning-duplicate-lines',
-							'Ces lignes existent déjà sur ce compte : { $lines }. Elles ne sont jamais ignorées : corrigez-les, ou confirmez pour les enregistrer.',
-							{
-								lines: screenLines(
-									warnings.duplicateLines.map((d) => d.line),
-									preview?.rowMap ?? [],
-								),
-							},
-						)}
+						{#if duplicateScreenLines !== null}
+							{i18nMsg(
+								'bank-import-manual-warning-duplicate-lines',
+								'Ces lignes existent déjà sur ce compte : { $lines }. Elles ne sont jamais ignorées : corrigez-les, ou confirmez pour les enregistrer.',
+								{ lines: duplicateScreenLines },
+							)}
+						{:else}
+							{i18nMsg(
+								'bank-import-manual-warning-duplicate-lines-generic',
+								'Des lignes de ce relevé existent déjà sur ce compte. Elles ne sont jamais ignorées : corrigez-les, ou confirmez pour les enregistrer.',
+							)}
+						{/if}
 					</p>
 					<label class="mt-2 flex items-center gap-2">
 						<input type="checkbox" data-testid="bank-import-manual-confirm-duplicate-lines" bind:checked={confirmDuplicateLines} />
@@ -579,7 +606,7 @@
 				</div>
 			{/if}
 			{#if warnings.openingBalanceGap}
-				<div class="rounded border border-warning bg-warning-soft p-3 text-sm" data-testid="bank-import-manual-warning-opening-gap">
+				<div class="rounded border border-warning bg-warning/10 p-3 text-sm" data-testid="bank-import-manual-warning-opening-gap">
 					<p>
 						{i18nMsg(
 							'bank-import-manual-warning-opening-gap',

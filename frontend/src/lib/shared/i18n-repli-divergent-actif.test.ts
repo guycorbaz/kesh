@@ -207,11 +207,13 @@ function valeurDuCatalogueFr(cle: string): string | undefined {
  * G13 (Story 15-14a, #569 et #547) — les replis frontend **à site unique** suivent le catalogue.
  *
  * ⚠️ La garde ci-dessus ne voit pas ces clés : elle ne retient que celles qui portent **au
- * moins deux** replis distincts (`parTexte.size > 1`). Chacune des quatre-vingt-onze clés
+ * moins deux** replis distincts (`parTexte.size > 1`). Chacune des quatre-vingt-treize clés
  * ci-dessous n'a qu'un texte de repli (un site d'appel, ou plusieurs qui disent la même
  * chose) ; un repli resté à l'ancien texte n'y rougirait pas, et l'écran l'afficherait dès
  * que le catalogue manque (premier rendu, catalogue non chargé). *(« treize » jusqu'à la
- * Story v016-2b, qui en ajoute soixante-dix-huit : 13 + 78 = 91, recompté sur la liste.)*
+ * Story v016-2b, qui en ajoute soixante-dix-huit : 13 + 78 = 91, recompté sur la liste ; 93 à la
+ * remédiation de sa revue P1, avec `bank-import-manual-warning-duplicate-lines-generic` et
+ * `bank-import-manual-load-error`.)*
  *
  * Le tableau attendu à UN élément est l'anti-test-muet : un relevé vide, une clé disparue du
  * catalogue (`[undefined]`) ou un second repli divergent rougissent tous.
@@ -321,6 +323,8 @@ const REPLIS_A_SITE_UNIQUE: readonly string[] = [
 	'bank-import-manual-verify',
 	'bank-import-manual-warning-duplicate-file',
 	'bank-import-manual-warning-duplicate-lines',
+	'bank-import-manual-warning-duplicate-lines-generic',
+	'bank-import-manual-load-error',
 	'bank-import-manual-warning-opening-gap',
 ];
 
