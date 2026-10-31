@@ -60,7 +60,9 @@ l'entrée *Ajouté* du CHANGELOG et la ligne *Fonctionnalités* du README.
   d'**entête** (`line` nul : période, numéro, soldes, `lines`) désigne le champ du formulaire, traduit par son libellé
   (validation P4, P5 ; Vitest). *Asymétrie de taille* (validation P4, P4) : le client admet 500 lignes pleines
   (≈ 2,1 Mo), le serveur refuse un corps au-delà de `KESH_BANK_IMPORT_MAX_MB` (minimum 1 Mio) en `400
-  VALIDATION_ERROR` sans `field`. Le format
+  VALIDATION_ERROR` sans `field`. *(Annoté le 2026-10-31, revue de code P1 de la 2b, A4 : depuis la remédiation de la revue de la 2a
+  (C-v016-2-24), la limite des deux routes de saisie est propre, **3 Mio**, indépendante de `KESH_BANK_IMPORT_MAX_MB` ;
+  500 lignes pleines passent, et l'asymétrie ci-dessus ne vaut plus qu'au-delà de 3 Mio.)* Le format
   se contrôle par `isValidAmount` **généralisée** (validation P1, R3/F4) : options `maxDecimals` (défaut 4, deux ici),
   `maxIntegerDigits` (défaut 15, treize ici), `allowNegative` (défaut non ; oui pour les soldes, non pour les montants
   de ligne) et `allowEmpty` (défaut oui, comme le journal ; non pour les soldes) — **aucune seconde expression
