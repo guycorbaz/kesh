@@ -316,15 +316,17 @@ fn validate_bank_input(
 
     let description = normalize_description(description)?;
 
+    // Le message de `kesh-core` nomme déjà le champ : servi tel quel, sans
+    // second préfixe ; le QR-IBAN passe par le helper commun, qui étiquette du
+    // bon champ l'erreur d'IBAN que `QrIban::new` propage (Story v017-6, #832).
     let iban_normalized = kesh_core::types::Iban::new(iban)
-        .map_err(|e| AppError::Validation(format!("IBAN invalide : {e}")))?
+        .map_err(|e| AppError::Validation(e.to_string()))?
         .as_str()
         .to_string();
 
     let qr_iban_normalized = match qr_iban {
         Some(qr) if !qr.trim().is_empty() => {
-            let qr_obj = kesh_core::types::QrIban::new(qr)
-                .map_err(|e| AppError::Validation(format!("QR-IBAN invalide : {e}")))?;
+            let qr_obj = kesh_core::types::QrIban::new(qr).map_err(crate::util::refus_qr_iban)?;
             Some(qr_obj.as_iban().as_str().to_string())
         }
         _ => None,

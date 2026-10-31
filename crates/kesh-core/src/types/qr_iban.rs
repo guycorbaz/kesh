@@ -40,7 +40,7 @@ impl QrIban {
 
         if !iban.is_swiss() {
             return Err(CoreError::InvalidQrIban(
-                "QR-IBAN doit être suisse ou liechtensteinois".into(),
+                "doit être suisse ou liechtensteinois".into(),
             ));
         }
 
