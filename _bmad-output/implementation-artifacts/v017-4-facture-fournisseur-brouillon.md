@@ -5,7 +5,7 @@ Status: split
 *Fiche rédigée le 2026-10-31, en autonomie (Opus 5.5), worktree `/home/gcorbaz/devel/kesh-0175`, branche
 `story/v017-4-facture-fournisseur-brouillon` partie de `8e126cfd` (tête de `release/0.17.0`, candidate
 `v0.17.0-rc1`) ; la story se fusionne sur la branche de release. Registre : `v017-4-choix-autonomes.md`
-(C-v017-4-1 à C-v017-4-20). **Découpée dès la rédaction** en `v017-4a` (backend) et `v017-4b` (écran) — § *Découpage*,
+(C-v017-4-1 à C-v017-4-25). **Amendée le même jour par les décisions de l'orchestrateur sur Q1 à Q5** (C-v017-4-21 à 25, § *Questions au Project Lead*). **Découpée dès la rédaction** en `v017-4a` (backend) et `v017-4b` (écran) — § *Découpage*,
 C-v017-4-1 ; cette fiche porte le contexte, les décisions, le contrat et le texte de **tous** les AC, que les
 sous-fiches répartissent par numéro. **Complétée le même jour** sur décision du Project Lead (C-v017-4-20) : #853,
 #830, #835 et #831, quatre défauts du même formulaire. Clé courte : `v0174`. Issues : **#849** (CR, P2), #853, #830,
@@ -27,7 +27,8 @@ annulée et sa contre-passation.
   en brouillon et peut être éditée. Validée, elle peut être soit payée, soit revenir au brouillon. Payée, on ne peut
   plus la changer. »
 - **Ajout du même jour** (mandat) : « on doit pouvoir supprimer des factures annulées sur la version précédente » —
-  traité en **question** (Q1), non prescrit : § *Les factures annulées*.
+  traité en **question** (Q1), non prescrit : § *Les factures annulées*. *(Décision du 2026-10-31, C-v017-4-21 : option (B),
+  le masquage, livrée ici ; la suppression réelle n'est pas dans la 0.17.0 — limite L6.)*
 - **Ajout du Project Lead du même jour** (C-v017-4-20) : #853 (échéance avant la date, date du jour par défaut sur une
   pièce importée), #830 (virgule décimale envoyée brute), #835 (total vivant du formulaire à deux décimales), #831
   (liste arrondie à deux décimales) — quatre défauts du formulaire et de la liste que cette story réécrit.
@@ -95,7 +96,7 @@ une quantité vide comme `0` (`supplier-invoice-form.ts:35`), l'envoi comme `1` 
 | # | Décision | Registre |
 |---|---|---|
 | D1 | Découpage en `v017-4a` (backend) et `v017-4b` (écran) | C-v017-4-1 |
-| D2 | `draft` s'ajoute ; `open` reste la valeur stockée de « validée, à payer », libellé « Ouverte » ; aucune ligne réécrite | C-v017-4-2 **(Q4)** |
+| D2 | `draft` s'ajoute ; `open` reste la valeur stockée de « validée, à payer », libellé **« Validée »** à l'écran (décision Q4 ; première rédaction : « Ouverte ») ; aucune ligne réécrite | C-v017-4-2, **C-v017-4-24** |
 | D3 | Migration `20261031000001_supplier_invoices_draft` : écriture d'achat nullable, `CHECK` refaits, `min_required` reposé à `0.17.0` (même valeur) ; aucun bump Cargo | C-v017-4-3 |
 | D4 | Créer = brouillon sans écriture ; contrôles de saisie à l'enregistrement, contrôles liés à l'écriture à la validation | C-v017-4-4 |
 | D5 | `PUT` d'un brouillon, remplacement complet, règles « document » partagées avec la complétion | C-v017-4-5 |
@@ -107,11 +108,11 @@ une quantité vide comme `0` (`supplier-invoice-form.ts:35`), l'envoi comme `1` 
 | D11 | Brouillons exclus des propositions et des lots par les filtres existants ; inventaire clos | C-v017-4-11 |
 | D12 | #853 : échéance antérieure refusée ; pas de date du jour avec un document ; l'avis de date laissé à une issue | C-v017-4-12 |
 | D13 | Contrôle de clôture K8 `DRAFT_SUPPLIER_INVOICES` | C-v017-4-13 |
-| D14 | Factures annulées masquées par défaut dans la liste ; aucune suppression d'écriture prescrite | C-v017-4-14 **(Q1)** |
-| D15 | Écran : badge, page d'édition, actions par statut ; pas de « Enregistrer et valider » | C-v017-4-15 **(Q3)** |
+| D14 | Factures annulées masquées par défaut dans la liste ; aucune suppression d'écriture | C-v017-4-14, **C-v017-4-21** |
+| D15 | Écran : badge, page d'édition, actions par statut ; pas de « Enregistrer et valider » | C-v017-4-15, **C-v017-4-23** |
 | D16 | Pas de motif de dévalidation calculé d'avance | C-v017-4-16 |
 | D17 | Dépôt : quatre fonctions neuves ; `create_validated` composé, pour seeds et tests | C-v017-4-17 |
-| D18 | Candidate `v0.17.0-rc2` | C-v017-4-18 **(Q2)** |
+| D18 | Candidate `v0.17.0-rc2`, limite L1 aux notes | C-v017-4-18, **C-v017-4-22** |
 | D19 | MCP : brouillons lus, `statut: draft`, `ecritureAchatId: null` | C-v017-4-19 |
 | D20 | #853, #830, #835, #831 intégrés | C-v017-4-20 |
 
@@ -242,6 +243,9 @@ d'une correction ; elles ne faussent ni solde ni rapport. Le brouillon livré ic
 Guy veut néanmoins (A), une story dédiée, avec ses conditions écrites ci-dessus et sa propre validation, plutôt
 qu'un ajout à celle-ci. ⛔ Rien de (A) n'est prescrit sans son accord.
 
+**Décision (2026-10-31, orchestrateur, mandat autonome du Project Lead — C-v017-4-21)** : **(B)**, livrée par cette
+story (AC-15, AC-21). **(A) n'est pas dans la 0.17.0** : elle sera soumise au Project Lead à part. Limite L6.
+
 ## Découpage
 
 *C-v017-4-1 : plus de cinq modules ; aucun cycle Cargo ; le backend se teste seul en HTTP.*
@@ -262,7 +266,7 @@ qu'un ajout à celle-ci. ⛔ Rien de (A) n'est prescrit sans son accord.
 | Mutations | Sous-fiche |
 |---|---|
 | M1 à M20 | `v017-4a` |
-| M21 à M30 | `v017-4b` |
+| M21 à M31 | `v017-4b` |
 
 ## Critères d'acceptation
 
@@ -446,6 +450,24 @@ Record avec leur sortie rouge), sauf mention. Tests Rust de dépôt et d'API : s
 
 - **AC-21 — Liste.** `SupplierInvoiceStatus` gagne `'draft'` ; `supplierInvoiceStatusLabel('draft')` → clé
   `supplier-invoices-status-draft` (« Brouillon », glossaire partie A, `docs/i18n-glossaire.md:92`) ; badge dans la liste.
+  **Décision Q4 (C-v017-4-24)** : l'état stocké `open` s'affiche **« Validée »** — la clé
+  `supplier-invoices-status-open` prend la valeur de `invoice-status-validated` de chaque catalogue : « Validée »
+  (fr-CH `:613`), « Validiert » (de-CH `:619`), « Convalidata » (it-CH `:619`), « Validated » (en-CH `:619`) ; le repli de
+  `supplier-invoice-helpers.ts:37`, son commentaire (`:31`) et son banc (`supplier-invoice-helpers.test.ts:36`, `:48`,
+  `:54`) suivent ; le glossaire (`docs/i18n-glossaire.md:93`) dit que, pour une facture fournisseur, l'état se nomme
+  « validée ». **Aucun texte de l'écran ne nomme plus cet état « ouverte »** — inventaire clos par `grep -n -i
+  'ouvert\|offen\|apert\|\bopen\b'` sur les clés `supplier-invoices-*`, `payment-batches-*` et
+  `reconciliation-*` des quatre catalogues, et par `grep -rn -i 'ouvert'` sur `frontend/src/lib/features/supplier-invoices`,
+  `frontend/src/routes/(app)/supplier-invoices` et `frontend/src/routes/(app)/payment-batches`. À `8e126cfd`, en fr-CH :
+  `reconciliation-failed-rule-masked-invoice-candidate` (`:1440`), `supplier-invoices-settlement-cancel-confirm`
+  (`:2571`), `supplier-invoices-settlement-cancelled` (`:2573`, « de nouveau ouverte »),
+  `payment-batches-failed-supplier-invoice-not-open` (`:2753`, « Facture non ouverte »), `payment-batches-no-open`
+  (`:2842`), et leurs replis (`[id]/+page.svelte:182`, `:202` ; `payment-batches/+page.svelte:150`) — chacun passé à
+  « validée » (ou « non validée ») aux quatre catalogues ; les commentaires de code (`supplier-invoices.api.ts:35`,
+  `:52`, `:62` ; `[id]/+page.svelte:215`, `:639`) suivent ; chaque occurrence triée au Dev Agent Record. « Ouvert »
+  au sens du **poste ouvert** d'un compte (la dette) reste. Les valeurs et codes (`open`,
+  `SUPPLIER_INVOICE_NOT_OPEN`) ne changent pas. Mutation **M31** : le repli redevient « Ouverte » → le banc des
+  helpers rougit.
   **#831** : la colonne TTC affiche `formatExactAmount(inv.totalAmount)` (`invoice-helpers.ts:92`) au lieu de
   `formatSupplierInvoiceTotal` (`supplier-invoices/+page.svelte:93`) — `100.0040` s'affiche `100.0040`, `100.00`
   s'affiche `100.00`. **C-v017-4-14** : case « Afficher les factures annulées », décochée par défaut ; la liste appelle
@@ -455,7 +477,7 @@ Record avec leur sortie rouge), sauf mention. Tests Rust de dépôt et d'API : s
 - **AC-22 — Fiche, actions par statut.** Brouillon : *Modifier* (lien vers l'édition), *Valider* (confirmation : « L'écriture
   d'achat sera passée au journal »), *Supprimer le brouillon* (Administrateur seul, confirmation) ; **ni** bloc *Payer*
   (`[id]/+page.svelte:514`) **ni** bloc *Annuler la facture* (`:642`) ; les gestes du document (joindre, détacher)
-  restent. Ouverte : *Dévalider* (Administrateur et Comptable, confirmation : l'écriture d'achat sera **supprimée**, la
+  restent. Validée (`open`) : *Dévalider* (Administrateur et Comptable, confirmation : l'écriture d'achat sera **supprimée**, la
   numérotation gardera un trou, la facture redeviendra modifiable), plus *Payer* et *Annuler* comme aujourd'hui. Payée,
   annulée : inchangées. Après chaque geste, la fiche affiche la facture rendue par le serveur et une notification de
   succès. Banc de la fiche : chaque statut × chaque rôle (Administrateur, Comptable, Consultation) — boutons présents ou
@@ -501,11 +523,18 @@ Record avec leur sortie rouge), sauf mention. Tests Rust de dépôt et d'API : s
   trois, la dévalidation d'une facture fournisseur ; (6) réconciliation d'un débit (`:2480`) et lots
   (`sec:paiements-fournisseurs`) : seules les factures **validées** (ouvertes) ; (7) documents à traiter
   (`sec:import-factures`) : la complétion crée un brouillon ; date de facture à saisir ; (8) contrôles de clôture : K8 ;
-  (9) #853 : l'échéance ne peut précéder la date ; (10) la virgule décimale admise. Tout passage qui affirme que
+  (9) #853 : l'échéance ne peut précéder la date ; (10) la virgule décimale admise ; (11) **décision Q4
+  (C-v017-4-24)** : l'état s'appelle **« validée »** — chaque « ouverte » qui désigne l'état d'une facture fournisseur
+  passe à « validée » (à `8e126cfd` : `:1645`, `:1646`, `:1660`, `:1695`, `:1727`, `:1734`, `:1765`, `:1828`, `:2480`,
+  et ce que rend `grep -n -i 'ouverte' docs/manual/fr/user-manual.tex` dans les § fournisseur, lots, réconciliation et
+  règles d'affectation) ; « la dette redevient ouverte » (`:1686`, le poste ouvert) reste ; le PDF aplati ne porte plus
+  « facture fournisseur ouverte » ni « factures fournisseur ouvertes ». Même tri dans la prose de
+  `docs/api-external.md` (« ouverte ou payée » → « validée ou payée » ; statut `open` et codes inchangés), au manuel
+  d'administration et dans le texte **neuf** du CHANGELOG `[0.17.0]` (les entrées publiées ne se réécrivent pas). Tout passage qui affirme que
   l'enregistrement **passe l'écriture** est réécrit (`:1583-1584` ; la phrase est coupée en fin de ligne : greper « Kesh passe l'écriture d'achat »).
 - **AC-30 — E2E.** Une spec neuve `frontend/tests/e2e/supplier-invoice-draft-cycle.spec.ts` : fournisseur et comptes
   synthétiques ; **brouillon** par le formulaire avec un compte de charge faux → fiche « Brouillon », aucune écriture
-  (lien d'écriture absent) ; *Modifier* → bon compte → *Enregistrer* ; *Valider* → « Ouverte », lien vers l'écriture ;
+  (lien d'écriture absent) ; *Modifier* → bon compte → *Enregistrer* ; *Valider* → « Validée », lien vers l'écriture ;
   *Dévalider* → « Brouillon » ; *Modifier* le prix (synthétique, 100.20 → 100.00) ; *Valider* ; un relevé **saisi à la
   main** par l'API (`POST /bank-imports/manual`) porte un débit égal ; à la réconciliation, la facture est proposée pour
   ce débit, et *Accepter* la rend « Payée ». Et : un brouillon au montant d'un débit **n'est pas** proposé ; un brouillon
@@ -560,6 +589,7 @@ Chacune posée sur une base éphémère, tuée par le test nommé, restaurée pa
 | M28 | liste : annulées affichées par défaut | AC-21 |
 | M29 | `supplierInvoiceUnvalidateMessage` : un code rend le repli | AC-25 |
 | M30 | lots : filtre `open` retiré de l'écran | AC-27 |
+| M31 | repli du libellé `open` redevenu « Ouverte » | AC-21 (ajoutée par la décision Q4) |
 
 ## Ce que les gardes ne voient pas (limites)
 
@@ -572,17 +602,19 @@ Chacune posée sur une base éphémère, tuée par le test nommé, restaurée pa
   annulé explicitement ; la fiche montre ce lot) : la banque a pu exécuter l'ordre — si le montant change, le manuel dit
   de vérifier le relevé.
 - **L5** — l'avis « date de facture postérieure au dépôt de plus de quelques jours » (#853, point 3) n'est pas fait :
-  issue demandée.
-- **L6** — les factures annulées restent dans les livres (Q1).
+  il part dans une issue neuve, ouverte par l'orchestrateur (C-v017-4-25).
+- **L6** — les factures annulées restent dans les livres, avec leur écriture d'achat et sa contre-passation : la 0.17.0
+  les masque dans la liste, elle ne les supprime pas (C-v017-4-21). La suppression réelle sera soumise au Project Lead à
+  part ; le manuel utilisateur le dit (§ *Annuler une facture fournisseur*).
 
 ## Ce que la release doit contenir (orchestrateur ; ne pas prescrire au développeur)
 
-1. Candidate `v0.17.0-rc2` (Q2) ; notes : deux migrations, la limite L1, le changement de contrat de
+1. Candidate `v0.17.0-rc2` (décidée, C-v017-4-22) ; notes : deux migrations, la limite L1 **écrite en toutes lettres**, le changement de contrat de
    `POST /supplier-invoices`.
 2. **Avant la mise à jour du NAS** : sauvegarde complète (base, `.keshbackup`, documents) ; aucune recette ne s'écrit
    dans la base de Guy (`v017-donnees-a-garder.md`, point 3) — la recette du cycle se joue sur une installation jetable.
-3. PR de release : `closes #849`, `closes #830`, `closes #835`, `closes #831` ; **#853** : `closes` si Guy accepte le
-   renvoi du point 3 à une issue neuve (L5), sinon `refs`.
+3. PR de release : `closes #849`, `closes #830`, `closes #835`, `closes #831` ; **`closes #853`** (décision Q5,
+   C-v017-4-25 : son point 3 part dans une issue neuve).
 4. Issue à ouvrir : #853 point 3 (avis de date). Commenter #849 (prémisse : la règle client est la suppression ;
    statut `open` gardé) et #830 (remède : parser une fois, non une substitution de chaîne).
 
@@ -613,6 +645,10 @@ manual) ; « six stories ».
 
 ## Questions au Project Lead
 
+*Tranchées le 2026-10-31 par l'orchestrateur, dans le mandat autonome du Project Lead (C-v017-4-21 à 25) : Q1 (B) ;
+Q2 oui, L1 aux notes de la candidate ; Q3 non ; Q4 « Validée » à l'écran, quatre locales, valeur stockée `open` ; Q5
+#853 fermée avec la release, point 3 en issue neuve. Le texte des questions reste tel que posé.*
+
 1. **Q1 — Supprimer les factures annulées (C-v017-4-14).** Options (A) suppression réelle de la facture et de ses deux
    écritures, (B) masquage dans la liste, (C) suppression de la seule facture — détaillées au § *Les factures
    annulées*. **Recommandation : (B), livré par cette story ; pas de (A)** : vos factures annulées sont des corrections
@@ -634,3 +670,9 @@ manual) ; « six stories ».
   complétée le même jour de #853, #830, #835, #831 sur décision du Project Lead (C-v017-4-20). Registre
   `v017-4-choix-autonomes.md` (C-v017-4-1 à 20). Questions Q1 à Q5. Prochaine étape : validation P1
   (`v017-4-validate-prompt-p1.md`, Sonnet, lentilles R et F).
+- 2026-10-31 — **Décisions sur Q1 à Q5** (orchestrateur, mandat autonome du Project Lead), consignées en C-v017-4-21 à
+  25 : (B) livrée, (A) hors 0.17.0 (L6) ; candidate rc2, L1 aux notes ; pas de « Enregistrer et valider » ; libellé
+  « Validée » aux quatre locales, inventaire des « ouverte » de l'écran et des textes (AC-21, AC-29), M31 ajoutée ;
+  `closes #853`, point 3 en issue neuve (L5). Touchés : en-tête, § *Origine*, table des décisions, § *Les factures
+  annulées*, AC-21, AC-22, AC-29, AC-30, table des mutations et du découpage, limites L5 et L6, § *Ce que la release doit
+  contenir*, § *Questions*. Prochaine étape inchangée : validation P1.

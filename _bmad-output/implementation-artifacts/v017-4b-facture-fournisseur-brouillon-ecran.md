@@ -23,7 +23,9 @@ catalogues, le manuel utilisateur et son PDF, l'E2E, les captures, le CHANGELOG 
 
 ## Critères d'acceptation
 
-**AC-21 à AC-32** de la fiche parente, sous leur numéro d'origine. Mutations **M21 à M30**.
+**AC-21 à AC-32** de la fiche parente, sous leur numéro d'origine. Mutations **M21 à M31** (M31 ajoutée par la décision
+Q4, C-v017-4-24 : l'état validé s'affiche « Validée » aux quatre locales, et aucun texte de l'écran, des manuels ni de
+l'API ne le nomme plus « ouverte » — AC-21, AC-29).
 
 ## Tâches
 
@@ -34,7 +36,7 @@ catalogues, le manuel utilisateur et son PDF, l'E2E, les captures, le CHANGELOG 
       lots (AC-27) ; i18n (AC-28).
 - [ ] Manuel utilisateur et PDF (AC-29).
 - [ ] E2E neuf et specs adaptées (AC-30) ; captures (AC-31) ; CHANGELOG et README (AC-32).
-- [ ] Mutations M21 à M30.
+- [ ] Mutations M21 à M31.
 - [ ] Gates frontend, gate complet et E2E complet au dernier commit de code.
 
 ## Dev Agent Record
@@ -45,3 +47,5 @@ catalogues, le manuel utilisateur et son PDF, l'E2E, les captures, le CHANGELOG 
 
 - 2026-10-31 — Sous-fiche créée au découpage de la v017-4 (C-v017-4-1). Prochaine étape : validation P1 de la fiche
   parente et des deux sous-fiches (`v017-4-validate-prompt-p1.md`).
+- 2026-10-31 — Décisions sur Q1 à Q5 (C-v017-4-21 à 25) : libellé « Validée » et inventaire des « ouverte » (AC-21,
+  AC-29), M31 ; masquage des annulées confirmé (AC-21) ; pas de « Enregistrer et valider ».

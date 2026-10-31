@@ -304,3 +304,48 @@ des livres réels ; aucune écriture passée ne se réécrit ; un appariement pr
 - **Retenu** : les quatre dans la sous-fiche **écran** (4b), sauf le refus serveur de #853, qui est dans la conversion
   commune et va à la 4a. CHANGELOG *Corrigé*, `refs` ; fermeture portée par la PR de release.
 - **Réversible** : oui.
+
+---
+
+*Les choix C-v017-4-21 à 25 consignent les décisions de l'orchestrateur sur les questions Q1 à Q5, prises le 2026-10-31
+dans le mandat autonome du Project Lead, avant la validation P1. Les entrées précédentes restent telles qu'écrites ;
+celles que ces décisions modifient sont nommées ci-dessous.*
+
+### C-v017-4-21 — Q1 : les factures annulées sont masquées, non supprimées
+
+- **Contexte** : C-v017-4-14 et la question Q1 (options A, B, C).
+- **Retenu** : option **(B)** — la liste masque par défaut les factures annulées, sans toucher au journal ; livrée par
+  cette story (AC-15, AC-21). L'option **(A)**, la suppression réelle de la facture et de ses deux écritures, **n'est pas
+  dans la 0.17.0** : elle sera soumise au Project Lead à part. Limite L6, écrite au manuel utilisateur.
+- **Écartées** : (A) dans cette release ; (C).
+- **Réversible** : oui.
+
+### C-v017-4-22 — Q2 : candidate `v0.17.0-rc2`
+
+- **Retenu** : oui ; la limite L1 (rc2 → rc1 seulement par la sauvegarde d'avant la mise à jour) s'écrit dans les notes
+  de la candidate. Confirme C-v017-4-18.
+- **Réversible** : oui.
+
+### C-v017-4-23 — Q3 : pas de bouton « Enregistrer et valider »
+
+- **Retenu** : confirme C-v017-4-15 : on enregistre le brouillon, puis on valide depuis sa fiche.
+- **Réversible** : oui.
+
+### C-v017-4-24 — Q4 : l'état validé s'affiche « Validée » (révise le libellé de C-v017-4-2)
+
+- **Contexte** : C-v017-4-2 gardait le libellé « Ouverte ». Le vocabulaire du Project Lead est « création → validation
+  → paiement ».
+- **Retenu** : la valeur stockée reste `open` (le reste de C-v017-4-2 tient : aucune ligne réécrite, filtres et contrat
+  inchangés) ; seuls le libellé, les textes et le filtre de liste changent. `supplier-invoices-status-open` prend la
+  valeur de `invoice-status-validated` de chaque catalogue (« Validée », « Validiert », « Convalidata », « Validated ») ;
+  aucun texte de l'écran, des catalogues, des manuels, de `api-external.md` ni du texte neuf du CHANGELOG ne nomme plus
+  cet état « ouverte » — inventaire clos aux AC-21 et AC-29 ; « ouvert » au sens du poste ouvert d'un compte reste.
+  Mutation M31.
+- **Écartées** : garder « Ouverte » (première rédaction).
+- **Réversible** : oui (clés i18n et textes).
+
+### C-v017-4-25 — Q5 : #853 se ferme avec la release
+
+- **Retenu** : `closes #853` à la PR de release ; son point 3 (avis sur une date de facture bien postérieure au dépôt)
+  part dans une issue neuve, ouverte par l'orchestrateur. Limite L5.
+- **Réversible** : oui.

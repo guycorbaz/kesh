@@ -7,7 +7,9 @@ faute de saisie ne se corrige qu'en l'annulant (contre-passation) et en la ressa
 `validate` et `unvalidate` — la dévalidation **supprime** l'écriture d'achat, règle de la facture client —, une
 migration breaking `20261031000001_supplier_invoices_draft` (écriture d'achat nullable, `min_required` reposé à
 `0.17.0`), un contrôle de clôture K8, et quatre défauts du même formulaire ajoutés par le Project Lead (#853, #830, #835,
-#831). La suppression des factures annulées n'est **pas** prescrite : posée en question (Q1). Des livres réels sont
+#831). Les questions Q1 à Q5 sont tranchées (C-v017-4-21 à 25) : les factures annulées sont **masquées** dans la liste, leur
+suppression réelle n'est pas dans la 0.17.0 ; candidate `v0.17.0-rc2` ; l'état validé (valeur stockée `open`)
+s'affiche **« Validée »** aux quatre locales ; #853 se ferme avec la release. Des livres réels sont
 tenus sur la `v0.17.0-rc1` : montée sans perte et sauvegardes antérieures importables sont des exigences.
 
 Worktree `/home/gcorbaz/devel/kesh-0175`, branche `story/v017-4-facture-fournisseur-brouillon`, partie de `8e126cfd`.
@@ -79,7 +81,10 @@ frais**.
   à l'inventaire de l'AC-29 ?
 - **L'écran (AC-21 à AC-27)** : actions par statut et par rôle cohérentes avec les rôles serveur (Comptable,
   Administrateur, clés) ; la page d'édition et le mode « document avec QR » ; la date vide avec un document ; les
-  messages des refus ; le libellé « Ouverte » gardé (C-v017-4-2) est-il cohérent partout ?
+  messages des refus ; le libellé « Validée » (C-v017-4-24) : l'inventaire de l'AC-21 et de l'AC-29 trouve-t-il **toutes**
+  les occurrences où l'écran, les catalogues, les manuels (PDF aplati), `api-external.md` ou le CHANGELOG nomment encore cet
+  état « ouverte » / « offen » / « aperta » / « open » ? Une occurrence au sens du poste ouvert d'un compte reste-t-elle
+  bien distinguée ?
 - **Les quatre défauts ajoutés (C-v017-4-20)** : les prémisses de #853, #830, #835, #831 sont-elles justes au code ? Le
   remède de #830 (parser une fois) couvre-t-il **tous** les champs numériques du formulaire (quantité, prix, taux,
   montant attendu) et le total vivant ? Un banc de la page de liste (#831) est-il bien prescrit ?
@@ -88,7 +93,8 @@ frais**.
   conduite d'une intégration ? « sept contrôles », « une migration », « six stories » relevés ?
 - **E2E et captures (AC-30, AC-31)** : le cycle complet jusqu'au paiement par réconciliation est-il jouable avec ce que
   Kesh offre (relevé saisi à la main par l'API) ? Les specs existantes à adapter sont-elles toutes listées ?
-- **Q1** : les options sur les factures annulées sont-elles exposées exactement, sans prescrire l'option destructive ?
+- **Les décisions sur Q1 à Q5** (C-v017-4-21 à 25) : sont-elles portées partout dans la fiche, sans contradiction avec
+  le texte d'origine laissé tel quel ? La limite L6 (factures annulées gardées dans les livres) est-elle écrite au manuel ?
 - **Les règles du dépôt** : aucun mot-clé de fermeture prescrit dans un message de commit ; aucune donnée réelle ;
   défaut voisin renvoyé à une issue s'il n'est pas mécanique.
 - **Les décomptes et numéros de ligne** : recompte-les.
