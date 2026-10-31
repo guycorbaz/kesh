@@ -1,6 +1,6 @@
 # Story v017-5 : lire le QR d'une facture QR scannée
 
-Status: review
+Status: done
 
 *Fiche rédigée le 2026-10-31, en autonomie (Opus 5.5), worktree `/home/gcorbaz/devel/kesh-0176`, branche
 `story/v017-5-qr-scanne` partie de `8e126cfd` (tête de `release/0.17.0`). Release **0.17.0**, candidate suivante
@@ -1110,3 +1110,5 @@ fichiers, 2293 tests**, build vert ; **E2E complet** (base `kesh_e2e_v0175` reco
   l'API (A3), #863 au CHANGELOG (A4), en-tête (A6) ; T4 et banc rejoués au dernier commit de code (A2). Gates :
   backend 4617/4617, Vitest 2293, E2E 330 + les 7 de la KF-029. Commits `dee8f982` (code), `25b2367a` (textes, PDF).
   Prochaine étape : revue de code P2 ciblée (`v017-5-review-prompt-p2.md`, Sonnet, une lentille).
+
+- **2026-10-31 — Revue de code P2 (Sonnet, ciblée)** : 0 CRITICAL, 0 HIGH, 0 MEDIUM, 4 LOW. Elle confirme au code (pdfium-render `apply_to_page`) l écart C-v017-5-19 à la consigne P1. Boucle close en deux passes (P1 Opus 0/0/1/14 → P2 Sonnet 0/0/0/4). LOW de la P2 tracés en #864. Statut : `done`. #854 reste ouverte jusqu à la recette du Project Lead sur ses pièces.
