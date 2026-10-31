@@ -7,8 +7,8 @@ ceux des dépendances, ceux de `~/.cargo/registry` (`pdfium-render-0.8.37`, `rxi
 
 Rédigé le 2026-10-31 en autonomie (Opus 5.5), sous la contrainte du Project Lead du 2026-10-30
 (`kesh-gate-logs/prompts/v017-donnees-a-garder.md` : les données de la 0.16.1-rc1 se gardent) et sans ouvrir aucune
-pièce réelle. Chaque choix : contexte, option retenue, alternatives écartées, réversibilité. Les choix marqués **(Q)**
-figurent aussi parmi les questions au Project Lead (fiche, § *Questions au Project Lead*).
+pièce réelle. Chaque choix : contexte, option retenue, alternatives écartées, réversibilité. Aucun choix n'est soumis au Project Lead depuis la validation P1 (le bouton est tracé en #858) ; les questions
+restantes sont dans la fiche (§ *Questions au Project Lead*).
 
 ---
 
@@ -34,30 +34,39 @@ figurent aussi parmi les questions au Project Lead (fiche, § *Questions au Proj
   (C-v017-5-3). (c) « La bibliothèque PDF manque » — elle rendrait `PDF_RENDER_ERROR` (`unreadable`), non `none`.
 - **Réversible** : oui (diagnostic) ; la fiche prescrit ce qui le réfute.
 
-### C-v017-5-2 — Le remède : un seul rendu par page, à la plus haute résolution que la borne existante permet, plafonnée à 300 dpi
+### C-v017-5-2 — Le remède : un rendu en deux temps — 72 dpi, puis, si la page ne livre aucun QR, la plus haute résolution que la borne existante permet, plafonnée à 300 dpi
+
+*(Récrit à la validation P1, sur décision de l'orchestrateur — finding R4 : le choix d'origine, « un seul rendu par
+page » à `render_scale`, multipliait par 5,6 le coût de **chaque** page, QR vectoriels compris, alors qu'un import traite
+jusqu'à 200 fichiers par passage (`config.rs:524`) derrière un proxy documenté à 300 s (`admin-manual.tex:341`), sur un
+NAS.)*
 
 - **Contexte** : le mandat propose une résolution plus élevée, et un second essai plus fin seulement si le premier ne
   trouve rien, **sans relâcher** les bornes anti-DoS. La borne de dimension (2000 px, `qr_decode.rs:46-53`) permet, pour
-  une A4 portrait, **171 dpi** (2000 / 11,69 in) — 4,2 à 6,3 px par module, assez pour un QR scanné de 150 à 300 dpi :
-  au-delà de la résolution source, un rendu plus fin n'apporte aucune information.
-- **Retenu** : une fonction pure `render_scale(largeur_pt, hauteur_pt, max_dimension) -> f32` = `min(max_dimension /
-  largeur, max_dimension / hauteur, MAX_RENDER_DPI / 72)` avec `MAX_RENDER_DPI = 300`, appliquée par
-  `scale_page_by_factor` ; les bornes `set_maximum_width/height` restent posées (défense en profondeur). Un seul rendu
-  par page, comme aujourd'hui.
-- **Écartées** : (b) un premier rendu à 150 dpi puis un second plus fin — au-delà de 171 dpi sur une A4, la borne de
-  2000 px est franchie : un second rendu « plus fin » de la page entière **relâcherait** la borne, ce que le mandat
-  interdit ; (c) un second rendu de la seule bande inférieure (section paiement) à 240 dpi par matrice de transformation
-  et découpe pdfium — faisable dans la borne, mais intestable sur l'hôte et en CI (pas de `libpdfium`, C-v017-5-6), et
-  sans gain attendu sur une source de 150 à 300 dpi rendue déjà à 171 dpi ; il reste ouvert **seulement** si T4 l'exige
-  (fiche, AC-2, branche d'arrêt) ; (d) relever `max_dimension` — interdit par le mandat.
-- **Réversible** : oui (une constante, une fonction).
+  une A4 portrait, **171 dpi** (2000 / 11,69 in) — **4,0 à 5,4 px par module** pour 57 à 77 modules (309,8 px / 77 et
+  / 57), assez pour un QR scanné de 150 à 300 dpi : au-delà de la résolution source, un rendu plus fin n'apporte aucune
+  information. Le rendu actuel (72 dpi) lit les QR vectoriels (constat de #854 : la facture d'assurance est lue).
+- **Retenu** : pour chaque page, (1) le **rendu actuel**, inchangé (échelle 1,0, bornes `max_dimension`) ; (2)
+  **seulement si** ce rendu ne livre aucun payload SPC, un second rendu à `render_scale(largeur_pt, hauteur_pt,
+  max_dimension) -> Option<f32>` = `min(max_dimension / largeur, max_dimension / hauteur, MAX_RENDER_DPI / 72)`,
+  `MAX_RENDER_DPI = 300`, appliqué par `scale_page_by_factor`, bornes `set_maximum_width/height` conservées ; `None`
+  (pas de second rendu) pour une page de dimension nulle, négative ou non finie, ou `max_dimension == 0`. Les deux
+  rendus restent sous 2000 px de côté : la borne n'est pas franchie. Le surcoût ne frappe que les pages sans QR lisible
+  au premier temps.
+- **Écartées** : (b) un seul rendu par page à `render_scale` (choix d'origine) — surcoût sur toutes les pages, QR
+  vectoriels compris ; (c) un second rendu « plus fin » de la page entière au-delà de 171 dpi — franchirait la borne ;
+  (d) un second rendu de la seule bande inférieure (section paiement) à 240 dpi par matrice de transformation et découpe
+  pdfium — faisable dans la borne, mais intestable sur l'hôte et en CI (pas de `libpdfium`, C-v017-5-6), et sans gain
+  attendu sur une source de 150 à 300 dpi rendue déjà à 171 dpi ; il reste ouvert **seulement** si T4 l'exige (fiche,
+  AC-2, branche d'arrêt (iii)) ; (e) relever `max_dimension` — interdit par le mandat.
+- **Réversible** : oui (une constante, une fonction, un second appel de rendu).
 
 ### C-v017-5-3 — Le décodeur : format QR seul ; tout autre essai seulement sur preuve d'une fixture
 
 - **Contexte** : `decode_qr_from_image` (`qr_decode.rs:84-94`) appelle `detect_multiple_in_luma`, qui essaie **tous**
-  les formats (aucun `PossibleFormats`). Le rendu passe de 0,5 à 2,8 Mpx par page A4 (× 5,6) : le coût du décodage
-  croît d'autant.
-- **Retenu** : (1) `PossibleFormats = {QR_CODE}` (via `detect_multiple_in_luma_with_hints`), `TryHarder` conservé —
+  les formats (aucun `PossibleFormats`). Le second rendu porte une page A4 de 0,5 à 2,8 Mpx (× 5,6) : le coût du
+  décodage d'une page sans QR lisible au premier temps croît d'autant.
+- **Retenu** : (1) `PossibleFormats = {QR_CODE}` (via `detect_multiple_in_luma_with_hints`), aux deux temps, `TryHarder` conservé —
   mesure de **coût**, sans effet sur ce que Kesh retient (seul un payload `SPC\n0200` compte, `first_spc`). (2) Un
   échelon supplémentaire — `FilteredImageReader` (pyramide et fermeture morphologique, `rxing-0.7.1/src/
   filtered_image_reader.rs`), puis, si besoin, une découpe de la bande inférieure de la page — n'est ajouté **que si**
@@ -80,7 +89,7 @@ figurent aussi parmi les questions au Project Lead (fiche, § *Questions au Proj
   pixels) est décidable ; une borne d'horloge ne l'est pas.
 - **Réversible** : oui.
 
-### C-v017-5-5 — Les fixtures : synthétiques, engendrées par un générateur versionné et déterministe
+### C-v017-5-5 — Les fixtures : synthétiques, produites une fois et versionnées comme données
 
 - **Contexte** : le mandat exige une fixture synthétique — une QR-facture générée par Kesh, rastérisée, floue et
   bruitée, dans un PDF image — et interdit tout document réel.
@@ -91,9 +100,14 @@ figurent aussi parmi les questions au Project Lead (fiche, § *Questions au Proj
   67 mm du bord gauche et 209 mm du haut, croix suisse de 7 mm), papier gris clair et encre gris foncé, (3) applique un
   flou gaussien de 0,1 mm et un bruit uniforme de ± 12 niveaux tiré d'un générateur à graine fixe, (4) encode en JPEG
   (qualité 75), (5) l'enveloppe dans un PDF d'une page A4 (`printpdf` 0.7, `ImageXObject` filtre DCT — paquet déjà au
-  `Cargo.lock` par `kesh-qrbill`, ajouté aux `dev-dependencies` de `kesh-api` : aucun paquet neuf). Les trois PDF et un PDF
-  sans QR (même chaîne, sans QR) sont **versionnés** sous `crates/kesh-api/tests/fixtures/`, le générateur à côté, et un
-  test `#[ignore]` les régénère à l'identique (octets comparés).
+  `Cargo.lock` par `kesh-qrbill`, ajouté aux `dev-dependencies` de `kesh-api` : aucun paquet neuf, une seule ligne au
+  lock). Les trois PDF et un PDF d'une page scannée pleine sans QR sont **produits une fois et versionnés comme
+  données** sous `crates/kesh-api/tests/fixtures/`, au plus 1 Mio chacun ; le générateur est versionné et documenté,
+  **sans exigence de reproductibilité au bit près** : la preuve porte sur le décodage (lu, non lu), non sur les octets.
+  *(Amendé à la validation P1, R1 et F10 : la version d'origine exigeait une régénération « à l'identique (octets
+  comparés) », impossible — `printpdf-0.7.0` tire un identifiant d'instance (`pdf_document.rs:791`, `utils.rs`, graine
+  globale du processus) et date le document (`pdf_metadata.rs:58`) à chaque écriture ; et elle ne bornait pas la
+  taille de fichiers versionnés dans un dépôt public.)*
 - **Écartées** : (b) ImageMagick / `img2pdf` — outils hors dépôt, non reproductibles en CI ; (c) une pièce réelle
   anonymisée — interdit.
 - **Réversible** : oui.
@@ -112,7 +126,7 @@ figurent aussi parmi les questions au Project Lead (fiche, § *Questions au Proj
   au Dev Agent Record ; (3) le test cassé de `qr_decode.rs:301-313` est **réparé** (correction mécanique : il lit une
   fixture qui existe) ; (4) la recette de l'orchestrateur passe par l'image Docker de la branche, sur une installation
   jetable.
-- **Écartées** : (b) installer pdfium en CI — changement d'outillage hors périmètre ; demandé en issue (fiche, I2).
+- **Écartées** : (b) installer pdfium en CI — changement d'outillage hors périmètre ; tracé en **#856**.
 - **Réversible** : oui.
 
 ### C-v017-5-7 — Ce que l'écran dit : « Aucun QR lu », par les valeurs des clés existantes
@@ -124,13 +138,15 @@ figurent aussi parmi les questions au Project Lead (fiche, § *Questions au Proj
   locales — fr « Aucun QR lu » / « aucun QR lu », de « Kein QR-Code gelesen » / « kein QR-Code gelesen », it « Nessun
   codice QR letto » / « nessun codice QR letto », en « No QR code read » / « no QR code read » — et les replis égaux des
   deux composants ; **clés inchangées**, valeur d'API `none` inchangée (contrat). Le serveur MCP dit déjà `qr_lu`
-  (`services/pieces.rs:80`) : le vocabulaire se rejoint.
+  (`services/pieces.rs:80`) : le vocabulaire se rejoint. `README.md:44`, qui nomme le badge, suit (F1 de la validation P1).
+  **Limite assumée** (F8) : un QR lu puis refusé (`FIELD_TOO_LONG`, montant, IBAN) est « QR illisible » au rapport et
+  « Aucun QR lu » dans la liste — la distinction n'est pas stockée ; le manuel dit « aucun QR **exploitable** ».
 - **Écartées** : (b) renommer les clés — churn sans gain ; (c) distinguer à l'écran « document sans QR » et « QR non
   lu » — impossible sans lire le texte du document (#854 le dit) ; (d) changer la valeur `none` de l'API — rupture de
   contrat pour un mot.
 - **Réversible** : oui.
 
-### C-v017-5-8 — Relire une pièce déjà importée : à la réactivation, pas par un bouton (Q)
+### C-v017-5-8 — Relire une pièce déjà importée : à la réactivation, pas par un bouton (bouton tracé en #858)
 
 - **Contexte** : rien n'est relu d'office (contrainte des données à garder). Aujourd'hui, retirer un document puis le
   redéposer le **réactive sans le relire** : le chemin `discarded` (`inbox_import.rs:477-531`) rend le statut stocké
@@ -141,15 +157,19 @@ figurent aussi parmi les questions au Project Lead (fiche, § *Questions au Proj
   dans la même transaction que la réactivation. Le geste de l'utilisateur : *Télécharger*, *Retirer de la liste*,
   déposer le fichier téléchargé dans le dossier d'import, *Importer le dossier*. Aucun doublon : la ligne existante est
   réactivée, l'empreinte est la même. Un bouton « Relire le QR » est **hors du périmètre minimal**.
-- **Pourquoi pas le bouton** : le décodeur est déterministe — à version égale, relire rend le même résultat ; relire
-  n'a de sens qu'**après une mise à jour** de Kesh, exactement le cas que couvre la réactivation, par un geste que le
+- **Pourquoi pas le bouton** : le décodeur est déterministe (aucune source d'aléa dans pdfium ni `rxing`) — à
+  version, réglage de pages (`KESH_INBOX_MAX_PDF_PAGES`) et bibliothèque PDF égaux, relire rend le même résultat ; relire
+  n'a de sens qu'après un changement de l'un d'eux (mise à jour de Kesh, borne relevée, `libpdfium` installée),
+  exactement les cas que couvre la réactivation, par un geste que le
   manuel décrit déjà (« le déposer de nouveau le fait revenir dans la liste », `user-manual.tex:1875-1876`). Un bouton
   demanderait une route, son contrôle de rôle, sa trace d'audit, son exposition aux clés d'API, quatre locales, un E2E et
-  des captures, pour un geste rare.
+  des captures, pour un geste rare. La demande de #854 (« proposer de réessayer la lecture ») est tracée en **#858**.
 - **Écartées** : (b) relire d'office à la montée de version — interdit (rien ne se relit d'office ; une migration ne
   décode pas de fichier) ; (c) relire aussi un document `to_complete` redéposé — il est aujourd'hui un doublon
   (`DUPLICATE`) ; le relire changerait ce contrat sans nécessité, le retrait d'abord suffit ; (d) relire un document
-  dont la facture est créée (`completed`) — ses coordonnées de paiement ont été saisies, un QR relu les contredirait.
+  joint à une facture (`completed`) — ses coordonnées de paiement ont été saisies, un QR relu les contredirait. Un
+  document **détaché** de sa facture redevient `to_complete` (`imported_supplier_invoices.rs:339-341`) et suit alors le
+  sort d'un document à traiter : retiré puis redéposé, il est relu s'il n'a aucun QR (F6 de la validation P1).
 - **Réversible** : oui (aucune donnée n'est réécrite hors des colonnes QR vides d'une ligne réactivée).
 
 ### C-v017-5-9 — La relecture n'écrit que des colonnes vides, en une instruction gardée
@@ -160,8 +180,12 @@ figurent aussi parmi les questions au Project Lead (fiche, § *Questions au Proj
 - **Retenu** : une fonction de dépôt neuve, `reactivate_to_complete_with_qr(tx, company_id, id, &données_qr)`, **une
   seule** instruction : `UPDATE … SET status = 'to_complete', supplier_invoice_id = NULL, <colonnes QR> … WHERE id = ?
   AND company_id = ? AND status = 'discarded' AND creditor_iban IS NULL`. Zéro ligne → même conduite qu'aujourd'hui (la
-  course est traitée en doublon, `inbox_import.rs:527-530`). Les valeurs viennent de la même projection que l'import
-  (`NewImportedSupplierInvoice::from_scanned`) — aucune seconde règle. La trace `imported_supplier_invoice.reactivated`
+  course est traitée en doublon, `inbox_import.rs:527-530`). Elle écrit les **quinze** colonnes QR (les sept
+  obligatoires et `creditor_line1`, `creditor_line2`, `creditor_postal_code`, `creditor_town`, `reference_value`,
+  `amount`, `unstructured_message`, `billing_information`), depuis une projection `QrColumns` **extraite** de
+  `NewImportedSupplierInvoice::from_scanned` (`entities/imported_supplier_invoice.rs:260-296`) et partagée par l'import
+  et la réactivation — aucune seconde règle, aucun `DocumentMeta` fabriqué (R8 de la validation P1). Un test de dépôt
+  (T9) prouve la garde seule, tuant la mutation M7a (R2). La trace `imported_supplier_invoice.reactivated`
   porte en plus `"qr"` (`present`, `none`, `unreadable`) et `"qr_reread"` (booléen). Le rapport dit le résultat de la
   relecture, avec `qrError` si inexploitable.
 - **Écartées** : (b) réactiver puis remplir en deux instructions — fenêtre où la ligne est `to_complete` sans QR et
@@ -173,7 +197,8 @@ figurent aussi parmi les questions au Project Lead (fiche, § *Questions au Proj
 
 - **Contexte** : modules touchés : `kesh-api/qr_decode`, `kesh-api/inbox_import`, `kesh-db/repositories`
   (une fonction), `kesh-i18n` (deux valeurs × quatre locales), le frontend (deux replis et leurs tests), la
-  documentation. Cinq modules au plus, dont deux par des valeurs de texte — pas « plus de cinq »
+  documentation. Cinq modules de code (deux dans `kesh-api`), dont deux par des valeurs de texte, et la documentation —
+  pas « plus de cinq »
   (`CLAUDE.md` § *Règle de splitting préventif*).
 - **Retenu** : une story. La relecture à la réactivation est ce qui rend le correctif utile aux pièces déjà importées ;
   la séparer laisserait livrer un décodeur meilleur que personne ne peut appliquer à l'existant.
@@ -185,7 +210,34 @@ figurent aussi parmi les questions au Project Lead (fiche, § *Questions au Proj
 - **Contexte** : (1) le décodage est synchrone dans une fonction `async` (`inbox_import.rs:540-550`, aucun
   `spawn_blocking`) : il occupe un fil de l'exécuteur tokio pendant le rendu et le décodage — le coût par page augmente
   avec cette story ; (2) le chemin PDF n'est exercé par aucun test qui tourne, en CI comme en local (C-v017-5-6).
-- **Retenu** : (1) issue demandée (I1, P3) — le passage en `spawn_blocking` change la propagation d'une panique et le
-  partage du verrou pdfium : pas mécanique ; (2) issue demandée (I2, P3, test) ; la réparation du test cassé, elle, est
+- **Retenu** : (1) tracé en **#855** (P3) — le passage en `spawn_blocking` change la propagation d'une panique et le
+  partage du verrou pdfium : pas mécanique ; (2) tracé en **#856** (P3, test) ; la réparation du test cassé, elle, est
   mécanique et intégrée (C-v017-5-6).
+- **Réversible** : oui.
+
+### C-v017-5-12 — #854 ne se ferme qu'au constat du Project Lead
+
+*(Ajouté à la validation P1, décision de l'orchestrateur — R14.)*
+
+- **Contexte** : la preuve de la story porte sur des fixtures synthétiques ; les deux pièces de #854 sont réelles et ne
+  s'ouvrent pas ici. Fermer #854 sur la seule preuve synthétique fermerait peut-être un défaut réel non corrigé.
+- **Retenu** : commits **et PR de release** en `refs #854` ; #854 se ferme quand le Project Lead a constaté, sur son
+  installation, après la mise à jour, que ses deux factures communales sont lues (retrait et redépôt), et rapporte
+  seulement « lues » ou « non lues ». Recette écrite dans la fiche (§ *Fermeture de #854*).
+- **Écartées** : (b) `closes #854` sur la PR — fermeture sans constat sur le cas réel.
+- **Réversible** : oui.
+
+### C-v017-5-13 — La cause se teste en CI par sa grandeur, non par une faiblesse du décodeur
+
+*(Ajouté à la validation P1 — R5, R6.)*
+
+- **Contexte** : le témoin « non lu à 595 × 842 px » de T2 exigeait que `rxing` **échoue** ; `rxing = "0.7"` admet toute
+  0.7.x, et une montée peut le faire lire sans que rien ne soit faux. Le rééchantillonnage `Triangle` n'est pas celui de
+  pdfium.
+- **Retenu** : en CI, une assertion sur la **grandeur causale** (pixels par module au premier et au second rendu,
+  calculés depuis la version du QR des fixtures) ; le contrôle « non lu à 72 dpi » devient un diagnostic `#[ignore]`,
+  joué à la main avec T4 ; **T4, sous pdfium, fait foi** en cas de contradiction avec T2. Le témoin vectoriel de T4 a un
+  payload nommé (celui de `render_spc_qr_png`, `qr_decode.rs:210-227`) et une branche d'arrêt s'il n'est pas lu au
+  commit rouge.
+- **Écartées** : (b) garder le témoin négatif en CI — fragile par construction.
 - **Réversible** : oui.
