@@ -1,6 +1,6 @@
 # Story v017-4b : factures fournisseur — brouillon, validée, payée — l'écran
 
-Status: ready-for-dev
+Status: in-progress
 
 *Sous-fiche issue du découpage de la Story v017-4 à sa rédaction (2026-10-31, C-v017-4-1). Même worktree et même
 branche que la `v017-4a` ; **dépend de la 4a** (routes, codes, K8) : développement après le commit de son code.
