@@ -2299,7 +2299,9 @@ async fn supplier_candidates_and_the_payment_batch_of_the_account(pool: MySqlPoo
 
 /// T-b9 (AC-b3) — un TTC à plus de deux décimales (`100.0040`) n'égale jamais
 /// un débit au centime (`100.00`) : absent des candidates, présent des
-/// factures masquantes (0,05 au plus). L'angle mort L2 (#687).
+/// factures masquantes (0,05 au plus). L'angle mort L2 (#687) — depuis la
+/// v0.17.0, l'état d'une facture enregistrée avant : la création refuse une
+/// ligne sous le centime, d'où l'insertion directe de ce test.
 #[sqlx::test(migrations = "./test-schema")]
 async fn a_supplier_ttc_under_the_centime_is_masking_not_candidate(pool: MySqlPool) {
     let (company_id, contact_id, _bank, je_id) = seed_supplier_301b(&pool).await;

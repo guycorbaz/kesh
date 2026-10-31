@@ -609,12 +609,9 @@ fn outils_et_politique_en_leur_lieu() {
     );
 
     let donnees = re(r"\bDonnees\s*::\s*nouvelles\b|\bDonnees\s*\{");
+    assert_eq!(sites_factices("    Ok(Donnees::nouvelles(t))", &donnees), 1);
     assert_eq!(
-        sites_factices("    Ok(Donnees::nouvelles(t, None))", &donnees),
-        1
-    );
-    assert_eq!(
-        sites_factices("    let d = Donnees { texte, structure };", &donnees),
+        sites_factices("    let d = Donnees { texte, resume };", &donnees),
         1
     );
     assert_eq!(sites_factices("    donnees: Donnees,", &donnees), 0);
@@ -635,7 +632,7 @@ fn outils_et_politique_en_leur_lieu() {
         sites(&sources_src(), |f| f == "mcp/sortie.rs", &donnees),
         liste(&[(
             "mcp/sortie.rs",
-            "Ok(Donnees::nouvelles(texte, Some(valeur)).avec_resume(resume))"
+            "Ok(Donnees::nouvelles(texte).avec_resume(resume))"
         )]),
         "témoin : la fabrique"
     );
@@ -2143,4 +2140,53 @@ fn envoi_valide_construit_par_le_service_seul() {
         );
         assert!(fautifs.is_empty(), "{nom} : {fautifs:?}");
     }
+}
+
+// ---------------------------------------------------------------------------
+// Story v016-1 (AC-4, #811) — structured_content_nulle_part
+// ---------------------------------------------------------------------------
+
+/// **Propriété** : aucun `result` de `tools/call` ne porte de
+/// `structuredContent` (v016-1, C-v016-1-1 ; #811) — Claude Code 2.1.312 ne
+/// transmet au modèle que ce champ quand il est présent, si bien que tout ce que
+/// `content` porte de plus n'atteignait pas l'agent. **Périmètre** : les lignes
+/// de code de `crates/kesh-api/src/` (hors lignes de commentaire,
+/// `est_commentaire`). **Formes** : la clé JSON `structuredContent`, et le champ
+/// Rust `structured_content` qu'un `#[serde(rename_all = "camelCase")]`
+/// sérialiserait en `structuredContent` (forme probable d'un retour par un SDK
+/// tel que `rmcp`), toutes casses.
+///
+/// ⚠️ **Angles morts** : (1) une clé **construite** (`format!`, concaténation)
+/// lui échappe — le cas de contrat `k23_un_seul_canal` (`mcp_contrat.rs`) et les
+/// attendus comparés par égalité (`tests/common/mcp.rs`, `mcp_prompts_e2e.rs`,
+/// `mcp_envois_e2e.rs`) la rattrapent sur chaque site existant ; une clé posée par
+/// une dépendance hors de `src/` lui échappe aussi. (2) À l'inverse,
+/// `est_commentaire` n'exclut que les lignes qui **commencent** par `//` : un
+/// commentaire de bloc `/* … */`, un `#[doc = "…"]`, un commentaire en fin de
+/// ligne ou un test de `src/` (`mod tests`) qui écrirait la chaîne en code la
+/// feraient rougir **à tort** — ne pas tester l'absence de la clé par un littéral
+/// dans `src/` : le faire dans `tests/`.
+#[test]
+fn structured_content_nulle_part() {
+    let motif = re(r"(?i)structured_?content");
+    assert_eq!(
+        sites_factices(r#"        "structuredContent": s,"#, &motif),
+        1,
+        "rouge factice : la clé JSON"
+    );
+    assert_eq!(
+        sites_factices("    structured_content: Some(v),", &motif),
+        1,
+        "rouge factice : le champ d'un SDK"
+    );
+    assert_eq!(
+        sites_factices("    /// structuredContent", &motif),
+        0,
+        "vert factice : un commentaire"
+    );
+    let trouves = sites(&sources_src(), tout, &motif);
+    assert!(
+        trouves.is_empty(),
+        "structuredContent dans un résultat de tools/call (#811, C-v016-1-1) : {trouves:#?}"
+    );
 }

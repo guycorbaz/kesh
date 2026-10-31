@@ -1,0 +1,31 @@
+{
+  "ok": [
+    {
+      "account_iban": "CH4431999123000889012",
+      "closing_balance": "1075.00",
+      "currency": "CHF",
+      "opening_balance": "1000.00",
+      "period_from": "2026-05-01",
+      "period_to": "2026-05-31",
+      "source_format": {
+        "kind": "camt053",
+        "version": "001.04"
+      },
+      "statement_id": "STMT-IBAN-INVALID",
+      "transactions": [
+        {
+          "amount": "75.00",
+          "booking_date": "2026-05-15",
+          "counterparty_iban": "CH00000000000000000000",
+          "counterparty_name": "Client IBAN cassé",
+          "currency": "CHF",
+          "details": "IBAN counterparty checksum invalide",
+          "end_to_end_id": "E2E-IB-001",
+          "reference": null,
+          "transaction_id": "BANK-IB-001",
+          "value_date": null
+        }
+      ]
+    }
+  ]
+}

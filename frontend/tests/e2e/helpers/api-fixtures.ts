@@ -8,7 +8,36 @@
  */
 import { expect } from '@playwright/test';
 import type { Page } from '@playwright/test';
-import { authedApiContext, disposeContextSafe } from './test-state';
+import { authedApiContext, clearAuthStorage, disposeContextSafe } from './test-state';
+
+/** Mot de passe des utilisateurs créés par `createUser`. */
+export const USER_PASSWORD = 'MotDePasse12345';
+
+/**
+ * Crée un utilisateur du rôle donné (`Admin`, `Comptable`, `Consultation`), en se
+ * connectant comme l'Admin du seed ; se déconnecte ensuite et rend son nom. Son mot de
+ * passe est `USER_PASSWORD`. Extraite d'`audit-log.spec.ts` (Story v016-2b, #816) :
+ * `bank-manual-statement.spec.ts` l'emploie aussi.
+ */
+export async function createUser(page: Page, role: string): Promise<string> {
+	await page.goto('/login');
+	await page.fill('#username', 'admin');
+	await page.fill('#password', 'admin123');
+	await page.click('button[type="submit"]');
+	await expect(page).toHaveURL('/');
+	const ctx = await authedApiContext(page);
+	const username = `${role.toLowerCase()}-${Date.now()}-${Math.floor(Math.random() * 1e6)}`;
+	try {
+		const res = await ctx.post('/api/v1/users', {
+			data: { username, password: USER_PASSWORD, role },
+		});
+		expect(res.ok(), `création de l'utilisateur ${role} : ${res.status()}`).toBeTruthy();
+	} finally {
+		await disposeContextSafe(ctx);
+	}
+	await clearAuthStorage(page);
+	return username;
+}
 
 /**
  * Échéance suffisamment passée pour être éligible au niveau 1 (seuil `today - 15j` :

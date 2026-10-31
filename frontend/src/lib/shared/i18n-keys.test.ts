@@ -25,6 +25,7 @@ import { describe, it, expect } from 'vitest';
 
 import { IMPORT_ERROR_LABELS } from '$lib/features/imported-supplier-invoices/error-label';
 import { CSV_LINE_ERROR_LABELS } from '$lib/features/bank-import/csv-line-error-label';
+import { MANUAL_STATEMENT_REASON_LABELS } from '$lib/features/bank-import/manual-statement-reason-label';
 import { readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 // Seul import de production autorisé (AC7 / D1-bis) : un utilitaire de lecture, sans
@@ -764,22 +765,82 @@ const ATTENDU = {
 	// même `grep` aux deux bornes (`f9b154f8` → HEAD), périmètre : les fichiers touchés —
 	// `McpKeysSection.svelte` 60 → 61 (`mcp-server-form-expires-invalid`, B3),
 	// `McpSettingsSection.svelte` 33 → 34 (`mcp-server-settings-retry`, E3). Que des littéraux.
-	sitesTotal: 2619,
+	// Story v017-2 (#809, l'assistant affiche le motif d'un refus) : **2619 → 2620** (+1),
+	// mesuré par la collecte de ce test et recompté par `grep -oE '(i18nMsg|[^a-zA-Z]msg)\('`
+	// aux deux bornes (`c5101b07` → HEAD de `story/v017-2-assistant-motif`), périmètre : les
+	// fichiers touchés par la branche — `routes/onboarding/+page.svelte` 59 → 60 (+1 S1,
+	// `onboarding-language-error` au lieu du littéral ; +1 indication du pays,
+	// `onboarding-field-country-hint` ; −1 `onboarding-finalize-error`, écrit une fois au lieu
+	// de deux dans `reportFinalizeError`) ; `shared/utils/error-message.ts` 1 → 1. Que des
+	// littéraux : les autres compteurs inchangés.
+	// Story v017-3b (#687, 2026-10-30) : **2619 → 2623** (+4), recompté par le même `grep` aux
+	// deux bornes (`899f564a` → HEAD de la branche), périmètre : les fichiers touchés —
+	// `supplier-invoice-form.ts` 16 → 17 (`-errors-line-not-in-centimes`),
+	// `SupplierInvoiceForm.svelte` 42 → 44 (`-err-line-not-in-centimes`,
+	// `-line-not-in-centimes`), `SupplierInvoiceTotal.svelte` 0 → 1 (fichier neuf,
+	// `-subcentime-total-warning`) ; `[id]/+page.svelte` 50 → 50 et
+	// `AttachDocumentPicker.svelte` 15 → 15. Que des littéraux.
+	// Release 0.17.0 (branche `release/0.17.0`, 2026-10-31) : les deux stories ci-dessus,
+	// réunies par fusion, sont **mesurées** sur l'arbre réuni par la collecte de ce test —
+	// non additionnées : **2619 → 2624** (+5 = +1 de la v017-2, +4 de la v017-3b ; mesuré
+	// après la fusion de `story/v017-3-rapprochement-attente`, bornes `99566298` → arbre réuni).
+	// Story v017-3a (#671, AC-13) : **2619 → 2635** (+16), recompté le 2026-10-30 par
+	// `grep -o "i18nMsg("` aux deux bornes (`af560b78` → HEAD de
+	// `story/v017-3a-rattacher-ecriture`), périmètre : les fichiers touchés —
+	// `LinkSettlementModal.svelte` 15 → 31 (les deux sections, leurs colonnes et listes vides,
+	// la phrase du jour, l'introduction datée et sa case), `ReconciliationProposals.svelte`
+	// 29 → 29. Que des littéraux. ⚠️ La v016-2b change aussi ce compteur : à **recompter**
+	// après réunion, jamais additionner.
+	// Release 0.17.0, après la fusion de `story/v017-3a-rattacher-ecriture` (2026-10-31) :
+	// mesuré sur l'arbre réuni des trois stories (v017-2, v017-3b, v017-3a) par la collecte de
+	// ce test, non additionné : **2619 → 2640** (+21 = +1 v017-2, +4 v017-3b, +16 v017-3a ;
+	// bornes `99566298` → arbre réuni). La v016-2b le changera encore : à remesurer.
+	// Story v016-2b (refs #816, saisir un relevé à la main) : **2619 → 2711** (+92), mesuré
+	// par la collecte de ce test et recompté par `grep -oE '(i18nMsg|[^a-zA-Z]msg)\('` aux
+	// deux bornes (`285d2fde` → tête de `story/v016-2b-releve-manuel-ecran`), périmètre : les
+	// fichiers touchés hors tests — `features/bank-import/ManualStatementForm.svelte` 0 → 51,
+	// `bank-import-display.ts` 0 → 3, `manual-statement-reason-label.ts` 0 → 1 (le gabarit
+	// ci-dessous), `DeleteBankImportAction.svelte` 8 → 14, `BankImportList.svelte` 5 → 5 ;
+	// `routes/(app)/bank-import/[id]/+page.svelte` 4 → 28, `bank-import/+page.svelte` 4 → 5,
+	// `bank-import/manual/+page.svelte` 0 → 6 ; `bank-accounts/+page.svelte` 73 → 73,
+	// `fiscal-years/closing-checks-labels.ts` 20 → 20 (replis récrits). `sitesNonResolus`
+	// et `relais` inchangés.
+	// Story v016-2b, remédiation de la revue de code P1 : **2711 → 2713** (+2), recompté par le
+	// même `grep` aux deux bornes (`9f576786` → tête), périmètre : les fichiers touchés —
+	// `ManualStatementForm.svelte` 51 → 52 (`bank-import-manual-warning-duplicate-lines-generic`),
+	// `bank-import/manual/+page.svelte` 6 → 7 (`bank-import-manual-load-error`). Que des littéraux.
+	// Remédiation de la revue de code P2 : **2713 → 2714** (+1), même `grep` aux deux bornes
+	// (`c3f9d6e2` → tête) — `ManualStatementForm.svelte` 52 → 53
+	// (`bank-import-manual-preview-outdated-server`). Un littéral.
+	// Release 0.17.0, après la fusion de `story/v016-2b-releve-manuel-ecran` (2026-10-31) :
+	// mesuré sur l'arbre réuni des quatre stories à écran (v017-2, v017-3b, v017-3a, v016-2b ;
+	// la v017-1 n'en a pas) par la collecte de ce test, non additionné : **2619 → 2735**
+	// (+116 = +1 v017-2, +4 v017-3b, +16 v017-3a, +95 v016-2b, aucun site commun ; bornes
+	// `336608f2` et `4cd761ea` → arbre réuni).
+	sitesTotal: 2735,
 	sitesNonResolus: 31,
 	relais: 6,
 	// Story 26-1 (#620, AC3-bis) : **10 → 11** — `lib/features/bank-import/
 	// csv-line-error-label.ts` (`bank-import-csv-errors-`), table littérale des codes
 	// d'erreur de ligne CSV, patron d'`imported-supplier-invoices/error-label.ts`.
-	sitesGabarit: 11,
+	// Story v016-2b (#816, AC-24) : **11 → 12** — `lib/features/bank-import/
+	// manual-statement-reason-label.ts` (`bank-import-manual-reason-`), table littérale des
+	// `reason` d'un refus `BANK_STATEMENT_INVALID`, même patron.
+	sitesGabarit: 12,
 	litterauxMin: 1050,
 	clesDepuisTsMin: 5
 } as const;
 
 /**
- * Les 9 préfixes dynamiques et leurs valeurs, **écrites en dur**.
+ * Les 10 préfixes dynamiques et leurs valeurs, **écrites en dur**.
  *
  * (Story 26-1 : 8 → 9, avec `bank-import-csv-errors-` — les six codes d'erreur de ligne
  * de l'import CSV, dont `amount-sign-mismatch`.)
+ *
+ * (Story v016-2b, #816 : 9 → 10, avec `bank-import-manual-reason-` — les onze `reason`
+ * d'un refus `BANK_STATEMENT_INVALID`. ⚠️ Cette liste recopie l'ensemble fermé ; ce qui le
+ * lie au serveur est le test Rust croisé de `crates/kesh-api/tests/textes_coherents.rs`,
+ * qui égale la table de production à `ManualStatementReason::ALL`.)
  *
  * ⚠️ Les lire depuis le code de production ferait qu'une carte vidée par erreur rendrait
  * le test vert à vide — le mode d'échec du test muet. La contrepartie est l'assertion de
@@ -830,6 +891,12 @@ const MOTIFS_DYNAMIQUES: Record<string, readonly string[]> = {
 		'row-too-short', 'amount-sign-mismatch',
 		// Story 27-2 (#624) — cellule Devise illisible.
 		'invalid-currency'
+	],
+	// Story v016-2b (#816, AC-24) — `lib/features/bank-import/manual-statement-reason-label.ts`.
+	'bank-import-manual-reason-': [
+		'required', 'invalid-date', 'invalid-number', 'period-inverted', 'too-many-lines',
+		'out-of-period', 'too-long', 'not-positive', 'too-many-decimals', 'too-many-digits',
+		'unknown-direction'
 	]
 };
 
@@ -879,7 +946,9 @@ const CARDINALITES: Record<string, number> = {
 	'imported-supplier-invoices-error-': Object.keys(IMPORT_ERROR_LABELS).length,
 	'bank-import-info-': 3,
 	// Story 26-1 : LUE depuis la production, comme la carte des erreurs d'import.
-	'bank-import-csv-errors-': Object.keys(CSV_LINE_ERROR_LABELS).length
+	'bank-import-csv-errors-': Object.keys(CSV_LINE_ERROR_LABELS).length,
+	// Story v016-2b (#816) : LUE depuis la production, comme les deux précédentes.
+	'bank-import-manual-reason-': Object.keys(MANUAL_STATEMENT_REASON_LABELS).length
 };
 
 /**
@@ -949,9 +1018,10 @@ const FAMILLES_RESOLUES: Record<string, readonly string[]> = {
 };
 
 /**
- * Les 11 sites de gabarit, **confrontés et non produits**.
+ * Les 12 sites de gabarit, **confrontés et non produits**.
  *
- * (Story 26-1 : 10 → 11, `csv-line-error-label.ts`.)
+ * (Story 26-1 : 10 → 11, `csv-line-error-label.ts`. Story v016-2b, #816 : 11 → 12,
+ * `manual-statement-reason-label.ts`.)
  *
  * ⚠️ Le développeur ne doit pas *fabriquer* cette liste par l'extraction — c'est elle
  * qui a déjà échoué cinq fois. Il la *compare*. Un simple compte laisserait d'ailleurs
@@ -968,7 +1038,8 @@ const SITES_GABARIT_ATTENDUS: readonly string[] = [
 	'routes/(app)/journal-entries/+page.svelte  journal-',
 	'routes/(app)/settings/vat-rates/+page.svelte  vat-category-',
 	'lib/features/imported-supplier-invoices/error-label.ts  imported-supplier-invoices-error-',
-	'lib/features/bank-import/csv-line-error-label.ts  bank-import-csv-errors-'
+	'lib/features/bank-import/csv-line-error-label.ts  bank-import-csv-errors-',
+	'lib/features/bank-import/manual-statement-reason-label.ts  bank-import-manual-reason-'
 ];
 
 /**
@@ -1169,7 +1240,7 @@ describe('garde i18n — les clés demandées existent au catalogue', () => {
 		}
 	});
 
-	it('les 9 préfixes dynamiques sont déclarés, et leurs 11 sites confrontés', () => {
+	it('les 10 préfixes dynamiques sont déclarés, et leurs 12 sites confrontés', () => {
 		expect([...new Set(releve.gabarits)].sort()).toEqual([...SITES_GABARIT_ATTENDUS].sort());
 		expect(releve.gabarits.length).toBe(ATTENDU.sitesGabarit);
 		const prefixesVus = new Set(releve.gabarits.map((g) => g.split('  ')[1]));

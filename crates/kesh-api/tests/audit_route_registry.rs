@@ -24,13 +24,14 @@
 //! ⚠️ Comparer des NOMBRES ne détecterait pas une route retirée pendant qu'une
 //! autre est ajoutée : le compte resterait égal et la dérive invisible. Le test
 //! `admin_pat_denied_e2e` peut compter, lui, parce qu'il opère sur un bloc clos
-//! entre marqueurs ; les 135 routes sont réparties dans tout le fichier.
+//! entre marqueurs ; les 138 routes sont réparties dans tout le fichier.
 //!
 //! # Deux fichiers, deux volets
 //!
-//! L'ensemble clos de l'INVENTAIRE est celui de `lib.rs` (135 routes à la
-//! Story 32-10a-iii, dont `/mcp`, monté par `route_service` — Story 32-6a) ;
-//! celui du REGISTRE est plus large (138), car trois routes mutantes vivent dans
+//! L'ensemble clos de l'INVENTAIRE est celui de `lib.rs` (138 routes à la
+//! release 0.17.0 — v017-3a et v016-2a réunies, mesuré le 2026-10-31 —, dont
+//! `/mcp`, monté par `route_service` — Story 32-6a) ;
+//! celui du REGISTRE est plus large (141), car trois routes mutantes vivent dans
 //! `routes/test_endpoints.rs` et sont montées par un `nest()`. D'où :
 //!
 //! - volet « route absente du registre » → sur les **deux** fichiers, faute de
@@ -154,7 +155,7 @@
 //!   `post`, `put`, `delete` et `patch`. Aucune route `GET` n'écrit au journal
 //!   aujourd'hui (remontée de l'AC1 : des `POST` et un `DELETE`) ; l'angle mort
 //!   est du même ordre que celui de l'audit (`GET /invoices/{id}/pdf`, plus bas).
-//! - **(vi)** **dix-sept routes `SansEcritureAuJournal` sont rejouées quand
+//! - **(vi)** **dix-huit routes `SansEcritureAuJournal` sont rejouées quand
 //!   même** : `onboarding::finalize` (enveloppe `AppError`, Story 15-5e2 — la
 //!   seule des neuf routes d'étape à l'être, cf. (iv)),
 //!   `company_invoice_settings::update_invoice_settings` (enveloppe `DbError`,
@@ -248,7 +249,17 @@
 //!   puis verrouillent une facture) ; le détachement ne
 //!   verrouille que la ligne du document. Tenues par les tests sans rejeu de
 //!   `crates/kesh-db/tests/supplier_document_attachment.rs`, **aucune preuve
-//!   dynamique du rejeu** (C-30-2-45). Dix-sept avec elles.
+//!   dynamique du rejeu** (C-30-2-45). Dix-sept avec elles. Et — Story
+//!   v017-3a, #671 — `reconciliation::post_link_entry` (enveloppe `AppError`
+//!   `crate::retry::retry_app_on_deadlock`, opération
+//!   `reconciliation::link_entry`, comme `post_link_transaction`) : le
+//!   rattachement à une écriture n'écrit rien au journal, mais il verrouille,
+//!   sous le verrou nommé du compte, la transaction puis l'écriture
+//!   (`reconciliation_link::link_entry_in_tx`), que se disputent la
+//!   contre-passation, la modification et la suppression d'une écriture ;
+//!   tenue par sa revue et par l'entrelacement forcé T-race-3
+//!   (`reconciliation_link_entry_e2e.rs`), **aucune preuve dynamique du
+//!   rejeu** (aucun interblocage forcé). Dix-huit avec elle.
 //! - **(vii)** — **angles morts assumés du volet (c bis)** (revue P1 de la
 //!   15-5e2, L-3 = B-4 = A5). Le volet reconnaît un appel au **dernier
 //!   segment** du chemin appelé (`retry_with`) dans un arbre `syn` ; il ne voit
@@ -454,6 +465,9 @@ const LIB_ROUTES: &[(&str, &str, Status, Rejeu)] = &[
     ("post", "bank_imports::preview", NoMatter("parse et valide sans persistance — aucune mutation"), SansEcritureAuJournal),
     ("post", "bank_imports::create", Traced, SansEcritureAuJournal),
     ("delete", "bank_imports::delete", Traced, SansEcritureAuJournal),
+    // Story v016-2a (#816) — saisir un relevé à la main.
+    ("post", "bank_statements_manual::preview", NoMatter("analyse et contrôle un relevé saisi, sans persistance — aucune mutation"), SansEcritureAuJournal),
+    ("post", "bank_statements_manual::create", Traced, SansEcritureAuJournal),
     ("post", "bank_profiles::create", Traced, SansEcritureAuJournal),
     ("put", "bank_profiles::update", Traced, SansEcritureAuJournal),
     ("delete", "bank_profiles::delete", Traced, SansEcritureAuJournal),
@@ -467,6 +481,8 @@ const LIB_ROUTES: &[(&str, &str, Status, Rejeu)] = &[
     ("post", "reconciliation::post_unreject_transaction", Traced, SansEcritureAuJournal),
     // Story 29-8 (#670) — `reconciliation.linked` ; rejouée (point (vi)).
     ("post", "reconciliation::post_link_transaction", Traced, SansEcritureAuJournal),
+    // Story v017-3a (#671) — `reconciliation.entry_linked` ; rejouée (point (vi)).
+    ("post", "reconciliation::post_link_entry", Traced, SansEcritureAuJournal),
     // Story 29-4a (#651), revue de code P1 (E-1) — la création, le `PUT` et
     // l'archivage : rejoués, victimes possibles du cycle avec un import ou un
     // lot qui tient le compte et attend la sentinelle (point (vi)).
@@ -906,13 +922,18 @@ fn the_registry_partition_is_what_the_story_declares() {
 
     assert_eq!(
         LIB_ROUTES.len(),
-        135,
-        "l'inventaire porte sur 135 routes (+ 1 : `/mcp`, 32-6a ; + 1 : la décision d'un \
-         envoi MCP, 32-8b ; + 5 : les routes mutantes des prompts du serveur MCP, 32-10a-iii)"
+        138,
+        "l'inventaire porte sur 138 routes (+ 1 : `/mcp`, 32-6a ; + 1 : la décision d'un \
+         envoi MCP, 32-8b ; + 5 : les routes mutantes des prompts du serveur MCP, 32-10a-iii ; \
+         + 1 : le rattachement d'une transaction à une écriture, v017-3a ; + 2 : l'aperçu et \
+         la création d'un relevé saisi à la main, v016-2a)"
     );
     assert_eq!(traced + exempt + no_matter, LIB_ROUTES.len());
+    // Release 0.17.0 (2026-10-31) : 130 dans la v017-3a ET dans la v016-2a (chacune +1
+    // depuis 129) — git a fusionné la ligne identique sans conflit ; **131 mesuré** sur
+    // l'arbre réuni.
     assert_eq!(
-        traced, 129,
+        traced, 131,
         "73 tracées avant la 25-1b, plus ses 14, plus la dévalidation (25-2-b-1, #440), \
          plus l'annulation d'un règlement client (25-3-a-1) et fournisseur (25-3-a-2, #414), \
          plus l'annulation d'un rapprochement (25-3-b, #418), plus le solde du reste \
@@ -932,16 +953,18 @@ fn the_registry_partition_is_what_the_story_declares() {
          MCP et l'enregistrement de ses réglages (32-5c, refs #723), plus chaque appel \
          d'outil MCP (32-6b, #723), plus la décision d'un envoi du serveur MCP (32-8b, \
          refs #723), plus les cinq routes mutantes des prompts du serveur MCP (32-10a-iii, \
-         refs #723)"
+         refs #723), plus le rattachement d'une transaction à une écriture (v017-3a, \
+         refs #671), plus la saisie manuelle d'un relevé (v016-2a, refs #816)"
     );
     assert_eq!(exempt, 4, "4 routes d'auth (#435)");
     assert_eq!(
-        no_matter, 2,
-        "deux routes mutantes qui ne mutent rien (le `PUT` des écritures en est sorti, 15-8a)"
+        no_matter, 3,
+        "trois routes mutantes qui ne mutent rien (le `PUT` des écritures en est sorti, 15-8a ; \
+         l'aperçu de la saisie manuelle d'un relevé y est entré, v016-2a)"
     );
     assert_eq!(
         LIB_ROUTES.len() + TEST_ENDPOINT_ROUTES.len(),
-        138,
+        141,
         "le registre est plus large que l'inventaire, et c'est voulu"
     );
 }
@@ -1309,19 +1332,20 @@ fn the_replay_partition_is_what_the_story_declares() {
     );
     assert_eq!(exemptees, 3, "full_import, /seed, /reset");
     assert_eq!(
-        sans_ecriture, 110,
-        "109 routes de lib.rs (la remise à zéro y est entrée, 15-7b2 ; la suppression d'un \
+        sans_ecriture, 113,
+        "112 routes de lib.rs (la remise à zéro y est entrée, 15-7b2 ; la suppression d'un \
          import, 27-1 ; l'annulation d'un rejet, 28-5a ; la clôture et la réouverture d'un \
          compte bancaire, 28-4a ; le rattachement d'une transaction à un règlement, 29-8 ; \
          le rattachement et le détachement d'un document fournisseur, 30-2c ; le réglage et \
          « Sauvegarder maintenant » de la sauvegarde automatique, 31-1c ; les quatre routes \
          mutantes des clés et des réglages du serveur MCP, 32-5c ; + 1 : `/mcp`, 32-6a ; la \
          décision d'un envoi du serveur MCP, 32-8b ; les cinq routes mutantes des prompts \
-         du serveur MCP, 32-10a-iii), \
+         du serveur MCP, 32-10a-iii ; le rattachement d'une transaction à une écriture, \
+         v017-3a ; l'aperçu et la création de la saisie manuelle d'un relevé, v016-2a), \
          plus /password-reset-token de test_endpoints.rs"
     );
     assert_eq!(rejouees + exemptees + sans_ecriture, tout.len());
-    assert_eq!(tout.len(), 138);
+    assert_eq!(tout.len(), 141);
 }
 
 /// Visiteur `syn` d'un fichier de routes : relève chaque appel à la primitive

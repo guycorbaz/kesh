@@ -374,3 +374,307 @@ async fn find_by_id_for_company_returns_account_when_owned(pool: MySqlPool) {
     assert_eq!(acc.id, bank_id);
     assert_eq!(acc.iban, "CH4431999123000889012");
 }
+
+// ---------------------------------------------------------------------------
+// Story v016-2a (#816) — previous_statement_closing (AC-6) et
+// overlapping_statements (AC-7).
+// ---------------------------------------------------------------------------
+
+fn date(s: &str) -> NaiveDate {
+    NaiveDate::parse_from_str(s, "%Y-%m-%d").unwrap()
+}
+
+/// Crée un relevé sans ligne sur `[from, to]`, de solde d'arrivée `closing`
+/// (`None` : un CSV sans solde), puis fixe son `imported_at`.
+#[allow(clippy::too_many_arguments)]
+async fn statement(
+    pool: &MySqlPool,
+    company_id: i64,
+    bank_id: i64,
+    user_id: i64,
+    from: &str,
+    to: &str,
+    closing: Option<Decimal>,
+    imported_at: &str,
+) -> i64 {
+    let mut tx = pool.begin().await.unwrap();
+    let mut new = make_new_import(company_id, bank_id, user_id, HASH_A);
+    new.period_from = date(from);
+    new.period_to = date(to);
+    new.closing_balance = closing;
+    new.opening_balance = closing.map(|_| dec!(0));
+    new.source_format = if closing.is_some() {
+        BankImportSourceFormat::Manual
+    } else {
+        BankImportSourceFormat::Csv
+    };
+    new.transaction_count = 0;
+    let (h, _) = bank_imports::create_with_transactions(&mut tx, new, vec![])
+        .await
+        .unwrap();
+    tx.commit().await.unwrap();
+    sqlx::query("UPDATE bank_imports SET imported_at = ? WHERE id = ?")
+        .bind(imported_at)
+        .bind(h.id)
+        .execute(pool)
+        .await
+        .unwrap();
+    h.id
+}
+
+struct Fx {
+    company: i64,
+    user: i64,
+    bank: i64,
+}
+
+async fn fx(pool: &MySqlPool) -> Fx {
+    let company = create_test_company(pool, "Acme").await;
+    let user = create_test_user(pool, "alice", company).await;
+    let bank = create_test_bank_account(pool, company, "CH4431999123000889012").await;
+    Fx {
+        company,
+        user,
+        bank,
+    }
+}
+
+#[sqlx::test(migrations = "./test-schema")]
+async fn previous_statement_closing_takes_the_latest_period_to(pool: MySqlPool) {
+    let f = fx(&pool).await;
+    let _aout = statement(
+        &pool,
+        f.company,
+        f.bank,
+        f.user,
+        "2026-08-01",
+        "2026-08-31",
+        Some(dec!(100)),
+        "2026-09-02 10:00:00",
+    )
+    .await;
+    // Importé AVANT l'autre, mais de période plus tardive : c'est lui.
+    let sept = statement(
+        &pool,
+        f.company,
+        f.bank,
+        f.user,
+        "2026-09-01",
+        "2026-09-30",
+        Some(dec!(250)),
+        "2026-09-01 10:00:00",
+    )
+    .await;
+    let got =
+        bank_imports::previous_statement_closing(&pool, f.company, f.bank, date("2026-10-01"))
+            .await
+            .unwrap();
+    assert_eq!(got, Some((sept, date("2026-09-30"), dec!(250))));
+}
+
+#[sqlx::test(migrations = "./test-schema")]
+async fn previous_statement_closing_breaks_ties_by_imported_at_then_id(pool: MySqlPool) {
+    let f = fx(&pool).await;
+    let tard = statement(
+        &pool,
+        f.company,
+        f.bank,
+        f.user,
+        "2026-09-01",
+        "2026-09-30",
+        Some(dec!(1)),
+        "2026-10-05 10:00:00",
+    )
+    .await;
+    let _tot = statement(
+        &pool,
+        f.company,
+        f.bank,
+        f.user,
+        "2026-09-15",
+        "2026-09-30",
+        Some(dec!(2)),
+        "2026-10-01 10:00:00",
+    )
+    .await;
+    let got =
+        bank_imports::previous_statement_closing(&pool, f.company, f.bank, date("2026-10-01"))
+            .await
+            .unwrap();
+    assert_eq!(got.map(|g| g.0), Some(tard), "imported_at DESC");
+
+    // Même period_to, même imported_at : l'id le plus grand gagne.
+    let dernier = statement(
+        &pool,
+        f.company,
+        f.bank,
+        f.user,
+        "2026-09-20",
+        "2026-09-30",
+        Some(dec!(3)),
+        "2026-10-05 10:00:00",
+    )
+    .await;
+    let got =
+        bank_imports::previous_statement_closing(&pool, f.company, f.bank, date("2026-10-01"))
+            .await
+            .unwrap();
+    assert_eq!(got.map(|g| g.0), Some(dernier), "id DESC");
+}
+
+#[sqlx::test(migrations = "./test-schema")]
+async fn previous_statement_closing_exclusions(pool: MySqlPool) {
+    let f = fx(&pool).await;
+    // Relevé sans solde (CSV) : exclu.
+    statement(
+        &pool,
+        f.company,
+        f.bank,
+        f.user,
+        "2026-09-01",
+        "2026-09-29",
+        None,
+        "2026-10-01 10:00:00",
+    )
+    .await;
+    // Relevé qui finit le jour même de `before` : exclu (strictement avant).
+    statement(
+        &pool,
+        f.company,
+        f.bank,
+        f.user,
+        "2026-09-01",
+        "2026-10-01",
+        Some(dec!(9)),
+        "2026-10-02 10:00:00",
+    )
+    .await;
+    // Autre compte, même société : exclu.
+    let other_bank = create_test_bank_account(&pool, f.company, "CH9300762011623852957").await;
+    statement(
+        &pool,
+        f.company,
+        other_bank,
+        f.user,
+        "2026-09-01",
+        "2026-09-30",
+        Some(dec!(7)),
+        "2026-10-01 10:00:00",
+    )
+    .await;
+    // Autre société : le même compte demandé sous une autre société.
+    let other_company = create_test_company(&pool, "Autre").await;
+    let got =
+        bank_imports::previous_statement_closing(&pool, other_company, f.bank, date("2026-10-15"))
+            .await
+            .unwrap();
+    assert_eq!(got, None, "autre société");
+
+    let got =
+        bank_imports::previous_statement_closing(&pool, f.company, f.bank, date("2026-10-01"))
+            .await
+            .unwrap();
+    assert_eq!(
+        got, None,
+        "CSV sans solde, jour même, autre compte : tous exclus"
+    );
+
+    // Le relevé du jour même devient le précédent dès le lendemain.
+    let got =
+        bank_imports::previous_statement_closing(&pool, f.company, f.bank, date("2026-10-02"))
+            .await
+            .unwrap();
+    assert_eq!(got.map(|g| g.2), Some(dec!(9)));
+}
+
+#[sqlx::test(migrations = "./test-schema")]
+async fn overlapping_statements_bounds_and_scope(pool: MySqlPool) {
+    let f = fx(&pool).await;
+    let jointif_avant = statement(
+        &pool,
+        f.company,
+        f.bank,
+        f.user,
+        "2026-08-01",
+        "2026-09-01",
+        None,
+        "2026-10-01 10:00:00",
+    )
+    .await;
+    let dedans = statement(
+        &pool,
+        f.company,
+        f.bank,
+        f.user,
+        "2026-09-10",
+        "2026-09-12",
+        Some(dec!(1)),
+        "2026-10-01 10:00:00",
+    )
+    .await;
+    let jointif_apres = statement(
+        &pool,
+        f.company,
+        f.bank,
+        f.user,
+        "2026-09-30",
+        "2026-10-31",
+        Some(dec!(1)),
+        "2026-10-01 10:00:00",
+    )
+    .await;
+    // Disjoints : exclus.
+    for (from, to) in [("2026-07-01", "2026-08-31"), ("2026-10-01", "2026-10-31")] {
+        statement(
+            &pool,
+            f.company,
+            f.bank,
+            f.user,
+            from,
+            to,
+            None,
+            "2026-10-01 10:00:00",
+        )
+        .await;
+    }
+    // Autre compte : exclu.
+    let other_bank = create_test_bank_account(&pool, f.company, "CH9300762011623852957").await;
+    statement(
+        &pool,
+        f.company,
+        other_bank,
+        f.user,
+        "2026-09-01",
+        "2026-09-30",
+        None,
+        "2026-10-01 10:00:00",
+    )
+    .await;
+
+    let got: Vec<i64> = bank_imports::overlapping_statements(
+        &pool,
+        f.company,
+        f.bank,
+        date("2026-09-01"),
+        date("2026-09-30"),
+    )
+    .await
+    .unwrap()
+    .into_iter()
+    .map(|i| i.id)
+    .collect();
+    assert_eq!(got, vec![jointif_avant, dedans, jointif_apres]);
+
+    // Autre société : rien.
+    let other_company = create_test_company(&pool, "Autre").await;
+    let got = bank_imports::overlapping_statements(
+        &pool,
+        other_company,
+        f.bank,
+        date("2026-09-01"),
+        date("2026-09-30"),
+    )
+    .await
+    .unwrap();
+    assert!(got.is_empty());
+}

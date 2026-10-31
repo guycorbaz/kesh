@@ -802,7 +802,9 @@ fn supplier_imputation_order_sql() -> String {
 /// 3. `total_amount = amount` — égalité **exacte** en décimal
 ///    (`DECIMAL(19,4)` contre `DECIMAL(18,2)`) : le règlement fournisseur est
 ///    binaire, du TTC entier (C-30-1-5). Un TTC à plus de deux décimales n'est
-///    jamais candidat (angle mort L2, #687) ;
+///    jamais candidat (angle mort L2, #687) — depuis la v0.17.0, seulement une
+///    facture enregistrée avant : la création refuse une ligne sous le centime
+///    (`purchase_lines_form`) ;
 /// 4. **jamais** une facture engagée dans un lot de paiement `generated` (le
 ///    fichier pain.001 est peut-être déjà à la banque) ;
 /// 5. la fenêtre fournisseur de l'[`InvoiceDateWindow`]

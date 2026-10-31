@@ -31,6 +31,16 @@ vi.mock('$lib/features/bank-import/bank-profile.api', () => ({
 	listBankProfiles: vi.fn(async () => ({ items: [], total: 0, page: 1, perPage: 50 })),
 }));
 
+// Story v016-2b (#816, AC-19) — le rôle courant, pour le lien de saisie à la main.
+const role = vi.hoisted(() => ({ value: 'Comptable' as string | null }));
+vi.mock('$lib/app/stores/auth.svelte', () => ({
+	authState: {
+		get currentUser() {
+			return role.value === null ? null : { role: role.value, username: 'u', userId: '1' };
+		},
+	},
+}));
+
 import Page from './+page.svelte';
 
 function deferred<T>() {
@@ -74,4 +84,32 @@ describe('Page d’import bancaire — chargement (Story 27-3, AC17 H11)', () =>
 		expect(container.textContent).not.toContain('common-loading');
 		expect(container.querySelector('[data-testid="bank-import-upload"]')).not.toBeNull();
 	});
+});
+
+// Story v016-2b (#816, AC-19) — « Saisir un relevé à la main » : Admin et Comptable
+// seulement (mutation M28 : lien affiché à tout rôle).
+describe('Page d’import bancaire — lien de saisie à la main (Story v016-2b, AC-19)', () => {
+	for (const r of ['Admin', 'Comptable']) {
+		it(`${r} ⇒ le lien vers /bank-import/manual est rendu`, async () => {
+			role.value = r;
+			companyGet.mockResolvedValue({ bankAccounts: [] });
+			const { container } = render(Page);
+			await flush();
+			const lien = container.querySelector<HTMLAnchorElement>('[data-testid="bank-import-manual-link"]');
+			expect(lien?.getAttribute('href')).toBe('/bank-import/manual');
+			expect(lien?.textContent?.trim()).toBe('bank-import-manual-link');
+		});
+	}
+
+	for (const r of ['Consultation', null]) {
+		it(`${r ?? 'aucun utilisateur'} ⇒ aucun lien (M28)`, async () => {
+			role.value = r;
+			companyGet.mockResolvedValue({ bankAccounts: [] });
+			const { container } = render(Page);
+			await flush();
+			// La page est chargée : l'absence du lien n'est pas celle d'une page vide.
+			expect(container.querySelector('[data-testid="bank-import-upload"]')).not.toBeNull();
+			expect(container.querySelector('[data-testid="bank-import-manual-link"]')).toBeNull();
+		});
+	}
 });

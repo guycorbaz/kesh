@@ -1,6 +1,8 @@
 //! Tests d'intégration du parseur CAMT.053 (Story 8-1a, AC #5 et #9).
 //!
-//! Les 14 fixtures (`ls tests/fixtures/camt053/ | wc -l`) couvrent :
+//! Les 19 fixtures (`ls tests/fixtures/camt053/*.xml | wc -l`) couvrent les cas
+//! ci-dessous ; les cinq ajoutées par la Story v017-1 (caractérisation, Latin-1,
+//! attribut en double) sont exercées par `camt053_golden.rs` :
 //! - v04 namespace par défaut + namespace préfixé (régression H4)
 //! - v08 namespace
 //! - Sous-transactions (FR49)

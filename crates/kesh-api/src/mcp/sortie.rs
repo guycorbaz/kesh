@@ -3,9 +3,10 @@
 //!
 //! **Une seule fabrique** : un outil ne rend ses données que par [`donnees`],
 //! qui sérialise **une fois** une structure déclarée par [`sortie!`] en une
-//! `serde_json::Value`, puis en tire les deux représentations — le contenu
-//! structuré, et **un** bloc de texte (`TEXTE_ENTETE_DONNEES`, une ligne vide,
-//! le JSON indenté de la même valeur). Dans `src/`, `Donnees::nouvelles` n'est
+//! `serde_json::Value`, puis en tire **un** bloc de texte
+//! (`TEXTE_ENTETE_DONNEES`, une ligne vide, le JSON indenté de la valeur) — le
+//! seul canal : depuis la 0.17.0, aucun contenu structuré ne part à côté
+//! (v016-1, C-v016-1-1 et C-v016-1-5 ; #811). Dans `src/`, `Donnees::nouvelles` n'est
 //! appelé qu'ici (garde `outils_et_politique_en_leur_lieu`).
 //!
 //! **Le typage ferme la classe « un texte libre sort sans enveloppe »** : une
@@ -192,14 +193,35 @@ impl Serialize for Date {
 impl scelle::Scelle for Date {}
 impl ChampSur for Date {}
 
-/// Un montant, en chaîne décimale — la forme de l'API (`rust_decimal`,
-/// fonctionnalité `serde-str`).
+/// Un montant — ou une quantité, un taux —, en chaîne décimale (`rust_decimal`,
+/// fonctionnalité `serde-str`), sous **une seule forme** (v016-1, C-v016-1-6 ;
+/// #812) : la valeur normalisée (`normalize` retire les zéros finals et rend
+/// `-0` en `0`), portée à deux décimales si elle en a moins (`rescale(2)`).
+/// `0.0000` et `0` sortent `"0.00"`, `123.4500` sort `"123.45"`, `100` sort
+/// `"100.00"`, `8.10` sort `"8.10"`, `0.0125` sort `"0.0125"`. **Aucune
+/// décimale réelle ne se perd** : `normalize` ne retire que des zéros finals,
+/// et `rescale` vers une échelle plus grande n'ajoute que des zéros.
+///
+/// **La borne** (revue de code P1, A5 et B6) : `rescale` ne rend jamais
+/// d'erreur ; quand la mantisse multipliée par cent ne tient plus dans les
+/// 96 bits d'un `Decimal` — au-delà d'environ 7,9·10^26 (2^96 / 100) —, il
+/// s'arrête à l'échelle la plus grande qu'il peut représenter, et la valeur
+/// sort alors avec moins de deux décimales, sans rien perdre d'elle-même
+/// (`rust_decimal` 1.43.0, doc de `rescale`). Inatteignable depuis la base :
+/// les colonnes décimales sont en `DECIMAL(19,4)`, `DECIMAL(18,2)`,
+/// `DECIMAL(7,2)` ou `DECIMAL(5,2)` (recompté dans `crates/kesh-db/migrations/`
+/// le 2026-10-29), seize chiffres entiers au plus ; une somme de telles valeurs
+/// en reste à des ordres de grandeur.
 pub struct Montant(pub Decimal);
 
 impl Serialize for Montant {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        let mut d = self.0.normalize();
+        if d.scale() < 2 {
+            d.rescale(2);
+        }
         // `Decimal::serialize` inhérente rend des octets : le trait, nommé.
-        Serialize::serialize(&self.0, serializer)
+        Serialize::serialize(&d, serializer)
     }
 }
 impl scelle::Scelle for Montant {}
@@ -416,10 +438,16 @@ impl Resume {
 // La fabrique (AC-a3)
 // ---------------------------------------------------------------------------
 
-/// Le texte et la valeur d'une sortie — **pure**. Le texte égale
+/// Le texte d'une sortie, et la valeur dont il dérive — **pure**. Le texte égale
 /// `TEXTE_ENTETE_DONNEES + "\n\n" + to_string_pretty(valeur)` ; au-delà de
 /// `MCP_ENVOI_OCTETS_MAX` octets, [`ErreurOutil::TropVolumineux`], sous les
 /// deux politiques (C-32-9-7).
+///
+/// Depuis la 0.17.0, la valeur n'est plus émise (#811) : la production
+/// ([`donnees`]) n'en garde que le texte ; un seul test de ce module la lit,
+/// `donnees_une_seule_source`, pour établir que le texte dérive d'une seule
+/// sérialisation. Elle est rendue plutôt que recalculée parce
+/// qu'elle est déjà construite — le texte en est le rendu (C-v016-1-15).
 pub(in crate::mcp) fn texte_et_valeur<T: ChampSur>(
     sortie: &T,
 ) -> Result<(String, serde_json::Value), ErreurOutil> {
@@ -438,13 +466,16 @@ pub(in crate::mcp) fn texte_et_valeur<T: ChampSur>(
     Ok((texte, valeur))
 }
 
-/// Les données d'un outil — **la seule fabrique** : une source, deux
-/// représentations dérivées (C-32-9-6), et le résumé de la demande.
+/// Les données d'un outil — **la seule fabrique** : une source sérialisée une
+/// fois (C-32-9-6), le seul texte qui en dérive, et le résumé de la demande.
+/// La valeur intermédiaire que rend [`texte_et_valeur`] est construite pour
+/// produire ce texte, puis abandonnée : elle n'est plus émise (v016-1,
+/// C-v016-1-5 et C-v016-1-15 ; #811).
 pub(in crate::mcp) fn donnees<T: ChampSur>(
     resume: Resume,
     sortie: &T,
 ) -> Result<Donnees, ErreurOutil> {
-    let (texte, valeur) = texte_et_valeur(sortie)?;
+    let (texte, _) = texte_et_valeur(sortie)?;
     let mut resume = resume.texte();
     if resume.len() > MCP_ENVOI_RESUME_OCTETS_MAX {
         // Inatteignable par construction (test `resume_borne`) ; tronqué à une
@@ -455,7 +486,7 @@ pub(in crate::mcp) fn donnees<T: ChampSur>(
         }
         resume.truncate(n);
     }
-    Ok(Donnees::nouvelles(texte, Some(valeur)).avec_resume(resume))
+    Ok(Donnees::nouvelles(texte).avec_resume(resume))
 }
 
 #[cfg(test)]
@@ -589,6 +620,35 @@ mod tests {
                 "texte": {"nonFiable": "libellé"}, "facultatif": null,
             })
         );
+    }
+
+    /// Story v016-1 (AC-7, #812) : une seule forme de montant — normalisé, au
+    /// moins deux décimales (C-v016-1-6).
+    #[test]
+    fn montant_forme_unique() {
+        let forme = |d: Decimal| serde_json::to_value(Montant(d)).unwrap();
+        // Un zéro négatif : `Neg` pose le bit de signe sur un zéro, là où
+        // `Decimal::from_parts(0, 0, 0, true, 4)` l'efface.
+        let z = -Decimal::new(0, 4);
+        assert!(z.is_sign_negative(), "témoin : un zéro négatif");
+        for (d, attendu) in [
+            (Decimal::new(0, 4), "0.00"),
+            (Decimal::ZERO, "0.00"),
+            (z, "0.00"),
+            (Decimal::new(1_234_500, 4), "123.45"),
+            (Decimal::new(100, 0), "100.00"),
+            (Decimal::new(125, 4), "0.0125"),
+            (Decimal::new(810, 2), "8.10"),
+            (Decimal::new(-5, 1), "-0.50"),
+            // Revue de code P1, E3 : une échelle normalisée de trois, que le
+            // seuil `scale() < 2` ne doit pas toucher — un seuil plus haut
+            // (`< 4`, `<= 3`) l'arrondirait en `1.13` ; et la quantité `2.5000`
+            // des colonnes, normalisée à une décimale puis portée à deux.
+            (Decimal::new(1_125, 3), "1.125"),
+            (Decimal::new(25_000, 4), "2.50"),
+        ] {
+            assert_eq!(forme(d), serde_json::json!(attendu), "{d:?}");
+        }
     }
 
     /// Le texte d'une structure `Textes` à un texte de `n` caractères ASCII.

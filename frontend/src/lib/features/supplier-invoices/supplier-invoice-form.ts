@@ -59,15 +59,39 @@ export function amountMismatch(lines: CreateSupplierInvoiceLineRequest[], target
 	}
 }
 
-/** `true` si le montant du QR porte des sous-centimes (plus de deux décimales non nulles). */
-export function hasSubCentime(amount: string | null): boolean {
-	if (!amount) return false;
+/**
+ * Le montant d'une ligne qui **n'est pas au centime**, ou `null` — Story v017-3b
+ * (#687, AC-12) : le miroir de `kesh_core::accounting::purchase_line_total`, qui
+ * reste juge (`SUPPLIER_INVOICE_LINE_NOT_IN_CENTIMES`).
+ *
+ * `quantité × prix` en `big.js` (jamais `parseFloat`) ; la quantité vide se lit `1`,
+ * comme l'envoi ; la virgule décimale, qu'`AMOUNT_RE` admet, se lit comme un point.
+ * Une saisie vide ou illisible ne refuse rien (`try/catch`, comme
+ * {@link amountMismatch}) : c'est {@link linesInvalid} qui la juge. Le montant rendu
+ * l'est par `toFixed()`, jamais en notation exponentielle.
+ *
+ * ⚠️ La virgule n'est pas normalisée **à l'envoi** : défaut préexistant, #830.
+ */
+export function lineNotInCentimes(line: CreateSupplierInvoiceLineRequest): string | null {
+	const decimal = (raw: string) => raw.trim().replace(',', '.');
+	if (!line.unitPrice.trim()) return null;
 	try {
-		const a = new Big(amount);
-		return !a.round(2, Big.roundHalfUp).eq(a);
+		const total = new Big(decimal(line.quantity || '1')).times(decimal(line.unitPrice));
+		return total.round(2, Big.roundDown).eq(total) ? null : total.toFixed();
 	} catch {
-		return false;
+		return null;
 	}
+}
+
+/** La première ligne qui n'est pas au centime (rang 0-based) et son montant, ou `null`. */
+export function firstLineNotInCentimes(
+	lines: CreateSupplierInvoiceLineRequest[],
+): { index: number; lineTotal: string } | null {
+	for (const [index, line] of lines.entries()) {
+		const lineTotal = lineNotInCentimes(line);
+		if (lineTotal !== null) return { index, lineTotal };
+	}
+	return null;
 }
 
 /** Lignes **structurellement** invalides (description, compte, quantité, prix). */
@@ -151,9 +175,14 @@ export function paymentReasonLabel(reason: string): string {
 	}
 }
 
-/** Où afficher un refus : sous l'IBAN, sous la référence, ou en tête du formulaire. */
+/**
+ * Où afficher un refus : sous l'IBAN, sous la référence, sous une **ligne** (Story
+ * v017-3b, #687 : `line`, rang 1-based du serveur), ou en tête du formulaire.
+ */
 export interface SubmitError {
-	field: 'iban' | 'reference' | null;
+	field: 'iban' | 'reference' | 'line' | null;
+	/** Le rang 1-based de la ligne désignée, quand `field === 'line'`. */
+	line?: number;
 	message: string;
 }
 
@@ -174,6 +203,20 @@ export function describeSubmitError(err: unknown): SubmitError {
 			const d = err.details as { field?: string; reason?: string } | undefined;
 			const field = d?.field === 'paymentReference' ? 'reference' : 'iban';
 			return { field, message: paymentReasonLabel(d?.reason ?? '') };
+		}
+		case 'SUPPLIER_INVOICE_LINE_NOT_IN_CENTIMES': {
+			// Story v017-3b (#687) — la clé et le texte du repli d'`errors.rs` : un texte
+			// pour un refus (validation P3, F3).
+			const d = err.details as { line?: number; lineTotal?: string } | undefined;
+			return {
+				field: 'line',
+				line: d?.line,
+				message: i18nMsg(
+					'supplier-invoices-errors-line-not-in-centimes',
+					'La ligne { $line } donne un montant de { $lineTotal }, qui n’est pas au centime. Saisissez la ligne au montant facturé par le fournisseur, au centime.',
+					{ line: d?.line ?? '?', lineTotal: d?.lineTotal ?? '?' },
+				),
+			};
 		}
 		case 'QR_FIELDS_FROM_DOCUMENT':
 			return {

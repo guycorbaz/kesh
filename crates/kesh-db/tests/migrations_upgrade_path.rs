@@ -41,9 +41,9 @@ async fn apply_migrations_up_to(
     assert!(
         n <= all.len(),
         "apply_migrations_up_to: n={} > total={} — vérifier que le calcul \
-         `total - 52` (fenêtre d'upgrade, FRONTIÈRE figée à 34) reste \
+         `total - 53` (fenêtre d'upgrade, FRONTIÈRE figée à 34) reste \
          cohérent avec l'ajout de migrations futures. Si une migration a été ajoutée à \
-         la branche, l'assertion `total == 86` du test upgrade_path_preserves_data \
+         la branche, l'assertion `total == 87` du test upgrade_path_preserves_data \
          doit également échouer, c'est son rôle : elle signale qu'il faut décider \
          explicitement si la fenêtre s'élargit (bumper `total` seul) ou si la \
          frontière doit rester à 34 (bumper `total` ET la fenêtre). Cf. garde-fou \
@@ -60,8 +60,8 @@ async fn apply_migrations_up_to(
     sub.run(pool).await
 }
 
-/// AC #15a — cas générique upgrade path : `total - 52` migrations appliquées
-/// (**34** à ce jour) + seed + `MIGRATOR.run()` final, qui applique les **52**
+/// AC #15a — cas générique upgrade path : `total - 53` migrations appliquées
+/// (**34** à ce jour) + seed + `MIGRATOR.run()` final, qui applique les **53**
 /// dernières. Assertion : seed préservé à travers la fenêtre d'upgrade.
 ///
 /// ⚠️ Les nombres ci-dessus se recomptent, ils ne se relisent pas — cf. le
@@ -119,13 +119,14 @@ async fn upgrade_path_preserves_data(pool: MySqlPool) {
     // + mcp_keys_and_server_settings (Story 32-5, refs #723) = 84.
     // + mcp_sends (Story 32-8a, refs #723) = 85.
     // + mcp_prompts (Story 32-10a-i, refs #723) = 86.
+    // + bank_imports_manual_source (Story v016-2a, refs #816) = 87.
     let total = kesh_db::MIGRATOR.migrations.len();
     assert_eq!(
-        total, 86,
-        "86 migrations attendues (85 précédentes + Story 32-10a-i : mcp_prompts)"
+        total, 87,
+        "87 migrations attendues (86 précédentes + Story v016-2a : bank_imports_manual_source)"
     );
 
-    // Étape 1 : applique toutes les migrations sauf les 52 dernières. La
+    // Étape 1 : applique toutes les migrations sauf les 53 dernières. La
     // fenêtre d'upgrade démarre donc à la 35ᵉ, `20260614000001_vat_accounts_config`
     // (Story 18-1a), et court jusqu'à la dernière du dépôt. Ne pas ré-énumérer
     // ici les migrations de la fenêtre : une liste nominative se périme à chaque
@@ -133,17 +134,17 @@ async fn upgrade_path_preserves_data(pool: MySqlPool) {
     // plus bas. Le seul nombre qui fait foi est celui du `total - N` ci-dessous.
     //
     // Note `total - N` : expression relative à la longueur totale, tandis que
-    // l'assertion `total == 86` ci-dessus est INTENTIONNELLEMENT codée en dur
+    // l'assertion `total == 87` ci-dessus est INTENTIONNELLEMENT codée en dur
     // pour fail-loud sur toute évolution non revue. À chaque migration ajoutée,
     // le mainteneur doit (1) bumper ce compte (2) incrémenter `N` du même pas,
     // de sorte que `total - N` — la frontière — reste **constant**.
     //
     // Frontière actuelle : **34**. Le test applique donc les 34 premières
     // migrations (jusqu'à `20260613000001_vat_rates_crud` incluse), seede des
-    // données, puis joue les 52 restantes comme « fenêtre d’upgrade ».
+    // données, puis joue les 53 restantes comme « fenêtre d’upgrade ».
     //
-    // ⚠️ `N` DOIT être incrémenté en même temps que `total`. Le laisser à 51
-    // avec `total = 86` porterait la frontière à 35 : le test continuerait de
+    // ⚠️ `N` DOIT être incrémenté en même temps que `total`. Le laisser à 52
+    // avec `total = 87` porterait la frontière à 35 : le test continuerait de
     // passer en testant une fenêtre plus étroite d'une migration.
     // Story 16-1a : 21 → 22, frontière inchangée (56 - 22 = 55 - 21 = 34).
     // Story 16-1a-bis : 22 → 23, frontière inchangée (57 - 23 = 34).
@@ -204,16 +205,17 @@ async fn upgrade_path_preserves_data(pool: MySqlPool) {
     // Story 32-5 : 49 → 50, frontière inchangée (84 - 50 = 34).
     // Story 32-8a : 50 → 51, frontière inchangée (85 - 51 = 34).
     // Story 32-10a-i : 51 → 52, frontière inchangée (86 - 52 = 34).
+    // Story v016-2a : 52 → 53, frontière inchangée (87 - 53 = 34).
     //
     // ⚠️ J'ai d'abord porté `total` à 69 SANS toucher à ce soustracteur : le socle
     // est alors passé de 34 à 35 migrations, la fenêtre a glissé d'un cran, et le
     // test a rougi non plus sur son compteur mais sur `COUNT(accounts) : expected
     // 4, got 2` — un échec qui ne ressemble en rien à sa cause. *Les deux nombres
     // se bougent du même pas, et le commentaire ci-dessus le disait.*
-    let n_before_upgrade_window = total - 52;
+    let n_before_upgrade_window = total - 53;
     apply_migrations_up_to(&pool, n_before_upgrade_window)
         .await
-        .expect("apply_migrations_up_to(total - 52) failed");
+        .expect("apply_migrations_up_to(total - 53) failed");
 
     // Étape 2 : seed 1 company + 1 user + 2 accounts + 1 invoice + 1 contact.
     let company_id: i64 = sqlx::query_scalar(
@@ -282,7 +284,7 @@ async fn upgrade_path_preserves_data(pool: MySqlPool) {
     .await
     .expect("INSERT invoice failed");
 
-    // Étape 3 : appliquer les 52 migrations restantes via MIGRATOR.run().
+    // Étape 3 : appliquer les 53 migrations restantes via MIGRATOR.run().
     kesh_db::MIGRATOR
         .run(&pool)
         .await
@@ -534,16 +536,31 @@ async fn downgrade_protection_rejects_old_binary(pool: MySqlPool) {
 /// quand binary == db_min (cas nominal upgrade-then-boot).
 #[sqlx::test(migrator = "kesh_db::MIGRATOR")]
 async fn downgrade_protection_aligned_when_binary_equals_min(pool: MySqlPool) {
-    // min_required = '0.14.0' depuis le bump breaking de la Story 30-2a
-    // (imported_documents_without_qr.sql — 5e bump du repo, après '0.7.0' en
-    // 21-3, '0.10.0' en 22-1, '0.13.0' en 15-1a-i et '0.13.1' en 26-1).
-    // Binary == db_min → Aligned.
-    let result = check_downgrade_protection(&pool, "0.14.0").await;
+    // min_required = '0.17.0' depuis le bump breaking de la Story v016-2a
+    // (bank_imports_manual_source.sql — 6e bump du repo, après '0.7.0' en
+    // 21-3, '0.10.0' en 22-1, '0.13.0' en 15-1a-i, '0.13.1' en 26-1 et
+    // '0.14.0' en 30-2a). Binary == db_min → Aligned.
+    let result = check_downgrade_protection(&pool, "0.17.0").await;
     assert_eq!(
         result.unwrap(),
         DowngradeCheckOutcome::Aligned,
-        "binary 0.14.0 == db_min 0.14.0 → Aligned"
+        "binary 0.17.0 == db_min 0.17.0 → Aligned"
     );
+}
+
+/// Story v016-2a (#816, AC-2) : un binaire 0.16.1 — la candidate
+/// `v0.16.1-rc1` en porte la version Cargo, et c'est la dernière version
+/// antérieure — est **refusé** : il ne décode pas `source_format = 'MANUAL'`
+/// d'un relevé saisi à la main (`BankImportSourceFormat::from_str`).
+#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+async fn downgrade_protection_refuses_0_16_1(pool: MySqlPool) {
+    match check_downgrade_protection(&pool, "0.16.1").await {
+        Err(VersionError::DowngradeRefused { db_min, binary }) => {
+            assert_eq!(db_min.to_string(), "0.17.0");
+            assert_eq!(binary.to_string(), "0.16.1");
+        }
+        other => panic!("Expected DowngradeRefused for 0.16.1, got {other:?}"),
+    }
 }
 
 /// Story 30-2a (#685) : un binaire 0.13.4 est désormais **refusé** — il lit
@@ -554,7 +571,8 @@ async fn downgrade_protection_aligned_when_binary_equals_min(pool: MySqlPool) {
 async fn downgrade_protection_refuses_0_13_4(pool: MySqlPool) {
     match check_downgrade_protection(&pool, "0.13.4").await {
         Err(VersionError::DowngradeRefused { db_min, binary }) => {
-            assert_eq!(db_min.to_string(), "0.14.0");
+            // Story v016-2a : le seuil est passé à 0.17.0 ; 0.13.4 reste refusé.
+            assert_eq!(db_min.to_string(), "0.17.0");
             assert_eq!(binary.to_string(), "0.13.4");
         }
         other => panic!("Expected DowngradeRefused for 0.13.4, got {other:?}"),
@@ -565,13 +583,16 @@ async fn downgrade_protection_refuses_0_13_4(pool: MySqlPool) {
 /// quand binary > db_min (upgrade legitime).
 #[sqlx::test(migrator = "kesh_db::MIGRATOR")]
 async fn downgrade_protection_binary_ahead_when_binary_greater(pool: MySqlPool) {
-    // min_required = '0.14.0' depuis le bump breaking de la Story 30-2a,
-    // binary 0.15.0 > 0.14.0 → BinaryAhead (upgrade légitime).
-    let result = check_downgrade_protection(&pool, "0.15.0").await;
+    // min_required = '0.17.0' depuis le bump breaking de la Story v016-2a,
+    // binary 0.18.0 > 0.17.0 → BinaryAhead (upgrade légitime). *(Le binaire
+    // était 0.15.0 jusqu'à la v016-2a : sous le seuil 0.17.0, il serait
+    // devenu un refus — le binaire passe au-delà du seuil, la sémantique du
+    // test reste « binaire en avance ».)*
+    let result = check_downgrade_protection(&pool, "0.18.0").await;
     match result.unwrap() {
         DowngradeCheckOutcome::BinaryAhead { db_min, binary } => {
-            assert_eq!(db_min.to_string(), "0.14.0");
-            assert_eq!(binary.to_string(), "0.15.0");
+            assert_eq!(db_min.to_string(), "0.17.0");
+            assert_eq!(binary.to_string(), "0.18.0");
         }
         other => panic!("Expected BinaryAhead, got {:?}", other),
     }
@@ -652,8 +673,8 @@ async fn bank_profiles_debit_sign_defaults_existing_profiles(pool: MySqlPool) {
             .await
             .unwrap();
     // Toutes les migrations ont tourné : la valeur est celle du DERNIER bump
-    // (Story 30-2a), non plus celui de cette migration-ci (0.13.1).
-    assert_eq!(min_required, "0.14.0");
+    // (Story v016-2a), non plus celui de cette migration-ci (0.13.1).
+    assert_eq!(min_required, "0.17.0");
 }
 
 /// Story 30-2a (#685, AC4) — la migration `imported_documents_without_qr`
@@ -815,4 +836,339 @@ async fn record_boot_version_updates_row(pool: MySqlPool) {
         last_boot_at.is_some(),
         "last_boot_at devrait être non-NULL après record_boot_version()"
     );
+}
+
+// ---------------------------------------------------------------------------
+// Story v016-2a (#816) — la montée depuis une base 0.16.x peuplée (AC-2-bis),
+// l'inventaire des instructions de la migration (AC-2-bis) et celui des
+// tables (AC-3-bis). Contrainte du Project Lead du 2026-10-30 (C-v016-2-16) :
+// les données de l'installation `v0.16.1-rc1` se gardent.
+// ---------------------------------------------------------------------------
+
+const MANUAL_SOURCE_VERSION: i64 = 20261030000001;
+const MANUAL_SOURCE_LABEL: &str = "bank_imports_manual_source";
+
+/// Chaque ligne d'une table, colonne par colonne (toutes les colonnes de
+/// `information_schema`, `NULL` rendu `∅`), triée par `id` : la comparaison
+/// avant/après ne choisit pas les colonnes qu'elle regarde.
+async fn table_snapshot(pool: &MySqlPool, table: &str) -> Vec<String> {
+    let columns: Vec<String> = sqlx::query_scalar(
+        "SELECT COLUMN_NAME FROM information_schema.COLUMNS \
+         WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? ORDER BY ORDINAL_POSITION",
+    )
+    .bind(table)
+    .fetch_all(pool)
+    .await
+    .unwrap();
+    assert!(!columns.is_empty(), "table {table} introuvable");
+    let parts: Vec<String> = columns
+        .iter()
+        .map(|c| format!("'{c}=', IFNULL(CAST(`{c}` AS CHAR), '∅')"))
+        .collect();
+    sqlx::query_scalar(&format!(
+        "SELECT CONCAT_WS('|', {}) FROM `{table}` ORDER BY id",
+        parts.join(", ")
+    ))
+    .fetch_all(pool)
+    .await
+    .unwrap()
+}
+
+async fn application_tables(pool: &MySqlPool) -> Vec<String> {
+    sqlx::query_scalar(
+        "SELECT TABLE_NAME FROM information_schema.TABLES \
+         WHERE TABLE_SCHEMA = DATABASE() AND TABLE_TYPE = 'BASE TABLE' \
+           AND TABLE_NAME <> '_sqlx_migrations' ORDER BY TABLE_NAME",
+    )
+    .fetch_all(pool)
+    .await
+    .unwrap()
+}
+
+/// AC-2-bis — une base à l'état 0.16.x, **peuplée** d'un import CAMT à soldes
+/// et à `statement_id`, d'un import CSV sans solde, et de leurs transactions
+/// (une `pending`, une `reconciled` liée à une écriture, une rejetée), monte en
+/// 0.17.0 sans qu'aucune ligne ne change, et se relit par le code applicatif.
+///
+/// Index résolu **par version** (`common::migrations_before`, P6) ; assertion
+/// de montage : `min_required` vaut `0.14.0` avant la migration et la base
+/// porte bien les lignes semées (sans elles, le test passerait à vide).
+#[sqlx::test(migrations = false)]
+async fn bank_imports_manual_source_preserves_existing_rows(pool: MySqlPool) {
+    apply_migrations_up_to(
+        &pool,
+        common::migrations_before(MANUAL_SOURCE_VERSION, MANUAL_SOURCE_LABEL),
+    )
+    .await
+    .expect("apply_migrations_up_to(avant bank_imports_manual_source) failed");
+
+    let (min_before, last_applied_before): (String, String) = sqlx::query_as(
+        "SELECT kesh_version_min_required, kesh_version_last_applied FROM _kesh_version WHERE id = 1",
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(min_before, "0.14.0", "montage : état 0.16.x");
+
+    // --- Semis, en SQL brut (le schéma de la 0.16.x) ---
+    let company_id: i64 = sqlx::query_scalar(
+        "INSERT INTO companies (name, address, org_type, accounting_language, instance_language) \
+         VALUES ('Société v016-2a', 'Rue 1', 'Pme', 'FR', 'FR') RETURNING id",
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    let user_id: i64 = sqlx::query_scalar(
+        "INSERT INTO users (username, password_hash, role, company_id) \
+         VALUES ('v0162a', ?, 'Comptable', ?) RETURNING id",
+    )
+    .bind("$argon2id$v=19$m=19456,t=2,p=1$dGVzdHNhbHQ$dGVzdGhhc2h0ZXN0aGFzaHRlc3RoYXNo")
+    .bind(company_id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    let bank_id: i64 = sqlx::query_scalar(
+        "INSERT INTO bank_accounts (company_id, bank_name, iban, is_primary) \
+         VALUES (?, 'Banque Exemple', 'CH9300762011623852957', TRUE) RETURNING id",
+    )
+    .bind(company_id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    let fy_id: i64 = sqlx::query_scalar(
+        "INSERT INTO fiscal_years (company_id, name, start_date, end_date) \
+         VALUES (?, 'Exercice 2026', '2026-01-01', '2026-12-31') RETURNING id",
+    )
+    .bind(company_id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    let mut account_ids = Vec::new();
+    for (number, name, kind) in [("1020", "Banque", "Asset"), ("3200", "Ventes", "Revenue")] {
+        let id: i64 = sqlx::query_scalar(
+            "INSERT INTO accounts (company_id, number, name, account_type) \
+             VALUES (?, ?, ?, ?) RETURNING id",
+        )
+        .bind(company_id)
+        .bind(number)
+        .bind(name)
+        .bind(kind)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        account_ids.push(id);
+    }
+    let entry_id: i64 = sqlx::query_scalar(
+        "INSERT INTO journal_entries (company_id, fiscal_year_id, entry_number, entry_date, \
+         journal, description) VALUES (?, ?, 1, '2026-09-15', 'Banque', 'Encaissement') \
+         RETURNING id",
+    )
+    .bind(company_id)
+    .bind(fy_id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    for (order, account, debit, credit) in [
+        (1, account_ids[0], "50.00", "0"),
+        (2, account_ids[1], "0", "50.00"),
+    ] {
+        sqlx::query(
+            "INSERT INTO journal_entry_lines (entry_id, account_id, line_order, debit, credit) \
+             VALUES (?, ?, ?, ?, ?)",
+        )
+        .bind(entry_id)
+        .bind(account)
+        .bind(order)
+        .bind(debit)
+        .bind(credit)
+        .execute(&pool)
+        .await
+        .unwrap();
+    }
+    let camt_id: i64 = sqlx::query_scalar(
+        "INSERT INTO bank_imports (company_id, bank_account_id, filename, file_hash, \
+         source_format, statement_id, period_from, period_to, opening_balance, closing_balance, \
+         transaction_count, imported_by_user_id) VALUES (?, ?, 'releve-09.xml', ?, \
+         'CAMT053_V04', 'STMT-2026-09', '2026-09-01', '2026-09-30', 1000.00, 729.75, 3, ?) \
+         RETURNING id",
+    )
+    .bind(company_id)
+    .bind(bank_id)
+    .bind("a".repeat(64))
+    .bind(user_id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    let csv_id: i64 = sqlx::query_scalar(
+        "INSERT INTO bank_imports (company_id, bank_account_id, filename, file_hash, \
+         source_format, period_from, period_to, transaction_count, imported_by_user_id) \
+         VALUES (?, ?, 'releve-10.csv', ?, 'CSV', '2026-10-01', '2026-10-31', 1, ?) RETURNING id",
+    )
+    .bind(company_id)
+    .bind(bank_id)
+    .bind("b".repeat(64))
+    .bind(user_id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    // CAMT : une pending (avec date de valeur, référence, contrepartie), une
+    // reconciled liée à l'écriture, une rejetée ; CSV : une pending.
+    sqlx::query(
+        "INSERT INTO bank_transactions (company_id, import_id, bank_account_id, booking_date, \
+         value_date, amount, currency, reference, details, end_to_end_id, transaction_id, \
+         counterparty_iban, counterparty_name, status, matched_entry_id, auto_match_rejected_at) \
+         VALUES \
+         (?, ?, ?, '2026-09-03', '2026-09-04', -320.25, 'CHF', 'RF18539007547034', \
+          'Prélèvement assurance', 'E2E-1', 'TX-1', 'CH9300762011623852957', 'Assurance Exemple SA', \
+          'pending', NULL, NULL), \
+         (?, ?, ?, '2026-09-15', NULL, 50.00, 'CHF', 'F-2026-0042', 'Virement reçu', NULL, NULL, \
+          NULL, NULL, 'reconciled', ?, NULL), \
+         (?, ?, ?, '2026-09-20', NULL, -4.80, 'CHF', NULL, 'Frais', NULL, NULL, NULL, NULL, \
+          'pending', NULL, '2026-10-01 08:00:00'), \
+         (?, ?, ?, '2026-10-05', NULL, 12.50, 'CHF', NULL, 'Intérêts', NULL, NULL, NULL, NULL, \
+          'pending', NULL, NULL)",
+    )
+    .bind(company_id)
+    .bind(camt_id)
+    .bind(bank_id)
+    .bind(company_id)
+    .bind(camt_id)
+    .bind(bank_id)
+    .bind(entry_id)
+    .bind(company_id)
+    .bind(camt_id)
+    .bind(bank_id)
+    .bind(company_id)
+    .bind(csv_id)
+    .bind(bank_id)
+    .execute(&pool)
+    .await
+    .expect("INSERT bank_transactions failed");
+
+    let watched = [
+        "bank_imports",
+        "bank_transactions",
+        "journal_entries",
+        "journal_entry_lines",
+    ];
+    let mut before = Vec::new();
+    for t in watched {
+        before.push(table_snapshot(&pool, t).await);
+    }
+    assert_eq!(before[0].len(), 2, "montage : deux imports semés");
+    assert_eq!(before[1].len(), 4, "montage : quatre transactions semées");
+
+    // --- La montée ---
+    kesh_db::MIGRATOR
+        .run(&pool)
+        .await
+        .expect("MIGRATOR.run() final failed — la montée doit passer sur une base peuplée");
+
+    // 1. et 3. — chaque ligne se relit colonne par colonne à l'identique,
+    // écriture liée et ses lignes comprises.
+    for (t, b) in watched.iter().zip(&before) {
+        assert_eq!(&table_snapshot(&pool, t).await, b, "table {t} modifiée");
+    }
+
+    // 2. — relecture par le code applicatif (décodage `from_str` compris).
+    use kesh_db::entities::BankImportSourceFormat;
+    use kesh_db::repositories::{bank_imports, bank_transactions};
+    let camt = bank_imports::find_by_id_for_company(&pool, company_id, camt_id)
+        .await
+        .expect("relecture CAMT")
+        .expect("import CAMT présent");
+    assert_eq!(camt.source_format, BankImportSourceFormat::Camt053V04);
+    assert_eq!(camt.statement_id.as_deref(), Some("STMT-2026-09"));
+    assert_eq!(
+        camt.closing_balance.map(|d| d.to_string()),
+        Some("729.75".into())
+    );
+    let csv = bank_imports::find_by_id_for_company(&pool, company_id, csv_id)
+        .await
+        .expect("relecture CSV")
+        .expect("import CSV présent");
+    assert_eq!(csv.source_format, BankImportSourceFormat::Csv);
+    assert_eq!(csv.closing_balance, None);
+    let camt_txs = bank_transactions::list_by_import(&pool, company_id, camt_id)
+        .await
+        .expect("relecture des transactions CAMT");
+    assert_eq!(camt_txs.len(), 3);
+    assert_eq!(camt_txs[0].status.as_str(), "pending");
+    assert_eq!(
+        camt_txs[0].counterparty_name.as_deref(),
+        Some("Assurance Exemple SA")
+    );
+    assert_eq!(camt_txs[1].status.as_str(), "reconciled");
+    assert_eq!(camt_txs[1].matched_entry_id, Some(entry_id));
+    assert!(camt_txs[2].auto_match_rejected_at.is_some());
+    let csv_txs = bank_transactions::list_by_import(&pool, company_id, csv_id)
+        .await
+        .expect("relecture des transactions CSV");
+    assert_eq!(csv_txs.len(), 1);
+
+    // 4. — le seuil relevé, la version du dernier démarrage inchangée.
+    let (min_after, last_applied_after): (String, String) = sqlx::query_as(
+        "SELECT kesh_version_min_required, kesh_version_last_applied FROM _kesh_version WHERE id = 1",
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(min_after, "0.17.0");
+    assert_eq!(last_applied_after, last_applied_before);
+}
+
+/// AC-2-bis — inventaire décidable : la migration ne porte **qu'une**
+/// instruction, le relèvement de `_kesh_version`. Le fichier est lu,
+/// décommenté (`--` en fin de ligne et `/* … */`), découpé aux `;`.
+#[test]
+fn bank_imports_manual_source_only_raises_min_required() {
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("migrations/20261030000001_bank_imports_manual_source.sql");
+    let raw = std::fs::read_to_string(&path).expect("migration lisible");
+    let mut uncommented = String::new();
+    let mut rest = raw.as_str();
+    while let Some(i) = rest.find("/*") {
+        uncommented.push_str(&rest[..i]);
+        rest = rest[i..].split_once("*/").map(|(_, r)| r).unwrap_or("");
+    }
+    uncommented.push_str(rest);
+    let code: String = uncommented
+        .lines()
+        .map(|l| l.split("--").next().unwrap_or(""))
+        .collect::<Vec<_>>()
+        .join("\n");
+    let statements: Vec<String> = code
+        .split(';')
+        .map(|s| s.split_whitespace().collect::<Vec<_>>().join(" "))
+        .filter(|s| !s.is_empty())
+        .collect();
+    assert_eq!(
+        statements,
+        vec![
+            "UPDATE _kesh_version SET kesh_version_min_required = '0.17.0' WHERE id = 1"
+                .to_string()
+        ],
+        "la migration ne doit porter que le relèvement de _kesh_version"
+    );
+}
+
+/// AC-3-bis — la 0.17.0 n'ajoute **aucune table** : l'inventaire des tables
+/// après le `MIGRATOR` complet égale celui de l'état d'avant la migration.
+/// Une sauvegarde `.keshbackup` de la 0.16.x a donc le même inventaire que
+/// la 0.17.0 (condition de `parse_and_verify`).
+#[sqlx::test(migrations = false)]
+async fn bank_imports_manual_source_adds_no_table(pool: MySqlPool) {
+    apply_migrations_up_to(
+        &pool,
+        common::migrations_before(MANUAL_SOURCE_VERSION, MANUAL_SOURCE_LABEL),
+    )
+    .await
+    .unwrap();
+    let before = application_tables(&pool).await;
+    assert!(
+        before.iter().any(|t| t == "bank_imports"),
+        "montage : la base 0.16.x porte bank_imports"
+    );
+    kesh_db::MIGRATOR.run(&pool).await.unwrap();
+    assert_eq!(application_tables(&pool).await, before);
 }

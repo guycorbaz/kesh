@@ -1,6 +1,6 @@
 -- SQUASH DU SCHÉMA DE TEST — Story 22-5 (#251). GÉNÉRÉ, NE PAS ÉDITER.
 -- Régénérer : scripts/regen-test-schema.sh
--- Équivalent des 86 migrations de crates/kesh-db/migrations/,
+-- Équivalent des 87 migrations de crates/kesh-db/migrations/,
 -- rejouées en UN batch DDL par base éphémère de test.
 --
 -- Le garde-fou crates/kesh-db/tests/test_schema_guard.rs compare ce schéma
@@ -1324,7 +1324,7 @@ CREATE TABLE `vat_rates` (
 -- Ligne d'installation, RELEVÉE dans la base migrée (jamais codée en dur :
 -- chaque bump P2 de kesh_version_min_required la déplace).
 INSERT INTO `_kesh_version` (`id`, `kesh_version_min_required`, `kesh_version_last_applied`)
-VALUES (1, '0.14.0', '0.1.0');
+VALUES (1, '0.17.0', '0.1.0');
 
 -- Réglage de la sauvegarde automatique, RELEVÉ dans la base migrée
 -- (Story 31-1c : défauts posés par la migration ; dump --no-data).

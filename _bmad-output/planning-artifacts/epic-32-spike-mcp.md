@@ -675,6 +675,7 @@ et son écran).
 - *Tests* : un outil de démonstration rend une valeur piégée ; sous une clé `requise`, elle n'apparaît dans **aucune**
   réponse d'**aucune** méthode servie avant validation (32-6) ; une valeur modifiée ou retirée à l'écran est absente du
   `content` **et** du `structuredContent` reçus (32-8).
+  *(dépassé le 2026-10-29 par la v016-1, C-v016-1-1 : `content` seul depuis la 0.16.1 ; E1 vaut toujours, pour le seul bloc texte)*
 
 **E2 — La liste close des méthodes JSON-RPC servies, avec ce que chacune peut envoyer, et un test d'inventaire**
 (32-6). En `2025-11-25`, six requêtes servies (`initialize`, `ping`, `tools/list`, `tools/call`, `prompts/list`,

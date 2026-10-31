@@ -239,6 +239,15 @@ const REGISTRE: &[(&str, &str, Statut)] = &[
             "pré-vol (link_preflight) et bank_accounts::ensure_open_in_tx après le verrou de l'écriture, étape 4.3",
         ),
     ),
+    (
+        // Story v017-3a (#671) — le rattachement d'une transaction à une écriture
+        // déjà passée.
+        "kesh-db/src/repositories/reconciliation_link.rs",
+        "link_entry_in_tx",
+        Statut::Gardee(
+            "pré-vol (link_preflight) et bank_accounts::ensure_open_in_tx après le verrou de l'écriture, étape 4.3",
+        ),
+    ),
     // --- kesh-db : lots de paiement -------------------------------------
     (
         "kesh-db/src/repositories/payment_batches.rs",
@@ -514,9 +523,10 @@ fn every_bank_account_writer_is_classified() {
     // Anti-muet : le nombre de sites vus (W1-W30 de la fiche, plus
     // `write_closed_on`, l'écrivain neuf de la story, plus l'`UPDATE` de
     // `reconciliation_link::link_in_tx`, Story 29-8, plus l'`UPDATE` de
-    // `accept_one_supplier_invoice`, Story 30-1b). Un détecteur qui cesserait
-    // de voir rendrait un registre « vert » vide.
-    assert_eq!(sites.len(), 33, "sites vus :\n{}", detail.join("\n"));
+    // `accept_one_supplier_invoice`, Story 30-1b, plus l'`UPDATE` de
+    // `reconciliation_link::link_entry_in_tx`, Story v017-3a). Un détecteur qui
+    // cesserait de voir rendrait un registre « vert » vide.
+    assert_eq!(sites.len(), 34, "sites vus :\n{}", detail.join("\n"));
 }
 
 /// Second inventaire (AC8, C-28-4-22) — chaque appelant du créateur de
@@ -641,6 +651,32 @@ fn both_import_calls_map_the_archived_account() {
             &suite[..fin]
         );
     }
+
+    // Story v016-2a (#816, AC-8) — la saisie d'un relevé à la main passe par la
+    // même aide : un appel de `create_import_or_roll_back(tx,` suivi de
+    // `.await?`, et aucun appel direct de `create_with_transactions`.
+    let chemin = racine_crates().join("kesh-api/src/routes/bank_statements_manual.rs");
+    let source = std::fs::read_to_string(chemin).expect("bank_statements_manual.rs");
+    let aplati: String = decouper(&source)
+        .1
+        .chars()
+        .filter(|c| !c.is_whitespace())
+        .collect();
+    assert_eq!(
+        aplati.matches(appel).count(),
+        0,
+        "la saisie ne doit pas appeler create_with_transactions directement"
+    );
+    let m = aplati.matches(aide).count();
+    assert_eq!(m, 1, "un appel de l'aide attendu (saisie), {m} trouvés");
+    let q = aplati.find(aide).expect("appel de l'aide");
+    let suite = &aplati[q..];
+    let fin = suite.find(';').expect("fin d'instruction");
+    assert!(
+        suite[..fin].ends_with(").await?"),
+        "l'appel de l'aide de la saisie sans `.await?` : {}",
+        &suite[..fin]
+    );
 }
 
 /// T29b-7 (Story 29-4b, T6-bis, R-5 de la passe ciblée P2 de la 29-4a, #651) —
@@ -892,6 +928,14 @@ const FENETRE: &[(&str, &str, Fenetre)] = &[
         "link_in_tx",
         Fenetre::Fermee(
             "I1 : la transaction est pending, la clôture refuse tant qu'elle existe — comme l'annulation de rejet",
+        ),
+    ),
+    (
+        // Story v017-3a (#671) : même raison que le rattachement à un règlement.
+        "kesh-db/src/repositories/reconciliation_link.rs",
+        "link_entry_in_tx",
+        Fenetre::Fermee(
+            "I1 : la transaction est pending, la clôture refuse tant qu'elle existe — comme le rattachement à un règlement",
         ),
     ),
     (
@@ -1243,10 +1287,11 @@ fn ecarts_fenetre(
 }
 
 /// T29a-5 (Story 29-4a, #651, AC5) — le troisième inventaire, sur les sources
-/// de production : aucune faute, et des décomptes anti-muets (`G` à onze
+/// de production : aucune faute, et des décomptes anti-muets (`G` à douze
 /// sites — les neuf fonctions de la fiche, depuis le rebase sur la 29-1a la
-/// constante `EXAMINED_ACCOUNTS_SQL` de `closing_checks.rs`, et depuis la
-/// 29-8 `reconciliation_link::link_in_tx` —, sept appels de revérification
+/// constante `EXAMINED_ACCOUNTS_SQL` de `closing_checks.rs`, depuis la 29-8
+/// `reconciliation_link::link_in_tx`, et depuis la v017-3a
+/// `reconciliation_link::link_entry_in_tx` —, sept appels de revérification
 /// depuis la 29-4b : l'import et le lot, plus les cinq annulations). T29b-4
 /// (Story 29-4b, AC8) : les cinq annulations y sont
 /// `Reverifiee(Variante::Clos, Position::EnDernier)`, et leur position est
@@ -1279,9 +1324,10 @@ fn every_unlocked_closed_account_guard_is_rechecked_or_justified() {
     // « vert » vide.
     assert_eq!(
         gardes_non_verrouillantes(&sources).len(),
-        11,
+        12,
         "G : neuf fonctions au sol de la 29-4a, plus la constante de lecture de \
-         closing_checks.rs (29-1a, entrée au rebase), plus le rattachement (29-8)"
+         closing_checks.rs (29-1a, entrée au rebase), plus le rattachement (29-8), \
+         plus le rattachement à une écriture (v017-3a)"
     );
     assert_eq!(
         appels_de_reverification(&sources).len(),

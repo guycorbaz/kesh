@@ -1,0 +1,18 @@
+-- BREAKING (P1, données) : relève kesh_version_min_required à 0.17.0.
+--
+-- Story v016-2a (#816) — saisir un relevé bancaire à la main. Un relevé saisi
+-- est une ligne de bank_imports de source_format = 'MANUAL'. La colonne est un
+-- VARCHAR(32) sans contrainte de valeur (20260504000001_bank_imports.sql) :
+-- aucun DDL n'est nécessaire. Mais un binaire 0.16.x ne décode pas 'MANUAL'
+-- (BankImportSourceFormat::from_str refuse toute valeur inconnue) : il
+-- redémarrerait sur une base passée par la 0.17.0 et rendrait une erreur sur
+-- la liste, le détail, la suppression des imports et l'export global dès le
+-- premier relevé saisi ; une sauvegarde de la 0.17.0 s'importerait dans une
+-- 0.16.x sans s'y lire. Le relèvement refuse ce binaire au démarrage et à
+-- l'import d'une sauvegarde, en le nommant (C-v016-2-2, C-v016-2-15).
+--
+-- Aucune ligne existante n'est touchée (montée sans perte, C-v016-2-16) : la
+-- seule instruction écrit _kesh_version, table système jamais restaurée, d'où
+-- l'entrée EXEMPT_MIGRATIONS (P7). Ligne ajoutée à
+-- docs/migrations-idempotence-audit.md (P5).
+UPDATE _kesh_version SET kesh_version_min_required = '0.17.0' WHERE id = 1;

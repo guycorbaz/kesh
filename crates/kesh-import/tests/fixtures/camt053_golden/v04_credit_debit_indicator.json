@@ -1,0 +1,43 @@
+{
+  "ok": [
+    {
+      "account_iban": "CH4431999123000889012",
+      "closing_balance": "1100.00",
+      "currency": "CHF",
+      "opening_balance": "1000.00",
+      "period_from": "2026-05-01",
+      "period_to": "2026-05-31",
+      "source_format": {
+        "kind": "camt053",
+        "version": "001.04"
+      },
+      "statement_id": "STMT-CRDT-DBIT",
+      "transactions": [
+        {
+          "amount": "300.00",
+          "booking_date": "2026-05-10",
+          "counterparty_iban": null,
+          "counterparty_name": "Client recette",
+          "currency": "CHF",
+          "details": "Encaissement",
+          "end_to_end_id": "E2E-CRDT-001",
+          "reference": null,
+          "transaction_id": "BANK-CRDT-001",
+          "value_date": "2026-05-10"
+        },
+        {
+          "amount": "-200.00",
+          "booking_date": "2026-05-20",
+          "counterparty_iban": null,
+          "counterparty_name": "Fournisseur",
+          "currency": "CHF",
+          "details": "Paiement facture",
+          "end_to_end_id": "E2E-DBIT-001",
+          "reference": null,
+          "transaction_id": "BANK-DBIT-001",
+          "value_date": "2026-05-20"
+        }
+      ]
+    }
+  ]
+}

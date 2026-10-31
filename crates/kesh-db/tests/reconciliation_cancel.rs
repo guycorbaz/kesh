@@ -8,7 +8,11 @@
 //! 29-8), produit l'état d'une acceptation « facture » : son annulation est
 //! exercée par `kesh-api/tests/reconciliation_link_e2e.rs` (T15), et ce
 //! fichier n'en a pas besoin — la concurrence avec une clôture d'exercice y est
-//! celle du chemin « facture ».
+//! celle du chemin « facture ». Le rattachement à une écriture déjà passée
+//! (Story v017-3a) produit l'état d'une écriture propre, d'un règlement client
+//! ou d'un règlement fournisseur selon l'écriture choisie : son annulation est
+//! exercée par `kesh-api/tests/reconciliation_link_entry_e2e.rs` (AC-8.3 et
+//! AC-8.5), sur les mêmes trois bras du classement.
 //! Ici : ce que seule une transaction tenue ouverte peut montrer — la
 //! **concurrence avec une clôture d'exercice**.
 //!

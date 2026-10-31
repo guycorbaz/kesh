@@ -5271,8 +5271,9 @@ async fn cancel_reconciliation_roles_scope_and_head(pool: MySqlPool) {
 /// ⛔ **Le marqueur de rejet** : une transaction dé-rapprochée doit revenir
 /// dans les propositions, qui écartent toute transaction marquée rejetée.
 /// ⚠️ **État FORGÉ, et dit tel** : aucun chemin réel ne laisse le marqueur sur
-/// une transaction rapprochée — cinq chemins le remettent à zéro (dont le
-/// rattachement à un règlement, Story 29-8), et les
+/// une transaction rapprochée — six chemins le remettent à zéro (dont le
+/// rattachement à un règlement, Story 29-8, et le rattachement à une écriture,
+/// Story v017-3a), et les
 /// chemins « facture » et « facture fournisseur » (Story 30-1b) refusent une
 /// transaction rejetée dès leur contrôle préalable commun (`failed[]`,
 /// `RECONCILIATION_ALREADY_REJECTED` depuis la Story 27-4 ; un `400` du lot

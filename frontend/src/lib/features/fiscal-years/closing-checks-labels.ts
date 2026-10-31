@@ -45,7 +45,7 @@ export function checkHelp(code: ClosingCheckCode): string {
 		case 'PENDING_BANK_TRANSACTIONS':
 			return i18nMsg(
 				'fiscal-years-checks-k2-help',
-				'Les transactions importées de l’exercice qui n’ont pas encore d’écriture.'
+				'Les transactions bancaires de l’exercice, importées ou saisies, qui n’ont pas encore d’écriture.'
 			);
 		case 'BANK_STATEMENT_AT_YEAR_END':
 			return i18nMsg(

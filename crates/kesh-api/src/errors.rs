@@ -792,6 +792,47 @@ pub enum AppError {
     #[error("Aperçu d'import périmé")]
     BankImportPreviewStale,
 
+    // ----- Story v016-2a (#816) — relevé saisi à la main -----
+    /// Une règle du relevé saisi (AC-4, règles 1 à 5) est violée, ou une chaîne
+    /// est absente, vide ou mal formée → `400 BANK_STATEMENT_INVALID`.
+    /// `field` et `reason` sont pris dans les ensembles **fermés**
+    /// `ManualStatementField` / `ManualStatementReason` de kesh-core ; `line`
+    /// est le rang 1-based dans le tableau envoyé, `None` pour l'entête.
+    #[error("Relevé saisi invalide ({field} : {reason})")]
+    BankStatementInvalid {
+        line: Option<usize>,
+        field: &'static str,
+        reason: &'static str,
+    },
+
+    /// `départ + crédits − débits ≠ arrivée`, égalité exacte, sans
+    /// confirmation possible (C-v016-2-4) → `422 BANK_STATEMENT_UNBALANCED`.
+    #[error("Relevé saisi déséquilibré (écart {diff})")]
+    BankStatementUnbalanced {
+        opening: String,
+        closing: String,
+        computed_closing: String,
+        diff: String,
+    },
+
+    /// Lignes du relevé saisi qui ont une transaction existante de même
+    /// empreinte, sans `confirmDuplicateLines` → `422
+    /// BANK_STATEMENT_DUPLICATE_LINES`. `lines` : `(rang 1-based,
+    /// transaction existante)`. Aucune option « ignorer » (C-v016-2-6).
+    #[error("Lignes déjà présentes")]
+    BankStatementDuplicateLines { lines: Vec<(usize, i64)> },
+
+    /// Solde de départ ≠ clôture du relevé précédent à solde, sans
+    /// `confirmOpeningBalanceGap` → `422 BANK_STATEMENT_OPENING_BALANCE_GAP`
+    /// (C-v016-2-5).
+    #[error("Solde de départ différent de la clôture du relevé précédent")]
+    BankStatementOpeningBalanceGap {
+        expected: String,
+        entered: String,
+        previous_import_id: i64,
+        previous_period_to: chrono::NaiveDate,
+    },
+
     /// Encoding détecté n'est pas dans `{UTF-8, ISO-8859-1}` v0.1 → `422`.
     #[error("Encoding non supporté v0.1")]
     BankCsvUnsupportedEncoding { detected: Option<String> },
@@ -1000,6 +1041,25 @@ pub enum AppError {
     ReconciliationSettlementNotLinkable {
         bank_transaction_id: i64,
         settlement_id: i64,
+    },
+
+    /// Story v017-3a (#671) — le rattachement à une écriture déjà passée
+    /// (`POST /reconciliation/transactions/{id}/link-entry`) vise une écriture
+    /// que la règle n'admet pas : la transaction n'est pas en CHF ou son
+    /// montant est nul, ou le mouvement de l'écriture sur le compte du grand
+    /// livre de la banque n'égale pas le montant, ou l'écriture est déjà
+    /// rapprochée, contre-passée ou contre-passation, ou c'est un règlement
+    /// client par virement sur ce compte bancaire (rattaché par `…/link`) —
+    /// **un seul code** pour les conditions 1 à 6. L'écran n'offre que des
+    /// candidates : ce refus ne se voit que par une course ou un appel direct ;
+    /// relire les listes. → `409 RECONCILIATION_ENTRY_NOT_LINKABLE`,
+    /// `details.bankTransactionId` et `details.journalEntryId`.
+    #[error(
+        "Écriture non rattachable : transaction={bank_transaction_id}, écriture={journal_entry_id}"
+    )]
+    ReconciliationEntryNotLinkable {
+        bank_transaction_id: i64,
+        journal_entry_id: i64,
     },
 
     // ----- Story 8-5a-bis — split FR48 -----
@@ -2476,6 +2536,93 @@ impl IntoResponse for AppError {
                 (StatusCode::CONFLICT, Json(body)).into_response()
             }
 
+            // Story v016-2a (#816) — relevé saisi à la main.
+            AppError::BankStatementInvalid {
+                line,
+                field,
+                reason,
+            } => {
+                let body = serde_json::json!({
+                    "error": {
+                        "code": "BANK_STATEMENT_INVALID",
+                        "message": t(
+                            "bank-import-manual-errors-invalid",
+                            "Le relevé saisi contient une valeur absente ou invalide.",
+                        ),
+                        "details": { "line": line, "field": field, "reason": reason }
+                    }
+                });
+                (StatusCode::BAD_REQUEST, Json(body)).into_response()
+            }
+
+            AppError::BankStatementUnbalanced {
+                opening,
+                closing,
+                computed_closing,
+                diff,
+            } => {
+                let body = serde_json::json!({
+                    "error": {
+                        "code": "BANK_STATEMENT_UNBALANCED",
+                        "message": t(
+                            "bank-import-manual-errors-unbalanced",
+                            "Le solde de départ, augmenté des crédits et diminué des débits, ne donne pas le solde d'arrivée.",
+                        ),
+                        "details": {
+                            "opening": opening,
+                            "closing": closing,
+                            "computedClosing": computed_closing,
+                            "diff": diff,
+                        }
+                    }
+                });
+                (StatusCode::UNPROCESSABLE_ENTITY, Json(body)).into_response()
+            }
+
+            AppError::BankStatementDuplicateLines { lines } => {
+                let lines: Vec<serde_json::Value> = lines
+                    .iter()
+                    .map(|(line, existing)| {
+                        serde_json::json!({ "line": line, "existingTransactionId": existing })
+                    })
+                    .collect();
+                let body = serde_json::json!({
+                    "error": {
+                        "code": "BANK_STATEMENT_DUPLICATE_LINES",
+                        "message": t(
+                            "bank-import-manual-errors-duplicate-lines",
+                            "Des lignes de ce relevé existent déjà sur ce compte. Corrigez-les, ou confirmez pour les enregistrer quand même.",
+                        ),
+                        "details": { "lines": lines }
+                    }
+                });
+                (StatusCode::UNPROCESSABLE_ENTITY, Json(body)).into_response()
+            }
+
+            AppError::BankStatementOpeningBalanceGap {
+                expected,
+                entered,
+                previous_import_id,
+                previous_period_to,
+            } => {
+                let body = serde_json::json!({
+                    "error": {
+                        "code": "BANK_STATEMENT_OPENING_BALANCE_GAP",
+                        "message": t(
+                            "bank-import-manual-errors-opening-balance-gap",
+                            "Le solde de départ diffère du solde d'arrivée du relevé précédent. Vérifiez-le, ou confirmez pour l'enregistrer quand même.",
+                        ),
+                        "details": {
+                            "expected": expected,
+                            "entered": entered,
+                            "previousImportId": previous_import_id,
+                            "previousPeriodTo": previous_period_to,
+                        }
+                    }
+                });
+                (StatusCode::UNPROCESSABLE_ENTITY, Json(body)).into_response()
+            }
+
             AppError::BankCsvUnsupportedEncoding { detected } => {
                 let body = serde_json::json!({
                     "error": {
@@ -2775,9 +2922,12 @@ impl IntoResponse for AppError {
             AppError::BankAccountHasPendingTransactions { pending_count } => {
                 let msg = t(
                     "bank-accounts-errors-has-pending-transactions",
-                    "Ce compte porte des transactions importées qui ne sont pas \
-                     rapprochées. Rapprochez-les, ou supprimez l'import s'il ne \
-                     contient aucune transaction rapprochée, avant de clore le compte.",
+                    // Story v016-2a (#816) : « importées » → « de relevés, importés
+                    // ou saisis » — un relevé saisi à la main porte aussi des
+                    // transactions, et se supprime par la même route.
+                    "Ce compte porte des transactions de relevés, importés ou saisis, \
+                     qui ne sont pas rapprochées. Rapprochez-les, ou supprimez le relevé \
+                     s'il ne contient aucune transaction rapprochée, avant de clore le compte.",
                 );
                 let body = serde_json::json!({
                     "error": {
@@ -2907,6 +3057,29 @@ impl IntoResponse for AppError {
                         "details": {
                             "bankTransactionId": bank_transaction_id,
                             "settlementId": settlement_id,
+                        },
+                    }
+                });
+                (StatusCode::CONFLICT, Json(body)).into_response()
+            }
+
+            // Story v017-3a (#671) — rattachement à une écriture refusé par la
+            // règle. Repli égal mot pour mot au catalogue fr-CH (G9).
+            AppError::ReconciliationEntryNotLinkable {
+                bank_transaction_id,
+                journal_entry_id,
+            } => {
+                let msg = t(
+                    "reconciliation-errors-entry-not-linkable",
+                    "Cette écriture ne peut pas être rattachée à cette transaction : la transaction n'est pas en CHF ou son montant est nul, ou le mouvement de l'écriture sur le compte de la banque n'égale pas le montant de la transaction, ou elle est déjà rapprochée, contre-passée, ou c'est un règlement de facture client à rattacher comme tel.",
+                );
+                let body = serde_json::json!({
+                    "error": {
+                        "code": "RECONCILIATION_ENTRY_NOT_LINKABLE",
+                        "message": msg,
+                        "details": {
+                            "bankTransactionId": bank_transaction_id,
+                            "journalEntryId": journal_entry_id,
                         },
                     }
                 });
@@ -3949,6 +4122,32 @@ impl IntoResponse for AppError {
                         "INVOICE_BELOW_MINIMUM",
                         &t_args("error-invoice-below-minimum", &fallback, &args),
                     )
+                }
+                // Story v017-3b (#687) — une ligne de facture fournisseur qui n'est
+                // pas au centime. **La seule conversion** vers le code : la saisie
+                // et la complétion d'une pièce importée la subissent par `?` depuis
+                // `purchase_lines_form`. Défaut de saisie → 400. Le montant voyage
+                // normalisé (`99.9999`), le rang 1-based.
+                DbError::SupplierLineNotInCentimes { line, line_total } => {
+                    let line_total = line_total.normalize().to_string();
+                    let fallback = format!(
+                        "La ligne {line} donne un montant de {line_total}, qui n’est pas au centime. Saisissez la ligne au montant facturé par le fournisseur, au centime."
+                    );
+                    let mut args = FluentArgs::new();
+                    args.set("line", line.to_string());
+                    args.set("lineTotal", line_total.clone());
+                    let body = serde_json::json!({
+                        "error": {
+                            "code": "SUPPLIER_INVOICE_LINE_NOT_IN_CENTIMES",
+                            "message": t_args(
+                                "supplier-invoices-errors-line-not-in-centimes",
+                                &fallback,
+                                &args,
+                            ),
+                            "details": { "line": line, "lineTotal": line_total },
+                        }
+                    });
+                    (StatusCode::BAD_REQUEST, Json(body)).into_response()
                 }
                 DbError::PeriodLocked {
                     locked_through,

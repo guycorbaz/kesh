@@ -1698,14 +1698,17 @@ pub(crate) struct BalancesRow {
 /// transaction **non rapprochée** n'y entre pas — son absence du grand livre est
 /// l'écart à montrer.
 ///
-/// ⚠️ **Invariant supposé : une transaction, une écriture.** Des sept chemins de
+/// ⚠️ **Invariant supposé : une transaction, une écriture.** Des huit chemins de
 /// rapprochement, six (`kesh-api/src/routes/reconciliation.rs`, dont
 /// l'acceptation d'une facture fournisseur, Story 30-1b) lient chacun une
-/// écriture qu'ils viennent de créer ; le septième, le rattachement à un
-/// règlement saisi depuis la fiche (Story 29-8,
-/// [`super::reconciliation_link::link_in_tx`]), lie une écriture **existante**
-/// et tient l'invariant par sa condition 3 (aucune transaction ne pointe déjà
-/// l'écriture), lue sous le verrou de ligne du règlement. Aucune écriture n'est
+/// écriture qu'ils viennent de créer ; les deux autres lient une écriture
+/// **existante** — le rattachement à un règlement saisi depuis la fiche (Story
+/// 29-8, [`super::reconciliation_link::link_in_tx`]) et le rattachement à une
+/// écriture déjà passée (Story v017-3a,
+/// [`super::reconciliation_link::link_entry_in_tx`]) — et tiennent l'invariant
+/// par leur condition « non rapprochée » (aucune transaction ne pointe déjà
+/// l'écriture), lue sous le verrou de ligne de l'objet lié (le règlement,
+/// l'écriture). Aucune écriture n'est
 /// donc rapprochée de plusieurs transactions. Si cela changeait, la correction ajouterait la ligne
 /// entière de l'écriture là où seule la part d'une transaction franchit la date
 /// du relevé (revue P1, lentille B).

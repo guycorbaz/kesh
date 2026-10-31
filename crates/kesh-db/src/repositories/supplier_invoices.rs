@@ -237,6 +237,55 @@ pub async fn list(
     Ok((items, total))
 }
 
+/// La passe de **forme** des lignes d'une facture fournisseur — Story v017-3b
+/// (#687, D9) : pure, sans I/O ni verrou.
+///
+/// Pour chaque ligne, **dans cet ordre** : positivité de la quantité, du prix et
+/// du produit (`IllegalStateTransition`, « strictement positifs ») ; puis le
+/// montant au centime ([`kesh_core::accounting::purchase_line_total`],
+/// [`DbError::SupplierLineNotInCentimes`] avec le rang 1-based) ; puis les bornes
+/// du taux de TVA. Le premier refus l'emporte, ligne par ligne. Rend les
+/// `line_total` dans l'ordre des lignes : l'appelant ne refait **aucun** second
+/// produit.
+///
+/// **Un seul ordre, deux chemins** : [`create_in_tx`] l'appelle avant tout
+/// verrou, et la complétion d'une pièce importée
+/// (`POST /imported-supplier-invoices/{id}/complete`) l'appelle avant son
+/// contrôle `AMOUNT_MISMATCH`, de sorte qu'une même ligne y reçoit le même refus.
+/// `pub` : la route de `kesh-api` l'appelle, et les tests d'intégration de
+/// `crates/kesh-db/tests/` l'atteignent.
+pub fn purchase_lines_form(
+    lines: &[crate::entities::NewSupplierInvoiceLine],
+) -> Result<Vec<Decimal>, DbError> {
+    let mut totals = Vec::with_capacity(lines.len());
+    for (index, line) in lines.iter().enumerate() {
+        // (a) Positivité, AVANT le centime : un produit nul ou négatif ne sort
+        //     jamais en « pas au centime » (validation P2, R1 ; mutation M10).
+        if line.quantity <= Decimal::ZERO
+            || line.unit_price <= Decimal::ZERO
+            || line.quantity * line.unit_price <= Decimal::ZERO
+        {
+            return Err(DbError::IllegalStateTransition(
+                "chaque ligne doit avoir une quantité et un prix strictement positifs".into(),
+            ));
+        }
+        // (b) Le centime — la seule définition de la règle (kesh-core).
+        let line_total = kesh_core::accounting::purchase_line_total(line.quantity, line.unit_price)
+            .map_err(|e| DbError::SupplierLineNotInCentimes {
+                line: index + 1,
+                line_total: e.line_total,
+            })?;
+        // (c) Les bornes du taux de TVA.
+        if line.vat_rate < Decimal::ZERO || line.vat_rate > Decimal::from(100) {
+            return Err(DbError::IllegalStateTransition(
+                "taux de TVA hors bornes (0-100)".into(),
+            ));
+        }
+        totals.push(line_total);
+    }
+    Ok(totals)
+}
+
 /// Enregistre une facture fournisseur et poste son écriture d'achat (single-step,
 /// pool-owning). Délègue le cœur à [`create_in_tx`] dans une transaction qu'elle
 /// possède puis commit — patron identique à [`pay`]/[`pay_in_tx`].
@@ -284,6 +333,8 @@ pub async fn create(
 ///                               seulement si un projet est renseigné
 /// (1)    contacts               fournisseur, lu SANS verrou
 /// (2)    —                      passe de FORME des lignes : aucun verrou
+///                               (purchase_lines_form : positivité, centime,
+///                               TVA — v017-3b ; l'étape (0) l'a précédée)
 /// (2 bis) company_invoice_settings  INSERT IGNORE puis FOR UPDATE
 ///                               (get_or_create_default_in_tx) — avancé AVANT les
 ///                               comptes de charge et l'exercice (choix C55)
@@ -396,34 +447,28 @@ pub async fn create_in_tx(
     // d'abord (refus immédiat, dans l'ordre des lignes), puis les COMPTES. Les
     // comptes non imputables sont collectés pour être tous nommés par un seul
     // refus ; la forme d'une ligne ultérieure doit donc avoir été jugée avant.
-    for line in &lines {
-        let line_total = line.quantity * line.unit_price;
-        if line.quantity <= Decimal::ZERO
-            || line.unit_price <= Decimal::ZERO
-            || line_total <= Decimal::ZERO
-        {
-            return Err(DbError::IllegalStateTransition(
-                "chaque ligne doit avoir une quantité et un prix strictement positifs".into(),
-            ));
-        }
-        if line.vat_rate < Decimal::ZERO || line.vat_rate > Decimal::from(100) {
-            return Err(DbError::IllegalStateTransition(
-                "taux de TVA hors bornes (0-100)".into(),
-            ));
-        }
-    }
+    //
+    // Story v017-3b (#687, D9) — la passe de forme est la fonction pure
+    // `purchase_lines_form` (positivité → centime → TVA), que la complétion
+    // d'une pièce importée appelle aussi. Elle ne prend aucun verrou ; ⚠️ l'étape
+    // (0) du projet analytique, plus haut, en a déjà pris un (sentinelle
+    // `companies`, projet `FOR UPDATE`) : un refus de forme n'en prend pas de
+    // NOUVEAU, il ne les précède pas tous.
+    let line_totals = purchase_lines_form(&lines)?;
     // (2 bis) Réglages de la société, AVANT les comptes de charge et l'exercice
     // (Story 15-5e1, AC5, choix C55) : l'ordre « réglages → exercice » devient
     // commun à la saisie et à la validation d'une facture client. Un refus de
-    // forme (passe ci-dessus) ne prend ainsi aucun verrou. L'exigence du compte
+    // forme (passe ci-dessus) ne prend ainsi aucun verrou de plus que ceux de
+    // l'étape (0), quand un projet est renseigné (v017-3b). L'exigence du compte
     // créanciers reste jugée plus bas, après l'exercice.
     let settings =
         company_invoice_settings::get_or_create_default_in_tx(&mut *tx, company_id).await?;
 
     // (2, suite) Passe des COMPTES de l'étape (2), après les réglages.
     let mut non_postable: Vec<NonPostableAccount> = Vec::new();
-    for line in &lines {
-        let line_total = line.quantity * line.unit_price;
+    // Le `line_total` de chaque ligne vient de la passe de forme : aucun second
+    // produit (v017-3b, AC-3).
+    for (line, &line_total) in lines.iter().zip(&line_totals) {
         // Compte de charge : doit exister, être actif, company-scoped, de type
         // Expense (AC6 — sinon l'écriture débiterait un Passif/Actif) **et
         // imputable**.
