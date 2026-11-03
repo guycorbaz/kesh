@@ -1,0 +1,297 @@
+# Story v0171-correctifs : la 0.17.1 — la QR-facture à lignes CR+LF (#854), la quantité (#866) et les dates (#871) des factures fournisseur
+
+Status: ready-for-dev
+
+*Fiche rédigée le 2026-11-03, en autonomie (Sonnet 5.5), worktree `/home/gcorbaz/devel/kesh-0171`, branche
+`release/0.17.1` partie de `910e5d5a` (le merge de la v0.17.0 sur `main`). Release **corrective 0.17.1**, sans
+migration. Registre : `v0171-choix-autonomes.md` (C-v0171-1 à 12). Clé courte : `v0171`. Issues : **#854** (bug, P2),
+**#866** (bug, P4), **#871** (bug, P4), en `refs` seulement dans les commits ; la fermeture se porte sur la PR de
+release. Les numéros de ligne sont ceux de `910e5d5a`.*
+
+## Story
+
+En tant que Comptable qui dépose dans le dossier d'import le PDF scanné d'une facture communale, je veux que Kesh en
+lise la QR-facture comme celle de n'importe quel autre émetteur ; et, en tant que lecteur d'une facture fournisseur, je
+veux lire les quantités et les dates dans la forme suisse (`1`, `29.01.2026`), non dans celle du serveur (`1.0000`,
+`2026-01-29`).
+
+## Origine et contrainte
+
+- **#854 (P2)** — recette de la 0.17.0-rc1 (2026-10-31), puis constat sur la 0.17.0 installée (2026-11-03) : deux
+  factures communales scannées, section paiement présente, entrent « Aucune QR-facture exploitable », alors que la QR-facture
+  d'un autre émetteur, scannée elle aussi, est lue. Le second rendu à ≈ 171 dpi de la v017-5 n'y change rien. Cause
+  établie le 2026-11-03 par l'orchestrateur sur les pièces réelles (hors dépôt) : voir § *Ce que le code dit*.
+- **#866 (P4)** — la fiche d'une facture fournisseur affiche la quantité brute du serveur (`1.0000`).
+- **#871 (P4)** — la confirmation d'annulation de règlement d'une facture fournisseur afficherait la date du lot en ISO.
+  ⚠️ **Prémisse à rectifier** : voir § 8.
+- **Aucune migration, aucune donnée touchée.** Du code de lecture d'un payload et des formats d'affichage. L'inventaire
+  des tables est inchangé ; `kesh_version_min_required` reste à 0.17.0 ; **le retour à la 0.17.0 est possible sans
+  restauration** (aucune écriture nouvelle, aucun schéma nouveau). Contrainte du Project Lead du 2026-10-30
+  (`kesh-gate-logs/prompts/v017-donnees-a-garder.md`), valable pour l'installation de production : Kesh 0.17.0 y tient
+  des livres réels. Aucun essai de cette story ne se joue sur le NAS ni sur des pièces réelles : fixtures synthétiques
+  seulement, bases `#[sqlx::test]` jetables.
+- **Hors périmètre** (release, faits par l'orchestrateur) : bump de version Cargo, macros des manuels
+  (`kesh-style.sty`), tag, PDF des manuels (régénérés par le développeur pour les seuls textes modifiés ici).
+
+## Ce que le code dit (relevé le 2026-11-03, `910e5d5a`)
+
+### #854 — le préfiltre strict
+
+1. **Le préfiltre** — `crates/kesh-api/src/qr_decode.rs:31` : `const SPC_HEADER: &str = "SPC\n0200";` ; `:261` :
+   `if p.starts_with(SPC_HEADER) {` dans `first_spc` (`:259-275`). Un payload `SPC\r\n0200\r\n…` n'a pas ce préfixe :
+   `first_spc` le saute, passe au suivant, rend `Ok(None)` ; `decode_pages` (`:172-`) en conclut « aucune QR-facture »
+   (`qr: none`), et l'import affiche « Aucune QR-facture exploitable ». `first_spc` est le **seul** appelant de
+   `parse_spc_payload` de la chaîne d'import (`decode_pages`, `:172-`, pour les PDF ; `decode_spc_from_image_bytes`, `:277`, pour les images).
+2. **Le parseur tolère CR+LF** — `crates/kesh-qrbill/src/parser.rs:94-95` : `let lines: Vec<&str> =
+   text.split('\n').map(|l| l.trim_end_matches('\r')).collect();`. Aucun test existant ne l'exerce (`grep -n 'r\\n'
+   crates/kesh-qrbill/src/parser.rs` ne rend que le commentaire de la ligne 94) : **la tolérance du parseur est une
+   affirmation sans preuve**. L'orchestrateur l'a constatée par exécution sur les trois payloads réels ; la story la fige
+   par un test synthétique.
+3. **Aucun `\r` ne peut subsister dans un champ restitué, par construction** : chaque ligne est retaillée de son `\r`
+   final (`:95`) avant tout usage ; `creditor_iban` passe par `validate_iban`, `reference` par `validate_qrr`/`SCOR`,
+   `creditor.*`, `currency`, `unstructured_message`, `billing_information` sont des `lines[i]` retaillées. Un `\r`
+   **interne** à une ligne (rare, hors norme) ne serait pas retiré ; hors périmètre (C-v0171-3). Côté écran, les
+   champs de `ScannedQrBill` sont recopiés tels quels en base (`imported_supplier_invoices.qr_*`) puis relus : aucune
+   découpe de texte intermédiaire.
+4. **Les messages de test** : `qr_decode.rs:444` (`assert!(payload.starts_with(SPC_HEADER))`) et `:973`
+   (`qr("SPC\n0200\n1\nPAS-UN-IBAN")`) supposent LF. Le premier dépend du **type** de `SPC_HEADER` (voir AC-1).
+
+### #854 — inventaire clos : tous les sites qui testent ou découpent un payload SPC par `\n`
+
+Méthode : `grep -rnE 'SPC\\n|SPC_HEADER|split\(.\\n.\)|\.lines\(\)' crates/kesh-api/src crates/kesh-qrbill/src
+crates/kesh-import/src --include=*.rs`, relevé site par site, puis `grep -rn 'SPC' frontend/src` (trois fichiers). Les
+`.lines()`/`split('\n')` qui ne portent pas sur un payload SPC sont classés en bloc (dernière ligne du tableau).
+
+| Site | Ce qu'il fait | Verdict |
+|---|---|---|
+| `kesh-api/src/qr_decode.rs:31, :261` (`SPC_HEADER`, `first_spc`) | écarte tout payload qui ne commence pas par `SPC\n0200` | **à corriger** (AC-1) |
+| `qr_decode.rs:7, :237` (doc-comments) | écrivent « commençant par `SPC\n0200` » | **à corriger** (la phrase devient fausse) |
+| `qr_decode.rs:444` (test `decode_spc_from_png_roundtrip`) | `payload.starts_with(SPC_HEADER)` | **à adapter** si le type de la constante change |
+| `qr_decode.rs:973` (test `image_de`, `Faux::SpcInvalide`) | payload LF fabriqué, volontairement invalide | conforme : rien à changer (le cas CR+LF s'ajoute à côté, AC-2 d) |
+| `kesh-qrbill/src/parser.rs:95` | `split('\n')` + `trim_end_matches('\r')` | **tolère CR+LF** (à prouver, AC-3) |
+| `routes/supplier_invoices.rs:1095` (`scan_qr_supplier_invoice`, chemin du navigateur) | `parse_spc_payload(&req.spc_text)` **sans préfiltre** | tolère CR+LF via le parseur ; **à prouver** (AC-4) |
+| `frontend/src/lib/features/supplier-invoices/supplier-invoice-scan.ts:28-29` | `jsQR(...)` rend `result.data` tel quel, aucune découpe ni test de préfixe | tolère CR+LF : le texte part à `scan-qr` inchangé |
+| `frontend/src/lib/features/imported-supplier-invoices/error-label.ts:36` | libellé de `INVALID_SPC_PAYLOAD` | hors classe : texte seul |
+| `inbox_import.rs:799, :807` | appelle `decode_spc_from_pdf_bytes` / `decode_spc_from_image_bytes` | tolère : passe par `first_spc` (aucune découpe propre) |
+| `kesh-qrbill/src/generator.rs:63` (`lines.join("\n")`) et ses tests (`:163-222`, `split('\n')`) | **émission** du payload par Kesh, en LF | hors chemin d'import (justifié) : la norme SIX admet LF ; Kesh émet LF, inchangé |
+| `kesh-qrbill/src/validation.rs:222` | commentaire sur `\n` comme séparateur du payload | hors chemin d'import (justifié) |
+| `routes/invoice_pdf_service.rs:461` (`split_lines`) | découpe les lignes d'une **adresse** de facture | hors classe : pas un payload SPC |
+| `kesh-import/src/csv/parser.rs:1644, :2181, :2216` ; `admin_backup/*`, `auto_backup.rs`, `config.rs`, `exports/csv_tables.rs`, `document_storage.rs`, `services/*`, `errors.rs`, `routes/admin.rs`, `routes/mcp_envois.rs` (`.lines()`) | CSV, sauvegarde, configuration, tests de texte | hors classe : aucun ne lit un payload SPC |
+
+**Les fixtures de test de l'import** (`crates/kesh-api/tests/inbox_import_e2e.rs:309-335`,
+`supplier_invoice_scan_qr_e2e.rs`) fabriquent des payloads **LF** : elles n'ont jamais pu rougir sur CR+LF — c'est la
+raison pour laquelle le défaut a passé la v017-5, dont les fixtures venaient du générateur de Kesh, en LF.
+
+### #866 — la quantité brute
+
+5. **Les sites qui affichent la quantité d'une ligne** — `grep -rn 'quantity' frontend/src --include=*.svelte` rend
+   cinq lectures, trois d'**affichage** :
+   `routes/(app)/supplier-invoices/[id]/+page.svelte:790` (`{line.quantity}` — l'objet de #866),
+   `routes/(app)/invoices/[id]/+page.svelte:1200` (`{l.quantity}`, facture cliente),
+   `routes/(app)/credit-notes/[id]/+page.svelte:174` (`{line.quantity}`, avoir) ; et deux d'**édition** (un champ
+   `<Input>`) : `lib/features/supplier-invoices/SupplierInvoiceForm.svelte:696` (déjà lisible : `formLineFromResponse`
+   passe par `readableAmount`, `supplier-invoice-form.ts:246`), `lib/components/invoices/InvoiceForm.svelte:113, :800`
+   (facture cliente : `quantity: l.quantity` recopié **brut** — `1.0000` dans le champ à l'ouverture d'un brouillon).
+6. **Le helper existe** — `readableAmount(raw, minDecimals)` (`supplier-invoice-form.ts:213`) : `1.0000` → `1` pour
+   `minDecimals = 0`, `33.3333` gardé, `2.5000` → `2.5`, valeur illisible rendue telle quelle. C'est celui du
+   formulaire de saisie (v017-4b, AC-23). **Aucun helper n'est créé** (C-v0171-6). `formatSwissAmount` ne convient pas :
+   décimales fixes, apostrophes de milliers (un montant, pas une quantité).
+7. **La liste des factures fournisseur n'affiche pas de quantité** (colonnes : numéro, fournisseur, dates, statut,
+   total) ; les MCP rendent déjà une forme unique (#812, 0.17.0).
+
+### #871 — les dates ISO
+
+8. **La prémisse de l'issue est inexacte sur le code de `910e5d5a`** : la confirmation d'annulation de règlement
+   formate déjà la date du lot — `routes/(app)/supplier-invoices/[id]/+page.svelte:231` :
+   `{ batch: batch.id, date: formatSwissDate((batch.confirmedAt ?? '').slice(0, 10)) }` ; de même `:336` (dévalidation)
+   et `:142` (« Facture réglée le … »). C'est le finding **B2-4** de la revue P2 de la v017-4b, remédié **avant** la
+   release, avec son test — `supplier-settlement-page.test.ts:202-205` : `toContain("02.07.2026")` et
+   `not.toContain("2026-07-02")`. #871 a été ouverte le 2026-11-03 à 08:32 (« relevé pendant la remédiation de la revue
+   P1 de la v017-4b »), la remédiation P2 l'a réglée : **l'issue décrit un état antérieur au code publié.** Le
+   développement le **vérifie par exécution** (AC-9) avant de conclure ; si une autre confirmation montre bien l'ISO
+   (le texte de l'issue dit « la date du lot »), il la corrige. Le commentaire à l'issue est demandé à l'orchestrateur
+   (C-v0171-8).
+9. **Les dates ISO qui, elles, restent affichées brutes sur les écrans des factures fournisseur** (inventaire clos,
+   `grep -rnE '\{[a-zA-Z.]*(invoiceDate|dueDate|requestedExecutionDate|confirmedAt)' frontend/src --include=*.svelte`
+   puis lecture) :
+
+   | Site | Valeur | Verdict |
+   |---|---|---|
+   | `routes/(app)/supplier-invoices/+page.svelte:144` | `inv.invoiceDate` (liste) | **à corriger** |
+   | `routes/(app)/supplier-invoices/+page.svelte:145` | `inv.dueDate ?? '—'` | **à corriger** |
+   | `routes/(app)/supplier-invoices/[id]/+page.svelte:569` | `invoice.invoiceDate` (fiche) | **à corriger** |
+   | `routes/(app)/supplier-invoices/[id]/+page.svelte:571` | `invoice.dueDate ?? '—'` | **à corriger** |
+   | `routes/(app)/payment-batches/+page.svelte:239` | `b.requestedExecutionDate` (liste des lots) | **à corriger** (C-v0171-9) |
+   | `routes/(app)/payment-batches/[id]/+page.svelte:97` | `batch.requestedExecutionDate` | **à corriger** |
+   | `routes/(app)/payment-batches/[id]/+page.svelte:104` | `batch.confirmedAt` (horodatage naïf `2026-…T…`) | **à corriger** : `slice(0, 10)` d'abord |
+   | `…/supplier-invoices/[id]/+page.svelte:142, :231, :336` ; `lib/features/supplier-invoices/supplier-invoice-form.ts:194` ; `lib/features/imported-supplier-invoices/imported-supplier-invoices.types.ts:65` | `formatSwissDate` déjà appliqué | conforme |
+   | `SupplierInvoiceForm.svelte:550-588`, `payment-batches/+page.svelte:145`, `[id]/+page.svelte:151`, `supplier-invoices/[id]/+page.svelte:851` | `<input type="date">` | hors périmètre (champ de saisie : le navigateur affiche la date dans sa langue) |
+
+   **Ce que la story ne corrige pas** : les dates des factures **clientes** (`invoices/+page.svelte:413`,
+   `invoices/[id]/+page.svelte:1135`) et des avoirs (`credit-notes/+page.svelte:64`, `credit-notes/[id]/+page.svelte:153`)
+   s'affichent aussi en ISO, de même que l'échéance des relances et des échéances (`invoices/reminders/+page.svelte:345`,
+   `invoices/due-dates/+page.svelte:450`, `invoices/[id]/+page.svelte:1139`) ; ce n'est pas une facture fournisseur. **Issue demandée**
+   (C-v0171-10).
+
+## Acceptance Criteria
+
+**AC-1 — Le préfiltre retient les deux séparateurs.** `first_spc` retient un payload dont les deux premières lignes sont
+`SPC` et `0200`, que le séparateur soit `\n` ou `\r\n` (`SPC\n0200` ou `SPC\r\n0200`), et le passe tel quel à
+`parse_spc_payload` (parseur inchangé). Une seule définition de la règle (une constante-tableau ou une fonction
+`est_payload_spc(&str) -> bool`), utilisée par `first_spc` et par le test de `:444`. Un `\r` seul (`SPC\r0200`), une version
+autre que `0200` (`SPC\r\n0100`) et un texte qui ne commence pas par `SPC` ne sont **pas** retenus. Les doc-comments de
+`:7` et `:237` disent « `SPC` puis `0200`, lignes séparées par LF ou CR+LF ».
+
+**AC-2 — Les tests du préfiltre et du décodage, sur des payloads engendrés par Kesh.**
+ (a) `first_spc` : le payload de `build_payload(&donnees_spc_test())` réécrit en CR+LF (`replace('\n', "\r\n")`) est retenu ;
+     `creditor_iban == "CH9300762011623852957"`, `amount == Some(100.00)`.
+ (b) `decode_spc_from_image_bytes` de bout en bout : un PNG QR (`qrcodegen_image`, `qr_decode.rs:412`) du même payload CR+LF
+     rend `Some(..)` avec les mêmes valeurs — **c'est le test qui aurait rougi sur #854**.
+ (c) **Non-régression LF** : le test existant `decode_spc_from_png_roundtrip` reste vert, inchangé en son corps.
+ (d) `decode_pages` (banc `jouer`, `qr_decode.rs:985` ; `enum Faux`, `:951`) : un cas `Faux::SpcCrlf` (QR CR+LF) à `Temps::Premier` rend `Some(..)`
+     **sans second rendu** (suite d'appels `[(0, Premier)]`) ; un cas `Faux::SpcCrlfInvalide` (`SPC\r\n0200\r\n1\r\nPAS-UN-IBAN`)
+     rend `Err(InvalidIban/InvalidSpcPayload)` comme son jumeau LF.
+ (e) Négatifs du préfiltre (AC-1) : `SPC\r0200…`, `SPC\r\n0100…`, `HTTP://…` rendent `Ok(None)`.
+
+**AC-3 — Aucun `\r` résiduel, au parseur.** Un test de `kesh-qrbill/src/parser.rs` parse un payload **structuré**
+(`structured_payload()`, `:270`) réécrit en CR+LF, **avec** les lignes 32 à 34 (information de facturation, AltPmtInf) et un
+`\r\n` final : tous les champs de `ScannedQrBill` (`creditor_iban`, `creditor.name/street_or_line1/building_or_line2/
+postal_code/town/country`, `currency`, `reference`, `unstructured_message`, `billing_information`) sont **égaux** à ceux
+du même payload en LF, et aucun ne contient `\r` (`!s.contains('\r')`). Un second cas : référence `QRR` (le checksum se
+calcule sur la valeur retaillée).
+
+**AC-4 — Le chemin du navigateur.** `POST /api/v1/supplier-invoices/scan-qr` avec `spcText` en CR+LF rend 200 et les mêmes
+champs que la version LF (`supplier_invoice_scan_qr_e2e.rs`, helper `spc_payload`, `:104`) ; test unitaire jumeau dans
+`scan_qr_tests` (`supplier_invoices.rs:1101-`) sur `ScanQrResponse::from_scanned(parse_spc_payload(..))`.
+
+**AC-5 — L'import de bout en bout.** Un test d'intégration (`inbox_import_e2e.rs`) dépose une image PNG dont le QR est un
+payload CR+LF (variante de `qr_invoice_png_with`, `:309-335`, qui reçoit le séparateur) et vérifie que le document entre
+avec `qr == "found"` (ou la forme du fichier : les champs IBAN, montant, créancier lus), puis le **contraire** de l'ancien
+comportement : pas de `qrError`, pas de « sans QR ». Même test en LF inchangé.
+
+**AC-6 — La quantité.** La fiche d'une facture fournisseur, la fiche d'une facture cliente et la fiche d'un avoir affichent
+la quantité via `readableAmount(raw, 0)` : `1.0000` → `1`, `2.5000` → `2.5`, `33.3333` → `33.3333`, `1250.0000` →
+`1250`. Aucun helper nouveau (C-v0171-6).
+
+**AC-7 — Les dates fournisseur.** Chaque site « à corriger » du tableau du § 9 passe par `formatSwissDate` : une date
+`2026-01-29` s'affiche `29.01.2026` ; `confirmedAt` (`2026-01-29T10:15:00`) s'affiche `29.01.2026` ; une échéance absente
+reste `—`. Aucune date ISO ne subsiste sur ces écrans (grep de contrôle, AC-8).
+
+**AC-8 — Tests Vitest qui figent l'affichage**, un par site corrigé (mutation : retirer le helper du site rougit le test) :
+ - fiche fournisseur : ligne `1.0000` → texte `1` (cellule `quantity`), **et** `not.toContain('1.0000')` ; dates de la fiche
+   `29.01.2026` / `not.toContain('2026-01-29')` ;
+ - liste fournisseur (`supplier-invoices-list-page.test.ts`) : date de facture et échéance en forme suisse ; échéance nulle `—` ;
+ - fiche cliente (`invoices/[id]`) et fiche d'avoir (`credit-notes/[id]`) : quantité `1` ;
+ - lots de paiement (liste et fiche) : date d'exécution et `Confirmé le` en forme suisse.
+ Grep de contrôle, à joindre au Change Log, **valeur** et non formulation : `grep -rnE '\{(inv|invoice|b|batch)\.(invoiceDate|dueDate|requestedExecutionDate|confirmedAt)\b'
+ frontend/src --include=*.svelte` ne rend plus que **trois** lignes, toutes d'écrans clients
+ (`invoices/reminders/+page.svelte:345`, `invoices/[id]/+page.svelte:1139`, `invoices/due-dates/+page.svelte:450`, voir § 9) ; sonde positive : le
+ même motif sur `910e5d5a` en rend **dix** (les sept des écrans fournisseur et ces trois-là).
+
+**AC-9 — #871 vérifiée, non supposée.** Le développement rejoue, sur une installation de dev jetable (base `kesh_v0171`),
+l'annulation du règlement d'une facture fournisseur figurant dans un lot confirmé, et **capture le texte** de la
+confirmation (`window.confirm` intercepté par Playwright ou Vitest). Attendu : `29.01.2026`. Si c'est exact, l'issue est
+déclarée **déjà corrigée en 0.17.0** (par B2-4) dans le rapport, et l'orchestrateur la commente ; sinon le site fautif est
+corrigé, avec son test.
+
+**AC-10 — Manuel et CHANGELOG** : voir § *Manuel* et § *CHANGELOG*.
+
+## Tests et mutations
+
+Tests rouges d'abord (sur `910e5d5a`), puis le correctif, puis les mutations.
+
+| # | Test | Ce qui doit rougir |
+|---|---|---|
+| T1 | `first_spc` CR+LF retenu (AC-2 a) | rouge avant correctif |
+| T2 | `decode_spc_from_image_bytes` sur PNG QR CR+LF (AC-2 b) | rouge avant correctif |
+| T3 | LF inchangé (AC-2 c) | vert avant et après |
+| T4 | `decode_pages` : CR+LF au premier temps (AC-2 d) | rouge avant correctif |
+| T5 | négatifs du préfiltre (AC-2 e) | vert avant et après ; rouge sous M2 |
+| T6 | parseur : égalité LF/CR+LF et aucun `\r` (AC-3) | vert avant et après ; rouge sous M3 |
+| T7 | `scan-qr` CR+LF (AC-4) | vert avant et après |
+| T8 | import PNG CR+LF (AC-5) | rouge avant correctif |
+| T9 | Vitest fiche fournisseur : quantité, dates (AC-6, 8) | rouge avant correctif |
+| T10 | Vitest liste fournisseur : dates (AC-8) | rouge avant correctif |
+| T11 | Vitest fiches cliente et d'avoir : quantité (AC-8) | rouge avant correctif |
+| T12 | Vitest lots de paiement : dates (AC-8) | rouge avant correctif |
+
+**Mutations** (sous le verrou de gate ; après une restauration par `cp`/`mv`, **toucher le fichier** — cargo garde le
+binaire muté) :
+- **M1** — rétablir le préfiltre strict (`starts_with("SPC\n0200")` seul) : **T1, T2, T4, T8 rougissent**. C'est la
+  mutation exigée par le mandat.
+- **M2** — accepter `SPC\r0200` (ou tout préfixe `SPC`) : T5 rougit.
+- **M3** — retirer `.map(|l| l.trim_end_matches('\r'))` du parseur : T6, T2 (champ avec `\r` ⇒ IBAN invalide) rougissent.
+- **M4** — retirer `readableAmount` d'un site de quantité (trois mutations, une par fiche) : T9 / T11 rougissent.
+- **M5** — retirer `formatSwissDate` d'un site de date (une par site corrigé) : le test du site rougit seul.
+
+Sondes positives : chaque contrôle « vide » (grep d'AC-8) prouve d'abord sa sensibilité sur `910e5d5a` (pathspec `crates/*/src/*`, non
+`crates/*/src`).
+
+## Tâches
+
+1. **Tests rouges** T1, T2, T4, T8, T9–T12 sur `910e5d5a` (T3, T5–T7 d'abord verts : les noter).
+2. `qr_decode.rs` : la règle du préfixe (AC-1), doc-comments ; adapter `:444`.
+3. Parseur : T6 seulement (aucune modification de production attendue ; si T6 révèle un `\r` résiduel, **le corriger** et
+   le consigner au Change Log — c'est alors le second défaut de #854).
+4. `inbox_import_e2e.rs` : le séparateur en paramètre de `qr_invoice_png_with` ; T8. `supplier_invoice_scan_qr_e2e.rs` : T7.
+5. Frontend : `readableAmount` aux trois fiches ; `formatSwissDate` aux sept sites ; tests Vitest.
+6. AC-9 : essai de la confirmation d'annulation du règlement, texte capturé au Change Log.
+7. Manuel FR (§ *Manuel*), PDF régénéré par le développeur (`make fr` dans `docs/manual/`), CHANGELOG.
+8. Captures d'écran, **thème clair** : fiche fournisseur (quantité, dates), liste fournisseur, fiche d'un lot de paiement ;
+   jointes au Dev Agent Record. Base de démonstration jetable.
+9. Gates : `cargo fmt --all -- --check`, `cargo clippy --workspace --all-targets -- -D warnings`, `scripts/test-fast.sh`
+   (sous `mem-guard`, verrou de gate), `cd frontend && npm run check && npm run lint-i18n-ownership && npm run test:unit &&
+   npm run build`, E2E complet au **dernier commit de code** (7 à 10 échecs attendus, `docs/testing.md`). Base remise à zéro
+   avant le gate complet.
+
+## Manuel
+
+`docs/manual/fr/user-manual.tex`, § *Importer des factures fournisseur* (`:1965-2030`) :
+- Le badge « Aucune QR-facture exploitable » (`:1983-1989`) énumère les causes (« aucun QR, un autre QR, un QR illisible, un scan de mauvaise
+  qualité ») : **ajouter** que la 0.17.1 lit les QR-factures dont les lignes sont séparées par un retour chariot
+  (CR+LF), que la norme admet et que certains émetteurs utilisent ; un document entré avant cette version avec la mention
+  « Aucune QR-facture exploitable » **alors que sa section de paiement porte un QR** se fait relire par le geste déjà
+  décrit au § *Faire relire le QR d'un document* (`:2010-2022`) : *Télécharger*, *Retirer de la liste*, redéposer,
+  *Importer le dossier*.
+- Le § *Faire relire le QR d'un document* attribue la lecture manquée à la résolution (« Sur des scans de test, ce second rendu lit des QR-factures
+  que le premier manquait ; une pièce réelle peut encore y échapper ») : **vrai** (le second rendu reste en place) mais incomplet ;
+  aucune phrase n'est fausse, rien ne se retire.
+- Les formats d'affichage (`1`, `29.01.2026`) : le manuel ne décrit ni la forme de la quantité ni celle des dates des écrans
+  fournisseur (`grep -nE '1\.0000|AAAA-MM-JJ|jj\.mm' docs/manual/fr/user-manual.tex` : rien d'applicable, `:2229` est la mention
+  « Clos le JJ.MM.AAAA » d'un autre écran) : **rien à corriger** pour #866 et #871.
+- `docs/manual/{de,en,it}/` : `ls` ne rend que `README.md` (aucun `.tex`) : rien à traduire.
+- Le manuel d'administration (`admin-manual.tex`, *Passer à la 0.17.0*) : la **procédure de mise à jour** vers la 0.17.1 (sans migration,
+  retour possible) relève de la préparation de la release, faite par l'orchestrateur.
+- **Le PDF est à contrôler** : `pdftotext docs/manual/fr/user-manual.pdf - | tr '\n' ' ' | tr -s ' '`, puis `grep -F` de la phrase neuve.
+
+## CHANGELOG
+
+Nouvelle section `## [0.17.1] — Non publié`, au-dessus de la 0.17.0, une intro d'une phrase — « La 0.17.1 est une version corrective :
+**aucune migration**, aucune donnée réécrite, **le retour à la 0.17.0 est possible sans restauration**. » — puis `### Corrigé` :
+- **La QR-facture de certains émetteurs est enfin lue** ([#854](…/issues/854)) : une QR-facture dont les lignes sont séparées
+  par CR+LF (que la norme SIX admet) était écartée avant lecture et entrait « Aucune QR-facture exploitable ». *Un document entré ainsi avant
+  la 0.17.1 se fait relire : le télécharger, le retirer de la liste, le redéposer.*
+- **La quantité d'une ligne s'affiche `1`, non `1.0000`**, sur la fiche d'une facture fournisseur, d'une facture cliente et d'un avoir
+  ([#866](…/issues/866)).
+- **Les dates des factures fournisseur et des lots de paiement s'affichent `29.01.2026`**, non `2026-01-29` ([#871](…/issues/871)) —
+  la confirmation d'annulation d'un règlement l'affichait déjà ainsi depuis la 0.17.0 *(à ajuster selon AC-9)*.
+
+`refs #854`, `refs #866`, `refs #871` aux commits ; **aucun mot-clé de fermeture** (la PR de release porte `closes #866`, `closes #871` ;
+`#854` attend le constat de Guy sur ses deux pièces, comme le disait le commentaire du 2026-10-31).
+
+## Dev Notes
+
+- **Jamais de pièce réelle.** Les fixtures sont les payloads de `build_payload` réécrits (`replace('\n', "\r\n")`) ; le QR est
+  encodé par `rxing` (`qrcodegen_image`) ou le générateur de Kesh. La question « rxing préserve-t-il `\r` dans un QR en
+  mode octet ? » est tranchée **par T2**, sur le QR synthétique ; si T2 rougit pour une autre raison que le préfiltre, le dire.
+- **Pourquoi la v017-5 n'a rien vu** : ses fixtures et son banc `jouer` (`Faux::Spc`) ont tous pour source `build_payload`, en LF.
+  La classe « payload valide mais non produit par Kesh » n'avait aucun représentant — AC-2 d/AC-5 le sont.
+- **Le second rendu de la v017-5 reste** : utile pour d'autres scans, non en cause ici (commentaire de l'issue du 2026-11-03).
+- Ne pas toucher `generator.rs` : Kesh émet LF (norme : LF ou CR+LF).
+- **Gate complet** (`kesh-api` touche `inbox_import`) ; aucune migration : pas de P5, P6, P7.
+
+## Change Log
+
+- 2026-11-03 — fiche créée (Sonnet 5.5, autonomie). Prémisses vérifiées au code : #854 (cause confirmée, lignes citées) ; #866
+  (confirmée, trois sites d'affichage dont deux hors fournisseur) ; #871 (**prémisse fausse sur le code publié**, voir § 8).
+  Registre C-v0171-1 à 12. Prochaine : validation P1 (Opus, une lentille R+F, `v0171-validate-prompt-p1.md`).
