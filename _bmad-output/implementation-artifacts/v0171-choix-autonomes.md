@@ -1,7 +1,7 @@
 # Release 0.17.1 — registre des choix autonomes de la Story v0171-correctifs
 
 Registre propre à la story (`docs/agents-orchestration.md` § 1), à verser **par union** au registre de la release.
-Fiche : `v0171-correctifs.md`. Numérotation `C-v0171-k`. Issues : #854 (P2), #866 (P4), #871 (P4), en `refs` seulement.
+Fiche : `v0171-correctifs.md`. Numérotation `C-v0171-k`. Issues : #854 (P2), #866 (P4), #871 (P4), #878 (P4), #879 (P4), en `refs` seulement.
 Numéros de ligne de `910e5d5a`. Chaque choix : contexte, option retenue, alternatives écartées, réversibilité.
 
 ---
@@ -131,12 +131,14 @@ Numéros de ligne de `910e5d5a`. Chaque choix : contexte, option retenue, altern
   — inutile, le serveur lit un décimal.
 - **Réversible** : oui.
 
-### C-v0171-14 — #879 : seize sites des écrans clients, huit exceptions closes, les autres écrans en issue
+### C-v0171-14 — #879 : dix-sept sites des écrans clients, quatre catégories d'exceptions closes, les autres écrans en issue
+
+*Recompté le 2026-11-03 (validation P1, P1) : « seize » et « huit exceptions » étaient faux ; le texte de ce choix dit désormais dix-sept sites et quatre catégories (i) à (iv).*
 
 - **Contexte** : listes et fiches des factures, des avoirs, des relances et des échéances (§ 10 de la fiche). Les écrans du journal, des
   exercices, de l'import bancaire et du rapprochement affichent aussi l'ISO (et des tests le figent) mais ne sont pas ceux de #879.
-- **Retenu** : `formatSwissDate` aux seize sites (horodatages après `.slice(0, 10)`) ; le grep de contrôle rend 0 site non enveloppé, hors les
-  exceptions (champs `type="date"`, valeurs envoyées à l'API et calculs, tests de nullité) ; les écrans cités ci-dessus se **tracent en issue**
+- **Retenu** : `formatSwissDate` aux dix-sept sites (horodatages après `.slice(0, 10)`) ; le grep de contrôle rend 0 site non enveloppé, hors les
+  exceptions (champs `type="date"`, valeurs envoyées à l'API et calculs, tests de nullité, dont `emailedAt` aux `:1000, :1014`) ; les écrans cités ci-dessus se **tracent en issue**
   (« on trace toujours »).
 - **Écartées** : tout l'application en une fois — une release corrective ne change pas le journal et les relevés bancaires, et leurs tests
   figent l'ISO.
@@ -169,4 +171,31 @@ Numéros de ligne de `910e5d5a`. Chaque choix : contexte, option retenue, altern
   rapprochement (§ 10 iv de la fiche).
 - **Retenu** : l'orchestrateur ouvre l'issue (P4) ; ces écrans sont hors de #879. Les tests du rapprochement qui figent l'ISO sont à
   réviser avec elle.
+- **Réversible** : oui.
+
+---
+
+*Remédiation de la validation P1 (2026-11-03).*
+
+### C-v0171-19 — #878 : le prix unitaire du brouillon client est formaté avec la quantité (`readableAmount(raw, 2)`)
+
+- **Contexte** : validation P1, P5. `InvoiceForm.svelte:114` et `:611` recopient `unitPrice: l.unitPrice` brut vers
+  `<Input … bind:value={line.unitPrice} />` (`:803`) ; `unit_price DECIMAL(19,4)` (`20260416000001_invoices.sql:47`), échelle ≤ 4 comme la quantité
+  (`MAX_DECIMAL_SCALE`, `invoices.rs:499`). Même défaut, mêmes deux sites que #878.
+- **Retenu** : l'intégrer à #878 ; `readableAmount(l.unitPrice, 2)`, le formatage du formulaire fournisseur (`supplier-invoice-form.ts:247`) :
+  deux décimales au moins, jamais de précision perdue (`100.2000` ⇒ `100.20`, `33.3333` gardé). Test et mutation M6-ter. `"100.00"` et
+  `"100.0000"` sont de même valeur : le total ne change pas.
+- **Écartées** : une issue distincte (C-v0171-7 l'a déjà fait pour la quantité, et #878 couvre le « champ de saisie d'une ligne ») ;
+  `readableAmount(…, 0)` pour le prix (`100` au lieu de `100.00`, pire lisibilité d'un montant).
+- **Réversible** : oui.
+
+### C-v0171-20 — M6-bis retirée (mutation équivalente) ; « tel quel » de C-v0171-1 déclaré non testable
+
+- **Contexte** : validation P1, P3 et P13. Sur le domaine du serveur (`DECIMAL(19,4)`, échelle ≤ 4, `MAX_QUANTITY` 1 000 000),
+  `Number(x).toString()` rend la même chaîne que `readableAmount(x, 0)` ; et une normalisation `\r\n` → `\n` avant le parseur donnerait les
+  mêmes résultats que le passage direct.
+- **Retenu** : retirer M6-bis, au lieu de l'envoyer chercher un cas qui ne rougit pas ; déclarer que « le payload part tel quel » n'a pas de test
+  (la garantie est la relecture du diff, `parse_spc_payload(p)`, `qr_decode.rs:262`), sans effet fonctionnel.
+- **Écartées** : une valeur illisible (`NaN`) pour tuer M6-bis — comportement hors besoin ; un test d'espionnage du parseur — du code de
+  production ajouté pour un test.
 - **Réversible** : oui.

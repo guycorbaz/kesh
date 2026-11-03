@@ -4,7 +4,7 @@ Status: ready-for-dev
 
 *Amendée le 2026-11-03 sur demande du Project Lead : périmètre élargi à **#878** (champ de saisie de la quantité d'une facture cliente) et **#879** (dates ISO des écrans clients) — issues ouvertes par l'orchestrateur sur les relevés de la première rédaction ; C-v0171-7 et C-v0171-10 sont remplacés par C-v0171-13 et 14. Fiche rédigée le 2026-11-03, en autonomie (Sonnet 5.5), worktree `/home/gcorbaz/devel/kesh-0171`, branche
 `release/0.17.1` partie de `910e5d5a` (le merge de la v0.17.0 sur `main`). Release **corrective 0.17.1**, sans
-migration. Registre : `v0171-choix-autonomes.md` (C-v0171-1 à 18). Clé courte : `v0171`. Issues : **#854** (bug, P2),
+migration. Registre : `v0171-choix-autonomes.md` (C-v0171-1 à 20). Clé courte : `v0171`. Issues : **#854** (bug, P2),
 **#866**, **#871**, **#878**, **#879** (bugs, P4), en `refs` seulement dans les commits ; la fermeture se porte sur la PR de
 release. Les numéros de ligne sont ceux de `910e5d5a`.*
 
@@ -13,7 +13,8 @@ release. Les numéros de ligne sont ceux de `910e5d5a`.*
 En tant que Comptable qui dépose dans le dossier d'import le PDF scanné d'une facture communale, je veux que Kesh en
 lise la QR-facture comme celle de n'importe quel autre émetteur ; et, en tant que lecteur d'une facture fournisseur, je
 veux lire les quantités et les dates dans la forme suisse (`1`, `29.01.2026`), non dans celle du serveur (`1.0000`,
-`2026-01-29`).
+`2026-01-29`) — sur les factures fournisseur et les lots de paiement, mais aussi sur les factures clientes, les avoirs, les relances et
+l'échéancier, et dans les champs quantité et prix d'un brouillon de facture cliente.
 
 ## Origine et contrainte
 
@@ -45,8 +46,7 @@ veux lire les quantités et les dates dans la forme suisse (`1`, `29.01.2026`), 
    (`qr: none`), et l'import affiche « Aucune QR-facture exploitable ». `first_spc` est le **seul** appelant de
    `parse_spc_payload` de la chaîne d'import (`decode_pages`, `:172-`, pour les PDF ; `decode_spc_from_image_bytes`, `:277`, pour les images).
 2. **Le parseur tolère CR+LF** — `crates/kesh-qrbill/src/parser.rs:94-95` : `let lines: Vec<&str> =
-   text.split('\n').map(|l| l.trim_end_matches('\r')).collect();`. Aucun test existant ne l'exerce (`grep -n 'r\\n'
-   crates/kesh-qrbill/src/parser.rs` ne rend que le commentaire de la ligne 94) : **la tolérance du parseur est une
+   text.split('\n').map(|l| l.trim_end_matches('\r')).collect();`. Aucun test existant ne l'exerce (`git grep -nF '\r' -- crates/kesh-qrbill/src/parser.rs` ne rend que la ligne 95, `git grep -nF CRLF` que le commentaire de la ligne 94) : **la tolérance du parseur est une
    affirmation sans preuve**. L'orchestrateur l'a constatée par exécution sur les trois payloads réels ; la story la fige
    par un test synthétique.
 3. **Aucun `\r` ne peut subsister dans un champ restitué, par construction** : chaque ligne est retaillée de son `\r`
@@ -87,7 +87,7 @@ raison pour laquelle le défaut a passé la v017-5, dont les fixtures venaient d
 ### #866 — la quantité brute
 
 5. **Les sites qui affichent la quantité d'une ligne** — `grep -rn 'quantity' frontend/src --include=*.svelte` rend
-   cinq lectures, trois d'**affichage** :
+   cinq sites de lecture (le grep rend treize lignes), trois d'**affichage** :
    `routes/(app)/supplier-invoices/[id]/+page.svelte:790` (`{line.quantity}` — l'objet de #866),
    `routes/(app)/invoices/[id]/+page.svelte:1200` (`{l.quantity}`, facture cliente),
    `routes/(app)/credit-notes/[id]/+page.svelte:174` (`{line.quantity}`, avoir) ; et deux d'**édition** (un champ
@@ -132,7 +132,7 @@ raison pour laquelle le défaut a passé la v017-5, dont les fixtures venaient d
 ### #879 — dates ISO des écrans clients (inventaire clos)
 
 10. `grep -rnE '(\{|date: )[a-zA-Z.!?]*\.(date|dueDate|paidAt|pdfFrozenAt|emailedAt|settledOn|sentAt|lastReminderAt|cancelledAt)\b'`
-    sur les huit fichiers d'écrans clients, relu ligne à ligne, rend **seize sites** d'affichage brut (`ReminderHistory` et
+    sur les huit fichiers d'écrans clients, relu ligne à ligne, rend **dix-sept sites** d'affichage brut (`ReminderHistory` et
     `InvoiceSettlements` sont des composants des fiches). Les horodatages (`paidAt`, `pdfFrozenAt`, `emailedAt`, `sentAt`,
     `lastReminderAt`, `cancelledAt`) passent déjà par `.slice(0, 10)` ; il reste à les envelopper de `formatSwissDate`.
 
@@ -151,13 +151,13 @@ raison pour laquelle le défaut a passé la v017-5, dont les fixtures venaient d
     **Exceptions closes, justifiées** : (i) les champs `<input type="date">` (`InvoiceForm`, `SettleInvoiceDialog.svelte:295`,
     `WriteOffDialog.svelte:210`, `ManualReminderDialog.svelte:126`, filtres) : le navigateur les affiche dans sa langue ;
     (ii) les valeurs **envoyées à l'API** (`createCreditNote({ date: today })`, `settledOn`, `sentAt`, `recordManualReminder`,
-    `invoiceDate={…}` passé à un dialogue comme borne) et les `toISOString().slice(0, 10)` de calcul ; (iii) `DunningPausedBadge`
-    et les `dunningPausedAt` (test de nullité, aucun affichage) ; (iv) les écrans qui ne sont **pas** ceux des factures clientes, des
+    `invoiceDate={…}` passé à un dialogue comme borne) et les `toISOString().slice(0, 10)` de calcul ; (iii) `DunningPausedBadge`,
+    les `dunningPausedAt` et le test de nullité de `emailedAt` (`invoices/[id]/+page.svelte:1000, :1014` : il choisit le libellé « Renvoyer / Envoyer par e-mail ») — aucun affichage ; (iv) l'écran des clés API (`settings/api-keys/+page.svelte:74-82`, `value.slice(0, 10)`), et les écrans qui ne sont **pas** ceux des factures clientes, des
     avoirs, des relances et des échéances : `journal-entries` (`+page.svelte:551`, `[id]/+page.svelte:590`), `settings/fiscal-years`
     (`:459-460, :636-642`), `bank-import` (`[id]/+page.svelte:139, :144, :179`, `BankImportList.svelte:38`,
     `BankImportUpload.svelte:544, :799`), le rapprochement (`ReconciliationProposals.svelte:480`, `ManualMatchModal.svelte:173`,
     `TransactionSplitModal.svelte:234`, `LinkSettlementModal.svelte:205, :290, :350`) — leurs tests figent d'ailleurs l'ISO
-    (`ReconciliationProposals.test.ts:398`, `LinkSettlementModal.test.ts:287`). **Issue demandée** pour ceux-là (C-v0171-18).
+    (`ReconciliationProposals.test.ts:398`, `LinkSettlementModal.test.ts:287`). **Issue** pour ceux-là : #880 (ouverte par l'orchestrateur, complétée de l'écran des clés API) ; C-v0171-18.
 
     **Tests existants qui figent l'ISO sur ces sites** (à mettre à jour, avec la raison au Change Log) :
     `routes/(app)/invoices/[id]/invoice-pdf-page.test.ts:171-173` (`"2026-03-02"` ⇒ `"02.03.2026"`) et `:220-222`
@@ -170,7 +170,7 @@ raison pour laquelle le défaut a passé la v017-5, dont les fixtures venaient d
     (`bind:value={line.quantity}`) : **conforme** — les brouillons relus passent par `formLineFromResponse` → `readableAmount(line.quantity, 0)`
     (`supplier-invoice-form.ts:246`, v017-4b AC-23). (b) `lib/components/invoices/InvoiceForm.svelte:800`
     (`<Input … bind:value={line.quantity} />`), alimenté par **deux** sites qui recopient la valeur brute du serveur : `initLines`
-    (`:113`, ouverture d'un brouillon) et `reloadInvoice` (`:610`, rechargement après un conflit de version) ; les deux autres sites
+    (`:113`, ouverture d'un brouillon) et `reloadInvoice` (`:610`, rechargement après un conflit de version) — qui recopient **aussi le prix unitaire** (`unitPrice: l.unitPrice`, `:114` et `:611`) vers `<Input … bind:value={line.unitPrice} />` (`:803`), même échelle `DECIMAL(19,4)` (`20260416000001_invoices.sql:47`) : intégré à #878 (C-v0171-19) ; les trois autres sites
     (`:125`, `:410`, `:424`) posent `'1'` (conformes). Les avoirs n'ont pas de formulaire (créés depuis la facture, `createCreditNote`).
     **Aller-retour** : à l'enregistrement, `stripUiKey` envoie la chaîne du champ telle quelle (`:555`) ; le serveur accepte `"1"`
     (c'est déjà la valeur des lignes neuves) ; `readableAmount` ne tronque rien (`33.3333` et `0.0125` gardés, seuls les zéros
@@ -180,8 +180,8 @@ raison pour laquelle le défaut a passé la v017-5, dont les fixtures venaient d
 ## Acceptance Criteria
 
 **AC-1 — Le préfiltre retient les deux séparateurs.** `first_spc` retient un payload dont les deux premières lignes sont
-`SPC` et `0200`, que le séparateur soit `\n` ou `\r\n` (`SPC\n0200` ou `SPC\r\n0200`), et le passe tel quel à
-`parse_spc_payload` (parseur inchangé). Une seule définition de la règle (une constante-tableau ou une fonction
+`SPC` et `0200`, que le séparateur soit `\n` ou `\r\n` (`SPC\n0200` ou `SPC\r\n0200`), et le passe à
+`parse_spc_payload` (parseur inchangé). *« Tel quel » n'est pas testable* : une normalisation `\r\n` → `\n` préalable donnerait les mêmes résultats (mutation équivalente) ; la garantie est celle de la relecture du diff (`parse_spc_payload(p)`, `qr_decode.rs:262`, reçoit `p`) et de C-v0171-1 (P13 de la validation P1). Une seule définition de la règle (une constante-tableau ou une fonction
 `est_payload_spc(&str) -> bool`), utilisée par `first_spc` et par le test de `:444`. Un `\r` seul (`SPC\r0200`), une version
 autre que `0200` (`SPC\r\n0100`) et un texte qui ne commence pas par `SPC` ne sont **pas** retenus. Les doc-comments de
 `:7` et `:237` disent « `SPC` puis `0200`, lignes séparées par LF ou CR+LF ».
@@ -210,8 +210,8 @@ champs que la version LF (`supplier_invoice_scan_qr_e2e.rs`, helper `spc_payload
 
 **AC-5 — L'import de bout en bout.** Un test d'intégration (`inbox_import_e2e.rs`) dépose une image PNG dont le QR est un
 payload CR+LF (variante de `qr_invoice_png_with`, `:309-335`, qui reçoit le séparateur) et vérifie que le document entre
-avec `qr == "found"` (ou la forme du fichier : les champs IBAN, montant, créancier lus), puis le **contraire** de l'ancien
-comportement : pas de `qrError`, pas de « sans QR ». Même test en LF inchangé.
+avec `entry["qr"] == "present"` (la valeur sérialisée, `inbox_import.rs:117` ; les tests existants font `assert_eq!(entry["qr"], "present", …)`, `inbox_import_e2e.rs:632`) et les champs IBAN, montant, créancier lus, puis le **contraire** de l'ancien
+comportement : pas de `qrError`, pas de `"none"`. Même test en LF inchangé.
 
 **AC-6 — La quantité (affichage, #866).** La fiche d'une facture fournisseur, la fiche d'une facture cliente et la fiche d'un avoir affichent
 la quantité via `readableAmount(raw, 0)` : `1.0000` → `1`, `2.5000` → `2.5`, `33.3333` → `33.3333`, `1250.0000` →
@@ -227,7 +227,7 @@ reste `—`. Aucune date ISO ne subsiste sur ces écrans (grep de contrôle, AC-
  - liste fournisseur (`supplier-invoices-list-page.test.ts`) : date de facture et échéance en forme suisse ; échéance nulle `—` ;
  - fiche cliente (`invoices/[id]`) et fiche d'avoir (`credit-notes/[id]`) : quantité `1` ;
  - lots de paiement (liste et fiche) : date d'exécution et `Confirmé le` en forme suisse ;
- - **#878** (`InvoiceForm.test.ts`) : un brouillon dont une ligne porte `1.0000` ouvre un champ `1` ; après un conflit de version et
+ - **#878** (`InvoiceForm.test.ts`) : un brouillon dont une ligne porte `1.0000` et un prix `100.0000` ouvre un champ `1` et un prix `100.00` (et `100.2000` ⇒ `100.20`, `33.3333` gardé) ; après un conflit de version et
    « Recharger » (`reloadInvoice`), le champ porte encore `1` ; `33.3333` reste `33.3333` ; l'enregistrement sans toucher la quantité envoie
    `quantity: "1"` (corps de la requête lu) et un total inchangé ; saisir `2.5` l'envoie `"2.5"` ;
  - **#879**, un test par écran (listes et fiches) : `inv.date`/`dueDate` des factures (liste, fiche, échéances), `paidAt`, `pdfFrozenAt`, `emailedAt`
@@ -240,7 +240,7 @@ reste `—`. Aucune date ISO ne subsiste sur ces écrans (grep de contrôle, AC-
 
 **AC-9 — #871 vérifiée, non supposée.** Le développement rejoue, sur une installation de dev jetable (base `kesh_v0171`),
 l'annulation du règlement d'une facture fournisseur figurant dans un lot confirmé, et **capture le texte** de la
-confirmation (`window.confirm` intercepté par Playwright ou Vitest). Attendu : `29.01.2026`. Si c'est exact, l'issue est
+confirmation (`window.confirm` intercepté par Playwright, sur `kesh_v0171` — le test Vitest `supplier-settlement-page.test.ts:186-207` existe déjà et n'est pas une exécution sur installation). Attendu : la date de confirmation du lot, vue à l'écran du lot, au format `JJ.MM.AAAA` et **aucune** forme `AAAA-MM-JJ` (le lot est confirmé le jour de l'essai : pas de littéral). Si c'est exact, l'issue est
 déclarée **déjà corrigée en 0.17.0** (par B2-4) dans le rapport, et l'orchestrateur la commente ; sinon le site fautif est
 corrigé, avec son test.
 
@@ -248,16 +248,18 @@ corrigé, avec son test.
 
 **AC-11 — Le champ de saisie de la quantité (#878).** À l'ouverture d'un brouillon de facture cliente (`initLines`) et après un
 rechargement sur conflit de version (`reloadInvoice`), le champ quantité porte `readableAmount(l.quantity, 0)` : `1.0000` ⇒ `1`,
-`2.5000` ⇒ `2.5`, `33.3333` ⇒ `33.3333`, `0.0125` ⇒ `0.0125`. Aller-retour : ouvrir un brouillon puis l'enregistrer sans toucher la
-quantité envoie `"1"` (jamais `"1.0000"`) et ne change pas le total ; saisir `33.3333` l'envoie tel quel. Le formulaire fournisseur
+`2.5000` ⇒ `2.5`, `33.3333` ⇒ `33.3333`, `0.0125` ⇒ `0.0125` ; **le champ prix unitaire porte `readableAmount(l.unitPrice, 2)`** (même échelle `DECIMAL(19,4)`,
+symétrique client de v017-4b AC-23, `supplier-invoice-form.ts:247`) : `100.0000` ⇒ `100.00`, `100.2000` ⇒ `100.20`, `33.3333` ⇒ `33.3333` (aucune
+précision saisie ou lue n'est perdue : seuls les zéros de fin au-delà de deux décimales tombent). Aller-retour : ouvrir un brouillon puis l'enregistrer sans toucher la
+quantité envoie `"1"` (jamais `"1.0000"`) et ne change pas le total ; saisir `33.3333` l'envoie tel quel ; le prix `100.0000` envoie `"100.00"`, de même valeur numérique, et le total ne change pas. Le formulaire fournisseur
 (conforme) ne change pas.
 
-**AC-12 — Les dates des écrans clients (#879).** Chacun des seize sites « à corriger » du § 10 passe par `formatSwissDate` (les
+**AC-12 — Les dates des écrans clients (#879).** Chacun des dix-sept sites « à corriger » du § 10 passe par `formatSwissDate` (les
 horodatages après `.slice(0, 10)`) : `2026-03-02` s'affiche `02.03.2026` ; l'échéance absente reste `—` ; les phrases « dernier le », « Annulé le »,
 « Confirmer la suppression de la facture du » portent la forme suisse. Les `data-testid` (`invoice-pdf-frozen-at`, `invoice-emailed-at`) sont
 conservés. **Grep de contrôle** : le motif du § 10, rejoué sur les huit fichiers après correction, ne rend que des lignes enveloppées de
-`formatSwissDate` ou rangées aux exceptions (i) à (iii) ; la liste (iv) est celle d'une issue, pas d'une tolérance. Sonde positive : le même
-motif sur `910e5d5a` rend les seize lignes du tableau.
+`formatSwissDate` ou rangées aux exceptions (i) à (iii) (quatre catégories (i) à (iv), pas « huit exceptions ») ; la liste (iv) est celle d'une issue, pas d'une tolérance. Sonde positive : le même
+motif sur `910e5d5a` rend **22 lignes**, dont les dix-sept du tableau ; les cinq autres sont rangées aux exceptions : `invoices/[id]/+page.svelte:1000, :1014` (test de nullité de `emailedAt`, (iii)) et `:1561, :1583`, `due-dates/+page.svelte:514` (borne passée à un dialogue, (ii)).
 
 ## Tests et mutations
 
@@ -277,7 +279,7 @@ Tests rouges d'abord (sur `910e5d5a`), puis le correctif, puis les mutations.
 | T10 | Vitest liste fournisseur : dates (AC-8) | rouge avant correctif |
 | T11 | Vitest fiches cliente et d'avoir : quantité (AC-8) | rouge avant correctif |
 | T12 | Vitest lots de paiement : dates (AC-8) | rouge avant correctif |
-| T13 | Vitest `InvoiceForm` : quantité à l'ouverture, après rechargement, aller-retour (AC-11) | rouge avant correctif (sauf l'aller-retour `33.3333`, vert avant et après) |
+| T13 | Vitest `InvoiceForm` : quantité et prix à l'ouverture, après rechargement, aller-retour (AC-11) | rouge avant correctif (sauf l'aller-retour `33.3333`, vert avant et après) |
 | T14 | Vitest écrans clients : dates, un test par écran (AC-12) | rouge avant correctif ; `invoice-pdf-page.test.ts` mis à jour |
 
 **Mutations** (sous le verrou de gate ; après une restauration par `cp`/`mv`, **toucher le fichier** — cargo garde le
@@ -285,12 +287,13 @@ binaire muté) :
 - **M1** — rétablir le préfiltre strict (`starts_with("SPC\n0200")` seul) : **T1, T2, T4, T8 rougissent**. C'est la
   mutation exigée par le mandat.
 - **M2** — accepter `SPC\r0200` (ou tout préfixe `SPC`) : T5 rougit.
-- **M3** — retirer `.map(|l| l.trim_end_matches('\r'))` du parseur : T6, T2 (champ avec `\r` ⇒ IBAN invalide) rougissent.
+- **M3** — retirer `.map(|l| l.trim_end_matches('\r'))` du parseur : **T1, T2, T4, T6, T7, T8 rougissent** (l'en-tête `SPC\r` est refusé dès `parser.rs:103`, `InvalidPayload`, non à l'IBAN).
 - **M4** — retirer `readableAmount` d'un site de quantité (trois mutations, une par fiche) : T9 / T11 rougissent.
 - **M5** — retirer `formatSwissDate` d'un site de date (une par site corrigé) : le test du site rougit seul.
 - **M6** (#878) — retirer `readableAmount` de `reloadInvoice` (`:610`) seul : le test « après conflit » rougit, celui de l'ouverture reste
-  vert ; puis de `initLines` (`:113`) seul : l'inverse. **M6-bis** — remplacer `readableAmount(l.quantity, 0)` par `Number(l.quantity).toString()` : le test de précision doit rougir ; il vise donc une
-  valeur que `Number` altère (`0.12345678`, huit décimales) en plus de `33.3333`. Si M6-bis ne rougit pas, ajouter le cas.
+  vert ; puis de `initLines` (`:113`) seul : l'inverse. **M6-ter** (prix unitaire, C-v0171-19) — retirer `readableAmount(l.unitPrice, 2)` de `reloadInvoice` (`:611`) seul, puis de `initLines` (`:114`) seul : le test du prix correspondant rougit seul.
+  *(M6-bis, `Number(x).toString()`, est retirée : sur le domaine du serveur — `DECIMAL(19,4)`, échelle ≤ 4, plafond 1 000 000 — `Number` rend la
+  même chaîne que `readableAmount(x, 0)`, la mutation est équivalente et aucun cas ne la tue ; P3 de la validation P1.)*
 - **M7** (#879) — retirer `formatSwissDate` du seul `.slice(0, 10)` de `invoice.emailedAt` (`:1172`), puis de `ReminderHistory.svelte:70` : chaque
   test d'écran rougit seul (un test unique par écran ne couvrirait pas le second site d'une même page : le test de la fiche lit les
   trois horodatages, celui de l'historique lit `sentAt` **et** `cancelledAt`).
@@ -300,18 +303,22 @@ Sondes positives : chaque contrôle « vide » (grep d'AC-8) prouve d'abord sa s
 
 ## Tâches
 
-1. **Tests rouges** T1, T2, T4, T8, T9–T12 sur `910e5d5a` (T3, T5–T7 d'abord verts : les noter).
+1. **Tests rouges** T1, T2, T4, T8, T9–T14 sur `910e5d5a` (T3, T5–T7 d'abord verts : les noter).
 2. `qr_decode.rs` : la règle du préfixe (AC-1), doc-comments ; adapter `:444`.
 3. Parseur : T6 seulement (aucune modification de production attendue ; si T6 révèle un `\r` résiduel, **le corriger** et
    le consigner au Change Log — c'est alors le second défaut de #854).
 4. `inbox_import_e2e.rs` : le séparateur en paramètre de `qr_invoice_png_with` ; T8. `supplier_invoice_scan_qr_e2e.rs` : T7.
 5. Frontend : `readableAmount` aux trois fiches ; `formatSwissDate` aux sept sites fournisseur et lots ; **`readableAmount` aux deux sites
-   d'`InvoiceForm` (#878)** ; **`formatSwissDate` aux seize sites des écrans clients (#879)** ; tests Vitest ; mise à jour de
+   d'`InvoiceForm` (#878)** ; **`formatSwissDate` aux dix-sept sites des écrans clients (#879)** ; tests Vitest ; mise à jour de
    `invoice-pdf-page.test.ts`.
 6. AC-9 : essai de la confirmation d'annulation du règlement, texte capturé au Change Log.
 7. Manuel FR (§ *Manuel*), PDF régénéré par le développeur (`make fr` dans `docs/manual/`), CHANGELOG.
-8. Captures d'écran, **thème clair** : fiche fournisseur (quantité, dates), liste fournisseur, fiche d'un lot de paiement ;
-   jointes au Dev Agent Record. Base de démonstration jetable.
+8. Captures d'écran, **thème clair**, base de démonstration jetable, jointes au Dev Agent Record — **chaque écran touché** :
+   fiche fournisseur (quantité, dates) ; liste fournisseur (échéance présente et nulle `—`) ; liste et fiche d'un lot de paiement
+   (exécution, `Confirmé le`) ; fiche d'une facture cliente et fiche d'un avoir (quantité) ; **brouillon de facture cliente rouvert** (champs
+   quantité et prix) puis **après « Recharger »** sur conflit de version ; écrans clients des dates : liste et fiche des factures (dont
+   payée, figée, envoyée), échéancier, relances (« dernier le »), historique des rappels (« Annulé le »), règlements, liste et fiche des
+   avoirs, dialogue de suppression d'une facture.
 9. Gates : `cargo fmt --all -- --check`, `cargo clippy --workspace --all-targets -- -D warnings`, `scripts/test-fast.sh`
    (sous `mem-guard`, verrou de gate), `cd frontend && npm run check && npm run lint-i18n-ownership && npm run test:unit &&
    npm run build`, E2E complet au **dernier commit de code** (7 à 10 échecs attendus, `docs/testing.md`). Base remise à zéro
@@ -324,7 +331,7 @@ Sondes positives : chaque contrôle « vide » (grep d'AC-8) prouve d'abord sa s
   qualité ») : **ajouter** que la 0.17.1 lit les QR-factures dont les lignes sont séparées par un retour chariot
   (CR+LF), que la norme admet et que certains émetteurs utilisent ; un document entré avant cette version avec la mention
   « Aucune QR-facture exploitable » **alors que sa section de paiement porte un QR** se fait relire par le geste déjà
-  décrit au § *Faire relire le QR d'un document* (`:2010-2022`) : *Télécharger*, *Retirer de la liste*, redéposer,
+  décrit au § *Faire relire le QR d'un document* (`:2012-2023`) : *Télécharger*, *Retirer de la liste*, redéposer,
   *Importer le dossier*.
 - Le § *Faire relire le QR d'un document* attribue la lecture manquée à la résolution (« Sur des scans de test, ce second rendu lit des QR-factures
   que le premier manquait ; une pièce réelle peut encore y échapper ») : **vrai** (le second rendu reste en place) mais incomplet ;
@@ -343,12 +350,12 @@ Nouvelle section `## [0.17.1] — Non publié`, au-dessus de la 0.17.0, une intr
 **aucune migration**, aucune donnée réécrite, **le retour à la 0.17.0 est possible sans restauration**. » — puis `### Corrigé` :
 - **La QR-facture de certains émetteurs est enfin lue** ([#854](…/issues/854)) : une QR-facture dont les lignes sont séparées
   par CR+LF (que la norme SIX admet) était écartée avant lecture et entrait « Aucune QR-facture exploitable ». *Un document entré ainsi avant
-  la 0.17.1 se fait relire : le télécharger, le retirer de la liste, le redéposer.*
+  la 0.17.1 se fait relire : le télécharger, le retirer de la liste, le redéposer dans le dossier d'import, puis lancer *Importer le dossier* — tant qu'il n'est pas joint à une facture.*
 - **La quantité d'une ligne s'affiche `1`, non `1.0000`**, sur la fiche d'une facture fournisseur, d'une facture cliente et d'un avoir
   ([#866](…/issues/866)).
 - **Les dates des factures fournisseur et des lots de paiement s'affichent `29.01.2026`**, non `2026-01-29` ([#871](…/issues/871)) —
   la confirmation d'annulation d'un règlement l'affichait déjà ainsi depuis la 0.17.0 *(à ajuster selon AC-9)*.
-- **Le champ quantité d'une facture cliente en brouillon s'ouvre à `1`, non `1.0000`** ([#878](…/issues/878)) ; la précision saisie
+- **Les champs quantité et prix unitaire d'une facture cliente en brouillon s'ouvrent à `1` et `100.00`, non `1.0000` et `100.0000`** ([#878](…/issues/878)) ; la précision saisie
   (`33.3333`) est conservée.
 - **Les dates des factures clientes, des avoirs, des relances et des échéances s'affichent `29.01.2026`**, non `2026-01-29`, en liste comme
   en fiche ([#879](…/issues/879)). D'autres écrans (journal, exercices, relevés bancaires, rapprochement) gardent la forme ISO jusqu'à une
@@ -378,3 +385,13 @@ Nouvelle section `## [0.17.1] — Non publié`, au-dessus de la 0.17.0, une intr
   exceptions closes et une liste d'écrans hors périmètre (issue demandée) ; deux tests existants qui figent l'ISO
   (`invoice-pdf-page.test.ts`). AC-11, AC-12, T13, T14, M6, M6-bis, M7 ajoutés ; C-v0171-7 et 10 remplacés par C-v0171-13 et 14 ; registre
   porté à C-v0171-1 à 18. La validation P1 n'avait pas rendu de rapport : rien à reprendre.
+- 2026-11-03 — **validation P1** (Opus, R+F, rapport `kesh-gate-logs/v0171-validate-p1.md`) : 0 CRITICAL, 0 HIGH, 5 MEDIUM (P1–P5), 8 LOW (P6–P13) — tous
+  appliqués ou arbitrés, **sauf P11 et P12, faits côté orchestrateur** (#880 complétée de l'écran des clés API ; chemin de `InvoiceForm.svelte` corrigé
+  sur #878). Prémisses relues au code avant application : P1 (17 sites au tableau, 22 lignes à la sonde : `git grep` sur `910e5d5a`) ; P2 (`inbox_import.rs:117`
+  `rename = "present"`, `inbox_import_e2e.rs:632`) ; P5 (`InvoiceForm.svelte:114, :611, :803`). Sorts : P1 → « dix-sept », sonde « 22 lignes dont les dix-sept »,
+  exception (iii) étendue à `emailedAt` `:1000, :1014`, « quatre catégories » ; P2 → `"present"` ; P3 → M6-bis retirée (équivalente), M6-ter ajoutée pour le prix ;
+  P4 → tâche 8 étendue à chaque écran ; P5 → prix intégré à #878 (AC-11, T13, M6-ter, C-v0171-19) ; P6 → M3 : T1, T2, T4, T6, T7, T8 (`parser.rs:103`) ;
+  P7 → AC-9 sans littéral, par Playwright ; P8 → puce #854 complétée (*Importer le dossier*, tant que non joint à une facture) ; P9 → Story, tâche 1 (T9–T14),
+  en-tête du registre ; P10 → « trois autres sites », commande de preuve du § 2, `:2012-2023`, « cinq sites » ; P13 → « tel quel » déclaré non testable (C-v0171-20).
+  *Annotation : les entrées ci-dessus du 2026-11-03 qui écrivent « seize sites » et « huit exceptions closes » (amendement) étaient fausses à leur date ; le compte
+  juste est dix-sept sites et quatre catégories. Le registre porte maintenant C-v0171-1 à 20.* Prochaine : validation P2 (Sonnet, R+F, `v0171-validate-prompt-p2.md`).
