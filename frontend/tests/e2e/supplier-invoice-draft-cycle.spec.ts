@@ -451,15 +451,83 @@ test.describe('Cycle brouillon → validée → payée (étapes par l’écran, 
 			expect(batch.ok(), await batch.text()).toBeTruthy();
 			expect((await batch.json()).batch, 'le lot est créé').not.toBeNull();
 
-			// La liste : le brouillon porte son badge ; la case des annulées, décochée puis cochée.
+			// Revue P1 (B-5 = E-9, A-2) : une facture ANNULÉE réelle, pour que l'étape
+			// « masquées puis affichées » prouve le filtre à travers HTTP.
+			const cancelRes = await ctx.post('/api/v1/supplier-invoices', {
+				data: body(d.supplierId, d.right, '17.25', `FF-ANNULEE-${token()}`),
+			});
+			expect(cancelRes.status()).toBe(201);
+			const toCancel = await cancelRes.json();
+			const valCancel = await ctx.post(`/api/v1/supplier-invoices/${toCancel.id}/validate`, {
+				data: { version: toCancel.version },
+			});
+			expect(valCancel.status(), await valCancel.text()).toBe(200);
+			const cancelled = await ctx.post(`/api/v1/supplier-invoices/${toCancel.id}/cancel`);
+			expect(cancelled.status(), await cancelled.text()).toBe(200);
+			expect((await cancelled.json()).status).toBe('cancelled');
+
+			// La liste : le brouillon porte son badge ; l'annulée est absente case décochée,
+			// présente (badge « Annulée ») case cochée.
 			await page.goto('/supplier-invoices');
 			const row = page.getByTestId('supplier-invoice-row').filter({ hasText: draft.supplierInvoiceNumber });
+			const cancelledRow = page
+				.getByTestId('supplier-invoice-row')
+				.filter({ hasText: toCancel.supplierInvoiceNumber });
 			await expect(row.getByTestId('supplier-invoice-status-badge')).toHaveText('Brouillon');
 			await expect(page.getByTestId('supplier-invoices-show-cancelled')).not.toBeChecked();
+			await expect(cancelledRow).toHaveCount(0);
 			await capture(page, testInfo, 'liste-annulees-masquees');
 			await page.getByTestId('supplier-invoices-show-cancelled').check();
+			await expect(cancelledRow.getByTestId('supplier-invoice-status-badge')).toHaveText('Annulée');
 			await expect(row).toBeVisible();
 			await capture(page, testInfo, 'liste-annulees-affichees');
+			await page.getByTestId('supplier-invoices-show-cancelled').uncheck();
+			await expect(cancelledRow).toHaveCount(0);
+
+			// Revue P1 (E-2 = A-1, limite L4) : une facture payée par un lot CONFIRMÉ, dont le
+			// règlement a été annulé, redevient validée ; sa fiche et la confirmation de la
+			// dévalidation nomment ce lot.
+			const paidRes = await ctx.post('/api/v1/supplier-invoices', {
+				data: {
+					...body(d.supplierId, d.right, '72.40', `FF-LOT-CONFIRME-${token()}`),
+					creditorIban: 'CH9300762011623852957',
+				},
+			});
+			expect(paidRes.status()).toBe(201);
+			const paidDraft = await paidRes.json();
+			const valPaid = await ctx.post(`/api/v1/supplier-invoices/${paidDraft.id}/validate`, {
+				data: { version: paidDraft.version },
+			});
+			expect(valPaid.status(), await valPaid.text()).toBe(200);
+			const today = new Date().toISOString().slice(0, 10);
+			const batch2 = await ctx.post('/api/v1/payment-batches', {
+				data: { bankAccountId, requestedExecutionDate: today, supplierInvoiceIds: [paidDraft.id] },
+			});
+			expect(batch2.ok(), await batch2.text()).toBeTruthy();
+			const batch2Id = (await batch2.json()).batch.id as number;
+			const confirmed = await ctx.post(`/api/v1/payment-batches/${batch2Id}/confirm`, {
+				data: { paymentDate: today },
+			});
+			expect(confirmed.ok(), await confirmed.text()).toBeTruthy();
+			const settlementCancel = await ctx.post(
+				`/api/v1/supplier-invoices/${paidDraft.id}/settlement/cancel`,
+			);
+			expect(settlementCancel.ok(), await settlementCancel.text()).toBeTruthy();
+			await page.goto(`/supplier-invoices/${paidDraft.id}`);
+			await expect(page.getByTestId('supplier-invoice-status')).toHaveText('Validée');
+			const batchWarning = page.getByTestId('supplier-invoice-confirmed-batch-warning');
+			await expect(batchWarning).toContainText(`lot de paiement n° ${batch2Id}`);
+			await expect(batchWarning).toContainText('vérifiez le relevé avant de changer son montant');
+			await capture(page, testInfo, 'fiche-validee-lot-confirme');
+			await page.getByTestId('supplier-invoice-unvalidate').click();
+			await expect(
+				page.getByTestId('supplier-invoice-unvalidate-dialog-batch-warning'),
+			).toContainText(`lot de paiement n° ${batch2Id}`);
+			await capture(page, testInfo, 'confirmation-devalider-lot-confirme');
+			// Fermer sans dévalider (Échap : aucun sélecteur sur un libellé traduit).
+			await page.keyboard.press('Escape');
+			await expect(page.getByTestId('supplier-invoice-unvalidate-dialog')).toHaveCount(0);
+			await expect(page.getByTestId('supplier-invoice-status')).toHaveText('Validée');
 
 			// Le refus de la dévalidation : la facture est dans un lot créé.
 			await page.goto(`/supplier-invoices/${lotDraft.id}`);
@@ -480,7 +548,12 @@ test.describe('Cycle brouillon → validée → payée (étapes par l’écran, 
 			const k8 = dialog.getByTestId('fiscal-year-checks-row-DRAFT_SUPPLIER_INVOICES');
 			await expect(k8).toHaveAttribute('data-status', 'attention');
 			await expect(k8.locator(`a[href="/supplier-invoices/${draft.id}"]`)).toHaveCount(1);
+			// Revue P1 (A-2) : le dialogue défile ; K8, huitième et dernier, s'amène à la vue
+			// avant la capture, et la ligne se capture aussi seule.
+			await k8.scrollIntoViewIfNeeded();
+			await expect(k8).toBeInViewport();
 			await dialog.screenshot({ path: capturePath(testInfo, 'v0174b-cloture-k8') });
+			await k8.screenshot({ path: capturePath(testInfo, 'v0174b-cloture-k8-ligne') });
 			await dialog.getByTestId('fiscal-year-checks-close').click();
 
 			// La suppression du brouillon, par l'administrateur.

@@ -1666,7 +1666,8 @@ version~0.17.0, c'est l'enregistrement même qui était refusé.)
 \subsection{Le brouillon~: modifier, valider, supprimer}\label{sec:brouillon-fournisseur}
 
 Une facture fournisseur suit le cycle \textbf{brouillon} → \textbf{validée} → \textbf{payée}
-(depuis la version~0.17.0). La liste et la fiche disent son état par un badge~: \emph{Brouillon},
+(depuis la version~0.17.0). La liste dit son état par un badge, la fiche à côté de son
+numéro~: \emph{Brouillon},
 \emph{Validée} --- validée et à payer ---, \emph{Payée}, \emph{Annulée}.
 
 \textbf{Un brouillon} n'a rien passé au journal~: il n'entre dans aucun rapport ni solde, la
@@ -1716,25 +1717,28 @@ laisserait aux livres la facture annulée et sa contre-passation. L'écriture su
 un \textbf{trou} dans la numérotation des écritures, que le journal d'audit explique (voir
 «~Numérotation~», au chapitre des écritures)~; le geste y est inscrit sous son propre nom.
 
-La dévalidation est refusée, et la fiche dit pourquoi, quand~:
+Une facture \textbf{payée} ne se dévalide pas, et sa fiche ne le propose pas~: annulez d'abord
+son règlement (\S\ref{sec:regler-facture-fournisseur}), puis dévalidez-la. La dévalidation
+d'une facture validée est refusée, et la fiche dit pourquoi, quand~:
 \begin{itemize}
-    \item la facture est \textbf{payée}~: annulez d'abord son règlement
-          (\S\ref{sec:regler-facture-fournisseur}), puis dévalidez-la~;
+    \item elle a été \textbf{payée} entre-temps, depuis une autre session~: la fiche se relit,
+          la montre payée et garde le motif~;
     \item elle figure dans un \textbf{lot de paiement en cours}~: annulez d'abord le lot
           (\S\ref{sec:paiements-fournisseurs})~;
     \item son écriture d'achat est \textbf{rapprochée} d'une transaction bancaire~: annulez
           d'abord le rapprochement (\S\ref{sec:annuler-rapprochement})~;
-    \item son exercice est \textbf{clôturé}, ou suivi d'un exercice clôturé~: un administrateur
-          doit rouvrir les exercices clôturés, en commençant par le plus récent
-          (\S\ref{sec:reouverture-exercice})~;
+    \item son exercice est \textbf{clôturé}, ou suivi d'un exercice clôturé --- que le refus
+          nomme~: un administrateur doit rouvrir les exercices clôturés, en commençant par le
+          plus récent (\S\ref{sec:reouverture-exercice})~;
     \item sa date est sous le \textbf{verrou de période}~: un administrateur fait reculer le
           verrou avant elle (\S\ref{sec:verrou-periode})~;
     \item une ligne de l'écriture d'achat est \textbf{lettrée}~: délettrez-la d'abord
           (\S\ref{sec:lettrage}).
 \end{itemize}
 Une facture payée par un \textbf{lot confirmé}, dont le règlement a été annulé, se dévalide~:
-la fiche nomme ce lot. Si la banque a exécuté l'ordre, vérifiez le relevé avant de changer son
-montant.
+sa fiche, au-dessus de \emph{Dévalider}, et la confirmation de la dévalidation nomment ce lot
+et sa date de confirmation. Si la banque a exécuté l'ordre, la facture a peut-être déjà été
+payée~: vérifiez le relevé avant de changer son montant.
 
 \subsection{Régler une facture fournisseur}\label{sec:regler-facture-fournisseur}
 

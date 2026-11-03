@@ -46,7 +46,9 @@
 	function badgeClass(status: SupplierInvoiceStatus): string {
 		switch (status) {
 			case 'draft':
-				return 'border-warning bg-warning-soft';
+				// Revue P1 : `bg-warning-soft` n'est défini nulle part (#645) ; le fond
+				// pâle se dit par le jeton défini `warning` à 10 %.
+				return 'border-warning bg-warning/10';
 			case 'cancelled':
 				return 'border-border text-text-muted';
 			default:

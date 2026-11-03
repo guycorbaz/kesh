@@ -825,7 +825,13 @@ const ATTENDU = {
 	// `invoice-cancel.ts` 7 → 8, `supplier-invoices/+page.svelte` 11 → 12,
 	// `FiscalYearChecks.svelte` 26 → 28, `closing-checks-labels.ts` 20 → 22. Que des
 	// littéraux ; `sitesNonResolus` et `relais` inchangés.
-	sitesTotal: 2790,
+	// Story v017-4b, remédiation de la revue de code P1 (2026-11-03) : **2790 → 2794** (+4),
+	// recompté par `grep -o 'i18nMsg('` aux deux bornes (`9a229bd3` → tête) :
+	// `supplier-invoices/[id]/+page.svelte` 73 → 74 (le lot confirmé, E-2),
+	// `SupplierInvoiceForm.svelte` 47 → 48 (date vide sans document, E-6),
+	// `supplier-invoice-unvalidate.ts` 11 → 12 (l'exercice postérieur nommé, E-4),
+	// `FiscalYearChecks.svelte` 28 → 29 (« … et N autre(s) », E-10). Que des littéraux.
+	sitesTotal: 2794,
 	sitesNonResolus: 31,
 	relais: 6,
 	// Story 26-1 (#620, AC3-bis) : **10 → 11** — `lib/features/bank-import/

@@ -201,8 +201,13 @@ const PREFIXES = [
  * fiche, édition, formulaire), 7 `-unvalidate-blocked-*` et `-unvalidate-error` (les refus de
  * la dévalidation), `-status-draft`, et `-cancel-blocked-draft` (posée au catalogue par la 4a,
  * appelée par l'écran depuis la 4b) ; 24 + 7 + 1 + 1 + 1 = 34. Aucune retirée.
+ *
+ * ⚠️ **Story v017-4b, remédiation de la revue de code P1** (2026-11-03) : **384 → 387** (+3),
+ * recompté aux deux bornes (`9a229bd3` → tête) : `supplier-invoices-unvalidate-batch-warning`
+ * (E-2), `-unvalidate-blocked-later-fiscal-year-closed-named` (E-4), `-err-invoice-date-plain`
+ * (E-6). `fiscal-years-checks-k8-more` (E-10) est hors de ce relevé (préfixe). Aucune retirée.
  */
-const CLES_RELEVEES = 384;
+const CLES_RELEVEES = 387;
 
 
 /** Relève, pour chaque clé du domaine, l'ensemble de ses replis littéraux distincts. */

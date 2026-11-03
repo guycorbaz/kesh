@@ -623,7 +623,8 @@
 		<div class="mb-6 space-y-2" data-testid="supplier-invoice-unvalidate-block">
 			{#if invoice.lastConfirmedBatch}
 				<p
-					class="rounded border border-warning bg-warning-soft p-2 text-sm"
+					class="rounded-md border border-warning bg-warning/10 px-3 py-2 text-sm"
+					role="note"
 					data-testid="supplier-invoice-confirmed-batch-warning"
 				>
 					{confirmedBatchWarning(invoice.lastConfirmedBatch)}
@@ -962,7 +963,8 @@
 		<!-- Revue P1 (E-2 = A-1, L4) : la confirmation rappelle le lot confirmé. -->
 		{#if invoice?.lastConfirmedBatch}
 			<p
-				class="rounded border border-warning bg-warning-soft p-2 text-sm"
+				class="rounded-md border border-warning bg-warning/10 px-3 py-2 text-sm"
+				role="note"
 				data-testid="supplier-invoice-unvalidate-dialog-batch-warning"
 			>
 				{confirmedBatchWarning(invoice.lastConfirmedBatch)}

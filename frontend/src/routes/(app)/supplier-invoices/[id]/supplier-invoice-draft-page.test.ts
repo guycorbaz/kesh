@@ -437,4 +437,32 @@ describe('fiche — refus d’écran périmé et lot confirmé (revue P1)', () =
 		const v = await rendered('open', 'Comptable');
 		expect(v.queryByTestId('supplier-invoice-confirmed-batch-warning')).toBeNull();
 	});
+
+	it('le rôle Consultation voit le lot confirmé, sans Dévalider (E-2 = A-1)', async () => {
+		role.value = 'Consultation';
+		getMock.mockResolvedValue({
+			...ofStatus('open'),
+			lastConfirmedBatch: { id: 12, confirmedAt: '2026-06-20T10:00:00' },
+		});
+		const v = render(Page);
+		await v.findByTestId('supplier-invoice-confirmed-batch-warning');
+		expect(v.queryByTestId('supplier-invoice-unvalidate')).toBeNull();
+	});
+
+	it('LATER_FISCAL_YEAR_CLOSED : le refus nomme l’exercice postérieur clos (E-4)', async () => {
+		const v = await rendered('open', 'Comptable');
+		unvalidateMock.mockRejectedValue({
+			code: 'LATER_FISCAL_YEAR_CLOSED',
+			status: 400,
+			message: 'serveur',
+			details: { fiscalYearId: 7, fiscalYearName: 'Exercice 2027' },
+		});
+		await fireEvent.click(v.getByTestId('supplier-invoice-unvalidate'));
+		await v.findByTestId('supplier-invoice-unvalidate-dialog');
+		await fireEvent.click(v.getByTestId('supplier-invoice-unvalidate-confirm'));
+		const err = await v.findByTestId('supplier-invoice-unvalidate-error');
+		expect(err.textContent?.trim()).toBe(
+			'L’exercice postérieur « Exercice 2027 » est clôturé : pour pouvoir dévalider cette facture, un administrateur doit rouvrir les exercices postérieurs clôturés, en commençant par le plus récent.',
+		);
+	});
 });
