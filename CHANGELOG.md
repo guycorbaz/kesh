@@ -10,7 +10,9 @@ Le contenu est rédigé en français à destination des **fiduciaires, PME, ind�
 
 ## [0.17.1] — 2026-11-03
 
-La 0.17.1 est une version corrective : **aucune migration**, aucune donnée réécrite, **le retour à la 0.17.0 est possible sans restauration**.
+La 0.17.1 est une version corrective : **aucune migration**, aucune donnée réécrite, **le retour à la 0.17.0 est possible sans restauration**. La sauvegarde complète d'avant la mise à jour (base, `.keshbackup`, dossier des documents) reste recommandée. Le compose et le `.env` ne changent pas. Le détail est au manuel d'administration, *Passer à la 0.17.1*.
+
+⚠️ **Les pièces déjà importées dont le QR n'avait pas été lu ne sont pas relues d'office** ([#854](https://github.com/guycorbaz/kesh/issues/854)) : pour en faire relire une, la télécharger, la retirer de la liste, la redéposer dans le dossier d'import, puis lancer *Importer le dossier* — tant qu'elle n'est pas jointe à une facture (manuel utilisateur, *Faire relire le QR d'un document*).
 
 ### Corrigé
 
