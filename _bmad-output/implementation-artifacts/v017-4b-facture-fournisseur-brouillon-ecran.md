@@ -211,6 +211,123 @@ C-v017-4-52 à C-v017-4-62 (`v017-4-choix-autonomes.md`).
 - Les doc-comments et commentaires de tests Rust de la 4a nomment encore « ouverte » l'état `open` (inventaire
   C-v017-4-61) — à aligner au passage d'une story backend.
 
+### Remédiation de la revue de code P1 (2026-10-31 interrompue, reprise le 2026-11-03)
+
+*Opus 5.5, autonomie, mandat `kesh-gate-logs/prompts/v0174b-remediation-p1.md`. Revue P1 (Opus) :
+`kesh-gate-logs/v0174b-review-p1-{B,E,A}.md`, 5 MEDIUM (B-1, E-1, E-2, A-1, A-2) et 23 LOW. Journaux `r-*.log` de
+`kesh-gate-logs/v0174b/`.*
+
+**Commits** : `165d9559` (WIP du 2026-10-31, jamais vérifié à sa date ; relu en entier le 2026-11-03 : aucune édition
+incomplète trouvée, ses bancs ciblés verts au premier passage, `r-vitest-cible-1.log`, 20 fichiers, 240/240) ;
+`79c2211e` (suite : jeton de fond, manuel et PDF, CHANGELOG, spec E2E, bancs, gardes recomptées) et `eed15c18` (banc
+qui relie le repli du refus des lots au catalogue) — **dernier commit de code** ; le commit de ce compte rendu.
+
+**Table finding → sort** (P = WIP `165d9559`, S = suite du 2026-11-03 ; « traité » = correctif et banc qui rougit
+sans lui, sauf mention).
+
+| Finding | Sév. | Sort | Où, et le banc |
+|---|---|---|---|
+| B-1 | MED | traité (P, S) | « Facture qui n'est pas à payer (brouillon, payée ou annulée) », 4 catalogues + repli ; `payment-batch-helpers.test.ts` (repli = catalogue fr-CH, ancien libellé absent des 4 locales — S) ; R1, R1-ftl |
+| B-2 | LOW | traité (P) | `clearCycleErrors()` au début de chaque geste ; « un refus périmé s'efface… (B-2) » ; R10 |
+| B-3 | LOW | traité (P) | `SUPPLIER_INVOICE_PAID` relit ; « un refus de Dévalider « payée » relit la fiche… (B-3) » ; R8 |
+| B-4 | LOW | traité (P) | jeton `requestSeq` ; « une réponse périmée ne remplace pas… » ; R11 |
+| B-5 | LOW | traité (S) | facture annulée réelle au décor E2E, absente / présente / absente selon la case |
+| B-6 | LOW | traité (P) | de-CH « ist danach wieder validiert und zu bezahlen » (×2), en-CH « back to validated » (×3) — textes, sans banc |
+| B-7 | LOW | traité (P) | projets archivés filtrés sauf celui du brouillon ; `edit-page.test.ts` |
+| B-8 | LOW | traité (P) | `readableAmount` exporté, montant attendu lisible ; `SupplierInvoiceForm.test.ts` |
+| B-9 = E-5 | LOW | traité (P) | la date de facture efface `dueServerError` ; `SupplierInvoiceForm.test.ts` |
+| E-1 = A-6 | MED / LOW | traité (P) | refus rendus hors des blocs de statut ; deux bancs (Valider, Supprimer) ; R2, R3, R4 |
+| E-2 = A-1 | MED | traité (P, S) | lot confirmé nommé au-dessus de *Dévalider*, à tous les rôles, et dans la confirmation ; manuel et CHANGELOG (S) ; deux bancs + Consultation (S) ; E2E par HTTP (S) ; R5, R6, R7 |
+| E-3 | LOW | traité (P) | `SUPPLIER_INVOICE_MUST_BE_UNVALIDATED_FIRST` relit ; R9 |
+| E-4 | LOW | partiel (P, S) | `LATER_FISCAL_YEAR_CLOSED` nomme l'exercice (`details.fiscalYearName`), bancs helper et fiche (S) ; `PERIOD_LOCKED` : le serveur ne rend pas de bornes — **issue demandée** (C-v017-4-67) |
+| E-6 | LOW | traité (P) | message sans « document » sans document ; `SupplierInvoiceForm.test.ts` |
+| E-7 | LOW | traité (P) | `extraRates` ; `SupplierInvoiceForm.test.ts` |
+| E-8 | LOW | = B-4 | |
+| E-9 | LOW | = B-5 | |
+| E-10 | LOW | partiel (P) | « … et N autre(s) » ; `FiscalYearChecks.test.ts` ; la liste limitée à 100 sans pagination ni filtre d'URL — **issue demandée** (C-v017-4-66) |
+| A-2 | MED | traité (S) | captures refaites dans `captures-r1/` : K8 amené à la vue (`v0174b-cloture-k8.png`, `-cloture-k8-ligne.png`), liste avec une annulée (`-liste-annulees-affichees.png`, badge « Annulée ») ; plus `-fiche-validee-lot-confirme.png`, `-confirmation-devalider-lot-confirme.png` |
+| A-3 | LOW | traité (S) | manuel : « Une facture payée ne se dévalide pas, et sa fiche ne le propose pas » ; le refus « payée » n'arrive qu'entre-temps ; CHANGELOG non publié aligné |
+| A-4 | LOW | traité (S) | manuel : « La liste dit son état par un badge, la fiche à côté de son numéro » |
+| A-5 | LOW | traité (P) | un seul site `loadOpenInvoices()` pour les deux lectures des lots (le banc M30 couvre donc les deux) |
+| A-7 | LOW | traité (P) | payée et annulée × trois rôles (`it.each` de 2 à 6 cas) |
+| A-8 | LOW | traité (P) | it-CH `-unvalidate-blocked-lettered` à la forme « tu » ; les autres clés de la 4b relues : aucune forme « voi » |
+| A-9 | LOW | traité (S) | inventaire ci-dessous |
+
+Hors table, trouvé en remédiant : le badge « Brouillon » de la liste et l'avertissement du lot employaient
+`bg-warning-soft`, jeton **non défini** (#645) — passés à `bg-warning/10` (C-v017-4-69).
+
+**Inventaire « ouverte » (A-9)**, rejoué par la valeur (`grep -rniE "(factur|fournisseur|supplier).{0,40}ouvert|ouvert.{0,30}(factur|fournisseur)"`
+sur `frontend/src`, `frontend/tests/e2e`, le catalogue fr-CH, `README.md`, `website/`, `docs/api-external.md`, le
+manuel utilisateur) : **43 lignes**, relues une à une. Aucune ne nomme l'état `open` d'une facture fournisseur dans un
+texte de l'écran, d'un catalogue, du manuel ou de l'API. Elles désignent : les factures **client** de l'accueil (tuile
+« Factures ouvertes », ses bancs, specs et clés, le manuel `:224`, `:229`) ; le **poste ouvert** et le lettrage ;
+l'**exercice ouvert** ; un dialogue ou une fiche **ouvert(e)** à l'écran, l'« ouverture » d'une page ; une route
+« **ouverte aux clés** » (`docs/api-external.md`) ; l'**historique** (`i18n-libelle-en-dur.test.ts:11`,
+`README.md:232`). Un seul site désigne une facture fournisseur `open` : l'identifiant `rouverte` d'un test E2E
+(`reconciliation-supplier.spec.ts:301`), du code de test, laissé (C-v017-4-61).
+
+**Gates au dernier commit de code (`eed15c18`)**
+
+| Gate | Résultat |
+|---|---|
+| Bases `kesh_v0174b` et `kesh_e2e_v0174b` recréées (migrations du worktree, seed), `scripts/test-fast.sh --ci` | vert — **4638 lancés, 4638 réussis, 8 ignorés** (`r-nextest-final.log`) |
+| `npm run check` (à `79c2211e` ; `eed15c18` ne touche qu'un banc) | 0 erreur, 29 avertissements dans 5 fichiers, aucun dans un fichier touché (`r-check-1.log`) |
+| `npm run lint-i18n-ownership` | vert (`r-lint-1.log`) |
+| `npm run test:unit` | vert — **194 fichiers, 2389 tests** (`r-vitest-complet-2.log`) |
+| `npm run build` | vert (`r-build-1.log`) |
+| E2E complet (`/tmp/kesh-e2e-v0174b-r1/` au backend et au runner, port 3179) | **336 réussis, 7 échecs, 17 ignorés** (14,0 min, `r-e2e-full-final.log`) ; backend arrêté par son PID |
+
+Échecs de l'E2E, nominatifs, contre `docs/testing.md` § *Les échecs attendus* : les **7 KF-029 (#97)** seuls —
+`mode-expert.spec.ts:26`, `:41` ; `onboarding-path-b.spec.ts:65`, `:92` ; `onboarding.spec.ts:57`, `:77`, `:150`. Ni
+KF-052 ni pollution. Le test « liste, refus de dévalidation, K8… » est vert avec ses étapes neuves.
+
+Gates intermédiaires : Vitest ciblé (`r-vitest-cible-2.log`, 11 fichiers, 132/132) ; `kesh-i18n` + `textes_coherents` +
+`i18n_e2e` (`r-nextest-i18n-1.log`, 70/70) ; `make user` (`r-make-user-1.log`, 2 passes, stable). Un premier Vitest
+complet (`r-vitest-complet-1.log`) a rougi sur trois gardes — `sitesTotal`, `CLES_RELEVEES` (décomptes du WIP non
+recalés) et la garde KF-043 (un `getByRole({ name: 'Annuler' })` neuf, remplacé par Échap).
+
+**Mutations de la remédiation** (`kesh-gate-logs/v0174b/mut-r1/mutations.log`, `mutations-2.log`, sorties `R*.out`) :
+12 appliquées, **12 tuées** au final ; `git status` vide après chaque restauration.
+
+| Mutation | Finding | Tuée par |
+|---|---|---|
+| R1 (repli « Facture non validée ») | B-1 | `payment-batch-helpers.test.ts` — « mappe les huit codes sur leur repli français » |
+| R1-ftl (catalogue fr-CH seul) | B-1 | **survivait** à la 1re campagne ; tuée après `eed15c18` par le même banc (`mutations-2.log`) |
+| R2 (`validateError` dans le bloc brouillon) | E-1 | « un refus de Valider qui relit une facture devenue validée reste lisible (E-1) » |
+| R3 (`deleteError` idem) | E-1 | « un refus de Supprimer « déjà validée » relit la fiche… (E-1, E-3) » |
+| R4 (`unvalidateError` masqué si payée) | E-1 | « un refus de Dévalider « payée » relit la fiche… (B-3) » |
+| R5 (avertissement de la fiche retiré) | E-2 | « … la fiche et la confirmation nomment le lot (E-2 = A-1) » et « le rôle Consultation voit le lot… » |
+| R6 (avertissement du dialogue retiré) | E-2 | « … la fiche et la confirmation nomment le lot (E-2 = A-1) » |
+| R7 (bloc réservé à `canManage`) | E-2 | « le rôle Consultation voit le lot confirmé, sans Dévalider » |
+| R8, R9 (`isStaleState` amputé) | B-3, E-3 | les bancs B-3 et E-1/E-3 |
+| R10 (`unvalidateError` non effacé) | B-2 | « un refus périmé s'efface au geste réussi suivant (B-2) » |
+| R11 (jeton de lecture retiré) | B-4 | « une réponse périmée ne remplace pas celle de la dernière bascule » |
+
+A-2 ne porte aucun code de production : le filtre qu'il voulait voir prouvé reste gardé par M28 (Vitest), et l'E2E
+l'éprouve désormais à travers HTTP. Aucune mutation de l'E2E n'a été jouée.
+
+**Compteurs recalés** : `sitesTotal` 2790 → **2794** ; `CLES_RELEVEES` 384 → **387** ; Vitest 2369 → **2389** tests
+(+16 déclarations, +4 cas de l'`it.each` payée/annulée) ; captures de la 4b : K8 refaite, plus trois neuves
+(`-cloture-k8-ligne`, `-fiche-validee-lot-confirme`, `-confirmation-devalider-lot-confirme`).
+
+**Contrôle du PDF aplati** (`r-user-flat.txt`, `grep -oF … | wc -l` sous `timeout 60`) : « la fiche nomme ce lot » 0,
+« nomment ce lot et sa date de confirmation » 1, « Une facture payée ne se dévalide pas » 1, « La liste dit son état par
+un badge, la fiche à côté de son numéro » 1, « La liste et la fiche disent son état par un badge » 0, « la fiche se
+relit, la montre payée et garde le motif » 1, « que le refus nomme » 1, « ?? » 0.
+
+**Choix ajoutés** : C-v017-4-63 à C-v017-4-70.
+
+**Écarts** : (1) le WIP `165d9559` reste tel quel, corrigé par des commits suivants ; (2) les captures neuves vont dans
+`captures-r1/`, celles de la P1 restent (pas d'écrasement) — l'E2E complet y a aussi déposé les captures des autres
+specs ; (3) le statut de la sous-fiche n'est pas repassé par `in-progress` (remédiation dans le flux de la revue).
+
+**Défauts observés, à tracer** : `PERIOD_LOCKED` sans bornes au corps de la réponse (backend) ; la liste des factures
+fournisseur limitée à 100 sans pagination ni filtre de statut par l'URL ; `bg-warning-soft` employé dans
+`BankImportUpload.svelte`, `bank-accounts/+page.svelte`, `SupplierInvoiceForm.svelte`, `SupplierInvoiceTotal.svelte`,
+`SupplierCreatePanel.svelte` (déjà sous #645) ; la date du lot dans la confirmation d'**annulation du règlement**
+(`cancelSettlement`, code antérieur) s'affiche en ISO, non au format suisse ; la quantité brute `1.0000` du tableau des
+lignes de la fiche (déjà relevée ci-dessus).
+
 ## Change Log
 
 - 2026-10-31 — Sous-fiche créée au découpage de la v017-4 (C-v017-4-1). Prochaine étape : validation P1 de la fiche
@@ -233,3 +350,8 @@ C-v017-4-52 à C-v017-4-62 (`v017-4-choix-autonomes.md`).
   liste #831, K8, lots), quatre locales, manuel utilisateur et brochure (PDF), CHANGELOG, README, specs E2E ; 16 mutations
   tuées ; gate complet 4638/4638, Vitest 2369, E2E complet 335 / 7 (KF-029 seuls). Choix C-v017-4-52 à 62. Statut
   `review`. Prochaine : revue de code P1 (`v017-4b-review-prompt-p1.md`, Opus, lentilles B, E, A).
+- 2026-11-03 — Revue de code P1 (Opus, B, E, A) : 0 CRITICAL, 0 HIGH, 5 MEDIUM (B-1, E-1, E-2, A-1, A-2), 23 LOW.
+  Remédiation (WIP `165d9559` du 2026-10-31, puis `79c2211e`, `eed15c18`) : tous les MEDIUM traités, LOW traités sauf
+  deux parties tracées (E-4 `PERIOD_LOCKED`, E-10 liste à 100) ; 12 mutations tuées ; gate 4638/4638, Vitest 2389, E2E
+  336 / 7 (KF-029 seuls). Choix C-v017-4-63 à 70. Statut `review`. Prochaine : revue de code P2 complète
+  (`v017-4b-review-prompt-p2.md`, Sonnet, lentilles B, E, A).

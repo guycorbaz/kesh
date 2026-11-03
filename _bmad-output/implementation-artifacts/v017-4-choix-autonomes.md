@@ -745,3 +745,82 @@ worktree `kesh-0175`). Les entrées précédentes restent telles qu'écrites.*
 - **Retenu** : la fiche d'un brouillon (sans bloc d'annulation) et le **refus de dévalidation** (AC-31) sont capturés ;
   écart déclaré au rapport.
 - **Réversible** : oui.
+
+## Remédiation de la revue de code P1 de la v017-4b — 2026-10-31 (WIP) et 2026-11-03
+
+*Les arbitrages du Project Lead (mandat `v0174b-remediation-p1.md`) s'imposent : lot affiché, libellé vrai du refus des
+lots, refus visibles hors du bloc brouillon, décor E2E avec une annulée, captures K8 refaites, tous les LOW traités ou
+tracés. Les choix ci-dessous sont ce qui restait à trancher.*
+
+### C-v017-4-63 — Le lot confirmé se dit dans le bloc de la facture validée, à tous les rôles, et dans la confirmation
+
+- **Contexte** : E-2 = A-1 ; arbitrage 1. `lastConfirmedBatch` est un fait historique (le lot confirmé le plus récent
+  qui contient la facture, `payment_batches::last_confirmed_batch_for_invoice`). Sur une facture `open`, sa présence
+  implique un règlement par ce lot puis annulé (un lot confirmé paie toutes ses factures).
+- **Retenu** : un avertissement au-dessus de *Dévalider*, visible de **tous** les rôles (le bloc de la facture validée
+  n'est plus réservé à Administrateur et Comptable ; seul le bouton l'est), repris dans le dialogue de confirmation ;
+  date au format suisse ; texte « … puis son règlement a été annulé. Si la banque a exécuté cet ordre, vérifiez le
+  relevé avant de changer son montant. »
+- **Écartée** : refuser la dévalidation (option (c) de C-v017-4-8, déjà écartée) ; l'afficher à la page d'édition seule
+  (trop tard : la dévalidation est faite).
+- **Réversible** : oui.
+
+### C-v017-4-64 — Les refus du cycle se rendent hors des blocs de statut, et s'effacent au début de chaque geste
+
+- **Contexte** : E-1 = A-6, B-2, B-3 = E-3.
+- **Retenu** : `validateError`, `deleteError`, `unvalidateError` rendus après les blocs de statut ; `clearCycleErrors()`
+  au début de chaque geste ; `isStaleState` relit aussi sur `SUPPLIER_INVOICE_PAID` et
+  `SUPPLIER_INVOICE_MUST_BE_UNVALIDATED_FIRST`.
+- **Écartée** : relire après tout `409` (trop large : `SUPPLIER_INVOICE_IN_PAYMENT_BATCH` ne dit pas l'écran périmé).
+- **Réversible** : oui.
+
+### C-v017-4-65 — Le refus des lots : « Facture qui n'est pas à payer (brouillon, payée ou annulée) »
+
+- **Contexte** : B-1 ; arbitrage 2. Le serveur rend `SUPPLIER_INVOICE_NOT_OPEN` pour tout statut autre que `open`.
+- **Retenu** : un libellé vrai pour les trois états, aux quatre catalogues et au repli ; un banc relie le repli au
+  catalogue fr-CH (la mutation du seul catalogue survivait).
+- **Écartée** : distinguer le brouillon au serveur (backend de la 4a, hors périmètre).
+- **Réversible** : oui.
+
+### C-v017-4-66 — K8 dit « … et N autre(s) » au-delà des vingt brouillons nommés
+
+- **Contexte** : E-10. C-v017-4-58 a écarté un filtre d'URL sur la liste.
+- **Retenu** : la ligne « … et N autre(s), dans la liste des factures fournisseurs. » quand `count` dépasse les
+  brouillons nommés. La liste, limitée à 100 sans pagination, peut ne pas les montrer tous : limite tracée (issue
+  demandée).
+- **Réversible** : oui.
+
+### C-v017-4-67 — L'exercice postérieur clos se nomme ; le verrou de période reste sans bornes
+
+- **Contexte** : E-4. `LATER_FISCAL_YEAR_CLOSED` porte `details.fiscalYearName` ; `PERIOD_LOCKED` ne porte aucun
+  `details`.
+- **Retenu** : une clé `-unvalidate-blocked-later-fiscal-year-closed-named` quand le nom est rendu, la clé générique
+  sinon. Pour `PERIOD_LOCKED`, aucune borne à l'écran tant que le serveur n'en rend pas : issue demandée (backend).
+- **Réversible** : oui.
+
+### C-v017-4-68 — Édition : le taux expiré d'une ligne est proposé, les projets archivés ne le sont pas
+
+- **Contexte** : E-7, B-7.
+- **Retenu** : `extraRates` — les taux des lignes du brouillon absents des taux actifs, proposés comme options ;
+  `projectsRes.filter((p) => !p.archived || p.id === inv.projectId)`.
+- **Écartée** : `listVatRates(true)` (tout l'historique dans le sélecteur, pour un cas rare).
+- **Réversible** : oui.
+
+### C-v017-4-69 — Les fonds d'avertissement neufs prennent le jeton défini `warning`
+
+- **Contexte** : `bg-warning-soft` n'est défini nulle part (#645, `jetons-non-definis.test.ts`) : la classe n'engendre
+  aucune règle.
+- **Retenu** : `bg-warning/10` pour l'avertissement du lot (fiche et dialogue) et le badge « Brouillon » de la liste,
+  sites de la 4b. Les sites antérieurs (import bancaire, comptes bancaires, `SupplierInvoiceForm`, `SupplierInvoiceTotal`,
+  `SupplierCreatePanel`) restent à #645.
+- **Réversible** : oui.
+
+### C-v017-4-70 — E2E : la facture annulée et le lot confirmé sont posés par l'API ; captures dans `captures-r1/`
+
+- **Contexte** : B-5 = E-9, A-2, arbitrages 4 et 5.
+- **Retenu** : le test « liste, refus de dévalidation, K8… » crée une facture validée puis annulée (absente case
+  décochée, présente avec son badge case cochée, absente de nouveau) et une facture payée par un lot confirmé puis
+  désengagée (lot nommé sur la fiche et dans la confirmation, dialogue fermé par Échap — la garde KF-043 refuse un
+  sélecteur sur le libellé « Annuler ») ; K8 amené à la vue avant sa capture, et capturé seul. Les captures neuves vont
+  dans `kesh-gate-logs/v0174b/captures-r1/` : celles de la P1 ne sont pas écrasées (rien ne les rattraperait).
+- **Réversible** : oui.
