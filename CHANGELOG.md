@@ -8,7 +8,7 @@ Le contenu est rédigé en français à destination des **fiduciaires, PME, ind�
 
 ---
 
-## [0.17.1] — Non publié
+## [0.17.1] — 2026-11-03
 
 La 0.17.1 est une version corrective : **aucune migration**, aucune donnée réécrite, **le retour à la 0.17.0 est possible sans restauration**.
 
