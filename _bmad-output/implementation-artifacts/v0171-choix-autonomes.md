@@ -179,11 +179,11 @@ Numéros de ligne de `910e5d5a`. Chaque choix : contexte, option retenue, altern
 
 ### C-v0171-19 — #878 : le prix unitaire du brouillon client est formaté avec la quantité (`readableAmount(raw, 2)`)
 
-- **Contexte** : validation P1, P5. `InvoiceForm.svelte:114` et `:611` recopient `unitPrice: l.unitPrice` brut vers
+- **Contexte** : validation P1, P5. `InvoiceForm.svelte:114`, `:425` (`onProductSelect`, `unitPrice: p.unitPrice`) et `:611` recopient le prix brut vers
   `<Input … bind:value={line.unitPrice} />` (`:803`) ; `unit_price DECIMAL(19,4)` (`20260416000001_invoices.sql:47`), échelle ≤ 4 comme la quantité
-  (`MAX_DECIMAL_SCALE`, `invoices.rs:499`). Même défaut, mêmes deux sites que #878.
+  (`MAX_DECIMAL_SCALE`, `invoices.rs:499`). Même défaut que #878 ; **trois sites** pour le prix (validation P2, P1), deux pour la quantité.
 - **Retenu** : l'intégrer à #878 ; `readableAmount(l.unitPrice, 2)`, le formatage du formulaire fournisseur (`supplier-invoice-form.ts:247`) :
-  deux décimales au moins, jamais de précision perdue (`100.2000` ⇒ `100.20`, `33.3333` gardé). Test et mutation M6-ter. `"100.00"` et
+  deux décimales au moins, jamais de précision perdue (`100.2000` ⇒ `100.20`, `33.3333` gardé). Test et mutation M6-ter (une par site). `"100.00"` et
   `"100.0000"` sont de même valeur : le total ne change pas.
 - **Écartées** : une issue distincte (C-v0171-7 l'a déjà fait pour la quantité, et #878 couvre le « champ de saisie d'une ligne ») ;
   `readableAmount(…, 0)` pour le prix (`100` au lieu de `100.00`, pire lisibilité d'un montant).
