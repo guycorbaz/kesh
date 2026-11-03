@@ -99,7 +99,7 @@ impl SmtpMailer {
         reset_url: &str,
         locale: Locale,
     ) -> Result<Message, AppError> {
-        // Rendu i18n du sujet/corps (DC10 — langue de l'instance).
+        // Rendu i18n du sujet/corps (DC10 — langue de l'installation).
         let subject = self
             .i18n
             .format(&locale, "email-password-reset-subject", None);

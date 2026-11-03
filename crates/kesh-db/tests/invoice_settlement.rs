@@ -1127,6 +1127,7 @@ fn ecriture_attendue(motif: SettlementCancelBlocker, err: &DbError) -> bool {
         // facture fournisseur (25-3-c) : jamais produits par l'annulation
         // d'un règlement.
         SettlementCancelBlocker::BankTransactionNotReconciled
+        | SettlementCancelBlocker::SupplierInvoiceDraft
         | SettlementCancelBlocker::SupplierInvoiceCancelled
         | SettlementCancelBlocker::SupplierInvoiceInPaymentBatch => false,
     }

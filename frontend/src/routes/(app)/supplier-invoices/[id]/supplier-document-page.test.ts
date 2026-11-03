@@ -79,10 +79,15 @@ vi.mock(
 
 import Page from "./+page.svelte";
 
+// Story v017-4b — `sourceDocument` porte aussi l'identifiant du document, l'origine
+// du lien et son QR (contrat de la 4a) : un document joint après coup, sans QR.
 const DOC = {
+  importedSupplierInvoiceId: 7,
   originalFilename: "facture-orage.png",
   mimeType: "image/png",
   byteSize: 1234,
+  linkOrigin: "attachment" as const,
+  qr: null,
 };
 
 function inv(
@@ -542,5 +547,22 @@ describe("fiche facture fournisseur — date de règlement (AC25) et QR-IBAN", (
     expect((await findByTestId("supplier-invoice-qr-iban")).textContent).toBe(
       "CH4431999123000889012",
     );
+  });
+});
+
+// Story v017-3b (#687, AC-10, C-v017-3-27) — le total de la facture, dans le
+// sélecteur de document, est celui de la facture affichée : une facture existante
+// sous le centime s'y lit aux décimales exactes, comme sur sa fiche.
+describe("fiche facture fournisseur — total sous le centime dans le sélecteur", () => {
+  it("facture 100.0040 sans document ⇒ « Total de la facture : 100.0040 » (M16)", async () => {
+    getMock.mockResolvedValue(
+      inv({ sourceDocument: null, totalAmount: "100.0040" }),
+    );
+    listImportedMock.mockResolvedValue([staged()]);
+    const { findByTestId } = render(Page);
+    await fireEvent.click(await findByTestId("supplier-invoice-attach"));
+    expect(
+      (await findByTestId("attach-document-invoice-total")).textContent,
+    ).toContain("Total de la facture : 100.0040");
   });
 });

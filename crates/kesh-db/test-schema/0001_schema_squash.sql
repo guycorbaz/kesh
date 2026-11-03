@@ -1,6 +1,6 @@
 -- SQUASH DU SCHÉMA DE TEST — Story 22-5 (#251). GÉNÉRÉ, NE PAS ÉDITER.
 -- Régénérer : scripts/regen-test-schema.sh
--- Équivalent des 86 migrations de crates/kesh-db/migrations/,
+-- Équivalent des 88 migrations de crates/kesh-db/migrations/,
 -- rejouées en UN batch DDL par base éphémère de test.
 --
 -- Le garde-fou crates/kesh-db/tests/test_schema_guard.rs compare ce schéma
@@ -613,6 +613,7 @@ CREATE TABLE `imported_supplier_invoices` (
   `version` int(11) NOT NULL DEFAULT 1,
   `created_at` datetime(3) NOT NULL DEFAULT current_timestamp(3),
   `updated_at` datetime(3) NOT NULL DEFAULT current_timestamp(3) ON UPDATE current_timestamp(3),
+  `link_origin` varchar(16) DEFAULT NULL,
   PRIMARY KEY (`id`),
   UNIQUE KEY `uq_imported_company_hash` (`company_id`,`file_hash`),
   UNIQUE KEY `uq_imported_supplier_invoice` (`supplier_invoice_id`),
@@ -623,7 +624,8 @@ CREATE TABLE `imported_supplier_invoices` (
   CONSTRAINT `chk_imported_si_address_type` CHECK (`creditor_address_type` in ('K','S')),
   CONSTRAINT `chk_imported_si_reference_type` CHECK (`reference_type` in ('QRR','SCOR','NON')),
   CONSTRAINT `chk_imported_si_byte_size_positive` CHECK (`byte_size` > 0),
-  CONSTRAINT `chk_imported_si_qr_all_or_nothing` CHECK (`creditor_iban` is null = (`is_qr_iban` is null) and `creditor_iban` is null = (`creditor_address_type` is null) and `creditor_iban` is null = (`creditor_name` is null) and `creditor_iban` is null = (`creditor_country` is null) and `creditor_iban` is null = (`reference_type` is null) and `creditor_iban` is null = (`currency` is null))
+  CONSTRAINT `chk_imported_si_qr_all_or_nothing` CHECK (`creditor_iban` is null = (`is_qr_iban` is null) and `creditor_iban` is null = (`creditor_address_type` is null) and `creditor_iban` is null = (`creditor_name` is null) and `creditor_iban` is null = (`creditor_country` is null) and `creditor_iban` is null = (`reference_type` is null) and `creditor_iban` is null = (`currency` is null)),
+  CONSTRAINT `chk_imported_si_link_origin` CHECK (`link_origin` is null or `link_origin` in ('completion','attachment'))
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 DROP TABLE IF EXISTS `invoice_lines`;
@@ -1228,7 +1230,7 @@ CREATE TABLE `supplier_invoices` (
   `creditor_qr_iban` varchar(34) DEFAULT NULL,
   `payment_reference` varchar(64) DEFAULT NULL,
   `expected_payment_amount` decimal(19,4) DEFAULT NULL,
-  `purchase_journal_entry_id` bigint(20) NOT NULL,
+  `purchase_journal_entry_id` bigint(20) DEFAULT NULL,
   `settlement_type` varchar(20) DEFAULT NULL,
   `settlement_bank_account_id` bigint(20) DEFAULT NULL,
   `settlement_account_id` bigint(20) DEFAULT NULL,
@@ -1254,10 +1256,12 @@ CREATE TABLE `supplier_invoices` (
   CONSTRAINT `fk_supplier_invoices_settlement_account` FOREIGN KEY (`settlement_account_id`) REFERENCES `accounts` (`id`),
   CONSTRAINT `fk_supplier_invoices_settlement_bank` FOREIGN KEY (`settlement_bank_account_id`) REFERENCES `bank_accounts` (`id`),
   CONSTRAINT `fk_supplier_invoices_settlement_je` FOREIGN KEY (`settlement_journal_entry_id`) REFERENCES `journal_entries` (`id`),
-  CONSTRAINT `chk_supplier_invoices_status` CHECK (`status` in ('open','paid','cancelled')),
   CONSTRAINT `chk_supplier_invoices_settlement_type` CHECK (`settlement_type` is null or `settlement_type` in ('bank_transfer','internal_account')),
   CONSTRAINT `chk_supplier_invoices_total_non_negative` CHECK (`total_amount` >= 0),
-  CONSTRAINT `chk_supplier_invoices_paid_has_settlement` CHECK (`status` <> 'paid' or `settlement_journal_entry_id` is not null and `paid_at` is not null and `settlement_type` is not null)
+  CONSTRAINT `chk_supplier_invoices_paid_has_settlement` CHECK (`status` <> 'paid' or `settlement_journal_entry_id` is not null and `paid_at` is not null and `settlement_type` is not null),
+  CONSTRAINT `chk_supplier_invoices_status_v2` CHECK (`status` in ('draft','open','paid','cancelled')),
+  CONSTRAINT `chk_supplier_invoices_entry_iff_not_draft` CHECK (`status` = 'draft' = (`purchase_journal_entry_id` is null)),
+  CONSTRAINT `chk_supplier_invoices_draft_without_settlement` CHECK (`status` <> 'draft' or `settlement_type` is null and `settlement_bank_account_id` is null and `settlement_account_id` is null and `settlement_journal_entry_id` is null and `paid_at` is null)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 DROP TABLE IF EXISTS `users`;
@@ -1324,7 +1328,7 @@ CREATE TABLE `vat_rates` (
 -- Ligne d'installation, RELEVÉE dans la base migrée (jamais codée en dur :
 -- chaque bump P2 de kesh_version_min_required la déplace).
 INSERT INTO `_kesh_version` (`id`, `kesh_version_min_required`, `kesh_version_last_applied`)
-VALUES (1, '0.14.0', '0.1.0');
+VALUES (1, '0.17.0', '0.1.0');
 
 -- Réglage de la sauvegarde automatique, RELEVÉ dans la base migrée
 -- (Story 31-1c : défauts posés par la migration ; dump --no-data).

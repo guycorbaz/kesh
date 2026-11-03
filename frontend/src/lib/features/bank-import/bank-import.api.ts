@@ -7,6 +7,8 @@ import type {
 	BankImportListResponse,
 	BankImportPreviewResponse,
 	BankImportResponse,
+	ManualStatementBody,
+	ManualStatementPreviewResponse,
 } from './bank-import.types';
 
 /// Story 8-3 — options du POST /preview et /bank-imports.
@@ -100,4 +102,27 @@ export async function getBankImportDetail(id: number): Promise<BankImportDetailR
  */
 export async function deleteBankImport(id: number): Promise<void> {
 	return apiClient.delete<void>(`/api/v1/bank-imports/${id}`);
+}
+
+/**
+ * Story v016-2b (#816) — `POST /api/v1/bank-imports/manual/preview` : contrôle
+ * le relevé saisi et rend ses sommes et ses avertissements, sans rien écrire.
+ * Refus : `400 BANK_STATEMENT_INVALID` (`details.line`, `field`, `reason`),
+ * `422 BANK_STATEMENT_UNBALANCED`, `404`/`409` du compte, `400 VALIDATION_ERROR`
+ * (corps rejeté). Les trois drapeaux `confirm*` sont ignorés.
+ */
+export async function previewManualStatement(
+	body: ManualStatementBody,
+): Promise<ManualStatementPreviewResponse> {
+	return apiClient.post<ManualStatementPreviewResponse>('/api/v1/bank-imports/manual/preview', body);
+}
+
+/**
+ * Story v016-2b (#816) — `POST /api/v1/bank-imports/manual` : enregistre le relevé
+ * saisi (`201`, l'import créé). En plus des refus de l'aperçu : relevé identique
+ * (`BANK_IMPORT_DUPLICATE_FILE`), doublons de lignes, écart de solde de départ,
+ * chacun sans sa case de confirmation.
+ */
+export async function createManualStatement(body: ManualStatementBody): Promise<BankImportResponse> {
+	return apiClient.post<BankImportResponse>('/api/v1/bank-imports/manual', body);
 }

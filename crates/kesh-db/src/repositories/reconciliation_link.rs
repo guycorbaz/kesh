@@ -13,14 +13,19 @@
 //! règlement, aucun lettrage. L'état produit est celui d'une proposition
 //! « facture » acceptée (`accept_one_invoice`), à l'écart près de la 29-6.
 //!
-//! ⛔ **Le seul chemin qui lie une écriture existante.** Les cinq autres
-//! chemins qui posent `matched_entry_id` (`routes/reconciliation.rs` :
-//! acceptation facture, proposition éclatée, règle, manuel, éclatement manuel)
-//! lient une écriture **qu'ils viennent de créer**. L'invariant « une écriture,
-//! une transaction » — qu'aucune contrainte `UNIQUE` ne défend et que
-//! supposent `bank_accounts::list_by_company_with_balances` et
-//! `reconciliation_cancel` (rang 3) — est tenu ici par la condition 3 de la
-//! règle, lue sous le verrou de ligne du règlement (voir [`link_in_tx`]).
+//! ⛔ **Les deux chemins qui lient une écriture existante.** Ce module en porte
+//! deux : le rattachement à un **règlement client** ([`link_in_tx`], Story
+//! 29-8) et, depuis la Story v017-3a (#671), le rattachement à une **écriture
+//! déjà passée** du journal ([`link_entry_in_tx`]). Les six autres chemins qui
+//! posent `matched_entry_id` (`routes/reconciliation.rs` : acceptation
+//! facture, acceptation facture fournisseur, proposition éclatée, règle,
+//! manuel, éclatement manuel) lient une écriture **qu'ils viennent de créer**.
+//! L'invariant « une écriture, une transaction » — qu'aucune contrainte
+//! `UNIQUE` ne défend et que supposent
+//! `bank_accounts::list_by_company_with_balances` et `reconciliation_cancel`
+//! (rang 3) — est tenu par la condition « non rapprochée » de chaque règle,
+//! lue sous le verrou de ligne de l'objet lié : le règlement pour
+//! [`link_in_tx`], l'écriture pour [`link_entry_in_tx`].
 //!
 //! # La règle (une seule définition)
 //!
@@ -60,6 +65,7 @@ use sqlx::{MySql, Transaction};
 
 use crate::entities::audit_log::NewAuditLogEntry;
 use crate::entities::bank_transaction::BankTransaction;
+use crate::entities::journal_entry::Journal;
 use crate::errors::{DbError, map_db_error};
 use crate::repositories::audit_log;
 use crate::repositories::bank_imports::is_reconciled;
@@ -252,14 +258,16 @@ pub struct LinkRequest {
     pub actor_api_key_id: Option<i64>,
 }
 
-/// Un refus du rattachement, sans rien écrire.
+/// Un refus du rattachement — à un règlement ([`link_in_tx`]) ou à une
+/// écriture ([`link_entry_in_tx`], Story v017-3a) —, sans rien écrire.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum LinkRefusal {
-    /// Transaction ou règlement introuvable, ou d'une autre société.
+    /// Transaction, règlement ou écriture introuvable, ou d'une autre société.
     NotFound,
     /// La transaction est déjà rapprochée.
     NotPending,
-    /// Conditions 1 à 4 : non rattachable.
+    /// Non rattachable : conditions 1 à 4 de la règle des règlements, ou 1 à 6
+    /// de celle des écritures.
     NotLinkable,
 }
 
@@ -305,10 +313,17 @@ pub struct Linked {
 ///   naît après l'attente, à l'étape 4.3 ; l'étape 4.4 voit donc le
 ///   `matched_entry_id` commité par le premier : refus, rien d'écrit ;
 /// - les autres écrivains ne visent jamais l'écriture d'un règlement
-///   existant : les cinq autres chemins lient une écriture qu'ils viennent de
-///   créer, invisible avant leur commit ; le seul autre écrivain de la colonne
-///   (`reconciliation_cancel::cancel_in_tx`) la remet à `NULL`, sous le verrou
-///   de `t` puis de `s` — même verrou de `s` ;
+///   existant, sauf un : les six chemins d'acceptation et de rapprochement
+///   lient une écriture qu'ils viennent de créer, invisible avant leur commit ;
+///   l'annulation (`reconciliation_cancel::cancel_in_tx`) la remet à `NULL`,
+///   sous le verrou de `t` puis de `s` — même verrou de `s` ; et le
+///   rattachement à une écriture ([`link_entry_in_tx`], Story v017-3a) peut
+///   viser l'écriture d'un règlement par virement sur un **autre** compte
+///   bancaire partageant le compte du grand livre (fiche v017-3a, AC-2.12) :
+///   il ne prend pas `s`, mais prend la ligne de `je` `FOR UPDATE` avant sa
+///   première lecture ordinaire, comme ce geste-ci à l'étape 4.2 (b) — c'est
+///   ce verrou-là qui les sérialise, sans cycle (aucun des deux ne prend `s`
+///   après `je`) ;
 /// - ⚠️ `SELECT GET_LOCK` ne fait pas naître la vue (il ne lit aucune table
 ///   InnoDB), et les lectures du pré-vol se font sur le pool, hors de la
 ///   transaction. **Raisonné sur le code et la documentation d'InnoDB, non
@@ -447,6 +462,395 @@ pub async fn link_in_tx(
     }))
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Story v017-3a (#671) — rattacher une transaction à une écriture déjà passée
+// ─────────────────────────────────────────────────────────────────────────────
+//
+// ⛔ **Pourquoi ce geste existe.** Un mouvement bancaire déjà comptabilisé —
+// facture fournisseur payée depuis sa fiche (`supplier_invoices::pay_in_tx_as`),
+// lot pain.001 d'une facture, écriture saisie au journal, règlement client par
+// compte interne sur le compte de la banque — laissait sa transaction `pending`
+// pour toujours : aucun chemin ne lisait l'écriture existante, la rejeter ne la
+// rapproche pas, et l'affecter passe une **seconde** écriture. Elle empêchait la
+// clôture du compte bancaire et restait au contrôle K2. Le rattachement la passe
+// `reconciled` en pointant l'écriture **existante** : aucune écriture, aucun
+// règlement, aucun lettrage. Kesh **liste**, l'utilisateur **choisit** : rien
+// n'est rattaché d'office (règle « un appariement automatique propose, il ne
+// crée jamais »).
+//
+// # La règle (une seule définition)
+//
+// Une écriture `e` est **rattachable** à une transaction `t` si et seulement si :
+//
+// 1. `t` est en CHF, de montant non nul ([`transaction_can_be_linked_to_entry`])
+//    — et, pour l'appelant, `pending` (rejetée ou non) ;
+// 2. `e` est de la même société ;
+// 3. son mouvement `M` sur le compte du grand livre **actuel** du compte
+//    bancaire de `t` (`SUM(debit) − SUM(credit)` de ses lignes sur ce compte)
+//    **égale** `t.amount`, en décimal exact — un crédit de la banque appelle
+//    `M > 0`, un débit `M < 0` ;
+// 4. `e` n'est rapprochée d'aucune transaction ;
+// 5. `e` ne contre-passe rien et n'est contre-passée par rien ;
+// 6. `e` n'est pas l'écriture d'un règlement client par virement **sur le
+//    compte bancaire de `t`** — celle-là relève de la Story 29-8
+//    ([`find_link_candidates`]).
+//
+// Les conditions 2 à 6 sont **une** requête ([`entry_candidates_sql`]) : la
+// liste ([`find_entry_candidates`]) et le geste ([`link_entry_in_tx`], restreint
+// à `e.id`) en lisent le même texte.
+
+/// Nombre maximal d'écritures candidates rendues (filtre et tri dans la
+/// requête, **avant** `LIMIT`).
+pub const ENTRY_CANDIDATES_LIMIT: i64 = 50;
+
+/// Condition 1 de la règle du rattachement à une écriture : la transaction est
+/// en CHF, de montant **non nul** — crédit ou débit. Un montant nul (`-0.00`
+/// compris : `Decimal::is_zero` ne regarde pas le signe) n'a pas de mouvement
+/// à égaler.
+///
+/// Fonction pure, seule définition de la condition (la liste et le geste
+/// l'appellent ; l'écran en tient le miroir, `canLink`).
+pub fn transaction_can_be_linked_to_entry(t: &BankTransaction) -> bool {
+    !t.amount.is_zero() && t.currency == "CHF"
+}
+
+/// Une écriture déjà passée à laquelle la transaction se rattache.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct EntryCandidate {
+    pub journal_entry_id: i64,
+    pub entry_number: i64,
+    pub fiscal_year_id: i64,
+    pub entry_date: NaiveDate,
+    pub journal: Journal,
+    pub description: String,
+    /// `M` — le mouvement de l'écriture sur le compte du grand livre actuel du
+    /// compte bancaire, à deux décimales, signé (égal à `t.amount`).
+    pub amount: Decimal,
+    /// `|entry_date − date de paiement de t|`, en jours. Trie, ne filtre pas.
+    pub days_apart: i64,
+}
+
+#[derive(sqlx::FromRow)]
+struct EntryCandidateRow {
+    journal_entry_id: i64,
+    entry_number: i64,
+    fiscal_year_id: i64,
+    entry_date: NaiveDate,
+    journal: Journal,
+    description: String,
+    amount: Decimal,
+    days_apart: i64,
+}
+
+impl From<EntryCandidateRow> for EntryCandidate {
+    fn from(r: EntryCandidateRow) -> Self {
+        let mut amount = r.amount;
+        amount.rescale(2);
+        Self {
+            journal_entry_id: r.journal_entry_id,
+            entry_number: r.entry_number,
+            fiscal_year_id: r.fiscal_year_id,
+            entry_date: r.entry_date,
+            journal: r.journal,
+            description: r.description,
+            amount,
+            days_apart: r.days_apart,
+        }
+    }
+}
+
+/// Le texte de la requête des conditions 2 à 6 — `one` : restreinte à `e.id`.
+///
+/// Paramètres, dans l'ordre : date de paiement de `t` (proximité), compte du
+/// grand livre actuel, `company_id`, `t.amount`, `t.bank_account_id`, et —
+/// `one` — l'identifiant de l'écriture.
+///
+/// - Le mouvement `M` se somme dans une **table dérivée par écriture**, en
+///   jointure interne sur les lignes du compte lié actuel. ⚠️ Ici la jointure
+///   est **redondante** avec la condition 3 : `M = t.amount ≠ 0` (condition 1)
+///   écarte déjà une écriture sans ligne sur ce compte — elle ne porte aucune
+///   garde que la condition 3 ne porte (au contraire de la 29-8, où c'est
+///   elle qui écarte le cas `M = 0`). Le filtre `l.account_id = ?`, lui, est
+///   porteur : sans lui la somme couvrirait toutes les lignes d'une écriture
+///   équilibrée, `M = 0` (mutation M2bis).
+/// - ⛔ `bank_transactions` n'entre **jamais** dans le `FROM` de la somme (le
+///   produit multiplierait les lignes) : la condition 4 est un `NOT EXISTS`.
+/// - La proximité lit la date de paiement **liée en paramètre**
+///   ([`payment_date`]) : la requête ne réécrit jamais
+///   `COALESCE(value_date, booking_date)`.
+/// - Tri par jours d'écart, puis identifiant ; [`ENTRY_CANDIDATES_LIMIT`] au
+///   plus, filtre et tri **avant** `LIMIT`.
+fn entry_candidates_sql(one: bool) -> String {
+    format!(
+        "SELECT e.id AS journal_entry_id, e.entry_number, e.fiscal_year_id, e.entry_date, \
+                e.journal, e.description, m.movement AS amount, \
+                CAST(ABS(DATEDIFF(e.entry_date, ?)) AS SIGNED) AS days_apart \
+         FROM journal_entries e \
+         JOIN (SELECT l.entry_id, SUM(l.debit) - SUM(l.credit) AS movement \
+                 FROM journal_entry_lines l \
+                WHERE l.account_id = ? \
+                GROUP BY l.entry_id) m ON m.entry_id = e.id \
+         WHERE e.company_id = ? \
+           AND m.movement = ? \
+           AND NOT EXISTS (SELECT 1 FROM bank_transactions bt WHERE bt.matched_entry_id = e.id) \
+           AND e.reverses_entry_id IS NULL \
+           AND NOT EXISTS (SELECT 1 FROM journal_entries r WHERE r.reverses_entry_id = e.id) \
+           AND NOT EXISTS (SELECT 1 FROM invoice_settlements s \
+                            WHERE s.journal_entry_id = e.id \
+                              AND s.settlement_type = 'bank_transfer' \
+                              AND s.settlement_bank_account_id = ?){} \
+         ORDER BY days_apart, e.id \
+         LIMIT {ENTRY_CANDIDATES_LIMIT}",
+        if one { " AND e.id = ?" } else { "" }
+    )
+}
+
+/// Exécute [`entry_candidates_sql`] pour `t`.
+async fn query_entry_candidates<'e, E>(
+    executor: E,
+    company_id: i64,
+    t: &BankTransaction,
+    bank_ledger_account_id: i64,
+    journal_entry_id: Option<i64>,
+) -> Result<Vec<EntryCandidate>, DbError>
+where
+    E: sqlx::Executor<'e, Database = MySql>,
+{
+    let sql = entry_candidates_sql(journal_entry_id.is_some());
+    let mut q = sqlx::query_as::<_, EntryCandidateRow>(&sql)
+        .bind(payment_date(t))
+        .bind(bank_ledger_account_id)
+        .bind(company_id)
+        .bind(t.amount)
+        .bind(t.bank_account_id);
+    if let Some(id) = journal_entry_id {
+        q = q.bind(id);
+    }
+    let rows = q.fetch_all(executor).await.map_err(map_db_error)?;
+    Ok(rows.into_iter().map(EntryCandidate::from).collect())
+}
+
+/// Les écritures rattachables à `t` — conditions 1 à 6 —, triées par jours
+/// d'écart croissants puis identifiant ; [`ENTRY_CANDIDATES_LIMIT`] au plus.
+/// Vide, **sans requête**, si la condition 1 est fausse.
+///
+/// `bank_ledger_account_id` : le compte du grand livre **actuel** du compte
+/// bancaire de `t`. L'appelant a vérifié que `t` est `pending`. Lecture non
+/// verrouillante ; rien n'est écrit, rien n'est présélectionné.
+pub async fn find_entry_candidates<'e, E>(
+    executor: E,
+    company_id: i64,
+    t: &BankTransaction,
+    bank_ledger_account_id: i64,
+) -> Result<Vec<EntryCandidate>, DbError>
+where
+    E: sqlx::Executor<'e, Database = MySql>,
+{
+    if !transaction_can_be_linked_to_entry(t) {
+        return Ok(Vec::new());
+    }
+    query_entry_candidates(executor, company_id, t, bank_ledger_account_id, None).await
+}
+
+/// Ce qu'on demande à [`link_entry_in_tx`].
+#[derive(Debug, Clone, Copy)]
+pub struct LinkEntryRequest {
+    pub company_id: i64,
+    /// Le compte bancaire de la transaction, lu au pré-vol.
+    pub bank_account_id: i64,
+    pub bank_transaction_id: i64,
+    /// L'écriture désignée par le corps de la requête — candidate ou non.
+    pub journal_entry_id: i64,
+    /// Le compte du grand livre lié au compte bancaire, lu au pré-vol.
+    pub bank_ledger_account_id: i64,
+    pub user_id: i64,
+    pub actor_api_key_id: Option<i64>,
+}
+
+/// Ce qu'a produit un rattachement à une écriture.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct EntryLinked {
+    pub journal_entry_id: i64,
+}
+
+/// Rattache la transaction à l'écriture désignée, **dans une transaction
+/// fournie**, sous le verrou nommé du compte que tient l'appelant
+/// (`with_account_lock`). Sans `BEGIN` ni `COMMIT`.
+///
+/// # Ordre des verrous (lock-order), imposé
+///
+/// verrou nommé (appelant) → `bank_transactions` (`t`) → `journal_entries`
+/// (`je`) : **deux verrous de ligne par clé primaire, rien d'autre** ; puis la
+/// première lecture ordinaire, `bank_accounts::ensure_open_in_tx`, qui fait
+/// naître la vue — **après** le dernier verrou. L'étape 4.2 verrouille
+/// l'écriture **désignée par le corps**, candidate ou non : le refus
+/// `NotLinkable` des conditions 2 à 6 ne vient qu'en 4.4. Le geste ne prend
+/// **jamais** `invoice_settlements`, `supplier_invoices`, `invoices`,
+/// `bank_accounts` ni `fiscal_years` : il n'écrit rien au journal.
+///
+/// ⛔ **Aucune lecture verrouillante sur `matched_entry_id`** : sur cet index
+/// secondaire non unique, un `FOR UPDATE` qui ne trouve rien pose un verrou
+/// d'intervalle ; deux rattachements simultanés sur deux comptes dont les
+/// écritures tombent dans le même intervalle s'interbloqueraient à l'`UPDATE`
+/// (raison reprise de [`link_in_tx`]).
+///
+/// # Qui sérialise : le verrou de ligne de `je`
+///
+/// - le verrou nommé n'assure qu'une **exclusion mutuelle pendant les
+///   instructions** : `with_account_lock` le rend (`RELEASE_LOCK`) **avant**
+///   que la route commite ; après lui, le geste n'attend plus rien, il commite ;
+/// - deux rattachements de la même écriture — du même compte, ou de deux
+///   comptes bancaires partageant le compte du grand livre (fiche, AC-2.12) —
+///   se croisent sur la ligne de `je` : le second attend à l'étape 4.2 que le
+///   premier **commite** ; sa vue naît après l'attente, à l'étape 4.3 ;
+///   l'étape 4.4 voit donc le `matched_entry_id` commité par le premier : refus,
+///   rien d'écrit. Le rattachement à un règlement ([`link_in_tx`]) prend lui
+///   aussi `je` `FOR UPDATE` avant sa première lecture ordinaire : même
+///   sérialisation ;
+/// - une contre-passation, une modification ou une suppression de l'écriture
+///   (`journal_entries::reverse_in_tx_inner`, `update_in_tx`, `delete_in_tx`)
+///   prend `je` `FOR UPDATE` **en premier acte**, puis lit `bank_transactions`
+///   sans verrou (`reversal_blockers` → `document_owners`, ou la garde
+///   d'écriture) : elle attend le rattachement et voit son lien
+///   (`MATCHED_BANK_TRANSACTION`), ou le rattachement l'attend et voit la
+///   contre-passation (condition 5) ;
+/// - ⚠️ `SELECT GET_LOCK` ne fait pas naître la vue, et les lectures du
+///   pré-vol se font sur le pool : **raisonné sur le code et la documentation
+///   d'InnoDB** ; l'entrelacement est forcé par le test T-race-3
+///   (`reconciliation_link_entry_e2e.rs`) ;
+/// - corollaire : **toute** lecture ordinaire déplacée avant l'étape 4.2
+///   rouvre le double rattachement (mutation M10).
+///
+/// # L'absence de cycle `t → je` (fiche v017-3a, AC-3 (b))
+///
+/// Ce geste prend `t` puis `je`. Un cycle exigerait un geste qui tienne `je`
+/// puis attende `t`. Ceux qui créent une écriture **puis** mettent à jour une
+/// transaction (les quatre acceptations du lot, le rapprochement et
+/// l'éclatement manuels), et le lot qui lettre une facture avant la
+/// transaction suivante, tiennent tous le **verrou nommé du compte de la
+/// transaction qu'ils écrivent**, pris avant : ils s'excluent avec ce geste sur
+/// le même compte, et n'écrivent aucune transaction d'un autre compte. Les
+/// gestes sans verrou nommé (routes du journal, suppression d'un import) ne
+/// prennent jamais `t` après `je`. La suppression d'une écriture fait poser à
+/// InnoDB, au titre de la clé étrangère `ON DELETE SET NULL` de
+/// `matched_entry_id`, un verrou d'**intervalle** sur l'index qu'elle parcourt
+/// (sans ligne trouvée : sa garde a refusé une écriture rapprochée) ; il
+/// n'attend jamais, mais il peut **bloquer** l'`UPDATE` de l'étape 5
+/// (insertion dans l'index secondaire) : le rattachement attend alors la fin de
+/// la suppression, la suppression n'attend rien. Non prouvé par un test,
+/// comme C-29-8-25.
+///
+/// # Étapes
+///
+/// 4.1 `t` `FOR UPDATE` → absente : [`LinkRefusal::NotFound`] ; rapprochée :
+/// [`LinkRefusal::NotPending`] ; condition 1 fausse :
+/// [`LinkRefusal::NotLinkable`] (avant toute lecture de l'écriture). 4.2 `je`
+/// `FOR UPDATE` → absente ou d'une autre société : `NotFound`. 4.3
+/// `ensure_open_in_tx` → `DbError::BankAccountClosed`. 4.4 la requête de la
+/// règle restreinte à `e.id` → absente : `NotLinkable`. 5 `UPDATE` gardé
+/// (`DbError::OptimisticLockConflict` si aucune ligne). 6 trace
+/// `reconciliation.entry_linked`.
+pub async fn link_entry_in_tx(
+    tx: &mut Transaction<'_, MySql>,
+    req: LinkEntryRequest,
+) -> Result<Result<EntryLinked, LinkRefusal>, DbError> {
+    // 4.1 — la transaction, verrouillée.
+    let Some(t) = find_by_id_for_account_for_update(
+        &mut **tx,
+        req.company_id,
+        req.bank_account_id,
+        req.bank_transaction_id,
+    )
+    .await?
+    else {
+        return Ok(Err(LinkRefusal::NotFound));
+    };
+    if is_reconciled(t.status.as_str(), t.matched_entry_id) {
+        return Ok(Err(LinkRefusal::NotPending));
+    }
+    if !transaction_can_be_linked_to_entry(&t) {
+        return Ok(Err(LinkRefusal::NotLinkable));
+    }
+
+    // 4.2 — l'écriture désignée, verrouillée (candidate ou non).
+    let je: Option<i64> = sqlx::query_scalar(
+        "SELECT id FROM journal_entries WHERE id = ? AND company_id = ? FOR UPDATE",
+    )
+    .bind(req.journal_entry_id)
+    .bind(req.company_id)
+    .fetch_optional(&mut **tx)
+    .await
+    .map_err(map_db_error)?;
+    if je.is_none() {
+        return Ok(Err(LinkRefusal::NotFound));
+    }
+
+    // 4.3 — garde non verrouillante, première lecture ordinaire : APRÈS le
+    // dernier verrou (règle de placement de `ensure_open_in_tx`).
+    super::bank_accounts::ensure_open_in_tx(tx, req.company_id, t.bank_account_id).await?;
+
+    // 4.4 — la règle, restreinte à cette écriture.
+    let candidate = query_entry_candidates(
+        &mut **tx,
+        req.company_id,
+        &t,
+        req.bank_ledger_account_id,
+        Some(req.journal_entry_id),
+    )
+    .await?
+    .into_iter()
+    .next();
+    let Some(candidate) = candidate else {
+        return Ok(Err(LinkRefusal::NotLinkable));
+    };
+
+    // 5 — le lien. Les gardes `status` et `matched_entry_id IS NULL` sont des
+    // défenses en profondeur : l'étape 4.1 a lu et refusé ces états sous le
+    // verrou de la même ligne, tenu jusqu'au commit.
+    let result = sqlx::query(
+        "UPDATE bank_transactions \
+         SET status = 'reconciled', matched_entry_id = ?, auto_match_rejected_at = NULL, \
+             updated_at = NOW(3), version = version + 1 \
+         WHERE id = ? AND company_id = ? AND status = 'pending' AND matched_entry_id IS NULL",
+    )
+    .bind(candidate.journal_entry_id)
+    .bind(req.bank_transaction_id)
+    .bind(req.company_id)
+    .execute(&mut **tx)
+    .await
+    .map_err(map_db_error)?;
+    if result.rows_affected() != 1 {
+        return Err(DbError::OptimisticLockConflict);
+    }
+
+    // 6 — la trace, dans la même transaction.
+    let mut amount = t.amount;
+    amount.rescale(2);
+    audit_log::insert_in_tx(
+        tx,
+        NewAuditLogEntry::for_actor(
+            req.user_id,
+            req.actor_api_key_id,
+            "reconciliation.entry_linked",
+            "bank_transaction",
+            req.bank_transaction_id,
+            Some(serde_json::json!({
+                "bank_transaction_id": req.bank_transaction_id,
+                "journal_entry_id": candidate.journal_entry_id,
+                "entry_number": candidate.entry_number,
+                "fiscal_year_id": candidate.fiscal_year_id,
+                "amount": amount.to_string(),
+                "was_previously_rejected": t.auto_match_rejected_at.is_some(),
+            })),
+        ),
+    )
+    .await?;
+
+    Ok(Ok(EntryLinked {
+        journal_entry_id: candidate.journal_entry_id,
+    }))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -498,5 +902,31 @@ mod tests {
         let one = candidates_sql(true);
         assert_eq!(one.replace(" AND s.id = ?", ""), all);
         assert!(!all.contains("FOR UPDATE"), "lecture ordinaire (C-29-8-17)");
+    }
+
+    /// Story v017-3a, condition 1 : une transaction en CHF de montant non nul,
+    /// crédit **ou débit** — `-0.00` compris comme nul (tue M8, M27).
+    #[test]
+    fn transaction_can_be_linked_to_entry_is_a_non_zero_chf_amount() {
+        assert!(transaction_can_be_linked_to_entry(&tx("0.01", "CHF")));
+        assert!(transaction_can_be_linked_to_entry(&tx("-250.00", "CHF")));
+        assert!(transaction_can_be_linked_to_entry(&tx("-0.01", "CHF")));
+        assert!(!transaction_can_be_linked_to_entry(&tx("0.00", "CHF")));
+        assert!(!transaction_can_be_linked_to_entry(&tx("-0.00", "CHF")));
+        assert!(!transaction_can_be_linked_to_entry(&tx("-250.00", "EUR")));
+        assert!(!transaction_can_be_linked_to_entry(&tx("250.00", "EUR")));
+    }
+
+    /// Story v017-3a (AC-1) : la requête restreinte du geste est la requête de
+    /// la liste plus `AND e.id = ?`, sans verrou — un seul texte pour les
+    /// conditions 2 à 6.
+    #[test]
+    fn the_restricted_entry_query_is_the_list_query_plus_the_entry() {
+        let all = entry_candidates_sql(false);
+        let one = entry_candidates_sql(true);
+        assert_eq!(one.replace(" AND e.id = ?", ""), all);
+        assert_ne!(one, all);
+        assert!(!all.contains("FOR UPDATE"), "lecture ordinaire");
+        assert!(!one.contains("FOR UPDATE"), "lecture ordinaire");
     }
 }

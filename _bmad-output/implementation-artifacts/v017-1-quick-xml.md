@@ -1,0 +1,844 @@
+# Story v017-1 : release 0.17.0 — quick-xml 0.39 → 0.42, les deux dénis de service de l'import CAMT.053
+
+Status: done
+
+<!-- Fiche créée le 2026-10-30 (Opus 5.5, autonomie), worktree `kesh-0171`, branche `story/v017-1-quick-xml`,
+     partie de `c5101b07` (tête de la candidate 0.16.1-rc1). Issue : #789 (P1, sécurité), en `refs` seulement.
+     Registre : `v017-1-quick-xml-choix-autonomes.md` (C-v017-1-1 à C-v017-1-11). -->
+
+## Story
+
+En tant qu'**Administrateur d'une installation Kesh qui tient des livres réels**,
+je veux que **l'import d'un relevé CAMT.053 ne puisse plus monopoliser un cœur ni épuiser la mémoire du serveur**,
+afin qu'**un fichier forgé ne rende pas Kesh indisponible — sans qu'un relevé déjà importé en 0.16 change de sens**.
+
+## Origine
+
+- **#789** (P1, `bug`) : `cargo audit` du 2026-10-27 signale deux avis de sévérité 7,5 sur `quick-xml` 0.39.4 —
+  **RUSTSEC-2026-0194** (temps quadratique du contrôle des attributs en double) et **RUSTSEC-2026-0195** (allocation non
+  bornée des déclarations d'espace de noms dans `NsReader`). Correctif amont : `quick-xml >= 0.41.0`. Décision de Guy du
+  2026-10-27 : traiter après la release 0.16.0.
+- **Contrainte du Project Lead du 2026-10-30** (`kesh-gate-logs/prompts/v017-donnees-a-garder.md`, et message de
+  l'orchestrateur) : l'installation du NAS (0.16.1-rc1) porte des données que Guy garde. **Un relevé CAMT.053 déjà
+  importé en 0.16.x doit rester lisible et inchangé après la montée, et l'empreinte anti-doublon d'un fichier ne doit pas
+  changer** — sinon un fichier réimporté passerait pour neuf. AC9 à AC11 en font des critères décidables.
+
+## Ce que le code dit (relevé le 2026-10-30, `c5101b07`)
+
+### Qui tire `quick-xml` — prémisse confirmée
+
+`cargo tree -i quick-xml --workspace -e normal,build,dev` (lu le 2026-10-30) : **une seule version, 0.39.4**, tirée
+**directement** par deux crates du workspace, et par aucune dépendance tierce :
+
+```
+quick-xml v0.39.4
+├── kesh-import v0.16.1     (crates/kesh-import/Cargo.toml:14  quick-xml = "0.39")
+└── kesh-payment v0.16.1    (crates/kesh-payment/Cargo.toml:9  quick-xml = "0.39")
+```
+
+`Cargo.lock:3058-3059` : `name = "quick-xml"`, `version = "0.39.4"`. `cargo info quick-xml` : dernière version
+**0.42.0**. Les avis (`~/.cargo/advisory-db/crates/quick-xml/RUSTSEC-2026-019{4,5}.md`, lus) : `patched = [">= 0.41.0"]`.
+
+### Exposition — confirmée, et précisée
+
+- **Lecture CAMT.053** (`crates/kesh-import/src/camt053/`) : `mod.rs:62` `NsReader::from_reader(xml)`, puis
+  `read_resolved_event_into` (`:75`) jusqu'à `<Document>`, puis `read_event_into` (`:129`) dans `parse_with_version`.
+  **Les deux** appels passent par `NamespaceResolver::push` sur chaque `Start`/`Empty` (un `NsReader` résout toujours) :
+  **RUSTSEC-2026-0195 atteint donc tout le document, pas seulement `<Document>`**. L'issue citait `v04.rs` ; `v04.rs` et
+  `v08.rs` ne sont que des enveloppes de `parse_with_version` (`v04.rs`, `v08.rs` : `super::parse_with_version(reader, …)`).
+- **RUSTSEC-2026-0194** : dans 0.39.4, `NamespaceResolver::push` itère les attributs **sans** contrôle
+  (`quick-xml-0.39.4/src/name.rs:671` : `for a in start.attributes().with_checks(false)`), contrairement à ce que dit
+  l'avis pour `NsReader`. Le chemin quadratique **réel** de Kesh est `attr_string` (`mod.rs:692-707`, `for attr in
+  start.attributes()`, contrôle par défaut), appelé sur **chaque** `Start` nommé `Amt` (bras `"Amt"` à `mod.rs:168`, appel
+  `attr_string(&start, b"Ccy")?` à `mod.rs:179`, avant tout test de contexte) ; il s'arrête au premier `Ccy`, si bien qu'un `<Amt>` dont les milliers d'attributs précèdent `Ccy` — ou qui
+  n'en a pas — parcourt tout. *Prémisse de l'issue précisée, non contredite.*
+- **Qui peut le déclencher** : un utilisateur authentifié de rôle Comptable ou plus (routes `preview` et `create`,
+  `crates/kesh-api/src/lib.rs:791-802`), dans la limite `KESH_BANK_IMPORT_MAX_MB` (défaut 10, borne [1, 100],
+  `config.rs:236-238`). **Le parseur tourne sur un fil de l'exécuteur Tokio** (`routes/bank_imports.rs:1045` et `:1249`,
+  `parse_camt053(&fields.file_bytes)` sans `spawn_blocking`) : la boucle quadratique bloque un fil de travail du serveur
+  entier, pas seulement la requête. Hors périmètre (C-v017-1-8, #820).
+- **pain.001** (`crates/kesh-payment/src/pain001/mod.rs`) : **écriture seule** (`Writer`, `BytesStart::new`,
+  `BytesText::new`, `BytesEnd::new`, `BytesDecl::new`, `push_attribute`). Aucun des deux avis ne l'atteint. Il monte quand
+  même (C-v017-1-2), pour qu'une seule version de `quick-xml` reste dans l'arbre. Le fichier est **régénéré à la demande**
+  (`kesh-db/src/repositories/payment_batches.rs:806-886`), non stocké.
+
+### API publique de `kesh-import` — prémisse confirmée
+
+`kesh_import::camt053::v04::parse` et `v08::parse` sont `pub` et prennent `&mut quick_xml::NsReader<R>` : **un type
+`quick-xml` est dans l'API publique**. Personne hors du crate ne les appelle (`grep -rn "v04::\|v08::\|camt053::" crates
+--include=*.rs`, hors `kesh-import/src` : aucun résultat). `kesh-import` n'est pas publié sur crates.io (`cargo search
+kesh-import` : vide) ; la CI fait `cargo publish --dry-run -p kesh-import` (`.github/workflows/ci.yml:126-127`). La
+montée de `quick-xml` change donc l'API publique de `kesh-import` ; la version 0.17.0 portée par la v016-2 (changement
+mineur en 0.x) suffit au sens de semver. Signatures gardées (C-v017-1-6).
+
+### L'empreinte anti-doublon ne dépend pas du parseur — confirmée
+
+- **Doublon de fichier** : `file_hash = compute_sha256_hex(&fields.file_bytes)` (`routes/bank_imports.rs:1036`, `:1192`,
+  `:1950`, `:2029` ; fonction `:1582-1585`), SHA-256 des **octets reçus**, comparé par
+  `bank_imports::find_by_company_and_hash` (`kesh-db/src/repositories/bank_imports.rs:294-322`). Indépendant de
+  `quick-xml`.
+- **Empreinte d'aperçu** (`routes/bank_import_fingerprint.rs`, en-tête) : tableau haché de `DOMAIN_TAG`, `company_id`,
+  compte, IBAN normalisé, **hash du fichier**, format, profil (CSV) ou `null` (CAMT). Aucun champ issu du parseur.
+- **Doublon de ligne** : `DuplicateKey { booking_date, amount, reference_normalized, bank_account_id }`
+  (`kesh-core/src/bank_imports.rs:287-292`, construite `:318-333`) — **elle dépend de la sortie du parseur** (date,
+  montant, `NtryRef` / `EndToEndId` / `AcctSvcrRef`). C'est le seul point par lequel la montée pourrait faire passer une
+  ligne déjà importée pour neuve : d'où la caractérisation AC9.
+
+### Un défaut voisin, préexistant, que la montée ne corrige pas — signalé
+
+`quick-xml` 0.39.4 émet les références d'entité dans le texte comme des événements séparés
+(`src/reader/mod.rs:289` : `Ok(Event::GeneralRef(BytesRef::wrap(…)))`), et le parseur les ignore (`mod.rs:246`,
+`_ => {}`). Un `<Nm>Dupont &amp; Fils</Nm>` produit `Text("Dupont ")`, `GeneralRef("amp")`, `Text(" Fils")` : la
+référence disparaît, et pour les champs affectés par `= Some(txt)` le dernier fragment **écrase** le premier
+(`handle_txdtls_text`, `Nm`, `EndToEndId`… : `mod.rs:423-470`). Ce défaut vit en 0.42 comme en 0.39 ; le corriger
+**changerait** la sortie du parseur pour les fichiers qui portent des entités — exactement ce que la contrainte du
+2026-10-30 interdit à cette story. **Hors périmètre** ; caractérisé tel quel par AC9 (fixture `v04_characterization.xml`)
+et tracé par **#819** (C-v017-1-7), sa correction devant traiter la clé de doublon de ligne. Le même bras
+`_ => {}` jette aussi les sections **CDATA** (`Event::CData`) : un `<Ustrd>` ou un `<AddtlNtryInf>` en CDATA est lu
+vide. Défaut de même nature (texte perdu en silence), figé par AC9 et versé à #819 (commentaire du 2026-10-30).
+
+### Ce qui change d'une version à l'autre (Changelog amont, lu le 2026-10-30)
+
+| Version | Changement qui touche Kesh |
+|---|---|
+| 0.40.0 (#371) | `Attribute::unescape_value` **déprécié** (→ `normalized_value`), et il **applique désormais la normalisation des valeurs d'attribut** ; `clippy -D warnings` refuse l'appel déprécié (`mod.rs:698`). |
+| 0.40.0 (#956) | MSRV 1.79 (le dépôt est en Rust 1.97, édition 2024). |
+| 0.41.0 (#969) | Contrôle des doublons d'attributs en `O(N)` — **corrige RUSTSEC-2026-0194**. |
+| 0.41.0 (#970) | `NamespaceResolver::push` refuse plus de 256 déclarations par élément — **corrige RUSTSEC-2026-0195**. |
+| 0.42.0 (#963) | Le lecteur **valide l'UTF-8** de toute l'entrée (`Error::Encoding`) ; `QName`/`LocalName`/`Namespace`/`Prefix` enveloppent `&str` (`AsRef<[u8]>` retiré) ; `ResolveResult::Unknown` porte un `String` ; **`BytesText::decode()` retiré** ; événements en `Cow<str>`, `Deref<Target = str>`. MSRV 1.86, édition 2024. |
+| 0.42.0 (#980) | Plafond **global** de liaisons d'espace de noms en portée, 128 par défaut (remplace le plafond par élément ; `TooManyDeclarations` → `TooManyBindings`). |
+| 0.42.0 (#977) | `NamespaceResolver::push` rend `TooDeeplyNested` au-delà de `u16::MAX` niveaux, **au lieu de déborder**. |
+| 0.42.0 (#990) | `BytesText::new()` et `escape()` échappent `\r` en référence de caractère (touche pain.001 si un texte porte `\r`). Établi dans la source, ci-dessous. |
+
+### Établi dans la source 0.42.0 (validation P1, 2026-10-30)
+
+Source téléchargée hors du dépôt (`kesh-gate-logs/v017-1-src/quick-xml-0.42.0/`, `static.crates.io`), lue sans rien
+exécuter. Chemins relatifs à ce dossier.
+
+- **Profondeur (AC7)** — `src/name.rs:729-733` : `pub fn push(&mut self, start: &BytesStart) -> Result<(), NamespaceError> {
+  self.nesting_level = self.nesting_level.checked_add(1).ok_or(NamespaceError::TooDeeplyNested(u16::MAX as usize))?;`,
+  **avant** la boucle des attributs, donc pour **toute** balise ouvrante ; `push` est appelé sur chaque `Start` et
+  chaque `Empty` (`src/reader/ns_reader.rs:82-87`, `self.ns_resolver.push(&e)?;`). En 0.39.4, `src/name.rs:668`
+  `self.nesting_level += 1;` sur un `u16` (`:492`) : **panique** au 65 536e niveau sous le profil de test (le
+  `[profile.dev]` du dépôt, `Cargo.toml:37-46`, ne désactive pas `overflow-checks`), débordement silencieux en release.
+- **Plafond (M2)** — `src/name.rs:541` `pub const DEFAULT_MAX_NAMESPACE_BINDINGS: usize = 128;` ; réglage
+  `src/name.rs:770` `pub fn set_max_namespace_bindings(&mut self, limit: usize) -> &mut Self` ; accès
+  `src/reader/ns_reader.rs:131` `pub fn resolver_mut(&mut self) -> &mut NamespaceResolver`. Le contrôle est dans `add`
+  (`src/name.rs:659-668` et `:707-709`, `self.bindings.len().saturating_sub(BUILTIN_NAMESPACE_BINDINGS) >=
+  self.max_namespace_bindings` → `TooManyBindings`) : il compte les liaisons **en portée**, tout niveau confondu.
+- **`escape::unescape` survit** — `src/escape.rs:236` `pub fn unescape(raw: &str) -> Result<Cow<'_, str>, EscapeError>`.
+- **Texte brut (AC9, M3)** — `BytesText` : `src/events/mod.rs:601` `pub fn into_inner(self) -> Cow<'i, str>` (contenu
+  tel que lu, **sans** normalisation), `:625` `pub fn xml10_content(&self) -> Cow<'i, str>` (normalise les fins de
+  ligne, `normalize_xml10_eols`), `:656` `pub fn xml_content(&self, version: XmlVersion) -> Cow<'i, str>`, `:697`
+  `impl<'i> Deref for BytesText<'i>`. L'équivalent de l'ancien `decode()` (0.39.4 `src/events/mod.rs:616-617`,
+  `self.decoder.decode_cow(&self.content)`, sans normalisation) est **`into_inner()` / `Deref`**, non `xml_content`.
+- **Valeur d'attribut** — 0.42 `src/events/attributes.rs:264` `unescape_value` est `#[deprecated = "use
+  Self::normalized_value()"]` (`:263`) ; `:75` `pub fn normalized_value(&self, version: XmlVersion)`, dont la
+  documentation dit (`:85`) : « The characters `\t`, `\r`, `\n` are replaced with whitespace characters (`0x20`) ».
+  0.39.4 `unescape_value` (`src/events/attributes.rs:56-58`, `:104-116`) décodait et dés-échappait **sans** cette
+  normalisation. La valeur brute reste publique en 0.42 (`src/events/attributes.rs:35` `pub value: Cow<'a, str>,`,
+  « The raw value of the attribute ») : **`quick_xml::escape::unescape(&attr.value)`** (`src/escape.rs:236`) rend
+  exactement ce que rendait `unescape_value` en 0.39 (dés-échappement des entités prédéfinies et des références de
+  caractère, sans normalisation). C'est l'adaptation **prescrite** ; `normalized_value` est écarté, il changerait la
+  devise d'une transaction dont le `Ccy` porte un blanc littéral (la devise lue sur `Amt@Ccy` est celle de la
+  transaction, `mod.rs:184-185`, stockée sous la seule contrainte `CHAR_LENGTH(currency) = 3`,
+  `migrations/20260504000001_bank_imports.sql:85` ; seule la devise du relevé est validée,
+  `kesh-core/src/bank_imports.rs:469`). Validation P2, R-3.
+- **Doublons d'attributs** — `src/events/attributes.rs:1036` `check_for_duplicates`, `:1061`
+  `check_for_duplicates_hashed` ; l'erreur `AttrError::Duplicated` est rendue **au second** attribut, pendant
+  l'itération (`:1050`, `:1088`), comme en 0.39. `attr_string` s'arrêtant au premier `Ccy`, `<Amt Ccy="CHF"
+  Ccy="EUR">` se lit `CHF` sous les deux versions.
+- **Références d'entité** — toujours émises à part : `src/reader/mod.rs:317`
+  `Ok(Event::GeneralRef(BytesRef::wrap(&bytes[1..bytes.len() - 1])))` ; #819 vit en 0.42.
+- **Validation UTF-8 hors texte (F-1/R-5)** — le lecteur à tampon valide chaque morceau lu, y compris commentaires,
+  CDATA et instructions : `src/reader/buffered_reader.rs:297` `return Ok((bang_type, std::str::from_utf8(&buf[start..])?));`
+  (sections `<!…>`), `:240`, `:588`. En 0.39.4, seuls étaient décodés le texte des éléments (`camt053/mod.rs:235`,
+  `t.decode()`), les noms d'élément (`:686-690`), l'URI de `<Document>` (`:84-85`) et la valeur du `Ccy` lu
+  (`:697-699`) ; commentaires, CDATA, PI et attributs non lus passaient. Divergence **admise** (C-v017-1-11).
+- **Déclaration d'encodage ignorée** — sans la fonctionnalité `encoding`, `encoding="ISO-8859-1"` n'a d'effet sous
+  aucune des deux versions : 0.42 `src/reader/state.rs:289-297` (`#[cfg(feature = "encoding")]` puis
+  `Ok(Event::Decl(event))`), 0.39.4 `src/reader/state.rs:291`. Un fichier ainsi déclaré mais tout en ASCII se lit sous
+  les deux (fixture `v04_latin1_declare_ascii.xml`, AC9 ; validation P2, F-6). Un CAMT.053 ISO-8859-1 est un « cas réel
+  observé » (`routes/bank_imports.rs:662`).
+- **Contrôle haché des doublons d'attributs** — au-delà de `SMALL_ATTRIBUTE_COUNT` = 32
+  (`src/events/attributes.rs:881`), condensé par `DefaultHasher::new()` (`:910-911`, SipHash à clés nulles) rangé tel
+  quel (`IdentityHasher`, `:887`). Hypothèse **non exécutée** au § *Ce que les gardes ne voient pas*.
+- **`\r` dans pain.001 (#990)** — `src/escape.rs:109` `matches!(ch, b'<' | b'>' | b'&' | b'\'' | b'\"' | b'\r')`, et
+  `src/events/mod.rs:586-587` `pub fn new(content: &'i str) -> Self { Self::from_escaped(escape(content)) }` ; en 0.39.4
+  `src/escape.rs:106` n'échappe que `< > & ' "`. Seul `\r` change.
+
+Sites de `kesh-import` à adapter en 0.42 (inventaire clos, `grep -rn "quick_xml" crates/` → 10 lignes, dont 2 de
+commentaire, `mod.rs:11` et `pain001/mod.rs:10` ; recompté en validation P2) : `mod.rs:32-34` (imports), `:82`, `:146` et
+`:196` (`local_name().as_ref()`), `:84` (`Namespace(b)` devient `&str`), `:88` (`Unknown(prefix)` devient `String`), `:234-238` (`t.decode()` retiré, puis
+`quick_xml::escape::unescape` — remplacer `t.decode()` par `t.into_inner()` ou `&*t`, **pas** par `xml_content`),
+`:686-690` (`fn local_name` sur des octets), `:692-707` (`attr.key.local_name().as_ref()
+== name` ; `unescape_value` remplacé par `quick_xml::escape::unescape(&attr.value)`, **pas** par `normalized_value`). `v04.rs:9`, `v08.rs:15` (import `NsReader`, signature inchangée). `kesh-payment` :
+`pain001/mod.rs:14-15`, appels `:104-119`, `:152-158`, `:218-239` — aucun changement d'API listé pour `Writer`,
+`write_event`, `BytesStart::new`, `push_attribute` (tuple `(&str, &str)`), `BytesDecl::new`, `BytesText::new` ; à
+confirmer à la compilation.
+
+## Critères d'acceptation
+
+### La dépendance
+
+- **AC1** — `crates/kesh-import/Cargo.toml` et `crates/kesh-payment/Cargo.toml` déclarent `quick-xml = "0.42"` ;
+  `Cargo.lock` ne porte **qu'une** entrée `name = "quick-xml"`, en `0.42.x` (`grep -c 'name = "quick-xml"' Cargo.lock`
+  rend 1) ; `cargo tree -i quick-xml --workspace` ne montre que `kesh-import` et `kesh-payment`. Aucune fonctionnalité
+  (`features`) n'est ajoutée à `quick-xml` (C-v017-1-1, C-v017-1-2).
+- **AC2** — `cargo audit` (base RustSec à jour au jour du développement) ne signale plus **ni RUSTSEC-2026-0194 ni
+  RUSTSEC-2026-0195** ; sa sortie complète est versée au journal (`$GATE_LOGS/v017-1-cargo-audit.txt`), et tout autre avis
+  sur `quick-xml` qu'elle porterait est déclaré au rapport (issue à demander à l'orchestrateur, non traité ici).
+- **AC3** — `cargo publish --dry-run -p kesh-import` est vert (la CI le rejoue), et l'invariant « zéro dépendance
+  workspace interne » de `kesh-import` (`ci.yml:140-147`) tient.
+- **AC4** — Aucun appel déprécié : `cargo clippy --workspace --all-targets -- -D warnings` vert, **sans** `#[allow(deprecated)]`
+  ajouté (`git diff c5101b07 -- crates | grep -c "allow(deprecated)"` rend 0).
+
+### Les entrées hostiles (tests en mémoire, sans réseau ni fichier réel)
+
+Les trois tests vivent dans `crates/kesh-import/tests/camt053_hostile.rs` (fichier neuf) ; chaque document est **construit
+en mémoire** à partir du **relevé v04 complet** d'AC6 (c) — `<Document xmlns="NS_V04"><BkToCstmrStmt>`, un `<Stmt>`
+avec `Id`, IBAN, `Ccy`, soldes, période, et des `<Ntry>` complets (`Amt` avec texte et `Ccy`, `BookgDt`, `CdtDbtInd`),
+produit par **une** fonction de construction du fichier de test (validation P3, P3-3). Chaque
+test exécute `parse_camt053` dans un fil (`std::thread::spawn`) et attend son résultat par un canal avec
+`recv_timeout(Duration::from_secs(10))` : `Err(RecvTimeoutError::Timeout)` fait échouer le test (« le parseur n'a pas
+rendu la main en 10 s »), `Err(RecvTimeoutError::Disconnected)` le fait échouer sous un **autre** message (« le fil du
+parseur est mort — panique »), sans bloquer la suite. Ils sont **rouges sous 0.39.4** et verts sous 0.42
+(C-v017-1-4). Le journal rouge du commit A (`$GATE_LOGS/v017-1-rouge-0.39.txt`) doit montrer la **cause** attendue de
+chaque rouge : dépassement de délai pour AC5, `Ok` au lieu d'`Err` pour AC6 (a)(b), fil mort par débordement
+(`attempt to add with overflow`, 0.39.4 `src/name.rs:668`) pour AC7 ; un rouge d'une autre cause (document mal formé
+par ailleurs, `Err` précoce) invalide le test et se corrige avant le commit A. Sous `--test-threads=1` (CI), le fil
+d'AC5 continue de tourner après l'échec et ralentit les tests suivants du binaire : à l'état rouge seulement.
+
+- **AC5 — RUSTSEC-2026-0194 (attributs).** Un `<Amt>` **à balise fermante** (`<Amt a0="" … >1.00</Amt>` : un `<Amt …/>`
+  vide est un `Event::Empty`, que le parseur ne traite pas, `mod.rs:145` ne lit que `Event::Start`), placé dans un
+  `<Ntry>` d'un `<Stmt>`, portant **200 000** attributs distincts
+  (`a0="" a1="" …`, environ 2,4 Mo, sous le plafond de 10 MiB) **sans** `Ccy` : `parse_camt053` rend la main en moins de
+  10 s, en `Ok` ou en `Err` (le résultat n'est pas asserté, seul le délai l'est — la fixture ne cherche pas à être un
+  relevé valide). *Rouge attendu sous 0.39 : 200 000² / 2 comparaisons ; l'avis mesure ~6 s pour 80 000 en release, le
+  test tourne en debug.* **Témoin dans le même test** (validation P2, F-9) : le même document, construit par la même
+  fonction, avec 3 attributs et `Ccy="CHF"` sur le `Ntry/Amt` d'un `<Ntry>` complet, rend `Ok` et
+  `stmts[0].transactions[0].currency == "CHF"` — preuve que la
+  fixture traverse un `<Stmt>` valide jusqu'à `attr_string` ; sans lui, une retouche du constructeur qui ferait échouer
+  le parse avant `<Amt>` laisserait AC5 vert à vide.
+- **AC6 — RUSTSEC-2026-0195 (déclarations d'espace de noms).** Les documents d'AC6 sont le **relevé v04 complet**
+  d'AC6 (c) (`Id`, IBAN, `Ccy`, soldes, période — sinon `finalize_statement` rend `MissingRequiredField`,
+  `mod.rs:661-663`, et le rouge du commit A n'a pas la bonne cause), augmenté des déclarations. (a) Un `<Stmt>` portant
+  **10 000** déclarations
+  `xmlns:p0="urn:x:0" … xmlns:p9999="urn:x:9999"` : `parse_camt053` rend `Err(CamtError::MalformedXml(_))` en moins de
+  10 s. (b) La même construction sur `<Document>` lui-même (en plus de `xmlns` par défaut) : `Err(MalformedXml(_))`.
+  (c) **Pas de faux positif** : un relevé v04 synthétique valide dont `<Document>` porte **cinq** déclarations
+  (constante nommée, très en deçà de `DEFAULT_MAX_NAMESPACE_BINDINGS` = 128)
+  (`xmlns`, `xmlns:xsi` et trois préfixes inutilisés) — l'ordre de grandeur des fichiers bancaires réels — se lit `Ok`, à
+  l'identique du même relevé sans les préfixes inutilisés (`assert_eq!` sur les `Vec<ImportedStatement>`). *Rouge
+  attendu sous 0.39 pour (a) et (b) : le document se lit sans erreur.*
+- **AC7 — imbrication profonde (#977, couverte par le choix de 0.42).** Un document dont `<BkToCstmrStmt>` contient
+  **70 000** éléments `<X>` nus imbriqués (au-delà de `u16::MAX`), refermés : `parse_camt053` rend
+  `Err(CamtError::MalformedXml(_))` en moins de 10 s, **sans paniquer** (le canal ne rend pas `Disconnected`). La
+  profondeur est comptée sur toute balise ouvrante (0.42 `src/name.rs:729-733`, établi ci-dessus) : aucune déclaration
+  n'est nécessaire dans la fixture.
+- **AC8 — L'erreur reste celle que l'écran sait dire.** Les refus d'AC6 et d'AC7 sont des `CamtError::MalformedXml`, que
+  `map_camt_error` (`routes/bank_imports.rs:880-884`) traduit en `BANK_IMPORT_MALFORMED_XML` — **aucun code d'erreur ni
+  aucune clé i18n neuve**. Un test d'intégration de `kesh-api` (dans le binaire de test des imports bancaires existant,
+  `crates/kesh-api/tests/bank_imports_e2e.rs`) poste le document d'AC6 (a) sur `POST /api/v1/bank-imports/preview` et
+  asserte ce que le test voisin `post_import_rejects_truncated_xml` (`bank_imports_e2e.rs:620-638`) asserte pour un XML
+  tronqué : statut `400`, `error.code == "BANK_IMPORT_MALFORMED_XML"`, `error.details.kind == "MALFORMED_XML"`. Le test
+  voisin poste sur la **création** (`/api/v1/bank-imports`, `:629`), celui-ci sur l'**aperçu** : les deux routes passent
+  par `map_camt_error` (`:880-884`), d'où les mêmes valeurs. Le document d'AC6 (a) se construit dans les deux binaires
+  de test (`camt053_hostile.rs`, `bank_imports_e2e.rs`) par la même recette, constantes recopiées et commentées comme
+  telles — deux binaires ne partagent pas de code ; une fixture fichier est écartée parce que le test de
+  caractérisation parse tout `camt053/`. Le même
+  test poste aussi la fixture `v04_latin1_hors_texte.xml` d'AC9 et asserte les mêmes trois valeurs (C-v017-1-11).
+
+### Les données de la 0.16 — rien ne change de sens (contrainte du 2026-10-30)
+
+- **AC9 — Caractérisation de la sortie du parseur, établie AVANT la montée.** Un test
+  `crates/kesh-import/tests/camt053_golden.rs` (fichier neuf) parse **chaque** fichier CAMT.053 du dépôt — les 14 de
+  `crates/kesh-import/tests/fixtures/camt053/`, les 4 de `frontend/tests/e2e/fixtures/camt053_*.xml` (lus par
+  `std::fs::read` à l'exécution, non par `include_bytes!`), et les cinq fixtures neuves ci-dessous — et compare le
+  résultat à un fichier de référence `crates/kesh-import/tests/fixtures/camt053_golden/<nom>.json` (dossier **frère** de
+  `camt053/`, pour ne pas fausser le décompte `ls camt053/` que citent `camt053_tests.rs:3` et le `README.md` des
+  fixtures) :
+  - pour un `Ok(stmts)`, `serde_json::to_string_pretty(&stmts)` **entier** (toutes les valeurs de `ImportedStatement`
+    et `ImportedTransaction`, `Serialize` dérivé, `types.rs:28-90`) ;
+  - pour un `Err`, le **nom du variant** et sa charge **entière**, sauf pour les `MalformedXml` qui relaient le message
+    d'une erreur de bibliothèque (`e.to_string()`), comparés au variant seul. Inventaire clos des sites, relevé le
+    2026-10-30 par `grep -n "MalformedXml" crates/kesh-import/src/camt053/mod.rs` : **relais** (variant seul) `:76`,
+    `:85`, `:130`, `:236`, `:238`, `:699`, `:704` ; **messages de Kesh** (comparés entiers) `:78-79` (`élément racine
+    <Document> introuvable`), `:89` (`préfixe namespace non lié`), `:138` (`fin de fichier inattendue`), `:512`
+    (`….CdtDbtInd inattendu : …`, qui embarque une valeur lue), `:689` (`nom de tag non UTF-8`). Le test distingue les
+    seconds par leur forme (liste de cinq motifs écrite en dur) et un **garde d'inventaire** dans le même fichier lit
+    `src/camt053/mod.rs` (`include_str!`), **retire d'abord les commentaires** (`//` jusqu'à la fin de ligne, `/* … */`),
+    puis compte les `CamtError::MalformedXml(` dont l'argument — jusqu'à la parenthèse fermante appariée, blancs et
+    sauts de ligne compris — **ne correspond pas** à l'expression `^\s*\w+\s*\.\s*to_string\(\)\s*,?\s*$` (un relais,
+    quel que soit le nom de la variable et la coupe de `rustfmt`, virgule finale comprise — `rustfmt` en ajoute une
+    quand il coupe un appel sur plusieurs lignes, `mod.rs:78-80` ; validation P4, P4-3 ; `regex` est déjà une dépendance de `kesh-import`) :
+    le compte doit valoir la longueur de la liste, si bien qu'un sixième message de Kesh fait rougir
+    le garde au lieu de passer en « variant seul » (C-v017-1-3 ; validation P2, F-4). Le commit B peut faire disparaître
+    des **relais** (`:85`, `:236`) ; il ne touche à aucun message de Kesh.
+
+  **Les références sont produites sous `quick-xml` 0.39.4, dans un commit qui précède celui de la montée**, et ce commit
+  ne touche aucun fichier sous `crates/*/src/` ni aucun `Cargo.*` (contrôle mécanique au § *Gates*). Le
+  commit de la montée ne modifie **aucun** fichier de référence (contrôle mécanique au § *Gates*). Un mode de
+  régénération (`KESH_GOLDEN_REGEN=1`) produit les références ; il est **verrouillé dans le code du test** : sous
+  `KESH_GOLDEN_REGEN=1`, le test lit `Cargo.lock` à la racine du workspace (`env!("CARGO_MANIFEST_DIR")/../../Cargo.lock`)
+  et **panique** si la version résolue de `quick-xml` n'est pas `0.39.x`, ou si la variable `CI` est définie. Hors de
+  ce mode, une référence manquante fait rougir le test. Le même verrou garde la régénération de la référence pain.001
+  d'AC12 (dans son test d'intégration, non dans `crates/kesh-payment/examples/gen_golden.rs`, qui reste tel quel et ne
+  produit que `pain001_sample.xml`, inchangé par AC12). **Après le commit A, ni `camt053_golden.rs`, ni
+  `camt053_hostile.rs`, ni les références, ni les fixtures d'entrée ne changent** : tout ce qui dépend de la version est
+  écrit dès A (exception d'UTF-8 ci-dessous), et le contrôle du § *Gates* le vérifie.
+
+  Fixtures neuves (synthétiques ; catalogue et décompte de `crates/kesh-import/tests/fixtures/README.md`, l. 25,
+  complétés) — **cinq** :
+  - `v04_characterization.xml` : BOM UTF-8 en tête ; fins de ligne CRLF ; `xmlns:xsi` + `xsi:schemaLocation` sur
+    `<Document>` ; commentaires ; noms accentués en UTF-8 (`Müller`, `Genève`). **Deux `<Ntry>`**, parce que le parseur
+    ne publie les valeurs de niveau `Ntry` qu'en repli quand un `TxDtls` les porte (`mod.rs:628-634`) (validation P2,
+    R-4) :
+    - chaque `<Ntry>` est **complet** : `Ntry/Amt` avec texte et `Ccy`, `BookgDt`, `CdtDbtInd` — sans quoi
+      `emit_transactions` rend `MissingRequiredField` (`amount`, `currency` : `n.currency` n'est posé que par un
+      `Ntry/Amt` à `Ccy` ouvert **hors d'un** `TxDtls` — aucun `TxDtls` ouvert à cet instant, `current_txdtls` étant
+      remis à `None` à `</TxDtls>` (`mod.rs:206-210`) —, bras `"Amt"`, `(Some("Ntry"), None)`) et les marqueurs
+      n'existent pas (validation P3, P3-3) ;
+    - `Ntry` n° 1, **sans** `TxDtls` : `<Amt Ccy="C&#72;F">` (référence de caractère dans la valeur d'attribut : 0.39
+      lit `CHF`), `<NtryRef>` à entités (`&amp;`, `&lt;`), `<AddtlNtryInf>` en section CDATA ;
+    - `Ntry` n° 2 : `Ntry/Amt` à `Ccy="CHF"` d'abord, puis un `TxDtls` complet (`Amt` avec texte, `CdtDbtInd`) dont
+      le `TxDtls/Amt` porte un `Ccy` à **tabulation littérale** (`C<TAB>F`, trois caractères ; 0.39 lit `C\tF`),
+      `TxDtls/RmtInf/Ustrd` dont le texte contient un saut de ligne CRLF **intérieur**, `RltdPties/Cdtr/Nm` à entités
+      (`Dupont &amp; Fils`, `&#xE9;`) ;
+    - le test vérifie, pour cette seule fixture, des **marqueurs lus dans les champs** de la sortie (non par recherche
+      de sous-chaîne, `"CHF"` étant aussi la devise du relevé) : `transactions[0].currency == "CHF"` (et nulle part
+      `C&#72;F`), `transactions[1].currency == "C\tF"`, `transactions[1].details` contient `\r\n` — preuve que les
+      formes à figer atteignent la sortie. Les sorties **actuelles, fautives**, des entités et du CDATA sont figées telles
+      quelles et commentées (« comportement de 0.16, défaut tracé par #819 ; ne pas corriger ici ») ;
+  - `v04_latin1.xml` : déclaré `encoding="ISO-8859-1"`, un nom accentué encodé en Latin-1 dans un `<Nm>` lu ; le test
+    **asserte** `Err(MalformedXml)` sous les deux versions, en plus de la référence (validation P2, F-5) ;
+  - `v04_latin1_declare_ascii.xml` : déclaré `encoding="ISO-8859-1"`, contenu **tout ASCII**, fins de ligne **LF**, indentation **par espaces** (une tabulation compterait au contrôle des octets) — la forme ISO-8859-1 qui
+    s'importe aujourd'hui ; référence `Ok` sous les deux versions (validation P2, F-6) ;
+  - `v04_latin1_hors_texte.xml` : relevé valide **dont tout le texte est ASCII**, mais portant un octet `0xE9`
+    (Latin-1) dans un **commentaire**, dans une section **CDATA** d'`<AddtlNtryInf>` et dans la valeur de
+    `xsi:schemaLocation`. Sous 0.39.4, aucun de ces octets n'est décodé (`mod.rs:235` ne décode que les `Event::Text`,
+    `mod.rs:246` jette le reste) : la référence attendue est `Ok(…)`. Sous 0.42, le lecteur refuse le fichier
+    (`buffered_reader.rs:297`) : **divergence admise** (C-v017-1-11), seule exception à la règle d'égalité ci-dessous.
+    **Dès le commit A**, la référence de cette fixture est produite sous le nom fixé en dur
+    `v04_latin1_hors_texte.0.39.json`, et l'exception est écrite, **nominative** (ce seul fichier) et **conditionnée par
+    la version de `quick-xml` lue au `Cargo.lock`** (la lecture du verrou) : `0.39.x` → égalité stricte à la référence ;
+    toute autre version → `Err(MalformedXml)` strict. Rien ne change donc au commit B, ni le test ni la référence
+    (validation P2, R-2/F-2) ;
+  - `v04_duplicate_attr.xml` : un `<Amt Ccy="CHF" Ccy="EUR">`. Attendu `CHF` sous les deux versions (le doublon n'est
+    signalé qu'au second attribut, et `attr_string` s'arrête au premier `Ccy` — établi ci-dessus) ; la référence le
+    fige.
+
+  **Contrôle des octets des fixtures**, au commit A, sorties copiées au Change Log (validation P2, F-5) — un outil qui
+  écrit en UTF-8 efface facilement un BOM, un CR ou un octet Latin-1 :
+
+  ```sh
+  F=crates/kesh-import/tests/fixtures/camt053
+  head -c3 $F/v04_characterization.xml | od -An -tx1                 # ef bb bf
+  grep -c $'\r' $F/v04_characterization.xml                          # > 0
+  grep -c $'\t' $F/v04_characterization.xml                          # > 0
+  LC_ALL=C grep -c $'\xe9' $F/v04_latin1.xml $F/v04_latin1_hors_texte.xml   # >= 1 chacun
+  iconv -f UTF-8 -t UTF-8 $F/v04_latin1.xml > /dev/null; echo $?     # non nul
+  iconv -f UTF-8 -t UTF-8 $F/v04_latin1_hors_texte.xml > /dev/null; echo $?   # non nul
+  LC_ALL=C grep -c '[^ -~]' $F/v04_latin1_declare_ascii.xml          # exactement 0 (fichier en LF)
+  ```
+
+  Classes de divergence après la montée :
+  - **interdite** — un `Ok` dont une valeur diffère, ou un `Ok` devenu `Err` sur un document UTF-8 bien formé : la
+    montée est fautive, le code d'adaptation se corrige jusqu'à l'égalité (par exemple `into_inner()` plutôt que
+    `xml_content`, qui normalise les fins de ligne) ;
+  - **admise** — la seule de C-v017-1-11 : un document **non UTF-8** (octet invalide hors du texte lu), `Ok` sous 0.39,
+    `Err(MalformedXml)` sous 0.42 ; nominative (`v04_latin1_hors_texte.xml`) ;
+  - **à rapporter** — toute autre différence (par exemple un document mal formé que 0.39 tolérait et que 0.42 refuse) :
+    elle **arrête le développement** et se rapporte à l'orchestrateur, avec la référence en cause ; elle ne se règle
+    jamais en régénérant la référence.
+- **AC10 — L'empreinte d'un fichier ne change pas.** Un test unitaire dans `crates/kesh-api/src/routes/bank_imports.rs`
+  (module de tests existant, ou neuf s'il n'y en a pas) asserte `compute_sha256_hex` sur les octets de
+  `frontend/tests/e2e/fixtures/camt053_v04_minimal.xml` (via `include_bytes!`) **égal à une constante hexadécimale écrite
+  en dur** (relevée par `sha256sum` du fichier, sortie citée au Change Log). Ce test s'écrit au **commit C** : l'empreinte
+  porte sur les octets et ne dépend pas de la version de `quick-xml`, et la fonction est privée (`:1582`), si bien que
+  son test vit dans `src` — ce que le commit A ne doit pas toucher (validation P2, R-1/F-1). Et
+  `git diff c5101b07 -- crates/kesh-api/src/routes/bank_imports.rs
+  crates/kesh-api/src/routes/bank_import_fingerprint.rs` ne touche ni `compute_sha256_hex`, ni `preview_fingerprint`, ni
+  `DOMAIN_TAG` (diff limité au test ajouté). *Ce test ne peut pas rougir par la montée — l'empreinte est prise sur les
+  octets — : il fixe l'invariant contre une modification future, et c'est écrit dans son commentaire.*
+- **AC11 — Un relevé importé ne passe pas pour neuf.** Un test d'intégration **neuf** dans
+  `crates/kesh-api/tests/bank_imports_e2e.rs` importe `read_fixture("v04_minimal.xml")` (helper `:183`), puis reposte
+  **le même fichier** en aperçu, et asserte **les deux** : `warnings.duplicateFile` présent (forme assertée par
+  `post_preview_returns_duplicate_file_warning`, `:736`, `:766-770`) **et** `warnings.duplicateLines` de longueur égale au
+  nombre de transactions du fichier (forme assertée par `post_preview_returns_duplicate_lines_warning`, `:878`, `:911`).
+  Aucun test existant ne fait les deux sur le même fichier : `:736` n'asserte que le doublon de fichier, `:878` prévisualise
+  un **autre** fichier (`v04_overlap.xml`). *Import et aperçu tournant dans le même binaire, ce test ne voit pas une
+  dérive entre versions : il fixe la logique `DuplicateKey` ; la preuve inter-versions est AC9 (même sortie du parseur →
+  mêmes clés), et AC10 pour le hash. Son commentaire le dit.*
+- **AC12 — pain.001 inchangé octet pour octet.** Le test `golden_file_matches` (`pain001/mod.rs:399-433`) reste vert
+  **sans modifier** `tests/fixtures/pain001_sample.xml`. Un second test de référence, **test d'intégration**
+  `crates/kesh-payment/tests/pain001_special_chars.rs` (`generate_pain001` est publique, `pain001/mod.rs:130`, module
+  `pub mod pain001`, `lib.rs:8`), **produit sous 0.39.4 dans le commit A**, génère un lot dont les noms et la référence
+  non structurée portent `&`, `<`, `>`, `"`, `'` et `é` (`tests/fixtures/pain001_special_chars.xml`), et reste égal
+  après la montée. Un texte contenant `\r` n'entre pas dans
+  la référence : 0.42 l'échappe en `&#13;` (#990), écart assumé et écrit dans le commentaire du test (C-v017-1-9).
+
+### Ce qui ne change pas
+
+- **AC13** — Aucune migration, aucun changement de version de crate, aucun texte visible ni clé i18n, aucune ligne de
+  manuel : le diff **de cette story** (`git diff <base de la branche> --stat -- crates/kesh-db/migrations crates/kesh-i18n
+  docs/manual frontend/src` vide, et aucune ligne `^version` de `crates/*/Cargo.toml` dans ce diff — la v016-2 porte le
+  passage à 0.17.0, que la réunion des branches apportera). Les 15 tests de `camt053_tests.rs` et les 9 de `pain001/mod.rs`
+  passent sans modification de leurs assertions.
+- **AC14** — `CHANGELOG.md` : sous un en-tête `## [0.17.0]` (que l'orchestrateur fusionnera), section **Sécurité** :
+  « La bibliothèque XML `quick-xml` passe de 0.39 à 0.42 : les deux défauts signalés sur l'import d'un relevé CAMT.053
+  (avis RUSTSEC-2026-0194, un temps de calcul quadratique, et RUSTSEC-2026-0195, une allocation de mémoire non bornée,
+  #789) sont corrigés. D'autres durcissements de l'import restent à faire (#820). Un relevé se lit exactement comme
+  avant : l'empreinte d'un fichier déjà importé et la détection des doublons ne changent
+  pas. Seule exception : un fichier qui n'est pas en UTF-8 — ce qu'exige la norme ISO 20022 —, accepté jusqu'ici quand
+  les octets fautifs se trouvaient hors du texte lu (commentaire, CDATA, attribut ignoré), est désormais refusé comme
+  XML mal formé. » (formulation libre, ces quatre faits obligatoires — les deux avis corrigés, le renvoi à #820, la
+  lecture inchangée, l'exception UTF-8 —, liens d'issue au format du fichier ; aucune promesse plus large que les deux
+  avis : le chemin `RltdPties`, l'hypothèse SipHash et l'amplification mémoire restent ouverts, validation P3, P3-5).
+
+## Tâches
+
+0. **Étape 0 — recontrôles** (déclarés au Change Log, ligne lue citée) : relire les numéros de ligne de cette fiche sur
+   la tête de branche ; relire, dans la source 0.42.0 résolue par le lock après la montée, les lignes citées au
+   § *Établi dans la source 0.42.0* (elles ont été lues sur l'archive de `static.crates.io` ; un écart se déclare).
+1. **Commit A — caractérisation, sous 0.39.4** (aucun fichier sous `crates/*/src/` ni aucun `Cargo.*`) : les cinq fixtures
+   neuves et `tests/fixtures/README.md` (catalogue, et décompte recompté par `ls tests/fixtures/camt053/*.xml | wc -l`,
+   comme le commentaire `camt053_tests.rs:3`) ; le contrôle des octets (AC9) ; `camt053_golden.rs` (verrou, exception
+   conditionnée, garde d'inventaire) et les références `camt053_golden/*.json` ; le test d'intégration et la référence
+   pain.001 d'AC12 ; **les trois tests hostiles d'AC5 à AC7**, rouges, avec le témoin d'AC5 vert. Journaux :
+   `$GATE_LOGS/v017-1-golden-vert-0.39.txt` (`binary(camt053_golden)` et `binary(pain001_special_chars)` verts) et
+   `$GATE_LOGS/v017-1-rouge-0.39.txt` (`binary(camt053_hostile)` : trois rouges, cause de chacun, témoin vert) — les
+   lentilles ne peuvent pas extraire A, ces journaux en tiennent lieu.
+2. **Commit B — la montée** : les deux `Cargo.toml`, `Cargo.lock` (par `cargo update -p quick-xml` après l'édition des
+   manifestes, et rien d'autre : `git diff Cargo.lock` ne montre que `quick-xml` et, s'il y a lieu, ses propres
+   dépendances) ; adaptation de `kesh-import` (inventaire ci-dessus) et de `kesh-payment` si la compilation l'exige.
+   `fn local_name` : le cas « non UTF-8 » devient inatteignable (le lecteur valide l'UTF-8) ; le **garder** (le garde
+   d'inventaire d'AC9 compte son message), sans laisser de commentaire faux. Aucun réglage des plafonds de `quick-xml` (C-v017-1-5).
+3. **Commit C — AC8, AC10, AC11, CHANGELOG** ; `cargo audit` (AC2) ; `cargo publish --dry-run -p kesh-import` (AC3).
+4. Mutations (ci-dessous), gate complet, E2E complet au dernier commit de code.
+
+## Tests et mutations prévus
+
+| Mutation (une à la fois, restaurée par `git checkout -- <f> && touch <f>`) | Doit faire rougir |
+|---|---|
+| *(pas de M1)* — revenir à 0.39 ne compile plus après le commit B : le rouge sous 0.39 est celui du **commit A**, journal `v017-1-rouge-0.39.txt` | AC5, AC6 (a)(b), AC7 |
+| M2 — dans `parse`, appeler `reader.resolver_mut().set_max_namespace_bindings(usize::MAX)` (0.42 `src/name.rs:770`, `src/reader/ns_reader.rs:131`) | AC6 (a)(b) |
+| M3 — dans le traitement de `Event::Text`, remplacer `into_inner()` par `xml10_content()` | AC9 (`v04_characterization`, saut de ligne CRLF intérieur) |
+| M4 — dans `attr_string`, remplacer `quick_xml::escape::unescape(&attr.value)` par `attr.value` brut | AC9 (`v04_characterization`, `Ntry` n° 1, `Ccy="C&#72;F"`) |
+| M4-bis — dans `attr_string`, remplacer `quick_xml::escape::unescape(&attr.value)` par `attr.normalized_value(XmlVersion::Implicit1_0)` (variante exacte relevée à la compilation) | AC9 (`v04_characterization`, `Ntry` n° 2, `Ccy` à tabulation) |
+| M7 — dans `crates/kesh-import/src/camt053/mod.rs`, ajouter un site fictif `CamtError::MalformedXml(format!("x"))` | le garde d'inventaire d'AC9 |
+| M7-bis — dans `mod.rs`, ajouter le même site **en commentaire** `// CamtError::MalformedXml(format!("x"))` | **aucun** rouge attendu (le garde ignore les commentaires) ; un rouge est un défaut du garde |
+| M5 — dans `compute_sha256_hex`, hacher `&bytes[1..]` | AC10 |
+| M6 — dans `pain001`, remplacer `BytesText::new(text)` par `BytesText::from_escaped(text)` | AC12 (référence à caractères spéciaux) |
+
+Une mutation qui survit se déclare au Change Log, avec la raison ; elle ne se tait pas.
+
+## Gates
+
+Gate complet (`scripts/test-fast.sh` sous verrou, `flock "$GATE_LOGS/.gate.lock"`) et E2E complet
+(`docs/testing.md` § *Prérequis Playwright local*, à la lettre, dossiers propres au worktree) au **dernier commit de
+code** ; frontend (`npm run check`, `lint-i18n-ownership`, `test:unit`, `build`) même sans changement frontend, la CI les
+joue. La suite E2E est le seul chemin qui fait traverser un CAMT.053 réel la frontière HTTP (specs `bank-import*`).
+Ne déclarer que ce qui a tourné, chiffres recomptés.
+
+**Contrôle des références (mécanique, au gate de fin de story et avant tout push)** — le sha du commit A s'écrit au
+Change Log dès sa création, puis :
+
+```sh
+A=<sha-commit-A>
+BASE=c5101b07            # base de la branche ; après une réunion qui la réécrit, la base réécrite, citée
+# (1) ascendance
+git merge-base --is-ancestor $A HEAD && echo "A est un ancêtre de HEAD"                 # doit s'afficher
+# (2) A ne touche aucun code de production ni manifeste
+git show --stat --format= $A -- 'crates/*/src/*' Cargo.toml Cargo.lock 'crates/*/Cargo.toml'      # vide
+# (3) rien de la caractérisation ne bouge après A
+git diff --stat $A HEAD -- crates/kesh-import/tests/camt053_golden.rs crates/kesh-import/tests/camt053_hostile.rs \
+  crates/kesh-import/tests/fixtures/camt053 crates/kesh-import/tests/fixtures/camt053_golden \
+  'frontend/tests/e2e/fixtures/camt053_*.xml' crates/kesh-payment/tests/pain001_special_chars.rs \
+  crates/kesh-payment/tests/fixtures                                                               # vide
+# (4) aucune fixture préexistante ni pain001_sample.xml modifiée, supprimée ni renommée par la story, A compris
+#     (les ajouts passent ; filtre minuscule `a` = tout sauf les ajouts — validation P4, P4-1)
+git diff --stat --diff-filter=a $BASE HEAD -- crates/kesh-import/tests/fixtures/camt053 \
+  'frontend/tests/e2e/fixtures/camt053_*.xml' crates/kesh-payment/tests/fixtures/pain001_sample.xml      # vide
+```
+
+**Sondes positives — les mêmes motifs doivent voir quelque chose là où il y a quelque chose**, sans quoi une faute de
+motif rend un « vide » muet (validation P3, P3-1 : le motif `'crates/*/src'`, sans `/*` final, ne désignait aucun
+fichier — `git ls-files 'crates/*/src' | wc -l` rend 0, `git ls-files 'crates/*/src/*' | wc -l` en rend 306) :
+
+```sh
+git ls-files 'crates/*/src/*' | wc -l                                       # > 0
+git diff --stat $A HEAD -- 'crates/*/src/*'                                  # non vide : le commit B adapte mod.rs
+git diff --stat --diff-filter=A $BASE HEAD -- crates/kesh-import/tests/fixtures/camt053   # non vide : les cinq ajouts
+git ls-files 'frontend/tests/e2e/fixtures/camt053_*.xml' | wc -l             # 4
+# sonde des chemins littéraux de (3) (validation P4, P4-2) : A les crée sous ces noms exacts
+git diff --stat --diff-filter=A $BASE $A -- crates/kesh-import/tests/camt053_golden.rs \
+  crates/kesh-import/tests/camt053_hostile.rs crates/kesh-import/tests/fixtures/camt053 \
+  crates/kesh-import/tests/fixtures/camt053_golden crates/kesh-payment/tests/pain001_special_chars.rs \
+  crates/kesh-payment/tests/fixtures
+# doit nommer camt053_golden.rs, camt053_hostile.rs, les cinq .xml neufs, des camt053_golden/*.json,
+# pain001_special_chars.rs et pain001_special_chars.xml
+```
+
+La commande (1) affiche sa phrase, (2) à (4) sont **vides**, les cinq sondes rendent ce qui est indiqué ; les neuf
+sorties sont copiées au Change Log. Les
+lentilles de revue les rejouent. Le commit A ne touche aucun fichier sous `crates/*/src/` (AC10 au commit C, AC12 en test
+d'intégration) ; après lui, aucun fichier de la caractérisation ne bouge (la seule dépendance à la version, l'exception
+d'UTF-8, est écrite dès A). Après une réunion des branches qui réécrirait A (rebase), le contrôle se rejoue sur le sha
+réécrit, cité au Change Log avec l'ancien (validation P2, R-1/F-1, R-2/F-2, F-9).
+
+**Contrôle sur relevé réel — à Guy, sur son installation, après la sauvegarde, jamais à un agent** (validation P2,
+F-10) : s'il a importé des CAMT.053 réels dans l'installation à garder, il réimporte en aperçu, après la sauvegarde
+complète d'avant mise à jour et sur la 0.17.0-rc1, un ou plusieurs de ces fichiers : l'aperçu doit signaler le doublon
+de fichier et les doublons de ligne, sans erreur. Il le rapporte « conforme / non conforme », sans aucun chiffre
+(`docs/agents-orchestration.md` § 8, C-v017-1-10). L'orchestrateur porte ce point aux notes de la candidate.
+`~/kesh-test/` ne s'ouvre pas par un agent.
+
+## Ce que les gardes ne voient pas
+
+- **La consommation de mémoire** n'est pas mesurée : AC6 asserte le **refus** (qui borne l'allocation par construction
+  en amont), pas un plafond d'octets.
+- **Le délai d'AC5** dépend de la machine ; 10 s pour 200 000 attributs en debug laisse une marge de plus d'un ordre de
+  grandeur sous un parseur linéaire, mais un runner très chargé pourrait le dépasser : un rouge de délai isolé se
+  rejoue avant d'être diagnostiqué.
+- **Le blocage de l'exécuteur Tokio** par un parse long (même linéaire, sur 100 MiB) reste entier (C-v017-1-8).
+- **Les entités et les sections CDATA dans le texte** restent mal lues (C-v017-1-7, #819) — figé, non corrigé.
+- **Un fichier non UTF-8** dont les octets fautifs étaient hors du texte lu (commentaire, CDATA, attribut ignoré)
+  s'importait en 0.16 et est refusé en 0.17 (`BANK_IMPORT_MALFORMED_XML`) — divergence admise (C-v017-1-11), prouvée
+  par `v04_latin1_hors_texte.xml` et AC8. Un tel fichier déjà importé n'est pas touché en base ; c'est sa
+  **réimportation** qui serait refusée : en **aperçu**, le parse (`routes/bank_imports.rs:1045`) précède la recherche du
+  hash (`:1081`), si bien que l'écran montre `MALFORMED_XML` au lieu du doublon ; à la **création**, la recherche
+  (`:1237`) précède le parse (`:1249`) et le doublon est signalé d'abord, le refus `MALFORMED_XML` ne venant que si
+  l'utilisateur confirme le doublon (validation P2, R-6/F-7).
+- **Un chemin super-linéaire propre à Kesh**, que la montée ne ferme pas : pour chaque texte `<Nm>` lu sous un
+  `TxDtls`, `mod.rs:471` (`path.iter().any(|s| s == "RltdPties")`) parcourt toute la pile de chemin, profonde jusqu'à
+  65 535 niveaux sous 0.42 ; un fichier forgé de 10 MiB coûterait de l'ordre de 6 × 10¹⁰ comparaisons (estimation par
+  dénombrement, **non mesurée** ; validation P2, F-3). Préexistant, hors périmètre, tracé par **#820** (commentaire de
+  l'orchestrateur du 2026-10-30).
+- **Le contrôle haché des doublons d'attributs de 0.42** (au-delà de 32 attributs, `src/events/attributes.rs:881`)
+  repose sur `DefaultHasher::new()` (`:910-911`), un SipHash à clés nulles, connues d'un attaquant : des noms
+  d'attributs choisis hors ligne pourraient reconstituer des grappes et un coût super-linéaire. **Hypothèse non
+  exécutée** ; AC5 (noms `a0…a199999`) ne la teste pas. Renvoyée à **#820** (validation P2, R-9).
+- **L'amplification mémoire d'un fichier valide** (un nœud de texte copié par le dés-échappement puis `trim` ; des
+  millions de `<Ntry>` alimentant `Vec<ImportedTransaction>`) n'est bornée que par `KESH_BANK_IMPORT_MAX_MB` (jusqu'à
+  100, `lib.rs:793-799`). Aucun autre lecteur XML dans le dépôt (`Cargo.lock` : seul `quick-xml`).
+
+## Dev Notes
+
+### Fichiers touchés (prévus)
+
+`crates/kesh-import/Cargo.toml`, `crates/kesh-payment/Cargo.toml`, `Cargo.lock` ; `crates/kesh-import/src/camt053/mod.rs`
+(et `v04.rs`/`v08.rs` si l'import change) ; `crates/kesh-payment/src/pain001/mod.rs` (si la compilation l'exige) ; tests
+neufs `crates/kesh-import/tests/camt053_golden.rs`, `camt053_hostile.rs`, cinq `.xml` dans
+`crates/kesh-import/tests/fixtures/camt053/`, références dans `crates/kesh-import/tests/fixtures/camt053_golden/`,
+`crates/kesh-import/tests/fixtures/README.md` ; `crates/kesh-payment/tests/pain001_special_chars.rs` et
+`crates/kesh-payment/tests/fixtures/pain001_special_chars.xml` ; tests `kesh-api` (AC8, AC11 dans
+`tests/bank_imports_e2e.rs`, AC10 dans `src/routes/bank_imports.rs`) ; `CHANGELOG.md`.
+Trois crates de code (`kesh-import`, `kesh-payment`, `kesh-api` en test seulement) : sous le seuil de découpage.
+
+### Le manuel
+
+Aucun texte visible ne change ; ni `docs/manual/` ni les PDF ne bougent (AC13). Aucun manuel ne nomme `quick-xml` ni les
+avis (`grep -rln "quick-xml\|quick_xml\|RUSTSEC" docs website README.md` : aucun résultat, relevé le 2026-10-30).
+
+### Références
+
+- Avis : `~/.cargo/advisory-db/crates/quick-xml/RUSTSEC-2026-0194.md`, `RUSTSEC-2026-0195.md`.
+- Changelog amont : `https://github.com/tafia/quick-xml/blob/master/Changelog.md` (0.40.0 du 2026-05-11, 0.41.0 du
+  2026-06-29, 0.42.0 du 2026-08-22).
+- Contrainte des données : `kesh-gate-logs/prompts/v017-donnees-a-garder.md`.
+
+## À recontrôler à l'étape 0 du développement
+
+- Les numéros de ligne cités (relevés sur `c5101b07`).
+- Les lignes de la source 0.42.0 citées au § *Établi dans la source 0.42.0*, contre la source que résout le lock
+  après la montée (lues le 2026-10-30 sur l'archive `static.crates.io` ; elles levaient les quatre inconnues que la
+  version initiale de cette liste portait : profondeur, nom du plafond, texte brut, `unescape`).
+
+## Dev Agent Record
+
+### Agent Model Used
+
+Opus 5.5 (`claude-opus-5-5`), autonomie, 2026-10-30.
+
+### Completion Notes List
+
+**Commits** (ordre imposé du § *Gates*) : `9941f89b` (étape 0, fiche) ; **A** `11ef8b69` (caractérisation sous
+0.39.4, aucun `crates/*/src/*` ni `Cargo.*`) ; **B** `2d608d4a` (la montée) ; **C** `35f67172` (AC8, AC10, AC11,
+CHANGELOG) ; puis les comptes rendus.
+
+**Étape 0 — recontrôles, lignes lues.**
+- Quatre LOW de la validation P4 appliqués avant A (entrée du Change Log du 2026-10-30, « Validation P4 ») ; lignes
+  lues : `mod.rs:78-80` (`return Err(CamtError::MalformedXml(` / `"élément racine <Document> introuvable".into(),` /
+  `));`), `mod.rs:183-185` (`match (parent, n.current_txdtls.as_mut())` … `(Some("Ntry"), None) => n.currency =
+  Some(ccy),`), `mod.rs:206-210` (`n.current_txdtls.take()`).
+- Numéros de ligne de la fiche relus sur la tête de branche (`716cd767`, identique à `c5101b07` pour le code) :
+  `mod.rs:76` `Err(e) => return Err(CamtError::MalformedXml(e.to_string())),`, `:82` `if
+  start.local_name().as_ref() == b"Document"`, `:84-85`, `:88-92`, `:130`, `:138`, `:146`, `:168`, `:179`
+  `attr_string(&start, b"Ccy")?`, `:196`, `:234-238` (`t.decode()` puis `quick_xml::escape::unescape(&decoded)`),
+  `:246` `_ => {}`, `:512`, `:686-690`, `:692-707` — conformes. `routes/bank_imports.rs:880` `fn map_camt_error`,
+  `:1036` et `:1192` `compute_sha256_hex(&fields.file_bytes)`, `:1045` et `:1249` `parse_camt053(…)`, `:1081` et
+  `:1237` `find_by_company_and_hash`, `:1582` `fn compute_sha256_hex` — conformes ; aucun module `mod tests` dans
+  `bank_imports.rs` mais un `mod import_create_error_tests` (C-v017-1-17). `bank_imports_e2e.rs:183` `fn
+  read_fixture`, `:620-638` `post_import_rejects_truncated_xml`, `:736`, `:878` — conformes.
+- Source 0.42.0 résolue par le lock après B (`~/.cargo/registry/src/…/quick-xml-0.42.0`) contre l'archive lue en
+  validation (`kesh-gate-logs/v017-1-src/quick-xml-0.42.0`) : `diff -r` ne rend que `.cargo-ok` — identiques. Lignes
+  relues : `src/name.rs:541` `pub const DEFAULT_MAX_NAMESPACE_BINDINGS: usize = 128;`, `:729-733` (`checked_add(1)`
+  … `TooDeeplyNested`), `:770` `set_max_namespace_bindings`, `src/reader/ns_reader.rs:131` `resolver_mut`,
+  `src/escape.rs:236` `pub fn unescape(raw: &str)`, `:109` (`b'\r'`), `src/events/mod.rs:601` `into_inner`, `:625`
+  `xml10_content`, `src/events/attributes.rs:35` `pub value: Cow<'a, str>,`, `:263-264` (`unescape_value` déprécié),
+  `src/reader/buffered_reader.rs:297`, `src/reader/mod.rs:317` (`GeneralRef`), `src/events/attributes.rs:881`
+  `SMALL_ATTRIBUTE_COUNT: usize = 32` — aucun écart.
+
+**Rouges constatés avant tout patch** (journal `kesh-gate-logs/v017-1-rouge-0.39.txt`, quick-xml 0.39.4, arbre du
+commit A) : 5 tests, 1 passé, 4 échoués, chacun pour la cause attendue :
+```
+FAIL ac6a_…_on_stmt_are_refused      … camt053_hostile.rs:168:5 : Err(MalformedXml) attendu, obtenu Ok(1 relevé(s))
+FAIL ac6b_…_on_document_are_refused  … camt053_hostile.rs:182:5 : Err(MalformedXml) attendu, obtenu Ok(1 relevé(s))
+FAIL ac7_deep_nesting_…              … quick-xml-0.39.4/src/name.rs:668:9: attempt to add with overflow
+                                     … camt053_hostile.rs:227:13 : le fil du parseur est mort — panique
+FAIL ac5_many_attributes_…  [10.023s] … camt053_hostile.rs:155:13 : le parseur n'a pas rendu la main en 10 s
+PASS ac6c_ordinary_namespace_declarations_are_accepted
+```
+Le témoin d'AC5 est l'appel de la ligne 145 ; le rouge d'AC5 pointe la ligne 155 (document hostile), grâce à
+`#[track_caller]` : le témoin est vert. *Un premier rouge avait la mauvaise cause* (AC6 en
+`MissingRequiredField("stmt[0].ntry[0].currency")`, gabarit sans `Ccy`) : test corrigé avant A (C-v017-1-14).
+Journal vert sous 0.39 (`v017-1-golden-vert-0.39.txt`) : `camt053_golden` (5), `pain001_special_chars` (1),
+`camt053_tests` (15) — 21 passés sur 21.
+
+**Contrôle des octets des fixtures** (au commit A, `kesh-gate-logs/v017-1-octets-fixtures.txt`, en `command grep`,
+C-v017-1-18) : BOM `ef bb bf` ; 85 lignes à `\r` ; 1 tabulation ; `0xE9` : 1 (`v04_latin1.xml`) et 3
+(`v04_latin1_hors_texte.xml`) ; `iconv` rend 1 pour les deux ; `[^ -~]` dans `v04_latin1_declare_ascii.xml` : 0.
+`git ls-files --eol` : `i/crlf w/crlf` pour `v04_characterization.xml` (CRLF conservé au commit).
+
+**La montée (B).** `cargo update -p quick-xml` : `Updating quick-xml v0.39.4 -> v0.42.0`, seule entrée du lock qui
+change (`git diff --stat Cargo.lock` : 2 lignes de version, 2 de checksum). `kesh-payment` compile sans adaptation.
+`mod.rs` : `"Document"` en `&str` ; `Namespace(uri)` déjà texte (relais `:85` disparu) ; `Unknown(prefix)` en `String`,
+même message ; `local_name(….as_ref().as_bytes())` (C-v017-1-16) ; texte par `t.into_inner()` (relais `:236`
+disparu) ; `attr_string(&start, "Ccy")` et `quick_xml::escape::unescape(&attr.value)`. **Aucune divergence de la
+caractérisation** sous 0.42 hors l'exception nominative : `camt053_golden` vert sans toucher une référence.
+
+**Gates, au dernier commit de code `35f67172`** (journaux `kesh-gate-logs/v017-1-gate/`, sous verrou) :
+- `scripts/test-fast.sh` (fmt, clippy, nextest, base `kesh_v0171`) : **4474 exécutés, 4474 passés, 7 ignorés** ;
+- frontend : `npm run check` rc 0, `lint-i18n-ownership` rc 0, `test:unit` **2150 tests, 181 fichiers**, `build` rc 0 ;
+- **E2E complet** (port 3171, base `kesh_e2e_v0171`, dossiers neufs `/tmp/kesh-e2e-v0171-1/`) : **325 passés,
+  7 échoués, 17 ignorés** (14,6 min). Les sept échecs, contre `docs/testing.md` § *Les échecs attendus* :
+  `mode-expert.spec.ts:26`, `:41`, `onboarding-path-b.spec.ts:65`, `:92`, `onboarding.spec.ts:57`, `:77`, `:150` —
+  les sept KF-029 (#97) ; ni KF-052 ni pollution. Les specs `bank-import*.spec.ts` (qui font traverser un CAMT.053 la
+  frontière HTTP) passent. Backend tué par PID (3613454), vérifié mort.
+- Tests neufs (périmètre `c5101b07..35f67172`, recomptés par `grep -c '#\[test\]\|#\[sqlx::test'`) : 14 —
+  `camt053_golden.rs` 5, `camt053_hostile.rs` 5, `pain001_special_chars.rs` 1, `bank_imports_e2e.rs` 2,
+  `routes/bank_imports.rs` 1.
+- **AC2** `cargo audit` (base RustSec mise à jour au jour, 1395 avis ; `kesh-gate-logs/v017-1-cargo-audit.txt`) :
+  **aucun avis sur `quick-xml`** (ni RUSTSEC-2026-0194 ni -0195). Restent : `lopdf` RUSTSEC-2026-0187 (#791), `zip`
+  RUSTSEC-2026-0367/-0368/-0369 (#790), `rsa` RUSTSEC-2023-0071, et des avertissements (`encoding`, `paste`,
+  `ttf-parser`) — préexistants, hors périmètre.
+- **AC3** `cargo publish --dry-run -p kesh-import` (sans `--allow-dirty`, après C ; `v017-1-publish-dry-run-2.txt`) :
+  rc 0, « Packaged 65 files » ; invariant `ci.yml:140-147` rejoué (`cargo metadata … select(.path != null)`) : vide.
+  *`cargo publish` figure aux interdits de `docs/agents-orchestration.md` § 2 ; le `--dry-run` est prescrit par AC3
+  et n'envoie rien.*
+- **AC4** : `git diff c5101b07 -- crates | grep -c "allow(deprecated)"` rend 0 ; clippy workspace vert.
+
+**Mutations** (`kesh-gate-logs/v017-1-mutations.txt`, sous verrou, chacune restaurée par `git checkout -- <f> && touch
+<f>`, diff vide vérifié) :
+
+| Mutation | Test rouge | Verdict |
+|---|---|---|
+| M2 `set_max_namespace_bindings(usize::MAX)` | `ac6a_…`, `ac6b_…` | tuée |
+| M3 `xml10_content()` | `parser_output_matches_…` (v04_characterization), `characterization_fixture_reaches_…` | tuée |
+| M4 `attr.value` brut | `parser_output_matches_…`, `characterization_fixture_reaches_…` (`C&#72;F`) | tuée |
+| M4-bis `normalized_value(XmlVersion::Implicit1_0)` | les deux mêmes (`Ccy` à tabulation) | tuée |
+| M7 site fictif `MalformedXml(format!("x"))` | `inventory_of_kesh_messages_is_closed` | tuée |
+| M7-bis le même en commentaire | aucun | conforme (aucun rouge attendu) |
+| M5 `Sha256::digest(&bytes[1..])` | `file_hash_is_sha256_of_received_bytes` | tuée |
+| M6 `BytesText::from_escaped(text)` | `special_characters_are_written_as_under_quick_xml_039` | tuée (`golden_file_matches` reste vert : l'exemple ordinaire n'a aucun caractère à échapper) |
+
+**AC10** : `sha256sum frontend/tests/e2e/fixtures/camt053_v04_minimal.xml` →
+`83b03aedf3b2a1cc7745a59c3f93cd565c2d8d9fc3bb00c88d0c5ebdaa3e6eaa`, constante écrite en dur ; diff de
+`routes/bank_imports.rs` limité au module `file_hash_tests` ; `bank_import_fingerprint.rs` non touché.
+
+**Compteurs recalés** : `tests/fixtures/README.md` « 14 fichiers » → **19** (`ls camt053/*.xml | wc -l`) ;
+`camt053_tests.rs:3` « 14 fixtures » → **19**. Aucun autre site (`grep -rnE "\b14 (fixtures|fichiers)"`).
+
+**Écarts à la fiche** : aucun sur le fond. Formes : le contrôle des octets s'exécute en `command grep`
+(C-v017-1-18) ; le garde d'inventaire saute les chaînes en retirant les commentaires et exige au moins un relais
+reconnu (C-v017-1-15) ; bornes minimales et test des références orphelines (C-v017-1-13).
+
+**Défauts observés** : aucun défaut neuf du produit. Les avis `zip`, `lopdf`, `rsa` sont déjà tracés (#790, #791) ou
+connus. Le défaut des entités et du CDATA reste figé (#819) ; le parse sur l'exécuteur Tokio et le chemin `RltdPties`
+restent à #820.
+
+### File List
+
+- `Cargo.lock`, `crates/kesh-import/Cargo.toml`, `crates/kesh-payment/Cargo.toml` (B)
+- `crates/kesh-import/src/camt053/mod.rs` (B)
+- `crates/kesh-import/tests/camt053_golden.rs`, `crates/kesh-import/tests/camt053_hostile.rs` (A, neufs)
+- `crates/kesh-import/tests/camt053_tests.rs` (A, commentaire d'en-tête), `crates/kesh-import/tests/fixtures/README.md` (A)
+- `crates/kesh-import/tests/fixtures/camt053/v04_characterization.xml`, `v04_latin1.xml`,
+  `v04_latin1_declare_ascii.xml`, `v04_latin1_hors_texte.xml`, `v04_duplicate_attr.xml` (A, neufs)
+- `crates/kesh-import/tests/fixtures/camt053_golden/*.json` — 23 références (A, neuves)
+- `crates/kesh-payment/tests/pain001_special_chars.rs`, `crates/kesh-payment/tests/fixtures/pain001_special_chars.xml` (A, neufs)
+- `crates/kesh-api/src/routes/bank_imports.rs`, `crates/kesh-api/tests/bank_imports_e2e.rs`, `CHANGELOG.md` (C)
+- `_bmad-output/implementation-artifacts/v017-1-quick-xml.md`, `v017-1-quick-xml-choix-autonomes.md`,
+  `v017-1-quick-xml-review-prompt-p1.md`, `sprint-status.yaml`
+
+## Change Log
+
+- 2026-10-30 — Fiche créée (Opus 5.5, autonomie) ; registre C-v017-1-1 à C-v017-1-10. Prémisses de #789 confirmées au
+  code ; précisées : RUSTSEC-2026-0195 atteint tout le document (tout `Start`, pas seulement `<Document>`) ;
+  RUSTSEC-2026-0194 atteint Kesh par `attr_string` sur `<Amt>` (`NamespaceResolver::push` itère sans contrôle en 0.39.4,
+  `name.rs:671`). Défaut voisin relevé (entités ignorées, `mod.rs:246`), hors périmètre, issue demandée.
+- 2026-10-30 — **Validation P1** (Sonnet, deux lentilles en contexte frais ; rapports
+  `kesh-gate-logs/v017-1-quick-xml-validate-p1-{R,F}.md`). Décompte : **R** 0 CRITICAL, 0 HIGH, 2 MEDIUM, 5 LOW ;
+  **F** 0 CRITICAL, 0 HIGH, 2 MEDIUM, 5 LOW ; F-1 et R-5 désignent le même défaut, soit **4 MEDIUM distincts et
+  10 LOW** comptés par l'orchestrateur. Remédiation par l'agent de fiche (Opus 5.5), prémisses vérifiées une à une ; la
+  source `quick-xml` 0.42.0 a été téléchargée hors du dépôt (`kesh-gate-logs/v017-1-src/`, permission de
+  l'orchestrateur) et lue sans rien exécuter. Traitement :
+  - **R-1 (MEDIUM), appliqué** — prémisse vérifiée : `bank_imports_e2e.rs:736` n'asserte que `duplicateFile`, `:878`
+    prévisualise `v04_overlap.xml`. AC11 devient un test neuf, même fichier, deux assertions ; la portée (logique de clé,
+    non dérive entre versions) est écrite.
+  - **R-2 (MEDIUM), appliqué** — prémisse vérifiée : après le commit B le code est écrit pour l'API 0.42 (`into_inner`,
+    noms en `&str`), il ne compile plus sous 0.39. M1 retirée ; le rouge sous 0.39 est celui du commit A, dont la cause
+    doit être journalisée.
+  - **F-1 = R-5 (MEDIUM / LOW), appliqué selon la décision de l'orchestrateur (divergence admise)** — prémisse vérifiée
+    dans les deux sources : 0.39.4 ne décode que les `Event::Text` (`camt053/mod.rs:235`) ; 0.42.0 valide toute section
+    lue (`src/reader/buffered_reader.rs:297`). Fixture `v04_latin1_hors_texte.xml` (référence 0.39 consignée), refus
+    `BANK_IMPORT_MALFORMED_XML` asserté par AC8, phrase au CHANGELOG (AC14), ligne au § *Ce que les gardes ne voient
+    pas*, choix C-v017-1-11, classes de divergence d'AC9.
+  - **F-2 (MEDIUM), appliqué** — verrou dans le code du test (`KESH_GOLDEN_REGEN` refusé si le lock ne résout pas
+    `quick-xml` 0.39.x ou si `CI` est défini) et contrôle mécanique au § *Gates* (deux commandes dont la sortie vide se
+    copie au Change Log). `gen_golden.rs` existe (`crates/kesh-payment/examples/`) mais ne produit que
+    `pain001_sample.xml`, inchangé : il n'est pas modifié, et le diff de contrôle couvre ce fichier.
+  - **R-3 (LOW), appliqué** — confirmé dans la source : 0.42 `src/name.rs:729-733` (profondeur comptée sur toute balise),
+    0.39.4 `src/name.rs:668` (débordement `u16`). AC7 simplifié (fixture nue, `Err(MalformedXml)` asserté) ; distinction
+    `Timeout` / `Disconnected` posée pour les trois tests hostiles.
+  - **R-4 (LOW), appliqué** — `<Amt Ccy="C&#72;F">` ajouté à `v04_characterization.xml` ; M4 tuée par AC9.
+  - **R-6 (LOW), rejeté** — prémisse fausse : 0.42 `src/escape.rs:109` échappe `\r`, et `BytesText::new` vaut
+    `Self::from_escaped(escape(content))` (`src/events/mod.rs:586-587`) ; la ligne du tableau était juste, elle cite
+    désormais la source.
+  - **R-7 (LOW), appliqué** — cote d'`attr_string` corrigée (`:168` le bras, `:179` l'appel) ; signatures de `BytesText`
+    établies (`into_inner` `:601`, `xml10_content` `:625`, `xml_content` `:656`) ; `escape::unescape` survit
+    (`src/escape.rs:236`).
+  - **F-3 (LOW), appliqué** — `<Amt>` à balise fermante (un `Empty` n'est pas lu, `mod.rs:145`) ; cause de chaque rouge
+    du commit A exigée au journal ; constante nommée pour les cinq déclarations ; fil survivant noté.
+  - **F-4 (LOW), appliqué** — trois classes de divergence dans AC9 (interdite, admise, à rapporter) ; le cas
+    `v04_duplicate_attr.xml` est établi identique sous les deux versions (`src/events/attributes.rs:1050`, `:1088`).
+  - **F-5 (LOW), appliqué** — #819 et #820 cités à la place de « issue demandée » ; CDATA ignoré (même bras
+    `mod.rs:246`) relevé, figé par AC9, à verser à #819 (demandé à l'orchestrateur).
+  - **F-6 (LOW), appliqué** — amplification mémoire et absence d'autre lecteur XML écrites au § *Ce que les gardes ne
+    voient pas*.
+  - **F-7 (LOW), appliqué** — AC13 mesuré sur le diff de la story ; C-v017-1-1 nuancé (#977 : panique en debug,
+    débordement silencieux en release ; risque ajouté par 0.42 = #963, gardé par AC9).
+  - **Ajout de l'agent, mécanique** : les références vont dans `tests/fixtures/camt053_golden/`, dossier frère, pour ne
+    pas fausser le décompte `ls camt053/` de `camt053_tests.rs:3` et du `README.md` des fixtures, que le commit A recompte.
+- 2026-10-30 — **Validation P2** (Opus, passe complète, deux lentilles en contexte frais ; rapports
+  `kesh-gate-logs/v017-1-quick-xml-validate-p2-{R,F}.md`). Décompte : **R** 0 CRITICAL, 0 HIGH, 3 MEDIUM, 6 LOW ;
+  **F** 0 CRITICAL, 0 HIGH, 3 MEDIUM, 7 LOW ; recoupements R-1 = F-1, R-2 = F-2, R-6 = F-7, soit **4 MEDIUM et
+  12 LOW distincts** (l'orchestrateur en compte 6 et 13 avant dédoublonnage). Remédiation par l'agent de fiche (Opus
+  5.5), chaque prémisse vérifiée au code ou dans la source amont (`kesh-gate-logs/v017-1-src/`), selon les orientations
+  de l'orchestrateur :
+  - **R-1 = F-1 (MEDIUM), appliqué (remède F)** — prémisse vérifiée : `compute_sha256_hex` est privée
+    (`routes/bank_imports.rs:1582`), son test vit dans `src`. AC10 passe au commit C ; AC12 devient le test
+    d'intégration `crates/kesh-payment/tests/pain001_special_chars.rs` (`generate_pain001` publique,
+    `pain001/mod.rs:130`, `lib.rs:8`). Le contrôle « aucune ligne de `crates/*/src` au commit A » devient décidable, et
+    s'ajoute `git merge-base --is-ancestor` (F-9).
+  - **R-2 = F-2 (MEDIUM), appliqué** — la référence se nomme `v04_latin1_hors_texte.0.39.json` dès le commit A ;
+    l'exception, nominative, est conditionnée par la version lue au `Cargo.lock` et écrite dès A. `camt053_golden.rs`,
+    `camt053_hostile.rs`, les fixtures d'entrée et les références entrent dans le contrôle `git diff --stat A HEAD`, qui
+    doit être vide.
+  - **R-3 (MEDIUM), appliqué** — prémisse vérifiée : la devise d'une transaction n'est pas validée
+    (`kesh-core/src/bank_imports.rs:469` ne contrôle que `stmt.currency`), stockée sous `CHAR_LENGTH = 3`
+    (`20260504000001_bank_imports.sql:85`) ; la valeur brute est publique en 0.42 (`src/events/attributes.rs:35`).
+    `quick_xml::escape::unescape(&attr.value)` prescrit ; `Ccy` à tabulation figé ; M4 réécrite, M4-bis ajoutée ; la
+    normalisation retirée de C-v017-1-11 et des angles morts. **Une seule divergence admise** reste, l'UTF-8 hors
+    texte : AC9, C-v017-1-11 et AC14 concordent.
+  - **F-3 (MEDIUM), appliqué selon l'orientation** — prémisse vérifiée (`mod.rs:471`, évalué avant le test de la
+    l. 472). Ligne au § *Ce que les gardes ne voient pas*, renvoi à #820 (commenté par l'orchestrateur) ; périmètre
+    inchangé.
+  - **R-4 (LOW), appliqué** — prémisse vérifiée (`mod.rs:628-634`, replis `TxDtls` → `Ntry`) ; deux `<Ntry>` prescrits,
+    marqueurs assertés.
+  - **R-5 (LOW), appliqué** — phrase corrigée (noms d'élément `:686-690`, URI `:84-85`, `Ccy` `:697-699`).
+  - **R-6 = F-7 (LOW), appliqué** — aperçu : parse `:1045` avant recherche `:1081` ; création : recherche `:1237` avant
+    parse `:1249`.
+  - **R-7 (LOW), appliqué** — cotes `:84`, `:88` ; inventaire recompté (10 lignes, 2 de commentaire) ; emplacement du
+    `README.md` (`tests/fixtures/README.md`, l. 25) ; AC8 dit que le test voisin poste sur la création.
+  - **R-8 (LOW), appliqué** — AC6 sur le relevé complet d'AC6 (c) ; double construction (deux binaires) écrite.
+  - **R-9 (LOW), appliqué selon l'orientation** — hypothèse non exécutée (`src/events/attributes.rs:881`, `:887`,
+    `:910-911`) écrite aux angles morts, renvoi à #820.
+  - **F-4 (LOW), appliqué** — prémisse vérifiée (`mod.rs:512`, `:689` hors de l'énumération) ; règle inversée,
+    inventaire clos des sites (`:76`, `:85`, `:130`, `:236`, `:238`, `:699`, `:704` / `:78-79`, `:89`, `:138`, `:512`,
+    `:689`), garde d'inventaire, mutation M7.
+  - **F-5 (LOW), appliqué** — contrôle des octets (BOM, CR, tabulation, `0xE9`, `iconv`) ; `MalformedXml` asserté pour
+    `v04_latin1.xml`.
+  - **F-6 (LOW), appliqué** — prémisse vérifiée (0.42 `src/reader/state.rs:289-297`, 0.39.4 `:291`, cas réel cité
+    `routes/bank_imports.rs:662`) ; cinquième fixture `v04_latin1_declare_ascii.xml`.
+  - **F-8 (LOW), appliqué** — #819 porte le complément CDATA (vérifié : commentaire « Complément (validation P1 de la
+    fiche v017-1, 2026-10-30) ») ; passage vivant corrigé ; emplacement du `README.md`.
+  - **F-9 (LOW), appliqué** — `merge-base --is-ancestor`, journaux verts et rouges du commit A, témoin d'AC5.
+  - **F-10 (LOW), appliqué selon l'orientation** — le contrôle sur relevé réel revient à Guy, sur son installation,
+    après la sauvegarde (§ *Gates*, C-v017-1-10).
+  - **Aucun finding rejeté.** `fn local_name` est désormais **gardé** au commit B (le garde d'inventaire compte son
+    message `:689`).
+- 2026-10-30 — **Validation P3** (Sonnet, passe ciblée sur la remédiation P2, une lentille ; rapport
+  `kesh-gate-logs/v017-1-quick-xml-validate-p3.md`). Décompte : 0 CRITICAL, 0 HIGH, **1 MEDIUM**, 5 LOW. Remédiation
+  par l'agent de fiche (Opus 5.5), prémisses vérifiées :
+  - **P3-1 (MEDIUM), appliqué** — prémisse vérifiée (par l'orchestrateur et à nouveau ici) : `git ls-files
+    'crates/*/src' | wc -l` rend 0, `git ls-files 'crates/*/src/*' | wc -l` rend 306 ; le contrôle (2) du § *Gates* était
+    muet par construction. Motif corrigé en `'crates/*/src/*'` dans la commande ; prose alignée (« aucun fichier sous
+    `crates/*/src/` »). **Sondes positives** ajoutées (mêmes motifs, sortie non vide attendue), versées au Change Log
+    avec les contrôles. Les mentions `crates/*/src` des entrées datées (Validation P2) ne sont pas réécrites.
+  - **P3-2 (LOW), appliqué** — contrôle (4) : `git diff --stat --diff-filter=M $BASE HEAD` sur les fixtures préexistantes
+    et `pain001_sample.xml`, vide attendu ; sonde `--diff-filter=A` non vide.
+  - **P3-3 (LOW), appliqué** — prémisse vérifiée (`emit_transactions` exige `amount` et `currency` de niveau `Ntry` ;
+    `n.currency` posé par `(Some("Ntry"), None)`) : `<Ntry>` complets prescrits, `Ntry/Amt` avant le `TxDtls` dans le
+    n° 2 ; tests hostiles et témoin d'AC5 sur le relevé complet d'AC6 (c) ; marqueurs lus dans les champs.
+  - **P3-4 (LOW), appliqué** — garde d'inventaire : commentaires retirés, relais reconnus par
+    `^\s*\w+\s*\.\s*to_string\(\)\s*$` sur l'argument apparié ; M7 reformulée (mutation dans `mod.rs`), M7-bis
+    (site en commentaire, aucun rouge attendu).
+  - **P3-5 (LOW), appliqué selon l'orientation** — la phrase du CHANGELOG ne promet que ce que la montée ferme (les
+    deux avis) et renvoie à #820 pour le reste.
+  - **P3-6 (LOW), appliqué** — `v04_latin1_declare_ascii.xml` en LF, compte attendu exactement 0.
+  - **Aucun finding rejeté.**
+- 2026-10-30 — **Validation P4** (Opus, passe ciblée sur la remédiation P3, une lentille ; rapport
+  `kesh-gate-logs/v017-1-quick-xml-validate-p4.md`). Décompte : 0 CRITICAL, 0 HIGH, **0 MEDIUM**, 4 LOW : la
+  validation est terminée. Les quatre LOW sont appliqués à l'étape 0 du développement (Opus 5.5), prémisses relues :
+  - **P4-1 (LOW), appliqué** — contrôle (4) en `--diff-filter=a` (tout sauf les ajouts) : une suppression ou un
+    renommage de fixture préexistante se voit.
+  - **P4-2 (LOW), appliqué** — cinquième sonde : `git diff --stat --diff-filter=A $BASE $A` sur les chemins littéraux
+    de (3) ; « neuf sorties » au lieu de huit.
+  - **P4-3 (LOW), appliqué** — ligne lue : `mod.rs:78-80` (`return Err(CamtError::MalformedXml(` /
+    `"élément racine <Document> introuvable".into(),` / `));`) montre la virgule finale de `rustfmt` ; l'expression du
+    garde devient `^\s*\w+\s*\.\s*to_string\(\)\s*,?\s*$`.
+  - **P4-4 (LOW), appliqué** — (a) ligne lue `mod.rs:183-185` (`match (parent, n.current_txdtls.as_mut())` …
+    `(Some("Ntry"), None) => n.currency = Some(ccy),`) et `:206-210` (`n.current_txdtls.take()`) : « ouvert hors d'un
+    `TxDtls` » ; (b) `v04_latin1_declare_ascii.xml` indentée par espaces.
+- 2026-10-30 — **Développement** (Opus 5.5, autonomie ; détail au Dev Agent Record). Commits **A** `11ef8b69`
+  (caractérisation sous 0.39.4, rouges d'AC5 à AC7 de la cause attendue), **B** `2d608d4a` (montée, aucune référence
+  touchée, aucune divergence hors l'exception nominative), **C** `35f67172`. Gate complet au dernier commit de code :
+  nextest 4474/4474 (7 ignorés), Vitest 2150 (181 fichiers), E2E 325 passés / 7 échoués (les sept KF-029) / 17 ignorés ;
+  huit mutations, sept tuées, M7-bis sans rouge comme attendu. Choix C-v017-1-12 à C-v017-1-18. **Contrôles du § Gates**
+  (`A=11ef8b69`, `BASE=c5101b07`, sorties copiées de `kesh-gate-logs/v017-1-controles-git.txt`) :
+  ```
+  (1) git merge-base --is-ancestor $A HEAD && echo …     → A est un ancêtre de HEAD
+  (2) git show --stat --format= $A -- 'crates/*/src/*' Cargo.toml Cargo.lock 'crates/*/Cargo.toml'   → (vide)
+  (3) git diff --stat $A HEAD -- <caractérisation>       → (vide)
+  (4) git diff --stat --diff-filter=a $BASE HEAD -- <fixtures préexistantes, pain001_sample.xml>   → (vide)
+  sonde 1 git ls-files 'crates/*/src/*' | wc -l          → 306
+  sonde 2 git diff --stat $A HEAD -- 'crates/*/src/*'    → crates/kesh-api/src/routes/bank_imports.rs | 22,
+                                                           crates/kesh-import/src/camt053/mod.rs | 45 ; 2 files changed
+  sonde 3 git diff --stat --diff-filter=A $BASE HEAD -- crates/kesh-import/tests/fixtures/camt053
+                                                         → les cinq .xml neufs, 5 files changed, 277 insertions(+)
+  sonde 4 git ls-files 'frontend/tests/e2e/fixtures/camt053_*.xml' | wc -l   → 4
+  sonde 5 git diff --stat --diff-filter=A $BASE $A -- <chemins littéraux de (3)>
+                                                         → camt053_golden.rs, camt053_hostile.rs, les cinq .xml,
+                                                           23 camt053_golden/*.json, pain001_special_chars.xml,
+                                                           pain001_special_chars.rs ; 32 files changed
+  ```
+  AC13 : `git diff --stat c5101b07 HEAD -- crates/kesh-db/migrations crates/kesh-i18n docs/manual frontend/src` vide,
+  aucune ligne `^[+-]version` dans les `crates/*/Cargo.toml` ; aucun mot-clé de fermeture dans les messages de commit.
+  Prochaine : revue de code P1 (Sonnet, trois lentilles, `v017-1-quick-xml-review-prompt-p1.md`).
+- 2026-10-30 — **Revue de code P1** (Sonnet, passe complète, trois lentilles en contexte frais ; rapports
+  `kesh-gate-logs/v017-1-quick-xml-review-p1-{B,E,A}.md`). Décompte : **B** 0 CRITICAL, 0 HIGH, 0 MEDIUM, 4 LOW
+  (B1 à B4) ; **E** 0/0/0/2 (E1, E2) ; **A** 0/0/0/4 (A1 à A4) — soit **0 MEDIUM+ et 10 LOW**. La boucle se clôt
+  **en une passe** (aucun finding au-dessus de LOW, aucune remédiation). Les LOW non corrigés sont tracés par **#834**.
+  Statut : `done`.

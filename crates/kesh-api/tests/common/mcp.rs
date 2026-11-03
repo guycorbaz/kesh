@@ -377,7 +377,7 @@ impl McpTool for Compteur {
         Box::pin(async move {
             let n = self.n.fetch_add(1, Ordering::SeqCst) + 1;
             let s = serde_json::json!({ "n": n });
-            Ok(Donnees::nouvelles(s.to_string(), Some(s)))
+            Ok(Donnees::nouvelles(s.to_string()))
         })
     }
 }
@@ -406,7 +406,7 @@ impl McpTool for Piege {
                     .await
                     .map_err(kesh_api::mcp::textes::depuis_app_error)?;
             let noms: Vec<String> = comptes.into_iter().map(|c| c.compte.name).collect();
-            Ok(Donnees::nouvelles(noms.join(", "), None))
+            Ok(Donnees::nouvelles(noms.join(", ")))
         })
     }
 }
@@ -460,7 +460,7 @@ impl McpTool for Lent {
     fn executer<'a>(&'a self, _ctx: &'a ContexteMcp<'a>, _a: serde_json::Value) -> FuturOutil<'a> {
         Box::pin(async move {
             tokio::time::sleep(Duration::from_secs(5)).await;
-            Ok(Donnees::nouvelles(String::new(), None))
+            Ok(Donnees::nouvelles(String::new()))
         })
     }
 }
@@ -493,7 +493,7 @@ impl McpTool for LecteurRetarde {
             kesh_api::services::plan_comptable::lister(ctx.acces(), ctx.lecture(), true)
                 .await
                 .map_err(kesh_api::mcp::textes::depuis_app_error)?;
-            Ok(Donnees::nouvelles(String::new(), None))
+            Ok(Donnees::nouvelles(String::new()))
         })
     }
 }
@@ -550,28 +550,27 @@ impl McpTool for Panique {
 // Story 32-8b — les envois à valider : un outil à sortie fixée et les aides
 // ---------------------------------------------------------------------------
 
-/// Outil de test de la 32-8b (AC-B15, point 11) : rend un texte, une structure
-/// et un résumé **fixés** — les pièges de l'AC-B2, les caractères cachés de
-/// l'AC-B3, un texte de taille réglable pour l'AC-B4 — et compte ses
-/// exécutions.
+/// Outil de test de la 32-8b (AC-B15, point 11) : rend un texte et un résumé
+/// **fixés** — les pièges de l'AC-B2, les caractères cachés de l'AC-B3, un
+/// texte de taille réglable pour l'AC-B4 — et compte ses exécutions. (Son champ
+/// `structure` est parti avec celui de `Donnees` à la 0.17.0, v016-1,
+/// C-v016-1-5.)
 pub struct Fixe {
     pub nom: &'static str,
     pub texte: String,
-    pub structure: Option<serde_json::Value>,
     pub resume: Option<String>,
     pub n: Arc<AtomicUsize>,
 }
 
 impl Fixe {
-    /// Un outil `nom` (portée `books:read`) qui rend `texte`, sans structure ni
-    /// résumé ; rend aussi son compteur.
+    /// Un outil `nom` (portée `books:read`) qui rend `texte`, sans résumé ; rend
+    /// aussi son compteur.
     pub fn texte(nom: &'static str, texte: impl Into<String>) -> (Self, Arc<AtomicUsize>) {
         let n = Arc::new(AtomicUsize::new(0));
         (
             Self {
                 nom,
                 texte: texte.into(),
-                structure: None,
                 resume: None,
                 n: n.clone(),
             },
@@ -596,7 +595,7 @@ impl McpTool for Fixe {
     fn executer<'a>(&'a self, _ctx: &'a ContexteMcp<'a>, _a: serde_json::Value) -> FuturOutil<'a> {
         Box::pin(async move {
             self.n.fetch_add(1, Ordering::SeqCst);
-            let d = Donnees::nouvelles(self.texte.clone(), self.structure.clone());
+            let d = Donnees::nouvelles(self.texte.clone());
             Ok(match &self.resume {
                 Some(r) => d.avec_resume(r.clone()),
                 None => d,
@@ -610,10 +609,14 @@ pub fn lire_envoi(id: i64, n: i64) -> String {
     appel(id, "kesh_lire_envoi", serde_json::json!({ "envoi": n }))
 }
 
-/// Le numéro que rend l'accusé d'un dépôt.
+/// Le numéro que rend l'accusé d'un dépôt, lu au préfixe « Envoi n° » de son
+/// texte (v016-1, C-v016-1-9 : l'accusé ne porte plus de `structuredContent`).
 pub fn numero_depose(r: &Rendu) -> i64 {
-    r.json()["result"]["structuredContent"]["envoi"]
-        .as_i64()
+    r.json()["result"]["content"][0]["text"]
+        .as_str()
+        .and_then(|t| t.strip_prefix("Envoi n° "))
+        .and_then(|t| t.split(' ').next())
+        .and_then(|n| n.parse().ok())
         .unwrap_or_else(|| {
             panic!(
                 "accusé de dépôt attendu : {}",
@@ -626,14 +629,14 @@ pub fn numero_depose(r: &Rendu) -> i64 {
 pub fn attendu_depose(id: i64, n: i64) -> serde_json::Value {
     serde_json::json!({"jsonrpc":"2.0","id":id,"result":{
         "content":[{"type":"text","text":kesh_api::mcp::textes::texte_envoi_depose(n)}],
-        "structuredContent":{"envoi":n,"etat":"en_attente"},"isError":false}})
+        "isError":false}})
 }
 
 /// La réponse attendue d'une relecture d'un envoi en attente (AC-B6).
 pub fn attendu_en_attente(id: i64, n: i64) -> serde_json::Value {
     serde_json::json!({"jsonrpc":"2.0","id":id,"result":{
         "content":[{"type":"text","text":kesh_api::mcp::textes::texte_envoi_en_attente(n)}],
-        "structuredContent":{"envoi":n,"etat":"en_attente"},"isError":false}})
+        "isError":false}})
 }
 
 /// La réponse attendue d'une relecture d'un envoi validé (AC-B6) : le second
@@ -644,7 +647,7 @@ pub fn attendu_valide(id: i64, n: i64, modifie: bool, texte: &str) -> serde_json
             {"type":"text","text":kesh_api::mcp::textes::texte_envoi_valide(n, modifie)},
             {"type":"text","text":texte},
         ],
-        "structuredContent":{"envoi":n,"etat":"valide","modifie":modifie},"isError":false}})
+        "isError":false}})
 }
 
 /// La réponse attendue d'une relecture refusée, échue ou inconnue (AC-B6).

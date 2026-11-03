@@ -123,7 +123,14 @@ async function createSupplierInvoiceViaApi(
 			},
 		});
 		expect(res.ok(), `create supplier invoice failed: ${res.status()}`).toBeTruthy();
-		return (await res.json()).id as number;
+		const draft = (await res.json()) as { id: number; version: number };
+		// Story v017-4b (#849, AC-30) : la création rend un BROUILLON ; ces tests
+		// paient ou annulent, ils valident donc la facture d'abord.
+		const val = await ctx.post(`/api/v1/supplier-invoices/${draft.id}/validate`, {
+			data: { version: draft.version },
+		});
+		expect(val.ok(), `validate supplier invoice failed: ${val.status()}`).toBeTruthy();
+		return draft.id;
 	} finally {
 		await disposeContextSafe(ctx);
 	}
@@ -131,8 +138,9 @@ async function createSupplierInvoiceViaApi(
 
 test.describe('Factures fournisseurs', () => {
 	// Story 25-3-a-2 (#414) — payer, puis annuler le RÈGLEMENT : la facture
-	// redevient « ouverte », à payer, et l'écriture inverse est passée.
-	test('payer puis annuler le règlement : la facture redevient ouverte', async ({ page }) => {
+	// redevient « validée », à payer, et l'écriture inverse est passée (Story v017-4b :
+	// l'état `open` se nomme « Validée », décision Q4).
+	test('payer puis annuler le règlement : la facture redevient validée', async ({ page }) => {
 		await login(page);
 		const { expenseAccountId, internalAccountId } = await ensureConfigAndAccounts(page);
 		const supplierId = await createSupplierViaApi(page, uniq('Fournisseur'));
@@ -148,7 +156,7 @@ test.describe('Factures fournisseurs', () => {
 		page.once('dialog', (d) => void d.accept());
 		await page.getByTestId('supplier-invoice-settlement-cancel').click();
 
-		await expect(page.getByTestId('supplier-invoice-status')).toContainText(/Ouverte/i);
+		await expect(page.getByTestId('supplier-invoice-status')).toContainText(/Validée/i);
 		await expect(page.getByTestId('supplier-invoice-pay')).toBeVisible();
 
 		const ctx = await authedApiContext(page);
@@ -206,7 +214,7 @@ test.describe('Factures fournisseurs', () => {
 
 		// Détail → règlement par compte interne.
 		await page.goto(`/supplier-invoices/${invoiceId}`);
-		await expect(page.getByTestId('supplier-invoice-status')).toContainText(/Ouverte/i);
+		await expect(page.getByTestId('supplier-invoice-status')).toContainText(/Validée/i);
 		await page.getByLabel(/Compte interne/i).check();
 		await page.getByTestId('pay-internal-account').selectOption(String(internalAccountId));
 		await page.getByTestId('supplier-invoice-pay-submit').click();

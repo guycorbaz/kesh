@@ -91,7 +91,7 @@ test.describe('Documents à traiter', () => {
 		await expect(img).toHaveAttribute('src', /^blob:/);
 	});
 
-	test('E2-a — un PNG sans QR : badge « Sans QR-code », aperçu <img>, le fichier a quitté le dossier', async ({
+	test('E2-a — un PNG sans QR : badge « Aucune QR-facture exploitable », aperçu <img>, le fichier a quitté le dossier', async ({
 		page,
 	}) => {
 		await login(page);
@@ -100,11 +100,15 @@ test.describe('Documents à traiter', () => {
 
 		const row = await importAndFindRow(page, name);
 		await expect(row.getByTestId('imported-badge-no-qr')).toBeVisible();
+		// Story v017-5 (#854, AC-7) : le badge dit ce que Kesh sait, non ce que porte le document.
+		await expect(row.getByTestId('imported-badge-no-qr')).toContainText(
+			'Aucune QR-facture exploitable',
+		);
 		await expect(row.getByTestId('imported-badge-qr')).toHaveCount(0);
-		// Le rapport dit « sans QR-code » pour ce fichier.
+		// Le rapport dit « aucune QR-facture exploitable » pour ce fichier.
 		await expect(
 			page.getByTestId('inbox-import-accepted-row').filter({ hasText: name }),
-		).toContainText('sans QR-code');
+		).toContainText('aucune QR-facture exploitable');
 		expect(await stillInInbox(name), 'le fichier quitte le dossier dès l’import').toBe(false);
 
 		await row.getByTestId('imported-preview').click();
@@ -286,6 +290,44 @@ test.describe('Créer la facture à côté du document (Story 30-2b)', () => {
 });
 
 /**
+ * Story v017-3b (#687, AC-15) — une ligne qui n'est pas au centime : signalée sous elle,
+ * refusée au clic par le message dédié sans rien enregistrer ; corrigée, la facture se crée.
+ * La valeur traverse la frontière HTTP : seul un E2E le montre de bout en bout.
+ */
+test.describe('Une ligne au centime (Story v017-3b)', () => {
+	test('E8 — 3 × 33.3333 refusée à la saisie, 1 × 99.99 enregistrée', async ({ page }) => {
+		await login(page);
+		const expenseAccountId = await ensurePayableAndExpense(page);
+		const supplierId = await createSupplierViaApi(page, `Fournisseur E8 ${token()}`);
+
+		await page.goto('/supplier-invoices/new');
+		// Le fournisseur d'abord : le formulaire le refuse avant les lignes.
+		await page.getByTestId('supplier-invoice-supplier').selectOption(String(supplierId));
+		await fillFirstInvoiceLine(page, 'Prestation E8', '33.3333', expenseAccountId);
+		// `fillFirstInvoiceLine` ne remplit pas la quantité.
+		const line = page.getByTestId('supplier-invoice-line').first();
+		await line.getByTestId('supplier-invoice-line-qty').fill('3');
+		await expect(page.getByTestId('supplier-invoice-line-subcentime')).toHaveText(
+			'Le montant de la ligne (99.9999) n’est pas au centime. Saisissez la ligne au montant facturé par le fournisseur, au centime.',
+		);
+
+		await page.getByTestId('supplier-invoice-submit').click();
+		await expect(page.getByTestId('supplier-invoice-form-error')).toHaveText(
+			'Une ligne n’est pas au centime : saisissez-la au montant facturé par le fournisseur, au centime.',
+		);
+		await expect(page).toHaveURL(/\/supplier-invoices\/new$/);
+
+		await line.getByTestId('supplier-invoice-line-qty').fill('1');
+		await line.getByTestId('supplier-invoice-line-unit-price').fill('99.99');
+		await expect(page.getByTestId('supplier-invoice-line-subcentime')).toHaveCount(0);
+		await page.getByTestId('supplier-invoice-submit').click();
+		await expect(page).toHaveURL(/\/supplier-invoices\/\d+$/);
+		const { inv } = await invoiceAndDocumentStatus(page, invoiceIdFromUrl(page));
+		expect(inv.totalAmount).toBe('99.9900');
+	});
+});
+
+/**
  * Story 30-2c — joindre un document après coup, le détacher (parcours E4 → E5 → E7).
  *
  * ⚠️ **`describe.serial`, avec son motif** (patron `open-items.spec.ts`) : les trois
@@ -316,10 +358,17 @@ test.describe.serial('Joindre puis détacher un document (Story 30-2c)', () => {
 		await page.getByTestId('supplier-invoice-submit').click();
 		await expect(page).toHaveURL(/\/supplier-invoices\/\d+$/);
 		invoiceId = invoiceIdFromUrl(page);
+		// Story v017-4b (#849, AC-30) : l'enregistrement crée un BROUILLON, sans écriture ;
+		// E7 lit l'écriture d'achat : la facture se valide depuis sa fiche.
+		await expect(page.getByTestId('supplier-invoice-status')).toHaveText('Brouillon');
+		await page.getByTestId('supplier-invoice-validate').click();
+		await page.getByTestId('supplier-invoice-validate-confirm').click();
+		await expect(page.getByTestId('supplier-invoice-status')).toHaveText('Validée');
 		const { inv, docStatus } = await invoiceAndDocumentStatus(page, invoiceId);
 		expect(inv.contactId).toBe(supplierId);
 		expect(docStatus, 'une facture sans document n’en a pas').toBe(404);
 		purchaseEntryId = inv.purchaseJournalEntryId;
+		expect(purchaseEntryId, 'la validation a passé l’écriture d’achat').toBeGreaterThan(0);
 		// Story 30-2c (AC18) : la fiche propose de joindre, et ne propose rien d'autre.
 		await expect(page.getByTestId('supplier-invoice-attach')).toBeVisible();
 		await expect(page.getByTestId('supplier-invoice-source-document')).toHaveCount(0);
@@ -467,7 +516,14 @@ async function createInvoiceAndAttachViaApi(
 			},
 		});
 		expect(created.status(), `création : ${await created.text()}`).toBe(201);
-		const inv = await created.json();
+		const draft = await created.json();
+		// Story v017-4b (#849, AC-30) : la création rend un brouillon, sans écriture ; E6
+		// lit l'écriture d'achat — la facture se valide d'abord.
+		const validated = await ctx.post(`/api/v1/supplier-invoices/${draft.id}/validate`, {
+			data: { version: draft.version },
+		});
+		expect(validated.status(), `validation : ${await validated.text()}`).toBe(200);
+		const inv = await validated.json();
 		const attached = await ctx.post(`/api/v1/supplier-invoices/${inv.id}/source-document`, {
 			data: { importedSupplierInvoiceId: importedId },
 		});

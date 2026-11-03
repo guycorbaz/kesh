@@ -176,8 +176,42 @@ const PREFIXES = [
  * `onboarding-restore-link` (relais `msg` de `routes/onboarding/+page.svelte`),
  * `onboarding-restore-back` (`routes/onboarding/restore/+page.svelte`). Recompté : `git diff`
  * du FTL fr-CH, préfixes du domaine.
+ *
+ * ⚠️ **344 → 346, +2 nommées** (Story v017-2, #809) — l'assistant affiche le motif d'un
+ * refus, deux clés au préfixe `onboarding-`, relais `msg` de `routes/onboarding/+page.svelte` :
+ * `onboarding-language-error` (S1, au lieu du littéral) et `onboarding-field-country-hint`
+ * (indication sous le champ Pays). Recompté : `git diff` du FTL fr-CH, préfixes du domaine.
+ *
+ * ⚠️ **344 → 348, +4 nommées** (Story v017-3b, #687, 2026-10-30) — une ligne de facture
+ * fournisseur au centime, toutes au préfixe `supplier-invoices-` et appelées par `i18nMsg`
+ * littéral : `-errors-line-not-in-centimes` (`supplier-invoice-form.ts`, le texte du refus
+ * serveur), `-line-not-in-centimes` et `-err-line-not-in-centimes`
+ * (`SupplierInvoiceForm.svelte`), `-subcentime-total-warning` (`SupplierInvoiceTotal.svelte`).
+ * Recompté depuis les SOURCES : les appels neufs de ces trois fichiers.
+ *
+ * ⚠️ **Release 0.17.0** (branche `release/0.17.0`, 2026-10-31) : les deux stories ci-dessus,
+ * parties toutes deux de 344, sont réunies par fusion ; la valeur est **mesurée** par ce
+ * test sur l'arbre réuni, non additionnée : **344 → 350** (+6 = les 2 de la v017-2 et les 4 de
+ * la v017-3b, aucune clé commune ; mesuré après la fusion de
+ * `story/v017-3-rapprochement-attente`, bornes `99566298` → arbre réuni).
+ *
+ * ⚠️ **Story v017-4b** (#849) : **350 → 384** (+34), recompté aux deux bornes (`1d9f81a5` →
+ * tête) par extraction des clés littérales des `i18nMsg` des sources hors tests, aux préfixes
+ * de ce relevé : 34 clés neuves, toutes `supplier-invoices-` — 24 de l'écran du cycle (liste,
+ * fiche, édition, formulaire), 7 `-unvalidate-blocked-*` et `-unvalidate-error` (les refus de
+ * la dévalidation), `-status-draft`, et `-cancel-blocked-draft` (posée au catalogue par la 4a,
+ * appelée par l'écran depuis la 4b) ; 24 + 7 + 1 + 1 + 1 = 34. Aucune retirée.
+ *
+ * ⚠️ **Story v017-4b, remédiation de la revue de code P1** (2026-11-03) : **384 → 387** (+3),
+ * recompté aux deux bornes (`9a229bd3` → tête) : `supplier-invoices-unvalidate-batch-warning`
+ * (E-2), `-unvalidate-blocked-later-fiscal-year-closed-named` (E-4), `-err-invoice-date-plain`
+ * (E-6). `fiscal-years-checks-k8-more` (E-10) est hors de ce relevé (préfixe). Aucune retirée.
+ *
+ * ⚠️ **Revue de code P2** (2026-11-03) : **387 → 389** (+2), aux deux bornes (`f8b119e5` →
+ * tête) : `supplier-invoices-unvalidate-batch-warning-undated` (B2-3) et
+ * `-unvalidate-batch-warning-action` (B2-5). Aucune retirée (`-batch-warning` change de texte).
  */
-const CLES_RELEVEES = 344;
+const CLES_RELEVEES = 389;
 
 
 /** Relève, pour chaque clé du domaine, l'ensemble de ses replis littéraux distincts. */

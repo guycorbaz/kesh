@@ -836,7 +836,7 @@
 										<p class="text-sm">
 											{i18nMsg(
 												'bank-accounts-close-dialog-body',
-												"Le compte passe en lecture seule : plus aucun import, rapprochement, règlement ni lot de paiement ne s'y enregistre. Son historique reste entier et consultable (imports, écritures, rapports, export). Vous pourrez le rouvrir.",
+												"Le compte passe en lecture seule : plus aucun relevé, importé ou saisi, ni rapprochement, règlement ou lot de paiement ne s'y enregistre. Son historique reste entier et consultable (relevés, écritures, rapports, export). Vous pourrez le rouvrir.",
 											)}
 										</p>
 										<div class="mt-3 max-w-xs">

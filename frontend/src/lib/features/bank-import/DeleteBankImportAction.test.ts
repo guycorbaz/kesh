@@ -245,3 +245,52 @@ describe('DeleteBankImportAction — échec imprévu (Story 28-2, B5)', () => {
 		expect(erreur.textContent).not.toContain('[object Object]');
 	});
 });
+
+// Story v016-2b (#816, AC-23) — un relevé saisi à la main a ses propres textes :
+// la boîte ne parle ni de « fichier » ni de « réimporter le même fichier ».
+describe('DeleteBankImportAction — relevé saisi à la main (Story v016-2b)', () => {
+	const manuel = (transactions: BankTransactionDto[]) => ({
+		...detail(transactions),
+		sourceFormat: 'MANUAL',
+		filename: 'saisie-manuelle-2026-03-02-2026-03-04',
+	});
+
+	it('bouton, motif bloqué, titre et corps propres (mutation : variantes MANUAL retirées)', async () => {
+		const bloque = monter(manuel([tx(1), tx(2, 'reconciled', 5)]));
+		expect(bloque.getByTestId('bank-import-delete-button').textContent).toContain('Supprimer le relevé');
+		expect(bloque.getByTestId('bank-import-delete-blocked').textContent).toContain(
+			'1 transaction(s) de ce relevé sont rapprochées',
+		);
+		cleanup();
+		const { getByTestId, findByTestId } = monter(manuel([tx(1)]));
+		await fireEvent.click(getByTestId('bank-import-delete-button'));
+		const corps = (await findByTestId('bank-import-delete-dialog-body')).textContent ?? '';
+		expect(corps).toContain('Le relevé saisi à la main (période du 2026-03-02 au 2026-03-04)');
+		expect(corps).toContain('le saisir de nouveau');
+		expect(corps).not.toContain('fichier');
+		expect(corps).not.toContain('saisie-manuelle-');
+		expect((await findByTestId('bank-import-delete-dialog')).textContent).toContain(
+			'Supprimer ce relevé saisi à la main ?',
+		);
+	});
+
+	it('erreurs propres : rapproché entre-temps, introuvable', async () => {
+		mockApi.deleteBankImport.mockRejectedValueOnce({
+			code: 'BANK_IMPORT_HAS_RECONCILED_TRANSACTIONS',
+			message: 'm',
+			status: 409,
+			details: { reconciledCount: 2 },
+		});
+		const { getByTestId, findByTestId } = monter(manuel([tx(1)]));
+		await fireEvent.click(getByTestId('bank-import-delete-button'));
+		await fireEvent.click(await findByTestId('bank-import-delete-submit'));
+		expect((await findByTestId('bank-import-delete-error')).textContent).toContain(
+			'2 transaction(s) de ce relevé ont été rapprochées entre-temps',
+		);
+		mockApi.deleteBankImport.mockRejectedValueOnce({ code: 'NOT_FOUND', message: 'm', status: 404 });
+		await fireEvent.click(getByTestId('bank-import-delete-submit'));
+		await waitFor(() =>
+			expect(getByTestId('bank-import-delete-error').textContent).toContain("Ce relevé n'existe plus"),
+		);
+	});
+});

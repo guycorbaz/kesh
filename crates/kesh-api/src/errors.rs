@@ -792,6 +792,47 @@ pub enum AppError {
     #[error("Aperçu d'import périmé")]
     BankImportPreviewStale,
 
+    // ----- Story v016-2a (#816) — relevé saisi à la main -----
+    /// Une règle du relevé saisi (AC-4, règles 1 à 5) est violée, ou une chaîne
+    /// est absente, vide ou mal formée → `400 BANK_STATEMENT_INVALID`.
+    /// `field` et `reason` sont pris dans les ensembles **fermés**
+    /// `ManualStatementField` / `ManualStatementReason` de kesh-core ; `line`
+    /// est le rang 1-based dans le tableau envoyé, `None` pour l'entête.
+    #[error("Relevé saisi invalide ({field} : {reason})")]
+    BankStatementInvalid {
+        line: Option<usize>,
+        field: &'static str,
+        reason: &'static str,
+    },
+
+    /// `départ + crédits − débits ≠ arrivée`, égalité exacte, sans
+    /// confirmation possible (C-v016-2-4) → `422 BANK_STATEMENT_UNBALANCED`.
+    #[error("Relevé saisi déséquilibré (écart {diff})")]
+    BankStatementUnbalanced {
+        opening: String,
+        closing: String,
+        computed_closing: String,
+        diff: String,
+    },
+
+    /// Lignes du relevé saisi qui ont une transaction existante de même
+    /// empreinte, sans `confirmDuplicateLines` → `422
+    /// BANK_STATEMENT_DUPLICATE_LINES`. `lines` : `(rang 1-based,
+    /// transaction existante)`. Aucune option « ignorer » (C-v016-2-6).
+    #[error("Lignes déjà présentes")]
+    BankStatementDuplicateLines { lines: Vec<(usize, i64)> },
+
+    /// Solde de départ ≠ clôture du relevé précédent à solde, sans
+    /// `confirmOpeningBalanceGap` → `422 BANK_STATEMENT_OPENING_BALANCE_GAP`
+    /// (C-v016-2-5).
+    #[error("Solde de départ différent de la clôture du relevé précédent")]
+    BankStatementOpeningBalanceGap {
+        expected: String,
+        entered: String,
+        previous_import_id: i64,
+        previous_period_to: chrono::NaiveDate,
+    },
+
     /// Encoding détecté n'est pas dans `{UTF-8, ISO-8859-1}` v0.1 → `422`.
     #[error("Encoding non supporté v0.1")]
     BankCsvUnsupportedEncoding { detected: Option<String> },
@@ -1002,6 +1043,25 @@ pub enum AppError {
         settlement_id: i64,
     },
 
+    /// Story v017-3a (#671) — le rattachement à une écriture déjà passée
+    /// (`POST /reconciliation/transactions/{id}/link-entry`) vise une écriture
+    /// que la règle n'admet pas : la transaction n'est pas en CHF ou son
+    /// montant est nul, ou le mouvement de l'écriture sur le compte du grand
+    /// livre de la banque n'égale pas le montant, ou l'écriture est déjà
+    /// rapprochée, contre-passée ou contre-passation, ou c'est un règlement
+    /// client par virement sur ce compte bancaire (rattaché par `…/link`) —
+    /// **un seul code** pour les conditions 1 à 6. L'écran n'offre que des
+    /// candidates : ce refus ne se voit que par une course ou un appel direct ;
+    /// relire les listes. → `409 RECONCILIATION_ENTRY_NOT_LINKABLE`,
+    /// `details.bankTransactionId` et `details.journalEntryId`.
+    #[error(
+        "Écriture non rattachable : transaction={bank_transaction_id}, écriture={journal_entry_id}"
+    )]
+    ReconciliationEntryNotLinkable {
+        bank_transaction_id: i64,
+        journal_entry_id: i64,
+    },
+
     // ----- Story 8-5a-bis — split FR48 -----
     /// `sum(splits) != tx.amount.abs()` (Decimal exact, pas de tolérance)
     /// → `400 RECONCILIATION_SPLIT_IMBALANCE`. Body `details = {
@@ -1135,6 +1195,16 @@ pub enum AppError {
     /// saisi et ce qui est enregistré serait muet.
     #[error("Coordonnées de paiement fournies pour un document à QR-code")]
     QrFieldsFromDocument,
+
+    /// Story v017-4a (#853, AC-14) — l'échéance d'une facture fournisseur
+    /// précède sa date → `400 SUPPLIER_INVOICE_DUE_BEFORE_INVOICE_DATE`,
+    /// `details { invoiceDate, dueDate }` (`AAAA-MM-JJ`). Création, complétion
+    /// et `PUT` ; une facture existante ainsi datée reste lisible et payable.
+    #[error("Échéance antérieure à la date de la facture")]
+    SupplierInvoiceDueBeforeInvoiceDate {
+        invoice_date: chrono::NaiveDate,
+        due_date: chrono::NaiveDate,
+    },
 
     /// Contrôle de forme refusé sur `POST /api/v1/opening-balances/complete`
     /// (Story 25-7, #445) → **400** avec un code `OPENING_COMPLEMENT_*` par
@@ -2476,6 +2546,93 @@ impl IntoResponse for AppError {
                 (StatusCode::CONFLICT, Json(body)).into_response()
             }
 
+            // Story v016-2a (#816) — relevé saisi à la main.
+            AppError::BankStatementInvalid {
+                line,
+                field,
+                reason,
+            } => {
+                let body = serde_json::json!({
+                    "error": {
+                        "code": "BANK_STATEMENT_INVALID",
+                        "message": t(
+                            "bank-import-manual-errors-invalid",
+                            "Le relevé saisi contient une valeur absente ou invalide.",
+                        ),
+                        "details": { "line": line, "field": field, "reason": reason }
+                    }
+                });
+                (StatusCode::BAD_REQUEST, Json(body)).into_response()
+            }
+
+            AppError::BankStatementUnbalanced {
+                opening,
+                closing,
+                computed_closing,
+                diff,
+            } => {
+                let body = serde_json::json!({
+                    "error": {
+                        "code": "BANK_STATEMENT_UNBALANCED",
+                        "message": t(
+                            "bank-import-manual-errors-unbalanced",
+                            "Le solde de départ, augmenté des crédits et diminué des débits, ne donne pas le solde d'arrivée.",
+                        ),
+                        "details": {
+                            "opening": opening,
+                            "closing": closing,
+                            "computedClosing": computed_closing,
+                            "diff": diff,
+                        }
+                    }
+                });
+                (StatusCode::UNPROCESSABLE_ENTITY, Json(body)).into_response()
+            }
+
+            AppError::BankStatementDuplicateLines { lines } => {
+                let lines: Vec<serde_json::Value> = lines
+                    .iter()
+                    .map(|(line, existing)| {
+                        serde_json::json!({ "line": line, "existingTransactionId": existing })
+                    })
+                    .collect();
+                let body = serde_json::json!({
+                    "error": {
+                        "code": "BANK_STATEMENT_DUPLICATE_LINES",
+                        "message": t(
+                            "bank-import-manual-errors-duplicate-lines",
+                            "Des lignes de ce relevé existent déjà sur ce compte. Corrigez-les, ou confirmez pour les enregistrer quand même.",
+                        ),
+                        "details": { "lines": lines }
+                    }
+                });
+                (StatusCode::UNPROCESSABLE_ENTITY, Json(body)).into_response()
+            }
+
+            AppError::BankStatementOpeningBalanceGap {
+                expected,
+                entered,
+                previous_import_id,
+                previous_period_to,
+            } => {
+                let body = serde_json::json!({
+                    "error": {
+                        "code": "BANK_STATEMENT_OPENING_BALANCE_GAP",
+                        "message": t(
+                            "bank-import-manual-errors-opening-balance-gap",
+                            "Le solde de départ diffère du solde d'arrivée du relevé précédent. Vérifiez-le, ou confirmez pour l'enregistrer quand même.",
+                        ),
+                        "details": {
+                            "expected": expected,
+                            "entered": entered,
+                            "previousImportId": previous_import_id,
+                            "previousPeriodTo": previous_period_to,
+                        }
+                    }
+                });
+                (StatusCode::UNPROCESSABLE_ENTITY, Json(body)).into_response()
+            }
+
             AppError::BankCsvUnsupportedEncoding { detected } => {
                 let body = serde_json::json!({
                     "error": {
@@ -2775,9 +2932,12 @@ impl IntoResponse for AppError {
             AppError::BankAccountHasPendingTransactions { pending_count } => {
                 let msg = t(
                     "bank-accounts-errors-has-pending-transactions",
-                    "Ce compte porte des transactions importées qui ne sont pas \
-                     rapprochées. Rapprochez-les, ou supprimez l'import s'il ne \
-                     contient aucune transaction rapprochée, avant de clore le compte.",
+                    // Story v016-2a (#816) : « importées » → « de relevés, importés
+                    // ou saisis » — un relevé saisi à la main porte aussi des
+                    // transactions, et se supprime par la même route.
+                    "Ce compte porte des transactions de relevés, importés ou saisis, \
+                     qui ne sont pas rapprochées. Rapprochez-les, ou supprimez le relevé \
+                     s'il ne contient aucune transaction rapprochée, avant de clore le compte.",
                 );
                 let body = serde_json::json!({
                     "error": {
@@ -2907,6 +3067,29 @@ impl IntoResponse for AppError {
                         "details": {
                             "bankTransactionId": bank_transaction_id,
                             "settlementId": settlement_id,
+                        },
+                    }
+                });
+                (StatusCode::CONFLICT, Json(body)).into_response()
+            }
+
+            // Story v017-3a (#671) — rattachement à une écriture refusé par la
+            // règle. Repli égal mot pour mot au catalogue fr-CH (G9).
+            AppError::ReconciliationEntryNotLinkable {
+                bank_transaction_id,
+                journal_entry_id,
+            } => {
+                let msg = t(
+                    "reconciliation-errors-entry-not-linkable",
+                    "Cette écriture ne peut pas être rattachée à cette transaction : la transaction n'est pas en CHF ou son montant est nul, ou le mouvement de l'écriture sur le compte de la banque n'égale pas le montant de la transaction, ou elle est déjà rapprochée, contre-passée, ou c'est un règlement de facture client à rattacher comme tel.",
+                );
+                let body = serde_json::json!({
+                    "error": {
+                        "code": "RECONCILIATION_ENTRY_NOT_LINKABLE",
+                        "message": msg,
+                        "details": {
+                            "bankTransactionId": bank_transaction_id,
+                            "journalEntryId": journal_entry_id,
                         },
                     }
                 });
@@ -3114,6 +3297,33 @@ impl IntoResponse for AppError {
                     "Les coordonnées de paiement viennent du QR-code du document : elles ne se saisissent pas.",
                 ),
             ),
+
+            AppError::SupplierInvoiceDueBeforeInvoiceDate {
+                invoice_date,
+                due_date,
+            } => {
+                let mut args = FluentArgs::new();
+                args.set("dueDate", due_date.to_string());
+                args.set("invoiceDate", invoice_date.to_string());
+                let fallback = format!(
+                    "L'échéance ({due_date}) précède la date de la facture ({invoice_date})."
+                );
+                let body = serde_json::json!({
+                    "error": {
+                        "code": "SUPPLIER_INVOICE_DUE_BEFORE_INVOICE_DATE",
+                        "message": t_args(
+                            "error-supplier-invoice-due-before-invoice-date",
+                            &fallback,
+                            &args,
+                        ),
+                        "details": {
+                            "invoiceDate": invoice_date.to_string(),
+                            "dueDate": due_date.to_string(),
+                        },
+                    }
+                });
+                (StatusCode::BAD_REQUEST, Json(body)).into_response()
+            }
 
             AppError::OpeningComplementInvalid {
                 error_code,
@@ -3844,8 +4054,10 @@ impl IntoResponse for AppError {
                             reconciliation_cancel_blocked_text(blocker)
                         }
                         // Motifs propres à l'annulation d'une FACTURE
-                        // fournisseur (25-3-c) : jamais produits ici.
-                        SettlementCancelBlocker::SupplierInvoiceCancelled
+                        // fournisseur (25-3-c ; brouillon, v017-4a) : jamais
+                        // produits ici.
+                        SettlementCancelBlocker::SupplierInvoiceDraft
+                        | SettlementCancelBlocker::SupplierInvoiceCancelled
                         | SettlementCancelBlocker::SupplierInvoiceInPaymentBatch => {
                             supplier_invoice_cancel_blocked_text(blocker)
                         }
@@ -3893,6 +4105,58 @@ impl IntoResponse for AppError {
                         "Cette facture est validée : dévalidez-la d'abord, puis supprimez le brouillon.",
                     ),
                 ),
+                // Story v017-4a (#849, AC-9) — `DELETE` d'une facture
+                // fournisseur validée : jumeau du client, le message oriente.
+                DbError::SupplierInvoiceMustBeUnvalidatedFirst => build_response(
+                    StatusCode::CONFLICT,
+                    "SUPPLIER_INVOICE_MUST_BE_UNVALIDATED_FIRST",
+                    &t(
+                        "error-supplier-invoice-must-be-unvalidated-first",
+                        "Cette facture fournisseur est validée : dévalidez-la d'abord, puis supprimez le brouillon.",
+                    ),
+                ),
+                // Story v017-4a (AC-9, limite L8) — un brouillon qui garde
+                // l'historique d'un lot ne se supprime pas ; jamais une erreur
+                // de clé étrangère.
+                DbError::SupplierInvoiceHasPaymentBatchHistory { payment_batch_id } => {
+                    let body = serde_json::json!({
+                        "error": {
+                            "code": "SUPPLIER_INVOICE_HAS_PAYMENT_BATCH_HISTORY",
+                            "message": t(
+                                "error-supplier-invoice-has-payment-batch-history",
+                                "Ce brouillon figure dans un lot de paiement, dont l'historique se garde : il ne se supprime pas. Corrigez-le et validez-le ; s'il n'est pas dû, validez-le puis annulez-le.",
+                            ),
+                            "details": { "paymentBatchId": payment_batch_id },
+                        }
+                    });
+                    (StatusCode::CONFLICT, Json(body)).into_response()
+                }
+                // Story v017-4a (AC-11) — la dévalidation d'une facture
+                // fournisseur refusée par un empêchement propre à la pièce. Même
+                // forme que celle de la facture client, `details` compris.
+                DbError::SupplierInvoiceNotUnvalidatable {
+                    blocker,
+                    document_id,
+                    document_label,
+                } => {
+                    let (fallback_key, fallback) = supplier_unvalidation_blocked_text(blocker);
+                    let base = t(fallback_key, fallback);
+                    let message = match document_label.as_deref() {
+                        Some(etiquette) => format!("{base} ({etiquette})"),
+                        None => base,
+                    };
+                    let body = serde_json::json!({
+                        "error": {
+                            "code": blocker.code(),
+                            "message": message,
+                            "details": {
+                                "documentId": document_id,
+                                "documentNumber": document_label,
+                            },
+                        }
+                    });
+                    (StatusCode::CONFLICT, Json(body)).into_response()
+                }
                 // ⚠️ **400** qui NOMME les comptes : raisons au doc-comment de
                 // `archived_accounts_response`.
                 DbError::ReversalAccountsArchived(archived) => archived_accounts_response(
@@ -3949,6 +4213,32 @@ impl IntoResponse for AppError {
                         "INVOICE_BELOW_MINIMUM",
                         &t_args("error-invoice-below-minimum", &fallback, &args),
                     )
+                }
+                // Story v017-3b (#687) — une ligne de facture fournisseur qui n'est
+                // pas au centime. **La seule conversion** vers le code : la saisie
+                // et la complétion d'une pièce importée la subissent par `?` depuis
+                // `purchase_lines_form`. Défaut de saisie → 400. Le montant voyage
+                // normalisé (`99.9999`), le rang 1-based.
+                DbError::SupplierLineNotInCentimes { line, line_total } => {
+                    let line_total = line_total.normalize().to_string();
+                    let fallback = format!(
+                        "La ligne {line} donne un montant de {line_total}, qui n’est pas au centime. Saisissez la ligne au montant facturé par le fournisseur, au centime."
+                    );
+                    let mut args = FluentArgs::new();
+                    args.set("line", line.to_string());
+                    args.set("lineTotal", line_total.clone());
+                    let body = serde_json::json!({
+                        "error": {
+                            "code": "SUPPLIER_INVOICE_LINE_NOT_IN_CENTIMES",
+                            "message": t_args(
+                                "supplier-invoices-errors-line-not-in-centimes",
+                                &fallback,
+                                &args,
+                            ),
+                            "details": { "line": line, "lineTotal": line_total },
+                        }
+                    });
+                    (StatusCode::BAD_REQUEST, Json(body)).into_response()
                 }
                 DbError::PeriodLocked {
                     locked_through,
@@ -4356,7 +4646,8 @@ fn reconciliation_cancel_blocked_text(
         ),
         // Motifs propres à l'annulation d'une facture fournisseur : jamais
         // produits par un dé-rapprochement ; le `match` reste exhaustif.
-        SettlementCancelBlocker::SupplierInvoiceCancelled
+        SettlementCancelBlocker::SupplierInvoiceDraft
+        | SettlementCancelBlocker::SupplierInvoiceCancelled
         | SettlementCancelBlocker::SupplierInvoiceInPaymentBatch => {
             supplier_invoice_cancel_blocked_text(blocker)
         }
@@ -4371,6 +4662,13 @@ fn supplier_invoice_cancel_blocked_text(
     blocker: SettlementCancelBlocker,
 ) -> (&'static str, &'static str) {
     match blocker {
+        // Story v017-4a (#849, AC-13 ; C-v017-4-42) — même clé que l'écran : un
+        // seul texte par motif ; il ne prescrit aucune suppression (un Comptable
+        // ou une clé `read-write` ne peut pas supprimer).
+        SettlementCancelBlocker::SupplierInvoiceDraft => (
+            "supplier-invoices-cancel-blocked-draft",
+            "Cette facture est un brouillon : elle ne s'annule pas, car rien n'a été passé au journal.",
+        ),
         SettlementCancelBlocker::SupplierInvoiceCancelled => (
             "supplier-invoices-cancel-blocked-cancelled",
             "Cette facture fournisseur est déjà annulée.",
@@ -4407,6 +4705,29 @@ fn supplier_invoice_cancel_blocked_text(
         | SettlementCancelBlocker::SupplierInvoiceNotPaid => {
             reconciliation_cancel_blocked_text(blocker)
         }
+    }
+}
+
+/// Clé FTL et repli fr-CH d'un motif qui refuse la **dévalidation d'une
+/// facture fournisseur** (Story v017-4a, #849, AC-11). Les replis disent mot
+/// pour mot le FTL fr-CH ; aucun ne nomme l'état validé « ouverte » (règle Q4).
+fn supplier_unvalidation_blocked_text(
+    blocker: kesh_db::errors::SupplierUnvalidationBlocker,
+) -> (&'static str, &'static str) {
+    use kesh_db::errors::SupplierUnvalidationBlocker as B;
+    match blocker {
+        B::Paid => (
+            "error-supplier-invoice-unvalidate-blocked-paid",
+            "Cette facture fournisseur est payée : annulez d'abord son règlement.",
+        ),
+        B::InPaymentBatch => (
+            "error-supplier-invoice-unvalidate-blocked-in-payment-batch",
+            "Cette facture figure dans un lot de paiement en cours : annulez d'abord le lot.",
+        ),
+        B::MatchedBankTransaction => (
+            "error-supplier-invoice-unvalidate-blocked-matched",
+            "L'écriture d'achat de cette facture est rapprochée d'une transaction bancaire : annulez d'abord le rapprochement.",
+        ),
     }
 }
 

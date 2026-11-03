@@ -112,7 +112,14 @@ async function createSupplierWithInvoice(
 			},
 		});
 		expect(invRes.ok(), `create supplier invoice failed: ${invRes.status()}`).toBeTruthy();
-		return (await invRes.json()).id as number;
+		const draft = (await invRes.json()) as { id: number; version: number };
+		// Story v017-4b (#849, AC-30) : la création rend un BROUILLON, qu'aucun lot ne
+		// prend ; la facture se valide d'abord.
+		const val = await ctx.post(`/api/v1/supplier-invoices/${draft.id}/validate`, {
+			data: { version: draft.version },
+		});
+		expect(val.ok(), `validate supplier invoice failed: ${val.status()}`).toBeTruthy();
+		return draft.id;
 	} finally {
 		await disposeContextSafe(ctx);
 	}

@@ -1901,6 +1901,27 @@ mod compte_clos {
         user_id: i64,
         hash: &str,
     ) -> Result<(), DbError> {
+        importer_au_format(
+            tx,
+            company_id,
+            bank_account_id,
+            user_id,
+            hash,
+            BankImportSourceFormat::Camt053V04,
+        )
+        .await
+    }
+
+    /// Story v016-2a (#816, AC-14) — le même import, au format choisi : un
+    /// relevé saisi à la main (`Manual`) passe par la même garde du dépôt.
+    async fn importer_au_format(
+        tx: &mut sqlx::Transaction<'_, sqlx::MySql>,
+        company_id: i64,
+        bank_account_id: i64,
+        user_id: i64,
+        hash: &str,
+        source_format: BankImportSourceFormat,
+    ) -> Result<(), DbError> {
         bank_imports::create_with_transactions(
             tx,
             NewBankImport {
@@ -1908,7 +1929,7 @@ mod compte_clos {
                 bank_account_id,
                 filename: "releve.xml".into(),
                 file_hash: format!("{hash:0>64}"),
-                source_format: BankImportSourceFormat::Camt053V04,
+                source_format,
                 statement_id: Some("CLOS-1".into()),
                 period_from: ymd(2026, 1, 1),
                 period_to: ymd(2026, 1, 31),
@@ -2371,6 +2392,25 @@ mod compte_clos {
         user_id: i64,
         hash: &'static str,
     ) -> tokio::task::JoinHandle<Result<(), DbError>> {
+        import_en_tache_au_format(
+            pool,
+            company_id,
+            bank_account_id,
+            user_id,
+            hash,
+            BankImportSourceFormat::Camt053V04,
+        )
+    }
+
+    /// Story v016-2a (AC-14) — [`import_en_tache`] au format choisi.
+    fn import_en_tache_au_format(
+        pool: &MySqlPool,
+        company_id: i64,
+        bank_account_id: i64,
+        user_id: i64,
+        hash: &'static str,
+        source_format: BankImportSourceFormat,
+    ) -> tokio::task::JoinHandle<Result<(), DbError>> {
         let p = pool.clone();
         tokio::spawn(async move {
             let mut tx = p.begin().await.unwrap();
@@ -2379,7 +2419,15 @@ mod compte_clos {
                     .await
                     .unwrap();
             assert!(doublon.is_none(), "montage : aucun doublon");
-            let r = importer(&mut tx, company_id, bank_account_id, user_id, hash).await;
+            let r = importer_au_format(
+                &mut tx,
+                company_id,
+                bank_account_id,
+                user_id,
+                hash,
+                source_format,
+            )
+            .await;
             if r.is_ok() {
                 tx.commit().await.unwrap();
             } else {
@@ -2505,6 +2553,89 @@ mod compte_clos {
         assert!(
             matches!(r, Err(DbError::NotFound)),
             "⛔ l'import commencé avant l'archivage devait être refusé — reçu {r:?}"
+        );
+        assert_eq!(lignes_d_import(&pool).await, (0, 0), "rien d'écrit");
+    }
+
+    /// Story v016-2a (#816, AC-14) — un relevé **saisi à la main** (`source_format
+    /// = Manual`) hérite de la garde du dépôt : refusé au dépôt sur un compte
+    /// archivé (`NotFound`) ou clos (`BankAccountClosed`), rien d'écrit.
+    #[sqlx::test(migrations = "./test-schema")]
+    async fn un_releve_saisi_refuse_l_archive_et_le_clos_au_depot(pool: MySqlPool) {
+        let company_id = create_test_company(&pool).await;
+        let user_id = create_test_user(&pool, company_id, "u").await;
+        let archive =
+            create_archived_bank_account(&pool, company_id, "CH5604835012345678009").await;
+        let clos = compte_secondaire(&pool, company_id, "CH4431999123000889012").await;
+        clore_sql(&pool, clos).await;
+
+        let mut tx = pool.begin().await.unwrap();
+        let err = importer_au_format(
+            &mut tx,
+            company_id,
+            archive,
+            user_id,
+            "a",
+            BankImportSourceFormat::Manual,
+        )
+        .await
+        .expect_err("archivé");
+        assert!(matches!(err, DbError::NotFound), "{err:?}");
+        tx.rollback().await.unwrap();
+
+        let mut tx = pool.begin().await.unwrap();
+        let err = importer_au_format(
+            &mut tx,
+            company_id,
+            clos,
+            user_id,
+            "b",
+            BankImportSourceFormat::Manual,
+        )
+        .await
+        .expect_err("clos");
+        assert!(
+            matches!(err, DbError::BankAccountClosed { bank_account_id } if bank_account_id == clos),
+            "{err:?}"
+        );
+        tx.rollback().await.unwrap();
+        assert_eq!(lignes_d_import(&pool).await, (0, 0), "rien d'écrit");
+    }
+
+    /// Story v016-2a (#816, AC-14) — **un compte clos entre le pré-vol et la
+    /// création** : patron de [`un_import_commence_avant_la_cloture_est_refuse`],
+    /// pour un relevé saisi à la main. La clôture tient la ligne du compte ; le
+    /// relevé, vue née avant le commit, attend sur son `INSERT` ; au commit de la
+    /// clôture, la revérification verrouillante refuse, rien d'écrit.
+    #[sqlx::test(migrations = "./test-schema")]
+    async fn un_releve_saisi_commence_avant_la_cloture_est_refuse(pool: MySqlPool) {
+        let company_id = create_test_company(&pool).await;
+        let user_id = create_test_user(&pool, company_id, "u").await;
+        let autre = compte_secondaire(&pool, company_id, "CH4431999123000889012").await;
+        let v = version(&pool, autre).await;
+
+        let mut cloture = pool.begin().await.unwrap();
+        let r = bank_accounts::close_in_tx(&mut cloture, company_id, autre, v, ymd(2026, 1, 31))
+            .await
+            .unwrap();
+        assert!(matches!(r, ClosureOutcome::Done { .. }), "{r:?}");
+
+        let mut import = import_en_tache_au_format(
+            &pool,
+            company_id,
+            autre,
+            user_id,
+            "m",
+            BankImportSourceFormat::Manual,
+        );
+        attendre_l_ecrivain(&pool, "INSERT INTO bank_imports", &mut import).await;
+
+        cloture.commit().await.unwrap();
+
+        let r = import.await.expect("tâche de saisie");
+        assert!(
+            matches!(r, Err(DbError::BankAccountClosed { bank_account_id }) if bank_account_id == autre),
+            "⛔ le relevé saisi commencé avant la clôture devait être refusé — reçu {r:?}"
         );
         assert_eq!(lignes_d_import(&pool).await, (0, 0), "rien d'écrit");
     }

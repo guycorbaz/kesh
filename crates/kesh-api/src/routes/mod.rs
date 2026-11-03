@@ -8,6 +8,7 @@ pub mod bank_accounts;
 pub(crate) mod bank_import_fingerprint;
 pub mod bank_imports;
 pub mod bank_profiles;
+pub mod bank_statements_manual;
 pub mod companies;
 pub mod company_dunning_settings;
 pub mod company_invoice_settings;

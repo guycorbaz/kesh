@@ -9,7 +9,7 @@
 	 *
 	 * Tout PDF ou image déposé dans le dossier d'import y entre, avec ou sans QR-code.
 	 * Chaque ligne porte un badge (« QR-facture » avec créancier, montant et référence,
-	 * ou « Sans QR-code »), un **aperçu** (`DocumentPreview`), « Créer une facture » et
+	 * ou « Aucune QR-facture exploitable », Story v017-5), un **aperçu** (`DocumentPreview`), « Créer une facture » et
 	 * « Retirer de la liste » (l'ancien *Écarter* : la ligne passe `discarded`, le
 	 * fichier reste conservé ; un nouveau dépôt la réactive).
 	 * L'URL reste `/supplier-invoices/import` (liens de la préparation de clôture, K5).
@@ -234,7 +234,7 @@
 								'Document accepté sans les données du QR : en créant la facture, saisissez l’IBAN et la référence à la main.',
 							)}
 						{:else}
-							{i18nMsg('imported-supplier-invoices-report-no-qr', 'sans QR-code')}
+							{i18nMsg('imported-supplier-invoices-report-no-qr', 'aucune QR-facture exploitable')}
 						{/if}
 					</li>
 				{/each}
@@ -309,7 +309,10 @@
 						{:else}
 							<div class="mt-1" data-testid="imported-badge-no-qr">
 								<span class="rounded bg-muted px-2 py-0.5 text-xs font-medium"
-									>{i18nMsg('imported-supplier-invoices-badge-no-qr', 'Sans QR-code')}</span
+									>{i18nMsg(
+										'imported-supplier-invoices-badge-no-qr',
+										'Aucune QR-facture exploitable',
+									)}</span
 								>
 							</div>
 						{/if}

@@ -8,7 +8,36 @@
  */
 import { expect } from '@playwright/test';
 import type { Page } from '@playwright/test';
-import { authedApiContext, disposeContextSafe } from './test-state';
+import { authedApiContext, clearAuthStorage, disposeContextSafe } from './test-state';
+
+/** Mot de passe des utilisateurs créés par `createUser`. */
+export const USER_PASSWORD = 'MotDePasse12345';
+
+/**
+ * Crée un utilisateur du rôle donné (`Admin`, `Comptable`, `Consultation`), en se
+ * connectant comme l'Admin du seed ; se déconnecte ensuite et rend son nom. Son mot de
+ * passe est `USER_PASSWORD`. Extraite d'`audit-log.spec.ts` (Story v016-2b, #816) :
+ * `bank-manual-statement.spec.ts` l'emploie aussi.
+ */
+export async function createUser(page: Page, role: string): Promise<string> {
+	await page.goto('/login');
+	await page.fill('#username', 'admin');
+	await page.fill('#password', 'admin123');
+	await page.click('button[type="submit"]');
+	await expect(page).toHaveURL('/');
+	const ctx = await authedApiContext(page);
+	const username = `${role.toLowerCase()}-${Date.now()}-${Math.floor(Math.random() * 1e6)}`;
+	try {
+		const res = await ctx.post('/api/v1/users', {
+			data: { username, password: USER_PASSWORD, role },
+		});
+		expect(res.ok(), `création de l'utilisateur ${role} : ${res.status()}`).toBeTruthy();
+	} finally {
+		await disposeContextSafe(ctx);
+	}
+	await clearAuthStorage(page);
+	return username;
+}
 
 /**
  * Échéance suffisamment passée pour être éligible au niveau 1 (seuil `today - 15j` :
@@ -211,7 +240,7 @@ export async function wiredBankAccountViaApi(page: Page, iban: string): Promise<
 }
 
 /**
- * Story 30-1b (#686) — un fournisseur et une facture fournisseur **ouverte** d'une ligne
+ * Story 30-1b (#686) — un fournisseur et une facture fournisseur **validée** d'une ligne
  * (sans TVA) de `amount`, créés par l'API (patron de `payment-batches.spec.ts`). Le compte
  * créanciers est désigné aux réglages s'il ne l'est pas (le seed `with-company` ne le désigne
  * pas). `paymentReference` et `number` sont facultatifs (la facture « sans QR » n'en porte
@@ -276,7 +305,65 @@ export async function createSupplierInvoiceViaApi(
 			},
 		});
 		expect(invRes.ok(), `facture fournisseur : ${invRes.status()} ${await invRes.text()}`).toBeTruthy();
-		return { supplierId, supplierInvoiceId: (await invRes.json()).id as number };
+		const draft = (await invRes.json()) as { id: number; version: number };
+		// Story v017-4a (#849) : la création rend un BROUILLON ; la facture se
+		// valide ensuite, comme la créait la 0.17.0-rc1 (validée, à payer).
+		const valRes = await ctx.post(`/api/v1/supplier-invoices/${draft.id}/validate`, {
+			data: { version: draft.version },
+		});
+		expect(valRes.ok(), `validation : ${valRes.status()} ${await valRes.text()}`).toBeTruthy();
+		return { supplierId, supplierInvoiceId: draft.id };
+	} finally {
+		await disposeContextSafe(ctx);
+	}
+}
+
+/**
+ * Story v017-4a (#849, AC-30) — un relevé **saisi à la main** par l'API
+ * (`POST /api/v1/bank-imports/manual`) : une seule ligne de **débit** de `amount`, datée
+ * `bookingDate`, sur le compte bancaire `bankAccountId` ; solde de départ `0.00`, solde
+ * d'arrivée `-amount` — **équilibré au centime**. La période couvre le mois de la date.
+ * Rend l'identifiant de l'import.
+ */
+export async function createManualDebitStatementViaApi(
+	page: Page,
+	opts: {
+		bankAccountId: number;
+		bookingDate: string;
+		amount: string;
+		counterpartyName: string | null;
+		details: string;
+	},
+): Promise<number> {
+	const ctx = await authedApiContext(page);
+	try {
+		const [y, m] = opts.bookingDate.split('-');
+		const lastDay = new Date(Date.UTC(Number(y), Number(m), 0)).getUTCDate();
+		const cents = Math.round(Number(opts.amount) * 100);
+		const closing = (-cents / 100).toFixed(2);
+		const res = await ctx.post('/api/v1/bank-imports/manual', {
+			data: {
+				bankAccountId: opts.bankAccountId,
+				periodFrom: `${y}-${m}-01`,
+				periodTo: `${y}-${m}-${String(lastDay).padStart(2, '0')}`,
+				openingBalance: '0.00',
+				closingBalance: closing,
+				lines: [
+					{
+						bookingDate: opts.bookingDate,
+						details: opts.details,
+						counterpartyName: opts.counterpartyName,
+						amount: opts.amount,
+						direction: 'debit',
+					},
+				],
+				confirmDuplicateFile: true,
+				confirmDuplicateLines: true,
+				confirmOpeningBalanceGap: true,
+			},
+		});
+		expect(res.status(), `relevé saisi : ${await res.text()}`).toBe(201);
+		return (await res.json()).id as number;
 	} finally {
 		await disposeContextSafe(ctx);
 	}

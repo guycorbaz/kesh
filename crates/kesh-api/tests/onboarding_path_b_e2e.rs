@@ -210,6 +210,76 @@ async fn coordinates_validates_ide(pool: MySqlPool) {
     assert_eq!(resp.status(), 400);
     let body: serde_json::Value = resp.json().await.unwrap();
     assert_eq!(body["error"]["code"], "VALIDATION_ERROR");
+    // Story v017-6 (#832) — le message de `kesh-core` nomme déjà le champ : la
+    // route ne le préfixe pas une seconde fois (« IDE invalide : Numéro IDE
+    // invalide : … » avant le correctif). Égalité exacte, entrée synthétique.
+    assert_eq!(
+        body["error"]["message"],
+        "Numéro IDE invalide : doit commencer par CHE"
+    );
+}
+
+/// Story v017-2 (#809, AC-8) — le contrat du refus que l'assistant affiche désormais :
+/// un pays écrit en toutes lettres (« Suisse ») est refusé en 400 `VALIDATION_ERROR`,
+/// avec un motif qui dit la forme attendue, et l'étape n'avance pas.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn coordinates_rejects_country_name(pool: MySqlPool) {
+    let app = spawn_app(pool.clone()).await;
+    create_test_company(&pool).await;
+    ensure_admin_user(&pool, &test_config()).await.unwrap();
+    let token = login(&app).await;
+    advance_to_step_2(&app, &token).await;
+
+    for (path, body) in [
+        ("/api/v1/onboarding/start-production", None),
+        (
+            "/api/v1/onboarding/org-type",
+            Some(json!({ "orgType": "Pme" })),
+        ),
+        (
+            "/api/v1/onboarding/accounting-language",
+            Some(json!({ "language": "FR" })),
+        ),
+    ] {
+        let mut req = app
+            .client
+            .post(app.url(path))
+            .header("Authorization", auth(&token));
+        if let Some(b) = body {
+            req = req.json(&b);
+        }
+        let resp = req.send().await.unwrap();
+        assert_eq!(resp.status(), 200, "{path}");
+    }
+
+    let resp = app
+        .client
+        .post(app.url("/api/v1/onboarding/coordinates"))
+        .header("Authorization", auth(&token))
+        .json(&json!({ "name": "Test SA", "address": {"street":"Rue Test","building":"1","postalCode":"1000","city":"Lausanne","country":"Suisse"}, "ideNumber": null }))
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(resp.status(), 400);
+    let body: serde_json::Value = resp.json().await.unwrap();
+    assert_eq!(body["error"]["code"], "VALIDATION_ERROR");
+    let message = body["error"]["message"].as_str().unwrap_or_default();
+    assert!(
+        message.contains("code ISO à 2 lettres"),
+        "motif inattendu : {message}"
+    );
+
+    let resp = app
+        .client
+        .get(app.url("/api/v1/onboarding/state"))
+        .header("Authorization", auth(&token))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 200);
+    let body: serde_json::Value = resp.json().await.unwrap();
+    assert_eq!(body["stepCompleted"], 5);
 }
 
 #[sqlx::test(migrations = "../kesh-db/test-schema")]
@@ -464,6 +534,43 @@ async fn bank_account_validates_iban(pool: MySqlPool) {
     assert_eq!(resp.status(), 400);
     let body: serde_json::Value = resp.json().await.unwrap();
     assert_eq!(body["error"]["code"], "VALIDATION_ERROR");
+
+    // Story v017-6 (#832) — chaque refus dit son mot une fois, et désigne le
+    // bon champ. Égalités exactes, entrées synthétiques ; l'IBAN valide est
+    // l'exemple de la suite (`full_path_b_flow`), son QR-IID 00762 hors plage.
+    let cas = [
+        // (b) IBAN mal formé : le message de `kesh-core`, sans second préfixe.
+        (
+            json!({ "bankName": "UBS", "iban": "BAD", "qrIban": null }),
+            "IBAN invalide : trop court",
+        ),
+        // (c) QR-IBAN mal formé : `QrIban::new` propage l'erreur d'IBAN, que la
+        // route étiquette du champ QR-IBAN (sinon « IBAN invalide : … »).
+        (
+            json!({ "bankName": "UBS", "iban": "CH93 0076 2011 6238 5295 7", "qrIban": "BAD" }),
+            "QR-IBAN invalide : trop court",
+        ),
+        // (c, second cas) IBAN valide hors de la plage QR-IID : toute autre
+        // variante passe telle quelle.
+        (
+            json!({ "bankName": "UBS", "iban": "CH93 0076 2011 6238 5295 7", "qrIban": "CH93 0076 2011 6238 5295 7" }),
+            "QR-IBAN invalide : QR-IID 762 hors plage 30000-31999",
+        ),
+    ];
+    for (corps, attendu) in cas {
+        let resp = app
+            .client
+            .post(app.url("/api/v1/onboarding/bank-account"))
+            .header("Authorization", auth(&token))
+            .json(&corps)
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), 400, "corps {corps}");
+        let body: serde_json::Value = resp.json().await.unwrap();
+        assert_eq!(body["error"]["code"], "VALIDATION_ERROR", "corps {corps}");
+        assert_eq!(body["error"]["message"], attendu, "corps {corps}");
+    }
 }
 
 /// Story v011-2 (Issue #120) — fresh install : pas de `create_test_company`, le

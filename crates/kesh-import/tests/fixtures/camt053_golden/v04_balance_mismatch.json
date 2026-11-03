@@ -1,0 +1,31 @@
+{
+  "ok": [
+    {
+      "account_iban": "CH4431999123000889012",
+      "closing_balance": "1500.00",
+      "currency": "CHF",
+      "opening_balance": "1000.00",
+      "period_from": "2026-05-01",
+      "period_to": "2026-05-31",
+      "source_format": {
+        "kind": "camt053",
+        "version": "001.04"
+      },
+      "statement_id": "STMT-MISMATCH",
+      "transactions": [
+        {
+          "amount": "100.00",
+          "booking_date": "2026-05-10",
+          "counterparty_iban": null,
+          "counterparty_name": "Client X",
+          "currency": "CHF",
+          "details": "Acompte",
+          "end_to_end_id": null,
+          "reference": null,
+          "transaction_id": "BANK-MM-001",
+          "value_date": null
+        }
+      ]
+    }
+  ]
+}

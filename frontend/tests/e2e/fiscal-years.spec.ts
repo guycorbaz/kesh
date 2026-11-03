@@ -495,7 +495,8 @@ test.describe('Préparer la clôture (Story 29-1a)', () => {
 					'href',
 					'/reconciliation',
 				);
-				await expect(dialog.locator('[data-testid^="fiscal-year-checks-row-"]')).toHaveCount(7);
+				// Story v017-4b (AC-26) : huit contrôles, K8 en dernier.
+				await expect(dialog.locator('[data-testid^="fiscal-year-checks-row-"]')).toHaveCount(8);
 				await dialog.screenshot({ path: capturePath(testInfo, `29-1a-panneau-${suffixe}`) });
 				await dialog.getByTestId('fiscal-year-checks-close').click();
 
@@ -540,7 +541,7 @@ test.describe('Préparer la clôture (Story 29-1a)', () => {
 			await page.getByTestId(`fiscal-year-checks-${fyId}`).click();
 			await expect(
 				page.getByTestId('fiscal-year-checks-dialog').locator('[data-testid^="fiscal-year-checks-row-"]'),
-			).toHaveCount(7);
+			).toHaveCount(8);
 			await expect(page.getByTestId(`fiscal-year-close-${fyId}`)).toHaveCount(0);
 		} finally {
 			// Le contexte d'API reste celui de l'administrateur, ouvert avant le changement de session.

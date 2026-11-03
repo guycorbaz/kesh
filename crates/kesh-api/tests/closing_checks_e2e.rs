@@ -244,6 +244,8 @@ async fn closing_checks_are_served_to_every_role(pool: MySqlPool) {
                 "IMPORTED_SUPPLIER_INVOICES_TO_COMPLETE",
                 "INCONSISTENT_ENTRIES",
                 "NEXT_FISCAL_YEAR",
+                // Story v017-4a (#849, AC-16) — K8, en dernier : `checks[7]`.
+                "DRAFT_SUPPLIER_INVOICES",
             ]
         );
         let k3 = &body["checks"][2];

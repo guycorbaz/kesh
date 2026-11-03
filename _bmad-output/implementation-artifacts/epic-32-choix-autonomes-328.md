@@ -47,6 +47,8 @@ elles. Chaque choix : contexte, option retenue, alternatives écartées, révers
 
 ### C-32-8-4 — Une seule représentation : le texte des blocs ; la donnée structurée n'est ni déposée ni envoyée
 
+*(dépassé le 2026-10-29 par la v016-1, C-v016-1-1 : `content` seul depuis la 0.16.1 ; `Donnees` n'a plus de champ structuré, C-v016-1-5)*
+
 - **Contexte** : E1, M-2 de la spike : « une seule représentation source est montrée, modifiée et validée ; la seconde
   est dérivée après validation » ; le choix revient à la 32-8. `Donnees` (32-6a) porte `contenu` (blocs) et
   `structure` (`structuredContent`). Un texte modifié librement ne se reconvertit pas fidèlement en structure.

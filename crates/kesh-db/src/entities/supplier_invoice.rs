@@ -22,7 +22,9 @@ pub struct SupplierInvoice {
     pub contact_id: i64,
     /// Numéro de la facture chez le fournisseur (texte libre, optionnel).
     pub supplier_invoice_number: Option<String>,
-    /// 'open' (enregistrée, impayée) | 'paid' (réglée) | 'cancelled' (annulée).
+    /// 'draft' (brouillon, sans écriture — Story v017-4a) | 'open' (validée,
+    /// à payer ; l'écran dit « Validée ») | 'paid' (réglée) | 'cancelled'
+    /// (annulée).
     pub status: String,
     pub invoice_date: NaiveDate,
     pub due_date: Option<NaiveDate>,
@@ -35,8 +37,12 @@ pub struct SupplierInvoice {
     pub expected_payment_amount: Option<Decimal>,
     /// Projet analytique (Epic 19, Story 19-3) — document-level.
     pub project_id: Option<i64>,
-    /// Écriture d'achat (toujours présente, posée à l'enregistrement).
-    pub purchase_journal_entry_id: i64,
+    /// Écriture d'achat : `None` pour un brouillon, posée à la validation,
+    /// retirée à la dévalidation (Story v017-4a, #849). La contrainte
+    /// `chk_supplier_invoices_entry_iff_not_draft` tient « présente si et
+    /// seulement si la facture n'est pas un brouillon » : un lecteur qui la
+    /// trouve absente sur une facture validée rend `DbError::Invariant`.
+    pub purchase_journal_entry_id: Option<i64>,
     // Règlement (renseigné au paiement uniquement).
     pub settlement_type: Option<String>,
     pub settlement_bank_account_id: Option<i64>,

@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Fixture synthetique (Story v017-1) : octet Latin-1 hors du texte lu : café -->
+<Document xmlns="urn:iso:std:iso:20022:tech:xsd:camt.053.001.04" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="urn:iso:std:iso:20022:tech:xsd:camt.053.001.04 camt-é.xsd">
+  <BkToCstmrStmt>
+    <GrpHdr>
+      <MsgId>LATIN1HT</MsgId>
+      <CreDtTm>2026-10-30T12:00:00</CreDtTm>
+    </GrpHdr>
+    <Stmt>
+      <Id>LATIN1HT-STMT</Id>
+      <FrToDt>
+        <FrDtTm>2026-10-01T00:00:00</FrDtTm>
+        <ToDtTm>2026-10-31T23:59:59</ToDtTm>
+      </FrToDt>
+      <Acct>
+        <Id>
+          <IBAN>CH9300762011623852957</IBAN>
+        </Id>
+        <Ccy>CHF</Ccy>
+      </Acct>
+      <Ntry>
+        <Amt Ccy="CHF">42.50</Amt>
+        <CdtDbtInd>CRDT</CdtDbtInd>
+        <Sts>BOOK</Sts>
+        <BookgDt>
+          <Dt>2026-10-15</Dt>
+        </BookgDt>
+        <AcctSvcrRef>LATIN1HT-TX-1</AcctSvcrRef>
+        <NtryDtls>
+          <TxDtls>
+            <Refs>
+              <EndToEndId>E2E-LATIN1HT-1</EndToEndId>
+            </Refs>
+            <RltdPties>
+              <Dbtr>
+                <Nm>Clement SA</Nm>
+              </Dbtr>
+            </RltdPties>
+            <RmtInf>
+              <Ustrd>Remboursement octobre</Ustrd>
+            </RmtInf>
+          </TxDtls>
+        </NtryDtls>
+        <AddtlNtryInf><![CDATA[Note café]]></AddtlNtryInf>
+      </Ntry>
+    </Stmt>
+  </BkToCstmrStmt>
+</Document>

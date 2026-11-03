@@ -1728,7 +1728,7 @@ async fn lettering_pieces(pool: &MySqlPool, biz: &Business) -> LetteringPieces {
     .await
     .expect("fournisseur");
     let supplier_invoice = |numero: &'static str| async move {
-        supplier_invoices::create(
+        supplier_invoices::create_validated(
             pool,
             NewSupplierInvoice {
                 company_id: company,
@@ -1814,9 +1814,11 @@ async fn lettering_pieces(pool: &MySqlPool, biz: &Business) -> LetteringPieces {
     let pieces = LetteringPieces {
         sale_entry,
         settlement_entry,
-        purchase_entry: paid.purchase_journal_entry_id,
+        purchase_entry: paid.purchase_journal_entry_id.expect("écriture d'achat"),
         payment_entry,
-        cancelled_purchase_entry: cancelled.purchase_journal_entry_id,
+        cancelled_purchase_entry: cancelled
+            .purchase_journal_entry_id
+            .expect("écriture d'achat"),
         manual_entry: manual.entry.id,
         receivable,
         payable,
@@ -4432,4 +4434,707 @@ async fn full_import_restores_mcp_sends_byte_for_byte(pool: MySqlPool) {
         .await
         .unwrap();
     assert_eq!(compte, 2);
+}
+
+// ---------------------------------------------------------------------------
+// Story v017-3b (#687, AC-19) — une sauvegarde portant une facture fournisseur
+// au TTC sous le centime se restaure à l'identique (contrainte « données à
+// garder » du 2026-10-30, § 2).
+// ---------------------------------------------------------------------------
+
+#[path = "../../kesh-db/tests/support/sous_centime.rs"]
+mod sous_centime;
+
+/// L'état écrit d'une facture fournisseur : TTC, lignes, lignes d'écriture
+/// d'achat et de règlement, montants à quatre décimales.
+async fn supplier_invoice_state(pool: &MySqlPool, id: i64) -> Vec<String> {
+    sqlx::query_scalar::<_, String>(
+        "SELECT CONCAT('facture ', total_amount, ' ', status, ' ', purchase_journal_entry_id, ' ', \
+                COALESCE(settlement_journal_entry_id, '-')) FROM supplier_invoices WHERE id = ? \
+         UNION ALL SELECT CONCAT('ligne ', quantity, ' ', unit_price, ' ', line_total) \
+           FROM supplier_invoice_lines WHERE supplier_invoice_id = ? \
+         UNION ALL SELECT CONCAT('écriture ', jel.entry_id, ' ', jel.account_id, ' ', jel.debit, ' ', jel.credit) \
+           FROM journal_entry_lines jel JOIN supplier_invoices si \
+             ON jel.entry_id IN (si.purchase_journal_entry_id, si.settlement_journal_entry_id) \
+          WHERE si.id = ? ORDER BY 1",
+    )
+    .bind(id)
+    .bind(id)
+    .bind(id)
+    .fetch_all(pool)
+    .await
+    .unwrap()
+}
+
+/// AC-19 (v017-3b) — deux factures montées comme une base 0.16.x à `100.0040`,
+/// l'une ouverte, l'autre payée : exportées, **altérées** après l'export, puis
+/// réimportées, chacune se relit à l'identique de l'export. La restauration
+/// réécrit donc les `100.0040` (`INSERT` générique de `backup.rs`), sans passer
+/// par `create_in_tx`, dont la garde du centime les refuserait.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn full_import_restores_a_supplier_invoice_under_the_centime(pool: MySqlPool) {
+    use kesh_db::entities::{NewSupplierInvoice, NewSupplierInvoiceLine, SettlementChoice};
+    use kesh_db::repositories::supplier_invoices;
+
+    let app = spawn_app(pool.clone()).await;
+    let biz = seed_business(&pool, "SC").await;
+    let company = biz.ctx.company_id;
+    let le = chrono::NaiveDate::from_ymd_opt(2026, 3, 15).unwrap();
+    let supplier: i64 = sqlx::query_scalar(
+        "INSERT INTO contacts (company_id, contact_type, name, is_supplier) \
+         VALUES (?, 'Entreprise', 'Fournisseur v017-3b', TRUE) RETURNING id",
+    )
+    .bind(company)
+    .fetch_one(&pool)
+    .await
+    .expect("fournisseur");
+    let mut ids = Vec::new();
+    for numero in ["FF-0-16-OUVERTE", "FF-0-16-PAYEE"] {
+        let id = supplier_invoices::create_validated(
+            &pool,
+            NewSupplierInvoice {
+                company_id: company,
+                contact_id: supplier,
+                supplier_invoice_number: Some(numero.into()),
+                invoice_date: le,
+                due_date: None,
+                creditor_iban: None,
+                creditor_qr_iban: None,
+                payment_reference: None,
+                expected_payment_amount: None,
+                project_id: None,
+                lines: vec![NewSupplierInvoiceLine {
+                    description: "Achat".into(),
+                    quantity: dec!(1),
+                    unit_price: dec!(100.00),
+                    vat_rate: dec!(0),
+                    expense_account_id: biz.accounts["4000"],
+                }],
+            },
+            biz.ctx.user_id,
+        )
+        .await
+        .expect("facture fournisseur")
+        .invoice
+        .id;
+        sous_centime::amener_sous_le_centime(&pool, id).await;
+        ids.push(id);
+    }
+    supplier_invoices::pay(
+        &pool,
+        company,
+        ids[1],
+        SettlementChoice::InternalAccount {
+            account_id: biz.accounts["1000"],
+        },
+        le,
+        biz.ctx.user_id,
+    )
+    .await
+    .expect("paiement de la facture sous le centime");
+
+    let mut avant = Vec::new();
+    for &id in &ids {
+        let etat = supplier_invoice_state(&pool, id).await;
+        assert!(
+            etat.iter().filter(|l| l.contains("100.0040")).count() >= 3,
+            "montage : {etat:?}"
+        );
+        avant.push(etat);
+    }
+
+    let backup = export_backup(&app, &biz.ctx.jwt).await;
+    // Altérées APRÈS l'export : seule la restauration peut les ramener.
+    sqlx::raw_sql(
+        "UPDATE supplier_invoice_lines SET unit_price = 1, line_total = 1; \
+         UPDATE supplier_invoices SET total_amount = 1; \
+         UPDATE journal_entry_lines SET debit = 1 WHERE debit = 100.0040; \
+         UPDATE journal_entry_lines SET credit = 1 WHERE credit = 100.0040;",
+    )
+    .execute(&pool)
+    .await
+    .unwrap();
+    assert_ne!(supplier_invoice_state(&pool, ids[0]).await, avant[0]);
+
+    let (manifest, data) = unzip(&backup);
+    import_ok(&app, &biz.ctx.jwt, &manifest, &data).await;
+
+    for (id, etat) in ids.iter().zip(&avant) {
+        assert_eq!(
+            &supplier_invoice_state(&pool, *id).await,
+            etat,
+            "la facture {id} se relit à l'identique"
+        );
+    }
+}
+
+// ============================================================
+// Story v016-2a (#816) — un relevé saisi à la main se sauvegarde et se
+// restaure (AC-3), et une sauvegarde de la 0.16.x s'importe dans la 0.17.0
+// (AC-3-bis, contrainte du Project Lead du 2026-10-30, C-v016-2-16).
+// ============================================================
+
+/// Un compte bancaire lié à un compte de banque du plan, et un exercice ouvert.
+async fn v0162a_bank_account(pool: &MySqlPool, company_id: i64) -> (i64, i64, i64) {
+    let ledger = sqlx::query(
+        "INSERT INTO accounts (company_id, number, name, account_type, active, postable) \
+         VALUES (?, '1020', 'Banque', 'Asset', 1, 1)",
+    )
+    .bind(company_id)
+    .execute(pool)
+    .await
+    .unwrap()
+    .last_insert_id() as i64;
+    let bank = sqlx::query(
+        "INSERT INTO bank_accounts (company_id, bank_name, iban, is_primary, journal_account_id) \
+         VALUES (?, 'Banque Exemple', 'CH4431999123000889012', TRUE, ?)",
+    )
+    .bind(company_id)
+    .bind(ledger)
+    .execute(pool)
+    .await
+    .unwrap()
+    .last_insert_id() as i64;
+    let fy = sqlx::query(
+        "INSERT INTO fiscal_years (company_id, name, start_date, end_date, status) \
+         VALUES (?, 'Exercice 2026', '2026-01-01', '2026-12-31', 'Open')",
+    )
+    .bind(company_id)
+    .execute(pool)
+    .await
+    .unwrap()
+    .last_insert_id() as i64;
+    (bank, ledger, fy)
+}
+
+/// La liste des imports et chaque détail (transactions comprises), tels que
+/// l'API les rend — ce qu'un utilisateur relit après une restauration.
+async fn v0162a_imports_as_served(app: &TestApp, jwt: &str) -> Vec<Value> {
+    let resp = app
+        .client
+        .get(app.url("/api/v1/bank-imports?limit=100"))
+        .header("Authorization", format!("Bearer {jwt}"))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 200);
+    let list: Value = resp.json().await.unwrap();
+    let mut out = vec![list["items"].clone()];
+    for item in list["items"].as_array().unwrap() {
+        let resp = app
+            .client
+            .get(app.url(&format!("/api/v1/bank-imports/{}", item["id"])))
+            .header("Authorization", format!("Bearer {jwt}"))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), 200);
+        out.push(resp.json().await.unwrap());
+    }
+    out
+}
+
+fn v0162a_manual_body(bank_account_id: i64, from: &str, to: &str) -> Value {
+    serde_json::json!({
+        "bankAccountId": bank_account_id,
+        "periodFrom": from, "periodTo": to,
+        "statementNumber": "S-1",
+        "openingBalance": "100.00", "closingBalance": "90.00",
+        "lines": [
+            { "bookingDate": from, "details": "Frais", "amount": "10.00", "direction": "debit" }
+        ]
+    })
+}
+
+/// AC-3 — l'aller-retour d'un relevé `MANUAL` : exporté, réimporté dans la
+/// même version, relevé et transactions identiques ; le manifeste porte
+/// `keshVersionMinRequired = "0.17.0"`.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn full_import_round_trip_keeps_a_manual_statement(pool: MySqlPool) {
+    let app = spawn_app(pool.clone()).await;
+    let admin = seed_admin(&pool, "Manuel").await;
+    let (bank, _, _) = v0162a_bank_account(&pool, admin.company_id).await;
+    let resp = app
+        .client
+        .post(app.url("/api/v1/bank-imports/manual"))
+        .header("Authorization", format!("Bearer {}", admin.jwt))
+        .json(&v0162a_manual_body(bank, "2026-09-01", "2026-09-30"))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 201, "{}", resp.text().await.unwrap());
+
+    let before = v0162a_imports_as_served(&app, &admin.jwt).await;
+    assert_eq!(before[0][0]["sourceFormat"], "MANUAL", "montage");
+    let backup = export_backup(&app, &admin.jwt).await;
+    let (manifest, _) = unzip(&backup);
+    assert_eq!(manifest["keshVersionMinRequired"], "0.17.0");
+
+    // La base change après l'export ; l'import la remet à l'état sauvegardé.
+    sqlx::query("UPDATE bank_imports SET statement_id = 'modifié'")
+        .execute(&pool)
+        .await
+        .unwrap();
+    let resp = post_import(&app, &admin.jwt, backup).await;
+    assert_eq!(resp.status(), 200, "{}", resp.text().await.unwrap());
+    assert_eq!(v0162a_imports_as_served(&app, &admin.jwt).await, before);
+}
+
+/// AC-3-bis — une sauvegarde dont le manifeste est celui d'une 0.16.x
+/// (`keshVersion` `0.16.1`, `keshVersionMinRequired` `0.14.0`), portant un
+/// import CAMT à soldes, un import CSV et des transactions dont une
+/// rapprochée, s'importe dans la 0.17.0 : `200`, puis chaque import et chaque
+/// transaction se relit à l'identique par l'API ; la base garde
+/// `min_required = 0.17.0` (`_kesh_version` n'est pas restaurée) ; un relevé
+/// saisi se crée ensuite normalement.
+///
+/// Moyen retenu (a) : la sauvegarde est exportée par la 0.17.0, puis son
+/// manifeste — non signé (`admin_backup/manifest.rs`), seules les tables
+/// portant un `sha256` — est récrit comme l'écrirait une 0.16.x. Licite parce
+/// que la 0.17.0 n'ajoute aucune table (`bank_imports_manual_source_adds_no_table`,
+/// `draft_migration_adds_no_table`), tous deux dans `migrations_upgrade_path.rs`.
+/// ⚠️ *Corrigé à la Story v017-4a (#849)* : ce doc-comment disait « ni colonne »
+/// — vrai de la seule `20261030000001` ; `20261031000001` ajoute
+/// `imported_supplier_invoices.link_origin`. Ce test-ci ne porte aucun document,
+/// la colonne y est vide ; le chemin « colonne absente de la source » est exercé
+/// par `full_import_accepts_a_0_16_backup_with_supplier_invoices`, qui la retire
+/// du manifeste et des lignes.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn full_import_accepts_a_0_16_backup(pool: MySqlPool) {
+    let app = spawn_app(pool.clone()).await;
+    let admin = seed_admin(&pool, "Seize").await;
+    let (bank, ledger, fy) = v0162a_bank_account(&pool, admin.company_id).await;
+    let entry = sqlx::query(
+        "INSERT INTO journal_entries (company_id, fiscal_year_id, entry_number, entry_date, \
+         journal, description) VALUES (?, ?, 1, '2026-09-15', 'Banque', 'Encaissement')",
+    )
+    .bind(admin.company_id)
+    .bind(fy)
+    .execute(&pool)
+    .await
+    .unwrap()
+    .last_insert_id() as i64;
+    let revenue = sqlx::query(
+        "INSERT INTO accounts (company_id, number, name, account_type, active, postable) \
+         VALUES (?, '3200', 'Ventes', 'Revenue', 1, 1)",
+    )
+    .bind(admin.company_id)
+    .execute(&pool)
+    .await
+    .unwrap()
+    .last_insert_id() as i64;
+    for (order, account, debit, credit) in [(1, ledger, "50.00", "0"), (2, revenue, "0", "50.00")] {
+        sqlx::query(
+            "INSERT INTO journal_entry_lines (entry_id, account_id, line_order, debit, credit) \
+             VALUES (?, ?, ?, ?, ?)",
+        )
+        .bind(entry)
+        .bind(account)
+        .bind(order)
+        .bind(debit)
+        .bind(credit)
+        .execute(&pool)
+        .await
+        .unwrap();
+    }
+    let camt = sqlx::query(
+        "INSERT INTO bank_imports (company_id, bank_account_id, filename, file_hash, \
+         source_format, statement_id, period_from, period_to, opening_balance, closing_balance, \
+         transaction_count, imported_by_user_id) VALUES (?, ?, 'releve-09.xml', REPEAT('a', 64), \
+         'CAMT053_V04', 'STMT-09', '2026-09-01', '2026-09-30', 1000.00, 1050.00, 2, ?)",
+    )
+    .bind(admin.company_id)
+    .bind(bank)
+    .bind(admin.user_id)
+    .execute(&pool)
+    .await
+    .unwrap()
+    .last_insert_id() as i64;
+    let csv = sqlx::query(
+        "INSERT INTO bank_imports (company_id, bank_account_id, filename, file_hash, \
+         source_format, period_from, period_to, transaction_count, imported_by_user_id) \
+         VALUES (?, ?, 'releve-10.csv', REPEAT('b', 64), 'CSV', '2026-10-01', '2026-10-31', 1, ?)",
+    )
+    .bind(admin.company_id)
+    .bind(bank)
+    .bind(admin.user_id)
+    .execute(&pool)
+    .await
+    .unwrap()
+    .last_insert_id() as i64;
+    sqlx::query(
+        "INSERT INTO bank_transactions (company_id, import_id, bank_account_id, booking_date, \
+         value_date, amount, currency, reference, details, counterparty_name, status, \
+         matched_entry_id) VALUES \
+         (?, ?, ?, '2026-09-15', '2026-09-15', 50.00, 'CHF', 'F-1', 'Virement reçu', \
+          'Client Exemple SA', 'reconciled', ?), \
+         (?, ?, ?, '2026-09-20', NULL, -4.80, 'CHF', NULL, 'Frais', NULL, 'pending', NULL), \
+         (?, ?, ?, '2026-10-05', NULL, 12.50, 'CHF', NULL, 'Intérêts', NULL, 'pending', NULL)",
+    )
+    .bind(admin.company_id)
+    .bind(camt)
+    .bind(bank)
+    .bind(entry)
+    .bind(admin.company_id)
+    .bind(camt)
+    .bind(bank)
+    .bind(admin.company_id)
+    .bind(csv)
+    .bind(bank)
+    .execute(&pool)
+    .await
+    .unwrap();
+
+    let before = v0162a_imports_as_served(&app, &admin.jwt).await;
+    assert_eq!(
+        before[0].as_array().unwrap().len(),
+        2,
+        "montage : deux imports"
+    );
+    let backup = export_backup(&app, &admin.jwt).await;
+    let (mut manifest, data) = unzip(&backup);
+    manifest["keshVersion"] = Value::from("0.16.1");
+    manifest["keshVersionMinRequired"] = Value::from("0.14.0");
+    let backup_016 = rezip(&manifest, &data);
+
+    // La base diverge de la sauvegarde avant l'import.
+    sqlx::query("DELETE FROM bank_transactions WHERE import_id = ?")
+        .bind(csv)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let resp = post_import(&app, &admin.jwt, backup_016).await;
+    assert_eq!(resp.status(), 200, "{}", resp.text().await.unwrap());
+    assert_eq!(
+        v0162a_imports_as_served(&app, &admin.jwt).await,
+        before,
+        "chaque import et chaque transaction se relit à l'identique"
+    );
+    let min_required: String =
+        sqlx::query_scalar("SELECT kesh_version_min_required FROM _kesh_version WHERE id = 1")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(min_required, "0.17.0", "_kesh_version n'est pas restaurée");
+
+    // Le relevé saisi suit le CAMT restauré (clôture 1050.00) : le solde de
+    // départ y est confronté, preuve que le relevé restauré se relit aussi
+    // par la saisie.
+    let mut body = v0162a_manual_body(bank, "2026-11-01", "2026-11-30");
+    body["openingBalance"] = Value::from("1050.00");
+    body["closingBalance"] = Value::from("1040.00");
+    let resp = app
+        .client
+        .post(app.url("/api/v1/bank-imports/manual"))
+        .header("Authorization", format!("Bearer {}", admin.jwt))
+        .json(&body)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 201, "{}", resp.text().await.unwrap());
+}
+
+/// AC-3-bis, le sens inverse : la **fonction de compatibilité** que le handler
+/// d'import appelle (`routes/admin.rs`, `check_import_version_compat`, dont le
+/// `DowngradeRefused` devient `409 IMPORT_VERSION_INCOMPATIBLE`) refuse, pour
+/// un binaire `0.16.1`, le `min_required` `0.17.0` qu'écrit la 0.17.0 (lu dans
+/// un vrai export par `full_import_round_trip_keeps_a_manual_statement`). Le
+/// handler lui-même n'est pas joué : un binaire `0.16.1` ne se monte pas dans
+/// ce test (revue de code P1, B3).
+#[test]
+fn a_0_17_backup_is_refused_by_a_0_16_1_binary() {
+    assert!(matches!(
+        kesh_db::version::check_import_version_compat("0.17.0", "0.16.1"),
+        Err(kesh_db::version::VersionError::DowngradeRefused { .. })
+    ));
+    assert!(kesh_db::version::check_import_version_compat("0.14.0", "0.17.0").is_ok());
+}
+
+// ============================================================
+// Story v017-4a (#849, AC-3) — les sauvegardes et les factures fournisseur
+// ============================================================
+
+/// Le décor fournisseur d'une société de test : exercice 2026, comptes (banque,
+/// TVA récupérable, créanciers, charges), réglages, fournisseur, compte
+/// bancaire lié. Synthétique. Rend `(fournisseur, charges, compte bancaire)`.
+async fn v0174a_decor(pool: &MySqlPool, company_id: i64) -> (i64, i64, i64) {
+    sqlx::query(
+        "INSERT INTO fiscal_years (company_id, name, start_date, end_date, status) \
+         VALUES (?, 'Exercice 2026', '2026-01-01', '2026-12-31', 'Open')",
+    )
+    .bind(company_id)
+    .execute(pool)
+    .await
+    .unwrap();
+    let mut acc = BTreeMap::new();
+    for (number, name, kind) in [
+        ("1020", "Banque", "Asset"),
+        ("1170", "TVA récupérable", "Asset"),
+        ("2000", "Créanciers", "Liability"),
+        ("4000", "Charges", "Expense"),
+    ] {
+        let id = sqlx::query(
+            "INSERT INTO accounts (company_id, number, name, account_type, active, postable) \
+             VALUES (?, ?, ?, ?, 1, 1)",
+        )
+        .bind(company_id)
+        .bind(number)
+        .bind(name)
+        .bind(kind)
+        .execute(pool)
+        .await
+        .unwrap()
+        .last_insert_id() as i64;
+        acc.insert(number, id);
+    }
+    sqlx::query(
+        "INSERT INTO company_invoice_settings (company_id, default_payable_account_id, \
+         default_vat_recoverable_account_id) VALUES (?, ?, ?)",
+    )
+    .bind(company_id)
+    .bind(acc["2000"])
+    .bind(acc["1170"])
+    .execute(pool)
+    .await
+    .unwrap();
+    let supplier = sqlx::query(
+        "INSERT INTO contacts (company_id, contact_type, name, is_supplier) \
+         VALUES (?, 'Entreprise', 'Fournisseur sauvegardé SA', TRUE)",
+    )
+    .bind(company_id)
+    .execute(pool)
+    .await
+    .unwrap()
+    .last_insert_id() as i64;
+    let bank = sqlx::query(
+        "INSERT INTO bank_accounts (company_id, bank_name, iban, is_primary, journal_account_id) \
+         VALUES (?, 'Banque Exemple', 'CH9300762011623852957', TRUE, ?)",
+    )
+    .bind(company_id)
+    .bind(acc["1020"])
+    .execute(pool)
+    .await
+    .unwrap()
+    .last_insert_id() as i64;
+    (supplier, acc["4000"], bank)
+}
+
+/// `POST` puis le corps JSON de la réponse, statut vérifié.
+async fn v0174a_post(app: &TestApp, jwt: &str, path: &str, body: Value, expected: u16) -> Value {
+    let resp = app
+        .client
+        .post(app.url(path))
+        .header("Authorization", format!("Bearer {jwt}"))
+        .json(&body)
+        .send()
+        .await
+        .unwrap();
+    let status = resp.status().as_u16();
+    let text = resp.text().await.unwrap();
+    assert_eq!(status, expected, "{path} : {text}");
+    serde_json::from_str(&text).unwrap_or(Value::Null)
+}
+
+/// Une facture fournisseur créée (brouillon), puis validée si `valider`.
+async fn v0174a_invoice(
+    app: &TestApp,
+    jwt: &str,
+    supplier: i64,
+    expense: i64,
+    numero: &str,
+    valider: bool,
+) -> Value {
+    let created = v0174a_post(
+        app,
+        jwt,
+        "/api/v1/supplier-invoices",
+        serde_json::json!({
+            "contactId": supplier, "supplierInvoiceNumber": numero, "invoiceDate": "2026-06-15",
+            "creditorIban": "CH5604835012345678009",
+            "lines": [{ "description": "Fourniture", "quantity": "1", "unitPrice": "100.00",
+                        "vatRate": "8.1", "expenseAccountId": expense }],
+        }),
+        201,
+    )
+    .await;
+    if !valider {
+        return created;
+    }
+    v0174a_post(
+        app,
+        jwt,
+        &format!("/api/v1/supplier-invoices/{}/validate", created["id"]),
+        serde_json::json!({ "version": created["version"] }),
+        200,
+    )
+    .await
+}
+
+async fn v0174a_get(app: &TestApp, jwt: &str, id: &Value) -> Value {
+    let resp = app
+        .client
+        .get(app.url(&format!("/api/v1/supplier-invoices/{id}")))
+        .header("Authorization", format!("Bearer {jwt}"))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 200);
+    resp.json().await.unwrap()
+}
+
+/// AC-3 (a) — une sauvegarde **sans** la colonne `link_origin` (forme de la
+/// 0.16.x, puis forme de la rc1), portant des factures fournisseur ouverte,
+/// payée et annulée et un document lié, s'importe dans la 0.17.0 : `200`,
+/// chaque facture se relit à l'identique par `GET`, `link_origin` vaut `NULL`,
+/// et la facture ouverte se dévalide puis se revalide.
+async fn v0174a_backup_without_link_origin(pool: MySqlPool, version: &str, min_required: &str) {
+    let app = spawn_app(pool.clone()).await;
+    let admin = seed_admin(&pool, "Sans origine").await;
+    let (supplier, expense, bank) = v0174a_decor(&pool, admin.company_id).await;
+    let open = v0174a_invoice(&app, &admin.jwt, supplier, expense, "FF-O", true).await;
+    let paid = v0174a_invoice(&app, &admin.jwt, supplier, expense, "FF-P", true).await;
+    v0174a_post(
+        &app,
+        &admin.jwt,
+        &format!("/api/v1/supplier-invoices/{}/pay", paid["id"]),
+        serde_json::json!({ "settlementType": "bank_transfer", "bankAccountId": bank,
+                            "paymentDate": "2026-06-20" }),
+        200,
+    )
+    .await;
+    let cancelled = v0174a_invoice(&app, &admin.jwt, supplier, expense, "FF-A", true).await;
+    v0174a_post(
+        &app,
+        &admin.jwt,
+        &format!("/api/v1/supplier-invoices/{}/cancel", cancelled["id"]),
+        serde_json::json!({}),
+        200,
+    )
+    .await;
+    let doc = sqlx::query(
+        "INSERT INTO imported_supplier_invoices (company_id, file_hash, storage_path, \
+         original_filename, mime_type, byte_size) \
+         VALUES (?, REPEAT('c', 64), 'doc-v0174a.pdf', 'doc.pdf', 'application/pdf', 10)",
+    )
+    .bind(admin.company_id)
+    .execute(&pool)
+    .await
+    .unwrap()
+    .last_insert_id() as i64;
+    v0174a_post(
+        &app,
+        &admin.jwt,
+        &format!("/api/v1/supplier-invoices/{}/source-document", open["id"]),
+        serde_json::json!({ "importedSupplierInvoiceId": doc }),
+        200,
+    )
+    .await;
+
+    let ids = [
+        open["id"].clone(),
+        paid["id"].clone(),
+        cancelled["id"].clone(),
+    ];
+    let mut before = Vec::new();
+    for id in &ids {
+        before.push(v0174a_get(&app, &admin.jwt, id).await);
+    }
+    let backup = export_backup(&app, &admin.jwt).await;
+    let (mut manifest, mut data, fichiers) = ouvrir_tout(&backup);
+    manifest["keshVersion"] = Value::from(version);
+    manifest["keshVersionMinRequired"] = Value::from(min_required);
+    recrire_table(
+        &mut manifest,
+        &mut data,
+        "imported_supplier_invoices",
+        |o| {
+            o.remove("link_origin");
+        },
+    );
+    strip_column(&mut manifest, "imported_supplier_invoices", "link_origin");
+    let ancienne = rezip_tout(&manifest, &data, &fichiers);
+
+    let resp = post_import(&app, &admin.jwt, ancienne).await;
+    assert_eq!(resp.status(), 200, "{}", resp.text().await.unwrap());
+    for (id, b) in ids.iter().zip(&before) {
+        let mut apres = v0174a_get(&app, &admin.jwt, id).await;
+        let mut avant = b.clone();
+        // L'origine du lien ne survit pas à une sauvegarde qui ne la porte pas.
+        for v in [&mut apres, &mut avant] {
+            if let Some(sd) = v.get_mut("sourceDocument").and_then(Value::as_object_mut) {
+                sd.remove("linkOrigin");
+            }
+        }
+        assert_eq!(apres, avant, "facture {id} relue à l'identique");
+    }
+    let origin: Option<String> =
+        sqlx::query_scalar("SELECT link_origin FROM imported_supplier_invoices WHERE id = ?")
+            .bind(doc)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(origin, None, "colonne absente de la source : NULL");
+
+    let o = v0174a_get(&app, &admin.jwt, &open["id"]).await;
+    let d = v0174a_post(
+        &app,
+        &admin.jwt,
+        &format!("/api/v1/supplier-invoices/{}/unvalidate", open["id"]),
+        serde_json::json!({ "version": o["version"] }),
+        200,
+    )
+    .await;
+    assert_eq!(d["status"], "draft");
+    let r = v0174a_post(
+        &app,
+        &admin.jwt,
+        &format!("/api/v1/supplier-invoices/{}/validate", open["id"]),
+        serde_json::json!({ "version": d["version"] }),
+        200,
+    )
+    .await;
+    assert_eq!(r["status"], "open");
+}
+
+/// AC-3 (a) — forme de la 0.16.x.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn full_import_accepts_a_0_16_backup_with_supplier_invoices(pool: MySqlPool) {
+    v0174a_backup_without_link_origin(pool, "0.16.1", "0.14.0").await;
+}
+
+/// AC-3 (a) — forme de la rc1 (même version Cargo, sans `link_origin`).
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn full_import_accepts_an_rc1_backup_with_supplier_invoices(pool: MySqlPool) {
+    v0174a_backup_without_link_origin(pool, "0.17.0", "0.17.0").await;
+}
+
+/// AC-3 (b) — aller-retour dans la 0.17.0 d'une base qui porte un brouillon et
+/// une facture validée : chaque facture identique, le brouillon reste
+/// brouillon, sans écriture.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn full_import_round_trip_keeps_a_draft(pool: MySqlPool) {
+    let app = spawn_app(pool.clone()).await;
+    let admin = seed_admin(&pool, "Brouillon").await;
+    let (supplier, expense, _) = v0174a_decor(&pool, admin.company_id).await;
+    let draft = v0174a_invoice(&app, &admin.jwt, supplier, expense, "FF-B", false).await;
+    let open = v0174a_invoice(&app, &admin.jwt, supplier, expense, "FF-V", true).await;
+    let before = [
+        v0174a_get(&app, &admin.jwt, &draft["id"]).await,
+        v0174a_get(&app, &admin.jwt, &open["id"]).await,
+    ];
+    let backup = export_backup(&app, &admin.jwt).await;
+    sqlx::query("DELETE FROM supplier_invoice_lines WHERE supplier_invoice_id = ?")
+        .bind(draft["id"].as_i64().unwrap())
+        .execute(&pool)
+        .await
+        .unwrap();
+    let resp = post_import(&app, &admin.jwt, backup).await;
+    assert_eq!(resp.status(), 200, "{}", resp.text().await.unwrap());
+    let after = [
+        v0174a_get(&app, &admin.jwt, &draft["id"]).await,
+        v0174a_get(&app, &admin.jwt, &open["id"]).await,
+    ];
+    assert_eq!(after, before);
+    assert_eq!(after[0]["status"], "draft");
+    assert_eq!(after[0]["purchaseJournalEntryId"], Value::Null);
 }

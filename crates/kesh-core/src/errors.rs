@@ -8,9 +8,14 @@ use thiserror::Error;
 
 /// Erreurs de validation des types métier kesh-core.
 ///
-/// Les messages `Display` sont destinés au logging serveur uniquement.
-/// `kesh-api` mappe chaque variante vers un code structuré et un message
-/// traduit via `kesh-i18n`. Ne jamais exposer ces messages au frontend.
+/// Les messages `Display` sont en français. `kesh-api` mappe certaines
+/// variantes vers un code structuré et un message traduit via `kesh-i18n` ;
+/// mais les refus de saisie d'un IBAN, d'un QR-IBAN et d'un numéro IDE
+/// (`InvalidIban`, `InvalidQrIban`, `InvalidCheNumber`) sont **servis tels
+/// quels** comme motif d'un `VALIDATION_ERROR` (assistant d'installation,
+/// comptes bancaires), en français quelle que soit la langue (#710). Leur
+/// message nomme le champ une fois (« IBAN invalide : … ») : la route ne le
+/// préfixe pas une seconde fois (#832).
 #[derive(Debug, Error, Clone, PartialEq)]
 pub enum CoreError {
     /// L'IBAN fourni est invalide (format, longueur ou checksum incorrect).

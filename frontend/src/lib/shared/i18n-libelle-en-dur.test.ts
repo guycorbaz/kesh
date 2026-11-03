@@ -246,8 +246,25 @@ const SUFFIXES = ['Label', 'Text', 'Display'];
  * ne bouge pas. *Identifiée en cherchant les suffixes `Label`, `Text`, `Display` dans le
  * diff de la story (`b3f52733` → tête) ; `formUnchanged`, `resetForm`, `applyState`,
  * `reread` et `isUnknownOutcome` n'en portent pas.*
+ *
+ * ⚠️ **71 → 76, et les cinq déclarations sont NOMMÉES** (Story v016-2b, #816 — saisir un
+ * relevé à la main) : `manualStatementReasonLabel` (`lib/features/bank-import/
+ * manual-statement-reason-label.ts`), `sourceFormatLabel` (`bank-import-display.ts`),
+ * `fieldLabel`, `blockReasonText` et `errorText` (`ManualStatementForm.svelte`). Chaque
+ * branche délègue à `i18nMsg` ou rend une donnée (code inconnu, message déjà traduit par le
+ * serveur, nom de champ inconnu) : aucun littéral, donc `conforme` **57 → 62** ; `ecartee`
+ * ne bouge pas. *Identifiées en cherchant les suffixes `Label`, `Text`, `Display` dans le
+ * diff de la story (`285d2fde` → tête) ; `importDisplayName`, `isManualImport`,
+ * `screenLines` et `swiss` n'en portent pas.*
+ *
+ * ⚠️ **76 → 77, et la déclaration est NOMMÉE** (Story v017-4b, #849) : `withLabel`
+ * (`lib/features/supplier-invoices/supplier-invoice-unvalidate.ts`), qui suffixe un message
+ * déjà traduit du numéro de la pièce — aucun littéral, donc `conforme` **62 → 63** ;
+ * `ecartee` ne bouge pas. *Identifiée en cherchant les suffixes `Label`, `Text`, `Display`
+ * dans le diff de la story (`1d9f81a5` → tête) ; `supplierInvoiceUnvalidateMessage`,
+ * `dueBeforeInvoiceDateMessage`, `formatLiveTotal` et `badgeClass` n'en portent pas.*
  */
-const CANDIDATES_ATTENDUES = 71;
+const CANDIDATES_ATTENDUES = 77;
 
 /** Les trois délimiteurs de littéral en JS/TS. */
 const QUOTES = ["'", '"', '`'];
@@ -764,7 +781,7 @@ describe('libellés en dur — l’angle mort #255', () => {
 			else if (c.retours.length > 0) classes.ecartee += 1;
 			else classes.conforme += 1;
 		}
-		expect(classes).toEqual({ nonAnalysee: 0, enViolation: 0, ecartee: 14, conforme: 57 });
+		expect(classes).toEqual({ nonAnalysee: 0, enViolation: 0, ecartee: 14, conforme: 63 });
 		// La somme est recalculée depuis les classes, jamais depuis le total qu'elle contrôle.
 		const somme = Object.values(classes).reduce((a, b) => a + b, 0);
 		expect(somme).toBe(CANDIDATES_ATTENDUES);

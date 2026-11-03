@@ -106,7 +106,8 @@ fn attendu_version_delai(id: i64, delai_s: f64) -> serde_json::Value {
         "delaiInstructionS": delai_s,
     });
     // Story 32-9a (AC-a8) : le bloc de texte est l'en-tête, une ligne vide et
-    // le JSON indenté de la même valeur (`sortie::donnees`).
+    // le JSON indenté de la même valeur (`sortie::donnees`) — le seul canal
+    // depuis la 0.17.0 (v016-1, C-v016-1-1).
     let texte = format!(
         "{TEXTE_ENTETE_DONNEES}\n\n{}",
         serde_json::to_string_pretty(&s).unwrap()
@@ -115,7 +116,6 @@ fn attendu_version_delai(id: i64, delai_s: f64) -> serde_json::Value {
         "jsonrpc": "2.0", "id": id,
         "result": {
             "content": [{ "type": "text", "text": texte }],
-            "structuredContent": s,
             "isError": false,
         },
     })
@@ -1550,7 +1550,7 @@ async fn cle_dispensee_servie(pool: MySqlPool) {
     assert_eq!(
         r.json(),
         json!({"jsonrpc":"2.0","id":1,"result":{
-            "content":[{"type":"text","text":s.to_string()}],"structuredContent":s,"isError":false}})
+            "content":[{"type":"text","text":s.to_string()}],"isError":false}})
     );
     assert_eq!(n.load(Ordering::SeqCst), 1);
 }

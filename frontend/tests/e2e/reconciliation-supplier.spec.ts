@@ -7,12 +7,12 @@
  * (`CLAUDE.md`, § *E2E*).
  *
  * Trois parcours :
- * 1. **avec QR** — une facture fournisseur ouverte, portant une référence de paiement QR, datée
+ * 1. **avec QR** — une facture fournisseur validée, portant une référence de paiement QR, datée
  *    et échue plusieurs mois avant le débit et **saisie le jour du test** (l'usage de Guy) ; un
  *    relevé dont le débit porte la référence ; *Réconciliation* → la facture proposée (badge,
  *    fournisseur, numéro, montant) → *Accepter* → la fiche dit « Payée » à la date du paiement,
  *    l'écriture de règlement est lettrée, la transaction rapprochée → *Annuler le rapprochement*
- *    (détail de l'import) → la facture redevient ouverte et la ligne revient ;
+ *    (détail de l'import) → la facture redevient validée, à payer, et la ligne revient ;
  * 2. un **crédit** du même montant ne propose pas la facture fournisseur ;
  * 3. **sans QR** — facture sans référence de paiement, débit sans référence, désigné par le
  *    montant et le nom du fournisseur → proposée, acceptée, payée.
@@ -85,7 +85,7 @@ type Decor = {
 };
 
 /**
- * La facture fournisseur ouverte et le relevé qui la paie. `sens` : `DBIT` (un paiement) ou
+ * La facture fournisseur validée et le relevé qui la paie. `sens` : `DBIT` (un paiement) ou
  * `CRDT` ; `withReference` : la facture porte une référence de paiement QR et le débit la porte.
  */
 async function decor(
@@ -287,12 +287,13 @@ test('avec QR — un débit propose la facture fournisseur, Accepter la règle, 
 			`/journal-entries/${paid.settlementJournalEntryId}`,
 		);
 
-		// 6. Annuler le rapprochement : le texte fournisseur, puis la facture rouverte.
+		// 6. Annuler le rapprochement : le texte fournisseur, puis la facture de nouveau à payer.
 		await row.getByTestId('detail-tx-cancel-reconciliation').click();
 		const dialog = page.getByTestId('reconciliation-cancel-dialog');
 		const texte = dialog.getByTestId('reconciliation-cancel-confirm-text');
 		await expect(texte).toContainText(`facture fournisseur ${d.number}`);
-		await expect(texte).toContainText('redeviendra ouverte, à payer');
+		// Story v017-4b (#849, décision Q4) : l'état `open` se nomme « validée ».
+		await expect(texte).toContainText('redeviendra validée, à payer');
 		await dialog.screenshot({ path: capturePath(testInfo, '30-1b-dialogue-annulation-clair') });
 		await dialog.getByTestId('reconciliation-cancel-submit').click();
 		await expect(dialog).toBeHidden();

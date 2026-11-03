@@ -113,6 +113,9 @@ impl From<ImportedSupplierInvoice> for PiecePublique {
             version: _,
             created_at,
             updated_at: _,
+            // Story v017-4a (C-v017-4-40 (2)) : l'origine du lien n'atteint pas
+            // l'outil MCP des pièces — l'agent n'en a pas l'usage.
+            link_origin: _,
         } = p;
         Self {
             id,

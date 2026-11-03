@@ -1,0 +1,58 @@
+{
+  "ok": [
+    {
+      "account_iban": "CH4431999123000889012",
+      "closing_balance": "1100.00",
+      "currency": "CHF",
+      "opening_balance": "1000.00",
+      "period_from": "2026-05-01",
+      "period_to": "2026-05-31",
+      "source_format": {
+        "kind": "camt053",
+        "version": "001.04"
+      },
+      "statement_id": "STMT-A",
+      "transactions": [
+        {
+          "amount": "100.00",
+          "booking_date": "2026-05-10",
+          "counterparty_iban": null,
+          "counterparty_name": "Client Alpha",
+          "currency": "CHF",
+          "details": "Premier compte",
+          "end_to_end_id": null,
+          "reference": null,
+          "transaction_id": "BANK-A-001",
+          "value_date": null
+        }
+      ]
+    },
+    {
+      "account_iban": "CH9300762011623852957",
+      "closing_balance": "450.00",
+      "currency": "CHF",
+      "opening_balance": "500.00",
+      "period_from": "2026-05-01",
+      "period_to": "2026-05-31",
+      "source_format": {
+        "kind": "camt053",
+        "version": "001.04"
+      },
+      "statement_id": "STMT-B",
+      "transactions": [
+        {
+          "amount": "-50.00",
+          "booking_date": "2026-05-20",
+          "counterparty_iban": null,
+          "counterparty_name": "Fournisseur Beta",
+          "currency": "CHF",
+          "details": "Second compte",
+          "end_to_end_id": null,
+          "reference": null,
+          "transaction_id": "BANK-B-001",
+          "value_date": null
+        }
+      ]
+    }
+  ]
+}

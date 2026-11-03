@@ -233,7 +233,8 @@ function serverStatusMessage(status: number): string {
 /**
  * Parse une réponse d'erreur en `ApiError`.
  * Gère les cas : JSON structuré, JSON non structuré, réponse non-JSON. Un
- * `message` présent dans le corps est repris tel quel (le serveur l'a traduit).
+ * `message` présent dans le corps est repris tel quel (le serveur l'a traduit,
+ * sauf les refus de validation écrits en dur dans les routes, rendus tels quels — #710).
  */
 async function parseErrorResponse(res: Response): Promise<ApiError> {
 	let body: unknown;

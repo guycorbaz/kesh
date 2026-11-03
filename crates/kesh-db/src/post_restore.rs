@@ -625,6 +625,18 @@ pub const EXEMPT_MIGRATIONS: &[(i64, ExemptionBasis, &str)] = &[
          plus se présenter. L'entrée reste dans RETIRED_BACKFILLS pour les tests de la \
          machinerie.",
     ),
+    (
+        20261030000001,
+        ExemptionBasis::Durable,
+        "UPDATE sur _kesh_version (bump kesh_version_min_required), table système jamais \
+         restaurée. La migration ne porte aucune autre instruction.",
+    ),
+    (
+        20261031000001,
+        ExemptionBasis::Durable,
+        "UPDATE sur _kesh_version (bump kesh_version_min_required, valeur inchangée 0.17.0), \
+         table système jamais restaurée. Les autres instructions sont du DDL (ALTER TABLE).",
+    ),
 ];
 
 /// Rejoue les backfills du registre canonique dans la transaction de restore.
@@ -1214,9 +1226,15 @@ mod tests {
         // ⚠️ **20 → 21 (Story 32-5a, #723)** : `20261010000001`, le rejeu du
         // lettrage, sorti du registre quand `mcp_keys` a refermé la fenêtre —
         // `Durable`, « Hors fenêtre », patron de `20260828000001`.
+        // ⚠️ **21 → 22 (Story v016-2)** : `20261030000001`, le bump
+        // `kesh_version_min_required` à 0.17.0 (relevé saisi, #816) — `Durable`,
+        // patron de `20261015000001` ; la migration n'a aucune autre instruction.
+        // ⚠️ **22 → 23 (Story v017-4a, #849)** : `20261031000001`, le bump
+        // `kesh_version_min_required` (valeur inchangée 0.17.0) du brouillon des
+        // factures fournisseur — `Durable` ; ses autres instructions sont du DDL.
         assert_eq!(
             EXEMPT_MIGRATIONS.len(),
-            21,
+            23,
             "le registre d'exemptions a changé de taille : déclarer le fondement de l'entrée \
              neuve (Durable, ou PerishableSince(<borne>) si elle argumente sur un fait daté), \
              puis bumper ce nombre."

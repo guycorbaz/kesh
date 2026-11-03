@@ -11,6 +11,8 @@
 //!   vivait dans `routes::reports::load_pdf_context`).
 //! - [`hex_encode`] — encoding hex d'un slice de bytes (Story 8-1b, factorisé
 //!   ici en Story 9-2b pour `exports::metadata::sha256_hex`).
+//! - [`refus_qr_iban`] — le refus d'un QR-IBAN saisi, sans mot répété et
+//!   désignant le bon champ (Story v017-6, #832).
 //!
 //! Toutes les fns sont `pub(crate)` — réservées aux modules internes de la
 //! crate `kesh-api`. Si une fn doit devenir publique (consommée hors crate),
@@ -268,6 +270,31 @@ pub(crate) fn origine_canonique(brut: &str) -> Option<String> {
     let url = url::Url::parse(entree).ok()?;
     url.host()?;
     Some(url.origin().ascii_serialization())
+}
+
+// ===========================================================================
+// Refus d'un QR-IBAN (Story v017-6, #832)
+// ===========================================================================
+
+/// Le refus d'un QR-IBAN saisi, servi en `VALIDATION_ERROR` : un seul « QR-IBAN
+/// invalide : », et le bon champ désigné.
+///
+/// `QrIban::new` propage **telle quelle** l'erreur d'un IBAN mal formé
+/// (`CoreError::InvalidIban`, dont le `Display` dit « IBAN invalide : … ») : la
+/// servir nue désignerait le champ IBAN. Ce cas est donc étiqueté du champ
+/// QR-IBAN ; toute autre variante (`InvalidQrIban`) porte déjà « QR-IBAN
+/// invalide : » et passe telle quelle, sans second préfixe.
+///
+/// Un helper, deux sites : l'étape banque de l'assistant
+/// (`routes::onboarding`) et la création d'un compte bancaire
+/// (`routes::bank_accounts`).
+pub(crate) fn refus_qr_iban(e: kesh_core::errors::CoreError) -> AppError {
+    match e {
+        kesh_core::errors::CoreError::InvalidIban(motif) => {
+            AppError::Validation(format!("QR-IBAN invalide : {motif}"))
+        }
+        autre => AppError::Validation(autre.to_string()),
+    }
 }
 
 // ===========================================================================

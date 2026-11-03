@@ -150,7 +150,7 @@ test('homepage affiche la company seedée', async ({ page }) => {
 
 | Preset | Contenu | Usage typique |
 |---|---|---|
-| `fresh` | DB vidée, user `changeme/changeme` seul | `onboarding.spec.ts`, `onboarding-path-b.spec.ts` |
+| `fresh` | DB vidée, user `changeme/changeme` seul | `onboarding.spec.ts`, `onboarding-path-b.spec.ts`, `onboarding-motif.spec.ts` |
 | `post-onboarding` | fresh + `admin/admin123` + company + fiscal_year + 5 accounts + company_invoice_settings + `onboarding_state.step_completed = 10` | alias sémantique de `with-company` |
 | `with-company` | **identique** à `post-onboarding` (même code path) | toutes les specs admin (`auth`, `accounts`, `contacts`, `products`, `invoices`, `journal-entries`, `users`, `homepage-settings`, `mode-expert`) |
 | `with-data` | `with-company` + 1 contact `'CI Contact SA'` + 1 product `'CI Product'` | `invoices_echeancier.spec.ts` (les factures sont créées dynamiquement par le spec — **pas de facture pré-seedée**) |

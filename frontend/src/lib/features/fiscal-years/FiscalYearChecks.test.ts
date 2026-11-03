@@ -23,7 +23,9 @@ const CODES = [
 	'DRAFT_INVOICES',
 	'IMPORTED_SUPPLIER_INVOICES_TO_COMPLETE',
 	'INCONSISTENT_ENTRIES',
-	'NEXT_FISCAL_YEAR'
+	'NEXT_FISCAL_YEAR',
+	// Story v017-4b (AC-26) — K8, en dernier.
+	'DRAFT_SUPPLIER_INVOICES'
 ];
 
 describe('FiscalYearChecks — les trois états', () => {
@@ -43,7 +45,7 @@ describe('FiscalYearChecks — les trois états', () => {
 		expect(screen.queryByTestId('fiscal-year-checks-list')).toBeNull();
 	});
 
-	it('une réponse : sept lignes, dans l’ordre du serveur', () => {
+	it('une réponse : huit lignes, dans l’ordre du serveur', () => {
 		render(FiscalYearChecks, { loadState: 'ready', checks: closingChecks() });
 		const rows = screen
 			.getByTestId('fiscal-year-checks-list')
@@ -51,7 +53,7 @@ describe('FiscalYearChecks — les trois états', () => {
 		expect([...rows].map((r) => r.getAttribute('data-testid')?.replace('fiscal-year-checks-row-', ''))).toEqual(
 			CODES
 		);
-		expect(screen.getAllByText('Rien à signaler')).toHaveLength(6);
+		expect(screen.getAllByText('Rien à signaler')).toHaveLength(7);
 		expect(screen.getByTestId('fiscal-year-checks-status-NEXT_FISCAL_YEAR').textContent).toMatch(
 			/« Exercice 2027 » suit cet exercice/
 		);
@@ -146,6 +148,54 @@ describe('FiscalYearChecks — contenus et liens', () => {
 			'/invoices?status=draft&dateFrom=2026-01-01&dateTo=2026-12-31'
 		);
 		expect(screen.getByText('Dubarde SàRL').getAttribute('href')).toBe('/invoices/9');
+	});
+
+	// Story v017-4b (#849, AC-26) — K8 : les brouillons fournisseur de l'exercice, chacun
+	// vers sa fiche, et la liste des factures fournisseurs.
+	it('K8 : chaque brouillon fournisseur mène à sa fiche, un lien vers la liste', () => {
+		render(FiscalYearChecks, {
+			loadState: 'ready',
+			checks: closingChecks({
+				DRAFT_SUPPLIER_INVOICES: {
+					status: 'attention',
+					count: 2,
+					details: {
+						invoices: [
+							{ id: 31, label: 'FF-31 — Dubarde SA', date: '2026-03-04' },
+							{ id: 32, label: 'Alpha SA', date: '2026-11-30' }
+						]
+					}
+				}
+			})
+		});
+		const status = screen.getByTestId('fiscal-year-checks-status-DRAFT_SUPPLIER_INVOICES');
+		expect(status.textContent).toMatch(/2 facture\(s\) fournisseur en brouillon datée\(s\) dans l’exercice/);
+		expect(status.textContent).toMatch(/04\.03\.2026/);
+		expect(screen.getByText('FF-31 — Dubarde SA').getAttribute('href')).toBe('/supplier-invoices/31');
+		expect(screen.getByText('Alpha SA').getAttribute('href')).toBe('/supplier-invoices/32');
+		expect(
+			screen.getByTestId('fiscal-year-checks-link-DRAFT_SUPPLIER_INVOICES').getAttribute('href')
+		).toBe('/supplier-invoices');
+		const row = screen.getByTestId('fiscal-year-checks-row-DRAFT_SUPPLIER_INVOICES');
+		expect(row.textContent).toMatch(/Factures fournisseur en brouillon/);
+		expect(screen.queryByTestId('fiscal-year-checks-k8-more')).toBeNull();
+	});
+
+	// Revue P1 (E-10) : le serveur nomme vingt brouillons au plus ; les autres se disent.
+	it('K8 : au-delà des brouillons nommés, « … et N autre(s) »', () => {
+		render(FiscalYearChecks, {
+			loadState: 'ready',
+			checks: closingChecks({
+				DRAFT_SUPPLIER_INVOICES: {
+					status: 'attention',
+					count: 23,
+					details: { invoices: [{ id: 31, label: 'FF-31', date: '2026-03-04' }] }
+				}
+			})
+		});
+		expect(screen.getByTestId('fiscal-year-checks-k8-more').textContent?.trim()).toBe(
+			'… et 22 autre(s), dans la liste des factures fournisseurs.'
+		);
 	});
 
 	it('K5 : lien vers les documents à traiter (Story 30-2a : textes neufs, lien inchangé)', () => {

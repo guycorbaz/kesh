@@ -19,6 +19,7 @@
 	import { deleteBankImport } from './bank-import.api';
 	import { reconciledCount } from './bank-import-deletion';
 	import type { BankImportDetailResponse } from './bank-import.types';
+	import { isManualImport } from './bank-import-display';
 
 	type Props = {
 		detail: BankImportDetailResponse;
@@ -33,6 +34,9 @@
 	let errorMsg = $state('');
 
 	const blocked = $derived(reconciledCount(detail.transactions));
+	// Story v016-2b (#816, AC-23) — un relevé saisi à la main a ses propres textes :
+	// ni « fichier », ni « réimporter le même fichier ».
+	const manual = $derived(isManualImport(detail));
 
 	function openDialog() {
 		errorMsg = '';
@@ -49,16 +53,28 @@
 			onDeleted(detail.filename);
 		} catch (err) {
 			if (isApiError(err) && err.code === 'BANK_IMPORT_HAS_RECONCILED_TRANSACTIONS') {
-				errorMsg = i18nMsg(
-					'bank-import-delete-error-reconciled',
-					'{ $count } transaction(s) de cet import ont été rapprochées entre-temps : rechargez la page.',
-					{ count: Number(err.details?.reconciledCount ?? 0) },
-				);
+				const count = Number(err.details?.reconciledCount ?? 0);
+				errorMsg = manual
+					? i18nMsg(
+							'bank-import-manual-delete-error-reconciled',
+							'{ $count } transaction(s) de ce relevé ont été rapprochées entre-temps : rechargez la page.',
+							{ count },
+						)
+					: i18nMsg(
+							'bank-import-delete-error-reconciled',
+							'{ $count } transaction(s) de cet import ont été rapprochées entre-temps : rechargez la page.',
+							{ count },
+						);
 			} else if (isApiError(err) && err.status === 404) {
-				errorMsg = i18nMsg(
-					'bank-import-delete-error-not-found',
-					"Cet import n'existe plus : il a peut-être déjà été supprimé.",
-				);
+				errorMsg = manual
+					? i18nMsg(
+							'bank-import-manual-delete-error-not-found',
+							"Ce relevé n'existe plus : il a peut-être déjà été supprimé.",
+						)
+					: i18nMsg(
+							'bank-import-delete-error-not-found',
+							"Cet import n'existe plus : il a peut-être déjà été supprimé.",
+						);
 			} else {
 				errorMsg = errorMessageOf(err);
 			}
@@ -76,15 +92,27 @@
 			disabled={blocked > 0}
 			data-testid="bank-import-delete-button"
 		>
-			{i18nMsg('bank-import-delete-button', "Supprimer l'import")}
+			{#if manual}
+				{i18nMsg('bank-import-manual-delete-button', 'Supprimer le relevé')}
+			{:else}
+				{i18nMsg('bank-import-delete-button', "Supprimer l'import")}
+			{/if}
 		</Button>
 		{#if blocked > 0}
 			<p class="mt-2 text-sm text-text-muted" data-testid="bank-import-delete-blocked">
-				{i18nMsg(
-					'bank-import-delete-blocked',
-					"{ $count } transaction(s) de cet import sont rapprochées. Pour supprimer l'import, annulez d'abord leur rapprochement.",
-					{ count: blocked },
-				)}
+				{#if manual}
+					{i18nMsg(
+						'bank-import-manual-delete-blocked',
+						"{ $count } transaction(s) de ce relevé sont rapprochées. Pour supprimer le relevé, annulez d'abord leur rapprochement.",
+						{ count: blocked },
+					)}
+				{:else}
+					{i18nMsg(
+						'bank-import-delete-blocked',
+						"{ $count } transaction(s) de cet import sont rapprochées. Pour supprimer l'import, annulez d'abord leur rapprochement.",
+						{ count: blocked },
+					)}
+				{/if}
 			</p>
 		{/if}
 	</div>
@@ -105,21 +133,37 @@
 		>
 			<Dialog.Header>
 				<Dialog.Title>
-					{i18nMsg('bank-import-delete-dialog-title', 'Supprimer cet import ?')}
+					{#if manual}
+						{i18nMsg('bank-import-manual-delete-dialog-title', 'Supprimer ce relevé saisi à la main ?')}
+					{:else}
+						{i18nMsg('bank-import-delete-dialog-title', 'Supprimer cet import ?')}
+					{/if}
 				</Dialog.Title>
 			</Dialog.Header>
 
 			<p class="text-sm" data-testid="bank-import-delete-dialog-body">
-				{i18nMsg(
-					'bank-import-delete-dialog-body',
-					'Le fichier { $filename } (période du { $from } au { $to }) et ses { $count } transaction(s) seront supprimés. Vous pourrez ensuite réimporter le même fichier. Cette suppression ne peut pas être annulée.',
-					{
-						filename: detail.filename,
-						from: detail.periodFrom,
-						to: detail.periodTo,
-						count: detail.transactions.length,
-					},
-				)}
+				{#if manual}
+					{i18nMsg(
+						'bank-import-manual-delete-dialog-body',
+						'Le relevé saisi à la main (période du { $from } au { $to }) et ses { $count } transaction(s) seront supprimés. Vous pourrez ensuite le saisir de nouveau. Cette suppression ne peut pas être annulée.',
+						{
+							from: detail.periodFrom,
+							to: detail.periodTo,
+							count: detail.transactions.length,
+						},
+					)}
+				{:else}
+					{i18nMsg(
+						'bank-import-delete-dialog-body',
+						'Le fichier { $filename } (période du { $from } au { $to }) et ses { $count } transaction(s) seront supprimés. Vous pourrez ensuite réimporter le même fichier. Cette suppression ne peut pas être annulée.',
+						{
+							filename: detail.filename,
+							from: detail.periodFrom,
+							to: detail.periodTo,
+							count: detail.transactions.length,
+						},
+					)}
+				{/if}
 			</p>
 
 			{#if errorMsg}

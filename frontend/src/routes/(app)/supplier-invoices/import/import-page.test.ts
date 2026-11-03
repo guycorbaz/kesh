@@ -109,7 +109,7 @@ afterEach(() => {
 });
 
 describe('Documents à traiter', () => {
-	it('titre, nom du fichier, date d’import, badge « QR-facture » ou « Sans QR-code »', async () => {
+	it('titre, nom du fichier, date d’import, badge « QR-facture » ou « Aucune QR-facture exploitable »', async () => {
 		listImportedMock.mockResolvedValue([AVEC_QR, SANS_QR]);
 		const { findAllByTestId, getByRole, getAllByTestId } = render(Page);
 		const rows = await findAllByTestId('imported-row');
@@ -124,7 +124,7 @@ describe('Documents à traiter', () => {
 		expect(qrBadge?.textContent).toMatch(/RF18539007547034/);
 		expect(rows[0].querySelector('[data-testid="imported-badge-no-qr"]')).toBeNull();
 		expect(rows[1].querySelector('[data-testid="imported-badge-no-qr"]')?.textContent).toMatch(
-			/Sans QR-code/,
+			/Aucune QR-facture exploitable/,
 		);
 		expect(rows[1].querySelector('[data-testid="imported-badge-qr"]')).toBeNull();
 		expect(getAllByTestId('imported-discard')[0].textContent).toMatch(/Retirer de la liste/);
@@ -159,7 +159,7 @@ describe('Documents à traiter', () => {
 		expect(fetchDocMock).toHaveBeenCalledTimes(1);
 	});
 
-	it('le rapport dit « sans QR-code » ou « QR illisible » pour un document accepté sans QR', async () => {
+	it('le rapport dit « aucune QR-facture exploitable » ou « QR illisible » pour un document accepté sans QR', async () => {
 		listImportedMock.mockResolvedValue([]);
 		const report: InboxImportReport = {
 			accepted: [
@@ -182,7 +182,7 @@ describe('Documents à traiter', () => {
 		expect(panel.textContent).toMatch(/3 document\(s\) importé\(s\)/);
 		const lines = await findAllByTestId('inbox-import-accepted-row');
 		expect(lines).toHaveLength(2);
-		expect(lines[0].textContent).toMatch(/sans\.png.*sans QR-code/s);
+		expect(lines[0].textContent).toMatch(/sans\.png.*aucune QR-facture exploitable/s);
 		expect(lines[1].textContent).toMatch(/abime\.png.*QR illisible/s);
 		expect(lines[1].textContent).toMatch(/Montant du QR hors des limites admises/);
 		// Story 30-2b : la saisie de l'IBAN et de la référence existe désormais.

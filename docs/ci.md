@@ -160,8 +160,13 @@ La publication d'images Docker se fait **uniquement** sur push de tag SemVer `v*
 
 | Tag | Trigger | Workflow | Mutabilité |
 |---|---|---|---|
-| `:{version}` (ex `:0.1.0`) | push tag `v*.*.*` | `release.yml/docker` | Immuable — release SemVer |
-| `:latest` | push tag `v*.*.*` | `release.yml/docker` | Mutable — toujours la dernière release SemVer |
+| `:{version}` (ex `:0.1.0`, `:0.16.1-rc1`) | push tag `v*.*.*` | `release.yml/docker` | Immuable — release SemVer ou pré-version |
+| `:latest` | push tag `v*.*.*` **sans suffixe** | `release.yml/docker` | Mutable — toujours la dernière release SemVer |
+
+Un tag de **pré-version** — suffixe après un tiret, `vX.Y.Z-rcN` — ne pousse que `:X.Y.Z-rcN` : `:latest` ne bouge pas,
+et sa GitHub Release est marquée pré-version. Cargo reste à `X.Y.Z` ; le smoke compare la base du tag à `/health`. Les
+candidates servent à jouer une recette sur l'image publiée avant de figer les textes du tag final. *(Depuis la
+préparation de la 0.16.1, 2026-10-29 : jusque-là, tout tag déplaçait `:latest` et créait une release ordinaire.)*
 
 Le job `docker-build` du `ci.yml` valide d'abord les deux compose distribués (`docker compose config -q` ; pour `docker-compose.yml`, avec des mots de passe MariaDB factices, puis l'échec **exigé** sans eux), puis build l'image en mode sanity (sans push) sur chaque PR/push afin de détecter au plus tôt toute régression du `Dockerfile`. L'image est jetée à la fin du runner. La **liste** des variables transmises par les compose est gardée par le test Rust `configuration_transmise` (job `backend`, Story 15-11a).
 

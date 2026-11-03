@@ -880,6 +880,191 @@ async fn import_no_qr_duplicate_and_reactivation(pool: MySqlPool) {
     assert_eq!(entry["importedSupplierInvoiceId"].as_i64(), Some(id));
     assert_eq!(entry["qr"], "none", "{b3}");
     assert_eq!(staging_status(&pool, id).await, "to_complete");
+    // Story v017-5 (AC-8) : la ligne sans QR a été relue, la trace le dit.
+    let trace = audit_details(&pool, id, "imported_supplier_invoice.reactivated").await;
+    assert_eq!(trace["qr"], "none", "{trace}");
+    assert_eq!(trace["qr_reread"], true, "{trace}");
+}
+
+// ============================================================
+// Story v017-5 (#854, AC-8, AC-9) — relire une pièce à sa réactivation
+// ============================================================
+
+/// Les quinze colonnes QR d'une ligne de staging, lues en SQL brut (texte).
+async fn quinze_colonnes(pool: &MySqlPool, id: i64) -> Vec<Option<String>> {
+    use sqlx::Row;
+    let ligne = sqlx::query(
+        "SELECT creditor_iban, CAST(is_qr_iban AS CHAR), creditor_address_type, creditor_name, \
+         creditor_line1, creditor_line2, creditor_postal_code, creditor_town, creditor_country, \
+         reference_type, reference_value, CAST(amount AS CHAR), currency, unstructured_message, \
+         billing_information FROM imported_supplier_invoices WHERE id = ?",
+    )
+    .bind(id)
+    .fetch_one(pool)
+    .await
+    .unwrap();
+    (0..15)
+        .map(|i| ligne.try_get::<Option<String>, _>(i).unwrap())
+        .collect()
+}
+
+/// Vide les quinze colonnes QR d'une ligne et la passe `discarded` — l'état d'une
+/// pièce importée sans QR lisible, puis retirée de la liste.
+async fn vider_qr_et_retirer(pool: &MySqlPool, id: i64) {
+    sqlx::query(
+        "UPDATE imported_supplier_invoices SET status = 'discarded', creditor_iban = NULL, \
+         is_qr_iban = NULL, creditor_address_type = NULL, creditor_name = NULL, \
+         creditor_line1 = NULL, creditor_line2 = NULL, creditor_postal_code = NULL, \
+         creditor_town = NULL, creditor_country = NULL, reference_type = NULL, \
+         reference_value = NULL, amount = NULL, currency = NULL, unstructured_message = NULL, \
+         billing_information = NULL WHERE id = ?",
+    )
+    .bind(id)
+    .execute(pool)
+    .await
+    .unwrap();
+}
+
+/// PNG d'une QR-facture dont les **quinze** colonnes sont non `NULL` : adresse
+/// structurée (code postal, localité), QR-IBAN et référence QRR, message,
+/// information de facturation. Données d'exemple SIX, noms fictifs.
+fn qr_invoice_png_quinze_colonnes() -> Vec<u8> {
+    let data = QrBillData {
+        creditor_iban: "CH4431999123000889012".into(),
+        creditor: Address {
+            address_type: AddressType::Structured,
+            name: "Commune fictive de Valbois".into(),
+            line1: "Place de la Maison de Commune".into(),
+            line2: "12".into(),
+            postal_code: "1999".into(),
+            town: "Valbois-sur-Exemple".into(),
+            country: "CH".into(),
+        },
+        ultimate_debtor: None,
+        amount: Some(dec!(1234.55)),
+        currency: Currency::Chf,
+        reference: Reference::Qrr("210000000003139471430009017".into()),
+        unstructured_message: Some("Facture synthetique de test".into()),
+        billing_information: Some("//S1/10/10201409/11/260131".into()),
+    };
+    qr_png_from_payload(&build_payload(&data).unwrap())
+}
+
+/// T6 (AC-8) — une pièce dont les colonnes QR sont vides, retirée puis redéposée,
+/// est **relue** : `present`, ses quinze colonnes égales aux valeurs d'origine,
+/// trace `"qr": "present"`, `"qr_reread": true`. Variante : une QR-facture
+/// inexploitable relue → `unreadable` / `FIELD_TOO_LONG`, colonnes `NULL`.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn reactivation_rereads_a_document_without_qr_data(pool: MySqlPool) {
+    let ctx = setup(&pool).await;
+    let app = spawn_app(pool.clone(), 25 * 1024 * 1024).await;
+    let png = qr_invoice_png_quinze_colonnes();
+    std::fs::write(app.inbox.join("t6.png"), &png).unwrap();
+    let b1 = run_import(&app, &ctx.jwt).await;
+    let entry = accepted_entry(&b1, "t6.png");
+    assert_eq!(entry["qr"], "present", "{b1}");
+    let id = entry["importedSupplierInvoiceId"].as_i64().unwrap();
+    let releve = quinze_colonnes(&pool, id).await;
+    // Les quinze valeurs relevées sont toutes présentes (anti-test-muet).
+    assert_eq!(releve.len(), 15);
+    for (rang, v) in releve.iter().enumerate() {
+        assert!(v.is_some(), "colonne {rang} vide à l'import : {releve:?}");
+    }
+
+    vider_qr_et_retirer(&pool, id).await;
+    assert!(qr_columns_all_null(&pool, id).await);
+    std::fs::write(app.inbox.join("t6-bis.png"), &png).unwrap();
+    let b2 = run_import(&app, &ctx.jwt).await;
+    let entry = accepted_entry(&b2, "t6-bis.png");
+    assert_eq!(
+        entry["importedSupplierInvoiceId"].as_i64(),
+        Some(id),
+        "{b2}"
+    );
+    assert_eq!(entry["qr"], "present", "{b2}");
+    assert!(entry.get("qrError").is_none(), "{b2}");
+    assert_eq!(staging_status(&pool, id).await, "to_complete");
+    assert_eq!(quinze_colonnes(&pool, id).await, releve);
+    let trace = audit_details(&pool, id, "imported_supplier_invoice.reactivated").await;
+    assert_eq!(trace["qr"], "present", "{trace}");
+    assert_eq!(trace["qr_reread"], true, "{trace}");
+
+    // Variante : une QR-facture inexploitable (nom de 71 caractères).
+    let trop_long = qr_invoice_png_with(&[(SPC_LINE_NAME, &"N".repeat(71))]);
+    std::fs::write(app.inbox.join("long.png"), &trop_long).unwrap();
+    let b3 = run_import(&app, &ctx.jwt).await;
+    let id2 = accepted_entry(&b3, "long.png")["importedSupplierInvoiceId"]
+        .as_i64()
+        .unwrap();
+    sqlx::query("UPDATE imported_supplier_invoices SET status = 'discarded' WHERE id = ?")
+        .bind(id2)
+        .execute(&pool)
+        .await
+        .unwrap();
+    std::fs::write(app.inbox.join("long-bis.png"), &trop_long).unwrap();
+    let b4 = run_import(&app, &ctx.jwt).await;
+    let entry = accepted_entry(&b4, "long-bis.png");
+    assert_eq!(
+        entry["importedSupplierInvoiceId"].as_i64(),
+        Some(id2),
+        "{b4}"
+    );
+    assert_eq!(entry["qr"], "unreadable", "{b4}");
+    assert_eq!(entry["qrError"], "FIELD_TOO_LONG", "{b4}");
+    assert!(qr_columns_all_null(&pool, id2).await);
+    let trace = audit_details(&pool, id2, "imported_supplier_invoice.reactivated").await;
+    assert_eq!(trace["qr"], "unreadable", "{trace}");
+    assert_eq!(trace["qr_reread"], true, "{trace}");
+}
+
+/// T7 (AC-8, AC-9) — rien d'autre n'est relu ni réécrit : une ligne `discarded`
+/// qui porte un QR est réactivée **sans** relecture (son `creditor_name`, changé
+/// en SQL, reste) ; une ligne `to_complete` sans QR redéposée reste un doublon.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn reactivation_never_rewrites_stored_qr_and_duplicates_stay(pool: MySqlPool) {
+    let ctx = setup(&pool).await;
+    let app = spawn_app(pool.clone(), 25 * 1024 * 1024).await;
+    let png = qr_invoice_png_quinze_colonnes();
+    std::fs::write(app.inbox.join("t7.png"), &png).unwrap();
+    let b1 = run_import(&app, &ctx.jwt).await;
+    let id = accepted_entry(&b1, "t7.png")["importedSupplierInvoiceId"]
+        .as_i64()
+        .unwrap();
+    sqlx::query(
+        "UPDATE imported_supplier_invoices SET status = 'discarded', \
+         creditor_name = 'Ancien nom' WHERE id = ?",
+    )
+    .bind(id)
+    .execute(&pool)
+    .await
+    .unwrap();
+    std::fs::write(app.inbox.join("t7-bis.png"), &png).unwrap();
+    let b2 = run_import(&app, &ctx.jwt).await;
+    let entry = accepted_entry(&b2, "t7-bis.png");
+    assert_eq!(entry["qr"], "present", "{b2}");
+    let nom: Option<String> =
+        sqlx::query_scalar("SELECT creditor_name FROM imported_supplier_invoices WHERE id = ?")
+            .bind(id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(nom.as_deref(), Some("Ancien nom"));
+    let trace = audit_details(&pool, id, "imported_supplier_invoice.reactivated").await;
+    assert_eq!(trace["qr_reread"], false, "{trace}");
+
+    // Une ligne `to_complete` sans QR, redéposée : doublon, colonnes inchangées.
+    let blanc = blank_png();
+    std::fs::write(app.inbox.join("blanc.png"), &blanc).unwrap();
+    let b3 = run_import(&app, &ctx.jwt).await;
+    let id2 = accepted_entry(&b3, "blanc.png")["importedSupplierInvoiceId"]
+        .as_i64()
+        .unwrap();
+    std::fs::write(app.inbox.join("blanc-bis.png"), &blanc).unwrap();
+    let b4 = run_import(&app, &ctx.jwt).await;
+    assert_eq!(b4["failed"][0]["fileName"], "blanc-bis.png", "{b4}");
+    assert_eq!(b4["failed"][0]["errorCode"], "DUPLICATE", "{b4}");
+    assert!(qr_columns_all_null(&pool, id2).await);
+    assert_eq!(staging_status(&pool, id2).await, "to_complete");
 }
 
 /// Story 30-2a (AC2) — la réactivation d'un document avec QR dit `present`.
@@ -1250,7 +1435,10 @@ async fn complete_creates_invoice_and_marks_completed(pool: MySqlPool) {
     let status = resp.status();
     let body: Value = resp.json().await.unwrap();
     assert_eq!(status, 200, "completion body: {body}");
-    assert_eq!(body["status"], "open");
+    // Story v017-4a (#849, AC-7) : la complétion crée un BROUILLON, sans
+    // écriture d'achat.
+    assert_eq!(body["status"], "draft");
+    assert_eq!(body.get("purchaseJournalEntryId"), Some(&Value::Null));
     assert_eq!(body["totalAmount"], "100.0000");
     assert_eq!(body["creditorIban"], "CH9300762011623852957");
 
@@ -1290,6 +1478,11 @@ async fn complete_creates_invoice_and_marks_completed(pool: MySqlPool) {
     assert_eq!(invoice_traces, 1, "les deux traces coexistent");
 }
 
+/// ⚠️ *Story v017-4a (#849, AC-6, AC-7) — le nom date d'avant la 0.17.0* : la
+/// complétion créait la facture **et** son écriture, et refusait une date hors
+/// de tout exercice ouvert (`400`, document resté à traiter). Depuis, elle crée
+/// un **brouillon**, accepté hors exercice ; c'est sa **validation** qui rend
+/// `400 FISCAL_YEAR_INVALID` et n'écrit rien.
 #[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn complete_closed_fiscal_year_keeps_to_complete(pool: MySqlPool) {
     let ctx = setup(&pool).await;
@@ -1327,13 +1520,39 @@ async fn complete_closed_fiscal_year_keeps_to_complete(pool: MySqlPool) {
         .send()
         .await
         .unwrap();
-    assert_eq!(resp.status(), 400);
-    // Rollback total : aucune facture, staging reste `to_complete`.
-    assert_eq!(staging_status(&pool, staging_id).await, "to_complete");
+    assert_eq!(
+        resp.status(),
+        200,
+        "un brouillon s'enregistre hors exercice"
+    );
+    let brouillon: Value = resp.json().await.unwrap();
+    assert_eq!(brouillon["status"], "draft");
+    assert_eq!(staging_status(&pool, staging_id).await, "completed");
     assert_eq!(
         supplier_invoice_count(&pool, ctx.seeded.company_id).await,
-        0
+        1
     );
+    // La validation, elle, exige l'exercice — et n'écrit rien.
+    let resp = app
+        .client
+        .post(app.url(&format!(
+            "/api/v1/supplier-invoices/{}/validate",
+            brouillon["id"]
+        )))
+        .bearer_auth(&ctx.jwt)
+        .json(&json!({ "version": brouillon["version"] }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 400);
+    let e: Value = resp.json().await.unwrap();
+    assert_eq!(e["error"]["code"], "FISCAL_YEAR_INVALID", "{e}");
+    let n: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM journal_entries WHERE company_id = ?")
+        .bind(ctx.seeded.company_id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(n, 0, "aucune écriture");
 }
 
 #[sqlx::test(migrations = "../kesh-db/test-schema")]
@@ -1401,7 +1620,50 @@ async fn complete_amount_mismatch_and_sub_centime_blocked(pool: MySqlPool) {
         .unwrap();
     assert_eq!(r2.status(), 400);
     let b2: Value = r2.json().await.unwrap();
-    assert_eq!(b2["error"]["code"], "AMOUNT_MISMATCH");
+    // Story v017-3b (#687, AC-6) : la garde de ligne passe AVANT `AMOUNT_MISMATCH`
+    // — la ligne sous le centime est nommée, non l'écart au QR. Tue M5.
+    assert_eq!(b2["error"]["code"], "SUPPLIER_INVOICE_LINE_NOT_IN_CENTIMES");
+    assert_eq!(b2["error"]["details"]["line"], 1);
+    assert_eq!(b2["error"]["details"]["lineTotal"], "99.9999");
+    assert_eq!(staging_status(&pool, s2).await, "to_complete");
+
+    // (c) Story v017-3b (AC-6, validation P2, R2) — la complétion passe par la
+    // MÊME passe de forme que la saisie : un produit négatif et sous le centime
+    // y reçoit le refus de positivité, comme `POST /supplier-invoices`. Tue M13.
+    let s3 = seed_staging(
+        &pool,
+        ctx.seeded.company_id,
+        "CHF",
+        false,
+        "NON",
+        None,
+        Some(dec!(100.00)),
+        "C",
+        "z.png",
+    )
+    .await;
+    let r3 = app
+        .client
+        .post(app.url(&format!("/api/v1/imported-supplier-invoices/{s3}/complete")))
+        .bearer_auth(&ctx.jwt)
+        .json(&complete_body(
+            ctx.supplier_id,
+            ctx.seeded.accounts["4000"],
+            dec!(-1),
+            dec!(33.3333),
+            dec!(0),
+        ))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(r3.status(), 409);
+    let b3: Value = r3.json().await.unwrap();
+    assert_eq!(b3["error"]["code"], "ILLEGAL_STATE_TRANSITION");
+    assert_eq!(staging_status(&pool, s3).await, "to_complete");
+    assert_eq!(
+        supplier_invoice_count(&pool, ctx.seeded.company_id).await,
+        0
+    );
 }
 
 #[sqlx::test(migrations = "../kesh-db/test-schema")]
@@ -1834,6 +2096,24 @@ async fn complete_refuses_a_designated_payable_made_non_postable(pool: MySqlPool
         .send()
         .await
         .unwrap();
+    // Story v017-4a (#849) : la complétion crée un brouillon, sans écriture —
+    // le compte créanciers n'y est pas encore écrit. C'est la VALIDATION qui le
+    // refuse, en nommant le compte, et qui n'écrit rien.
+    let status = resp.status();
+    let brouillon: Value = resp.json().await.unwrap();
+    assert_eq!(status, 200, "{brouillon}");
+    assert_eq!(brouillon["status"], "draft");
+    let resp = app
+        .client
+        .post(app.url(&format!(
+            "/api/v1/supplier-invoices/{}/validate",
+            brouillon["id"]
+        )))
+        .bearer_auth(&ctx.jwt)
+        .json(&json!({ "version": brouillon["version"] }))
+        .send()
+        .await
+        .unwrap();
     let status = resp.status();
     let body: Value = resp.json().await.unwrap();
     assert_eq!(status, 400, "{body}");
@@ -1843,11 +2123,12 @@ async fn complete_refuses_a_designated_payable_made_non_postable(pool: MySqlPool
         json!([{ "accountId": payable, "accountNumber": "2000" }]),
         "{body}"
     );
-    assert_eq!(staging_status(&pool, staging_id).await, "to_complete");
-    assert_eq!(
-        supplier_invoice_count(&pool, ctx.seeded.company_id).await,
-        0
-    );
+    let statut: String = sqlx::query_scalar("SELECT status FROM supplier_invoices WHERE id = ?")
+        .bind(brouillon["id"].as_i64().unwrap())
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(statut, "draft", "la validation refusée n'écrit rien");
 }
 
 // ============================================================
@@ -2174,8 +2455,10 @@ async fn complete_without_qr_takes_payment_details_and_project_from_body(pool: M
     assert_eq!(b["paymentReference"], "Facture 4711");
     assert_eq!(b["expectedPaymentAmount"], "100.0000");
     assert_eq!(b["projectId"], project_id, "projet honoré à la complétion");
+    // Story v017-4a (#849) : la facture créée est un brouillon — la fonction du
+    // GET le dit (`cancelBlockedBy`), ce qui prouve la relecture.
     assert_eq!(
-        b["cancellable"], true,
+        b["cancelBlockedBy"], "SUPPLIER_INVOICE_DRAFT",
         "réponse relue par la fonction du GET : {b}"
     );
     assert_eq!(staging_status(&pool, id).await, "completed");
@@ -2281,6 +2564,17 @@ async fn invoice_with_iban(
     let (s, b) = post_supplier_invoice(app, &ctx.jwt, &body).await;
     assert_eq!(s, 201, "{b}");
     let id = b["id"].as_i64().unwrap();
+    // Story v017-4a (#849) : la saisie crée un brouillon ; validée ici, comme la
+    // créait la rc1 (le test annule ensuite l'une d'elles en base).
+    let resp = app
+        .client
+        .post(app.url(&format!("/api/v1/supplier-invoices/{id}/validate")))
+        .bearer_auth(&ctx.jwt)
+        .json(&json!({ "version": b["version"] }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 200, "validation");
     if let Some((column, value)) = stored {
         sqlx::query(&format!(
             "UPDATE supplier_invoices SET creditor_iban = NULL, {column} = ? WHERE id = ?"
@@ -2541,16 +2835,38 @@ async fn staged_document(app: &TestApp, pool: &MySqlPool, ctx: &Ctx, file: &str)
     .await
 }
 
-/// Une facture fournisseur ouverte, créée par l'API (sans document).
+/// Une facture fournisseur validée (`open`), créée par l'API (sans document) —
+/// Story v017-4a (#849) : la création rend un brouillon, validé ici. La
+/// réponse de la **création** est rendue (son `sourceDocument` est absent).
 async fn invoice_without_document(app: &TestApp, ctx: &Ctx) -> Value {
     let (s, b) = post_supplier_invoice(app, &ctx.jwt, &body_with(ctx, json!({}))).await;
     assert_eq!(s, 201, "{b}");
+    let resp = app
+        .client
+        .post(app.url(&format!("/api/v1/supplier-invoices/{}/validate", b["id"])))
+        .bearer_auth(&ctx.jwt)
+        .json(&json!({ "version": b["version"] }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 200, "validation");
     b
 }
 
 /// L'objet `sourceDocument` attendu d'un document semé par `staged_document`.
 fn expected_source_document() -> Value {
     json!({ "originalFilename": "facture.png", "mimeType": "image/png", "byteSize": 1234 })
+}
+
+/// Les trois champs d'origine (Story 30-2c) d'un `sourceDocument` — la Story
+/// v017-4a (#849, C-v017-4-30) en a ajouté trois (`importedSupplierInvoiceId`,
+/// `linkOrigin`, `qr`), éprouvés par `supplier_invoice_draft_e2e.rs`.
+fn champs_30_2c(source_document: &Value) -> Value {
+    json!({
+        "originalFilename": source_document["originalFilename"],
+        "mimeType": source_document["mimeType"],
+        "byteSize": source_document["byteSize"],
+    })
 }
 
 /// AC18 — `sourceDocument` à trois états : **absent** de la réponse de `POST
@@ -2578,7 +2894,12 @@ async fn source_document_has_three_states(pool: MySqlPool) {
     let doc = staged_document(&app, &pool, &ctx, "complete-302c.png").await;
     let (s, done) = post_complete(&app, &ctx.jwt, doc, &body_with(&ctx, json!({}))).await;
     assert_eq!(s, 200, "{done}");
-    assert_eq!(done["sourceDocument"], expected_source_document(), "{done}");
+    assert_eq!(
+        champs_30_2c(&done["sourceDocument"]),
+        expected_source_document(),
+        "{done}"
+    );
+    assert_eq!(done["sourceDocument"]["linkOrigin"], "completion", "{done}");
     let completed = done["id"].as_i64().unwrap();
     let (_, got) = get_json(
         &app,
@@ -2586,7 +2907,10 @@ async fn source_document_has_three_states(pool: MySqlPool) {
         &format!("/api/v1/supplier-invoices/{completed}"),
     )
     .await;
-    assert_eq!(got["sourceDocument"], expected_source_document());
+    assert_eq!(
+        champs_30_2c(&got["sourceDocument"]),
+        expected_source_document()
+    );
 }
 
 /// AC19 — joindre après coup : `200` et la facture relue (`sourceDocument`
@@ -2626,7 +2950,12 @@ async fn attach_route_refuses_then_attaches(pool: MySqlPool) {
     let (s, b) = post_attach(&app, &ctx.jwt, inv, doc).await;
     assert_eq!(s, 200, "{b}");
     assert_eq!(b["id"], json!(inv));
-    assert_eq!(b["sourceDocument"], expected_source_document(), "{b}");
+    assert_eq!(
+        champs_30_2c(&b["sourceDocument"]),
+        expected_source_document(),
+        "{b}"
+    );
+    assert_eq!(b["sourceDocument"]["linkOrigin"], "attachment", "{b}");
     assert_eq!(b["status"], "open", "la facture ne change pas");
     assert_eq!(staging_status(&pool, doc).await, "completed");
     let details = audit_details(&pool, doc, "imported_supplier_invoice.attached").await;
@@ -2765,7 +3094,14 @@ async fn journal_entry_detail_shows_the_document(pool: MySqlPool) {
     let app = spawn_app(pool.clone(), 25 * 1024 * 1024).await;
     let created = invoice_without_document(&app, &ctx).await;
     let inv = created["id"].as_i64().unwrap();
-    let purchase = created["purchaseJournalEntryId"].as_i64().unwrap();
+    // Story v017-4a : la réponse de création est celle du brouillon ;
+    // l'écriture d'achat, posée par la validation, se lit en base.
+    let purchase: i64 =
+        sqlx::query_scalar("SELECT purchase_journal_entry_id FROM supplier_invoices WHERE id = ?")
+            .bind(inv)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
     let doc = staged_document(&app, &pool, &ctx, "entry-302c.png").await;
     let (s, _) = post_attach(&app, &ctx.jwt, inv, doc).await;
     assert_eq!(s, 200);
@@ -2785,7 +3121,7 @@ async fn journal_entry_detail_shows_the_document(pool: MySqlPool) {
     let paid: Value = resp.json().await.unwrap();
     let settlement = paid["settlementJournalEntryId"].as_i64().unwrap();
     assert_eq!(
-        paid["sourceDocument"],
+        champs_30_2c(&paid["sourceDocument"]),
         expected_source_document(),
         "pay relit la facture"
     );
@@ -2801,7 +3137,12 @@ async fn journal_entry_detail_shows_the_document(pool: MySqlPool) {
         assert_eq!(b["sourceDocument"], attendu, "écriture {entry} : {b}");
     }
     let other = invoice_without_document(&app, &ctx).await;
-    let other_entry = other["purchaseJournalEntryId"].as_i64().unwrap();
+    let other_entry: i64 =
+        sqlx::query_scalar("SELECT purchase_journal_entry_id FROM supplier_invoices WHERE id = ?")
+            .bind(other["id"].as_i64().unwrap())
+            .fetch_one(&pool)
+            .await
+            .unwrap();
     let (_, b) = get_json(
         &app,
         &ctx.jwt,
@@ -2823,4 +3164,172 @@ async fn journal_entry_detail_shows_the_document(pool: MySqlPool) {
     )
     .await;
     assert_eq!(b["sourceDocument"], Value::Null, "après détachement : {b}");
+}
+
+// ============================================================
+// Story v017-5 (#854) — AC-6-bis (T12) : l'abandon de la requête
+// ============================================================
+
+/// PNG de bruit `cote × cote`, sans QR, unique par `graine` — un fichier dont le
+/// décodage prend du temps (rxing cherche un QR partout).
+fn noise_png(cote: u32, graine: u64) -> Vec<u8> {
+    let mut x = graine.wrapping_mul(0x9E37_79B9_7F4A_7C15) | 1;
+    let img = image::GrayImage::from_fn(cote, cote, |_, _| {
+        x ^= x << 13;
+        x ^= x >> 7;
+        x ^= x << 17;
+        image::Luma([(x & 0xFF) as u8])
+    });
+    let mut png = Vec::new();
+    image::DynamicImage::ImageLuma8(img)
+        .write_to(&mut std::io::Cursor::new(&mut png), image::ImageFormat::Png)
+        .unwrap();
+    png
+}
+
+/// Fichiers réguliers restés dans le dossier d'import (hors `failed/`).
+fn inbox_files(app: &TestApp) -> Vec<String> {
+    let mut v: Vec<String> = std::fs::read_dir(&app.inbox)
+        .unwrap()
+        .filter_map(|e| e.ok())
+        .filter(|e| e.file_type().map(|t| t.is_file()).unwrap_or(false))
+        .map(|e| e.file_name().to_string_lossy().to_string())
+        .collect();
+    v.sort();
+    v
+}
+
+/// Story v017-5 (AC-6-bis, T12) — le client abandonne l'import en cours de
+/// passage (délai court) : une fois le passage terminé ou interrompu côté
+/// serveur, (1) le verrou de run est libre, lu sur une connexion **neuve**
+/// (`IS_FREE_LOCK`, un `GET_LOCK` étant ré-entrant pour sa session) ; (2) le
+/// second import répond 200 ; (3) les fichiers non traités sont repris, sans
+/// document en double.
+///
+/// ⚠️ Le serveur reçoit un pool **réglé comme celui de la production**
+/// (`main.rs` : `max_connections(5)`, délais d'inactivité par défaut de `sqlx`,
+/// dix minutes) et non le pool de `#[sqlx::test]`, qui ferme toute connexion
+/// inactive au bout d'**une seconde** (`idle_timeout`, `sqlx-mysql-0.8.6/src/
+/// testing/mod.rs:181`) : avec lui, une connexion rendue au pool en tenant le
+/// verrou était fermée avant la lecture d'`IS_FREE_LOCK`, et la fuite ne se
+/// voyait pas (premier essai, vert à tort).
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn import_abandoned_by_client_releases_run_lock(pool: MySqlPool) {
+    use sqlx::{ConnectOptions, Connection};
+    let ctx = setup(&pool).await;
+    let pool_production = sqlx::mysql::MySqlPoolOptions::new()
+        .max_connections(5)
+        .connect_with((*pool.connect_options()).clone())
+        .await
+        .unwrap();
+    let app = spawn_app(pool_production, 25 * 1024 * 1024).await;
+    const N: u64 = 12;
+    for i in 0..N {
+        std::fs::write(
+            app.inbox.join(format!("bruit-{i:02}.png")),
+            noise_png(1500, i + 1),
+        )
+        .unwrap();
+    }
+
+    // (a) Un client qui abandonne au bout de deux secondes.
+    let debut = std::time::Instant::now();
+    let impatient = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(2))
+        .build()
+        .unwrap();
+    let r = impatient
+        .post(app.url("/api/v1/inbox-import"))
+        .bearer_auth(&ctx.jwt)
+        .send()
+        .await;
+    assert!(
+        r.as_ref().err().is_some_and(|e| e.is_timeout()),
+        "le premier import aurait dû être abandonné par le client : {r:?}"
+    );
+    let restants_a_l_abandon = inbox_files(&app).len();
+
+    // (b) Attendre la fin du passage côté serveur : dossier stable pendant 2 s.
+    let mut dernier = inbox_files(&app);
+    let mut stable_depuis = std::time::Instant::now();
+    while stable_depuis.elapsed() < std::time::Duration::from_secs(2) {
+        tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+        let courant = inbox_files(&app);
+        if courant != dernier {
+            dernier = courant;
+            stable_depuis = std::time::Instant::now();
+        }
+    }
+    let restants = dernier.len();
+    // Assertion de montage (revue de code P1, B-1 = E-4) : le passage a bien été
+    // interrompu côté serveur — sans quoi aucun chemin de fuite n'est exercé.
+    assert!(
+        restants > 0,
+        "le passage est allé au bout malgré l'abandon : le test n'exerce plus rien"
+    );
+    let traites: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM imported_supplier_invoices WHERE company_id = ?")
+            .bind(ctx.seeded.company_id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    eprintln!(
+        "T12 : abandon après {:?} ; {restants_a_l_abandon} fichier(s) dans le dossier à l'abandon, \
+         {restants} après stabilisation ({:?}) ; {traites} document(s) dans la liste",
+        std::time::Duration::from_secs(2),
+        debut.elapsed()
+    );
+
+    // (1) Le verrou, lu sur une connexion neuve (hors du pool).
+    let mut neuve = pool.connect_options().connect().await.unwrap();
+    let db: Option<String> = sqlx::query_scalar("SELECT DATABASE()")
+        .fetch_one(&mut neuve)
+        .await
+        .unwrap();
+    let cle = format!("kesh_inbox_import:{}", db.unwrap_or_default());
+    let libre: Option<i64> = sqlx::query_scalar("SELECT IS_FREE_LOCK(?)")
+        .bind(&cle)
+        .fetch_one(&mut neuve)
+        .await
+        .unwrap();
+    eprintln!("T12 : IS_FREE_LOCK('{cle}') = {libre:?}");
+    neuve.close().await.unwrap();
+
+    // (2) Le second import répond 200 (non 409).
+    let resp = app
+        .client
+        .post(app.url("/api/v1/inbox-import"))
+        .bearer_auth(&ctx.jwt)
+        .send()
+        .await
+        .unwrap();
+    let statut = resp.status().as_u16();
+    let corps: Value = resp.json().await.unwrap();
+    eprintln!("T12 : second import → {statut} {corps}");
+    assert_eq!(libre, Some(1), "le verrou de run a fui après l'abandon");
+    assert_eq!(statut, 200, "{corps}");
+
+    // (3) Tout est traité, sans document en double : N lignes, dossier vide.
+    let lignes: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM imported_supplier_invoices WHERE company_id = ?")
+            .bind(ctx.seeded.company_id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    let doublons = corps["failed"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|f| f["errorCode"] == "DUPLICATE")
+        .count() as i64;
+    assert_eq!(lignes, N as i64, "{corps}");
+    assert!(
+        doublons <= 1,
+        "au plus le fichier en cours à l'abandon : {corps}"
+    );
+    assert!(
+        inbox_files(&app).is_empty(),
+        "fichiers restés : {:?}",
+        inbox_files(&app)
+    );
 }

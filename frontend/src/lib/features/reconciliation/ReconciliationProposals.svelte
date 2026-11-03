@@ -17,10 +17,13 @@
   est cochée, et la rangée des boutons le dit. Erreurs partielles
   affichées en bas via `failed`.
 
-  Story 29-8 (#670, AC4) — une ligne de crédit en CHF porte un troisième
-  bouton, « Rattacher à un règlement » (`LinkSettlementModal`) : la
+  Story 29-8 (#670, AC4) — un troisième bouton (`LinkSettlementModal`) : la
   transaction se rattache au règlement déjà saisi depuis la fiche de la
-  facture, sans écriture.
+  facture, sans écriture. Story v017-3a (#671, AC-13) — renommé « Rattacher à
+  une écriture existante », il est offert sur toute ligne en CHF de montant
+  non nul, débit compris : la transaction se rattache aussi à une écriture
+  déjà passée sur le compte de la banque (règlement fournisseur payé depuis
+  la fiche, écriture saisie au journal…), sans écriture.
 
   Story 15-5c (AC3, #492, choix C38) — chaque refus de `failed[]` est affiché
   par son LIBELLÉ traduit (`failedProposalLabel`) et désigne la transaction par
@@ -73,7 +76,8 @@
 	// Story 8-5a-bis FR48 — split modal state.
 	let splitOpen = $state(false);
 	let splitProposal = $state<ReconciliationProposal | null>(null);
-	// Story 29-8 (#670) — modale « Rattacher à un règlement ».
+	// Story 29-8 (#670) — modale de rattachement ; « Rattacher à une écriture
+	// existante » depuis la Story v017-3a (#671).
 	let linkOpen = $state(false);
 	let linkProposal = $state<ReconciliationProposal | null>(null);
 	let accounts = $state<AccountResponse[]>([]);
@@ -231,11 +235,14 @@
 	}
 
 	/**
-	 * Story 29-8 (#670, AC4) — miroir de la condition 1 du serveur
-	 * (`transaction_can_be_linked`) : seul un crédit en CHF se rattache à un règlement.
+	 * Story v017-3a (#671, AC-13) — miroir de la condition 1 du serveur
+	 * (`transaction_can_be_linked_to_entry`) : toute transaction en CHF de montant non nul,
+	 * crédit ou débit, se rattache à une écriture existante. Un crédit offre en plus la
+	 * section des règlements de factures clients (Story 29-8, `transaction_can_be_linked`) ;
+	 * le dialogue en décide.
 	 */
 	function canLink(p: ReconciliationProposal): boolean {
-		return Number(p.transaction.amount) > 0 && p.transaction.currency === 'CHF';
+		return Number(p.transaction.amount) !== 0 && p.transaction.currency === 'CHF';
 	}
 
 	function openLink(p: ReconciliationProposal) {
@@ -572,8 +579,9 @@
 							>
 								{i18nMsg('reconciliation-split-button-label', 'Éclater')}
 							</button>
-							<!-- Story 29-8 (#670, AC4) — rattacher la transaction au règlement déjà
-							     saisi depuis la fiche de la facture : lignes de crédit en CHF seulement. -->
+							<!-- Story 29-8 (#670, AC4), Story v017-3a (#671, AC-13) — rattacher la
+							     transaction à une écriture existante (règlement saisi depuis une fiche,
+							     écriture saisie au journal) : toute ligne en CHF de montant non nul. -->
 							{#if canLink(p)}
 								<button
 									type="button"
@@ -583,7 +591,7 @@
 									data-testid="link-settlement-button"
 									data-tx-id={p.bankTransactionId}
 								>
-									{i18nMsg('reconciliation-link-button-label', 'Rattacher à un règlement')}
+									{i18nMsg('reconciliation-link-button-label', 'Rattacher à une écriture existante')}
 								</button>
 							{/if}
 						</td>

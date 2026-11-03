@@ -1,0 +1,55 @@
+{
+  "ok": [
+    {
+      "account_iban": "CH4431999123000889012",
+      "closing_balance": "4895.80",
+      "currency": "CHF",
+      "opening_balance": "5000.00",
+      "period_from": "2026-06-01",
+      "period_to": "2026-06-30",
+      "source_format": {
+        "kind": "camt053",
+        "version": "001.04"
+      },
+      "statement_id": "STMT-AMTDTLS",
+      "transactions": [
+        {
+          "amount": "-54.20",
+          "booking_date": "2026-06-10",
+          "counterparty_iban": null,
+          "counterparty_name": null,
+          "currency": "CHF",
+          "details": "Carte - Librairie Fictive, Annecy",
+          "end_to_end_id": null,
+          "reference": null,
+          "transaction_id": "BANK-CARD-001-TX",
+          "value_date": "2026-06-10"
+        },
+        {
+          "amount": "-30.00",
+          "booking_date": "2026-06-12",
+          "counterparty_iban": null,
+          "counterparty_name": null,
+          "currency": "CHF",
+          "details": "Carte - Boulangerie Exemple, Lyon",
+          "end_to_end_id": null,
+          "reference": null,
+          "transaction_id": "BANK-CARD-002",
+          "value_date": "2026-06-12"
+        },
+        {
+          "amount": "-20.00",
+          "booking_date": "2026-06-14",
+          "counterparty_iban": null,
+          "counterparty_name": null,
+          "currency": "CHF",
+          "details": "Carte - Musée Imaginaire, Turin",
+          "end_to_end_id": null,
+          "reference": null,
+          "transaction_id": "BANK-CARD-003-TX",
+          "value_date": "2026-06-14"
+        }
+      ]
+    }
+  ]
+}

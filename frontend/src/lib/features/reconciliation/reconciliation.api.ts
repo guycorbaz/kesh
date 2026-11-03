@@ -5,7 +5,9 @@ import type {
 	AcceptProposalInput,
 	AcceptResponse,
 	CancelReconciliationResponse,
+	EntryCandidatesResponse,
 	GetProposalsResponse,
+	LinkEntryResponse,
 	LinkCandidatesResponse,
 	LinkResponse,
 	ManualMatchResponse,
@@ -187,5 +189,35 @@ export async function linkTransaction(
 	return apiClient.post<LinkResponse>(
 		`/api/v1/reconciliation/transactions/${bankTransactionId}/link`,
 		{ settlementId },
+	);
+}
+
+/**
+ * Story v017-3a (#671) — les écritures déjà passées auxquelles la transaction se rattache :
+ * mouvement sur le compte du grand livre de la banque égal au montant (signé), écriture
+ * non rapprochée, ni contre-passée ni contre-passation. Triées par proximité de date ; rien
+ * n'est présélectionné. Chacune porte le motif qui empêcherait AUJOURD'HUI d'annuler le
+ * rattachement (`cancelBlockedBy`), un instantané.
+ */
+export async function getEntryCandidates(
+	bankTransactionId: number,
+): Promise<EntryCandidatesResponse> {
+	return apiClient.get<EntryCandidatesResponse>(
+		`/api/v1/reconciliation/transactions/${bankTransactionId}/entry-candidates`,
+	);
+}
+
+/**
+ * Story v017-3a (#671) — rattache la transaction à l'écriture : elle passe rapprochée en la
+ * pointant, **sans aucune écriture**. Refus notable :
+ * `409 RECONCILIATION_ENTRY_NOT_LINKABLE` (la liste a changé — la relire).
+ */
+export async function linkEntry(
+	bankTransactionId: number,
+	journalEntryId: number,
+): Promise<LinkEntryResponse> {
+	return apiClient.post<LinkEntryResponse>(
+		`/api/v1/reconciliation/transactions/${bankTransactionId}/link-entry`,
+		{ journalEntryId },
 	);
 }

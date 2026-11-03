@@ -700,6 +700,12 @@ pub async fn achats(pool: &MySqlPool, seeded: &SeededCompany) -> Achats {
 
 /// Une facture fournisseur `open` de `ttc` (une ligne à 0 % sur la charge
 /// `4000`), avec coordonnées de paiement (pour les lots) et le numéro `numero`.
+///
+/// ⚠️ Story v017-4a (#849) — les tests du rattrapage montent un schéma
+/// **antérieur** à `20261031000001`, où un brouillon ne s'insère pas
+/// (`purchase_journal_entry_id NOT NULL`) : sur un tel schéma, la facture est
+/// posée comme la posait la création d'avant la 0.17.0 (écriture d'achat, puis
+/// la ligne `open`) ; sur le schéma courant, par `create_validated`.
 pub async fn facture_fournisseur(
     pool: &MySqlPool,
     seeded: &SeededCompany,
@@ -708,7 +714,17 @@ pub async fn facture_fournisseur(
     date: NaiveDate,
     numero: Option<&str>,
 ) -> i64 {
-    supplier_invoices::create(
+    let nullable: String = sqlx::query_scalar(
+        "SELECT IS_NULLABLE FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() \
+         AND TABLE_NAME = 'supplier_invoices' AND COLUMN_NAME = 'purchase_journal_entry_id'",
+    )
+    .fetch_one(pool)
+    .await
+    .expect("schéma");
+    if nullable == "NO" {
+        return facture_fournisseur_d_avant_017(pool, seeded, achats, ttc, date, numero).await;
+    }
+    supplier_invoices::create_validated(
         pool,
         NewSupplierInvoice {
             company_id: seeded.company_id,
@@ -735,6 +751,104 @@ pub async fn facture_fournisseur(
     .expect("facture fournisseur")
     .invoice
     .id
+}
+
+/// [`facture_fournisseur`] sur un schéma antérieur à la 0.17.0 : l'écriture
+/// d'achat que passait la création (D charge, C créanciers, journal Achats,
+/// datée de la facture), puis la ligne `open` et sa ligne de facture — dans une
+/// transaction.
+async fn facture_fournisseur_d_avant_017(
+    pool: &MySqlPool,
+    seeded: &SeededCompany,
+    achats: &Achats,
+    ttc: Decimal,
+    date: NaiveDate,
+    numero: Option<&str>,
+) -> i64 {
+    use kesh_db::entities::{Journal, NewJournalEntry, NewJournalEntryLine};
+    let fy: i64 = sqlx::query_scalar(
+        "SELECT id FROM fiscal_years WHERE company_id = ? AND start_date <= ? \
+         AND end_date >= ? AND status = 'Open'",
+    )
+    .bind(seeded.company_id)
+    .bind(date)
+    .bind(date)
+    .fetch_one(pool)
+    .await
+    .expect("exercice ouvert");
+    // Le compte créanciers des RÉGLAGES, comme la création d'avant la 0.17.0 —
+    // un test peut l'avoir désigné ailleurs que `achats.payable` (C104).
+    let payable: i64 = sqlx::query_scalar(
+        "SELECT default_payable_account_id FROM company_invoice_settings WHERE company_id = ?",
+    )
+    .bind(seeded.company_id)
+    .fetch_one(pool)
+    .await
+    .expect("compte créanciers désigné");
+    let nom: String = sqlx::query_scalar("SELECT name FROM contacts WHERE id = ?")
+        .bind(achats.supplier_id)
+        .fetch_one(pool)
+        .await
+        .expect("fournisseur");
+    let mut tx = pool.begin().await.unwrap();
+    let je = kesh_db::repositories::journal_entries::create_in_tx(
+        &mut tx,
+        fy,
+        seeded.admin_user_id,
+        NewJournalEntry {
+            company_id: seeded.company_id,
+            entry_date: date,
+            journal: Journal::Achats,
+            description: format!("Facture fournisseur {} - {nom}", numero.unwrap_or_default()),
+            project_id: None,
+            lines: vec![
+                NewJournalEntryLine {
+                    account_id: seeded.accounts["4000"],
+                    debit: ttc,
+                    credit: Decimal::ZERO,
+                    project_id: None,
+                },
+                NewJournalEntryLine {
+                    account_id: payable,
+                    debit: Decimal::ZERO,
+                    credit: ttc,
+                    project_id: None,
+                },
+            ],
+        },
+        false,
+    )
+    .await
+    .expect("écriture d'achat");
+    let id: i64 = sqlx::query_scalar(
+        "INSERT INTO supplier_invoices (company_id, contact_id, supplier_invoice_number, \
+         status, invoice_date, total_amount, creditor_iban, payment_reference, \
+         purchase_journal_entry_id) \
+         VALUES (?, ?, ?, 'open', ?, ?, 'CH5604835012345678009', 'Lettrage', ?) RETURNING id",
+    )
+    .bind(seeded.company_id)
+    .bind(achats.supplier_id)
+    .bind(numero)
+    .bind(date)
+    .bind(ttc)
+    .bind(je.entry.id)
+    .fetch_one(&mut *tx)
+    .await
+    .expect("facture fournisseur");
+    sqlx::query(
+        "INSERT INTO supplier_invoice_lines (supplier_invoice_id, position, description, \
+         quantity, unit_price, vat_rate, line_total, expense_account_id) \
+         VALUES (?, 0, 'Achat', 1, ?, 0, ?, ?)",
+    )
+    .bind(id)
+    .bind(ttc)
+    .bind(ttc)
+    .bind(seeded.accounts["4000"])
+    .execute(&mut *tx)
+    .await
+    .expect("ligne de facture");
+    tx.commit().await.unwrap();
+    id
 }
 
 /// Paie la facture fournisseur par le mode `choix` et rend l'écriture de

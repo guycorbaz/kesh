@@ -1,6 +1,7 @@
 <script lang="ts">
-	// Story 29-1a (#232, AC5) — le panneau « Préparer la clôture » : les sept
-	// contrôles préalables, dans l'ordre que rend le serveur, chacun avec son état
+	// Story 29-1a (#232, AC5) — le panneau « Préparer la clôture » : les huit
+	// contrôles préalables (K8, brouillons fournisseur : Story v017-4b, #849, AC-26),
+	// dans l'ordre que rend le serveur, chacun avec son état
 	// et un lien vers l'écran où l'on agit. Il ne recalcule rien : statuts, compteurs
 	// et écarts sont ceux du serveur. Il ne bloque rien non plus.
 	//
@@ -276,6 +277,37 @@
 										</button>
 									{/if}
 								{/if}
+							{:else if check.code === 'DRAFT_SUPPLIER_INVOICES'}
+								<!-- Story v017-4b (#849, AC-26) — K8 : la forme de K4, chaque brouillon
+								     vers sa fiche fournisseur. -->
+								<p>
+									{i18nMsg(
+										'fiscal-years-checks-k8-attention',
+										'{ $count } facture(s) fournisseur en brouillon datée(s) dans l’exercice.',
+										{ count: check.count }
+									)}
+								</p>
+								<ul class="ml-4 list-disc text-xs">
+									{#each check.details.invoices ?? [] as inv (inv.id)}
+										<li>
+											<a class="underline" href="/supplier-invoices/{inv.id}">{inv.label}</a>
+											— {formatSwissDate(inv.date)}
+										</li>
+									{/each}
+								</ul>
+								<!-- Revue P1 (E-10) : le serveur n'en nomme que vingt ; les autres se disent. -->
+								{#if check.count > (check.details.invoices ?? []).length}
+									<p class="text-xs" data-testid="fiscal-year-checks-k8-more">
+										{i18nMsg(
+											'fiscal-years-checks-k8-more',
+											'… et { $n } autre(s), dans la liste des factures fournisseurs.',
+											{ n: check.count - (check.details.invoices ?? []).length }
+										)}
+									</p>
+								{/if}
+								<a class="text-xs text-primary underline" href="/supplier-invoices" data-testid="fiscal-year-checks-link-{check.code}">
+									{i18nMsg('fiscal-years-checks-k8-link', 'Ouvrir les factures fournisseurs')}
+								</a>
 							{/if}
 							{#if check.code === 'BANK_STATEMENT_AT_YEAR_END' && (check.details.notCheckable ?? []).length > 0}
 								<ul class="mt-1 ml-4 list-disc text-xs text-text-muted" data-testid="fiscal-year-checks-not-checkable">

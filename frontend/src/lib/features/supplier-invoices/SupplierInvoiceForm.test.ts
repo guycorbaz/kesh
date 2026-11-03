@@ -10,6 +10,7 @@ import type { ContactResponse } from '$lib/features/contacts/contacts.types';
 import type { ImportedSupplierInvoice } from '$lib/features/imported-supplier-invoices/imported-supplier-invoices.types';
 import type { CreateSupplierInvoiceRequest } from './supplier-invoices.types';
 import type { SupplierProposal } from './supplier-proposals';
+import type { SupplierInvoiceFormInitial } from './supplier-invoice-form';
 
 vi.mock('$lib/shared/utils/i18n.svelte', () => ({
 	i18nMsg: (_key: string, fallback: string, args?: Record<string, string | number>) =>
@@ -110,6 +111,9 @@ function renderForm(opts: {
 	proposals?: SupplierProposal[];
 	suppliers?: ContactResponse[];
 	onSubmit?: Submit;
+	initial?: SupplierInvoiceFormInitial | null;
+	hasDocument?: boolean;
+	vatRates?: { id: number; rate: string }[];
 }) {
 	const onSubmit = vi.fn(opts.onSubmit ?? (async () => {}));
 	const r = render(SupplierInvoiceForm, {
@@ -117,11 +121,16 @@ function renderForm(opts: {
 			suppliers: opts.suppliers ?? [contact(1, 'Alpha SA')],
 			// eslint-disable-next-line @typescript-eslint/no-explicit-any
 			expenseAccounts: [ACCOUNT as any],
-			vatRates: [],
+			// eslint-disable-next-line @typescript-eslint/no-explicit-any
+			vatRates: (opts.vatRates ?? []) as any,
 			projects: [],
 			document: opts.document ?? null,
 			proposals: opts.proposals ?? [],
 			onSubmit,
+			// Story v017-4b : props neuves, passées seulement quand le test les donne
+			// (leurs défauts — `null`, `false` — sont ce que la page de création passe).
+			...(opts.initial !== undefined ? { initial: opts.initial } : {}),
+			...(opts.hasDocument !== undefined ? { hasDocument: opts.hasDocument } : {}),
 		},
 	});
 	return { ...r, onSubmit };
@@ -135,6 +144,20 @@ async function fillLine(container: HTMLElement, price: string) {
 	const account = container.querySelector('[data-testid="supplier-invoice-line-account"]') as HTMLSelectElement;
 	account.value = '40';
 	await fireEvent.change(account);
+}
+
+/**
+ * Story v017-4b (#853, AC-24 (b)) — avec un document, la date de facture démarre VIDE et
+ * se saisit : les tests qui enregistrent à côté d'un document la posent d'abord.
+ */
+async function setDate(container: HTMLElement, value = '2026-10-15') {
+	const d = container.querySelector('[data-testid="supplier-invoice-date"]') as HTMLInputElement;
+	await fireEvent.input(d, { target: { value } });
+}
+
+async function setDue(container: HTMLElement, value: string) {
+	const d = container.querySelector('[data-testid="supplier-invoice-due"]') as HTMLInputElement;
+	await fireEvent.input(d, { target: { value } });
 }
 
 async function selectSupplier(container: HTMLElement, id: string) {
@@ -164,6 +187,7 @@ describe('SupplierInvoiceForm — document avec QR (AC11)', () => {
 	it('n’envoie aucune coordonnée de paiement (le serveur refuserait QR_FIELDS_FROM_DOCUMENT)', async () => {
 		const { container, getByTestId, onSubmit } = renderForm({ document: qrDoc() });
 		await selectSupplier(container, '1');
+		await setDate(container);
 		await fillLine(container, '100.00');
 		await fireEvent.click(getByTestId('supplier-invoice-submit'));
 		await waitFor(() => expect(onSubmit).toHaveBeenCalledTimes(1));
@@ -206,6 +230,7 @@ describe('SupplierInvoiceForm — fournisseur proposé (AC14)', () => {
 			proposals: [{ contact: p, reason: 'name' }],
 		});
 		await fireEvent.click(getByTestId('supplier-proposal-retain'));
+		await setDate(container);
 		await fillLine(container, '100.00');
 		await fireEvent.click(getByTestId('supplier-invoice-submit'));
 		await waitFor(() => expect(onSubmit).toHaveBeenCalledTimes(1));
@@ -250,6 +275,7 @@ describe('SupplierInvoiceForm — saisie à la main (AC12)', () => {
 		expect(queryByTestId('supplier-invoice-scan-btn')).toBeNull();
 		expect(queryByTestId('supplier-invoice-qr-locked')).toBeNull();
 		await selectSupplier(container, '1');
+		await setDate(container);
 		await fillLine(container, '10.00');
 		await fireEvent.input(getByTestId('supplier-invoice-iban'), {
 			target: { value: 'CH93 0076 2011 6238 5295 7' },
@@ -305,6 +331,7 @@ describe('SupplierInvoiceForm — refus du serveur (AC16)', () => {
 			},
 		});
 		await selectSupplier(container, '1');
+		await setDate(container);
 		await fillLine(container, '100.00');
 		await fireEvent.click(getByTestId('supplier-invoice-submit'));
 		await waitFor(() =>
@@ -318,6 +345,7 @@ describe('SupplierInvoiceForm — nouveau fournisseur (AC15)', () => {
 	it('pré-remplit nom et adresse d’un QR de type S, crée, sélectionne, et garde les lignes (M-b6)', async () => {
 		createContactMock.mockResolvedValue(contact(9, 'Dubarde SA'));
 		const { container, getByTestId, queryByTestId, onSubmit } = renderForm({ document: qrDoc() });
+		await setDate(container);
 		await fillLine(container, '100.00');
 		await fireEvent.click(getByTestId('supplier-new-open'));
 		expect((getByTestId('supplier-new-name') as HTMLInputElement).value).toBe('Dubarde SA');
@@ -379,6 +407,9 @@ describe('SupplierInvoiceForm — Entrée dans le panneau « Nouveau fournisseur
 		// une soumission partirait sur ce fournisseur-là.
 		createContactMock.mockRejectedValue({ code: 'VALIDATION_ERROR', status: 400, message: 'refus' });
 		const { container, getByTestId, onSubmit } = renderForm({ document: qrDoc() });
+		// Story v017-4b : la date posée, sans quoi la facture ne partirait jamais et le
+		// test passerait à vide.
+		await setDate(container);
 		await fillLine(container, '100.00');
 		await selectSupplier(container, '1');
 		await fireEvent.click(getByTestId('supplier-new-open'));
@@ -410,6 +441,7 @@ describe('SupplierInvoiceForm — Entrée dans le panneau « Nouveau fournisseur
 	it('Entrée dans le nom crée et sélectionne le fournisseur, sans enregistrer la facture', async () => {
 		createContactMock.mockResolvedValue(contact(9, 'Dubarde SA'));
 		const { container, getByTestId, queryByTestId, onSubmit } = renderForm({ document: qrDoc() });
+		await setDate(container);
 		await fillLine(container, '100.00');
 		await selectSupplier(container, '1');
 		await fireEvent.click(getByTestId('supplier-new-open'));
@@ -424,9 +456,399 @@ describe('SupplierInvoiceForm — Entrée dans le panneau « Nouveau fournisseur
 		// Sans ce témoin, `pressEnter` pourrait ne rien soumettre du tout et les deux
 		// tests ci-dessus passeraient à vide.
 		const { container, getByTestId, onSubmit } = renderForm({ document: qrDoc() });
+		await setDate(container);
 		await fillLine(container, '100.00');
 		await selectSupplier(container, '1');
 		await pressEnter(getByTestId('supplier-invoice-number') as HTMLInputElement);
 		await waitFor(() => expect(onSubmit).toHaveBeenCalledTimes(1));
+	});
+});
+
+describe('SupplierInvoiceForm — une ligne au centime (Story v017-3b, #687, AC-12)', () => {
+	const DEDIE =
+		'Une ligne n’est pas au centime : saisissez-la au montant facturé par le fournisseur, au centime.';
+
+	async function setQty(container: HTMLElement, value: string) {
+		const qty = container.querySelector('[data-testid="supplier-invoice-line-qty"]') as HTMLInputElement;
+		await fireEvent.input(qty, { target: { value } });
+	}
+
+	it('affiche le message de ligne sous une ligne qui n’est pas au centime', async () => {
+		const { container, getByTestId, queryByTestId } = renderForm({});
+		await fillLine(container, '33.3333');
+		await setQty(container, '3');
+		expect(getByTestId('supplier-invoice-line-subcentime').textContent?.trim()).toBe(
+			'Le montant de la ligne (99.9999) n’est pas au centime. Saisissez la ligne au montant facturé par le fournisseur, au centime.',
+		);
+		await setQty(container, '1');
+		await fillLine(container, '99.99');
+		expect(queryByTestId('supplier-invoice-line-subcentime')).toBeNull();
+	});
+
+	it('au clic, affiche le message DÉDIÉ et n’envoie rien (M8, M12) ; corrigée, la saisie part', async () => {
+		const { container, getByTestId, onSubmit } = renderForm({});
+		await selectSupplier(container, '1');
+		await fillLine(container, '33.3333');
+		await setQty(container, '3');
+		expect((getByTestId('supplier-invoice-submit') as HTMLButtonElement).disabled).toBe(false);
+		await fireEvent.click(getByTestId('supplier-invoice-submit'));
+		await tick();
+		expect(getByTestId('supplier-invoice-form-error').textContent?.trim()).toBe(DEDIE);
+		expect(onSubmit).not.toHaveBeenCalled();
+
+		await setQty(container, '1');
+		await fillLine(container, '99.99');
+		await fireEvent.click(getByTestId('supplier-invoice-submit'));
+		await waitFor(() => expect(onSubmit).toHaveBeenCalledTimes(1));
+	});
+
+	it('une ligne à la fois incomplète et sous le centime reçoit le message générique', async () => {
+		const { container, getByTestId, onSubmit } = renderForm({});
+		await selectSupplier(container, '1');
+		await fillLine(container, '33.3333');
+		await setQty(container, '3');
+		await fireEvent.input(getByTestId('supplier-invoice-line-desc'), { target: { value: '' } });
+		await fireEvent.click(getByTestId('supplier-invoice-submit'));
+		await tick();
+		expect(getByTestId('supplier-invoice-form-error').textContent?.trim()).toBe(
+			'Chaque ligne requiert une description, un montant et un compte de charge.',
+		);
+		expect(onSubmit).not.toHaveBeenCalled();
+	});
+
+	it('un refus serveur désigne sa ligne, traduit, sans perdre la saisie', async () => {
+		const { container, getByTestId, getAllByTestId } = renderForm({
+			onSubmit: async () => {
+				throw {
+					code: 'SUPPLIER_INVOICE_LINE_NOT_IN_CENTIMES',
+					status: 400,
+					message: 'serveur',
+					details: { line: 1, lineTotal: '0.005' },
+				};
+			},
+		});
+		await selectSupplier(container, '1');
+		await fillLine(container, '10.00');
+		await fireEvent.click(getByTestId('supplier-invoice-submit'));
+		await waitFor(() =>
+			expect(getAllByTestId('supplier-invoice-line-server-error')[0].textContent?.trim()).toBe(
+				'La ligne 1 donne un montant de 0.005, qui n’est pas au centime. Saisissez la ligne au montant facturé par le fournisseur, au centime.',
+			),
+		);
+		expect((getByTestId('supplier-invoice-line-unit-price') as HTMLInputElement).value).toBe('10.00');
+	});
+});
+
+// ---------------------------------------------------------------------------
+// Story v017-4b (#849, #853, #830, #835 ; AC-23, AC-24)
+// ---------------------------------------------------------------------------
+
+/** Ce que la page d'édition passe au formulaire : la facture relue (brouillon). */
+function initial(over: Partial<SupplierInvoiceFormInitial> = {}): SupplierInvoiceFormInitial {
+	return {
+		contactId: 1,
+		supplierInvoiceNumber: 'FF-1',
+		invoiceDate: '2026-05-10',
+		dueDate: '2026-06-09',
+		creditorIban: 'CH9300762011623852957',
+		creditorQrIban: null,
+		paymentReference: null,
+		expectedPaymentAmount: null,
+		projectId: null,
+		lines: [
+			{
+				position: 0,
+				description: 'Fourniture',
+				quantity: '1.0000',
+				unitPrice: '100.2000',
+				vatRate: '0.00',
+				lineTotal: '100.20',
+				expenseAccountId: 40,
+			},
+		],
+		...over,
+	};
+}
+
+describe('SupplierInvoiceForm — la date de facture (#853, AC-24 (b))', () => {
+	it('avec un document, la date démarre VIDE, avec son aide ; sans document, la date du jour (M23)', () => {
+		const withDoc = renderForm({ document: qrDoc() });
+		expect((withDoc.getByTestId('supplier-invoice-date') as HTMLInputElement).value).toBe('');
+		expect(withDoc.getByTestId('supplier-invoice-date-help').textContent).toContain(
+			'Date de la facture, telle qu’imprimée sur le document',
+		);
+		cleanup();
+		const without = renderForm({ document: null });
+		expect((without.getByTestId('supplier-invoice-date') as HTMLInputElement).value).toBe(
+			new Date().toISOString().slice(0, 10),
+		);
+		expect(without.queryByTestId('supplier-invoice-date-help')).toBeNull();
+	});
+
+	it('une date vide a son propre message, sous le champ, et rien ne part', async () => {
+		const { container, getByTestId, queryByTestId, onSubmit } = renderForm({ document: qrDoc() });
+		await selectSupplier(container, '1');
+		await fillLine(container, '100.00');
+		await fireEvent.click(getByTestId('supplier-invoice-submit'));
+		await tick();
+		expect(getByTestId('supplier-invoice-date-error').textContent?.trim()).toBe(
+			'Saisissez la date de la facture, telle qu’imprimée sur le document.',
+		);
+		// Pas le message des lignes, qui parlait d'autre chose.
+		expect(queryByTestId('supplier-invoice-form-error')).toBeNull();
+		expect(onSubmit).not.toHaveBeenCalled();
+	});
+
+	it('une échéance antérieure à la date se signale sous le champ et bloque l’envoi (M24)', async () => {
+		const { container, getByTestId, queryByTestId, onSubmit } = renderForm({ document: null });
+		await selectSupplier(container, '1');
+		await setDate(container, '2026-05-10');
+		await fillLine(container, '100.00');
+		await setDue(container, '2026-05-09');
+		expect(getByTestId('supplier-invoice-due-error').textContent?.trim()).toBe(
+			"L'échéance (09.05.2026) précède la date de la facture (10.05.2026).",
+		);
+		await fireEvent.click(getByTestId('supplier-invoice-submit'));
+		await tick();
+		expect(onSubmit).not.toHaveBeenCalled();
+		// Égale : elle passe.
+		await setDue(container, '2026-05-10');
+		expect(queryByTestId('supplier-invoice-due-error')).toBeNull();
+		await fireEvent.click(getByTestId('supplier-invoice-submit'));
+		await waitFor(() => expect(onSubmit).toHaveBeenCalledTimes(1));
+		expect(onSubmit.mock.calls[0][0].dueDate).toBe('2026-05-10');
+	});
+
+	it('le refus serveur de l’échéance s’affiche au même endroit, saisie intacte', async () => {
+		const { container, getByTestId } = renderForm({
+			document: null,
+			onSubmit: async () => {
+				throw {
+					code: 'SUPPLIER_INVOICE_DUE_BEFORE_INVOICE_DATE',
+					status: 400,
+					message: 'serveur',
+					details: { invoiceDate: '2026-05-10', dueDate: '2026-05-01' },
+				};
+			},
+		});
+		await selectSupplier(container, '1');
+		await fillLine(container, '10.00');
+		await fireEvent.click(getByTestId('supplier-invoice-submit'));
+		await waitFor(() =>
+			expect(getByTestId('supplier-invoice-due-error').textContent?.trim()).toBe(
+				"L'échéance (01.05.2026) précède la date de la facture (10.05.2026).",
+			),
+		);
+		expect((getByTestId('supplier-invoice-line-unit-price') as HTMLInputElement).value).toBe('10.00');
+	});
+});
+
+describe('SupplierInvoiceForm — la virgule décimale (#830, AC-24 (c))', () => {
+	it('quantité, prix et montant attendu partent avec un point (M25, M32)', async () => {
+		const { container, getByTestId, onSubmit } = renderForm({ document: null });
+		await selectSupplier(container, '1');
+		await fillLine(container, '12,50');
+		await fireEvent.input(getByTestId('supplier-invoice-line-qty'), { target: { value: '2,5' } });
+		await fireEvent.input(getByTestId('supplier-invoice-expected-amount'), {
+			target: { value: '31,25' },
+		});
+		await fireEvent.click(getByTestId('supplier-invoice-submit'));
+		await waitFor(() => expect(onSubmit).toHaveBeenCalledTimes(1));
+		const req = onSubmit.mock.calls[0][0];
+		expect(req.lines[0].unitPrice).toBe('12.50');
+		expect(req.lines[0].quantity).toBe('2.5');
+		expect(req.expectedPaymentAmount).toBe('31.25');
+	});
+
+	it('une quantité vide vaut 1 au total vivant comme à l’envoi', async () => {
+		const { container, getByTestId, onSubmit } = renderForm({ document: null });
+		await selectSupplier(container, '1');
+		await fillLine(container, '12,50');
+		await fireEvent.input(getByTestId('supplier-invoice-line-qty'), { target: { value: '' } });
+		expect(getByTestId('supplier-invoice-sum-ttc').textContent).toContain('12.50');
+		await fireEvent.click(getByTestId('supplier-invoice-submit'));
+		await waitFor(() => expect(onSubmit).toHaveBeenCalledTimes(1));
+		expect(onSubmit.mock.calls[0][0].lines[0].quantity).toBe('1');
+	});
+
+	it('un prix vide est refusé par le message des lignes, rien ne part (M33)', async () => {
+		const { container, getByTestId, onSubmit } = renderForm({ document: null });
+		await selectSupplier(container, '1');
+		await fillLine(container, '');
+		await fireEvent.click(getByTestId('supplier-invoice-submit'));
+		await tick();
+		expect(getByTestId('supplier-invoice-form-error').textContent?.trim()).toBe(
+			'Chaque ligne requiert une description, un montant et un compte de charge.',
+		);
+		expect(onSubmit).not.toHaveBeenCalled();
+	});
+});
+
+describe('SupplierInvoiceForm — le total vivant aux décimales exactes (#835, AC-24 (d))', () => {
+	it('une ligne à 99.9999 se lit 99.9999, sous son message de refus (M26)', async () => {
+		const { container, getByTestId } = renderForm({ document: null });
+		await fillLine(container, '33.3333');
+		await fireEvent.input(getByTestId('supplier-invoice-line-qty'), { target: { value: '3' } });
+		expect(getByTestId('supplier-invoice-sum-ttc').textContent).toContain('99.9999');
+		expect(getByTestId('supplier-invoice-line-subcentime')).not.toBeNull();
+	});
+
+	it('le montant du QR s’affiche aux décimales exactes', () => {
+		const { getByTestId } = renderForm({ document: qrDoc({ amount: '100.0050' }) });
+		expect((getByTestId('supplier-invoice-expected-amount') as HTMLInputElement).value).toContain(
+			'100.0050',
+		);
+	});
+});
+
+describe('SupplierInvoiceForm — le bouton d’enregistrement (AC-24 (a))', () => {
+	it('« Enregistrer le brouillon » à la création, « Enregistrer » à l’édition', () => {
+		const create = renderForm({ document: null });
+		expect(create.getByTestId('supplier-invoice-submit').textContent?.trim()).toBe(
+			'Enregistrer le brouillon',
+		);
+		cleanup();
+		const edit = renderForm({ document: null, initial: initial() });
+		expect(edit.getByTestId('supplier-invoice-submit').textContent?.trim()).toBe('Enregistrer');
+	});
+});
+
+describe('SupplierInvoiceForm — l’édition d’un brouillon (AC-23)', () => {
+	it('pré-remplit fournisseur, numéro, dates, coordonnées et lignes', () => {
+		const { getByTestId } = renderForm({ document: null, initial: initial() });
+		expect((getByTestId('supplier-invoice-supplier') as HTMLSelectElement).value).toBe('1');
+		expect((getByTestId('supplier-invoice-number') as HTMLInputElement).value).toBe('FF-1');
+		expect((getByTestId('supplier-invoice-date') as HTMLInputElement).value).toBe('2026-05-10');
+		expect((getByTestId('supplier-invoice-due') as HTMLInputElement).value).toBe('2026-06-09');
+		expect((getByTestId('supplier-invoice-iban') as HTMLInputElement).value).toBe(
+			'CH9300762011623852957',
+		);
+		expect((getByTestId('supplier-invoice-line-desc') as HTMLInputElement).value).toBe('Fourniture');
+		expect((getByTestId('supplier-invoice-line-qty') as HTMLInputElement).value).toBe('1');
+		expect((getByTestId('supplier-invoice-line-unit-price') as HTMLInputElement).value).toBe('100.20');
+	});
+
+	it('la date de l’initial prime sur la règle « date vide avec un document »', () => {
+		const { getByTestId } = renderForm({ document: qrDoc(), initial: initial() });
+		expect((getByTestId('supplier-invoice-date') as HTMLInputElement).value).toBe('2026-05-10');
+	});
+
+	it('le corps reprend la saisie corrigée, coordonnées comprises', async () => {
+		const { container, getByTestId, onSubmit } = renderForm({ document: null, initial: initial() });
+		await fillLine(container, '100.00');
+		await fireEvent.click(getByTestId('supplier-invoice-submit'));
+		await waitFor(() => expect(onSubmit).toHaveBeenCalledTimes(1));
+		const req = onSubmit.mock.calls[0][0];
+		expect(req.contactId).toBe(1);
+		expect(req.supplierInvoiceNumber).toBe('FF-1');
+		expect(req.invoiceDate).toBe('2026-05-10');
+		expect(req.creditorIban).toBe('CH9300762011623852957');
+		expect(req.lines).toHaveLength(1);
+		expect(req.lines[0].unitPrice).toBe('100.00');
+		expect(req.lines[0].vatRate).toBe('0');
+	});
+
+	it('scan offert ssi `document === null && !hasDocument` (M35)', () => {
+		const sans = renderForm({ document: null, initial: initial(), hasDocument: false });
+		expect(sans.queryByTestId('supplier-invoice-scan-btn')).not.toBeNull();
+		cleanup();
+		const avec = renderForm({ document: null, initial: initial(), hasDocument: true });
+		expect(avec.queryByTestId('supplier-invoice-scan-btn')).toBeNull();
+		// Et saisie libre : les coordonnées restent modifiables.
+		expect((avec.getByTestId('supplier-invoice-iban') as HTMLInputElement).readOnly).toBe(false);
+	});
+});
+
+describe('SupplierInvoiceForm — revue de code P1 (B-8, B-9 = E-5, E-6, E-7)', () => {
+	it('sans document, une date vide a un message qui ne parle pas d’un document (E-6)', async () => {
+		const { container, getByTestId, onSubmit } = renderForm({ document: null });
+		await selectSupplier(container, '1');
+		await setDate(container, '');
+		await fillLine(container, '10.00');
+		await fireEvent.click(getByTestId('supplier-invoice-submit'));
+		await tick();
+		expect(getByTestId('supplier-invoice-date-error').textContent?.trim()).toBe(
+			'Saisissez la date de la facture.',
+		);
+		expect(onSubmit).not.toHaveBeenCalled();
+	});
+
+	it('le montant attendu du brouillon se pré-remplit lisible (B-8)', () => {
+		const { getByTestId } = renderForm({
+			document: null,
+			initial: initial({ expectedPaymentAmount: '100.2000' }),
+		});
+		expect((getByTestId('supplier-invoice-expected-amount') as HTMLInputElement).value).toBe(
+			'100.20',
+		);
+	});
+
+	it('corriger la date de facture efface le refus serveur de l’échéance (B-9 = E-5)', async () => {
+		const { container, getByTestId, queryByTestId } = renderForm({
+			document: null,
+			onSubmit: async () => {
+				throw {
+					code: 'SUPPLIER_INVOICE_DUE_BEFORE_INVOICE_DATE',
+					status: 400,
+					message: 'serveur',
+					details: { invoiceDate: '2026-05-10', dueDate: '2026-05-01' },
+				};
+			},
+		});
+		await selectSupplier(container, '1');
+		await fillLine(container, '10.00');
+		await fireEvent.click(getByTestId('supplier-invoice-submit'));
+		await waitFor(() => expect(getByTestId('supplier-invoice-due-error')).not.toBeNull());
+		await setDate(container, '2026-04-30');
+		expect(queryByTestId('supplier-invoice-due-error')).toBeNull();
+	});
+
+	it('le taux d’une ligne absent des taux actifs reste proposé et choisi (E-7)', () => {
+		const { getByTestId } = renderForm({
+			document: null,
+			vatRates: [{ id: 1, rate: '8.10' }],
+			initial: initial({
+				lines: [
+					{
+						position: 0,
+						description: 'Ancienne',
+						quantity: '1.0000',
+						unitPrice: '10.0000',
+						vatRate: '7.70',
+						lineTotal: '10.00',
+						expenseAccountId: 40,
+					},
+				],
+			}),
+		});
+		const sel = getByTestId('supplier-invoice-line-vat') as HTMLSelectElement;
+		expect([...sel.options].map((o) => o.value)).toContain('7.70');
+		expect(sel.value).toBe('7.70');
+	});
+
+	// Revue P2 (E2-5) : un taux expiré à l'échelle du serveur s'affiche « 7.70% », sa valeur
+	// reste celle du serveur.
+	it('le taux expiré à quatre décimales s’affiche à deux (E2-5)', () => {
+		const { getByTestId } = renderForm({
+			document: null,
+			vatRates: [{ id: 1, rate: '8.10' }],
+			initial: initial({
+				lines: [
+					{
+						position: 0,
+						description: 'Ancienne',
+						quantity: '1.0000',
+						unitPrice: '10.0000',
+						vatRate: '7.7000',
+						lineTotal: '10.00',
+						expenseAccountId: 40,
+					},
+				],
+			}),
+		});
+		const sel = getByTestId('supplier-invoice-line-vat') as HTMLSelectElement;
+		const opt = [...sel.options].find((o) => o.value === '7.7000');
+		expect(opt?.textContent?.trim()).toBe('7.70%');
+		expect(sel.value).toBe('7.7000');
 	});
 });

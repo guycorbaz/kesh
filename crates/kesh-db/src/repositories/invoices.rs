@@ -1447,7 +1447,9 @@ pub async fn delete(
     //
     // `unvalidate` est désormais le **seul** appelant de production à passer
     // `false` — et elle, elle ne supprime pas une facture : elle la ramène au
-    // brouillon.
+    // brouillon. *(Annoté à la Story v017-4a, #849 : seul appelant côté facture
+    // client ; `supplier_invoices::unvalidate_in_tx` en est le second, pour
+    // l'écriture d'achat d'une facture fournisseur.)*
 
     tx.commit().await.map_err(map_db_error)?;
     Ok(())

@@ -16,10 +16,12 @@ const ORDER: [ClosingCheckCode, ClosingCheck['severity']][] = [
 	['DRAFT_INVOICES', 'info'],
 	['IMPORTED_SUPPLIER_INVOICES_TO_COMPLETE', 'info'],
 	['INCONSISTENT_ENTRIES', 'anomaly'],
-	['NEXT_FISCAL_YEAR', 'info']
+	['NEXT_FISCAL_YEAR', 'info'],
+	// Story v017-4b (#849, AC-26) — K8, rendu en dernier par le serveur (AC-16).
+	['DRAFT_SUPPLIER_INVOICES', 'info']
 ];
 
-/** Les sept contrôles `ok` (K7 avec un exercice suivant), surchargés par code. */
+/** Les huit contrôles `ok` (K7 avec un exercice suivant), surchargés par code. */
 export function closingChecks(
 	over: Partial<Record<ClosingCheckCode, Partial<ClosingCheck>>> = {}
 ): ClosingChecksResponse {
@@ -40,7 +42,8 @@ export function closingChecks(
 		},
 		NEXT_FISCAL_YEAR: {
 			fiscalYear: { id: 2, name: 'Exercice 2027', startDate: '2027-01-01', status: 'Open' }
-		}
+		},
+		DRAFT_SUPPLIER_INVOICES: { invoices: [] }
 	};
 	return {
 		fiscalYearId: 1,

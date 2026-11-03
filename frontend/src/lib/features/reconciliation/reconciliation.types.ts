@@ -49,7 +49,7 @@ export interface ReconciliationCandidate {
 
 /**
  * Story 30-1b (#686, AC-b5) — pourquoi une ligne ne propose rien. Un seul code : une
- * facture fournisseur ouverte du montant exact du débit est dans un lot de paiement en cours
+ * facture fournisseur validée du montant exact du débit est dans un lot de paiement en cours
  * sur ce compte.
  */
 export interface ProposalNotice {
@@ -228,4 +228,40 @@ export interface LinkResponse {
 	journalEntryId: number;
 	invoiceId: number;
 	settlementId: number;
+}
+
+// Story v017-3a (#671) — rattacher une transaction à une écriture déjà passée.
+
+/** Une écriture déjà passée à laquelle la transaction se rattache. */
+export interface EntryCandidate {
+	journalEntryId: number;
+	entryNumber: number;
+	fiscalYearId: number;
+	entryDate: string;
+	/** Le code du journal (`Achats`, `Ventes`, `Banque`, `Caisse`, `OD`). */
+	journal: string;
+	description: string;
+	/** Le mouvement de l'écriture sur le compte de la banque, signé, à deux décimales. */
+	amount: string;
+	/** Jours entre l'écriture et le paiement (toujours positif). */
+	daysApart: number;
+	/**
+	 * Le motif qui, AU MOMENT DE LA LECTURE, empêcherait d'annuler ce rattachement — un
+	 * instantané —, ou `null`. Les codes fournisseur de tête ne sortent pas pour une candidate.
+	 */
+	cancelBlockedBy: ReconciliationCancelCode | null;
+	/** Numéro du compte archivé (rang 4). */
+	cancelBlockedLabel: string | null;
+}
+
+/** `GET /api/v1/reconciliation/transactions/{id}/entry-candidates`. */
+export interface EntryCandidatesResponse {
+	bankTransactionId: number;
+	candidates: EntryCandidate[];
+}
+
+/** `POST /api/v1/reconciliation/transactions/{id}/link-entry`. */
+export interface LinkEntryResponse {
+	bankTransactionId: number;
+	journalEntryId: number;
 }

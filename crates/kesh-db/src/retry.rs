@@ -17,7 +17,8 @@
 //! verrou partagé sur chaque compte écrit (`fk_jel_account`) **après** le
 //! verrou de l'exercice : aucun ordre « comptes avant exercice » ne tient de
 //! bout en bout. L'ordre des verrous écrit aux doc-comments canoniques
-//! (`invoices::validate_invoice`, `supplier_invoices::create_in_tx`) est une
+//! (`invoices::validate_invoice`, `supplier_invoices::validate_in_tx` —
+//! `create_in_tx` jusqu'à la Story v017-4a) est une
 //! convention qui **réduit la fréquence** des interblocages ; le rejeu des
 //! routes les rend **invisibles** à l'utilisateur. Les routes rejouées passent
 //! par l'enveloppe `DbError` de ce module ([`retry_on_deadlock`]) ou par

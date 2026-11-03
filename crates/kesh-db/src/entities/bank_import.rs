@@ -28,6 +28,11 @@ pub enum BankImportSourceFormat {
     Camt053V08,
     /// Story 8-2 T5.0.a — import CSV (multi-encodage + profil banque).
     Csv,
+    /// Story v016-2a (#816) — relevé saisi à la main. Une valeur que la 0.16.x
+    /// ne décode pas (`from_str` refuse l'inconnu) : d'où la migration
+    /// `20261030000001_bank_imports_manual_source`, qui relève
+    /// `kesh_version_min_required` à 0.17.0 (C-v016-2-2).
+    Manual,
 }
 
 impl BankImportSourceFormat {
@@ -38,6 +43,7 @@ impl BankImportSourceFormat {
             Self::Camt053V04 => "CAMT053_V04",
             Self::Camt053V08 => "CAMT053_V08",
             Self::Csv => "CSV",
+            Self::Manual => "MANUAL",
         }
     }
 }
@@ -55,6 +61,7 @@ impl std::str::FromStr for BankImportSourceFormat {
             "CAMT053_V04" => Ok(Self::Camt053V04),
             "CAMT053_V08" => Ok(Self::Camt053V08),
             "CSV" => Ok(Self::Csv),
+            "MANUAL" => Ok(Self::Manual),
             other => Err(format!("BankImportSourceFormat inconnu : {other}")),
         }
     }
@@ -133,18 +140,38 @@ mod tests {
         assert_eq!(BankImportSourceFormat::Camt053V04.as_str(), "CAMT053_V04");
         assert_eq!(BankImportSourceFormat::Camt053V08.as_str(), "CAMT053_V08");
         assert_eq!(BankImportSourceFormat::Csv.as_str(), "CSV");
+        assert_eq!(BankImportSourceFormat::Manual.as_str(), "MANUAL");
     }
 
+    /// Story v016-2a (AC-1) — aller-retour des quatre valeurs, `Display`
+    /// compris, et alignement sur `SourceFormatTag::as_db_str()` de kesh-core.
     #[test]
     fn source_format_roundtrip() {
-        for fmt in [
-            BankImportSourceFormat::Camt053V04,
-            BankImportSourceFormat::Camt053V08,
-            BankImportSourceFormat::Csv,
+        use kesh_core::bank_imports::SourceFormatTag;
+        for (fmt, tag) in [
+            (
+                BankImportSourceFormat::Camt053V04,
+                SourceFormatTag::Camt053V04,
+            ),
+            (
+                BankImportSourceFormat::Camt053V08,
+                SourceFormatTag::Camt053V08,
+            ),
+            (BankImportSourceFormat::Csv, SourceFormatTag::Csv),
+            (BankImportSourceFormat::Manual, SourceFormatTag::Manual),
         ] {
             let parsed = BankImportSourceFormat::from_str(fmt.as_str()).unwrap();
             assert_eq!(fmt, parsed);
+            assert_eq!(fmt.to_string(), fmt.as_str());
+            assert_eq!(fmt.as_str(), tag.as_db_str());
+            assert_eq!(tag.to_string(), tag.as_db_str());
         }
+    }
+
+    /// Story v016-2a (AC-1) — `"manual"` en minuscules refusé.
+    #[test]
+    fn source_format_manual_lowercase_rejected() {
+        BankImportSourceFormat::from_str("manual").expect_err("doit être MAJUSCULES");
     }
 
     #[test]

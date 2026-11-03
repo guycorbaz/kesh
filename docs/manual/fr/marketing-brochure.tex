@@ -434,7 +434,7 @@ Kesh est en développement actif. Voici la feuille de route publique au \keshRel
 \textbf{\color{keshSuccess}\faCheckCircle\ Préparer la première clôture (Epic 29, v0.13.4 et v0.14)}
 
 \begin{itemize}
-    \item Sept contrôles préalables à la clôture, en lecture seule (rapprochement bancaire, relevé de fin d'exercice, brouillons, écritures incohérentes\ldots). \emph{(livré en v0.13.4)}
+    \item Huit contrôles préalables à la clôture, en lecture seule (rapprochement bancaire, relevé de fin d'exercice, brouillons de factures client et fournisseur, écritures incohérentes\ldots). \emph{(livré en v0.13.4 ; le huitième, les brouillons fournisseur, en v0.17.0)}
     \item Les transitoires contre-passées depuis la fiche de l'écriture, datées du premier jour de l'exercice suivant. \emph{(livré en v0.14.0)}
 \end{itemize}
 
@@ -445,7 +445,8 @@ Kesh est en développement actif. Voici la feuille de route publique au \keshRel
 \begin{itemize}
     \item « Documents à traiter » : tout document fournisseur, avec ou sans QR-code, avec un aperçu ; la facture se crée à côté de son document, le fournisseur proposé --- jamais choisi d'office --- ou créé sans quitter la saisie.
     \item Un document se joint à une facture après coup, s'en détache, et se voit depuis l'écriture.
-    \item La réconciliation propose la facture fournisseur ouverte pour un débit du relevé, et la règle.
+    \item La réconciliation propose la facture fournisseur validée pour un débit du relevé, et la règle.
+    \item Depuis la v0.17.0, une facture fournisseur naît en brouillon, se corrige, puis se valide~; validée et non payée, elle se dévalide pour être corrigée, sans annulation ni contre-passation.
 \end{itemize}
 
 \vspace{0.4cm}

@@ -37,7 +37,10 @@ pub(crate) enum ReponseEnvoi {
 
 impl ReponseEnvoi {
     /// Le `result` d'un `tools/call` d'envoi — corps exacts de l'AC-B5 et de
-    /// l'AC-B6.
+    /// l'AC-B6. **Un seul canal, le texte** (v016-1, C-v016-1-1 ; #811) : les
+    /// clés sont exactement `content` et `isError` ; le numéro, l'état et le
+    /// booléen « modifié » se lisent dans la phrase de Kesh, le texte validé au
+    /// second bloc.
     fn en_resultat(self) -> serde_json::Value {
         let un_bloc = |texte: String, erreur: bool| {
             serde_json::json!({
@@ -46,19 +49,8 @@ impl ReponseEnvoi {
             })
         };
         match self {
-            Self::Depose(accuse) => {
-                let n = accuse.numero();
-                serde_json::json!({
-                    "content": [{ "type": "text", "text": textes::texte_envoi_depose(n) }],
-                    "structuredContent": { "envoi": n, "etat": "en_attente" },
-                    "isError": false,
-                })
-            }
-            Self::EnAttente(n) => serde_json::json!({
-                "content": [{ "type": "text", "text": textes::texte_envoi_en_attente(n) }],
-                "structuredContent": { "envoi": n, "etat": "en_attente" },
-                "isError": false,
-            }),
+            Self::Depose(accuse) => un_bloc(textes::texte_envoi_depose(accuse.numero()), false),
+            Self::EnAttente(n) => un_bloc(textes::texte_envoi_en_attente(n), false),
             Self::Valide(valide) => serde_json::json!({
                 "content": [
                     {
@@ -67,11 +59,6 @@ impl ReponseEnvoi {
                     },
                     { "type": "text", "text": valide.texte() },
                 ],
-                "structuredContent": {
-                    "envoi": valide.numero(),
-                    "etat": "valide",
-                    "modifie": valide.modifie(),
-                },
                 "isError": false,
             }),
             Self::Refuse(n) => un_bloc(textes::texte_envoi_refuse(n), true),

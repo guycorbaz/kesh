@@ -1,0 +1,6 @@
+{
+  "err": {
+    "payload": "fin de fichier inattendue, éléments non fermés : BkToCstmrStmt > Stmt > Ntry > NtryDtls > TxDtls > Refs > EndToEndId",
+    "variant": "MalformedXml"
+  }
+}

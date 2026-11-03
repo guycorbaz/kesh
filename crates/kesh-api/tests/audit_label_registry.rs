@@ -17,8 +17,8 @@
 //! # L'inventaire des sites NON RÉSOLUS (D4-ter du `CLAUDE.md`)
 //!
 //! ⛔ L'extracteur ci-dessous lit un **littéral à une position d'argument**.
-//! Huit sites du dépôt n'en portent pas : l'action y est une variable ou un
-//! ternaire. Énumérer « les formes qui marchent » laisserait une neuvième forme
+//! Neuf sites du dépôt n'en portent pas : l'action y est une variable ou un
+//! ternaire. Énumérer « les formes qui marchent » laisserait une dixième forme
 //! passer sans que rien ne rougisse. On inventorie donc l'**ensemble clos de ce
 //! qui ne résout pas** : tout site indirect doit figurer dans
 //! `SITES_INDIRECTS`, avec les codes qu'il produit, écrits à la main et relus.
@@ -137,6 +137,13 @@ const SITES_INDIRECTS: &[(&str, &str, &[&str])] = &[
         // ce qui rendrait visible un littéral ajouté ici, c'est que le fichier
         // soit BALAYÉ — cf. le commentaire sur l'absence de liste d'exclusion.
         &[],
+    ),
+    (
+        "crates/kesh-api/src/routes/bank_imports.rs",
+        "`insert_canonical_audit_log` reçoit l'action en paramètre, `ImportAuditAction`, \
+         dont le `match` porte les deux codes : un fichier importé ou un relevé saisi à la \
+         main (Story v016-2a, #816)",
+        &["bank_import.created", "bank_import.entered_manually"],
     ),
 ];
 
@@ -376,7 +383,7 @@ fn args_de(src: &str) -> Option<Vec<String>> {
 /// Le code porté par un argument, s'il est littéral.
 ///
 /// ⚠️ `"product.created".to_string()` EST un littéral : le refuser rapporterait
-/// quatre-vingts faux sites indirects et noierait les huit vrais.
+/// quatre-vingts faux sites indirects et noierait les neuf vrais.
 fn litteral(arg: &str) -> Option<String> {
     let mut a = arg.trim();
     if let Some(reste) = a.strip_prefix("String::from(") {
@@ -576,17 +583,25 @@ fn les_codes_de_l_inventaire_sont_verifies_dans_le_fichier_de_leur_site() {
 /// Littéraux qui ont la forme d'un code d'action **sans en être un**, et qu'on
 /// déclare plutôt que d'élargir le tamis.
 ///
-/// ⚠️ **Un ensemble clos, borné aux HUIT fichiers inventoriés** — et non une
+/// ⚠️ **Un ensemble clos, borné aux NEUF fichiers inventoriés** — et non une
 /// liste ouverte sur tout le dépôt : elle ne grossit que si l'on écrit un
 /// littéral de cette forme dans l'un d'eux. Chaque entrée porte son motif, comme
 /// l'inventaire lui-même. *(« six » ici était faux : `SITES_INDIRECTS` en compte
 /// sept depuis l'ajout d'`audit.rs` — décompte relevé par la passe 3, dans le
 /// commentaire même qui corrigeait un défaut de comptage voisin.)*
-const PAS_DES_CODES: &[(&str, &str)] = &[(
-    "bank_account.journal_account_id",
-    "clé de CONFIGURATION nommant le champ manquant (`DbError::ConfigurationRequired`), \
-     pas un acte — la forme `table.colonne` est ici fortuite",
-)];
+const PAS_DES_CODES: &[(&str, &str)] = &[
+    (
+        "bank_account.journal_account_id",
+        "clé de CONFIGURATION nommant le champ manquant (`DbError::ConfigurationRequired`), \
+         pas un acte — la forme `table.colonne` est ici fortuite",
+    ),
+    (
+        "upload.xml",
+        "NOM DE FICHIER par défaut d'un envoi multipart sans nom (`routes/bank_imports.rs`), \
+         pas un acte — la forme `nom.extension` est ici fortuite (Story v016-2a, #816, depuis \
+         que ce fichier est inventorié)",
+    ),
+];
 
 /// Les littéraux d'un source qui ont la **forme** d'un code d'action :
 /// `entité.acte`, un seul point, ni espace ni ponctuation.
@@ -918,11 +933,11 @@ fn l_inventaire_compte_ce_que_le_fichier_annonce() {
     // se périme pas — elle rougit.
     assert_eq!(
         SITES_INDIRECTS.len(),
-        8,
+        9,
         "⛔ Le nombre de sites indirects a changé. Mettre à jour **toutes** les \
          mentions en toutes lettres de ce fichier — elles ne sont pas confinées à \
          l'en-tête — puis ce nombre.\n\n\
-         `grep -niE '\\b(six|sept|huit)\\b' <ce fichier>` les trouve toutes : les \
+         `grep -niE '\\b(six|sept|huit|neuf)\\b' <ce fichier>` les trouve toutes : les \
          traiter une par une, sans en avancer le nombre ici. ⚠️ Un message qui \
          annonce « elles sont N » est lui-même un décompte, et il se périme comme \
          les autres — c'est arrivé."

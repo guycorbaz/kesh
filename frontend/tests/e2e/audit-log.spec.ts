@@ -5,6 +5,7 @@ import {
 	authedApiContext,
 	disposeContextSafe,
 } from './helpers/test-state';
+import { createUser, USER_PASSWORD } from './helpers/api-fixtures';
 
 /**
  * Tests E2E — l'écran du journal d'audit (Story 25-1c-b1, #378).
@@ -48,22 +49,9 @@ function uniqSuffix(): string {
 	return `${Date.now()}-${Math.floor(Math.random() * 1e6)}`;
 }
 
-/** Crée un utilisateur du rôle donné, en Admin ; rend son nom. */
-async function createUser(page: import('@playwright/test').Page, role: string): Promise<string> {
-	await login(page);
-	const ctx = await authedApiContext(page);
-	const username = `${role.toLowerCase()}-${uniqSuffix()}`;
-	try {
-		const res = await ctx.post('/api/v1/users', {
-			data: { username, password: 'MotDePasse12345', role },
-		});
-		expect(res.ok(), `création de l'utilisateur ${role} : ${res.status()}`).toBeTruthy();
-	} finally {
-		await disposeContextSafe(ctx);
-	}
-	await clearAuthStorage(page);
-	return username;
-}
+// `createUser` (création d'un utilisateur d'un rôle, en Admin) est extraite vers
+// `helpers/api-fixtures.ts` (Story v016-2b, #816 : `bank-manual-statement.spec.ts` l'emploie
+// aussi). Son mot de passe est `USER_PASSWORD`.
 
 /** Le jour UTC courant, `AAAA-MM-JJ` — la route filtre sur des jours UTC. */
 function todayUtc(): string {
@@ -72,7 +60,7 @@ function todayUtc(): string {
 
 test('un Comptable ouvre le journal par le menu, filtre, déplie et exporte', async ({ page }) => {
 	const comptable = await createUser(page, 'Comptable');
-	await login(page, comptable, 'MotDePasse12345');
+	await login(page, comptable, USER_PASSWORD);
 
 	// ⚠️ `authedApiContext` reprend la session de la PAGE : c'est le Comptable
 	// qui crée le contact, et c'est lui que la route doit servir.
@@ -149,7 +137,7 @@ test('un Comptable ouvre le journal par le menu, filtre, déplie et exporte', as
 
 test("un Consultation ne voit pas l'entrée de menu, et /audit-log le redirige", async ({ page }) => {
 	const lecteur = await createUser(page, 'Consultation');
-	await login(page, lecteur, 'MotDePasse12345');
+	await login(page, lecteur, USER_PASSWORD);
 
 	await page.locator('[data-testid="nav-group-administration"] summary').click();
 	// Anti-vacuité : une entrée du même groupe, visible de tous, est rendue

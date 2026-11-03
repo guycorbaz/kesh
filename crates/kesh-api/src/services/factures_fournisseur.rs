@@ -51,6 +51,37 @@ pub struct DemandeListeFacturesFournisseur {
     pub limit: Option<i64>,
     /// Décalage ; absent → 0, ramené à 0 s'il est négatif.
     pub offset: Option<i64>,
+    /// Story v017-4a (#849, AC-15) — les statuts retenus, **vide = tous** ;
+    /// construit par [`statuts_du_filtre`] (la route), laissé vide par l'outil
+    /// MCP, qui n'en change pas.
+    pub statuts: Vec<&'static str>,
+}
+
+/// Le filtre `?status=` de `GET /api/v1/supplier-invoices` (Story v017-4a,
+/// AC-15) : absent → tous (vide) ; sinon une ou plusieurs valeurs de
+/// [`supplier_invoices::SUPPLIER_INVOICE_STATUSES`], séparées par des
+/// virgules (blancs autour ignorés, doublons fondus). Une valeur inconnue, ou
+/// un filtre vide, → `400 VALIDATION_ERROR`.
+pub fn statuts_du_filtre(param: Option<&str>) -> Result<Vec<&'static str>, AppError> {
+    let Some(param) = param else {
+        return Ok(Vec::new());
+    };
+    let mut statuts: Vec<&'static str> = Vec::new();
+    for brut in param.split(',') {
+        let valeur = brut.trim();
+        let connu = supplier_invoices::SUPPLIER_INVOICE_STATUSES
+            .iter()
+            .find(|s| **s == valeur)
+            .ok_or_else(|| {
+                AppError::Validation(format!(
+                    "status : valeur inconnue '{valeur}' (attendu : draft, open, paid, cancelled)"
+                ))
+            })?;
+        if !statuts.contains(connu) {
+            statuts.push(connu);
+        }
+    }
+    Ok(statuts)
 }
 
 /// Une page de factures fournisseur, les plus récentes d'abord
@@ -84,7 +115,9 @@ pub async fn lister(
             .await?;
     let limit = demande.limit.unwrap_or(LIMITE_DEFAUT).clamp(1, LIMITE_MAX);
     let offset = demande.offset.unwrap_or(0).max(0);
-    let (items, total) = supplier_invoices::list(lecture.pool(), company.id, limit, offset).await?;
+    let (items, total) =
+        supplier_invoices::list(lecture.pool(), company.id, &demande.statuts, limit, offset)
+            .await?;
     Ok(PageFacturesFournisseur {
         items,
         total,

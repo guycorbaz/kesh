@@ -499,7 +499,8 @@ describe('page des comptes bancaires — clôture (Story 28-4b, AC11)', () => {
 	// T-b8 — un refus du serveur s'affiche par son message, jamais « [object Object] ».
 	it('un refus 412 s’affiche par le message du serveur', async () => {
 		const message =
-			"Ce compte porte des transactions importées qui ne sont pas rapprochées. Rapprochez-les, ou supprimez l'import s'il ne contient aucune transaction rapprochée, avant de clore le compte.";
+			// Story v016-2b (#816) : le message récrit par la 2a (`fr-CH`, relevés importés ou saisis).
+			"Ce compte porte des transactions de relevés, importés ou saisis, qui ne sont pas rapprochées. Rapprochez-les, ou supprimez le relevé s'il ne contient aucune transaction rapprochée, avant de clore le compte.";
 		closeBankAccountMock.mockRejectedValue({
 			code: 'BANK_ACCOUNT_HAS_PENDING_TRANSACTIONS',
 			message,

@@ -281,3 +281,55 @@ describe('page détail d’import — une relecture ancienne ne masque pas la pa
 		expect(await view.findAllByTestId('detail-tx-row')).toHaveLength(2);
 	});
 });
+
+// Story v016-2b (#816, AC-23) — un relevé saisi s'affiche « Saisie manuelle » (et son
+// numéro), son format « Saisie manuelle » ; sa suppression a sa propre notification.
+describe('page détail — relevé saisi à la main (Story v016-2b)', () => {
+	function manuel(): BankImportDetailResponse {
+		return {
+			...detail(),
+			sourceFormat: 'MANUAL',
+			filename: 'saisie-manuelle-2026-03-02-2026-03-04',
+			statementId: '9/2026',
+			openingBalance: '100.00',
+			closingBalance: '110.00',
+		};
+	}
+
+	it('« Saisie manuelle n° … » au lieu du filename, format « Saisie manuelle », « Saisi le »', async () => {
+		role.value = 'Comptable';
+		getMock.mockResolvedValue(manuel());
+		const { findByTestId, getByTestId } = render(Page);
+		expect((await findByTestId('detail-filename')).textContent).toBe('Saisie manuelle n° 9/2026');
+		expect(getByTestId('detail-source-format').textContent).toBe('Saisie manuelle');
+		const texte = getByTestId('bank-import-detail').textContent ?? '';
+		expect(texte).toContain('Saisi le');
+		expect(texte).not.toContain('Fichier');
+		expect(texte).not.toContain('saisie-manuelle-');
+	});
+
+	it('un import CSV garde « Fichier », son nom et son format', async () => {
+		role.value = 'Comptable';
+		const { findByTestId, getByTestId } = render(Page);
+		expect((await findByTestId('detail-filename')).textContent).toBe('releve-mars.csv');
+		expect(getByTestId('detail-source-format').textContent).toBe('CSV');
+		expect(getByTestId('bank-import-detail').textContent).toContain('Fichier');
+	});
+
+	it('la suppression d’un relevé saisi notifie sans nommer de fichier', async () => {
+		role.value = 'Comptable';
+		getMock.mockResolvedValue({ ...manuel(), statementId: null });
+		const notify = await import('$lib/shared/utils/notify');
+		const apiMod = await import('$lib/features/bank-import/bank-import.api');
+		vi.mocked(apiMod.deleteBankImport).mockResolvedValue(undefined);
+		const { findByTestId } = render(Page);
+		expect((await findByTestId('detail-filename')).textContent).toBe('Saisie manuelle');
+		await fireEvent.click(await findByTestId('bank-import-delete-button'));
+		await fireEvent.click(await findByTestId('bank-import-delete-submit'));
+		await waitFor(() =>
+			expect(notify.notifySuccess).toHaveBeenCalledWith(
+				'Relevé saisi à la main du 2026-03-02 au 2026-03-04 supprimé.',
+			),
+		);
+	});
+});

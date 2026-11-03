@@ -346,3 +346,180 @@ async fn supplier_invoice_id_is_unique(pool: MySqlPool) {
         .await
         .unwrap();
 }
+
+// ============================================================
+// Story v017-5 (#854, C-v017-5-9) — T9 : la relecture n'écrit que des colonnes vides
+// ============================================================
+
+/// QR à quinze colonnes non `NULL`, valeurs **distinctes** de celles de
+/// `new_invoice` sur chacune des quinze.
+fn qr_quinze() -> kesh_db::entities::QrColumns {
+    kesh_db::entities::QrColumns {
+        creditor_iban: "CH9300762011623852957".into(),
+        is_qr_iban: false,
+        creditor_address_type: "S".into(),
+        creditor_name: "Commune fictive de Valbois".into(),
+        creditor_line1: Some("Place de la Maison de Commune".into()),
+        creditor_line2: Some("12".into()),
+        creditor_postal_code: Some("1999".into()),
+        creditor_town: Some("Valbois-sur-Exemple".into()),
+        creditor_country: "LI".into(),
+        reference_type: "SCOR".into(),
+        reference_value: Some("RF18539007547034".into()),
+        amount: Some(dec!(1234.55)),
+        currency: "EUR".into(),
+        unstructured_message: Some("Message relu".into()),
+        billing_information: Some("//S1/10/10201409".into()),
+    }
+}
+
+/// Les quinze colonnes QR d'une ligne, en texte (booléen `0`/`1`, montant à quatre
+/// décimales comme la colonne).
+async fn quinze(pool: &MySqlPool, id: i64) -> Vec<Option<String>> {
+    use sqlx::Row;
+    let ligne = sqlx::query(
+        "SELECT creditor_iban, CAST(is_qr_iban AS CHAR), creditor_address_type, creditor_name, \
+         creditor_line1, creditor_line2, creditor_postal_code, creditor_town, creditor_country, \
+         reference_type, reference_value, CAST(amount AS CHAR), currency, unstructured_message, \
+         billing_information FROM imported_supplier_invoices WHERE id = ?",
+    )
+    .bind(id)
+    .fetch_one(pool)
+    .await
+    .unwrap();
+    (0..15)
+        .map(|i| ligne.try_get::<Option<String>, _>(i).unwrap())
+        .collect()
+}
+
+fn quinze_de(q: &kesh_db::entities::QrColumns) -> Vec<Option<String>> {
+    vec![
+        Some(q.creditor_iban.clone()),
+        Some(if q.is_qr_iban { "1" } else { "0" }.to_string()),
+        Some(q.creditor_address_type.clone()),
+        Some(q.creditor_name.clone()),
+        q.creditor_line1.clone(),
+        q.creditor_line2.clone(),
+        q.creditor_postal_code.clone(),
+        q.creditor_town.clone(),
+        Some(q.creditor_country.clone()),
+        Some(q.reference_type.clone()),
+        q.reference_value.clone(),
+        q.amount.map(|a| format!("{a:.4}")),
+        Some(q.currency.clone()),
+        q.unstructured_message.clone(),
+        q.billing_information.clone(),
+    ]
+}
+
+/// Document sans QR (`without_qr`) d'empreinte `file_hash`.
+fn new_invoice_without_qr(company_id: i64, file_hash: &str) -> NewImportedSupplierInvoice {
+    NewImportedSupplierInvoice::without_qr(
+        company_id,
+        kesh_db::entities::imported_supplier_invoice::DocumentMeta {
+            storage_path: format!("{file_hash}.png"),
+            original_filename: "scan.png".into(),
+            sha256: file_hash.into(),
+            mime_type: "image/png".into(),
+            byte_size: 10,
+        },
+    )
+}
+
+async fn reactiver_avec_qr(pool: &MySqlPool, company_id: i64, id: i64) -> bool {
+    let mut tx = pool.begin().await.unwrap();
+    let r = repo::reactivate_to_complete_with_qr(&mut tx, company_id, id, &qr_quinze())
+        .await
+        .expect("reactivate_to_complete_with_qr");
+    tx.commit().await.unwrap();
+    r
+}
+
+async fn statut_et_facture(pool: &MySqlPool, id: i64) -> (String, Option<i64>) {
+    sqlx::query_as(
+        "SELECT status, supplier_invoice_id FROM imported_supplier_invoices WHERE id = ?",
+    )
+    .bind(id)
+    .fetch_one(pool)
+    .await
+    .unwrap()
+}
+
+/// T9 — `reactivate_to_complete_with_qr` : (1) ligne `discarded` **pourvue** d'un
+/// QR différent → `false`, quinze colonnes inchangées ; (2) ligne `discarded`
+/// sans QR portant un `supplier_invoice_id` résiduel → `true`, quinze colonnes
+/// écrites, pointeur remis à `NULL` ; (3) ligne `discarded` sans QR → `true` ;
+/// (4) ligne `to_complete` sans QR → `false`.
+#[sqlx::test(migrations = "./test-schema")]
+async fn reactivate_with_qr_writes_only_empty_discarded_rows(pool: MySqlPool) {
+    let company_id = create_test_company(&pool, "Relecture SA").await;
+    let attendu = quinze_de(&qr_quinze());
+
+    // (1) Ligne pourvue d'un QR différent.
+    let pourvue = repo::create(&pool, &new_invoice(company_id, "t9-pourvue"))
+        .await
+        .unwrap()
+        .id;
+    sqlx::query("UPDATE imported_supplier_invoices SET status = 'discarded' WHERE id = ?")
+        .bind(pourvue)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let avant = quinze(&pool, pourvue).await;
+    assert_ne!(avant, attendu, "assertion de montage : valeurs distinctes");
+    assert!(!reactiver_avec_qr(&pool, company_id, pourvue).await);
+    assert_eq!(quinze(&pool, pourvue).await, avant);
+    assert_eq!(statut_et_facture(&pool, pourvue).await.0, "discarded");
+
+    // (2) Ligne sans QR, `discarded`, portant un pointeur résiduel.
+    let residuelle = repo::create(&pool, &new_invoice_without_qr(company_id, "t9-residuelle"))
+        .await
+        .unwrap()
+        .id;
+    let mut conn = pool.acquire().await.unwrap();
+    sqlx::query("SET FOREIGN_KEY_CHECKS = 0")
+        .execute(&mut *conn)
+        .await
+        .unwrap();
+    sqlx::query(
+        "UPDATE imported_supplier_invoices SET status = 'discarded', supplier_invoice_id = 999999 \
+         WHERE id = ?",
+    )
+    .bind(residuelle)
+    .execute(&mut *conn)
+    .await
+    .unwrap();
+    sqlx::query("SET FOREIGN_KEY_CHECKS = 1")
+        .execute(&mut *conn)
+        .await
+        .unwrap();
+    drop(conn);
+    assert!(reactiver_avec_qr(&pool, company_id, residuelle).await);
+    assert_eq!(quinze(&pool, residuelle).await, attendu);
+    assert_eq!(
+        statut_et_facture(&pool, residuelle).await,
+        ("to_complete".to_string(), None)
+    );
+
+    // (3) Ligne sans QR, `discarded`.
+    let vide = repo::create(&pool, &new_invoice_without_qr(company_id, "t9-vide"))
+        .await
+        .unwrap()
+        .id;
+    sqlx::query("UPDATE imported_supplier_invoices SET status = 'discarded' WHERE id = ?")
+        .bind(vide)
+        .execute(&pool)
+        .await
+        .unwrap();
+    assert!(reactiver_avec_qr(&pool, company_id, vide).await);
+    assert_eq!(quinze(&pool, vide).await, attendu);
+    assert_eq!(statut_et_facture(&pool, vide).await.0, "to_complete");
+
+    // (4) Ligne `to_complete` sans QR.
+    let active = repo::create(&pool, &new_invoice_without_qr(company_id, "t9-active"))
+        .await
+        .unwrap()
+        .id;
+    assert!(!reactiver_avec_qr(&pool, company_id, active).await);
+    assert!(quinze(&pool, active).await.iter().all(Option::is_none));
+}

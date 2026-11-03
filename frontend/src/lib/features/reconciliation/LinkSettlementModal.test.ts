@@ -2,16 +2,28 @@
 // liste vide, échec du chargement, aucune présélection, « Rattacher » grisé puis
 // actif, avertissement d'écart, succès, erreur, et rechargement sur
 // `409 RECONCILIATION_SETTLEMENT_NOT_LINKABLE` (C-29-8-24).
+//
+// Story v017-3a (#671, AC-13) — la section « Écritures passées sur le compte de la
+// banque » : un débit n'a qu'elle ; un seul choix parmi les deux sections, rien de
+// présélectionné ; `link-entry` pour une écriture ; la vérité datée de l'annulation et
+// sa case ; les quatre cas de listes vides ; la relecture des deux listes sur course.
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, fireEvent, waitFor } from '@testing-library/svelte';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import type { LinkCandidate, ReconciliationProposal } from './reconciliation.types';
+import type {
+	EntryCandidate,
+	LinkCandidate,
+	ReconciliationProposal,
+} from './reconciliation.types';
 
 vi.mock('./reconciliation.api', () => ({
 	getLinkCandidates: vi.fn(),
 	linkTransaction: vi.fn(),
+	// Story v017-3a (#671, AC-13) — la section « écritures ».
+	getEntryCandidates: vi.fn(),
+	linkEntry: vi.fn(),
 }));
 
 vi.mock('$lib/shared/utils/i18n.svelte', () => ({
@@ -28,13 +40,14 @@ function proposal(
 	bankTransactionId = 42,
 	bookingDate = '2026-06-18',
 	valueDate: string | null = '2026-06-18',
+	amount = '100.03',
 ): ReconciliationProposal {
 	return {
 		bankTransactionId,
 		transaction: {
 			bookingDate,
 			valueDate,
-			amount: '100.03',
+			amount,
 			currency: 'CHF',
 			counterpartyName: 'Dubarde SàRL',
 		},
@@ -57,14 +70,35 @@ function candidate(settlementId: number, gap: string): LinkCandidate {
 	};
 }
 
-function mount(onSuccess = vi.fn(), onOpenChange = vi.fn()) {
+/** Story v017-3a — une écriture candidate. */
+function entry(
+	journalEntryId: number,
+	cancelBlockedBy: EntryCandidate['cancelBlockedBy'] = null,
+	cancelBlockedLabel: string | null = null,
+	amount = '100.03',
+): EntryCandidate {
+	return {
+		journalEntryId,
+		entryNumber: 1000 + journalEntryId,
+		fiscalYearId: 3,
+		entryDate: '2026-06-17',
+		journal: 'Banque',
+		description: `Écriture ${journalEntryId}`,
+		amount,
+		daysApart: 1,
+		cancelBlockedBy,
+		cancelBlockedLabel,
+	};
+}
+
+function mount(onSuccess = vi.fn(), onOpenChange = vi.fn(), p: ReconciliationProposal = proposal()) {
 	return {
 		onSuccess,
 		onOpenChange,
 		...render(LinkSettlementModal, {
 			open: true,
 			onOpenChange,
-			proposal: proposal(),
+			proposal: p,
 			onSuccess,
 		}),
 	};
@@ -73,6 +107,9 @@ function mount(onSuccess = vi.fn(), onOpenChange = vi.fn()) {
 describe('LinkSettlementModal', () => {
 	beforeEach(() => {
 		vi.clearAllMocks();
+		// Story v017-3a (validation P4, C6) : sans valeur par défaut, tout test qui ne la
+		// paramètre pas recevrait `undefined` à l'ouverture d'un crédit.
+		mockApi.getEntryCandidates.mockResolvedValue({ bankTransactionId: 42, candidates: [] });
 	});
 
 	it('charge les candidats de la transaction, sans présélection ; Rattacher grisé', async () => {
@@ -117,11 +154,13 @@ describe('LinkSettlementModal', () => {
 		expect(mockApi.linkTransaction).not.toHaveBeenCalled();
 	});
 
-	it('liste vide : le message dit d’enregistrer le règlement depuis la fiche', async () => {
+	it('crédit, deux listes vides : le message dit d’enregistrer le règlement ou de saisir l’écriture (v017-3a, cas 1)', async () => {
 		mockApi.getLinkCandidates.mockResolvedValue({ bankTransactionId: 42, candidates: [] });
 		const { findByTestId, getByTestId } = mount();
 		const empty = await findByTestId('link-empty');
-		expect(empty.textContent).toContain("Enregistrez d'abord le règlement depuis la fiche");
+		expect(empty.textContent?.trim()).toBe(
+			"Aucun règlement de facture client ni aucune écriture du compte de la banque ne correspond à cette transaction. Enregistrez d'abord le règlement depuis la fiche de la facture, ou saisissez l'écriture, puis revenez ici.",
+		);
 		expect((getByTestId('link-submit') as HTMLButtonElement).disabled).toBe(true);
 	});
 
@@ -373,5 +412,204 @@ describe('LinkSettlementModal', () => {
 		for (const [, cle, , repli] of appels) {
 			expect(catalogue.get(cle), cle).toBe(repli);
 		}
+	});
+});
+
+// Story v017-3a (#671, AC-13) — la section « Écritures passées sur le compte de la banque ».
+describe('LinkSettlementModal — écritures existantes (Story v017-3a)', () => {
+	const INTRO = "Ce rattachement ne pourra pas être annulé tant que dure l'obstacle suivant.";
+
+	beforeEach(() => {
+		vi.clearAllMocks();
+		mockApi.getLinkCandidates.mockResolvedValue({ bankTransactionId: 42, candidates: [] });
+		mockApi.getEntryCandidates.mockResolvedValue({ bankTransactionId: 42, candidates: [] });
+	});
+
+	const debit = () => proposal(42, '2026-06-18', '2026-06-18', '-250.00');
+
+	it('un débit : la seule section des écritures, aucun appel aux règlements, rien de présélectionné', async () => {
+		mockApi.getEntryCandidates.mockResolvedValue({
+			bankTransactionId: 42,
+			candidates: [entry(7, null, null, '-250.00'), entry(8, null, null, '-250.00')],
+		});
+		const { findAllByTestId, getByTestId, queryByTestId } = mount(vi.fn(), vi.fn(), debit());
+		const radios = (await findAllByTestId('entry-candidate-radio')) as HTMLInputElement[];
+		expect(mockApi.getEntryCandidates).toHaveBeenCalledWith(42);
+		expect(mockApi.getLinkCandidates).not.toHaveBeenCalled();
+		expect(queryByTestId('link-settlements-section')).toBeNull();
+		expect(radios.map((r) => r.dataset.entryId)).toEqual(['7', '8']);
+		expect(radios.every((r) => !r.checked)).toBe(true);
+		expect((getByTestId('link-submit') as HTMLButtonElement).disabled).toBe(true);
+		const rows = await findAllByTestId('entry-candidate-row');
+		expect(rows[0].textContent).toContain('1007');
+		expect(rows[0].textContent).toContain('Écriture 7');
+	});
+
+	it('un crédit : deux sections, aucune présélection ni dans l’une ni dans l’autre (M30), un seul choix', async () => {
+		mockApi.getLinkCandidates.mockResolvedValue({
+			bankTransactionId: 42,
+			candidates: [candidate(1, '0.00')],
+		});
+		mockApi.getEntryCandidates.mockResolvedValue({ bankTransactionId: 42, candidates: [entry(7)] });
+		const { findAllByTestId, getByTestId } = mount();
+		const [reglement] = (await findAllByTestId('link-candidate-radio')) as HTMLInputElement[];
+		const [ecriture] = (await findAllByTestId('entry-candidate-radio')) as HTMLInputElement[];
+		expect(getByTestId('link-settlements-section')).toBeTruthy();
+		expect(getByTestId('link-entries-section')).toBeTruthy();
+		expect(reglement.checked).toBe(false);
+		expect(ecriture.checked).toBe(false);
+		await fireEvent.click(reglement);
+		expect(reglement.checked).toBe(true);
+		await fireEvent.click(ecriture);
+		expect(ecriture.checked).toBe(true);
+		expect(reglement.checked).toBe(false);
+	});
+
+	it('une écriture choisie, sans obstacle : la phrase du jour, Rattacher appelle linkEntry et non link (M16)', async () => {
+		mockApi.getEntryCandidates.mockResolvedValue({
+			bankTransactionId: 42,
+			candidates: [entry(7, null, null, '-250.00')],
+		});
+		mockApi.linkEntry.mockResolvedValue({ bankTransactionId: 42, journalEntryId: 7 });
+		const { findAllByTestId, getByTestId, findByTestId, queryByTestId, onSuccess } = mount(
+			vi.fn(),
+			vi.fn(),
+			debit(),
+		);
+		await fireEvent.click((await findAllByTestId('entry-candidate-radio'))[0]);
+		expect((await findByTestId('entry-cancel-today')).textContent?.trim()).toBe(
+			"Aujourd'hui, Kesh ne voit aucun obstacle : annuler ce rapprochement contre-passerait cette écriture (ou annulerait le règlement qu'elle porte). Une clôture d'exercice, une période verrouillée ou un exercice postérieur clos pourraient l'empêcher, dès aujourd'hui sans que Kesh le voie, ou plus tard.",
+		);
+		expect(queryByTestId('entry-cancel-blocked-ack')).toBeNull();
+		expect((getByTestId('link-submit') as HTMLButtonElement).disabled).toBe(false);
+		await fireEvent.click(getByTestId('link-submit'));
+		await waitFor(() => expect(onSuccess).toHaveBeenCalledTimes(1));
+		expect(mockApi.linkEntry).toHaveBeenCalledWith(42, 7);
+		expect(mockApi.linkTransaction).not.toHaveBeenCalled();
+	});
+
+	it('une écriture d’exercice clôturé : l’introduction datée, le motif, et Rattacher inactif tant que la case n’est pas cochée (M25, M29)', async () => {
+		mockApi.getEntryCandidates.mockResolvedValue({
+			bankTransactionId: 42,
+			candidates: [entry(7, 'FISCAL_YEAR_CLOSED', null, '-250.00')],
+		});
+		mockApi.linkEntry.mockResolvedValue({ bankTransactionId: 42, journalEntryId: 7 });
+		const { findAllByTestId, getByTestId, findByTestId, onSuccess } = mount(
+			vi.fn(),
+			vi.fn(),
+			debit(),
+		);
+		await fireEvent.click((await findAllByTestId('entry-candidate-radio'))[0]);
+		const bloc = await findByTestId('entry-candidate-cancel-blocked');
+		expect(bloc.querySelector('[data-testid="entry-cancel-blocked-intro"]')?.textContent?.trim()).toBe(
+			INTRO,
+		);
+		expect(bloc.querySelector('[data-testid="entry-cancel-blocked-reason"]')?.textContent?.trim()).toBe(
+			"Ce rapprochement appartient à un exercice clôturé : pour pouvoir l'annuler, un administrateur doit rouvrir les exercices clôturés jusqu'à celui-ci, en commençant par le plus récent.",
+		);
+		const submit = getByTestId('link-submit') as HTMLButtonElement;
+		expect(submit.disabled).toBe(true);
+		await fireEvent.click(submit);
+		expect(mockApi.linkEntry).not.toHaveBeenCalled();
+		const ack = getByTestId('entry-cancel-blocked-ack') as HTMLInputElement;
+		expect(ack.checked).toBe(false);
+		await fireEvent.click(ack);
+		expect(submit.disabled).toBe(false);
+		await fireEvent.click(submit);
+		await waitFor(() => expect(onSuccess).toHaveBeenCalledTimes(1));
+		expect(mockApi.linkEntry).toHaveBeenCalledWith(42, 7);
+	});
+
+	it('un compte archivé : le motif nomme le compte (cancelBlockedLabel)', async () => {
+		mockApi.getEntryCandidates.mockResolvedValue({
+			bankTransactionId: 42,
+			candidates: [entry(7, 'ACCOUNT_ARCHIVED', '3000', '-250.00')],
+		});
+		const { findAllByTestId, findByTestId } = mount(vi.fn(), vi.fn(), debit());
+		await fireEvent.click((await findAllByTestId('entry-candidate-radio'))[0]);
+		const raison = (await findByTestId('entry-candidate-cancel-blocked')).querySelector(
+			'[data-testid="entry-cancel-blocked-reason"]',
+		);
+		expect(raison?.textContent).toContain('(3000)');
+	});
+
+	it('la case se décoche quand on change d’écriture', async () => {
+		mockApi.getEntryCandidates.mockResolvedValue({
+			bankTransactionId: 42,
+			candidates: [
+				entry(7, 'FISCAL_YEAR_CLOSED', null, '-250.00'),
+				entry(8, 'FISCAL_YEAR_CLOSED', null, '-250.00'),
+			],
+		});
+		const { findAllByTestId, getByTestId } = mount(vi.fn(), vi.fn(), debit());
+		const radios = await findAllByTestId('entry-candidate-radio');
+		await fireEvent.click(radios[0]);
+		await fireEvent.click(getByTestId('entry-cancel-blocked-ack'));
+		await fireEvent.click(radios[1]);
+		expect((getByTestId('entry-cancel-blocked-ack') as HTMLInputElement).checked).toBe(false);
+		expect((getByTestId('link-submit') as HTMLButtonElement).disabled).toBe(true);
+	});
+
+	it('409 RECONCILIATION_ENTRY_NOT_LINKABLE : les deux listes sont relues, le choix remis à vide (M23)', async () => {
+		mockApi.getLinkCandidates.mockResolvedValue({
+			bankTransactionId: 42,
+			candidates: [candidate(1, '0.00')],
+		});
+		mockApi.getEntryCandidates
+			.mockResolvedValueOnce({ bankTransactionId: 42, candidates: [entry(7), entry(8)] })
+			.mockResolvedValueOnce({ bankTransactionId: 42, candidates: [entry(8)] });
+		mockApi.linkEntry.mockRejectedValue({
+			code: 'RECONCILIATION_ENTRY_NOT_LINKABLE',
+			message: 'Cette écriture ne peut pas être rattachée à cette transaction.',
+			status: 409,
+		});
+		const { findAllByTestId, getByTestId, findByTestId } = mount();
+		await fireEvent.click((await findAllByTestId('entry-candidate-radio'))[0]);
+		await fireEvent.click(getByTestId('link-submit'));
+		expect((await findByTestId('link-error')).textContent).toContain('ne peut pas être rattachée');
+		await waitFor(() => expect(mockApi.getEntryCandidates).toHaveBeenCalledTimes(2));
+		expect(mockApi.getLinkCandidates).toHaveBeenCalledTimes(2);
+		await waitFor(async () => {
+			const radios = (await findAllByTestId('entry-candidate-radio')) as HTMLInputElement[];
+			expect(radios.map((r) => r.dataset.entryId)).toEqual(['8']);
+			expect(radios[0].checked).toBe(false);
+		});
+		expect((getByTestId('link-submit') as HTMLButtonElement).disabled).toBe(true);
+	});
+
+	it('crédit, règlements vides et écritures non vides : la section des règlements le dit (cas 2)', async () => {
+		mockApi.getEntryCandidates.mockResolvedValue({ bankTransactionId: 42, candidates: [entry(7)] });
+		const { findByTestId, queryByTestId, findAllByTestId } = mount();
+		expect((await findByTestId('link-settlements-empty')).textContent?.trim()).toBe(
+			'Aucun règlement de facture client ne correspond.',
+		);
+		expect(await findAllByTestId('entry-candidate-row')).toHaveLength(1);
+		expect(queryByTestId('link-empty')).toBeNull();
+		expect(queryByTestId('link-entries-empty')).toBeNull();
+	});
+
+	it('crédit, écritures vides et règlements non vides : la section des écritures le dit (cas 3)', async () => {
+		mockApi.getLinkCandidates.mockResolvedValue({
+			bankTransactionId: 42,
+			candidates: [candidate(1, '0.00')],
+		});
+		const { findByTestId, queryByTestId, findAllByTestId } = mount();
+		expect((await findByTestId('link-entries-empty')).textContent?.trim()).toBe(
+			'Aucune écriture du compte de la banque ne correspond.',
+		);
+		expect(await findAllByTestId('link-candidate-row')).toHaveLength(1);
+		expect(queryByTestId('link-empty')).toBeNull();
+		expect(queryByTestId('link-settlements-empty')).toBeNull();
+	});
+
+	it('débit sans candidate : la consigne de rejeter, sans mention de règlement client (cas 4)', async () => {
+		const { findByTestId, queryByTestId } = mount(vi.fn(), vi.fn(), debit());
+		const vide = await findByTestId('link-entries-empty-debit');
+		expect(vide.textContent?.trim()).toBe(
+			"Aucune écriture du compte de la banque ne correspond à ce débit. S'il est déjà comptabilisé par un autre chemin, rejetez-le plutôt que de l'affecter.",
+		);
+		expect(queryByTestId('link-empty')).toBeNull();
+		expect(queryByTestId('link-entries-empty')).toBeNull();
+		expect(vide.textContent).not.toContain('règlement');
 	});
 });

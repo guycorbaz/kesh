@@ -67,6 +67,13 @@ pub struct ImportedSupplierInvoice {
     pub version: i32,
     pub created_at: chrono::NaiveDateTime,
     pub updated_at: chrono::NaiveDateTime,
+    /// D'où vient le lien à la facture (Story v017-4a, #849, C-v017-4-29) :
+    /// `completion` (la facture est née de la complétion de ce document),
+    /// `attachment` (document joint après coup), ou `None` — aucun lien, ou un
+    /// lien antérieur à la 0.17.0 (aucun backfill : la base ne dit pas d'où il
+    /// vient, limite L7). Seul `completion` impose au `PUT` du brouillon les
+    /// règles de la complétion. Cf. [`LinkOrigin`].
+    pub link_origin: Option<String>,
 }
 
 impl ImportedSupplierInvoice {
@@ -74,6 +81,35 @@ impl ImportedSupplierInvoice {
     /// `creditor_iban`, représentant des sept colonnes « tout ou rien ».
     pub fn has_qr(&self) -> bool {
         self.creditor_iban.is_some()
+    }
+
+    /// La facture liée est-elle **née de la complétion** de ce document ?
+    /// (Story v017-4a, AC-8.) Faux pour un document joint après coup et pour un
+    /// lien antérieur à la 0.17.0.
+    pub fn born_from_completion(&self) -> bool {
+        self.link_origin.as_deref() == Some(LinkOrigin::Completion.as_str())
+    }
+}
+
+/// L'origine du lien d'un document à sa facture (Story v017-4a, #849) —
+/// l'ensemble fermé de la contrainte `chk_imported_si_link_origin`. Passée à
+/// [`crate::repositories::imported_supplier_invoices::mark_completed`] par ses
+/// deux appelants : la complétion et le rattachement.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LinkOrigin {
+    /// La facture est née de la complétion du document.
+    Completion,
+    /// Le document a été joint à une facture existante.
+    Attachment,
+}
+
+impl LinkOrigin {
+    /// La valeur stockée.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Completion => "completion",
+            Self::Attachment => "attachment",
+        }
     }
 }
 
@@ -258,11 +294,7 @@ impl NewImportedSupplierInvoice {
     /// colonnes « tout ou rien » sont toutes `Some` (Story 30-2a) ; l'appelant
     /// a d'abord vérifié [`check_scanned_fits_columns`].
     pub fn from_scanned(company_id: i64, scanned: &ScannedQrBill, doc: DocumentMeta) -> Self {
-        let (reference_type, reference_value) = match &scanned.reference {
-            ScannedReference::Qrr(v) => ("QRR".to_string(), Some(v.clone())),
-            ScannedReference::Scor(v) => ("SCOR".to_string(), Some(v.clone())),
-            ScannedReference::None => ("NON".to_string(), None),
-        };
+        let qr = QrColumns::from_scanned(scanned);
         Self {
             company_id,
             file_hash: doc.sha256,
@@ -270,27 +302,83 @@ impl NewImportedSupplierInvoice {
             original_filename: doc.original_filename,
             mime_type: doc.mime_type,
             byte_size: doc.byte_size,
-            creditor_iban: Some(scanned.creditor_iban.clone()),
-            is_qr_iban: Some(scanned.is_qr_iban),
+            creditor_iban: Some(qr.creditor_iban),
+            is_qr_iban: Some(qr.is_qr_iban),
+            creditor_address_type: Some(qr.creditor_address_type),
+            creditor_name: Some(qr.creditor_name),
+            creditor_line1: qr.creditor_line1,
+            creditor_line2: qr.creditor_line2,
+            creditor_postal_code: qr.creditor_postal_code,
+            creditor_town: qr.creditor_town,
+            creditor_country: Some(qr.creditor_country),
+            reference_type: Some(qr.reference_type),
+            reference_value: qr.reference_value,
+            amount: qr.amount,
+            currency: Some(qr.currency),
+            unstructured_message: qr.unstructured_message,
+            billing_information: qr.billing_information,
+        }
+    }
+}
+
+/// Les quinze colonnes QR d'une ligne de staging, projetées d'un `ScannedQrBill`
+/// (Story v017-5, #854, C-v017-5-9) — une seule règle de projection, partagée par
+/// l'import ([`NewImportedSupplierInvoice::from_scanned`]) et la relecture à la
+/// réactivation (`repositories::imported_supplier_invoices::reactivate_to_complete_with_qr`).
+/// Les sept colonnes « tout ou rien » sont des valeurs (jamais absentes) ; les
+/// huit autres, facultatives.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct QrColumns {
+    pub creditor_iban: String,
+    pub is_qr_iban: bool,
+    /// 'K' ou 'S'.
+    pub creditor_address_type: String,
+    pub creditor_name: String,
+    pub creditor_line1: Option<String>,
+    pub creditor_line2: Option<String>,
+    pub creditor_postal_code: Option<String>,
+    pub creditor_town: Option<String>,
+    pub creditor_country: String,
+    /// 'QRR' | 'SCOR' | 'NON'.
+    pub reference_type: String,
+    pub reference_value: Option<String>,
+    pub amount: Option<Decimal>,
+    pub currency: String,
+    pub unstructured_message: Option<String>,
+    pub billing_information: Option<String>,
+}
+
+impl QrColumns {
+    /// Projette un `ScannedQrBill` (12-5a). Aucun champ QR n'est perdu ;
+    /// l'appelant a d'abord vérifié [`check_scanned_fits_columns`].
+    pub fn from_scanned(scanned: &ScannedQrBill) -> Self {
+        let (reference_type, reference_value) = match &scanned.reference {
+            ScannedReference::Qrr(v) => ("QRR".to_string(), Some(v.clone())),
+            ScannedReference::Scor(v) => ("SCOR".to_string(), Some(v.clone())),
+            ScannedReference::None => ("NON".to_string(), None),
+        };
+        Self {
+            creditor_iban: scanned.creditor_iban.clone(),
+            is_qr_iban: scanned.is_qr_iban,
             // Normalisation sur {'K','S'} : le parseur (12-5a) traite tout type
             // ≠ 'S' comme 'K' (adresse combinée). On s'aligne pour respecter le
             // CHECK SQL `IN ('K','S')` — un QR tiers émettant un autre caractère
             // ne doit pas provoquer une CHECK violation DB opaque.
-            creditor_address_type: Some(if scanned.creditor.address_type == 'S' {
+            creditor_address_type: if scanned.creditor.address_type == 'S' {
                 "S".to_string()
             } else {
                 "K".to_string()
-            }),
-            creditor_name: Some(scanned.creditor.name.clone()),
+            },
+            creditor_name: scanned.creditor.name.clone(),
             creditor_line1: non_empty(&scanned.creditor.street_or_line1),
             creditor_line2: non_empty(&scanned.creditor.building_or_line2),
             creditor_postal_code: scanned.creditor.postal_code.clone(),
             creditor_town: scanned.creditor.town.clone(),
-            creditor_country: Some(scanned.creditor.country.clone()),
-            reference_type: Some(reference_type),
+            creditor_country: scanned.creditor.country.clone(),
+            reference_type,
             reference_value,
             amount: scanned.amount,
-            currency: Some(scanned.currency.clone()),
+            currency: scanned.currency.clone(),
             unstructured_message: scanned.unstructured_message.clone(),
             billing_information: scanned.billing_information.clone(),
         }

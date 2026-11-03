@@ -7,14 +7,30 @@
   une définition au lieu de deux. La page `/supplier-invoices/new` l'affiche seul ou à
   côté du document.
 
-  Trois modes, décidés par `document` :
-  - **sans document** — tout se saisit, le scan navigateur 12.4 est proposé ;
+  Trois modes, décidés par `document` **et** `hasDocument` (Story v017-4b, AC-23) :
+  - **sans document** (`document === null && !hasDocument`) — tout se saisit, le scan
+    navigateur 12.4 est proposé ;
   - **document sans QR** — tout se saisit (IBAN, référence, montant attendu compris),
-    sans scan : le document est déjà sous les yeux ;
+    sans scan : le document est déjà sous les yeux. La page de complétion passe le
+    document lui-même ; l'édition d'un brouillon qui a un document passe `document =
+    null` et `hasDocument = true` (document sans QR, joint après coup, ou lien antérieur
+    à la 0.17.0) ;
   - **document avec QR** — IBAN ou QR-IBAN, référence et montant attendu viennent du
     QR, affichés **en lecture seule** et absents du corps envoyé (le serveur refuse
     `QR_FIELDS_FROM_DOCUMENT`, C-30-2-9) ; le total TTC vivant est comparé au montant
-    du QR ; pas de scan.
+    du QR ; pas de scan. L'édition ne passe le QR (`sourceDocument.qr`) que pour une
+    facture **née de la complétion** de son document (`linkOrigin === 'completion'`).
+
+  ⚠️ Le scan s'offre **si et seulement si `document === null && !hasDocument`** — jamais
+  `!hasDocument` seul, qui le ferait réapparaître sur la page de complétion d'un document
+  sans QR (`hasDocument` y vaut son défaut, `false`).
+
+  Story v017-4b — `initial` (édition d'un brouillon) pré-remplit la saisie ; sa date de
+  facture **prime** sur la règle « date vide avec un document » (#853). Le bouton dit
+  « Enregistrer le brouillon » à la création, « Enregistrer » à l'édition. Les montants
+  partent avec un point décimal (#830), le total vivant s'affiche aux décimales exactes
+  (#835), une échéance antérieure à la date est signalée sous son champ et bloque
+  l'envoi (#853).
 
   Fournisseur : les propositions reçues (`proposals`, calculées par la page) s'affichent
   avec leur motif et un bouton « Retenir » ; **aucune n'est présélectionnée** — la liste
@@ -26,12 +42,11 @@
   sous le champ nommé par `details.field`, les autres en tête (AC16).
 -->
 <script lang="ts">
-	import Big from 'big.js';
 	import { i18nMsg } from '$lib/shared/utils/i18n.svelte';
 	import { notifySuccess, notifyError, notifyWarning } from '$lib/shared/utils/notify';
 	import { isApiError } from '$lib/shared/utils/api-error';
 	import { qrIbanHasValidQrIid } from '$lib/shared/utils/iban';
-	import { formatSwissAmount } from '$lib/features/journal-entries/balance';
+	import { formatExactAmount } from '$lib/features/invoices/invoice-helpers';
 	import type { ContactResponse, StructuredAddress } from '$lib/features/contacts/contacts.types';
 	import type { AccountResponse } from '$lib/features/accounts/accounts.types';
 	import type { VatRateResponse } from '$lib/features/vat-rates/vat-rates.types';
@@ -47,13 +62,43 @@
 	import {
 		amountMismatch,
 		describeSubmitError,
+		dueBeforeInvoiceDate,
+		dueBeforeInvoiceDateMessage,
 		emptyLine,
-		hasSubCentime,
+		firstLineNotInCentimes,
+		formatLiveTotal,
+		formLineFromResponse,
+		readableAmount,
+		lineNotInCentimes,
+		linesForServer,
 		linesInvalid,
 		paymentFields,
 		sumTtc,
+		type SupplierInvoiceFormInitial,
 	} from './supplier-invoice-form';
+	import { hasSubCentime } from '$lib/features/invoices/invoice-helpers';
 	import SupplierCreatePanel from './SupplierCreatePanel.svelte';
+
+	/**
+	 * Story v017-4b (validation P3, F8 ; P4, F3) — les **douze** champs du document que
+	 * le formulaire lit : un `ImportedSupplierInvoice` les contient (complétion), l'objet
+	 * `sourceDocument.qr` d'une facture aussi (édition).
+	 */
+	type FormDocument = Pick<
+		ImportedSupplierInvoice,
+		| 'creditorIban'
+		| 'isQrIban'
+		| 'referenceValue'
+		| 'amount'
+		| 'currency'
+		| 'creditorName'
+		| 'creditorAddressType'
+		| 'creditorLine1'
+		| 'creditorLine2'
+		| 'creditorPostalCode'
+		| 'creditorTown'
+		| 'creditorCountry'
+	>;
 
 	interface Props {
 		/** Fournisseurs de la liste déroulante ; un fournisseur retenu ou créé y est ajouté. */
@@ -61,12 +106,20 @@
 		expenseAccounts: AccountResponse[];
 		vatRates: VatRateResponse[];
 		projects: ProjectResponse[];
-		/** Le document à côté duquel la facture se crée, ou `null`. */
-		document: ImportedSupplierInvoice | null;
+		/** Le document à côté duquel la facture se crée (ou son QR, à l'édition), ou `null`. */
+		document: FormDocument | null;
 		/** Fournisseurs proposés (document avec QR seulement), jamais présélectionnés. */
 		proposals: SupplierProposal[];
 		/** Enregistre ; rejette avec l'erreur de l'API, la saisie restant intacte. */
 		onSubmit: (req: CreateSupplierInvoiceRequest) => Promise<void>;
+		/**
+		 * Story v017-4b (AC-23) — la facture a un document, même si `document` est `null`
+		 * (édition d'un brouillon dont le document n'impose rien) : le scan est caché.
+		 * Défaut `false` : la page de création et celle de complétion ne la passent pas.
+		 */
+		hasDocument?: boolean;
+		/** Story v017-4b (AC-23) — le brouillon édité, ou `null` à la création. */
+		initial?: SupplierInvoiceFormInitial | null;
 	}
 
 	let {
@@ -77,23 +130,85 @@
 		document,
 		proposals,
 		onSubmit,
+		hasDocument = false,
+		initial = null,
 	}: Props = $props();
 
 	/** Le document porte un QR : coordonnées de paiement verrouillées (AC11). */
 	const qrLocked = $derived(document !== null && document.creditorIban !== null);
 	/** Montant du QR, cible du total TTC (`null` sans QR ou montant ouvert). */
 	const target = $derived(qrLocked ? (document?.amount ?? null) : null);
+	/** Story v017-4b (AC-23, M35) : le scan, seulement sans aucun document. */
+	const scanOffered = $derived(document === null && !hasDocument);
 
-	const today = new Date().toISOString().slice(0, 10);
-	let fContactId = $state<number | null>(null);
-	let fNumber = $state('');
-	let fInvoiceDate = $state(today);
-	let fDueDate = $state('');
-	let fIban = $state('');
-	let fReference = $state('');
-	let fExpectedAmount = $state('');
-	let fProjectId = $state<number | null>(null);
-	let fLines = $state<CreateSupplierInvoiceLineRequest[]>([emptyLine()]);
+	/**
+	 * La saisie de départ — Story v017-4b. Lue UNE fois, au montage (le formulaire ne se
+	 * resynchronise pas : la saisie appartient ensuite à l'utilisateur).
+	 * - `initial` (édition) : la facture relue ; sa date prime sur la règle de #853 ;
+	 * - sinon, #853 (AC-24 (b)) : avec un document, la date démarre **vide** — la date
+	 *   du jour n'est presque jamais celle d'une facture reçue ; sans document, la date
+	 *   du jour reste proposée.
+	 */
+	function startState() {
+		const today = new Date().toISOString().slice(0, 10);
+		const init = initial;
+		if (init === null) {
+			return {
+				contactId: null as number | null,
+				number: '',
+				invoiceDate: document !== null ? '' : today,
+				dueDate: '',
+				iban: '',
+				reference: '',
+				expectedAmount: '',
+				projectId: null as number | null,
+				lines: [emptyLine()],
+			};
+		}
+		return {
+			contactId: init.contactId as number | null,
+			number: init.supplierInvoiceNumber ?? '',
+			invoiceDate: init.invoiceDate,
+			dueDate: init.dueDate ?? '',
+			iban: init.creditorQrIban ?? init.creditorIban ?? '',
+			reference: init.paymentReference ?? '',
+			// Revue P1 (B-8) : lisible comme le prix (`100.0000` → `100.00`).
+			expectedAmount:
+				init.expectedPaymentAmount == null ? '' : readableAmount(init.expectedPaymentAmount, 2),
+			projectId: init.projectId,
+			lines:
+				init.lines.length > 0
+					? init.lines.map((l) => formLineFromResponse(l, vatRates))
+					: [emptyLine()],
+		};
+	}
+	const start = startState();
+
+	/**
+	 * Revue P1 (E-7) — les taux des lignes du brouillon qui ne sont plus dans la liste des
+	 * taux actifs (taux expiré) : proposés quand même, sans quoi le `<select>` les
+	 * afficherait vides alors que le total vivant et l'envoi les emploient.
+	 */
+	const extraRates = start.lines
+		.map((l) => l.vatRate)
+		.filter((r, i, all) => r !== '0' && all.indexOf(r) === i)
+		.filter((r) => !vatRates.some((v) => v.rate === r));
+
+	let fContactId = $state<number | null>(start.contactId);
+	let fNumber = $state(start.number);
+	let fInvoiceDate = $state(start.invoiceDate);
+	let fDueDate = $state(start.dueDate);
+	let fIban = $state(start.iban);
+	let fReference = $state(start.reference);
+	let fExpectedAmount = $state(start.expectedAmount);
+	let fProjectId = $state<number | null>(start.projectId);
+	let fLines = $state<CreateSupplierInvoiceLineRequest[]>(start.lines);
+
+	/** Story v017-4b (#853) — l'échéance précède la date : signalée en direct. */
+	const dueBefore = $derived(dueBeforeInvoiceDate(fInvoiceDate, fDueDate));
+	/** Le refus serveur de l'échéance, affiché au même endroit (effacé à la saisie). */
+	let dueServerError = $state('');
+	let dateError = $state('');
 
 	// Scan navigateur (Story 12.4), proposé seulement sans document.
 	let scanning = $state(false);
@@ -108,6 +223,8 @@
 	let formError = $state('');
 	let ibanError = $state('');
 	let referenceError = $state('');
+	/** Story v017-3b (#687) — un refus serveur qui désigne une ligne (rang 0-based). */
+	let lineServerError = $state<{ index: number; message: string } | null>(null);
 
 	/** Adresse pré-remplie du panneau : QR de type `S` seulement (C-30-2-8). */
 	const prefillAddress = $derived<StructuredAddress | null>(
@@ -183,27 +300,55 @@
 		}
 	}
 
+	/**
+	 * Un montant du QR, aux décimales exactes (Story v017-4b, #835 : la même lecture que
+	 * le total vivant, `formatExactAmount`).
+	 */
 	function fmt(amount: string | null): string {
 		if (!amount) return '—';
-		try {
-			return formatSwissAmount(new Big(amount));
-		} catch {
-			return amount;
-		}
+		return formatExactAmount(amount) || amount;
 	}
 
 	async function submit() {
 		formError = '';
 		ibanError = '';
 		referenceError = '';
+		dateError = '';
+		dueServerError = '';
+		lineServerError = null;
 		if (!fContactId) {
 			formError = i18nMsg('supplier-invoices-err-supplier', 'Sélectionnez un fournisseur.');
 			return;
 		}
-		if (!fInvoiceDate.trim() || linesInvalid(fLines)) {
+		// Story v017-4b (#853, AC-24 (b), validation P1, F8) — une date vide a SON message,
+		// sous le champ, et non celui des lignes.
+		if (!fInvoiceDate.trim()) {
+			// Revue P1 (E-6) : sans document, le message ne parle pas d'un document.
+			dateError =
+				document !== null || hasDocument
+					? i18nMsg(
+							'supplier-invoices-err-invoice-date',
+							'Saisissez la date de la facture, telle qu’imprimée sur le document.',
+						)
+					: i18nMsg('supplier-invoices-err-invoice-date-plain', 'Saisissez la date de la facture.');
+			return;
+		}
+		// L'échéance antérieure : déjà signalée sous son champ, elle bloque l'envoi.
+		if (dueBefore) return;
+		if (linesInvalid(fLines)) {
 			formError = i18nMsg(
 				'supplier-invoices-err-lines',
 				'Chaque ligne requiert une description, un montant et un compte de charge.',
+			);
+			return;
+		}
+		// Story v017-3b (#687, C-v017-3-19) — APRÈS `linesInvalid` : une ligne à la fois
+		// incomplète et sous le centime reçoit le message générique. Le bouton n'est pas
+		// désactivé : le refus se dit au clic, avec sa cause.
+		if (firstLineNotInCentimes(fLines) !== null) {
+			formError = i18nMsg(
+				'supplier-invoices-err-line-not-in-centimes',
+				'Une ligne n’est pas au centime : saisissez-la au montant facturé par le fournisseur, au centime.',
 			);
 			return;
 		}
@@ -213,13 +358,8 @@
 			invoiceDate: fInvoiceDate,
 			dueDate: fDueDate || null,
 			projectId: fProjectId,
-			lines: fLines.map((l) => ({
-				description: l.description.trim(),
-				quantity: l.quantity || '1',
-				unitPrice: l.unitPrice,
-				vatRate: l.vatRate || '0',
-				expenseAccountId: Number(l.expenseAccountId),
-			})),
+			// Story v017-4b (#830) : montants lus une fois, envoyés avec un point.
+			lines: linesForServer(fLines),
 		};
 		// Avec QR, le corps ne porte AUCUNE coordonnée de paiement (AC11).
 		const req = qrLocked
@@ -236,6 +376,9 @@
 			const e = describeSubmitError(err);
 			if (e.field === 'iban') ibanError = e.message;
 			else if (e.field === 'reference') referenceError = e.message;
+			else if (e.field === 'due') dueServerError = e.message;
+			else if (e.field === 'line' && e.line !== undefined && e.line >= 1 && e.line <= fLines.length)
+				lineServerError = { index: e.line - 1, message: e.message };
 			else formError = e.message;
 		} finally {
 			saving = false;
@@ -251,8 +394,9 @@
 		void submit();
 	}}
 >
-	{#if document === null}
-		<!-- Story 12.4 : scan QR-facture → pré-remplissage des coordonnées. -->
+	{#if scanOffered}
+		<!-- Story 12.4 : scan QR-facture → pré-remplissage des coordonnées. Story v017-4b
+		     (AC-23) : seulement si `document === null && !hasDocument`. -->
 		<div class="flex flex-wrap items-center gap-3 rounded bg-muted/40 p-3">
 			<input
 				type="file"
@@ -408,12 +552,49 @@
 				type="date"
 				class="mt-1 w-full rounded border px-2 py-1"
 				data-testid="supplier-invoice-date"
+				aria-required="true"
+				aria-invalid={dateError !== ''}
 				bind:value={fInvoiceDate}
+				oninput={() => {
+					dateError = '';
+					// Revue P1 (B-9 = E-5) : le refus serveur de l'échéance portait les dates
+					// d'avant ; corriger la date de facture l'efface aussi.
+					dueServerError = '';
+				}}
 			/>
+			<!-- Story v017-4b (#853, AC-24 (b)) : avec un document, la date démarre vide et
+			     l'aide dit laquelle saisir. -->
+			{#if document !== null || hasDocument}
+				<span class="mt-1 block text-xs text-text-muted" data-testid="supplier-invoice-date-help">
+					{i18nMsg(
+						'supplier-invoices-field-date-help',
+						'Date de la facture, telle qu’imprimée sur le document',
+					)}
+				</span>
+			{/if}
+			{#if dateError}
+				<span class="mt-1 block text-xs text-destructive" role="alert" data-testid="supplier-invoice-date-error"
+					>{dateError}</span
+				>
+			{/if}
 		</label>
 		<label class="block text-sm">
 			{i18nMsg('supplier-invoices-field-due', 'Échéance')}
-			<input type="date" class="mt-1 w-full rounded border px-2 py-1" bind:value={fDueDate} />
+			<input
+				type="date"
+				class="mt-1 w-full rounded border px-2 py-1"
+				data-testid="supplier-invoice-due"
+				aria-invalid={dueBefore || dueServerError !== ''}
+				bind:value={fDueDate}
+				oninput={() => (dueServerError = '')}
+			/>
+			<!-- Story v017-4b (#853) : l'échéance antérieure, sous le champ — en direct, ou
+			     le refus du serveur (`SUPPLIER_INVOICE_DUE_BEFORE_INVOICE_DATE`). -->
+			{#if dueBefore || dueServerError}
+				<span class="mt-1 block text-xs text-destructive" role="alert" data-testid="supplier-invoice-due-error"
+					>{dueBefore ? dueBeforeInvoiceDateMessage(fInvoiceDate, fDueDate) : dueServerError}</span
+				>
+			{/if}
 		</label>
 		{#if !qrLocked}
 			<label class="block text-sm">
@@ -499,6 +680,7 @@
 	<div>
 		<div class="mb-2 text-sm font-medium">{i18nMsg('supplier-invoices-lines', 'Lignes')}</div>
 		{#each fLines as line, idx (idx)}
+			{@const subCentime = lineNotInCentimes(line)}
 			<div class="mb-2 grid grid-cols-12 gap-2" data-testid="supplier-invoice-line">
 				<input
 					class="col-span-4 rounded border px-2 py-1 text-sm"
@@ -526,6 +708,11 @@
 					bind:value={line.vatRate}
 				>
 					<option value="0">0%</option>
+					{#each extraRates as r (r)}
+						<!-- Revue P2 (E2-5) : l'étiquette à l'échelle des taux actifs (7.7000 → 7.70),
+						     la valeur inchangée. -->
+						<option value={r}>{readableAmount(r, 2)}%</option>
+					{/each}
 					{#each vatRates as r (r.id)}
 						<option value={r.rate}>{r.rate}%</option>
 					{/each}
@@ -547,6 +734,20 @@
 					disabled={fLines.length === 1}>✕</button
 				>
 			</div>
+			{#if subCentime !== null}
+				<p class="mb-2 text-sm text-destructive" data-testid="supplier-invoice-line-subcentime">
+					{i18nMsg(
+						'supplier-invoices-line-not-in-centimes',
+						'Le montant de la ligne ({ $lineTotal }) n’est pas au centime. Saisissez la ligne au montant facturé par le fournisseur, au centime.',
+						{ lineTotal: subCentime },
+					)}
+				</p>
+			{/if}
+			{#if lineServerError?.index === idx}
+				<p class="mb-2 text-sm text-destructive" role="alert" data-testid="supplier-invoice-line-server-error">
+					{lineServerError.message}
+				</p>
+			{/if}
 		{/each}
 		<button type="button" class="text-sm text-primary" data-testid="supplier-invoice-add-line" onclick={addLine}>
 			+ {i18nMsg('supplier-invoices-add-line', 'Ajouter une ligne')}
@@ -555,8 +756,9 @@
 
 	<div class="text-sm" data-testid="supplier-invoice-sum-ttc">
 		{i18nMsg('supplier-invoices-sum-ttc', 'Total TTC des lignes')} :
+		<!-- Story v017-4b (#835, AC-24 (d)) : aux décimales exactes. -->
 		<span class:text-destructive={amountMismatch(fLines, target)}>
-			{formatSwissAmount(sumTtc(fLines))}
+			{formatLiveTotal(sumTtc(fLines))}
 		</span>
 		{#if target}
 			/ {i18nMsg('supplier-invoices-target', 'montant du QR')} : {fmt(target)}
@@ -578,6 +780,11 @@
 		data-testid="supplier-invoice-submit"
 		disabled={saving}
 	>
-		{saving ? '…' : i18nMsg('supplier-invoices-save', 'Enregistrer')}
+		<!-- Story v017-4b (AC-24 (a)) : la création enregistre un brouillon. -->
+		{saving
+			? '…'
+			: initial === null
+				? i18nMsg('supplier-invoices-save-draft', 'Enregistrer le brouillon')
+				: i18nMsg('supplier-invoices-save', 'Enregistrer')}
 	</button>
 </form>

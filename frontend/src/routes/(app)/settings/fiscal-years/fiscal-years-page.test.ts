@@ -444,7 +444,7 @@ describe('Préparer la clôture — bouton et colonne d’actions (AC5)', () => 
 });
 
 describe('Préparer la clôture — le panneau (AC5)', () => {
-	it('chargement : l’état d’attente seul ; puis les sept lignes', async () => {
+	it('chargement : l’état d’attente seul ; puis les huit lignes', async () => {
 		authState.login({ userId: '3', username: 'lecture', role: 'Consultation', expiresIn: 3600 });
 		listFiscalYearsMock.mockResolvedValue([fy({ id: 1, status: 'Open' })]);
 		const d = deferred<ClosingChecksResponse>();
@@ -457,7 +457,8 @@ describe('Préparer la clôture — le panneau (AC5)', () => {
 		expect(getClosingChecksMock).toHaveBeenCalledWith(1);
 		d.resolve(closingChecks());
 		const list = await screen.findByTestId('fiscal-year-checks-list');
-		expect(list.querySelectorAll('[data-testid^="fiscal-year-checks-row-"]')).toHaveLength(7);
+		// Story v017-4b (#849, AC-26) — K8 en huitième ligne (7 → 8).
+		expect(list.querySelectorAll('[data-testid^="fiscal-year-checks-row-"]')).toHaveLength(8);
 	});
 
 	it('échec : « indisponible », jamais « Rien à signaler »', async () => {

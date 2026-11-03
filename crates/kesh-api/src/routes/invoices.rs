@@ -42,7 +42,7 @@ use crate::helpers::get_company_for;
 use crate::middleware::auth::CurrentUser;
 use crate::routes::ListResponse;
 use crate::routes::limits::{
-    MAX_DECIMAL_SCALE, MAX_LINE_TOTAL, MAX_QUANTITY, MAX_UNIT_PRICE, scale_within,
+    MAX_DECIMAL_SCALE, MAX_LINE_TOTAL, MAX_QUANTITY, MAX_UNIT_PRICE, line_scale_error, scale_within,
 };
 use crate::routes::vat;
 use crate::services::acces::ContexteAcces;
@@ -481,10 +481,7 @@ fn validate_line(req: CreateInvoiceLineRequest, index: usize) -> Result<NewInvoi
         )));
     }
     if !scale_within(&req.quantity, MAX_DECIMAL_SCALE) {
-        return Err(AppError::Validation(format!(
-            "Ligne {} : la quantité doit avoir au plus {MAX_DECIMAL_SCALE} décimales",
-            index + 1
-        )));
+        return Err(line_scale_error(index, "la quantité"));
     }
     if req.quantity > *MAX_QUANTITY {
         return Err(AppError::Validation(format!(
@@ -500,10 +497,7 @@ fn validate_line(req: CreateInvoiceLineRequest, index: usize) -> Result<NewInvoi
         )));
     }
     if !scale_within(&req.unit_price, MAX_DECIMAL_SCALE) {
-        return Err(AppError::Validation(format!(
-            "Ligne {} : le prix unitaire doit avoir au plus {MAX_DECIMAL_SCALE} décimales",
-            index + 1
-        )));
+        return Err(line_scale_error(index, "le prix unitaire"));
     }
     if req.unit_price > *MAX_UNIT_PRICE {
         return Err(AppError::Validation(format!(

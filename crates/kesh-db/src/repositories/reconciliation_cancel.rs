@@ -8,29 +8,44 @@
 //! par son propre geste d'annulation au rang 3. L'écriture était donc
 //! **définitivement incorrigible**.
 //!
-//! ⛔ **Trois familles d'écritures, et seulement trois.** Des sept chemins qui
-//! posent `bank_transactions.matched_entry_id`, deux rendent un **règlement
-//! client** (ligne `invoice_settlements`) : l'acceptation d'une proposition
-//! « facture » (`routes/reconciliation.rs`), qui le crée, et le rattachement
-//! d'une transaction au règlement déjà saisi depuis la fiche de la facture
-//! (Story 29-8, [`super::reconciliation_link::link_in_tx`]), qui pointe son
-//! écriture existante. Un seul rend un **règlement fournisseur** : l'acceptation
-//! d'une proposition « facture fournisseur » (Story 30-1b), qui le crée. Les
-//! quatre autres (éclatement, règle, rapprochement manuel, éclatement manuel)
-//! créent une écriture que **seule la transaction** possède. Le règlement
-//! client se défait par [`invoice_settlements_write::cancel_settlement_in_tx`],
-//! **appelé, jamais réécrit** ; l'écriture propre, par
-//! [`journal_entries::reverse_in_tx`].
+//! ⛔ **Trois familles d'écritures, et seulement trois.** Des huit chemins qui
+//! posent `bank_transactions.matched_entry_id`, deux **créent** un **règlement
+//! client** (ligne `invoice_settlements`) ou en pointent un : l'acceptation
+//! d'une proposition « facture » (`routes/reconciliation.rs`), qui le crée, et
+//! le rattachement d'une transaction au règlement déjà saisi depuis la fiche
+//! de la facture (Story 29-8, [`super::reconciliation_link::link_in_tx`]), qui
+//! pointe son écriture existante. L'acceptation d'une proposition « facture
+//! fournisseur » (Story 30-1b) **crée** un **règlement fournisseur**. Quatre
+//! autres (éclatement, règle, rapprochement manuel, éclatement manuel) créent
+//! une écriture que **seule la transaction** possède. Le huitième, le
+//! rattachement à une **écriture déjà passée** (Story v017-3a, #671,
+//! [`super::reconciliation_link::link_entry_in_tx`]), pointe une écriture
+//! **existante** de l'une ou l'autre famille : l'écriture d'un règlement client
+//! (par compte interne sur le compte de la banque, ou par virement sur un autre
+//! compte bancaire qui partage le compte du grand livre), celle d'un règlement
+//! fournisseur payé depuis la fiche ou par un lot, ou une écriture **saisie au
+//! journal**, que rien d'autre ne possède. Le classement ci-dessous la lit
+//! comme les autres. Le règlement client se défait par
+//! [`invoice_settlements_write::cancel_settlement_in_tx`], **appelé, jamais
+//! réécrit** ; l'écriture propre, par [`journal_entries::reverse_in_tx`].
+//!
+//! **L'écriture propre** est donc une écriture qu'**aucune pièce** ne possède —
+//! ni règlement client, ni facture fournisseur payée : celle d'un éclatement,
+//! d'une règle, d'un rapprochement manuel, d'un règlement fournisseur détaché,
+//! et, depuis la v017-3a, une écriture saisie au journal puis rattachée. Toutes
+//! sont **contre-passées** à l'annulation du rapprochement.
 //!
 //! ⛔ **La troisième : le règlement fournisseur** (Story 30-1a, #686) — une
 //! écriture de règlement que pointent les colonnes `settlement_*` d'une facture
-//! fournisseur **payée**. Le seul chemin qui la rapproche est l'acceptation
-//! d'une facture fournisseur pour un débit (Story 30-1b) ; ce geste a su la
-//! défaire **d'abord** (30-1a), pour qu'à aucun commit un tel rapprochement ne
-//! soit produisible sans être défaisable. Elle se défait par
-//! [`supplier_invoices::cancel_settlement_in_tx`], **appelé, jamais réécrit**.
-//! Un règlement **détaché** (facture payée puis annulée, colonnes à `NULL`) n'a
-//! plus de propriétaire : il est classé écriture propre et contre-passé.
+//! fournisseur **payée**. Deux chemins la rapprochent : l'acceptation d'une
+//! facture fournisseur pour un débit (Story 30-1b), et le rattachement d'une
+//! transaction à l'écriture du paiement saisi depuis la fiche ou par un lot
+//! (Story v017-3a) ; ce geste a su la défaire **d'abord** (30-1a), pour qu'à
+//! aucun commit un tel rapprochement ne soit produisible sans être défaisable.
+//! Elle se défait par [`supplier_invoices::cancel_settlement_in_tx`],
+//! **appelé, jamais réécrit**. Un règlement **détaché** (facture payée puis
+//! annulée, colonnes à `NULL`) n'a plus de propriétaire : il est classé
+//! écriture propre et contre-passé.
 //!
 //! ⛔ **Le lien d'abord, la contre-passation ensuite.** Remettre
 //! `matched_entry_id` à `NULL` dans la même transaction, **avant** de
@@ -68,9 +83,10 @@ pub enum ReconciliationKind {
     /// fournisseur `paid` (Story 30-1a, #686). Il n'y a pas de seconde ligne :
     /// la facture **est** la ligne de règlement.
     SupplierSettlement { supplier_invoice_id: i64 },
-    /// Une écriture que seule la transaction possède (éclatement, règle,
-    /// rapprochement manuel) — ou un règlement fournisseur **détaché** de sa
-    /// facture annulée.
+    /// Une écriture qu'aucune pièce ne possède (éclatement, règle,
+    /// rapprochement manuel ; une écriture saisie au journal puis rattachée —
+    /// Story v017-3a) — ou un règlement fournisseur **détaché** de sa facture
+    /// annulée.
     Entry,
 }
 
@@ -228,7 +244,9 @@ async fn find(
 /// ⛔ **La seule fonction qui calcule les motifs** : [`get_view`] l'appelle pour
 /// la lecture (l'écran, au clic), [`cancel_in_tx`] pour refuser, sur la
 /// transaction qu'il vient de verrouiller. Elle prend la transaction déjà lue,
-/// pour que chaque appelant choisisse sa lecture (verrouillante ou non).
+/// pour que chaque appelant choisisse sa lecture (verrouillante ou non). Après
+/// le rang 0, elle délègue à [`entry_cancel_blocker`] — la même lecture que la
+/// liste des écritures candidates (Story v017-3a, D14).
 async fn cancel_blocker(
     conn: &mut MySqlConnection,
     company_id: i64,
@@ -241,14 +259,44 @@ async fn cancel_blocker(
             None,
         )));
     }
-    let entry_id = matched_entry(bt)?;
+    entry_cancel_blocker(conn, company_id, matched_entry(bt)?, Some(bt.id)).await
+}
+
+/// Le premier motif qui empêcherait d'annuler un rapprochement **dont
+/// l'écriture serait `entry_id`**, ou `None` — classement puis bras client,
+/// fournisseur ou écriture propre, rangs 1 à 5 (Story v017-3a, D14 : extraite
+/// de [`cancel_blocker`], qui l'appelle après le rang 0).
+///
+/// `unlinking` : la transaction dont on défait le lien (exemption étroite du
+/// rang 3, cf. `settlement_entry_cancel_blocker`). ⛔ **Une seule précédence**
+/// : la liste des écritures candidates au rattachement
+/// (`GET …/entry-candidates`) l'appelle avec `unlinking = None` pour annoncer,
+/// **au moment de la lecture**, le motif qui empêcherait d'annuler le
+/// rattachement — l'écriture n'étant rapprochée d'aucune transaction
+/// (condition 4 de la règle), le rang 3 ne peut pas sortir. Les trois motifs
+/// fournisseur de tête (`SUPPLIER_INVOICE_NOT_PAID`, `…_CANCELLED`,
+/// `…_IN_PAYMENT_BATCH`) ne sortent pas non plus pour une candidate : le
+/// classement exige une facture `paid` ([`SUPPLIER_SETTLEMENT_CLASSIFY_SQL`]),
+/// et une facture payée n'est dans aucun lot `generated`.
+///
+/// ⚠️ **Un instantané** : le motif peut apparaître après la lecture (clôture
+/// d'exercice) ou disparaître (réouverture, compte réactivé) ; s'y ajoutent
+/// les angles morts documentés de la queue commune (verrou de période du jour,
+/// exercice postérieur clos — #568) et les motifs de propriété qu'elle ignore.
+/// Lecture non verrouillante, sans écriture.
+pub async fn entry_cancel_blocker(
+    conn: &mut MySqlConnection,
+    company_id: i64,
+    entry_id: i64,
+    unlinking: Option<i64>,
+) -> Result<Option<SettlementCancelHit>, DbError> {
     match classify(conn, company_id, entry_id, false).await? {
         ReconciliationKind::InvoiceSettlement { settlement_id, .. } => {
             invoice_settlements_write::settlement_cancel_blocker_unlinking(
                 conn,
                 company_id,
                 settlement_id,
-                Some(bt.id),
+                unlinking,
             )
             .await
         }
@@ -259,12 +307,12 @@ async fn cancel_blocker(
                 conn,
                 company_id,
                 supplier_invoice_id,
-                Some(bt.id),
+                unlinking,
             )
             .await
         }
         ReconciliationKind::Entry => {
-            settlement_entry_cancel_blocker(conn, company_id, entry_id, Some(bt.id)).await
+            settlement_entry_cancel_blocker(conn, company_id, entry_id, unlinking).await
         }
     }
 }
@@ -566,7 +614,10 @@ pub async fn cancel_in_tx(
     //     (`routes/reconciliation.rs`, `SettlementChoice::BankTransfer` avec le
     //     compte de l'import), non à une contrainte du schéma. Un règlement
     //     dont le compte différerait de celui de la transaction (donnée
-    //     héritée ou restaurée — le code ne le produit pas) ferait prendre
+    //     héritée ou restaurée — et, depuis la Story v017-3a, le
+    //     rattachement à l'écriture d'un règlement par virement sur un AUTRE
+    //     compte bancaire qui partage le compte du grand livre, fiche v017-3a
+    //     AC-2.12, angle mort L3) ferait prendre
     //     deux partagés neufs sur deux comptes : la revérification de W25 ne
     //     serait plus la dernière acquisition, et un cycle à quatre (deux
     //     annulations croisées, deux clôtures en file) deviendrait possible,

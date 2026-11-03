@@ -1,0 +1,31 @@
+{
+  "ok": [
+    {
+      "account_iban": "CH4431999123000889012",
+      "closing_balance": "1200.00",
+      "currency": "EUR",
+      "opening_balance": "1000.00",
+      "period_from": "2026-05-01",
+      "period_to": "2026-05-31",
+      "source_format": {
+        "kind": "camt053",
+        "version": "001.04"
+      },
+      "statement_id": "STMT-EUR",
+      "transactions": [
+        {
+          "amount": "200.00",
+          "booking_date": "2026-05-15",
+          "counterparty_iban": null,
+          "counterparty_name": "Client allemand",
+          "currency": "EUR",
+          "details": "Virement EUR",
+          "end_to_end_id": "E2E-EUR-001",
+          "reference": null,
+          "transaction_id": "BANK-EUR-001",
+          "value_date": null
+        }
+      ]
+    }
+  ]
+}

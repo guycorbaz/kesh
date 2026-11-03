@@ -19,6 +19,7 @@
 	import { isApiError } from '$lib/shared/utils/api-client';
 	import { i18nMsg } from '$lib/shared/utils/i18n.svelte';
 	import { formatSupplierInvoiceTotal } from '$lib/features/supplier-invoices/supplier-invoice-helpers';
+	import { formatExactAmount } from '$lib/features/invoices/invoice-helpers';
 	import DocumentPreview from './DocumentPreview.svelte';
 	import { fetchImportedSourceDocument, listImported } from './imported-supplier-invoices.api';
 	import { hasQr, importDateOf, type ImportedSupplierInvoice } from './imported-supplier-invoices.types';
@@ -144,7 +145,10 @@
 							{:else}
 								<div class="mt-1">
 									<span class="rounded bg-muted px-2 py-0.5 text-xs font-medium"
-										>{i18nMsg('imported-supplier-invoices-badge-no-qr', 'Sans QR-code')}</span
+										>{i18nMsg(
+											'imported-supplier-invoices-badge-no-qr',
+											'Aucune QR-facture exploitable',
+										)}</span
 									>
 								</div>
 							{/if}
@@ -161,7 +165,11 @@
 									>{i18nMsg(
 										'imported-supplier-invoices-attach-invoice-total',
 										'Total de la facture : { $total }',
-										{ total: formatSupplierInvoiceTotal(invoiceTotal) },
+										// Story v017-3b (#687, C-v017-3-27) — le total de la facture
+										// affichée, exact : une facture existante sous le centime s'y
+										// lit comme sur sa fiche. Le montant du QR, au centime par le
+										// contrôle d'import, garde son format.
+										{ total: formatExactAmount(invoiceTotal) },
 									)}</span
 								>
 							</div>

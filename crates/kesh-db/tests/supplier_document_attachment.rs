@@ -82,7 +82,7 @@ async fn facture_ouverte(
     numero: &str,
     montant: Decimal,
 ) -> (i64, i64) {
-    let created = supplier_invoices::create(
+    let created = supplier_invoices::create_validated(
         pool,
         NewSupplierInvoice {
             company_id: seeded.company_id,
@@ -109,7 +109,10 @@ async fn facture_ouverte(
     .expect("facture fournisseur");
     (
         created.invoice.id,
-        created.invoice.purchase_journal_entry_id,
+        created
+            .invoice
+            .purchase_journal_entry_id
+            .expect("facture validée : écriture d'achat"),
     )
 }
 
@@ -409,7 +412,8 @@ async fn completer_dans(
     if row.status != "to_complete" {
         return Err(row.status);
     }
-    let created = supplier_invoices::create_in_tx(
+    // Story v017-4a (#849, AC-7) : la complétion crée un brouillon.
+    let created = supplier_invoices::create_draft_in_tx(
         tx,
         NewSupplierInvoice {
             company_id: seeded.company_id,
@@ -434,9 +438,15 @@ async fn completer_dans(
     )
     .await
     .unwrap();
-    repo::mark_completed(tx, seeded.company_id, doc, created.invoice.id)
-        .await
-        .unwrap();
+    repo::mark_completed(
+        tx,
+        seeded.company_id,
+        doc,
+        created.invoice.id,
+        kesh_db::entities::imported_supplier_invoice::LinkOrigin::Completion,
+    )
+    .await
+    .unwrap();
     Ok(created.invoice.id)
 }
 

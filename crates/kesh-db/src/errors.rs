@@ -311,6 +311,46 @@ impl UnvalidationBlocker {
     }
 }
 
+/// Ce qui empêche de **dévalider une facture fournisseur** (Story v017-4a,
+/// #849, AC-11) — les empêchements **propres à la pièce**, contrôlés par
+/// `supplier_invoices::unvalidate_in_tx` avant
+/// `journal_entries::delete_in_tx`, dont les refus (exercice clos, exercice
+/// postérieur clos, écriture contre-passée, période verrouillée, lettrage)
+/// parlent ensuite avec leurs variantes propres.
+///
+/// Précédence complète : `NotFound` → statut (`SUPPLIER_INVOICE_PAID` ;
+/// `ILLEGAL_STATE_TRANSITION`) → `OPTIMISTIC_LOCK_CONFLICT` →
+/// `SUPPLIER_INVOICE_IN_PAYMENT_BATCH` → `MATCHED_BANK_TRANSACTION` →
+/// `FISCAL_YEAR_CLOSED` → `LATER_FISCAL_YEAR_CLOSED` → `ENTRY_IS_REVERSED` →
+/// `PERIOD_LOCKED` → `ENTRY_LETTERED` — patron de sa fonction sœur
+/// `invoices::unvalidate`, dont les empêchements propres à la pièce précèdent
+/// ceux de `delete_in_tx` (C-v017-4-40).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SupplierUnvalidationBlocker {
+    /// La facture est **payée** : son règlement s'annule d'abord.
+    Paid,
+    /// La facture est engagée dans un lot de paiement `generated` : le fichier
+    /// pain.001 est peut-être déjà à la banque. Le lot s'annule d'abord.
+    InPaymentBatch,
+    /// L'écriture d'achat est **rapprochée** d'une transaction bancaire. ⚠️ La
+    /// clé étrangère `bank_transactions.matched_entry_id` est `ON DELETE SET
+    /// NULL` : sans cette garde, le lien s'effacerait en silence.
+    MatchedBankTransaction,
+}
+
+impl SupplierUnvalidationBlocker {
+    /// Code canonique — `SUPPLIER_INVOICE_IN_PAYMENT_BATCH` et
+    /// `MATCHED_BANK_TRANSACTION` **réemploient** les codes existants : un même
+    /// état du monde ne reçoit pas un second nom.
+    pub fn code(self) -> &'static str {
+        match self {
+            Self::Paid => "SUPPLIER_INVOICE_PAID",
+            Self::InPaymentBatch => "SUPPLIER_INVOICE_IN_PAYMENT_BATCH",
+            Self::MatchedBankTransaction => "MATCHED_BANK_TRANSACTION",
+        }
+    }
+}
+
 /// Ce qui empêche d'**annuler un règlement** (Story 25-3-a-1, #414).
 ///
 /// ⛔ **Une tête propre à chaque pièce, une queue commune.** Le rang 1 est
@@ -374,6 +414,12 @@ pub enum SettlementCancelBlocker {
     /// facture non `paid` n'a pas d'écriture de règlement, la queue ne s'évalue
     /// pas. Même rang que `InvoiceCredited` : chaque pièce n'a que sa propre tête.
     SupplierInvoiceNotPaid,
+    /// Tête de l'**annulation d'une facture fournisseur** (Story v017-4a, #849,
+    /// AC-13), rang 1, **avant** `SupplierInvoiceCancelled` : la facture est un
+    /// **brouillon** — rien n'a été passé au journal, il n'y a rien à
+    /// contre-passer. Coupe court (un brouillon n'a pas d'écriture d'achat, la
+    /// queue ne s'évaluerait pas).
+    SupplierInvoiceDraft,
     /// Tête de l'**annulation d'une facture fournisseur** (Story 25-3-c), rang
     /// 1 : la facture est déjà `cancelled`. Coupe court.
     SupplierInvoiceCancelled,
@@ -443,6 +489,7 @@ impl SettlementCancelBlocker {
             Self::InvoiceCredited => "INVOICE_CREDITED",
             Self::WriteOffExists => "INVOICE_WRITTEN_OFF",
             Self::SupplierInvoiceNotPaid => "SUPPLIER_INVOICE_NOT_PAID",
+            Self::SupplierInvoiceDraft => "SUPPLIER_INVOICE_DRAFT",
             Self::SupplierInvoiceCancelled => "SUPPLIER_INVOICE_CANCELLED",
             Self::FiscalYearClosed => "FISCAL_YEAR_CLOSED",
             Self::DocumentLetteringInClosedPeriods => "LETTERING_ALL_LINES_IN_CLOSED_PERIODS",
@@ -761,6 +808,20 @@ pub enum DbError {
         minimum: rust_decimal::Decimal,
     },
 
+    /// Une ligne de facture fournisseur dont `quantité × prix` n'est pas au
+    /// centime (Story v017-3b, #687) : refusée à la saisie comme à la
+    /// complétion d'une pièce importée, par la passe de forme
+    /// [`crate::repositories::supplier_invoices::purchase_lines_form`].
+    ///
+    /// Défaut de saisie → HTTP **400** `SUPPLIER_INVOICE_LINE_NOT_IN_CENTIMES`.
+    /// `line` est le rang **1-based** de la ligne ; `line_total` le produit
+    /// **normalisé** (`4.9995`, jamais `4.999500`), que le message nomme.
+    #[error("La ligne {line} donne un montant de {line_total}, qui n'est pas au centime")]
+    SupplierLineNotInCentimes {
+        line: usize,
+        line_total: rust_decimal::Decimal,
+    },
+
     /// La date fournie ne tombe pas dans l'exercice courant de l'entité
     /// modifiée. Story 3.3 : empêche le déplacement d'une écriture vers
     /// un autre exercice via un simple changement de date.
@@ -963,6 +1024,31 @@ pub enum DbError {
     /// lit « transition interdite » sur le seul chemin qui lui reste.
     #[error("Facture validée : dévalider d'abord")]
     InvoiceMustBeUnvalidatedFirst,
+
+    /// `delete_draft` a reçu une facture fournisseur **validée** (Story
+    /// v017-4a, #849, AC-9) — jumeau de [`DbError::InvoiceMustBeUnvalidatedFirst`] :
+    /// le message oriente vers la dévalidation. → **409**.
+    #[error("Facture fournisseur validée : dévalider d'abord")]
+    SupplierInvoiceMustBeUnvalidatedFirst,
+
+    /// Un brouillon de facture fournisseur garde l'**historique d'un lot de
+    /// paiement** (Story v017-4a, AC-9, limite L8) : validé, placé dans un lot
+    /// (annulé, ou confirmé puis règlement annulé), puis dévalidé. L'ordre
+    /// transmis à la banque se garde (`payment_batch_items` en `RESTRICT`) : le
+    /// brouillon ne se supprime pas. → **409**, `details.paymentBatchId`.
+    #[error("Brouillon présent dans le lot de paiement {payment_batch_id}")]
+    SupplierInvoiceHasPaymentBatchHistory { payment_batch_id: i64 },
+
+    /// La dévalidation d'une facture fournisseur est refusée (Story v017-4a,
+    /// AC-11) par un empêchement propre à la pièce. → **409**, avec le code du
+    /// [`SupplierUnvalidationBlocker`] ; `document_id` désigne le lot ou la
+    /// transaction bancaire, `document_label` le numéro de la facture.
+    #[error("Facture fournisseur non dévalidable ({})", .blocker.code())]
+    SupplierInvoiceNotUnvalidatable {
+        blocker: SupplierUnvalidationBlocker,
+        document_id: Option<i64>,
+        document_label: Option<String>,
+    },
 
     /// L'écriture ne peut pas être contre-passée (Story 24-4a, #380).
     ///
@@ -1419,6 +1505,7 @@ impl DbError {
             Self::RoundingAccountNotConfigured { .. } => "ROUNDING_ACCOUNT_NOT_CONFIGURED",
             Self::WriteOffAccountNotConfigured { .. } => "WRITE_OFF_ACCOUNT_NOT_CONFIGURED",
             Self::InvoiceBelowMinimum { .. } => "INVOICE_BELOW_MINIMUM",
+            Self::SupplierLineNotInCentimes { .. } => "SUPPLIER_INVOICE_LINE_NOT_IN_CENTIMES",
             Self::DateOutsideFiscalYear => "DATE_OUTSIDE_FISCAL_YEAR",
             Self::AccountHasEntries { .. } => "ACCOUNT_HAS_ENTRIES",
             Self::AccountRoleAlreadyAssigned { .. } => "ACCOUNT_ROLE_ALREADY_ASSIGNED",
@@ -1443,6 +1530,13 @@ impl DbError {
             Self::SupplierInvoiceNotCancellable { blocker } => blocker.code(),
             Self::InvoiceNumberFiscalYearMismatch => "INVOICE_NUMBER_FISCAL_YEAR_MISMATCH",
             Self::InvoiceMustBeUnvalidatedFirst => "INVOICE_MUST_BE_UNVALIDATED_FIRST",
+            Self::SupplierInvoiceMustBeUnvalidatedFirst => {
+                "SUPPLIER_INVOICE_MUST_BE_UNVALIDATED_FIRST"
+            }
+            Self::SupplierInvoiceHasPaymentBatchHistory { .. } => {
+                "SUPPLIER_INVOICE_HAS_PAYMENT_BATCH_HISTORY"
+            }
+            Self::SupplierInvoiceNotUnvalidatable { blocker, .. } => blocker.code(),
             Self::EntryIsReversed => "ENTRY_IS_REVERSED",
             // ⚠️ Repli générique, comme `EntryNotReversable` : le code EXPOSÉ
             // vient du mappage `kesh-api`, qui rend `guard.code()`.

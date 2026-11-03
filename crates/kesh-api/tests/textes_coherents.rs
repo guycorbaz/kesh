@@ -26,6 +26,7 @@
 //! | G21 | #697 | le `FROM rust:` du `Dockerfile` et le `channel` de `rust-toolchain.toml` désignent la même chaîne (même mineure, même patch si les deux en portent un) |
 //! | G22 | #503 | la sauvegarde automatique : le manuel dit la reprise au bout d'une heure et le bandeau à partir d'au moins deux intervalles ; le rappel de l'écran dit le volume (nombre conservé plus une, une par import jamais purgée) dans les quatre langues |
 //! | G23 | #723 | le serveur MCP : le manuel liste exactement les plages admises par défaut et les cinq portées (dans l'ordre), nomme `100.64.0.0/10` hors des défauts ; l'écran le nomme, ainsi que Traefik et Docker, dans les quatre langues |
+//! | G24 | #816 | la table des libellés de `reason` de l'écran de saisie d'un relevé (`manual-statement-reason-label.ts`) a exactement les clés de `ManualStatementReason::ALL`, dans les deux sens |
 
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -799,10 +800,17 @@ fn les_replis_rust_suivent_le_catalogue() {
                 ("bank-import-csv-errors-mixed-currencies", 1, DEVISES),
                 // Story 27-3 (#626) — refus d'une empreinte d'aperçu périmée.
                 ("bank-import-errors-preview-stale", 1, &[]),
+                // Story v016-2a (#816) — les quatre refus de la saisie manuelle.
+                ("bank-import-manual-errors-invalid", 1, &[]),
+                ("bank-import-manual-errors-unbalanced", 1, &[]),
+                ("bank-import-manual-errors-duplicate-lines", 1, &[]),
+                ("bank-import-manual-errors-opening-balance-gap", 1, &[]),
                 // Story 28-5a (#526) — refus de l'annulation d'un rejet.
                 ("reconciliation-errors-transaction-not-rejected", 1, &[]),
                 // Story 29-8 (#670) — refus du rattachement à un règlement.
                 ("reconciliation-errors-settlement-not-linkable", 1, &[]),
+                // Story v017-3a (#671) — refus du rattachement à une écriture.
+                ("reconciliation-errors-entry-not-linkable", 1, &[]),
                 // Story 28-4a (#642) — le compte bancaire clos : les cinq clés
                 // neuves, et le message du principal qui ne s'archive pas
                 // (« ni archivé ni clos »).
@@ -812,6 +820,13 @@ fn les_replis_rust_suivent_le_catalogue() {
                 ("bank-accounts-errors-has-pending-transactions", 1, &[]),
                 ("bank-accounts-errors-has-open-payment-batches", 1, &[]),
                 ("bank-accounts-errors-cannot-archive-primary", 1, &[]),
+                // Story v017-3b (#687) — une ligne de facture fournisseur qui
+                // n'est pas au centime.
+                (
+                    "supplier-invoices-errors-line-not-in-centimes",
+                    1,
+                    &[("{ $line }", "{line}"), ("{ $lineTotal }", "{line_total}")],
+                ),
             ],
         ),
         (
@@ -1935,4 +1950,138 @@ fn le_serveur_mcp_dit_vrai() {
         erreurs.len(),
         erreurs.join("\n  - ")
     );
+}
+
+// ---------------------------------------------------------------------------
+// G24 — la table des `reason` de l'écran de saisie égale l'ensemble fermé du serveur
+// ---------------------------------------------------------------------------
+
+/// La table TypeScript des libellés de `reason` (Story v016-2b, #816, AC-24).
+const TABLE_DES_REASON: &str =
+    "frontend/src/lib/features/bank-import/manual-statement-reason-label.ts";
+
+/// Ouverture du seul objet de la table (forme imposée à la validation P4 de la fiche, P2).
+const OUVERTURE_DES_REASON: &str = "export const MANUAL_STATEMENT_REASON_LABELS";
+
+/// Les clés de la table : le bloc qui suit la **déclaration** — la ligne qui **commence** par
+/// `OUVERTURE_DES_REASON`, non une mention dans un commentaire (revue de code P1, B4 = E4 =
+/// A5) — jusqu'à la première ligne `};`. Chaque ligne non vide du bloc doit être une entrée
+/// `clé: [` (clé `[A-Za-z0-9_]+`, citée ou non) : une ligne d'une autre forme (continuation,
+/// commentaire) est une erreur, non une ligne ignorée. Erreur aussi si le bloc est
+/// introuvable, non fermé, ou vide — jamais un ensemble vide muet.
+fn cles_de_la_table_des_reason(source: &str) -> Result<Vec<String>, String> {
+    // Revue de code P2, P7 : l'ouverture en début de ligne, suivie exactement de `:`, ` ` ou
+    // `=` — une déclaration `…_LABELS_V2` n'est pas la table.
+    let declaration = Regex::new(&format!(
+        r"(?m)^{}[:= ]",
+        regex::escape(OUVERTURE_DES_REASON)
+    ))
+    .expect("motif valide");
+    let debut = declaration
+        .find(source)
+        .map(|m| m.start())
+        .ok_or_else(|| format!("déclaration `{OUVERTURE_DES_REASON}` introuvable"))?;
+    let bloc = &source[debut..];
+    let fin = bloc
+        .find("\n};")
+        .ok_or_else(|| "fin de la table (`};`) introuvable".to_string())?;
+    let entree = Regex::new(r"^'?([A-Za-z0-9_]+)'?\s*:\s*\[").expect("motif valide");
+    let mut cles = Vec::new();
+    for ligne in bloc[..fin].lines().skip(1).map(str::trim) {
+        if ligne.is_empty() {
+            continue;
+        }
+        match entree.captures(ligne) {
+            Some(c) => cles.push(c[1].to_string()),
+            None => {
+                return Err(format!(
+                    "ligne de la table qui n'est pas une entrée : {ligne}"
+                ));
+            }
+        }
+    }
+    if cles.is_empty() {
+        return Err("table des `reason` vide".to_string());
+    }
+    Ok(cles)
+}
+
+#[test]
+fn g24_l_extracteur_de_la_table_des_reason() {
+    // Témoin vert : une entrée par ligne, clé citée ou non.
+    let ok = "x\nexport const MANUAL_STATEMENT_REASON_LABELS: Record<string, [string, string]> = {\n\trequired: ['required', 'a'],\n\t'too_long': ['too-long', 'b'],\n};\n";
+    assert_eq!(
+        cles_de_la_table_des_reason(ok),
+        Ok(vec!["required".to_string(), "too_long".to_string()])
+    );
+    // Témoins rouges : bloc absent, non fermé, vide.
+    assert!(cles_de_la_table_des_reason("const AUTRE = {};").is_err());
+    assert!(
+        cles_de_la_table_des_reason(
+            "export const MANUAL_STATEMENT_REASON_LABELS = {\n\ta: ['a', 'b'],"
+        )
+        .is_err()
+    );
+    assert!(
+        cles_de_la_table_des_reason("export const MANUAL_STATEMENT_REASON_LABELS = {\n};").is_err()
+    );
+    // Revue de code P1 (B4 = E4 = A5) — une mention de l'ouverture dans un commentaire, avant
+    // la déclaration, n'est pas la table : l'extracteur part de la déclaration.
+    let mention = "/**\n * `export const MANUAL_STATEMENT_REASON_LABELS = {` … `};`\n * piege: x\n */\nimport { a } from 'b';\nexport const MANUAL_STATEMENT_REASON_LABELS: R = {\n\trequired: ['required', 'a'],\n};\n";
+    assert_eq!(
+        cles_de_la_table_des_reason(mention),
+        Ok(vec!["required".to_string()])
+    );
+    // Une clé hors `[a-z_]` est lue (elle rougira à l'égalité), une ligne de continuation
+    // est une erreur, non une ligne ignorée.
+    assert_eq!(
+        cles_de_la_table_des_reason(
+            "export const MANUAL_STATEMENT_REASON_LABELS = {\n\tTooLong2: ['x', 'y'],\n};"
+        ),
+        Ok(vec!["TooLong2".to_string()])
+    );
+    assert!(cles_de_la_table_des_reason(
+        "export const MANUAL_STATEMENT_REASON_LABELS = {\n\trequired: [\n\t\t'required',\n\t],\n};"
+    )
+    .is_err());
+    // Revue de code P2, P7 — une déclaration au nom prolongé, avant la vraie, n'est pas la table.
+    let prolonge = "export const MANUAL_STATEMENT_REASON_LABELS_V2 = {\n\tautre: ['a', 'b'],\n};\nexport const MANUAL_STATEMENT_REASON_LABELS: R = {\n\trequired: ['required', 'a'],\n};\n";
+    assert_eq!(
+        cles_de_la_table_des_reason(prolonge),
+        Ok(vec!["required".to_string()])
+    );
+}
+
+/// **G24** (Story v016-2b, #816, AC-24, décision de l'orchestrateur à la validation P3,
+/// R1) — la table des libellés de `reason` d'un refus `BANK_STATEMENT_INVALID`
+/// (`MANUAL_STATEMENT_REASON_LABELS`) a exactement les clés de
+/// `ManualStatementReason::ALL` mappé par `code()`, dans les deux sens : un `reason`
+/// ajouté au serveur sans libellé, ou un libellé sans `reason`, rougit ici. Ce test
+/// s'appuie sur l'exhaustivité non circulaire de `ALL` (C-v016-2-20, tests
+/// `all_is_indexed_and_counted` et `all_covers_every_declared_variant` de `kesh-core`).
+#[test]
+fn g24_la_table_des_reason_egale_l_ensemble_ferme_du_serveur() {
+    use kesh_core::bank_imports::manual::ManualStatementReason;
+    use std::collections::BTreeSet;
+
+    let source = lire(TABLE_DES_REASON);
+    let cles =
+        cles_de_la_table_des_reason(&source).unwrap_or_else(|e| panic!("{TABLE_DES_REASON} : {e}"));
+    let table: BTreeSet<&str> = cles.iter().map(String::as_str).collect();
+    assert_eq!(
+        table.len(),
+        cles.len(),
+        "clé en double dans la table : {cles:?}"
+    );
+    let serveur: BTreeSet<&str> = ManualStatementReason::ALL
+        .iter()
+        .map(|r| r.code())
+        .collect();
+    let sans_libelle: Vec<_> = serveur.difference(&table).collect();
+    let sans_reason: Vec<_> = table.difference(&serveur).collect();
+    assert!(
+        sans_libelle.is_empty() && sans_reason.is_empty(),
+        "G24 — `reason` sans libellé : {sans_libelle:?} ; libellé sans `reason` : {sans_reason:?}"
+    );
+    assert_eq!(table.len(), ManualStatementReason::COUNT);
 }

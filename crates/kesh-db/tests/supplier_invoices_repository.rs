@@ -139,7 +139,7 @@ async fn account_balance(pool: &MySqlPool, company_id: i64, account_id: i64) -> 
 #[sqlx::test(migrations = "./test-schema")]
 async fn create_posts_purchase_entry_open(pool: MySqlPool) {
     let ctx = setup(&pool).await;
-    let created = supplier_invoices::create(
+    let created = supplier_invoices::create_validated(
         &pool,
         one_line(&ctx, dec!(1000.00), dec!(8.10)),
         ctx.seeded.admin_user_id,
@@ -150,7 +150,12 @@ async fn create_posts_purchase_entry_open(pool: MySqlPool) {
     assert_eq!(created.invoice.status, "open");
     // TTC = 1000 + 81 = 1081.
     assert_eq!(created.invoice.total_amount, dec!(1081.00));
-    assert!(created.invoice.purchase_journal_entry_id > 0);
+    assert!(
+        created
+            .invoice
+            .purchase_journal_entry_id
+            .is_some_and(|id| id > 0)
+    );
 
     // D 4000=1000, D 1171=81, C 2000=1081.
     let charge = account_balance(&pool, ctx.seeded.company_id, ctx.seeded.accounts["4000"]).await;
@@ -164,7 +169,7 @@ async fn create_posts_purchase_entry_open(pool: MySqlPool) {
 #[sqlx::test(migrations = "./test-schema")]
 async fn pay_internal_account_settles_payable_to_zero(pool: MySqlPool) {
     let ctx = setup(&pool).await;
-    let created = supplier_invoices::create(
+    let created = supplier_invoices::create_validated(
         &pool,
         one_line(&ctx, dec!(1000.00), dec!(8.10)),
         ctx.seeded.admin_user_id,
@@ -223,7 +228,7 @@ async fn pay_bank_transfer_uses_journal_account(pool: MySqlPool) {
         .await
         .unwrap();
 
-    let created = supplier_invoices::create(
+    let created = supplier_invoices::create_validated(
         &pool,
         one_line(&ctx, dec!(500.00), dec!(0)),
         ctx.seeded.admin_user_id,
@@ -261,7 +266,7 @@ async fn pay_bank_transfer_uses_journal_account(pool: MySqlPool) {
 #[sqlx::test(migrations = "./test-schema")]
 async fn cancel_reverses_purchase_entry(pool: MySqlPool) {
     let ctx = setup(&pool).await;
-    let created = supplier_invoices::create(
+    let created = supplier_invoices::create_validated(
         &pool,
         one_line(&ctx, dec!(1000.00), dec!(8.10)),
         ctx.seeded.admin_user_id,
@@ -289,7 +294,10 @@ async fn cancel_reverses_purchase_entry(pool: MySqlPool) {
 
     // Story 25-3-c (#454) : une VRAIE contre-passation, liée à l'achat — que
     // le grand livre présente désormais comme déjà contre-passée.
-    let purchase = created.invoice.purchase_journal_entry_id;
+    let purchase = created
+        .invoice
+        .purchase_journal_entry_id
+        .expect("écriture d'achat");
     let reverses: Option<i64> = sqlx::query_scalar(
         "SELECT reverses_entry_id FROM journal_entries \
          WHERE company_id = ? AND reverses_entry_id IS NOT NULL",
@@ -322,7 +330,7 @@ async fn create_without_payable_account_fails_config(pool: MySqlPool) {
         .await
         .unwrap();
 
-    let err = supplier_invoices::create(
+    let err = supplier_invoices::create_validated(
         &pool,
         one_line(&ctx, dec!(1000.00), dec!(8.10)),
         ctx.seeded.admin_user_id,
@@ -335,7 +343,7 @@ async fn create_without_payable_account_fails_config(pool: MySqlPool) {
 #[sqlx::test(migrations = "./test-schema")]
 async fn pay_cancelled_invoice_rejected(pool: MySqlPool) {
     let ctx = setup(&pool).await;
-    let created = supplier_invoices::create(
+    let created = supplier_invoices::create_validated(
         &pool,
         one_line(&ctx, dec!(100.00), dec!(0)),
         ctx.seeded.admin_user_id,
@@ -385,7 +393,7 @@ async fn create_with_non_expense_account_is_rejected(pool: MySqlPool) {
     let mut new = one_line(&ctx, dec!(100.00), dec!(0));
     new.lines[0].expense_account_id = ctx.seeded.accounts["1000"];
 
-    let err = supplier_invoices::create(&pool, new, ctx.seeded.admin_user_id)
+    let err = supplier_invoices::create_validated(&pool, new, ctx.seeded.admin_user_id)
         .await
         .unwrap_err();
     assert!(
@@ -417,7 +425,7 @@ async fn create_with_non_postable_expense_account_is_rejected(pool: MySqlPool) {
         .await
         .unwrap();
 
-    let err = supplier_invoices::create(
+    let err = supplier_invoices::create_validated(
         &pool,
         one_line(&ctx, dec!(100.00), dec!(0)),
         ctx.seeded.admin_user_id,
@@ -473,7 +481,7 @@ async fn set_flag(pool: &MySqlPool, account_id: i64, column: &str, value: bool) 
 async fn create_with_archived_expense_account_is_inactive_or_invalid(pool: MySqlPool) {
     let ctx = setup(&pool).await;
     set_flag(&pool, ctx.seeded.accounts["4000"], "active", false).await;
-    let err = supplier_invoices::create(
+    let err = supplier_invoices::create_validated(
         &pool,
         one_line(&ctx, dec!(100.00), dec!(0)),
         ctx.seeded.admin_user_id,
@@ -495,7 +503,7 @@ async fn create_with_non_postable_asset_as_expense_is_inactive_or_invalid(pool: 
     set_flag(&pool, ctx.seeded.accounts["1000"], "postable", false).await;
     let mut new = one_line(&ctx, dec!(100.00), dec!(0));
     new.lines[0].expense_account_id = ctx.seeded.accounts["1000"];
-    let err = supplier_invoices::create(&pool, new, ctx.seeded.admin_user_id)
+    let err = supplier_invoices::create_validated(&pool, new, ctx.seeded.admin_user_id)
         .await
         .unwrap_err();
     assert!(
@@ -519,7 +527,7 @@ async fn create_with_two_non_postable_expense_lines_names_both(pool: MySqlPool) 
     second.expense_account_id = other;
     // Ordre des lignes inverse de l'ordre des numéros : le refus trie.
     new.lines.insert(0, second);
-    let err = supplier_invoices::create(&pool, new, ctx.seeded.admin_user_id)
+    let err = supplier_invoices::create_validated(&pool, new, ctx.seeded.admin_user_id)
         .await
         .unwrap_err();
     assert_eq!(
@@ -542,7 +550,7 @@ async fn create_form_of_later_line_wins_over_non_postable_account(pool: MySqlPoo
     bad.expense_account_id = other;
     bad.quantity = dec!(0);
     new.lines.push(bad);
-    let err = supplier_invoices::create(&pool, new, ctx.seeded.admin_user_id)
+    let err = supplier_invoices::create_validated(&pool, new, ctx.seeded.admin_user_id)
         .await
         .unwrap_err();
     assert!(
@@ -564,7 +572,7 @@ async fn create_form_of_later_line_wins_over_archived_account(pool: MySqlPool) {
     bad.expense_account_id = other;
     bad.unit_price = dec!(-5);
     new.lines.push(bad);
-    let err = supplier_invoices::create(&pool, new, ctx.seeded.admin_user_id)
+    let err = supplier_invoices::create_validated(&pool, new, ctx.seeded.admin_user_id)
         .await
         .unwrap_err();
     assert!(
@@ -578,7 +586,7 @@ async fn create_form_of_later_line_wins_over_archived_account(pool: MySqlPool) {
 #[sqlx::test(migrations = "./test-schema")]
 async fn pay_with_archived_account_is_inactive_or_invalid(pool: MySqlPool) {
     let ctx = setup(&pool).await;
-    let created = supplier_invoices::create(
+    let created = supplier_invoices::create_validated(
         &pool,
         one_line(&ctx, dec!(100.00), dec!(0)),
         ctx.seeded.admin_user_id,
@@ -617,7 +625,7 @@ async fn pay_with_archived_account_is_inactive_or_invalid(pool: MySqlPool) {
 #[sqlx::test(migrations = "./test-schema")]
 async fn pay_with_non_postable_account_is_rejected(pool: MySqlPool) {
     let ctx = setup(&pool).await;
-    let created = supplier_invoices::create(
+    let created = supplier_invoices::create_validated(
         &pool,
         one_line(&ctx, dec!(100.00), dec!(0)),
         ctx.seeded.admin_user_id,
@@ -664,9 +672,10 @@ async fn cancel_paid_invoice_detaches_its_settlement(pool: MySqlPool) {
 
     let ctx = setup(&pool).await;
     let (c, u) = (ctx.seeded.company_id, ctx.seeded.admin_user_id);
-    let created = supplier_invoices::create(&pool, one_line(&ctx, dec!(100.00), dec!(8.10)), u)
-        .await
-        .unwrap();
+    let created =
+        supplier_invoices::create_validated(&pool, one_line(&ctx, dec!(100.00), dec!(8.10)), u)
+            .await
+            .unwrap();
     let paid = supplier_invoices::pay(
         &pool,
         c,
@@ -854,7 +863,7 @@ async fn create_non_supplier_contact_rejected(pool: MySqlPool) {
 
     let mut new = one_line(&ctx, dec!(100.00), dec!(0));
     new.contact_id = client_id;
-    let err = supplier_invoices::create(&pool, new, ctx.seeded.admin_user_id)
+    let err = supplier_invoices::create_validated(&pool, new, ctx.seeded.admin_user_id)
         .await
         .unwrap_err();
     assert!(matches!(err, DbError::IllegalStateTransition(_)));
@@ -863,7 +872,7 @@ async fn create_non_supplier_contact_rejected(pool: MySqlPool) {
 #[sqlx::test(migrations = "./test-schema")]
 async fn pay_foreign_internal_account_rejected(pool: MySqlPool) {
     let ctx = setup(&pool).await;
-    let created = supplier_invoices::create(
+    let created = supplier_invoices::create_validated(
         &pool,
         one_line(&ctx, dec!(100.00), dec!(0)),
         ctx.seeded.admin_user_id,
@@ -907,7 +916,7 @@ async fn pay_foreign_internal_account_rejected(pool: MySqlPool) {
 #[sqlx::test(migrations = "./test-schema")]
 async fn pay_already_paid_invoice_rejected(pool: MySqlPool) {
     let ctx = setup(&pool).await;
-    let created = supplier_invoices::create(
+    let created = supplier_invoices::create_validated(
         &pool,
         one_line(&ctx, dec!(100.00), dec!(0)),
         ctx.seeded.admin_user_id,
@@ -946,7 +955,7 @@ async fn create_with_date_outside_fiscal_year_rejected(pool: MySqlPool) {
     let ctx = setup(&pool).await;
     let mut new = one_line(&ctx, dec!(100.00), dec!(0));
     new.invoice_date = d(2099, 1, 1); // hors de tout exercice ouvert.
-    let err = supplier_invoices::create(&pool, new, ctx.seeded.admin_user_id)
+    let err = supplier_invoices::create_validated(&pool, new, ctx.seeded.admin_user_id)
         .await
         .unwrap_err();
     assert!(matches!(err, DbError::FiscalYearInvalid));
@@ -955,7 +964,7 @@ async fn create_with_date_outside_fiscal_year_rejected(pool: MySqlPool) {
 #[sqlx::test(migrations = "./test-schema")]
 async fn pay_with_date_outside_fiscal_year_rejected(pool: MySqlPool) {
     let ctx = setup(&pool).await;
-    let created = supplier_invoices::create(
+    let created = supplier_invoices::create_validated(
         &pool,
         one_line(&ctx, dec!(100.00), dec!(0)),
         ctx.seeded.admin_user_id,
@@ -1001,7 +1010,7 @@ async fn create_with_project_tags_all_purchase_lines(pool: MySqlPool) {
 
     let mut new = one_line(&ctx, dec!(100), dec!(8.1));
     new.project_id = Some(project_id);
-    let created = supplier_invoices::create(&pool, new, ctx.seeded.admin_user_id)
+    let created = supplier_invoices::create_validated(&pool, new, ctx.seeded.admin_user_id)
         .await
         .unwrap();
     assert_eq!(created.invoice.project_id, Some(project_id));
@@ -1028,7 +1037,7 @@ async fn create_with_archived_project_is_rejected(pool: MySqlPool) {
 
     let mut new = one_line(&ctx, dec!(100), dec!(8.1));
     new.project_id = Some(project_id);
-    let err = supplier_invoices::create(&pool, new, ctx.seeded.admin_user_id)
+    let err = supplier_invoices::create_validated(&pool, new, ctx.seeded.admin_user_id)
         .await
         .unwrap_err();
     assert!(
@@ -1045,7 +1054,7 @@ async fn pay_with_project_tags_settlement_entry(pool: MySqlPool) {
     let project_id = make_project(&pool, ctx.seeded.company_id, "RENOV", false).await;
     let mut new = one_line(&ctx, dec!(1000.00), dec!(8.10));
     new.project_id = Some(project_id);
-    let created = supplier_invoices::create(&pool, new, ctx.seeded.admin_user_id)
+    let created = supplier_invoices::create_validated(&pool, new, ctx.seeded.admin_user_id)
         .await
         .unwrap();
 
@@ -1087,7 +1096,7 @@ async fn cancel_nets_project_to_zero(pool: MySqlPool) {
     let project_id = make_project(&pool, ctx.seeded.company_id, "RENOV", false).await;
     let mut new = one_line(&ctx, dec!(1000.00), dec!(8.10));
     new.project_id = Some(project_id);
-    let created = supplier_invoices::create(&pool, new, ctx.seeded.admin_user_id)
+    let created = supplier_invoices::create_validated(&pool, new, ctx.seeded.admin_user_id)
         .await
         .unwrap();
 
@@ -1122,7 +1131,7 @@ async fn create_with_unknown_project_is_rejected(pool: MySqlPool) {
     let ctx = setup(&pool).await;
     let mut new = one_line(&ctx, dec!(100), dec!(8.1));
     new.project_id = Some(999_999); // n'existe pas / hors company
-    let err = supplier_invoices::create(&pool, new, ctx.seeded.admin_user_id)
+    let err = supplier_invoices::create_validated(&pool, new, ctx.seeded.admin_user_id)
         .await
         .unwrap_err();
     assert!(
@@ -1139,7 +1148,7 @@ async fn pay_succeeds_when_project_archived_after_tagging(pool: MySqlPool) {
     let project_id = make_project(&pool, ctx.seeded.company_id, "RENOV", false).await;
     let mut new = one_line(&ctx, dec!(500.00), dec!(8.10));
     new.project_id = Some(project_id);
-    let created = supplier_invoices::create(&pool, new, ctx.seeded.admin_user_id)
+    let created = supplier_invoices::create_validated(&pool, new, ctx.seeded.admin_user_id)
         .await
         .unwrap();
 
@@ -1192,7 +1201,7 @@ async fn paid_invoice(
     let mut new = one_line(ctx, dec!(100.00), dec!(0));
     new.invoice_date = inv_date;
     new.due_date = Some(inv_date);
-    let created = supplier_invoices::create(pool, new, ctx.seeded.admin_user_id)
+    let created = supplier_invoices::create_validated(pool, new, ctx.seeded.admin_user_id)
         .await
         .expect("création");
     let paid = supplier_invoices::pay(
@@ -1209,7 +1218,10 @@ async fn paid_invoice(
     .expect("règlement");
     (
         created.invoice.id,
-        created.invoice.purchase_journal_entry_id,
+        created
+            .invoice
+            .purchase_journal_entry_id
+            .expect("écriture d'achat"),
         paid.invoice
             .settlement_journal_entry_id
             .expect("écriture de règlement"),
@@ -1313,7 +1325,7 @@ async fn two_full_cycles_pay_cancel_pay_cancel(pool: MySqlPool) {
 async fn not_paid_is_refused_with_its_code(pool: MySqlPool) {
     let ctx = setup(&pool).await;
     let (c, u) = (ctx.seeded.company_id, ctx.seeded.admin_user_id);
-    let open = supplier_invoices::create(&pool, one_line(&ctx, dec!(50.00), dec!(0)), u)
+    let open = supplier_invoices::create_validated(&pool, one_line(&ctx, dec!(50.00), dec!(0)), u)
         .await
         .unwrap()
         .invoice
@@ -1888,7 +1900,7 @@ async fn monter_achat(
         let mut new = one_line(&ctx, dec!(100.00), dec!(0));
         new.invoice_date = dd - chrono::Duration::days(20);
         new.due_date = Some(new.invoice_date);
-        supplier_invoices::create(pool, new, ctx.seeded.admin_user_id)
+        supplier_invoices::create_validated(pool, new, ctx.seeded.admin_user_id)
             .await
             .expect("création")
             .invoice
@@ -2022,7 +2034,7 @@ async fn invoice_cancel_motives_and_their_precedence(pool: MySqlPool) {
 async fn a_second_cancellation_is_refused_with_its_code(pool: MySqlPool) {
     let ctx = setup(&pool).await;
     let (c, u) = (ctx.seeded.company_id, ctx.seeded.admin_user_id);
-    let id = supplier_invoices::create(&pool, one_line(&ctx, dec!(50.00), dec!(0)), u)
+    let id = supplier_invoices::create_validated(&pool, one_line(&ctx, dec!(50.00), dec!(0)), u)
         .await
         .unwrap()
         .invoice
@@ -2195,7 +2207,7 @@ async fn cancel_keeps_the_project_on_every_line(pool: MySqlPool) {
         vat_rate: dec!(0),
         expense_account_id: ctx.seeded.accounts["4000"],
     });
-    let created = supplier_invoices::create(&pool, new, ctx.seeded.admin_user_id)
+    let created = supplier_invoices::create_validated(&pool, new, ctx.seeded.admin_user_id)
         .await
         .unwrap();
     supplier_invoices::cancel(
@@ -2212,7 +2224,10 @@ async fn cancel_keeps_the_project_on_every_line(pool: MySqlPool) {
             "SELECT COUNT(*) FROM journal_entry_lines jel \
              JOIN journal_entries je ON je.id = jel.entry_id \
              WHERE je.reverses_entry_id = {} AND (jel.project_id IS NULL OR jel.project_id <> {project_id})",
-            created.invoice.purchase_journal_entry_id
+            created
+                .invoice
+                .purchase_journal_entry_id
+                .expect("écriture d'achat")
         ),
     )
     .await;
@@ -2285,7 +2300,7 @@ mod garde_usage_comptes_reglage {
         let payable = ctx.seeded.accounts["2000"];
         set_postable(&pool, payable, false).await;
 
-        let err = supplier_invoices::create(
+        let err = supplier_invoices::create_validated(
             &pool,
             one_line(&ctx, dec!(100.00), dec!(0)),
             ctx.seeded.admin_user_id,
@@ -2306,7 +2321,7 @@ mod garde_usage_comptes_reglage {
         let ctx = setup(&pool).await;
         set_postable(&pool, ctx.recoverable_id, false).await;
 
-        let err = supplier_invoices::create(
+        let err = supplier_invoices::create_validated(
             &pool,
             one_line(&ctx, dec!(100.00), dec!(8.10)),
             ctx.seeded.admin_user_id,
@@ -2319,7 +2334,7 @@ mod garde_usage_comptes_reglage {
         );
         assert_nothing_written(&pool, &ctx).await;
 
-        supplier_invoices::create(
+        supplier_invoices::create_validated(
             &pool,
             one_line(&ctx, dec!(100.00), dec!(0)),
             ctx.seeded.admin_user_id,
@@ -2340,7 +2355,7 @@ mod garde_usage_comptes_reglage {
             .unwrap();
         set_postable(&pool, ctx.seeded.accounts["2000"], false).await;
 
-        let err = supplier_invoices::create(
+        let err = supplier_invoices::create_validated(
             &pool,
             one_line(&ctx, dec!(100.00), dec!(8.10)),
             ctx.seeded.admin_user_id,
@@ -2377,7 +2392,8 @@ mod garde_usage_comptes_reglage {
             one_line(&ctx, dec!(100.00), dec!(8.10)),
             ctx.seeded.admin_user_id,
         );
-        let tache = tokio::spawn(async move { supplier_invoices::create(&p, new, u).await });
+        let tache =
+            tokio::spawn(async move { supplier_invoices::create_validated(&p, new, u).await });
         let vue = attendre_une_requete_en_cours(&pool, ACCESSEUR, || tache.is_finished()).await;
         assert!(
             vue,
@@ -2442,7 +2458,8 @@ mod garde_usage_comptes_reglage {
             one_line(&ctx, dec!(100.00), dec!(8.10)),
             ctx.seeded.admin_user_id,
         );
-        let tache = tokio::spawn(async move { supplier_invoices::create(&p, new, u).await });
+        let tache =
+            tokio::spawn(async move { supplier_invoices::create_validated(&p, new, u).await });
         let vue = attendre_une_requete_en_cours(&pool, EXERCICE, || tache.is_finished()).await;
         assert!(
             vue,
@@ -2520,7 +2537,7 @@ fn assert_payable_refusal(err: &DbError, payable: i64) {
 async fn pay_with_the_payable_account_as_internal_account_is_refused(pool: MySqlPool) {
     let ctx = setup(&pool).await;
     let payable = ctx.seeded.accounts["2000"];
-    let created = supplier_invoices::create(
+    let created = supplier_invoices::create_validated(
         &pool,
         one_line(&ctx, dec!(500.00), dec!(0)),
         ctx.seeded.admin_user_id,
@@ -2570,7 +2587,7 @@ async fn pay_by_a_bank_account_linked_to_the_payable_account_is_refused(pool: My
         .execute(&pool)
         .await
         .unwrap();
-    let created = supplier_invoices::create(
+    let created = supplier_invoices::create_validated(
         &pool,
         one_line(&ctx, dec!(500.00), dec!(0)),
         ctx.seeded.admin_user_id,
@@ -2815,7 +2832,7 @@ mod compte_bancaire_clos {
         let mut new = one_line(&ctx, dec!(100.00), dec!(0));
         new.invoice_date = dd - chrono::Duration::days(20);
         new.due_date = Some(new.invoice_date);
-        let created = supplier_invoices::create(pool, new, ctx.seeded.admin_user_id)
+        let created = supplier_invoices::create_validated(pool, new, ctx.seeded.admin_user_id)
             .await
             .expect("création");
         supplier_invoices::pay(
@@ -2968,7 +2985,7 @@ mod compte_bancaire_clos {
 #[sqlx::test(migrations = "./test-schema")]
 async fn pay_sets_paid_at_to_the_payment_date(pool: MySqlPool) {
     let ctx = setup(&pool).await;
-    let created = supplier_invoices::create(
+    let created = supplier_invoices::create_validated(
         &pool,
         one_line(&ctx, dec!(100.00), dec!(0)),
         ctx.seeded.admin_user_id,
@@ -2991,4 +3008,200 @@ async fn pay_sets_paid_at_to_the_payment_date(pool: MySqlPool) {
         Some(d(2026, 6, 20).and_hms_opt(0, 0, 0).unwrap()),
         "paid_at = la date du paiement, à minuit"
     );
+}
+
+// ---------------------------------------------------------------------------
+// Story v017-3b (#687) — une ligne de facture fournisseur naît au centime.
+// ---------------------------------------------------------------------------
+
+/// Une ligne de la facture de test : quantité, prix, taux, compte 4000.
+fn line(
+    ctx: &Ctx,
+    quantity: Decimal,
+    unit_price: Decimal,
+    vat_rate: Decimal,
+) -> NewSupplierInvoiceLine {
+    NewSupplierInvoiceLine {
+        description: "Prestation".into(),
+        quantity,
+        unit_price,
+        vat_rate,
+        expense_account_id: ctx.seeded.accounts["4000"],
+    }
+}
+
+/// La facture de test, aux lignes données.
+fn with_lines(ctx: &Ctx, lines: Vec<NewSupplierInvoiceLine>) -> NewSupplierInvoice {
+    NewSupplierInvoice {
+        lines,
+        ..one_line(ctx, dec!(1), dec!(0))
+    }
+}
+
+/// Ce que la création écrit : factures, écritures, traces `supplier_invoice.created`.
+async fn written(pool: &MySqlPool, company_id: i64) -> (i64, i64, i64) {
+    let count = |sql: &'static str| async move {
+        sqlx::query_scalar::<_, i64>(sql)
+            .bind(company_id)
+            .fetch_one(pool)
+            .await
+            .unwrap()
+    };
+    (
+        count("SELECT COUNT(*) FROM supplier_invoices WHERE company_id = ?").await,
+        count("SELECT COUNT(*) FROM journal_entries WHERE company_id = ?").await,
+        sqlx::query_scalar::<_, i64>(
+            "SELECT COUNT(*) FROM audit_log WHERE action = 'supplier_invoice.created'",
+        )
+        .fetch_one(pool)
+        .await
+        .unwrap(),
+    )
+}
+
+/// AC-4 (v017-3b) — le refus au niveau du dépôt : la ligne fautive est nommée
+/// par son rang 1-based et son montant normalisé, et rien n'est écrit.
+/// Tue M3 (l'appel retiré de `create_in_tx`).
+#[sqlx::test(migrations = "./test-schema")]
+async fn create_refuses_a_line_not_in_centimes(pool: MySqlPool) {
+    let ctx = setup(&pool).await;
+    let company = ctx.seeded.company_id;
+    let avant = written(&pool, company).await;
+
+    let cas: [(Vec<NewSupplierInvoiceLine>, usize, Decimal); 3] = [
+        (
+            vec![line(&ctx, dec!(3), dec!(33.3333), dec!(0))],
+            1,
+            dec!(99.9999),
+        ),
+        (
+            vec![
+                line(&ctx, dec!(1), dec!(10.00), dec!(8.1)),
+                line(&ctx, dec!(1.5), dec!(3.333), dec!(0)),
+            ],
+            2,
+            dec!(4.9995),
+        ),
+        // Deux lignes sous le centime dont la SOMME l'est (0.01) : la règle
+        // porte sur chaque ligne, non sur le total (validation P1, R7).
+        (
+            vec![
+                line(&ctx, dec!(1), dec!(0.005), dec!(0)),
+                line(&ctx, dec!(1), dec!(0.005), dec!(0)),
+            ],
+            1,
+            dec!(0.005),
+        ),
+    ];
+    for (lines, rang, montant) in cas {
+        let err = supplier_invoices::create_validated(
+            &pool,
+            with_lines(&ctx, lines),
+            ctx.seeded.admin_user_id,
+        )
+        .await
+        .expect_err("la ligne n'est pas au centime");
+        match err {
+            DbError::SupplierLineNotInCentimes { line, line_total } => {
+                assert_eq!(line, rang);
+                assert_eq!(line_total, montant);
+                assert_eq!(line_total.to_string(), montant.normalize().to_string());
+            }
+            other => panic!("attendu SupplierLineNotInCentimes, reçu {other:?}"),
+        }
+        assert_eq!(written(&pool, company).await, avant, "rien n'est écrit");
+    }
+}
+
+/// AC-4 (v017-3b, validation P2, R1) — un produit négatif ET sous le centime
+/// sort en refus de **positivité**, jamais en « pas au centime ». Tue M10.
+#[sqlx::test(migrations = "./test-schema")]
+async fn create_judges_positivity_before_the_centime(pool: MySqlPool) {
+    let ctx = setup(&pool).await;
+    for (q, p) in [(dec!(-1), dec!(33.3333)), (dec!(1), dec!(-0.005))] {
+        let err = supplier_invoices::create_validated(
+            &pool,
+            with_lines(&ctx, vec![line(&ctx, q, p, dec!(0))]),
+            ctx.seeded.admin_user_id,
+        )
+        .await
+        .expect_err("ligne négative");
+        match err {
+            DbError::IllegalStateTransition(m) => {
+                assert!(m.contains("strictement positifs"), "{m}")
+            }
+            other => panic!("attendu le refus de positivité pour {q} × {p}, reçu {other:?}"),
+        }
+    }
+}
+
+/// AC-4 (v017-3b) — invariant : une facture créée a un TTC au centime, que la
+/// ligne créanciers de son écriture d'achat égale.
+#[sqlx::test(migrations = "./test-schema")]
+async fn a_created_invoice_has_a_total_in_centimes(pool: MySqlPool) {
+    let ctx = setup(&pool).await;
+    let cas = vec![
+        vec![line(&ctx, dec!(1), dec!(99.95), dec!(0))],
+        vec![line(&ctx, dec!(2), dec!(0.125), dec!(8.1))],
+        vec![
+            line(&ctx, dec!(3), dec!(12.35), dec!(2.6)),
+            line(&ctx, dec!(0.5), dec!(7.30), dec!(8.1)),
+            line(&ctx, dec!(4), dec!(2.5000), dec!(0)),
+        ],
+    ];
+    for (i, lines) in cas.into_iter().enumerate() {
+        let mut new = with_lines(&ctx, lines);
+        new.supplier_invoice_number = Some(format!("FF-C-{i}"));
+        let created = supplier_invoices::create_validated(&pool, new, ctx.seeded.admin_user_id)
+            .await
+            .expect("lignes au centime");
+        let total = created.invoice.total_amount;
+        assert!(
+            total.normalize().scale() <= 2,
+            "TTC {total} sous le centime"
+        );
+        let payable: Decimal = sqlx::query_scalar(
+            "SELECT credit FROM journal_entry_lines WHERE entry_id = ? AND credit > 0",
+        )
+        .bind(created.invoice.purchase_journal_entry_id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(payable, total, "la ligne créanciers égale le TTC");
+    }
+}
+
+/// D9 (v017-3b) — la passe de forme, seule : l'ordre positivité → centime →
+/// TVA, ligne par ligne, et les `line_total` rendus.
+#[test]
+fn purchase_lines_form_orders_its_refusals() {
+    let l = |q: Decimal, p: Decimal, t: Decimal| NewSupplierInvoiceLine {
+        description: "x".into(),
+        quantity: q,
+        unit_price: p,
+        vat_rate: t,
+        expense_account_id: 1,
+    };
+    assert_eq!(
+        supplier_invoices::purchase_lines_form(&[l(dec!(2), dec!(0.125), dec!(8.1))]).unwrap(),
+        vec![dec!(0.250)]
+    );
+    // Centime avant la TVA, sur la même ligne.
+    assert!(matches!(
+        supplier_invoices::purchase_lines_form(&[l(dec!(3), dec!(33.3333), dec!(101))]),
+        Err(DbError::SupplierLineNotInCentimes { line: 1, .. })
+    ));
+    // La TVA d'une ligne antérieure avant le centime d'une ligne ultérieure.
+    assert!(matches!(
+        supplier_invoices::purchase_lines_form(&[
+            l(dec!(1), dec!(1), dec!(101)),
+            l(dec!(3), dec!(33.3333), dec!(0)),
+        ]),
+        Err(DbError::IllegalStateTransition(_))
+    ));
+    // Positivité avant le centime.
+    assert!(matches!(
+        supplier_invoices::purchase_lines_form(&[l(dec!(-1), dec!(33.3333), dec!(0))]),
+        Err(DbError::IllegalStateTransition(_))
+    ));
 }

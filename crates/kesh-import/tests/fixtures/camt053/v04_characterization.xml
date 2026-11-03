@@ -1,0 +1,85 @@
+﻿<?xml version="1.0" encoding="UTF-8"?>
+<!-- Fixture synthétique de caractérisation (Story v017-1, #789) : BOM, CRLF, entités, CDATA. -->
+<!-- Entités (&amp;, &lt;, &#xE9;) et CDATA dans le texte : la sortie FAUTIVE est figée telle quelle par la référence camt053_golden/v04_characterization.json. Comportement de 0.16, défaut tracé par #819 ; ne pas corriger ici. -->
+<Document xmlns="urn:iso:std:iso:20022:tech:xsd:camt.053.001.04" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="urn:iso:std:iso:20022:tech:xsd:camt.053.001.04 camt.053.001.04.xsd">
+  <BkToCstmrStmt>
+    <GrpHdr>
+      <MsgId>CHARAC-2026-10-001</MsgId>
+      <CreDtTm>2026-10-30T12:00:00</CreDtTm>
+    </GrpHdr>
+    <Stmt>
+      <Id>CHARAC-STMT-001</Id>
+      <!-- Période du relevé -->
+      <FrToDt>
+        <FrDtTm>2026-10-01T00:00:00</FrDtTm>
+        <ToDtTm>2026-10-31T23:59:59</ToDtTm>
+      </FrToDt>
+      <Acct>
+        <Id>
+          <IBAN>CH9300762011623852957</IBAN>
+        </Id>
+        <Ccy>CHF</Ccy>
+      </Acct>
+      <Bal>
+        <Tp>
+          <CdOrPrtry>
+            <Cd>OPBD</Cd>
+          </CdOrPrtry>
+        </Tp>
+        <Amt Ccy="CHF">1000.00</Amt>
+        <CdtDbtInd>CRDT</CdtDbtInd>
+        <Dt>
+          <Dt>2026-10-01</Dt>
+        </Dt>
+      </Bal>
+      <Ntry>
+        <!-- Ntry n° 1 : sans TxDtls ; référence de caractère dans Ccy, entités, CDATA -->
+        <Amt Ccy="C&#72;F">100.00</Amt>
+        <CdtDbtInd>CRDT</CdtDbtInd>
+        <Sts>BOOK</Sts>
+        <BookgDt>
+          <Dt>2026-10-10</Dt>
+        </BookgDt>
+        <ValDt>
+          <Dt>2026-10-10</Dt>
+        </ValDt>
+        <NtryRef>REF &amp; Co &lt;1&gt;</NtryRef>
+        <AcctSvcrRef>CHARAC-TX-1</AcctSvcrRef>
+        <AddtlNtryInf><![CDATA[Versement de Müller à Genève]]></AddtlNtryInf>
+      </Ntry>
+      <Ntry>
+        <!-- Ntry n° 2 : Ntry/Amt d'abord, puis un TxDtls complet -->
+        <Amt Ccy="CHF">250.00</Amt>
+        <CdtDbtInd>DBIT</CdtDbtInd>
+        <Sts>BOOK</Sts>
+        <BookgDt>
+          <Dt>2026-10-20</Dt>
+        </BookgDt>
+        <AcctSvcrRef>CHARAC-TX-2</AcctSvcrRef>
+        <NtryDtls>
+          <TxDtls>
+            <Refs>
+              <EndToEndId>E2E-CHARAC-2</EndToEndId>
+            </Refs>
+            <Amt Ccy="C	F">250.00</Amt>
+            <CdtDbtInd>DBIT</CdtDbtInd>
+            <RltdPties>
+              <Cdtr>
+                <Nm>Dupont &amp; Fils, &#xE9;tablissement Müller</Nm>
+              </Cdtr>
+              <CdtrAcct>
+                <Id>
+                  <IBAN>CH5604835012345678009</IBAN>
+                </Id>
+              </CdtrAcct>
+            </RltdPties>
+            <RmtInf>
+              <Ustrd>Facture Genève
+octobre 2026</Ustrd>
+            </RmtInf>
+          </TxDtls>
+        </NtryDtls>
+      </Ntry>
+    </Stmt>
+  </BkToCstmrStmt>
+</Document>

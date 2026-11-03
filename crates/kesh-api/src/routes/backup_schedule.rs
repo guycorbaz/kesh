@@ -122,7 +122,7 @@ pub struct UpdateBackupScheduleRequest {
 }
 
 /// `PUT /api/v1/admin/backup-schedule` — 400 `VALIDATION_ERROR` hors domaine
-/// (rien d'écrit, aucun audit ; message dans la langue de l'instance, clé
+/// (rien d'écrit, aucun audit ; message dans la langue de l'installation, clé
 /// `admin-backup-schedule-error-out-of-domain`, Story 32-1d) ; 409
 /// `OPTIMISTIC_LOCK_CONFLICT` sur une version périmée.
 pub async fn update_backup_schedule(

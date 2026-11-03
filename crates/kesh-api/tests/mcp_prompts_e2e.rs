@@ -672,11 +672,12 @@ fn args(nom: &str, description: &str, texte: &str) -> Value {
 }
 
 /// L'accusé attendu d'une proposition de `nom` (AC-iii3) : le nom validé
-/// seul.
+/// seul. Comparé par égalité au corps entier, il tient aussi l'invariant I de
+/// la v016-1 pour le site S5 (clés exactes `content`, `isError` ; C-v016-1-1,
+/// #811).
 fn accuse(nom: &str) -> Value {
     json!({"jsonrpc":"2.0","id":1,"result":{
         "content": [{"type": "text", "text": texte_accuse_proposition(nom)}],
-        "structuredContent": {"nom": nom, "etat": "a_valider"},
         "isError": false,
     }})
 }

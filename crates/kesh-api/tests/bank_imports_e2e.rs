@@ -638,6 +638,99 @@ async fn post_import_rejects_truncated_xml(pool: MySqlPool) {
     assert_eq!(body["error"]["details"]["kind"], "MALFORMED_XML");
 }
 
+/// Déclarations d'espace de noms portées par `<Stmt>` dans le document hostile
+/// d'AC6 (a) — **constante recopiée** de
+/// `crates/kesh-import/tests/camt053_hostile.rs` (`DECLARATIONS_HOSTILES`) :
+/// deux binaires de test ne partagent pas de code (Story v017-1).
+const DECLARATIONS_HOSTILES: usize = 10_000;
+
+/// Le document d'AC6 (a) de la Story v017-1 : un relevé v04 complet dont le
+/// `<Stmt>` porte [`DECLARATIONS_HOSTILES`] déclarations `xmlns:pK`. **Même
+/// recette** que `releve()` de `camt053_hostile.rs`, recopiée.
+fn hostile_namespace_document() -> Vec<u8> {
+    let declarations: String = (0..DECLARATIONS_HOSTILES)
+        .map(|i| format!(r#" xmlns:p{i}="urn:x:{i}""#))
+        .collect();
+    format!(
+        r#"<?xml version="1.0" encoding="UTF-8"?>
+<Document xmlns="urn:iso:std:iso:20022:tech:xsd:camt.053.001.04">
+  <BkToCstmrStmt>
+    <GrpHdr>
+      <MsgId>HOSTILE-001</MsgId>
+      <CreDtTm>2026-10-30T12:00:00</CreDtTm>
+    </GrpHdr>
+    <Stmt{declarations}>
+      <Id>HOSTILE-STMT-001</Id>
+      <FrToDt>
+        <FrDtTm>2026-10-01T00:00:00</FrDtTm>
+        <ToDtTm>2026-10-31T23:59:59</ToDtTm>
+      </FrToDt>
+      <Acct>
+        <Id>
+          <IBAN>CH9300762011623852957</IBAN>
+        </Id>
+        <Ccy>CHF</Ccy>
+      </Acct>
+      <Bal>
+        <Tp><CdOrPrtry><Cd>OPBD</Cd></CdOrPrtry></Tp>
+        <Amt Ccy="CHF">100.00</Amt>
+        <CdtDbtInd>CRDT</CdtDbtInd>
+        <Dt><Dt>2026-10-01</Dt></Dt>
+      </Bal>
+      <Bal>
+        <Tp><CdOrPrtry><Cd>CLBD</Cd></CdOrPrtry></Tp>
+        <Amt Ccy="CHF">101.00</Amt>
+        <CdtDbtInd>CRDT</CdtDbtInd>
+        <Dt><Dt>2026-10-31</Dt></Dt>
+      </Bal>
+      <Ntry>
+        <Amt Ccy="CHF">1.00</Amt>
+        <CdtDbtInd>CRDT</CdtDbtInd>
+        <Sts>BOOK</Sts>
+        <BookgDt><Dt>2026-10-15</Dt></BookgDt>
+        <AcctSvcrRef>HOSTILE-TX-1</AcctSvcrRef>
+      </Ntry>
+    </Stmt>
+  </BkToCstmrStmt>
+</Document>
+"#
+    )
+    .into_bytes()
+}
+
+/// AC8 (Story v017-1, #789) — les refus de quick-xml 0.42 restent l'erreur que
+/// l'écran sait dire : un document à 10 000 déclarations d'espace de noms
+/// (RUSTSEC-2026-0195), et un fichier non UTF-8 hors du texte lu (divergence
+/// admise C-v017-1-11), postés en **aperçu**, rendent ce que rend un XML
+/// tronqué à la création (`post_import_rejects_truncated_xml`) — les deux
+/// routes passent par `map_camt_error`. Aucun code ni clé i18n neuf.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn post_preview_rejects_hostile_and_non_utf8_xml_as_malformed(pool: MySqlPool) {
+    let s = setup(&pool).await;
+    let app = spawn_app(pool).await;
+
+    for (nom, xml) in [
+        ("hostile_namespaces.xml", hostile_namespace_document()),
+        (
+            "v04_latin1_hors_texte.xml",
+            read_fixture("v04_latin1_hors_texte.xml"),
+        ),
+    ] {
+        let resp = app
+            .client
+            .post(app.url("/api/v1/bank-imports/preview"))
+            .bearer_auth(&s.jwt)
+            .multipart(build_multipart(xml, nom, s.bank_account_id))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), 400, "{nom}");
+        let body: Value = resp.json().await.unwrap();
+        assert_eq!(body["error"]["code"], "BANK_IMPORT_MALFORMED_XML", "{nom}");
+        assert_eq!(body["error"]["details"]["kind"], "MALFORMED_XML", "{nom}");
+    }
+}
+
 #[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn post_import_rejects_when_bank_account_belongs_to_other_company(pool: MySqlPool) {
     // 14e test : IDOR sur bankAccountId du payload — un user company_A ne
@@ -912,6 +1005,61 @@ async fn post_preview_returns_duplicate_lines_warning(pool: MySqlPool) {
     assert_eq!(dup_lines.len(), 1, "1 ligne doublon attendue");
     let new_idx = dup_lines[0]["newIndex"].as_u64().unwrap();
     assert!(new_idx == 0 || new_idx == 1);
+}
+
+/// AC11 (Story v017-1, #789) — un relevé importé ne passe pas pour neuf : le
+/// **même** fichier, importé puis reposté en aperçu, est signalé **à la fois**
+/// en doublon de fichier et ligne par ligne (toutes ses transactions).
+///
+/// Import et aperçu tournent dans le même binaire : ce test ne voit pas une
+/// dérive entre versions de quick-xml. Il fixe la logique `DuplicateKey` ; la
+/// preuve d'une version à l'autre est la caractérisation de la sortie du
+/// parseur (`kesh-import/tests/camt053_golden.rs` : même sortie → mêmes clés),
+/// et le test d'empreinte `file_hash_is_sha256_of_received_bytes` pour le hash.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn post_preview_of_imported_file_flags_file_and_every_line(pool: MySqlPool) {
+    let s = setup(&pool).await;
+    let app = spawn_app(pool).await;
+
+    let xml = read_fixture("v04_minimal.xml");
+    let transactions = kesh_import::parse_camt053(&xml).expect("v04_minimal se lit")[0]
+        .transactions
+        .len();
+    assert!(transactions > 0);
+
+    let r1 = app
+        .client
+        .post(app.url("/api/v1/bank-imports"))
+        .bearer_auth(&s.jwt)
+        .multipart(build_multipart(
+            xml.clone(),
+            "v04_minimal.xml",
+            s.bank_account_id,
+        ))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(r1.status(), 201);
+
+    let r2 = app
+        .client
+        .post(app.url("/api/v1/bank-imports/preview"))
+        .bearer_auth(&s.jwt)
+        .multipart(build_multipart(xml, "v04_minimal.xml", s.bank_account_id))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(r2.status(), 200);
+    let body: Value = r2.json().await.unwrap();
+    let dup = &body["warnings"]["duplicateFile"];
+    assert!(!dup.is_null(), "duplicateFile attendu");
+    assert!(dup["existingImportId"].as_i64().unwrap() > 0);
+    let dup_lines = body["warnings"]["duplicateLines"].as_array().unwrap();
+    assert_eq!(
+        dup_lines.len(),
+        transactions,
+        "chaque transaction du fichier déjà importé est un doublon de ligne"
+    );
 }
 
 #[sqlx::test(migrations = "../kesh-db/test-schema")]

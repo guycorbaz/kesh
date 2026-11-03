@@ -40,7 +40,17 @@ jobs:
 
       - name: Extract version
         id: version
-        run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+        # Un tag de pré-version (`vX.Y.Z-rcN`, convention des `v0.1.0-rc1` à `-rc3`) publie la
+        # seule image `:X.Y.Z-rcN` : il ne déplace pas `:latest`, et sa GitHub Release est
+        # marquée pré-version. Tout suffixe après un tiret compte comme pré-version (SemVer).
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          if [[ "$VERSION" == *-* ]]; then
+            echo "prerelease=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "prerelease=false" >> "$GITHUB_OUTPUT"
+          fi
 
       # Story 31-2 (C-31-2-11) — connexion AVANT le builder : il tire
       # `moby/buildkit` depuis Docker Hub.
@@ -59,9 +69,10 @@ jobs:
           platforms: linux/amd64
           load: true
           push: false
+          # Ligne vide pour une pré-version : build-push-action ignore les entrées vides.
           tags: |
             gcorbaz/kesh:${{ steps.version.outputs.version }}
-            gcorbaz/kesh:latest
+            ${{ steps.version.outputs.prerelease == 'false' && 'gcorbaz/kesh:latest' || '' }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
           labels: |
@@ -156,10 +167,15 @@ jobs:
       - name: Push image to Docker Hub
         run: |
           docker push gcorbaz/kesh:${{ steps.version.outputs.version }}
-          docker push gcorbaz/kesh:latest
+          if [ "${{ steps.version.outputs.prerelease }}" = "false" ]; then
+            docker push gcorbaz/kesh:latest
+          else
+            echo "→ pré-version : :latest n'est pas poussé"
+          fi
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           generate_release_notes: true
           name: ${{ github.ref_name }}
+          prerelease: ${{ steps.version.outputs.prerelease == 'true' }}

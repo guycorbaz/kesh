@@ -481,7 +481,7 @@ async fn facture_fournisseur(pool: &MySqlPool, s: &SeededCompany) -> Result<i64,
                 .id
         }
     };
-    supplier_invoices::create(
+    supplier_invoices::create_validated(
         pool,
         NewSupplierInvoice {
             company_id: s.company_id,

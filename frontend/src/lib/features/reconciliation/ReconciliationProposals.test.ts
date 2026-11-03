@@ -1011,9 +1011,11 @@ describe('ReconciliationProposals — une ligne sans proposition se rejette (Sto
 	});
 });
 
-// Story 29-8 (#670, AC4, C-29-8-14) — le bouton « Rattacher à un règlement », sur les seules
-// lignes de crédit en CHF (miroir de la condition 1), et le bilan après un rattachement.
-describe('ReconciliationProposals — rattacher à un règlement (Story 29-8)', () => {
+// Story 29-8 (#670, AC4, C-29-8-14) — le bouton de rattachement, et le bilan après un
+// rattachement. Story v017-3a (#671, AC-13) : le bouton, renommé « Rattacher à une écriture
+// existante », est sur toute ligne en CHF de montant non nul (miroir de
+// `transaction_can_be_linked_to_entry`), débits compris.
+describe('ReconciliationProposals — rattacher à une écriture existante (Stories 29-8, v017-3a)', () => {
 	function ligne(
 		id: number,
 		amount: string,
@@ -1027,7 +1029,7 @@ describe('ReconciliationProposals — rattacher à un règlement (Story 29-8)', 
 		vi.clearAllMocks();
 	});
 
-	it('le bouton est sur une ligne de crédit en CHF, et absent sur un débit, un montant nul ou une autre devise (M12)', async () => {
+	it('le bouton est sur une ligne en CHF non nulle, débit compris, et absent sur un montant nul ou une autre devise (v017-3a M14)', async () => {
 		mockApi.getProposals.mockResolvedValue({
 			proposals: [ligne(1, '100.03'), ligne(2, '-50.00'), ligne(3, '0.00'), ligne(4, '20.00', 'EUR')],
 			hasMore: false,
@@ -1035,7 +1037,8 @@ describe('ReconciliationProposals — rattacher à un règlement (Story 29-8)', 
 		const { findAllByTestId } = render(ReconciliationProposals, { bankAccountId: 17 });
 		await findAllByTestId('reconciliation-row');
 		const boutons = await findAllByTestId('link-settlement-button');
-		expect(boutons.map((b) => b.getAttribute('data-tx-id'))).toEqual(['1']);
+		expect(boutons.map((b) => b.getAttribute('data-tx-id'))).toEqual(['1', '2']);
+		expect(boutons[1].textContent?.trim()).toBe('Rattacher à une écriture existante');
 	});
 
 	it('un rattachement réussi efface le bilan du lot précédent, recharge et affiche « 1 opération(s) réussie(s). »', async () => {

@@ -20,6 +20,7 @@ pub mod config;
 pub mod document_storage;
 pub mod errors;
 pub mod exports;
+pub(crate) mod extractors;
 pub mod helpers;
 pub mod inbox_import;
 pub mod logging;
@@ -304,6 +305,14 @@ pub fn build_router_avec_registre(
         .route(
             "/api/v1/invoices/{id}",
             delete(routes::invoices::delete_invoice),
+        )
+        // Story v017-4a (#849, AC-9) : le DELETE d'un BROUILLON de facture
+        // fournisseur, Admin uniquement et fermé aux clés, comme celui de la
+        // facture client. Même path que le GET (lectures) et le PUT
+        // (comptable_routes) : méthodes disjointes, fusionnées au merge.
+        .route(
+            "/api/v1/supplier-invoices/{id}",
+            delete(routes::supplier_invoices::delete_supplier_invoice),
         )
         // Story 21-5a : annulation (soft) d'un rappel envoyé par erreur — Admin.
         .route(
@@ -617,6 +626,20 @@ pub fn build_router_avec_registre(
             "/api/v1/supplier-invoices",
             post(routes::supplier_invoices::create_supplier_invoice),
         )
+        // Story v017-4a (#849) : modifier un brouillon (PUT), le valider, le
+        // dévalider — Comptable+, clés `read-write` admises.
+        .route(
+            "/api/v1/supplier-invoices/{id}",
+            put(routes::supplier_invoices::update_supplier_invoice),
+        )
+        .route(
+            "/api/v1/supplier-invoices/{id}/validate",
+            post(routes::supplier_invoices::validate_supplier_invoice),
+        )
+        .route(
+            "/api/v1/supplier-invoices/{id}/unvalidate",
+            post(routes::supplier_invoices::unvalidate_supplier_invoice),
+        )
         .route(
             "/api/v1/supplier-invoices/{id}/pay",
             post(routes::supplier_invoices::pay_supplier_invoice),
@@ -804,6 +827,26 @@ pub fn build_router_avec_registre(
             "/api/v1/bank-imports/{id}",
             delete(routes::bank_imports::delete),
         )
+        // Story v016-2a (#816) : saisir un relevé à la main (Comptable+, clés
+        // `read-write` comme l'import). Corps JSON borné par une limite PROPRE,
+        // indépendante de `KESH_BANK_IMPORT_MAX_MB` (revue de code P1, E1) :
+        // 500 lignes pleines approchent 2,1 Mo, la limite est de 3 Mio.
+        .route(
+            "/api/v1/bank-imports/manual/preview",
+            post(routes::bank_statements_manual::preview).layer(
+                axum::extract::DefaultBodyLimit::max(
+                    routes::bank_statements_manual::MANUAL_STATEMENT_BODY_LIMIT_BYTES,
+                ),
+            ),
+        )
+        .route(
+            "/api/v1/bank-imports/manual",
+            post(routes::bank_statements_manual::create).layer(
+                axum::extract::DefaultBodyLimit::max(
+                    routes::bank_statements_manual::MANUAL_STATEMENT_BODY_LIMIT_BYTES,
+                ),
+            ),
+        )
         // Story 8-2 : write profils CSV (Comptable+).
         .route("/api/v1/bank-profiles", post(routes::bank_profiles::create))
         .route(
@@ -860,6 +903,17 @@ pub fn build_router_avec_registre(
         .route(
             "/api/v1/reconciliation/transactions/{id}/link",
             post(routes::reconciliation::post_link_transaction),
+        )
+        // Story v017-3a (#671) : rattacher une transaction à une écriture déjà
+        // passée (Comptable+, clés API d'écriture admises) — la liste des
+        // écritures candidates, puis le rattachement.
+        .route(
+            "/api/v1/reconciliation/transactions/{id}/entry-candidates",
+            get(routes::reconciliation::get_entry_candidates),
+        )
+        .route(
+            "/api/v1/reconciliation/transactions/{id}/link-entry",
+            post(routes::reconciliation::post_link_entry),
         )
         // Story 8-5a-zero : configuration `bank_account.journal_account_id`
         // (Comptable+ pour la mutation, foundation FR45/FR48).

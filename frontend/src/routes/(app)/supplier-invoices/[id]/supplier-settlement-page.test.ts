@@ -149,7 +149,7 @@ describe("fiche facture fournisseur — annuler le règlement", () => {
       await findByTestId("supplier-invoice-settlement-cancel"),
     );
     await waitFor(() => expect(cancelSettlementMock).toHaveBeenCalledWith(9));
-    // Revenue « ouverte » : le formulaire de paiement revient, le motif « non
+    // Revenue « validée » : le formulaire de paiement revient, le motif « non
     // payée » ne s'affiche PAS à côté de lui.
     await waitFor(() =>
       expect(queryByTestId("supplier-invoice-pay")).not.toBeNull(),
@@ -199,7 +199,10 @@ describe("fiche facture fournisseur — annuler le règlement", () => {
     );
     const texte = String(confirmSpy.mock.calls[0][0]);
     expect(texte).toContain("lot de paiement n° 42");
-    expect(texte).toContain("2026-07-02");
+    // Story v017-4b, revue P2 (B2-4) : la date au format suisse, comme l'avertissement de
+    // la dévalidation (elle s'écrivait en ISO, `2026-07-02`).
+    expect(texte).toContain("02.07.2026");
+    expect(texte).not.toContain("2026-07-02");
     expect(texte).not.toContain("payée par");
   });
 
@@ -302,7 +305,7 @@ describe("fiche facture fournisseur — annuler la facture (Story 25-3-c)", () =
     expect(queryByTestId("supplier-invoice-settlement-entry")).toBeNull();
   });
 
-  it("confirmation d'une facture ouverte ⇒ sans le paragraphe du paiement", async () => {
+  it("confirmation d'une facture validée ⇒ sans le paragraphe du paiement", async () => {
     getMock.mockResolvedValue(inv({ status: "open", settlementJournalEntryId: null }));
     cancelInvoiceMock.mockResolvedValue(inv({ status: "cancelled", cancellable: false }));
     const { findByTestId } = render(Page);
@@ -443,5 +446,68 @@ describe("fiche facture fournisseur — la contrepartie n’est pas le compte cr
     const { findByTestId, queryByTestId } = await monter([banque(3, null)]);
     await findByTestId("pay-bank-account");
     expect(queryByTestId("pay-no-eligible-bank")).toBeNull();
+  });
+});
+
+// Story v017-3b (#687, AC-10, C-v017-3-26, C-v017-3-27) — une facture EXISTANTE au
+// total sous le centime : la fiche l'affiche aux décimales exactes et l'avertit,
+// sauf annulée. L'intégration de `SupplierInvoiceTotal` dans la page.
+describe("fiche facture fournisseur — total sous le centime", () => {
+  const ligne = {
+    position: 1,
+    description: "Prestation",
+    quantity: "1.0000",
+    unitPrice: "100.0040",
+    vatRate: "0.00",
+    lineTotal: "100.0040",
+    expenseAccountId: 1,
+  };
+
+  it("validée, 100.0040 ⇒ l'avertissement, le TTC et les cellules de lignes exacts (M14, M16)", async () => {
+    getMock.mockResolvedValue(
+      inv({
+        status: "open",
+        totalAmount: "100.0040",
+        lines: [ligne],
+        settlementType: null,
+        settlementAccountId: null,
+        settlementJournalEntryId: null,
+        paidAt: null,
+      }),
+    );
+    const { findByTestId, getAllByTestId } = render(Page);
+    expect(
+      (await findByTestId("supplier-invoice-subcentime-warning")).textContent,
+    ).toContain("100.0040");
+    expect(
+      (await findByTestId("supplier-invoice-total")).textContent?.trim(),
+    ).toBe("100.0040");
+    expect(
+      getAllByTestId("supplier-invoice-detail-line-unit-price")[0].textContent?.trim(),
+    ).toBe("100.0040");
+    expect(
+      getAllByTestId("supplier-invoice-detail-line-total")[0].textContent?.trim(),
+    ).toBe("100.0040");
+  });
+
+  it("annulée, 100.0040 ⇒ aucun avertissement : la page transmet le statut (M7)", async () => {
+    getMock.mockResolvedValue(
+      inv({
+        status: "cancelled",
+        totalAmount: "100.0040",
+        lines: [ligne],
+        settlementType: null,
+        settlementAccountId: null,
+        settlementJournalEntryId: null,
+        paidAt: null,
+        cancellable: false,
+        settlementCancellable: false,
+      }),
+    );
+    const { findByTestId, queryByTestId } = render(Page);
+    expect(
+      (await findByTestId("supplier-invoice-total")).textContent?.trim(),
+    ).toBe("100.0040");
+    expect(queryByTestId("supplier-invoice-subcentime-warning")).toBeNull();
   });
 });

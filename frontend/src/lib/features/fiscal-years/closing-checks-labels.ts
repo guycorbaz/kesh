@@ -31,6 +31,8 @@ export function checkTitle(code: ClosingCheckCode): string {
 			return i18nMsg('fiscal-years-checks-k6-title', 'Écritures incohérentes');
 		case 'NEXT_FISCAL_YEAR':
 			return i18nMsg('fiscal-years-checks-k7-title', 'Exercice suivant');
+		case 'DRAFT_SUPPLIER_INVOICES':
+			return i18nMsg('fiscal-years-checks-k8-title', 'Factures fournisseur en brouillon');
 	}
 }
 
@@ -45,7 +47,7 @@ export function checkHelp(code: ClosingCheckCode): string {
 		case 'PENDING_BANK_TRANSACTIONS':
 			return i18nMsg(
 				'fiscal-years-checks-k2-help',
-				'Les transactions importées de l’exercice qui n’ont pas encore d’écriture.'
+				'Les transactions bancaires de l’exercice, importées ou saisies, qui n’ont pas encore d’écriture.'
 			);
 		case 'BANK_STATEMENT_AT_YEAR_END':
 			return i18nMsg(
@@ -71,6 +73,11 @@ export function checkHelp(code: ClosingCheckCode): string {
 			return i18nMsg(
 				'fiscal-years-checks-k7-help',
 				'L’exercice qui suit, où se passent les écritures de l’année suivante.'
+			);
+		case 'DRAFT_SUPPLIER_INVOICES':
+			return i18nMsg(
+				'fiscal-years-checks-k8-help',
+				'Les factures fournisseur datées dans l’exercice et jamais validées : leur achat n’est pas en comptabilité.'
 			);
 	}
 }
