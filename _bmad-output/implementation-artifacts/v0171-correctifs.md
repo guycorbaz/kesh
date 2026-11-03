@@ -1,6 +1,6 @@
 # Story v0171-correctifs : la 0.17.1 — la QR-facture à lignes CR+LF (#854), la quantité (#866, #878) et les dates (#871, #879)
 
-Status: in-progress
+Status: review
 
 *Amendée le 2026-11-03 sur demande du Project Lead : périmètre élargi à **#878** (champ de saisie de la quantité d'une facture cliente) et **#879** (dates ISO des écrans clients) — issues ouvertes par l'orchestrateur sur les relevés de la première rédaction ; C-v0171-7 et C-v0171-10 sont remplacés par C-v0171-13 et 14. Fiche rédigée le 2026-11-03, en autonomie (Sonnet 5.5), worktree `/home/gcorbaz/devel/kesh-0171`, branche
 `release/0.17.1` partie de `910e5d5a` (le merge de la v0.17.0 sur `main`). Release **corrective 0.17.1**, sans
@@ -439,3 +439,162 @@ Rapport `kesh-gate-logs/v0171-validate-p4.md` ; prémisses relues :
 - **P2** (huit chemins) — sonde rejouée à `910e5d5a` sur les huit fichiers : `… | wc -l` → **22** ; § 10 énumère les huit chemins depuis `frontend/`, AC-12 y renvoie.
 - **P3** (`vatRate`) — ligne lue : `crates/kesh-db/src/repositories/vat_rates.rs:55` `WHERE company_id = ? AND active = TRUE ORDER BY rate DESC` ; § 11 et
   C-v0171-21 bornés (jamais affiché brut ; taux désactivé → #882).
+
+### Rouges constatés avant tout correctif (tâche 1)
+
+Journaux : `kesh-gate-logs/v0171/rouges-backend.log`, `rouges-vitest.log`.
+
+- **Backend** (`cargo nextest`, filtre `test(/v0171|crlf|decode_spc_from_png_roundtrip/)`, 12 tests) : **5 rouges** —
+  T1 `v0171_t1_first_spc_retient_un_payload_crlf` (`expect("payload CR+LF retenu")`, `qr_decode.rs:465`), T2
+  `v0171_t2_decode_image_png_crlf` (`expect("QR-facture CR+LF lue")`, `:487` — l'assertion précédente, `rxing` rend le payload
+  CR+LF à l'identique, **passe** : rxing préserve `\r`, la cause est bien le préfiltre), T4 `v0171_t4_crlf_lue_au_premier_temps`
+  (`left: [(0, Premier), (0, Second)]`), T4 `v0171_t4_crlf_inexploitable` (rendu `LU` par le second temps au lieu de
+  `InvalidSpcPayload`), T8 `import_crlf_qr_reports_present` (`"qr":"none"`). **Verts avant** : T3 (`decode_spc_from_png_roundtrip`),
+  T5 (`v0171_t5_prefiltre_negatifs`), T6 (`crlf_payload_parses_like_lf_without_residual_cr`, `crlf_payload_with_qrr_parses_like_lf`),
+  T7 (`crlf_spc_text_maps_like_lf`, `scan_qr_crlf_payload_returns_same_coordinates_as_lf`). T6 vert : **aucun `\r` résiduel au
+  parseur**, pas de second défaut (tâche 3).
+- **Vitest** (sept répertoires ou fichiers, `data-testid` posés d'abord sans changer l'affichage, C-v0171-23) : **34 rouges**, tous
+  sur la valeur (« expected '2026-03-01' to be '01.03.2026' », « expected [ '1.0000', … ] », « expected [ '1', '100.0000' ] »…) —
+  T9, T10, T11, T12, T13, T14, — dont un premier test d'aller-retour qui mêlait `33.3333` et la saisie `2.5` et rougissait sur le prix `10.0000` de sa seconde ligne : il a été scindé en deux tests (`33.3333` part tel quel ; `2.5` saisi part `"2.5"`), qui ne dépendent pas du correctif — vérifié sous M6 et M6-ter `initLines`, où ils restent verts —, et les deux tests
+  mis à jour d'`invoice-pdf-page.test.ts`. Les tests d'échéance nulle (`—`) sont verts avant et après.
+
+### Implémentation
+
+- `crates/kesh-api/src/qr_decode.rs` : `SPC_HEADERS` + `est_payload_spc` (C-v0171-22), employé par `first_spc` et par le test
+  `decode_spc_from_png_roundtrip` (`:444` d'origine) ; doc-comments `:7` et `:237` récrits ; tests T1, T2, T4 (`Faux::SpcCrlf`,
+  `Faux::SpcCrlfInvalide`), T5. Parseur **non modifié** (T6 seulement). `generator.rs` non touché.
+- Tests : `parser.rs` (T6, deux cas), `routes/supplier_invoices.rs::scan_qr_tests` et `supplier_invoice_scan_qr_e2e.rs` (T7),
+  `inbox_import_e2e.rs` (`qr_invoice_png_with_sep`, T8).
+- Frontend : `readableAmount(q, 0)` aux trois fiches (#866) ; `formatSwissDate` aux sept sites fournisseur et lots (#871) et aux
+  dix-sept sites clients (#879) ; `readableAmount` aux deux sites quantité et trois sites prix d'`InvoiceForm` (#878) ;
+  `invoice-pdf-page.test.ts:171-173, :220-222` mis à jour (l'ISO y était figé) ; E2E `invoices.spec.ts:634` `150.0000` ⇒ `150.00`
+  (C-v0171-25). Grep des specs E2E et des `.test.ts` : aucune autre assertion ne fige une date ISO de ces écrans
+  (`git grep -nE "(toContainText|toHaveText|toContain|toBe)\(.{0,40}[0-9]{4}-[0-9]{2}-[0-9]{2}" -- tests/e2e` ne rend que
+  `fiscal-year-closing-journey.spec.ts:282`, une réponse d'API) ; une seule fige une quantité ou un prix brut (`invoices.spec.ts:634`).
+- Décomptes (périmètre `68374eb9..HEAD`) : **10 tests backend** neufs (`#[test]`/`#[sqlx::test]` : `qr_decode.rs` 35 → 40,
+  `parser.rs` 10 → 12, `supplier_invoices.rs` 4 → 5, `inbox_import_e2e.rs` 43 → 44, `supplier_invoice_scan_qr_e2e.rs` 5 → 6) ;
+  **35 tests Vitest** neufs (`it(` ajoutés, aucun retiré) dans quatorze fichiers.
+
+### AC-8 et AC-12 — greps de contrôle (rejoués après correction)
+
+- **AC-8** : `grep -rnE '\{(inv|invoice|b|batch)\.(invoiceDate|dueDate|requestedExecutionDate|confirmedAt)\b' src --include=*.svelte
+  | /usr/bin/grep -vF formatSwissDate` (depuis `frontend/`) → **0 ligne** ; sonde positive sur `910e5d5a` → **10**.
+- **AC-12**, motif du § 10 sur les huit fichiers (`kesh-gate-logs/v0171/ac12.txt`) : **8 lignes** avant filtre ; après
+  `| /usr/bin/grep -vF formatSwissDate`, **exactement les cinq lignes** des exceptions (a) :
+  `invoices/[id]/+page.svelte:1002` (`{invoice.emailedAt`), `:1016` (`{invoice?.emailedAt`), `:1569` et `:1591`
+  (`invoiceDate={invoice.date}`), `due-dates/+page.svelte:520` (`invoiceDate={markTarget.date}`) — numéros décalés de `910e5d5a`
+  (`:1000, :1014, :1561, :1583, :514`) par les lignes ajoutées. Aucune première ligne de ternaire multi-lignes.
+  **Lignes retirées par le filtre (b)**, relues : `invoices/[id]/+page.svelte:1143` `{invoice.dueDate ? formatSwissDate(invoice.dueDate) : '—'}`,
+  `due-dates/+page.svelte:453` `{inv.dueDate ? formatSwissDate(inv.dueDate) : '—'}`, `due-dates/+page.svelte:472`
+  `>{inv.paidAt ? formatSwissDate(inv.paidAt.slice(0, 10)) : '—'}</td`. Les quatorze autres sites corrigés (`{formatSwissDate(…)}`,
+  `date: formatSwissDate(…)`) ne correspondent plus au motif ; chacun est tenu par son test et sa mutation (ci-dessous).
+
+### Mutations (sous le verrou, restauration `git checkout -- <fichier>` puis `touch`)
+
+Journaux : `kesh-gate-logs/v0171/mut/back.log`, `front.log`, `front-liste.log` ; scripts `mutations-back.py`, `mutations-front.py`.
+
+- **M1** (préfiltre strict) : 5 rouges — T1, T2, T4 ×2, T8. **Tuée.**
+- **M2** (tout préfixe `SPC`) : 1 rouge — T5. **Tuée.**
+- **M3** (`trim_end_matches('\r')` retiré du parseur) : 8 rouges — T1, T2, T4 (lu au premier temps), T6 ×2, T7 ×2, T8. **Tuée.**
+  Écart à la fiche : le jumeau inexploitable de T4 (`v0171_t4_crlf_inexploitable`) reste **vert** sous M3 — normal : un payload
+  `SPC\r…` refusé par le parseur reste `InvalidSpcPayload`, qui est son attendu.
+- **M4** ×3 (fiche fournisseur, fiche cliente, fiche d'avoir) : chacune rougit le seul test de quantité de sa fiche. **Tuées.**
+- **M5** ×21 (un par site de date corrigé, sauf `emailedAt`) et **M7** ×3 (`emailedAt`, `sentAt`, `cancelledAt`) : chacune rougit
+  le **seul** test de son site. Au premier passage, M5 sur `inv.date` de la liste des factures rougissait aussi le test de la
+  confirmation de suppression (qui lisait tout `document.body`) ; ce test lit désormais le seul dialogue, et le rejeu donne un
+  rouge par mutation (`front-liste.log`). **Tuées.**
+- **M6** : `reloadInvoice` (quantité) seul ⇒ seul « après Recharger » rouge ; `initLines` (quantité) seul ⇒ « ouverture » et
+  « aller-retour sans toucher » rouges, « après Recharger » vert. **M6-ter** : prix `initLines` ⇒ « ouverture » + « aller-retour » ;
+  prix `reloadInvoice` ⇒ « après Recharger » ; prix `onProductSelect` ⇒ « ajout depuis un article ». **Tuées.**
+- Après restauration : filtre backend 12/12 verts ; arbre propre.
+
+### AC-9 — #871 vérifiée par exécution
+
+Base jetable `kesh_v0171`, backend sur `127.0.0.1:3171`, Playwright (`kesh-gate-logs/v0171/recette/recette-v0171.mjs`) : facture
+fournisseur payée par un lot confirmé, bouton « Annuler le règlement », `window.confirm` intercepté puis **refusé** (rien d'annulé).
+Texte capturé (`captures/recette.log`) :
+
+> Annuler ce règlement ? Une écriture inverse datée d'aujourd'hui sera passée au grand livre, et la facture redeviendra validée, à payer.
+> Cette facture figure dans le lot de paiement n° 1, confirmé le 03.11.2026. Si la banque a exécuté cet ordre, elle a déjà été payée : corrigez alors par un nouveau règlement direct, jamais par un nouveau lot.
+
+`confirmedAt` du lot : `2026-11-03T17:40:45.806` ; `03.11.2026` présent, aucune forme `AAAA-MM-JJ`. **#871 est déjà corrigée en
+0.17.0 pour cette confirmation** (B2-4) ; le correctif de la 0.17.1 porte sur les sept autres sites (§ 9). Commentaire à l'issue
+demandé à l'orchestrateur.
+
+### Captures (thème clair, base jetable `kesh_v0171`, données synthétiques)
+
+`kesh-gate-logs/v0171/captures/` : `01-liste-factures-fournisseur`, `02-fiche-fournisseur-quantites-dates`,
+`03-fiche-fournisseur-sans-echeance`, `04-liste-lots`, `05-fiche-lot-confirme`, `06-fiche-facture-payee-figee-envoyee-reglements-quantites`,
+`07-fiche-facture-historique-rappels-annule`, `08-liste-factures`, `09-dialogue-suppression-facture`, `10-echeancier`,
+`11-relances-dernier-le`, `12-liste-avoirs`, `13-fiche-avoir`, `14-brouillon-rouvert-quantite-prix`, `15-brouillon-conflit-de-version`,
+`16-brouillon-apres-recharger`, `17-brouillon-ligne-depuis-article` (dix-sept PNG) et `recette.log`. Champs relevés : brouillon serveur
+`[1.0000, 100.0000] [2.5000, 100.2000] [33.3333, 33.3333]` ⇒ champs `1, 100.00, 2.5, 100.20, 33.3333, 33.3333`, identiques après
+« Recharger » ; ligne ajoutée depuis l'article ⇒ `1, 100.00`.
+
+### Manuel et CHANGELOG
+
+- `docs/manual/fr/user-manual.tex`, § *Documents à traiter*, badge « Aucune QR-facture exploitable » : phrase sur la 0.17.1 et le
+  CR+LF, renvoi au geste de *Faire relire le QR d'un document*. PDF régénéré (`make user`, sous verrou, 3 passes, stable). Contrôle
+  aplati : « Depuis la version 0.17.1, Kesh lit aussi les QR-factures » → 1 ; « retour chariot suivi d’un saut de ligne (CR+LF) » → 1 ;
+  « Faire relire le QR d’un document) » → 1 (apostrophes typographiques).
+- `CHANGELOG.md` : section `## [0.17.1] — Non publié` **créée** (écart au mandat, qui la disait existante : elle n'existait pas à
+  `68374eb9`), cinq entrées *Corrigé*, #871 ajustée selon AC-9, #880 citée pour les autres écrans.
+
+### Gates (au dernier commit de code `32769535`)
+
+- Bases `kesh_v0171` et `kesh_e2e_v0171` recréées à neuf (migrations du worktree + seed) avant le gate.
+- **Backend** `scripts/test-fast.sh` (fmt, clippy `-D warnings`, nextest) : **4683 exécutés, 4683 verts, 12 ignorés**
+  (`gate-backend.log`).
+- **Frontend** : `npm run check` 0 erreur (29 avertissements, aucun dans un fichier touché) ; `lint-i18n-ownership` vert ;
+  `npm run test:unit` **2433 tests, 204 fichiers, verts** ; `npm run build` vert (`gate-frontend.log`).
+- **E2E complet**, premier run (`32769535`) : **non valable** — 21 échecs, dont 14 hors baseline, mais le backend du run n'avait
+  pas démarré (`Address already in use` sur 3171) : le backend de la recette visuelle, dont j'avais tué le PID du lanceur et non
+  celui du processus, servait encore le port avec la base `kesh_v0171` et un autre dossier d'import. D'où les échecs de
+  `inbox-import`, `supplier-documents`, `backup-restore-new-install` et `supplier-invoice-draft-cycle:576` (« le runner et le backend
+  n'utilisent pas le même KESH_INBOX_DIR »). Ce run a cependant révélé **un échec réel dû à la story** :
+  `invoices_echeancier.spec.ts:100` filtrait la ligne de l'échéancier sur la date ISO (`daysFromToday(-1)`), que #879 affiche
+  désormais en `JJ.MM.AAAA` — corrigé au commit `e5d4ccd0` (filtre sur la forme suisse). Le processus résiduel a été tué par son
+  PID (environnement relu : `DATABASE_URL=…/kesh_v0171`, `KESH_PORT=3171`), le script d'E2E refuse désormais un port occupé et un
+  backend mort au démarrage.
+- **E2E complet**, second run, au dernier commit de code `e5d4ccd0`, base `kesh_e2e_v0171` recréée, dossiers neufs
+  `/tmp/kesh-e2e-v0171-3/…` passés au backend et au runner : **335 verts, 7 échecs, 18 ignorés** (`e2e.log`). Les 7 échecs sont
+  exactement les KF-029 (#97) de `docs/testing.md` § *Les échecs attendus* : `mode-expert.spec.ts:26`, `:41`,
+  `onboarding-path-b.spec.ts:65`, `:92`, `onboarding.spec.ts:57`, `:77`, `:150`. Ni KF-052, ni pollution.
+- Le commit `e5d4ccd0` ne touche qu'une spec E2E : les gates backend et frontend du commit `32769535` portent sur un code
+  applicatif et des tests unitaires identiques (`git diff --stat 32769535 e5d4ccd0` : `frontend/tests/e2e/invoices_echeancier.spec.ts` seul).
+
+### Écarts à la fiche et au mandat
+
+- Section `## [0.17.1] — Non publié` du CHANGELOG **créée** (le mandat la disait existante).
+- M3 ne rougit pas le jumeau inexploitable de T4 (justifié plus haut).
+- Données de recette : la ligne fournisseur `33.3333 × 3.00` est refusée par la règle du centime (v017-3b) ; la recette emploie
+  `33.25 × 4.00`. Les tests unitaires gardent `33.3333`.
+- Spec E2E `invoices_echeancier.spec.ts` modifiée (non prévue par la fiche, qui n'avait relevé que les assertions à date littérale).
+
+### Pour l'orchestrateur
+
+- Commenter #871 : la confirmation d'annulation de règlement affichait déjà `JJ.MM.AAAA` en 0.17.0 (AC-9, texte ci-dessus) ; la 0.17.1
+  corrige les sept autres sites.
+- Défaut observé hors périmètre, à trier : sur la base de démonstration, les numéros de facture sortent `F-2020-0001`/`F-2020-0002`
+  pour des factures datées de 2026 (capture `06`, `11`) — à vérifier contre le format de numérotation du seed avant d'ouvrir une issue.
+- Revue de code P1 : `v0171-correctifs-review-prompt-p1.md` (Sonnet, B/E/A).
+
+### File List
+
+`crates/kesh-api/src/qr_decode.rs`, `crates/kesh-api/src/routes/supplier_invoices.rs`, `crates/kesh-api/tests/inbox_import_e2e.rs`,
+`crates/kesh-api/tests/supplier_invoice_scan_qr_e2e.rs`, `crates/kesh-qrbill/src/parser.rs` ;
+`frontend/src/lib/components/invoices/InvoiceForm.svelte` (+ `.test.ts`), `frontend/src/lib/features/invoices/InvoiceSettlements.svelte`
+(+ `.test.ts`), `frontend/src/lib/features/reminders/ReminderHistory.svelte` (+ `ReminderHistory.test.ts`, neuf),
+`frontend/src/routes/(app)/{supplier-invoices/+page, supplier-invoices/[id]/+page, payment-batches/+page, payment-batches/[id]/+page,
+invoices/+page, invoices/[id]/+page, invoices/due-dates/+page, invoices/reminders/+page, credit-notes/+page, credit-notes/[id]/+page}.svelte`
+et leurs tests (neufs : `supplier-invoice-display-page`, `payment-batches-dates-page`, `payment-batch-detail-page`, `invoices-list-page`,
+`invoice-display-page`, `reminders-page`, `credit-notes-list-page`, `credit-note-display-page` ; complétés : `supplier-invoices-list-page`,
+`due-dates-page`, `invoice-pdf-page`) ; `frontend/tests/e2e/invoices.spec.ts`, `frontend/tests/e2e/invoices_echeancier.spec.ts` ;
+`docs/manual/fr/user-manual.tex` et `.pdf` ; `CHANGELOG.md` ; fiche, registre (C-v0171-22 à 25), `sprint-status.yaml`, prompt de revue P1.
+
+### Change Log (développement)
+
+- 2026-11-03 — développement (Opus 5.5, autonomie) : étape 0 (LOW P1–P3 de la validation P4) ; rouges constatés (backend 5, Vitest 34) ;
+  #854, #866, #871, #878, #879 corrigés ; mutations M1–M7 tuées ; AC-9 : #871 déjà corrigée en 0.17.0 pour la confirmation ; manuel et
+  PDF, CHANGELOG ; gates : backend 4683/4683 (12 ignorés), Vitest 2433, E2E 335 verts / 7 échecs KF-029. Registre C-v0171-22 à 25.
+  Prochaine : revue de code P1 (Sonnet, `v0171-correctifs-review-prompt-p1.md`).

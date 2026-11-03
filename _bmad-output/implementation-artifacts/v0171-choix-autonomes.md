@@ -216,3 +216,43 @@ Numéros de ligne de `910e5d5a`. Chaque choix : contexte, option retenue, altern
 - **Écartées** : formater le taux (`readableAmount`) — le fournisseur le fait pour aligner une option de liste dont la forme diffère (`supplier-invoice-form.ts`), ce qui n'est pas le cas ici ; l'appliquer
   casserait `includes`.
 - **Réversible** : oui.
+
+---
+
+*Développement (2026-11-03, Opus 5.5).*
+
+### C-v0171-22 — #854 : une constante-tableau **et** une fonction, `SPC_HEADERS` / `est_payload_spc`
+
+- **Contexte** : AC-1 admet « une constante-tableau ou une fonction `est_payload_spc(&str) -> bool` ».
+- **Retenu** : les deux, la fonction étant la seule règle appelée (`first_spc`, test `decode_spc_from_png_roundtrip`) et la
+  constante sa donnée (`["SPC\n0200", "SPC\r\n0200"]`). Les préfixes gardent la forme d'origine (sans séparateur final).
+- **Écartées** : normaliser `\r\n` → `\n` avant le parseur (mutation équivalente, C-v0171-20, et un second chemin de lecture) ;
+  un motif `SPC\r?\n0200` par expression régulière (dépendance pour deux préfixes).
+- **Réversible** : oui.
+
+### C-v0171-23 — Cibles de test : `data-testid` posés aux sites corrigés ; `readableAmount` importé par les écrans clients
+
+- **Contexte** : les tests par site (AC-8, AC-12) ont besoin d'une cible qui ne lise pas un libellé traduit ; `readableAmount`
+  vit dans `supplier-invoice-form.ts` (feature fournisseur).
+- **Retenu** : un `data-testid` par cellule ou champ corrigé (p. ex. `invoice-detail-date`, `due-dates-paid-at`,
+  `credit-note-line-quantity`), posé **avant** le correctif pour que les rouges portent sur la valeur affichée et non sur
+  un élément absent ; `readableAmount` importé tel quel (C-v0171-6 : aucun helper créé, pas de déplacement de module dans
+  une corrective).
+- **Écartées** : déplacer `readableAmount` dans `$lib/shared` (refonte hors périmètre d'une 0.17.1) ; des sélecteurs par
+  position ou par texte.
+- **Réversible** : oui.
+
+### C-v0171-24 — Échéance nulle : ternaire `x ? formatSwissDate(x) : '—'`, non `formatSwissDate(x ?? '—')`
+
+- **Contexte** : `formatSwissDate('—')` rend `'—'` (`reports.api.ts:195`), les deux formes s'affichent pareil.
+- **Retenu** : le ternaire, qui dit l'intention et que le critère d'AC-12 reconnaît (ligne retirée par le second filtre).
+- **Écartée** : `formatSwissDate(x ?? '—')`, juste par accident de l'implémentation de `formatSwissDate`.
+- **Réversible** : oui.
+
+### C-v0171-25 — L'E2E du catalogue (`invoices.spec.ts:634`) attend `150.00`
+
+- **Contexte** : la spec figeait le prix brut `150.0000` d'une ligne ajoutée depuis un article — exactement le comportement
+  que #878 corrige (`onProductSelect`).
+- **Retenu** : l'assertion suit le correctif (`150.00`), avec la raison en commentaire.
+- **Écartée** : laisser la spec rougir et la déclarer échec attendu (ce serait un échec créé par la story).
+- **Réversible** : oui.
