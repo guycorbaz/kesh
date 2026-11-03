@@ -209,7 +209,10 @@ Numéros de ligne de `910e5d5a`. Chaque choix : contexte, option retenue, altern
 - **Contexte** : `vatRate: l.vatRate` (`InvoiceForm.svelte:115`, `:612`) et `p.vatRate` (`:426`) recopient la valeur du serveur comme la quantité et le prix.
 - **Retenu** : ne rien changer. Le taux ne s'affiche jamais brut : `<select bind:value={line.vatRate}>` (`:807`) dont les options sont `{v}%` pour `v` du magasin
   des taux (`:61`, `vatOptions = rates.map((r) => r.rate)`) ; la validation exige `vatOptions.includes(l.vatRate)` (`:492`) ; `invoice_lines.vat_rate` et `vat_rates.rate` sont tous deux
-  `DECIMAL(5,2)` (`20260416000001_invoices.sql:48`, `20260428000001_vat_rates.sql:17`) — même forme brute, donc même valeur d'option, affichage `8.10%`.
+  `DECIMAL(5,2)` (`20260416000001_invoices.sql:48`, `20260428000001_vat_rates.sql:17`) — même forme brute, donc même valeur d'option, affichage `8.10%` pour un taux **présent** au magasin des taux actifs.
+  *Borné le 2026-11-03 (validation P4, P3, appliqué à l'étape 0 du développement)* : `vatRate` n'est jamais affiché brut ; un taux **désactivé** depuis
+  (absent des options : `getVatRates` ne rend que les taux actifs, `vat_rates.rs:55`) laisse le `<select>` sans option choisie et fait refuser l'enregistrement
+  (`:492`) — défaut préexistant, distinct de #878, tracé en **#882**.
 - **Écartées** : formater le taux (`readableAmount`) — le fournisseur le fait pour aligner une option de liste dont la forme diffère (`supplier-invoice-form.ts`), ce qui n'est pas le cas ici ; l'appliquer
   casserait `includes`.
 - **Réversible** : oui.
