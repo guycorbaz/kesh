@@ -111,9 +111,8 @@ Le fichier `shared/kesh-style.sty` centralise toute la configuration. Modifier c
    make distclean && make all-langs
    ```
 
-4. **Inclure les PDF dans le tag release GitHub** :
-   - Les PDF générés (`fr/*.pdf`, `de/*.pdf`, etc.) sont attachés au release GitHub `vX.Y.Z`.
-   - Idéalement automatisé via `.github/workflows/release.yml` (à implémenter dans Epic 10 « Déploiement & Opérations »).
+4. **Versionner les PDF au tag de la release** :
+   - Les PDF générés (`fr/*.pdf`, `de/*.pdf`, etc.) sont commités dans le dépôt et se lisent au tag `vX.Y.Z` ; ils ne sont pas joints à la release GitHub (`.github/workflows/release.yml` n'attache aucun fichier, #746).
 
 5. **Vérifier la cohérence** entre :
    - Le contenu des manuels.
