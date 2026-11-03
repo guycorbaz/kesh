@@ -1,11 +1,14 @@
-# Prompt — validation P1 de la fiche v0171-correctifs (release corrective 0.17.1 : #854, #866, #871), une lentille complète R+F, Opus
+# Prompt — validation P1 de la fiche v0171-correctifs (release corrective 0.17.1 : #854, #866, #871, #878, #879), une lentille complète R+F, Opus
 
 Tu valides la **fiche** de la Story v0171-correctifs de Kesh (comptabilité suisse, Rust/Axum, SvelteKit, MariaDB 10.11), une
 **petite** story de release corrective, **sans migration** : **#854 (P2)** — les QR-factures dont les lignes sont séparées par
 CR+LF sont écartées par le préfiltre `SPC_HEADER = "SPC\n0200"` de `first_spc`
 (`crates/kesh-api/src/qr_decode.rs:31, :261`) alors que le parseur les tolère (`crates/kesh-qrbill/src/parser.rs:95`) ;
 **#866 (P4)** — la quantité d'une ligne s'affiche brute (`1.0000`) ; **#871 (P4)** — des dates ISO là où la forme suisse est attendue
-(la fiche soutient que la prémisse de l'issue est **fausse** pour la confirmation d'annulation de règlement : à contrôler).
+(la fiche soutient que la prémisse de l'issue est **fausse** pour la confirmation d'annulation de règlement : à contrôler) ;
+**#878 (P4)** — le champ de saisie de la quantité d'une facture cliente en brouillon recopie `1.0000` (`InvoiceForm.svelte:113`, `:610`) ;
+**#879 (P4)** — les écrans clients (factures, avoirs, relances, échéances) affichent des dates ISO. La fiche a été **amendée** le
+2026-11-03 pour y ajouter #878 et #879 : relis le Change Log pour le détail ; aucune passe de validation antérieure n'a rendu de rapport.
 
 Worktree `/home/gcorbaz/devel/kesh-0171`, branche `release/0.17.1`, partie de `910e5d5a`. Langue du rapport : **français**.
 Modèle : **Opus**. Passe **complète**, première passe de validation, **une seule lentille** qui tient à la fois R (la règle et sa
@@ -15,7 +18,7 @@ fiche dit d'elle-même ; refais les relevés.
 ## À lire
 
 1. La fiche `_bmad-output/implementation-artifacts/v0171-correctifs.md`, **en entier**.
-2. Le registre `_bmad-output/implementation-artifacts/v0171-choix-autonomes.md` (C-v0171-1 à 12).
+2. Le registre `_bmad-output/implementation-artifacts/v0171-choix-autonomes.md` (C-v0171-1 à 18).
 3. Les issues, **en lecture seule** : `gh issue view 854 --comments`, `gh issue view 866`, `gh issue view 871` (si `gh issue view`
    échoue sur « Projects (classic) », `gh api repos/guycorbaz/kesh/issues/<n>/comments` en lecture).
 4. Le code : `crates/kesh-api/src/qr_decode.rs` (en entier), `crates/kesh-api/src/qr_decode_synthetique.rs` (`payload()`,
@@ -25,7 +28,9 @@ fiche dit d'elle-même ; refais les relevés.
    `frontend/src/lib/features/supplier-invoices/{supplier-invoice-scan,supplier-invoice-form}.ts`,
    `frontend/src/lib/features/reports/reports.api.ts` (`formatSwissDate`),
    `frontend/src/routes/(app)/{supplier-invoices,payment-batches,invoices,credit-notes}/…/+page.svelte`,
-   `frontend/src/lib/components/invoices/InvoiceForm.svelte`,
+   `frontend/src/lib/components/invoices/InvoiceForm.svelte` et `InvoiceForm.test.ts`,
+   `frontend/src/lib/features/{reminders/ReminderHistory.svelte,invoices/InvoiceSettlements.svelte}`,
+   `frontend/src/routes/(app)/invoices/{+page,[id]/+page,due-dates/+page,reminders/+page}.svelte`, `…/invoice-pdf-page.test.ts`,
    `frontend/src/routes/(app)/supplier-invoices/[id]/supplier-settlement-page.test.ts`.
 5. Le **manuel** : `docs/manual/fr/user-manual.tex` (§ import des factures fournisseur, `:1965-2030`, et partout où la lecture du
    QR, la quantité ou les dates d'une facture fournisseur sont décrites). **Le PDF aussi**, lu aplati et vers la sortie standard
@@ -63,8 +68,19 @@ fiche dit d'elle-même ; refais les relevés.
   #871** : relis `supplier-invoices/[id]/+page.svelte` (`cancelSettlement`, `:215-250`) et le test `:202-205` — la fiche a-t-elle
   raison de dire que la date y est déjà au format suisse ? Y a-t-il une autre « confirmation d'annulation de règlement » (client,
   lot, rapprochement) qui affiche une date ISO ? AC-9 (essai par exécution) est-il réalisable tel que décrit ?
-- **Périmètre** : un défaut voisin non mécanique est-il intégré à tort ? Un défaut mécanique est-il renvoyé à tort ? Les deux
-  issues demandées (C-v0171-7, C-v0171-10) sont-elles justifiées ? Un point écarté sans issue (« on trace toujours ») ?
+- **#878 (AC-11)** : l'inventaire des champs de saisie de la quantité (§ 11) est-il clos (grep `quantity`, `qty`, `Quantité`, y compris
+  dialogues, import de lignes, devis, articles) ? `initLines` et `reloadInvoice` sont-ils les seuls sites qui alimentent le champ ? L'aller-retour
+  est-il sans risque (`stripUiKey`, `computeLineTotal`, validation `qty.lte(0)`, comparaison de version/état modifié, MAX_LINE_TOTAL) : envoyer
+  `"1"` au lieu de `"1.0000"` change-t-il quoi que ce soit côté serveur (désérialisation, échelle, `NUMERIC(…,4)`) ? `readableAmount` altère-t-il une
+  valeur saisie à quatre décimales (`0.0125`, `33.3333`) ? M6-bis est-elle réalisable ?
+- **#879 (AC-12)** : refais l'inventaire des seize sites (§ 10) sur les huit fichiers **et au-delà** : un affichage de date client oublié (aperçu de
+  facture, dialogues d'envoi, rappels, `ReminderSendDialog`, `ReminderBatchReport`, `DunningPauseDialog`, cartes du tableau de bord, rapports clients
+  âgés `AgedReceivablesView`, listes de lettrage, contacts) ? Les exceptions (i) à (iv) sont-elles justifiées une à une ? Chaque `.slice(0, 10)` est-il
+  correct pour un horodatage naïf (`2026-03-02T10:00:00.000`) ? Les tests existants qui figent l'ISO sont-ils tous trouvés (`grep` des `.test.ts` **et**
+  des specs E2E, `tests/e2e/*.ts`, assertions de texte) ? La phrase « le grep de contrôle rend 0 » est-elle vraie, ou la liste d'exceptions
+  trop large ? Le périmètre est-il tenable en release corrective (seize sites + tests) ?
+- **Périmètre** : un défaut voisin non mécanique est-il intégré à tort ? Un défaut mécanique est-il renvoyé à tort ? Les
+  issues demandées (C-v0171-18 : dates ISO des autres écrans) sont-elles justifiées ? Le remplacement de C-v0171-7 et C-v0171-10 est-il cohérent ? Un point écarté sans issue (« on trace toujours ») ?
   Le choix de C-v0171-12 (pas de relecture automatique) tient-il ?
 - **Les règles du dépôt** : aucune migration (`ls crates/kesh-db/migrations | wc -l` inchangé : 86 ; pas de P5, P6, P7), aucune
   donnée réelle (ni IBAN, ni émetteur, ni montant d'une pièce du Project Lead dans la fiche, le registre, ni les noms de test),
@@ -80,7 +96,7 @@ fiche dit d'elle-même ; refais les relevés.
 - **CHANGELOG** : les trois puces sont-elles vraies, bien rangées (*Corrigé*), sans fermeture de ticket ? L'intro « aucune migration,
   retour à la 0.17.0 possible sans restauration » est-elle vraie (aucune écriture nouvelle, `kesh_version_min_required` inchangé,
   P2-bis : les versions Cargo ne sont **pas** de la story) ? La puce de #871 est-elle honnête vis-à-vis de AC-9 ?
-- **Les décomptes** (sept sites de dates corrigés, dix au grep de contrôle, trois fiches de quantité, douze choix, numéros de ligne) :
+- **Les décomptes** (sept sites de dates fournisseur, seize sites clients, deux sites d'`InvoiceForm`, dix au grep de contrôle fournisseur, trois fiches de quantité, dix-huit choix, numéros de ligne) :
   recompte-les depuis la source (`grep -c`, `sed -n`).
 
 ## Ce qu'il faut rendre

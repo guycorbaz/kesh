@@ -60,6 +60,8 @@ Numéros de ligne de `910e5d5a`. Chaque choix : contexte, option retenue, altern
 
 ### C-v0171-7 — #866 : le champ de saisie d'une facture cliente en brouillon reste hors de la story — issue demandée
 
+*Remplacé le 2026-11-03 par C-v0171-13 : l'issue demandée est #878, intégrée à la story sur décision du Project Lead.*
+
 - **Contexte** : `InvoiceForm.svelte:113` recopie `l.quantity` brut dans le champ ; à l'ouverture d'un brouillon client le champ
   porte `1.0000`. Même cause, mais c'est un champ de saisie dont la valeur repart au serveur (comparaison de dirty-state,
   payload).
@@ -87,6 +89,8 @@ Numéros de ligne de `910e5d5a`. Chaque choix : contexte, option retenue, altern
 
 ### C-v0171-10 — Dates ISO des écrans clients : issue demandée
 
+*Remplacé le 2026-11-03 par C-v0171-14 : l'issue demandée est #879, intégrée à la story sur décision du Project Lead.*
+
 - **Contexte** : `invoices/+page.svelte:413`, `invoices/[id]/+page.svelte:1135, :1139`, `credit-notes/+page.svelte:64`,
   `credit-notes/[id]/+page.svelte:153`, `invoices/reminders/+page.svelte:345`, `invoices/due-dates/+page.svelte:450`
   affichent l'ISO. Défaut voisin, hors « factures fournisseur ».
@@ -110,4 +114,59 @@ Numéros de ligne de `910e5d5a`. Chaque choix : contexte, option retenue, altern
   et manuel disent le geste.
 - **Écartées** : une relecture au démarrage de tous les documents `qr: none` — écriture sur la base de production au
   premier boot, hors d'une release corrective « sans migration ».
+- **Réversible** : oui.
+
+---
+
+*Amendement du 2026-11-03 (périmètre élargi à #878 et #879, demande du Project Lead).*
+
+### C-v0171-13 — #878 : `readableAmount(raw, 0)` aux deux sites d'`InvoiceForm`
+
+- **Contexte** : le champ quantité de la facture cliente est alimenté par `initLines` (`InvoiceForm.svelte:113`) et par `reloadInvoice` (`:610`),
+  tous deux en recopie brute. Le formulaire fournisseur est déjà conforme (`formLineFromResponse`). Aucun autre champ de saisie de quantité
+  (inventaire clos : deux champs ; les avoirs n'ont pas de formulaire).
+- **Retenu** : le même helper que #866 (C-v0171-6), aux deux sites ; aucun changement au payload (le champ est envoyé tel quel,
+  `"1"` est déjà la valeur d'une ligne neuve). La précision saisie est conservée : seuls les zéros de fin tombent.
+- **Écartées** : (a) ne corriger que `initLines` — `reloadInvoice` ramènerait `1.0000` après un conflit de version ; (b) normaliser à l'envoi
+  — inutile, le serveur lit un décimal.
+- **Réversible** : oui.
+
+### C-v0171-14 — #879 : seize sites des écrans clients, huit exceptions closes, les autres écrans en issue
+
+- **Contexte** : listes et fiches des factures, des avoirs, des relances et des échéances (§ 10 de la fiche). Les écrans du journal, des
+  exercices, de l'import bancaire et du rapprochement affichent aussi l'ISO (et des tests le figent) mais ne sont pas ceux de #879.
+- **Retenu** : `formatSwissDate` aux seize sites (horodatages après `.slice(0, 10)`) ; le grep de contrôle rend 0 site non enveloppé, hors les
+  exceptions (champs `type="date"`, valeurs envoyées à l'API et calculs, tests de nullité) ; les écrans cités ci-dessus se **tracent en issue**
+  (« on trace toujours »).
+- **Écartées** : tout l'application en une fois — une release corrective ne change pas le journal et les relevés bancaires, et leurs tests
+  figent l'ISO.
+- **Réversible** : oui.
+
+### C-v0171-15 — #879 : les tests qui figeaient l'ISO sur les sites corrigés sont mis à jour, pas contournés
+
+- **Contexte** : `invoice-pdf-page.test.ts:171-173, :220-222` assertent `"2026-03-02"`, `"2026-04-01"` pour `invoice-pdf-frozen-at`.
+- **Retenu** : les assertions deviennent `"02.03.2026"` et `"01.04.2026"` ; c'est le changement voulu, consigné au Change Log.
+- **Écartées** : laisser le `data-testid` lire une valeur ISO cachée — l'écran est ce qui compte.
+- **Réversible** : oui.
+
+### C-v0171-16 — Les phrases à argument `{ $date }` reçoivent la date formatée, non une chaîne ISO
+
+- **Contexte** : « dernier le { $date } », « Annulé le { $date } », « Confirmer la suppression de la facture du { $date } » : l'argument est
+  formaté **avant** `i18nMsg`, comme `supplier-invoices-settlement-cancel-batch-warning`. Les catalogues des quatre locales ne changent pas.
+- **Retenu** : formater l'argument ; aucune clé i18n nouvelle, aucun texte modifié (pas de PDF de manuel à régénérer pour #878 et #879).
+- **Réversible** : oui.
+
+### C-v0171-17 — Un test par écran, avec un cas qui couvre les deux horodatages d'une même page
+
+- **Contexte** : la fiche d'une facture cliente porte trois horodatages ; l'historique d'un rappel en porte deux.
+- **Retenu** : les tests lisent chaque horodatage (mutation M7 : retirer le helper d'un seul site rougit exactement ce test).
+- **Écartées** : un test unique par page qui ne lit qu'une date — laisserait les autres sans filet.
+- **Réversible** : oui.
+
+### C-v0171-18 — Issue demandée : dates ISO des autres écrans
+
+- **Contexte** : journal (`journal-entries/+page.svelte:551`, `[id]:590`), exercices (`settings/fiscal-years`), import bancaire,
+  rapprochement (§ 10 iv de la fiche).
+- **Retenu** : l'orchestrateur ouvre l'issue (P4) ; ces écrans sont hors de #879. Les tests du rapprochement qui figent l'ISO sont à
+  réviser avec elle.
 - **Réversible** : oui.
