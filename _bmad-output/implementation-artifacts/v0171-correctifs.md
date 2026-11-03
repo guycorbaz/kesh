@@ -4,7 +4,7 @@ Status: ready-for-dev
 
 *Amendée le 2026-11-03 sur demande du Project Lead : périmètre élargi à **#878** (champ de saisie de la quantité d'une facture cliente) et **#879** (dates ISO des écrans clients) — issues ouvertes par l'orchestrateur sur les relevés de la première rédaction ; C-v0171-7 et C-v0171-10 sont remplacés par C-v0171-13 et 14. Fiche rédigée le 2026-11-03, en autonomie (Sonnet 5.5), worktree `/home/gcorbaz/devel/kesh-0171`, branche
 `release/0.17.1` partie de `910e5d5a` (le merge de la v0.17.0 sur `main`). Release **corrective 0.17.1**, sans
-migration. Registre : `v0171-choix-autonomes.md` (C-v0171-1 à 20). Clé courte : `v0171`. Issues : **#854** (bug, P2),
+migration. Registre : `v0171-choix-autonomes.md` (C-v0171-1 à 21). Clé courte : `v0171`. Issues : **#854** (bug, P2),
 **#866**, **#871**, **#878**, **#879** (bugs, P4), en `refs` seulement dans les commits ; la fermeture se porte sur la PR de
 release. Les numéros de ligne sont ceux de `910e5d5a`.*
 
@@ -171,7 +171,7 @@ raison pour laquelle le défaut a passé la v017-5, dont les fixtures venaient d
     (`supplier-invoice-form.ts:246`, v017-4b AC-23). (b) `lib/components/invoices/InvoiceForm.svelte:800`
     (`<Input … bind:value={line.quantity} />`), alimenté par **deux** sites qui recopient la valeur brute du serveur : `initLines`
     (`:113`, ouverture d'un brouillon) et `reloadInvoice` (`:610`, rechargement après un conflit de version) — qui recopient **aussi le prix unitaire** (`unitPrice: l.unitPrice`, `:114` et `:611`) vers `<Input … bind:value={line.unitPrice} />` (`:803`), même échelle `DECIMAL(19,4)` (`20260416000001_invoices.sql:47`) : intégré à #878 (C-v0171-19) ; les trois autres sites
-    (`:125`, `:410`, `:424`) posent `'1'` pour la **quantité** (conformes). **Le prix a un troisième site brut** : `onProductSelect` (ajout d'une ligne depuis un article), `unitPrice: p.unitPrice` (`:425`), l'article portant `unit_price DECIMAL(19,4)` (`20260415000001_products.sql:18`) ; les lignes neuves posent `'0.00'` (`:126`, `:411`, conformes). **Inventaire clos des sites qui posent `unitPrice` ou `quantity` dans les lignes d'un formulaire** (`git grep -nE '(unitPrice|quantity)\s*:' frontend/src`, hors tests, types et API ; sonde positive : 8 occurrences d'`unitPrice` dans `InvoiceForm.svelte`) : `InvoiceForm.svelte` quantité `:113` et `:610` bruts, `:125`, `:410`, `:424` conformes ; prix `:114`, `:425` et `:611` **bruts**, `:126`, `:411` conformes ; `supplier-invoice-form.ts:27` (`''`), `:167-168` (envoi, `decimalForServer`), `:246-247` (`readable`) conformes ; `routes/(app)/products/+page.svelte:308-310` (champ prix d'un article : déjà ramené à deux décimales) et `:368` (envoi) conformes. Aucune affectation `.unitPrice =` / `.quantity =` ailleurs. Les avoirs n'ont pas de formulaire (créés depuis la facture, `createCreditNote`).
+    (`:125`, `:410`, `:424`) posent `'1'` pour la **quantité** (conformes). **Le prix a un troisième site brut** : `onProductSelect` (ajout d'une ligne depuis un article), `unitPrice: p.unitPrice` (`:425`), l'article portant `unit_price DECIMAL(19,4)` (`20260415000001_products.sql:18`) ; les lignes neuves posent `'0.00'` (`:126`, `:411`, conformes). **Inventaire clos des sites qui posent `unitPrice` ou `quantity` dans les lignes d'un formulaire** (`git grep -nE '(unitPrice|quantity)\s*:' frontend/src`, hors tests, types et API ; sonde positive : 8 occurrences d'`unitPrice` dans `InvoiceForm.svelte`) : `InvoiceForm.svelte` quantité `:113` et `:610` bruts, `:125`, `:410`, `:424` conformes ; prix `:114`, `:425` et `:611` **bruts**, `:126`, `:411` conformes ; `supplier-invoice-form.ts:27` (`''`), `:167-168` (envoi, `decimalForServer`), `:246-247` (`readable`) conformes ; `routes/(app)/products/+page.svelte:308-310` (champ prix d'un article : les zéros de fin sont retirés quand les **deux** dernières décimales sont nulles — `100.0000` ⇒ `100.00` ; `33.3330` garde son zéro, `:308` n'étant jamais `readableAmount` ; écart cosmétique de même famille que #878, sans perte de valeur, **hors #878** et laissé en l'état — à tracer en issue si le Project Lead le souhaite) et `:368` (envoi) conformes. Aucune affectation `.unitPrice =` / `.quantity =` ailleurs. **`vatRate`** (recopié aux mêmes sites, `:115`, `:426`, `:612`) : **conforme, non intégré** — il ne s'affiche jamais brut : le champ est `<select bind:value={line.vatRate}>` (`InvoiceForm.svelte:807`) dont chaque option affiche `{v}%` pour `v` pris du magasin des taux (`vatOptions = rates.map((r) => r.rate)`, `:61`), et la validation exige `vatOptions.includes(l.vatRate)` (`:492`) ; `invoice_lines.vat_rate` et `vat_rates.rate` sont tous deux `DECIMAL(5,2)` (`20260416000001_invoices.sql:48`, `20260428000001_vat_rates.sql:17`) : la forme brute du serveur est celle des options, l'affichage est `8.10%` quelle que soit la forme de `l.vatRate` (C-v0171-21). Les avoirs n'ont pas de formulaire (créés depuis la facture, `createCreditNote`).
     **Aller-retour** : à l'enregistrement, `stripUiKey` envoie la chaîne du champ telle quelle (`:555`) ; le serveur accepte `"1"`
     (c'est déjà la valeur des lignes neuves) ; `readableAmount` ne tronque rien (`33.3333` et `0.0125` gardés, seuls les zéros
     de fin tombent) : **la valeur numérique envoyée est la même, la précision à quatre décimales est conservée quand l'utilisateur
@@ -235,7 +235,7 @@ reste `—`. Aucune date ISO ne subsiste sur ces écrans (grep de contrôle, AC-
    (`InvoiceSettlements`), la date de la confirmation de suppression d'une facture : chacun affiche `JJ.MM.AAAA` et `not.toContain` l'ISO ;
    échéance nulle ⇒ `—`. Mettre à jour `invoice-pdf-page.test.ts:171-173, :220-222`.
  Grep de contrôle, à joindre au Change Log, **valeur** et non formulation : `grep -rnE '\{(inv|invoice|b|batch)\.(invoiceDate|dueDate|requestedExecutionDate|confirmedAt)\b'
- frontend/src --include=*.svelte` ne rend plus **que** des lignes d'écrans clients — plus aucune après #879, voir AC-12 ; sonde positive :
+ frontend/src --include=*.svelte` suivi de `| /usr/bin/grep -vF formatSwissDate` rend **0 ligne** après #879 (les trois lignes d'écrans clients du motif sont corrigées par AC-12 ; une échéance écrite en ternaire contient `formatSwissDate` et le filtre la retire) ; sonde positive :
  le même motif sur `910e5d5a` en rend **dix** (les sept des écrans fournisseur et trois d'écrans clients). Pour #879, voir AC-12.
 
 **AC-9 — #871 vérifiée, non supposée.** Le développement rejoue, sur une installation de dev jetable (base `kesh_v0171`),
@@ -246,19 +246,24 @@ corrigé, avec son test.
 
 **AC-10 — Manuel et CHANGELOG** : voir § *Manuel* et § *CHANGELOG*.
 
-**AC-11 — Le champ de saisie de la quantité (#878).** À l'ouverture d'un brouillon de facture cliente (`initLines`) et après un
+**AC-11 — Les champs quantité et prix unitaire d'une ligne de facture cliente (#878).** À l'ouverture d'un brouillon de facture cliente (`initLines`) et après un
 rechargement sur conflit de version (`reloadInvoice`), le champ quantité porte `readableAmount(l.quantity, 0)` : `1.0000` ⇒ `1`,
-`2.5000` ⇒ `2.5`, `33.3333` ⇒ `33.3333`, `0.0125` ⇒ `0.0125` ; **le champ prix unitaire porte `readableAmount(l.unitPrice, 2)`** (trois sites : `initLines`, `reloadInvoice` et `onProductSelect`, même échelle `DECIMAL(19,4)`,
+`2.5000` ⇒ `2.5`, `33.3333` ⇒ `33.3333`, `0.0125` ⇒ `0.0125` ; **le champ prix unitaire porte `readableAmount(<prix lu du serveur>, 2)`** — `l.unitPrice` à l'ouverture et au rechargement, `p.unitPrice` à l'**ajout d'une ligne depuis un article** (`onProductSelect`, brouillon ou facture neuve, `invoices/new`) — (trois sites : `initLines`, `reloadInvoice` et `onProductSelect`, même échelle `DECIMAL(19,4)`,
 symétrique client de v017-4b AC-23, `supplier-invoice-form.ts:247`) : `100.0000` ⇒ `100.00`, `100.2000` ⇒ `100.20`, `33.3333` ⇒ `33.3333` (aucune
 précision saisie ou lue n'est perdue : seuls les zéros de fin au-delà de deux décimales tombent). Aller-retour : ouvrir un brouillon puis l'enregistrer sans toucher la
-quantité envoie `"1"` (jamais `"1.0000"`) et ne change pas le total ; saisir `33.3333` l'envoie tel quel ; le prix `100.0000` envoie `"100.00"`, de même valeur numérique, et le total ne change pas. Le formulaire fournisseur
+quantité envoie `"1"` (jamais `"1.0000"`) et ne change pas le total ; saisir `33.3333` l'envoie tel quel ; le prix `100.0000` envoie `"100.00"`, de même valeur numérique, et le total ne change pas. Le taux de TVA (`vatRate`, recopié aux mêmes sites) **ne change pas** : il s'affiche par un `<select>` dont les options sont les taux du magasin (§ 11), jamais en brut. Le formulaire fournisseur
 (conforme) ne change pas.
 
 **AC-12 — Les dates des écrans clients (#879).** Chacun des dix-sept sites « à corriger » du § 10 passe par `formatSwissDate` (les
 horodatages après `.slice(0, 10)`) : `2026-03-02` s'affiche `02.03.2026` ; l'échéance absente reste `—` ; les phrases « dernier le », « Annulé le »,
 « Confirmer la suppression de la facture du » portent la forme suisse. Les `data-testid` (`invoice-pdf-frozen-at`, `invoice-emailed-at`) sont
-conservés. **Grep de contrôle** : le motif du § 10, rejoué sur les huit fichiers après correction, ne rend plus que les
-cinq lignes des exceptions (ii) et (iii) (`invoices/[id]/+page.svelte:1000, :1014, :1561, :1583`, `due-dates/+page.svelte:514`) — un affichage enveloppé de `formatSwissDate(…)` ne correspond pas au motif ; (iv) concerne d'autres écrans, hors des huit fichiers parcourus, et n'entre pas dans ce contrôle (c'est une issue, #880, pas une tolérance). Sonde positive : le même
+conservés. **Grep de contrôle, décidable** : le motif du § 10, rejoué sur les huit fichiers après correction, rend (a) les cinq lignes des exceptions (ii) et (iii)
+(`invoices/[id]/+page.svelte:1000, :1014, :1561, :1583`, `due-dates/+page.svelte:514`) **et** (b) toute ligne où la date n'est affichée qu'à travers `formatSwissDate`
+— y compris sous un test de nullité ou un `??` (ex. `due-dates/+page.svelte:467` corrigée en `{inv.paidAt ? formatSwissDate(inv.paidAt.slice(0, 10)) : '—'}` : le motif la reconnaît
+encore, `{inv` puis `.paidAt`). Le critère s'écrit donc **avec un second filtre** : `<motif> | /usr/bin/grep -vF formatSwissDate` doit rendre **exactement les cinq lignes** de (a) ; les lignes
+de (b) sont celles que le filtre retire, **listées nominativement au Dev Agent Record** et relues (une date affichée sur une ligne et enveloppée sur la suivante se lit à la main).
+Joué sur : `:467` ternaire (retirée par le filtre ✓), `invoices/[id]:1139` (`{formatSwissDate(invoice.dueDate)…}` retirée ✓, et `{invoice.dueDate ?? '—'}` non corrigée resterait ✓ visible),
+`due-dates:450`, `reminders:345` (même lecture). (iv) concerne d'autres écrans, hors des huit fichiers parcourus, et n'entre pas dans ce contrôle (c'est une issue, #880, pas une tolérance). Sonde positive : le même
 motif sur `910e5d5a` rend **22 lignes**, dont les dix-sept du tableau ; les cinq autres sont rangées aux exceptions : `invoices/[id]/+page.svelte:1000, :1014` (test de nullité de `emailedAt`, (iii)) et `:1561, :1583`, `due-dates/+page.svelte:514` (borne passée à un dialogue, (ii)).
 
 ## Tests et mutations
@@ -401,3 +406,11 @@ Nouvelle section `## [0.17.1] — Non publié`, au-dessus de la 0.17.0, une intr
   AC-8, AC-11, T13, M6-ter (une mutation par site), CHANGELOG, C-v0171-19 ; P2 → `sprint-status.yaml` mis à jour ; P3 → AC-12 sans « huit exceptions », le grep rend les cinq lignes
   des exceptions (ii) et (iii) ; P4 → AC-2 (d) : `Err(DecodeError::InvalidSpcPayload(_))` ; P5 → `spc_payload` `:105`. *Annotation : les entrées du 2026-11-03 ci-dessus qui parlent de
   « deux sites » pour le prix étaient fausses à leur date ; le compte juste est trois.* Prochaine : validation P3 (Opus, ciblée, `v0171-validate-prompt-p3.md`).
+- 2026-11-03 — **validation P3** (Opus, ciblée sur la remédiation P2, rapport `kesh-gate-logs/v0171-validate-p3.md`) : 0 CRITICAL, 0 HIGH, 1 MEDIUM (P1), 3 LOW (P2–P4), appliqués ; l'inventaire
+  `unitPrice`/`quantity` refait plus large : aucun site omis. Sorts : P1 → AC-12 et AC-8 rendus décidables (second filtre `| /usr/bin/grep -vF formatSwissDate`, les cinq lignes d'exception
+  restent, les lignes enveloppées — ternaires compris, `due-dates:467` — sont listées nominativement au Dev Agent Record) ; P2 → **annotation de l'entrée P2 corrigée ici, par une
+  annotation datée** : aucune entrée datée ne disait « deux sites » pour le prix (l'entrée de l'amendement, « deux sites d'`InvoiceForm` `:113`, `:610` », porte sur la **quantité** et reste juste) ;
+  le « deux sites » faux était dans C-v0171-19 et au § 11, textes vivants corrigés par la P2 ; P3 → § 11 : `products/+page.svelte:308` retire les zéros de fin seulement si les deux dernières décimales
+  sont nulles (`33.3330` garde son zéro : écart cosmétique, hors #878, à tracer si le Project Lead le souhaite) ; P4 → AC-11 : titre « quantité et prix unitaire », formule `readableAmount(<prix lu>, 2)`,
+  `p.unitPrice` à l'ajout depuis un article (brouillon ou facture neuve). Hors axe signalé : `vatRate` (`:115`, `:426`, `:612`) vérifié — **conforme**, voir § 11 et C-v0171-21. Prochaine : validation P4
+  (Sonnet, ciblée, `v0171-validate-prompt-p4.md`).
