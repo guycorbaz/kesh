@@ -8,6 +8,8 @@
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, fireEvent, cleanup, waitFor } from '@testing-library/svelte';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import type {
 	SupplierInvoiceResponse,
 	SupplierInvoiceStatus,
@@ -441,6 +443,31 @@ describe('fiche — refus d’écran périmé et lot confirmé (revue P1)', () =
 		expect(texte(v.getByTestId('supplier-invoice-unvalidate-dialog-batch-warning'))).toBe(
 			`${FAIT} ${CONSIGNE}`,
 		);
+	});
+
+	it('les catalogues disent le fait, jamais « payée par ce lot », aux quatre locales (B2-1)', () => {
+		const valeur = (loc: string, cle: string) =>
+			readFileSync(join('../crates/kesh-i18n/locales', loc, 'messages.ftl'), 'utf-8')
+				.split('\n')
+				.find((l) => l.startsWith(`${cle} = `))
+				?.slice(cle.length + 3);
+		expect(valeur('fr-CH', 'supplier-invoices-unvalidate-batch-warning')).toBe(
+			'Cette facture figure dans le lot de paiement n° { $batch }, confirmé le { $date }.',
+		);
+		expect(valeur('fr-CH', 'supplier-invoices-unvalidate-batch-warning-undated')).toBe(
+			'Cette facture figure dans le lot de paiement confirmé n° { $batch }.',
+		);
+		expect(valeur('fr-CH', 'supplier-invoices-unvalidate-batch-warning-action')).toBe(CONSIGNE);
+		for (const loc of ['fr-CH', 'de-CH', 'it-CH', 'en-CH']) {
+			for (const cle of [
+				'supplier-invoices-unvalidate-batch-warning',
+				'supplier-invoices-unvalidate-batch-warning-undated',
+			]) {
+				const v = valeur(loc, cle);
+				expect(v, `${loc} ${cle}`).toBeDefined();
+				expect(v, `${loc} ${cle}`).not.toMatch(/pay[ée]|bezahlt|paid|pagat|storn|annul/i);
+			}
+		}
 	});
 
 	it('sans date de confirmation, la phrase sans date (B2-3)', async () => {
