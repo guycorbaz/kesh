@@ -4,7 +4,7 @@ Status: review
 
 *Amendée le 2026-11-03 sur demande du Project Lead : périmètre élargi à **#878** (champ de saisie de la quantité d'une facture cliente) et **#879** (dates ISO des écrans clients) — issues ouvertes par l'orchestrateur sur les relevés de la première rédaction ; C-v0171-7 et C-v0171-10 sont remplacés par C-v0171-13 et 14. Fiche rédigée le 2026-11-03, en autonomie (Sonnet 5.5), worktree `/home/gcorbaz/devel/kesh-0171`, branche
 `release/0.17.1` partie de `910e5d5a` (le merge de la v0.17.0 sur `main`). Release **corrective 0.17.1**, sans
-migration. Registre : `v0171-choix-autonomes.md` (C-v0171-1 à 25). Clé courte : `v0171`. Issues : **#854** (bug, P2),
+migration. Registre : `v0171-choix-autonomes.md` (C-v0171-1 à 25 ; « 1 à 21 » à la rédaction, recalé le 2026-11-03 à la revue P1). Clé courte : `v0171`. Issues : **#854** (bug, P2),
 **#866**, **#871**, **#878**, **#879** (bugs, P4), en `refs` seulement dans les commits ; la fermeture se porte sur la PR de
 release. Les numéros de ligne sont ceux de `910e5d5a`.*
 
@@ -615,3 +615,9 @@ et leurs tests (neufs : `supplier-invoice-display-page`, `payment-batches-dates-
   de `qr_decode.rs:8` non reflué (B), lignes Svelte au-delà de la largeur Prettier probable (B), `assert_ne!` redondant
   d'`inbox_import_e2e.rs` (B), bornes de `est_payload_spc` sans test — en-têtes mêlés, chaîne vide, BOM, en-tête sans suite (E-2) ;
   E-3 (horodatage non tranché) sans site fautif. Issue : #883. Prochaine : passe P2 ciblée sur cette remédiation.
+- 2026-11-03 — revue de code P2 ciblée (Haiku, `v0171-correctifs-review-prompt-p2.md`, `kesh-gate-logs/v0171-review-p2.md`) sur
+  `d5e44cd0` : 0/0/1/2. MEDIUM : E-1 (jumeau de T4 qui ne discrimine le CR+LF qu'au préfiltre) n'était tracé nulle part, et
+  l'entrée P1 ci-dessus laissait croire E-3 dans #883 sans qu'il y fût — **#883 complétée** (commentaire : points 5 = E-1, 6 = E-3).
+  LOW-1 : en-tête recalé sans annotation → annoté. LOW-2 : la phrase retirée « Verts avant : T3, T6, T7 » n'est citée que par
+  renvoi — la voici, pour la trace : « **Verts avant** : T3 (`decode_spc_from_png_roundtrip`), T5 (…), T6 (…), T7 (…) ».
+  Remédiation sans code. Prochaine : passe P3 ciblée sur cette remédiation.
