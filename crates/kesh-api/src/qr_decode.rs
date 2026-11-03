@@ -4,8 +4,8 @@
 //! - **Image** (PNG/JPG) : `image::load_from_memory` → luma → `rxing` (QR→texte).
 //! - **PDF** : `pdfium-render` rend chaque page → `image::DynamicImage` → `rxing`.
 //!
-//! On retient le **premier** payload commençant par `SPC\n0200` (multi-QR par
-//! page, multi-page tentés dans l'ordre) puis on le parse via `parse_spc_payload`
+//! On retient le **premier** payload commençant par `SPC` puis `0200`, lignes
+//! séparées par LF ou CR+LF (multi-QR par page, multi-page tentés dans l'ordre) puis on le parse via `parse_spc_payload`
 //! (12-5a). Le mapping des erreurs vers les codes du rapport d'import
 //! (`PDF_RENDER_ERROR`, `INVALID_SPC_PAYLOAD`, `INVALID_IBAN`) est consommé par
 //! `inbox_import` ; ce module expose une erreur typée. Depuis la Story 30-2a,
@@ -27,8 +27,18 @@ pub(crate) mod synthetique;
 /// DC6 (12-5c) — garantit la sûreté même si un futur appelant oublie de sérialiser.
 static PDFIUM_LOCK: Mutex<()> = Mutex::new(());
 
-/// En-tête d'un payload Swiss QR (SPC v0200).
-const SPC_HEADER: &str = "SPC\n0200";
+/// En-têtes d'un payload Swiss QR (SPC v0200) : `SPC` puis `0200`, lignes
+/// séparées par LF ou par CR+LF — les deux séparateurs que la norme SIX admet.
+/// Story v0171 (#854) : certains émetteurs produisent du CR+LF, que l'ancien
+/// préfiltre (`SPC\n0200` seul) écartait avant toute lecture.
+const SPC_HEADERS: [&str; 2] = ["SPC\n0200", "SPC\r\n0200"];
+
+/// `true` si `p` commence par l'un des [`SPC_HEADERS`] — la seule définition
+/// de la règle, employée par [`first_spc`]. Un `\r` seul, une autre version que
+/// `0200` ou un texte qui ne commence pas par `SPC` ne sont pas retenus.
+fn est_payload_spc(p: &str) -> bool {
+    SPC_HEADERS.iter().any(|h| p.starts_with(h))
+}
 
 /// Borne de dimension (largeur/hauteur en px) du décodage image directe — garde
 /// anti-DoS (bombe de décompression) symétrique au cap de rendu PDF. Une image
@@ -234,7 +244,8 @@ where
 ///
 /// Story v017-5 (#854, C-v017-5-3) : format QR seul (`PossibleFormats`) et
 /// `TryHarder` — mesure de coût, sans effet sur ce que Kesh retient (seul un
-/// payload `SPC\n0200` compte, `first_spc`).
+/// payload `SPC` puis `0200`, lignes séparées par LF ou CR+LF, compte,
+/// `first_spc`).
 pub fn decode_qr_from_image(img: &DynamicImage) -> Vec<String> {
     let luma = img.to_luma8();
     let (w, h) = luma.dimensions();
@@ -258,7 +269,7 @@ pub fn decode_qr_from_image(img: &DynamicImage) -> Vec<String> {
 /// n'est un payload SPC.
 fn first_spc(payloads: &[String]) -> Result<Option<ScannedQrBill>, DecodeError> {
     for p in payloads {
-        if p.starts_with(SPC_HEADER) {
+        if est_payload_spc(p) {
             return match parse_spc_payload(p) {
                 Ok(bill) => Ok(Some(bill)),
                 // IBAN / QR-IBAN invalide → variant dédié (AC2, mapping HTTP
@@ -441,7 +452,73 @@ mod tests {
         assert_eq!(scanned.creditor_iban, "CH9300762011623852957");
         assert_eq!(scanned.amount, Some(dec!(100.00)));
         // Sanity : le payload décodé est bien le SPC d'origine.
-        assert!(payload.starts_with(SPC_HEADER));
+        assert!(est_payload_spc(&payload));
+    }
+
+    // Story v0171 (#854) — une QR-facture dont les lignes sont séparées par CR+LF
+    // (que la norme SIX admet, et que certains émetteurs produisent). Les fixtures
+    // sont celles de `build_payload`, réécrites : aucune pièce réelle.
+
+    /// Le payload de test de `donnees_spc_test`, en CR+LF.
+    fn payload_crlf() -> String {
+        build_payload(&donnees_spc_test())
+            .unwrap()
+            .replace('\n', "\r\n")
+    }
+
+    /// T1 (AC-2 a) — `first_spc` retient un payload CR+LF et le parse.
+    #[test]
+    fn v0171_t1_first_spc_retient_un_payload_crlf() {
+        let p = payload_crlf();
+        assert!(p.starts_with("SPC\r\n0200\r\n"), "{p:?}");
+        let bill = first_spc(&[p])
+            .expect("parse ok")
+            .expect("payload CR+LF retenu");
+        assert_eq!(bill.creditor_iban, "CH9300762011623852957");
+        assert_eq!(bill.amount, Some(dec!(100.00)));
+    }
+
+    /// T2 (AC-2 b) — de bout en bout sur une image : un PNG dont le QR porte le
+    /// payload CR+LF est lu. C'est le test qui aurait rougi sur #854. Il établit
+    /// aussi que `rxing` rend le `\r` tel qu'encodé (mode octet).
+    #[test]
+    fn v0171_t2_decode_image_png_crlf() {
+        let payload = payload_crlf();
+        let img = image::DynamicImage::ImageLuma8(qrcodegen_image(&payload));
+        assert_eq!(
+            decode_qr_from_image(&img),
+            vec![payload.clone()],
+            "rxing doit rendre le payload CR+LF à l'identique"
+        );
+        let mut png = Vec::new();
+        img.write_to(&mut std::io::Cursor::new(&mut png), image::ImageFormat::Png)
+            .unwrap();
+        let scanned = decode_spc_from_image_bytes(&png)
+            .expect("decode ok")
+            .expect("QR-facture CR+LF lue");
+        assert_eq!(scanned.creditor_iban, "CH9300762011623852957");
+        assert_eq!(scanned.amount, Some(dec!(100.00)));
+        assert_eq!(scanned.creditor.name, "Robert Schneider SA");
+    }
+
+    /// T5 (AC-2 e) — ne sont **pas** retenus : un `\r` seul comme séparateur, une
+    /// version autre que `0200` en CR+LF, un texte qui ne commence pas par `SPC`.
+    #[test]
+    fn v0171_t5_prefiltre_negatifs() {
+        let lf = build_payload(&donnees_spc_test()).unwrap();
+        let cr_seul = lf.replace('\n', "\r");
+        let v0100 = payload_crlf().replacen("SPC\r\n0200", "SPC\r\n0100", 1);
+        assert!(v0100.starts_with("SPC\r\n0100\r\n"));
+        for p in [
+            cr_seul,
+            v0100,
+            "HTTP://exemple.invalid/SPC\r\n0200".to_string(),
+        ] {
+            assert!(
+                matches!(first_spc(std::slice::from_ref(&p)), Ok(None)),
+                "non retenu attendu : {p:?}"
+            );
+        }
     }
 
     #[test]
@@ -955,6 +1032,10 @@ mod tests {
         Spc,
         /// Une image portant une QR-facture inexploitable.
         SpcInvalide,
+        /// Story v0171 (#854) — une QR-facture exploitable, lignes en CR+LF.
+        SpcCrlf,
+        /// Story v0171 (#854) — une QR-facture inexploitable, lignes en CR+LF.
+        SpcCrlfInvalide,
         /// Une image portant un QR d'un autre usage.
         NonSpc,
         /// Une erreur de rendu.
@@ -971,6 +1052,8 @@ mod tests {
             ))),
             Faux::Spc => qr(&build_payload(&donnees_spc_test()).unwrap()),
             Faux::SpcInvalide => qr("SPC\n0200\n1\nPAS-UN-IBAN"),
+            Faux::SpcCrlf => qr(&payload_crlf()),
+            Faux::SpcCrlfInvalide => qr("SPC\r\n0200\r\n1\r\nPAS-UN-IBAN"),
             Faux::NonSpc => qr("https://exemple.invalid/produit/0001"),
             Faux::Erreur => Err("page illisible (simulée)".into()),
             Faux::Rien => Ok(None),
@@ -1127,5 +1210,35 @@ mod tests {
             "{}",
             decrire(&r)
         );
+    }
+
+    /// T4 (AC-2 d, story v0171, #854) — une QR-facture CR+LF au premier temps est
+    /// lue sans second rendu.
+    #[test]
+    fn v0171_t4_crlf_lue_au_premier_temps() {
+        let plan = [(Faux::SpcCrlf, Faux::Spc)];
+        let (r, appels) = jouer(&plan, 1, 20);
+        match &r {
+            Ok(Some(bill)) => {
+                assert_eq!(bill.creditor_iban, "CH9300762011623852957");
+                assert_eq!(bill.amount, Some(dec!(100.00)));
+            }
+            autre => panic!("attendu LU, obtenu {}", decrire(autre)),
+        }
+        assert_eq!(appels, vec![(0, Temps::Premier)]);
+    }
+
+    /// T4 (AC-2 d) — une QR-facture CR+LF inexploitable est rendue en erreur
+    /// `InvalidSpcPayload`, comme son jumeau LF.
+    #[test]
+    fn v0171_t4_crlf_inexploitable() {
+        let plan = [(Faux::SpcCrlfInvalide, Faux::Spc)];
+        let (r, appels) = jouer(&plan, 1, 20);
+        assert!(
+            matches!(r, Err(DecodeError::InvalidSpcPayload(_))),
+            "{}",
+            decrire(&r)
+        );
+        assert_eq!(appels, vec![(0, Temps::Premier)]);
     }
 }

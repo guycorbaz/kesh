@@ -389,4 +389,63 @@ mod tests {
             Err(QrBillError::InvalidPayload(_))
         ));
     }
+
+    /// Every text field of a scanned bill, for the « no `\r` left » check.
+    fn text_fields(b: &ScannedQrBill) -> Vec<String> {
+        let mut v = vec![
+            b.creditor_iban.clone(),
+            b.creditor.name.clone(),
+            b.creditor.street_or_line1.clone(),
+            b.creditor.building_or_line2.clone(),
+            b.creditor.country.clone(),
+            b.currency.clone(),
+        ];
+        v.extend(b.creditor.postal_code.clone());
+        v.extend(b.creditor.town.clone());
+        v.extend(b.unstructured_message.clone());
+        v.extend(b.billing_information.clone());
+        match &b.reference {
+            ScannedReference::Qrr(r) | ScannedReference::Scor(r) => v.push(r.clone()),
+            ScannedReference::None => {}
+        }
+        v
+    }
+
+    /// Story v0171 (#854, AC-3) — a CR+LF payload (that SIX allows) parses to
+    /// exactly the same bill as its LF twin, and no field keeps a `\r`:
+    /// structured address, billing information and AltPmtInf (lines 32-34),
+    /// trailing line break.
+    #[test]
+    fn crlf_payload_parses_like_lf_without_residual_cr() {
+        let base = structured_payload();
+        let lf = format!("{base}\n//S1/10/INV-1\nName AV1: UV;Ultapayment\nName AV2: XY\n");
+        let crlf = lf.replace('\n', "\r\n");
+        assert!(crlf.starts_with("SPC\r\n0200\r\n") && crlf.ends_with("XY\r\n"));
+        let a = parse_spc_payload(&lf).unwrap();
+        let b = parse_spc_payload(&crlf).unwrap();
+        assert_eq!(a, b);
+        assert_eq!(b.billing_information.as_deref(), Some("//S1/10/INV-1"));
+        assert_eq!(b.creditor.town.as_deref(), Some("Zürich"));
+        assert_eq!(b.unstructured_message.as_deref(), Some("Bestellung 7788"));
+        for s in text_fields(&b) {
+            assert!(!s.contains('\r'), "champ avec \\r résiduel : {s:?}");
+        }
+    }
+
+    /// Story v0171 (#854, AC-3) — QR-Reference in a CR+LF payload: the checksum
+    /// is computed on the trimmed value.
+    #[test]
+    fn crlf_payload_with_qrr_parses_like_lf() {
+        let qrr = build_qrr(42, 100).unwrap();
+        let lf = build_payload(&sample(Reference::Qrr(qrr.clone()), QR_IBAN_OK)).unwrap();
+        let crlf = lf.replace('\n', "\r\n");
+        let a = parse_spc_payload(&lf).unwrap();
+        let b = parse_spc_payload(&crlf).unwrap();
+        assert_eq!(a, b);
+        assert_eq!(b.reference, ScannedReference::Qrr(qrr));
+        assert!(b.is_qr_iban);
+        for s in text_fields(&b) {
+            assert!(!s.contains('\r'), "champ avec \\r résiduel : {s:?}");
+        }
+    }
 }
