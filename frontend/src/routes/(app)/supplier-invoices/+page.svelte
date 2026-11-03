@@ -23,6 +23,7 @@
 	import { listSupplierInvoices } from '$lib/features/supplier-invoices/supplier-invoices.api';
 	import { supplierInvoiceStatusLabel } from '$lib/features/supplier-invoices/supplier-invoice-helpers';
 	import { formatExactAmount } from '$lib/features/invoices/invoice-helpers';
+	import { formatSwissDate } from '$lib/features/reports/reports.api';
 	import type {
 		SupplierInvoiceListItemResponse,
 		SupplierInvoiceStatus,
@@ -141,8 +142,11 @@
 				>
 					<td class="py-2 font-mono">{inv.supplierInvoiceNumber ?? `#${inv.id}`}</td>
 					<td class="py-2">{inv.contactName}</td>
-					<td class="py-2">{inv.invoiceDate}</td>
-					<td class="py-2">{inv.dueDate ?? '—'}</td>
+					<!-- Story v0171 (#871) : dates en forme suisse. -->
+					<td class="py-2" data-testid="supplier-invoice-row-date">{formatSwissDate(inv.invoiceDate)}</td>
+					<td class="py-2" data-testid="supplier-invoice-row-due">
+						{inv.dueDate ? formatSwissDate(inv.dueDate) : '—'}
+					</td>
 					<td class="py-2">
 						<span
 							class="inline-block rounded border px-2 py-0.5 text-xs {badgeClass(inv.status)}"

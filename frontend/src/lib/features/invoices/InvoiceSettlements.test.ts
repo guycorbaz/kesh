@@ -157,3 +157,18 @@ describe('InvoiceSettlements', () => {
 		expect(getByTestId('invoice-settlement-cancel').textContent).toContain('Annuler le solde');
 	});
 });
+
+// Story v0171 (#879) — la date d'un règlement en forme suisse. Mutation M5 : retirer
+// `formatSwissDate` du site `settledOn` rougit ce test.
+describe('InvoiceSettlements — date (v0171)', () => {
+	it('`2026-03-05` s’affiche `05.03.2026`', () => {
+		const { getByTestId } = render(InvoiceSettlements, {
+			settlements: [s({ id: 1 })],
+			canManage: true,
+			onCancel: vi.fn(),
+		});
+		const date = getByTestId('invoice-settlement-date');
+		expect(date.textContent?.trim()).toBe('05.03.2026');
+		expect(getByTestId('invoice-settlement-row').textContent).not.toContain('2026-03-05');
+	});
+});

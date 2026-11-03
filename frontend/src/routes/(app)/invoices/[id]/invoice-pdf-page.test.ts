@@ -168,8 +168,9 @@ describe("fiche facture — mention du gel", () => {
       invoice({ pdfFrozenAt: "2026-03-02T10:00:00.000" }),
     );
     const { findByTestId } = render(Page);
+    // Story v0171 (#879) : la date s'affiche en forme suisse (`2026-03-02` jusqu'à la 0.17.0).
     expect((await findByTestId("invoice-pdf-frozen-at")).textContent).toBe(
-      "2026-03-02",
+      "02.03.2026",
     );
   });
 
@@ -217,8 +218,9 @@ describe("fiche facture — refiger après un 410", () => {
     await waitFor(() => expect(refreezeMock).toHaveBeenCalledWith(5));
     await waitFor(() => expect(getInvoiceMock).toHaveBeenCalledTimes(2));
     await waitFor(() =>
+      // Story v0171 (#879) : forme suisse (`2026-04-01` jusqu'à la 0.17.0).
       expect(getByTestId("invoice-pdf-frozen-at").textContent).toBe(
-        "2026-04-01",
+        "01.04.2026",
       ),
     );
     await waitFor(() =>

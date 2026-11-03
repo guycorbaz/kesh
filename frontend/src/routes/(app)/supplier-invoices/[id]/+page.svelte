@@ -63,6 +63,7 @@
 	import AttachDocumentPicker from '$lib/features/imported-supplier-invoices/AttachDocumentPicker.svelte';
 	import { isStaleDocumentRefusal } from '$lib/features/imported-supplier-invoices/stale-refusal';
 	import { formatSwissDate } from '$lib/features/reports/reports.api';
+	import { readableAmount } from '$lib/features/supplier-invoices/supplier-invoice-form';
 
 	const id = Number(page.params.id);
 
@@ -566,9 +567,12 @@
 
 	<dl class="mb-6 grid grid-cols-2 gap-2 text-sm">
 		<dt class="text-text-muted">{i18nMsg('supplier-invoices-col-date', 'Date')}</dt>
-		<dd>{invoice.invoiceDate}</dd>
+		<!-- Story v0171 (#871) : dates en forme suisse. -->
+		<dd data-testid="supplier-invoice-detail-date">{formatSwissDate(invoice.invoiceDate)}</dd>
 		<dt class="text-text-muted">{i18nMsg('supplier-invoices-col-due', 'Échéance')}</dt>
-		<dd>{invoice.dueDate ?? '—'}</dd>
+		<dd data-testid="supplier-invoice-detail-due">
+			{invoice.dueDate ? formatSwissDate(invoice.dueDate) : '—'}
+		</dd>
 		<dt class="text-text-muted">{i18nMsg('supplier-invoices-col-total', 'TTC')}</dt>
 		<dd><SupplierInvoiceTotal totalAmount={invoice.totalAmount} status={invoice.status} /></dd>
 		{#if projectLabel}
@@ -787,7 +791,10 @@
 			{#each invoice.lines as line (line.position)}
 				<tr class="border-b">
 					<td class="py-2">{line.description}</td>
-					<td class="py-2 text-right">{line.quantity}</td>
+					<!-- Story v0171 (#866) : la quantité lisible, `1.0000` → `1`. -->
+					<td class="py-2 text-right" data-testid="supplier-invoice-detail-line-quantity"
+						>{readableAmount(line.quantity, 0)}</td
+					>
 					<td class="py-2 text-right" data-testid="supplier-invoice-detail-line-unit-price"
 						>{formatExactAmount(line.unitPrice)}</td
 					>

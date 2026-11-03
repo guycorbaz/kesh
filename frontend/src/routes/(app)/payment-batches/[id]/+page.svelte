@@ -13,6 +13,7 @@
 		paymentBatchStatusLabel,
 	} from '$lib/features/payment-batches/payment-batch-helpers';
 	import type { PaymentBatchResponse } from '$lib/features/payment-batches/payment-batches.types';
+	import { formatSwissDate } from '$lib/features/reports/reports.api';
 	import { isApiError } from '$lib/shared/utils/api-client';
 	import { i18nMsg } from '$lib/shared/utils/i18n.svelte';
 
@@ -94,14 +95,20 @@
 
 	<dl class="mb-6 grid grid-cols-2 gap-2 text-sm">
 		<dt class="text-text-muted">{i18nMsg('payment-batches-detail-date', "Date d'exécution")}</dt>
-		<dd>{batch.requestedExecutionDate}</dd>
+		<!-- Story v0171 (#871) : dates en forme suisse ; `confirmedAt` est un horodatage
+		     naïf (`2026-01-29T10:15:00`), dont seule la date s'affiche. -->
+		<dd data-testid="payment-batch-execution-date">
+			{formatSwissDate(batch.requestedExecutionDate)}
+		</dd>
 		<dt class="text-text-muted">{i18nMsg('payment-batches-col-total', 'Total')}</dt>
 		<dd>{formatBatchTotal(batch.totalAmount)}</dd>
 		<dt class="text-text-muted">{i18nMsg('payment-batches-msg-id', 'Référence message')}</dt>
 		<dd class="font-mono">{batch.msgId}</dd>
 		{#if batch.confirmedAt}
 			<dt class="text-text-muted">{i18nMsg('payment-batches-confirmed-at', 'Confirmé le')}</dt>
-			<dd>{batch.confirmedAt}</dd>
+			<dd data-testid="payment-batch-confirmed-at">
+				{formatSwissDate(batch.confirmedAt.slice(0, 10))}
+			</dd>
 		{/if}
 	</dl>
 

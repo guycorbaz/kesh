@@ -23,6 +23,7 @@
 		SortDirection,
 	} from '$lib/features/invoices/invoices.types';
 	import { formatInvoiceTotal } from '$lib/features/invoices/invoice-helpers';
+	import { formatSwissDate } from '$lib/features/reports/reports.api';
 	import DunningPausedBadge from '$lib/features/invoices/DunningPausedBadge.svelte';
 	// Story 21-6a : seules les chaînes NOUVELLES passent par i18nMsg. Le reste
 	// de la page est en FR codé en dur — dette pré-existante suivie par #255
@@ -410,7 +411,8 @@
 		<tbody>
 			{#each items as inv (inv.id)}
 				<tr class="border-b border-border">
-					<td class="py-2 pr-2">{inv.date}</td>
+					<!-- Story v0171 (#879) : date en forme suisse. -->
+					<td class="py-2 pr-2" data-testid="invoice-row-date">{formatSwissDate(inv.date)}</td>
 					<td class="py-2 pr-2">{inv.contactName}</td>
 					<td class="py-2 pr-2">{inv.invoiceNumber ?? '—'}</td>
 					<td class="py-2 pr-2">
@@ -491,7 +493,7 @@
 			{i18nMsg(
 				'invoice-delete-confirm-body-context',
 				'Confirmer la suppression de la facture du { $date } pour { $contact } ?',
-				{ date: deleteTarget?.date ?? '', contact: deleteTarget?.contactName ?? '' },
+				{ date: formatSwissDate(deleteTarget?.date ?? ''), contact: deleteTarget?.contactName ?? '' },
 			)}
 		</p>
 		<!-- ⚠️ Un brouillon NUMÉROTÉ a déjà consommé son numéro — c'est le cas

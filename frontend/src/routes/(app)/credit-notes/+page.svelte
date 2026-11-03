@@ -7,6 +7,7 @@
 		formatCreditNoteTotal,
 	} from '$lib/features/credit-notes/credit-note-helpers';
 	import type { CreditNoteListItemResponse } from '$lib/features/credit-notes/credit-notes.types';
+	import { formatSwissDate } from '$lib/features/reports/reports.api';
 	import { isApiError } from '$lib/shared/utils/api-client';
 	import { i18nMsg } from '$lib/shared/utils/i18n.svelte';
 
@@ -61,7 +62,8 @@
 					onclick={() => goto(`/credit-notes/${cn.id}`)}
 				>
 					<td class="py-2 font-mono">{cn.creditNoteNumber ?? `#${cn.id}`}</td>
-					<td class="py-2">{cn.date}</td>
+					<!-- Story v0171 (#879) : date en forme suisse. -->
+					<td class="py-2">{formatSwissDate(cn.date)}</td>
 					<td class="py-2">{creditNoteStatusLabel(cn.status)}</td>
 					<td class="py-2 text-right">{formatCreditNoteTotal(cn.totalAmount)}</td>
 				</tr>

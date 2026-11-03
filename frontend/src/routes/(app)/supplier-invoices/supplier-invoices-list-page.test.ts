@@ -122,3 +122,32 @@ describe('liste des factures fournisseurs', () => {
 		expect(box.checked).toBe(false);
 	});
 });
+
+// Story v0171 (#871) — les dates de la liste en forme suisse.
+describe('liste des factures fournisseurs — dates (v0171)', () => {
+	beforeEach(() => {
+		listMock.mockImplementation(async () => ({
+			items: [
+				item({ id: 1, invoiceDate: '2026-01-29', dueDate: '2026-02-28' }),
+				item({ id: 2, invoiceDate: '2026-03-02', dueDate: null }),
+			],
+			total: 2,
+			offset: 0,
+			limit: 100,
+		}));
+	});
+
+	it('date de facture `29.01.2026`, jamais l’ISO (mutation M5 : formatSwissDate retiré de `invoiceDate`)', async () => {
+		const { findAllByTestId, container } = render(Page);
+		const dates = await findAllByTestId('supplier-invoice-row-date');
+		expect(dates.map((d) => d.textContent?.trim())).toEqual(['29.01.2026', '02.03.2026']);
+		expect(container.textContent).not.toContain('2026-01-29');
+	});
+
+	it('échéance `28.02.2026`, échéance nulle `—` (mutation M5 : formatSwissDate retiré de `dueDate`)', async () => {
+		const { findAllByTestId, container } = render(Page);
+		const dues = await findAllByTestId('supplier-invoice-row-due');
+		expect(dues.map((d) => d.textContent?.trim())).toEqual(['28.02.2026', '—']);
+		expect(container.textContent).not.toContain('2026-02-28');
+	});
+});

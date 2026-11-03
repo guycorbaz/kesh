@@ -39,6 +39,10 @@
 	import { isAccountUnusable } from '$lib/features/accounts/account-validity';
 	import { listProjects } from '$lib/features/projects/projects.api';
 	import type { ProjectResponse } from '$lib/features/projects/projects.types';
+	// Story v0171 (#878) — symétrique client de v017-4b (AC-23) : une quantité ou un prix
+	// lu du serveur (`DECIMAL(19,4)`, `1.0000`, `100.0000`) s'ouvre lisible dans son champ
+	// (`1`, `100.00`), sans perte de précision (`33.3333` gardé).
+	import { readableAmount } from '$lib/features/supplier-invoices/supplier-invoice-form';
 
 	type Props = { invoice?: InvoiceResponse | null };
 	let { invoice = null }: Props = $props();
@@ -110,8 +114,8 @@
 		if (invoice && invoice.lines.length > 0) {
 			return invoice.lines.map((l) => ({
 				description: l.description,
-				quantity: l.quantity,
-				unitPrice: l.unitPrice,
+				quantity: readableAmount(l.quantity, 0),
+				unitPrice: readableAmount(l.unitPrice, 2),
 				vatRate: l.vatRate,
 				// AC9-bis — site 1/5. Recopier depuis la réponse serveur, sinon toute
 				// ouverture d'un brouillon perdrait sa ventilation au ré-enregistrement.
@@ -422,7 +426,7 @@
 		lines.push({
 			description: p.name,
 			quantity: '1',
-			unitPrice: p.unitPrice,
+			unitPrice: readableAmount(p.unitPrice, 2),
 			vatRate: p.vatRate,
 			// AC9-bis — site 3/5. Le compte de l'article est recopié tel quel
 			// (Story 16-2b, #144) ; `null` s'il n'en impose aucun, la ligne suit
@@ -607,8 +611,8 @@
 			projectId = fresh.projectId ?? null;
 			lines = fresh.lines.map((l) => ({
 				description: l.description,
-				quantity: l.quantity,
-				unitPrice: l.unitPrice,
+				quantity: readableAmount(l.quantity, 0),
+				unitPrice: readableAmount(l.unitPrice, 2),
 				vatRate: l.vatRate,
 				// AC9-bis — site 4/5, LE PLUS DANGEREUX. Un oubli ici n'est visible
 				// qu'APRÈS un conflit de version : conflit optimiste → modale →

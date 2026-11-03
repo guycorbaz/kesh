@@ -25,6 +25,7 @@
 	import { formatExactAmount } from './invoice-helpers';
 	import { invoiceSettlementCancelMessage } from './settlement-cancel';
 	import { writeOffNatureLabel } from './write-off';
+	import { formatSwissDate } from '$lib/features/reports/reports.api';
 	import type { InvoiceSettlementResponse } from './invoices.types';
 
 	let {
@@ -72,7 +73,10 @@
 			<tbody>
 				{#each settlements as s (s.id)}
 					<tr class="border-b border-border align-top" data-testid="invoice-settlement-row">
-						<td class="py-2 pr-2">{s.settledOn}</td>
+						<!-- Story v0171 (#879) : date en forme suisse. -->
+						<td class="py-2 pr-2" data-testid="invoice-settlement-date">
+							{formatSwissDate(s.settledOn)}
+						</td>
 						<td class="py-2 pr-2 text-right font-mono">{formatExactAmount(s.amount)}</td>
 						<td class="py-2 pr-2" data-testid="invoice-settlement-mode">{typeLabel(s)}</td>
 						<td class="py-2 pr-2">

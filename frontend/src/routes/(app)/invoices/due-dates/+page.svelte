@@ -35,6 +35,7 @@
 	import ContactPicker from '$lib/components/invoices/ContactPicker.svelte';
 	import type { ContactResponse } from '$lib/features/contacts/contacts.types';
 	import { getContact } from '$lib/features/contacts/contacts.api';
+	import { formatSwissDate } from '$lib/features/reports/reports.api';
 	import PaymentStatusBadge from '$lib/features/invoices/PaymentStatusBadge.svelte';
 	import SettleInvoiceDialog, {
 		type SettlementPayload,
@@ -446,8 +447,11 @@
 		<tbody>
 			{#each items as inv (inv.id)}
 				<tr class="border-b border-border" class:row-overdue={inv.isOverdue}>
-					<td class="py-2 pr-2">{inv.date}</td>
-					<td class="py-2 pr-2">{inv.dueDate ?? '—'}</td>
+					<!-- Story v0171 (#879) : dates en forme suisse. -->
+					<td class="py-2 pr-2" data-testid="due-dates-date">{formatSwissDate(inv.date)}</td>
+					<td class="py-2 pr-2" data-testid="due-dates-due">
+						{inv.dueDate ? formatSwissDate(inv.dueDate) : '—'}
+					</td>
 					<td class="py-2 pr-2">
 						<a class="underline" href={`/invoices/${inv.id}`}>{inv.invoiceNumber ?? '—'}</a>
 					</td>
@@ -464,7 +468,9 @@
 					<td class="py-2 pr-2">
 						<PaymentStatusBadge status={statusOf(inv)} />
 					</td>
-					<td class="py-2 pr-2">{inv.paidAt ? inv.paidAt.slice(0, 10) : '—'}</td>
+					<td class="py-2 pr-2" data-testid="due-dates-paid-at"
+						>{inv.paidAt ? formatSwissDate(inv.paidAt.slice(0, 10)) : '—'}</td
+					>
 					<td class="py-2 pr-2 text-right">
 						{#if !inv.paidAt}
 							<Button variant="outline" size="sm" onclick={() => openMark(inv)}>

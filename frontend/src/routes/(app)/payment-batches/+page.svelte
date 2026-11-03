@@ -19,6 +19,7 @@
 	import { listBankAccounts } from '$lib/features/bank-accounts/bank-accounts.api';
 	import type { BankAccountSummary } from '$lib/features/bank-accounts/bank-accounts.api';
 	import { bankAccountOptionLabel } from '$lib/features/bank-accounts/format';
+	import { formatSwissDate } from '$lib/features/reports/reports.api';
 	import { isApiError } from '$lib/shared/utils/api-client';
 	import { i18nMsg } from '$lib/shared/utils/i18n.svelte';
 
@@ -236,7 +237,8 @@
 					onclick={() => goto(`/payment-batches/${b.id}`)}
 				>
 					<td class="py-2 font-mono">#{b.id}</td>
-					<td class="py-2">{b.requestedExecutionDate}</td>
+					<!-- Story v0171 (#871) : date en forme suisse. -->
+					<td class="py-2">{formatSwissDate(b.requestedExecutionDate)}</td>
 					<td class="py-2">{paymentBatchStatusLabel(b.status)}</td>
 					<td class="py-2 text-right">{formatBatchTotal(b.totalAmount)}</td>
 				</tr>

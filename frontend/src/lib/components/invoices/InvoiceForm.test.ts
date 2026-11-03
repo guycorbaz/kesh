@@ -581,3 +581,153 @@ describe('InvoiceForm — pré-remplissage depuis le catalogue (Story 16-2b, AC-
 		expect(last.value).toBe('');
 	});
 });
+
+// Story v0171 (#878, AC-11) — les champs quantité et prix unitaire d'une ligne de facture
+// cliente portent la forme lisible de la valeur du serveur (`DECIMAL(19,4)`) : quantité
+// `readableAmount(q, 0)` (`1.0000` ⇒ `1`), prix `readableAmount(p, 2)` (`100.0000` ⇒
+// `100.00`), sans perte de précision (`33.3333` gardé). Trois sites : `initLines`
+// (ouverture d'un brouillon), `reloadInvoice` (« Recharger » après un conflit de
+// version), `onProductSelect` (ajout depuis un article). Mutations M6 / M6-ter : retirer
+// le helper d'un site rougit le seul test de ce site.
+describe('InvoiceForm — quantité et prix lisibles (v0171, #878)', () => {
+	function ligneServeur(position: number, quantity: string, unitPrice: string) {
+		return { ...line(position, null), quantity, unitPrice };
+	}
+
+	function brouillon(lignes: ReturnType<typeof ligneServeur>[]): InvoiceResponse {
+		return { ...invoiceWith([]), lines: lignes } as unknown as InvoiceResponse;
+	}
+
+	/** Les champs quantité et prix, dans l'ordre des lignes : `[[q, p], …]`. */
+	function champs(container: HTMLElement): [string, string][] {
+		const inputs = Array.from(
+			container.querySelectorAll<HTMLInputElement>(
+				'[data-testid="invoice-lines-table"] input[inputmode="decimal"]',
+			),
+		).map((i) => i.value);
+		const paires: [string, string][] = [];
+		for (let k = 0; k < inputs.length; k += 2) paires.push([inputs[k], inputs[k + 1]]);
+		return paires;
+	}
+
+	function payloadLines(): { quantity: string; unitPrice: string }[] {
+		return (updateInvoiceMock.mock.calls.at(-1)![1] as { lines: { quantity: string; unitPrice: string }[] })
+			.lines;
+	}
+
+	it('ouverture d’un brouillon : `1.0000` ⇒ `1`, `100.0000` ⇒ `100.00`, `100.2000` ⇒ `100.20`, `33.3333` gardé (mutation M6 / M6-ter : `initLines`)', async () => {
+		const { container } = render(InvoiceForm, {
+			invoice: brouillon([
+				ligneServeur(1, '1.0000', '100.0000'),
+				ligneServeur(2, '2.5000', '100.2000'),
+				ligneServeur(3, '33.3333', '33.3333'),
+				ligneServeur(4, '0.0125', '0.0100'),
+			]),
+		});
+		await settle();
+		expect(champs(container)).toEqual([
+			['1', '100.00'],
+			['2.5', '100.20'],
+			['33.3333', '33.3333'],
+			['0.0125', '0.01'],
+		]);
+	});
+
+	it('après « Recharger » sur conflit de version : `1` et `100.00` (mutation M6 / M6-ter : `reloadInvoice`)', async () => {
+		updateInvoiceMock.mockRejectedValue({
+			code: 'OPTIMISTIC_LOCK_CONFLICT',
+			status: 409,
+			message: 'conflit',
+		});
+		getInvoiceMock.mockResolvedValue(
+			brouillon([ligneServeur(1, '1.0000', '100.0000'), ligneServeur(2, '33.3333', '33.3333')]),
+		);
+		// Départ déjà lisible : seul `reloadInvoice` peut produire la forme brute.
+		const { container, getByTestId, getByText } = render(InvoiceForm, {
+			invoice: brouillon([ligneServeur(1, '1', '100.00')]),
+		});
+		await settle();
+		await fireEvent.click(getByTestId('create-invoice-button'));
+		await settle();
+		await fireEvent.click(getByText('Recharger'));
+		await settle();
+		expect(champs(container)).toEqual([
+			['1', '100.00'],
+			['33.3333', '33.3333'],
+		]);
+	});
+
+	it('ajout d’une ligne depuis un article de prix `100.0000` ⇒ prix `100.00` (mutation M6-ter : `onProductSelect`)', async () => {
+		listProductsMock.mockResolvedValue({
+			items: [
+				{
+					id: 1,
+					companyId: 1,
+					name: 'Article à quatre décimales',
+					description: null,
+					unitPrice: '100.0000',
+					vatRate: '8.10',
+					defaultRevenueAccountId: null,
+					active: true,
+					version: 1,
+					createdAt: '2026-01-01T00:00:00',
+					updatedAt: '2026-01-01T00:00:00',
+				},
+			],
+			total: 1,
+			limit: 20,
+			offset: 0,
+		});
+		const { container, getByText } = render(InvoiceForm, { invoice: invoiceWith([]) });
+		await settle();
+		await fireEvent.click(getByText('Depuis catalogue'));
+		await settle();
+		const picker = document.querySelector('[role="dialog"]');
+		const entry = picker?.querySelector('ul li button') as HTMLElement | null;
+		expect(entry, 'le picker doit proposer l’article').toBeTruthy();
+		await fireEvent.click(entry!);
+		await settle();
+		expect(champs(container).at(-1)).toEqual(['1', '100.00']);
+	});
+
+	it('aller-retour : enregistrer sans toucher envoie `"1"` et `"100.00"`, le total ne change pas', async () => {
+		updateInvoiceMock.mockResolvedValue({ id: 7 });
+		const { container, getByTestId } = render(InvoiceForm, {
+			invoice: brouillon([ligneServeur(1, '1.0000', '100.0000')]),
+		});
+		await settle();
+		const total = () => container.querySelector('tfoot')?.textContent ?? '';
+		const avant = total();
+		expect(avant).toContain('100.00');
+		await fireEvent.click(getByTestId('create-invoice-button'));
+		await settle();
+		expect(payloadLines()[0]).toMatchObject({ quantity: '1', unitPrice: '100.00' });
+		expect(total()).toBe(avant);
+	});
+
+	it('aller-retour : `33.3333` part tel quel, aucune précision perdue', async () => {
+		updateInvoiceMock.mockResolvedValue({ id: 7 });
+		const { getByTestId } = render(InvoiceForm, {
+			invoice: brouillon([ligneServeur(1, '33.3333', '33.3333')]),
+		});
+		await settle();
+		await fireEvent.click(getByTestId('create-invoice-button'));
+		await settle();
+		expect(payloadLines()[0]).toMatchObject({ quantity: '33.3333', unitPrice: '33.3333' });
+	});
+
+	it('aller-retour : saisir `2.5` dans la quantité l’envoie `"2.5"`', async () => {
+		updateInvoiceMock.mockResolvedValue({ id: 7 });
+		const { container, getByTestId } = render(InvoiceForm, {
+			invoice: brouillon([ligneServeur(1, '1.0000', '10.0000')]),
+		});
+		await settle();
+		const qte = container.querySelectorAll<HTMLInputElement>(
+			'[data-testid="invoice-lines-table"] input[inputmode="decimal"]',
+		)[0];
+		await fireEvent.input(qte, { target: { value: '2.5' } });
+		await fireEvent.click(getByTestId('create-invoice-button'));
+		await settle();
+		expect(payloadLines()[0]).toMatchObject({ quantity: '2.5' });
+	});
+});
