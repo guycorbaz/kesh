@@ -631,7 +631,9 @@ test.describe('Factures — création brouillon', () => {
 		const secondRow = page.locator('tbody tr').nth(1);
 		await expect(secondRow.locator('input[type="text"]').first()).toHaveValue(productName);
 		const secondRowNumerics = secondRow.locator('input[inputmode="decimal"]');
-		await expect(secondRowNumerics.nth(1)).toHaveValue('150.0000'); // prix catalogue à 4 décimales
+		// Prix catalogue stocké à 4 décimales (`150.0000`), ouvert lisible depuis la
+		// Story v0171 (#878, `onProductSelect` → `readableAmount(p.unitPrice, 2)`).
+		await expect(secondRowNumerics.nth(1)).toHaveValue('150.00');
 
 		// Soumettre
 		await page.getByRole('button', { name: 'Créer la facture' }).click();
