@@ -1,6 +1,6 @@
 # Story v0171-correctifs : la 0.17.1 — la QR-facture à lignes CR+LF (#854), la quantité (#866, #878) et les dates (#871, #879)
 
-Status: review
+Status: done
 
 *Amendée le 2026-11-03 sur demande du Project Lead : périmètre élargi à **#878** (champ de saisie de la quantité d'une facture cliente) et **#879** (dates ISO des écrans clients) — issues ouvertes par l'orchestrateur sur les relevés de la première rédaction ; C-v0171-7 et C-v0171-10 sont remplacés par C-v0171-13 et 14. Fiche rédigée le 2026-11-03, en autonomie (Sonnet 5.5), worktree `/home/gcorbaz/devel/kesh-0171`, branche
 `release/0.17.1` partie de `910e5d5a` (le merge de la v0.17.0 sur `main`). Release **corrective 0.17.1**, sans
@@ -621,3 +621,8 @@ et leurs tests (neufs : `supplier-invoice-display-page`, `payment-batches-dates-
   LOW-1 : en-tête recalé sans annotation → annoté. LOW-2 : la phrase retirée « Verts avant : T3, T6, T7 » n'est citée que par
   renvoi — la voici, pour la trace : « **Verts avant** : T3 (`decode_spc_from_png_roundtrip`), T5 (…), T6 (…), T7 (…) ».
   Remédiation sans code. Prochaine : passe P3 ciblée sur cette remédiation.
+- 2026-11-03 — revue de code P3 ciblée (Sonnet, `v0171-correctifs-review-prompt-p3.md`, `kesh-gate-logs/v0171-review-p3.md`) sur
+  `d5e44cd0` et `3d21d1aa` : **0/0/0/1** — LOW-1 : titre de #883 périmé (« quatre LOW » pour six points), renommé. **Boucle
+  terminée** sur une passe sans finding au-dessus de LOW. Trend > LOW : P1 1 (A, Dev Agent Record) → P2 1 (traçage d'un LOW)
+  → P3 0. Modèles : Sonnet ×3 (P1), Haiku (P2 ciblée), Sonnet (P3 ciblée). Aucune remédiation de la revue n'a touché le code :
+  le gate complet et l'E2E complet de `e5d4ccd0` (dernier commit de code) restent ceux de la story. Statut `done`.
