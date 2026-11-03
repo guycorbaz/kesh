@@ -4,7 +4,7 @@ Status: review
 
 *Amendée le 2026-11-03 sur demande du Project Lead : périmètre élargi à **#878** (champ de saisie de la quantité d'une facture cliente) et **#879** (dates ISO des écrans clients) — issues ouvertes par l'orchestrateur sur les relevés de la première rédaction ; C-v0171-7 et C-v0171-10 sont remplacés par C-v0171-13 et 14. Fiche rédigée le 2026-11-03, en autonomie (Sonnet 5.5), worktree `/home/gcorbaz/devel/kesh-0171`, branche
 `release/0.17.1` partie de `910e5d5a` (le merge de la v0.17.0 sur `main`). Release **corrective 0.17.1**, sans
-migration. Registre : `v0171-choix-autonomes.md` (C-v0171-1 à 21). Clé courte : `v0171`. Issues : **#854** (bug, P2),
+migration. Registre : `v0171-choix-autonomes.md` (C-v0171-1 à 25). Clé courte : `v0171`. Issues : **#854** (bug, P2),
 **#866**, **#871**, **#878**, **#879** (bugs, P4), en `refs` seulement dans les commits ; la fermeture se porte sur la PR de
 release. Les numéros de ligne sont ceux de `910e5d5a`.*
 
@@ -444,15 +444,20 @@ Rapport `kesh-gate-logs/v0171-validate-p4.md` ; prémisses relues :
 
 Journaux : `kesh-gate-logs/v0171/rouges-backend.log`, `rouges-vitest.log`.
 
-- **Backend** (`cargo nextest`, filtre `test(/v0171|crlf|decode_spc_from_png_roundtrip/)`, 12 tests) : **5 rouges** —
+- **Backend** (`cargo nextest`, **6 tests joués** sur `910e5d5a` — le journal porte « 6 tests run: 1 passed, 5 failed » ; *rectifié
+  le 2026-11-03 à la revue P1, finding A MEDIUM-1 : cette ligne annonçait « filtre `test(/v0171|crlf|decode_spc_from_png_roundtrip/)`,
+  12 tests », chiffre qui ne se trouve qu'aux journaux de mutation, donc après correctif*) : **5 rouges** —
   T1 `v0171_t1_first_spc_retient_un_payload_crlf` (`expect("payload CR+LF retenu")`, `qr_decode.rs:465`), T2
   `v0171_t2_decode_image_png_crlf` (`expect("QR-facture CR+LF lue")`, `:487` — l'assertion précédente, `rxing` rend le payload
   CR+LF à l'identique, **passe** : rxing préserve `\r`, la cause est bien le préfiltre), T4 `v0171_t4_crlf_lue_au_premier_temps`
   (`left: [(0, Premier), (0, Second)]`), T4 `v0171_t4_crlf_inexploitable` (rendu `LU` par le second temps au lieu de
-  `InvalidSpcPayload`), T8 `import_crlf_qr_reports_present` (`"qr":"none"`). **Verts avant** : T3 (`decode_spc_from_png_roundtrip`),
-  T5 (`v0171_t5_prefiltre_negatifs`), T6 (`crlf_payload_parses_like_lf_without_residual_cr`, `crlf_payload_with_qrr_parses_like_lf`),
-  T7 (`crlf_spc_text_maps_like_lf`, `scan_qr_crlf_payload_returns_same_coordinates_as_lf`). T6 vert : **aucun `\r` résiduel au
-  parseur**, pas de second défaut (tâche 3).
+  `InvalidSpcPayload`), T8 `import_crlf_qr_reports_present` (`"qr":"none"`). **Vert avant** : T5 (`v0171_t5_prefiltre_negatifs`),
+  seul. **Non joués avant le correctif** : T3 (`decode_spc_from_png_roundtrip`), T6 (`crlf_payload_parses_like_lf_without_residual_cr`,
+  `crlf_payload_with_qrr_parses_like_lf`), T7 (`crlf_spc_text_maps_like_lf`, `scan_qr_crlf_payload_returns_same_coordinates_as_lf`) ;
+  ils sont verts au gate complet après correctif. Ce qui établit « **aucun `\r` résiduel au parseur**, pas de second défaut »
+  (tâche 3) : T6 vert **et** le parseur de production inchangé — `git diff 910e5d5a..HEAD -- crates/kesh-qrbill/src/parser.rs`
+  n'ajoute que dans `mod tests` (hunk `@@ -389,4 +389,63 @@ mod tests`), de même `routes/supplier_invoices.rs` (`mod scan_qr_tests`) ;
+  T6 et T7 auraient donc rendu le même vert sur `910e5d5a`, sans l'avoir montré par exécution.
 - **Vitest** (sept répertoires ou fichiers, `data-testid` posés d'abord sans changer l'affichage, C-v0171-23) : **34 rouges**, tous
   sur la valeur (« expected '2026-03-01' to be '01.03.2026' », « expected [ '1.0000', … ] », « expected [ '1', '100.0000' ] »…) —
   T9, T10, T11, T12, T13, T14, — dont un premier test d'aller-retour qui mêlait `33.3333` et la saisie `2.5` et rougissait sur le prix `10.0000` de sa seconde ligne : il a été scindé en deux tests (`33.3333` part tel quel ; `2.5` saisi part `"2.5"`), qui ne dépendent pas du correctif — vérifié sous M6 et M6-ter `initLines`, où ils restent verts —, et les deux tests
@@ -473,7 +478,8 @@ Journaux : `kesh-gate-logs/v0171/rouges-backend.log`, `rouges-vitest.log`.
   `fiscal-year-closing-journey.spec.ts:282`, une réponse d'API) ; une seule fige une quantité ou un prix brut (`invoices.spec.ts:634`).
 - Décomptes (périmètre `68374eb9..HEAD`) : **10 tests backend** neufs (`#[test]`/`#[sqlx::test]` : `qr_decode.rs` 35 → 40,
   `parser.rs` 10 → 12, `supplier_invoices.rs` 4 → 5, `inbox_import_e2e.rs` 43 → 44, `supplier_invoice_scan_qr_e2e.rs` 5 → 6) ;
-  **35 tests Vitest** neufs (`it(` ajoutés, aucun retiré) dans quatorze fichiers.
+  **35 tests Vitest** neufs (`it(` ajoutés, aucun retiré) dans treize fichiers ; un quatorzième, `invoice-pdf-page.test.ts`, n'a que
+  des assertions modifiées *(« dans quatorze fichiers » rectifié le 2026-11-03, revue P1, LOW de la lentille A)*.
 
 ### AC-8 et AC-12 — greps de contrôle (rejoués après correction)
 
@@ -496,8 +502,11 @@ Journaux : `kesh-gate-logs/v0171/mut/back.log`, `front.log`, `front-liste.log` ;
 - **M1** (préfiltre strict) : 5 rouges — T1, T2, T4 ×2, T8. **Tuée.**
 - **M2** (tout préfixe `SPC`) : 1 rouge — T5. **Tuée.**
 - **M3** (`trim_end_matches('\r')` retiré du parseur) : 8 rouges — T1, T2, T4 (lu au premier temps), T6 ×2, T7 ×2, T8. **Tuée.**
-  Écart à la fiche : le jumeau inexploitable de T4 (`v0171_t4_crlf_inexploitable`) reste **vert** sous M3 — normal : un payload
-  `SPC\r…` refusé par le parseur reste `InvalidSpcPayload`, qui est son attendu.
+  Écart à la fiche : le jumeau inexploitable de T4 (`v0171_t4_crlf_inexploitable`) reste **vert** sous M3 — normal : son payload n'a que
+  4 lignes, refusé au contrôle du nombre de lignes (`parser.rs:90-100`) avant tout examen d'en-tête ; il rend `InvalidSpcPayload`, son
+  attendu, avec ou sans M3. Ce test ne garde donc que le préfiltre (M1) *(cause précisée le 2026-11-03, revue P1, LOW des lentilles A
+  et E)*. Écart à AC-2(c) : `decode_spc_from_png_roundtrip` change d'une ligne (il emploie `est_payload_spc`, la règle unique) au lieu
+  de rester « inchangé en son corps ».
 - **M4** ×3 (fiche fournisseur, fiche cliente, fiche d'avoir) : chacune rougit le seul test de quantité de sa fiche. **Tuées.**
 - **M5** ×21 (un par site de date corrigé, sauf `emailedAt`) et **M7** ×3 (`emailedAt`, `sentAt`, `cancelledAt`) : chacune rougit
   le **seul** test de son site. Au premier passage, M5 sur `inv.date` de la liste des factures rougissait aussi le test de la
@@ -518,7 +527,8 @@ Texte capturé (`captures/recette.log`) :
 > Cette facture figure dans le lot de paiement n° 1, confirmé le 03.11.2026. Si la banque a exécuté cet ordre, elle a déjà été payée : corrigez alors par un nouveau règlement direct, jamais par un nouveau lot.
 
 `confirmedAt` du lot : `2026-11-03T17:40:45.806` ; `03.11.2026` présent, aucune forme `AAAA-MM-JJ`. **#871 est déjà corrigée en
-0.17.0 pour cette confirmation** (B2-4) ; le correctif de la 0.17.1 porte sur les sept autres sites (§ 9). Commentaire à l'issue
+0.17.0 pour cette confirmation** (B2-4) — établi par l'exécution du build du worktree **et** par les lignes de cette confirmation,
+inchangées entre `910e5d5a` et la tête (`git diff -U0 910e5d5a..HEAD`), non par une exécution du binaire 0.17.0 ; le correctif de la 0.17.1 porte sur les sept autres sites (§ 9). Commentaire à l'issue
 demandé à l'orchestrateur.
 
 ### Captures (thème clair, base jetable `kesh_v0171`, données synthétiques)
@@ -598,3 +608,10 @@ et leurs tests (neufs : `supplier-invoice-display-page`, `payment-batches-dates-
   #854, #866, #871, #878, #879 corrigés ; mutations M1–M7 tuées ; AC-9 : #871 déjà corrigée en 0.17.0 pour la confirmation ; manuel et
   PDF, CHANGELOG ; gates : backend 4683/4683 (12 ignorés), Vitest 2433, E2E 335 verts / 7 échecs KF-029. Registre C-v0171-22 à 25.
   Prochaine : revue de code P1 (Sonnet, `v0171-correctifs-review-prompt-p1.md`).
+- 2026-11-03 — revue de code P1 (Sonnet ×3, `kesh-gate-logs/v0171-review-p1-{B,E,A}.md`) : B 0/0/0/3, E 0/0/0/3, A 0/0/1/4.
+  Remédiation de l'orchestrateur, **sans code** : A MEDIUM-1 (« 12 tests » et « verts avant » du record des rouges, faux au journal :
+  6 joués, T5 seul vert) récrit ; LOW A recalés au record (registre C-v0171-1 à 25 dans l'en-tête, treize fichiers Vitest à `it(`
+  neufs, cause du jumeau de T4 sous M3 et écart à AC-2(c), fondement d'AC-9). LOW de code **non traités, tracés en issue** : doc-comment
+  de `qr_decode.rs:8` non reflué (B), lignes Svelte au-delà de la largeur Prettier probable (B), `assert_ne!` redondant
+  d'`inbox_import_e2e.rs` (B), bornes de `est_payload_spc` sans test — en-têtes mêlés, chaîne vide, BOM, en-tête sans suite (E-2) ;
+  E-3 (horodatage non tranché) sans site fautif. Issue : #883. Prochaine : passe P2 ciblée sur cette remédiation.
