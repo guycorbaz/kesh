@@ -180,6 +180,9 @@
 
 	async function pay() {
 		payError = '';
+		// Revue P2 (B2-2 = A2-2 = E2-1) : un geste qui change le statut périme les refus du
+		// cycle, rendus hors des blocs de statut.
+		clearCycleErrors();
 		if (settlementType === 'bank_transfer' && !payBankAccountId) {
 			payError = i18nMsg('supplier-invoices-pay-err-bank', 'Sélectionnez un compte bancaire.');
 			return;
@@ -223,10 +226,13 @@
 				i18nMsg(
 					'supplier-invoices-settlement-cancel-batch-warning',
 					'Cette facture figure dans le lot de paiement n° { $batch }, confirmé le { $date }. Si la banque a exécuté cet ordre, elle a déjà été payée : corrigez alors par un nouveau règlement direct, jamais par un nouveau lot.',
-					{ batch: batch.id, date: (batch.confirmedAt ?? '').slice(0, 10) },
+					// Revue P2 (B2-4) : la date au format suisse, comme l'avertissement de la
+					// dévalidation.
+					{ batch: batch.id, date: formatSwissDate((batch.confirmedAt ?? '').slice(0, 10)) },
 				);
 		}
 		if (!confirm(message)) return;
+		clearCycleErrors(); // revue P2 (B2-2 = A2-2 = E2-1)
 		cancellingSettlement = true;
 		try {
 			const res = await cancelSupplierInvoiceSettlement(id);
@@ -267,6 +273,7 @@
 				);
 		}
 		if (!confirm(message)) return;
+		clearCycleErrors(); // revue P2 (B2-2 = A2-2 = E2-1)
 		cancelling = true;
 		try {
 			invoice = await cancelSupplierInvoice(id);
@@ -297,7 +304,12 @@
 		);
 	}
 
-	/** Efface les refus des gestes du cycle (revue P1, B-2) : au début de chaque geste. */
+	/**
+	 * Efface les refus des gestes du cycle (revue P1, B-2) : au début de **tout geste qui
+	 * change le statut** — valider, dévalider, supprimer, et (revue P2, B2-2 = A2-2 = E2-1)
+	 * payer, annuler le règlement, annuler la facture. Les refus sont rendus hors des blocs
+	 * de statut : rien d'autre ne les masque.
+	 */
 	function clearCycleErrors() {
 		validateError = '';
 		unvalidateError = '';
@@ -305,14 +317,31 @@
 	}
 
 	/**
-	 * Revue P1 (E-2 = A-1, limite L4) — le lot confirmé qui a payé la facture avant que son
-	 * règlement soit annulé : la banque a pu exécuter l'ordre.
+	 * Revue P1 (E-2 = A-1, limite L4), reprise en revue P2 (B2-1 = A2-1) — le lot confirmé le
+	 * plus récent qui contient la facture : un fait HISTORIQUE, jamais « payée par ce lot »
+	 * (`payment_batches::last_confirmed_batch_for_invoice`). Le fait se dit à tous les rôles ;
+	 * sans date de confirmation, la phrase sans date (B2-3).
 	 */
-	function confirmedBatchWarning(batch: { id: number; confirmedAt: string | null }): string {
+	function confirmedBatchFact(batch: { id: number; confirmedAt: string | null }): string {
+		if (!batch.confirmedAt) {
+			return i18nMsg(
+				'supplier-invoices-unvalidate-batch-warning-undated',
+				'Cette facture figure dans le lot de paiement confirmé n° { $batch }.',
+				{ batch: batch.id },
+			);
+		}
 		return i18nMsg(
 			'supplier-invoices-unvalidate-batch-warning',
-			'Cette facture a été payée par le lot de paiement n° { $batch }, confirmé le { $date }, puis son règlement a été annulé. Si la banque a exécuté cet ordre, vérifiez le relevé avant de changer son montant.',
-			{ batch: batch.id, date: formatSwissDate((batch.confirmedAt ?? '').slice(0, 10)) },
+			'Cette facture figure dans le lot de paiement n° { $batch }, confirmé le { $date }.',
+			{ batch: batch.id, date: formatSwissDate(batch.confirmedAt.slice(0, 10)) },
+		);
+	}
+
+	/** La consigne, pour les seuls rôles qui peuvent dévalider (revue P2, B2-5). */
+	function confirmedBatchAction(): string {
+		return i18nMsg(
+			'supplier-invoices-unvalidate-batch-warning-action',
+			'Si la banque a exécuté cet ordre, la facture a peut-être déjà été payée : vérifiez le relevé avant de changer son montant.',
 		);
 	}
 
@@ -614,12 +643,14 @@
 				</div>
 			{/if}
 		</div>
-	{:else if invoice.status === 'open'}
+	{:else if invoice.status === 'open' && (canManage || invoice.lastConfirmedBatch)}
 		<!-- Story v017-4b (#849, AC-22) : dévalider — Administrateur et Comptable. L'écran
 		     ne rejoue pas les empêchements : le serveur refuse, la fiche dit le motif.
-		     Revue P1 (E-2 = A-1, limite L4) : une facture payée par un lot CONFIRMÉ dont le
-		     règlement a été annulé se dévalide ; la fiche nomme ce lot et dit de vérifier le
-		     relevé avant de changer le montant — risque de double paiement. -->
+		     Revue P1 (E-2 = A-1, limite L4), reprise en P2 (B2-1, B2-5) : une facture qui
+		     figure dans un lot CONFIRMÉ se dévalide ; la fiche nomme ce lot (un fait
+		     historique, à tous les rôles) et, aux rôles qui dévalident, dit de vérifier le
+		     relevé avant de changer le montant — risque de double paiement. Sans geste ni
+		     lot, aucun bloc (P2, A2-4 = E2-3). -->
 		<div class="mb-6 space-y-2" data-testid="supplier-invoice-unvalidate-block">
 			{#if invoice.lastConfirmedBatch}
 				<p
@@ -627,7 +658,8 @@
 					role="note"
 					data-testid="supplier-invoice-confirmed-batch-warning"
 				>
-					{confirmedBatchWarning(invoice.lastConfirmedBatch)}
+					{confirmedBatchFact(invoice.lastConfirmedBatch)}
+					{#if canManage}{confirmedBatchAction()}{/if}
 				</p>
 			{/if}
 			{#if canManage}
@@ -967,7 +999,8 @@
 				role="note"
 				data-testid="supplier-invoice-unvalidate-dialog-batch-warning"
 			>
-				{confirmedBatchWarning(invoice.lastConfirmedBatch)}
+				{confirmedBatchFact(invoice.lastConfirmedBatch)}
+				{confirmedBatchAction()}
 			</p>
 		{/if}
 		<Dialog.Footer>

@@ -709,7 +709,9 @@
 				>
 					<option value="0">0%</option>
 					{#each extraRates as r (r)}
-						<option value={r}>{r}%</option>
+						<!-- Revue P2 (E2-5) : l'étiquette à l'échelle des taux actifs (7.7000 → 7.70),
+						     la valeur inchangée. -->
+						<option value={r}>{readableAmount(r, 2)}%</option>
 					{/each}
 					{#each vatRates as r (r.id)}
 						<option value={r.rate}>{r.rate}%</option>

@@ -206,8 +206,12 @@ const PREFIXES = [
  * recompté aux deux bornes (`9a229bd3` → tête) : `supplier-invoices-unvalidate-batch-warning`
  * (E-2), `-unvalidate-blocked-later-fiscal-year-closed-named` (E-4), `-err-invoice-date-plain`
  * (E-6). `fiscal-years-checks-k8-more` (E-10) est hors de ce relevé (préfixe). Aucune retirée.
+ *
+ * ⚠️ **Revue de code P2** (2026-11-03) : **387 → 389** (+2), aux deux bornes (`f8b119e5` →
+ * tête) : `supplier-invoices-unvalidate-batch-warning-undated` (B2-3) et
+ * `-unvalidate-batch-warning-action` (B2-5). Aucune retirée (`-batch-warning` change de texte).
  */
-const CLES_RELEVEES = 387;
+const CLES_RELEVEES = 389;
 
 
 /** Relève, pour chaque clé du domaine, l'ensemble de ses replis littéraux distincts. */

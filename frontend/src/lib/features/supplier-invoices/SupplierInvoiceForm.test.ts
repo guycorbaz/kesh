@@ -825,4 +825,30 @@ describe('SupplierInvoiceForm — revue de code P1 (B-8, B-9 = E-5, E-6, E-7)', 
 		expect([...sel.options].map((o) => o.value)).toContain('7.70');
 		expect(sel.value).toBe('7.70');
 	});
+
+	// Revue P2 (E2-5) : un taux expiré à l'échelle du serveur s'affiche « 7.70% », sa valeur
+	// reste celle du serveur.
+	it('le taux expiré à quatre décimales s’affiche à deux (E2-5)', () => {
+		const { getByTestId } = renderForm({
+			document: null,
+			vatRates: [{ id: 1, rate: '8.10' }],
+			initial: initial({
+				lines: [
+					{
+						position: 0,
+						description: 'Ancienne',
+						quantity: '1.0000',
+						unitPrice: '10.0000',
+						vatRate: '7.7000',
+						lineTotal: '10.00',
+						expenseAccountId: 40,
+					},
+				],
+			}),
+		});
+		const sel = getByTestId('supplier-invoice-line-vat') as HTMLSelectElement;
+		const opt = [...sel.options].find((o) => o.value === '7.7000');
+		expect(opt?.textContent?.trim()).toBe('7.70%');
+		expect(sel.value).toBe('7.7000');
+	});
 });

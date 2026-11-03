@@ -2654,7 +2654,9 @@ supplier-invoices-save-draft = Save the draft
 supplier-invoices-field-date-help = Invoice date, as printed on the document
 supplier-invoices-err-invoice-date = Enter the invoice date, as printed on the document.
 supplier-invoices-err-stale = This invoice has been changed in the meantime: reload the page, then redo your correction.
-supplier-invoices-unvalidate-batch-warning = This invoice was paid by payment batch no. { $batch }, confirmed on { $date }, then its settlement was cancelled. If the bank executed that order, check the bank statement before changing its amount.
+supplier-invoices-unvalidate-batch-warning = This invoice is part of payment batch no. { $batch }, confirmed on { $date }.
+supplier-invoices-unvalidate-batch-warning-undated = This invoice is part of confirmed payment batch no. { $batch }.
+supplier-invoices-unvalidate-batch-warning-action = If the bank executed that order, the invoice may already have been paid: check the bank statement before changing its amount.
 supplier-invoices-unvalidate-blocked-later-fiscal-year-closed-named = The later fiscal year “{ $name }” is closed: to unvalidate this invoice, an administrator must reopen the later closed fiscal years, starting with the most recent.
 supplier-invoices-err-invoice-date-plain = Enter the invoice date.
 # Story 30-2b (#685) — the invoice is created next to the document (cf. fr-CH).

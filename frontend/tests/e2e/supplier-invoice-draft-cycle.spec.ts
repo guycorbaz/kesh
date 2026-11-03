@@ -484,9 +484,10 @@ test.describe('Cycle brouillon → validée → payée (étapes par l’écran, 
 			await page.getByTestId('supplier-invoices-show-cancelled').uncheck();
 			await expect(cancelledRow).toHaveCount(0);
 
-			// Revue P1 (E-2 = A-1, limite L4) : une facture payée par un lot CONFIRMÉ, dont le
-			// règlement a été annulé, redevient validée ; sa fiche et la confirmation de la
-			// dévalidation nomment ce lot.
+			// Revue P1 (E-2 = A-1, limite L4), reprise en P2 (B2-1) : une facture placée dans un
+			// lot CONFIRMÉ, puis dont le règlement est annulé, redevient validée ; sa fiche et la
+			// confirmation de la dévalidation disent qu'elle FIGURE dans ce lot (un fait
+			// historique, jamais « payée par ce lot »).
 			const paidRes = await ctx.post('/api/v1/supplier-invoices', {
 				data: {
 					...body(d.supplierId, d.right, '72.40', `FF-LOT-CONFIRME-${token()}`),
@@ -516,8 +517,11 @@ test.describe('Cycle brouillon → validée → payée (étapes par l’écran, 
 			await page.goto(`/supplier-invoices/${paidDraft.id}`);
 			await expect(page.getByTestId('supplier-invoice-status')).toHaveText('Validée');
 			const batchWarning = page.getByTestId('supplier-invoice-confirmed-batch-warning');
-			await expect(batchWarning).toContainText(`lot de paiement n° ${batch2Id}`);
+			await expect(batchWarning).toContainText(
+				`Cette facture figure dans le lot de paiement n° ${batch2Id}, confirmé le `,
+			);
 			await expect(batchWarning).toContainText('vérifiez le relevé avant de changer son montant');
+			await expect(batchWarning).not.toContainText('payée par');
 			await capture(page, testInfo, 'fiche-validee-lot-confirme');
 			await page.getByTestId('supplier-invoice-unvalidate').click();
 			await expect(

@@ -2684,7 +2684,11 @@ supplier-invoices-field-date-help = Date de la facture, telle qu’imprimée sur
 supplier-invoices-err-invoice-date = Saisissez la date de la facture, telle qu’imprimée sur le document.
 supplier-invoices-err-stale = Cette facture a été modifiée entre-temps : rechargez la page, puis refaites votre correction.
 # Story v017-4b, revue P1 (E-2 = A-1, E-4, E-6).
-supplier-invoices-unvalidate-batch-warning = Cette facture a été payée par le lot de paiement n° { $batch }, confirmé le { $date }, puis son règlement a été annulé. Si la banque a exécuté cet ordre, vérifiez le relevé avant de changer son montant.
+# Revue P2 (B2-1 = A2-1, B2-3, B2-5) : un fait historique, jamais « payée par ce lot » ; sans
+# date, la phrase sans date ; la consigne, aux seuls rôles qui dévalident.
+supplier-invoices-unvalidate-batch-warning = Cette facture figure dans le lot de paiement n° { $batch }, confirmé le { $date }.
+supplier-invoices-unvalidate-batch-warning-undated = Cette facture figure dans le lot de paiement confirmé n° { $batch }.
+supplier-invoices-unvalidate-batch-warning-action = Si la banque a exécuté cet ordre, la facture a peut-être déjà été payée : vérifiez le relevé avant de changer son montant.
 supplier-invoices-unvalidate-blocked-later-fiscal-year-closed-named = L’exercice postérieur « { $name } » est clôturé : pour pouvoir dévalider cette facture, un administrateur doit rouvrir les exercices postérieurs clôturés, en commençant par le plus récent.
 supplier-invoices-err-invoice-date-plain = Saisissez la date de la facture.
 # Story 30-2b (#685) — la facture se crée à côté du document (page `/supplier-invoices/new`,

@@ -2648,7 +2648,9 @@ supplier-invoices-save-draft = Entwurf speichern
 supplier-invoices-field-date-help = Rechnungsdatum, wie auf dem Dokument gedruckt
 supplier-invoices-err-invoice-date = Geben Sie das Rechnungsdatum ein, wie es auf dem Dokument gedruckt ist.
 supplier-invoices-err-stale = Diese Rechnung wurde inzwischen geändert: Laden Sie die Seite neu und nehmen Sie Ihre Korrektur erneut vor.
-supplier-invoices-unvalidate-batch-warning = Diese Rechnung wurde mit dem Zahlungsstapel Nr. { $batch } bezahlt, bestätigt am { $date }, dann wurde ihre Zahlung storniert. Hat die Bank diesen Auftrag ausgeführt, prüfen Sie den Kontoauszug, bevor Sie ihren Betrag ändern.
+supplier-invoices-unvalidate-batch-warning = Diese Rechnung ist im Zahlungsauftrag Nr. { $batch } enthalten, bestätigt am { $date }.
+supplier-invoices-unvalidate-batch-warning-undated = Diese Rechnung ist im bestätigten Zahlungsauftrag Nr. { $batch } enthalten.
+supplier-invoices-unvalidate-batch-warning-action = Hat die Bank diesen Auftrag ausgeführt, wurde die Rechnung vielleicht bereits bezahlt: Prüfen Sie den Kontoauszug, bevor Sie ihren Betrag ändern.
 supplier-invoices-unvalidate-blocked-later-fiscal-year-closed-named = Das spätere Geschäftsjahr «{ $name }» ist abgeschlossen: Damit die Freigabe dieser Rechnung aufgehoben werden kann, muss ein Administrator die späteren abgeschlossenen Geschäftsjahre wieder eröffnen, beginnend mit dem neuesten.
 supplier-invoices-err-invoice-date-plain = Geben Sie das Rechnungsdatum ein.
 # Story 30-2b (#685) — die Rechnung wird neben dem Dokument erfasst (cf. fr-CH).

@@ -831,7 +831,10 @@ const ATTENDU = {
 	// `SupplierInvoiceForm.svelte` 47 → 48 (date vide sans document, E-6),
 	// `supplier-invoice-unvalidate.ts` 11 → 12 (l'exercice postérieur nommé, E-4),
 	// `FiscalYearChecks.svelte` 28 → 29 (« … et N autre(s) », E-10). Que des littéraux.
-	sitesTotal: 2794,
+	// Revue de code P2 (2026-11-03) : **2794 → 2796** (+2), `grep -o 'i18nMsg('` aux deux
+	// bornes (`f8b119e5` → tête) : `supplier-invoices/[id]/+page.svelte` 74 → 76 — le lot
+	// confirmé se dit en trois clés (fait daté, fait sans date, consigne ; B2-1, B2-3, B2-5).
+	sitesTotal: 2796,
 	sitesNonResolus: 31,
 	relais: 6,
 	// Story 26-1 (#620, AC3-bis) : **10 → 11** — `lib/features/bank-import/

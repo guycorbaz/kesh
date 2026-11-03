@@ -1727,18 +1727,19 @@ d'une facture validée est refusée, et la fiche dit pourquoi, quand~:
           (\S\ref{sec:paiements-fournisseurs})~;
     \item son écriture d'achat est \textbf{rapprochée} d'une transaction bancaire~: annulez
           d'abord le rapprochement (\S\ref{sec:annuler-rapprochement})~;
-    \item son exercice est \textbf{clôturé}, ou suivi d'un exercice clôturé --- que le refus
-          nomme~: un administrateur doit rouvrir les exercices clôturés, en commençant par le
-          plus récent (\S\ref{sec:reouverture-exercice})~;
+    \item son exercice est \textbf{clôturé}, ou suivi d'un exercice clôturé (le refus nomme
+          alors celui-ci)~: un administrateur doit rouvrir les exercices clôturés, en commençant
+          par le plus récent (\S\ref{sec:reouverture-exercice})~;
     \item sa date est sous le \textbf{verrou de période}~: un administrateur fait reculer le
           verrou avant elle (\S\ref{sec:verrou-periode})~;
     \item une ligne de l'écriture d'achat est \textbf{lettrée}~: délettrez-la d'abord
           (\S\ref{sec:lettrage}).
 \end{itemize}
-Une facture payée par un \textbf{lot confirmé}, dont le règlement a été annulé, se dévalide~:
-sa fiche, au-dessus de \emph{Dévalider}, et la confirmation de la dévalidation nomment ce lot
-et sa date de confirmation. Si la banque a exécuté l'ordre, la facture a peut-être déjà été
-payée~: vérifiez le relevé avant de changer son montant.
+Une facture validée qui figure dans un \textbf{lot confirmé} se dévalide~: sa fiche, au-dessus de \emph{Dévalider}, nomme ce lot et sa date de
+confirmation, pour tous les rôles~; pour qui peut dévalider, la fiche et la confirmation de la
+dévalidation ajoutent que si la banque a exécuté l'ordre, la facture a peut-être déjà été
+payée~: vérifiez le relevé avant de changer son montant. Kesh ne dit pas que ce lot l'a payée~:
+il dit seulement qu'elle y figure.
 
 \subsection{Régler une facture fournisseur}\label{sec:regler-facture-fournisseur}
 

@@ -49,9 +49,9 @@ error-invoice-number-fiscal-year-mismatch = Questa fattura ha già un numero: la
 error-invoice-must-be-unvalidated-first = Questa fattura è convalidata: annullate prima la convalida, poi eliminate la bozza.
 error-supplier-invoice-must-be-unvalidated-first = Questa fattura fornitore è convalidata: annullate prima la convalida, poi eliminate la bozza.
 error-supplier-invoice-has-payment-batch-history = Questa bozza figura in un lotto di pagamento, la cui cronologia si conserva: non si elimina. Correggetela e convalidatela; se non è dovuta, convalidatela e poi annullatela.
-error-supplier-invoice-unvalidate-blocked-paid = Questa fattura fornitore è pagata: annullate prima il suo pagamento.
-error-supplier-invoice-unvalidate-blocked-in-payment-batch = Questa fattura figura in un lotto di pagamento in corso: annullate prima il lotto.
-error-supplier-invoice-unvalidate-blocked-matched = La registrazione d'acquisto di questa fattura è riconciliata con una transazione bancaria: annullate prima la riconciliazione.
+error-supplier-invoice-unvalidate-blocked-paid = Questa fattura fornitore è pagata: annulla prima il suo pagamento.
+error-supplier-invoice-unvalidate-blocked-in-payment-batch = Questa fattura figura in un lotto di pagamento in corso: annulla prima il lotto.
+error-supplier-invoice-unvalidate-blocked-matched = La registrazione d'acquisto di questa fattura è riconciliata con una transazione bancaria: annulla prima la riconciliazione.
 error-supplier-invoice-due-before-invoice-date = La scadenza ({ $dueDate }) precede la data della fattura ({ $invoiceDate }).
 
 # Lettrage (Story 15-1a-i, #518)
@@ -2649,7 +2649,9 @@ supplier-invoices-save-draft = Salva la bozza
 supplier-invoices-field-date-help = Data della fattura, come stampata sul documento
 supplier-invoices-err-invoice-date = Inserisci la data della fattura, come stampata sul documento.
 supplier-invoices-err-stale = Questa fattura è stata modificata nel frattempo: ricarica la pagina, poi rifai la correzione.
-supplier-invoices-unvalidate-batch-warning = Questa fattura è stata pagata dall’ordine di pagamento n. { $batch }, confermato il { $date }, poi il suo pagamento è stato annullato. Se la banca ha eseguito quest’ordine, verifica l’estratto conto prima di modificarne l’importo.
+supplier-invoices-unvalidate-batch-warning = Questa fattura figura nell’ordine di pagamento n. { $batch }, confermato il { $date }.
+supplier-invoices-unvalidate-batch-warning-undated = Questa fattura figura nell’ordine di pagamento confermato n. { $batch }.
+supplier-invoices-unvalidate-batch-warning-action = Se la banca ha eseguito quest’ordine, la fattura è forse già stata pagata: verifica l’estratto conto prima di modificarne l’importo.
 supplier-invoices-unvalidate-blocked-later-fiscal-year-closed-named = L’esercizio successivo «{ $name }» è chiuso: per poter annullare la convalida di questa fattura, un amministratore deve riaprire gli esercizi successivi chiusi, cominciando dal più recente.
 supplier-invoices-err-invoice-date-plain = Inserisci la data della fattura.
 # Story 30-2b (#685) — la fattura si crea accanto al documento (cf. fr-CH).
