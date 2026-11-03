@@ -1987,6 +1987,12 @@ Chaque ligne de la liste porte le nom du fichier, sa date d'import et un badge~:
           trop longue). Le document est alors accepté \textbf{sans les données du QR}~: en créant la
           facture, vous saisissez vous-même l'IBAN et la référence, et son montant est
           celui des lignes que vous saisissez.
+          Depuis la version 0.17.1, Kesh lit aussi les QR-factures dont les lignes sont
+          séparées par un retour chariot suivi d'un saut de ligne (CR+LF), une forme que la
+          norme admet et que certains émetteurs emploient~; une telle QR-facture entrait
+          jusque-là avec cette mention. Un document entré avant la 0.17.1 avec « Aucune
+          QR-facture exploitable » alors que sa section de paiement porte un QR se fait
+          relire par le geste décrit plus bas (\emph{Faire relire le QR d'un document}).
 \end{itemize}
 
 Quatre gestes par document~:

@@ -76,11 +76,14 @@ describe('liste des factures — dates (v0171)', () => {
 	it('la confirmation de suppression cite `02.03.2026` (mutation M5 : site `deleteTarget.date`)', async () => {
 		const { findByLabelText } = render(Page);
 		await fireEvent.click(await findByLabelText('Supprimer la facture Client Démo SA'));
+		// Le dialogue est rendu en portail : le lire seul, sans la ligne de la liste (dont
+		// la date est l'objet de l'autre test).
+		const dialog = () => document.querySelector('[role="dialog"]')?.textContent ?? '';
 		await waitFor(() =>
-			expect(document.body.textContent).toContain(
+			expect(dialog()).toContain(
 				'Confirmer la suppression de la facture du 02.03.2026 pour Client Démo SA',
 			),
 		);
-		expect(document.body.textContent).not.toContain('2026-03-02');
+		expect(dialog()).not.toContain('2026-03-02');
 	});
 });
