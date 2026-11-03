@@ -764,6 +764,16 @@ tracés. Les choix ci-dessous sont ce qui restait à trancher.*
 - **Écartée** : refuser la dévalidation (option (c) de C-v017-4-8, déjà écartée) ; l'afficher à la page d'édition seule
   (trop tard : la dévalidation est faite).
 - **Réversible** : oui.
+- ⚠️ **Annotation du 2026-11-03, revue de code P2 (B2-1 = A2-1, B2-3, B2-5)** : le **contexte était faux**. La
+  présence de `lastConfirmedBatch` sur une facture `open` n'établit ni que ce lot a produit le dernier règlement annulé
+  (lot confirmé → annulation → règlement direct → annulation), ni que le montant n'a pas déjà changé (dévalidation,
+  correction, revalidation) — le dépôt le dit (`payment_batches.rs`, « un fait HISTORIQUE, jamais l'origine du
+  règlement courant »). Le texte retenu ci-dessus est remplacé par le fait historique, calqué sur
+  `supplier-invoices-settlement-cancel-batch-warning` : « Cette facture figure dans le lot de paiement n° X, confirmé le
+  D. » (clé `-undated` sans date si `confirmedAt` est nul), visible de **tous** les rôles ; la consigne « Si la banque a
+  exécuté cet ordre, la facture a peut-être déjà été payée : vérifiez le relevé avant de changer son montant. » (clé
+  `-action`) n'est dite qu'aux rôles qui dévalident, et dans la confirmation. Le bloc n'existe plus, pour la
+  Consultation, sans lot à nommer (A2-4 = E2-3). de-CH « Zahlungsauftrag », comme la clé voisine (A2-5 = B2-7).
 
 ### C-v017-4-64 — Les refus du cycle se rendent hors des blocs de statut, et s'effacent au début de chaque geste
 
@@ -773,6 +783,10 @@ tracés. Les choix ci-dessous sont ce qui restait à trancher.*
   `SUPPLIER_INVOICE_MUST_BE_UNVALIDATED_FIRST`.
 - **Écartée** : relire après tout `409` (trop large : `SUPPLIER_INVOICE_IN_PAYMENT_BATCH` ne dit pas l'écran périmé).
 - **Réversible** : oui.
+- ⚠️ **Annotation du 2026-11-03, revue de code P2 (B2-2 = A2-2 = E2-1)** : « au début de chaque geste » ne valait que
+  pour valider, dévalider et supprimer. `clearCycleErrors()` est désormais appelée aussi par **payer** (au début du
+  geste), **annuler le règlement** et **annuler la facture** (après la confirmation) — tout geste qui change le statut.
+  Joindre et détacher un document ne changent pas le statut et ne l'appellent pas.
 
 ### C-v017-4-65 — Le refus des lots : « Facture qui n'est pas à payer (brouillon, payée ou annulée) »
 

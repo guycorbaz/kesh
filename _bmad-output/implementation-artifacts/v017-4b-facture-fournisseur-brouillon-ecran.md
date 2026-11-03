@@ -328,6 +328,63 @@ fournisseur limitée à 100 sans pagination ni filtre de statut par l'URL ; `bg-
 (`cancelSettlement`, code antérieur) s'affiche en ISO, non au format suisse ; la quantité brute `1.0000` du tableau des
 lignes de la fiche (déjà relevée ci-dessus).
 
+*(Annotation du 2026-11-03, revue P2 : la ligne E-2 = A-1 de la table ci-dessus disait le lot « nommé » par un texte
+qui affirmait « payée par le lot … puis son règlement a été annulé » — causalité que le dépôt interdit ; reprise
+ci-dessous, B2-1. Le relevé de la P1 n'est pas réécrit.)*
+
+### Remédiation de la revue de code P2 (2026-11-03)
+
+*Revue P2 (Sonnet) : `kesh-gate-logs/v0174b-review-p2-{B,E,A}.md` — B 0/0/2/5, E 0/0/0/7, A 0/0/2/4. Journaux `p2-*.log`
+de `kesh-gate-logs/v0174b/`.*
+
+**Commits** : `fa71e7bc` (correctifs, catalogues, manuel et PDF, CHANGELOG, bancs, E2E, gardes) et `48b39fbd` (banc
+des catalogues) — **dernier commit de code** ; le commit de ce compte rendu.
+
+| Finding | Sév. | Sort | Où, et le banc / la mutation |
+|---|---|---|---|
+| B2-1 = A2-1 | MED | traité | le fait historique : « Cette facture figure dans le lot de paiement n° X, confirmé le D. », calqué sur `supplier-invoices-settlement-cancel-batch-warning`, sans « payée par », sans « puis son règlement a été annulé » ; 4 locales, manuel et PDF, CHANGELOG, E2E (`not.toContainText('payée par')`) ; bancs fiche + catalogues ; S1, S1-ftl |
+| B2-2 = A2-2 = E2-1 | MED / LOW | traité | `clearCycleErrors()` dans `pay` (début), `cancelSettlement` et `cancel` (après confirmation) ; trois bancs dont le parcours *Dévalider* refusé « payée » → *Annuler le règlement* → plus de refus ; S5, S6, S7 |
+| B2-3 = E2-2 = A2-3 | LOW | traité | `confirmedAt` nul : clé `-undated` ; banc ; S2 |
+| B2-4 | LOW | traité | date suisse dans la confirmation d'annulation du règlement ; `supplier-settlement-page.test.ts` ; S8 |
+| B2-5 | LOW | traité | le fait à tous les rôles, la consigne (clé `-action`) aux seuls rôles qui dévalident et dans la confirmation ; banc Consultation ; S3 |
+| B2-6 | LOW | partiel | it-CH : les trois `error-supplier-invoice-unvalidate-blocked-*` au « tu » ; les autres clés italiennes au « voi » (`supplier-invoices-cancel-*`, `error-*-must-be-unvalidated-first`, `invoices-settlement-cancel-blocked-written-off`, `reconciliation-cancel-blocked-written-off`, `bank-import-manual-delete-blocked`…) restent — **issue demandée** |
+| B2-7 = A2-5 | LOW | traité | de-CH « Zahlungsauftrag », comme la clé voisine |
+| A2-4 = E2-3 | LOW | traité | `{:else if invoice.status === 'open' && (canManage \|\| invoice.lastConfirmedBatch)}` ; banc ; S4 |
+| A2-6 | LOW | traité | manuel : « suivi d'un exercice clôturé (le refus nomme alors celui-ci) » |
+| E2-5 | LOW | traité | étiquette `readableAmount(r, 2)` ; banc ; S9 |
+| E2-4 | LOW | non traité | projet archivé enfant d'une racine archivée, invisible à l'édition — **issue demandée** |
+| E2-6 | LOW | non traité | l'exercice nommé est le plus proche clos, la consigne dit « le plus récent » — **issue demandée** |
+| E2-7 | LOW | non traité | = #870 (liste à 100) |
+
+**Gates au dernier commit de code (`48b39fbd`)** : bases recréées ; `scripts/test-fast.sh --ci` **4638 / 4638**, 8
+ignorés (`p2-nextest-final.log`) ; `npm run check` 0 erreur, 29 avertissements, aucun dans un fichier touché ;
+`lint-i18n-ownership` vert ; Vitest **194 fichiers, 2396 tests** (`p2-vitest-complet-2.log`) ; `npm run build` vert ;
+E2E complet (`/tmp/kesh-e2e-v0174b-r2/`) **335 réussis, 8 échecs, 17 ignorés** (14,4 min, `p2-e2e-full-final.log`) :
+les 7 KF-029 (`mode-expert.spec.ts:26`, `:41` ; `onboarding-path-b.spec.ts:65`, `:92` ; `onboarding.spec.ts:57`, `:77`,
+`:150`) et **`vat-rates.spec.ts:55`** (délai de 30 s dépassé en attendant `#username` sur `/login`), **rejoué seul vert**
+(`/tmp/kesh-e2e-v0174b-r3/`, 2/2, `p2-e2e-vat-rates-isole.log`) : pollution au sens de `docs/testing.md`, ni KF-052 ni
+lien avec la story (la spec ne touche pas aux factures fournisseur, et elle était verte à l'E2E de la P1). Backends
+arrêtés par leur PID. Intermédiaires : Vitest ciblé 40 fichiers 519/519 ; `kesh-i18n` + `textes_coherents` + `i18n_e2e`
+70/70 ; `make user` stable en 2 passes.
+
+**Mutations** (`mut-r2/mutations.log`, `mutations-2.log`) : 10 appliquées, **10 tuées** au final — S1 à S9 dès la
+campagne ; S1-ftl (le seul catalogue fr-CH) **survivait**, tuée après `48b39fbd` par « les catalogues disent le fait,
+jamais « payée par ce lot », aux quatre locales (B2-1) ».
+
+**Compteurs** : `sitesTotal` 2794 → **2796** (fiche 74 → 76) ; `CLES_RELEVEES` 387 → **389** (`-undated`, `-action`) ;
+Vitest 2389 → **2396** (+6 à la fiche, +1 au formulaire).
+
+**PDF aplati** (`p2-user-flat.txt`) : « payée par un lot confirmé, dont le règlement a été annulé » 0 ; « Une facture
+validée qui figure dans un lot confirmé se dévalide » 1 ; « Kesh ne dit pas que ce lot l’a payée » 1 ; « le refus
+nomme alors celui-ci » 1 ; « que le refus nomme » 0 ; « ?? » 0. Grep de la valeur sur le dépôt (« payée par le lot »,
+« pagata dall », « mit dem Zahlungsstapel », « paid by payment batch », « puis son règlement a été annulé », « dont le
+règlement a été annulé ») : plus aucun site dans le code, les catalogues, le manuel ou le CHANGELOG neufs ; restent
+les fiches et prompts historiques, et des phrases d'autres stories qui décrivent une facture **payée** par un lot
+(vraies).
+
+**Choix** : C-v017-4-63 et C-v017-4-64 amendés par annotations datées (registre). Captures : `captures-r2/`
+(`v0174b-fiche-validee-lot-confirme.png` montre le fait et la consigne).
+
 ## Change Log
 
 - 2026-10-31 — Sous-fiche créée au découpage de la v017-4 (C-v017-4-1). Prochaine étape : validation P1 de la fiche
@@ -355,3 +412,8 @@ lignes de la fiche (déjà relevée ci-dessus).
   deux parties tracées (E-4 `PERIOD_LOCKED`, E-10 liste à 100) ; 12 mutations tuées ; gate 4638/4638, Vitest 2389, E2E
   336 / 7 (KF-029 seuls). Choix C-v017-4-63 à 70. Statut `review`. Prochaine : revue de code P2 complète
   (`v017-4b-review-prompt-p2.md`, Sonnet, lentilles B, E, A).
+- 2026-11-03 — Revue de code P2 (Sonnet, B, E, A) : 0 CRITICAL, 0 HIGH, 4 MEDIUM (deux convergents : B2-1 = A2-1,
+  B2-2 = A2-2), 16 LOW. Remédiation (`fa71e7bc`, `48b39fbd`) : les deux MEDIUM traités, LOW traités sauf B2-6 (partiel),
+  E2-4, E2-6, E2-7 (issues) ; 10 mutations tuées ; gate 4638/4638, Vitest 2396, E2E 335 / 8 (KF-029, plus
+  `vat-rates.spec.ts:55` vert rejoué seul). Prochaine : passe P3 **ciblée** (`v017-4b-review-prompt-p3.md`, Opus,
+  lentille R).
