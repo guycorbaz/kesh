@@ -528,7 +528,7 @@ impl Ctx {
         .await
         .unwrap();
         let fournisseur = self.contact("Fournisseur SA", false).await;
-        let id = supplier_invoices::create(
+        let id = supplier_invoices::create_validated(
             &self.pool,
             NewSupplierInvoice {
                 company_id: self.company_id(),

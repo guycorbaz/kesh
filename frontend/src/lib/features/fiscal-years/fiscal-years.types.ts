@@ -44,7 +44,10 @@ export interface ReopenFiscalYearRequest {
 // décimales, jamais convertis en `Number`.
 // ---------------------------------------------------------------------------
 
-/** Les sept codes, dans l'ordre que rend le serveur. */
+/**
+ * Les huit codes, dans l'ordre que rend le serveur. Story v017-4b (#849, AC-26) : K8
+ * `DRAFT_SUPPLIER_INVOICES`, rendu en dernier (AC-16 de la 4a).
+ */
 export type ClosingCheckCode =
 	| 'EARLIER_FISCAL_YEAR_OPEN'
 	| 'PENDING_BANK_TRANSACTIONS'
@@ -52,7 +55,8 @@ export type ClosingCheckCode =
 	| 'DRAFT_INVOICES'
 	| 'IMPORTED_SUPPLIER_INVOICES_TO_COMPLETE'
 	| 'INCONSISTENT_ENTRIES'
-	| 'NEXT_FISCAL_YEAR';
+	| 'NEXT_FISCAL_YEAR'
+	| 'DRAFT_SUPPLIER_INVOICES';
 
 export type ClosingCheckSeverity = 'blocking' | 'warning' | 'info' | 'anomaly';
 export type ClosingCheckStatus = 'ok' | 'attention';
@@ -123,7 +127,7 @@ export interface ClosingCheckDetails {
 	accounts?: PendingByAccount[] | StatementIssue[];
 	/** K3 — comptes examinés mais non vérifiables (sans effet sur le statut). */
 	notCheckable?: NotCheckable[];
-	/** K4. */
+	/** K4, et K8 (même forme : brouillons fournisseur). */
 	invoices?: DraftInvoiceRef[];
 	/** K6. */
 	countByReason?: Record<EntryReason, number>;

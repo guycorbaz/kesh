@@ -84,11 +84,11 @@
 			);
 		}
 		// Story 30-1b (#686, AC-b11) — un règlement fournisseur : son paiement est retiré
-		// et la facture redevient ouverte, à payer.
+		// et la facture redevient validée, à payer (Story v017-4b : « validée », décision Q4).
 		if (view?.kind === 'supplier_settlement') {
 			return i18nMsg(
 				'reconciliation-cancel-confirm-supplier-invoice',
-				"Une écriture inverse datée d'aujourd'hui sera passée, le paiement de la facture fournisseur { $invoice } sera retiré et la facture redeviendra ouverte, à payer ; la transaction redeviendra à rapprocher.",
+				"Une écriture inverse datée d'aujourd'hui sera passée, le paiement de la facture fournisseur { $invoice } sera retiré et la facture redeviendra validée, à payer ; la transaction redeviendra à rapprocher.",
 				{ invoice: view.supplierInvoiceNumber ?? `#${view.supplierInvoiceId ?? ''}` },
 			);
 		}

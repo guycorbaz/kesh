@@ -682,7 +682,10 @@ se corrige plus simplement par \textbf{modification}, ou disparaît par \textbf{
 tracées~: sa \textbf{suppression} depuis sa fiche, inscrite au journal d'audit avec son contenu
 complet~; et la \textbf{dévalidation} d'une facture, qui la repasse en brouillon avec l'écriture
 que sa validation avait créée (voir «~Supprimer ou dévalider une facture~») --- une décision de
-facturation, inscrite au journal d'audit sous son propre nom. \emph{Exception~: l'annulation
+facturation, inscrite au journal d'audit sous son propre nom. Depuis la version~0.17.0, une
+\textbf{facture fournisseur} se dévalide de même~: son écriture d'achat disparaît, sous les
+refus qui lui sont propres, et le journal d'audit nomme le geste (\S\ref{sec:brouillon-fournisseur}).
+\emph{Exception~: l'annulation
 d'un règlement (ou d'un paiement) dont le lettrage s'est figé avec la période est refusée~; le
 verrou doit reculer pour la permettre (\S\ref{sec:verrou-periode}).} \emph{La restauration d'une
 sauvegarde, qui remet les livres dans l'état de l'archive, fait exception à cette règle.}
@@ -757,10 +760,11 @@ sa suppression ou par la dévalidation de sa facture ---, la suivante prendra le
 Jusqu'à cette version, ce numéro était repris~: une écriture au contenu tout différent
 portait alors un numéro déjà employé, \textbf{sans aucun message et sans trace visible}.
 
-\textbf{Cette numérotation peut en revanche comporter des trous}, et c'est assumé. Deux chemins
-en creusent~: la \textbf{suppression} d'une écriture depuis sa fiche (ci-dessus), et la
+\textbf{Cette numérotation peut en revanche comporter des trous}, et c'est assumé. Trois chemins
+en creusent~: la \textbf{suppression} d'une écriture depuis sa fiche (ci-dessus), la
 \textbf{dévalidation} d'une facture, qui emporte son écriture (voir «~Supprimer ou dévalider une
-facture~»). \emph{Un trou se voit et s'explique} --- le journal d'audit nomme ce qui a été
+facture~»), et, depuis la version~0.17.0, la \textbf{dévalidation d'une facture fournisseur},
+qui emporte son écriture d'achat (\S\ref{sec:brouillon-fournisseur}). \emph{Un trou se voit et s'explique} --- le journal d'audit nomme ce qui a été
 supprimé, quand et par qui. C'est la réattribution, elle, qui ne se voyait pas~; le combler
 exigerait de renuméroter des écritures existantes, ce qu'une comptabilité ne fait pas.
 
@@ -804,7 +808,7 @@ Un exercice \textbf{ne se crée pas avant un exercice clôturé} (depuis la v0.1
 
 \subsection{Préparer la clôture}\label{sec:preparer-cloture}
 
-Avant de clôturer --- et à tout moment de l'année ---, le bouton \emph{Préparer la clôture} d'un exercice ouvert (\emph{Administration} → \emph{Exercices comptables}, colonne \emph{Actions}) ouvre un panneau qui passe l'exercice en revue~: sept \textbf{contrôles préalables}, chacun avec son état --- \emph{Rien à signaler}, ou ce qui reste à faire --- et un lien vers l'écran où l'on agit. Le panneau est offert à \textbf{tous les rôles}, Consultation comprise~: il ne fait que lire.
+Avant de clôturer --- et à tout moment de l'année ---, le bouton \emph{Préparer la clôture} d'un exercice ouvert (\emph{Administration} → \emph{Exercices comptables}, colonne \emph{Actions}) ouvre un panneau qui passe l'exercice en revue~: huit \textbf{contrôles préalables}, chacun avec son état --- \emph{Rien à signaler}, ou ce qui reste à faire --- et un lien vers l'écran où l'on agit. Le panneau est offert à \textbf{tous les rôles}, Consultation comprise~: il ne fait que lire.
 
 Le panneau \textbf{ne bloque rien}~: la clôture garde son seul refus, l'exercice antérieur encore ouvert. Le dialogue de clôture en rappelle le résultat au-dessus de sa confirmation (« Aucun point à vérifier », ou la liste des points), sans empêcher de clôturer --- une clôture se défait d'ailleurs par une réouverture motivée (\S\ref{sec:reouverture-exercice}).
 
@@ -816,6 +820,7 @@ Le panneau \textbf{ne bloque rien}~: la clôture garde son seul refus, l'exercic
     \item[Documents fournisseur à traiter] Des documents déposés dans le dossier d'import, avec ou sans QR-code, attendent qu'une facture en soit créée, ou d'être retirés de la liste (\S\ref{sec:import-factures}). Lien~: \emph{Ouvrir les documents à traiter}.
     \item[Écritures incohérentes] Des écritures déséquilibrées, à moins de deux lignes, datées hors de leur exercice, ou appartenant à un autre exercice mais datées dans celui-ci. Chaque écriture listée mène à sa fiche.
     \item[Exercice suivant] Aucun exercice ne suit celui-ci~: créez-le pour y passer les écritures de l'année qui vient --- et pour contre-passer vos transitoires au début de cet exercice (\S\ref{sec:transitoires}). Bouton~: \emph{Créer l'exercice suivant}, qui ouvre la création d'un exercice (administrateur et comptable).
+    \item[Factures fournisseur en brouillon] Depuis la version~0.17.0~: des factures fournisseur datées dans l'exercice sont restées en \textbf{brouillon}~: jamais validées, leur achat n'est pas en comptabilité (\S\ref{sec:brouillon-fournisseur}). Chaque brouillon listé mène à sa fiche~; lien~: \emph{Ouvrir les factures fournisseurs}.
 \end{description}
 
 \paragraph{Ce que les contrôles ne disent pas.}
@@ -1589,11 +1594,28 @@ l'échéance éventuelle, les coordonnées de paiement (IBAN ou QR-IBAN du créa
 référence, montant attendu --- toutes facultatives), le projet analytique éventuel et les
 lignes (description, montant, compte de charge, taux de TVA applicable --- l'impôt
 préalable est comptabilisé automatiquement). Le bouton \emph{Scanner une QR-facture}
-pré-remplit IBAN, référence et montant depuis une image de la QR-facture. À
-l'enregistrement, Kesh passe l'écriture d'achat (charge + TVA préalable au débit, dette
-fournisseur au crédit) et ouvre la fiche de la facture créée. Pour créer la facture
-d'un document reçu dans le dossier d'import, voir \S\ref{sec:import-factures}~: la même
-saisie s'y fait à côté du document.
+pré-remplit IBAN, référence et montant depuis une image de la QR-facture.
+
+\textbf{Depuis la version~0.17.0, l'enregistrement crée un brouillon.} Le bouton
+\emph{Enregistrer le brouillon} enregistre la facture \textbf{sans rien passer au journal} et
+ouvre sa fiche~: la facture s'y relit, s'y corrige au besoin, puis s'y \textbf{valide} ---
+c'est la validation qui passe l'écriture d'achat (charge et TVA préalable au débit, dette
+fournisseur au crédit). Saisissez, puis validez~: voir \S\ref{sec:brouillon-fournisseur}. Pour
+créer la facture d'un document reçu dans le dossier d'import, voir
+\S\ref{sec:import-factures}~: la même saisie s'y fait à côté du document.
+
+\paragraph{Les dates.} Sans document, la date de la facture est proposée au jour même~; à côté
+d'un document, elle est \textbf{vide} et se saisit telle qu'imprimée sur la pièce (depuis la
+version~0.17.0~: la date du jour n'est presque jamais celle d'une facture reçue). L'\textbf{échéance}
+ne peut pas précéder la date de la facture~: une échéance antérieure est signalée sous son champ,
+avec les deux dates, et la facture n'est pas enregistrée. Une échéance égale à la date, ou
+absente, est acceptée.
+
+\paragraph{Les montants.} Quantité, prix et montant attendu s'écrivent avec un point ou une
+\textbf{virgule} décimale («~12,50~»)~: Kesh les lit tels quels et les enregistre au point. Une
+quantité laissée vide vaut~1, au total affiché comme à l'enregistrement~; un prix est
+obligatoire. Le \textbf{total} TTC qui s'affiche sous les lignes, pendant la saisie, porte ses
+décimales exactes~: une ligne à 99.9999 s'y lit 99.9999, non 100.00.
 
 \paragraph{Une ligne se saisit au centime.} Depuis la version~0.17.0, la quantité et le prix
 d'une ligne portent \textbf{quatre décimales au plus}, et leur produit --- le montant de la
@@ -1645,14 +1667,93 @@ La dette fournisseur est portée au \textbf{compte créanciers} désigné dans
 \emph{Administration} → \emph{Facturation} (section \emph{Comptes par défaut}), et
 l'impôt préalable au compte de \textbf{TVA récupérable} de la même page. Si le
 compte créanciers --- ou, pour une facture qui porte de la TVA, le compte de TVA
-récupérable --- n'est pas imputable, la saisie est refusée avec un message qui
+récupérable --- n'est pas imputable, la \textbf{validation} est refusée avec un message qui
 nomme le compte et renvoie à ces paramètres, où un administrateur doit le
-remplacer~; rien n'est enregistré.
+remplacer~; rien n'est passé au journal, et la facture reste en brouillon. (Jusqu'à la
+version~0.17.0, c'est l'enregistrement même qui était refusé.)
+
+\subsection{Le brouillon~: modifier, valider, supprimer}\label{sec:brouillon-fournisseur}
+
+Une facture fournisseur suit le cycle \textbf{brouillon} → \textbf{validée} → \textbf{payée}
+(depuis la version~0.17.0). La liste dit son état par un badge, la fiche à côté de son
+numéro~: \emph{Brouillon},
+\emph{Validée} --- validée et à payer ---, \emph{Payée}, \emph{Annulée}.
+
+\textbf{Un brouillon} n'a rien passé au journal~: il n'entre dans aucun rapport ni solde, la
+réconciliation ne le propose jamais pour un débit, et aucun lot de paiement ne le prend. Sa
+fiche ne propose ni \emph{Payer} ni \emph{Annuler la facture}~; elle propose~:
+\begin{description}
+    \item[Modifier] (comptable ou administrateur) ouvre la page d'édition, le formulaire de la
+          saisie pré-rempli~; \emph{Enregistrer} remplace la facture --- fournisseur, numéro,
+          dates, coordonnées, projet, lignes ---, toujours sans rien passer au journal. Si la
+          facture a été modifiée entre-temps dans une autre session, l'enregistrement est refusé
+          et vous invite à recharger la page.
+    \item[Valider] (comptable ou administrateur), après confirmation, passe l'écriture d'achat,
+          datée de la date de la facture~; la facture devient \emph{Validée}, et sa fiche mène à
+          l'écriture (\emph{Voir l'écriture d'achat}). La validation vérifie ce qu'exige une
+          écriture~: un exercice ouvert qui couvre la date de la facture, une date hors de la
+          période verrouillée, des comptes actifs et imputables, un projet non archivé, les
+          comptes créanciers et de TVA récupérable des paramètres. Un refus s'affiche sous le
+          bouton~; la facture reste un brouillon, rien n'est écrit.
+    \item[Supprimer le brouillon] (administrateur seulement), après confirmation, le supprime~;
+          s'il avait un document, celui-ci revient dans les documents à traiter
+          (\S\ref{sec:import-factures}). Un brouillon qui a figuré dans un \textbf{lot de
+          paiement} --- validé, placé dans un lot, puis dévalidé, que le lot ait été annulé ou
+          confirmé puis son règlement annulé --- \textbf{ne se supprime pas}~: l'historique de
+          l'ordre transmis à la banque se garde. Corrigez-le et validez-le~; s'il n'est pas dû,
+          validez-le puis annulez-le (\S\ref{sec:annuler-facture-fournisseur}).
+\end{description}
+Le contrôle de clôture \emph{Factures fournisseur en brouillon} (\S\ref{sec:preparer-cloture})
+signale les brouillons datés dans l'exercice.
+
+\paragraph{Le document d'un brouillon.} À l'édition d'une facture \textbf{née} d'un document à
+QR-facture (créée depuis \emph{Documents à traiter}), l'IBAN, la référence et le montant du QR
+restent \textbf{en lecture seule}, et le total des lignes reste comparé au montant du QR, comme à
+la création. Un document \textbf{joint après coup}, ou lié avant la version~0.17.0, n'impose
+rien~: les coordonnées de la facture se modifient comme une saisie --- y compris celles d'une
+facture née d'un QR avant la version~0.17.0, que Kesh ne sait pas distinguer d'un document joint.
+Un brouillon \textbf{sans} document garde le bouton \emph{Scanner une QR-facture}~; un brouillon
+qui a un document ne l'a pas.
+
+\subsubsection{Dévalider une facture validée}
+
+Une facture \textbf{validée} et pas encore payée dont la saisie est fausse --- un compte, une
+date, un total --- \textbf{se dévalide}~: sur sa fiche, \emph{Dévalider} (comptable ou
+administrateur), après confirmation, \textbf{supprime son écriture d'achat}, et la facture
+redevient un brouillon modifiable~: corrigez-la, puis validez-la de nouveau. C'est le geste à
+choisir pour une faute de saisie, plutôt que l'annulation suivie d'une nouvelle saisie, qui
+laisserait aux livres la facture annulée et sa contre-passation. L'écriture supprimée laisse
+un \textbf{trou} dans la numérotation des écritures, que le journal d'audit explique (voir
+«~Numérotation~», au chapitre des écritures)~; le geste y est inscrit sous son propre nom.
+
+Une facture \textbf{payée} ne se dévalide pas, et sa fiche ne le propose pas~: annulez d'abord
+son règlement (\S\ref{sec:regler-facture-fournisseur}), puis dévalidez-la. La dévalidation
+d'une facture validée est refusée, et la fiche dit pourquoi, quand~:
+\begin{itemize}
+    \item elle a été \textbf{payée} entre-temps, depuis une autre session~: la fiche se relit,
+          la montre payée et garde le motif~;
+    \item elle figure dans un \textbf{lot de paiement en cours}~: annulez d'abord le lot
+          (\S\ref{sec:paiements-fournisseurs})~;
+    \item son écriture d'achat est \textbf{rapprochée} d'une transaction bancaire~: annulez
+          d'abord le rapprochement (\S\ref{sec:annuler-rapprochement})~;
+    \item son exercice est \textbf{clôturé}, ou suivi d'un exercice clôturé (le refus nomme
+          alors celui-ci)~: un administrateur doit rouvrir les exercices clôturés, en commençant
+          par le plus récent (\S\ref{sec:reouverture-exercice})~;
+    \item sa date est sous le \textbf{verrou de période}~: un administrateur fait reculer le
+          verrou avant elle (\S\ref{sec:verrou-periode})~;
+    \item une ligne de l'écriture d'achat est \textbf{lettrée}~: délettrez-la d'abord
+          (\S\ref{sec:lettrage}).
+\end{itemize}
+Une facture validée qui figure dans un \textbf{lot confirmé} se dévalide~: sa fiche, au-dessus de \emph{Dévalider}, nomme ce lot et sa date de
+confirmation, pour tous les rôles~; pour qui peut dévalider, la fiche et la confirmation de la
+dévalidation ajoutent que si la banque a exécuté l'ordre, la facture a peut-être déjà été
+payée~: vérifiez le relevé avant de changer son montant. Kesh ne dit pas que ce lot l'a payée~:
+il dit seulement qu'elle y figure.
 
 \subsection{Régler une facture fournisseur}\label{sec:regler-facture-fournisseur}
 
-Une facture fournisseur ouverte se règle de deux façons~: depuis sa \textbf{fiche}, ci-dessous,
-ou en laissant la \textbf{réconciliation bancaire} la régler~: saisissez la facture ouverte, puis,
+Une facture fournisseur \textbf{validée} se règle de deux façons~: depuis sa \textbf{fiche}, ci-dessous,
+ou en laissant la \textbf{réconciliation bancaire} la régler~: saisissez, puis validez la facture, puis,
 dans \emph{Réconciliation}, acceptez-la pour le débit du relevé qui la paie
 (\S\ref{sec:matching-fournisseur}) --- c'est le processus le plus sûr quand on saisit les factures
 après coup, puisqu'il relie d'un même geste le paiement et la transaction du relevé. Payée
@@ -1666,7 +1767,7 @@ la transaction acceptée par la réconciliation ---, celle de l'écriture de rè
 version~0.13.4, elle affichait le moment de l'enregistrement~; les factures déjà payées gardent
 cette valeur.
 
-Sur la fiche d'une facture ouverte, le \textbf{règlement} est « binaire » — deux
+Sur la fiche d'une facture validée, le \textbf{règlement} est « binaire » — deux
 cas selon le moyen de paiement :
 
 \begin{itemize}
@@ -1701,12 +1802,14 @@ déjà payées avant la mise à jour vers la version 0.13 sont lettrées par la 
 
 \textbf{Annuler le règlement.} Un règlement enregistré par erreur ne se supprime pas~: sur la
 fiche d'une facture payée, \emph{Annuler le règlement} (comptable ou administrateur) passe une
-écriture inverse \textbf{datée du jour} et ramène la facture à \emph{ouverte}, à payer --- c'est
+écriture inverse \textbf{datée du jour} et ramène la facture à \emph{validée}, à payer --- c'est
 le geste à choisir quand c'est le \textbf{paiement} qui est faux et que vous voulez le refaire.
 L'écriture d'origine et sa contre-passation restent toutes deux au grand livre, et le journal
 d'audit nomme le geste. Un lien mène de la fiche à l'écriture de règlement. Si c'est la
 \textbf{facture} elle-même qui est à écarter, payée ou non, voyez «~Annuler une facture
-fournisseur~» ci-dessous~: il n'est pas nécessaire d'annuler d'abord son règlement.
+fournisseur~» ci-dessous~: il n'est pas nécessaire d'annuler d'abord son règlement. Si c'est
+sa \textbf{saisie} qui est fausse, annulez le règlement, puis dévalidez la facture pour la
+corriger (\S\ref{sec:brouillon-fournisseur}).
 
 Quand l'annulation n'est pas possible, le bouton est remplacé par la raison~: l'exercice du
 règlement est \textbf{clôturé} (un administrateur doit d'abord rouvrir les exercices clôturés
@@ -1727,54 +1830,66 @@ Depuis la version~0.17.0, chaque ligne d'une facture fournisseur se saisit \text
 total à plus de deux décimales --- une quantité ou un prix fractionnaire, «~1 × 100.004~» par
 exemple. Kesh \textbf{ne la modifie pas}~: elle reste lisible, payable et annulable. Sa fiche
 l'affiche aux décimales exactes (100.0040, non 100.00) et porte un avertissement qui renvoie
-ici, sauf si elle est annulée. La liste des factures, elle, arrondit encore ce total à deux
-décimales.
+ici, sauf si elle est annulée~; la liste des factures l'affiche aussi aux décimales exactes
+(depuis la version~0.17.0~: elle l'arrondissait à deux décimales).
 
 \textbf{Pourquoi la traiter.} Son règlement écrit au compte de la banque le total tel quel~:
 un paiement bancaire de ce montant ne pourra être rapproché d'aucune transaction de relevé, qui
 est toujours au centime. La réconciliation ne la propose jamais pour un débit
-(\S\ref{sec:matching-fournisseur}). Tant qu'elle est ouverte, elle peut en outre retenir la
+(\S\ref{sec:matching-fournisseur}). Tant qu'elle est validée et non payée, elle peut en outre retenir la
 proposition d'une règle d'affectation pour un débit égal à son total à 5~centimes près, lorsque
 la référence du paiement ou le nom du fournisseur la désigne (\S\ref{sec:regles-affectation}).
 Ses livres sont justes~; c'est le rapprochement de son paiement qui ne se fera pas.
 
-\textbf{La remplacer par une facture au centime}, selon son état~:
+\textbf{La corriger au centime}, selon son état (depuis la version~0.17.0, la dévalidation
+remplace l'annulation suivie d'une nouvelle saisie, \S\ref{sec:brouillon-fournisseur})~:
 \begin{itemize}
-    \item \textbf{ouverte}~: annulez-la (\S\ref{sec:annuler-facture-fournisseur}), puis saisissez
-          de nouveau la facture au montant facturé par le fournisseur, au centime~;
-    \item \textbf{payée}~: annulez d'abord le \textbf{règlement}, \textbf{puis} la facture, dans
-          cet ordre, puis ressaisissez-la. Annuler d'abord la facture laisse son règlement au
-          grand livre, détaché~; si c'est arrivé, l'écriture de règlement détachée se contre-passe
-          depuis sa fiche d'écriture (\S\ref{sec:contre-passation}). Si l'achat est dans un
-          exercice clôturé et le règlement dans un exercice ouvert, n'annulez pas le règlement
-          tant que la facture ne peut pas l'être~;
-    \item \textbf{dans un exercice clôturé}~: l'annulation suppose la réouverture de l'exercice
+    \item \textbf{validée}~: dévalidez-la, corrigez la ligne au montant facturé par le
+          fournisseur, au centime, puis revalidez-la. Tant que ses lignes ne sont pas au centime,
+          la revalidation est refusée~;
+    \item \textbf{payée}~: annulez d'abord le \textbf{règlement}
+          (\S\ref{sec:regler-facture-fournisseur}), puis dévalidez la facture, corrigez-la et
+          revalidez-la. Si l'achat est dans un exercice clôturé et le règlement dans un exercice
+          ouvert, n'annulez pas le règlement tant que la facture ne peut pas être dévalidée~;
+    \item \textbf{dans un exercice clôturé}~: la dévalidation suppose la réouverture de l'exercice
           par un administrateur (\S\ref{sec:reouverture-exercice}). Si vous ne la voulez pas, la
           facture reste telle quelle~: un paiement bancaire de ce montant ne pourra être rapproché
           d'aucune transaction de relevé~;
     \item \textbf{dans un lot pain.001}~: un lot en cours dont le fichier n'a pas été transmis
-          --- ou que la banque a refusé --- s'annule avant la facture (\S\ref{sec:paiements-fournisseurs})~;
+          --- ou que la banque a refusé --- s'annule avant la dévalidation (\S\ref{sec:paiements-fournisseurs})~;
           un lot \textbf{exécuté} par la banque se confirme, puis la facture suit la voie
           «~payée~». Si la banque a passé le lot en un seul débit, la transaction du relevé ne se
           rattache à aucune facture seule~;
     \item \textbf{réglée par un compte interne} (caisse, carte)~: aucun débit n'est au relevé, rien
-          n'est à rapprocher~; la remplacer n'est utile que pour un grand livre au centime.
+          n'est à rapprocher~; la corriger n'est utile que pour un grand livre au centime.
 \end{itemize}
 
-\textbf{Après la ressaisie}, la nouvelle facture se règle par la réconciliation du débit déjà au
+\textbf{Après la correction}, la facture se règle par la réconciliation du débit déjà au
 relevé (\S\ref{sec:matching-fournisseur}), ou depuis sa fiche puis en rattachant la transaction du
-relevé à l'écriture de ce règlement (\S\ref{sec:rattacher-reglement}). Un \textbf{document joint}
-à l'ancienne facture s'en détache depuis sa fiche~: il redevient «~à traiter~»
-(\S\ref{sec:import-factures}), et la nouvelle facture se crée depuis lui.
+relevé à l'écriture de ce règlement (\S\ref{sec:rattacher-reglement}). Son document, s'il en a un,
+lui reste joint.
 
 \subsection{Annuler une facture fournisseur}
 \label{sec:annuler-facture-fournisseur}
 
 Une facture fournisseur saisie par erreur --- doublon, mauvais fournisseur, facture qui n'était
-pas due --- s'annule depuis sa fiche, \textbf{qu'elle soit ouverte ou déjà payée}~: bouton
+pas due --- s'annule depuis sa fiche, \textbf{qu'elle soit validée ou déjà payée}~: bouton
 \emph{Annuler la facture} (comptable ou administrateur). Kesh passe une écriture inverse de
 l'achat, \textbf{datée du jour}, liée à l'écriture d'origine~: la charge et l'impôt préalable
 reviennent à zéro, et la facture passe à \emph{annulée}. Le journal d'audit nomme le geste.
+
+\textbf{Annuler ou dévalider~?} Annulez une facture qui \textbf{n'était pas due}~: l'achat et sa
+contre-passation restent aux livres, la correction se voit. Une \textbf{faute de saisie} --- un
+compte, une date, un total --- se corrige plutôt par la dévalidation
+(\S\ref{sec:brouillon-fournisseur})~: rien ne reste aux livres de la saisie fautive, hors le trou
+de numérotation. Un \textbf{brouillon} ne s'annule pas --- rien n'est au journal~: il se
+supprime (administrateur) ou se corrige.
+
+\textbf{Les factures annulées dans la liste.} Depuis la version~0.17.0, la liste des factures
+fournisseurs \textbf{masque} les factures annulées~; la case \emph{Afficher les factures annulées}
+les fait revenir. Masquer n'est pas supprimer~: l'écriture d'achat d'une facture annulée et sa
+contre-passation \textbf{restent au journal} et au grand livre, nettes à zéro --- c'est ce que la
+loi demande d'une correction (art.~958f CO). La 0.17.0 ne supprime aucune facture annulée.
 
 \textbf{Si la facture était payée}, son règlement \textbf{reste au grand livre}~: l'argent est
 bien sorti. Il est \textbf{détaché} de la facture et devient un \emph{paiement sans facture}~---
@@ -1799,8 +1914,8 @@ date la plus récente du lettrage et/ou rouvre les exercices clôturés, selon l
 \S\ref{sec:verrou-periode}), un compte de l'achat
 a été \textbf{archivé} (réactivez-le), aucun exercice ouvert ne couvre la date du jour
 (créez-le), ou la facture figure dans un \textbf{lot de paiement en cours} (annulez d'abord le
-lot). Une facture annulée ne se \emph{désannule} pas~: si l'annulation était une erreur,
-saisissez-la de nouveau.
+lot). Une facture annulée ne se \emph{désannule} pas, ni ne se dévalide~: si l'annulation était
+une erreur, saisissez-la de nouveau.
 
 \subsection{Paiements par fichier pain.001}
 \label{sec:paiements-fournisseurs}
@@ -1811,7 +1926,8 @@ dans l'e-banking. Le flux est en \textbf{deux temps} :
 
 \begin{enumerate}
     \item \emph{Quotidien} → \emph{Paiements fournisseurs} : créer un lot en
-    sélectionnant les factures à payer, puis télécharger le fichier
+    sélectionnant les factures à payer --- seules les factures \textbf{validées} sont proposées,
+    jamais un brouillon ---, puis télécharger le fichier
     \texttt{pain.001} généré et le déposer dans votre e-banking.
     \item Une fois le paiement exécuté par la banque, \textbf{confirmer} le lot
     dans Kesh : les écritures de règlement sont alors passées, et chaque facture
@@ -1834,7 +1950,7 @@ un lot qui en contient (\S\ref{sec:facture-fournisseur-sous-centime}).
 \begin{keshwarning}[title=\faExclamationTriangle\ Annuler le règlement d'une facture payée par lot]
 Le règlement d'une facture payée par un lot \textbf{confirmé} peut être annulé --- le cas
 d'usage est le \textbf{rejet} du virement par la banque. Le lot, lui, n'est pas modifié~: il
-reste la trace de l'ordre transmis. La facture redevient \emph{ouverte} et peut repartir dans un
+reste la trace de l'ordre transmis. La facture redevient \emph{validée}, à payer, et peut repartir dans un
 nouveau lot. Si le compte bancaire du lot a été \textbf{clos} depuis, l'annulation est refusée
 tant qu'il n'est pas rouvert (\S\ref{sec:clore-compte-bancaire}).
 
@@ -1925,11 +2041,14 @@ restés dans le dossier et sont repris. Le fichier en cours au moment de la coup
 revenir en échec comme doublon~: il est déjà dans la liste.
 
 \paragraph{Créer la facture d'un document.} Le formulaire est celui de la saisie
-(\S\ref{sec:saisie-facture-fournisseur}), à deux différences près~:
+(\S\ref{sec:saisie-facture-fournisseur}) --- il enregistre un \textbf{brouillon}, à valider
+ensuite depuis sa fiche (\S\ref{sec:brouillon-fournisseur}) ---, et la \textbf{date de la
+facture}, vide, se saisit telle qu'imprimée sur le document. Deux différences encore~:
 \begin{itemize}
     \item \textbf{Document avec QR-facture}~: l'IBAN (ou le QR-IBAN), la référence et le
           montant du QR sont affichés \textbf{en lecture seule} --- ils viennent du
-          document et ne se modifient pas. Kesh compare en direct le total TTC des lignes
+          document et ne se modifient pas, à la création comme à l'édition du brouillon
+          (\S\ref{sec:brouillon-fournisseur}). Kesh compare en direct le total TTC des lignes
           au montant du QR, signale un écart, et refuse l'enregistrement tant que le total
           ne \textbf{correspond pas exactement}. Le scan d'image n'est pas proposé.
     \item \textbf{Document sans QR}~: tout se saisit, IBAN, référence et montant attendu
@@ -1952,13 +2071,14 @@ sociétés d'un même groupe aux noms presque identiques sont toutes deux propos
 Vérifiez avant de retenir.
 \end{keshwarning}
 
-À l'enregistrement, le document quitte la liste et l'écran ouvre la fiche de la facture
-créée. Un refus --- une ligne qui n'est pas au centime (\S\ref{sec:saisie-facture-fournisseur}),
-total différent du QR, coordonnée de paiement invalide (sous le champ
-concerné), compte créanciers ou TVA récupérable non imputable
-(\S\ref{sec:saisie-facture-fournisseur}), exercice fermé, document traité entre-temps
+À l'enregistrement, le document quitte la liste et l'écran ouvre la fiche du brouillon
+créé (« Brouillon enregistré. »). Un refus --- une ligne qui n'est pas au centime
+(\S\ref{sec:saisie-facture-fournisseur}), total différent du QR, coordonnée de paiement
+invalide (sous le champ concerné), échéance antérieure à la date, document traité entre-temps
 dans une autre session --- s'affiche sans perdre la saisie, et le document reste dans la
-liste. Un lien vers un document qui n'est plus à traiter affiche « Ce document n'est plus à
+liste. Ce qu'exige l'écriture d'achat --- compte créanciers ou TVA récupérable imputable,
+exercice ouvert (\S\ref{sec:saisie-facture-fournisseur}) --- se vérifie à la
+\textbf{validation}, depuis la version~0.17.0. Un lien vers un document qui n'est plus à traiter affiche « Ce document n'est plus à
 traiter. » et renvoie à la liste.
 
 \paragraph{Ce qui reste refusé.} Un fichier qui n'est ni un PDF ni une image PNG ou JPEG
@@ -1988,7 +2108,9 @@ badge, et, pour un document avec QR, le \textbf{montant du QR à côté du total
 facture}. \emph{Aperçu} affiche le document choisi~; \emph{Joindre} demande confirmation,
 puis le document quitte la liste et la fiche le montre. Kesh \textbf{ne compare pas} les
 montants et ne modifie rien de la facture~: c'est à vous de voir que la pièce est la
-bonne. Tout statut de facture est accepté --- ouverte, payée ou annulée. Une facture n'a
+bonne --- et un document joint après coup n'impose rien à la facture, même dévalidée puis
+modifiée (\S\ref{sec:brouillon-fournisseur}). Tout statut de facture est accepté --- brouillon,
+validée, payée ou annulée. Une facture n'a
 qu'un document~; si la liste est vide, déposez la pièce dans le dossier d'import puis
 importez-la.
 
@@ -2000,8 +2122,10 @@ détachez-la, puis joignez la bonne.
 \begin{keshwarning}
 \textbf{Un document détaché redevient un document à traiter, avec QR compris}~: rien
 n'empêche d'en \emph{créer une facture} une seconde fois, et la première facture n'est ni
-annulée ni signalée. Si c'est la facture elle-même qui est fausse, annulez-la d'abord,
-puis traitez le document.
+annulée ni signalée. Si c'est la facture elle-même qui est fausse~: un brouillon se
+\textbf{supprime} (administrateur) --- son document redevient «~à traiter~» ---~; une facture
+validée se dévalide puis se supprime, ou se corrige (\S\ref{sec:brouillon-fournisseur})~;
+une facture qui n'était pas due s'annule. Puis traitez le document.
 \end{keshwarning}
 
 Le détail d'une \textbf{écriture} d'achat ou de règlement d'une facture fournisseur qui a un
@@ -2523,9 +2647,9 @@ La réconciliation consiste à passer en comptabilité les transactions bancaire
 
 \paragraph{Une facture datée de plus d'un jour après le paiement n'est pas proposée.}\label{sec:facture-posterieure} Un paiement ne peut pas précéder la facture qu'il règle de \textbf{plus d'un jour}. Depuis la version~0.13.3, la proposition applique la même règle que l'acceptation, sur la même date --- la \textbf{date de valeur} de la transaction, à défaut sa date de comptabilisation~: une facture datée de \textbf{plus d'un jour après} le paiement n'est donc plus proposée, et une facture proposée n'est plus refusée parce qu'elle serait postérieure au paiement. Ce refus ne se voit plus que si la facture a été \textbf{redatée} entre l'affichage des propositions et leur acceptation~: la ligne apparaît alors dans les \emph{Échecs partiels} avec le motif «~Le paiement est daté de plus d'un jour avant la facture~». De même, si un \textbf{rappel est annulé} entre l'affichage des propositions et leur acceptation, la date qui fait courir les 30 jours peut reculer, et la facture être refusée pour un paiement trop tardif~: la ligne apparaît dans les \emph{Échecs partiels}, avec le motif générique de la facture non éligible. Le règlement saisi depuis la fiche de la facture, ou depuis la page des échéances, refuse lui aussi un règlement daté avant la facture~: l'écran n'accepte aucune date antérieure à la date de la facture, et son calendrier n'en propose aucune. Il n'a en revanche aucune limite de 30 jours~: c'est par lui qu'on enregistre un paiement que la réconciliation ne propose pas (reçu plus de 30 jours après l'échéance et le dernier rappel) --- en rattachant ensuite la transaction à ce règlement (\S\ref{sec:rattacher-reglement}). Vérifiez la date de la facture~: si le paiement est réellement antérieur --- un acompte, par exemple ---, il ne règle pas cette facture.
 
-\paragraph{Un débit~: les factures fournisseur.}\label{sec:matching-fournisseur} Depuis la version~0.14.0, une transaction \textbf{débitrice} en CHF reçoit les factures \textbf{fournisseur ouvertes} (\S\ref{sec:factures-fournisseurs}) qui pourraient lui correspondre --- c'est le processus pour qui saisit après coup les factures des paiements de son relevé~: saisir la facture \textbf{ouverte}, puis laisser la réconciliation la régler. Une facture fournisseur est \textbf{candidate} si elle est ouverte, si son \textbf{total} (TTC) est \textbf{exactement} égal au montant du débit --- le paiement d'une facture fournisseur est toujours du total, sans paiement partiel ni tolérance~; un total à plus de deux décimales n'est jamais proposé, ce qui depuis la version~0.17.0 ne se produit plus que pour une facture enregistrée avant (\S\ref{sec:facture-fournisseur-sous-centime}) ---, si elle n'est \textbf{pas engagée dans un lot de paiement en cours} (\S\ref{sec:paiements-fournisseurs}), et si le paiement tombe \textbf{au plus 7 jours avant la date de la facture} (un achat payé en ligne, facturé à l'expédition) et \textbf{au plus un an après la plus tardive de sa date et de son échéance} --- sa date seule, si elle n'a pas d'échéance. La date à laquelle la facture a été \textbf{saisie} ne compte pas~: une facture saisie des mois après le paiement est proposée. Elle est notée comme une facture client, à une différence près~: la \textbf{référence} du paiement compte si elle est \textbf{égale} à la référence de paiement de la facture (la référence QR ou SCOR qu'elle porte) ou à son numéro --- espaces ignorés, majuscules ou minuscules indifférentes ---, en entier et sur six caractères au moins~; un numéro court («~1~», «~Loyer~») ou une référence qui n'en contient qu'une partie ne compte pas. À score égal, la facture échue la première passe en tête (\S\ref{sec:imputation-score-egal}).
+\paragraph{Un débit~: les factures fournisseur.}\label{sec:matching-fournisseur} Depuis la version~0.14.0, une transaction \textbf{débitrice} en CHF reçoit les factures \textbf{fournisseur validées} et non payées (\S\ref{sec:factures-fournisseurs}) qui pourraient lui correspondre --- c'est le processus pour qui saisit après coup les factures des paiements de son relevé~: \textbf{saisir, puis valider} la facture, puis laisser la réconciliation la régler. Un \textbf{brouillon} n'est jamais proposé (\S\ref{sec:brouillon-fournisseur}). Une facture fournisseur est \textbf{candidate} si elle est validée et non payée, si son \textbf{total} (TTC) est \textbf{exactement} égal au montant du débit --- le paiement d'une facture fournisseur est toujours du total, sans paiement partiel ni tolérance~; un total à plus de deux décimales n'est jamais proposé, ce qui depuis la version~0.17.0 ne se produit plus que pour une facture enregistrée avant (\S\ref{sec:facture-fournisseur-sous-centime}) ---, si elle n'est \textbf{pas engagée dans un lot de paiement en cours} (\S\ref{sec:paiements-fournisseurs}), et si le paiement tombe \textbf{au plus 7 jours avant la date de la facture} (un achat payé en ligne, facturé à l'expédition) et \textbf{au plus un an après la plus tardive de sa date et de son échéance} --- sa date seule, si elle n'a pas d'échéance. La date à laquelle la facture a été \textbf{saisie} ne compte pas~: une facture saisie des mois après le paiement est proposée. Elle est notée comme une facture client, à une différence près~: la \textbf{référence} du paiement compte si elle est \textbf{égale} à la référence de paiement de la facture (la référence QR ou SCOR qu'elle porte) ou à son numéro --- espaces ignorés, majuscules ou minuscules indifférentes ---, en entier et sur six caractères au moins~; un numéro court («~1~», «~Loyer~») ou une référence qui n'en contient qu'une partie ne compte pas. À score égal, la facture échue la première passe en tête (\S\ref{sec:imputation-score-egal}).
 
-\textbf{Un lot de paiement en cours sur ce compte.} Si une facture fournisseur ouverte du montant \textbf{exact} du débit figure dans un lot de paiement \textbf{en cours} (fichier généré, non confirmé) sur le compte bancaire de la transaction, la ligne ne propose \textbf{rien} --- ni facture, ni règle --- et dit pourquoi, en nommant la facture et le lot~: ce débit est peut-être le paiement de ce lot, et accepter une autre facture du même montant (la mensualité suivante, typiquement) réglerait deux fois la même dépense. Si le débit est bien le paiement du lot, \textbf{annulez le lot}~: la facture sera alors proposée ici. Sinon, affectez la transaction à la main. Si vous \textbf{confirmez} plutôt le lot, la confirmation enregistre un paiement par facture~: un lot d'\textbf{une} facture produit un paiement égal au débit, qui se rattache ensuite à lui (\S\ref{sec:rattacher-reglement})~; un lot de \textbf{plusieurs} factures débité par la banque en une seule ligne ne s'y rattache pas --- aucun paiement n'égale la somme --- et la transaction resterait en attente (issue \#823~; voir l'encadré «~Dépense déjà réglée~» ci-dessous). Un lot \textbf{oublié} --- fichier généré mais jamais transmis à la banque --- retient ainsi, tant qu'il reste en cours, tout débit de ce montant sur ce compte, sans limite de date~: annulez-le (\S\ref{sec:paiements-fournisseurs}).
+\textbf{Un lot de paiement en cours sur ce compte.} Si une facture fournisseur validée du montant \textbf{exact} du débit figure dans un lot de paiement \textbf{en cours} (fichier généré, non confirmé) sur le compte bancaire de la transaction, la ligne ne propose \textbf{rien} --- ni facture, ni règle --- et dit pourquoi, en nommant la facture et le lot~: ce débit est peut-être le paiement de ce lot, et accepter une autre facture du même montant (la mensualité suivante, typiquement) réglerait deux fois la même dépense. Si le débit est bien le paiement du lot, \textbf{annulez le lot}~: la facture sera alors proposée ici. Sinon, affectez la transaction à la main. Si vous \textbf{confirmez} plutôt le lot, la confirmation enregistre un paiement par facture~: un lot d'\textbf{une} facture produit un paiement égal au débit, qui se rattache ensuite à lui (\S\ref{sec:rattacher-reglement})~; un lot de \textbf{plusieurs} factures débité par la banque en une seule ligne ne s'y rattache pas --- aucun paiement n'égale la somme --- et la transaction resterait en attente (issue \#823~; voir l'encadré «~Dépense déjà réglée~» ci-dessous). Un lot \textbf{oublié} --- fichier généré mais jamais transmis à la banque --- retient ainsi, tant qu'il reste en cours, tout débit de ce montant sur ce compte, sans limite de date~: annulez-le (\S\ref{sec:paiements-fournisseurs}).
 
 Chaque candidate reçoit un score, somme de trois critères :
 
@@ -2541,14 +2665,14 @@ Une candidate dont le score vaut zéro n'est pas proposée.
 
 Cette règle ne départage que des scores égaux. Un paiement qui porte le \textbf{numéro} d'une facture \textbf{et son montant exact} la désigne, et elle passe devant toute facture qu'il ne désigne pas aussi~; le montant pesant plus que la référence, une autre facture au montant exact \textbf{peut} en revanche passer devant une facture désignée dont le montant diffère, fût-ce d'un centime, et y passe toujours si elle est du même client. Kesh ne connaît pas les poursuites et ne répartit pas un paiement entre deux factures échues le même jour~: pour imputer autrement, enregistrez le règlement depuis la fiche de la facture voulue (\S\ref{sec:reglement-client}), puis rattachez la transaction à ce règlement (\S\ref{sec:rattacher-reglement}). Entre deux clients que rien ne distingue, cet ordre n'est qu'un choix par défaut~: vérifiez la proposition.
 
-Quand aucune facture n'est candidate, la réconciliation propose à la place la \textbf{règle d'affectation} qui correspond à la transaction, s'il y en a une (\S\ref{sec:regles-affectation})~; elle s'affiche avec un score de 100\,\% --- un score conventionnel, qui n'est pas comparé à celui des factures. Elle n'est \textbf{pas} proposée quand une facture que le paiement dépasse de 5 centimes au plus --- qui n'est pas candidate, \S\ref{sec:algorithme-matching} --- est désignée par la référence du paiement ou le nom de son client~: c'est vraisemblablement ce client qui a payé, et accepter la règle porterait son paiement en produit, la facture restant due. Pour un \textbf{débit}, de même, la règle n'est pas proposée quand une facture fournisseur \textbf{ouverte} d'un total égal au débit à 5 centimes près --- candidate ou non~: hors de la fenêtre de dates, ou dans le lot de paiement d'un autre compte --- est désignée par la référence du paiement ou le nom de son fournisseur, ni quand une facture du montant exact est dans un lot en cours sur ce compte (paragraphe précédent)~; et, par prudence, ni quand 200 factures ouvertes ou davantage sont à 5 centimes près. Une facture fournisseur \textbf{non candidate} qui ne porte ni la référence du paiement ni le nom de la contrepartie ne masque pas la règle. Rien n'est jamais passé en comptabilité sans votre acceptation : il n'y a ni seuil de confiance réglable, ni acceptation automatique.
+Quand aucune facture n'est candidate, la réconciliation propose à la place la \textbf{règle d'affectation} qui correspond à la transaction, s'il y en a une (\S\ref{sec:regles-affectation})~; elle s'affiche avec un score de 100\,\% --- un score conventionnel, qui n'est pas comparé à celui des factures. Elle n'est \textbf{pas} proposée quand une facture que le paiement dépasse de 5 centimes au plus --- qui n'est pas candidate, \S\ref{sec:algorithme-matching} --- est désignée par la référence du paiement ou le nom de son client~: c'est vraisemblablement ce client qui a payé, et accepter la règle porterait son paiement en produit, la facture restant due. Pour un \textbf{débit}, de même, la règle n'est pas proposée quand une facture fournisseur \textbf{validée} et non payée d'un total égal au débit à 5 centimes près --- candidate ou non~: hors de la fenêtre de dates, ou dans le lot de paiement d'un autre compte --- est désignée par la référence du paiement ou le nom de son fournisseur, ni quand une facture du montant exact est dans un lot en cours sur ce compte (paragraphe précédent)~; et, par prudence, ni quand 200 factures validées et non payées, ou davantage, sont à 5 centimes près. Un brouillon ne masque jamais la règle. Une facture fournisseur \textbf{non candidate} qui ne porte ni la référence du paiement ni le nom de la contrepartie ne masque pas la règle. Rien n'est jamais passé en comptabilité sans votre acceptation : il n'y a ni seuil de confiance réglable, ni acceptation automatique.
 
 \begin{keshwarning}[title=\faExclamationTriangle\ Dépense déjà réglée par un autre chemin]
 La réconciliation ne \textbf{propose} pas le débit d'une dépense \textbf{déjà réglée par un autre
 chemin}~--- paiement enregistré depuis la fiche de la facture fournisseur, confirmation d'un lot de
 paiement, écriture saisie au journal, ou facture payée puis annulée dont le paiement est resté au
 grand livre~---, même quand il porte la référence de la facture payée~: celle-ci n'est plus
-ouverte, et n'est donc pas proposée. Pour ce débit, la réconciliation peut alors proposer la
+à payer, et n'est donc pas proposée. Pour ce débit, la réconciliation peut alors proposer la
 \textbf{règle} d'affectation, ou une \textbf{autre facture du même montant} (la mensualité
 suivante, typiquement), et l'écran ne le signale pas. N'acceptez \textbf{rien} de ce qu'elle
 propose pour ce débit~: ni la règle, ni l'autre facture~; n'utilisez pas non plus \emph{Affecter
@@ -2633,7 +2757,7 @@ Kesh passe \textbf{une} écriture entre le compte de la banque et ce compte de c
 
 \textbf{Une écriture d'un exercice clôturé} se rattache~: un paiement de décembre rapproché en janvier, une fois décembre clos, n'écrit rien. Mais son rapprochement \textbf{ne s'annule pas} tant que l'exercice reste clos, comme tout rapprochement d'un exercice clôturé (\S\ref{sec:annuler-rapprochement}).
 
-\textbf{Défaire un rattachement.} \emph{Annuler le rapprochement} (\S\ref{sec:annuler-rapprochement}) défait le lien \textbf{et défait aussi l'écriture}, comme pour une proposition acceptée~: une écriture saisie au journal est \textbf{contre-passée}~; un règlement de facture client est \textbf{retiré}, la facture est de nouveau à régler~; le paiement d'une facture fournisseur est \textbf{annulé}, la facture redevient ouverte. Il n'y a pas de geste qui défasse le seul lien (issue \#672). Quand vous choisissez une écriture, la fenêtre dit ce qu'il en serait \textbf{aujourd'hui}~: si Kesh ne voit aucun obstacle, que l'annulation contre-passerait l'écriture (ou annulerait le règlement qu'elle porte), en rappelant qu'une clôture d'exercice, une période verrouillée ou un exercice postérieur clos pourraient l'empêcher~; si un obstacle existe déjà --- un exercice clôturé, un compte archivé, un solde de facture ---, qu'elle \textbf{ne pourra pas être annulée tant qu'il dure}, avec ce qui le lève~; il faut alors cocher la case qui le reconnaît pour pouvoir rattacher. C'est un constat daté, non une promesse~: un obstacle peut apparaître plus tard (la clôture de l'exercice), ou disparaître (l'exercice rouvert, le compte réactivé). La section des règlements de factures clients ne porte pas ce constat~; l'annulation d'un tel rattachement suit les mêmes règles (\S\ref{sec:annuler-rapprochement}).
+\textbf{Défaire un rattachement.} \emph{Annuler le rapprochement} (\S\ref{sec:annuler-rapprochement}) défait le lien \textbf{et défait aussi l'écriture}, comme pour une proposition acceptée~: une écriture saisie au journal est \textbf{contre-passée}~; un règlement de facture client est \textbf{retiré}, la facture est de nouveau à régler~; le paiement d'une facture fournisseur est \textbf{annulé}, la facture redevient validée, à payer. Il n'y a pas de geste qui défasse le seul lien (issue \#672). Quand vous choisissez une écriture, la fenêtre dit ce qu'il en serait \textbf{aujourd'hui}~: si Kesh ne voit aucun obstacle, que l'annulation contre-passerait l'écriture (ou annulerait le règlement qu'elle porte), en rappelant qu'une clôture d'exercice, une période verrouillée ou un exercice postérieur clos pourraient l'empêcher~; si un obstacle existe déjà --- un exercice clôturé, un compte archivé, un solde de facture ---, qu'elle \textbf{ne pourra pas être annulée tant qu'il dure}, avec ce qui le lève~; il faut alors cocher la case qui le reconnaît pour pouvoir rattacher. C'est un constat daté, non une promesse~: un obstacle peut apparaître plus tard (la clôture de l'exercice), ou disparaître (l'exercice rouvert, le compte réactivé). La section des règlements de factures clients ne porte pas ce constat~; l'annulation d'un tel rattachement suit les mêmes règles (\S\ref{sec:annuler-rapprochement}).
 
 \textbf{Ce qui ne se rattache pas}~:
 \begin{itemize}
@@ -2683,7 +2807,7 @@ Exemple : le loyer est prélevé chaque mois par la régie. Une règle «~Loyer~
 
 \subsubsection{Application des règles}
 
-Une règle ne s'applique qu'aux transactions en CHF, et seulement quand \textbf{aucune facture} n'est candidate pour la transaction --- ni désignée, par la référence du paiement ou le nom de son client, alors que le paiement la dépasse de quelques centimes (\S\ref{sec:algorithme-matching}). Pour un débit, une facture fournisseur ouverte d'un total égal au débit à 5 centimes près, désignée par la référence du paiement ou le nom de son fournisseur, masque aussi la règle, de même qu'une facture du montant exact dans un lot de paiement en cours sur ce compte (\S\ref{sec:matching-fournisseur}). Une dépense \textbf{déjà réglée} par un autre chemin ne la masque \textbf{pas}~: n'acceptez pas la règle, rattachez la transaction à l'écriture déjà passée (\S\ref{sec:rattacher-reglement}~; encadré «~Dépense déjà réglée par un autre chemin~»). Depuis la version~0.14.0, l'\textbf{acceptation} d'une règle est refusée quand une facture fournisseur candidate, une facture fournisseur d'un lot en cours sur ce compte, ou une facture client que le paiement dépasse de quelques centimes la défend~: rechargez la page et traitez la facture --- acceptez la facture fournisseur proposée, ou, pour un crédit, enregistrez le règlement depuis la fiche de la facture client puis rattachez-y la transaction (\S\ref{sec:rattacher-reglement}). \emph{Affecter manuellement} ne convient que si la transaction ne règle \textbf{aucune} facture saisie et n'est comptabilisée par \textbf{aucune} écriture~: sinon la charge ou le produit serait compté deux fois --- rattachez-la plutôt à l'écriture déjà passée (\S\ref{sec:rattacher-reglement}~; encadré «~Dépense déjà réglée par un autre chemin~»). Les règles actives sont essayées par \textbf{priorité croissante}, puis de la plus ancienne à la plus récente~; \textbf{seule la première} qui correspond est proposée. La colonne \emph{Appliquée} compte les acceptations.
+Une règle ne s'applique qu'aux transactions en CHF, et seulement quand \textbf{aucune facture} n'est candidate pour la transaction --- ni désignée, par la référence du paiement ou le nom de son client, alors que le paiement la dépasse de quelques centimes (\S\ref{sec:algorithme-matching}). Pour un débit, une facture fournisseur validée et non payée d'un total égal au débit à 5 centimes près, désignée par la référence du paiement ou le nom de son fournisseur, masque aussi la règle, de même qu'une facture du montant exact dans un lot de paiement en cours sur ce compte (\S\ref{sec:matching-fournisseur}). Une dépense \textbf{déjà réglée} par un autre chemin ne la masque \textbf{pas}~: n'acceptez pas la règle, rattachez la transaction à l'écriture déjà passée (\S\ref{sec:rattacher-reglement}~; encadré «~Dépense déjà réglée par un autre chemin~»). Depuis la version~0.14.0, l'\textbf{acceptation} d'une règle est refusée quand une facture fournisseur candidate, une facture fournisseur d'un lot en cours sur ce compte, ou une facture client que le paiement dépasse de quelques centimes la défend~: rechargez la page et traitez la facture --- acceptez la facture fournisseur proposée, ou, pour un crédit, enregistrez le règlement depuis la fiche de la facture client puis rattachez-y la transaction (\S\ref{sec:rattacher-reglement}). \emph{Affecter manuellement} ne convient que si la transaction ne règle \textbf{aucune} facture saisie et n'est comptabilisée par \textbf{aucune} écriture~: sinon la charge ou le produit serait compté deux fois --- rattachez-la plutôt à l'écriture déjà passée (\S\ref{sec:rattacher-reglement}~; encadré «~Dépense déjà réglée par un autre chemin~»). Les règles actives sont essayées par \textbf{priorité croissante}, puis de la plus ancienne à la plus récente~; \textbf{seule la première} qui correspond est proposée. La colonne \emph{Appliquée} compte les acceptations.
 
 \subsubsection{Désactiver, archiver, réactiver}
 
@@ -2717,7 +2841,7 @@ Avant de confirmer, Kesh dit ce qui va se passer. À la confirmation~:
           saisi depuis la fiche (\S\ref{sec:rattacher-reglement}), par virement ou par compte
           interne~: le règlement est retiré aussi --- aucun geste ne défait le seul lien~;
     \item si le rapprochement avait réglé une \textbf{facture fournisseur}, son
-          \textbf{paiement est retiré}~: la facture redevient \emph{ouverte}, à payer, et
+          \textbf{paiement est retiré}~: la facture redevient \emph{validée}, à payer, et
           revient parmi les propositions de son débit. Il en va de même d'une transaction
           rattachée au paiement saisi depuis la fiche d'une facture fournisseur, ou par un lot~;
     \item une transaction rattachée à une \textbf{écriture saisie au journal} voit cette
@@ -3575,7 +3699,7 @@ Oui, si :
 \begin{itemize}
     \item Aucune facture validée et non payée n'a un \textbf{reste dû} égal au montant de la transaction --- à l'arrondi au centime près, un demi-centime au plus au-dessous ---, ou supérieur de 5 centimes au plus (\S\ref{sec:algorithme-matching})~: un client qui a payé trop, même de quelques centimes, n'est pas proposé~; une règle d'affectation ne l'est pas non plus à la place de sa facture, si la référence du paiement ou le nom du client la désigne.
     \item La transaction tombe \textbf{plus de 30 jours après l'échéance} de la facture (ou après sa date, si elle n'a pas d'échéance) \textbf{et plus de 30 jours après son dernier rappel}~: une facture payée tard et sans rappel récent n'est pas proposée (\S\ref{sec:algorithme-matching}). À l'inverse, une facture datée de plus d'un jour \textbf{après} le paiement n'est pas proposée (\S\ref{sec:facture-posterieure}).
-    \item La transaction n'est pas en CHF~: seules les transactions en CHF reçoivent une facture candidate. Un \textbf{débit} ne reçoit jamais une facture client, seulement une facture \textbf{fournisseur ouverte} dont le total est exactement son montant, datée au plus 7 jours après lui et échue au plus un an avant (\S\ref{sec:matching-fournisseur})~--- une facture enregistrée avant la version~0.17.0 avec un total à plus de deux décimales n'est jamais proposée (\S\ref{sec:facture-fournisseur-sous-centime})~; un débit dont le montant est celui d'une facture d'un lot de paiement en cours sur ce compte ne propose rien, et le dit.
+    \item La transaction n'est pas en CHF~: seules les transactions en CHF reçoivent une facture candidate. Un \textbf{débit} ne reçoit jamais une facture client, seulement une facture \textbf{fournisseur validée} et non payée --- jamais un brouillon --- dont le total est exactement son montant, datée au plus 7 jours après lui et échue au plus un an avant (\S\ref{sec:matching-fournisseur})~--- une facture enregistrée avant la version~0.17.0 avec un total à plus de deux décimales n'est jamais proposée (\S\ref{sec:facture-fournisseur-sous-centime})~; un débit dont le montant est celui d'une facture d'un lot de paiement en cours sur ce compte ne propose rien, et le dit.
     \item Le score de la facture est nul~: la référence de la transaction ne contient pas le \textbf{numéro de la facture}, le nom de la contrepartie ne correspond pas au nom du client, et le montant n'est pas exactement le reste dû au centime.
     \item Aucune règle d'affectation ne correspond --- ou la règle qui correspondrait est écartée parce que son compte de contrepartie a été archivé ou est devenu non imputable. Une règle n'est d'ailleurs affichée que s'il n'y a \textbf{aucune} facture candidate.
 \end{itemize}
@@ -3584,7 +3708,7 @@ Que faire ensuite dépend de la transaction~:
 
 \begin{itemize}
     \item Pour un \textbf{paiement de client}, enregistrez le règlement \textbf{depuis la fiche de la facture} (\emph{Enregistrer un règlement}, \S\ref{sec:reglement-client}). N'utilisez ni \emph{Affecter manuellement} ni \emph{Éclater}~: ils ne proposent que les comptes des classes 5, 6 et 7, et la facture resterait due. Ne créez pas non plus de règle d'affectation pour un paiement de client~: elle porterait le paiement en produit --- le produit serait compté deux fois, et la facture resterait due, sans que rien le signale. Puis rattachez la transaction à ce règlement (\emph{Rattacher à une écriture existante} sur sa ligne, \S\ref{sec:rattacher-reglement})~: elle passe rapprochée, sans écriture.
-    \item Pour le \textbf{paiement d'un fournisseur}, saisissez la facture fournisseur \textbf{ouverte} (\S\ref{sec:factures-fournisseurs}), sans la payer depuis sa fiche, puis revenez ici~: elle est proposée pour le débit, et \emph{Accepter} la règle. Si la dépense est \textbf{déjà réglée} par un autre chemin --- payée depuis la fiche, par un lot confirmé, par une écriture saisie au journal, ou facture payée puis annulée ---, n'acceptez aucune proposition pour ce débit~: rattachez-le à l'écriture déjà passée (\emph{Rattacher à une écriture existante}, \S\ref{sec:rattacher-reglement}~; encadré «~Dépense déjà réglée par un autre chemin~», \S\ref{sec:matching-fournisseur}).
+    \item Pour le \textbf{paiement d'un fournisseur}, \textbf{saisissez, puis validez} la facture fournisseur (\S\ref{sec:factures-fournisseurs}), sans la payer depuis sa fiche, puis revenez ici~: elle est proposée pour le débit, et \emph{Accepter} la règle. Si la dépense est \textbf{déjà réglée} par un autre chemin --- payée depuis la fiche, par un lot confirmé, par une écriture saisie au journal, ou facture payée puis annulée ---, n'acceptez aucune proposition pour ce débit~: rattachez-le à l'écriture déjà passée (\emph{Rattacher à une écriture existante}, \S\ref{sec:rattacher-reglement}~; encadré «~Dépense déjà réglée par un autre chemin~», \S\ref{sec:matching-fournisseur}).
     \item Pour une \textbf{charge} diverse, utilisez \emph{Affecter manuellement} ou \emph{Éclater}~; pour une charge récurrente (loyer, abonnement, frais bancaires), créez une règle d'affectation.
 \end{itemize}
 
@@ -3629,13 +3753,15 @@ Selon l'action :
           s'annule pas tant qu'un administrateur n'a pas fait reculer le verrou et/ou rouvert
           les exercices clôturés (\S\ref{sec:verrou-periode}).
     \item Facture validée : passage en avoir + génération d'une nouvelle facture.
-    \item Facture fournisseur~: elle s'annule depuis sa fiche, ouverte ou payée
-          (\S\ref{sec:annuler-facture-fournisseur})~; payée, son règlement reste au grand
+    \item Facture fournisseur~: un brouillon se corrige, ou se supprime (administrateur)~; une
+          facture validée dont la saisie est fausse se dévalide, se corrige et se revalide
+          (\S\ref{sec:brouillon-fournisseur})~; une facture qui n'était pas due s'annule depuis
+          sa fiche, validée ou payée (\S\ref{sec:annuler-facture-fournisseur})~; payée, son règlement reste au grand
           livre, détaché --- un paiement sans facture. La fiche de ce paiement n'offre ni «~Modifier~» ni «~Supprimer~»~: elle affiche le motif, et la contre-passation reste disponible.
     \item Rapprochement bancaire~: il s'annule depuis le détail de l'import bancaire, ou depuis
           la fiche de la facture \textbf{client} qu'il a réglée (\S\ref{sec:annuler-rapprochement})~; son
           écriture est contre-passée, et un règlement de facture qu'il avait créé est retiré ---
-          le paiement d'une facture fournisseur aussi, qui redevient ouverte.
+          le paiement d'une facture fournisseur aussi, qui redevient validée, à payer.
 \end{itemize}
 
 Le journal d'audit garde toujours la trace de l'action originale ET de l'action de retour.

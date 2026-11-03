@@ -375,13 +375,19 @@ async fn validate_invoice_for_batch(
 
     // (status, creditor_iban, creditor_qr_iban, payment_reference, total_amount,
     //  purchase_journal_entry_id)
+    //
+    // Story v017-4a (#849, AC-5 (4), C-v017-4-38) — l'écriture d'achat est
+    // décodée en `Option` : un brouillon n'en a pas, et la décoder en entier
+    // AVANT le contrôle de statut rendait un `500` pour tout le lot. Elle n'est
+    // extraite qu'après le statut ; un brouillon reçoit `SUPPLIER_INVOICE_NOT_OPEN`
+    // dans `failed[]` (§ Pattern batch).
     type InvoiceCoordsRow = (
         String,
         Option<String>,
         Option<String>,
         Option<String>,
         Decimal,
-        i64,
+        Option<i64>,
     );
     let row: Option<InvoiceCoordsRow> = sqlx::query_as(
         "SELECT status, creditor_iban, creditor_qr_iban, payment_reference, total_amount, \
@@ -400,6 +406,9 @@ async fn validate_invoice_for_batch(
     if status != "open" {
         return Ok(fail(sid, "SUPPLIER_INVOICE_NOT_OPEN"));
     }
+    let purchase_entry_id = purchase_entry_id.ok_or_else(|| {
+        DbError::Invariant("facture fournisseur validée sans écriture d'achat".into())
+    })?;
     if iban.is_none() && qr_iban.is_none() {
         return Ok(fail(sid, "NO_PAYMENT_COORDINATES"));
     }

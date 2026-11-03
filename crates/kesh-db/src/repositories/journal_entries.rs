@@ -1805,10 +1805,13 @@ pub async fn delete_by_id(
 /// # `enforce_ownership` — qui passe quoi
 ///
 /// - **`true`** : [`delete_by_id`], donc la route. L'étape 3-ter s'applique.
-/// - **`false`** : `invoices::unvalidate` seul (25-2-b-1, #440) — la facture
+/// - **`false`** : `invoices::unvalidate` (25-2-b-1, #440) — la facture
 ///   supprime **sa** propre écriture, sous ses propres gardes (non réglée, même
 ///   partiellement, non créditée, sans rappel, non envoyée, non rapprochée) : la
-///   garde « possédée par une facture » n'y aurait pas de sens. Les étapes 2-bis,
+///   garde « possédée par une facture » n'y aurait pas de sens ; et, **second
+///   appelant** depuis la Story v017-4a (#849), `supplier_invoices::unvalidate_in_tx`,
+///   qui supprime l'écriture d'achat sous ses propres gardes (non payée, hors lot
+///   `generated`, non rapprochée). Les étapes 2-bis,
 ///   3, 3-bis, 3-quater et 3-quinquies tiennent quand même — l'étape 2-bis depuis la
 ///   Story 15-12b (#543) : avant elle, l'exercice postérieur clos n'était pas
 ///   contrôlé sur ce chemin (C-15-8-29).

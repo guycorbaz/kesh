@@ -16,6 +16,10 @@
 import { i18nMsg } from "$lib/shared/utils/i18n.svelte";
 
 export type SupplierInvoiceCancelCode =
+  // Story v017-4b (#849, AC-25) — rang 1 du serveur (AC-13 de la 4a) : un brouillon
+  // ne s'annule pas. Le GET d'un brouillon le rend (AC-5 (7)) ; la fiche n'affiche pas
+  // le bloc d'annulation d'un brouillon (AC-22), mais le type reste vrai.
+  | "SUPPLIER_INVOICE_DRAFT"
   | "SUPPLIER_INVOICE_CANCELLED"
   | "FISCAL_YEAR_CLOSED"
   // Story 15-1a2-0 (#518) — rang 2 bis : le lettrage de pièce figé par la période.
@@ -34,6 +38,13 @@ export function supplierInvoiceCancelMessage(
   label: string | null,
 ): string {
   switch (code) {
+    case "SUPPLIER_INVOICE_DRAFT":
+      // La clé et le texte posés par la 4a (AC-13, C-v017-4-42) : un seul texte par
+      // motif, partagé avec le serveur (`errors.rs`).
+      return i18nMsg(
+        "supplier-invoices-cancel-blocked-draft",
+        "Cette facture est un brouillon : elle ne s'annule pas, car rien n'a été passé au journal.",
+      );
     case "SUPPLIER_INVOICE_CANCELLED":
       return i18nMsg(
         "supplier-invoices-cancel-blocked-cancelled",

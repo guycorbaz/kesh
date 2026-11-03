@@ -441,7 +441,7 @@ impl Ctx {
     /// (payable par lot).
     async fn facture_fournisseur(&self) -> i64 {
         let fournisseur = self.contact("Fournisseur SA", true).await;
-        let id = supplier_invoices::create(
+        let id = supplier_invoices::create_validated(
             &self.pool,
             NewSupplierInvoice {
                 company_id: self.company_id(),

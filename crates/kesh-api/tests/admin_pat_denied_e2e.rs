@@ -43,7 +43,8 @@ const LIB_RS: &str = include_str!("../src/lib.rs");
 const MARKER_BEGIN: &str = "KESH-ADMIN-ROUTES-BEGIN";
 const MARKER_END: &str = "KESH-ADMIN-ROUTES-END";
 
-/// Les **49 constructeurs de méthode** du bloc `admin_routes`, un par couple
+/// Les **50 constructeurs de méthode** du bloc `admin_routes` (49 avant la
+/// Story v017-4a), un par couple
 /// (méthode, chemin). Les identifiants de chemin sont arbitraires : la couche
 /// répond **avant** le handler, donc aucune donnée n'a besoin d'exister.
 ///
@@ -70,6 +71,8 @@ const ADMIN_COUPLES: &[(&str, &str)] = &[
     ("PUT", "/api/v1/dunning-levels/1"),
     ("DELETE", "/api/v1/dunning-levels/1"),
     ("DELETE", "/api/v1/invoices/1"),
+    // Story v017-4a (#849, AC-9) — supprimer un brouillon de facture fournisseur.
+    ("DELETE", "/api/v1/supplier-invoices/1"),
     ("POST", "/api/v1/invoices/1/reminders/1/cancel"),
     ("GET", "/api/v1/admin/full-export"),
     ("POST", "/api/v1/admin/full-import"),
@@ -789,7 +792,7 @@ async fn error_code(resp: reqwest::Response) -> String {
 // Tests HTTP — le comportement
 // ============================================================================
 
-/// AC1, jambe `read-write` : les 49 couples rendent `API_KEY_ADMIN_FORBIDDEN`.
+/// AC1, jambe `read-write` : les 50 couples rendent `API_KEY_ADMIN_FORBIDDEN`.
 ///
 /// ⚠️ On asserte le **code**, pas le statut. Trois gardes distinctes rendent
 /// `403` sur ces routes — le RBAC, le gate de portée, et la couche : un test
@@ -864,7 +867,9 @@ async fn read_only_pat_is_stopped_by_the_right_guard_on_each_couple(pool: MySqlP
         // des prompts (liste, détail) atteignent la couche ; les cinq `POST`
         // (prompt neuf, version, approbation, refus, retour au standard) sont
         // arrêtés par le gate de portée.
-        (14, 35),
+        // (14, 35) → (14, 36) : Story v017-4a (refs #849) — le `DELETE` d'un
+        // brouillon de facture fournisseur est arrêté par le gate de portée.
+        (14, 36),
         "la répartition attendue entre la couche et le gate de portée a changé"
     );
 }

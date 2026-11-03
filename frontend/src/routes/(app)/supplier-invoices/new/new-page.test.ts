@@ -39,18 +39,24 @@ vi.mock('$lib/app/stores/auth.svelte', () => ({
 const listImportedMock = vi.fn();
 const candidatesMock = vi.fn();
 const fetchDocMock = vi.fn();
+const completeMock = vi.fn();
 vi.mock('$lib/features/imported-supplier-invoices/imported-supplier-invoices.api', () => ({
 	listImported: (s: string) => listImportedMock(s),
 	getSupplierCandidates: (id: number) => candidatesMock(id),
 	fetchImportedSourceDocument: (id: number) => fetchDocMock(id),
-	completeImport: vi.fn(),
+	completeImport: (id: number, req: unknown) => completeMock(id, req),
 }));
 const listContactsMock = vi.fn();
 vi.mock('$lib/features/contacts/contacts.api', () => ({
 	listContacts: (q: unknown) => listContactsMock(q),
 	createContact: vi.fn(),
 }));
-vi.mock('$lib/features/accounts/accounts.api', () => ({ fetchAccounts: () => Promise.resolve([]) }));
+vi.mock('$lib/features/accounts/accounts.api', () => ({
+	fetchAccounts: () =>
+		Promise.resolve([
+			{ id: 40, number: '4000', name: 'Achats', accountType: 'Expense', active: true, postable: true },
+		]),
+}));
 vi.mock('$lib/features/vat-rates/vat-rates.api', () => ({ listVatRates: () => Promise.resolve([]) }));
 vi.mock('$lib/features/projects/projects.api', () => ({ listProjects: () => Promise.resolve([]) }));
 vi.mock('$lib/features/supplier-invoices/supplier-invoices.api', () => ({
@@ -59,6 +65,9 @@ vi.mock('$lib/features/supplier-invoices/supplier-invoices.api', () => ({
 }));
 
 import Page from './+page.svelte';
+import { fireEvent } from '@testing-library/svelte';
+import { goto } from '$app/navigation';
+import { notifySuccess } from '$lib/shared/utils/notify';
 
 function doc(over: Partial<ImportedSupplierInvoice> = {}): ImportedSupplierInvoice {
 	return {
@@ -182,6 +191,36 @@ describe('page /supplier-invoices/new', () => {
 		const { findByTestId } = render(Page);
 		await findByTestId('supplier-invoice-form');
 		expect(candidatesMock).not.toHaveBeenCalled();
+	});
+
+	// Story v017-4b (#849, AC-24 (e)) — la complétion crée un BROUILLON : la notification
+	// le dit (clé `imported-supplier-invoices-completed`), plus « Facture créée ».
+	it('après la complétion d’un document, « Brouillon enregistré. », puis la fiche', async () => {
+		url.value = new URL('http://localhost/supplier-invoices/new?document=7');
+		listImportedMock.mockResolvedValue([doc()]);
+		listContactsMock.mockResolvedValue({
+			items: [{ id: 1, name: 'Dubarde SA', isSupplier: true }],
+			total: 1,
+			limit: 200,
+			offset: 0,
+		});
+		completeMock.mockResolvedValue({ id: 33, status: 'draft' });
+		const { findByTestId, getByTestId, container } = render(Page);
+		await findByTestId('supplier-invoice-form');
+		const q = (id: string) => container.querySelector(`[data-testid="${id}"]`) as HTMLInputElement;
+		const sup = q('supplier-invoice-supplier') as unknown as HTMLSelectElement;
+		sup.value = '1';
+		await fireEvent.change(sup);
+		await fireEvent.input(q('supplier-invoice-date'), { target: { value: '2026-10-01' } });
+		await fireEvent.input(q('supplier-invoice-line-desc'), { target: { value: 'Prestation' } });
+		await fireEvent.input(q('supplier-invoice-line-unit-price'), { target: { value: '100.00' } });
+		const acc = q('supplier-invoice-line-account') as unknown as HTMLSelectElement;
+		acc.value = '40';
+		await fireEvent.change(acc);
+		await fireEvent.click(getByTestId('supplier-invoice-submit'));
+		await waitFor(() => expect(completeMock).toHaveBeenCalledTimes(1));
+		await waitFor(() => expect(notifySuccess).toHaveBeenCalledWith('Brouillon enregistré.'));
+		expect(goto).toHaveBeenCalledWith('/supplier-invoices/33');
 	});
 
 	it('pour un rôle Consultation, la page ne propose rien', async () => {

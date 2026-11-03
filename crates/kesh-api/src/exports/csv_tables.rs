@@ -1239,7 +1239,8 @@ pub fn serialize_supplier_invoices_csv<W: Write>(
             fmt_opt_str(&si.payment_reference),
             fmt_opt_decimal(si.expected_payment_amount),
             fmt_opt_i64(si.project_id),
-            si.purchase_journal_entry_id.to_string(),
+            // Story v017-4a (#849, AC-4) : cellule vide pour un brouillon.
+            fmt_opt_i64(si.purchase_journal_entry_id),
             fmt_opt_str(&si.settlement_type),
             fmt_opt_i64(si.settlement_bank_account_id),
             fmt_opt_i64(si.settlement_account_id),
@@ -1597,6 +1598,9 @@ pub fn serialize_imported_supplier_invoices_csv<W: Write>(
         "version",
         "created_at",
         "updated_at",
+        // Story v017-4a (#849, AC-7) — l'origine du lien, en dernière colonne
+        // comme dans la table ; vide pour un lien antérieur à la 0.17.0.
+        "link_origin",
     ])
     .map_err(|e| map_csv_err("imported_supplier_invoices", e))?;
     for i in rows {
@@ -1632,6 +1636,7 @@ pub fn serialize_imported_supplier_invoices_csv<W: Write>(
             i.version.to_string(),
             fmt_dt(i.created_at),
             fmt_dt(i.updated_at),
+            fmt_opt_str(&i.link_origin),
         ])
         .map_err(|e| map_csv_err("imported_supplier_invoices", e))?;
     }
@@ -2293,6 +2298,7 @@ mod tests {
             version: 1,
             created_at: ts,
             updated_at: ts,
+            link_origin: None,
         };
         let mut buf = Vec::new();
         serialize_imported_supplier_invoices_csv(&[row], &mut buf).expect("serialize ok");

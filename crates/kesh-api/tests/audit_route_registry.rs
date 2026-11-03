@@ -24,14 +24,14 @@
 //! ⚠️ Comparer des NOMBRES ne détecterait pas une route retirée pendant qu'une
 //! autre est ajoutée : le compte resterait égal et la dérive invisible. Le test
 //! `admin_pat_denied_e2e` peut compter, lui, parce qu'il opère sur un bloc clos
-//! entre marqueurs ; les 138 routes sont réparties dans tout le fichier.
+//! entre marqueurs ; les 142 routes sont réparties dans tout le fichier.
 //!
 //! # Deux fichiers, deux volets
 //!
-//! L'ensemble clos de l'INVENTAIRE est celui de `lib.rs` (138 routes à la
-//! release 0.17.0 — v017-3a et v016-2a réunies, mesuré le 2026-10-31 —, dont
-//! `/mcp`, monté par `route_service` — Story 32-6a) ;
-//! celui du REGISTRE est plus large (141), car trois routes mutantes vivent dans
+//! L'ensemble clos de l'INVENTAIRE est celui de `lib.rs` (142 routes à la
+//! release 0.17.0 — v017-3a, v016-2a et v017-4a réunies, mesuré le 2026-10-31 —,
+//! dont `/mcp`, monté par `route_service` — Story 32-6a) ;
+//! celui du REGISTRE est plus large (145), car trois routes mutantes vivent dans
 //! `routes/test_endpoints.rs` et sont montées par un `nest()`. D'où :
 //!
 //! - volet « route absente du registre » → sur les **deux** fichiers, faute de
@@ -155,7 +155,7 @@
 //!   `post`, `put`, `delete` et `patch`. Aucune route `GET` n'écrit au journal
 //!   aujourd'hui (remontée de l'AC1 : des `POST` et un `DELETE`) ; l'angle mort
 //!   est du même ordre que celui de l'audit (`GET /invoices/{id}/pdf`, plus bas).
-//! - **(vi)** **dix-huit routes `SansEcritureAuJournal` sont rejouées quand
+//! - **(vi)** **vingt-deux routes `SansEcritureAuJournal` sont rejouées quand
 //!   même** : `onboarding::finalize` (enveloppe `AppError`, Story 15-5e2 — la
 //!   seule des neuf routes d'étape à l'être, cf. (iv)),
 //!   `company_invoice_settings::update_invoice_settings` (enveloppe `DbError`,
@@ -259,7 +259,18 @@
 //!   contre-passation, la modification et la suppression d'une écriture ;
 //!   tenue par sa revue et par l'entrelacement forcé T-race-3
 //!   (`reconciliation_link_entry_e2e.rs`), **aucune preuve dynamique du
-//!   rejeu** (aucun interblocage forcé). Dix-huit avec elle.
+//!   rejeu** (aucun interblocage forcé). Dix-huit avec elle. Et — Story
+//!   v017-4a, #849 — quatre routes de la facture fournisseur, qui n'écrivent
+//!   plus au journal mais gardent ou reçoivent une enveloppe (C-v017-4-37) :
+//!   `supplier_invoices::create_supplier_invoice` et
+//!   `imported_supplier_invoices::complete_import`, reclassées depuis
+//!   `Rejouee` (un brouillon, sans écriture), et le `PUT` et le `DELETE` d'un
+//!   brouillon (`update_supplier_invoice`, enveloppe `AppError`, opération
+//!   `supplier_invoices::update` ; `delete_supplier_invoice`, enveloppe
+//!   `DbError`, opération `supplier_invoices::delete`) : les verrous partagés
+//!   des clés étrangères de l'insertion des lignes forment un cycle avec une
+//!   validation aux comptes croisés ; tenues par leur revue, **aucune preuve
+//!   dynamique du rejeu**. Vingt-deux avec elles.
 //! - **(vii)** — **angles morts assumés du volet (c bis)** (revue P1 de la
 //!   15-5e2, L-3 = B-4 = A5). Le volet reconnaît un appel au **dernier
 //!   segment** du chemin appelé (`retry_with`) dans un arbre `syn` ; il ne voit
@@ -422,12 +433,23 @@ const LIB_ROUTES: &[(&str, &str, Status, Rejeu)] = &[
     ("post", "invoices::create_invoice", Traced, SansEcritureAuJournal),
     ("put", "invoices::update_invoice", Traced, SansEcritureAuJournal),
     ("post", "credit_notes::create_credit_note", Traced, Rejouee),
-    ("post", "supplier_invoices::create_supplier_invoice", Traced, Rejouee),
+    // Story v017-4a (#849) — la création n'écrit plus au journal (un brouillon) :
+    // reclassée `SansEcritureAuJournal`, rejouée quand même (point (vi),
+    // C-v017-4-37). Le `PUT` et le `DELETE` d'un brouillon n'écrivent pas au
+    // journal, rejoués (point (vi)) ; la validation et la dévalidation écrivent
+    // au journal (passent ou suppriment l'écriture d'achat) : `Rejouee`.
+    ("post", "supplier_invoices::create_supplier_invoice", Traced, SansEcritureAuJournal),
+    ("put", "supplier_invoices::update_supplier_invoice", Traced, SansEcritureAuJournal),
+    ("delete", "supplier_invoices::delete_supplier_invoice", Traced, SansEcritureAuJournal),
+    ("post", "supplier_invoices::validate_supplier_invoice", Traced, Rejouee),
+    ("post", "supplier_invoices::unvalidate_supplier_invoice", Traced, Rejouee),
     ("post", "supplier_invoices::pay_supplier_invoice", Traced, Rejouee),
     ("post", "supplier_invoices::cancel_supplier_invoice", Traced, Rejouee),
     ("post", "supplier_invoices::scan_qr_supplier_invoice", NoMatter("parsing pur du payload SPC, aucun accès base"), SansEcritureAuJournal),
     ("post", "imported_supplier_invoices::post_inbox_import", Traced, SansEcritureAuJournal),
-    ("post", "imported_supplier_invoices::complete_import", Traced, Rejouee),
+    // Story v017-4a (#849) — la complétion crée un brouillon, sans écriture :
+    // reclassée `SansEcritureAuJournal`, gardée rejouée (point (vi)).
+    ("post", "imported_supplier_invoices::complete_import", Traced, SansEcritureAuJournal),
     ("post", "imported_supplier_invoices::discard_import", Traced, SansEcritureAuJournal),
     // Story 30-2c (#685, AC19, AC24) — joindre un document à une facture,
     // le détacher (audits `imported_supplier_invoice.attached` / `.detached`,
@@ -922,18 +944,20 @@ fn the_registry_partition_is_what_the_story_declares() {
 
     assert_eq!(
         LIB_ROUTES.len(),
-        138,
-        "l'inventaire porte sur 138 routes (+ 1 : `/mcp`, 32-6a ; + 1 : la décision d'un \
+        142,
+        "l'inventaire porte sur 142 routes (+ 1 : `/mcp`, 32-6a ; + 1 : la décision d'un \
          envoi MCP, 32-8b ; + 5 : les routes mutantes des prompts du serveur MCP, 32-10a-iii ; \
          + 1 : le rattachement d'une transaction à une écriture, v017-3a ; + 2 : l'aperçu et \
-         la création d'un relevé saisi à la main, v016-2a)"
+         la création d'un relevé saisi à la main, v016-2a ; + 4 : le `PUT`, le `DELETE`, la \
+         validation et la dévalidation d'une facture fournisseur, v017-4a)"
     );
     assert_eq!(traced + exempt + no_matter, LIB_ROUTES.len());
     // Release 0.17.0 (2026-10-31) : 130 dans la v017-3a ET dans la v016-2a (chacune +1
     // depuis 129) — git a fusionné la ligne identique sans conflit ; **131 mesuré** sur
-    // l'arbre réuni.
+    // l'arbre réuni. Story v017-4a (#849) : 131 → 135 (le `PUT`, le `DELETE`, la
+    // validation et la dévalidation d'une facture fournisseur, tracés).
     assert_eq!(
-        traced, 131,
+        traced, 135,
         "73 tracées avant la 25-1b, plus ses 14, plus la dévalidation (25-2-b-1, #440), \
          plus l'annulation d'un règlement client (25-3-a-1) et fournisseur (25-3-a-2, #414), \
          plus l'annulation d'un rapprochement (25-3-b, #418), plus le solde du reste \
@@ -954,7 +978,9 @@ fn the_registry_partition_is_what_the_story_declares() {
          d'outil MCP (32-6b, #723), plus la décision d'un envoi du serveur MCP (32-8b, \
          refs #723), plus les cinq routes mutantes des prompts du serveur MCP (32-10a-iii, \
          refs #723), plus le rattachement d'une transaction à une écriture (v017-3a, \
-         refs #671), plus la saisie manuelle d'un relevé (v016-2a, refs #816)"
+         refs #671), plus la saisie manuelle d'un relevé (v016-2a, refs #816), plus le \
+         `PUT`, le `DELETE`, la validation et la dévalidation d'une facture fournisseur \
+         (v017-4a, refs #849)"
     );
     assert_eq!(exempt, 4, "4 routes d'auth (#435)");
     assert_eq!(
@@ -964,7 +990,7 @@ fn the_registry_partition_is_what_the_story_declares() {
     );
     assert_eq!(
         LIB_ROUTES.len() + TEST_ENDPOINT_ROUTES.len(),
-        141,
+        145,
         "le registre est plus large que l'inventaire, et c'est voulu"
     );
 }
@@ -1328,12 +1354,16 @@ fn the_replay_partition_is_what_the_story_declares() {
          paiement, écriture manuelle et contre-passation, bilan d'ouverture, \
          complétion d'import, rapprochement manuel et ventilé) + le lettrage et le \
          délettrage manuels (15-1a-i) + la contre-passation au début de l'exercice \
-         suivant (29-1b)"
+         suivant (29-1b) ; v017-4a : − la saisie fournisseur et la complétion d'import \
+         (brouillons, sans écriture au journal) + la validation et la dévalidation d'une \
+         facture fournisseur — compte inchangé"
     );
     assert_eq!(exemptees, 3, "full_import, /seed, /reset");
     assert_eq!(
-        sans_ecriture, 113,
-        "112 routes de lib.rs (la remise à zéro y est entrée, 15-7b2 ; la suppression d'un \
+        sans_ecriture, 117,
+        "116 routes de lib.rs (v017-4a : + 4 — la saisie fournisseur et la complétion \
+         d'import reclassées, le `PUT` et le `DELETE` d'un brouillon) — 112 avant \
+         (la remise à zéro y est entrée, 15-7b2 ; la suppression d'un \
          import, 27-1 ; l'annulation d'un rejet, 28-5a ; la clôture et la réouverture d'un \
          compte bancaire, 28-4a ; le rattachement d'une transaction à un règlement, 29-8 ; \
          le rattachement et le détachement d'un document fournisseur, 30-2c ; le réglage et \
@@ -1345,7 +1375,8 @@ fn the_replay_partition_is_what_the_story_declares() {
          plus /password-reset-token de test_endpoints.rs"
     );
     assert_eq!(rejouees + exemptees + sans_ecriture, tout.len());
-    assert_eq!(tout.len(), 141);
+    // Story v017-4a (#849) : 141 → 145 (quatre routes de la facture fournisseur).
+    assert_eq!(tout.len(), 145);
 }
 
 /// Visiteur `syn` d'un fichier de routes : relève chaque appel à la primitive

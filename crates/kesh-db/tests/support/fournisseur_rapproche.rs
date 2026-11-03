@@ -124,7 +124,7 @@ pub async fn facture_payee(
     jour: NaiveDate,
     montant: Decimal,
 ) -> (i64, i64, i64) {
-    let created = supplier_invoices::create(
+    let created = supplier_invoices::create_validated(
         pool,
         NewSupplierInvoice {
             company_id: seeded.company_id,
@@ -163,7 +163,10 @@ pub async fn facture_payee(
     .expect("règlement par virement");
     (
         created.invoice.id,
-        created.invoice.purchase_journal_entry_id,
+        created
+            .invoice
+            .purchase_journal_entry_id
+            .expect("facture validée : écriture d'achat"),
         paid.invoice
             .settlement_journal_entry_id
             .expect("écriture de règlement"),
@@ -300,7 +303,7 @@ pub async fn facture_ouverte(
     echeance: Option<NaiveDate>,
     montant: Decimal,
 ) -> (i64, i64) {
-    let created = supplier_invoices::create(
+    let created = supplier_invoices::create_validated(
         pool,
         NewSupplierInvoice {
             company_id: seeded.company_id,
@@ -327,7 +330,10 @@ pub async fn facture_ouverte(
     .expect("facture fournisseur ouverte");
     (
         created.invoice.id,
-        created.invoice.purchase_journal_entry_id,
+        created
+            .invoice
+            .purchase_journal_entry_id
+            .expect("facture validée : écriture d'achat"),
     )
 }
 

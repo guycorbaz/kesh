@@ -38,3 +38,15 @@ describe("le lettrage figé par la période (rang 2 bis)", () => {
     ).not.toBe(supplierInvoiceCancelMessage("FISCAL_YEAR_CLOSED", null));
   });
 });
+
+// Story v017-4b (#849, AC-25) — le serveur rend `SUPPLIER_INVOICE_DRAFT` sur le GET d'un
+// brouillon (AC-5 (7)) : l'union le porte, avec le texte posé par la 4a (AC-13, clé
+// `supplier-invoices-cancel-blocked-draft`). Mutation : le `case` renvoyé vers un autre
+// texte, ou repli divergent du catalogue.
+describe("le brouillon (rang 1, Story v017-4a)", () => {
+  it("le motif a le texte de la 4a, mot pour mot le FTL fr-CH", () => {
+    const attendu = valeurFr("supplier-invoices-cancel-blocked-draft");
+    expect(attendu).toBeDefined();
+    expect(supplierInvoiceCancelMessage("SUPPLIER_INVOICE_DRAFT", null)).toBe(attendu);
+  });
+});

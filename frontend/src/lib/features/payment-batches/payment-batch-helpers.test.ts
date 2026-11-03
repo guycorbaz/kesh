@@ -1,4 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 
 const getMock = vi.fn();
 vi.mock('$lib/shared/utils/api-client', () => ({ apiClient: { get: (u: string) => getMock(u) } }));
@@ -61,7 +63,28 @@ describe('failedItemLabel', () => {
 	// suivant.
 	it('mappe les huit codes sur leur repli français', () => {
 		expect(failedItemLabel('SUPPLIER_INVOICE_NOT_FOUND')).toBe('Facture introuvable');
-		expect(failedItemLabel('SUPPLIER_INVOICE_NOT_OPEN')).toBe('Facture non ouverte');
+		// Story v017-4b (#849, revue P1, B-1) : le serveur rend ce code pour un brouillon, une
+		// facture payée ou annulée — « non validée » était faux pour une facture payée.
+		expect(failedItemLabel('SUPPLIER_INVOICE_NOT_OPEN')).toBe(
+			'Facture qui n’est pas à payer (brouillon, payée ou annulée)',
+		);
+		// Le repli égale le catalogue fr-CH, et aucune locale ne garde l'ancien libellé
+		// (« non validée » et ses traductions), faux pour une facture payée.
+		const valeur = (loc: string) =>
+			readFileSync(join('../crates/kesh-i18n/locales', loc, 'messages.ftl'), 'utf-8')
+				.split('\n')
+				.find((l) => l.startsWith('payment-batches-failed-supplier-invoice-not-open = '))
+				?.split(' = ')[1];
+		expect(valeur('fr-CH')).toBe('Facture qui n’est pas à payer (brouillon, payée ou annulée)');
+		for (const [loc, ancien] of [
+			['fr-CH', 'Facture non validée'],
+			['de-CH', 'Rechnung nicht validiert'],
+			['it-CH', 'Fattura non convalidata'],
+			['en-CH', 'Invoice not validated'],
+		]) {
+			expect(valeur(loc), loc).toBeDefined();
+			expect(valeur(loc), loc).not.toBe(ancien);
+		}
 		expect(failedItemLabel('NO_PAYMENT_COORDINATES')).toBe(
 			'Pas de coordonnées de paiement (IBAN/QR-IBAN)'
 		);

@@ -1871,7 +1871,7 @@ async fn discover_supplier_invoice_document(
 ) -> Result<Option<PieceDocument>, DbError> {
     let (status, purchase_entry_id, settlement_entry_id, number): (
         String,
-        i64,
+        Option<i64>,
         Option<i64>,
         Option<String>,
     ) = sqlx::query_as(SYNC_SUPPLIER_INVOICE_SQL)
@@ -1881,6 +1881,17 @@ async fn discover_supplier_invoice_document(
         .await
         .map_err(map_db_error)?
         .ok_or(DbError::NotFound)?;
+    // Story v017-4a (#849) — un brouillon n'a pas d'écriture d'achat ; aucun des
+    // trois chemins qui mènent ici — le paiement, l'annulation de la facture
+    // (`cancel_in_tx`) et l'annulation du règlement — ne l'atteint : chacun
+    // refuse le statut avant.
+    // L'atteindre serait un état incohérent : `Invariant` explicite.
+    let Some(purchase_entry_id) = purchase_entry_id else {
+        return Err(DbError::Invariant(format!(
+            "lettrage de pièce : la facture fournisseur {supplier_invoice_id} ({status}) n'a \
+             pas d'écriture d'achat"
+        )));
+    };
     let mut entries = vec![purchase_entry_id];
     match (status.as_str(), settlement_entry_id) {
         ("cancelled", _) => return Ok(None),

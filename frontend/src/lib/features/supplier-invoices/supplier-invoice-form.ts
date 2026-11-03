@@ -9,13 +9,17 @@
 
 import Big from 'big.js';
 import { lineVatAmount } from '$lib/features/journal-entries/vat-purchase';
-import { isValidAmount } from '$lib/features/journal-entries/balance';
+import { isValidAmount, parseAmount } from '$lib/features/journal-entries/balance';
+import { formatExactAmount } from '$lib/features/invoices/invoice-helpers';
+import { formatSwissDate } from '$lib/features/reports/reports.api';
 import { isApiError } from '$lib/shared/utils/api-error';
 import { i18nMsg } from '$lib/shared/utils/i18n.svelte';
 import { normalizeIban, qrIbanHasValidQrIid } from '$lib/shared/utils/iban';
 import type {
 	CreateSupplierInvoiceLineRequest,
 	CreateSupplierInvoiceRequest,
+	SupplierInvoiceLineResponse,
+	SupplierInvoiceResponse,
 } from './supplier-invoices.types';
 
 /** Une ligne vide, telle que le formulaire l'ajoute. */
@@ -24,15 +28,53 @@ export function emptyLine(): CreateSupplierInvoiceLineRequest {
 }
 
 /**
+ * Story v017-4b (#849, AC-23) — ce que la page d'édition passe au formulaire : la facture
+ * relue, dont il ne lit que la saisie (en-tête, coordonnées, projet, lignes).
+ */
+export type SupplierInvoiceFormInitial = Pick<
+	SupplierInvoiceResponse,
+	| 'contactId'
+	| 'supplierInvoiceNumber'
+	| 'invoiceDate'
+	| 'dueDate'
+	| 'creditorIban'
+	| 'creditorQrIban'
+	| 'paymentReference'
+	| 'expectedPaymentAmount'
+	| 'projectId'
+	| 'lines'
+>;
+
+/**
+ * Story v017-4b (#830, AC-24 (c)) — un montant saisi, **lu une fois** par
+ * `parseAmount` (virgule ou point), rendu avec un point décimal et le nombre de
+ * décimales saisi (« 12,50 » → `"12.50"`). L'appelant ne l'appelle que sur une saisie
+ * validée (`AMOUNT_RE`) : `parseAmount` lève sur une saisie illisible.
+ */
+export function decimalForServer(raw: string): string {
+	const s = raw.trim();
+	const decimals = /[.,](\d+)$/.exec(s)?.[1].length ?? 0;
+	return parseAmount(s).toFixed(decimals);
+}
+
+/** La quantité d'une ligne : vide, elle vaut 1 — au total vivant comme à l'envoi. */
+function quantityOf(l: CreateSupplierInvoiceLineRequest): Big {
+	return l.quantity.trim() === '' ? new Big(1) : parseAmount(l.quantity.trim());
+}
+
+/**
  * Σ TTC pleine précision, en parité avec le serveur (`Σ line_total + Σ
- * line_vat_amount`, `create_in_tx`) ; une ligne incomplète est ignorée.
+ * line_vat_amount`, `purchase_invoice_totals`) ; une ligne incomplète est ignorée.
+ * Story v017-4b (#830) : quantité et prix lus par `parseAmount` (virgule admise),
+ * la quantité vide vaut 1, comme l'envoi.
  */
 export function sumTtc(lines: CreateSupplierInvoiceLineRequest[]): Big {
 	let total = new Big(0);
 	for (const l of lines) {
 		let lineTotal: Big;
 		try {
-			lineTotal = new Big(l.quantity || '0').times(l.unitPrice || '0');
+			if (l.unitPrice.trim() === '') continue; // prix vide → rien à totaliser
+			lineTotal = quantityOf(l).times(parseAmount(l.unitPrice.trim()));
 		} catch {
 			continue; // saisie incomplète → ignorée pour le total vivant
 		}
@@ -65,18 +107,16 @@ export function amountMismatch(lines: CreateSupplierInvoiceLineRequest[], target
  * reste juge (`SUPPLIER_INVOICE_LINE_NOT_IN_CENTIMES`).
  *
  * `quantité × prix` en `big.js` (jamais `parseFloat`) ; la quantité vide se lit `1`,
- * comme l'envoi ; la virgule décimale, qu'`AMOUNT_RE` admet, se lit comme un point.
+ * comme l'envoi ; la virgule décimale, qu'`AMOUNT_RE` admet, se lit comme un point —
+ * par `parseAmount`, la même lecture que l'envoi (Story v017-4b, #830).
  * Une saisie vide ou illisible ne refuse rien (`try/catch`, comme
  * {@link amountMismatch}) : c'est {@link linesInvalid} qui la juge. Le montant rendu
  * l'est par `toFixed()`, jamais en notation exponentielle.
- *
- * ⚠️ La virgule n'est pas normalisée **à l'envoi** : défaut préexistant, #830.
  */
 export function lineNotInCentimes(line: CreateSupplierInvoiceLineRequest): string | null {
-	const decimal = (raw: string) => raw.trim().replace(',', '.');
 	if (!line.unitPrice.trim()) return null;
 	try {
-		const total = new Big(decimal(line.quantity || '1')).times(decimal(line.unitPrice));
+		const total = quantityOf(line).times(parseAmount(line.unitPrice.trim()));
 		return total.round(2, Big.roundDown).eq(total) ? null : total.toFixed();
 	} catch {
 		return null;
@@ -94,16 +134,120 @@ export function firstLineNotInCentimes(
 	return null;
 }
 
-/** Lignes **structurellement** invalides (description, compte, quantité, prix). */
+/**
+ * Lignes **structurellement** invalides (description, compte, quantité, prix).
+ *
+ * Story v017-4b (#830, AC-24 (c), C-v017-4-36) — le prix est **obligatoire**
+ * (`allowEmpty: false`) : un prix vide n'est jamais lu `0` (`parseAmount('')` rend `0`),
+ * et le formulaire le refuse avant le serveur. La quantité vide reste admise (elle vaut
+ * 1).
+ */
 export function linesInvalid(lines: CreateSupplierInvoiceLineRequest[]): boolean {
 	if (lines.length === 0) return true;
 	return lines.some(
 		(l) =>
 			!l.description.trim() ||
 			!l.expenseAccountId ||
-			!isValidAmount(l.quantity) ||
-			!isValidAmount(l.unitPrice),
+			!isValidAmount(l.quantity.trim()) ||
+			!isValidAmount(l.unitPrice.trim(), { allowEmpty: false }),
 	);
+}
+
+/**
+ * Story v017-4b (#830) — les lignes telles qu'elles partent au serveur : description
+ * rognée, quantité (vide → `1`) et prix lus une fois et envoyés avec un point, taux
+ * (choisi dans une liste, sans virgule) tel quel. À n'appeler qu'après
+ * {@link linesInvalid}.
+ */
+export function linesForServer(
+	lines: CreateSupplierInvoiceLineRequest[],
+): CreateSupplierInvoiceLineRequest[] {
+	return lines.map((l) => ({
+		description: l.description.trim(),
+		quantity: l.quantity.trim() === '' ? '1' : decimalForServer(l.quantity),
+		unitPrice: decimalForServer(l.unitPrice),
+		vatRate: l.vatRate || '0',
+		expenseAccountId: Number(l.expenseAccountId),
+	}));
+}
+
+/**
+ * Story v017-4b (#853, AC-24 (b)) — l'échéance précède-t-elle la date de facture ? Deux
+ * dates ISO `AAAA-MM-JJ` se comparent comme des chaînes ; une date absente ne refuse
+ * rien (la date vide a son propre message). Le serveur reste juge
+ * (`SUPPLIER_INVOICE_DUE_BEFORE_INVOICE_DATE`).
+ */
+export function dueBeforeInvoiceDate(invoiceDate: string, dueDate: string): boolean {
+	if (!invoiceDate || !dueDate) return false;
+	return dueDate < invoiceDate;
+}
+
+/**
+ * Le message d'une échéance antérieure — **le texte et la clé du serveur**
+ * (`error-supplier-invoice-due-before-invoice-date`, `errors.rs`) : un seul texte pour le
+ * refus du formulaire et celui du serveur. Dates au format suisse.
+ */
+export function dueBeforeInvoiceDateMessage(invoiceDate: string, dueDate: string): string {
+	return i18nMsg(
+		'error-supplier-invoice-due-before-invoice-date',
+		"L'échéance ({ $dueDate }) précède la date de la facture ({ $invoiceDate }).",
+		{ dueDate: formatSwissDate(dueDate), invoiceDate: formatSwissDate(invoiceDate) },
+	);
+}
+
+/**
+ * Story v017-4b (#835, AC-24 (d)) — le total vivant aux décimales exactes : quatre si le
+ * total n'est pas au centime, deux sinon (`formatExactAmount`, celui de la fiche et de la
+ * liste). Une ligne à 99.9999 se lit `99.9999`, non `100.00`.
+ */
+export function formatLiveTotal(total: Big): string {
+	return formatExactAmount(total.toFixed());
+}
+
+/**
+ * Story v017-4b (AC-23) — un montant lu du serveur (`100.2000`), rendu lisible au
+ * formulaire : sans zéros inutiles, avec au moins `minDecimals` décimales (`100.2000` →
+ * `100.20` pour 2, `1.0000` → `1` pour 0, `33.3333` gardé). Une valeur illisible est
+ * rendue telle quelle.
+ */
+export function readableAmount(raw: string, minDecimals: number): string {
+	try {
+		const b = new Big(raw);
+		const s = b.toFixed();
+		const dot = s.indexOf('.');
+		const decimals = dot === -1 ? 0 : s.length - dot - 1;
+		return decimals < minDecimals ? b.toFixed(minDecimals) : s;
+	} catch {
+		return raw;
+	}
+}
+
+/**
+ * Story v017-4b (AC-23) — une ligne lue du serveur, rendue au formulaire : quantité sans
+ * zéros inutiles (`1.0000` → `1`), prix à deux décimales au moins (`100.2000` →
+ * `100.20`, `33.3333` gardé), taux aligné sur la valeur d'une option de la liste (`0.00`
+ * → `0`, `8.1` → `8.10` si la liste porte `8.10`).
+ */
+export function formLineFromResponse(
+	line: SupplierInvoiceLineResponse,
+	vatRates: { rate: string }[],
+): CreateSupplierInvoiceLineRequest {
+	const readable = readableAmount;
+	let vatRate = line.vatRate;
+	try {
+		const r = new Big(line.vatRate);
+		if (r.eq(0)) vatRate = '0';
+		else vatRate = vatRates.find((v) => new Big(v.rate).eq(r))?.rate ?? line.vatRate;
+	} catch {
+		// taux illisible : gardé tel quel
+	}
+	return {
+		description: line.description,
+		quantity: readable(line.quantity, 0),
+		unitPrice: readable(line.unitPrice, 2),
+		vatRate,
+		expenseAccountId: line.expenseAccountId,
+	};
 }
 
 /** Les coordonnées de paiement saisies à la main (document sans QR, ou sans document). */
@@ -127,11 +271,15 @@ export function paymentFields(
 > {
 	const iban = normalizeIban(input.iban);
 	const isQr = iban !== '' && qrIbanHasValidQrIid(iban);
+	const expected = input.expectedAmount.trim();
 	return {
 		creditorIban: iban !== '' && !isQr ? iban : null,
 		creditorQrIban: isQr ? iban : null,
 		paymentReference: input.reference.trim() || null,
-		expectedPaymentAmount: input.expectedAmount.trim() || null,
+		// Story v017-4b (#830, M32) : lu une fois, envoyé avec un point ; une saisie
+		// illisible part telle quelle et le serveur la refuse (400).
+		expectedPaymentAmount:
+			expected === '' ? null : isValidAmount(expected) ? decimalForServer(expected) : expected,
 	};
 }
 
@@ -180,7 +328,8 @@ export function paymentReasonLabel(reason: string): string {
  * v017-3b, #687 : `line`, rang 1-based du serveur), ou en tête du formulaire.
  */
 export interface SubmitError {
-	field: 'iban' | 'reference' | 'line' | null;
+	/** Story v017-4b (#853) : `due` — sous l'échéance. */
+	field: 'iban' | 'reference' | 'line' | 'due' | null;
 	/** Le rang 1-based de la ligne désignée, quand `field === 'line'`. */
 	line?: number;
 	message: string;
@@ -218,6 +367,23 @@ export function describeSubmitError(err: unknown): SubmitError {
 				),
 			};
 		}
+		case 'SUPPLIER_INVOICE_DUE_BEFORE_INVOICE_DATE': {
+			// Story v017-4b (#853, AC-24 (b)) — au même endroit que le refus du formulaire.
+			const d = err.details as { invoiceDate?: string; dueDate?: string } | undefined;
+			return {
+				field: 'due',
+				message: dueBeforeInvoiceDateMessage(d?.invoiceDate ?? '?', d?.dueDate ?? '?'),
+			};
+		}
+		case 'OPTIMISTIC_LOCK_CONFLICT':
+			// Story v017-4b (AC-23) — le brouillon a changé depuis sa lecture.
+			return {
+				field: null,
+				message: i18nMsg(
+					'supplier-invoices-err-stale',
+					'Cette facture a été modifiée entre-temps : rechargez la page, puis refaites votre correction.',
+				),
+			};
 		case 'QR_FIELDS_FROM_DOCUMENT':
 			return {
 				field: null,

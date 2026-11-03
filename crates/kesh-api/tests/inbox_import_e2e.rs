@@ -1435,7 +1435,10 @@ async fn complete_creates_invoice_and_marks_completed(pool: MySqlPool) {
     let status = resp.status();
     let body: Value = resp.json().await.unwrap();
     assert_eq!(status, 200, "completion body: {body}");
-    assert_eq!(body["status"], "open");
+    // Story v017-4a (#849, AC-7) : la complétion crée un BROUILLON, sans
+    // écriture d'achat.
+    assert_eq!(body["status"], "draft");
+    assert_eq!(body.get("purchaseJournalEntryId"), Some(&Value::Null));
     assert_eq!(body["totalAmount"], "100.0000");
     assert_eq!(body["creditorIban"], "CH9300762011623852957");
 
@@ -1475,6 +1478,11 @@ async fn complete_creates_invoice_and_marks_completed(pool: MySqlPool) {
     assert_eq!(invoice_traces, 1, "les deux traces coexistent");
 }
 
+/// ⚠️ *Story v017-4a (#849, AC-6, AC-7) — le nom date d'avant la 0.17.0* : la
+/// complétion créait la facture **et** son écriture, et refusait une date hors
+/// de tout exercice ouvert (`400`, document resté à traiter). Depuis, elle crée
+/// un **brouillon**, accepté hors exercice ; c'est sa **validation** qui rend
+/// `400 FISCAL_YEAR_INVALID` et n'écrit rien.
 #[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn complete_closed_fiscal_year_keeps_to_complete(pool: MySqlPool) {
     let ctx = setup(&pool).await;
@@ -1512,13 +1520,39 @@ async fn complete_closed_fiscal_year_keeps_to_complete(pool: MySqlPool) {
         .send()
         .await
         .unwrap();
-    assert_eq!(resp.status(), 400);
-    // Rollback total : aucune facture, staging reste `to_complete`.
-    assert_eq!(staging_status(&pool, staging_id).await, "to_complete");
+    assert_eq!(
+        resp.status(),
+        200,
+        "un brouillon s'enregistre hors exercice"
+    );
+    let brouillon: Value = resp.json().await.unwrap();
+    assert_eq!(brouillon["status"], "draft");
+    assert_eq!(staging_status(&pool, staging_id).await, "completed");
     assert_eq!(
         supplier_invoice_count(&pool, ctx.seeded.company_id).await,
-        0
+        1
     );
+    // La validation, elle, exige l'exercice — et n'écrit rien.
+    let resp = app
+        .client
+        .post(app.url(&format!(
+            "/api/v1/supplier-invoices/{}/validate",
+            brouillon["id"]
+        )))
+        .bearer_auth(&ctx.jwt)
+        .json(&json!({ "version": brouillon["version"] }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 400);
+    let e: Value = resp.json().await.unwrap();
+    assert_eq!(e["error"]["code"], "FISCAL_YEAR_INVALID", "{e}");
+    let n: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM journal_entries WHERE company_id = ?")
+        .bind(ctx.seeded.company_id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(n, 0, "aucune écriture");
 }
 
 #[sqlx::test(migrations = "../kesh-db/test-schema")]
@@ -2062,6 +2096,24 @@ async fn complete_refuses_a_designated_payable_made_non_postable(pool: MySqlPool
         .send()
         .await
         .unwrap();
+    // Story v017-4a (#849) : la complétion crée un brouillon, sans écriture —
+    // le compte créanciers n'y est pas encore écrit. C'est la VALIDATION qui le
+    // refuse, en nommant le compte, et qui n'écrit rien.
+    let status = resp.status();
+    let brouillon: Value = resp.json().await.unwrap();
+    assert_eq!(status, 200, "{brouillon}");
+    assert_eq!(brouillon["status"], "draft");
+    let resp = app
+        .client
+        .post(app.url(&format!(
+            "/api/v1/supplier-invoices/{}/validate",
+            brouillon["id"]
+        )))
+        .bearer_auth(&ctx.jwt)
+        .json(&json!({ "version": brouillon["version"] }))
+        .send()
+        .await
+        .unwrap();
     let status = resp.status();
     let body: Value = resp.json().await.unwrap();
     assert_eq!(status, 400, "{body}");
@@ -2071,11 +2123,12 @@ async fn complete_refuses_a_designated_payable_made_non_postable(pool: MySqlPool
         json!([{ "accountId": payable, "accountNumber": "2000" }]),
         "{body}"
     );
-    assert_eq!(staging_status(&pool, staging_id).await, "to_complete");
-    assert_eq!(
-        supplier_invoice_count(&pool, ctx.seeded.company_id).await,
-        0
-    );
+    let statut: String = sqlx::query_scalar("SELECT status FROM supplier_invoices WHERE id = ?")
+        .bind(brouillon["id"].as_i64().unwrap())
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(statut, "draft", "la validation refusée n'écrit rien");
 }
 
 // ============================================================
@@ -2402,8 +2455,10 @@ async fn complete_without_qr_takes_payment_details_and_project_from_body(pool: M
     assert_eq!(b["paymentReference"], "Facture 4711");
     assert_eq!(b["expectedPaymentAmount"], "100.0000");
     assert_eq!(b["projectId"], project_id, "projet honoré à la complétion");
+    // Story v017-4a (#849) : la facture créée est un brouillon — la fonction du
+    // GET le dit (`cancelBlockedBy`), ce qui prouve la relecture.
     assert_eq!(
-        b["cancellable"], true,
+        b["cancelBlockedBy"], "SUPPLIER_INVOICE_DRAFT",
         "réponse relue par la fonction du GET : {b}"
     );
     assert_eq!(staging_status(&pool, id).await, "completed");
@@ -2509,6 +2564,17 @@ async fn invoice_with_iban(
     let (s, b) = post_supplier_invoice(app, &ctx.jwt, &body).await;
     assert_eq!(s, 201, "{b}");
     let id = b["id"].as_i64().unwrap();
+    // Story v017-4a (#849) : la saisie crée un brouillon ; validée ici, comme la
+    // créait la rc1 (le test annule ensuite l'une d'elles en base).
+    let resp = app
+        .client
+        .post(app.url(&format!("/api/v1/supplier-invoices/{id}/validate")))
+        .bearer_auth(&ctx.jwt)
+        .json(&json!({ "version": b["version"] }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 200, "validation");
     if let Some((column, value)) = stored {
         sqlx::query(&format!(
             "UPDATE supplier_invoices SET creditor_iban = NULL, {column} = ? WHERE id = ?"
@@ -2769,16 +2835,38 @@ async fn staged_document(app: &TestApp, pool: &MySqlPool, ctx: &Ctx, file: &str)
     .await
 }
 
-/// Une facture fournisseur ouverte, créée par l'API (sans document).
+/// Une facture fournisseur validée (`open`), créée par l'API (sans document) —
+/// Story v017-4a (#849) : la création rend un brouillon, validé ici. La
+/// réponse de la **création** est rendue (son `sourceDocument` est absent).
 async fn invoice_without_document(app: &TestApp, ctx: &Ctx) -> Value {
     let (s, b) = post_supplier_invoice(app, &ctx.jwt, &body_with(ctx, json!({}))).await;
     assert_eq!(s, 201, "{b}");
+    let resp = app
+        .client
+        .post(app.url(&format!("/api/v1/supplier-invoices/{}/validate", b["id"])))
+        .bearer_auth(&ctx.jwt)
+        .json(&json!({ "version": b["version"] }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 200, "validation");
     b
 }
 
 /// L'objet `sourceDocument` attendu d'un document semé par `staged_document`.
 fn expected_source_document() -> Value {
     json!({ "originalFilename": "facture.png", "mimeType": "image/png", "byteSize": 1234 })
+}
+
+/// Les trois champs d'origine (Story 30-2c) d'un `sourceDocument` — la Story
+/// v017-4a (#849, C-v017-4-30) en a ajouté trois (`importedSupplierInvoiceId`,
+/// `linkOrigin`, `qr`), éprouvés par `supplier_invoice_draft_e2e.rs`.
+fn champs_30_2c(source_document: &Value) -> Value {
+    json!({
+        "originalFilename": source_document["originalFilename"],
+        "mimeType": source_document["mimeType"],
+        "byteSize": source_document["byteSize"],
+    })
 }
 
 /// AC18 — `sourceDocument` à trois états : **absent** de la réponse de `POST
@@ -2806,7 +2894,12 @@ async fn source_document_has_three_states(pool: MySqlPool) {
     let doc = staged_document(&app, &pool, &ctx, "complete-302c.png").await;
     let (s, done) = post_complete(&app, &ctx.jwt, doc, &body_with(&ctx, json!({}))).await;
     assert_eq!(s, 200, "{done}");
-    assert_eq!(done["sourceDocument"], expected_source_document(), "{done}");
+    assert_eq!(
+        champs_30_2c(&done["sourceDocument"]),
+        expected_source_document(),
+        "{done}"
+    );
+    assert_eq!(done["sourceDocument"]["linkOrigin"], "completion", "{done}");
     let completed = done["id"].as_i64().unwrap();
     let (_, got) = get_json(
         &app,
@@ -2814,7 +2907,10 @@ async fn source_document_has_three_states(pool: MySqlPool) {
         &format!("/api/v1/supplier-invoices/{completed}"),
     )
     .await;
-    assert_eq!(got["sourceDocument"], expected_source_document());
+    assert_eq!(
+        champs_30_2c(&got["sourceDocument"]),
+        expected_source_document()
+    );
 }
 
 /// AC19 — joindre après coup : `200` et la facture relue (`sourceDocument`
@@ -2854,7 +2950,12 @@ async fn attach_route_refuses_then_attaches(pool: MySqlPool) {
     let (s, b) = post_attach(&app, &ctx.jwt, inv, doc).await;
     assert_eq!(s, 200, "{b}");
     assert_eq!(b["id"], json!(inv));
-    assert_eq!(b["sourceDocument"], expected_source_document(), "{b}");
+    assert_eq!(
+        champs_30_2c(&b["sourceDocument"]),
+        expected_source_document(),
+        "{b}"
+    );
+    assert_eq!(b["sourceDocument"]["linkOrigin"], "attachment", "{b}");
     assert_eq!(b["status"], "open", "la facture ne change pas");
     assert_eq!(staging_status(&pool, doc).await, "completed");
     let details = audit_details(&pool, doc, "imported_supplier_invoice.attached").await;
@@ -2993,7 +3094,14 @@ async fn journal_entry_detail_shows_the_document(pool: MySqlPool) {
     let app = spawn_app(pool.clone(), 25 * 1024 * 1024).await;
     let created = invoice_without_document(&app, &ctx).await;
     let inv = created["id"].as_i64().unwrap();
-    let purchase = created["purchaseJournalEntryId"].as_i64().unwrap();
+    // Story v017-4a : la réponse de création est celle du brouillon ;
+    // l'écriture d'achat, posée par la validation, se lit en base.
+    let purchase: i64 =
+        sqlx::query_scalar("SELECT purchase_journal_entry_id FROM supplier_invoices WHERE id = ?")
+            .bind(inv)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
     let doc = staged_document(&app, &pool, &ctx, "entry-302c.png").await;
     let (s, _) = post_attach(&app, &ctx.jwt, inv, doc).await;
     assert_eq!(s, 200);
@@ -3013,7 +3121,7 @@ async fn journal_entry_detail_shows_the_document(pool: MySqlPool) {
     let paid: Value = resp.json().await.unwrap();
     let settlement = paid["settlementJournalEntryId"].as_i64().unwrap();
     assert_eq!(
-        paid["sourceDocument"],
+        champs_30_2c(&paid["sourceDocument"]),
         expected_source_document(),
         "pay relit la facture"
     );
@@ -3029,7 +3137,12 @@ async fn journal_entry_detail_shows_the_document(pool: MySqlPool) {
         assert_eq!(b["sourceDocument"], attendu, "écriture {entry} : {b}");
     }
     let other = invoice_without_document(&app, &ctx).await;
-    let other_entry = other["purchaseJournalEntryId"].as_i64().unwrap();
+    let other_entry: i64 =
+        sqlx::query_scalar("SELECT purchase_journal_entry_id FROM supplier_invoices WHERE id = ?")
+            .bind(other["id"].as_i64().unwrap())
+            .fetch_one(&pool)
+            .await
+            .unwrap();
     let (_, b) = get_json(
         &app,
         &ctx.jwt,

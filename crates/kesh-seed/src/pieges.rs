@@ -581,8 +581,9 @@ pub async fn semer(
     )
     .await?;
 
-    // La facture fournisseur : numéro, IBAN, QR-IBAN, référence, ligne.
-    let ff = supplier_invoices::create(
+    // La facture fournisseur : numéro, IBAN, QR-IBAN, référence, ligne —
+    // validée, comme la créait la 0.17.0-rc1 (Story v017-4a, AC-12).
+    let ff = supplier_invoices::create_validated(
         pool,
         NewSupplierInvoice {
             company_id,
@@ -686,7 +687,11 @@ pub async fn semer(
         compte_k2: k2.id,
         compte_cr: cr.id,
         ecriture: e.entry.id,
-        ecriture_achat: ff.invoice.purchase_journal_entry_id,
+        ecriture_achat: ff.invoice.purchase_journal_entry_id.ok_or_else(|| {
+            kesh_db::errors::DbError::Invariant(
+                "facture fournisseur validée sans écriture d'achat".into(),
+            )
+        })?,
         client: client.id,
         fournisseur: fournisseur.id,
         facture: facture.id,

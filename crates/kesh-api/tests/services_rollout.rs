@@ -363,7 +363,7 @@ async fn poser_facture_fournisseur(
     .execute(pool)
     .await
     .expect("compte fournisseurs");
-    supplier_invoices::create(
+    supplier_invoices::create_validated(
         pool,
         NewSupplierInvoice {
             company_id: s.company_id,
@@ -2824,7 +2824,11 @@ async fn ac324b_b_les_bornes_des_listes_de_factures(pool: MySqlPool) {
         let r = factures_fournisseur::lister(
             &acces,
             &lecture,
-            DemandeListeFacturesFournisseur { limit, offset },
+            DemandeListeFacturesFournisseur {
+                limit,
+                offset,
+                statuts: Vec::new(),
+            },
         )
         .await
         .map(|p| (p.limit, p.offset));

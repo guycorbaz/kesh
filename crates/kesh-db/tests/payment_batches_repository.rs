@@ -120,7 +120,7 @@ async fn make_invoice(
     reference: Option<&str>,
     unit_price: Decimal,
 ) -> i64 {
-    supplier_invoices::create(
+    supplier_invoices::create_validated(
         pool,
         NewSupplierInvoice {
             company_id: ctx.seeded.company_id,

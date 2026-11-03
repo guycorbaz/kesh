@@ -49,7 +49,7 @@ export interface ReconciliationCandidate {
 
 /**
  * Story 30-1b (#686, AC-b5) — pourquoi une ligne ne propose rien. Un seul code : une
- * facture fournisseur ouverte du montant exact du débit est dans un lot de paiement en cours
+ * facture fournisseur validée du montant exact du débit est dans un lot de paiement en cours
  * sur ce compte.
  */
 export interface ProposalNotice {

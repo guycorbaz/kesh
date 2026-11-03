@@ -108,7 +108,7 @@ sortie! {
         reference_paiement: Option<TexteNonFiable>,
         montant_attendu: Option<Montant>,
         projet_id: Option<i64>,
-        ecriture_achat_id: i64,
+        ecriture_achat_id: Option<i64>,
         reglement: Option<Reglement>,
         payee_le: Option<Horodatage>,
         piece_id: Option<i64>,
@@ -150,6 +150,8 @@ impl McpTool for KeshFacturesFournisseur {
             let demande = DemandeListeFacturesFournisseur {
                 limit: Some(limit),
                 offset: Some(offset),
+                // L'outil n'a pas de filtre de statut (Story v017-4a, AC-15).
+                statuts: Vec::new(),
             };
             let page = factures_fournisseur::lister(ctx.acces(), ctx.lecture(), demande)
                 .await

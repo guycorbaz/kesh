@@ -15,8 +15,9 @@
 //!   (Comptable+, Story 30-2c)
 //!
 //! La complétion (`/complete`) **siège la transaction DC6** : `SELECT … FOR UPDATE`
-//! du staging + `create_in_tx` (facture réelle 12-2) + `UPDATE status='completed'`
-//! dans **une seule** transaction → impossible d'aboutir à une double facture.
+//! du staging + `create_draft_in_tx` (un **brouillon**, sans écriture, depuis la
+//! Story v017-4a) + `UPDATE status='completed'` dans **une seule** transaction →
+//! impossible d'aboutir à une double facture.
 
 use axum::Extension;
 use axum::Json;
@@ -26,9 +27,8 @@ use axum::response::{IntoResponse, Response};
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 
-use kesh_core::accounting::vat::line_vat_amount;
 use kesh_db::entities::audit_log::NewAuditLogEntry;
-use kesh_db::entities::imported_supplier_invoice::ImportedSupplierInvoice;
+use kesh_db::entities::imported_supplier_invoice::{ImportedSupplierInvoice, LinkOrigin};
 use kesh_db::errors::map_db_error;
 use kesh_db::repositories::{audit_log, contacts, imported_supplier_invoices, supplier_invoices};
 
@@ -105,9 +105,11 @@ pub async fn list_imported(
 // ---------------------------------------------------------------------------
 
 /// Complétion atomique d'une facture importée (DC6, Comptable+). Toute la
-/// séquence (verrou staging → validations métier → `create_in_tx` → `UPDATE
-/// completed`) vit dans **une transaction** ; sur échec, rollback total (pas
-/// d'écriture comptable partielle, staging reste `to_complete`).
+/// séquence (verrou staging → validations métier → `create_draft_in_tx` →
+/// `UPDATE completed`) vit dans **une transaction** ; sur échec, rollback total
+/// (staging reste `to_complete`). Depuis la Story v017-4a (#849, AC-7), la
+/// facture créée est un **brouillon** : aucune écriture au journal ; elle se
+/// valide ensuite (`POST /supplier-invoices/{id}/validate`).
 ///
 /// Story 30-2b (AC13, C-30-2-10) : le corps est **celui de** `POST
 /// /supplier-invoices` ([`CreateSupplierInvoiceRequest`]) — projet compris ; un
@@ -182,6 +184,82 @@ async fn complete_import_once(
             });
         }
 
+        // (3) à (6) Les règles « document », extraites (Story v017-4a, AC-7) :
+        //     la même fonction juge le `PUT` d'un brouillon né de la
+        //     complétion. Ordre des refus inchangé.
+        let new = new_from_document(&staging, req, company_id)?;
+
+        // (7) Création du BROUILLON dans la MÊME transaction (DC6) — Story
+        //     v017-4a (#849, AC-7) : la complétion n'écrit plus au journal.
+        let created = supplier_invoices::create_draft_in_tx(&mut tx, new, user_id).await?;
+
+        // Lien staging → facture réelle + passage `completed`, origine
+        // `completion` (le `PUT` du brouillon garde les règles du QR).
+        imported_supplier_invoices::mark_completed(
+            &mut tx,
+            company_id,
+            id,
+            created.invoice.id,
+            LinkOrigin::Completion,
+        )
+        .await?;
+
+        // Story 25-1b (AC 3) — la transition de la PIÈCE laisse sa propre trace.
+        // La facture fournisseur créée juste au-dessus est déjà auditée
+        // (`supplier_invoice.created`, dans `create_draft_in_tx`) ; sans celle-ci, le
+        // cycle de vie d'une pièce disait `created` → `discarded` quand elle est
+        // rejetée, et `created` → RIEN quand elle aboutit. C'était l'asymétrie.
+        audit_log::insert_in_tx(
+            &mut tx,
+            NewAuditLogEntry::from_current_user(
+                current_user,
+                "imported_supplier_invoice.completed",
+                "imported_supplier_invoice",
+                id,
+                Some(serde_json::json!({
+                    "supplier_invoice_id": created.invoice.id,
+                })),
+            ),
+        )
+        .await?;
+
+        Ok(created)
+    }
+    .await;
+
+    match result {
+        Ok(created) => {
+            tx.commit()
+                .await
+                .map_err(|e| AppError::Database(map_db_error(e)))?;
+            Ok(created)
+        }
+        Err(e) => {
+            let _ = tx.rollback().await;
+            Err(e)
+        }
+    }
+}
+
+/// Les **règles « document »** d'une facture née d'un document (Story 30-2b ;
+/// extraites à la Story v017-4a, #849, AC-7) : construisent le
+/// `NewSupplierInvoice` depuis le corps et la ligne du document, dans cet ordre
+/// de refus — devise (`CURRENCY_NOT_SUPPORTED`, document avec QR seulement),
+/// routage IBAN et cohérence QRR (`IBAN_REFERENCE_MISMATCH`), la conversion
+/// commune (échelle des lignes, échéance, coordonnées : `QR_FIELDS_FROM_DOCUMENT`
+/// si le corps en porte), la forme des lignes, puis `AMOUNT_MISMATCH` si le TTC
+/// diffère du montant du QR.
+///
+/// **Deux appelants** : la complétion (le document lu sous verrou) et le `PUT`
+/// d'un brouillon **né de la complétion** de ce document (`link_origin =
+/// 'completion'`, C-v017-4-29). Un document joint après coup, ou lié avant la
+/// 0.17.0, n'impose rien au `PUT` (limite L7).
+pub(crate) fn new_from_document(
+    staging: &ImportedSupplierInvoice,
+    req: &CreateSupplierInvoiceRequest,
+    company_id: i64,
+) -> Result<kesh_db::entities::NewSupplierInvoice, AppError> {
+    {
         // (3) Devise — CHF UNIQUEMENT en v0.4 (F-OPUS-1, décision Guy 2026-06-30).
         //     Story 30-2a (C-30-2-19) : le contrôle ne vaut que pour un document
         //     AVEC QR ; sans QR, aucune devise n'est lue, la facture est en CHF
@@ -200,7 +278,7 @@ async fn complete_import_once(
 
         // (4) Source des coordonnées de paiement (Story 30-2b, AC11/AC12).
         //     - Document AVEC QR : routage IBAN (F9) + cohérence QRR ↔ QR-IBAN
-        //       (SIX SPC 2.2), valeurs lues sur la ligne VERROUILLÉE ; le corps
+        //       (SIX SPC 2.2), valeurs lues sur la ligne du document ; le corps
         //       ne doit en porter aucune (`QR_FIELDS_FROM_DOCUMENT`, refusé par
         //       la conversion commune).
         //     - Document SANS QR : elles viennent du corps, validées par la
@@ -258,16 +336,18 @@ async fn complete_import_once(
         //     l'égalité EXACTE Σ lignes TTC == staging.amount (pleine précision,
         //     PAS round2 — garantit total_amount == staging.amount ==
         //     expected_payment_amount par construction, F-OPUS-2). Σ TTC calculé
-        //     EXACTEMENT comme create_in_tx (TVA par ligne via line_vat_amount).
+        //     par la fonction pure unique du total d'une facture fournisseur
+        //     (`purchase_invoice_totals`, Story v017-4a, C-v017-4-27) — celle
+        //     du brouillon et de l'écriture d'achat.
         if let Some(qr_amount) = staging.amount {
-            let mut sum_ht = Decimal::ZERO;
-            let mut sum_vat = Decimal::ZERO;
             // Les `line_total` de la passe de forme : aucun second produit.
-            for (l, &line_total) in new.lines.iter().zip(&line_totals) {
-                sum_ht += line_total;
-                sum_vat += line_vat_amount(line_total, l.vat_rate);
-            }
-            let sum_ttc = sum_ht + sum_vat;
+            let pairs: Vec<(Decimal, Decimal)> = new
+                .lines
+                .iter()
+                .zip(&line_totals)
+                .map(|(l, &line_total)| (line_total, l.vat_rate))
+                .collect();
+            let (_, _, sum_ttc) = kesh_core::accounting::purchase_invoice_totals(&pairs);
             if sum_ttc != qr_amount {
                 return Err(AppError::ImportCompletionRejected {
                     error_code: "AMOUNT_MISMATCH",
@@ -281,53 +361,7 @@ async fn complete_import_once(
                 });
             }
         }
-
-        // (7) Création de la facture réelle dans la MÊME transaction (DC6).
-        let created = supplier_invoices::create_in_tx(&mut tx, new, user_id).await?;
-
-        // Lien staging → facture réelle + passage `completed`.
-        imported_supplier_invoices::mark_completed(
-            &mut tx,
-            company_id,
-            id,
-            created.invoice.id,
-        )
-        .await?;
-
-        // Story 25-1b (AC 3) — la transition de la PIÈCE laisse sa propre trace.
-        // La facture fournisseur créée juste au-dessus est déjà auditée
-        // (`supplier_invoice.created`, dans `create_in_tx`) ; sans celle-ci, le
-        // cycle de vie d'une pièce disait `created` → `discarded` quand elle est
-        // rejetée, et `created` → RIEN quand elle aboutit. C'était l'asymétrie.
-        audit_log::insert_in_tx(
-            &mut tx,
-            NewAuditLogEntry::from_current_user(
-                current_user,
-                "imported_supplier_invoice.completed",
-                "imported_supplier_invoice",
-                id,
-                Some(serde_json::json!({
-                    "supplier_invoice_id": created.invoice.id,
-                })),
-            ),
-        )
-        .await?;
-
-        Ok(created)
-    }
-    .await;
-
-    match result {
-        Ok(created) => {
-            tx.commit()
-                .await
-                .map_err(|e| AppError::Database(map_db_error(e)))?;
-            Ok(created)
-        }
-        Err(e) => {
-            let _ = tx.rollback().await;
-            Err(e)
-        }
+        Ok(new)
     }
 }
 

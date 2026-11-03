@@ -31,6 +31,8 @@ export function checkTitle(code: ClosingCheckCode): string {
 			return i18nMsg('fiscal-years-checks-k6-title', 'Écritures incohérentes');
 		case 'NEXT_FISCAL_YEAR':
 			return i18nMsg('fiscal-years-checks-k7-title', 'Exercice suivant');
+		case 'DRAFT_SUPPLIER_INVOICES':
+			return i18nMsg('fiscal-years-checks-k8-title', 'Factures fournisseur en brouillon');
 	}
 }
 
@@ -71,6 +73,11 @@ export function checkHelp(code: ClosingCheckCode): string {
 			return i18nMsg(
 				'fiscal-years-checks-k7-help',
 				'L’exercice qui suit, où se passent les écritures de l’année suivante.'
+			);
+		case 'DRAFT_SUPPLIER_INVOICES':
+			return i18nMsg(
+				'fiscal-years-checks-k8-help',
+				'Les factures fournisseur datées dans l’exercice et jamais validées : leur achat n’est pas en comptabilité.'
 			);
 	}
 }

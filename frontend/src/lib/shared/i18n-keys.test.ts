@@ -817,7 +817,24 @@ const ATTENDU = {
 	// la v017-1 n'en a pas) par la collecte de ce test, non additionné : **2619 → 2735**
 	// (+116 = +1 v017-2, +4 v017-3b, +16 v017-3a, +95 v016-2b, aucun site commun ; bornes
 	// `336608f2` et `4cd761ea` → arbre réuni).
-	sitesTotal: 2735,
+	// Story v017-4b (#849) : **2735 → 2790** (+55), recompté par `grep -o 'i18nMsg('` aux
+	// deux bornes (`1d9f81a5` → tête), périmètre : les fichiers touchés hors tests —
+	// `supplier-invoices/[id]/+page.svelte` 50 → 73, `[id]/edit/+page.svelte` 0 → 9 (neuf),
+	// `supplier-invoice-unvalidate.ts` 0 → 11 (neuf), `SupplierInvoiceForm.svelte` 44 → 47,
+	// `supplier-invoice-form.ts` 17 → 19, `supplier-invoice-helpers.ts` 3 → 4,
+	// `invoice-cancel.ts` 7 → 8, `supplier-invoices/+page.svelte` 11 → 12,
+	// `FiscalYearChecks.svelte` 26 → 28, `closing-checks-labels.ts` 20 → 22. Que des
+	// littéraux ; `sitesNonResolus` et `relais` inchangés.
+	// Story v017-4b, remédiation de la revue de code P1 (2026-11-03) : **2790 → 2794** (+4),
+	// recompté par `grep -o 'i18nMsg('` aux deux bornes (`9a229bd3` → tête) :
+	// `supplier-invoices/[id]/+page.svelte` 73 → 74 (le lot confirmé, E-2),
+	// `SupplierInvoiceForm.svelte` 47 → 48 (date vide sans document, E-6),
+	// `supplier-invoice-unvalidate.ts` 11 → 12 (l'exercice postérieur nommé, E-4),
+	// `FiscalYearChecks.svelte` 28 → 29 (« … et N autre(s) », E-10). Que des littéraux.
+	// Revue de code P2 (2026-11-03) : **2794 → 2796** (+2), `grep -o 'i18nMsg('` aux deux
+	// bornes (`f8b119e5` → tête) : `supplier-invoices/[id]/+page.svelte` 74 → 76 — le lot
+	// confirmé se dit en trois clés (fait daté, fait sans date, consigne ; B2-1, B2-3, B2-5).
+	sitesTotal: 2796,
 	sitesNonResolus: 31,
 	relais: 6,
 	// Story 26-1 (#620, AC3-bis) : **10 → 11** — `lib/features/bank-import/

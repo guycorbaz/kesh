@@ -2,7 +2,11 @@
 //!
 //! - `GET    /api/v1/supplier-invoices`          liste paginée (tout rôle)
 //! - `GET    /api/v1/supplier-invoices/{id}`     détail + lignes (tout rôle)
-//! - `POST   /api/v1/supplier-invoices`          enregistrer (Comptable+, RBAC routing)
+//! - `POST   /api/v1/supplier-invoices`          enregistrer un brouillon (Comptable+)
+//! - `PUT    /api/v1/supplier-invoices/{id}`     modifier un brouillon (Comptable+, v017-4a)
+//! - `DELETE /api/v1/supplier-invoices/{id}`     supprimer un brouillon (Admin, v017-4a)
+//! - `POST   /api/v1/supplier-invoices/{id}/validate`   valider (Comptable+, v017-4a)
+//! - `POST   /api/v1/supplier-invoices/{id}/unvalidate` dévalider (Comptable+, v017-4a)
 //! - `POST   /api/v1/supplier-invoices/{id}/pay` régler binaire (Comptable+)
 //! - `POST   /api/v1/supplier-invoices/{id}/cancel` annuler, même payée (Comptable+)
 //!
@@ -78,7 +82,9 @@ pub struct SupplierInvoiceResponse {
     pub payment_reference: Option<String>,
     pub expected_payment_amount: Option<Decimal>,
     pub project_id: Option<i64>,
-    pub purchase_journal_entry_id: i64,
+    /// L'écriture d'achat — **`null` pour un brouillon** (Story v017-4a, #849,
+    /// AC-4) ; le champ est toujours présent.
+    pub purchase_journal_entry_id: Option<i64>,
     pub settlement_type: Option<String>,
     pub settlement_bank_account_id: Option<i64>,
     pub settlement_account_id: Option<i64>,
@@ -132,22 +138,69 @@ pub struct SupplierInvoiceResponse {
 
 /// Ce que la fiche d'une facture fournisseur dit de son document (Story 30-2c,
 /// AC18) — jamais son chemin de stockage ni son empreinte.
+///
+/// Story v017-4a (#849, C-v017-4-30) — enrichi de ce que l'édition d'un
+/// brouillon doit savoir : l'identifiant du document, l'**origine** du lien
+/// (`completion`, `attachment`, ou `null` pour un lien antérieur à la 0.17.0) et
+/// les données du **QR** (`null` pour un document sans QR). Ajout de champs,
+/// sans retrait.
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SourceDocumentInfo {
+    pub imported_supplier_invoice_id: i64,
     pub original_filename: String,
     pub mime_type: String,
     pub byte_size: i64,
+    pub link_origin: Option<String>,
+    pub qr: Option<SourceDocumentQr>,
+}
+
+/// Les données du QR d'un document, telles que les lit le mode « document avec
+/// QR » du formulaire (Story v017-4a, AC-23) — jamais le chemin ni l'empreinte.
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SourceDocumentQr {
+    pub creditor_iban: Option<String>,
+    pub is_qr_iban: Option<bool>,
+    pub reference_type: Option<String>,
+    pub reference_value: Option<String>,
+    pub amount: Option<Decimal>,
+    pub currency: Option<String>,
+    pub creditor_name: Option<String>,
+    pub creditor_address_type: Option<String>,
+    pub creditor_line1: Option<String>,
+    pub creditor_line2: Option<String>,
+    pub creditor_postal_code: Option<String>,
+    pub creditor_town: Option<String>,
+    pub creditor_country: Option<String>,
 }
 
 impl From<kesh_db::entities::imported_supplier_invoice::ImportedSupplierInvoice>
     for SourceDocumentInfo
 {
     fn from(d: kesh_db::entities::imported_supplier_invoice::ImportedSupplierInvoice) -> Self {
+        let qr = d.has_qr().then(|| SourceDocumentQr {
+            creditor_iban: d.creditor_iban.clone(),
+            is_qr_iban: d.is_qr_iban,
+            reference_type: d.reference_type.clone(),
+            reference_value: d.reference_value.clone(),
+            amount: d.amount,
+            currency: d.currency.clone(),
+            creditor_name: d.creditor_name.clone(),
+            creditor_address_type: d.creditor_address_type.clone(),
+            creditor_line1: d.creditor_line1.clone(),
+            creditor_line2: d.creditor_line2.clone(),
+            creditor_postal_code: d.creditor_postal_code.clone(),
+            creditor_town: d.creditor_town.clone(),
+            creditor_country: d.creditor_country.clone(),
+        });
         Self {
+            imported_supplier_invoice_id: d.id,
             original_filename: d.original_filename,
             mime_type: d.mime_type,
             byte_size: d.byte_size,
+            link_origin: d.link_origin,
+            qr,
         }
     }
 }
@@ -163,7 +216,7 @@ pub struct LastConfirmedBatchResponse {
 impl SupplierInvoiceResponse {
     /// `pub` (Story 12-5c) : appelé par le module `imported_supplier_invoices`
     /// pour construire la réponse de complétion à partir du `SupplierInvoiceWithLines`
-    /// retourné par `create_in_tx` (DRY — pas de redéfinition cross-module).
+    /// retourné par `create_draft_in_tx` (DRY — pas de redéfinition cross-module).
     pub fn from_parts(inv: SupplierInvoice, lines: Vec<SupplierInvoiceLine>) -> Self {
         Self {
             id: inv.id,
@@ -491,6 +544,17 @@ impl CreateSupplierInvoiceRequest {
                 return Err(line_scale_error(index, "le prix unitaire"));
             }
         }
+        // Story v017-4a (#853, AC-14) — l'échéance ne précède pas la date de la
+        // facture : APRÈS l'échelle des lignes, AVANT les coordonnées de
+        // paiement. Une échéance égale ou absente passe.
+        if let Some(due_date) = self.due_date
+            && due_date < self.invoice_date
+        {
+            return Err(AppError::SupplierInvoiceDueBeforeInvoiceDate {
+                invoice_date: self.invoice_date,
+                due_date,
+            });
+        }
         let (payment, expected_payment_amount) = match source {
             PaymentSource::Body => (
                 validate_payment_details(
@@ -576,6 +640,27 @@ impl PaySupplierInvoiceRequest {
 pub struct ListSupplierInvoicesQuery {
     pub limit: Option<i64>,
     pub offset: Option<i64>,
+    /// Story v017-4a (AC-15) — une ou plusieurs valeurs parmi `draft`, `open`,
+    /// `paid`, `cancelled`, séparées par des virgules ; absent = tous.
+    pub status: Option<String>,
+}
+
+/// Corps de `PUT /api/v1/supplier-invoices/{id}` (Story v017-4a, AC-8) : celui
+/// de la création, plus la `version` lue.
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UpdateSupplierInvoiceRequest {
+    #[serde(flatten)]
+    pub invoice: CreateSupplierInvoiceRequest,
+    pub version: i32,
+}
+
+/// Corps de `validate` et `unvalidate` (Story v017-4a, AC-10, AC-11) : le
+/// verrou optimiste, convention du dépôt.
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SupplierInvoiceVersionRequest {
+    pub version: i32,
 }
 
 // ---------------------------------------------------------------------------
@@ -596,6 +681,7 @@ pub async fn list_supplier_invoices(
         DemandeListeFacturesFournisseur {
             limit: params.limit,
             offset: params.offset,
+            statuts: factures_fournisseur::statuts_du_filtre(params.status.as_deref())?,
         },
     )
     .await?;
@@ -625,11 +711,16 @@ pub async fn get_supplier_invoice(
     Ok(Json(SupplierInvoiceResponse::from_view(vue)))
 }
 
-/// `POST /api/v1/supplier-invoices` — enregistre une facture fournisseur (Comptable+).
+/// `POST /api/v1/supplier-invoices` — enregistre un **brouillon** de facture
+/// fournisseur (Comptable+), **sans écriture** (Story v017-4a, #849, AC-6 —
+/// changement de contrat : jusqu'à la 0.17.0-rc1, la création passait
+/// l'écriture d'achat). La facture se valide ensuite (`…/validate`).
 ///
-/// ⚠️ **Rejouée sur interblocage** (Story 15-5e1, choix C66) par l'enveloppe
-/// `DbError` [`kesh_db::retry::retry_on_deadlock`] ; le `NewSupplierInvoice` est
-/// cloné à chaque tentative.
+/// ⚠️ **Rejouée sur interblocage** (Story 15-5e1, choix C66 ; gardée par
+/// C-v017-4-37 : les verrous partagés des clés étrangères de l'insertion ne
+/// sont pas compatibles avec tout) par l'enveloppe `DbError`
+/// [`kesh_db::retry::retry_on_deadlock`] ; le `NewSupplierInvoice` est cloné à
+/// chaque tentative.
 pub async fn create_supplier_invoice(
     State(state): State<AppState>,
     Extension(current_user): Extension<CurrentUser>,
@@ -639,7 +730,7 @@ pub async fn create_supplier_invoice(
     // Story 30-2b (AC12-bis, AC13) : conversion commune, coordonnées validées.
     let new = req.to_new_supplier_invoice(company.id, PaymentSource::Body)?;
     let created = kesh_db::retry::retry_on_deadlock("supplier_invoices::create", || {
-        supplier_invoices::create(&state.pool, new.clone(), current_user.user_id)
+        supplier_invoices::create_draft(&state.pool, new.clone(), current_user.user_id)
     })
     .await?;
     Ok((
@@ -648,6 +739,178 @@ pub async fn create_supplier_invoice(
             created.invoice,
             created.lines,
         )),
+    ))
+}
+
+/// `PUT /api/v1/supplier-invoices/{id}` — **remplace** un brouillon (Comptable+,
+/// clés `read-write` ; Story v017-4a, #849, AC-8 ; C-v017-4-5, C-v017-4-29).
+///
+/// Corps : celui de la création, plus `version`. Si la facture est **née de la
+/// complétion** de son document (`link_origin = 'completion'`), les règles
+/// « document » de la complétion s'appliquent
+/// ([`super::imported_supplier_invoices::new_from_document`]) : coordonnées du
+/// corps refusées (`QR_FIELDS_FROM_DOCUMENT`), coordonnées gardées du QR,
+/// devise, `AMOUNT_MISMATCH`. Un document joint après coup, ou lié avant la
+/// 0.17.0, n'impose rien : le `PUT` se juge comme une saisie.
+///
+/// Refus : facture absente → `404` ; pas un brouillon → `409
+/// ILLEGAL_STATE_TRANSITION` ; version périmée → `409 OPTIMISTIC_LOCK_CONFLICT`
+/// ; puis ceux de la création. Réponse : la facture relue.
+///
+/// ⚠️ **Rejouée sur interblocage** par l'enveloppe `AppError`
+/// [`crate::retry::retry_app_on_deadlock`] (C-v017-4-37, P4) : la transaction
+/// vit dans [`update_supplier_invoice_once`], parce que les règles « document »
+/// rendent des `AppError`.
+pub async fn update_supplier_invoice(
+    State(state): State<AppState>,
+    Extension(current_user): Extension<CurrentUser>,
+    Path(id): Path<i64>,
+    Json(req): Json<UpdateSupplierInvoiceRequest>,
+) -> Result<Json<SupplierInvoiceResponse>, AppError> {
+    let company = get_company_for(&current_user, &state.pool).await?;
+    crate::retry::retry_app_on_deadlock("supplier_invoices::update", || {
+        update_supplier_invoice_once(&state.pool, current_user.user_id, company.id, id, &req)
+    })
+    .await?;
+    Ok(Json(
+        SupplierInvoiceResponse::load_with_settlement_cancellation(&state.pool, company.id, id)
+            .await?,
+    ))
+}
+
+/// Une tentative du `PUT` : la facture verrouillée (brouillon, version), le
+/// document joint lu par une **lecture ordinaire** (ses données de QR et son
+/// origine ne changent qu'avec un détachement, bénin), la conversion selon
+/// l'origine, puis le remplacement.
+async fn update_supplier_invoice_once(
+    pool: &sqlx::MySqlPool,
+    user_id: i64,
+    company_id: i64,
+    id: i64,
+    req: &UpdateSupplierInvoiceRequest,
+) -> Result<(), AppError> {
+    use kesh_db::errors::map_db_error;
+    use kesh_db::repositories::imported_supplier_invoices;
+
+    let mut tx = pool
+        .begin()
+        .await
+        .map_err(|e| AppError::Database(map_db_error(e)))?;
+    let result = async {
+        supplier_invoices::lock_draft_in_tx(&mut tx, company_id, id, req.version).await?;
+        let document = imported_supplier_invoices::find_by_supplier_invoice_id_scoped(
+            &mut *tx, company_id, id,
+        )
+        .await?;
+        let new = match document {
+            Some(doc) if doc.born_from_completion() => {
+                super::imported_supplier_invoices::new_from_document(
+                    &doc,
+                    &req.invoice,
+                    company_id,
+                )?
+            }
+            _ => req
+                .invoice
+                .to_new_supplier_invoice(company_id, PaymentSource::Body)?,
+        };
+        supplier_invoices::update_draft_in_tx(&mut tx, company_id, id, req.version, new, user_id)
+            .await?;
+        Ok::<(), AppError>(())
+    }
+    .await;
+    match result {
+        Ok(()) => tx
+            .commit()
+            .await
+            .map_err(|e| AppError::Database(map_db_error(e))),
+        Err(e) => {
+            let _ = tx.rollback().await;
+            Err(e)
+        }
+    }
+}
+
+/// `DELETE /api/v1/supplier-invoices/{id}` — supprime un **brouillon**
+/// (**Administrateur**, fermé aux clés ; Story v017-4a, #849, AC-9 ;
+/// C-v017-4-6). Son document joint, s'il en a un, est rendu « à traiter ».
+/// Refus : validée → `409 SUPPLIER_INVOICE_MUST_BE_UNVALIDATED_FIRST` ; payée,
+/// annulée → `409 ILLEGAL_STATE_TRANSITION` ; historique de lot → `409
+/// SUPPLIER_INVOICE_HAS_PAYMENT_BATCH_HISTORY`. `204` sinon.
+///
+/// ⚠️ **Rejouée sur interblocage** (C-v017-4-37) : l'ordre « facture puis
+/// document » évite le cycle avec le rattachement ; l'enveloppe couvre le reste.
+pub async fn delete_supplier_invoice(
+    State(state): State<AppState>,
+    Extension(current_user): Extension<CurrentUser>,
+    Path(id): Path<i64>,
+) -> Result<StatusCode, AppError> {
+    let company = get_company_for(&current_user, &state.pool).await?;
+    kesh_db::retry::retry_on_deadlock("supplier_invoices::delete", || {
+        supplier_invoices::delete_draft(&state.pool, company.id, id, current_user.user_id)
+    })
+    .await?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+/// `POST /api/v1/supplier-invoices/{id}/validate` `{version}` — valide un
+/// brouillon : l'écriture d'achat est passée (Comptable+, clés `read-write` ;
+/// Story v017-4a, #849, AC-10). Réponse : la facture relue, `status: "open"`.
+///
+/// ⚠️ **Rejouée sur interblocage** par l'enveloppe `DbError`
+/// [`kesh_db::retry::retry_on_deadlock`] (cycle connu avec la confirmation d'un
+/// lot et l'acceptation d'un lot de rapprochement).
+pub async fn validate_supplier_invoice(
+    State(state): State<AppState>,
+    Extension(current_user): Extension<CurrentUser>,
+    Path(id): Path<i64>,
+    Json(req): Json<SupplierInvoiceVersionRequest>,
+) -> Result<Json<SupplierInvoiceResponse>, AppError> {
+    let company = get_company_for(&current_user, &state.pool).await?;
+    kesh_db::retry::retry_on_deadlock("supplier_invoices::validate", || {
+        supplier_invoices::validate(
+            &state.pool,
+            company.id,
+            id,
+            req.version,
+            current_user.user_id,
+        )
+    })
+    .await?;
+    Ok(Json(
+        SupplierInvoiceResponse::load_with_settlement_cancellation(&state.pool, company.id, id)
+            .await?,
+    ))
+}
+
+/// `POST /api/v1/supplier-invoices/{id}/unvalidate` `{version}` — dévalide une
+/// facture validée : son écriture d'achat est **supprimée**, elle redevient
+/// brouillon (Comptable+, clés `read-write` ; Story v017-4a, #849, AC-11 ; la
+/// règle de la facture client). Précédence des refus : doc-comment de
+/// `supplier_invoices::unvalidate_in_tx`. Réponse : la facture relue.
+///
+/// ⚠️ **Rejouée sur interblocage** par l'enveloppe `DbError`
+/// [`kesh_db::retry::retry_on_deadlock`].
+pub async fn unvalidate_supplier_invoice(
+    State(state): State<AppState>,
+    Extension(current_user): Extension<CurrentUser>,
+    Path(id): Path<i64>,
+    Json(req): Json<SupplierInvoiceVersionRequest>,
+) -> Result<Json<SupplierInvoiceResponse>, AppError> {
+    let company = get_company_for(&current_user, &state.pool).await?;
+    kesh_db::retry::retry_on_deadlock("supplier_invoices::unvalidate", || {
+        supplier_invoices::unvalidate(
+            &state.pool,
+            company.id,
+            id,
+            req.version,
+            current_user.user_id,
+        )
+    })
+    .await?;
+    Ok(Json(
+        SupplierInvoiceResponse::load_with_settlement_cancellation(&state.pool, company.id, id)
+            .await?,
     ))
 }
 

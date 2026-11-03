@@ -280,11 +280,42 @@ const REGISTRE: &[(&str, &str, Statut)] = &[
         ),
     ),
     // --- kesh-db : factures fournisseurs --------------------------------
+    // Story v017-4a (#849) — `create_in_tx` est devenu `validate_in_tx` ; le
+    // brouillon a ses écrivains, dont aucun ne nomme un compte bancaire.
     (
         "kesh-db/src/repositories/supplier_invoices.rs",
-        "create_in_tx",
+        "create_draft_in_tx",
         Statut::SansCompteBancaire(
-            "la facture naît ouverte ; l'INSERT ne nomme aucun settlement_*",
+            "la facture naît brouillon ; l'INSERT ne nomme aucun settlement_*",
+        ),
+    ),
+    (
+        "kesh-db/src/repositories/supplier_invoices.rs",
+        "validate_in_tx",
+        Statut::SansCompteBancaire(
+            "brouillon seulement (statut gardé) : l'UPDATE ne nomme aucun settlement_*",
+        ),
+    ),
+    (
+        "kesh-db/src/repositories/supplier_invoices.rs",
+        "update_draft_in_tx",
+        Statut::SansCompteBancaire(
+            "brouillon seulement (statut gardé) ; l'UPDATE ne nomme aucun settlement_*",
+        ),
+    ),
+    (
+        "kesh-db/src/repositories/supplier_invoices.rs",
+        "delete_draft_in_tx",
+        Statut::SansCompteBancaire(
+            "brouillon seulement : la contrainte chk_supplier_invoices_draft_without_settlement \
+             lui interdit tout settlement_*",
+        ),
+    ),
+    (
+        "kesh-db/src/repositories/supplier_invoices.rs",
+        "unvalidate_in_tx",
+        Statut::SansCompteBancaire(
+            "facture validée non payée (statut gardé) : aucun settlement_* ; l'UPDATE n'en nomme aucun",
         ),
     ),
     (
@@ -525,8 +556,11 @@ fn every_bank_account_writer_is_classified() {
     // `reconciliation_link::link_in_tx`, Story 29-8, plus l'`UPDATE` de
     // `accept_one_supplier_invoice`, Story 30-1b, plus l'`UPDATE` de
     // `reconciliation_link::link_entry_in_tx`, Story v017-3a). Un détecteur qui
-    // cesserait de voir rendrait un registre « vert » vide.
-    assert_eq!(sites.len(), 34, "sites vus :\n{}", detail.join("\n"));
+    // cesserait de voir rendrait un registre « vert » vide. Story v017-4a
+    // (#849) : 34 → 38 — `create_in_tx` devient `validate_in_tx`, et le
+    // brouillon ajoute quatre écrivains (création, modification, suppression,
+    // dévalidation), aucun ne nommant un compte bancaire.
+    assert_eq!(sites.len(), 38, "sites vus :\n{}", detail.join("\n"));
 }
 
 /// Second inventaire (AC8, C-28-4-22) — chaque appelant du créateur de

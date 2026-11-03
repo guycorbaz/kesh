@@ -1196,6 +1196,16 @@ pub enum AppError {
     #[error("Coordonnées de paiement fournies pour un document à QR-code")]
     QrFieldsFromDocument,
 
+    /// Story v017-4a (#853, AC-14) — l'échéance d'une facture fournisseur
+    /// précède sa date → `400 SUPPLIER_INVOICE_DUE_BEFORE_INVOICE_DATE`,
+    /// `details { invoiceDate, dueDate }` (`AAAA-MM-JJ`). Création, complétion
+    /// et `PUT` ; une facture existante ainsi datée reste lisible et payable.
+    #[error("Échéance antérieure à la date de la facture")]
+    SupplierInvoiceDueBeforeInvoiceDate {
+        invoice_date: chrono::NaiveDate,
+        due_date: chrono::NaiveDate,
+    },
+
     /// Contrôle de forme refusé sur `POST /api/v1/opening-balances/complete`
     /// (Story 25-7, #445) → **400** avec un code `OPENING_COMPLEMENT_*` par
     /// cause (aucune ligne, trop de lignes, montant, compte en double).
@@ -3288,6 +3298,33 @@ impl IntoResponse for AppError {
                 ),
             ),
 
+            AppError::SupplierInvoiceDueBeforeInvoiceDate {
+                invoice_date,
+                due_date,
+            } => {
+                let mut args = FluentArgs::new();
+                args.set("dueDate", due_date.to_string());
+                args.set("invoiceDate", invoice_date.to_string());
+                let fallback = format!(
+                    "L'échéance ({due_date}) précède la date de la facture ({invoice_date})."
+                );
+                let body = serde_json::json!({
+                    "error": {
+                        "code": "SUPPLIER_INVOICE_DUE_BEFORE_INVOICE_DATE",
+                        "message": t_args(
+                            "error-supplier-invoice-due-before-invoice-date",
+                            &fallback,
+                            &args,
+                        ),
+                        "details": {
+                            "invoiceDate": invoice_date.to_string(),
+                            "dueDate": due_date.to_string(),
+                        },
+                    }
+                });
+                (StatusCode::BAD_REQUEST, Json(body)).into_response()
+            }
+
             AppError::OpeningComplementInvalid {
                 error_code,
                 message,
@@ -4017,8 +4054,10 @@ impl IntoResponse for AppError {
                             reconciliation_cancel_blocked_text(blocker)
                         }
                         // Motifs propres à l'annulation d'une FACTURE
-                        // fournisseur (25-3-c) : jamais produits ici.
-                        SettlementCancelBlocker::SupplierInvoiceCancelled
+                        // fournisseur (25-3-c ; brouillon, v017-4a) : jamais
+                        // produits ici.
+                        SettlementCancelBlocker::SupplierInvoiceDraft
+                        | SettlementCancelBlocker::SupplierInvoiceCancelled
                         | SettlementCancelBlocker::SupplierInvoiceInPaymentBatch => {
                             supplier_invoice_cancel_blocked_text(blocker)
                         }
@@ -4066,6 +4105,58 @@ impl IntoResponse for AppError {
                         "Cette facture est validée : dévalidez-la d'abord, puis supprimez le brouillon.",
                     ),
                 ),
+                // Story v017-4a (#849, AC-9) — `DELETE` d'une facture
+                // fournisseur validée : jumeau du client, le message oriente.
+                DbError::SupplierInvoiceMustBeUnvalidatedFirst => build_response(
+                    StatusCode::CONFLICT,
+                    "SUPPLIER_INVOICE_MUST_BE_UNVALIDATED_FIRST",
+                    &t(
+                        "error-supplier-invoice-must-be-unvalidated-first",
+                        "Cette facture fournisseur est validée : dévalidez-la d'abord, puis supprimez le brouillon.",
+                    ),
+                ),
+                // Story v017-4a (AC-9, limite L8) — un brouillon qui garde
+                // l'historique d'un lot ne se supprime pas ; jamais une erreur
+                // de clé étrangère.
+                DbError::SupplierInvoiceHasPaymentBatchHistory { payment_batch_id } => {
+                    let body = serde_json::json!({
+                        "error": {
+                            "code": "SUPPLIER_INVOICE_HAS_PAYMENT_BATCH_HISTORY",
+                            "message": t(
+                                "error-supplier-invoice-has-payment-batch-history",
+                                "Ce brouillon figure dans un lot de paiement, dont l'historique se garde : il ne se supprime pas. Corrigez-le et validez-le ; s'il n'est pas dû, validez-le puis annulez-le.",
+                            ),
+                            "details": { "paymentBatchId": payment_batch_id },
+                        }
+                    });
+                    (StatusCode::CONFLICT, Json(body)).into_response()
+                }
+                // Story v017-4a (AC-11) — la dévalidation d'une facture
+                // fournisseur refusée par un empêchement propre à la pièce. Même
+                // forme que celle de la facture client, `details` compris.
+                DbError::SupplierInvoiceNotUnvalidatable {
+                    blocker,
+                    document_id,
+                    document_label,
+                } => {
+                    let (fallback_key, fallback) = supplier_unvalidation_blocked_text(blocker);
+                    let base = t(fallback_key, fallback);
+                    let message = match document_label.as_deref() {
+                        Some(etiquette) => format!("{base} ({etiquette})"),
+                        None => base,
+                    };
+                    let body = serde_json::json!({
+                        "error": {
+                            "code": blocker.code(),
+                            "message": message,
+                            "details": {
+                                "documentId": document_id,
+                                "documentNumber": document_label,
+                            },
+                        }
+                    });
+                    (StatusCode::CONFLICT, Json(body)).into_response()
+                }
                 // ⚠️ **400** qui NOMME les comptes : raisons au doc-comment de
                 // `archived_accounts_response`.
                 DbError::ReversalAccountsArchived(archived) => archived_accounts_response(
@@ -4555,7 +4646,8 @@ fn reconciliation_cancel_blocked_text(
         ),
         // Motifs propres à l'annulation d'une facture fournisseur : jamais
         // produits par un dé-rapprochement ; le `match` reste exhaustif.
-        SettlementCancelBlocker::SupplierInvoiceCancelled
+        SettlementCancelBlocker::SupplierInvoiceDraft
+        | SettlementCancelBlocker::SupplierInvoiceCancelled
         | SettlementCancelBlocker::SupplierInvoiceInPaymentBatch => {
             supplier_invoice_cancel_blocked_text(blocker)
         }
@@ -4570,6 +4662,13 @@ fn supplier_invoice_cancel_blocked_text(
     blocker: SettlementCancelBlocker,
 ) -> (&'static str, &'static str) {
     match blocker {
+        // Story v017-4a (#849, AC-13 ; C-v017-4-42) — même clé que l'écran : un
+        // seul texte par motif ; il ne prescrit aucune suppression (un Comptable
+        // ou une clé `read-write` ne peut pas supprimer).
+        SettlementCancelBlocker::SupplierInvoiceDraft => (
+            "supplier-invoices-cancel-blocked-draft",
+            "Cette facture est un brouillon : elle ne s'annule pas, car rien n'a été passé au journal.",
+        ),
         SettlementCancelBlocker::SupplierInvoiceCancelled => (
             "supplier-invoices-cancel-blocked-cancelled",
             "Cette facture fournisseur est déjà annulée.",
@@ -4606,6 +4705,29 @@ fn supplier_invoice_cancel_blocked_text(
         | SettlementCancelBlocker::SupplierInvoiceNotPaid => {
             reconciliation_cancel_blocked_text(blocker)
         }
+    }
+}
+
+/// Clé FTL et repli fr-CH d'un motif qui refuse la **dévalidation d'une
+/// facture fournisseur** (Story v017-4a, #849, AC-11). Les replis disent mot
+/// pour mot le FTL fr-CH ; aucun ne nomme l'état validé « ouverte » (règle Q4).
+fn supplier_unvalidation_blocked_text(
+    blocker: kesh_db::errors::SupplierUnvalidationBlocker,
+) -> (&'static str, &'static str) {
+    use kesh_db::errors::SupplierUnvalidationBlocker as B;
+    match blocker {
+        B::Paid => (
+            "error-supplier-invoice-unvalidate-blocked-paid",
+            "Cette facture fournisseur est payée : annulez d'abord son règlement.",
+        ),
+        B::InPaymentBatch => (
+            "error-supplier-invoice-unvalidate-blocked-in-payment-batch",
+            "Cette facture figure dans un lot de paiement en cours : annulez d'abord le lot.",
+        ),
+        B::MatchedBankTransaction => (
+            "error-supplier-invoice-unvalidate-blocked-matched",
+            "L'écriture d'achat de cette facture est rapprochée d'une transaction bancaire : annulez d'abord le rapprochement.",
+        ),
     }
 }
 

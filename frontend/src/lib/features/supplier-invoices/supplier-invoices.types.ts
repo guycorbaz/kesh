@@ -6,7 +6,12 @@
 import type { SupplierSettlementCancelCode } from './settlement-cancel';
 import type { SupplierInvoiceCancelCode } from './invoice-cancel';
 
-export type SupplierInvoiceStatus = 'open' | 'paid' | 'cancelled';
+/**
+ * Statut d'une facture fournisseur. Story v017-4b (#849, AC-21) : `draft` — un
+ * brouillon, sans écriture ; `open` est la valeur **stockée** de l'état « validée,
+ * à payer », qui s'affiche « Validée » (décision Q4, C-v017-4-24).
+ */
+export type SupplierInvoiceStatus = 'draft' | 'open' | 'paid' | 'cancelled';
 export type SettlementType = 'bank_transfer' | 'internal_account';
 
 export interface SupplierInvoiceLineResponse {
@@ -33,7 +38,8 @@ export interface SupplierInvoiceResponse {
 	expectedPaymentAmount: string | null;
 	/** Projet analytique affecté (Epic 19, Story 19-3), ou `null`. */
 	projectId: number | null;
-	purchaseJournalEntryId: number;
+	/** L'écriture d'achat ; `null` pour un brouillon (Story v017-4a, AC-4). */
+	purchaseJournalEntryId: number | null;
 	settlementType: SettlementType | null;
 	settlementBankAccountId: number | null;
 	settlementAccountId: number | null;
@@ -84,9 +90,40 @@ export interface SupplierInvoiceResponse {
 
 /** Le document d'une facture fournisseur (Story 30-2c, AC18). */
 export interface SupplierInvoiceSourceDocument {
+	/** Story v017-4a (contrat, F5) : l'identifiant du document importé. */
+	importedSupplierInvoiceId: number;
 	originalFilename: string;
 	mimeType: string;
 	byteSize: number;
+	/**
+	 * D'où vient le lien (Story v017-4a, C-v017-4-29) : `completion` — la facture est
+	 * née de la complétion du document ; `attachment` — document joint après coup ;
+	 * `null` — lien antérieur à la 0.17.0.
+	 */
+	linkOrigin: 'completion' | 'attachment' | null;
+	/** Les données du QR du document, ou `null` pour un document sans QR. */
+	qr: SupplierInvoiceSourceQr | null;
+}
+
+/**
+ * Les données du QR d'un document, telles que le serveur les expose dans
+ * `sourceDocument.qr` (Story v017-4a) — jamais le chemin de stockage ni l'empreinte.
+ * Montant en `string` (parité `serde-str`).
+ */
+export interface SupplierInvoiceSourceQr {
+	creditorIban: string | null;
+	isQrIban: boolean | null;
+	referenceType: string | null;
+	referenceValue: string | null;
+	amount: string | null;
+	currency: string | null;
+	creditorName: string | null;
+	creditorAddressType: string | null;
+	creditorLine1: string | null;
+	creditorLine2: string | null;
+	creditorPostalCode: string | null;
+	creditorTown: string | null;
+	creditorCountry: string | null;
 }
 
 export interface CancelSupplierSettlementResponse {
@@ -128,6 +165,14 @@ export interface CreateSupplierInvoiceRequest {
 }
 
 /**
+ * Story v017-4b (#849, AC-23) — le corps du `PUT` d'un brouillon : celui de la
+ * création, plus la `version` lue (verrou optimiste).
+ */
+export interface UpdateSupplierInvoiceRequest extends CreateSupplierInvoiceRequest {
+	version: number;
+}
+
+/**
  * Coordonnées extraites d'une QR-facture (Story 12.4) — pré-remplissage seul.
  * Exactement l'un de `creditorIban` / `creditorQrIban` est renseigné.
  * Montant en `string` (parité `serde-str` backend / big.js frontend).
@@ -154,6 +199,11 @@ export interface PaySupplierInvoiceRequest {
 export interface ListSupplierInvoicesQuery {
 	limit?: number;
 	offset?: number;
+	/**
+	 * Story v017-4b (AC-15, AC-21, AC-27) — filtre serveur sur un ou plusieurs statuts
+	 * (`?status=draft,open,paid`) ; absent ou vide : tous.
+	 */
+	status?: SupplierInvoiceStatus[];
 }
 
 export interface ListResponse<T> {

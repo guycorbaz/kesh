@@ -171,7 +171,7 @@ async fn open_invoice_of(
     supplier: i64,
     number: &str,
 ) -> i64 {
-    supplier_invoices::create(
+    supplier_invoices::create_validated(
         pool,
         NewSupplierInvoice {
             company_id: seeded.company_id,
@@ -738,7 +738,9 @@ async fn cancel_blocked_by_closed_lettering(pool: MySqlPool) {
         &pool,
         seeded.accounts["2000"],
         &[
-            paid.invoice.purchase_journal_entry_id,
+            paid.invoice
+                .purchase_journal_entry_id
+                .expect("écriture d'achat"),
             paid.invoice
                 .settlement_journal_entry_id
                 .expect("écriture de paiement"),
@@ -1173,7 +1175,18 @@ async fn the_manual_s_nominal_path_replaces_it_by_an_invoice_in_centimes(pool: M
     )
     .await;
     assert_eq!(resp.status(), 201);
-    let nouvelle = resp.json::<Value>().await.unwrap()["id"].as_i64().unwrap();
+    let brouillon = resp.json::<Value>().await.unwrap();
+    let nouvelle = brouillon["id"].as_i64().unwrap();
+    // Story v017-4a (#849) : la saisie crée un brouillon ; la voie nominale du
+    // manuel le valide avant de le payer.
+    let resp = post(
+        &app,
+        &token,
+        &format!("/api/v1/supplier-invoices/{nouvelle}/validate"),
+        json!({ "version": brouillon["version"] }),
+    )
+    .await;
+    assert_eq!(resp.status(), 200);
     let resp = post(
         &app,
         &token,

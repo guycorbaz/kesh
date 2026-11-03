@@ -306,6 +306,14 @@ pub fn build_router_avec_registre(
             "/api/v1/invoices/{id}",
             delete(routes::invoices::delete_invoice),
         )
+        // Story v017-4a (#849, AC-9) : le DELETE d'un BROUILLON de facture
+        // fournisseur, Admin uniquement et fermé aux clés, comme celui de la
+        // facture client. Même path que le GET (lectures) et le PUT
+        // (comptable_routes) : méthodes disjointes, fusionnées au merge.
+        .route(
+            "/api/v1/supplier-invoices/{id}",
+            delete(routes::supplier_invoices::delete_supplier_invoice),
+        )
         // Story 21-5a : annulation (soft) d'un rappel envoyé par erreur — Admin.
         .route(
             "/api/v1/invoices/{id}/reminders/{reminderId}/cancel",
@@ -617,6 +625,20 @@ pub fn build_router_avec_registre(
         .route(
             "/api/v1/supplier-invoices",
             post(routes::supplier_invoices::create_supplier_invoice),
+        )
+        // Story v017-4a (#849) : modifier un brouillon (PUT), le valider, le
+        // dévalider — Comptable+, clés `read-write` admises.
+        .route(
+            "/api/v1/supplier-invoices/{id}",
+            put(routes::supplier_invoices::update_supplier_invoice),
+        )
+        .route(
+            "/api/v1/supplier-invoices/{id}/validate",
+            post(routes::supplier_invoices::validate_supplier_invoice),
+        )
+        .route(
+            "/api/v1/supplier-invoices/{id}/unvalidate",
+            post(routes::supplier_invoices::unvalidate_supplier_invoice),
         )
         .route(
             "/api/v1/supplier-invoices/{id}/pay",

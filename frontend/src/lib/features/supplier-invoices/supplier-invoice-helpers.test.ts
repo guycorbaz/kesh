@@ -1,4 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 
 const getMock = vi.fn();
 vi.mock('$lib/shared/utils/api-client', () => ({ apiClient: { get: (u: string) => getMock(u) } }));
@@ -32,10 +34,25 @@ describe('supplierInvoiceStatusLabel', () => {
 	// navigateur le dictionnaire est vide et `i18nMsg` rend son 2e argument. Elles
 	// verrouillaient le français avant la passe 4 de la story 23-3, où les valeurs
 	// n'appelaient pas encore `i18nMsg` — un test vert sur un défaut visible à l'écran.
-	it('mappe les statuts sur leur repli français', () => {
-		expect(supplierInvoiceStatusLabel('open')).toBe('Ouverte');
+	// Story v017-4b (#849, AC-21) — l'état stocké `open` s'affiche « Validée » (décision
+	// Q4, C-v017-4-24), le brouillon « Brouillon ». Mutation M31 : repli redevenu
+	// « Ouverte ».
+	it('mappe les statuts sur leur repli français (M31)', () => {
+		expect(supplierInvoiceStatusLabel('draft')).toBe('Brouillon');
+		expect(supplierInvoiceStatusLabel('open')).toBe('Validée');
 		expect(supplierInvoiceStatusLabel('paid')).toBe('Payée');
 		expect(supplierInvoiceStatusLabel('cancelled')).toBe('Annulée');
+	});
+
+	it('chaque repli égale le catalogue fr-CH, mot pour mot', () => {
+		const ftl = readFileSync(
+			join('../crates/kesh-i18n/locales', 'fr-CH', 'messages.ftl'),
+			'utf-8',
+		).split('\n');
+		const fr = (cle: string) =>
+			ftl.find((l) => l.startsWith(`${cle} = `))?.slice(`${cle} = `.length);
+		expect(supplierInvoiceStatusLabel('draft')).toBe(fr('supplier-invoices-status-draft'));
+		expect(supplierInvoiceStatusLabel('open')).toBe(fr('supplier-invoices-status-open'));
 	});
 
 	// Borne anti-régression : le défaut d'origine était l'ABSENCE d'appel i18n. Une
@@ -45,13 +62,15 @@ describe('supplierInvoiceStatusLabel', () => {
 		getMock.mockResolvedValue({
 			locale: 'de-CH',
 			messages: {
-				'supplier-invoices-status-open': 'Offen',
+				'supplier-invoices-status-draft': 'Entwurf',
+				'supplier-invoices-status-open': 'Validiert',
 				'supplier-invoices-status-paid': 'Bezahlt',
 				'supplier-invoices-status-cancelled': 'Storniert',
 			},
 		});
 		await loadI18nMessages();
-		expect(supplierInvoiceStatusLabel('open')).toBe('Offen');
+		expect(supplierInvoiceStatusLabel('draft')).toBe('Entwurf');
+		expect(supplierInvoiceStatusLabel('open')).toBe('Validiert');
 		expect(supplierInvoiceStatusLabel('paid')).toBe('Bezahlt');
 		expect(supplierInvoiceStatusLabel('cancelled')).toBe('Storniert');
 	});
