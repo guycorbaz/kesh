@@ -1,6 +1,6 @@
 # Story v017-4b : factures fournisseur — brouillon, validée, payée — l'écran
 
-Status: review
+Status: done
 
 *Sous-fiche issue du découpage de la Story v017-4 à sa rédaction (2026-10-31, C-v017-4-1). Même worktree et même
 branche que la `v017-4a` ; **dépend de la 4a** (routes, codes, K8) : développement après le commit de son code.
@@ -417,3 +417,12 @@ les fiches et prompts historiques, et des phrases d'autres stories qui décriven
   E2-4, E2-6, E2-7 (issues) ; 10 mutations tuées ; gate 4638/4638, Vitest 2396, E2E 335 / 8 (KF-029, plus
   `vat-rates.spec.ts:55` vert rejoué seul). Prochaine : passe P3 **ciblée** (`v017-4b-review-prompt-p3.md`, Opus,
   lentille R).
+- 2026-11-03 — Revue de code P3 **ciblée** (Opus, lentille R, braquée sur `fa71e7bc` et `48b39fbd`) : 0 CRITICAL,
+  0 HIGH, 0 MEDIUM, 4 LOW (R3-1 à R3-4, rapport `kesh-gate-logs/v0174b-review-p3-R.md`). **Boucle close en trois
+  passes**, la dernière sans finding au-dessus de LOW ; trend : P1 Opus (B 0/0/1/8, E 0/0/2/8, A 0/0/2/7 — 0/0/5/23)
+  → P2 Sonnet (B 0/0/2/5, E 0/0/0/7, A 0/0/2/4 — 0/0/4/16) → P3 Opus ciblée 0/0/0/4. Modèles : Opus, Sonnet, Opus
+  (rotation des passes complètes Sonnet ↔ Opus, passe ciblée de fin de boucle). Aucun reclassement. LOW de la P3 et
+  restes des passes précédentes tracés en #875 ; parties renvoyées aux issues #869 (`PERIOD_LOCKED` sans bornes),
+  #870 (liste à 100), #871 (date du lot en ISO), #872 (projet archivé dans l'édition), #873 (refus
+  `LATER_FISCAL_YEAR_CLOSED`), #874 (it-CH, forme d'adresse). Aucune remédiation après la P3 : rien n'est resté sans
+  relecture. Clôture écrite dans la branche `release/0.17.0`, après la fusion de la story. Statut : `done`.
