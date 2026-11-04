@@ -371,6 +371,10 @@ Fiche : `v0172-session.md`, extraite de `v0172-correctifs.md` à la validation P
 Correspondance : C-v0172s-1 ← C-v0172b-2 ; s-2 ← b-3 ; s-3 ← b-4 ; s-4 ← b-5 ; s-5 ← b-18 ; s-6 ← b-23 ; s-7 ← b-24 ; s-8 à s-13
 neufs ; s-14 ← b-25 (c).
 
+**Conception remplacée à la validation P3 (2026-11-04)** : **C-v0172s-1 à 13 sont écartés** (historique ; leur conception — renouvellement
+anticipé à l'entrée, verrous, module armé, suspension — est remplacée, cf. C-v0172s-15) ; **C-v0172s-14 reste** (issue du jeton stocké en
+clair) ; **en vigueur : C-v0172s-14 à 21**.
+
 ### C-v0172s-1 — Renouvellement côté navigateur, à l'entrée de l'utilisateur, et champ `sessionExpiresIn`
 
 - **Contexte** : avec 15/15, le renouvellement sur 401 arrive toujours après l'expiration du jeton de renouvellement
@@ -486,4 +490,64 @@ neufs ; s-14 ← b-25 (c).
   `admin-manual.tex:2996` dira que le jeton est stocké tel quel (`refresh_tokens.rs:30-34`) ; le stockage en clair fait l'objet
   d'une issue demandée.
 - **Écartées** : hacher le jeton dans cette story.
+- **Réversible** : —
+
+### C-v0172s-15 — Conception remplacée : la fenêtre d'inactivité plus longue que le jeton d'accès, et le chemin 401 existant
+
+- **Contexte** : trois validations de suite (P1, P2 de la fiche mère, P3 de cette fiche) ont rendu des MEDIUM nés de la mécanique du
+  renouvellement anticipé (verrous entre onglets, `navigator.locks` absent en HTTP, module inerte sous Vitest, suspension pendant l'import,
+  `logout` sous verrou). Lu au code : le chemin 401 existant (`api-client.ts:452-461`, mutex `:185-192`) renouvelle et rejoue ; le
+  renouvellement glisse (`routes/auth.rs:421-432`) ; il n'échoue que parce que la ligne expire en même temps que le cookie d'accès
+  (`:254`, `:54`, `:399`) ; le 401 précède le handler (`middleware/auth.rs:73-`), le rejeu est sûr.
+- **Retenu** : défaut d'inactivité 60 minutes, règle « au moins le double du jeton d'accès » (C-16), grâce de rotation (C-17), repli `/me`
+  (C-18), renouvellement silencieux au démarrage (C-19), requêtes de fond (C-20) ; borne entre `N − jwt` et `N` après la dernière requête
+  (C-21).
+- **Écartées** : la conception C-v0172s-1 à 13 — borne plus serrée, mais huit modules et une mécanique qui recyclait les défauts ; un jeton
+  d'accès plus court (5 min) avec la même inactivité — renouvellements trois fois plus fréquents et défauts de test au jeton d'accès
+  (`config.rs:2106`) sans gain pour la saisie.
+- **Réversible** : oui.
+
+### C-v0172s-16 — Défaut 60 minutes ; une valeur trop courte est portée au double, sans refus de démarrage
+
+- **Retenu** : défaut de `KESH_REFRESH_INACTIVITY_MINUTES` 15 → 60 (`config.rs:735-755`, `.env.example:160`, `docker-compose*.yml`) ; si
+  la valeur est inférieure à `2 × KESH_JWT_EXPIRY_MINUTES`, avertissement et double appliqué.
+- **Écartées** : refuser le démarrage — un `.env` recopié du gabarit 0.17.1 (15) empêcherait la mise à jour de démarrer ; la règle
+  « strictement supérieur » — une marge d'une minute laisserait une saisie de quelques minutes sans requête perdre la session.
+- **Réversible** : oui.
+
+### C-v0172s-17 — Grâce de rotation de 30 secondes
+
+- **Contexte** : deux onglets qui reçoivent 401 au même moment présentent le même jeton ; le second déclencherait la détection de vol
+  (`routes/auth.rs:379-389`) et la révocation de toutes les sessions.
+- **Retenu** : un jeton tourné depuis moins de 30 s rend 401 sans révocation générale ; aucun jeton émis.
+- **Écartées** : verrou entre onglets (finding P3 : `navigator.locks` absent hors contexte sécurisé) ; rendre le même jeton neuf au
+  second appel — demande de garder le jeton neuf en clair côté serveur.
+- **Réversible** : oui.
+
+### C-v0172s-18 — Après un refus de renouvellement, un `GET /auth/me` avant d'effacer
+
+- **Retenu** : si `/me` rend 200, un autre onglet a renouvelé : succès, rejeu ; sinon, comportement actuel.
+- **Écartées** : `localStorage` ou `BroadcastChannel` — de l'état partagé de plus, pour un cas que `/me` tranche.
+- **Réversible** : oui.
+
+### C-v0172s-19 — `hydrate()` tente un renouvellement silencieux
+
+- **Retenu** : sur 401 de `/me` au démarrage, un `POST /auth/refresh` ; succès ⇒ second `/me` ; échec ⇒ état nul **sans redirection**
+  (la page de connexion appelle aussi `hydrate()`).
+- **Écartées** : passer par `doRefresh` — il redirige sur échec, ce qui bouclerait sur `/login`.
+- **Réversible** : oui.
+
+### C-v0172s-20 — Les lectures de fond ne renouvellent pas
+
+- **Retenu** : `CallOptions.background` ; la lecture périodique du bandeau de sauvegarde (`BackupScheduleBanner.svelte:34`) le porte ;
+  sur 401, rejet sans renouvellement ni effacement.
+- **Écartées** : laisser la lecture renouveler — session éternelle sur un écran d'administration abandonné (une lecture toutes les
+  30 minutes, inactivité de 60) ; supprimer la lecture périodique — le bandeau de sauvegarde en retard perdrait sa mise à jour.
+- **Réversible** : oui.
+
+### C-v0172s-21 — La borne écrite : entre `N − jwt` et `N` après la dernière requête ; aucune durée absolue
+
+- **Retenu** : 45 à 60 minutes par défaut, 15 à 30 avec un `.env` 0.17.1 ; une saisie sans requête est sûre tant qu'elle dure moins de
+  `N − jwt` ; aucune durée absolue pour un utilisateur actif (cookie de 30 jours reposé à chaque renouvellement), écrit au manuel
+  d'administration (finding P13 de la validation P3).
 - **Réversible** : —

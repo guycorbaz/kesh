@@ -59,7 +59,8 @@ de la date du jour — signalée comme telle — sur une facture fournisseur cr�
 
 Extraite à la validation P2 (C-v0172b-1). Conception, AC, tests, mutations, manuels (utilisateur `:95` et l'inventaire clos du
 manuel d'administration sur les cookies, les jetons et les durées), CHANGELOG et recette : dans la fiche sœur, choix
-`C-v0172s-1` à `14`.
+`C-v0172s-14` à `21` en vigueur (conception remplacée à la validation P3 de la fiche sœur : fenêtre d'inactivité plus longue
+que le jeton d'accès ; `C-v0172s-1` à `13` écartés).
 
 ---
 
