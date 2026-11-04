@@ -10,39 +10,44 @@ alternatives écartées, réversibilité.
 
 Fiche : `v0172-correctifs.md`. Numéros de ligne de `d7ec2ea2`. Issues en `refs` seulement.
 
-### C-v0172b-1 — Découpage en trois sous-stories dans la même fiche
+### C-v0172b-1 — Découpage en quatre sous-stories dans la même fiche *(révisé à la validation P1, 2026-11-04 : trois → quatre)*
 
 - **Contexte** : huit issues, plus de cinq modules (règle de splitting préventif du `CLAUDE.md`).
-- **Retenu** : trois sous-stories posées dans `v0172-correctifs.md` — A (session #876, import simultané #840), B (écrans :
-  #870, #851, #882, #885), C (forme : #880, #883) —, développées dans l'ordre A → B → C sur la branche
+- **Retenu** : quatre sous-stories posées dans `v0172-correctifs.md` — A1 (session #876), A2 (import simultané #840), B
+  (écrans : #870, #851, #882, #885), C (forme : #880, #883) —, développées dans l'ordre A1 → A2 → B → C sur la branche
   `story/v0172-correctifs`, chacune close par ses commits, son gate et sa revue de code. Chacune touche au plus cinq
-  modules ; C est un déploiement mécanique. Une seule clé `v0172-correctifs` au registre des sprints, comme le mandat le
+  modules (tableau complet des fichiers dans la fiche) ; C est un déploiement mécanique. #876 et #840, sans lien, ont été
+  séparées à la validation P1 (finding P5 : réunies, elles dépassaient cinq modules). Une seule clé `v0172-correctifs` au registre des sprints, comme le mandat le
   demande.
 - **Écartées** : (a) une story unique — trop large pour une revue adversariale fiable ; (b) trois fiches sœurs — le mandat
   permet la même fiche, et les trois partagent la contrainte, le CHANGELOG et le manuel ; (c) huit stories — coût de
   boucles de revue disproportionné pour des correctifs de P3/P4.
 - **Réversible** : oui — une sous-story peut être sortie en fiche sœur `v0172-correctifs-<n>` si sa revue ne converge pas.
 
-### C-v0172b-2 — #876 : renouvellement anticipé côté navigateur, sur activité, et champ `sessionExpiresIn`
+### C-v0172b-2 — #876 : renouvellement côté navigateur, à l'entrée de l'utilisateur, et champ `sessionExpiresIn` *(révisé à la validation P1)*
 
 - **Contexte** : avec 15/15 minutes (défauts), le renouvellement sur 401 arrive toujours après l'expiration du jeton de
   renouvellement (`routes/auth.rs:254, :399` ; cookie d'accès `max_age = jwt_expiry`, `:54`) : la session meurt à 15 minutes,
   en pleine saisie, avec redirection vers `/login` (`api-client.ts:176-177`).
-- **Retenu** : le frontend renouvelle **avant** l'échéance la plus proche (accès ou renouvellement), s'il y a eu activité
-  de l'utilisateur depuis le dernier renouvellement ; le serveur rend `sessionExpiresIn` (login, refresh, changement de mot
+- **Retenu** : le frontend renouvelle **à l'entrée de l'utilisateur**, au plus une fois par pas `T` (C-v0172b-23), tant que la
+  session vit ; le serveur rend `sessionExpiresIn` (login, refresh, changement de mot
   de passe, assistant : `refresh_inactivity` ; `/me` : durée restante du jeton du cookie, `null` sinon).
 - **Écartées** : (a) relâcher l'expiration au serveur (`expires_at = now + jwt + leeway + inactivity`) — inactivité tolérée
   floue (15 à 31 minutes), saisie longue sans requête perdue quand même ; (b) prolonger à chaque requête — les sondes de fond
   (`BackupScheduleBanner`, `api-health`) rendraient la session éternelle ; (c) ne corriger que le manuel — la perte de saisie
   est le défaut ; (d) déduire l'échéance du renouvellement côté navigateur sans aide du serveur — impossible après un
-  rechargement de page, et faux si `KESH_REFRESH_INACTIVITY_MINUTES < KESH_JWT_EXPIRY_MINUTES`.
+  rechargement de page, et faux si `KESH_REFRESH_INACTIVITY_MINUTES < KESH_JWT_EXPIRY_MINUTES` ; (e) une minuterie armée avant
+  l'échéance qui renouvelle s'il y a eu activité depuis le dernier renouvellement — la première rédaction : borne d'inactivité
+  jusqu'à `2N − 1`, et minuterie muette pendant une veille ou ralentie dans un onglet masqué (findings P1-P2 de la validation P1).
 - **Réversible** : oui (champ JSON additif, module frontend isolé).
 
 ### C-v0172b-3 — #876 : l'activité, ce sont les entrées de l'utilisateur, non les requêtes
 
 - **Contexte** : des composants interrogent le serveur sans geste de l'utilisateur (`BackupScheduleBanner.svelte:34`,
   `api-health.svelte.ts:102`).
-- **Retenu** : `keydown`, `pointerdown`, `wheel`, `touchstart` (écouteurs passifs sur `window`) ; une saisie longue sans
+- **Retenu** : `keydown`, `pointerdown`, `wheel`, `touchstart` (écouteurs passifs sur `window`) et `visibilitychange` vers
+  `visible` (revenir sur l'onglet est un geste) ; posés à l'armement par `authState`, retirés au désarmement (`clearSession`,
+  `logout`) ; une saisie longue sans
   enregistrer garde la session ; un onglet laissé ouvert expire après l'inactivité réglée.
 - **Écartées** : compter les requêtes (session éternelle sur un écran d'administration) ; compter `mousemove` (un pointeur
   qui frôle l'écran prolongerait la session d'un poste quitté) ; `scroll` (déclenché aussi par le code).
@@ -51,10 +56,10 @@ Fiche : `v0172-correctifs.md`. Numéros de ligne de `d7ec2ea2`. Issues en `refs`
 ### C-v0172b-4 — #876 : un seul renouvellement pour tous les onglets
 
 - **Contexte** : les onglets partagent les cookies ; un jeton déjà tourné présenté de nouveau révoque toutes les sessions
-  (`routes/auth.rs:377-393`). Le correctif rend le renouvellement fréquent et donc la course réelle, y compris sur le chemin
+  (`routes/auth.rs:379`). Le correctif rend le renouvellement fréquent et donc la course réelle, y compris sur le chemin
   401 existant.
-- **Retenu** : `navigator.locks.request('kesh:auth:refresh')` autour du renouvellement (minuterie **et** 401) ; sous le verrou,
-  si `localStorage['kesh:auth:renewedAt']` est postérieur à la décision de l'onglet, `GET /auth/me` au lieu de `POST
+- **Retenu** : `navigator.locks.request('kesh:auth:refresh')` autour du renouvellement (à l'entrée **et** sur 401) ; sous le
+  verrou, si `localStorage['kesh:auth:renewedAt']` est postérieur ou égal à la décision de l'onglet, `GET /auth/me` au lieu de `POST
   /auth/refresh` ; après succès, écriture de `renewedAt` et message `auth-renewed` sur le canal existant. Sans
   `navigator.locks`, repli sur la seule comparaison de `renewedAt` (course résiduelle déclarée).
 - **Écartées** : (a) une période de grâce au serveur pour un jeton tout juste tourné — affaiblit la détection de vol ;
@@ -102,7 +107,8 @@ Fiche : `v0172-correctifs.md`. Numéros de ligne de `d7ec2ea2`. Issues en `refs`
 
 - **Contexte** : l'issue suppose un rôle momentanément nul ; le code le réfute (remplacement atomique de `_currentUser`,
   garde de `/admin/mcp` qui redirigerait, disparition qui serait totale). La `<nav>` a une hauteur fixe sans `overflow-y`
-  (`+layout.svelte:374-376`), pour 34 entrées de 44 px en mode guidé.
+  (`+layout.svelte:374-376`), pour 33 entrées de 44 px en mode guidé (11 + 4 + 18 ; « 34 » à la rédaction, recompté à la
+  validation P1).
 - **Retenu** : E2E de reproduction (chaque entrée d'Administration atteignable, 1280 × 720) rouge d'abord, puis
   `overflow-y-auto min-h-0` sur la `<nav>`. Si la reproduction ne rougit pas : aucune correction, constat au rapport.
 - **Écartées** : corriger à l'aveugle ; réduire la hauteur des liens (change le mode guidé).
@@ -112,8 +118,9 @@ Fiche : `v0172-correctifs.md`. Numéros de ligne de `d7ec2ea2`. Issues en `refs`
 
 - **Contexte** : options du `<select>` limitées aux taux actifs (`InvoiceForm.svelte:54-74`) ; le serveur refuse aussi tout
   taux inactif (`routes/vat.rs`, `verify_vat_rates_against_db`, `active = TRUE`).
-- **Retenu** : option « 7.70 % (désactivé) » pour le taux porté par la ligne, ensemble dérivé des lignes ; message de refus
-  explicite (choisir un taux actif ou le réactiver) ; symétrique de `extraRates` du formulaire fournisseur.
+- **Retenu** : option `7.70% (désactivé)` pour le taux porté par la ligne, ensemble dérivé des lignes ; message de refus
+  explicite — « choisissez un taux actif », **sans** parler de réactivation, qui n'existe pas (`settings/vat-rates/+page.svelte:231-252`) ;
+  le repli `8.10` limité aux lignes neuves (C-v0172b-27) ; symétrique de `extraRates` du formulaire fournisseur.
 - **Écartées** : accepter un taux inactif au serveur — règle TVA, jalon « Vague 2 » reporté, conséquence sur le décompte non
   établie ; remplacer d'office le taux par le premier actif — changement muet d'un montant de TVA.
 - **Réversible** : oui.
@@ -203,17 +210,23 @@ Fiche : `v0172-correctifs.md`. Numéros de ligne de `d7ec2ea2`. Issues en `refs`
 
 ### C-v0172b-20 — Issue demandée : la « date du jour » calculée en UTC
 
-- **Contexte** : `new Date().toISOString().slice(0, 10)` rend la veille entre minuit et 1 h (2 h en été) en Suisse ; dix
-  sites de `frontend/src` hors tests (`git grep -lE "new Date\(\)\.toISOString\(\)\.slice\(0, ?10\)"`), dont celui de
-  `SupplierInvoiceForm.svelte`, corrigé par #885.
-- **Retenu** : seul le site de #885 passe à `todayLocal()` ; les neuf autres → issue demandée à l'orchestrateur.
-- **Écartées** : les corriger tous ici — neuf écrans sans lien avec les issues de la story.
+- **Contexte** : `….toISOString().slice(0, 10)` rend la veille entre minuit et 1 h (2 h en été) en Suisse. Le motif large
+  `git grep -nE '\.toISOString\(\)\.slice\(0, ?10\)' -- frontend/src ':!*.test.ts'` rend **16 lignes** (relevé à la validation
+  P1 ; la première rédaction n'en comptait que dix, par un motif qui manquait les formes en deux temps) : `InvoiceForm.svelte:110`,
+  `SettleInvoiceDialog.svelte:77`, `WriteOffDialog.svelte:64`, `invoice-helpers.ts:124`, `journal-entries/form-helpers.ts:63`,
+  `ManualReminderDialog.svelte:46`, `reminders/reminder-sent-at.ts:24`, `reports.api.ts:328`, `SupplierInvoiceForm.svelte:153`
+  (corrigé par #885), `invoices/[id]/+page.svelte:106`, `invoices/due-dates/+page.svelte:297`, `payment-batches/+page.svelte:37`,
+  `payment-batches/[id]/+page.svelte:26`, `settings/+page.svelte:219`, `settings/api-keys/+page.svelte:51`,
+  `supplier-invoices/[id]/+page.svelte:90`. Certaines sont du calcul de dates (à trier), non une « date du jour ».
+- **Retenu** : seul le site de #885 passe à `todayLocal()` ; l'issue demandée à l'orchestrateur porte les 15 autres lignes, à trier.
+- **Écartées** : les corriger tous ici — des écrans sans lien avec les issues de la story.
 - **Réversible** : —
 
 ### C-v0172b-21 — Aucune migration ; retour à la 0.17.1 sans restauration
 
 - **Contexte** : contrainte de production (`v017-donnees-a-garder.md`) ; consigne de préférer une solution sans migration.
-- **Retenu** : verrou nommé (#840), champ JSON additif (#876), tout le reste au frontend ; 86 migrations avant et après.
+- **Retenu** : verrou nommé (#840), champ JSON additif (#876), tout le reste au frontend ; 88 migrations avant et après (`ls crates/kesh-db/migrations/*.sql | wc -l` ; « 86 » à la
+  rédaction, faux, corrigé à la validation P1).
 - **Écartées** : contrainte d'unicité pour #840 (C-v0172b-6).
 - **Réversible** : —
 
@@ -225,4 +238,63 @@ Fiche : `v0172-correctifs.md`. Numéros de ligne de `d7ec2ea2`. Issues en `refs`
   vérifier » et son bouton, lien K8) a sa clé dans les quatre `messages.ftl` ; les messages voisins en dur de `validate`
   restent tels quels.
 - **Écartées** : passer tout `validate` à l'i18n — hors périmètre.
+- **Réversible** : oui.
+
+### C-v0172b-23 — #876 : pas de minuterie ; l'entrée renouvelle, au plus une fois par pas `T`
+
+- **Contexte** : validation P1, findings P1 et P2 — une minuterie qui renouvelle « s'il y a eu activité depuis le dernier
+  renouvellement » laisse la session vivre jusqu'à `2N − 1` après la dernière entrée, et ne sonne pas pendant une veille ni à
+  l'heure dans un onglet masqué.
+- **Retenu** : à chaque entrée (clavier, pointeur, molette, toucher, retour sur l'onglet), l'horloge murale est relue ; si la
+  session vit et que le dernier renouvellement (de cet onglet ou d'un autre) date d'au moins `T = min(60 s, N/4, jwt/4)`, on
+  renouvelle. Borne d'inactivité : entre `max(N, jwt) − T` et `max(N, jwt)` après la dernière entrée (14 à 15 minutes par
+  défaut). Coût : au plus un renouvellement par minute d'activité et par utilisateur.
+- **Écartées** : (a) la minuterie de la première rédaction ; (b) une minuterie de secours en plus de l'entrée — inutile : sans
+  entrée, il n'y a rien à prolonger ; (c) un pas fixe de 60 s — trop long pour une inactivité réglée à une minute.
+- **Réversible** : oui.
+
+### C-v0172b-24 — #876 : un échec transitoire du renouvellement anticipé ne déconnecte pas
+
+- **Contexte** : `doRefresh` efface la session sur toute erreur (`api-client.ts:96-99, :174-178`), défendable sur 401 (session
+  morte), faux quand la session vit encore (finding P3).
+- **Retenu** : sur le chemin anticipé, seul `401 INVALID_REFRESH_TOKEN` efface la session ; erreur réseau, 429, 5xx : la
+  session reste, l'entrée suivante retente au plus tôt 10 s plus tard tant que la session vit. Le chemin 401 garde son
+  comportement, plus la garde « 401 sans entrée depuis le dernier renouvellement : ni renouvellement ni effacement » (sans
+  elle, une sonde de fond prolongerait la session dès que l'inactivité réglée dépasse la durée du jeton d'accès).
+- **Écartées** : réessayer en boucle sans entrée — prolongerait une session inactive ; effacer sur toute erreur — la perte de
+  saisie de #876 par un autre chemin.
+- **Réversible** : oui.
+
+### C-v0172b-25 — Limites déclarées, et issue demandée : le jeton de renouvellement stocké en clair
+
+- **Contexte** : (a) l'import tient deux connexions d'un pool de 5 (`main.rs:83`) ; (b) au-delà de 5 s sous le verrou, le
+  second envoi rend le `409` du rapprochement ; (c) en refermant l'inventaire du manuel d'administration, `admin-manual.tex:2996`
+  affirme un hash SHA-256 du jeton de renouvellement, alors qu'il est stocké tel quel (`repositories/refresh_tokens.rs:30-34`,
+  `.bind(&new.token)`).
+- **Retenu** : (a) et (b) déclarés en Dev Notes, non corrigés (même risque que la saisie manuelle, déjà accepté) ; (c) le manuel
+  est corrigé (il dit ce que fait le code) ; le stockage en clair, défaut de sécurité sans lien avec #876, fait l'objet d'une
+  **issue demandée** (« on trace toujours »).
+- **Écartées** : hacher le jeton dans cette story — touche le dépôt et les sessions ouvertes, hors périmètre d'une corrective.
+- **Réversible** : —
+
+### C-v0172b-26 — #870 : l'URL est la source de vérité, lue de façon réactive ; le filtre ne porte que sur le statut
+
+- **Contexte** : validation P1, finding P6 — le motif `initFromUrl` à `onMount` ne relit pas l'URL quand seule la requête
+  change ; un lien vers `/supplier-invoices` depuis `?status=draft` laisserait la liste filtrée. Finding P20 : K8 compte les
+  brouillons de l'exercice, le lien ouvre ceux de tous les exercices.
+- **Retenu** : `status`, `offset`, `limit` dérivés de `page.url` ; les gestes naviguent ; une page au-delà du total ramène à la
+  dernière page ; le bandeau, le manuel et le CHANGELOG disent « de tous les exercices ».
+- **Écartées** : filtrer aussi par dates depuis K8 — l'issue ne le demande pas, et un sur-ensemble suffit à atteindre chaque
+  brouillon ; faire du lien du bandeau un bouton qui remet l'état — le lien du menu resterait sans effet.
+- **Réversible** : oui.
+
+### C-v0172b-27 — #882 : le repli `8.10` ne touche plus que les lignes neuves
+
+- **Contexte** : `InvoiceForm.svelte:83-92` réécrit en silence toute ligne à `8.10` quand ce taux n'est plus actif, lignes
+  relues comprises (finding P9) — exactement ce que C-v0172b-9 écarte.
+- **Retenu** : une marque d'interface `_vatPlaceholder` sur les seules lignes créées avec la valeur provisoire avant le
+  chargement des taux (retirée par `stripUiKey`) ; le repli ne touche qu'elles ; une ligne relue ou venue d'un article garde
+  son taux, affiché « (désactivé) » s'il est inactif.
+- **Écartées** : retirer le repli — une ligne neuve créée avant le chargement garderait `8.10` même absent de la société ;
+  le garder tel quel — changement muet de TVA.
 - **Réversible** : oui.
