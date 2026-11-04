@@ -56,3 +56,21 @@ export interface CompanyCurrentResponse {
 	company: CompanyJson;
 	bankAccounts: BankAccountJson[];
 }
+
+/**
+ * Story v0172-session (0.17.3, CR #891) — la durée d'inactivité de la session,
+ * `GET /api/v1/admin/session-settings` (Administrateur seul). `version` vaut 0
+ * tant que rien n'est enregistré (défaut 60 minutes).
+ */
+export interface SessionSettings {
+	sessionIdleMinutes: number;
+	version: number;
+	min: number;
+	max: number;
+}
+
+/** Corps de `PUT /api/v1/admin/session-settings`. */
+export interface UpdateSessionSettingsRequest {
+	sessionIdleMinutes: number;
+	version: number;
+}

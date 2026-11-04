@@ -155,10 +155,123 @@ describe('authState (Story 10-5)', () => {
 
 		await authState.hydrate();
 
-		expect(mockFetch).toHaveBeenCalledOnce();
+		// Story v0172-session (C-v0172s-26) : `/me` en 401, puis UN essai de
+		// renouvellement (refusé ici) — deux appels au lieu d'un.
+		expect(mockFetch).toHaveBeenCalledTimes(2);
+		expect(mockFetch.mock.calls[1][0]).toBe('/api/v1/auth/refresh');
 		expect(authState.isAuthenticated).toBe(false);
 		expect(authState.currentUser).toBeNull();
 		expect(authState.expiresIn).toBeNull();
+	});
+
+	// --- Story v0172-session (0.17.3, #876) : renouvellement au démarrage (AC-7) ---
+
+	function reponse(ok: boolean, status: number, body: unknown) {
+		return { ok, status, json: () => Promise.resolve(body) };
+	}
+	const ME = {
+		userId: 7,
+		username: 'bob',
+		role: 'Comptable',
+		expiresIn: 900,
+		idleTimeoutMinutes: 60,
+		idleExpiresIn: 3_000,
+	};
+
+	it('hydrate() : /me 401, renouvellement 200, /me 200 ⇒ identité et champs d’inactivité (AC-7 1)', async () => {
+		const mockFetch = vi
+			.fn()
+			.mockResolvedValueOnce(reponse(false, 401, {}))
+			.mockResolvedValueOnce(reponse(true, 200, { expiresIn: 900 }))
+			.mockResolvedValueOnce(reponse(true, 200, ME));
+		vi.stubGlobal('fetch', mockFetch);
+
+		await authState.hydrate();
+
+		expect(mockFetch.mock.calls.map((c) => c[0])).toEqual([
+			'/api/v1/auth/me',
+			'/api/v1/auth/refresh',
+			'/api/v1/auth/me',
+		]);
+		expect(authState.currentUser).toEqual({ userId: '7', username: 'bob', role: 'Comptable' });
+		expect(authState.idleTimeoutMinutes).toBe(60);
+		expect(authState.idleExpiresIn).toBe(3_000);
+	});
+
+	it('hydrate() : renouvellement refusé ⇒ état nul, sans redirection (AC-7 2)', async () => {
+		const replaceMock = vi.fn();
+		const original = window.location;
+		Object.defineProperty(window, 'location', {
+			value: { ...original, replace: replaceMock },
+			writable: true,
+			configurable: true,
+		});
+		vi.stubGlobal(
+			'fetch',
+			vi.fn().mockResolvedValueOnce(reponse(false, 401, {})).mockResolvedValueOnce(reponse(false, 401, {})),
+		);
+
+		await authState.hydrate();
+
+		expect(authState.currentUser).toBeNull();
+		expect(replaceMock).not.toHaveBeenCalled();
+		Object.defineProperty(window, 'location', { value: original, writable: true, configurable: true });
+	});
+
+	it('hydrate() et un chemin 401 en vol ⇒ un seul POST /auth/refresh (AC-7 3)', async () => {
+		const { apiClient } = await import('$lib/shared/utils/api-client');
+		let lacher: (v: unknown) => void = () => {};
+		const refreshEnVol = new Promise((r) => (lacher = r));
+		const mockFetch = vi.fn((url: string) => {
+			if (url === '/api/v1/auth/refresh') return refreshEnVol;
+			if (url === '/api/v1/some/data') return Promise.resolve(reponse(false, 401, {}));
+			return Promise.resolve(reponse(true, 200, ME));
+		});
+		vi.stubGlobal('fetch', mockFetch);
+		// Le chemin 401 lance le renouvellement…
+		const requete = apiClient.get('/api/v1/some/data').catch(() => undefined);
+		await vi.waitFor(() =>
+			expect(mockFetch.mock.calls.some((c) => c[0] === '/api/v1/auth/refresh')).toBe(true),
+		);
+		// … pendant que /me du démarrage rend 401 (ici : la seconde lecture).
+		mockFetch.mockImplementationOnce(() => Promise.resolve(reponse(false, 401, {})));
+		const hydratation = authState.hydrate();
+		lacher(reponse(true, 200, { expiresIn: 900 }));
+		await Promise.all([requete, hydratation]);
+		expect(mockFetch.mock.calls.filter((c) => c[0] === '/api/v1/auth/refresh')).toHaveLength(1);
+	});
+
+	it('hydrate() sur /login?reason=idle : aucune requête, état nul (AC-7 4)', async () => {
+		const original = window.location;
+		Object.defineProperty(window, 'location', {
+			value: { ...original, pathname: '/login', search: '?reason=idle&minutes=60' },
+			writable: true,
+			configurable: true,
+		});
+		const mockFetch = vi.fn();
+		vi.stubGlobal('fetch', mockFetch);
+
+		await authState.hydrate();
+
+		expect(mockFetch).not.toHaveBeenCalled();
+		expect(authState.currentUser).toBeNull();
+		Object.defineProperty(window, 'location', { value: original, writable: true, configurable: true });
+	});
+
+	it('hydrate() sur /login?reason=session_expired : comportement ordinaire (/me)', async () => {
+		const original = window.location;
+		Object.defineProperty(window, 'location', {
+			value: { ...original, pathname: '/login', search: '?reason=session_expired' },
+			writable: true,
+			configurable: true,
+		});
+		const mockFetch = vi.fn().mockResolvedValue(reponse(true, 200, ME));
+		vi.stubGlobal('fetch', mockFetch);
+
+		await authState.hydrate();
+
+		expect(mockFetch.mock.calls[0][0]).toBe('/api/v1/auth/me');
+		Object.defineProperty(window, 'location', { value: original, writable: true, configurable: true });
 	});
 
 	// --- Issue #347 : un backend indisponible n'invalide PAS la session ---

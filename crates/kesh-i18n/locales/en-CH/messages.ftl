@@ -2221,6 +2221,18 @@ settings-company-email-saved = Company email saved
 settings-company-email-conflict = Version conflict — data reloaded, please try again.
 settings-company-email-conflict-reload-failed = Version conflict and reload failed — reload the page.
 
+# Story v0172-session (0.17.3, CR #891) — section « Session » des paramètres et page de connexion.
+settings-session-title = Session
+settings-session-idle-label = Close the session after
+settings-session-idle-unit = minutes of inactivity
+settings-session-idle-help = From { $min } to { $max } minutes. Any activity in Kesh resets the count; a session applies a new duration at its next activity.
+settings-session-idle-invalid = Enter a whole number from { $min } to { $max } minutes.
+settings-session-saved = Inactivity duration saved
+settings-session-conflict = Version conflict — the data has been reloaded, try again.
+settings-session-conflict-reload-failed = Version conflict and reload failed — reload the page.
+settings-session-load-error = Unable to read the inactivity duration.
+login-session-idle = Session closed after { $minutes } minutes of inactivity.
+
 # --- Debtor reminders (Story 21-4, #231) ---
 dunning-title = Debtor reminders
 dunning-subtitle = Configure reminder levels, delays and reminder fees.

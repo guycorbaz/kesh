@@ -16,6 +16,10 @@ interface SetupAdminResponse {
 	userId: number;
 	username: string;
 	role: string;
+	/** Story v0172-session — durée d'inactivité N (minutes). */
+	idleTimeoutMinutes?: number;
+	/** Story v0172-session — secondes restantes avant l'échéance. */
+	idleExpiresIn?: number | null;
 }
 
 /**
@@ -51,6 +55,8 @@ export async function setupAdmin(
 		username: data.username,
 		role: data.role,
 		expiresIn: data.expiresIn,
+		idleTimeoutMinutes: data.idleTimeoutMinutes,
+		idleExpiresIn: data.idleExpiresIn,
 	};
 
 	// Story v011-5 ECH1-6 : broadcast cross-tab AVANT le redirect (le goto vient

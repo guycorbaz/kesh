@@ -2327,6 +2327,18 @@ settings-company-email-saved = E-mail de la société enregistré
 settings-company-email-conflict = Conflit de version — les données ont été rechargées, réessayez.
 settings-company-email-conflict-reload-failed = Conflit de version et rechargement impossible — rechargez la page.
 
+# Story v0172-session (0.17.3, CR #891) — section « Session » des paramètres et page de connexion.
+settings-session-title = Session
+settings-session-idle-label = Fermer la session après
+settings-session-idle-unit = minutes d'inactivité
+settings-session-idle-help = De { $min } à { $max } minutes. Toute activité dans Kesh remet le compte à zéro ; une session applique une nouvelle durée à sa prochaine activité.
+settings-session-idle-invalid = Saisissez un nombre entier de { $min } à { $max } minutes.
+settings-session-saved = Durée d'inactivité enregistrée
+settings-session-conflict = Conflit de version — les données ont été rechargées, réessayez.
+settings-session-conflict-reload-failed = Conflit de version et rechargement impossible — rechargez la page.
+settings-session-load-error = Impossible de lire la durée d'inactivité.
+login-session-idle = Session fermée après { $minutes } minutes d'inactivité.
+
 # --- Rappels débiteurs (Story 21-4, #231) ---
 dunning-title = Rappels débiteurs
 dunning-subtitle = Configurez les niveaux de rappel, les délais et les frais de relance.

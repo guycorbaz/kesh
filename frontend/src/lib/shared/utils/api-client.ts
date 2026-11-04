@@ -70,8 +70,10 @@ let refreshPromise: Promise<boolean> | null = null;
 
 /**
  * Tente un refresh des tokens via POST /api/v1/auth/refresh.
- * Retourne `true` si le refresh a réussi, `false` sinon.
- * En cas d'échec : clearSession() + redirect login.
+ * Retourne `true` si le refresh a réussi, `false` sinon — **sans** effacer
+ * ni rediriger : c'est le chemin 401 (`refreshTokens`) qui le fait, et
+ * `tryRefresh` (renouvellement au démarrage) qui s'en abstient (Story
+ * v0172-session, C-v0172s-26, C-v0172s-58).
  *
  * Story 10-5 (T7.3) :
  * - Plus de guard `!currentRefreshToken` (Pass 1 F-AH-P1-2) — le refresh
@@ -94,8 +96,6 @@ async function doRefresh(): Promise<boolean> {
 			body: JSON.stringify({}),
 		});
 	} catch {
-		authState.clearSession();
-		window.location.replace('/login?reason=session_expired');
 		return false;
 	}
 
@@ -104,8 +104,6 @@ async function doRefresh(): Promise<boolean> {
 		try {
 			data = await res.json();
 		} catch {
-			authState.clearSession();
-			window.location.replace('/login?reason=session_expired');
 			return false;
 		}
 		// D1 Option A acté : body conserve `accessToken/refreshToken/expiresIn`
@@ -113,8 +111,6 @@ async function doRefresh(): Promise<boolean> {
 		// uniquement `expiresIn` (les tokens sont ignorés côté JS — ils sont
 		// dans les cookies HttpOnly).
 		if (typeof data?.expiresIn !== 'number') {
-			authState.clearSession();
-			window.location.replace('/login?reason=session_expired');
 			return false;
 		}
 
@@ -141,17 +137,22 @@ async function doRefresh(): Promise<boolean> {
 					username: string;
 					role: string;
 					expiresIn: number;
+					idleTimeoutMinutes?: number;
+					idleExpiresIn?: number | null;
 				};
 				// Refresh ne doit pas broadcast cross-tab (option `broadcast: false`)
 				// — sinon chaque refresh proactif ferait re-hydrate les autres tabs
 				// alors qu'elles partagent déjà le même cookie HttpOnly. Le
 				// broadcast cross-tab est réservé aux transitions login/logout.
+				// Story v0172-session : les champs d'inactivité transitent (C-v0172s-47).
 				authState.login(
 					{
 						userId: String(meBody.userId),
 						username: meBody.username,
 						role: meBody.role,
 						expiresIn: meBody.expiresIn,
+						idleTimeoutMinutes: meBody.idleTimeoutMinutes,
+						idleExpiresIn: meBody.idleExpiresIn,
 					},
 					{ broadcast: false },
 				);
@@ -173,23 +174,45 @@ async function doRefresh(): Promise<boolean> {
 	}
 
 	// Refresh échoué (401 INVALID_REFRESH_TOKEN ou autre erreur)
-	authState.clearSession();
-	window.location.replace('/login?reason=session_expired');
 	return false;
 }
 
 /**
- * Mutex de refresh : si un refresh est déjà en cours, retourne la
- * même Promise. Sinon, lance un nouveau refresh.
+ * Mutex de refresh : si un refresh est déjà en cours, rend la même Promise ;
+ * sinon, en lance un. Partagé par le chemin 401 et par `tryRefresh`.
+ */
+function sharedRefresh(): Promise<boolean> {
+	if (!refreshPromise) {
+		refreshPromise = doRefresh().finally(() => {
+			refreshPromise = null;
+		});
+	}
+	return refreshPromise;
+}
+
+/**
+ * Chemin 401 : renouvelle (sous le mutex) et, sur échec, efface la session et
+ * mène à la connexion (`reason=session_expired`). Chaque requête rejetée
+ * l'applique — plusieurs effacements sur un même échec, sans gravité.
  */
 async function refreshTokens(): Promise<boolean> {
-	if (refreshPromise) return refreshPromise;
-	refreshPromise = doRefresh();
-	try {
-		return await refreshPromise;
-	} finally {
-		refreshPromise = null;
+	const refreshed = await sharedRefresh();
+	if (!refreshed) {
+		authState.clearSession();
+		window.location.replace('/login?reason=session_expired');
 	}
+	return refreshed;
+}
+
+/**
+ * Story v0172-session (0.17.3, C-v0172s-26) — renouvellement **sans**
+ * effacement ni redirection, sous le même mutex que le chemin 401 : employé
+ * par `authState.hydrate()` au démarrage, quand `/me` rend 401 parce que le
+ * jeton d'accès a expiré alors que la session vit encore. Rend `true` si le
+ * renouvellement a réussi (même si la relecture de `/me` a échoué).
+ */
+export function tryRefresh(): Promise<boolean> {
+	return sharedRefresh();
 }
 
 /**

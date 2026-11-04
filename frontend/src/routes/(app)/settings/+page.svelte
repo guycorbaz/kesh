@@ -11,6 +11,7 @@
 		updateCompanyEmail
 	} from '$lib/features/settings/settings.api';
 	import type { CompanyCurrentResponse } from '$lib/features/settings/settings.types';
+	import SessionIdleSection from '$lib/features/settings/SessionIdleSection.svelte';
 	import { bankAccountName } from '$lib/features/bank-accounts/format';
 	import { authState } from '$lib/app/stores/auth.svelte';
 	import { isApiError } from '$lib/shared/utils/api-client';
@@ -510,6 +511,14 @@
 		</section>
 
 		<Separator />
+
+		<!-- Section Session (Story v0172-session, CR #891) — Administrateur seul :
+		     le GET du réglage rend 403 aux autres rôles. -->
+		{#if isAdmin}
+			<SessionIdleSection />
+
+			<Separator />
+		{/if}
 
 		<!-- Section Verrou de période (Story 24-4c, #380) -->
 		<section class="rounded-lg border border-border bg-white p-6 shadow-sm" data-testid="settings-books-lock">

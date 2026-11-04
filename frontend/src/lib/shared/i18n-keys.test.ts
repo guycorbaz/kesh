@@ -850,7 +850,11 @@ const ATTENDU = {
 	// annulées ; B-4 = E-4).
 	// Fusion de la release 0.17.2 (2026-11-04) : les deux stories réunies, **recompté à la
 	// source** par la garde elle-même après la fusion (non additionné) : **2813**.
-	sitesTotal: 2813,
+	// v0172-session (0.17.3, 2026-11-04) : **2813 → 2825** (+12), `grep -o 'i18nMsg('` aux
+	// deux bornes (`1dc94968` → tête), fichiers touchés hors tests :
+	// `SessionIdleSection.svelte` 0 → 11 (neuf), `login/+page.svelte` 0 → 1 (message de
+	// fin de session pour inactivité). Que des littéraux.
+	sitesTotal: 2825,
 	sitesNonResolus: 31,
 	relais: 6,
 	// Story 26-1 (#620, AC3-bis) : **10 → 11** — `lib/features/bank-import/

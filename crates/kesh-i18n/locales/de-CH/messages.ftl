@@ -2216,6 +2216,18 @@ settings-company-email-saved = Firmen-E-Mail gespeichert
 settings-company-email-conflict = Versionskonflikt — die Daten wurden neu geladen, bitte erneut versuchen.
 settings-company-email-conflict-reload-failed = Versionskonflikt und Neuladen fehlgeschlagen — laden Sie die Seite neu.
 
+# Story v0172-session (0.17.3, CR #891) — section « Session » des paramètres et page de connexion.
+settings-session-title = Sitzung
+settings-session-idle-label = Sitzung schliessen nach
+settings-session-idle-unit = Minuten Inaktivität
+settings-session-idle-help = { $min } bis { $max } Minuten. Jede Aktivität in Kesh setzt den Zähler zurück; eine Sitzung übernimmt eine neue Dauer bei ihrer nächsten Aktivität.
+settings-session-idle-invalid = Geben Sie eine ganze Zahl von { $min } bis { $max } Minuten ein.
+settings-session-saved = Inaktivitätsdauer gespeichert
+settings-session-conflict = Versionskonflikt — die Daten wurden neu geladen, versuchen Sie es erneut.
+settings-session-conflict-reload-failed = Versionskonflikt und Neuladen fehlgeschlagen — laden Sie die Seite neu.
+settings-session-load-error = Die Inaktivitätsdauer kann nicht gelesen werden.
+login-session-idle = Sitzung nach { $minutes } Minuten Inaktivität geschlossen.
+
 # --- Mahnwesen (Story 21-4, #231) ---
 dunning-title = Mahnungen
 dunning-subtitle = Konfigurieren Sie die Mahnstufen, Fristen und Mahngebühren.
