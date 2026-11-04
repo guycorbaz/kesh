@@ -14,8 +14,8 @@ La 0.17.2 est une version corrective : **aucune migration**, aucune donnée ré�
 
 ### Corrigé
 
-- **Un relevé importé deux fois en même temps n'est plus enregistré deux fois** ([#840](https://github.com/guycorbaz/kesh/issues/840)) : un double clic ou un envoi rejoué enregistrait deux relevés identiques sans confirmation ; le second est désormais refusé comme fichier déjà importé.
-- **Toutes les factures fournisseur sont atteignables** ([#870](https://github.com/guycorbaz/kesh/issues/870)) : la liste se pagine (au-delà des cent premières, les plus anciennes n'apparaissaient nulle part) et se filtre par statut depuis l'adresse ; le lien du contrôle de clôture ouvre les brouillons, de tous les exercices.
+- **Un relevé importé deux fois en même temps n'est plus enregistré deux fois** ([#840](https://github.com/guycorbaz/kesh/issues/840)) : un double clic ou un envoi rejoué enregistrait deux relevés identiques sans confirmation ; le second est désormais refusé comme fichier déjà importé. Un import attend la fin d'une autre opération en cours sur le même compte (import, saisie, rapprochement) ; au-delà de cinq secondes, il est refusé sans rien enregistrer.
+- **Toutes les factures fournisseur sont atteignables** ([#870](https://github.com/guycorbaz/kesh/issues/870)) : la liste se pagine (au-delà des cent premières, les plus anciennes n'apparaissaient nulle part) et se filtre par statut depuis l'adresse ; le lien du contrôle de clôture ouvre les brouillons, de tous les exercices ; une liste filtrée vide le dit, au lieu d'annoncer qu'aucune facture n'est enregistrée.
 - **Le menu garde toutes ses entrées** ([#851](https://github.com/guycorbaz/kesh/issues/851)) : la barre latérale avait une hauteur fixe sans défilement ; pour un administrateur, sur une page courte comme *Serveur MCP*, le bas du menu — quinze entrées sur trente-trois — n'était plus atteignable. Elle défile désormais.
 - **Un brouillon de facture dont un taux de TVA a été désactivé se corrige** ([#882](https://github.com/guycorbaz/kesh/issues/882)) : la ligne affiche son taux « (désactivé) » au lieu d'un champ vide, le refus dit de choisir un taux actif, et un brouillon au taux de 8,1 % désactivé ne change plus de taux en silence.
 - **Les dates des écrans comptables s'affichent `29.01.2026`** ([#880](https://github.com/guycorbaz/kesh/issues/880)) : journal, exercices, relevés bancaires, rapprochement, taux de TVA et clés d'API ; les heures (import d'un relevé, dernière utilisation d'une clé) s'affichent à l'heure suisse, non plus en UTC ; une clé d'API s'affiche « expirée » au même instant que le serveur la refuse (l'écran la lisait à l'heure locale, une à deux heures d'écart).
@@ -23,7 +23,7 @@ La 0.17.2 est une version corrective : **aucune migration**, aucune donnée ré�
 
 ### Ajouté
 
-- **La date d'une facture fournisseur créée depuis un document est proposée** ([#885](https://github.com/guycorbaz/kesh/issues/885)) : la date du jour, **marquée « à vérifier »** jusqu'à ce que vous la confirmiez ou la changiez ; l'échéance suit la date, plus le délai de paiement du fournisseur s'il en a un. Une échéance antérieure à la date reste signalée.
+- **La date d'une facture fournisseur créée depuis un document est proposée** ([#885](https://github.com/guycorbaz/kesh/issues/885)) : la date du jour, **marquée « à vérifier »** jusqu'à ce que vous la confirmiez ou la changiez ; l'échéance suit la date, plus le délai de paiement du fournisseur s'il en a un. **À toute création de facture fournisseur, avec ou sans document, l'échéance suit désormais la date** tant que vous ne l'avez pas saisie : sans délai de paiement du fournisseur, elle vaut la date de la facture — videz le champ pour n'en mettre aucune. Une échéance antérieure à la date reste signalée.
 
 ## [0.17.1] — 2026-11-03
 

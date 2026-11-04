@@ -422,6 +422,28 @@ cas `Z` et décalage compris. « Aucun fuseau appliqué » (première rédaction
   et refuse un montage au-delà de 100.
 - **Réversible** : oui.
 
+### C-v0172b-35 — #870 : « Afficher toutes les factures » mène à la liste annulées comprises
+
+*Remédiation de la revue de code P1 (finding E-5), 2026-11-04.*
+
+- **Contexte** : le lien du bandeau de filtre menait à `/supplier-invoices`, liste par défaut **sans** les annulées ; depuis
+  `?status=cancelled`, il faisait disparaître les factures qu'on regardait, et le manuel disait « la liste complète ».
+- **Retenu** : le lien mène à `/supplier-invoices?cancelled=1` (la case cochée) ; le libellé et le manuel disent vrai. La fiche
+  (C-v0172b-7) prescrivait `/supplier-invoices` ; l'écart est écrit ici.
+- **Écartées** : renommer le lien « Retirer le filtre » (le libellé, traduit, reste juste ainsi) ; ne corriger que le manuel.
+- **Réversible** : oui.
+
+### C-v0172b-36 — #851 : la mutation MB3 bis est équivalente
+
+- **Contexte** : MB3 bis rétablit `h-[calc(100vh-3.5rem)]` à la place de `max-h-[…]` sur la `<nav>` ; la fiche l'attendait
+  tuée par la variante « avec bandeau » d'AC-B5. Jouée à la remédiation de la revue P1 : **6 passés**, elle survit.
+- **Raison de l'équivalence** : depuis le correctif, le fond et le filet sont portés par l'`aside`, et la `<nav>` défile
+  (`overflow-y-auto`) ; qu'elle ait une hauteur fixe ou maximale, ses entrées restent atteignables par la molette (la barre
+  défile jusqu'en bas, puis la page de `B` pixels) et l'aspect est celui de l'`aside`. La seule différence est la hauteur de la
+  boîte de la `<nav>` quand son contenu est court, invisible à l'écran. Un test qui la mesurerait figerait une implémentation,
+  non un comportement : aucun n'est ajouté.
+- **Réversible** : —
+
 ## Story v0172-session (clé `v0172s`) — #876
 
 Fiche : `v0172-session.md`, extraite de `v0172-correctifs.md` à la validation P2 (2026-11-04). Numéros de ligne de `d7ec2ea2`.

@@ -877,6 +877,24 @@ vide). La PR de release porte les `closes`.
   (le manuel ne décrit pas la forme des dates de ces écrans). Choix C-v0172b-30 à 34. Correction de l'orchestrateur
   appliquée (`:50`, #876 en simple renvoi, CR #891 ; aucune puce `[0.17.2]` sur #876).
 
+- 2026-11-04 — **Revue de code P1 (Opus) : B 0/0/0/9, E 0/0/0/8, A 0/0/1/8** (rapports `kesh-gate-logs/v0172b-review-p1-{B,E,A}.md`,
+  trois lentilles). Remédiation (Opus 5.5), prémisse lue au code pour chaque finding traité :
+  **A-1 (MEDIUM)** — les quatre mutations MB3 jouées (E2E `sidebar-navigation.spec.ts -g "#851"`, frontend rebâti à chaque
+  mutation, sous `flock` et `mem-guard` ; `mut/MB3*.log`, campagne `mut/MB3-campagne.log`) : **MB3** tuée (AC-B5 et AC-B5 bis,
+  deux variantes chacune, 4 échecs) ; **MB3 ter** tuée (AC-B5 ter) ; **MB3 quater** tuée (AC-B5 ter) ; **MB3 bis survit**
+  (6 passés) — déclarée **équivalente** (C-v0172b-36 : depuis le correctif, le fond est porté par l'`aside` et la `<nav>`
+  défile ; hauteur fixe ou maximale, seules changent les dimensions invisibles de sa boîte). Corrigés, chacun avec son test
+  rouge d'abord (`rouges.log`, § « Remédiation de la revue P1 ») : **B-2** — `SupplierInvoiceForm.svelte:614` et la clé
+  `supplier-invoices-date-to-verify` (« … ce n'est pas celle du document … ») → « Date du jour proposée : vérifiez-la sur le
+  document. », quatre locales, manuel ajusté ; **B-3** — puce #885 du CHANGELOG : l'échéance suit la date à toute création, avec
+  ou sans document ; **B-4 = E-4** — `supplier-invoices/+page.svelte:218-220` lu : une liste vide dit son filtre (« Aucune
+  facture « Brouillon ». ») ou, sans la case, que les annulées sont masquées (deux clés neuves, quatre locales) ; **E-5** —
+  `:197` lu : le lien du bandeau mène à `?cancelled=1`, la liste complète que le manuel annonce (C-v0172b-35) ; **A-9** — le
+  manuel dit qu'un import attend un enregistrement en cours sur le même compte et, au-delà de cinq secondes, le refuse avec le
+  message réel du catalogue (`reconciliation-errors-account-locked`, fr-CH `:1471`, et non le repli de `errors.rs`) ; puce
+  CHANGELOG #840 complétée. Gardes i18n recomptées (2806 → 2808 sites, 395 → 397 clés). **Non traités** (sur instruction de
+  l'orchestrateur ; liste au Dev Agent Record, à tracer en issues) : B-1, B-5 à B-9, E-1 à E-3, E-6 à E-8, A-2 à A-8.
+
 ## Dev Agent Record
 
 ### Agent Model Used
@@ -968,3 +986,39 @@ les `*.test.ts` voisins des fichiers ci-dessus, `src/lib/shared/{i18n-keys,i18n-
 `tests/e2e/helpers/inbox.ts`.
 Docs : `CHANGELOG.md`, `docs/manual/fr/user-manual.{tex,pdf}`, cette fiche, `v0172-choix-autonomes.md`, `sprint-status.yaml`,
 `v0172-correctifs-review-prompt-p1.md`.
+
+### Remédiation de la revue de code P1 (2026-11-04)
+
+Commits : `59025b3e` (code et tests), puis la documentation et ce compte rendu. Mutations MB3 : MB3, MB3 ter, MB3 quater tuées ;
+MB3 bis équivalente (C-v0172b-36). Gates au nouveau dernier commit de code (`59025b3e`, bases remises à neuf) :
+- frontend : `check` 0 erreur (29 avertissements préexistants), `lint-i18n-ownership` PASS, `test:unit` **2519 / 2519**
+  (206 fichiers), `build` vert ;
+- **E2E complet** (run r6, port 3173, `/tmp/kesh-e2e-v0172b-r6/`, backend rebâti) : **342 passés, 7 échecs, 18 ignorés** —
+  les sept de la KF-029 (#97), aucun autre ; un ignoré de plus qu'au run r3 (343 / 17) : test non identifié (le rapporteur
+  `line` ne liste pas les ignorés), aucun ignoré ajouté par la remédiation ;
+- backend, rejoué parce que les `messages.ftl` sont sous `crates/` : `test-fast.sh --ci` **4687 passés, 12 ignorés** ;
+- PDF : `make fr`, seul `user-manual.pdf` commité ; aplati (locale UTF-8, apostrophes, césures, ligature `ﬀ`) : les cinq
+  phrases neuves présentes, « ce n'est pas celle du document » absente.
+
+**LOW non traités, à tracer en issues** (rapports `kesh-gate-logs/v0172b-review-p1-{B,E,A}.md`) :
+- **B-1** — le verrou de #840 est par compte, le contrôle « fichier déjà importé » par société : deux envois simultanés du même
+  fichier sur deux comptes de la même société ne se sérialisent pas.
+- **B-5** — la liste fournisseur ne montre aucun chargement entre deux pages ou filtres ; *Suivant* reste actif pendant la lecture.
+- **B-6** — clés d'API : « Active (expire le 31.12.2026) » affiché le 1ᵉʳ janvier à 0 h 30 à Zurich (vrai au serveur, déroutant).
+- **B-7** — un taux inconnu (ni actif ni historique) est annoncé « désactivé ».
+- **B-8** — fixture TA8 : clé de détails `timeoutSecs` au lieu de `retryAfterSeconds`.
+- **B-9** — forme : `<nav>` non réindentée dans l'`aside`, style redondant, repère ARIA.
+- **E-1** — épuisement du pool, variante « comptes distincts » non déclarée.
+- **E-2** — échec de `RELEASE_LOCK` après un commit : la connexion revient au pool avec le verrou de session.
+- **E-3** — `?limit=0` donne 50 alors que le commentaire dit « borné à [1, 200] ».
+- **E-6** — `UnrejectTransactionAction` lit encore un instant UTC comme une heure locale.
+- **E-7** — `isExpired` : la branche « avec `Z` ou décalage » n'est jamais exercée par un test.
+- **E-8** — une fraction de plus de trois chiffres repose sur `Date.parse`, non garanti par la norme.
+- **A-2** — MB10 : le run vert sous `TZ=UTC` n'est pas journalisé.
+- **A-3** — AC-C3 : relevé « après » antérieur au 25ᵉ site ; recalage `ReconciliationProposals.svelte:546 → :548` faux (`:552`).
+- **A-4** — `rouges.log:40` décrit un montage d'AC-B5 ter remplacé par C-v0172b-32.
+- **A-5** — TB3 (E2E d'AC-B4) : « rouge avant » non constaté.
+- **A-6** — le grep des E2E prescrit au § 26 n'est pas joint.
+- **A-7** — « serveur inchangé » déclaré avec un pathspec muet (`routes/vat.rs`) ; la commande juste
+  (`crates/kesh-api/src/routes/…`) rend bien vide.
+- **A-8** — l'option « 8.10% (désactivé) » est tronquée dans la colonne TVA (capture du refus).

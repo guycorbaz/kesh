@@ -1605,8 +1605,8 @@ créer la facture d'un document reçu dans le dossier d'import, voir
 \S\ref{sec:import-factures}~: la même saisie s'y fait à côté du document.
 
 \paragraph{Les dates.} La date de la facture est proposée au jour même. À côté d'un document,
-elle est de plus \textbf{marquée «~à vérifier~»}~: un avis sous le champ rappelle que la date du
-jour n'est presque jamais celle d'une facture reçue, jusqu'à ce que vous la \textbf{modifiiez} ou
+elle est de plus \textbf{marquée «~à vérifier~»}~: un avis sous le champ demande de la vérifier sur
+le document (la date du jour n'est presque jamais celle d'une facture reçue), jusqu'à ce que vous la \textbf{modifiiez} ou
 la \textbf{confirmiez} (bouton \emph{C'est la bonne date})~; l'avis ne bloque pas
 l'enregistrement (depuis la version~0.17.2, elle est proposée et signalée~; la 0.17.0 et la 0.17.1
 la laissaient vide). À la création, l'\textbf{échéance suit la date}~: la date plus le délai de
@@ -1901,7 +1901,8 @@ loi demande d'une correction (art.~958f CO). La 0.17.0 ne supprime aucune factur
 chaque facture y est atteignable, si ancienne soit-elle. Elle se \textbf{filtre par statut depuis
 l'adresse}~: \texttt{/supplier-invoices?status=draft} ne montre que les brouillons (de tous les
 exercices), un bandeau le dit et son lien \emph{Afficher toutes les factures} revient à la liste
-complète~; la page et le filtre suivent l'adresse, si bien que le retour arrière du navigateur les
+complète, factures annulées comprises (la case \emph{Afficher les factures annulées} cochée)~;
+une liste filtrée sans facture le dit («~Aucune facture «~Brouillon~».~»)~; la page et le filtre suivent l'adresse, si bien que le retour arrière du navigateur les
 retrouve.
 
 \textbf{Si la facture était payée}, son règlement \textbf{reste au grand livre}~: l'argent est
@@ -2354,6 +2355,14 @@ qui \textbf{chevauchent un import précédent} sont \textbf{ignorées par défau
 même}. Une devise non supportée bloque l'import — relevé CAMT.053, ou CSV dont le profil lit la
 colonne Devise ; un CSV dont le profil ne la lit pas est supposé en CHF, et la prévisualisation le
 dit (\S\ref{sec:import-csv}). \emph{Annuler} abandonne sans rien enregistrer.
+
+\textbf{Un seul enregistrement à la fois par compte.} Depuis la version~0.17.2, \emph{Confirmer
+l'import} attend la fin d'un autre enregistrement en cours sur le même compte bancaire --- un
+autre import, une saisie manuelle ou un geste de rapprochement~: un double clic ou un envoi
+rejoué n'enregistre donc plus deux fois le même relevé, le second est refusé comme fichier déjà
+importé. Si l'autre opération dure plus de cinq secondes, l'import est refusé, sans rien
+enregistrer, avec le message du rapprochement «~Compte bancaire en cours de réconciliation par un autre
+utilisateur. Réessayez dans quelques secondes.~» --- réessayez simplement l'import.
 L'import confirmé rejoint la liste \emph{Imports précédents} de la même page (date
 d'enregistrement, relevé --- le nom du fichier, ou «~Saisie manuelle~» pour un relevé saisi ---,
 période, nombre de transactions) ; ce nom ouvre le détail du relevé.
