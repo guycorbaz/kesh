@@ -96,20 +96,6 @@
 		}
 	});
 
-	/**
-	 * v0172-correctifs (#882, C-v0172b-9) — les taux portés par les lignes qui ne sont
-	 * pas actifs (désactivés depuis) : **dérivés des lignes**, pour couvrir le
-	 * brouillon, le rechargement après conflit et l'ajout depuis un article. Vide tant
-	 * que les taux actifs ne sont pas connus.
-	 */
-	const inactiveRates = $derived(
-		new Set(
-			vatOptions.length === 0
-				? []
-				: lines.map((l) => l.vatRate).filter((r) => r !== '' && !vatOptions.includes(r)),
-		),
-	);
-
 	// Identifiant UI stable (cross-reorder/remove). NE PAS envoyer au backend.
 	// `_vatPlaceholder` (v0172, #882) : la ligne porte la valeur provisoire du taux,
 	// posée avant la résolution des taux actifs ; seul le repli ci-dessus la lit.
@@ -231,6 +217,21 @@
 	// est présent (projet archivé depuis — leçon 19-2 BH-L2 : visible/détaguable).
 	const showProjectField = $derived(projects.length > 0 || projectId !== null);
 	let lines = $state<LineState[]>(initLines());
+
+	/**
+	 * v0172-correctifs (#882, C-v0172b-9) — les taux portés par les lignes qui ne sont
+	 * pas actifs (désactivés depuis) : **dérivés des lignes**, pour couvrir le
+	 * brouillon, le rechargement après conflit et l'ajout depuis un article. Vide tant
+	 * que les taux actifs ne sont pas connus.
+	 */
+	const inactiveRates = $derived(
+		new Set(
+			vatOptions.length === 0
+				? []
+				: lines.map((l) => l.vatRate).filter((r) => r !== '' && !vatOptions.includes(r)),
+		),
+	);
+
 	let submitting = $state(false);
 	let errorMsg = $state<string>('');
 	let productPickerOpen = $state(false);

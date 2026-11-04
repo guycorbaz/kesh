@@ -834,7 +834,12 @@ const ATTENDU = {
 	// Revue de code P2 (2026-11-03) : **2794 → 2796** (+2), `grep -o 'i18nMsg('` aux deux
 	// bornes (`f8b119e5` → tête) : `supplier-invoices/[id]/+page.svelte` 74 → 76 — le lot
 	// confirmé se dit en trois clés (fait daté, fait sans date, consigne ; B2-1, B2-3, B2-5).
-	sitesTotal: 2796,
+	// v0172-correctifs (2026-11-04) : **2796 → 2806** (+10), `grep -o 'i18nMsg('` aux deux
+	// bornes (`1be0f701` → tête), fichiers touchés hors tests : `supplier-invoices/+page.svelte`
+	// 12 → 18 (bandeau du filtre, son lien, compte singulier/pluriel, Précédent, Suivant ; #870),
+	// `InvoiceForm.svelte` 14 → 16 (option et refus du taux désactivé ; #882),
+	// `SupplierInvoiceForm.svelte` 48 → 50 (avis « à vérifier » et son bouton ; #885).
+	sitesTotal: 2806,
 	sitesNonResolus: 31,
 	relais: 6,
 	// Story 26-1 (#620, AC3-bis) : **10 → 11** — `lib/features/bank-import/
@@ -926,8 +931,11 @@ const MOTIFS_DYNAMIQUES: Record<string, readonly string[]> = {
  * Les trois ensembles ouverts de cette story sont donc `vat-category-*`,
  * `bank-import-info-*` et celui-ci. *Aucune garde ne les borne, et c'est écrit plutôt
  * que découvert.*
+ *
+ * (`:52` → `:54` le 2026-11-04, v0172-correctifs : deux lignes d'import de
+ * `formatSwissDate` ajoutées au-dessus, #880.)
  */
-const ANGLE_MORT_CLE_EN_COLONNE = 'routes/(app)/settings/vat-rates/+page.svelte:52';
+const ANGLE_MORT_CLE_EN_COLONNE = 'routes/(app)/settings/vat-rates/+page.svelte:54';
 
 /**
  * Cardinalité attendue de chaque préfixe dynamique — **la contrepartie des valeurs
