@@ -47,8 +47,9 @@ Fiche : `v0172-annulees.md`. Clé `v0172a`. Issue #868, en `refs` seulement.
 - **Contexte** : le mode `System` suppose que l'appelant tient un exercice **ouvert** ; la dissolution vient avant
   `delete_in_tx`, qui juge l'exercice.
 - **Retenu** : après les verrous des deux écritures et de leurs exercices, un exercice `Closed` → `FiscalYearClosed`
-  (le code que `delete_in_tx` rendrait), avant toute écriture. Mutation M12 équivalente, déclarée : le pré-contrôle tient
-  un contrat, non un comportement observable (la transaction annulée effacerait de toute façon la dissolution).
+  (le code que `delete_in_tx` rendrait), avant toute écriture. *Annoté le 2026-11-04 (validation P1, V1-3)* : la mutation
+  M12 n'est **pas** équivalente — sans le pré-contrôle, un achat dans un exercice clos dont la contre-passation est sous le
+  verrou de période rend `PERIOD_LOCKED` (la contre-passation parle d'abord) ; elle est tuée par la paire *P4* d'AC-5.
 - **Écartées** : s'en remettre au rollback — juste en résultat, mais viole le contrat écrit du mode `System`.
 - **Réversible** : oui.
 
@@ -76,7 +77,8 @@ Fiche : `v0172-annulees.md`. Clé `v0172a`. Issue #868, en `refs` seulement.
 
 - **Contexte** : le Project Lead veut que le refus dise quoi faire d'abord ; les textes suffixaient le numéro de la facture.
 - **Retenu** : `details.transactionDate`, `entryNumber`, `batchId` ; clés FTL à arguments ; le suffixe du numéro de la
-  facture retiré des messages qui nomment leur objet.
+  facture retiré des messages qui nomment leur objet. *Annoté le 2026-11-04 (validation P1, V1-11)* : cinq champs, dont
+  `entryId` et `entryDate` (le numéro d'écriture repart à 1 à chaque exercice) — C-v0172a-22.
 - **Écartées** : des liens cliquables dans le message — refonte de l'affichage des refus, hors périmètre.
 - **Réversible** : oui.
 
@@ -106,6 +108,8 @@ Fiche : `v0172-annulees.md`. Clé `v0172a`. Issue #868, en `refs` seulement.
 
 ### C-v0172a-11 — Rôles inchangés
 
+- **Contexte** : la dévalidation est ouverte au Comptable et à l'Administrateur (route `unvalidate`, Comptable+, clés
+  `read-write`) ; la suppression d'un brouillon à l'Administrateur seul.
 - **Retenu** : repasser en brouillon = Comptable+ (comme la dévalidation) ; supprimer le brouillon = Administrateur.
 - **Écartées** : réserver l'annulée à l'Administrateur — le geste est sous les mêmes gardes que la dévalidation, et la
   suppression, elle, reste réservée.
@@ -121,6 +125,8 @@ Fiche : `v0172-annulees.md`. Clé `v0172a`. Issue #868, en `refs` seulement.
 
 ### C-v0172a-13 — Historique de lot : le brouillon ne se supprime toujours pas
 
+- **Contexte** : `delete_draft_in_tx` refuse un brouillon présent dans un lot de paiement, quel qu'en soit le sort
+  (limite L8, `SupplierInvoiceHasPaymentBatchHistory`) ; une annulée qui a figuré dans un lot devient un tel brouillon.
 - **Retenu** : la règle L8 (`SupplierInvoiceHasPaymentBatchHistory`) est inchangée ; le manuel le dit.
 - **Écartées** : la lever pour une annulée — l'ordre transmis à la banque se garde (`RESTRICT`).
 - **Réversible** : oui.
@@ -134,6 +140,9 @@ Fiche : `v0172-annulees.md`. Clé `v0172a`. Issue #868, en `refs` seulement.
 - **Réversible** : oui.
 
 ### C-v0172a-15 — Limite L1 : les messages d'exercice, de période et de lettrage parlent de « l'écriture d'achat »
+
+*Annoté le 2026-11-04 (validation P1, V1-2) : la contre-passation parle avant l'achat pour les refus de `delete_in_tx`
+(C-v0172a-19) ; la limite vaut pour les refus 6 et 7a du tableau.*
 
 - **Contexte** : pour une annulée, le refus peut venir de la contre-passation — seulement si l'achat est daté après son
   annulation.
@@ -160,5 +169,49 @@ Fiche : `v0172-annulees.md`. Clé `v0172a`. Issue #868, en `refs` seulement.
 
 - **Retenu** : CO 957a al. 2 ch. 5, CO 958f, Olico art. 3 et 9 ; « rien ne disparaît sans trace », paire nette à zéro,
   avant clôture, hors période verrouillée, audit et sauvegarde.
+- *Annoté le 2026-11-04 (validation P1, V1-13)* : le manuel ne cite que CO 957a, CO 958f et OLICo art. 9 al. 1 let. b,
+  que le dépôt appuie déjà ; l'art. 3 de l'Olico reste dans la fiche, marqué non vérifié, jusqu'à confirmation du
+  Project Lead ou de sa fiduciaire.
 - **Écartées** : affirmer la conformité sans réserve — Kesh n'est pas conseil juridique.
+- **Réversible** : oui.
+
+### C-v0172a-19 — Précédence composée par écriture, contre-passation d'abord (validation P1, V1-2, V1-10)
+
+- **Contexte** : la fiche énonçait un ordre total des refus ; deux appels successifs de `delete_in_tx` rendent les refus
+  de la contre-passation avant ceux de l'achat, et le lot `generated` est refusé avant la lecture d'audit.
+- **Retenu** : rangs 0 à 6 par le dépôt (statut, version, lot, paiement détaché, rapprochement, pré-contrôle d'exercice
+  clos), puis `delete_in_tx` sur la contre-passation, puis sur l'achat ; écrit au tableau, testé par paires montées pour
+  que les deux refus jouent (AC-5, P1 à P6), conséquence *P5* assumée.
+- **Écartées** : étendre le pré-contrôle à l'exercice postérieur et au verrou des deux écritures — une seconde copie de
+  la précédence de `delete_in_tx`, qui divergerait.
+- **Réversible** : oui.
+
+### C-v0172a-20 — Vocabulaire : « repasser en brouillon » dans tous les textes fournisseur (validation P1, V1-6)
+
+- **Contexte** : le bouton change de nom ; les messages qui disent quoi faire renvoyaient à « dévalider », geste que
+  l'utilisateur ne trouve plus sous ce nom.
+- **Retenu** : quinze valeurs fournisseur modifiées et cinq clés neuves (AC-15), dans les quatre locales (fr « repasser
+  en brouillon », de « in den Entwurf zurücksetzen », it « riportare in bozza », en « return to draft ») ; manuel
+  utilisateur côté fournisseur ; glossaire. « Dévalider » reste le mot des factures clientes et le nom de code.
+- **Écartées** : garder « dévalider » dans les messages — renvoie à un geste introuvable, ce que la décision du Project
+  Lead (point 3) vise.
+- **Réversible** : oui.
+
+### C-v0172a-21 — Payée : appel direct, sans boîte de confirmation (validation P1, V1-14)
+
+- **Contexte** : la boîte de la dévalidation annonce une suppression ; pour une payée, le serveur refuse toujours.
+- **Retenu** : pour `paid`, le bouton appelle la route sans boîte ; aucune écriture ne peut suivre (statut refusé au
+  rang 1 ; une facture redevenue validée ailleurs a une version incrémentée par l'annulation du règlement,
+  `supplier_invoices.rs:2427`, refusée au rang 2).
+- **Écartées** : une boîte dont le texte annonce une suppression qui n'aura pas lieu ; masquer le bouton — le Project
+  Lead veut que le geste se trouve.
+- **Réversible** : oui.
+
+### C-v0172a-22 — Cinq champs de `details`, toujours présents (validation P1, V1-11)
+
+- **Contexte** : les messages nomment un lot, une transaction, une écriture ; le numéro d'écriture repart à 1 à chaque
+  exercice (`journal_entries.rs:2908-2915`).
+- **Retenu** : `batchId`, `transactionDate`, `entryId`, `entryNumber`, `entryDate`, `null` quand ils ne s'appliquent
+  pas ; l'écriture se nomme « n° N du JJ.MM.AAAA ».
+- **Écartées** : le nom de l'exercice — plus long, et la date suffit à lever l'ambiguïté.
 - **Réversible** : oui.
