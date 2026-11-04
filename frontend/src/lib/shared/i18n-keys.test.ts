@@ -834,7 +834,13 @@ const ATTENDU = {
 	// Revue de code P2 (2026-11-03) : **2794 → 2796** (+2), `grep -o 'i18nMsg('` aux deux
 	// bornes (`f8b119e5` → tête) : `supplier-invoices/[id]/+page.svelte` 74 → 76 — le lot
 	// confirmé se dit en trois clés (fait daté, fait sans date, consigne ; B2-1, B2-3, B2-5).
-	sitesTotal: 2796,
+	// Story v0172-annulees (#868, 2026-11-04) : **2796 → 2801** (+5), `grep -o 'i18nMsg('`
+	// aux deux bornes (`d7ec2ea2` → tête), périmètre : les fichiers touchés hors tests —
+	// `supplier-invoices/[id]/+page.svelte` 76 → 78 (corps de la confirmation d'une annulée,
+	// succès d'une annulée), `supplier-invoice-unvalidate.ts` 12 → 15 (payée rapprochée,
+	// paiement détaché avec et sans date), `[id]/edit/+page.svelte` 9 → 9 (repli récrit).
+	// Que des littéraux ; `sitesNonResolus` et `relais` inchangés.
+	sitesTotal: 2801,
 	sitesNonResolus: 31,
 	relais: 6,
 	// Story 26-1 (#620, AC3-bis) : **10 → 11** — `lib/features/bank-import/

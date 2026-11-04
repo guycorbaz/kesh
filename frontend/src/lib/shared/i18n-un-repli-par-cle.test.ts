@@ -210,8 +210,14 @@ const PREFIXES = [
  * ⚠️ **Revue de code P2** (2026-11-03) : **387 → 389** (+2), aux deux bornes (`f8b119e5` →
  * tête) : `supplier-invoices-unvalidate-batch-warning-undated` (B2-3) et
  * `-unvalidate-batch-warning-action` (B2-5). Aucune retirée (`-batch-warning` change de texte).
+ *
+ * ⚠️ **Story v0172-annulees** (#868, 2026-11-04) : **389 → 391** (+2), aux deux bornes
+ * (`d7ec2ea2` → tête) : `supplier-invoices-unvalidate-confirm-body-cancelled` et
+ * `supplier-invoices-unvalidated-cancelled`. Les trois autres clés neuves
+ * (`error-supplier-invoice-unvalidate-blocked-*`) sont hors de ce relevé (préfixe). Aucune
+ * retirée (dix-huit valeurs récrites, « repasser en brouillon »).
  */
-const CLES_RELEVEES = 389;
+const CLES_RELEVEES = 391;
 
 
 /** Relève, pour chaque clé du domaine, l'ensemble de ses replis littéraux distincts. */

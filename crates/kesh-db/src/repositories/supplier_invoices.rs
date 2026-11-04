@@ -5,15 +5,20 @@
 //!   [`update_draft`] le remplace ; [`delete_draft`] le supprime ;
 //!   [`validate`] poste l'écriture d'achat (D charge / D impôt préalable /
 //!   C créanciers, logique TVA Epic 18) et passe la facture en `open`
-//!   (« validée ») ; [`unvalidate`] supprime l'écriture et ramène le brouillon
-//!   (règle de la facture client). [`create_validated`] compose création et
-//!   validation, pour les seeds et les tests.
+//!   (« validée ») ; [`unvalidate`] — « Repasser en brouillon » à l'écran —
+//!   supprime l'écriture et ramène le brouillon (règle de la facture client) ;
+//!   depuis la Story v0172-annulees (#868), une facture **annulée** y repasse
+//!   aussi, son achat et sa contre-passation supprimés.
+//!   [`create_validated`] compose création et validation, pour les seeds et
+//!   les tests.
 //! - [`pay`] : règlement binaire. Poste `D 2000 / C contrepartie` (virement →
 //!   `bank_account.journal_account_id` ; compte interne → compte libre) et
 //!   passe en `paid`. Le compte débité ET le montant sont relus depuis la
 //!   ligne de crédit de l'écriture d'achat → solde 2000 garanti à 0 [O-M2].
 //! - [`cancel`] : contre-passe l'écriture d'achat (relecture lignes + swap
-//!   débit↔crédit, montants positifs) et passe en `cancelled` [DC7].
+//!   débit↔crédit, montants positifs) et passe en `cancelled` [DC7]. L'annulée
+//!   n'est plus définitive depuis la 0.17.2 : saisie par erreur, elle repasse
+//!   en brouillon par [`unvalidate`].
 //!
 //! Helper de génération d'écriture en kesh-db (PAS kesh-core : `NewJournalEntryLine`
 //! et `DbError` y sont définis — dépendance circulaire sinon [O-C1]).
@@ -875,26 +880,49 @@ pub async fn unvalidate(
 /// une contre-passation. Le trou de numérotation est assumé (limite L2) ; le
 /// journal d'audit garde l'écriture (`journal_entry.deleted`).
 ///
-/// # Précédence (testée paire par paire)
+/// # Une facture annulée repasse en brouillon (Story v0172-annulees, #868)
 ///
-/// `NotFound` → statut (payée : [`SupplierUnvalidationBlocker::Paid`] ;
-/// brouillon ou annulée : `IllegalStateTransition`) → version → lot
-/// `generated` → écriture rapprochée → puis les refus de
-/// [`super::journal_entries::delete_in_tx`] : exercice clos, exercice
-/// postérieur clos, écriture contre-passée (inatteignable), période
+/// Depuis la 0.17.2, le geste — « Repasser en brouillon » à l'écran — vaut
+/// aussi pour une facture **annulée** : son écriture d'achat **et** sa
+/// contre-passation sont supprimées, contre-passation d'abord (C-v0172a-2),
+/// par le socle `delete_in_tx` ; les paires de lettrage `reversal` que
+/// l'annulation avait posées entre elles sont dissoutes avant (C-v0172a-3) ;
+/// le paiement détaché d'une annulée qui avait été payée doit être
+/// contre-passé d'abord (C-v0172a-5). La facture garde ses lignes, son
+/// numéro, son fournisseur ; son document reste joint (C-v0172a-12).
+///
+/// # Précédence (testée paire par paire) — composée par écriture (C-v0172a-19)
+///
+/// `NotFound` → statut (payée : [`SupplierUnvalidationBlocker::Paid`], ou
+/// `PaidReconciled` si le règlement est rapproché ; brouillon :
+/// `IllegalStateTransition`) → version → lot `generated` → (annulée) paiement
+/// détaché non contre-passé → écriture d'achat rapprochée, puis (annulée)
+/// contre-passation rapprochée → (annulée) pré-contrôle de l'exercice clos de
+/// l'achat ou de la contre-passation (C-v0172a-4 : le mode `System` de la
+/// dissolution exige un exercice ouvert) → les refus de
+/// [`super::journal_entries::delete_in_tx`] pour la **contre-passation**, puis
+/// pour l'**achat** : exercice clos, exercice postérieur clos, écriture
+/// contre-passée (inatteignable : la contre-passation part d'abord), période
 /// verrouillée, lettrage.
 ///
-/// # Ordre des verrous
+/// # Ordre des verrous — tous avant toute lecture ordinaire
 ///
-/// La facture `FOR UPDATE` ; les articles de lot `generated` et la transaction
-/// rapprochée en **lecture verrouillante** (`LOCK IN SHARE MODE`, patron de
-/// [`lock_for_bank_settlement_in_tx`] (c)) ; l'`UPDATE` ; puis `delete_in_tx`
-/// (écriture et exercice, exercices postérieurs, lignes). Rejouée par la route
+/// La facture `FOR UPDATE` ; (payée) la transaction rapprochée du règlement
+/// en lecture verrouillante ; les articles de lot `generated` et la
+/// transaction rapprochée en **lecture verrouillante** (`LOCK IN SHARE MODE`,
+/// patron de [`lock_for_bank_settlement_in_tx`] (c)) ; (annulée) l'écriture
+/// d'achat et son exercice, puis la contre-passation et son exercice,
+/// `FOR UPDATE` — la contre-passation trouvée par une lecture **verrouillante**
+/// sur `reverses_entry_id`, jamais par `journal_entries::reversed_by`, lecture
+/// ordinaire qui ouvrirait l'instantané avant les verrous (V1-1, M14) ; les
+/// transactions rapprochées des deux écritures ; **puis seulement** les
+/// lectures ordinaires (audit du paiement détaché, `fetch_lines`) ; les lignes
+/// (dissolution) ; l'`UPDATE` ; enfin `delete_in_tx` ×2. Rejouée par la route
 /// (`retry_on_deadlock("supplier_invoices::unvalidate", …)`).
 ///
 /// ⚠️ **Second appelant de `delete_in_tx` avec `enforce_ownership = false`**,
-/// après `invoices::unvalidate` : la facture supprime **sa** propre écriture,
-/// sous ses propres gardes.
+/// après `invoices::unvalidate` : la facture supprime **ses** propres
+/// écritures, sous ses propres gardes.
 ///
 /// ⚠️ *Lecture avant le premier acte de `delete_in_tx`* (revue P1, B4 = E-4) :
 /// `fetch_lines`, lecture ordinaire pour l'instantané d'audit, précède le verrou
@@ -913,8 +941,10 @@ pub async fn unvalidate_in_tx(
     version: i32,
     user_id: i64,
 ) -> Result<SupplierInvoiceWithLines, DbError> {
-    use crate::errors::SupplierUnvalidationBlocker;
+    use super::journal_entries::{DETACHED_SETTLEMENT_ENTRY, DETACHED_SETTLEMENT_TRACES};
+    use crate::errors::{SupplierUnvalidationBlocker as B, SupplierUnvalidationHint as Hint};
 
+    // (1) La facture, sous verrou.
     let inv = sqlx::query_as::<_, SupplierInvoice>(&format!("{FIND_SCOPED_SQL} FOR UPDATE"))
         .bind(id)
         .bind(company_id)
@@ -922,23 +952,41 @@ pub async fn unvalidate_in_tx(
         .await
         .map_err(map_db_error)?
         .ok_or(DbError::NotFound)?;
-    let refus = |blocker, document_id| DbError::SupplierInvoiceNotUnvalidatable {
+    // Revue P1, E-6 : un numéro vide ou blanc vaut absent (même règle que K8).
+    let document_label = inv
+        .supplier_invoice_number
+        .clone()
+        .filter(|n| !n.trim().is_empty());
+    let refus = |blocker, document_id, hint| DbError::SupplierInvoiceNotUnvalidatable {
         blocker,
         document_id,
-        // Revue P1, E-6 : un numéro vide ou blanc vaut absent — sinon le message
-        // finirait par « () » et `documentNumber` vaudrait `""` (même règle que K8).
-        document_label: inv
-            .supplier_invoice_number
-            .clone()
-            .filter(|n| !n.trim().is_empty()),
-        hint: Default::default(),
+        document_label: document_label.clone(),
+        hint,
     };
+    //     Le statut : validée ou annulée passent ; payée → le règlement est-il
+    //     rapproché ? (lecture verrouillante, C-v0172a-6) ; brouillon → refus.
     match inv.status.as_str() {
-        "open" => {}
-        "paid" => return Err(refus(SupplierUnvalidationBlocker::Paid, None)),
+        "open" | "cancelled" => {}
+        "paid" => {
+            let reconciled = match inv.settlement_journal_entry_id {
+                Some(settlement) => matched_transaction_locked(tx, settlement).await?,
+                None => None,
+            };
+            return Err(match reconciled {
+                Some((tx_id, booking_date)) => refus(
+                    B::PaidReconciled,
+                    Some(tx_id),
+                    Hint {
+                        transaction_date: Some(booking_date),
+                        ..Hint::default()
+                    },
+                ),
+                None => refus(B::Paid, None, Hint::default()),
+            });
+        }
         other => {
             return Err(DbError::IllegalStateTransition(format!(
-                "seule une facture validée se dévalide (statut actuel : '{other}')"
+                "seule une facture validée ou annulée repasse en brouillon (statut actuel : '{other}')"
             )));
         }
     }
@@ -948,6 +996,8 @@ pub async fn unvalidate_in_tx(
     let je_id = inv.purchase_journal_entry_id.ok_or_else(|| {
         DbError::Invariant("facture fournisseur validée sans écriture d'achat".into())
     })?;
+
+    // (2) Le lot `generated` (lecture verrouillante).
     let batch: Option<i64> = sqlx::query_scalar(
         "SELECT pb.id FROM payment_batch_items pbi \
          JOIN payment_batches pb ON pb.id = pbi.payment_batch_id \
@@ -960,35 +1010,179 @@ pub async fn unvalidate_in_tx(
     .map_err(map_db_error)?;
     if let Some(batch_id) = batch {
         return Err(refus(
-            SupplierUnvalidationBlocker::InPaymentBatch,
+            B::InPaymentBatch,
             Some(batch_id),
+            Hint {
+                batch_id: Some(batch_id),
+                ..Hint::default()
+            },
         ));
     }
-    let matched: Option<i64> = sqlx::query_scalar(
-        "SELECT id FROM bank_transactions WHERE matched_entry_id = ? LIMIT 1 LOCK IN SHARE MODE",
-    )
-    .bind(je_id)
-    .fetch_optional(&mut **tx)
-    .await
-    .map_err(map_db_error)?;
-    if let Some(tx_id) = matched {
+
+    // (3) Annulée — les verrous des deux écritures et de leurs exercices.
+    let cancelled = inv.status == "cancelled";
+    let reversal = if cancelled {
+        let (purchase_fy_status,): (String,) = sqlx::query_as(
+            "SELECT fy.status FROM journal_entries je \
+             JOIN fiscal_years fy ON fy.id = je.fiscal_year_id \
+             WHERE je.id = ? AND je.company_id = ? FOR UPDATE",
+        )
+        .bind(je_id)
+        .bind(company_id)
+        .fetch_optional(&mut **tx)
+        .await
+        .map_err(map_db_error)?
+        .ok_or_else(|| DbError::Invariant("facture fournisseur sans écriture d'achat".into()))?;
+        // ⛔ Lecture VERROUILLANTE sur `reverses_entry_id`, jamais
+        // `journal_entries::reversed_by` (lecture ordinaire) : l'instantané ne
+        // s'ouvre qu'après le dernier verrou (V1-1, M14).
+        let found: Vec<(i64, i64, String)> = sqlx::query_as(
+            "SELECT je.id, fy.id, fy.status FROM journal_entries je \
+             JOIN fiscal_years fy ON fy.id = je.fiscal_year_id \
+             WHERE je.reverses_entry_id = ? AND je.company_id = ? FOR UPDATE",
+        )
+        .bind(je_id)
+        .bind(company_id)
+        .fetch_all(&mut **tx)
+        .await
+        .map_err(map_db_error)?;
+        // C-v0172a-16 — une annulée a exactement une contre-passation liée ;
+        // aucun geste ne produit un autre état.
+        let [(cp_id, cp_fy_id, cp_fy_status)] = <[_; 1]>::try_from(found).map_err(|found| {
+            DbError::Invariant(format!(
+                "facture fournisseur annulée {id} : {} contre-passation(s) liée(s) à son achat",
+                found.len()
+            ))
+        })?;
+        Some((purchase_fy_status, cp_id, cp_fy_id, cp_fy_status))
+    } else {
+        None
+    };
+    //     Les transactions rapprochées de l'achat, puis de la contre-passation
+    //     (lectures verrouillantes).
+    let matched_purchase = matched_transaction_locked(tx, je_id).await?;
+    let matched_reversal = match &reversal {
+        Some((_, cp_id, _, _)) => matched_transaction_locked(tx, *cp_id).await?,
+        None => None,
+    };
+
+    // (4) Annulée — lectures ORDINAIRES, après le dernier verrou : le paiement
+    //     détaché que nomme chaque trace d'annulation (AC-6, C-v0172a-5). Le
+    //     refus nomme la première écriture qui existe et n'est pas contre-passée.
+    if cancelled {
+        // `JSON_VALUE` rend un `LONGBLOB` : converti ici en entier (une valeur
+        // illisible vaut 0, qu'aucune écriture ne porte) ; `NULL` pour une
+        // annulation sans paiement.
+        let traces: Vec<Option<i64>> = sqlx::query_scalar(&format!(
+            "SELECT CAST({DETACHED_SETTLEMENT_ENTRY} AS SIGNED) FROM {DETACHED_SETTLEMENT_TRACES} \
+               AND si.id = ? ORDER BY al.id"
+        ))
+        .bind(company_id)
+        .bind(company_id)
+        .bind(id)
+        .fetch_all(&mut **tx)
+        .await
+        .map_err(map_db_error)?;
+        for entry_id in traces.into_iter().flatten() {
+            let entry: Option<(i64, chrono::NaiveDate)> = sqlx::query_as(
+                "SELECT entry_number, entry_date FROM journal_entries WHERE id = ? AND company_id = ?",
+            )
+            .bind(entry_id)
+            .bind(company_id)
+            .fetch_optional(&mut **tx)
+            .await
+            .map_err(map_db_error)?;
+            let Some((entry_number, entry_date)) = entry else {
+                continue;
+            };
+            // Sans verrou : une contre-passation ne s'annule pas ; une
+            // contre-passation concurrente ne rend le refus que conservateur.
+            if super::journal_entries::reversed_by(&mut **tx, company_id, entry_id)
+                .await?
+                .is_some()
+            {
+                continue;
+            }
+            let transaction_date: Option<chrono::NaiveDate> = sqlx::query_scalar(
+                "SELECT booking_date FROM bank_transactions WHERE matched_entry_id = ? \
+                 ORDER BY id LIMIT 1",
+            )
+            .bind(entry_id)
+            .fetch_optional(&mut **tx)
+            .await
+            .map_err(map_db_error)?;
+            return Err(refus(
+                B::DetachedPayment,
+                Some(entry_id),
+                Hint {
+                    transaction_date,
+                    entry_id: Some(entry_id),
+                    entry_number: Some(entry_number),
+                    entry_date: Some(entry_date),
+                    ..Hint::default()
+                },
+            ));
+        }
+    }
+
+    // (5) Le rapprochement : l'achat, puis la contre-passation.
+    if let Some((tx_id, booking_date)) = matched_purchase.or(matched_reversal) {
         return Err(refus(
-            SupplierUnvalidationBlocker::MatchedBankTransaction,
+            B::MatchedBankTransaction,
             Some(tx_id),
+            Hint {
+                transaction_date: Some(booking_date),
+                ..Hint::default()
+            },
         ));
     }
+
+    // (6) Annulée — pré-contrôle de l'exercice clos (C-v0172a-4) : le mode
+    //     `System` de la dissolution suppose un exercice ouvert tenu.
+    if let Some((purchase_fy_status, _, _, cp_fy_status)) = &reversal
+        && (purchase_fy_status == "Closed" || cp_fy_status == "Closed")
+    {
+        return Err(DbError::FiscalYearClosed);
+    }
+
     let lines = fetch_lines(tx, id).await?;
     let snapshot = snapshot_json(&inv, &lines);
-    // Un seul `UPDATE` : deux tiendraient un état qui viole
-    // `chk_supplier_invoices_entry_iff_not_draft`.
+
+    // (7) Annulée — les paires `reversal` de l'annulation se dissolvent, et
+    //     elles seules (C-v0172a-3) ; l'exercice tenu est celui de la
+    //     contre-passation, verrouillé en (3) et ouvert (6).
+    if let Some((_, cp_id, cp_fy_id, _)) = &reversal {
+        for key in letterings::reversal_groups_within_entries(tx, company_id, je_id, *cp_id).await?
+        {
+            letterings::dissolve_group_in_tx(
+                tx,
+                company_id,
+                key,
+                letterings::Mode::System {
+                    held_open_fiscal_year_id: *cp_fy_id,
+                },
+                letterings::Actor {
+                    user_id,
+                    api_key_id: None,
+                },
+            )
+            .await?;
+        }
+    }
+
+    // (8) Un seul `UPDATE` : deux tiendraient un état qui viole
+    //     `chk_supplier_invoices_entry_iff_not_draft`. Gardé par le statut LU
+    //     en (1). `chk_supplier_invoices_draft_without_settlement` tient : une
+    //     annulée n'a plus de colonne `settlement_*` (vidées par `cancel_in_tx`).
     let rows = sqlx::query(
         "UPDATE supplier_invoices SET status = 'draft', purchase_journal_entry_id = NULL, \
          version = version + 1 \
-         WHERE id = ? AND company_id = ? AND version = ? AND status = 'open'",
+         WHERE id = ? AND company_id = ? AND version = ? AND status = ?",
     )
     .bind(id)
     .bind(company_id)
     .bind(version)
+    .bind(&inv.status)
     .execute(&mut **tx)
     .await
     .map_err(map_db_error)?
@@ -996,9 +1190,25 @@ pub async fn unvalidate_in_tx(
     if rows != 1 {
         return Err(DbError::OptimisticLockConflict);
     }
-    // L'écriture part APRÈS que la facture a lâché sa référence (clé étrangère
-    // `RESTRICT`).
+
+    // (9) Les écritures partent APRÈS que la facture a lâché sa référence
+    //     (clé étrangère `RESTRICT`) : la contre-passation d'abord — elle n'est
+    //     contre-passée par rien, et la clé `reverses_entry_id` est `RESTRICT` —,
+    //     puis l'achat, dont l'étape 3-bis passe alors.
+    if let Some((_, cp_id, _, _)) = &reversal {
+        super::journal_entries::delete_in_tx(tx, company_id, *cp_id, user_id, None, false).await?;
+    }
     super::journal_entries::delete_in_tx(tx, company_id, je_id, user_id, None, false).await?;
+
+    // (10) La trace du geste (AC-9).
+    let mut details = serde_json::json!({
+        "supplierInvoice": snapshot,
+        "previousStatus": inv.status,
+        "purchaseJournalEntryId": je_id,
+    });
+    if let Some((_, cp_id, _, _)) = &reversal {
+        details["reversalJournalEntryId"] = serde_json::json!(cp_id);
+    }
     audit_log::insert_in_tx(
         &mut *tx,
         NewAuditLogEntry::user(
@@ -1006,14 +1216,28 @@ pub async fn unvalidate_in_tx(
             "supplier_invoice.unvalidated".to_string(),
             "supplier_invoice".to_string(),
             id,
-            Some(serde_json::json!({
-                "supplierInvoice": snapshot,
-                "purchaseJournalEntryId": je_id,
-            })),
+            Some(details),
         ),
     )
     .await?;
     reread(tx, company_id, id).await
+}
+
+/// La transaction bancaire rapprochée de l'écriture `entry_id`, et sa date de
+/// comptabilisation — **lecture verrouillante** (`LOCK IN SHARE MODE`), pour
+/// [`unvalidate_in_tx`].
+async fn matched_transaction_locked(
+    tx: &mut sqlx::Transaction<'_, sqlx::MySql>,
+    entry_id: i64,
+) -> Result<Option<(i64, chrono::NaiveDate)>, DbError> {
+    sqlx::query_as(
+        "SELECT id, booking_date FROM bank_transactions WHERE matched_entry_id = ? \
+         ORDER BY id LIMIT 1 LOCK IN SHARE MODE",
+    )
+    .bind(entry_id)
+    .fetch_optional(&mut **tx)
+    .await
+    .map_err(map_db_error)
 }
 
 /// **Valide** un brouillon de facture fournisseur (Story v017-4a, #849, AC-10 ;
@@ -2031,6 +2255,12 @@ pub async fn supplier_invoice_cancel_blocker(
 /// en est **détaché** (arbitrage du 2026-09-26) : les colonnes `settlement_*`
 /// et `paid_at` reviennent à `NULL`, l'écriture de règlement n'a plus de
 /// propriétaire ; l'audit garde le lien.
+///
+/// L'annulation n'est plus **définitive** (Story v0172-annulees, #868) : une
+/// annulée saisie par erreur repasse en brouillon par [`unvalidate_in_tx`],
+/// qui supprime l'achat et la contre-passation posée ici — sous les gardes de
+/// la dévalidation, et tant que le règlement détaché n'est pas contre-passé,
+/// jamais (son gel lit la facture par le statut `cancelled`).
 ///
 /// ⛔ **Les verrous d'abord, tous, avant toute lecture non verrouillante**
 /// (leçon de la Story 25-3-b) : sous `REPEATABLE READ`, la première lecture non

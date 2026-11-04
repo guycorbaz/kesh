@@ -1274,6 +1274,40 @@ pub async fn dissolve_group_in_tx(
     dissolve_group_inner(tx, company_id, key, mode, actor, None).await
 }
 
+/// Les clés des groupes d'origine **`reversal`** dont **toutes** les lignes
+/// appartiennent à l'une des deux écritures `a` et `b` — une origine et sa
+/// contre-passation (Story v0172-annulees, #868, C-v0172a-3). Lecture
+/// **ordinaire**, par ordre croissant ; ne juge rien.
+///
+/// ⛔ Ni un groupe `manual` ou `document` des mêmes lignes, ni un groupe
+/// `reversal` qui aurait une ligne ailleurs : effacer un lettrage qui relie
+/// une ligne à une autre pièce le ferait en silence — la garde de lettrage de
+/// `journal_entries::delete_in_tx` refuse alors (`ENTRY_LETTERED`).
+pub async fn reversal_groups_within_entries(
+    tx: &mut Transaction<'_, MySql>,
+    company_id: i64,
+    a: i64,
+    b: i64,
+) -> Result<Vec<i64>, DbError> {
+    sqlx::query_scalar::<_, i64>(
+        "SELECT DISTINCT jel.lettering_key FROM journal_entry_lines jel \
+         JOIN journal_entries je ON je.id = jel.entry_id \
+         WHERE je.company_id = ? AND jel.entry_id IN (?, ?) \
+           AND jel.lettering_origin = 'reversal' AND jel.lettering_key IS NOT NULL \
+           AND NOT EXISTS (SELECT 1 FROM journal_entry_lines o \
+                           WHERE o.lettering_key = jel.lettering_key AND o.entry_id NOT IN (?, ?)) \
+         ORDER BY jel.lettering_key",
+    )
+    .bind(company_id)
+    .bind(a)
+    .bind(b)
+    .bind(a)
+    .bind(b)
+    .fetch_all(&mut **tx)
+    .await
+    .map_err(map_db_error)
+}
+
 /// Le corps de [`dissolve_group_in_tx`] — **la seule fonction qui retire la
 /// marque** (R3) — avec, en plus, la pièce pour l'audit.
 async fn dissolve_group_inner(

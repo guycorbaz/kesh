@@ -75,7 +75,8 @@ export async function validateSupplierInvoice(
 }
 
 /**
- * Dévalide une facture validée : son écriture d'achat est **supprimée**, elle redevient
+ * Repasse en brouillon une facture validée — ou, depuis la Story v0172-annulees (#868),
+ * annulée : son écriture d'achat (et sa contre-passation) est **supprimée**, elle redevient
  * un brouillon modifiable (Story v017-4b, AC-22). Rend la facture relue.
  */
 export async function unvalidateSupplierInvoice(

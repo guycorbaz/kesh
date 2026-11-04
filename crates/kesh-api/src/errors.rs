@@ -4112,7 +4112,7 @@ impl IntoResponse for AppError {
                     "SUPPLIER_INVOICE_MUST_BE_UNVALIDATED_FIRST",
                     &t(
                         "error-supplier-invoice-must-be-unvalidated-first",
-                        "Cette facture fournisseur est validée : dévalidez-la d'abord, puis supprimez le brouillon.",
+                        "Cette facture fournisseur est validée : repassez-la d'abord en brouillon, puis supprimez le brouillon.",
                     ),
                 ),
                 // Story v017-4a (AC-9, limite L8) — un brouillon qui garde
@@ -4131,21 +4131,20 @@ impl IntoResponse for AppError {
                     });
                     (StatusCode::CONFLICT, Json(body)).into_response()
                 }
-                // Story v017-4a (AC-11) — la dévalidation d'une facture
-                // fournisseur refusée par un empêchement propre à la pièce. Même
-                // forme que celle de la facture client, `details` compris.
+                // Story v017-4a (AC-11) — le repassage en brouillon
+                // (« dévalidation ») d'une facture fournisseur refusé par un
+                // empêchement propre à la pièce. Story v0172-annulees (#868,
+                // AC-8) : le message nomme ce qu'il faut défaire d'abord (lot,
+                // transaction, écriture de paiement) — plus de suffixe du numéro
+                // de la facture —, et `details` gagne cinq champs, toujours
+                // présents (`null` quand ils ne s'appliquent pas).
                 DbError::SupplierInvoiceNotUnvalidatable {
                     blocker,
                     document_id,
                     document_label,
-                    ..
+                    hint,
                 } => {
-                    let (fallback_key, fallback) = supplier_unvalidation_blocked_text(blocker);
-                    let base = t(fallback_key, fallback);
-                    let message = match document_label.as_deref() {
-                        Some(etiquette) => format!("{base} ({etiquette})"),
-                        None => base,
-                    };
+                    let message = supplier_unvalidation_message(blocker, &hint);
                     let body = serde_json::json!({
                         "error": {
                             "code": blocker.code(),
@@ -4153,6 +4152,11 @@ impl IntoResponse for AppError {
                             "details": {
                                 "documentId": document_id,
                                 "documentNumber": document_label,
+                                "batchId": hint.batch_id,
+                                "transactionDate": hint.transaction_date,
+                                "entryId": hint.entry_id,
+                                "entryNumber": hint.entry_number,
+                                "entryDate": hint.entry_date,
                             },
                         }
                     });
@@ -4709,31 +4713,71 @@ fn supplier_invoice_cancel_blocked_text(
     }
 }
 
-/// Clé FTL et repli fr-CH d'un motif qui refuse la **dévalidation d'une
-/// facture fournisseur** (Story v017-4a, #849, AC-11). Les replis disent mot
-/// pour mot le FTL fr-CH ; aucun ne nomme l'état validé « ouverte » (règle Q4).
-fn supplier_unvalidation_blocked_text(
+/// Le message d'un motif qui refuse le **repassage en brouillon d'une facture
+/// fournisseur** (« dévalidation » ; Story v017-4a, #849, AC-11 ; Story
+/// v0172-annulees, #868, AC-8) : il dit **quoi faire d'abord**, et nomme
+/// l'objet à défaire — le lot, la transaction bancaire par sa date, l'écriture
+/// de paiement par son numéro **et** sa date (le numéro repart à 1 à chaque
+/// exercice). Les replis disent mot pour mot le FTL fr-CH ; aucun ne nomme
+/// l'état validé « ouverte » (règle Q4). Clés **plates**, aucun sélecteur.
+///
+/// ⚠️ `t_args` rend le repli **tel quel**, sans substituer ses arguments,
+/// quand aucun catalogue n'est chargé : le repli est donc construit par
+/// `format!`, arguments déjà en place (patron de
+/// [`settlement_counterparty_message`] ; test `supplier_unvalidation_fallbacks_substitute_their_arguments`, M13).
+fn supplier_unvalidation_message(
     blocker: kesh_db::errors::SupplierUnvalidationBlocker,
-) -> (&'static str, &'static str) {
+    hint: &kesh_db::errors::SupplierUnvalidationHint,
+) -> String {
     use kesh_db::errors::SupplierUnvalidationBlocker as B;
-    match blocker {
+    use kesh_i18n::formatting::format_date;
+    let date = |d: Option<chrono::NaiveDate>| d.as_ref().map(format_date).unwrap_or_default();
+    let tx_date = date(hint.transaction_date);
+    let entry_date = date(hint.entry_date);
+    let batch = hint.batch_id.map(|b| b.to_string()).unwrap_or_default();
+    let entry = hint.entry_number.map(|n| n.to_string()).unwrap_or_default();
+    let mut args = FluentArgs::new();
+    args.set("date", tx_date.clone());
+    args.set("batch", batch.clone());
+    args.set("entry", entry.clone());
+    args.set("entryDate", entry_date.clone());
+    let (key, fallback) = match blocker {
         B::Paid => (
             "error-supplier-invoice-unvalidate-blocked-paid",
-            "Cette facture fournisseur est payée : annulez d'abord son règlement.",
+            "Cette facture fournisseur est payée : annulez d'abord son règlement (bouton « Annuler le règlement » de cette fiche), puis repassez-la en brouillon.".to_string(),
+        ),
+        B::PaidReconciled => (
+            "error-supplier-invoice-unvalidate-blocked-paid-reconciled",
+            format!(
+                "Cette facture fournisseur est payée par la transaction bancaire du {tx_date} : annulez d'abord ce rapprochement, depuis le détail de l'import bancaire — elle redeviendra validée —, puis repassez-la en brouillon."
+            ),
         ),
         B::InPaymentBatch => (
             "error-supplier-invoice-unvalidate-blocked-in-payment-batch",
-            "Cette facture figure dans un lot de paiement en cours : annulez d'abord le lot.",
+            format!(
+                "Cette facture figure dans le lot de paiement n° {batch}, en cours : annulez d'abord ce lot, dans Paiements fournisseurs, puis repassez-la en brouillon."
+            ),
+        ),
+        B::DetachedPayment if hint.transaction_date.is_some() => (
+            "error-supplier-invoice-unvalidate-blocked-detached-payment-reconciled",
+            format!(
+                "Cette facture a été annulée alors qu'elle était payée : son paiement (écriture n° {entry} du {entry_date}) est rapproché de la transaction bancaire du {tx_date}. Si ce paiement n'a pas eu lieu, annulez d'abord ce rapprochement, depuis le détail de l'import bancaire — il contre-passera le paiement —, puis repassez la facture en brouillon."
+            ),
+        ),
+        B::DetachedPayment => (
+            "error-supplier-invoice-unvalidate-blocked-detached-payment",
+            format!(
+                "Cette facture a été annulée alors qu'elle était payée : son paiement (écriture n° {entry} du {entry_date}) reste au grand livre. Si ce paiement n'a pas eu lieu, contre-passez-le d'abord depuis sa fiche, puis repassez la facture en brouillon."
+            ),
         ),
         B::MatchedBankTransaction => (
             "error-supplier-invoice-unvalidate-blocked-matched",
-            "L'écriture d'achat de cette facture est rapprochée d'une transaction bancaire : annulez d'abord le rapprochement.",
+            format!(
+                "L'écriture d'achat de cette facture est rapprochée de la transaction bancaire du {tx_date} : annulez d'abord ce rapprochement, depuis le détail de l'import bancaire, puis repassez la facture en brouillon."
+            ),
         ),
-        B::PaidReconciled | B::DetachedPayment => (
-            "supplier-invoices-unvalidate-error",
-            "La facture n’a pas pu être dévalidée.",
-        ),
-    }
+    };
+    t_args(key, &fallback, &args)
 }
 
 /// Clé i18n et repli français du refus « contrepartie = compte soldé »
