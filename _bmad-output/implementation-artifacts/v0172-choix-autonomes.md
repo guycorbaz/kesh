@@ -381,7 +381,9 @@ clair) ; *(liste en vigueur : voir la ligne « Validation P5 » ci-dessous, qui 
 
 **Validation P4 (2026-11-04)** : la story vise la **0.17.3** (décision du Project Lead) ; l'inactivité vaut 60 minutes (CR #891). **C-v0172s-18 et 19 sont retirés** (simplicité).
 
-**Validation P5 (2026-11-04) — fait foi** : C-v0172s-19 et 25 sont **remplacés** par C-v0172s-26 (renouvellement au démarrage, forme minimale) ; **en vigueur : C-v0172s-14 à 17, 20 à 24, 26, 27**.
+**Validation P5 (2026-11-04)** : C-v0172s-19 et 25 sont **remplacés** par C-v0172s-26 (renouvellement au démarrage, forme minimale) ; en vigueur alors : C-v0172s-14 à 17, 20 à 24, 26, 27.
+
+**Reprise (2026-11-04) — fait foi** : décision du Project Lead (commentaire de #891) — durée d'inactivité réglée dans l'interface, exacte, remise à zéro par l'activité. C-v0172s-15, 16, 20, 21, 22 et 27 sont **remplacés** (C-v0172s-28) ; **en vigueur : C-v0172s-14, 17, 23, 24, 26 et 28 à 42**.
 
 ### C-v0172s-1 — Renouvellement côté navigateur, à l'entrée de l'utilisateur, et champ `sessionExpiresIn`
 
@@ -506,6 +508,8 @@ clair) ; *(liste en vigueur : voir la ligne « Validation P5 » ci-dessous, qui 
 
 ### C-v0172s-15 — Conception remplacée : la fenêtre d'inactivité plus longue que le jeton d'accès, et le chemin 401 existant
 
+*Remplacé à la reprise (2026-11-04) par **C-v0172s-28** et suivants.*
+
 *Révisé à la validation P4 : le repli `/me` (C-18) et le renouvellement silencieux d'`hydrate()` (C-19) sont retirés de la conception ; s'y ajoute la révocation à la restauration complète (C-23).*
 
 - **Contexte** : trois validations de suite (P1, P2 de la fiche mère, P3 de cette fiche) ont rendu des MEDIUM nés de la mécanique du
@@ -523,6 +527,8 @@ clair) ; *(liste en vigueur : voir la ligne « Validation P5 » ci-dessous, qui 
 - **Réversible** : oui.
 
 ### C-v0172s-16 — Défaut 60 minutes ; une valeur trop courte est portée au double, sans refus de démarrage
+
+*Remplacé à la reprise (2026-11-04) par **C-v0172s-28** et suivants.*
 
 *Confirmé par le Project Lead le 2026-11-04 (« 60 minutes : 15 est trop court ») et porté par le CR #891 (FR13). La règle vit dans une fonction unique appelée par `from_env` seul : C-v0172s-22.*
 
@@ -564,6 +570,8 @@ clair) ; *(liste en vigueur : voir la ligne « Validation P5 » ci-dessous, qui 
 
 ### C-v0172s-20 — Les lectures de fond ne renouvellent pas
 
+*Remplacé à la reprise (2026-11-04) par **C-v0172s-28** et suivants.*
+
 *Précisé à la validation P4* : la distinction montage / minuterie vit dans `BackupScheduleBanner.svelte:33-34` ; `apiClient.get(url, call?)`, `fetchBackupSchedule(call?)`, `refreshBackupScheduleState(call?)` transmettent l'option.
 
 - **Retenu** : `CallOptions.background` ; la lecture périodique du bandeau de sauvegarde (`BackupScheduleBanner.svelte:34`) le porte ;
@@ -574,12 +582,16 @@ clair) ; *(liste en vigueur : voir la ligne « Validation P5 » ci-dessous, qui 
 
 ### C-v0172s-21 — La borne écrite : entre `N − jwt` et `N` après la dernière requête ; aucune durée absolue
 
+*Remplacé à la reprise (2026-11-04) par **C-v0172s-28** et suivants.*
+
 - **Retenu** : 45 à 60 minutes par défaut, 15 à 30 avec un `.env` 0.17.1 ; une saisie sans requête est sûre tant qu'elle dure moins de
   `N − jwt` ; aucune durée absolue pour un utilisateur actif (cookie de 30 jours reposé à chaque renouvellement), écrit au manuel
   d'administration (finding P13 de la validation P3).
 - **Réversible** : —
 
 ### C-v0172s-22 — La règle du double dans une fonction unique, appelée par `from_env` seulement
+
+*Remplacé à la reprise (2026-11-04) par **C-v0172s-28** et suivants.*
 
 - **Contexte** : validation P4, finding P2 — `from_fields_for_test` (`config.rs:443-510`) prend l'inactivité en paramètre ; ~80 fichiers de
   tests d'intégration lui passent 15/15 ; son assertion `≤ 24 h` (`:474-476`) refuserait une valeur doublée de 2880.
@@ -638,8 +650,165 @@ clair) ; *(liste en vigueur : voir la ligne « Validation P5 » ci-dessous, qui 
 
 ### C-v0172s-27 — Dérogation à la règle de splitting : six modules
 
+*Remplacé à la reprise (2026-11-04) par **C-v0172s-28** et suivants.*
+
 - **Contexte** : le renouvellement au démarrage ajoute `lib/app/stores/auth.svelte.ts` (un appel) aux cinq modules.
 - **Retenu** : garder la story unique ; le changement du store est un appel indissociable de `tryRefresh()` ; risque borné par la taille du
   changement et par le gate complet qu'impose le repository.
 - **Écartées** : une story à part pour `hydrate()` — elle dépendrait de `tryRefresh()` et se livrerait après, ou en même temps.
+- **Réversible** : oui.
+
+### C-v0172s-28 — Reprise : la conception à l'activité de l'utilisateur, au réglage en base, à l'échéance exacte
+
+- **Contexte** : décision du Project Lead du 2026-11-04 (commentaire de #891) : réglage dans l'interface d'administration, durée
+  exactement celle réglée (« non pas un multiple »), remise à zéro à chaque activité (« mouvement de souris, etc. »). Les prémisses de
+  C-15, 16, 20, 21, 22 (inactivité mesurée aux requêtes, variable d'environnement, double du jeton d'accès) tombent.
+- **Retenu** : C-29 à C-42 ; **gardés** : C-14 (#890), C-17 (grâce), C-23 (révocation à l'import), C-24 (course résiduelle), C-26
+  (renouvellement au démarrage) ; **remplacés** : C-15, 16, 20, 21, 22, 27.
+- **Écartées** : garder la conception validée et n'ajouter que l'écran (la règle du double contredirait « non pas un multiple ») ;
+  reprendre la première conception (C-1 à 13 : verrous, module armé, suspension — ce qui recyclait les défauts).
+- **Réversible** : oui (avant publication).
+
+### C-v0172s-29 — Le réglage dans une table système singleton, sans ligne initiale
+
+- **Contexte** : aucune table existante ne peut porter le réglage sans migration ; le précédent `_kesh_backup_schedule` (31-1c) montre
+  qu'une table **applicative** neuve rendrait inimportables toutes les sauvegardes antérieures (égalité des inventaires de tables).
+- **Retenu** : `_kesh_installation_settings` (préfixe `_kesh_`, exclue de `TABLES_TO_TRUNCATE`), `session_idle_minutes` entre 1 et 1440,
+  défaut du code 60 tant qu'aucune ligne n'existe (patron `mcp_server_settings`), migration DDL seule (P7 sans objet) ; une restauration
+  garde le réglage de la destination. Nom générique : d'autres réglages d'installation pourront s'y ajouter (par une migration).
+- **Écartées** : une table applicative (sauvegardes 0.17.x inimportables) ; une colonne dans `_kesh_backup_schedule` (sens faux, et
+  migration aussi) ; un `INSERT` initial (une écriture de données à trier P7, et un squash de test à alimenter) ; un fichier hors base.
+- **Bornes** : 1 minute (recette ; plus court rend un seul champ risqué) à 1440 (une journée ; au-delà, la session ne se fermerait plus) —
+  celles de la variable d'aujourd'hui.
+- **Réversible** : oui, par une migration suivante.
+
+### C-v0172s-30 — L'écran : une section « Session » de Paramètres, Administrateur seul
+
+- **Retenu** : `/settings` (menu Administration → Paramètres), qui porte déjà des sections réservées à l'Administrateur (`isAdmin`) ;
+  `GET`/`PUT /api/v1/admin/session-settings` dans `admin_routes` (clés d'API refusées), verrou optimiste, audit
+  `admin.session_settings_updated` dans la transaction ; la session de l'Administrateur prend la nouvelle valeur aussitôt.
+- **Écartées** : un écran neuf `/admin/session` (une entrée de menu pour un champ) ; l'écran Utilisateurs (il gère des comptes, non
+  l'installation) ; l'écran de sauvegarde (sans rapport).
+- **Réversible** : oui.
+
+### C-v0172s-31 — `KESH_REFRESH_INACTIVITY_MINUTES` ignorée, avec avertissement ; pas d'amorçage
+
+- **Retenu** : la variable n'est plus lue comme durée ; si posée, avertissement au démarrage (fonction pure testée) ; retirée de
+  `.env.example` et des deux `docker-compose` ; `Config::refresh_inactivity` et `main.rs:245-251` retirés ; le paramètre de
+  `from_fields_for_test` gardé et ignoré.
+- **Écartées** : refuser le démarrage (un `docker-compose` 0.17.x la pose toujours, `${…:-15}` : la mise à jour ne démarrerait pas) ;
+  amorcer le réglage depuis la variable (les gabarits livrés posaient 15 : presque toutes les installations prendraient 15 au lieu des 60
+  voulus) ; retirer le paramètre de `from_fields_for_test` dans cette story (78 fichiers, par édition manuelle, sans comportement).
+- **Issue demandée** : retirer le paramètre ignoré de `from_fields_for_test` en un lot mécanique (P3, dette de test).
+- **Réversible** : oui.
+
+### C-v0172s-32 — L'échéance : `refresh_tokens.expires_at`, copiée dans `idle_exp`, contrôlée sans tolérance
+
+- **Retenu** : `expires_at` = dernière activité + N ; revendication facultative `idle_exp` du jeton d'accès, contrôlée strictement par
+  le middleware (sans les 60 s de `decode`) ; le renouvellement recopie l'échéance ; connexion, assistant, changement de mot de passe :
+  `now + N`. Jetons 0.17.x sans `idle_exp` acceptés jusqu'à leur `exp`. `jwt::encode` inchangé (tests), `encode_session` et
+  `encode_claims` ajoutés.
+- **Écartées** : lire la ligne en base à chaque requête (une requête de plus par appel, un identifiant de session à ajouter au jeton, et
+  les jetons forgés de dizaines de tests sans ligne) ; un jeton d'accès de durée N (la tolérance de 60 s le rend inexact, et un battement
+  devrait le réémettre de toute façon) ; supprimer la tolérance de `decode` (changerait deux tests et la sémantique de tous les jetons) ;
+  supprimer la rotation (perte de la détection de vol).
+- **Réversible** : oui.
+
+### C-v0172s-33 — Le battement `POST /api/v1/auth/activity { idleMs }`, au plus toutes les 15 secondes
+
+- **Retenu** : route protégée (jeton d'accès) qui lit le cookie de renouvellement de la même session (chemin `/api/v1/auth`), met
+  `expires_at = now − idleMs + N` (`idleMs` borné à `[0, N]`) par un seul `UPDATE` conditionné à `user_id`, réémet le jeton d'accès avec
+  le **même `exp`** et le nouvel `idle_exp` ; aucune rotation, non audité (inscrit comme tel au registre des routes). 15 s : coût
+  négligeable (une lecture, une écriture par clé unique, un encodage) pour un écart serveur borné à 15 s dans le seul cas d'un arrêt du
+  navigateur.
+- **Écartées** : prolonger à chaque requête (les sondes de fond et les requêtes non voulues par l'utilisateur compteraient) ; un battement
+  sans `idleMs` (échéance en retard jusqu'au pas) ; faire du battement un renouvellement (rotation toutes les 15 s, course entre onglets
+  multipliée) ; prolonger aussi `exp` (fenêtre de rôle périmé sans fin pour un utilisateur actif) ; `navigator.sendBeacon` à la fermeture
+  (gain de 15 s au plus, quand l'utilisateur est parti).
+- **Réversible** : oui.
+
+### C-v0172s-34 — Le navigateur : un module d'écoute, `localStorage`, une minuterie d'une seconde, aucun verrou
+
+- **Retenu** : `session-idle.svelte.ts`, démarré par le layout racine dès qu'un utilisateur est connu ; trois clés `localStorage`
+  (`lastActivity`, `reportedActivity`, `heartbeatAt`) ; une minuterie d'une seconde par onglet qui ferme à l'échéance et envoie le
+  battement ; doublons de battement inoffensifs (même échéance écrite deux fois). Repli en mémoire si `localStorage` manque (activité non
+  partagée, déclarée).
+- **Écartées** : `BroadcastChannel` (un message par mouvement, et rien à lire pour un onglet qui s'ouvre) ; `navigator.locks` (absent hors
+  contexte sécurisé : HTTP en LAN) ; un onglet maître (élection, reprise à la fermeture) ; l'événement `storage` (inutile : la minuterie
+  relit les clés chaque seconde). Pourquoi aucun mécanisme des passes P1 à P3 n'est repris : le serveur détient l'échéance, si bien qu'aucun
+  état du navigateur n'a à être protégé contre une course ; un onglet qui se trompe ne peut que fermer trop tard à l'écran, jamais
+  prolonger au serveur au-delà de l'activité réelle.
+- **Réversible** : oui.
+
+### C-v0172s-35 — Ce qui compte comme activité
+
+- **Retenu** : `keydown`, `pointerdown`, `pointermove` à coordonnées neuves, `wheel`, `touchstart`, `scroll` (capture), `focus`,
+  `visibilitychange` vers `visible`, `blur` vers un `<iframe>` de la page ; contrôle de l'échéance **avant** d'enregistrer ; le chargement
+  d'une page ne compte pas.
+- **Écartées** : `mousemove` sans contrôle de coordonnées (mouvements fictifs du navigateur quand la page bouge sous un pointeur immobile :
+  une sonde de fond qui redessine un bandeau prolongerait la session) ; compter le chargement (un navigateur qui rouvre ses onglets au
+  démarrage ferait une activité sans l'utilisateur).
+- **Réversible** : oui.
+
+### C-v0172s-36 — L'aperçu PDF : ce qui est observable, et ce qui ne l'est pas
+
+- **Retenu** : les événements de la visionneuse PDF d'un `<iframe>` n'atteignent pas la page ; comptent l'entrée et la sortie du pointeur
+  et le clic qui donne le focus au cadre ; une image (`<img>`) compte entièrement. Déclaré au manuel utilisateur : une lecture de plus de N
+  sans geste hors du cadre ferme la session.
+- **Écartées** : compter le focus continu dans le cadre (un poste quitté avec le PDF au premier plan ne se fermerait jamais) ; injecter des
+  écouteurs dans le document du cadre (visionneuse du navigateur, inaccessible) ; rendre le PDF par une bibliothèque dans la page (hors
+  périmètre, poids).
+- **Signalé, non tranché** : si le Project Lead lit de longs documents dans l'aperçu, la durée réglée est le levier ; un CR peut suivre.
+- **Réversible** : oui.
+
+### C-v0172s-37 — La fin de session : retour à la connexion, avec le motif ; aucune alerte préalable
+
+- **Retenu** : à l'échéance, chaque onglet efface l'état sans diffusion et va à `/login?reason=idle&minutes=N` (« Session fermée après N
+  minutes d'inactivité. ») ; ce qui n'était pas enregistré est perdu, dans tous les onglets.
+- **Écartées** : une alerte « la session va se fermer » avec un bouton *Rester connecté* (un CR distinct : une minuterie et un dialogue de
+  plus, hors des quatre exigences) ; conserver les saisies en cours (brouillons locaux : hors périmètre).
+- **Réversible** : oui.
+
+### C-v0172s-38 — Un changement du réglage s'applique à chaque session à sa prochaine activité
+
+- **Retenu** : l'échéance d'une session est calculée à chaque battement avec la valeur du moment ; une session déjà inactive garde
+  l'échéance calculée avec l'ancienne valeur ; la session de l'Administrateur qui enregistre prend la nouvelle aussitôt.
+- **Écartées** : recalculer toutes les lignes actives à l'enregistrement (un `UPDATE` de masse pour un effet de quelques minutes au plus,
+  et le jeton d'accès de chaque session porterait encore l'ancienne) ; stocker la dernière activité au lieu de l'échéance (une colonne
+  neuve sur une table applicative, donc une sauvegarde 0.17.x qui ne s'importerait plus).
+- **Réversible** : oui.
+
+### C-v0172s-39 — Les lectures de fond ne comptent pas, par construction
+
+- **Retenu** : seul le battement prolonge ; le module d'écoute ne voit aucune requête ; le renouvellement recopie l'échéance. L'option
+  `background` de C-20 n'est pas ajoutée, le bandeau de sauvegarde et ses fichiers ne sont pas touchés.
+- **Réversible** : —
+
+### C-v0172s-40 — Une migration, non breaking, sans bump
+
+- **Contexte** : l'ancienne fiche se faisait fort de n'en avoir aucune ; un réglage en base en exige une (C-29).
+- **Retenu** : `20261104000001_installation_settings.sql`, `CREATE TABLE` seul ; pas de bump de `kesh_version_min_required` (P1, P3 sans
+  objet) ; audit d'idempotence (P5), couplage positionnel (P6), checksum (P8). **Conséquence pour la production** : la 0.17.1 refuse de
+  démarrer sur une base passée par la 0.17.3 ; le retour passe par la sauvegarde d'avant la mise à jour, ou par `DROP TABLE
+  _kesh_installation_settings` **et** la suppression de sa ligne de `_sqlx_migrations`. À écrire au CHANGELOG et à la note de mise à jour.
+- **Écartées** : aucune migration (pas de réglage dans l'interface) ; un bump (rien d'incompatible pour un binaire antérieur, qui
+  ignorerait la table s'il démarrait).
+- **Réversible** : par la sauvegarde.
+
+### C-v0172s-41 — Dérogation à la règle de splitting : huit modules, deux lots, revue par lot
+
+- **Contexte** : modules 1 à 7 de code (kesh-db, kesh-api, kesh-i18n, `lib/shared/utils`, `lib/app/stores`, `lib/features/settings`,
+  `routes`) et la configuration et les textes.
+- **Retenu** : une story ; lot S (serveur) puis lot N (navigateur), un commit de lot et une revue de code par lot.
+- **Écartées** : deux stories — le serveur seul fermerait la session N minutes après la connexion malgré l'activité (seul le battement
+  prolonge), le navigateur seul n'aurait rien à appeler ; aucune ne se publie sans l'autre.
+- **Risque accepté** : la validation de fiche porte sur huit modules ; borné par la simplicité de chaque moitié.
+- **Réversible** : oui.
+
+### C-v0172s-42 — `KESH_JWT_EXPIRY_MINUTES` reste une variable ; le contournement de #876 à retirer
+
+- **Retenu** : la durée du jeton d'accès ne fixe plus la fin de session (seulement le rythme des renouvellements et la fenêtre d'un rôle
+  périmé) ; elle reste un réglage d'exploitation. Le contournement `KESH_JWT_EXPIRY_MINUTES=480` (commentaire de #876) est à retirer :
+  dit au CHANGELOG et au manuel.
+- **Écartées** : la déplacer aussi dans l'interface (hors de la demande).
 - **Réversible** : oui.
