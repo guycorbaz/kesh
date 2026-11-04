@@ -17,6 +17,8 @@
 	import { fetchAccounts } from '$lib/features/accounts/accounts.api';
 	import type { AccountResponse } from '$lib/features/accounts/accounts.types';
 	import { creditNoteRevenueAccountLabel } from '$lib/features/accounts/account-label';
+	import { formatSwissDate } from '$lib/features/reports/reports.api';
+	import { readableAmount } from '$lib/features/supplier-invoices/supplier-invoice-form';
 
 	let creditNote = $state<CreditNoteResponse | null>(null);
 	let loading = $state(true);
@@ -150,7 +152,10 @@
 		{creditNote.creditNoteNumber ?? `#${creditNote.id}`}
 	</h1>
 	<p class="mb-6 text-sm text-text-muted">
-		{creditNote.date} · {creditNoteStatusLabel(creditNote.status)}
+		<!-- Story v0171 (#879) : date en forme suisse. -->
+		<span data-testid="credit-note-date">{formatSwissDate(creditNote.date)}</span> · {creditNoteStatusLabel(
+			creditNote.status,
+		)}
 	</p>
 
 	<table class="w-full border-collapse text-sm">
@@ -171,7 +176,10 @@
 			{#each creditNote.lines as line (line.position)}
 				<tr class="border-b">
 					<td class="py-2">{line.description}</td>
-					<td class="py-2 text-right">{line.quantity}</td>
+					<!-- Story v0171 (#866) : la quantité lisible, `1.0000` → `1`. -->
+					<td class="py-2 text-right" data-testid="credit-note-line-quantity">
+						{readableAmount(line.quantity, 0)}
+					</td>
 					<td class="py-2 text-right">{formatCreditNoteTotal(line.unitPrice)}</td>
 					<td class="py-2 text-right">{line.vatRate}</td>
 					<td class="py-2" data-testid="credit-note-line-revenue-account">

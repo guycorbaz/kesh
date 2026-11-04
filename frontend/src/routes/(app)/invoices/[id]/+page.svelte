@@ -80,6 +80,8 @@
 	import { createCreditNote } from '$lib/features/credit-notes/credit-notes.api';
 	import { listProjects } from '$lib/features/projects/projects.api';
 	import type { ProjectResponse } from '$lib/features/projects/projects.types';
+	import { formatSwissDate } from '$lib/features/reports/reports.api';
+	import { readableAmount } from '$lib/features/supplier-invoices/supplier-invoice-form';
 
 	let creditNoteOpen = $state(false);
 	let creditNoteSubmitting = $state(false);
@@ -1132,11 +1134,14 @@
 		<div class="grid grid-cols-2 gap-4 text-sm">
 			<div>
 				<div class="text-text-muted">Date</div>
-				<div>{invoice.date}</div>
+				<!-- Story v0171 (#879) : les dates de la fiche en forme suisse. -->
+				<div data-testid="invoice-detail-date">{formatSwissDate(invoice.date)}</div>
 			</div>
 			<div>
 				<div class="text-text-muted">Échéance</div>
-				<div>{invoice.dueDate ?? '—'}</div>
+				<div data-testid="invoice-detail-due">
+					{invoice.dueDate ? formatSwissDate(invoice.dueDate) : '—'}
+				</div>
 			</div>
 			<div>
 				<div class="text-text-muted">Conditions de paiement</div>
@@ -1153,7 +1158,9 @@
 			{#if invoice.paidAt}
 				<div>
 					<div class="text-text-muted">{i18nMsg('invoice-detail-paid-at-label', 'Payée le')}</div>
-					<div>{invoice.paidAt.slice(0, 10)}</div>
+					<div data-testid="invoice-detail-paid-at">
+						{formatSwissDate(invoice.paidAt.slice(0, 10))}
+					</div>
 				</div>
 			{/if}
 			{#if invoice.pdfFrozenAt}
@@ -1161,7 +1168,7 @@
 					<div class="text-text-muted">
 						{i18nMsg('invoice-detail-pdf-frozen-at-label', 'Document figé le')}
 					</div>
-					<div data-testid="invoice-pdf-frozen-at">{invoice.pdfFrozenAt.slice(0, 10)}</div>
+					<div data-testid="invoice-pdf-frozen-at">{formatSwissDate(invoice.pdfFrozenAt.slice(0, 10))}</div>
 				</div>
 			{/if}
 			{#if invoice.emailedAt}
@@ -1169,7 +1176,7 @@
 					<div class="text-text-muted">
 						{i18nMsg('invoice-detail-emailed-at-label', 'Envoyée le')}
 					</div>
-					<div data-testid="invoice-emailed-at">{invoice.emailedAt.slice(0, 10)}</div>
+					<div data-testid="invoice-emailed-at">{formatSwissDate(invoice.emailedAt.slice(0, 10))}</div>
 					<div class="text-text-muted" data-testid="invoice-emailed-to">{invoice.emailedTo}</div>
 				</div>
 			{/if}
@@ -1197,7 +1204,8 @@
 				{#each invoice.lines as l (l.id)}
 					<tr class="border-b border-border">
 						<td class="py-2 pr-2">{l.description}</td>
-						<td class="py-2 pr-2">{l.quantity}</td>
+						<!-- Story v0171 (#866) : la quantité lisible, `1.0000` → `1`. -->
+						<td class="py-2 pr-2" data-testid="invoice-line-quantity">{readableAmount(l.quantity, 0)}</td>
 						<td class="py-2 pr-2 font-mono">{formatInvoiceTotal(l.unitPrice)}</td>
 						<td class="py-2 pr-2">{l.vatRate}%</td>
 						<td class="py-2 pr-2" data-testid="invoice-line-revenue-account">

@@ -150,3 +150,38 @@ describe("échéancier — le reste dû (Story 25-4-b1)", () => {
     expect(container).toBeTruthy();
   });
 });
+
+// Story v0171 (#879) — les dates de l'échéancier en forme suisse. Mutation M5 : retirer
+// `formatSwissDate` d'un site rougit le test qui le nomme.
+describe("échéancier — dates (v0171)", () => {
+  it("date de facture `01.03.2026` (mutation M5 : site `inv.date`)", async () => {
+    const { findByTestId, container } = render(Page);
+    expect((await findByTestId("due-dates-date")).textContent?.trim()).toBe(
+      "01.03.2026",
+    );
+    expect(container.textContent).not.toContain("2026-03-01");
+  });
+
+  it("échéance `31.03.2026`, absente ⇒ `—` (mutation M5 : site `inv.dueDate`)", async () => {
+    listDueDatesMock.mockResolvedValue(
+      response([item(), item({ id: 6, dueDate: null })]),
+    );
+    const { findAllByTestId, container } = render(Page);
+    const dues = await findAllByTestId("due-dates-due");
+    expect(dues.map((d) => d.textContent?.trim())).toEqual(["31.03.2026", "—"]);
+    expect(container.textContent).not.toContain("2026-03-31");
+  });
+
+  it("« Payée le » `10.04.2026`, non payée ⇒ `—` (mutation M5 : site `inv.paidAt`)", async () => {
+    listDueDatesMock.mockResolvedValue(
+      response([
+        item({ paidAt: "2026-04-10T09:30:00", amountDue: "0.00" }),
+        item({ id: 6 }),
+      ]),
+    );
+    const { findAllByTestId, container } = render(Page);
+    const paid = await findAllByTestId("due-dates-paid-at");
+    expect(paid.map((d) => d.textContent?.trim())).toEqual(["10.04.2026", "—"]);
+    expect(container.textContent).not.toContain("2026-04-10");
+  });
+});

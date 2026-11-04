@@ -125,8 +125,10 @@ test.describe('Échéancier factures — Story 5.4', () => {
 		await expect(page.getByRole('heading', { name: /Échéancier/i })).toBeVisible();
 
 		// Les 2 doivent apparaître (filtre défaut = unpaid).
+		// Story v0171 (#879) : l'échéancier affiche ses dates en forme suisse
+		// (`JJ.MM.AAAA`), non plus en ISO.
 		const overdueRow = page.locator('tbody tr', { hasText: contactName }).filter({
-			hasText: daysFromToday(-1),
+			hasText: daysFromToday(-1).split('-').reverse().join('.'),
 		});
 		await expect(overdueRow).toBeVisible({ timeout: 5000 });
 		// Badge "En retard" présent au moins une fois dans le tableau.

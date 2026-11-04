@@ -32,6 +32,7 @@
 	import ReminderSendDialog from '$lib/features/reminders/ReminderSendDialog.svelte';
 	import ManualReminderDialog from '$lib/features/reminders/ManualReminderDialog.svelte';
 	import ReminderBatchReport from '$lib/features/reminders/ReminderBatchReport.svelte';
+	import { formatSwissDate } from '$lib/features/reports/reports.api';
 
 	/** Cap dur backend (BATCH_TOO_LARGE au-delà, après dédup). */
 	const BATCH_CAP = 20;
@@ -342,7 +343,10 @@
 											/>
 										</td>
 										<td class="py-2 pr-2 font-mono">{invoiceLabel(inv)}</td>
-										<td class="py-2 pr-2">{inv.dueDate}</td>
+										<!-- Story v0171 (#879) : dates en forme suisse. -->
+										<td class="py-2 pr-2" data-testid="reminder-due-date">
+											{formatSwissDate(inv.dueDate)}
+										</td>
 										<td class="py-2 pr-2">
 											{#if inv.terminal}
 												<ReminderTerminalBadge />
@@ -352,10 +356,10 @@
 												})}
 											{/if}
 										</td>
-										<td class="py-2 pr-2 text-text-muted">
+										<td class="py-2 pr-2 text-text-muted" data-testid="reminder-last-sent">
 											{#if inv.lastReminderAt}
 												{i18nMsg('reminders-last-sent', 'dernier le { $date }', {
-													date: inv.lastReminderAt.slice(0, 10),
+													date: formatSwissDate(inv.lastReminderAt.slice(0, 10)),
 												})}
 											{/if}
 										</td>

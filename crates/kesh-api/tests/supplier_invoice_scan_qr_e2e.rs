@@ -221,3 +221,38 @@ async fn scan_qr_requires_authentication(pool: MySqlPool) {
         .unwrap();
     assert_eq!(resp.status(), 401);
 }
+
+/// Story v0171 (#854, AC-4) — un `spcText` dont les lignes sont séparées par
+/// CR+LF (admis par la norme SIX) rend 200 et exactement la réponse de son
+/// jumeau LF.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn scan_qr_crlf_payload_returns_same_coordinates_as_lf(pool: MySqlPool) {
+    seed_accounting_company(&pool).await.expect("seed");
+    let app = spawn_app(pool).await;
+    let token = login(&app).await;
+
+    let qrr = build_qrr(1, 42).expect("qrr");
+    let lf = spc_payload(QR_IBAN_OK, Reference::Qrr(qrr.clone()));
+    let crlf = lf.replace('\n', "\r\n");
+    assert!(crlf.starts_with("SPC\r\n0200\r\n"));
+
+    let mut bodies = Vec::new();
+    for spc in [&lf, &crlf] {
+        let resp = app
+            .client
+            .post(app.url("/api/v1/supplier-invoices/scan-qr"))
+            .bearer_auth(&token)
+            .json(&json!({ "spcText": spc }))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), 200);
+        bodies.push(resp.json::<serde_json::Value>().await.unwrap());
+    }
+    assert_eq!(bodies[0], bodies[1]);
+    assert_eq!(bodies[1]["creditorQrIban"], QR_IBAN_OK);
+    assert_eq!(bodies[1]["paymentReference"], qrr);
+    assert_eq!(bodies[1]["expectedPaymentAmount"], "1234.50");
+    assert_eq!(bodies[1]["creditorName"], "Robert Schneider SA");
+    assert_eq!(bodies[1]["unstructuredMessage"], "Facture F-2026-0042");
+}

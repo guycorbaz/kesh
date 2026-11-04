@@ -14,6 +14,7 @@
 <script lang="ts">
 	import { i18nMsg } from '$lib/shared/utils/i18n.svelte';
 	import { formatInvoiceTotal } from '$lib/features/invoices/invoice-helpers';
+	import { formatSwissDate } from '$lib/features/reports/reports.api';
 	import type { ReminderResponse } from './reminders.types';
 
 	let { reminders }: { reminders: ReminderResponse[] } = $props();
@@ -53,7 +54,8 @@
 						class="border-b border-border {cancelled ? 'text-text-muted line-through' : ''}"
 						data-testid="reminder-history-row"
 					>
-						<td class="py-2 pr-2">{r.sentAt.slice(0, 10)}</td>
+						<!-- Story v0171 (#879) : dates en forme suisse. -->
+						<td class="py-2 pr-2">{formatSwissDate(r.sentAt.slice(0, 10))}</td>
 						<td class="py-2 pr-2">
 							{i18nMsg('reminders-level-name', 'Rappel { $level }', { level: r.levelNumber })}
 						</td>
@@ -65,9 +67,13 @@
 					</tr>
 					{#if cancelled}
 						<tr class="border-b border-border">
-							<td colspan="5" class="pb-2 text-xs text-text-muted">
+							<td
+								colspan="5"
+								class="pb-2 text-xs text-text-muted"
+								data-testid="reminder-history-cancelled-at"
+							>
 								{i18nMsg('reminders-history-cancelled-at', 'Annulé le { $date }', {
-									date: r.cancelledAt!.slice(0, 10),
+									date: formatSwissDate(r.cancelledAt!.slice(0, 10)),
 								})}
 							</td>
 						</tr>

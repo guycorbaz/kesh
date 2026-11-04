@@ -307,6 +307,13 @@ fn qr_invoice_png(amount: Decimal, name: &str) -> Vec<u8> {
 /// 12-5a, lui, ne borne ni les longueurs, ni le montant, ni le pays, ni la
 /// devise — c'est exactement ce que le contrôle pur de l'import doit rattraper.
 fn qr_invoice_png_with(overrides: &[(usize, &str)]) -> Vec<u8> {
+    qr_invoice_png_with_sep(overrides, "\n")
+}
+
+/// Comme [`qr_invoice_png_with`], les lignes du payload jointes par `sep` —
+/// Story v0171 (#854) : `"\r\n"` fabrique une QR-facture à lignes CR+LF, forme
+/// que la norme SIX admet et que le générateur de Kesh n'émet pas.
+fn qr_invoice_png_with_sep(overrides: &[(usize, &str)], sep: &str) -> Vec<u8> {
     let data = QrBillData {
         creditor_iban: "CH9300762011623852957".into(),
         creditor: Address {
@@ -332,7 +339,7 @@ fn qr_invoice_png_with(overrides: &[(usize, &str)]) -> Vec<u8> {
     for (index, value) in overrides {
         lines[*index] = (*value).to_string();
     }
-    qr_png_from_payload(&lines.join("\n"))
+    qr_png_from_payload(&lines.join(sep))
 }
 
 /// PDF minimal d'une page de texte, écrit à la main, **sans** QR (Story 30-2a,
@@ -636,6 +643,45 @@ async fn import_with_qr_reports_present(pool: MySqlPool) {
     assert_eq!(details["qr_present"], json!(true), "{details}");
     assert_eq!(details["iban_present"], json!(true), "{details}");
     assert_eq!(details["creditor_name"], "Robert SA");
+}
+
+/// Story v0171 (#854, AC-5) — une QR-facture dont les lignes sont séparées par
+/// CR+LF entre `present`, IBAN, montant et créancier lus — et non plus `none`
+/// (« Aucune QR-facture exploitable »), l'ancien comportement.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn import_crlf_qr_reports_present(pool: MySqlPool) {
+    let ctx = setup(&pool).await;
+    let app = spawn_app(pool.clone(), 25 * 1024 * 1024).await;
+    std::fs::write(
+        app.inbox.join("crlf.png"),
+        qr_invoice_png_with_sep(
+            &[(SPC_LINE_AMOUNT, "100.00"), (SPC_LINE_NAME, "Commune CRLF")],
+            "\r\n",
+        ),
+    )
+    .unwrap();
+    let body = run_import(&app, &ctx.jwt).await;
+    assert!(body["failed"].as_array().unwrap().is_empty(), "{body}");
+    let entry = accepted_entry(&body, "crlf.png");
+    assert_eq!(entry["qr"], "present", "{body}");
+    assert_ne!(entry["qr"], "none", "{body}");
+    assert!(entry.get("qrError").is_none(), "{body}");
+    let id = entry["importedSupplierInvoiceId"].as_i64().unwrap();
+    let (iban, amount, name): (Option<String>, Option<String>, Option<String>) = sqlx::query_as(
+        "SELECT creditor_iban, CAST(amount AS CHAR), creditor_name \
+         FROM imported_supplier_invoices WHERE id = ?",
+    )
+    .bind(id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(iban.as_deref(), Some("CH9300762011623852957"));
+    // `amount` est `DECIMAL(19,4)`.
+    assert_eq!(amount.as_deref(), Some("100.0000"));
+    assert_eq!(name.as_deref(), Some("Commune CRLF"));
+    for v in [&iban, &amount, &name] {
+        assert!(!v.as_deref().unwrap_or("").contains('\r'), "{v:?}");
+    }
 }
 
 /// Story 30-2a (AC1) — un PDF sans QR entre lui aussi, sans données QR. Selon

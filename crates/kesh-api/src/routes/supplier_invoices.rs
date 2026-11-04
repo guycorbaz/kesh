@@ -1191,4 +1191,43 @@ mod scan_qr_tests {
         };
         assert!(format_scanned_address(&a).is_none());
     }
+
+    /// Story v0171 (#854, AC-4) — le chemin du navigateur (`scan-qr`) : un
+    /// `spcText` en CR+LF donne la même réponse que son jumeau LF.
+    #[test]
+    fn crlf_spc_text_maps_like_lf() {
+        use kesh_qrbill::{Address, AddressType, Currency, QrBillData, Reference, build_payload};
+        let lf = build_payload(&QrBillData {
+            creditor_iban: "CH9300762011623852957".into(),
+            creditor: Address {
+                address_type: AddressType::Combined,
+                name: "Fournisseur CRLF SA".into(),
+                line1: "Rue du Test 1".into(),
+                line2: "1000 Lausanne".into(),
+                postal_code: String::new(),
+                town: String::new(),
+                country: "CH".into(),
+            },
+            ultimate_debtor: None,
+            amount: Some(dec!(123.45)),
+            currency: Currency::Chf,
+            reference: Reference::None,
+            unstructured_message: Some("Facture 7".into()),
+            billing_information: None,
+        })
+        .unwrap();
+        let crlf = lf.replace('\n', "\r\n");
+        let a = ScanQrResponse::from_scanned(parse_spc_payload(&lf).unwrap());
+        let b = ScanQrResponse::from_scanned(parse_spc_payload(&crlf).unwrap());
+        assert_eq!(
+            serde_json::to_value(&a).unwrap(),
+            serde_json::to_value(&b).unwrap()
+        );
+        assert_eq!(b.creditor_name, "Fournisseur CRLF SA");
+        assert_eq!(b.expected_payment_amount, Some(dec!(123.45)));
+        assert_eq!(
+            b.creditor_address.as_deref(),
+            Some("Rue du Test 1, 1000 Lausanne, CH")
+        );
+    }
 }
