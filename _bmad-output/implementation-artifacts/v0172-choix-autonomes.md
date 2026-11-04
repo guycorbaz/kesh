@@ -379,6 +379,8 @@ neufs ; s-14 ← b-25 (c).
 anticipé à l'entrée, verrous, module armé, suspension — est remplacée, cf. C-v0172s-15) ; **C-v0172s-14 reste** (issue du jeton stocké en
 clair) ; **en vigueur : C-v0172s-14 à 21**.
 
+**Validation P4 (2026-11-04)** : la story vise la **0.17.3** (décision du Project Lead) ; l'inactivité vaut 60 minutes (CR #891). **C-v0172s-18 et 19 sont retirés** (simplicité) ; **en vigueur : C-v0172s-14, 15, 16, 17, 20, 21, 22 à 25**.
+
 ### C-v0172s-1 — Renouvellement côté navigateur, à l'entrée de l'utilisateur, et champ `sessionExpiresIn`
 
 - **Contexte** : avec 15/15, le renouvellement sur 401 arrive toujours après l'expiration du jeton de renouvellement
@@ -490,6 +492,8 @@ clair) ; **en vigueur : C-v0172s-14 à 21**.
 
 ### C-v0172s-14 — Manuel d'administration corrigé ; issue demandée : le jeton de renouvellement stocké en clair
 
+*Annotation (validation P4, 2026-11-04) : les décomptes ci-dessous (« 11 sites au tableau, 53 hors classe ») datent du relevé sensible à la casse ; l'inventaire en vigueur, insensible à la casse, compte 82 lignes, 17 au tableau et 65 hors classe (fiche, § Manuel).*
+
 - **Retenu** : l'inventaire clos du manuel d'administration (11 sites au tableau, 53 hors classe) est dans `v0172-session.md` ;
   `admin-manual.tex:2996` dira que le jeton est stocké tel quel (`refresh_tokens.rs:30-34`) ; le stockage en clair fait l'objet
   d'une issue demandée.
@@ -497,6 +501,8 @@ clair) ; **en vigueur : C-v0172s-14 à 21**.
 - **Réversible** : —
 
 ### C-v0172s-15 — Conception remplacée : la fenêtre d'inactivité plus longue que le jeton d'accès, et le chemin 401 existant
+
+*Révisé à la validation P4 : le repli `/me` (C-18) et le renouvellement silencieux d'`hydrate()` (C-19) sont retirés de la conception ; s'y ajoute la révocation à la restauration complète (C-23).*
 
 - **Contexte** : trois validations de suite (P1, P2 de la fiche mère, P3 de cette fiche) ont rendu des MEDIUM nés de la mécanique du
   renouvellement anticipé (verrous entre onglets, `navigator.locks` absent en HTTP, module inerte sous Vitest, suspension pendant l'import,
@@ -513,6 +519,8 @@ clair) ; **en vigueur : C-v0172s-14 à 21**.
 
 ### C-v0172s-16 — Défaut 60 minutes ; une valeur trop courte est portée au double, sans refus de démarrage
 
+*Confirmé par le Project Lead le 2026-11-04 (« 60 minutes : 15 est trop court ») et porté par le CR #891 (FR13). La règle vit dans une fonction unique appelée par `from_env` seul : C-v0172s-22.*
+
 - **Retenu** : défaut de `KESH_REFRESH_INACTIVITY_MINUTES` 15 → 60 (`config.rs:735-755`, `.env.example:160`, `docker-compose*.yml`) ; si
   la valeur est inférieure à `2 × KESH_JWT_EXPIRY_MINUTES`, avertissement et double appliqué.
 - **Écartées** : refuser le démarrage — un `.env` recopié du gabarit 0.17.1 (15) empêcherait la mise à jour de démarrer ; la règle
@@ -520,6 +528,8 @@ clair) ; **en vigueur : C-v0172s-14 à 21**.
 - **Réversible** : oui.
 
 ### C-v0172s-17 — Grâce de rotation de 30 secondes
+
+*Précisé à la validation P4 : l'âge de la rotation se mesure à l'horloge de la base (`revoked_at > NOW(3) - INTERVAL 30 SECOND`), non en comparant `NOW(3)` à l'horloge du serveur Kesh. **Risque accepté** : un attaquant qui présente le premier un jeton volé obtient un jeton neuf ; la victime qui présente ensuite le même jeton dans les 30 s reçoit 401 sans révocation générale — elle est renvoyée à la connexion, l'attaquant garde une session ; au-delà de 30 s, la détection joue. Borné à cette fenêtre.*
 
 - **Contexte** : deux onglets qui reçoivent 401 au même moment présentent le même jeton ; le second déclencherait la détection de vol
   (`routes/auth.rs:379-389`) et la révocation de toutes les sessions.
@@ -530,11 +540,15 @@ clair) ; **en vigueur : C-v0172s-14 à 21**.
 
 ### C-v0172s-18 — Après un refus de renouvellement, un `GET /auth/me` avant d'effacer
 
+*Retiré à la validation P4 (2026-11-04)* : un seul `GET /auth/me` ne fermait pas la course (le 401 du second onglet peut précéder le `Set-Cookie` du premier) ; la fermer demandait attente et second essai. La grâce (C-17) suffit à l'essentiel ; la course résiduelle est déclarée (C-24).
+
 - **Retenu** : si `/me` rend 200, un autre onglet a renouvelé : succès, rejeu ; sinon, comportement actuel.
 - **Écartées** : `localStorage` ou `BroadcastChannel` — de l'état partagé de plus, pour un cas que `/me` tranche.
 - **Réversible** : oui.
 
 ### C-v0172s-19 — `hydrate()` tente un renouvellement silencieux
+
+*Retiré à la validation P4 (2026-11-04)* : sans rapport avec le défaut (un utilisateur en train de travailler), il présentait des cookies périmés au démarrage (détection de vol au-delà de 30 s) et risquait une boucle entre onglets. Conséquence déclarée : C-25.
 
 - **Retenu** : sur 401 de `/me` au démarrage, un `POST /auth/refresh` ; succès ⇒ second `/me` ; échec ⇒ état nul **sans redirection**
   (la page de connexion appelle aussi `hydrate()`).
@@ -542,6 +556,8 @@ clair) ; **en vigueur : C-v0172s-14 à 21**.
 - **Réversible** : oui.
 
 ### C-v0172s-20 — Les lectures de fond ne renouvellent pas
+
+*Précisé à la validation P4* : la distinction montage / minuterie vit dans `BackupScheduleBanner.svelte:33-34` ; `apiClient.get(url, call?)`, `fetchBackupSchedule(call?)`, `refreshBackupScheduleState(call?)` transmettent l'option.
 
 - **Retenu** : `CallOptions.background` ; la lecture périodique du bandeau de sauvegarde (`BackupScheduleBanner.svelte:34`) le porte ;
   sur 401, rejet sans renouvellement ni effacement.
@@ -555,3 +571,37 @@ clair) ; **en vigueur : C-v0172s-14 à 21**.
   `N − jwt` ; aucune durée absolue pour un utilisateur actif (cookie de 30 jours reposé à chaque renouvellement), écrit au manuel
   d'administration (finding P13 de la validation P3).
 - **Réversible** : —
+
+### C-v0172s-22 — La règle du double dans une fonction unique, appelée par `from_env` seulement
+
+- **Contexte** : validation P4, finding P2 — `from_fields_for_test` (`config.rs:443-510`) prend l'inactivité en paramètre ; ~80 fichiers de
+  tests d'intégration lui passent 15/15 ; son assertion `≤ 24 h` (`:474-476`) refuserait une valeur doublée de 2880.
+- **Retenu** : `effective_refresh_inactivity(jwt, lue)` appelée par `from_env` ; `from_fields_for_test` et `make_test_config` inchangés.
+- **Écartées** : appliquer la règle dans `from_fields_for_test` — change silencieusement ~80 fichiers de tests et contredit son assertion.
+- **Réversible** : oui.
+
+### C-v0172s-23 — La restauration complète révoque tous les jetons de renouvellement, dans sa transaction
+
+- **Contexte** : validation P4, finding P6 — l'import réinsère `refresh_tokens` tel quel (`routes/admin.rs:180-182, :422-425`) ; avec une
+  inactivité de 60 minutes, une session (ou une session d'un autre appareil, même déconnectée après l'export) survivrait. Décision du
+  Project Lead : révoquer.
+- **Retenu** : `refresh_tokens::revoke_all_in_tx(&mut tx, "full_import")` après la garde de comptage, avant le commit ; `sessionInvalidated:
+  true` redevient vrai ; motif distinct de `"rotation"`.
+- **Écartées** : exclure `refresh_tokens` de la sauvegarde — change le format du `.keshbackup` et l'inventaire des tables ; écrire la
+  limite au manuel — l'écran annonce la session invalidée.
+- **Réversible** : oui.
+
+### C-v0172s-24 — La course entre deux onglets reste résiduelle, déclarée comme telle
+
+- **Retenu** : la grâce évite la révocation de toutes les sessions ; l'onglet dont le refresh perd la course revient à la connexion. Il faut
+  deux requêtes de l'utilisateur, dans deux onglets, à quelques millisecondes, juste après l'échéance du jeton d'accès.
+- **Écartées** : la fermer par un verrou (absent en HTTP-LAN), par un second essai différé, ou par un état partagé — complexité que trois
+  passes ont fait recycler.
+- **Réversible** : oui.
+
+### C-v0172s-25 — Un nouvel onglet ou un rechargement après l'échéance du jeton d'accès demande de se reconnecter
+
+- **Retenu** : comportement 0.17.1 inchangé, déclaré au manuel utilisateur (`:95`) ; à porter en demande séparée si le Project Lead le
+  souhaite.
+- **Écartées** : le renouvellement silencieux d'`hydrate()` (C-19, retiré).
+- **Réversible** : oui.
