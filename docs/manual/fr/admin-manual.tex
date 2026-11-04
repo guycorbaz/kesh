@@ -223,7 +223,7 @@ cd /opt/kesh
 Télécharger le fichier de référence depuis le dépôt officiel, \textbf{au tag de la version que décrit ce manuel} (\texttt{v\keshVersion}) --- non à la branche \texttt{main}, qui peut être en avance sur l'image publiée ; pour une autre version, remplacez le tag dans l'adresse :
 
 \begin{lstlisting}[language=bash]
-curl -fsSL https://raw.githubusercontent.com/guycorbaz/kesh/v0.17.1/docker-compose.yml \
+curl -fsSL https://raw.githubusercontent.com/guycorbaz/kesh/v0.17.2/docker-compose.yml \
     -o docker-compose.yml
 \end{lstlisting}
 
@@ -234,7 +234,7 @@ Ce fichier désigne l'image publiée \texttt{gcorbaz/kesh:latest} : \keshcommand
 Copier le fichier d'exemple et l'adapter :
 
 \begin{lstlisting}[language=bash]
-curl -fsSL https://raw.githubusercontent.com/guycorbaz/kesh/v0.17.1/.env.example \
+curl -fsSL https://raw.githubusercontent.com/guycorbaz/kesh/v0.17.2/.env.example \
     -o .env
 \end{lstlisting}
 
@@ -570,7 +570,7 @@ Télécharger le \keshpath{docker-compose.yml} canonique depuis le dépôt Kesh,
 
 \begin{lstlisting}[language=bash]
 cd /volume1/docker/kesh
-DEPOT=https://raw.githubusercontent.com/guycorbaz/kesh/v0.17.1
+DEPOT=https://raw.githubusercontent.com/guycorbaz/kesh/v0.17.2
 curl -fsSL "$DEPOT/docker-compose.prod.yml" -o docker-compose.yml
 curl -fsSL "$DEPOT/.env.example" -o .env
 
@@ -1732,7 +1732,7 @@ Les exports ne doivent pas rester dans le dossier de téléchargements : Synolog
 \Needspace{15\baselineskip}
     \item \textbf{Compose et \keshpath{.env.example} au tag de la version relevée, et variables qu'il lit.} Remplacez \texttt{0.15.0} par la version relevée. Les exemples de cette sous-section portent \texttt{0.15.0}, la version de ce manuel ; une production qui satisfait le prérequis porte \textbf{0.15.0 ou plus} : à une version suivante, l'exemple recopié tel quel donnerait une copie qui n'est pas celle de la production. Le contrôle~9 arrête une \textbf{image} d'une autre version ; le tag de \keshcommand{DEPOT}, lui, n'est contrôlé par rien : remplacez les deux.
 \begin{lstlisting}[language=bash]
-DEPOT=https://raw.githubusercontent.com/guycorbaz/kesh/v0.17.1
+DEPOT=https://raw.githubusercontent.com/guycorbaz/kesh/v0.17.2
 curl -fsSL "$DEPOT/docker-compose.yml" -o "$COPIE/docker-compose.yml"
 curl -fsSL "$DEPOT/.env.example" -o "$COPIE/.env"
 grep -oE '\$\{?[A-Za-z_][A-Za-z0-9_]*' "$COPIE/docker-compose.yml" \
@@ -2051,7 +2051,7 @@ Les deux scripts sont des fichiers du dépôt Kesh, \keshpath{scripts/synology/k
 
 \begin{lstlisting}[language=bash]
 cd /volume1/docker/kesh
-DEPOT=https://raw.githubusercontent.com/guycorbaz/kesh/v0.17.1
+DEPOT=https://raw.githubusercontent.com/guycorbaz/kesh/v0.17.2
 curl -fsSLO "$DEPOT/scripts/synology/kesh-dump.sh"
 curl -fsSLO "$DEPOT/scripts/synology/kesh-restore.sh"
 chmod 700 kesh-dump.sh kesh-restore.sh
@@ -2506,6 +2506,20 @@ L'opération s'inscrit au journal d'audit sous \emph{Réparation de l'installati
 La session ouverte doit être \textbf{rouverte} --- reconnexion, ou au plus la durée de session plus une minute ; d'ici là, certains écrans de la société répondent par une erreur, d'autres s'affichent vides. Si le journal du serveur porte « réparation de l'installation au démarrage » suivi d'une erreur, voir la section \emph{Dépannage}.
 
 \textbf{Limite} : les données de démonstration laissées par une réinitialisation antérieure (taux de TVA, réglages de facturation, contacts, articles, factures, avoirs) qui désignent la société effacée restent en base, invisibles et inertes (\#546).
+
+\subsubsection{Passer à la 0.17.2}\label{sec:maj-0-17-2}
+
+La 0.17.2 est une version corrective, qui se pose sur la 0.17.1 : elle ne demande ni nouveau compose ni nouvelle variable de \keshpath{.env} ; on tire l'image et on redémarre (\S\ref{sec:mise-a-jour}). Depuis une version antérieure à la 0.17.1, appliquez d'abord les sections suivantes (\S\ref{sec:maj-0-17-1}, puis \S\ref{sec:maj-0-17-0} s'il le faut).
+
+\begin{sloppypar}
+\textbf{La 0.17.2 n'a aucune migration} : elle ne modifie ni le schéma ni aucune ligne de la base, et \texttt{kesh\_version\_min\_required} reste à \texttt{0.17.0}. \textbf{Le retour à la 0.17.1 se fait donc sans restauration} : la 0.17.1 démarre sur une base passée par la 0.17.2, il suffit de reprendre l'image \texttt{gcorbaz/kesh:0.17.1} dans le compose et de redémarrer. Une sauvegarde d'installation \keshpath{.keshbackup} prise sous l'une s'importe dans l'autre (mêmes tables, même version minimale). \textbf{La sauvegarde complète d'avant la mise à jour reste recommandée} --- la base, une sauvegarde \keshpath{.keshbackup} et le dossier des documents ---, comme avant toute mise à jour.
+\end{sloppypar}
+
+\paragraph{Ce qui change à l'écran.} Une facture fournisseur validée, payée ou annulée porte le bouton \emph{Repasser en brouillon} : une annulée repasse en brouillon en retirant du journal son écriture d'achat et sa contre-passation ; sur une payée, le refus dit ce qu'il faut défaire d'abord. La date d'une facture fournisseur créée depuis un document est proposée et marquée « à vérifier » ; la liste des factures fournisseur se pagine ; le menu latéral défile ; les dates des écrans comptables s'affichent à la forme suisse (\texttt{29.01.2026}). Le détail est au manuel utilisateur et au journal des modifications.
+
+\begin{sloppypar}
+\paragraph{La session, non corrigée dans cette version.} Avec les réglages par défaut (\texttt{KESH\_JWT\_EXPIRY\_MINUTES=15}, \texttt{KESH\_REFRESH\_INACTIVITY\_MINUTES=15}), une session se ferme environ quinze minutes après la connexion, même en activité continue (issue \#876). La correction est prévue pour la 0.17.3. D'ici là, le contournement consiste à allonger la durée du jeton d'accès dans le \keshpath{.env}, par exemple \texttt{KESH\_JWT\_EXPIRY\_MINUTES=480}, puis à redémarrer ; la contrepartie est qu'un jeton d'accès dérobé reste valable aussi longtemps.
+\end{sloppypar}
 
 \subsubsection{Passer à la 0.17.1}\label{sec:maj-0-17-1}
 

@@ -10,7 +10,9 @@ Le contenu est rédigé en français à destination des **fiduciaires, PME, ind�
 
 ## [0.17.2] — 2026-11-04
 
-La 0.17.2 est une version corrective : **aucune migration**, aucune donnée réécrite, **le retour à la 0.17.1 est possible sans restauration**.
+La 0.17.2 est une version corrective : **aucune migration**, aucune donnée réécrite, **le retour à la 0.17.1 est possible sans restauration**. La sauvegarde complète d'avant la mise à jour (base, `.keshbackup`, dossier des documents) reste recommandée. Le compose et le `.env` ne changent pas. Le détail est au manuel d'administration, *Passer à la 0.17.2*.
+
+Ce qui change à l'écran : le bouton *Repasser en brouillon* (l'ancien *Dévalider*) s'affiche sur une facture fournisseur **validée, payée ou annulée** — une annulée repasse en brouillon, une payée dit ce qu'il faut défaire d'abord ; la date d'une facture fournisseur créée depuis un document est proposée et marquée **« à vérifier »** ; la **liste des factures fournisseur se pagine** ; le **menu latéral défile** ; les dates des écrans comptables s'affichent à la **forme suisse** (`29.01.2026`).
 
 ### Ajouté
 
