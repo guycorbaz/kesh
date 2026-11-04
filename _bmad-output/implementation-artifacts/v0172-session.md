@@ -9,11 +9,12 @@ de celle-ci. J'aimerais que cette durée soit remise à zéro à chaque activit�
 15 est trop court : je me fais régulièrement éjecter alors que je suis en train de travailler et que je consulte des documents. » Le
 changement d'exigence est porté par le **CR #891** (commentaire du 2026-11-04 : FR13 réécrit). Worktree `/home/gcorbaz/devel/kesh-0172s`,
 branche `story/v0172-session`, tête de reprise `c547dc41`. Clé courte : `v0172s`. Registre : `v0172-choix-autonomes.md`, section
-`v0172s` ; **en vigueur : C-v0172s-14, 17, 23, 24, 26 et C-v0172s-28 à 48** (C-1 à 13 : première conception, écartée ; C-15, 16, 20,
+`v0172s` ; **en vigueur : C-v0172s-14, 17, 23, 24, 26 et C-v0172s-28 à 51** (C-1 à 13 : première conception, écartée ; C-15, 16, 20,
 21, 22, 27 : remplacés à la reprise par C-28 et suivants ; C-18 : retiré ; C-19 et 25 : remplacés par C-26). Issues : **#876** (bug, P2),
 **#891** (CR), **#895** (CR, hors périmètre : l'avertissement avant fermeture), en `refs` seulement. Numéros de ligne de `c547dc41` (le
 code applicatif est celui de `d7ec2ea2`, inchangé depuis). La boucle de validation **est repartie à R1** (complète, Sonnet, 0/0/5/12,
-remédiée), puis **R2** (complète, Opus, 0/0/3/12, remédiée) ; prochaine : **R3** (complète, Sonnet).*
+remédiée), puis **R2** (complète, Opus, 0/0/3/12, remédiée) et **R3** (complète, Sonnet, 0/0/2/7,
+remédiée) ; prochaine : **R4** (ciblée, Opus, sur `git diff da16b94e HEAD`).*
 
 ## Story
 
@@ -73,8 +74,8 @@ pas satisfaite, et son exception ne s'applique pas à la lettre** : l'exception 
 impossibles à tester ; ici, chaque moitié se teste seule (tests d'intégration du serveur ; Vitest avec `apiClient` simulé). Ce qui lie les
 deux moitiés est la **publication** : le serveur seul (modules 1 à 3) fermerait la session N minutes après la connexion malgré l'activité,
 puisque seul le battement prolonge l'échéance, et le navigateur seul n'aurait rien à appeler. L'alternative honnête serait deux fiches
-fusionnées sans release entre elles ; elle est **écartée** pour ne pas recommencer la boucle de validation sur deux fiches couplées, et ce
-choix est **déclaré au Project Lead** par l'orchestrateur. *Atténuation* : le développement se fait en **deux lots ordonnés** sur la
+fusionnées sans release entre elles ; elle est **écartée** pour ne pas recommencer la boucle de validation sur deux fiches couplées. **Déclarée au Project Lead le
+2026-11-04**, par l'orchestrateur, dans sa conversation ; **le Project Lead n'a pas demandé de découpage**. *Atténuation* : le développement se fait en **deux lots ordonnés** sur la
 branche — **lot S** (serveur : modules 1 à 3, avec la configuration livrée) puis **lot N** (navigateur : modules 4 à 8, avec les manuels, le
 CHANGELOG et le PRD) — et **la revue de code se tient par lot** (un prompt de revue par lot, chacun sur trois à cinq modules). *Risque
 accepté* : une validation de fiche sur neuf modules ; borné par la simplicité de chaque moitié (un réglage, une échéance, un battement ; un
@@ -209,8 +210,23 @@ module d'écoute sans verrou). Une modification de `repositories/` et une migrat
    écrivant `expires_at` ; le statut de rejeu est celui des quatre routes d'authentification exemptées (`:543`). `/me` et la réponse de connexion (`LoginResponse`, partagée par l'assistant, `setup.rs:307-314`)
    rendent aussi `idleTimeoutMinutes` et `idleExpiresIn` (le reste de `idle_exp`, `null` sans elle) ; la réponse du renouvellement aussi.
 5. **Le navigateur : un module d'écoute, sans verrou** (C-v0172s-34, C-v0172s-35). `frontend/src/lib/app/stores/session-idle.svelte.ts`,
-   démarré par le layout **racine** (`routes/+layout.svelte`) quand `authState.currentUser` devient non nul — il couvre donc `(app)` et
-   `/onboarding` — et arrêté quand il redevient nul. Trois clés `localStorage` partagées par les onglets de l'origine :
+   démarré par le layout **racine** (`routes/+layout.svelte`) — il couvre donc `(app)` et `/onboarding`. **Clé d'abonnement**
+   (C-v0172s-50, validation R3) : l'**identifiant** de l'utilisateur, non l'objet — `const sessionUserId = $derived(authState.currentUser?.userId
+   ?? null)`, et un `$effect` qui ne lit que `sessionUserId` : non nul ⇒ `sessionIdle.start(…)`, nul ⇒ `sessionIdle.stop()`, autre
+   identifiant ⇒ `stop()` puis `start(…)`. `authState.login()` remplace l'objet `_currentUser` à chaque renouvellement (`doRefresh`,
+   `api-client.ts:149`) : un abonnement à l'objet arrêterait et redémarrerait le module toutes les 15 minutes ; à l'identifiant, non (le
+   `$derived` d'une chaîne égale ne se propage pas). **Interface** (C-v0172s-50, R3-9) — N et l'échéance sont tenus par le **module**,
+   non par `authState` :
+   ```ts
+   export const sessionIdle = {
+     start(init: { idleTimeoutMinutes?: number; idleExpiresIn?: number | null }): void; // conciliation, écouteurs, minuterie
+     stop(): void;                     // retire écouteurs et minuterie ; n'écrit rien
+     setMinutes(n: number): void;      // N neuf (réponse d'un battement, ou enregistrement de l'écran)
+     readonly minutes: number | null;  // N courant, lu par la fermeture (?minutes=)
+   };
+   ```
+   `authState` ne porte que le **transit** des deux champs du `LoginPayload` (`idleTimeoutMinutes`, `idleExpiresIn`), que le layout passe à
+   `start()` ; `SessionIdleSection` appelle `sessionIdle.setMinutes(n)` après un `PUT` réussi. Trois clés `localStorage` partagées par les onglets de l'origine :
    `kesh:session:lastActivity`, `kesh:session:reportedActivity`, `kesh:session:heartbeatAt` (millisecondes). Écouteurs passifs, en phase
    de capture, sur `window` : `keydown`, `pointerdown`, `pointermove` (**seulement si `screenX`/`screenY` diffèrent du dernier
    mouvement vu** : le navigateur émet des mouvements fictifs, à coordonnées inchangées, quand la page bouge sous un pointeur immobile — un
@@ -220,9 +236,14 @@ module d'écoute sans verrou). Une modification de `repositories/` et une migrat
    navigateur émet `dragover`, non `pointermove`) ; sur `document` : `input` (capture : dictée, collage, saisie par un clavier virtuel ou une
    méthode de saisie qui n'émet pas de `keydown` utile) et `visibilitychange` vers `visible` ; `blur` de `window` quand le focus passe dans
    un `<iframe>` de la page (§ 6). **`scroll` n'est pas écouté** (C-v0172s-35, validation R2) : un contenu qui change au-dessus de la vue,
-   ou qui raccourcit, émet `scroll` sans geste (ancrage de défilement, borne de `scrollTop`) — une sonde de fond le pourrait ; le
-   défilement voulu passe toujours par un geste déjà écouté (molette, clavier, glisser de la barre par `pointerdown`/`pointermove`,
-   toucher). Seul l'élan d'un défilement tactile, après le `touchstart`, n'est pas vu : quelques secondes au plus. Chaque événement : **d'abord** le contrôle de l'échéance (une activité au-delà de l'échéance ne ranime pas la session : elle la
+   ou qui raccourcit, émet `scroll` sans geste (ancrage de défilement, borne de `scrollTop`) — une sonde de fond le pourrait. **Ce que la
+   fiche promet, et ne promet pas** (C-v0172s-49, validation R3) : le défilement **à la molette, au clavier ou au toucher** compte (par
+   `wheel`, `keydown`, `touchstart`) ; le **glisser de la barre de défilement** ne compte **qu'à son début** (le `pointerdown` sur la
+   barre, s'il parvient à la page ; les navigateurs ne remettent pas à la page les mouvements d'un glisser de barre, ce que la fiche
+   n'établit pas autrement) — **écart déclaré**, sans portée pratique (un glisser dure quelques secondes) ; l'élan d'un défilement
+   tactile, après le `touchstart`, n'est pas vu non plus. FR13, le manuel et le CHANGELOG disent donc « molette, clavier, souris,
+   toucher », non « défilement ». *Écartée* : écouter `scroll` dans la seconde qui suit un geste — un mécanisme de plus pour le seul
+   glisser de barre. Chaque événement : **d'abord** le contrôle de l'échéance (une activité au-delà de l'échéance ne ranime pas la session : elle la
    ferme), puis `lastActivity = now`, écrite au plus une fois par seconde. Une **minuterie d'une seconde** par onglet : (a) `deadline =
    max(lastActivity) + N × 60 000` ; `now ≥ deadline` ⇒ fin de session (§ 7) ; (b) sinon, si `lastActivity > reportedActivity` et `now −
    heartbeatAt ≥ 15 000`, l'onglet écrit `heartbeatAt = now` et `reportedActivity = lastActivity`, puis envoie le battement avec `idleMs =
@@ -232,7 +253,9 @@ module d'écoute sans verrou). Une modification de `repositories/` et une migrat
    concilie avec le serveur : si `idleExpiresIn` est un nombre, `serverLast = min(now, now + idleExpiresIn × 1000 − N × 60 000)` — **borné
    à maintenant** : une conciliation n'écrit **jamais** une activité future (avec un N appris plus petit que celui qui a calculé l'échéance
    du serveur, le calcul brut tomberait dans le futur et se partagerait à tous les onglets) —, `lastActivity = min(now, max(stockée,
-   serverLast))`, `reportedActivity = min(now, max(stockée, serverLast))` ; à la connexion `idleExpiresIn = N × 60`, donc `serverLast = now`.
+   serverLast))`, et **`reportedActivity = min(now, max(reportedActivity stockée, serverLast))`** — concilié avec ce qui a **réellement**
+   été rapporté au serveur (`serverLast`, que dit `idleExpiresIn`), jamais avec l'activité stockée : une activité notée dans les 15 s qui
+   précèdent un rechargement ou l'ouverture d'un onglet reste « à rapporter », et le premier tic du module l'envoie (C-v0172s-51, R3-1) ; à la connexion `idleExpiresIn = N × 60`, donc `serverLast = now`.
    **Toute écriture** de `lastActivity` est de même bornée à `now`. Si `idleExpiresIn` est `null` (jeton émis avant la mise à jour, sans
    `idle_exp`) ou absent, `lastActivity` garde sa valeur stockée (bornée à `now`) et, à défaut, vaut `now` — **aucun calcul sur cette
    valeur** : en JavaScript `null × 1000` vaut 0 (l'échéance tomberait à `now`, fermeture immédiate) et `undefined × 1000` vaut `NaN`
@@ -291,8 +314,9 @@ module d'écoute sans verrou). Une modification de `repositories/` et une migrat
    en cours, brouillon non enregistré, filtre non appliqué) ; aucune alerte ne précède la fermeture — l'avertissement avec « Rester
    connecté » est le **CR #895**, hors de cette story. **Précision** : le
    navigateur ferme à `dernière activité + N` **à la seconde près** (activité notée au pas d'une seconde, minuterie d'une seconde) ; le
-   serveur refuse **à partir de la même échéance, à la seconde près** (`idle_exp` en secondes entières, arrondi vers le bas : jamais plus
-   tard que l'échéance), parce que le battement lui transmet l'**âge exact** de la dernière activité. Quatre écarts, et seulement quatre :
+   serveur refuse **à partir de la même échéance, à la seconde près** (`idle_exp` en secondes entières, arrondi vers le bas ; l'échéance du serveur
+   vaut celle du navigateur **à une seconde plus tôt près, et au délai de transmission du battement plus tard près** — le serveur calcule
+   `now − idleMs + N` à la réception), parce que le battement lui transmet l'**âge exact** de la dernière activité. Quatre écarts, et seulement quatre :
    (a) l'activité est transmise au plus **15 secondes** après qu'elle a eu lieu — si le navigateur est fermé, mis en veille ou perd le
    réseau dans ces 15 secondes, le serveur ne l'a pas reçue et ferme jusqu'à 15 secondes plus tôt (l'utilisateur, alors, n'est plus là) ;
    un battement qui croise un renouvellement de la même session peut de même être perdu (la ligne neuve recopie l'échéance d'avant), écart
@@ -392,8 +416,10 @@ aucun audit ; `PUT 60` à version 0 ⇒ 200 `{ 60, version 0 }`, aucune ligne, a
 (E), (F) : la variable n'est ni lue, ni transmise, ni affectée, ni nommée dans le corpus surveillé). Les trois tests
 `config_refresh_inactivity_*` et la ligne `config.rs:1700` retirés, raison au Change Log. Sonde rendue au Dev Agent Record :
 `git grep -nE 'refresh_inactivity|REFRESH_INACTIVITY' -- crates frontend scripts docs/manual .env.example docker-compose.yml
-docker-compose.prod.yml` ne rend que le paramètre ignoré de `from_fields_for_test` (en minuscules) et `crates/kesh-api/README.md` (hors
-corpus) ; le `CHANGELOG.md` la nomme. **Pas de rouge avant correctif** : c'est une garde, verte avant et après ; le retrait se prouve par
+docker-compose.prod.yml` ne rend, après correctif, que le paramètre ignoré de `from_fields_for_test` (en minuscules) et
+`crates/kesh-api/README.md` (hors corpus) — les quatre commentaires qui décrivent le champ disparu sont **mis à jour** (R3-6) :
+`routes/auth.rs:30` (doc de `build_auth_cookies`) et `tests/auth_cookies_e2e.rs:249, :271, :274` (commentaires et message d'assertion :
+« l'échéance d'inactivité de la ligne », non `refresh_inactivity`) ; le `CHANGELOG.md` la nomme. **Pas de rouge avant correctif** : c'est une garde, verte avant et après ; le retrait se prouve par
 la sonde et par la garde.
 
 **AC-3 — L'échéance exacte, côté serveur.** `crates/kesh-api/tests/session_idle_e2e.rs` (neuf), réglage posé par le dépôt :
@@ -447,9 +473,9 @@ et `location.replace` ne sont appelés qu'après la résolution de ce `fetch` (s
 `clearSession({ broadcast: false })` et `location.replace('/login?reason=idle&minutes=2')` ; (3 bis) `fetch` de déconnexion qui ne répond
 pas : au bout de 2 000 ms le `signal` est abandonné et la redirection a lieu ; (4) **activité après
 l'échéance** (minuterie arrêtée, événement à l'échéance + 500 ms) : fermeture, `lastActivity` non réécrite ; (5) **battement régulé** :
-`pointermove` toutes les 100 ms pendant 60 s ⇒ au plus 5 battements ; aucune activité ⇒ aucun battement ; (5 bis) **`idleMs` exact** : un
-battement à t = 0 (activité à 0), une seule activité à t = 10 s, puis rien — le battement suivant part à t = 15 s avec `idleMs = 5 000`
-exactement ; (6) **un onglet vaut pour tous** : `localStorage.setItem('kesh:session:lastActivity', …)` par « un autre onglet »
+`pointermove` toutes les 100 ms pendant 60 s ⇒ au plus 5 battements ; aucune activité ⇒ aucun battement ; (5 bis) **`idleMs` exact**, sur la grille
+d'une seconde de la minuterie (module démarré à t = 0, sans `heartbeatAt` stocké) : activité à 0,5 s ⇒ battement au tic de 1 s, `idleMs =
+500` ; une seule activité à 10 s, puis rien ⇒ battement suivant au tic de 16 s (15 s après le premier), `idleMs = 6 000` exactement ; (6) **un onglet vaut pour tous** : `localStorage.setItem('kesh:session:lastActivity', …)` par « un autre onglet »
 repousse l'échéance de celui-ci ; `heartbeatAt` récent écrit par l'autre ⇒ pas de second battement dans les 15 s ; (7) réponse du
 battement `idleTimeoutMinutes = 5` ⇒ l'échéance se calcule sur 5 ; (8) battement en échec réseau ⇒ pas de fermeture, nouvel envoi au pas
 de 15 s suivant ; (9) **les sondes ne comptent pas** : un `apiClient.get` déclenché par minuterie ne modifie pas `lastActivity` ;
@@ -460,7 +486,10 @@ la valeur stockée, ou `now` sans valeur stockée — fermeture à `N × 60 000`
 fermeture ni déconnexion à l'échéance locale ; (15) **N inconnu** (`idleTimeoutMinutes` absent) : un seul `GET /api/v1/auth/me`, ses champs
 appliqués ; `/me` en échec ⇒ aucune fermeture ; (16) échec du battement : le suivant part à +15 s, non à +1 s ; (17) **jamais d'activité
 future** : démarrage avec N = 1 et `idleExpiresIn = 3 000` (échéance calculée avec 60) ⇒ `lastActivity = now` (non `now + 59 min`), et
-une valeur stockée dans le futur est ramenée à `now`. **Rouges avant correctif**
+une valeur stockée dans le futur est ramenée à `now` ; (18) **activité non rapportée au démarrage** : `lastActivity` stockée à t, 
+`reportedActivity` stockée à t − 20 s, démarrage d'un module à t + 1 s avec `idleExpiresIn` correspondant à t − 20 s ⇒ un battement
+part au premier tic, `idleMs ≈ 1 000` ; (19) **abonnement** (test du layout racine) : `authState.login` rappelé pendant la session avec le
+même `userId` ⇒ `sessionIdle.start` **n'est pas** rappelé ; `userId` différent ⇒ `stop` puis `start` ; `clearSession` ⇒ `stop`. **Rouges avant correctif**
 (le module n'existe pas). `setup.api.test.ts` (neuf) : `setupAdmin` transmet `idleTimeoutMinutes` et `idleExpiresIn` de la réponse à
 `authState.login` ; le test de la page de connexion vérifie de même la connexion.
 
@@ -472,7 +501,7 @@ existant qui change : `auth.svelte.test.ts:147-163` (deux appels au lieu d'un). 
 (`:205, :246, :270, :327, :488, :567`) restent verts. **Rouges avant correctif** : (1), (3), (4).
 
 **AC-8 — L'écran.** `SessionIdleSection.test.ts` (neuf) : rend la valeur lue (60) et les bornes ; `0`, `1441`, `abc` ⇒ erreur de saisie,
-aucun `PUT` ; `45` ⇒ `PUT { sessionIdleMinutes: 45, version }`, message de succès, `authState` porte 45 ; 409 ⇒ rechargement et message de
+aucun `PUT` ; `45` ⇒ `PUT { sessionIdleMinutes: 45, version }`, message de succès, `sessionIdle.setMinutes(45)` appelé ; 409 ⇒ rechargement et message de
 conflit ; après l'enregistrement d'un abaissement, l'échéance de l'onglet suit la nouvelle valeur. `settings-page.test.ts` : la section
 est rendue pour un Admin, **absente** pour un Comptable et une Consultation (aucun `GET` `/admin/session-settings` pour eux). **Test
 existant qui change** : la fabrique `vi.mock('$lib/features/settings/settings.api', () => ({ … }))` de `settings-page.test.ts:20-26`
@@ -529,7 +558,7 @@ binaire muté) :
 - **M9** — le module enregistre l'activité **avant** de contrôler l'échéance : T6 (4) rougit.
 - **M10** — `pointermove` sans comparaison de coordonnées : T6 (2) rougit.
 - **M11** — activité gardée en mémoire seulement (sans `localStorage`) : T6 (6) rougit.
-- **M12** — battement sans régulation : T6 (5) rougit ; **M12 bis** — `idleMs` envoyé à 0 : T6 (5 bis) rougit (5 000 attendu).
+- **M12** — battement sans régulation : T6 (5) rougit ; **M12 bis** — `idleMs` envoyé à 0 : T6 (5 bis) rougit (500 et 6 000 attendus).
 - **M13** — `hydrate()` sans `tryRefresh()` : T7 (1) rougit ; **M13 bis** — `tryRefresh()` hors du mutex : T7 (3) rougit.
 - **M14** — la section rendue sans condition de rôle : T8 (page) rougit.
 - **M15** — l'assistant émet `idle_exp = i64::MAX` (au lieu de l'échéance de la ligne) : T3 (h) rougit ; **M15 bis** — de même au
@@ -546,6 +575,8 @@ binaire muté) :
 - **M24** — `hydrate()` ignore `reason=idle` : T7 (4) rougit.
 - **M25** — conciliation non bornée à `now` : T6 (17) rougit.
 - **M26** — `scroll` écouté de nouveau : T6 (2) rougit ; **M26 bis** — `focus` compté quelle que soit sa cible : T6 (2) rougit.
+- **M27** — `reportedActivity` conciliée avec l'activité stockée : T6 (18) rougit.
+- **M28** — le layout s'abonne à l'objet `currentUser` : T6 (19) rougit.
 
 ## Tâches
 
@@ -559,7 +590,10 @@ binaire muté) :
    `test_fixtures.rs:365-371` ; **P6** : `grep -rn "migrations.len()\|apply_migrations_up_to" crates/` et chaque site inspecté
    (`migrations_upgrade_path.rs:124-127`, `assert_eq!(total, 88, …)` → 89 avec sa ligne de généalogie, **et** `:217` `let
    n_before_upgrade_window = total - 54;` → `total - 55`, la frontière `total - N` restant constante, comme l'exige le commentaire
-   `:138-142` ; `audit_log_company_id_backfill.rs`, `lettering_documents_backfill.rs`, résolus par version) ; **P7** : `every_data_backfill_migration_is_triaged` vert sans entrée (DDL
+   `:138-142`, **et la prose du même fichier** (R3-7) : `:44, :46, :63, :64, :130, :138, :145, :148, :220, :289` — `54` → `55` là où il
+   désigne la fenêtre, `88` → `89` dans la prose, la frontière `34` inchangée, `:148` (« porterait la frontière à 35 ») récrit pour 89 ;
+   contrôle `/usr/bin/grep -nE '\b(54|55|88|89)\b' crates/kesh-db/tests/migrations_upgrade_path.rs`, chaque occurrence restante justifiée
+   au Dev Agent Record ; `audit_log_company_id_backfill.rs`, `lettering_documents_backfill.rs`, résolus par version) ; **P7** : `every_data_backfill_migration_is_triaged` vert sans entrée (DDL
    seul) ; dépôt `installation_settings` ; `refresh_tokens` (`set_idle_deadline`, `was_rotated_within`, `revoke_all_in_tx`).
 3. `crates/kesh-api` : `jwt.rs` (`SessionClaims`, `decode_session`, `encode_session`, `encode_session_claims`, `encode` sous
    `#[cfg(test)]` ; `Claims` inchangée), `middleware/auth.rs` (décodage par `decode_session`, contrôle strict, `CurrentUser`),
@@ -602,7 +636,7 @@ binaire muté) :
    frontend/src ':!*.test.ts'`. `settings-page.test.ts:20-26` : fabrique du simulacre complétée (AC-8). Vérifier qu'aucun test qui monte le layout racine ne laisse tourner la minuterie (`git grep -ln "routes/+layout"
    -- frontend/src`) et qu'aucune spec Playwright ne compte toutes les requêtes (`git grep -n "page.on('request'" -- frontend/tests`).
 9. Manuels et PDF (§ *Manuel*), CHANGELOG, PRD et copies.
-10. Mutations M9 à M14, M18 à M21, M23 à M26 bis ; recette AC-10 ; captures.
+10. Mutations M9 à M14, M18 à M21, M23 à M28 ; recette AC-10 ; captures.
 11. Gates (ci-dessous) ; **revue de code du lot N**.
 
 **Gates** : `cargo fmt --all -- --check`, `cargo clippy --workspace --all-targets -- -D warnings`, `scripts/test-fast.sh` (sous `flock
@@ -629,7 +663,7 @@ lint-i18n-ownership && npm run test:unit && npm run build`, E2E complet au **der
 
 - `_bmad-output/planning-artifacts/prd.md:391` : « FR13 : Le système renouvelle silencieusement la session et la termine après une durée
   d'inactivité **réglée par l'Administrateur dans l'interface** (60 minutes par défaut), **appliquée exactement** ; toute activité de
-  l'utilisateur dans Kesh (clavier, souris, défilement, toucher, retour sur l'onglet) la remet à zéro — CR #891 ».
+  l'utilisateur dans Kesh (clavier, souris — mouvement, clic, molette —, toucher, retour sur l'onglet) la remet à zéro — CR #891 ».
 - `prd.md:280` : « Authentification JWT avec refresh silencieux, fin de session après la durée d'inactivité réglée dans l'interface (60 min
   par défaut, CR #891) ».
 - `epics.md:63` : à l'identique de `prd.md:391`.
@@ -668,7 +702,7 @@ prescriptions changent.**
 
 | Site | Ce qu'il dit | Prescrit (reprise) |
 |---|---|---|
-| `user-manual.tex:95` | « La session reste active 15 minutes, prolongée … Après 15 minutes sans activité … `KESH_REFRESH_INACTIVITY_MINUTES` » | La session se ferme après une **durée d'inactivité réglée par l'administrateur** (60 minutes par défaut ; Administration → Paramètres, section Session). **Toute activité dans Kesh la remet à zéro** : frappe au clavier, mouvement, clic ou molette de la souris, défilement, toucher, retour sur l'onglet de Kesh ; une activité dans un onglet vaut pour tous les onglets de Kesh du même navigateur. À l'échéance, Kesh affiche la page de connexion avec « Session fermée après N minutes d'inactivité » ; **ce qui n'était pas enregistré est perdu**, dans tous les onglets. Comptent aussi la dictée, le collage et le glisser-déposer d'un fichier. **Ne comptent pas** : la lecture d'un PDF dans l'aperçu — Kesh ne voit pas ce qui se passe dans le cadre du document ; seuls l'entrée et la sortie du pointeur, et le clic qui y entre, comptent. **Pendant une longue lecture dans l'aperçu, sortez le pointeur du document, ou cliquez à côté, au moins une fois par durée réglée** (une fois par heure avec le réglage par défaut) ; un avertissement avant la fermeture est demandé (CR #895). Ne comptent pas non plus le travail dans un autre programme ou un autre onglet, ni les mises à jour que Kesh fait seul. Le message s'affiche en français sur la page de connexion, quelle que soit la langue choisie. Recharger la page ou ouvrir un onglet ne déconnecte pas tant que la session vit. Rare : deux onglets qui renouvellent leur accès à la même seconde peuvent ramener l'un d'eux à la connexion. |
+| `user-manual.tex:95` | « La session reste active 15 minutes, prolongée … Après 15 minutes sans activité … `KESH_REFRESH_INACTIVITY_MINUTES` » | La session se ferme après une **durée d'inactivité réglée par l'administrateur** (60 minutes par défaut ; Administration → Paramètres, section Session). **Toute activité dans Kesh la remet à zéro** : frappe au clavier (y compris pour faire défiler), mouvement, clic ou molette de la souris, toucher, retour sur l'onglet de Kesh ; faire glisser la barre de défilement ne compte qu'à son début ; une activité dans un onglet vaut pour tous les onglets de Kesh du même navigateur. À l'échéance, Kesh affiche la page de connexion avec « Session fermée après N minutes d'inactivité » ; **ce qui n'était pas enregistré est perdu**, dans tous les onglets. Comptent aussi la dictée, le collage et le glisser-déposer d'un fichier. **Ne comptent pas** : la lecture d'un PDF dans l'aperçu — Kesh ne voit pas ce qui se passe dans le cadre du document ; seuls l'entrée et la sortie du pointeur, et le clic qui y entre, comptent. **Pendant une longue lecture dans l'aperçu, sortez le pointeur du document, ou cliquez à côté, au moins une fois par durée réglée** (une fois par heure avec le réglage par défaut) ; un avertissement avant la fermeture est demandé (CR #895). Ne comptent pas non plus le travail dans un autre programme ou un autre onglet, ni les mises à jour que Kesh fait seul. Le message s'affiche en français sur la page de connexion, quelle que soit la langue choisie. Recharger la page ou ouvrir un onglet ne déconnecte pas tant que la session vit. Rare : deux onglets qui renouvellent leur accès à la même seconde peuvent ramener l'un d'eux à la connexion. |
 | `user-manual.tex:106` | après la récupération par courriel : « toutes vos sessions ouvertes … ont été déconnectées » | « … ne peuvent plus être renouvelées : chacune prend fin à sa prochaine activité, au plus tard à l'échéance de son jeton d'accès (15 minutes par défaut) » (`routes/auth.rs:969` ; le battement d'une ligne révoquée rend 401) |
 | `user-manual.tex:119` | « Tous les refresh tokens de votre session actuelle sont révoqués » | la déconnexion révoque le jeton de renouvellement **de cette session** (`routes/auth.rs:306`) ; les autres appareils restent connectés |
 | `admin-manual.tex:111` | « compensée par rafraîchissement automatique côté frontend » | « renouvelé à la première requête après son échéance ; la fin de session est fixée par la durée d'inactivité réglée dans l'interface (section *Durée d'inactivité de la session*) » |
@@ -709,7 +743,7 @@ Section `## [0.17.3] — Non publié` (à créer en tête si elle n'existe pas) 
 `### Corrigé`
 - **La session ne se ferme plus pendant que vous travaillez** ([#876](https://github.com/guycorbaz/kesh/issues/876)) : elle prenait fin
   quinze minutes après la connexion, même en pleine saisie, et la saisie en cours était perdue. Elle se ferme désormais **exactement** après
-  la durée d'inactivité réglée, et **toute activité dans Kesh** — clavier, souris, défilement, toucher, retour sur l'onglet — la remet à
+  la durée d'inactivité réglée, et **toute activité dans Kesh** — clavier, souris (mouvement, clic, molette), toucher, retour sur l'onglet — la remet à
   zéro, dans tous les onglets. À l'échéance, la page de connexion le dit ; ce qui n'était pas enregistré est perdu. La lecture d'un PDF dans
   l'aperçu, sans geste hors du document, ne compte pas comme activité : pendant une longue lecture, sortez le pointeur du document de temps
   en temps (un avertissement avant la fermeture est demandé : [#895](https://github.com/guycorbaz/kesh/issues/895)).
@@ -735,7 +769,7 @@ mot-clé de fermeture. La note de mise à jour du manuel d'administration (*Pass
   simule un refresh qui réussit ; aucun test ne mesurait une inactivité.
 - **Sécurité** : (a) le battement n'émet aucun jeton de renouvellement et ne prolonge pas `exp` — la fenêtre de rôle ou de société
   périmés reste celle du jeton d'accès ; (b) il exige le jeton d'accès **et** le cookie de renouvellement de la même session (même
-  `user_id`) — rien de plus que ce qu'exige le renouvellement ; (c) `idleMs` ne peut que **raccourcir** l'échéance (borné à `[0, N]`) :
+  `user_id`) — rien de plus que ce qu'exige le renouvellement ; (c) `idleMs` ne peut que **raccourcir** l'échéance (borné à `[0, N × 60 000]` millisecondes) :
   un client ne peut pas obtenir plus qu'en battant réellement ; (d) une session reste vivante tant qu'un onglet produit des événements
   — un script injecté le pourrait aussi, mais il disposerait déjà de la session ; (e) **cas accepté** de la grâce (C-v0172s-17) : un
   attaquant qui présente le premier un jeton volé obtient un jeton neuf ; la victime qui présente ensuite le même jeton dans les 30 s
@@ -743,7 +777,7 @@ mot-clé de fermeture. La note de mise à jour du manuel d'administration (*Pass
   `idle_exp` absente, rien ne change pour eux.
 - **Coût** : au plus un battement toutes les 15 s par navigateur actif — une lecture de réglage par clé primaire, un `UPDATE` sur
   `token` (clé unique `uq_refresh_tokens_token`, squash `:1182`), un encodage de jeton. Aucune ligne neuve (`refresh_tokens` ne grossit pas plus qu'aujourd'hui).
-- **E2E** : le backend des E2E ne pose plus la variable ; le réglage vaut 60 ; les specs bougent la souris et déclenchent des battements
+- **E2E** : le réglage vaut 60 (table vide) ; les specs bougent la souris et déclenchent des battements
   (sans effet sur leurs assertions, à vérifier : Tâche 8).
 - **Jamais de donnée réelle** ; recette sur `kesh_v0172s` seulement.
 
@@ -915,6 +949,30 @@ mot-clé de fermeture. La note de mise à jour du manuel d'administration (*Pass
   `Trois écarts`, `sauf trois`, `89 appels`, `quatre constructeurs`, `avertissement au démarrage`, `legacy_inactivity`, `` `scroll` (capture``,
   `0.17.1 passe` — ne restent que les entrées historiques du Change Log. Registre : C-v0172s-48 ajouté ; C-31 récrit ; C-32, 35, 40, 41,
   45 corrigés. Prochaine : validation **R3** (Sonnet, complète, `v0172-session-validate-prompt-r3.md`).
+
+- 2026-11-04 — **Validation R3 (Sonnet) : 0/0/2/7** (rapport `kesh-gate-logs/v0172s-validate-r3.md`), remédiée par l'agent de fiche
+  (Opus). Prémisses relues avant application : § 5 de la fiche (conciliation), `api-client.ts:149` (`authState.login` à chaque
+  renouvellement), `auth.svelte.ts` (`_currentUser` remplacé à chaque `login()`), `routes/auth.rs:30`, `auth_cookies_e2e.rs:249, :271,
+  :274`, `migrations_upgrade_path.rs` (`/usr/bin/grep -nE "\b54\b|\b88\b"` : `:44, :46, :63, :64, :130, :138, :145, :148, :220, :289`),
+  registre `:732`, `:890-894`.
+  **MEDIUM** — **R3-1** appliqué : `reportedActivity` se concilie avec `serverLast` seulement, jamais avec l'activité stockée ; AC-6 (18),
+  M27 (C-v0172s-51). **R3-2** : voie choisie, **ne plus promettre « défilement »** — FR13, manuel et CHANGELOG disent « clavier, souris
+  (mouvement, clic, molette), toucher, retour sur l'onglet » ; le glisser de la barre ne compte qu'à son début, **écart déclaré** ; écouter
+  `scroll` dans la seconde d'un geste est écarté, un mécanisme de plus pour ce seul cas (C-v0172s-49).
+  **LOW** — **R3-3** appliqué : abonnement du layout à l'**identifiant** (`$derived(authState.currentUser?.userId ?? null)`), AC-6 (19),
+  M28 (C-v0172s-50) ; **R3-4** appliqué (AC-6 5 bis sur la grille d'une seconde : 500, puis 6 000 au tic de 16 s ; M12 bis ajustée) ;
+  **R3-5** appliqué (l'échéance du serveur à une seconde plus tôt près et au délai de transmission plus tard près) ; **R3-6** appliqué
+  (sonde d'AC-2 juste : `routes/auth.rs:30` et `auth_cookies_e2e.rs:249, :271, :274` mis à jour ; phrase fausse des Dev Notes retirée) ;
+  **R3-7** appliqué (prose de `migrations_upgrade_path.rs` aux dix lignes relevées, grep de contrôle `\b(54|55|88|89)\b`) ; **R3-8**
+  appliqué (registre C-47 : 83 appels, trois constructeurs et `hydrate()` ; C-33 et Dev Notes : `[0, N × 60 000]` millisecondes) ;
+  **R3-9** appliqué (interface `sessionIdle` : `start`, `stop`, `setMinutes`, `minutes` ; N tenu par le module, `authState` en transit ;
+  AC-8 : `sessionIdle.setMinutes(45)` appelé).
+  **Dérogation de splitting** : déclarée au Project Lead le 2026-11-04 par l'orchestrateur, dans sa conversation ; il n'a pas demandé de
+  découpage (§ *Modules*, C-v0172s-41).
+  Valeurs grepées dans la fiche après remédiation : `défilement` (ne reste que l'écart déclaré, l'iframe, la recette et l'ancien texte du
+  manuel cité), `authState porte`, `[0, N]`, `ne pose plus la variable`, `t = 15 s`, `reportedActivity = min(now, max(stockée` ; dans le
+  registre : `89 appels`, `quatre constructeurs`. Registre : C-v0172s-49 à 51 ajoutés ; C-33, 35, 41, 47 corrigés. Prochaine : validation
+  **R4** (Opus, **ciblée** sur `git diff da16b94e HEAD`, `v0172-session-validate-prompt-r4.md`).
 
 ## Dev Agent Record
 

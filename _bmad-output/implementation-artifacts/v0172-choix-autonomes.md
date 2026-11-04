@@ -387,7 +387,9 @@ clair) ; *(liste en vigueur : voir la ligne « Validation P5 » ci-dessous, qui 
 
 **Validation R1 (2026-11-04)** : C-v0172s-43 à 47 ajoutés ; C-32, 34, 36, 37, 41 précisés ; en vigueur alors : C-v0172s-14, 17, 23, 24, 26 et 28 à 47.
 
-**Validation R2 (2026-11-04) — fait foi** : C-v0172s-48 ajouté ; C-31 récrit (plus aucune lecture) ; C-32, 35, 40, 41, 45 corrigés dans leur corps ; **en vigueur : C-v0172s-14, 17, 23, 24, 26 et 28 à 48**.
+**Validation R2 (2026-11-04)** : C-v0172s-48 ajouté ; C-31 récrit (plus aucune lecture) ; C-32, 35, 40, 41, 45 corrigés dans leur corps ; en vigueur alors : C-v0172s-14, 17, 23, 24, 26 et 28 à 48.
+
+**Validation R3 (2026-11-04) — fait foi** : C-v0172s-49 à 51 ajoutés ; C-33, 35, 41, 47 corrigés ; **en vigueur : C-v0172s-14, 17, 23, 24, 26 et 28 à 51**.
 
 ### C-v0172s-1 — Renouvellement côté navigateur, à l'entrée de l'utilisateur, et champ `sessionExpiresIn`
 
@@ -729,7 +731,7 @@ clair) ; *(liste en vigueur : voir la ligne « Validation P5 » ci-dessous, qui 
 ### C-v0172s-33 — Le battement `POST /api/v1/auth/activity { idleMs }`, au plus toutes les 15 secondes
 
 - **Retenu** : route protégée (jeton d'accès) qui lit le cookie de renouvellement de la même session (chemin `/api/v1/auth`), met
-  `expires_at = now − idleMs + N` (`idleMs` borné à `[0, N]`) par un seul `UPDATE` conditionné à `user_id`, réémet le jeton d'accès avec
+  `expires_at = now − idleMs + N` (`idleMs` borné à `[0, N × 60 000]` millisecondes — corrigé à la validation R3) par un seul `UPDATE` conditionné à `user_id`, réémet le jeton d'accès avec
   le **même `exp`** et le nouvel `idle_exp` ; aucune rotation, non audité (inscrit comme tel au registre des routes). 15 s : coût
   négligeable (une lecture, une écriture par clé unique, un encodage) pour un écart serveur borné à 15 s dans le seul cas d'un arrêt du
   navigateur.
@@ -755,6 +757,8 @@ clair) ; *(liste en vigueur : voir la ligne « Validation P5 » ci-dessous, qui 
 - **Réversible** : oui.
 
 ### C-v0172s-35 — Ce qui compte comme activité
+
+*Corrigé à la validation R3 : le glisser de la barre de défilement ne compte qu'à son début, écart déclaré ; FR13, manuel et CHANGELOG ne promettent plus « défilement » (C-v0172s-49).*
 
 *Précisé à la validation R1 : `dragover`, `drop` (glisser-déposer HTML5) et `input` (dictée, collage, méthodes de saisie) comptent aussi.*
 
@@ -830,6 +834,8 @@ clair) ; *(liste en vigueur : voir la ligne « Validation P5 » ci-dessous, qui 
 - **Écartées** : deux stories — le serveur seul fermerait la session N minutes après la connexion malgré l'activité (seul le battement
   prolonge), le navigateur seul n'aurait rien à appeler ; aucune ne se publie sans l'autre.
 - **Risque accepté** : la validation de fiche porte sur neuf modules ; borné par la simplicité de chaque moitié.
+- **Déclaration** : dérogation déclarée au Project Lead le **2026-11-04** par l'orchestrateur, dans sa conversation ; le Project Lead
+  n'a **pas** demandé de découpage.
 - **Réversible** : oui.
 
 ### C-v0172s-42 — `KESH_JWT_EXPIRY_MINUTES` reste une variable ; le contournement de #876 à retirer
@@ -887,11 +893,12 @@ clair) ; *(liste en vigueur : voir la ligne « Validation P5 » ci-dessous, qui 
 
 ### C-v0172s-47 — `LoginPayload` : champs d'inactivité facultatifs ; N inconnu ⇒ un `GET /me` ; `null` sans calcul (R1-4, R1-7, R1-8)
 
-- **Retenu** : `idleTimeoutMinutes?: number`, `idleExpiresIn?: number | null` (les 89 appels de `authState.login(` des tests restent
-  valides) ; les quatre constructeurs de production (connexion, assistant `setup.api.ts`, `doRefresh`, `hydrate()`) les transmettent ; le
+- **Retenu** : `idleTimeoutMinutes?: number`, `idleExpiresIn?: number | null` (les **83** appels de `authState.login(` des tests restent
+  valides — corrigé à la validation R3) ; les **trois** constructeurs de `LoginPayload` (connexion, assistant `setup.api.ts`,
+  `doRefresh`/`tryRefresh`) et `hydrate()`, qui affecte l'état directement, les transmettent ; le
   module, sans N valide, fait un `GET /api/v1/auth/me` et, faute de réponse, ne ferme rien ; `idleExpiresIn = null` ⇒ `lastActivity` stockée
   ou `now`, jamais de calcul sur `null`.
-- **Écartées** : champs obligatoires (89 appels de tests à modifier) ; fermer avec une valeur par défaut du navigateur (60) quand N est
+- **Écartées** : champs obligatoires (83 appels de tests à modifier) ; fermer avec une valeur par défaut du navigateur (60) quand N est
   inconnu (le serveur peut avoir 5).
 - **Réversible** : oui.
 
@@ -901,4 +908,30 @@ clair) ; *(liste en vigueur : voir la ligne « Validation P5 » ci-dessous, qui 
   l'adresse elle-même, sans stockage ; la conciliation au démarrage et toute écriture de `lastActivity` sont bornées à `now`.
 - **Écartées** : un marqueur `sessionStorage` ou `localStorage` (un état de plus, à effacer au bon moment) ; laisser la conciliation écrire
   une activité future (avec un N appris plus petit, elle prolongerait tous les onglets).
+- **Réversible** : oui.
+
+### C-v0172s-49 — Le défilement : ce qui est promis (validation R3, R3-2)
+
+- **Retenu** : la molette, le clavier et le toucher comptent ; le glisser de la barre de défilement ne compte qu'à son début (écart
+  déclaré, sans portée pratique) ; FR13, le manuel et le CHANGELOG disent « clavier, souris (mouvement, clic, molette), toucher, retour sur
+  l'onglet », non « défilement ». Le commentaire de #891 (« clavier, souris, défilement ») est tenu pour le défilement voulu par un geste.
+- **Écartées** : écouter `scroll` dans la seconde qui suit un geste (`pointerdown`, `wheel`, `keydown`, `touchstart`) — un mécanisme de
+  plus pour le seul glisser de barre ; écouter `scroll` sans condition (une sonde de fond le déclencherait, R2-11).
+- **Réversible** : oui.
+
+### C-v0172s-50 — L'abonnement par l'identifiant ; N tenu par le module (validation R3, R3-3 et R3-9)
+
+- **Retenu** : le layout racine s'abonne à `authState.currentUser?.userId ?? null` (`$derived`), non à l'objet que `login()` remplace à
+  chaque renouvellement ; `sessionIdle` expose `start(init)`, `stop()`, `setMinutes(n)`, `minutes` ; `authState` ne porte que le transit
+  des deux champs du `LoginPayload` ; `SessionIdleSection` appelle `sessionIdle.setMinutes(n)` après un `PUT` réussi.
+- **Écartées** : s'abonner à `currentUser` ou `isAuthenticated` (redémarrage toutes les 15 minutes) ; tenir N dans `authState` (deux
+  sources de N).
+- **Réversible** : oui.
+
+### C-v0172s-51 — `reportedActivity` se concilie avec ce qui a été rapporté (validation R3, R3-1)
+
+- **Retenu** : au démarrage, `reportedActivity = min(now, max(reportedActivity stockée, serverLast))` ; l'activité stockée plus récente
+  reste à rapporter et part au premier tic.
+- **Écartées** : concilier `reportedActivity` avec l'activité stockée (un rechargement dans les 15 s d'une activité la déclarait
+  rapportée : écart non déclaré de 15 s).
 - **Réversible** : oui.
