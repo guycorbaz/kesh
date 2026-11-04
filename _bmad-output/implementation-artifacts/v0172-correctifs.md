@@ -1,6 +1,6 @@
 # Story v0172-correctifs : la 0.17.2 — l'import simultané (#840), la liste des factures fournisseur (#870), le menu (#851), le taux de TVA désactivé (#882), les dates (#880), six LOW (#883), la date d'une pièce importée (#885)
 
-Status: in-progress
+Status: review
 
 *Fiche rédigée le 2026-11-04, en autonomie (Opus 5.5), worktree `/home/gcorbaz/devel/kesh-0172b`, branche
 `story/v0172-correctifs` partie de `d7ec2ea2` (le merge de la v0.17.1 sur `main`). Release **0.17.2**, **sans migration**
@@ -858,10 +858,113 @@ vide). La PR de release porte les `closes`.
   à la ligne 24 b du tableau, au « Retenu » de C-v0172b-10 (registre), et une puce au CHANGELOG (pas d'issue séparée : corrigé ici).
   **P3** — la limite de la double substitution du contrôle du PDF dit la locale UTF-8 requise.
 
+- 2026-11-04 — **Développement (Opus 5.5)** : A2, B, C dans l'ordre, rouges d'abord (`kesh-gate-logs/v0172b/rouges.log`),
+  mutations nommées (`mut/*.log`). Tests ajoutés, de `1be0f701` à la tête, recomptés aux deux bornes : Rust **+4**
+  (`bank_imports_e2e.rs` 60 → 63, `qr_decode.rs` 40 → 41) ; Vitest **+47 déclarations** (dont deux `it.each` et un
+  `describe.each` joués sous deux fuseaux ; deux fichiers neufs, `journal-entries-list-page.test.ts`,
+  `vat-rates-page.test.ts`) ; E2E **+5 déclarations** (sidebar 4 → 8, dont deux générées par variante — six tests ;
+  `supplier-invoices.spec.ts` 3 → 4). Assertions existantes mises à jour, raison : la correction les rend fausses —
+  `supplier-invoices-list-page.test.ts:59, :68, :71` (`limit: 100` ⇒ `limit: 50, offset: 0`) et le test « réponse périmée »
+  (la case navigue : le second clic attend la première lecture) ; `FiscalYearChecks.test.ts:176-178` (lien K8) ;
+  `SupplierInvoiceForm.test.ts:574-600` (la date ne démarre plus vide ; `todayLocal`) ;
+  `supplier-invoice-draft-cycle.spec.ts:591-605` (réécrit : avis, confirmation, échéance calculée, date vidée) et le
+  commentaire de `helpers/inbox.ts:228-232` ; les ISO du § 26 (`DeleteBankImportAction.test.ts:103, :268`,
+  `LinkSettlementModal.test.ts:287-292`, `ReconciliationProposals.test.ts:398, :428, :542` et l'`aria-label` de V19/V20) ;
+  `bank-import-detail-page.test.ts:331` (message de suppression, non cité au § 26) ; deux E2E sur ces écrans, trouvés par le
+  gate et non par le grep du § 26 (`fiscal-years.spec.ts:57`, `bank-manual-statement.spec.ts:376`, une date calculée) ;
+  gardes i18n recomptées (`i18n-keys.test.ts` 2796 → 2806 sites, l'angle mort `vat-rates/+page.svelte:52` → `:54` ;
+  `i18n-un-repli-par-cle.test.ts` 389 → 395 clés). `grep -nE 'AAAA-MM-JJ|jj\.mm' docs/manual/fr/user-manual.tex` : vide
+  (le manuel ne décrit pas la forme des dates de ces écrans). Choix C-v0172b-30 à 34. Correction de l'orchestrateur
+  appliquée (`:50`, #876 en simple renvoi, CR #891 ; aucune puce `[0.17.2]` sur #876).
+
 ## Dev Agent Record
 
 ### Agent Model Used
 
+Opus 5.5 (`claude-opus-5-5`), autonomie, 2026-11-04. Worktree `/home/gcorbaz/devel/kesh-0172b`, port 3173, bases
+`kesh_v0172b` / `kesh_e2e_v0172b`.
+
 ### Completion Notes List
 
+**A2 — #840.** Rouges avant correctif (TA5 : « l'import n'a jamais attendu le verrou du compte : rendu 201 » ; TA6 : `[201, 201]` ;
+TA7 : `201` au lieu de `409`). Correctif : `create` et `create_csv` passent leur création, telle quelle, dans
+`create_camt_under_lock` / `create_csv_under_lock`, sous `create_under_account_lock` — helper partagé avec la saisie manuelle
+(C-v0172b-30), commit **avant** rendu du verrou par construction (angle mort déclaré C-v0172b-28 : vérifié à la forme du code,
+non par un test). MA11 et MA12 tuées (TA5 et TA7 rougissent, CAMT pour MA11, CSV pour MA12). TA8 (Vitest 409) vert avant :
+le chemin d'erreur générique affiche déjà le message — le test le fige ; texte du 409 « rapprochement » déclaré (C-v0172b-25).
+
+**B.1 — #870.** 11 rouges (Vitest) ; liste lue de l'adresse par `$derived` + `$effect`, gestes qui naviguent ; MB1, MB2, MB8
+tuées (MB8 rougit bien le cas « navigation par lien »). E2E AC-B4 vert (55 brouillons, page 2 à 5, le menu ramène la liste
+par défaut ; C-v0172b-34).
+
+**B.2 — #851 — l'oracle a ROUGI : correctif appliqué.** Relevés avant correctif (fenêtre 1280 × 720, mode guidé, groupes
+d'abord remis à l'état par défaut) : relevé 1 15/15, relevé 3 33/33, relevé 4 (sur `/admin/mcp`) **18/33** — quinze
+entrées perdues (`bank-import-profiles` … `admin-mcp-prompts`), sans et avec bandeau (`captures/v0172b-851-avant-releves-*.json`,
+capture `v0172b-851-avant-admin-mcp-sans-bandeau.png` : le bas du menu passe sous le pied de page). Après correctif : 15/15,
+33/33, 33/33 dans les deux variantes ; AC-B5 bis vert (`overflow-y: auto`, la `<nav>` déborde) ; AC-B5 ter vert avant et
+après (C-v0172b-32 : Quotidien replié d'un clic) ; AC-B6 vert. MB3, MB3 bis, MB3 ter, MB3 quater **non jouées** (E2E
+seulement ; le budget du verrou de gate partagé ne l'a pas permis) — angle mort déclaré, à jouer en revue ou demandé.
+L'hypothèse du rôle nul reste réfutée (AC-B6 vert avant correctif).
+
+**B.3 — #882.** 4 rouges ; `inactiveRates` dérivé des lignes, option « (désactivé) », refus i18n, repli limité aux lignes
+marquées `_vatPlaceholder`. MB4 et MB9 tuées (MB4 rejouée après le déplacement de la déclaration exigé par svelte-check).
+Serveur inchangé (`git diff 1be0f701 -- routes/vat.rs routes/invoices.rs` vide).
+
+**B.4 — #885.** 7 rouges (fuseau épinglé Europe/Zurich, horloge 2026-11-04T23:30Z) ; `todayLocal`, avis « à vérifier »
+non bloquant, `dueFollows`. MB5, MB7 tuées ; **MB6 a d'abord survécu** — le test saisissait `2026-11-20`, valeur que le calcul
+produisait aussi (11-10 + 10 jours) ; test corrigé (`2026-11-23`), MB6 tuée. MB10 : le test tel qu'écrit, processus sous
+`TZ=UTC`, est vert ; MB5 sous `TZ=UTC` le rougit (7 échecs) ; sans l'épinglage, le test rougit même sans mutation.
+
+**C — #880, #883.** TC1 : 26 rouges (deux fuseaux). TC2 : 34 rouges, joués sur les 14 `.svelte` d'avant (`git stash` des seules
+sources, `reports.api.ts` neuf gardé). AC-C3 rejoué : **51** lignes avant correction (64 sans filtre), **exactement 20** après,
+identifiées par leur contenu (`kesh-gate-logs/v0172b/acc3-{avant,apres}.txt`) ; recalage : `BankImportUpload.svelte:104 → :106`,
+`ManualStatementForm.svelte:647 → :649`, `ReconciliationProposals.svelte:546 → :548`, `journal-entries/+page.svelte:79-80 → :81-82`,
+`api-keys/+page.svelte:51 → :54`, `:56 → :69` (`isExpired`, le calcul devenu `new Date(utc)`), `:366 → :392`, `:375 → :401`,
+`fiscal-years/+page.svelte:202-203 → :204-205`. **Un 25ᵉ site hors inventaire** corrigé (`describeTx`, C-v0172b-31).
+22 mutations C jouées, toutes tuées (MC1 ; 19 MC2, une par site ou écran ; MC5 ; MC6) ; MC3 tue T1, T2, T4 (les deux) ; MC4
+tue `v0172_est_payload_spc_bornes` et T5. #883.2 sans objet (C-v0172b-13 ; aucun Svelte refluxé).
+
+**Gates, au dernier commit de code** (`0518769a`, `test(e2e)` — dernier commit de code ; le PDF et ce compte rendu suivent ; bases remises à neuf) :
+- `scripts/test-fast.sh --ci` (fmt + clippy + nextest) : **4687 passés, 12 ignorés, 0 échec** ; `cargo build --workspace
+  --all-targets` : vert. *(Joués à `39fcccf4` ; les commits suivants ne touchent que `frontend/`, la doc et ce compte rendu.)*
+- Frontend : `npm run check` 0 erreur, 29 avertissements (préexistants, aucun dans un fichier de la story) ;
+  `lint-i18n-ownership` PASS ; `test:unit` **2517 / 2517** (206 fichiers) ; `build` vert.
+- **E2E complet** (run r3, port 3173, `/tmp/kesh-e2e-v0172b-r3/`, base neuve) : **343 passés, 7 échecs, 17 ignorés** — les sept
+  de la KF-029 (#97) nommés par `docs/testing.md` (`mode-expert.spec.ts:26, :41`, `onboarding-path-b.spec.ts:65, :92`,
+  `onboarding.spec.ts:57, :77, :150`), aucun autre. Un run r2 avait rendu 14 échecs : quatre d'un montage du runner
+  incomplet (`KESH_INBOX_DIR` non passé au runner), deux assertions ISO réelles (corrigées, commit `test(e2e)`), un dérivé
+  du même montage (`supplier-invoice-draft-cycle.spec.ts:576`, fichier déposé dans `/tmp/kesh-e2e/inbox`) — r3 les a
+  rejoués avec le montage complet.
+- PDF : `make fr` ; seul `user-manual.pdf` est commité (les deux autres PDF ne changeaient que d'horodatage, restaurés).
+  Contrôle aplati (locale UTF-8, apostrophes et césures normalisées) : les phrases neuves présentes, les phrases retirées
+  absentes ; deux phrases coupées par un saut de page (« Afficher toutes les factures », ligature `ﬀ` ; « ne propose pas de
+  réactiver un taux ») relues à la main.
+
+**Captures** (`kesh-gate-logs/v0172b/captures/`, thème clair, bases jetables) : `v0172b-851-{avant,apres}-*` (menu sur
+`/admin/mcp` sans et avec bandeau ; aspect Comptable replié et Administrateur déplié) ; `v0172b-870-brouillons-page{1,2}` ;
+`v0172b-880-*` (journal liste et fiche, exercices liste et renommage, relevés aperçu, liste, fiche, dialogue de suppression,
+rapprochement, clés d'API, taux de TVA) ; `v0172b-882-{brouillon,refus}-taux-desactive` ; `v0174b-completion-*` (#885 : date à
+vérifier, confirmée, échéance calculée, date vidée — préfixe hérité du helper de la spec). La saisie manuelle et ses
+avertissements : `12-…`, `14-…` (spec `bank-manual-statement`, même run). Non capturés : les modales d'affectation et
+d'éclatement (#880) — couvertes par Vitest.
+
+**Écarts à la fiche et aux consignes, déclarés :** revue de code non tenue par sous-story (une seule P1 pour A2, B et C,
+comme le prompt de l'orchestrateur le prescrit) ; quelques fichiers de **test** modifiés par script (`sed`/`python3`, motifs
+vérifiés uniques) au lieu de l'outil Edit (consigne 14) ; une boucle de mutations (`git checkout -- frontend/src`) a effacé
+une fois le correctif non commité de `+layout.svelte`, réécrit aussitôt à l'identique (aucune perte au commit) ; des
+captures d'autres specs sont tombées dans le dossier de captures (variable `KESH_E2E_CAPTURES_DIR` du run complet).
+
 ### File List
+
+Code : `crates/kesh-api/src/routes/{bank_imports.rs,bank_statements_manual.rs}`, `crates/kesh-api/src/qr_decode.rs` ;
+`frontend/src/routes/(app)/{+layout.svelte,supplier-invoices/+page.svelte,bank-import/[id]/+page.svelte,journal-entries/+page.svelte,journal-entries/[id]/+page.svelte,settings/fiscal-years/+page.svelte,settings/api-keys/+page.svelte,settings/vat-rates/+page.svelte}` ;
+`frontend/src/lib/components/invoices/InvoiceForm.svelte` ; `frontend/src/lib/features/{fiscal-years/FiscalYearChecks.svelte,supplier-invoices/SupplierInvoiceForm.svelte,reports/reports.api.ts,bank-import/{BankImportList,BankImportUpload,DeleteBankImportAction,ManualStatementForm}.svelte,reconciliation/{ReconciliationProposals,ManualMatchModal,TransactionSplitModal,LinkSettlementModal}.svelte}` ;
+`crates/kesh-i18n/locales/{fr-CH,de-CH,it-CH,en-CH}/messages.ftl`.
+Tests : `crates/kesh-api/tests/{bank_imports_e2e.rs,bank_statements_manual_e2e.rs,inbox_import_e2e.rs,common/mod.rs}` ;
+les `*.test.ts` voisins des fichiers ci-dessus, `src/lib/shared/{i18n-keys,i18n-un-repli-par-cle}.test.ts`, neufs :
+`supplier-invoices/page-state.test-helper.svelte.ts`, `lib/shared/utils/pin-time-zone.test-helper.ts`,
+`journal-entries/journal-entries-list-page.test.ts`, `settings/vat-rates/vat-rates-page.test.ts` ; E2E
+`tests/e2e/{sidebar-navigation,supplier-invoices,supplier-invoice-draft-cycle,fiscal-years,bank-manual-statement}.spec.ts`,
+`tests/e2e/helpers/inbox.ts`.
+Docs : `CHANGELOG.md`, `docs/manual/fr/user-manual.{tex,pdf}`, cette fiche, `v0172-choix-autonomes.md`, `sprint-status.yaml`,
+`v0172-correctifs-review-prompt-p1.md`.
