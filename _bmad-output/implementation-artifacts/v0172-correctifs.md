@@ -1,39 +1,40 @@
-# Story v0172-correctifs : la 0.17.2 — la session (#876), l'import simultané (#840), la liste des factures fournisseur (#870), le menu (#851), le taux de TVA désactivé (#882), les dates (#880), six LOW (#883), la date d'une pièce importée (#885)
+# Story v0172-correctifs : la 0.17.2 — l'import simultané (#840), la liste des factures fournisseur (#870), le menu (#851), le taux de TVA désactivé (#882), les dates (#880), six LOW (#883), la date d'une pièce importée (#885)
 
 Status: ready-for-dev
 
 *Fiche rédigée le 2026-11-04, en autonomie (Opus 5.5), worktree `/home/gcorbaz/devel/kesh-0172b`, branche
 `story/v0172-correctifs` partie de `d7ec2ea2` (le merge de la v0.17.1 sur `main`). Release **0.17.2**, **sans migration**
 (§ *Contrainte*). Liste acceptée par le Project Lead le 2026-11-04. Registre : `v0172-choix-autonomes.md`, choix
-`C-v0172b-1` à `C-v0172b-27`. Clé courte : `v0172b` (port 3173, bases `kesh_v0172b` / `kesh_e2e_v0172b`). Issues : **#876**,
-**#840** (bugs, P2), **#870**, **#851**, **#882** (bugs, P3), **#880**, **#883** (bugs, P4), **#885** (demande), en `refs`
+`C-v0172b-1` à `C-v0172b-28` (ceux de #876 déplacés vers la section `v0172s`). Clé courte : `v0172b` (port 3173, bases
+`kesh_v0172b` / `kesh_e2e_v0172b`). Issues : **#840** (bug, P2), **#870**, **#851**, **#882** (bugs, P3), **#880**, **#883** (bugs, P4), **#885** (demande), en `refs`
 seulement dans les commits ; la fermeture se porte sur la PR de release. Les numéros de ligne sont ceux de `d7ec2ea2`.
 Une autre story de la 0.17.2 (`v0172-annulees`, #868) travaille en parallèle sur une autre branche : CHANGELOG et registre
-se fusionnent **par union** à l'intégration. Remédiée le 2026-11-04 après la validation P1 (Change Log).*
+se fusionnent **par union** à l'intégration. Remédiée le 2026-11-04 après les validations P1 et P2 (Change Log).
+**#876 (la session) a été extraite à la validation P2 dans la fiche sœur `v0172-session.md`** (même branche, clé de statut
+`v0172-session`) : cette fiche n'en garde que des renvois.*
 
-## Découpage — quatre sous-stories dans cette fiche (règle de splitting préventif)
+## Découpage — trois sous-stories dans cette fiche, et une fiche sœur (règle de splitting préventif)
 
-Le périmètre touche plus de cinq modules. Il est découpé en **quatre sous-stories**, posées dans cette même fiche
-(C-v0172b-1, révisé à la validation P1 : #876 et #840, sans lien, sont séparées), développées **dans l'ordre A1 → A2 → B → C**
-sur la même branche, chacune close par ses propres commits, son gate (complet, E2E complet au dernier commit de code) et sa
-revue de code avant la suivante. Fichiers de chaque sous-story, **complets** :
+Le périmètre touche plus de cinq modules. #876 (la session) est développée dans la **fiche sœur `v0172-session.md`**
+(extraite à la validation P2 : la sévérité stagnait, 12 MEDIUM puis 11, et les défauts recyclés se concentraient sur elle ;
+C-v0172b-1). Cette fiche garde **trois sous-stories**, développées **dans l'ordre A2 → B → C** sur la même branche, chacune close
+par ses propres commits, son gate (complet, E2E complet au dernier commit de code) et sa revue de code avant la suivante. L'ordre
+relatif de `v0172-session` et de cette fiche est libre : elles ne touchent aucun fichier commun, hors CHANGELOG, registre et
+manuels (sections distinctes). Fichiers de chaque sous-story, **complets** :
 
 | Sous-story | Issues | Fichiers (modules) | Nature |
 |---|---|---|---|
-| **A1 — la session** | #876 (P2) | (1) `crates/kesh-api/src/routes/auth.rs`, `routes/setup.rs` (routes d'authentification) ; (2) `frontend/src/lib/shared/utils/api-client.ts` + module neuf `session-renewal.ts` ; (3) `frontend/src/lib/app/stores/auth.svelte.ts` (le module de renouvellement s'y arme et s'y désarme — **aucun** écouteur posé par le layout) ; (4) les deux constructeurs du `LoginPayload`, une ligne chacun : `routes/login/+page.svelte:48`, `lib/features/setup/setup.api.ts:53` ; (5) `frontend/vitest-setup.ts` (module inerte dans les tests qui ne le visent pas) ; manuels FR | comportement, concurrence entre onglets |
-| **A2 — l'import simultané** | #840 (P2) | (1) `crates/kesh-api/src/routes/bank_imports.rs` ; (2) `crates/kesh-api/tests/bank_imports_e2e.rs` (+ helper partagé) ; (3) `frontend/src/lib/features/bank-import/BankImportUpload.svelte` et son test (AC-A10, si correction) | concurrence, serveur |
-| **B — les écrans de saisie et de liste** | #870 (P3), #851 (P3), #882 (P3), #885 (CR) | (1) `routes/(app)/supplier-invoices/+page.svelte` + `lib/features/fiscal-years/FiscalYearChecks.svelte` (#870) ; (2) `routes/(app)/+layout.svelte` + `tests/e2e/sidebar-navigation.spec.ts` (#851) ; (3) `lib/components/invoices/InvoiceForm.svelte` (#882) ; (4) `lib/features/supplier-invoices/SupplierInvoiceForm.svelte` + `tests/e2e/supplier-invoice-draft-cycle.spec.ts`, `tests/e2e/helpers/inbox.ts` (commentaire) (#885) ; (5) les quatre `messages.ftl` ; manuel FR | écrans |
-| **C — la forme** | #880 (P4), #883 (P4) | `lib/features/reports/reports.api.ts` (helpers), les 32 fichiers du § 23 et leurs tests, `crates/kesh-api/src/qr_decode.rs`, `crates/kesh-api/tests/inbox_import_e2e.rs` | déploiement mécanique d'un motif + tests |
+| **A2 — l'import simultané** | #840 (P2) | (1) `crates/kesh-api/src/routes/bank_imports.rs` ; (2) `crates/kesh-api/tests/bank_imports_e2e.rs`, et, si `take_account_lock` est partagé, `crates/kesh-api/tests/common/mod.rs` et `tests/bank_statements_manual_e2e.rs` (déplacement du helper) ; (3) `frontend/src/lib/features/bank-import/BankImportUpload.svelte` et son test (AC-A10, si correction) | concurrence, serveur |
+| **B — les écrans de saisie et de liste** | #870 (P3), #851 (P3), #882 (P3), #885 (CR) | (1) `routes/(app)/supplier-invoices/+page.svelte` et `supplier-invoices-list-page.test.ts` + `lib/features/fiscal-years/FiscalYearChecks.svelte` (#870) ; (2) `routes/(app)/+layout.svelte` + `tests/e2e/sidebar-navigation.spec.ts` (#851) ; (3) `lib/components/invoices/InvoiceForm.svelte` (#882) ; (4) `lib/features/supplier-invoices/SupplierInvoiceForm.svelte` + `tests/e2e/supplier-invoice-draft-cycle.spec.ts`, `tests/e2e/helpers/inbox.ts` (commentaire) (#885) ; (5) les quatre `messages.ftl` ; manuel FR | écrans |
+| **C — la forme** | #880 (P4), #883 (P4) | `lib/features/reports/reports.api.ts` (helpers), les 32 fichiers du § 23 et leurs tests, `routes/(app)/settings/vat-rates/+page.svelte` (§ 24 bis), `crates/kesh-api/src/qr_decode.rs`, `crates/kesh-api/tests/inbox_import_e2e.rs` | déploiement mécanique d'un motif + tests |
 
-A1 compte cinq modules au sens de la règle (les deux constructeurs du `LoginPayload` comptent pour un : une ligne chacun,
-même valeur) ; A2 trois ; B cinq ; C est un *rollout* mécanique (un helper, puis son application site par site), revu
-fichier par fichier. **Ordre** : les deux P2 d'abord ; C en dernier (#883.6 change `formatSwissDate`, dont dépend #880 ; aucun
-site de B n'en dépend). A1 et B ne touchent plus le même fichier (`(app)/+layout.svelte` n'est plus dans A1).
+A2 compte trois modules, B cinq ; C est un *rollout* mécanique (un helper, puis son application site par site), revu fichier
+par fichier. **Ordre** : le P2 d'abord ; C en dernier (#883.6 change `formatSwissDate`, dont dépend #880 ; aucun site de B n'en
+dépend).
 
 ## Story
 
-En tant que Comptable qui saisit une facture pendant vingt minutes, je ne veux pas être renvoyé à la connexion au moment
-d'enregistrer ; en tant que Comptable qui importe un relevé, je ne veux pas qu'un double clic l'enregistre deux fois ; en
+En tant que Comptable qui importe un relevé, je ne veux pas qu'un double clic l'enregistre deux fois ; en
 tant que Comptable qui clôture, je veux atteindre chaque brouillon de facture fournisseur que le contrôle de clôture me
 nomme ; en tant qu'Administrateur, je veux que le menu garde ses entrées ; en tant que Comptable, je veux pouvoir corriger
 un brouillon de facture dont un taux de TVA a été désactivé, lire les dates des écrans comptables en forme suisse, et partir
@@ -43,205 +44,22 @@ de la date du jour — signalée comme telle — sur une facture fournisseur cr�
 
 - **Kesh 0.17.1 tient des livres réels sur le NAS du Project Lead** (`kesh-gate-logs/prompts/v017-donnees-a-garder.md`) :
   aucun essai de cette story ne se joue sur le NAS ni sur des données réelles ; fixtures synthétiques, bases `#[sqlx::test]`
-  jetables, base de démonstration jetable `kesh_v0172b` pour les captures et la recette de session.
+  jetables, base de démonstration jetable `kesh_v0172b` pour les captures.
 - **Aucune migration** (C-v0172b-21) : `ls crates/kesh-db/migrations/*.sql | wc -l` vaut **88** avant et après (recompté le
   2026-11-04 ; `docs/migrations-idempotence-audit.md:17` porte « 88 migrations »). #840 se corrige par un **verrou nommé**, non
-  par une contrainte (§ A2, C-v0172b-6) ; #876 ajoute un **champ JSON** aux réponses d'authentification, sans schéma neuf. Aucune
+  par une contrainte (§ A2, C-v0172b-6) ; #876 (fiche sœur) n'ajoute qu'un **champ JSON** aux réponses d'authentification. Aucune
   donnée existante n'est lue autrement, aucune n'est réécrite. `kesh_version_min_required` reste à 0.17.0 ; **le retour à la
-  0.17.1 reste possible sans restauration** (le binaire 0.17.1 ignore le champ JSON neuf, et aucune ligne de
-  `_sqlx_migrations` n'est ajoutée). Pas de P5, P6, P7.
+  0.17.1 reste possible sans restauration** (aucune ligne de `_sqlx_migrations` n'est ajoutée). Pas de P5, P6, P7.
 - **Hors périmètre** (release, faits par l'orchestrateur) : bump de version Cargo, macros des manuels (`kesh-style.sty`),
   tag. Les PDF des manuels sont régénérés par le développeur pour les seuls textes modifiés ici.
 
 ---
 
-# Sous-story A1 — #876 : la session expire pendant une activité continue
+# #876 — la session : voir `v0172-session.md`
 
-## Ce que le code dit (établi au code, d7ec2ea2)
-
-La prémisse de l'issue (« à vérifier ») est **confirmée, et le défaut est plus net que l'issue ne le dit** : avec les
-réglages par défaut, **le renouvellement sur 401 ne peut jamais réussir**, si bien qu'une session dure ≈ 15 minutes après
-la connexion, **quelle que soit l'activité**.
-
-1. **Deux durées de 15 minutes, comptées du même instant.** À la connexion, le jeton d'accès vaut
-   `state.config.jwt_expiry` (`routes/auth.rs:244-250` ; défaut de production 15 min, `config.rs:688-708`) et le jeton de
-   renouvellement reçoit `expires_at = now + refresh_inactivity` (`routes/auth.rs:254` ; défaut 15 min, `config.rs:735-755`).
-   Même règle au renouvellement (`:422`), au changement de mot de passe (`:524`) et à l'assistant (`routes/setup.rs:288`).
-   `.env.example:129, :160` et les deux `docker-compose*.yml` posent les mêmes 15/15.
-2. **Le cookie d'accès disparaît à 15 minutes.** `build_auth_cookies` (`routes/auth.rs:44-`) pose `kesh_access_token` avec
-   `max_age = jwt_expiry` (`:54`) : le navigateur le supprime à l'échéance ; la requête suivante part sans jeton et reçoit
-   401 (le `leeway = 60` de `auth/jwt.rs:91` n'y change rien, le cookie n'est plus envoyé — et pour un en-tête `Bearer`, il
-   ne fait que repousser le 401 d'une minute). Le cookie de renouvellement, lui, vit `refresh_token_max_lifetime` (30 jours,
-   `:63-66`) : ce n'est **que** la durée du cookie ; la ligne en base expire à `now + refresh_inactivity`.
-3. **Le frontend ne renouvelle qu'après ce 401.** `request` (`lib/shared/utils/api-client.ts:452-460`) et `requestRaw`
-   (`:551-`) appellent `refreshTokens()` sur 401 ; **aucun** renouvellement préalable n'existe : `git grep -nE
-   '\.expiresIn\b' -- frontend/src ':!*.test.ts'` ne rend que des affectations et des validations de forme
-   (`auth.svelte.ts:117, :245, :259`, `api-client.ts:115-170`, `setup.api.ts:53`, `login/+page.svelte:48`) — `_expiresIn`
-   n'est jamais lu pour planifier quoi que ce soit (le commentaire « refresh proactif » de `auth.svelte.ts:129` et
-   `api-client.ts:146` décrit un mécanisme qui n'existe pas).
-4. **Le renouvellement arrive trop tard.** `refresh` refuse un jeton dont `expires_at < now` (`routes/auth.rs:399`). Or le
-   401 survient à `t₀ + jwt_expiry` (cookie supprimé), et le jeton de renouvellement a expiré à `t₀ + refresh_inactivity`
-   (+ quelques millisecondes) : avec 15 = 15, le `POST /auth/refresh` arrive **après** son expiration ⇒ `InvalidRefreshToken
-   ("token expired")` ⇒ `doRefresh` fait `clearSession()` puis `window.location.replace('/login?reason=session_expired')`
-   (`api-client.ts:176-177`) — **la saisie en cours est perdue**. Toute configuration où `refresh_inactivity ≤ jwt_expiry`
-   produit la même chose ; seule `refresh_inactivity > jwt_expiry` laisse une fenêtre.
-5. **Le manuel promet le contraire** : `docs/manual/fr/user-manual.tex:95` — « La session reste active 15 minutes, prolongée
-   automatiquement à chaque action grâce au système de \emph{refresh token}. Après 15 minutes sans activité, vous devrez
-   vous reconnecter ». Le manuel d'administration le dit aussi (`admin-manual.tex:111`, « compensée par rafraîchissement
-   automatique côté frontend ») et se trompe ailleurs sur les cookies et les durées (§ *Manuel*, inventaire clos).
-6. **Ce qui sonde le serveur sans l'utilisateur** : `BackupScheduleBanner.svelte:34` (`setInterval`, Administrateur) et
-   `api-health.svelte.ts:102` (sonde `/health` en mode dégradé). Une règle « toute requête prolonge la session » rendrait
-   éternelle une session laissée ouverte sur un écran d'administration : **les requêtes ne sont pas une activité**
-   (C-v0172b-3).
-7. **Plusieurs onglets partagent les cookies**, et la rotation détecte le rejeu : un jeton de renouvellement déjà tourné
-   (`revoked_reason = "rotation"`, `routes/auth.rs:379`) présenté de nouveau révoque **toutes** les sessions de l'utilisateur
-   (`:380-389`). Deux onglets qui renouvellent au même instant avec le même cookie déconnectent tout. Ce risque existe déjà
-   sur le chemin 401 — il ne se manifestait pas, faute de renouvellement qui réussisse ; **le correctif le rend réel** et doit
-   le fermer (C-v0172b-4).
-7 bis. **Tout échec de renouvellement efface la session** : `doRefresh` fait `clearSession()` + redirection sur erreur réseau
-   (`api-client.ts:96-99`), sur réponse illisible (`:105-109`, `:115-118`) et sur **tout** statut non-OK, 429 et 5xx compris
-   (`:174-178`). Défendable sur le chemin 401 (la session y est déjà morte) ; faux pour un renouvellement **anticipé**, quand la
-   session vit encore (C-v0172b-24).
-
-## Conception retenue (C-v0172b-2 à 5, 18, 23, 24)
-
-**Le principe : la session se prolonge à l'entrée de l'utilisateur, au plus une fois par pas `T`.** Il n'y a **pas de
-minuterie** : c'est l'entrée elle-même qui renouvelle, ce qui donne une borne d'inactivité exacte (à `T` près) et ne dépend ni
-de la mise en veille du poste ni de la limitation des minuteries des onglets masqués (C-v0172b-23).
-
-- **Serveur** — un champ additif `sessionExpiresIn` (secondes avant l'expiration du jeton de **renouvellement**) dans
-  `LoginResponse` (`routes/auth.rs:135`, rendu par `login` et par l'assistant `routes/setup.rs:308`), `RefreshResponse`
-  (`:343`, rendu par `refresh` et `change_password`) — valeur `refresh_inactivity.num_seconds()` — et `MeResponse`
-  (`:571`) — valeur calculée depuis la ligne `refresh_tokens` du cookie `kesh_refresh_token` (le cookie a pour chemin
-  `/api/v1/auth`, `:63` : il accompagne `GET /api/v1/auth/me`), `max(0, expires_at − now)`, et **`null`** si le cookie
-  manque, est inconnu, révoqué ou expiré (`find_active_by_token`, `repositories/refresh_tokens.rs:79`). Aucune écriture,
-  aucun schéma. Le frontend en tire la **fenêtre** `N` (durée d'inactivité réglée) et l'échéance `sessionDeadline`.
-- **Frontend** — un module `lib/shared/utils/session-renewal.ts` (une seule définition), armé par `authState` à `login` /
-  `hydrate` réussi / renouvellement, **désarmé** à `clearSession()` et `logout()` (`auth.svelte.ts:148-162, :168-186`) :
-  - **état** : `lastRenewalAt` (horloge murale, `Date.now()`), `accessDeadline = lastRenewalAt + expiresIn`,
-    `sessionDeadline = lastRenewalAt + sessionExpiresIn` (absent ⇒ `accessDeadline`, prudent face à un serveur 0.17.1) ;
-    le pas `T = min(60 s, N/4, expiresIn/4)` ;
-  - **entrées** : écouteurs passifs `keydown`, `pointerdown`, `wheel`, `touchstart` sur `window`, et
-    `visibilitychange` vers `visible` (revenir sur l'onglet est un geste) ; posés à l'armement, retirés au désarmement
-    (C-v0172b-3) ; **les requêtes HTTP ne comptent pas** ;
-  - **règle** : à chaque entrée, si `now ≥ max(accessDeadline, sessionDeadline)`, rien (la session est morte : la prochaine
-    requête rendra 401 et mènera à la connexion, comme aujourd'hui) ; sinon, si `now − max(lastRenewalAt, renewedAtPartagé)
-    ≥ T`, renouveler (sous le verrou, ci-dessous). L'horloge murale est relue à chaque entrée : après une veille de 13 minutes,
-    la première frappe renouvelle ; après une veille de 16 minutes (15/15), elle ne fait rien ;
-  - **borne d'inactivité qui en résulte** : la dernière entrée à `a`, le dernier renouvellement à `r ∈ [a − T, a]` ; la
-    session prend fin à `r + max(N, jwt)` — **entre `max(N, jwt) − T` et `max(N, jwt)` après la dernière entrée**. Avec les
-    réglages par défaut : **entre 14 et 15 minutes** ; avec `KESH_REFRESH_INACTIVITY_MINUTES=1` : entre 45 et 60 secondes
-    (si le jeton d'accès vaut 1 minute aussi ; sinon `max(N, jwt)`) ;
-  - **échec d'un renouvellement anticipé** (C-v0172b-24) : seul `401` (`INVALID_REFRESH_TOKEN`) efface la session et mène à
-    la connexion ; une erreur réseau, un 429 ou un 5xx **laissent la session** et notent `lastAttemptAt` : l'entrée suivante
-    retente au plus tôt 10 s plus tard, tant que `now < max(accessDeadline, sessionDeadline)`. Le chemin 401 existant
-    (`doRefresh`) garde son comportement, sauf la règle du point suivant ;
-  - **401 sans entrée** : sur le chemin 401, si **aucune entrée** n'a eu lieu depuis `lastRenewalAt`, le renouvellement n'est
-    **pas** tenté : l'appel échoue (`UNAUTHENTICATED`), la session n'est ni prolongée ni effacée. Sans cela, une sonde de fond
-    prolongerait la session dès que `N > jwt` (une sonde qui reçoit 401 après expiration du jeton d'accès renouvellerait).
-    Avec 15/15, le cas ne se présente pas ;
-  - **entre onglets** : `refreshTokens()` passe sous `navigator.locks.request('kesh:auth:refresh', …)` ; une fois le verrou
-    obtenu, si `localStorage['kesh:auth:renewedAt'] ≥` l'instant où l'onglet a décidé de renouveler, un autre onglet l'a fait :
-    **pas de `POST /auth/refresh`**, un `GET /auth/me` recale l'état ; après un renouvellement réussi, `renewedAt` est écrit et
-    le canal `authBroadcast` (`auth.svelte.ts`, existant) diffuse `{ type: 'auth-renewed' }`, sur lequel les autres onglets
-    recalent leur état par `/me` **sans** renouveler. Le même chemin verrouillé sert le renouvellement sur 401. Sans
-    `navigator.locks` (jsdom, navigateur ancien), repli sans verrou, sur la seule comparaison de `renewedAt` (C-v0172b-4) ;
-  - **tests** : le module est **inerte** dans Vitest tant qu'un test ne l'active pas (`vitest-setup.ts` appelle
-    `disableSessionRenewalForTests()` ; `session-renewal.test.ts` le réactive) : les centaines de tests qui appellent
-    `authState.login(` n'arment ni écouteur ni appel réseau.
-- **Écartées** (C-v0172b-2, 23) : (a) une minuterie armée avant l'échéance qui renouvelle « s'il y a eu activité depuis le
-  dernier renouvellement » — la première rédaction de cette fiche : la borne d'inactivité monte jusqu'à `2N − 1` (une frappe
-  juste après un renouvellement suffit pour le suivant), et la minuterie ne sonne pas pendant une veille ni à l'heure dans un
-  onglet masqué (finding P1-P2 de la validation P1) ; (b) côté serveur seul, porter `expires_at` à `now + jwt + leeway +
-  refresh_inactivity` — inactivité tolérée floue (15 à 31 minutes), saisie longue sans requête perdue quand même ;
-  (c) prolonger à chaque requête — les sondes de fond (§ 6) rendraient la session éternelle ; (d) ne corriger que le manuel —
-  la perte de saisie est le défaut.
-- **Coût** : au plus un `POST /auth/refresh` (rotation, une ligne `refresh_tokens`) par minute d'activité et par utilisateur —
-  négligeable pour l'usage de Kesh ; il est déclaré au Dev Agent Record.
-
-## Acceptance Criteria (A1)
-
-**AC-A1 — Le champ `sessionExpiresIn`.** `POST /api/v1/auth/login`, `POST /api/v1/auth/refresh`,
-`PUT /api/v1/auth/password` et la fin de l'assistant (`routes/setup.rs`) rendent `sessionExpiresIn ==
-refresh_inactivity.num_seconds()` (900 par défaut) ; `GET /api/v1/auth/me` rend la durée restante du jeton de
-renouvellement du cookie (entre 0 et 900 juste après la connexion, **décroissante** : un `/me` lu après avoir reculé
-`expires_at` de 300 s en base rend ≤ 600), et `null` sans cookie de renouvellement (en-tête `Bearer` seul), avec un cookie
-révoqué ou expiré. `expiresIn` est inchangé partout. Tests : `crates/kesh-api/tests/` (fichier des E2E d'authentification
-existant — le développeur le nomme au Change Log après `git grep -ln 'auth/me' crates/kesh-api/tests`).
-
-**AC-A2 — Le défaut reste visible au serveur, figé par un test.** Un test d'intégration documente la sémantique : un jeton
-de renouvellement dont `expires_at` est passé est refusé (`401`, `INVALID_REFRESH_TOKEN`) — il **reste vert** : c'est ce
-qui oblige le frontend à renouveler **avant** l'échéance. (Sans lui, un correctif futur pourrait « réparer » #876 en
-relâchant l'expiration, ce que C-v0172b-2 écarte.)
-
-**AC-A3 — Le renouvellement à l'entrée.** `session-renewal.test.ts` (Vitest, horloge simulée par `vi.setSystemTime`, sans
-dépendre d'aucune minuterie) — connexion avec `expiresIn = 900`, `sessionExpiresIn = 900` (`T = 60 s`) :
-(a) une frappe toutes les 30 s pendant 40 minutes : `POST /api/v1/auth/refresh` appelé **au plus une fois par 60 s** et **au
-moins une fois par 120 s** ; aucune requête rejetée ; **rouge avant correctif** ;
-(b) **« une entrée puis plus rien »** — (b1) renouvellement à t = 0, une frappe à t = 0,5 min (pas de `POST` : < `T`), puis
-rien : une frappe à t = 15 min 01 s **ne** déclenche **pas** de `POST` (session morte à 15 min, soit 14,5 min après la dernière
-entrée : dans la borne) ; (b2) renouvellement à t = 0, une frappe à t = 1 min ⇒ `POST` (nouvel état à t = 1) ; puis une frappe à
-t = 15 min 30 s ⇒ `POST` ; variante sans cette frappe : une frappe à t = 16 min 01 s ⇒ aucun `POST` ;
-(c) une requête de fond (mock de `listBackupSchedule` ou `fetch('/health')`) chaque minute pendant 20 minutes, sans entrée :
-**aucun** `POST /auth/refresh` ;
-(d) `sessionExpiresIn = 120` (inactivité de 2 minutes) avec `expiresIn = 900` : `T = 30 s` ; une frappe toutes les 20 s
-renouvelle au moins toutes les 60 s ;
-(e) `sessionExpiresIn` absent : `T` et les échéances se calculent sur `expiresIn` seul ;
-(f) **veille du poste** : l'horloge avance de 13 minutes d'un coup (aucune minuterie ne sonne), puis une frappe ⇒ `POST`
-aussitôt ; l'horloge avance de 16 minutes, puis une frappe ⇒ aucun `POST` ;
-(g) **retour sur l'onglet** : `document.visibilityState = 'visible'` + `visibilitychange` après 5 minutes sans entrée ⇒ `POST`
-(rouge avant) ; `visibilitychange` vers `hidden` ⇒ rien ;
-(h) **échec transitoire** : le `POST` anticipé rend `503`, puis une erreur réseau : `authState.isAuthenticated` reste vrai,
-aucune redirection (`window.location.replace` non appelé) ; l'entrée suivante, 10 s plus tard, retente et réussit ; un `401
-INVALID_REFRESH_TOKEN` au `POST` anticipé ⇒ `clearSession()` et redirection `/login?reason=session_expired` ;
-(i) **401 sans entrée** : avec `sessionExpiresIn = 3600` et `expiresIn = 900`, à t = 16 min, une requête de fond reçoit 401 ⇒
-**aucun** `POST /auth/refresh`, l'appel rejette `UNAUTHENTICATED`, la session n'est pas effacée ; une frappe ensuite ⇒ `POST` ;
-(j) **désarmement** : après `clearSession()` (ou le message `auth-change` d'un autre onglet qui déconnecte), une frappe ne
-déclenche aucun `POST`.
-
-**AC-A4 — Un seul renouvellement pour plusieurs onglets.** (a) Deux instances du module partageant un `localStorage` et un
-`navigator.locks` simulés, même état, une frappe dans chacune au même instant (horloge simulée **avancée d'au moins 1 ms**
-entre les deux décisions, et comparaison `≥` — une horloge figée rendrait l'égalité) : **un seul** `POST /auth/refresh` ;
-l'autre instance fait `GET /auth/me` et recale son état ; (b) le message `auth-renewed` reçu recale l'état sans `POST` et
-compte pour `max(lastRenewalAt, renewedAt)` (une frappe juste après ne renouvelle pas) ; (c) deux 401 simultanés **dans deux
-onglets** (deux instances, entrée récente dans les deux) : un seul `POST /auth/refresh`, les deux requêtes rejouées une fois ;
-(d) sans `navigator.locks` : (a) tient par la comparaison de `renewedAt` quand les deux décisions sont séquentielles (la
-fenêtre de course résiduelle est déclarée au Dev Agent Record, C-v0172b-4). Les tests existants du mutex d'onglet
-(`api-client.test.ts:270-316`) restent verts.
-
-**AC-A5 — Recette sur une installation de dev.** Sur `kesh_v0172b`, backend lancé avec `KESH_JWT_EXPIRY_MINUTES=2` et
-`KESH_REFRESH_INACTIVITY_MINUTES=2` : (a) en tapant dans une facture en brouillon (sans enregistrer) pendant **6 minutes**,
-puis en enregistrant : l'enregistrement réussit, aucune redirection vers `/login` ; (b) une frappe, puis plus rien pendant
-2 min 30 s, puis un clic sur une entrée du menu : retour à la connexion (`reason=session_expired`) ; une frappe puis 1 min 20 s
-sans rien, puis un clic : la session vit ; (c) deux onglets ouverts, actifs : au bout de 6 minutes, aucun des deux n'est
-déconnecté, et aucune ligne `token replay detected` au journal du backend ; (d) poste mis en veille 1 minute pendant une saisie
-(ou onglet masqué 1 minute), puis une frappe et *Enregistrer* : réussite. Le déroulé (heures, résultat) va au Dev Agent Record.
-Ce n'est **pas** un test automatisé : la suite E2E partage un backend aux réglages par défaut (C-v0172b-5).
-
-**AC-A6 — Les manuels disent vrai.** Les sites du § *Manuel* (puce #876, inventaire clos des deux manuels) sont corrigés ; la
-borne écrite est celle de la conception : **entre 14 et 15 minutes** sans entrée par défaut, et, au manuel d'administration,
-`max(KESH_REFRESH_INACTIVITY_MINUTES, KESH_JWT_EXPIRY_MINUTES)` à une minute près.
-
-## Tests et mutations (A1)
-
-| # | Test | Attendu |
-|---|---|---|
-| TA1 | `sessionExpiresIn` aux cinq réponses (AC-A1) | rouge avant correctif |
-| TA2 | refus d'un jeton de renouvellement expiré (AC-A2) | vert avant et après |
-| TA3 | Vitest renouvellement à l'entrée a–j (AC-A3) | (a), (b) partie renouvelante, (d), (f) 1ʳᵉ partie, (g), (h) partie « retente », (i) 2ᵉ partie rouges avant ; (c), (j) verts avant (rien n'est appelé) |
-| TA4 | Vitest plusieurs onglets a–d (AC-A4) | (a), (b), (c) rouges avant |
-
-**Mutations nommées (P2)** — sous le verrou de gate ; après une restauration par `cp`/`mv`, **toucher le fichier** :
-- **MA1** — le gestionnaire d'entrée n'appelle plus `refreshTokens()` : TA3 (a), (f), (g) rougissent.
-- **MA2** — le pas `T` retiré (renouvelle à chaque entrée) : TA3 (a) (« au plus une fois par 60 s ») rougit.
-- **MA3** — les requêtes comptées comme entrée (l'enveloppe `request` appelle le gestionnaire) : TA3 (c) rougit.
-- **MA4** — la comparaison `renewedAt` retirée sous le verrou : TA4 (a) et (c) rougissent.
-- **MA5** — `/me` rend `refresh_inactivity` au lieu de la durée restante : TA1 (le `/me` décroissant) rougit.
-- **MA6** — la garde « session morte » retirée : TA3 (b) (frappe à 16 min 01 s) et (f) 2ᵉ partie rougissent.
-- **MA7** — un échec 503 du renouvellement anticipé efface la session (retour au `doRefresh` d'origine) : TA3 (h) rougit.
-- **MA8** — l'écouteur `visibilitychange` retiré : TA3 (g) rougit.
-- **MA9** — la garde « 401 sans entrée » retirée : TA3 (i) rougit.
-- **MA10** — le désarmement retiré de `clearSession()` : TA3 (j) rougit.
+Extraite à la validation P2 (C-v0172b-1). Conception, AC, tests, mutations, manuels (utilisateur `:95` et l'inventaire clos du
+manuel d'administration sur les cookies, les jetons et les durées), CHANGELOG et recette : dans la fiche sœur, choix
+`C-v0172s-1` à `14`.
 
 ---
 
@@ -315,8 +133,12 @@ des gestes de rapprochement) : limite déclarée en Dev Notes, non corrigée (C-
 **Mutations nommées (P2)** :
 - **MA11** — `create` (CAMT) appelle `…_under_lock` **sans** `with_account_lock` : TA5 CAMT rougit seul.
 - **MA12** — idem pour `create_csv` : TA5 CSV rougit seul.
-- **MA13** — le verrou rendu **avant** le commit (le commit sorti de la fermeture) : TA5 rougit (le `POST` voit un relevé non
-  commité ou n'en voit aucun).
+- *(MA13 — « le verrou rendu avant le commit » — est **retirée** à la validation P2 : dans TA5, c'est la connexion de test qui
+  tient le verrou ; que le `POST` rende le sien avant ou après son commit n'y est jamais observé, et AC-A8 ne la tue que selon
+  l'ordonnancement. L'inverse — le `POST` tient le verrou, une connexion de test l'attend et lit la base dès qu'elle l'obtient —
+  demanderait un point d'arrêt de test dans le code de production. **Angle mort déclaré** au Dev Agent Record : l'ordre « commit
+  puis rendu du verrou » est garanti par la forme du code (le commit est dans `…_under_lock`, appelée dans la fermeture,
+  comme `bank_statements_manual.rs:239-249`) et vérifié à la revue de code, non par un test ; C-v0172b-28.)*
 
 ---
 
@@ -334,23 +156,32 @@ des gestes de rapprochement) : limite déclarée en Dev Notes, non corrigée (C-
     `status` accepte une liste (`statuts_du_filtre`, `services/factures_fournisseur.rs:65`). **Aucune modification serveur.**
 11. Le contrôle de clôture K8 (`lib/features/fiscal-years/FiscalYearChecks.svelte:280-311`) nomme vingt brouillons, dit
     « … et N autre(s), dans la liste des factures fournisseurs » et lie `href="/supplier-invoices"` (`:308`), sans filtre.
-    Au-delà de cent factures (plus récentes d'abord), un brouillon ancien n'est atteignable nulle part — le manuel affirme
-    pourtant « Pour les brouillons, le lien ouvre la liste complète » (`user-manual.tex:833`), ce qui est faux.
+    Au-delà de cent factures (plus récentes d'abord), un brouillon ancien n'est atteignable nulle part. Le manuel décrit K8 à
+    `user-manual.tex:823` (« Chaque brouillon listé mène à sa fiche ; lien : Ouvrir les factures fournisseurs ») sans dire ni les
+    vingt premières ni « … et N autres ». *(La phrase de `:833` — « Pour les brouillons, le lien ouvre la liste complète » —
+    porte sur les **factures client** en brouillon, K4 : `:819` « Factures en brouillon … Des factures client », `:834` « Seules
+    les factures client en brouillon sont comptées » ; son lien est `/invoices?status=draft&dateFrom=…&dateTo=…`
+    (`FiscalYearChecks.svelte:116`), liste paginée : elle est **vraie** et ne change pas. La première rédaction de cette fiche la
+    lisait comme une phrase de K8 — finding P7 de la validation P2.)*
 12. **Le motif de pagination** à reprendre : `routes/(app)/invoices/+page.svelte` — `initFromUrl` (`:71-107`, lecture et
-    validation de `status`, `limit`, `offset`), `syncUrl` (`:118-153`, `goto(…, { replaceState: true, keepFocus: true,
+    validation de `status`, `limit`, `offset`), `syncUrl` (`:116-153`, `goto(…, { replaceState: true, keepFocus: true,
     noScroll: true })`), boutons *Précédent* / *Suivant* et total (`:451-471`).
 
 ### Conception (C-v0172b-7)
 
-La liste lit `?status=` (**une** valeur parmi `draft`, `open`, `paid`, `cancelled`), `?offset=` et `?limit=` (défaut 50,
+La liste lit `?status=` (**une** valeur parmi `draft`, `open`, `paid`, `cancelled`), `?cancelled=1` (la case *Afficher les
+factures annulées*), `?offset=` et `?limit=` (défaut 50,
 borné à [1, 200] comme le serveur — non les 20/100 de `invoices/+page.svelte`). **L'URL est la source de vérité, lue de façon
 réactive** (C-v0172b-26) : `status`, `offset`, `limit` sont des `$derived` de `page.url.searchParams` (`$app/state`), et un
-`$effect` relit la liste quand ils changent ; boutons, case et liens ne modifient pas un état local mais **naviguent**
+`$effect` relit la liste quand ils changent ; la case est **elle aussi** dérivée de l'URL (`showCancelled = cancelled === '1'`,
+C-v0172b-26) ; boutons, case et liens ne modifient pas un état local mais **naviguent**
 (`goto(nouvelle URL, { keepFocus: true, noScroll: true })`). Le motif `initFromUrl` à `onMount` de `invoices/+page.svelte`
 **n'est pas** repris tel quel : il ne relit pas l'URL quand seule la requête change (même instance de page), si bien qu'un lien
 `<a href="/supplier-invoices">` (bandeau, menu latéral) depuis `?status=draft` laisserait la liste filtrée. Après lecture, si la
 page est vide alors que `total > 0` et `offset > 0` (dernière ligne supprimée, signet ancien), la page navigue vers la dernière
-page (`offset = floor((total − 1) / limit) × limit`, `replaceState`). Sans `status`, comportement 0.17.1 : sans les annulées, la case *Afficher les factures annulées* les rend. Avec
+page (`offset = floor((total − 1) / limit) × limit`, `replaceState`). Sans `status`, comportement 0.17.1 : sans les annulées (`status: ['draft','open','paid']`) ; cocher la case navigue vers
+`?cancelled=1` (`offset` remis à 0), qui lit sans filtre de statut ; la décocher retire le paramètre. Avec `status`, `cancelled`
+est ignoré. Avec
 `status`, la liste ne montre que ce statut, la case est **masquée** et un bandeau dit le filtre (« Seules les factures
 « Brouillon » sont affichées, tous exercices confondus. » + lien *Afficher toutes les factures* → `/supplier-invoices`). Le
 filtre ne porte que sur le statut : depuis K8, la liste montre les brouillons de **tous** les exercices — un sur-ensemble de ceux
@@ -375,7 +206,12 @@ arrière du navigateur ⇒ la liste suit l'URL. **Page au-delà du total** : `?o
 **AC-B3** — K8 : `fiscal-year-checks-link-DRAFT_SUPPLIER_INVOICES` (`FiscalYearChecks.svelte:280`, `check.code === 'DRAFT_SUPPLIER_INVOICES'`) a
 `href="/supplier-invoices?status=draft"`. **AC-B4** — E2E `supplier-invoices.spec.ts` : 55 brouillons créés par l'API
 (fixture), la liste filtrée par l'URL montre 50 lignes puis 5 après *Suivant*.
-Tests : `supplier-invoices-list-page.test.ts` (existant ; `$app/state` simulé avec une `page.url` modifiable), `FiscalYearChecks.test.ts`
+**AC-B2 bis** — la case : cocher appelle `goto` vers `?cancelled=1` puis lit `{ limit: 50, offset: 0 }` ; *Suivant* garde
+`cancelled=1` ; retour arrière vers l'URL sans le paramètre ⇒ la case décochée et `status: ['draft','open','paid']`.
+Tests : `supplier-invoices-list-page.test.ts` (existant ; `$app/state` simulé avec une `page.url` **modifiable**, et le simulacre
+de `goto` (`:12`, aujourd'hui `goto: vi.fn()`) **modifie** cette `page.url`, sans quoi les lectures réactives ne se rejouent pas).
+**Assertions existantes à mettre à jour** (raison au Change Log : `limit` passe de 100 à 50, `offset` est envoyé) : `:50`, `:59`,
+`:68`, `:71`, `:104`, `:113`, `:136` (`{ limit: 100, … }` ⇒ `{ limit: 50, offset: 0, … }`) ; `FiscalYearChecks.test.ts`
 (existant ou créé). **Rouges avant correctif** : AC-B1, AC-B2, AC-B3. E2E (AC-B4) : après *Suivant*, un clic sur l'entrée
 *Factures fournisseurs* du menu ramène la liste par défaut, page 1.
 
@@ -406,26 +242,36 @@ Tests : `supplier-invoices-list-page.test.ts` (existant ; `$app/state` simulé a
 
 ### Conception (C-v0172b-8)
 
-**Reproduire d'abord** (AC-B5, rouge attendu), puis corriger par la seule classe `overflow-y-auto` (et `min-h-0`) sur la
-`<nav>` : la barre garde sa hauteur et défile **seule**. Si la reproduction **ne** rougit **pas**, ne rien corriger : relever
-les entrées absentes par capture, le dire au Dev Agent Record et au rapport (l'orchestrateur commente l'issue) — l'hypothèse
-du rôle (§ 13) reste écartée sauf preuve. Hors périmètre : le dépliage exclusif des groupes (issue voisine citée par #851).
+**Reproduire d'abord le symptôme** (AC-B5, oracle du symptôme), puis corriger : la `<nav>` reçoit `overflow-y-auto` et
+`overscroll-behavior: auto` (la molette fait défiler la barre, puis la page), sa hauteur devient un **maximum**
+(`self-start max-h-[calc(100vh-3.5rem)]` à la place de `h-[calc(100vh-3.5rem)]`, `top-14` inchangé) : avec un bandeau affiché
+(`DemoBanner`, `IncompleteBanner`, `BackupScheduleBanner`, `+layout.svelte:362-369`) la barre commence `B` pixels plus bas ;
+la molette, arrivée au bas de la barre, fait défiler la page de `B` pixels, la barre se colle sous l'en-tête et son dernier
+lien entre dans la fenêtre (finding P10 de la validation P2). **Si l'oracle du symptôme ne rougit pas**, ne rien corriger :
+relever les entrées absentes par capture, le dire au Dev Agent Record et au rapport (l'orchestrateur commente l'issue) ;
+l'hypothèse du rôle (§ 13) reste écartée sauf preuve. **AC-B5 bis** n'est qu'une garde du correctif. Hors périmètre : le dépliage exclusif des groupes (issue voisine citée par #851).
 
 ### Acceptance Criteria (B.2)
 
-**AC-B5** — `tests/e2e/sidebar-navigation.spec.ts`, Administrateur, fenêtre 1280 × 720, mode guidé, les trois groupes
-dépliés, sur `/admin/mcp` puis sur `/` et `/settings`, **sans faire défiler la page** (l'oracle ne doit pas dépendre du défilement
-du document, qui peut faire remonter une barre `sticky`) : (a) `window.scrollY` vaut 0 avant et après chaque mesure ; (b) pour
-chacune des **18** entrées d'Administration (sélecteurs `nav-link-*`, liste écrite en dur dans le test, recomptée depuis
-`navGroups`), on fait défiler **la barre seule** (`nav.evaluate((n, el) => { n.scrollTop = el.offsetTop - n.clientHeight / 2 },
-link)`), puis la boîte du lien est **contenue** dans la boîte de la `<nav>` et dans la fenêtre, et `document.elementFromPoint`
-au centre de la boîte rend le lien lui-même (ni le pied de page, ni le contenu). Avant correctif, `scrollTop` est sans effet
-(`overflow` visible) et le dernier lien sort de la boîte : **rouge attendu**. Le test consigne aussi `nav.scrollHeight >
-nav.clientHeight` (le débordement mesuré).
+**AC-B5 — l'oracle du symptôme** (`tests/e2e/sidebar-navigation.spec.ts`, Administrateur, fenêtre 1280 × 720, mode guidé). On
+définit **atteignable** une entrée qu'un utilisateur peut viser **par ses propres gestes** : la souris posée sur la barre, des
+crans de molette (`page.mouse.wheel(0, 200)`, au plus 20, jusqu'à stabilité), puis le lien est dans la fenêtre et
+`document.elementFromPoint` au centre de sa boîte rend le lien lui-même (ni le pied de page, ni le contenu, ni un bandeau).
+Scénario de l'issue : sur `/`, groupes à leur état par défaut (Quotidien et Mensuel dépliés, Administration replié) ; (1) relever
+les entrées visibles des groupes dépliés, toutes atteignables ; (2) **ouvrir le groupe Administration** (clic sur son titre) ;
+(3) relever chacune des **18** entrées d'Administration (liste écrite en dur, recomptée depuis `navGroups`) : atteignable ?
+(4) cliquer *Serveur MCP* ; sur `/admin/mcp`, relever de nouveau les 18 entrées et celles des deux autres groupes. Le test
+**rougit si une entrée visible au relevé précédent n'est plus atteignable** — c'est « des entrées disparaissent à l'ouverture d'un
+groupe ». Il est joué **deux fois** : sans bandeau, et **avec** un bandeau affiché (réponse de l'API de `BackupScheduleBanner`
+simulée par `page.route` pour l'afficher — route exacte relue au code par le développeur — ou base de démonstration pour
+`DemoBanner`). Le résultat **avant correctif** décide : rouge ⇒ corriger, et la puce du CHANGELOG le dit ; vert ⇒ branche « ne
+rien corriger » ci-dessus. Les relevés (atteignable / non, par entrée et par étape) vont au Dev Agent Record.
+**AC-B5 bis — la garde du correctif** : après correctif, AC-B5 vert dans ses deux variantes ; et sans faire défiler la page
+(`window.scrollY` à 0, sans bandeau), `nav.scrollHeight > nav.clientHeight` et `getComputedStyle(nav).overflowY` vaut `auto`.
 **AC-B6** — le nombre d'entrées `nav-link-*` du groupe Administration est 18 sur `/admin/mcp`, `/admin/mcp/sends`,
 `/admin/mcp/prompts`, `/users` et `/` (garde de l'hypothèse du rôle, vert avant et après). Captures : menu déplié sur
-`/admin/mcp`, avant (le bas manquant) et après (barre défilée jusqu'en bas). **La puce du CHANGELOG de #851 ne s'écrit
-qu'après la reproduction**, selon son résultat.
+`/admin/mcp`, avant (le bas manquant) et après (barre défilée jusqu'en bas), sans et avec bandeau. **La puce du CHANGELOG de
+#851 ne s'écrit qu'après AC-B5**, selon son résultat.
 
 ## B.3 — #882 : une ligne au taux de TVA désactivé
 
@@ -440,8 +286,9 @@ qu'après la reproduction**, selon son résultat.
     un brouillon au taux le plus courant changerait de TVA sans avertissement.
 15 bis. **Aucune réactivation d'un taux n'existe** : `routes/(app)/settings/vat-rates/+page.svelte:231-252` n'affiche les
     boutons *Changer le taux* et *Désactiver* que pour un taux actif (`{#if r.active}`) ; un taux inactif n'affiche que
-    « Inactif » ; aucune route ne réactive (`git grep -nE 'reactiv|set_active' -- crates/kesh-api/src/routes
-    crates/kesh-db/src/repositories` : vide). L'écran s'appelle *Taux de TVA* (`/settings/vat-rates`).
+    « Inactif » ; aucune route ne réactive un **taux** (`git grep -nE 'reactiv|set_active' -- crates/kesh-api/src/routes/vat.rs
+    crates/kesh-api/src/routes/vat_rates.rs crates/kesh-db/src/repositories/vat_rates.rs` : aucun résultat ; le motif sur tout
+    `routes/` rend la réactivation d'un **compte**, `routes/accounts.rs:280, :350, :358`, sans rapport). L'écran s'appelle *Taux de TVA* (`/settings/vat-rates`).
 16. **Le serveur refuse aussi** : `create_invoice` / `update_invoice` appellent `verify_vat_rates_against_db`
     (`routes/invoices.rs:661, :749` → `routes/vat.rs`, `… WHERE company_id = ? AND active = TRUE AND rate IN (…)`) ⇒ `400`
     « Taux TVA non autorisé pour cette entreprise. » (`VAT_REJECTED_MSG`, `vat.rs:49`). Proposer le taux à l'écran ne
@@ -553,7 +400,8 @@ Captures : complétion d'un document, avis visible ; après *C'est la bonne date
 | TB1 | liste filtrée par l'URL, pagination (AC-B1, B2) | rouges avant |
 | TB2 | lien de K8 (AC-B3) | rouge avant |
 | TB3 | E2E 55 brouillons (AC-B4) | rouge avant |
-| TB4 | E2E menu atteignable (AC-B5) | rouge avant (attendu) |
+| TB4 | E2E oracle du symptôme, sans et avec bandeau (AC-B5) | **décide** : rouge ⇒ correctif ; vert ⇒ aucun correctif |
+| TB4 bis | E2E garde du correctif (AC-B5 bis) | rouge avant, vert après |
 | TB5 | E2E nombre d'entrées (AC-B6) | vert avant et après |
 | TB6 | Vitest taux désactivé (AC-B7, B8) | B7 rouge avant ; B8 vert |
 | TB7 | Vitest date et avis (AC-B9, B10) | rouges avant |
@@ -561,7 +409,8 @@ Captures : complétion d'un document, avis visible ; après *C'est la bonne date
 | TB9 | Vitest #853 (AC-B12) | vert avant (contrôle) ; tests mis à jour |
 
 Mutations : **MB1** `offset` non relu de l'URL ⇒ TB1 rougit ; **MB2** lien K8 sans `?status=draft` ⇒ TB2 ; **MB3**
-`overflow-y-auto` retiré ⇒ TB4 ; **MB4** l'ensemble des taux proposés calculé une fois (non dérivé) ⇒ le cas
+`overflow-y-auto` retiré ⇒ TB4 et TB4 bis ; **MB3 bis** `h-[…]` rétabli à la place de `max-h-[…]` et `self-start` ⇒ la variante
+« avec bandeau » de TB4 ; **MB4** l'ensemble des taux proposés calculé une fois (non dérivé) ⇒ le cas
 `onProductSelect` de TB6 rougit ; **MB5** `toISOString` rétabli ⇒ TB7 (date locale) ; **MB6** `dueFollows` jamais remis à
 `false` ⇒ le cas « saisie à la main » de TB8 ; **MB7** l'avis non retiré à la saisie ⇒ TB7 (AC-B10) ; **MB8** la lecture réactive de l'URL remplacée par une lecture à
 `onMount` ⇒ le cas « navigation par lien » de TB1 ; **MB9** la marque `_vatPlaceholder` ignorée par le repli (toutes les lignes
@@ -613,6 +462,10 @@ le développeur vérifie que, sous `TZ=UTC`, MB5 rougit TB7.
 
     Les sites multiples d'une même ligne du tableau comptent pour une ligne ; le décompte des **lignes de code** touchées va au
     Dev Agent Record, recompté.
+24 bis. **Hors des neuf dossiers, un site voisin intégré** (finding P22 de la validation P2) :
+    `routes/(app)/settings/vat-rates/+page.svelte:228-229` (`{r.validFrom}`, `{r.validTo ?? '—'}`, dates pures, `NaiveDate`,
+    `kesh-db/src/entities/vat_rate.rs:36-37`) ⇒ `formatSwissDate` ; un test (`settings/vat-rates`, ou création s'il manque).
+    Ce fichier n'entre pas dans le contrôle d'AC-C3 (qui porte sur les 32 fichiers) : son test le garde.
 25. **Conformes ou hors classe, justifiés** : `FiscalYearChecks.svelte:73, :82, :215, :248, :294` et
     `journal-entries/[id]/+page.svelte:673` (déjà `formatSwissDate`) ; `FiscalYearChecks.svelte:116` (URL de lien,
     `dateFrom=${c.startDate}` — valeur envoyée, non affichée) ; `journal-entries/+page.svelte:79-80`,
@@ -634,20 +487,32 @@ le développeur vérifie que, sous `TZ=UTC`, MB5 rougit TB7.
 ### Conception (C-v0172b-10)
 
 `formatSwissDate` (`lib/features/reports/reports.api.ts`) **tolère un horodatage** : si l'entrée commence par
-`AAAA-MM-JJ` suivi de `T`, d'une espace ou de rien, elle rend `JJ.MM.AAAA` ; toute autre entrée est rendue telle quelle
-(comportement actuel pour une valeur illisible) — c'est #883.6. Un helper **voisin** `formatSwissDateTime(iso)` rend
-`JJ.MM.AAAA HH:mm` pour un horodatage naïf (`2026-01-29T10:15:00` → `29.01.2026 10:15`), la date seule pour une date pure,
-l'entrée telle quelle sinon. Aucun fuseau n'est appliqué : les horodatages du serveur sont naïfs et affichés comme tels
-aujourd'hui (`api-keys`, `:82`). `api-keys/+page.svelte` garde `formatDate`/`formatDateTime` comme noms locaux (ils portent
+`AAAA-MM-JJ` seul, elle rend `JJ.MM.AAAA` (date pure, aucun fuseau) ; si elle est un **horodatage** (`AAAA-MM-JJ` suivi de `T`
+ou d'une espace, avec ou sans fraction, avec ou sans `Z` ou décalage `±HH:MM`), elle rend la **date à Zurich** de cet instant ;
+toute autre entrée est rendue telle quelle — c'est #883.6. Un helper **voisin** `formatSwissDateTime(iso)` rend `JJ.MM.AAAA
+HH:mm` **à l'heure de Zurich** pour un horodatage, la date seule pour une date pure, l'entrée telle quelle sinon. **Les
+horodatages du serveur sont de l'UTC** (finding P11 de la validation P2) : `imported_at = Utc::now().naive_utc()`
+(`routes/bank_imports.rs:1284`), session MariaDB en `time_zone = '+00:00'` (`kesh-db/src/pool.rs:40`), `existing_imported_at:
+DateTime<Utc>` sérialisé avec `Z` (`:206` ; fixture `BankImportUpload.test.ts:133`, `'2026-01-02T00:00:00Z'`) ; les champs
+`api_keys` sont des `NaiveDateTime` (`routes/api_keys.rs:37-40`) écrits par `NOW(3)`, UTC. Un horodatage **sans** `Z` ni décalage
+est donc lu comme UTC (on lui ajoute `Z`), puis affiché par `Intl.DateTimeFormat('fr-CH', { timeZone: 'Europe/Zurich', … })`
+(C-v0172b-10, révisé). Aujourd'hui, `api-keys` affiche l'heure UTC brute (`:82`). Les sites de la 0.17.1 qui passent un
+horodatage UTC par `.slice(0, 10)` (fiche client : `paidAt`, `pdfFrozenAt`, `emailedAt` ; relances) donnent la date UTC — même
+famille que C-v0172b-20, portés à son issue ; non corrigés ici. `api-keys/+page.svelte` garde `formatDate`/`formatDateTime` comme noms locaux (ils portent
 le repli `—` et « Jamais utilisée ») mais délègue la mise en forme aux helpers.
 
 ### Acceptance Criteria (C.1)
 
-**AC-C1** — `reports.api.test.ts` : `formatSwissDate('2026-01-29') = '29.01.2026'`, `('2026-11-03T17:40:45') =
-'03.11.2026'`, `('2026-11-03T17:40:45.123') = '03.11.2026'`, `('2026-11-03 17:40') = '03.11.2026'`, `('') = ''`,
-`('29.01.2026') = '29.01.2026'`, `('n/a') = 'n/a'` ; `formatSwissDateTime('2026-01-29T10:15:00') = '29.01.2026 10:15'`,
-`('2026-01-29') = '29.01.2026'`, `('bogus') = 'bogus'`. **Rouge avant** pour l'horodatage (`'03T17:40:45.11.2026'`).
-**AC-C2** — chaque site du § 24 affiche la forme suisse : un test Vitest **par écran** (liste et fiche du journal ; liste et
+**AC-C1** — `reports.api.test.ts`, **fuseau du processus épinglé** à `UTC` puis à `America/New_York` (le résultat ne doit
+dépendre que de `Europe/Zurich`, non du poste ni du runner ; `process.env.TZ` posé et rétabli comme
+`bank-accounts-page.test.ts:702-718`) : `formatSwissDate('2026-01-29') = '29.01.2026'` (date pure, inchangée),
+`('2026-11-03T17:40:45') = '03.11.2026'`, `('2026-11-03T23:30:00') = '04.11.2026'` (UTC 23:30 ⇒ Zurich 00:30, hiver),
+`('2026-07-01T22:30:00.123') = '02.07.2026'` (été, +2 h), `('2026-11-03 17:40') = '03.11.2026'`, `('') = ''`, `('29.01.2026') =
+'29.01.2026'`, `('n/a') = 'n/a'` ; `formatSwissDateTime('2026-01-29T10:15:00') = '29.01.2026 11:15'`,
+`('2026-01-02T00:00:00Z') = '02.01.2026 01:00'` (**cas `Z`**), `('2026-07-01T22:30:00+00:00') = '02.07.2026 00:30'`,
+`('2026-01-29') = '29.01.2026'`, `('bogus') = 'bogus'`. **Rouge avant** pour tout horodatage (`'03T17:40:45.11.2026'`).
+**AC-C2** — chaque site du § 24 et du § 24 bis affiche la forme suisse (les horodatages, à l'heure de Zurich ; le fuseau du
+processus épinglé à `UTC` dans les tests qui lisent un horodatage) : un test Vitest **par écran** (liste et fiche du journal ; liste et
 dialogue de renommage des exercices ; liste, aperçu et fiche des relevés ; dialogue de suppression et message de succès ;
 avertissements de la saisie manuelle ; propositions de rapprochement, y compris l'`aria-label` ; les trois modales ; clés
 API, quatre dates et la dernière utilisation) : `JJ.MM.AAAA` présent, `not.toContain` de l'ISO. Un écran qui porte deux
@@ -691,8 +556,11 @@ sites (p. ex. `bank-import/[id]` : `importedAt` et `bookingDate`) les lit **tous
     31 lignes).
 31. **#883.5** — `v0171_t4_crlf_inexploitable` (`qr_decode.rs:1234-1244`) emploie `Faux::SpcCrlfInvalide` = `qr("SPC\r\n0200\r\n1\r\nPAS-UN-IBAN")`
     (`:1056`) : 4 lignes, refusé au compte de lignes avant tout en-tête. Remplacer la fixture par un payload CR+LF **de 31 lignes
-    au moins** (le payload de `build_payload(&donnees_spc_test())` réécrit en CR+LF, l'IBAN remplacé par une valeur invalide)
-    et attendre `Err(DecodeError::InvalidIban(_))` : il rougit alors **aussi** sous la mutation qui retire
+    au moins** : produire le texte valide par `build_payload(&donnees_spc_test())` (qui **valide** l'IBAN,
+    `kesh-qrbill/src/generator.rs:15`, `validate(data)?` : un IBAN invalide dans les données ferait échouer l'`unwrap()`),
+    **puis** remplacer la ligne de l'IBAN dans le texte produit par une valeur invalide, **puis** passer en CR+LF ; attendre
+    `Err(DecodeError::InvalidIban(_))`, et récrire le doc-comment du test (`qr_decode.rs:1231-1232`, « `InvalidSpcPayload`, comme
+    son jumeau LF », devient faux) : il rougit alors **aussi** sous la mutation qui retire
     `trim_end_matches('\r')` du parseur (`kesh-qrbill/src/parser.rs:95`), qui rend `InvalidSpcPayload` dès l'en-tête `SPC\r`.
     Le jumeau LF existant reste.
 32. **#883.6** — traité par C.1 (`formatSwissDate` tolère l'horodatage, AC-C1).
@@ -717,30 +585,25 @@ rougit (il ne rougissait pas avec la fixture de 4 lignes) ; **MC4** `est_payload
 
 ## Tâches
 
-Par sous-story, dans l'ordre A1, A2, B, C ; chacune : tests rouges d'abord (constatés et notés), correctif, mutations, gates,
+Par sous-story, dans l'ordre A2, B, C (#876 : fiche sœur) ; chacune : tests rouges d'abord (constatés et notés), correctif, mutations, gates,
 captures, commit `refs #N`, revue de code.
 
-1. **A1** — TA1, TA3, TA4 rouges sur `d7ec2ea2` ; `sessionExpiresIn` (serveur, cinq réponses) ; `session-renewal.ts` et son
-   câblage : armement et désarmement dans `auth.svelte.ts` (`login`, `hydrate` réussi, `clearSession`, `logout`, message
-   `auth-change`), `api-client.ts` (`doRefresh`/`refreshTokens` sous le verrou, distinction anticipé / 401, garde « 401 sans
-   entrée »), `sessionExpiresIn` passé au `LoginPayload` par `login/+page.svelte:48` et `setup.api.ts:53`,
-   `disableSessionRenewalForTests()` dans `frontend/vitest-setup.ts` ; AC-A5 (recette) ; manuels (puce #876 du § *Manuel*).
-2. **A2** — TA5 rouges ; verrou nommé des deux chemins d'import ; `take_account_lock` partagé ; AC-A10.
-3. **B** — TB1–TB4, TB6–TB8 rouges ; liste paginée et filtrée, lecture réactive de l'URL ; lien K8 ; `overflow-y-auto` après
+1. **A2** — TA5 rouges ; verrou nommé des deux chemins d'import ; `take_account_lock` partagé ; AC-A10.
+2. **B** — TB1–TB4, TB6–TB8 rouges ; liste paginée et filtrée, lecture réactive de l'URL ; lien K8 ; `overflow-y-auto` après
    reproduction ; taux désactivé et repli limité aux lignes neuves ; date et échéance ; i18n quatre locales
    (`crates/kesh-i18n/locales/{fr-CH,de-CH,it-CH,en-CH}/messages.ftl`) ; `npm run lint-i18n-ownership` ; manuel.
-4. **C** — TC1, TC2 rouges ; helpers ; les 24 sites ; tests ISO mis à jour ; #883.1, .3, .4, .5 ; AC-C3.
-5. **Gates** : `cargo fmt --all -- --check`, `cargo clippy --workspace --all-targets -- -D warnings`, `scripts/test-fast.sh`
+3. **C** — TC1, TC2 rouges ; helpers ; les 24 sites ; tests ISO mis à jour ; #883.1, .3, .4, .5 ; AC-C3.
+4. **Gates** : `cargo fmt --all -- --check`, `cargo clippy --workspace --all-targets -- -D warnings`, `scripts/test-fast.sh`
    (sous `flock /home/gcorbaz/devel/kesh-gate-logs/.gate.lock` et `mem-guard`), `cd frontend && npm run check && npm run
    lint-i18n-ownership && npm run test:unit && npm run build`, E2E complet au **dernier commit de code** de **chaque**
-   sous-story (7 à 10 échecs attendus, `docs/testing.md`) ; base remise à zéro avant chaque gate complet. A1 et A2 touchent
-   `routes/auth.rs` et `bank_imports.rs` (aucun repository, aucune migration) : gate ciblé permis en boucle, complet au push.
-6. **Captures** (thème clair, base de démonstration jetable `kesh_v0172b`, dans
+   sous-story (7 à 10 échecs attendus, `docs/testing.md`) ; base remise à zéro avant chaque gate complet. A2 touche
+   `bank_imports.rs` (aucun repository, aucune migration) : gate ciblé permis en boucle, complet au push.
+5. **Captures** (thème clair, base de démonstration jetable `kesh_v0172b`, dans
    `/home/gcorbaz/devel/kesh-gate-logs/v0172b/captures/`) : B — liste filtrée « Brouillon » avec son bandeau, pied de pagination,
    lien K8 ; menu déplié sur `/admin/mcp` avant/après ; brouillon au taux désactivé ; complétion d'un document avec l'avis, après
    confirmation, échéance calculée. C — un écran par ligne du tableau du § 24 (journal liste et fiche, exercices, relevés liste,
    aperçu, fiche, dialogue de suppression, saisie manuelle avec avertissement, rapprochement et ses trois modales, clés API).
-   A1 n'a pas de contrôle visible neuf ; A2 : capture du message 409 si le texte change (AC-A10).
+   A2 : capture du message 409 si le texte change (AC-A10).
 
 ## Manuel
 
@@ -748,43 +611,23 @@ Le PDF de chaque manuel touché est régénéré par `make fr` dans `docs/manual
 docs/manual/fr/<manuel>.pdf - | tr '\n' ' ' | tr -s ' '`, puis `grep -F` de chaque phrase neuve **et** de chaque phrase retirée).
 
 **`docs/manual/fr/user-manual.tex`**
-- **#876** — `:95` récrit : la session se prolonge **tant que vous travaillez dans Kesh** (une frappe, un clic, le retour sur
-  l'onglet) ; elle prend fin **entre 14 et 15 minutes après votre dernière frappe ou votre dernier clic** (durée réglable par
-  l'administrateur) ; une saisie longue, même sans enregistrer, la garde ouverte ; une mise en veille du poste plus longue que
-  cette durée ferme la session ; plusieurs onglets partagent la même session.
-- **#870** — `:823` et `:833` : le lien de K8 ouvre la liste **filtrée sur les brouillons, de tous les exercices** (le compte de
-  la liste peut donc dépasser celui de K8) ; § des factures fournisseur (`:1888-1892`, « Les factures annulées dans la liste ») :
+- **#870** — `:823` (K8) seulement : le panneau nomme les vingt premiers brouillons et dit « … et N autres » ; le lien
+  *Ouvrir les brouillons de factures fournisseurs* ouvre la liste **filtrée sur les brouillons, de tous les exercices** (le compte
+  de la liste peut donc dépasser celui de K8). `:833` (K4, factures client) **ne change pas** ; § des factures fournisseur (`:1888-1892`, « Les factures annulées dans la liste ») :
   la liste est paginée (50 par page, *Précédent* / *Suivant*) et se filtre par statut depuis l'adresse.
 - **#885** — `:1607-1612` (« Les dates ») et `:2049-2053` (« Créer la facture d'un document ») : à côté d'un document, la date est
   **proposée au jour même et marquée « à vérifier »** jusqu'à ce que vous la modifiiez ou la confirmiez ; l'échéance suit la date
   (plus le délai de paiement du fournisseur, s'il en a un) tant que vous ne l'avez pas saisie ; une échéance antérieure reste
   signalée. Le rappel historique « depuis la version 0.17.0 : la date du jour n'est presque jamais celle d'une facture reçue »
   devient « depuis la version 0.17.2, elle est proposée et signalée ».
-- **#882** — § *Création d'une facture* (`:1032`), puce *Lignes de facture* (`:1040`) : une ligne dont le taux a été désactivé
+- **#882** — § *Création d'une facture* (`:1034`), puce *Lignes de facture* (`:1045`) : une ligne dont le taux a été désactivé
   l'affiche « (désactivé) » ; la facture ne s'enregistre qu'avec un taux actif, à choisir dans la ligne (un taux désactivé ne
   se réactive pas : *Paramètres → Taux de TVA*, `:1014`, ne propose que *Changer le taux* et *Désactiver* pour un taux actif).
 - **#851, #880, #883** : rien à décrire (le manuel ne décrit ni la forme des dates de ces écrans — `grep -nE 'AAAA-MM-JJ|jj\.mm'
   docs/manual/fr/user-manual.tex` à joindre au Change Log — ni la hauteur du menu).
 
-**`docs/manual/fr/admin-manual.tex` — inventaire clos des phrases sur les cookies, les jetons et les durées** (relevé par
-`grep -nE 'refresh|cookie|JWT|jeton d.accès|access token|KESH_JWT|INACTIVITY|SameSite|session' docs/manual/fr/admin-manual.tex
-| grep -viE mcp`, 64 lignes, lues une à une ; hors classe : le secret JWT `:243-253, :577-579, :599, :732, :1744-1752, :2414,
-:2766-2789, :2987, :3691`, le multi-tenant `:112, :1500`, `KESH_COOKIE_SECURE` `:784, :1391-1432` (exact), les sessions
-révoquées `:1192, :1361, :2322`, la sauvegarde `:1662`, les sessions SSH/root `:2027, :2130, :2164`, et les lignes sans rapport
-`:1655, :1665, :1988, :1991, :2050, :2091, :2292, :2360, :2793, :2925, :3003, :3040, :3269, :3341, :3357, :3618`, les titres
-`:772, :2990, :2992`) — 54 lignes hors classe, 10 au tableau :
-
-| Site | Ce qu'il dit | Verdict |
-|---|---|---|
-| `:111` | « durée d'expiration courte (15 min) compensée par rafraîchissement automatique côté frontend » | **faux jusqu'ici, vrai après A1** : préciser « renouvelée à l'activité de l'utilisateur » |
-| `:777` | `KESH_JWT_EXPIRY_MINUTES` « Durée access token » | exact ; ajouter « (et du cookie d'accès) » |
-| `:778` | `KESH_REFRESH_TOKEN_MAX_LIFETIME_DAYS` « Durée absolue refresh token » | **inexact** : c'est la durée de vie du **cookie** (`routes/auth.rs:63-66`) ; la ligne en base expire après l'inactivité |
-| `:779` | `KESH_REFRESH_INACTIVITY_MINUTES` « Inactivité avant expiration refresh (sliding) » | **à récrire** : temps sans frappe ni clic dans Kesh avant la fin de la session — la session prend fin entre `max(inactivité, durée du jeton d'accès) − 1 min` et `max(…)` après la dernière entrée |
-| `:2506` | « au plus la durée de session plus une minute » | **à préciser** : il s'agit de la durée du **jeton d'accès** (`KESH_JWT_EXPIRY_MINUTES`) plus la tolérance d'une minute — le jeton porte la société |
-| `:2995` | cookie d'accès « `HttpOnly; Secure; SameSite=Lax` » | **faux** : `SameSite=Strict` (`routes/auth.rs:52, :62`) — corriger |
-| `:2996` | « refresh token (durée 30 jours par défaut) … avec hash SHA-256 (jamais stocké en clair) » | **deux fois faux** : 30 jours est la durée du cookie, la ligne expire après l'inactivité ; et le jeton est stocké **tel quel** (`repositories/refresh_tokens.rs:30-34`, `.bind(&new.token)`, valeur `uuid::Uuid::new_v4()` de `routes/auth.rs:253`) — corriger le texte ; le stockage en clair est un **défaut de sécurité hors périmètre : issue demandée** (C-v0172b-25) |
-| `:2997`, `:2998` | rotation et trace ; la déconnexion révoque | exact pour la rotation (`:379`) ; `:2998` hors classe (durées) |
-| `:3886` | glossaire « Refresh token — Token longue durée » | **inexact** : jeton qui renouvelle le jeton d'accès, valable l'inactivité réglée après chaque renouvellement |
+**`docs/manual/fr/admin-manual.tex`** : les phrases sur les cookies, les jetons et les durées relèvent de #876 (inventaire clos
+dans `v0172-session.md`, § *Manuel*) ; aucune autre n'est touchée ici.
 
 - `docs/manual/{de,en,it}/` : `ls` ne rend que `README.md` (aucun `.tex`) — rien à traduire.
 
@@ -795,23 +638,20 @@ sans réécrire ses puces). Intro, si elle n'existe pas encore : « La 0.17.2 es
 donnée réécrite, **le retour à la 0.17.1 est possible sans restauration**. » (à vérifier contre la story voisine à l'intégration.)
 
 `### Corrigé`
-- **La session ne se ferme plus pendant que vous travaillez** ([#876](https://github.com/guycorbaz/kesh/issues/876)) : elle n'était
-  jamais prolongée — avec les réglages par défaut, elle prenait fin quinze minutes après la connexion, même en pleine saisie, et la
-  saisie en cours était perdue. Elle se prolonge désormais tant que vous tapez ou cliquez, et se ferme entre 14 et 15 minutes après
-  votre dernière frappe ou votre dernier clic.
 - **Un relevé importé deux fois en même temps n'est plus enregistré deux fois** ([#840](https://github.com/guycorbaz/kesh/issues/840)) :
   un double clic ou un envoi rejoué enregistrait deux relevés identiques sans confirmation ; le second est désormais refusé comme
   fichier déjà importé.
 - **Toutes les factures fournisseur sont atteignables** ([#870](https://github.com/guycorbaz/kesh/issues/870)) : la liste se pagine
   (au-delà des cent premières, les plus anciennes n'apparaissaient nulle part) et se filtre par statut depuis l'adresse ; le lien du
   contrôle de clôture ouvre les brouillons, de tous les exercices.
-- **Le menu garde toutes ses entrées** ([#851](https://github.com/guycorbaz/kesh/issues/851)) : *puce rédigée après la reproduction
-  d'AC-B5, selon son résultat (cause attendue : le menu déplié dépassait la hauteur de l'écran sans défiler).*
+- **Le menu garde toutes ses entrées** ([#851](https://github.com/guycorbaz/kesh/issues/851)) : *puce rédigée après l'oracle du
+  symptôme (AC-B5), selon son résultat.*
 - **Un brouillon de facture dont un taux de TVA a été désactivé se corrige** ([#882](https://github.com/guycorbaz/kesh/issues/882)) :
   la ligne affiche son taux « (désactivé) » au lieu d'un champ vide, le refus dit de choisir un taux actif, et un brouillon au taux
   de 8,1 % désactivé ne change plus de taux en silence.
 - **Les dates des écrans comptables s'affichent `29.01.2026`** ([#880](https://github.com/guycorbaz/kesh/issues/880)) : journal,
-  exercices, relevés bancaires, rapprochement et clés d'API.
+  exercices, relevés bancaires, rapprochement, taux de TVA et clés d'API ; les heures (import d'un relevé, dernière utilisation d'une
+  clé) s'affichent à l'heure suisse, non plus en UTC.
 - Points de forme de la revue de la 0.17.1 ([#883](https://github.com/guycorbaz/kesh/issues/883)).
 
 `### Ajouté`
@@ -819,25 +659,20 @@ donnée réécrite, **le retour à la 0.17.1 est possible sans restauration**. �
   la date du jour, **marquée « à vérifier »** jusqu'à ce que vous la confirmiez ou la changiez ; l'échéance suit la date, plus le délai
   de paiement du fournisseur s'il en a un. Une échéance antérieure à la date reste signalée.
 
-`refs #876`, `refs #840`, `refs #870`, `refs #851`, `refs #882`, `refs #880`, `refs #883`, `refs #885` aux commits ; **aucun mot-clé de
+(La puce de #876 est prescrite par `v0172-session.md`.) `refs #840`, `refs #870`, `refs #851`, `refs #882`, `refs #880`, `refs #883`, `refs #885` aux commits ; **aucun mot-clé de
 fermeture** (contrôle : `git log origin/main..HEAD --format=%B | /usr/bin/grep -niE '\b(close[sd]?|fix(e[sd])?|resolve[sd]?) #[0-9]'`
 vide). La PR de release porte les `closes`.
 
 ## Dev Notes
 
 - **Jamais de donnée réelle** : fixtures CAMT/CSV synthétiques (celles de `bank_imports_e2e.rs`), contacts et factures de démonstration.
-- **#876, pourquoi aucun test ne l'a vu** : les E2E durent moins de quinze minutes par spec, et le seul test du renouvellement
-  (`api-client.test.ts:204-`) simule un refresh **qui réussit** — il n'a jamais confronté les deux durées.
-- **#876, la course résiduelle sans `navigator.locks`** : deux onglets qui décident à la même milliseconde peuvent encore présenter
-  le même cookie ; la détection de vol déconnecterait alors tout. Les navigateurs visés par Kesh (Chromium, Firefox, Safari ≥ 15.4)
-  portent l'API ; le repli est pour jsdom. À déclarer au Dev Agent Record, pas à résoudre.
-- **#876, rechargement après expiration du jeton d'accès** : un rechargement de page (aucune entrée captée) dont le `/me` rend 401
-  garde le comportement actuel de `hydrate()` (`auth.svelte.ts:261-`) ; avec 15/15 la session est alors morte de toute façon.
 - **#840** : le verrou est celui du rapprochement — un import attend donc un rapprochement en cours sur le même compte (≤ 5 s), et
   inversement. C'est le comportement de la saisie manuelle depuis la 0.16. **Deux connexions par import** (`lock_tx` puis la
   transaction de `…_under_lock`) pour un pool de **5** (`crates/kesh-api/src/main.rs:83`, `.max_connections(5)`) : cinq envois
   simultanés sur un même compte peuvent occuper le pool en attente du verrou, et le détenteur attendre sa seconde connexion jusqu'à
-  `acquire_timeout` — même risque, déjà accepté, que la saisie manuelle ; déclaré, non corrigé. Un import CSV long (> 5 s sous le
+  `acquire_timeout` — même risque, déjà accepté, que la saisie manuelle ; déclaré, non corrigé. Sur le refus « profil CSV
+  introuvable », `resolve_csv_profile` (`bank_imports.rs:801-`) appelle `list_available_profiles(pool, …)` (`:822`, `:841`) :
+  **trois** connexions le temps du refus. Un import CSV long (> 5 s sous le
   verrou) fait rendre au second clic `409 RECONCILIATION_ACCOUNT_LOCKED` (texte du rapprochement), non `422` (C-v0172b-25).
 - **#851** : ne pas toucher `expandedState` ni la persistance des groupes.
 - **#880** : ne pas toucher aux `<input type="date">` ni aux valeurs envoyées à l'API.
@@ -879,6 +714,28 @@ vide). La PR de release porte les `closes`.
   CHANGELOG ; **P21** → ancre `:1032`/`:1040` ; **P22** → `config.rs:688-708, :735-755`, `auth.rs:379`, `auth.svelte.ts:245`.
   Valeurs corrigées grepées dans la fiche, le registre et le prompt (`\b86\b`, `\b19\b`, `\b34\b`, « neuf entrées »). Registre
   C-v0172b-1 à 27. Prochaine : validation P2 (Opus, complète, `v0172-correctifs-validate-prompt-p2.md`).
+
+- 2026-11-04 — **Validation P2 (Opus) : 0/0/11/12** (rapport `kesh-gate-logs/v0172b-validate-p2.md`, lentille complète).
+  **Découpage** : signal de stagnation (12 MEDIUM puis 11, six des onze nés de la remédiation P1, les défauts recyclés concentrés sur
+  #876) — **#876 extraite** dans la fiche sœur `v0172-session.md` (clé de statut `v0172-session`, choix renumérotés `C-v0172s-1` à
+  `14`, correspondance au registre) ; cette fiche garde A2, B et C et ne porte plus de #876 que des renvois (titre, découpage,
+  contrainte, § A1 remplacé, Tâches, Manuel, CHANGELOG, Dev Notes). Findings traités **ici**, prémisse relue au code :
+  **P6** (MEDIUM) appliqué — MA13 retirée, angle mort déclaré (C-v0172b-28) ; ligne lue : AC-A7, la connexion de test tient le
+  verrou. **P7** (MEDIUM) appliqué — `user-manual.tex:819`, `:823`, `:833`, `:834` lus : `:833` porte sur K4 (factures client) et est
+  vraie ; seule `:823` (K8) change ; § 11 corrigé. **P8** (MEDIUM) appliqué — `?cancelled=1`, AC-B2 bis, assertions
+  `supplier-invoices-list-page.test.ts:50, :59, :68, :71, :104, :113, :136` nommées, simulacre de `goto` (`:12`) qui modifie
+  `page.url`. **P9, P10** (MEDIUM) appliqués — `+layout.svelte:362-369` (bandeaux) et `:376` lus : oracle du **symptôme** (entrées
+  atteignables par la molette avant et après l'ouverture du groupe Administration puis de *Serveur MCP*, sans et avec bandeau), dont
+  le résultat décide du correctif ; barre bornée par un maximum (`self-start max-h-[…]`) ; AC-B5 bis garde ; MB3 bis (C-v0172b-8
+  révisé). **P11** (MEDIUM) appliqué — `bank_imports.rs:206, :1284`, `BankImportUpload.test.ts:133`, `pool.rs:40`, `api_keys.rs:37-40`
+  lus : horodatages UTC affichés à l'heure de Zurich, cas `Z` et décalage, `process.env.TZ` épinglé à AC-C1 (C-v0172b-10 révisé).
+  LOW : **P18** appliqué (tableau d'A2 complété, troisième connexion du refus de profil, `bank_imports.rs:801, :822, :841`) ; **P19**
+  appliqué (`git grep` restreint aux fichiers des taux) ; **P20** appliqué (`user-manual.tex:1034`, `:1045` ; `syncUrl` à
+  `invoices/+page.svelte:116`) ; **P21** appliqué pour C-v0172b-7 (C-v0172b-5 est devenu C-v0172s-4) ; **P22** appliqué
+  (`vat-rates/+page.svelte:228-229` intégré à C, § 24 bis) ; **P23** appliqué (`generator.rs:15` lu : IBAN remplacé dans le texte
+  produit ; doc-comment `qr_decode.rs:1231-1232`). Findings P1 à P5, P12 à P17 : traités dans `v0172-session.md` (son Change Log ;
+  P16 en partie réfuté, `exports/global.rs:215-217`). Valeurs grepées : `:1032`, `:1040`, `:118`, `MA13`, `A1`, `#876`, `limit: 100`
+  dans la fiche ; « 1 à 27 » → « 1 à 28 ». Prochaine : validation **P3** (Sonnet, complète, `v0172-correctifs-validate-prompt-p3.md`).
 
 ## Dev Agent Record
 

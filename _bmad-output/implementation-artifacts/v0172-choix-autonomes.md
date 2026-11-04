@@ -10,7 +10,11 @@ alternatives écartées, réversibilité.
 
 Fiche : `v0172-correctifs.md`. Numéros de ligne de `d7ec2ea2`. Issues en `refs` seulement.
 
-### C-v0172b-1 — Découpage en quatre sous-stories dans la même fiche *(révisé à la validation P1, 2026-11-04 : trois → quatre)*
+### C-v0172b-1 — Découpage *(révisé deux fois : validation P1, trois → quatre sous-stories ; validation P2, #876 extraite en fiche sœur)*
+
+*Révision de la validation P2 (2026-11-04) : la sévérité stagnait (12 MEDIUM puis 11, six des onze nés de la remédiation P1, les
+défauts recyclés concentrés sur #876). #876 passe dans la fiche sœur `v0172-session.md` (clé `v0172-session`, choix
+`C-v0172s-k`) ; `v0172-correctifs` garde A2, B et C, dans cet ordre. Signal déclaré au Project Lead par l'orchestrateur.*
 
 - **Contexte** : huit issues, plus de cinq modules (règle de splitting préventif du `CLAUDE.md`).
 - **Retenu** : quatre sous-stories posées dans `v0172-correctifs.md` — A1 (session #876), A2 (import simultané #840), B
@@ -25,6 +29,8 @@ Fiche : `v0172-correctifs.md`. Numéros de ligne de `d7ec2ea2`. Issues en `refs`
 - **Réversible** : oui — une sous-story peut être sortie en fiche sœur `v0172-correctifs-<n>` si sa revue ne converge pas.
 
 ### C-v0172b-2 — #876 : renouvellement côté navigateur, à l'entrée de l'utilisateur, et champ `sessionExpiresIn` *(révisé à la validation P1)*
+
+*Déplacé le 2026-11-04 (validation P2) vers la section `v0172s` : **C-v0172s-1**, qui fait foi ; texte ci-dessous conservé comme historique.*
 
 - **Contexte** : avec 15/15 minutes (défauts), le renouvellement sur 401 arrive toujours après l'expiration du jeton de
   renouvellement (`routes/auth.rs:254, :399` ; cookie d'accès `max_age = jwt_expiry`, `:54`) : la session meurt à 15 minutes,
@@ -43,6 +49,8 @@ Fiche : `v0172-correctifs.md`. Numéros de ligne de `d7ec2ea2`. Issues en `refs`
 
 ### C-v0172b-3 — #876 : l'activité, ce sont les entrées de l'utilisateur, non les requêtes
 
+*Déplacé le 2026-11-04 (validation P2) vers la section `v0172s` : **C-v0172s-2**, qui fait foi ; texte ci-dessous conservé comme historique.*
+
 - **Contexte** : des composants interrogent le serveur sans geste de l'utilisateur (`BackupScheduleBanner.svelte:34`,
   `api-health.svelte.ts:102`).
 - **Retenu** : `keydown`, `pointerdown`, `wheel`, `touchstart` (écouteurs passifs sur `window`) et `visibilitychange` vers
@@ -54,6 +62,8 @@ Fiche : `v0172-correctifs.md`. Numéros de ligne de `d7ec2ea2`. Issues en `refs`
 - **Réversible** : oui.
 
 ### C-v0172b-4 — #876 : un seul renouvellement pour tous les onglets
+
+*Déplacé le 2026-11-04 (validation P2) vers la section `v0172s` : **C-v0172s-3**, qui fait foi ; texte ci-dessous conservé comme historique.*
 
 - **Contexte** : les onglets partagent les cookies ; un jeton déjà tourné présenté de nouveau révoque toutes les sessions
   (`routes/auth.rs:379`). Le correctif rend le renouvellement fréquent et donc la course réelle, y compris sur le chemin
@@ -68,6 +78,8 @@ Fiche : `v0172-correctifs.md`. Numéros de ligne de `d7ec2ea2`. Issues en `refs`
 - **Réversible** : oui.
 
 ### C-v0172b-5 — #876 : la recette de session est manuelle, non un E2E
+
+*Déplacé le 2026-11-04 (validation P2) vers la section `v0172s` : **C-v0172s-4**, qui fait foi ; texte ci-dessous conservé comme historique.*
 
 - **Contexte** : la suite E2E partage un backend aux durées par défaut (15 minutes) ; un E2E de session demanderait un
   backend dédié à durées courtes et plusieurs minutes d'attente.
@@ -93,6 +105,8 @@ Fiche : `v0172-correctifs.md`. Numéros de ligne de `d7ec2ea2`. Issues en `refs`
 
 ### C-v0172b-7 — #870 : pagination et filtre de statut dans l'adresse, sans toucher au serveur
 
+*Révisé à la validation P1 : le motif `initFromUrl` n'est pas repris tel quel, cf. C-v0172b-26 (lecture réactive de l'URL).*
+
 - **Contexte** : le serveur pagine et filtre déjà (`routes/supplier_invoices.rs:640-`, `services/factures_fournisseur.rs:28-30,
   :65, :116`) ; la page ne lit pas l'URL et demande 100 lignes.
 - **Retenu** : motif de `invoices/+page.svelte` (`initFromUrl`, `syncUrl`, *Précédent*/*Suivant*) ; `?status=` d'**une** valeur,
@@ -104,6 +118,11 @@ Fiche : `v0172-correctifs.md`. Numéros de ligne de `d7ec2ea2`. Issues en `refs`
 - **Réversible** : oui.
 
 ### C-v0172b-8 — #851 : la cause est le débordement de la barre latérale ; reproduire avant de corriger
+
+*Révisé à la validation P2 : la reproduction est un **oracle du symptôme** (entrées atteignables par la molette, avant et après
+l'ouverture d'un groupe, sans et avec bandeau), dont le résultat décide du correctif ; le correctif borne la barre par un
+**maximum** (`self-start max-h-[…]`) en plus d'`overflow-y-auto`, pour rester juste avec un bandeau. L'oracle de la première
+remédiation rougissait par construction (finding P9) et restait rouge sous un code corrigé avec un bandeau (finding P10).*
 
 - **Contexte** : l'issue suppose un rôle momentanément nul ; le code le réfute (remplacement atomique de `_currentUser`,
   garde de `/admin/mcp` qui redirigerait, disparition qui serait totale). La `<nav>` a une hauteur fixe sans `overflow-y`
@@ -126,6 +145,11 @@ Fiche : `v0172-correctifs.md`. Numéros de ligne de `d7ec2ea2`. Issues en `refs`
 - **Réversible** : oui.
 
 ### C-v0172b-10 — #880 : `formatSwissDate` tolère l'horodatage ; un helper voisin `formatSwissDateTime`
+
+*Révisé à la validation P2 : les horodatages du serveur sont de l'**UTC** (`naive_utc()`, session `+00:00`, `DateTime<Utc>` avec
+`Z`) ; les deux helpers lisent un horodatage sans décalage comme UTC et l'affichent **à l'heure de Zurich**
+(`Intl.DateTimeFormat`, `timeZone: 'Europe/Zurich'`) ; une date pure reste sans fuseau. Tests sous `process.env.TZ` épinglé,
+cas `Z` et décalage compris. « Aucun fuseau appliqué », ci-dessous, est remplacé.*
 
 - **Contexte** : `formatSwissDate` (`reports.api.ts`) rend un résultat faux sur `2026-11-03T17:40:45` (#883.6) ; plusieurs
   sites de #880 affichent un horodatage (`importedAt`, `lastUsedAt`).
@@ -195,6 +219,8 @@ Fiche : `v0172-correctifs.md`. Numéros de ligne de `d7ec2ea2`. Issues en `refs`
 
 ### C-v0172b-18 — #876 : `/me` lit la ligne du jeton de renouvellement, sans écriture
 
+*Déplacé le 2026-11-04 (validation P2) vers la section `v0172s` : **C-v0172s-5**, qui fait foi ; texte ci-dessous conservé comme historique.*
+
 - **Contexte** : après un rechargement, seul `/me` peut dire l'échéance du jeton de renouvellement.
 - **Retenu** : `find_active_by_token` sur le cookie `kesh_refresh_token` (chemin `/api/v1/auth`, envoyé à `/me`) ; `null`
   sans cookie, inconnu, révoqué ou expiré ; aucune mise à jour de la ligne.
@@ -242,6 +268,8 @@ Fiche : `v0172-correctifs.md`. Numéros de ligne de `d7ec2ea2`. Issues en `refs`
 
 ### C-v0172b-23 — #876 : pas de minuterie ; l'entrée renouvelle, au plus une fois par pas `T`
 
+*Déplacé le 2026-11-04 (validation P2) vers la section `v0172s` : **C-v0172s-6**, qui fait foi ; texte ci-dessous conservé comme historique.*
+
 - **Contexte** : validation P1, findings P1 et P2 — une minuterie qui renouvelle « s'il y a eu activité depuis le dernier
   renouvellement » laisse la session vivre jusqu'à `2N − 1` après la dernière entrée, et ne sonne pas pendant une veille ni à
   l'heure dans un onglet masqué.
@@ -255,6 +283,8 @@ Fiche : `v0172-correctifs.md`. Numéros de ligne de `d7ec2ea2`. Issues en `refs`
 
 ### C-v0172b-24 — #876 : un échec transitoire du renouvellement anticipé ne déconnecte pas
 
+*Déplacé le 2026-11-04 (validation P2) vers la section `v0172s` : **C-v0172s-7**, qui fait foi ; texte ci-dessous conservé comme historique.*
+
 - **Contexte** : `doRefresh` efface la session sur toute erreur (`api-client.ts:96-99, :174-178`), défendable sur 401 (session
   morte), faux quand la session vit encore (finding P3).
 - **Retenu** : sur le chemin anticipé, seul `401 INVALID_REFRESH_TOKEN` efface la session ; erreur réseau, 429, 5xx : la
@@ -267,6 +297,8 @@ Fiche : `v0172-correctifs.md`. Numéros de ligne de `d7ec2ea2`. Issues en `refs`
 
 ### C-v0172b-25 — Limites déclarées, et issue demandée : le jeton de renouvellement stocké en clair
 
+*À la validation P2, le point (c) (manuel d'administration et stockage du jeton) passe à `v0172-session` : **C-v0172s-14**. Restent ici (a) et (b), d'A2.*
+
 - **Contexte** : (a) l'import tient deux connexions d'un pool de 5 (`main.rs:83`) ; (b) au-delà de 5 s sous le verrou, le
   second envoi rend le `409` du rapprochement ; (c) en refermant l'inventaire du manuel d'administration, `admin-manual.tex:2996`
   affirme un hash SHA-256 du jeton de renouvellement, alors qu'il est stocké tel quel (`repositories/refresh_tokens.rs:30-34`,
@@ -278,6 +310,8 @@ Fiche : `v0172-correctifs.md`. Numéros de ligne de `d7ec2ea2`. Issues en `refs`
 - **Réversible** : —
 
 ### C-v0172b-26 — #870 : l'URL est la source de vérité, lue de façon réactive ; le filtre ne porte que sur le statut
+
+*Complété à la validation P2 (finding P8) : la case des annulées a sa place dans l'URL, `?cancelled=1` ; les assertions `limit: 100` du test de la liste sont nommées (`:50, :59, :68, :71, :104, :113, :136`) et le simulacre de `goto` modifie `page.url`.*
 
 - **Contexte** : validation P1, finding P6 — le motif `initFromUrl` à `onMount` ne relit pas l'URL quand seule la requête
   change ; un lien vers `/supplier-invoices` depuis `?status=draft` laisserait la liste filtrée. Finding P20 : K8 compte les
@@ -298,3 +332,139 @@ Fiche : `v0172-correctifs.md`. Numéros de ligne de `d7ec2ea2`. Issues en `refs`
 - **Écartées** : retirer le repli — une ligne neuve créée avant le chargement garderait `8.10` même absent de la société ;
   le garder tel quel — changement muet de TVA.
 - **Réversible** : oui.
+
+### C-v0172b-28 — #840 : la mutation « verrou rendu avant le commit » est retirée ; angle mort déclaré
+
+- **Contexte** : validation P2, finding P6 — dans le test d'entrelacement, c'est la connexion de test qui tient le verrou ; que le
+  `POST` rende le sien avant ou après son commit n'est jamais observé ; `tokio::join!` ne la tue que selon l'ordonnancement.
+- **Retenu** : MA13 retirée ; l'ordre « commit, puis rendu » est garanti par la forme du code (commit dans `…_under_lock`, appelée
+  dans la fermeture de `with_account_lock`, comme `bank_statements_manual.rs:239-249`) et vérifié à la revue de code ; angle mort
+  déclaré au Dev Agent Record.
+- **Écartées** : un point d'arrêt de test dans le code de production pour inverser les rôles — instrumente la production pour un
+  test.
+- **Réversible** : oui.
+
+---
+
+## Story v0172-session (clé `v0172s`) — #876
+
+Fiche : `v0172-session.md`, extraite de `v0172-correctifs.md` à la validation P2 (2026-11-04). Numéros de ligne de `d7ec2ea2`.
+Correspondance : C-v0172s-1 ← C-v0172b-2 ; s-2 ← b-3 ; s-3 ← b-4 ; s-4 ← b-5 ; s-5 ← b-18 ; s-6 ← b-23 ; s-7 ← b-24 ; s-8 à s-13
+neufs ; s-14 ← b-25 (c).
+
+### C-v0172s-1 — Renouvellement côté navigateur, à l'entrée de l'utilisateur, et champ `sessionExpiresIn`
+
+- **Contexte** : avec 15/15, le renouvellement sur 401 arrive toujours après l'expiration du jeton de renouvellement
+  (`routes/auth.rs:254, :399` ; cookie d'accès `max_age = jwt_expiry`, `:54`) ; la session meurt à 15 minutes, saisie perdue
+  (`api-client.ts:176-177`).
+- **Retenu** : renouvellement **à l'entrée**, au plus une fois par pas `T`, tant que le jeton de renouvellement vit ; le serveur rend
+  `sessionExpiresIn` (login, refresh, changement de mot de passe, assistant : `refresh_inactivity` ; `/me` : reste, `null` sinon).
+- **Écartées** : relâcher l'expiration au serveur ; prolonger à chaque requête ; ne corriger que le manuel ; déduire les échéances
+  sans aide du serveur ; une minuterie (borne jusqu'à `2N − 1`, muette en veille).
+- **Réversible** : oui.
+
+### C-v0172s-2 — L'activité, ce sont les entrées de l'utilisateur, non les requêtes
+
+- **Retenu** : `keydown`, `pointerdown`, `wheel`, `touchstart` sur `window` et `visibilitychange` vers `visible` ; posés à
+  l'armement, retirés au désarmement. Les sondes de fond (`BackupScheduleBanner.svelte:34`, `api-health.svelte.ts:102`) ne comptent
+  pas.
+- **Écartées** : les requêtes ; `mousemove` ; `scroll`.
+- **Réversible** : oui.
+
+### C-v0172s-3 — Un seul renouvellement pour tous les onglets
+
+- **Retenu** : `navigator.locks.request('kesh:auth:refresh')` autour de tout renouvellement (à l'entrée, sur 401) **et de la
+  déconnexion** (C-v0172s-10) ; sous le verrou, `renewedAt ≥ décision` ⇒ `GET /auth/me` au lieu du `POST` ; message `auth-renewed`,
+  ignoré par un onglet désarmé ; repli sans verrou par `renewedAt`.
+- **Écartées** : grâce au serveur pour un jeton tout juste tourné ; onglet « maître ».
+- **Réversible** : oui.
+
+### C-v0172s-4 — La recette de session est manuelle ; les tests Vitest simulent l'horloge, non les minuteries
+
+- **Retenu** : `vi.useFakeTimers({ toFake: ['Date'] })` + `vi.setSystemTime` (précédent `bank-accounts-page.test.ts:702-718`) ;
+  aucun cas ne dépend d'une minuterie ; recette à 2/2 minutes sur `kesh_v0172b` (AC-7). *(L'ancien C-v0172b-5 disait « minuteries
+  simulées » : corrigé, finding P21 de la validation P2.)*
+- **Écartées** : un projet Playwright à durées courtes.
+- **Réversible** : oui.
+
+### C-v0172s-5 — `/me` lit la ligne du jeton de renouvellement, sans écriture
+
+- **Retenu** : `find_active_by_token` sur le cookie `kesh_refresh_token` (chemin `/api/v1/auth`) ; `null` sans cookie valide.
+- **Écartées** : prolonger la ligne à chaque `/me`.
+- **Réversible** : oui.
+
+### C-v0172s-6 — Pas de minuterie ; pas `T` calculé sur les valeurs reçues
+
+- **Retenu** : `T = min(60 s, sessionExpiresIn/4, expiresIn/4)` à chaque armement ; après `login` ou un renouvellement, ce sont les
+  durées pleines ; après `hydrate`, des restes (`/me`), donc un `T` plus court, prudent, jusqu'au renouvellement suivant.
+  *(Aligne la fiche et le registre, qui divergeaient — finding P13 de la validation P2.)*
+- **Écartées** : exposer au `/me` les durées réglées — un champ de plus pour un gain nul.
+- **Réversible** : oui.
+
+### C-v0172s-7 — Échecs du renouvellement anticipé, et chemin 401
+
+- **Retenu** : `401 INVALID_REFRESH_TOKEN` n'efface la session **que jeton d'accès expiré** ; sinon désarmement pour ce jeton et
+  session jusqu'à `accessDeadline` ; réseau, 429, 5xx : session conservée, nouvelle tentative au plus tôt 10 s plus tard. Chemin 401
+  d'une requête : module armé, renouvellement seulement si une entrée date de **moins de 10 s** ; module non armé, comportement 0.17.1.
+- **Écartées** : « aucune entrée depuis le dernier renouvellement » comme critère (une entrée dans le pas `T` laissait une sonde
+  prolonger la session — finding P2 de la validation P2) ; effacer sur tout 401.
+- **Réversible** : oui.
+
+### C-v0172s-8 — La borne d'inactivité quand `N < jwt` : Kesh ne coupe pas avant l'expiration du jeton d'accès
+
+- **Contexte** : validation P2, finding P1 — avec `N = 1`, `jwt = 15`, la remédiation P1 lançait un renouvellement voué au 401
+  après deux minutes de lecture, et l'effaçait : saisie perdue alors que le jeton d'accès valait encore 13 minutes.
+- **Retenu** : (1) aucun renouvellement tenté après `sessionDeadline` ; (2) un `401 INVALID_REFRESH_TOKEN` n'efface la session que
+  jeton d'accès expiré ; la session vit donc jusqu'à `accessDeadline`. Borne : entre `max(N, jwt) − T` et `max(N, jwt)` après la
+  dernière entrée qui a renouvelé — `N` si `N ≥ jwt`, `jwt` si `N < jwt` (et, dans ce cas, une lecture plus longue que `N` fixe la
+  fin à `r + jwt` même si l'utilisateur reprend). Écrite au manuel d'administration.
+- **Écartées** : couper à `r + N` côté navigateur (même effet que le défaut) ; effacer au premier refus.
+- **Réversible** : oui.
+
+### C-v0172s-9 — Après un import complet, le renouvellement est suspendu
+
+- **Contexte** : finding P4 — l'import remplace `refresh_tokens` ; le bilan reste à l'écran jusqu'à *Se reconnecter*
+  (`AdminRestorePanel.svelte:170-185`, `admin-manual.tex:2322`) ; un renouvellement rendrait 401 et effacerait le bilan.
+- **Retenu** : `sessionRenewal.suspend()` à l'envoi de l'import (`:156`) ; reprise si l'import est refusé.
+- **Écartées** : suspendre seulement après réussite — un renouvellement pourrait partir pendant l'import.
+- **Réversible** : oui.
+
+### C-v0172s-10 — La déconnexion attend le renouvellement en vol
+
+- **Contexte** : finding P5 — `logout()` (`auth.svelte.ts:169`) révoque la ligne du cookie courant (`routes/auth.rs:306`,
+  `refresh_tokens.rs:115`) ; un renouvellement commité avant laisserait une ligne neuve active.
+- **Retenu** : `logout()` désarme, prend le verrou `kesh:auth:refresh` (attend tout renouvellement en vol), puis `POST /auth/logout` ;
+  la réponse d'un renouvellement arrivée après le désarmement ne réarme rien.
+- **Écartées** : révoquer toutes les lignes de l'utilisateur au logout — déconnecterait ses autres appareils, changement de règle
+  hors périmètre.
+- **Réversible** : oui.
+
+### C-v0172s-11 — La garde du chemin 401 ne vaut que module armé ; les tests existants ne changent pas
+
+- **Contexte** : finding P3 — `api-client.test.ts:205, :246, :270, :327, :488, :567` simulent un 401 sans entrée.
+- **Retenu** : module non armé ⇒ comportement 0.17.1 ; ces six tests restent verts **sans modification** (T4, M15). Changement déclaré
+  (finding P12) : module armé, une sonde de fond qui reçoit 401 sans entrée récente ne mène plus à `/login` ; l'écran reste jusqu'à
+  la première action.
+- **Écartées** : réécrire les six tests.
+- **Réversible** : oui.
+
+### C-v0172s-12 — L'aperçu `<iframe>` d'un document ne compte pas comme entrée
+
+- **Contexte** : finding P17 — `DocumentPreview.svelte:92`.
+- **Retenu** : déclaré au manuel utilisateur ; aucun écouteur dans l'`<iframe>` (document d'une autre origine possible).
+- **Réversible** : oui.
+
+### C-v0172s-13 — Coûts déclarés
+
+- **Retenu** : au plus un renouvellement par pas `T` d'activité et par utilisateur ; une ligne `refresh_tokens` chacun, purgée au
+  démarrage seulement (`main.rs:230-233`, au-delà de sept jours) ; la table n'est **pas** dans l'export global
+  (`exports/global.rs:215-217`) — le finding P16 de la validation P2 l'affirmait, à tort — mais elle est dans le `.keshbackup`.
+- **Réversible** : —
+
+### C-v0172s-14 — Manuel d'administration corrigé ; issue demandée : le jeton de renouvellement stocké en clair
+
+- **Retenu** : l'inventaire clos du manuel d'administration (11 sites au tableau, 53 hors classe) est dans `v0172-session.md` ;
+  `admin-manual.tex:2996` dira que le jeton est stocké tel quel (`refresh_tokens.rs:30-34`) ; le stockage en clair fait l'objet
+  d'une issue demandée.
+- **Écartées** : hacher le jeton dans cette story.
+- **Réversible** : —
