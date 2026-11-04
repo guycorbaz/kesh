@@ -1,6 +1,6 @@
 # Story v0172-session : la 0.17.3 — la durée d'inactivité réglée dans l'interface, exacte, remise à zéro par l'activité (#876, #891)
 
-Status: in-progress
+Status: review
 
 *Fiche **reprise** le 2026-11-04 sur une décision du Project Lead qui fait tomber les trois prémisses de la conception validée de P3 à P6
 (Change Log, entrée « Reprise ») : « J'aimerais que la durée d'inactivité soit configurée dans la partie admin de l'interface web et pas
@@ -1028,10 +1028,101 @@ mot-clé de fermeture. La note de mise à jour du manuel d'administration (*Pass
   cette version »), qui **nomme l'ancienne variable** — elle serait un fantôme pour la garde (F) de `configuration_transmise.rs` : ajoutée au
   tableau (83 = 19 + 64). 88 migrations constatées, crates en 0.17.2 (non bumpés).
 
+- 2026-11-04 — **Développement (Opus 5.5, autonomie)**, lots S puis N, commits `1dc94968` (lot S), `5392bd37` (lot N), `b7f02678`
+  (verbe allemand, PDF). Rouges constatés avant chaque lot (`kesh-gate-logs/v0172s/rouges.log`) ; 42 mutations nommées jouées, toutes
+  tuées par le test attendu (`mut/S-resume.log`, `mut/N-resume.log`) ; gates complets, E2E complet, recette de durée et captures (Dev
+  Agent Record). Choix du développement C-v0172s-53 à 58 au registre, dont deux **écarts à la fiche** : AC-2 (la garde
+  `configuration_transmise.rs` change de deux nombres, C-54) et deux tests « n'ajoute aucune table » appliqués jusqu'à leur migration
+  incluse (C-55) ; s'y ajoutent hors registre : `sans_ecriture` 117 → 119 (`audit_route_registry.rs`, compteur non prescrit par la
+  fiche), HEAD discriminants 12 → 13 (`admin_pat_denied_e2e.rs`), G9 de `textes_coherents.rs` (7 → 8 entrées), `sitesTotal` 2813 →
+  2825 (`i18n-keys.test.ts`), le verbe allemand « beenden » (garde `la_cloture_d_exercice_ne_parle_pas_comme_un_panneau`), et la note
+  de la 0.17.2 du manuel d'administration récrite (`:2524`). AC-7 (3) est **vert avant correctif** (la fiche l'annonçait rouge) : sans
+  renouvellement dans `hydrate()`, un seul `POST /auth/refresh` part de toute façon ; il garde le mutex, ce que M13 bis prouve.
+
 ## Dev Agent Record
 
 ### Agent Model Used
 
+Claude Opus 5.5 (autonomie complète, mandat `kesh-gate-logs/prompts/v0173-session-dev.md`), 2026-11-04.
+
 ### Completion Notes List
 
+**Fusion de main** (`0b2e8ec9`) : `origin/main` (v0.17.2, `95e325e7`) fusionnée ; conflits sur `sprint-status.yaml` (lignes de main pour
+v0172-annulees et v0172-correctifs, ligne de la branche pour v0172-session), le registre (union : sections de main, section `v0172s`
+de la branche), `v0172-correctifs.md` (main), `v0172-session.md` (branche). Aucun marqueur restant ; 88 migrations ; crates en 0.17.2
+(non bumpés : la release le fera).
+
+**Étape 0** (`1e50fd03`) : les sept LOW de la validation R5 appliqués ; numéros de ligne relus après la fusion (Change Log).
+
+**Rouges** (`kesh-gate-logs/v0172s/rouges.log`) — lot S, sur le code d'avant : 21 tests, **18 rouges** (T1 : 4 ; T3 : 13 ; T4 (a) ;
+T5 (a)), **3 verts attendus** (T4 (b), (c) ; T5 (b)). Lot N, implémentation retirée (`git stash` des huit fichiers, deux fichiers neufs
+mis de côté, restaurés ensuite) : 7 fichiers rouges, dont 10 tests rouges et les deux fichiers neufs (module absent) ; AC-7 (3) vert
+avant (cf. Change Log).
+
+**Mutations** (sous le verrou, restauration `git checkout --` puis `touch`) : lot S **21/21 tuées** (M1, M1 bis, M2, M3, M3 bis, M4,
+M5, M6, M6 bis, M7, M7 bis, M8, M8 bis, M15, M15 bis, M16, M16 bis — l'extracteur du battement —, M17, M22) ; lot N **21/21 tuées**
+(M9 à M14, M13 bis, M12 bis, M18 à M21, M23 à M30, M26 bis). Chacune par le test attendu (`mut/M*.log`). M11 est jouée comme « lecture
+en mémoire seulement » (la clé d'un autre onglet est ignorée) : tuée par AC-6 (6).
+
+**Gates**, base remise à neuf avant chaque gate complet :
+- `scripts/test-fast.sh --ci` (fmt, clippy `-D warnings`, nextest) au commit `5392bd37` : **4738 exécutés, 4737 verts, 1 rouge**
+  (`kesh-i18n` `la_cloture_d_exercice_ne_parle_pas_comme_un_panneau` : « Sitzung schliessen ») — corrigé (`b7f02678`), `kesh-i18n` 41/41 ;
+  gate complet rejoué au dernier commit de code (`b7f02678`, base remise à neuf) : **4738 exécutés, 4738 verts, 12 ignorés**
+  (`gate-backend-2.log`).
+- `cargo build --workspace --all-targets` : vert (`build-1.log`).
+- Frontend : `npm run check` 0 erreur (29 avertissements, aucun dans les fichiers de la story), `lint-i18n-ownership` vert,
+  `test:unit` **211 fichiers, 2586 tests verts**, `build` vert.
+- `make fr` : trois PDF stables ; PDF aplatis contrôlés (phrases neuves présentes, `KESH_REFRESH_INACTIVITY`, « 135 des 142 » et « La
+  session reste active 15 minutes » absents).
+- **E2E complet** (port 3174, `kesh_e2e_v0172s`, `/tmp/kesh-e2e-v0172s-r1/`) : **343 passés, 7 échecs, 18 ignorés** ; les 7 échecs
+  sont exactement les sept KF-029 (#97) de `docs/testing.md` (`mode-expert.spec.ts:26, :41`, `onboarding-path-b.spec.ts:65, :92`,
+  `onboarding.spec.ts:57, :77, :150`). `ss` avant et après : 0 écoute sur 3174 ; backend arrêté par son PID.
+
+**Recette de durée** (AC-10, `recette-r3.log`, base `kesh_v0172s` jetable, `KESH_JWT_EXPIRY_MINUTES=1`, l'ancienne variable posée à 15
+— ignorée, volet (h)) : réglage porté à 2 par l'écran ; (a) mouvements de souris 3 min (19:31:56 → 19:34:57) puis `POST /contacts` 201,
+`/me` 200 (`idleTimeoutMinutes = 2`) ; (d) 90 s d'activité puis rechargement : connecté ; (b) dernière activité 19:36:27.862, fermeture
+19:38:28.416 — **120,55 s** (attendu 120 ± 2 s), message « Session fermée après 2 minutes d'inactivité. », `curl` avec l'ancien cookie
+d'accès → **401**, dernière ligne `refresh_tokens` révoquée `logout`, rechargement de `/login` : reste sur la page ; (b bis) abaissement
+2 → 1 à 19:38:30.798, fermeture 19:39:31.773 (**60,98 s**), `/` mène à la connexion, ligne `logout` ; (c) deux onglets, activité dans
+B seul 3 min : A toujours connecté, `/me` 200. Deux essais préalables avortés par le script lui-même (r1 : mot de passe réécrit par le
+bootstrap ; r2 : sélecteur du journal d'audit), corrigés dans `scripts/recette-v0172s.mjs`. **Non joués** : (e) l'aperçu PDF (couvert
+par les tests du `blur` vers un `<iframe>` ; le comportement est déclaré au manuel) et (f) la restauration complète (couverte par
+`admin_full_import_e2e.rs`, T5).
+
+**Captures** (`kesh-gate-logs/v0172s/captures/`, thème clair, base jetable) : `v0172s-01-parametres-session-60`,
+`-02-saisie-hors-bornes-refusee`, `-03-enregistrement-reussi-2`, `-04-parametres-comptable-sans-session`,
+`-05-connexion-session-fermee-2-min`, `-06-journal-audit-reglage`.
+
+**Sondes** : `git grep -n "jwt::encode(" -- crates/kesh-api/src` ne rend que les tests en module de `middleware/auth.rs` (sous
+`#[cfg(test)]`) ; `git grep -nE 'refresh_inactivity|REFRESH_INACTIVITY' -- crates frontend scripts docs/manual .env.example
+docker-compose.yml docker-compose.prod.yml` ne rend que le paramètre ignoré de `from_fields_for_test` et `crates/kesh-api/README.md` ;
+`LoginPayload` : trois constructeurs (`login/+page.svelte`, `setup.api.ts`, `doRefresh`) et `hydrate()` transmettent les deux champs ;
+aucune spec Playwright ne compte toutes les requêtes (`homepage-reminders.spec.ts:78` filtre par URL) ; aucun test ne montait le layout
+racine avant `root-layout-session.test.ts` (qui simule `sessionIdle`).
+
+**Décomptes** (périmètre `1e50fd03` → tête) : 27 attributs de test Rust ajoutés, 3 retirés (`config_refresh_inactivity_*`) ; 44 `it(`
+Vitest ajoutés.
+
+**Actions demandées à l'orchestrateur** : push et PR (`refs #876`, `refs #891` ; `closes` éventuel au titre de la PR seulement) ; issue
+pour retirer en lot mécanique le paramètre ignoré `_refresh_inactivity_ignored` de `from_fields_for_test` (fiche § 12) ; revues de code
+P1 par lot (`v0172-session-review-prompt-p1-S.md`, `-p1-N.md`, Sonnet, trois lentilles chacun).
+
 ### File List
+
+Lot S : `crates/kesh-db/migrations/20261104000001_installation_settings.sql` (neuf), `crates/kesh-db/migrations.sha384`,
+`crates/kesh-db/test-schema/0001_schema_squash.sql` (régénéré), `crates/kesh-db/src/repositories/{installation_settings.rs (neuf),
+mod.rs, refresh_tokens.rs}`, `crates/kesh-db/src/{backup.rs, test_fixtures.rs}`, `crates/kesh-db/tests/migrations_upgrade_path.rs`,
+`crates/kesh-api/src/{auth/jwt.rs, auth/api_key.rs, middleware/auth.rs, helpers.rs, config.rs, main.rs, lib.rs, audit_labels.rs,
+routes/auth.rs, routes/setup.rs, routes/admin.rs, routes/session_settings.rs (neuf), routes/mod.rs}`, `crates/kesh-api/README.md`,
+`crates/kesh-api/tests/{session_idle_e2e.rs (neuf), session_settings_e2e.rs (neuf), auth_e2e.rs, auth_cookies_e2e.rs,
+admin_full_import_e2e.rs, admin_pat_denied_e2e.rs, audit_route_registry.rs, configuration_transmise.rs, textes_coherents.rs,
+services_motif.rs, services_rollout.rs}`, `crates/kesh-i18n/locales/*/messages.ftl`, `.env.example`, `docker-compose.yml`,
+`docker-compose.prod.yml`, `docs/migrations-idempotence-audit.md`, `docs/manual/fr/{admin,user}-manual.tex` (sites gardés).
+Lot N : `frontend/src/lib/app/stores/{session-idle.svelte.ts (neuf), session-idle.svelte.test.ts (neuf), auth.svelte.ts,
+auth.svelte.test.ts}`, `frontend/src/lib/shared/utils/api-client.ts`, `frontend/src/lib/shared/i18n-keys.test.ts`,
+`frontend/src/lib/features/settings/{SessionIdleSection.svelte (neuf), SessionIdleSection.test.ts (neuf), settings.api.ts,
+settings.types.ts}`, `frontend/src/lib/features/setup/{setup.api.ts, setup.api.test.ts (neuf)}`, `frontend/src/routes/{+layout.svelte,
+root-layout-session.test.ts (neuf), login/+page.svelte, login/login-page.test.ts (neuf), (app)/settings/+page.svelte,
+(app)/settings/settings-page.test.ts}`, `crates/kesh-i18n/locales/*/messages.ftl`, `docs/manual/fr/*.tex` et `*.pdf`, `CHANGELOG.md`,
+`_bmad-output/planning-artifacts/{prd,epics}.md`, `docs/kesh-specifications.txt`. Comptes rendus : cette fiche, le registre,
+`sprint-status.yaml`, les deux prompts de revue.
