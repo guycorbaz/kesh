@@ -478,6 +478,34 @@ async fn heartbeat_refuses_api_keys(pool: MySqlPool) {
         .await
         .unwrap();
     assert_eq!(resp.status(), 403, "clé d'API refusée");
+
+    // Revue de code P1 (S-B4/S-E8) : le refus de la clé d'API précède la
+    // lecture du corps — un corps illisible rend 403, non 400.
+    for corps in [
+        json!({ "idleMs": -1 }),
+        json!({}),
+        json!({ "idleMs": "abc" }),
+    ] {
+        let resp = app
+            .client
+            .post(app.url("/api/v1/auth/activity"))
+            .header("Authorization", format!("Bearer {key}"))
+            .json(&corps)
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), 403, "clé d'API, corps {corps}");
+    }
+    // Témoin : le même corps illisible, par une session, rend bien 400.
+    let resp = app
+        .client
+        .post(app.url("/api/v1/auth/activity"))
+        .header("Authorization", format!("Bearer {at}"))
+        .json(&json!({ "idleMs": -1 }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 400, "session, corps illisible");
 }
 
 // --- (g) au-delà de l'échéance ---------------------------------------------

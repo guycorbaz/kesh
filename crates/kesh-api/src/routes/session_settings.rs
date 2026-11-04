@@ -9,6 +9,8 @@
 //!   corps lu par un extracteur qui rend **400 `VALIDATION_ERROR`** sur tout
 //!   rejet (jamais le 422 d'Axum) ; hors bornes ⇒ 400, rien d'écrit ; version
 //!   périmée ⇒ 409 `OPTIMISTIC_LOCK_CONFLICT` ; sinon 200 et le nouvel état.
+//!   Rejouée sur interblocage (1213) : deux premiers enregistrements
+//!   simultanés rendent 200 et 409, jamais 500.
 //!   L'audit `admin.session_settings_updated` est écrit par le dépôt dans la
 //!   même transaction ; une valeur inchangée n'écrit rien.
 //!
@@ -84,11 +86,21 @@ pub async fn update_session_settings(
             "Durée d'inactivité hors bornes : de 1 minute à 24 heures.",
         )));
     }
-    let s = installation_settings::update_session_idle_minutes(
-        &state.pool,
-        req.version,
-        current_user.user_id,
-        req.session_idle_minutes,
+    // Revue de code P1 (S-B1/S-E1, choix C-v0172s-59) : deux `PUT` simultanés
+    // à version 0 sur table vide prennent chacun le verrou d'intervalle du
+    // `SELECT … FOR UPDATE`, puis leurs `INSERT` s'attendent l'un l'autre :
+    // InnoDB annule la victime en 1213. Rejouée, elle relit la ligne validée
+    // par l'autre et rend le conflit optimiste (409), non un 500.
+    let s = kesh_db::retry::retry_on_deadlock(
+        "installation_settings::update_session_idle_minutes",
+        || {
+            installation_settings::update_session_idle_minutes(
+                &state.pool,
+                req.version,
+                current_user.user_id,
+                req.session_idle_minutes,
+            )
+        },
     )
     .await?;
     Ok(Json(s.into()))

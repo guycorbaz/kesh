@@ -286,3 +286,91 @@ async fn put_writes_audits_and_locks(pool: MySqlPool) {
     assert_eq!(b["error"]["code"], "OPTIMISTIC_LOCK_CONFLICT");
     assert_eq!(audits(&pool).await.len(), 1);
 }
+
+/// Revue de code P1 (S-B1/S-E1, choix C-v0172s-59) — deux premiers
+/// enregistrements simultanés (version 0, table vide) : l'un gagne, l'autre
+/// rend **409**, jamais 500.
+///
+/// Montage déterministe, sur le patron de `rejeu_interblocage_e2e.rs` : une
+/// transaction de test **alourdie** (500 lignes de lest : InnoDB choisit pour
+/// victime la plus légère) prend le verrou d'intervalle de `id = 1` par le même
+/// `SELECT … FOR UPDATE` que le dépôt ; la route, lancée en tâche, le prend
+/// aussi (les verrous d'intervalle sont compatibles) puis attend sur son
+/// `INSERT` ; la transaction de test insère à son tour : cycle, InnoDB annule
+/// la route (1213). Sans rejeu, la route rend 500 ; rejouée, elle relit la
+/// ligne validée par la transaction de test et rend le conflit optimiste.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn concurrent_first_puts_yield_a_conflict_not_a_500(pool: MySqlPool) {
+    create_user(&pool, "admin1", Role::Admin).await;
+    let app = spawn_app(pool.clone()).await;
+    let jwt = login(&app, "admin1").await;
+    let capture = common::capture_rejeu::CaptureRejeu::installer();
+
+    sqlx::query(
+        "CREATE TABLE IF NOT EXISTS lest_rejeu (id INT AUTO_INCREMENT PRIMARY KEY, x INT) \
+         ENGINE=InnoDB",
+    )
+    .execute(&pool)
+    .await
+    .unwrap();
+    let mut tx = pool.begin().await.unwrap();
+    for _ in 0..10 {
+        sqlx::query("INSERT INTO lest_rejeu (x) SELECT seq FROM seq_1_to_50")
+            .execute(&mut *tx)
+            .await
+            .unwrap();
+    }
+    let vu: Option<(i32, i32)> = sqlx::query_as(
+        "SELECT session_idle_minutes, version FROM _kesh_installation_settings \
+         WHERE id = 1 FOR UPDATE",
+    )
+    .fetch_optional(&mut *tx)
+    .await
+    .unwrap();
+    assert!(vu.is_none(), "montage : la table doit être vide");
+
+    let client = app.client.clone();
+    let url = app.url(PATH);
+    let jwt_tache = jwt.clone();
+    let tache = tokio::spawn(async move {
+        let resp = client
+            .put(url)
+            .header("Authorization", format!("Bearer {jwt_tache}"))
+            .json(&json!({ "sessionIdleMinutes": 30, "version": 0 }))
+            .send()
+            .await
+            .unwrap();
+        let status = resp.status().as_u16();
+        (status, resp.json::<Value>().await.unwrap_or(Value::Null))
+    });
+    assert!(
+        kesh_db::test_fixtures::attendre_une_requete_en_cours(
+            &pool,
+            &["INSERT INTO _kesh_installation_settings"],
+            || tache.is_finished(),
+        )
+        .await,
+        "la route n'a pas attendu sur son INSERT : le cycle n'est pas formé"
+    );
+    sqlx::query(
+        "INSERT INTO _kesh_installation_settings (id, session_idle_minutes, version) \
+         VALUES (1, 45, 1)",
+    )
+    .execute(&mut *tx)
+    .await
+    .expect("la transaction de test, alourdie, ne doit pas être la victime");
+    tx.commit().await.unwrap();
+
+    let (status, corps) = tache.await.unwrap();
+    assert_eq!(status, 409, "corps : {corps}");
+    assert_eq!(corps["error"]["code"], "OPTIMISTIC_LOCK_CONFLICT");
+    capture.exiger_un_rejeu("installation_settings::update_session_idle_minutes");
+    let ligne: (i32, i32) = sqlx::query_as(
+        "SELECT session_idle_minutes, version FROM _kesh_installation_settings WHERE id = 1",
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(ligne, (45, 1), "la valeur gagnante reste");
+    assert!(audits(&pool).await.is_empty(), "le perdant n'audite rien");
+}

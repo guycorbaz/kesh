@@ -1361,7 +1361,7 @@ KESH_ADMIN_PASSWORD=<nouveau-mdp-12+>  # nouveau mot de passe (>= 12 chars)
 WARN bootstrap: Recovery break-glass declenche pour user 'admin'...
 ERROR bootstrap: Recovery effectue -- RETIRER LES VARS DE .ENV
 \end{lstlisting}
-    \item \textbf{Se connecter} via l'écran de login avec le nouveau mot de passe. Les sessions actives sur ce compte ont été révoquées par le recovery~: elles ne peuvent plus être renouvelées~: chacune prend fin à sa prochaine activité, au plus tard à l'échéance de son jeton d'accès (15 minutes par défaut) ; les autres onglets/devices devront se reconnecter.
+    \item \textbf{Se connecter} via l'écran de login avec le nouveau mot de passe. Les sessions actives sur ce compte ont été révoquées par le recovery ; elles ne peuvent plus être renouvelées~: chacune prend fin à sa prochaine activité, au plus tard à l'échéance de son jeton d'accès (15 minutes par défaut) ; les autres onglets/devices devront se reconnecter.
     \item \textbf{Retirer les variables \keshpath{KESH\_ADMIN\_*} de \keshpath{.env}} (les recommenter ou les supprimer). Tant qu'elles restent en place, un \keshpath{WARN bootstrap: retirer les vars de .env} apparaît à chaque redémarrage (no-op silencieux côté DB grâce à la détection « hash identique »).
     \item \begin{sloppypar}Appliquer le retrait (\keshcommand{docker compose up -d kesh-api} --- un \keshcommand{restart} garderait les variables dans le conteneur) et confirmer que les warnings bootstrap ont disparu des logs — preuve que les variables \keshpath{KESH\_ADMIN\_*} sont bien retirées.\end{sloppypar}
 \end{enumerate}
@@ -3034,7 +3034,11 @@ Kesh utilise un modèle JWT avec rotation de refresh tokens :
 \end{sloppypar}
 
 \begin{sloppypar}
-\textbf{Mise à jour.} L'ancienne variable de durée d'inactivité n'est plus lue (\S\ref{sec:configuration} : retirez-la si vous l'aviez posée). Les jetons émis avant la mise à jour restent valables jusqu'à \texttt{KESH\_JWT\_EXPIRY\_MINUTES}~: la mise à jour ne déconnecte personne.
+\textbf{Mise à jour.} L'ancienne variable de durée d'inactivité n'est plus lue (\S\ref{sec:configuration} : retirez-la si vous l'aviez posée). Les jetons émis avant la mise à jour restent valables jusqu'à \texttt{KESH\_JWT\_EXPIRY\_MINUTES}~: sans le contournement de la 0.17.2, la mise à jour ne déconnecte personne. Si vous aviez posé \texttt{KESH\_JWT\_EXPIRY\_MINUTES=480}, une session ouverte avant la mise à jour prend fin à sa première activité qui suit~: reconnectez-vous une fois.
+\end{sloppypar}
+
+\begin{sloppypar}
+\textbf{Clients hors navigateur.} Seul le navigateur prolonge la session (il transmet l'activité au serveur). Un programme qui se connecte par mot de passe et renouvelle son jeton par le corps de la requête ne prolonge plus sa session~: elle prend fin à la connexion plus la durée réglée, quelle que soit son activité. Les intégrations utilisent une clé d'API (\S\ref{sec:api-keys}), que la durée d'inactivité ne concerne pas.
 \end{sloppypar}
 
 \subsection{Clés API (PAT) — accès programmatique}\label{sec:api-keys}

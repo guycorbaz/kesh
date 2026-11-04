@@ -696,13 +696,36 @@ pub struct ActivityResponse {
 ///
 /// Refus : clé d'API ⇒ 403 ; cookie absent, ligne d'un autre utilisateur,
 /// révoquée ou échue ⇒ 401 ; corps illisible ⇒ 400 `VALIDATION_ERROR`.
+///
+/// L'ordre est celui-là, corps compris (revue de code P1, S-B4/S-E8) : le corps
+/// est extrait en `Result` et ne se juge **qu'après** `ensure_not_pat`, si
+/// bien qu'une clé d'API reçoit 403 même avec un corps illisible.
 pub async fn activity(
     State(state): State<AppState>,
     axum::Extension(current_user): axum::Extension<CurrentUser>,
     jar: CookieJar,
-    ActivityBody(req): ActivityBody,
+    body: Result<ActivityBody, axum::response::Response>,
+) -> axum::response::Response {
+    use axum::response::IntoResponse;
+    if let Err(e) = ensure_not_pat(&current_user) {
+        return e.into_response();
+    }
+    let ActivityBody(req) = match body {
+        Ok(b) => b,
+        Err(rejet) => return rejet,
+    };
+    activity_with(state, current_user, jar, req)
+        .await
+        .into_response()
+}
+
+/// Le battement, une fois la clé d'API écartée et le corps lu ([`activity`]).
+async fn activity_with(
+    state: AppState,
+    current_user: CurrentUser,
+    jar: CookieJar,
+    req: ActivityRequest,
 ) -> Result<(CookieJar, Json<ActivityResponse>), AppError> {
-    ensure_not_pat(&current_user)?;
     let refresh_token = jar
         .get("kesh_refresh_token")
         .map(|c| c.value().to_string())

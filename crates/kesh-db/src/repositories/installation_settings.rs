@@ -74,6 +74,11 @@ pub async fn get(pool: &MySqlPool) -> Result<InstallationSettings, DbError> {
 ///   en 400) ;
 /// - version périmée, ou ligne apparue alors que `expected_version == 0` ⇒
 ///   [`DbError::OptimisticLockConflict`] ;
+/// - ⚠️ deux appels simultanés à `expected_version == 0` sur table vide
+///   s'interbloquent (verrous d'intervalle du `FOR UPDATE`, puis deux
+///   `INSERT`) : la victime rend `DbError::Sqlx` (1213), **pas** le conflit.
+///   L'appelant rejoue par `kesh_db::retry::retry_on_deadlock` ; le rejeu voit
+///   la ligne et rend le conflit (route `session_settings`, choix C-v0172s-59) ;
 /// - valeur inchangée ⇒ rien d'écrit, l'état courant est rendu.
 pub async fn update_session_idle_minutes(
     pool: &MySqlPool,

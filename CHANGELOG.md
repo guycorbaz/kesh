@@ -23,7 +23,8 @@ Le contenu est rédigé en français à destination des **fiduciaires, PME, ind�
 
 ### Modifié
 
-- **`KESH_REFRESH_INACTIVITY_MINUTES` n'est plus lue** : Kesh l'ignore sans rien en dire ; retirez-la de votre `.env` et de votre `docker-compose`. *Si vous aviez posé `KESH_JWT_EXPIRY_MINUTES=480` pour contourner #876, retirez-le, puis reconnectez-vous une fois : il ne prolonge plus la session et allongerait inutilement la durée de validité des droits d'un utilisateur ; les jetons émis avant la mise à jour restent valables jusqu'à huit heures.*
+- **`KESH_REFRESH_INACTIVITY_MINUTES` n'est plus lue** : Kesh l'ignore sans rien en dire ; retirez-la de votre `.env` et de votre `docker-compose`. *Si vous aviez posé `KESH_JWT_EXPIRY_MINUTES=480` pour contourner #876, retirez-le, puis reconnectez-vous une fois : il ne prolonge plus la session et allongerait inutilement la durée de validité des droits d'un utilisateur. Avec ce contournement, une session ouverte avant la mise à jour prend fin à sa première activité qui suit : il faut se reconnecter une fois. Sans lui, la mise à jour ne déconnecte personne.*
+- **Un programme qui se connecte par mot de passe ne prolonge plus sa session** : seul le navigateur transmet l'activité ; une connexion par `/api/v1/auth/login`, renouvelée par le corps de la requête, prend fin à la connexion plus la durée réglée, quelle que soit son activité. Les intégrations utilisent une clé d'API, que la durée d'inactivité ne concerne pas.
 - **Une restauration complète révoque les jetons de renouvellement restaurés** : aucune session, de la sauvegarde ou de l'installation, ne peut plus être renouvelée après l'import ; la durée d'inactivité réglée n'est pas restaurée. *(Ce n'est pas la correction d'un défaut publié : avec les réglages d'avant (15/15), ces jetons mouraient de fait avec le jeton d'accès.)*
 
 ---

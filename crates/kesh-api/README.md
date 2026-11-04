@@ -38,13 +38,13 @@ tests/
 | `KESH_ADMIN_PASSWORD` | non | *vide* | Mot de passe admin bootstrap. Absent ou vide → onboarding `/setup`. Si posé : ≥ 12 caractères ; **refus au démarrage** s'il vaut `changeme`, contient `GENERATE_ME` ou est un gabarit entre chevrons `<…>` |
 | `KESH_JWT_EXPIRY_MINUTES` | non | `15` | Durée de vie de l'access token (rythme des renouvellements ; ne fixe pas la fin de session), borné `[1, 1440]` |
 | `KESH_REFRESH_TOKEN_MAX_LIFETIME_DAYS` | non | `30` | Durée de vie du cookie de renouvellement, reposé à chaque renouvellement, bornée `[1, 365]` |
-
-Depuis la 0.17.3, `KESH_REFRESH_INACTIVITY_MINUTES` **n'est plus lue** (ni lecture, ni avertissement) : la durée d'inactivité de la session se règle dans l'interface (Administration → Paramètres, section Session ; table système `_kesh_installation_settings`, 60 minutes par défaut).
 | `KESH_RATE_LIMIT_WINDOW_MINUTES` | non | `15` | Fenêtre de comptage des tentatives de login échouées `[1, 1440]` |
 | `KESH_RATE_LIMIT_MAX_ATTEMPTS` | non | `5` | Nombre max de tentatives échouées par IP `[1, 100]` |
 | `KESH_RATE_LIMIT_BLOCK_MINUTES` | non | `30` | Durée de blocage après dépassement du seuil `[1, 1440]` |
 | `KESH_STATIC_DIR` | non | `frontend/build` | Répertoire du SPA SvelteKit buildé |
 | `RUST_LOG` | non | `info` | Filtre `tracing_subscriber::EnvFilter` |
+
+Depuis la 0.17.3, `KESH_REFRESH_INACTIVITY_MINUTES` **n'est plus lue** (ni lecture, ni avertissement) : la durée d'inactivité de la session se règle dans l'interface (Administration → Paramètres, section Session ; table système `_kesh_installation_settings`, 60 minutes par défaut).
 
 ### Génération d'un `KESH_JWT_SECRET` valide
 

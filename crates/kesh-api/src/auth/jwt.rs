@@ -163,6 +163,12 @@ pub fn decode_session(token: &str, secret: &[u8]) -> Result<SessionClaims, AppEr
 
 /// Décode et valide un JWT HS256 ([`decode_session`], sans l'échéance
 /// d'inactivité).
+///
+/// Réservé aux tests (revue de code P1, S-B5/S-E7), comme [`encode`] : un
+/// point d'authentification de production qui l'appellerait ignorerait
+/// `idle_exp` sans bruit ; il doit passer par [`decode_session`] et contrôler
+/// l'échéance, comme `middleware::auth`.
+#[cfg(test)]
 pub fn decode(token: &str, secret: &[u8]) -> Result<Claims, AppError> {
     decode_session(token, secret).map(|s| s.claims)
 }

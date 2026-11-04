@@ -24,14 +24,15 @@
 //! ⚠️ Comparer des NOMBRES ne détecterait pas une route retirée pendant qu'une
 //! autre est ajoutée : le compte resterait égal et la dérive invisible. Le test
 //! `admin_pat_denied_e2e` peut compter, lui, parce qu'il opère sur un bloc clos
-//! entre marqueurs ; les 142 routes sont réparties dans tout le fichier.
+//! entre marqueurs ; les 144 routes sont réparties dans tout le fichier.
 //!
 //! # Deux fichiers, deux volets
 //!
 //! L'ensemble clos de l'INVENTAIRE est celui de `lib.rs` (142 routes à la
 //! release 0.17.0 — v017-3a, v016-2a et v017-4a réunies, mesuré le 2026-10-31 —,
-//! dont `/mcp`, monté par `route_service` — Story 32-6a) ;
-//! celui du REGISTRE est plus large (145), car trois routes mutantes vivent dans
+//! puis 144 à la 0.17.3, Story v0172-session ; dont `/mcp`, monté par
+//! `route_service` — Story 32-6a) ;
+//! celui du REGISTRE est plus large (147), car trois routes mutantes vivent dans
 //! `routes/test_endpoints.rs` et sont montées par un `nest()`. D'où :
 //!
 //! - volet « route absente du registre » → sur les **deux** fichiers, faute de
