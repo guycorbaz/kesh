@@ -167,6 +167,10 @@
 				expectedAmount: '',
 				projectId: null as number | null,
 				lines: [emptyLine()],
+				// v0172 (#885) : à la création, la date est « à vérifier » à côté d'un
+				// document, et l'échéance suit la date.
+				dateToVerify: document !== null || hasDocument,
+				dueFollows: true,
 			};
 		}
 		return {
@@ -184,6 +188,9 @@
 				init.lines.length > 0
 					? init.lines.map((l) => formLineFromResponse(l, vatRates))
 					: [emptyLine()],
+			// v0172 (#885) : à l'édition, ni avis ni échéance qui suit.
+			dateToVerify: false,
+			dueFollows: false,
 		};
 	}
 	const start = startState();
@@ -213,14 +220,14 @@
 	 * proposée (le jour même) est « à vérifier » : un avis visible le dit sous le champ
 	 * jusqu'à ce que l'utilisateur la modifie ou la confirme. Il ne bloque pas l'envoi.
 	 */
-	let dateToVerify = $state(initial === null && (document !== null || hasDocument));
+	let dateToVerify = $state(start.dateToVerify);
 	/**
 	 * v0172-correctifs (#885, C-v0172b-16) — à la création, l'échéance **suit** la date :
 	 * date + délai de paiement du fournisseur choisi (`defaultPaymentTermsDays`), ou la
 	 * date elle-même sans délai ni fournisseur ; vide si la date l'est. Une saisie dans le
 	 * champ échéance l'arrête pour de bon. À l'édition, elle ne suit jamais.
 	 */
-	let dueFollows = $state(initial === null);
+	let dueFollows = $state(start.dueFollows);
 	$effect(() => {
 		if (!dueFollows) return;
 		if (!fInvoiceDate) {
