@@ -1403,23 +1403,6 @@ async fn body_limit_is_its_own(pool: MySqlPool) {
     assert_eq!(r["transactionCount"], 500);
 }
 
-/// Le nom du verrou des gestes de rapprochement (`kesh_reconciliation::mutex`,
-/// `reconcile:<base>:<société>:<compte>`), tenu par une connexion de test.
-async fn take_account_lock(conn: &mut sqlx::MySqlConnection, company: i64, bank: i64) -> String {
-    let db: String = sqlx::query_scalar("SELECT DATABASE()")
-        .fetch_one(&mut *conn)
-        .await
-        .unwrap();
-    let name = format!("reconcile:{db}:{company}:{bank}");
-    let got: Option<i32> = sqlx::query_scalar("SELECT GET_LOCK(?, 5)")
-        .bind(&name)
-        .fetch_one(&mut *conn)
-        .await
-        .unwrap();
-    assert_eq!(got, Some(1), "montage : verrou pris");
-    name
-}
-
 /// E2 — **entrelacement forcé** : une connexion de test tient le verrou du
 /// compte ; le `POST` de la saisie est **vu en attente** sur `GET_LOCK`
 /// (`PROCESSLIST`) ; la connexion enregistre alors, dans sa propre transaction,
@@ -1445,7 +1428,7 @@ async fn create_waits_for_the_account_lock_and_sees_the_committed_twin(pool: MyS
     .collect();
 
     let mut held = pool.acquire().await.unwrap();
-    let name = take_account_lock(&mut held, c.company_id, c.bank_account_id).await;
+    let name = common::take_account_lock(&mut held, c.company_id, c.bank_account_id).await;
 
     let client = app.client.clone();
     let url = app.url("/api/v1/bank-imports/manual");

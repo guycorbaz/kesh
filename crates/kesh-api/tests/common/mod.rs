@@ -162,6 +162,32 @@ pub async fn create_key_via_http(
     (id, key)
 }
 
+/// Le nom du verrou des gestes de rapprochement (`kesh_reconciliation::mutex`,
+/// `reconcile:<base>:<société>:<compte>`), tenu par une connexion de test.
+///
+/// Partagé par la saisie manuelle (`bank_statements_manual_e2e.rs`, v016-2a) et
+/// les imports de fichier (`bank_imports_e2e.rs`, #840, v0172-correctifs) : les
+/// trois chemins d'écriture d'un relevé prennent ce même verrou. Il reste tenu
+/// par la session de `conn` jusqu'à un `RELEASE_LOCK` ou la fin de la connexion.
+pub async fn take_account_lock(
+    conn: &mut sqlx::MySqlConnection,
+    company: i64,
+    bank: i64,
+) -> String {
+    let db: String = sqlx::query_scalar("SELECT DATABASE()")
+        .fetch_one(&mut *conn)
+        .await
+        .unwrap();
+    let name = format!("reconcile:{db}:{company}:{bank}");
+    let got: Option<i32> = sqlx::query_scalar("SELECT GET_LOCK(?, 5)")
+        .bind(&name)
+        .fetch_one(&mut *conn)
+        .await
+        .unwrap();
+    assert_eq!(got, Some(1), "montage : verrou pris");
+    name
+}
+
 /// Témoin du rejeu sur interblocage (Story 15-5e1, choix C74).
 pub mod capture_rejeu;
 
