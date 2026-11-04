@@ -130,8 +130,12 @@ remédiation rougissait par construction (finding P9) et restait rouge sous un c
   garde de `/admin/mcp` qui redirigerait, disparition qui serait totale). La `<nav>` a une hauteur fixe sans `overflow-y`
   (`+layout.svelte:374-376`), pour 33 entrées de 44 px en mode guidé (11 + 4 + 18 ; « 34 » à la rédaction, recompté à la
   validation P1).
-- **Retenu** : E2E de reproduction (chaque entrée d'Administration atteignable, 1280 × 720) rouge d'abord, puis
-  `overflow-y-auto min-h-0` sur la `<nav>`. Si la reproduction ne rougit pas : aucune correction, constat au rapport.
+- **Retenu** (état en vigueur depuis la validation P4) : un **oracle du symptôme** (entrées atteignables par la molette avant et après
+  l'ouverture d'un groupe, sans et avec bandeau, état persisté des groupes vidé) dont le résultat avant correctif décide ; s'il rougit,
+  le fond et le filet passent à un `aside` étiré **et minoré** (`min-h-[calc(100vh-3.5rem)]`), la `<nav>` intérieure reste `sticky
+  top-14` avec `max-h-[calc(100vh-3.5rem)]` et `overflow-y-auto` ; l'aspect d'aujourd'hui est gardé (AC-B5 ter). S'il ne rougit pas :
+  aucune correction, constat au rapport. *(Le `self-start max-h-[…]` de la note de la validation P2, ci-dessus, est remplacé ; le
+  `overflow-y-auto min-h-0` de la première rédaction aussi.)*
 - **Écartées** : corriger à l'aveugle ; réduire la hauteur des liens (change le mode guidé).
 - **Réversible** : oui.
 
@@ -140,7 +144,7 @@ remédiation rougissait par construction (finding P9) et restait rouge sous un c
 - **Contexte** : options du `<select>` limitées aux taux actifs (`InvoiceForm.svelte:54-74`) ; le serveur refuse aussi tout
   taux inactif (`routes/vat.rs`, `verify_vat_rates_against_db`, `active = TRUE`).
 - **Retenu** : option `7.70% (désactivé)` pour le taux porté par la ligne, ensemble dérivé des lignes ; message de refus
-  explicite — « choisissez un taux actif », **sans** parler de réactivation, qui n'existe pas (`settings/vat-rates/+page.svelte:231-252`) ;
+  explicite — « choisissez un taux actif », **sans** parler de réactivation, que l'écran ne propose pas (`settings/vat-rates/+page.svelte:231-252` ; la route, elle, le permet : C-v0172b-29) ;
   le repli `8.10` limité aux lignes neuves (C-v0172b-27) ; symétrique de `extraRates` du formulaire fournisseur.
 - **Écartées** : accepter un taux inactif au serveur — règle TVA, jalon « Vague 2 » reporté, conséquence sur le décompte non
   établie ; remplacer d'office le taux par le premier actif — changement muet d'un montant de TVA.
@@ -151,7 +155,7 @@ remédiation rougissait par construction (finding P9) et restait rouge sous un c
 *Révisé à la validation P2 : les horodatages du serveur sont de l'**UTC** (`naive_utc()`, session `+00:00`, `DateTime<Utc>` avec
 `Z`) ; les deux helpers lisent un horodatage sans décalage comme UTC et l'affichent **à l'heure de Zurich**
 (`Intl.DateTimeFormat`, `timeZone: 'Europe/Zurich'`) ; une date pure reste sans fuseau. Tests sous `process.env.TZ` épinglé,
-cas `Z` et décalage compris. « Aucun fuseau appliqué », ci-dessous, est remplacé.*
+cas `Z` et décalage compris. « Aucun fuseau appliqué » (première rédaction) est remplacé ; le « Retenu » ci-dessous dit l'état en vigueur.*
 
 - **Contexte** : `formatSwissDate` (`reports.api.ts`) rend un résultat faux sur `2026-11-03T17:40:45` (#883.6) ; plusieurs
   sites de #880 affichent un horodatage (`importedAt`, `lastUsedAt`), et les horodatages du serveur sont de l'UTC.

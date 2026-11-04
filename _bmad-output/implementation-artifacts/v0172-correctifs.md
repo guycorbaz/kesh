@@ -212,9 +212,13 @@ arrière du navigateur ⇒ la liste suit l'URL. **Page au-delà du total** : `?o
 Tests : `supplier-invoices-list-page.test.ts` (existant). Le `page` de `$app/state` y est **réactif**, sur le modèle exact de
 `routes/(app)/journal-entries/[id]/page-state.test-helper.svelte.ts` (`export const pageState = $state({ … })`, et son
 commentaire : « Un objet simple dans `vi.mock` ne déclenche rien ; cet état-ci, si ») : un module `page-state.test-helper.svelte.ts`
-à côté du test exporte `pageState = $state({ url: new URL('http://localhost/supplier-invoices') })`, `vi.mock('$app/state')` rend
-`{ get page() { return pageState; } }` (ou équivalent), et le simulacre de `goto` (`:12`, aujourd'hui `goto: vi.fn()`) **réaffecte**
-`pageState.url = new URL(cible, 'http://localhost')` — une réaffectation, car un `URL` n'est pas suivi par `$state` s'il est
+à côté du test exporte `pageState = $state({ url: new URL('http://localhost/supplier-invoices') })` ; **les deux simulacres suivent la
+forme du modèle** (`journal-entries/[id]/journal-entry-page.test.ts:23-26`), une fabrique `async` qui importe le module dans
+la fabrique — `vi.mock` étant hissé au-dessus des imports, une fabrique qui lirait un import statique de premier niveau trouverait une
+valeur non initialisée :
+`vi.mock('$app/state', async () => ({ page: (await import('./page-state.test-helper.svelte')).pageState }))` et
+`vi.mock('$app/navigation', () => ({ goto: vi.fn(async (cible: string) => { (await import('./page-state.test-helper.svelte')).pageState.url = new URL(cible, 'http://localhost'); }) }))`
+(`:12`, aujourd'hui `goto: vi.fn()`) — une réaffectation, car un `URL` n'est pas suivi par `$state` s'il est
 seulement muté. Un objet ordinaire muté (patron d'`invoices-list-page.test.ts:13-15`) ne rejouerait ni le `$derived` ni le
 `$effect`, et le test de navigation par lien ne passerait pas sous une implémentation correcte. **Sonde** : le cas « navigation par
 lien » rougit sous MB8 (constaté au Dev Agent Record), comme MB10.
@@ -254,9 +258,13 @@ alignées sur `limit: 50` par cohérence ; et `lib/features/fiscal-years/FiscalY
 
 **Reproduire d'abord le symptôme** (AC-B5, oracle du symptôme), puis corriger **en gardant l'aspect de la barre** (fond
 `bg-surface-alt` et filet `border-r` sur toute la hauteur de la fenêtre, pour tous les rôles, groupes repliés compris — c'est ce
-que donne aujourd'hui `h-[calc(100vh-3.5rem)]`, `+layout.svelte:374-377`, dans `<div class="flex flex-1">`, `:371`) : le fond et le
-filet passent à un conteneur **étiré** par le flex (`<aside class="w-56 shrink-0 border-r border-border bg-surface-alt">`, qui prend
-la hauteur de la ligne, au moins celle de la fenêtre) ; la `<nav>`, à l'intérieur, reste `sticky top-14`, reçoit
+que donne aujourd'hui `h-[calc(100vh-3.5rem)]`, `+layout.svelte:374-377`, dans `<div class="flex flex-1">`, `:372`) : le fond et le
+filet passent à un conteneur **étiré** par le flex et **minoré** à la hauteur d'aujourd'hui
+(`<aside class="w-56 shrink-0 min-h-[calc(100vh-3.5rem)] border-r border-border bg-surface-alt">`) : la ligne `flex flex-1` (`:372`)
+ne reçoit que la hauteur restante de la colonne `min-h-screen` (`:295`), pied de page (`:445`) déduit — c'est la `<nav>` à hauteur
+fixe qui, aujourd'hui, la force à `100vh − 56` et pousse le pied de page sous le pli ; sans le `min-h`, sur une page courte, l'`aside`
+s'arrêterait au haut du pied de page (finding P1 de la validation P4). Avec lui, l'`aside` retrouve exactement la boîte d'aujourd'hui
+(bas à `100vh + B`, pied de page sous le pli) ; la `<nav>`, à l'intérieur, reste `sticky top-14`, reçoit
 `overflow-y-auto`, `overscroll-behavior: auto` (la molette fait défiler la barre, puis la page) et une hauteur **maximale**
 (`max-h-[calc(100vh-3.5rem)]`, à la place de `h-[…]`) ; elle garde son `padding` (C-v0172b-8) : avec un bandeau affiché
 (`DemoBanner`, `IncompleteBanner`, `BackupScheduleBanner`, `+layout.svelte:362-369`) la barre commence `B` pixels plus bas ;
@@ -273,7 +281,7 @@ crans de molette (`page.mouse.wheel(0, 200)`, au plus 20, jusqu'à stabilité), 
 `document.elementFromPoint` au centre de sa boîte rend le lien lui-même (ni le pied de page, ni le contenu, ni un bandeau).
 Scénario de l'issue : **avant tout**, vider l'état persisté des groupes (`localStorage.removeItem` des trois clés
 `kesh:sidebar:expanded:quotidien|mensuel|administration`, `+layout.svelte:206-209`, puis rechargement), pour partir de l'état par
-défaut (`:225-227` : Quotidien et Mensuel dépliés, Administration replié) quelle que soit la spec précédente ; (1) **relever**
+défaut (`:242-246` : Quotidien et Mensuel dépliés, Administration replié ; `initialOpen`, `:224-227`) quelle que soit la spec précédente ; (1) **relever**
 l'atteignabilité des entrées visibles des groupes dépliés — c'est un relevé, **non** une précondition : 15 entrées de 46 px
 peuvent déjà dépasser la barre avant correctif, et une entrée non atteignable au relevé (1) est consignée, sans faire échouer le
 test à ce stade ; (2) **ouvrir le groupe Administration** (clic sur son titre) ;
@@ -289,9 +297,12 @@ rien corriger » ci-dessus. Les relevés (atteignable / non, par entrée et par 
 (`window.scrollY` à 0, sans bandeau), `nav.scrollHeight > nav.clientHeight` et `getComputedStyle(nav).overflowY` vaut `auto`.
 **AC-B5 ter — l'aspect de la barre est gardé** : en **Comptable** (pas de bloc `adminOnly`), groupes **repliés**, sur `/` sans
 bandeau, le conteneur qui porte le fond et le filet (`aside`, ou l'élément qui porte `bg-surface-alt`) a une boîte dont le bas est
-≥ `window.innerHeight − 1` (le fond et le filet descendent jusqu'au bas de la fenêtre) et `getComputedStyle(…).borderRightWidth`
-vaut `1px` ; même mesure en Administrateur, tous groupes dépliés. Capture de chacun des deux états (thème clair). **Rouge** sous la
-forme `self-start max-h-[…]` sans conteneur étiré (MB3 ter) ; vert avant correctif.
+≥ `window.innerHeight − 1` **et** sa hauteur ≥ `window.innerHeight − 56 − 1` (le fond et le filet descendent jusqu'au bas de la
+fenêtre, comme aujourd'hui), le pied de page est **sous le pli** (`footer.getBoundingClientRect().top ≥ window.innerHeight − 1`,
+comme aujourd'hui sur une page courte) et `getComputedStyle(…).borderRightWidth` vaut `1px` ; même mesure en Administrateur, tous
+groupes dépliés. Capture de chacun des deux états (thème clair), avant et après correctif, cadrées sur toute la fenêtre (le bas de la
+barre et le pied de page visibles ou non). **Rouge** sous la forme sans `min-h` (MB3 quater) et sous la forme « fond et filet sur la
+`<nav>` seule » (MB3 ter) ; vert avant correctif et après.
 **AC-B6** — le nombre d'entrées `nav-link-*` du groupe Administration est 18 sur `/admin/mcp`, `/admin/mcp/sends`,
 `/admin/mcp/prompts`, `/users` et `/` (garde de l'hypothèse du rôle, vert avant et après). Captures : menu déplié sur
 `/admin/mcp`, avant (le bas manquant) et après (barre défilée jusqu'en bas), sans et avec bandeau. **La puce du CHANGELOG de
@@ -439,7 +450,8 @@ Captures : complétion d'un document, avis visible ; après *C'est la bonne date
 
 Mutations : **MB1** `offset` non relu de l'URL ⇒ TB1 rougit ; **MB2** lien K8 sans `?status=draft` ⇒ TB2 ; **MB3**
 `overflow-y-auto` retiré ⇒ TB4 et TB4 bis ; **MB3 bis** `h-[…]` rétabli à la place de `max-h-[…]` sur la `<nav>` ⇒ la variante
-« avec bandeau » de TB4 ; **MB3 ter** fond et filet reportés sur la `<nav>` seule (sans conteneur étiré) ⇒ AC-B5 ter ; **MB4** l'ensemble des taux proposés calculé une fois (non dérivé) ⇒ le cas
+« avec bandeau » de TB4 ; **MB3 ter** fond et filet reportés sur la `<nav>` seule (sans conteneur étiré) ⇒ AC-B5 ter ; **MB3 quater**
+`min-h-[calc(100vh-3.5rem)]` retiré de l'`aside` ⇒ AC-B5 ter (page courte) ; **MB4** l'ensemble des taux proposés calculé une fois (non dérivé) ⇒ le cas
 `onProductSelect` de TB6 rougit ; **MB5** `toISOString` rétabli ⇒ TB7 (date locale) ; **MB6** `dueFollows` jamais remis à
 `false` ⇒ le cas « saisie à la main » de TB8 ; **MB7** l'avis non retiré à la saisie ⇒ TB7 (AC-B10) ; **MB8** la lecture réactive de l'URL remplacée par une lecture à
 `onMount` ⇒ le cas « navigation par lien » de TB1 ; **MB9** la marque `_vatPlaceholder` ignorée par le repli (toutes les lignes
@@ -558,7 +570,14 @@ dépendre que de `Europe/Zurich`, non du poste ni du runner ; `process.env.TZ` p
 processus épinglé à `UTC` dans les tests qui lisent un horodatage). **Cas de l'expiration** (`api-keys`) : une clé créée avec
 l'expiration choisie au **31.12.2026** (réponse simulée `expiresAt: '2026-12-31T23:59:59'`) affiche « Active (expire le
 31.12.2026) » et, expirée, « Expirée le 31.12.2026 » — **jamais** `01.01.2027` ; le test est joué sous `process.env.TZ` épinglé à
-`Europe/Zurich` **et** à `UTC` (il rougit sous la conversion de `expiresAt`, mutation MC5) : un test Vitest **par écran** (liste et fiche du journal ; liste et
+`Europe/Zurich` **et** à `UTC` (il rougit sous la conversion de `expiresAt`, mutation MC5). Le cas « expirée » **fixe l'horloge** loin de
+la borne (`vi.setSystemTime(new Date('2027-01-15T12:00:00Z'))`), le cas « active » aussi (`2026-12-01T12:00:00Z`). **`isExpired`**
+(`api-keys/+page.svelte:56`, `new Date(k.expiresAt).getTime() < Date.now()`) lit aujourd'hui la valeur sans `Z` comme une heure
+**locale**, alors que le serveur compare en UTC (`repositories/api_keys.rs:134`, `k.expires_at > NOW(3)`) : il passe à la lecture
+**UTC** (`Z` ajouté, le même lecteur que les horodatages, C.1), pour que l'écran dise « expirée » au même instant que le serveur refuse
+la clé ; cas de bord, horloge à `2026-12-31T23:30:00Z` (00:30 le 01.01 à Zurich) : « Active (expire le 31.12.2026) » sous les deux
+fuseaux — la clé vaut encore jusqu'à 23:59:59 UTC (mutation MC6 : `isExpired` rendu à la lecture locale ⇒ ce cas rougit sous
+`Europe/Zurich`) : un test Vitest **par écran** (liste et fiche du journal ; liste et
 dialogue de renommage des exercices ; liste, aperçu et fiche des relevés ; dialogue de suppression et message de succès ;
 avertissements de la saisie manuelle ; propositions de rapprochement, y compris l'`aria-label` ; les trois modales ; clés
 API, quatre dates et la dernière utilisation) : `JJ.MM.AAAA` présent, `not.toContain` de l'ISO. Un écran qui porte deux
@@ -627,7 +646,7 @@ sites (p. ex. `bank-import/[id]` : `importedAt` et `bookingDate`) les lit **tous
 Mutations : **MC1** `formatSwissDate` rendu à sa forme actuelle (`split('-')`) ⇒ TC1 ; **MC2** retirer le helper d'un site
 (une mutation par écran) ⇒ son test seul ; **MC3** retirer `.map(|l| l.trim_end_matches('\r'))` de `parser.rs:95` ⇒ TC4
 rougit (il ne rougissait pas avec la fixture de 4 lignes) ; **MC4** `est_payload_spc` accepte tout préfixe `SPC` ⇒ TC3 ; **MC5** `expiresAt` passé par la conversion à Zurich ⇒ le cas du
-31.12 d'AC-C2.
+31.12 d'AC-C2 ; **MC6** `isExpired` rendu à la lecture locale ⇒ le cas de bord d'AC-C2 sous `Europe/Zurich`.
 
 ---
 
@@ -656,7 +675,10 @@ captures, commit `refs #N`, revue de code.
 ## Manuel
 
 Le PDF de chaque manuel touché est régénéré par `make fr` dans `docs/manual/`, puis contrôlé aplati **et apostrophes
-normalisées** — `pdftotext docs/manual/fr/<manuel>.pdf - | tr '\n' ' ' | tr -s ' ' | sed "s/’/'/g"` — puis `grep -F` de chaque
+normalisées et césures recollées** — `pdftotext docs/manual/fr/<manuel>.pdf - | tr '\n' ' ' | tr -s ' ' | sed "s/’/'/g" |
+sed -E 's/([[:alpha:]])- ([[:alpha:]])/\1\2/g'` (la seconde substitution recolle les mots coupés en fin de ligne, `réinitia- lisation` ;
+elle recolle aussi, rarement, un composé à trait d'union suivi d'une espace : en cas de doute, greper un fragment court sans mot
+long) — puis `grep -F` de chaque
 phrase neuve **et** de chaque phrase retirée (le PDF rend l'apostrophe typographique U+2019, le `.tex` et les phrases prescrites
 portent `'` : sans la normalisation, un `grep -F` rend 0 pour une phrase présente, ou « bien retirée » pour une phrase restée).
 
@@ -806,6 +828,19 @@ vide). La PR de release porte les `closes`.
   comparative seule à gouverner. Valeurs grepées : `self-start` (ne reste qu'en entrées datées et au cas de mutation MB3 ter),
   « ne se réactive pas », `vat_rates.rs` (pathspec), `1 à 28` → `1 à 29`. Prochaine : validation **P4** (Opus, ciblée sur cette
   remédiation, `v0172-correctifs-validate-prompt-p4.md`).
+
+- 2026-11-04 — **Validation P4 (Opus, ciblée) : 0/0/1/6** (rapport `kesh-gate-logs/v0172b-validate-p4.md`, ciblée sur la remédiation
+  P3). Tous appliqués, prémisse relue au code. **P1** (MEDIUM) — `+layout.svelte:295`, `:372` (`<div class="flex flex-1">`), `:445`
+  (`<footer>` après la ligne, dans la colonne `min-h-screen`) lus : prémisse vraie ; l'`aside` reçoit `min-h-[calc(100vh-3.5rem)]` ;
+  AC-B5 ter mesure aussi la hauteur de l'`aside` et le pied de page sous le pli, captures cadrées sur la fenêtre, avant et après ; MB3
+  quater ; référence `:371` → `:372`. LOW : **P2** — `api-keys/+page.svelte:56` et `repositories/api_keys.rs:134` lus : `isExpired` lit
+  désormais l'expiration en UTC, comme le serveur ; horloge fixée pour « expirée » et « active », cas de bord du 31.12 23:30 UTC, MC6 ;
+  **P3** — `journal-entry-page.test.ts:23-26` lu : les deux simulacres suivent la forme du modèle (fabrique `async`, import dans la
+  fabrique ; piège du hissage nommé) ; **P4** — C-v0172b-9 : « que l'écran ne propose pas » ; **P5** — C-v0172b-8 « Retenu » récrit à
+  l'état en vigueur, `self-start` marqué remplacé ; C-v0172b-10 : renvoi « ci-dessous » corrigé ; **P6** — contrôle du PDF : césures
+  recollées (`réinitia- lisation`), avec sa limite ; **P7** — état par défaut `:242-246` (`initialOpen`, `:224-227`). Valeurs grepées :
+  `:371`, `:225-227`, « qui n'existe pas », « ci-dessous », `self-start`. Prochaine : validation **P5** (Sonnet, ciblée,
+  `v0172-correctifs-validate-prompt-p5.md`).
 
 ## Dev Agent Record
 
