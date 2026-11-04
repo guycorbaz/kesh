@@ -47,7 +47,7 @@ de la date du jour — signalée comme telle — sur une facture fournisseur cr�
   jetables, base de démonstration jetable `kesh_v0172b` pour les captures.
 - **Aucune migration** (C-v0172b-21) : `ls crates/kesh-db/migrations/*.sql | wc -l` vaut **88** avant et après (recompté le
   2026-11-04 ; `docs/migrations-idempotence-audit.md:17` porte « 88 migrations »). #840 se corrige par un **verrou nommé**, non
-  par une contrainte (§ A2, C-v0172b-6) ; #876 (fiche sœur) n'ajoute qu'un **champ JSON** aux réponses d'authentification. Aucune
+  par une contrainte (§ A2, C-v0172b-6) ; #876 : sortie de la 0.17.2, fiche `v0172-session` (0.17.3). Aucune
   donnée existante n'est lue autrement, aucune n'est réécrite. `kesh_version_min_required` reste à 0.17.0 ; **le retour à la
   0.17.1 reste possible sans restauration** (aucune ligne de `_sqlx_migrations` n'est ajoutée). Pas de P5, P6, P7.
 - **Hors périmètre** (release, faits par l'orchestrateur) : bump de version Cargo, macros des manuels (`kesh-style.sty`),
@@ -739,7 +739,7 @@ donnée réécrite, **le retour à la 0.17.1 est possible sans restauration**. �
   la date du jour, **marquée « à vérifier »** jusqu'à ce que vous la confirmiez ou la changiez ; l'échéance suit la date, plus le délai
   de paiement du fournisseur s'il en a un. Une échéance antérieure à la date reste signalée.
 
-(La puce de #876 est prescrite par `v0172-session.md`.) `refs #840`, `refs #870`, `refs #851`, `refs #882`, `refs #880`, `refs #883`, `refs #885` aux commits ; **aucun mot-clé de
+(#876 est sortie de la 0.17.2 — CR #891, fiche `v0172-session`, 0.17.3 : **aucune** puce `[0.17.2]` ne la nomme.) `refs #840`, `refs #870`, `refs #851`, `refs #882`, `refs #880`, `refs #883`, `refs #885` aux commits ; **aucun mot-clé de
 fermeture** (contrôle : `git log origin/main..HEAD --format=%B | /usr/bin/grep -niE '\b(close[sd]?|fix(e[sd])?|resolve[sd]?) #[0-9]'`
 vide). La PR de release porte les `closes`.
 

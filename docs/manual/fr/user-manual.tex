@@ -820,7 +820,7 @@ Le panneau \textbf{ne bloque rien}~: la clôture garde son seul refus, l'exercic
     \item[Documents fournisseur à traiter] Des documents déposés dans le dossier d'import, avec ou sans QR-code, attendent qu'une facture en soit créée, ou d'être retirés de la liste (\S\ref{sec:import-factures}). Lien~: \emph{Ouvrir les documents à traiter}.
     \item[Écritures incohérentes] Des écritures déséquilibrées, à moins de deux lignes, datées hors de leur exercice, ou appartenant à un autre exercice mais datées dans celui-ci. Chaque écriture listée mène à sa fiche.
     \item[Exercice suivant] Aucun exercice ne suit celui-ci~: créez-le pour y passer les écritures de l'année qui vient --- et pour contre-passer vos transitoires au début de cet exercice (\S\ref{sec:transitoires}). Bouton~: \emph{Créer l'exercice suivant}, qui ouvre la création d'un exercice (administrateur et comptable).
-    \item[Factures fournisseur en brouillon] Depuis la version~0.17.0~: des factures fournisseur datées dans l'exercice sont restées en \textbf{brouillon}~: jamais validées, leur achat n'est pas en comptabilité (\S\ref{sec:brouillon-fournisseur}). Chaque brouillon listé mène à sa fiche~; lien~: \emph{Ouvrir les factures fournisseurs}.
+    \item[Factures fournisseur en brouillon] Depuis la version~0.17.0~: des factures fournisseur datées dans l'exercice sont restées en \textbf{brouillon}~: jamais validées, leur achat n'est pas en comptabilité (\S\ref{sec:brouillon-fournisseur}). Le panneau nomme les \textbf{vingt premiers} brouillons, chacun menant à sa fiche, et dit «~… et N autres~» au-delà~; le lien \emph{Ouvrir les brouillons de factures fournisseurs} ouvre la liste des factures fournisseurs \textbf{filtrée sur les brouillons, de tous les exercices} (depuis la version~0.17.2)~: son compte peut donc dépasser celui du contrôle, qui ne compte que les brouillons datés dans l'exercice.
 \end{description}
 
 \paragraph{Ce que les contrôles ne disent pas.}
@@ -1042,7 +1042,7 @@ dans la recherche. La forme imprimée sur les documents officiels,
     \item \textbf{Date de facture} : par défaut aujourd'hui.
     \item \textbf{Date d'échéance} : calculée automatiquement selon les conditions de paiement du client (modifiable).
     \item \textbf{Numéro} : généré automatiquement selon le pattern configuré (cf. \emph{Numérotation}).
-    \item \textbf{Lignes de facture} : un ou plusieurs produits avec quantité, prix, TVA, et \textbf{compte de produit}.
+    \item \textbf{Lignes de facture} : un ou plusieurs produits avec quantité, prix, TVA, et \textbf{compte de produit}. Une ligne dont le taux de TVA a été \textbf{désactivé} depuis (un brouillon ancien, un article à l'ancien taux) affiche ce taux suivi de «~(désactivé)~»~; la facture ne s'enregistre qu'avec un \textbf{taux actif}, à choisir dans la ligne. L'écran \emph{Taux de TVA} ne propose pas de réactiver un taux désactivé~: il n'offre \emph{Changer le taux} et \emph{Désactiver} que pour un taux actif.
     \item \textbf{Compte de produit (par ligne)} : le compte du plan comptable sur lequel le chiffre d'affaires de cette ligne sera crédité. Quand vous ajoutez une ligne \textbf{depuis le catalogue}, Kesh y \textbf{recopie} le compte de produit de l'article, s'il en porte un ; vous restez libre de le changer ensuite. Laissé vide, le champ suit le \textbf{compte de produit par défaut de la société} (\emph{Administration} → \emph{Facturation}) — il affiche alors ce compte entre parenthèses, pour que vous voyiez d'un coup d'œil où ira le produit. \textbf{Attention} : la recopie a lieu \textbf{une seule fois}, au moment où vous choisissez l'article ; la ligne ne reste pas liée à lui. Vider le champ d'une ligne venue du catalogue la ramène donc au compte par défaut de la société, \textbf{pas} au compte de l'article. Renseigné, il permet de \textbf{ventiler une même facture sur plusieurs comptes} : honoraires, marchandises, prestations, etc. Le compte reste \textbf{modifiable tant que la facture est un brouillon} ; il est figé à la validation.
     \item \textbf{Remarques} : texte libre apparaissant en bas de facture (mention de remerciement, conditions particulières, etc.).
 \end{itemize}
@@ -1604,12 +1604,17 @@ fournisseur au crédit). Saisissez, puis validez~: voir \S\ref{sec:brouillon-fou
 créer la facture d'un document reçu dans le dossier d'import, voir
 \S\ref{sec:import-factures}~: la même saisie s'y fait à côté du document.
 
-\paragraph{Les dates.} Sans document, la date de la facture est proposée au jour même~; à côté
-d'un document, elle est \textbf{vide} et se saisit telle qu'imprimée sur la pièce (depuis la
-version~0.17.0~: la date du jour n'est presque jamais celle d'une facture reçue). L'\textbf{échéance}
-ne peut pas précéder la date de la facture~: une échéance antérieure est signalée sous son champ,
-avec les deux dates, et la facture n'est pas enregistrée. Une échéance égale à la date, ou
-absente, est acceptée.
+\paragraph{Les dates.} La date de la facture est proposée au jour même. À côté d'un document,
+elle est de plus \textbf{marquée «~à vérifier~»}~: un avis sous le champ rappelle que la date du
+jour n'est presque jamais celle d'une facture reçue, jusqu'à ce que vous la \textbf{modifiiez} ou
+la \textbf{confirmiez} (bouton \emph{C'est la bonne date})~; l'avis ne bloque pas
+l'enregistrement (depuis la version~0.17.2, elle est proposée et signalée~; la 0.17.0 et la 0.17.1
+la laissaient vide). À la création, l'\textbf{échéance suit la date}~: la date plus le délai de
+paiement du fournisseur choisi, s'il en a un, sinon la date elle-même~; elle se recalcule quand la
+date ou le fournisseur change, tant que vous ne l'avez pas saisie --- une échéance saisie à la main
+ne bouge plus. L'échéance ne peut pas précéder la date de la facture~: une échéance antérieure est
+signalée sous son champ, avec les deux dates, et la facture n'est pas enregistrée. Une échéance
+égale à la date, ou absente, est acceptée.
 
 \paragraph{Les montants.} Quantité, prix et montant attendu s'écrivent avec un point ou une
 \textbf{virgule} décimale («~12,50~»)~: Kesh les lit tels quels et les enregistre au point. Une
@@ -1891,6 +1896,14 @@ les fait revenir. Masquer n'est pas supprimer~: l'écriture d'achat d'une factur
 contre-passation \textbf{restent au journal} et au grand livre, nettes à zéro --- c'est ce que la
 loi demande d'une correction (art.~958f CO). La 0.17.0 ne supprime aucune facture annulée.
 
+\textbf{Une liste paginée et filtrée.} Depuis la version~0.17.2, la liste montre
+\textbf{50 factures par page}, avec leur nombre et les boutons \emph{Précédent} et \emph{Suivant}~:
+chaque facture y est atteignable, si ancienne soit-elle. Elle se \textbf{filtre par statut depuis
+l'adresse}~: \texttt{/supplier-invoices?status=draft} ne montre que les brouillons (de tous les
+exercices), un bandeau le dit et son lien \emph{Afficher toutes les factures} revient à la liste
+complète~; la page et le filtre suivent l'adresse, si bien que le retour arrière du navigateur les
+retrouve.
+
 \textbf{Si la facture était payée}, son règlement \textbf{reste au grand livre}~: l'argent est
 bien sorti. Il est \textbf{détaché} de la facture et devient un \emph{paiement sans facture}~---
 au compte fournisseurs (2000), il laisse un solde débiteur, une somme que le fournisseur vous
@@ -2049,7 +2062,9 @@ revenir en échec comme doublon~: il est déjà dans la liste.
 \paragraph{Créer la facture d'un document.} Le formulaire est celui de la saisie
 (\S\ref{sec:saisie-facture-fournisseur}) --- il enregistre un \textbf{brouillon}, à valider
 ensuite depuis sa fiche (\S\ref{sec:brouillon-fournisseur}) ---, et la \textbf{date de la
-facture}, vide, se saisit telle qu'imprimée sur le document. Deux différences encore~:
+facture} est proposée au jour même, \textbf{marquée «~à vérifier~»} jusqu'à ce que vous la
+modifiiez ou la confirmiez~: corrigez-la selon la date imprimée sur le document. L'échéance suit
+la date, plus le délai de paiement du fournisseur, tant que vous ne l'avez pas saisie. Deux différences encore~:
 \begin{itemize}
     \item \textbf{Document avec QR-facture}~: l'IBAN (ou le QR-IBAN), la référence et le
           montant du QR sont affichés \textbf{en lecture seule} --- ils viennent du

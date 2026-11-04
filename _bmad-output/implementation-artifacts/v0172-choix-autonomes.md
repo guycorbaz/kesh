@@ -371,6 +371,57 @@ cas `Z` et décalage compris. « Aucun fuseau appliqué » (première rédaction
 
 ---
 
+### C-v0172b-30 — #840 : l'appariement des issues du verrou est partagé par les trois chemins d'écriture d'un relevé
+
+*Développement (Opus 5.5, 2026-11-04).*
+
+- **Contexte** : la fiche prescrit de reprendre le motif de `bank_statements_manual::create` (verrou sur une connexion dédiée,
+  création dans sa propre transaction, puis un `match` de quatre bras qui apparie les issues aux statuts). Le recopier deux fois
+  dans `bank_imports.rs` aurait fait trois copies du même `match`.
+- **Retenu** : `bank_imports::create_under_account_lock(pool, société, compte, contexte, création)` porte le verrou et le
+  `match` ; `create` (CAMT), `create_csv` et `bank_statements_manual::create` l'appellent. Comportement de la saisie manuelle
+  inchangé (ses tests E2 restent verts sans changement d'assertion) ; seul le message de trace porte désormais un champ
+  `context`. `take_account_lock` passe dans `tests/common/mod.rs`.
+- **Écartées** : recopier le `match` dans chaque chemin (DRY) ; toucher `kesh_reconciliation::mutex` (hors périmètre).
+- **Réversible** : oui.
+
+### C-v0172b-31 — #880 : un 25ᵉ site, hors de l'inventaire clos, est corrigé
+
+- **Contexte** : les tests de `ReconciliationProposals` que la fiche nomme au § 26 (`:398, :428, :542`, « figent l'ISO »)
+  portent sur le bilan d'un lot (`describeTx`, `ReconciliationProposals.svelte:120-125`), qui rend `t.bookingDate` brute dans
+  une fonction, hors du gabarit : les motifs M₁/M₂ ne lisent que les interpolations et ne le voient pas. Une sonde élargie
+  (`\.(\w*Date|\w*At|periodFrom|periodTo|settledOn|\w*On)\b` sur les 32 fichiers, appels de mise en forme et liaisons
+  exclus) ne rend aucun autre site d'affichage.
+- **Retenu** : `formatSwissDate(t.bookingDate)` ; les trois assertions mises en forme suisse, plus une négative. AC-C3 reste
+  à 20 lignes (le site n'y entrait pas). Limite déclarée : l'inventaire de la fiche n'est clos que pour les interpolations.
+- **Écartées** : le laisser (même écran, même classe de défaut, tests déjà désignés par la fiche).
+- **Réversible** : oui.
+
+### C-v0172b-32 — #851 : AC-B5 ter replie le groupe Quotidien d'un clic
+
+- **Contexte** : AC-B5 ter mesure « groupes repliés, sur `/` » ; or `/` est une entrée de Quotidien, que le `$effect`
+  d'auto-dépliage (`+layout.svelte`, route active) rouvre à chaque chargement : l'état est inatteignable par `localStorage`.
+- **Retenu** : `localStorage` à `false` pour les trois groupes, rechargement, puis un clic sur le titre de Quotidien (geste
+  de l'utilisateur) ; la mesure suit.
+- **Écartées** : mesurer sur une autre page (la fiche dit `/`).
+- **Réversible** : oui.
+
+### C-v0172b-33 — #880 : un utilitaire de test pour épingler le fuseau
+
+- **Contexte** : sept fichiers de test lisent un horodatage et doivent épingler `process.env.TZ` (AC-C2).
+- **Retenu** : `src/lib/shared/utils/pin-time-zone.test-helper.ts` (`pinTimeZone(zone)` : `beforeEach`/`afterEach`), sur le
+  précédent de `bank-accounts-page.test.ts` ; non inclus par Vitest comme fichier de test (suffixe `.test-helper.ts`).
+  Les tests qui fixent aussi l'horloge (clés d'API, formulaire fournisseur) gardent leur montage local.
+- **Réversible** : oui.
+
+### C-v0172b-34 — #870 : l'E2E compte les brouillons relativement à l'état de la base
+
+- **Contexte** : la spec `supplier-invoices.spec.ts` est seedée une fois (`beforeAll`) ; un ordre d'exécution différent ou une
+  base non remise à neuf pourrait y laisser des brouillons.
+- **Retenu** : le test lit le nombre de brouillons avant d'en créer 55, attend `avant + 55` au pied et `avant + 5` en page 2,
+  et refuse un montage au-delà de 100.
+- **Réversible** : oui.
+
 ## Story v0172-session (clé `v0172s`) — #876
 
 Fiche : `v0172-session.md`, extraite de `v0172-correctifs.md` à la validation P2 (2026-11-04). Numéros de ligne de `d7ec2ea2`.
