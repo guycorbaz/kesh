@@ -664,7 +664,6 @@ async fn import_crlf_qr_reports_present(pool: MySqlPool) {
     assert!(body["failed"].as_array().unwrap().is_empty(), "{body}");
     let entry = accepted_entry(&body, "crlf.png");
     assert_eq!(entry["qr"], "present", "{body}");
-    assert_ne!(entry["qr"], "none", "{body}");
     assert!(entry.get("qrError").is_none(), "{body}");
     let id = entry["importedSupplierInvoiceId"].as_i64().unwrap();
     let (iban, amount, name): (Option<String>, Option<String>, Option<String>) = sqlx::query_as(

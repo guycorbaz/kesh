@@ -55,6 +55,7 @@ vi.mock('$lib/features/reconciliation/reconciliation.api', () => ({
 
 import { fireEvent, waitFor } from '@testing-library/svelte';
 import Page from './+page.svelte';
+import { pinTimeZone } from '$lib/shared/utils/pin-time-zone.test-helper';
 
 function detail(): BankImportDetailResponse {
 	return {
@@ -328,8 +329,35 @@ describe('page détail — relevé saisi à la main (Story v016-2b)', () => {
 		await fireEvent.click(await findByTestId('bank-import-delete-submit'));
 		await waitFor(() =>
 			expect(notify.notifySuccess).toHaveBeenCalledWith(
-				'Relevé saisi à la main du 2026-03-02 au 2026-03-04 supprimé.',
+				'Relevé saisi à la main du 02.03.2026 au 04.03.2026 supprimé.', // v0172 (#880)
 			),
 		);
+	});
+});
+
+// v0172-correctifs (#880, AC-C2) — la fiche d'un relevé lit ses deux sortes de dates :
+// l'horodatage « Importé le » / « Saisi le » (UTC) à l'heure de Zurich, la période et les
+// transactions en forme suisse.
+describe('page détail — dates en forme suisse (v0172, #880)', () => {
+	pinTimeZone('UTC');
+
+	it('fichier : « Importé le 05.03.2026 11:00 », période 02.03.2026 → 04.03.2026, transaction 02.03.2026', async () => {
+		role.value = 'Comptable';
+		const { findAllByTestId, container } = render(Page);
+		const rows = await findAllByTestId('detail-tx-row');
+		expect(rows[0].querySelector('td')?.textContent?.trim()).toBe('02.03.2026');
+		const text = container.textContent ?? '';
+		expect(text).toMatch(/Importé le\s*05\.03\.2026 11:00/);
+		expect(text).toContain('02.03.2026 → 04.03.2026');
+		expect(text).not.toMatch(/2026-03-0\d/);
+	});
+
+	it('saisie manuelle : « Saisi le 05.03.2026 11:00 »', async () => {
+		role.value = 'Comptable';
+		getMock.mockResolvedValue({ ...detail(), sourceFormat: 'MANUAL', filename: 'saisie-manuelle-x' });
+		const { findAllByTestId, container } = render(Page);
+		await findAllByTestId('detail-tx-row');
+		expect(container.textContent).toMatch(/Saisi le\s*05\.03\.2026 11:00/);
+		expect(container.textContent).not.toMatch(/2026-03-0\d/);
 	});
 });

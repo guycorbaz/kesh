@@ -1,8 +1,11 @@
 /**
  * Story v017-4b (#849, AC-25) — les messages des refus de la dévalidation d'une
- * facture fournisseur.
+ * facture fournisseur ; Story v0172-annulees (#868, AC-8, T8) — le geste s'appelle
+ * « repasser en brouillon », et chaque refus nomme ce qu'il faut défaire d'abord (lot,
+ * transaction et sa date, écriture de paiement et sa date), à partir de `details`.
  *
- * ⚠️ Chaque test nomme la MUTATION qu'il attrape (M29 : un code rend le repli).
+ * ⚠️ Chaque test nomme la MUTATION qu'il attrape (M29 : un code rend le repli ; M11 :
+ * la date de la transaction absente du message).
  * i18nMsg rend son repli, variables substituées : les textes vérifiés sont ceux du
  * repli français, qui égale le catalogue fr-CH.
  */
@@ -30,25 +33,43 @@ function valeurFr(cle: string): string | undefined {
 		?.slice(prefixe.length);
 }
 
-const REPLI = 'La facture n’a pas pu être dévalidée.';
+/** Le gabarit fr-CH d'une clé, arguments substitués. */
+function rempli(cle: string, args: Record<string, string>): string {
+	const gabarit = valeurFr(cle);
+	expect(gabarit, cle).toBeDefined();
+	return gabarit!.replace(/\{\s*\$(\w+)\s*\}/g, (_, n) => args[n] ?? '');
+}
+
+const REPLI = 'La facture n’a pas pu repasser en brouillon.';
+
+/** Des `details` complets, tels que le serveur les rend (AC-8). */
+const DETAILS = {
+	batchId: 4,
+	transactionDate: '2026-06-17',
+	entryId: 90,
+	entryNumber: 12,
+	entryDate: '2026-06-18',
+};
 
 describe('supplierInvoiceUnvalidateMessage', () => {
 	it('chaque code de la précédence a son propre message, jamais le repli (M29)', () => {
 		const vus = new Set<string>();
 		for (const code of SUPPLIER_INVOICE_UNVALIDATE_CODES) {
-			const m = supplierInvoiceUnvalidateMessage(code, null);
+			const m = supplierInvoiceUnvalidateMessage(code, DETAILS);
 			expect(m, code).not.toBe(REPLI);
 			expect(vus.has(m), `${code} : texte en double`).toBe(false);
 			vus.add(m);
 		}
-		// La précédence de la fiche parente : trois motifs propres à la pièce, ceux de
+		// Story v0172-annulees : douze codes — cinq motifs propres à la pièce, ceux de
 		// `delete_in_tx`, plus l'état et la version.
 		expect([...SUPPLIER_INVOICE_UNVALIDATE_CODES].sort()).toEqual(
 			[
 				'SUPPLIER_INVOICE_PAID',
+				'SUPPLIER_INVOICE_PAID_RECONCILED',
 				'ILLEGAL_STATE_TRANSITION',
 				'OPTIMISTIC_LOCK_CONFLICT',
 				'SUPPLIER_INVOICE_IN_PAYMENT_BATCH',
+				'SUPPLIER_INVOICE_DETACHED_PAYMENT',
 				'MATCHED_BANK_TRANSACTION',
 				'FISCAL_YEAR_CLOSED',
 				'LATER_FISCAL_YEAR_CLOSED',
@@ -59,19 +80,53 @@ describe('supplierInvoiceUnvalidateMessage', () => {
 		);
 	});
 
-	it.each([
-		['SUPPLIER_INVOICE_PAID', 'error-supplier-invoice-unvalidate-blocked-paid'],
-		['SUPPLIER_INVOICE_IN_PAYMENT_BATCH', 'error-supplier-invoice-unvalidate-blocked-in-payment-batch'],
-		['MATCHED_BANK_TRANSACTION', 'error-supplier-invoice-unvalidate-blocked-matched'],
-	])(
-		'%s : le texte du serveur, mot pour mot le FTL fr-CH, suffixé du numéro de la pièce',
-		(code, cle) => {
-			const attendu = valeurFr(cle);
-			expect(attendu).toBeDefined();
-			expect(supplierInvoiceUnvalidateMessage(code, null)).toBe(attendu);
-			expect(supplierInvoiceUnvalidateMessage(code, 'Lot 4')).toBe(`${attendu} (Lot 4)`);
-		},
-	);
+	it('SUPPLIER_INVOICE_PAID : mot pour mot le FTL fr-CH, sans suffixe', () => {
+		const attendu = valeurFr('error-supplier-invoice-unvalidate-blocked-paid');
+		expect(attendu).toBeDefined();
+		expect(supplierInvoiceUnvalidateMessage('SUPPLIER_INVOICE_PAID', DETAILS)).toBe(attendu);
+		expect(supplierInvoiceUnvalidateMessage('SUPPLIER_INVOICE_PAID', null)).toBe(attendu);
+	});
+
+	it('SUPPLIER_INVOICE_PAID_RECONCILED : la date de la transaction, au format suisse (M11)', () => {
+		const m = supplierInvoiceUnvalidateMessage('SUPPLIER_INVOICE_PAID_RECONCILED', DETAILS);
+		expect(m).toBe(
+			rempli('error-supplier-invoice-unvalidate-blocked-paid-reconciled', { date: '17.06.2026' }),
+		);
+		expect(m).toContain('17.06.2026');
+	});
+
+	it('SUPPLIER_INVOICE_IN_PAYMENT_BATCH : le lot nommé par `batchId`', () => {
+		expect(supplierInvoiceUnvalidateMessage('SUPPLIER_INVOICE_IN_PAYMENT_BATCH', DETAILS)).toBe(
+			rempli('error-supplier-invoice-unvalidate-blocked-in-payment-batch', { batch: '4' }),
+		);
+	});
+
+	it('SUPPLIER_INVOICE_DETACHED_PAYMENT : sans date de transaction, la clé sans date', () => {
+		const sansDate = { ...DETAILS, transactionDate: null };
+		expect(supplierInvoiceUnvalidateMessage('SUPPLIER_INVOICE_DETACHED_PAYMENT', sansDate)).toBe(
+			rempli('error-supplier-invoice-unvalidate-blocked-detached-payment', {
+				entry: '12',
+				entryDate: '18.06.2026',
+			}),
+		);
+	});
+
+	it('SUPPLIER_INVOICE_DETACHED_PAYMENT : rapproché, la clé avec la date (M11)', () => {
+		const m = supplierInvoiceUnvalidateMessage('SUPPLIER_INVOICE_DETACHED_PAYMENT', DETAILS);
+		expect(m).toBe(
+			rempli('error-supplier-invoice-unvalidate-blocked-detached-payment-reconciled', {
+				entry: '12',
+				entryDate: '18.06.2026',
+				date: '17.06.2026',
+			}),
+		);
+	});
+
+	it('MATCHED_BANK_TRANSACTION : la date de la transaction (M11)', () => {
+		expect(supplierInvoiceUnvalidateMessage('MATCHED_BANK_TRANSACTION', DETAILS)).toBe(
+			rempli('error-supplier-invoice-unvalidate-blocked-matched', { date: '17.06.2026' }),
+		);
+	});
 
 	it.each([
 		['OPTIMISTIC_LOCK_CONFLICT', 'supplier-invoices-unvalidate-blocked-stale'],
@@ -85,20 +140,18 @@ describe('supplierInvoiceUnvalidateMessage', () => {
 		const attendu = valeurFr(cle);
 		expect(attendu).toBeDefined();
 		expect(supplierInvoiceUnvalidateMessage(code, null)).toBe(attendu);
-		// Le libellé n'est lu que par les motifs propres à la pièce, et par l'exercice
-		// postérieur nommé (ci-dessous).
-		if (code !== 'LATER_FISCAL_YEAR_CLOSED') {
-			expect(supplierInvoiceUnvalidateMessage(code, 'ignoré')).toBe(attendu);
-		}
+		expect(supplierInvoiceUnvalidateMessage(code, DETAILS)).toBe(attendu);
 	});
 
 	// Revue P1 (E-4) — le nom de l'exercice postérieur clos, que le serveur donne dans
 	// `details.fiscalYearName`, est repris.
 	it('LATER_FISCAL_YEAR_CLOSED nommé : le texte du catalogue, le nom substitué', () => {
-		const gabarit = valeurFr('supplier-invoices-unvalidate-blocked-later-fiscal-year-closed-named');
-		expect(gabarit).toBeDefined();
-		expect(supplierInvoiceUnvalidateMessage('LATER_FISCAL_YEAR_CLOSED', 'Exercice 2027')).toBe(
-			gabarit!.replace('{ $name }', 'Exercice 2027'),
+		expect(
+			supplierInvoiceUnvalidateMessage('LATER_FISCAL_YEAR_CLOSED', { fiscalYearName: 'Exercice 2027' }),
+		).toBe(
+			rempli('supplier-invoices-unvalidate-blocked-later-fiscal-year-closed-named', {
+				name: 'Exercice 2027',
+			}),
 		);
 	});
 
@@ -107,9 +160,15 @@ describe('supplierInvoiceUnvalidateMessage', () => {
 		expect(valeurFr('supplier-invoices-unvalidate-error')).toBe(REPLI);
 	});
 
+	it('le vocabulaire du geste : « repasser en brouillon », jamais « dévalider » (C-v0172a-20)', () => {
+		for (const code of [...SUPPLIER_INVOICE_UNVALIDATE_CODES, 'INTERNAL_ERROR']) {
+			expect(supplierInvoiceUnvalidateMessage(code, DETAILS), code).not.toMatch(/d[ée]valid/i);
+		}
+	});
+
 	it('aucun message ne nomme l’état validé « ouverte » (règle Q4)', () => {
 		for (const code of SUPPLIER_INVOICE_UNVALIDATE_CODES) {
-			expect(supplierInvoiceUnvalidateMessage(code, null)).not.toMatch(/ouvert/i);
+			expect(supplierInvoiceUnvalidateMessage(code, DETAILS)).not.toMatch(/ouvert/i);
 		}
 	});
 });

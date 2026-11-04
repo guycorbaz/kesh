@@ -210,8 +210,26 @@ const PREFIXES = [
  * ⚠️ **Revue de code P2** (2026-11-03) : **387 → 389** (+2), aux deux bornes (`f8b119e5` →
  * tête) : `supplier-invoices-unvalidate-batch-warning-undated` (B2-3) et
  * `-unvalidate-batch-warning-action` (B2-5). Aucune retirée (`-batch-warning` change de texte).
+ *
+ * ⚠️ **Story v0172-annulees** (#868, 2026-11-04) : **389 → 391** (+2), aux deux bornes
+ * (`d7ec2ea2` → tête) : `supplier-invoices-unvalidate-confirm-body-cancelled` et
+ * `supplier-invoices-unvalidated-cancelled`. Les trois autres clés neuves
+ * (`error-supplier-invoice-unvalidate-blocked-*`) sont hors de ce relevé (préfixe). Aucune
+ * retirée (dix-huit valeurs récrites, « repasser en brouillon »).
+ *
+ * ⚠️ **v0172-correctifs** (2026-11-04) : **389 → 395** (+6), aux deux bornes (`1be0f701` →
+ * tête) : `supplier-invoices-filter-status`, `-filter-show-all`, `-count-one`, `-count-other`
+ * (liste paginée et filtrée, #870), `-date-to-verify`, `-date-confirm` (date « à vérifier »,
+ * #885). Aucune retirée.
+ *
+ * ⚠️ **Remédiation de la revue de code P1 de la v0172-correctifs** (2026-11-04) : **395 → 397**
+ * (+2) : `supplier-invoices-empty-filtered`, `-empty-active` (liste vide, B-4 = E-4). Aucune
+ * retirée (`-date-to-verify` change de texte).
+ *
+ * ⚠️ **Fusion de la release 0.17.2** (2026-11-04) : les deux stories réunies, **recompté à la
+ * source** par la garde après la fusion (non additionné) : **399**.
  */
-const CLES_RELEVEES = 389;
+const CLES_RELEVEES = 399;
 
 
 /** Relève, pour chaque clé du domaine, l'ensemble de ses replis littéraux distincts. */

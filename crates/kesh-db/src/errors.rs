@@ -261,9 +261,13 @@ impl ModificationBlocker {
 /// variantes propres — `FiscalYearClosed`, `LaterFiscalYearClosed` (Story
 /// 15-12b), `EntryIsReversed`, `PeriodLocked`. La marque de lettrage
 /// (`ModificationGuard::Lettered`, Story 15-1a-ii) est tenue au même point de
-/// passage, mais elle est inatteignable par la dévalidation (une facture
-/// lettrée a un règlement ou un avoir, refusés avant) : elle parle en dernier
-/// et n'est pas comptée parmi les refus de la dévalidation (C132).
+/// passage, mais elle est inatteignable par la dévalidation d'une facture
+/// **client** (une facture lettrée a un règlement ou un avoir, refusés avant) :
+/// elle parle en dernier et n'est pas comptée parmi les refus de la
+/// dévalidation client (C132). ⚠️ Elle est en revanche **atteignable** par le
+/// repassage en brouillon d'une facture **fournisseur annulée** dont une ligne
+/// est lettrée hors des paires `reversal` de son annulation (Story
+/// v0172-annulees, AC-4 d, `ENTRY_LETTERED`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum UnvalidationBlocker {
     /// Un règlement, même **partiel**, pointe la facture.
@@ -311,30 +315,51 @@ impl UnvalidationBlocker {
     }
 }
 
-/// Ce qui empêche de **dévalider une facture fournisseur** (Story v017-4a,
-/// #849, AC-11) — les empêchements **propres à la pièce**, contrôlés par
+/// Ce qui empêche de **repasser en brouillon une facture fournisseur**
+/// (« dévalider », route `unvalidate` ; Story v017-4a, #849, AC-11 ; étendu
+/// aux factures **annulées** par la Story v0172-annulees, #868) — les
+/// empêchements **propres à la pièce**, contrôlés par
 /// `supplier_invoices::unvalidate_in_tx` avant
 /// `journal_entries::delete_in_tx`, dont les refus (exercice clos, exercice
 /// postérieur clos, écriture contre-passée, période verrouillée, lettrage)
-/// parlent ensuite avec leurs variantes propres.
+/// parlent ensuite avec leurs variantes propres. **Cinq** variantes.
 ///
-/// Précédence complète : `NotFound` → statut (`SUPPLIER_INVOICE_PAID` ;
-/// `ILLEGAL_STATE_TRANSITION`) → `OPTIMISTIC_LOCK_CONFLICT` →
-/// `SUPPLIER_INVOICE_IN_PAYMENT_BATCH` → `MATCHED_BANK_TRANSACTION` →
-/// `FISCAL_YEAR_CLOSED` → `LATER_FISCAL_YEAR_CLOSED` → `ENTRY_IS_REVERSED` →
-/// `PERIOD_LOCKED` → `ENTRY_LETTERED` — patron de sa fonction sœur
+/// Précédence (C-v0172a-19) — **composée par écriture**, non en un ordre
+/// total : `NotFound` → statut (`SUPPLIER_INVOICE_PAID` ou
+/// `SUPPLIER_INVOICE_PAID_RECONCILED` ; brouillon → `ILLEGAL_STATE_TRANSITION`)
+/// → `OPTIMISTIC_LOCK_CONFLICT` → `SUPPLIER_INVOICE_IN_PAYMENT_BATCH` →
+/// `SUPPLIER_INVOICE_DETACHED_PAYMENT` (annulée) → `MATCHED_BANK_TRANSACTION`
+/// (achat, puis contre-passation) → pré-contrôle `FISCAL_YEAR_CLOSED` (achat ou
+/// contre-passation, annulée) → les refus de `delete_in_tx` pour la
+/// **contre-passation** (annulée), puis pour l'**achat** : `FISCAL_YEAR_CLOSED`,
+/// `LATER_FISCAL_YEAR_CLOSED`, `ENTRY_IS_REVERSED` (inatteignable),
+/// `PERIOD_LOCKED`, `ENTRY_LETTERED` — patron de sa fonction sœur
 /// `invoices::unvalidate`, dont les empêchements propres à la pièce précèdent
 /// ceux de `delete_in_tx` (C-v017-4-40).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SupplierUnvalidationBlocker {
-    /// La facture est **payée** : son règlement s'annule d'abord.
+    /// La facture est **payée**, règlement non rapproché : son règlement
+    /// s'annule d'abord (bouton « Annuler le règlement » de la fiche).
     Paid,
+    /// La facture est **payée** et son écriture de règlement est **rapprochée**
+    /// d'une transaction bancaire (Story v0172-annulees, C-v0172a-6) : la fiche
+    /// refuserait l'annulation du règlement, le chemin est l'annulation du
+    /// rapprochement. `document_id` = la transaction.
+    PaidReconciled,
     /// La facture est engagée dans un lot de paiement `generated` : le fichier
     /// pain.001 est peut-être déjà à la banque. Le lot s'annule d'abord.
     InPaymentBatch,
-    /// L'écriture d'achat est **rapprochée** d'une transaction bancaire. ⚠️ La
-    /// clé étrangère `bank_transactions.matched_entry_id` est `ON DELETE SET
-    /// NULL` : sans cette garde, le lien s'effacerait en silence.
+    /// Facture **annulée alors qu'elle était payée** (Story v0172-annulees,
+    /// C-v0172a-5, AC-6) : la trace `supplier_invoice.cancelled` nomme un
+    /// paiement qui existe et n'est pas contre-passé. Repasser la facture en
+    /// brouillon lèverait le gel de ce paiement réel
+    /// (`journal_entries::modification_guard`, qui lit la facture **par son
+    /// statut** `cancelled`). `document_id` = l'écriture de paiement.
+    DetachedPayment,
+    /// L'écriture d'achat — ou, pour une annulée, sa contre-passation — est
+    /// **rapprochée** d'une transaction bancaire. ⚠️ La clé étrangère
+    /// `bank_transactions.matched_entry_id` est `ON DELETE SET NULL` : sans
+    /// cette garde, le lien s'effacerait en silence.
     MatchedBankTransaction,
 }
 
@@ -345,10 +370,33 @@ impl SupplierUnvalidationBlocker {
     pub fn code(self) -> &'static str {
         match self {
             Self::Paid => "SUPPLIER_INVOICE_PAID",
+            Self::PaidReconciled => "SUPPLIER_INVOICE_PAID_RECONCILED",
             Self::InPaymentBatch => "SUPPLIER_INVOICE_IN_PAYMENT_BATCH",
+            Self::DetachedPayment => "SUPPLIER_INVOICE_DETACHED_PAYMENT",
             Self::MatchedBankTransaction => "MATCHED_BANK_TRANSACTION",
         }
     }
+}
+
+/// Ce que nomme le message d'un refus [`SupplierUnvalidationBlocker`] (Story
+/// v0172-annulees, AC-8, C-v0172a-22) : exposé en **cinq** champs de
+/// `details`, toujours présents (`null` quand ils ne s'appliquent pas).
+///
+/// ⚠️ Le numéro d'écriture repart à 1 à chaque exercice : `entry_number` ne
+/// se lit jamais sans `entry_date`.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct SupplierUnvalidationHint {
+    /// Le lot `generated` (`InPaymentBatch`).
+    pub batch_id: Option<i64>,
+    /// Date de comptabilisation de la transaction rapprochée
+    /// (`PaidReconciled`, `MatchedBankTransaction`, `DetachedPayment` rapproché).
+    pub transaction_date: Option<chrono::NaiveDate>,
+    /// L'écriture de paiement détachée (`DetachedPayment`).
+    pub entry_id: Option<i64>,
+    /// Son numéro.
+    pub entry_number: Option<i64>,
+    /// Sa date.
+    pub entry_date: Option<chrono::NaiveDate>,
 }
 
 /// Ce qui empêche d'**annuler un règlement** (Story 25-3-a-1, #414).
@@ -1039,15 +1087,19 @@ pub enum DbError {
     #[error("Brouillon présent dans le lot de paiement {payment_batch_id}")]
     SupplierInvoiceHasPaymentBatchHistory { payment_batch_id: i64 },
 
-    /// La dévalidation d'une facture fournisseur est refusée (Story v017-4a,
-    /// AC-11) par un empêchement propre à la pièce. → **409**, avec le code du
-    /// [`SupplierUnvalidationBlocker`] ; `document_id` désigne le lot ou la
-    /// transaction bancaire, `document_label` le numéro de la facture.
-    #[error("Facture fournisseur non dévalidable ({})", .blocker.code())]
+    /// Le repassage en brouillon (« dévalidation », route `unvalidate`) d'une
+    /// facture fournisseur est refusé (Story v017-4a, AC-11 ; Story
+    /// v0172-annulees, #868, AC-8) par un empêchement propre à la pièce. →
+    /// **409**, avec le code du [`SupplierUnvalidationBlocker`] ; `document_id`
+    /// désigne le lot, la transaction bancaire ou l'écriture de paiement,
+    /// `document_label` le numéro de la facture, `hint` ce que le message nomme
+    /// (lot, date de la transaction, écriture de paiement).
+    #[error("Facture fournisseur non repassable en brouillon ({})", .blocker.code())]
     SupplierInvoiceNotUnvalidatable {
         blocker: SupplierUnvalidationBlocker,
         document_id: Option<i64>,
         document_label: Option<String>,
+        hint: SupplierUnvalidationHint,
     },
 
     /// L'écriture ne peut pas être contre-passée (Story 24-4a, #380).

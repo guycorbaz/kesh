@@ -19,6 +19,8 @@
 	import { Input } from '$lib/components/ui/input';
 	import * as Dialog from '$lib/components/ui/dialog';
 	import { i18nMsg } from '$lib/shared/utils/i18n.svelte';
+	// v0172-correctifs (#880) : date de la transaction en forme suisse.
+	import { formatSwissDate } from '$lib/features/reports/reports.api';
 	import AccountAutocomplete from '$lib/features/journal-entries/AccountAutocomplete.svelte';
 	import { isApiError } from '$lib/shared/utils/api-client';
 	import { errorMessageOf } from '$lib/shared/utils/error-message';
@@ -231,7 +233,7 @@
 		{#if proposal}
 			<div class="text-sm text-text-muted">
 				<span data-testid="split-tx-summary">
-					{proposal.transaction.bookingDate} — {proposal.transaction.amount}
+					{formatSwissDate(proposal.transaction.bookingDate)} — {proposal.transaction.amount}
 					{proposal.transaction.currency}
 				</span>
 			</div>

@@ -395,7 +395,8 @@ describe('ReconciliationProposals — refus par lot lisibles (Story 15-5c, AC3)'
 
 		const item = await findByTestId('reconciliation-failed-item');
 		const text = item.textContent ?? '';
-		expect(text).toContain('2026-05-15');
+		expect(text).toContain('15.05.2026'); // v0172 (#880) : forme suisse (était l’ISO)
+		expect(text).not.toContain('2026-05-15');
 		expect(text).toContain('100.00 CHF');
 		expect(text).toContain('ACME GMBH');
 		expect(text).toContain("aucun compte de différences d'arrondi utilisable");
@@ -425,7 +426,8 @@ describe('ReconciliationProposals — refus par lot lisibles (Story 15-5c, AC3)'
 
 		const item = await findByTestId('reconciliation-failed-item');
 		const text = item.textContent ?? '';
-		expect(text).toContain('2026-05-15');
+		expect(text).toContain('15.05.2026'); // v0172 (#880) : forme suisse (était l’ISO)
+		expect(text).not.toContain('2026-05-15');
 		expect(text).toContain('100.00 CHF');
 		expect(text).toContain('Cette transaction est déjà réconciliée.');
 		expect(text).not.toContain('RECONCILIATION_ALREADY_RECONCILED');
@@ -539,7 +541,8 @@ describe('ReconciliationProposals — refus par lot lisibles (Story 15-5c, AC3)'
 		expect(item.getAttribute('data-tx-id')).toBe('2');
 		expect(item.getAttribute('data-error-code')).toBe('BANK_TRANSACTION_NOT_FOUND');
 		const text = item.textContent ?? '';
-		expect(text).toContain('2026-05-20');
+		expect(text).toContain('20.05.2026'); // v0172 (#880) : forme suisse (était l’ISO)
+		expect(text).not.toContain('2026-05-20');
 		expect(text).toContain('250.00 CHF');
 		expect(text).not.toContain('TX #');
 		expect(text).toContain('supprimée avec son import');
@@ -1240,7 +1243,7 @@ describe('ReconciliationProposals — cases nommées et indication annoncée (St
 		await findAllByTestId('reconciliation-row');
 		const avec = getByRole('checkbox', {
 			name: libelleFr('reconciliation-labels-select-transaction', {
-				date: '2026-05-15',
+				date: '15.05.2026' /* v0172 (#880, C-v0172b-11) */,
 				amount: '100.00',
 				currency: 'CHF',
 				counterparty: 'ACME GMBH',
@@ -1249,7 +1252,7 @@ describe('ReconciliationProposals — cases nommées et indication annoncée (St
 		expect(avec.getAttribute('data-tx-id')).toBe('1');
 		const sans = getByRole('checkbox', {
 			name: libelleFr('reconciliation-labels-select-transaction', {
-				date: '2026-05-15',
+				date: '15.05.2026' /* v0172 (#880, C-v0172b-11) */,
 				amount: '50.00',
 				currency: 'CHF',
 				counterparty: 'UNKNOWN',
@@ -1266,7 +1269,7 @@ describe('ReconciliationProposals — cases nommées et indication annoncée (St
 		const { findAllByTestId, container } = render(ReconciliationProposals, { bankAccountId: 17 });
 		await findAllByTestId('reconciliation-row');
 		const attendu = libelleFr('reconciliation-labels-select-transaction-no-counterparty', {
-			date: '2026-05-15',
+			date: '15.05.2026' /* v0172 (#880, C-v0172b-11) */,
 			amount: '50.00',
 			currency: 'CHF',
 		});
@@ -1468,5 +1471,21 @@ describe('ReconciliationProposals — factures fournisseur (Story 30-1b)', () =>
 			expect(valeur, cle).toBeDefined();
 			expect(source).toContain(`'${valeur}'`);
 		}
+	});
+});
+
+// v0172-correctifs (#880, AC-C2, C-v0172b-11) — la date de la transaction en forme suisse,
+// dans la cellule et dans le nom de sa case (V19, V20 ci-dessus).
+describe('ReconciliationProposals — date de la transaction en forme suisse (v0172, #880)', () => {
+	it('la cellule de date dit 15.05.2026, jamais 2026-05-15', async () => {
+		mockApi.getProposals.mockResolvedValue({
+			proposals: [makeProposalWithCandidate(1, 101, 1.0)],
+			hasMore: false,
+		} satisfies GetProposalsResponse);
+		const { findAllByTestId } = render(ReconciliationProposals, { bankAccountId: 17 });
+		const [row] = await findAllByTestId('reconciliation-row');
+		const cells = Array.from(row.querySelectorAll('td')).map((td) => td.textContent?.trim());
+		expect(cells).toContain('15.05.2026');
+		expect(row.textContent).not.toContain('2026-05-15');
 	});
 });

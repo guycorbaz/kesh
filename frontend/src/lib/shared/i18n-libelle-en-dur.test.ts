@@ -263,8 +263,15 @@ const SUFFIXES = ['Label', 'Text', 'Display'];
  * `ecartee` ne bouge pas. *Identifiée en cherchant les suffixes `Label`, `Text`, `Display`
  * dans le diff de la story (`1d9f81a5` → tête) ; `supplierInvoiceUnvalidateMessage`,
  * `dueBeforeInvoiceDateMessage`, `formatLiveTotal` et `badgeClass` n'en portent pas.*
+ *
+ * ⚠️ **77 → 76, et la déclaration est NOMMÉE** (Story v0172-annulees, #868) : `withLabel`
+ * disparaît de `supplier-invoice-unvalidate.ts` — le message ne se suffixe plus du numéro
+ * de la facture, il nomme l'objet à défaire (AC-8) — donc `conforme` **63 → 62** ;
+ * `ecartee` ne bouge pas. *Recompté en cherchant les suffixes `Label`, `Text`, `Display`
+ * dans le diff de la story (`d7ec2ea2` → tête) : aucune déclaration neuve ne les porte
+ * (`swissDate`, `requestUnvalidate`, `supplierInvoiceUnvalidateMessage`).*
  */
-const CANDIDATES_ATTENDUES = 77;
+const CANDIDATES_ATTENDUES = 76;
 
 /** Les trois délimiteurs de littéral en JS/TS. */
 const QUOTES = ["'", '"', '`'];
@@ -781,7 +788,7 @@ describe('libellés en dur — l’angle mort #255', () => {
 			else if (c.retours.length > 0) classes.ecartee += 1;
 			else classes.conforme += 1;
 		}
-		expect(classes).toEqual({ nonAnalysee: 0, enViolation: 0, ecartee: 14, conforme: 63 });
+		expect(classes).toEqual({ nonAnalysee: 0, enViolation: 0, ecartee: 14, conforme: 62 });
 		// La somme est recalculée depuis les classes, jamais depuis le total qu'elle contrôle.
 		const somme = Object.values(classes).reduce((a, b) => a + b, 0);
 		expect(somme).toBe(CANDIDATES_ATTENDUES);

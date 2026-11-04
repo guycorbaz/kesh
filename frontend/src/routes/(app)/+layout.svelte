@@ -370,11 +370,19 @@
 
 	<!-- Corps : sidebar + contenu -->
 	<div class="flex flex-1">
-		<!-- Sidebar fixe gauche -->
+		<!-- Sidebar fixe gauche.
+		     v0172-correctifs (#851, C-v0172b-8) — la barre avait une hauteur fixe sans
+		     défilement : avec ses 33 entrées (Administrateur, mode guidé), le bas du
+		     menu sortait de la barre et, sur une page courte comme « Serveur MCP »,
+		     n'était plus atteignable. Le fond et le filet passent à un conteneur
+		     étiré par le flex et minoré à la hauteur d'avant (l'aspect est gardé, le
+		     pied de page reste sous le pli) ; la `<nav>`, collée sous l'en-tête, est
+		     bornée par une hauteur MAXIMALE et défile (`overflow-y-auto`). -->
+		<aside class="w-56 shrink-0 min-h-[calc(100vh-3.5rem)] border-r border-border bg-surface-alt">
 		<nav
 			aria-label="Navigation principale"
-			class="sticky top-14 flex h-[calc(100vh-3.5rem)] w-56 flex-col border-r border-border bg-surface-alt"
-			style="padding: var(--kesh-padding);"
+			class="sticky top-14 flex max-h-[calc(100vh-3.5rem)] flex-col overflow-y-auto"
+			style="padding: var(--kesh-padding); overscroll-behavior: auto;"
 		>
 			{#each navGroups as group, i}
 				{#if i > 0}
@@ -434,6 +442,7 @@
 				</details>
 			{/each}
 		</nav>
+		</aside>
 
 		<!-- Zone contenu fluide -->
 		<main class="flex-1 overflow-auto" style="padding: var(--kesh-padding);">

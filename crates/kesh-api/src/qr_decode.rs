@@ -5,8 +5,9 @@
 //! - **PDF** : `pdfium-render` rend chaque page → `image::DynamicImage` → `rxing`.
 //!
 //! On retient le **premier** payload commençant par `SPC` puis `0200`, lignes
-//! séparées par LF ou CR+LF (multi-QR par page, multi-page tentés dans l'ordre) puis on le parse via `parse_spc_payload`
-//! (12-5a). Le mapping des erreurs vers les codes du rapport d'import
+//! séparées par LF ou CR+LF (multi-QR par page, multi-page tentés dans l'ordre)
+//! puis on le parse via `parse_spc_payload` (12-5a). Le mapping des erreurs vers
+//! les codes du rapport d'import
 //! (`PDF_RENDER_ERROR`, `INVALID_SPC_PAYLOAD`, `INVALID_IBAN`) est consommé par
 //! `inbox_import` ; ce module expose une erreur typée. Depuis la Story 30-2a,
 //! « aucun QR » (`Ok(None)`) et ces trois erreurs font entrer le document SANS
@@ -463,6 +464,29 @@ mod tests {
     fn payload_crlf() -> String {
         build_payload(&donnees_spc_test())
             .unwrap()
+            .replace('\n', "\r\n")
+    }
+
+    /// v0172-correctifs (#883.5) — le payload de test, complet, dont la ligne de
+    /// l'IBAN porte une clé de contrôle fausse, puis en CR+LF. Le texte valide est
+    /// produit d'abord (`build_payload` valide l'IBAN des données : un IBAN faux y
+    /// ferait échouer l'`unwrap()`), l'IBAN n'est remplacé qu'ensuite.
+    fn payload_crlf_iban_invalide() -> String {
+        let lf = build_payload(&donnees_spc_test()).unwrap();
+        let lignes: Vec<&str> = lf.split('\n').collect();
+        assert!(
+            lignes.len() >= 31,
+            "montage : payload complet ({} lignes)",
+            lignes.len()
+        );
+        assert_eq!(
+            lignes
+                .iter()
+                .filter(|l| **l == "CH9300762011623852957")
+                .count(),
+            1
+        );
+        lf.replace("CH9300762011623852957", "CH9300762011623852958")
             .replace('\n', "\r\n")
     }
 
@@ -1035,6 +1059,9 @@ mod tests {
         /// Story v0171 (#854) — une QR-facture exploitable, lignes en CR+LF.
         SpcCrlf,
         /// Story v0171 (#854) — une QR-facture inexploitable, lignes en CR+LF.
+        /// v0172-correctifs (#883.5) : un payload COMPLET (plus de 31 lignes), dont
+        /// seul l'IBAN est faux — il franchit l'en-tête et le compte de lignes, si
+        /// bien qu'il éprouve la tolérance au CR+LF du parseur.
         SpcCrlfInvalide,
         /// Une image portant un QR d'un autre usage.
         NonSpc,
@@ -1053,7 +1080,7 @@ mod tests {
             Faux::Spc => qr(&build_payload(&donnees_spc_test()).unwrap()),
             Faux::SpcInvalide => qr("SPC\n0200\n1\nPAS-UN-IBAN"),
             Faux::SpcCrlf => qr(&payload_crlf()),
-            Faux::SpcCrlfInvalide => qr("SPC\r\n0200\r\n1\r\nPAS-UN-IBAN"),
+            Faux::SpcCrlfInvalide => qr(&payload_crlf_iban_invalide()),
             Faux::NonSpc => qr("https://exemple.invalid/produit/0001"),
             Faux::Erreur => Err("page illisible (simulée)".into()),
             Faux::Rien => Ok(None),
@@ -1228,17 +1255,53 @@ mod tests {
         assert_eq!(appels, vec![(0, Temps::Premier)]);
     }
 
-    /// T4 (AC-2 d) — une QR-facture CR+LF inexploitable est rendue en erreur
-    /// `InvalidSpcPayload`, comme son jumeau LF.
+    /// T4 (AC-2 d) — une QR-facture CR+LF inexploitable est rendue en erreur, sans
+    /// passer au temps suivant. v0172-correctifs (#883.5) : la fixture est un payload
+    /// complet en CR+LF dont seul l'IBAN est faux ; l'erreur attendue est donc
+    /// `InvalidIban` — ce qui exige que le parseur ait lu les lignes CR+LF jusqu'à
+    /// l'IBAN. Sous la mutation MC3 (le `trim_end_matches('\r')` de
+    /// `kesh-qrbill/src/parser.rs` retiré), l'en-tête `SPC\r` est refusé
+    /// (`InvalidSpcPayload`) et ce test rougit ; l'ancienne fixture de 4 lignes,
+    /// refusée au compte de lignes, ne l'aurait pas vu.
     #[test]
     fn v0171_t4_crlf_inexploitable() {
         let plan = [(Faux::SpcCrlfInvalide, Faux::Spc)];
         let (r, appels) = jouer(&plan, 1, 20);
         assert!(
-            matches!(r, Err(DecodeError::InvalidSpcPayload(_))),
+            matches!(r, Err(DecodeError::InvalidIban(_))),
             "{}",
             decrire(&r)
         );
         assert_eq!(appels, vec![(0, Temps::Premier)]);
+    }
+
+    /// v0172-correctifs (#883.4, C-v0172b-14) — les bornes du préfiltre
+    /// [`est_payload_spc`], figées telles qu'elles sont : en-têtes mêlés retenus, texte
+    /// vide refusé, BOM en tête refusé (la norme SIX n'en admet pas), en-têtes seuls
+    /// retenus par le préfiltre — et refusés ensuite par le parseur (trop peu de lignes).
+    #[test]
+    fn v0172_est_payload_spc_bornes() {
+        assert!(
+            est_payload_spc("SPC\r\n0200\nsuite"),
+            "en-têtes mêlés : retenu"
+        );
+        assert!(!est_payload_spc(""), "vide : refusé");
+        assert!(
+            !est_payload_spc("\u{FEFF}SPC\n0200\nsuite"),
+            "BOM en tête : refusé"
+        );
+        assert!(!est_payload_spc("SPC\r0200"), "CR seul : refusé");
+        assert!(
+            !est_payload_spc("SPC\n0100\nsuite"),
+            "autre version : refusé"
+        );
+        assert!(
+            est_payload_spc("SPC\n0200"),
+            "en-têtes sans suite : retenus"
+        );
+        assert!(matches!(
+            first_spc(&["SPC\n0200".to_string()]),
+            Err(DecodeError::InvalidSpcPayload(_))
+        ));
     }
 }

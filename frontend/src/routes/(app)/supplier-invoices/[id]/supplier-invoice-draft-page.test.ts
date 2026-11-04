@@ -196,10 +196,15 @@ describe('fiche — actions par statut et par rôle', () => {
 		['Admin', true],
 		['Comptable', true],
 		['Consultation', false],
-	])('validée (%s) : Dévalider %s ; Payer et Annuler comme avant ; libellé « Validée »', async (r, writes) => {
+	])('validée (%s) : Repasser en brouillon %s ; Payer et Annuler comme avant ; libellé « Validée »', async (r, writes) => {
 		const v = await rendered('open', r);
 		expect(v.getByTestId('supplier-invoice-status').textContent?.trim()).toBe('Validée');
 		expect(present(v, 'supplier-invoice-unvalidate')).toBe(writes);
+		if (writes) {
+			expect(v.getByTestId('supplier-invoice-unvalidate').textContent?.trim()).toBe(
+				'Repasser en brouillon',
+			);
+		}
 		expect(present(v, 'supplier-invoice-pay')).toBe(true);
 		expect(present(v, 'supplier-invoice-cancel')).toBe(writes);
 		expect(present(v, 'supplier-invoice-edit')).toBe(false);
@@ -217,24 +222,112 @@ describe('fiche — actions par statut et par rôle', () => {
 		},
 	);
 
-	// Revue P1 (A-7) : chaque statut × chaque rôle.
+	// Revue P1 (A-7) : chaque statut × chaque rôle. Story v0172-annulees (#868, AC-12,
+	// T12) : *Repasser en brouillon* s'affiche aussi sur une payée et une annulée, aux
+	// rôles qui écrivent (M10) ; jamais Modifier, Valider ni Supprimer.
 	it.each([
-		['paid', 'Admin'],
-		['paid', 'Comptable'],
-		['paid', 'Consultation'],
-		['cancelled', 'Admin'],
-		['cancelled', 'Comptable'],
-		['cancelled', 'Consultation'],
-	] as const)('%s (%s) : ni Dévalider, ni Modifier, ni Valider, ni Supprimer', async (s, r) => {
+		['paid', 'Admin', true],
+		['paid', 'Comptable', true],
+		['paid', 'Consultation', false],
+		['cancelled', 'Admin', true],
+		['cancelled', 'Comptable', true],
+		['cancelled', 'Consultation', false],
+	] as const)('%s (%s) : Repasser en brouillon %s ; ni Modifier, ni Valider, ni Supprimer', async (s, r, writes) => {
 		const v = await rendered(s, r);
-		for (const id of [
-			'supplier-invoice-unvalidate',
-			'supplier-invoice-edit',
-			'supplier-invoice-validate',
-			'supplier-invoice-delete',
-		]) {
+		expect(present(v, 'supplier-invoice-unvalidate'), 'M10').toBe(writes);
+		if (writes) {
+			expect(v.getByTestId('supplier-invoice-unvalidate').textContent?.trim()).toBe(
+				'Repasser en brouillon',
+			);
+		}
+		for (const id of ['supplier-invoice-edit', 'supplier-invoice-validate', 'supplier-invoice-delete']) {
 			expect(present(v, id), id).toBe(false);
 		}
+	});
+});
+
+describe('fiche — repasser en brouillon une payée ou une annulée (v0172-annulees, T12)', () => {
+	it('annulée : la confirmation a son propre corps (deux écritures, deux trous, TVA) ; succès propre', async () => {
+		const v = await rendered('cancelled', 'Comptable');
+		unvalidateMock.mockResolvedValue(ofStatus('draft'));
+		await fireEvent.click(v.getByTestId('supplier-invoice-unvalidate'));
+		const dialog = await v.findByTestId('supplier-invoice-unvalidate-dialog');
+		expect(dialog.textContent).toContain('Repasser la facture en brouillon ?');
+		expect(dialog.textContent).toContain('sa contre-passation seront supprimées');
+		expect(dialog.textContent).toContain('deux trous');
+		expect(dialog.textContent).toContain('TVA');
+		expect(v.getByTestId('supplier-invoice-unvalidate-confirm').textContent?.trim()).toBe(
+			'Repasser en brouillon',
+		);
+		await fireEvent.click(v.getByTestId('supplier-invoice-unvalidate-confirm'));
+		await waitFor(() => expect(unvalidateMock).toHaveBeenCalledWith(9, 3));
+		await waitFor(() =>
+			expect(v.getByTestId('supplier-invoice-status').textContent?.trim()).toBe('Brouillon'),
+		);
+		expect(notifySuccess).toHaveBeenCalledWith(
+			'Facture repassée en brouillon : son écriture d\'achat et sa contre-passation ont été supprimées.',
+		);
+	});
+
+	it('validée : la confirmation garde son corps, sans les deux trous', async () => {
+		const v = await rendered('open', 'Comptable');
+		await fireEvent.click(v.getByTestId('supplier-invoice-unvalidate'));
+		const dialog = await v.findByTestId('supplier-invoice-unvalidate-dialog');
+		expect(dialog.textContent).toContain('un trou');
+		expect(dialog.textContent).not.toContain('deux trous');
+	});
+
+	it('payée : appel direct, sans boîte ; le refus rapproché dit la date de la transaction', async () => {
+		const v = await rendered('paid', 'Comptable');
+		unvalidateMock.mockRejectedValue({
+			code: 'SUPPLIER_INVOICE_PAID_RECONCILED',
+			status: 409,
+			message: 'serveur',
+			details: {
+				documentId: 77,
+				documentNumber: 'FF-9',
+				batchId: null,
+				transactionDate: '2026-06-17',
+				entryId: null,
+				entryNumber: null,
+				entryDate: null,
+			},
+		});
+		getMock.mockResolvedValue(ofStatus('paid'));
+		await fireEvent.click(v.getByTestId('supplier-invoice-unvalidate'));
+		await waitFor(() => expect(unvalidateMock).toHaveBeenCalledWith(9, 3));
+		expect(v.queryByTestId('supplier-invoice-unvalidate-dialog')).toBeNull();
+		const err = await v.findByTestId('supplier-invoice-unvalidate-error');
+		expect(err.textContent?.trim()).toBe(
+			'Cette facture fournisseur est payée par la transaction bancaire du 17.06.2026 : annulez d\'abord ce rapprochement, depuis le détail de l\'import bancaire — elle redeviendra validée —, puis repassez-la en brouillon.',
+		);
+		// La fiche se relit (`isStaleState`).
+		await waitFor(() => expect(getMock).toHaveBeenCalledTimes(2));
+	});
+
+	it('annulée qui avait été payée : le refus nomme le paiement et sa date', async () => {
+		const v = await rendered('cancelled', 'Comptable');
+		unvalidateMock.mockRejectedValue({
+			code: 'SUPPLIER_INVOICE_DETACHED_PAYMENT',
+			status: 409,
+			message: 'serveur',
+			details: {
+				documentId: 90,
+				documentNumber: 'FF-9',
+				batchId: null,
+				transactionDate: null,
+				entryId: 90,
+				entryNumber: 12,
+				entryDate: '2026-06-18',
+			},
+		});
+		await fireEvent.click(v.getByTestId('supplier-invoice-unvalidate'));
+		await v.findByTestId('supplier-invoice-unvalidate-dialog');
+		await fireEvent.click(v.getByTestId('supplier-invoice-unvalidate-confirm'));
+		const err = await v.findByTestId('supplier-invoice-unvalidate-error');
+		expect(err.textContent?.trim()).toBe(
+			'Cette facture a été annulée alors qu\'elle était payée : son paiement (écriture n° 12 du 18.06.2026) reste au grand livre. Si ce paiement n\'a pas eu lieu, contre-passez-le d\'abord depuis sa fiche, puis repassez la facture en brouillon.',
+		);
 	});
 });
 
@@ -286,20 +379,28 @@ describe('fiche — les gestes du cycle', () => {
 		);
 	});
 
-	it('un refus de la dévalidation dit son motif, suffixé du numéro de la pièce (AC-25)', async () => {
+	it('un refus du repassage en brouillon dit son motif et nomme le lot (AC-25 ; v0172-annulees, AC-8)', async () => {
 		const v = await rendered('open', 'Comptable');
 		unvalidateMock.mockRejectedValue({
 			code: 'SUPPLIER_INVOICE_IN_PAYMENT_BATCH',
 			status: 409,
 			message: 'serveur',
-			details: { documentId: 4, documentNumber: 'Lot 4' },
+			details: {
+				documentId: 4,
+				documentNumber: 'FF-9',
+				batchId: 4,
+				transactionDate: null,
+				entryId: null,
+				entryNumber: null,
+				entryDate: null,
+			},
 		});
 		await fireEvent.click(v.getByTestId('supplier-invoice-unvalidate'));
 		await v.findByTestId('supplier-invoice-unvalidate-dialog');
 		await fireEvent.click(v.getByTestId('supplier-invoice-unvalidate-confirm'));
 		await waitFor(() =>
 			expect(v.getByTestId('supplier-invoice-unvalidate-error').textContent?.trim()).toBe(
-				'Cette facture figure dans un lot de paiement en cours : annulez d\'abord le lot. (Lot 4)',
+				'Cette facture figure dans le lot de paiement n° 4, en cours : annulez d\'abord ce lot, dans Paiements fournisseurs, puis repassez-la en brouillon.',
 			),
 		);
 	});
@@ -395,7 +496,7 @@ describe('fiche — refus d’écran périmé et lot confirmé (revue P1)', () =
 		);
 		expect(v.queryByTestId('supplier-invoice-pay')).toBeNull();
 		expect(v.getByTestId('supplier-invoice-unvalidate-error').textContent?.trim()).toBe(
-			"Cette facture fournisseur est payée : annulez d'abord son règlement.",
+			"Cette facture fournisseur est payée : annulez d'abord son règlement (bouton « Annuler le règlement » de cette fiche), puis repassez-la en brouillon.",
 		);
 	});
 
@@ -572,7 +673,7 @@ describe('fiche — refus d’écran périmé et lot confirmé (revue P1)', () =
 		await fireEvent.click(v.getByTestId('supplier-invoice-unvalidate-confirm'));
 		const err = await v.findByTestId('supplier-invoice-unvalidate-error');
 		expect(err.textContent?.trim()).toBe(
-			'L’exercice postérieur « Exercice 2027 » est clôturé : pour pouvoir dévalider cette facture, un administrateur doit rouvrir les exercices postérieurs clôturés, en commençant par le plus récent.',
+			'L’exercice postérieur « Exercice 2027 » est clôturé : pour pouvoir repasser cette facture en brouillon, un administrateur doit rouvrir les exercices postérieurs clôturés, en commençant par le plus récent.',
 		);
 	});
 });

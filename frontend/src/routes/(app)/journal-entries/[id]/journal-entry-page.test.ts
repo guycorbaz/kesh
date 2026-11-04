@@ -639,3 +639,13 @@ describe('fiche d’écriture — le document de la facture fournisseur (30-2c, 
 		vi.restoreAllMocks();
 	});
 });
+
+// v0172-correctifs (#880, AC-C2) — la date de l'écriture, en forme suisse sur la fiche.
+describe('fiche d’écriture — date en forme suisse (v0172, #880)', () => {
+	it('« Date » 04.03.2026, jamais 2026-03-04', async () => {
+		await renderEntry(entry());
+		const main = document.body.textContent ?? '';
+		expect(main).toMatch(/Date\s*04\.03\.2026/);
+		expect(main).not.toContain('2026-03-04');
+	});
+});

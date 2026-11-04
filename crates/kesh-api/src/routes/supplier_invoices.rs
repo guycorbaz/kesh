@@ -6,7 +6,7 @@
 //! - `PUT    /api/v1/supplier-invoices/{id}`     modifier un brouillon (Comptable+, v017-4a)
 //! - `DELETE /api/v1/supplier-invoices/{id}`     supprimer un brouillon (Admin, v017-4a)
 //! - `POST   /api/v1/supplier-invoices/{id}/validate`   valider (Comptable+, v017-4a)
-//! - `POST   /api/v1/supplier-invoices/{id}/unvalidate` dévalider (Comptable+, v017-4a)
+//! - `POST   /api/v1/supplier-invoices/{id}/unvalidate` repasser en brouillon, validée ou annulée (Comptable+, v017-4a, v0172)
 //! - `POST   /api/v1/supplier-invoices/{id}/pay` régler binaire (Comptable+)
 //! - `POST   /api/v1/supplier-invoices/{id}/cancel` annuler, même payée (Comptable+)
 //!
@@ -883,11 +883,16 @@ pub async fn validate_supplier_invoice(
     ))
 }
 
-/// `POST /api/v1/supplier-invoices/{id}/unvalidate` `{version}` — dévalide une
-/// facture validée : son écriture d'achat est **supprimée**, elle redevient
-/// brouillon (Comptable+, clés `read-write` ; Story v017-4a, #849, AC-11 ; la
-/// règle de la facture client). Précédence des refus : doc-comment de
-/// `supplier_invoices::unvalidate_in_tx`. Réponse : la facture relue.
+/// `POST /api/v1/supplier-invoices/{id}/unvalidate` `{version}` — repasse en
+/// brouillon (« dévalide ») une facture validée : son écriture d'achat est
+/// **supprimée**, elle redevient brouillon (Comptable+, clés `read-write` ;
+/// Story v017-4a, #849, AC-11 ; la règle de la facture client). Depuis la
+/// Story v0172-annulees (#868), une facture **annulée** aussi : son achat **et**
+/// sa contre-passation sont supprimés. Précédence des refus, et les cinq
+/// champs neufs de `details` (`batchId`, `transactionDate`, `entryId`,
+/// `entryNumber`, `entryDate`) : doc-comment de
+/// `supplier_invoices::unvalidate_in_tx` et `docs/api-external.md`. Réponse :
+/// la facture relue.
 ///
 /// ⚠️ **Rejouée sur interblocage** par l'enveloppe `DbError`
 /// [`kesh_db::retry::retry_on_deadlock`].

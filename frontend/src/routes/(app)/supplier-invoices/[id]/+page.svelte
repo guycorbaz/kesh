@@ -7,12 +7,17 @@
 	 * - **brouillon** : *Modifier* (page d'édition), *Valider* (l'écriture d'achat est
 	 *   passée), *Supprimer le brouillon* (Administrateur seul) ; ni *Payer* ni *Annuler
 	 *   la facture* — rien n'est au journal ;
-	 * - **validée** (`open`) : *Dévalider* (l'écriture d'achat est supprimée, la facture
-	 *   redevient modifiable), plus *Payer* et *Annuler* comme avant ;
-	 * - **payée**, **annulée** : inchangées.
+	 * - **validée** (`open`) : *Repasser en brouillon* (l'écriture d'achat est supprimée, la
+	 *   facture redevient modifiable), plus *Payer* et *Annuler* comme avant ;
+	 * - **payée**, **annulée** : Story v0172-annulees (#868, AC-12) — *Repasser en brouillon*
+	 *   s'y affiche aussi. Annulée : une confirmation propre (achat et contre-passation
+	 *   supprimés, deux trous, totaux de deux périodes). Payée : appel direct, sans boîte —
+	 *   le serveur refuse au rang 1, avant toute écriture, et le refus dit quoi faire d'abord
+	 *   (annuler le règlement, ou le rapprochement).
 	 * Un lien « Voir l'écriture d'achat » s'affiche dès qu'il y en a une. Les refus de la
 	 * validation et de la suppression s'affichent sous leur bouton par le message du
-	 * serveur ; ceux de la dévalidation par `supplierInvoiceUnvalidateMessage` (AC-25).
+	 * serveur ; ceux du repassage en brouillon par `supplierInvoiceUnvalidateMessage`
+	 * (AC-25 ; v0172-annulees, AC-8).
 	 */
 	import { onMount } from 'svelte';
 	import { goto } from '$app/navigation';
@@ -30,7 +35,10 @@
 	} from '$lib/features/supplier-invoices/supplier-invoices.api';
 	import { supplierSettlementCancelMessage } from '$lib/features/supplier-invoices/settlement-cancel';
 	import { supplierInvoiceCancelMessage } from '$lib/features/supplier-invoices/invoice-cancel';
-	import { supplierInvoiceUnvalidateMessage } from '$lib/features/supplier-invoices/supplier-invoice-unvalidate';
+	import {
+		supplierInvoiceUnvalidateMessage,
+		type SupplierInvoiceUnvalidateDetails,
+	} from '$lib/features/supplier-invoices/supplier-invoice-unvalidate';
 	import { authState } from '$lib/app/stores/auth.svelte';
 	import { supplierInvoiceStatusLabel } from '$lib/features/supplier-invoices/supplier-invoice-helpers';
 	// Story v017-3b (#687, C-v017-3-27) — la fiche est la seule page aux décimales
@@ -108,8 +116,9 @@
 	let cancelling = $state(false);
 	let cancelError = $state('');
 
-	// Story v017-4b (#849, AC-22) — valider, dévalider, supprimer le brouillon. Chaque
-	// geste a sa confirmation (dialogue) et son refus, affiché sous son bouton, jamais
+	// Story v017-4b (#849, AC-22) — valider, repasser en brouillon, supprimer le brouillon.
+	// Chaque geste a sa confirmation (dialogue ; sauf repasser une payée en brouillon,
+	// v0172-annulees) et son refus, affiché sous son bouton, jamais
 	// dans `errorMsg`.
 	const isAdmin = $derived(authState.currentUser?.role === 'Admin');
 	let validateOpen = $state(false);
@@ -295,19 +304,23 @@
 	function isStaleState(err: unknown): boolean {
 		// Revue P1 (B-3, E-3) : `SUPPLIER_INVOICE_PAID` (dévalider une facture payée
 		// entre-temps) et `SUPPLIER_INVOICE_MUST_BE_UNVALIDATED_FIRST` (supprimer un
-		// « brouillon » validé entre-temps) disent eux aussi l'écran périmé.
+		// « brouillon » validé entre-temps) disent eux aussi l'écran périmé. Story
+		// v0172-annulees (AC-12) : les deux refus neufs relisent la facture comme
+		// `SUPPLIER_INVOICE_PAID`.
 		return (
 			isApiError(err) &&
 			(err.code === 'ILLEGAL_STATE_TRANSITION' ||
 				err.code === 'OPTIMISTIC_LOCK_CONFLICT' ||
 				err.code === 'SUPPLIER_INVOICE_PAID' ||
+				err.code === 'SUPPLIER_INVOICE_PAID_RECONCILED' ||
+				err.code === 'SUPPLIER_INVOICE_DETACHED_PAYMENT' ||
 				err.code === 'SUPPLIER_INVOICE_MUST_BE_UNVALIDATED_FIRST')
 		);
 	}
 
 	/**
 	 * Efface les refus des gestes du cycle (revue P1, B-2) : au début de **tout geste qui
-	 * change le statut** — valider, dévalider, supprimer, et (revue P2, B2-2 = A2-2 = E2-1)
+	 * change le statut** — valider, repasser en brouillon, supprimer, et (revue P2, B2-2 = A2-2 = E2-1)
 	 * payer, annuler le règlement, annuler la facture. Les refus sont rendus hors des blocs
 	 * de statut : rien d'autre ne les masque.
 	 */
@@ -338,7 +351,7 @@
 		);
 	}
 
-	/** La consigne, pour les seuls rôles qui peuvent dévalider (revue P2, B2-5). */
+	/** La consigne, pour les seuls rôles qui peuvent repasser en brouillon (revue P2, B2-5). */
 	function confirmedBatchAction(): string {
 		return i18nMsg(
 			'supplier-invoices-unvalidate-batch-warning-action',
@@ -374,35 +387,53 @@
 	}
 
 	/**
-	 * Dévalide la facture (Story v017-4b, AC-22) : son écriture d'achat est supprimée, elle
-	 * redevient un brouillon modifiable. Un refus dit son motif
-	 * (`supplierInvoiceUnvalidateMessage`, AC-25), suffixé du numéro du document qui
-	 * empêche.
+	 * Le clic sur *Repasser en brouillon* (Story v0172-annulees, AC-12, C-v0172a-21) :
+	 * validée ou annulée, la confirmation s'ouvre ; **payée**, l'appel part directement,
+	 * sans boîte — aucune suppression ne peut suivre (le serveur refuse le statut `paid` au
+	 * rang 1 ; une facture redevenue validée ailleurs a changé de version et rend
+	 * `OPTIMISTIC_LOCK_CONFLICT`), et le refus dit quoi faire d'abord.
+	 */
+	function requestUnvalidate() {
+		if (invoice?.status === 'paid') {
+			void confirmUnvalidate();
+		} else {
+			unvalidateOpen = true;
+		}
+	}
+
+	/**
+	 * Repasse la facture en brouillon (Story v017-4b, AC-22 ; v0172-annulees, AC-12) : son
+	 * écriture d'achat — et, annulée, sa contre-passation — est supprimée, elle redevient un
+	 * brouillon modifiable. Un refus dit son motif et nomme l'objet à défaire
+	 * (`supplierInvoiceUnvalidateMessage`, AC-25, AC-8), à partir de `details`.
 	 */
 	async function confirmUnvalidate() {
 		if (!invoice || unvalidating) return;
 		unvalidating = true;
 		clearCycleErrors();
+		const wasCancelled = invoice.status === 'cancelled';
 		try {
 			invoice = await unvalidateSupplierInvoice(invoice.id, invoice.version);
 			unvalidateOpen = false;
 			notifySuccess(
-				i18nMsg(
-					'supplier-invoices-unvalidated',
-					"Facture dévalidée : son écriture d'achat a été supprimée, elle est de nouveau un brouillon.",
-				),
+				wasCancelled
+					? i18nMsg(
+							'supplier-invoices-unvalidated-cancelled',
+							"Facture repassée en brouillon : son écriture d'achat et sa contre-passation ont été supprimées.",
+						)
+					: i18nMsg(
+							'supplier-invoices-unvalidated',
+							"Facture repassée en brouillon : son écriture d'achat a été supprimée.",
+						),
 			);
 		} catch (err) {
 			unvalidateOpen = false;
 			if (isApiError(err)) {
-				// `label` : le numéro du document qui empêche (trois motifs propres à la
-				// pièce) ; ou, revue P1 (E-4), le nom de l'exercice postérieur clos.
-				const d = err.details as
-					| { documentNumber?: string | null; fiscalYearName?: string | null }
-					| undefined;
+				// `details` : le lot, la transaction, l'écriture de paiement (AC-8) ; ou,
+				// revue P1 (E-4), le nom de l'exercice postérieur clos.
 				unvalidateError = supplierInvoiceUnvalidateMessage(
 					err.code,
-					d?.documentNumber ?? d?.fiscalYearName ?? null,
+					(err.details as SupplierInvoiceUnvalidateDetails | undefined) ?? null,
 				);
 			} else {
 				unvalidateError = supplierInvoiceUnvalidateMessage('', null);
@@ -647,16 +678,18 @@
 				</div>
 			{/if}
 		</div>
-	{:else if invoice.status === 'open' && (canManage || invoice.lastConfirmedBatch)}
-		<!-- Story v017-4b (#849, AC-22) : dévalider — Administrateur et Comptable. L'écran
-		     ne rejoue pas les empêchements : le serveur refuse, la fiche dit le motif.
+	{:else if (invoice.status === 'open' && (canManage || invoice.lastConfirmedBatch)) || ((invoice.status === 'paid' || invoice.status === 'cancelled') && canManage)}
+		<!-- Story v017-4b (#849, AC-22) : repasser en brouillon — Administrateur et
+		     Comptable. Story v0172-annulees (#868, AC-12, C-v0172a-8) : aussi sur une payée et
+		     une annulée. L'écran ne rejoue pas les empêchements : le serveur refuse, la fiche
+		     dit le motif et quoi faire d'abord.
 		     Revue P1 (E-2 = A-1, limite L4), reprise en P2 (B2-1, B2-5) : une facture qui
-		     figure dans un lot CONFIRMÉ se dévalide ; la fiche nomme ce lot (un fait
-		     historique, à tous les rôles) et, aux rôles qui dévalident, dit de vérifier le
+		     figure dans un lot CONFIRMÉ repasse en brouillon ; la fiche nomme ce lot (un fait
+		     historique, à tous les rôles) et, aux rôles qui écrivent, dit de vérifier le
 		     relevé avant de changer le montant — risque de double paiement. Sans geste ni
 		     lot, aucun bloc (P2, A2-4 = E2-3). -->
 		<div class="mb-6 space-y-2" data-testid="supplier-invoice-unvalidate-block">
-			{#if invoice.lastConfirmedBatch}
+			{#if invoice.status === 'open' && invoice.lastConfirmedBatch}
 				<p
 					class="rounded-md border border-warning bg-warning/10 px-3 py-2 text-sm"
 					role="note"
@@ -671,9 +704,9 @@
 					variant="outline"
 					data-testid="supplier-invoice-unvalidate"
 					disabled={unvalidating}
-					onclick={() => (unvalidateOpen = true)}
+					onclick={requestUnvalidate}
 				>
-					{i18nMsg('supplier-invoices-unvalidate', 'Dévalider')}
+					{i18nMsg('supplier-invoices-unvalidate', 'Repasser en brouillon')}
 				</Button>
 			{/if}
 		</div>
@@ -974,7 +1007,7 @@
 		<p class="text-sm">
 			{i18nMsg(
 				'supplier-invoices-validate-confirm-body',
-				'L’écriture d’achat sera passée au journal, datée du jour de la facture. Validée, la facture peut être payée ; pour la corriger ensuite, il faudra la dévalider.',
+				'L’écriture d’achat sera passée au journal, datée du jour de la facture. Validée, la facture peut être payée ; pour la corriger ensuite, il faudra la repasser en brouillon.',
 			)}
 		</p>
 		<Dialog.Footer>
@@ -991,13 +1024,22 @@
 <Dialog.Root bind:open={unvalidateOpen}>
 	<Dialog.Content data-testid="supplier-invoice-unvalidate-dialog">
 		<Dialog.Header>
-			<Dialog.Title>{i18nMsg('supplier-invoices-unvalidate-confirm-title', 'Dévalider la facture ?')}</Dialog.Title>
+			<Dialog.Title>{i18nMsg('supplier-invoices-unvalidate-confirm-title', 'Repasser la facture en brouillon ?')}</Dialog.Title>
 		</Dialog.Header>
-		<p class="text-sm">
-			{i18nMsg(
-				'supplier-invoices-unvalidate-confirm-body',
-				'Son écriture d’achat sera supprimée du journal, et la numérotation des écritures gardera un trou. La facture redeviendra un brouillon modifiable, à valider de nouveau.',
-			)}
+		<!-- Story v0172-annulees (AC-12) : une annulée a son propre corps — deux écritures,
+		     deux trous, les totaux de deux périodes (V2-5). -->
+		<p class="text-sm" data-testid="supplier-invoice-unvalidate-dialog-body">
+			{#if invoice?.status === 'cancelled'}
+				{i18nMsg(
+					'supplier-invoices-unvalidate-confirm-body-cancelled',
+					'Son écriture d’achat et sa contre-passation seront supprimées du journal, et la numérotation des écritures gardera deux trous ; le journal d’audit garde les deux écritures. Les totaux de la période de l’achat et de celle de l’annulation changeront, TVA comprise : si l’une a déjà été déclarée, faites d’abord verrouiller la période. La facture redeviendra un brouillon modifiable — à valider de nouveau, ou à supprimer.',
+				)}
+			{:else}
+				{i18nMsg(
+					'supplier-invoices-unvalidate-confirm-body',
+					'Son écriture d’achat sera supprimée du journal, et la numérotation des écritures gardera un trou. La facture redeviendra un brouillon modifiable, à valider de nouveau.',
+				)}
+			{/if}
 		</p>
 		<!-- Revue P1 (E-2 = A-1, L4) : la confirmation rappelle le lot confirmé. -->
 		{#if invoice?.lastConfirmedBatch}
@@ -1020,7 +1062,7 @@
 				disabled={unvalidating}
 				onclick={confirmUnvalidate}
 			>
-				{i18nMsg('supplier-invoices-unvalidate', 'Dévalider')}
+				{i18nMsg('supplier-invoices-unvalidate', 'Repasser en brouillon')}
 			</Button>
 		</Dialog.Footer>
 	</Dialog.Content>

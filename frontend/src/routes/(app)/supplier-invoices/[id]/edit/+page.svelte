@@ -2,7 +2,7 @@
   Story v017-4b (#849, AC-23) — modifier un brouillon de facture fournisseur.
 
   La page charge la facture ; si elle n'est pas un brouillon, elle renvoie à sa fiche avec
-  un message (une facture validée se dévalide d'abord). Sinon elle rend
+  un message (une facture validée ou annulée se repasse d'abord en brouillon). Sinon elle rend
   `SupplierInvoiceForm` **pré-rempli** (`initial`) ; l'enregistrement envoie le `PUT` avec
   la `version` lue, puis va à la fiche.
 
@@ -85,7 +85,7 @@
 				notifyWarning(
 					i18nMsg(
 						'supplier-invoices-edit-not-draft',
-						'Seul un brouillon se modifie : dévalidez d’abord la facture.',
+						'Seul un brouillon se modifie : repassez d’abord la facture en brouillon.',
 					),
 				);
 				await goto(`/supplier-invoices/${id}`);

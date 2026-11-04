@@ -265,3 +265,20 @@ describe('TransactionSplitModal — soumission rejetée (Story 28-2, B14)', () =
 		expect(await r.findByTestId('split-bank-not-configured')).toBeTruthy();
 	});
 });
+
+// v0172-correctifs (#880, AC-C2) — le rappel de la transaction dit sa date en forme suisse.
+describe('TransactionSplitModal — date en forme suisse (v0172, #880)', () => {
+	it('le rappel dit 31.05.2026, jamais 2026-05-31', async () => {
+		const { findByTestId } = render(TransactionSplitModal, {
+			open: true,
+			onOpenChange: () => {},
+			bankAccountId: 17,
+			proposal: makeProposal(),
+			accounts: makeAccounts(),
+			onSuccess: () => {},
+		});
+		const summary = await findByTestId('split-tx-summary');
+		expect(summary.textContent).toContain('31.05.2026');
+		expect(summary.textContent).not.toContain('2026-05-31');
+	});
+});

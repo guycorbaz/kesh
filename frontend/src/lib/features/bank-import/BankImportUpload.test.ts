@@ -38,6 +38,7 @@ import type {
 } from './bank-import.types';
 import type { BankProfile } from './bank-profile.types';
 import type { ApiError } from '$lib/shared/types/api';
+import { pinTimeZone } from '$lib/shared/utils/pin-time-zone.test-helper';
 
 const mockApi = vi.mocked(api);
 const mockProfileApi = vi.mocked(profileApi);
@@ -439,6 +440,26 @@ describe('BankImportUpload — séquence, compte et confirmation (Story 27-3)', 
 
 		pending.resolve({ id: 1 } as BankImportResponse);
 		await flush();
+	});
+
+	it('TA8 (#840, AC-A10) — 409 RECONCILIATION_ACCOUNT_LOCKED : le message s’affiche, rien n’est recalculé', async () => {
+		// Depuis la 0.17.2, l'import attend le verrou du compte ; au-delà de
+		// 5 s, le serveur rend ce 409. Il prend le chemin d'erreur générique
+		// (`setError`), non celui de BANK_IMPORT_PREVIEW_STALE.
+		const { c, onSuccess } = await mount();
+		await previewWithA(c);
+		mockApi.createBankImport.mockRejectedValueOnce(
+			apiError('RECONCILIATION_ACCOUNT_LOCKED', 409, { bankAccountId: 1, timeoutSecs: 5 }),
+		);
+		await confirm(c);
+
+		const alert = get(c, 'bank-import-error');
+		expect(alert.getAttribute('data-error-code')).toBe('RECONCILIATION_ACCOUNT_LOCKED');
+		expect(alert.textContent).toContain('message RECONCILIATION_ACCOUNT_LOCKED');
+		expect(get<HTMLButtonElement>(c, 'bank-import-confirm').disabled).toBe(false);
+		expect(get(c, 'bank-import-preview').textContent).toContain('tx-A');
+		expect(mockApi.previewBankImport, 'aucun recalcul sur ce 409').toHaveBeenCalledTimes(1);
+		expect(onSuccess).not.toHaveBeenCalled();
 	});
 
 	it('V14 — confirmation rejetée autrement qu’en 409 : l’écran n’est pas figé', async () => {
@@ -846,5 +867,21 @@ describe('Écran d’import — libellés traduits (Story 27-3, AC17)', () => {
 		for (const key of KEYS) expect(all, key).toContain(key);
 		for (const text of FR_TEXTS) expect(all, text).not.toContain(text);
 		expect(all).not.toMatch(FR_WHOLE);
+	});
+});
+
+// v0172-correctifs (#880, AC-C2) — l'aperçu : période et dates des transactions en forme
+// suisse ; l'horodatage du relevé déjà importé (UTC, avec `Z`) à l'heure de Zurich.
+describe('BankImportUpload — dates de l’aperçu en forme suisse (v0172, #880)', () => {
+	pinTimeZone('UTC');
+
+	it('période 01.01.2026 → 31.01.2026, transaction 01.01.2026, déjà importé le 02.01.2026 01:00 ; aucune date ISO', async () => {
+		const { c } = await mount();
+		await previewWithA(c, { warnings: DUPLICATE_FILE });
+		const text = get(c, 'bank-import-preview').textContent ?? '';
+		expect(text).toContain('01.01.2026 → 31.01.2026');
+		expect(get(c, 'preview-tx-row').textContent).toContain('01.01.2026');
+		expect(c.textContent).toContain('02.01.2026 01:00');
+		expect(c.textContent).not.toMatch(/2026-0\d-\d{2}/);
 	});
 });

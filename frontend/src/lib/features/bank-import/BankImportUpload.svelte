@@ -34,6 +34,8 @@
 	import BankProfileSelector from './BankProfileSelector.svelte';
 	import { isApiError } from '$lib/shared/utils/api-client';
 	import { i18nMsg } from '$lib/shared/utils/i18n.svelte';
+	// v0172-correctifs (#880) : dates en forme suisse, horodatage à l'heure de Zurich.
+	import { formatSwissDate, formatSwissDateTime } from '$lib/features/reports/reports.api';
 	import {
 		bankAccountOptionLabel,
 		type BankAccountOptionSource,
@@ -510,7 +512,11 @@
 				<dt>{i18nMsg('bank-import-labels-iban', 'IBAN')}</dt>
 				<dd data-testid="preview-iban">{preview.selectedStatement.accountIban}</dd>
 				<dt>{i18nMsg('bank-import-labels-period', 'Période')}</dt>
-				<dd>{preview.selectedStatement.periodFrom} → {preview.selectedStatement.periodTo}</dd>
+				<dd>
+					{formatSwissDate(preview.selectedStatement.periodFrom)} → {formatSwissDate(
+						preview.selectedStatement.periodTo,
+					)}
+				</dd>
 				<dt>{i18nMsg('bank-import-labels-currency', 'Devise')}</dt>
 				<dd>{preview.selectedStatement.currency}</dd>
 				<dt>{i18nMsg('bank-import-labels-opening-balance', 'Solde ouverture')}</dt>
@@ -541,7 +547,7 @@
 						>
 							{preview.warnings.duplicateFile.existingFilename}
 						</a>
-						— {preview.warnings.duplicateFile.existingImportedAt}
+						— {formatSwissDateTime(preview.warnings.duplicateFile.existingImportedAt)}
 					</p>
 					<label class="mt-2 flex items-center gap-2 text-sm">
 						<input
@@ -796,7 +802,7 @@
 				<tbody>
 					{#each preview.transactions as tx, i (i)}
 						<tr data-testid="preview-tx-row">
-							<td>{tx.bookingDate}</td>
+							<td>{formatSwissDate(tx.bookingDate)}</td>
 							<td class="text-right">{tx.amount} {tx.currency}</td>
 							<td>{tx.details}</td>
 						</tr>
