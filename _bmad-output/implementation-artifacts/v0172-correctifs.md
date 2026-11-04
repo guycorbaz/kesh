@@ -1,6 +1,6 @@
 # Story v0172-correctifs : la 0.17.2 — l'import simultané (#840), la liste des factures fournisseur (#870), le menu (#851), le taux de TVA désactivé (#882), les dates (#880), six LOW (#883), la date d'une pièce importée (#885)
 
-Status: ready-for-dev
+Status: in-progress
 
 *Fiche rédigée le 2026-11-04, en autonomie (Opus 5.5), worktree `/home/gcorbaz/devel/kesh-0172b`, branche
 `story/v0172-correctifs` partie de `d7ec2ea2` (le merge de la v0.17.1 sur `main`). Release **0.17.2**, **sans migration**
@@ -219,7 +219,10 @@ valeur non initialisée :
 `vi.mock('$app/state', async () => ({ page: (await import('./page-state.test-helper.svelte')).pageState }))` et
 `vi.mock('$app/navigation', () => ({ goto: vi.fn(async (cible: string) => { (await import('./page-state.test-helper.svelte')).pageState.url = new URL(cible, 'http://localhost'); }) }))`
 (`:12`, aujourd'hui `goto: vi.fn()`) — une réaffectation, car un `URL` n'est pas suivi par `$state` s'il est
-seulement muté. Un objet ordinaire muté (patron d'`invoices-list-page.test.ts:13-15`) ne rejouerait ni le `$derived` ni le
+seulement muté. **Remise à zéro** (finding P1 de la validation P5) : le `beforeEach` du test pose
+`pageState.url = new URL('http://localhost/supplier-invoices')` (l'état du module est partagé par les tests du fichier), et le
+simulacre de `goto` résout contre l'URL courante, `new URL(cible, pageState.url)` (un `goto('?cancelled=1')` relatif garde le
+chemin). Un objet ordinaire muté (patron d'`invoices-list-page.test.ts:13-15`) ne rejouerait ni le `$derived` ni le
 `$effect`, et le test de navigation par lien ne passerait pas sous une implémentation correcte. **Sonde** : le cas « navigation par
 lien » rougit sous MB8 (constaté au Dev Agent Record), comme MB10.
 **Assertions existantes à mettre à jour** (raison au Change Log) : les **requêtes** `:59`, `:71` (`{ limit: 100, status: […] }` ⇒
@@ -500,7 +503,7 @@ le développeur vérifie que, sous `TZ=UTC`, MB5 rougit TB7.
     | 22 | `ManualMatchModal.svelte:173` ; `TransactionSplitModal.svelte:234` | `proposal.transaction.bookingDate` | idem |
     | 23 | `LinkSettlementModal.svelte:205, :290, :350` | `valueDate ?? bookingDate`, `c.settledOn`, `e.entryDate` | idem |
     | 24 | `routes/(app)/settings/api-keys/+page.svelte:74-77` (`formatDate`, `value.slice(0, 10)` — sert `:94`, `:371`) et `:80-83` (`formatDateTime`, `value.slice(0, 16).replace('T', ' ')` — sert `:372`) | `revokedAt`, `createdAt` (instants UTC), `lastUsedAt` | les deux fonctions locales **délèguent** aux helpers communs (DRY), avec conversion à Zurich |
-    | 24 b | `api-keys/+page.svelte:99, :104` (« Expirée le », « Active (expire le … ) ») | `expiresAt` — **date de calendrier** saisie, envoyée `T23:59:59Z` (`:152`) | `formatSwissDate(value.slice(0, 10))`, **sans** conversion (une fonction locale distincte, p. ex. `formatExpiryDate`) |
+    | 24 b | `api-keys/+page.svelte:99, :104` (« Expirée le », « Active (expire le … ) ») | `expiresAt` — **date de calendrier** saisie, envoyée `T23:59:59Z` (`:152`) | `formatSwissDate(value.slice(0, 10))`, **sans** conversion (une fonction locale distincte, p. ex. `formatExpiryDate`) ; `isExpired` (`:56`) lit l'expiration en UTC (AC-C2, MC6) |
 
     Les sites multiples d'une même ligne du tableau comptent pour une ligne ; le décompte des **lignes de code** touchées va au
     Dev Agent Record, recompté.
@@ -543,7 +546,9 @@ est donc lu comme UTC (on lui ajoute `Z`), puis affiché par `Intl.DateTimeForma
 jour (`<input type="date">`), le client l'envoie à `${jour}T23:59:59Z` (`api-keys/+page.svelte:152`), le serveur le stocke en
 `naive_utc()` (`routes/api_keys.rs:147`) et le rend `2026-12-31T23:59:59` (`:40`, sans `Z`). Converti à l'heure de Zurich, ce serait
 le **01.01.2027**. `expiresAt` **ne se convertit donc pas** : il s'affiche `formatSwissDate(value.slice(0, 10))`, la date choisie
-(§ 24, ligne 24 b du tableau). `createdAt`, `revokedAt`, `lastUsedAt` (écrits par `NOW(3)`) sont, eux, des instants UTC.
+(§ 24, ligne 24 b du tableau). `createdAt`, `revokedAt`, `lastUsedAt` (écrits par `NOW(3)`) sont, eux, des instants UTC. **`isExpired`**
+(`api-keys/+page.svelte:56`) lit l'expiration **en UTC**, comme le serveur (`repositories/api_keys.rs:134`) — changement de
+comportement de production, d'une heure (deux en été) à Zurich : AC-C2, MC6, puce du CHANGELOG (finding P2 de la validation P5).
 **Les sites de la 0.17.1 qui passent un horodatage par `.slice(0, 10)`** donnent la date UTC (la veille entre minuit et 1 h, 2 h en
 été) ; ils ne sont **pas** corrigés ici et relèvent de **#889** (complétée par l'orchestrateur pour cette forme). Inventaire
 (`git grep -nE "formatSwissDate\(.*\.slice\(0, 10\)" -- frontend/src`, **12 lignes** — le finding P8 de la validation P3 en
@@ -678,7 +683,8 @@ Le PDF de chaque manuel touché est régénéré par `make fr` dans `docs/manual
 normalisées et césures recollées** — `pdftotext docs/manual/fr/<manuel>.pdf - | tr '\n' ' ' | tr -s ' ' | sed "s/’/'/g" |
 sed -E 's/([[:alpha:]])- ([[:alpha:]])/\1\2/g'` (la seconde substitution recolle les mots coupés en fin de ligne, `réinitia- lisation` ;
 elle recolle aussi, rarement, un composé à trait d'union suivi d'une espace : en cas de doute, greper un fragment court sans mot
-long) — puis `grep -F` de chaque
+long ; elle n'est juste que **sous une locale UTF-8** — `LANG=fr_FR.UTF-8` ou `LC_ALL=C.UTF-8` — : sous `LC_ALL=C`, `[[:alpha:]]` ne
+reconnaît pas une lettre accentuée et la césure voisine reste, finding P3 de la validation P5) — puis `grep -F` de chaque
 phrase neuve **et** de chaque phrase retirée (le PDF rend l'apostrophe typographique U+2019, le `.tex` et les phrases prescrites
 portent `'` : sans la normalisation, un `grep -F` rend 0 pour une phrase présente, ou « bien retirée » pour une phrase restée).
 
@@ -724,7 +730,8 @@ donnée réécrite, **le retour à la 0.17.1 est possible sans restauration**. �
   de 8,1 % désactivé ne change plus de taux en silence.
 - **Les dates des écrans comptables s'affichent `29.01.2026`** ([#880](https://github.com/guycorbaz/kesh/issues/880)) : journal,
   exercices, relevés bancaires, rapprochement, taux de TVA et clés d'API ; les heures (import d'un relevé, dernière utilisation d'une
-  clé) s'affichent à l'heure suisse, non plus en UTC.
+  clé) s'affichent à l'heure suisse, non plus en UTC ; une clé d'API s'affiche « expirée » au même instant que le serveur la refuse
+  (l'écran la lisait à l'heure locale, une à deux heures d'écart).
 - Points de forme de la revue de la 0.17.1 ([#883](https://github.com/guycorbaz/kesh/issues/883)).
 
 `### Ajouté`
@@ -841,6 +848,15 @@ vide). La PR de release porte les `closes`.
   recollées (`réinitia- lisation`), avec sa limite ; **P7** — état par défaut `:242-246` (`initialOpen`, `:224-227`). Valeurs grepées :
   `:371`, `:225-227`, « qui n'existe pas », « ci-dessous », `self-start`. Prochaine : validation **P5** (Sonnet, ciblée,
   `v0172-correctifs-validate-prompt-p5.md`).
+
+- 2026-11-04 — **Validation P5 (Sonnet, ciblée) : 0/0/0/3** (rapport `kesh-gate-logs/v0172b-validate-p5.md`). Validation **terminée**
+  (aucun finding au-dessus de LOW). Les trois LOW sont traités à l'**étape 0 du développement** (Opus 5.5), prémisse relue à la tête
+  `1be0f701` : **P1** — `journal-entry-page.test.ts:151` (`pageState.params.id = '7';`) et `supplier-invoices-list-page.test.ts:12`
+  (`vi.mock('$app/navigation', () => ({ goto: vi.fn() }));`) lus : remise à zéro de `pageState.url` au `beforeEach` et résolution du
+  `goto` contre l'URL courante, prescrites à AC-B2 bis. **P2** — `api-keys/+page.svelte:56` (`new Date(k.expiresAt).getTime() <
+  Date.now()`) et `repositories/api_keys.rs:134` (`k.expires_at > NOW(3)`) lus : `isExpired` en UTC écrit à l'« Exception » du § C.1,
+  à la ligne 24 b du tableau, au « Retenu » de C-v0172b-10 (registre), et une puce au CHANGELOG (pas d'issue séparée : corrigé ici).
+  **P3** — la limite de la double substitution du contrôle du PDF dit la locale UTF-8 requise.
 
 ## Dev Agent Record
 

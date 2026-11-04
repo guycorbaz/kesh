@@ -164,7 +164,9 @@ cas `Z` et décalage compris. « Aucun fuseau appliqué » (première rédaction
   `Intl.DateTimeFormat('fr-CH', { timeZone: 'Europe/Zurich' })` dont seuls les composants sont repris pour composer `JJ.MM.AAAA`
   et `JJ.MM.AAAA HH:mm` (la forme ne dépend pas de la langue) ; `api-keys` délègue. **Exception** : l'expiration d'une clé API est
   une **date de calendrier** saisie, envoyée `T23:59:59Z` (`api-keys/+page.svelte:152`) : elle s'affiche par sa date
-  (`value.slice(0, 10)`), sans conversion (finding P1 de la validation P3 ; test du 31.12).
+  (`value.slice(0, 10)`), sans conversion (finding P1 de la validation P3 ; test du 31.12). **`isExpired`** lit l'expiration comme UTC,
+  comme le serveur (`repositories/api_keys.rs:134`) — l'écran dit « expirée » au même instant que le serveur refuse la clé ; AC-C2,
+  MC6 ; puce au CHANGELOG, sans issue séparée (corrigé dans cette story ; finding P2 de la validation P5).
 - **Écartées** : afficher les horodatages tels quels (heure UTC lue comme suisse, et la veille entre minuit et 1-2 h) ; `Intl` pour
   la forme entière (dépendante de la langue, alors que la 0.17.1 a fixé `JJ.MM.AAAA`) ; un `.slice(0, 10)` à chaque site
   (duplication, heure perdue) ; convertir aussi l'expiration (31.12 affiché 01.01).
