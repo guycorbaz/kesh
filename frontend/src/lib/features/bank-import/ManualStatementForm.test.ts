@@ -369,3 +369,33 @@ describe('ManualStatementForm', () => {
 		expect(q(c, 'bank-import-manual-block-reason')?.dataset.reason).toBe('preview');
 	});
 });
+
+// v0172-correctifs (#880, AC-C2) — les avertissements de la saisie manuelle disent leurs
+// dates en forme suisse : la fin du relevé précédent, les périodes chevauchées.
+describe('ManualStatementForm — dates des avertissements en forme suisse (v0172, #880)', () => {
+	it('« … qui finit le 31.08.2026 », périodes « 01.08.2026 → 31.08.2026 » ; aucune date ISO', async () => {
+		mockApi.previewManualStatement.mockResolvedValue(
+			previewOk({
+				openingBalanceGap: {
+					expected: '990.00',
+					entered: '1000.00',
+					previousImportId: 4,
+					previousPeriodTo: '2026-08-31',
+				},
+				overlappingStatements: [
+					{ importId: 4, periodFrom: '2026-08-01', periodTo: '2026-08-31' },
+					{ importId: 6, periodFrom: '2026-09-15', periodTo: '2026-10-15' },
+				] as never,
+			}),
+		);
+		const { container: c } = render(ManualStatementForm, { props: { bankAccounts: ACCOUNTS } });
+		await fill(c);
+		await fireEvent.click(q(c, 'bank-import-manual-verify')!);
+		await flush();
+		const gap = q(c, 'bank-import-manual-warning-opening-gap')!.textContent ?? '';
+		expect(gap).toContain('qui finit le 31.08.2026');
+		const overlap = q(c, 'bank-import-manual-info-overlap')!.textContent ?? '';
+		expect(overlap).toContain('01.08.2026 → 31.08.2026, 15.09.2026 → 15.10.2026');
+		expect(gap + overlap).not.toMatch(/2026-\d{2}-\d{2}/);
+	});
+});

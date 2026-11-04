@@ -25,6 +25,8 @@
 	import { getInvoiceSettings } from '$lib/features/invoices/invoices.api';
 	import { fetchCompanyCurrent } from '$lib/features/settings/settings.api';
 	import { formatSwissAmount } from '$lib/features/journal-entries/balance';
+	// v0172-correctifs (#880) : dates en forme suisse (liste, bandeau du verrou).
+	import { formatSwissDate } from '$lib/features/reports/reports.api';
 	import {
 		parseQueryFromUrl,
 		serializeQuery
@@ -363,7 +365,7 @@
 				{i18nMsg(
 					'journal-entries-books-locked-banner',
 					'Livres verrouillés jusqu\'au { $date } inclus — aucune écriture ne peut y être datée.',
-					{ date: booksLockedThrough }
+					{ date: formatSwissDate(booksLockedThrough) }
 				)}
 			</div>
 		{/if}
@@ -548,7 +550,7 @@
 					{#each entries as entry (entry.id)}
 						<tr class="border-b border-border/50">
 							<td class="py-2 tabular-nums">{entry.entryNumber}</td>
-							<td class="py-2">{entry.entryDate}</td>
+							<td class="py-2">{formatSwissDate(entry.entryDate)}</td>
 							<td class="py-2">{journalLabel(entry.journal)}</td>
 							<td class="py-2">{entry.description}</td>
 							<td class="py-2 text-right tabular-nums">{totalOf(entry)}</td>

@@ -6,6 +6,8 @@
 //! Fixtures lues directement depuis `crates/kesh-import/tests/fixtures/`
 //! via `env!("CARGO_MANIFEST_DIR")` + chemin relatif (M2 validate Pass 2).
 
+mod common;
+
 use std::net::SocketAddr;
 use std::path::Path;
 use std::sync::Arc;
@@ -3435,4 +3437,287 @@ async fn unknown_bank_account_wins_over_fingerprint(pool: MySqlPool) {
     .await;
     assert_eq!(status, 404, "{body}");
     assert_eq!(body["error"]["code"], "BANK_IMPORT_BANK_ACCOUNT_NOT_FOUND");
+}
+
+// =========================================================================
+// v0172-correctifs (#840) — deux envois simultanés d'un même fichier. Les
+// deux chemins de fichier (CAMT, CSV) prennent le verrou nommé du compte,
+// comme la saisie manuelle : le contrôle « fichier déjà importé » et
+// l'`INSERT` ne lisent la base qu'une fois le verrou acquis (AC-A7 à AC-A9).
+// =========================================================================
+
+/// Le fichier envoyé par un test de #840 : le CAMT `v04_minimal.xml`, ou le
+/// CSV de trois lignes valides sous le profil de test.
+#[derive(Clone, Copy, Debug)]
+enum Fichier840 {
+    Camt,
+    Csv { profile_id: i64 },
+}
+
+impl Fichier840 {
+    fn bytes(self) -> Vec<u8> {
+        match self {
+            Fichier840::Camt => read_fixture("v04_minimal.xml"),
+            Fichier840::Csv { .. } => CSV_VALID_3_LINES.as_bytes().to_vec(),
+        }
+    }
+
+    fn form(self, bank_account_id: i64, extra: &[(&str, String)]) -> multipart::Form {
+        match self {
+            Fichier840::Camt => build_multipart_with_text_fields(
+                self.bytes(),
+                "v04_minimal.xml",
+                bank_account_id,
+                extra,
+            ),
+            Fichier840::Csv { profile_id } => {
+                build_csv_multipart(self.bytes(), "stmt.csv", bank_account_id, profile_id, extra)
+            }
+        }
+    }
+
+    fn source_format(self) -> kesh_db::entities::BankImportSourceFormat {
+        match self {
+            Fichier840::Camt => kesh_db::entities::BankImportSourceFormat::Camt053V04,
+            Fichier840::Csv { .. } => kesh_db::entities::BankImportSourceFormat::Csv,
+        }
+    }
+
+    /// L'empreinte que le serveur calcule (`compute_sha256_hex`, minuscules).
+    fn file_hash(self) -> String {
+        use sha2::{Digest, Sha256};
+        Sha256::digest(self.bytes())
+            .iter()
+            .map(|x| format!("{x:02x}"))
+            .collect()
+    }
+}
+
+/// Les deux fichiers de #840, profil CSV créé pour la société de `s`.
+async fn fichiers_840(pool: &MySqlPool, s: &TestSetup) -> [Fichier840; 2] {
+    let profile_id = create_test_bank_profile_csv(pool, s.company_id, s.user_id).await;
+    [Fichier840::Camt, Fichier840::Csv { profile_id }]
+}
+
+/// `POST /api/v1/bank-imports` ; rend (statut, corps).
+async fn post_import_840(
+    client: reqwest::Client,
+    url: String,
+    jwt: String,
+    form: multipart::Form,
+) -> (u16, Value) {
+    let r = client
+        .post(url)
+        .bearer_auth(jwt)
+        .multipart(form)
+        .send()
+        .await
+        .unwrap();
+    let st = r.status().as_u16();
+    (st, r.json::<Value>().await.unwrap_or(Value::Null))
+}
+
+/// (relevés, transactions) de toute la base de test.
+async fn counts_840(pool: &MySqlPool) -> (i64, i64) {
+    let imports: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM bank_imports")
+        .fetch_one(pool)
+        .await
+        .unwrap();
+    (imports, tx_count(pool).await)
+}
+
+/// TA5 (AC-A7) — **entrelacement forcé**, CAMT puis CSV : une connexion de test
+/// tient le verrou du compte ; le `POST` est **vu en attente** sur `GET_LOCK`
+/// (`PROCESSLIST`) ; la connexion enregistre alors un relevé de **même
+/// empreinte**, commite, rend le verrou. Le `POST` doit rendre `422
+/// BANK_IMPORT_DUPLICATE_FILE` : il ne lit la base qu'après le commit. Un seul
+/// relevé. Rougit sans le verrou (mutations MA11, MA12) : le `POST` n'attend
+/// jamais et enregistre un second relevé.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn v0172_import_waits_for_the_account_lock_and_sees_the_committed_twin(pool: MySqlPool) {
+    let s = setup(&pool).await;
+    let app = spawn_app(pool.clone()).await;
+    for fichier in fichiers_840(&pool, &s).await {
+        let before = counts_840(&pool).await;
+        let mut held = pool.acquire().await.unwrap();
+        let name = common::take_account_lock(&mut held, s.company_id, s.bank_account_id).await;
+
+        let request = tokio::spawn(post_import_840(
+            app.client.clone(),
+            app.url("/api/v1/bank-imports"),
+            s.jwt.clone(),
+            fichier.form(s.bank_account_id, &[]),
+        ));
+        let seen =
+            kesh_db::test_fixtures::attendre_une_requete_en_cours(&pool, &["GET_LOCK"], || {
+                request.is_finished()
+            })
+            .await;
+        if !seen {
+            let (st, r) = request.await.unwrap();
+            panic!(
+                "{fichier:?} : l'import n'a jamais attendu le verrou du compte : rendu {st} {r}"
+            );
+        }
+
+        {
+            use kesh_db::entities::NewBankImport;
+            use sqlx::Connection;
+            let mut tx = held.begin().await.unwrap();
+            kesh_db::repositories::bank_imports::create_with_transactions(
+                &mut tx,
+                NewBankImport {
+                    company_id: s.company_id,
+                    bank_account_id: s.bank_account_id,
+                    filename: "jumeau-840".into(),
+                    file_hash: fichier.file_hash(),
+                    source_format: fichier.source_format(),
+                    statement_id: None,
+                    period_from: chrono::NaiveDate::from_ymd_opt(2020, 1, 1).unwrap(),
+                    period_to: chrono::NaiveDate::from_ymd_opt(2020, 1, 31).unwrap(),
+                    opening_balance: None,
+                    closing_balance: None,
+                    transaction_count: 0,
+                    imported_by_user_id: s.user_id,
+                },
+                vec![],
+            )
+            .await
+            .unwrap();
+            tx.commit().await.unwrap();
+        }
+        let released: Option<i32> = sqlx::query_scalar("SELECT RELEASE_LOCK(?)")
+            .bind(&name)
+            .fetch_one(&mut *held)
+            .await
+            .unwrap();
+        assert_eq!(released, Some(1));
+
+        let (st, r) = request.await.unwrap();
+        assert_eq!(
+            (st, r["error"]["code"].as_str()),
+            (422, Some("BANK_IMPORT_DUPLICATE_FILE")),
+            "{fichier:?} : {r}"
+        );
+        assert_eq!(
+            counts_840(&pool).await,
+            (before.0 + 1, before.1),
+            "{fichier:?} : un seul relevé, celui de la connexion de test, sans transaction"
+        );
+    }
+}
+
+/// TA6 (AC-A8) — deux envois identiques **lancés ensemble**, CAMT puis CSV :
+/// un `201` et un `422 BANK_IMPORT_DUPLICATE_FILE`, un seul relevé et ses
+/// transactions une seule fois. Avant correctif, rouge **ou** vert selon
+/// l'ordonnancement : la preuve est TA5.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn v0172_two_identical_simultaneous_imports_give_one_statement(pool: MySqlPool) {
+    let s = setup(&pool).await;
+    let app = spawn_app(pool.clone()).await;
+    for fichier in fichiers_840(&pool, &s).await {
+        let (imports_before, txs_before) = counts_840(&pool).await;
+        let send = || {
+            post_import_840(
+                app.client.clone(),
+                app.url("/api/v1/bank-imports"),
+                s.jwt.clone(),
+                fichier.form(s.bank_account_id, &[]),
+            )
+        };
+        let ((s1, r1), (s2, r2)) = tokio::join!(send(), send());
+        let mut statuses = [s1, s2];
+        statuses.sort();
+        assert_eq!(statuses, [201, 422], "{fichier:?} : {r1} / {r2}");
+        let (accepted, refused) = if s1 == 422 { (&r2, &r1) } else { (&r1, &r2) };
+        assert_eq!(refused["error"]["code"], "BANK_IMPORT_DUPLICATE_FILE");
+        let n = accepted["transactionCount"].as_i64().unwrap();
+        assert!(n > 0, "{fichier:?} : montage, le fichier porte des lignes");
+        assert_eq!(
+            counts_840(&pool).await,
+            (imports_before + 1, txs_before + n),
+            "{fichier:?} : un relevé, ses transactions une fois"
+        );
+    }
+}
+
+/// TA7 (AC-A9) — un verrou tenu au-delà du délai
+/// (`MANUAL_STATEMENT_LOCK_TIMEOUT_SECS`, 5 s) par une connexion de test : le
+/// `POST` rend `409 RECONCILIATION_ACCOUNT_LOCKED` et n'écrit rien, CAMT puis
+/// CSV. Rouge avant correctif (l'import n'attend aucun verrou : `201`). Le
+/// réimport confirmé reste couvert par `post_import_accepts_duplicate_file_with_confirm`
+/// (CAMT) ; il est rejoué ici sous verrou libre, CAMT et CSV.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn v0172_import_under_a_held_lock_is_refused_409_without_writing(pool: MySqlPool) {
+    let s = setup(&pool).await;
+    let app = spawn_app(pool.clone()).await;
+    for fichier in fichiers_840(&pool, &s).await {
+        let before = counts_840(&pool).await;
+        let mut held = pool.acquire().await.unwrap();
+        let name = common::take_account_lock(&mut held, s.company_id, s.bank_account_id).await;
+        let (st, r) = post_import_840(
+            app.client.clone(),
+            app.url("/api/v1/bank-imports"),
+            s.jwt.clone(),
+            fichier.form(s.bank_account_id, &[]),
+        )
+        .await;
+        assert_eq!(
+            (st, r["error"]["code"].as_str()),
+            (409, Some("RECONCILIATION_ACCOUNT_LOCKED")),
+            "{fichier:?} : {r}"
+        );
+        assert_eq!(
+            counts_840(&pool).await,
+            before,
+            "{fichier:?} : rien d'écrit"
+        );
+        let released: Option<i32> = sqlx::query_scalar("SELECT RELEASE_LOCK(?)")
+            .bind(&name)
+            .fetch_one(&mut *held)
+            .await
+            .unwrap();
+        assert_eq!(released, Some(1));
+
+        // Verrou libre : premier import, puis réimport confirmé (comportement
+        // 8-3 inchangé) — deux relevés, le second marqué `duplicate_file`.
+        let (st, r) = post_import_840(
+            app.client.clone(),
+            app.url("/api/v1/bank-imports"),
+            s.jwt.clone(),
+            fichier.form(s.bank_account_id, &[]),
+        )
+        .await;
+        assert_eq!(st, 201, "{fichier:?} : {r}");
+        let (st, r) = post_import_840(
+            app.client.clone(),
+            app.url("/api/v1/bank-imports"),
+            s.jwt.clone(),
+            fichier.form(
+                s.bank_account_id,
+                &[
+                    ("confirmDuplicateFile", "true".into()),
+                    ("confirmDuplicateLines", "import".into()),
+                ],
+            ),
+        )
+        .await;
+        assert_eq!(st, 201, "{fichier:?} : réimport confirmé : {r}");
+        let d = common::audit_details(
+            &pool,
+            "bank_imports",
+            r["id"].as_i64().unwrap(),
+            "bank_import.created",
+        )
+        .await
+        .unwrap();
+        assert!(
+            d["modifiers"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|m| m == "duplicate_file"),
+            "{fichier:?} : {d}"
+        );
+    }
 }

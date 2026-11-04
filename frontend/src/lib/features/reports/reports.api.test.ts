@@ -11,6 +11,8 @@ import {
 	getAgedReceivables,
 	downloadAgedReceivables,
 	isReportEmpty,
+	formatSwissDate,
+	formatSwissDateTime,
 } from './reports.api';
 import type { BalanceSheetDto } from './reports.types';
 
@@ -391,5 +393,49 @@ describe('reports.api — Story 9-2a', () => {
 			});
 			expect(isReportEmpty('balance-sheet', dto)).toBe(false);
 		});
+	});
+});
+
+// v0172-correctifs (#880, #883.6, C-v0172b-10) — `formatSwissDate` tolère un horodatage
+// (date à Zurich de l'instant), `formatSwissDateTime` rend la date et l'heure à Zurich.
+// Les horodatages du serveur sont de l'UTC : sans décalage, ils sont lus comme UTC. Le
+// résultat ne dépend que de `Europe/Zurich`, ni du poste ni du runner : il est vérifié
+// sous deux fuseaux de processus.
+describe.each(['UTC', 'America/New_York'])('formatSwissDate / formatSwissDateTime (TZ=%s)', (zone) => {
+	let tz: string | undefined;
+	beforeEach(() => {
+		tz = process.env.TZ;
+		process.env.TZ = zone;
+	});
+	afterEach(() => {
+		if (tz === undefined) delete process.env.TZ;
+		else process.env.TZ = tz;
+	});
+
+	it.each([
+		['2026-01-29', '29.01.2026'],
+		['2026-11-03T17:40:45', '03.11.2026'],
+		['2026-11-03T23:30:00', '04.11.2026'],
+		['2026-07-01T22:30:00.123', '02.07.2026'],
+		['2026-11-03 17:40', '03.11.2026'],
+		['2026-11-03T23:30:00Z', '04.11.2026'],
+		['2026-11-03T23:30:00+01:00', '03.11.2026'],
+		['', ''],
+		['29.01.2026', '29.01.2026'],
+		['n/a', 'n/a'],
+	])('formatSwissDate(%j) = %j (MC1)', (input, expected) => {
+		expect(formatSwissDate(input)).toBe(expected);
+	});
+
+	it.each([
+		['2026-01-29T10:15:00', '29.01.2026 11:15'],
+		['2026-01-02T00:00:00Z', '02.01.2026 01:00'],
+		['2026-07-01T22:30:00+00:00', '02.07.2026 00:30'],
+		['2026-11-03T17:40:45.123456', '03.11.2026 18:40'],
+		['2026-01-29', '29.01.2026'],
+		['bogus', 'bogus'],
+		['', ''],
+	])('formatSwissDateTime(%j) = %j', (input, expected) => {
+		expect(formatSwissDateTime(input)).toBe(expected);
 	});
 });

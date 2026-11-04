@@ -373,7 +373,9 @@ test('recette visuelle de la saisie d’un relevé (AC-25)', async ({ page }, te
 		await page.goto(`/bank-import/${id2}`);
 		await page.getByTestId('bank-import-delete-button').click();
 		await page.getByTestId('bank-import-delete-submit').click();
-		await expect(page.locator('[data-sonner-toast]').first()).toContainText(demain);
+		// v0172 (#880) : la période du message en forme suisse (`JJ.MM.AAAA`), non plus ISO.
+		const [a, m, j] = demain.split('-');
+		await expect(page.locator('[data-sonner-toast]').first()).toContainText(`${j}.${m}.${a}`);
 		await capture(page, testInfo, '17-notification-de-suppression');
 
 		// Le refus d'un compte clos à la saisie.

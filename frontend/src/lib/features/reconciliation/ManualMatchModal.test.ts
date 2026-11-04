@@ -314,3 +314,20 @@ describe('ManualMatchModal — soumission rejetée (Story 28-2, B13)', () => {
 		expect(await r.findByTestId('manual-match-bank-not-configured')).toBeTruthy();
 	});
 });
+
+// v0172-correctifs (#880, AC-C2) — le rappel de la transaction dit sa date en forme suisse.
+describe('ManualMatchModal — date en forme suisse (v0172, #880)', () => {
+	it('le rappel dit 15.05.2026, jamais 2026-05-15', async () => {
+		const { findByTestId } = render(ManualMatchModal, {
+			open: true,
+			onOpenChange: () => {},
+			bankAccountId: 17,
+			proposal: makeProposal(),
+			accounts: makeAccounts(),
+			onSuccess: () => {},
+		});
+		const summary = await findByTestId('manual-match-tx-summary');
+		expect(summary.textContent).toContain('15.05.2026');
+		expect(summary.textContent).not.toContain('2026-05-15');
+	});
+});

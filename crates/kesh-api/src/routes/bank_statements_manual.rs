@@ -44,7 +44,6 @@ use kesh_db::entities::{
 };
 use kesh_db::errors::DbError;
 use kesh_db::repositories::{bank_accounts, bank_imports, bank_transactions};
-use kesh_reconciliation::{ReconciliationError, with_account_lock};
 
 use crate::AppState;
 use crate::errors::AppError;
@@ -52,8 +51,8 @@ use crate::extractors::impl_validation_extractor;
 use crate::middleware::auth::CurrentUser;
 use crate::routes::bank_imports::{
     BankImportResponse, DuplicateFilePayload, ImportAuditAction, compute_sha256_hex,
-    create_import_or_roll_back, duplicate_file_payload, existing_dedup_keys, import_to_response,
-    insert_canonical_audit_log,
+    create_import_or_roll_back, create_under_account_lock, duplicate_file_payload,
+    existing_dedup_keys, insert_canonical_audit_log,
 };
 
 impl_validation_extractor!(
@@ -228,58 +227,17 @@ pub async fn create(
     let company_id = current_user.company_id;
     let bank_id = checked.account.id;
 
-    let mut lock_tx = state
-        .pool
-        .begin()
-        .await
-        .map_err(|e| AppError::Database(DbError::Sqlx(e)))?;
-    let mut outcome: Option<Result<BankImport, AppError>> = None;
-    let slot = &mut outcome;
+    // Le verrou et l'appariement de ses issues aux statuts sont partagés avec
+    // les imports de fichier depuis la 0.17.2 (#840, v0172-correctifs).
     let (pool, user, body) = (&state.pool, &current_user, &raw);
-    let locked = with_account_lock(
-        &mut lock_tx,
+    create_under_account_lock(
+        &state.pool,
         company_id,
         bank_id,
-        MANUAL_STATEMENT_LOCK_TIMEOUT_SECS,
-        async move |_held| {
-            *slot = Some(create_under_lock(pool, user, body, &checked).await);
-            Ok(())
-        },
+        "saisie d'un relevé",
+        async move || create_under_lock(pool, user, body, &checked).await,
     )
-    .await;
-    drop(lock_tx);
-
-    match (outcome, locked) {
-        (Some(created), Ok(())) => {
-            let header = created?;
-            Ok((StatusCode::CREATED, Json(import_to_response(header))))
-        }
-        // La création a conclu (commitée ou annulée) ; seul le `RELEASE_LOCK`
-        // a échoué. Le verrou suit la session de la connexion. Annoncer un
-        // échec d'une création commitée serait faux (P2) : on rend son issue.
-        (Some(created), Err(e)) => {
-            tracing::error!(error = ?e, bank_account_id = bank_id, "saisie d'un relevé : libération du verrou du compte en échec");
-            let header = created?;
-            Ok((StatusCode::CREATED, Json(import_to_response(header))))
-        }
-        (
-            None,
-            Err(ReconciliationError::AccountLocked {
-                bank_account_id,
-                timeout_secs,
-            }),
-        ) => Err(AppError::ReconciliationAccountLocked {
-            bank_account_id,
-            timeout_secs,
-        }),
-        (None, Err(ReconciliationError::Database(e))) => Err(AppError::Database(DbError::Sqlx(e))),
-        (None, other) => {
-            tracing::error!(?other, "saisie d'un relevé : verrou du compte non acquis");
-            Err(AppError::Internal(
-                "verrou du compte bancaire non acquis".to_string(),
-            ))
-        }
-    }
+    .await
 }
 
 /// Délai d'attente du verrou nommé du compte bancaire — celui des gestes de
