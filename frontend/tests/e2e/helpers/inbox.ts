@@ -225,10 +225,11 @@ export async function ensurePayableAndExpense(page: Page): Promise<number> {
  * Story 30-2b — remplit la première ligne du formulaire de facture fournisseur
  * (`SupplierInvoiceForm`) : description, prix unitaire, compte de charge (quantité 1, TVA 0).
  *
- * Story v017-4b (#853, AC-24 (b), AC-30) — à côté d'un document, la date de facture
- * démarre **vide** et doit se saisir : le helper la pose à la date du jour si elle est
- * vide (la date que le formulaire proposait jusqu'à la 0.17.0), sans toucher une date
- * déjà saisie. Un seul endroit, plutôt que spec par spec (validation P2, F3).
+ * Story v017-4b (#853, AC-24 (b), AC-30) — le helper pose la date de facture à la date
+ * du jour si elle est vide, sans toucher une date déjà saisie. Un seul endroit, plutôt
+ * que spec par spec (validation P2, F3). Depuis la 0.17.2 (#885), à côté d'un document,
+ * la date démarre au jour même, marquée « à vérifier » : la branche « vide » ne sert
+ * plus qu'à une spec qui l'a vidée.
  */
 export async function fillFirstInvoiceLine(
 	page: Page,

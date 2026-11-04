@@ -76,7 +76,8 @@
 		sumTtc,
 		type SupplierInvoiceFormInitial,
 	} from './supplier-invoice-form';
-	import { hasSubCentime } from '$lib/features/invoices/invoice-helpers';
+	import { addDaysIso, hasSubCentime } from '$lib/features/invoices/invoice-helpers';
+	import { todayLocal } from '$lib/features/open-items/open-items';
 	import SupplierCreatePanel from './SupplierCreatePanel.svelte';
 
 	/**
@@ -144,19 +145,22 @@
 	/**
 	 * La saisie de départ — Story v017-4b. Lue UNE fois, au montage (le formulaire ne se
 	 * resynchronise pas : la saisie appartient ensuite à l'utilisateur).
-	 * - `initial` (édition) : la facture relue ; sa date prime sur la règle de #853 ;
-	 * - sinon, #853 (AC-24 (b)) : avec un document, la date démarre **vide** — la date
-	 *   du jour n'est presque jamais celle d'une facture reçue ; sans document, la date
-	 *   du jour reste proposée.
+	 * - `initial` (édition) : la facture relue ; sa date prime ;
+	 * - sinon, la date du jour, **locale** (`todayLocal`, non la date UTC qui serait la
+	 *   veille entre minuit et 1 h ou 2 h en Suisse). v0172-correctifs (#885,
+	 *   C-v0172b-15) : avec un document, elle est **proposée et marquée « à vérifier »**
+	 *   (`dateToVerify`) — la 0.17.0 (#853) la laissait vide, la date du jour n'étant
+	 *   presque jamais celle d'une facture reçue ; l'avis le dit désormais, sans bloquer.
+	 *   L'échéance, elle, est calculée par `dueFollows` ci-dessous.
 	 */
 	function startState() {
-		const today = new Date().toISOString().slice(0, 10);
+		const today = todayLocal();
 		const init = initial;
 		if (init === null) {
 			return {
 				contactId: null as number | null,
 				number: '',
-				invoiceDate: document !== null ? '' : today,
+				invoiceDate: today,
 				dueDate: '',
 				iban: '',
 				reference: '',
@@ -203,6 +207,29 @@
 	let fExpectedAmount = $state(start.expectedAmount);
 	let fProjectId = $state<number | null>(start.projectId);
 	let fLines = $state<CreateSupplierInvoiceLineRequest[]>(start.lines);
+
+	/**
+	 * v0172-correctifs (#885, C-v0172b-15) — à la création à côté d'un document, la date
+	 * proposée (le jour même) est « à vérifier » : un avis visible le dit sous le champ
+	 * jusqu'à ce que l'utilisateur la modifie ou la confirme. Il ne bloque pas l'envoi.
+	 */
+	let dateToVerify = $state(initial === null && (document !== null || hasDocument));
+	/**
+	 * v0172-correctifs (#885, C-v0172b-16) — à la création, l'échéance **suit** la date :
+	 * date + délai de paiement du fournisseur choisi (`defaultPaymentTermsDays`), ou la
+	 * date elle-même sans délai ni fournisseur ; vide si la date l'est. Une saisie dans le
+	 * champ échéance l'arrête pour de bon. À l'édition, elle ne suit jamais.
+	 */
+	let dueFollows = $state(initial === null);
+	$effect(() => {
+		if (!dueFollows) return;
+		if (!fInvoiceDate) {
+			fDueDate = '';
+			return;
+		}
+		const days = suppliers.find((s) => s.id === fContactId)?.defaultPaymentTermsDays ?? null;
+		fDueDate = days != null ? addDaysIso(fInvoiceDate, days) : fInvoiceDate;
+	});
 
 	/** Story v017-4b (#853) — l'échéance précède la date : signalée en direct. */
 	const dueBefore = $derived(dueBeforeInvoiceDate(fInvoiceDate, fDueDate));
@@ -554,17 +581,43 @@
 				data-testid="supplier-invoice-date"
 				aria-required="true"
 				aria-invalid={dateError !== ''}
+				aria-describedby={dateToVerify ? 'supplier-invoice-date-to-verify' : undefined}
 				bind:value={fInvoiceDate}
 				oninput={() => {
 					dateError = '';
 					// Revue P1 (B-9 = E-5) : le refus serveur de l'échéance portait les dates
 					// d'avant ; corriger la date de facture l'efface aussi.
 					dueServerError = '';
+					// v0172 (#885) : la date est modifiée, elle n'est plus « à vérifier ».
+					dateToVerify = false;
 				}}
 			/>
-			<!-- Story v017-4b (#853, AC-24 (b)) : avec un document, la date démarre vide et
-			     l'aide dit laquelle saisir. -->
-			{#if document !== null || hasDocument}
+			<!-- v0172-correctifs (#885) : la date proposée au jour même est signalée,
+			     à la place de l'aide, jusqu'à ce qu'elle soit modifiée ou confirmée. -->
+			{#if dateToVerify}
+				<span
+					id="supplier-invoice-date-to-verify"
+					class="mt-1 flex flex-wrap items-center gap-2 rounded border border-warning bg-warning/10 px-2 py-1 text-xs"
+					data-testid="supplier-invoice-date-to-verify"
+					aria-live="polite"
+				>
+					<span>
+						{i18nMsg(
+							'supplier-invoices-date-to-verify',
+							'Date du jour, proposée par défaut — ce n’est pas celle du document. Vérifiez-la.',
+						)}
+					</span>
+					<button
+						type="button"
+						class="rounded border border-border bg-surface px-2 py-0.5"
+						data-testid="supplier-invoice-date-confirm"
+						onclick={() => (dateToVerify = false)}
+					>
+						{i18nMsg('supplier-invoices-date-confirm', 'C’est la bonne date')}
+					</button>
+				</span>
+			{:else if document !== null || hasDocument}
+				<!-- Story v017-4b (#853, AC-24 (b)) : l'aide dit quelle date saisir. -->
 				<span class="mt-1 block text-xs text-text-muted" data-testid="supplier-invoice-date-help">
 					{i18nMsg(
 						'supplier-invoices-field-date-help',
@@ -586,7 +639,11 @@
 				data-testid="supplier-invoice-due"
 				aria-invalid={dueBefore || dueServerError !== ''}
 				bind:value={fDueDate}
-				oninput={() => (dueServerError = '')}
+				oninput={() => {
+					dueServerError = '';
+					// v0172 (#885) : saisie à la main, l'échéance ne suit plus la date.
+					dueFollows = false;
+				}}
 			/>
 			<!-- Story v017-4b (#853) : l'échéance antérieure, sous le champ — en direct, ou
 			     le refus du serveur (`SUPPLIER_INVOICE_DUE_BEFORE_INVOICE_DATE`). -->

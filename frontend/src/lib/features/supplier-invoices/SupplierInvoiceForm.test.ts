@@ -33,6 +33,7 @@ vi.mock('$lib/features/contacts/contacts.api', () => ({
 }));
 
 import SupplierInvoiceForm from './SupplierInvoiceForm.svelte';
+import { todayLocal } from '$lib/features/open-items/open-items';
 
 function contact(id: number, name: string): ContactResponse {
 	return {
@@ -571,23 +572,23 @@ function initial(over: Partial<SupplierInvoiceFormInitial> = {}): SupplierInvoic
 }
 
 describe('SupplierInvoiceForm — la date de facture (#853, AC-24 (b))', () => {
-	it('avec un document, la date démarre VIDE, avec son aide ; sans document, la date du jour (M23)', () => {
-		const withDoc = renderForm({ document: qrDoc() });
-		expect((withDoc.getByTestId('supplier-invoice-date') as HTMLInputElement).value).toBe('');
-		expect(withDoc.getByTestId('supplier-invoice-date-help').textContent).toContain(
-			'Date de la facture, telle qu’imprimée sur le document',
-		);
-		cleanup();
+	// v0172 (#885) : avec un document, la date ne démarre plus vide — elle vaut la date du
+	// jour, signalée « à vérifier » (C-v0172b-15). Le test de #853 (« démarre VIDE ») est
+	// remplacé par AC-B9 ci-dessous ; ne reste ici que le cas sans document.
+	it('sans document, la date du jour, sans aide ni avis (M23)', () => {
 		const without = renderForm({ document: null });
 		expect((without.getByTestId('supplier-invoice-date') as HTMLInputElement).value).toBe(
-			new Date().toISOString().slice(0, 10),
+			todayLocal(),
 		);
 		expect(without.queryByTestId('supplier-invoice-date-help')).toBeNull();
+		expect(without.queryByTestId('supplier-invoice-date-to-verify')).toBeNull();
 	});
 
 	it('une date vide a son propre message, sous le champ, et rien ne part', async () => {
 		const { container, getByTestId, queryByTestId, onSubmit } = renderForm({ document: qrDoc() });
 		await selectSupplier(container, '1');
+		// v0172 (#885) : la date démarre au jour même ; on la vide.
+		await setDate(container, '');
 		await fillLine(container, '100.00');
 		await fireEvent.click(getByTestId('supplier-invoice-submit'));
 		await tick();
@@ -850,5 +851,136 @@ describe('SupplierInvoiceForm — revue de code P1 (B-8, B-9 = E-5, E-6, E-7)', 
 		const opt = [...sel.options].find((o) => o.value === '7.7000');
 		expect(opt?.textContent?.trim()).toBe('7.70%');
 		expect(sel.value).toBe('7.7000');
+	});
+});
+
+// v0172-correctifs (#885, C-v0172b-15, C-v0172b-16) — à côté d'un document, la date est
+// proposée au jour même (date LOCALE) et marquée « à vérifier » ; l'échéance suit la date,
+// plus le délai du fournisseur, tant qu'elle n'a pas été saisie.
+describe('SupplierInvoiceForm — date proposée et échéance qui suit (v0172, #885)', () => {
+	let tz: string | undefined;
+	beforeEach(() => {
+		// Fuseau épinglé ET horloge fixée : 2026-11-04T23:30Z = le 5 novembre, 00:30 à
+		// Zurich ; sous `toISOString`, la date serait le 4 (MB5, sonde MB10).
+		tz = process.env.TZ;
+		process.env.TZ = 'Europe/Zurich';
+		vi.useFakeTimers({ toFake: ['Date'] });
+		vi.setSystemTime(new Date('2026-11-04T23:30:00Z'));
+	});
+	afterEach(() => {
+		vi.useRealTimers();
+		if (tz === undefined) delete process.env.TZ;
+		else process.env.TZ = tz;
+	});
+
+	function withTerms(id: number, name: string, days: number | null): ContactResponse {
+		return { ...contact(id, name), defaultPaymentTermsDays: days };
+	}
+	const dateInput = (c: HTMLElement) =>
+		c.querySelector('[data-testid="supplier-invoice-date"]') as HTMLInputElement;
+	const dueInput = (c: HTMLElement) =>
+		c.querySelector('[data-testid="supplier-invoice-due"]') as HTMLInputElement;
+
+	it('AC-B9 — avec un document : la date LOCALE du jour (2026-11-05), l’avis « à vérifier » visible (MB5)', () => {
+		expect(new Date().toISOString().slice(0, 10), 'montage : la date UTC est la veille').toBe('2026-11-04');
+		const { container, getByTestId } = renderForm({ document: qrDoc() });
+		expect(dateInput(container).value).toBe('2026-11-05');
+		const notice = getByTestId('supplier-invoice-date-to-verify');
+		expect(notice.textContent).toContain(
+			'Date du jour, proposée par défaut — ce n’est pas celle du document. Vérifiez-la.',
+		);
+		expect(dateInput(container).getAttribute('aria-describedby')).toBe(notice.id);
+		expect(getByTestId('supplier-invoice-date-confirm').textContent?.trim()).toBe('C’est la bonne date');
+	});
+
+	it('AC-B9 — sans document : 2026-11-05 et aucun avis ; à l’édition : la date de `initial`, aucun avis', () => {
+		const a = renderForm({ document: null });
+		expect(dateInput(a.container).value).toBe('2026-11-05');
+		expect(a.queryByTestId('supplier-invoice-date-to-verify')).toBeNull();
+		cleanup();
+		const b = renderForm({
+			document: qrDoc(),
+			initial: initial({ invoiceDate: '2026-06-01', dueDate: '2026-06-30' }),
+		});
+		expect(dateInput(b.container).value).toBe('2026-06-01');
+		expect(dueInput(b.container).value).toBe('2026-06-30');
+		expect(b.queryByTestId('supplier-invoice-date-to-verify')).toBeNull();
+	});
+
+	it('AC-B10 — l’avis disparaît après une saisie dans la date, et ne revient pas (MB7)', async () => {
+		const { container, queryByTestId } = renderForm({ document: qrDoc() });
+		await setDate(container, '2026-10-20');
+		expect(queryByTestId('supplier-invoice-date-to-verify')).toBeNull();
+		await setDate(container, '2026-11-05');
+		expect(queryByTestId('supplier-invoice-date-to-verify')).toBeNull();
+	});
+
+	it('AC-B10 — « C’est la bonne date » retire l’avis, la date reste', async () => {
+		const { container, getByTestId, queryByTestId } = renderForm({ document: qrDoc() });
+		await fireEvent.click(getByTestId('supplier-invoice-date-confirm'));
+		expect(queryByTestId('supplier-invoice-date-to-verify')).toBeNull();
+		expect(dateInput(container).value).toBe('2026-11-05');
+	});
+
+	it('AC-B11 — fournisseur à 30 jours : échéance 2026-12-05, puis 2026-12-10 quand la date passe au 2026-11-10', async () => {
+		const { container } = renderForm({
+			document: qrDoc(),
+			suppliers: [withTerms(1, 'Alpha SA', 30), withTerms(2, 'Beta SA', 10)],
+		});
+		await selectSupplier(container, '1');
+		expect(dueInput(container).value).toBe('2026-12-05');
+		await setDate(container, '2026-11-10');
+		expect(dueInput(container).value).toBe('2026-12-10');
+		// Changer de fournisseur (30 → 10 jours) recalcule tant que l'échéance suit.
+		await selectSupplier(container, '2');
+		expect(dueInput(container).value).toBe('2026-11-20');
+	});
+
+	it('AC-B11 — fournisseur sans délai (ou aucun) : échéance = date, et elle suit la date ; date vidée ⇒ échéance vide', async () => {
+		const { container } = renderForm({ document: qrDoc(), suppliers: [withTerms(1, 'Alpha SA', null)] });
+		expect(dueInput(container).value, 'aucun fournisseur choisi').toBe('2026-11-05');
+		await selectSupplier(container, '1');
+		expect(dueInput(container).value).toBe('2026-11-05');
+		await setDate(container, '2026-11-12');
+		expect(dueInput(container).value).toBe('2026-11-12');
+		await setDate(container, '');
+		expect(dueInput(container).value).toBe('');
+	});
+
+	it('AC-B11 — échéance saisie à la main : changer la date ou le fournisseur ne la touche plus (MB6)', async () => {
+		const { container } = renderForm({
+			document: qrDoc(),
+			suppliers: [withTerms(1, 'Alpha SA', 30), withTerms(2, 'Beta SA', 10)],
+		});
+		await selectSupplier(container, '1');
+		await setDue(container, '2026-11-20');
+		await setDate(container, '2026-11-10');
+		await selectSupplier(container, '2');
+		expect(dueInput(container).value).toBe('2026-11-20');
+	});
+
+	it('AC-B12 — #853 inchangé : échéance 2026-11-01 pour une date 2026-11-05 ⇒ message, rien ne part', async () => {
+		const { container, getByTestId, onSubmit } = renderForm({ document: qrDoc() });
+		await selectSupplier(container, '1');
+		await fillLine(container, '100.00');
+		await setDue(container, '2026-11-01');
+		expect(getByTestId('supplier-invoice-due-error').textContent?.trim()).toBe(
+			"L'échéance (01.11.2026) précède la date de la facture (05.11.2026).",
+		);
+		await fireEvent.click(getByTestId('supplier-invoice-submit'));
+		await tick();
+		expect(onSubmit).not.toHaveBeenCalled();
+	});
+
+	it('AC-B12 — sans rien toucher, la requête porte la date proposée et l’échéance calculée (date non confirmée : pas de blocage)', async () => {
+		const { container, getByTestId, onSubmit } = renderForm({
+			document: qrDoc(),
+			suppliers: [withTerms(1, 'Alpha SA', 30)],
+		});
+		await selectSupplier(container, '1');
+		await fillLine(container, '100.00');
+		await fireEvent.click(getByTestId('supplier-invoice-submit'));
+		await waitFor(() => expect(onSubmit).toHaveBeenCalledTimes(1));
+		expect(onSubmit.mock.calls[0][0]).toMatchObject({ invoiceDate: '2026-11-05', dueDate: '2026-12-05' });
 	});
 });

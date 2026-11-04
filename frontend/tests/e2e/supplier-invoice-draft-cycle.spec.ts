@@ -588,11 +588,44 @@ test.describe('Cycle brouillon → validée → payée (étapes par l’écran, 
 			const entry = report.accepted.find((a) => a.fileName === name);
 			expect(entry, `${name} importé`).toBeTruthy();
 
-			// La complétion : la date démarre vide, avec son aide (#853).
+			// La complétion — v0172 (#885) : la date est proposée au jour même (date locale)
+			// et marquée « à vérifier » ; l'échéance suit la date, plus le délai du
+			// fournisseur. (Jusqu'à la 0.17.1, #853 : la date démarrait vide.)
+			const termsSupplier = await ctx.post('/api/v1/contacts', {
+				data: {
+					contactType: 'Entreprise',
+					name: `Fournisseur à 30 jours ${token()}`,
+					isClient: false,
+					isSupplier: true,
+					defaultPaymentTermsDays: 30,
+				},
+			});
+			expect(termsSupplier.ok(), `fournisseur à délai : ${termsSupplier.status()}`).toBeTruthy();
+			const termsSupplierId = (await termsSupplier.json()).id as number;
 			await page.goto(`/supplier-invoices/new?document=${entry!.importedSupplierInvoiceId}`);
-			await expect(page.getByTestId('supplier-invoice-date')).toHaveValue('');
-			await expect(page.getByTestId('supplier-invoice-date-help')).toBeVisible();
+			const date = page.getByTestId('supplier-invoice-date');
+			const today = await page.evaluate(() => {
+				const n = new Date();
+				const p = (x: number) => String(x).padStart(2, '0');
+				return `${n.getFullYear()}-${p(n.getMonth() + 1)}-${p(n.getDate())}`;
+			});
+			await expect(date).toHaveValue(today);
+			await expect(page.getByTestId('supplier-invoice-date-to-verify')).toBeVisible();
+			await expect(page.getByTestId('supplier-invoice-date-help')).toHaveCount(0);
+			await capture(page, testInfo, 'completion-date-a-verifier');
+			await page.getByTestId('supplier-invoice-date-confirm').click();
+			await expect(page.getByTestId('supplier-invoice-date-to-verify')).toHaveCount(0);
+			await expect(date).toHaveValue(today);
+			await capture(page, testInfo, 'completion-date-confirmee');
+			await page.getByTestId('supplier-invoice-supplier').selectOption(String(termsSupplierId));
+			await date.fill('2026-11-05');
+			await expect(page.getByTestId('supplier-invoice-date-to-verify')).toHaveCount(0);
+			await expect(page.getByTestId('supplier-invoice-due')).toHaveValue('2026-12-05');
+			await capture(page, testInfo, 'completion-echeance-calculee');
+			await date.fill(today);
 			await page.getByTestId('supplier-invoice-supplier').selectOption(String(d.supplierId));
+			// Une date vidée garde son message (#853).
+			await date.fill('');
 			await page
 				.getByTestId('supplier-invoice-line')
 				.first()
