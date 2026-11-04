@@ -441,6 +441,26 @@ describe('BankImportUpload — séquence, compte et confirmation (Story 27-3)', 
 		await flush();
 	});
 
+	it('TA8 (#840, AC-A10) — 409 RECONCILIATION_ACCOUNT_LOCKED : le message s’affiche, rien n’est recalculé', async () => {
+		// Depuis la 0.17.2, l'import attend le verrou du compte ; au-delà de
+		// 5 s, le serveur rend ce 409. Il prend le chemin d'erreur générique
+		// (`setError`), non celui de BANK_IMPORT_PREVIEW_STALE.
+		const { c, onSuccess } = await mount();
+		await previewWithA(c);
+		mockApi.createBankImport.mockRejectedValueOnce(
+			apiError('RECONCILIATION_ACCOUNT_LOCKED', 409, { bankAccountId: 1, timeoutSecs: 5 }),
+		);
+		await confirm(c);
+
+		const alert = get(c, 'bank-import-error');
+		expect(alert.getAttribute('data-error-code')).toBe('RECONCILIATION_ACCOUNT_LOCKED');
+		expect(alert.textContent).toContain('message RECONCILIATION_ACCOUNT_LOCKED');
+		expect(get<HTMLButtonElement>(c, 'bank-import-confirm').disabled).toBe(false);
+		expect(get(c, 'bank-import-preview').textContent).toContain('tx-A');
+		expect(mockApi.previewBankImport, 'aucun recalcul sur ce 409').toHaveBeenCalledTimes(1);
+		expect(onSuccess).not.toHaveBeenCalled();
+	});
+
 	it('V14 — confirmation rejetée autrement qu’en 409 : l’écran n’est pas figé', async () => {
 		// Revue P1, E-1 : seule la clause `finally` éteint `isConfirming` sur
 		// cette voie.
