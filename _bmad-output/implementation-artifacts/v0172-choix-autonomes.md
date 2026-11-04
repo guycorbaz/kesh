@@ -262,6 +262,10 @@ Fiche : `v0172-annulees.md`. Clé `v0172a`. Issue #868, en `refs` seulement.
 - **Contexte** : le journal d'audit affiche l'action sous `audit-log-action-supplier-invoice-unvalidated` (« Facture
   fournisseur dévalidée », fr-CH `:3053` ; de, it, en de même) ; C-v0172a-20 retire « dévalider » de tous les textes
   fournisseur, et cette clé échappait à la liste `K`.
+- *Annoté le 2026-11-04 (validation P4, V4-7)* : la valeur ci-dessous est la **fr-CH** ; les trois autres suivent le
+  vocabulaire d'AC-15 — de « Lieferantenrechnung in den Entwurf zurückgesetzt » (au lieu de « … entvalidiert »), it
+  « Fattura fornitore riportata in bozza » (au lieu de « Fattura fornitore annullata (convalida) », qui dit *annulée* :
+  contresens), en « Supplier invoice returned to draft » (au lieu de « … unvalidated »).
 - **Retenu** : 18ᵉ clé de `K`, valeur « Facture fournisseur repassée en brouillon » dans les quatre locales ; sonde
   refaite à `d7ec2ea2` : `clés=18 verbe=14` dans chaque locale. Le libellé vaut aussi pour les entrées passées (validées
   dévalidées depuis la 0.17.0) : c'est le même geste, rebaptisé.
@@ -277,7 +281,22 @@ Fiche : `v0172-annulees.md`. Clé `v0172a`. Issue #868, en `refs` seulement.
   (`docs/api-external.md:563`), et l'écran ne propose *Supprimer le brouillon* que sur un brouillon (un brouillon ne
   s'annule pas) : le refus n'est atteignable que par un appel direct de session ; le manuel et `api-external.md` disent
   déjà « d'abord brouillon ».
+- *Annoté le 2026-11-04 (validation P4, V4-5)* : il l'est aussi par une page restée ouverte pendant qu'une autre session
+  validait puis annulait le brouillon (`+page.svelte:613`, statut lu au chargement ; `delete_draft_in_tx` relit sous
+  verrou) ; course rare, message générique assumé.
 - **Écartées** : un motif `SUPPLIER_INVOICE_MUST_BE_REDRAFTED_FIRST` — code et clé neufs dans quatre locales pour un
   chemin qu'aucun écran ni aucune clé n'atteint ; changer le texte de `ILLEGAL_STATE_TRANSITION` — il est commun à tous
   les gestes.
+- **Réversible** : oui.
+
+### C-v0172a-26 — `docs/api-external.md` garde « dévalidation » comme nom de la route (validation P4, V4-2)
+
+- **Contexte** : le document de contrat des intégrateurs emploie « dévalidation » neuf fois (`:300 460 572 574 604 610
+  869 961 965`, relevé à `d7ec2ea2`) ; la route s'appelle `POST …/unvalidate` pour les deux sortes de factures ; le
+  vocabulaire de l'écran fournisseur devient « repasser en brouillon » (C-v0172a-20).
+- **Retenu** : « dévalidation » reste le **nom de la route** (comme le nom de code) ; changent les phrases devenues
+  fausses (`:572`, `:604`, partie fournisseur de `:869`) et celles qui recopient la consigne d'un message (`:574`,
+  `:961`) ; restent `:300`, `:965` (génériques) et `:460`, `:610` (clientes).
+- **Écartées** : renommer partout — le document décrirait une route `unvalidate` sous un autre nom que son chemin, et les
+  passages génériques couvrent aussi les factures clientes, qui gardent « dévalider ».
 - **Réversible** : oui.
