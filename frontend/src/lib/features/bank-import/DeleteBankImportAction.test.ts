@@ -100,7 +100,8 @@ describe('DeleteBankImportAction', () => {
 		await fireEvent.click(getByTestId('bank-import-delete-button'));
 		const body = (await findByTestId('bank-import-delete-dialog-body')).textContent ?? '';
 		expect(body).toContain('releve-mars.csv');
-		expect(body).toContain('du 2026-03-02 au 2026-03-04');
+		expect(body).toContain('du 02.03.2026 au 04.03.2026'); // v0172 (#880) : forme suisse (était l’ISO)
+		expect(body).not.toContain('2026-03-02');
 		expect(body).toContain('ses 3 transaction(s)');
 	});
 
@@ -265,7 +266,7 @@ describe('DeleteBankImportAction — relevé saisi à la main (Story v016-2b)', 
 		const { getByTestId, findByTestId } = monter(manuel([tx(1)]));
 		await fireEvent.click(getByTestId('bank-import-delete-button'));
 		const corps = (await findByTestId('bank-import-delete-dialog-body')).textContent ?? '';
-		expect(corps).toContain('Le relevé saisi à la main (période du 2026-03-02 au 2026-03-04)');
+		expect(corps).toContain('Le relevé saisi à la main (période du 02.03.2026 au 04.03.2026)'); // v0172 (#880)
 		expect(corps).toContain('le saisir de nouveau');
 		expect(corps).not.toContain('fichier');
 		expect(corps).not.toContain('saisie-manuelle-');

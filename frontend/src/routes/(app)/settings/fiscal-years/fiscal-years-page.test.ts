@@ -645,3 +645,23 @@ describe('Jeton de requête — une réponse tardive est ignorée (C-29-1-37)', 
 		expect(screen.getByTestId('fiscal-year-close-checks-none')).toBeTruthy();
 	});
 });
+
+// v0172-correctifs (#880, AC-C2) — les dates de début et de fin, en forme suisse dans la
+// liste et dans le dialogue de renommage.
+describe('exercices — dates en forme suisse (v0172, #880)', () => {
+	it('liste : 01.01.2026 et 31.12.2026 ; dialogue de renommage : idem ; jamais l’ISO', async () => {
+		authState.login({ userId: '1', username: 'admin', role: 'Admin', expiresIn: 3600 });
+		listFiscalYearsMock.mockResolvedValue([
+			fy({ id: 1, name: 'Exercice 2026', startDate: '2026-01-01', endDate: '2026-12-31', status: 'Open' }),
+		]);
+		render(Page);
+		const row = await screen.findByTestId('fiscal-year-row-1');
+		expect(row.textContent).toContain('01.01.2026');
+		expect(row.textContent).toContain('31.12.2026');
+		expect(row.textContent).not.toContain('2026-01-01');
+		await fireEvent.click(screen.getByRole('button', { name: 'Renommer Exercice 2026' }));
+		await waitFor(() => expect(document.body.textContent).toMatch(/Début\s*01\.01\.2026/));
+		expect(document.body.textContent).toMatch(/Fin\s*31\.12\.2026/);
+		expect(document.body.textContent).not.toContain('2026-12-31');
+	});
+});

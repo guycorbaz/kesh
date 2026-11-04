@@ -38,6 +38,7 @@ import type {
 } from './bank-import.types';
 import type { BankProfile } from './bank-profile.types';
 import type { ApiError } from '$lib/shared/types/api';
+import { pinTimeZone } from '$lib/shared/utils/pin-time-zone.test-helper';
 
 const mockApi = vi.mocked(api);
 const mockProfileApi = vi.mocked(profileApi);
@@ -866,5 +867,21 @@ describe('Écran d’import — libellés traduits (Story 27-3, AC17)', () => {
 		for (const key of KEYS) expect(all, key).toContain(key);
 		for (const text of FR_TEXTS) expect(all, text).not.toContain(text);
 		expect(all).not.toMatch(FR_WHOLE);
+	});
+});
+
+// v0172-correctifs (#880, AC-C2) — l'aperçu : période et dates des transactions en forme
+// suisse ; l'horodatage du relevé déjà importé (UTC, avec `Z`) à l'heure de Zurich.
+describe('BankImportUpload — dates de l’aperçu en forme suisse (v0172, #880)', () => {
+	pinTimeZone('UTC');
+
+	it('période 01.01.2026 → 31.01.2026, transaction 01.01.2026, déjà importé le 02.01.2026 01:00 ; aucune date ISO', async () => {
+		const { c } = await mount();
+		await previewWithA(c, { warnings: DUPLICATE_FILE });
+		const text = get(c, 'bank-import-preview').textContent ?? '';
+		expect(text).toContain('01.01.2026 → 31.01.2026');
+		expect(get(c, 'preview-tx-row').textContent).toContain('01.01.2026');
+		expect(c.textContent).toContain('02.01.2026 01:00');
+		expect(c.textContent).not.toMatch(/2026-0\d-\d{2}/);
 	});
 });

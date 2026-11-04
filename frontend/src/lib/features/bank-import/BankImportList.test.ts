@@ -10,6 +10,7 @@ vi.mock('$lib/shared/utils/i18n.svelte', () => ({
 }));
 
 import BankImportList from './BankImportList.svelte';
+import { pinTimeZone } from '$lib/shared/utils/pin-time-zone.test-helper';
 import type { BankImportResponse } from './bank-import.types';
 
 function imp(o: Partial<BankImportResponse>): BankImportResponse {
@@ -51,5 +52,21 @@ describe('BankImportList — origine du relevé', () => {
 		expect(container.textContent).not.toContain('saisie-manuelle-');
 		const entetes = Array.from(container.querySelectorAll('th')).map((t) => t.textContent);
 		expect(entetes.slice(0, 2)).toEqual(['Enregistré le', 'Relevé']);
+	});
+});
+
+// v0172-correctifs (#880, AC-C2) — dates en forme suisse ; l'horodatage d'import (UTC)
+// à l'heure de Zurich. Mutation MC2 : un helper retiré d'un site rougit ce test.
+describe('BankImportList — dates en forme suisse (v0172, #880)', () => {
+	pinTimeZone('UTC');
+
+	it('« Enregistré le » 01.10.2026 02:00 (UTC 00:00), période 01.09.2026 → 30.09.2026, jamais l’ISO', () => {
+		const { getAllByTestId, container } = render(BankImportList, { props: { imports: [imp({})] } });
+		const cells = Array.from(getAllByTestId('bank-import-list-row')[0].querySelectorAll('td')).map(
+			(td) => td.textContent?.trim(),
+		);
+		expect(cells[0]).toBe('01.10.2026 02:00');
+		expect(cells[2]).toBe('01.09.2026 → 30.09.2026');
+		expect(container.textContent).not.toMatch(/2026-\d{2}-\d{2}/);
 	});
 });

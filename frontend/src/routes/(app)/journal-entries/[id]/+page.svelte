@@ -587,7 +587,8 @@
 	<dl class="mb-6 grid grid-cols-1 gap-x-8 gap-y-2 text-sm sm:grid-cols-2">
 		<div class="flex justify-between border-b border-border py-1">
 			<dt class="text-text-muted">Date</dt>
-			<dd class="font-medium">{entry.entryDate}</dd>
+			<!-- v0172-correctifs (#880) : date en forme suisse. -->
+			<dd class="font-medium">{formatSwissDate(entry.entryDate)}</dd>
 		</div>
 		<div class="flex justify-between border-b border-border py-1">
 			<dt class="text-text-muted">Journal</dt>
