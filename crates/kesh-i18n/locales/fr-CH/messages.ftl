@@ -1039,7 +1039,7 @@ fiscal-years-checks-k7-link = Créer l’exercice suivant
 fiscal-years-checks-k8-title = Factures fournisseur en brouillon
 fiscal-years-checks-k8-help = Les factures fournisseur datées dans l’exercice et jamais validées : leur achat n’est pas en comptabilité.
 fiscal-years-checks-k8-attention = { $count } facture(s) fournisseur en brouillon datée(s) dans l’exercice.
-fiscal-years-checks-k8-link = Ouvrir les factures fournisseurs
+fiscal-years-checks-k8-link = Ouvrir les brouillons de factures fournisseurs
 fiscal-years-checks-k8-more = … et { $n } autre(s), dans la liste des factures fournisseurs.
 fiscal-years-checks-reminder-none = Aucun point à vérifier.
 fiscal-years-checks-reminder-count = { $count } point(s) à vérifier :
@@ -2652,6 +2652,10 @@ supplier-invoices-status-cancelled = Annulée
 # édition d'un brouillon, formulaire (#853, #830, #835). L'état stocké `open` se nomme
 # « validée » (décision Q4, C-v017-4-24).
 supplier-invoices-show-cancelled = Afficher les factures annulées
+supplier-invoices-filter-status = Seules les factures « { $status } » sont affichées, tous exercices confondus.
+supplier-invoices-filter-show-all = Afficher toutes les factures
+supplier-invoices-count-one = { $count } facture
+supplier-invoices-count-other = { $count } factures
 supplier-invoices-purchase-entry-link = Voir l'écriture d'achat
 supplier-invoices-draft-info = Brouillon : rien n’est encore passé au journal. Corrigez-le si besoin, puis validez-le.
 supplier-invoices-edit = Modifier

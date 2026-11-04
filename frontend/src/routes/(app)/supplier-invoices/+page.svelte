@@ -16,9 +16,19 @@
 	 *   restent au journal (limite L6) ;
 	 * - le TTC s'affiche aux **décimales exactes** (`formatExactAmount`, #831) : un total
 	 *   sous le centime ne s'arrondit plus à deux décimales.
+	 *
+	 * Story v0172-correctifs (#870, C-v0172b-7, C-v0172b-26) — la liste **se pagine** (50 par
+	 * page, *Précédent* / *Suivant*, le total) et **se filtre par statut depuis l'adresse** :
+	 * `?status=` (une valeur parmi `draft`, `open`, `paid`, `cancelled`), `?cancelled=1` (la
+	 * case), `?offset=`, `?limit=` (borné à [1, 200], comme le serveur). L'adresse est la
+	 * **source de vérité**, lue de façon réactive (`page.url`, `$derived`) : un lien vers
+	 * `/supplier-invoices` depuis la page filtrée, ou le retour arrière, relit la liste. Les
+	 * gestes (boutons, case) **naviguent**, ils ne posent pas d'état local. Le filtre ne porte
+	 * que sur le statut : depuis le contrôle de clôture K8, la liste montre les brouillons de
+	 * tous les exercices.
 	 */
-	import { onMount } from 'svelte';
 	import { goto } from '$app/navigation';
+	import { page } from '$app/state';
 	import { authState } from '$lib/app/stores/auth.svelte';
 	import { listSupplierInvoices } from '$lib/features/supplier-invoices/supplier-invoices.api';
 	import { supplierInvoiceStatusLabel } from '$lib/features/supplier-invoices/supplier-invoice-helpers';
@@ -33,11 +43,58 @@
 
 	/** Les statuts listés par défaut : tout, sauf les annulées. */
 	const WITHOUT_CANCELLED: SupplierInvoiceStatus[] = ['draft', 'open', 'paid'];
+	/** Les valeurs admises de `?status=` ; toute autre est ignorée, jamais envoyée. */
+	const STATUSES: readonly SupplierInvoiceStatus[] = ['draft', 'open', 'paid', 'cancelled'];
+	/** Taille de page par défaut et bornes de `?limit=` — celles du serveur. */
+	const DEFAULT_LIMIT = 50;
+	const MAX_LIMIT = 200;
+
+	/** Un entier de l'adresse, ou `null` s'il n'en est pas un. */
+	function intParam(raw: string | null): number | null {
+		if (raw === null || !/^\d+$/.test(raw)) return null;
+		const n = Number(raw);
+		return Number.isSafeInteger(n) ? n : null;
+	}
+
+	const statusFilter = $derived.by((): SupplierInvoiceStatus | null => {
+		const raw = page.url.searchParams.get('status');
+		return STATUSES.find((s) => s === raw) ?? null;
+	});
+	/** La case « annulées » : ignorée quand un statut est imposé. */
+	const showCancelled = $derived(
+		statusFilter === null && page.url.searchParams.get('cancelled') === '1',
+	);
+	const offset = $derived(intParam(page.url.searchParams.get('offset')) ?? 0);
+	const limit = $derived.by(() => {
+		const n = intParam(page.url.searchParams.get('limit'));
+		return n === null || n < 1 ? DEFAULT_LIMIT : Math.min(n, MAX_LIMIT);
+	});
 
 	let items = $state<SupplierInvoiceListItemResponse[]>([]);
+	let total = $state(0);
 	let loading = $state(true);
 	let errorMsg = $state('');
-	let showCancelled = $state(false);
+
+	/**
+	 * Navigue vers la liste avec les paramètres `changes` appliqués à l'adresse courante
+	 * (`null` retire le paramètre). `offset` 0 ne s'écrit pas.
+	 */
+	function navigate(
+		changes: Record<string, string | null>,
+		opts: { replaceState?: boolean } = {},
+	): void {
+		const params = new URLSearchParams(page.url.searchParams);
+		for (const [k, v] of Object.entries(changes)) {
+			if (v === null || (k === 'offset' && v === '0')) params.delete(k);
+			else params.set(k, v);
+		}
+		const qs = params.toString();
+		void goto(`/supplier-invoices${qs ? `?${qs}` : ''}`, {
+			keepFocus: true,
+			noScroll: true,
+			replaceState: opts.replaceState ?? false,
+		});
+	}
 
 	const canWrite = $derived(
 		authState.currentUser?.role === 'Admin' || authState.currentUser?.role === 'Comptable',
@@ -64,15 +121,34 @@
 	 */
 	let requestSeq = 0;
 
-	async function load() {
+	async function load(
+		filter: SupplierInvoiceStatus | null,
+		cancelled: boolean,
+		off: number,
+		lim: number,
+	) {
 		const seq = ++requestSeq;
 		errorMsg = '';
 		try {
 			const res = await listSupplierInvoices(
-				showCancelled ? { limit: 100 } : { limit: 100, status: WITHOUT_CANCELLED },
+				filter
+					? { limit: lim, offset: off, status: [filter] }
+					: cancelled
+						? { limit: lim, offset: off }
+						: { limit: lim, offset: off, status: WITHOUT_CANCELLED },
 			);
 			if (seq !== requestSeq) return;
+			// Page au-delà du total (dernière ligne supprimée, signet ancien) : la
+			// dernière page, sans nouvelle entrée d'historique.
+			if (res.items.length === 0 && res.total > 0 && off > 0) {
+				navigate(
+					{ offset: String(Math.floor((res.total - 1) / lim) * lim) },
+					{ replaceState: true },
+				);
+				return;
+			}
 			items = res.items;
+			total = res.total;
 		} catch (err) {
 			if (seq !== requestSeq) return;
 			if (isApiError(err)) errorMsg = err.message;
@@ -81,7 +157,10 @@
 		}
 	}
 
-	onMount(load);
+	// L'adresse change (geste, lien, retour arrière) : la liste se relit.
+	$effect(() => {
+		void load(statusFilter, showCancelled, offset, limit);
+	});
 </script>
 
 <svelte:head>
@@ -103,15 +182,34 @@
 	{/if}
 </div>
 
-<label class="mb-4 flex items-center gap-2 text-sm">
-	<input
-		type="checkbox"
-		data-testid="supplier-invoices-show-cancelled"
-		bind:checked={showCancelled}
-		onchange={() => void load()}
-	/>
-	{i18nMsg('supplier-invoices-show-cancelled', 'Afficher les factures annulées')}
-</label>
+{#if statusFilter}
+	<div
+		class="mb-4 flex flex-wrap items-center gap-3 rounded border border-border bg-surface-alt px-3 py-2 text-sm"
+		data-testid="supplier-invoices-filter-banner"
+	>
+		<span>
+			{i18nMsg(
+				'supplier-invoices-filter-status',
+				'Seules les factures « { $status } » sont affichées, tous exercices confondus.',
+				{ status: supplierInvoiceStatusLabel(statusFilter) },
+			)}
+		</span>
+		<a class="text-primary underline" href="/supplier-invoices" data-testid="supplier-invoices-filter-clear">
+			{i18nMsg('supplier-invoices-filter-show-all', 'Afficher toutes les factures')}
+		</a>
+	</div>
+{:else}
+	<label class="mb-4 flex items-center gap-2 text-sm">
+		<input
+			type="checkbox"
+			data-testid="supplier-invoices-show-cancelled"
+			checked={showCancelled}
+			onchange={(e) =>
+				navigate({ cancelled: e.currentTarget.checked ? '1' : null, offset: null })}
+		/>
+		{i18nMsg('supplier-invoices-show-cancelled', 'Afficher les factures annulées')}
+	</label>
+{/if}
 
 {#if loading}
 	<p class="text-sm text-text-muted">{i18nMsg('common-loading', 'Chargement…')}</p>
@@ -161,4 +259,31 @@
 			{/each}
 		</tbody>
 	</table>
+	<div class="mt-4 flex items-center justify-between text-sm text-text-muted">
+		<span data-testid="supplier-invoices-count">
+			{total > 1
+				? i18nMsg('supplier-invoices-count-other', '{ $count } factures', { count: total })
+				: i18nMsg('supplier-invoices-count-one', '{ $count } facture', { count: total })}
+		</span>
+		<div class="flex gap-2">
+			<button
+				type="button"
+				class="rounded border border-border px-3 py-1 disabled:opacity-50"
+				data-testid="supplier-invoices-prev"
+				disabled={offset === 0}
+				onclick={() => navigate({ offset: String(Math.max(0, offset - limit)) })}
+			>
+				{i18nMsg('common-previous', 'Précédent')}
+			</button>
+			<button
+				type="button"
+				class="rounded border border-border px-3 py-1 disabled:opacity-50"
+				data-testid="supplier-invoices-next"
+				disabled={offset + limit >= total}
+				onclick={() => navigate({ offset: String(offset + limit) })}
+			>
+				{i18nMsg('common-next', 'Suivant')}
+			</button>
+		</div>
+	</div>
 {/if}
