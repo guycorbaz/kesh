@@ -931,6 +931,7 @@ pub async fn unvalidate_in_tx(
             .supplier_invoice_number
             .clone()
             .filter(|n| !n.trim().is_empty()),
+        hint: Default::default(),
     };
     match inv.status.as_str() {
         "open" => {}

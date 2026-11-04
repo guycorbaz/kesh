@@ -4138,6 +4138,7 @@ impl IntoResponse for AppError {
                     blocker,
                     document_id,
                     document_label,
+                    ..
                 } => {
                     let (fallback_key, fallback) = supplier_unvalidation_blocked_text(blocker);
                     let base = t(fallback_key, fallback);
@@ -4727,6 +4728,10 @@ fn supplier_unvalidation_blocked_text(
         B::MatchedBankTransaction => (
             "error-supplier-invoice-unvalidate-blocked-matched",
             "L'écriture d'achat de cette facture est rapprochée d'une transaction bancaire : annulez d'abord le rapprochement.",
+        ),
+        B::PaidReconciled | B::DetachedPayment => (
+            "supplier-invoices-unvalidate-error",
+            "La facture n’a pas pu être dévalidée.",
         ),
     }
 }
@@ -5816,5 +5821,76 @@ mod tests {
             msg, "Entrée invalide",
             "le code doit être dans la whitelist de dispatch, sinon message générique"
         );
+    }
+
+    /// Story v0172-annulees (#868, T7b, AC-8) — sans catalogue chargé (le cas de
+    /// ces tests), `t_args` rend le repli **tel quel** : il doit donc être
+    /// construit par `format!`, arguments en place — jamais un gabarit
+    /// `{ $… }` littéral. Une réponse par motif nommant un objet ; tue M13.
+    #[tokio::test]
+    async fn supplier_unvalidation_fallbacks_substitute_their_arguments() {
+        use kesh_db::errors::{SupplierUnvalidationBlocker as B, SupplierUnvalidationHint};
+        let d = |y, m, j| chrono::NaiveDate::from_ymd_opt(y, m, j);
+        let cas = [
+            (
+                B::PaidReconciled,
+                SupplierUnvalidationHint {
+                    transaction_date: d(2026, 6, 17),
+                    ..Default::default()
+                },
+                "Cette facture fournisseur est payée par la transaction bancaire du 17.06.2026 : annulez d'abord ce rapprochement, depuis le détail de l'import bancaire — elle redeviendra validée —, puis repassez-la en brouillon.",
+            ),
+            (
+                B::InPaymentBatch,
+                SupplierUnvalidationHint {
+                    batch_id: Some(4),
+                    ..Default::default()
+                },
+                "Cette facture figure dans le lot de paiement n° 4, en cours : annulez d'abord ce lot, dans Paiements fournisseurs, puis repassez-la en brouillon.",
+            ),
+            (
+                B::DetachedPayment,
+                SupplierUnvalidationHint {
+                    entry_id: Some(90),
+                    entry_number: Some(12),
+                    entry_date: d(2026, 6, 18),
+                    ..Default::default()
+                },
+                "Cette facture a été annulée alors qu'elle était payée : son paiement (écriture n° 12 du 18.06.2026) reste au grand livre. Si ce paiement n'a pas eu lieu, contre-passez-le d'abord depuis sa fiche, puis repassez la facture en brouillon.",
+            ),
+            (
+                B::DetachedPayment,
+                SupplierUnvalidationHint {
+                    transaction_date: d(2026, 6, 19),
+                    entry_id: Some(91),
+                    entry_number: Some(13),
+                    entry_date: d(2026, 6, 18),
+                    ..Default::default()
+                },
+                "Cette facture a été annulée alors qu'elle était payée : son paiement (écriture n° 13 du 18.06.2026) est rapproché de la transaction bancaire du 19.06.2026. Si ce paiement n'a pas eu lieu, annulez d'abord ce rapprochement, depuis le détail de l'import bancaire — il contre-passera le paiement —, puis repassez la facture en brouillon.",
+            ),
+            (
+                B::MatchedBankTransaction,
+                SupplierUnvalidationHint {
+                    transaction_date: d(2026, 6, 21),
+                    ..Default::default()
+                },
+                "L'écriture d'achat de cette facture est rapprochée de la transaction bancaire du 21.06.2026 : annulez d'abord ce rapprochement, depuis le détail de l'import bancaire, puis repassez la facture en brouillon.",
+            ),
+        ];
+        for (blocker, hint, attendu) in cas {
+            let resp = AppError::from(DbError::SupplierInvoiceNotUnvalidatable {
+                blocker,
+                document_id: Some(1),
+                document_label: Some("FF-1".into()),
+                hint,
+            })
+            .into_response();
+            let (status, body) = response_body(resp).await;
+            assert_eq!(status, StatusCode::CONFLICT);
+            let m = body["error"]["message"].as_str().unwrap();
+            assert!(!m.contains("{ $"), "M13 : gabarit littéral : {m}");
+            assert_eq!(m, attendu, "{blocker:?}");
+        }
     }
 }

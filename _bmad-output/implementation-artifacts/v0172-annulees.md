@@ -325,9 +325,12 @@ puis états posés en SQL :
   ne dise `LATER_FISCAL_YEAR_CLOSED` ;
 - **P6** : verrou au `Y-2`-12-31 (achat seul) + une ligne de l'achat lettrée hors paire (SQL) → `PERIOD_LOCKED` de
   l'achat (3-quater avant 3-quinquies), la contre-passation ayant passé.
-Répartition close : **scission** pour T3a, T3b, T3c, T3c', P2, P3, P4, P5, P6 (P2 et P3 : `A` `Closed` comme T3a,
+Répartition close, **pour les tests de `kesh-db`** (V5-4) : **scission** pour T3a, T3b, T3c, T3c', P2, P3, P4, P5, P6 (P2 et P3 : `A` `Closed` comme T3a,
 non le décor clos tout entier, pour que la contre-passation reste dans un exercice ouvert) ; **décor unique** pour T1,
-T2, T3d, T3e, P1, T5, T6, T9, T9b, T10, T11, T14.
+T2, T3d, T3e, P1, T5, T6, T9, T9b, T10, T11, T14. **T7** (`kesh-api`) ne couvre que les variantes de
+`SupplierUnvalidationBlocker` (`Paid`, `PaidReconciled`, `InPaymentBatch`, `DetachedPayment` avec et sans date,
+`MatchedBankTransaction`) et le 200 d'une annulée — aucun refus d'exercice ni de période, que T3/T4 couvrent au dépôt et
+dont les messages existants restent testés par la page (T12) : **décor unique**.
 
 **AC-6 — Annulée alors que payée : pas de brouillon tant que le paiement réel reste sans gel.** Si l'audit
 `supplier_invoice.cancelled` de la facture porte `settlementJournalEntryId` et que cette écriture **existe** et n'est
@@ -460,7 +463,12 @@ retirées).
   git show d7ec2ea2:crates/kesh-i18n/locales/fr-CH/messages.ftl | /usr/bin/grep -nE "$K" | while IFS= read -r l; do
     v=${l#*= }; echo "${l%% = *} droite=$(printf '%s' "$v" | tr -cd "'" | wc -c) typo=$(printf '%s' "$v" | /usr/bin/grep -o "’" | wc -l)"; done
   ```
-  (avec `K` d'AC-15 étendue à `supplier-invoices-unvalidate-confirm-body`, sœur des clés neuves). Sortie copiée :
+  avec `K` d'AC-15 étendue à `supplier-invoices-unvalidate-confirm-body`, sœur des clés neuves (V5-3 : la commande se
+  joue avec cette définition, non avec le `K` du contrôle de vocabulaire, qui rendrait 18 lignes et omettrait `:2664`) :
+  ```sh
+  K='^(error-supplier-invoice-must-be-unvalidated-first|error-supplier-invoice-unvalidate-blocked-(paid|in-payment-batch|matched)|supplier-invoices-unvalidate|supplier-invoices-unvalidate-confirm-(title|body)|supplier-invoices-unvalidated|supplier-invoices-unvalidate-blocked-(not-validated|fiscal-year-closed|later-fiscal-year-closed|reversed|period-locked|lettered|later-fiscal-year-closed-named)|supplier-invoices-unvalidate-error|supplier-invoices-validate-confirm-body|supplier-invoices-edit-not-draft|audit-log-action-supplier-invoice-unvalidated) = '
+  ```
+  Sortie copiée (19 lignes) :
   ```
   50:error-supplier-invoice-must-be-unvalidated-first droite=1 typo=0
   52:error-supplier-invoice-unvalidate-blocked-paid droite=1 typo=0
@@ -547,8 +555,11 @@ phrases devenues fausses et celles qui recopient une consigne de l'écran) :
     et la partie fournisseur de `:869` (la route `unvalidate` fournisseur vaut aussi pour une annulée) ;
   - **restent** : `:460` et `:610` (factures clientes), `:300` et `:965` (génériques : « la dévalidation d'une facture »,
     nom de la route pour les deux sortes) ;
-  à la tête, le même relevé rend ces quatre-là, plus ce que la reformulation de `:572`, `:604`, `:869` conserve du nom de
-  la route — sortie copiée au Dev Agent Record ;
+  à la tête, le même relevé rend ces quatre-là, plus des lignes fournisseur où « dévalid » ne survit **que** comme nom de
+  la route (`POST …/unvalidate`, « la dévalidation » désignant cette route) ; toute autre occurrence fournisseur est un
+  reste à corriger ; la liste des lignes admises, avec leur motif, s'écrit au Dev Agent Record (V5-2). Pour `:869`, ce
+  qui change est nommé : la route `unvalidate` fournisseur vaut **aussi pour une annulée**, et y supprime en plus la
+  contre-passation ; le reste de la phrase est juste et ne change pas ;
 `git grep -nE "PAID_RECONCILED|DETACHED_PAYMENT" -- docs/api-external.md` rend au moins deux lignes.
 
 ## Tests et mutations
@@ -585,9 +596,16 @@ triée) :
 | `supplier-invoice-unvalidate.test.ts:62-75` | « mot pour mot le FTL, suffixé du numéro de la pièce » | mot pour mot le FTL, **arguments** substitués, sans suffixe |
 | `frontend/src/lib/shared/i18n-keys.test.ts:837` (`sitesTotal: 2796`) et ses compteurs par fichier (`:810-840`) | nombre d'appels `i18nMsg(` | **recomptés à la source** aux deux bornes (`d7ec2ea2` → tête), la variation écrite dans le commentaire comme les précédentes |
 | `frontend/src/lib/shared/i18n-un-repli-par-cle.test.ts:204-212` | décompte des clés de la famille | recompté, variation écrite (clés neuves d'AC-15) |
-| `frontend/src/lib/shared/i18n-libelle-en-dur.test.ts:267` (`CANDIDATES_ATTENDUES = 77`, asserté `:762`, `:787`) **et `:784`** (`expect(classes).toEqual({ nonAnalysee: 0, enViolation: 0, ecartee: 14, conforme: 63 })`) ; préambule `:74-266`, entrée de `withLabel` (`supplier-invoice-unvalidate.ts`) `:260-265`. Littéraux relevés à `d7ec2ea2` par `git show d7ec2ea2:frontend/src/lib/shared/i18n-libelle-en-dur.test.ts \| /usr/bin/grep -nE "(const [A-Z_]+ = [0-9]+;\|toBe\([0-9]+\)\|toEqual\(\{[^}]*[0-9]\|toHaveLength\([0-9]+\))"` : `:267`, `:784` portent sur le dépôt ; `:856`, `:919`, `:926`, `:936`, `:1019` portent sur des sources synthétiques du test et ne bougent pas (V4-1) | nombre de fonctions candidates (suffixes `Label`, `Text`, `Display`) | **recompté à la source** aux deux bornes (`d7ec2ea2` → tête) par l'extraction de son préambule : `withLabel` disparaît si le suffixe du numéro de facture est retiré (AC-8), d'autres fonctions en `*Label`/`*Text`/`*Display` peuvent apparaître ; variation et noms écrits dans le commentaire, entrées passées non réécrites ; ajouté en remédiation P3 (V3-2) |
+| `frontend/src/lib/shared/i18n-libelle-en-dur.test.ts:267` (`CANDIDATES_ATTENDUES = 77`, asserté `:762`, `:787`) **et `:784`** (`expect(classes).toEqual({ nonAnalysee: 0, enViolation: 0, ecartee: 14, conforme: 63 })`) ; préambule `:74-266`, entrée de `withLabel` (`supplier-invoice-unvalidate.ts`) `:260-265`. Littéraux relevés à `d7ec2ea2` par la commande **(L)** donnée sous ce tableau : `:267`, `:784` portent sur le dépôt ; `:856`, `:919`, `:926`, `:936`, `:1019` portent sur des sources synthétiques du test et ne bougent pas (V4-1) | nombre de fonctions candidates (suffixes `Label`, `Text`, `Display`) | **recompté à la source** aux deux bornes (`d7ec2ea2` → tête) par l'extraction de son préambule : `withLabel` disparaît si le suffixe du numéro de facture est retiré (AC-8), d'autres fonctions en `*Label`/`*Text`/`*Display` peuvent apparaître ; variation et noms écrits dans le commentaire, entrées passées non réécrites ; ajouté en remédiation P3 (V3-2) |
 | `frontend/tests/e2e/supplier-invoice-draft-cycle.spec.ts:365-372` | boîte de la dévalidation contient « trou » | reste vrai (« trou » ⊂ « deux trous ») ; le libellé du bouton change |
 | `frontend/tests/e2e/supplier-invoice-draft-cycle.spec.ts:412` | payée par la réconciliation : `toHaveCount(0)` | le parcours 3 d'AC-13 |
+
+Commande **(L)** des littéraux de `i18n-libelle-en-dur.test.ts` (sortie du tableau ci-dessus ; V5-3 : hors du
+tableau, ses `|` sont des OU d'`-E`) :
+
+```sh
+git show d7ec2ea2:frontend/src/lib/shared/i18n-libelle-en-dur.test.ts | /usr/bin/grep -nE "(const [A-Z_]+ = [0-9]+;|toBe\([0-9]+\)|toEqual\(\{[^}]*[0-9]|toHaveLength\([0-9]+\))"
+```
 
 Tout autre test qui rougit au gate se juge et se déclare au Dev Agent Record (ce relevé est un grep, pas une exécution).
 
@@ -661,12 +679,12 @@ Tout autre test qui rougit au gate se juge et se déclare au Dev Agent Record (c
    `SupplierInvoiceNotUnvalidatable` (`:4137-4159`) : repli par `format!`, message par `t_args` (AC-8), `details`
    d'AC-8 ; doc-comment de la route.
 5. **i18n** : clés d'AC-15 dans les quatre locales ; `npm run lint-i18n-ownership` ; tests i18n du frontend
-   (`i18n-keys.test.ts`, `i18n-un-repli-par-cle.test.ts`, `i18n-libelle-en-dur.test.ts`) verts, **`sitesTotal` et les
-   compteurs par fichier de `i18n-keys.test.ts`, le décompte de `i18n-un-repli-par-cle.test.ts` et
-   `CANDIDATES_ATTENDUES` (`:267`) **et la ventilation `conforme` / `ecartee` (`:784`)** de `i18n-libelle-en-dur.test.ts`,
-   recomptés à la source** par l'extraction de son préambule (`:74-266`), la variation de chaque classe écrite dans le
-   commentaire (« `conforme` 63 → 62 » si `withLabel` disparaît) (aux deux bornes, la variation écrite dans le commentaire, entrées passées non réécrites) ;
-   `docs/i18n-glossaire.md` (AC-15).
+   (`i18n-keys.test.ts`, `i18n-un-repli-par-cle.test.ts`, `i18n-libelle-en-dur.test.ts`) verts ; `sitesTotal` et les
+   compteurs par fichier de `i18n-keys.test.ts`, le décompte de `i18n-un-repli-par-cle.test.ts`,
+   `CANDIDATES_ATTENDUES` (`:267`) et la ventilation `conforme` / `ecartee` (`:784`) de `i18n-libelle-en-dur.test.ts`
+   **recomptés à la source** (aux deux bornes, `d7ec2ea2` → tête), ce dernier par l'extraction de son préambule
+   (`:74-266`) ; la variation de chaque classe s'écrit dans le commentaire (« `conforme` 63 → 62 » si `withLabel`
+   disparaît), entrées passées non réécrites ; `docs/i18n-glossaire.md` (AC-15).
 6. **Frontend** : `supplier-invoice-unvalidate.ts` (douze codes, arguments, replis = FTL fr-CH) ; `+page.svelte` (bouton
    pour `open`/`paid`/`cancelled`, boîte pour `open`/`cancelled`, appel direct pour `paid`, succès par statut,
    `isStaleState`) ; commentaires à jour (`ENTRY_IS_REVERSED` reste « inatteignable », pour une autre raison).

@@ -1120,3 +1120,319 @@ async fn delete_route_during_an_attachment_ends_in_204(pool: MySqlPool) {
     let status = route.await.unwrap();
     assert_eq!(status, 204, "jamais 500");
 }
+
+// ---------------------------------------------------------------------------
+// Story v0172-annulees (#868) — repasser en brouillon une annulée, par HTTP
+// ---------------------------------------------------------------------------
+
+async fn unvalidate_route(c: &Ctx, pool: &MySqlPool, id: i64) -> (u16, Value) {
+    let version: i32 = sqlx::query_scalar("SELECT version FROM supplier_invoices WHERE id = ?")
+        .bind(id)
+        .fetch_one(pool)
+        .await
+        .unwrap();
+    post(
+        c,
+        &format!("/api/v1/supplier-invoices/{id}/unvalidate"),
+        json!({ "version": version }),
+    )
+    .await
+}
+
+fn jour(y: i32, m: u32, d: u32) -> NaiveDate {
+    NaiveDate::from_ymd_opt(y, m, d).unwrap()
+}
+
+/// Une facture fournisseur validée (montant sans TVA) par le dépôt ; rend son id.
+async fn validee_depot(pool: &MySqlPool, c: &Ctx, numero: &str, montant: Decimal) -> (i64, i64) {
+    let v = kesh_db::repositories::supplier_invoices::create_validated(
+        pool,
+        kesh_db::entities::NewSupplierInvoice {
+            company_id: c.seeded.company_id,
+            contact_id: c.f.supplier_id,
+            supplier_invoice_number: Some(numero.into()),
+            invoice_date: jour(2026, 6, 15),
+            due_date: None,
+            creditor_iban: Some(fournisseur_rapproche::IBAN_CREANCIER.into()),
+            creditor_qr_iban: None,
+            payment_reference: None,
+            expected_payment_amount: None,
+            project_id: None,
+            lines: vec![kesh_db::entities::NewSupplierInvoiceLine {
+                description: "Fourniture".into(),
+                quantity: dec!(1),
+                unit_price: montant,
+                vat_rate: dec!(0),
+                expense_account_id: c.seeded.accounts["4000"],
+            }],
+        },
+        c.seeded.admin_user_id,
+    )
+    .await
+    .expect("facture validée");
+    (v.invoice.id, v.invoice.purchase_journal_entry_id.unwrap())
+}
+
+async fn annuler_depot(pool: &MySqlPool, c: &Ctx, id: i64) {
+    kesh_db::repositories::supplier_invoices::cancel(
+        pool,
+        c.seeded.company_id,
+        id,
+        c.seeded.admin_user_id,
+    )
+    .await
+    .expect("annulation");
+}
+
+/// Les cinq champs neufs de `details` (AC-8), toujours présents.
+fn details_neufs(e: &Value) -> [Value; 5] {
+    let d = &e["error"]["details"];
+    for k in [
+        "documentId",
+        "documentNumber",
+        "batchId",
+        "transactionDate",
+        "entryId",
+        "entryNumber",
+        "entryDate",
+    ] {
+        assert!(d.get(k).is_some(), "details.{k} toujours présent : {e}");
+    }
+    [
+        d["batchId"].clone(),
+        d["transactionDate"].clone(),
+        d["entryId"].clone(),
+        d["entryNumber"].clone(),
+        d["entryDate"].clone(),
+    ]
+}
+
+/// T7 (AC-8) — la route `unvalidate` : 200 sur une annulée (les deux écritures
+/// supprimées) ; puis un 409 par variante de `SupplierUnvalidationBlocker`,
+/// `details` complets, message fr-CH exact, arguments substitués (catalogue de
+/// l'harnais chargé). Décor unique (V5-4) : aucun refus d'exercice ici.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn unvalidate_route_redrafts_a_cancelled_invoice_and_names_what_to_undo(pool: MySqlPool) {
+    let c = setup(&pool).await;
+    let co = c.seeded.company_id;
+
+    // 200 — annulée → brouillon.
+    let (id, achat) = validee_depot(&pool, &c, "FF-R7", dec!(20)).await;
+    annuler_depot(&pool, &c, id).await;
+    let avant = nb_ecritures(&pool, co).await;
+    let (s, b) = unvalidate_route(&c, &pool, id).await;
+    assert_eq!(s, 200, "{b}");
+    assert_eq!(b["status"], "draft");
+    assert_eq!(b.get("purchaseJournalEntryId"), Some(&Value::Null));
+    assert_eq!(
+        nb_ecritures(&pool, co).await,
+        avant - 2,
+        "achat et contre-passation"
+    );
+    let _ = achat;
+
+    // SUPPLIER_INVOICE_PAID — règlement non rapproché.
+    let (paid, _, _) = fournisseur_rapproche::facture_payee(
+        &pool,
+        &c.seeded,
+        c.f,
+        "FF-R7P",
+        jour(2026, 6, 15),
+        dec!(30),
+    )
+    .await;
+    let (s, e) = unvalidate_route(&c, &pool, paid).await;
+    assert_eq!((s, code(&e)), (409, "SUPPLIER_INVOICE_PAID"), "{e}");
+    assert_eq!(
+        e["error"]["message"],
+        "Cette facture fournisseur est payée : annulez d'abord son règlement (bouton « Annuler le règlement » de cette fiche), puis repassez-la en brouillon."
+    );
+    assert_eq!(
+        details_neufs(&e),
+        [
+            Value::Null,
+            Value::Null,
+            Value::Null,
+            Value::Null,
+            Value::Null
+        ]
+    );
+    assert_eq!(e["error"]["details"]["documentNumber"], "FF-R7P");
+
+    // SUPPLIER_INVOICE_PAID_RECONCILED.
+    let r = fournisseur_rapproche::reglement_rapproche(
+        &pool,
+        &c.seeded,
+        c.f,
+        "FF-R7R",
+        jour(2026, 6, 17),
+        dec!(30),
+    )
+    .await;
+    let (s, e) = unvalidate_route(&c, &pool, r.supplier_invoice_id).await;
+    assert_eq!(
+        (s, code(&e)),
+        (409, "SUPPLIER_INVOICE_PAID_RECONCILED"),
+        "{e}"
+    );
+    assert_eq!(
+        e["error"]["message"],
+        "Cette facture fournisseur est payée par la transaction bancaire du 17.06.2026 : annulez d'abord ce rapprochement, depuis le détail de l'import bancaire — elle redeviendra validée —, puis repassez-la en brouillon."
+    );
+    assert_eq!(e["error"]["details"]["documentId"], r.bank_transaction_id);
+    assert_eq!(
+        details_neufs(&e),
+        [
+            Value::Null,
+            json!("2026-06-17"),
+            Value::Null,
+            Value::Null,
+            Value::Null
+        ]
+    );
+
+    // SUPPLIER_INVOICE_IN_PAYMENT_BATCH.
+    let (lotee, _) = validee_depot(&pool, &c, "FF-R7L", dec!(11)).await;
+    let outcome = kesh_db::repositories::payment_batches::create_batch(
+        &pool,
+        kesh_db::entities::NewPaymentBatch {
+            company_id: co,
+            bank_account_id: c.f.bank_account_id,
+            requested_execution_date: jour(2026, 6, 25),
+            supplier_invoice_ids: vec![lotee],
+        },
+        c.seeded.admin_user_id,
+    )
+    .await
+    .expect("lot");
+    let lot = outcome.batch.expect("lot créé").batch.id;
+    let (s, e) = unvalidate_route(&c, &pool, lotee).await;
+    assert_eq!(
+        (s, code(&e)),
+        (409, "SUPPLIER_INVOICE_IN_PAYMENT_BATCH"),
+        "{e}"
+    );
+    assert_eq!(
+        e["error"]["message"],
+        format!(
+            "Cette facture figure dans le lot de paiement n° {lot}, en cours : annulez d'abord ce lot, dans Paiements fournisseurs, puis repassez-la en brouillon."
+        )
+    );
+    assert_eq!(
+        details_neufs(&e),
+        [
+            json!(lot),
+            Value::Null,
+            Value::Null,
+            Value::Null,
+            Value::Null
+        ]
+    );
+
+    // SUPPLIER_INVOICE_DETACHED_PAYMENT — sans transaction.
+    let (detachee, _, reglement) = fournisseur_rapproche::facture_payee(
+        &pool,
+        &c.seeded,
+        c.f,
+        "FF-R7D",
+        jour(2026, 6, 18),
+        dec!(30),
+    )
+    .await;
+    annuler_depot(&pool, &c, detachee).await;
+    let numero: i64 = sqlx::query_scalar("SELECT entry_number FROM journal_entries WHERE id = ?")
+        .bind(reglement)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    let (s, e) = unvalidate_route(&c, &pool, detachee).await;
+    assert_eq!(
+        (s, code(&e)),
+        (409, "SUPPLIER_INVOICE_DETACHED_PAYMENT"),
+        "{e}"
+    );
+    assert_eq!(
+        e["error"]["message"],
+        format!(
+            "Cette facture a été annulée alors qu'elle était payée : son paiement (écriture n° {numero} du 18.06.2026) reste au grand livre. Si ce paiement n'a pas eu lieu, contre-passez-le d'abord depuis sa fiche, puis repassez la facture en brouillon."
+        )
+    );
+    assert_eq!(
+        details_neufs(&e),
+        [
+            Value::Null,
+            Value::Null,
+            json!(reglement),
+            json!(numero),
+            json!("2026-06-18")
+        ]
+    );
+
+    // SUPPLIER_INVOICE_DETACHED_PAYMENT — paiement rapproché.
+    let rr = fournisseur_rapproche::reglement_rapproche(
+        &pool,
+        &c.seeded,
+        c.f,
+        "FF-R7DR",
+        jour(2026, 6, 19),
+        dec!(30),
+    )
+    .await;
+    annuler_depot(&pool, &c, rr.supplier_invoice_id).await;
+    let numero: i64 = sqlx::query_scalar("SELECT entry_number FROM journal_entries WHERE id = ?")
+        .bind(rr.settlement_entry_id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    let (s, e) = unvalidate_route(&c, &pool, rr.supplier_invoice_id).await;
+    assert_eq!(
+        (s, code(&e)),
+        (409, "SUPPLIER_INVOICE_DETACHED_PAYMENT"),
+        "{e}"
+    );
+    assert_eq!(
+        e["error"]["message"],
+        format!(
+            "Cette facture a été annulée alors qu'elle était payée : son paiement (écriture n° {numero} du 19.06.2026) est rapproché de la transaction bancaire du 19.06.2026. Si ce paiement n'a pas eu lieu, annulez d'abord ce rapprochement, depuis le détail de l'import bancaire — il contre-passera le paiement —, puis repassez la facture en brouillon."
+        )
+    );
+    assert_eq!(
+        details_neufs(&e),
+        [
+            Value::Null,
+            json!("2026-06-19"),
+            json!(rr.settlement_entry_id),
+            json!(numero),
+            json!("2026-06-19")
+        ]
+    );
+
+    // MATCHED_BANK_TRANSACTION — l'achat rapproché.
+    let (rapprochee, achat) = validee_depot(&pool, &c, "FF-R7M", dec!(13)).await;
+    let tx = fournisseur_rapproche::debit_rapproche(
+        &pool,
+        &c.seeded,
+        c.f,
+        achat,
+        jour(2026, 6, 21),
+        dec!(13),
+    )
+    .await;
+    let (s, e) = unvalidate_route(&c, &pool, rapprochee).await;
+    assert_eq!((s, code(&e)), (409, "MATCHED_BANK_TRANSACTION"), "{e}");
+    assert_eq!(
+        e["error"]["message"],
+        "L'écriture d'achat de cette facture est rapprochée de la transaction bancaire du 21.06.2026 : annulez d'abord ce rapprochement, depuis le détail de l'import bancaire, puis repassez la facture en brouillon."
+    );
+    assert_eq!(e["error"]["details"]["documentId"], tx);
+    assert_eq!(
+        details_neufs(&e),
+        [
+            Value::Null,
+            json!("2026-06-21"),
+            Value::Null,
+            Value::Null,
+            Value::Null
+        ]
+    );
+}
