@@ -51,12 +51,36 @@ pub struct Claims {
     pub exp: i64,
 }
 
-/// Encode un JWT HS256 pour un utilisateur donné.
+/// Story v0172-session (0.17.3, #876, C-v0172s-43) — les revendications d'un
+/// jeton de **session** : celles de [`Claims`], plus l'échéance d'inactivité
+/// `idle_exp` (secondes Unix), copie de `refresh_tokens.expires_at`.
+///
+/// [`Claims`] n'est pas modifiée (les tests qui la construisent en littéral
+/// restent intacts) : un jeton qui ne porte que `Claims` — forgé par un test,
+/// ou émis par une version antérieure — se décode avec `idle_exp = None`, et
+/// reste accepté jusqu'à son `exp`. Le middleware ([`decode_session`]) refuse
+/// sans tolérance un jeton dont l'`idle_exp` est passée.
+#[derive(Debug, Serialize, Deserialize)]
+pub struct SessionClaims {
+    /// Les revendications ordinaires, à plat dans le jeton.
+    #[serde(flatten)]
+    pub claims: Claims,
+    /// Échéance d'inactivité de la session (secondes Unix), `None` pour un
+    /// jeton sans échéance.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub idle_exp: Option<i64>,
+}
+
+/// Encode un JWT HS256 **sans échéance d'inactivité**.
 ///
 /// Force `Algorithm::HS256` explicitement (pas `Header::default()`)
 /// pour éviter toute attaque via `alg: none`.
 ///
 /// Story 6.2: `company_id` paramètre ajouté (multi-tenant scoping).
+/// Story v0172-session (C-v0172s-43) : réservé aux tests — tout site de
+/// production passe par [`encode_session`], dont l'échéance est obligatoire,
+/// si bien qu'un oubli ne compile pas.
+#[cfg(test)]
 pub fn encode(
     user_id: i64,
     role: Role,
@@ -81,19 +105,66 @@ pub fn encode(
     .map_err(|e| AppError::Internal(format!("jwt encode: {e}")))
 }
 
-/// Décode et valide un JWT HS256.
+/// Encode un jeton de session (HS256) : `exp = now + lifetime` et l'échéance
+/// d'inactivité `idle_exp` (secondes Unix), **obligatoire**.
+pub fn encode_session(
+    user_id: i64,
+    role: Role,
+    company_id: i64,
+    secret: &[u8],
+    lifetime: TimeDelta,
+    idle_exp: i64,
+) -> Result<String, AppError> {
+    let now = Utc::now();
+    encode_session_claims(
+        &SessionClaims {
+            claims: Claims {
+                sub: user_id.to_string(),
+                role: role.as_str().to_owned(),
+                company_id,
+                iat: now.timestamp(),
+                exp: (now + lifetime).timestamp(),
+            },
+            idle_exp: Some(idle_exp),
+        },
+        secret,
+    )
+}
+
+/// Encode des revendications de session déjà construites — partagé par
+/// [`encode_session`] et le battement d'activité, qui réémet un jeton au même
+/// `exp` que celui qu'on lui présente.
+pub fn encode_session_claims(claims: &SessionClaims, secret: &[u8]) -> Result<String, AppError> {
+    jsonwebtoken::encode(
+        &Header::new(Algorithm::HS256),
+        claims,
+        &EncodingKey::from_secret(secret),
+    )
+    .map_err(|e| AppError::Internal(format!("jwt encode: {e}")))
+}
+
+/// Décode et valide un JWT HS256, revendications de session comprises.
 ///
 /// - Algo HS256 forcé (protection `alg: none`).
-/// - `leeway = 60s` pour absorber le clock drift NTP.
-/// - Claims `exp`, `sub`, `iat` obligatoires.
-pub fn decode(token: &str, secret: &[u8]) -> Result<Claims, AppError> {
+/// - `leeway = 60s` pour absorber le clock drift NTP — sur `exp` seulement :
+///   `idle_exp` n'est **pas** contrôlée ici, mais par l'appelant, sans
+///   tolérance.
+/// - Claims `exp`, `sub`, `iat`, `company_id` obligatoires ; `idle_exp`
+///   facultative.
+pub fn decode_session(token: &str, secret: &[u8]) -> Result<SessionClaims, AppError> {
     let mut validation = Validation::new(Algorithm::HS256);
     validation.leeway = 60; // Tolérance clock drift NTP
     validation.required_spec_claims = REQUIRED_SPEC_CLAIMS.clone();
 
-    jsonwebtoken::decode::<Claims>(token, &DecodingKey::from_secret(secret), &validation)
+    jsonwebtoken::decode::<SessionClaims>(token, &DecodingKey::from_secret(secret), &validation)
         .map(|data| data.claims)
         .map_err(|e| AppError::Unauthenticated(format!("jwt decode: {e}")))
+}
+
+/// Décode et valide un JWT HS256 ([`decode_session`], sans l'échéance
+/// d'inactivité).
+pub fn decode(token: &str, secret: &[u8]) -> Result<Claims, AppError> {
+    decode_session(token, secret).map(|s| s.claims)
 }
 
 #[cfg(test)]
@@ -115,6 +186,44 @@ mod tests {
         let now = Utc::now().timestamp();
         let expected_exp = now + 15 * 60;
         assert!((claims.exp - expected_exp).abs() < 5);
+    }
+
+    /// Story v0172-session (C-v0172s-43) — forme de `SessionClaims` : aller-retour
+    /// avec `idle_exp`, et un jeton `Claims` seul se décode avec `None`.
+    #[test]
+    fn session_claims_round_trip_with_and_without_idle_exp() {
+        let token = encode_session(
+            42,
+            Role::Comptable,
+            7,
+            TEST_SECRET,
+            TimeDelta::minutes(15),
+            1_900_000_000,
+        )
+        .unwrap();
+        let s = decode_session(&token, TEST_SECRET).unwrap();
+        assert_eq!(s.idle_exp, Some(1_900_000_000));
+        assert_eq!(s.claims.sub, "42");
+        assert_eq!(s.claims.company_id, 7);
+        // La revendication est à plat dans le jeton, sous ce nom.
+        let payload: serde_json::Value = serde_json::to_value(&s).unwrap();
+        assert_eq!(payload["idle_exp"], 1_900_000_000);
+        assert_eq!(payload["sub"], "42");
+
+        let ancien = encode(42, Role::Comptable, 7, TEST_SECRET, TimeDelta::minutes(15)).unwrap();
+        let s = decode_session(&ancien, TEST_SECRET).unwrap();
+        assert_eq!(s.idle_exp, None, "jeton sans idle_exp");
+        let sans = SessionClaims {
+            claims: s.claims,
+            idle_exp: None,
+        };
+        assert!(
+            serde_json::to_value(&sans)
+                .unwrap()
+                .get("idle_exp")
+                .is_none(),
+            "idle_exp absente n'est pas sérialisée"
+        );
     }
 
     #[test]

@@ -369,6 +369,9 @@ pub async fn seed_accounting_company_no_fy(pool: &MySqlPool) -> Result<(), Fixtu
 ///   suivant sans casser le boot. Cohérent traitement `_sqlx_migrations`.
 /// - `_kesh_backup_schedule` : Story 31-1c — singleton du réglage et de l'état
 ///   de la sauvegarde automatique (table système, comme `_kesh_version`).
+/// - `_kesh_installation_settings` : Story v0172-session (0.17.3) — singleton
+///   des réglages de l'installation faits dans l'interface (durée
+///   d'inactivité de la session) ; sans ligne, les défauts du code.
 // Story 17-3a — la liste canonique des tables a été promue vers
 // `crate::backup::TABLES_TO_TRUNCATE` (source de vérité unique, réutilisée par
 // l'export d'installation). On la ré-exporte ici pour `truncate_all`.

@@ -8,16 +8,55 @@ use axum::http::StatusCode;
 use axum::response::IntoResponse;
 use axum_extra::extract::CookieJar;
 use axum_extra::extract::cookie::{Cookie, SameSite};
-use chrono::Utc;
+use chrono::{NaiveDateTime, SubsecRound, TimeDelta, Utc};
 use kesh_db::entities::{NewAuditLogEntry, NewRefreshToken};
-use kesh_db::repositories::{audit_log, password_reset_tokens, refresh_tokens, users};
+use kesh_db::repositories::{
+    audit_log, installation_settings, password_reset_tokens, refresh_tokens, users,
+};
 use serde::{Deserialize, Serialize};
 
 use crate::AppState;
 use crate::auth::{jwt, password};
 use crate::errors::AppError;
+use crate::extractors::impl_validation_extractor;
 use crate::mail;
 use crate::middleware::auth::CurrentUser;
+use crate::routes::api_keys::ensure_not_pat;
+
+/// Story v0172-session (0.17.3, #876, C-v0172s-32) — l'échéance d'inactivité
+/// d'une session qui commence ou reprend par un geste de l'utilisateur
+/// (connexion, assistant, changement de mot de passe) : `now + N`, N lu en
+/// base (`installation_settings`), tronquée à la milliseconde comme la colonne
+/// `refresh_tokens.expires_at` — si bien que `idle_exp` (secondes, arrondi
+/// vers le bas) se relit à l'identique de la ligne.
+pub(crate) struct SessionDeadline {
+    /// À écrire dans `refresh_tokens.expires_at`.
+    pub expires_at: NaiveDateTime,
+    /// La même échéance en secondes Unix, pour la revendication `idle_exp`.
+    pub idle_exp: i64,
+    /// La durée N (minutes) en vigueur.
+    pub minutes: i32,
+}
+
+/// Lit N et calcule l'échéance d'une session neuve (cf. [`SessionDeadline`]).
+pub(crate) async fn new_session_deadline(state: &AppState) -> Result<SessionDeadline, AppError> {
+    let minutes = installation_settings::get(&state.pool)
+        .await?
+        .session_idle_minutes;
+    let expires_at = (Utc::now() + TimeDelta::minutes(i64::from(minutes)))
+        .naive_utc()
+        .trunc_subsecs(3);
+    Ok(SessionDeadline {
+        expires_at,
+        idle_exp: expires_at.and_utc().timestamp(),
+        minutes,
+    })
+}
+
+/// Secondes restantes avant `idle_exp` (0 si passée).
+pub(crate) fn idle_expires_in(idle_exp: i64) -> i64 {
+    idle_exp.saturating_sub(Utc::now().timestamp()).max(0)
+}
 
 /// Story 10-5 — construit les 2 cookies HttpOnly d'auth (access + refresh).
 ///
@@ -27,7 +66,8 @@ use crate::middleware::auth::CurrentUser;
 ///
 /// - `access` : `Path=/`, `Max-Age=jwt_expiry` (typiquement 15 min)
 /// - `refresh` : `Path=/api/v1/auth`, `Max-Age=refresh_token_max_lifetime` (30 jours hard ceiling browser
-///   — distinct de `refresh_inactivity` sliding window DB côté `expires_at`, cf. Pass 3 F-COOKIE-LIFETIME-P3-1)
+///   — distinct de l'échéance d'inactivité de la ligne, `expires_at` en base,
+///   cf. Pass 3 F-COOKIE-LIFETIME-P3-1 et Story v0172-session)
 /// - `.secure(state.config.cookie_secure)` : hotfix v0.1.3 (Issue #136) — par
 ///   défaut `true` (sécurité maximale, requiert HTTPS côté client). Override
 ///   via `KESH_COOKIE_SECURE=false` pour les déploiements LAN strict HTTP-only
@@ -46,15 +86,7 @@ pub(crate) fn build_auth_cookies(
     access_token: &str,
     refresh_token: &str,
 ) -> (Cookie<'static>, Cookie<'static>) {
-    let access = Cookie::build(("kesh_access_token", access_token.to_string()))
-        .http_only(true)
-        .secure(state.config.cookie_secure)
-        .same_site(SameSite::Strict)
-        .path("/")
-        .max_age(time::Duration::seconds(
-            state.config.jwt_expiry.num_seconds(),
-        ))
-        .build();
+    let access = build_access_cookie(state, access_token, state.config.jwt_expiry.num_seconds());
 
     let refresh = Cookie::build(("kesh_refresh_token", refresh_token.to_string()))
         .http_only(true)
@@ -67,6 +99,19 @@ pub(crate) fn build_auth_cookies(
         .build();
 
     (access, refresh)
+}
+
+/// Le cookie d'accès seul, d'âge `max_age_secs` — partagé par
+/// [`build_auth_cookies`] et le battement d'activité, qui réémet le jeton
+/// d'accès au même `exp` (cookie d'âge `exp − now`).
+fn build_access_cookie(state: &AppState, access_token: &str, max_age_secs: i64) -> Cookie<'static> {
+    Cookie::build(("kesh_access_token", access_token.to_string()))
+        .http_only(true)
+        .secure(state.config.cookie_secure)
+        .same_site(SameSite::Strict)
+        .path("/")
+        .max_age(time::Duration::seconds(max_age_secs))
+        .build()
 }
 
 /// Story 10-5 — construit les 2 cookies d'auth expirés (Max-Age=0) pour logout.
@@ -139,6 +184,11 @@ pub struct LoginResponse {
     pub user_id: i64,
     pub username: String,
     pub role: String,
+    /// Story v0172-session (#876) — la durée d'inactivité N (minutes).
+    pub idle_timeout_minutes: i32,
+    /// Story v0172-session (#876) — secondes restantes avant l'échéance
+    /// d'inactivité de la session (`N × 60` à la connexion).
+    pub idle_expires_in: Option<i64>,
 }
 
 /// Corps de `POST /api/v1/auth/logout`.
@@ -240,25 +290,28 @@ pub async fn login(
         return Err(AppError::InvalidCredentials);
     }
 
-    // Step 4 : JWT (Story 6.2: include company_id)
-    let access_token = jwt::encode(
+    // Step 4 : JWT (Story 6.2: include company_id) — Story v0172-session :
+    // l'échéance d'inactivité de la session (`now + N`) est écrite dans la
+    // ligne de renouvellement et copiée dans le jeton (`idle_exp`).
+    let deadline = new_session_deadline(&state).await?;
+    let access_token = jwt::encode_session(
         user.id,
         user.role,
         user.company_id,
         state.config.jwt_secret_bytes(),
         state.config.jwt_expiry,
+        deadline.idle_exp,
     )?;
 
-    // Step 5 : refresh token (sliding expiry — story 1.6)
+    // Step 5 : refresh token — sa ligne porte l'échéance d'inactivité.
     let refresh_token = uuid::Uuid::new_v4().to_string();
-    let expires_at = (Utc::now() + state.config.refresh_inactivity).naive_utc();
 
     refresh_tokens::create(
         &state.pool,
         NewRefreshToken {
             user_id: user.id,
             token: refresh_token.clone(),
-            expires_at,
+            expires_at: deadline.expires_at,
         },
     )
     .await?;
@@ -281,6 +334,8 @@ pub async fn login(
             user_id: user.id,
             username: user.username,
             role: format!("{:?}", user.role),
+            idle_timeout_minutes: deadline.minutes,
+            idle_expires_in: Some(idle_expires_in(deadline.idle_exp)),
         }),
     ))
 }
@@ -344,7 +399,17 @@ pub struct RefreshResponse {
     pub access_token: String,
     pub refresh_token: String,
     pub expires_in: i64,
+    /// Story v0172-session (#876) — la durée d'inactivité N (minutes).
+    pub idle_timeout_minutes: i32,
+    /// Story v0172-session (#876) — secondes restantes avant l'échéance
+    /// d'inactivité de la session.
+    pub idle_expires_in: Option<i64>,
 }
+
+/// Story v0172-session (#876, C-v0172s-17) — fenêtre de grâce d'une rotation :
+/// un jeton tourné depuis moins de 30 secondes, présenté de nouveau (deux
+/// onglets qui renouvellent ensemble), rend 401 sans révocation générale.
+const ROTATION_GRACE_SECS: i64 = 30;
 
 /// `POST /api/v1/auth/refresh`
 ///
@@ -377,6 +442,23 @@ pub async fn refresh(
     // Step 2-4 : vérifier si révoqué
     if token.revoked_at.is_some() {
         if token.revoked_reason.as_deref() == Some("rotation") {
+            // Story v0172-session (#876, C-v0172s-17) — grâce de rotation :
+            // deux onglets qui renouvellent avec le même jeton à quelques
+            // secondes d'intervalle. Mesurée à l'horloge de la base, celle
+            // qui a écrit `revoked_at`.
+            if refresh_tokens::was_rotated_within(
+                &state.pool,
+                &refresh_token_input,
+                ROTATION_GRACE_SECS,
+            )
+            .await?
+            {
+                tracing::info!(
+                    user_id = token.user_id,
+                    "refresh with a just-rotated token (grace), no mass revoke"
+                );
+                return Err(AppError::InvalidRefreshToken("token just rotated".into()));
+            }
             // Détection de vol : mass revoke tous les tokens de l'utilisateur
             let revoked_count =
                 refresh_tokens::revoke_all_for_user(&state.pool, token.user_id, "theft_detected")
@@ -417,27 +499,34 @@ pub async fn refresh(
     // Step 8 : révoquer l'ancien token (rotation)
     refresh_tokens::revoke_by_token(&state.pool, &refresh_token_input, "rotation").await?;
 
-    // Step 9 : créer nouveau refresh_token + JWT
+    // Step 9 : créer nouveau refresh_token + JWT — Story v0172-session (#876,
+    // C-v0172s-32) : le renouvellement n'est PAS une activité, il ne prolonge
+    // rien. La ligne neuve RECOPIE l'échéance d'inactivité de l'ancienne, et le
+    // jeton neuf la porte (`idle_exp`) ; seul le battement la prolonge.
     let new_refresh_token = uuid::Uuid::new_v4().to_string();
-    let new_expires_at = (Utc::now() + state.config.refresh_inactivity).naive_utc();
+    let idle_exp = token.expires_at.and_utc().timestamp();
 
     refresh_tokens::create(
         &state.pool,
         NewRefreshToken {
             user_id: user.id,
             token: new_refresh_token.clone(),
-            expires_at: new_expires_at,
+            expires_at: token.expires_at,
         },
     )
     .await?;
 
-    let access_token = jwt::encode(
+    let access_token = jwt::encode_session(
         user.id,
         user.role,
         user.company_id,
         state.config.jwt_secret_bytes(),
         state.config.jwt_expiry,
+        idle_exp,
     )?;
+    let idle_minutes = installation_settings::get(&state.pool)
+        .await?
+        .session_idle_minutes;
 
     tracing::info!(user_id = user.id, "refresh successful");
 
@@ -452,6 +541,8 @@ pub async fn refresh(
             access_token,
             refresh_token: new_refresh_token,
             expires_in: state.config.jwt_expiry.num_seconds(),
+            idle_timeout_minutes: idle_minutes,
+            idle_expires_in: Some(idle_expires_in(idle_exp)),
         }),
     ))
 }
@@ -519,26 +610,28 @@ pub async fn change_password(
         "password changed"
     );
 
-    // Step 5 : créer nouveau refresh_token + JWT
+    // Step 5 : créer nouveau refresh_token + JWT — Story v0172-session : un
+    // geste de l'utilisateur, la session repart à `now + N`.
     let new_refresh_token = uuid::Uuid::new_v4().to_string();
-    let new_expires_at = (Utc::now() + state.config.refresh_inactivity).naive_utc();
+    let deadline = new_session_deadline(&state).await?;
 
     refresh_tokens::create(
         &state.pool,
         NewRefreshToken {
             user_id: user.id,
             token: new_refresh_token.clone(),
-            expires_at: new_expires_at,
+            expires_at: deadline.expires_at,
         },
     )
     .await?;
 
-    let access_token = jwt::encode(
+    let access_token = jwt::encode_session(
         user.id,
         user.role,
         user.company_id,
         state.config.jwt_secret_bytes(),
         state.config.jwt_expiry,
+        deadline.idle_exp,
     )?;
 
     // Story 10-5 (T2.4 Pass 3 F-EXPIRES-IN-CHANGE-PASSWORD-P3-15) — émettre
@@ -555,6 +648,117 @@ pub async fn change_password(
             access_token,
             refresh_token: new_refresh_token,
             expires_in: state.config.jwt_expiry.num_seconds(),
+            idle_timeout_minutes: deadline.minutes,
+            idle_expires_in: Some(idle_expires_in(deadline.idle_exp)),
+        }),
+    ))
+}
+
+// --- Story v0172-session (0.17.3, #876) : le battement d'activité ---
+
+/// Corps de `POST /api/v1/auth/activity` : l'âge de la dernière activité de
+/// l'utilisateur au moment de l'envoi, mesuré par le navigateur.
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ActivityRequest {
+    /// Millisecondes écoulées depuis la dernière activité (entier ≥ 0).
+    pub idle_ms: u64,
+}
+
+impl_validation_extractor!(
+    ActivityBody,
+    ActivityRequest,
+    "idleMs : entier positif ou nul (millisecondes)"
+);
+
+/// Réponse du battement : N et les secondes restantes avant l'échéance.
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ActivityResponse {
+    pub idle_timeout_minutes: i32,
+    pub idle_expires_in: i64,
+}
+
+/// `POST /api/v1/auth/activity` — Story v0172-session (#876, C-v0172s-33).
+///
+/// Prolonge l'échéance d'inactivité de **cette** session (la ligne que
+/// désigne le cookie de renouvellement, reçu puisque la route est sous
+/// `/api/v1/auth/`) : `échéance = now − âge + N`, l'âge étant borné à
+/// `[0, N]`. Une requête, une écriture ; aucune rotation, aucun jeton de
+/// renouvellement émis — deux onglets qui battent ensemble ne déclenchent rien.
+///
+/// Le jeton d'accès est réémis avec les mêmes `sub`, `role`, `company_id` et
+/// **le même `exp`** que celui présenté (le battement ne prolonge ni la
+/// fenêtre d'un rôle périmé, ni le rythme des renouvellements), et le nouvel
+/// `idle_exp`. Si `exp` est déjà passé (jeton présenté dans la tolérance de
+/// 60 s), aucun cookie d'accès n'est posé — un `Max-Age` nul le supprimerait —
+/// et le prochain appel passera par le renouvellement.
+///
+/// Refus : clé d'API ⇒ 403 ; cookie absent, ligne d'un autre utilisateur,
+/// révoquée ou échue ⇒ 401 ; corps illisible ⇒ 400 `VALIDATION_ERROR`.
+pub async fn activity(
+    State(state): State<AppState>,
+    axum::Extension(current_user): axum::Extension<CurrentUser>,
+    jar: CookieJar,
+    ActivityBody(req): ActivityBody,
+) -> Result<(CookieJar, Json<ActivityResponse>), AppError> {
+    ensure_not_pat(&current_user)?;
+    let refresh_token = jar
+        .get("kesh_refresh_token")
+        .map(|c| c.value().to_string())
+        .ok_or_else(|| AppError::Unauthenticated("activity: missing refresh cookie".into()))?;
+
+    let minutes = installation_settings::get(&state.pool)
+        .await?
+        .session_idle_minutes;
+    let window_ms = u64::try_from(minutes).unwrap_or(0) * 60_000;
+    let idle_ms = req.idle_ms.min(window_ms);
+    let now = Utc::now();
+    let deadline = (now - TimeDelta::milliseconds(i64::try_from(idle_ms).unwrap_or(i64::MAX))
+        + TimeDelta::minutes(i64::from(minutes)))
+    .naive_utc()
+    .trunc_subsecs(3);
+
+    let written = refresh_tokens::set_idle_deadline(
+        &state.pool,
+        &refresh_token,
+        current_user.user_id,
+        deadline,
+        now.naive_utc(),
+    )
+    .await?;
+    if !written {
+        return Err(AppError::Unauthenticated(
+            "activity: no live session for this refresh cookie".into(),
+        ));
+    }
+    let idle_exp = deadline.and_utc().timestamp();
+
+    let remaining = current_user.exp.saturating_sub(now.timestamp());
+    let jar = if remaining > 0 {
+        let token = jwt::encode_session_claims(
+            &jwt::SessionClaims {
+                claims: jwt::Claims {
+                    sub: current_user.user_id.to_string(),
+                    role: current_user.role.as_str().to_owned(),
+                    company_id: current_user.company_id,
+                    iat: now.timestamp(),
+                    exp: current_user.exp,
+                },
+                idle_exp: Some(idle_exp),
+            },
+            state.config.jwt_secret_bytes(),
+        )?;
+        jar.add(build_access_cookie(&state, &token, remaining))
+    } else {
+        jar
+    };
+
+    Ok((
+        jar,
+        Json(ActivityResponse {
+            idle_timeout_minutes: minutes,
+            idle_expires_in: idle_expires_in(idle_exp),
         }),
     ))
 }
@@ -574,6 +778,12 @@ pub struct MeResponse {
     pub role: String,
     /// Secondes restantes avant expiration du JWT (calculé depuis claims.exp).
     pub expires_in: i64,
+    /// Story v0172-session (#876) — la durée d'inactivité N (minutes).
+    pub idle_timeout_minutes: i32,
+    /// Story v0172-session (#876) — secondes restantes avant l'échéance
+    /// d'inactivité (`idle_exp` du jeton), `null` pour un jeton qui n'en porte
+    /// pas (émis avant la 0.17.3).
+    pub idle_expires_in: Option<i64>,
 }
 
 /// `GET /api/v1/auth/me`
@@ -596,12 +806,17 @@ pub async fn me(
     // soustraction native. `.max(0)` reste nécessaire pour clamper les expirations
     // déjà passées (cas normal d'un token expiré).
     let expires_in = current_user.exp.saturating_sub(now_secs).max(0);
+    let idle_timeout_minutes = installation_settings::get(&state.pool)
+        .await?
+        .session_idle_minutes;
 
     Ok(Json(MeResponse {
         user_id: user.id,
         username: user.username,
         role: format!("{:?}", user.role),
         expires_in,
+        idle_timeout_minutes,
+        idle_expires_in: current_user.idle_exp.map(idle_expires_in),
     }))
 }
 

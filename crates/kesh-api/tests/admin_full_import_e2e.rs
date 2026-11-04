@@ -5138,3 +5138,164 @@ async fn full_import_round_trip_keeps_a_draft(pool: MySqlPool) {
     assert_eq!(after[0]["status"], "draft");
     assert_eq!(after[0]["purchaseJournalEntryId"], Value::Null);
 }
+
+// ============================================================
+// Story v0172-session (0.17.3, #876) — la restauration complète révoque
+// toutes les sessions, et garde le réglage d'inactivité de la destination
+// (AC-5, C-v0172s-23)
+// ============================================================
+
+/// Pose une ligne `refresh_tokens` (échéance future), éventuellement révoquée.
+async fn v0172s_refresh_row(pool: &MySqlPool, user_id: i64, revoked: Option<&str>) -> String {
+    let token = uuid::Uuid::new_v4().to_string();
+    sqlx::query(
+        "INSERT INTO refresh_tokens (user_id, token, expires_at, revoked_at, revoked_reason) \
+         VALUES (?, ?, ?, IF(? IS NULL, NULL, NOW(3)), ?)",
+    )
+    .bind(user_id)
+    .bind(&token)
+    .bind(Utc::now().naive_utc() + TimeDelta::hours(1))
+    .bind(revoked)
+    .bind(revoked)
+    .execute(pool)
+    .await
+    .unwrap();
+    token
+}
+
+async fn v0172s_set_idle(pool: &MySqlPool, minutes: i32) {
+    sqlx::query(
+        "INSERT INTO _kesh_installation_settings (id, session_idle_minutes, version) \
+         VALUES (1, ?, 1) ON DUPLICATE KEY UPDATE session_idle_minutes = VALUES(session_idle_minutes)",
+    )
+    .bind(minutes)
+    .execute(pool)
+    .await
+    .expect("table _kesh_installation_settings");
+}
+
+async fn v0172s_active_rows(pool: &MySqlPool) -> i64 {
+    sqlx::query_scalar("SELECT COUNT(*) FROM refresh_tokens WHERE revoked_at IS NULL")
+        .fetch_one(pool)
+        .await
+        .unwrap()
+}
+
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn v0172s_full_import_revokes_every_session_and_keeps_idle_setting(pool: MySqlPool) {
+    let app = spawn_app(pool.clone()).await;
+    let admin = seed_admin(&pool, "Sessions").await;
+    let actif = v0172s_refresh_row(&pool, admin.user_id, None).await;
+    let deconnecte = v0172s_refresh_row(&pool, admin.user_id, Some("logout")).await;
+    v0172s_set_idle(&pool, 30).await;
+    let backup = export_backup(&app, &admin.jwt).await;
+    // Après l'export : une ligne active de la destination, et le réglage à 45.
+    let destination = v0172s_refresh_row(&pool, admin.user_id, None).await;
+    v0172s_set_idle(&pool, 45).await;
+
+    let resp = post_import(&app, &admin.jwt, backup).await;
+    assert_eq!(resp.status(), 200, "{}", resp.text().await.unwrap());
+
+    assert_eq!(
+        v0172s_active_rows(&pool).await,
+        0,
+        "plus aucune ligne active"
+    );
+    let motif = |t: String| {
+        let pool = pool.clone();
+        async move {
+            sqlx::query_scalar::<_, Option<String>>(
+                "SELECT revoked_reason FROM refresh_tokens WHERE token = ?",
+            )
+            .bind(t)
+            .fetch_one(&pool)
+            .await
+            .unwrap()
+        }
+    };
+    assert_eq!(
+        motif(actif.clone()).await.as_deref(),
+        Some("password_change")
+    );
+    assert_eq!(
+        motif(deconnecte).await.as_deref(),
+        Some("logout"),
+        "motif gardé"
+    );
+    let restante: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM refresh_tokens WHERE token = ?")
+        .bind(&destination)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(
+        restante, 0,
+        "la table est remplacée par celle de la sauvegarde"
+    );
+
+    // Le cookie d'une ligne restaurée ne renouvelle plus rien.
+    let resp = app
+        .client
+        .post(app.url("/api/v1/auth/refresh"))
+        .json(&serde_json::json!({ "refreshToken": actif }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 401, "renouvellement d'une ligne restaurée");
+    let resp = app
+        .client
+        .post(app.url("/api/v1/auth/activity"))
+        .header(
+            "Cookie",
+            format!(
+                "kesh_access_token={}; kesh_refresh_token={actif}",
+                admin.jwt
+            ),
+        )
+        .json(&serde_json::json!({ "idleMs": 0 }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 401, "battement d'une ligne restaurée");
+
+    let reglage: i32 = sqlx::query_scalar(
+        "SELECT session_idle_minutes FROM _kesh_installation_settings WHERE id = 1",
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(
+        reglage, 45,
+        "le réglage de la destination n'est pas restauré"
+    );
+}
+
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn v0172s_failed_import_after_revocation_point_keeps_sessions(pool: MySqlPool) {
+    let app = spawn_app(pool.clone()).await;
+    let admin = seed_admin(&pool, "SansAdmin").await;
+    let backup = export_backup(&app, &admin.jwt).await;
+    // L'archive ne porte plus aucun Administrateur : refus après la révocation.
+    let (mut manifest, mut data) = unzip(&backup);
+    let users_nd = String::from_utf8(data["users"].clone()).unwrap();
+    assert!(users_nd.contains("\"Admin\""), "la source porte un Admin");
+    let sans = users_nd.replace("\"Admin\"", "\"Comptable\"").into_bytes();
+    manifest["tables"]["users"]["sha256"] = Value::from(sha256_hex(&sans));
+    data.insert("users".into(), sans);
+    let actif = v0172s_refresh_row(&pool, admin.user_id, None).await;
+    assert_eq!(v0172s_active_rows(&pool).await, 1);
+
+    let resp = post_import(&app, &admin.jwt, rezip(&manifest, &data)).await;
+    assert!(
+        !resp.status().is_success(),
+        "import sans Admin refusé, rendu {}",
+        resp.status()
+    );
+    assert_eq!(v0172s_active_rows(&pool).await, 1, "transaction annulée");
+    let r: Option<String> =
+        sqlx::query_scalar("SELECT revoked_reason FROM refresh_tokens WHERE token = ?")
+            .bind(&actif)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(r, None, "la ligne de la destination reste active");
+}

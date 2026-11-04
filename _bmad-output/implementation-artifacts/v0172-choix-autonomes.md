@@ -807,7 +807,9 @@ clair) ; *(liste en vigueur : voir la ligne « Validation P5 » ci-dessous, qui 
 
 **Validation R3 (2026-11-04)** : C-v0172s-49 à 51 ajoutés ; C-33, 35, 41, 47 corrigés ; en vigueur alors : C-v0172s-14, 17, 23, 24, 26 et 28 à 51.
 
-**Validation R4 (2026-11-04) — fait foi** : C-v0172s-52 ajouté ; C-35 et C-50 précisés ; **en vigueur : C-v0172s-14, 17, 23, 24, 26 et 28 à 52**.
+**Validation R4 (2026-11-04)** : C-v0172s-52 ajouté ; C-35 et C-50 précisés ; en vigueur alors : C-v0172s-14, 17, 23, 24, 26 et 28 à 52.
+
+**Développement (2026-11-04) — fait foi** : C-v0172s-53 à 58 ajoutés ; **en vigueur : C-v0172s-14, 17, 23, 24, 26 et 28 à 58**.
 
 ### C-v0172s-1 — Renouvellement côté navigateur, à l'entrée de l'utilisateur, et champ `sessionExpiresIn`
 
@@ -1363,6 +1365,62 @@ clair) ; *(liste en vigueur : voir la ligne « Validation P5 » ci-dessous, qui 
   absent ⇒ `reportedActivity` = valeur stockée finie, sinon 0 (l'activité stockée part au premier tic).
 - **Écartées** : laisser la branche implicite (un `Math.max(…, NaN)` écrirait `NaN` dans la clé partagée : plus aucun battement, dans
   aucun onglet, et la session fermée au serveur en pleine activité — le symptôme même de #876).
+- **Réversible** : oui.
+
+### C-v0172s-53 — Développement : les sites du manuel gardés par des tests Rust voyagent avec le lot S
+
+- **Contexte** : le lot S retire la lecture de l'ancienne variable de durée d'inactivité et ajoute deux routes mutantes ; deux gardes
+  du serveur lisent le manuel français — (F) de `configuration_transmise.rs` (tout nom de variable non lue est un fantôme) et
+  `le_manuel_dit_le_compte_du_registre` (`admin-manual.tex:3054`). Le manuel était prescrit au lot N.
+- **Retenu** : le commit du lot S porte les quatre sites du manuel qui rendraient ces gardes rouges — `user-manual.tex:95` (texte
+  prescrit complet), la ligne de la variable retirée du tableau d'`admin-manual.tex` avec sa note, `admin-manual.tex:2524` (la note de
+  la 0.17.2, ajoutée à l'étape 0) et le compte du registre (`:3054`) ; le reste du manuel et les PDF au lot N.
+- **Écartées** : un lot S rouge au gate complet ; repousser le retrait de la lecture au lot N.
+- **Réversible** : oui.
+
+### C-v0172s-54 — Développement : la garde `configuration_transmise.rs` change de deux nombres (écart à AC-2)
+
+- **Contexte** : la fiche prescrivait la garde « verte sans modification » ; au gate ciblé, elle a rougi sur deux décomptes codés en dur
+  — l'entrée (L) de `Config::from_env` (31 appels `env_nonempty` attendus, 30 trouvés) et le plancher de l'ensemble lu (41 → 40).
+  Les volets (T), (E), (F) passent tels quels.
+- **Retenu** : les deux nombres décrémentés, avec leur généalogie en commentaire ; aucune autre modification de la garde.
+- **Écartées** : garder une lecture factice de la variable pour tenir le compte (contraire à C-v0172s-31).
+- **Réversible** : oui.
+
+### C-v0172s-55 — Développement : « n'ajoute aucune table » se contrôle jusqu'à la migration incluse
+
+- **Contexte** : `bank_imports_manual_source_adds_no_table` et `draft_migration_adds_no_table` (`migrations_upgrade_path.rs`)
+  comparaient l'inventaire d'avant la migration à celui d'après le `MIGRATOR` **complet** : la table système de la 0.17.3 les fait
+  rougir sans que leur migration ait changé.
+- **Retenu** : chacun applique les migrations **jusqu'à la sienne incluse** (`migrations_before(…) + 1`) — l'invariant qu'ils
+  nomment ; un test neuf, `installation_settings_adds_only_its_system_table`, contrôle la montée 0.17.2 → 0.17.3 sur une base peuplée
+  (une seule table neuve, système, vide ; ligne `refresh_tokens` intacte ; inventaire de sauvegarde inchangé ; défauts lus).
+- **Écartées** : exclure les tables `_kesh_` d'`application_tables` (changerait le sens des autres tests qui l'emploient).
+- **Réversible** : oui.
+
+### C-v0172s-56 — Développement : le message « hors bornes » dit « de 1 minute à 24 heures »
+
+- **Contexte** : la garde `les_comptes_cites_en_exemple_existent_dans_les_plans_livres` (`textes_coherents.rs`) prend « 1440 » d'un
+  message du catalogue pour un numéro de compte absent des plans livrés.
+- **Retenu** : `admin-session-settings-error-out-of-domain` = « Durée d'inactivité hors bornes : de 1 minute à 24 heures. » (et ses
+  trois traductions ; repli Rust égal à la valeur fr-CH). L'écran affiche les bornes en minutes à côté du champ.
+- **Écartées** : une exemption de la garde pour ce message.
+- **Réversible** : oui.
+
+### C-v0172s-57 — Développement : la déconnexion à l'échéance attend au plus 2 s, même si `fetch` ignore l'abandon
+
+- **Contexte** : § 7 et AC-6 (3 bis) — la fermeture attend la déconnexion, abandonnée par un `AbortController` au bout de 2 s.
+  Un `fetch` qui ne rejette pas sur abandon (simulacre, navigateur) bloquerait la redirection.
+- **Retenu** : `Promise.race` entre la déconnexion et le délai de 2 s, qui abandonne aussi le `signal`.
+- **Réversible** : oui.
+
+### C-v0172s-58 — Développement : le chemin 401 efface et redirige lui-même ; `tryRefresh` partage le mutex
+
+- **Contexte** : C-v0172s-26 — `tryRefresh()` sous le mutex `refreshPromise`, sans effacement ni redirection. Si le chemin 401
+  rejoint un renouvellement lancé par `tryRefresh`, il ne doit pas perdre la redirection.
+- **Retenu** : `refreshCore()` ne fait qu'essayer (rend un booléen) ; le mutex partage sa promesse ; `refreshTokens()` (chemin 401)
+  efface et redirige **après** l'attente quand elle rend `false` — un effacement par requête rejetée, sans gravité (fiche, § 11) ;
+  `tryRefresh()` rend le booléen tel quel.
 - **Réversible** : oui.
 
 ## Release 0.17.2 — intégration et préparation du tag (clé `v0172r`)

@@ -1791,6 +1791,8 @@ admin-backup-banner-future = Die letzte erfolgreiche automatische Sicherung ist 
 admin-backup-banner-link = Administration → Vollständige Sicherung
 admin-backup-banner-overdue = Seit dem { $date } keine erfolgreiche automatische Sicherung.
 admin-backup-schedule-error-out-of-domain = Sicherungseinstellung ausserhalb des zulässigen Bereichs: Häufigkeit 6, 12, 24 oder 168 Stunden, 1 bis 60 aufbewahrte Sicherungen.
+# Story v0172-session (0.17.3, CR #891) — refus d'une durée d'inactivité hors bornes.
+admin-session-settings-error-out-of-domain = Inaktivitätsdauer ausserhalb des zulässigen Bereichs: 1 Minute bis 24 Stunden.
 admin-backup-server-download = Herunterladen
 admin-backup-server-download-error = Das Herunterladen ist fehlgeschlagen.
 admin-backup-server-empty = Keine Sicherung auf dem Server.
@@ -3074,6 +3076,7 @@ audit-log-action-installation-ui-mode-changed = Nutzungsmodus geändert
 audit-log-action-admin-backup-downloaded = Sicherung vom Server heruntergeladen
 audit-log-action-admin-backup-run = Sicherung manuell gestartet
 audit-log-action-admin-backup-schedule-updated = Einstellung der automatischen Sicherung geändert
+audit-log-action-admin-session-settings-updated = Inaktivitätsdauer der Sitzung geändert
 audit-log-action-admin-full-export = Vollständige Sicherung exportiert
 audit-log-action-admin-full-import = Sicherung importiert
 audit-log-action-exports-global = Globaler Export durchgeführt

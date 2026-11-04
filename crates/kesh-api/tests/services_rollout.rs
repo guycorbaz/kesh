@@ -445,6 +445,7 @@ fn api_societe(company_id: i64, user_id: i64, role: Role) -> ContexteAcces {
         company_id,
         exp: i64::MAX,
         api_key_id: None,
+        idle_exp: None,
     })
 }
 

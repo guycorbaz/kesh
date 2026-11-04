@@ -1862,6 +1862,8 @@ admin-backup-banner-future = La dernière sauvegarde automatique réussie est da
 admin-backup-banner-link = Administration → Sauvegarde complète
 admin-backup-banner-overdue = Aucune sauvegarde automatique réussie depuis le { $date }.
 admin-backup-schedule-error-out-of-domain = Réglage de sauvegarde hors domaine : fréquence 6, 12, 24 ou 168 heures, de 1 à 60 sauvegardes conservées.
+# Story v0172-session (0.17.3, CR #891) — refus d'une durée d'inactivité hors bornes.
+admin-session-settings-error-out-of-domain = Durée d'inactivité hors bornes : de 1 minute à 24 heures.
 admin-backup-server-download = Télécharger
 admin-backup-server-download-error = Le téléchargement a échoué.
 admin-backup-server-empty = Aucune sauvegarde sur le serveur.
@@ -3147,6 +3149,7 @@ audit-log-action-installation-ui-mode-changed = Mode d'utilisation changé
 audit-log-action-admin-backup-downloaded = Sauvegarde du serveur téléchargée
 audit-log-action-admin-backup-run = Sauvegarde lancée manuellement
 audit-log-action-admin-backup-schedule-updated = Réglage de la sauvegarde automatique modifié
+audit-log-action-admin-session-settings-updated = Durée d'inactivité de la session modifiée
 audit-log-action-admin-full-export = Sauvegarde complète exportée
 audit-log-action-admin-full-import = Sauvegarde importée
 audit-log-action-exports-global = Export global effectué

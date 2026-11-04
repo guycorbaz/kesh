@@ -13,7 +13,7 @@ src/
 ├── errors.rs        # AppError + IntoResponse exhaustif vers JSON structuré
 ├── auth/
 │   ├── password.rs  # Argon2id hash/verify + dummy_verify (timing-attack)
-│   ├── jwt.rs       # Claims HS256 + encode/decode (leeway 60s)
+│   ├── jwt.rs       # Claims / SessionClaims (idle_exp) HS256 + encode_session/decode_session (leeway 60s sur exp)
 │   └── bootstrap.rs # ensure_admin_user (FR3 : admin auto au démarrage)
 ├── middleware/
 │   ├── auth.rs      # require_auth (from_fn_with_state) + CurrentUser
@@ -36,9 +36,10 @@ tests/
 | `KESH_TEST_MODE` | non | `false` | `true`/`1` active `/api/v1/_test/*` (seed/reset DB). **DEV/CI ONLY** — refuse le démarrage si combiné avec un `KESH_HOST` non-loopback. |
 | `KESH_ADMIN_USERNAME` | non | `admin` | Username du compte admin bootstrap (FR3) |
 | `KESH_ADMIN_PASSWORD` | non | *vide* | Mot de passe admin bootstrap. Absent ou vide → onboarding `/setup`. Si posé : ≥ 12 caractères ; **refus au démarrage** s'il vaut `changeme`, contient `GENERATE_ME` ou est un gabarit entre chevrons `<…>` |
-| `KESH_JWT_EXPIRY_MINUTES` | non | `15` | Durée de vie de l'access token, borné `[1, 1440]` |
-| `KESH_REFRESH_TOKEN_MAX_LIFETIME_DAYS` | non | `30` | Lifetime absolu du refresh token, borné `[1, 365]` |
-| `KESH_REFRESH_INACTIVITY_MINUTES` | non | `15` | Sliding expiration : inactivité avant expiration du refresh token `[1, 1440]` |
+| `KESH_JWT_EXPIRY_MINUTES` | non | `15` | Durée de vie de l'access token (rythme des renouvellements ; ne fixe pas la fin de session), borné `[1, 1440]` |
+| `KESH_REFRESH_TOKEN_MAX_LIFETIME_DAYS` | non | `30` | Durée de vie du cookie de renouvellement, reposé à chaque renouvellement, bornée `[1, 365]` |
+
+Depuis la 0.17.3, `KESH_REFRESH_INACTIVITY_MINUTES` **n'est plus lue** (ni lecture, ni avertissement) : la durée d'inactivité de la session se règle dans l'interface (Administration → Paramètres, section Session ; table système `_kesh_installation_settings`, 60 minutes par défaut).
 | `KESH_RATE_LIMIT_WINDOW_MINUTES` | non | `15` | Fenêtre de comptage des tentatives de login échouées `[1, 1440]` |
 | `KESH_RATE_LIMIT_MAX_ATTEMPTS` | non | `5` | Nombre max de tentatives échouées par IP `[1, 100]` |
 | `KESH_RATE_LIMIT_BLOCK_MINUTES` | non | `30` | Durée de blocage après dépassement du seuil `[1, 1440]` |
@@ -157,8 +158,8 @@ Réponse :
 
 ## Authentification — flux
 
-- **Access token** : JWT HS256, `sub` (user_id String), `role`, `iat`, `exp`. Durée 15 min par défaut. `leeway = 60s` au decode pour absorber le clock drift NTP.
-- **Refresh token** : UUID v4 opaque persisté en base (`refresh_tokens`). Sliding expiration : 15 min d'inactivité par défaut (story 1.6). Token rotation à chaque refresh avec détection de vol.
+- **Access token** : JWT HS256, `sub` (user_id String), `role`, `company_id`, `iat`, `exp`, et — jeton de session, depuis la 0.17.3 — `idle_exp`, l'échéance d'inactivité de la session (copie de `refresh_tokens.expires_at`), contrôlée par le middleware **sans tolérance**. Durée 15 min par défaut. `leeway = 60s` au decode (sur `exp` seulement) pour absorber le clock drift NTP.
+- **Refresh token** : UUID v4 opaque persisté en base (`refresh_tokens`). Sa ligne porte l'**échéance d'inactivité** de la session, réglée en base (60 min par défaut, `_kesh_installation_settings`), prolongée par le battement `POST /api/v1/auth/activity` ; **le renouvellement ne la prolonge pas** (la ligne neuve la recopie). Token rotation à chaque refresh avec détection de vol, sauf rejeu dans les 30 s d'une rotation (grâce, deux onglets).
 - **Middleware `require_auth`** : pattern Axum 0.8 `from_fn_with_state` qui décode le JWT et injecte un `CurrentUser { user_id, role }` dans les `Extensions` de la requête. Les handlers protégés le récupèrent via `Extension<CurrentUser>`.
 - **Bootstrap admin** : au premier démarrage sur une DB vide, un compte `KESH_ADMIN_USERNAME` avec mot de passe `KESH_ADMIN_PASSWORD` est créé. Log explicite « CHANGEZ LE MOT DE PASSE ».
 
@@ -176,7 +177,7 @@ Voir `crates/kesh-db/README.md` pour les prérequis DB (privilèges `CREATE DATA
 
 ## Dettes techniques documentées
 
-1. **`refresh_tokens.token` stocké en clair** — le hashing SHA-256 avant stockage est souhaitable mais hors scope MVP. Risque mitigé par la sliding expiration courte (15 min).
+1. **`refresh_tokens.token` stocké en clair** — le hashing SHA-256 avant stockage est souhaitable mais hors scope MVP. Depuis la 0.17.3, la durée d'inactivité par défaut est de 60 minutes (réglable de 1 à 1440) : le risque d'un jeton lu en base est donc plus grand qu'avec les 15 minutes d'avant — suivi par #890 (C-v0172s-14).
 2. **`refresh_token_max_lifetime` non enforced** — la session peut vivre indéfiniment si le client refresh régulièrement. Story future pour token families / absolute lifetime.
 3. **Rate limiter in-memory** — reset au redémarrage, single-instance, HashMap non borné. Acceptable pour MVP 2-5 users.
 4. **TOCTOU sur refresh concurrent** — deux refresh simultanés avec le même token peuvent émettre deux sessions. Fix via token families hors scope MVP.

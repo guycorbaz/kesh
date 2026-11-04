@@ -34,7 +34,6 @@ use std::sync::atomic::Ordering;
 use axum::Json;
 use axum::extract::{ConnectInfo, State};
 use axum_extra::extract::CookieJar;
-use chrono::Utc;
 use kesh_db::entities::audit_log::NewAuditLogEntry;
 use kesh_db::entities::{NewRefreshToken, NewUser, Role};
 use kesh_db::errors::DbError;
@@ -44,7 +43,9 @@ use serde::Deserialize;
 use crate::AppState;
 use crate::auth::{jwt, password};
 use crate::errors::AppError;
-use crate::routes::auth::{LoginResponse, build_auth_cookies};
+use crate::routes::auth::{
+    LoginResponse, build_auth_cookies, idle_expires_in, new_session_deadline,
+};
 
 /// Corps de `POST /api/v1/setup/admin`.
 ///
@@ -276,22 +277,25 @@ pub async fn create_admin(
     // verrouillée. Le store immédiat heal le state en mémoire avec la réalité DB.
     state.users_exist.store(true, Ordering::Release);
 
-    // Step 6 — JWT + refresh token (cohérent /login).
-    let access_token = jwt::encode(
+    // Step 6 — JWT + refresh token (cohérent /login) ; Story v0172-session :
+    // l'échéance d'inactivité de la session neuve (`now + N`), dans la ligne
+    // et dans le jeton (`idle_exp`).
+    let deadline = new_session_deadline(&state).await?;
+    let access_token = jwt::encode_session(
         user.id,
         user.role,
         user.company_id,
         state.config.jwt_secret_bytes(),
         state.config.jwt_expiry,
+        deadline.idle_exp,
     )?;
     let refresh_token = uuid::Uuid::new_v4().to_string();
-    let expires_at = (Utc::now() + state.config.refresh_inactivity).naive_utc();
     refresh_tokens::create(
         &state.pool,
         NewRefreshToken {
             user_id: user.id,
             token: refresh_token.clone(),
-            expires_at,
+            expires_at: deadline.expires_at,
         },
     )
     .await?;
@@ -312,6 +316,8 @@ pub async fn create_admin(
             user_id: user.id,
             username: user.username,
             role: format!("{:?}", user.role),
+            idle_timeout_minutes: deadline.minutes,
+            idle_expires_in: Some(idle_expires_in(deadline.idle_exp)),
         }),
     ))
 }

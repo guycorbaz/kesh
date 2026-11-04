@@ -1791,6 +1791,8 @@ admin-backup-banner-future = The last successful automatic backup is dated { $da
 admin-backup-banner-link = Administration → Full backup
 admin-backup-banner-overdue = No successful automatic backup since { $date }.
 admin-backup-schedule-error-out-of-domain = Backup setting out of range: frequency 6, 12, 24 or 168 hours, 1 to 60 backups kept.
+# Story v0172-session (0.17.3, CR #891) — refus d'une durée d'inactivité hors bornes.
+admin-session-settings-error-out-of-domain = Inactivity duration out of range: 1 minute to 24 hours.
 admin-backup-server-download = Download
 admin-backup-server-download-error = The download failed.
 admin-backup-server-empty = No backup on the server.
@@ -3080,6 +3082,7 @@ audit-log-action-installation-ui-mode-changed = Usage mode changed
 audit-log-action-admin-backup-downloaded = Server backup downloaded
 audit-log-action-admin-backup-run = Backup started manually
 audit-log-action-admin-backup-schedule-updated = Automatic backup setting changed
+audit-log-action-admin-session-settings-updated = Session inactivity duration changed
 audit-log-action-admin-full-export = Full backup exported
 audit-log-action-admin-full-import = Backup imported
 audit-log-action-exports-global = Global export completed

@@ -774,9 +774,8 @@ hexadécimal).
     \toprule
     \keshtableheader{Variable} & \keshtableheader{Description} & \keshtableheader{Défaut} \\
     \midrule
-    KESH\_JWT\_EXPIRY\_MINUTES & Durée access token. Borne [1, 1440]. & \texttt{15} \\
-    KESH\_REFRESH\_TOKEN\_MAX\_LIFETIME\_DAYS & Durée absolue refresh token. Borne [1, 365]. & \texttt{30} \\
-    KESH\_REFRESH\_INACTIVITY\_MINUTES & Inactivité avant expiration refresh (sliding). Borne [1, 1440]. & \texttt{15} \\
+    KESH\_JWT\_EXPIRY\_MINUTES & Durée du jeton d'accès (et de son cookie)~: rythme des renouvellements ; ne fixe pas la fin de session. Borne [1, 1440]. & \texttt{15} \\
+    KESH\_REFRESH\_TOKEN\_MAX\_LIFETIME\_DAYS & Durée de vie du \emph{cookie} de renouvellement, reposé à chaque renouvellement ; aucune durée absolue ne borne la session d'un utilisateur actif. Borne [1, 365]. & \texttt{30} \\
     KESH\_RATE\_LIMIT\_WINDOW\_MINUTES & Fenêtre de comptage des échecs login. Borne [1, 1440]. & \texttt{15} \\
     KESH\_RATE\_LIMIT\_MAX\_ATTEMPTS & Échecs login par IP avant blocage. Borne [1, 100]. & \texttt{5} \\
     KESH\_RATE\_LIMIT\_BLOCK\_MINUTES & Durée de blocage d'une IP. Borne [1, 1440]. & \texttt{30} \\
@@ -784,6 +783,10 @@ hexadécimal).
     KESH\_COOKIE\_SECURE & Flag \texttt{Secure} des cookies (\texttt{true}/\texttt{false}). \textbf{\texttt{false} uniquement en LAN HTTP strict}. & \texttt{true} \\
     \bottomrule
 \end{tabularx}
+
+\begin{sloppypar}
+Depuis la 0.17.3, \textbf{l'ancienne variable de durée d'inactivité n'est plus lue} (voir le journal des modifications de la 0.17.3)~: la durée se règle dans l'interface (\S\ref{sec:duree-inactivite}). Retirez-la de votre \keshpath{.env} et de votre \keshpath{docker-compose.yml}. Si vous aviez posé \texttt{KESH\_JWT\_EXPIRY\_MINUTES=480} pour contourner \#876, retirez-le aussi.
+\end{sloppypar}
 
 \paragraph{Journalisation.}\mbox{}\\
 \begin{tabularx}{\linewidth}{>{\bfseries\ttfamily}lXl}
@@ -2518,7 +2521,7 @@ La 0.17.2 est une version corrective, qui se pose sur la 0.17.1 : elle ne demand
 \paragraph{Ce qui change à l'écran.} Une facture fournisseur validée, payée ou annulée porte le bouton \emph{Repasser en brouillon} : une annulée repasse en brouillon en retirant du journal son écriture d'achat et sa contre-passation ; sur une payée, le refus dit ce qu'il faut défaire d'abord. La date d'une facture fournisseur créée depuis un document est proposée et marquée « à vérifier » ; la liste des factures fournisseur se pagine ; le menu latéral défile ; les dates des écrans comptables s'affichent à la forme suisse (\texttt{29.01.2026}). Le détail est au manuel utilisateur et au journal des modifications.
 
 \begin{sloppypar}
-\paragraph{La session, non corrigée dans cette version.} Avec les réglages par défaut (\texttt{KESH\_JWT\_EXPIRY\_MINUTES=15}, \texttt{KESH\_REFRESH\_INACTIVITY\_MINUTES=15}), une session se ferme environ quinze minutes après la connexion, même en activité continue (issue \#876). La correction est prévue pour la 0.17.3. D'ici là, le contournement consiste à allonger la durée du jeton d'accès dans le \keshpath{.env}, par exemple \texttt{KESH\_JWT\_EXPIRY\_MINUTES=480}, puis à redémarrer ; la contrepartie est qu'un jeton d'accès dérobé reste valable aussi longtemps.
+\paragraph{La session, non corrigée dans cette version.} Avec les réglages par défaut (jeton d'accès et durée d'inactivité de 15 minutes chacun), une session se ferme environ quinze minutes après la connexion, même en activité continue (issue \#876). Corrigée en 0.17.3 (\S\ref{sec:duree-inactivite})~: le contournement ci-dessous est à retirer en passant à la 0.17.3. D'ici là, le contournement consiste à allonger la durée du jeton d'accès dans le \keshpath{.env}, par exemple \texttt{KESH\_JWT\_EXPIRY\_MINUTES=480}, puis à redémarrer ; la contrepartie est qu'un jeton d'accès dérobé reste valable aussi longtemps.
 \end{sloppypar}
 
 \subsubsection{Passer à la 0.17.1}\label{sec:maj-0-17-1}
@@ -3051,7 +3054,7 @@ Le contrôle d'accès basé sur les rôles est appliqué \textbf{au niveau de ch
 \label{sec:conformite-audit}
 
 \begin{sloppypar}
-La quasi-totalité des actions métier mutantes est enregistrée dans la table \texttt{audit\_log} --- 135 des 142 routes à verbe mutant au moment de la rédaction, dont, depuis la v0.13.0, la configuration d'une installation de production (une entrée par étape franchie), le chargement des données de démonstration (une entrée de synthèse) et leur réinitialisation (\texttt{installation.reset}, qui dit le nombre et la plage d'identifiants des entrées effacées). S'y ajoute une entrée qu'aucune route n'écrit d'elle-même : la réparation d'une installation touchée par \#528 ou \#542, au démarrage ou à l'import d'une sauvegarde (\texttt{installation.repaired}, \S\ref{sec:reparation-installation}). \keshAttention\ \emph{Les exceptions sont connues, comptées et suivies~: quatre routes exemptées --- les gestes de session, la connexion, la déconnexion, le renouvellement de session et le changement de son propre mot de passe (issue \#435) ---, et trois autres routes qui n'écrivent rien parce qu'elles ne modifient rien~: 135 + 4 + 3 = 142.} \keshAttention\ \emph{Limite connue, suivie par l'issue \#538~: l'entrée du chargement des données de démonstration n'est écrite que lorsqu'il aboutit. Un chargement interrompu --- ou refusé parce que la configuration de production a franchi l'étape entre-temps --- laisse la société renommée, le plan comptable et l'exercice \textbf{sans entrée au journal}.} La liste complète, route par route, est tenue dans le dépôt et contrôlée par un test~:
+La quasi-totalité des actions métier mutantes est enregistrée dans la table \texttt{audit\_log} --- 136 des 144 routes à verbe mutant au moment de la rédaction, dont, depuis la v0.13.0, la configuration d'une installation de production (une entrée par étape franchie), le chargement des données de démonstration (une entrée de synthèse) et leur réinitialisation (\texttt{installation.reset}, qui dit le nombre et la plage d'identifiants des entrées effacées). S'y ajoute une entrée qu'aucune route n'écrit d'elle-même : la réparation d'une installation touchée par \#528 ou \#542, au démarrage ou à l'import d'une sauvegarde (\texttt{installation.repaired}, \S\ref{sec:reparation-installation}). \keshAttention\ \emph{Les exceptions sont connues, comptées et suivies~: cinq routes exemptées --- les gestes de session, la connexion, la déconnexion, le renouvellement de session, le changement de son propre mot de passe (issue \#435) et le battement d'activité (issue \#876) ---, et trois autres routes qui n'écrivent rien parce qu'elles ne modifient rien~: 136 + 5 + 3 = 144.} \keshAttention\ \emph{Limite connue, suivie par l'issue \#538~: l'entrée du chargement des données de démonstration n'est écrite que lorsqu'il aboutit. Un chargement interrompu --- ou refusé parce que la configuration de production a franchi l'étape entre-temps --- laisse la société renommée, le plan comptable et l'exercice \textbf{sans entrée au journal}.} La liste complète, route par route, est tenue dans le dépôt et contrôlée par un test~:
 \end{sloppypar}
 
 \begin{itemize}
