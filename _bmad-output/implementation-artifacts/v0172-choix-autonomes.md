@@ -494,6 +494,8 @@ clair) ; *(liste en vigueur : voir la ligne « Validation P5 » ci-dessous, qui 
 
 ### C-v0172s-14 — Manuel d'administration corrigé ; issue demandée : le jeton de renouvellement stocké en clair
 
+*Annotation (validation P6, 2026-11-04) : l'issue est ouverte — **#890**.*
+
 *Annotation (validation P4, 2026-11-04) : les décomptes ci-dessous (« 11 sites au tableau, 53 hors classe ») datent du relevé sensible à la casse ; l'inventaire en vigueur, insensible à la casse, compte 82 lignes, 17 au tableau et 65 hors classe (fiche, § Manuel).*
 
 - **Retenu** : l'inventaire clos du manuel d'administration (11 sites au tableau, 53 hors classe) est dans `v0172-session.md` ;
@@ -602,6 +604,8 @@ clair) ; *(liste en vigueur : voir la ligne « Validation P5 » ci-dessous, qui 
 
 ### C-v0172s-24 — La course entre deux onglets reste résiduelle, déclarée comme telle
 
+*Précisé à la validation P6 : « deux requêtes quasi simultanées dans deux onglets » — deux gestes de l'utilisateur, **ou** plusieurs onglets de Kesh rouverts ensemble par le navigateur (chacun lance son renouvellement au démarrage, C-26 : N−1 reviennent à la connexion, sans révocation générale ; pas pire que la 0.17.1).*
+
 - **Retenu** : la grâce évite la révocation de toutes les sessions ; l'onglet dont le refresh perd la course revient à la connexion. Il faut
   deux requêtes de l'utilisateur, dans deux onglets, à quelques millisecondes, juste après l'échéance du jeton d'accès.
 - **Écartées** : la fermer par un verrou (absent en HTTP-LAN), par un second essai différé, ou par un état partagé — complexité que trois
@@ -618,6 +622,8 @@ clair) ; *(liste en vigueur : voir la ligne « Validation P5 » ci-dessous, qui 
 - **Réversible** : oui.
 
 ### C-v0172s-26 — Le renouvellement au démarrage, sous forme minimale
+
+*Précisé à la validation P6* : import **statique** de `tryRefresh()` (le cycle `api-client` ↔ `auth.svelte` existe déjà par `vat-rates` et reste bénin ; « import dynamique » et sa raison sont retirés) ; `hydrate()` juge le succès sur `authState.currentUser !== null` ; N requêtes rejetées sur un renouvellement échoué font N effacements (déclaré) ; l'absence de diffusion n'est plus assertée (`authBroadcast` nul sous jsdom) — M7 bis et M7 ter retirées.
 
 - **Contexte** : validation P5, finding P3, et instruction de l'orchestrateur — sans lui, recharger la page ou ouvrir un onglet renvoie à
   la connexion dès l'échéance du jeton d'accès posé au dernier renouvellement, parfois quelques secondes après la dernière action : le

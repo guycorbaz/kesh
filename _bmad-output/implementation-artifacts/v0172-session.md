@@ -88,8 +88,11 @@ frontend (une fonction extraite de `doRefresh`, un appel, une option) et par le 
    compris ; `.env.example:160` ; `docker-compose.yml:85`, `docker-compose.prod.yml:94`, `:-60`). `KESH_JWT_EXPIRY_MINUTES` reste à 15.
 2. **La règle du double** (C-v0172s-16, C-v0172s-22) : une **fonction unique** `effective_refresh_inactivity(jwt: TimeDelta, lue:
    TimeDelta) -> TimeDelta` rend `max(lue, 2 × jwt)` ; appelée par `from_env` **seulement**, après la lecture et la validation de bornes
-   de la valeur lue (l'avertissement : `KESH_REFRESH_INACTIVITY_MINUTES=15 inférieur au double de KESH_JWT_EXPIRY_MINUTES=15 : 30 minutes
-   appliquées`). `from_fields_for_test` (`config.rs:443-510`) **n'est pas** modifié : ses ~80 appelants des tests d'intégration
+   de la valeur lue. L'avertissement nomme la valeur et son origine : variable posée — `KESH_REFRESH_INACTIVITY_MINUTES=15 inférieur au
+   double de KESH_JWT_EXPIRY_MINUTES=15 : 30 minutes appliquées` ; variable absente — `KESH_REFRESH_INACTIVITY_MINUTES absent (défaut 60)
+   inférieur au double de KESH_JWT_EXPIRY_MINUTES=480 : 960 minutes appliquées`. **Le contournement publié sur #876**
+   (`KESH_JWT_EXPIRY_MINUTES=480`, commentaire du 2026-11-04) porterait ainsi l'inactivité à 960 minutes, et la session durerait 8 à
+   16 heures après la dernière requête : la note de mise à jour, le CHANGELOG et le manuel disent de **retirer** ce contournement. `from_fields_for_test` (`config.rs:443-510`) **n'est pas** modifié : ses ~80 appelants des tests d'intégration
    (`auth_e2e.rs:63-65` et suivants, qui passent 15/15 explicitement) gardent leurs valeurs, et son assertion `≤ 24 h` (`:474-476`)
    porte toujours sur une valeur passée, jamais doublée. `make_test_config` (`config.rs:1617-1635`, `#[cfg(test)]`) non plus.
 3. **La grâce de rotation** (C-v0172s-17) : dans `refresh`, avant la détection de vol (`:379`), un jeton révoqué pour `"rotation"`
@@ -119,9 +122,10 @@ frontend (une fonction extraite de `doRefresh`, un appel, une option) et par le 
    `git grep -nE '"(logout|rotation|password_change|admin_disable|theft_detected)"' -- crates/kesh-api/src` (`auth.rs:306, :382, :418, :515,
    :969`, `bootstrap.rs:364`, `users.rs:366, :442, :493`) ; aucun ne lit le motif hors `auth.rs:379` (`== "rotation"`). Un cookie d'une
    ligne de la sauvegarde rend donc `401` (« token revoked » : motif ≠ `rotation`, pas de détection de vol). `sessionInvalidated: true`
-   redevient vrai. Aucun des traitements de la transaction ne lit `refresh_tokens` (le développeur le vérifie : `git grep -n
-   refresh_tokens crates/kesh-db/src/post_restore.rs crates/kesh-db/src/backfill.rs crates/kesh-api/src/routes/admin.rs`), si bien que
-   l'ordre ne change rien à leur résultat. Le commentaire `routes/admin.rs:180-182` est mis à jour (« l'import remplace puis **révoque**
+   redevient vrai. Aucun des traitements de la transaction — réparation 5-quater (`repositories/companies.rs`,
+   `repair_installation_in_tx`, appelée après le point de révocation) comprise — ne lit `refresh_tokens` : `git grep -n refresh_tokens --
+   crates/kesh-db/src crates/kesh-api/src/routes/admin.rs` ne rend, hors `repositories/refresh_tokens.rs`, que `backup.rs` (inventaire des
+   tables) et `repositories/mod.rs` (déclaration du module) ; l'ordre ne change donc rien à leur résultat. Le commentaire `routes/admin.rs:180-182` est mis à jour (« l'import remplace puis **révoque**
    les `refresh_tokens` »).
 6. **La borne d'inactivité** (C-v0172s-21) : *requête* = toute requête API de l'utilisateur (non de fond). La dernière à `a`, le dernier
    renouvellement à `r ≤ a`. Une requête faite pendant que le jeton d'accès vit ne prolonge rien ; une requête après renouvelle. La
@@ -135,7 +139,9 @@ frontend (une fonction extraite de `doRefresh`, un appel, une option) et par le 
    n'ait reposé les cookies — deux requêtes de l'utilisateur, dans deux onglets, à quelques millisecondes d'intervalle, juste après
    l'échéance du jeton d'accès —, le second reçoit 401 et **cet onglet** revient à la connexion (sa saisie non enregistrée est perdue) ;
    l'autre onglet et les autres appareils continuent. La fiche ne la déclare **pas** fermée. Les lectures de fond ne renouvelant plus
-   (§ 4), il faut deux gestes de l'utilisateur quasi simultanés. Écrite au manuel utilisateur (`:95`) et d'administration (`:2997`).
+   (§ 4), il faut deux requêtes quasi simultanées dans deux onglets — deux gestes de l'utilisateur, ou plusieurs onglets de Kesh rouverts
+   ensemble par le navigateur (chacun lance son renouvellement au démarrage, § 8 bis : N−1 d'entre eux reviennent à la connexion, sans
+   révocation générale ; pas pire que la 0.17.1). Écrite au manuel utilisateur (`:95`) et d'administration (`:2997`).
 8. **Retiré à la validation P4** (C-v0172s-18) : le **repli `GET /auth/me`** après un refus de renouvellement — un seul `/me` ne fermait
    pas la course (le 401 du second peut précéder le `Set-Cookie` du premier) ; la grâce suffit à l'essentiel, le reste est déclaré au § 7.
 8 bis. **Le renouvellement au démarrage, sous forme minimale** (C-v0172s-26, rétabli à la validation P5) : sans lui, un rechargement
@@ -145,9 +151,13 @@ frontend (une fonction extraite de `doRefresh`, un appel, une option) et par le 
    fonction **`tryRefresh(): Promise<boolean>`**, sous le **même mutex d'onglet** (`refreshPromise`, `:67-69`, `:185-192`), qui fait le
    `POST /auth/refresh` puis le `GET /auth/me` et pose l'état par `authState.login(…, { broadcast: false })` en cas de succès, et rend
    `false` **sans rien effacer ni rediriger** en cas d'échec ; le chemin 401 de `request`/`requestRaw` appelle `tryRefresh()` et, sur
-   `false`, fait lui-même `clearSession()` et la redirection (comportement actuel, inchangé). `hydrate()` (`auth.svelte.ts:229-265`), sur un
-   401 de `/me`, appelle **une fois** `tryRefresh()` — importé dynamiquement (`await import('$lib/shared/utils/api-client')`), pour ne pas
-   créer à l'initialisation l'import circulaire `api-client` ↔ `auth.svelte` — ; succès : l'état est posé ; échec : état nul, **sans**
+   `false`, fait lui-même `clearSession()` et la redirection — à une différence près, sans gravité : N requêtes rejetées qui partagent un
+   renouvellement échoué font N `clearSession()` (chacun diffuse `auth-change`) et N redirections vers la même page, là où `doRefresh` en
+   faisait une. `tryRefresh()` garde la branche actuelle « refresh réussi, `/me` en échec » (`api-client.ts:158-172` : `true`, état non
+   reposé) : le chemin 401 rejoue. `hydrate()` (`auth.svelte.ts:209-316`, branche 401 `:261-267`), sur un 401 de `/me`, appelle **une
+   fois** `tryRefresh()` — **import statique** : le cycle `api-client` ↔ `auth.svelte` existe déjà (`auth.svelte.ts:17` → `vat-rates` →
+   `api-client.ts:15`) et reste bénin, aucun des deux n'utilisant l'autre au chargement — ; elle juge le succès sur
+   `authState.currentUser !== null` (la branche « `/me` en échec » laisse donc l'état nul, sans plus) ; échec : état nul, **sans**
    `clearSession()` diffusé, **sans** redirection (`hooks.client.ts:22` appelle `hydrate()` au démarrage de toute page, `/login`
    compris). **Pourquoi P13 à P15 de la validation P4 ne reviennent pas** : aucune issue d'`hydrate()` ne diffuse `auth-change`, donc
    aucun onglet ne relance celui d'un autre (P13), et le mutex partagé interdit deux renouvellements concurrents dans un onglet ; le
@@ -198,11 +208,13 @@ correctif** (la ligne restaurée est active).
 Change Log. Les autres appelants (`AutoBackupSection.svelte:145, :213`) inchangés. **Rouges avant correctif.**
 
 **AC-5 bis — Le renouvellement au démarrage.** `auth.svelte.test.ts` : (1) `hydrate()`, `GET /auth/me` 401, `POST /auth/refresh` 200,
-`GET /auth/me` 200 ⇒ `currentUser` peuplé, `authBroadcast.postMessage` **non appelé** ; (2) refresh 401 ⇒ `currentUser` nul,
-`window.location.replace` **non appelé**, `postMessage` non appelé ; (3) concurrent : un chemin 401 en vol dans l'onglet et `hydrate()` ⇒
-**un seul** `POST /auth/refresh`. Les tests existants d'`hydrate` qui attendent un seul `fetch` sur 401 reçoivent le simulacre du refresh
-(401) — nommés au Change Log. `api-client.test.ts` : les six tests du chemin 401 (`:205, :246, :270, :327, :488, :567`) restent verts
-(l'effacement et la redirection passent de `doRefresh` à l'appelant, comportement identique). **Rouges avant correctif** : (1), (3).
+`GET /auth/me` 200 ⇒ `currentUser` peuplé ; (2) refresh 401 ⇒ `currentUser` nul, `window.location.replace` **non appelé** ; (3) concurrent : un chemin 401 en vol dans l'onglet et `hydrate()` ⇒
+**un seul** `POST /auth/refresh`. *(L'absence de diffusion `auth-change` n'est pas assertée : `authBroadcast`, privé, vaut `null` sous
+jsdom quand `BroadcastChannel` manque, `auth.svelte.ts:30-37` — une assertion « non appelé » y serait vraie par construction ; retirée à la
+validation P6, comme ses mutations.)* Test existant qui change : `auth.svelte.test.ts:147-163` (« hydrate() avec 401 laisse l'état
+non-auth ») — toutes ses réponses valent 401, et son `expect(mockFetch).toHaveBeenCalledOnce()` passe à **deux** appels (`/me`, puis le
+refresh) ; `:217` et `:279` restent verts. `api-client.test.ts` : les six tests du chemin 401 (`:205, :246, :270, :327, :488, :567`) restent verts
+(l'effacement et la redirection passent de `doRefresh` à l'appelant ; aucun d'eux n'exerce plusieurs requêtes en échec). **Rouges avant correctif** : (1), (3).
 
 **AC-6 — Recette sur une installation de dev.** `kesh_v0172s`, backend `KESH_JWT_EXPIRY_MINUTES=1`, `KESH_REFRESH_INACTIVITY_MINUTES=3` :
 (a) taper dans un brouillon **1 min 30 s** sans enregistrer, puis enregistrer : réussite (au journal : `refresh successful`) ; (b) rien
@@ -234,13 +246,12 @@ Agent Record.
 - **M1** — défaut rétabli à 15 : T1 rougit.
 - **M2** — `effective_refresh_inactivity` rend la valeur lue : T1 (cas 15/15 et tests de la fonction) rougit.
 - **M3** — grâce portée à 0 s : T3 (a) rougit.
-- **M4** — grâce sans borne : T3 (b) et le cas 4 de (c) rougissent.
+- **M4** — grâce sans borne : T3 (b) rougit.
 - **M5** — la révocation après restauration retirée : T4 (a) rougit ; **M5 bis** — la révocation déplacée **avant l'ouverture** de la
   transaction d'import, sur le pool (aucun verrou n'est encore tenu : la mutation s'exécute sans attente mutuelle) : T4 (b) rougit (les
   lignes de la destination sont révoquées alors que l'import échoue), et T4 (a) aussi (les lignes restaurées sont réinsérées actives).
-- **M7** — `hydrate()` sans `tryRefresh()` : T6 (1ᵉʳ cas) rougit ; **M7 bis** — succès posé par `login()` **avec** diffusion : T6
-  (« `postMessage` non appelé ») rougit ; **M7 ter** — échec suivi de `clearSession()` diffusé ou d'une redirection : T6 (2ᵈ cas) rougit ;
-  **M7 quater** — `tryRefresh()` hors du mutex : T6 (cas concurrent) rougit.
+- **M7** — `hydrate()` sans `tryRefresh()` : T6 (1ᵉʳ cas) rougit ; **M7 quater** — `tryRefresh()` hors du mutex : T6 (cas concurrent)
+  rougit. *(M7 bis et M7 ter, qui reposaient sur l'observation de `postMessage`, sont retirées à la validation P6.)*
 - **M6** — l'option `background` ignorée dans `request` : T5 (`api-client.test.ts`) rougit ; **M6 bis** — l'argument retiré au site de
   la minuterie (`BackupScheduleBanner.svelte:34`) : T5 (`BackupScheduleBanner.test.ts`) rougit.
 
@@ -256,7 +267,8 @@ Agent Record.
    moins le double de `KESH_JWT_EXPIRY_MINUTES` ; défaut 60 ») et `:130` (« durée de vie du **cookie** de renouvellement ; aucune durée
    absolue pour un utilisateur actif ») ; `docker-compose.yml:85`, `docker-compose.prod.yml:94` ; `crates/kesh-api/README.md:41` (défaut
    60, au moins le double du jeton d'accès), `:161` (« 60 min d'inactivité par défaut »), `:179` (« sliding expiration de 60 min par
-   défaut » : le risque du jeton stocké en clair, que justifiait une durée courte, est plus grand — C-v0172s-14) ; `:160` reste vrai.
+   défaut » : le risque du jeton stocké en clair, que justifiait une durée courte, est plus grand — C-v0172s-14, #890), `:40` (« durée de
+   vie du cookie de renouvellement, reposé à chaque renouvellement », non « lifetime absolu ») ; `:160` reste vrai.
 5. PRD (§ *PRD*) ; manuels et PDF ; CHANGELOG.
 6. Mutations M1–M7 quater ; AC-6 (recette).
 7. Gates : `cargo fmt --all -- --check`, `cargo clippy --workspace --all-targets -- -D warnings`, `scripts/test-fast.sh` (sous
@@ -269,6 +281,8 @@ Agent Record.
 - `_bmad-output/planning-artifacts/prd.md:391` : « FR13 : Le système renouvelle silencieusement la session et la termine après **60
   minutes** d'inactivité (configurable ; au moins le double de la durée du jeton d'accès) — CR #891 ».
 - `prd.md:280` : « expiration **60 min** d'inactivité » (même renvoi).
+- *Le libellé « la termine après 60 minutes » est celui du CR #891, décision du Project Lead : il est gardé tel quel. La borne précise
+  (entre 45 et 60 minutes après la dernière requête, avec les réglages par défaut) est écrite au manuel ; signalé, non tranché.*
 - `epics.md:63` : la reprise de FR13, à l'identique de `prd.md:391`.
 - `epics.md:616` : « **Given** inactivité de **60 minutes** (configurable via env, au moins le double de la durée du jeton d'accès) … »
   (renvoi à #891).
@@ -277,7 +291,7 @@ Agent Record.
 - **`docs/kesh-specifications.txt`**, copie des spécifications : `:278` (« expiration 15 min d'inactivité »), `:389` et `:2144` (FR13),
   `:2690` (story 1.6) — **mises à jour** de même, avec le renvoi à #891 ; hors classe : `:71`, `:374`, `:1439`, `:2129`, `:2625` (installation
   et prise en main en 15 minutes), `:392`, `:2147`, `:2691` (limitation des connexions), `:806`, `:2362`, `:2679` (durée du jeton d'accès,
-  inchangée). Si le fichier est engendré (le développeur le vérifie : `git log --format=%s -5 -- docs/kesh-specifications.txt`), le
+  inchangée), `:44`, `:1453` (opérationnel en moins de 15 minutes), `:219` (time to value de 15 minutes). Si le fichier est engendré (le développeur le vérifie : `git log --format=%s -5 -- docs/kesh-specifications.txt`), le
   regénérer plutôt que l'éditer.
 
 ## Manuel
@@ -313,12 +327,12 @@ passage au tableau de `:1192`, `:1361`, `:2292` et `:2322`.)*
 | `admin-manual.tex:111` | « compensée par rafraîchissement automatique côté frontend » | « renouvelé à la première requête après son échéance » |
 | `:777` | `KESH_JWT_EXPIRY_MINUTES` « Durée access token » | ajouter « (et du cookie d'accès) » |
 | `:778` | `KESH_REFRESH_TOKEN_MAX_LIFETIME_DAYS` « Durée absolue refresh token » | durée de vie du **cookie** de renouvellement (`routes/auth.rs:63-66`), reposé à chaque renouvellement : **aucune durée absolue** ne borne la session d'un utilisateur actif |
-| `:779` | `KESH_REFRESH_INACTIVITY_MINUTES` ; défaut `15` | défaut **60** ; au moins le double de `KESH_JWT_EXPIRY_MINUTES` (sinon porté au double, avertissement au démarrage) ; fin de session entre `inactivité − jeton d'accès` et `inactivité` après la dernière requête ; un `.env` antérieur à 15 donne 30 ; session courte : réduire les deux (p. ex. 7 et 15) |
+| `:779` | `KESH_REFRESH_INACTIVITY_MINUTES` ; défaut `15` | défaut **60** ; au moins le double de `KESH_JWT_EXPIRY_MINUTES` (sinon porté au double, avertissement au démarrage) ; fin de session entre `inactivité − jeton d'accès` et `inactivité` après la dernière requête ; un `.env` antérieur à 15 donne 30 ; **si vous aviez posé `KESH_JWT_EXPIRY_MINUTES=480` pour contourner #876, retirez-le** : la règle du double porterait l'inactivité à 960 minutes ; session courte : réduire les deux (p. ex. 7 et 15) |
 | `:1192`, `:1361` | révocation des sessions à la réinitialisation / au recovery : « déconnectées » | même précision que `user-manual.tex:106` |
 | `:1446`, `:2360`, `:2506` | « au plus sa durée plus une minute » / « la durée de session plus une minute » | « au plus la durée du **jeton d'accès** (`KESH_JWT_EXPIRY_MINUTES`) plus une minute » — c'est lui qui porte la société |
 | `:2292`, `:2322` | « votre session est invalidée » ; « la session est déjà invalidée » | **vrai après correctif** : l'import révoque tous les jetons de renouvellement (§ 5 de la conception, C-v0172s-23) ; ajouter « les sessions de tous les utilisateurs ne peuvent plus être renouvelées : elles prennent fin au plus tard à l'échéance de leur jeton d'accès (15 minutes par défaut) ; la vôtre, par le bouton *Se reconnecter* » — cohérent avec `:2360` |
 | `:2995` | cookie d'accès « `HttpOnly; Secure; SameSite=Lax` » | `HttpOnly`, `Secure` sauf `KESH_COOKIE_SECURE=false`, `SameSite=Strict` (`routes/auth.rs:51-52, :61-62`) |
-| `:2996` | « refresh token (durée 30 jours par défaut) … hash SHA-256 (jamais stocké en clair) » | 30 jours : durée du cookie ; la ligne expire après l'inactivité ; jeton stocké **tel quel** (`repositories/refresh_tokens.rs:30-34`) — **issue demandée** (C-v0172s-14) |
+| `:2996` | « refresh token (durée 30 jours par défaut) … hash SHA-256 (jamais stocké en clair) » | 30 jours : durée du cookie ; la ligne expire après l'inactivité ; jeton stocké **tel quel** (`repositories/refresh_tokens.rs:30-34`) — défaut tracé en **#890** (C-v0172s-14) |
 | `:2997` | rotation et trace pour la détection du rejeu | ajouter la grâce : un rejeu dans les 30 secondes d'une rotation est refusé sans révoquer les autres sessions ; l'onglet dont le renouvellement a perdu la course (deux onglets, la même seconde, juste après l'échéance du jeton d'accès) revient à la connexion |
 | `:2998` | « La déconnexion révoque tous les refresh tokens de la session » | « révoque le jeton de renouvellement de la session » |
 | `:3708` | Dépannage « Erreurs 401 en cascade » — « Cause : Refresh token expiré ou invalidé » | ajouter la cause ordinaire : session expirée par inactivité ; un bandeau de fond peut rester affiché jusqu'à la première action, qui mène à la connexion |
@@ -332,12 +346,13 @@ Dans la section de la **0.17.3** (`## [0.17.3] — Non publié`, à créer en t�
   d'inactivité passe à **60 minutes** par défaut ([#891](https://github.com/guycorbaz/kesh/issues/891)) : la session se ferme alors entre
   45 et 60 minutes après votre dernière action qui interroge le serveur (ouvrir un écran, enregistrer, chercher). *Un `.env` recopié
   d'une version antérieure, qui pose `KESH_REFRESH_INACTIVITY_MINUTES=15`, est porté à 30 minutes (au moins le double de la durée du
-  jeton d'accès), avec un avertissement au démarrage ; pour 60 minutes, retirez la ligne ou mettez-la à 60.*
+  jeton d'accès), avec un avertissement au démarrage ; pour 60 minutes, retirez la ligne ou mettez-la à 60. Si vous aviez posé
+  `KESH_JWT_EXPIRY_MINUTES=480` pour contourner ce défaut, retirez-le : la règle du double porterait l'inactivité à 960 minutes.*
 - Recharger la page ou ouvrir un nouvel onglet ne renvoie plus à la connexion tant que la session vit.
 
 Sous `### Modifié` :
 - **Une restauration complète révoque les jetons de renouvellement restaurés** : aucune session, de la sauvegarde ou de l'installation,
-  ne peut plus être renouvelée après l'import. *(Ce n'est pas la correction d'un défaut publié : avec l'ancienne durée de 15 minutes, ces
+  ne peut plus être renouvelée après l'import. *(Ce n'est pas la correction d'un défaut publié : avec les réglages par défaut (15/15), ces
   jetons mouraient de fait avec le jeton d'accès ; la durée de 60 minutes rendait nécessaire de les révoquer.)*
 
 `refs #876`, `refs #891` aux commits ; aucun mot-clé de fermeture. La note de mise à jour (manuel d'administration, *Passer à la 0.17.3*)
@@ -408,6 +423,26 @@ relève de la préparation de la release (orchestrateur) : elle reprend la phras
   d'audit `admin.full_import`), `TIMESTAMPDIFF(MINUTE`, `plus de 15 minutes après`, `C-v0172s-25`, `M6 bis` (Tâche 6). Prochaine :
   validation **P6** (Opus, complète, `v0172-session-validate-prompt-p6.md`) — sixième passe : **dès celle-ci, l'orchestrateur ne remédie
   plus lui-même** (`CLAUDE.md`), et la boucle approche du plafond de huit.
+
+- 2026-11-04 — **Validation P6 (Opus) : 0/0/3/13** (rapport `kesh-gate-logs/v0172s-validate-p6.md`), sixième passe ; remédiation
+  **textuelle** : aucun mécanisme ajouté, deux assertions et deux mutations retirées. **Signal de non-convergence (règle de splitting,
+  second critère), constaté** : sévérité P3 MEDIUM → P4 MEDIUM → P5 **HIGH** → P6 MEDIUM ; le HIGH de P5 (motif `'full_import'` refusé par
+  la contrainte CHECK) est né de la révocation **ajoutée par la remédiation P4** : c'est du **recyclage**, au sens de l'amendement D5. Le
+  signal est déclaré au Project Lead par l'orchestrateur. Décision déjà prise et rappelée : #876 **sortie de la 0.17.2** pour la 0.17.3, et
+  conception **simplifiée** (validation P3 : fenêtre d'inactivité, chemin 401 existant ; validation P4 : retraits). Prémisses relues au
+  code. **P1** (MEDIUM) appliqué — commentaire de #876 lu (« Contournement d'ici là : `KESH_JWT_EXPIRY_MINUTES=480` ») : retrait du
+  contournement écrit au CHANGELOG, au manuel `:779` et dans la raison du § 2 (960 minutes) ; libellé de l'avertissement quand la variable
+  est absente. **P2** (MEDIUM) appliqué par **retrait** — `auth.svelte.ts:30-37` lu (`authBroadcast` nul sans `BroadcastChannel`) : les
+  assertions « `postMessage` non appelé » et M7 bis, M7 ter retirées, sans sonde neuve. **P3** (MEDIUM) appliqué — le signal ci-dessus.
+  LOW : **P4** M4 sans « le cas 4 de (c) » ; **P5** `README.md:40` ajouté ; **P6** import **statique** (cycle déjà existant et bénin,
+  `auth.svelte.ts:17` → `vat-rates` → `api-client.ts:15`), raison fausse retirée ; **P7** `auth.svelte.test.ts:147-163` nommé (compte d'appels
+  à deux) ; **P8** N effacements écrits, sans gravité ; **P9** `hydrate()` juge le succès sur `currentUser !== null` (le chemin 401 garde
+  `true` et rejoue) ; **P10** « deux requêtes quasi simultanées dans deux onglets — deux gestes, ou plusieurs onglets rouverts ensemble » ;
+  **P11** `kesh-specifications.txt:44, :219, :1453` hors classe ; **P12** #890 cité (manuel `:2996`, registre C-14) ; **P13** sonde
+  élargie à `crates/kesh-db/src` (réparation 5-quater comprise) ; **P14** libellé de FR13 gardé (décision du Project Lead), signalé ;
+  **P15** « avec les réglages par défaut (15/15) » ; **P16** `hydrate()` cité `:209-316`, branche 401 `:261-267`. Valeurs grepées : `480`,
+  `postMessage`, `M7 bis`, `M7 ter`, `cas 4 de (c)`, `importé dynamiquement`, `:229-265`, `issue demandée`, `deux gestes`. Prochaine :
+  validation **P7** (Sonnet, **ciblée**, `v0172-session-validate-prompt-p7.md`, sur `git diff d556bc25 HEAD`) ; il reste P7 et P8.
 
 ## Dev Agent Record
 
