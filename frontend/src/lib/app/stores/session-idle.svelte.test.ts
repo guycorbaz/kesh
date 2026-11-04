@@ -450,3 +450,142 @@ describe('session-idle — sans localStorage, N inconnu (14, 15)', () => {
 		expect(replaceMock).not.toHaveBeenCalled();
 	});
 });
+
+// Revue de code P1 (N-A1/N-E1) — après `stop()`, aucun des onze écouteurs ne
+// produit plus rien. Chaque geste est tiré au-delà de l'échéance : un écouteur
+// resté posé appellerait `recordActivity`, qui fermerait la session (le
+// témoin de chaque cas, sans `stop()`, le montre).
+describe('session-idle — stop() retire chacun des onze écouteurs (10)', () => {
+	const gestes: Array<[string, () => void]> = [
+		['keydown', () => fire('keydown')],
+		['pointerdown', () => fire('pointerdown')],
+		['wheel', () => fire('wheel')],
+		['touchstart', () => fire('touchstart')],
+		['dragover', () => fire('dragover')],
+		['drop', () => fire('drop')],
+		['pointermove', () => move(321, 654)],
+		['focus de la fenêtre', () => window.dispatchEvent(new FocusEvent('focus'))],
+		[
+			'blur de la fenêtre vers un <iframe>',
+			() => {
+				const f = document.createElement('iframe');
+				document.body.appendChild(f);
+				vi.spyOn(document, 'activeElement', 'get').mockReturnValue(f);
+				window.dispatchEvent(new FocusEvent('blur'));
+			},
+		],
+		[
+			'input sur le document',
+			() => {
+				const input = document.createElement('input');
+				document.body.appendChild(input);
+				input.dispatchEvent(new Event('input', { bubbles: true }));
+			},
+		],
+		[
+			'visibilitychange vers visible',
+			() => {
+				Object.defineProperty(document, 'visibilityState', { value: 'visible', configurable: true });
+				fire('visibilitychange', {}, document);
+			},
+		],
+	];
+	it('les cas couvrent les onze écouteurs du module', () => {
+		expect(gestes).toHaveLength(11);
+	});
+	for (const [nom, geste] of gestes) {
+		it(`${nom} : témoin sans stop() ⇒ fermeture`, async () => {
+			startAtLogin();
+			vi.setSystemTime(W + 5_000);
+			geste();
+			await advance(0);
+			expect(fetchMock).toHaveBeenCalledWith('/api/v1/auth/logout', expect.anything());
+		});
+		it(`${nom} : après stop() ⇒ rien`, async () => {
+			startAtLogin();
+			sessionIdle.stop();
+			vi.setSystemTime(W + 5_000);
+			geste();
+			await advance(0);
+			expect(fetchMock).not.toHaveBeenCalled();
+			expect(postMock).not.toHaveBeenCalled();
+			expect(key(KEY_LAST_ACTIVITY)).toBe(0);
+		});
+	}
+	it('stop() retire la minuterie : aucune minuterie en attente', async () => {
+		// jsdom diffuse chaque écriture de `localStorage` par une minuterie à 0 ms
+		// (événement `storage`) : on les laisse passer, puis on compte.
+		await advance(0);
+		const avant = vi.getTimerCount();
+		startAtLogin();
+		await advance(0);
+		expect(vi.getTimerCount()).toBe(avant + 1);
+		sessionIdle.stop();
+		expect(vi.getTimerCount()).toBe(avant);
+	});
+});
+
+// Revue de code P1 (N-E2) — `localStorage` qui refuse EN COURS de session : le
+// module bascule en mémoire et ne ferme pas un utilisateur actif.
+describe('session-idle — localStorage refusé en cours de session (14 bis)', () => {
+	async function activiteContinue(jusqua: number) {
+		while (Date.now() < jusqua) {
+			fire('keydown');
+			await advance(20_000);
+		}
+	}
+	it('écriture refusée après le démarrage : battement envoyé, aucune fermeture', async () => {
+		startAtLogin();
+		await advance(10_000);
+		fire('keydown');
+		expect(key(KEY_LAST_ACTIVITY)).toBe(10_000);
+		vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
+			throw new Error('QuotaExceeded');
+		});
+		await advance(20_000);
+		const avant = postMock.mock.calls.length;
+		await activiteContinue(W + 60_000);
+		expect(postMock.mock.calls.length).toBeGreaterThan(avant);
+		expect(fetchMock).not.toHaveBeenCalled();
+		expect(replaceMock).not.toHaveBeenCalled();
+	});
+	it('lecture refusée après le démarrage : battement envoyé, aucune fermeture', async () => {
+		startAtLogin();
+		await advance(10_000);
+		fire('keydown');
+		vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => {
+			throw new Error('SecurityError');
+		});
+		await advance(20_000);
+		const avant = postMock.mock.calls.length;
+		await activiteContinue(W + 60_000);
+		expect(postMock.mock.calls.length).toBeGreaterThan(avant);
+		expect(fetchMock).not.toHaveBeenCalled();
+		expect(replaceMock).not.toHaveBeenCalled();
+	});
+});
+
+// Revue de code P1 (N-B1/N-E4) — une clé vide ou blanche vaut absente, et une
+// borne non finie de la conciliation aussi.
+describe('session-idle — valeurs vides et non finies (12 ter)', () => {
+	for (const vide of ['', '   ']) {
+		it(`lastActivity à ${JSON.stringify(vide)} : absente, réécrite, aucune fermeture`, async () => {
+			vi.setSystemTime(1_000_000);
+			startAtLogin();
+			await advance(10_000);
+			fire('keydown');
+			expect(key(KEY_LAST_ACTIVITY)).toBe(1_010_000);
+			localStorage.setItem(KEY_LAST_ACTIVITY, vide);
+			await advance(1_000);
+			expect(fetchMock).not.toHaveBeenCalled();
+			expect(key(KEY_LAST_ACTIVITY)).toBe(1_010_000);
+		});
+	}
+	it('idleExpiresIn démesuré (−1e308) : aucune borne infinie, lastActivity = now', async () => {
+		vi.setSystemTime(1_000_000);
+		sessionIdle.start({ idleTimeoutMinutes: N, idleExpiresIn: -1e308 });
+		expect(key(KEY_LAST_ACTIVITY)).toBe(1_000_000);
+		await advance(1_000);
+		expect(fetchMock).not.toHaveBeenCalled();
+	});
+});

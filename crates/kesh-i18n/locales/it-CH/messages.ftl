@@ -2225,6 +2225,7 @@ settings-session-conflict = Conflitto di versione — i dati sono stati ricarica
 settings-session-conflict-reload-failed = Conflitto di versione e ricaricamento impossibile — ricaricare la pagina.
 settings-session-load-error = Impossibile leggere la durata di inattività.
 login-session-idle = Sessione chiusa dopo { $minutes } minuti di inattività.
+login-session-idle-one = Sessione chiusa dopo 1 minuto di inattività.
 
 # --- Solleciti debitori (Story 21-4, #231) ---
 dunning-title = Solleciti debitori

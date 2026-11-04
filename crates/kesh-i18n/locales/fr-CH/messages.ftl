@@ -2338,6 +2338,7 @@ settings-session-conflict = Conflit de version — les données ont été rechar
 settings-session-conflict-reload-failed = Conflit de version et rechargement impossible — rechargez la page.
 settings-session-load-error = Impossible de lire la durée d'inactivité.
 login-session-idle = Session fermée après { $minutes } minutes d'inactivité.
+login-session-idle-one = Session fermée après 1 minute d'inactivité.
 
 # --- Rappels débiteurs (Story 21-4, #231) ---
 dunning-title = Rappels débiteurs

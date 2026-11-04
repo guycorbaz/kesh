@@ -854,7 +854,9 @@ const ATTENDU = {
 	// deux bornes (`1dc94968` → tête), fichiers touchés hors tests :
 	// `SessionIdleSection.svelte` 0 → 11 (neuf), `login/+page.svelte` 0 → 1 (message de
 	// fin de session pour inactivité). Que des littéraux.
-	sitesTotal: 2825,
+	// Remédiation de la revue de code P1 de v0172-session (2026-11-04) : **2825 → 2826**
+	// (+1), `login/+page.svelte` 1 → 2 (`login-session-idle-one`, le singulier ; N-B4).
+	sitesTotal: 2826,
 	sitesNonResolus: 31,
 	relais: 6,
 	// Story 26-1 (#620, AC3-bis) : **10 → 11** — `lib/features/bank-import/

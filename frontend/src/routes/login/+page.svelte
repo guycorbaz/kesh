@@ -23,7 +23,11 @@
 	const idleMinutes = $derived.by(() => {
 		if ($page.url.searchParams.get('reason') !== 'idle') return null;
 		const raw = $page.url.searchParams.get('minutes') ?? '';
-		return /^[0-9]+$/.test(raw) ? Number(raw) : null;
+		if (!/^[0-9]{1,4}$/.test(raw)) return null;
+		const n = Number(raw);
+		// Bornes du réglage (revue de code P1, N-B4/N-E6) : hors de 1 à 1440,
+		// le message de session expirée, sans durée.
+		return n >= 1 && n <= 1440 ? n : null;
 	});
 	const idleClosed = $derived(idleMinutes !== null);
 
@@ -109,12 +113,16 @@
 				data-testid="login-session-idle"
 			>
 				<Clock class="h-4 w-4 flex-shrink-0" aria-hidden="true" />
+				<!-- Singulier par une clé `-one` (précédent `supplier-invoices-count-one`) :
+				     `i18nMsg` n'évalue pas les sélecteurs Fluent (choix C-v0172s-60). -->
 				<span
-					>{i18nMsg(
-						'login-session-idle',
-						"Session fermée après { $minutes } minutes d'inactivité.",
-						{ minutes: idleMinutes ?? 0 },
-					)}</span
+					>{idleMinutes === 1
+						? i18nMsg('login-session-idle-one', "Session fermée après 1 minute d'inactivité.")
+						: i18nMsg(
+								'login-session-idle',
+								"Session fermée après { $minutes } minutes d'inactivité.",
+								{ minutes: idleMinutes ?? 0 },
+							)}</span
 				>
 			</div>
 		{/if}

@@ -116,7 +116,9 @@ function readKey(key: string): number | null {
 		shared = false;
 		return readKey(key);
 	}
-	if (raw === null) return null;
+	// Vide ou blanche : absente (revue de code P1, N-B1/N-E4) — `Number('')`
+	// vaut 0, qui fermerait toutes les sessions.
+	if (raw === null || raw.trim() === '') return null;
 	const v = Number(raw);
 	return Number.isFinite(v) ? v : null;
 }
@@ -188,9 +190,13 @@ function concile(now: number, idleExpiresIn: unknown): void {
 	const storedRep = readKey(KEY_REPORTED_ACTIVITY);
 	let last: number;
 	let rep: number;
-	if (w !== null && isFiniteNumber(idleExpiresIn)) {
-		// Dernière activité connue du serveur, jamais dans le futur.
-		const serverLast = Math.min(now, now + idleExpiresIn * 1000 - w);
+	// Dernière activité connue du serveur, jamais dans le futur ; une borne non
+	// finie (`idleExpiresIn` démesuré) vaut absente (revue de code P1, N-E4).
+	const serverLast =
+		w !== null && isFiniteNumber(idleExpiresIn)
+			? Math.min(now, now + idleExpiresIn * 1000 - w)
+			: Number.NaN;
+	if (Number.isFinite(serverLast)) {
 		last = Math.min(now, Math.max(storedLast ?? -Infinity, serverLast));
 		rep = Math.min(now, Math.max(storedRep ?? -Infinity, serverLast));
 	} else {

@@ -2227,6 +2227,7 @@ settings-session-conflict = Versionskonflikt — die Daten wurden neu geladen, v
 settings-session-conflict-reload-failed = Versionskonflikt und Neuladen fehlgeschlagen — laden Sie die Seite neu.
 settings-session-load-error = Die Inaktivitätsdauer kann nicht gelesen werden.
 login-session-idle = Sitzung nach { $minutes } Minuten Inaktivität beendet.
+login-session-idle-one = Sitzung nach 1 Minute Inaktivität beendet.
 
 # --- Mahnwesen (Story 21-4, #231) ---
 dunning-title = Mahnungen

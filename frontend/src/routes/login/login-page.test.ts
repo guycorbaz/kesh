@@ -50,6 +50,30 @@ describe('page de connexion — fin de session (Story v0172-session, AC-9)', () 
 		expect(getByText('Votre session a expiré. Veuillez vous reconnecter.')).toBeTruthy();
 	});
 
+	// Revue de code P1 (N-B4/N-A9/N-E6) — bornes 1 à 1440, et le singulier.
+	it('?reason=idle&minutes=1 ⇒ « 1 minute », au singulier', () => {
+		at('?reason=idle&minutes=1');
+		const { getByTestId } = render(Page);
+		expect(getByTestId('login-session-idle').textContent?.trim()).toBe(
+			"Session fermée après 1 minute d'inactivité.",
+		);
+	});
+	it('?reason=idle&minutes=1440 ⇒ la borne haute s’affiche', () => {
+		at('?reason=idle&minutes=1440');
+		const { getByTestId } = render(Page);
+		expect(getByTestId('login-session-idle').textContent?.trim()).toBe(
+			"Session fermée après 1440 minutes d'inactivité.",
+		);
+	});
+	for (const hors of ['0', '00', '1441', '99999999999999999999', '1.5', '']) {
+		it(`?reason=idle&minutes=${hors} ⇒ hors bornes : le message de session expirée`, () => {
+			at(`?reason=idle&minutes=${hors}`);
+			const { queryByTestId, getByText } = render(Page);
+			expect(queryByTestId('login-session-idle')).toBeNull();
+			expect(getByText('Votre session a expiré. Veuillez vous reconnecter.')).toBeTruthy();
+		});
+	}
+
 	it('?reason=session_expired ⇒ inchangé', () => {
 		at('?reason=session_expired');
 		const { queryByTestId, getByText } = render(Page);
