@@ -894,6 +894,10 @@ vide). La PR de release porte les `closes`.
   message réel du catalogue (`reconciliation-errors-account-locked`, fr-CH `:1471`, et non le repli de `errors.rs`) ; puce
   CHANGELOG #840 complétée. Gardes i18n recomptées (2806 → 2808 sites, 395 → 397 clés). **Non traités** (sur instruction de
   l'orchestrateur ; liste au Dev Agent Record, à tracer en issues) : B-1, B-5 à B-9, E-1 à E-3, E-6 à E-8, A-2 à A-8.
+- 2026-11-04 — **Revue de code P2 (Sonnet, ciblée sur la remédiation P1) : 0/0/0/1** (`kesh-gate-logs/v0172b-review-p2.md`) —
+  boucle close : P1 Opus B 0/0/0/9, E 0/0/0/8, A 0/0/1/8 → P2 ciblée 0/0/0/1. Les dix-neuf LOW non traités de la P1 et le LOW
+  de la P2 (commentaire `SupplierInvoiceForm.svelte:153` devenu inexact) sont tracés dans l'issue #893. Story `done`
+  (orchestrateur, Opus 5.5).
 
 ## Dev Agent Record
 
