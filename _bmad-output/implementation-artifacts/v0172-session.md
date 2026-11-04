@@ -9,12 +9,12 @@ de celle-ci. J'aimerais que cette durée soit remise à zéro à chaque activit�
 15 est trop court : je me fais régulièrement éjecter alors que je suis en train de travailler et que je consulte des documents. » Le
 changement d'exigence est porté par le **CR #891** (commentaire du 2026-11-04 : FR13 réécrit). Worktree `/home/gcorbaz/devel/kesh-0172s`,
 branche `story/v0172-session`, tête de reprise `c547dc41`. Clé courte : `v0172s`. Registre : `v0172-choix-autonomes.md`, section
-`v0172s` ; **en vigueur : C-v0172s-14, 17, 23, 24, 26 et C-v0172s-28 à 51** (C-1 à 13 : première conception, écartée ; C-15, 16, 20,
+`v0172s` ; **en vigueur : C-v0172s-14, 17, 23, 24, 26 et C-v0172s-28 à 52** (C-1 à 13 : première conception, écartée ; C-15, 16, 20,
 21, 22, 27 : remplacés à la reprise par C-28 et suivants ; C-18 : retiré ; C-19 et 25 : remplacés par C-26). Issues : **#876** (bug, P2),
 **#891** (CR), **#895** (CR, hors périmètre : l'avertissement avant fermeture), en `refs` seulement. Numéros de ligne de `c547dc41` (le
 code applicatif est celui de `d7ec2ea2`, inchangé depuis). La boucle de validation **est repartie à R1** (complète, Sonnet, 0/0/5/12,
 remédiée), puis **R2** (complète, Opus, 0/0/3/12, remédiée) et **R3** (complète, Sonnet, 0/0/2/7,
-remédiée) ; prochaine : **R4** (ciblée, Opus, sur `git diff da16b94e HEAD`).*
+remédiée), puis **R4** (ciblée, Opus, 0/0/2/6, remédiée) ; prochaine : **R5** (ciblée, Sonnet, sur `git diff ec83dcdd HEAD`).*
 
 ## Story
 
@@ -159,7 +159,7 @@ module d'écoute sans verrou). Une modification de `repositories/` et une migrat
    (`/settings`), rendue pour l'Administrateur seul (`isAdmin`, `+page.svelte:38`) — un champ entier « Fermer la session après
    [ 60 ] minutes d'inactivité », bornes affichées, *Enregistrer*, message de succès, conflit de version traité comme l'e-mail de la
    société (`:61-80` : recharger et inviter à recommencer). Après enregistrement, la durée de **la session de l'Administrateur** est mise
-   à jour aussitôt (`authState`), celle des autres sessions à leur prochaine activité (C-v0172s-38). Un Comptable ou une Consultation ne
+   à jour aussitôt (`sessionIdle.setMinutes`), celle des autres sessions à leur prochaine activité (C-v0172s-38). Un Comptable ou une Consultation ne
    voit pas la section ; le `GET` leur rend 403.
 3. **L'échéance, côté serveur : une seule valeur, exacte** (C-v0172s-32). `refresh_tokens.expires_at` **devient l'échéance
    d'inactivité** de la session (dernière activité + N), et le jeton d'accès en porte une copie dans une revendication **`idle_exp`**
@@ -212,8 +212,11 @@ module d'écoute sans verrou). Une modification de `repositories/` et une migrat
 5. **Le navigateur : un module d'écoute, sans verrou** (C-v0172s-34, C-v0172s-35). `frontend/src/lib/app/stores/session-idle.svelte.ts`,
    démarré par le layout **racine** (`routes/+layout.svelte`) — il couvre donc `(app)` et `/onboarding`. **Clé d'abonnement**
    (C-v0172s-50, validation R3) : l'**identifiant** de l'utilisateur, non l'objet — `const sessionUserId = $derived(authState.currentUser?.userId
-   ?? null)`, et un `$effect` qui ne lit que `sessionUserId` : non nul ⇒ `sessionIdle.start(…)`, nul ⇒ `sessionIdle.stop()`, autre
-   identifiant ⇒ `stop()` puis `start(…)`. `authState.login()` remplace l'objet `_currentUser` à chaque renouvellement (`doRefresh`,
+   ?? null)`, et un `$effect` qui ne lit que `sessionUserId` : non nul ⇒ `sessionIdle.start(…)`, dont **les arguments sont lus sous
+   `untrack(…)`** (les deux champs de transit, que `login()` remplace à chaque renouvellement, ne doivent pas abonner l'effet ; `start()`
+   ne doit pas non plus y lire de `$state` du module hors `untrack`) ; l'effet **rend `() => sessionIdle.stop()`** comme nettoyage, ce qui
+   donne à la fois l'arrêt quand l'identifiant devient nul et l'arrêt puis le redémarrage sur un autre identifiant ; **`stop()` est
+   idempotente** (la fermeture l'appelle avant `clearSession()`, puis le nettoyage l'appelle de nouveau). `authState.login()` remplace l'objet `_currentUser` à chaque renouvellement (`doRefresh`,
    `api-client.ts:149`) : un abonnement à l'objet arrêterait et redémarrerait le module toutes les 15 minutes ; à l'identifiant, non (le
    `$derived` d'une chaîne égale ne se propage pas). **Interface** (C-v0172s-50, R3-9) — N et l'échéance sont tenus par le **module**,
    non par `authState` :
@@ -247,7 +250,7 @@ module d'écoute sans verrou). Une modification de `repositories/` et une migrat
    ferme), puis `lastActivity = now`, écrite au plus une fois par seconde. Une **minuterie d'une seconde** par onglet : (a) `deadline =
    max(lastActivity) + N × 60 000` ; `now ≥ deadline` ⇒ fin de session (§ 7) ; (b) sinon, si `lastActivity > reportedActivity` et `now −
    heartbeatAt ≥ 15 000`, l'onglet écrit `heartbeatAt = now` et `reportedActivity = lastActivity`, puis envoie le battement avec `idleMs =
-   now − lastActivity` ; sur réponse, `N` et l'échéance prennent les valeurs du serveur ; sur échec (réseau, 5xx), `reportedActivity`
+   now − lastActivity` ; sur réponse, le module prend N et l'échéance du serveur (`sessionIdle.setMinutes`) ; sur échec (réseau, 5xx), `reportedActivity`
    reprend sa valeur précédente, `heartbeatAt` **garde** la sienne, si bien que l'envoi se retente **au pas de 15 s suivant** (non à la
    seconde suivante) ; sur 401 définitif, le chemin 401 a déjà effacé et redirigé. **Au démarrage** (connexion ou rechargement), le module
    concilie avec le serveur : si `idleExpiresIn` est un nombre, `serverLast = min(now, now + idleExpiresIn × 1000 − N × 60 000)` — **borné
@@ -256,9 +259,13 @@ module d'écoute sans verrou). Une modification de `repositories/` et une migrat
    serverLast))`, et **`reportedActivity = min(now, max(reportedActivity stockée, serverLast))`** — concilié avec ce qui a **réellement**
    été rapporté au serveur (`serverLast`, que dit `idleExpiresIn`), jamais avec l'activité stockée : une activité notée dans les 15 s qui
    précèdent un rechargement ou l'ouverture d'un onglet reste « à rapporter », et le premier tic du module l'envoie (C-v0172s-51, R3-1) ; à la connexion `idleExpiresIn = N × 60`, donc `serverLast = now`.
-   **Toute écriture** de `lastActivity` est de même bornée à `now`. Si `idleExpiresIn` est `null` (jeton émis avant la mise à jour, sans
-   `idle_exp`) ou absent, `lastActivity` garde sa valeur stockée (bornée à `now`) et, à défaut, vaut `now` — **aucun calcul sur cette
-   valeur** : en JavaScript `null × 1000` vaut 0 (l'échéance tomberait à `now`, fermeture immédiate) et `undefined × 1000` vaut `NaN`
+   **Toute écriture** de `lastActivity` est de même bornée à `now`. **Lecture des clés** (C-v0172s-52, validation R4) : une clé dont la
+   valeur lue n'est pas un nombre fini (`Number.isFinite` faux : clé absente, `NaN`, texte) vaut **absente**, et **aucune écriture** dans
+   une clé partagée ne se fait sans `Number.isFinite` vrai — un `NaN` écrit une fois rendrait `lastActivity > reportedActivity` toujours
+   faux, dans tous les onglets, et la session se fermerait au serveur en pleine activité. Si `idleExpiresIn` est `null` (jeton émis avant
+   la mise à jour, sans `idle_exp`) ou absent, `lastActivity` garde sa valeur stockée (bornée à `now`) et, à défaut, vaut `now` ;
+   **`reportedActivity` garde sa valeur stockée si elle est finie, et vaut 0 sinon** (toute activité stockée part alors au premier tic) —
+   **aucun calcul sur `idleExpiresIn`** : en JavaScript `null × 1000` vaut 0 (l'échéance tomberait à `now`, fermeture immédiate) et `undefined × 1000` vaut `NaN`
    (jamais de fermeture). **N inconnu** (C-v0172s-47)
    (`idleTimeoutMinutes` absent, non entier ou hors `[1, 1440]` — les deux champs sont **facultatifs** dans `LoginPayload`,
    `idleTimeoutMinutes?: number; idleExpiresIn?: number | null`, pour que les **83** appels de `authState.login(` des tests restent valides,
@@ -302,7 +309,7 @@ module d'écoute sans verrou). Une modification de `repositories/` et une migrat
    la session tant que l'échéance du serveur n'est pas passée — ce qui n'arrive que si cette échéance est **plus tardive** que celle du
    navigateur (écart (c) ci-dessous) ; **écart déclaré**. Le cas d'école de l'écart (c) n'est **pas** celui d'un battement (après un
    battement, l'onglet, la ligne et le jeton portent la même échéance, calculée avec la même valeur) : c'est **la session de l'Administrateur
-   qui enregistre un abaissement** (60 → 5 ; son `authState` prend 5 aussitôt, § 2, alors que sa ligne garde l'échéance calculée avec 60
+   qui enregistre un abaissement** (60 → 5 ; son module d'écoute prend 5 aussitôt par `sessionIdle.setMinutes`, § 2, alors que sa ligne garde l'échéance calculée avec 60
    jusqu'au battement suivant, au plus 15 s plus tard — le clic sur *Enregistrer* étant une activité) ou un onglet qui apprend la nouvelle
    valeur par `/me` au démarrage (conciliation bornée à maintenant, § 5). La page de connexion affiche
    **« Session fermée après N minutes d'inactivité. »** (clé `login-session-idle`, variable Fluent `$minutes` ; `minutes` absent ou non
@@ -474,22 +481,28 @@ et `location.replace` ne sont appelés qu'après la résolution de ce `fetch` (s
 pas : au bout de 2 000 ms le `signal` est abandonné et la redirection a lieu ; (4) **activité après
 l'échéance** (minuterie arrêtée, événement à l'échéance + 500 ms) : fermeture, `lastActivity` non réécrite ; (5) **battement régulé** :
 `pointermove` toutes les 100 ms pendant 60 s ⇒ au plus 5 battements ; aucune activité ⇒ aucun battement ; (5 bis) **`idleMs` exact**, sur la grille
-d'une seconde de la minuterie (module démarré à t = 0, sans `heartbeatAt` stocké) : activité à 0,5 s ⇒ battement au tic de 1 s, `idleMs =
-500` ; une seule activité à 10 s, puis rien ⇒ battement suivant au tic de 16 s (15 s après le premier), `idleMs = 6 000` exactement ; (6) **un onglet vaut pour tous** : `localStorage.setItem('kesh:session:lastActivity', …)` par « un autre onglet »
+d'une seconde de la minuterie (module démarré à t = 0 par une connexion, sans `heartbeatAt` stocké ; la conciliation écrit `lastActivity = 0`) : activité
+à 1,5 s ⇒ battement au tic de 2 s, `idleMs = 500`, `heartbeatAt = 2 000` ; une seule activité à 10 s, puis rien ⇒ battement suivant au
+tic de 17 s (15 s après le premier), `idleMs = 7 000` exactement ; (6) **un onglet vaut pour tous** : `localStorage.setItem('kesh:session:lastActivity', …)` par « un autre onglet »
 repousse l'échéance de celui-ci ; `heartbeatAt` récent écrit par l'autre ⇒ pas de second battement dans les 15 s ; (7) réponse du
 battement `idleTimeoutMinutes = 5` ⇒ l'échéance se calcule sur 5 ; (8) battement en échec réseau ⇒ pas de fermeture, nouvel envoi au pas
 de 15 s suivant ; (9) **les sondes ne comptent pas** : un `apiClient.get` déclenché par minuterie ne modifie pas `lastActivity` ;
 (10) `stop()` retire tous les écouteurs (un `keydown` après `stop()` n'écrit rien) et la minuterie ; (11) démarrage : `idleExpiresIn = 30`
-avec N = 2 ⇒ `lastActivity = now − 90 s` (conciliation), fermeture à 30 s ; (12) démarrage avec `idleExpiresIn = null` : `lastActivity` =
-la valeur stockée, ou `now` sans valeur stockée — fermeture à `N × 60 000` après, jamais `NaN` ; (13) `dragover`, `drop` et `input` (sur un
+avec N = 2 ⇒ `lastActivity = now − 90 s` (conciliation), fermeture à 30 s ; (12) démarrage avec `idleExpiresIn = null`, puis avec
+`idleExpiresIn` absent : `lastActivity` = la valeur stockée, ou `now` sans valeur stockée — fermeture à `N × 60 000` après, jamais
+`NaN` ; `reportedActivity` = la valeur stockée, ou 0 sans valeur stockée (et 0 si la clé contient `"NaN"` ou un texte) ; puis une
+activité ⇒ un battement part au tic suivant (`heartbeatAt` absent) ; aucune des trois clés ne contient jamais `NaN` (lecture de
+`localStorage` après chaque tic) ; (13) `dragover`, `drop` et `input` (sur un
 `<input>`, capture) comptent ; (14) **`localStorage` indisponible** (simulé : `setItem` qui lève) : battement envoyé sur activité, **aucune**
 fermeture ni déconnexion à l'échéance locale ; (15) **N inconnu** (`idleTimeoutMinutes` absent) : un seul `GET /api/v1/auth/me`, ses champs
 appliqués ; `/me` en échec ⇒ aucune fermeture ; (16) échec du battement : le suivant part à +15 s, non à +1 s ; (17) **jamais d'activité
 future** : démarrage avec N = 1 et `idleExpiresIn = 3 000` (échéance calculée avec 60) ⇒ `lastActivity = now` (non `now + 59 min`), et
-une valeur stockée dans le futur est ramenée à `now` ; (18) **activité non rapportée au démarrage** : `lastActivity` stockée à t, 
-`reportedActivity` stockée à t − 20 s, démarrage d'un module à t + 1 s avec `idleExpiresIn` correspondant à t − 20 s ⇒ un battement
-part au premier tic, `idleMs ≈ 1 000` ; (19) **abonnement** (test du layout racine) : `authState.login` rappelé pendant la session avec le
-même `userId` ⇒ `sessionIdle.start` **n'est pas** rappelé ; `userId` différent ⇒ `stop` puis `start` ; `clearSession` ⇒ `stop`. **Rouges avant correctif**
+une valeur stockée dans le futur est ramenée à `now` ; (18) **activité non rapportée au démarrage**, sur la grille d'une seconde : `lastActivity`
+stockée à t, `reportedActivity` stockée à t − 20 s, `heartbeatAt` absent ; démarrage d'un module à t + 1 s avec `idleExpiresIn` tel que
+`serverLast = t − 20 s` ⇒ juste après le démarrage, `reportedActivity` stockée vaut t − 20 s ; un battement part au premier tic (t + 2 s),
+`idleMs = 2 000` et `heartbeatAt = t + 2 000` exactement ; (19) **abonnement** (test du layout racine) : `authState.login` rappelé pendant la session avec le
+même `userId` ⇒ `sessionIdle.start` **n'est pas** rappelé ; `userId` différent ⇒ `stop` puis `start` ; `clearSession` ⇒ `stop` ; un renouvellement (`login()` qui remplace les champs de transit) ne relance pas l'effet ; un second
+`stop()` est sans effet. **Rouges avant correctif**
 (le module n'existe pas). `setup.api.test.ts` (neuf) : `setupAdmin` transmet `idleTimeoutMinutes` et `idleExpiresIn` de la réponse à
 `authState.login` ; le test de la page de connexion vérifie de même la connexion.
 
@@ -558,7 +571,7 @@ binaire muté) :
 - **M9** — le module enregistre l'activité **avant** de contrôler l'échéance : T6 (4) rougit.
 - **M10** — `pointermove` sans comparaison de coordonnées : T6 (2) rougit.
 - **M11** — activité gardée en mémoire seulement (sans `localStorage`) : T6 (6) rougit.
-- **M12** — battement sans régulation : T6 (5) rougit ; **M12 bis** — `idleMs` envoyé à 0 : T6 (5 bis) rougit (500 et 6 000 attendus).
+- **M12** — battement sans régulation : T6 (5) rougit ; **M12 bis** — `idleMs` envoyé à 0 : T6 (5 bis) rougit (500 et 7 000 attendus).
 - **M13** — `hydrate()` sans `tryRefresh()` : T7 (1) rougit ; **M13 bis** — `tryRefresh()` hors du mutex : T7 (3) rougit.
 - **M14** — la section rendue sans condition de rôle : T8 (page) rougit.
 - **M15** — l'assistant émet `idle_exp = i64::MAX` (au lieu de l'échéance de la ligne) : T3 (h) rougit ; **M15 bis** — de même au
@@ -577,6 +590,8 @@ binaire muté) :
 - **M26** — `scroll` écouté de nouveau : T6 (2) rougit ; **M26 bis** — `focus` compté quelle que soit sa cible : T6 (2) rougit.
 - **M27** — `reportedActivity` conciliée avec l'activité stockée : T6 (18) rougit.
 - **M28** — le layout s'abonne à l'objet `currentUser` : T6 (19) rougit.
+- **M29** — `reportedActivity` calculée avec `serverLast` indéfini quand `idleExpiresIn` est nul ou absent (`Math.max(stockée, NaN)`),
+  sans garde `Number.isFinite` : T6 (12) rougit (`NaN` dans la clé, aucun battement après l'activité).
 
 ## Tâches
 
@@ -591,7 +606,8 @@ binaire muté) :
    (`migrations_upgrade_path.rs:124-127`, `assert_eq!(total, 88, …)` → 89 avec sa ligne de généalogie, **et** `:217` `let
    n_before_upgrade_window = total - 54;` → `total - 55`, la frontière `total - N` restant constante, comme l'exige le commentaire
    `:138-142`, **et la prose du même fichier** (R3-7) : `:44, :46, :63, :64, :130, :138, :145, :148, :220, :289` — `54` → `55` là où il
-   désigne la fenêtre, `88` → `89` dans la prose, la frontière `34` inchangée, `:148` (« porterait la frontière à 35 ») récrit pour 89 ;
+   désigne la fenêtre, `88` → `89` dans la prose, la frontière `34` inchangée, `:148` (« porterait la frontière à 35 ») récrit pour 89 ; **ligne de généalogie** ajoutée après `:210`, au patron des
+   précédentes : « Story v0172-session : 54 → 55, frontière inchangée (89 - 55 = 34). » ;
    contrôle `/usr/bin/grep -nE '\b(54|55|88|89)\b' crates/kesh-db/tests/migrations_upgrade_path.rs`, chaque occurrence restante justifiée
    au Dev Agent Record ; `audit_log_company_id_backfill.rs`, `lettering_documents_backfill.rs`, résolus par version) ; **P7** : `every_data_backfill_migration_is_triaged` vert sans entrée (DDL
    seul) ; dépôt `installation_settings` ; `refresh_tokens` (`set_idle_deadline`, `was_rotated_within`, `revoke_all_in_tx`).
@@ -636,7 +652,7 @@ binaire muté) :
    frontend/src ':!*.test.ts'`. `settings-page.test.ts:20-26` : fabrique du simulacre complétée (AC-8). Vérifier qu'aucun test qui monte le layout racine ne laisse tourner la minuterie (`git grep -ln "routes/+layout"
    -- frontend/src`) et qu'aucune spec Playwright ne compte toutes les requêtes (`git grep -n "page.on('request'" -- frontend/tests`).
 9. Manuels et PDF (§ *Manuel*), CHANGELOG, PRD et copies.
-10. Mutations M9 à M14, M18 à M21, M23 à M28 ; recette AC-10 ; captures.
+10. Mutations M9 à M14, M18 à M21, M23 à M29 ; recette AC-10 ; captures.
 11. Gates (ci-dessous) ; **revue de code du lot N**.
 
 **Gates** : `cargo fmt --all -- --check`, `cargo clippy --workspace --all-targets -- -D warnings`, `scripts/test-fast.sh` (sous `flock
@@ -973,6 +989,25 @@ mot-clé de fermeture. La note de mise à jour du manuel d'administration (*Pass
   manuel cité), `authState porte`, `[0, N]`, `ne pose plus la variable`, `t = 15 s`, `reportedActivity = min(now, max(stockée` ; dans le
   registre : `89 appels`, `quatre constructeurs`. Registre : C-v0172s-49 à 51 ajoutés ; C-33, 35, 41, 47 corrigés. Prochaine : validation
   **R4** (Opus, **ciblée** sur `git diff da16b94e HEAD`, `v0172-session-validate-prompt-r4.md`).
+
+- 2026-11-04 — **Validation R4 (Opus, ciblée) : 0/0/2/6** (rapport `kesh-gate-logs/v0172s-validate-r4.md`, sur `git diff da16b94e
+  ec83dcdd`), remédiée par l'agent de fiche (Opus). Prémisses relues : § 5 de la fiche (régulation, conciliation), `auth.svelte.ts:41,
+  :113` (`userId` chaîne), `api-client.ts:149`, `migrations_upgrade_path.rs:192-210` (généalogie de la fenêtre), registre C-35.
+  **MEDIUM** — **R4-1** appliqué : AC-6 (18) récrit sur la grille d'une seconde, sans « ≈ » : démarrage à t + 1 s, `heartbeatAt` absent,
+  battement au premier tic (t + 2 s), `idleMs = 2 000`, `heartbeatAt = t + 2 000`. **R4-2** appliqué : branche « `idleExpiresIn` nul ou
+  absent » de la conciliation — `reportedActivity` = valeur stockée finie, sinon 0 ; toute clé lue non finie vaut absente, aucune écriture
+  sans `Number.isFinite` ; AC-6 (12) complété (deux variantes, battement après une activité, aucune clé à `NaN`) ; **M29** ajoutée
+  (C-v0172s-52).
+  **LOW** — **R4-3** appliqué (AC-6 5 bis : activité à 1,5 s ⇒ `idleMs = 500` au tic de 2 s ; activité à 10 s ⇒ `idleMs = 7 000` au tic
+  de 17 s ; M12 bis ajustée) ; **R4-4** appliqué : la **valeur** grepée — qui tient N — dans toute la fiche (`authState`, « prennent les
+  valeurs », `setMinutes`, « nouvelle valeur ») : `:162` et `:305` disent désormais `sessionIdle.setMinutes` et « son module d'écoute »,
+  `:250` « le module prend N » ; restent `authState` comme transit (§ 5) et la phrase qui l'écarte (`non par authState`) ; **R4-5** appliqué
+  (arguments de `start()` sous `untrack`, nettoyage `() => sessionIdle.stop()`, `stop()` idempotente ; AC-6 19 complété) ; **R4-6** appliqué
+  (corps de C-35) ; **R4-7** sans objet pour la fiche : l'orchestrateur commente #891 lui-même ; **R4-8** appliqué (ligne de généalogie
+  « Story v0172-session : 54 → 55, frontière inchangée (89 - 55 = 34). » après `:210`).
+  Valeurs grepées après remédiation : `≈`, `0,5 s`, `6 000`, `tic de 16 s`, `son \`authState\``, `(\`authState\`)`. Registre :
+  C-v0172s-52 ajouté ; C-35 corrigé. Prochaine : validation **R5** (Sonnet, **ciblée** sur `git diff ec83dcdd HEAD`,
+  `v0172-session-validate-prompt-r5.md`).
 
 ## Dev Agent Record
 

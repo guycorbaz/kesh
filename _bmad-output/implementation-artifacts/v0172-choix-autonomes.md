@@ -389,7 +389,9 @@ clair) ; *(liste en vigueur : voir la ligne « Validation P5 » ci-dessous, qui 
 
 **Validation R2 (2026-11-04)** : C-v0172s-48 ajouté ; C-31 récrit (plus aucune lecture) ; C-32, 35, 40, 41, 45 corrigés dans leur corps ; en vigueur alors : C-v0172s-14, 17, 23, 24, 26 et 28 à 48.
 
-**Validation R3 (2026-11-04) — fait foi** : C-v0172s-49 à 51 ajoutés ; C-33, 35, 41, 47 corrigés ; **en vigueur : C-v0172s-14, 17, 23, 24, 26 et 28 à 51**.
+**Validation R3 (2026-11-04)** : C-v0172s-49 à 51 ajoutés ; C-33, 35, 41, 47 corrigés ; en vigueur alors : C-v0172s-14, 17, 23, 24, 26 et 28 à 51.
+
+**Validation R4 (2026-11-04) — fait foi** : C-v0172s-52 ajouté ; C-35 et C-50 précisés ; **en vigueur : C-v0172s-14, 17, 23, 24, 26 et 28 à 52**.
 
 ### C-v0172s-1 — Renouvellement côté navigateur, à l'entrée de l'utilisateur, et champ `sessionExpiresIn`
 
@@ -770,7 +772,8 @@ clair) ; *(liste en vigueur : voir la ligne « Validation P5 » ci-dessous, qui 
 - **Écartées** : `mousemove` sans contrôle de coordonnées (mouvements fictifs du navigateur quand la page bouge sous un pointeur immobile :
   une sonde de fond qui redessine un bandeau prolongerait la session) ; compter le chargement (un navigateur qui rouvre ses onglets au
   démarrage ferait une activité sans l'utilisateur) ; `scroll` (émis sans geste quand un contenu change au-dessus de la vue ou
-  raccourcit — une sonde de fond le pourrait ; le défilement voulu passe par un geste déjà écouté) ; `focus` d'un élément (un `.focus()`
+  raccourcit — une sonde de fond le pourrait ; le défilement voulu passe par un geste déjà écouté, sauf le glisser de la barre, compté à son début seulement
+  (C-v0172s-49 ; corrigé à la validation R4)) ; `focus` d'un élément (un `.focus()`
   programmatique).
 - **Réversible** : oui.
 
@@ -921,6 +924,8 @@ clair) ; *(liste en vigueur : voir la ligne « Validation P5 » ci-dessous, qui 
 
 ### C-v0172s-50 — L'abonnement par l'identifiant ; N tenu par le module (validation R3, R3-3 et R3-9)
 
+*Précisé à la validation R4 : arguments de `start()` lus sous `untrack` ; l'effet rend `() => sessionIdle.stop()` comme nettoyage ; `stop()` idempotente.*
+
 - **Retenu** : le layout racine s'abonne à `authState.currentUser?.userId ?? null` (`$derived`), non à l'objet que `login()` remplace à
   chaque renouvellement ; `sessionIdle` expose `start(init)`, `stop()`, `setMinutes(n)`, `minutes` ; `authState` ne porte que le transit
   des deux champs du `LoginPayload` ; `SessionIdleSection` appelle `sessionIdle.setMinutes(n)` après un `PUT` réussi.
@@ -934,4 +939,12 @@ clair) ; *(liste en vigueur : voir la ligne « Validation P5 » ci-dessous, qui 
   reste à rapporter et part au premier tic.
 - **Écartées** : concilier `reportedActivity` avec l'activité stockée (un rechargement dans les 15 s d'une activité la déclarait
   rapportée : écart non déclaré de 15 s).
+- **Réversible** : oui.
+
+### C-v0172s-52 — Aucune valeur non finie dans les clés partagées (validation R4, R4-2)
+
+- **Retenu** : une clé lue qui n'est pas un nombre fini vaut absente ; aucune écriture sans `Number.isFinite` ; `idleExpiresIn` nul ou
+  absent ⇒ `reportedActivity` = valeur stockée finie, sinon 0 (l'activité stockée part au premier tic).
+- **Écartées** : laisser la branche implicite (un `Math.max(…, NaN)` écrirait `NaN` dans la clé partagée : plus aucun battement, dans
+  aucun onglet, et la session fermée au serveur en pleine activité — le symptôme même de #876).
 - **Réversible** : oui.
