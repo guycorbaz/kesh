@@ -1,6 +1,6 @@
 # Story v0172-correctifs : la 0.17.2 — l'import simultané (#840), la liste des factures fournisseur (#870), le menu (#851), le taux de TVA désactivé (#882), les dates (#880), six LOW (#883), la date d'une pièce importée (#885)
 
-Status: review
+Status: done
 
 *Fiche rédigée le 2026-11-04, en autonomie (Opus 5.5), worktree `/home/gcorbaz/devel/kesh-0172b`, branche
 `story/v0172-correctifs` partie de `d7ec2ea2` (le merge de la v0.17.1 sur `main`). Release **0.17.2**, **sans migration**
