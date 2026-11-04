@@ -8,6 +8,8 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { i18nMsg } from '$lib/shared/utils/i18n.svelte';
+	// v0172-correctifs (#880, § 24 bis) : dates de validité en forme suisse.
+	import { formatSwissDate } from '$lib/features/reports/reports.api';
 	import { isApiError } from '$lib/shared/utils/api-client';
 	import { Button } from '$lib/components/ui/button';
 	import { Input } from '$lib/components/ui/input';
@@ -225,8 +227,8 @@
 						{#each list as r (r.id)}
 							<tr class="border-t" data-testid="vat-rate-row">
 								<td class="py-2 font-medium">{r.rate} %</td>
-								<td class="py-2">{r.validFrom}</td>
-								<td class="py-2">{r.validTo ?? '—'}</td>
+								<td class="py-2">{formatSwissDate(r.validFrom)}</td>
+								<td class="py-2">{r.validTo ? formatSwissDate(r.validTo) : '—'}</td>
 								<td class="py-2">
 									{#if r.active}
 										<span class="text-green-700">{i18nMsg('vat-rates-active', 'Actif')}</span>

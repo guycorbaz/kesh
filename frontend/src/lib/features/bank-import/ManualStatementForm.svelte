@@ -34,6 +34,8 @@
 	import { Button } from '$lib/components/ui/button';
 	import { i18nMsg } from '$lib/shared/utils/i18n.svelte';
 	import { formatSwissAmount, isValidAmount } from '$lib/features/journal-entries/balance';
+	// v0172-correctifs (#880) : les dates des avertissements en forme suisse.
+	import { formatSwissDate } from '$lib/features/reports/reports.api';
 	import {
 		bankAccountOptionLabel,
 		type BankAccountOptionSource,
@@ -626,7 +628,7 @@
 							'bank-import-manual-warning-opening-gap',
 							"Le solde de départ attendu, d'après le relevé précédent qui finit le { $date }, est { $expected } ; vous avez saisi { $entered }.",
 							{
-								date: warnings.openingBalanceGap.previousPeriodTo,
+								date: formatSwissDate(warnings.openingBalanceGap.previousPeriodTo),
 								expected: swiss(warnings.openingBalanceGap.expected),
 								entered: swiss(warnings.openingBalanceGap.entered),
 							},
@@ -645,7 +647,7 @@
 						'Information : ce relevé chevauche des relevés de ce compte ({ $periods }).',
 						{
 							periods: warnings.overlappingStatements
-								.map((o) => `${o.periodFrom} → ${o.periodTo}`)
+								.map((o) => `${formatSwissDate(o.periodFrom)} → ${formatSwissDate(o.periodTo)}`)
 								.join(', '),
 						},
 					)}

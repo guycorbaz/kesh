@@ -17,6 +17,8 @@
 	import { isApiError } from '$lib/shared/utils/api-client';
 	import { authState } from '$lib/app/stores/auth.svelte';
 	import { i18nMsg } from '$lib/shared/utils/i18n.svelte';
+	// v0172-correctifs (#880) : dates en forme suisse, horodatage à l'heure de Zurich.
+	import { formatSwissDate, formatSwissDateTime } from '$lib/features/reports/reports.api';
 	import CancelReconciliationDialog from '$lib/features/reconciliation/CancelReconciliationDialog.svelte';
 	import DeleteBankImportAction from '$lib/features/bank-import/DeleteBankImportAction.svelte';
 	import UnrejectTransactionAction from '$lib/features/reconciliation/UnrejectTransactionAction.svelte';
@@ -46,7 +48,7 @@
 				i18nMsg(
 					'bank-import-manual-delete-success',
 					'Relevé saisi à la main du { $from } au { $to } supprimé.',
-					{ from: detail.periodFrom, to: detail.periodTo },
+					{ from: formatSwissDate(detail.periodFrom), to: formatSwissDate(detail.periodTo) },
 				),
 			);
 		} else {
@@ -136,17 +138,17 @@
 				<dt>{i18nMsg('bank-import-detail-statement', 'Relevé')}</dt>
 				<dd class="break-all" data-testid="detail-filename">{importDisplayName(detail)}</dd>
 				<dt>{i18nMsg('bank-import-detail-entered-at', 'Saisi le')}</dt>
-				<dd>{detail.importedAt}</dd>
+				<dd>{formatSwissDateTime(detail.importedAt)}</dd>
 			{:else}
 				<dt>{i18nMsg('bank-import-detail-file', 'Fichier')}</dt>
 				<dd data-testid="detail-filename">{detail.filename}</dd>
 				<dt>{i18nMsg('bank-import-detail-imported-at', 'Importé le')}</dt>
-				<dd>{detail.importedAt}</dd>
+				<dd>{formatSwissDateTime(detail.importedAt)}</dd>
 			{/if}
 			<dt>{i18nMsg('bank-import-detail-source-format', 'Format source')}</dt>
 			<dd data-testid="detail-source-format">{sourceFormatLabel(detail.sourceFormat)}</dd>
 			<dt>{i18nMsg('bank-import-labels-period', 'Période')}</dt>
-			<dd>{detail.periodFrom} → {detail.periodTo}</dd>
+			<dd>{formatSwissDate(detail.periodFrom)} → {formatSwissDate(detail.periodTo)}</dd>
 			<dt>{i18nMsg('bank-import-labels-opening-balance', 'Solde ouverture')}</dt>
 			<dd>{detail.openingBalance ?? '—'}</dd>
 			<dt>{i18nMsg('bank-import-labels-closing-balance', 'Solde clôture')}</dt>
@@ -176,7 +178,7 @@
 			<tbody>
 				{#each detail.transactions as tx (tx.id)}
 					<tr data-testid="detail-tx-row" data-tx-id={tx.id}>
-						<td>{tx.bookingDate}</td>
+						<td>{formatSwissDate(tx.bookingDate)}</td>
 						<td class="text-right">{tx.amount} {tx.currency}</td>
 						<td>{tx.reference ?? '—'}</td>
 						<td>{tx.details}</td>

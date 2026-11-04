@@ -8,6 +8,9 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { i18nMsg } from '$lib/shared/utils/i18n.svelte';
+	// v0172-correctifs (#880) : les dates des clés en forme suisse ; les instants
+	// (`createdAt`, `revokedAt`, `lastUsedAt`, UTC) à l'heure de Zurich.
+	import { formatSwissDate, formatSwissDateTime } from '$lib/features/reports/reports.api';
 	import { isApiError } from '$lib/shared/utils/api-client';
 	import { errorMessageOf } from '$lib/shared/utils/error-message';
 	import { copyToClipboard } from '$lib/shared/utils/clipboard';
@@ -51,9 +54,19 @@
 		return new Date(Date.now() + 86_400_000).toISOString().slice(0, 10);
 	}
 
-	/** True si la clé est expirée par date (sans révocation explicite). */
+	/**
+	 * True si la clé est expirée par date (sans révocation explicite).
+	 *
+	 * v0172-correctifs (#880, C-v0172b-10) — `expiresAt` est un `NaiveDateTime` **UTC**
+	 * (`naive_utc()`), rendu sans `Z` : il se lit comme UTC, comme le serveur le compare
+	 * (`k.expires_at > NOW(3)`). Lu à l'heure locale (avant la 0.17.2), l'écran disait la
+	 * clé expirée une à deux heures avant que le serveur ne la refuse.
+	 */
 	function isExpired(k: ApiKey): boolean {
-		return !k.revokedAt && k.expiresAt !== null && new Date(k.expiresAt).getTime() < Date.now();
+		if (k.revokedAt || k.expiresAt === null) return false;
+		const raw = k.expiresAt;
+		const utc = /(Z|[+-]\d{2}:\d{2})$/.test(raw) ? raw : `${raw}Z`;
+		return new Date(utc).getTime() < Date.now();
 	}
 
 	async function reload() {
@@ -70,16 +83,29 @@
 		loading = false;
 	});
 
-	/** Formate un `NaiveDateTime` (`2026-06-06T12:34:56.789`) en `YYYY-MM-DD`. */
+	/**
+	 * Formate un instant UTC (`NaiveDateTime`, `2026-06-06T12:34:56.789`) en `JJ.MM.AAAA`,
+	 * date à Zurich — v0172-correctifs (#880) : délègue à `formatSwissDate`.
+	 */
 	function formatDate(value: string | null): string {
 		if (!value) return '—';
-		return value.slice(0, 10);
+		return formatSwissDate(value);
 	}
 
-	/** Formate en `YYYY-MM-DD HH:mm` (dernière utilisation). */
+	/**
+	 * L'expiration d'une clé est une **date de calendrier** choisie par l'utilisateur et
+	 * envoyée `T23:59:59Z` : elle s'affiche par sa date, **sans** conversion (convertie à
+	 * Zurich, le 31.12 deviendrait le 01.01 ; v0172-correctifs, C-v0172b-10, exception).
+	 */
+	function formatExpiryDate(value: string | null): string {
+		if (!value) return '—';
+		return formatSwissDate(value.slice(0, 10));
+	}
+
+	/** Formate en `JJ.MM.AAAA HH:mm` à l'heure de Zurich (dernière utilisation). */
 	function formatDateTime(value: string | null): string {
 		if (!value) return i18nMsg('api-keys-labels-never-used', 'Jamais utilisée');
-		return value.slice(0, 16).replace('T', ' ');
+		return formatSwissDateTime(value);
 	}
 
 	function scopeLabel(scope: ApiKeyScope): string {
@@ -96,12 +122,12 @@
 		}
 		if (isExpired(k)) {
 			return i18nMsg('api-keys-labels-status-expired', 'Expirée le {$date}', {
-				date: formatDate(k.expiresAt),
+				date: formatExpiryDate(k.expiresAt),
 			});
 		}
 		if (k.expiresAt) {
 			return i18nMsg('api-keys-labels-status-expires', 'Active (expire le {$date})', {
-				date: formatDate(k.expiresAt),
+				date: formatExpiryDate(k.expiresAt),
 			});
 		}
 		return i18nMsg('api-keys-labels-status-active', 'Active');

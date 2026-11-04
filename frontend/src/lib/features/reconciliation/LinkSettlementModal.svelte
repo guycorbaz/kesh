@@ -37,6 +37,8 @@
 	import { Button } from '$lib/components/ui/button';
 	import * as Dialog from '$lib/components/ui/dialog';
 	import { i18nMsg } from '$lib/shared/utils/i18n.svelte';
+	// v0172-correctifs (#880) : dates en forme suisse.
+	import { formatSwissDate } from '$lib/features/reports/reports.api';
 	import { isApiError } from '$lib/shared/utils/api-client';
 	import { errorMessageOf } from '$lib/shared/utils/error-message';
 	import type {
@@ -202,7 +204,7 @@
 				<!-- La date de paiement (valeur, à défaut comptabilisation) : celle d'où se
 				     comptent les « jours d'écart » (revue de code P1, A7, C-29-8-39). -->
 				<span data-testid="link-tx-summary">
-					{proposal.transaction.valueDate ?? proposal.transaction.bookingDate} — {proposal.transaction.amount}
+					{formatSwissDate(proposal.transaction.valueDate ?? proposal.transaction.bookingDate)} — {proposal.transaction.amount}
 					{proposal.transaction.currency}{#if proposal.transaction.counterpartyName}
 						{' '}— {proposal.transaction.counterpartyName}{/if}
 				</span>
@@ -287,7 +289,7 @@
 												</td>
 												<td class="whitespace-nowrap">{c.invoiceNumber ?? `#${c.invoiceId}`}</td>
 												<td>{c.contactName}</td>
-												<td class="whitespace-nowrap">{c.settledOn}</td>
+												<td class="whitespace-nowrap">{formatSwissDate(c.settledOn)}</td>
 												<td class="text-right">{c.amount}</td>
 												<td class="text-right">{c.gap}</td>
 												<td class="text-right">{c.daysApart}</td>
@@ -347,7 +349,7 @@
 												/>
 											</td>
 											<td class="whitespace-nowrap">{e.entryNumber}</td>
-											<td class="whitespace-nowrap">{e.entryDate}</td>
+											<td class="whitespace-nowrap">{formatSwissDate(e.entryDate)}</td>
 											<td class="whitespace-nowrap">{e.journal}</td>
 											<td>{e.description}</td>
 											<td class="text-right">{e.amount}</td>

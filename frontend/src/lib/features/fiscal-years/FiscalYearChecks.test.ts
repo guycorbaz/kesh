@@ -175,7 +175,10 @@ describe('FiscalYearChecks — contenus et liens', () => {
 		expect(screen.getByText('Alpha SA').getAttribute('href')).toBe('/supplier-invoices/32');
 		expect(
 			screen.getByTestId('fiscal-year-checks-link-DRAFT_SUPPLIER_INVOICES').getAttribute('href')
-		).toBe('/supplier-invoices');
+		).toBe('/supplier-invoices?status=draft'); // v0172 (#870, AC-B3, MB2) : les brouillons, de tous les exercices
+		expect(
+			screen.getByTestId('fiscal-year-checks-link-DRAFT_SUPPLIER_INVOICES').textContent?.trim()
+		).toBe('Ouvrir les brouillons de factures fournisseurs');
 		const row = screen.getByTestId('fiscal-year-checks-row-DRAFT_SUPPLIER_INVOICES');
 		expect(row.textContent).toMatch(/Factures fournisseur en brouillon/);
 		expect(screen.queryByTestId('fiscal-year-checks-k8-more')).toBeNull();

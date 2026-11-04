@@ -840,7 +840,17 @@ const ATTENDU = {
 	// succès d'une annulée), `supplier-invoice-unvalidate.ts` 12 → 15 (payée rapprochée,
 	// paiement détaché avec et sans date), `[id]/edit/+page.svelte` 9 → 9 (repli récrit).
 	// Que des littéraux ; `sitesNonResolus` et `relais` inchangés.
-	sitesTotal: 2801,
+	// v0172-correctifs (2026-11-04) : **2796 → 2806** (+10), `grep -o 'i18nMsg('` aux deux
+	// bornes (`1be0f701` → tête), fichiers touchés hors tests : `supplier-invoices/+page.svelte`
+	// 12 → 18 (bandeau du filtre, son lien, compte singulier/pluriel, Précédent, Suivant ; #870),
+	// `InvoiceForm.svelte` 14 → 16 (option et refus du taux désactivé ; #882),
+	// `SupplierInvoiceForm.svelte` 48 → 50 (avis « à vérifier » et son bouton ; #885).
+	// Remédiation de la revue de code P1 (2026-11-04) : **2806 → 2808** (+2),
+	// `supplier-invoices/+page.svelte` 18 → 20 (liste vide filtrée, liste vide sans les
+	// annulées ; B-4 = E-4).
+	// Fusion de la release 0.17.2 (2026-11-04) : les deux stories réunies, **recompté à la
+	// source** par la garde elle-même après la fusion (non additionné) : **2813**.
+	sitesTotal: 2813,
 	sitesNonResolus: 31,
 	relais: 6,
 	// Story 26-1 (#620, AC3-bis) : **10 → 11** — `lib/features/bank-import/
@@ -932,8 +942,11 @@ const MOTIFS_DYNAMIQUES: Record<string, readonly string[]> = {
  * Les trois ensembles ouverts de cette story sont donc `vat-category-*`,
  * `bank-import-info-*` et celui-ci. *Aucune garde ne les borne, et c'est écrit plutôt
  * que découvert.*
+ *
+ * (`:52` → `:54` le 2026-11-04, v0172-correctifs : deux lignes d'import de
+ * `formatSwissDate` ajoutées au-dessus, #880.)
  */
-const ANGLE_MORT_CLE_EN_COLONNE = 'routes/(app)/settings/vat-rates/+page.svelte:52';
+const ANGLE_MORT_CLE_EN_COLONNE = 'routes/(app)/settings/vat-rates/+page.svelte:54';
 
 /**
  * Cardinalité attendue de chaque préfixe dynamique — **la contrepartie des valeurs

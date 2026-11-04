@@ -29,6 +29,8 @@
 	} from '$lib/features/fiscal-years/fiscal-years.types';
 	import { isApiError } from '$lib/shared/utils/api-client';
 	import { i18nMsg } from '$lib/shared/utils/i18n.svelte';
+	// v0172-correctifs (#880) : dates en forme suisse (liste, dialogue de renommage).
+	import { formatSwissDate } from '$lib/features/reports/reports.api';
 	import { notifyError, notifySuccess } from '$lib/shared/utils/notify';
 	import { authState } from '$lib/app/stores/auth.svelte';
 
@@ -456,8 +458,8 @@
 			{#each fiscalYears as fy (fy.id)}
 				<Table.Row data-testid="fiscal-year-row-{fy.id}">
 					<Table.Cell class="font-medium">{fy.name}</Table.Cell>
-					<Table.Cell>{fy.startDate}</Table.Cell>
-					<Table.Cell>{fy.endDate}</Table.Cell>
+					<Table.Cell>{formatSwissDate(fy.startDate)}</Table.Cell>
+					<Table.Cell>{formatSwissDate(fy.endDate)}</Table.Cell>
 					<Table.Cell>
 						{#if fy.status === 'Open'}
 							<span class="inline-flex items-center rounded-full bg-green-100 px-2 py-0.5 text-xs font-medium text-green-700">
@@ -633,13 +635,13 @@
 						<dt class="font-medium">
 							{msg('fiscal-year-start-date-label', 'Début')}
 						</dt>
-						<dd>{renameTarget.startDate}</dd>
+						<dd>{formatSwissDate(renameTarget.startDate)}</dd>
 					</div>
 					<div>
 						<dt class="font-medium">
 							{msg('fiscal-year-end-date-label', 'Fin')}
 						</dt>
-						<dd>{renameTarget.endDate}</dd>
+						<dd>{formatSwissDate(renameTarget.endDate)}</dd>
 					</div>
 				</div>
 			{/if}

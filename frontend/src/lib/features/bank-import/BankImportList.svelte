@@ -10,6 +10,8 @@
 	import { i18nMsg } from '$lib/shared/utils/i18n.svelte';
 	import type { BankImportResponse } from './bank-import.types';
 	import { importDisplayName } from './bank-import-display';
+	// v0172-correctifs (#880) : dates en forme suisse, horodatage à l'heure de Zurich.
+	import { formatSwissDate, formatSwissDateTime } from '$lib/features/reports/reports.api';
 
 	type Props = {
 		imports: BankImportResponse[];
@@ -35,9 +37,9 @@
 			<tbody>
 				{#each imports as imp (imp.id)}
 					<tr data-testid="bank-import-list-row" data-import-id={imp.id} data-source-format={imp.sourceFormat}>
-						<td>{imp.importedAt}</td>
+						<td>{formatSwissDateTime(imp.importedAt)}</td>
 						<td><a class="text-primary underline break-all" data-testid="bank-import-list-link" href="/bank-import/{imp.id}">{importDisplayName(imp)}</a></td>
-						<td>{imp.periodFrom} → {imp.periodTo}</td>
+						<td>{formatSwissDate(imp.periodFrom)} → {formatSwissDate(imp.periodTo)}</td>
 						<td class="text-right">{imp.transactionCount}</td>
 					</tr>
 				{/each}

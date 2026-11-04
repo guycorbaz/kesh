@@ -20,6 +20,8 @@
 	import { reconciledCount } from './bank-import-deletion';
 	import type { BankImportDetailResponse } from './bank-import.types';
 	import { isManualImport } from './bank-import-display';
+	// v0172-correctifs (#880) : la période en forme suisse dans les deux messages.
+	import { formatSwissDate } from '$lib/features/reports/reports.api';
 
 	type Props = {
 		detail: BankImportDetailResponse;
@@ -147,8 +149,8 @@
 						'bank-import-manual-delete-dialog-body',
 						'Le relevé saisi à la main (période du { $from } au { $to }) et ses { $count } transaction(s) seront supprimés. Vous pourrez ensuite le saisir de nouveau. Cette suppression ne peut pas être annulée.',
 						{
-							from: detail.periodFrom,
-							to: detail.periodTo,
+							from: formatSwissDate(detail.periodFrom),
+							to: formatSwissDate(detail.periodTo),
 							count: detail.transactions.length,
 						},
 					)}
@@ -158,8 +160,8 @@
 						'Le fichier { $filename } (période du { $from } au { $to }) et ses { $count } transaction(s) seront supprimés. Vous pourrez ensuite réimporter le même fichier. Cette suppression ne peut pas être annulée.',
 						{
 							filename: detail.filename,
-							from: detail.periodFrom,
-							to: detail.periodTo,
+							from: formatSwissDate(detail.periodFrom),
+							to: formatSwissDate(detail.periodTo),
 							count: detail.transactions.length,
 						},
 					)}

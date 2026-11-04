@@ -74,25 +74,32 @@
 		};
 	});
 
-	// Pass 1 remediation #8 : si une ligne a été initialisée avec le fallback
+	// Pass 1 remediation #8 : si une ligne NEUVE a été initialisée avec le fallback
 	// hardcodé `'8.10'` (avant resolve du store) et que `'8.10'` n'est pas dans
 	// la liste de la company courante, repointer la ligne sur le premier
-	// vatOption résolu. No-op pour les companies suisses standard où `8.10`
-	// fait partie du seed — défense pour Epic 11-1 (CRUD admin) où la liste
-	// peut diverger d'une company à l'autre.
+	// vatOption résolu.
+	//
+	// v0172-correctifs (#882, C-v0172b-27) — le repli ne touche plus que les lignes
+	// marquées `_vatPlaceholder` (créées avant la résolution des taux). Une ligne
+	// relue d'un brouillon, d'un rechargement ou d'un article garde son taux : s'il
+	// est désactivé, le `<select>` le propose « (désactivé) » et `validateClient` le
+	// refuse en le disant. Avant la 0.17.2, un brouillon au taux de 8,1 % désactivé
+	// changeait de TVA en silence.
 	$effect(() => {
 		if (vatOptions.length === 0) return;
-		if (vatOptions.includes('8.10')) return;
-		const fallback = vatOptions[0];
+		const fallback = vatOptions.includes('8.10') ? '8.10' : vatOptions[0];
 		for (const l of lines) {
-			if (l.vatRate === '8.10') {
+			if (l._vatPlaceholder) {
 				l.vatRate = fallback;
+				l._vatPlaceholder = false;
 			}
 		}
 	});
 
 	// Identifiant UI stable (cross-reorder/remove). NE PAS envoyer au backend.
-	type LineState = CreateInvoiceLineRequest & { _uiKey: string };
+	// `_vatPlaceholder` (v0172, #882) : la ligne porte la valeur provisoire du taux,
+	// posée avant la résolution des taux actifs ; seul le repli ci-dessus la lit.
+	type LineState = CreateInvoiceLineRequest & { _uiKey: string; _vatPlaceholder?: boolean };
 
 	let uiKeySeq = 0;
 	function nextUiKey(): string {
@@ -101,7 +108,7 @@
 	}
 
 	function stripUiKey(l: LineState): CreateInvoiceLineRequest {
-		const { _uiKey, ...rest } = l;
+		const { _uiKey, _vatPlaceholder, ...rest } = l;
 		return rest;
 	}
 
@@ -129,6 +136,8 @@
 				quantity: '1',
 				unitPrice: '0.00',
 				vatRate: DEFAULT_VAT,
+				// v0172 (#882) : valeur provisoire si les taux ne sont pas encore connus.
+				_vatPlaceholder: vatOptions.length === 0,
 				// AC9-bis — site 5/5, celui de la facture NEUVE (aucune ligne
 				// serveur). Il manquait au décompte « 4 sites » de la passe
 				// d'implémentation : `undefined` se comporte comme `null` partout où
@@ -208,6 +217,21 @@
 	// est présent (projet archivé depuis — leçon 19-2 BH-L2 : visible/détaguable).
 	const showProjectField = $derived(projects.length > 0 || projectId !== null);
 	let lines = $state<LineState[]>(initLines());
+
+	/**
+	 * v0172-correctifs (#882, C-v0172b-9) — les taux portés par les lignes qui ne sont
+	 * pas actifs (désactivés depuis) : **dérivés des lignes**, pour couvrir le
+	 * brouillon, le rechargement après conflit et l'ajout depuis un article. Vide tant
+	 * que les taux actifs ne sont pas connus.
+	 */
+	const inactiveRates = $derived(
+		new Set(
+			vatOptions.length === 0
+				? []
+				: lines.map((l) => l.vatRate).filter((r) => r !== '' && !vatOptions.includes(r)),
+		),
+	);
+
 	let submitting = $state(false);
 	let errorMsg = $state<string>('');
 	let productPickerOpen = $state(false);
@@ -414,6 +438,8 @@
 			quantity: '1',
 			unitPrice: '0.00',
 			vatRate: DEFAULT_VAT,
+			// v0172 (#882) : valeur provisoire si les taux ne sont pas encore connus.
+			_vatPlaceholder: vatOptions.length === 0,
 			// AC9-bis — site 2/5. `null` = suivre le compte de produit par défaut
 			// de la société. Une ligne libre ne vient d'AUCUN article : elle reste
 			// à `null` par construction (décision D-B3 de la Story 16-2b).
@@ -493,8 +519,19 @@
 			} catch {
 				return `Ligne ${i + 1} : valeurs numériques invalides`;
 			}
-			if (vatOptions.length > 0 && !vatOptions.includes(l.vatRate))
+			if (vatOptions.length > 0 && !vatOptions.includes(l.vatRate)) {
+				// v0172 (#882) : un taux porté par la ligne mais désactivé depuis — le
+				// refus dit quoi faire (aucune réactivation n'est offerte à l'écran,
+				// C-v0172b-29). « invalide » ne reste que pour une valeur vide.
+				if (inactiveRates.has(l.vatRate)) {
+					return i18nMsg(
+						'invoice-line-vat-rate-disabled-error',
+						'Ligne { $line } : le taux de TVA { $rate }% a été désactivé. Choisissez un taux actif.',
+						{ line: i + 1, rate: l.vatRate },
+					);
+				}
 				return `Ligne ${i + 1} : taux TVA invalide`;
+			}
 		}
 		return null;
 	}
@@ -817,6 +854,15 @@
 								{#each vatOptions as v (v)}
 									<option value={v}>{v}%</option>
 								{/each}
+								<!-- v0172 (#882) : le taux de la ligne, désactivé depuis, reste
+								     affiché au lieu d'un champ vide. -->
+								{#if inactiveRates.has(line.vatRate)}
+									<option value={line.vatRate}>
+										{i18nMsg('invoice-line-vat-rate-disabled-option', '{ $rate }% (désactivé)', {
+											rate: line.vatRate,
+										})}
+									</option>
+								{/if}
 							</select>
 						</td>
 						<td class="py-2 pr-2">

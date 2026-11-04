@@ -1,4 +1,5 @@
-import { expect, test } from '@playwright/test';
+import path from 'node:path';
+import { expect, test, type TestInfo } from '@playwright/test';
 import {
 	seedTestState,
 	clearAuthStorage,
@@ -101,6 +102,7 @@ async function createSupplierInvoiceViaApi(
 	page: import('@playwright/test').Page,
 	contactId: number,
 	expenseAccountId: number,
+	validate = true,
 ): Promise<number> {
 	const today = new Date().toISOString().slice(0, 10);
 	const ctx = await authedApiContext(page);
@@ -124,6 +126,7 @@ async function createSupplierInvoiceViaApi(
 		});
 		expect(res.ok(), `create supplier invoice failed: ${res.status()}`).toBeTruthy();
 		const draft = (await res.json()) as { id: number; version: number };
+		if (!validate) return draft.id;
 		// Story v017-4b (#849, AC-30) : la création rend un BROUILLON ; ces tests
 		// paient ou annulent, ils valident donc la facture d'abord.
 		const val = await ctx.post(`/api/v1/supplier-invoices/${draft.id}/validate`, {
@@ -136,7 +139,62 @@ async function createSupplierInvoiceViaApi(
 	}
 }
 
+/** Le dossier des captures : `KESH_E2E_CAPTURES_DIR`, sinon la sortie du test (hors dépôt). */
+function capturePath(testInfo: TestInfo, name: string): string {
+	const dossier = process.env.KESH_E2E_CAPTURES_DIR;
+	return dossier ? path.join(dossier, `${name}.png`) : testInfo.outputPath(`${name}.png`);
+}
+
 test.describe('Factures fournisseurs', () => {
+	// v0172-correctifs (#870, AC-B4) — la liste se pagine et se filtre par l'adresse :
+	// 55 brouillons, 50 en page 1, 5 après « Suivant » ; l'entrée du menu ramène la
+	// liste par défaut, page 1 (lecture réactive de l'adresse, même instance de page).
+	test('#870 — 55 brouillons : 50, puis 5 après Suivant ; le menu ramène la liste par défaut', async ({
+		page,
+	}, testInfo) => {
+		test.setTimeout(120_000);
+		await login(page);
+		const { expenseAccountId } = await ensureConfigAndAccounts(page);
+		const supplierId = await createSupplierViaApi(page, uniq('Fournisseur'));
+		const before = await (async () => {
+			const ctx = await authedApiContext(page);
+			try {
+				const r = await ctx.get('/api/v1/supplier-invoices?status=draft&limit=1');
+				return ((await r.json()) as { total: number }).total;
+			} finally {
+				await disposeContextSafe(ctx);
+			}
+		})();
+		for (let i = 0; i < 55; i++) {
+			await createSupplierInvoiceViaApi(page, supplierId, expenseAccountId, false);
+		}
+		const drafts = before + 55;
+		expect(drafts, 'montage : au moins 55 brouillons, au plus 100').toBeLessThanOrEqual(100);
+
+		await page.goto('/supplier-invoices?status=draft');
+		const rows = page.getByTestId('supplier-invoice-row');
+		await expect(page.getByTestId('supplier-invoices-filter-banner')).toBeVisible();
+		await expect(page.getByTestId('supplier-invoices-show-cancelled')).toHaveCount(0);
+		await expect(rows).toHaveCount(50);
+		await expect(page.getByTestId('supplier-invoices-count')).toHaveText(`${drafts} factures`);
+		await expect(page.getByTestId('supplier-invoices-prev')).toBeDisabled();
+		await page.screenshot({ path: capturePath(testInfo, 'v0172b-870-brouillons-page1'), fullPage: true });
+
+		await page.getByTestId('supplier-invoices-next').click();
+		await expect(page).toHaveURL(/status=draft/);
+		await expect(page).toHaveURL(/offset=50/);
+		await expect(rows).toHaveCount(drafts - 50);
+		await expect(page.getByTestId('supplier-invoices-next')).toBeDisabled();
+		await page.screenshot({ path: capturePath(testInfo, 'v0172b-870-brouillons-page2'), fullPage: true });
+
+		await page.getByTestId('nav-link-supplier-invoices').click();
+		await expect(page).toHaveURL(/\/supplier-invoices$/);
+		await expect(page.getByTestId('supplier-invoices-filter-banner')).toHaveCount(0);
+		await expect(page.getByTestId('supplier-invoices-show-cancelled')).toBeVisible();
+		await expect(page.getByTestId('supplier-invoices-prev')).toBeDisabled();
+		await expect(rows).toHaveCount(50);
+	});
+
 	// Story 25-3-a-2 (#414) — payer, puis annuler le RÈGLEMENT : la facture
 	// redevient « validée », à payer, et l'écriture inverse est passée (Story v017-4b :
 	// l'état `open` se nomme « Validée », décision Q4).

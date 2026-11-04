@@ -9,7 +9,7 @@
 // littéral `{ $lines }` au lieu des numéros de lignes — le test passerait en
 // n'observant rien.
 
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, fireEvent } from '@testing-library/svelte';
 import type { AccountResponse } from '$lib/features/accounts/accounts.types';
 import type { InvoiceResponse } from '$lib/features/invoices/invoices.types';
@@ -729,5 +729,144 @@ describe('InvoiceForm — quantité et prix lisibles (v0171, #878)', () => {
 		await fireEvent.click(getByTestId('create-invoice-button'));
 		await settle();
 		expect(payloadLines()[0]).toMatchObject({ quantity: '2.5' });
+	});
+});
+
+// v0172-correctifs (#882, C-v0172b-9, C-v0172b-27) — une ligne dont le taux de TVA a été
+// désactivé : le `<select>` le propose, libellé « (désactivé) », le refus dit de choisir
+// un taux actif, et le repli `8.10` ne touche plus que les lignes neuves.
+describe('InvoiceForm — taux de TVA désactivé (v0172, #882)', () => {
+	const ACTIFS = [{ rate: '8.10' }, { rate: '2.60' }, { rate: '0.00' }];
+
+	function brouillonAuTaux(rate: string): InvoiceResponse {
+		return { ...invoiceWith([null]), lines: [{ ...line(1, null), vatRate: rate }] } as unknown as InvoiceResponse;
+	}
+	function selects(container: HTMLElement): HTMLSelectElement[] {
+		return Array.from(container.querySelectorAll('[data-testid="invoice-line-vat-rate"]'));
+	}
+	function optionLabels(s: HTMLSelectElement): string[] {
+		return Array.from(s.options).map((o) => o.textContent?.trim() ?? '');
+	}
+	const DISABLED_MSG = 'Ligne 1 : le taux de TVA 7.70% a été désactivé. Choisissez un taux actif.';
+
+	beforeEach(async () => {
+		const { getVatRates } = await import('$lib/features/vat-rates');
+		vi.mocked(getVatRates).mockImplementation(async () => ACTIFS as never);
+	});
+	afterEach(async () => {
+		const { getVatRates } = await import('$lib/features/vat-rates');
+		vi.mocked(getVatRates).mockImplementation(async () => [{ rate: '8.10' }, { rate: '2.60' }] as never);
+	});
+
+	it('AC-B7 — un brouillon à 7.70 s’ouvre sur `7.70% (désactivé)` ; Enregistrer refuse en le disant (rouge avant correctif)', async () => {
+		const { container, getByTestId } = render(InvoiceForm, { invoice: brouillonAuTaux('7.70') });
+		await settle();
+		const [s] = selects(container);
+		expect(s.value).toBe('7.70');
+		expect(optionLabels(s)).toContain('7.70% (désactivé)');
+		await fireEvent.click(getByTestId('create-invoice-button'));
+		await settle();
+		expect(updateInvoiceMock).not.toHaveBeenCalled();
+		expect(container.textContent).toContain(DISABLED_MSG);
+		expect(container.textContent).not.toContain('taux TVA invalide');
+	});
+
+	it('AC-B7 — choisir 8.10 retire le libellé et le refus ; l’envoi porte `vatRate: "8.10"`', async () => {
+		updateInvoiceMock.mockResolvedValue({ id: 7 });
+		const { container, getByTestId } = render(InvoiceForm, { invoice: brouillonAuTaux('7.70') });
+		await settle();
+		const [s] = selects(container);
+		await fireEvent.change(s, { target: { value: '8.10' } });
+		await settle();
+		expect(optionLabels(selects(container)[0]).some((l) => l.includes('(désactivé)'))).toBe(false);
+		await fireEvent.click(getByTestId('create-invoice-button'));
+		await settle();
+		expect(container.textContent).not.toContain(DISABLED_MSG);
+		const sent = updateInvoiceMock.mock.calls.at(-1)![1] as { lines: Record<string, unknown>[] };
+		expect(sent.lines[0].vatRate).toBe('8.10');
+		expect(Object.keys(sent.lines[0]).filter((k) => k.startsWith('_')), 'aucune marque d’interface envoyée').toEqual([]);
+	});
+
+	it('AC-B7 — après « Recharger » (conflit de version), la ligne à 7.70 garde son taux, désactivé', async () => {
+		updateInvoiceMock.mockRejectedValue({ code: 'OPTIMISTIC_LOCK_CONFLICT', status: 409, message: 'conflit' });
+		getInvoiceMock.mockResolvedValue(brouillonAuTaux('7.70'));
+		const { container, getByTestId, getByText } = render(InvoiceForm, {
+			invoice: brouillonAuTaux('8.10'),
+		});
+		await settle();
+		await fireEvent.click(getByTestId('create-invoice-button'));
+		await settle();
+		await fireEvent.click(getByText('Recharger'));
+		await settle();
+		const [s] = selects(container);
+		expect(s.value).toBe('7.70');
+		expect(optionLabels(s)).toContain('7.70% (désactivé)');
+	});
+
+	it('AC-B7 — une ligne ajoutée depuis un article à 7.70 propose `7.70% (désactivé)` (MB4)', async () => {
+		listProductsMock.mockResolvedValue({
+			items: [
+				{
+					id: 1,
+					companyId: 1,
+					name: 'Article à l’ancien taux',
+					description: null,
+					unitPrice: '10.00',
+					vatRate: '7.70',
+					defaultRevenueAccountId: null,
+					active: true,
+					version: 1,
+					createdAt: '2026-01-01T00:00:00',
+					updatedAt: '2026-01-01T00:00:00',
+				},
+			],
+			total: 1,
+			limit: 20,
+			offset: 0,
+		});
+		const { container, getByText } = render(InvoiceForm, { invoice: invoiceWith([null]) });
+		await settle();
+		await fireEvent.click(getByText('Depuis catalogue'));
+		await settle();
+		const entry = document.querySelector('[role="dialog"] ul li button') as HTMLElement | null;
+		expect(entry, 'le picker doit proposer l’article').toBeTruthy();
+		await fireEvent.click(entry!);
+		await settle();
+		const s = selects(container).at(-1)!;
+		expect(s.value).toBe('7.70');
+		expect(optionLabels(s)).toContain('7.70% (désactivé)');
+	});
+
+	it('AC-B8 — une ligne à taux actif : aucune option « (désactivé) »', async () => {
+		const { container } = render(InvoiceForm, { invoice: brouillonAuTaux('2.60') });
+		await settle();
+		const [s] = selects(container);
+		expect(s.value).toBe('2.60');
+		expect(optionLabels(s)).toEqual(['8.10%', '2.60%', '0.00%']);
+	});
+
+	it('AC-B8 — cas 8.10 : un brouillon à 8.10, taux désactivé, n’est PAS réécrit en 2.60 (MB9 ; rouge avant correctif)', async () => {
+		const { getVatRates } = await import('$lib/features/vat-rates');
+		vi.mocked(getVatRates).mockImplementation(async () => [{ rate: '2.60' }, { rate: '0.00' }] as never);
+		const { container } = render(InvoiceForm, { invoice: brouillonAuTaux('8.10') });
+		await settle();
+		const [s] = selects(container);
+		expect(s.value).toBe('8.10');
+		expect(optionLabels(s)).toContain('8.10% (désactivé)');
+	});
+
+	it('AC-B8 — cas 8.10 : une ligne NEUVE créée avant la résolution des taux est repointée sur 2.60', async () => {
+		const { getVatRates } = await import('$lib/features/vat-rates');
+		let resolve: (v: unknown) => void = () => {};
+		vi.mocked(getVatRates).mockImplementation(
+			() => new Promise((r) => (resolve = r as (v: unknown) => void)) as never,
+		);
+		const { container } = render(InvoiceForm, {});
+		await settle();
+		resolve([{ rate: '2.60' }, { rate: '0.00' }]);
+		await settle();
+		const [s] = selects(container);
+		expect(s.value).toBe('2.60');
+		expect(optionLabels(s).some((l) => l.includes('(désactivé)'))).toBe(false);
 	});
 });

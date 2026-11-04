@@ -189,11 +189,66 @@ export function isReportEmpty(
 	}
 }
 
-/** Formate une date ISO YYYY-MM-DD en suisse dd.mm.yyyy. */
+/** Une date pure `AAAA-MM-JJ`, rien d'autre. */
+const PURE_DATE_RE = /^(\d{4})-(\d{2})-(\d{2})$/;
+/**
+ * Un horodatage : `AAAA-MM-JJ`, `T` ou une espace, `HH:mm` (secondes et fraction
+ * facultatives), puis `Z`, un décalage `±HH:MM`, ou rien.
+ */
+const TIMESTAMP_RE = /^(\d{4}-\d{2}-\d{2})[T ](\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?)(Z|[+-]\d{2}:\d{2})?$/;
+
+/** Les composants d'un instant à l'heure de Zurich (forme indépendante de la langue). */
+const ZURICH_PARTS = new Intl.DateTimeFormat('fr-CH', {
+	timeZone: 'Europe/Zurich',
+	year: 'numeric',
+	month: '2-digit',
+	day: '2-digit',
+	hour: '2-digit',
+	minute: '2-digit',
+	hourCycle: 'h23',
+});
+
+/**
+ * L'instant d'un horodatage, à l'heure de Zurich — `null` si `iso` n'en est pas un.
+ * Sans `Z` ni décalage, l'horodatage est lu comme **UTC** : c'est ce que rend le
+ * serveur (`naive_utc()`, session MariaDB en `+00:00` ; v0172-correctifs, C-v0172b-10).
+ */
+function zurichParts(iso: string): Record<'day' | 'month' | 'year' | 'hour' | 'minute', string> | null {
+	const m = TIMESTAMP_RE.exec(iso);
+	if (!m) return null;
+	const ms = Date.parse(`${m[1]}T${m[2]}${m[3] ?? 'Z'}`);
+	if (Number.isNaN(ms)) return null;
+	const out = { day: '', month: '', year: '', hour: '', minute: '' };
+	for (const p of ZURICH_PARTS.formatToParts(new Date(ms))) {
+		if (p.type in out) out[p.type as keyof typeof out] = p.value;
+	}
+	return out;
+}
+
+/**
+ * Formate une date en forme suisse `JJ.MM.AAAA`.
+ *
+ * - une date pure `AAAA-MM-JJ` : ses composants, **sans fuseau** ;
+ * - un horodatage (v0172-correctifs, #880, #883.6) : la **date à Zurich** de cet instant
+ *   (sans décalage, lu comme UTC) — avant la 0.17.2, `2026-11-03T17:40:45` rendait
+ *   `03T17:40:45.11.2026` ;
+ * - toute autre entrée est rendue telle quelle.
+ */
 export function formatSwissDate(iso: string): string {
-	const parts = iso.split('-');
-	if (parts.length !== 3) return iso;
-	return `${parts[2]}.${parts[1]}.${parts[0]}`;
+	const d = PURE_DATE_RE.exec(iso);
+	if (d) return `${d[3]}.${d[2]}.${d[1]}`;
+	const z = zurichParts(iso);
+	return z ? `${z.day}.${z.month}.${z.year}` : iso;
+}
+
+/**
+ * Formate un horodatage en `JJ.MM.AAAA HH:mm`, **à l'heure de Zurich** (sans décalage, lu
+ * comme UTC) ; une date pure se rend `JJ.MM.AAAA`, toute autre entrée telle quelle
+ * (v0172-correctifs, #880, C-v0172b-10).
+ */
+export function formatSwissDateTime(iso: string): string {
+	const z = zurichParts(iso);
+	return z ? `${z.day}.${z.month}.${z.year} ${z.hour}:${z.minute}` : formatSwissDate(iso);
 }
 
 /**

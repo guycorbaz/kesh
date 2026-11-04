@@ -44,6 +44,8 @@
 <script lang="ts">
 	import { errorMessageOf } from '$lib/shared/utils/error-message';
 	import { i18nMsg } from '$lib/shared/utils/i18n.svelte';
+	// v0172-correctifs (#880, C-v0172b-11) : date en forme suisse, cellule et `aria-label`.
+	import { formatSwissDate } from '$lib/features/reports/reports.api';
 	import {
 		acceptProposals,
 		getProposals,
@@ -115,11 +117,15 @@
 		failedTx = new Map();
 	}
 
-	/** « date · montant devise · contrepartie », ou `TX #<id>` si la transaction n'a pas été relevée. */
+	/**
+	 * « date · montant devise · contrepartie », ou `TX #<id>` si la transaction n'a pas été relevée.
+	 * v0172-correctifs (#880, C-v0172b-31) : la date en forme suisse — site hors de
+	 * l'inventaire de la fiche (le motif M₁ ne lit que les interpolations du gabarit).
+	 */
 	function describeTx(id: number): string {
 		const t = failedTx.get(id);
 		if (!t) return `TX #${id}`;
-		return [t.bookingDate, `${t.amount} ${t.currency}`, t.counterpartyName]
+		return [formatSwissDate(t.bookingDate), `${t.amount} ${t.currency}`, t.counterpartyName]
 			.filter((v) => v !== null && v !== undefined && v !== '')
 			.join(' · ');
 	}
@@ -458,7 +464,7 @@
 											'reconciliation-labels-select-transaction',
 											'Sélectionner la transaction du { $date }, { $amount } { $currency }, { $counterparty }',
 											{
-												date: p.transaction.bookingDate,
+												date: formatSwissDate(p.transaction.bookingDate),
 												amount: p.transaction.amount,
 												currency: p.transaction.currency,
 												counterparty: p.transaction.counterpartyName,
@@ -468,7 +474,7 @@
 											'reconciliation-labels-select-transaction-no-counterparty',
 											'Sélectionner la transaction du { $date }, { $amount } { $currency }',
 											{
-												date: p.transaction.bookingDate,
+												date: formatSwissDate(p.transaction.bookingDate),
 												amount: p.transaction.amount,
 												currency: p.transaction.currency,
 											},
@@ -477,7 +483,7 @@
 								data-tx-id={p.bankTransactionId}
 							/>
 						</td>
-						<td>{p.transaction.bookingDate}</td>
+						<td>{formatSwissDate(p.transaction.bookingDate)}</td>
 						<td class="text-right">{p.transaction.amount} {p.transaction.currency}</td>
 						<td>{p.transaction.counterpartyName ?? ''}</td>
 						{#if p.notice}

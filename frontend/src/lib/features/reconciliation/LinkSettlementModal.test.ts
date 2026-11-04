@@ -284,12 +284,12 @@ describe('LinkSettlementModal', () => {
 		});
 		await rerender(props(proposal(42, '2026-06-18', '2026-06-16')));
 		await waitFor(() =>
-			expect(getByTestId('link-tx-summary').textContent).toContain('2026-06-16'),
+			expect(getByTestId('link-tx-summary').textContent).toContain('16.06.2026'), // v0172 (#880)
 		);
-		expect(getByTestId('link-tx-summary').textContent).not.toContain('2026-06-18');
+		expect(getByTestId('link-tx-summary').textContent).not.toContain('18.06.2026');
 		await rerender(props(proposal(43, '2026-06-18', null)));
 		await waitFor(() =>
-			expect(getByTestId('link-tx-summary').textContent).toContain('2026-06-18'),
+			expect(getByTestId('link-tx-summary').textContent).toContain('18.06.2026'),
 		);
 	});
 
@@ -611,5 +611,42 @@ describe('LinkSettlementModal — écritures existantes (Story v017-3a)', () => 
 		expect(queryByTestId('link-empty')).toBeNull();
 		expect(queryByTestId('link-entries-empty')).toBeNull();
 		expect(vide.textContent).not.toContain('règlement');
+	});
+});
+
+// v0172-correctifs (#880, AC-C2) — la modale dit ses dates en forme suisse : le rappel de
+// la transaction (testé plus haut), la date des règlements et celle des écritures candidates.
+describe('LinkSettlementModal — dates en forme suisse (v0172, #880)', () => {
+	beforeEach(() => {
+		vi.clearAllMocks();
+		mockApi.getLinkCandidates.mockResolvedValue({ bankTransactionId: 42, candidates: [] });
+		mockApi.getEntryCandidates.mockResolvedValue({ bankTransactionId: 42, candidates: [] });
+	});
+
+	it('règlement candidat : 20.06.2026', async () => {
+		mockApi.getLinkCandidates.mockResolvedValue({
+			bankTransactionId: 42,
+			candidates: [candidate(1, '0.00')],
+		});
+		const { findAllByTestId, getByTestId } = mount();
+		await findAllByTestId('link-candidate-radio');
+		const table = getByTestId('link-candidates-table').textContent ?? '';
+		expect(table).toContain('20.06.2026');
+		expect(table).not.toContain('2026-06-20');
+	});
+
+	it('écriture candidate : 17.06.2026', async () => {
+		mockApi.getEntryCandidates.mockResolvedValue({
+			bankTransactionId: 42,
+			candidates: [entry(7, null, null, '-250.00')],
+		});
+		const { findAllByTestId } = mount(
+			vi.fn(),
+			vi.fn(),
+			proposal(42, '2026-06-18', '2026-06-18', '-250.00'),
+		);
+		const [row] = await findAllByTestId('entry-candidate-row');
+		expect(row.textContent).toContain('17.06.2026');
+		expect(row.textContent).not.toContain('2026-06-17');
 	});
 });

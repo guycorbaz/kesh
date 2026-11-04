@@ -45,11 +45,13 @@ use kesh_import::{
     CamtError, CsvError, CsvLineError, ImportedStatement, ParseCsvOutcome, parse_camt053,
     parse_csv_collect,
 };
+use kesh_reconciliation::{ReconciliationError, with_account_lock};
 
 use crate::AppState;
 use crate::errors::AppError;
 use crate::middleware::auth::CurrentUser;
 use crate::routes::ListResponse;
+use crate::routes::bank_statements_manual::MANUAL_STATEMENT_LOCK_TIMEOUT_SECS;
 
 /// Traduit l'erreur de `bank_imports::create_with_transactions` aux **deux**
 /// appels de la route (CAMT et CSV) — Story 28-4a (#642, AC6-bis, T-a47).
@@ -1208,18 +1210,43 @@ pub async fn create(
         ),
     )?;
 
+    // v0172-correctifs (#840) — la suite (contrôle « fichier déjà importé »,
+    // analyse, fenêtre de doublons, `INSERT`, trace, commit) passe sous le
+    // verrou nommé du compte, comme la saisie manuelle : deux envois
+    // simultanés du même fichier ne se voient plus l'un l'autre absents.
+    let (pool, user, form, account) = (&state.pool, &current_user, &fields, &bank_account);
+    create_under_account_lock(
+        &state.pool,
+        current_user.company_id,
+        bank_account.id,
+        "import CAMT",
+        async move || create_camt_under_lock(pool, user, form, account, file_hash).await,
+    )
+    .await
+}
+
+/// L'import CAMT proprement dit, **sous le verrou du compte** (#840) : sa
+/// propre transaction, conclue (commit ou annulation) avant que
+/// [`create_under_account_lock`] rende le verrou. L'ordre des refus est celui
+/// d'avant la 0.17.2 ; seule l'empreinte d'aperçu est vérifiée avant le
+/// verrou, par [`create`].
+async fn create_camt_under_lock(
+    pool: &sqlx::MySqlPool,
+    current_user: &CurrentUser,
+    fields: &MultipartFields,
+    bank_account: &kesh_db::entities::BankAccount,
+    file_hash: String,
+) -> Result<BankImport, AppError> {
     // Story 8-3 — ouvre la transaction AVANT le check applicatif
     // duplicate file pour que le check + INSERT vivent dans la même tx
     // (le UNIQUE a été retiré par migration, donc le check est notre
-    // seule barrière — cf. Limitations connues v0.1 L11 race acceptée).
+    // seule barrière). La course « L11 race acceptée » (deux lecteurs sous
+    // REPEATABLE READ) est fermée depuis la 0.17.2 par le verrou du compte,
+    // pris par l'appelant (#840).
     //
     // M1 (Pass 1 review) — `find_by_company_and_hash` ET
-    // `find_in_dedup_window` sont désormais exécutés via `&mut *tx`
-    // au lieu de `&state.pool`, conformément à la spec L11 + T6.2 step 5
-    // (« le check applicatif est dans la transaction »). Sous MariaDB
-    // REPEATABLE READ la fenêtre de race reste théoriquement ouverte
-    // par snapshot ; mais sortir le check de la transaction l'élargit
-    // arbitrairement et désaligne le code de la documentation.
+    // `find_in_dedup_window` sont exécutés via `&mut *tx`
+    // (« le check applicatif est dans la transaction »).
     //
     // M-4 (Pass 2 review) — sur tout return Err(...) avant `tx.commit()`,
     // sqlx::Transaction::drop déclenche un ROLLBACK asynchrone
@@ -1227,8 +1254,7 @@ pub async fn create(
     // rendue au pool une fois le rollback terminé. Aucun leak en
     // pratique, mais l'utilisateur doit savoir que la fenêtre entre
     // `Err(...)` et la fin du rollback async occupe une connexion.
-    let mut tx = state
-        .pool
+    let mut tx = pool
         .begin()
         .await
         .map_err(|e| AppError::Database(DbError::Sqlx(e)))?;
@@ -1396,7 +1422,86 @@ pub async fn create(
         .await
         .map_err(|e| AppError::Database(DbError::Sqlx(e)))?;
 
-    Ok((StatusCode::CREATED, Json(import_to_response(header))))
+    Ok(header)
+}
+
+/// v0172-correctifs (#840) — exécute `create`, la création d'un relevé dans sa
+/// **propre** transaction, sous le verrou nommé du compte bancaire
+/// (`with_account_lock`, `GET_LOCK('reconcile:<base>:<société>:<compte>')`,
+/// celui des gestes de rapprochement), pris sur une connexion **dédiée** et
+/// rendu seulement **après** que `create` a conclu (commit ou annulation).
+///
+/// Les trois chemins d'écriture d'un relevé — import CAMT, import CSV et saisie
+/// manuelle (`bank_statements_manual::create`, v016-2a) — passent par ici : sur
+/// un même compte, ils se sérialisent, et leurs contrôles « relevé identique »
+/// et « doublons de lignes » lisent une base où le relevé concurrent est soit
+/// commité, soit absent pour de bon. Un verrou tenu plus de
+/// [`MANUAL_STATEMENT_LOCK_TIMEOUT_SECS`] secondes rend `409
+/// RECONCILIATION_ACCOUNT_LOCKED`, sans écriture. Deux connexions du pool par
+/// appel (le verrou, puis la transaction de `create`) : limite déclarée
+/// (v0172-correctifs, Dev Notes).
+///
+/// `context` nomme le chemin dans les traces d'erreur.
+pub(crate) async fn create_under_account_lock<F>(
+    pool: &sqlx::MySqlPool,
+    company_id: i64,
+    bank_account_id: i64,
+    context: &'static str,
+    create: F,
+) -> Result<(StatusCode, Json<BankImportResponse>), AppError>
+where
+    F: AsyncFnOnce() -> Result<BankImport, AppError>,
+{
+    let mut lock_tx = pool
+        .begin()
+        .await
+        .map_err(|e| AppError::Database(DbError::Sqlx(e)))?;
+    let mut outcome: Option<Result<BankImport, AppError>> = None;
+    let slot = &mut outcome;
+    let locked = with_account_lock(
+        &mut lock_tx,
+        company_id,
+        bank_account_id,
+        MANUAL_STATEMENT_LOCK_TIMEOUT_SECS,
+        async move |_held| {
+            *slot = Some(create().await);
+            Ok(())
+        },
+    )
+    .await;
+    drop(lock_tx);
+
+    match (outcome, locked) {
+        (Some(created), Ok(())) => {
+            let header = created?;
+            Ok((StatusCode::CREATED, Json(import_to_response(header))))
+        }
+        // La création a conclu (commitée ou annulée) ; seul le `RELEASE_LOCK`
+        // a échoué. Le verrou suit la session de la connexion. Annoncer un
+        // échec d'une création commitée serait faux : on rend son issue.
+        (Some(created), Err(e)) => {
+            tracing::error!(error = ?e, bank_account_id, context, "relevé : libération du verrou du compte en échec");
+            let header = created?;
+            Ok((StatusCode::CREATED, Json(import_to_response(header))))
+        }
+        (
+            None,
+            Err(ReconciliationError::AccountLocked {
+                bank_account_id,
+                timeout_secs,
+            }),
+        ) => Err(AppError::ReconciliationAccountLocked {
+            bank_account_id,
+            timeout_secs,
+        }),
+        (None, Err(ReconciliationError::Database(e))) => Err(AppError::Database(DbError::Sqlx(e))),
+        (None, other) => {
+            tracing::error!(?other, context, "relevé : verrou du compte non acquis");
+            Err(AppError::Internal(
+                "verrou du compte bancaire non acquis".to_string(),
+            ))
+        }
+    }
 }
 
 /// `GET /api/v1/bank-imports` — liste paginée multi-tenant (KF-002).
@@ -2057,14 +2162,36 @@ async fn preview_csv(
     }))
 }
 
+/// L'import CSV : toute la création (contrôle « fichier déjà importé »,
+/// profil, empreinte d'aperçu, analyse, fenêtre de doublons, `INSERT`, trace)
+/// sous le verrou nommé du compte (#840, comme [`create`]).
 async fn create_csv(
     state: &AppState,
     current_user: &CurrentUser,
     bank_account: &kesh_db::entities::BankAccount,
     fields: &MultipartFields,
 ) -> Result<(StatusCode, Json<BankImportResponse>), AppError> {
-    let mut tx = state
-        .pool
+    let pool = &state.pool;
+    create_under_account_lock(
+        &state.pool,
+        current_user.company_id,
+        bank_account.id,
+        "import CSV",
+        async move || create_csv_under_lock(pool, current_user, bank_account, fields).await,
+    )
+    .await
+}
+
+/// L'import CSV proprement dit, **sous le verrou du compte** (#840) : sa
+/// propre transaction, conclue avant que le verrou soit rendu. L'ordre des
+/// refus est celui d'avant la 0.17.2.
+async fn create_csv_under_lock(
+    pool: &sqlx::MySqlPool,
+    current_user: &CurrentUser,
+    bank_account: &kesh_db::entities::BankAccount,
+    fields: &MultipartFields,
+) -> Result<BankImport, AppError> {
+    let mut tx = pool
         .begin()
         .await
         .map_err(|e| AppError::Database(DbError::Sqlx(e)))?;
@@ -2096,7 +2223,7 @@ async fn create_csv(
     // Pass 1 review G2 H6 — transaction-bound profile resolution.
     let (profile, _info) = resolve_csv_profile(
         &mut *tx,
-        &state.pool,
+        pool,
         current_user.company_id,
         fields.bank_profile_id,
         &fields.filename,
@@ -2322,8 +2449,7 @@ async fn create_csv(
         .await
         .map_err(|e| AppError::Database(DbError::Sqlx(e)))?;
 
-    let _ = bank_account; // validé en amont
-    Ok((StatusCode::CREATED, Json(import_to_response(header))))
+    Ok(header)
 }
 
 #[cfg(test)]

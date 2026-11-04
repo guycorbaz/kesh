@@ -305,8 +305,10 @@
 										)}
 									</p>
 								{/if}
-								<a class="text-xs text-primary underline" href="/supplier-invoices" data-testid="fiscal-year-checks-link-{check.code}">
-									{i18nMsg('fiscal-years-checks-k8-link', 'Ouvrir les factures fournisseurs')}
+								<!-- v0172 (#870) : la liste filtrée sur les brouillons, de tous les
+								     exercices, et paginée — chaque brouillon y est atteignable. -->
+								<a class="text-xs text-primary underline" href="/supplier-invoices?status=draft" data-testid="fiscal-year-checks-link-{check.code}">
+									{i18nMsg('fiscal-years-checks-k8-link', 'Ouvrir les brouillons de factures fournisseurs')}
 								</a>
 							{/if}
 							{#if check.code === 'BANK_STATEMENT_AT_YEAR_END' && (check.details.notCheckable ?? []).length > 0}
