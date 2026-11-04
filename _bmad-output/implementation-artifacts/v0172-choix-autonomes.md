@@ -383,7 +383,9 @@ clair) ; *(liste en vigueur : voir la ligne « Validation P5 » ci-dessous, qui 
 
 **Validation P5 (2026-11-04)** : C-v0172s-19 et 25 sont **remplacés** par C-v0172s-26 (renouvellement au démarrage, forme minimale) ; en vigueur alors : C-v0172s-14 à 17, 20 à 24, 26, 27.
 
-**Reprise (2026-11-04) — fait foi** : décision du Project Lead (commentaire de #891) — durée d'inactivité réglée dans l'interface, exacte, remise à zéro par l'activité. C-v0172s-15, 16, 20, 21, 22 et 27 sont **remplacés** (C-v0172s-28) ; **en vigueur : C-v0172s-14, 17, 23, 24, 26 et 28 à 42**.
+**Reprise (2026-11-04)** : décision du Project Lead (commentaire de #891) — durée d'inactivité réglée dans l'interface, exacte, remise à zéro par l'activité. C-v0172s-15, 16, 20, 21, 22 et 27 sont **remplacés** (C-v0172s-28) ; **en vigueur : C-v0172s-14, 17, 23, 24, 26 et 28 à 42**.
+
+**Validation R1 (2026-11-04) — fait foi** : C-v0172s-43 à 47 ajoutés ; C-32, 34, 36, 37, 41 précisés ; **en vigueur : C-v0172s-14, 17, 23, 24, 26 et 28 à 47**.
 
 ### C-v0172s-1 — Renouvellement côté navigateur, à l'entrée de l'utilisateur, et champ `sessionExpiresIn`
 
@@ -704,6 +706,8 @@ clair) ; *(liste en vigueur : voir la ligne « Validation P5 » ci-dessous, qui 
 
 ### C-v0172s-32 — L'échéance : `refresh_tokens.expires_at`, copiée dans `idle_exp`, contrôlée sans tolérance
 
+*Précisé à la validation R1 : la forme est `SessionClaims` (C-v0172s-43), non un champ de `Claims` ; `jwt::encode` sous `#[cfg(test)]`.*
+
 - **Retenu** : `expires_at` = dernière activité + N ; revendication facultative `idle_exp` du jeton d'accès, contrôlée strictement par
   le middleware (sans les 60 s de `decode`) ; le renouvellement recopie l'échéance ; connexion, assistant, changement de mot de passe :
   `now + N`. Jetons 0.17.x sans `idle_exp` acceptés jusqu'à leur `exp`. `jwt::encode` inchangé (tests), `encode_session` et
@@ -729,6 +733,8 @@ clair) ; *(liste en vigueur : voir la ligne « Validation P5 » ci-dessous, qui 
 
 ### C-v0172s-34 — Le navigateur : un module d'écoute, `localStorage`, une minuterie d'une seconde, aucun verrou
 
+*Précisé à la validation R1 : sans `localStorage`, le module ne ferme plus de lui-même (C-v0172s-45) ; écouteurs `dragover`, `drop`, `input` ajoutés (C-35).*
+
 - **Retenu** : `session-idle.svelte.ts`, démarré par le layout racine dès qu'un utilisateur est connu ; trois clés `localStorage`
   (`lastActivity`, `reportedActivity`, `heartbeatAt`) ; une minuterie d'une seconde par onglet qui ferme à l'échéance et envoie le
   battement ; doublons de battement inoffensifs (même échéance écrite deux fois). Repli en mémoire si `localStorage` manque (activité non
@@ -742,6 +748,8 @@ clair) ; *(liste en vigueur : voir la ligne « Validation P5 » ci-dessous, qui 
 
 ### C-v0172s-35 — Ce qui compte comme activité
 
+*Précisé à la validation R1 : `dragover`, `drop` (glisser-déposer HTML5) et `input` (dictée, collage, méthodes de saisie) comptent aussi.*
+
 - **Retenu** : `keydown`, `pointerdown`, `pointermove` à coordonnées neuves, `wheel`, `touchstart`, `scroll` (capture), `focus`,
   `visibilitychange` vers `visible`, `blur` vers un `<iframe>` de la page ; contrôle de l'échéance **avant** d'enregistrer ; le chargement
   d'une page ne compte pas.
@@ -751,6 +759,8 @@ clair) ; *(liste en vigueur : voir la ligne « Validation P5 » ci-dessous, qui 
 - **Réversible** : oui.
 
 ### C-v0172s-36 — L'aperçu PDF : ce qui est observable, et ce qui ne l'est pas
+
+*Tranché à la validation R1 par le Project Lead : C-v0172s-46 (comportement gardé, geste écrit au manuel, CR #895).*
 
 - **Retenu** : les événements de la visionneuse PDF d'un `<iframe>` n'atteignent pas la page ; comptent l'entrée et la sortie du pointeur
   et le clic qui donne le focus au cadre ; une image (`<img>`) compte entièrement. Déclaré au manuel utilisateur : une lecture de plus de N
@@ -762,6 +772,8 @@ clair) ; *(liste en vigueur : voir la ligne « Validation P5 » ci-dessous, qui 
 - **Réversible** : oui.
 
 ### C-v0172s-37 — La fin de session : retour à la connexion, avec le motif ; aucune alerte préalable
+
+*Précisé à la validation R1 : la fermeture appelle `POST /auth/logout` et devient définitive (C-v0172s-45) ; l'avertissement préalable est le CR #895.*
 
 - **Retenu** : à l'échéance, chaque onglet efface l'état sans diffusion et va à `/login?reason=idle&minutes=N` (« Session fermée après N
   minutes d'inactivité. ») ; ce qui n'était pas enregistré est perdu, dans tous les onglets.
@@ -797,6 +809,8 @@ clair) ; *(liste en vigueur : voir la ligne « Validation P5 » ci-dessous, qui 
 
 ### C-v0172s-41 — Dérogation à la règle de splitting : huit modules, deux lots, revue par lot
 
+*Reformulé à la validation R1 : neuf modules (`lib/features/setup` ajouté) ; l'exception de la règle ne s'applique pas à la lettre — dérogation déclarée au Project Lead.*
+
 - **Contexte** : modules 1 à 7 de code (kesh-db, kesh-api, kesh-i18n, `lib/shared/utils`, `lib/app/stores`, `lib/features/settings`,
   `routes`) et la configuration et les textes.
 - **Retenu** : une story ; lot S (serveur) puis lot N (navigateur), un commit de lot et une revue de code par lot.
@@ -811,4 +825,55 @@ clair) ; *(liste en vigueur : voir la ligne « Validation P5 » ci-dessous, qui 
   périmé) ; elle reste un réglage d'exploitation. Le contournement `KESH_JWT_EXPIRY_MINUTES=480` (commentaire de #876) est à retirer :
   dit au CHANGELOG et au manuel.
 - **Écartées** : la déplacer aussi dans l'interface (hors de la demande).
+- **Réversible** : oui.
+
+### C-v0172s-43 — `Claims` inchangée ; `SessionClaims` ; `jwt::encode` réservé aux tests (validation R1, R1-1 et R1-5)
+
+- **Contexte** : ajouter un champ à `Claims` cassait 38 fichiers de tests qui la construisent en littéral ; une revendication facultative
+  émise par un site oublieux ne fermerait jamais la session (fermeture par défaut ouverte).
+- **Retenu** : `SessionClaims { #[serde(flatten)] claims: Claims, idle_exp: Option<i64> }`, seule struct décodée par le middleware
+  (`decode_session`) et encodée par les sites de session ; `jwt::encode` sous `#[cfg(test)]` (ses seuls appelants sont des tests en module) ;
+  `encode_session(…, idle_exp: i64)` à échéance obligatoire ; un test par site d'émission (connexion, renouvellement, mot de passe,
+  assistant, battement).
+- **Écartées** : `idle_exp: None` ajouté aux 38 littéraux (édition de masse sans comportement, le motif même qui fait garder le paramètre
+  de `from_fields_for_test`) ; `#[derive(Default)]` et `..Default::default()` (touche aussi les 38 littéraux) ; une seconde struct décodée
+  à part sur le même jeton (deux décodages par requête).
+- **Réversible** : oui.
+
+### C-v0172s-44 — Les corps du réglage et du battement lus par `impl_validation_extractor!` : 400, jamais 422 (R1-2)
+
+- **Retenu** : la macro de `crates/kesh-api/src/extractors.rs` pour `PUT /admin/session-settings` et `POST /auth/activity` ; tout rejet du
+  corps (clé absente, `1.5`, `-1`, JSON illisible) rend `400 VALIDATION_ERROR`, comme `bank_accounts` et la saisie manuelle de relevé.
+- **Écartées** : `Json<T>` comme le précédent `backup_schedule.rs:131` (422 natif d'Axum, que le dépôt réserve aux refus métier) ; écrire
+  422 aux AC (contraire à la règle de `extractors.rs`).
+- **Réversible** : oui.
+
+### C-v0172s-45 — La fermeture déconnecte au serveur ; sans `localStorage`, le navigateur ne ferme pas seul (R1-3)
+
+- **Contexte** : `clearSession` ne touche pas les cookies `HttpOnly` ; un rechargement de `/login` rétablissait la session par `hydrate()`
+  dès que l'échéance du serveur était plus tardive que celle du navigateur — notamment après un abaissement du réglage.
+- **Retenu** : à l'échéance, `fetch('/api/v1/auth/logout', { method: 'POST', credentials: 'include', keepalive: true, … })` puis
+  `clearSession({ broadcast: false })` et la redirection ; la fin de session est définitive, y compris après un abaissement ; troisième
+  écart de précision écrit (transition après un changement du réglage). Sans `localStorage`, le module bat mais ne ferme pas : la
+  déconnexion d'un onglet sans geste couperait la session d'un autre qui travaille ; le serveur ferme alors (message de session expirée).
+- **Écartées** : `authState.logout()` (diffuse `auth-change` et attend la réponse) ; écrire seulement le troisième écart sans déconnecter
+  (la session renaîtrait au rechargement) ; recalculer toutes les lignes à chaque changement du réglage (C-38).
+- **Réversible** : oui.
+
+### C-v0172s-46 — L'aperçu PDF : décision du Project Lead, « 1, et éventuellement 3 »
+
+- **Contexte** : C-36 signalait, sans trancher, que la lecture dans l'aperçu ne compte pas.
+- **Retenu** (décision du 2026-11-04) : comportement gardé pour la 0.17.3 ; le manuel utilisateur écrit la limite en clair et le geste à
+  faire (sortir le pointeur du document, ou cliquer à côté, au moins une fois par durée réglée) ; l'avertissement avant fermeture avec
+  « Rester connecté » est hors périmètre, tracé par le **CR #895**, cité à la fiche, au manuel et au CHANGELOG.
+- **Réversible** : oui (CR #895).
+
+### C-v0172s-47 — `LoginPayload` : champs d'inactivité facultatifs ; N inconnu ⇒ un `GET /me` ; `null` sans calcul (R1-4, R1-7, R1-8)
+
+- **Retenu** : `idleTimeoutMinutes?: number`, `idleExpiresIn?: number | null` (les 89 appels de `authState.login(` des tests restent
+  valides) ; les quatre constructeurs de production (connexion, assistant `setup.api.ts`, `doRefresh`, `hydrate()`) les transmettent ; le
+  module, sans N valide, fait un `GET /api/v1/auth/me` et, faute de réponse, ne ferme rien ; `idleExpiresIn = null` ⇒ `lastActivity` stockée
+  ou `now`, jamais de calcul sur `null`.
+- **Écartées** : champs obligatoires (89 appels de tests à modifier) ; fermer avec une valeur par défaut du navigateur (60) quand N est
+  inconnu (le serveur peut avoir 5).
 - **Réversible** : oui.
