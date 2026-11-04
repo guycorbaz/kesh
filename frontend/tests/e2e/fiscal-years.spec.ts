@@ -54,7 +54,8 @@ test.describe('Page exercices — affichage', () => {
 		await goToFiscalYears(page);
 		// L'exercice seedé est nommé "Exercice CI" (2020-01-01 → 2030-12-31).
 		await expect(page.getByTestId('fiscal-year-table')).toBeVisible();
-		await expect(page.locator('tr', { hasText: '2020-01-01' })).toBeVisible();
+		// v0172 (#880) : les dates de la liste en forme suisse (était `2020-01-01`).
+		await expect(page.locator('tr', { hasText: '01.01.2020' })).toBeVisible();
 	});
 });
 
