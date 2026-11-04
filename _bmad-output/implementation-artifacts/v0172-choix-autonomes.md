@@ -385,7 +385,9 @@ clair) ; *(liste en vigueur : voir la ligne « Validation P5 » ci-dessous, qui 
 
 **Reprise (2026-11-04)** : décision du Project Lead (commentaire de #891) — durée d'inactivité réglée dans l'interface, exacte, remise à zéro par l'activité. C-v0172s-15, 16, 20, 21, 22 et 27 sont **remplacés** (C-v0172s-28) ; **en vigueur : C-v0172s-14, 17, 23, 24, 26 et 28 à 42**.
 
-**Validation R1 (2026-11-04) — fait foi** : C-v0172s-43 à 47 ajoutés ; C-32, 34, 36, 37, 41 précisés ; **en vigueur : C-v0172s-14, 17, 23, 24, 26 et 28 à 47**.
+**Validation R1 (2026-11-04)** : C-v0172s-43 à 47 ajoutés ; C-32, 34, 36, 37, 41 précisés ; en vigueur alors : C-v0172s-14, 17, 23, 24, 26 et 28 à 47.
+
+**Validation R2 (2026-11-04) — fait foi** : C-v0172s-48 ajouté ; C-31 récrit (plus aucune lecture) ; C-32, 35, 40, 41, 45 corrigés dans leur corps ; **en vigueur : C-v0172s-14, 17, 23, 24, 26 et 28 à 48**.
 
 ### C-v0172s-1 — Renouvellement côté navigateur, à l'entrée de l'utilisateur, et champ `sessionExpiresIn`
 
@@ -693,13 +695,18 @@ clair) ; *(liste en vigueur : voir la ligne « Validation P5 » ci-dessous, qui 
   l'installation) ; l'écran de sauvegarde (sans rapport).
 - **Réversible** : oui.
 
-### C-v0172s-31 — `KESH_REFRESH_INACTIVITY_MINUTES` ignorée, avec avertissement ; pas d'amorçage
+### C-v0172s-31 — `KESH_REFRESH_INACTIVITY_MINUTES` n'est plus lue du tout ; pas d'amorçage
 
-- **Retenu** : la variable n'est plus lue comme durée ; si posée, avertissement au démarrage (fonction pure testée) ; retirée de
-  `.env.example` et des deux `docker-compose` ; `Config::refresh_inactivity` et `main.rs:245-251` retirés ; le paramètre de
+*Récrit à la validation R2 (R2-1) : la première rédaction gardait une lecture pour avertir, ce que la garde `configuration_transmise.rs` refusait (variable lue mais ni transmise ni affectée).*
+
+- **Retenu** : la variable n'est **plus lue** ; **aucun avertissement** ; son nom disparaît de tout le corpus de la garde
+  `crates/kesh-api/tests/configuration_transmise.rs` (`.env.example`, les deux `docker-compose`, les catalogues i18n, les manuels français,
+  les littéraux du code de production) — le manuel et `.env.example` parlent de « l'ancienne variable de durée d'inactivité » sans la
+  nommer ; le CHANGELOG et le README de `kesh-api`, hors corpus, la nomment ; la garde passe **sans modification** (volets L, T, E, F) ; `Config::refresh_inactivity` et `main.rs:245-251` retirés ; le paramètre de
   `from_fields_for_test` gardé et ignoré.
-- **Écartées** : refuser le démarrage (un `docker-compose` 0.17.x la pose toujours, `${…:-15}` : la mise à jour ne démarrerait pas) ;
-  amorcer le réglage depuis la variable (les gabarits livrés posaient 15 : presque toutes les installations prendraient 15 au lieu des 60
+- **Écartées** : garder une lecture pour avertir (une quatrième sorte d'exception dans la garde, contrôlée dans les deux sens : plus de
+  mécanisme pour un message) ; refuser le démarrage (un `docker-compose` 0.17.x la pose toujours, `${…:-15}` : la mise à jour ne
+  démarrerait pas) ; amorcer le réglage depuis la variable (les gabarits livrés posaient 15 : presque toutes les installations prendraient 15 au lieu des 60
   voulus) ; retirer le paramètre de `from_fields_for_test` dans cette story (78 fichiers, par édition manuelle, sans comportement).
 - **Issue demandée** : retirer le paramètre ignoré de `from_fields_for_test` en un lot mécanique (P3, dette de test).
 - **Réversible** : oui.
@@ -710,8 +717,9 @@ clair) ; *(liste en vigueur : voir la ligne « Validation P5 » ci-dessous, qui 
 
 - **Retenu** : `expires_at` = dernière activité + N ; revendication facultative `idle_exp` du jeton d'accès, contrôlée strictement par
   le middleware (sans les 60 s de `decode`) ; le renouvellement recopie l'échéance ; connexion, assistant, changement de mot de passe :
-  `now + N`. Jetons 0.17.x sans `idle_exp` acceptés jusqu'à leur `exp`. `jwt::encode` inchangé (tests), `encode_session` et
-  `encode_claims` ajoutés.
+  `now + N`. Jetons 0.17.x sans `idle_exp` acceptés jusqu'à leur `exp` (au plus `KESH_JWT_EXPIRY_MINUTES`). Forme : `SessionClaims`,
+  `decode_session`, `encode_session` (échéance obligatoire) et `encode_session_claims` ; `jwt::encode` sous `#[cfg(test)]` ; `Claims`
+  inchangée (C-43).
 - **Écartées** : lire la ligne en base à chaque requête (une requête de plus par appel, un identifiant de session à ajouter au jeton, et
   les jetons forgés de dizaines de tests sans ligne) ; un jeton d'accès de durée N (la tolérance de 60 s le rend inexact, et un battement
   devrait le réémettre de toute façon) ; supprimer la tolérance de `decode` (changerait deux tests et la sémantique de tous les jetons) ;
@@ -750,12 +758,16 @@ clair) ; *(liste en vigueur : voir la ligne « Validation P5 » ci-dessous, qui 
 
 *Précisé à la validation R1 : `dragover`, `drop` (glisser-déposer HTML5) et `input` (dictée, collage, méthodes de saisie) comptent aussi.*
 
-- **Retenu** : `keydown`, `pointerdown`, `pointermove` à coordonnées neuves, `wheel`, `touchstart`, `scroll` (capture), `focus`,
-  `visibilitychange` vers `visible`, `blur` vers un `<iframe>` de la page ; contrôle de l'échéance **avant** d'enregistrer ; le chargement
+*Corrigé à la validation R2 (R2-11) : `scroll` n'est plus écouté, `focus` ne compte que si sa cible est `window`.*
+
+- **Retenu** : `keydown`, `pointerdown`, `pointermove` à coordonnées neuves, `wheel`, `touchstart`, `focus` dont la cible est `window`,
+  `dragover`, `drop`, `input`, `visibilitychange` vers `visible`, `blur` vers un `<iframe>` de la page ; contrôle de l'échéance **avant** d'enregistrer ; le chargement
   d'une page ne compte pas.
 - **Écartées** : `mousemove` sans contrôle de coordonnées (mouvements fictifs du navigateur quand la page bouge sous un pointeur immobile :
   une sonde de fond qui redessine un bandeau prolongerait la session) ; compter le chargement (un navigateur qui rouvre ses onglets au
-  démarrage ferait une activité sans l'utilisateur).
+  démarrage ferait une activité sans l'utilisateur) ; `scroll` (émis sans geste quand un contenu change au-dessus de la vue ou
+  raccourcit — une sonde de fond le pourrait ; le défilement voulu passe par un geste déjà écouté) ; `focus` d'un élément (un `.focus()`
+  programmatique).
 - **Réversible** : oui.
 
 ### C-v0172s-36 — L'aperçu PDF : ce qui est observable, et ce qui ne l'est pas
@@ -800,23 +812,24 @@ clair) ; *(liste en vigueur : voir la ligne « Validation P5 » ci-dessous, qui 
 
 - **Contexte** : l'ancienne fiche se faisait fort de n'en avoir aucune ; un réglage en base en exige une (C-29).
 - **Retenu** : `20261104000001_installation_settings.sql`, `CREATE TABLE` seul ; pas de bump de `kesh_version_min_required` (P1, P3 sans
-  objet) ; audit d'idempotence (P5), couplage positionnel (P6), checksum (P8). **Conséquence pour la production** : la 0.17.1 refuse de
-  démarrer sur une base passée par la 0.17.3 ; le retour passe par la sauvegarde d'avant la mise à jour, ou par `DROP TABLE
+  objet) ; audit d'idempotence (P5), couplage positionnel (P6), checksum (P8). **Conséquence pour la production** : une version
+  antérieure (0.17.2 ou 0.17.1) refuse de démarrer sur une base passée par la 0.17.3 ; le retour passe par la sauvegarde d'avant la mise à jour, ou par `DROP TABLE
   _kesh_installation_settings` **et** la suppression de sa ligne de `_sqlx_migrations`. À écrire au CHANGELOG et à la note de mise à jour.
 - **Écartées** : aucune migration (pas de réglage dans l'interface) ; un bump (rien d'incompatible pour un binaire antérieur, qui
   ignorerait la table s'il démarrait).
 - **Réversible** : par la sauvegarde.
 
-### C-v0172s-41 — Dérogation à la règle de splitting : huit modules, deux lots, revue par lot
+### C-v0172s-41 — Dérogation à la règle de splitting : neuf modules, deux lots, revue par lot
 
 *Reformulé à la validation R1 : neuf modules (`lib/features/setup` ajouté) ; l'exception de la règle ne s'applique pas à la lettre — dérogation déclarée au Project Lead.*
 
-- **Contexte** : modules 1 à 7 de code (kesh-db, kesh-api, kesh-i18n, `lib/shared/utils`, `lib/app/stores`, `lib/features/settings`,
-  `routes`) et la configuration et les textes.
+- **Contexte** (corrigé à la validation R2, R2-7) : modules 1 à 8 de code (kesh-db, kesh-api, kesh-i18n, `lib/shared/utils`,
+  `lib/app/stores`, `lib/features/settings`, `lib/features/setup`, `routes`) et la configuration et les textes ; l'exception de la règle
+  (cycles de dépendance, fusions impossibles à tester) ne s'applique pas à la lettre — dérogation déclarée au Project Lead.
 - **Retenu** : une story ; lot S (serveur) puis lot N (navigateur), un commit de lot et une revue de code par lot.
 - **Écartées** : deux stories — le serveur seul fermerait la session N minutes après la connexion malgré l'activité (seul le battement
   prolonge), le navigateur seul n'aurait rien à appeler ; aucune ne se publie sans l'autre.
-- **Risque accepté** : la validation de fiche porte sur huit modules ; borné par la simplicité de chaque moitié.
+- **Risque accepté** : la validation de fiche porte sur neuf modules ; borné par la simplicité de chaque moitié.
 - **Réversible** : oui.
 
 ### C-v0172s-42 — `KESH_JWT_EXPIRY_MINUTES` reste une variable ; le contournement de #876 à retirer
@@ -852,11 +865,15 @@ clair) ; *(liste en vigueur : voir la ligne « Validation P5 » ci-dessous, qui 
 
 - **Contexte** : `clearSession` ne touche pas les cookies `HttpOnly` ; un rechargement de `/login` rétablissait la session par `hydrate()`
   dès que l'échéance du serveur était plus tardive que celle du navigateur — notamment après un abaissement du réglage.
-- **Retenu** : à l'échéance, `fetch('/api/v1/auth/logout', { method: 'POST', credentials: 'include', keepalive: true, … })` puis
-  `clearSession({ broadcast: false })` et la redirection ; la fin de session est définitive, y compris après un abaissement ; troisième
-  écart de précision écrit (transition après un changement du réglage). Sans `localStorage`, le module bat mais ne ferme pas : la
+- **Retenu** (corrigé à la validation R2, R2-3) : à l'échéance, `await fetch('/api/v1/auth/logout', { method: 'POST', credentials:
+  'include', signal, … })` — abandonné au bout de 2 s —, puis `clearSession({ broadcast: false })` et la redirection vers
+  `/login?reason=idle` ; sur cette page, `hydrate()` ne tente ni `/me` ni `tryRefresh()` (C-48). Ce qui est garanti : la page de fermeture
+  ne rétablit rien ; la ligne est révoquée dès que la déconnexion aboutit. Écart déclaré : déconnexion non aboutie et échéance du serveur
+  plus tardive ⇒ une autre page peut retrouver la session jusqu'à cette échéance. Le cas d'école de l'écart (transition après un
+  changement) est la session de l'Administrateur qui enregistre un abaissement, non un battement (qui aligne onglet, ligne et jeton). Sans `localStorage`, le module bat mais ne ferme pas : la
   déconnexion d'un onglet sans geste couperait la session d'un autre qui travaille ; le serveur ferme alors (message de session expirée).
-- **Écartées** : `authState.logout()` (diffuse `auth-change` et attend la réponse) ; écrire seulement le troisième écart sans déconnecter
+- **Écartées** : `keepalive` sans attente (la page de connexion pouvait joindre le serveur avant la déconnexion et rétablir la session) ;
+  `authState.logout()` (diffuse `auth-change`) ; écrire seulement le troisième écart sans déconnecter
   (la session renaîtrait au rechargement) ; recalculer toutes les lignes à chaque changement du réglage (C-38).
 - **Réversible** : oui.
 
@@ -876,4 +893,12 @@ clair) ; *(liste en vigueur : voir la ligne « Validation P5 » ci-dessous, qui 
   ou `now`, jamais de calcul sur `null`.
 - **Écartées** : champs obligatoires (89 appels de tests à modifier) ; fermer avec une valeur par défaut du navigateur (60) quand N est
   inconnu (le serveur peut avoir 5).
+- **Réversible** : oui.
+
+### C-v0172s-48 — `/login?reason=idle` ne rétablit rien ; aucune activité future (validation R2, R2-3)
+
+- **Retenu** : `hydrate()`, sur `/login` avec `reason=idle`, ne fait ni `/me` ni `tryRefresh()` et laisse l'état nul — le marqueur est
+  l'adresse elle-même, sans stockage ; la conciliation au démarrage et toute écriture de `lastActivity` sont bornées à `now`.
+- **Écartées** : un marqueur `sessionStorage` ou `localStorage` (un état de plus, à effacer au bon moment) ; laisser la conciliation écrire
+  une activité future (avec un N appris plus petit, elle prolongerait tous les onglets).
 - **Réversible** : oui.
