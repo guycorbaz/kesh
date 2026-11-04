@@ -953,10 +953,14 @@ describe('SupplierInvoiceForm — date proposée et échéance qui suit (v0172, 
 			suppliers: [withTerms(1, 'Alpha SA', 30), withTerms(2, 'Beta SA', 10)],
 		});
 		await selectSupplier(container, '1');
-		await setDue(container, '2026-11-20');
+		// 2026-11-23 : aucune des valeurs que le calcul produirait ici (12-05, 12-10, 11-20),
+		// sans quoi le test passerait sous MB6 par coïncidence (constaté à la première
+		// rédaction, qui saisissait 2026-11-20 = 11-10 + 10 jours).
+		await setDue(container, '2026-11-23');
 		await setDate(container, '2026-11-10');
+		expect(dueInput(container).value).toBe('2026-11-23');
 		await selectSupplier(container, '2');
-		expect(dueInput(container).value).toBe('2026-11-20');
+		expect(dueInput(container).value).toBe('2026-11-23');
 	});
 
 	it('AC-B12 — #853 inchangé : échéance 2026-11-01 pour une date 2026-11-05 ⇒ message, rien ne part', async () => {
