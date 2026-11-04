@@ -8,6 +8,18 @@ Le contenu est rédigé en français à destination des **fiduciaires, PME, ind�
 
 ---
 
+## [0.17.2] — Non publié
+
+### Ajouté
+
+- **Une facture fournisseur annulée repasse en brouillon** ([#868](https://github.com/guycorbaz/kesh/issues/868)) : *Repasser en brouillon*, sur sa fiche, retire du journal son écriture d'achat et sa contre-passation — deux trous dans la numérotation, expliqués par le journal d'audit —, sous les gardes de la dévalidation (exercice ouvert, période non verrouillée, aucune écriture rapprochée ni lettrée ailleurs). Le brouillon se corrige et se revalide, ou se supprime. Une facture annulée alors qu'elle était payée ne repasse en brouillon qu'une fois son paiement contre-passé. ⚠️ Les totaux de la période de l'achat et de celle de l'annulation changent (TVA comprise) : verrouillez d'abord une période déjà déclarée. *Refs #868.*
+
+### Modifié
+
+- **Le bouton *Dévalider* d'une facture fournisseur s'appelle *Repasser en brouillon*** et s'affiche aussi sur une facture payée ou annulée ; quand le geste est refusé, le message dit quoi faire d'abord — annuler le règlement, le rapprochement de la transaction du …, ou le lot de paiement n° … ([#868](https://github.com/guycorbaz/kesh/issues/868)). Pour l'API : deux codes neufs, `SUPPLIER_INVOICE_PAID_RECONCILED` et `SUPPLIER_INVOICE_DETACHED_PAYMENT`, et cinq champs de `details` (`docs/api-external.md`). *Refs #868.*
+
+---
+
 ## [0.17.1] — 2026-11-03
 
 La 0.17.1 est une version corrective : **aucune migration**, aucune donnée réécrite, **le retour à la 0.17.0 est possible sans restauration**. La sauvegarde complète d'avant la mise à jour (base, `.keshbackup`, dossier des documents) reste recommandée. Le compose et le `.env` ne changent pas. Le détail est au manuel d'administration, *Passer à la 0.17.1*.

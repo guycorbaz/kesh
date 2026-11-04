@@ -446,7 +446,7 @@ Kesh est en développement actif. Voici la feuille de route publique au \keshRel
     \item « Documents à traiter » : tout document fournisseur, avec ou sans QR-code, avec un aperçu ; la facture se crée à côté de son document, le fournisseur proposé --- jamais choisi d'office --- ou créé sans quitter la saisie.
     \item Un document se joint à une facture après coup, s'en détache, et se voit depuis l'écriture.
     \item La réconciliation propose la facture fournisseur validée pour un débit du relevé, et la règle.
-    \item Depuis la v0.17.0, une facture fournisseur naît en brouillon, se corrige, puis se valide~; validée et non payée, elle se dévalide pour être corrigée, sans annulation ni contre-passation.
+    \item Depuis la v0.17.0, une facture fournisseur naît en brouillon, se corrige, puis se valide~; validée et non payée, elle repasse en brouillon pour être corrigée, sans contre-passation ; annulée par erreur, elle y repasse aussi depuis la v0.17.2.
 \end{itemize}
 
 \vspace{0.4cm}

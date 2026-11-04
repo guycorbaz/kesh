@@ -409,7 +409,81 @@ test.describe('Cycle brouillon → validée → payée (étapes par l’écran, 
 			await expect(page.getByTestId('reconciliation-success')).toBeVisible();
 			await page.goto(`/supplier-invoices/${id}`);
 			await expect(page.getByTestId('supplier-invoice-status')).toHaveText('Payée');
-			await expect(page.getByTestId('supplier-invoice-unvalidate')).toHaveCount(0);
+			// Story v0172-annulees (#868, AC-13 parcours 3) : *Repasser en brouillon* se
+			// propose sur une payée ; payée par la réconciliation, le clic part sans boîte et
+			// le refus dit d'annuler le rapprochement, en nommant la transaction par sa date.
+			await expect(page.getByTestId('supplier-invoice-unvalidate')).toHaveText('Repasser en brouillon');
+			await page.getByTestId('supplier-invoice-unvalidate').click();
+			await expect(page.getByTestId('supplier-invoice-unvalidate-error')).toContainText(
+				"Cette facture fournisseur est payée par la transaction bancaire du 20.07.2026 : annulez d'abord ce rapprochement",
+			);
+			await expect(page.getByTestId('supplier-invoice-unvalidate-dialog')).toHaveCount(0);
+			await expect(page.getByTestId('supplier-invoice-status')).toHaveText('Payée');
+		} finally {
+			await disposeContextSafe(ctx);
+		}
+	});
+
+	test('une facture annulée repasse en brouillon puis se supprime ; une payée depuis la fiche dit d’annuler son règlement (v0172-annulees)', async ({
+		page,
+	}) => {
+		await login(page);
+		const bankAccountId = await wiredBankAccountViaApi(page, TEST_IBAN);
+		const ctx = await authedApiContext(page);
+		try {
+			const d = await decor(ctx);
+			// 1. Une facture saisie, validée, annulée (par l'API) ; sa fiche porte le geste.
+			const res = await ctx.post('/api/v1/supplier-invoices', {
+				data: body(d.supplierId, d.right, '23.40', `FF-ANN-BR-${token()}`),
+			});
+			expect(res.status()).toBe(201);
+			const draft = await res.json();
+			const val = await ctx.post(`/api/v1/supplier-invoices/${draft.id}/validate`, {
+				data: { version: draft.version },
+			});
+			expect(val.status(), await val.text()).toBe(200);
+			const achat = (await val.json()).purchaseJournalEntryId as number;
+			const cancelled = await ctx.post(`/api/v1/supplier-invoices/${draft.id}/cancel`);
+			expect(cancelled.status(), await cancelled.text()).toBe(200);
+			await page.goto(`/supplier-invoices/${draft.id}`);
+			await expect(page.getByTestId('supplier-invoice-status')).toHaveText('Annulée');
+			await page.getByTestId('supplier-invoice-unvalidate').click();
+			const dialog = page.getByTestId('supplier-invoice-unvalidate-dialog');
+			await expect(dialog).toContainText('deux trous');
+			await expect(dialog).toContainText('Repasser la facture en brouillon ?');
+			await page.getByTestId('supplier-invoice-unvalidate-confirm').click();
+			await expect(page.getByTestId('supplier-invoice-status')).toHaveText('Brouillon');
+			await expect(page.getByTestId('supplier-invoice-edit')).toBeVisible();
+			// Les deux écritures sont parties.
+			expect((await ctx.get(`/api/v1/journal-entries/${achat}`)).status()).toBe(404);
+			// 2. Administrateur : le brouillon se supprime.
+			await page.getByTestId('supplier-invoice-delete').click();
+			await expect(page.getByTestId('supplier-invoice-delete-dialog')).toBeVisible();
+			await page.getByTestId('supplier-invoice-delete-confirm').click();
+			await expect(page).toHaveURL(/\/supplier-invoices$/);
+			expect((await ctx.get(`/api/v1/supplier-invoices/${draft.id}`)).status()).toBe(404);
+
+			// 3. Payée depuis la fiche : le clic part sans boîte ; le refus dit d'annuler le
+			//    règlement.
+			const res2 = await ctx.post('/api/v1/supplier-invoices', {
+				data: body(d.supplierId, d.right, '31.10', `FF-PAY-BR-${token()}`),
+			});
+			const draft2 = await res2.json();
+			const val2 = await ctx.post(`/api/v1/supplier-invoices/${draft2.id}/validate`, {
+				data: { version: draft2.version },
+			});
+			expect(val2.status(), await val2.text()).toBe(200);
+			const paid = await ctx.post(`/api/v1/supplier-invoices/${draft2.id}/pay`, {
+				data: { settlementType: 'bank_transfer', bankAccountId, paymentDate: '2026-05-20' },
+			});
+			expect(paid.status(), await paid.text()).toBe(200);
+			await page.goto(`/supplier-invoices/${draft2.id}`);
+			await expect(page.getByTestId('supplier-invoice-status')).toHaveText('Payée');
+			await page.getByTestId('supplier-invoice-unvalidate').click();
+			await expect(page.getByTestId('supplier-invoice-unvalidate-error')).toContainText(
+				"annulez d'abord son règlement",
+			);
+			await expect(page.getByTestId('supplier-invoice-unvalidate-dialog')).toHaveCount(0);
 		} finally {
 			await disposeContextSafe(ctx);
 		}
@@ -537,8 +611,12 @@ test.describe('Cycle brouillon → validée → payée (étapes par l’écran, 
 			await page.goto(`/supplier-invoices/${lotDraft.id}`);
 			await page.getByTestId('supplier-invoice-unvalidate').click();
 			await page.getByTestId('supplier-invoice-unvalidate-confirm').click();
+			// Story v0172-annulees (AC-8) : le refus nomme le lot.
 			await expect(page.getByTestId('supplier-invoice-unvalidate-error')).toContainText(
-				'Cette facture figure dans un lot de paiement en cours : annulez d\'abord le lot.',
+				"Cette facture figure dans le lot de paiement n° ",
+			);
+			await expect(page.getByTestId('supplier-invoice-unvalidate-error')).toContainText(
+				"annulez d'abord ce lot, dans Paiements fournisseurs, puis repassez-la en brouillon.",
 			);
 			await expect(page.getByTestId('supplier-invoice-status')).toHaveText('Validée');
 			await capture(page, testInfo, 'refus-devalidation');
