@@ -7,10 +7,10 @@ remplacée à la validation P3. **Visée pour la 0.17.3** sur décision du Proje
 fixé la durée : « 60 minutes : 15 est trop court : je me fais régulièrement éjecter alors que je suis en train de travailler et que je
 consulte des documents. » Le changement d'exigence est porté par le **CR #891** (FR13 : 60 minutes au lieu de 15). Worktree
 `/home/gcorbaz/devel/kesh-0172s`, branche `story/v0172-session`, partie de `1be0f701`. Clé courte : `v0172s`. Registre :
-`v0172-choix-autonomes.md`, section `v0172s` ; **en vigueur : C-v0172s-14, 16, 17, 20, 21, 22 à 25** (C-v0172s-1 à 13 : première
-conception, écartée ; C-v0172s-15 : conception actuelle ; C-v0172s-18 et 19 : **retirés** à la validation P4). Issues : **#876** (bug,
+`v0172-choix-autonomes.md`, section `v0172s` ; **en vigueur : C-v0172s-14 à 17, 20 à 24, 26, 27** (C-v0172s-1 à 13 : première
+conception, écartée ; C-v0172s-18 : retiré à la validation P4 ; C-v0172s-19 et 25 : remplacés à la validation P5 par C-v0172s-26). Issues : **#876** (bug,
 P2), **#891** (CR), en `refs` seulement. Numéros de ligne de `1be0f701` (le code applicatif est celui de `d7ec2ea2`). La prochaine passe
-de validation est la **P5**, complète.*
+de validation est la **P6**, complète ; la boucle approche du plafond de huit passes (`CLAUDE.md`).*
 
 ## Story
 
@@ -27,11 +27,19 @@ schéma, jetons de même format). Pas de P5, P6, P7.
 
 **Modules** (règle de splitting) : (1) `crates/kesh-api` — `config.rs` (défaut et règle de l'inactivité), `routes/auth.rs` (grâce de
 rotation), `routes/admin.rs` (révocation après restauration complète) ; (2) `crates/kesh-db/src/repositories/refresh_tokens.rs` (deux
-requêtes) ; (3) `frontend/src/lib/shared/utils/api-client.ts` (option `background`, `get(url, call?)`) ; (4)
+requêtes) ; (3) `frontend/src/lib/shared/utils/api-client.ts` (option `background`, `get(url, call?)`, `tryRefresh()`) et
+`frontend/src/lib/app/stores/auth.svelte.ts` (`hydrate()`, un appel) ; (4)
 `frontend/src/lib/features/admin-backup/` (`BackupScheduleBanner.svelte`, `backup-schedule.svelte.ts`, `backup-schedule.api.ts`, et leurs
-tests) ; (5) la configuration livrée (`.env.example`, `docker-compose.yml`, `docker-compose.prod.yml`), les manuels FR et le PRD
-(`_bmad-output/planning-artifacts/prd.md`, `epics.md`, CR #891). **Cinq.** Une modification de `repositories/` impose le gate complet en
-cours de boucle (`CLAUDE.md`, exception `kesh-db`).
+tests) ; (5) la configuration livrée et sa documentation (`.env.example`, `docker-compose.yml`, `docker-compose.prod.yml`,
+`crates/kesh-api/README.md`), les manuels FR, le PRD (`_bmad-output/planning-artifacts/prd.md`, `epics.md`, CR #891) et
+`docs/kesh-specifications.txt`. Une modification de `repositories/` impose le gate complet en cours de boucle (`CLAUDE.md`, exception
+`kesh-db`).
+
+**Dérogation règle de splitting** (C-v0172s-27) : au sens strict de la règle, le frontend touche deux modules de premier niveau
+(`lib/shared/utils`, `lib/app/stores`), soit **six** en tout. *Justification* : le changement d'`auth.svelte.ts` est un appel
+(`hydrate()` → `tryRefresh()`), indissociable de la fonction qu'il appelle ; séparer les deux en deux stories livrerait l'une sans l'autre
+ou ferait dépendre l'une de l'autre au merge. *Risque accepté* : une revue sur six modules ; il est borné par la taille du changement
+frontend (une fonction extraite de `doRefresh`, un appel, une option) et par le gate complet imposé par le repository.
 
 ## Ce que le code dit (1be0f701)
 
@@ -95,12 +103,26 @@ cours de boucle (`CLAUDE.md`, exception `kesh-db`).
    transmet ; `refreshBackupScheduleState(call?)` (`backup-schedule.svelte.ts:49`) aussi ; **le site de la minuterie**
    (`BackupScheduleBanner.svelte:34`) passe `{ background: true }`, celui du montage (`:33`) rien. Sans cela, la lecture de 30 minutes,
    sous une inactivité de 60, renouvellerait indéfiniment une session laissée sur un écran d'administration.
-5. **La restauration complète révoque toutes les sessions** (C-v0172s-23) : dans la transaction d'import, **après** `restore_tables_in_tx`
-   et la garde de comptage, `refresh_tokens::revoke_all_in_tx(&mut tx, "full_import")` (`UPDATE refresh_tokens SET revoked_at = NOW(3),
-   revoked_reason = ? WHERE revoked_at IS NULL`) ; le commit les emporte avec le reste. `sessionInvalidated: true` redevient vrai ; un
-   cookie d'une ligne de la sauvegarde rend `401` (« token revoked », motif distinct de `"rotation"` : pas de détection de vol). Le rejeu
-   des backfills et la garde de comptage ne voient pas cette mise à jour (elle est postérieure ; aucun backfill ne lit `refresh_tokens`,
-   le développeur le vérifie : `git grep -n refresh_tokens crates/kesh-db/src/post_restore.rs`).
+5. **La restauration complète révoque toutes les sessions** (C-v0172s-23) : dans la transaction d'import, **juste avant** le
+   `SELECT MIN(id) FROM users WHERE role = 'Admin'` (`routes/admin.rs:488-492`) — donc après `restore_tables_in_tx` (`:422-425`), la garde
+   de comptage (`:436`), le rejeu des backfills 5-bis (`:452-`) et le backfill 5-ter (`:464-`), et avant le refus « aucun compte Admin »
+   (`:493-497`), la réparation 5-quater, l'audit et le commit — `refresh_tokens::revoke_all_in_tx(&mut tx, "password_change")`
+   (`UPDATE refresh_tokens SET revoked_at = NOW(3), revoked_reason = ? WHERE revoked_at IS NULL`) ; le commit les emporte avec le reste.
+   **Le motif** est `"password_change"`, non un motif neuf : la contrainte `chk_refresh_tokens_revoked_reason`
+   (`20260406000001_refresh_tokens_revoked_reason.sql` ; `test-schema/0001_schema_squash.sql:1187`) n'admet que `logout`, `rotation`,
+   `password_change`, `admin_disable`, `theft_detected`, et un motif neuf exigerait une migration (`ALTER … CHECK`), que la story exclut.
+   Le précédent du dépôt a tranché deux fois de même : la réinitialisation du mot de passe par courriel (`routes/auth.rs:964-969`) et le
+   recours d'urgence (`auth/bootstrap.rs:355-364`) réutilisent `"password_change"` et portent la distinction dans `audit_log.action`.
+   Ici aussi : l'import **remplace** les empreintes de mot de passe par celles de la sauvegarde — c'est sémantiquement un changement de
+   mot de passe pour chaque compte ; la distinction est portée par l'audit `admin.full_import`. `"admin_disable"` est écarté : il désigne
+   la désactivation d'**un** compte (`routes/users.rs:366, :442`) et le lire après un import égarerait. Sonde des appelants :
+   `git grep -nE '"(logout|rotation|password_change|admin_disable|theft_detected)"' -- crates/kesh-api/src` (`auth.rs:306, :382, :418, :515,
+   :969`, `bootstrap.rs:364`, `users.rs:366, :442, :493`) ; aucun ne lit le motif hors `auth.rs:379` (`== "rotation"`). Un cookie d'une
+   ligne de la sauvegarde rend donc `401` (« token revoked » : motif ≠ `rotation`, pas de détection de vol). `sessionInvalidated: true`
+   redevient vrai. Aucun des traitements de la transaction ne lit `refresh_tokens` (le développeur le vérifie : `git grep -n
+   refresh_tokens crates/kesh-db/src/post_restore.rs crates/kesh-db/src/backfill.rs crates/kesh-api/src/routes/admin.rs`), si bien que
+   l'ordre ne change rien à leur résultat. Le commentaire `routes/admin.rs:180-182` est mis à jour (« l'import remplace puis **révoque**
+   les `refresh_tokens` »).
 6. **La borne d'inactivité** (C-v0172s-21) : *requête* = toute requête API de l'utilisateur (non de fond). La dernière à `a`, le dernier
    renouvellement à `r ≤ a`. Une requête faite pendant que le jeton d'accès vit ne prolonge rien ; une requête après renouvelle. La
    session prend fin **entre `N − jwt` et `N` après la dernière requête** (`N` = inactivité appliquée) : défauts 60/15, **entre 45 et
@@ -113,15 +135,26 @@ cours de boucle (`CLAUDE.md`, exception `kesh-db`).
    n'ait reposé les cookies — deux requêtes de l'utilisateur, dans deux onglets, à quelques millisecondes d'intervalle, juste après
    l'échéance du jeton d'accès —, le second reçoit 401 et **cet onglet** revient à la connexion (sa saisie non enregistrée est perdue) ;
    l'autre onglet et les autres appareils continuent. La fiche ne la déclare **pas** fermée. Les lectures de fond ne renouvelant plus
-   (§ 4), il faut deux gestes de l'utilisateur quasi simultanés.
-8. **Retirés à la validation P4** (C-v0172s-18, 19, 25) : (a) le **repli `GET /auth/me`** après un refus de renouvellement — un seul
-   `/me` ne fermait pas la course (finding P5 : le 401 du second peut précéder le `Set-Cookie` du premier), et le fermer demandait une
-   attente et un second essai ; la grâce suffit à l'essentiel (pas de révocation générale), le reste est déclaré au § 7 ; (b) le
-   **renouvellement silencieux dans `hydrate()`** — sans rapport avec le défaut (qui frappe un utilisateur en train de travailler), et
-   il introduisait la présentation de cookies périmés au démarrage (finding P14) et un risque de boucle entre onglets (finding P13).
-   Conséquence déclarée : **ouvrir un nouvel onglet, ou recharger la page, plus de 15 minutes après la dernière requête demande de se
-   reconnecter**, même si la session vivrait encore dans un onglet ouvert — comportement 0.17.1, inchangé ; à porter en demande séparée
-   si le Project Lead le souhaite (C-v0172s-25).
+   (§ 4), il faut deux gestes de l'utilisateur quasi simultanés. Écrite au manuel utilisateur (`:95`) et d'administration (`:2997`).
+8. **Retiré à la validation P4** (C-v0172s-18) : le **repli `GET /auth/me`** après un refus de renouvellement — un seul `/me` ne fermait
+   pas la course (le 401 du second peut précéder le `Set-Cookie` du premier) ; la grâce suffit à l'essentiel, le reste est déclaré au § 7.
+8 bis. **Le renouvellement au démarrage, sous forme minimale** (C-v0172s-26, rétabli à la validation P5) : sans lui, un rechargement
+   ou un nouvel onglet renvoie à la connexion **dès l'échéance du jeton d'accès posé au dernier renouvellement** — parfois quelques
+   secondes après la dernière action (connexion à 09:00, travail jusqu'à 09:14 sans renouvellement, F5 à 09:16 : `/me` sans cookie
+   d'accès, page de connexion), c'est-à-dire le symptôme même du CR #891. Forme retenue : `api-client.ts` extrait de `doRefresh` une
+   fonction **`tryRefresh(): Promise<boolean>`**, sous le **même mutex d'onglet** (`refreshPromise`, `:67-69`, `:185-192`), qui fait le
+   `POST /auth/refresh` puis le `GET /auth/me` et pose l'état par `authState.login(…, { broadcast: false })` en cas de succès, et rend
+   `false` **sans rien effacer ni rediriger** en cas d'échec ; le chemin 401 de `request`/`requestRaw` appelle `tryRefresh()` et, sur
+   `false`, fait lui-même `clearSession()` et la redirection (comportement actuel, inchangé). `hydrate()` (`auth.svelte.ts:229-265`), sur un
+   401 de `/me`, appelle **une fois** `tryRefresh()` — importé dynamiquement (`await import('$lib/shared/utils/api-client')`), pour ne pas
+   créer à l'initialisation l'import circulaire `api-client` ↔ `auth.svelte` — ; succès : l'état est posé ; échec : état nul, **sans**
+   `clearSession()` diffusé, **sans** redirection (`hooks.client.ts:22` appelle `hydrate()` au démarrage de toute page, `/login`
+   compris). **Pourquoi P13 à P15 de la validation P4 ne reviennent pas** : aucune issue d'`hydrate()` ne diffuse `auth-change`, donc
+   aucun onglet ne relance celui d'un autre (P13), et le mutex partagé interdit deux renouvellements concurrents dans un onglet ; le
+   cookie périmé (P14) — un jeton déjà tourné dont la réponse a été perdue — serait de toute façon présenté au premier 401 du chemin
+   existant, avec la même conséquence (détection de vol, reconnexion sur tous les appareils) : `hydrate()` ne l'expose pas davantage ;
+   la raison écrite pour l'absence de redirection est désormais la bonne (P15 : c'est `hooks.client.ts`, non la page de connexion, qui
+   appelle `hydrate()`).
 9. **Écartée** (C-v0172s-15) : la première conception (renouvellement anticipé à chaque entrée, verrous, module armé, suspension).
 
 ## Acceptance Criteria
@@ -146,26 +179,42 @@ jeton) ; détection de vol inchangée (toutes les lignes révoquées) — raison
 (`:1647-`) : son cas 3 passe désormais par la grâce ; un **cas 4** (même rejeu, `revoked_at` reculé de 60 s, chemin du vol) est ajouté, et
 les quatre codes restent identiques. **Rouges avant correctif** : (a) ; (b) et (c) verts avant, et doivent le rester après.
 
-**AC-4 — La restauration complète révoque tout.** `admin_full_import_e2e.rs` : avant l'import, une ligne active de `refresh_tokens`
+**AC-4 — La restauration complète révoque tout.** `admin_full_import_e2e.rs` : (a) avant l'import, une ligne active de `refresh_tokens`
 présente **dans la sauvegarde** (export fait après une connexion, puis import de cet export) ; après l'import : `SELECT COUNT(*) FROM
-refresh_tokens WHERE revoked_at IS NULL` = 0, toutes les lignes portent `revoked_reason = 'full_import'` ; un `POST /auth/refresh` avec le
-cookie de cette ligne rend 401 ; un import qui échoue (garde de comptage, ou erreur simulée après la révocation) **ne révoque rien** (la
-transaction est annulée). `sessionInvalidated: true` inchangé (`admin_full_import_e2e.rs:326`, `admin_backup_e2e.rs:814`). **Rouge avant
+refresh_tokens WHERE revoked_at IS NULL` = 0 ; les lignes **auparavant actives** portent `revoked_reason = 'password_change'` (les lignes
+déjà révoquées gardent leur motif d'origine) — l'import réussit, ce qui prouve que le motif passe la contrainte CHECK ; un `POST
+/auth/refresh` avec le cookie de cette ligne rend 401 ; (b) **échec après la révocation** : une archive dont la table `users` ne contient
+**aucun** Admin (le refus `admin.rs:493-497`, levé après le point de révocation) — l'import échoue (`AdminFullImportFailed`), la
+transaction est annulée, et les lignes actives de la **destination** (la session du test, connectée avant l'import) sont **toujours
+actives**, aucune n'est révoquée. `sessionInvalidated: true` inchangé (`admin_full_import_e2e.rs:326`, `admin_backup_e2e.rs:814`). **Rouge avant
 correctif** (la ligne restaurée est active).
 
 **AC-5 — Les lectures de fond.** `api-client.test.ts` : `background: true` + 401 ⇒ **aucun** `POST /auth/refresh`, rejet
 `UNAUTHENTICATED`, pas d'effacement ni de redirection ; sans l'option, renouvellement (existant). `BackupScheduleBanner.test.ts`
 (minuteries simulées) : la lecture du montage appelle `fetchBackupSchedule` **sans** `background`, celle qui suit `REFRESH_MS` **avec**
-`{ background: true }`. `backup-schedule.api.test.ts:55` : `fetchBackupSchedule(call)` transmet l'option à `apiClient.get`. Les autres
-appelants (`AutoBackupSection.svelte:145, :213`) inchangés. **Rouges avant correctif.**
+`{ background: true }`. `backup-schedule.api.test.ts` : un cas neuf, `fetchBackupSchedule({ background: true })` transmet l'option à
+`apiClient.get` ; **l'assertion existante `:56-57`** (`toHaveBeenNthCalledWith(1, '/api/v1/admin/backup-schedule')`) devient
+`toHaveBeenNthCalledWith(1, '/api/v1/admin/backup-schedule', undefined)` (le second argument est désormais transmis, absent) — raison au
+Change Log. Les autres appelants (`AutoBackupSection.svelte:145, :213`) inchangés. **Rouges avant correctif.**
+
+**AC-5 bis — Le renouvellement au démarrage.** `auth.svelte.test.ts` : (1) `hydrate()`, `GET /auth/me` 401, `POST /auth/refresh` 200,
+`GET /auth/me` 200 ⇒ `currentUser` peuplé, `authBroadcast.postMessage` **non appelé** ; (2) refresh 401 ⇒ `currentUser` nul,
+`window.location.replace` **non appelé**, `postMessage` non appelé ; (3) concurrent : un chemin 401 en vol dans l'onglet et `hydrate()` ⇒
+**un seul** `POST /auth/refresh`. Les tests existants d'`hydrate` qui attendent un seul `fetch` sur 401 reçoivent le simulacre du refresh
+(401) — nommés au Change Log. `api-client.test.ts` : les six tests du chemin 401 (`:205, :246, :270, :327, :488, :567`) restent verts
+(l'effacement et la redirection passent de `doRefresh` à l'appelant, comportement identique). **Rouges avant correctif** : (1), (3).
 
 **AC-6 — Recette sur une installation de dev.** `kesh_v0172s`, backend `KESH_JWT_EXPIRY_MINUTES=1`, `KESH_REFRESH_INACTIVITY_MINUTES=3` :
 (a) taper dans un brouillon **1 min 30 s** sans enregistrer, puis enregistrer : réussite (au journal : `refresh successful`) ; (b) rien
-pendant 3 min 30 s, puis un clic : retour à la connexion ; (c) deux onglets, une action dans chacun à quelques secondes d'intervalle
-après l'échéance du jeton d'accès : aucune déconnexion, aucune ligne `token replay detected` ; (d) restauration complète d'un export fait
+pendant 3 min 30 s, puis un clic : retour à la connexion ; (c) deux onglets ouverts, une action dans chacun à quelques secondes
+d'intervalle après l'échéance du jeton d'accès : **les deux restent connectés** (le cas n'exerce **pas** la grâce — le second onglet
+trouve déjà le cookie neuf ; la grâce est établie par AC-3) ; (c bis) une action, puis **recharger la page** 1 min 30 s plus tard (jeton
+d'accès échu, session vivante) : la page se recharge connectée (renouvellement au démarrage) ; (d) restauration complète d'un export fait
 dans la séance : après l'import, `refresh_tokens` n'a plus de ligne active (requête en lecture sur `kesh_v0172s`) ; (e) la durée
-appliquée se lit sur une ligne neuve : `SELECT TIMESTAMPDIFF(MINUTE, created_at, expires_at) FROM refresh_tokens ORDER BY id DESC LIMIT 1`
-rend 3 ; avec `KESH_REFRESH_INACTIVITY_MINUTES=1` et jwt 1, l'avertissement apparaît au démarrage et la requête rend 2. Déroulé au Dev
+appliquée se lit sur une ligne neuve, **arrondie en secondes** (`created_at` est posé par la base à l'`INSERT`, quelques millisecondes
+après le calcul d'`expires_at`, `routes/auth.rs:254-262` : une troncature en minutes rendrait `N − 1`) : `SELECT
+ROUND(TIMESTAMPDIFF(SECOND, created_at, expires_at) / 60) FROM refresh_tokens ORDER BY id DESC LIMIT 1` rend 3 ; avec
+`KESH_REFRESH_INACTIVITY_MINUTES=1` et jwt 1, l'avertissement apparaît au démarrage et la requête rend 2. Déroulé au Dev
 Agent Record.
 
 **AC-7 — Les textes disent vrai.** Le § *Manuel* (PDF compris), les commentaires de `.env.example`, le PRD et les epics (§ *PRD*).
@@ -179,14 +228,19 @@ Agent Record.
 | T3 | grâce de rotation (AC-3) | (a) rouge ; (b), (c) verts |
 | T4 | restauration complète (AC-4) | rouge |
 | T5 | lectures de fond (AC-5) | rouge |
+| T6 | renouvellement au démarrage (AC-5 bis) | (1), (3) rouges ; (2) vert |
 
 **Mutations nommées (P2)** — sous le verrou de gate ; après une restauration par `cp`/`mv`, toucher le fichier :
 - **M1** — défaut rétabli à 15 : T1 rougit.
 - **M2** — `effective_refresh_inactivity` rend la valeur lue : T1 (cas 15/15 et tests de la fonction) rougit.
 - **M3** — grâce portée à 0 s : T3 (a) rougit.
 - **M4** — grâce sans borne : T3 (b) et le cas 4 de (c) rougissent.
-- **M5** — la révocation après restauration retirée : T4 rougit ; **M5 bis** — révocation hors de la transaction (sur le pool, avant le
-  commit) : le cas « import qui échoue ne révoque rien » de T4 rougit.
+- **M5** — la révocation après restauration retirée : T4 (a) rougit ; **M5 bis** — la révocation déplacée **avant l'ouverture** de la
+  transaction d'import, sur le pool (aucun verrou n'est encore tenu : la mutation s'exécute sans attente mutuelle) : T4 (b) rougit (les
+  lignes de la destination sont révoquées alors que l'import échoue), et T4 (a) aussi (les lignes restaurées sont réinsérées actives).
+- **M7** — `hydrate()` sans `tryRefresh()` : T6 (1ᵉʳ cas) rougit ; **M7 bis** — succès posé par `login()` **avec** diffusion : T6
+  (« `postMessage` non appelé ») rougit ; **M7 ter** — échec suivi de `clearSession()` diffusé ou d'une redirection : T6 (2ᵈ cas) rougit ;
+  **M7 quater** — `tryRefresh()` hors du mutex : T6 (cas concurrent) rougit.
 - **M6** — l'option `background` ignorée dans `request` : T5 (`api-client.test.ts`) rougit ; **M6 bis** — l'argument retiré au site de
   la minuterie (`BackupScheduleBanner.svelte:34`) : T5 (`BackupScheduleBanner.test.ts`) rougit.
 
@@ -196,13 +250,15 @@ Agent Record.
 2. Serveur : `config.rs` (défaut, `effective_refresh_inactivity`, avertissement), `routes/auth.rs` (grâce), `routes/admin.rs`
    (révocation dans la transaction d'import), `repositories/refresh_tokens.rs` (`was_rotated_within`, `revoke_all_in_tx`) ; tests, dont
    la mise à jour de `refresh_replay_after_rotation_revokes_all` et le cas 4.
-3. Frontend : `api-client.ts` (`background`, `get(url, call?)`), `backup-schedule.api.ts`, `backup-schedule.svelte.ts`,
-   `BackupScheduleBanner.svelte:34` ; tests.
+3. Frontend : `api-client.ts` (`background`, `get(url, call?)`, `tryRefresh()` extrait de `doRefresh`), `auth.svelte.ts` (`hydrate()`),
+   `backup-schedule.api.ts`, `backup-schedule.svelte.ts`, `BackupScheduleBanner.svelte:34` ; tests.
 4. Configuration livrée : `.env.example:160` (60) et ses commentaires `:159` (« inactivité, comptée depuis le dernier renouvellement, au
    moins le double de `KESH_JWT_EXPIRY_MINUTES` ; défaut 60 ») et `:130` (« durée de vie du **cookie** de renouvellement ; aucune durée
-   absolue pour un utilisateur actif ») ; `docker-compose.yml:85`, `docker-compose.prod.yml:94`.
+   absolue pour un utilisateur actif ») ; `docker-compose.yml:85`, `docker-compose.prod.yml:94` ; `crates/kesh-api/README.md:41` (défaut
+   60, au moins le double du jeton d'accès), `:161` (« 60 min d'inactivité par défaut »), `:179` (« sliding expiration de 60 min par
+   défaut » : le risque du jeton stocké en clair, que justifiait une durée courte, est plus grand — C-v0172s-14) ; `:160` reste vrai.
 5. PRD (§ *PRD*) ; manuels et PDF ; CHANGELOG.
-6. Mutations M1–M6 bis ; AC-6 (recette).
+6. Mutations M1–M7 quater ; AC-6 (recette).
 7. Gates : `cargo fmt --all -- --check`, `cargo clippy --workspace --all-targets -- -D warnings`, `scripts/test-fast.sh` (sous
    `flock /home/gcorbaz/devel/kesh-gate-logs/.gate.lock` et `mem-guard`), `cd frontend && npm run check && npm run lint-i18n-ownership &&
    npm run test:unit && npm run build`, E2E complet au **dernier commit de code** (7 à 10 échecs attendus) ; base remise à zéro avant
@@ -218,6 +274,11 @@ Agent Record.
   (renvoi à #891).
 - Le développeur greppe la valeur (`grep -nE '\b15 min(utes)?\b' _bmad-output/planning-artifacts/{prd,epics}.md`) et trie les
   occurrences (fenêtre de limitation des connexions, `epics.md:617`, hors classe).
+- **`docs/kesh-specifications.txt`**, copie des spécifications : `:278` (« expiration 15 min d'inactivité »), `:389` et `:2144` (FR13),
+  `:2690` (story 1.6) — **mises à jour** de même, avec le renvoi à #891 ; hors classe : `:71`, `:374`, `:1439`, `:2129`, `:2625` (installation
+  et prise en main en 15 minutes), `:392`, `:2147`, `:2691` (limitation des connexions), `:806`, `:2362`, `:2679` (durée du jeton d'accès,
+  inchangée). Si le fichier est engendré (le développeur le vérifie : `git log --format=%s -5 -- docs/kesh-specifications.txt`), le
+  regénérer plutôt que l'éditer.
 
 ## Manuel
 
@@ -246,7 +307,7 @@ passage au tableau de `:1192`, `:1361`, `:2292` et `:2322`.)*
 
 | Site | Ce qu'il dit | Prescrit |
 |---|---|---|
-| `user-manual.tex:95` | « La session reste active 15 minutes, prolongée automatiquement à chaque action … Après 15 minutes sans activité » | la session se prolonge tant que vous travaillez dans Kesh ; elle prend fin, avec les réglages par défaut, **entre 45 et 60 minutes après votre dernière action qui interroge le serveur** (ouvrir un écran, enregistrer, chercher) ; une saisie ou une lecture sans enregistrer est sûre tant qu'elle dure moins de 45 minutes ; **ouvrir un nouvel onglet ou recharger la page plus de 15 minutes après votre dernière action demande de vous reconnecter** ; la durée se règle par `KESH_REFRESH_INACTIVITY_MINUTES` |
+| `user-manual.tex:95` | « La session reste active 15 minutes, prolongée automatiquement à chaque action … Après 15 minutes sans activité » | la session se prolonge tant que vous travaillez dans Kesh ; elle prend fin, avec les réglages par défaut, **entre 45 et 60 minutes après votre dernière action qui interroge le serveur** (ouvrir un écran, enregistrer, chercher) ; une saisie ou une lecture sans enregistrer est sûre tant qu'elle dure moins de 45 minutes ; recharger la page ou ouvrir un nouvel onglet ne déconnecte pas tant que la session vit ; deux onglets qui interrogent le serveur à la même seconde, juste après l'échéance du jeton d'accès, peuvent ramener **l'un** d'eux à la connexion (rare) ; la durée se règle par `KESH_REFRESH_INACTIVITY_MINUTES` |
 | `user-manual.tex:106` | après la **récupération** par courriel : « toutes vos sessions ouvertes … ont été déconnectées » | « … ne peuvent plus être renouvelées : elles prennent fin au plus tard après la durée du jeton d'accès (15 minutes par défaut) » (`routes/auth.rs:969`) |
 | `user-manual.tex:119` | « Tous les refresh tokens de votre session actuelle sont révoqués » | la déconnexion révoque le jeton de renouvellement **de cette session** (`routes/auth.rs:306`, `revoke_by_token`) ; les autres appareils restent connectés |
 | `admin-manual.tex:111` | « compensée par rafraîchissement automatique côté frontend » | « renouvelé à la première requête après son échéance » |
@@ -255,10 +316,10 @@ passage au tableau de `:1192`, `:1361`, `:2292` et `:2322`.)*
 | `:779` | `KESH_REFRESH_INACTIVITY_MINUTES` ; défaut `15` | défaut **60** ; au moins le double de `KESH_JWT_EXPIRY_MINUTES` (sinon porté au double, avertissement au démarrage) ; fin de session entre `inactivité − jeton d'accès` et `inactivité` après la dernière requête ; un `.env` antérieur à 15 donne 30 ; session courte : réduire les deux (p. ex. 7 et 15) |
 | `:1192`, `:1361` | révocation des sessions à la réinitialisation / au recovery : « déconnectées » | même précision que `user-manual.tex:106` |
 | `:1446`, `:2360`, `:2506` | « au plus sa durée plus une minute » / « la durée de session plus une minute » | « au plus la durée du **jeton d'accès** (`KESH_JWT_EXPIRY_MINUTES`) plus une minute » — c'est lui qui porte la société |
-| `:2292`, `:2322` | « votre session est invalidée » ; « la session est déjà invalidée » | **vrai après correctif** : l'import révoque tous les jetons de renouvellement (§ 9, C-v0172s-23) ; ajouter « toutes les sessions, de tous les utilisateurs, sont fermées ; chacun se reconnecte » |
+| `:2292`, `:2322` | « votre session est invalidée » ; « la session est déjà invalidée » | **vrai après correctif** : l'import révoque tous les jetons de renouvellement (§ 5 de la conception, C-v0172s-23) ; ajouter « les sessions de tous les utilisateurs ne peuvent plus être renouvelées : elles prennent fin au plus tard à l'échéance de leur jeton d'accès (15 minutes par défaut) ; la vôtre, par le bouton *Se reconnecter* » — cohérent avec `:2360` |
 | `:2995` | cookie d'accès « `HttpOnly; Secure; SameSite=Lax` » | `HttpOnly`, `Secure` sauf `KESH_COOKIE_SECURE=false`, `SameSite=Strict` (`routes/auth.rs:51-52, :61-62`) |
 | `:2996` | « refresh token (durée 30 jours par défaut) … hash SHA-256 (jamais stocké en clair) » | 30 jours : durée du cookie ; la ligne expire après l'inactivité ; jeton stocké **tel quel** (`repositories/refresh_tokens.rs:30-34`) — **issue demandée** (C-v0172s-14) |
-| `:2997` | rotation et trace pour la détection du rejeu | ajouter la grâce : un rejeu dans les 30 secondes d'une rotation est refusé sans révoquer les autres sessions |
+| `:2997` | rotation et trace pour la détection du rejeu | ajouter la grâce : un rejeu dans les 30 secondes d'une rotation est refusé sans révoquer les autres sessions ; l'onglet dont le renouvellement a perdu la course (deux onglets, la même seconde, juste après l'échéance du jeton d'accès) revient à la connexion |
 | `:2998` | « La déconnexion révoque tous les refresh tokens de la session » | « révoque le jeton de renouvellement de la session » |
 | `:3708` | Dépannage « Erreurs 401 en cascade » — « Cause : Refresh token expiré ou invalidé » | ajouter la cause ordinaire : session expirée par inactivité ; un bandeau de fond peut rester affiché jusqu'à la première action, qui mène à la connexion |
 | `:3886` | glossaire « Token longue durée » | jeton qui renouvelle le jeton d'accès, valable l'inactivité réglée après chaque renouvellement |
@@ -272,8 +333,12 @@ Dans la section de la **0.17.3** (`## [0.17.3] — Non publié`, à créer en t�
   45 et 60 minutes après votre dernière action qui interroge le serveur (ouvrir un écran, enregistrer, chercher). *Un `.env` recopié
   d'une version antérieure, qui pose `KESH_REFRESH_INACTIVITY_MINUTES=15`, est porté à 30 minutes (au moins le double de la durée du
   jeton d'accès), avec un avertissement au démarrage ; pour 60 minutes, retirez la ligne ou mettez-la à 60.*
-- **Une restauration complète ferme toutes les sessions** : les jetons de renouvellement restaurés avec la sauvegarde sont révoqués,
-  comme l'écran l'annonçait déjà.
+- Recharger la page ou ouvrir un nouvel onglet ne renvoie plus à la connexion tant que la session vit.
+
+Sous `### Modifié` :
+- **Une restauration complète révoque les jetons de renouvellement restaurés** : aucune session, de la sauvegarde ou de l'installation,
+  ne peut plus être renouvelée après l'import. *(Ce n'est pas la correction d'un défaut publié : avec l'ancienne durée de 15 minutes, ces
+  jetons mouraient de fait avec le jeton d'accès ; la durée de 60 minutes rendait nécessaire de les révoquer.)*
 
 `refs #876`, `refs #891` aux commits ; aucun mot-clé de fermeture. La note de mise à jour (manuel d'administration, *Passer à la 0.17.3*)
 relève de la préparation de la release (orchestrateur) : elle reprend la phrase en italique.
@@ -320,6 +385,29 @@ relève de la préparation de la release (orchestrateur) : elle reprend la phras
   (§ 7, § 8, manuel `:95`, C-v0172s-25). **Version** : toute mention de la 0.17.2 retirée ; CHANGELOG en 0.17.3. Valeurs grepées dans
   cette fiche : `0.17.2`, `[0.17.2]`, `/auth/me`, `hydrate`, `:417`, `theft_detected`, `kesh_v0172b`. Prochaine : validation **P5**
   (Sonnet, complète, `v0172-session-validate-prompt-p5.md`).
+
+- 2026-11-04 — **Validation P5 (Sonnet) : 0/1/4/9** (rapport `kesh-gate-logs/v0172s-validate-p5.md`). Prémisses relues au code.
+  **P1** (HIGH) appliqué — `20260406000001_refresh_tokens_revoked_reason.sql` et `test-schema/0001_schema_squash.sql:1187` (CHECK à cinq
+  valeurs), `routes/auth.rs:964-969`, `auth/bootstrap.rs:355-364` lus ; sonde des appelants (`git grep -nE '"(logout|rotation|password_change|admin_disable|theft_detected)"'`) :
+  motif **`"password_change"`**, sans migration, sur le précédent du dépôt, distinction portée par l'audit ; `"admin_disable"` écarté ;
+  § 5, AC-4, C-23 récrits. **P2** (MEDIUM) appliqué — `admin.rs:436, :452, :464, :488-497` lus : révocation placée juste avant le `SELECT
+  MIN(id)` ; déclencheur décidable de l'échec après révocation : archive sans Admin (AC-4 b) ; M5 bis récrite (révocation sur le pool
+  **avant** la transaction : ne s'auto-bloque pas). **P3** (MEDIUM) appliqué, sur instruction de l'orchestrateur — le renouvellement au
+  démarrage est **rétabli** sous forme minimale (§ 8 bis : `tryRefresh()` sous le mutex, aucune diffusion, aucune redirection ;
+  AC-5 bis, M7 à M7 quater ; C-v0172s-26 remplace C-19 et C-25) ; la raison pour laquelle P13 à P15 de la P4 ne reviennent pas est écrite ;
+  dérogation de splitting écrite (six modules, C-v0172s-27). **P4** (MEDIUM) appliqué — `routes/auth.rs:254-262` lu : arrondi en
+  secondes (AC-6 e). **P5** (MEDIUM) appliqué — `crates/kesh-api/README.md:41, :161, :179` lus : ajoutés au module (5) et à la Tâche 4.
+  LOW : **P6** appliqué (position fixée, seul argument « aucun lecteur de `refresh_tokens` », commentaire `admin.rs:180-182`) ; **P7**
+  appliqué (`:2292`, `:2322` : « ne peuvent plus être renouvelées … au plus tard à l'échéance du jeton d'accès ») ; **P8** appliqué (puce
+  sous *Modifié*, avec la raison) ; **P9** appliqué (course résiduelle au manuel `:95` et `:2997`) ; **P10** appliqué au registre (en-tête
+  de section et « Retenu » de C-v0172s-15) ; **P11** appliqué (`docs/kesh-specifications.txt:278, :389, :2144, :2690`, et le tri des
+  autres occurrences) ; **P12** — la phrase de la fiche mère est déjà corrigée par l'agent de développement (instruction de
+  l'orchestrateur) ; les PDF des manuels régénérés par les deux fiches sont un point de **fusion** pour l'orchestrateur (régénérer après
+  la fusion des `.tex`) ; **P13** appliqué (assertion `backup-schedule.api.test.ts:56-57` nommée) ; **P14** appliqué (AC-6 c récrit, il
+  n'exerce pas la grâce ; c bis ajouté pour le rechargement). Valeurs grepées dans cette fiche : `full_import` (ne reste que l'action
+  d'audit `admin.full_import`), `TIMESTAMPDIFF(MINUTE`, `plus de 15 minutes après`, `C-v0172s-25`, `M6 bis` (Tâche 6). Prochaine :
+  validation **P6** (Opus, complète, `v0172-session-validate-prompt-p6.md`) — sixième passe : **dès celle-ci, l'orchestrateur ne remédie
+  plus lui-même** (`CLAUDE.md`), et la boucle approche du plafond de huit.
 
 ## Dev Agent Record
 

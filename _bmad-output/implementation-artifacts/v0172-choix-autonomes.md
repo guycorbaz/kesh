@@ -377,9 +377,11 @@ neufs ; s-14 ← b-25 (c).
 
 **Conception remplacée à la validation P3 (2026-11-04)** : **C-v0172s-1 à 13 sont écartés** (historique ; leur conception — renouvellement
 anticipé à l'entrée, verrous, module armé, suspension — est remplacée, cf. C-v0172s-15) ; **C-v0172s-14 reste** (issue du jeton stocké en
-clair) ; **en vigueur : C-v0172s-14 à 21**.
+clair) ; *(liste en vigueur : voir la ligne « Validation P5 » ci-dessous, qui fait foi.)*
 
-**Validation P4 (2026-11-04)** : la story vise la **0.17.3** (décision du Project Lead) ; l'inactivité vaut 60 minutes (CR #891). **C-v0172s-18 et 19 sont retirés** (simplicité) ; **en vigueur : C-v0172s-14, 15, 16, 17, 20, 21, 22 à 25**.
+**Validation P4 (2026-11-04)** : la story vise la **0.17.3** (décision du Project Lead) ; l'inactivité vaut 60 minutes (CR #891). **C-v0172s-18 et 19 sont retirés** (simplicité).
+
+**Validation P5 (2026-11-04) — fait foi** : C-v0172s-19 et 25 sont **remplacés** par C-v0172s-26 (renouvellement au démarrage, forme minimale) ; **en vigueur : C-v0172s-14 à 17, 20 à 24, 26, 27**.
 
 ### C-v0172s-1 — Renouvellement côté navigateur, à l'entrée de l'utilisateur, et champ `sessionExpiresIn`
 
@@ -509,9 +511,10 @@ clair) ; **en vigueur : C-v0172s-14 à 21**.
   `logout` sous verrou). Lu au code : le chemin 401 existant (`api-client.ts:452-461`, mutex `:185-192`) renouvelle et rejoue ; le
   renouvellement glisse (`routes/auth.rs:421-432`) ; il n'échoue que parce que la ligne expire en même temps que le cookie d'accès
   (`:254`, `:54`, `:399`) ; le 401 précède le handler (`middleware/auth.rs:73-`), le rejeu est sûr.
-- **Retenu** : défaut d'inactivité 60 minutes, règle « au moins le double du jeton d'accès » (C-16), grâce de rotation (C-17), repli `/me`
-  (C-18), renouvellement silencieux au démarrage (C-19), requêtes de fond (C-20) ; borne entre `N − jwt` et `N` après la dernière requête
-  (C-21).
+- **Retenu** (état en vigueur depuis la validation P5) : défaut d'inactivité 60 minutes, règle « au moins le double du jeton d'accès »
+  (C-16, C-22), grâce de rotation (C-17), requêtes de fond (C-20), révocation à la restauration complète (C-23), renouvellement au démarrage
+  sous forme minimale (C-26) ; borne entre `N − jwt` et `N` après la dernière requête (C-21) ; course entre onglets résiduelle (C-24).
+  *(Le repli `/me`, C-18, est retiré ; la première forme du renouvellement au démarrage, C-19, est remplacée par C-26.)*
 - **Écartées** : la conception C-v0172s-1 à 13 — borne plus serrée, mais huit modules et une mécanique qui recyclait les défauts ; un jeton
   d'accès plus court (5 min) avec la même inactivité — renouvellements trois fois plus fréquents et défauts de test au jeton d'accès
   (`config.rs:2106`) sans gain pour la saisie.
@@ -547,6 +550,8 @@ clair) ; **en vigueur : C-v0172s-14 à 21**.
 - **Réversible** : oui.
 
 ### C-v0172s-19 — `hydrate()` tente un renouvellement silencieux
+
+*Remplacé à la validation P5 (2026-11-04) par **C-v0172s-26**.*
 
 *Retiré à la validation P4 (2026-11-04)* : sans rapport avec le défaut (un utilisateur en train de travailler), il présentait des cookies périmés au démarrage (détection de vol au-delà de 30 s) et risquait une boucle entre onglets. Conséquence déclarée : C-25.
 
@@ -585,10 +590,14 @@ clair) ; **en vigueur : C-v0172s-14 à 21**.
 - **Contexte** : validation P4, finding P6 — l'import réinsère `refresh_tokens` tel quel (`routes/admin.rs:180-182, :422-425`) ; avec une
   inactivité de 60 minutes, une session (ou une session d'un autre appareil, même déconnectée après l'export) survivrait. Décision du
   Project Lead : révoquer.
-- **Retenu** : `refresh_tokens::revoke_all_in_tx(&mut tx, "full_import")` après la garde de comptage, avant le commit ; `sessionInvalidated:
-  true` redevient vrai ; motif distinct de `"rotation"`.
+- **Retenu** (récrit à la validation P5) : `refresh_tokens::revoke_all_in_tx(&mut tx, "password_change")`, juste avant le `SELECT MIN(id)
+  FROM users WHERE role = 'Admin'` (`routes/admin.rs:488-492`), avant le commit ; `sessionInvalidated: true` redevient vrai ; motif
+  distinct de `"rotation"`. **Le motif** : la contrainte `chk_refresh_tokens_revoked_reason` n'admet que cinq valeurs (finding P1 de la
+  validation P5 : le `"full_import"` de la première rédaction aurait fait échouer chaque import en 500) ; `"password_change"` suit le
+  précédent (`routes/auth.rs:964-969`, `auth/bootstrap.rs:355-364`) — l'import remplace les empreintes de mot de passe, la distinction est
+  portée par l'audit `admin.full_import` ; `"admin_disable"` désigne la désactivation d'un compte et égarerait.
 - **Écartées** : exclure `refresh_tokens` de la sauvegarde — change le format du `.keshbackup` et l'inventaire des tables ; écrire la
-  limite au manuel — l'écran annonce la session invalidée.
+  limite au manuel — l'écran annonce la session invalidée ; un motif neuf (`full_import`) — migration `ALTER … CHECK`, exclue.
 - **Réversible** : oui.
 
 ### C-v0172s-24 — La course entre deux onglets reste résiduelle, déclarée comme telle
@@ -601,7 +610,30 @@ clair) ; **en vigueur : C-v0172s-14 à 21**.
 
 ### C-v0172s-25 — Un nouvel onglet ou un rechargement après l'échéance du jeton d'accès demande de se reconnecter
 
+*Remplacé à la validation P5 (2026-11-04) par **C-v0172s-26**.*
+
 - **Retenu** : comportement 0.17.1 inchangé, déclaré au manuel utilisateur (`:95`) ; à porter en demande séparée si le Project Lead le
   souhaite.
 - **Écartées** : le renouvellement silencieux d'`hydrate()` (C-19, retiré).
+- **Réversible** : oui.
+
+### C-v0172s-26 — Le renouvellement au démarrage, sous forme minimale
+
+- **Contexte** : validation P5, finding P3, et instruction de l'orchestrateur — sans lui, recharger la page ou ouvrir un onglet renvoie à
+  la connexion dès l'échéance du jeton d'accès posé au dernier renouvellement, parfois quelques secondes après la dernière action : le
+  symptôme même du CR #891 (« éjecté alors que je travaille et consulte des documents »).
+- **Retenu** : `tryRefresh()` extrait de `doRefresh` (`api-client.ts`), sous le mutex d'onglet, sans effacement ni redirection sur échec ;
+  le chemin 401 efface et redirige lui-même (inchangé) ; `hydrate()` l'appelle **une fois** sur un 401 de `/me` (import dynamique), pose
+  l'état **sans diffusion**, et ne redirige jamais. P13 (boucle entre onglets) ne revient pas : aucune issue ne diffuse ; P14 (cookie
+  périmé) : le même cookie serait présenté au premier 401 du chemin existant ; P15 : la raison est désormais la bonne (`hooks.client.ts:22`).
+- **Écartées** : la forme de la validation P3 (C-19 : renouvellement hors mutex, issue non précisée) ; ne rien faire (C-25 : la
+  conséquence était plus large qu'écrite).
+- **Réversible** : oui.
+
+### C-v0172s-27 — Dérogation à la règle de splitting : six modules
+
+- **Contexte** : le renouvellement au démarrage ajoute `lib/app/stores/auth.svelte.ts` (un appel) aux cinq modules.
+- **Retenu** : garder la story unique ; le changement du store est un appel indissociable de `tryRefresh()` ; risque borné par la taille du
+  changement et par le gate complet qu'impose le repository.
+- **Écartées** : une story à part pour `hydrate()` — elle dépendrait de `tryRefresh()` et se livrerait après, ou en même temps.
 - **Réversible** : oui.
