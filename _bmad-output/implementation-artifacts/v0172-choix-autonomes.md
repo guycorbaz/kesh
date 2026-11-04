@@ -111,6 +111,8 @@ Fiche : `v0172-annulees.md`. Clé `v0172a`. Issue #868, en `refs` seulement.
 - **Contexte** : la dévalidation est ouverte au Comptable et à l'Administrateur (route `unvalidate`, Comptable+, clés
   `read-write`) ; la suppression d'un brouillon à l'Administrateur seul.
 - **Retenu** : repasser en brouillon = Comptable+ (comme la dévalidation) ; supprimer le brouillon = Administrateur.
+- *Annoté le 2026-11-04 (validation P2, V2-3)* : une clé d'API `read-write` peut donc supprimer **deux** écritures d'une
+  facture annulée ; l'avertissement du manuel d'administration sur les clés `read-write` (`admin-manual.tex:3010`) le dit.
 - **Écartées** : réserver l'annulée à l'Administrateur — le geste est sous les mêmes gardes que la dévalidation, et la
   suppression, elle, reste réservée.
 - **Réversible** : oui.
@@ -135,6 +137,9 @@ Fiche : `v0172-annulees.md`. Clé `v0172a`. Issue #868, en `refs` seulement.
 
 - **Contexte** : `invoices::unvalidate` refuse `cancelled` ; une cliente n'est annulée que par un avoir (document
   numéroté, souvent envoyé), déjà refusé par le motif `Credited`.
+- *Annoté le 2026-11-04 (validation P2, V2-6)* : la phrase précédente est inexacte. Une cliente annulée est refusée par son
+  **statut** (`invoices.rs:1524-1528`, `IllegalStateTransition`), avant tout motif ; `Credited` ne vaut que pour une
+  facture encore validée qui porte un avoir. L'avoir **est** la contre-passation.
 - **Retenu** : ne rien changer ; issue demandée à l'orchestrateur pour le tracer.
 - **Écartées** : supprimer un avoir pour rouvrir la facture — décision de facturation que le Project Lead n'a pas prise.
 - **Réversible** : oui.
@@ -160,6 +165,8 @@ Fiche : `v0172-annulees.md`. Clé `v0172a`. Issue #868, en `refs` seulement.
 
 ### C-v0172a-17 — Le chemin d'une payée par la réconciliation se prouve par un test d'intégration `kesh-db`
 
+- **Contexte** : le mandat (point 2) demande que la fiche vérifie au code le chemin payée → rapprochement annulé →
+  validée → brouillon → supprimée, et qu'« un test E2E ou d'intégration » le parcoure, sans changer le refus.
 - **Retenu** : T10 de bout en bout (refus → dé-rapprochement → brouillon → suppression) ; l'E2E vérifie l'écran
   (bouton et message) sur le parcours de réconciliation déjà présent dans la spec.
 - **Écartées** : tout le parcours en E2E — import, réconciliation et suppression : lent et redondant avec T10.
@@ -167,6 +174,9 @@ Fiche : `v0172-annulees.md`. Clé `v0172a`. Issue #868, en `refs` seulement.
 
 ### C-v0172a-18 — Lecture du droit : écrite dans la fiche et résumée au manuel, renvoi à la fiduciaire
 
+- **Contexte** : le mandat demande que la fiche écrive pourquoi supprimer une écriture contre-passée, avant clôture, avec
+  trace d'audit et sauvegarde, reste acceptable (CO 957a), et ce qu'en dit le manuel ; `delete_in_tx` cite l'art. 958f
+  pour refuser la suppression d'une écriture contre-passée.
 - **Retenu** : CO 957a al. 2 ch. 5, CO 958f, Olico art. 3 et 9 ; « rien ne disparaît sans trace », paire nette à zéro,
   avant clôture, hors période verrouillée, audit et sauvegarde.
 - *Annoté le 2026-11-04 (validation P1, V1-13)* : le manuel ne cite que CO 957a, CO 958f et OLICo art. 9 al. 1 let. b,
@@ -190,6 +200,12 @@ Fiche : `v0172-annulees.md`. Clé `v0172a`. Issue #868, en `refs` seulement.
 
 - **Contexte** : le bouton change de nom ; les messages qui disent quoi faire renvoyaient à « dévalider », geste que
   l'utilisateur ne trouve plus sous ce nom.
+- *Annoté le 2026-11-04 (validation P2, V2-1, V2-2)* : **dix-sept** valeurs (deux clés omises :
+  `supplier-invoices-validate-confirm-body`, `supplier-invoices-edit-not-draft`) et quatorze replis en dur ; le contrôle se
+  fait **par liste de clés** et par racine propre à chaque langue (fr `[Dd][ée]valid`, en `[Uu]nvalidat`, de
+  `Freigabe|[Ee]ntvalid`, it `[Cc]onvalida\b`), avec une sonde positive relevée à `d7ec2ea2` (13 valeurs sur 17 dans
+  chaque locale) — un motif global attrapait *convalidare* (valider) en italien et manquait les formes fléchies de
+  l'allemand.
 - **Retenu** : quinze valeurs fournisseur modifiées et cinq clés neuves (AC-15), dans les quatre locales (fr « repasser
   en brouillon », de « in den Entwurf zurücksetzen », it « riportare in bozza », en « return to draft ») ; manuel
   utilisateur côté fournisseur ; glossaire. « Dévalider » reste le mot des factures clientes et le nom de code.
@@ -215,3 +231,20 @@ Fiche : `v0172-annulees.md`. Clé `v0172a`. Issue #868, en `refs` seulement.
   pas ; l'écriture se nomme « n° N du JJ.MM.AAAA ».
 - **Écartées** : le nom de l'exercice — plus long, et la date suffit à lever l'ambiguïté.
 - **Réversible** : oui.
+
+### C-v0172a-23 — Les totaux par période changent : le verrou de période suffit, la confirmation et le manuel le disent (validation P2, V2-5)
+
+- **Contexte** : l'achat est daté de la facture, la contre-passation du jour de l'annulation ; la paire n'est nette
+  qu'au cumul. La supprimer change, en sens inverse, la charge, l'impôt préalable et la TVA de la période de l'achat et
+  de celle de l'annulation, et tout solde arrêté entre les deux dates ; le rapport TVA se recalcule à la volée.
+- **Retenu** : aucune garde neuve. Le **verrou de période** est le seul fait que Kesh connaisse d'une période déclarée
+  (« aucune écriture ne peut plus être datée d'une période déjà déclarée », `admin-manual.tex:3054`), et
+  `delete_in_tx` l'applique à chacune des deux écritures (étape 3-quater) : une période verrouillée refuse le geste. La
+  confirmation d'une annulée, le manuel utilisateur et le CHANGELOG disent que deux périodes changent et qu'il faut
+  verrouiller une période déclarée **avant** ; T1 asserte l'effet par période.
+- **Écartées** : (a) refuser quand l'achat et la contre-passation tombent dans deux trimestres différents — refuserait
+  le cas courant (facture d'un trimestre, annulée au suivant) sans savoir si l'un est déclaré, et Kesh ne le sait que par
+  le verrou ; (b) refuser si la date de l'une des écritures est antérieure au dernier rapport TVA produit — Kesh ne garde
+  pas trace des rapports produits ; (c) recalculer l'avertissement selon les dates réelles des deux écritures — demande
+  au `GET` la date de la contre-passation, pour un texte qui ne change pas la conduite.
+- **Réversible** : oui (une garde se rajoute sans migration).
