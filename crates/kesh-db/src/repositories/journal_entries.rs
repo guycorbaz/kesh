@@ -1018,6 +1018,26 @@ fn entry_snapshot_json(entry: &JournalEntry, lines: &[JournalEntryLine]) -> serd
 // Modification d'une écriture (Story 15-8a, #532)
 // ---------------------------------------------------------------------------
 
+/// Les traces d'annulation d'une facture fournisseur qui peuvent nommer un
+/// **paiement détaché** — fragment SQL **partagé** (Story v0172-annulees, #868,
+/// AC-6, V2-12) par les deux seules lectures de ce lien : [`modification_guard`]
+/// (de l'écriture vers la facture annulée qui la nomme) et
+/// `supplier_invoices::unvalidate_in_tx` (de la facture vers les paiements que
+/// nomment ses traces). Chacune ajoute son propre `AND …`.
+///
+/// Lie, dans l'ordre : `al.company_id`, `si.company_id`. Borné par société des
+/// deux côtés (filtre strict du journal d'audit).
+pub(crate) const DETACHED_SETTLEMENT_TRACES: &str = "supplier_invoices si \
+     JOIN audit_log al ON al.entity_type = 'supplier_invoice' AND al.entity_id = si.id \
+      AND al.action = 'supplier_invoice.cancelled' AND al.company_id = ? \
+     WHERE si.company_id = ?";
+
+/// L'identifiant du paiement détaché d'une trace de [`DETACHED_SETTLEMENT_TRACES`]
+/// — **une chaîne** (`JSON_VALUE`), `NULL` pour une facture annulée non payée.
+/// ⛔ Le seul site du dépôt qui lit ce chemin JSON (contrôle d'AC-6).
+pub(crate) const DETACHED_SETTLEMENT_ENTRY: &str =
+    "JSON_VALUE(al.details_json, '$.settlementJournalEntryId')";
+
 /// **Garde d'écriture** de la modification (Story 15-8a, D2) : ce qui empêche
 /// une écriture d'être modifiée, hors exercices clos et verrou de période.
 ///
@@ -1063,6 +1083,15 @@ fn entry_snapshot_json(entry: &JournalEntry, lines: &[JournalEntryLine]) -> serd
 ///
 /// ⚠️ `JSON_VALUE` rend une **chaîne** : l'identifiant est lié en chaîne, pour
 /// une comparaison exacte plutôt qu'une conversion numérique implicite.
+///
+/// ⚠️ **Réserve 2, étendue par la Story v0172-annulees** (#868, limite L2) : la
+/// même trace étrangère peut aussi faire **refuser le repassage en brouillon**
+/// d'une facture annulée restaurée (`SUPPLIER_INVOICE_DETACHED_PAYMENT`), en
+/// désignant un paiement sans rapport — la lecture est partagée
+/// ([`DETACHED_SETTLEMENT_TRACES`]). Et c'est pourquoi la dévalidation d'une
+/// annulée **refuse** tant que le paiement nommé existe non contre-passé : ce
+/// gel lit la facture **par son statut** `cancelled`, et un brouillon le
+/// lèverait en silence.
 pub async fn modification_guard(
     conn: &mut sqlx::MySqlConnection,
     company_id: i64,
@@ -1083,14 +1112,11 @@ pub async fn modification_guard(
         }));
     }
 
-    let detached: Option<(i64, Option<String>)> = sqlx::query_as(
-        "SELECT si.id, si.supplier_invoice_number FROM supplier_invoices si \
-         JOIN audit_log al ON al.entity_type = 'supplier_invoice' AND al.entity_id = si.id \
-          AND al.action = 'supplier_invoice.cancelled' AND al.company_id = ? \
-         WHERE si.company_id = ? AND si.status = 'cancelled' \
-           AND JSON_VALUE(al.details_json, '$.settlementJournalEntryId') = ? \
-         ORDER BY si.id LIMIT 1",
-    )
+    let detached: Option<(i64, Option<String>)> = sqlx::query_as(&format!(
+        "SELECT si.id, si.supplier_invoice_number FROM {DETACHED_SETTLEMENT_TRACES} \
+           AND si.status = 'cancelled' AND {DETACHED_SETTLEMENT_ENTRY} = ? \
+         ORDER BY si.id LIMIT 1"
+    ))
     .bind(company_id)
     .bind(company_id)
     .bind(id.to_string())
@@ -1773,8 +1799,11 @@ pub async fn delete_by_id(
 ///   `enforce_ownership`) — une ligne lettrée (`lettering_guard`) →
 ///   [`DbError::EntryNotModifiable`] (`ENTRY_LETTERED`) : après tout refus que
 ///   le délettrage ne lèverait pas (C126), donc après 2-bis par construction
-///   (C117). Inatteignable par la dévalidation aujourd'hui (une facture lettrée
-///   a un règlement ou un avoir) ; la garde vit quand même au point de passage.
+///   (C117). Inatteignable par la dévalidation d'une facture client (une facture
+///   lettrée a un règlement ou un avoir) ; **atteignable** depuis la Story
+///   v0172-annulees par le repassage en brouillon d'une facture fournisseur
+///   annulée dont une ligne est lettrée hors des paires `reversal` de son
+///   annulation (AC-4 d).
 ///
 /// ⛔ **La garde est la seule barrière pour trois refus** : la contre-passation
 /// elle-même (la clé `RESTRICT` ne protège que l'origine), le paiement détaché
@@ -1811,7 +1840,12 @@ pub async fn delete_by_id(
 ///   garde « possédée par une facture » n'y aurait pas de sens ; et, **second
 ///   appelant** depuis la Story v017-4a (#849), `supplier_invoices::unvalidate_in_tx`,
 ///   qui supprime l'écriture d'achat sous ses propres gardes (non payée, hors lot
-///   `generated`, non rapprochée). Les étapes 2-bis,
+///   `generated`, non rapprochée) — et, depuis la Story v0172-annulees (#868),
+///   pour une facture **annulée**, **deux** écritures par geste : la
+///   contre-passation d'abord (elle n'est contre-passée par rien), puis l'achat,
+///   dont l'étape 3-bis passe alors (`reversed_by` ne rend plus rien) ; ses
+///   gardes propres y ajoutent le paiement détaché non contre-passé et le
+///   rapprochement de la contre-passation. Les étapes 2-bis,
 ///   3, 3-bis, 3-quater et 3-quinquies tiennent quand même — l'étape 2-bis depuis la
 ///   Story 15-12b (#543) : avant elle, l'exercice postérieur clos n'était pas
 ///   contrôlé sur ce chemin (C-15-8-29).

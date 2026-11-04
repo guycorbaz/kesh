@@ -755,8 +755,11 @@ fn bloque(err: &DbError) -> Option<SupplierUnvalidationBlocker> {
     }
 }
 
-/// AC-11 — statut : payée → `SUPPLIER_INVOICE_PAID` (M6) ; brouillon et
-/// annulée → `IllegalStateTransition` ; puis la version (après le statut).
+/// AC-11 — statut : payée → `SUPPLIER_INVOICE_PAID` (M6) ; brouillon →
+/// `IllegalStateTransition` ; puis la version (après le statut). Story
+/// v0172-annulees (#868, AC-1) : une **annulée** n'est plus refusée par son
+/// statut — elle repasse en brouillon ; le brouillon reste le seul
+/// `IllegalStateTransition`.
 #[sqlx::test(migrations = "./test-schema")]
 async fn unvalidation_status_refusals(pool: MySqlPool) {
     let (seeded, f) = decor(&pool).await;
@@ -828,10 +831,16 @@ async fn unvalidation_status_refusals(pool: MySqlPool) {
     supplier_invoices::cancel(&pool, c, x.invoice.id, u)
         .await
         .unwrap();
-    let err = supplier_invoices::unvalidate(&pool, c, x.invoice.id, x.invoice.version + 1, u)
+    // Story v0172-annulees (AC-1) : version périmée → la version parle (le
+    // statut `cancelled` passe) ; à jour → brouillon.
+    let err = supplier_invoices::unvalidate(&pool, c, x.invoice.id, x.invoice.version + 7, u)
         .await
-        .expect_err("annulée");
-    assert!(matches!(err, DbError::IllegalStateTransition(_)), "{err:?}");
+        .expect_err("annulée, version périmée");
+    assert!(matches!(err, DbError::OptimisticLockConflict), "{err:?}");
+    let r = supplier_invoices::unvalidate(&pool, c, x.invoice.id, x.invoice.version + 1, u)
+        .await
+        .expect("annulée → brouillon");
+    assert_eq!(r.invoice.status, "draft");
 
     let o = validee(&pool, &seeded, f, "FF-O", dec!(10)).await;
     let err = supplier_invoices::unvalidate(&pool, c, o.invoice.id, o.invoice.version + 1, u)
@@ -1351,4 +1360,1199 @@ async fn a_draft_cannot_be_paid(pool: MySqlPool) {
         }
         other => panic!("{other:?}"),
     }
+}
+
+// ---------------------------------------------------------------------------
+// Story v0172-annulees (#868) — repasser en brouillon une facture annulée
+// ---------------------------------------------------------------------------
+//
+// Topologie des exercices (fiche, AC-5) : le décor n'a qu'un exercice,
+// 2020-2030, ouvert, et la contre-passation est datée **du jour** (horloge
+// réelle). Les tests à deux exercices le **scindent en SQL** relativement à
+// l'année du jour `Y` : `A` = `Y-2`, `B` = `Y-1`, `C` = [`Y`-01-01,
+// 2030-12-31] (l'exercice du décor, raccourci).
+
+fn aujourdhui() -> NaiveDate {
+    chrono::Utc::now().date_naive()
+}
+
+/// Les trois exercices de la scission.
+#[derive(Debug, Clone, Copy)]
+struct Exercices {
+    y: i32,
+    a: i64,
+    b: i64,
+}
+
+async fn scinder(pool: &MySqlPool, seeded: &SeededCompany) -> Exercices {
+    use chrono::Datelike;
+    let y = aujourdhui().year();
+    assert!(
+        y <= 2029,
+        "montage : l'exercice C finit le 2030-12-31 (Y = {y})"
+    );
+    let done =
+        sqlx::query("UPDATE fiscal_years SET start_date = ? WHERE id = ? AND company_id = ?")
+            .bind(jour(y, 1, 1))
+            .bind(seeded.fiscal_year_id)
+            .bind(seeded.company_id)
+            .execute(pool)
+            .await
+            .unwrap();
+    assert_eq!(done.rows_affected(), 1, "montage : l'exercice du décor");
+    let mut ids = Vec::new();
+    for an in [y - 2, y - 1] {
+        let id = sqlx::query(
+            "INSERT INTO fiscal_years (company_id, name, start_date, end_date, status) \
+             VALUES (?, ?, ?, ?, 'Open')",
+        )
+        .bind(seeded.company_id)
+        .bind(format!("Exercice {an}"))
+        .bind(jour(an, 1, 1))
+        .bind(jour(an, 12, 31))
+        .execute(pool)
+        .await
+        .unwrap()
+        .last_insert_id() as i64;
+        ids.push(id);
+    }
+    Exercices {
+        y,
+        a: ids[0],
+        b: ids[1],
+    }
+}
+
+async fn clore(pool: &MySqlPool, fy: i64) {
+    sqlx::query("UPDATE fiscal_years SET status = 'Closed' WHERE id = ?")
+        .bind(fy)
+        .execute(pool)
+        .await
+        .unwrap();
+}
+
+async fn verrouiller(pool: &MySqlPool, company_id: i64, au: NaiveDate) {
+    sqlx::query("UPDATE companies SET books_locked_through = ? WHERE id = ?")
+        .bind(au)
+        .bind(company_id)
+        .execute(pool)
+        .await
+        .unwrap();
+}
+
+async fn existe(pool: &MySqlPool, entry: i64) -> bool {
+    let n: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM journal_entries WHERE id = ?")
+        .bind(entry)
+        .fetch_one(pool)
+        .await
+        .unwrap();
+    n == 1
+}
+
+/// Une facture annulée : son achat (conservé) et sa contre-passation.
+#[derive(Debug, Clone, Copy)]
+struct Annulee {
+    id: i64,
+    achat: i64,
+    cp: i64,
+    version: i32,
+}
+
+async fn annuler(pool: &MySqlPool, seeded: &SeededCompany, id: i64) -> Annulee {
+    let x = supplier_invoices::cancel(pool, seeded.company_id, id, seeded.admin_user_id)
+        .await
+        .expect("annulation");
+    assert_eq!(x.invoice.status, "cancelled");
+    let achat = x
+        .invoice
+        .purchase_journal_entry_id
+        .expect("l'annulée garde son achat");
+    let cp: i64 = sqlx::query_scalar("SELECT id FROM journal_entries WHERE reverses_entry_id = ?")
+        .bind(achat)
+        .fetch_one(pool)
+        .await
+        .expect("contre-passation");
+    Annulee {
+        id,
+        achat,
+        cp,
+        version: x.invoice.version,
+    }
+}
+
+/// Une facture validée de `lignes`, datée `date`, puis annulée.
+async fn annulee(
+    pool: &MySqlPool,
+    seeded: &SeededCompany,
+    f: Fournisseur,
+    numero: &str,
+    date: NaiveDate,
+    lignes: &[(Decimal, Decimal)],
+) -> Annulee {
+    let v = supplier_invoices::create_validated(
+        pool,
+        nouvelle(seeded, f, numero, date, lignes),
+        seeded.admin_user_id,
+    )
+    .await
+    .expect("facture validée");
+    annuler(pool, seeded, v.invoice.id).await
+}
+
+async fn repasser(
+    pool: &MySqlPool,
+    seeded: &SeededCompany,
+    a: Annulee,
+) -> Result<supplier_invoices::SupplierInvoiceWithLines, DbError> {
+    supplier_invoices::unvalidate(
+        pool,
+        seeded.company_id,
+        a.id,
+        a.version,
+        seeded.admin_user_id,
+    )
+    .await
+}
+
+async fn nb_action(pool: &MySqlPool, action: &str) -> i64 {
+    sqlx::query_scalar("SELECT COUNT(*) FROM audit_log WHERE action = ?")
+        .bind(action)
+        .fetch_one(pool)
+        .await
+        .unwrap()
+}
+
+/// L'état que tout refus doit laisser intact : facture, deux écritures,
+/// lettrage, audit.
+async fn photo(
+    pool: &MySqlPool,
+    a: Annulee,
+) -> (String, Option<i64>, i32, bool, bool, i64, i64, i64, i64) {
+    let (status, je, version) = etat(pool, a.id).await;
+    let lettrees: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM journal_entry_lines WHERE entry_id IN (?, ?) \
+         AND lettering_key IS NOT NULL",
+    )
+    .bind(a.achat)
+    .bind(a.cp)
+    .fetch_one(pool)
+    .await
+    .unwrap();
+    (
+        status,
+        je,
+        version,
+        existe(pool, a.achat).await,
+        existe(pool, a.cp).await,
+        lettrees,
+        nb_action(pool, "lettering.removed").await,
+        nb_action(pool, "journal_entry.deleted").await,
+        nb_action(pool, "supplier_invoice.unvalidated").await,
+    )
+}
+
+async fn refus_sans_ecrire(pool: &MySqlPool, seeded: &SeededCompany, a: Annulee) -> DbError {
+    let avant = photo(pool, a).await;
+    assert_eq!(avant.0, "cancelled", "montage");
+    let err = repasser(pool, seeded, a).await.expect_err("refus attendu");
+    assert_eq!(
+        photo(pool, a).await,
+        avant,
+        "un refus n'écrit rien : {err:?}"
+    );
+    err
+}
+
+fn refus(
+    err: &DbError,
+) -> (
+    SupplierUnvalidationBlocker,
+    Option<i64>,
+    kesh_db::errors::SupplierUnvalidationHint,
+) {
+    match err {
+        DbError::SupplierInvoiceNotUnvalidatable {
+            blocker,
+            document_id,
+            hint,
+            ..
+        } => (*blocker, *document_id, hint.clone()),
+        other => panic!("refus propre à la pièce attendu : {other:?}"),
+    }
+}
+
+async fn solde_au(
+    pool: &MySqlPool,
+    company_id: i64,
+    account_id: i64,
+    au: Option<NaiveDate>,
+) -> Decimal {
+    sqlx::query_scalar::<_, Decimal>(
+        "SELECT COALESCE(SUM(jel.debit - jel.credit), 0) FROM journal_entry_lines jel \
+         JOIN journal_entries je ON je.id = jel.entry_id \
+         WHERE je.company_id = ? AND jel.account_id = ? AND (? IS NULL OR je.entry_date <= ?)",
+    )
+    .bind(company_id)
+    .bind(account_id)
+    .bind(au)
+    .bind(au)
+    .fetch_one(pool)
+    .await
+    .unwrap()
+}
+
+/// `(compte, Σ débit − crédit)` des lignes d'une écriture.
+async fn effet(pool: &MySqlPool, entry: i64) -> Vec<(i64, Decimal)> {
+    sqlx::query_as(
+        "SELECT account_id, SUM(debit - credit) FROM journal_entry_lines WHERE entry_id = ? \
+         GROUP BY account_id ORDER BY account_id",
+    )
+    .bind(entry)
+    .fetch_all(pool)
+    .await
+    .unwrap()
+}
+
+async fn cles_reversal(pool: &MySqlPool, a: Annulee) -> Vec<i64> {
+    sqlx::query_scalar(
+        "SELECT DISTINCT lettering_key FROM journal_entry_lines WHERE entry_id IN (?, ?) \
+         AND lettering_origin = 'reversal' ORDER BY lettering_key",
+    )
+    .bind(a.achat)
+    .bind(a.cp)
+    .fetch_all(pool)
+    .await
+    .unwrap()
+}
+
+/// T1 (AC-1) — une annulée repasse en brouillon : les deux écritures et leurs
+/// lignes partent, les paires `reversal` sont dissoutes (une trace chacune),
+/// la facture garde ses lignes ; soldes cumulés identiques, soldes de la
+/// période de l'achat diminués de l'achat (V2-5). Tue M2, M4, M8.
+#[sqlx::test(migrations = "./test-schema")]
+async fn cancelled_invoice_returns_to_draft(pool: MySqlPool) {
+    let (seeded, f) = decor(&pool).await;
+    let c = seeded.company_id;
+    let date = jour(2026, 6, 15);
+    let a = annulee(
+        &pool,
+        &seeded,
+        f,
+        "FF-AN1",
+        date,
+        &[(dec!(100), dec!(8.1)), (dec!(50), dec!(0))],
+    )
+    .await;
+    let veille = aujourdhui().pred_opt().unwrap();
+    assert!(
+        veille >= date,
+        "montage : l'achat précède la veille de l'annulation"
+    );
+    let effet_achat = effet(&pool, a.achat).await;
+    assert_eq!(
+        effet_achat.len(),
+        3,
+        "montage : charge, impôt préalable, créanciers : {effet_achat:?}"
+    );
+    assert!(
+        effet_achat.iter().any(|(_, m)| *m == dec!(8.10)),
+        "montage : une ligne d'impôt préalable : {effet_achat:?}"
+    );
+    let cles = cles_reversal(&pool, a).await;
+    assert!(
+        !cles.is_empty(),
+        "montage : l'annulation a lettré des paires `reversal`"
+    );
+    let mut soldes_avant = Vec::new();
+    for (compte, _) in &effet_achat {
+        soldes_avant.push((
+            solde_au(&pool, c, *compte, None).await,
+            solde_au(&pool, c, *compte, Some(veille)).await,
+        ));
+    }
+    let lignes_avant: Vec<(String, Decimal, Decimal, Decimal, i64)> = sqlx::query_as(
+        "SELECT description, quantity, unit_price, vat_rate, expense_account_id \
+         FROM supplier_invoice_lines WHERE supplier_invoice_id = ? ORDER BY id",
+    )
+    .bind(a.id)
+    .fetch_all(&pool)
+    .await
+    .unwrap();
+    let entete = |pool: MySqlPool| async move {
+        sqlx::query_as::<
+            _,
+            (
+                Option<String>,
+                i64,
+                NaiveDate,
+                Option<NaiveDate>,
+                Option<i64>,
+            ),
+        >(
+            "SELECT supplier_invoice_number, contact_id, invoice_date, due_date, project_id \
+             FROM supplier_invoices WHERE id = ?",
+        )
+        .bind(a.id)
+        .fetch_one(&pool)
+        .await
+        .unwrap()
+    };
+    let entete_avant = entete(pool.clone()).await;
+    let removed_avant = nb_action(&pool, "lettering.removed").await;
+
+    let r = repasser(&pool, &seeded, a)
+        .await
+        .expect("annulée → brouillon");
+
+    assert_eq!(r.invoice.status, "draft");
+    assert_eq!(r.invoice.purchase_journal_entry_id, None);
+    assert_eq!(r.invoice.version, a.version + 1, "M8");
+    assert_eq!(
+        etat(&pool, a.id).await,
+        ("draft".into(), None, a.version + 1)
+    );
+    assert!(!existe(&pool, a.achat).await, "l'achat est supprimé");
+    assert!(
+        !existe(&pool, a.cp).await,
+        "M2 : la contre-passation est supprimée"
+    );
+    let lignes: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM journal_entry_lines WHERE entry_id IN (?, ?)")
+            .bind(a.achat)
+            .bind(a.cp)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(lignes, 0, "les lignes des deux écritures sont parties");
+    assert_eq!(
+        nb_action(&pool, "lettering.removed").await - removed_avant,
+        cles.len() as i64,
+        "M4 : une trace `lettering.removed` par paire dissoute"
+    );
+    for cle in &cles {
+        let reste: i64 =
+            sqlx::query_scalar("SELECT COUNT(*) FROM journal_entry_lines WHERE lettering_key = ?")
+                .bind(cle)
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        assert_eq!(reste, 0, "aucune ligne ne garde la marque {cle}");
+    }
+    for ((compte, montant), (cumul, periode)) in effet_achat.iter().zip(soldes_avant) {
+        assert_eq!(
+            solde_au(&pool, c, *compte, None).await,
+            cumul,
+            "compte {compte} : la paire était nette à zéro au cumul"
+        );
+        assert_eq!(
+            solde_au(&pool, c, *compte, Some(veille)).await,
+            periode - *montant,
+            "compte {compte} : la période de l'achat perd l'achat"
+        );
+    }
+    let lignes_apres: Vec<(String, Decimal, Decimal, Decimal, i64)> = sqlx::query_as(
+        "SELECT description, quantity, unit_price, vat_rate, expense_account_id \
+         FROM supplier_invoice_lines WHERE supplier_invoice_id = ? ORDER BY id",
+    )
+    .bind(a.id)
+    .fetch_all(&pool)
+    .await
+    .unwrap();
+    assert_eq!(lignes_apres, lignes_avant);
+    assert_eq!(entete(pool.clone()).await, entete_avant);
+}
+
+/// T2 (AC-2) — le brouillon issu d'une annulée vit comme tout brouillon :
+/// modifié puis revalidé ; ou, document joint, supprimé (document rendu « à
+/// traiter »).
+#[sqlx::test(migrations = "./test-schema")]
+async fn a_cancelled_then_redrafted_invoice_is_edited_validated_then_deleted(pool: MySqlPool) {
+    let (seeded, f) = decor(&pool).await;
+    let c = seeded.company_id;
+    let u = seeded.admin_user_id;
+    // Revalidée.
+    let a = annulee(
+        &pool,
+        &seeded,
+        f,
+        "FF-AN2",
+        jour(2026, 6, 15),
+        &[(dec!(40), dec!(0))],
+    )
+    .await;
+    let d = repasser(&pool, &seeded, a).await.expect("brouillon");
+    let m = supplier_invoices::update_draft(
+        &pool,
+        c,
+        a.id,
+        d.invoice.version,
+        nouvelle(
+            &seeded,
+            f,
+            "FF-AN2",
+            jour(2026, 6, 15),
+            &[(dec!(45), dec!(0))],
+        ),
+        u,
+    )
+    .await
+    .expect("modifié");
+    let r = supplier_invoices::validate(&pool, c, a.id, m.invoice.version, u)
+        .await
+        .expect("revalidé");
+    assert_eq!(r.invoice.status, "open");
+    assert_eq!(r.invoice.total_amount, dec!(45));
+    let neuf = r
+        .invoice
+        .purchase_journal_entry_id
+        .expect("écriture d'achat neuve");
+    assert_ne!(neuf, a.achat);
+
+    // Supprimée, document joint.
+    let v = validee(&pool, &seeded, f, "FF-AN2B", dec!(12)).await;
+    let doc = document(&pool, c, "an2b").await;
+    joindre(&pool, c, doc, v.invoice.id).await;
+    let b = annuler(&pool, &seeded, v.invoice.id).await;
+    repasser(&pool, &seeded, b).await.expect("brouillon");
+    assert_eq!(
+        statut_document(&pool, doc).await.1,
+        Some(b.id),
+        "le document reste joint au brouillon"
+    );
+    supplier_invoices::delete_draft(&pool, c, b.id, u)
+        .await
+        .expect("suppression");
+    assert_eq!(
+        statut_document(&pool, doc).await,
+        ("to_complete".into(), None, None)
+    );
+}
+
+/// T3a (AC-4 a) — exercice de l'achat clos, contre-passation dans un exercice
+/// ouvert → `FISCAL_YEAR_CLOSED`, rien d'écrit.
+#[sqlx::test(migrations = "./test-schema")]
+async fn cancelled_redraft_refused_when_purchase_year_closed(pool: MySqlPool) {
+    let (seeded, f) = decor(&pool).await;
+    let x = scinder(&pool, &seeded).await;
+    let a = annulee(
+        &pool,
+        &seeded,
+        f,
+        "FF-3A",
+        jour(x.y - 2, 6, 15),
+        &[(dec!(20), dec!(0))],
+    )
+    .await;
+    clore(&pool, x.a).await;
+    let err = refus_sans_ecrire(&pool, &seeded, a).await;
+    assert!(matches!(err, DbError::FiscalYearClosed), "{err:?}");
+}
+
+/// T3b (AC-4 b) — exercice clos **entre** l'achat et la contre-passation (état
+/// hérité d'avant la v0.13.0, posé en SQL) → l'achat rend
+/// `LATER_FISCAL_YEAR_CLOSED`, qui nomme l'exercice.
+#[sqlx::test(migrations = "./test-schema")]
+async fn cancelled_redraft_refused_when_a_later_year_is_closed(pool: MySqlPool) {
+    let (seeded, f) = decor(&pool).await;
+    let x = scinder(&pool, &seeded).await;
+    let a = annulee(
+        &pool,
+        &seeded,
+        f,
+        "FF-3B",
+        jour(x.y - 2, 6, 15),
+        &[(dec!(20), dec!(0))],
+    )
+    .await;
+    clore(&pool, x.b).await;
+    let err = refus_sans_ecrire(&pool, &seeded, a).await;
+    match err {
+        DbError::LaterFiscalYearClosed {
+            fiscal_year_id,
+            fiscal_year_name,
+        } => {
+            assert_eq!(fiscal_year_id, x.b);
+            assert_eq!(fiscal_year_name, format!("Exercice {}", x.y - 1));
+        }
+        other => panic!("{other:?}"),
+    }
+}
+
+/// T3c (AC-4 c) — la **contre-passation** sous le verrou de période, l'achat
+/// (daté après son annulation) hors du verrou → `PERIOD_LOCKED` sur la date de
+/// la contre-passation. Tue M1 (suppression brute de la contre-passation).
+#[sqlx::test(migrations = "./test-schema")]
+async fn cancelled_redraft_refused_when_the_reversal_is_locked(pool: MySqlPool) {
+    let (seeded, f) = decor(&pool).await;
+    let x = scinder(&pool, &seeded).await;
+    let a = annulee(
+        &pool,
+        &seeded,
+        f,
+        "FF-3C",
+        jour(x.y + 1, 3, 1),
+        &[(dec!(20), dec!(0))],
+    )
+    .await;
+    verrouiller(&pool, seeded.company_id, aujourdhui()).await;
+    let err = refus_sans_ecrire(&pool, &seeded, a).await;
+    match err {
+        DbError::PeriodLocked { attempted, .. } => assert_eq!(attempted, aujourdhui(), "M1"),
+        other => panic!("M1 : {other:?}"),
+    }
+}
+
+/// T3c' (AC-4 c') — l'achat sous le verrou → `PERIOD_LOCKED` sur sa date.
+#[sqlx::test(migrations = "./test-schema")]
+async fn cancelled_redraft_refused_when_the_purchase_is_locked(pool: MySqlPool) {
+    let (seeded, f) = decor(&pool).await;
+    let x = scinder(&pool, &seeded).await;
+    let date = jour(x.y - 2, 6, 15);
+    let a = annulee(&pool, &seeded, f, "FF-3CP", date, &[(dec!(20), dec!(0))]).await;
+    verrouiller(&pool, seeded.company_id, jour(x.y - 2, 12, 31)).await;
+    let err = refus_sans_ecrire(&pool, &seeded, a).await;
+    match err {
+        DbError::PeriodLocked { attempted, .. } => assert_eq!(attempted, date),
+        other => panic!("{other:?}"),
+    }
+}
+
+/// Lettre « à la main » (état posé en SQL — aucune route ne lettre une ligne
+/// d'une pièce, R5) les lignes `ids` en un groupe `manual`.
+async fn lettrer_a_la_main(pool: &MySqlPool, ids: &[i64]) {
+    let cle = *ids.iter().min().unwrap();
+    for id in ids {
+        let done = sqlx::query(
+            "UPDATE journal_entry_lines SET lettering_key = ?, lettering_origin = 'manual' \
+             WHERE id = ? AND lettering_key IS NULL",
+        )
+        .bind(cle)
+        .bind(id)
+        .execute(pool)
+        .await
+        .unwrap();
+        assert_eq!(done.rows_affected(), 1, "montage : ligne {id} libre");
+    }
+}
+
+/// La ligne de charge (compte 4000) d'une écriture.
+async fn ligne_de_charge(pool: &MySqlPool, seeded: &SeededCompany, entry: i64) -> i64 {
+    sqlx::query_scalar("SELECT id FROM journal_entry_lines WHERE entry_id = ? AND account_id = ?")
+        .bind(entry)
+        .bind(seeded.accounts["4000"])
+        .fetch_one(pool)
+        .await
+        .unwrap()
+}
+
+/// T3d (AC-4 d) — une ligne lettrée **hors** des paires `reversal` de
+/// l'annulation (groupe `manual` posé en SQL : la route ne le produit pas) →
+/// `ENTRY_LETTERED` ; la dissolution ne touche pas ce groupe. Tue M5.
+#[sqlx::test(migrations = "./test-schema")]
+async fn cancelled_redraft_refused_when_a_line_is_lettered_outside_the_pairs(pool: MySqlPool) {
+    let (seeded, f) = decor(&pool).await;
+    let a = annulee(
+        &pool,
+        &seeded,
+        f,
+        "FF-3D",
+        jour(2026, 6, 15),
+        &[(dec!(20), dec!(0))],
+    )
+    .await;
+    let l1 = ligne_de_charge(&pool, &seeded, a.achat).await;
+    let l2 = ligne_de_charge(&pool, &seeded, a.cp).await;
+    lettrer_a_la_main(&pool, &[l1, l2]).await;
+    let err = refus_sans_ecrire(&pool, &seeded, a).await;
+    match &err {
+        DbError::EntryNotModifiable(g) => assert_eq!(g.code(), "ENTRY_LETTERED", "M5"),
+        other => panic!("M5 : {other:?}"),
+    }
+}
+
+/// T3e (AC-4 e) — l'achat, puis la contre-passation, rapprochés (lien posé
+/// après l'annulation) → `MATCHED_BANK_TRANSACTION`, transaction et date au
+/// détail ; le lien reste. Tue M9 (variante contre-passation).
+#[sqlx::test(migrations = "./test-schema")]
+async fn cancelled_redraft_refused_when_an_entry_is_reconciled(pool: MySqlPool) {
+    let (seeded, f) = decor(&pool).await;
+    for (numero, sur_cp, jour_tx) in [
+        ("FF-3E1", false, jour(2026, 7, 2)),
+        ("FF-3E2", true, jour(2026, 7, 3)),
+    ] {
+        let a = annulee(
+            &pool,
+            &seeded,
+            f,
+            numero,
+            jour(2026, 6, 15),
+            &[(dec!(20), dec!(0))],
+        )
+        .await;
+        let cible = if sur_cp { a.cp } else { a.achat };
+        let tx =
+            fournisseur_rapproche::debit_rapproche(&pool, &seeded, f, cible, jour_tx, dec!(20))
+                .await;
+        let err = refus_sans_ecrire(&pool, &seeded, a).await;
+        let (b, doc, hint) = refus(&err);
+        assert_eq!(
+            b,
+            SupplierUnvalidationBlocker::MatchedBankTransaction,
+            "{numero} (M9)"
+        );
+        assert_eq!(doc, Some(tx));
+        assert_eq!(hint.transaction_date, Some(jour_tx));
+        let lien: Option<i64> =
+            sqlx::query_scalar("SELECT matched_entry_id FROM bank_transactions WHERE id = ?")
+                .bind(tx)
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        assert_eq!(lien, Some(cible), "le lien reste");
+    }
+}
+
+/// T4 P1 (AC-5) — version périmée + paiement détaché → la version parle.
+#[sqlx::test(migrations = "./test-schema")]
+async fn cancelled_redraft_precedence_version_before_detached_payment(pool: MySqlPool) {
+    let (seeded, f) = decor(&pool).await;
+    let (id, _, _) = fournisseur_rapproche::facture_payee(
+        &pool,
+        &seeded,
+        f,
+        "FF-P1",
+        jour(2026, 6, 15),
+        dec!(30),
+    )
+    .await;
+    let a = annuler(&pool, &seeded, id).await;
+    let err = refus_sans_ecrire(
+        &pool,
+        &seeded,
+        Annulee {
+            version: a.version + 1,
+            ..a
+        },
+    )
+    .await;
+    assert!(matches!(err, DbError::OptimisticLockConflict), "{err:?}");
+}
+
+/// T4 P2 — paiement détaché + exercice de l'achat clos → le paiement parle.
+#[sqlx::test(migrations = "./test-schema")]
+async fn cancelled_redraft_precedence_detached_payment_before_closed_year(pool: MySqlPool) {
+    let (seeded, f) = decor(&pool).await;
+    let x = scinder(&pool, &seeded).await;
+    let (id, _, _) = fournisseur_rapproche::facture_payee(
+        &pool,
+        &seeded,
+        f,
+        "FF-P2",
+        jour(x.y - 2, 6, 15),
+        dec!(30),
+    )
+    .await;
+    let a = annuler(&pool, &seeded, id).await;
+    clore(&pool, x.a).await;
+    let err = refus_sans_ecrire(&pool, &seeded, a).await;
+    assert_eq!(
+        refus(&err).0,
+        SupplierUnvalidationBlocker::DetachedPayment,
+        "{err:?}"
+    );
+}
+
+/// T4 P3 — rapprochement de l'achat + exercice de l'achat clos → le
+/// rapprochement parle.
+#[sqlx::test(migrations = "./test-schema")]
+async fn cancelled_redraft_precedence_match_before_closed_year(pool: MySqlPool) {
+    let (seeded, f) = decor(&pool).await;
+    let x = scinder(&pool, &seeded).await;
+    let a = annulee(
+        &pool,
+        &seeded,
+        f,
+        "FF-P3",
+        jour(x.y - 2, 6, 15),
+        &[(dec!(20), dec!(0))],
+    )
+    .await;
+    fournisseur_rapproche::debit_rapproche(
+        &pool,
+        &seeded,
+        f,
+        a.achat,
+        jour(x.y - 2, 6, 20),
+        dec!(20),
+    )
+    .await;
+    clore(&pool, x.a).await;
+    let err = refus_sans_ecrire(&pool, &seeded, a).await;
+    assert_eq!(
+        refus(&err).0,
+        SupplierUnvalidationBlocker::MatchedBankTransaction,
+        "{err:?}"
+    );
+}
+
+/// T4 P4 — exercice de l'achat clos + contre-passation sous le verrou de
+/// période → `FISCAL_YEAR_CLOSED` (pré-contrôle). Tue M12.
+#[sqlx::test(migrations = "./test-schema")]
+async fn cancelled_redraft_precedence_closed_year_before_locked_reversal(pool: MySqlPool) {
+    let (seeded, f) = decor(&pool).await;
+    let x = scinder(&pool, &seeded).await;
+    let a = annulee(
+        &pool,
+        &seeded,
+        f,
+        "FF-P4",
+        jour(x.y - 2, 6, 15),
+        &[(dec!(20), dec!(0))],
+    )
+    .await;
+    clore(&pool, x.a).await;
+    verrouiller(&pool, seeded.company_id, aujourdhui()).await;
+    let err = refus_sans_ecrire(&pool, &seeded, a).await;
+    assert!(matches!(err, DbError::FiscalYearClosed), "M12 : {err:?}");
+}
+
+/// T4 P5 — exercice clos entre l'achat et la contre-passation + contre-passation
+/// sous le verrou → la contre-passation parle d'abord (`PERIOD_LOCKED`) ;
+/// conséquence assumée de la précédence par écriture (C-v0172a-19).
+#[sqlx::test(migrations = "./test-schema")]
+async fn cancelled_redraft_precedence_reversal_speaks_first(pool: MySqlPool) {
+    let (seeded, f) = decor(&pool).await;
+    let x = scinder(&pool, &seeded).await;
+    let a = annulee(
+        &pool,
+        &seeded,
+        f,
+        "FF-P5",
+        jour(x.y - 2, 6, 15),
+        &[(dec!(20), dec!(0))],
+    )
+    .await;
+    clore(&pool, x.b).await;
+    verrouiller(&pool, seeded.company_id, aujourdhui()).await;
+    let err = refus_sans_ecrire(&pool, &seeded, a).await;
+    match err {
+        DbError::PeriodLocked { attempted, .. } => assert_eq!(attempted, aujourdhui()),
+        other => panic!("{other:?}"),
+    }
+}
+
+/// T4 P6 — verrou sur l'achat + ligne de l'achat lettrée hors paire → le
+/// verrou parle (3-quater avant 3-quinquies), la contre-passation ayant passé.
+#[sqlx::test(migrations = "./test-schema")]
+async fn cancelled_redraft_precedence_period_lock_before_lettering(pool: MySqlPool) {
+    let (seeded, f) = decor(&pool).await;
+    let x = scinder(&pool, &seeded).await;
+    let date = jour(x.y - 2, 6, 15);
+    let a = annulee(&pool, &seeded, f, "FF-P6", date, &[(dec!(20), dec!(0))]).await;
+    verrouiller(&pool, seeded.company_id, jour(x.y - 2, 12, 31)).await;
+    let l = ligne_de_charge(&pool, &seeded, a.achat).await;
+    sqlx::query(
+        "UPDATE journal_entry_lines SET lettering_key = ?, lettering_origin = 'manual' WHERE id = ?",
+    )
+    .bind(l)
+    .bind(l)
+    .execute(&pool)
+    .await
+    .unwrap();
+    let err = refus_sans_ecrire(&pool, &seeded, a).await;
+    match err {
+        DbError::PeriodLocked { attempted, .. } => assert_eq!(attempted, date),
+        other => panic!("{other:?}"),
+    }
+}
+
+/// T5a (AC-6) — payée puis annulée : le paiement détaché existe, non
+/// contre-passé → `SUPPLIER_INVOICE_DETACHED_PAYMENT`, l'écriture nommée,
+/// aucune date de transaction. Tue M6.
+#[sqlx::test(migrations = "./test-schema")]
+async fn cancelled_paid_invoice_redraft_refused_while_payment_stands(pool: MySqlPool) {
+    let (seeded, f) = decor(&pool).await;
+    let (id, _, reglement) = fournisseur_rapproche::facture_payee(
+        &pool,
+        &seeded,
+        f,
+        "FF-5A",
+        jour(2026, 6, 15),
+        dec!(30),
+    )
+    .await;
+    let a = annuler(&pool, &seeded, id).await;
+    let numero: i64 = sqlx::query_scalar("SELECT entry_number FROM journal_entries WHERE id = ?")
+        .bind(reglement)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    let err = refus_sans_ecrire(&pool, &seeded, a).await;
+    let (b, doc, hint) = refus(&err);
+    assert_eq!(b, SupplierUnvalidationBlocker::DetachedPayment, "M6");
+    assert_eq!(doc, Some(reglement));
+    assert_eq!(hint.entry_id, Some(reglement));
+    assert_eq!(hint.entry_number, Some(numero));
+    assert_eq!(hint.entry_date, Some(jour(2026, 6, 15)));
+    assert_eq!(hint.transaction_date, None);
+    assert!(existe(&pool, reglement).await);
+}
+
+/// T5b (AC-6) — idem, paiement rapproché → refus, date de la transaction.
+#[sqlx::test(migrations = "./test-schema")]
+async fn cancelled_paid_invoice_redraft_refused_with_the_transaction_date(pool: MySqlPool) {
+    let (seeded, f) = decor(&pool).await;
+    let r = fournisseur_rapproche::reglement_rapproche(
+        &pool,
+        &seeded,
+        f,
+        "FF-5B",
+        jour(2026, 6, 16),
+        dec!(30),
+    )
+    .await;
+    let a = annuler(&pool, &seeded, r.supplier_invoice_id).await;
+    let err = refus_sans_ecrire(&pool, &seeded, a).await;
+    let (b, _, hint) = refus(&err);
+    assert_eq!(b, SupplierUnvalidationBlocker::DetachedPayment);
+    assert_eq!(hint.entry_id, Some(r.settlement_entry_id));
+    assert_eq!(hint.transaction_date, Some(jour(2026, 6, 16)));
+}
+
+/// T5c (AC-6) — paiement contre-passé depuis sa fiche → brouillon ; le paiement
+/// et sa contre-passation restent, inchangés. Tue M6b.
+#[sqlx::test(migrations = "./test-schema")]
+async fn cancelled_paid_invoice_redrafts_once_the_payment_is_reversed(pool: MySqlPool) {
+    let (seeded, f) = decor(&pool).await;
+    let (id, _, reglement) = fournisseur_rapproche::facture_payee(
+        &pool,
+        &seeded,
+        f,
+        "FF-5C",
+        jour(2026, 6, 15),
+        dec!(30),
+    )
+    .await;
+    let a = annuler(&pool, &seeded, id).await;
+    let inverse = kesh_db::repositories::journal_entries::reverse(
+        &pool,
+        seeded.company_id,
+        reglement,
+        seeded.admin_user_id,
+    )
+    .await
+    .expect("paiement contre-passé")
+    .entry
+    .id;
+    let effets = (effet(&pool, reglement).await, effet(&pool, inverse).await);
+    let r = repasser(&pool, &seeded, a).await.expect("M6b : brouillon");
+    assert_eq!(r.invoice.status, "draft");
+    assert!(existe(&pool, reglement).await && existe(&pool, inverse).await);
+    assert_eq!(
+        (effet(&pool, reglement).await, effet(&pool, inverse).await),
+        effets
+    );
+}
+
+/// T5d (AC-6) — le chemin de T5b : *Annuler le rapprochement* contre-passe le
+/// paiement → brouillon.
+#[sqlx::test(migrations = "./test-schema")]
+async fn cancelled_paid_invoice_redrafts_after_unreconciliation(pool: MySqlPool) {
+    let (seeded, f) = decor(&pool).await;
+    let r = fournisseur_rapproche::reglement_rapproche(
+        &pool,
+        &seeded,
+        f,
+        "FF-5D",
+        jour(2026, 6, 16),
+        dec!(30),
+    )
+    .await;
+    let a = annuler(&pool, &seeded, r.supplier_invoice_id).await;
+    refus_sans_ecrire(&pool, &seeded, a).await;
+    kesh_db::repositories::reconciliation_cancel::cancel(
+        &pool,
+        seeded.company_id,
+        r.bank_transaction_id,
+        seeded.admin_user_id,
+    )
+    .await
+    .expect("rapprochement annulé");
+    let r2 = repasser(&pool, &seeded, a).await.expect("brouillon");
+    assert_eq!(r2.invoice.status, "draft");
+    assert!(
+        existe(&pool, r.settlement_entry_id).await,
+        "le paiement reste"
+    );
+    let inverse: Option<i64> =
+        sqlx::query_scalar("SELECT id FROM journal_entries WHERE reverses_entry_id = ?")
+            .bind(r.settlement_entry_id)
+            .fetch_optional(&pool)
+            .await
+            .unwrap();
+    assert!(inverse.is_some(), "et sa contre-passation");
+}
+
+/// T5e (AC-6) — deux cycles d'annulation : le premier paiement contre-passé, le
+/// second non → le refus nomme le second. Tue M6c.
+#[sqlx::test(migrations = "./test-schema")]
+async fn cancelled_redraft_examines_every_cancellation_trace(pool: MySqlPool) {
+    let (seeded, f) = decor(&pool).await;
+    let c = seeded.company_id;
+    let u = seeded.admin_user_id;
+    let (id, _, s1) = fournisseur_rapproche::facture_payee(
+        &pool,
+        &seeded,
+        f,
+        "FF-5E",
+        jour(2026, 6, 15),
+        dec!(30),
+    )
+    .await;
+    let a = annuler(&pool, &seeded, id).await;
+    kesh_db::repositories::journal_entries::reverse(&pool, c, s1, u)
+        .await
+        .expect("premier paiement contre-passé");
+    let d = repasser(&pool, &seeded, a).await.expect("premier cycle");
+    let v = supplier_invoices::validate(&pool, c, id, d.invoice.version, u)
+        .await
+        .expect("revalidée");
+    let p = supplier_invoices::pay(
+        &pool,
+        c,
+        id,
+        SettlementChoice::BankTransfer {
+            bank_account_id: f.bank_account_id,
+        },
+        jour(2026, 6, 18),
+        u,
+    )
+    .await
+    .expect("payée de nouveau");
+    assert_eq!(v.invoice.id, id);
+    let s2 = p
+        .invoice
+        .settlement_journal_entry_id
+        .expect("second paiement");
+    let b = annuler(&pool, &seeded, id).await;
+    let err = refus_sans_ecrire(&pool, &seeded, b).await;
+    let (blocker, doc, hint) = refus(&err);
+    assert_eq!(blocker, SupplierUnvalidationBlocker::DetachedPayment, "M6c");
+    assert_eq!(
+        (doc, hint.entry_id),
+        (Some(s2), Some(s2)),
+        "M6c : le second paiement"
+    );
+}
+
+/// T6 (AC-7) — payée, règlement rapproché → `SUPPLIER_INVOICE_PAID_RECONCILED`,
+/// transaction et date ; le statut parle avant la version. Tue M7.
+#[sqlx::test(migrations = "./test-schema")]
+async fn paid_reconciled_invoice_redraft_names_the_reconciliation(pool: MySqlPool) {
+    let (seeded, f) = decor(&pool).await;
+    let r = fournisseur_rapproche::reglement_rapproche(
+        &pool,
+        &seeded,
+        f,
+        "FF-6",
+        jour(2026, 6, 17),
+        dec!(30),
+    )
+    .await;
+    let version: i32 = sqlx::query_scalar("SELECT version FROM supplier_invoices WHERE id = ?")
+        .bind(r.supplier_invoice_id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    for v in [version, version + 3] {
+        let err = supplier_invoices::unvalidate(
+            &pool,
+            seeded.company_id,
+            r.supplier_invoice_id,
+            v,
+            seeded.admin_user_id,
+        )
+        .await
+        .expect_err("payée rapprochée");
+        let (b, doc, hint) = refus(&err);
+        assert_eq!(b, SupplierUnvalidationBlocker::PaidReconciled, "M7");
+        assert_eq!(doc, Some(r.bank_transaction_id));
+        assert_eq!(hint.transaction_date, Some(jour(2026, 6, 17)));
+    }
+    assert_eq!(etat(&pool, r.supplier_invoice_id).await.0, "paid");
+}
+
+/// T9 (AC-9) — la trace du geste : `supplier_invoice.unvalidated` avec
+/// `previousStatus`, les deux écritures, l'instantané ; `journal_entry.deleted`
+/// pour chacune ; `lettering.removed` pour chaque paire. Tue M3, M3b.
+#[sqlx::test(migrations = "./test-schema")]
+async fn cancelled_redraft_is_audited(pool: MySqlPool) {
+    let (seeded, f) = decor(&pool).await;
+    let a = annulee(
+        &pool,
+        &seeded,
+        f,
+        "FF-9",
+        jour(2026, 6, 15),
+        &[(dec!(100), dec!(8.1))],
+    )
+    .await;
+    let cles = cles_reversal(&pool, a).await;
+    repasser(&pool, &seeded, a).await.expect("brouillon");
+    let details: serde_json::Value = sqlx::query_scalar(
+        "SELECT details_json FROM audit_log WHERE action = 'supplier_invoice.unvalidated' AND entity_id = ?",
+    )
+    .bind(a.id)
+    .fetch_one(&pool)
+    .await
+    .expect("M3 : trace du geste");
+    assert_eq!(details["previousStatus"], "cancelled", "M3b : {details}");
+    assert_eq!(details["purchaseJournalEntryId"], a.achat, "{details}");
+    assert_eq!(details["reversalJournalEntryId"], a.cp, "M3b : {details}");
+    assert_eq!(
+        details["supplierInvoice"]["status"], "cancelled",
+        "{details}"
+    );
+    assert_eq!(nb_audits(&pool, "journal_entry.deleted", a.achat).await, 1);
+    assert_eq!(nb_audits(&pool, "journal_entry.deleted", a.cp).await, 1);
+    for cle in &cles {
+        assert_eq!(
+            nb_audits(&pool, "lettering.removed", *cle).await,
+            1,
+            "paire {cle}"
+        );
+    }
+}
+
+/// T9b (AC-9) — la dévalidation d'une validée écrit `previousStatus: "open"`
+/// et aucun `reversalJournalEntryId`.
+#[sqlx::test(migrations = "./test-schema")]
+async fn validated_redraft_audit_says_open(pool: MySqlPool) {
+    let (seeded, f) = decor(&pool).await;
+    let v = validee(&pool, &seeded, f, "FF-9B", dec!(10)).await;
+    supplier_invoices::unvalidate(
+        &pool,
+        seeded.company_id,
+        v.invoice.id,
+        v.invoice.version,
+        seeded.admin_user_id,
+    )
+    .await
+    .expect("brouillon");
+    let details: serde_json::Value = sqlx::query_scalar(
+        "SELECT details_json FROM audit_log WHERE action = 'supplier_invoice.unvalidated' AND entity_id = ?",
+    )
+    .bind(v.invoice.id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(details["previousStatus"], "open", "{details}");
+    assert!(details.get("reversalJournalEntryId").is_none(), "{details}");
+}
+
+/// T10 (AC-10) — payée par la réconciliation : refus `PaidReconciled` →
+/// *Annuler le rapprochement* → validée → brouillon → supprimée ; le règlement
+/// et sa contre-passation restent. Tue M7.
+#[sqlx::test(migrations = "./test-schema")]
+async fn a_reconciled_paid_invoice_goes_back_to_draft_through_unreconciliation(pool: MySqlPool) {
+    let (seeded, f) = decor(&pool).await;
+    let c = seeded.company_id;
+    let u = seeded.admin_user_id;
+    let r = fournisseur_rapproche::reglement_rapproche(
+        &pool,
+        &seeded,
+        f,
+        "FF-10",
+        jour(2026, 6, 15),
+        dec!(30),
+    )
+    .await;
+    let version = etat(&pool, r.supplier_invoice_id).await.2;
+    let err = supplier_invoices::unvalidate(&pool, c, r.supplier_invoice_id, version, u)
+        .await
+        .expect_err("payée rapprochée");
+    assert_eq!(
+        refus(&err).0,
+        SupplierUnvalidationBlocker::PaidReconciled,
+        "M7"
+    );
+    kesh_db::repositories::reconciliation_cancel::cancel(&pool, c, r.bank_transaction_id, u)
+        .await
+        .expect("rapprochement annulé");
+    let (status, _, version) = etat(&pool, r.supplier_invoice_id).await;
+    assert_eq!(status, "open");
+    let d = supplier_invoices::unvalidate(&pool, c, r.supplier_invoice_id, version, u)
+        .await
+        .expect("brouillon");
+    assert_eq!(d.invoice.status, "draft");
+    supplier_invoices::delete_draft(&pool, c, r.supplier_invoice_id, u)
+        .await
+        .expect("supprimée");
+    let reste: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM supplier_invoices WHERE id = ?")
+        .bind(r.supplier_invoice_id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(reste, 0);
+    assert!(
+        !existe(&pool, r.purchase_entry_id).await,
+        "l'achat est supprimé"
+    );
+    assert!(
+        existe(&pool, r.settlement_entry_id).await,
+        "le règlement n'est jamais supprimé"
+    );
+    let inverse: Option<i64> =
+        sqlx::query_scalar("SELECT id FROM journal_entries WHERE reverses_entry_id = ?")
+            .bind(r.settlement_entry_id)
+            .fetch_optional(&pool)
+            .await
+            .unwrap();
+    assert!(inverse.is_some(), "et sa contre-passation");
+}
+
+/// T11 (AC-11) — une annulée qui a figuré dans un lot (annulé) repasse en
+/// brouillon, mais le brouillon ne se supprime pas.
+#[sqlx::test(migrations = "./test-schema")]
+async fn a_redrafted_cancelled_invoice_keeps_its_batch_history(pool: MySqlPool) {
+    let (seeded, f) = decor(&pool).await;
+    let c = seeded.company_id;
+    let u = seeded.admin_user_id;
+    let v = validee(&pool, &seeded, f, "FF-11", dec!(7)).await;
+    let lot = en_lot(&pool, &seeded, f, v.invoice.id).await;
+    payment_batches::cancel_batch(&pool, c, lot, u)
+        .await
+        .unwrap();
+    let a = annuler(&pool, &seeded, v.invoice.id).await;
+    repasser(&pool, &seeded, a).await.expect("brouillon");
+    let err = supplier_invoices::delete_draft(&pool, c, a.id, u)
+        .await
+        .expect_err("historique de lot");
+    assert!(
+        matches!(err, DbError::SupplierInvoiceHasPaymentBatchHistory { payment_batch_id } if payment_batch_id == lot),
+        "{err:?}"
+    );
+}
+
+/// T14 (C-v0172a-16) — une annulée sans contre-passation liée (lien retiré en
+/// SQL de test : aucun geste ne produit cet état) → `Invariant`, rien d'écrit.
+#[sqlx::test(migrations = "./test-schema")]
+async fn cancelled_redraft_without_a_linked_reversal_is_an_invariant(pool: MySqlPool) {
+    let (seeded, f) = decor(&pool).await;
+    let a = annulee(
+        &pool,
+        &seeded,
+        f,
+        "FF-14",
+        jour(2026, 6, 15),
+        &[(dec!(20), dec!(0))],
+    )
+    .await;
+    sqlx::query("UPDATE journal_entries SET reverses_entry_id = NULL WHERE id = ?")
+        .bind(a.cp)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let err = refus_sans_ecrire(&pool, &seeded, a).await;
+    assert!(matches!(err, DbError::Invariant(_)), "{err:?}");
 }
