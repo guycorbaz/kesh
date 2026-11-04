@@ -5,11 +5,11 @@ Status: ready-for-dev
 *Fiche rédigée le 2026-11-04, en autonomie (Opus 5.5), worktree `/home/gcorbaz/devel/kesh-0172b`, branche
 `story/v0172-correctifs` partie de `d7ec2ea2` (le merge de la v0.17.1 sur `main`). Release **0.17.2**, **sans migration**
 (§ *Contrainte*). Liste acceptée par le Project Lead le 2026-11-04. Registre : `v0172-choix-autonomes.md`, choix
-`C-v0172b-1` à `C-v0172b-28` (ceux de #876 déplacés vers la section `v0172s`). Clé courte : `v0172b` (port 3173, bases
+`C-v0172b-1` à `C-v0172b-29` (ceux de #876 déplacés vers la section `v0172s`). Clé courte : `v0172b` (port 3173, bases
 `kesh_v0172b` / `kesh_e2e_v0172b`). Issues : **#840** (bug, P2), **#870**, **#851**, **#882** (bugs, P3), **#880**, **#883** (bugs, P4), **#885** (demande), en `refs`
 seulement dans les commits ; la fermeture se porte sur la PR de release. Les numéros de ligne sont ceux de `d7ec2ea2`.
 Une autre story de la 0.17.2 (`v0172-annulees`, #868) travaille en parallèle sur une autre branche : CHANGELOG et registre
-se fusionnent **par union** à l'intégration. Remédiée le 2026-11-04 après les validations P1 et P2 (Change Log).
+se fusionnent **par union** à l'intégration. Remédiée le 2026-11-04 après les validations P1, P2 et P3 (Change Log).
 **#876 (la session) a été extraite à la validation P2 dans la fiche sœur `v0172-session.md`** (même branche, clé de statut
 `v0172-session`) : cette fiche n'en garde que des renvois.*
 
@@ -208,11 +208,20 @@ arrière du navigateur ⇒ la liste suit l'URL. **Page au-delà du total** : `?o
 (fixture), la liste filtrée par l'URL montre 50 lignes puis 5 après *Suivant*.
 **AC-B2 bis** — la case : cocher appelle `goto` vers `?cancelled=1` puis lit `{ limit: 50, offset: 0 }` ; *Suivant* garde
 `cancelled=1` ; retour arrière vers l'URL sans le paramètre ⇒ la case décochée et `status: ['draft','open','paid']`.
-Tests : `supplier-invoices-list-page.test.ts` (existant ; `$app/state` simulé avec une `page.url` **modifiable**, et le simulacre
-de `goto` (`:12`, aujourd'hui `goto: vi.fn()`) **modifie** cette `page.url`, sans quoi les lectures réactives ne se rejouent pas).
-**Assertions existantes à mettre à jour** (raison au Change Log : `limit` passe de 100 à 50, `offset` est envoyé) : `:50`, `:59`,
-`:68`, `:71`, `:104`, `:113`, `:136` (`{ limit: 100, … }` ⇒ `{ limit: 50, offset: 0, … }`) ; `FiscalYearChecks.test.ts`
-(existant ou créé). **Rouges avant correctif** : AC-B1, AC-B2, AC-B3. E2E (AC-B4) : après *Suivant*, un clic sur l'entrée
+Tests : `supplier-invoices-list-page.test.ts` (existant). Le `page` de `$app/state` y est **réactif**, sur le modèle exact de
+`routes/(app)/journal-entries/[id]/page-state.test-helper.svelte.ts` (`export const pageState = $state({ … })`, et son
+commentaire : « Un objet simple dans `vi.mock` ne déclenche rien ; cet état-ci, si ») : un module `page-state.test-helper.svelte.ts`
+à côté du test exporte `pageState = $state({ url: new URL('http://localhost/supplier-invoices') })`, `vi.mock('$app/state')` rend
+`{ get page() { return pageState; } }` (ou équivalent), et le simulacre de `goto` (`:12`, aujourd'hui `goto: vi.fn()`) **réaffecte**
+`pageState.url = new URL(cible, 'http://localhost')` — une réaffectation, car un `URL` n'est pas suivi par `$state` s'il est
+seulement muté. Un objet ordinaire muté (patron d'`invoices-list-page.test.ts:13-15`) ne rejouerait ni le `$derived` ni le
+`$effect`, et le test de navigation par lien ne passerait pas sous une implémentation correcte. **Sonde** : le cas « navigation par
+lien » rougit sous MB8 (constaté au Dev Agent Record), comme MB10.
+**Assertions existantes à mettre à jour** (raison au Change Log) : les **requêtes** `:59`, `:71` (`{ limit: 100, status: […] }` ⇒
+`{ limit: 50, offset: 0, status: […] }`) et `:68` (`{ limit: 100 }` ⇒ `{ limit: 50, offset: 0 }`) ; `:50`, `:104`, `:113`, `:136`
+sont des **réponses simulées** (`total`, `offset`, `limit` du corps rendu) que la correction ne rend pas fausses — inchangées, ou
+alignées sur `limit: 50` par cohérence ; et `lib/features/fiscal-years/FiscalYearChecks.test.ts:176-178`
+(`.toBe('/supplier-invoices')` ⇒ `.toBe('/supplier-invoices?status=draft')`), l'assertion qui change avec AC-B3. **Rouges avant correctif** : AC-B1, AC-B2, AC-B3. E2E (AC-B4) : après *Suivant*, un clic sur l'entrée
 *Factures fournisseurs* du menu ramène la liste par défaut, page 1.
 
 ## B.2 — #851 : des entrées du menu disparaissent
@@ -242,9 +251,13 @@ de `goto` (`:12`, aujourd'hui `goto: vi.fn()`) **modifie** cette `page.url`, san
 
 ### Conception (C-v0172b-8)
 
-**Reproduire d'abord le symptôme** (AC-B5, oracle du symptôme), puis corriger : la `<nav>` reçoit `overflow-y-auto` et
-`overscroll-behavior: auto` (la molette fait défiler la barre, puis la page), sa hauteur devient un **maximum**
-(`self-start max-h-[calc(100vh-3.5rem)]` à la place de `h-[calc(100vh-3.5rem)]`, `top-14` inchangé) : avec un bandeau affiché
+**Reproduire d'abord le symptôme** (AC-B5, oracle du symptôme), puis corriger **en gardant l'aspect de la barre** (fond
+`bg-surface-alt` et filet `border-r` sur toute la hauteur de la fenêtre, pour tous les rôles, groupes repliés compris — c'est ce
+que donne aujourd'hui `h-[calc(100vh-3.5rem)]`, `+layout.svelte:374-377`, dans `<div class="flex flex-1">`, `:371`) : le fond et le
+filet passent à un conteneur **étiré** par le flex (`<aside class="w-56 shrink-0 border-r border-border bg-surface-alt">`, qui prend
+la hauteur de la ligne, au moins celle de la fenêtre) ; la `<nav>`, à l'intérieur, reste `sticky top-14`, reçoit
+`overflow-y-auto`, `overscroll-behavior: auto` (la molette fait défiler la barre, puis la page) et une hauteur **maximale**
+(`max-h-[calc(100vh-3.5rem)]`, à la place de `h-[…]`) ; elle garde son `padding` (C-v0172b-8) : avec un bandeau affiché
 (`DemoBanner`, `IncompleteBanner`, `BackupScheduleBanner`, `+layout.svelte:362-369`) la barre commence `B` pixels plus bas ;
 la molette, arrivée au bas de la barre, fait défiler la page de `B` pixels, la barre se colle sous l'en-tête et son dernier
 lien entre dans la fenêtre (finding P10 de la validation P2). **Si l'oracle du symptôme ne rougit pas**, ne rien corriger :
@@ -257,17 +270,27 @@ l'hypothèse du rôle (§ 13) reste écartée sauf preuve. **AC-B5 bis** n'est q
 définit **atteignable** une entrée qu'un utilisateur peut viser **par ses propres gestes** : la souris posée sur la barre, des
 crans de molette (`page.mouse.wheel(0, 200)`, au plus 20, jusqu'à stabilité), puis le lien est dans la fenêtre et
 `document.elementFromPoint` au centre de sa boîte rend le lien lui-même (ni le pied de page, ni le contenu, ni un bandeau).
-Scénario de l'issue : sur `/`, groupes à leur état par défaut (Quotidien et Mensuel dépliés, Administration replié) ; (1) relever
-les entrées visibles des groupes dépliés, toutes atteignables ; (2) **ouvrir le groupe Administration** (clic sur son titre) ;
+Scénario de l'issue : **avant tout**, vider l'état persisté des groupes (`localStorage.removeItem` des trois clés
+`kesh:sidebar:expanded:quotidien|mensuel|administration`, `+layout.svelte:206-209`, puis rechargement), pour partir de l'état par
+défaut (`:225-227` : Quotidien et Mensuel dépliés, Administration replié) quelle que soit la spec précédente ; (1) **relever**
+l'atteignabilité des entrées visibles des groupes dépliés — c'est un relevé, **non** une précondition : 15 entrées de 46 px
+peuvent déjà dépasser la barre avant correctif, et une entrée non atteignable au relevé (1) est consignée, sans faire échouer le
+test à ce stade ; (2) **ouvrir le groupe Administration** (clic sur son titre) ;
 (3) relever chacune des **18** entrées d'Administration (liste écrite en dur, recomptée depuis `navGroups`) : atteignable ?
 (4) cliquer *Serveur MCP* ; sur `/admin/mcp`, relever de nouveau les 18 entrées et celles des deux autres groupes. Le test
-**rougit si une entrée visible au relevé précédent n'est plus atteignable** — c'est « des entrées disparaissent à l'ouverture d'un
-groupe ». Il est joué **deux fois** : sans bandeau, et **avec** un bandeau affiché (réponse de l'API de `BackupScheduleBanner`
+**rougit si une entrée atteignable au relevé précédent n'est plus atteignable** — c'est « des entrées disparaissent à l'ouverture
+d'un groupe » ; la règle est **comparative** et c'est elle seule qui gouverne le résultat avant correctif. Après correctif
+(AC-B5 bis), **toutes** les entrées de tous les relevés sont atteignables. Il est joué **deux fois** : sans bandeau, et **avec** un bandeau affiché (réponse de l'API de `BackupScheduleBanner`
 simulée par `page.route` pour l'afficher — route exacte relue au code par le développeur — ou base de démonstration pour
 `DemoBanner`). Le résultat **avant correctif** décide : rouge ⇒ corriger, et la puce du CHANGELOG le dit ; vert ⇒ branche « ne
 rien corriger » ci-dessus. Les relevés (atteignable / non, par entrée et par étape) vont au Dev Agent Record.
 **AC-B5 bis — la garde du correctif** : après correctif, AC-B5 vert dans ses deux variantes ; et sans faire défiler la page
 (`window.scrollY` à 0, sans bandeau), `nav.scrollHeight > nav.clientHeight` et `getComputedStyle(nav).overflowY` vaut `auto`.
+**AC-B5 ter — l'aspect de la barre est gardé** : en **Comptable** (pas de bloc `adminOnly`), groupes **repliés**, sur `/` sans
+bandeau, le conteneur qui porte le fond et le filet (`aside`, ou l'élément qui porte `bg-surface-alt`) a une boîte dont le bas est
+≥ `window.innerHeight − 1` (le fond et le filet descendent jusqu'au bas de la fenêtre) et `getComputedStyle(…).borderRightWidth`
+vaut `1px` ; même mesure en Administrateur, tous groupes dépliés. Capture de chacun des deux états (thème clair). **Rouge** sous la
+forme `self-start max-h-[…]` sans conteneur étiré (MB3 ter) ; vert avant correctif.
 **AC-B6** — le nombre d'entrées `nav-link-*` du groupe Administration est 18 sur `/admin/mcp`, `/admin/mcp/sends`,
 `/admin/mcp/prompts`, `/users` et `/` (garde de l'hypothèse du rôle, vert avant et après). Captures : menu déplié sur
 `/admin/mcp`, avant (le bas manquant) et après (barre défilée jusqu'en bas), sans et avec bandeau. **La puce du CHANGELOG de
@@ -284,11 +307,15 @@ rien corriger » ci-dessus. Les relevés (atteignable / non, par entrée et par 
     invalide » (`:496-497`) sans dire pourquoi. Le repli `:83-92` (un `$effect`) réécrit **en silence** en `vatOptions[0]`
     toute ligne dont `vatRate === '8.10'` quand `8.10` n'est plus actif — lignes relues d'un brouillon et d'un article comprises :
     un brouillon au taux le plus courant changerait de TVA sans avertissement.
-15 bis. **Aucune réactivation d'un taux n'existe** : `routes/(app)/settings/vat-rates/+page.svelte:231-252` n'affiche les
-    boutons *Changer le taux* et *Désactiver* que pour un taux actif (`{#if r.active}`) ; un taux inactif n'affiche que
-    « Inactif » ; aucune route ne réactive un **taux** (`git grep -nE 'reactiv|set_active' -- crates/kesh-api/src/routes/vat.rs
-    crates/kesh-api/src/routes/vat_rates.rs crates/kesh-db/src/repositories/vat_rates.rs` : aucun résultat ; le motif sur tout
-    `routes/` rend la réactivation d'un **compte**, `routes/accounts.rs:280, :350, :358`, sans rapport). L'écran s'appelle *Taux de TVA* (`/settings/vat-rates`).
+15 bis. **L'écran n'offre aucune réactivation d'un taux ; la route, si** : `routes/(app)/settings/vat-rates/+page.svelte:231-252`
+    n'affiche les boutons *Changer le taux* et *Désactiver* que pour un taux actif (`{#if r.active}`, `:240`) ; un taux inactif
+    n'affiche que « Inactif ». Mais `PUT /api/v1/vat-rates/{id}` (`crates/kesh-api/src/lib.rs:282-283`, `routes/vat.rs:371`
+    « modifie label / valid_to / active ») accepte `active: true` — sonde positive : `git grep -nF 'body.active' --
+    crates/kesh-api/src/routes/vat.rs` rend `:406` (contrôle de chevauchement à la réactivation) et `:425` (`active: body.active`) ;
+    le dépôt aussi (`repositories/vat_rates.rs:195`). *(La première rédaction affirmait « aucune route ne réactive un taux », sur un
+    `git grep` dont le pathspec `routes/vat_rates.rs` n'existe pas — un contrôle muet ; finding P4 de la validation P3.)* L'écran
+    s'appelle *Taux de TVA* (`/settings/vat-rates`). **Choix (C-v0172b-29)** : la story **n'ajoute pas** de bouton de réactivation ;
+    le message de refus reste « Choisissez un taux actif. », qui ne décrit qu'une action offerte à l'écran.
 16. **Le serveur refuse aussi** : `create_invoice` / `update_invoice` appellent `verify_vat_rates_against_db`
     (`routes/invoices.rs:661, :749` → `routes/vat.rs`, `… WHERE company_id = ? AND active = TRUE AND rate IN (…)`) ⇒ `400`
     « Taux TVA non autorisé pour cette entreprise. » (`VAT_REJECTED_MSG`, `vat.rs:49`). Proposer le taux à l'écran ne
@@ -402,6 +429,7 @@ Captures : complétion d'un document, avis visible ; après *C'est la bonne date
 | TB3 | E2E 55 brouillons (AC-B4) | rouge avant |
 | TB4 | E2E oracle du symptôme, sans et avec bandeau (AC-B5) | **décide** : rouge ⇒ correctif ; vert ⇒ aucun correctif |
 | TB4 bis | E2E garde du correctif (AC-B5 bis) | rouge avant, vert après |
+| TB4 ter | E2E aspect de la barre (AC-B5 ter) | vert avant et après ; rouge sous MB3 ter |
 | TB5 | E2E nombre d'entrées (AC-B6) | vert avant et après |
 | TB6 | Vitest taux désactivé (AC-B7, B8) | B7 rouge avant ; B8 vert |
 | TB7 | Vitest date et avis (AC-B9, B10) | rouges avant |
@@ -409,8 +437,8 @@ Captures : complétion d'un document, avis visible ; après *C'est la bonne date
 | TB9 | Vitest #853 (AC-B12) | vert avant (contrôle) ; tests mis à jour |
 
 Mutations : **MB1** `offset` non relu de l'URL ⇒ TB1 rougit ; **MB2** lien K8 sans `?status=draft` ⇒ TB2 ; **MB3**
-`overflow-y-auto` retiré ⇒ TB4 et TB4 bis ; **MB3 bis** `h-[…]` rétabli à la place de `max-h-[…]` et `self-start` ⇒ la variante
-« avec bandeau » de TB4 ; **MB4** l'ensemble des taux proposés calculé une fois (non dérivé) ⇒ le cas
+`overflow-y-auto` retiré ⇒ TB4 et TB4 bis ; **MB3 bis** `h-[…]` rétabli à la place de `max-h-[…]` sur la `<nav>` ⇒ la variante
+« avec bandeau » de TB4 ; **MB3 ter** fond et filet reportés sur la `<nav>` seule (sans conteneur étiré) ⇒ AC-B5 ter ; **MB4** l'ensemble des taux proposés calculé une fois (non dérivé) ⇒ le cas
 `onProductSelect` de TB6 rougit ; **MB5** `toISOString` rétabli ⇒ TB7 (date locale) ; **MB6** `dueFollows` jamais remis à
 `false` ⇒ le cas « saisie à la main » de TB8 ; **MB7** l'avis non retiré à la saisie ⇒ TB7 (AC-B10) ; **MB8** la lecture réactive de l'URL remplacée par une lecture à
 `onMount` ⇒ le cas « navigation par lien » de TB1 ; **MB9** la marque `_vatPlaceholder` ignorée par le repli (toutes les lignes
@@ -458,7 +486,8 @@ le développeur vérifie que, sous `TZ=UTC`, MB5 rougit TB7.
     | 21 | `lib/features/reconciliation/ReconciliationProposals.svelte:480` (cellule) et `:461, :471` (`aria-label` « Sélectionner la transaction du { $date } ») | `p.transaction.bookingDate` | idem (C-v0172b-11) |
     | 22 | `ManualMatchModal.svelte:173` ; `TransactionSplitModal.svelte:234` | `proposal.transaction.bookingDate` | idem |
     | 23 | `LinkSettlementModal.svelte:205, :290, :350` | `valueDate ?? bookingDate`, `c.settledOn`, `e.entryDate` | idem |
-    | 24 | `routes/(app)/settings/api-keys/+page.svelte:74-77` (`formatDate`, `value.slice(0, 10)` — sert `:94, :99, :104, :371`) et `:80-83` (`formatDateTime`, `value.slice(0, 16).replace('T', ' ')` — sert `:372`) | `createdAt`, `revokedAt`, `expiresAt`, `lastUsedAt` | les deux fonctions locales **délèguent** aux helpers communs (DRY) |
+    | 24 | `routes/(app)/settings/api-keys/+page.svelte:74-77` (`formatDate`, `value.slice(0, 10)` — sert `:94`, `:371`) et `:80-83` (`formatDateTime`, `value.slice(0, 16).replace('T', ' ')` — sert `:372`) | `revokedAt`, `createdAt` (instants UTC), `lastUsedAt` | les deux fonctions locales **délèguent** aux helpers communs (DRY), avec conversion à Zurich |
+    | 24 b | `api-keys/+page.svelte:99, :104` (« Expirée le », « Active (expire le … ) ») | `expiresAt` — **date de calendrier** saisie, envoyée `T23:59:59Z` (`:152`) | `formatSwissDate(value.slice(0, 10))`, **sans** conversion (une fonction locale distincte, p. ex. `formatExpiryDate`) |
 
     Les sites multiples d'une même ligne du tableau comptent pour une ligne ; le décompte des **lignes de code** touchées va au
     Dev Agent Record, recompté.
@@ -496,9 +525,22 @@ horodatages du serveur sont de l'UTC** (finding P11 de la validation P2) : `impo
 DateTime<Utc>` sérialisé avec `Z` (`:206` ; fixture `BankImportUpload.test.ts:133`, `'2026-01-02T00:00:00Z'`) ; les champs
 `api_keys` sont des `NaiveDateTime` (`routes/api_keys.rs:37-40`) écrits par `NOW(3)`, UTC. Un horodatage **sans** `Z` ni décalage
 est donc lu comme UTC (on lui ajoute `Z`), puis affiché par `Intl.DateTimeFormat('fr-CH', { timeZone: 'Europe/Zurich', … })`
-(C-v0172b-10, révisé). Aujourd'hui, `api-keys` affiche l'heure UTC brute (`:82`). Les sites de la 0.17.1 qui passent un
-horodatage UTC par `.slice(0, 10)` (fiche client : `paidAt`, `pdfFrozenAt`, `emailedAt` ; relances) donnent la date UTC — même
-famille que C-v0172b-20, portés à son issue ; non corrigés ici. `api-keys/+page.svelte` garde `formatDate`/`formatDateTime` comme noms locaux (ils portent
+(C-v0172b-10, révisé). Aujourd'hui, `api-keys` affiche l'heure UTC brute (`:82`).
+**Exception — l'expiration d'une clé API est une date de calendrier** (finding P1 de la validation P3) : l'utilisateur choisit un
+jour (`<input type="date">`), le client l'envoie à `${jour}T23:59:59Z` (`api-keys/+page.svelte:152`), le serveur le stocke en
+`naive_utc()` (`routes/api_keys.rs:147`) et le rend `2026-12-31T23:59:59` (`:40`, sans `Z`). Converti à l'heure de Zurich, ce serait
+le **01.01.2027**. `expiresAt` **ne se convertit donc pas** : il s'affiche `formatSwissDate(value.slice(0, 10))`, la date choisie
+(§ 24, ligne 24 b du tableau). `createdAt`, `revokedAt`, `lastUsedAt` (écrits par `NOW(3)`) sont, eux, des instants UTC.
+**Les sites de la 0.17.1 qui passent un horodatage par `.slice(0, 10)`** donnent la date UTC (la veille entre minuit et 1 h, 2 h en
+été) ; ils ne sont **pas** corrigés ici et relèvent de **#889** (complétée par l'orchestrateur pour cette forme). Inventaire
+(`git grep -nE "formatSwissDate\(.*\.slice\(0, 10\)" -- frontend/src`, **12 lignes** — le finding P8 de la validation P3 en
+annonçait onze ; le recompte de la sortie en rend douze), à porter nommément à #889, chacun à trier (instant UTC ou date) :
+`routes/(app)/invoices/[id]/+page.svelte:1162` (`paidAt`), `:1171` (`pdfFrozenAt`), `:1179` (`emailedAt`) ;
+`lib/features/reminders/ReminderHistory.svelte:58` (`sentAt`), `:76` (`cancelledAt`) ; `routes/(app)/invoices/due-dates/+page.svelte:472`
+(`paidAt`) ; `routes/(app)/invoices/reminders/+page.svelte:362` (`lastReminderAt`) ; `routes/(app)/payment-batches/[id]/+page.svelte:110`
+(`confirmedAt`) ; `routes/(app)/supplier-invoices/[id]/+page.svelte:143` (`paidAt`), `:232` (`batch.confirmedAt`), `:337`
+(`batch.confirmedAt`) ; `lib/features/imported-supplier-invoices/imported-supplier-invoices.types.ts:65` (`createdAt`). Le passage de
+`formatSwissDate` à la conversion des horodatages (C.1) **ne les touche pas** : ils lui passent une date pure. `api-keys/+page.svelte` garde `formatDate`/`formatDateTime` comme noms locaux (ils portent
 le repli `—` et « Jamais utilisée ») mais délègue la mise en forme aux helpers.
 
 ### Acceptance Criteria (C.1)
@@ -512,14 +554,18 @@ dépendre que de `Europe/Zurich`, non du poste ni du runner ; `process.env.TZ` p
 `('2026-01-02T00:00:00Z') = '02.01.2026 01:00'` (**cas `Z`**), `('2026-07-01T22:30:00+00:00') = '02.07.2026 00:30'`,
 `('2026-01-29') = '29.01.2026'`, `('bogus') = 'bogus'`. **Rouge avant** pour tout horodatage (`'03T17:40:45.11.2026'`).
 **AC-C2** — chaque site du § 24 et du § 24 bis affiche la forme suisse (les horodatages, à l'heure de Zurich ; le fuseau du
-processus épinglé à `UTC` dans les tests qui lisent un horodatage) : un test Vitest **par écran** (liste et fiche du journal ; liste et
+processus épinglé à `UTC` dans les tests qui lisent un horodatage). **Cas de l'expiration** (`api-keys`) : une clé créée avec
+l'expiration choisie au **31.12.2026** (réponse simulée `expiresAt: '2026-12-31T23:59:59'`) affiche « Active (expire le
+31.12.2026) » et, expirée, « Expirée le 31.12.2026 » — **jamais** `01.01.2027` ; le test est joué sous `process.env.TZ` épinglé à
+`Europe/Zurich` **et** à `UTC` (il rougit sous la conversion de `expiresAt`, mutation MC5) : un test Vitest **par écran** (liste et fiche du journal ; liste et
 dialogue de renommage des exercices ; liste, aperçu et fiche des relevés ; dialogue de suppression et message de succès ;
 avertissements de la saisie manuelle ; propositions de rapprochement, y compris l'`aria-label` ; les trois modales ; clés
 API, quatre dates et la dernière utilisation) : `JJ.MM.AAAA` présent, `not.toContain` de l'ISO. Un écran qui porte deux
 sites (p. ex. `bank-import/[id]` : `importedAt` et `bookingDate`) les lit **tous deux** dans son test.
 **AC-C3** — **Contrôle décidable, inventaire clos.** Les motifs `M₁` et `M₂` du § 23, rejoués ensemble (`-E "M₁|M₂"`) sur
 **les 32 fichiers**, avec l'exclusion `bind:value|value=\{|onchange|oninput` puis le filtre
-`| /usr/bin/grep -vE 'formatSwissDate|formatSwissDateTime|formatDate\(|formatDateTime\('`, rendent :
+`| /usr/bin/grep -vE 'formatSwissDate|formatSwissDateTime|formatDate\(|formatDateTime\(|formatExpiryDate\('`, rendent
+(le nom `formatExpiryDate` est celui que prescrit la ligne 24 b du § 24 ; si le développeur en choisit un autre, le filtre suit) :
 - **sonde positive, sur `d7ec2ea2`** : **51 lignes** (64 avant le filtre ; relevé du 2026-11-04) — les **31 lignes** de code des
   sites du § 24 (BankImportList `:38, :40` ; BankImportUpload `:513, :544, :799` ; DeleteBankImportAction `:150, :151, :161,
   :162` ; ManualStatementForm `:629, :648` ; LinkSettlementModal `:205, :290, :350` ; ManualMatchModal `:173` ;
@@ -579,7 +625,8 @@ sites (p. ex. `bank-import/[id]` : `importedAt` et `bookingDate`) les lit **tous
 
 Mutations : **MC1** `formatSwissDate` rendu à sa forme actuelle (`split('-')`) ⇒ TC1 ; **MC2** retirer le helper d'un site
 (une mutation par écran) ⇒ son test seul ; **MC3** retirer `.map(|l| l.trim_end_matches('\r'))` de `parser.rs:95` ⇒ TC4
-rougit (il ne rougissait pas avec la fixture de 4 lignes) ; **MC4** `est_payload_spc` accepte tout préfixe `SPC` ⇒ TC3.
+rougit (il ne rougissait pas avec la fixture de 4 lignes) ; **MC4** `est_payload_spc` accepte tout préfixe `SPC` ⇒ TC3 ; **MC5** `expiresAt` passé par la conversion à Zurich ⇒ le cas du
+31.12 d'AC-C2.
 
 ---
 
@@ -607,8 +654,10 @@ captures, commit `refs #N`, revue de code.
 
 ## Manuel
 
-Le PDF de chaque manuel touché est régénéré par `make fr` dans `docs/manual/`, puis contrôlé aplati (`pdftotext
-docs/manual/fr/<manuel>.pdf - | tr '\n' ' ' | tr -s ' '`, puis `grep -F` de chaque phrase neuve **et** de chaque phrase retirée).
+Le PDF de chaque manuel touché est régénéré par `make fr` dans `docs/manual/`, puis contrôlé aplati **et apostrophes
+normalisées** — `pdftotext docs/manual/fr/<manuel>.pdf - | tr '\n' ' ' | tr -s ' ' | sed "s/’/'/g"` — puis `grep -F` de chaque
+phrase neuve **et** de chaque phrase retirée (le PDF rend l'apostrophe typographique U+2019, le `.tex` et les phrases prescrites
+portent `'` : sans la normalisation, un `grep -F` rend 0 pour une phrase présente, ou « bien retirée » pour une phrase restée).
 
 **`docs/manual/fr/user-manual.tex`**
 - **#870** — `:823` (K8) seulement : le panneau nomme les vingt premiers brouillons et dit « … et N autres » ; le lien
@@ -621,8 +670,9 @@ docs/manual/fr/<manuel>.pdf - | tr '\n' ' ' | tr -s ' '`, puis `grep -F` de chaq
   signalée. Le rappel historique « depuis la version 0.17.0 : la date du jour n'est presque jamais celle d'une facture reçue »
   devient « depuis la version 0.17.2, elle est proposée et signalée ».
 - **#882** — § *Création d'une facture* (`:1034`), puce *Lignes de facture* (`:1045`) : une ligne dont le taux a été désactivé
-  l'affiche « (désactivé) » ; la facture ne s'enregistre qu'avec un taux actif, à choisir dans la ligne (un taux désactivé ne
-  se réactive pas : *Paramètres → Taux de TVA*, `:1014`, ne propose que *Changer le taux* et *Désactiver* pour un taux actif).
+  l'affiche « (désactivé) » ; la facture ne s'enregistre qu'avec un taux actif, à choisir dans la ligne. *(L'écran **Taux de TVA**,
+  `:1014`, ne propose pas de réactiver un taux désactivé : il n'offre *Changer le taux* et *Désactiver* que pour un taux actif. Le
+  manuel le dit ainsi — ce que fait l'écran —, sans affirmer qu'un taux « ne se réactive pas ».)*
 - **#851, #880, #883** : rien à décrire (le manuel ne décrit ni la forme des dates de ces écrans — `grep -nE 'AAAA-MM-JJ|jj\.mm'
   docs/manual/fr/user-manual.tex` à joindre au Change Log — ni la hauteur du menu).
 
@@ -736,6 +786,25 @@ vide). La PR de release porte les `closes`.
   produit ; doc-comment `qr_decode.rs:1231-1232`). Findings P1 à P5, P12 à P17 : traités dans `v0172-session.md` (son Change Log ;
   P16 en partie réfuté, `exports/global.rs:215-217`). Valeurs grepées : `:1032`, `:1040`, `:118`, `MA13`, `A1`, `#876`, `limit: 100`
   dans la fiche ; « 1 à 27 » → « 1 à 28 ». Prochaine : validation **P3** (Sonnet, complète, `v0172-correctifs-validate-prompt-p3.md`).
+
+- 2026-11-04 — **Validation P3 (Sonnet) : 0/0/4/5** (rapport `kesh-gate-logs/v0172b-validate-p3.md`, lentille complète). Tous
+  appliqués, prémisse relue au code. **P1** (MEDIUM) — `api-keys/+page.svelte:152` (`${formExpiresAt}T23:59:59Z`) et
+  `routes/api_keys.rs:147` (`naive_utc()`) lus : l'expiration d'une clé est une **date de calendrier**, rangée à part (§ 24, ligne
+  24 b ; § C.1, exception), affichée sans conversion ; cas du 31.12 à AC-C2 sous `TZ` Zurich et UTC ; MC5 ; filtre d'AC-C3 étendu à
+  `formatExpiryDate\(` ; C-v0172b-10 récrit. **P2** (MEDIUM) — `+layout.svelte:371, :374-377` lus : fond et filet portés par un
+  conteneur étiré, la `<nav>` seule `sticky` à `max-h-[…]` ; AC-B5 ter (Comptable, groupes repliés : le fond descend au bas de la
+  fenêtre) et ses captures ; MB3 ter. **P3** (MEDIUM) — `journal-entries/[id]/page-state.test-helper.svelte.ts:3-15` lu : `page`
+  **réactif** sur ce modèle, cité et prescrit, `url` réaffectée par le simulacre de `goto` ; sonde sous MB8. **P4** (MEDIUM) —
+  `routes/vat.rs:371, :406, :425`, `lib.rs:282-283`, `repositories/vat_rates.rs:195` lus : la route réactive un taux, l'écran non ;
+  § 15 bis récrit avec sonde positive (`git grep -nF 'body.active'`) ; manuel : « l'écran ne propose pas de réactiver » ; **choix
+  C-v0172b-29** : pas de bouton, message inchangé (« Choisissez un taux actif. »). LOW : **P5** — assertions de requête `:59`,
+  `:68`, `:71` seules, réponses simulées `:50, :104, :113, :136` distinguées, `FiscalYearChecks.test.ts:176-178` nommé ; **P6** —
+  C-v0172b-1 et C-v0172b-10 récrits (« Retenu » / « Écartées » à l'état en vigueur) ; **P7** — contrôle du PDF avec
+  `sed "s/’/'/g"` ; **P8** — les sites `formatSwissDate(x.slice(0, 10))` listés au § C.1 avec renvoi à **#889** : **12** lignes au
+  recompte (le finding en annonçait onze) ; **P9** — état persisté des groupes vidé avant l'oracle, relevé (1) non bloquant, règle
+  comparative seule à gouverner. Valeurs grepées : `self-start` (ne reste qu'en entrées datées et au cas de mutation MB3 ter),
+  « ne se réactive pas », `vat_rates.rs` (pathspec), `1 à 28` → `1 à 29`. Prochaine : validation **P4** (Opus, ciblée sur cette
+  remédiation, `v0172-correctifs-validate-prompt-p4.md`).
 
 ## Dev Agent Record
 

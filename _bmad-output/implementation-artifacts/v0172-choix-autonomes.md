@@ -17,16 +17,16 @@ défauts recyclés concentrés sur #876). #876 passe dans la fiche sœur `v0172-
 `C-v0172s-k`) ; `v0172-correctifs` garde A2, B et C, dans cet ordre. Signal déclaré au Project Lead par l'orchestrateur.*
 
 - **Contexte** : huit issues, plus de cinq modules (règle de splitting préventif du `CLAUDE.md`).
-- **Retenu** : quatre sous-stories posées dans `v0172-correctifs.md` — A1 (session #876), A2 (import simultané #840), B
-  (écrans : #870, #851, #882, #885), C (forme : #880, #883) —, développées dans l'ordre A1 → A2 → B → C sur la branche
-  `story/v0172-correctifs`, chacune close par ses commits, son gate et sa revue de code. Chacune touche au plus cinq
-  modules (tableau complet des fichiers dans la fiche) ; C est un déploiement mécanique. #876 et #840, sans lien, ont été
-  séparées à la validation P1 (finding P5 : réunies, elles dépassaient cinq modules). Une seule clé `v0172-correctifs` au registre des sprints, comme le mandat le
-  demande.
-- **Écartées** : (a) une story unique — trop large pour une revue adversariale fiable ; (b) trois fiches sœurs — le mandat
-  permet la même fiche, et les trois partagent la contrainte, le CHANGELOG et le manuel ; (c) huit stories — coût de
+- **Retenu** (état en vigueur depuis la validation P2) : **#876** dans la fiche sœur `v0172-session.md` (clé de statut
+  `v0172-session`, choix `C-v0172s-k`) ; **trois** sous-stories dans `v0172-correctifs.md` — A2 (import simultané #840), B (écrans :
+  #870, #851, #882, #885), C (forme : #880, #883) —, développées dans l'ordre A2 → B → C sur la branche `story/v0172-correctifs`,
+  chacune close par ses commits, son gate et sa revue de code ; chacune touche au plus cinq modules (tableau des fichiers dans la
+  fiche) ; C est un déploiement mécanique. *Historique* : trois sous-stories à la rédaction (A = #876 + #840), quatre à la
+  validation P1 (A1 / A2 séparées, finding P5), puis l'extraction de A1 à la validation P2.
+- **Écartées** : (a) une story unique — trop large pour une revue adversariale fiable ; (b) une fiche sœur par sous-story — les
+  trois qui restent partagent la contrainte, le CHANGELOG et le manuel, et leurs revues convergeaient ; (c) huit stories — coût de
   boucles de revue disproportionné pour des correctifs de P3/P4.
-- **Réversible** : oui — une sous-story peut être sortie en fiche sœur `v0172-correctifs-<n>` si sa revue ne converge pas.
+- **Réversible** : oui — une sous-story peut encore être sortie en fiche sœur si sa revue ne converge pas.
 
 ### C-v0172b-2 — #876 : renouvellement côté navigateur, à l'entrée de l'utilisateur, et champ `sessionExpiresIn` *(révisé à la validation P1)*
 
@@ -119,6 +119,8 @@ défauts recyclés concentrés sur #876). #876 passe dans la fiche sœur `v0172-
 
 ### C-v0172b-8 — #851 : la cause est le débordement de la barre latérale ; reproduire avant de corriger
 
+*Complété à la validation P3 : l'aspect de la barre est gardé — fond et filet portés par un conteneur étiré, la `<nav>` seule `sticky` à hauteur maximale ; AC-B5 ter et sa capture ; état persisté des groupes vidé avant l'oracle, relevé (1) non bloquant (findings P2, P9).*
+
 *Révisé à la validation P2 : la reproduction est un **oracle du symptôme** (entrées atteignables par la molette, avant et après
 l'ouverture d'un groupe, sans et avec bandeau), dont le résultat décide du correctif ; le correctif borne la barre par un
 **maximum** (`self-start max-h-[…]`) en plus d'`overflow-y-auto`, pour rester juste avec un bandeau. L'oracle de la première
@@ -152,11 +154,16 @@ remédiation rougissait par construction (finding P9) et restait rouge sous un c
 cas `Z` et décalage compris. « Aucun fuseau appliqué », ci-dessous, est remplacé.*
 
 - **Contexte** : `formatSwissDate` (`reports.api.ts`) rend un résultat faux sur `2026-11-03T17:40:45` (#883.6) ; plusieurs
-  sites de #880 affichent un horodatage (`importedAt`, `lastUsedAt`).
-- **Retenu** : `formatSwissDate` reconnaît `AAAA-MM-JJ` suivi de `T`, d'une espace ou de rien ; `formatSwissDateTime` rend
-  `JJ.MM.AAAA HH:mm` ; aucun fuseau appliqué (horodatages naïfs, affichés tels quels aujourd'hui) ; `api-keys` délègue.
-- **Écartées** : `Intl.DateTimeFormat` — forme dépendante de la langue, alors que les écrans de la 0.17.1 ont fixé
-  `JJ.MM.AAAA` ; un `.slice(0, 10)` à chaque site — duplication, et l'heure perdue là où elle est affichée aujourd'hui.
+  sites de #880 affichent un horodatage (`importedAt`, `lastUsedAt`), et les horodatages du serveur sont de l'UTC.
+- **Retenu** (état en vigueur depuis la validation P2, complété à la P3) : une date pure (`AAAA-MM-JJ`) se rend `JJ.MM.AAAA` sans
+  fuseau ; un horodatage (sans décalage lu comme UTC, `Z` et `±HH:MM` compris) se rend à l'heure de Zurich, par
+  `Intl.DateTimeFormat('fr-CH', { timeZone: 'Europe/Zurich' })` dont seuls les composants sont repris pour composer `JJ.MM.AAAA`
+  et `JJ.MM.AAAA HH:mm` (la forme ne dépend pas de la langue) ; `api-keys` délègue. **Exception** : l'expiration d'une clé API est
+  une **date de calendrier** saisie, envoyée `T23:59:59Z` (`api-keys/+page.svelte:152`) : elle s'affiche par sa date
+  (`value.slice(0, 10)`), sans conversion (finding P1 de la validation P3 ; test du 31.12).
+- **Écartées** : afficher les horodatages tels quels (heure UTC lue comme suisse, et la veille entre minuit et 1-2 h) ; `Intl` pour
+  la forme entière (dépendante de la langue, alors que la 0.17.1 a fixé `JJ.MM.AAAA`) ; un `.slice(0, 10)` à chaque site
+  (duplication, heure perdue) ; convertir aussi l'expiration (31.12 affiché 01.01).
 - **Réversible** : oui.
 
 ### C-v0172b-11 — #880 : l'`aria-label` des propositions de rapprochement est inclus
@@ -244,7 +251,7 @@ cas `Z` et décalage compris. « Aucun fuseau appliqué », ci-dessous, est remp
   (corrigé par #885), `invoices/[id]/+page.svelte:106`, `invoices/due-dates/+page.svelte:297`, `payment-batches/+page.svelte:37`,
   `payment-batches/[id]/+page.svelte:26`, `settings/+page.svelte:219`, `settings/api-keys/+page.svelte:51`,
   `supplier-invoices/[id]/+page.svelte:90`. Certaines sont du calcul de dates (à trier), non une « date du jour ».
-- **Retenu** : seul le site de #885 passe à `todayLocal()` ; l'issue demandée à l'orchestrateur porte les 15 autres lignes, à trier.
+- **Retenu** : seul le site de #885 passe à `todayLocal()` ; l'issue demandée à l'orchestrateur porte les 15 autres lignes, à trier. *Complété à la validation P3 : l'issue est **#889** ; l'orchestrateur y a ajouté la forme `formatSwissDate(x.slice(0, 10))` sur un horodatage UTC, dont la fiche (§ C.1) liste les **12** lignes à y porter nommément.*
 - **Écartées** : les corriger tous ici — des écrans sans lien avec les issues de la story.
 - **Réversible** : —
 
@@ -311,7 +318,7 @@ cas `Z` et décalage compris. « Aucun fuseau appliqué », ci-dessous, est remp
 
 ### C-v0172b-26 — #870 : l'URL est la source de vérité, lue de façon réactive ; le filtre ne porte que sur le statut
 
-*Complété à la validation P2 (finding P8) : la case des annulées a sa place dans l'URL, `?cancelled=1` ; les assertions `limit: 100` du test de la liste sont nommées (`:50, :59, :68, :71, :104, :113, :136`) et le simulacre de `goto` modifie `page.url`.*
+*Complété à la validation P2 (finding P8) : la case des annulées a sa place dans l'URL, `?cancelled=1` ; les assertions `limit: 100` du test de la liste sont nommées et le simulacre de `goto` modifie `page.url`.* *Précisé à la validation P3 : seules `:59`, `:68`, `:71` sont des assertions de requête (`:50, :104, :113, :136` sont des réponses simulées) ; `FiscalYearChecks.test.ts:176-178` change aussi ; le `page` simulé est **réactif**, sur le modèle de `journal-entries/[id]/page-state.test-helper.svelte.ts`, `url` réaffectée par le simulacre de `goto` (findings P3, P5).*
 
 - **Contexte** : validation P1, finding P6 — le motif `initFromUrl` à `onMount` ne relit pas l'URL quand seule la requête
   change ; un lien vers `/supplier-invoices` depuis `?status=draft` laisserait la liste filtrée. Finding P20 : K8 compte les
@@ -342,6 +349,18 @@ cas `Z` et décalage compris. « Aucun fuseau appliqué », ci-dessous, est remp
   déclaré au Dev Agent Record.
 - **Écartées** : un point d'arrêt de test dans le code de production pour inverser les rôles — instrumente la production pour un
   test.
+- **Réversible** : oui.
+
+
+### C-v0172b-29 — #882 : pas de bouton de réactivation ; le message reste « Choisissez un taux actif. »
+
+- **Contexte** : validation P3, finding P4 — `PUT /api/v1/vat-rates/{id}` accepte `active: true` (`routes/vat.rs:371, :406, :425` ;
+  `lib.rs:282-283`), mais l'écran *Taux de TVA* ne l'offre pas (`vat-rates/+page.svelte:240`, `{#if r.active}`).
+- **Retenu** : la story n'ajoute pas de bouton ; le refus dit « Choisissez un taux actif. » (une action offerte à l'écran) ; le manuel
+  dit que l'écran ne propose pas de réactiver un taux, sans affirmer qu'un taux ne se réactive pas.
+- **Écartées** : un bouton *Réactiver* — touche l'écran des taux et la règle de chevauchement (`:406`), dans le domaine TVA dont les
+  P1 sont reportés ; il ne corrige pas #882, qui porte sur la facture ; à proposer en demande séparée si le Project Lead le
+  souhaite.
 - **Réversible** : oui.
 
 ---
