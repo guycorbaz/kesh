@@ -558,8 +558,13 @@ describe('session-idle — localStorage refusé en cours de session (14 bis)', (
 		});
 		await advance(20_000);
 		const avant = postMock.mock.calls.length;
+		const debut = Date.now();
 		await activiteContinue(W + 60_000);
-		expect(postMock.mock.calls.length).toBeGreaterThan(avant);
+		const envoyes = postMock.mock.calls.length - avant;
+		expect(envoyes).toBeGreaterThan(0);
+		// Le repli en mémoire garde la régulation à 15 s (une lecture qui
+		// rendrait « absente » sans basculer la ferait sauter).
+		expect(envoyes).toBeLessThanOrEqual(Math.ceil((Date.now() - debut) / 15_000) + 1);
 		expect(fetchMock).not.toHaveBeenCalled();
 		expect(replaceMock).not.toHaveBeenCalled();
 	});
