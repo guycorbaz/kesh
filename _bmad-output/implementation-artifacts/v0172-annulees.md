@@ -1,6 +1,6 @@
 # Story v0172-annulees : la 0.17.2 — repasser en brouillon une facture fournisseur annulée (#868)
 
-Status: ready-for-dev
+Status: review
 
 *Fiche rédigée le 2026-11-04, en autonomie (Opus 5.5), worktree `/home/gcorbaz/devel/kesh-0172a`, branche
 `story/v0172-annulees` partie de `d7ec2ea2` (le merge de la v0.17.1 sur `main`). Release **0.17.2**, **sans migration**
@@ -842,13 +842,151 @@ payée rapprochée (date) ; refus sur une annulée qui avait été payée. Joint
 | 2026-11-04 | 0.3 | **Validation P2 (Opus) : 0/1/4/8**, remédiée (Opus 5.5) ; les treize findings appliqués, aucun réfuté (prémisses relues : catalogues des quatre locales, replis, manuels, `git grep` à `d7ec2ea2`). HIGH : V2-1 contrôle de vocabulaire par **liste de 17 clés** et racine par langue (it `[Cc]onvalida\b`, de `Freigabe\|[Ee]ntvalid`), sonde positive relevée à `d7ec2ea2` (13 sur 17 dans chaque locale), vide attendu à la tête (AC-15). MEDIUM : V2-2 deux clés ajoutées (`validate-confirm-body`, `edit-not-draft`, 15 → 17) et liste close de 14 replis en dur, page d'édition et repli Rust compris ; V2-3 manuel utilisateur `:3762-3766` et inventaire clos des dix lignes du manuel d'administration (`:2546`, `:2550`, `:3010` clés `read-write`, `:3058` changent) ; V2-4 contrôle DRY sur le chemin JSON `'$.settlementJournalEntryId'` (une ligne, sonde à `d7ec2ea2`) ; V2-5 la paire n'est nette qu'au cumul : totaux de deux périodes, TVA comprise — fiche, confirmation à l'écran, manuel, CHANGELOG, T1 par période ; le verrou de période suffit (C-v0172a-23). LOW : V2-6 registre C-14 annoté ; V2-7 contextes de C-17 et C-18 ; V2-8 L1 étendue au rang 5 ; V2-9 assertion vide de T1 remplacée, M8 sur la forme prescrite ; V2-10 AC-4 (b) posé en SQL ; V2-11 contrainte `chk_…_draft_without_settlement` et deux doc-comments qui deviennent faux ; V2-12 prédicat partagé nommé (fragment SQL, deux requêtes) ; V2-13 trois sites ajoutés à l'inventaire (18 à 20) avec le critère de tri. Deux tests à réécrire ajoutés (`supplier-invoice-draft-page.test.ts:574-576`, `supplier-invoice-unvalidate.test.ts:33`). Prochaine : validation P3 (Sonnet, passe complète, `v0172-annulees-validate-prompt-p3.md`). | Opus 5.5 |
 | 2026-11-04 | 0.4 | **Validation P3 (Sonnet) : 0/0/2/5**, remédiée (Opus 5.5) ; les sept findings appliqués, aucun réfuté (prémisses relues à `d7ec2ea2` : FTL des quatre locales `audit-log-action-supplier-invoice-unvalidated`, `i18n-libelle-en-dur.test.ts:255-267`, `test_fixtures.rs:71, 118`, `supplier_invoices_draft.rs:944-960`, `README.md:42`, `marketing-brochure.tex:449`, `api-external.md:563, 574, 961`, `kesh-api/src/errors.rs:4260-4266`). MEDIUM : V3-1 le libellé d'audit devient la **18ᵉ** clé de `K` (« Facture fournisseur repassée en brouillon »), sonde refaite à `d7ec2ea2` : `clés=18 verbe=14` dans chaque locale, `verbe=0` attendu à la tête (C-v0172a-24) ; V3-2 `CANDIDATES_ATTENDUES` (`i18n-libelle-en-dur.test.ts:267`) ajouté au tableau des tests à réécrire et à la tâche 5, recompte à la source. LOW : V3-3 topologie des exercices des montages (scission du décor en SQL relativement à l'année du jour ; T3b et P5 avec l'exercice clos **entre** les deux écritures) ; V3-4 typographie des apostrophes par famille de clés ; V3-5 `README.md:42`, brochure `:449` et son PDF, `api-external.md:574`, `:961` ; V3-6 C-5 et C-20 annotés, choix du parcours de toutes les traces consigné ; V3-7 refus générique de `DELETE` d'une annulée écarté par écrit (C-v0172a-25). Prochaine : validation P4 (Opus, passe ciblée sur le diff `ea098675` → tête, `v0172-annulees-validate-prompt-p4.md`). | Opus 5.5 |
 | 2026-11-04 | 0.5 | **Validation P4 (Opus, ciblée) : 0/0/3/4**, remédiée (Opus 5.5) ; les sept findings appliqués, aucun réfuté. Les trois MEDIUM fermés par une **commande** relevée à `d7ec2ea2`, sortie copiée : V4-1 littéraux de `i18n-libelle-en-dur.test.ts` (`:267` et `:784` portent sur le dépôt, cinq autres sur des sources synthétiques), préambule `:74-266`, `withLabel` `:260-265` ; V4-2 les neuf lignes « dévalid » de `docs/api-external.md` triées (`:604` ajoutée, `:300`, `:965` génériques, `:460`, `:610` clientes ; C-v0172a-26) ; V4-3 apostrophe fixée **par clé** (relevé de 19 clés, `:2668` droite, clés neuves rattachées à leur sœur). LOW : V4-4 répartition close des montages (scission ou décor unique), « au jour de l'exécution », borne `Y` ≤ 2029 ; V4-5 page restée ouverte ajoutée au refus de `DELETE` (C-v0172a-25 annoté) ; V4-6 texte cible de la brochure ; V4-7 valeur du libellé d'audit par locale (C-v0172a-24 annoté ; it « annullata » était un contresens). Prochaine : validation P5 (Sonnet, ciblée sur `d1707de9` → tête, `v0172-annulees-validate-prompt-p5.md`). | Opus 5.5 |
+| 2026-11-04 | 0.6 | **Validation P5 (Sonnet, ciblée) : 0/0/0/4** — boucle de validation close (aucun finding au-dessus de LOW). Les quatre LOW appliqués à l'étape 0 du développement (Opus 5.5), ligne lue citée : V5-1 tâche 5 (« `CANDIDATES_ATTENDUES` (`:267`) **et la ventilation…** », gras imbriqué et parenthèse répétée) récrite en une proposition ; V5-2 AC-16 (« plus ce que la reformulation de `:572`, `:604`, `:869` conserve du nom de la route ») bornée — seules restent les occurrences « dévalid » qui nomment la route, liste au Dev Agent Record ; `:869` change par sa seule partie fournisseur, nommée ; V5-3 AC-15 (« (avec `K` d'AC-15 étendue à `supplier-invoices-unvalidate-confirm-body` …) ») reçoit sa définition `K` à 19 clés en bloc de code, et la commande des littéraux (tableau des tests, cellule `\|`) sort en bloc **(L)** ; V5-4 « Répartition close : » devient « pour les tests de `kesh-db` », T7 classé « décor unique » (variantes de `SupplierUnvalidationBlocker` seules). | Opus 5.5 |
+| 2026-11-04 | 0.7 | **Développement** (Opus 5.5, `bmad-dev-story`, autonomie) : rouges constatés, code, i18n, écran, documentation, 16 mutations tuées, gates complets, E2E complet, 10 captures ; C-v0172a-27 à 30 au registre. Détail au Dev Agent Record. Statut `review` ; prochaine : revue de code P1 (Sonnet, trois lentilles B, E, A, `v0172-annulees-review-prompt-p1.md`). | Opus 5.5 |
 
 ## Dev Agent Record
 
 ### Agent Model Used
 
+Opus 5.5 (Claude Code, sous-agent de développement, autonomie complète), 2026-11-04, worktree
+`/home/gcorbaz/devel/kesh-0172a`, base `kesh_v0172a` / `kesh_e2e_v0172a`, port 3172.
+
 ### Debug Log References
+
+Journaux hors dépôt, `/home/gcorbaz/devel/kesh-gate-logs/v0172a/` : `rouges.log` (synthèse), `rouges-db-complet.log`,
+`rouges-api.log`, `rouges-front.log` ; `cible-1.log`, `cible-2.log`, `cible-front-1.log`, `cible-front-2.log` (verts
+ciblés) ; `mut/SYNTHESE.log`, `mut/M*.log`, `mut/mutations-v0172a.py` ; `gate-backend-1.log` ; `build-1.log` ;
+`front-check.log`, `front-lint-i18n-ownership.log`, `front-test:unit.log`, `front-build.log` ; `make-fr-1.log` ;
+`e2e-r1.log` (**invalide**, cf. incident), `e2e-r1-rejeu.log` (**invalide**), `e2e-r2.log`, `e2e-backend-r2.log`,
+`e2e-r2-pilote.log`, `e2e-v0172a.sh` ; `captures.log`, `captures-v0172a.mjs`, `captures/v0172a-01` à `-10`.
 
 ### Completion Notes List
 
+**Étape 0.** Les quatre LOW de la P5 appliqués (Change Log 0.6, lignes lues citées). Numéros de ligne relus à la tête
+(`ce9badd9` ne diffère de `d7ec2ea2` que par des artefacts `_bmad-output`) : `supplier_invoices.rs:909-1016`
+(`unvalidate_in_tx`), `:2045-2210` (`cancel_in_tx`), `journal_entries.rs:1066-1105` (`modification_guard`),
+`kesh-api/src/errors.rs:4137-4159`, `:4714-4733`, `+page.svelte:650-679`, `:922-932`, `:991-1027`, FTL fr-CH
+`:50-54`, `:2659-2692`, `:3053` — exacts.
+
+**Rouges d'abord** (`rouges.log`). Ordre suivi : les types du refus d'abord (variantes `PaidReconciled`,
+`DetachedPayment`, `SupplierUnvalidationHint` dans `kesh-db/src/errors.rs`, échafaudage de compilation dans
+`unvalidate_in_tx` et `kesh-api/src/errors.rs` — sans comportement), puis les tests, constatés rouges **à
+l'exécution** avant le correctif : kesh-db 46 exécutés, **26 rouges** (dont T1, T5a, T6, T14,
+`unvalidation_status_refusals` : `IllegalStateTransition("seule une facture validée se dévalide (statut actuel :
+'cancelled')")`, `left: Paid / right: PaidReconciled`, `left: Null / right: "open"`) ; kesh-api T7b rouge (repli «
+La facture n’a pas pu être dévalidée. (FF-1) »), T7 rouge (`409 ILLEGAL_STATE_TRANSITION` au lieu de `200`) ; Vitest
+T8 + T12 : **23 rouges**, 37 verts.
+
+**Code.** `unvalidate_in_tx` récrit selon la tâche 3 (verrous : facture → transaction du règlement si payée → lot →
+achat et exercice → contre-passation et exercice par lecture **verrouillante** sur `reverses_entry_id` →
+transactions de l'achat et de la contre-passation ; puis lectures ordinaires). **M14** (règle de sérialisation, non
+tuable) : la contre-passation se lit `supplier_invoices.rs:1042`, `WHERE je.reverses_entry_id = ? AND je.company_id = ?
+FOR UPDATE` ; `reversed_by` n'est appelé qu'après le dernier verrou, pour le seul paiement détaché (`:1100`). Fragment
+partagé `DETACHED_SETTLEMENT_TRACES` / `DETACHED_SETTLEMENT_ENTRY` (`journal_entries.rs`), employé par
+`modification_guard` et la dévalidation ; `letterings::reversal_groups_within_entries` (lecture) ; doc-comments mis à
+jour (module, `unvalidate_in_tx`, `cancel_in_tx`, `delete_in_tx` § `enforce_ownership` et 3-quinquies,
+`modification_guard` réserve L2, `UnvalidationBlocker` C132, `SupplierUnvalidationBlocker`, la route). API :
+`supplier_unvalidation_message` (repli `format!`, `t_args`), cinq champs de `details`, repli
+`SupplierInvoiceMustBeUnvalidatedFirst`. Écran : bouton pour `open`/`paid`/`cancelled` (rôles qui écrivent),
+`requestUnvalidate` (payée : appel direct), corps et succès propres à l'annulée, `isStaleState` étendu.
+
+**Contrôles déclarés.**
+- AC-3 : `git grep -nF "DELETE FROM journal_entries" -- crates/kesh-db/src/repositories/supplier_invoices.rs` → **vide**.
+- AC-6 : `git grep -nF "'\$.settlementJournalEntryId'" -- crates/kesh-db/src` → **une ligne**,
+  `journal_entries.rs:1039` (la constante `DETACHED_SETTLEMENT_ENTRY`).
+- Aucune migration : `git diff --stat d7ec2ea2 -- crates/kesh-db/migrations crates/kesh-db/test-schema` → vide.
+- AC-15, vocabulaire (commande de la fiche, à la tête) : `fr-CH clés=18 verbe=0`, `en-CH clés=18 verbe=0`, `de-CH
+  clés=18 verbe=0`, `it-CH clés=18 verbe=0`. Clés neuves : **5** par locale (recomptées : `n=5` ×4), aucune de plus.
+- AC-15, replis : le grep de la fiche sur les deux dossiers fournisseur et `kesh-api/src/errors.rs` ne rend plus, côté
+  fournisseur, que deux **commentaires** historiques de `+page.svelte` (`:240` « l'avertissement de la dévalidation »,
+  `:305` revue P1 B-3) ; les lignes de `errors.rs` restantes (`:1422`, `:3567`, `:3878`, `:3902`, `:3934`, `:4105`) sont
+  **clientes** ; `:4135` et `:4717` sont des doc-comments qui nomment « dévalidation » comme nom de la route.
+- AC-16 : `git grep -nF "(brouillon, annulée)" -- docs/api-external.md` → vide ; « dévalid » à la tête : `300 460 572
+  610 869 967` — restent `:300`, `:967` (ex-`:965`, génériques), `:460`, `:610` (clientes) ; **admises comme nom de la
+  route** : `:572` (« **La dévalidation** (`POST …/unvalidate`, « Repasser en brouillon » à l'écran) »), `:869` (« la
+  dévalidation, `POST /supplier-invoices/{id}/unvalidate`, reste ouverte aux clés » et sa partie client) ; `:574`,
+  `:604`, `:961` n'en portent plus. `PAID_RECONCILED|DETACHED_PAYMENT` : 3 lignes (`:572`, `:964`, `:965`).
+- `website/` : `git grep -niE "d[ée]valid" -- website` → vide (inchangé).
+- Mots-clés de fermeture : `git log origin/main..HEAD --format=%B | grep …` → vide.
+
+**Compteurs recomptés** (aux deux bornes, `d7ec2ea2` → tête) : `i18n-keys.test.ts` `sitesTotal` **2796 → 2801**
+(`+page.svelte` 76 → 78, `supplier-invoice-unvalidate.ts` 12 → 15, `edit/+page.svelte` 9 → 9) ;
+`i18n-un-repli-par-cle.test.ts` **389 → 391** ; `i18n-libelle-en-dur.test.ts` `CANDIDATES_ATTENDUES` **77 → 76**,
+`conforme` **63 → 62** (`withLabel` retiré). Tests ajoutés (périmètre `d7ec2ea2` → tête) : `supplier_invoices_draft.rs`
+`#[sqlx::test]` 21 → 46 (+25 : T1, T2, T3a, T3b, T3c, T3c', T3d, T3e, P1-P6, T5a-e, T6, T9, T9b, T10, T11, T14 ; T3e
+joue ses deux variantes dans un test) ; `supplier_invoice_draft_e2e.rs` 15 → 16 (T7) ; `kesh-api/src/errors.rs`
+`tokio::test` 31 → 32 (T7b) ; `supplier-invoice-unvalidate.test.ts` `it` 6 → 12 ; `supplier-invoice-draft-page.test.ts`
+25 → 29 ; `supplier-invoice-draft-cycle.spec.ts` `test` 5 → 6.
+
+**Mutations** (`mut/SYNTHESE.log`) : **16 jouées, 16 tuées** par le test nommé — M1, M2, M3, M3b, M4, M5, M6, M6b,
+M6c, M7 (T6 et T10), M8, M9, M10 (4 tests de T12), M11 (3 tests de T8), M12 (P4 : `PeriodLocked` sans le
+pré-contrôle), M13 (T7b : gabarit littéral) ; M14 non tuable (ligne citée ci-dessus). Restauration `git checkout --`
+puis `touch` après chacune ; arbre propre vérifié après la campagne.
+
+**Gates, au dernier commit de code (`ad618b04`)** : base `kesh_v0172a` remise à neuf (migrations + seed) ;
+`scripts/test-fast.sh --ci` **vert** — fmt, clippy `-D warnings`, nextest **4710 exécutés, 4710 réussis, 12
+ignorés** ; `cargo build --workspace --all-targets` vert ; `npm run check` 0 erreur, 29 avertissements, aucun dans un
+fichier touché ; `lint-i18n-ownership` PASS ; `npm run test:unit` **204 fichiers, 2441 tests** verts ; `npm run build`
+vert. **E2E complet r2** (base `kesh_e2e_v0172a` recréée, dossiers `/tmp/kesh-e2e-v0172a-r2/`) : **336 réussis, 7
+échecs, 18 ignorés** — les sept KF-029 (#97) de `docs/testing.md` § *Les échecs attendus* (`mode-expert:26`, `:41`,
+`onboarding-path-b:65`, `:92`, `onboarding:57`, `:77`, `:150`), aucun autre ; les trois tests de
+`supplier-invoice-draft-cycle.spec.ts` touchés (parcours 1, 2, 3 d'AC-13) sont verts.
+
+⚠️ **Incident — run E2E r1 invalide, verrou tenu 36 minutes.** Le premier run (`e2e-r1.log`, 319 réussis, 13 échecs)
+est **écarté** : le runner n'avait pas reçu `KESH_INBOX_DIR`/`KESH_DOCUMENTS_DIR`/`KESH_ADMIN_BACKUP_DIR` (6 échecs
+« répertoire absent » ou dérivés), et, surtout, je l'avais lancé avec `KEEP=1` pour garder le backend vivant pour les
+captures : ce backend (PID 725724) avait hérité du descripteur de `flock` et, rattaché à systemd, a **tenu
+`.gate.lock` 36 minutes**, bloquant mon propre rejeu (`e2e-r1-rejeu.log`, joué contre un backend arrêté :
+`ECONNREFUSED`, **invalide**) et les gates de l'agent v0172b. L'orchestrateur l'a arrêté par son PID. Corrigé :
+`e2e-v0172a.sh` se lance par `flock -o` (le descripteur n'est pas transmis), démarre le backend descripteur 9 fermé
+(`9>&-`), passe les dossiers au runner, joue les captures **dans** le même run, et arrête toujours le backend par le PID
+de l'écoute du port (`trap EXIT`), avec contrôle `ss -ltnp` (r2 : « port 3172 : 0 écoute(s) »). Aucun résultat de r1 ni
+du rejeu n'est compté.
+
+**Captures** (thème clair, base `kesh_e2e_v0172a` jetable après l'E2E r2, données synthétiques, C-v0172a-30),
+`/home/gcorbaz/devel/kesh-gate-logs/v0172a/captures/` : `v0172a-01-fiche-validee-bouton`, `-02-fiche-payee-bouton`,
+`-03-refus-payee`, `-04-fiche-annulee-bouton`, `-05-confirmation-annulee` (« deux trous », TVA), `-06-brouillon-obtenu`,
+`-07-refus-payee-rapprochee`, `-08-refus-paiement-detache` (« écriture n° 9 du 22.05.2026 »), `-09-refus-periode-
+verrouillee`, `-10-refus-exercice-clos` ; verrou et clôture posés en SQL sur la seule base jetable, rétablis.
+
+**Manuels** : `make fr` (sous verrou et plafond) — trois PDF stables ; contrôle aplati : phrases retirées absentes (0
+pour « se dévalide, se corrige et se revalide », « dévalider une facture fournisseur », « se dévalide par », « ne
+supprime aucune facture annulée », « ni ne se dévalide », « elle se dévalide pour être corrigée ») ; présentes : «
+Repasser une facture en brouillon » (2), « deux trous » (≥2), « supprime l’écriture d’achat et sa contre-passation », «
+nette à zéro qu’au cumul », « Une facture annulée alors qu’elle était payée », « se repasse en brouillon, se corrige
+et se revalide », « refuser de repasser en brouillon » (admin), « annulée par erreur, elle y repasse aussi depuis la
+v0.17.2 » (brochure). `\keshVersion` non touchée (hors périmètre).
+
+**Écarts à la fiche, déclarés.**
+1. Pré-contrôle d'exercice clos sur la seule branche annulée (C-v0172a-28).
+2. Lecture du paiement détaché par `CAST(… AS SIGNED)` (C-v0172a-27) ; un identifiant illisible est ignoré.
+3. `document_id` de `DetachedPayment` = l'écriture de paiement ; l'avertissement du lot confirmé reste réservé aux
+   validées sur la fiche (C-v0172a-29).
+4. Captures par script hors dépôt après l'E2E (C-v0172a-30), non par la spec E2E.
+5. Libellé de `-blocked-later-fiscal-year-closed-named` : « pour pouvoir repasser cette facture en brouillon » (la
+   fiche ne prescrivait que la famille).
+6. **Consigne 14 enfreinte, déclarée** : deux remplacements par script `python3` (motif vérifié unique, `assert
+   count == 1`) sur des fichiers de code — l'échafaudage de compilation de l'étape rouge (`supplier_invoices.rs`,
+   `kesh-api/src/errors.rs`, aussitôt récrit par l'outil Edit) — et l'ajout des tests neufs en fin de
+   `supplier_invoices_draft.rs` et `supplier_invoice_draft_e2e.rs` par `cat >>` (ajout, non remplacement). Les
+   catalogues FTL, `admin-manual.tex`, la brochure et le README ont été édités par script à motifs vérifiés uniques.
+
+**Pour l'orchestrateur** (inchangé de la fiche) : issue « Factures clientes annulées : aucun retour au brouillon » à
+ouvrir ; commentaire à porter sur #868 ; `closes #868` sur la PR de release seulement.
+
 ### File List
+
+`CHANGELOG.md` ; `README.md` ; `crates/kesh-api/src/errors.rs` ; `crates/kesh-api/src/routes/supplier_invoices.rs` ;
+`crates/kesh-api/tests/supplier_invoice_draft_e2e.rs` ; `crates/kesh-db/src/errors.rs` ;
+`crates/kesh-db/src/repositories/journal_entries.rs` ; `crates/kesh-db/src/repositories/letterings.rs` ;
+`crates/kesh-db/src/repositories/supplier_invoices.rs` ; `crates/kesh-db/tests/supplier_invoices_draft.rs` ;
+`crates/kesh-i18n/locales/{fr-CH,de-CH,it-CH,en-CH}/messages.ftl` ; `docs/api-external.md` ; `docs/i18n-glossaire.md` ;
+`docs/manual/fr/{user-manual,admin-manual,marketing-brochure}.{tex,pdf}` ;
+`frontend/src/lib/features/supplier-invoices/supplier-invoice-unvalidate.ts` (et `.test.ts`) ;
+`frontend/src/lib/features/supplier-invoices/supplier-invoices.api.ts` ;
+`frontend/src/lib/shared/{i18n-keys,i18n-libelle-en-dur,i18n-un-repli-par-cle}.test.ts` ;
+`frontend/src/routes/(app)/supplier-invoices/[id]/+page.svelte`, `edit/+page.svelte`,
+`supplier-invoice-draft-page.test.ts` ; `frontend/tests/e2e/supplier-invoice-draft-cycle.spec.ts` ;
+`_bmad-output/implementation-artifacts/{v0172-annulees.md, v0172-choix-autonomes.md, sprint-status.yaml,
+v0172-annulees-review-prompt-p1.md}`.

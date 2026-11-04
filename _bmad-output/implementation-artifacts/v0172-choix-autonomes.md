@@ -300,3 +300,43 @@ Fiche : `v0172-annulees.md`. Clé `v0172a`. Issue #868, en `refs` seulement.
 - **Écartées** : renommer partout — le document décrirait une route `unvalidate` sous un autre nom que son chemin, et les
   passages génériques couvrent aussi les factures clientes, qui gardent « dévalider ».
 - **Réversible** : oui.
+
+### C-v0172a-27 — Le paiement détaché se lit par `CAST(JSON_VALUE(…) AS SIGNED)` (développement)
+
+- **Contexte** : `JSON_VALUE` rend un `LONGBLOB` que sqlx refuse de décoder en `String` (constaté au premier vert ciblé,
+  six tests rouges en `ColumnDecode`) ; `modification_guard` contourne en liant l'identifiant **en chaîne**.
+- **Retenu** : la requête de la dévalidation enveloppe le fragment partagé `DETACHED_SETTLEMENT_ENTRY` dans
+  `CAST(… AS SIGNED)` et lit des `Option<i64>` ; une valeur illisible vaut 0, qu'aucune écriture ne porte (ignorée).
+- **Écartées** : décoder en `Vec<u8>` puis analyser — plus de code pour le même résultat ; une seconde copie du chemin
+  JSON — contredit le contrôle DRY d'AC-6.
+- **Réversible** : oui.
+
+### C-v0172a-28 — Le pré-contrôle d'exercice clos ne joue que pour une annulée (développement)
+
+- **Contexte** : la tâche 3.5 range le pré-contrôle parmi les refus des rangs 3 à 6 sans dire s'il vaut pour une
+  validée ; il existe pour le mode `System` de la dissolution, que seule l'annulée emprunte (C-v0172a-4).
+- **Retenu** : pré-contrôle sur la seule branche annulée ; une validée garde l'ordre d'avant (son exercice clos parle par
+  `delete_in_tx`, même code) — les tests `unvalidation_precedence_*` restent verts sans réécriture.
+- **Écartées** : le jouer aussi pour une validée — il imposerait un verrou d'écriture et d'exercice plus tôt sur ce
+  chemin, sans changer aucune réponse.
+- **Réversible** : oui.
+
+### C-v0172a-29 — `document_id` de `DetachedPayment` = l'écriture de paiement ; l'avertissement du lot reste aux validées (développement)
+
+- **Contexte** : AC-8 garde `details.documentId` sans dire ce qu'il désigne pour le motif neuf ; la fiche montrait
+  l'avertissement du lot confirmé pour une `open` seulement.
+- **Retenu** : `documentId` = `entryId` (l'écriture de paiement, l'objet à défaire) ; sur la fiche, l'avertissement du
+  lot confirmé ne s'affiche toujours que pour une validée (le bloc s'ouvre aussi pour payée et annulée, sans lui) ; la
+  boîte de confirmation le garde si la facture en porte un.
+- **Écartées** : `documentId` = la transaction rapprochée — elle manque quand le paiement n'est pas rapproché.
+- **Réversible** : oui.
+
+### C-v0172a-30 — Les captures se prennent par un script hors dépôt, sur la base E2E jetable (développement)
+
+- **Contexte** : les refus « période verrouillée » et « exercice clos » demandent de verrouiller ou de clore, ce que la
+  suite E2E partagée ne doit pas faire (les autres specs en dépendent) ; aucun fichier ne se supprime (consignes).
+- **Retenu** : `kesh-gate-logs/v0172a/captures-v0172a.mjs`, Playwright chargé par `createRequire` depuis le
+  `frontend/` du worktree, contre le backend du port 3172 sur `kesh_e2e_v0172a` **après** l'E2E complet ; états posés
+  par l'API, le verrou et la clôture par SQL sur la seule base jetable, rétablis après chaque capture.
+- **Écartées** : une spec Playwright versionnée de plus — elle clorait un exercice dans la base partagée de la suite.
+- **Réversible** : oui (hors dépôt).
