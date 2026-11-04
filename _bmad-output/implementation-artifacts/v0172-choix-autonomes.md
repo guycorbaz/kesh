@@ -971,3 +971,49 @@ clair) ; **en vigueur : C-v0172s-14 à 21**.
   `N − jwt` ; aucune durée absolue pour un utilisateur actif (cookie de 30 jours reposé à chaque renouvellement), écrit au manuel
   d'administration (finding P13 de la validation P3).
 - **Réversible** : —
+
+---
+
+## Release 0.17.2 — intégration et préparation du tag (clé `v0172r`)
+
+Mandat : `kesh-gate-logs/prompts/rel0172-integration.md`. Branche `release/0.17.2`, partie de `d7ec2ea2`.
+
+### C-v0172r-1 — `v0172-session` reste au registre de sprint, en `ready-for-dev`
+
+- **Contexte** : le mandat demande de ne pas faire figurer `v0172-session` si elle n'est pas sur les branches fusionnées. Elle
+  y est : `story/v0172-correctifs` porte sa fiche (`v0172-session.md`, extraite à la validation P2) et sa clé
+  `ready-for-dev` ; aucun code de #876 n'est sur cette branche (la story `story/v0172-session` n'est pas fusionnée).
+- **Retenu** : garder la clé et la fiche telles que la branche les porte (union) ; le CHANGELOG n'a aucune puce #876.
+- **Écartées** : retirer la clé — ce serait écraser une ligne d'une branche fusionnée.
+- **Réversible** : oui.
+
+### C-v0172r-2 — Gardes i18n recomptées à la source après la fusion
+
+- **Retenu** : `sitesTotal` 2813 et `CLES_RELEVEES` 399, valeurs rendues par les gardes elles-mêmes sur l'arbre fusionné
+  (non additionnées) ; elles égalent la somme des deux branches (2796 + 5 + 12 ; 389 + 2 + 8), ce qui confirme qu'aucun site
+  ne se recouvre. `i18n-libelle-en-dur` vert sans changement.
+- **Réversible** : oui.
+
+### C-v0172r-3 — La session (#876) : dite au manuel d'administration et au README, non au CHANGELOG
+
+- **Contexte** : #876 sort de la 0.17.2 (décision du Project Lead) ; le mandat exclut toute puce #876 du CHANGELOG et demande
+  que les notes de version donnent le contournement `KESH_JWT_EXPIRY_MINUTES`.
+- **Retenu** : un paragraphe « La session, non corrigée dans cette version » à *Passer à la 0.17.2* (contournement
+  `KESH_JWT_EXPIRY_MINUTES=480`, valeur du commentaire de #876, et sa contrepartie : un jeton dérobé vit aussi longtemps) ;
+  une phrase dans la ligne 0.17.2 du README ; les notes de version.
+- **Écartées** : une mention au CHANGELOG (exclue par le mandat).
+- **Réversible** : oui (texte).
+
+### C-v0172r-4 — Base de démarrage 0.17.1 migrée par l'image elle-même
+
+- **Retenu** : base `kesh_rel0172_boot` créée vide, migrée par l'image `gcorbaz/kesh:0.17.1` à son démarrage (88), peuplée
+  par son preset `with-company` puis par l'API : factures clientes validée, payée (deux règlements : le premier a pris le
+  montant HT, le solde a suivi), brouillon ; factures fournisseur validée, payée, annulée, brouillon.
+- **Écartées** : `sqlx migrate run` depuis l'arbre de `d7ec2ea2` — l'image fait foi pour « une base 0.17.1 ».
+- **Réversible** : oui (base jetable).
+
+### C-v0172r-5 — Le backend de l'E2E démarre hors du verrou
+
+- **Retenu** : le backend démarre depuis le script, descripteur 9 fermé, entrée `/dev/null`, hors de `flock` ; seul le
+  runner Playwright prend `.gate.lock` et `mem-guard` ; le backend est tué par son PID, `ss -ltnp` avant et après.
+- **Réversible** : oui.
