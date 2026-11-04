@@ -839,7 +839,10 @@ const ATTENDU = {
 	// 12 → 18 (bandeau du filtre, son lien, compte singulier/pluriel, Précédent, Suivant ; #870),
 	// `InvoiceForm.svelte` 14 → 16 (option et refus du taux désactivé ; #882),
 	// `SupplierInvoiceForm.svelte` 48 → 50 (avis « à vérifier » et son bouton ; #885).
-	sitesTotal: 2806,
+	// Remédiation de la revue de code P1 (2026-11-04) : **2806 → 2808** (+2),
+	// `supplier-invoices/+page.svelte` 18 → 20 (liste vide filtrée, liste vide sans les
+	// annulées ; B-4 = E-4).
+	sitesTotal: 2808,
 	sitesNonResolus: 31,
 	relais: 6,
 	// Story 26-1 (#620, AC3-bis) : **10 → 11** — `lib/features/bank-import/

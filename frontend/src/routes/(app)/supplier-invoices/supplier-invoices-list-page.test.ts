@@ -211,8 +211,34 @@ describe('liste des factures fournisseurs — pagination et filtre (v0172, #870)
 		expect(banner.textContent).toContain('« Brouillon »');
 		expect(banner.textContent).toContain('tous exercices confondus');
 		const all = await findByTestId('supplier-invoices-filter-clear');
-		expect(all.getAttribute('href')).toBe('/supplier-invoices');
+		// Revue de code P1 (E-5, C-v0172b-35) : « toutes » dit vrai — les annulées comprises.
+		expect(all.getAttribute('href')).toBe('/supplier-invoices?cancelled=1');
 		expect(queryByTestId('supplier-invoices-show-cancelled')).toBeNull();
+	});
+
+	// Revue de code P1 (B-4 = E-4) : une liste vide dit ce qui est vide, non « aucune
+	// facture enregistrée ».
+	it('liste filtrée vide : « Aucune facture « Brouillon ». », jamais « Aucune facture fournisseur enregistrée. »', async () => {
+		serveur(0);
+		at('?status=draft');
+		const { findByTestId, container } = render(Page);
+		const empty = await findByTestId('supplier-invoices-empty');
+		expect(empty.textContent?.trim()).toBe('Aucune facture « Brouillon ».');
+		expect(container.textContent).not.toContain('Aucune facture fournisseur enregistrée.');
+	});
+
+	it('liste par défaut vide : les annulées sont masquées, le message le dit ; avec la case cochée, « aucune facture enregistrée »', async () => {
+		serveur(0);
+		const { findByTestId } = render(Page);
+		expect((await findByTestId('supplier-invoices-empty')).textContent?.trim()).toBe(
+			'Aucune facture fournisseur à afficher : les factures annulées sont masquées.',
+		);
+		at('?cancelled=1');
+		await waitFor(async () =>
+			expect((await findByTestId('supplier-invoices-empty')).textContent?.trim()).toBe(
+				'Aucune facture fournisseur enregistrée.',
+			),
+		);
 	});
 
 	it('AC-B1 — `?status=bogus` est ignoré : liste par défaut, sans bandeau', async () => {

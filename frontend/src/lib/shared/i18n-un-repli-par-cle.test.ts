@@ -215,8 +215,12 @@ const PREFIXES = [
  * tête) : `supplier-invoices-filter-status`, `-filter-show-all`, `-count-one`, `-count-other`
  * (liste paginée et filtrée, #870), `-date-to-verify`, `-date-confirm` (date « à vérifier »,
  * #885). Aucune retirée.
+ *
+ * ⚠️ **Remédiation de la revue de code P1 de la v0172-correctifs** (2026-11-04) : **395 → 397**
+ * (+2) : `supplier-invoices-empty-filtered`, `-empty-active` (liste vide, B-4 = E-4). Aucune
+ * retirée (`-date-to-verify` change de texte).
  */
-const CLES_RELEVEES = 395;
+const CLES_RELEVEES = 397;
 
 
 /** Relève, pour chaque clé du domaine, l'ensemble de ses replis littéraux distincts. */

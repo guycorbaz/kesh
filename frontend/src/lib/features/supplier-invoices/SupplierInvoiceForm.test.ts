@@ -886,9 +886,10 @@ describe('SupplierInvoiceForm — date proposée et échéance qui suit (v0172, 
 		const { container, getByTestId } = renderForm({ document: qrDoc() });
 		expect(dateInput(container).value).toBe('2026-11-05');
 		const notice = getByTestId('supplier-invoice-date-to-verify');
-		expect(notice.textContent).toContain(
-			'Date du jour, proposée par défaut — ce n’est pas celle du document. Vérifiez-la.',
-		);
+		// Revue de code P1 (B-2) : l'avis n'affirme plus que la date n'est pas celle du
+		// document — l'écran ne la lit pas ; il demande de la vérifier.
+		expect(notice.textContent).toContain('Date du jour proposée : vérifiez-la sur le document.');
+		expect(notice.textContent).not.toContain('ce n’est pas celle du document');
 		expect(dateInput(container).getAttribute('aria-describedby')).toBe(notice.id);
 		expect(getByTestId('supplier-invoice-date-confirm').textContent?.trim()).toBe('C’est la bonne date');
 	});

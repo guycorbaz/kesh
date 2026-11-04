@@ -611,7 +611,7 @@
 					<span>
 						{i18nMsg(
 							'supplier-invoices-date-to-verify',
-							'Date du jour, proposée par défaut — ce n’est pas celle du document. Vérifiez-la.',
+							'Date du jour proposée : vérifiez-la sur le document.',
 						)}
 					</span>
 					<button

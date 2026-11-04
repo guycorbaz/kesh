@@ -194,7 +194,8 @@
 				{ status: supplierInvoiceStatusLabel(statusFilter) },
 			)}
 		</span>
-		<a class="text-primary underline" href="/supplier-invoices" data-testid="supplier-invoices-filter-clear">
+		<!-- Revue de code P1 (E-5, C-v0172b-35) : « toutes » comprend les annulées. -->
+		<a class="text-primary underline" href="/supplier-invoices?cancelled=1" data-testid="supplier-invoices-filter-clear">
 			{i18nMsg('supplier-invoices-filter-show-all', 'Afficher toutes les factures')}
 		</a>
 	</div>
@@ -216,8 +217,21 @@
 {:else if errorMsg}
 	<p class="text-sm text-destructive">{errorMsg}</p>
 {:else if items.length === 0}
-	<p class="text-sm text-text-muted">
-		{i18nMsg('supplier-invoices-empty', 'Aucune facture fournisseur enregistrée.')}
+	<!-- Revue de code P1 (B-4 = E-4) : le message dit ce qui est vide — le filtre, la liste
+	     sans les annulées, ou toute la liste. -->
+	<p class="text-sm text-text-muted" data-testid="supplier-invoices-empty">
+		{#if statusFilter}
+			{i18nMsg('supplier-invoices-empty-filtered', 'Aucune facture « { $status } ».', {
+				status: supplierInvoiceStatusLabel(statusFilter),
+			})}
+		{:else if !showCancelled}
+			{i18nMsg(
+				'supplier-invoices-empty-active',
+				'Aucune facture fournisseur à afficher : les factures annulées sont masquées.',
+			)}
+		{:else}
+			{i18nMsg('supplier-invoices-empty', 'Aucune facture fournisseur enregistrée.')}
+		{/if}
 	</p>
 {:else}
 	<table class="w-full border-collapse text-sm" data-testid="supplier-invoices-table">
