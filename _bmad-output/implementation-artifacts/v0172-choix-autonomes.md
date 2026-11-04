@@ -60,6 +60,11 @@ Fiche : `v0172-annulees.md`. Clé `v0172a`. Issue #868, en `refs` seulement.
 - **Retenu** : refus, avec le numéro de l'écriture de paiement et, si elle est rapprochée, la date de la transaction ;
   passe si le paiement est contre-passé (gardé alors par l'étape 3-bis) ou absent. Lecture d'audit **partagée** avec
   `modification_guard` (une fonction).
+- *Annoté le 2026-11-04 (validation P3, V3-6)* : le partage est un **fragment SQL** constant employé par deux requêtes
+  aux `WHERE` propres (AC-6, V2-12), non une fonction ; et la dévalidation examine **chaque** trace
+  `supplier_invoice.cancelled` de la facture — une facture peut avoir été annulée, repassée, revalidée, repayée puis
+  annulée de nouveau —, le refus nommant la première écriture de paiement non contre-passée (T5e, M6c). Écartée : ne lire
+  que la dernière trace, qui laisserait sans gel le paiement d'un cycle antérieur.
 - **Écartées** : (a) refuser toute annulée qui a été payée, sans issue — aucun chemin pour une saisie fautive payée par
   erreur ; (b) laisser passer — perte silencieuse du gel ; (c) déplacer le gel sur une colonne — migration, et c'est #541.
 - **Réversible** : oui.
@@ -103,6 +108,7 @@ Fiche : `v0172-annulees.md`. Clé `v0172a`. Issue #868, en `refs` seulement.
 
 - **Contexte** : un libellé d'action neuf exigerait un libellé au registre `audit_labels.rs` et des traductions.
 - **Retenu** : même action ; `previousStatus` et, pour une annulée, `reversalJournalEntryId`.
+- *Annoté le 2026-11-04 (validation P3, V3-1)* : l'action garde son nom, son **libellé affiché** change (C-v0172a-24).
 - **Écartées** : `supplier_invoice.redrafted` — un second nom pour le même geste.
 - **Réversible** : oui (les traces écrites restent lisibles).
 
@@ -206,6 +212,8 @@ Fiche : `v0172-annulees.md`. Clé `v0172a`. Issue #868, en `refs` seulement.
   `Freigabe|[Ee]ntvalid`, it `[Cc]onvalida\b`), avec une sonde positive relevée à `d7ec2ea2` (13 valeurs sur 17 dans
   chaque locale) — un motif global attrapait *convalidare* (valider) en italien et manquait les formes fléchies de
   l'allemand.
+- *Annoté le 2026-11-04 (validation P3, V3-1, V3-6)* : le chiffre du *Retenu* ci-dessous (« quinze ») est périmé ; il
+  vaut **dix-huit** valeurs modifiées depuis la remédiation P3 (dix-sept à la P2, plus le libellé d'audit, C-v0172a-24).
 - **Retenu** : quinze valeurs fournisseur modifiées et cinq clés neuves (AC-15), dans les quatre locales (fr « repasser
   en brouillon », de « in den Entwurf zurücksetzen », it « riportare in bozza », en « return to draft ») ; manuel
   utilisateur côté fournisseur ; glossaire. « Dévalider » reste le mot des factures clientes et le nom de code.
@@ -248,3 +256,28 @@ Fiche : `v0172-annulees.md`. Clé `v0172a`. Issue #868, en `refs` seulement.
   pas trace des rapports produits ; (c) recalculer l'avertissement selon les dates réelles des deux écritures — demande
   au `GET` la date de la contre-passation, pour un texte qui ne change pas la conduite.
 - **Réversible** : oui (une garde se rajoute sans migration).
+
+### C-v0172a-24 — Le libellé d'audit de `supplier_invoice.unvalidated` devient « repassée en brouillon » (validation P3, V3-1)
+
+- **Contexte** : le journal d'audit affiche l'action sous `audit-log-action-supplier-invoice-unvalidated` (« Facture
+  fournisseur dévalidée », fr-CH `:3053` ; de, it, en de même) ; C-v0172a-20 retire « dévalider » de tous les textes
+  fournisseur, et cette clé échappait à la liste `K`.
+- **Retenu** : 18ᵉ clé de `K`, valeur « Facture fournisseur repassée en brouillon » dans les quatre locales ; sonde
+  refaite à `d7ec2ea2` : `clés=18 verbe=14` dans chaque locale. Le libellé vaut aussi pour les entrées passées (validées
+  dévalidées depuis la 0.17.0) : c'est le même geste, rebaptisé.
+- **Écartées** : garder le libellé historique au motif que le nom de l'action ne change pas — l'administrateur lirait
+  au journal un mot que l'écran ne montre plus, pour un geste qu'il cherche sous l'autre nom.
+- **Réversible** : oui.
+
+### C-v0172a-25 — `DELETE` d'une annulée : le refus générique reste (validation P3, V3-7)
+
+- **Contexte** : `delete_draft_in_tx` refuse une annulée par `IllegalStateTransition`, rendu « Transition d'état
+  interdite » (`kesh-api/src/errors.rs:4260-4266`) ; la décision du Project Lead veut que tout refus dise quoi faire.
+- **Retenu** : pas de motif neuf. La route est réservée à l'Administrateur, **fermée aux clés d'API**
+  (`docs/api-external.md:563`), et l'écran ne propose *Supprimer le brouillon* que sur un brouillon (un brouillon ne
+  s'annule pas) : le refus n'est atteignable que par un appel direct de session ; le manuel et `api-external.md` disent
+  déjà « d'abord brouillon ».
+- **Écartées** : un motif `SUPPLIER_INVOICE_MUST_BE_REDRAFTED_FIRST` — code et clé neufs dans quatre locales pour un
+  chemin qu'aucun écran ni aucune clé n'atteint ; changer le texte de `ILLEGAL_STATE_TRANSITION` — il est commun à tous
+  les gestes.
+- **Réversible** : oui.

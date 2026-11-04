@@ -4,7 +4,7 @@ Status: ready-for-dev
 
 *Fiche rédigée le 2026-11-04, en autonomie (Opus 5.5), worktree `/home/gcorbaz/devel/kesh-0172a`, branche
 `story/v0172-annulees` partie de `d7ec2ea2` (le merge de la v0.17.1 sur `main`). Release **0.17.2**, **sans migration**
-(C-v0172a-1). Registre : `v0172-choix-autonomes.md`, section `v0172-annulees` (C-v0172a-1 à 23). Clé courte : `v0172a`.
+(C-v0172a-1). Registre : `v0172-choix-autonomes.md`, section `v0172-annulees` (C-v0172a-1 à 25). Clé courte : `v0172a`.
 Issue : **#868** (enhancement, reformulée par la décision du Project Lead du 2026-11-04), en `refs` seulement dans les
 commits ; la fermeture se porte sur la PR de release. Les numéros de ligne sont ceux de `d7ec2ea2`.*
 
@@ -137,7 +137,7 @@ clientes, règlements et `DocumentPreview` écartés). Chaque site, et ce qu'il 
 | 1 | `supplier_invoices.rs:2149` `cancel_in_tx` | **seul écrivain** de `cancelled` | inchangé ; un brouillon issu d'une annulée se revalide puis s'annule de nouveau comme un autre |
 | 2 | `supplier_invoices.rs:1993` `supplier_invoice_cancel_blocker` | coupe court « déjà annulée » | inchangé ; le brouillon répond `SupplierInvoiceDraft` (rang 1) |
 | 3 | `supplier_invoices.rs:935-942` `unvalidate_in_tx` | refuse `cancelled` | **modifié** : `cancelled` passe (AC-1) |
-| 4 | `supplier_invoices.rs:771-778` `delete_draft_in_tx` | refuse `cancelled` (`IllegalStateTransition`) | inchangé : l'annulée ne se supprime pas directement — d'abord brouillon (décision du Project Lead) |
+| 4 | `supplier_invoices.rs:771-778` `delete_draft_in_tx` | refuse `cancelled` (`IllegalStateTransition`) | inchangé : l'annulée ne se supprime pas directement — d'abord brouillon (décision du Project Lead) ; le refus reste le générique `ILLEGAL_STATE_TRANSITION` (« Transition d'état interdite », `kesh-api/src/errors.rs:4260-4266`), sans motif neuf : la route `DELETE` est réservée à l'Administrateur et **fermée aux clés d'API** (`docs/api-external.md:563`), et l'écran ne propose *Supprimer le brouillon* que sur un brouillon — le refus n'est atteignable que par un appel direct de session (V3-7, C-v0172a-25) |
 | 5 | `journal_entries.rs:1086-1092` `modification_guard` (paiement détaché) | gèle le règlement détaché d'une annulée | **protégé par refus** : une annulée dont le paiement détaché existe non contre-passé ne repasse pas en brouillon (AC-6) ; contre-passé, il est gardé par l'étape 3-bis |
 | 6 | `letterings.rs:1847-1900` `discover_supplier_invoice_document` | `cancelled` → aucune pièce | non atteint : le brouillon n'est pas soumis au lettrage de pièce (les trois appelants refusent un brouillon avant) |
 | 7 | `contacts.rs:401` `find_suppliers_by_invoice_iban` | exclut les annulées des fournisseurs suggérés | le brouillon y revient — voulu : ce n'est plus une facture écartée |
@@ -146,7 +146,7 @@ clientes, règlements et `DocumentPreview` écartés). Chaque site, et ce qu'il 
 | 10 | `supplier_invoices.rs:212, 218-279` `list` + filtre de la 0.17.0 (`routes/supplier_invoices.rs:644`, case « Afficher les factures annulées », `frontend/src/routes/(app)/supplier-invoices/+page.svelte:113`) | masque les annulées par défaut | le brouillon apparaît dans la liste par défaut |
 | 11 | `imported_supplier_invoices.rs:379-400` `find_source_document_of_entry` | le document de l'achat d'une annulée | l'achat supprimé, plus rien à montrer ; le document reste joint au brouillon (C-v0172a-12) |
 | 12 | `crates/kesh-api/src/exports/csv_tables.rs:1233` | exporte le statut | exporte `draft` ; aucune règle |
-| 13 | `audit_labels.rs:194, 199` | libellés `supplier_invoice.cancelled` / `.unvalidated` | `.unvalidated` réemployé (C-v0172a-10) ; aucun libellé neuf |
+| 13 | `audit_labels.rs:194, 199` | libellés `supplier_invoice.cancelled` / `.unvalidated` | `.unvalidated` réemployé (C-v0172a-10) ; aucune action neuve ; son **libellé affiché** (`audit-log-action-supplier-invoice-unvalidated`, fr-CH `:3053` « Facture fournisseur dévalidée ») devient « Facture fournisseur repassée en brouillon » — 18ᵉ clé de la liste `K` (V3-1, C-v0172a-24) |
 | 14 | `frontend/…/supplier-invoices/[id]/+page.svelte:922-940` | bloc « Facture annulée. », bloc d'annulation masqué | **modifié** : bouton « Repasser en brouillon » (AC-12) |
 | 15 | `frontend/…/SupplierInvoiceTotal.svelte:30`, `supplier-invoice-helpers.ts:46`, `invoice-cancel.ts:50` | affichage | inchangés |
 | 16 | Sauvegarde / `post_restore.rs` | — | aucun : pas de migration, pas de backfill, inventaire des tables identique ; un `.keshbackup` d'avant le geste restaure l'annulée et ses deux écritures |
@@ -273,8 +273,9 @@ version, deux écritures, lettrage et audit inchangés — asserté) :
 - (a) exercice de l'**achat** clos, contre-passation dans un exercice ouvert (le cas courant : facture 2025 annulée en
   2026 après la clôture de 2025) → `FISCAL_YEAR_CLOSED` (T3a) ;
 - (b) exercice postérieur clos → `LATER_FISCAL_YEAR_CLOSED` (T3b, nomme l'exercice) — état **posé en SQL** (exercice
-  postérieur clos inséré après l'annulation, hérité d'avant la v0.13.0), comme le test existant
-  `unvalidation_precedence_later_year_then_period_lock` (`supplier_invoices_draft.rs:951-958`) : sous la clôture ordonnée
+  postérieur clos inséré après l'annulation, hérité d'avant la v0.13.0), comme le fait le test existant
+  `unvalidation_precedence_later_year_then_period_lock` (`supplier_invoices_draft.rs:951-958`) — mais avec l'exercice clos
+  **entre** l'achat et la contre-passation (§ *Topologie des exercices*, V3-3) : sous la clôture ordonnée
   (`admin-manual.tex:1479`), une annulée dont les deux exercices sont ouverts n'a pas d'exercice postérieur clos ;
 - (c) **contre-passation** sous le verrou de période, achat hors verrou (achat daté après son annulation) →
   `PERIOD_LOCKED` (T3c) ; (c') achat sous le verrou → `PERIOD_LOCKED` (T3c') ;
@@ -294,7 +295,8 @@ jouent :
 - *P3* rapprochement de l'achat + exercice de l'achat clos → `MATCHED_BANK_TRANSACTION` ;
 - *P4* exercice de l'achat clos + **contre-passation sous le verrou de période** (verrou posé après la date de
   l'annulation) → `FISCAL_YEAR_CLOSED` — c'est la paire qui tue M12 ;
-- *P5* exercice postérieur à celui de l'achat clos (état posé en SQL, hérité d'avant la v0.13.0) + contre-passation sous le
+- *P5* exercice postérieur à celui de l'achat clos, **situé entre l'achat et la contre-passation** (état posé en SQL, hérité
+  d'avant la v0.13.0) + contre-passation sous le
   verrou → `PERIOD_LOCKED` (la contre-passation parle d'abord ; conséquence assumée, écrite) ;
 - *P6* verrou de période sur l'achat + ligne de l'achat lettrée hors paire → `PERIOD_LOCKED`.
 La paire « lot + paiement détaché » n'est pas exigée : une annulée n'entre jamais dans un lot `generated`
@@ -302,6 +304,27 @@ La paire « lot + paiement détaché » n'est pas exigée : une annulée n'entre
 que `open`) ; le rang du lot reste avant, pour la validée. Les tests de précédence existants de la validée
 (`unvalidation_precedence_*`, `supplier_invoices_draft.rs:870, 944`) restent verts — leurs messages attendus, s'ils en
 comparent, suivent AC-8.
+
+**Topologie des exercices des montages** (V3-3). Le décor (`crates/kesh-db/src/test_fixtures.rs:71, 118`) n'a **qu'un**
+exercice, 2020–2030, ouvert ; la contre-passation est datée **du jour** (horloge réelle). Les tests à deux exercices le
+**scindent en SQL** avant de valider la facture, relativement à l'année du jour `Y` : `A` = [`Y-2`-01-01, `Y-2`-12-31],
+`B` = [`Y-1`-01-01, `Y-1`-12-31], `C` = [`Y`-01-01, 2030-12-31] (l'exercice du décor, raccourci). Achat daté de `A`
+(par exemple `Y-2`-06-15), annulation le jour même (contre-passation dans `C`), puis états posés en SQL :
+- **T3a** : `A` `Closed`, `B` ouvert → `FISCAL_YEAR_CLOSED` (pré-contrôle) ;
+- **T3b** : `B` `Closed` — **strictement entre** l'achat et la contre-passation —, `A` et `C` ouverts, aucun verrou → la
+  contre-passation passe, l'achat rend `LATER_FISCAL_YEAR_CLOSED` (nomme `B`) ; ⚠️ le montage du test existant
+  (`Exercice 2031` clos, **postérieur aux deux** écritures, `supplier_invoices_draft.rs:951-958`) ne convient **pas** : la
+  contre-passation y rendrait `LATER_FISCAL_YEAR_CLOSED` la première, et pour sa propre raison ;
+- **T3c** : achat daté **après** l'annulation (dans `C`, par exemple `Y+1`-03-01 si ≤ 2030, sinon une date future du même
+  exercice), verrou au jour (`books_locked_through` = aujourd'hui) → la contre-passation rend `PERIOD_LOCKED` ;
+  **T3c'** : achat dans `A`, verrou au `Y-2`-12-31 → l'achat rend `PERIOD_LOCKED` ;
+- **P4** : `A` `Closed` + verrou au jour → `FISCAL_YEAR_CLOSED` (sans le pré-contrôle : `PERIOD_LOCKED` de la
+  contre-passation, d'où M12) ;
+- **P5** : `B` `Closed` (entre les deux) + verrou au jour → la contre-passation rend `PERIOD_LOCKED` avant que l'achat
+  ne dise `LATER_FISCAL_YEAR_CLOSED` ;
+- **P6** : verrou au `Y-2`-12-31 (achat seul) + une ligne de l'achat lettrée hors paire (SQL) → `PERIOD_LOCKED` de
+  l'achat (3-quater avant 3-quinquies), la contre-passation ayant passé.
+Les tests à un seul exercice (T1, T2, T5, T6, T9, T10, T11, T14) gardent le décor tel quel.
 
 **AC-6 — Annulée alors que payée : pas de brouillon tant que le paiement réel reste sans gel.** Si l'audit
 `supplier_invoice.cancelled` de la facture porte `settlementJournalEntryId` et que cette écriture **existe** et n'est
@@ -414,7 +437,9 @@ retirées).
   `error-supplier-invoice-unvalidate-blocked-detached-payment-reconciled`,
   `supplier-invoices-unvalidate-confirm-body-cancelled`, `supplier-invoices-unvalidated-cancelled` ; toute clé de plus
   se déclare au Dev Agent Record, avec le recompte ;
-- **valeur modifiée (17)** — la liste `K` du contrôle ci-dessous, numéros fr-CH : `error-supplier-invoice-must-be-unvalidated-first`
+- **valeur modifiée (18)** — la liste `K` du contrôle ci-dessous, numéros fr-CH : **`audit-log-action-supplier-invoice-unvalidated`**
+  (`:3053`, « Facture fournisseur repassée en brouillon » ; de `:2980`, it `:2981`, en `:2986` — libellé du journal d'audit,
+  ajouté en remédiation P3, C-v0172a-24), `error-supplier-invoice-must-be-unvalidated-first`
   (`:50`, « …repassez-la d'abord en brouillon, puis supprimez le brouillon. »), `error-supplier-invoice-unvalidate-blocked-paid`
   (`:52`), `…-in-payment-batch` (`:53`), `…-matched` (`:54`), `supplier-invoices-unvalidate` (`:2659`, « Repasser en
   brouillon »), **`supplier-invoices-validate-confirm-body`** (`:2662`, « …pour la corriger ensuite, il faudra la repasser
@@ -425,19 +450,23 @@ retirées).
   modifie : repassez d'abord la facture en brouillon. »), `…-blocked-later-fiscal-year-closed-named` (`:2692`) ;
   `:2664` (`…-unvalidate-confirm-body`), `:2670` (`…-blocked-stale`) et `:2689-2691` (avertissement du lot confirmé) ne
   portent pas le verbe et restent ;
+- **typographie** (V3-4) : chaque clé garde l'apostrophe de sa valeur actuelle — typographique `’` pour la famille
+  `supplier-invoices-*` (`:2662-2692`), droite `'` pour `error-supplier-invoice-*` (`:50-54`) et pour le libellé d'audit ;
+  les clés neuves prennent celle de leur famille ; les textes cités dans cette fiche avec `'` se recopient avec
+  l'apostrophe de la famille, et le repli suit le FTL caractère pour caractère ;
 - **vocabulaire** (C-v0172a-20) : fr « repasser en brouillon », de « in den Entwurf zurücksetzen », it « riportare in
   bozza », en « return to draft ».
 
 **Contrôle des catalogues, décidable par liste de clés** (V2-1). Un motif global ne décide rien : en italien
 `convalida`/`convalidata` est aussi la racine de *valider* (`docs/i18n-glossaire.md:95`, `supplier-invoices-validated`,
 `-draft-info` doivent le garder), et en allemand le verbe se fléchit et se sépare (« Freigabe aufgehoben », « Heben Sie
-zuerst die Freigabe … auf », « entvalidieren »). Le contrôle ne lit donc **que les 17 clés de la liste**, et cherche dans
+zuerst die Freigabe … auf », « entvalidieren »). Le contrôle ne lit donc **que les 18 clés de la liste**, et cherche dans
 leur valeur la racine de *dévalider* propre à chaque langue : fr `[Dd][ée]valid`, en `[Uu]nvalidat`, de
 `Freigabe|[Ee]ntvalid`, it `[Cc]onvalida\b` (le **nom** ; `convalidata`, l'état validé, n'est pas visé). Commande, à
 recopier au Dev Agent Record avec ses sorties :
 
 ```sh
-K='^(error-supplier-invoice-must-be-unvalidated-first|error-supplier-invoice-unvalidate-blocked-(paid|in-payment-batch|matched)|supplier-invoices-unvalidate|supplier-invoices-unvalidate-confirm-title|supplier-invoices-unvalidated|supplier-invoices-unvalidate-blocked-(not-validated|fiscal-year-closed|later-fiscal-year-closed|reversed|period-locked|lettered|later-fiscal-year-closed-named)|supplier-invoices-unvalidate-error|supplier-invoices-validate-confirm-body|supplier-invoices-edit-not-draft) = '
+K='^(error-supplier-invoice-must-be-unvalidated-first|error-supplier-invoice-unvalidate-blocked-(paid|in-payment-batch|matched)|supplier-invoices-unvalidate|supplier-invoices-unvalidate-confirm-title|supplier-invoices-unvalidated|supplier-invoices-unvalidate-blocked-(not-validated|fiscal-year-closed|later-fiscal-year-closed|reversed|period-locked|lettered|later-fiscal-year-closed-named)|supplier-invoices-unvalidate-error|supplier-invoices-validate-confirm-body|supplier-invoices-edit-not-draft|audit-log-action-supplier-invoice-unvalidated) = '
 for x in "fr-CH:[Dd][ée]valid" "en-CH:[Uu]nvalidat" "de-CH:Freigabe|[Ee]ntvalid" "it-CH:[Cc]onvalida\b"; do
   loc=${x%%:*}; pat=${x#*:}; f=crates/kesh-i18n/locales/$loc/messages.ftl
   echo "$loc clés=$(/usr/bin/grep -cE "$K" "$f") verbe=$(/usr/bin/grep -E "$K" "$f" | /usr/bin/grep -cE "^[a-z-]+ = .*($pat)")"
@@ -445,8 +474,9 @@ done
 ```
 
 **Sonde positive, relevée par l'agent de fiche** sur `d7ec2ea2` (même commande, `git show d7ec2ea2:<fichier>`) :
-`clés=17 verbe=13` dans **chacune** des quatre locales (les quatre clés sans le verbe : `-blocked-paid`,
-`-in-payment-batch`, `-matched`, `-not-validated`). **À la tête : `clés=17 verbe=0` partout.** Une valeur `clés` ≠ 17 dit
+`clés=18 verbe=14` dans **chacune** des quatre locales (les quatre clés sans le verbe : `-blocked-paid`,
+`-in-payment-batch`, `-matched`, `-not-validated` ; relevé refait en remédiation P3 avec la 18ᵉ clé — il valait `clés=17
+verbe=13` à dix-sept clés). **À la tête : `clés=18 verbe=0` partout.** Une valeur `clés` ≠ 18 dit
 qu'une clé a été renommée ou supprimée : le contrôle ne vaut plus, il se corrige avant d'être cru.
 
 **Contrôle des replis, liste close** (V2-2). Les replis en dur qui portent le verbe, relevés à `d7ec2ea2` par
@@ -468,7 +498,10 @@ n'est plus en `ILLEGAL_STATE_TRANSITION` ; précédence par écriture ; deux cod
 `:869` (le paragraphe de la dévalidation), `:963` (ligne `SUPPLIER_INVOICE_PAID`, `details` complétés) et deux lignes
 neuves au tableau des codes (`SUPPLIER_INVOICE_PAID_RECONCILED`, `SUPPLIER_INVOICE_DETACHED_PAYMENT`), avec la mention
 *(depuis la v0.17.2)* ; l'audit `supplier_invoice.unvalidated` y gagne `previousStatus` et `reversalJournalEntryId` s'il
-y est décrit. Contrôle : `git grep -nF "(brouillon, annulée)" -- docs/api-external.md` vide ;
+y est décrit. Et deux lignes qui citent le refus de suppression d'une validée (V3-5) : `:574` (« facture validée : dévalidez-la
+d'abord ») et `:961` (« la dévalider d'abord ») → « repassez-la d'abord en brouillon ». Contrôle :
+`git grep -nF "(brouillon, annulée)" -- docs/api-external.md` vide ; `git grep -niE "d[ée]valid" -- docs/api-external.md`
+trié au Dev Agent Record (restent les lignes des factures clientes) ;
 `git grep -nE "PAID_RECONCILED|DETACHED_PAYMENT" -- docs/api-external.md` rend au moins deux lignes.
 
 ## Tests et mutations
@@ -505,6 +538,7 @@ triée) :
 | `supplier-invoice-unvalidate.test.ts:62-75` | « mot pour mot le FTL, suffixé du numéro de la pièce » | mot pour mot le FTL, **arguments** substitués, sans suffixe |
 | `frontend/src/lib/shared/i18n-keys.test.ts:837` (`sitesTotal: 2796`) et ses compteurs par fichier (`:810-840`) | nombre d'appels `i18nMsg(` | **recomptés à la source** aux deux bornes (`d7ec2ea2` → tête), la variation écrite dans le commentaire comme les précédentes |
 | `frontend/src/lib/shared/i18n-un-repli-par-cle.test.ts:204-212` | décompte des clés de la famille | recompté, variation écrite (clés neuves d'AC-15) |
+| `frontend/src/lib/shared/i18n-libelle-en-dur.test.ts:267` (`CANDIDATES_ATTENDUES = 77`, asserté `:762`, `:787` ; préambule `:255-265`, dont `withLabel` de `supplier-invoice-unvalidate.ts`) | nombre de fonctions candidates (suffixes `Label`, `Text`, `Display`) | **recompté à la source** aux deux bornes (`d7ec2ea2` → tête) par l'extraction de son préambule : `withLabel` disparaît si le suffixe du numéro de facture est retiré (AC-8), d'autres fonctions en `*Label`/`*Text`/`*Display` peuvent apparaître ; variation et noms écrits dans le commentaire, entrées passées non réécrites ; ajouté en remédiation P3 (V3-2) |
 | `frontend/tests/e2e/supplier-invoice-draft-cycle.spec.ts:365-372` | boîte de la dévalidation contient « trou » | reste vrai (« trou » ⊂ « deux trous ») ; le libellé du bouton change |
 | `frontend/tests/e2e/supplier-invoice-draft-cycle.spec.ts:412` | payée par la réconciliation : `toHaveCount(0)` | le parcours 3 d'AC-13 |
 
@@ -581,8 +615,8 @@ Tout autre test qui rougit au gate se juge et se déclare au Dev Agent Record (c
    d'AC-8 ; doc-comment de la route.
 5. **i18n** : clés d'AC-15 dans les quatre locales ; `npm run lint-i18n-ownership` ; tests i18n du frontend
    (`i18n-keys.test.ts`, `i18n-un-repli-par-cle.test.ts`, `i18n-libelle-en-dur.test.ts`) verts, **`sitesTotal` et les
-   compteurs par fichier de `i18n-keys.test.ts`, et le décompte de `i18n-un-repli-par-cle.test.ts`, recomptés à la
-   source** (aux deux bornes, la variation écrite dans le commentaire, entrées passées non réécrites) ;
+   compteurs par fichier de `i18n-keys.test.ts`, le décompte de `i18n-un-repli-par-cle.test.ts` et
+   `CANDIDATES_ATTENDUES` de `i18n-libelle-en-dur.test.ts:267`, recomptés à la source** (aux deux bornes, la variation écrite dans le commentaire, entrées passées non réécrites) ;
    `docs/i18n-glossaire.md` (AC-15).
 6. **Frontend** : `supplier-invoice-unvalidate.ts` (douze codes, arguments, replis = FTL fr-CH) ; `+page.svelte` (bouton
    pour `open`/`paid`/`cancelled`, boîte pour `open`/`cancelled`, appel direct pour `paid`, succès par statut,
@@ -660,6 +694,15 @@ PDF régénérés, contrôlés aplatis : les phrases neuves présentes, et absen
 revalide », « dévalider une facture fournisseur », « se dévalide par », « ne supprime aucune facture annulée », « ni ne
 se dévalide ».
 
+**Hors des manuels** (V3-5), même vocabulaire :
+- `README.md:42` (Fonctionnalités) : « validée et non payée, elle se **dévalide** pour être corrigée (v0.17.0) » → « elle
+  se **repasse en brouillon** pour être corrigée — annulée aussi, depuis la v0.17.2 » ;
+- `docs/manual/fr/marketing-brochure.tex:449` **et son PDF** (`marketing-brochure.pdf`, régénéré par `make fr`) : « validée
+  et non payée, elle se dévalide pour être corrigée, sans annulation ni contre-passation » → même correction ;
+- `website/` : relevé propre à `d7ec2ea2` (`git grep -niE "d[ée]valid" -- website` vide, P3) — à rejouer.
+Ce sont des éléments de la liste de contrôle pré-release (CLAUDE.md, points 1 et 4) : ils se font **dans cette story**,
+avec le code qui les motive, non à la release.
+
 Manuels DE/IT/EN : vides (`docs/manual/{de,en,it}/README.md` seulement) — rien à traduire.
 
 ## CHANGELOG
@@ -728,6 +771,7 @@ payée rapprochée (date) ; refus sur une annulée qui avait été payée. Joint
 | 2026-11-04 | 0.1 | Fiche créée en autonomie (C-v0172a-1 à 18) ; validation P1 à lancer (`v0172-annulees-validate-prompt-p1.md`, Sonnet). | Opus 5.5 |
 | 2026-11-04 | 0.2 | **Validation P1 (Sonnet) : 0/0/7/8**, remédiée (Opus 5.5) ; les quinze findings appliqués, aucun réfuté (prémisses relues au code). MEDIUM : V1-1 identifiant de la contre-passation par lecture verrouillante après le verrou de l'achat (tâche 3.3, Dev Notes, M14) ; V1-2 précédence composée par écriture, contre-passation d'abord, paires P1-P6 (AC-5, tableau, C-v0172a-19) ; V1-3 M12 n'est plus déclarée équivalente, tuée par P4 (C-v0172a-4 annoté) ; V1-4 liste close des tests existants à réécrire (13 sites, dont `sitesTotal` et le décompte de `i18n-un-repli-par-cle`) ; V1-5 `docs/api-external.md` et `docs/i18n-glossaire.md` (AC-15, AC-16) ; V1-6 vocabulaire « repasser en brouillon » dans toutes les valeurs fournisseur, grep insensible à la casse, manuel `:1811`, `:1917` (C-v0172a-20) ; V1-7 repli serveur par `format!`, T7b, M13. LOW : V1-8 limite L2 et manuel d'administration `:3073` ; V1-9 cinq numéros de ligne ; V1-10 lot avant paiement détaché ; V1-11 cinq champs de `details`, écriture nommée par sa date, chemins de menu de l'écran (C-v0172a-22) ; V1-12 contextes de C-11 et C-13, liste close des clés (AC-15), T14 pour l'`Invariant` ; V1-13 Olico art. 3 retiré du manuel, marqué non vérifié ; V1-14 payée sans boîte, séquences E2E explicites (C-v0172a-21) ; V1-15 justification côté clientes corrigée. Registre : C-v0172a-19 à 22. Prochaine : validation P2 (Opus, passe complète, `v0172-annulees-validate-prompt-p2.md`). | Opus 5.5 |
 | 2026-11-04 | 0.3 | **Validation P2 (Opus) : 0/1/4/8**, remédiée (Opus 5.5) ; les treize findings appliqués, aucun réfuté (prémisses relues : catalogues des quatre locales, replis, manuels, `git grep` à `d7ec2ea2`). HIGH : V2-1 contrôle de vocabulaire par **liste de 17 clés** et racine par langue (it `[Cc]onvalida\b`, de `Freigabe\|[Ee]ntvalid`), sonde positive relevée à `d7ec2ea2` (13 sur 17 dans chaque locale), vide attendu à la tête (AC-15). MEDIUM : V2-2 deux clés ajoutées (`validate-confirm-body`, `edit-not-draft`, 15 → 17) et liste close de 14 replis en dur, page d'édition et repli Rust compris ; V2-3 manuel utilisateur `:3762-3766` et inventaire clos des dix lignes du manuel d'administration (`:2546`, `:2550`, `:3010` clés `read-write`, `:3058` changent) ; V2-4 contrôle DRY sur le chemin JSON `'$.settlementJournalEntryId'` (une ligne, sonde à `d7ec2ea2`) ; V2-5 la paire n'est nette qu'au cumul : totaux de deux périodes, TVA comprise — fiche, confirmation à l'écran, manuel, CHANGELOG, T1 par période ; le verrou de période suffit (C-v0172a-23). LOW : V2-6 registre C-14 annoté ; V2-7 contextes de C-17 et C-18 ; V2-8 L1 étendue au rang 5 ; V2-9 assertion vide de T1 remplacée, M8 sur la forme prescrite ; V2-10 AC-4 (b) posé en SQL ; V2-11 contrainte `chk_…_draft_without_settlement` et deux doc-comments qui deviennent faux ; V2-12 prédicat partagé nommé (fragment SQL, deux requêtes) ; V2-13 trois sites ajoutés à l'inventaire (18 à 20) avec le critère de tri. Deux tests à réécrire ajoutés (`supplier-invoice-draft-page.test.ts:574-576`, `supplier-invoice-unvalidate.test.ts:33`). Prochaine : validation P3 (Sonnet, passe complète, `v0172-annulees-validate-prompt-p3.md`). | Opus 5.5 |
+| 2026-11-04 | 0.4 | **Validation P3 (Sonnet) : 0/0/2/5**, remédiée (Opus 5.5) ; les sept findings appliqués, aucun réfuté (prémisses relues à `d7ec2ea2` : FTL des quatre locales `audit-log-action-supplier-invoice-unvalidated`, `i18n-libelle-en-dur.test.ts:255-267`, `test_fixtures.rs:71, 118`, `supplier_invoices_draft.rs:944-960`, `README.md:42`, `marketing-brochure.tex:449`, `api-external.md:563, 574, 961`, `kesh-api/src/errors.rs:4260-4266`). MEDIUM : V3-1 le libellé d'audit devient la **18ᵉ** clé de `K` (« Facture fournisseur repassée en brouillon »), sonde refaite à `d7ec2ea2` : `clés=18 verbe=14` dans chaque locale, `verbe=0` attendu à la tête (C-v0172a-24) ; V3-2 `CANDIDATES_ATTENDUES` (`i18n-libelle-en-dur.test.ts:267`) ajouté au tableau des tests à réécrire et à la tâche 5, recompte à la source. LOW : V3-3 topologie des exercices des montages (scission du décor en SQL relativement à l'année du jour ; T3b et P5 avec l'exercice clos **entre** les deux écritures) ; V3-4 typographie des apostrophes par famille de clés ; V3-5 `README.md:42`, brochure `:449` et son PDF, `api-external.md:574`, `:961` ; V3-6 C-5 et C-20 annotés, choix du parcours de toutes les traces consigné ; V3-7 refus générique de `DELETE` d'une annulée écarté par écrit (C-v0172a-25). Prochaine : validation P4 (Opus, passe ciblée sur le diff `ea098675` → tête, `v0172-annulees-validate-prompt-p4.md`). | Opus 5.5 |
 
 ## Dev Agent Record
 
