@@ -76,7 +76,11 @@ test.describe('Avertissement avant la fermeture pour inactivité (#895)', () => 
 		await expect(warning(page)).toHaveCount(0);
 		await page.clock.fastForward(W - 60_000 + 500);
 		await expect(warning(page)).toBeVisible();
-		await expect(page.getByTestId('session-idle-warning-countdown')).toContainText('Fermeture dans 1:00.');
+		// L'horloge de la page continue de couler après le saut : le compte à rebours
+		// vaut au plus 1:00, quelques secondes de moins selon la durée de la connexion.
+		await expect(page.getByTestId('session-idle-warning-countdown')).toHaveText(
+			/Fermeture dans (1:00|0:[0-5]\d)\./,
+		);
 
 		const battement = page.waitForResponse('**/api/v1/auth/activity');
 		await page.getByTestId('session-idle-warning-stay').click();
