@@ -618,7 +618,7 @@
 <div class="container mx-auto py-6">
 	<div class="flex items-center justify-between mb-6">
 		<h1 class="text-2xl font-bold">{i18nMsg('contacts-page-title', "Carnet d'adresses")}</h1>
-		<Button onclick={openCreate}>
+		<Button onclick={openCreate} data-testid="contact-new">
 			<Plus class="w-4 h-4 mr-2" />
 			{i18nMsg('contact-list-new', 'Nouveau contact')}
 		</Button>
@@ -783,6 +783,7 @@
 										variant="ghost"
 										size="sm"
 										onclick={() => openEdit(c)}
+										data-testid="contact-edit"
 										aria-label={i18nMsg('contact-list-edit', 'Modifier')}
 									>
 										<Pencil class="w-4 h-4" />

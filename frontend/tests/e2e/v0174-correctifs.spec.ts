@@ -239,14 +239,15 @@ test.describe('0.17.4 — les écrans des correctifs', () => {
 	}, testInfo) => {
 		await login(page);
 		await page.goto('/contacts');
-		await page.getByRole('button', { name: /Nouveau contact/i }).click();
+		await page.getByTestId('contact-new').click();
 		await page.fill('#form-name', uniq('Contact pays XX'));
 		await page.fill('#form-street', 'Rue des Essais');
 		await page.fill('#form-npa', '1200');
 		await page.fill('#form-city', 'Genève');
 		await page.fill('#form-country', 'XX');
 		await page.locator('form button[type="submit"]').click();
-		await expect(page.getByText('« XX »').first()).toBeVisible();
+		// Le refus du serveur, tel quel (la marque « XX » n'est pas un libellé traduit).
+		await expect(page.locator('form p.text-destructive')).toContainText('« XX »');
 		await capture(page, testInfo, '817-contacts-refus-xx');
 
 		await page.goto('/supplier-invoices/new');
@@ -256,7 +257,7 @@ test.describe('0.17.4 — les écrans des correctifs', () => {
 		await panel.getByTestId('supplier-new-street').fill('Rue des Essais');
 		await panel.getByTestId('supplier-new-postal-code').fill('1200');
 		await panel.getByTestId('supplier-new-city').fill('Genève');
-		await panel.getByLabel('Pays').fill('XX');
+		await panel.getByTestId('supplier-new-country').fill('XX');
 		await panel.getByTestId('supplier-new-create').click();
 		await expect(panel.getByTestId('supplier-new-error')).toContainText('« XX »');
 		await capture(page, testInfo, '817-panneau-fournisseur-refus-xx');
@@ -305,7 +306,7 @@ test.describe('0.17.4 — les écrans des correctifs', () => {
 			},
 		);
 		await page.goto('/contacts');
-		await page.getByRole('button', { name: 'Modifier' }).first().click();
+		await page.getByTestId('contact-edit').first().click();
 		await expect(page.getByTestId('contact-country-unknown')).toContainText('« SU »');
 		await capture(page, testInfo, '817-contact-pays-inconnu-avis');
 	});
