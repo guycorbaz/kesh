@@ -298,7 +298,9 @@ AC-5 (a), AC-6.
    sites), `<=`
    (S-E6), nom d'opération (S2-B2), `main.rs:237` (message). Tests adaptés et neufs.
 5. #896 (§ *Conception* 5), contrôle 85/85.
-6. LOW 1 à 12 ; annotations de `v0172-session.md`.
+6. LOW restants de § *Conception* 6, ceux que la tâche 4 ne traite pas : le test S-B2/S-E2 du point 1, les points 2
+   (S-E3), 3 (S-E4 (c), texte), 6 (S-B3/S-E4 (a)), 9 (S2-B3), 11 (S2-A1) et 12 (annotations de `v0172-session.md`) —
+   validation P4, P4-2.
 7. Textes (§ *Manuel*, *CHANGELOG*, *README*). **Le PDF du manuel d'administration est régénéré par cette sous-fiche**
    (`make admin` dans `docs/manual/`, sous les deux verrous ; `make fr` régénérerait aussi le manuel utilisateur et la
    brochure, que la 1 ne touche pas — validation P3, P3-6) et contrôlé aplati : son AC-10 se vérifie sans la 2, qui le régénérera encore

@@ -264,8 +264,8 @@ rendu, non 65 ms après le changement d'adresse, leçon N2-A1). Jointes au Dev A
   ouvert) ;
   au `:97`, **seule la phrase en gras** (« Pendant une longue lecture dans l'aperçu, sortez le pointeur du document, ou
   cliquez à côté, au moins une fois par durée réglée … ; un avertissement avant la fermeture est demandé (CR \#895) ») est
-  remplacée par « **Pendant une longue lecture dans l'aperçu, cliquez sur Rester connecté quand l'avertissement
-  apparaît.** » — la phrase précédente du même paragraphe, qui dit déjà que Kesh ne voit pas ce qui se passe dans le cadre,
+  remplacée par « **Pendant une longue lecture dans l'aperçu, c'est le bouton Rester connecté de l'avertissement qui
+  garde la session ouverte.** » (descriptive, sans impératif — validation P4, P4-1) — la phrase précédente du même paragraphe, qui dit déjà que Kesh ne voit pas ce qui se passe dans le cadre,
   est gardée (pas de doublon, validation P1, F11 (2)) ; le reste du paragraphe est gardé. Si l'étape 0 a écrit un écart (C-v0174s-13), il est dit
   ici.
 - **Administration** (`admin-manual.tex:3043`, « Ce qui compte ») : remplacer « (le geste à faire est au manuel

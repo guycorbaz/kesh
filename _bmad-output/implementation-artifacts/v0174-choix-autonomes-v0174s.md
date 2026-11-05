@@ -11,7 +11,7 @@ Fiche : `v0174-session.md` (parente), `v0174-session-1.md` (serveur), `v0174-ses
   `kesh-i18n`, `frontend/src/lib/app/stores`, `frontend/src/lib/shared/components`, `frontend/src/routes` : six modules,
   au-dessus du seuil de cinq de la règle de splitting préventif.
 - **Retenu** : `v0174-session-1` (serveur : #890, #896, LOW serveur ; `kesh-db` et `kesh-api` — deux modules au
-  répertoire, une douzaine à la granularité de la règle, d'où la **dérogation écrite** dans la sous-fiche, motif de coût
+  répertoire, onze à la granularité de la règle (validation P4, P4-3), d'où la **dérogation écrite** dans la sous-fiche, motif de coût
   et non l'exception de la règle, déclarée au Project Lead — validation P3, P3-4) et
   `v0174-session-2` (navigateur : #895, LOW navigateur ; quatre modules), sur la même branche, la 1 avant la 2. Aucune
   dépendance de code entre elles : le format du cookie de renouvellement ne change pas (C-v0174s-2), le navigateur n'a
