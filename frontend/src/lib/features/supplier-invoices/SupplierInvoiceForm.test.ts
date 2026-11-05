@@ -47,6 +47,7 @@ function contact(id: number, name: string): ContactResponse {
 		isSupplier: true,
 		address: null,
 		addressStructured: { street: '', building: '', postalCode: '', city: '', country: 'CH' },
+		addressCountryKnown: true,
 		email: null,
 		phone: null,
 		ideNumber: null,

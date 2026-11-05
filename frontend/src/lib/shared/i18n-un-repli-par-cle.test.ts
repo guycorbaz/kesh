@@ -228,8 +228,13 @@ const PREFIXES = [
  *
  * ⚠️ **Fusion de la release 0.17.2** (2026-11-04) : les deux stories réunies, **recompté à la
  * source** par la garde après la fusion (non additionné) : **399**.
+ *
+ * ⚠️ **v0174-correctifs** (0.17.4, 2026-11-05) : **399 → 401** (+2), aux deux bornes
+ * (`7bd4d5c0` → tête) : `supplier-invoices-project-archived-option` (#872) et
+ * `supplier-invoices-unvalidate-blocked-period-locked-named` (#869). La troisième clé neuve,
+ * `contacts-country-unknown` (#817), n'est pas d'un préfixe relevé. Aucune retirée.
  */
-const CLES_RELEVEES = 399;
+const CLES_RELEVEES = 401;
 
 
 /** Relève, pour chaque clé du domaine, l'ensemble de ses replis littéraux distincts. */

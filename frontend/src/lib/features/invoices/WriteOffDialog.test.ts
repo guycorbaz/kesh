@@ -12,6 +12,7 @@ vi.mock('$lib/shared/utils/i18n.svelte', () => ({
 
 import WriteOffDialog from './WriteOffDialog.svelte';
 import type { InvoiceSettingsResponse } from './invoices.types';
+import { pinClock } from '$lib/shared/utils/pin-clock.test-helper';
 
 const settings = {
 	defaultDiscountAccountId: 1,
@@ -91,6 +92,16 @@ describe('WriteOffDialog', () => {
 		expect((r.getByTestId('write-off-confirm') as HTMLButtonElement).disabled).toBe(true);
 		// Revue P2 (M2) : l'utilisateur sait pourquoi.
 		expect(r.getByText(/n'est pas connu/)).toBeTruthy();
+	});
+});
+
+// Story v0174-correctifs-3 (#889, AC-3.6, site 3) — la date par défaut d'un solde est celle
+// du poste : à 00 h 30 le 5 novembre à Zurich, le 5.
+describe('WriteOffDialog — date par défaut locale (#889)', () => {
+	pinClock();
+	it('le solde est daté du 5 novembre', () => {
+		const r = open('60.0000');
+		expect((r.getByTestId('write-off-date') as HTMLInputElement).value).toBe('2026-11-05');
 	});
 });
 

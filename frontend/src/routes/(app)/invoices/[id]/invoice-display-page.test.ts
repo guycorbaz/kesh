@@ -86,11 +86,13 @@ vi.mock("$lib/features/reminders/reminders.api", () => ({
 vi.mock("$lib/features/projects/projects.api", () => ({
   listProjects: vi.fn(async () => []),
 }));
+const createCreditNoteMock = vi.hoisted(() => vi.fn());
 vi.mock("$lib/features/credit-notes/credit-notes.api", () => ({
-  createCreditNote: vi.fn(),
+  createCreditNote: (req: unknown) => createCreditNoteMock(req),
 }));
 
 import Page from "./+page.svelte";
+import { pinClock } from "$lib/shared/utils/pin-clock.test-helper";
 
 function invoice(partial: Partial<InvoiceResponse> = {}): InvoiceResponse {
   return {
@@ -234,5 +236,53 @@ describe("fiche facture — dates (v0171, #879)", () => {
       "03.03.2026",
     );
     expect(container.textContent).not.toContain("2026-03-03");
+  });
+});
+
+// Story v0174-correctifs-3 (#889) — à 00 h 30 le 5 novembre à Zurich (23 h 30 UTC la
+// veille) : l'avoir est daté du 5 (site 9) ; un instant UTC du 4 à 23 h 30 s'affiche à sa
+// date suisse, le 5 (affichages b et c) ; une date de règlement (minuit) reste la sienne (a).
+describe("fiche facture — la date du jour et les instants à l'heure suisse (#889)", () => {
+  pinClock();
+
+  it("l'avoir créé est daté du 5 novembre (site 9)", async () => {
+    getInvoiceMock.mockResolvedValue(invoice());
+    createCreditNoteMock.mockResolvedValue({ id: 77 });
+    const { findByTestId } = render(Page);
+    await fireEvent.click(await findByTestId("invoice-credit-note-button"));
+    await fireEvent.click(await findByTestId("invoice-credit-note-confirm"));
+    await waitFor(() => expect(createCreditNoteMock).toHaveBeenCalled());
+    expect(createCreditNoteMock.mock.calls[0][0]).toEqual({
+      invoiceId: 5,
+      date: "2026-11-05",
+    });
+  });
+
+  it("« Document figé le » d'un instant à 23 h 30 UTC : `05.11.2026` (b)", async () => {
+    getInvoiceMock.mockResolvedValue(invoice({ pdfFrozenAt: "2026-11-04T23:30:00" }));
+    const { findByTestId } = render(Page);
+    expect((await findByTestId("invoice-pdf-frozen-at")).textContent?.trim()).toBe(
+      "05.11.2026",
+    );
+  });
+
+  it("« Envoyée le » d'un instant à 23 h 30 UTC : `05.11.2026` (c)", async () => {
+    getInvoiceMock.mockResolvedValue(
+      invoice({ emailedAt: "2026-11-04T23:30:00", emailedTo: "client@example.invalid" }),
+    );
+    const { findByTestId } = render(Page);
+    expect((await findByTestId("invoice-emailed-at")).textContent?.trim()).toBe(
+      "05.11.2026",
+    );
+  });
+
+  it("« Payée le » d'une date à minuit reste `04.11.2026` (a, conforme)", async () => {
+    getInvoiceMock.mockResolvedValue(
+      invoice({ status: "paid" as never, paidAt: "2026-11-04T00:00:00" }),
+    );
+    const { findByTestId } = render(Page);
+    expect((await findByTestId("invoice-detail-paid-at")).textContent?.trim()).toBe(
+      "04.11.2026",
+    );
   });
 });

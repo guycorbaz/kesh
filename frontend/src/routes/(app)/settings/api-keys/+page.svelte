@@ -13,6 +13,8 @@
 	import { formatSwissDate, formatSwissDateTime } from '$lib/features/reports/reports.api';
 	import { isApiError } from '$lib/shared/utils/api-client';
 	import { errorMessageOf } from '$lib/shared/utils/error-message';
+	import { todayLocal } from '$lib/shared/utils/local-date';
+	import { addDaysIso } from '$lib/features/invoices/invoice-helpers';
 	import { copyToClipboard } from '$lib/shared/utils/clipboard';
 	import { Button } from '$lib/components/ui/button';
 	import { Input } from '$lib/components/ui/input';
@@ -50,8 +52,9 @@
 	// reste ouverte au-delà de minuit (code-review Pass 1).
 	let formMinDate = $state('');
 
+	// #889 : le lendemain du jour du poste, non celui d'UTC (la veille entre minuit et 1 h).
 	function computeMinDate(): string {
-		return new Date(Date.now() + 86_400_000).toISOString().slice(0, 10);
+		return addDaysIso(todayLocal(), 1);
 	}
 
 	/**

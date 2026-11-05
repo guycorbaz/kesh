@@ -144,6 +144,13 @@
 	let formPostalCode = $state('');
 	let formCity = $state('');
 	let formCountry = $state('CH');
+	// Story v0174-correctifs-3 (#817) — le code pays inconnu du contact ouvert en édition
+	// (`addressCountryKnown === false`, jugé par le serveur), ou `null`. L'avis s'affiche
+	// tant que le champ garde ce code ; dès qu'il change, le serveur juge la nouvelle valeur.
+	let unknownCountryCode = $state<string | null>(null);
+	const countryUnknownNotice = $derived(
+		unknownCountryCode !== null && formCountry === unknownCountryCode,
+	);
 	let formIde = $state('');
 	// Story 16-3b (#151) — numéro de client ('' = non renseigné).
 	let formClientNumber = $state('');
@@ -386,6 +393,7 @@
 		formPostalCode = '';
 		formCity = '';
 		formCountry = 'CH';
+		unknownCountryCode = null;
 		formIde = '';
 		formClientNumber = '';
 		formPaymentTerms = '';
@@ -411,6 +419,7 @@
 		formPostalCode = c.addressStructured?.postalCode ?? '';
 		formCity = c.addressStructured?.city ?? '';
 		formCountry = c.addressStructured?.country || 'CH';
+		unknownCountryCode = c.addressCountryKnown === false ? formCountry : null;
 		formIde = formatIdeNumber(c.ideNumber);
 		// ⚠️ `PUT` est un FULL-REPLACE et le même payload sert à créer et à
 		// modifier : sans cette ligne, modifier un simple téléphone EFFACERAIT
@@ -994,6 +1003,15 @@
 						<label for="form-country" class="text-xs text-muted-foreground">{i18nMsg('field-country', 'Pays')}</label>
 						<Input id="form-country" type="text" bind:value={formCountry} maxlength={2} placeholder="CH" />
 					</div>
+					{#if countryUnknownNotice}
+						<p class="col-span-3 text-xs text-warning" data-testid="contact-country-unknown">
+							{i18nMsg(
+								'contacts-country-unknown',
+								'Le code pays « { $code } » n’est pas un code ISO connu : la QR-facture de ce contact ne pourra pas être produite. Corrigez-le (CH, FR, DE…) ; les autres champs s’enregistrent sans y toucher.',
+								{ code: unknownCountryCode ?? '' },
+							)}
+						</p>
+					{/if}
 				</div>
 			</fieldset>
 

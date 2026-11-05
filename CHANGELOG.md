@@ -23,9 +23,18 @@ Le contenu est rédigé en français à destination des **fiduciaires, PME, ind�
   changé doit être valide. Pour l'API : `POST` et `PUT /api/v1/contacts` et l'étape des coordonnées de l'assistant
   (`POST /api/v1/onboarding/coordinates`) refusent en `400 VALIDATION_ERROR` un pays nouveau ou modifié hors de la liste ISO (il
   passait), et les réponses de contact portent un champ neuf, `addressCountryKnown`.
+- **Toutes les factures validées sont proposées pour un lot de paiement** ([#888](https://github.com/guycorbaz/kesh/issues/888)),
+  non plus les 200 premières.
+- **La date du jour est celle de votre poste, non plus celle d'UTC** ([#889](https://github.com/guycorbaz/kesh/issues/889)) :
+  entre minuit et 1 h (2 h en été), la facture, le règlement, le solde, le rappel manuel, l'avoir, le lot de paiement, le
+  paiement d'une facture fournisseur, l'expiration minimale d'une clé d'API et les noms des fichiers exportés proposaient la
+  veille. L'envoi d'un document, le gel d'un PDF, un rappel, la confirmation d'un lot, la date d'import d'un document et la
+  création d'un utilisateur s'affichent à leur date suisse.
 - **Le refus de repasser une facture fournisseur en brouillon sous le verrou de période dit jusqu'à quand**
   ([#869](https://github.com/guycorbaz/kesh/issues/869)). Pour l'API : `400 PERIOD_LOCKED` porte `details.lockedThrough` et
   `details.attempted` (`docs/api-external.md`).
+- **Un brouillon de facture fournisseur montre son projet archivé** ([#872](https://github.com/guycorbaz/kesh/issues/872)),
+  marqué « (archivé) », même quand son projet parent l'est aussi.
 - **Une requête interrompue ne bloque plus un compte bancaire** ([#842](https://github.com/guycorbaz/kesh/issues/842)) : le
   verrou du compte, et l'état des clés étrangères d'une restauration interrompue
   ([#540](https://github.com/guycorbaz/kesh/issues/540)), sont rendus au retour de la connexion au pool, au lieu d'y rester

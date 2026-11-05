@@ -30,9 +30,10 @@ vi.mock('$lib/shared/utils/notify', () => ({
 }));
 
 const listContactsMock = vi.fn();
+const createContactMock = vi.hoisted(() => vi.fn());
 vi.mock('$lib/features/contacts/contacts.api', () => ({
 	listContacts: (q?: unknown) => listContactsMock(q),
-	createContact: vi.fn(),
+	createContact: (p: unknown) => createContactMock(p),
 	updateContact: vi.fn(),
 	archiveContact: vi.fn()
 }));
@@ -918,5 +919,65 @@ describe('AC-b4 — rien ne part avant que la frappe se calme', () => {
 		await ouvrirEdition();
 
 		expect(zone('contact-duplicate-nearby').textContent?.trim() ?? '').toBe('');
+	});
+});
+
+// ---------------------------------------------------------------------------
+// Story v0174-correctifs-3 (#817, AC-3.14, AC-3.15) — le pays inconnu se signale
+// ---------------------------------------------------------------------------
+
+describe('#817 — le pays d’une adresse', () => {
+	const ADRESSE = { street: 'Rue des Essais', building: '7', postalCode: '1200', city: 'Genève' };
+	const avis = () => document.querySelector('[data-testid="contact-country-unknown"]');
+
+	it('AC-3.14 : un contact au pays « SU » inconnu affiche l’avis, qui le nomme (MC-817)', async () => {
+		const ancien = c({
+			id: 31,
+			name: 'Ancien SU',
+			addressStructured: { ...ADRESSE, country: 'SU' },
+			addressCountryKnown: false
+		} as Partial<ContactResponse> & { id: number; name: string });
+		repondre({}, [ancien]);
+		render(Page);
+		await settle(30);
+		await ouvrirEdition();
+		expect(avis()?.textContent).toContain('« SU »');
+		expect(avis()?.textContent).toContain('QR-facture');
+		// Le champ changé : le serveur juge la nouvelle valeur, l'avis disparaît.
+		await saisir('form-country', 'CH', 20);
+		expect(avis()).toBeNull();
+	});
+
+	it('AC-3.14 : un pays connu n’affiche aucun avis', async () => {
+		const connu = c({
+			id: 32,
+			name: 'Connu CH',
+			addressStructured: { ...ADRESSE, country: 'CH' },
+			addressCountryKnown: true
+		} as Partial<ContactResponse> & { id: number; name: string });
+		repondre({}, [connu]);
+		render(Page);
+		await settle(30);
+		await ouvrirEdition();
+		expect(avis()).toBeNull();
+	});
+
+	it('AC-3.15 : le refus du serveur pour un pays « XX » s’affiche tel quel', async () => {
+		const refus = 'adresse : le pays « XX » n’est pas un code ISO 3166-1 alpha-2 connu (ex. CH, FR, DE)';
+		createContactMock.mockRejectedValue({ code: 'VALIDATION_ERROR', status: 400, message: refus });
+		repondre({});
+		render(Page);
+		await settle(20);
+		await ouvrirCreation();
+		await saisir('form-name', 'Essai XX', 20);
+		await saisir('form-street', ADRESSE.street, 20);
+		await saisir('form-npa', ADRESSE.postalCode, 20);
+		await saisir('form-city', ADRESSE.city, 20);
+		await saisir('form-country', 'XX', 20);
+		const form = champ('form-name').closest('form') as HTMLFormElement;
+		await fireEvent.submit(form);
+		await settle(30);
+		expect(createContactMock).toHaveBeenCalled();
+		expect(document.body.textContent).toContain(refus);
 	});
 });

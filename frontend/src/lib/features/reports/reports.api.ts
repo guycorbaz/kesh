@@ -3,6 +3,7 @@
 import Big from 'big.js';
 import { apiClient } from '$lib/shared/utils/api-client';
 import { i18nMsg } from '$lib/shared/utils/i18n.svelte';
+import { todayLocal } from '$lib/shared/utils/local-date';
 import { formatSwissAmount } from '$lib/features/journal-entries/balance';
 import type {
 	AgedReceivablesDto,
@@ -380,8 +381,8 @@ export async function getAgedReceivables(): Promise<AgedReceivablesDto> {
 export async function downloadAgedReceivables(): Promise<void> {
 	const response = await apiClient.getBlob('/api/v1/reports/aged-receivables/export?format=csv');
 	const blob = await response.blob();
-	const today = new Date().toISOString().slice(0, 10);
-	triggerDownload(blob, `balance-agee-${today}.csv`);
+	// #889 : la date du jour du poste, non celle d'UTC (la veille entre minuit et 1 h).
+	triggerDownload(blob, `balance-agee-${todayLocal()}.csv`);
 }
 
 export async function downloadReport(

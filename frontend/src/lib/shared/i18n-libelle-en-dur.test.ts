@@ -270,8 +270,17 @@ const SUFFIXES = ['Label', 'Text', 'Display'];
  * `ecartee` ne bouge pas. *Recompté en cherchant les suffixes `Label`, `Text`, `Display`
  * dans le diff de la story (`d7ec2ea2` → tête) : aucune déclaration neuve ne les porte
  * (`swissDate`, `requestUnvalidate`, `supplierInvoiceUnvalidateMessage`).*
+ *
+ * ⚠️ **76 → 77, et la déclaration est NOMMÉE** (Story v0174-correctifs-3, #872) :
+ * `projectOptionLabel` (`lib/features/supplier-invoices/SupplierInvoiceForm.svelte`), le
+ * libellé d'une option de projet — le code et le nom du projet (des données), suffixés
+ * « (archivé) » par `i18nMsg` (`supplier-invoices-project-archived-option`) : aucun littéral,
+ * donc `conforme` **62 → 63** ; `ecartee` ne bouge pas. *Identifiée en cherchant les suffixes
+ * `Label`, `Text`, `Display` dans le diff de la story (`7bd4d5c0` → tête) ; `orphanProjects`,
+ * `todayLocal`, `loadOpenInvoices`, `importDateOf`, `formatDate`, `computeMinDate` et
+ * `countryUnknownNotice` n'en portent pas.*
  */
-const CANDIDATES_ATTENDUES = 76;
+const CANDIDATES_ATTENDUES = 77;
 
 /** Les trois délimiteurs de littéral en JS/TS. */
 const QUOTES = ["'", '"', '`'];
@@ -788,7 +797,7 @@ describe('libellés en dur — l’angle mort #255', () => {
 			else if (c.retours.length > 0) classes.ecartee += 1;
 			else classes.conforme += 1;
 		}
-		expect(classes).toEqual({ nonAnalysee: 0, enViolation: 0, ecartee: 14, conforme: 62 });
+		expect(classes).toEqual({ nonAnalysee: 0, enViolation: 0, ecartee: 14, conforme: 63 });
 		// La somme est recalculée depuis les classes, jamais depuis le total qu'elle contrôle.
 		const somme = Object.values(classes).reduce((a, b) => a + b, 0);
 		expect(somme).toBe(CANDIDATES_ATTENDUES);

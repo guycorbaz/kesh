@@ -22,6 +22,7 @@
 	import type { BankAccountSummary } from '$lib/features/bank-accounts/bank-accounts.api';
 	import { bankAccountOptionLabel } from '$lib/features/bank-accounts/format';
 	import { dueToCentime } from './invoice-helpers';
+	import { todayLocal } from '$lib/shared/utils/local-date';
 	import {
 		accountIdsWithRole,
 		bankAccountsNotLinkedTo,
@@ -73,21 +74,18 @@
 		}
 	}
 
-	function todayIso(): string {
-		return new Date().toISOString().slice(0, 10);
-	}
-
 	let settlementType = $state<'bank_transfer' | 'internal_account'>('bank_transfer');
 	let bankAccountId = $state<number | null>(null);
 	let accountId = $state<number | null>(null);
 	let amount = $state('');
-	let settledOn = $state(todayIso());
+	// #889 : la date du jour du poste, non celle d'UTC (la veille entre minuit et 1 h).
+	let settledOn = $state(todayLocal());
 
 	// Réinitialisation à l'ouverture — sans quoi le dialogue rouvrirait sur la
 	// saisie précédente, ce qui est particulièrement trompeur pour un montant.
 	$effect(() => {
 		if (open) {
-			settledOn = todayIso();
+			settledOn = todayLocal();
 			// Story 25-4-b1 : le reste dû arrive à l'échelle du calcul SQL
 			// (« 68.1000 ») ; le champ montre des centimes.
 			amount = amountDue !== null ? dueToCentime(amountDue).toFixed(2) : '';

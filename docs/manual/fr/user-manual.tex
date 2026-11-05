@@ -1697,7 +1697,10 @@ fiche ne propose ni \emph{Payer} ni \emph{Annuler la facture}~; elle propose~:
           saisie pré-rempli~; \emph{Enregistrer} remplace la facture --- fournisseur, numéro,
           dates, coordonnées, projet, lignes ---, toujours sans rien passer au journal. Si la
           facture a été modifiée entre-temps dans une autre session, l'enregistrement est refusé
-          et vous invite à recharger la page.
+          et vous invite à recharger la page. Un projet \textbf{archivé} déjà imputé au brouillon
+          reste affiché, marqué «~(archivé)~» --- même sous un projet parent archivé lui
+          aussi (depuis la version~0.17.4)~; la validation le refuse toujours (ci-dessous)~:
+          choisissez-en un autre avant de valider.
     \item[Valider] (comptable ou administrateur), après confirmation, passe l'écriture d'achat,
           datée de la date de la facture~; la facture devient \emph{Validée}, et sa fiche mène à
           l'écriture (\emph{Voir l'écriture d'achat}). La validation vérifie ce qu'exige une
@@ -1996,8 +1999,11 @@ dans l'e-banking. Le flux est en \textbf{deux temps} :
 \begin{enumerate}
     \item \emph{Quotidien} → \emph{Paiements fournisseurs} : créer un lot en
     sélectionnant les factures à payer --- seules les factures \textbf{validées} sont proposées,
-    jamais un brouillon ---, puis télécharger le fichier
-    \texttt{pain.001} généré et le déposer dans votre e-banking.
+    jamais un brouillon, et \textbf{toutes} le sont, quel que soit leur nombre (depuis la
+    version~0.17.4~; avant, les 200 premières seulement) ---, puis télécharger le fichier
+    \texttt{pain.001} généré et le déposer dans votre e-banking. Un lot ne dépasse pas
+    500 factures~: au-delà, la création est refusée («~un lot de paiement ne peut pas dépasser
+    500 factures~») --- faites-en plusieurs.
     \item Une fois le paiement exécuté par la banque, \textbf{confirmer} le lot
     dans Kesh : les écritures de règlement sont alors passées, et chaque facture
     payée est \textbf{lettrée} avec son achat, comme un paiement depuis sa fiche

@@ -44,10 +44,11 @@ vi.mock("$lib/app/stores/auth.svelte", () => ({
 }));
 
 const listDueDatesMock = vi.fn();
+const exportDueDatesCsvMock = vi.hoisted(() => vi.fn());
 vi.mock("$lib/features/invoices/invoices.api", () => ({
   listDueDates: (q: unknown) => listDueDatesMock(q),
   settleInvoice: vi.fn(),
-  exportDueDatesCsv: vi.fn(),
+  exportDueDatesCsv: (q: unknown) => exportDueDatesCsvMock(q),
 }));
 vi.mock("$lib/features/accounts/accounts.api", () => ({
   fetchAccounts: vi.fn(async () => []),
@@ -61,6 +62,7 @@ vi.mock("$lib/features/contacts/contacts.api", () => ({
 }));
 
 import Page from "./+page.svelte";
+import { pinClock } from "$lib/shared/utils/pin-clock.test-helper";
 
 function item(partial: Partial<DueDateItem> = {}): DueDateItem {
   return {
@@ -183,5 +185,39 @@ describe("échéancier — dates (v0171)", () => {
     const paid = await findAllByTestId("due-dates-paid-at");
     expect(paid.map((d) => d.textContent?.trim())).toEqual(["10.04.2026", "—"]);
     expect(container.textContent).not.toContain("2026-04-10");
+  });
+});
+
+// Story v0174-correctifs-3 (#889, AC-3.6, site 10 ; AC-3.8, f) — à 00 h 30 le 5 novembre à
+// Zurich : le CSV exporté porte la date du 5 ; une date de règlement (minuit) reste la sienne.
+describe("échéancier — date du jour locale (#889)", () => {
+  pinClock();
+
+  it("le fichier exporté s'appelle echeancier-2026-11-05.csv (site 10)", async () => {
+    exportDueDatesCsvMock.mockResolvedValue(new Blob(["a;b\r\n"], { type: "text/csv" }));
+    vi.stubGlobal("URL", {
+      createObjectURL: vi.fn().mockReturnValue("blob:http://localhost/x"),
+      revokeObjectURL: vi.fn(),
+    });
+    const names: string[] = [];
+    const click = vi
+      .spyOn(HTMLAnchorElement.prototype, "click")
+      .mockImplementation(function (this: HTMLAnchorElement) {
+        names.push(this.download);
+      });
+    const { findByText } = render(Page);
+    await fireEvent.click(await findByText("Exporter CSV"));
+    await waitFor(() => expect(names).toEqual(["echeancier-2026-11-05.csv"]));
+    click.mockRestore();
+    // `URL` reste remplacé : la page révoque l'URL objet 5 s plus tard (minuterie réelle).
+  });
+
+  it("« Payée le » d'une date à minuit reste `04.11.2026` (f, conforme)", async () => {
+    listDueDatesMock.mockResolvedValue(
+      response([item({ paidAt: "2026-11-04T00:00:00", amountDue: "0.00" })]),
+    );
+    const { findAllByTestId } = render(Page);
+    const paid = await findAllByTestId("due-dates-paid-at");
+    expect(paid.map((d) => d.textContent?.trim())).toEqual(["04.11.2026"]);
   });
 });

@@ -359,7 +359,7 @@
 										<td class="py-2 pr-2 text-text-muted" data-testid="reminder-last-sent">
 											{#if inv.lastReminderAt}
 												{i18nMsg('reminders-last-sent', 'dernier le { $date }', {
-													date: formatSwissDate(inv.lastReminderAt.slice(0, 10)),
+													date: formatSwissDate(inv.lastReminderAt),
 												})}
 											{/if}
 										</td>

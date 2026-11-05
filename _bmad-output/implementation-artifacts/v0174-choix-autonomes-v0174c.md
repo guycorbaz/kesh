@@ -387,3 +387,56 @@ Numéros de ligne de `7bd4d5c0` (le merge de la rétrospective de la série 0.17
 - **Note** : une mutation « mode hérité sans rognage du lecteur » serait **équivalente** — la boucle héritée
   rogne déjà chaque fragment elle-même (`mod.rs:242`).
 - **Réversible** : oui (code).
+
+### C-v0174c-22 — #819 : `resolve_xml_entity`, non `resolve_predefined_entity` (développement)
+
+- **Contexte** : la fiche nomme `quick_xml::escape::resolve_predefined_entity` (`escape.rs:851`). Cette fonction
+  rend, si la fonctionnalité `escape-html` de quick-xml est activée — par n'importe quelle dépendance du graphe
+  (unification des fonctionnalités Cargo) —, les **2 000 entités HTML5** au lieu des cinq du XML.
+- **Retenu** : `resolve_xml_entity` (`escape.rs:881`), les cinq entités prédéfinies du XML, quelle que soit la
+  configuration du graphe ; toute autre entité refuse le fichier (C-v0174c-4).
+- **Écartée** : `resolve_predefined_entity`, dont le résultat dépendrait d'un choix fait ailleurs.
+- **Réversible** : oui (code).
+
+### C-v0174c-23 — #819 : l'alias se calcule dans `kesh-api`, par une fonction qui ne peut pas échouer (développement)
+
+- **Retenu** : `legacy_0173_aliases(file_bytes, iban, new_txs, bank_account_id) -> Vec<Option<DuplicateKey>>`
+  (`routes/bank_imports.rs`), appelée aux deux sites CAMT (aperçu hors verrou, création sous verrou) ; vide si la
+  lecture héritée, sa sélection ou l'alignement échoue ; `Some` seulement si la clé diffère. Testée par trois tests
+  unitaires (`legacy_alias_tests`) et cinq E2E (`bank_imports_e2e.rs`, `*_819`), dont le montage « 0.17.3 » passe
+  par le dépôt (`create_with_transactions`), lecture `parse_legacy_0173`.
+- **Angle mort** : « les deux lectures n'ont pas le même nombre de lignes » n'a pas de montage — les deux modes
+  lisent la même structure ; la garde reste, en défense.
+- **Réversible** : oui (code).
+
+### C-v0174c-24 — #889 : l'horloge des tests s'épingle par un assistant commun (développement)
+
+- **Retenu** : `frontend/src/lib/shared/utils/pin-clock.test-helper.ts` (`pinClock()`, 00 h 30 le 5 novembre à
+  Zurich par défaut ; `vi.useFakeTimers({ toFake: ['Date'] })`, minuteries réelles), sur le patron de
+  `pin-time-zone.test-helper.ts` ; la garde l'écarte comme tout `*.test-helper*`.
+- **Écartée** : recopier `beforeEach`/`afterEach` dans une douzaine de fichiers de test (DRY).
+- **Réversible** : oui (tests).
+
+### C-v0174c-25 — #889 : la garde se sonde sur des sources synthétiques (développement)
+
+- **Retenu** : la logique de la garde est une fonction pure (`relever`, `auditer`) ; MC-889-g et les trois autres
+  écarts d'AC-3.9 (fichier hors allowlist, entrée orpheline, fragment à deux lignes) se jouent sur des sources
+  synthétiques dans le même fichier de test, sans muter le dépôt ; la sonde « avant correctif » a été jouée sur
+  l'arbre réel (21 relevés sans entrée + 8 entrées = 29, `kesh-gate-logs/v0174c/rouges-fiche3.log`).
+- **Réversible** : oui (tests).
+
+### C-v0174c-26 — #888 : l'appel de la première page porte `offset: 0` (développement)
+
+- **Contexte** : le test existant M30 (`payment-batches-page.test.ts`, v017-4b) attendait l'appel exact
+  `{ limit: 200, status: ['open'] }`.
+- **Retenu** : la boucle passe `offset` à chaque appel, `0` compris ; l'assertion M30 est mise à jour
+  (`offset: 0`), son sens (« le serveur ne rend que les validées ») inchangé.
+- **Réversible** : oui (code et test).
+
+### C-v0174c-27 — #817 : l'étape des coordonnées se teste dans `onboarding_path_b_e2e.rs` (développement)
+
+- **Contexte** : la fiche nomme `onboarding_e2e.rs` ; l'étape des coordonnées (et son refus d'un pays en toutes
+  lettres, v017-2) se teste dans `onboarding_path_b_e2e.rs`, qui monte déjà le parcours jusqu'à l'étape 5.
+- **Retenu** : `coordinates_rejects_unknown_iso_country_817` y est écrit, au patron de
+  `coordinates_rejects_country_name`.
+- **Réversible** : oui (test).

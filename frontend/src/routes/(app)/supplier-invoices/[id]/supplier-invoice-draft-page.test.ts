@@ -68,6 +68,7 @@ vi.mock('$lib/features/imported-supplier-invoices/imported-supplier-invoices.api
 	listImported: vi.fn(async () => []),
 	fetchImportedSourceDocument: vi.fn(),
 }));
+import { pinClock } from '$lib/shared/utils/pin-clock.test-helper';
 
 import Page from './+page.svelte';
 
@@ -674,6 +675,48 @@ describe('fiche — refus d’écran périmé et lot confirmé (revue P1)', () =
 		const err = await v.findByTestId('supplier-invoice-unvalidate-error');
 		expect(err.textContent?.trim()).toBe(
 			'L’exercice postérieur « Exercice 2027 » est clôturé : pour pouvoir repasser cette facture en brouillon, un administrateur doit rouvrir les exercices postérieurs clôturés, en commençant par le plus récent.',
+		);
+	});
+});
+
+// Story v0174-correctifs-3 (#889) — à 00 h 30 le 5 novembre à Zurich : la date de paiement
+// proposée est le 5 (site 15) ; « confirmé le » d'un lot confirmé à 23 h 30 UTC la veille
+// se lit le 5 (j, k) ; la date d'un règlement (minuit) reste la sienne (i).
+describe('fiche fournisseur — la date du jour et les instants à l’heure suisse (#889)', () => {
+	pinClock();
+	const LOT = { id: 12, confirmedAt: '2026-11-04T23:30:00' };
+
+	it('la date de paiement proposée est le 5 novembre (site 15)', async () => {
+		const v = await rendered('open', 'Comptable');
+		expect((v.getByLabelText('Date de règlement') as HTMLInputElement).value).toBe(
+			'2026-11-05',
+		);
+	});
+
+	it('« confirmé le » du lot, sur la fiche : `05.11.2026` (k)', async () => {
+		role.value = 'Comptable';
+		getMock.mockResolvedValue({ ...ofStatus('open'), lastConfirmedBatch: LOT });
+		const v = render(Page);
+		const warning = await v.findByTestId('supplier-invoice-confirmed-batch-warning');
+		expect(warning.textContent).toContain('confirmé le 05.11.2026');
+	});
+
+	it('« confirmé le » du lot, à l’annulation du règlement : `05.11.2026` (j)', async () => {
+		role.value = 'Comptable';
+		getMock.mockResolvedValue({ ...ofStatus('paid'), lastConfirmedBatch: LOT });
+		const v = render(Page);
+		const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(false);
+		await fireEvent.click(await v.findByTestId('supplier-invoice-settlement-cancel'));
+		expect(String(confirmSpy.mock.calls[0][0])).toContain('confirmé le 05.11.2026');
+		confirmSpy.mockRestore();
+	});
+
+	it('« Facture réglée le » d’une date à minuit reste `04.11.2026` (i, conforme)', async () => {
+		role.value = 'Comptable';
+		getMock.mockResolvedValue({ ...ofStatus('paid'), paidAt: '2026-11-04T00:00:00' });
+		const v = render(Page);
+		expect((await v.findByTestId('supplier-invoice-paid-info')).textContent).toContain(
+			'Facture réglée le 04.11.2026.',
 		);
 	});
 });

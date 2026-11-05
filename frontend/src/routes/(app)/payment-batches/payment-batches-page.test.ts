@@ -26,6 +26,26 @@ vi.mock('$lib/features/bank-accounts/bank-accounts.api', () => ({
 }));
 
 import Page from './+page.svelte';
+import { pinClock } from '$lib/shared/utils/pin-clock.test-helper';
+
+// Story v0174-correctifs-3 (#889, AC-3.6, site 11) — à 00 h 30 le 5 novembre à Zurich, la
+// date d'exécution proposée est le 5, non la veille (UTC).
+describe('page des lots de virements — date d’exécution locale (#889)', () => {
+	pinClock();
+	beforeEach(() => {
+		vi.clearAllMocks();
+		listBankAccountsMock.mockResolvedValue([]);
+		listSupplierInvoicesMock.mockResolvedValue({ items: [], total: 0 });
+	});
+	it('la date d’exécution par défaut est le 5 novembre', async () => {
+		const { findByTestId } = render(Page);
+		await fireEvent.click(await findByTestId('payment-batch-new'));
+		const form = await findByTestId('payment-batch-form');
+		expect((form.querySelector('input[type="date"]') as HTMLInputElement).value).toBe(
+			'2026-11-05',
+		);
+	});
+});
 
 function compte(id: number, description: string | null): BankAccountSummary {
 	return {
@@ -93,7 +113,12 @@ describe('page des lots de virements — factures proposées (Story v017-4b, AC-
 		listSupplierInvoicesMock.mockResolvedValue({ items: [], total: 0 });
 		render(Page);
 		await vi.waitFor(() => expect(listSupplierInvoicesMock).toHaveBeenCalled());
-		expect(listSupplierInvoicesMock.mock.calls[0][0]).toEqual({ limit: 200, status: ['open'] });
+		// #888 (0.17.4) : la première page porte désormais son `offset`.
+		expect(listSupplierInvoicesMock.mock.calls[0][0]).toEqual({
+			limit: 200,
+			offset: 0,
+			status: ['open'],
+		});
 	});
 
 	it('un brouillon rendu malgré tout n’est jamais proposé (défense)', async () => {
@@ -108,5 +133,75 @@ describe('page des lots de virements — factures proposées (Story v017-4b, AC-
 		const form = await findByTestId('payment-batch-form');
 		expect(form.textContent).toContain('Fournisseur 2');
 		expect(form.textContent).not.toContain('Fournisseur 1');
+	});
+});
+
+// Story v0174-correctifs-3 (#888, AC-3.1 à 3.3) — le formulaire d'un lot propose TOUTES
+// les factures validées : l'écran lit les pages de 200 jusqu'à `total`, s'arrête sur une
+// page vide, et déduplique par `id` (une facture validée entre deux pages décale l'offset).
+describe('page des lots de virements — toutes les factures validées (#888)', () => {
+	function facture(id: number) {
+		return {
+			id,
+			contactId: 1,
+			contactName: `Fournisseur ${id}`,
+			supplierInvoiceNumber: `FF-${id}`,
+			status: 'open' as const,
+			invoiceDate: '2026-05-10',
+			dueDate: null,
+			totalAmount: '100.00',
+		};
+	}
+	function range(from: number, count: number) {
+		return Array.from({ length: count }, (_, i) => facture(from + i));
+	}
+	function pages(total: number, ...items: ReturnType<typeof facture>[][]) {
+		for (const page of items) {
+			listSupplierInvoicesMock.mockResolvedValueOnce({ items: page, total, offset: 0, limit: 200 });
+		}
+	}
+	async function boxesOnForm() {
+		const { findByTestId, findAllByTestId } = render(Page);
+		await fireEvent.click(await findByTestId('payment-batch-new'));
+		return findAllByTestId('payment-batch-invoice-checkbox');
+	}
+
+	beforeEach(() => {
+		vi.clearAllMocks();
+		listSupplierInvoicesMock.mockReset();
+		listBankAccountsMock.mockResolvedValue([compte(1, 'Personnel')]);
+	});
+
+	it('AC-3.1 — 450 factures en trois pages : trois appels, 450 cases', async () => {
+		pages(450, range(1, 200), range(201, 200), range(401, 50));
+		const boxes = await boxesOnForm();
+		expect(boxes).toHaveLength(450);
+		expect(listSupplierInvoicesMock.mock.calls.map((c) => c[0])).toEqual([
+			{ limit: 200, offset: 0, status: ['open'] },
+			{ limit: 200, offset: 200, status: ['open'] },
+			{ limit: 200, offset: 400, status: ['open'] },
+		]);
+	});
+
+	it('AC-3.2 — une page vide arrête la lecture (pas de boucle)', async () => {
+		pages(450, range(1, 200), []);
+		const boxes = await boxesOnForm();
+		expect(boxes).toHaveLength(200);
+		expect(listSupplierInvoicesMock).toHaveBeenCalledTimes(2);
+	});
+
+	it('AC-3.2 bis — une page qui recouvre la précédente : aucune case en double', async () => {
+		pages(450, range(1, 200), range(191, 200), range(391, 50));
+		const boxes = await boxesOnForm();
+		expect(boxes).toHaveLength(440);
+	});
+
+	it('AC-3.3 — aucune facture : un appel, le message d’absence', async () => {
+		pages(0, []);
+		const { findByTestId } = render(Page);
+		await fireEvent.click(await findByTestId('payment-batch-new'));
+		const form = await findByTestId('payment-batch-form');
+		expect(form.textContent).toContain('Aucune facture fournisseur validée à payer.');
+		expect(listSupplierInvoicesMock).toHaveBeenCalledTimes(1);
 	});
 });
