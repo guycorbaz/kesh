@@ -4,10 +4,11 @@ Status: ready-for-dev
 
 *Fiche sœur de `v0174-correctifs.md` (l'index), rédigée le 2026-11-05 en autonomie (Opus 5.5), worktree
 `/home/gcorbaz/devel/kesh-0174c`, branche `story/v0174-correctifs` partie de `7bd4d5c0`. Release **0.17.4**, **sans
-migration**. Registre : `v0174-choix-autonomes-v0174c.md`, choix C-v0174c-12 à 19. Clé de statut `v0174-correctifs-3`.
-Issues **#888** (P3), **#889** (P4), **#872** (P3), **#869** (P3, côté écran), en `refs` seulement. Numéros de ligne de
+migration**. Registre : `v0174-choix-autonomes-v0174c.md`, choix C-v0174c-12 à 19 et 9 (côté écran). Clé de statut `v0174-correctifs-3`.
+Issues **#888** (P3), **#889** (P4), **#872** (P3), **#869** (P3, côté écran), **#817** (P2, côté écran, § 3.5), en `refs`
+seulement. Numéros de ligne de
 `7bd4d5c0` (chemins relatifs à `frontend/src/` sauf mention). **Se développe après la fiche 2** (#869 lit
-`details.lockedThrough`, que la fiche 2 pose).*
+`details.lockedThrough`, #817 lit `addressCountryKnown`, que la fiche 2 pose).*
 
 ## Story
 
@@ -38,24 +39,30 @@ revu fichier par fichier).
    `crates/kesh-db/src/repositories/reconciliation.rs:1083`), en `400 VALIDATION_ERROR` affiché par le formulaire
    (`formError = err.message`, `+page.svelte:99`).
 3. **Défaut voisin, non traité** : la liste des lots ne lit que les cent premiers (`listPaymentBatches({ limit: 100 })`,
-   `:43`) — issue demandée (C-v0174c-12).
+   `:43`) — ouverte en #906 (C-v0174c-12).
 
 ### Conception (C-v0174c-12)
 
-`loadOpenInvoices` lit les pages de 200 (`offset` 0, 200, 400…) jusqu'à avoir `total` factures, et s'arrête sur une page vide ;
-le filtre client reste. Un seul site (le montage et la relecture après un lot l'appellent déjà, `:60`, `:97`).
+`loadOpenInvoices` lit les pages de 200 (`offset` 0, 200, 400…) jusqu'à avoir lu `total` lignes, et s'arrête sur une page vide ;
+les factures s'accumulent **dédupliquées par `id`** (une `Map`, ordre de première lecture) — une facture validée ou payée par
+une autre session entre deux pages décale l'`OFFSET` et ferait sinon paraître deux fois la même facture, que l'`{#each … (inv.id)}`
+à clé (`+page.svelte:160`) refuse (`each_key_duplicate`) ; une facture peut alors manquer jusqu'à la relecture suivante, ce
+qu'aucune lecture par pages n'évite (déclaré). Le filtre client reste. Un seul site (le montage et la relecture après un lot l'appellent déjà, `:60`, `:97`).
 
 ### Acceptance Criteria (3.1)
 
 **AC-3.1** — `payment-batches-page.test.ts` : `total = 450`, trois pages simulées (200, 200, 50) → trois appels
 `{ limit: 200, offset: 0|200|400, status: ['open'] }`, **450** cases à cocher. **Rouge avant** (200 cases, un appel).
 **AC-3.2** — `total = 450` mais la deuxième page revient vide : deux appels, 200 cases, aucun troisième appel (pas de boucle).
+**AC-3.2 bis** — la deuxième page recouvre la première (ses dix premières factures sont les dix dernières de la page 1) : aucune
+case en double, aucune erreur de clé, 440 cases. Rouge sous MC-888-b.
 **AC-3.3** — `total = 0` : un appel, « Aucune facture fournisseur validée à payer. ». Les tests existants du fichier (`:55-`,
 AC-27 de la v017-4b) restent verts, leurs simulacres complétés de `total` si besoin.
 **AC-3.4 — E2E** (`frontend/tests/e2e/`, spec des lots existante ou voisine) : 205 factures validées créées par l'API
 (fixture synthétique) → le formulaire en propose 205. Capture.
 
-**Mutation (P3)** : **MC-888** — la boucle s'arrête après la première page : AC-3.1 rougit.
+**Mutations (P3)** : **MC-888** — la boucle s'arrête après la première page : AC-3.1 rougit. **MC-888-b** — sans
+déduplication : AC-3.2 bis rougit.
 
 ---
 
@@ -120,6 +127,12 @@ AC-27 de la v017-4b) restent verts, leurs simulacres complétés de `total` si b
    plus deux conformes hors liste. **Site hors inventaire, corrigé** : `formatDate` de `routes/(app)/users/+page.svelte:271-279`
    lit un horodatage UTC sans décalage par `new Date(iso)` (heure **locale**) — remplacé par `formatSwissDate(iso)` (le `'—'`
    d'une date illisible gardé).
+6 bis. **Deux prémisses, nommées** (validation P1, R9) : (a) les neuf « instants » sont au fuseau de la **session MariaDB** —
+   `create_pool` (qui pose `time_zone = '+00:00'`) n'est appelée par personne, le pool de `main.rs:82-85` n'a pas
+   d'`after_connect` (issue #669, ouverte) ; ils sont UTC parce que le conteneur MariaDB est en UTC. La correction des
+   affichages en dépend, comme tout l'écran depuis la 0.17.2 (`formatSwissDate` lit un horodatage sans décalage comme UTC).
+   (b) `todayLocal` rend la date **du poste** (`getFullYear`, `getMonth`, `getDate`), non celle de Zurich : identiques pour un
+   poste réglé sur la Suisse, le cas visé ; les affichages, eux, sont à Zurich. Le CHANGELOG le dit ainsi.
 7. Le helper existe : `todayLocal` (`lib/features/open-items/open-items.ts:26-31`, testé `open-items.test.ts:30-35`),
    déjà importé hors de sa feature (`SupplierInvoiceForm.svelte:80`, `routes/(app)/bank-accounts/+page.svelte:41`). Le patron
    de test qui épingle le fuseau existe : `lib/shared/utils/pin-time-zone.test-helper.ts` (`pinTimeZone`).
@@ -134,10 +147,18 @@ AC-27 de la v017-4b) restent verts, leurs simulacres complétés de `total` si b
 - Affichages b-e, g, h, j-l : `formatSwissDate(x)` sans `.slice(0, 10)` ; `users/+page.svelte` : `formatSwissDate`.
 - **Garde** (C-v0174c-17) : `lib/shared/utils/local-date-guard.test.ts` lit les sources `src/**/*.{ts,svelte}` hors tests
   (`readdirSync` / `readFileSync`, patron de `lib/shared/i18n-un-repli-par-cle.test.ts:45`, `:240-247` ; filtre des
-  `*.test.ts`, `*.test-helper*`) et relève `toISOString().slice(0, 10)` et `formatSwissDate(….slice(0, 10))` ; chaque relevé
-  doit figurer à une allowlist nominative `{ fichier, motif }` — les sites 4, 5, 13 et les deux conformes hors liste (`api-keys`,
-  `supplier-invoice-unvalidate`) ; les trois `paidAt` (a, f, i) y entrent aussi, motif « date du règlement à minuit » —, et
-  aucune entrée de l'allowlist ne doit être orpheline. Sonde positive au Dev Agent Record (MC-889-g).
+  `*.test.ts`, `*.test-helper*`), **commentaires masqués** (`masquerCommentaires`, même patron : un commentaire qui cite le
+  motif — `reminder-sent-at.ts:19`, le futur en-tête de `local-date.ts` — ne compte pas), et relève deux motifs, **par ligne** :
+  `toISOString\(\)\.slice\(0, ?10\)` et `formatSwissDate\(.*\.slice\(0, ?10\)` — ce dernier **sans** `[^()]`, pour attraper
+  une expression parenthésée (`formatSwissDate((batch.confirmedAt ?? '').slice(0, 10))`, site j, aujourd'hui). L'allowlist est
+  **par occurrence** : chaque entrée est `{ fichier, fragment, motif }`, où `fragment` est un extrait **exact** et unique de la
+  ligne (par exemple `invoice.paidAt.slice(0, 10)`) ; chaque relevé doit égaler **une** entrée, et chaque entrée **un seul**
+  relevé (ni orpheline, ni en double). Entrées : sites 4, 5, 13, les trois `paidAt` (a, f, i ; motif « date du règlement à
+  minuit »), `api-keys/+page.svelte:102` et `supplier-invoice-unvalidate.ts:65` — **huit**, dont trois dans des fichiers qui
+  portent aussi des sites corrigés (`invoices/[id]/+page.svelte`, `supplier-invoices/[id]/+page.svelte`,
+  `settings/api-keys/+page.svelte`). Sonde du motif lui-même, au Dev Agent Record : jouée sur les sources
+  de `7bd4d5c0` (avant correctif), la relève rend exactement les quinze lignes du § 5 et les quatorze du § 6 — 29, aucune
+  autre ; après correctif, exactement les huit entrées.
 
 ### Acceptance Criteria (3.2)
 
@@ -158,13 +179,18 @@ verts. **Rouge avant** (le premier rend `2026-11-05T12:00:00`, futur, que le ser
 **AC-3.8 — Les affichages** : sous `pinTimeZone('Europe/Zurich')`, un horodatage `2026-11-04T23:30:00` s'affiche `05.11.2026`
 pour b, c, d, e, g, h, j, k, l et `users` ; les tests existants qui figent ces affichages (`ReminderHistory.test.ts:36-45` : à
 `08:00`/`10:00` UTC, même date) restent verts. Les `paidAt` (a, f, i) : `2026-11-04T00:00:00` → `04.11.2026`. **Rouges avant**
-(sites corrigés).
-**AC-3.9 — La garde** : verte après correctif ; rouge si l'on réintroduit `new Date().toISOString().slice(0, 10)` dans un
-fichier hors allowlist (sonde, MC-889-g) ; rouge si une entrée de l'allowlist ne correspond plus à rien.
+(sites corrigés). ⚠️ Le cas des `paidAt` **ne discrimine rien** : minuit UTC est le même jour à Zurich, si bien que retirer
+leur `.slice(0, 10)` donnerait la même sortie ; leur conformité tient à la nature de la valeur (lue au code Rust,
+`invoice_settlements_write.rs:323-326`, `supplier_invoices.rs:1922-1923`), et c'est la garde (AC-3.9) qui les fige.
+**AC-3.9 — La garde** : verte après correctif ; **sonde dans un fichier déjà autorisé** (MC-889-g) : rétablir le `.slice(0, 10)`
+du site b (`invoices/[id]/+page.svelte`, `pdfFrozenAt`), fichier qui porte l'entrée a — la garde rougit (relevé sans entrée) ;
+rouge aussi si l'on ajoute `new Date().toISOString().slice(0, 10)` à un fichier hors allowlist, si une entrée ne correspond plus
+à rien, et si un fragment correspond à deux lignes ; verte sur un commentaire qui cite le motif.
 
 **Mutations (P4)** : **MC-889-a** — `todayLocal` rend l'UTC (`toISOString().slice(0, 10)`) : AC-3.5, AC-3.6 rougissent.
 **MC-889-b** — `reminderSentAtDateTime` compare de nouveau à l'UTC : AC-3.7 rougit. **MC-889-c** — un `.slice(0, 10)`
-rétabli sur un affichage (b) : AC-3.8 et la garde rougissent. **MC-889-g** — sonde de la garde (AC-3.9).
+rétabli sur un affichage (b) : AC-3.8 et la garde rougissent. **MC-889-g** — sonde de la garde (AC-3.9). **MC-889-h** —
+le masque des commentaires retiré : la garde rougit sur `reminder-sent-at.ts:19` (preuve que le masque sert).
 
 ---
 
@@ -229,18 +255,50 @@ facture validée, verrou posé après sa date, *Repasser en brouillon* → le me
 
 ---
 
+## 3.5 — #817 côté écran : le pays inconnu se signale (C-v0174c-9, révisé)
+
+### Ce que le code dit
+
+11. `contacts/+page.svelte:995` : le champ *Pays* (`maxlength={2}`, `placeholder="CH"`) ; le type `ContactResponse`
+    (`lib/features/contacts/contacts.types.ts:33-`) n'a pas de champ de validité ; le refus du serveur s'affiche
+    (`formError = err.message`). `SupplierCreatePanel.svelte:210` ne fait que créer (aucune valeur stockée).
+
+### Conception
+
+`ContactResponse` reçoit `addressCountryKnown: boolean` (posé par la fiche 2). À l'ouverture d'un contact dont
+`addressCountryKnown === false`, le formulaire affiche sous le champ *Pays* un avis non bloquant (clé neuve
+`contacts-country-unknown` — « Le code pays « { $code } » n'est pas un code ISO connu : la QR-facture de ce contact ne pourra
+pas être produite. Corrigez-le (CH, FR, DE…) ; les autres champs s'enregistrent sans y toucher. ») ; l'avis disparaît dès que
+le champ change (le serveur juge alors la nouvelle valeur). Aucune liste ISO n'est recopiée côté écran.
+
+### Acceptance Criteria (3.5)
+
+**AC-3.14** — Vitest de la page des contacts : un contact `addressCountryKnown: false`, `country: 'SU'` ouvert en édition →
+l'avis nomme `SU` ; `true` → aucun avis ; le champ modifié → l'avis disparaît. **Rouge avant.**
+**AC-3.15** — Vitest des deux écrans (contacts, panneau de création fournisseur) : un `400 VALIDATION_ERROR` au message du
+serveur (« adresse : le pays « XX » … ») s'affiche tel quel. Vert avant (le chemin existe) : il fige. Captures : l'avis sur un
+contact `SU`, le refus `XX` dans chaque écran.
+
+**Mutation (P2)** : **MC-817** — l'avis lit `country` au lieu d'`addressCountryKnown` (toujours caché) : AC-3.14 rougit.
+
+---
+
 ## Tâches
 
-1. Rouges d'abord : AC-3.1, 3.5-3.8, 3.10, 3.12 (constatés, notés).
-2. #888 ; #889 (helper, douze sites, `JournalEntryForm`, neuf affichages et `users`, garde) ; #872 ; #869.
-3. i18n : deux clés neuves, quatre locales (`crates/kesh-i18n/locales/{fr-CH,de-CH,it-CH,en-CH}/messages.ftl`) ;
-   `npm run lint-i18n-ownership` ; gardes `i18n-keys.test.ts` et `i18n-un-repli-par-cle.test.ts` (décomptes **recomptés**,
-   avant → après, au Dev Agent Record).
+1. Rouges d'abord : AC-3.1, 3.2 bis, 3.5-3.8, 3.10, 3.12, 3.14 (constatés, notés).
+2. #888 ; #889 (helper, douze sites, `JournalEntryForm`, neuf affichages et `users`, garde) ; #872 ; #869 ; #817 (écran).
+3. i18n : **trois** clés neuves (`supplier-invoices-project-archived-option`,
+   `supplier-invoices-unvalidate-blocked-period-locked-named`, `contacts-country-unknown`), quatre locales
+   (`crates/kesh-i18n/locales/{fr-CH,de-CH,it-CH,en-CH}/messages.ftl`) ; `npm run lint-i18n-ownership` ; la garde
+   `i18n-un-repli-par-cle.test.ts` porte `const CLES_RELEVEES = 399;` (`:232`, assertion `:314`) : chacune des trois clés a un
+   repli littéral, d'où **399 → 402** attendu (recompté au Dev Agent Record, avec l'entrée d'historique de l'en-tête de la
+   garde) ; `i18n-keys.test.ts` n'a pas de nombre en dur (vérifier qu'il reste vert).
 4. Manuel utilisateur (fiche-index, § *Manuel*).
 5. Captures (thème clair, base de démonstration jetable `kesh_v0174c`, `kesh-gate-logs/v0174c/captures/`) : formulaire d'un lot
    avec plus de 200 factures (pied de la liste visible) ; édition d'un brouillon au projet archivé sous racine archivée ;
-   refus du repassage en brouillon nommant la date du verrou.
-6. Mutations MC-888, MC-889-a/b/c/g, MC-872, MC-869 ; gates (fiche-index).
+   refus du repassage en brouillon nommant la date du verrou ; l'avis d'un contact au pays inconnu et le refus `XX` (contacts,
+   panneau fournisseur).
+6. Mutations MC-888, MC-888-b, MC-889-a/b/c/g/h, MC-872, MC-869, MC-817 ; gates (fiche-index).
 
 ## Dev Notes
 
@@ -248,7 +306,7 @@ facture validée, verrou posé après sa date, *Repasser en brouillon* → le me
   part telle quelle) ; ne pas toucher aux sites conformes. Le fuseau du runner de la CI est UTC : sans `pinTimeZone`, les
   tests de la section se tromperaient de jour selon le poste.
 - **#888** : 450 factures, 3 requêtes ; aucune borne haute n'est posée (une société à 10 000 factures validées non payées ferait
-  50 requêtes) — déclaré, non traité.
+  50 requêtes) — déclaré, non traité, **issue demandée** (index, Dev Notes communes, (7)).
 - **#872** : la validation refuse toujours un projet archivé (`user-manual.tex:1705`) ; la marque prévient.
 
 ## Change Log
@@ -265,3 +323,8 @@ facture validée, verrou posé après sa date, *Repasser en brouillon* → le me
 ### Completion Notes List
 
 ### File List
+- 2026-11-05 — **Validation P1 (Sonnet, R et F)** : sur cette fiche, R3 = F4 (MEDIUM : garde par fichier incapable de tuer
+  MC-889-c, commentaires non masqués, motif qui manquait une expression parenthésée) → allowlist par occurrence
+  `{ fichier, fragment, motif }`, masque des commentaires, sonde dans un fichier autorisé, MC-889-h ; R4 (AC-3.8 ne discrimine
+  pas les `paidAt`, dit) ; R9 (deux prémisses nommées, § 6 bis, #669) ; R11 (déduplication par `id`, AC-3.2 bis, MC-888-b) ;
+  F11 (`CLES_RELEVEES` 399 → 402). Le côté écran de #817 entre ici (§ 3.5, arbitrage de l'orchestrateur sur R2).

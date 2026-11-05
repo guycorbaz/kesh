@@ -8,7 +8,7 @@ Numéros de ligne de `7bd4d5c0` (le merge de la rétrospective de la série 0.17
 
 ---
 
-## Story v0174-correctifs — les bugs de l'usage réel (#819, #888, #889, #869, #872, #817, #842, #901)
+## Story v0174-correctifs — les bugs de l'usage réel (#819, #888, #889, #869, #872, #817, #842, #540, #901)
 
 ### C-v0174c-1 — Découpage en trois fiches sœurs, et une fiche-index
 
@@ -102,7 +102,8 @@ Numéros de ligne de `7bd4d5c0` (le merge de la rétrospective de la série 0.17
   (d) réécrire les transactions existantes — le fichier d'origine n'est pas gardé (C-v0174c-2).
 - **Limite déclarée** : l'alias peut faire signaler comme doublon une ligne réellement nouvelle dont la date,
   le montant, le compte et la référence d'une ligne existante égalent sa forme tronquée (« 1 ») — signalée à
-  l'aperçu, jamais écartée en silence ; le CSV n'est pas concerné (aucun XML).
+  l'aperçu ; à la création, écartée par défaut (`skip`) comme tout doublon, tracée à l'audit
+  (`duplicate_lines_skipped`) ; le CSV n'est pas concerné (aucun XML).
 - **Réversible** : oui (code).
 
 ### C-v0174c-6 — #819 : la caractérisation devient double
@@ -146,11 +147,18 @@ Numéros de ligne de `7bd4d5c0` (le merge de la rétrospective de la série 0.17
   écrit que `PERIOD_LOCKED` « n'émet aucun `details` ».
 - **Retenu** : à ce site, un corps `{ code, message, details: { lockedThrough, attempted } }` (dates
   `AAAA-MM-JJ`), sur le patron de `later_fiscal_year_closed_response` (`:1385-`) ; les noms sont ceux que
-  l'acceptation par lot porte déjà (`routes/reconciliation.rs:585-592`). Le champ est additif ;
-  `docs/api-external.md` est mis à jour à chaque phrase qui parle des `details` de `PERIOD_LOCKED`.
+  l'acceptation par lot porte déjà (`routes/reconciliation.rs:572-595`). Le champ est additif ;
+  `docs/api-external.md` est mis à jour à chaque phrase qui énumère des `details` que `PERIOD_LOCKED` porte
+  désormais (`:298`, `:336`, le début de `:493`, une ligne au § 10 — fiche 2, § 2.1 ; la fin de `:493`, « trois cas
+  sur cinq », reste vraie : validation P1, F1).
+- **« Et l'exercice »** (issue #869, *Attendu*, entre parenthèses) : **non retenu** — la borne du verrou est une
+  date de période, non un exercice ; un exercice fermé a ses propres refus (`FISCAL_YEAR_CLOSED`,
+  `LATER_FISCAL_YEAR_CLOSED`, ce dernier nommant l'exercice), et nommer « l'exercice de la date tentée »
+  demanderait une lecture de plus dans le chemin d'erreur sans dire quoi faire. #869 se ferme sur la date ; si le
+  Project Lead veut aussi l'exercice, **issue demandée**.
 - **Écartées** : (a) un champ propre à la route `unvalidate` — toutes les routes partagent le site ; (b)
   reformater les dates du **message** du serveur en forme suisse — défaut voisin (le texte affiche
-  `2026-03-31` dans le journal et à la validation fournisseur), non demandé : **issue demandée**.
+  `2026-03-31` dans le journal et à la validation fournisseur), non demandé : **ouverte en #908**.
 - **Réversible** : oui (champ additif).
 
 ### C-v0174c-9 — #817 : la liste ISO de `kesh-qrbill`, rendue publique, juge toute adresse écrite
@@ -159,28 +167,33 @@ Numéros de ligne de `7bd4d5c0` (le merge de la rétrospective de la série 0.17
   ne contrôle que deux lettres ASCII ; la liste ISO 3166-1 alpha-2 vit, privée, dans
   `crates/kesh-qrbill/src/validation.rs:276` (`is_iso_3166_alpha2`, 249 codes, triée, `binary_search`).
   Les deux écrivains d'une adresse structurée : `validate_common` des contacts (`routes/contacts.rs:392`,
-  création `:640`, mise à jour `:708`) et l'assistant d'installation (`routes/onboarding.rs:532`).
+  création `:641`, mise à jour `:708`) et l'assistant d'installation (`routes/onboarding.rs:532`).
 - **Retenu** : `is_iso_3166_alpha2` devient `pub` (réexportée par `kesh_qrbill`), et `check_lengths` la
   consulte après la forme : un code absent est refusé `400 VALIDATION_ERROR`, message qui **nomme** le code
   (« adresse : le pays « SU » n'est pas un code ISO 3166-1 alpha-2 connu (ex. CH, FR, DE) »). **À
   l'écriture seulement** : la lecture (`From<&StructuredAddress>`, `:110-`) ne valide rien et ne change pas.
-  **Une adresse stockée au code invalide** se lit, se liste et s'affiche ; la modifier exige de corriger le
-  pays — y compris si l'on ne touche qu'un autre champ du contact, l'écran envoyant l'adresse entière ; le
-  refus le dit.
-- **Écartées** : (a) recopier la liste dans `kesh-api` — deux listes divergeraient ; (b) tolérer la valeur
-  stockée inchangée à la mise à jour — demande de relire la ligne avant d'écrire, et laisse vivre un code qui
-  fait échouer la QR-facture ; (c) un sélecteur de pays commun aux écrans — fonctionnalité, **issue
-  demandée** ; (d) un écran pour corriger l'adresse de la société — aucun n'existe
+  **Une adresse stockée au code invalide** se lit, se liste et s'affiche. **Révisé à la validation P1 (R2,
+  arbitrage de l'orchestrateur)** : à la mise à jour d'un contact, un pays **inchangé** (égal, après
+  normalisation, au pays stocké, que `update_contact` lit déjà, `routes/contacts.rs:704-706`) est **toléré** ;
+  un pays nouveau ou modifié hors liste est refusé ; la création et l'assistant refusent tout code hors liste.
+  `ContactResponse` porte `addressCountryKnown: bool` (calculé par la même fonction) et l'écran des contacts
+  signale un pays inconnu (fiche 3, § 3.5), sans recopier la liste. Le message reste en français, comme les
+  refus de forme de l'adresse (#710).
+- **Écartées** : (a) recopier la liste dans `kesh-api` ou le frontend — deux listes divergeraient ; (b) *(retenue
+  avant la validation P1, écartée depuis)* refuser aussi le pays stocké inchangé — l'issue exige qu'une adresse
+  existante invalide ne devienne pas impossible à modifier, et la raison donnée (« relire la ligne ») était
+  fausse, la ligne étant déjà lue ; (c) un sélecteur de pays commun aux écrans — fonctionnalité, **ouverte en
+  #910** ; (d) un écran pour corriger l'adresse de la société — aucun n'existe
   (`routes/companies.rs` n'a ni route ni champ d'adresse en écriture, `:102`, `:240`), fonctionnalité,
-  **issue demandée** : une société enregistrée en 0.17.3 avec un code invalide ne peut toujours pas le
+  **ouverte en #909** : une société enregistrée en 0.17.3 avec un code invalide ne peut toujours pas le
   corriger.
 - **Réversible** : oui (code).
 
 ### C-v0174c-10 — #842 : la session se remet à zéro au retour au pool
 
-- **Contexte** : `with_account_lock` (`crates/kesh-reconciliation/src/mutex.rs:64-`) prend `GET_LOCK` sur
+- **Contexte** : `with_account_lock` (`crates/kesh-reconciliation/src/mutex.rs:66-`) prend `GET_LOCK` sur
   la connexion d'une `Transaction` empruntée ; il rend le verrou par `RELEASE_LOCK` après la fermeture
-  (`:132-136`). Si la requête est **abandonnée** pendant la fermeture (client déconnecté : Axum abandonne la
+  (`:131-135`). Si la requête est **abandonnée** pendant la fermeture (client déconnecté : Axum abandonne la
   future), ou si `RELEASE_LOCK` ne rend pas 1, la `Transaction` est abandonnée, sa connexion **revient au
   pool** (`sqlx-core-0.8.6/src/pool/connection.rs`, `return_to_pool`) avec le verrou de session —
   `GET_LOCK` survit au `ROLLBACK` —, et le commentaire « le lock advisory sera libéré à fin de session »
@@ -204,6 +217,7 @@ Numéros de ligne de `7bd4d5c0` (le merge de la rétrospective de la série 0.17
 - **Contexte** : #540 (même famille) — la restauration (`backup.rs:611-650`) désactive les clés étrangères
   sur sa connexion ; une requête abandonnée rend la connexion au pool avec `FOREIGN_KEY_CHECKS=0`. Le prompt :
   « rapprocher sans l'intégrer, sauf mécanique ».
+- **Priorité** : #540 est **P2** (étiquette lue en `GET`, validation P1, F6).
 - **Retenu** : **intégré**, parce qu'il est mécanique une fois C-v0174c-10 posé : le crochet exécute aussi
   `SET SESSION foreign_key_checks = 1`, avec un test du même modèle (pool d'une connexion). La remède diffère
   de celui que l'issue propose (`close_on_drop` après l'`acquire`) mais couvre tous les chemins, celui de la
@@ -218,13 +232,16 @@ Numéros de ligne de `7bd4d5c0` (le merge de la rétrospective de la série 0.17
   `services/factures_fournisseur.rs:30`), rend `total` filtré et un ordre stable (`invoice_date DESC, id
   DESC`, `repositories/supplier_invoices.rs:252`).
 - **Retenu** : lire les pages de 200 jusqu'à `total` (`offset` croissant), en s'arrêtant sur une page vide
-  (garde contre une boucle si la liste rétrécit pendant la lecture) ; la liste à cocher garde sa forme. La
+  (garde contre une boucle si la liste rétrécit pendant la lecture), en **dédupliquant par `id`** (une facture
+  validée par une autre session entre deux pages décale l'`OFFSET` ; validation P1, R11) ; la liste à cocher
+  garde sa forme. Aucune borne haute (une société à 10 000 factures validées non payées ferait 50 requêtes) :
+  **issue demandée**. La
   création refuse déjà plus de 500 factures dans un lot (`MAX_IN_CLAUSE_IDS`, `routes/payment_batches.rs:174`)
   avec un message affiché.
 - **Écartées** : (a) une pagination à l'écran — la sélection d'un lot traverserait les pages, état à tenir ;
   (b) un filtre par échéance — fonctionnalité.
 - **Défaut voisin** : la liste des **lots** ne lit que les cent premiers (`listPaymentBatches({ limit: 100 })`,
-  `:43`), sans signal : non mécanique (pagination de l'écran), **issue demandée**.
+  `:43`), sans signal : non mécanique (pagination de l'écran), **ouverte en #906**.
 - **Réversible** : oui.
 
 ### C-v0174c-13 — #889 : un helper unique, `todayLocal`, déplacé dans `lib/shared`
@@ -248,7 +265,7 @@ Numéros de ligne de `7bd4d5c0` (le merge de la rétrospective de la série 0.17
   propose exactement ce que le serveur accepte.
 - **Retenu** : site **conforme**, inchangé, inscrit à l'allowlist de la garde (C-v0174c-17) avec ce motif.
   Le serveur, lui, juge à la date UTC : entre minuit et 1 h (2 h en été), verrouiller jusqu'à la veille est
-  refusé — défaut serveur, non demandé : **issue demandée**.
+  refusé — défaut serveur, non demandé : **ouverte en #907**.
 - **Écartées** : passer l'écran en date locale — il proposerait une date que le serveur refuse.
 - **Réversible** : oui.
 
@@ -271,7 +288,11 @@ Numéros de ligne de `7bd4d5c0` (le merge de la rétrospective de la série 0.17
   (`frontend/src/lib/features/reports/reports.api.ts:237-241`) : le `.slice(0, 10)` est ce qui la défait.
   Lu au code : `paidAt` (factures client et fournisseur) n'est **pas** un instant — c'est la date du
   règlement à minuit (`invoice_settlements_write.rs:323-324`, `supplier_invoices.rs:1922-1923`) ; les autres
-  sont des instants UTC (`NOW(3)`, `UTC_TIMESTAMP(6)`, `CURRENT_TIMESTAMP(3)` sous `time_zone = '+00:00'`).
+  sont des instants (`NOW(3)`, `UTC_TIMESTAMP(6)`, `CURRENT_TIMESTAMP(3)`) — **prémisse nommée** (validation P1,
+  R9) : ils sont au fuseau de la session MariaDB ; `create_pool`, qui pose `time_zone = '+00:00'`, n'est appelée
+  par personne, et le pool de `main.rs:82-85` n'a pas d'`after_connect` (issue #669) ; ils sont UTC parce que le
+  conteneur MariaDB l'est. `todayLocal` rend la date **du poste**, non celle de Zurich (identiques pour un poste
+  suisse) ; le CHANGELOG le dit ainsi.
 - **Retenu** : retirer le `.slice(0, 10)` aux **neuf** instants (`pdfFrozenAt`, `emailedAt`, `sentAt`,
   `cancelledAt`, `lastReminderAt`, `confirmedAt` ×3, `createdAt` des documents importés) ; les trois `paidAt`
   sont **conformes**, inchangés (prémisse de l'issue corrigée) ; `formatExpiryDate` des clés d'API
@@ -286,10 +307,14 @@ Numéros de ligne de `7bd4d5c0` (le merge de la rétrospective de la série 0.17
 
 - **Contexte** : l'inventaire d'aujourd'hui (fiche 3, § Inventaire) se périme au premier site ajouté.
 - **Retenu** : un test qui lit les sources de `frontend/src` (`readdirSync` / `readFileSync`, patron de
-  `lib/shared/i18n-un-repli-par-cle.test.ts`, hors `*.test.ts` et `*.test-helper*`) et liste les lignes de `toISOString().slice(0, 10)` et de
-  `formatSwissDate(<expr>.slice(0, 10))` : chacune doit figurer dans une allowlist **nominative** (fichier,
-  motif écrit) — les sites conformes de l'inventaire —, et l'allowlist ne doit contenir aucune entrée
-  orpheline. Sonde positive : la garde rougit sur un site réintroduit (mutation MC-889-g).
+  `lib/shared/i18n-un-repli-par-cle.test.ts`, hors `*.test.ts` et `*.test-helper*`), **commentaires masqués**, et
+  relève par ligne `toISOString().slice(0, 10)` et `formatSwissDate(<expr>.slice(0, 10))`, `<expr>` pouvant être
+  parenthésée (`(x ?? '').slice(0, 10)`). **Révisé à la validation P1 (R3 = F4)** : l'allowlist est **par
+  occurrence** — `{ fichier, fragment exact de la ligne, motif }`, huit entrées —, chaque relevé égale une entrée
+  et chaque entrée un seul relevé ; une allowlist par fichier laissait verte la mutation d'un site corrigé dans un
+  fichier qui porte aussi un conforme (`invoices/[id]/+page.svelte`, `supplier-invoices/[id]/+page.svelte`,
+  `settings/api-keys/+page.svelte`). Sonde positive **dans un fichier déjà autorisé** (MC-889-g), mutation du
+  masque (MC-889-h).
 - **Écartées** : une règle ESLint — le dépôt n'en a aucune de ce genre, et un test se lit dans la fiche.
 - **Réversible** : oui.
 
@@ -337,3 +362,22 @@ Numéros de ligne de `7bd4d5c0` (le merge de la rétrospective de la série 0.17
   (texte seul) : **issue demandée** (ou commentaire de #901).
 - **Écartées** : réécrire les notes de la release GitHub — interdit par le prompt.
 - **Réversible** : oui.
+
+### C-v0174c-21 — #819 : la lecture corrigée ne rogne plus au lecteur ; le mode hérité, si
+
+- **Contexte** (validation P1, R1, HIGH ; prémisse lue dans la source) : `parse` pose `cfg.trim_text(true)`
+  (`crates/kesh-import/src/camt053/mod.rs:65`) ; quick-xml 0.42 rogne alors **chaque fragment** de texte, y
+  compris autour d'une référence et d'un CDATA (`quick-xml-0.42.0/src/reader/mod.rs:308-315`, `:351-352` ;
+  `src/reader/state.rs:64-72` ; avertissement de l'option, `src/reader/mod.rs:170-184`). Accumuler les fragments
+  sans changer la configuration donnerait « Dupont&Fils ».
+- **Retenu** : le mode `Joined` lit avec `trim_text(false)` et rogne une fois, au vidage du tampon (C-v0174c-3) ;
+  le mode `Legacy0173` garde `trim_text(true)`, à l'identique de la 0.17.3. Chaque mode construit son lecteur
+  (`check_end_names = true` aux deux). Preuve : le mode corrigé égale toutes les références 0.39 hors
+  `v04_characterization` (AC-1.4) ; cas « espaces autour » d'une entité et d'un CDATA (AC-1.1, AC-1.2) ;
+  mutation MA-819-7. La référence corrigée est **recalculée au développement** et tout écart se déclare.
+- **Écartées** : (a) garder `trim_text(true)` et réinsérer une espace autour des entités — invente un texte
+  (« A&B » deviendrait « A & B ») ; (b) `trim_text_start(false)` seul — la fin des fragments resterait rognée
+  (`trim_text_end`, `state.rs:64-72`).
+- **Note** : une mutation « mode hérité sans rognage du lecteur » serait **équivalente** — la boucle héritée
+  rogne déjà chaque fragment elle-même (`mod.rs:242`).
+- **Réversible** : oui (code).

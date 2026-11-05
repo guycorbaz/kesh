@@ -4,7 +4,7 @@ Status: ready-for-dev
 
 *Fiche sœur de `v0174-correctifs.md` (l'index : contraintes communes, CHANGELOG, manuels, ordre), rédigée le 2026-11-05 en
 autonomie (Opus 5.5), worktree `/home/gcorbaz/devel/kesh-0174c`, branche `story/v0174-correctifs` partie de `7bd4d5c0`.
-Release **0.17.4**, **sans migration**. Registre : `v0174-choix-autonomes-v0174c.md`, choix C-v0174c-3 à 7. Clé de statut
+Release **0.17.4**, **sans migration**. Registre : `v0174-choix-autonomes-v0174c.md`, choix C-v0174c-3 à 7 et 21. Clé de statut
 `v0174-correctifs-1`. Issue **#819** (bug, P2), en `refs` seulement. Numéros de ligne de `7bd4d5c0`.*
 
 ## Story
@@ -39,6 +39,13 @@ transaction réécrite (C-v0174c-2, C-v0174c-7). Modules : `kesh-import`, `kesh-
    C-v017-1-11). L'en-tête de `camt053_tests.rs:3` compte **19** fixtures (`ls … | wc -l`) et `MIN_CRATE_FIXTURES = 19`
    (`camt053_golden.rs:56`) : **aucune fixture n'est ajoutée** à `tests/fixtures/camt053/` (elle demanderait une référence
    0.39 qu'on ne peut plus produire) ; les XML de cette story sont **écrits dans les tests**.
+2 bis. **Le lecteur rogne chaque fragment** (trouvé à la validation P1, lentille R, R1 ; lu dans la source) : `parse` pose
+   `cfg.trim_text(true)` (`camt053/mod.rs:65`), et quick-xml 0.42 rogne le début de **chaque** texte à chaque entrée dans l'état
+   texte — y compris après une référence (`quick-xml-0.42.0/src/reader/mod.rs:308-315`, `InsideRef` → `InsideText` ;
+   `:351-352`, `skip_whitespace` si `trim_text_start`) — et la fin de chaque fragment (`src/reader/state.rs:64-72`,
+   `emit_text`, `trim_text_end`) ; la documentation de l'option le dit (`src/reader/mod.rs:170-184`, « Incorrect trimming around
+   comments, PIs, and CDATA sections »). `Dupont &amp; Fils` arrive donc en `Text("Dupont")`, `GeneralRef(amp)`, `Text("Fils")` :
+   accumuler sans changer la configuration donnerait « Dupont&Fils ».
 3. **La clé d'un relevé déjà importé ne dépend pas de la lecture.** `create` (CAMT) calcule l'empreinte des **octets**
    (`compute_sha256_hex`, `routes/bank_imports.rs:1197`) et la cherche sous le verrou du compte
    (`find_by_company_and_hash`, `:1266`) ; l'aperçu de même (`:1041`, `:1086`). Une lecture corrigée ne change pas
@@ -59,6 +66,13 @@ transaction réécrite (C-v0174c-2, C-v0174c-7). Modules : `kesh-import`, `kesh-
 
 ## Conception (C-v0174c-3 à 6)
 
+- **Le lecteur de la lecture corrigée ne rogne plus** (C-v0174c-21) : en mode `Joined`, `trim_text(false)` ; le seul `trim()`
+  est celui du vidage du tampon, qui rend pour un texte ordinaire exactement le fragment rogné d'aujourd'hui (texte intérieur,
+  CRLF compris, intact ; un texte fait de blancs seuls, entre deux balises, se vide sans distribution). Le mode `Legacy0173`
+  garde `trim_text(true)` — c'est ce qui le rend identique, bit pour bit, à la 0.17.3. La configuration du lecteur est donc
+  posée par le mode : `parse` et `parse_legacy_0173` construisent chacune leur `NsReader` (`check_end_names = true` dans les
+  deux). Un blanc entre deux balises produit, sans rognage, un `Text` de blancs que la boucle de détection de `<Document>`
+  (`:74-104`) ignore déjà (`_ => {}`).
 - **Accumuler, puis distribuer** (C-v0174c-3). Un tampon `pending: String` reçoit `Text` (traitement d'aujourd'hui :
   `into_inner`, `unescape`), `GeneralRef` (résolue) et `CData` (`into_inner`, sans normalisation des fins de ligne, comme le
   texte, Story v017-1 AC9). **Avant tout autre événement** — `Start`, `End`, `Empty`, `Comment`, `PI`, `Decl`, `DocType`,
@@ -79,8 +93,8 @@ transaction réécrite (C-v0174c-2, C-v0174c-7). Modules : `kesh-import`, `kesh-
   son alias égale une clé existante (`DuplicateLine.key` porte la clé qui a égalé). `detect_duplicate_lines` reste et appelle
   la variante avec des alias vides (CSV, saisie manuelle inchangés). Dans `kesh-api`, aux trois sites CAMT — aperçu
   (`:1050`, `:1097`) et création (`:1278`, `:1337`) —, le fichier est relu par `parse_legacy_0173`, le même relevé choisi par
-  IBAN (`select_statement_by_iban`) ; si la lecture héritée échoue, ou si les deux lectures n'ont pas le même nombre de
-  transactions, **aucun alias** (un tel fichier n'a pas pu être importé en 0.17.3) ; sinon, alias de la ligne *i* = la clé
+  IBAN (`select_statement_by_iban`) ; si la lecture héritée échoue, si sa sélection échoue, ou si les deux lectures n'ont pas
+  le même nombre de transactions, **aucun alias** (jamais de `?`) (un tel fichier n'a pas pu être importé en 0.17.3) ; sinon, alias de la ligne *i* = la clé
   héritée de la ligne *i* **si elle diffère** de sa clé neuve. Les deux lectures se font hors du verrou du compte pour
   l'aperçu, sous le verrou pour la création (là où la lecture se fait aujourd'hui).
 - **Les transactions déjà importées ne se réécrivent pas** (C-v0174c-7) : elles gardent leur texte tronqué.
@@ -89,12 +103,15 @@ transaction réécrite (C-v0174c-2, C-v0174c-7). Modules : `kesh-import`, `kesh-
 
 **AC-1.1 — Les entités.** Tests unitaires de `kesh-import` (`tests/camt053_tests.rs`, XML écrit dans le test, IBAN et noms
 inventés) : `<Nm>Dupont &amp; Fils</Nm>` → `counterparty_name = "Dupont & Fils"` ; `&lt;`, `&gt;`, `&quot;`, `&apos;` ;
-`&#xE9;tablissement` et `&#233;tablissement` → `établissement` ; `<NtryRef>REF &amp; Co &lt;1&gt;</NtryRef>` →
+`&#xE9;tablissement` et `&#233;tablissement` → `établissement` ; **les espaces autour d'une entité sont gardés** :
+`<Nm>A &amp; B</Nm>` → `"A & B"`, `<Nm>A&amp;B</Nm>` → `"A&B"`, `<Nm>  A &amp; B  </Nm>` → `"A & B"` (seuls les blancs
+extérieurs tombent) ; `<NtryRef>REF &amp; Co &lt;1&gt;</NtryRef>` →
 `reference = "REF & Co <1>"` ; une entité en tête (`&amp;Co` → `&Co`) et en queue ; `<Ustrd>A &amp; B</Ustrd>` → **une**
 partie, `details = "A & B"`. **Rouges avant correctif.**
 
 **AC-1.2 — Le CDATA.** `<AddtlNtryInf><![CDATA[Versement de Müller à Genève]]></AddtlNtryInf>` → `details` égal à ce texte ;
-`<Ustrd>Facture <![CDATA[n° 12]]> octobre</Ustrd>` → `"Facture n° 12 octobre"` ; un CDATA aux fins de ligne CRLF les garde.
+`<Ustrd>Facture <![CDATA[n° 12]]> octobre</Ustrd>` → `"Facture n° 12 octobre"` (les deux espaces autour du CDATA gardés) ;
+`<Nm><![CDATA[ Dupont ]]></Nm>` → `"Dupont"` (rogné au vidage) ; un CDATA aux fins de ligne CRLF les garde.
 **Rouges avant correctif.**
 
 **AC-1.3 — Ce qui ne change pas.** Un texte coupé par un commentaire (`<Nm>A<!-- x -->B</Nm>`) se lit comme en 0.17.3 (C-v0174c-3,
@@ -105,10 +122,13 @@ dates d'un fichier ordinaire sont inchangés (AC-1.4).
 - le **mode hérité** (`parse_legacy_0173`) égale **toutes** les références existantes, `v04_characterization.json` comprise,
   et la divergence admise `v04_latin1_hors_texte` comme aujourd'hui ;
 - le **mode corrigé** (`parse_camt053`) égale les mêmes références, **sauf** `v04_characterization`, comparée à
-  `v04_characterization.0.17.4.json`, écrite à la main, identique à la référence 0.39 **à trois valeurs près** :
-  Ntry 1 `"reference": "REF & Co <1>"`, `"details": "Versement de Müller à Genève"` ; Ntry 2
+  `v04_characterization.0.17.4.json`, écrite à la main, identique à la référence 0.39 **à trois valeurs près** —
+  attendues, après C-v0174c-21 : Ntry 1 `"reference": "REF & Co <1>"`, `"details": "Versement de Müller à Genève"` ; Ntry 2
   `"counterparty_name": "Dupont & Fils, établissement Müller"` (tout le reste, `"currency": "C\tF"` et le CRLF de `details`
-  compris, inchangé). L'exception est nominative (une constante, comme `UTF8_EXCEPTION`), et `every_reference_has_an_input`
+  compris, inchangé). Ces valeurs sont **recalculées au développement** : la sortie réelle du mode corrigé est relevée par un
+  test unitaire avant d'écrire le fichier ; tout écart avec la liste ci-dessus (une valeur de plus qui change, un blanc) se
+  déclare au Change Log et se justifie au code, jamais ne s'aligne en silence. Le mode corrigé, sans rognage du lecteur, doit
+  égaler **toutes** les autres références : c'est la preuve que C-v0174c-21 ne change rien aux fichiers ordinaires. L'exception est nominative (une constante, comme `UTF8_EXCEPTION`), et `every_reference_has_an_input`
   (`:260-`) la reconnaît. **La référence 0.39 n'est ni régénérée ni modifiée** (`git diff` vide sur
   `tests/fixtures/camt053_golden/*.json` hors le fichier neuf).
 - `characterization_fixture_reaches_the_forms_it_freezes` (`:285-308`) : son dernier commentaire (« ne pas corriger ici »)
@@ -132,12 +152,19 @@ cohérent), dont une ligne porte `<NtryRef>REF &amp; Co</NtryRef>` et une autre 
 - *(d) le témoin* : le même scénario, montage fait par `parse_camt053` (lecture corrigée) — les deux lignes sont reconnues
   par leur clé neuve, sans alias.
 
-(c) est vert avant correctif (les deux lectures sont alors la même) ; il **rougit sous MA-819-4** (alias retiré) : c'est sa
-preuve. (b) est vert avant et après (C-v0174c-5 : la clé du relevé ne dépend pas de la lecture).
+Le montage (a) appelle `parse_legacy_0173`, qui n'existe pas avant le correctif : AC-1.5 **ne compile pas avant** — il n'est
+ni rouge ni vert ; sa preuve est sa mutation : (c) **rougit sous MA-819-4** (alias retiré). Pour constater (b) avant
+correctif, le développeur peut jouer une variante dont le montage se fait par `parse_camt053` (lecture de la 0.17.3, à ce
+moment-là) : verte, comme après (C-v0174c-5 : la clé du relevé ne dépend pas de la lecture).
 
-**AC-1.6 — L'alias ne s'applique qu'au CAMT et n'écarte rien en silence.** `kesh-core` : la variante avec alias vides rend
+**AC-1.6 — L'alias ne s'applique qu'au CAMT, se signale à l'aperçu et, à la création, s'écarte par défaut comme tout
+doublon, tracé à l'audit (`duplicate_lines_skipped`).** `kesh-core` : la variante avec alias vides rend
 exactement ce que rend `detect_duplicate_lines` (tests existants verts sans changement d'assertion) ; un alias égal à la clé
-neuve n'est pas passé ; un alias qui égale une clé existante produit un `DuplicateLine` dont `key` est celle de l'alias. Les
+neuve n'est pas passé ; un alias qui égale une clé existante produit un `DuplicateLine` dont `key` est celle de l'alias. **Côté `kesh-api`** : si la
+lecture héritée échoue, si **sa sélection par IBAN** échoue (`select_statement_by_iban` rend une erreur,
+`routes/bank_imports.rs:920-`), ou si les deux lectures n'ont pas le même nombre de transactions, aucun alias n'est passé et
+l'import suit son cours — **jamais** de `?` sur la lecture ou la sélection héritées (test : un relevé dont la seule lecture
+héritée échoue — CDATA dans une date, lue vide par le mode hérité — s'importe sans alias). Les
 tests CSV de `bank_imports_e2e.rs` sont inchangés.
 
 **AC-1.7 — Les transactions existantes ne bougent pas.** Après (c), les deux transactions du montage gardent leur texte
@@ -151,8 +178,8 @@ tels que lus en 0.17.3) : relu en base.
 | T1-1 | AC-1.1, AC-1.2 (unitaires `kesh-import`) | **rouges avant** |
 | T1-2 | AC-1.3 | vert avant (commentaire, montants) ; entité inconnue rouge avant (lue « tronquée » sans erreur) |
 | T1-3 | AC-1.4 (deux comparaisons) | la comparaison corrigée rouge avant sur `v04_characterization` seule |
-| T1-4 | AC-1.5 (b, c, d), AC-1.7 | verts avant ; (c) rouge sous MA-819-4 |
-| T1-5 | AC-1.6 (`kesh-core`) | rouges avant (fonction absente) |
+| T1-4 | AC-1.5 (b, c, d), AC-1.7 | ne compilent pas avant (`parse_legacy_0173` absente) ; (c) rouge sous MA-819-4 |
+| T1-5 | AC-1.6 (`kesh-core`, et le repli sans alias de `kesh-api`) | rouges avant (fonction absente) |
 
 **Mutations nommées** (jouées sous le verrou de gate, restauration `git checkout -- <fichier>` puis `touch`) :
 - **MA-819-1** — le bras `GeneralRef` ne fait rien : T1-1 (entités) rougit.
@@ -163,11 +190,16 @@ tels que lus en 0.17.3) : relu en base.
 - **MA-819-5** — `parse_legacy_0173` lit en mode corrigé : la comparaison héritée de T1-3 rougit sur
   `v04_characterization`.
 - **MA-819-6** — la variante de `kesh-core` ignore l'alias : T1-5 rougit.
+- **MA-819-7** — le mode corrigé lit avec `trim_text(true)` (C-v0174c-21 défait) : les cas « espaces autour » de T1-1
+  rougissent (« A&B » au lieu de « A & B »).
+- *(Pas de mutation « mode hérité sans rognage du lecteur » : elle serait **équivalente** — la boucle héritée rogne déjà chaque
+  fragment elle-même (`let txt = unescaped.trim()`, `camt053/mod.rs:242`) et saute un fragment vide ; le `trim_text(true)` du
+  mode hérité est gardé pour l'identité de configuration avec la 0.17.3, non parce qu'un test le distinguerait.)*
 
 ## Tâches
 
 1. T1-1, T1-2, T1-3, T1-5 rouges d'abord (constatés, notés au Dev Agent Record) ; T1-4 écrit.
-2. `kesh-import` : tampon, résolution, `TextMode`, `parse_legacy_0173` ; `KESH_MESSAGES` ; référence
+2. `kesh-import` : configuration du lecteur par mode (C-v0174c-21), tampon, résolution, `TextMode`, `parse_legacy_0173` ; `KESH_MESSAGES` ; référence
    `v04_characterization.0.17.4.json` ; `README.md` des fixtures.
 3. `kesh-core` : variante avec alias, documentée (`///`).
 4. `kesh-api` : relecture héritée et alias aux trois sites CAMT ; commentaires de `bank_imports.rs` qui décrivent la clé.
@@ -190,6 +222,11 @@ tels que lus en 0.17.3) : relu en base.
 - 2026-11-05 — fiche créée (Opus 5.5, autonomie). Prémisse de #819 **confirmée** et étendue (tous les champs texte, § 1) ;
   clé du relevé indépendante de la lecture (§ 3), clé de ligne dépendante pour ses seuls identifiants (§ 4) → alias de clé
   hérité (C-v0174c-5) ; caractérisation double (C-v0174c-6). Aucune migration.
+- 2026-11-05 — **Validation P1 (Sonnet, R et F)** : sur cette fiche, R1 (HIGH), R6, R7 (LOW). Prémisse de R1 lue dans la source
+  de quick-xml 0.42 (`reader/mod.rs:170-184`, `:308-315`, `:351-352` ; `reader/state.rs:64-72`) : confirmée — le lecteur rogne
+  chaque fragment ; remède C-v0174c-21 (lecture corrigée sans rognage, mode hérité inchangé), cas « espaces autour », MA-819-7
+  (une variante sur le mode hérité serait équivalente, dit), référence recalculée au développement. R6 : AC-1.5 non compilable avant, dit ; « jamais écartée en silence » reformulé.
+  R7 : repli sans alias sur échec de la sélection héritée, testé.
 
 ## Dev Agent Record
 

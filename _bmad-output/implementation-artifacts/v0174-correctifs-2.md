@@ -5,7 +5,7 @@ Status: ready-for-dev
 *Fiche sœur de `v0174-correctifs.md` (l'index), rédigée le 2026-11-05 en autonomie (Opus 5.5), worktree
 `/home/gcorbaz/devel/kesh-0174c`, branche `story/v0174-correctifs` partie de `7bd4d5c0`. Release **0.17.4**, **sans
 migration**. Registre : `v0174-choix-autonomes-v0174c.md`, choix C-v0174c-8 à 11 et 20. Clé de statut `v0174-correctifs-2`.
-Issues **#869** (P3), **#817** (P2), **#842** (P3), **#540** (P3, intégrée, C-v0174c-11), **#901** (P4), en `refs`
+Issues **#869** (P3), **#817** (P2), **#842** (P3), **#540** (P2, intégrée, C-v0174c-11), **#901** (P4), en `refs`
 seulement. Numéros de ligne de `7bd4d5c0`. **À développer avant la fiche 3**, dont l'écran de #869 lit les `details`
 posés ici.*
 
@@ -20,7 +20,8 @@ veux la vraie date de la 0.17.1.
 ## Contrainte
 
 Production 0.17.3 : fixtures synthétiques, bases `#[sqlx::test]` jetables (squash `crates/kesh-db/test-schema`). **Aucune
-migration.** Modules : `kesh-api`, `kesh-qrbill`, `kesh-db`, `kesh-reconciliation` (quatre). ⚠️ **Exception `kesh-db`** : #842
+migration.** Modules : `kesh-api`, `kesh-qrbill`, `kesh-db`, `kesh-reconciliation` (quatre ; la part d'écran de #817 est
+portée par la fiche 3, § 3.5, qui touche déjà le frontend). ⚠️ **Exception `kesh-db`** : #842
 touche le pool — **gate complet même en cours de boucle** (`CLAUDE.md`, § *Pendant une boucle de revue*).
 
 ---
@@ -48,9 +49,17 @@ touche le pool — **gate complet même en cours de boucle** (`CLAUDE.md`, § *P
 
 Au site `errors.rs:4248`, un corps `{ "error": { "code": "PERIOD_LOCKED", "message": …, "details": { "lockedThrough":
 "AAAA-MM-JJ", "attempted": "AAAA-MM-JJ" } } }`, sur le patron de `later_fiscal_year_closed_response` (`:1385-`). Le message ne
-change pas. `docs/api-external.md` : la phrase de `:493` est récrite (« Les **quatre autres** … 11 lignes en tout, 7 avec
-`details` et 4 sans — recompté depuis le tableau `:466-478` ») et la phrase qui suit (« dans trois cas sur cinq ») aussi ; une
-ligne `400 PERIOD_LOCKED` entre au tableau du § 10, *(depuis la v0.17.4)*.
+change pas. Le registre écarte le champ « exercice » que l'issue mentionne entre parenthèses (C-v0174c-8 : la date du verrou
+est la borne d'une période, non d'un exercice ; le refus d'exercice a ses propres codes). `docs/api-external.md` :
+- `:493` : seul le **début** de la phrase change — « Les **quatre autres** codes … 11 lignes en tout, 7 avec `details` et 4 sans »
+  (recompté depuis le tableau, en-tête `:467`, lignes `:469-479`) ; la fin (« dans trois cas sur cinq ») compte les cinq lignes
+  du tableau `documentId` / `documentNumber`, dont trois portent la facture elle-même : elle **reste vraie** et ne change pas ;
+- `:298` (refus du `PUT` d'une écriture) et `:336` (« Les `details` sont ceux du `PUT` … ») : une incise « `PERIOD_LOCKED` :
+  `details.lockedThrough`, `details.attempted` *(depuis la v0.17.4)* » ;
+- § 10 (`:937-`) : une ligne `400 PERIOD_LOCKED`, `details.lockedThrough` / `details.attempted` (`AAAA-MM-JJ`), *(depuis la
+  v0.17.4)*, qui dit que `failed[]` de `POST /reconciliation/accept` porte déjà ces deux noms (et `projectId`).
+Inventaire de contrôle au Dev Agent Record : `/usr/bin/grep -n 'lockedThrough' docs/api-external.md` (vide aujourd'hui) après
+correctif, les quatre sites.
 
 ### Acceptance Criteria (2.1)
 
@@ -78,7 +87,7 @@ qui monte déjà une facture validée). **Rouge avant.**
    `binary_search`, garde `debug_assert!` de l'ordre), appelée par `validate_country` (`:258-270`) à la production de la
    QR-facture. `kesh-api` dépend déjà de `kesh-qrbill` (`crates/kesh-api/Cargo.toml:12`).
 6. Les écrivains d'une adresse structurée : `validate_common` des contacts (`routes/contacts.rs:392`,
-   `validate_optional`), appelée par la création (`:640`) et la mise à jour (`:708`) ; l'assistant d'installation
+   `validate_optional`), appelée par la création (`:641`) et la mise à jour (`:708`) ; l'assistant d'installation
    (`routes/onboarding.rs:532`, `validate_required`). **Aucune route ne modifie l'adresse de la société après l'assistant**
    (`routes/companies.rs` : `update_company_email` `:102`, `update_company_contact_details` `:240`, le verrou `:395`, `:408`) —
    prémisse de l'issue confirmée.
@@ -86,16 +95,26 @@ qui monte déjà une facture validée). **Rouge avant.**
    pays stocké.
 8. Écrans : `contacts/+page.svelte:995` (`maxlength={2}`, `placeholder="CH"`) et `SupplierCreatePanel.svelte:210`
    (`maxlength="2"`) ; l'assistant (manuel `user-manual.tex:213` : « l'assistant affiche le motif que le serveur donne »).
+   Les deux écrans affichent déjà `err.message` (`contacts/+page.svelte` : `formError = err.message` ;
+   `SupplierCreatePanel.svelte` : `error = (isApiError(err) && err.message)`).
+8 bis. `update_contact` **lit déjà** la ligne avant d'écrire (`routes/contacts.rs:704-706`,
+   `find_by_id_in_company`, contrôle d'appartenance) : le pays stocké (`address_country`, `entities/contact.rs:190`) est
+   disponible sans lecture de plus. L'issue l'exige : « une adresse déjà enregistrée avec un code invalide ne doit pas devenir
+   impossible à modifier ni à relire ».
 
 ### Conception (C-v0174c-9)
 
 `is_iso_3166_alpha2` devient `pub` (réexportée `kesh_qrbill::is_iso_3166_alpha2`, documentée `///`) ; `check_lengths` la
 consulte **après** le contrôle de forme : refus `AppError::Validation` (`400 VALIDATION_ERROR`) au message « adresse : le pays
 « {code} » n'est pas un code ISO 3166-1 alpha-2 connu (ex. CH, FR, DE) ». Le message de forme (`:68-70`) reste. Lecture
-inchangée. Une adresse stockée invalide : lue, listée, affichée ; toute **écriture** de ce contact exige un pays valide — le
-refus le dit (C-v0174c-9, écartée b). Écrans : le refus s'affiche par leur chemin d'erreur existant — le développeur le
-vérifie par un test Vitest par écran (contacts, panneau fournisseur ; mock `400 VALIDATION_ERROR` au message ci-dessus) : si
-le message est déjà affiché, le test le fige ; sinon, correction.
+inchangée. **Pays inchangé toléré** (C-v0174c-9, révisé à la validation P1) : `validate_common` reçoit le pays stocké
+(`Some(_existing.address_country)` à la mise à jour, `None` à la création) et le contrôle ISO accepte un code **égal**, après
+normalisation (majuscules, `trim`), au pays stocké ; un pays **nouveau ou modifié** hors liste est refusé. Une adresse stockée
+invalide se lit, se liste, s'affiche, et le contact se modifie (téléphone, courriel…) sans toucher au pays ; changer le pays
+exige un code valide. La création et l'assistant (aucune valeur stockée) refusent tout code hors liste. **Le signal à
+l'écran** : `ContactResponse` porte un champ additif `addressCountryKnown: bool` (calculé par `is_iso_3166_alpha2` sur le pays
+lu ; `true` sans adresse) — l'écran des contacts l'affiche (fiche 3, § 3.5) sans recopier la liste ISO. Le message reste en
+français, comme les refus de forme de l'adresse (`AppError::Validation`, manuel `:213`, #710).
 
 ### Acceptance Criteria (2.2)
 
@@ -105,12 +124,16 @@ refusés, le message nomme le code ; `C1`, `CHE` refusés par le contrôle de fo
 **AC-2.5** — E2E (`crates/kesh-api/tests/`, fichier de contacts voisin ou neuf `contact_address_country_e2e.rs`) : `POST
 /api/v1/contacts` avec `country: "XX"` → `400 VALIDATION_ERROR`, rien d'écrit ; avec `"FR"` → `201`.
 **AC-2.6 — Les données existantes** : un contact dont l'adresse porte `SU`, posé par SQL au montage (comme une installation
-0.17.3) : `GET /api/v1/contacts/{id}` et la liste rendent `200` et `"country": "SU"` ; `PUT` qui ne change que le téléphone,
-adresse renvoyée telle quelle → `400 VALIDATION_ERROR` nommant `SU`, contact inchangé en base ; `PUT` avec `CH` → `200`.
+0.17.3) : `GET /api/v1/contacts/{id}` et la liste rendent `200`, `"country": "SU"` et `addressCountryKnown: false` ; `PUT` qui
+ne change que le téléphone, adresse renvoyée telle quelle (`SU`, ou `su`) → `200`, pays inchangé ; `PUT` avec `XX` →
+`400 VALIDATION_ERROR` nommant `XX`, contact inchangé en base ; `PUT` avec `CH` → `200`, `addressCountryKnown: true`. **Rouge
+avant** : `addressCountryKnown` absent, `XX` accepté.
 **AC-2.7** — Assistant : l'étape des coordonnées avec `country: "XX"` → `400` (`onboarding_e2e.rs`) ; rien d'écrit.
-**AC-2.8** — Vitest : les deux écrans affichent le message du refus (AC de conception).
+**AC-2.8** — Côté écran : fiche 3, § 3.5 (AC-3.14, AC-3.15).
 
-**Mutation (P2, nommée)** : **MB-817** — `check_lengths` n'appelle pas `is_iso_3166_alpha2` : AC-2.4, AC-2.5, AC-2.6 rougissent.
+**Mutations (P2, nommées)** : **MB-817** — le contrôle n'appelle pas `is_iso_3166_alpha2` : AC-2.4, AC-2.5, AC-2.6 (`XX`)
+rougissent. **MB-817-b** — la tolérance du pays stocké est retirée (`None` passé à la mise à jour) : AC-2.6 (`PUT` du
+téléphone sur `SU`) rougit. **MB-817-c** — la tolérance accepte tout code à la mise à jour : AC-2.6 (`XX`) rougit.
 
 ---
 
@@ -145,12 +168,18 @@ Dans `kesh-db/src/pool.rs`, une fonction publique documentée, par exemple
 `Ok(true)` ; une erreur rend `Err` (sqlx ferme alors la connexion, `close_hard`, et la fin de session libère tout).
 `main.rs:82` l'applique au pool de production. `mutex.rs` : l'en-tête (`:30-50`, motif d'appel), la doc (`:61-64`) et les deux
 messages de journal (`:150`, `:165`) disent désormais que le verrou est rendu **au retour au pool** de la connexion ;
-`errors.rs:911-` (doc de `AccountLocked`) relu. `create_pool` (`pool.rs:28`) applique **aussi** la fonction (même
+les autres sites du même symptôme aussi — `crates/kesh-reconciliation/src/errors.rs:19-25` (doc **et** message
+`#[error(… lock may persist until session end)]` de `LockReleaseFailed`), `crates/kesh-api/src/errors.rs:919-921` (doc de
+`ReconciliationLockReleaseFailed`), `crates/kesh-api/src/routes/reconciliation.rs:1809-1810` (« Lock advisory libéré à fin de
+session ») ; inventaire de contrôle : `/usr/bin/grep -rn 'fin de session\|session end\|L22' crates --include=*.rs` rejoué au
+Dev Agent Record, seuls restent des sites sans rapport (`config.rs:202`, la session d'authentification). `create_pool` (`pool.rs:28`) applique **aussi** la fonction (même
 comportement pour tout pool de `kesh-db`).
 
 ### Acceptance Criteria (2.3)
 
-Les tests montent un pool **avec** la fonction, d'**une** connexion (pour que la connexion réacquise soit celle qui a servi),
+Les tests neufs montent le squash, comme l'exige `crates/kesh-db/tests/test_schema_guard.rs` (`:34`, `:921`) :
+`#[sqlx::test(migrations = "./test-schema")]` dans `kesh-db`, `#[sqlx::test(migrations = "../kesh-db/test-schema")]` dans
+`kesh-api`. Ils montent un pool **avec** la fonction, d'**une** connexion (pour que la connexion réacquise soit celle qui a servi),
 depuis les options de la base de test (`MySqlPoolOptions::new().max_connections(1).connect_with((*pool.connect_options()).clone())`,
 patron de `backup.rs:1772-1778`), et une **seconde** connexion indépendante pour observer :
 
@@ -195,10 +224,12 @@ ligne citée au Dev Agent Record). **MB-540** — le crochet ne rétablit pas `f
 
 1. Rouges d'abord : AC-2.1, 2.2, 2.4 à 2.7, 2.9 à 2.11 (constatés, notés).
 2. #869 : corps du `PERIOD_LOCKED` ; `docs/api-external.md` (`:493`, phrase suivante, ligne au § 10).
-3. #817 : `kesh-qrbill` (`pub`, réexport, doc) ; `address_input.rs` ; Vitest des deux écrans ; manuel.
-4. #842/#540 : la fonction de `pool.rs`, appliquée par `create_pool` et `main.rs` ; commentaires de `mutex.rs`.
+3. #817 : `kesh-qrbill` (`pub`, réexport, doc) ; `address_input.rs` ; tolérance du pays stocké dans `validate_common` ;
+   `addressCountryKnown` ; manuel.
+4. #842/#540 : la fonction de `pool.rs`, appliquée par `create_pool` et `main.rs` ; commentaires de `mutex.rs`,
+   `kesh-reconciliation/src/errors.rs`, `kesh-api/src/errors.rs:919-921`, `routes/reconciliation.rs:1809-1810`.
 5. #901 : la ligne du CHANGELOG.
-6. Mutations MB-869, MB-817, MB-842-a, MB-540 ; gates (fiche-index).
+6. Mutations MB-869, MB-817, MB-817-b, MB-817-c, MB-842-a, MB-540 ; gates (fiche-index).
 
 ## Dev Notes
 
@@ -209,8 +240,10 @@ ligne citée au Dev Agent Record). **MB-540** — le crochet ne rétablit pas `f
   demandé, le déclarer l'est. `RELEASE_ALL_LOCKS` existe depuis MariaDB 10.5 ; la CI est en `mariadb:10.11` (`.github/workflows/ci.yml:50`) ;
   l'image de dev se relit dans `docker-compose.dev.yml` et se cite au Dev Agent Record.
 - **Ne pas** fermer la connexion (`Ok(false)`) comme le pool du MCP : le pool de l'API rouvrirait une connexion par requête.
-- **Captures** (thème clair, base de démonstration jetable `kesh_v0174c`, `kesh-gate-logs/v0174c/captures/`) : le refus d'un
-  contact au pays `XX` (écran des contacts) et le même refus dans le panneau de création d'un fournisseur.
+- **Captures** : celles de #817 sont à la fiche 3 (§ 3.5).
+- **Angles morts déclarés, issue demandée** (pour qu'ils ne restent pas seulement écrits ici) : AC-2.12 (chemin `RELEASE_LOCK`
+  raté sans montage propre) et MB-842-b (l'application de la fonction par `main.rs` n'est vue par aucun test, les tests
+  construisant leur pool).
 
 ## Change Log
 
@@ -218,6 +251,12 @@ ligne citée au Dev Agent Record). **MB-540** — le crochet ne rétablit pas `f
   **confirmée** (forme seule, liste privée dans `kesh-qrbill`, aucune route d'adresse de la société) ; #842 **confirmée et
   précisée** (la doc de `mutex.rs` affirme une libération « à fin de session » qui n'a pas lieu : le pool garde la session) ;
   #901 **confirmée** (seul le CHANGELOG porte la date). #540 intégrée (mécanique, C-v0174c-11). Aucune migration.
+- 2026-11-05 — **Validation P1 (Sonnet, R et F)** : sur cette fiche, R2 (MEDIUM, #817 : prémisse « relire la ligne » fausse —
+  `update_contact` la lit déjà, `contacts.rs:704-706` — et contrainte de l'issue) → pays inchangé toléré, `addressCountryKnown`,
+  MB-817-b et c, écran en fiche 3 § 3.5 ; F1 (la fin de `api-external.md:493` reste vraie), F2 (`:298`, `:336`, § 10),
+  F3 (symptôme « fin de session » à trois sites de plus) ; LOW R5 (squash), R8 (« et l'exercice » écarté, C-v0174c-8), R10 = F9
+  (quatre modules, l'écran passe à la fiche 3), F6 (#540 P2), F8 (`:641`, `:466-478` → `:467`/`:469-479`), F10 (angles morts
+  demandés en issue).
 
 ## Dev Agent Record
 
