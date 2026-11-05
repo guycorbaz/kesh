@@ -9,13 +9,11 @@ Issue : **#847** (P2, enhancement), en `refs` seulement dans les commits ; la fe
 Les numéros de ligne sont ceux de `7bd4d5c0`. Une fiche ne compile ni ne teste rien : tout ce qui doit être exécuté est
 prescrit au développement.*
 
-*Fiche **parente** depuis la remédiation de la validation P1 (C-v0174m-18) : elle garde l'analyse du code et la
-conception commune ; le travail est découpé en deux sous-fiches sœurs, sur la même branche, développées dans cet ordre :*
-
-- ***`v0174-mise-a-jour-1.md`** — la sauvegarde avant migration (lot A : `kesh-db`, `kesh-api`, compose, manuel,
-  CHANGELOG, recette) ;*
-- ***`v0174-mise-a-jour-2.md`** — le type « Avant mise à jour » dans la liste du serveur (lot B : liste, frontend, i18n,
-  captures).*
+*Fiche **parente** (C-v0174m-18), réduite le 2026-11-05 par la **décision du Project Lead** (C-v0174m-30 : version
+minimale de #847, après la non-convergence de la validation) : elle garde l'analyse du code ; **une seule sous-fiche se
+développe**, `v0174-mise-a-jour-1.md` (la sauvegarde avant migration, version minimale) ; la sœur `v0174-mise-a-jour-2.md`
+(le type « Avant mise à jour » à l'écran) est `superseded`, son contenu passe en issue. La conception commune ci-dessous
+est remplacée par celle de la sous-fiche 1 là où elles diffèrent.*
 
 ## Story
 
@@ -151,34 +149,23 @@ et s'inscrit au journal d'audit (`admin.backup_downloaded`). Côté écran : `ba
   `./backup` ; `README.md:50`. Inventaire complet et traitement : `v0174-mise-a-jour-1.md`, § *Manuel*.
 
 
-## Conception retenue (commune aux deux sous-fiches)
+## Conception retenue
 
-1. **Un module neuf** `crates/kesh-api/src/pre_upgrade_backup.rs` (`pub mod` dans `lib.rs` : les tests sont un crate
-   externe et `main.rs` un binaire distinct), appelé par `main.rs` entre l'étape 3b et l'étape 4 (C-v0174m-2) : plan
-   (C-v0174m-3, plan illisible → refus C-v0174m-16), échappatoire à version exacte, une seule voie (C-v0174m-4, C-v0174m-28), version de
-   départ (C-v0174m-8), dossier `pre-upgrade/`, espace (C-v0174m-7), lecture **à l'inventaire du schéma présent**
-   (C-v0174m-1, C-v0174m-24), écriture, relecture, **aucune suppression** de sauvegarde avant mise à jour (C-v0174m-25, qui retire C-6 et C-15), journal
-   (C-v0174m-9) qui nomme le fichier de chaque tentative et la règle de choix du fichier à restaurer. Tout échec → refus de démarrer **avant** `MIGRATOR.run`. Détail, AC,
-   tests et mutations : `v0174-mise-a-jour-1.md`.
-2. **L'importabilité par la version de départ** se garde dans le temps (garde du format) et se joue en test (aller-retour
-   discriminant par inventaire paramétré) et en recette dans deux jambes (0.15.0 et 0.17.2 → branche) et deux topologies
-   (C-v0174m-17, C-v0174m-19, C-v0174m-22).
-3. **L'écran** : `BackupKind::PreUpgrade`, type « Avant mise à jour » (quatre locales) : `v0174-mise-a-jour-2.md`.
+Voir `v0174-mise-a-jour-1.md`, § *Ce qui est fait (et rien d'autre)* et § *Conception* : c'est la seule à jour depuis la
+décision du Project Lead (C-v0174m-30). En bref : plan lu dans `_sqlx_migrations` (illisible → refus) ; `.keshbackup` de
+format 2 à l'inventaire du schéma présent dans `pre-upgrade/`, nom aux deux versions ; refus sur tout échec avant
+migration ; échappatoire `KESH_SKIP_PRE_UPGRADE_BACKUP=<version exacte>` ; jamais de suppression ; test d'aller-retour
+discriminant.
 
 **Alternative écartée** (C-v0174m-1) : un vidage SQL — pas de client MariaDB dans l'image, pas de pièces, un second format
 à maintenir ; et le `.keshbackup` à l'inventaire du binaire neuf, qui échoue ou produit un fichier que la version de départ
 refuse.
 
-## Découpage (C-v0174m-18)
+## Découpage
 
-| Sous-fiche | Modules | Dépend de |
-|---|---|---|
-| `v0174-mise-a-jour-1.md` | `kesh-db/backup` (+ paramètre d'inventaire interne de l'import), `kesh-api` (module neuf, `main.rs`, `config.rs`, `lib.rs`, `admin_backup/{import,export}.rs`, visibilités de `auto_backup.rs` et `routes/admin.rs`), compose et `.env.example`, manuel d'administration, CHANGELOG | — |
-| `v0174-mise-a-jour-2.md` | `kesh-api/auto_backup` (`BackupKind`, liste) et `routes/backup_schedule.rs`, `frontend/admin-backup`, `kesh-i18n` | le nom et le dossier fixés par la 1 |
-
-Le lot 1 est livrable seul : sans la 2, la sauvegarde existe et se récupère par le dossier ; la liste de l'écran ne la
-montre pas encore, et son manuel le dit (le téléchargement par l'écran est conditionné à la 2). Modules au sens de la
-règle : `kesh-db`, `kesh-api` (les fichiers ci-dessus forment un seul crate), compose, manuel — sous cinq. La 2 ne relit aucune décision de la 1 hors l'expression du nom.
+Une seule sous-fiche à développer : `v0174-mise-a-jour-1.md` (`kesh-db/backup`, `kesh-api`, compose et `.env.example`,
+manuel, CHANGELOG — sous cinq modules). `v0174-mise-a-jour-2.md` : `superseded` (C-v0174m-30). La parente reste `split`
+(le plus simple : l'analyse du code n'a pas à être recopiée, et les validations passées la citent).
 
 ## Pour l'orchestrateur
 
@@ -190,7 +177,10 @@ règle : `kesh-db`, `kesh-api` (les fichiers ci-dessus forment un seul crate), c
   ouvrir.
 - **Intégration** : si une autre story de la 0.17.4 ajoute finalement une migration, corriger la phrase du CHANGELOG
   (`v0174-mise-a-jour-1.md`) et rejouer la recette de 0.17.3 à 0.17.4.
-- **Splitting** : la dérogation du premier jet (C-v0174m-12) est retirée ; deux sous-fiches (C-v0174m-18).
+- **Splitting** : la dérogation du premier jet (C-v0174m-12) est retirée ; une seule sous-fiche à développer depuis la
+  décision du Project Lead (C-v0174m-30).
+- **Issue à ouvrir** : le type « Avant mise à jour » à l'écran (contenu de la sous-fiche 2, `superseded`) — texte dans le
+  rapport de l'agent.
 
 ## Change Log
 
@@ -208,3 +198,7 @@ règle : `kesh-db`, `kesh-api` (les fichiers ci-dessus forment un seul crate), c
   traités, un correctif proposé écarté (V2-1 : protéger la plus ancienne depuis `last_boot_at`, remplacé par le retrait de
   la rétention) ; détail au Change Log de `v0174-mise-a-jour-1.md`. Prochaine étape : validation P3 (Sonnet, lentille
   complète braquée d'abord sur cette remédiation, `v0174-mise-a-jour-validate-prompt-p3.md`).
+- 2026-11-05 — Validation P3 (Sonnet, 0/1/5/4) : la boucle ne converge pas (un HIGH à chaque passe, tous recyclés).
+  **Décision du Project Lead : version minimale de #847** (C-v0174m-30). Sous-fiche 1 récrite ; sous-fiche 2
+  `superseded` (issue demandée) ; parente gardée en `split`. Prochaine étape : validation P4 (Opus, lentille complète,
+  `v0174-mise-a-jour-validate-prompt-p4.md`), sur la sous-fiche 1 et le registre.

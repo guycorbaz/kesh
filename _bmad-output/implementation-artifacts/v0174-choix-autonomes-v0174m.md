@@ -115,7 +115,7 @@ Fiche : `v0174-mise-a-jour.md`. Issue #847 (P2), en `refs` seulement dans les co
   mesurer la base (`information_schema` ne donne qu'une estimation, et la sauvegarde automatique ne le fait pas).
 - **Réversible** : oui.
 
-### C-v0174m-8 — Version de départ antérieure à la 0.15.0 ou inconnue : refus, sauf échappatoire
+### C-v0174m-8 — Version de départ antérieure à la 0.15.0 ou inconnue : refus, sauf échappatoire — **retiré par la décision du Project Lead (C-v0174m-30)**
 
 - **Contexte** : une sauvegarde de format 2 ne s'importe que dans une 0.15.0 ou plus récente (`manifest.rs:18-27`) . (La lecture des pièces, elle, ne fixe pas la borne : `invoices.pdf_storage_path` existe dès la 0.13.0 — motif
   retiré à la validation P1, R1-11.) Écrire depuis une 0.14.x un fichier
@@ -125,7 +125,7 @@ Fiche : `v0174-mise-a-jour.md`. Issue #847 (P2), en `refs` seulement dans les co
 - **Écartées** : écrire la sauvegarde quand même avec un avertissement ; la sauter en silence.
 - **Réversible** : oui. Sans portée pour la production (0.17.3).
 
-### C-v0174m-9 — Le journal de démarrage et l'écran
+### C-v0174m-9 — Le journal de démarrage et l'écran — **réduit par C-v0174m-30** (deux lignes `info`, pas d'écran)
 
 - **Contexte** : #847, point 3.
 - **Retenu** : quatre lignes `info`, écrites mot pour mot au § *Messages* de la sous-fiche `v0174-mise-a-jour-1.md`
@@ -157,7 +157,7 @@ Fiche : `v0174-mise-a-jour.md`. Issue #847 (P2), en `refs` seulement dans les co
   neuf (son inventaire n'est pas celui du fichier).
 - **Réversible** : oui (texte du manuel).
 
-### C-v0174m-11 — La recette se joue de 0.17.2 à 0.17.4, quelle que soit la story `v0174-session`
+### C-v0174m-11 — La recette se joue de 0.17.2 à 0.17.4, quelle que soit la story `v0174-session` — **retiré par C-v0174m-30** (seule la jambe 0.15.0 de C-22 est jouée)
 
 - **Contexte** : la sauvegarde ne se déclenche que si la version d'arrivée porte une migration. Seule `v0174-session` peut
   en porter une en 0.17.4 (consigne commune) ; si elle n'en porte pas, rien ne se passe de la 0.17.3 à la 0.17.4.
@@ -238,7 +238,7 @@ Fiche : `v0174-mise-a-jour.md`. Issue #847 (P2), en `refs` seulement dans les co
 - **Écartées** : traiter l'erreur comme *à jour* ou *neuve*.
 - **Réversible** : oui.
 
-### C-v0174m-17 — L'importabilité par la version de départ se garde dans le temps et se joue en test
+### C-v0174m-17 — L'importabilité par la version de départ se garde dans le temps et se joue en test — **réduit par C-v0174m-30** (garde de format (a) retirée ; aller-retour (b)(c) gardé)
 
 - **Contexte** (R1-4, F1-4) : le fichier est écrit par le binaire neuf et lu par l'ancien ; un changement de
   `BACKUP_FORMAT_VERSION` (`manifest.rs:27`), du manifeste ou de `decode_cell` le rendrait silencieusement inimportable ;
@@ -257,7 +257,7 @@ Fiche : `v0174-mise-a-jour.md`. Issue #847 (P2), en `refs` seulement dans les co
 - **Écartées** : paramétrer le format par version cible (aucun besoin aujourd'hui) ; se contenter de la recette.
 - **Réversible** : oui (refactor interne, production inchangée).
 
-### C-v0174m-18 — Deux sous-fiches sœurs, parente en `split`
+### C-v0174m-18 — Deux sous-fiches sœurs, parente en `split` — **amendé par C-v0174m-30** (la sous-fiche 2 est `superseded`)
 
 - **Contexte** (R1-10) : la *Règle de splitting préventif* n'admet pas la dérogation C-v0174m-12 ; chaque lot compte moins
   de cinq modules, le lot A est livrable seul (le fichier se récupère par le dossier), le lot B ne dépend que du nom.
@@ -268,7 +268,7 @@ Fiche : `v0174-mise-a-jour.md`. Issue #847 (P2), en `refs` seulement dans les co
 - **Écartées** : une fiche avec section de dérogation (critère d'exception non rempli).
 - **Réversible** : oui.
 
-### C-v0174m-19 — Retour en arrière : une procédure, deux topologies, deux recettes
+### C-v0174m-19 — Retour en arrière : une procédure, deux topologies, deux recettes — **réduit par C-v0174m-30** (une topologie jouée ; Synology par renvoi, non éprouvée)
 
 - **Contexte** (R1-2, R1-8, F1-11) : la production est la topologie Synology (Kesh seul, MariaDB du paquet DSM,
   `mem_limit: 1g`, `docker-compose.prod.yml:193`) ; le compose standard a son conteneur `mariadb`.
@@ -308,7 +308,7 @@ Fiche : `v0174-mise-a-jour.md`. Issue #847 (P2), en `refs` seulement dans les co
 - **Écartées** : lire la variable dans un fichier du dossier de sauvegarde (un réglage de plus, caché).
 - **Réversible** : oui.
 
-### C-v0174m-22 — Une jambe de recette dont l'inventaire diffère : 0.15.0 → branche
+### C-v0174m-22 — Une jambe de recette dont l'inventaire diffère : 0.15.0 → branche — **réduit par C-v0174m-30** (une seule jambe, 0.15.0 → branche)
 
 - **Contexte** (F1-4) : de la 0.17.2 à la branche, `TABLES_TO_TRUNCATE` est identique (la 0.17.3 n'ajoute qu'une table
   système) : la recette C-v0174m-11 survivrait à la mutation M4. La 0.15.0 est publiée et n'a pas les tables du serveur
@@ -319,7 +319,7 @@ Fiche : `v0174-mise-a-jour.md`. Issue #847 (P2), en `refs` seulement dans les co
 - **Écartées** : la seule jambe 0.17.2.
 - **Réversible** : oui.
 
-### C-v0174m-23 — Une table étrangère au schéma : avertissement
+### C-v0174m-23 — Une table étrangère au schéma : avertissement — **retiré par C-v0174m-30**
 
 - **Contexte** (R1-15) : une table créée hors migration (à la main, par un outil) entrerait dans l'inventaire et rendrait
   le fichier inimportable par la version de départ.
@@ -361,7 +361,7 @@ simplifier plutôt que corriger.*
   (proposée par V2-1 : un mécanisme de plus, avec un piège de fuseau, dans la zone qui recyclait).
 - **Réversible** : oui (une rétention peut s'ajouter plus tard, si l'accumulation gêne).
 
-### C-v0174m-26 — `admin_backup` devient `pub mod`
+### C-v0174m-26 — `admin_backup` devient `pub mod` — **retiré par C-v0174m-30** (tests internes)
 
 - **Contexte** : V2-3, prémisse confirmée (`lib.rs:14` : `pub(crate) mod admin_backup;`) : le test d'aller-retour, crate
   externe, ne compilerait pas.
@@ -369,7 +369,7 @@ simplifier plutôt que corriger.*
 - **Écartées** : un test unitaire dans `import.rs` (il faudrait inclure les helpers de montage de `kesh-db` depuis `src/`).
 - **Réversible** : oui.
 
-### C-v0174m-27 — Un plan illisible ne propose pas l'échappatoire
+### C-v0174m-27 — Un plan illisible ne propose pas l'échappatoire — **retiré par C-v0174m-30** (remplacé par C-v0174m-31)
 
 - **Contexte** : V2-5 — l'échappatoire est évaluée après le plan ; la conseiller sur `Refus::Plan` serait un geste sans
   effet, et `{de}` n'y est pas encore lu.
@@ -390,7 +390,7 @@ simplifier plutôt que corriger.*
 - **Écartées** : `docker compose run` ; un fichier témoin dans le dossier de sauvegarde.
 - **Réversible** : oui.
 
-### C-v0174m-29 — La procédure Synology du retour vit dans `sec:backup-dsm`
+### C-v0174m-29 — La procédure Synology du retour vit dans `sec:backup-dsm` — **retiré par C-v0174m-30** (renvoi à `sec:backup-dsm`, aucune procédure Synology neuve)
 
 - **Contexte** : V2-19 — les gardes G14 à G16 ne lisent que les sections Synology (`common/manuel.rs:74` : `sec:synology`,
   `sec:backup-dsm`) ; une procédure Synology écrite sous *Revenir à la version précédente* leur échapperait.
@@ -399,3 +399,55 @@ simplifier plutôt que corriger.*
   dans la section générale.
 - **Écartées** : étendre les bornes des gardes (changement d'un test sans rapport avec la story) ; écrire l'angle mort.
 - **Réversible** : oui.
+
+---
+
+## Décision du Project Lead (2026-11-05) — version minimale
+
+### C-v0174m-30 — Version minimale de #847
+
+- **Contexte** : la validation n'a pas convergé — P1 2 HIGH, P2 1 HIGH, P3 1 HIGH (0/1/5/4), chacun né de la remédiation
+  précédente (rétention, puis protection du couple, puis nettoyage du `.partial` sur panique) ; signal déclaré au Project
+  Lead par l'orchestrateur.
+- **Retenu (décision du Project Lead)** : (1) au démarrage, s'il reste des migrations (plan lu dans `_sqlx_migrations`
+  contre le `MIGRATOR` ; illisible → refus), un `.keshbackup` de format 2, pièces comprises, à l'inventaire du schéma
+  présent, dans `<KESH_ADMIN_BACKUP_DIR>/pre-upgrade/`, nom portant les versions de départ et d'arrivée ; (2) écriture dans
+  un temporaire puis renommage ; tout échec (dossier, espace, lecture, écriture, panique) refuse le démarrage sans
+  migration ; aucun nettoyage exigé du `.partial` sur panique (inoffensif, dit au manuel) ; (3) échappatoire
+  `KESH_SKIP_PRE_UPGRADE_BACKUP=<version exacte>` dans le `.env`, transmise par les deux compose ; (4) jamais de
+  suppression automatique ; le journal donne le chemin ; le manuel dit où trouver le fichier, comment revenir (base recréée
+  vide par le compte Kesh, image précédente, assistant), qu'on retire les anciens à la main, et, en une phrase, qu'après
+  une tentative qui a migré en partie on restaure le plus ancien fichier écrit pour cette mise à jour. Gardés : le test
+  d'aller-retour discriminant, le refus sur échec, l'absence de sauvegarde sans migration ou sur base neuve, et les
+  mutations qui tuent ces points. **Retirés** : l'affichage à l'écran (sous-fiche 2 `superseded`, issue), la règle RG
+  détaillée, E1 et tout message après `MIGRATOR.run`, la garde de format, `pub mod admin_backup`, le refus de version de
+  départ `< 0.15.0` (C-8), la relecture, l'avertissement de table étrangère (C-23) et W1 à W3, le nettoyage sur panique,
+  la seconde jambe et la seconde topologie de recette, la procédure Synology neuve (C-29).
+- **Écartées** : poursuivre la boucle de validation sur la conception complète (huit passes au plus, chacune recyclant).
+- **Réversible** : oui — ce qui est retiré reste au registre et dans la sous-fiche 2 ; l'issue de l'écran le reprendra.
+
+### C-v0174m-31 — L'échappatoire est évaluée en premier
+
+- **Contexte** : C-v0174m-27 évaluait l'échappatoire après le plan, ce qui obligeait un message de refus particulier pour
+  le plan illisible (V2-5).
+- **Retenu** : après `FreshInstall`, l'échappatoire égale à la version du binaire saute tout (plan compris) ; le message de
+  refus est le même pour toutes les causes, et son conseil vaut toujours. Un état « interrompu » non vu dans ce cas est
+  refusé ensuite par `sqlx` (`MigrateError::Dirty`).
+- **Écartées** : C-v0174m-27.
+- **Réversible** : oui.
+
+### Annotations des résidus relevés en P3 (V3-5, V3-7)
+
+- **C-v0174m-3 (ii)** : le motif « le journal renvoie à la plus récente … pourrait évincer, par la rétention, la seule
+  sauvegarde utile » est caduc (aucune rétention, C-v0174m-25) ; motif en vigueur : sauvegarder un schéma à moitié migré
+  n'apporterait rien, `sqlx` refusera.
+- **C-v0174m-5** et **C-v0174m-13** : les mentions de « la rétention » sont caduques (C-v0174m-25) ; le nom et le dossier
+  ne sont lus que par le module lui-même.
+- **C-v0174m-19** : la forme `docker compose exec mariadb mariadb -u"$MARIADB_USER" -p` est **fausse** (développée dans le
+  shell de l'hôte, V2-9) ; forme en vigueur : `docker compose exec mariadb sh -c '…'` (sous-fiche 1, § *Manuel*, point 3).
+
+## Choix en vigueur après la décision du Project Lead
+
+C-v0174m-1, -2, -3 (motif annoté), -4 (sans la cause « version de départ trop ancienne », retirée avec C-8), -5 (annoté),
+-7, -9 (réduit), -10, -13 (annoté), -14, -16, -17 (réduit), -18 (amendé), -19 (réduit, annoté), -20, -22 (réduit à une
+jambe), -24, -25, -28, -30, -31. Retirés : -6, -8, -11, -12, -15, -21, -23, -26, -27, -29.

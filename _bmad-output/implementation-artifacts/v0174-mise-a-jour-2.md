@@ -1,6 +1,10 @@
 # Story v0174-mise-a-jour-2 : la 0.17.4 — la sauvegarde avant mise à jour dans la liste du serveur (#847, lot B)
 
-Status: ready-for-dev
+Status: superseded
+
+*⛔ **`superseded` le 2026-11-05** — décision du Project Lead (C-v0174m-30) : la version minimale de #847 n'affiche
+pas les sauvegardes d'avant mise à jour à l'écran ; elles se récupèrent dans le dossier. Le contenu ci-dessous passe en
+issue (rédigée par l'orchestrateur), qui le reprendra quand elle sera planifiée. Ne pas développer.*
 
 *Sous-fiche de `v0174-mise-a-jour.md` (parente en `split`, C-v0174m-18), écrite le 2026-11-05 à la remédiation de la
 validation P1 (Opus 5.5, autonomie). Même worktree, même branche, mêmes bases que la sous-fiche 1 ; se développe **après**
