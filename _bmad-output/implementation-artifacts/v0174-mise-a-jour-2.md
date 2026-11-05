@@ -59,7 +59,7 @@ inchangés. (T13, captures.)
 
 | Test | Assertion |
 |---|---|
-| **T11** (`crates/kesh-api/tests/admin_auto_backup_e2e.rs`) | un fichier valide dans `pre-upgrade/`, un lien, un `.partial`, un nom invalide : la liste porte le seul fichier valide, `kind = "pre-upgrade"` ; le téléchargement rend ses octets et écrit l'audit ; nom invalide → 404 |
+| **T11** (`crates/kesh-api/tests/admin_auto_backup_e2e.rs`) | un fichier valide dans `pre-upgrade/`, un lien, un `.partial`, un nom invalide : la liste porte le seul fichier valide, `kind = "pre-upgrade"` ; le téléchargement rend ses octets et écrit l'audit ; nom invalide → 404 ; la même requête par une clé d'API → refus (le code de `ensure_not_pat`, relevé au code, asserté) |
 | **T11-bis** (unitaire, `auto_backup.rs`) | `pre-upgrade/` en `0o000` : la liste rend les sauvegardes de `auto/` et de la racine |
 | **T13** (Vitest, `AutoBackupSection`) | une ligne `kind: 'pre-upgrade'` affiche « Avant mise à jour » ; `auto` et `pre-import` inchangés |
 
@@ -68,6 +68,7 @@ inchangés. (T13, captures.)
 | **M11** `PreUpgrade` absent de `lister_les_sauvegardes` | T11 |
 | **M11-bis** `nom_valide` de `PreUpgrade` qui accepte tout | T11 (nom invalide → 404) |
 | **M12** le libellé de `pre-upgrade` retombe sur « Avant import » | T13 |
+| **M12-bis** `ensure_not_pat` retiré de `download_backup` | T11 (clé d'API) |
 
 ## Tâches
 
@@ -86,6 +87,8 @@ inchangés. (T13, captures.)
 - 2026-11-05 — Sous-fiche créée à la remédiation de la validation P1 (C-v0174m-18 : découpage de la fiche, R1-10) ;
   contenu repris du lot B du premier jet, complété (AC-2 sur les clés d'API, T11-bis, M11-bis, table de libellés).
   Prochaine étape : validation P2 avec la parente et la sous-fiche 1.
+- 2026-11-05 — Remédiation de la validation P2 : V2-17 (T11 asserte le refus par une clé d'API, M12-bis). La 1 ne
+  supprime plus aucune sauvegarde (C-v0174m-25) : la liste les montre toutes, sans changement ici.
 
 ## Dev Agent Record
 

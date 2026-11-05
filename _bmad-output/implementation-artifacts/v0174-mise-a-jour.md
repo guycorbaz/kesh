@@ -4,7 +4,7 @@ Status: split
 
 *Fiche rédigée le 2026-11-05, en autonomie (Opus 5.5), worktree `/home/gcorbaz/devel/kesh-0174m`, branche
 `story/v0174-mise-a-jour` partie de `7bd4d5c0` (`origin/main`, rétrospective de la série 0.17). Release **0.17.4**,
-**sans migration** (C-v0174m-13). Registre : `v0174-choix-autonomes-v0174m.md` (C-v0174m-1 à 14). Clé courte : `v0174m`.
+**sans migration** (C-v0174m-13). Registre : `v0174-choix-autonomes-v0174m.md` (C-v0174m-1 à 29 ; C-6, C-15, C-21 retirés). Clé courte : `v0174m`.
 Issue : **#847** (P2, enhancement), en `refs` seulement dans les commits ; la fermeture se porte sur la PR de release.
 Les numéros de ligne sont ceux de `7bd4d5c0`. Une fiche ne compile ni ne teste rien : tout ce qui doit être exécuté est
 prescrit au développement.*
@@ -131,7 +131,7 @@ et s'inscrit au journal d'audit (`admin.backup_downloaded`). Côté écran : `ba
   (`docker-compose.prod.yml` : aucun service `mariadb`, `mem_limit: 1g` à `:193`) — C-v0174m-19.
 - `sqlx-mysql-0.8.6/src/migrate.rs`, `apply` : la ligne `success = FALSE` est insérée **dans** la transaction de la
   migration ; elle ne survit que si un DDL a provoqué un commit implicite. Une migration qui échoue avant tout DDL est
-  annulée **sans** ligne « sale », et les migrations précédentes de la même mise à jour restent appliquées — C-v0174m-15.
+  annulée **sans** ligne « sale », et les migrations précédentes de la même mise à jour restent appliquées — C-v0174m-15 (retiré), aujourd'hui C-v0174m-25.
 - `_kesh_version.kesh_version_last_applied` vaut `'0.1.0'` à la création (`20260522000001_kesh_version.sql`) et n'est mis
   à jour que par `record_boot_version`, **après** `MIGRATOR.run` (`main.rs:191`) : une base montée par migrations sans
   démarrage porte `'0.1.0'` (à poser explicitement dans les tests).
@@ -155,10 +155,10 @@ et s'inscrit au journal d'audit (`admin.backup_downloaded`). Côté écran : `ba
 
 1. **Un module neuf** `crates/kesh-api/src/pre_upgrade_backup.rs` (`pub mod` dans `lib.rs` : les tests sont un crate
    externe et `main.rs` un binaire distinct), appelé par `main.rs` entre l'étape 3b et l'étape 4 (C-v0174m-2) : plan
-   (C-v0174m-3, plan illisible → refus C-v0174m-16), échappatoire à version exacte (C-v0174m-4, C-v0174m-21), version de
+   (C-v0174m-3, plan illisible → refus C-v0174m-16), échappatoire à version exacte, une seule voie (C-v0174m-4, C-v0174m-28), version de
    départ (C-v0174m-8), dossier `pre-upgrade/`, espace (C-v0174m-7), lecture **à l'inventaire du schéma présent**
-   (C-v0174m-1, C-v0174m-24), écriture, relecture, rétention (trois plus récentes **et** la plus ancienne du couple courant,
-   C-v0174m-6, C-v0174m-15), journal (C-v0174m-9). Tout échec → refus de démarrer **avant** `MIGRATOR.run`. Détail, AC,
+   (C-v0174m-1, C-v0174m-24), écriture, relecture, **aucune suppression** de sauvegarde avant mise à jour (C-v0174m-25, qui retire C-6 et C-15), journal
+   (C-v0174m-9) qui nomme le fichier de chaque tentative et la règle de choix du fichier à restaurer. Tout échec → refus de démarrer **avant** `MIGRATOR.run`. Détail, AC,
    tests et mutations : `v0174-mise-a-jour-1.md`.
 2. **L'importabilité par la version de départ** se garde dans le temps (garde du format) et se joue en test (aller-retour
    discriminant par inventaire paramétré) et en recette dans deux jambes (0.15.0 et 0.17.2 → branche) et deux topologies
@@ -173,22 +173,21 @@ refuse.
 
 | Sous-fiche | Modules | Dépend de |
 |---|---|---|
-| `v0174-mise-a-jour-1.md` | `kesh-db/backup` (+ paramètre d'inventaire interne de l'import), `kesh-api` (module neuf, `main.rs`, `config.rs`, `admin_backup/import.rs`), compose et `.env.example`, manuel d'administration, CHANGELOG | — |
-| `v0174-mise-a-jour-2.md` | `kesh-api/auto_backup` (liste) et `routes/backup_schedule.rs`, `frontend/admin-backup`, `kesh-i18n` | le nom et le dossier fixés par la 1 |
+| `v0174-mise-a-jour-1.md` | `kesh-db/backup` (+ paramètre d'inventaire interne de l'import), `kesh-api` (module neuf, `main.rs`, `config.rs`, `lib.rs`, `admin_backup/{import,export}.rs`, visibilités de `auto_backup.rs` et `routes/admin.rs`), compose et `.env.example`, manuel d'administration, CHANGELOG | — |
+| `v0174-mise-a-jour-2.md` | `kesh-api/auto_backup` (`BackupKind`, liste) et `routes/backup_schedule.rs`, `frontend/admin-backup`, `kesh-i18n` | le nom et le dossier fixés par la 1 |
 
 Le lot 1 est livrable seul : sans la 2, la sauvegarde existe et se récupère par le dossier ; la liste de l'écran ne la
-montre pas encore. La 2 ne relit aucune décision de la 1 hors l'expression du nom.
+montre pas encore, et son manuel le dit (le téléchargement par l'écran est conditionné à la 2). Modules au sens de la
+règle : `kesh-db`, `kesh-api` (les fichiers ci-dessus forment un seul crate), compose, manuel — sous cinq. La 2 ne relit aucune décision de la 1 hors l'expression du nom.
 
 ## Pour l'orchestrateur
 
 - **#847** : `closes #847` sur la PR de release, `refs #847` dans les commits.
 - **Commentaire à #847** : le point de conception est tranché par C-v0174m-1 (`.keshbackup` à l'inventaire du schéma
   présent ; le vidage SQL écarté) ; la restauration passe par une base recréée vide **par le compte Kesh** et l'assistant.
-- **Issue à ouvrir** (on trace toujours, R1-14) : « Une sauvegarde complète charge toutes les tables en mémoire avant
-  d'écrire » — `export_installation` garde chaque `TableExport.ndjson` en `Vec<u8>` ; sous le `mem_limit: 1g` du compose de
-  production, une base de plus d'environ 1 Go fait tuer le conteneur (code 137) à la sauvegarde automatique, à l'export,
-  à la pré-import **et**, après cette story, au démarrage d'une mise à jour qui migre (refus muet, en boucle, sans
-  migration : sûr pour les données, opaque). P3 proposé. Vérifier d'abord qu'aucune issue ouverte ne le porte.
+- **Issue mémoire** (R1-14) : elle existe, **#911** (« Sauvegarde complète : toutes les tables sont chargées en mémoire
+  avant l'écriture — risque d'OOM sous le mem_limit 1g de production », ouverte) ; citée au manuel et en Dev Notes. Rien à
+  ouvrir.
 - **Intégration** : si une autre story de la 0.17.4 ajoute finalement une migration, corriger la phrase du CHANGELOG
   (`v0174-mise-a-jour-1.md`) et rejouer la recette de 0.17.3 à 0.17.4.
 - **Splitting** : la dérogation du premier jet (C-v0174m-12) est retirée ; deux sous-fiches (C-v0174m-18).
@@ -202,3 +201,10 @@ montre pas encore. La 2 ne relit aucune décision de la 1 hors l'expression du n
   `v0174-mise-a-jour-1.md`) ; fiche découpée en deux sous-fiches sœurs
   (C-v0174m-18) ; choix C-v0174m-15 à 24 ajoutés, C-v0174m-1, -8, -9, -10, -12, -13 amendés ; prochaine étape :
   validation P2 (Opus, lentille complète, `v0174-mise-a-jour-validate-prompt-p2.md`), sur les trois fichiers.
+- 2026-11-05 — Validation P2 (Opus, 0/1/10/9 ; 16 des 20 issus de la remédiation P1) remédiée (Opus 5.5) sur la décision
+  de l'orchestrateur, **simplifier plutôt que corriger** (signal de non-convergence déclaré au Project Lead) : aucune
+  suppression automatique des sauvegardes d'avant mise à jour (C-v0174m-25, retire C-6 et C-15), échappatoire par la seule
+  variable du `.env` transmise par le compose (C-v0174m-28, retire C-21) ; C-v0174m-26, -27, -29 ajoutés. Les 20 findings
+  traités, un correctif proposé écarté (V2-1 : protéger la plus ancienne depuis `last_boot_at`, remplacé par le retrait de
+  la rétention) ; détail au Change Log de `v0174-mise-a-jour-1.md`. Prochaine étape : validation P3 (Sonnet, lentille
+  complète braquée d'abord sur cette remédiation, `v0174-mise-a-jour-validate-prompt-p3.md`).

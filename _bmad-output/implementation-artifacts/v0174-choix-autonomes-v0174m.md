@@ -52,7 +52,7 @@ Fiche : `v0174-mise-a-jour.md`. Issue #847 (P2), en `refs` seulement dans les co
 
 - **Contexte** : `sqlx` (0.8.6, `Migrator::run_direct`) refuse une base « sale » (`dirty_version`), puis une migration
   appliquée inconnue, puis applique dans l'ordre les migrations connues absentes de `_sqlx_migrations`.
-- **Retenu** : un **plan** lu avant `run` : (i) `_sqlx_migrations` absente ou vide → *installation neuve*, pas de
+- **Retenu** : un **plan** lu avant `run` : (i) `_sqlx_migrations` absente (erreur 1146 seulement, C-v0174m-16) ou vide → *installation neuve*, pas de
   sauvegarde ; (ii) une ligne `success = 0` → *migration interrompue*, pas de sauvegarde (le journal renvoie à la plus
   récente sauvegarde avant mise à jour : `sqlx` refusera de toute façon, et sauvegarder un schéma à moitié migré
   pourrait évincer, par la rétention, la seule sauvegarde utile) ; (iii) aucune migration connue (montante) absente →
@@ -93,7 +93,7 @@ Fiche : `v0174-mise-a-jour.md`. Issue #847 (P2), en `refs` seulement dans les co
   qui rend le tri sûr).
 - **Réversible** : oui (nom et dossier ne sont lus que par la liste du serveur et la rétention).
 
-### C-v0174m-6 — Rétention : les trois plus récentes
+### C-v0174m-6 — Rétention : les trois plus récentes — **retiré à la validation P2 (C-v0174m-25)**
 
 - **Contexte** : chaque sauvegarde pèse la base plus les documents ; une boucle de redémarrage (`restart: unless-stopped`)
   après un échec de migration non « sale » referait une sauvegarde à chaque tentative.
@@ -132,7 +132,7 @@ Fiche : `v0174-mise-a-jour.md`. Issue #847 (P2), en `refs` seulement dans les co
   (plan : nombre de migrations, de → vers ; base lue : tables, lignes, durée ; pièces : emportées, octets, non incluses ;
   fichier : chemin, taille, durée, et le renvoi au manuel « Revenir à la version précédente »), `warn` si des pièces manquent ou si le fichier dépasse `KESH_ADMIN_IMPORT_MAX_MB` (la version de départ
   ne pourrait l'importer par l'écran qu'en relevant ce plafond). À l'écran : la liste *Sauvegardes sur le serveur* montre
-  ces fichiers, type « Avant mise à jour », téléchargeables (`BackupKind::PreUpgrade`, `kind = "pre-upgrade"`). Aucune
+  ces fichiers (sous-fiche 2), type « Avant mise à jour », téléchargeables (`BackupKind::PreUpgrade`, `kind = "pre-upgrade"`). Aucune
   entrée au journal d'audit (aucun utilisateur n'a agi ; le fichier et le journal du serveur suffisent ; le
   téléchargement, lui, est déjà audité).
 - **Écartées** : un bandeau après la mise à jour (état à stocker : une migration) ; une entrée d'audit signée par le plus
@@ -152,7 +152,7 @@ Fiche : `v0174-mise-a-jour.md`. Issue #847 (P2), en `refs` seulement dans les co
   confirme (C-v0174m-19) ; reprendre l'image
   précédente ; `/setup` puis « Restaurer une sauvegarde » de l'assistant (31-1b) avec le fichier `pre-upgrade/…`. Le
   dossier des documents reste en place (une pièce présente et intacte est laissée telle quelle,
-  `AlreadyIntact`, `document_storage.rs:248`). Jouée en recette de 0.17.2 à 0.17.4 (la 0.17.3 a ajouté une migration ; voir C-11).
+  `AlreadyIntact`, `document_storage.rs:248`). Jouée en recette en deux jambes (C-v0174m-22) et deux topologies (C-v0174m-19).
 - **Écartées** : une base sous un autre nom (exige un `GRANT` par root, que le manuel éviterait) ; restaurer par le binaire
   neuf (son inventaire n'est pas celui du fichier).
 - **Réversible** : oui (texte du manuel).
@@ -209,7 +209,7 @@ Fiche : `v0174-mise-a-jour.md`. Issue #847 (P2), en `refs` seulement dans les co
 
 ## Choix ajoutés à la remédiation de la validation P1 (2026-11-05)
 
-### C-v0174m-15 — Tentatives répétées d'une même mise à jour : la plus ancienne du couple est protégée
+### C-v0174m-15 — Tentatives répétées d'une même mise à jour : la plus ancienne du couple est protégée — **retiré à la validation P2 (C-v0174m-25)**
 
 - **Contexte** (R1-1, F1-3, prémisse vérifiée : `sqlx-mysql-0.8.6/src/migrate.rs`, `apply` insère la ligne
   `success = FALSE` **dans** la transaction ; une migration qui échoue avant tout DDL est annulée sans ligne « sale ») :
@@ -297,7 +297,7 @@ Fiche : `v0174-mise-a-jour.md`. Issue #847 (P2), en `refs` seulement dans les co
 - **Écartées** : refuser (un dossier démonté bloquerait toute mise à jour, l'échappatoire deviendrait l'usage).
 - **Réversible** : oui.
 
-### C-v0174m-21 — L'échappatoire quand le compose ne la transmet pas
+### C-v0174m-21 — L'échappatoire quand le compose ne la transmet pas — **retiré à la validation P2 (C-v0174m-28)**
 
 - **Contexte** (R1-9, F1-6) : les compose n'ont pas d'`env_file` ; un compose antérieur à la 0.17.4 ne transmet pas
   `KESH_SKIP_PRE_UPGRADE_BACKUP`, si bien qu'une ligne au seul `.env` reste sans effet et sans avertissement.
@@ -336,4 +336,66 @@ Fiche : `v0174-mise-a-jour.md`. Issue #847 (P2), en `refs` seulement dans les co
 - **Retenu** : même prédicat que la garde (toutes les tables de `DATABASE()` dans `information_schema.TABLES`), filtre du
   préfixe `_` en Rust ; la garde T15 emploie le même. Amende C-v0174m-1.
 - **Écartées** : `TABLE_TYPE = 'BASE TABLE'`.
+- **Réversible** : oui.
+
+---
+
+## Choix de la remédiation de la validation P2 (2026-11-05)
+
+*Signal de non-convergence déclaré au Project Lead par l'orchestrateur : la rétention a produit un HIGH en P1 (R1-1) et un
+autre en P2 (V2-1), l'échappatoire par `docker compose run` un MEDIUM à chaque passe. Décision de l'orchestrateur :
+simplifier plutôt que corriger.*
+
+### C-v0174m-25 — Aucune suppression automatique des sauvegardes d'avant mise à jour (retire C-6 et C-15)
+
+- **Contexte** : V2-1 (prémisse confirmée : `record_boot_version`, `version.rs:325`, met `last_applied` à jour à chaque
+  démarrage réussi) — la protection « plus ancienne du couple » supprime la seule sauvegarde restaurable si la version
+  d'arrivée change entre deux tentatives, ou si la version de départ a servi entre deux tentatives. Chaque correctif de
+  rétention ajoutait un critère, et le critère suivant un défaut.
+- **Retenu** : Kesh ne supprime **jamais** un fichier `kesh-pre-upgrade-*.keshbackup`. Chaque tentative écrit le sien ; ils
+  s'accumulent dans `pre-upgrade/` (quelques-uns par an) ; le manuel dit de retirer les anciens à la main une fois la mise
+  à jour éprouvée. Le seuil d'espace (C-v0174m-7) reste. Le journal et le refus nomment le fichier de **cette** tentative et
+  rappellent la règle : si une tentative précédente a déjà migré en partie, c'est la plus ancienne sauvegarde du dossier
+  écrite après le dernier démarrage réussi de la version de départ qu'il faut restaurer.
+- **Écartées** : la rétention à trois (C-6) ; la plus ancienne du couple (C-15) ; la plus ancienne depuis `last_boot_at`
+  (proposée par V2-1 : un mécanisme de plus, avec un piège de fuseau, dans la zone qui recyclait).
+- **Réversible** : oui (une rétention peut s'ajouter plus tard, si l'accumulation gêne).
+
+### C-v0174m-26 — `admin_backup` devient `pub mod`
+
+- **Contexte** : V2-3, prémisse confirmée (`lib.rs:14` : `pub(crate) mod admin_backup;`) : le test d'aller-retour, crate
+  externe, ne compilerait pas.
+- **Retenu** : `pub mod admin_backup` (comme `auto_backup`, `lib.rs:18`), le test restant dans `crates/kesh-api/tests/`.
+- **Écartées** : un test unitaire dans `import.rs` (il faudrait inclure les helpers de montage de `kesh-db` depuis `src/`).
+- **Réversible** : oui.
+
+### C-v0174m-27 — Un plan illisible ne propose pas l'échappatoire
+
+- **Contexte** : V2-5 — l'échappatoire est évaluée après le plan ; la conseiller sur `Refus::Plan` serait un geste sans
+  effet, et `{de}` n'y est pas encore lu.
+- **Retenu** : `Refus::Plan` : « L'état des migrations n'a pas pu être lu. Corrigez la cause : connexion à la base ou droits
+  de lecture de `_sqlx_migrations`. » — sans `{de}`, sans échappatoire. L'ordre plan → échappatoire est gardé.
+- **Écartées** : évaluer l'échappatoire avant le plan (elle contournerait un état illisible, y compris un état
+  « interrompu » qu'on ne saurait plus voir).
+- **Réversible** : oui.
+
+### C-v0174m-28 — Échappatoire : une seule voie (retire C-21)
+
+- **Contexte** : V2-8 — `docker compose run --rm -e …` ne se termine pas (le processus va jusqu'à `axum::serve`) et le
+  conteneur du service redémarre en même temps : deux Kesh sur une base.
+- **Retenu** : la variable dans `.env`, transmise par `docker-compose.yml` et `docker-compose.prod.yml` de la 0.17.4
+  (`${KESH_SKIP_PRE_UPGRADE_BACKUP:-}`) ; pour un compose antérieur, le manuel et le message disent d'y ajouter la ligne.
+  Rangement dans la garde : `SANS_DEFAUT` (V2-2 : vide = absent = sauvegarde faite ; `VIDE_SIGNIFIANT` est réservé à un vide
+  qui a un sens distinct de l'absence, `configuration_transmise.rs:122`, `:132`).
+- **Écartées** : `docker compose run` ; un fichier témoin dans le dossier de sauvegarde.
+- **Réversible** : oui.
+
+### C-v0174m-29 — La procédure Synology du retour vit dans `sec:backup-dsm`
+
+- **Contexte** : V2-19 — les gardes G14 à G16 ne lisent que les sections Synology (`common/manuel.rs:74` : `sec:synology`,
+  `sec:backup-dsm`) ; une procédure Synology écrite sous *Revenir à la version précédente* leur échapperait.
+- **Retenu** : la jambe Synology (vidage par `kesh-dump.sh`, recréation par le compte Kesh via `kesh-restore.cnf`) est une
+  sous-section de `sec:backup-dsm`, à laquelle *Revenir à la version précédente* renvoie ; la jambe du compose standard reste
+  dans la section générale.
+- **Écartées** : étendre les bornes des gardes (changement d'un test sans rapport avec la story) ; écrire l'angle mort.
 - **Réversible** : oui.
