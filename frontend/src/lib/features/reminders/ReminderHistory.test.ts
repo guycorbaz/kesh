@@ -13,6 +13,7 @@ vi.mock('$lib/shared/utils/i18n.svelte', () => ({
 }));
 
 import ReminderHistory from './ReminderHistory.svelte';
+import { pinTimeZone } from '$lib/shared/utils/pin-time-zone.test-helper';
 
 function rappel(over: Partial<ReminderResponse> = {}): ReminderResponse {
 	return {
@@ -47,5 +48,22 @@ describe('historique des rappels — dates (v0171)', () => {
 		const cancelled = getByTestId('reminder-history-cancelled-at');
 		expect(cancelled.textContent?.trim()).toBe('Annulé le 20.04.2026');
 		expect(getByTestId('reminder-history').textContent).not.toContain('2026-04-20');
+	});
+});
+
+// Story v0174-correctifs-3 (#889, AC-3.8, d et e) — un instant UTC du 4 novembre à 23 h 30
+// s'affiche à sa date suisse, le 5.
+describe('historique des rappels — instants à l’heure suisse (#889)', () => {
+	pinTimeZone('Europe/Zurich');
+	it('envoi et annulation à 23 h 30 UTC : `05.11.2026`', () => {
+		const { getByTestId } = render(ReminderHistory, {
+			reminders: [
+				rappel({ sentAt: '2026-11-04T23:30:00', cancelledAt: '2026-11-04T23:30:00' }),
+			],
+		});
+		expect(getByTestId('reminder-history-row').textContent).toContain('05.11.2026');
+		expect(getByTestId('reminder-history-cancelled-at').textContent?.trim()).toBe(
+			'Annulé le 05.11.2026',
+		);
 	});
 });

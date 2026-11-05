@@ -2186,6 +2186,7 @@ contact-salutation-madame = Signora
 # au singulier contre 11 messages de courtoisie. « NPA » est l'usage de la Poste suisse en
 # italien, et non « CAP » qui est italien.
 contact-error-address-npa-city = NPA e località sono obbligatori se viene inserito un indirizzo
+contacts-country-unknown = Il codice paese « { $code } » non è un codice ISO noto: la QR-fattura di questo contatto non potrà essere prodotta. Correggilo (CH, FR, DE…); gli altri campi si registrano senza modificarlo.
 contact-error-person-name = Nome e cognome sono obbligatori per una persona
 contact-persons-add = Aggiungi
 contact-persons-add-error = Impossibile aggiungere la persona
@@ -2629,6 +2630,7 @@ supplier-invoices-pay-submit = Paga
 supplier-invoices-pay-title = Paga la fattura
 supplier-invoices-pay-transfer = Bonifico bancario
 supplier-invoices-project-none = — Nessuno
+supplier-invoices-project-archived-option = { $label } (archiviato)
 supplier-invoices-save = Salva
 supplier-invoices-scan = Scansiona una fattura QR
 supplier-invoices-scan-detected = Creditore rilevato
@@ -2671,6 +2673,7 @@ supplier-invoices-unvalidate-blocked-fiscal-year-closed = La scrittura d’acqui
 supplier-invoices-unvalidate-blocked-later-fiscal-year-closed = Un esercizio successivo a quello di questa fattura è chiuso: per poterla riportare in bozza, un amministratore deve riaprire gli esercizi successivi chiusi, cominciando dal più recente.
 supplier-invoices-unvalidate-blocked-reversed = La scrittura d’acquisto di questa fattura è stata stornata: non può più essere eliminata, e la fattura non si riporta in bozza.
 supplier-invoices-unvalidate-blocked-period-locked = La scrittura d’acquisto di questa fattura è datata in un periodo bloccato: per poterla riportare in bozza, un amministratore deve arretrare il blocco prima della sua data.
+supplier-invoices-unvalidate-blocked-period-locked-named = La scrittura d’acquisto di questa fattura è datata nel periodo bloccato fino al { $date }: per poterla riportare in bozza, un amministratore deve arretrare il blocco prima della sua data.
 supplier-invoices-unvalidate-blocked-lettered = La scrittura d’acquisto di questa fattura è pareggiata: annulla prima il pareggio, poi riporta la fattura in bozza.
 supplier-invoices-unvalidate-error = Non è stato possibile riportare la fattura in bozza.
 supplier-invoices-edit-title = Modifica la bozza

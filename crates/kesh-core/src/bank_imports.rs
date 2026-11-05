@@ -424,6 +424,31 @@ pub fn detect_duplicate_lines(
     bank_account_id: i64,
     existing_keys: &[(i64, DuplicateKey)],
 ) -> Vec<DuplicateLine> {
+    detect_duplicate_lines_with_aliases(new, bank_account_id, existing_keys, &[])
+}
+
+/// Variante de [`detect_duplicate_lines`] qui reconnaît aussi une ligne par un
+/// **alias** de sa clé (0.17.4, #819).
+///
+/// `aliases` est aligné par index sur `new` (un tableau plus court, ou vide,
+/// vaut `None` pour les lignes restantes). Une ligne neuve est un doublon si sa
+/// clé **ou** son alias égale une clé existante ; la clé est essayée d'abord, si
+/// bien qu'un alias égal à la clé ne produit jamais deux [`DuplicateLine`]. Le
+/// champ [`DuplicateLine::key`] porte la clé qui a égalé.
+///
+/// L'usage : la lecture CAMT.053 de la 0.17.4 lit en entier un identifiant qui
+/// porte une entité (`REF &amp; Co`), là où la 0.17.3 n'en gardait que le
+/// dernier morceau ; la clé d'une ligne déjà importée diffère donc de celle que
+/// calcule la lecture neuve. `kesh-api` passe, pour chaque ligne, la clé de la
+/// lecture de la 0.17.3 quand elle diffère, pour qu'une ligne reprise par un
+/// autre fichier reste reconnue. Sans alias, le résultat est exactement celui de
+/// [`detect_duplicate_lines`] (CSV, saisie manuelle).
+pub fn detect_duplicate_lines_with_aliases(
+    new: &[BankTransactionDraft],
+    bank_account_id: i64,
+    existing_keys: &[(i64, DuplicateKey)],
+    aliases: &[Option<DuplicateKey>],
+) -> Vec<DuplicateLine> {
     use std::collections::HashMap;
 
     // Construit l'index des clés existantes — premier `id` rencontré
@@ -456,6 +481,14 @@ pub fn detect_duplicate_lines(
                 new_index: idx,
                 existing_transaction_id: existing_id,
                 key: key.to_string(),
+            });
+        } else if let Some(Some(alias)) = aliases.get(idx)
+            && let Some(&existing_id) = index.get(alias)
+        {
+            out.push(DuplicateLine {
+                new_index: idx,
+                existing_transaction_id: existing_id,
+                key: alias.to_string(),
             });
         }
     }
@@ -911,6 +944,75 @@ mod tests {
         // M4 (Pass 1 review) — Decimal::normalize() strips trailing zeros,
         // so "150.00" formats as "150" via DuplicateKey::Display.
         assert_eq!(result[0].key, "2026-05-15|150|ref-abc|17");
+    }
+
+    // ── Story v0174-correctifs-1 (#819, AC-1.6) — l'alias de clé ────
+
+    fn key(reference: &str) -> DuplicateKey {
+        dedup_key_scalar(
+            date(2026, 10, 10),
+            dec!(10.00),
+            Some(reference),
+            None,
+            None,
+            17,
+        )
+    }
+
+    /// Des alias vides rendent exactement ce que rend `detect_duplicate_lines`.
+    #[test]
+    fn aliases_empty_behaves_like_detect_duplicate_lines_819() {
+        let new = vec![
+            draft(date(2026, 10, 10), dec!(10.00), Some("A"), None, None),
+            draft(date(2026, 10, 10), dec!(10.00), Some("B"), None, None),
+        ];
+        let existing = vec![(42, key("b"))];
+        let plain = detect_duplicate_lines(&new, 17, &existing);
+        assert_eq!(
+            detect_duplicate_lines_with_aliases(&new, 17, &existing, &[]),
+            plain
+        );
+        assert_eq!(
+            detect_duplicate_lines_with_aliases(&new, 17, &existing, &[None, None]),
+            plain
+        );
+        assert_eq!(plain.len(), 1);
+    }
+
+    /// Un alias qui égale une clé existante fait un doublon, sous la clé de
+    /// l'alias.
+    #[test]
+    fn alias_matching_an_existing_key_is_a_duplicate_819() {
+        let new = vec![draft(
+            date(2026, 10, 10),
+            dec!(10.00),
+            Some("REF & Co"),
+            None,
+            None,
+        )];
+        let existing = vec![(42, key("Co"))];
+        assert!(detect_duplicate_lines(&new, 17, &existing).is_empty());
+        let r = detect_duplicate_lines_with_aliases(&new, 17, &existing, &[Some(key("Co"))]);
+        assert_eq!(r.len(), 1);
+        assert_eq!(r[0].new_index, 0);
+        assert_eq!(r[0].existing_transaction_id, 42);
+        assert_eq!(r[0].key, key("Co").to_string());
+    }
+
+    /// Un alias égal à la clé neuve n'est pas compté deux fois.
+    #[test]
+    fn alias_equal_to_the_key_is_not_counted_twice_819() {
+        let new = vec![draft(
+            date(2026, 10, 10),
+            dec!(10.00),
+            Some("A"),
+            None,
+            None,
+        )];
+        let existing = vec![(42, key("a"))];
+        let r = detect_duplicate_lines_with_aliases(&new, 17, &existing, &[Some(key("a"))]);
+        assert_eq!(r.len(), 1);
+        assert_eq!(r[0].key, key("a").to_string());
     }
 
     #[test]

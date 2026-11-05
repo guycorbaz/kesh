@@ -79,6 +79,7 @@
 	import { authState } from '$lib/app/stores/auth.svelte';
 	import { createCreditNote } from '$lib/features/credit-notes/credit-notes.api';
 	import { listProjects } from '$lib/features/projects/projects.api';
+	import { todayLocal } from '$lib/shared/utils/local-date';
 	import type { ProjectResponse } from '$lib/features/projects/projects.types';
 	import { formatSwissDate } from '$lib/features/reports/reports.api';
 	import { readableAmount } from '$lib/features/supplier-invoices/supplier-invoice-form';
@@ -103,8 +104,8 @@
 		creditNoteSubmitting = true;
 		creditNoteError = '';
 		try {
-			const today = new Date().toISOString().slice(0, 10);
-			const cn = await createCreditNote({ invoiceId: invoice.id, date: today });
+			// #889 : la date du jour du poste, non celle d'UTC (la veille entre minuit et 1 h).
+			const cn = await createCreditNote({ invoiceId: invoice.id, date: todayLocal() });
 			creditNoteOpen = false;
 			notifySuccess(i18nMsg('credit-notes-created', 'Avoir créé'));
 			await goto(`/credit-notes/${cn.id}`);
@@ -1168,7 +1169,8 @@
 					<div class="text-text-muted">
 						{i18nMsg('invoice-detail-pdf-frozen-at-label', 'Document figé le')}
 					</div>
-					<div data-testid="invoice-pdf-frozen-at">{formatSwissDate(invoice.pdfFrozenAt.slice(0, 10))}</div>
+					<!-- #889 : un instant (NOW, UTC) — sa date suisse, horodatage entier. -->
+					<div data-testid="invoice-pdf-frozen-at">{formatSwissDate(invoice.pdfFrozenAt)}</div>
 				</div>
 			{/if}
 			{#if invoice.emailedAt}
@@ -1176,7 +1178,7 @@
 					<div class="text-text-muted">
 						{i18nMsg('invoice-detail-emailed-at-label', 'Envoyée le')}
 					</div>
-					<div data-testid="invoice-emailed-at">{formatSwissDate(invoice.emailedAt.slice(0, 10))}</div>
+					<div data-testid="invoice-emailed-at">{formatSwissDate(invoice.emailedAt)}</div>
 					<div class="text-text-muted" data-testid="invoice-emailed-to">{invoice.emailedTo}</div>
 				</div>
 			{/if}

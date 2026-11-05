@@ -41,15 +41,17 @@ parseur (AC #5, #9 de la story 8-1a) :
 | `v04_overlap.xml` | `MsgId` distinct de `v04_minimal.xml`, une transaction identique en clé composite → doublon de ligne, pas de fichier (Story 8-3) |
 | `v04_truncated_after_stmt_close.xml` | XML coupé après la fermeture d'un `Stmt` — `MalformedXml` par la garde de fin de fichier |
 | `v04_amtdtls_foreign_currency.xml` | compte CHF, montants d'information en EUR (`AmtDtls/InstdAmt`, `Chrgs`) sur 3 entrées (TxDtls à `Amt` direct, sans TxDtls, TxDtls sans `Amt`) → chaque transaction en CHF (Story 27-2, AC19) |
-| `v04_characterization.xml` | BOM UTF-8, fins de ligne CRLF, `xsi:schemaLocation`, commentaires, noms accentués ; `Ccy="C&#72;F"` (référence de caractère), `Ccy` à tabulation littérale, CRLF intérieur à `Ustrd`, entités et CDATA dans le texte — sortie figée par `camt053_golden.rs`, y compris la sortie **fautive** des entités et du CDATA (#819) (Story v017-1, AC9) |
+| `v04_characterization.xml` | BOM UTF-8, fins de ligne CRLF, `xsi:schemaLocation`, commentaires, noms accentués ; `Ccy="C&#72;F"` (référence de caractère), `Ccy` à tabulation littérale, CRLF intérieur à `Ustrd`, entités et CDATA dans le texte — sortie figée par `camt053_golden.rs` (Story v017-1, AC9), sous **deux références** depuis la 0.17.4 (#819) : `v04_characterization.json` (0.39) garde la sortie **fautive** des entités et du CDATA, celle de la lecture héritée de la 0.17.3 (`parse_legacy_0173`) ; `v04_characterization.0.17.4.json`, écrite à la main, la lecture corrigée (trois valeurs changent : `reference`, `details` du premier `Ntry`, `counterparty_name` du second). Le commentaire d'en-tête du XML (« sortie FAUTIVE figée ») date d'avant le correctif : le fichier ne se modifie pas, son empreinte et sa référence en dépendent |
 | `v04_latin1.xml` | déclaré ISO-8859-1, nom accentué en Latin-1 dans un `Nm` lu — `MalformedXml` (Story v017-1) |
 | `v04_latin1_declare_ascii.xml` | déclaré ISO-8859-1, contenu tout ASCII, LF, indentation par espaces — se lit (Story v017-1) |
-| `v04_latin1_hors_texte.xml` | octet Latin-1 `0xE9` hors du texte lu (commentaire, CDATA, `xsi:schemaLocation`) — se lisait sous quick-xml 0.39, refusé depuis (divergence admise C-v017-1-11) (Story v017-1) |
+| `v04_latin1_hors_texte.xml` | octet Latin-1 `0xE9` hors du texte lu par la 0.17.3 (commentaire, CDATA, `xsi:schemaLocation`) — se lisait sous quick-xml 0.39, refusé depuis (divergence admise C-v017-1-11) (Story v017-1). Depuis la 0.17.4 (#819), la lecture corrigée lit le CDATA (`AddtlNtryInf`) : il n'est plus « hors du texte lu » pour elle ; le verdict ne change pas, le fichier est refusé avant, par la validation UTF-8 de l'entrée |
 | `v04_duplicate_attr.xml` | `<Amt Ccy="CHF" Ccy="EUR">` — le premier `Ccy` est lu (Story v017-1) |
 
 Les références de `camt053_golden.rs` (Story v017-1, #789) vivent dans le dossier **frère**
 `camt053_golden/`, produites sous quick-xml 0.39.4 avant la montée ; elles portent aussi sur les quatre
-fixtures CAMT.053 du frontend (`frontend/tests/e2e/fixtures/camt053_*.xml`).
+fixtures CAMT.053 du frontend (`frontend/tests/e2e/fixtures/camt053_*.xml`). Depuis la 0.17.4 (#819),
+chacune est comparée deux fois : à la lecture héritée de la 0.17.3, qui les égale toutes, et à la lecture
+corrigée, qui les égale toutes sauf `v04_characterization` (comparée à `v04_characterization.0.17.4.json`).
 
 ## CSV (Story 26-1)
 

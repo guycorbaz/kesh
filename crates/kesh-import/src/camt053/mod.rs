@@ -58,17 +58,78 @@ pub const NS_V08: &str = "urn:iso:std:iso:20022:tech:xsd:camt.053.001.08";
 ///   un `ImportedStatement` ou une `ImportedTransaction` est absent.
 /// - [`CamtError::InvalidAmount`] / [`CamtError::InvalidDate`] : valeur
 ///   non parseable dans un `<Amt>` ou un élément date.
+///
+/// # Texte d'un élément (depuis la 0.17.4, #819)
+///
+/// Le texte d'un élément se lit **en entier** : les références d'entité
+/// prédéfinies (`&amp;`, `&lt;`…), les références de caractère (`&#xE9;`,
+/// `&#233;`) et les sections CDATA s'ajoutent au texte qui les entoure, blancs
+/// intérieurs compris ; seuls les blancs extérieurs tombent. Une référence
+/// d'entité inconnue rend [`CamtError::MalformedXml`]. Un commentaire ou une
+/// instruction de traitement coupe le texte comme avant (le dernier morceau
+/// l'emporte).
 pub fn parse(xml: &[u8]) -> Result<Vec<ImportedStatement>, CamtError> {
-    let mut reader = NsReader::from_reader(xml);
-    {
-        let cfg = reader.config_mut();
-        cfg.trim_text(true);
-        // Defense-in-depth : explicite, indépendant du défaut quick-xml.
-        // Sans ça, un futur bump du crate qui flippe le défaut désynchroniserait
-        // silencieusement la pile de chemin et corromprait le parsing.
-        cfg.check_end_names = true;
+    let mut reader = reader_for(xml, TextMode::Joined);
+    match detect_version(&mut reader)? {
+        Version::V04 => v04::parse(&mut reader),
+        Version::V08 => v08::parse(&mut reader),
     }
+}
 
+/// Lecture **héritée** de la 0.17.3 — réservée à Kesh, hors de l'API publique
+/// du crate.
+///
+/// Elle lit un document exactement comme le lisait la 0.17.3 : le texte d'un
+/// élément est distribué morceau par morceau (le dernier l'emporte), les
+/// références d'entité et les sections CDATA sont ignorées. `kesh-api` s'en sert
+/// pour recalculer la clé de doublon qu'une ligne déjà importée porte en base
+/// (#819) ; elle ne doit servir à rien d'autre. Même détection de version et
+/// mêmes erreurs que [`parse`], sauf l'entité inconnue, ignorée.
+#[doc(hidden)]
+pub fn parse_legacy_0173(xml: &[u8]) -> Result<Vec<ImportedStatement>, CamtError> {
+    let mut reader = reader_for(xml, TextMode::Legacy0173);
+    let version = match detect_version(&mut reader)? {
+        Version::V04 => "001.04",
+        Version::V08 => "001.08",
+    };
+    parse_with_version(&mut reader, version, TextMode::Legacy0173)
+}
+
+/// Façon de lire le texte d'un élément (#819, C-v0174c-5).
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub(crate) enum TextMode {
+    /// Lecture de la 0.17.4 : le texte, les entités et les CDATA d'un élément
+    /// s'accumulent, puis se distribuent une fois, rognés.
+    Joined,
+    /// Lecture de la 0.17.3, à l'identique : chaque morceau de texte se
+    /// distribue seul ; entités et CDATA sont ignorés.
+    Legacy0173,
+}
+
+/// Les deux versions de CAMT.053 reconnues.
+enum Version {
+    V04,
+    V08,
+}
+
+/// Un lecteur configuré pour le mode. La lecture corrigée ne rogne pas le texte
+/// au lecteur : quick-xml rognerait chaque morceau, si bien que « Dupont &amp;
+/// Fils » donnerait « Dupont&Fils » (C-v0174c-21) ; le rognage se fait une fois,
+/// sur le texte entier. La lecture héritée garde la configuration de la 0.17.3.
+fn reader_for(xml: &[u8], mode: TextMode) -> NsReader<&[u8]> {
+    let mut reader = NsReader::from_reader(xml);
+    let cfg = reader.config_mut();
+    cfg.trim_text(mode == TextMode::Legacy0173);
+    // Defense-in-depth : explicite, indépendant du défaut quick-xml.
+    // Sans ça, un futur bump du crate qui flippe le défaut désynchroniserait
+    // silencieusement la pile de chemin et corromprait le parsing.
+    cfg.check_end_names = true;
+    reader
+}
+
+/// Avance le lecteur jusqu'au `<Document>` ouvrant et rend sa version, lue sur
+/// le namespace (préfixé ou non).
+fn detect_version(reader: &mut NsReader<&[u8]>) -> Result<Version, CamtError> {
     let mut buf = Vec::new();
 
     loop {
@@ -94,8 +155,8 @@ pub fn parse(xml: &[u8]) -> Result<Vec<ImportedStatement>, CamtError> {
                 };
                 buf.clear();
                 return match uri.as_str() {
-                    NS_V04 => v04::parse(&mut reader),
-                    NS_V08 => v08::parse(&mut reader),
+                    NS_V04 => Ok(Version::V04),
+                    NS_V08 => Ok(Version::V08),
                     other => Err(CamtError::UnsupportedVersion(other.to_string())),
                 };
             }
@@ -111,11 +172,19 @@ pub fn parse(xml: &[u8]) -> Result<Vec<ImportedStatement>, CamtError> {
 ///
 /// Le reader doit avoir consommé le tag `<Document>` ouvrant ; le parseur
 /// continue à partir de `<BkToCstmrStmt>` jusqu'à `</Document>`.
+///
+/// En [`TextMode::Joined`], le texte, les références d'entité et les CDATA
+/// s'accumulent dans un tampon, vidé **avant** tout autre événement — le chemin
+/// est alors encore celui de l'élément qui porte le texte. Un élément sans entité
+/// ni CDATA donne exactement les appels de la lecture héritée.
 pub(crate) fn parse_with_version<R: std::io::BufRead>(
     reader: &mut NsReader<R>,
     version: &str,
+    mode: TextMode,
 ) -> Result<Vec<ImportedStatement>, CamtError> {
     let mut buf = Vec::new();
+    // Texte de l'élément courant, en attente de distribution (mode `Joined`).
+    let mut pending = String::new();
     let mut path: Vec<String> = Vec::new();
     let mut stmts: Vec<ImportedStatement> = Vec::new();
     let mut sb: Option<StmtBuilder> = None;
@@ -126,9 +195,20 @@ pub(crate) fn parse_with_version<R: std::io::BufRead>(
     let mut ntry_index: usize = 0;
 
     loop {
-        match reader.read_event_into(&mut buf) {
+        let event = match reader.read_event_into(&mut buf) {
             Err(e) => return Err(CamtError::MalformedXml(e.to_string())),
-            Ok(Event::Eof) => {
+            Ok(event) => event,
+        };
+        if mode == TextMode::Joined
+            && !matches!(
+                event,
+                Event::Text(_) | Event::GeneralRef(_) | Event::CData(_)
+            )
+        {
+            flush_pending(&mut pending, sb.as_mut(), &path)?;
+        }
+        match event {
+            Event::Eof => {
                 // Tags non fermés à EOF : XML tronqué. quick-xml peut
                 // renvoyer Eof sans erreur quand la fin du fichier est
                 // atteinte au milieu d'un élément, donc on contrôle ici
@@ -142,7 +222,7 @@ pub(crate) fn parse_with_version<R: std::io::BufRead>(
                 }
                 break;
             }
-            Ok(Event::Start(start)) => {
+            Event::Start(start) => {
                 let local = local_name(start.local_name().as_ref().as_bytes())?;
 
                 match local.as_str() {
@@ -192,7 +272,7 @@ pub(crate) fn parse_with_version<R: std::io::BufRead>(
 
                 path.push(local);
             }
-            Ok(Event::End(end)) => {
+            Event::End(end) => {
                 let local = local_name(end.local_name().as_ref().as_bytes())?;
 
                 match local.as_str() {
@@ -230,7 +310,7 @@ pub(crate) fn parse_with_version<R: std::io::BufRead>(
 
                 path.pop();
             }
-            Ok(Event::Text(t)) => {
+            Event::Text(t) => {
                 // Le texte tel que lu, SANS normalisation des fins de ligne
                 // (`into_inner`, l'équivalent de l'ancien `decode()` de
                 // quick-xml 0.39) : `xml10_content()` normaliserait un CRLF
@@ -239,19 +319,66 @@ pub(crate) fn parse_with_version<R: std::io::BufRead>(
                 let raw = t.into_inner();
                 let unescaped = quick_xml::escape::unescape(&raw)
                     .map_err(|e| CamtError::MalformedXml(e.to_string()))?;
-                let txt = unescaped.trim();
-                if !txt.is_empty()
-                    && let Some(s) = sb.as_mut()
-                {
-                    handle_text(s, &path, txt)?;
+                match mode {
+                    TextMode::Joined => pending.push_str(&unescaped),
+                    TextMode::Legacy0173 => {
+                        let txt = unescaped.trim();
+                        if !txt.is_empty()
+                            && let Some(s) = sb.as_mut()
+                        {
+                            handle_text(s, &path, txt)?;
+                        }
+                    }
                 }
             }
+            // Référence d'entité ou de caractère, émise à part depuis
+            // quick-xml 0.39 (#819) : résolue, elle rejoint le texte.
+            Event::GeneralRef(r) if mode == TextMode::Joined => {
+                match r
+                    .resolve_char_ref()
+                    .map_err(|e| CamtError::MalformedXml(e.to_string()))?
+                {
+                    Some(ch) => pending.push(ch),
+                    None => match quick_xml::escape::resolve_xml_entity(&r) {
+                        Some(s) => pending.push_str(s),
+                        None => {
+                            return Err(CamtError::MalformedXml(format!(
+                                "référence d'entité inconnue : {}",
+                                &*r
+                            )));
+                        }
+                    },
+                }
+            }
+            // Section CDATA, telle quelle, sans normalisation des fins de
+            // ligne, comme le texte (#819).
+            Event::CData(c) if mode == TextMode::Joined => pending.push_str(&c.into_inner()),
             _ => {}
         }
         buf.clear();
     }
 
     Ok(stmts)
+}
+
+/// Vide le tampon de texte (mode [`TextMode::Joined`]) : le texte entier de
+/// l'élément, rogné de ses blancs extérieurs, est distribué s'il n'est pas vide
+/// — exactement comme un morceau de texte l'est en lecture héritée.
+fn flush_pending(
+    pending: &mut String,
+    sb: Option<&mut StmtBuilder>,
+    path: &[String],
+) -> Result<(), CamtError> {
+    if pending.is_empty() {
+        return Ok(());
+    }
+    let txt = pending.trim();
+    let result = match sb {
+        Some(s) if !txt.is_empty() => handle_text(s, path, txt),
+        _ => Ok(()),
+    };
+    pending.clear();
+    result
 }
 
 #[derive(Default)]

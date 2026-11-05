@@ -25,12 +25,15 @@ use crate::errors::{DbError, map_db_error};
 /// - `database_url` : URL de connexion (`mysql://user:pass@host:port/db`)
 /// - `max_connections` : taille maximale du pool (recommandé : 5 pour le MVP)
 /// - `connect_timeout` : timeout d'acquisition d'une connexion (recommandé : 10 secondes)
+///
+/// La session de chaque connexion est remise à zéro à son retour au pool
+/// ([`avec_remise_a_zero_de_session`], #842, #540).
 pub async fn create_pool(
     database_url: &str,
     max_connections: u32,
     connect_timeout: Duration,
 ) -> Result<MySqlPool, DbError> {
-    MySqlPoolOptions::new()
+    avec_remise_a_zero_de_session(MySqlPoolOptions::new())
         .max_connections(max_connections)
         .acquire_timeout(connect_timeout)
         .after_connect(|conn, _meta| {
@@ -46,6 +49,38 @@ pub async fn create_pool(
         .connect(database_url)
         .await
         .map_err(map_db_error)
+}
+
+/// Pose sur les options d'un pool un crochet `after_release` qui **remet à zéro
+/// l'état de session** de chaque connexion à son retour au pool (0.17.4, #842,
+/// #540) : `RELEASE_ALL_LOCKS()` rend tout verrou nommé (`GET_LOCK`) encore
+/// tenu, et `SET SESSION foreign_key_checks = 1` rétablit le contrôle des clés
+/// étrangères.
+///
+/// **Pourquoi** : un verrou `GET_LOCK` et `FOREIGN_KEY_CHECKS` sont **de
+/// session** ; ils survivent au `ROLLBACK` d'une transaction abandonnée, et le
+/// pool garde la session — la « fin de session » qui les libérerait n'arrive
+/// pas. Une requête interrompue (client déconnecté : Axum abandonne la future
+/// du gestionnaire) pendant qu'elle tenait le verrou d'un compte bancaire
+/// (`kesh_reconciliation::mutex::with_account_lock`) laissait ce compte bloqué
+/// jusqu'à ce que la connexion soit fermée (jusqu'à une demi-heure, la durée de
+/// vie maximale) ; une restauration interrompue rendait sa connexion avec
+/// `FOREIGN_KEY_CHECKS = 0`.
+///
+/// Le crochet rend `Ok(true)` (la connexion reste au pool). Une erreur le fait
+/// échouer : sqlx ferme alors la connexion (`close_hard`), et la fin de session
+/// libère tout. La connexion n'est **pas** fermée à chaque restitution, à la
+/// différence du pool du MCP ([`pool_lecture_seule`]) : le pool de l'API
+/// rouvrirait une connexion par requête. Coût : deux instructions par
+/// restitution. `RELEASE_ALL_LOCKS` existe depuis MariaDB 10.5.
+pub fn avec_remise_a_zero_de_session(options: MySqlPoolOptions) -> MySqlPoolOptions {
+    options.after_release(|conn, _meta| {
+        Box::pin(async move {
+            conn.execute("DO RELEASE_ALL_LOCKS()").await?;
+            conn.execute("SET SESSION foreign_key_checks = 1").await?;
+            Ok(true)
+        })
+    })
 }
 
 /// Le pool **en lecture seule** des outils du serveur MCP — Story 32-6a

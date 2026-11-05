@@ -2193,6 +2193,7 @@ contact-salutation-madame = Ms
 # choisi contre le cognat étroit `Stadt`/`Ville`/`Città` parce que beaucoup de communes
 # suisses ne sont pas des villes. « City » est précisément ce cognat étroit.
 contact-error-address-npa-city = Postal code and city are required when an address is entered
+contacts-country-unknown = The country code "{ $code }" is not a known ISO code: the QR-bill of this contact cannot be produced. Correct it (CH, FR, DE…); the other fields are saved without changing it.
 contact-error-person-name = First name and last name are required for a contact person
 contact-persons-add = Add
 contact-persons-add-error = Could not add the contact person
@@ -2634,6 +2635,7 @@ supplier-invoices-pay-submit = Pay
 supplier-invoices-pay-title = Pay the invoice
 supplier-invoices-pay-transfer = Bank transfer
 supplier-invoices-project-none = — None
+supplier-invoices-project-archived-option = { $label } (archived)
 supplier-invoices-save = Save
 supplier-invoices-scan = Scan a QR-bill
 supplier-invoices-scan-detected = Creditor detected
@@ -2676,6 +2678,7 @@ supplier-invoices-unvalidate-blocked-fiscal-year-closed = The purchase entry of 
 supplier-invoices-unvalidate-blocked-later-fiscal-year-closed = A fiscal year after this invoice’s is closed: to return it to draft, an administrator must reopen the later closed fiscal years, starting with the most recent.
 supplier-invoices-unvalidate-blocked-reversed = The purchase entry of this invoice has been reversed: it can no longer be deleted, and the invoice cannot return to draft.
 supplier-invoices-unvalidate-blocked-period-locked = The purchase entry of this invoice is dated within a locked period: to return it to draft, an administrator must move the period lock back before its date.
+supplier-invoices-unvalidate-blocked-period-locked-named = The purchase entry of this invoice is dated within the period locked through { $date }: to return it to draft, an administrator must move the period lock back before its date.
 supplier-invoices-unvalidate-blocked-lettered = The purchase entry of this invoice is matched in a lettering: unletter it first, then return the invoice to draft.
 supplier-invoices-unvalidate-error = The invoice could not be returned to draft.
 supplier-invoices-edit-title = Edit the draft

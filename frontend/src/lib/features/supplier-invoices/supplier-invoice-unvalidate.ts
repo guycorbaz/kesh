@@ -58,6 +58,8 @@ export interface SupplierInvoiceUnvalidateDetails {
 	entryNumber?: number | null;
 	entryDate?: string | null;
 	fiscalYearName?: string | null;
+	/** La borne du verrou de période, `AAAA-MM-JJ` (`PERIOD_LOCKED`, 0.17.4, #869). */
+	lockedThrough?: string | null;
 }
 
 /** Une date `AAAA-MM-JJ` au format suisse, ou rien. */
@@ -152,6 +154,15 @@ export function supplierInvoiceUnvalidateMessage(
 				'L’écriture d’achat de cette facture a été contre-passée : elle ne peut plus être supprimée, et la facture ne repasse pas en brouillon.',
 			);
 		case 'PERIOD_LOCKED':
+			// #869 (0.17.4) : le serveur donne la borne du verrou (`details.lockedThrough`) ;
+			// l'écran la nomme quand il l'a.
+			if (d.lockedThrough) {
+				return i18nMsg(
+					'supplier-invoices-unvalidate-blocked-period-locked-named',
+					'L’écriture d’achat de cette facture est datée sous le verrou de période, posé jusqu’au { $date } : pour pouvoir la repasser en brouillon, un administrateur doit faire reculer le verrou avant sa date.',
+					{ date: swissDate(d.lockedThrough) },
+				);
+			}
 			return i18nMsg(
 				'supplier-invoices-unvalidate-blocked-period-locked',
 				'L’écriture d’achat de cette facture est datée sous le verrou de période : pour pouvoir la repasser en brouillon, un administrateur doit faire reculer le verrou avant sa date.',

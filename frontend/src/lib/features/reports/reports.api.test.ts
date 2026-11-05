@@ -15,6 +15,7 @@ import {
 	formatSwissDateTime,
 } from './reports.api';
 import type { BalanceSheetDto } from './reports.types';
+import { pinClock } from '$lib/shared/utils/pin-clock.test-helper';
 
 function fakeJwt(): string {
 	const header = btoa(JSON.stringify({ alg: 'HS256', typ: 'JWT' }))
@@ -315,6 +316,33 @@ describe('reports.api — Story 9-2a', () => {
 			const url = mockFetch.mock.calls[0][0] as string;
 			expect(url).toContain('/api/v1/reports/aged-receivables/export');
 			expect(url).toContain('format=csv');
+		});
+
+		// Story v0174-correctifs-3 (#889, AC-3.6, site 8) — le nom du fichier porte la date
+		// du poste : à 00 h 30 le 5 novembre à Zurich, le 5.
+		describe('nom du fichier à la date locale (#889)', () => {
+			pinClock();
+			it('balance-agee-2026-11-05.csv', async () => {
+				const blob = new Blob(['Contact;Total\r\n'], { type: 'text/csv' });
+				vi.stubGlobal(
+					'fetch',
+					vi.fn().mockResolvedValue({
+						ok: true,
+						status: 200,
+						blob: () => Promise.resolve(blob),
+						headers: new Headers({ 'content-type': 'text/csv' }),
+					} as unknown as Response),
+				);
+				const names: string[] = [];
+				const click = vi
+					.spyOn(HTMLAnchorElement.prototype, 'click')
+					.mockImplementation(function (this: HTMLAnchorElement) {
+						names.push(this.download);
+					});
+				await downloadAgedReceivables();
+				click.mockRestore();
+				expect(names).toEqual(['balance-agee-2026-11-05.csv']);
+			});
 		});
 	});
 

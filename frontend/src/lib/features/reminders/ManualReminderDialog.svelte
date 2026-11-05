@@ -13,6 +13,7 @@
 	import * as Dialog from '$lib/components/ui/dialog';
 	import { i18nMsg } from '$lib/shared/utils/i18n.svelte';
 	import { reminderSentAtDateTime } from './reminder-sent-at';
+	import { todayLocal } from '$lib/shared/utils/local-date';
 
 	type Props = {
 		open: boolean;
@@ -42,9 +43,9 @@
 	// IDs DOM stables et HTTP-LAN-safe ($props.id() — pas de crypto.randomUUID).
 	const uid = $props.id();
 
-	function todayIso(): string {
-		return new Date().toISOString().slice(0, 10);
-	}
+	// #889 : la date du jour du poste, non celle d'UTC (la veille entre minuit et 1 h) — la
+	// date proposée et son maximum ; `reminderSentAtDateTime` compare à la même date.
+	const todayIso = (): string => todayLocal();
 
 	let level = $state(defaultLevel);
 	let sentAt = $state(todayIso());

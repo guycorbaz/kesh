@@ -20,6 +20,8 @@ vi.mock('$lib/app/stores/auth.svelte', () => ({
 vi.mock('$lib/features/dunning/dunning.api', () => ({
 	listDunningLevels: vi.fn(async () => []),
 }));
+// Story v0174-correctifs-3 (#889) : l'instant du dernier rappel se règle par test.
+const last = vi.hoisted(() => ({ at: '2026-04-15T08:00:00' }));
 vi.mock('$lib/features/reminders/reminders.api', () => ({
 	listReminders: vi.fn(async () => ({
 		groups: [
@@ -35,7 +37,7 @@ vi.mock('$lib/features/reminders/reminders.api', () => ({
 						currentLevel: 1,
 						nextLevel: 2,
 						terminal: false,
-						lastReminderAt: '2026-04-15T08:00:00',
+						lastReminderAt: last.at,
 					},
 				],
 			},
@@ -48,10 +50,25 @@ vi.mock('$lib/features/reminders/reminders.api', () => ({
 }));
 
 import Page from './+page.svelte';
+import { pinTimeZone } from '$lib/shared/utils/pin-time-zone.test-helper';
 
 afterEach(() => {
 	cleanup();
 	vi.clearAllMocks();
+	last.at = '2026-04-15T08:00:00';
+});
+
+// Story v0174-correctifs-3 (#889, AC-3.8, g) — le dernier rappel envoyé à 23 h 30 UTC le
+// 4 novembre se lit à sa date suisse, le 5.
+describe('relances — l’instant du dernier rappel à l’heure suisse (#889)', () => {
+	pinTimeZone('Europe/Zurich');
+	it('« dernier le 05.11.2026 »', async () => {
+		last.at = '2026-11-04T23:30:00';
+		const { findByTestId } = render(Page);
+		expect((await findByTestId('reminder-last-sent')).textContent?.trim()).toBe(
+			'dernier le 05.11.2026',
+		);
+	});
 });
 
 describe('relances — dates (v0171)', () => {

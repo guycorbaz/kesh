@@ -7,6 +7,7 @@
 	import { i18nMsg } from '$lib/features/onboarding/onboarding.svelte';
 	import { isApiError } from '$lib/shared/utils/api-client';
 	import { notifyMissingFiscalYearOrFallback } from '$lib/shared/utils/notify';
+	import { todayLocal } from '$lib/shared/utils/local-date';
 	import type { AccountResponse } from '$lib/features/accounts/accounts.types';
 	import type { ProjectResponse } from '$lib/features/projects/projects.types';
 	import { createJournalEntry, updateJournalEntry } from './journal-entries.api';
@@ -81,13 +82,6 @@
 
 	const JOURNALS: Journal[] = ['Achats', 'Ventes', 'Banque', 'Caisse', 'OD'];
 
-	function todayISO(): string {
-		const d = new Date();
-		const yyyy = d.getFullYear();
-		const mm = String(d.getMonth() + 1).padStart(2, '0');
-		const dd = String(d.getDate()).padStart(2, '0');
-		return `${yyyy}-${mm}-${dd}`;
-	}
 
 	// --- État formulaire ---
 	// Pré-remplissage depuis initialEntry si mode édition. Les warnings
@@ -96,8 +90,9 @@
 	// Si initialEntry change au cours de la vie du composant, le parent
 	// doit démonter/remonter le formulaire (ce qui est le cas : la fiche
 	// remplace sa vue par le formulaire, puis le retire au retour).
+	// #889 : le helper commun de la date du jour du poste (copie retirée, C-v0174c-13).
 	/* svelte-ignore state_referenced_locally */
-	let entryDate = $state(initialEntry?.entryDate ?? todayISO());
+	let entryDate = $state(initialEntry?.entryDate ?? todayLocal());
 	/* svelte-ignore state_referenced_locally */
 	let journal = $state<Journal>(initialEntry?.journal ?? 'Achats');
 	/* svelte-ignore state_referenced_locally */

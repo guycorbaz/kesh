@@ -16,12 +16,14 @@ pub enum ReconciliationError {
         timeout_secs: u32,
     },
 
-    /// `RELEASE_LOCK` failure — connexion poisoned, lock potentiellement
-    /// retenu jusqu'à fin de session MariaDB (HP3-1 Pass 3 + HP4-1
-    /// Pass 4 wording correction). Cf. L22 + §mutex-account.
+    /// `RELEASE_LOCK` failure — connexion poisoned (HP3-1 Pass 3 + HP4-1
+    /// Pass 4 wording correction). Le verrou est rendu au retour de la
+    /// connexion au pool, par le crochet
+    /// `kesh_db::pool::avec_remise_a_zero_de_session` (0.17.4, #842) ; cf.
+    /// §mutex-account.
     #[error(
         "RELEASE_LOCK failed for bank_account_id={bank_account_id} \
-         (lock may persist until session end)"
+         (lock released when the connection returns to a pool fitted with the session reset hook)"
     )]
     LockReleaseFailed {
         bank_account_id: i64,

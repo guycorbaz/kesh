@@ -1435,3 +1435,22 @@ async fn unvalidate_route_redrafts_a_cancelled_invoice_and_names_what_to_undo(po
         ]
     );
 }
+
+/// Story v0174-correctifs-2 (#869, AC-2.2) — le repassage en brouillon d'une
+/// facture dont l'achat est daté sous le verrou de période rend `400
+/// PERIOD_LOCKED` **avec** `details.lockedThrough` (la borne) et
+/// `details.attempted` (la date de l'achat), `AAAA-MM-JJ`.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn unvalidate_under_the_period_lock_names_its_bounds_869(pool: MySqlPool) {
+    let c = setup(&pool).await;
+    let (id, _) = validee_depot(&pool, &c, "FF-869", dec!(30)).await;
+    sqlx::query("UPDATE companies SET books_locked_through = '2026-06-30' WHERE id = ?")
+        .bind(c.seeded.company_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let (s, e) = unvalidate_route(&c, &pool, id).await;
+    assert_eq!((s, code(&e)), (400, "PERIOD_LOCKED"), "{e}");
+    assert_eq!(e["error"]["details"]["lockedThrough"], "2026-06-30", "{e}");
+    assert_eq!(e["error"]["details"]["attempted"], "2026-06-15", "{e}");
+}

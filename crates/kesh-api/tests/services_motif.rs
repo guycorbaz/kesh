@@ -1890,6 +1890,13 @@ const EXCEPTIONS_V1: &[(&str, &str)] = &[
         "lib.rs",
         "kesh_db::pool::pool_lecture_seule(&state.pool, mcp::MCP_POOL_CONNEXIONS, delai);",
     ),
+    // Story v0174-correctifs-2 (#842, #540) — le même faux rouge : le chemin du
+    // module `kesh_db::pool` (le crochet de remise à zéro de session du pool de
+    // production), non l'accesseur `pool` d'une poignée.
+    (
+        "main.rs",
+        "let pool = match kesh_db::pool::avec_remise_a_zero_de_session(MySqlPoolOptions::new())",
+    ),
 ];
 
 /// Les six fabriques de poignées, au câblage de `lib.rs` (v-2) — trois

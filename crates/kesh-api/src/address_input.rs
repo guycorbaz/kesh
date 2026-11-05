@@ -49,7 +49,12 @@ impl StructuredAddressInput {
             && self.city.trim().is_empty()
     }
 
-    fn check_lengths(&self) -> Result<(), AppError> {
+    /// Longueurs SIX, forme du pays (deux lettres), puis pays **connu** de la
+    /// liste ISO 3166-1 alpha-2 (#817, 0.17.4) — sauf s'il égale, après
+    /// normalisation, `stored_country`, le pays déjà enregistré : un contact
+    /// enregistré avant la 0.17.4 avec un code inconnu reste modifiable sans
+    /// toucher à son pays ; un pays nouveau ou changé doit être connu.
+    fn check_lengths(&self, stored_country: Option<&str>) -> Result<(), AppError> {
         let checks = [
             ("rue", self.street.trim().chars().count(), STREET_MAX),
             ("numéro", self.building.trim().chars().count(), BUILDING_MAX),
@@ -69,6 +74,12 @@ impl StructuredAddressInput {
                 "adresse : le pays doit être un code ISO à 2 lettres (ex. CH)".into(),
             ));
         }
+        let unchanged = stored_country.is_some_and(|s| s.trim().to_uppercase() == country);
+        if !unchanged && !kesh_qrbill::is_iso_3166_alpha2(&country) {
+            return Err(AppError::Validation(format!(
+                "adresse : le pays « {country} » n'est pas un code ISO 3166-1 alpha-2 connu (ex. CH, FR, DE)"
+            )));
+        }
         Ok(())
     }
 
@@ -84,8 +95,10 @@ impl StructuredAddressInput {
 
     /// Validation **requise** (créancier / société) : NPA et localité obligatoires
     /// (SIX type S), longueurs respectées.
+    /// Le pays doit être un code ISO connu (#817) : aucune valeur n'est encore
+    /// enregistrée à l'assistant.
     pub fn validate_required(&self) -> Result<StructuredAddress, AppError> {
-        self.check_lengths()?;
+        self.check_lengths(None)?;
         if self.postal_code.trim().is_empty() || self.city.trim().is_empty() {
             return Err(AppError::Validation(
                 "adresse : le NPA et la localité sont obligatoires (format structuré exigé par les banques suisses)".into(),
@@ -98,12 +111,37 @@ impl StructuredAddressInput {
     /// entièrement vide ; sinon longueurs vérifiées. Une adresse partielle est
     /// acceptée au niveau contact — le bloc débiteur du QR n'est émis que si
     /// l'adresse est complète (cf. génération).
+    /// Le pays doit être un code ISO connu (#817) ; c'est la validation d'une
+    /// création, où rien n'est encore enregistré.
     pub fn validate_optional(&self) -> Result<Option<StructuredAddress>, AppError> {
+        self.validate_optional_keeping(None)
+    }
+
+    /// Comme [`Self::validate_optional`], pour une **mise à jour** : un pays égal
+    /// (après normalisation) à `stored_country`, celui que la ligne porte déjà,
+    /// est accepté même hors de la liste ISO (#817) — une adresse enregistrée
+    /// avant la 0.17.4 avec « SU » se modifie sans toucher au pays ; changer le
+    /// pays exige un code connu.
+    pub fn validate_optional_keeping(
+        &self,
+        stored_country: Option<&str>,
+    ) -> Result<Option<StructuredAddress>, AppError> {
         if self.is_blank() {
             return Ok(None);
         }
-        self.check_lengths()?;
+        self.check_lengths(stored_country)?;
         Ok(Some(self.build()))
+    }
+}
+
+/// `true` si le pays d'une adresse **lue** est un code ISO 3166-1 alpha-2 connu
+/// (après normalisation : blancs rognés, majuscules), ou s'il n'y a pas de pays
+/// (le défaut est `CH`). Sert au champ `addressCountryKnown` des réponses de
+/// contact (#817) : l'écran signale un code inconnu sans recopier la liste ISO.
+pub fn is_known_country(country: Option<&str>) -> bool {
+    match country.map(str::trim) {
+        Some(c) if !c.is_empty() => kesh_qrbill::is_iso_3166_alpha2(&c.to_uppercase()),
+        _ => true,
     }
 }
 
@@ -115,6 +153,95 @@ impl From<&StructuredAddress> for StructuredAddressInput {
             postal_code: a.postal_code.clone(),
             city: a.city.clone(),
             country: Some(a.country.clone()),
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn addr(country: Option<&str>) -> StructuredAddressInput {
+        StructuredAddressInput {
+            street: "Rue du Test".into(),
+            building: "1".into(),
+            postal_code: "1000".into(),
+            city: "Lausanne".into(),
+            country: country.map(str::to_string),
+        }
+    }
+
+    fn message<T: std::fmt::Debug>(r: Result<T, AppError>) -> String {
+        match r {
+            Err(AppError::Validation(m)) => m,
+            other => panic!("refus de validation attendu, obtenu {other:?}"),
+        }
+    }
+
+    /// AC-2.4 (#817) — codes connus, casse et blancs normalisés, défaut `CH`.
+    #[test]
+    fn known_countries_are_accepted_817() {
+        for (c, attendu) in [
+            (Some("CH"), "CH"),
+            (Some("ch"), "CH"),
+            (Some(" li "), "LI"),
+            (Some(""), "CH"),
+            (None, "CH"),
+        ] {
+            let a = addr(c).validate_required().expect("pays connu");
+            assert_eq!(a.country, attendu, "{c:?}");
+        }
+    }
+
+    /// AC-2.4 (#817) — un code de deux lettres hors de la liste ISO est refusé,
+    /// et le message le nomme.
+    #[test]
+    fn unknown_countries_are_refused_and_named_817() {
+        for c in ["SU", "XX", "ZZ", "UK"] {
+            let m = message(addr(Some(c)).validate_required());
+            assert!(m.contains(&format!("« {c} »")), "{c} : {m}");
+            let m = message(addr(Some(c)).validate_optional());
+            assert!(m.contains(&format!("« {c} »")), "{c} : {m}");
+        }
+    }
+
+    /// #817 — à la mise à jour, un pays inconnu **inchangé** (casse et blancs
+    /// normalisés) est toléré ; changé, il doit être connu.
+    #[test]
+    fn an_unchanged_stored_country_is_tolerated_817() {
+        let a = addr(Some("su"))
+            .validate_optional_keeping(Some("SU"))
+            .expect("pays inchangé toléré")
+            .expect("adresse");
+        assert_eq!(a.country, "SU");
+        let m = message(addr(Some("XX")).validate_optional_keeping(Some("SU")));
+        assert!(m.contains("« XX »"), "{m}");
+        assert!(
+            addr(Some("CH"))
+                .validate_optional_keeping(Some("SU"))
+                .is_ok()
+        );
+    }
+
+    /// #817 — `addressCountryKnown` : connu, inconnu, absent.
+    #[test]
+    fn known_country_flag_817() {
+        assert!(is_known_country(Some("CH")));
+        assert!(is_known_country(Some(" ch ")));
+        assert!(is_known_country(None));
+        assert!(is_known_country(Some("")));
+        assert!(!is_known_country(Some("SU")));
+    }
+
+    /// AC-2.4 — la forme (deux lettres ASCII) garde son message d'aujourd'hui.
+    #[test]
+    fn malformed_countries_keep_the_shape_message_817() {
+        for c in ["C1", "CHE"] {
+            assert_eq!(
+                message(addr(Some(c)).validate_required()),
+                "adresse : le pays doit être un code ISO à 2 lettres (ex. CH)",
+                "{c}"
+            );
         }
     }
 }

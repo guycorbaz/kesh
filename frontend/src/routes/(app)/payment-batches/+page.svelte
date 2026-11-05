@@ -22,6 +22,7 @@
 	import { formatSwissDate } from '$lib/features/reports/reports.api';
 	import { isApiError } from '$lib/shared/utils/api-client';
 	import { i18nMsg } from '$lib/shared/utils/i18n.svelte';
+	import { todayLocal } from '$lib/shared/utils/local-date';
 
 	let batches = $state<PaymentBatchListItemResponse[]>([]);
 	let openInvoices = $state<SupplierInvoiceListItemResponse[]>([]);
@@ -34,9 +35,9 @@
 	let formError = $state('');
 	let lastResult = $state<CreatePaymentBatchResponse | null>(null);
 
-	const today = new Date().toISOString().slice(0, 10);
+	// #889 : la date du jour du poste, non celle d'UTC (la veille entre minuit et 1 h).
 	let fBankAccountId = $state<number | null>(null);
-	let fExecutionDate = $state(today);
+	let fExecutionDate = $state(todayLocal());
 	let fSelected = $state<Set<number>>(new Set());
 
 	async function reload() {
@@ -49,10 +50,27 @@
 	 * (`status=open`, AC-15) — sans quoi brouillons et annulées prendraient la place de
 	 * factures à payer dans la fenêtre de 200 ; le filtre client reste en défense. Un seul
 	 * site pour la lecture au montage et la relecture après un lot (revue P1, A-5).
+	 *
+	 * Story v0174-correctifs-3 (#888) : **toutes** les factures validées, non les 200
+	 * premières — les pages de 200 (le plafond du serveur) se lisent jusqu'à `total`, et
+	 * la lecture s'arrête sur une page vide. Les factures s'accumulent **dédupliquées par
+	 * `id`** : une facture validée ou payée par une autre session entre deux pages décale
+	 * l'offset et ferait sinon paraître deux fois la même facture (clé de l'`#each`). Une
+	 * facture peut alors manquer jusqu'à la relecture suivante — ce qu'aucune lecture par
+	 * pages n'évite.
 	 */
 	async function loadOpenInvoices() {
-		const invRes = await listSupplierInvoices({ limit: 200, status: ['open'] });
-		openInvoices = invRes.items.filter((i) => i.status === 'open');
+		const PAGE = 200;
+		const byId = new Map<number, SupplierInvoiceListItemResponse>();
+		let offset = 0;
+		for (;;) {
+			const res = await listSupplierInvoices({ limit: PAGE, offset, status: ['open'] });
+			for (const inv of res.items) if (!byId.has(inv.id)) byId.set(inv.id, inv);
+			offset += res.items.length;
+			// `!(offset < total)` plutôt que `offset >= total` : un `total` absent arrête aussi.
+			if (res.items.length === 0 || !(offset < res.total)) break;
+		}
+		openInvoices = [...byId.values()].filter((i) => i.status === 'open');
 	}
 
 	onMount(async () => {

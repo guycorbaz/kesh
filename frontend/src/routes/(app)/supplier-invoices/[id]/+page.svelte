@@ -34,6 +34,7 @@
 		validateSupplierInvoice,
 	} from '$lib/features/supplier-invoices/supplier-invoices.api';
 	import { supplierSettlementCancelMessage } from '$lib/features/supplier-invoices/settlement-cancel';
+	import { todayLocal } from '$lib/shared/utils/local-date';
 	import { supplierInvoiceCancelMessage } from '$lib/features/supplier-invoices/invoice-cancel';
 	import {
 		supplierInvoiceUnvalidateMessage,
@@ -95,8 +96,8 @@
 
 	// Formulaire de règlement binaire.
 	let settlementType = $state<'bank_transfer' | 'internal_account'>('bank_transfer');
-	const today = new Date().toISOString().slice(0, 10);
-	let paymentDate = $state(today);
+	// #889 : la date du jour du poste, non celle d'UTC (la veille entre minuit et 1 h).
+	let paymentDate = $state(todayLocal());
 	let payBankAccountId = $state<number | null>(null);
 	let payAccountId = $state<number | null>(null);
 	let paying = $state(false);
@@ -238,7 +239,8 @@
 					'Cette facture figure dans le lot de paiement n° { $batch }, confirmé le { $date }. Si la banque a exécuté cet ordre, elle a déjà été payée : corrigez alors par un nouveau règlement direct, jamais par un nouveau lot.',
 					// Revue P2 (B2-4) : la date au format suisse, comme l'avertissement de la
 					// dévalidation.
-					{ batch: batch.id, date: formatSwissDate((batch.confirmedAt ?? '').slice(0, 10)) },
+					// #889 : un instant (CURRENT_TIMESTAMP, UTC) — sa date suisse, horodatage entier.
+					{ batch: batch.id, date: formatSwissDate(batch.confirmedAt ?? '') },
 				);
 		}
 		if (!confirm(message)) return;
@@ -347,7 +349,7 @@
 		return i18nMsg(
 			'supplier-invoices-unvalidate-batch-warning',
 			'Cette facture figure dans le lot de paiement n° { $batch }, confirmé le { $date }.',
-			{ batch: batch.id, date: formatSwissDate(batch.confirmedAt.slice(0, 10)) },
+			{ batch: batch.id, date: formatSwissDate(batch.confirmedAt) },
 		);
 	}
 

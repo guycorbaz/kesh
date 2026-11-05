@@ -418,6 +418,27 @@
 			saving = false;
 		}
 	}
+
+	/**
+	 * Story v0174-correctifs-3 (#872, C-v0174c-18) — le libellé d'une option de projet ;
+	 * un projet archivé (celui du brouillon, seul offert par la page d'édition) porte la
+	 * marque « (archivé) » : la validation le refuse toujours, la marque prévient.
+	 */
+	function projectOptionLabel(p: ProjectResponse): string {
+		const label = `${p.code} — ${p.name}`;
+		return p.archived
+			? i18nMsg('supplier-invoices-project-archived-option', '{ $label } (archivé)', { label })
+			: label;
+	}
+
+	/**
+	 * Les projets dont le parent n'est pas offert — un sous-projet archivé dont la racine
+	 * est archivée, et donc écartée (#872) : rendus à plat après l'arbre, sans quoi le
+	 * `<select>` n'aurait aucune option à la valeur du brouillon.
+	 */
+	const orphanProjects = $derived(
+		projects.filter((p) => p.parentId !== null && !projects.some((q) => q.id === p.parentId)),
+	);
 </script>
 
 <form
@@ -731,10 +752,13 @@
 				>
 					<option value={null}>{i18nMsg('supplier-invoices-project-none', '— Aucun')}</option>
 					{#each projects.filter((p) => p.parentId === null) as root (root.id)}
-						<option value={root.id}>{root.code} — {root.name}</option>
+						<option value={root.id}>{projectOptionLabel(root)}</option>
 						{#each projects.filter((c) => c.parentId === root.id) as child (child.id)}
-							<option value={child.id}>&nbsp;&nbsp;↳ {child.code} — {child.name}</option>
+							<option value={child.id}>&nbsp;&nbsp;↳ {projectOptionLabel(child)}</option>
 						{/each}
+					{/each}
+					{#each orphanProjects as orphan (orphan.id)}
+						<option value={orphan.id}>{projectOptionLabel(orphan)}</option>
 					{/each}
 				</select>
 			</label>
