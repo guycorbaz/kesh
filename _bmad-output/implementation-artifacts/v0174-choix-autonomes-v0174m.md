@@ -17,8 +17,10 @@ Fiche : `v0174-mise-a-jour.md`. Issue #847 (P2), en `refs` seulement dans les co
   à l'inverse, une table que la version neuve supprimerait manquerait à la sauvegarde. Et l'import de la version de
   départ exige un manifeste dont les tables sont **exactement** son propre inventaire (`parse_and_verify`,
   `crates/kesh-api/src/admin_backup/import.rs:234-249`).
-- **Retenu** : une lecture dont l'inventaire est **celui du schéma présent** — les tables de base
-  (`information_schema.TABLES`, `TABLE_TYPE = 'BASE TABLE'`) de `DATABASE()` dont le nom ne commence pas par `_`. Elle
+- **Retenu** : une lecture dont l'inventaire est **celui du schéma présent** — les tables de
+  `information_schema.TABLES` de `DATABASE()` dont le nom ne commence pas par `_` — **même prédicat que la garde**
+  `backup_inventory_matches_schema` (aucun filtre sur `TABLE_TYPE`), le `_` filtré en Rust par `starts_with('_')` et non
+  par un `LIKE` échappé (amendé à la validation P1, F1-9 ; C-v0174m-24). Elle
   rend exactement le `TABLES_TO_TRUNCATE` de la version qui a créé ce schéma : à chaque version, le test
   `backup_inventory_matches_schema` (`backup.rs:848`) impose « tables du schéma = `TABLES_TO_TRUNCATE` + tables
   système », et toutes les tables système portent le préfixe `_` (`_sqlx_migrations`, `_kesh_version`,
@@ -64,9 +66,10 @@ Fiche : `v0174-mise-a-jour.md`. Issue #847 (P2), en `refs` seulement dans les co
 ### C-v0174m-4 — Un échec de la sauvegarde refuse le démarrage ; l'échappatoire est une variable qui nomme la version
 
 - **Contexte** : #847, point 2 ; c'est un réglage de démarrage (l'interface n'est pas encore servie).
-- **Retenu** : tout échec (dossier, espace, lecture de la base, écriture, relecture, version de départ trop ancienne)
-  → message clair au journal et `exit(1)` **avant** `MIGRATOR.run` : la base est intacte, l'image précédente redémarre
-  dessus. Échappatoire : `KESH_SKIP_PRE_UPGRADE_BACKUP=<version>` — elle ne vaut que si sa valeur est **exactement** la
+- **Retenu** : tout échec (plan illisible, dossier, espace, lecture de la base, écriture, relecture, version de départ
+  trop ancienne) → message clair au journal et `exit(1)` **avant** `MIGRATOR.run` : cette tentative n'a rien migré ;
+  l'image précédente redémarre dessus si aucune tentative précédente n'a migré (amendé à la validation P1, C-v0174m-15,
+  C-v0174m-16). Échappatoire : `KESH_SKIP_PRE_UPGRADE_BACKUP=<version>` — elle ne vaut que si sa valeur est **exactement** la
   version du binaire (`CARGO_PKG_VERSION`) : elle s'éteint d'elle-même à la mise à jour suivante, si on l'oublie dans le
   `.env`. Posée avec une autre valeur, elle est ignorée et le journal le dit ; posée et utilisée, un avertissement est
   écrit. Transmise par les deux compose et décrite à `.env.example` (garde `configuration_transmise`).
@@ -101,6 +104,7 @@ Fiche : `v0174-mise-a-jour.md`. Issue #847 (P2), en `refs` seulement dans les co
   réutiliser le nombre de la sauvegarde automatique (lu dans `_kesh_backup_schedule`, qu'une base antérieure à la 0.15.0
   n'a pas, et réglage d'un autre usage).
 - **Réversible** : oui.
+- *Amendé à la validation P1* : la plus ancienne sauvegarde du couple courant est en outre protégée (C-v0174m-15).
 
 ### C-v0174m-7 — Seuil d'espace : celui de la sauvegarde automatique
 
@@ -113,8 +117,8 @@ Fiche : `v0174-mise-a-jour.md`. Issue #847 (P2), en `refs` seulement dans les co
 
 ### C-v0174m-8 — Version de départ antérieure à la 0.15.0 ou inconnue : refus, sauf échappatoire
 
-- **Contexte** : une sauvegarde de format 2 ne s'importe que dans une 0.15.0 ou plus récente (`manifest.rs:18-27`) ; la
-  lecture des pièces exige `invoices.pdf_storage_path` (migration `20261003000001`). Écrire depuis une 0.14.x un fichier
+- **Contexte** : une sauvegarde de format 2 ne s'importe que dans une 0.15.0 ou plus récente (`manifest.rs:18-27`) . (La lecture des pièces, elle, ne fixe pas la borne : `invoices.pdf_storage_path` existe dès la 0.13.0 — motif
+  retiré à la validation P1, R1-11.) Écrire depuis une 0.14.x un fichier
   que la 0.14.x ne peut pas importer serait un filet qui ne retient rien, et le dire seulement au journal le rendrait muet.
 - **Retenu** : si `kesh_version_last_applied` ne se lit pas comme une version, ou est inférieure à 0.15.0, Kesh refuse la
   migration avec un message qui dit pourquoi et renvoie au vidage manuel de la base (`kesh-dump.sh` sur Synology, `mariadb-dump` sinon) puis à l'échappatoire.
@@ -124,9 +128,9 @@ Fiche : `v0174-mise-a-jour.md`. Issue #847 (P2), en `refs` seulement dans les co
 ### C-v0174m-9 — Le journal de démarrage et l'écran
 
 - **Contexte** : #847, point 3.
-- **Retenu** : quatre lignes `info` (plan : nombre de migrations, de → vers ; base lue : tables, lignes, durée ; pièces :
-  emportées, octets, non incluses ; fichier : chemin, taille, durée, et le renvoi au manuel « Revenir à la version
-  précédente »), `warn` si des pièces manquent ou si le fichier dépasse `KESH_ADMIN_IMPORT_MAX_MB` (la version de départ
+- **Retenu** : quatre lignes `info`, écrites mot pour mot au § *Messages* de la sous-fiche `v0174-mise-a-jour-1.md`
+  (plan : nombre de migrations, de → vers ; base lue : tables, lignes, durée ; pièces : emportées, octets, non incluses ;
+  fichier : chemin, taille, durée, et le renvoi au manuel « Revenir à la version précédente »), `warn` si des pièces manquent ou si le fichier dépasse `KESH_ADMIN_IMPORT_MAX_MB` (la version de départ
   ne pourrait l'importer par l'écran qu'en relevant ce plafond). À l'écran : la liste *Sauvegardes sur le serveur* montre
   ces fichiers, type « Avant mise à jour », téléchargeables (`BackupKind::PreUpgrade`, `kind = "pre-upgrade"`). Aucune
   entrée au journal d'audit (aucun utilisateur n'a agi ; le fichier et le journal du serveur suffisent ; le
@@ -140,8 +144,12 @@ Fiche : `v0174-mise-a-jour.md`. Issue #847 (P2), en `refs` seulement dans les co
 - **Contexte** : la version de départ refuse de démarrer sur la base migrée (migration appliquée inconnue de `sqlx`,
   `min_required` le cas échéant) : on ne peut pas importer par son écran sans lui rendre une base qu'elle accepte.
 - **Retenu** : la procédure du manuel — arrêter Kesh ; prendre un vidage de la base migrée (`kesh-dump.sh` sur Synology, `mariadb-dump` sinon ; filet,
-  garde G16) ; recréer la base **vide** sous le même nom (`DROP DATABASE` / `CREATE DATABASE` par le compte root du conteneur
-  MariaDB — les droits de `kesh`, posés au niveau de la base, survivent : **à établir en recette**) ; reprendre l'image
+  garde G16) ; recréer la base **vide** sous le même nom (`DROP DATABASE` / `CREATE DATABASE`) **par le compte Kesh** de
+  `DATABASE_URL`, dans les deux topologies — *amendé à la validation P1* (R1-2) : la production Synology n'a pas de
+  conteneur MariaDB (`docker-compose.prod.yml` sans service `mariadb`) et la garde G16 y interdit le compte root ; le
+  manuel (`admin-manual.tex:2005-2010`) et `scripts/synology/kesh-restore.sh` font déjà `DROP`/`CREATE DATABASE` par ce
+  compte, qui porte `ALL PRIVILEGES` sur la base : la question des droits est tranchée par ce précédent, la recette le
+  confirme (C-v0174m-19) ; reprendre l'image
   précédente ; `/setup` puis « Restaurer une sauvegarde » de l'assistant (31-1b) avec le fichier `pre-upgrade/…`. Le
   dossier des documents reste en place (une pièce présente et intacte est laissée telle quelle,
   `AlreadyIntact`, `document_storage.rs:248`). Jouée en recette de 0.17.2 à 0.17.4 (la 0.17.3 a ajouté une migration ; voir C-11).
@@ -158,8 +166,11 @@ Fiche : `v0174-mise-a-jour.md`. Issue #847 (P2), en `refs` seulement dans les co
   ajoute une migration, la recette se rejoue aussi de 0.17.3 à 0.17.4 après l'intégration.
 - **Écartées** : attendre une migration de la 0.17.4 pour jouer la recette.
 - **Réversible** : oui.
+- *Amendé à la validation P1* : cette jambe ne discrimine pas l'inventaire (la 0.17.3 n'ajoute qu'une table système) ;
+  une jambe 0.15.0 → branche s'y ajoute (C-v0174m-22), et la jambe 0.17.2 se joue dans la topologie de production
+  (C-v0174m-19). `v0174-session` ne prévoit pas de migration (C-v0174s-2).
 
-### C-v0174m-12 — Deux lots dans une fiche, dérogation de splitting déclarée
+### C-v0174m-12 — Deux lots dans une fiche, dérogation de splitting déclarée — **remplacé par C-v0174m-18**
 
 - **Contexte** : modules touchés — `kesh-db/backup` (lecture à l'inventaire du schéma), `kesh-api` (module neuf,
   `main.rs`, `config.rs`), `kesh-api/auto_backup` (liste et rétention), `frontend/admin-backup`, `kesh-i18n` (une clé,
@@ -170,6 +181,8 @@ Fiche : `v0174-mise-a-jour.md`. Issue #847 (P2), en `refs` seulement dans les co
 - **Écartées** : deux fiches (B seule n'a pas de sens sans A ; la boucle de validation porterait deux fois la même
   conception).
 - **Réversible** : oui (le découpage peut se faire à la validation si le signal de stagnation se lève).
+- *Annoté à la validation P1 (R1-10)* : la règle n'admet de dérogation qu'en cas de cycle Cargo ou de merges
+  intermédiaires intestables ; aucun ici. Choix remplacé par C-v0174m-18.
 
 ### C-v0174m-13 — Aucune migration ; #848 hors périmètre
 
@@ -177,7 +190,8 @@ Fiche : `v0174-mise-a-jour.md`. Issue #847 (P2), en `refs` seulement dans les co
   (`routes/admin.rs:92-95`).
 - **Retenu** : aucune migration (rétention constante, rien n'est stocké en base). #848 ne se règle pas du même geste :
   le nom de la sauvegarde avant mise à jour est neuf et porte déjà l'heure ; celui de l'export manuel n'est pas touché.
-- **Écartées** : —
+- **Écartées** : régler #848 dans le même geste — le nom téléchargé est celui de `routes/admin.rs:92-95`, que la story ne
+  touche pas.
 - **Réversible** : oui.
 
 ### C-v0174m-14 — Manifeste : `keshVersion` dit qui a écrit, le nom dit de quoi
@@ -189,4 +203,137 @@ Fiche : `v0174-mise-a-jour.md`. Issue #847 (P2), en `refs` seulement dans les co
   celle de la base lue (la version de départ l'accepte), et le nom du fichier porte les deux versions. Aucun champ neuf.
 - **Écartées** : écrire la version de départ dans `keshVersion` (le champ mentirait sur l'auteur) ; un champ neuf
   (`sourceVersion` : la version de départ l'ignorerait, et rien ne le lirait).
+- **Réversible** : oui.
+
+---
+
+## Choix ajoutés à la remédiation de la validation P1 (2026-11-05)
+
+### C-v0174m-15 — Tentatives répétées d'une même mise à jour : la plus ancienne du couple est protégée
+
+- **Contexte** (R1-1, F1-3, prémisse vérifiée : `sqlx-mysql-0.8.6/src/migrate.rs`, `apply` insère la ligne
+  `success = FALSE` **dans** la transaction ; une migration qui échoue avant tout DDL est annulée sans ligne « sale ») :
+  une mise à jour qui applique la migration *k* puis échoue proprement sur *k+1* laisse un schéma à moitié migré **sans**
+  ligne sale ; `kesh_version_last_applied` est resté la version de départ ; chaque redémarrage (`restart: unless-stopped`)
+  écrit une sauvegarde du même couple `<de>-to-<vers>`, inutilisable par la version de départ, et la rétention à trois
+  finissait par supprimer la seule bonne. La Dev Note « la rétention ne peut pas évincer la bonne » était fausse.
+- **Retenu** : Kesh écrit toujours une sauvegarde à chaque tentative (l'état peut avoir changé si la version de départ a
+  servi entre-temps), mais la rétention ne supprime **jamais la plus ancienne sauvegarde du couple courant**
+  `<de>-to-<vers>` ; elle garde en outre les trois plus récentes (au plus quatre fichiers). Le message de refus dit
+  « **Cette tentative** n'a appliqué aucune migration » (toujours vrai) ; s'il existe déjà un fichier du même couple, il
+  ajoute qu'une tentative précédente a pu en appliquer, nomme la plus ancienne et renvoie au manuel ; la promesse « la
+  {de} peut redémarrer dessus » n'est écrite que s'il n'en existe pas. Le journal du plan dit, le cas échéant,
+  « tentative n° N de la même mise à jour ».
+- **Écartées** : ne jamais réécrire un couple déjà sauvegardé (fausse si la version de départ a servi après une première
+  tentative avortée sans migration : la sauvegarde gardée serait périmée) ; détecter le schéma à moitié migré (la liste
+  des migrations de la version de départ n'est pas connue du binaire neuf).
+- **Réversible** : oui.
+
+### C-v0174m-16 — Plan illisible : refus
+
+- **Contexte** (R1-3, F1-2) : `check_downgrade_protection` distingue 1146 de toute autre erreur ; rien de tel n'était
+  prescrit pour la lecture de `_sqlx_migrations`, et une implémentation « erreur → neuve » migrerait sans sauvegarde.
+- **Retenu** : seule l'erreur 1146 (table absente) vaut *neuve* ; toute autre erreur de lecture du plan → `Refus::Plan`,
+  message de refus, `exit(1)` avant `MIGRATOR.run`.
+- **Écartées** : traiter l'erreur comme *à jour* ou *neuve*.
+- **Réversible** : oui.
+
+### C-v0174m-17 — L'importabilité par la version de départ se garde dans le temps et se joue en test
+
+- **Contexte** (R1-4, F1-4) : le fichier est écrit par le binaire neuf et lu par l'ancien ; un changement de
+  `BACKUP_FORMAT_VERSION` (`manifest.rs:27`), du manifeste ou de `decode_cell` le rendrait silencieusement inimportable ;
+  et aucun test ne rejouait l'import sur le fichier produit, alors que #847 l'exige.
+- **Retenu** : (a) une garde `format_de_la_sauvegarde_avant_mise_a_jour_fige` : `BACKUP_FORMAT_VERSION == 2`, ensemble
+  exact des clés du manifeste et des types décodés par `decode_cell` ; son message dit qu'un changement casse
+  l'importabilité par les versions antérieures et doit être consigné (manuel, CHANGELOG) ; (b) `parse_and_verify` et
+  `restore_tables_in_tx` reçoivent en interne l'inventaire à respecter (`parse_and_verify_avec_inventaire`,
+  `restore_tables_in_tx_avec_inventaire`, l'inventaire de production restant `TABLES_TO_TRUNCATE` : comportement inchangé,
+  appelants de production inchangés) ; (c) un test d'aller-retour discriminant : base arrêtée avant `20261027000001`
+  (migration en attente qui crée des tables applicatives), sauvegarde, puis sur une **seconde** base au même état :
+  `parse_and_verify_avec_inventaire` avec l'inventaire **littéral** de départ (`TABLES_TO_TRUNCATE` privé de
+  `mcp_prompts` et `mcp_prompt_versions`, oracle indépendant du prédicat lu), `check_schema_compat`, restauration, et
+  comparaison ligne à ligne avec la base source ; (d) la recette sur une image publiée dont l'inventaire diffère
+  (C-v0174m-22).
+- **Écartées** : paramétrer le format par version cible (aucun besoin aujourd'hui) ; se contenter de la recette.
+- **Réversible** : oui (refactor interne, production inchangée).
+
+### C-v0174m-18 — Deux sous-fiches sœurs, parente en `split`
+
+- **Contexte** (R1-10) : la *Règle de splitting préventif* n'admet pas la dérogation C-v0174m-12 ; chaque lot compte moins
+  de cinq modules, le lot A est livrable seul (le fichier se récupère par le dossier), le lot B ne dépend que du nom.
+- **Retenu** : `v0174-mise-a-jour.md` passe en `split` (analyse commune, conception, découpage) ;
+  `v0174-mise-a-jour-1.md` (la sauvegarde avant migration : `kesh-db`, `kesh-api`, compose, manuel, CHANGELOG, recette) et
+  `v0174-mise-a-jour-2.md` (le type « Avant mise à jour » à l'écran : `auto_backup.rs` liste, frontend, i18n, captures),
+  sur la même branche, développées dans cet ordre, comme `v0174-session`.
+- **Écartées** : une fiche avec section de dérogation (critère d'exception non rempli).
+- **Réversible** : oui.
+
+### C-v0174m-19 — Retour en arrière : une procédure, deux topologies, deux recettes
+
+- **Contexte** (R1-2, R1-8, F1-11) : la production est la topologie Synology (Kesh seul, MariaDB du paquet DSM,
+  `mem_limit: 1g`, `docker-compose.prod.yml:193`) ; le compose standard a son conteneur `mariadb`.
+- **Retenu** : la base se recrée **par le compte Kesh** (client `mariadb` d'un conteneur jetable lisant
+  `kesh-restore.cnf` sur Synology, comme `kesh-restore.sh` ; `docker compose exec mariadb mariadb -u"$MARIADB_USER" -p`
+  dans le compose standard), nom de base `MARIADB_DATABASE` (défaut `kesh`) ; vidage de sécurité d'abord ; le fichier se
+  télécharge par l'écran **avant** d'arrêter Kesh (ou se copie par SSH, `sudo cp` + `chown` comme pour la pré-import) ;
+  l'image à remettre est la version `<de>` du nom du fichier, épinglée (le compose pointe `:latest`) ; ce que le retour
+  perd est dit : la saisie faite depuis la mise à jour, et les réglages hors fichier (planification de la sauvegarde
+  automatique, durée d'inactivité de la session), remis aux défauts ; sans `/setup` si `KESH_ADMIN_USERNAME` est posé. La
+  recette se joue **dans les deux topologies** : compose standard, et topologie de production reproduite sur la station
+  (conteneur MariaDB autonome sur un réseau jetable, conteneur Kesh seul joint par `DATABASE_URL`, `--memory 1g`, compte
+  Kesh sans root). Si la seconde ne peut pas se monter sur la station, le Dev Agent Record le dit et le manuel marque la
+  procédure Synology « non éprouvée » (précédent : la 0.16.0 pour Claude Code).
+- **Écartées** : le compte root (absent sur Synology, interdit par G16) ; une base sous un autre nom (exige un `GRANT`).
+- **Réversible** : oui (texte du manuel).
+
+### C-v0174m-20 — Des pièces manquantes ne refusent pas la migration
+
+- **Contexte** (R1-12 b, F1-8) : AC-8 décidait sans choix qu'une pièce référencée absente, altérée ou illisible laisse la
+  sauvegarde écrite et la migration se faire.
+- **Retenu** : maintenu — les migrations ne touchent pas le dossier des documents, la pièce manquante l'est aussi pour la
+  version de départ, et la sauvegarde automatique a le même statut « incomplète » ; un `warn` nomme le nombre et renvoie au
+  journal. Réserve écrite : `unreadable` peut être transitoire (montage) ; le manuel dit de vérifier le montage du dossier
+  des documents avant la mise à jour.
+- **Écartées** : refuser (un dossier démonté bloquerait toute mise à jour, l'échappatoire deviendrait l'usage).
+- **Réversible** : oui.
+
+### C-v0174m-21 — L'échappatoire quand le compose ne la transmet pas
+
+- **Contexte** (R1-9, F1-6) : les compose n'ont pas d'`env_file` ; un compose antérieur à la 0.17.4 ne transmet pas
+  `KESH_SKIP_PRE_UPGRADE_BACKUP`, si bien qu'une ligne au seul `.env` reste sans effet et sans avertissement.
+- **Retenu** : le message de refus, le manuel et le CHANGELOG disent les deux voies : la ligne sous `environment:` du
+  service `kesh-api` (compose 0.17.4 : déjà présente, valeur vide), ou, sans toucher au compose,
+  `docker compose run --rm -e KESH_SKIP_PRE_UPGRADE_BACKUP=<vers> kesh-api` (une exécution, puis `docker compose up -d`).
+  Le CHANGELOG conseille de reprendre la ligne dans le compose local dès la 0.17.4.
+- **Écartées** : lire la variable dans un fichier du dossier de sauvegarde (un réglage de plus, caché).
+- **Réversible** : oui.
+
+### C-v0174m-22 — Une jambe de recette dont l'inventaire diffère : 0.15.0 → branche
+
+- **Contexte** (F1-4) : de la 0.17.2 à la branche, `TABLES_TO_TRUNCATE` est identique (la 0.17.3 n'ajoute qu'une table
+  système) : la recette C-v0174m-11 survivrait à la mutation M4. La 0.15.0 est publiée et n'a pas les tables du serveur
+  MCP ajoutées en 0.16.0.
+- **Retenu** : deux jambes — **0.15.0 → branche** (exerce C-v0174m-1 et la borne C-v0174m-8 : refus de la 0.15.0 sur la
+  base migrée, restauration par son assistant) et **0.17.2 → branche** (retour sur la série en production). Plus, si une
+  autre story de la 0.17.4 ajoute une migration, 0.17.3 → 0.17.4 à l'intégration.
+- **Écartées** : la seule jambe 0.17.2.
+- **Réversible** : oui.
+
+### C-v0174m-23 — Une table étrangère au schéma : avertissement
+
+- **Contexte** (R1-15) : une table créée hors migration (à la main, par un outil) entrerait dans l'inventaire et rendrait
+  le fichier inimportable par la version de départ.
+- **Retenu** : si une table lue n'est pas dans le `TABLES_TO_TRUNCATE` du binaire neuf (les tables ne font que s'ajouter
+  entre versions : départ ⊆ arrivée), un `warn` la nomme ; la sauvegarde est écrite quand même (elle reste la seule copie
+  de l'état d'avant).
+- **Écartées** : la retirer de l'inventaire (le fichier ne serait plus la photographie de la base) ; refuser.
+- **Réversible** : oui.
+
+### C-v0174m-24 — Prédicat de l'inventaire aligné sur la garde
+
+- **Contexte** (F1-9) : la garde `backup_inventory_matches_schema` ne filtre pas `TABLE_TYPE` ; un filtre
+  `BASE TABLE` divergerait d'elle sur un type que la garde verrait.
+- **Retenu** : même prédicat que la garde (toutes les tables de `DATABASE()` dans `information_schema.TABLES`), filtre du
+  préfixe `_` en Rust ; la garde T15 emploie le même. Amende C-v0174m-1.
+- **Écartées** : `TABLE_TYPE = 'BASE TABLE'`.
 - **Réversible** : oui.
