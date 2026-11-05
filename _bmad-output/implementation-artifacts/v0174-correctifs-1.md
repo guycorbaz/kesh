@@ -1,6 +1,6 @@
 # Story v0174-correctifs-1 : l'import CAMT.053 lit les références d'entité et le CDATA (#819), sans dédoubler les lignes déjà importées
 
-Status: ready-for-dev
+Status: review
 
 *Fiche sœur de `v0174-correctifs.md` (l'index : contraintes communes, CHANGELOG, manuels, ordre), rédigée le 2026-11-05 en
 autonomie (Opus 5.5), worktree `/home/gcorbaz/devel/kesh-0174c`, branche `story/v0174-correctifs` partie de `7bd4d5c0`.
@@ -239,14 +239,53 @@ tels que lus en 0.17.3) : relu en base.
   chaque fragment ; remède C-v0174c-21 (lecture corrigée sans rognage, mode hérité inchangé), cas « espaces autour », MA-819-7
   (une variante sur le mode hérité serait équivalente, dit), référence recalculée au développement. R6 : AC-1.5 non compilable avant, dit ; « jamais écartée en silence » reformulé.
   R7 : repli sans alias sur échec de la sélection héritée, testé.
+- 2026-11-05 — **Validation P2 (Opus, lentille complète)** : sur cette fiche, LOW seulement — P4 (MA-819-1 à **7** aux tâches),
+  P6 (deux tests nommés du repli sans alias, règle « alias différent » rattachée à `kesh-api`), P8 (**deux** sites CAMT, non
+  trois), P9 (chemin du mode jusqu'à `parse_with_version`, signatures publiques de `v04::parse` / `v08::parse` inchangées).
+  *(Entrée déplacée au développement de la section « File List », où elle avait été écrite, vers ce Change Log ; texte
+  inchangé.)*
+- 2026-11-05 — **Développement** (Opus 5.5, autonomie), commit `16039590`. Étape 0 : la référence de caractérisation de la
+  lecture corrigée **recalculée** — `v04_characterization.0.17.4.json` écrit depuis la référence 0.39 à trois valeurs près,
+  puis comparé à la sortie réelle de `parse_camt053` par `corrected_reading_matches_references_except_the_characterization` :
+  **égalité, écart nul** (aucune autre valeur ne change, `"currency": "C\tF"` et le CRLF de `details` compris). Statut → review.
 
 ## Dev Agent Record
 
 ### Agent Model Used
 
+Claude Opus 5.5 (`claude-opus-5-5`), autonomie, worktree `/home/gcorbaz/devel/kesh-0174c`.
+
 ### Completion Notes List
 
+- **Rouges d'abord** (`kesh-gate-logs/v0174c/rouges.log`, `rouges-819-import.log`, `rouges-819-core.log`) : `camt053_tests`
+  7 rouges / 24 (entités du nom, références de caractère, espaces autour, entité en tête et en queue, référence et `Ustrd`,
+  CDATA, entité inconnue) — le commentaire et le témoin ordinaire verts, comme prévu ; la caractérisation corrigée rouge sur
+  `v04_characterization` seule ; les trois tests d'alias de `kesh-core` ne compilaient pas. AC-1.5 ne compilait pas avant
+  (dit par la fiche).
+- **Lecture** (`camt053/mod.rs`) : `reader_for(mode)` (`trim_text(true)` en `Legacy0173` seulement, C-v0174c-21),
+  `detect_version` partagé, `TextMode`, tampon `pending` vidé avant tout événement autre que `Text`/`GeneralRef`/`CData`
+  (`flush_pending`) ; `resolve_char_ref` puis `resolve_xml_entity` (C-v0174c-22) ; `KESH_MESSAGES` 5 → 6.
+  `parse_legacy_0173` `#[doc(hidden)]` ; `v04::parse`/`v08::parse` gardent leur signature (doc : lecteur sans rognage).
+- **Alias** : `kesh_core::bank_imports::detect_duplicate_lines_with_aliases` (`detect_duplicate_lines` l'appelle à vide) ;
+  `kesh-api` `legacy_0173_aliases` aux deux sites CAMT, `&[]` aux deux sites CSV (C-v0174c-23).
+- **Tests neufs** : `camt053_tests.rs` 9 (`*_819`) ; `camt053_golden.rs` deux comparaisons (`legacy_reading_…`,
+  `corrected_reading_…`) et `characterization_fixture_reaches_the_forms_it_freezes` étendu ; `kesh-core` 3 ;
+  `kesh-api` 3 unitaires (`legacy_alias_tests`) et 5 E2E (`bank_imports_e2e.rs`, `*_819`). Ciblé : `cible-819-api.log`,
+  8/8 verts.
+- **Mutations** (`kesh-gate-logs/v0174c/mut/mutations.log`, `mut/MA-819-*.log`) : MA-819-1, -2, -3, -4, -5, -6, -7 **toutes
+  tuées** (7/7). MA-819-4 rougit déjà au (b) d'AC-1.5 (l'aperçu du même fichier ne signale plus ses lignes), puis au (c).
+- **Angle mort déclaré** : « les deux lectures n'ont pas le même nombre de lignes » n'a pas de montage (C-v0174c-23).
+- **Faux doublon par alias** (limite assumée, index (10)) : non testé à part ; borné aux lignes dont la clé change.
+- **Écart de méthode déclaré** : deux éditions de fichiers de test faites par script au lieu de l'outil Edit
+  (`camt053_golden.rs`, trois remplacements à motif vérifié unique ; ajout par `cat >>` à `camt053_tests.rs` et
+  `supplier_invoice_draft_e2e.rs`) — contraire à la consigne 14 ; le contenu a été relu et compilé. Le reste par Edit.
+- Gates : au dernier commit de code de la story, fiche-index § *Dev Agent Record (gates)*.
+
 ### File List
-- 2026-11-05 — **Validation P2 (Opus, lentille complète)** : sur cette fiche, LOW seulement — P4 (MA-819-1 à **7** aux tâches),
-  P6 (deux tests nommés du repli sans alias, règle « alias différent » rattachée à `kesh-api`), P8 (**deux** sites CAMT, non
-  trois), P9 (chemin du mode jusqu'à `parse_with_version`, signatures publiques de `v04::parse` / `v08::parse` inchangées).
+
+- `crates/kesh-import/src/camt053/mod.rs`, `v04.rs`, `v08.rs`
+- `crates/kesh-import/tests/camt053_tests.rs`, `camt053_golden.rs`, `fixtures/README.md`
+- `crates/kesh-import/tests/fixtures/camt053_golden/v04_characterization.0.17.4.json` (neuf)
+- `crates/kesh-core/src/bank_imports.rs`
+- `crates/kesh-api/src/routes/bank_imports.rs`, `crates/kesh-api/tests/bank_imports_e2e.rs`
+- `docs/manual/fr/user-manual.tex` (et PDF), `CHANGELOG.md`

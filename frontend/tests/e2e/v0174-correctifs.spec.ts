@@ -289,18 +289,22 @@ test.describe('0.17.4 — les écrans des correctifs', () => {
 		} finally {
 			await disposeContextSafe(ctx);
 		}
-		await page.route('**/api/v1/contacts?**', async (route) => {
-			const response = await route.fetch();
-			const body = await response.json();
-			for (const c of body.items ?? []) {
-				if (c.name === name) {
+		// La liste ne rend que ce contact (les autres specs du fichier en ont créé), réécrit.
+		await page.route(
+			(url) => url.pathname === '/api/v1/contacts',
+			async (route) => {
+				if (route.request().method() !== 'GET') return route.continue();
+				const response = await route.fetch();
+				const body = await response.json();
+				const mine = (body.items ?? []).filter((c: { name: string }) => c.name === name);
+				for (const c of mine) {
 					c.addressStructured.country = 'SU';
 					c.addressCountryKnown = false;
 				}
-			}
-			await route.fulfill({ response, json: body });
-		});
-		await page.goto(`/contacts?search=${encodeURIComponent(name)}`);
+				await route.fulfill({ response, json: { ...body, items: mine, total: mine.length } });
+			},
+		);
+		await page.goto('/contacts');
 		await page.getByRole('button', { name: 'Modifier' }).first().click();
 		await expect(page.getByTestId('contact-country-unknown')).toContainText('« SU »');
 		await capture(page, testInfo, '817-contact-pays-inconnu-avis');

@@ -1,6 +1,6 @@
 # Story v0174-correctifs-2 : le serveur — les bornes du verrou de période (#869), le pays d'une adresse (#817), le verrou du compte rendu au pool (#842, #540), la date de la 0.17.1 (#901)
 
-Status: ready-for-dev
+Status: review
 
 *Fiche sœur de `v0174-correctifs.md` (l'index), rédigée le 2026-11-05 en autonomie (Opus 5.5), worktree
 `/home/gcorbaz/devel/kesh-0174c`, branche `story/v0174-correctifs` partie de `7bd4d5c0`. Release **0.17.4**, **sans
@@ -272,17 +272,78 @@ ligne citée au Dev Agent Record). **MB-540** — le crochet ne rétablit pas `f
   F3 (symptôme « fin de session » à trois sites de plus) ; LOW R5 (squash), R8 (« et l'exercice » écarté, C-v0174c-8), R10 = F9
   (quatre modules, l'écran passe à la fiche 3), F6 (#540 P2), F8 (`:641`, `:466-478` → `:467`/`:469-479`), F10 (angles morts
   demandés en issue).
-
-## Dev Agent Record
-
-### Agent Model Used
-
-### Completion Notes List
-
-### File List
 - 2026-11-05 — **Validation P2 (Opus, lentille complète)** : sur cette fiche, LOW seulement — P5 (tâche 2 alignée sur la
   conception de `api-external.md`), P10 (AC-2.3 : inventaire clos par `git grep`), P11 (deux sites du symptôme « fin de
   session » écrits autrement : `bank_imports.rs:1478-1481`, `backup.rs:618-620`), P15 (le MCP ne porte pas
   `addressCountryKnown`, dit ; « Pour l'API » à la puce CHANGELOG, index).
 - 2026-11-05 — **Validation P3 (Sonnet, passe ciblée)** : LOW seulement — P3 (`bank_imports.rs:1479-1481`, après `drop(lock_tx)`),
   P4 (`inbox_import.rs:177-186`, grep de contrôle élargi), P5 (liste de `api-external.md:493` : `PERIOD_LOCKED` retiré).
+  *(Ces deux entrées, écrites sous « File List », sont déplacées au développement vers ce Change Log ; texte inchangé.)*
+- 2026-11-05 — **Développement** (Opus 5.5, autonomie), commit `524fda2a`. Étape 0 : `RELEASE_ALL_LOCKS` sur l'image de dev —
+  `docker-compose.dev.yml:56` `image: mariadb:10.11` ; joué sur le conteneur (`etape0-release-all-locks.log`) :
+  `SELECT VERSION(), GET_LOCK('kesh-v0174c-sonde',0), RELEASE_ALL_LOCKS(), IS_FREE_LOCK('kesh-v0174c-sonde')` →
+  `10.11.19-MariaDB-ubu2204  1  1  1`. LOW P2 de la validation P4 : chaque site du second grep classé (Completion Notes).
+  Statut → review.
+
+## Dev Agent Record
+
+### Agent Model Used
+
+Claude Opus 5.5 (`claude-opus-5-5`), autonomie, worktree `/home/gcorbaz/devel/kesh-0174c`.
+
+### Completion Notes List
+
+- **Rouges d'abord** (`kesh-gate-logs/v0174c/rouges.log`, `rouges-fiche2.log`) : 6 rouges / 8 — `unknown_countries_…_817`,
+  `contact_address_country_e2e` ×2 (`addressCountryKnown` absent, `XX` accepté en `201`), `coordinates_rejects_unknown_iso_
+  country_817` (`200`), `period_locked_carries_its_bounds_in_details_869` et `unvalidate_under_the_period_lock_names_its_
+  bounds_869` (`details.lockedThrough` = `Null`). `pool_session_reset.rs` et `account_lock_session_reset_e2e.rs` ne
+  compilaient pas (fonction absente) ; leurs **témoins sans crochet** sont verts après — ils établissent le défaut (verrou
+  tenu au-delà de 2 s, `foreign_key_checks = 0` sur la connexion réacquise).
+- **#869** : corps `PERIOD_LOCKED` au site unique (`errors.rs`), message égal à celui d'aujourd'hui (AC-2.1 l'assert
+  littéralement). AC-2.3 : `git grep -n PERIOD_LOCKED -- crates/kesh-api/tests` rendait **21 lignes** avant les tests
+  neufs (`ac-2-3-period-locked-tests.txt`, relevé au développement avant leur écriture), toutes lisant `code` (ou
+  `modificationBlockedBy`), aucune ne comparant le corps entier ; **25** après (les quatre lignes des deux tests neufs
+  de #869, `period_lock_e2e.rs`, `supplier_invoice_draft_e2e.rs`). Les 21 restent vertes au gate. `docs/api-external.md` : `grep -n lockedThrough` → `:298`, `:336`, `:493`, `:970` (quatre sites).
+- **#817** : `kesh_qrbill::is_iso_3166_alpha2` publique et réexportée ; `check_lengths(stored_country)` ; `validate_optional`
+  (création) et `validate_required` (assistant) sans tolérance ; `validate_optional_keeping` (mise à jour,
+  `existing.address_country`) ; `is_known_country` → `ContactResponse.address_country_known` (`true` sans adresse). Le DTO
+  MCP `kesh_contacts` ne porte pas le champ (choix de la fiche : le MCP ne prépare pas de QR-facture).
+- **#842, #540** : `kesh_db::pool::avec_remise_a_zero_de_session` (`DO RELEASE_ALL_LOCKS()`, puis
+  `SET SESSION foreign_key_checks = 1`, `Ok(true)` ; une erreur ferme la connexion), posée par `create_pool` et par
+  `main.rs` — `grep -nF 'avec_remise_a_zero_de_session' crates/kesh-api/src/main.rs` →
+  `85:    let pool = match kesh_db::pool::avec_remise_a_zero_de_session(MySqlPoolOptions::new())` (MB-842-b, angle mort
+  déclaré : aucun test ne le voit). Coût : deux instructions par restitution, non mesuré.
+- **Les deux greps du symptôme**, rejoués après correctif :
+  - `grep -rn 'fin de session\|session end\|L22' crates --include=*.rs` (`grep-842-1.txt`) → 4 lignes : `config.rs:202`
+    (session d'authentification, sans rapport), `pool.rs:62`, `:71` (la doc neuve, qui dit pourquoi la fin de session
+    n'arrive pas), `mutex.rs:32` (« libéré à la fin de session si l'application s'arrête » : vrai) — **aucun résidu**.
+  - `grep -rn 'rendue au pool\|retour au pool\|connexion au pool\|suit la session' crates --include=*.rs`
+    (`grep-842-2.txt`) → 30 lignes, classées : **corrigés** — `routes/bank_imports.rs` (bras d'échec du `RELEASE_LOCK`),
+    `inbox_import.rs:177-…` (défense en profondeur, `close_on_drop` gardé), `backup.rs:618-…`, `reconciliation.rs:1810`,
+    `mutex.rs` (en-tête et doc), `errors.rs` (doc), `inbox_import_e2e.rs:3254-…` (le pool du test, « comme la production »,
+    est dit **sans** le crochet : il prouve `close_on_drop` seul) ; **neufs** — `main.rs:82`, `pool.rs:29`, `:55`,
+    `pool_session_reset.rs`, `account_lock_session_reset_e2e.rs` ; **sans rapport, restés vrais** —
+    `bank_imports.rs:82`, `:1264`, `:1637`, `bank_accounts.rs:1126` (attente des transactions), `snapshot.rs:18`
+    (isolation), `backup.rs:2025`, `:2027` (connexion fermée), `kesh-seed/src/lib.rs:471`, `:538` (connexion fermée) ;
+    **pools de test sans crochet, restés vrais** — `test_fixtures.rs:393`, `exports_global_e2e.rs:1893` (pools de
+    `#[sqlx::test]`).
+- **Tests neufs** : `address_input.rs` 5 unitaires ; `contact_address_country_e2e.rs` 2 ; `onboarding_path_b_e2e.rs` 1
+  (C-v0174c-27) ; `period_lock_e2e.rs` 1 ; `supplier_invoice_draft_e2e.rs` 1 ; `pool_session_reset.rs` 4 ;
+  `account_lock_session_reset_e2e.rs` 2. Ciblé `cible-fiche2.log` : 16/16 verts.
+- **Mutations** (`mut/mutations.log`) : MB-869, MB-817, MB-817-b, MB-817-c, MB-842-a (kesh-db et kesh-api), MB-540 —
+  **toutes tuées** (7/7). MB-842-b non jouable par un test (angle mort, issue demandée).
+- **AC-2.12** (chemin `RELEASE_LOCK` raté) : sans montage propre, déclaré ; couvert par AC-2.9 pour la conséquence.
+- **AC-2.14 (#901)** : `## [0.17.1] — 2026-11-04`.
+- Gates : au dernier commit de code de la story (exception `kesh-db` : gate complet) — fiche-index § *Dev Agent Record
+  (gates)*.
+
+### File List
+
+- `crates/kesh-api/src/errors.rs`, `address_input.rs`, `main.rs`, `inbox_import.rs`
+- `crates/kesh-api/src/routes/contacts.rs`, `routes/bank_imports.rs`, `routes/reconciliation.rs`
+- `crates/kesh-api/tests/period_lock_e2e.rs`, `supplier_invoice_draft_e2e.rs`, `onboarding_path_b_e2e.rs`,
+  `inbox_import_e2e.rs`, `contact_address_country_e2e.rs` (neuf), `account_lock_session_reset_e2e.rs` (neuf)
+- `crates/kesh-qrbill/src/lib.rs`, `validation.rs`
+- `crates/kesh-db/src/pool.rs`, `backup.rs`, `crates/kesh-db/tests/pool_session_reset.rs` (neuf)
+- `crates/kesh-reconciliation/src/mutex.rs`, `errors.rs`
+- `docs/api-external.md`, `docs/manual/fr/user-manual.tex` (et PDF), `CHANGELOG.md`

@@ -100,6 +100,33 @@ action). `docs/manual/{de,en,it}/` : `README.md` seulement, rien à traduire.
 **`docs/api-external.md`** (fiche 2) — le début et la liste de `:493` (« quatre autres », « 7 avec et 4 sans », `PERIOD_LOCKED`
 retiré de la liste ; la fin, « trois cas sur cinq », reste vraie), des incises à `:298` et `:336`, une ligne `PERIOD_LOCKED` au § 10 (`:937-`).
 
+## Points de « Passer à la 0.17.4 » (manuel d'administration, pour l'intégration)
+
+*Écrits au développement (2026-11-05) ; la section est de la release (orchestrateur). Cette story ne porte **aucune
+migration** : le retour à la 0.17.3 reste possible sans restauration, pour ce qui la concerne.*
+
+1. **Import CAMT.053 (#819).** Les noms, libellés et références à « & », « < », lettre codée ou CDATA sont désormais lus
+   en entier. **Rien n'est relu** : les transactions déjà importées gardent leur texte tronqué (« Fils » pour « Dupont &
+   Fils ») ; un relevé déjà importé reste refusé en doublon de fichier, et une ligne déjà importée, reprise par un autre
+   fichier, reste reconnue (la clé de la 0.17.3 sert d'alias). Une règle d'affectation *Contrepartie exacte* écrite sur un
+   nom tronqué ne reconnaît plus le nom entier : **la corriger**. Un fichier qui porte une entité inconnue est refusé
+   (« Fichier XML mal formé ou tronqué »). **Retour arrière** : une 0.17.3 remise en service calcule la clé tronquée et ne
+   reconnaît pas une ligne que la 0.17.4 a enregistrée entière — un réimport qui chevauche peut alors la doubler : vérifier
+   les doublons d'un réimport après un retour à la 0.17.3.
+2. **Pays des adresses (#817).** Un contact, ou la société, enregistré avec un pays hors de la liste ISO (« SU »,
+   « XX ») se lit toujours ; le contact se modifie sans toucher au pays, et l'écran signale le code inconnu ; changer le
+   pays exige un code valide. **La société ne peut pas corriger son adresse par l'écran** après l'assistant (#909) : une
+   société enregistrée avec un pays invalide ne produit pas de QR-facture ; la correction passe aujourd'hui par
+   l'administrateur de la base. Intégrations : `POST`/`PUT /api/v1/contacts` et `POST /api/v1/onboarding/coordinates`
+   refusent un pays nouveau ou modifié hors liste (`400 VALIDATION_ERROR`) ; les réponses de contact portent
+   `addressCountryKnown`.
+3. **Verrou du compte et état de session (#842, #540).** Aucune action : le pool de connexions remet la session à zéro au
+   retour de chaque connexion (`RELEASE_ALL_LOCKS`, `FOREIGN_KEY_CHECKS = 1`). Exige MariaDB **10.5 ou plus récent**
+   (`RELEASE_ALL_LOCKS`) — l'image `mariadb:10.11` du `docker-compose` le satisfait ; une base plus ancienne ferait échouer
+   le crochet, et chaque connexion serait fermée à sa restitution (correct, plus lent).
+4. **`PERIOD_LOCKED` (#869)** : les intégrations reçoivent `details.lockedThrough` et `details.attempted` ; le message ne
+   change pas.
+
 ## CHANGELOG
 
 Section commune `## [0.17.4] — Non publié`, **au-dessus** de `## [0.17.3] — 2026-11-05` (`CHANGELOG.md:11`) ; les deux autres
