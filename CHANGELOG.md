@@ -8,6 +8,20 @@ Le contenu est rédigé en français à destination des **fiduciaires, PME, ind�
 
 ---
 
+## [0.17.4] — Non publié
+
+La 0.17.4 ne porte **aucune migration**.
+
+### Sécurité
+
+- **Les jetons de session ne sont plus stockés en clair** ([#890](https://github.com/guycorbaz/kesh/issues/890)) : la base, un dump SQL ou une sauvegarde `.keshbackup` n'en gardent qu'une empreinte, à partir de laquelle Kesh 0.17.4 ne reprend aucune session. *À la mise à jour, chaque utilisateur se reconnecte une fois* ; les jetons d'avant sont effacés au premier démarrage et à l'import d'une sauvegarde antérieure. Aucune migration : revenir à la 0.17.3 reste possible sans la sauvegarde, **à condition de vider d'abord la table des sessions** (`DELETE FROM refresh_tokens`, Kesh arrêté ; commande au manuel d'administration, « Passer à la 0.17.4 ») — tout le monde est déconnecté ; la sauvegarde complète avant la mise à jour reste recommandée. **Le manuel des versions jusqu'à la 0.17.2 annonçait à tort un hachage** : une base, un dump ou une sauvegarde antérieurs à la 0.17.4 contiennent les jetons en clair — gardez-les comme le secret qu'ils sont.
+
+### Corrigé
+
+- Une panne de **lecture du réglage d'inactivité** ne fait plus perdre la session au renouvellement (le réglage est lu avant que le jeton ne soit remplacé), ne laisse plus un mot de passe changé sans session neuve, ni l'assistant d'installation en erreur après avoir créé l'Administrateur (refs [#898](https://github.com/guycorbaz/kesh/issues/898)).
+
+---
+
 ## [0.17.3] — 2026-11-05
 
 ⚠️ **La 0.17.3 porte une migration** (une table système, `_kesh_installation_settings`, pour le réglage de la durée d'inactivité) : elle ne modifie aucune donnée existante et `kesh_version_min_required` reste à 0.17.0, mais une 0.17.2 ou une 0.17.1 refuse ensuite de démarrer sur la base. **Le retour à une version antérieure (0.17.2 ou 0.17.1) passe par la sauvegarde complète d'avant la mise à jour** — la base, une sauvegarde `.keshbackup` et le dossier des documents. Une sauvegarde `.keshbackup` prise en 0.17.2 s'importe dans la 0.17.3 (mêmes tables applicatives).

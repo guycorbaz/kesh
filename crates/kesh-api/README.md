@@ -159,7 +159,7 @@ Réponse :
 ## Authentification — flux
 
 - **Access token** : JWT HS256, `sub` (user_id String), `role`, `company_id`, `iat`, `exp`, et — jeton de session, depuis la 0.17.3 — `idle_exp`, l'échéance d'inactivité de la session (copie de `refresh_tokens.expires_at`), contrôlée par le middleware **sans tolérance**. Durée 15 min par défaut. `leeway = 60s` au decode (sur `exp` seulement) pour absorber le clock drift NTP.
-- **Refresh token** : UUID v4 opaque persisté en base (`refresh_tokens`). Sa ligne porte l'**échéance d'inactivité** de la session, réglée en base (60 min par défaut, `_kesh_installation_settings`), prolongée par le battement `POST /api/v1/auth/activity` ; **le renouvellement ne la prolonge pas** (la ligne neuve la recopie). Token rotation à chaque refresh avec détection de vol, sauf rejeu dans les 30 s d'une rotation (grâce, deux onglets).
+- **Refresh token** : UUID v4 opaque ; **seule son empreinte** (SHA-256 tronqué, mis en forme dans la colonne `token` — depuis la 0.17.4, #890) est persistée en base (`refresh_tokens`). Sa ligne porte l'**échéance d'inactivité** de la session, réglée en base (60 min par défaut, `_kesh_installation_settings`), prolongée par le battement `POST /api/v1/auth/activity` ; **le renouvellement ne la prolonge pas** (la ligne neuve la recopie). Token rotation à chaque refresh avec détection de vol, sauf rejeu dans les 30 s d'une rotation (grâce, deux onglets).
 - **Middleware `require_auth`** : pattern Axum 0.8 `from_fn_with_state` qui décode le JWT et injecte un `CurrentUser { user_id, role }` dans les `Extensions` de la requête. Les handlers protégés le récupèrent via `Extension<CurrentUser>`.
 - **Bootstrap admin** : au premier démarrage sur une DB vide, un compte `KESH_ADMIN_USERNAME` avec mot de passe `KESH_ADMIN_PASSWORD` est créé. Log explicite « CHANGEZ LE MOT DE PASSE ».
 
@@ -177,7 +177,7 @@ Voir `crates/kesh-db/README.md` pour les prérequis DB (privilèges `CREATE DATA
 
 ## Dettes techniques documentées
 
-1. **`refresh_tokens.token` stocké en clair** — le hashing SHA-256 avant stockage est souhaitable mais hors scope MVP. Depuis la 0.17.3, la durée d'inactivité par défaut est de 60 minutes (réglable de 1 à 1440) : le risque d'un jeton lu en base est donc plus grand qu'avec les 15 minutes d'avant — suivi par #890 (C-v0172s-14).
+1. **`refresh_tokens.token` stocké en clair** — *corrigé en 0.17.4 (#890)* : la colonne ne porte plus que l'empreinte du jeton ; son nom et son commentaire SQL (`'UUID v4 opaque'`) ne changeront qu'à la prochaine migration de la table.
 2. **`refresh_token_max_lifetime` non enforced** — la session peut vivre indéfiniment si le client refresh régulièrement. Story future pour token families / absolute lifetime.
 3. **Rate limiter in-memory** — reset au redémarrage, single-instance, HashMap non borné. Acceptable pour MVP 2-5 users.
 4. **TOCTOU sur refresh concurrent** — deux refresh simultanés avec le même token peuvent émettre deux sessions. Fix via token families hors scope MVP.

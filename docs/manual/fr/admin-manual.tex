@@ -1662,7 +1662,7 @@ La répétition d'une clôture sur une copie (\S\ref{sec:repetition-cloture}) co
 \paragraph{Ce qu'elle suppose.} Une production qui \textbf{exporte en format 2} (Kesh 0.15.0 ou plus) : le fichier \keshcommand{.keshbackup} emporte alors les pièces et en annonce le nombre. Cela se vérifie \textbf{avant de rien créer}, et sans rien télécharger : sur la production, la page \emph{Administration → Sauvegarde complète} dit que le fichier emporte « les pièces justificatives » ; une version antérieure ne le dit pas. Une production antérieure se \textbf{met d'abord à jour} (section \emph{Mise à jour de Kesh}, \S\ref{sec:mise-a-jour}), geste distinct de la répétition. Une sauvegarde de format 1 ne vaut pas répétition : ses pièces ne sont pas dans le fichier et, dans la copie, dont le dossier des documents est neuf, toutes les pièces référencées seraient manquantes.
 
 \begin{keshwarning}[title=\faExclamationTriangle\ La copie porte les données réelles]
-Le fichier \keshcommand{.keshbackup} est un \textbf{secret} (mots de passe hachés, jetons de session : \S\ref{sec:backup-ui-keshbackup}), et la copie restaurée contient toute la comptabilité, les pièces et une sauvegarde de sécurité. Tout ce qui touche la répétition reste dans le dossier de la copie, et la répétition se termine par sa \textbf{destruction} --- y compris si elle s'arrête en chemin.
+Le fichier \keshcommand{.keshbackup} est un \textbf{secret} (mots de passe hachés, empreintes des jetons de session --- depuis la 0.17.4 ; une sauvegarde antérieure porte encore des jetons en clair : \S\ref{sec:backup-ui-keshbackup}), et la copie restaurée contient toute la comptabilité, les pièces et une sauvegarde de sécurité. Tout ce qui touche la répétition reste dans le dossier de la copie, et la répétition se termine par sa \textbf{destruction} --- y compris si elle s'arrête en chemin.
 \end{keshwarning}
 
 \paragraph{Conventions.} Les commandes se tapent dans un même terminal, dans l'ordre. \keshcommand{COPIE} désigne le dossier de la copie, toujours écrit \textbf{sans barre finale}. Chaque commande Compose qui désigne la copie porte \keshcommand{-p kesh-repetition}, \keshcommand{-{}-project-directory "\$COPIE"} et des \keshcommand{-f} explicites : le nom de projet ne dépend ni du dossier courant ni d'une variable du terminal, le \keshpath{.env} lu est celui de la copie, et le fichier d'override est nommé, donc vu. Ne les abrégez pas par un alias ou une fonction : une session où l'alias manque retomberait sur les valeurs implicites. « \textbf{Arrêt} » veut dire, partout : faire ce que dit, pour l'endroit où l'on s'arrête, la rubrique \emph{En cas d'arrêt} (en fin de sous-section) --- détruire ce qui a été créé, rien s'il n'y a rien ---, puis, pour reprendre, repartir du contrôle~1 avec un \textbf{nouveau dossier} : une nouvelle date, ou, le même jour, un suffixe (\keshpath{kesh-repetition-AAAAMMJJ-2}) --- jamais un \keshcommand{mkdir -p}, jamais un \keshcommand{rm} improvisé.
@@ -1988,7 +1988,7 @@ Hyper Backup est l'outil principal Synology pour les backups versionnés vers st
     \item Lancer Hyper Backup → \textbf{+ Tâche de sauvegarde de données} → choisir la destination (ex. \emph{Synology C2 Backup} pour offsite managé, \emph{S3 Storage} pour AWS/Wasabi/Backblaze, \emph{Dossier local} pour HDD USB attaché au NAS).
     \item Cocher les dossiers à backup :
         \begin{itemize}
-            \item \textbf{Obligatoire} : \keshpath{/volume1/docker/kesh/} --- le compose, \keshpath{.env}, \keshpath{log/}, \keshpath{inbox/}, \keshpath{documents/}, \keshpath{backup/}, les deux fichiers d'identifiants (\keshpath{kesh-dump.cnf}, \keshpath{kesh-restore.cnf}), les deux scripts et le dossier \keshpath{dump/}, où la tâche planifiée dépose le \textbf{dump de la base} (\keshpath{kesh\_pre\_backup.sql.gz}). La base elle-même n'est pas dans ce dossier : seul ce dump l'y fait entrer. \keshpath{documents/} porte les documents fournisseur importés --- la majeure partie du dossier depuis la 0.14.0 --- et les PDF des factures émises (\S\ref{sec:pdf-factures-sauvegarde}) ; avec \keshpath{docker-compose.yml}, c'est le dossier de \texttt{KESH\_DOCUMENTS\_HOST\_DIR} s'il est posé --- à ajouter alors à la tâche de sauvegarde. \keshpath{backup/} (sauvegarde de sécurité prise avant chaque import d'installation), \keshpath{dump/} et \keshpath{avant-restauration/} (dumps de sécurité de \keshpath{kesh-restore.sh}) contiennent des \textbf{secrets} --- condensés des mots de passe, jetons de session --- : d'où leurs droits réservés à root et le chiffrement client-side ci-dessous (\S\ref{sec:backup-ui-keshbackup}). À restaurer avec la base.
+            \item \textbf{Obligatoire} : \keshpath{/volume1/docker/kesh/} --- le compose, \keshpath{.env}, \keshpath{log/}, \keshpath{inbox/}, \keshpath{documents/}, \keshpath{backup/}, les deux fichiers d'identifiants (\keshpath{kesh-dump.cnf}, \keshpath{kesh-restore.cnf}), les deux scripts et le dossier \keshpath{dump/}, où la tâche planifiée dépose le \textbf{dump de la base} (\keshpath{kesh\_pre\_backup.sql.gz}). La base elle-même n'est pas dans ce dossier : seul ce dump l'y fait entrer. \keshpath{documents/} porte les documents fournisseur importés --- la majeure partie du dossier depuis la 0.14.0 --- et les PDF des factures émises (\S\ref{sec:pdf-factures-sauvegarde}) ; avec \keshpath{docker-compose.yml}, c'est le dossier de \texttt{KESH\_DOCUMENTS\_HOST\_DIR} s'il est posé --- à ajouter alors à la tâche de sauvegarde. \keshpath{backup/} (sauvegarde de sécurité prise avant chaque import d'installation), \keshpath{dump/} et \keshpath{avant-restauration/} (dumps de sécurité de \keshpath{kesh-restore.sh}) contiennent des \textbf{secrets} --- condensés des mots de passe, empreintes des jetons de session (depuis la 0.17.4 ; les dumps \textbf{antérieurs} à la mise à jour portent encore des jetons en clair) --- : d'où leurs droits réservés à root et le chiffrement client-side ci-dessous (\S\ref{sec:backup-ui-keshbackup}). À restaurer avec la base.
         \end{itemize}
     \item \emph{Facultatif} : cocher l'application \textbf{Container Manager} dans \emph{Applications} pour sauvegarder la configuration des projets --- \textbf{à vérifier d'abord} sur votre NAS : voir la note sur l'arrêt possible des applications sauvegardées, plus bas. La sauvegarde de Kesh n'en dépend pas : le compose et \keshpath{.env} sont dans le dossier coché ci-dessus.
     \item Activer le \textbf{chiffrement client-side} (mot de passe différent du KESH\_JWT\_SECRET, stocké séparément offline — la perte de ce mot de passe rend les backups illisibles).
@@ -2260,7 +2260,7 @@ Et régler \keshcommand{default\_storage\_engine=InnoDB} dans la configuration d
 L'\textbf{export global} (CSV, \textbf{Administration → Export global}) ne bénéficie \textbf{pas encore} de cette garantie : il lit ses tables l'une après l'autre (issue \#465).
 
 \begin{keshwarning}
-Le fichier \keshcommand{.keshbackup} est un \textbf{secret} : il contient les \textbf{condensés (hash) des mots de passe} de tous les utilisateurs, les \textbf{condensés des clés API (PAT)}, depuis la 0.16.0 les \textbf{condensés des clés du serveur MCP} et les \textbf{envois du serveur MCP} --- des données de vos livres qu'un agent a demandées, \textbf{en clair}, en attente ou validées, y compris une version que vous avez \textbf{modifiée} (\S\ref{sec:mcp-envois}) ---, ainsi que les \textbf{jetons de session}. Il n'est \textbf{pas chiffré} par défaut. Conservez-le et transmettez-le comme une donnée hautement sensible — chiffrez-le pour tout transit hors de votre infrastructure contrôlée (par ex. \keshcommand{gpg} ou \keshcommand{age}).
+Le fichier \keshcommand{.keshbackup} est un \textbf{secret} : il contient les \textbf{condensés (hash) des mots de passe} de tous les utilisateurs, les \textbf{condensés des clés API (PAT)}, depuis la 0.16.0 les \textbf{condensés des clés du serveur MCP} et les \textbf{envois du serveur MCP} --- des données de vos livres qu'un agent a demandées, \textbf{en clair}, en attente ou validées, y compris une version que vous avez \textbf{modifiée} (\S\ref{sec:mcp-envois}) ---, ainsi que les \textbf{empreintes} des jetons de session (depuis la 0.17.4). Une sauvegarde, une base ou un dump \textbf{antérieurs} à la 0.17.4 portent encore les jetons \textbf{en clair}, et le manuel des versions jusqu'à la 0.17.2 annonçait à tort un hachage : traitez-les comme le secret qu'ils sont. Le fichier n'est \textbf{pas chiffré} par défaut. Conservez-le et transmettez-le comme une donnée hautement sensible — chiffrez-le pour tout transit hors de votre infrastructure contrôlée (par ex. \keshcommand{gpg} ou \keshcommand{age}).
 \end{keshwarning}
 
 \paragraph{Ce que la sauvegarde emporte (format 2, depuis la 0.15.0)}
@@ -2509,6 +2509,28 @@ L'opération s'inscrit au journal d'audit sous \emph{Réparation de l'installati
 La session ouverte doit être \textbf{rouverte} --- reconnexion, ou au plus la durée du \textbf{jeton d'accès} (\texttt{KESH\_JWT\_EXPIRY\_MINUTES}) plus une minute ; d'ici là, certains écrans de la société répondent par une erreur, d'autres s'affichent vides. Si le journal du serveur porte « réparation de l'installation au démarrage » suivi d'une erreur, voir la section \emph{Dépannage}.
 
 \textbf{Limite} : les données de démonstration laissées par une réinitialisation antérieure (taux de TVA, réglages de facturation, contacts, articles, factures, avoirs) qui désignent la société effacée restent en base, invisibles et inertes (\#546).
+
+\subsubsection{Passer à la 0.17.4}\label{sec:maj-0-17-4}
+
+La 0.17.4 se pose sur la 0.17.3 : elle ne demande ni nouveau compose ni nouvelle variable de \keshpath{.env} ; on tire l'image et on redémarre (\S\ref{sec:mise-a-jour}). Depuis une version antérieure à la 0.17.3, appliquez d'abord les sections suivantes (\S\ref{sec:maj-0-17-3}, puis \S\ref{sec:maj-0-17-2} s'il le faut).
+
+\begin{sloppypar}
+\paragraph{Aucune migration, retour à la 0.17.3 après vidage des sessions.} \textbf{La 0.17.4 n'a aucune migration} : elle ne modifie pas le schéma, et \texttt{kesh\_version\_min\_required} reste à \texttt{0.17.0}. \textbf{Le retour à la 0.17.3 se fait sans restauration}, \textbf{après avoir vidé la table des sessions}, Kesh arrêté. Avec \keshpath{docker-compose.yml}, deux commandes (compte et base de Kesh : remplacez \texttt{kesh} par \texttt{MARIADB\_USER} et \texttt{MARIADB\_DATABASE} s'ils ont été changés ; le mot de passe demandé est celui de \texttt{DATABASE\_URL}, saisi au clavier) :
+\end{sloppypar}
+
+\begin{lstlisting}[language=bash]
+docker compose stop kesh-api
+docker compose exec mariadb mariadb -u kesh -p kesh \
+  -e "DELETE FROM refresh_tokens"
+\end{lstlisting}
+
+\begin{sloppypar}
+Avec \keshpath{docker-compose.prod.yml} (base hébergée hors du compose, par exemple le MariaDB de DSM), exécutez \texttt{DELETE FROM refresh\_tokens;} dans la base de \texttt{DATABASE\_URL} avec le client MariaDB habituel, Kesh arrêté. Puis reprenez l'image \texttt{gcorbaz/kesh:0.17.3} dans le compose et redémarrez. Tout le monde est déconnecté. \textbf{Sans ce geste}, une empreinte lue dans une base, un dump ou une sauvegarde de la 0.17.4 ouvrirait une session sous la 0.17.3, qui cherche la valeur reçue telle quelle. \textbf{La sauvegarde complète d'avant la mise à jour reste recommandée} --- la base, une sauvegarde \keshpath{.keshbackup} et le dossier des documents ---, comme avant toute mise à jour.
+\end{sloppypar}
+
+\begin{sloppypar}
+\paragraph{Chaque utilisateur se reconnecte une fois.} Les jetons de session sont désormais stockés en empreinte (\S\ref{sec:auth-jwt}) ; ceux d'avant ne sont plus reconnus, et sont effacés au premier démarrage de la 0.17.4 comme à l'import d'une sauvegarde antérieure. Un onglet resté ouvert revient à la connexion \textbf{à sa prochaine activité} : enregistrez avant de mettre à jour. Les bases, dumps et sauvegardes \textbf{antérieurs} à la mise à jour portent encore des jetons en clair : ils restent des secrets (\S\ref{sec:backup-ui-keshbackup}).
+\end{sloppypar}
 
 \subsubsection{Passer à la 0.17.3}\label{sec:maj-0-17-3}
 
@@ -3018,13 +3040,13 @@ Configurations recommandées du reverse proxy :
     \item Rotation périodique du \texttt{KESH\_JWT\_SECRET} : tous les 6--12 mois en production. Une rotation invalide tous les tokens existants, forçant les utilisateurs à se reconnecter.
 \end{itemize}
 
-\subsection{Authentification JWT + refresh tokens}
+\subsection{Authentification JWT + refresh tokens}\label{sec:auth-jwt}
 
 Kesh utilise un modèle JWT avec rotation de refresh tokens :
 
 \begin{itemize}
     \item L'access token (JWT court, 15 min par défaut) est envoyé en cookie \texttt{HttpOnly}, \texttt{Secure} (sauf \texttt{KESH\_COOKIE\_SECURE=false}), \texttt{SameSite=Strict}. Il porte l'échéance d'inactivité de la session (\texttt{idle\_exp}), contrôlée sans tolérance.
-    \item Le refresh token est stocké en DB (table \texttt{refresh\_tokens}) \textbf{tel quel} (non haché, suivi par \#890) ; 30 jours est la durée du \emph{cookie} ; la ligne porte l'\textbf{échéance d'inactivité} de la session.
+    \item Le refresh token n'est \textbf{jamais stocké en clair} : la table \texttt{refresh\_tokens} n'en garde qu'une empreinte (SHA-256), si bien que Kesh ne peut pas reprendre une session à partir d'une lecture de la base ou d'une sauvegarde (voir \S\ref{sec:maj-0-17-4} pour un retour à la 0.17.3) ; 30 jours est la durée du \emph{cookie} ; la ligne porte l'\textbf{échéance d'inactivité} de la session.
     \item À chaque refresh, le token précédent est invalidé (rotation), une trace est conservée pour détection d'attaque par replay. La rotation n'a lieu qu'à l'échéance du jeton d'accès et \textbf{ne prolonge pas} la session ; un rejeu dans les 30 secondes d'une rotation (deux onglets) est refusé sans révoquer les autres sessions --- l'onglet qui a perdu la course revient à la connexion.
     \item La déconnexion révoque le jeton de renouvellement de la session.
 \end{itemize}
@@ -3036,7 +3058,7 @@ Kesh utilise un modèle JWT avec rotation de refresh tokens :
 \end{sloppypar}
 
 \begin{sloppypar}
-\textbf{Exacte.} La session se ferme à la dernière activité de l'utilisateur plus la durée réglée, \textbf{à la seconde près, sauf quatre écarts}~: (a) l'activité est transmise au serveur au plus 15 secondes après qu'elle a eu lieu --- un navigateur fermé, mis en veille ou coupé du réseau dans ces 15 secondes ferme jusqu'à 15 secondes plus tôt ; (b) un onglet en arrière-plan~: le navigateur ralentit ses minuteries, l'écran de connexion peut n'apparaître qu'au retour sur l'onglet --- le serveur, lui, a refusé dès l'échéance ; (c) la transition qui suit un changement du réglage~: chaque session applique la nouvelle valeur à sa prochaine activité, une session déjà inactive garde son échéance --- un abaissement peut donc fermer une session dans le navigateur plus tôt que le serveur ne l'aurait fait ; (d) deux écarts sous la seconde (un battement rejoué après un renouvellement, une activité de la toute dernière seconde). Au-delà de l'échéance, le serveur refuse toute requête, quelle que soit la durée du jeton d'accès~: \texttt{KESH\_JWT\_EXPIRY\_MINUTES} ne règle plus que le rythme des renouvellements.
+\textbf{Exacte.} La session se ferme à la dernière activité de l'utilisateur plus la durée réglée, \textbf{à la seconde près, sauf quatre écarts}~: (a) l'activité est transmise au serveur au plus 15 secondes après qu'elle a eu lieu --- un navigateur fermé, mis en veille ou coupé du réseau dans ces 15 secondes ferme jusqu'à 15 secondes plus tôt ; un battement qui croise un renouvellement de la même session peut être perdu de même, et rattrapé à l'activité suivante ; (b) un onglet en arrière-plan~: le navigateur ralentit ses minuteries, l'écran de connexion peut n'apparaître qu'au retour sur l'onglet --- le serveur, lui, a refusé dès l'échéance ; (c) la transition qui suit un changement du réglage~: chaque session applique la nouvelle valeur à sa prochaine activité, une session déjà inactive garde son échéance --- un abaissement peut donc fermer une session dans le navigateur plus tôt que le serveur ne l'aurait fait ; (d) deux écarts sous la seconde (un battement rejoué après un renouvellement, une activité de la toute dernière seconde). Au-delà de l'échéance, le serveur refuse toute requête, quelle que soit la durée du jeton d'accès~: \texttt{KESH\_JWT\_EXPIRY\_MINUTES} ne règle plus que le rythme des renouvellements.
 \end{sloppypar}
 
 \begin{sloppypar}
@@ -3048,7 +3070,7 @@ Kesh utilise un modèle JWT avec rotation de refresh tokens :
 \end{sloppypar}
 
 \begin{sloppypar}
-\textbf{Mise à jour.} L'ancienne variable de durée d'inactivité n'est plus lue (\S\ref{sec:configuration} : retirez-la si vous l'aviez posée). Les jetons émis avant la mise à jour restent valables jusqu'à \texttt{KESH\_JWT\_EXPIRY\_MINUTES}. \textbf{Après la mise à jour, rechargez chaque onglet de Kesh resté ouvert}~: un onglet resté sur l'ancienne interface ne transmet pas l'activité au serveur, et sa session peut se fermer en pleine saisie. Si vous aviez posé \texttt{KESH\_JWT\_EXPIRY\_MINUTES=480}, une session ouverte avant la mise à jour peut prendre fin à sa première activité qui suit~: reconnectez-vous une fois.
+\textbf{Mise à jour.} Pour la 0.17.4 (jetons de session en empreinte, une reconnexion), voir \S\ref{sec:maj-0-17-4}. À la mise à jour vers la 0.17.3 : l'ancienne variable de durée d'inactivité n'est plus lue (\S\ref{sec:configuration} : retirez-la si vous l'aviez posée). Les jetons émis avant la mise à jour restent valables jusqu'à \texttt{KESH\_JWT\_EXPIRY\_MINUTES}. \textbf{Après la mise à jour, rechargez chaque onglet de Kesh resté ouvert}~: un onglet resté sur l'ancienne interface ne transmet pas l'activité au serveur, et sa session peut se fermer en pleine saisie. Si vous aviez posé \texttt{KESH\_JWT\_EXPIRY\_MINUTES=480}, une session ouverte avant la mise à jour peut prendre fin à sa première activité qui suit~: reconnectez-vous une fois.
 \end{sloppypar}
 
 \begin{sloppypar}
@@ -3762,7 +3784,7 @@ Kesh démarre quand même, sur l'installation \textbf{inchangée} : la connexion
 
 \paragraph{Symptômes} Plusieurs appels API consécutifs échouent en \texttt{401 Unauthorized} alors que l'utilisateur est censé être authentifié.
 
-\paragraph{Cause} La cause ordinaire~: la \textbf{session a été fermée par inactivité} (\S\ref{sec:duree-inactivite}) --- la page de connexion le dit ; un onglet resté en arrière-plan peut n'afficher la connexion qu'au retour. Sinon~: jeton de renouvellement expiré ou invalidé (cf. KF \#54 « E2E test helpers cascade 401 », fermée Epic 9.5).
+\paragraph{Cause} La cause ordinaire~: la \textbf{session a été fermée par inactivité} (\S\ref{sec:duree-inactivite}) --- la page de connexion le dit ; un onglet resté en arrière-plan peut n'afficher la connexion qu'au retour ; juste après une mise à jour vers la 0.17.4~: la reconnexion unique (\S\ref{sec:maj-0-17-4}). Sinon~: jeton de renouvellement expiré ou invalidé (cf. KF \#54 « E2E test helpers cascade 401 », fermée Epic 9.5).
 
 \paragraph{Solution} L'utilisateur doit se reconnecter. Si le problème persiste pour tous les utilisateurs, vérifier l'horloge système (drift NTP).
 
