@@ -8,7 +8,7 @@ Le contenu est rédigé en français à destination des **fiduciaires, PME, ind�
 
 ---
 
-## [0.17.4] — Non publié
+## [0.17.4] — 2026-11-06
 
 La 0.17.4 ne porte **aucune migration**.
 
