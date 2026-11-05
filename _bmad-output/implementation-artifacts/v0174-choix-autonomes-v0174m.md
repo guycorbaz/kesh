@@ -431,7 +431,8 @@ simplifier plutôt que corriger.*
 - **Contexte** : C-v0174m-27 évaluait l'échappatoire après le plan, ce qui obligeait un message de refus particulier pour
   le plan illisible (V2-5).
 - **Retenu** : après `FreshInstall`, l'échappatoire égale à la version du binaire saute tout (plan compris) ; le message de
-  refus est le même pour toutes les causes, et son conseil vaut toujours. Un état « interrompu » non vu dans ce cas est
+  refus est le même pour toutes les causes, et son conseil vaut toujours — *annoté à la validation P6* : sauf le plan
+  incohérent (C-v0174m-30, V5-4), que l'échappatoire ne franchit pas et dont le message ne la conseille pas. Un état « interrompu » non vu dans ce cas est
   refusé ensuite par `sqlx` (`MigrateError::Dirty`).
 - **Écartées** : C-v0174m-27.
 - **Réversible** : oui.
@@ -444,7 +445,7 @@ simplifier plutôt que corriger.*
 - **C-v0174m-5** et **C-v0174m-13** : les mentions de « la rétention » sont caduques (C-v0174m-25) ; le nom et le dossier
   ne sont lus que par le module lui-même.
 - **C-v0174m-19** : la forme `docker compose exec mariadb mariadb -u"$MARIADB_USER" -p` est **fausse** (développée dans le
-  shell de l'hôte, V2-9) ; forme en vigueur : `docker compose exec mariadb sh -c '…'` (sous-fiche 1, § *Manuel*, point 3).
+  shell de l'hôte, V2-9) ; forme non reprise : C-v0174m-32 ne retient aucune commande de restauration (annoté à la validation P6).
 
 ## Remédiation de la validation P4 (2026-11-05)
 
