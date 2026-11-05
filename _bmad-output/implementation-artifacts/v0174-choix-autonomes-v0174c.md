@@ -69,7 +69,7 @@ Numéros de ligne de `7bd4d5c0` (le merge de la rétrospective de la série 0.17
 - **Retenu** : `resolve_char_ref()` (`quick-xml-0.42.0/src/events/mod.rs:1724`) pour une référence de
   caractère, `quick_xml::escape::resolve_predefined_entity` (`src/escape.rs:851`) pour un nom ; une
   référence inconnue ou invalide rend `CamtError::MalformedXml` avec un message **rédigé par Kesh**
-  (« référence d'entité inconnue : &… ; »), ajouté à `KESH_MESSAGES` (`tests/camt053_golden.rs:61-67`) et à
+  (« référence d'entité inconnue : » suivi du nom de l'entité), ajouté à `KESH_MESSAGES` (`tests/camt053_golden.rs:61-67`) et à
   l'inventaire clos `inventory_of_kesh_messages_is_closed`.
 - **Écartées** : (a) ignorer l'entité inconnue — c'est le défaut même ; (b) la garder telle quelle
   (`&foo;`) — un texte faux qui paraît juste.
@@ -103,7 +103,8 @@ Numéros de ligne de `7bd4d5c0` (le merge de la rétrospective de la série 0.17
 - **Limite déclarée** : l'alias peut faire signaler comme doublon une ligne réellement nouvelle dont la date,
   le montant, le compte et la référence d'une ligne existante égalent sa forme tronquée (« 1 ») — signalée à
   l'aperçu ; à la création, écartée par défaut (`skip`) comme tout doublon, tracée à l'audit
-  (`duplicate_lines_skipped`) ; le CSV n'est pas concerné (aucun XML).
+  (`duplicate_lines_skipped`) ; le CSV n'est pas concerné (aucun XML). Limite assumée, **issue demandée** (validation P2,
+  P14).
 - **Réversible** : oui (code).
 
 ### C-v0174c-6 — #819 : la caractérisation devient double
@@ -233,7 +234,8 @@ Numéros de ligne de `7bd4d5c0` (le merge de la rétrospective de la série 0.17
   DESC`, `repositories/supplier_invoices.rs:252`).
 - **Retenu** : lire les pages de 200 jusqu'à `total` (`offset` croissant), en s'arrêtant sur une page vide
   (garde contre une boucle si la liste rétrécit pendant la lecture), en **dédupliquant par `id`** (une facture
-  validée par une autre session entre deux pages décale l'`OFFSET` ; validation P1, R11) ; la liste à cocher
+  validée par une autre session entre deux pages décale l'`OFFSET` ; validation P1, R11 — une facture peut alors manquer
+  jusqu'à la relecture suivante, limite assumée, **issue demandée**, validation P2, P14) ; la liste à cocher
   garde sa forme. Aucune borne haute (une société à 10 000 factures validées non payées ferait 50 requêtes) :
   **issue demandée**. La
   création refuse déjà plus de 500 factures dans un lot (`MAX_IN_CLAUSE_IDS`, `routes/payment_batches.rs:174`)
@@ -307,14 +309,18 @@ Numéros de ligne de `7bd4d5c0` (le merge de la rétrospective de la série 0.17
 
 - **Contexte** : l'inventaire d'aujourd'hui (fiche 3, § Inventaire) se périme au premier site ajouté.
 - **Retenu** : un test qui lit les sources de `frontend/src` (`readdirSync` / `readFileSync`, patron de
-  `lib/shared/i18n-un-repli-par-cle.test.ts`, hors `*.test.ts` et `*.test-helper*`), **commentaires masqués**, et
+  `lib/shared/i18n-un-repli-par-cle.test.ts`, hors `*.test.ts` et `*.test-helper*`), et
   relève par ligne `toISOString().slice(0, 10)` et `formatSwissDate(<expr>.slice(0, 10))`, `<expr>` pouvant être
   parenthésée (`(x ?? '').slice(0, 10)`). **Révisé à la validation P1 (R3 = F4)** : l'allowlist est **par
   occurrence** — `{ fichier, fragment exact de la ligne, motif }`, huit entrées —, chaque relevé égale une entrée
   et chaque entrée un seul relevé ; une allowlist par fichier laissait verte la mutation d'un site corrigé dans un
-  fichier qui porte aussi un conforme (`invoices/[id]/+page.svelte`, `supplier-invoices/[id]/+page.svelte`,
-  `settings/api-keys/+page.svelte`). Sonde positive **dans un fichier déjà autorisé** (MC-889-g), mutation du
-  masque (MC-889-h).
+  fichier qui porte aussi un conforme — quatre : `invoices/[id]/+page.svelte`, `supplier-invoices/[id]/+page.svelte`,
+  `settings/api-keys/+page.svelte`, `invoices/due-dates/+page.svelte`. Sonde positive **dans un fichier déjà autorisé**
+  (MC-889-g). **Révisé à la validation P2 (P2)** : **pas de masque des commentaires** — aucun commentaire de `7bd4d5c0`
+  ne porte l'un des deux motifs (rejoués sans filtre : 15 et 14 lignes, toutes du code), si bien qu'un masque ne
+  protégerait rien de réel et demanderait sa propre preuve ; un commentaire futur qui citerait le motif entrerait à
+  l'allowlist, motif « commentaire ». *(Écartée : garder le masque et le prouver par un test sur une chaîne
+  synthétique — plus d'outillage pour un cas qui n'existe pas ; réversible si un tel commentaire apparaît.)*
 - **Écartées** : une règle ESLint — le dépôt n'en a aucune de ce genre, et un test se lit dans la fiche.
 - **Réversible** : oui.
 

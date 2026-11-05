@@ -69,8 +69,10 @@ l'écriture ; le `message` est inchangé (assertion d'égalité à la valeur d'a
 **AC-2.2** — Le repassage en brouillon d'une facture fournisseur dont l'achat est sous le verrou
 (`POST /api/v1/supplier-invoices/{id}/unvalidate`) rend les mêmes `details` (`supplier_invoice_draft_e2e.rs` ou fichier voisin
 qui monte déjà une facture validée). **Rouge avant.**
-**AC-2.3** — Les tests qui figent le corps d'un `PERIOD_LOCKED` (`invoice_delete_e2e.rs:327`,
-`journal_entry_reversal_e2e.rs:1882`, `:1891`, `:2298-2304`, `:2595`) restent verts sans changement (ils lisent `code`).
+**AC-2.3** — **Tous** les tests de `crates/kesh-api/tests` qui citent `PERIOD_LOCKED`
+(`git grep -n PERIOD_LOCKED -- crates/kesh-api/tests`, sortie jointe au Dev Agent Record — dont `invoice_delete_e2e.rs:327`,
+`journal_entry_reversal_e2e.rs:1882`, `:1891`, `:2298-2304`, `:2595`, `:3216`, `:3241`, `period_lock_e2e.rs:343`, `:348`)
+lisent `code` seul, aucun ne compare le corps entier : ils restent verts sans changement.
 
 **Mutation (P3, nommée)** : **MB-869** — `details` omis : AC-2.1 et AC-2.2 rougissent.
 
@@ -223,17 +225,25 @@ ligne citée au Dev Agent Record). **MB-540** — le crochet ne rétablit pas `f
 ## Tâches
 
 1. Rouges d'abord : AC-2.1, 2.2, 2.4 à 2.7, 2.9 à 2.11 (constatés, notés).
-2. #869 : corps du `PERIOD_LOCKED` ; `docs/api-external.md` (`:493`, phrase suivante, ligne au § 10).
+2. #869 : corps du `PERIOD_LOCKED` ; `docs/api-external.md` (début de `:493`, incises `:298` et `:336`, ligne au § 10).
 3. #817 : `kesh-qrbill` (`pub`, réexport, doc) ; `address_input.rs` ; tolérance du pays stocké dans `validate_common` ;
    `addressCountryKnown` ; manuel.
 4. #842/#540 : la fonction de `pool.rs`, appliquée par `create_pool` et `main.rs` ; commentaires de `mutex.rs`,
-   `kesh-reconciliation/src/errors.rs`, `kesh-api/src/errors.rs:919-921`, `routes/reconciliation.rs:1809-1810`.
+   `kesh-reconciliation/src/errors.rs`, `kesh-api/src/errors.rs:919-921`, `routes/reconciliation.rs:1809-1810`, et deux sites
+   du même symptôme écrit autrement (validation P2, P11) : `routes/bank_imports.rs:1478-1481` (« Le verrou suit la session de
+   la connexion », avant `drop(lock_tx)`) → « rendu au retour de la connexion au pool (`avec_remise_a_zero_de_session`) » ;
+   `crates/kesh-db/src/backup.rs:618-620` (« rétabli systématiquement … pour ne jamais rendre une connexion au pool avec les FK
+   désactivées ») → « rétabli ici ; à l'abandon d'une requête, par le crochet du pool ». Le grep de contrôle de la conception
+   (`fin de session|session end|L22`) ne les voit pas : ils se relisent nommément.
 5. #901 : la ligne du CHANGELOG.
 6. Mutations MB-869, MB-817, MB-817-b, MB-817-c, MB-842-a, MB-540 ; gates (fiche-index).
 
 ## Dev Notes
 
 - **Pattern batch** : inchangé — `PERIOD_LOCKED` par proposition garde sa forme (`reconciliation.rs:572-595`).
+- **#817, MCP** : l'outil `kesh_contacts` a son propre DTO (`crates/kesh-api/src/mcp/outils/contacts.rs:117`, `:185`,
+  `pays`) et **ne porte pas** `addressCountryKnown` — choix assumé (le MCP ne prépare pas de QR-facture), écrit au Dev Agent
+  Record.
 - **#817** : le message est en français (`AppError::Validation`), comme tous les refus de forme de l'adresse ; le manuel le dit
   déjà (`user-manual.tex:213`, #710).
 - **#842** : la fonction s'applique à **toute** restitution — une instruction de plus par connexion rendue ; mesurer n'est pas
@@ -265,3 +275,7 @@ ligne citée au Dev Agent Record). **MB-540** — le crochet ne rétablit pas `f
 ### Completion Notes List
 
 ### File List
+- 2026-11-05 — **Validation P2 (Opus, lentille complète)** : sur cette fiche, LOW seulement — P5 (tâche 2 alignée sur la
+  conception de `api-external.md`), P10 (AC-2.3 : inventaire clos par `git grep`), P11 (deux sites du symptôme « fin de
+  session » écrits autrement : `bank_imports.rs:1478-1481`, `backup.rs:618-620`), P15 (le MCP ne porte pas
+  `addressCountryKnown`, dit ; « Pour l'API » à la puce CHANGELOG, index).

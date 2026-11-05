@@ -147,16 +147,18 @@ déduplication : AC-3.2 bis rougit.
 - Affichages b-e, g, h, j-l : `formatSwissDate(x)` sans `.slice(0, 10)` ; `users/+page.svelte` : `formatSwissDate`.
 - **Garde** (C-v0174c-17) : `lib/shared/utils/local-date-guard.test.ts` lit les sources `src/**/*.{ts,svelte}` hors tests
   (`readdirSync` / `readFileSync`, patron de `lib/shared/i18n-un-repli-par-cle.test.ts:45`, `:240-247` ; filtre des
-  `*.test.ts`, `*.test-helper*`), **commentaires masqués** (`masquerCommentaires`, même patron : un commentaire qui cite le
-  motif — `reminder-sent-at.ts:19`, le futur en-tête de `local-date.ts` — ne compte pas), et relève deux motifs, **par ligne** :
+  `*.test.ts`, `*.test-helper*`), **sans masque des commentaires** (C-v0174c-17, révisé à la validation P2 : aucun commentaire
+  de `7bd4d5c0` ne porte l'un des deux motifs — rejoué sans filtre, ils rendent 15 et 14 lignes, toutes du code ; un masque
+  ne protégerait rien de réel et demanderait sa propre mutation ; un commentaire futur qui citerait le motif mot pour mot
+  entrerait à l'allowlist, motif « commentaire », ce qui reste visible et décidable), et relève deux motifs, **par ligne** :
   `toISOString\(\)\.slice\(0, ?10\)` et `formatSwissDate\(.*\.slice\(0, ?10\)` — ce dernier **sans** `[^()]`, pour attraper
   une expression parenthésée (`formatSwissDate((batch.confirmedAt ?? '').slice(0, 10))`, site j, aujourd'hui). L'allowlist est
   **par occurrence** : chaque entrée est `{ fichier, fragment, motif }`, où `fragment` est un extrait **exact** et unique de la
   ligne (par exemple `invoice.paidAt.slice(0, 10)`) ; chaque relevé doit égaler **une** entrée, et chaque entrée **un seul**
   relevé (ni orpheline, ni en double). Entrées : sites 4, 5, 13, les trois `paidAt` (a, f, i ; motif « date du règlement à
-  minuit »), `api-keys/+page.svelte:102` et `supplier-invoice-unvalidate.ts:65` — **huit**, dont trois dans des fichiers qui
+  minuit »), `api-keys/+page.svelte:102` et `supplier-invoice-unvalidate.ts:65` — **huit**, dont quatre dans des fichiers qui
   portent aussi des sites corrigés (`invoices/[id]/+page.svelte`, `supplier-invoices/[id]/+page.svelte`,
-  `settings/api-keys/+page.svelte`). Sonde du motif lui-même, au Dev Agent Record : jouée sur les sources
+  `settings/api-keys/+page.svelte`, `invoices/due-dates/+page.svelte`). Sonde du motif lui-même, au Dev Agent Record : jouée sur les sources
   de `7bd4d5c0` (avant correctif), la relève rend exactement les quinze lignes du § 5 et les quatorze du § 6 — 29, aucune
   autre ; après correctif, exactement les huit entrées.
 
@@ -166,7 +168,9 @@ Tous les tests de cette section épinglent `pinTimeZone('Europe/Zurich')` et l'h
 (`vi.useFakeTimers({ toFake: ['Date'] })`, `vi.setSystemTime(new Date('2026-11-04T23:30:00Z'))` — 00 h 30 le 5 novembre à
 Zurich) :
 
-**AC-3.5** — `todayLocal()` = `'2026-11-05'` (test déplacé, plus ce cas).
+**AC-3.5** — `todayLocal()` = `'2026-11-05'` (test déplacé, plus ce cas). **Vert avant** pour le calcul (`todayLocal` est
+déjà local, `open-items.ts:26-31`) ; le test ne rougit avant correctif que par son import de `$lib/shared/utils/local-date`,
+absent.
 **AC-3.6 — Par site corrigé** (un test par site, dans le fichier de test voisin existant ou neuf) : la valeur par défaut
 affichée ou envoyée vaut `2026-11-05` — facture (1), règlement (2), solde (3), rappel manuel et son `max` (6), avoir envoyé
 `{ date: '2026-11-05' }` (9), date d'exécution (11), date de paiement d'un lot (12), `min` de l'expiration d'une clé
@@ -185,12 +189,13 @@ leur `.slice(0, 10)` donnerait la même sortie ; leur conformité tient à la na
 **AC-3.9 — La garde** : verte après correctif ; **sonde dans un fichier déjà autorisé** (MC-889-g) : rétablir le `.slice(0, 10)`
 du site b (`invoices/[id]/+page.svelte`, `pdfFrozenAt`), fichier qui porte l'entrée a — la garde rougit (relevé sans entrée) ;
 rouge aussi si l'on ajoute `new Date().toISOString().slice(0, 10)` à un fichier hors allowlist, si une entrée ne correspond plus
-à rien, et si un fragment correspond à deux lignes ; verte sur un commentaire qui cite le motif.
+à rien, et si un fragment correspond à deux lignes. Sans masque, un commentaire qui cite le motif est relevé comme du code
+(il entre à l'allowlist, motif « commentaire », ou se reformule).
 
 **Mutations (P4)** : **MC-889-a** — `todayLocal` rend l'UTC (`toISOString().slice(0, 10)`) : AC-3.5, AC-3.6 rougissent.
 **MC-889-b** — `reminderSentAtDateTime` compare de nouveau à l'UTC : AC-3.7 rougit. **MC-889-c** — un `.slice(0, 10)`
-rétabli sur un affichage (b) : AC-3.8 et la garde rougissent. **MC-889-g** — sonde de la garde (AC-3.9). **MC-889-h** —
-le masque des commentaires retiré : la garde rougit sur `reminder-sent-at.ts:19` (preuve que le masque sert).
+rétabli sur un affichage (b) : AC-3.8 et la garde rougissent. **MC-889-g** — sonde de la garde (AC-3.9). *(MC-889-h, « masque
+retiré », est **supprimée** avec le masque, validation P2.)*
 
 ---
 
@@ -265,7 +270,10 @@ facture validée, verrou posé après sa date, *Repasser en brouillon* → le me
 
 ### Conception
 
-`ContactResponse` reçoit `addressCountryKnown: boolean` (posé par la fiche 2). À l'ouverture d'un contact dont
+`ContactResponse` reçoit `addressCountryKnown: boolean` (posé par la fiche 2), **requis** ; deux simulacres de test le
+construisent en entier et se complètent dans le même commit, sans quoi `npm run check` les refuse :
+`lib/features/supplier-invoices/SupplierInvoiceForm.test.ts:38` et `lib/features/supplier-invoices/supplier-proposals.test.ts:8`
+(inventaire de contrôle au Dev Agent Record : `git grep -n '): ContactResponse' -- frontend/src`). À l'ouverture d'un contact dont
 `addressCountryKnown === false`, le formulaire affiche sous le champ *Pays* un avis non bloquant (clé neuve
 `contacts-country-unknown` — « Le code pays « { $code } » n'est pas un code ISO connu : la QR-facture de ce contact ne pourra
 pas être produite. Corrigez-le (CH, FR, DE…) ; les autres champs s'enregistrent sans y toucher. ») ; l'avis disparaît dès que
@@ -285,20 +293,23 @@ contact `SU`, le refus `XX` dans chaque écran.
 
 ## Tâches
 
-1. Rouges d'abord : AC-3.1, 3.2 bis, 3.5-3.8, 3.10, 3.12, 3.14 (constatés, notés).
+1. Rouges d'abord : AC-3.1, 3.2 bis, 3.6-3.8, 3.10, 3.12, 3.14 (constatés, notés) ; AC-3.5 vert avant (rouge par l'import seul).
 2. #888 ; #889 (helper, douze sites, `JournalEntryForm`, neuf affichages et `users`, garde) ; #872 ; #869 ; #817 (écran).
 3. i18n : **trois** clés neuves (`supplier-invoices-project-archived-option`,
    `supplier-invoices-unvalidate-blocked-period-locked-named`, `contacts-country-unknown`), quatre locales
    (`crates/kesh-i18n/locales/{fr-CH,de-CH,it-CH,en-CH}/messages.ftl`) ; `npm run lint-i18n-ownership` ; la garde
    `i18n-un-repli-par-cle.test.ts` porte `const CLES_RELEVEES = 399;` (`:232`, assertion `:314`) : chacune des trois clés a un
    repli littéral, d'où **399 → 402** attendu (recompté au Dev Agent Record, avec l'entrée d'historique de l'en-tête de la
-   garde) ; `i18n-keys.test.ts` n'a pas de nombre en dur (vérifier qu'il reste vert).
+   garde) ; `i18n-keys.test.ts` porte un compte exact des sites d'appel, `sitesTotal: 2826` (`:859`, contrôlé `:1199`,
+   historique des recomptes en en-tête `:843-858`) : **2826 → 2826 + N**, N = sites `i18nMsg(` ajoutés, recomptés par
+   `grep -o 'i18nMsg('` aux deux bornes, entrée d'historique écrite ; `sitesNonResolus` (`:860`) relu de même. Les deux nombres
+   **se recomptent au développement**, puis à la source après l'union avec `v0174-session` (qui touche aussi des écrans).
 4. Manuel utilisateur (fiche-index, § *Manuel*).
 5. Captures (thème clair, base de démonstration jetable `kesh_v0174c`, `kesh-gate-logs/v0174c/captures/`) : formulaire d'un lot
    avec plus de 200 factures (pied de la liste visible) ; édition d'un brouillon au projet archivé sous racine archivée ;
    refus du repassage en brouillon nommant la date du verrou ; l'avis d'un contact au pays inconnu et le refus `XX` (contacts,
    panneau fournisseur).
-6. Mutations MC-888, MC-888-b, MC-889-a/b/c/g/h, MC-872, MC-869, MC-817 ; gates (fiche-index).
+6. Mutations MC-888, MC-888-b, MC-889-a/b/c/g, MC-872, MC-869, MC-817 ; gates (fiche-index).
 
 ## Dev Notes
 
@@ -315,6 +326,16 @@ contact `SU`, le refus `XX` dans chaque écran.
   corrigés, 3 conformes ; § 5) et son commentaire **corrigé en partie** (les trois `paidAt` sont des dates, 9 affichages
   corrigés sur 12 ; § 6), un site hors inventaire (`users`) ; #872 **corrigée** (projet d'en-tête, non de ligne ; § 8) ;
   #869 côté écran (§ 10). Défaut voisin : la liste des lots limitée à 100 (issue demandée).
+- 2026-11-05 — **Validation P1 (Sonnet, R et F)** : sur cette fiche, R3 = F4 (MEDIUM : garde par fichier incapable de tuer
+  MC-889-c, commentaires non masqués, motif qui manquait une expression parenthésée) → allowlist par occurrence
+  `{ fichier, fragment, motif }`, masque des commentaires, sonde dans un fichier autorisé, MC-889-h ; R4 (AC-3.8 ne discrimine
+  pas les `paidAt`, dit) ; R9 (deux prémisses nommées, § 6 bis, #669) ; R11 (déduplication par `id`, AC-3.2 bis, MC-888-b) ;
+  F11 (`CLES_RELEVEES` 399 → 402). Le côté écran de #817 entre ici (§ 3.5, arbitrage de l'orchestrateur sur R2).
+- 2026-11-05 — **Validation P2 (Opus, lentille complète)** : sur cette fiche, P1 (MEDIUM : `i18n-keys.test.ts` porte bien un
+  nombre, `sitesTotal: 2826`, `:859`, contrôlé `:1199` — la remédiation P1 avait repris une prémisse fausse) → recompte
+  prescrit, union avec `v0174-session` ; P2 (MEDIUM : `reminder-sent-at.ts:19` ne porte pas le motif, aucun commentaire de
+  `7bd4d5c0` non plus) → **masque retiré**, MC-889-h supprimée (C-v0174c-17) ; LOW P3 (quatre fichiers, non trois), P7 (deux
+  simulacres `ContactResponse`), P12 (entrée P1 remise sous `## Change Log`), P17 (AC-3.5 vert avant).
 
 ## Dev Agent Record
 
@@ -323,8 +344,3 @@ contact `SU`, le refus `XX` dans chaque écran.
 ### Completion Notes List
 
 ### File List
-- 2026-11-05 — **Validation P1 (Sonnet, R et F)** : sur cette fiche, R3 = F4 (MEDIUM : garde par fichier incapable de tuer
-  MC-889-c, commentaires non masqués, motif qui manquait une expression parenthésée) → allowlist par occurrence
-  `{ fichier, fragment, motif }`, masque des commentaires, sonde dans un fichier autorisé, MC-889-h ; R4 (AC-3.8 ne discrimine
-  pas les `paidAt`, dit) ; R9 (deux prémisses nommées, § 6 bis, #669) ; R11 (déduplication par `id`, AC-3.2 bis, MC-888-b) ;
-  F11 (`CLES_RELEVEES` 399 → 402). Le côté écran de #817 entre ici (§ 3.5, arbitrage de l'orchestrateur sur R2).

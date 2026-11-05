@@ -88,10 +88,16 @@ transaction réécrite (C-v0174c-2, C-v0174c-7). Modules : `kesh-import`, `kesh-
   comportement d'aujourd'hui, **à l'identique** (distribution fragment par fragment, `GeneralRef` et `CData` ignorés).
   `parse` (public, `kesh_import::parse_camt053`) lit en `Joined` ; `kesh_import::camt053::parse_legacy_0173(xml)`,
   `#[doc(hidden)]`, en `Legacy0173`, avec la même détection de version. Le type `ImportedStatement` ne change pas.
+  **Chemin du mode** (validation P2, P9) : `parse_with_version` (`pub(crate)`) reçoit le `TextMode` ; les fonctions
+  **publiques** `camt053::v04::parse` et `v08::parse` (`v04.rs:16-19`, qui reçoivent un lecteur fourni par l'appelant)
+  **gardent leur signature** et appellent `parse_with_version(…, Joined)` ; leur doc dit désormais que le lecteur fourni ne
+  doit pas rogner le texte (`trim_text(false)`), faute de quoi « Dupont&Fils » (C-v0174c-21). `parse_legacy_0173` ne passe
+  pas par elles : elle construit son lecteur à `trim_text(true)`, détecte la version par l'URI comme `parse`, et appelle
+  directement `parse_with_version(…, Legacy0173)`. Les deux détections d'URI partagent une fonction privée (DRY).
 - **L'alias de clé** (C-v0174c-5). `kesh-core` reçoit une variante de `detect_duplicate_lines` qui prend, en plus des
   brouillons, un tableau `aliases: &[Option<DuplicateKey>]` aligné par index : une ligne neuve est doublon si sa clé **ou**
   son alias égale une clé existante (`DuplicateLine.key` porte la clé qui a égalé). `detect_duplicate_lines` reste et appelle
-  la variante avec des alias vides (CSV, saisie manuelle inchangés). Dans `kesh-api`, aux trois sites CAMT — aperçu
+  la variante avec des alias vides (CSV, saisie manuelle inchangés). Dans `kesh-api`, aux **deux** sites CAMT — aperçu
   (`:1050`, `:1097`) et création (`:1278`, `:1337`) —, le fichier est relu par `parse_legacy_0173`, le même relevé choisi par
   IBAN (`select_statement_by_iban`) ; si la lecture héritée échoue, si sa sélection échoue, ou si les deux lectures n'ont pas
   le même nombre de transactions, **aucun alias** (jamais de `?`) (un tel fichier n'a pas pu être importé en 0.17.3) ; sinon, alias de la ligne *i* = la clé
@@ -160,11 +166,17 @@ moment-là) : verte, comme après (C-v0174c-5 : la clé du relevé ne dépend pa
 **AC-1.6 — L'alias ne s'applique qu'au CAMT, se signale à l'aperçu et, à la création, s'écarte par défaut comme tout
 doublon, tracé à l'audit (`duplicate_lines_skipped`).** `kesh-core` : la variante avec alias vides rend
 exactement ce que rend `detect_duplicate_lines` (tests existants verts sans changement d'assertion) ; un alias égal à la clé
-neuve n'est pas passé ; un alias qui égale une clé existante produit un `DuplicateLine` dont `key` est celle de l'alias. **Côté `kesh-api`** : si la
+neuve n'est pas **compté deux fois** (la variante tolère un alias égal à la clé, sans `DuplicateLine` en double) ; un alias
+qui égale une clé existante produit un `DuplicateLine` dont `key` est celle de l'alias. **Côté `kesh-api`** : si la
 lecture héritée échoue, si **sa sélection par IBAN** échoue (`select_statement_by_iban` rend une erreur,
-`routes/bank_imports.rs:920-`), ou si les deux lectures n'ont pas le même nombre de transactions, aucun alias n'est passé et
-l'import suit son cours — **jamais** de `?` sur la lecture ou la sélection héritées (test : un relevé dont la seule lecture
-héritée échoue — CDATA dans une date, lue vide par le mode hérité — s'importe sans alias). Les
+`routes/bank_imports.rs:932-`), ou si les deux lectures n'ont pas le même nombre de transactions, aucun alias n'est passé et
+l'import suit son cours — **jamais** de `?` sur la lecture ou la sélection héritées. La règle « l'alias n'est passé que s'il
+**diffère** de la clé neuve » est celle de l'appelant (`kesh-api`) et se teste là (une ligne sans entité ne reçoit aucun
+alias). **Deux tests nommés** : (i) *lecture héritée en échec* — une date écrite en CDATA, lue vide par le mode hérité
+(`MissingRequiredField` ou date invalide) : le relevé s'importe, sans alias ; (ii) *sélection héritée en échec* — l'IBAN du
+relevé écrit avec une référence de caractère (`CH93&#48;…`, IBAN du compte du montage) : le mode hérité le lit tronqué,
+`select_statement_by_iban` ne trouve aucun relevé, la lecture corrigée le sélectionne ; le relevé s'importe, sans alias.
+(Un IBAN en CDATA ne convient pas pour (ii) : le mode hérité échouerait dès la lecture, `finalize_statement`.) Les
 tests CSV de `bank_imports_e2e.rs` sont inchangés.
 
 **AC-1.7 — Les transactions existantes ne bougent pas.** Après (c), les deux transactions du montage gardent leur texte
@@ -202,9 +214,9 @@ tels que lus en 0.17.3) : relu en base.
 2. `kesh-import` : configuration du lecteur par mode (C-v0174c-21), tampon, résolution, `TextMode`, `parse_legacy_0173` ; `KESH_MESSAGES` ; référence
    `v04_characterization.0.17.4.json` ; `README.md` des fixtures.
 3. `kesh-core` : variante avec alias, documentée (`///`).
-4. `kesh-api` : relecture héritée et alias aux trois sites CAMT ; commentaires de `bank_imports.rs` qui décrivent la clé.
+4. `kesh-api` : relecture héritée et alias aux deux sites CAMT ; commentaires de `bank_imports.rs` qui décrivent la clé.
 5. Manuel utilisateur (fiche-index, § *Manuel*) et CHANGELOG (§ *CHANGELOG*).
-6. Mutations MA-819-1 à 6 ; gates (fiche-index, § *Gates*).
+6. Mutations MA-819-1 à 7 ; gates (fiche-index, § *Gates*).
 
 ## Dev Notes
 
@@ -235,3 +247,6 @@ tels que lus en 0.17.3) : relu en base.
 ### Completion Notes List
 
 ### File List
+- 2026-11-05 — **Validation P2 (Opus, lentille complète)** : sur cette fiche, LOW seulement — P4 (MA-819-1 à **7** aux tâches),
+  P6 (deux tests nommés du repli sans alias, règle « alias différent » rattachée à `kesh-api`), P8 (**deux** sites CAMT, non
+  trois), P9 (chemin du mode jusqu'à `parse_with_version`, signatures publiques de `v04::parse` / `v08::parse` inchangées).

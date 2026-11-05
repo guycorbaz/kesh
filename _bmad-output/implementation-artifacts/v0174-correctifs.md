@@ -91,7 +91,9 @@ PDF régénéré par `make fr` dans `docs/manual/` (sous les deux verrous), cont
   phrase ne décrit l'heure de bascule ; la borne du verrou, `:641`, reste juste — le serveur juge à sa date, C-v0174c-14).
 
 **`docs/manual/fr/admin-manual.tex`** — une section *Passer à la 0.17.4* est de la release (orchestrateur) ; cette story lui
-fournit, au rapport, les points à y porter : #819 (rien n'est relu, les règles « nom exact »), #817 (les contacts et la
+fournit, au rapport, les points à y porter : #819 (rien n'est relu, les règles « nom exact » ; **retour arrière** : une 0.17.3
+remise en service calcule la clé tronquée et ne reconnaît pas une ligne que la 0.17.4 a enregistrée entière — un réimport qui
+chevauche peut alors la doubler : vérifier les doublons d'un réimport après un retour à la 0.17.3), #817 (les contacts et la
 société au pays invalide — et la société **ne peut pas** corriger son adresse par l'écran, #909), #842 (aucune
 action). `docs/manual/{de,en,it}/` : `README.md` seulement, rien à traduire.
 
@@ -113,7 +115,8 @@ se vérifie à l'intégration contre `v0174-session`.
 - **Le pays d'une adresse est contrôlé sur la liste ISO** ([#817](https://github.com/guycorbaz/kesh/issues/817)) : « SU » ou
   « XX » sont refusés à la saisie d'un contact ou dans l'assistant, au lieu de faire échouer la QR-facture plus tard. Un
   contact déjà enregistré avec un tel code se lit et se modifie toujours ; l'écran signale son pays inconnu, et un pays
-  changé doit être valide.
+  changé doit être valide. Pour l'API : `POST` et `PUT /api/v1/contacts` refusent en `400 VALIDATION_ERROR` un pays nouveau ou
+  modifié hors de la liste ISO (il passait), et les réponses de contact portent un champ neuf, `addressCountryKnown`.
 - **Toutes les factures validées sont proposées pour un lot de paiement** ([#888](https://github.com/guycorbaz/kesh/issues/888)),
   non plus les 200 premières.
 - **La date du jour est celle de votre poste, non plus celle d'UTC** ([#889](https://github.com/guycorbaz/kesh/issues/889)) :
@@ -150,9 +153,10 @@ se vérifie à l'intégration contre `v0174-session`.
   date le CHANGELOG à la préparation, non au tag (C-v0174c-20) ; (7) aucune borne haute à la lecture des factures d'un lot —
   10 000 factures validées non payées feraient 50 requêtes (C-v0174c-12) ; (8) « et l'exercice » de #869, non retenu
   (C-v0174c-8), si le Project Lead le veut ; (9) les angles morts de la fiche 2 : le chemin `RELEASE_LOCK` raté sans montage
-  (AC-2.12) et l'application du crochet par `main.rs`, qu'aucun test ne voit (MB-842-b). Les limites déclarées sans issue, et
-  pourquoi : le faux doublon possible par alias (C-v0174c-5 — signalé à l'aperçu, borné aux lignes dont la clé change) et la
-  facture manquante d'une lecture par pages pendant une validation concurrente (fiche 3, § 3.1 — la relecture la retrouve).
+  (AC-2.12) et l'application du crochet par `main.rs`, qu'aucun test ne voit (MB-842-b) ; (10) le faux doublon possible par
+  alias (C-v0174c-5 — signalé à l'aperçu, borné aux lignes dont la clé change) ; (11) la facture manquée par la lecture par
+  pages d'un lot pendant une validation concurrente (fiche 3, § 3.1 — la relecture la retrouve). Les deux dernières sont des
+  limites assumées, **issue demandée** pour chacune (validation P2, P14 : « on trace toujours »).
 - **#540** (P2) est intégrée à la fiche 2 (C-v0174c-11) : `refs #540` ; `closes #540` proposé à la PR si la revue le confirme.
 
 ## Change Log
@@ -177,3 +181,14 @@ se vérifie à l'intégration contre `v0174-session`.
   les fiches et le registre : `trim_text`, `addressCountryKnown`, `#906`…`#910`, `:640`, `:64-`, `:132-136`, `401`, `402`,
   `#540 (P3`, `trois cas sur cinq`, `fin de session`, `celle de Zurich` — résidus traités, les entrées datées des Change Logs
   laissées telles quelles. Prochaine : validation P2 (Opus, lentille complète, `v0174-correctifs-validate-prompt-p2.md`).
+- 2026-11-05 — **Validation P2 (Opus, lentille complète) : 0/0/2/15** (`kesh-gate-logs/v0174c-validate-p2.md`), les deux MEDIUM
+  nés de la remédiation P1. Prémisse de chaque finding relue au code ; **aucun rejeté**. **P1** (MEDIUM) →
+  `i18n-keys.test.ts:859` `sitesTotal: 2826` (contrôlé `:1199`) prescrit au recompte, à l'union avec `v0174-session` aussi
+  (fiche 3) ; **P2** (MEDIUM) → aucun commentaire ne porte le motif de la garde : **masque retiré**, MC-889-h supprimée
+  (C-v0174c-17 révisé : le remède le plus simple, rien de réel à protéger). LOW : P3 (quatre fichiers), P7 (simulacres),
+  P17 (AC-3.5) — fiche 3 ; P4, P6, P8, P9 — fiche 1 ; P5, P10, P11, P15 — fiche 2 ; P12 (`sprint-status.yaml`, entrée de
+  Change Log de la fiche 3 remise à sa section) ; P13 (une seule forme du message d'entité inconnue, registre) ; P14 (deux
+  limites → issues demandées (10), (11)) ; P15 (« Pour l'API » à la puce #817) ; P16 (retour arrière à la 0.17.3, point
+  fourni à la section admin). Grep des valeurs corrigées : `masqu`, `MC-889-h`, `trois dans des fichiers`, `n'a pas de nombre
+  en dur`, `MA-819-1 à 6`, `trois sites CAMT`, `phrase suivante`, `sans issue`, `&… ;`, `:920-`. Prochaine : validation P3
+  (Sonnet, passe ciblée, `v0174-correctifs-validate-prompt-p3.md`).
