@@ -183,9 +183,12 @@ pub async fn sauvegarder_avant_migration(
             .map_err(|e| Refus::Lecture {
                 erreur: map_db_error(e),
             })?;
+    // Coupure après « à appliquer » : la garde `mcp_gardes_lexicales`
+    // (`executer_appele_par_le_repartiteur_seul`) lit `appliquer (` comme un
+    // appel de `mcp::…::appliquer`. Le texte journalisé est inchangé.
     tracing::info!(
-        "Mise à jour de la base : {n} migration(s) à appliquer (de la {de} à la {binaire}). \
-         Sauvegarde complète avant mise à jour en cours ; le serveur répondra une fois la mise \
+        "Mise à jour de la base : {n} migration(s) à appliquer \
+         (de la {de} à la {binaire}). Sauvegarde complète avant mise à jour en cours ; le serveur répondra une fois la mise \
          à jour terminée."
     );
     let mut issue = ecrire_la_sauvegarde(pool, config, environnement, &de, binaire, now).await?;
