@@ -42,7 +42,6 @@ fn test_config_with_max_attempts(max_attempts: u32) -> Config {
         TimeDelta::minutes(15),
         TimeDelta::days(30),
         TimeDelta::minutes(15),
-        TimeDelta::minutes(15),
         max_attempts,
         TimeDelta::minutes(30),
         12,

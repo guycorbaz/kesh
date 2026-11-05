@@ -38,7 +38,6 @@ fn test_config() -> Config {
         TimeDelta::minutes(15),
         TimeDelta::days(30),
         TimeDelta::minutes(15),
-        TimeDelta::minutes(15),
         100,
         TimeDelta::minutes(30),
         12,

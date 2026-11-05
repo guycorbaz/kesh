@@ -265,7 +265,6 @@ mod tests {
             TimeDelta::minutes(15),
             TimeDelta::days(30),
             TimeDelta::minutes(15),
-            TimeDelta::minutes(15),
             5,
             TimeDelta::minutes(30),
             12,
