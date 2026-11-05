@@ -34,6 +34,10 @@ tokio = { version = "1", default-features = false, features = ["time"] }
 # VARCHAR DB et comparaison via `Ord`. Crate déjà résolu transitivement
 # dans Cargo.lock (cargo-metadata), pas de re-résolution.
 semver = "1"
+# Story v0174-session-1 (#890, C-v0174s-3) : le dépôt `refresh_tokens` ne
+# stocke que l'empreinte SHA-256 du jeton de renouvellement. Même version que
+# `kesh-api` : crate déjà au graphe, aucune entrée neuve au Cargo.lock.
+sha2 = "0.10"
 
 [dev-dependencies]
 tokio = { version = "1", features = ["full"] }

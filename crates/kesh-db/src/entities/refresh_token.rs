@@ -1,15 +1,16 @@
 //! Entité `RefreshToken` : jeton de rafraîchissement persistant.
 //!
 //! **Sécurité** : `RefreshToken` et `NewRefreshToken` ne dérivent PAS
-//! `Debug` classique — impl manuelle masquant le champ `token` pour éviter
+//! `Debug` classique — impl manuelle masquant le jeton et son empreinte pour éviter
 //! toute fuite dans les logs `tracing`. Pas de `Serialize`/`Deserialize`
 //! non plus (défense en profondeur : un refresh_token ne doit jamais
 //! fuiter en JSON).
 //!
-//! **Note sur le stockage plaintext** : dans cette story (1.5), le `token`
-//! est stocké en clair en base. La story 1.6 ajoutera une colonne
-//! `token_hash` (SHA-256) + rotation à chaque refresh pour éliminer
-//! l'exposition session-takeover sur dump DB.
+//! **Stockage** (0.17.4, #890) : la base ne garde que l'**empreinte** du jeton
+//! (`repositories::refresh_tokens::token_digest`, SHA-256 tronqué et mis en
+//! forme dans la colonne `token`) — jamais le jeton lui-même. Jusqu'à la
+//! 0.17.3, le jeton était stocké en clair ; les lignes de cette forme sont
+//! effacées au démarrage et à la restauration complète.
 
 use chrono::NaiveDateTime;
 
@@ -22,7 +23,9 @@ use chrono::NaiveDateTime;
 pub struct RefreshToken {
     pub id: i64,
     pub user_id: i64,
-    pub token: String,
+    /// L'**empreinte** du jeton, jamais le jeton (#890) — colonne `token`.
+    #[sqlx(rename = "token")]
+    pub token_digest: String,
     pub expires_at: NaiveDateTime,
     pub created_at: NaiveDateTime,
     pub revoked_at: Option<NaiveDateTime>,
@@ -36,7 +39,7 @@ impl std::fmt::Debug for RefreshToken {
         f.debug_struct("RefreshToken")
             .field("id", &self.id)
             .field("user_id", &self.user_id)
-            .field("token", &"***")
+            .field("token_digest", &"***")
             .field("expires_at", &self.expires_at)
             .field("created_at", &self.created_at)
             .field("revoked_at", &self.revoked_at)
@@ -49,6 +52,8 @@ impl std::fmt::Debug for RefreshToken {
 #[derive(Clone)]
 pub struct NewRefreshToken {
     pub user_id: i64,
+    /// Le jeton **clair** (celui du cookie) ; le dépôt n'en stocke que
+    /// l'empreinte.
     pub token: String,
     pub expires_at: NaiveDateTime,
 }
