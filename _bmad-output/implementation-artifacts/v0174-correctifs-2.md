@@ -51,7 +51,9 @@ Au site `errors.rs:4248`, un corps `{ "error": { "code": "PERIOD_LOCKED", "messa
 "AAAA-MM-JJ", "attempted": "AAAA-MM-JJ" } } }`, sur le patron de `later_fiscal_year_closed_response` (`:1385-`). Le message ne
 change pas. Le registre écarte le champ « exercice » que l'issue mentionne entre parenthèses (C-v0174c-8 : la date du verrou
 est la borne d'une période, non d'un exercice ; le refus d'exercice a ses propres codes). `docs/api-external.md` :
-- `:493` : seul le **début** de la phrase change — « Les **quatre autres** codes … 11 lignes en tout, 7 avec `details` et 4 sans »
+- `:493` : le **début** de la phrase change — « Les **quatre autres** codes … 11 lignes en tout, 7 avec `details` et 4 sans » —
+  **et sa liste**, d'où `PERIOD_LOCKED` sort (restent `FISCAL_YEAR_CLOSED`, `ENTRY_IS_REVERSED`, `OPTIMISTIC_LOCK_CONFLICT`,
+  `ILLEGAL_STATE_TRANSITION`) ; la phrase est relue **en entière** après correctif
   (recompté depuis le tableau, en-tête `:467`, lignes `:469-479`) ; la fin (« dans trois cas sur cinq ») compte les cinq lignes
   du tableau `documentId` / `documentNumber`, dont trois portent la facture elle-même : elle **reste vraie** et ne change pas ;
 - `:298` (refus du `PUT` d'une écriture) et `:336` (« Les `details` sont ceux du `PUT` … ») : une incise « `PERIOD_LOCKED` :
@@ -173,8 +175,9 @@ messages de journal (`:150`, `:165`) disent désormais que le verrou est rendu *
 les autres sites du même symptôme aussi — `crates/kesh-reconciliation/src/errors.rs:19-25` (doc **et** message
 `#[error(… lock may persist until session end)]` de `LockReleaseFailed`), `crates/kesh-api/src/errors.rs:919-921` (doc de
 `ReconciliationLockReleaseFailed`), `crates/kesh-api/src/routes/reconciliation.rs:1809-1810` (« Lock advisory libéré à fin de
-session ») ; inventaire de contrôle : `/usr/bin/grep -rn 'fin de session\|session end\|L22' crates --include=*.rs` rejoué au
-Dev Agent Record, seuls restent des sites sans rapport (`config.rs:202`, la session d'authentification). `create_pool` (`pool.rs:28`) applique **aussi** la fonction (même
+session ») ; inventaire de contrôle, **deux** greps rejoués au Dev Agent Record : `/usr/bin/grep -rn 'fin de session\|session end\|L22'
+crates --include=*.rs` (seuls restent des sites sans rapport : `config.rs:202`, la session d'authentification) et
+`/usr/bin/grep -rn 'rendue au pool\|retour au pool\|connexion au pool\|suit la session' crates --include=*.rs` (validation P3, P4). `create_pool` (`pool.rs:28`) applique **aussi** la fonction (même
 comportement pour tout pool de `kesh-db`).
 
 ### Acceptance Criteria (2.3)
@@ -225,15 +228,17 @@ ligne citée au Dev Agent Record). **MB-540** — le crochet ne rétablit pas `f
 ## Tâches
 
 1. Rouges d'abord : AC-2.1, 2.2, 2.4 à 2.7, 2.9 à 2.11 (constatés, notés).
-2. #869 : corps du `PERIOD_LOCKED` ; `docs/api-external.md` (début de `:493`, incises `:298` et `:336`, ligne au § 10).
+2. #869 : corps du `PERIOD_LOCKED` ; `docs/api-external.md` (début et liste de `:493`, incises `:298` et `:336`, ligne au § 10).
 3. #817 : `kesh-qrbill` (`pub`, réexport, doc) ; `address_input.rs` ; tolérance du pays stocké dans `validate_common` ;
    `addressCountryKnown` ; manuel.
 4. #842/#540 : la fonction de `pool.rs`, appliquée par `create_pool` et `main.rs` ; commentaires de `mutex.rs`,
    `kesh-reconciliation/src/errors.rs`, `kesh-api/src/errors.rs:919-921`, `routes/reconciliation.rs:1809-1810`, et deux sites
-   du même symptôme écrit autrement (validation P2, P11) : `routes/bank_imports.rs:1478-1481` (« Le verrou suit la session de
-   la connexion », avant `drop(lock_tx)`) → « rendu au retour de la connexion au pool (`avec_remise_a_zero_de_session`) » ;
+   du même symptôme écrit autrement (validation P2, P11) : `routes/bank_imports.rs:1479-1481` (« Le verrou suit la session de
+   la connexion », dans le bras d'échec du `RELEASE_LOCK`, après `drop(lock_tx)`, `:1472`) → « rendu au retour de la connexion au pool (`avec_remise_a_zero_de_session`) » ;
    `crates/kesh-db/src/backup.rs:618-620` (« rétabli systématiquement … pour ne jamais rendre une connexion au pool avec les FK
-   désactivées ») → « rétabli ici ; à l'abandon d'une requête, par le crochet du pool ». Le grep de contrôle de la conception
+   désactivées ») → « rétabli ici ; à l'abandon d'une requête, par le crochet du pool » ; et `crates/kesh-api/src/inbox_import.rs:177-186`
+   (« une connexion rendue au pool garderait le verrou dans sa session ») — devenu faux avec le crochet ; la justification de
+   `close_on_drop` se récrit en défense en profondeur (la connexion du verrou n'est jamais réutilisée), `close_on_drop` reste. Le grep de contrôle de la conception
    (`fin de session|session end|L22`) ne les voit pas : ils se relisent nommément.
 5. #901 : la ligne du CHANGELOG.
 6. Mutations MB-869, MB-817, MB-817-b, MB-817-c, MB-842-a, MB-540 ; gates (fiche-index).
@@ -279,3 +284,5 @@ ligne citée au Dev Agent Record). **MB-540** — le crochet ne rétablit pas `f
   conception de `api-external.md`), P10 (AC-2.3 : inventaire clos par `git grep`), P11 (deux sites du symptôme « fin de
   session » écrits autrement : `bank_imports.rs:1478-1481`, `backup.rs:618-620`), P15 (le MCP ne porte pas
   `addressCountryKnown`, dit ; « Pour l'API » à la puce CHANGELOG, index).
+- 2026-11-05 — **Validation P3 (Sonnet, passe ciblée)** : LOW seulement — P3 (`bank_imports.rs:1479-1481`, après `drop(lock_tx)`),
+  P4 (`inbox_import.rs:177-186`, grep de contrôle élargi), P5 (liste de `api-external.md:493` : `PERIOD_LOCKED` retiré).

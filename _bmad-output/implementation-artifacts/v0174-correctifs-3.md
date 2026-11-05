@@ -273,7 +273,8 @@ facture validée, verrou posé après sa date, *Repasser en brouillon* → le me
 `ContactResponse` reçoit `addressCountryKnown: boolean` (posé par la fiche 2), **requis** ; deux simulacres de test le
 construisent en entier et se complètent dans le même commit, sans quoi `npm run check` les refuse :
 `lib/features/supplier-invoices/SupplierInvoiceForm.test.ts:38` et `lib/features/supplier-invoices/supplier-proposals.test.ts:8`
-(inventaire de contrôle au Dev Agent Record : `git grep -n '): ContactResponse' -- frontend/src`). À l'ouverture d'un contact dont
+(`npm run check` fait foi ; l'inventaire `git grep -n 'ContactResponse' -- frontend/src` **se trie** : les simulacres
+transtypés `as unknown as ContactResponse` n'en font pas partie, ni les fonctions de `duplicate-probe.ts`). À l'ouverture d'un contact dont
 `addressCountryKnown === false`, le formulaire affiche sous le champ *Pays* un avis non bloquant (clé neuve
 `contacts-country-unknown` — « Le code pays « { $code } » n'est pas un code ISO connu : la QR-facture de ce contact ne pourra
 pas être produite. Corrigez-le (CH, FR, DE…) ; les autres champs s'enregistrent sans y toucher. ») ; l'avis disparaît dès que
@@ -298,13 +299,19 @@ contact `SU`, le refus `XX` dans chaque écran.
 3. i18n : **trois** clés neuves (`supplier-invoices-project-archived-option`,
    `supplier-invoices-unvalidate-blocked-period-locked-named`, `contacts-country-unknown`), quatre locales
    (`crates/kesh-i18n/locales/{fr-CH,de-CH,it-CH,en-CH}/messages.ftl`) ; `npm run lint-i18n-ownership` ; la garde
-   `i18n-un-repli-par-cle.test.ts` porte `const CLES_RELEVEES = 399;` (`:232`, assertion `:314`) : chacune des trois clés a un
-   repli littéral, d'où **399 → 402** attendu (recompté au Dev Agent Record, avec l'entrée d'historique de l'en-tête de la
-   garde) ; `i18n-keys.test.ts` porte un compte exact des sites d'appel, `sitesTotal: 2826` (`:859`, contrôlé `:1199`,
-   historique des recomptes en en-tête `:843-858`) : **2826 → 2826 + N**, N = sites `i18nMsg(` ajoutés, recomptés par
-   `grep -o 'i18nMsg('` aux deux bornes, entrée d'historique écrite ; `sitesNonResolus` (`:860`) relu de même. Les deux nombres
+   `i18n-un-repli-par-cle.test.ts` porte `const CLES_RELEVEES = 399;` (`:232`, assertion `:314`) mais ne relève que les clés
+   de six préfixes (`PREFIXES`, `:51-72` : `supplier-invoices-`, `imported-supplier-invoices-`, `payment-batches-`,
+   `onboarding-`, `open-items-`, `error-lettering-`) : des trois clés neuves, seules les deux `supplier-invoices-` comptent,
+   `contacts-country-unknown` non (`contacts-` absent), d'où **399 → 401** attendu (validation P3, P1 ; recompté au
+   développement, avec l'entrée d'historique de l'en-tête de la garde) ; `i18n-keys.test.ts` porte un compte exact des sites d'appel, `sitesTotal: 2826` (`:859`, contrôlé `:1199`,
+   historique des recomptes en en-tête `:843-858`) : **2826 → 2826 + N**, N = sites ajoutés tels que la garde les
+   compte — `i18nMsg(` **et** ses relais `msg(` (`findCallSites`, `i18n-literal-reader.js:480`) —, recomptés aux deux bornes par
+   `grep -oE '(i18nMsg|[^a-zA-Z]msg)\('` (la forme des en-têtes `:701-799`), la garde elle-même faisant foi, entrée
+   d'historique écrite ; `sitesNonResolus` (`:860`) relu de même. Les deux nombres
    **se recomptent au développement**, puis à la source après l'union avec `v0174-session` (qui touche aussi des écrans).
-4. Manuel utilisateur (fiche-index, § *Manuel*).
+4. Manuel utilisateur (fiche-index, § *Manuel*). La doc de `lib/shared/utils/local-date.ts` **ne cite pas** le motif
+   `toISOString().slice(0, 10)` mot pour mot : la garde, sans masque, le relèverait comme du code (sinon : une entrée
+   d'allowlist, motif « commentaire »).
 5. Captures (thème clair, base de démonstration jetable `kesh_v0174c`, `kesh-gate-logs/v0174c/captures/`) : formulaire d'un lot
    avec plus de 200 factures (pied de la liste visible) ; édition d'un brouillon au projet archivé sous racine archivée ;
    refus du repassage en brouillon nommant la date du verrou ; l'avis d'un contact au pays inconnu et le refus `XX` (contacts,
@@ -336,6 +343,9 @@ contact `SU`, le refus `XX` dans chaque écran.
   prescrit, union avec `v0174-session` ; P2 (MEDIUM : `reminder-sent-at.ts:19` ne porte pas le motif, aucun commentaire de
   `7bd4d5c0` non plus) → **masque retiré**, MC-889-h supprimée (C-v0174c-17) ; LOW P3 (quatre fichiers, non trois), P7 (deux
   simulacres `ContactResponse`), P12 (entrée P1 remise sous `## Change Log`), P17 (AC-3.5 vert avant).
+- 2026-11-05 — **Validation P3 (Sonnet, passe ciblée)** : P1 (MEDIUM) — *annotation datée* : l'entrée de la P1 ci-dessus écrit
+  « 399 → 402 » ; c'est **399 → 401** (`contacts-` hors des préfixes de la garde, tâche 3). LOW : P2 (recompte de `sitesTotal` par
+  la forme large), P6 (doc de `local-date.ts`, tâche 4), P7 (inventaire `ContactResponse` à trier).
 
 ## Dev Agent Record
 

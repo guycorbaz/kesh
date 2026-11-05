@@ -97,8 +97,8 @@ chevauche peut alors la doubler : vérifier les doublons d'un réimport après u
 société au pays invalide — et la société **ne peut pas** corriger son adresse par l'écran, #909), #842 (aucune
 action). `docs/manual/{de,en,it}/` : `README.md` seulement, rien à traduire.
 
-**`docs/api-external.md`** (fiche 2) — le début de `:493` (« quatre autres », « 7 avec et 4 sans » ; la fin, « trois cas sur
-cinq », reste vraie), des incises à `:298` et `:336`, une ligne `PERIOD_LOCKED` au § 10 (`:937-`).
+**`docs/api-external.md`** (fiche 2) — le début et la liste de `:493` (« quatre autres », « 7 avec et 4 sans », `PERIOD_LOCKED`
+retiré de la liste ; la fin, « trois cas sur cinq », reste vraie), des incises à `:298` et `:336`, une ligne `PERIOD_LOCKED` au § 10 (`:937-`).
 
 ## CHANGELOG
 
@@ -115,8 +115,9 @@ se vérifie à l'intégration contre `v0174-session`.
 - **Le pays d'une adresse est contrôlé sur la liste ISO** ([#817](https://github.com/guycorbaz/kesh/issues/817)) : « SU » ou
   « XX » sont refusés à la saisie d'un contact ou dans l'assistant, au lieu de faire échouer la QR-facture plus tard. Un
   contact déjà enregistré avec un tel code se lit et se modifie toujours ; l'écran signale son pays inconnu, et un pays
-  changé doit être valide. Pour l'API : `POST` et `PUT /api/v1/contacts` refusent en `400 VALIDATION_ERROR` un pays nouveau ou
-  modifié hors de la liste ISO (il passait), et les réponses de contact portent un champ neuf, `addressCountryKnown`.
+  changé doit être valide. Pour l'API : `POST` et `PUT /api/v1/contacts` et l'étape des coordonnées de l'assistant
+  (`POST /api/v1/onboarding/coordinates`) refusent en `400 VALIDATION_ERROR` un pays nouveau ou modifié hors de la liste ISO (il
+  passait), et les réponses de contact portent un champ neuf, `addressCountryKnown`.
 - **Toutes les factures validées sont proposées pour un lot de paiement** ([#888](https://github.com/guycorbaz/kesh/issues/888)),
   non plus les 200 premières.
 - **La date du jour est celle de votre poste, non plus celle d'UTC** ([#889](https://github.com/guycorbaz/kesh/issues/889)) :
@@ -192,3 +193,14 @@ se vérifie à l'intégration contre `v0174-session`.
   fourni à la section admin). Grep des valeurs corrigées : `masqu`, `MC-889-h`, `trois dans des fichiers`, `n'a pas de nombre
   en dur`, `MA-819-1 à 6`, `trois sites CAMT`, `phrase suivante`, `sans issue`, `&… ;`, `:920-`. Prochaine : validation P3
   (Sonnet, passe ciblée, `v0174-correctifs-validate-prompt-p3.md`).
+- 2026-11-05 — *Annotation datée (validation P3, P1)* : l'entrée de la P1 ci-dessus écrit « `CLES_RELEVEES` 399 → **402**, et non
+  401 » ; c'est **faux** — la garde ne relève que six préfixes (`i18n-un-repli-par-cle.test.ts:51-72`), sans `contacts-`, si bien
+  que `contacts-country-unknown` n'y compte pas : **399 → 401** (fiche 3, tâche 3). L'entrée de la P1 reste telle quelle.
+- 2026-11-05 — **Validation P3 (Sonnet, passe ciblée sur `c3be330f`) : 0/0/1/7** (`kesh-gate-logs/v0174c-validate-p3.md`).
+  Prémisses relues au code, aucun rejet. P1 (MEDIUM) → 399 → **401** (fiche 3, annotation ci-dessus). LOW : P2 (recompte de
+  `sitesTotal` par la forme large, `i18nMsg` et `msg`, la garde faisant foi), P3 (`bank_imports.rs:1479-1481`, après
+  `drop(lock_tx)`), P4 (`inbox_import.rs:177-186` et grep de contrôle élargi), P5 (liste de `:493` : `PERIOD_LOCKED` retiré),
+  P6 (la doc de `local-date.ts` ne cite pas le motif), P7 (inventaire `ContactResponse` à trier, `npm run check` fait foi),
+  P8 (l'assistant au « Pour l'API » du CHANGELOG). Grep des valeurs : `402` (plus que dans l'entrée datée de la P1), `1478`,
+  `seul le **début**`, `grep -o 'i18nMsg('`, `'): ContactResponse'`. Prochaine : validation P4 (Haiku, passe ciblée,
+  `v0174-correctifs-validate-prompt-p4.md`).
