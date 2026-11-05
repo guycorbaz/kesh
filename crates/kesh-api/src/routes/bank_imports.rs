@@ -1499,7 +1499,8 @@ where
             Ok((StatusCode::CREATED, Json(import_to_response(header))))
         }
         // La création a conclu (commitée ou annulée) ; seul le `RELEASE_LOCK`
-        // a échoué. Le verrou suit la session de la connexion. Annoncer un
+        // a échoué. Le verrou est rendu au retour de la connexion au pool
+        // (`kesh_db::pool::avec_remise_a_zero_de_session`, #842). Annoncer un
         // échec d'une création commitée serait faux : on rend son issue.
         (Some(created), Err(e)) => {
             tracing::error!(error = ?e, bank_account_id, context, "relevé : libération du verrou du compte en échec");

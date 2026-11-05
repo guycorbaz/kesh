@@ -3253,7 +3253,10 @@ fn inbox_files(app: &TestApp) -> Vec<String> {
 ///
 /// ⚠️ Le serveur reçoit un pool **réglé comme celui de la production**
 /// (`main.rs` : `max_connections(5)`, délais d'inactivité par défaut de `sqlx`,
-/// dix minutes) et non le pool de `#[sqlx::test]`, qui ferme toute connexion
+/// dix minutes) — **sans** le crochet de remise à zéro de session que la
+/// production pose depuis la 0.17.4 (#842), pour que ce test prouve la
+/// fermeture de la connexion du verrou (`close_on_drop`) à elle seule —, et non
+/// le pool de `#[sqlx::test]`, qui ferme toute connexion
 /// inactive au bout d'**une seconde** (`idle_timeout`, `sqlx-mysql-0.8.6/src/
 /// testing/mod.rs:181`) : avec lui, une connexion rendue au pool en tenant le
 /// verrou était fermée avant la lecture d'`IS_FREE_LOCK`, et la fuite ne se

@@ -271,9 +271,17 @@ fn validate_country(code: &str) -> Result<(), QrBillError> {
     Ok(())
 }
 
-/// Liste statique ISO-3166-1 alpha-2 (mise à jour 2026-04).
+/// `true` si `code` est un code pays ISO 3166-1 alpha-2 de la liste statique
+/// (249 codes, mise à jour 2026-04), **en majuscules** (`"CH"`, non `"ch"`).
+///
+/// C'est la liste que la QR-facture exige ([`validate`]) ; depuis la 0.17.4
+/// (#817), `kesh-api` la consulte aussi à la saisie d'une adresse, pour refuser
+/// « SU » ou « XX » à l'écriture plutôt qu'à la production de la QR-facture.
+/// Le code reçu n'est pas normalisé : à l'appelant de le passer rogné et en
+/// majuscules.
+///
 /// Source : https://www.iso.org/obp/ui/#search/code/
-fn is_iso_3166_alpha2(code: &str) -> bool {
+pub fn is_iso_3166_alpha2(code: &str) -> bool {
     const ISO_3166_ALPHA2: &[&str] = &[
         "AD", "AE", "AF", "AG", "AI", "AL", "AM", "AO", "AQ", "AR", "AS", "AT", "AU", "AW", "AX",
         "AZ", "BA", "BB", "BD", "BE", "BF", "BG", "BH", "BI", "BJ", "BL", "BM", "BN", "BO", "BQ",

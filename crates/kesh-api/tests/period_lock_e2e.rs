@@ -360,6 +360,43 @@ async fn le_seuil_du_verrou_est_inclusif(pool: MySqlPool) {
     assert_eq!(st, 201, "le lendemain de la borne doit passer : {body}");
 }
 
+/// Story v0174-correctifs-2 (#869, AC-2.1) — `400 PERIOD_LOCKED` porte les
+/// bornes du verrou dans `details` (`lockedThrough`, `attempted`, `AAAA-MM-JJ`),
+/// pour que l'écran les dise ; le `message` ne change pas.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn period_locked_carries_its_bounds_in_details_869(pool: MySqlPool) {
+    let (app, token, company_id, _fy) = setup(&pool).await;
+    let d = make_account(&pool, company_id, "6000", AccountType::Expense).await;
+    let c = make_account(&pool, company_id, "1020", AccountType::Asset).await;
+
+    let borne = Utc::now().date_naive() - chrono::Duration::days(10);
+    let (st, body) = poser_verrou(&app, &token, borne).await;
+    assert_eq!(st, 200, "la pose doit passer : {body}");
+
+    let tentee = borne - chrono::Duration::days(3);
+    let (st, body) = creer_ecriture(&app, &token, d, c, tentee).await;
+    assert_eq!(st, 400, "{body}");
+    assert_eq!(body["error"]["code"], "PERIOD_LOCKED");
+    assert_eq!(
+        body["error"]["details"]["lockedThrough"],
+        borne.to_string(),
+        "{body}"
+    );
+    assert_eq!(
+        body["error"]["details"]["attempted"],
+        tentee.to_string(),
+        "{body}"
+    );
+    // Le message d'aujourd'hui, inchangé (fr-CH, `journal-entries-period-locked`).
+    assert_eq!(
+        body["error"]["message"],
+        format!(
+            "Les écritures sont verrouillées jusqu'au {borne} ; celle-ci est datée du {tentee}."
+        ),
+        "{body}"
+    );
+}
+
 // ---------------------------------------------------------------------------
 // AC 3 — la borne est STRICTEMENT antérieure à aujourd'hui
 // ---------------------------------------------------------------------------

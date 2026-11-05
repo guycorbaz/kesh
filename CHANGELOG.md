@@ -17,6 +17,20 @@ Le contenu est rédigé en français à destination des **fiduciaires, PME, ind�
   Les transactions déjà importées ne sont pas relues ; un fichier ou une ligne déjà importés restent reconnus comme doublons.
   Une règle d'affectation *Contrepartie exacte* écrite sur un nom tronqué est à corriger. Un fichier qui porte une entité
   inconnue est désormais refusé.
+- **Le pays d'une adresse est contrôlé sur la liste ISO** ([#817](https://github.com/guycorbaz/kesh/issues/817)) : « SU » ou
+  « XX » sont refusés à la saisie d'un contact ou dans l'assistant, au lieu de faire échouer la QR-facture plus tard. Un
+  contact déjà enregistré avec un tel code se lit et se modifie toujours ; l'écran signale son pays inconnu, et un pays
+  changé doit être valide. Pour l'API : `POST` et `PUT /api/v1/contacts` et l'étape des coordonnées de l'assistant
+  (`POST /api/v1/onboarding/coordinates`) refusent en `400 VALIDATION_ERROR` un pays nouveau ou modifié hors de la liste ISO (il
+  passait), et les réponses de contact portent un champ neuf, `addressCountryKnown`.
+- **Le refus de repasser une facture fournisseur en brouillon sous le verrou de période dit jusqu'à quand**
+  ([#869](https://github.com/guycorbaz/kesh/issues/869)). Pour l'API : `400 PERIOD_LOCKED` porte `details.lockedThrough` et
+  `details.attempted` (`docs/api-external.md`).
+- **Une requête interrompue ne bloque plus un compte bancaire** ([#842](https://github.com/guycorbaz/kesh/issues/842)) : le
+  verrou du compte, et l'état des clés étrangères d'une restauration interrompue
+  ([#540](https://github.com/guycorbaz/kesh/issues/540)), sont rendus au retour de la connexion au pool, au lieu d'y rester
+  jusqu'à une demi-heure.
+- La 0.17.1 est datée du 2026-11-04, jour de sa publication ([#901](https://github.com/guycorbaz/kesh/issues/901)).
 
 ## [0.17.3] — 2026-11-05
 
@@ -67,7 +81,7 @@ Ce qui change à l'écran : le bouton *Repasser en brouillon* (l'ancien *Dévali
 
 ---
 
-## [0.17.1] — 2026-11-03
+## [0.17.1] — 2026-11-04
 
 La 0.17.1 est une version corrective : **aucune migration**, aucune donnée réécrite, **le retour à la 0.17.0 est possible sans restauration**. La sauvegarde complète d'avant la mise à jour (base, `.keshbackup`, dossier des documents) reste recommandée. Le compose et le `.env` ne changent pas. Le détail est au manuel d'administration, *Passer à la 0.17.1*.
 

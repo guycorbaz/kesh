@@ -78,8 +78,11 @@ async fn main() {
         }
     };
 
-    // 3. Pool MariaDB — obligatoire (story 1.5)
-    let pool = match MySqlPoolOptions::new()
+    // 3. Pool MariaDB — obligatoire (story 1.5). La session de chaque
+    // connexion est remise à zéro à son retour au pool (#842, #540) : un verrou
+    // de compte ou `FOREIGN_KEY_CHECKS = 0` laissés par une requête abandonnée
+    // ne survivent pas.
+    let pool = match kesh_db::pool::avec_remise_a_zero_de_session(MySqlPoolOptions::new())
         .max_connections(5)
         .acquire_timeout(config.db_connect_timeout)
         .connect(&config.database_url)

@@ -28,8 +28,16 @@
 //! - ❌ `SELECT ... FOR UPDATE` row-level : sémantique floue, plus
 //!   long que nécessaire.
 //! - ❌ Tokio Mutex en mémoire : pas multi-instance.
-//! - ✅ Advisory lock MariaDB : portable multi-instance, nommé,
-//!   libère à fin de session si app crash.
+//! - ✅ Advisory lock MariaDB : portable multi-instance, nommé, libéré à la
+//!   fin de session si l'application s'arrête.
+//!
+//! ⚠️ **Le verrou est de session, et le pool garde la session** : il survit au
+//! `ROLLBACK` d'une transaction abandonnée. Depuis la 0.17.4 (#842), c'est le
+//! crochet du pool (`kesh_db::pool::avec_remise_a_zero_de_session`, posé par
+//! `main.rs` et `create_pool`) qui le rend **au retour de la connexion au
+//! pool** — requête interrompue (future abandonnée avant `RELEASE_LOCK`) ou
+//! `RELEASE_LOCK` raté. Avant, la connexion revenait au pool en le tenant, et le
+//! compte restait bloqué jusqu'à la fermeture de cette connexion.
 //!
 //! **HP3-1 + HP4-1 + HP5-1 — caller pattern** : sur
 //! `Err(LockReleaseFailed)`, le handler **DOIT** :
@@ -60,8 +68,9 @@ use crate::errors::ReconciliationError;
 /// - `Err(AccountLocked)` si l'acquisition timeout.
 /// - `Err(LockReleaseFailed)` si la closure réussit mais
 ///   `RELEASE_LOCK` échoue (cas pathologique connexion poisoned —
-///   le caller doit drop tx_outer pour rollback + retour pool, le
-///   lock advisory sera libéré à fin de session MariaDB cf. L22).
+///   le caller doit drop tx_outer pour rollback + retour pool ; le
+///   lock advisory est rendu au retour de la connexion au pool, par le
+///   crochet `kesh_db::pool::avec_remise_a_zero_de_session`, #842).
 /// - `Err(...)` propagé tel quel depuis la closure.
 pub async fn with_account_lock<F, T>(
     tx: &mut sqlx::Transaction<'_, sqlx::MySql>,
@@ -147,7 +156,7 @@ where
                     ?bank_account_id,
                     lock_name = %lock_name,
                     "RELEASE_LOCK returned non-1 after successful business op; \
-                     lock will leak until session end (cf. L22)"
+                     lock is released when the connection returns to the pool (#842)"
                 );
                 Err(ReconciliationError::LockReleaseFailed {
                     bank_account_id,
@@ -162,7 +171,7 @@ where
                     ?bank_account_id,
                     lock_name = %lock_name,
                     "RELEASE_LOCK failed after successful business op; \
-                     lock will leak until session end (cf. L22)"
+                     lock is released when the connection returns to the pool (#842)"
                 );
                 Err(ReconciliationError::LockReleaseFailed {
                     bank_account_id,

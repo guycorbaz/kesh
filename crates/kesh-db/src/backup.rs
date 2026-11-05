@@ -615,9 +615,11 @@ pub struct TableRestore {
 /// 2. `DELETE FROM <table>` pour les tables applicatives — **`onboarding_state`
 ///    exclue** (DC11, état local destination) — ordre enfants→parents ;
 /// 3. `INSERT` paramétrés (colonnes explicites du manifeste) parents→enfants ;
-/// 4. `SET FOREIGN_KEY_CHECKS = 1` — **rétabli systématiquement**, succès ou
-///    erreur, pour ne jamais rendre une connexion au pool avec les FK
-///    désactivées (corruption silencieuse).
+/// 4. `SET FOREIGN_KEY_CHECKS = 1` — **rétabli ici**, succès ou erreur, pour ne
+///    jamais rendre une connexion au pool avec les FK désactivées (corruption
+///    silencieuse) ; à l'abandon d'une requête (future abandonnée avant ce
+///    point), par le crochet du pool, `crate::pool::avec_remise_a_zero_de_session`
+///    (0.17.4, #540).
 ///
 /// Retourne `(tables_restaurées, lignes_restaurées)`. `_kesh_version`,
 /// `_sqlx_migrations` et `onboarding_state` ne sont jamais touchées. Le caller
