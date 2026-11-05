@@ -15,8 +15,8 @@ Trois clés i18n (quatre locales) ; trois gardes recomptées.
 Trois lentilles, **une par rapport** : **B** (chasseur aveugle), **E** (cas limites), **A** (auditeur d'acceptation).
 
 Worktree `/home/gcorbaz/devel/kesh-0174c`, branche `story/v0174-correctifs`. Le diff de cette fiche, **aplati** :
-`git -C /home/gcorbaz/devel/kesh-0174c show 15742cad` (et tout commit de code de cette fiche qui le suivrait, au Change
-Log). Langue : français. Modèle : **Sonnet**. Passe **complète** (première passe). Contexte frais.
+`git -C /home/gcorbaz/devel/kesh-0174c show 15742cad`, puis `git show 49b5826e -- frontend` et `git show 3f2a1cb8` (la
+spec E2E : liste filtrée, `data-testid` posés au gate). Langue : français. Modèle : **Sonnet**. Passe **complète** (première passe). Contexte frais.
 
 Rapports (un par lentille, **le seul fichier que tu écris**) :
 `/home/gcorbaz/devel/kesh-gate-logs/v0174c-review-p1-3-B.md`, `…-3-E.md`, `…-3-A.md`.

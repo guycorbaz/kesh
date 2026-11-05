@@ -16,7 +16,7 @@ Trois lentilles, **une par rapport** : **B** (chasseur aveugle : le diff seul), 
 d'acceptation : AC, mutations, Dev Agent Record contre les pièces).
 
 Worktree `/home/gcorbaz/devel/kesh-0174c`, branche `story/v0174-correctifs`. Le diff de cette fiche, **aplati** :
-`git -C /home/gcorbaz/devel/kesh-0174c show 524fda2a`. Langue : français. Modèle : **Opus**. Passe **complète**
+`git -C /home/gcorbaz/devel/kesh-0174c show 524fda2a`, puis `git show 53740b59` (l'exception `EXCEPTIONS_V1` de `services_motif.rs` pour `main.rs`, et le manuel sans « ISO 3166-1 », posées au gate). Langue : français. Modèle : **Opus**. Passe **complète**
 (première passe). Contexte frais.
 
 Rapports (un par lentille, **le seul fichier que tu écris**) :
