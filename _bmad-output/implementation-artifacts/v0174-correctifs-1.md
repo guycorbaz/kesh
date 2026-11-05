@@ -248,6 +248,9 @@ tels que lus en 0.17.3) : relu en base.
   lecture corrigée **recalculée** — `v04_characterization.0.17.4.json` écrit depuis la référence 0.39 à trois valeurs près,
   puis comparé à la sortie réelle de `parse_camt053` par `corrected_reading_matches_references_except_the_characterization` :
   **égalité, écart nul** (aucune autre valeur ne change, `"currency": "C\tF"` et le CRLF de `details` compris). Statut → review.
+- 2026-11-06 — **Revue de code P1 (Sonnet, B, E, A)** : B 0/0/1/4, E 0/0/1/5, A 0/0/1/6 ; le MEDIUM unique, convergé
+  (B-1 = E-4 = A-1 : la lecture corrigée d'un relevé v08 sans test ni mutation), remédié (`f3b5d5b1`) avec les LOW B-3, A-3,
+  A-5, A-6, A-7 ; prémisses relues au code. Prochaine : revue P2 ciblée (Sonnet, `v0174-correctifs-review-prompt-p2-1.md`).
 
 ## Dev Agent Record
 
@@ -277,8 +280,16 @@ Claude Opus 5.5 (`claude-opus-5-5`), autonomie, worktree `/home/gcorbaz/devel/ke
 - **Angle mort déclaré** : « les deux lectures n'ont pas le même nombre de lignes » n'a pas de montage (C-v0174c-23).
 - **Faux doublon par alias** (limite assumée, index (10)) : non testé à part ; borné aux lignes dont la clé change.
 - **Écart de méthode déclaré** : deux éditions de fichiers de test faites par script au lieu de l'outil Edit
-  (`camt053_golden.rs`, trois remplacements à motif vérifié unique ; ajout par `cat >>` à `camt053_tests.rs` et
-  `supplier_invoice_draft_e2e.rs`) — contraire à la consigne 14 ; le contenu a été relu et compilé. Le reste par Edit.
+  (`camt053_golden.rs`, trois remplacements à motif vérifié unique ; ajout par `cat >>` à `camt053_tests.rs`) — contraire à
+  la consigne 14 ; le contenu a été relu et compilé. Le reste par Edit. *(Corrigé à la remédiation P1, A-5 : la rédaction
+  précédente nommait aussi `supplier_invoice_draft_e2e.rs`, qui est de la fiche 2.)*
+- **Remédiation de la revue P1** (commit `f3b5d5b1`) : test `v08_corrected_reading_resolves_entities_and_cdata_819`
+  (camt.053.001.08, entité, référence de caractère, CDATA ; B-1 = E-4 = A-1) et **mutation MA-819-8** (`v08.rs` en
+  `Legacy0173`) **tuée** (`mut/MA-819-8.log`, 1 échec sur 17 : le test neuf) ; `invalid_char_refs_are_malformed_819`
+  (`&#0;`, `&#xD800;`, B-3, vert d'emblée : il fige la branche) ; le témoin (d) d'AC-1.5 asserte que les clés qui ont égalé
+  sont les clés neuves (`|ref & co|`, `|e2e & 7|`, A-3) ; manuel et CHANGELOG disent les deux limites de la reconnaissance
+  par alias (#915, A-6) ; README des fixtures (A-7). Ciblé : 11/11 (`*_819` de `kesh-import`). Total des mutations de la
+  fiche : 8/8 tuées.
 - Gates : au dernier commit de code de la story, fiche-index § *Dev Agent Record (gates)*.
 
 ### File List
@@ -288,4 +299,5 @@ Claude Opus 5.5 (`claude-opus-5-5`), autonomie, worktree `/home/gcorbaz/devel/ke
 - `crates/kesh-import/tests/fixtures/camt053_golden/v04_characterization.0.17.4.json` (neuf)
 - `crates/kesh-core/src/bank_imports.rs`
 - `crates/kesh-api/src/routes/bank_imports.rs`, `crates/kesh-api/tests/bank_imports_e2e.rs`
-- `docs/manual/fr/user-manual.tex` (et PDF), `CHANGELOG.md`
+- `docs/manual/fr/user-manual.tex` (commit `16039590`) et son PDF (régénéré aux commits de documentation `3ba6e053`, puis
+  après la remédiation P1), `CHANGELOG.md`

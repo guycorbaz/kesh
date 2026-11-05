@@ -227,6 +227,22 @@ partagée, verrou commun). Chaque commande sous les deux verrous, une par prise 
   bascule.
 - **Migrations** : `ls crates/kesh-db/migrations/*.sql | wc -l` → 89, avant et après.
 
+- **Remédiation des revues P1** (2026-11-06) — gates rejoués au dernier commit de code :
+  - backend, tête `f3b5d5b1` (`gate-final.log`, `nextest-final.log`, base recréée) : `test-fast.sh --ci` vert, **nextest
+    4778 exécutés, 4778 passés, 12 ignorés** ; `cargo build --workspace --all-targets`, `cargo publish --dry-run -p
+    kesh-import` verts. `ae37e7fb` ne touche qu'une spec E2E (aucun fichier Rust ni FTL) ;
+  - frontend, tête `f3b5d5b1` (`gate-front3.log`) : `check` 0 erreur, `lint-i18n-ownership` PASS, **Vitest 2668/2668**,
+    `build` vert ;
+  - E2E complet, run 3 à `f3b5d5b1` (`e2e-full-3.log`) : 348 passés, 8 échoués — les 7 de la KF-029 et
+    `invoices.spec.ts:501`, joué après minuit : le test calculait la date du jour en UTC, le formulaire propose la date du
+    poste (#889) ; test corrigé (`ae37e7fb`). **Run 4 à `ae37e7fb`** (`e2e-full-4.log`, `/tmp/kesh-e2e-v0174c-r4/`, joué
+    entre 00 h 12 et 00 h 30, dans la fenêtre où la date UTC est la veille) : **349 passés, 7 échoués (KF-029), 17
+    ignorés** ; les cinq tests de `v0174-correctifs.spec.ts` verts ; port 3179 libre avant et après ;
+  - captures reprises : `captures-r3/` et `captures-r4/` (`v0174c-888-lot-haut-de-liste`, `-888-lot-pied-de-liste`,
+    `-817-contact-pays-inconnu-avis`, et les quatre autres) ;
+  - manuel : `make -C docs/manual user` (`make-user2.log`) ; PDF aplati (`pdf-controle2.txt`) : les phrases neuves de la
+    limite #915 présentes, « 3166 » absent.
+
 ## Change Log
 
 - 2026-11-05 — fiche-index et trois fiches sœurs créées (Opus 5.5, autonomie). Prémisses établies au code (`7bd4d5c0`) :
@@ -278,3 +294,7 @@ partagée, verrou commun). Chaque commande sous les deux verrous, une par prise 
   (fiche 2), `15742cad` (fiche 3), `49b5826e` et `53740b59` (Dev Agent Records, gate), `3f2a1cb8` (spec E2E). Mutations :
   7/7, 7/7, 9/9 tuées. Gates au § *Dev Agent Record (gates)*. Registre C-v0174c-22 à 27. Statut des fiches → review ;
   prochaine : revue de code P1, un prompt par fiche (`v0174-correctifs-review-prompt-p1-{1,2,3}.md`).
+- 2026-11-06 — **Revues de code P1** : fiche 1 (Sonnet) un MEDIUM convergé, fiche 2 (Opus) aucun au-dessus de LOW (revue
+  terminée), fiche 3 (Sonnet) un MEDIUM (captures). Remédiation `f3b5d5b1` et `ae37e7fb` ; mutations neuves MA-819-8 et
+  MC-817-casse tuées ; gates au § *Dev Agent Record (gates)*. Prochaine : revues P2 ciblées des fiches 1 et 3 (Sonnet,
+  `v0174-correctifs-review-prompt-p2-{1,3}.md`).

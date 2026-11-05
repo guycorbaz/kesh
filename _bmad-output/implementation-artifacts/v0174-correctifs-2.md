@@ -284,6 +284,10 @@ ligne citée au Dev Agent Record). **MB-540** — le crochet ne rétablit pas `f
   `SELECT VERSION(), GET_LOCK('kesh-v0174c-sonde',0), RELEASE_ALL_LOCKS(), IS_FREE_LOCK('kesh-v0174c-sonde')` →
   `10.11.19-MariaDB-ubu2204  1  1  1`. LOW P2 de la validation P4 : chaque site du second grep classé (Completion Notes).
   Statut → review.
+- 2026-11-06 — **Revue de code P1 (Opus, B, E, A)** : aucun finding au-dessus de LOW — revue terminée pour cette fiche.
+  LOW mécaniques remédiés (`f3b5d5b1`) : E-1 (AC-2.11 constate que le verrou est pris avant l'abandon), B-4 (les messages
+  « rendu au retour au pool » de `kesh-reconciliation` disent « un pool muni du crochet de remise à zéro »), A-2 (registre
+  C-v0174c-10 annoté : deux instructions). Les autres LOW sont laissés à l'orchestrateur.
 
 ## Dev Agent Record
 

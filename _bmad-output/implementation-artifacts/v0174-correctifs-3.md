@@ -351,6 +351,11 @@ contact `SU`, le refus `XX` dans chaque écran.
   `as unknown as` » — `SupplierInvoiceForm.test.ts:38` et `supplier-proposals.test.ts:8` complétés, `npm run check` fait foi
   (0 erreur) ; (P3) `sitesTotal` est **le nombre que la garde rend au run** (2829), le grep large ne sert que de contrôle
   de l'écart (2845 → 2848 aux deux bornes, +3), écrit ainsi à l'entrée d'historique. Statut → review.
+- 2026-11-06 — **Revue de code P1 (Sonnet, B, E, A)** : un MEDIUM (A-1, captures #888 et #817 qui ne montraient pas le
+  pied de la liste ni l'avis entier), remédié avec les LOW B-3, E-1, E-3, A-2 (`f3b5d5b1`, `ae37e7fb`). L'E2E complet de la
+  remédiation, joué après minuit, a révélé un test `invoices.spec.ts:501` qui calculait la date du jour en UTC alors que le
+  formulaire propose désormais la date du poste (#889) : corrigé (`ae37e7fb`). Prochaine : revue P2 ciblée (Sonnet,
+  `v0174-correctifs-review-prompt-p2-3.md`).
 
 ## Dev Agent Record
 
@@ -388,6 +393,17 @@ Claude Opus 5.5 (`claude-opus-5-5`), autonomie, worktree `/home/gcorbaz/devel/ke
   `kesh-gate-logs/v0174c/captures/v0174c-*.png`.
 - **Limites assumées, issues demandées** : (7) aucune borne haute à la lecture des factures d'un lot ; (11) une facture
   manquée par la lecture par pages pendant une validation concurrente (la relecture la retrouve).
+- **Portée réelle des campagnes MC-889** (revue P1, A-2) : MC-889-a (`todayLocal` rend l'UTC) n'a été jouée que sur six
+  fichiers de test (`local-date`, `InvoiceForm`, `SettleInvoiceDialog`, `WriteOffDialog`, `ManualReminderDialog`,
+  `payment-batches-page`) : 7 rouges ; les sites 8, 9, 10, 12, 14, 15 et `JournalEntryForm` n'ont pas été rejoués sous elle
+  (ils ont été rouges avant correctif, `rouges-fiche3.log`). MC-889-c n'a muté que l'affichage b ; c, d, e, g, h, j, k, l et
+  `users` n'ont pas de mutation propre — leurs tests ont été rouges avant correctif, et la garde les tient.
+- **Remédiation de la revue P1** (`f3b5d5b1`, `ae37e7fb`) : captures #888 (haut et pied de la liste, numéros `LOT888-…-001`
+  à `205`, nombre de cases écrit sur la page par la spec) et #817 (fenêtre haute, avis amené dans la vue, entier) —
+  `kesh-gate-logs/v0174c/captures-r3/` et `captures-r4/` ; l'avis compare le pays sans la casse, comme le serveur
+  (E-1, test « su », mutation **MC-817-casse tuée**) ; it-CH « Correggilo », en-CH guillemets droits (B-3) ;
+  `pinTimeZone('UTC')` au `describe` de #259 (E-3) ; `invoices.spec.ts:501` (date du poste). Mutations de la fiche : 10/10
+  tuées.
 - Gates : fiche-index § *Dev Agent Record (gates)*.
 
 ### File List
