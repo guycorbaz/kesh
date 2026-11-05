@@ -2233,6 +2233,10 @@ settings-session-conflict-reload-failed = Version conflict and reload failed —
 settings-session-load-error = Unable to read the inactivity duration.
 login-session-idle = Session closed after { $minutes } minutes of inactivity.
 login-session-idle-one = Session closed after 1 minute of inactivity.
+# Story v0174-session-2 (0.17.4, #895) — the warning before the session closes.
+session-idle-warning-announce = Your session will soon be closed due to inactivity: click “Stay signed in”.
+session-idle-warning-countdown = Closing in { $remaining }.
+session-idle-warning-stay = Stay signed in
 
 # --- Debtor reminders (Story 21-4, #231) ---
 dunning-title = Debtor reminders

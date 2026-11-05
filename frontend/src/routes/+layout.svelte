@@ -5,6 +5,7 @@
 	import favicon from '$lib/assets/favicon.svg';
 	import { modeState } from '$lib/app/stores/mode.svelte';
 	import DegradedBanner from '$lib/shared/components/DegradedBanner.svelte';
+	import SessionIdleWarning from '$lib/shared/components/SessionIdleWarning.svelte';
 	import { apiHealth } from '$lib/shared/utils/api-health.svelte';
 	import { appVersion } from '$lib/shared/utils/app-version.svelte';
 	import { featureFlags } from '$lib/shared/utils/feature-flags.svelte';
@@ -103,6 +104,16 @@
 </svelte:head>
 
 <DegradedBanner />
+
+<!-- Story v0174-session-2 (#895, C-v0174s-20) : l'avertissement avant la
+     fermeture pour inactivité, rendu seulement si le temps restant est un
+     nombre (un simulacre du module sans le champ ne rend rien). -->
+{#if typeof sessionIdle.warningRemainingMs === 'number'}
+	<SessionIdleWarning
+		remainingMs={sessionIdle.warningRemainingMs}
+		onStay={() => sessionIdle.stayActive()}
+	/>
+{/if}
 
 {@render children()}
 <Toaster theme="light" />

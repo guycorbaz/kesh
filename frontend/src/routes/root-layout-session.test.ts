@@ -8,14 +8,24 @@ import { createRawSnippet, flushSync, tick } from 'svelte';
 
 const startMock = vi.fn();
 const stopMock = vi.fn();
+const stayActiveMock = vi.fn();
+// Story v0174-session-2 (#895, AC-3) : le simulacre expose l'état de
+// l'avertissement, posé AVANT chaque rendu (non réactif : un rendu par état).
+// `undefined` vaut un simulacre qui n'expose pas le champ.
+const idleMock = vi.hoisted(() => ({ warning: undefined as number | null | undefined }));
 vi.mock('$lib/app/stores/session-idle.svelte', () => ({
 	sessionIdle: {
 		start: (...a: unknown[]) => startMock(...a),
 		stop: (...a: unknown[]) => stopMock(...a),
+		stayActive: (...a: unknown[]) => stayActiveMock(...a),
+		get warningRemainingMs() {
+			return idleMock.warning;
+		},
 	},
 }));
 vi.mock('$lib/shared/utils/i18n.svelte', () => ({
-	i18nMsg: (_k: string, f: string) => f,
+	i18nMsg: (_k: string, f: string, args?: Record<string, string | number>) =>
+		args ? f.replace(/\{\s*\$(\w+)\s*\}/g, (_, k) => String(args[k] ?? '')) : f,
 	loadI18nMessages: vi.fn(),
 }));
 
@@ -82,5 +92,34 @@ describe('layout racine — abonnement du suivi d’activité (Story v0172-sessi
 		flushSync();
 		expect(stopMock).toHaveBeenCalledTimes(2);
 		expect(startMock).toHaveBeenCalledTimes(2);
+	});
+
+	// Story v0174-session-2 (#895, AC-3, C-v0174s-20) — l'avertissement est
+	// rendu si et seulement si `warningRemainingMs` est un nombre.
+	describe('l’avertissement avant la fermeture', () => {
+		afterEach(() => {
+			idleMock.warning = undefined;
+		});
+		for (const [nom, valeur] of [
+			['champ absent du simulacre', undefined],
+			['null', null],
+		] as const) {
+			it(`${nom} ⇒ rien n’est rendu`, async () => {
+				idleMock.warning = valeur;
+				const { queryByTestId } = render(Layout, { props: { children } });
+				await tick();
+				expect(queryByTestId('session-idle-warning')).toBeNull();
+			});
+		}
+		it('un nombre ⇒ l’avis est rendu, son bouton appelle stayActive', async () => {
+			idleMock.warning = 42_000;
+			const { getByTestId } = render(Layout, { props: { children } });
+			await tick();
+			expect(getByTestId('session-idle-warning-countdown').textContent?.trim()).toBe(
+				'Fermeture dans 0:42.',
+			);
+			getByTestId('session-idle-warning-stay').click();
+			expect(stayActiveMock).toHaveBeenCalledTimes(1);
+		});
 	});
 });

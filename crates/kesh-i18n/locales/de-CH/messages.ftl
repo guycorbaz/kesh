@@ -2228,6 +2228,10 @@ settings-session-conflict-reload-failed = Versionskonflikt und Neuladen fehlgesc
 settings-session-load-error = Die Inaktivitätsdauer kann nicht gelesen werden.
 login-session-idle = Sitzung nach { $minutes } Minuten Inaktivität beendet.
 login-session-idle-one = Sitzung nach 1 Minute Inaktivität beendet.
+# Story v0174-session-2 (0.17.4, #895) — die Warnung vor dem Sitzungsende.
+session-idle-warning-announce = Ihre Sitzung wird wegen Inaktivität bald beendet: Klicken Sie auf «Angemeldet bleiben».
+session-idle-warning-countdown = Ende in { $remaining }.
+session-idle-warning-stay = Angemeldet bleiben
 
 # --- Mahnwesen (Story 21-4, #231) ---
 dunning-title = Mahnungen

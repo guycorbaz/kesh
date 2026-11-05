@@ -856,7 +856,10 @@ const ATTENDU = {
 	// fin de session pour inactivité). Que des littéraux.
 	// Remédiation de la revue de code P1 de v0172-session (2026-11-04) : **2825 → 2826**
 	// (+1), `login/+page.svelte` 1 → 2 (`login-session-idle-one`, le singulier ; N-B4).
-	sitesTotal: 2826,
+	// v0174-session-2 (0.17.4, #895, 2026-11-05) : **2826 → 2829** (+3), `grep -o 'i18nMsg('`
+	// sur le fichier neuf `lib/shared/components/SessionIdleWarning.svelte` (0 → 3 :
+	// l'annonce, le compte à rebours, le bouton). Que des littéraux.
+	sitesTotal: 2829,
 	sitesNonResolus: 31,
 	relais: 6,
 	// Story 26-1 (#620, AC3-bis) : **10 → 11** — `lib/features/bank-import/
