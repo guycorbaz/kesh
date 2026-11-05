@@ -323,6 +323,11 @@ l'agent.
 - **Poste de dev** : une base montée par `sqlx migrate run` porte `last_applied = '0.1.0'` ; le nom du fichier dira alors
   `0.1.0-to-…` — sans effet sur la sauvegarde. Hors Docker, `KESH_ADMIN_BACKUP_DIR` doit être inscriptible.
 - **Données réelles** : aucune ; `~/kesh/`, `~/kesh-test/` et le NAS interdits.
+- **Angle mort écrit** (B1-3 / E1-4 de la revue de code P1, laissé tel quel sur arbitrage de l'orchestrateur) :
+  `FreshInstall` est cru sans consulter le plan — une base où `_kesh_version` manque mais `_sqlx_migrations` est
+  peuplée rendrait `InstallationNeuve` et migrerait sans sauvegarde. Aucune version publiée ne produit cet état : la
+  migration `20260522000001_kesh_version` est dans l'arbre de tous les tags, dès `v0.1.0-rc1` (`git ls-tree` relu) ; il
+  ne naîtrait que d'une suppression à la main de la table.
 
 ## Change Log
 
@@ -452,6 +457,26 @@ l'agent.
     vide avant le développement) : `main.rs:122-154` / `:157`, `backup.rs:848-854`, `routes/admin.rs:143` et `:754`,
     `auto_backup.rs:510`, `import.rs:172` et `:493-496`, `export.rs:148` et `:330`, `admin_auto_backup_e2e.rs:133`.
 
+- 2026-11-05 — **Remédiation de la revue de code P1** (Opus, B 0/0/1/4, E 0/0/1/5, A 0/0/3/2 ; B1-1 = E1-1), par
+  Opus 5.5. Prémisses relues : B1-1 (`backup.rs:541`, `:546`, `import.rs:263`) confirmée ; A1-1 (aucune mutation ne
+  visait T16) confirmée ; A1-2 (`mut/M5.log:41`, échec de décodage) confirmée ; A1-3 (recette partielle, « aucune issue »)
+  confirmée. **Aucune ligne de code de production touchée** (tests, manuel, fiche).
+  - **B1-1 / E1-1** : une phrase au manuel (§ *La sauvegarde avant mise à jour* : une table ou une vue ajoutée à la main
+    rend le fichier inimportable par la version de départ ; le retour passe alors par le vidage de sécurité). Inventaire
+    inchangé (C-v0174m-24).
+  - **A1-1** : M23 jouée, T16 vue rouge. **A1-2** : M5-bis jouée, tuée par l'assertion du manifeste. **A1-4** : noté au
+    Dev Agent Record. **A1-3** : Dev Agent Record et § *Recette* récrits — AC-8 jouée en partie, écarts imposés par
+    l'interdit sur `kesh-mariadb-dev`, issue demandée.
+  - **LOW** : E1-2 (T6-bis, frontière exacte ; M9-bis tuée), E1-5 (trois causes assertées dans `messages_de_refus`), E1-6
+    (garde `BaseJetable` : la seconde base de T1-ter est supprimée même sur un échec, absence vérifiée en fin de test),
+    A1-5 (manuel : plan illisible nommé, plan incohérent non contournable). **B1-3 / E1-4** : laissés tels quels, angle
+    mort écrit aux Dev Notes. B1-2, B1-4, B1-5, E1-3 : non traités (LOW, hors consigne).
+  - Gate **ciblé** (aucune production touchée) : fmt, clippy du workspace `-D warnings`, nextest des binaires touchés
+    (`pre_upgrade_backup::tests`, `sauvegarde_avant_migration`, `configuration_transmise`, `textes_coherents`,
+    `test_schema_guard`, `backup::tests`) → **140/140** (`kesh-gate-logs/v0174m/p1rem-cible.log`) ; gate complet et E2E
+    non rejoués (dernier commit de code de production : `4c060d03`). Prochaine étape : revue de code P2 (Sonnet, ciblée,
+    `v0174-mise-a-jour-review-prompt-p2.md`).
+
 ## Dev Agent Record
 
 ### Agent Model Used
@@ -471,16 +496,25 @@ complet, rouge sur `mcp_gardes_lexicales`) et `gate-test-fast-2.log` (gate compl
 - **Rouges d'abord** (`rouges.log`, squelette du module dont les corps rendaient `AJour` / chaîne vide) : 22 tests
   lancés, **17 rouges**, 5 verts — `chaque_lecture_n_a_qu_un_appelant` (garde récrite, déjà vraie au squelette),
   `backup_inventory_matches_schema` (test existant récrit sur `TABLES_SYSTEME`), `convention_du_prefixe_des_tables_systeme`
-  (T16, garde d'une convention déjà tenue : verte par construction, sa force est mesurée par les mutations, non par le
-  rouge), **`t2_base_a_jour` et `t11_echappatoire_sur_base_a_jour`** (le squelette rendait `AJour`, la bonne réponse sur
+  (T16, garde d'une convention déjà tenue : verte par construction ; *remédiation P1, A1-1* : aucune des 22 mutations
+  ne la visait — la mutation M23 de la campagne C, une table sans préfixe ajoutée au squash, l'a vue **rouge**),
+  **`t2_base_a_jour` et `t11_echappatoire_sur_base_a_jour`** (le squelette rendait `AJour`, la bonne réponse sur
   une base à jour : vert par coïncidence ; M3 et M18 en mesurent la force). Les montages des bases partielles ont tourné
   dans les 17 rouges (les échecs sont des assertions sur l'issue, non de montage).
 - **Mutations M1 à M22 : 22 tuées / 22**, chacune par le test que la fiche nomme (motif vérifié unique, restauration
   `git checkout -- <fichier>` puis `touch`, arbre propre après chaque campagne) : M1, M2 → T8 ; M3, M5 → T1 ; M4 → T1 et
   T1-ter ; M6, M20, M21, M22 → T3 ; M7 → T4 ; M8 → T9 ; M9 → T6 ; M10 → T7 ; M11 → T10 ; M12, M19 → T11 (base
   partielle) ; M13 → T1-ter ; M14 → T13 ; M15 → T11-bis ; M16 → T15 ; M17 → T7-bis ; M18 → T11 (base à jour). Deux
-  campagnes, chacune dans une seule prise des deux verrous.
-- **Tests ajoutés** (de `7bd4d5c0` à `HEAD`, recomptés par `grep -cE '^#\[(sqlx::)?test'`) : 18 dans
+  campagnes, chacune dans une seule prise des deux verrous. *Précisions de la remédiation P1* : **M5** est tuée par T1,
+  mais par un échec de décodage incident (`_sqlx_migrations.checksum` binaire lu en chaîne, `mut/M5.log:41`), non par
+  l'assertion du manifeste (A1-2) ; **M3** est tuée par l'assertion de montage de T1, qui appelle la fonction mutée
+  (A1-4 : motif juste, étiquette approximative).
+- **Campagne C** (remédiation de la revue P1, `mut/campagne-C.log`, une prise) : **3 tuées / 3** — **M5-bis** (le
+  filtre laisse entrer `_kesh_version` seule) tuée par l'assertion `tables du manifeste = inventaire de départ` de T1
+  (`mut/M5-bis.log`) ; **M9-bis** (`libre > seuil`) tuée par T6-bis (`un espace égal au seuil écrit`) ; **M23** (table
+  `kesh_systeme_m23` sans préfixe ajoutée au squash) tuée par T16 (`table hors TABLES_TO_TRUNCATE sans préfixe`).
+- **Tests ajoutés** (de `7bd4d5c0` au commit de développement `569fb0a1`, recomptés par
+  `grep -cE '^#\[(sqlx::)?test'` ; la remédiation P1 en ajoute un, T6-bis : 19 à `060769f4`) : 18 dans
   `pre_upgrade_backup/tests.rs` (T1, T1-ter, T2, T3, T4, T5, T6, T7, T7-bis, T9, T10, T11 ×2, T11-bis, T13, T14, T15, et
   `messages_de_refus`), 1 dans `tests/sauvegarde_avant_migration.rs` (T8), 1 dans `kesh-db/src/backup.rs` (T16 : 28 → 29) ;
   la garde `export_installation_n_a_qu_un_appelant` est **renommée** `chaque_lecture_n_a_qu_un_appelant` (5 → 5). T12 est
@@ -511,7 +545,7 @@ complet, rouge sur `mcp_gardes_lexicales`) et `gate-test-fast-2.log` (gate compl
   autre story de la release n'en porte (la `v0174-session` le peut) — à vérifier à l'intégration.
 - **AC-9** : 89 fichiers `.sql` avant et après (`ls crates/kesh-db/migrations/*.sql | wc -l`) ; `TABLES_TO_TRUNCATE` et
   `min_required` inchangés.
-- **Recette AC-8** : voir § *Recette* ci-dessous.
+- **Recette AC-8** : **jouée en partie** — voir § *Recette* ci-dessous.
 
 ### File List
 
@@ -555,14 +589,18 @@ release). Binaire de la branche : `target/debug/kesh-api` au commit `4c060d03`.
    (`c9704d58…` des deux côtés) ; **document fournisseur servi identique** (`4faa3dee…`). La 0.15.0 sert les données et
    les pièces revenues.
 
-**Écarts entre la procédure écrite et ce qui a été fait** (constats, aucune retouche de la procédure ici) :
-(a) conteneurs `docker run` sur le réseau de l'hôte et bases sur le MariaDB **partagé** de la station au lieu d'un
-projet compose avec son propre service `mariadb` — imposé par l'interdit sur `kesh-mariadb-dev` ; (b) le vidage de
-sécurité par `docker exec kesh-mariadb-dev mariadb-dump --single-transaction` et non par le script du § *Script de
-sauvegarde mariadb-dump* (qui vise le service `mariadb` du compose) ; (c) `/setup` et la restauration depuis l'assistant
-joués **par l'API** (`POST /api/v1/setup/admin`, `POST /api/v1/admin/full-import`), non par l'écran ; (d) conteneurs en
-`--user` de la station, si bien que le fichier `pre-upgrade/` n'est pas `root` : la récupération `sudo cp` + `chown` du
-manuel n'a pas été jouée ; (e) l'installation neuve est sur la **même** machine (base distincte), ce que le manuel dit
-« non éprouvé » : l'est désormais pour ce montage seulement. Aucun écart n'a révélé de défaut de la procédure ; aucune
-issue n'en découle. Conteneurs `kesh-0174m-boot-0150` et `kesh-0174m-neuve-0150` **laissés arrêtés**, non supprimés ;
+**AC-8 n'est jouée qu'en partie** (récrit à la remédiation de la revue P1, A1-3 ; l'entrée d'origine disait à tort « aucune
+issue n'en découle »). Ce qui est **établi** : le fichier écrit par la branche avant migration se restaure dans une 0.15.0
+neuve, données et pièces comprises, et la 0.15.0 refuse la base migrée. Ce qui **n'a pas été joué tel qu'écrit** au
+manuel — les écarts étant **imposés par la consigne** de ne jamais toucher au cycle de vie du conteneur MariaDB partagé
+de la station (`kesh-mariadb-dev`, sur lequel les bases de recette ont dû être créées, faute d'un MariaDB à soi) :
+(a) aucun projet compose neuf avec son propre service `mariadb` et son volume neuf — conteneurs `docker run` sur le
+réseau de l'hôte, bases sur le MariaDB partagé ; (b) le vidage de sécurité n'a pas été pris par le script du § *Script de
+sauvegarde mariadb-dump* (qui vise le service `mariadb` d'un compose), mais par `docker exec kesh-mariadb-dev
+mariadb-dump --single-transaction` ; (c) `/setup` et la restauration depuis l'assistant ont été joués **par l'API**
+(`POST /api/v1/setup/admin`, `POST /api/v1/admin/full-import`), non par l'écran ; (d) conteneurs lancés en `--user` de la
+station, si bien que le fichier `pre-upgrade/` n'était pas `root` : la récupération `sudo cp` + `chown` n'a pas été
+jouée ; (e) l'installation neuve était sur la même machine, base distincte — ce n'est pas l'installation « sur la machine
+même » que le manuel dit non éprouvée (même projet compose, même base). Ces points restent **non éprouvés** : issue
+demandée à l'orchestrateur (« procédure de retour de la 0.17.4 non éprouvée telle qu'écrite »). Conteneurs `kesh-0174m-boot-0150` et `kesh-0174m-neuve-0150` **laissés arrêtés**, non supprimés ;
 bases `kesh_v0174m_recette*` et dossiers `/tmp/kesh-e2e-v0174m-recette/` laissés en place.
