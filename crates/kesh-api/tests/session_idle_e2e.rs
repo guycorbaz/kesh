@@ -199,9 +199,11 @@ fn forge(user_id: i64, role: &str, exp_offset: i64, idle_exp: Option<i64>) -> St
     .unwrap()
 }
 
+/// L'échéance de la ligne du jeton `token` (jeton clair ; la ligne porte son
+/// empreinte depuis la 0.17.4, #890).
 async fn row_expires_at(pool: &MySqlPool, token: &str) -> NaiveDateTime {
     sqlx::query_scalar("SELECT expires_at FROM refresh_tokens WHERE token = ?")
-        .bind(token)
+        .bind(common::independent_refresh_digest(token))
         .fetch_one(pool)
         .await
         .expect("ligne refresh_tokens")
@@ -306,12 +308,13 @@ async fn refresh_copies_the_deadline(pool: MySqlPool) {
     let app = spawn_app(pool.clone()).await;
     let (_at, rt, _) = login(&app, "carol").await;
     let target = Utc::now().naive_utc() + TimeDelta::minutes(5);
-    sqlx::query("UPDATE refresh_tokens SET expires_at = ? WHERE token = ?")
+    let r = sqlx::query("UPDATE refresh_tokens SET expires_at = ? WHERE token = ?")
         .bind(target)
-        .bind(&rt)
+        .bind(common::independent_refresh_digest(&rt))
         .execute(&pool)
         .await
         .unwrap();
+    assert_eq!(r.rows_affected(), 1);
     let posee = row_expires_at(&pool, &rt).await;
     let resp = app
         .client
@@ -430,23 +433,25 @@ async fn heartbeat_refuses_foreign_revoked_or_expired_rows(pool: MySqlPool) {
     );
 
     let (at_g2, rt_g2, _) = login(&app, "gina").await;
-    sqlx::query(
+    let r = sqlx::query(
         "UPDATE refresh_tokens SET revoked_at = NOW(3), revoked_reason = 'logout' WHERE token = ?",
     )
-    .bind(&rt_g2)
+    .bind(common::independent_refresh_digest(&rt_g2))
     .execute(&pool)
     .await
     .unwrap();
+    assert_eq!(r.rows_affected(), 1);
     let resp = heartbeat(&app, &at_g2, &rt_g2, json!({ "idleMs": 0 })).await;
     assert_eq!(resp.status(), 401, "ligne révoquée");
 
     let (at_g3, rt_g3, _) = login(&app, "gina").await;
-    sqlx::query("UPDATE refresh_tokens SET expires_at = ? WHERE token = ?")
+    let r = sqlx::query("UPDATE refresh_tokens SET expires_at = ? WHERE token = ?")
         .bind(Utc::now().naive_utc() - TimeDelta::seconds(5))
-        .bind(&rt_g3)
+        .bind(common::independent_refresh_digest(&rt_g3))
         .execute(&pool)
         .await
         .unwrap();
+    assert_eq!(r.rows_affected(), 1);
     let resp = heartbeat(&app, &at_g3, &rt_g3, json!({ "idleMs": 0 })).await;
     assert_eq!(resp.status(), 401, "ligne expirée");
 
@@ -516,12 +521,13 @@ async fn nothing_is_accepted_past_the_deadline(pool: MySqlPool) {
     let app = spawn_app(pool.clone()).await;
     let (_at, rt, _) = login(&app, "jane").await;
     let passe = Utc::now().naive_utc() - TimeDelta::minutes(1);
-    sqlx::query("UPDATE refresh_tokens SET expires_at = ? WHERE token = ?")
+    let r = sqlx::query("UPDATE refresh_tokens SET expires_at = ? WHERE token = ?")
         .bind(passe)
-        .bind(&rt)
+        .bind(common::independent_refresh_digest(&rt))
         .execute(&pool)
         .await
         .unwrap();
+    assert_eq!(r.rows_affected(), 1);
     let posee = row_expires_at(&pool, &rt).await;
     let at = forge(uid, "Comptable", 900, Some(passe.and_utc().timestamp()));
     let resp = heartbeat(&app, &at, &rt, json!({ "idleMs": 0 })).await;

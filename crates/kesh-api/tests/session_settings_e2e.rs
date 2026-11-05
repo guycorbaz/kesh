@@ -364,7 +364,7 @@ async fn concurrent_first_puts_yield_a_conflict_not_a_500(pool: MySqlPool) {
     let (status, corps) = tache.await.unwrap();
     assert_eq!(status, 409, "corps : {corps}");
     assert_eq!(corps["error"]["code"], "OPTIMISTIC_LOCK_CONFLICT");
-    capture.exiger_un_rejeu("installation_settings::update_session_idle_minutes");
+    capture.exiger_un_rejeu("session_settings::update_session_settings");
     let ligne: (i32, i32) = sqlx::query_as(
         "SELECT session_idle_minutes, version FROM _kesh_installation_settings WHERE id = 1",
     )

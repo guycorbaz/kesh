@@ -40,6 +40,38 @@ pub async fn create_test_company(pool: &MySqlPool) {
 }
 
 // ---------------------------------------------------------------------------
+// Empreinte d'un jeton de renouvellement — Story v0174-session-1 (#890)
+// ---------------------------------------------------------------------------
+
+/// L'empreinte qu'un jeton de renouvellement doit porter en base, recalculée
+/// **indépendamment** de `kesh_db::repositories::refresh_tokens::token_digest`
+/// (C-v0174s-19) : sans quoi la mutation « empreinte = identité » passerait,
+/// le test comparant le code à lui-même.
+///
+/// Les 16 premiers octets de SHA-256(jeton), en hexadécimal minuscule, mis en
+/// forme `8-4-4-4-12`, dont le 13ᵉ chiffre (position 15 de la chaîne, tirets
+/// compris) est forcé à `0` (C-v0174s-2). Vecteur : `00000000-0000-4000-8000-
+/// 000000000000` ⇒ `db8055e0-e030-0d5a-016b-ec4dc338d698` (`sha256sum`).
+pub fn independent_refresh_digest(clear: &str) -> String {
+    use sha2::{Digest, Sha256};
+    let bytes = Sha256::digest(clear.as_bytes());
+    let mut hex: Vec<char> = bytes[..16]
+        .iter()
+        .flat_map(|b| format!("{b:02x}").chars().collect::<Vec<_>>())
+        .collect();
+    hex[12] = '0';
+    let s: String = hex.into_iter().collect();
+    format!(
+        "{}-{}-{}-{}-{}",
+        &s[0..8],
+        &s[8..12],
+        &s[12..16],
+        &s[16..20],
+        &s[20..32]
+    )
+}
+
+// ---------------------------------------------------------------------------
 // Assertions d'audit — Story 25-1b
 // ---------------------------------------------------------------------------
 //

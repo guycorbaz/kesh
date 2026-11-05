@@ -17,6 +17,8 @@ use kesh_db::test_fixtures::{seed_stub_company_only, truncate_all};
 use serde_json::{Value, json};
 use sqlx::MySqlPool;
 
+mod common;
+
 const TEST_JWT_SECRET: &[u8] = b"test-secret-32-bytes-minimum-test-secret-padding";
 
 struct TestApp {
@@ -598,5 +600,52 @@ async fn toctou_race_two_distinct_usernames_creates_exactly_one_admin(pool: MySq
     assert_eq!(
         audite, survivant,
         "la trace désigne l'utilisateur qui a réellement survécu à la race"
+    );
+}
+
+/// Story v0174-session-1 (#890, AC-2) — l'assistant ne stocke que l'empreinte
+/// du cookie de renouvellement qu'il pose (recalculée par
+/// `common::independent_refresh_digest`).
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn setup_admin_stores_only_the_token_digest(pool: MySqlPool) {
+    truncate_all(&pool).await.expect("truncate");
+    seed_stub_company_only(&pool).await.expect("seed stub");
+    let app = spawn_app(pool.clone(), false).await;
+
+    let res = app
+        .client
+        .post(app.url("/api/v1/setup/admin"))
+        .json(&json!({
+            "username": "digest-admin",
+            "password": "digest-admin-password-12",
+        }))
+        .send()
+        .await
+        .expect("setup POST");
+    assert_eq!(res.status(), 200);
+    let c = res
+        .headers()
+        .get_all("set-cookie")
+        .iter()
+        .filter_map(|h| h.to_str().ok())
+        .find_map(|c| c.strip_prefix("kesh_refresh_token="))
+        .map(|c| c.split(';').next().unwrap_or("").to_string())
+        .filter(|v| !v.is_empty())
+        .expect("cookie kesh_refresh_token");
+
+    let clear_rows: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM refresh_tokens WHERE token = ?")
+        .bind(&c)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(clear_rows, 0, "aucune ligne ne porte le jeton clair");
+    let stored: Vec<String> = sqlx::query_scalar("SELECT token FROM refresh_tokens")
+        .fetch_all(&pool)
+        .await
+        .unwrap();
+    assert_eq!(
+        stored,
+        vec![common::independent_refresh_digest(&c)],
+        "une ligne, qui porte l'empreinte du cookie"
     );
 }

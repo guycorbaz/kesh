@@ -31,6 +31,7 @@ use kesh_api::errors::AppError;
 use kesh_api::middleware::auth::CurrentUser;
 use kesh_api::{AppState, build_router};
 use kesh_db::repositories::companies;
+use kesh_db::repositories::refresh_tokens::token_digest;
 use serde_json::json;
 use sqlx::MySqlPool;
 
@@ -382,7 +383,7 @@ async fn logout_invalidates_cookie(pool: MySqlPool) {
     // Vérifier que le refresh_token est NON-révoqué avant logout (sanity check).
     let revoked_before: Option<chrono::DateTime<chrono::Utc>> =
         sqlx::query_scalar("SELECT revoked_at FROM refresh_tokens WHERE token = ?")
-            .bind(&refresh_token)
+            .bind(token_digest(&refresh_token))
             .fetch_one(&pool_for_query)
             .await
             .expect("refresh_token should exist post-login");
@@ -468,7 +469,7 @@ async fn logout_invalidates_cookie(pool: MySqlPool) {
     // applicative préservée Story 1.6 + Story 10-5 cookie-only flow).
     let revoked_after: Option<chrono::DateTime<chrono::Utc>> =
         sqlx::query_scalar("SELECT revoked_at FROM refresh_tokens WHERE token = ?")
-            .bind(&refresh_token)
+            .bind(token_digest(&refresh_token))
             .fetch_one(&pool_for_query)
             .await
             .expect("refresh_token row should still exist post-logout");

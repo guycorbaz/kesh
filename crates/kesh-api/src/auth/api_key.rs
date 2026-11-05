@@ -28,7 +28,7 @@ use crate::errors::AppError;
 use crate::middleware::auth::CurrentUser;
 
 /// Préfixe discriminant des clés PAT. Testé **case-sensitive exact** (octets)
-/// par le middleware pour router vers `validate_pat` plutôt que `jwt::decode`.
+/// par le middleware pour router vers `validate_pat` plutôt que `jwt::decode_session`.
 pub const PAT_PREFIX: &str = "kesh_pat_";
 
 /// Nombre d'octets aléatoires du secret (160 bits — AC2).

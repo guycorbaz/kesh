@@ -23,9 +23,12 @@ use kesh_api::errors::AppError;
 use kesh_api::middleware::auth::CurrentUser;
 use kesh_api::{AppState, build_router};
 use kesh_db::entities::{NewUser, Role};
+use kesh_db::repositories::refresh_tokens::token_digest;
 use kesh_db::repositories::{companies, users};
 use serde_json::json;
 use sqlx::MySqlPool;
+
+mod common;
 
 /// Secret JWT utilisé par tous les tests ≥ 32 bytes.
 const TEST_JWT_SECRET: &[u8] = b"test-secret-32-bytes-minimum-test-secret-padding";
@@ -634,7 +637,7 @@ async fn logout_revokes_refresh_token(pool: MySqlPool) {
     // 3. Vérifier en base que revoked_at IS NOT NULL
     let revoked_at: Option<chrono::NaiveDateTime> =
         sqlx::query_scalar("SELECT revoked_at FROM refresh_tokens WHERE token = ?")
-            .bind(&refresh_token)
+            .bind(token_digest(&refresh_token))
             .fetch_one(&pool)
             .await
             .unwrap();
@@ -1056,7 +1059,7 @@ async fn refresh_rotates_token(pool: MySqlPool) {
     // Verify old token is revoked with reason=rotation in DB
     let row: (Option<String>,) =
         sqlx::query_as("SELECT revoked_reason FROM refresh_tokens WHERE token = ?")
-            .bind(&rt)
+            .bind(token_digest(&rt))
             .fetch_one(&pool)
             .await
             .unwrap();
@@ -1085,13 +1088,14 @@ async fn refresh_replay_after_rotation_revokes_all(pool: MySqlPool) {
     // Story v0172-session (#876, C-v0172s-17) — un rejeu dans les 30 s d'une
     // rotation relève de la grâce (deux onglets) ; la détection de vol joue
     // au-delà : la rotation est reculée de 60 s avant le rejeu.
-    sqlx::query(
+    let reculee = sqlx::query(
         "UPDATE refresh_tokens SET revoked_at = NOW(3) - INTERVAL 60 SECOND WHERE token = ?",
     )
-    .bind(&rt_old)
+    .bind(token_digest(&rt_old))
     .execute(&pool)
     .await
     .unwrap();
+    assert_eq!(reculee.rows_affected(), 1, "la rotation est bien reculée");
 
     // Replay old token → theft detection → mass revoke
     let resp = app
@@ -1173,11 +1177,12 @@ async fn refresh_after_logout_does_not_mass_revoke(pool: MySqlPool) {
 #[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn refresh_with_expired_token_returns_401(pool: MySqlPool) {
     let user_id = create_user(&pool, "user5", "password123!", true).await;
-    // Insert an already-expired token directly in DB
+    // Insert an already-expired token directly in DB — son empreinte (#890) :
+    // sans quoi le 401 viendrait d'un jeton « inconnu », non expiré (M15).
     let expired_token = uuid::Uuid::new_v4().to_string();
     sqlx::query("INSERT INTO refresh_tokens (user_id, token, expires_at) VALUES (?, ?, ?)")
         .bind(user_id)
-        .bind(&expired_token)
+        .bind(token_digest(&expired_token))
         .bind(chrono::Utc::now().naive_utc() - chrono::TimeDelta::hours(1))
         .execute(&pool)
         .await
@@ -1524,30 +1529,44 @@ async fn change_password_too_short_returns_400(pool: MySqlPool) {
 async fn cleanup_removes_old_tokens(pool: MySqlPool) {
     let user_id = create_user(&pool, "user16", "password123!", true).await;
 
-    // Insert old expired token (8 days ago)
-    sqlx::query(
-        "INSERT INTO refresh_tokens (user_id, token, expires_at, created_at) VALUES (?, ?, ?, ?)",
+    // Story v0174-session-1 (#890, AC-4) : toutes les lignes portent des
+    // EMPREINTES — une ligne claire serait effacée par le prédicat des jetons
+    // d'avant la 0.17.4, quel que soit son âge, et le test deviendrait muet
+    // sur les clauses d'âge (M13).
+    let now = chrono::Utc::now().naive_utc();
+    let insert = |expires: chrono::NaiveDateTime, revoked: Option<chrono::NaiveDateTime>| {
+        let pool = pool.clone();
+        async move {
+            let r = sqlx::query(
+                "INSERT INTO refresh_tokens (user_id, token, expires_at, revoked_at, revoked_reason) \
+                 VALUES (?, ?, ?, ?, IF(? IS NULL, NULL, 'logout'))",
+            )
+            .bind(user_id)
+            .bind(token_digest(&uuid::Uuid::new_v4().to_string()))
+            .bind(expires)
+            .bind(revoked)
+            .bind(revoked)
+            .execute(&pool)
+            .await
+            .unwrap();
+            assert_eq!(r.rows_affected(), 1);
+        }
+    };
+    // Old expired token (8 days ago)
+    insert(now - chrono::TimeDelta::days(8), None).await;
+    // Old revoked token (8 days ago)
+    insert(
+        now + chrono::TimeDelta::days(1),
+        Some(now - chrono::TimeDelta::days(8)),
     )
-    .bind(user_id)
-    .bind(uuid::Uuid::new_v4().to_string())
-    .bind(chrono::Utc::now().naive_utc() - chrono::TimeDelta::days(8))
-    .bind(chrono::Utc::now().naive_utc() - chrono::TimeDelta::days(9))
-    .execute(&pool)
-    .await
-    .unwrap();
-
-    // Insert old revoked token (8 days ago)
-    let old_revoked = uuid::Uuid::new_v4().to_string();
-    sqlx::query(
-        "INSERT INTO refresh_tokens (user_id, token, expires_at, revoked_at, revoked_reason) VALUES (?, ?, ?, ?, 'logout')",
+    .await;
+    // À garder : une ligne récente non révoquée, une révoquée depuis moins de 7 jours.
+    insert(now + chrono::TimeDelta::hours(1), None).await;
+    insert(
+        now + chrono::TimeDelta::days(1),
+        Some(now - chrono::TimeDelta::days(6)),
     )
-    .bind(user_id)
-    .bind(&old_revoked)
-    .bind(chrono::Utc::now().naive_utc() + chrono::TimeDelta::days(1))
-    .bind(chrono::Utc::now().naive_utc() - chrono::TimeDelta::days(8))
-    .execute(&pool)
-    .await
-    .unwrap();
+    .await;
 
     let before_count: i64 =
         sqlx::query_scalar("SELECT COUNT(*) FROM refresh_tokens WHERE user_id = ?")
@@ -1555,7 +1574,7 @@ async fn cleanup_removes_old_tokens(pool: MySqlPool) {
             .fetch_one(&pool)
             .await
             .unwrap();
-    assert_eq!(before_count, 2);
+    assert_eq!(before_count, 4);
 
     // Cleanup : remove tokens older than 7 days
     let cutoff = (chrono::Utc::now() - chrono::TimeDelta::days(7)).naive_utc();
@@ -1570,7 +1589,7 @@ async fn cleanup_removes_old_tokens(pool: MySqlPool) {
             .fetch_one(&pool)
             .await
             .unwrap();
-    assert_eq!(after_count, 0);
+    assert_eq!(after_count, 2, "the two recent tokens are kept");
 }
 
 // --- 9.17 login_timing_still_normalized (anti-regression) ---
@@ -1671,11 +1690,12 @@ async fn all_refresh_error_codes_are_identical(pool: MySqlPool) {
         .unwrap();
     let body1: serde_json::Value = resp.json().await.unwrap();
 
-    // Case 2: expired token
+    // Case 2: expired token — son empreinte (#890), sans quoi ce cas
+    // retomberait sur le cas 1 (jeton inconnu).
     let expired = uuid::Uuid::new_v4().to_string();
     sqlx::query("INSERT INTO refresh_tokens (user_id, token, expires_at) VALUES (?, ?, ?)")
         .bind(user_id)
-        .bind(&expired)
+        .bind(token_digest(&expired))
         .bind(chrono::Utc::now().naive_utc() - chrono::TimeDelta::hours(1))
         .execute(&pool)
         .await
@@ -1710,13 +1730,14 @@ async fn all_refresh_error_codes_are_identical(pool: MySqlPool) {
     // Case 4 (Story v0172-session, #876) : le cas 3 passe désormais par la
     // grâce de rotation (30 s) ; le rejeu reculé de 60 s emprunte le chemin de
     // la détection de vol — même code.
-    sqlx::query(
+    let reculee = sqlx::query(
         "UPDATE refresh_tokens SET revoked_at = NOW(3) - INTERVAL 60 SECOND WHERE token = ?",
     )
-    .bind(&rt)
+    .bind(token_digest(&rt))
     .execute(&pool)
     .await
     .unwrap();
+    assert_eq!(reculee.rows_affected(), 1, "la rotation est bien reculée");
     let resp = app
         .client
         .post(app.url("/api/v1/auth/refresh"))
@@ -1771,9 +1792,186 @@ async fn refresh_replay_within_grace_does_not_revoke_all(pool: MySqlPool) {
         "SELECT COUNT(*) FROM refresh_tokens WHERE user_id = ? AND token = ? AND revoked_at IS NULL",
     )
     .bind(user_id)
-    .bind(&rt_new)
+    .bind(token_digest(&rt_new))
     .fetch_one(&pool)
     .await
     .unwrap();
     assert_eq!(active, 1, "la ligne neuve reste active (grâce, pas de vol)");
+}
+
+// =========================================================================
+// === Story v0174-session-1 (#890) : seule l'empreinte est en base ===
+// =========================================================================
+//
+// Les empreintes attendues sont recalculées par
+// `common::independent_refresh_digest`, jamais par `token_digest` : sans quoi
+// la mutation « empreinte = identité » passerait (C-v0174s-19).
+
+/// Le cookie `kesh_refresh_token` posé par une réponse.
+fn refresh_cookie(resp: &reqwest::Response) -> String {
+    resp.headers()
+        .get_all("set-cookie")
+        .iter()
+        .filter_map(|h| h.to_str().ok())
+        .find_map(|c| c.strip_prefix("kesh_refresh_token="))
+        .map(|c| c.split(';').next().unwrap_or("").to_string())
+        .filter(|v| !v.is_empty())
+        .expect("cookie kesh_refresh_token")
+}
+
+/// Aucune ligne ne porte la valeur claire `clear`, et la ligne la plus récente
+/// de l'utilisateur porte son empreinte.
+async fn assert_only_digest_stored(pool: &MySqlPool, user_id: i64, clear: &str, what: &str) {
+    let clear_rows: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM refresh_tokens WHERE token = ?")
+        .bind(clear)
+        .fetch_one(pool)
+        .await
+        .unwrap();
+    assert_eq!(
+        clear_rows, 0,
+        "{what} : aucune ligne ne porte le jeton clair"
+    );
+    let stored: String = sqlx::query_scalar(
+        "SELECT token FROM refresh_tokens WHERE user_id = ? ORDER BY id DESC LIMIT 1",
+    )
+    .bind(user_id)
+    .fetch_one(pool)
+    .await
+    .unwrap();
+    assert_eq!(
+        stored,
+        common::independent_refresh_digest(clear),
+        "{what} : la ligne neuve porte l'empreinte du cookie"
+    );
+}
+
+#[test]
+fn independent_digest_matches_the_ac1_vector() {
+    // `printf '%s' '00000000-0000-4000-8000-000000000000' | sha256sum`
+    // ⇒ db8055e0e0307d5a016bec4dc338d698…, 13ᵉ chiffre `7` forcé à `0`.
+    assert_eq!(
+        common::independent_refresh_digest("00000000-0000-4000-8000-000000000000"),
+        "db8055e0-e030-0d5a-016b-ec4dc338d698"
+    );
+}
+
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn login_stores_only_the_token_digest(pool: MySqlPool) {
+    let user_id = create_user(&pool, "digest1", "old-password-digest", true).await;
+    let app = spawn_app(pool.clone()).await;
+
+    // Connexion.
+    let resp = app
+        .client
+        .post(app.url("/api/v1/auth/login"))
+        .json(&json!({"username": "digest1", "password": "old-password-digest"}))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 200);
+    let c = refresh_cookie(&resp);
+    let body: serde_json::Value = resp.json().await.unwrap();
+    let at = body["accessToken"].as_str().unwrap().to_string();
+    assert_only_digest_stored(&pool, user_id, &c, "connexion").await;
+
+    // Renouvellement : la ligne neuve.
+    let resp = app
+        .client
+        .post(app.url("/api/v1/auth/refresh"))
+        .json(&json!({"refreshToken": c}))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 200);
+    let c2 = refresh_cookie(&resp);
+    assert_ne!(c2, c);
+    assert_only_digest_stored(&pool, user_id, &c2, "renouvellement").await;
+
+    // Changement de mot de passe.
+    let resp = app
+        .client
+        .put(app.url("/api/v1/auth/password"))
+        .header("Authorization", format!("Bearer {at}"))
+        .json(&json!({"currentPassword": "old-password-digest", "newPassword": "new-password-digest-14"}))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 200);
+    let c3 = refresh_cookie(&resp);
+    assert_only_digest_stored(&pool, user_id, &c3, "changement de mot de passe").await;
+}
+
+/// AC-3 : une ligne forme 0.17.3 (UUID v4 clair, active, échéance future)
+/// n'ouvre rien — renouvellement 401, battement 401, déconnexion 204 sans la
+/// révoquer.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn legacy_clear_token_row_opens_nothing(pool: MySqlPool) {
+    let user_id = create_user(&pool, "legacy1", "password123!", true).await;
+    let app = spawn_app(pool.clone()).await;
+    let (at, _rt) = login_and_get_tokens(&app, "legacy1", "password123!").await;
+
+    let legacy = uuid::Uuid::new_v4().to_string();
+    let inserted =
+        sqlx::query("INSERT INTO refresh_tokens (user_id, token, expires_at) VALUES (?, ?, ?)")
+            .bind(user_id)
+            .bind(&legacy)
+            .bind(chrono::Utc::now().naive_utc() + chrono::TimeDelta::minutes(30))
+            .execute(&pool)
+            .await
+            .unwrap();
+    assert_eq!(inserted.rows_affected(), 1);
+
+    // Renouvellement, par le corps puis par le cookie.
+    let resp = app
+        .client
+        .post(app.url("/api/v1/auth/refresh"))
+        .json(&json!({"refreshToken": legacy}))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 401, "renouvellement par le corps");
+    let body: serde_json::Value = resp.json().await.unwrap();
+    assert_eq!(body["error"]["code"], "INVALID_REFRESH_TOKEN");
+    let resp = app
+        .client
+        .post(app.url("/api/v1/auth/refresh"))
+        .header("Cookie", format!("kesh_refresh_token={legacy}"))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 401, "renouvellement par le cookie");
+
+    // Battement d'activité avec ce cookie.
+    let resp = app
+        .client
+        .post(app.url("/api/v1/auth/activity"))
+        .header(
+            "Cookie",
+            format!("kesh_access_token={at}; kesh_refresh_token={legacy}"),
+        )
+        .json(&json!({ "idleMs": 0 }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 401, "battement");
+
+    // Déconnexion : 204, rien à révoquer.
+    let resp = app
+        .client
+        .post(app.url("/api/v1/auth/logout"))
+        .json(&json!({"refreshToken": legacy}))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 204, "déconnexion");
+    let revoked: Option<chrono::NaiveDateTime> =
+        sqlx::query_scalar("SELECT revoked_at FROM refresh_tokens WHERE token = ?")
+            .bind(&legacy)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert!(
+        revoked.is_none(),
+        "la déconnexion ne touche pas la ligne forme 0.17.3"
+    );
 }

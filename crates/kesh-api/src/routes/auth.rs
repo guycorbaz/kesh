@@ -43,6 +43,11 @@ pub(crate) async fn new_session_deadline(state: &AppState) -> Result<SessionDead
     let minutes = installation_settings::get(&state.pool)
         .await?
         .session_idle_minutes;
+    // `.trunc_subsecs(3)` (#898, S-A8) : la valeur écrite est alignée sur la
+    // précision de `DATETIME(3)` quel que soit le mode d'arrondi du serveur
+    // (`TIME_ROUND_FRACTIONAL` arrondirait au lieu de tronquer, et `idle_exp`
+    // ne serait plus la seconde de la ligne). Sous le réglage par défaut de
+    // MariaDB (troncature), le retirer ne change rien : mutation équivalente.
     let expires_at = (Utc::now() + TimeDelta::minutes(i64::from(minutes)))
         .naive_utc()
         .trunc_subsecs(3);
@@ -476,9 +481,10 @@ pub async fn refresh(
         return Err(AppError::InvalidRefreshToken("token revoked".into()));
     }
 
-    // Step 5 : vérifier expiration
+    // Step 5 : vérifier expiration — `<=`, aligné sur le middleware
+    // (`now >= idle_exp` refuse) : l'échéance elle-même est passée (#898, S-E6).
     let now = Utc::now().naive_utc();
-    if token.expires_at < now {
+    if token.expires_at <= now {
         return Err(AppError::InvalidRefreshToken("token expired".into()));
     }
 
@@ -495,6 +501,12 @@ pub async fn refresh(
         tracing::warn!(user_id = user.id, "refresh for inactive user");
         return Err(AppError::InvalidRefreshToken("user inactive".into()));
     }
+
+    // Step 7 : lire N **avant** la rotation (#898, S-E5) — une panne de cette
+    // lecture ne laisse plus un jeton tourné sans cookie neuf.
+    let idle_minutes = installation_settings::get(&state.pool)
+        .await?
+        .session_idle_minutes;
 
     // Step 8 : révoquer l'ancien token (rotation)
     refresh_tokens::revoke_by_token(&state.pool, &refresh_token_input, "rotation").await?;
@@ -524,9 +536,6 @@ pub async fn refresh(
         state.config.jwt_expiry,
         idle_exp,
     )?;
-    let idle_minutes = installation_settings::get(&state.pool)
-        .await?
-        .session_idle_minutes;
 
     tracing::info!(user_id = user.id, "refresh successful");
 
@@ -598,6 +607,13 @@ pub async fn change_password(
     // Step 2 : hasher le nouveau mot de passe
     let new_hash = password::hash_password_async(req.new_password.clone()).await?;
 
+    // Step 2-bis : lire N **avant** d'écrire (#898, S-E5) — une panne de cette
+    // lecture ne laisse plus un mot de passe changé et des sessions révoquées
+    // sans cookie neuf. L'échéance vaut `now + N` à quelques millisecondes
+    // près de la création de la ligne (étape 5) ; seules l'insertion et
+    // l'encodage restent après les écritures.
+    let deadline = new_session_deadline(&state).await?;
+
     // Step 3 : update en base
     users::update_password(&state.pool, user.id, &new_hash).await?;
 
@@ -613,7 +629,6 @@ pub async fn change_password(
     // Step 5 : créer nouveau refresh_token + JWT — Story v0172-session : un
     // geste de l'utilisateur, la session repart à `now + N`.
     let new_refresh_token = uuid::Uuid::new_v4().to_string();
-    let deadline = new_session_deadline(&state).await?;
 
     refresh_tokens::create(
         &state.pool,
@@ -694,12 +709,13 @@ pub struct ActivityResponse {
 /// 60 s), aucun cookie d'accès n'est posé — un `Max-Age` nul le supprimerait —
 /// et le prochain appel passera par le renouvellement.
 ///
-/// Refus : clé d'API ⇒ 403 ; cookie absent, ligne d'un autre utilisateur,
-/// révoquée ou échue ⇒ 401 ; corps illisible ⇒ 400 `VALIDATION_ERROR`.
-///
-/// L'ordre est celui-là, corps compris (revue de code P1, S-B4/S-E8) : le corps
-/// est extrait en `Result` et ne se juge **qu'après** `ensure_not_pat`, si
-/// bien qu'une clé d'API reçoit 403 même avec un corps illisible.
+/// Refus, dans cet ordre (revue de code P1, S-B4/S-E8 ; ordre corrigé à la
+/// 0.17.4, #899 S2-E2) : clé d'API ⇒ 403 ; corps illisible ⇒ 400
+/// `VALIDATION_ERROR` ; cookie absent, ligne d'un autre utilisateur, révoquée
+/// ou échue ⇒ 401. Le corps est extrait en `Result` et ne se juge **qu'après**
+/// `ensure_not_pat`, si bien qu'une clé d'API reçoit 403 même avec un corps
+/// illisible ; il se juge **avant** le cookie, si bien qu'une session au corps
+/// illisible et sans cookie reçoit 400.
 pub async fn activity(
     State(state): State<AppState>,
     axum::Extension(current_user): axum::Extension<CurrentUser>,
@@ -737,6 +753,9 @@ async fn activity_with(
     let window_ms = u64::try_from(minutes).unwrap_or(0) * 60_000;
     let idle_ms = req.idle_ms.min(window_ms);
     let now = Utc::now();
+    // `.trunc_subsecs(3)` : même garde que `new_session_deadline` (#898, S-A8 —
+    // serveur réglé en `TIME_ROUND_FRACTIONAL` ; mutation équivalente sous le
+    // réglage par défaut).
     let deadline = (now - TimeDelta::milliseconds(i64::try_from(idle_ms).unwrap_or(i64::MAX))
         + TimeDelta::minutes(i64::from(minutes)))
     .naive_utc()

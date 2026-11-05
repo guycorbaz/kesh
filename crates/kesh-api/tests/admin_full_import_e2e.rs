@@ -39,6 +39,8 @@ use sqlx::MySqlPool;
 
 #[path = "../../kesh-db/tests/support/installations_atteintes.rs"]
 mod installations_atteintes;
+
+mod common;
 use zip::write::SimpleFileOptions;
 use zip::{CompressionMethod, ZipWriter};
 
@@ -5145,21 +5147,36 @@ async fn full_import_round_trip_keeps_a_draft(pool: MySqlPool) {
 // (AC-5, C-v0172s-23)
 // ============================================================
 
-/// Pose une ligne `refresh_tokens` (échéance future), éventuellement révoquée.
-async fn v0172s_refresh_row(pool: &MySqlPool, user_id: i64, revoked: Option<&str>) -> String {
-    let token = uuid::Uuid::new_v4().to_string();
-    sqlx::query(
+/// Pose une ligne `refresh_tokens` (échéance future), éventuellement révoquée,
+/// dont la colonne `token` porte `stored` tel quel.
+async fn insert_refresh_row(pool: &MySqlPool, user_id: i64, revoked: Option<&str>, stored: &str) {
+    let r = sqlx::query(
         "INSERT INTO refresh_tokens (user_id, token, expires_at, revoked_at, revoked_reason) \
          VALUES (?, ?, ?, IF(? IS NULL, NULL, NOW(3)), ?)",
     )
     .bind(user_id)
-    .bind(&token)
+    .bind(stored)
     .bind(Utc::now().naive_utc() + TimeDelta::hours(1))
     .bind(revoked)
     .bind(revoked)
     .execute(pool)
     .await
     .unwrap();
+    assert_eq!(r.rows_affected(), 1);
+}
+
+/// Pose une ligne `refresh_tokens` (échéance future), éventuellement révoquée.
+/// Depuis la 0.17.4 (#890), la ligne porte l'**empreinte** du jeton ; rend le
+/// jeton clair (celui qu'un cookie présenterait).
+async fn v0172s_refresh_row(pool: &MySqlPool, user_id: i64, revoked: Option<&str>) -> String {
+    let token = uuid::Uuid::new_v4().to_string();
+    insert_refresh_row(
+        pool,
+        user_id,
+        revoked,
+        &common::independent_refresh_digest(&token),
+    )
+    .await;
     token
 }
 
@@ -5207,7 +5224,7 @@ async fn v0172s_full_import_revokes_every_session_and_keeps_idle_setting(pool: M
             sqlx::query_scalar::<_, Option<String>>(
                 "SELECT revoked_reason FROM refresh_tokens WHERE token = ?",
             )
-            .bind(t)
+            .bind(common::independent_refresh_digest(&t))
             .fetch_one(&pool)
             .await
             .unwrap()
@@ -5223,7 +5240,7 @@ async fn v0172s_full_import_revokes_every_session_and_keeps_idle_setting(pool: M
         "motif gardé"
     );
     let restante: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM refresh_tokens WHERE token = ?")
-        .bind(&destination)
+        .bind(common::independent_refresh_digest(&destination))
         .fetch_one(&pool)
         .await
         .unwrap();
@@ -5293,9 +5310,149 @@ async fn v0172s_failed_import_after_revocation_point_keeps_sessions(pool: MySqlP
     assert_eq!(v0172s_active_rows(&pool).await, 1, "transaction annulée");
     let r: Option<String> =
         sqlx::query_scalar("SELECT revoked_reason FROM refresh_tokens WHERE token = ?")
-            .bind(&actif)
+            .bind(common::independent_refresh_digest(&actif))
             .fetch_one(&pool)
             .await
             .unwrap();
     assert_eq!(r, None, "la ligne de la destination reste active");
+}
+
+// ============================================================
+// Story v0174-session-1 (0.17.4, #890) — la sauvegarde n'emporte que des
+// empreintes ; une sauvegarde 0.17.3 (jetons clairs) s'importe sans y replanter
+// un jeton clair (AC-5, AC-6, C-v0174s-6)
+// ============================================================
+
+/// Pose une ligne **forme 0.17.3** : un UUID v4 clair (échéance future),
+/// éventuellement révoquée. Rend la valeur posée.
+async fn v0174s_legacy_row(pool: &MySqlPool, user_id: i64, revoked: Option<&str>) -> String {
+    let token = uuid::Uuid::new_v4().to_string();
+    insert_refresh_row(pool, user_id, revoked, &token).await;
+    token
+}
+
+/// Les lignes `token` du NDJSON de `refresh_tokens` d'une archive.
+fn v0174s_archived_tokens(backup: &[u8]) -> Vec<String> {
+    let (_, data) = unzip(backup);
+    let nd = data
+        .get("refresh_tokens")
+        .expect("entrée data/refresh_tokens.ndjson");
+    String::from_utf8(nd.clone())
+        .unwrap()
+        .lines()
+        .filter(|l| !l.trim().is_empty())
+        .map(|l| {
+            let v: Value = serde_json::from_str(l).unwrap();
+            v["token"].as_str().expect("colonne token").to_string()
+        })
+        .collect()
+}
+
+/// AC-5 (a) — une archive dont `refresh_tokens` porte des UUID clairs (forme
+/// 0.17.3, actifs et révoqués) s'importe ; aucun jeton clair ne reste ; les
+/// empreintes de l'archive sont présentes et toutes révoquées.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn v0174s_full_import_erases_legacy_clear_tokens(pool: MySqlPool) {
+    let app = spawn_app(pool.clone()).await;
+    let admin = seed_admin(&pool, "Legacy").await;
+    let clair_actif = v0174s_legacy_row(&pool, admin.user_id, None).await;
+    let clair_revoque = v0174s_legacy_row(&pool, admin.user_id, Some("logout")).await;
+    // Une ligne à empreinte (forme 0.17.4), active.
+    let empreinte = common::independent_refresh_digest(&uuid::Uuid::new_v4().to_string());
+    insert_refresh_row(&pool, admin.user_id, None, &empreinte).await;
+
+    let backup = export_backup(&app, &admin.jwt).await;
+    // D'abord : l'archive porte bien les lignes claires posées (validation P3,
+    // P3-7 : sans quoi le cas resterait vert à vide).
+    let archived = v0174s_archived_tokens(&backup);
+    let claires = archived
+        .iter()
+        .filter(|t| **t == clair_actif || **t == clair_revoque)
+        .count();
+    assert_eq!(claires, 2, "l'archive porte les deux lignes claires");
+    assert!(archived.contains(&empreinte), "et la ligne à empreinte");
+
+    let resp = post_import(&app, &admin.jwt, backup).await;
+    assert_eq!(resp.status(), 200, "{}", resp.text().await.unwrap());
+
+    let claires_restantes: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM refresh_tokens WHERE SUBSTRING(token, 15, 1) <> '0'",
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(claires_restantes, 0, "aucun jeton clair après l'import");
+    let (present, actives): (i64, i64) = sqlx::query_as(
+        "SELECT COUNT(*), CAST(COALESCE(SUM(revoked_at IS NULL), 0) AS SIGNED) \
+         FROM refresh_tokens WHERE token = ?",
+    )
+    .bind(&empreinte)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(present, 1, "la ligne à empreinte de l'archive est présente");
+    assert_eq!(actives, 0, "et révoquée");
+}
+
+/// AC-5 (c) — une ligne forme 0.17.3 de la destination survit à un import
+/// refusé (la transaction annule aussi l'effacement). Vert avant correctif :
+/// témoin du rollback.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn v0174s_failed_import_keeps_legacy_rows(pool: MySqlPool) {
+    let app = spawn_app(pool.clone()).await;
+    let admin = seed_admin(&pool, "SansAdminLegacy").await;
+    let backup = export_backup(&app, &admin.jwt).await;
+    let (mut manifest, mut data) = unzip(&backup);
+    let users_nd = String::from_utf8(data["users"].clone()).unwrap();
+    let sans = users_nd.replace("\"Admin\"", "\"Comptable\"").into_bytes();
+    manifest["tables"]["users"]["sha256"] = Value::from(sha256_hex(&sans));
+    data.insert("users".into(), sans);
+    let clair = v0174s_legacy_row(&pool, admin.user_id, None).await;
+
+    let resp = post_import(&app, &admin.jwt, rezip(&manifest, &data)).await;
+    assert!(!resp.status().is_success(), "rendu {}", resp.status());
+    let r: (i64, Option<String>) =
+        sqlx::query_as("SELECT COUNT(*), MAX(revoked_reason) FROM refresh_tokens WHERE token = ?")
+            .bind(&clair)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(r, (1, None), "la ligne forme 0.17.3 survit, active");
+}
+
+/// AC-6 — après une connexion, l'export `.keshbackup` ne contient pas la
+/// valeur du cookie, et contient son empreinte.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn v0174s_backup_carries_no_usable_token(pool: MySqlPool) {
+    let app = spawn_app(pool.clone()).await;
+    let admin = seed_admin(&pool, "Cookie").await;
+    let resp = app
+        .client
+        .post(app.url("/api/v1/auth/login"))
+        .json(&serde_json::json!({ "username": "Cookie_user", "password": "password123" }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 200, "connexion");
+    let cookie = resp
+        .headers()
+        .get_all("set-cookie")
+        .iter()
+        .filter_map(|h| h.to_str().ok())
+        .find_map(|c| c.strip_prefix("kesh_refresh_token="))
+        .map(|c| c.split(';').next().unwrap_or("").to_string())
+        .filter(|v| !v.is_empty())
+        .expect("cookie kesh_refresh_token");
+
+    let backup = export_backup(&app, &admin.jwt).await;
+    let (_, data) = unzip(&backup);
+    let nd = String::from_utf8(data["refresh_tokens"].clone()).unwrap();
+    assert!(
+        !nd.contains(&cookie),
+        "la sauvegarde ne porte pas la valeur du cookie"
+    );
+    assert!(
+        v0174s_archived_tokens(&backup).contains(&common::independent_refresh_digest(&cookie)),
+        "elle porte son empreinte"
+    );
 }
