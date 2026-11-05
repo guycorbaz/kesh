@@ -429,7 +429,7 @@ durée réglée pour tout contrôle 401 au `curl` (leçon N-A5). Chiffres et heu
   l'étape 0 du développement (commit `c21db740`) : P4-1 (phrase en gras du manuel utilisateur rendue descriptive,
   `v0174-session-2.md`), P4-2 (tâche 6 récrite : « le test S-B2/S-E2 du point 1, les points 2, 3, 6, 9, 11 et 12 »), P4-3
   (« onze » au registre, C-v0174s-1).
-- 2026-11-05 — **Développement** (Opus 5.5, autonomie) : tâches 1 à 9, commits `2bde7a77` (dépôt), `b537f0dd`
+- 2026-11-05 — **Développement** (Opus 5.5, autonomie) : tâches 1 à 9, commits `2bde7a77` (dépôt), `59588081`
   (`kesh-api`), `f330fe03` (#896), `05188efa` (LOW restants), `76f5007d` (textes). **Étape 0, lignes lues** (code
   `7bd4d5c0`, `git diff --stat 7bd4d5c0 -- crates frontend docs` vide au départ) : `refresh_tokens.rs:32`
   `.bind(&new.token)` ; `routes/auth.rs:481` `if token.expires_at < now {`, `:499` « Step 8 », `:527`
@@ -447,7 +447,7 @@ durée réglée pour tout contrôle 401 au `curl` (leçon N-A5). Chiffres et heu
   au gate). **Écarts constatés** : (1) la sonde `git grep -nE "\.token\b"` rend après le correctif, outre
   `routes/auth.rs:1141`, la lecture `token_digest(&new.token)` (`refresh_tokens.rs:78`) et sa doc (`:68`) — le champ
   `NewRefreshToken.token` reste le jeton clair à hacher, la fiche l'avait omis ; (2) `Cargo.lock` (+`sha2` à `kesh-db`,
-  aucune crate neuve) est entré dans le commit de `kesh-api` (`b537f0dd`, par `--amend`) et non dans celui du dépôt ;
+  aucune crate neuve) est entré dans le commit de `kesh-api` (`59588081`, par `--amend`) et non dans celui du dépôt ;
   (3) l'AC-5 (c) est un cas neuf (`v0174s_failed_import_keeps_legacy_rows`) plutôt qu'une modification de
   `v0172s_failed_import_after_revocation_point_keeps_sessions`, qui reste tel quel (son assistant porte désormais
   l'empreinte) ; (4) l'annotation S2-A3 est placée après l'annotation fautive elle-même (§ *CHANGELOG* de
