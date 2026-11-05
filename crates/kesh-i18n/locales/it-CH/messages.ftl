@@ -1791,6 +1791,8 @@ admin-backup-banner-future = L'ultimo backup automatico riuscito è datato { $da
 admin-backup-banner-link = Amministrazione → Backup completo
 admin-backup-banner-overdue = Nessun backup automatico riuscito dal { $date }.
 admin-backup-schedule-error-out-of-domain = Impostazione del backup fuori dai valori ammessi: frequenza 6, 12, 24 o 168 ore, da 1 a 60 backup conservati.
+# Story v0172-session (0.17.3, CR #891) — refus d'une durée d'inactivité hors bornes.
+admin-session-settings-error-out-of-domain = Durata di inattività fuori dai valori ammessi: da 1 minuto a 24 ore.
 admin-backup-server-download = Scarica
 admin-backup-server-download-error = Il download non è riuscito.
 admin-backup-server-empty = Nessun backup sul server.
@@ -2211,6 +2213,19 @@ settings-company-email-invalid = Indirizzo e-mail non valido.
 settings-company-email-saved = E-mail della società salvata
 settings-company-email-conflict = Conflitto di versione — i dati sono stati ricaricati, riprovare.
 settings-company-email-conflict-reload-failed = Conflitto di versione e ricaricamento impossibile — ricaricare la pagina.
+
+# Story v0172-session (0.17.3, CR #891) — section « Session » des paramètres et page de connexion.
+settings-session-title = Sessione
+settings-session-idle-label = Chiudi la sessione dopo
+settings-session-idle-unit = minuti di inattività
+settings-session-idle-help = Da { $min } a { $max } minuti. Ogni attività in Kesh azzera il conteggio; una sessione applica una nuova durata alla sua prossima attività.
+settings-session-idle-invalid = Inserire un numero intero da { $min } a { $max } minuti.
+settings-session-saved = Durata di inattività salvata
+settings-session-conflict = Conflitto di versione — i dati sono stati ricaricati, riprovare.
+settings-session-conflict-reload-failed = Conflitto di versione e ricaricamento impossibile — ricaricare la pagina.
+settings-session-load-error = Impossibile leggere la durata di inattività.
+login-session-idle = Sessione chiusa dopo { $minutes } minuti di inattività.
+login-session-idle-one = Sessione chiusa dopo 1 minuto di inattività.
 
 # --- Solleciti debitori (Story 21-4, #231) ---
 dunning-title = Solleciti debitori
@@ -3075,6 +3090,7 @@ audit-log-action-installation-ui-mode-changed = Modalità d'uso modificata
 audit-log-action-admin-backup-downloaded = Backup del server scaricato
 audit-log-action-admin-backup-run = Backup avviato manualmente
 audit-log-action-admin-backup-schedule-updated = Impostazione del backup automatico modificata
+audit-log-action-admin-session-settings-updated = Durata di inattività della sessione modificata
 audit-log-action-admin-full-export = Backup completo esportato
 audit-log-action-admin-full-import = Backup importato
 audit-log-action-exports-global = Esportazione globale effettuata

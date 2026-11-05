@@ -731,7 +731,7 @@ fn les_replis_rust_suivent_le_catalogue() {
     const ENTREE_ATTENDU: &[(&str, &str)] =
         &[("{ $entry }", "{entree}"), ("{ $expected }", "{attendu}")];
     type Cles = &'static [(&'static str, usize, &'static [(&'static str, &'static str)])];
-    const TABLE: [(&str, Cles); 7] = [
+    const TABLE: [(&str, Cles); 8] = [
         // Story 31-5 (#469, C-31-5-15) — les six refus du journal d'audit.
         (
             "crates/kesh-api/src/routes/audit_log.rs",
@@ -842,6 +842,12 @@ fn les_replis_rust_suivent_le_catalogue() {
         (
             "crates/kesh-api/src/routes/backup_schedule.rs",
             &[("admin-backup-schedule-error-out-of-domain", 1, &[])],
+        ),
+        // Story v0172-session (0.17.3, CR #891) — le refus d'une durée
+        // d'inactivité hors bornes.
+        (
+            "crates/kesh-api/src/routes/session_settings.rs",
+            &[("admin-session-settings-error-out-of-domain", 1, &[])],
         ),
         // Story 32-5c (refs #723, AC-c3) — les refus de la gestion des clés MCP.
         (

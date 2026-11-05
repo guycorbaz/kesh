@@ -1791,6 +1791,8 @@ admin-backup-banner-future = Die letzte erfolgreiche automatische Sicherung ist 
 admin-backup-banner-link = Administration → Vollständige Sicherung
 admin-backup-banner-overdue = Seit dem { $date } keine erfolgreiche automatische Sicherung.
 admin-backup-schedule-error-out-of-domain = Sicherungseinstellung ausserhalb des zulässigen Bereichs: Häufigkeit 6, 12, 24 oder 168 Stunden, 1 bis 60 aufbewahrte Sicherungen.
+# Story v0172-session (0.17.3, CR #891) — refus d'une durée d'inactivité hors bornes.
+admin-session-settings-error-out-of-domain = Inaktivitätsdauer ausserhalb des zulässigen Bereichs: 1 Minute bis 24 Stunden.
 admin-backup-server-download = Herunterladen
 admin-backup-server-download-error = Das Herunterladen ist fehlgeschlagen.
 admin-backup-server-empty = Keine Sicherung auf dem Server.
@@ -2213,6 +2215,19 @@ settings-company-email-invalid = Ungültige E-Mail-Adresse.
 settings-company-email-saved = Firmen-E-Mail gespeichert
 settings-company-email-conflict = Versionskonflikt — die Daten wurden neu geladen, bitte erneut versuchen.
 settings-company-email-conflict-reload-failed = Versionskonflikt und Neuladen fehlgeschlagen — laden Sie die Seite neu.
+
+# Story v0172-session (0.17.3, CR #891) — section « Session » des paramètres et page de connexion.
+settings-session-title = Sitzung
+settings-session-idle-label = Sitzung beenden nach
+settings-session-idle-unit = Minuten Inaktivität
+settings-session-idle-help = { $min } bis { $max } Minuten. Jede Aktivität in Kesh setzt den Zähler zurück; eine Sitzung übernimmt eine neue Dauer bei ihrer nächsten Aktivität.
+settings-session-idle-invalid = Geben Sie eine ganze Zahl von { $min } bis { $max } Minuten ein.
+settings-session-saved = Inaktivitätsdauer gespeichert
+settings-session-conflict = Versionskonflikt — die Daten wurden neu geladen, versuchen Sie es erneut.
+settings-session-conflict-reload-failed = Versionskonflikt und Neuladen fehlgeschlagen — laden Sie die Seite neu.
+settings-session-load-error = Die Inaktivitätsdauer kann nicht gelesen werden.
+login-session-idle = Sitzung nach { $minutes } Minuten Inaktivität beendet.
+login-session-idle-one = Sitzung nach 1 Minute Inaktivität beendet.
 
 # --- Mahnwesen (Story 21-4, #231) ---
 dunning-title = Mahnungen
@@ -3074,6 +3089,7 @@ audit-log-action-installation-ui-mode-changed = Nutzungsmodus geändert
 audit-log-action-admin-backup-downloaded = Sicherung vom Server heruntergeladen
 audit-log-action-admin-backup-run = Sicherung manuell gestartet
 audit-log-action-admin-backup-schedule-updated = Einstellung der automatischen Sicherung geändert
+audit-log-action-admin-session-settings-updated = Inaktivitätsdauer der Sitzung geändert
 audit-log-action-admin-full-export = Vollständige Sicherung exportiert
 audit-log-action-admin-full-import = Sicherung importiert
 audit-log-action-exports-global = Globaler Export durchgeführt

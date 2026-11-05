@@ -92,7 +92,9 @@ Pour vous connecter :
     \item Cliquer sur \emph{Se connecter}.
 \end{enumerate}
 
-La session reste active 15 minutes, prolongée automatiquement à chaque action grâce au système de \emph{refresh token}. Après 15 minutes sans activité, vous devrez vous reconnecter~: c'est la durée par défaut, que l'administrateur peut régler de 1 minute à 24 heures (variable \texttt{KESH\_REFRESH\_INACTIVITY\_MINUTES}).
+La session se ferme après une \textbf{durée d'inactivité réglée par l'administrateur} (60 minutes par défaut ; \emph{Administration → Paramètres}, section \emph{Session}). \textbf{Toute activité dans Kesh la remet à zéro}~: frappe au clavier (y compris pour faire défiler), mouvement, clic ou molette de la souris, toucher, retour sur l'onglet de Kesh ; faire glisser la barre de défilement ne compte qu'à son début ; une activité dans un onglet vaut pour tous les onglets de Kesh du même navigateur. Comptent aussi la dictée, le collage et le glisser-déposer d'un fichier. À l'échéance, Kesh affiche la page de connexion avec « Session fermée après N minutes d'inactivité » ; \textbf{ce qui n'était pas enregistré est perdu}, dans tous les onglets.
+
+\textbf{Ne comptent pas}~: la lecture d'un PDF dans l'aperçu --- Kesh ne voit pas ce qui se passe dans le cadre du document ; seuls l'entrée et la sortie du pointeur, et le clic qui y entre, comptent. \textbf{Pendant une longue lecture dans l'aperçu, sortez le pointeur du document, ou cliquez à côté, au moins une fois par durée réglée} (une fois par heure avec le réglage par défaut) ; un avertissement avant la fermeture est demandé (CR \#895). Ne comptent pas non plus le travail dans un autre programme ou un autre onglet, ni les mises à jour que Kesh fait seul. Le message s'affiche en français sur la page de connexion, quelle que soit la langue choisie. Recharger la page ou ouvrir un onglet ne déconnecte pas tant que la session vit. Rare~: deux onglets qui renouvellent leur accès à la même seconde peuvent ramener l'un d'eux à la connexion.
 
 \subsection{Récupération de mot de passe}
 
@@ -103,7 +105,7 @@ Si vous avez oublié votre mot de passe :
     \item Saisissez votre nom d'utilisateur \textbf{ou} votre adresse email, puis validez. Un message de confirmation générique s'affiche dans tous les cas — par sécurité, Kesh ne révèle jamais si un compte existe ou non.
     \item Ouvrez l'email reçu et cliquez sur le lien de réinitialisation. Le lien est valable \textbf{30 minutes} et ne fonctionne qu'\textbf{une seule fois}.
     \item Choisissez votre nouveau mot de passe (12 caractères minimum) et confirmez-le.
-    \item Reconnectez-vous avec le nouveau mot de passe. Par sécurité, toutes vos sessions ouvertes (autres onglets, autres appareils) ont été déconnectées.
+    \item Reconnectez-vous avec le nouveau mot de passe. Par sécurité, toutes vos sessions ouvertes (autres onglets, autres appareils) ne peuvent plus être renouvelées~: chacune prend fin à sa prochaine activité, au plus tard à l'échéance de son jeton d'accès (15 minutes par défaut).
 \end{enumerate}
 
 \begin{keshwarning}
@@ -116,7 +118,7 @@ Un lien expiré ou déjà utilisé affiche « lien invalide ou expiré » : cliq
 
 \subsection{Déconnexion}
 
-Ouvrez le \emph{menu utilisateur} (coin supérieur droit, il affiche votre rôle) → \emph{Se déconnecter}. Tous les refresh tokens de votre session actuelle sont révoqués.
+Ouvrez le \emph{menu utilisateur} (coin supérieur droit, il affiche votre rôle) → \emph{Se déconnecter}. Le jeton de renouvellement \textbf{de cette session} est révoqué ; vos sessions sur d'autres appareils restent ouvertes.
 
 \begin{keshtip}
 Si vous utilisez Kesh sur un ordinateur partagé, déconnectez-vous toujours après usage. Le mode \emph{HttpOnly Secure} des cookies de session protège contre certaines attaques, mais ne remplace pas une déconnexion explicite.

@@ -1791,6 +1791,8 @@ admin-backup-banner-future = The last successful automatic backup is dated { $da
 admin-backup-banner-link = Administration → Full backup
 admin-backup-banner-overdue = No successful automatic backup since { $date }.
 admin-backup-schedule-error-out-of-domain = Backup setting out of range: frequency 6, 12, 24 or 168 hours, 1 to 60 backups kept.
+# Story v0172-session (0.17.3, CR #891) — refus d'une durée d'inactivité hors bornes.
+admin-session-settings-error-out-of-domain = Inactivity duration out of range: 1 minute to 24 hours.
 admin-backup-server-download = Download
 admin-backup-server-download-error = The download failed.
 admin-backup-server-empty = No backup on the server.
@@ -2218,6 +2220,19 @@ settings-company-email-invalid = Invalid email address.
 settings-company-email-saved = Company email saved
 settings-company-email-conflict = Version conflict — data reloaded, please try again.
 settings-company-email-conflict-reload-failed = Version conflict and reload failed — reload the page.
+
+# Story v0172-session (0.17.3, CR #891) — section « Session » des paramètres et page de connexion.
+settings-session-title = Session
+settings-session-idle-label = Close the session after
+settings-session-idle-unit = minutes of inactivity
+settings-session-idle-help = From { $min } to { $max } minutes. Any activity in Kesh resets the count; a session applies a new duration at its next activity.
+settings-session-idle-invalid = Enter a whole number from { $min } to { $max } minutes.
+settings-session-saved = Inactivity duration saved
+settings-session-conflict = Version conflict — the data has been reloaded, try again.
+settings-session-conflict-reload-failed = Version conflict and reload failed — reload the page.
+settings-session-load-error = Unable to read the inactivity duration.
+login-session-idle = Session closed after { $minutes } minutes of inactivity.
+login-session-idle-one = Session closed after 1 minute of inactivity.
 
 # --- Debtor reminders (Story 21-4, #231) ---
 dunning-title = Debtor reminders
@@ -3080,6 +3095,7 @@ audit-log-action-installation-ui-mode-changed = Usage mode changed
 audit-log-action-admin-backup-downloaded = Server backup downloaded
 audit-log-action-admin-backup-run = Backup started manually
 audit-log-action-admin-backup-schedule-updated = Automatic backup setting changed
+audit-log-action-admin-session-settings-updated = Session inactivity duration changed
 audit-log-action-admin-full-export = Full backup exported
 audit-log-action-admin-full-import = Backup imported
 audit-log-action-exports-global = Global export completed

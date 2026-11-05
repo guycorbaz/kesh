@@ -151,6 +151,78 @@ pub async fn revoke_all_for_user(
     Ok(rows_affected)
 }
 
+/// Story v0172-session (#876) — écrit l'échéance d'inactivité d'une session
+/// (battement d'activité, `POST /api/v1/auth/activity`).
+///
+/// Une requête, une écriture : la ligne doit porter ce `token`, appartenir à
+/// `user_id`, n'être ni révoquée ni échue à `now` (horloge de l'application,
+/// jamais `NOW(3)`). Rend `false` si aucune ligne ne convient (cookie absent
+/// ou d'un autre utilisateur, ligne révoquée ou expirée) — l'appelant rend 401.
+pub async fn set_idle_deadline(
+    pool: &MySqlPool,
+    token: &str,
+    user_id: i64,
+    deadline: chrono::NaiveDateTime,
+    now: chrono::NaiveDateTime,
+) -> Result<bool, DbError> {
+    let rows_affected = sqlx::query(
+        "UPDATE refresh_tokens SET expires_at = ? \
+         WHERE token = ? AND user_id = ? AND revoked_at IS NULL AND expires_at > ?",
+    )
+    .bind(deadline)
+    .bind(token)
+    .bind(user_id)
+    .bind(now)
+    .execute(pool)
+    .await
+    .map_err(map_db_error)?
+    .rows_affected();
+    Ok(rows_affected > 0)
+}
+
+/// Story v0172-session (#876, C-v0172s-17) — ce jeton a-t-il été révoqué par
+/// **rotation** depuis moins de `secs` secondes ?
+///
+/// Mesuré à l'horloge de la base, la même qui a écrit `revoked_at = NOW(3)`
+/// (`revoke_by_token`) : la grâce de rotation laisse deux onglets présenter
+/// le même jeton à quelques secondes d'intervalle sans déclencher la
+/// détection de vol.
+pub async fn was_rotated_within(pool: &MySqlPool, token: &str, secs: i64) -> Result<bool, DbError> {
+    let n: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM refresh_tokens \
+         WHERE token = ? AND revoked_reason = 'rotation' \
+           AND revoked_at > NOW(3) - INTERVAL ? SECOND",
+    )
+    .bind(token)
+    .bind(secs)
+    .fetch_one(pool)
+    .await
+    .map_err(map_db_error)?;
+    Ok(n > 0)
+}
+
+/// Story v0172-session (#876, C-v0172s-23) — révoque **toutes** les lignes
+/// actives, dans la transaction de la restauration complète.
+///
+/// Motif imposé par la contrainte `chk_refresh_tokens_revoked_reason` (cinq
+/// valeurs) : l'appelant passe `"password_change"`, la distinction étant
+/// portée par l'audit `admin.full_import`.
+pub async fn revoke_all_in_tx(
+    tx: &mut sqlx::Transaction<'_, sqlx::MySql>,
+    reason: &str,
+) -> Result<u64, DbError> {
+    let rows_affected = sqlx::query(
+        "UPDATE refresh_tokens SET revoked_at = NOW(3), revoked_reason = ? \
+         WHERE revoked_at IS NULL",
+    )
+    .bind(reason)
+    .execute(&mut **tx)
+    .await
+    .map_err(map_db_error)?
+    .rows_affected();
+    Ok(rows_affected)
+}
+
 /// Supprime physiquement les tokens expirés ou révoqués depuis plus de
 /// `older_than`. Utilisé au démarrage pour le nettoyage (AC8).
 pub async fn delete_expired_and_revoked(

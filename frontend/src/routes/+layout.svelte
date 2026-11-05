@@ -1,6 +1,7 @@
 <script lang="ts">
 	import '../app.css';
-	import { onMount } from 'svelte';
+	import { onMount, untrack } from 'svelte';
+	import { sessionIdle } from '$lib/app/stores/session-idle.svelte';
 	import favicon from '$lib/assets/favicon.svg';
 	import { modeState } from '$lib/app/stores/mode.svelte';
 	import DegradedBanner from '$lib/shared/components/DegradedBanner.svelte';
@@ -18,6 +19,25 @@
 	// modeState.value est un getter réactif — $effect re-exécutera quand le mode change.
 	$effect(() => {
 		document.documentElement.setAttribute('data-mode', modeState.value);
+	});
+
+	// Story v0172-session (0.17.3, #876, C-v0172s-50) — le suivi d'activité de
+	// la session, pour `(app)` comme pour `/onboarding`. L'effet ne s'abonne
+	// qu'à l'IDENTIFIANT de l'utilisateur : `authState.login()` remplace l'objet
+	// à chaque renouvellement (toutes les 15 minutes d'une session active), et un
+	// abonnement à l'objet arrêterait puis redémarrerait le module. Les champs de
+	// transit sont lus sous `untrack`. Le nettoyage arrête le module quand
+	// l'identifiant devient nul, ou avant de le redémarrer pour un autre.
+	const sessionUserId = $derived(authState.currentUser?.userId ?? null);
+	$effect(() => {
+		if (sessionUserId === null) return;
+		untrack(() =>
+			sessionIdle.start({
+				idleTimeoutMinutes: authState.idleTimeoutMinutes,
+				idleExpiresIn: authState.idleExpiresIn,
+			}),
+		);
+		return () => sessionIdle.stop();
 	});
 
 	// Story 10.3 (AC #14bis) : ping /health initial au boot. Si la DB est down

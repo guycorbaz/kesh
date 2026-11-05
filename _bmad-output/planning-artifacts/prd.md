@@ -277,7 +277,7 @@ Kesh est une Single Page Application (SPA) Svelte communiquant avec une API REST
 ### Considérations d'implémentation
 
 - Frontend servi en fichiers statiques par nginx (production) ou Axum directement (développement)
-- Authentification JWT avec refresh silencieux, expiration 15 min d'inactivité
+- Authentification JWT avec refresh silencieux, fin de session après la durée d'inactivité réglée dans l'interface (60 min par défaut, CR #891)
 - Internationalisation côté backend (API expose les traductions), langue configurée au niveau de l'instance
 - Formats suisses : dates `dd.mm.yyyy`, montants avec apostrophe `1'234.56`
 
@@ -388,7 +388,7 @@ Kesh est une Single Page Application (SPA) Svelte communiquant avec une API REST
 - FR10 : L'administrateur peut attribuer un ou plusieurs rôles à un utilisateur (Admin, Comptable, Consultation)
 - FR11 : Le système contrôle l'accès aux fonctionnalités en fonction des rôles (RBAC)
 - FR12 : L'utilisateur peut s'authentifier avec un identifiant et un mot de passe
-- FR13 : Le système renouvelle silencieusement la session et la termine après 15 minutes d'inactivité (configurable)
+- FR13 : Le système renouvelle silencieusement la session et la termine après une durée d'inactivité **réglée par l'Administrateur dans l'interface** (60 minutes par défaut), **appliquée exactement** ; toute activité de l'utilisateur dans Kesh (clavier, souris — mouvement, clic, molette —, toucher, retour sur l'onglet) la remet à zéro — CR #891
 - FR14 : L'utilisateur peut changer son propre mot de passe
 - FR15 : L'administrateur peut réinitialiser le mot de passe d'un utilisateur
 - FR16 : Le système bloque les tentatives de connexion après 5 échecs en 15 minutes, avec un délai de déblocage de 30 minutes

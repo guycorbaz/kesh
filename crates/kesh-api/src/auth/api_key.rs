@@ -207,6 +207,8 @@ pub async fn validate_pat(
         company_id: row.company_id,
         exp,
         api_key_id: Some(row.api_key_id),
+        // Story v0172-session — une clé d'API n'a pas de session.
+        idle_exp: None,
     };
 
     // Best-effort (AC5) — eventual consistency, ne fait jamais échouer la requête.

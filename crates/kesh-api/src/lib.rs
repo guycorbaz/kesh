@@ -248,7 +248,7 @@ pub fn build_router_avec_registre(
     // KESH-ADMIN-ROUTES-BEGIN
     // ⚠️ Bloc borné — Story 22-4a (#167). Le test `admin_pat_denied_e2e` lit CE
     // fichier par `include_str!`, compte les constructeurs de méthode entre les
-    // deux marqueurs, et exige exactement 49 (Story 32-10a-iii). Toute route ajoutée ici sans son
+    // deux marqueurs, et exige exactement 52 (Story v0172-session). Toute route ajoutée ici sans son
     // couple dans la liste du test fait ROUGIR le test : c'est le rappel qui
     // manquait, et qui a laissé 16 routes sur 19 sans garde anti-PAT.
     // Ne pas déplacer ni reformuler les marqueurs sans ajuster le test.
@@ -350,6 +350,14 @@ pub fn build_router_avec_registre(
         .route(
             "/api/v1/admin/backups/{kind}/{name}",
             get(routes::backup_schedule::download_backup),
+        )
+        // Story v0172-session (0.17.3, CR #891) : la durée d'inactivité de la
+        // session, réglée dans Administration → Paramètres (Admin ; un PAT
+        // reçoit la couche anti-PAT). Audit `admin.session_settings_updated`.
+        .route(
+            "/api/v1/admin/session-settings",
+            get(routes::session_settings::get_session_settings)
+                .put(routes::session_settings::update_session_settings),
         )
         // Story 32-5c (refs #723) : les clés du serveur MCP et ses réglages
         // (Admin ; un PAT reçoit la couche anti-PAT, une clé MCP n'est pas
@@ -1118,6 +1126,10 @@ pub fn build_router_avec_registre(
         // Story 10-5 — endpoint /me pour restaurer l'état frontend post-hydrate
         // (le JWT en cookie HttpOnly n'est pas décodable côté JS).
         .route("/api/v1/auth/me", get(routes::auth::me))
+        // Story v0172-session (0.17.3, #876) — le battement d'activité :
+        // prolonge l'échéance d'inactivité de la session (jeton d'accès valide,
+        // `idle_exp` comprise ; clés d'API refusées par `ensure_not_pat`).
+        .route("/api/v1/auth/activity", post(routes::auth::activity))
         .route("/api/v1/i18n/messages", get(routes::i18n::get_messages))
         .route(
             "/api/v1/companies/current",

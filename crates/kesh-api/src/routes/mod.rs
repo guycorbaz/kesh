@@ -45,6 +45,7 @@ pub mod projects;
 pub mod reconciliation;
 pub mod reconciliation_rules;
 pub mod reports;
+pub mod session_settings;
 pub mod setup;
 pub mod supplier_invoices;
 pub mod test_endpoints;

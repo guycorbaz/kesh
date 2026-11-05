@@ -242,14 +242,9 @@ async fn main() {
         }
     }
 
-    // 5d. Vérification de cohérence refresh_inactivity vs max_lifetime (story 1.6)
-    if config.refresh_inactivity > config.refresh_token_max_lifetime {
-        tracing::warn!(
-            "refresh_inactivity ({:?}) exceeds max_lifetime ({:?}), sessions will expire by inactivity only",
-            config.refresh_inactivity,
-            config.refresh_token_max_lifetime
-        );
-    }
+    // 5d. (Story v0172-session, 0.17.3) Le contrôle de cohérence entre la durée
+    //     d'inactivité et la durée de vie du cookie de renouvellement est
+    //     retiré : la durée d'inactivité vit en base, réglée dans l'interface.
 
     // 6. i18n (story 2.1)
     let locales_dir = std::path::PathBuf::from(

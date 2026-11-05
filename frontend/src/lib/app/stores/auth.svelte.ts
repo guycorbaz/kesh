@@ -16,6 +16,10 @@
 
 import { resetVatRatesCache } from '$lib/features/vat-rates';
 import { apiHealth } from '$lib/shared/utils/api-health.svelte';
+// Story v0172-session (C-v0172s-26) — import statique : le cycle
+// `auth.svelte.ts` → `vat-rates` → `api-client.ts` → `auth.svelte.ts` existait
+// déjà ; aucun des modules n'emploie l'autre au niveau supérieur.
+import { tryRefresh } from '$lib/shared/utils/api-client';
 
 /**
  * CR Pass 3 ECH3-M4 — `BroadcastChannel` singleton pour la synchronisation
@@ -50,6 +54,15 @@ let _currentUser = $state<CurrentUser | null>(null);
 let _hydrated = false;
 
 /**
+ * Story v0172-session (0.17.3, C-v0172s-50) — **transit** des champs
+ * d'inactivité de la dernière réponse de connexion, de renouvellement ou de
+ * `/me`, que le layout racine passe à `sessionIdle.start()`. La durée N et
+ * l'échéance sont tenues par le module `session-idle`, non ici.
+ */
+let _idleTimeoutMinutes: number | undefined = undefined;
+let _idleExpiresIn: number | null | undefined = undefined;
+
+/**
  * Story v011-5 — flag « setup-required » set à `true` quand `/me` ou tout autre
  * route protégée retourne `423 Locked` (table `users` vide côté backend, le
  * 1er admin n'a pas encore été créé via `/setup`). Le `+layout.ts` racine
@@ -75,6 +88,19 @@ export interface LoginPayload {
 	username: string;
 	role: string;
 	expiresIn: number;
+	/** Story v0172-session — la durée d'inactivité N (minutes), si le serveur la dit. */
+	idleTimeoutMinutes?: number;
+	/** Story v0172-session — secondes restantes avant l'échéance (`null` : jeton sans échéance). */
+	idleExpiresIn?: number | null;
+}
+
+/** Le marqueur d'une fermeture pour inactivité : `/login?reason=idle`. */
+function isIdleClosurePage(): boolean {
+	if (typeof window === 'undefined') return false;
+	return (
+		window.location.pathname === '/login' &&
+		new URLSearchParams(window.location.search).get('reason') === 'idle'
+	);
 }
 
 export const authState = {
@@ -91,6 +117,14 @@ export const authState = {
 	/** Story v011-5 — true si `/me` ou autre route protégée retourne 423 Locked. */
 	get isSetupRequired(): boolean {
 		return _setupRequired;
+	},
+	/** Story v0172-session — transit : N reçu du serveur (non réactif). */
+	get idleTimeoutMinutes(): number | undefined {
+		return _idleTimeoutMinutes;
+	},
+	/** Story v0172-session — transit : secondes restantes avant l'échéance (non réactif). */
+	get idleExpiresIn(): number | null | undefined {
+		return _idleExpiresIn;
 	},
 
 	/**
@@ -115,6 +149,8 @@ export const authState = {
 			role: payload.role,
 		};
 		_expiresIn = payload.expiresIn;
+		_idleTimeoutMinutes = payload.idleTimeoutMinutes;
+		_idleExpiresIn = payload.idleExpiresIn;
 		// Story v011-5 — un login réussi implique que les users existent côté
 		// backend → state cohérent. Reset le flag (cas use : setup réussit dans
 		// une autre tab → broadcast → cette tab re-hydrate via login()).
@@ -148,6 +184,8 @@ export const authState = {
 	clearSession(options?: { broadcast?: boolean }) {
 		_expiresIn = null;
 		_currentUser = null;
+		_idleTimeoutMinutes = undefined;
+		_idleExpiresIn = undefined;
 		_setupRequired = false;
 		_hydrated = false;
 		// Defensive cleanup localStorage pour utilisateurs migrant depuis pre-Story 10-5.
@@ -174,6 +212,8 @@ export const authState = {
 		}).catch(() => {});
 		_expiresIn = null;
 		_currentUser = null;
+		_idleTimeoutMinutes = undefined;
+		_idleExpiresIn = undefined;
 		_hydrated = false; // CR Pass 1 M2 — permet re-hydrate intra-SPA session
 		// Defensive cleanup localStorage.
 		if (typeof window !== 'undefined' && window.localStorage) {
@@ -225,6 +265,17 @@ export const authState = {
 			window.localStorage.removeItem(STORAGE_KEY_EXPIRES_IN);
 		}
 
+		// Story v0172-session (0.17.3, C-v0172s-48) — sur la page de fermeture
+		// pour inactivité, AUCUNE requête : ni `/me`, ni renouvellement. Un
+		// rechargement de cette page ne rétablit rien, même si la déconnexion au
+		// serveur n'était pas arrivée.
+		if (isIdleClosurePage()) {
+			_currentUser = null;
+			_expiresIn = null;
+			_hydrated = true;
+			return;
+		}
+
 		try {
 			const res = await fetch('/api/v1/auth/me', { credentials: 'include' });
 			if (res.ok) {
@@ -233,6 +284,8 @@ export const authState = {
 					username: string;
 					role: string;
 					expiresIn: number;
+					idleTimeoutMinutes?: number;
+					idleExpiresIn?: number | null;
 				};
 				// CR Pass 4 BH4-M1↓ : validation runtime de la shape /me — endpoint
 				// est server-controlled typé strict (MeResponse Rust), mais defense-
@@ -257,6 +310,10 @@ export const authState = {
 						role: body.role,
 					};
 					_expiresIn = body.expiresIn;
+					// Story v0172-session — affectation directe, sans `login()` :
+					// les champs d'inactivité transitent aussi.
+					_idleTimeoutMinutes = body.idleTimeoutMinutes;
+					_idleExpiresIn = body.idleExpiresIn;
 				}
 			} else if (res.status === 401) {
 				// CR Pass 3 ECH3-M1 — reset state si /me retourne 401 : couvre le
@@ -265,6 +322,16 @@ export const authState = {
 				_currentUser = null;
 				_expiresIn = null;
 				_setupRequired = false;
+				// Story v0172-session (0.17.3, C-v0172s-26) — le jeton d'accès a pu
+				// expirer alors que la session vit : UN renouvellement, sous le
+				// mutex du chemin 401, sans effacement ni redirection ni diffusion
+				// sur échec (`hooks.client.ts` appelle `hydrate()` sur toute page,
+				// `/login` comprise). Réussi, il a peuplé l'état par `/me`.
+				const refreshed = await tryRefresh();
+				if (!refreshed || authState.currentUser === null) {
+					_currentUser = null;
+					_expiresIn = null;
+				}
 			} else if (res.status === 423) {
 				// Story v011-5 (AC #18) — `/me` retourne 423 Locked : la table
 				// `users` est vide côté backend, le 1er admin n'a pas encore été

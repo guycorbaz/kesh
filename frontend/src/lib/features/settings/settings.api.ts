@@ -2,8 +2,10 @@ import { apiClient } from '$lib/shared/utils/api-client';
 import type {
 	CompanyCurrentResponse,
 	CompanyJson,
+	SessionSettings,
 	UpdateCompanyContactDetailsRequest,
-	UpdateCompanyEmailRequest
+	UpdateCompanyEmailRequest,
+	UpdateSessionSettingsRequest
 } from './settings.types';
 
 export async function fetchCompanyCurrent(): Promise<CompanyCurrentResponse> {
@@ -52,4 +54,22 @@ export async function releaseBooksLock(
 		through,
 		motif
 	});
+}
+
+/**
+ * Story v0172-session (0.17.3, CR #891) — lit la durée d'inactivité de la
+ * session et ses bornes (Administrateur seul).
+ */
+export async function fetchSessionSettings(): Promise<SessionSettings> {
+	return apiClient.get<SessionSettings>('/api/v1/admin/session-settings');
+}
+
+/**
+ * Enregistre la durée d'inactivité (verrou optimiste ; 409
+ * `OPTIMISTIC_LOCK_CONFLICT` sur une version périmée, 400 hors bornes).
+ */
+export async function updateSessionSettings(
+	req: UpdateSessionSettingsRequest
+): Promise<SessionSettings> {
+	return apiClient.put<SessionSettings>('/api/v1/admin/session-settings', req);
 }
