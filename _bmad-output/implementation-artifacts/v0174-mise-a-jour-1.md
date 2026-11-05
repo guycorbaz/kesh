@@ -1,6 +1,6 @@
 # Story v0174-mise-a-jour-1 : la 0.17.4 — la sauvegarde avant migration, version minimale (#847)
 
-Status: ready-for-dev
+Status: review
 
 *Seule sous-fiche à développer de `v0174-mise-a-jour.md` (parente en `split`, qui garde l'analyse du code ; la sœur
 `v0174-mise-a-jour-2.md` est `superseded`). Récrite le 2026-11-05 en **version minimale**, sur décision du Project Lead
@@ -432,12 +432,137 @@ l'agent.
   C-19), V6-6 (variantes de `Refus` portant leurs données), V6-7 (coquille). Prochaine étape : validation P7 (Sonnet,
   ciblée, `v0174-mise-a-jour-validate-prompt-p7.md`).
 
+- 2026-11-05 — **Validation terminée** en sept passes (P7 Sonnet, ciblée, 0/0/0/4). **Développement** (Opus 5.5,
+  autonomie). **Étape 0** — les quatre LOW de la P7 (`kesh-gate-logs/v0174m-validate-p7.md`), ligne lue citée :
+  - V7-1 (point 6, ligne lue `53: est alors lu **pour le journal seulement**`) : récrit « pour décider de l'issue, et du
+    seul avertissement dans les cas à appliquer ou illisible ».
+  - V7-2 (AC-1, ligne lue `128:*neuve* (`FreshInstall`, ou plan *neuve*)`) : « `FreshInstall` ; un plan *neuve* hors
+    `FreshInstall` est le refus *incohérent* d'AC-4 ».
+  - V7-3 (registre C-4, ligne lue `74: … Posée avec une autre valeur, elle est ignorée et le journal le dit`) : C-4
+    annoté (avertissement seulement sur plan *à appliquer*).
+  - V7-4 (Conception, ligne lue `81: Espace { dir, libre: Option<u64>, seuil: u64, erreur: Option<io::Error> }`) :
+    `libre: Result<u64, io::Error>` (état contradictoire non représentable), octets, Mio arrondis dans
+    `message_de_refus`, types des autres variantes écrits.
+  - **Dérogation de découpage** (sept modules) recontrôlée au code : `kesh-db/backup` (`lire_installation`,
+    `Inventaire`), `kesh-api/pre_upgrade_backup` (neuf), `admin_backup` (`build_keshbackup` reçoit l'inventaire ;
+    `parse_and_verify_avec_inventaire`), `auto_backup` (trois `pub(crate)`, `sync_dir`), `config` (un champ), `main` (un
+    appel), `routes/admin` (`pub(crate) async fn ensure_backup_dir` ; deux appels reçoivent `Inventaire::Binaire`).
+    Compte inchangé (sept) ; **déclarée au Project Lead** par le rapport de l'agent.
+  - Prémisses de la parente relues à `7bd4d5c0` (code inchangé depuis : `git diff --stat 7bd4d5c0 HEAD -- crates docs`
+    vide avant le développement) : `main.rs:122-154` / `:157`, `backup.rs:848-854`, `routes/admin.rs:143` et `:754`,
+    `auto_backup.rs:510`, `import.rs:172` et `:493-496`, `export.rs:148` et `:330`, `admin_auto_backup_e2e.rs:133`.
+
 ## Dev Agent Record
 
 ### Agent Model Used
 
+Opus 5.5 (agent de développement, autonomie), 2026-11-05.
+
 ### Debug Log References
+
+Tous sous `/home/gcorbaz/devel/kesh-gate-logs/v0174m/` : `rouges.log` (relevé des rouges), `verts-1.log`,
+`verts-2.log` (ciblés), `mut/M1.log` à `mut/M22.log` et `mut/campagne-{A,B}.log`, `gate-test-fast.log` (premier gate
+complet, rouge sur `mcp_gardes_lexicales`) et `gate-test-fast-2.log` (gate complet au dernier commit de code),
+`gate-build.log`, `frontend-build.log`, `e2e-r1.log` et `e2e-r1/{backend,playwright}.log`, `make-admin.log`,
+`recette/recette.log` (et `recette/*.log`, `recette/vidage/`, scripts `recette/*.sh`).
 
 ### Completion Notes List
 
+- **Rouges d'abord** (`rouges.log`, squelette du module dont les corps rendaient `AJour` / chaîne vide) : 22 tests
+  lancés, **17 rouges**, 5 verts — `chaque_lecture_n_a_qu_un_appelant` (garde récrite, déjà vraie au squelette),
+  `backup_inventory_matches_schema` (test existant récrit sur `TABLES_SYSTEME`), `convention_du_prefixe_des_tables_systeme`
+  (T16, garde d'une convention déjà tenue : verte par construction, sa force est mesurée par les mutations, non par le
+  rouge), **`t2_base_a_jour` et `t11_echappatoire_sur_base_a_jour`** (le squelette rendait `AJour`, la bonne réponse sur
+  une base à jour : vert par coïncidence ; M3 et M18 en mesurent la force). Les montages des bases partielles ont tourné
+  dans les 17 rouges (les échecs sont des assertions sur l'issue, non de montage).
+- **Mutations M1 à M22 : 22 tuées / 22**, chacune par le test que la fiche nomme (motif vérifié unique, restauration
+  `git checkout -- <fichier>` puis `touch`, arbre propre après chaque campagne) : M1, M2 → T8 ; M3, M5 → T1 ; M4 → T1 et
+  T1-ter ; M6, M20, M21, M22 → T3 ; M7 → T4 ; M8 → T9 ; M9 → T6 ; M10 → T7 ; M11 → T10 ; M12, M19 → T11 (base
+  partielle) ; M13 → T1-ter ; M14 → T13 ; M15 → T11-bis ; M16 → T15 ; M17 → T7-bis ; M18 → T11 (base à jour). Deux
+  campagnes, chacune dans une seule prise des deux verrous.
+- **Tests ajoutés** (de `7bd4d5c0` à `HEAD`, recomptés par `grep -cE '^#\[(sqlx::)?test'`) : 18 dans
+  `pre_upgrade_backup/tests.rs` (T1, T1-ter, T2, T3, T4, T5, T6, T7, T7-bis, T9, T10, T11 ×2, T11-bis, T13, T14, T15, et
+  `messages_de_refus`), 1 dans `tests/sauvegarde_avant_migration.rs` (T8), 1 dans `kesh-db/src/backup.rs` (T16 : 28 → 29) ;
+  la garde `export_installation_n_a_qu_un_appelant` est **renommée** `chaque_lecture_n_a_qu_un_appelant` (5 → 5). T12 est
+  `configuration_transmise`, existant (compte `env_nonempty` de `Config::from_env` 30 → 31, `SANS_DEFAUT` + 1).
+- **Choix d'implémentation** (sans écart avec la fiche) : le module journalise en `info` le début et la fin, `main.rs`
+  émet les trois avertissements d'après l'`Issue` (helpers `message_echappatoire_utilisee`, `…_ignoree`,
+  `message_dossier_non_synchronise`) ; le contrôle d'espace se fait **avant** la lecture de la base (la sauvegarde
+  automatique le fait dans la tâche, après) — une lecture inutile est évitée ; la plus grande sauvegarde de
+  `pre-upgrade/` se reconnaît à `NOM_PRE_UPGRADE`, celle de `auto/` à `NOM_AUTO` ; un dossier illisible y compte pour 0.
+- **Deux retouches imposées par des gardes existantes** : (1) une variable locale `env` renommée `ecrivains` — la garde
+  (L) de `configuration_transmise` lit tout jeton `env` comme une lecture de l'environnement ; (2) le texte du message
+  de début est **coupé** dans le source après « à appliquer » (texte journalisé inchangé) — la garde
+  `mcp_gardes_lexicales::executer_appele_par_le_repartiteur_seul` lit `appliquer (` comme un appel de
+  `mcp::…::appliquer` (premier gate complet rouge sur ce seul test, 4758/4759 ; corrigé au commit `4c060d03`).
+- **Gates au dernier commit de code `4c060d03`**, chacun dans sa propre prise des deux verrous, `free -g` avant (≥ 20 Go
+  disponibles à chaque prise) : `scripts/test-fast.sh --ci` sur `kesh_v0174m` remise à neuf (fmt, clippy `-D warnings`,
+  nextest) → **4759 exécutés, 4759 passés, 12 ignorés** ; `cargo build --workspace --all-targets` → vert ; frontend non
+  touché : seul `npm run build` (pour l'E2E) → vert ; **E2E complet** sur `kesh_e2e_v0174m` recréée vide (backend sur
+  3178, descripteurs fermés, tué par son PID, port libre avant et après) → **343 passés, 7 échoués, 18 ignorés** ; les
+  sept échecs sont exactement les sept KF-029 (#97) de `docs/testing.md` (`mode-expert.spec.ts:26`, `:41`,
+  `onboarding-path-b.spec.ts:65`, `:92`, `onboarding.spec.ts:57`, `:77`, `:150`), ni KF-052 ni pollution.
+- **Manuel** (`docs/manual/fr/admin-manual.tex` + PDF, `make admin`, 3 passes, stable). Contrôle du § *Manuel* point 6,
+  PDF aplati : `Rollback en cas d.échec` 3 → **0** ; `La sauvegarde avant mise à jour` 0 → **2** ; `Revenir à la version
+  précédente` 0 → **3** ; `git grep -n "sauvegardes automatiques (sous-dossier"` : 2 lignes avant, 2 après, **chacune**
+  nomme `pre-upgrade/` (lignes 812 et 2378). Renvoi de `:3758` mis à jour (`\S\ref{sec:revenir-version-precedente}`).
+- **CHANGELOG** : `## [0.17.4] — Non publié`, `### Ajouté`, entrée #847 du § *CHANGELOG* de la fiche. ⚠️ Sa dernière
+  phrase (« La 0.17.4 n'ayant pas de migration, la mise à jour depuis la 0.17.3 n'en écrit pas ») ne vaut que si aucune
+  autre story de la release n'en porte (la `v0174-session` le peut) — à vérifier à l'intégration.
+- **AC-9** : 89 fichiers `.sql` avant et après (`ls crates/kesh-db/migrations/*.sql | wc -l`) ; `TABLES_TO_TRUNCATE` et
+  `min_required` inchangés.
+- **Recette AC-8** : voir § *Recette* ci-dessous.
+
 ### File List
+
+- `crates/kesh-api/src/pre_upgrade_backup.rs` (neuf), `crates/kesh-api/src/pre_upgrade_backup/tests.rs` (neuf),
+  `crates/kesh-api/tests/sauvegarde_avant_migration.rs` (neuf)
+- `crates/kesh-api/src/main.rs`, `lib.rs`, `config.rs`, `auto_backup.rs`, `routes/admin.rs`,
+  `admin_backup/export.rs`, `admin_backup/import.rs`, `crates/kesh-api/tests/configuration_transmise.rs`
+- `crates/kesh-db/src/backup.rs`, `crates/kesh-db/tests/test_schema_guard.rs`
+- `docker-compose.yml`, `docker-compose.prod.yml`, `.env.example`, `CHANGELOG.md`
+- `docs/manual/fr/admin-manual.tex`, `docs/manual/fr/admin-manual.pdf`
+- `_bmad-output/implementation-artifacts/v0174-mise-a-jour-1.md`, `v0174-choix-autonomes-v0174m.md`,
+  `sprint-status.yaml`, `v0174-mise-a-jour-review-prompt-p1.md` (neuf)
+
+### Recette
+
+Une jambe, données synthétiques, journal horodaté `kesh-gate-logs/v0174m/recette/recette.log` (scripts
+`recette-v0174m.sh`, `p1b`, `p1c`, `p1d`), chaque phase dans sa propre prise des deux verrous. Image
+`gcorbaz/kesh:0.15.0` = `sha256:77cfb96dce11b266a015d614ef0ea9cf60e4f8e302f95319e29748403c0e5428` (le digest de la
+release). Binaire de la branche : `target/debug/kesh-api` au commit `4c060d03`.
+
+1. **0.15.0 peuple une base neuve** (22:43–23:00, conteneur `kesh-0174m-boot-0150`, base `kesh_v0174m_recette`) :
+   démonstration par l'assistant (langue, mode, `seed-demo`), une facture validée (écriture n° 1), un compte bancaire
+   principal (IBAN d'exemple public `CH93…2957`) et un contact à adresse structurée — sans eux la 0.15.0 refuse le PDF
+   (`INVOICE_NOT_PDF_READY`, deux essais consignés) —, une seconde facture validée et son **PDF figé**
+   (`c9704d58…cd1510`), une **facture fournisseur à document** importée par la boîte de dépôt (`4faa3dee…8ea68`). État :
+   83 migrations, `last_applied = 0.15.0`, 2 écritures.
+2. **Branche** (23:16:37) : journal `Mise à jour de la base : 6 migration(s) à appliquer (de la 0.15.0 à la 0.17.3).
+   Sauvegarde complète avant mise à jour en cours ; …`, puis `Sauvegarde avant mise à jour écrite :
+   …/backup/pre-upgrade/kesh-pre-upgrade-20261105T221637884Z-0.15.0-to-0.17.3.keshbackup (26163 octets).`, puis
+   `Migrations appliquées`. Dossier `drwx------`, fichier `-rw-------`, empreinte
+   `e61103fad21953d0d20348cc23371d6727aaf2aeb4188a0ef8d9a49f57d1a0f6`. Base : 89 migrations, `last_applied = 0.17.3`.
+   (`<vers>` = 0.17.3 : la version Cargo n'est pas bumpée dans cette story.)
+3. **0.15.0 refusée sur la base migrée** (23:16:57) : `FATAL : La base a été migrée par Kesh v0.17.0, le binaire
+   courant v0.15.0 ne peut pas la downgrader sans risque.` — conteneur sorti en code 1.
+4. **Procédure existante du manuel** — (3) vidage de sécurité de la base migrée (23:17:05) :
+   `vidage/kesh_v0174m_recette-20261105T231705.sql`, 138 844 octets, `b8b5f305…ba27d7` ; (4) *Restaurer sur une
+   nouvelle machine* : installation neuve de la 0.15.0 (`kesh-0174m-neuve-0150`) sur une base vide
+   (`kesh_v0174m_recette_neuve`), administrateur provisoire, import du fichier `pre-upgrade/` (23:17:18) :
+   `{"backupCreated":true,"filesMissing":0,"filesRestored":2,"rowsRestored":130,"tablesRestored":38,…}` ; reconnexion
+   avec les identifiants **de la sauvegarde** ; deux factures, 2 écritures ; **PDF figé servi identique**
+   (`c9704d58…` des deux côtés) ; **document fournisseur servi identique** (`4faa3dee…`). La 0.15.0 sert les données et
+   les pièces revenues.
+
+**Écarts entre la procédure écrite et ce qui a été fait** (constats, aucune retouche de la procédure ici) :
+(a) conteneurs `docker run` sur le réseau de l'hôte et bases sur le MariaDB **partagé** de la station au lieu d'un
+projet compose avec son propre service `mariadb` — imposé par l'interdit sur `kesh-mariadb-dev` ; (b) le vidage de
+sécurité par `docker exec kesh-mariadb-dev mariadb-dump --single-transaction` et non par le script du § *Script de
+sauvegarde mariadb-dump* (qui vise le service `mariadb` du compose) ; (c) `/setup` et la restauration depuis l'assistant
+joués **par l'API** (`POST /api/v1/setup/admin`, `POST /api/v1/admin/full-import`), non par l'écran ; (d) conteneurs en
+`--user` de la station, si bien que le fichier `pre-upgrade/` n'est pas `root` : la récupération `sudo cp` + `chown` du
+manuel n'a pas été jouée ; (e) l'installation neuve est sur la **même** machine (base distincte), ce que le manuel dit
+« non éprouvé » : l'est désormais pour ce montage seulement. Aucun écart n'a révélé de défaut de la procédure ; aucune
+issue n'en découle. Conteneurs `kesh-0174m-boot-0150` et `kesh-0174m-neuve-0150` **laissés arrêtés**, non supprimés ;
+bases `kesh_v0174m_recette*` et dossiers `/tmp/kesh-e2e-v0174m-recette/` laissés en place.
