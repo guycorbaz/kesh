@@ -1,6 +1,6 @@
 # Story v0174-correctifs-3 : les écrans — toutes les factures d'un lot (#888), la date du jour à l'heure suisse (#889), le projet archivé d'un brouillon (#872), la date du verrou au repassage en brouillon (#869)
 
-Status: ready-for-dev
+Status: review
 
 *Fiche sœur de `v0174-correctifs.md` (l'index), rédigée le 2026-11-05 en autonomie (Opus 5.5), worktree
 `/home/gcorbaz/devel/kesh-0174c`, branche `story/v0174-correctifs` partie de `7bd4d5c0`. Release **0.17.4**, **sans
@@ -346,11 +346,75 @@ contact `SU`, le refus `XX` dans chaque écran.
 - 2026-11-05 — **Validation P3 (Sonnet, passe ciblée)** : P1 (MEDIUM) — *annotation datée* : l'entrée de la P1 ci-dessus écrit
   « 399 → 402 » ; c'est **399 → 401** (`contacts-` hors des préfixes de la garde, tâche 3). LOW : P2 (recompte de `sitesTotal` par
   la forme large), P6 (doc de `local-date.ts`, tâche 4), P7 (inventaire `ContactResponse` à trier).
+- 2026-11-05 — **Développement** (Opus 5.5, autonomie), commit `15742cad` (et `49b5826e` pour la spec E2E). Étape 0, LOW de
+  la validation P4 : (P1) l'inventaire `ContactResponse` se trie sur le critère « construction littérale sans
+  `as unknown as` » — `SupplierInvoiceForm.test.ts:38` et `supplier-proposals.test.ts:8` complétés, `npm run check` fait foi
+  (0 erreur) ; (P3) `sitesTotal` est **le nombre que la garde rend au run** (2829), le grep large ne sert que de contrôle
+  de l'écart (2845 → 2848 aux deux bornes, +3), écrit ainsi à l'entrée d'historique. Statut → review.
 
 ## Dev Agent Record
 
 ### Agent Model Used
 
+Claude Opus 5.5 (`claude-opus-5-5`), autonomie, worktree `/home/gcorbaz/devel/kesh-0174c`.
+
 ### Completion Notes List
 
+- **Rouges d'abord** (`kesh-gate-logs/v0174c/rouges.log`, `rouges-888.log`, `rouges-fiche3.log`) : #888, 4 rouges / 7
+  (dont M30, l'appel sans `offset`) ; #889 et suivants, 28 FAIL sur les 23 fichiers de test touchés (27 tests et
+  `local-date.test.ts`, non chargeable sans le module). Verts attendus : `JournalEntryForm` (déjà local), les trois
+  `paidAt` conformes, AC-3.14 pays connu, AC-3.15 (les deux écrans), les sondes synthétiques de la garde.
+- **Sonde de la garde** jouée sur l'arbre d'avant correctif : **21 relevés sans entrée + 8 relevés égalant les 8 entrées =
+  29** (les 15 du § 5, les 14 du § 6), aucune autre ligne ; après correctif, exactement les 8 entrées (garde verte).
+  MC-889-g se joue aussi sur sources synthétiques (C-v0174c-25) ; sa forme réelle (`.slice` rétabli au site b) est la
+  mutation MC-889-c-g.
+- **#888** : boucle par pages, arrêt `!(offset < total)` ou page vide, `Map` par `id` ; l'assertion M30 reçoit `offset: 0`
+  (C-v0174c-26).
+- **#889** : `todayLocal` déménage (`open-items.ts` le réexporte ; son test déménage) ; les 12 sites corrigés,
+  `JournalEntryForm`, `reminderSentAtDateTime` ; les 9 affichages et `users` ; les 3 conformes et les 2 hors liste
+  laissés. Tests par site sous `pinClock()` (00 h 30 le 5 novembre à Zurich, C-v0174c-24) ou `pinTimeZone('Europe/Zurich')`.
+- **#872** : `projectOptionLabel`, `orphanProjects` ; **#869** : `lockedThrough`, clé `…-period-locked-named` ; **#817** :
+  `addressCountryKnown` (type), `unknownCountryCode` / `countryUnknownNotice`, clé `contacts-country-unknown`.
+- **i18n** : trois clés, quatre locales, repli = fr-CH mot pour mot. Gardes : `CLES_RELEVEES` 399 → **401**, `sitesTotal`
+  2826 → **2829**, `CANDIDATES_ATTENDUES` 76 → **77** (`projectOptionLabel`, conforme 62 → 63) — chacune recomptée par la
+  garde au run, entrée d'historique écrite. `lint-i18n-ownership` : PASS.
+- **Mutations** (`mut/mutations.log`, `mut/MC-*.log`) : MC-888, MC-888-b, MC-889-a, MC-889-b, MC-889-c-g (c et g en une
+  campagne : le `.slice` rétabli au site b rougit l'affichage **et** la garde), MC-872, MC-869, MC-817 — **toutes tuées**
+  (8 campagnes, 9 mutations nommées).
+- **E2E** (`frontend/tests/e2e/v0174-correctifs.spec.ts`, neuf) : AC-3.4 (205 factures validées par l'API ; le formulaire
+  en propose autant que le `total` du serveur), AC-3.13 (verrou posé puis **levé** en `finally`), #872 (racine et enfant
+  archivés), #817 (refus `XX` aux deux écrans ; l'avis `SU` sur une réponse de liste **réécrite** par `page.route` — un
+  contact `SU` ne se crée plus par l'API ; le champ est celui du serveur, prouvé par AC-2.6 ; choix déclaré). Captures :
+  `kesh-gate-logs/v0174c/captures/v0174c-*.png`.
+- **Limites assumées, issues demandées** : (7) aucune borne haute à la lecture des factures d'un lot ; (11) une facture
+  manquée par la lecture par pages pendant une validation concurrente (la relecture la retrouve).
+- Gates : fiche-index § *Dev Agent Record (gates)*.
+
 ### File List
+
+- `frontend/src/lib/shared/utils/local-date.ts` (neuf), `local-date.test.ts` (neuf), `local-date-guard.test.ts` (neuf),
+  `pin-clock.test-helper.ts` (neuf)
+- `frontend/src/lib/features/open-items/open-items.ts`, `open-items.test.ts`
+- `frontend/src/lib/components/invoices/InvoiceForm.svelte`, `InvoiceForm.test.ts`
+- `frontend/src/lib/features/invoices/SettleInvoiceDialog.svelte`, `.test.ts`, `WriteOffDialog.svelte`, `.test.ts`
+- `frontend/src/lib/features/reminders/ManualReminderDialog.svelte`, `ManualReminderDialog.test.ts` (neuf),
+  `reminder-sent-at.ts`, `.test.ts`, `ReminderHistory.svelte`, `.test.ts`
+- `frontend/src/lib/features/reports/reports.api.ts`, `.test.ts`
+- `frontend/src/lib/features/imported-supplier-invoices/imported-supplier-invoices.types.ts`, `.types.test.ts` (neuf)
+- `frontend/src/lib/features/journal-entries/JournalEntryForm.svelte`, `JournalEntryForm.create.test.ts`
+- `frontend/src/lib/features/supplier-invoices/SupplierInvoiceForm.svelte`, `SupplierInvoiceForm.test.ts`,
+  `supplier-proposals.test.ts`, `supplier-invoice-unvalidate.ts`, `.test.ts`, `SupplierCreatePanel.test.ts` (neuf)
+- `frontend/src/lib/features/contacts/contacts.types.ts`
+- `frontend/src/routes/(app)/payment-batches/+page.svelte`, `payment-batches-page.test.ts`, `[id]/+page.svelte`,
+  `[id]/payment-batch-detail-page.test.ts`
+- `frontend/src/routes/(app)/invoices/[id]/+page.svelte`, `invoice-display-page.test.ts` ; `invoices/due-dates/+page.svelte`,
+  `due-dates-page.test.ts` ; `invoices/reminders/+page.svelte`, `reminders-page.test.ts`
+- `frontend/src/routes/(app)/settings/api-keys/+page.svelte`, `api-keys-page.test.ts`
+- `frontend/src/routes/(app)/supplier-invoices/[id]/+page.svelte`, `supplier-invoice-draft-page.test.ts`,
+  `[id]/edit/edit-page.test.ts`
+- `frontend/src/routes/(app)/contacts/+page.svelte`, `contacts-page.test.ts`
+- `frontend/src/routes/(app)/users/+page.svelte`, `users-dates-page.test.ts` (neuf)
+- `frontend/src/lib/shared/i18n-keys.test.ts`, `i18n-un-repli-par-cle.test.ts`, `i18n-libelle-en-dur.test.ts`
+- `frontend/tests/e2e/v0174-correctifs.spec.ts` (neuf)
+- `crates/kesh-i18n/locales/{fr-CH,de-CH,it-CH,en-CH}/messages.ftl`
+- `docs/manual/fr/user-manual.tex` (et PDF), `CHANGELOG.md`
