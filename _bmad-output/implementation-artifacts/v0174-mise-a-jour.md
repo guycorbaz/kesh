@@ -144,9 +144,10 @@ et s'inscrit au journal d'audit (`admin.backup_downloaded`). Côté écran : `ba
 - § *La sauvegarde automatique* (`:2380`), paragraphes *Volume* et *Les sauvegardes du serveur* : deux types seulement.
 - `CHANGELOG.md` : pas de section `[0.17.4]` à `7bd4d5c0` (la première est `[0.17.3] — 2026-11-05`).
 - Autres sites que la story rend incomplets (validation P1, F1-5, R1-13 ; PDF identique) : `admin-manual.tex:812` et
-  `:2377` (`KESH_ADMIN_BACKUP_DIR` : « pré-import, sauvegardes automatiques (sous-dossier `auto/`) ») ; `:2282`
-  (*Compatibilité*) ; `:2442` (« Kesh propose quatre approches ») ; `.env.example` et commentaires des deux compose sur
-  `./backup` ; `README.md:50`. Inventaire complet et traitement : `v0174-mise-a-jour-1.md`, § *Manuel*.
+  `:2377` (`KESH_ADMIN_BACKUP_DIR`) — **traités** par la sous-fiche 1 ; `:2282` (*Compatibilité*), `:2442` (« quatre
+  approches »), `:870-871`, `:1525-1526`, `.env.example` (commentaires du dossier) et commentaires des deux compose sur
+  `./backup`, `README.md:50` — **laissés** par la version minimale (C-v0174m-30) : incomplets, non faux. La variable neuve,
+  elle, entre à `.env.example` et dans les compose.
 
 
 ## Conception retenue
@@ -171,7 +172,7 @@ manuel, CHANGELOG — sous cinq modules). `v0174-mise-a-jour-2.md` : `superseded
 
 - **#847** : `closes #847` sur la PR de release, `refs #847` dans les commits.
 - **Commentaire à #847** : le point de conception est tranché par C-v0174m-1 (`.keshbackup` à l'inventaire du schéma
-  présent ; le vidage SQL écarté) ; la restauration passe par une base recréée vide **par le compte Kesh** et l'assistant.
+  présent ; le vidage SQL écarté) ; le retour passe par un vidage de sécurité puis les procédures de restauration existantes (installation neuve de la version de départ, assistant « Restaurer une sauvegarde »), sans procédure neuve (C-v0174m-32).
 - **Issue mémoire** (R1-14) : elle existe, **#911** (« Sauvegarde complète : toutes les tables sont chargées en mémoire
   avant l'écriture — risque d'OOM sous le mem_limit 1g de production », ouverte) ; citée au manuel et en Dev Notes. Rien à
   ouvrir.
@@ -202,3 +203,6 @@ manuel, CHANGELOG — sous cinq modules). `v0174-mise-a-jour-2.md` : `superseded
   **Décision du Project Lead : version minimale de #847** (C-v0174m-30). Sous-fiche 1 récrite ; sous-fiche 2
   `superseded` (issue demandée) ; parente gardée en `split`. Prochaine étape : validation P4 (Opus, lentille complète,
   `v0174-mise-a-jour-validate-prompt-p4.md`), sur la sous-fiche 1 et le registre.
+- 2026-11-05 — Validation P4 (Opus, 0/2/5/7) remédiée : aucune procédure de restauration neuve (C-v0174m-32), renvoi aux
+  procédures existantes après un vidage de sécurité ; garde de convention rétablie ; registre et parente alignés.
+  Prochaine étape : validation P5 (Sonnet, `v0174-mise-a-jour-validate-prompt-p5.md`).

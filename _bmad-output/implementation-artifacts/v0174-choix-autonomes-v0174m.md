@@ -63,7 +63,7 @@ Fiche : `v0174-mise-a-jour.md`. Issue #847 (P2), en `refs` seulement dans les co
   démarrage (coût et disque).
 - **Réversible** : oui.
 
-### C-v0174m-4 — Un échec de la sauvegarde refuse le démarrage ; l'échappatoire est une variable qui nomme la version
+### C-v0174m-4 — Un échec de la sauvegarde refuse le démarrage ; l'échappatoire est une variable qui nomme la version — **réduit par C-v0174m-30 et C-v0174m-31** (causes en vigueur : plan illisible, dossier, espace, lecture, écriture, panique ; ni relecture ni version de départ ; échappatoire évaluée en premier)
 
 - **Contexte** : #847, point 2 ; c'est un réglage de démarrage (l'interface n'est pas encore servie).
 - **Retenu** : tout échec (plan illisible, dossier, espace, lecture de la base, écriture, relecture, version de départ
@@ -125,7 +125,7 @@ Fiche : `v0174-mise-a-jour.md`. Issue #847 (P2), en `refs` seulement dans les co
 - **Écartées** : écrire la sauvegarde quand même avec un avertissement ; la sauter en silence.
 - **Réversible** : oui. Sans portée pour la production (0.17.3).
 
-### C-v0174m-9 — Le journal de démarrage et l'écran — **réduit par C-v0174m-30** (deux lignes `info`, pas d'écran)
+### C-v0174m-9 — Le journal de démarrage et l'écran — **réduit par C-v0174m-30** (en vigueur : deux lignes `info`, début et chemin du fichier écrit ; ni `warn` de pièces ni de plafond, pas d'écran ; le corps ci-dessous est l'historique)
 
 - **Contexte** : #847, point 3.
 - **Retenu** : quatre lignes `info`, écrites mot pour mot au § *Messages* de la sous-fiche `v0174-mise-a-jour-1.md`
@@ -139,7 +139,7 @@ Fiche : `v0174-mise-a-jour.md`. Issue #847 (P2), en `refs` seulement dans les co
   ancien administrateur, comme la réparation (`installation.repaired`) — bruit pour un geste sans décision.
 - **Réversible** : oui.
 
-### C-v0174m-10 — La restauration : base recréée vide, image précédente, assistant
+### C-v0174m-10 — La restauration : base recréée vide, image précédente, assistant — **remplacé par C-v0174m-32** (aucune procédure de restauration neuve ; le corps ci-dessous est l'historique)
 
 - **Contexte** : la version de départ refuse de démarrer sur la base migrée (migration appliquée inconnue de `sqlx`,
   `min_required` le cas échéant) : on ne peut pas importer par son écran sans lui rendre une base qu'elle accepte.
@@ -268,7 +268,7 @@ Fiche : `v0174-mise-a-jour.md`. Issue #847 (P2), en `refs` seulement dans les co
 - **Écartées** : une fiche avec section de dérogation (critère d'exception non rempli).
 - **Réversible** : oui.
 
-### C-v0174m-19 — Retour en arrière : une procédure, deux topologies, deux recettes — **réduit par C-v0174m-30** (une topologie jouée ; Synology par renvoi, non éprouvée)
+### C-v0174m-19 — Retour en arrière : une procédure, deux topologies, deux recettes — **remplacé par C-v0174m-32** (le corps ci-dessous est l'historique)
 
 - **Contexte** (R1-2, R1-8, F1-11) : la production est la topologie Synology (Kesh seul, MariaDB du paquet DSM,
   `mem_limit: 1g`, `docker-compose.prod.yml:193`) ; le compose standard a son conteneur `mariadb`.
@@ -286,7 +286,7 @@ Fiche : `v0174-mise-a-jour.md`. Issue #847 (P2), en `refs` seulement dans les co
 - **Écartées** : le compte root (absent sur Synology, interdit par G16) ; une base sous un autre nom (exige un `GRANT`).
 - **Réversible** : oui (texte du manuel).
 
-### C-v0174m-20 — Des pièces manquantes ne refusent pas la migration
+### C-v0174m-20 — Des pièces manquantes ne refusent pas la migration — **réduit par C-v0174m-30** (en vigueur : des pièces manquantes ne refusent pas ; sans `warn` récapitulatif ni phrase du manuel)
 
 - **Contexte** (R1-12 b, F1-8) : AC-8 décidait sans choix qu'une pièce référencée absente, altérée ou illisible laisse la
   sauvegarde écrite et la migration se faire.
@@ -346,7 +346,7 @@ Fiche : `v0174-mise-a-jour.md`. Issue #847 (P2), en `refs` seulement dans les co
 autre en P2 (V2-1), l'échappatoire par `docker compose run` un MEDIUM à chaque passe. Décision de l'orchestrateur :
 simplifier plutôt que corriger.*
 
-### C-v0174m-25 — Aucune suppression automatique des sauvegardes d'avant mise à jour (retire C-6 et C-15)
+### C-v0174m-25 — Aucune suppression automatique des sauvegardes d'avant mise à jour (retire C-6 et C-15) — **réduit par C-v0174m-30** (en vigueur : aucune suppression ; la règle de choix du fichier tient en une phrase du manuel, non dans le journal)
 
 - **Contexte** : V2-1 (prémisse confirmée : `record_boot_version`, `version.rs:325`, met `last_applied` à jour à chaque
   démarrage réussi) — la protection « plus ancienne du couple » supprime la seule sauvegarde restaurable si la version
@@ -446,8 +446,25 @@ simplifier plutôt que corriger.*
 - **C-v0174m-19** : la forme `docker compose exec mariadb mariadb -u"$MARIADB_USER" -p` est **fausse** (développée dans le
   shell de l'hôte, V2-9) ; forme en vigueur : `docker compose exec mariadb sh -c '…'` (sous-fiche 1, § *Manuel*, point 3).
 
+## Remédiation de la validation P4 (2026-11-05)
+
+### C-v0174m-32 — Aucune procédure de restauration neuve
+
+- **Contexte** : V4-1 et V4-2 (HIGH) portaient sur la procédure de retour écrite par la fiche (recréation de la base sans
+  vidage de sécurité ; renvoi Synology sans `CREATE DATABASE`). Décision de l'orchestrateur, dans l'esprit de la version
+  minimale.
+- **Retenu** : la story n'écrit aucune commande de restauration. Le manuel dit où est le fichier, lequel prendre (le plus
+  ancien écrit depuis le dernier démarrage réussi de la version de départ ; aucun n'est jamais supprimé), impose de
+  commencer par un vidage de sécurité de la base actuelle (§ *Script de sauvegarde mariadb-dump*, ou `kesh-dump.sh`), et
+  renvoie aux procédures existantes (§ *Restaurer sur une nouvelle machine*, base vide : § *Initialisation manuelle de la
+  base*). La recette joue ces procédures telles qu'écrites sur le compose standard ; un écart devient une issue, non une
+  retouche ici. La commande `DROP DATABASE` de `sec:backup-dsm` (`admin-manual.tex:2183-2186`) n'est pas un défaut : elle
+  sert le cas « base présente mais illisible », suivi de `kesh-restore.sh`, dont le dump recrée la base.
+- **Écartées** : la procédure de recréation par le compte Kesh (C-10, C-19), qui a produit un HIGH à chaque passe.
+- **Réversible** : oui.
+
 ## Choix en vigueur après la décision du Project Lead
 
-C-v0174m-1, -2, -3 (motif annoté), -4 (sans la cause « version de départ trop ancienne », retirée avec C-8), -5 (annoté),
--7, -9 (réduit), -10, -13 (annoté), -14, -16, -17 (réduit), -18 (amendé), -19 (réduit, annoté), -20, -22 (réduit à une
-jambe), -24, -25, -28, -30, -31. Retirés : -6, -8, -11, -12, -15, -21, -23, -26, -27, -29.
+C-v0174m-1, -2, -3 (motif annoté), -4 (réduit), -5 (annoté), -7, -9 (réduit), -13 (annoté), -14, -16, -17 (réduit),
+-18 (amendé), -20 (réduit), -22 (réduit à une jambe), -24 (avec la garde T16 de la fiche), -25 (réduit), -28, -30, -31, -32.
+Retirés ou remplacés : -6, -8, -10, -11, -12, -15, -19, -21, -23, -26, -27, -29.
