@@ -12,6 +12,10 @@ Le contenu est rédigé en français à destination des **fiduciaires, PME, ind�
 
 La 0.17.4 ne porte **aucune migration**.
 
+### Ajouté
+
+- **Un avertissement avant la fermeture pour inactivité** ([#895](https://github.com/guycorbaz/kesh/issues/895)) : une minute avant l'échéance, Kesh affiche un compte à rebours et un bouton **Rester connecté**. Il couvre la lecture d'un PDF dans l'aperçu, où Kesh ne voit pas vos gestes.
+
 ### Sécurité
 
 - **Les jetons de session ne sont plus stockés en clair** ([#890](https://github.com/guycorbaz/kesh/issues/890)) : la base, un dump SQL ou une sauvegarde `.keshbackup` n'en gardent qu'une empreinte, à partir de laquelle Kesh 0.17.4 ne reprend aucune session. *À la mise à jour, chaque utilisateur se reconnecte une fois* ; les jetons d'avant sont effacés au premier démarrage et à l'import d'une sauvegarde antérieure. Aucune migration : revenir à la 0.17.3 reste possible sans la sauvegarde, **à condition de vider d'abord la table des sessions** (`DELETE FROM refresh_tokens`, Kesh arrêté ; commande au manuel d'administration, « Passer à la 0.17.4 ») — tout le monde est déconnecté ; la sauvegarde complète avant la mise à jour reste recommandée. **Le manuel des versions jusqu'à la 0.17.2 annonçait à tort un hachage** : une base, un dump ou une sauvegarde antérieurs à la 0.17.4 contiennent les jetons en clair — gardez-les comme le secret qu'ils sont.
@@ -19,6 +23,7 @@ La 0.17.4 ne porte **aucune migration**.
 ### Corrigé
 
 - Une panne de **lecture du réglage d'inactivité** ne fait plus perdre la session au renouvellement (le réglage est lu avant que le jeton ne soit remplacé), ne laisse plus un mot de passe changé sans session neuve, ni l'assistant d'installation en erreur après avoir créé l'Administrateur (refs [#898](https://github.com/guycorbaz/kesh/issues/898)).
+- Après un battement d'activité en échec, l'activité est de nouveau transmise au serveur ; ressortir du document affiché par le même point de l'écran compte comme activité (refs [#898](https://github.com/guycorbaz/kesh/issues/898)).
 
 ---
 

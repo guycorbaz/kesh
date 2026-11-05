@@ -2532,6 +2532,8 @@ Avec \keshpath{docker-compose.prod.yml} (base hébergée hors du compose, par ex
 \paragraph{Chaque utilisateur se reconnecte une fois.} Les jetons de session sont désormais stockés en empreinte (\S\ref{sec:auth-jwt}) ; ceux d'avant ne sont plus reconnus, et sont effacés au premier démarrage de la 0.17.4 comme à l'import d'une sauvegarde antérieure. Un onglet resté ouvert revient à la connexion \textbf{à sa prochaine activité} : enregistrez avant de mettre à jour. Les bases, dumps et sauvegardes \textbf{antérieurs} à la mise à jour portent encore des jetons en clair : ils restent des secrets (\S\ref{sec:backup-ui-keshbackup}).
 \end{sloppypar}
 
+\paragraph{Ce qui change à l'écran.} Un avertissement paraît une minute avant la fermeture pour inactivité (trente secondes pour une durée d'une minute), avec un compte à rebours et le bouton \emph{Rester connecté} (\S\ref{sec:duree-inactivite}). Le détail est au manuel utilisateur et au journal des modifications.
+
 \subsubsection{Passer à la 0.17.3}\label{sec:maj-0-17-3}
 
 La 0.17.3 se pose sur la 0.17.2 : elle ne demande pas de nouveau compose, on tire l'image et on redémarre (\S\ref{sec:mise-a-jour}) --- après avoir retiré du \keshpath{.env} les variables nommées ci-dessous. Depuis une version antérieure à la 0.17.2, appliquez d'abord les sections suivantes (\S\ref{sec:maj-0-17-2}, puis \S\ref{sec:maj-0-17-1} et \S\ref{sec:maj-0-17-0} s'il le faut).
@@ -3062,11 +3064,11 @@ Kesh utilise un modèle JWT avec rotation de refresh tokens :
 \end{sloppypar}
 
 \begin{sloppypar}
-\textbf{Ce qui compte.} Toute activité dans Kesh~: clavier, souris (mouvement, clic, molette), toucher, retour sur l'onglet, dictée, collage, glisser-déposer d'un fichier --- dans n'importe quel onglet de Kesh du même navigateur. Ne comptent pas~: la lecture d'un PDF dans l'aperçu sans geste hors du document (le geste à faire est au manuel utilisateur ; un avertissement avant la fermeture est demandé, CR \#895), le travail dans un autre programme, les mises à jour que Kesh fait seul. Détail au manuel utilisateur.
+\textbf{Ce qui compte.} Toute activité dans Kesh~: clavier, souris (mouvement, clic, molette), toucher, retour sur l'onglet, dictée, collage, glisser-déposer d'un fichier --- dans n'importe quel onglet de Kesh du même navigateur. Ne comptent pas~: la lecture d'un PDF dans l'aperçu sans geste hors du document (une minute avant l'échéance --- trente secondes pour une durée d'une minute ---, un avertissement propose de rester connecté ; détail au manuel utilisateur), le travail dans un autre programme, les mises à jour que Kesh fait seul. Détail au manuel utilisateur.
 \end{sloppypar}
 
 \begin{sloppypar}
-\textbf{À l'échéance.} Le navigateur \textbf{déconnecte} la session au serveur (il attend la réponse jusqu'à deux secondes), puis affiche la page de connexion avec « Session fermée après N minutes d'inactivité », qui ne rétablit pas la session. Si la déconnexion n'a pas abouti (réseau coupé) et que l'échéance du serveur est plus tardive (écart c), revenir à une autre page de Kesh peut retrouver la session jusqu'à cette échéance. Si le navigateur refuse \texttt{localStorage}, l'activité n'est pas partagée entre onglets~: c'est le serveur qui ferme (message de session expirée), et l'écran reste affiché jusqu'à la prochaine action.
+\textbf{À l'échéance.} Le navigateur \textbf{déconnecte} la session au serveur (il attend la réponse jusqu'à deux secondes), puis affiche la page de connexion avec « Session fermée après N minutes d'inactivité », qui ne rétablit pas la session. Si la déconnexion n'a pas abouti (réseau coupé) et que l'échéance du serveur est plus tardive (écart c), revenir à une autre page de Kesh peut retrouver la session jusqu'à cette échéance. Si le navigateur refuse \texttt{localStorage}, l'activité n'est pas partagée entre onglets~: c'est le serveur qui ferme (message de session expirée), aucun avertissement ne précède la fermeture, et l'écran reste affiché jusqu'à la prochaine action.
 \end{sloppypar}
 
 \begin{sloppypar}
