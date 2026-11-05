@@ -329,7 +329,7 @@ Fiche : `v0174-mise-a-jour.md`. Issue #847 (P2), en `refs` seulement dans les co
 - **Écartées** : la retirer de l'inventaire (le fichier ne serait plus la photographie de la base) ; refuser.
 - **Réversible** : oui.
 
-### C-v0174m-24 — Prédicat de l'inventaire aligné sur la garde
+### C-v0174m-24 — Prédicat de l'inventaire aligné sur la garde — **annoté à la validation P5** (la garde de convention est T16 de la sous-fiche 1 ; « T15 » dans le corps ci-dessous est l'ancienne numérotation)
 
 - **Contexte** (F1-9) : la garde `backup_inventory_matches_schema` ne filtre pas `TABLE_TYPE` ; un filtre
   `BASE TABLE` divergerait d'elle sur un type que la garde verrait.
@@ -463,8 +463,27 @@ simplifier plutôt que corriger.*
 - **Écartées** : la procédure de recréation par le compte Kesh (C-10, C-19), qui a produit un HIGH à chaque passe.
 - **Réversible** : oui.
 
+## Remédiation de la validation P5 (2026-11-05)
+
+### C-v0174m-33 — L'échec de la synchronisation du dossier n'est qu'un avertissement
+
+- **Contexte** : V5-1 — rendu fatal, cet échec interdirait la mise à jour sur les montages qui refusent `fsync` de dossier,
+  alors que le fichier est déjà écrit et synchronisé, et chaque redémarrage écrirait un fichier de plus.
+- **Retenu** (arbitrage de l'orchestrateur) : comme à l'import (`admin_backup/import.rs:493-496`), un avertissement ; la
+  sauvegarde reste `Ecrite`, l'`Issue` porte l'erreur, la migration se fait.
+- **Écartées** : le refus (V4-14 dans sa première forme).
+- **Réversible** : oui.
+
+### C-v0174m-34 — Les avertissements se décident sur la valeur rendue
+
+- **Contexte** : V5-3 — un avertissement émis par `tracing` dans le module n'était observable par aucun test.
+- **Retenu** : le module rend l'`Issue` (`Contournee`, `Ecrite { echappatoire_ignoree, dossier_non_synchronise }`) ;
+  `main.rs` émet les avertissements d'après elle ; les tests assertent l'`Issue`.
+- **Écartées** : un abonné `tracing` de test (local au fil, fragile en asynchrone).
+- **Réversible** : oui.
+
 ## Choix en vigueur après la décision du Project Lead
 
 C-v0174m-1, -2, -3 (motif annoté), -4 (réduit), -5 (annoté), -7, -9 (réduit), -13 (annoté), -14, -16, -17 (réduit),
--18 (amendé), -20 (réduit), -22 (réduit à une jambe), -24 (avec la garde T16 de la fiche), -25 (réduit), -28, -30, -31, -32.
+-18 (amendé), -20 (réduit), -22 (réduit à une jambe), -24 (annoté : garde T16), -25 (réduit), -28, -30, -31, -32, -33, -34.
 Retirés ou remplacés : -6, -8, -10, -11, -12, -15, -19, -21, -23, -26, -27, -29.

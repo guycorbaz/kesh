@@ -31,13 +31,19 @@ version qui doit migrer la base, écrive lui-même, avant toute migration, une s
    `TABLES_TO_TRUNCATE` ne commence par `_` —, que la garde **T16** fige.
 3. **Où, sous quel nom** : `<KESH_ADMIN_BACKUP_DIR>/pre-upgrade/kesh-pre-upgrade-<AAAAMMJJTHHMMSSmmm>Z-<de>-to-<vers>.keshbackup`
    (UTC ; `<de>` = `_kesh_version.kesh_version_last_applied`, `<vers>` = `CARGO_PKG_VERSION` ; caractères hors
-   `[0-9A-Za-z.-]` retirés, vide → `inconnue`, 40 caractères au plus). Dossier créé en `0700`.
-4. **Comment** : écriture par `write_backup_file` (`routes/admin.rs:754` : `<nom>.partial` en `create_new` `0600`,
-   `sync_all`, renommage sans écrasement), puis **synchronisation du dossier** `pre-upgrade/`
-   (`File::open(dir)?.sync_all()`, échec → `Refus::Ecriture` : le fichier est la seule copie d'avant une migration qui va
-   se committer ; `write_backup_file` laisse cet angle mort, `routes/admin.rs:748-750`), après un contrôle d'espace (`seuil_d_espace`, `auto_backup.rs:510`, avec la plus
-   grande sauvegarde de `auto/` et de `pre-upgrade/` et la taille des documents, contre `BackupEnv::free_bytes`).
-5. **Échec** : dossier non créable, espace insuffisant ou illisible, lecture de la base, écriture, panique de la tâche
+   `[0-9A-Za-z.-]` retirés, vide → `inconnue`, 40 caractères au plus). Dossier créé en `0700` par `ensure_backup_dir`
+   (`routes/admin.rs:143`, rendue `pub(crate)`, corps inchangé : pas de second `DirBuilder`).
+4. **Comment** : après un contrôle d'espace (`seuil_d_espace`, `auto_backup.rs:510`, avec la plus grande sauvegarde de
+   `auto/` et de `pre-upgrade/` et la taille des documents, contre `BackupEnv::free_bytes`), écriture par
+   `write_backup_file` (`routes/admin.rs:754` : `<nom>.partial` en `create_new` `0600`, `sync_all`, renommage sans
+   écrasement), puis **synchronisation du dossier** `pre-upgrade/` (`BackupEnv::sync_dir`), qui ferme l'angle mort de
+   durabilité de `write_backup_file` (`routes/admin.rs:748-750`). **Son échec n'est qu'un avertissement** — comme à
+   l'import (`admin_backup/import.rs:493-496`, montages réseau ou FUSE qui refusent `fsync` sur un dossier) : le fichier
+   est déjà écrit et synchronisé, la sauvegarde reste `Ecrite`, la migration se fait (C-v0174m-33).
+5. **Échec** : plan illisible **ou incohérent** (*neuve* alors que `check_downgrade_protection` n'a pas rendu
+   `FreshInstall` : `_kesh_version` présente sans `_sqlx_migrations` — restauration partielle, table vidée à la main →
+   `Refus::Plan`, « état des migrations incohérent », V5-4), dossier non créable, espace insuffisant ou illisible, lecture
+   de la base, écriture, panique de la tâche
    d'écriture (`BackupError::Task`) → message de refus, `exit(1)`, **aucune migration appliquée**. Un `.partial` laissé par
    une panique ou un arrêt brutal est inoffensif (jamais listé, jamais importé) : le manuel le dit, rien ne l'exige
    nettoyé.
@@ -51,7 +57,8 @@ version qui doit migrer la base, écrive lui-même, avant toute migration, une s
    **Quel fichier restaurer** (règle de C-v0174m-25, une phrase au manuel) : le plus ancien fichier écrit depuis le dernier
    démarrage réussi de la version de départ ; les fichiers ne sont jamais supprimés.
 8. **Journal** : une ligne au début (`Sauvegarde avant mise à jour en cours …`), une à la fin avec le **chemin** du fichier
-   écrit, le refus, les deux avertissements de l'échappatoire.
+   écrit, le refus, et les avertissements que `main.rs` tire de l'`Issue` (échappatoire utilisée ou ignorée, dossier non
+   synchronisé ; C-v0174m-34).
 
 **Retiré** (décision du Project Lead, C-v0174m-30) : le type « Avant mise à jour » à l'écran (sous-fiche 2, `superseded`,
 issue à ouvrir) ; la règle détaillée de choix du fichier, E1 et tout message après `MIGRATOR.run` ; la garde de format
@@ -67,9 +74,17 @@ les commentaires des compose (incomplets, non faux : la story n'y touche pas).
 - **`crates/kesh-api/src/pre_upgrade_backup.rs`**, `pub mod` dans `lib.rs` (appelé par `main.rs`, binaire distinct) ;
   point d'entrée `pub async fn sauvegarder_avant_migration(pool, &Config, &DowngradeCheckOutcome, binaire: &str,
   environnement: Arc<dyn BackupEnv>, now: NaiveDateTime) -> Result<Issue, Refus>` ;
-  `Issue { InstallationNeuve, AJour, Interrompue, Contournee, Ecrite(PathBuf) }`,
-  `Refus { Plan, Dossier, Espace, Lecture, Ecriture, Tache }` (chacun avec l'erreur d'origine). `main.rs` : `Err` →
-  `tracing::error!` du refus, `exit(1)` ; `Ok` → étape 4. Doc-comment d'en-tête de `main.rs` complété (étape 3c).
+  `Issue { InstallationNeuve, AJour, Interrompue, Contournee, Ecrite { chemin: PathBuf, echappatoire_ignoree:
+  Option<String>, dossier_non_synchronise: Option<String> } }`, `Refus { Plan, Dossier, Espace, Lecture, Ecriture, Tache }`
+  (chacun avec l'erreur d'origine). **Les avertissements se décident sur la valeur rendue** (C-v0174m-34) : le module ne
+  journalise pas les avertissements, `main.rs` les émet d'après l'`Issue` — « migration sans sauvegarde » **si et seulement
+  si** `Issue::Contournee` ; « ignorée » si `echappatoire_ignoree` est `Some(valeur)` ; « dossier non synchronisé » si
+  `dossier_non_synchronise` est `Some(erreur)` ; les tests assertent l'`Issue`, sans capturer `tracing`. `main.rs` : `Err` →
+  `tracing::error!` du refus, `exit(1)` ; `Ok` → avertissements puis étape 4. Doc-comment d'en-tête de `main.rs` complété
+  (étape 3c). Étapes nommées, testées une à une : `pub(crate) async fn plan_de_migration(pool) -> Result<Plan, sqlx::Error>`
+  (T3, T9) et `pub(crate) async fn ecrire_la_sauvegarde(pool, config, environnement, de: &str, vers: &str, now)
+  -> Result<Issue, Refus>`, où `de` est lu **par le point d'entrée** (après le plan) et passé en argument, si bien que T10
+  (pool fermé) échoue bien dans `build_keshbackup` et non à la lecture de `de`.
 - **`kesh-db/src/backup.rs`** : `export_installation_schema_present(pool)` — même `ReadSnapshot`, cœur
   `export_installation_in` rendu générique sur la liste des tables, liste lue **dans l'instantané** ;
   `InstallationExport.tables` et `Etape::ApresTable` à noms possédés (`String`) ; `KeshBackupMeta.table_count` =
@@ -84,10 +99,14 @@ les commentaires des compose (incomplets, non faux : la story n'y touche pas).
   à `pub fn restore_tables_in_tx_avec_inventaire(tx, tables, inventaire)` (ordre de `TABLES_TO_TRUNCATE` filtré,
   exclusions `onboarding_state` et `audit_log` inchangées). Les appelants de production (`routes/admin.rs:430`) ne changent
   pas.
-- **`BackupEnv`** reçoit une méthode `sync_dir(&self, dir: &Path) -> io::Result<()>` (production : `File::open(dir)?.sync_all()`),
-  pour T7-bis.
-- **Visibilités** `pub(crate)` dans `auto_backup.rs` : `seuil_d_espace`, `taille_des_documents`, `fichiers_reguliers` ;
-  `ensure_backup_dir` (`routes/admin.rs:143`) inchangée si le module crée son dossier lui-même (`DirBuilder`, `0700`).
+- **`BackupEnv`** reçoit une méthode **à corps par défaut** `fn sync_dir(&self, dir: &Path) -> io::Result<()> {
+  std::fs::File::open(dir)?.sync_all() }` — `impl BackupEnv for TestEnv` (`tests/admin_auto_backup_e2e.rs:133`) compile
+  sans changement ; T7-bis la redéfinit.
+- **Garde lexicale** `export_installation_n_a_qu_un_appelant` (`export.rs:489-520`) : elle lit chaque `.rs` de
+  `kesh-api/src` jusqu'à la première ligne égale à `#[cfg(test)]` ; elle est étendue pour **sauter un fichier qui commence
+  par `#![cfg(test)]`** (`pre_upgrade_backup/tests.rs`), qui appelle `lire_installation(` (V5-5).
+- **Visibilités** `pub(crate)` : `seuil_d_espace`, `taille_des_documents`, `fichiers_reguliers` (`auto_backup.rs`) et
+  `ensure_backup_dir` (`routes/admin.rs:143`, corps inchangé ; DRY).
 - **Configuration** : `skip_pre_upgrade_backup: Option<String>` par `env_nonempty` ; ligne sous `environment:` de
   `kesh-api` dans les deux compose ; ligne **commentée** à `.env.example` ; `SANS_DEFAUT` et `EMPLACEMENTS_AUTORISES` de
   `crates/kesh-api/tests/configuration_transmise.rs` (vide = absent = sauvegarde faite).
@@ -96,8 +115,9 @@ les commentaires des compose (incomplets, non faux : la story n'y touche pas).
 
 - **Début** (`info`) : `Mise à jour de la base : {n} migration(s) à appliquer (de la {de} à la {vers}). Sauvegarde complète avant mise à jour en cours ; le serveur répondra une fois la mise à jour terminée.`
 - **Fin** (`info`) : `Sauvegarde avant mise à jour écrite : {chemin} ({taille} octets).`
-- **Refus** (`error`) : `FATAL : mise à jour refusée — la sauvegarde avant mise à jour n'a pas pu être écrite ({cause}). Aucune migration n'a été appliquée par cette tentative. Corrigez la cause, ou, en connaissance de cause, posez KESH_SKIP_PRE_UPGRADE_BACKUP={vers} dans le .env pour migrer sans sauvegarde (le compose doit la transmettre ; manuel d'administration, « La sauvegarde avant mise à jour »).` — `{cause}` : `état des migrations illisible : {e}` · `dossier {dir} : {e}` · `espace insuffisant dans {dir} ({libre} Mio libres, {seuil} Mio requis)` ou `espace libre de {dir} illisible : {e}` · `lecture de la base : {e}` · `écriture de {chemin} : {e}` · `tâche interrompue : {e}`. Jamais `DATABASE_URL`.
+- **Refus** (`error`) : `FATAL : mise à jour refusée — la sauvegarde avant mise à jour n'a pas pu être préparée ({cause}). Aucune migration n'a été appliquée par cette tentative. Corrigez la cause, ou, en connaissance de cause, posez KESH_SKIP_PRE_UPGRADE_BACKUP={vers} dans le .env pour migrer sans sauvegarde (le compose doit la transmettre ; manuel d'administration, « La sauvegarde avant mise à jour »).` — `{cause}` : `état des migrations illisible : {e}` · `état des migrations incohérent (_kesh_version présente, _sqlx_migrations absente ou vide)` · `dossier {dir} : {e}` · `espace insuffisant dans {dir} ({libre} Mio libres, {seuil} Mio requis)` ou `espace libre de {dir} illisible : {e}` · `lecture de la base : {e}` · `écriture de {chemin} : {e}` · `tâche interrompue : {e}`. Jamais `DATABASE_URL`.
 - **Échappatoire** (`warn`) : `KESH_SKIP_PRE_UPGRADE_BACKUP={vers} : migration sans sauvegarde préalable, à la demande de l'administrateur. Retirez cette variable après la mise à jour.` (seulement si le plan est *à appliquer* ou illisible) · `KESH_SKIP_PRE_UPGRADE_BACKUP={valeur} ignorée : elle ne vaut que pour la version {vers}.`
+- **Dossier non synchronisé** (`warn`, d'après `dossier_non_synchronise`) : `Synchronisation du dossier {dir} refusée ({e}) — montage sans fsync de dossier ? La sauvegarde {chemin} est écrite et synchronisée ; la mise à jour continue.`
 
 L'échappatoire étant évaluée avant le plan, le conseil du refus vaut pour toutes les causes, plan illisible compris.
 
@@ -115,13 +135,13 @@ attente qui crée des tables applicatives), le fichier passe `parse_and_verify_a
 départ **littéral**, `check_schema_compat` contre une seconde base au même état, et se restaure dans celle-ci avec les
 mêmes lignes ; l'import à l'inventaire du binaire le **refuse**. (T1-ter.)
 
-**AC-4 — Un échec refuse la migration.** Plan illisible, dossier, espace, lecture, écriture (synchronisation du dossier
-comprise), panique de la tâche d'écriture : refus, code de sortie non nul, `_sqlx_migrations` inchangée. (T5, T6, T7, T8,
-T9, T10, T15.)
+**AC-4 — Un échec refuse la migration.** Plan illisible ou incohérent, dossier, espace, lecture, écriture, panique de la
+tâche d'écriture : refus, code de sortie non nul, `_sqlx_migrations` inchangée. L'échec de la **synchronisation du dossier**
+n'est pas un refus : la sauvegarde reste écrite, l'`Issue` le porte. (T3, T5, T6, T7, T7-bis, T8, T9, T10, T15.)
 
-**AC-5 — L'échappatoire.** Valeur égale à la version du binaire : aucun fichier ; avertissement seulement si une migration
-est contournée (plan *à appliquer* ou illisible) ; elle vaut contre un plan illisible. Autre valeur : avertissement
-« ignorée », fichier écrit. Transmise par les deux compose ; garde `configuration_transmise` verte. (T11, T11-bis, T12.)
+**AC-5 — L'échappatoire.** Valeur égale à la version du binaire : aucun fichier ; `Issue::Contournee` (donc
+l'avertissement) seulement si une migration est contournée (plan *à appliquer* ou illisible), sinon l'issue du plan ; elle
+vaut contre un plan illisible. Autre valeur : `Ecrite { echappatoire_ignoree: Some(valeur), … }`, fichier écrit. Transmise par les deux compose ; garde `configuration_transmise` verte. (T11, T11-bis, T12.)
 
 **AC-6 — Aucune suppression.** Deux exécutions successives : deux fichiers. (T13.)
 
@@ -156,19 +176,19 @@ données en SQL brut ; assertion de montage : le plan rend *à appliquer* avec `
 
 | Test | Montage | Assertion |
 |---|---|---|
-| **T1** | base partielle ; société, utilisateur, compte, une écriture, une `imported_supplier_invoices` dont le document existe dans un dossier temporaire, une facture à `pdf_storage_path` | `Ecrite(chemin)` ; nom conforme, `0.17.3-to-<binaire>` ; tables du manifeste = `TABLES_TO_TRUNCATE` privé de `mcp_prompt_versions` et `mcp_prompts` ; les deux pièces dans `files` ; puis `MIGRATOR.run` réussit |
+| **T1** | base partielle ; société, utilisateur, compte, une écriture, une `imported_supplier_invoices` dont le document existe dans un dossier temporaire, une facture à `pdf_storage_path` | `Ecrite { chemin, echappatoire_ignoree: None, dossier_non_synchronise: None }` ; nom conforme, `0.17.3-to-<binaire>` ; dossier `pre-upgrade/` en `0700`, fichier en `0600` ; tables du manifeste = `TABLES_TO_TRUNCATE` privé de `mcp_prompt_versions` et `mcp_prompts` ; les deux pièces dans `files` ; puis `MIGRATOR.run` réussit |
 | **T1-ter** | test **autonome** : base partielle peuplée, sauvegarde écrite **sans** migrer ensuite, lignes de la source relevées ; seconde base au même état partiel | `parse_and_verify_avec_inventaire(…, inventaire littéral)` OK ; `check_schema_compat` OK ; restauration par `restore_tables_in_tx_avec_inventaire` ; chaque table de l'inventaire : `SELECT *` brut identique aux deux bases (`onboarding_state` exclue, `audit_log` sans `id`) ; `parse_and_verify` (inventaire du binaire) refuse : `table 'mcp_prompt_versions' absente du manifeste` |
 | **T2** | base entièrement migrée par le vrai `MIGRATOR` (`#[sqlx::test(migrator = "kesh_db::MIGRATOR")]` : le squash ne laisserait qu'une ligne dans `_sqlx_migrations`) | `AJour`, `pre-upgrade/` absent |
-| **T3** | base vide : `plan_de_migration` direct, puis point d'entrée avec `Aligned` et avec `FreshInstall` | *neuve* ; `InstallationNeuve` deux fois ; rien d'écrit |
+| **T3** | base vide : `plan_de_migration` direct ; point d'entrée avec `FreshInstall` ; point d'entrée avec `Aligned` | *neuve* ; `InstallationNeuve`, rien d'écrit ; `Refus::Plan` (incohérent), rien d'écrit |
 | **T4** | base partielle + ligne `success = 0` | `Interrompue`, rien d'écrit |
 | **T5** | `KESH_ADMIN_BACKUP_DIR` = fichier régulier | `Refus::Dossier` |
 | **T6** | `BackupEnv` : espace libre sous le seuil | `Refus::Espace`, rien d'écrit |
 | **T7** | écrivain qui rend `StorageFull` | `Refus::Ecriture` |
-| **T7-bis** | synchronisation du dossier en échec (fonction de synchronisation injectée par `BackupEnv::sync_dir`, simulée en erreur) | `Refus::Ecriture` |
+| **T7-bis** | `BackupEnv::sync_dir` redéfinie en erreur | `Ecrite { dossier_non_synchronise: Some(_), … }`, fichier présent |
 | **T8** (binaire) | base partielle ; dossier = fichier ; `KESH_PORT` occupé ; `DATABASE_URL` (base éphémère), `KESH_JWT_SECRET`, `KESH_HOST=127.0.0.1`, `KESH_PORT`, `KESH_ADMIN_BACKUP_DIR`, `KESH_LOCALES_DIR` absolu | code non nul ; sortie contient `mise à jour refusée` et `dossier` ; `COUNT(*)` de `_sqlx_migrations` inchangé |
 | **T9** | plan sur un pool fermé | `Refus::Plan` |
 | **T10** | étape d'écriture (`ecrire_la_sauvegarde`) appelée avec le pool fermé après un plan réussi | `Refus::Lecture` |
-| **T11** | base partielle : skip = version du binaire / `0.0.1` ; base entièrement migrée : skip = version du binaire | `Contournee` sans fichier, avertissement / `Ecrite` / `AJour` sans avertissement |
+| **T11** | base partielle : skip = version du binaire / `0.0.1` ; base entièrement migrée : skip = version du binaire | `Contournee` sans fichier / `Ecrite { echappatoire_ignoree: Some("0.0.1"), … }` / `AJour` (non `Contournee`) |
 | **T11-bis** | plan sur un pool fermé, skip = version du binaire | `Contournee` (l'échappatoire passe avant le plan) |
 | **T12** | `configuration_transmise` | verte (variable dans `SANS_DEFAUT`, forme `${NOM:-}` dans les deux compose, ligne commentée) |
 | **T13** | deux appels successifs (`now` avancé d'une milliseconde) | deux fichiers présents |
@@ -183,7 +203,7 @@ données en SQL brut ; assertion de montage : le plan rend *à appliquer* avec `
 | **M3** le plan rend toujours *à jour* | T1 |
 | **M4** l'inventaire lu dans `TABLES_TO_TRUNCATE` | T1, T1-ter |
 | **M5** préfixe `_` non exclu | T1 |
-| **M6** *neuve* traitée comme *à appliquer* | T3 |
+| **M6** *neuve* traitée comme *à appliquer* | T3 (appel direct) |
 | **M7** la branche *interrompue* retirée | T4 |
 | **M8** plan en erreur traité comme *neuve* | T9 |
 | **M9** contrôle d'espace retiré | T6 |
@@ -194,8 +214,10 @@ données en SQL brut ; assertion de montage : le plan rend *à appliquer* avec `
 | **M14** une suppression de sauvegarde ajoutée après l'écriture | T13 |
 | **M15** l'échappatoire évaluée après le plan | T11-bis |
 | **M16** `Err(Task)` converti en succès | T15 |
-| **M17** la synchronisation du dossier en échec ignorée | T7-bis (`BackupEnv` ou dossier rendu non ouvrable après l'écriture → `Refus::Ecriture`) |
-| **M18** l'avertissement émis aussi sur un plan *à jour* | T11 (base entièrement migrée) |
+| **M17** l'échec de `sync_dir` converti en `Refus` (ou tu : `dossier_non_synchronise` laissé à `None`) | T7-bis |
+| **M18** `Contournee` rendue aussi sur un plan *à jour* | T11 (base entièrement migrée) |
+| **M19** `echappatoire_ignoree` laissée à `None` | T11 (`0.0.1`) |
+| **M20** *neuve* acceptée hors `FreshInstall` | T3 (`Aligned`) |
 
 ## Tâches
 
@@ -204,7 +226,7 @@ données en SQL brut ; assertion de montage : le plan rend *à appliquer* avec `
 3. `kesh-db` : inventaire du schéma présent, noms possédés, `restore_tables_in_tx_avec_inventaire`.
 4. `kesh-api` : module, `parse_and_verify_avec_inventaire`, `Config`, `main.rs`, visibilités, garde lexicale.
 5. Compose (deux), `.env.example`, `configuration_transmise.rs`.
-6. Mutations M1 à M18 (sous verrou, restaurées par `git checkout --` puis `touch`).
+6. Mutations M1 à M20 (sous verrou, restaurées par `git checkout --` puis `touch`).
 7. Manuel `.tex` + PDF (`make fr` sous les deux verrous) ; CHANGELOG.
 8. Recette AC-8 (images sous les deux verrous, réseau et volumes jetables, jamais `kesh-mariadb-dev`).
 9. Gate complet, Vitest, build, E2E complet au dernier commit de code.
@@ -219,7 +241,7 @@ données en SQL brut ; assertion de montage : le plan rend *à appliquer* avec `
    `/volume1/docker/kesh/backup/pre-upgrade`), au nom `kesh-pre-upgrade-AAAAMMJJTHHMMSSmmmZ-<de>-to-<vers>.keshbackup` ;
    le journal en donne le chemin. Elle se restaure dans la version de départ (une 0.15.0 ou plus récente). Pas de
    sauvegarde sans migration à appliquer (la plupart des redémarrages, toute version sans migration) ni sur une
-   installation neuve. Pendant l'écriture le serveur ne répond pas. Si elle échoue, Kesh ne migre pas et le dit ;
+   installation neuve. Pendant l'écriture le serveur ne répond pas : le conteneur s'affiche « unhealthy » un moment, sans être redémarré. Si elle échoue, Kesh ne migre pas et le dit ;
    échappatoire `KESH_SKIP_PRE_UPGRADE_BACKUP=<version exacte>` dans le `.env`, transmise par les compose de la 0.17.4 —
    **un compose antérieur ne la transmet pas : ajoutez sous `environment:` du service `kesh-api` la ligne
    `KESH_SKIP_PRE_UPGRADE_BACKUP: ${KESH_SKIP_PRE_UPGRADE_BACKUP:-}`** ; à retirer après. **Kesh n'en supprime aucune** :
@@ -238,8 +260,12 @@ données en SQL brut ; assertion de montage : le plan rend *à appliquer* avec `
    ne le supprimez qu'une fois la restauration vérifiée ; (4) la version de départ ne démarre pas sur la base migrée : le
    fichier se restaure dans une **installation neuve** de cette version (image `<de>` du nom, épinglée), sur une base vide,
    par la procédure **existante** § *Restaurer sur une nouvelle machine* (`sec:restauration-machine-neuve`) — base vide :
-   § *Initialisation manuelle de la base* (`sec:init-db-manuelle`) hors Docker. Aucune commande `DROP`/`CREATE DATABASE`
-   n'est écrite ici. Ce que le retour perd : la saisie faite depuis la mise à jour ; les réglages hors fichier reviennent
+   § *Initialisation manuelle de la base* (`sec:init-db-manuelle`) hors Docker. Ces procédures décrivent une machine neuve ;
+   **sur la machine même**, arrêtez et retirez d'abord le conteneur de la version migrée (`docker compose down`, **sans**
+   `-v` : la base migrée et ses sauvegardes restent), puis réutilisez la base existante, vidée, plutôt que d'en créer une —
+   « base vide » ne désigne jamais une base qui porte encore celle de l'installation migrée (V5-2). **Procédure non éprouvée
+   sur Synology** (base distincte du compose). Aucune commande `DROP`/`CREATE DATABASE` n'est écrite ici. Le titre renommé
+   est aussi cité au renvoi de `:3758` (« la section *Rollback en cas d'échec* »), à mettre à jour. Ce que le retour perd : la saisie faite depuis la mise à jour ; les réglages hors fichier reviennent
    aux défauts. Garder le paragraphe sur la réparation de l'installation.
 4. **`KESH_ADMIN_BACKUP_DIR`** (`:812`, `:2377`) : ajouter `pre-upgrade/`.
 5. **§ Variables d'environnement complètes** : `KESH_SKIP_PRE_UPGRADE_BACKUP`.
@@ -260,6 +286,20 @@ Sous `## [0.17.4] — Non publié`, `### Ajouté` :
   connaissance de cause : `KESH_SKIP_PRE_UPGRADE_BACKUP=<version>` dans le `.env` (les compose de la 0.17.4 la
   transmettent ; un compose antérieur, non : reprenez-en la ligne). Kesh n'en supprime aucune. La 0.17.4 n'ayant pas de
   migration, la mise à jour depuis la 0.17.3 n'en écrit pas.
+
+## Dérogation règle de splitting
+
+**Compte** (V5-10), au grain de la règle (« crates Rust, packages npm, ou modules métier de premier niveau ») : au grain
+des crates, **deux** (`kesh-db`, `kesh-api`) ; au grain des modules de premier niveau, **six** — `kesh-db/backup`,
+`kesh-api/pre_upgrade_backup` (neuf), `kesh-api/admin_backup` (export : `lire_installation` ; import : inventaire paramétré),
+`kesh-api/auto_backup` (trois visibilités, une méthode à corps par défaut), `kesh-api/config` (un champ), `kesh-api/main`
+(un appel) — plus `routes/admin.rs` (une visibilité), les compose, `.env.example`, le manuel, le CHANGELOG. Le seuil de
+cinq est dépassé au grain le plus fin. **Justification** : la fiche résulte de la décision du Project Lead de réduire #847
+à sa version minimale (C-v0174m-30) après une non-convergence ; trois des six modules ne reçoivent que des visibilités, un
+champ ou un appel ; un découpage remettrait en boucle de validation des morceaux qui n'ont de sens qu'ensemble (le refus
+de `main.rs` sans le module, le module sans l'inventaire). **Risque accepté** : le développement tient six modules dans un
+même passage ; la revue de code le relit module par module. Dérogation **déclarée au Project Lead** par le rapport de
+l'agent.
 
 ## Dev Notes
 
@@ -358,6 +398,18 @@ Sous `## [0.17.4] — Non publié`, `### Ajouté` :
   (`lire_installation`, gardes récrites), V4-11 (T1-ter autonome), V4-12 (avertissement seulement si une migration est
   contournée, M18), V4-13 (marqueurs retirés ; `{de}` lu après le plan), V4-14 (synchronisation du dossier, T7-bis, M17).
   Prochaine étape : validation P5 (Sonnet, `v0174-mise-a-jour-validate-prompt-p5.md`).
+
+- 2026-11-05 — Remédiation de la validation P5 (Sonnet, 0/0/3/7) par Opus 5.5, prémisses relues : **V5-1** confirmé
+  (`import.rs:493-496`) ; arbitrage de l'orchestrateur : l'échec de `sync_dir` est un avertissement porté par l'`Issue`
+  (C-v0174m-33), T7-bis et M17 récrits. **V5-2** confirmé (`admin-manual.tex:2412-2415`, conteneurs nommés en dur) : deux
+  phrases au point 3 (machine même : retirer le conteneur sans `-v`, réutiliser la base existante vidée) et la réserve
+  « non éprouvée sur Synology » rétablie. **V5-3** confirmé : les avertissements se décident sur l'`Issue`
+  (C-v0174m-34), M18 et M19 tuées par T11. **LOW** : V5-4 (*neuve* hors `FreshInstall` → `Refus::Plan`, T3, M20), V5-5
+  (`sync_dir` à corps par défaut ; `plan_de_migration` et `ecrire_la_sauvegarde` nommés, `de` en argument ; garde
+  lexicale étendue à `#![cfg(test)]`), V5-6 (registre C-24), V5-7 (renvoi de `:3758`), V5-8 (`ensure_backup_dir`
+  réutilisée, modes assertés en T1), V5-9 (ordre du point 4, « préparée », « unhealthy »), V5-10 (compte des modules et
+  § *Dérogation règle de splitting*). Prochaine étape : validation P6 (Haiku, passe ciblée sur ce commit,
+  `v0174-mise-a-jour-validate-prompt-p6.md`).
 
 ## Dev Agent Record
 
