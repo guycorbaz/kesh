@@ -5,10 +5,13 @@
 //! la sauvegarde pré-import (17-3c) réutilise ce cœur sans auditer.
 //!
 //! Depuis la Story 28-3 (#633), la base est lue par **un seul** appel,
-//! `kesh_db::backup::export_installation`, qui lit toutes les tables dans un
-//! instantané commun (`kesh_db::snapshot::ReadSnapshot`) : le fichier
-//! photographie la base à un seul instant, et une saisie concurrente ne peut
-//! plus y laisser une ligne sans son parent.
+//! `kesh_db::backup::lire_installation` (`export_installation` jusqu'à la
+//! 0.17.3), qui lit toutes les tables dans un instantané commun
+//! (`kesh_db::snapshot::ReadSnapshot`) : le fichier photographie la base à un
+//! seul instant, et une saisie concurrente ne peut plus y laisser une ligne
+//! sans son parent. Depuis la story v0174-mise-a-jour (#847), l'appelant dit
+//! l'inventaire à lire (celui du binaire, ou celui du schéma présent pour la
+//! sauvegarde avant mise à jour).
 //!
 //! Story 31-1a (#503) — **format 2** et **assemblage hors mémoire**, en deux
 //! temps et deux seulement (AC4) :
@@ -23,7 +26,7 @@
 //!
 //! Structure du ZIP (format 2) :
 //! ```text
-//! data/<table>.ndjson        # une par table de `TABLES_TO_TRUNCATE`
+//! data/<table>.ndjson        # une par table de l'inventaire lu
 //! files/                     # entrée dossier, toujours écrite, avant les pièces
 //! files/<sha256>.<ext>       # une par pièce référencée présente et intacte (Stored)
 //! manifest.json              # au ROOT, en dernier (files, filesNotIncluded)
@@ -53,9 +56,7 @@ use crate::document_storage::{ReadDocumentError, is_safe_storage_path, open_docu
 use crate::errors::AppError;
 use crate::exports::metadata::sha256_hex;
 
-use kesh_db::backup::{
-    InstallationExport, ReferencedFile, TABLES_TO_TRUNCATE, export_installation,
-};
+use kesh_db::backup::{InstallationExport, Inventaire, ReferencedFile, lire_installation};
 
 /// Métadonnées retournées au handler (audit + tracing).
 #[derive(Debug, Clone, Copy)]
@@ -131,15 +132,22 @@ impl From<BackupError> for AppError {
 }
 
 /// Produit une sauvegarde, **sans audit** : lit la base par l'unique
-/// `export_installation(pool)` — un seul instantané, clos avant l'écriture
-/// (Story 28-3, #633) —, puis exécute `remplir(export, documents_dir)` dans
-/// **un seul** `tokio::task::spawn_blocking` et rend ce qu'il rend.
+/// `lire_installation(pool, inventaire)` — un seul instantané, clos avant
+/// l'écriture (Story 28-3, #633) —, puis exécute `remplir(export,
+/// documents_dir)` dans **un seul** `tokio::task::spawn_blocking` et rend ce
+/// qu'il rend.
 ///
 /// `remplir` appelle [`write_keshbackup`] sur l'écrivain de l'appelant ; il
 /// **possède** tout ce qu'il touche (aucun emprunt n'entre dans la tâche).
 /// C'est le **seul** lecteur de la base de la sauvegarde dans `kesh-api` :
 /// les gardes `tests::build_keshbackup_ne_lit_la_base_qu_une_fois` et
-/// `tests::export_installation_n_a_qu_un_appelant` y tiennent.
+/// `tests::chaque_lecture_n_a_qu_un_appelant` y tiennent.
+///
+/// Story v0174-mise-a-jour (#847) — `inventaire` dit quelles tables lire :
+/// [`Inventaire::Binaire`] pour l'export, la sauvegarde automatique et la
+/// sauvegarde pré-import ; [`Inventaire::SchemaPresent`] pour la sauvegarde
+/// avant mise à jour (`crate::pre_upgrade_backup`), prise sur une base que les
+/// migrations du binaire n'ont pas encore touchée.
 ///
 /// Erreurs : [`BackupError`]. ⚠️ L'import l'appelle pour **produire** la
 /// sauvegarde pré-import : il convertit l'échec par
@@ -147,6 +155,7 @@ impl From<BackupError> for AppError {
 /// (Story 15-13b, #576) ; l'export le rend en `AdminFullExportFailed`.
 pub async fn build_keshbackup<T, F>(
     pool: &MySqlPool,
+    inventaire: Inventaire,
     documents_dir: PathBuf,
     remplir: F,
 ) -> Result<T, BackupError>
@@ -154,7 +163,9 @@ where
     F: FnOnce(InstallationExport, PathBuf) -> Result<T, BackupWriteError> + Send + 'static,
     T: Send + 'static,
 {
-    let export = export_installation(pool).await.map_err(BackupError::Db)?;
+    let export = lire_installation(pool, inventaire)
+        .await
+        .map_err(BackupError::Db)?;
     tokio::task::spawn_blocking(move || remplir(export, documents_dir))
         .await
         .map_err(|e| BackupError::Task(e.to_string()))?
@@ -244,7 +255,7 @@ pub fn write_keshbackup<W: Write + Seek>(
         .compression_method(CompressionMethod::Deflated)
         .unix_permissions(0o644);
 
-    // Une entrée NDJSON par table (ordre TABLES_TO_TRUNCATE).
+    // Une entrée NDJSON par table (ordre de l'inventaire lu).
     for (table, table_export) in &export.tables {
         total_rows += table_export.row_count;
         tables_meta.insert(
@@ -327,7 +338,9 @@ pub fn write_keshbackup<W: Write + Seek>(
         w,
         KeshBackupMeta {
             byte_size,
-            table_count: TABLES_TO_TRUNCATE.len(),
+            // Story v0174-mise-a-jour : les tables écrites, non la liste du
+            // binaire — l'inventaire du schéma présent peut être plus court.
+            table_count: export.tables.len(),
             total_rows,
             file_count,
             files_bytes,
@@ -457,9 +470,10 @@ mod tests {
 
     /// Story 28-3 (#633), AC5 (g)(ii) — garde lexicale : `build_keshbackup` ne
     /// nomme le pool que deux fois — son paramètre et l'unique
-    /// `export_installation(pool)` —, si bien qu'aucune lecture n'y échappe à
-    /// l'instantané commun (M10 : une relecture dans un second instantané
-    /// compile, et seule cette garde la voit).
+    /// `lire_installation(pool, inventaire)` (`export_installation(pool)`
+    /// jusqu'à la 0.17.3, story v0174-mise-a-jour) —, si bien qu'aucune lecture
+    /// n'y échappe à l'instantané commun (M10 : une relecture dans un second
+    /// instantané compile, et seule cette garde la voit).
     #[test]
     fn build_keshbackup_ne_lit_la_base_qu_une_fois() {
         let corps = corps_de_build_keshbackup();
@@ -469,59 +483,135 @@ mod tests {
             .count();
         assert_eq!(
             n, 2,
-            "`pool` doit apparaître exactement deux fois (paramètre, export_installation) :\n{corps}"
+            "`pool` doit apparaître exactement deux fois (paramètre, lire_installation) :\n{corps}"
         );
         // Revue de code P1 (L3) : le second `pool` est bien l'appel
-        // `export_installation(pool)` — une autre fonction qui prendrait le
-        // pool laisserait le compte à deux.
+        // `lire_installation(pool, inventaire)` — une autre fonction qui
+        // prendrait le pool laisserait le compte à deux.
         assert!(
-            corps.contains("export_installation(pool)"),
-            "`build_keshbackup` doit lire par `export_installation(pool)` :\n{corps}"
+            corps.contains("lire_installation(pool, inventaire)"),
+            "`build_keshbackup` doit lire par `lire_installation(pool, inventaire)` :\n{corps}"
         );
     }
 
-    /// Story 31-1a (AC4, C-31-1-56) — `build_keshbackup` est le **seul**
-    /// appelant d'`export_installation(` dans le code de production de
-    /// `kesh-api` (tous les `.rs` de `src/`, avant leur première ligne
-    /// `#[cfg(test)]`, lignes `//` écartées) : un appelant qui lirait la base
-    /// lui-même, hors de l'unique point d'entrée, fait rougir ce test.
-    #[test]
-    fn export_installation_n_a_qu_un_appelant() {
-        fn sources(dir: &Path, out: &mut Vec<PathBuf>) {
-            for e in std::fs::read_dir(dir).unwrap() {
-                let p = e.unwrap().path();
-                if p.is_dir() {
-                    sources(&p, out);
-                } else if p.extension().is_some_and(|x| x == "rs") {
-                    out.push(p);
-                }
+    /// Les `.rs` d'un dossier, récursivement.
+    fn sources(dir: &Path, out: &mut Vec<PathBuf>) {
+        for e in std::fs::read_dir(dir).unwrap() {
+            let p = e.unwrap().path();
+            if p.is_dir() {
+                sources(&p, out);
+            } else if p.extension().is_some_and(|x| x == "rs") {
+                out.push(p);
             }
         }
+    }
+
+    /// Les lignes de code de **production** d'un fichier : vide s'il commence
+    /// par `#![cfg(test)]` (fichier de tests, tel
+    /// `pre_upgrade_backup/tests.rs` — V5-5 de la story v0174-mise-a-jour),
+    /// sinon tout ce qui précède sa première ligne `#[cfg(test)]`, lignes `//`
+    /// écartées.
+    fn lignes_de_production(texte: &str) -> Vec<&str> {
+        if texte
+            .lines()
+            .map(str::trim)
+            .find(|l| !l.is_empty() && !l.starts_with("//"))
+            == Some("#![cfg(test)]")
+        {
+            return Vec::new();
+        }
+        texte
+            .lines()
+            .take_while(|l| l.trim() != "#[cfg(test)]")
+            .filter(|l| !l.trim_start().starts_with("//"))
+            .collect()
+    }
+
+    /// Story 31-1a (AC4, C-31-1-56), récrite à la story v0174-mise-a-jour
+    /// (#847) — **chacune des deux fonctions de lecture n'a qu'un appelant,
+    /// `lire_installation`**, et celle-ci n'en a qu'un, `build_keshbackup` :
+    ///
+    /// - dans le code de production de `kesh-api` (tous les `.rs` de `src/`,
+    ///   [`lignes_de_production`]), `lire_installation(` n'apparaît qu'une fois,
+    ///   dans `admin_backup/export.rs`, et ni `export_installation(` ni
+    ///   `export_installation_schema_present(` n'apparaissent ;
+    /// - dans le code de production de `kesh-db/src/backup.rs`, chacune des
+    ///   deux n'est appelée qu'une fois, dans le corps de `lire_installation`.
+    ///
+    /// Un appelant qui lirait la base lui-même, hors de l'unique point
+    /// d'entrée, fait rougir ce test.
+    #[test]
+    fn chaque_lecture_n_a_qu_un_appelant() {
         let src = Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
         let mut fichiers = Vec::new();
         sources(&src, &mut fichiers);
         let mut sites = Vec::new();
+        let mut directs = Vec::new();
         for f in &fichiers {
             let texte = std::fs::read_to_string(f).unwrap();
-            for l in texte
-                .lines()
-                .take_while(|l| l.trim() != "#[cfg(test)]")
-                .filter(|l| !l.trim_start().starts_with("//"))
-            {
-                for _ in l.matches("export_installation(") {
-                    sites.push(f.strip_prefix(&src).unwrap().to_string_lossy().to_string());
+            let relatif = f.strip_prefix(&src).unwrap().to_string_lossy().to_string();
+            for l in lignes_de_production(&texte) {
+                for _ in l.matches("lire_installation(") {
+                    sites.push(relatif.clone());
+                }
+                for motif in [
+                    "export_installation(",
+                    "export_installation_schema_present(",
+                ] {
+                    if l.contains(motif) {
+                        directs.push(format!("{relatif} : {}", l.trim()));
+                    }
                 }
             }
         }
         assert_eq!(
             sites,
             vec!["admin_backup/export.rs".to_string()],
-            "`export_installation(` ne doit être appelée que par `build_keshbackup`"
+            "`lire_installation(` ne doit être appelée que par `build_keshbackup`"
         );
         assert!(
-            corps_de_build_keshbackup().contains("export_installation(pool)"),
+            corps_de_build_keshbackup().contains("lire_installation(pool, inventaire)"),
             "l'unique appel doit être celui de `build_keshbackup`"
         );
+        assert!(
+            directs.is_empty(),
+            "lecture de l'installation hors de `lire_installation` :\n{}",
+            directs.join("\n")
+        );
+
+        // Côté `kesh-db` : les deux lectures ne sont appelées que par
+        // `lire_installation`.
+        let backup = include_str!("../../../kesh-db/src/backup.rs");
+        let prod = lignes_de_production(backup);
+        let debut = prod
+            .iter()
+            .position(|l| l.starts_with("pub async fn lire_installation("))
+            .expect("assertion de montage : `lire_installation` introuvable");
+        let fin = debut
+            + prod[debut..]
+                .iter()
+                .position(|l| *l == "}")
+                .expect("assertion de montage : fin de `lire_installation`");
+        for motif in [
+            "export_installation(pool)",
+            "export_installation_schema_present(pool)",
+        ] {
+            let appels: Vec<usize> = prod
+                .iter()
+                .enumerate()
+                .filter(|(_, l)| l.contains(motif) && !l.trim_start().starts_with("pub async fn"))
+                .map(|(i, _)| i)
+                .collect();
+            assert_eq!(
+                appels.len(),
+                1,
+                "`{motif}` doit être appelée exactement une fois dans kesh-db/src/backup.rs"
+            );
+            assert!(
+                (debut..=fin).contains(&appels[0]),
+                "`{motif}` doit être appelée par `lire_installation` seulement"
+            );
+        }
     }
 
     fn piece(chemin: &str, sha: &str) -> ReferencedFile {

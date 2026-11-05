@@ -42,7 +42,7 @@ use std::sync::{Arc, LazyLock};
 use chrono::{NaiveDateTime, TimeDelta, Utc};
 use regex::Regex;
 
-use kesh_db::backup::InstallationExport;
+use kesh_db::backup::{InstallationExport, Inventaire};
 use kesh_db::errors::DbError;
 use kesh_db::repositories::backup_schedule::{self, BackupSchedule, BackupStatus, BackupSuccess};
 
@@ -92,6 +92,14 @@ pub trait BackupEnv: Send + Sync {
     /// L'écrivain de l'archive, construit sur un **clone** du descripteur du
     /// `.partial` (possédé : il entre dans le `spawn_blocking`).
     fn wrap_writer(&self, file: File) -> Box<dyn WriteSeek>;
+    /// Story v0174-mise-a-jour (#847) — synchronise le dossier `dir` (ses
+    /// entrées) après le renommage d'une sauvegarde : ferme l'angle mort de
+    /// durabilité de `routes::admin::write_backup_file`. Corps par défaut :
+    /// `fsync` du dossier ouvert ; les tests le redéfinissent en erreur
+    /// (montage qui refuse `fsync` sur un dossier).
+    fn sync_dir(&self, dir: &Path) -> io::Result<()> {
+        File::open(dir)?.sync_all()
+    }
 }
 
 /// L'environnement de production : `statvfs`, et le fichier tel quel.
@@ -308,7 +316,7 @@ pub(crate) struct ServerBackup {
 /// dossier ou métadonnées en échec) est sautée, journalisée si elle ne s'est
 /// pas simplement évanouie : elle ne fait pas échouer les autres (revue de
 /// code P1, E-4, C-31-1-88).
-fn fichiers_reguliers(
+pub(crate) fn fichiers_reguliers(
     dir: &Path,
     garder: impl Fn(&str) -> bool,
 ) -> io::Result<Vec<(String, std::fs::Metadata, PathBuf)>> {
@@ -493,7 +501,7 @@ pub(crate) fn supprimer_les_partiels(dir: &Path, prefixe: &str) -> usize {
 /// des pièces que l'archive emportera. Dossier absent : 0 (aucune pièce
 /// encore) ; dossier illisible : 0, journalisé ; une entrée illisible est
 /// sautée, journalisée, et la somme ne la compte pas (C-31-1-88).
-fn taille_des_documents(documents_dir: &Path) -> u64 {
+pub(crate) fn taille_des_documents(documents_dir: &Path) -> u64 {
     match fichiers_reguliers(documents_dir, |_| true) {
         Ok(fichiers) => fichiers.iter().map(|(_, m, _)| m.len()).sum(),
         Err(e) => {
@@ -507,7 +515,7 @@ fn taille_des_documents(documents_dir: &Path) -> u64 {
 }
 
 /// AC30 — `max(dernière sauvegarde, documents) × 1,2 + 256 Mio`.
-fn seuil_d_espace(derniere: u64, documents: u64) -> u64 {
+pub(crate) fn seuil_d_espace(derniere: u64, documents: u64) -> u64 {
     let base = derniere.max(documents);
     base.saturating_add(base / 5).saturating_add(MARGE_FIXE)
 }
@@ -706,13 +714,14 @@ pub async fn run_once(
             environnement,
         ))
     };
-    let ecriture = match build_keshbackup(&state.pool, documents_dir, remplir).await {
-        Ok(e) => e,
-        Err(e) => {
-            tracing::error!(?trigger, "sauvegarde automatique : {e:?}");
-            Ecriture::Refusee(FailureStatus::Failed)
-        }
-    };
+    let ecriture =
+        match build_keshbackup(&state.pool, Inventaire::Binaire, documents_dir, remplir).await {
+            Ok(e) => e,
+            Err(e) => {
+                tracing::error!(?trigger, "sauvegarde automatique : {e:?}");
+                Ecriture::Refusee(FailureStatus::Failed)
+            }
+        };
 
     let statut = match ecriture {
         Ecriture::Refusee(echec) => {

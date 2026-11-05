@@ -21,7 +21,7 @@ use axum::{
 };
 use chrono::Utc;
 
-use kesh_db::backup::InstallationExport;
+use kesh_db::backup::{InstallationExport, Inventaire};
 use kesh_db::entities::AUDIT_ENTITY_ID_NONE;
 use kesh_db::entities::audit_log::NewAuditLogEntry;
 
@@ -80,9 +80,14 @@ pub async fn full_export(
         let temporaire = tempfile::spooled_tempfile_in(seuil, &backup_dir);
         write_keshbackup(&export, &documents, temporaire)
     };
-    let (archive, meta) = build_keshbackup(&state.pool, documents_dir(&state), remplir)
-        .await
-        .map_err(AppError::from)?;
+    let (archive, meta) = build_keshbackup(
+        &state.pool,
+        Inventaire::Binaire,
+        documents_dir(&state),
+        remplir,
+    )
+    .await
+    .map_err(AppError::from)?;
 
     // Audit best-effort (handler-level, pas dans build_keshbackup — réutilisé
     // sans audit par le backup pré-import 17-3c). Un échec d'INSERT n'empêche
@@ -140,7 +145,10 @@ fn corps_de_l_archive(archive: tempfile::SpooledTempFile) -> Result<Body, AppErr
 /// créé** l'est en `0700`, parents compris (`DirBuilder` récursif) ; un dossier
 /// existant (montage de l'hôte) n'est pas modifié. Rend le détail de l'échec
 /// (journal seulement) : l'appelant choisit la variante d'erreur.
-async fn ensure_backup_dir(dir: &str) -> Result<(), String> {
+///
+/// `pub(crate)` depuis la story v0174-mise-a-jour (#847) : la sauvegarde avant
+/// mise à jour crée par elle son sous-dossier `pre-upgrade/` (DRY).
+pub(crate) async fn ensure_backup_dir(dir: &str) -> Result<(), String> {
     let mut builder = tokio::fs::DirBuilder::new();
     builder.recursive(true);
     #[cfg(unix)]
@@ -721,9 +729,14 @@ async fn write_pre_import_backup(state: &AppState) -> Result<bool, AppError> {
             write_keshbackup(&export, &documents, fichier).map(|(_, meta)| meta)
         })
     };
-    let meta = build_keshbackup(&state.pool, documents_dir(state), remplir)
-        .await
-        .map_err(avant_sauvegarde)?;
+    let meta = build_keshbackup(
+        &state.pool,
+        Inventaire::Binaire,
+        documents_dir(state),
+        remplir,
+    )
+    .await
+    .map_err(avant_sauvegarde)?;
     tracing::info!(
         path = %path.display(),
         bytes = meta.byte_size,

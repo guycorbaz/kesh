@@ -15,6 +15,7 @@ La 0.17.4 ne porte **aucune migration**.
 ### Ajouté
 
 - **Un avertissement avant la fermeture pour inactivité** ([#895](https://github.com/guycorbaz/kesh/issues/895)) : une minute avant l'échéance, Kesh affiche un compte à rebours et un bouton **Rester connecté**. Il couvre la lecture d'un PDF dans l'aperçu, où Kesh ne voit pas vos gestes.
+- **Kesh se sauvegarde lui-même avant de mettre la base à jour** ([#847](https://github.com/guycorbaz/kesh/issues/847)) : au démarrage d'une version qui doit migrer la base, une sauvegarde complète — base et pièces — est écrite dans `backup/pre-upgrade/` avant toute migration ; elle se restaure dans la version de départ (manuel d'administration, *Revenir à la version précédente*). Si elle échoue, Kesh ne migre pas et le dit ; pour migrer quand même, en connaissance de cause : `KESH_SKIP_PRE_UPGRADE_BACKUP=<version>` dans le `.env` (les compose de la 0.17.4 la transmettent ; un compose antérieur, non : reprenez-en la ligne). Kesh n'en supprime aucune. La 0.17.4 n'ayant pas de migration, la mise à jour depuis la 0.17.3 n'en écrit pas.
 
 ### Sécurité
 

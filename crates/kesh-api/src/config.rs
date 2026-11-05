@@ -267,6 +267,15 @@ pub struct Config {
     /// l'exploitant.
     pub admin_backup_dir: String,
 
+    /// Story v0174-mise-a-jour (#847) — échappatoire de la **sauvegarde avant
+    /// mise à jour** (`crate::pre_upgrade_backup`). Lu depuis
+    /// `KESH_SKIP_PRE_UPGRADE_BACKUP` ; vide ou absente → `None` (la sauvegarde
+    /// se fait). Elle ne vaut que si sa valeur est **exactement** la version du
+    /// binaire (`CARGO_PKG_VERSION`) : oubliée dans le `.env`, elle s'éteint
+    /// d'elle-même à la mise à jour suivante ; une autre valeur est ignorée, et
+    /// le journal le dit.
+    pub skip_pre_upgrade_backup: Option<String>,
+
     /// Story 12-5b (#194) — répertoire de stockage des **justificatifs**
     /// (copies des fichiers de factures importées, `{sha256hex}.{ext}`). Hors DB.
     /// Lu depuis `KESH_DOCUMENTS_DIR` ; défaut `/data/documents` (PAS `/tmp` :
@@ -515,6 +524,7 @@ impl Config {
             admin_export_inmem_mib: 50,
             admin_import_max_mib: DEFAULT_ADMIN_IMPORT_MAX_MIB,
             admin_backup_dir: "/tmp".to_string(),
+            skip_pre_upgrade_backup: None,
             documents_dir: "/tmp/kesh-documents-test".to_string(),
             inbox_dir: "/tmp/kesh-inbox-test".to_string(),
             inbox_max_file_bytes: 25 * 1024 * 1024,
@@ -951,6 +961,12 @@ impl Config {
         let admin_backup_dir = env_nonempty("KESH_ADMIN_BACKUP_DIR")
             .unwrap_or_else(|| DEFAULT_ADMIN_BACKUP_DIR.to_string());
 
+        // Story v0174-mise-a-jour (#847) — échappatoire de la sauvegarde avant
+        // mise à jour : sans défaut, vide = absente (les compose transmettent
+        // `${KESH_SKIP_PRE_UPGRADE_BACKUP:-}`). Sa valeur n'est comparée qu'au
+        // démarrage, par `pre_upgrade_backup` (version exacte du binaire).
+        let skip_pre_upgrade_backup = env_nonempty("KESH_SKIP_PRE_UPGRADE_BACKUP");
+
         // Story 12-5b (#194) — KESH_DOCUMENTS_DIR : stockage des justificatifs
         // importés. Défaut `/data/documents` (volume persistant Docker, PAS /tmp).
         let documents_dir =
@@ -1173,6 +1189,7 @@ impl Config {
             admin_export_inmem_mib,
             admin_import_max_mib,
             admin_backup_dir,
+            skip_pre_upgrade_backup,
             documents_dir,
             inbox_dir,
             inbox_max_file_bytes,
@@ -1621,6 +1638,7 @@ pub(crate) mod test_helpers {
             admin_export_inmem_mib: 50,
             admin_import_max_mib: DEFAULT_ADMIN_IMPORT_MAX_MIB,
             admin_backup_dir: "/tmp".to_string(),
+            skip_pre_upgrade_backup: None,
             documents_dir: "/tmp/kesh-documents-test".to_string(),
             inbox_dir: "/tmp/kesh-inbox-test".to_string(),
             inbox_max_file_bytes: 25 * 1024 * 1024,
