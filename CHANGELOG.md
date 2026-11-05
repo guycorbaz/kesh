@@ -10,7 +10,7 @@ Le contenu est rédigé en français à destination des **fiduciaires, PME, ind�
 
 ## [0.17.4] — 2026-11-06
 
-La 0.17.4 ne porte **aucune migration**.
+La 0.17.4 est une version corrective : la session plus sûre, une sauvegarde automatique avant les migrations à venir, et les défauts relevés à l'usage. Elle ne porte **aucune migration** ; seules les sessions ouvertes sont effacées au premier démarrage, si bien que **chaque utilisateur se reconnecte une fois**. **Le retour à la 0.17.3 est possible sans restauration, après avoir vidé la table des sessions** (manuel d'administration, *Passer à la 0.17.4*). La sauvegarde complète d'avant la mise à jour (base, `.keshbackup`, dossier des documents) reste recommandée. Le `.env` ne change pas ; les compose fournis transmettent une variable nouvelle, facultative (`KESH_SKIP_PRE_UPGRADE_BACKUP`).
 
 ### Ajouté
 
@@ -23,14 +23,13 @@ La 0.17.4 ne porte **aucune migration**.
 
 ### Corrigé
 
-- Une panne de **lecture du réglage d'inactivité** ne fait plus perdre la session au renouvellement (le réglage est lu avant que le jeton ne soit remplacé), ne laisse plus un mot de passe changé sans session neuve, ni l'assistant d'installation en erreur après avoir créé l'Administrateur (refs [#898](https://github.com/guycorbaz/kesh/issues/898)).
-- Après un battement d'activité en échec, l'activité est de nouveau transmise au serveur ; ressortir du document affiché par le même point de l'écran compte comme activité (refs [#898](https://github.com/guycorbaz/kesh/issues/898)).
 - **L'import CAMT.053 lit les noms et libellés qui contiennent « & », une lettre codée ou une section CDATA**
   ([#819](https://github.com/guycorbaz/kesh/issues/819)) : « Dupont & Fils » était lu « Fils », un libellé en CDATA était vide.
   Les transactions déjà importées ne sont pas relues ; un fichier ou une ligne déjà importés restent reconnus comme doublons
   (une ligne reprise par un autre fichier l'est par la référence que lisait la version précédente : deux limites rares — une
   ligne neuve signalée doublon à tort, que l'aperçu montre, ou, si cette relecture échoue, une ligne non reconnue, importée une
-  seconde fois sans signal : vérifier alors les transactions du compte —, [#915](https://github.com/guycorbaz/kesh/issues/915)).
+  seconde fois sans signal : vérifier alors les transactions du compte —, [#915](https://github.com/guycorbaz/kesh/issues/915),
+  [#922](https://github.com/guycorbaz/kesh/issues/922)).
   Une règle d'affectation *Contrepartie exacte* écrite sur un nom tronqué est à corriger. Un fichier qui porte une entité
   inconnue est désormais refusé.
 - **Le pays d'une adresse est contrôlé sur la liste ISO** ([#817](https://github.com/guycorbaz/kesh/issues/817)) : « SU » ou
@@ -55,6 +54,8 @@ La 0.17.4 ne porte **aucune migration**.
   verrou du compte, et l'état des clés étrangères d'une restauration interrompue
   ([#540](https://github.com/guycorbaz/kesh/issues/540)), sont rendus au retour de la connexion au pool, au lieu d'y rester
   jusqu'à une demi-heure.
+- Une panne de **lecture du réglage d'inactivité** ne fait plus perdre la session au renouvellement (le réglage est lu avant que le jeton ne soit remplacé), ne laisse plus un mot de passe changé sans session neuve, ni l'assistant d'installation en erreur après avoir créé l'Administrateur (refs [#898](https://github.com/guycorbaz/kesh/issues/898)).
+- Après un battement d'activité en échec, l'activité est de nouveau transmise au serveur ; ressortir du document affiché par le même point de l'écran compte comme activité (refs [#898](https://github.com/guycorbaz/kesh/issues/898)).
 - La 0.17.1 est datée du 2026-11-04, jour de sa publication ([#901](https://github.com/guycorbaz/kesh/issues/901)).
 
 ---
