@@ -14,7 +14,9 @@ Le contenu est rédigé en français à destination des **fiduciaires, PME, ind�
 
 - **L'import CAMT.053 lit les noms et libellés qui contiennent « & », une lettre codée ou une section CDATA**
   ([#819](https://github.com/guycorbaz/kesh/issues/819)) : « Dupont & Fils » était lu « Fils », un libellé en CDATA était vide.
-  Les transactions déjà importées ne sont pas relues ; un fichier ou une ligne déjà importés restent reconnus comme doublons.
+  Les transactions déjà importées ne sont pas relues ; un fichier ou une ligne déjà importés restent reconnus comme doublons
+  (une ligne reprise par un autre fichier l'est par la référence que lisait la version précédente : deux limites rares — une
+  ligne neuve signalée doublon à tort, ou une ligne non reconnue si cette relecture échoue —, [#915](https://github.com/guycorbaz/kesh/issues/915)).
   Une règle d'affectation *Contrepartie exacte* écrite sur un nom tronqué est à corriger. Un fichier qui porte une entité
   inconnue est désormais refusé.
 - **Le pays d'une adresse est contrôlé sur la liste ISO** ([#817](https://github.com/guycorbaz/kesh/issues/817)) : « SU » ou

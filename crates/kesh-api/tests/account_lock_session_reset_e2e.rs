@@ -39,7 +39,11 @@ async fn account_lock_name(pool: &MySqlPool) -> String {
 
 /// Une requête qui prend le verrou du compte, puis attend indéfiniment, est
 /// abandonnée au bout de 100 ms ; sa transaction est abandonnée avec elle.
-async fn abandoned_request(p: &MySqlPool) {
+///
+/// Revue P1 (E-1) : avant l'abandon de la transaction, une connexion
+/// indépendante constate que le verrou est **pris** — sans quoi « rendu après »
+/// pourrait n'être qu'un verrou jamais acquis.
+async fn abandoned_request(p: &MySqlPool, observer: &MySqlPool, name: &str) {
     let mut tx = p.begin().await.unwrap();
     let r = tokio::time::timeout(
         Duration::from_millis(100),
@@ -49,6 +53,16 @@ async fn abandoned_request(p: &MySqlPool) {
     )
     .await;
     assert!(r.is_err(), "la requête doit être abandonnée");
+    let free: Option<i64> = sqlx::query_scalar("SELECT IS_FREE_LOCK(?)")
+        .bind(name)
+        .fetch_one(observer)
+        .await
+        .unwrap();
+    assert_eq!(
+        free,
+        Some(0),
+        "le verrou du compte était pris avant l'abandon"
+    );
     drop(tx);
 }
 
@@ -84,7 +98,7 @@ async fn lock_taken_by_another(pool: &MySqlPool, name: &str, within: Duration) -
 async fn abandoned_request_does_not_keep_the_account_locked_842(pool: MySqlPool) {
     let name = account_lock_name(&pool).await;
     let p = pool_of_one(&pool, true).await;
-    abandoned_request(&p).await;
+    abandoned_request(&p, &pool, &name).await;
     assert!(
         lock_taken_by_another(&pool, &name, Duration::from_secs(2)).await,
         "le verrou du compte doit être rendu au retour de la connexion au pool"
@@ -98,7 +112,7 @@ async fn abandoned_request_does_not_keep_the_account_locked_842(pool: MySqlPool)
 async fn without_the_hook_the_account_stays_locked_842(pool: MySqlPool) {
     let name = account_lock_name(&pool).await;
     let p = pool_of_one(&pool, false).await;
-    abandoned_request(&p).await;
+    abandoned_request(&p, &pool, &name).await;
     assert!(
         !lock_taken_by_another(&pool, &name, Duration::from_secs(2)).await,
         "témoin : sans crochet, le verrou survit à la requête"

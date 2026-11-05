@@ -546,3 +546,54 @@ fn ordinary_amounts_and_dates_unchanged_819() {
     assert_eq!(tx.reference.as_deref(), Some("R"));
     assert_eq!(tx.details, "U");
 }
+
+/// Revue de code P1 (B-1 = E-4 = A-1) — la lecture corrigée d'un relevé
+/// **camt.053.001.08** (`v08::parse`) : entité, référence de caractère, espaces
+/// autour, CDATA. Tue la mutation MA-819-8 (`v08.rs` en lecture héritée).
+#[test]
+fn v08_corrected_reading_resolves_entities_and_cdata_819() {
+    let xml = r#"<?xml version="1.0" encoding="UTF-8"?>
+<Document xmlns="urn:iso:std:iso:20022:tech:xsd:camt.053.001.08">
+  <BkToCstmrStmt>
+    <Stmt>
+      <Id>STMT-V08-819</Id>
+      <FrToDt><FrDtTm>2026-10-01T00:00:00</FrDtTm><ToDtTm>2026-10-31T23:59:59</ToDtTm></FrToDt>
+      <Acct><Id><IBAN>CH5604835012345678009</IBAN></Id><Ccy>CHF</Ccy></Acct>
+      <Ntry>
+        <Amt Ccy="CHF">20.00</Amt>
+        <CdtDbtInd>CRDT</CdtDbtInd>
+        <BookgDt><Dt>2026-10-12</Dt></BookgDt>
+        <NtryRef>REF &amp; Co &lt;8&gt;</NtryRef>
+        <NtryDtls>
+          <TxDtls>
+            <RltdPties><Dbtr><Pty><Nm>Dupont &amp; Fils, &#xE9;tablissement</Nm></Pty></Dbtr></RltdPties>
+            <RmtInf><Ustrd>Facture <![CDATA[n° 8]]> octobre</Ustrd></RmtInf>
+          </TxDtls>
+        </NtryDtls>
+      </Ntry>
+    </Stmt>
+  </BkToCstmrStmt>
+</Document>
+"#;
+    let tx = only_tx(xml.as_bytes());
+    assert_eq!(
+        tx.counterparty_name.as_deref(),
+        Some("Dupont & Fils, établissement")
+    );
+    assert_eq!(tx.reference.as_deref(), Some("REF & Co <8>"));
+    assert_eq!(tx.details, "Facture n° 8 octobre");
+}
+
+/// Revue de code P1 (B-3) — une référence de caractère invalide (`&#0;`, un
+/// demi-codet `&#xD800;`) refuse le fichier en `MalformedXml` (relais de
+/// quick-xml), au lieu d'être ignorée.
+#[test]
+fn invalid_char_refs_are_malformed_819() {
+    for r in ["&#0;", "&#xD800;"] {
+        let res = parse_camt053(&one_entry("R", "I", &format!("Dupont {r} Fils"), "U"));
+        assert!(
+            matches!(res, Err(CamtError::MalformedXml(_))),
+            "{r} : Err(MalformedXml) attendu, obtenu {res:?}"
+        );
+    }
+}

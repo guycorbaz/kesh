@@ -146,10 +146,13 @@
 	let formCountry = $state('CH');
 	// Story v0174-correctifs-3 (#817) — le code pays inconnu du contact ouvert en édition
 	// (`addressCountryKnown === false`, jugé par le serveur), ou `null`. L'avis s'affiche
-	// tant que le champ garde ce code ; dès qu'il change, le serveur juge la nouvelle valeur.
+	// tant que le champ garde ce code — comparé comme le serveur le tolère, blancs rognés et
+	// sans tenir compte de la casse (revue P1, E-1 : « su » est le même pays inconnu) ; dès
+	// qu'il change, le serveur juge la nouvelle valeur.
 	let unknownCountryCode = $state<string | null>(null);
 	const countryUnknownNotice = $derived(
-		unknownCountryCode !== null && formCountry === unknownCountryCode,
+		unknownCountryCode !== null &&
+			formCountry.trim().toUpperCase() === unknownCountryCode.trim().toUpperCase(),
 	);
 	let formIde = $state('');
 	// Story 16-3b (#151) — numéro de client ('' = non renseigné).

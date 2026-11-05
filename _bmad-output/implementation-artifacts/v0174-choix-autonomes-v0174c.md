@@ -211,6 +211,7 @@ Numéros de ligne de `7bd4d5c0` (le merge de la rétrospective de la série 0.17
   transaction verrouillée, et double les connexions par requête sur un pool de 5 ; (b) un garde `Drop` —
   rien d'asynchrone ne s'exécute dans un `Drop`, et la `Transaction` empruntée ne se détache pas.
 - **Coût déclaré** : une instruction de plus à chaque restitution d'une connexion au pool.
+  *(Annotation datée du 2026-11-05, revue de code P1 de la fiche 2, A-2 : **deux** instructions depuis C-v0174c-11 — `DO RELEASE_ALL_LOCKS()` et `SET SESSION foreign_key_checks = 1`, `pool.rs`.)*
 - **Réversible** : oui (code).
 
 ### C-v0174c-11 — #540 : le même crochet rétablit `FOREIGN_KEY_CHECKS`

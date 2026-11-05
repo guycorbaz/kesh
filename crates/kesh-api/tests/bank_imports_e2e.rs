@@ -4018,6 +4018,16 @@ async fn camt_import_witness_montage_by_corrected_reading_819(pool: MySqlPool) {
     .await;
     assert_eq!(st, 200, "{preview}");
     assert_eq!(duplicate_indexes_819(&preview), vec![0, 1]);
+    // Revue P1 (A-3) — reconnues par leur clé NEUVE : la clé qui a égalé porte la
+    // référence entière, non celle de la 0.17.3 (« co », « 7 »).
+    let keys: Vec<&str> = preview["warnings"]["duplicateLines"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|d| d["key"].as_str().unwrap())
+        .collect();
+    assert!(keys.iter().any(|k| k.contains("|ref & co|")), "{keys:?}");
+    assert!(keys.iter().any(|k| k.contains("|e2e & 7|")), "{keys:?}");
     let (st, created) = post_819(
         &app,
         &s,

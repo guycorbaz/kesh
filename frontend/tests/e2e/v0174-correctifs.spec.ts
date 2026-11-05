@@ -92,12 +92,14 @@ async function supplierInvoice(
 		invoiceDate: string;
 		projectId?: number | null;
 		validate: boolean;
+		/** Numéro de la facture ; un numéro unique sinon. */
+		number?: string;
 	},
 ): Promise<{ id: number; version: number }> {
 	const res = await ctx.post('/api/v1/supplier-invoices', {
 		data: {
 			contactId: opts.contactId,
-			supplierInvoiceNumber: uniq('FF'),
+			supplierInvoiceNumber: opts.number ?? uniq('FF'),
 			invoiceDate: opts.invoiceDate,
 			creditorIban: 'CH5604835012345678009',
 			projectId: opts.projectId ?? null,
@@ -132,12 +134,16 @@ test.describe('0.17.4 — les écrans des correctifs', () => {
 		try {
 			const expense = await expenseAccount(ctx);
 			const contactId = await supplier(ctx, uniq('Fournisseur lot 888'));
-			for (let i = 0; i < 205; i++) {
+			// Numérotées 001 à 205 : le haut de la liste (la plus récente) et son pied (la
+			// première) se lisent sur les captures.
+			const run = Date.now() % 100000;
+			for (let i = 1; i <= 205; i++) {
 				await supplierInvoice(ctx, {
 					contactId,
 					expenseAccountId: expense,
 					invoiceDate: daysFromToday(-5),
 					validate: true,
+					number: `LOT888-${run}-${String(i).padStart(3, '0')}`,
 				});
 			}
 			const open = await (
@@ -147,8 +153,22 @@ test.describe('0.17.4 — les écrans des correctifs', () => {
 
 			await page.goto('/payment-batches');
 			await page.getByTestId('payment-batch-new').click();
-			await expect(page.getByTestId('payment-batch-invoice-checkbox')).toHaveCount(open.total);
-			await capture(page, testInfo, '888-lot-toutes-les-factures');
+			const boxes = page.getByTestId('payment-batch-invoice-checkbox');
+			await expect(boxes).toHaveCount(open.total);
+			// Revue P1 (A-1) : le haut de la liste, puis son pied (la 205e case, numéro 001),
+			// défilé jusqu'au bout ; le nombre de cases s'écrit sur la page de la capture.
+			await capture(page, testInfo, '888-lot-haut-de-liste');
+			await boxes.last().scrollIntoViewIfNeeded();
+			await page.evaluate((n) => {
+				const p = document.createElement('p');
+				p.textContent = `[capture E2E] ${n} cases à cocher dans la liste`;
+				p.style.cssText = 'position:fixed;top:4px;right:8px;background:#ffd;padding:2px 6px;z-index:9999';
+				document.body.appendChild(p);
+			}, await boxes.count());
+			await expect(
+				page.getByTestId('payment-batch-form').getByText(`LOT888-${run}-001`),
+			).toBeInViewport();
+			await capture(page, testInfo, '888-lot-pied-de-liste');
 		} finally {
 			await disposeContextSafe(ctx);
 		}
@@ -305,9 +325,15 @@ test.describe('0.17.4 — les écrans des correctifs', () => {
 				await route.fulfill({ response, json: { ...body, items: mine, total: mine.length } });
 			},
 		);
+		// Revue P1 (A-1) : une fenêtre haute, et l'avis amené dans la vue, pour qu'il se lise
+		// en entier sur la capture.
+		await page.setViewportSize({ width: 1280, height: 1200 });
 		await page.goto('/contacts');
 		await page.getByTestId('contact-edit').first().click();
-		await expect(page.getByTestId('contact-country-unknown')).toContainText('« SU »');
+		const avis = page.getByTestId('contact-country-unknown');
+		await expect(avis).toContainText('« SU »');
+		await avis.scrollIntoViewIfNeeded();
+		await expect(avis).toBeInViewport({ ratio: 1 });
 		await capture(page, testInfo, '817-contact-pays-inconnu-avis');
 	});
 });

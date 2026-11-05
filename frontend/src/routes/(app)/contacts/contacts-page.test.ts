@@ -943,6 +943,10 @@ describe('#817 — le pays d’une adresse', () => {
 		await ouvrirEdition();
 		expect(avis()?.textContent).toContain('« SU »');
 		expect(avis()?.textContent).toContain('QR-facture');
+		// Revue P1 (E-1) : retapé en minuscules, c'est le même pays inconnu (le serveur le
+		// tolère et le garde) : l'avis reste.
+		await saisir('form-country', 'su', 20);
+		expect(avis()?.textContent).toContain('« SU »');
 		// Le champ changé : le serveur juge la nouvelle valeur, l'avis disparaît.
 		await saisir('form-country', 'CH', 20);
 		expect(avis()).toBeNull();

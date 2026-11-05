@@ -23,7 +23,7 @@ pub enum ReconciliationError {
     /// §mutex-account.
     #[error(
         "RELEASE_LOCK failed for bank_account_id={bank_account_id} \
-         (lock released when the connection returns to the pool)"
+         (lock released when the connection returns to a pool fitted with the session reset hook)"
     )]
     LockReleaseFailed {
         bank_account_id: i64,

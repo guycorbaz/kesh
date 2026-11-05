@@ -20,6 +20,9 @@ describe('reminderSentAtDateTime — la date du jour est locale (#889)', () => {
 });
 
 describe('reminderSentAtDateTime (#259 — anti-futur)', () => {
+	// Revue P1 (E-3) : « aujourd'hui » est la date du poste (#889) ; ces cas sont écrits
+	// en UTC — le fuseau s'épingle, sans quoi un poste à UTC+9 les verrait le lendemain.
+	pinTimeZone('UTC');
 	it("pour aujourd'hui AVANT midi UTC, renvoie l'instant courant (jamais midi, jamais futur)", () => {
 		const now = new Date('2026-07-20T08:30:00Z');
 		const result = reminderSentAtDateTime('2026-07-20', now);

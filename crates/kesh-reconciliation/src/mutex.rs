@@ -156,7 +156,8 @@ where
                     ?bank_account_id,
                     lock_name = %lock_name,
                     "RELEASE_LOCK returned non-1 after successful business op; \
-                     lock is released when the connection returns to the pool (#842)"
+                     lock is released when the connection returns to a pool fitted with \
+                     the session reset hook (#842)"
                 );
                 Err(ReconciliationError::LockReleaseFailed {
                     bank_account_id,
@@ -171,7 +172,8 @@ where
                     ?bank_account_id,
                     lock_name = %lock_name,
                     "RELEASE_LOCK failed after successful business op; \
-                     lock is released when the connection returns to the pool (#842)"
+                     lock is released when the connection returns to a pool fitted with \
+                     the session reset hook (#842)"
                 );
                 Err(ReconciliationError::LockReleaseFailed {
                     bank_account_id,
