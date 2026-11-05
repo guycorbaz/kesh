@@ -1418,10 +1418,48 @@ clair) ; *(liste en vigueur : voir la ligne « Validation P5 » ci-dessous, qui 
 
 - **Contexte** : C-v0172s-26 — `tryRefresh()` sous le mutex `refreshPromise`, sans effacement ni redirection. Si le chemin 401
   rejoint un renouvellement lancé par `tryRefresh`, il ne doit pas perdre la redirection.
-- **Retenu** : `refreshCore()` ne fait qu'essayer (rend un booléen) ; le mutex partage sa promesse ; `refreshTokens()` (chemin 401)
-  efface et redirige **après** l'attente quand elle rend `false` — un effacement par requête rejetée, sans gravité (fiche, § 11) ;
-  `tryRefresh()` rend le booléen tel quel.
+- **Retenu** : `doRefresh()` ne fait qu'essayer (rend un booléen) ; le mutex (`sharedRefresh()`) partage sa promesse ;
+  `refreshTokens()` (chemin 401) efface et redirige **après** l'attente quand elle rend `false` — un effacement par requête
+  rejetée, sans gravité (fiche, § 11) ; `tryRefresh()` rend le booléen tel quel. *(Revue de code P1, N-A7 : ce choix nommait
+  `refreshCore()`, qui n'existe pas ; le nom réel est `doRefresh()`, `api-client.ts:89`.)*
 - **Réversible** : oui.
+
+### C-v0172s-59 — Revue de code P1 : le `PUT` du réglage se rejoue sur interblocage (S-B1/S-E1, reclassé MEDIUM)
+
+- **Contexte** : deux premiers enregistrements simultanés (version 0, table vide) prennent chacun le verrou d'intervalle du
+  `SELECT … FOR UPDATE`, puis leurs `INSERT` s'attendent : InnoDB annule la victime (1213), que `map_db_error` laisse en
+  `DbError::Sqlx` ⇒ 500. Constaté, non supposé : `concurrent_first_puts_yield_a_conflict_not_a_500` rendait
+  `500 INTERNAL_ERROR` avant correctif (`kesh-gate-logs/v0172s/rem-p1-rouge-S1.log`).
+- **Retenu** : la route enveloppe l'appel du dépôt dans `kesh_db::retry::retry_on_deadlock` (opération
+  `installation_settings::update_session_idle_minutes`), sur le précédent `company_invoice_settings::update` (C70) : le rejeu
+  relit la ligne validée par l'autre et rend `OptimisticLockConflict` (409), ce qui dit la vérité — quelqu'un d'autre a
+  enregistré. Le statut de la route au registre reste `SansEcritureAuJournal` (la présence d'une enveloppe n'y est pas
+  contrainte, point (vi) du registre).
+- **Écartées** : mapper 1213 en `OptimisticLockConflict` dans le dépôt — il aurait rendu « conflit » pour un interblocage dont la
+  cause ne serait pas une écriture concurrente du réglage (un rejeu se juge sur l'état relu, non sur le code d'erreur) ; lire sans
+  `FOR UPDATE` à version 0 — change la sémantique du verrou pour la seule branche d'insertion.
+- **Test** : course déterministe (transaction de test alourdie de 500 lignes de lest, vue en attente par `PROCESSLIST`), rouge
+  avant, verte après, témoin du rejeu exigé (`CaptureRejeu::exiger_un_rejeu`).
+- **Réversible** : oui (une ligne de code).
+
+### C-v0172s-60 — Revue de code P1 : le singulier du message de connexion par une clé `-one`, non par un sélecteur Fluent
+
+- **Contexte** : le mandat de la remédiation demande un sélecteur Fluent de pluriel (N-B4/N-A9/N-E6). Lu au code : le serveur
+  pré-résout les messages **sans arguments** (`i18n.svelte.ts:22-27`), si bien qu'un sélecteur `{ $minutes -> [one] … }` rendrait
+  toujours la variante par défaut ; et sur `/login` les messages ne sont pas chargés, c'est le repli français qui s'affiche.
+- **Retenu** : une clé `login-session-idle-one` dans les quatre locales, choisie par la page quand `minutes === 1` (précédent
+  `supplier-invoices-count-one`) ; `?minutes=` borné à 1..1440 (sinon le message de session expirée).
+- **Écartées** : le sélecteur Fluent (ineffectif côté navigateur, cf. contexte).
+- **Réversible** : oui.
+
+### C-v0172s-61 — Revue de code P1 : volets de recette non joués, et (e) joué (S-A6, N-A2)
+
+- **Contexte** : AC-10 (e) l'aperçu PDF et (f) la restauration complète n'avaient pas été joués au développement, déclarés au
+  seul Dev Agent Record.
+- **Retenu** : (e) joué à la remédiation (`kesh-gate-logs/v0172s/recette-e-r1.log`, résultat au Dev Agent Record) ; (f) reste
+  non joué en navigateur, couvert par `admin_full_import_e2e.rs` (T5 : révocation des jetons restaurés, réglage gardé) ; (g)
+  l'avant/après de l'audit n'est prouvé que côté serveur (T1), la capture 06 montre le libellé seul.
+- **Réversible** : oui (recette rejouable).
 
 ## Release 0.17.2 — intégration et préparation du tag (clé `v0172r`)
 

@@ -1,6 +1,6 @@
 # Story v0172-session : la 0.17.3 — la durée d'inactivité réglée dans l'interface, exacte, remise à zéro par l'activité (#876, #891)
 
-Status: review
+Status: done
 
 *Fiche **reprise** le 2026-11-04 sur une décision du Project Lead qui fait tomber les trois prémisses de la conception validée de P3 à P6
 (Change Log, entrée « Reprise ») : « J'aimerais que la durée d'inactivité soit configurée dans la partie admin de l'interface web et pas
@@ -190,6 +190,11 @@ module d'écoute sans verrou). Une modification de `repositories/` et une migrat
    `idle_exp`) restent acceptés jusqu'à leur `exp`, c'est-à-dire **au plus `KESH_JWT_EXPIRY_MINUTES`** (15 minutes par défaut, **8 heures**
    pour une installation qui a posé le contournement de #876) : la mise à jour ne déconnecte personne, et le CHANGELOG demande à qui a posé
    ce contournement de se reconnecter une fois après l'avoir retiré.
+   *(Annoté le 2026-11-04, revue de code P1, S-A1 : faux pour les sessions du contournement. Leur ligne `refresh_tokens` porte
+   l'ancienne inactivité glissante, connexion + 15 min, jamais prolongée tant que le jeton d'accès de 8 h vit ; le premier battement
+   après la mise à jour trouve la ligne échue (`set_idle_deadline` : `expires_at > ?`) et rend 401, et le navigateur ferme la session.
+   « Ne déconnecte personne » ne vaut que sans ce contournement ; avec lui, il faut se reconnecter une fois. Le code ne change pas
+   — ranimer une ligne échue serait pire ; le manuel et le CHANGELOG le disent.)*
 4. **Le battement d'activité** (C-v0172s-33). `POST /api/v1/auth/activity` (routeur protégé : jeton d'accès valide, `idle_exp` compris ;
    clés d'API refusées par `ensure_not_pat`), corps `{ "idleMs": <entier ≥ 0> }` (type `u64`, lu par un extracteur
    `impl_validation_extractor!` : `-1`, `1.5`, clé absente ⇒ **400 `VALIDATION_ERROR`**, C-v0172s-44) — **l'âge de la dernière activité**
@@ -771,7 +776,9 @@ Section `## [0.17.3] — Non publié` (à créer en tête si elle n'existe pas) 
 - **`KESH_REFRESH_INACTIVITY_MINUTES` n'est plus lue** : Kesh l'ignore sans rien en dire ; retirez-la de votre `.env` et de votre
   `docker-compose`. *Si vous aviez posé `KESH_JWT_EXPIRY_MINUTES=480` pour contourner #876, retirez-le, puis reconnectez-vous une fois :
   il ne prolonge plus la session et allongerait inutilement la durée de validité des droits d'un utilisateur ; les jetons émis avant la
-  mise à jour restent valables jusqu'à huit heures.*
+  mise à jour restent valables jusqu'à huit heures.* *(Annoté le 2026-11-04, revue de code P1 : « huit heures » est faux, cf. S-A1
+  au § 3 ; le CHANGELOG dit désormais qu'avec ce contournement il faut se reconnecter une fois, et une entrée « Un programme qui se
+  connecte par mot de passe ne prolonge plus sa session » s'ajoute (S-E9).)*
 - **Une restauration complète révoque les jetons de renouvellement restaurés** : aucune session, de la sauvegarde ou de l'installation, ne
   peut plus être renouvelée après l'import ; la durée d'inactivité réglée n'est pas restaurée. *(Ce n'est pas la correction d'un défaut
   publié : avec les réglages d'avant (15/15), ces jetons mouraient de fait avec le jeton d'accès.)*
@@ -1030,7 +1037,8 @@ mot-clé de fermeture. La note de mise à jour du manuel d'administration (*Pass
 
 - 2026-11-04 — **Développement (Opus 5.5, autonomie)**, lots S puis N, commits `1dc94968` (lot S), `5392bd37` (lot N), `b7f02678`
   (verbe allemand, PDF). Rouges constatés avant chaque lot (`kesh-gate-logs/v0172s/rouges.log`) ; 42 mutations nommées jouées, toutes
-  tuées par le test attendu (`mut/S-resume.log`, `mut/N-resume.log`) ; gates complets, E2E complet, recette de durée et captures (Dev
+  tuées par le test attendu (`mut/S-resume.log`, `mut/N-resume.log`) *(annoté à la revue de code P1 : **40**, 19 S + 21 N, recompté
+  depuis les deux journaux)* ; gates complets, E2E complet, recette de durée et captures (Dev
   Agent Record). Choix du développement C-v0172s-53 à 58 au registre, dont deux **écarts à la fiche** : AC-2 (la garde
   `configuration_transmise.rs` change de deux nombres, C-54) et deux tests « n'ajoute aucune table » appliqués jusqu'à leur migration
   incluse (C-55) ; s'y ajoutent hors registre : `sans_ecriture` 117 → 119 (`audit_route_registry.rs`, compteur non prescrit par la
@@ -1038,6 +1046,78 @@ mot-clé de fermeture. La note de mise à jour du manuel d'administration (*Pass
   2825 (`i18n-keys.test.ts`), le verbe allemand « beenden » (garde `la_cloture_d_exercice_ne_parle_pas_comme_un_panneau`), et la note
   de la 0.17.2 du manuel d'administration récrite (`:2524`). AC-7 (3) est **vert avant correctif** (la fiche l'annonçait rouge) : sans
   renouvellement dans `hydrate()`, un seul `POST /auth/refresh` part de toute façon ; il garde le mutex, ce que M13 bis prouve.
+
+- 2026-11-04 — **Revue de code P1 (Sonnet, trois lentilles par lot) et sa remédiation (Opus 5.5, autonomie)**. Rapports
+  `kesh-gate-logs/v0172s-review-p1-{S,N}-{B,E,A}.md`. **Trend** (CRITICAL/HIGH/MEDIUM/LOW, recompté depuis les six rapports) :
+  S-B 0/0/0/5, S-E 0/0/0/9, S-A 0/0/2/6 ; N-B 0/0/0/5, N-E 0/0/2/9, N-A 0/0/2/8 — **0/0/6/42** avant tri ; après tri de
+  l'orchestrateur, **sept** constats au-dessus de LOW : S-B1/S-E1 **reclassé MEDIUM** (une erreur 500 au lieu d'un 409 est un
+  P2), S-A1, S-A2 = N-A4 = N-E11 (décomptes), N-A1 = N-E1, N-E2, N-A2. Commits `ff20983d` (lot S), `ac666759` et `8d6561bc`
+  (lot N, code), `d38fcd8b` (lot N, manuel et PDF). Chaque prémisse relue au code avant correctif :
+  - **S-B1/S-E1** — lu : `installation_settings.rs` `"{SELECT_SQL} FOR UPDATE"` puis `INSERT … VALUES (1, ?, 1)`, seul
+    `UniqueConstraintViolation` converti en conflit. **Rouge reproduit** avant correctif par un test de course déterministe
+    (`concurrent_first_puts_yield_a_conflict_not_a_500` : `500 INTERNAL_ERROR`, `rem-p1-rouge-S1.log`) ; correctif : la route
+    rejoue par `retry_on_deadlock` (C-v0172s-59), le rejeu rend 409 ; témoin du rejeu exigé.
+  - **S-A1** — lu : `set_idle_deadline` `… AND expires_at > ?` ; une ligne de la 0.17.2 sous contournement porte connexion + 15 min.
+    Prémisse vraie ; manuel (*Mise à jour*), CHANGELOG et fiche (§ 3, annotation datée) corrigés ; code inchangé.
+  - **S-A2 / N-A4 / N-E11** — recomptés : `mut/S-resume.log` 19 `TUÉE`, `mut/N-resume.log` 21, **40** ; `rouges-S.log` : 18 rouges,
+    dont `session_idle_e2e` **12** (4 + 12 + 1 + 1). Dev Agent Record (vivant) corrigé ; entrée « Développement » ci-dessus
+    annotée, non réécrite ; `sprint-status.yaml` (note courante) corrigée.
+  - **N-A1 / N-E1** — lu : le seul test d'arrêt ne tirait que `keydown`. Onze cas après `stop()` (table, témoin sans `stop()`
+    chacun) et la minuterie comptée par `vi.getTimerCount()` (compte relatif : jsdom diffuse chaque écriture de `localStorage` par
+    une minuterie à 0 ms — constaté, 5 minuterie de plus après `start()`) ; mutations `MN1` (`input`), `MN1bis` (`blur`), `MN2`
+    (`clearInterval`) **tuées** par le cas attendu.
+  - **N-E2** — lu : `readKey`/`writeKey`, `catch { shared = false; … }`, aucun test après la sonde. Deux cas (écriture, lecture
+    refusées en cours de session) ; `MN3` (`writeKey`) tuée ; `MN4` (`readKey` qui rend « absente » sans basculer) **survivante au
+    premier jeu** — le test a été renforcé (régulation du battement à 15 s gardée en repli), puis tuée ; `MN4bis` (`shared = false`
+    retiré à la lettre : récursion infinie) tuée.
+  - **N-A2** — AC-10 (e) **joué en navigateur** (Chromium 147, nouveau headless : le visualiseur PDF se rend, capture 07) :
+    base jetable `kesh_v0172s`, réglage 2 min, fixture synthétique `scan-sans-qr.pdf` importée puis ouverte dans « Créer une
+    facture » (`recette-e-r*.log`, script `scripts/recette-e-v0172s.mjs`). **Volet 1** — clic dans le document (un `blur` de la
+    fenêtre, `activeElement = IFRAME`, activité comptée), puis molette **dans** le document toutes les 10 s : fermeture
+    **120,67 s** (r1) et **120,55 s** (r2) après le clic, `lastActivity` jamais avancée par la molette, capture 08. **Volet 2** —
+    le geste du manuel (`user-manual.tex:97`), pointeur sorti du document toutes les 90 s : session **ouverte 271,8 s** après le
+    clic (réglage 120 s), chaque sortie comptée (`lastActivity` 20:30:09, 20:31:40, 20:33:10), `/me` 200 (r3). Le manuel dit
+    vrai ; il n'est pas modifié sur ce point. **Constat neuf** (r2) : deux sorties au **même pixel** — la seconde n'a pas compté
+    (le filtre des mouvements fictifs compare au dernier point vu) et la session s'est fermée ; un geste à la main ne repasse
+    pratiquement pas par le même pixel, r3 varie le point de sortie. Tracé pour l'issue des LOW (Rec-e1). r1 a avorté au volet 2
+    (second import du même fichier refusé comme doublon), corrigé dans le script.
+  - **LOW corrigés** : S-A3 (doc de module du registre 144/147), S-A4 (paragraphe sous le tableau du README), S-A6 (C-v0172s-61),
+    S-A7 (« ; » au lieu du second « ~: »), N-A7 (`doRefresh()`, C-58), S-B4/S-E8 (`ensure_not_pat` avant le corps, test et mutation
+    `MS2` tuée), S-B5/S-E7 (`jwt::decode` sous `#[cfg(test)]` — `git grep` : aucun appelant hors du module de tests), S-E9 (manuel
+    *Clients hors navigateur* et CHANGELOG ; lu : les clés d'API passent par `validate_pat`, sans `idle_exp` ni ligne
+    `refresh_tokens`), N-B1/N-E4 (`trim()` et borne non finie, `MN5`, `MN6` tuées), N-B4/N-A9/N-E6 (bornes 1..1440 et singulier
+    par `login-session-idle-one`, `MN7`, `MN8` tuées — **écart au mandat** : une clé `-one` et non un sélecteur Fluent, que
+    `i18nMsg` n'évalue pas, `i18n.svelte.ts:22-27`, C-v0172s-60), N-B2/N-E8 (manuel utilisateur : quitter la fenêtre pendant que le
+    document a la main « peut aussi compter, une fois » — **non éprouvé** : la recette ne simule pas un changement de fenêtre du
+    système ; la phrase dit ce que le code ferait si le navigateur émet ce `blur`). S-A5 (pas de gate complet au commit du lot S) :
+    constaté, le gate complet du lot S tel que livré est celui de `5392bd37` ; déclaré ici.
+  - **LOW non corrigés** : seize points (S-B2/S-A8, S-B3, S-E2 à S-E6, N-B3/N-E7, N-B5, N-A3/N-E3, N-A5, N-A6, N-A8/N-E10, N-A10, N-E5,
+    N-E9), plus le constat Rec-e1 de la recette, rédigés pour une issue (`kesh-gate-logs/v0172s/issue-low-p1.md`), ouverte
+    par l'orchestrateur le 2026-11-05 : **#898**.
+  - **Rejets** : aucun constat rejeté pour prémisse fausse.
+  - **Gates** au dernier commit de code (`d38fcd8b`) : `test-fast.sh --ci` **4739/4739** (12 ignorés), `rem-p1-gate-backend.log`
+    (2026-11-04 21:40) ; frontend `check` 0 erreur, `lint-i18n-ownership` vert, Vitest **2623/2623** (211 fichiers), `build`
+    vert ; `make fr` stable. **E2E complet** : le run r2 a été interrompu vers le test 190 (OOM de la station, GNOME Shell tué
+    le 2026-11-04 à 21:48:42) ; le r3, lancé sur une base non remise à neuf, a été arrêté au démarrage et ne compte pas ;
+    **r4** (2026-11-05, orchestrateur, `kesh_e2e_v0172s` recréée vide, sous `/tmp/station-heavy.lock` et `.gate.lock`) :
+    **343 verts, 7 échecs, 18 ignorés** (15,3 min) — les 7 échecs sont exactement ceux de la KF-029 (#97) listés à
+    `docs/testing.md` (`mode-expert.spec.ts:26`, `:41` ; `onboarding-path-b.spec.ts:65`, `:92` ; `onboarding.spec.ts:57`,
+    `:77`, `:150`) ; aucun autre (`kesh-gate-logs/v0172s/e2e-r4.log`).
+- 2026-11-05 — **Revue de code P2 (Opus, trois lentilles par lot, sur le diff de la remédiation) : REVUE CLOSE.** Lot S
+  (`11e5a38b..ff20983d`) : B 0/0/0/3, E 0/0/0/4, A 0/0/0/3 ; lot N (`ff20983d..d38fcd8b`) : B 0/0/0/2, E 0/0/0/2, A 0/0/0/2 —
+  **aucun finding au-dessus de LOW**, 16 LOW (10 + 6). Tendance : P1 S 0/0/2 MEDIUM (+ S-B1 reclassé), N 0/0/4 → P2 0 MEDIUM.
+  Rapports `kesh-gate-logs/v0172s-review-p2-{S,N}-{B,E,A}.md`, prompts `v0172-session-review-prompt-p2-{S,N}.md`.
+  - **Corrigés par l'orchestrateur, texte seul** (manuels `.tex` et CHANGELOG ; aucune ligne de code, l'E2E r4 reste celui du
+    dernier commit de code ; PDF régénérés à l'intégration de la release) : S2-E1/S2-A2 (« prend fin à sa première activité »
+    → « peut prendre fin » : une session de moins de quinze minutes garde sa ligne vivante) ; S2-E4 (« la mise à jour ne
+    déconnecte personne » retiré : aucune détection de version dans `svelte.config.js`, un onglet resté sur l'interface 0.17.2
+    n'envoie pas de battement → « rechargez chaque onglet de Kesh resté ouvert », manuel d'administration et CHANGELOG) ; S2-E3
+    (« seul le navigateur prolonge » → l'interface web, par une route qui exige le cookie de renouvellement, `activity_with`
+    lu ; « la durée réglée à ce moment-là ») ; N2-B1 (proposition Alt-Tab du manuel utilisateur retirée : non éprouvée).
+    Prémisses lues au code avant correction (`routes/auth.rs`, `activity` et `activity_with` ; `svelte.config.js`). Grep des
+    formulations retirées sur le worktree hors `_bmad-output` : vide, sonde positive sur la formulation neuve (2 sites).
+  - **LOW non corrigés** (S2-B1, S2-B2, S2-B3, S2-E2, S2-A1, S2-A3, N2-B2, N2-E1, N2-E2, N2-A1, N2-A2) : **#899**, ouverte par
+    l'orchestrateur.
 
 ## Dev Agent Record
 
@@ -1054,12 +1134,14 @@ de la branche), `v0172-correctifs.md` (main), `v0172-session.md` (branche). Aucu
 
 **Étape 0** (`1e50fd03`) : les sept LOW de la validation R5 appliqués ; numéros de ligne relus après la fusion (Change Log).
 
-**Rouges** (`kesh-gate-logs/v0172s/rouges.log`) — lot S, sur le code d'avant : 21 tests, **18 rouges** (T1 : 4 ; T3 : 13 ; T4 (a) ;
-T5 (a)), **3 verts attendus** (T4 (b), (c) ; T5 (b)). Lot N, implémentation retirée (`git stash` des huit fichiers, deux fichiers neufs
+**Rouges** (`kesh-gate-logs/v0172s/rouges.log`) — lot S, sur le code d'avant : 21 tests, **18 rouges** (T1 : 4 ; T3 : 12 ; T4 (a) ;
+T5 (a) — 4 + 12 + 1 + 1 = 18, recompté depuis `rouges-S.log` à la revue de code P1 ; « T3 : 13 » écrit au développement),
+**3 verts attendus** (T4 (b), (c) ; T5 (b)). Lot N, implémentation retirée (`git stash` des huit fichiers, deux fichiers neufs
 mis de côté, restaurés ensuite) : 7 fichiers rouges, dont 10 tests rouges et les deux fichiers neufs (module absent) ; AC-7 (3) vert
 avant (cf. Change Log).
 
-**Mutations** (sous le verrou, restauration `git checkout --` puis `touch`) : lot S **21/21 tuées** (M1, M1 bis, M2, M3, M3 bis, M4,
+**Mutations** (sous le verrou, restauration `git checkout --` puis `touch`) : lot S **19/19 tuées** (« 21/21 » écrit au développement, recompté à la revue de code P1 :
+`mut/S-resume.log` porte 19 lignes `TUÉE` ; **40 mutations en tout**, 19 + 21) (M1, M1 bis, M2, M3, M3 bis, M4,
 M5, M6, M6 bis, M7, M7 bis, M8, M8 bis, M15, M15 bis, M16, M16 bis — l'extracteur du battement —, M17, M22) ; lot N **21/21 tuées**
 (M9 à M14, M13 bis, M12 bis, M18 à M21, M23 à M30, M26 bis). Chacune par le test attendu (`mut/M*.log`). M11 est jouée comme « lecture
 en mémoire seulement » (la clé d'un autre onglet est ignorée) : tuée par AC-6 (6).
@@ -1085,13 +1167,16 @@ en mémoire seulement » (la clé d'un autre onglet est ignorée) : tuée par AC
 d'accès → **401**, dernière ligne `refresh_tokens` révoquée `logout`, rechargement de `/login` : reste sur la page ; (b bis) abaissement
 2 → 1 à 19:38:30.798, fermeture 19:39:31.773 (**60,98 s**), `/` mène à la connexion, ligne `logout` ; (c) deux onglets, activité dans
 B seul 3 min : A toujours connecté, `/me` 200. Deux essais préalables avortés par le script lui-même (r1 : mot de passe réécrit par le
-bootstrap ; r2 : sélecteur du journal d'audit), corrigés dans `scripts/recette-v0172s.mjs`. **Non joués** : (e) l'aperçu PDF (couvert
-par les tests du `blur` vers un `<iframe>` ; le comportement est déclaré au manuel) et (f) la restauration complète (couverte par
-`admin_full_import_e2e.rs`, T5).
+bootstrap ; r2 : sélecteur du journal d'audit), corrigés dans `scripts/recette-v0172s.mjs`. **Non joués** au développement : (e) l'aperçu PDF et (f) la restauration complète (couverte par
+`admin_full_import_e2e.rs`, T5). *(Revue de code P1, N-A2 : « (e) couvert par les tests du `blur` » surestimait — ces tests ne
+couvrent que le clic qui entre, simulé. (e) a été **joué en navigateur** à la remédiation : fermeture à 120,67 s et 120,55 s
+malgré la molette dans le document, session gardée 271,8 s par le geste du manuel ; détail au Change Log, entrée « Revue de code
+P1 ». (f) reste non joué en navigateur ; C-v0172s-61.)*
 
 **Captures** (`kesh-gate-logs/v0172s/captures/`, thème clair, base jetable) : `v0172s-01-parametres-session-60`,
 `-02-saisie-hors-bornes-refusee`, `-03-enregistrement-reussi-2`, `-04-parametres-comptable-sans-session`,
-`-05-connexion-session-fermee-2-min`, `-06-journal-audit-reglage`.
+`-05-connexion-session-fermee-2-min`, `-06-journal-audit-reglage` ; à la remédiation P1 : `-07-apercu-pdf` (le visualiseur PDF
+rendu), `-08-apercu-pdf-fermeture`.
 
 **Sondes** : `git grep -n "jwt::encode(" -- crates/kesh-api/src` ne rend que les tests en module de `middleware/auth.rs` (sous
 `#[cfg(test)]`) ; `git grep -nE 'refresh_inactivity|REFRESH_INACTIVITY' -- crates frontend scripts docs/manual .env.example
@@ -1102,6 +1187,21 @@ racine avant `root-layout-session.test.ts` (qui simule `sessionIdle`).
 
 **Décomptes** (périmètre `1e50fd03` → tête) : 27 attributs de test Rust ajoutés, 3 retirés (`config_refresh_inactivity_*`) ; 44 `it(`
 Vitest ajoutés.
+
+**Remédiation de la revue de code P1** (Opus 5.5, mandat `kesh-gate-logs/prompts/v0173-session-rem-p1.md`) — commits `ff20983d`
+(lot S), `ac666759`, `8d6561bc`, `d38fcd8b` (lot N). Détail des constats, prémisses lues et rejets au Change Log.
+- **Rouge avant correctif** : `concurrent_first_puts_yield_a_conflict_not_a_500` → `500 INTERNAL_ERROR` (`rem-p1-rouge-S1.log`).
+- **Mutations** (`kesh-gate-logs/v0172s/mut-rem-p1/`, script `scripts/mut-v0172s-rem-p1.py`, motif unique, restauration
+  `git checkout --` puis `touch`) : `MS2`, `MN1`, `MN1bis`, `MN2`, `MN3`, `MN4` (survivante au premier jeu, tuée après renforcement
+  du test), `MN4bis`, `MN5`, `MN6`, `MN7`, `MN8` — **11 tuées** sur 11 au dernier jeu, chacune par le cas attendu ; `MS1` (rejeu retiré)
+  est le rouge avant correctif ci-dessus.
+- **Décomptes** (périmètre `11e5a38b` → `d38fcd8b`) : 1 attribut de test Rust ajouté (le test de course ; `heartbeat_refuses_api_keys`
+  étendu), 0 retiré ; 11 `it(` Vitest littéraux ajoutés (dont deux dans des boucles), 0 retiré ; `sitesTotal` 2825 → 2826 ; une clé
+  i18n par locale (`login-session-idle-one`).
+- **Recette (e)** : jouée (Change Log). **Non éprouvé** : le `blur` d'un changement de fenêtre du système (Alt-Tab) pendant que
+  l'aperçu a le focus — la phrase du manuel utilisateur dit « peut aussi compter », ce que le code ferait si le navigateur émet ce
+  `blur`.
+- **Gates** au dernier commit de code : voir l'entrée « Revue de code P1 » du Change Log.
 
 **Actions demandées à l'orchestrateur** : push et PR (`refs #876`, `refs #891` ; `closes` éventuel au titre de la PR seulement) ; issue
 pour retirer en lot mécanique le paramètre ignoré `_refresh_inactivity_ignored` de `from_fields_for_test` (fiche § 12) ; revues de code

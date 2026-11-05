@@ -3034,11 +3034,11 @@ Kesh utilise un modèle JWT avec rotation de refresh tokens :
 \end{sloppypar}
 
 \begin{sloppypar}
-\textbf{Mise à jour.} L'ancienne variable de durée d'inactivité n'est plus lue (\S\ref{sec:configuration} : retirez-la si vous l'aviez posée). Les jetons émis avant la mise à jour restent valables jusqu'à \texttt{KESH\_JWT\_EXPIRY\_MINUTES}~: sans le contournement de la 0.17.2, la mise à jour ne déconnecte personne. Si vous aviez posé \texttt{KESH\_JWT\_EXPIRY\_MINUTES=480}, une session ouverte avant la mise à jour prend fin à sa première activité qui suit~: reconnectez-vous une fois.
+\textbf{Mise à jour.} L'ancienne variable de durée d'inactivité n'est plus lue (\S\ref{sec:configuration} : retirez-la si vous l'aviez posée). Les jetons émis avant la mise à jour restent valables jusqu'à \texttt{KESH\_JWT\_EXPIRY\_MINUTES}. \textbf{Après la mise à jour, rechargez chaque onglet de Kesh resté ouvert}~: un onglet resté sur l'ancienne interface ne transmet pas l'activité au serveur, et sa session peut se fermer en pleine saisie. Si vous aviez posé \texttt{KESH\_JWT\_EXPIRY\_MINUTES=480}, une session ouverte avant la mise à jour peut prendre fin à sa première activité qui suit~: reconnectez-vous une fois.
 \end{sloppypar}
 
 \begin{sloppypar}
-\textbf{Clients hors navigateur.} Seul le navigateur prolonge la session (il transmet l'activité au serveur). Un programme qui se connecte par mot de passe et renouvelle son jeton par le corps de la requête ne prolonge plus sa session~: elle prend fin à la connexion plus la durée réglée, quelle que soit son activité. Les intégrations utilisent une clé d'API (\S\ref{sec:api-keys}), que la durée d'inactivité ne concerne pas.
+\textbf{Clients hors navigateur.} C'est l'interface web qui prolonge la session~: elle transmet l'activité au serveur, par une route qui exige le cookie de renouvellement. Un programme qui se connecte par mot de passe et renouvelle son jeton par le corps de la requête ne prolonge donc pas sa session~: elle prend fin à la connexion plus la durée réglée à ce moment-là, quelle que soit son activité. Les intégrations utilisent une clé d'API (\S\ref{sec:api-keys}), que la durée d'inactivité ne concerne pas.
 \end{sloppypar}
 
 \subsection{Clés API (PAT) — accès programmatique}\label{sec:api-keys}
