@@ -8,9 +8,11 @@ Le contenu est rédigé en français à destination des **fiduciaires, PME, ind�
 
 ---
 
-## [0.17.3] — Non publié
+## [0.17.3] — 2026-11-05
 
 ⚠️ **La 0.17.3 porte une migration** (une table système, `_kesh_installation_settings`, pour le réglage de la durée d'inactivité) : elle ne modifie aucune donnée existante et `kesh_version_min_required` reste à 0.17.0, mais une 0.17.2 ou une 0.17.1 refuse ensuite de démarrer sur la base. **Le retour à une version antérieure (0.17.2 ou 0.17.1) passe par la sauvegarde complète d'avant la mise à jour** — la base, une sauvegarde `.keshbackup` et le dossier des documents. Une sauvegarde `.keshbackup` prise en 0.17.2 s'importe dans la 0.17.3 (mêmes tables applicatives).
+
+Ce qu'il faut faire : **la sauvegarde complète avant la mise à jour** ; retirer `KESH_REFRESH_INACTIVITY_MINUTES` du `.env` (et, si vous l'aviez posé, le contournement `KESH_JWT_EXPIRY_MINUTES=480`) ; après le redémarrage, **recharger chaque onglet de Kesh resté ouvert** ; régler la durée dans *Administration → Paramètres*, section *Session* (60 minutes par défaut). Ce qui change à l'écran : **la session ne se ferme plus en pleine saisie** ; pendant une longue lecture dans l'aperçu PDF, sortez le pointeur du document de temps en temps. Le détail est au manuel d'administration, *Passer à la 0.17.3*.
 
 ### Ajouté
 
