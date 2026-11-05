@@ -12,7 +12,7 @@ sous-fiches sœurs, sur la même branche, développées dans cet ordre :*
 - ***`v0174-session-2.md`** — le navigateur : #895, les LOW navigateur de #898 et #899.*
 
 *Issues en `refs` seulement dans les commits. Validation P1 (Sonnet, R 0/0/2/9, F 0/0/3/13) remédiée ; prochaine
-étape : validation P2 (Opus, complète, `v0174-session-validate-prompt-p2.md`), sur les trois fichiers.*
+étape : validation P3 (Sonnet, complète, `v0174-session-validate-prompt-p3.md`), après la P2 (Opus, 0/0/6/9, remédiée).*
 
 ## Story
 
@@ -25,8 +25,9 @@ avant que ma session ne se ferme, et pouvoir la garder d'un clic.
 Kesh **0.17.3** est en service sur le NAS du Project Lead avec ses livres réels. Essais sur bases jetables seulement
 (`kesh_v0174s`, `kesh_e2e_v0174s`, migrations du worktree, seed `scripts/seed-dev-db.sql`) ; fixtures synthétiques ;
 aucune donnée réelle. **Aucune migration** (C-v0174s-2) : `ls crates/kesh-db/migrations/*.sql | wc -l` = **89** avant et
-après ; P2 à P8 sans objet ; **la 0.17.3 redémarre sur une base passée par la 0.17.4** (C-v0174s-7), au prix d'une
-reconnexion ; une sauvegarde 0.17.3 s'importe dans la 0.17.4 (schéma identique ; ses jetons clairs sont effacés dans la
+après ; P2 à P8 sans objet ; **la 0.17.3 redémarre sur une base passée par la 0.17.4** (C-v0174s-7), **à condition de
+vider d'abord `refresh_tokens`** (une commande SQL donnée au manuel ; tout le monde est déconnecté) — sans quoi une
+empreinte lue sous la 0.17.4 redeviendrait un jeton valable pour la 0.17.3 (validation P2, P2-6) ; une sauvegarde 0.17.3 s'importe dans la 0.17.4 (schéma identique ; ses jetons clairs sont effacés dans la
 transaction d'import, C-v0174s-6).
 
 ## Ce que le code dit, par issue (`7bd4d5c0`)
@@ -105,7 +106,7 @@ Légende : **1** = corrigé par `v0174-session-1` ; **2** = corrigé par `v0174-
 | #898 S-B3 / S-E4 (a) — le battement peut faire reculer l'échéance | `refresh_tokens.rs:161-181` | **—** | conception : un abaissement du réglage **doit** pouvoir raccourcir l'échéance à la prochaine activité (C-v0172s-38) ; `GREATEST` l'interdirait. Deux battements réordonnés supposent deux onglets envoyant à moins de 15 s l'un de l'autre, ce que `heartbeatAt` partagé exclut hors course de quelques ms ; l'effet est borné à l'écart (a). Documenté au doc-comment de `set_idle_deadline` (la 1) |
 | #898 S-E3 — la grâce de 30 s survivrait à 5 s | `routes/auth.rs:412` ; `auth_e2e.rs` | **1** | deux cas : `revoked_at` reculé de 29 s ⇒ grâce, de 31 s ⇒ vol |
 | #898 S-E4 (b) — battement parti avec l'ancien cookie après une rotation | `routes/auth.rs:703-780` | **—** | sans effet : le 401 passe par le chemin 401 du navigateur, qui renouvelle avec le cookie neuf (partagé par les onglets) et rejoue (`api-client.ts`, chemin 401) |
-| #898 S-E4 (c) — un renouvellement recopie une échéance lue avant un battement | `routes/auth.rs:506-517` | **1** (texte) | perte d'au plus 15 s, rattrapée au battement suivant : l'écart (a) du manuel d'administration (`admin-manual.tex:3039`) la nomme désormais |
+| #898 S-E4 (c) — un renouvellement recopie une échéance lue avant un battement | `routes/auth.rs:506-517` | **1** (texte) | perte de l'activité rapportée par ce battement (d'ordinaire quelques secondes, au pire l'écart depuis la précédente — validation P2, P2-10), rattrapée à l'activité suivante : l'écart (a) du manuel d'administration (`admin-manual.tex:3039`) la nomme désormais |
 | #898 S-E5 — `refresh` lit N après avoir tourné le jeton ; `setup` après avoir créé l'Administrateur ; et (validation P1, R6) `change_password` après avoir changé le mot de passe et révoqué les sessions | `routes/auth.rs:500-529` ; `setup.rs:262-283` ; `routes/auth.rs:602-616` | **1** | lire N **avant** l'étape 8 (`refresh`), avant la section critique (`setup`) et avant l'étape 3 (`change_password`) : une panne de **lecture de N** ne laisse plus ni jeton tourné sans cookie neuf, ni Administrateur créé sous un 500, ni mot de passe changé et sessions révoquées sans cookie neuf (les autres étapes postérieures — encodage du jeton, création de la ligne — restent après, ce que le CHANGELOG ne prétend pas couvrir) |
 | #898 S-E6 — `expires_at < now` au renouvellement contre `now >= idle_exp` au middleware ; battement à `idleMs ≥ N` | `routes/auth.rs:481` ; `:734-756` | **1** / **—** | `<=` au renouvellement (alignement, mécanique) ; le battement à `idleMs ≥ N × 60 000` (échéance = maintenant, réponse `idleExpiresIn: 0`) n'est jamais envoyé par le navigateur (il ferme avant) et la requête suivante est refusée : sans portée, non corrigé |
 | #898 N-B3 / N-E7 — un battement en vol à la fermeture peut écraser la redirection « inactivité » | `session-idle.svelte.ts:302-351` ; `api-client.ts` (chemin 401) | **issue** | le 401 du battement n'arrive que si l'échéance du serveur est déjà passée (écarts a, c) ; l'effet est le message affiché (« session expirée » au lieu d'« inactivité »), la session étant fermée de toute façon. Le remède touche le chemin 401 générique d'`api-client.ts` (qui écrase tout `signal` passé, `api-client.ts:304-326`) : hors périmètre minimal |
@@ -115,7 +116,7 @@ Légende : **1** = corrigé par `v0174-session-1` ; **2** = corrigé par `v0174-
 | #898 N-A8 / N-E10 — un test qui passe à vide, une assertion tautologique, des cas à `t = 0` | `session-idle.svelte.test.ts` | **2** | (9) écrit comme garde de principe, assertion littérale `470_000`, cas de `currentLast` démarrés à `1_000_000` |
 | #898 N-E5 — `previousReported = -Infinity` jamais réécrit après un échec | `session-idle.svelte.ts:293`, `:315` | **2** | `removeItem` de la clé quand `previousReported` n'est pas fini |
 | #898 N-E9 — `localStorage` lu à chaque `pointermove` | `session-idle.svelte.ts:217-221` | **—** | micro-coût sans mesure (lecture synchrone d'une clé, quelques dizaines par seconde au plus) ; un raccourci `memLast + w > now` ajouterait un invariant à tenir (monotonie de la clé) pour aucun effet observable |
-| #898 Rec-e1 — une sortie du document au même pixel que la précédente ne compte pas | `session-idle.svelte.ts:230-237` | **2** | `lastPointer = null` sur un `pointerout` dont `relatedTarget` est nul ; que ce soit le cas pour l'`<iframe>` d'un PDF reste à **constater en Chromium** à la recette (validation P1, F9) — sinon, issue |
+| #898 Rec-e1 — une sortie du document au même pixel que la précédente ne compte pas | `session-idle.svelte.ts:230-237` | **2** | `lastPointer = null` sur un `pointerout` dont `relatedTarget` est nul **ou** un `HTMLIFrameElement` (validation P2, P2-13) : le cas visé est couvert sans dépendre du comportement de Chromium |
 | #899 S2-B1 — trois commentaires présentent `jwt::decode` comme le chemin de production | `middleware/auth.rs:134`, `:137` ; `auth/api_key.rs:31` | **1** | commentaires corrigés (`jwt::decode_session`) |
 | #899 S2-B2 — nom d'opération de `retry_on_deadlock` | `routes/session_settings.rs:94-95` | **1** | nommer la route (`session_settings::update_session_settings`), témoin du test de course aligné |
 | #899 S2-B3 — `heartbeat_refuses_api_keys` n'asserte que 403 | `tests/session_idle_e2e.rs:465` | **1** | asserter aussi le code `API_KEY_MANAGEMENT_FORBIDDEN` |
@@ -143,12 +144,13 @@ table : aucun absent).*
    `'UUID v4 opaque'` à la prochaine migration de la table » (C-v0174s-2).
 4. Si l'étape 0 de la `v0174-session-2` ne trouve pas de moyen simple pour l'avis au-dessus d'un dialogue
    (C-v0174s-13) : l'écart, en issue.
-5. **Les trois limites de l'avis** (P4, une issue, validation P1, F13) — « Session : l'avertissement avant fermeture
+5. **Les trois limites de l'avis** — **ouverte : #912** (par l'orchestrateur, qui y ajoute l'annonce d'un `role="alert"`
+   sous un dialogue `aria-modal`, validation P2, P2-14). Libellé demandé (P4, validation P1, F13) — « Session : l'avertissement avant fermeture
    (#895) (i) n'apparaît pas si le navigateur refuse `localStorage` (C-v0174s-14 : la fermeture vient alors du serveur,
    sans avis) ; (ii) son bouton n'est pas atteignable à la **tabulation** quand un dialogue modal est ouvert (le piège à
-   focus du dialogue l'enferme ; toute touche reste une activité) ; (iii) dans un onglet en arrière-plan, il peut
+   focus du dialogue l'enferme) ; (iii) dans un onglet en arrière-plan, il peut
    apparaître en retard ou pas du tout (minuteries ralenties par le navigateur) ».
-6. **Commentaire sur #890** (par l'orchestrateur) : la prémisse « corrigé en 0.17.2 » est inexacte — le manuel de la
+6. **Fait** (#890 commentée par l'orchestrateur ; validation P2, P2-15) : la prémisse « corrigé en 0.17.2 » est inexacte — le manuel de la
    0.17.2 affirmait encore le hachage (`v0.17.2:docs/manual/fr/admin-manual.tex:3010`), corrigé en 0.17.3 (`f135bd68`).
 
 À la fermeture de #898 et #899 par la PR, l'orchestrateur y laisse un commentaire qui renvoie à la table ci-dessus (ce
@@ -161,7 +163,9 @@ qui est corrigé, ce qui ne l'est pas et pourquoi).
 | `v0174-session-1` | `crates/kesh-db` (dépôt `refresh_tokens`, entité, `Cargo.toml`, tests du dépôt) ; `crates/kesh-api` (commentaires et ordre de lecture dans `routes/auth.rs`, `routes/setup.rs`, `routes/admin.rs`, `routes/session_settings.rs`, `middleware/auth.rs`, `auth/api_key.rs`, `admin_backup/mod.rs`, `config.rs`, README, tests) ; textes | 2 |
 | `v0174-session-2` | `crates/kesh-i18n` (quatre catalogues) ; `frontend/src/lib/app/stores` (`session-idle`) ; `frontend/src/lib/shared/components` (avis neuf) ; `frontend/src/routes` (layout racine) ; textes | 4 |
 
-Chaque sous-fiche reste sous le seuil de cinq ; aucune ne dépend du code de l'autre (C-v0174s-1). La `v0174-session-1`
+Comptée au répertoire, chaque sous-fiche reste sous le seuil de cinq ; comptée à la granularité de la règle
+(`kesh-api/routes/<x>`), la `v0174-session-1` le dépasse — **dérogation écrite** dans la sous-fiche (validation P2,
+P2-12). Aucune ne dépend du code de l'autre (C-v0174s-1). La `v0174-session-1`
 touche un dépôt (`repositories/refresh_tokens.rs`) : **gate complet même en cours de boucle** (`CLAUDE.md`, exception
 `kesh-db`).
 
@@ -178,8 +182,10 @@ touche un dépôt (`repositories/refresh_tokens.rs`) : **gate complet même en c
   `sec:maj-0-17-3`, `admin-manual.tex:2513`, sur le patron de la 0.17.2, `:2527`, qui n'avait pas de migration) —
   validation P1, F2 et R9. **Sa rédaction commune aux trois stories de la 0.17.4 revient à l'intégration** ; la session y
   apporte, et chaque sous-fiche écrit sa part sous un intitulé repérable pour l'union : (1, la 1) « **La 0.17.4 n'a
-  aucune migration** : le retour à la 0.17.3 se fait **sans restauration** (au prix d'une reconnexion) ; la sauvegarde
-  complète d'avant la mise à jour reste recommandée » ; (2, la 1) « **Chaque utilisateur se reconnecte une fois** :
+  aucune migration** : le retour à la 0.17.3 se fait **sans restauration**, **après avoir vidé la table des sessions**
+  (Kesh arrêté : `docker compose stop kesh-api`, puis `docker compose exec mariadb mariadb -u kesh -p kesh -e "DELETE FROM refresh_tokens"` (compte et base de Kesh : remplacer `kesh` par `MARIADB_USER` et `MARIADB_DATABASE` s'ils ont été changés ; le mot de passe demandé est celui de `DATABASE_URL`, saisi au clavier, aucune variable de l'hôte) — avec `docker-compose.prod.yml`, la même requête dans la base que nomme `DATABASE_URL`) — tout le monde est déconnecté ; sans ce geste, une empreinte lue dans une base, un dump ou une
+  sauvegarde de la 0.17.4 ouvrirait une session sous la 0.17.3 (validation P2, P2-6) ; la sauvegarde complète d'avant la
+  mise à jour reste recommandée » ; (2, la 1) « **Chaque utilisateur se reconnecte une fois** :
   les jetons de session sont désormais stockés en empreinte, ceux d'avant ne sont plus reconnus — un onglet resté
   ouvert revient à la connexion **à sa prochaine activité** (premier battement refusé) ; enregistrez avant de mettre à
   jour. Les bases, dumps et sauvegardes **antérieurs** à la mise à jour portent encore des jetons en clair : ils
@@ -213,3 +219,14 @@ touche un dépôt (`repositories/refresh_tokens.rs`) : **gate complet même en c
   `internal/body-scroll-lock.svelte.js:129` ; l'avis doit donc porter `pointer-events: auto`), F4 à F16 (F13 : issue
   demandée, point 5). Choix ajoutés : C-v0174s-17 à 20. Prochaine : validation P2 (Opus, complète,
   `v0174-session-validate-prompt-p2.md`).
+- 2026-11-05 — **Validation P2** (Opus, complète) : **0/0/6/9**, dont cinq MEDIUM nés de la remédiation P1 ; remédiée
+  (Opus 5.5), consigne de l'orchestrateur : retraits et formulations simples plutôt que mécanismes neufs. **Traités** :
+  P2-1 (motifs du PDF sous leur forme réelle, `’` et `—`, chacun avec son attendu avant et après, constaté sur le PDF
+  versionné), P2-2 (AC-3 sur `remainingMs`/`onStay`), P2-3 (l'annonce ne promet plus la touche, inopérante quand le focus
+  est dans l'aperçu : « cliquez sur Rester connecté, ou n'importe où dans Kesh hors du document affiché »), P2-4 (M14
+  rattachée à l'AC-5 (a)), P2-5 (**W13 retirée**, le garde reste à onze écouteurs d'activité : un `pointerout` resté posé
+  n'a aucun effet observable, un espion ne prouverait rien d'utile), P2-6 (retour à la 0.17.3 après `DELETE FROM
+  refresh_tokens`, C-v0174s-7 récrit ; « inutilisables sans le jeton lui-même » retiré), P2-7 (`:85`), P2-8
+  (`:441-445`), P2-9, P2-10, P2-11, P2-12 (dérogation écrite), P2-13 (`relatedTarget` nul ou `<iframe>`), P2-14 (à
+  #912), P2-15 (point 6 fait). Aucun rejeté. Prochaine : validation P3 (Sonnet, complète, braquée d'abord sur cette
+  remédiation, `v0174-session-validate-prompt-p3.md`).

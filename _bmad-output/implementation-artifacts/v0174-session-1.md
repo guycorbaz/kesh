@@ -4,7 +4,7 @@ Status: ready-for-dev
 
 *Sous-fiche de `v0174-session.md` (contexte, cause lue au code par issue, triage des LOW, issues demandées), qui fait foi pour
 ce qu'elle porte. Branche `story/v0174-session`, worktree `/home/gcorbaz/devel/kesh-0174s`, port **3177**, bases
-`kesh_v0174s` / `kesh_e2e_v0174s`. Registre `v0174-choix-autonomes-v0174s.md` : **C-v0174s-2 à 9** s'appliquent ici.
+`kesh_v0174s` / `kesh_e2e_v0174s`. Registre `v0174-choix-autonomes-v0174s.md` : **C-v0174s-2 à 9, 17, 18 et 19** s'appliquent ici.
 Numéros de ligne de `7bd4d5c0`. Se développe **avant** la `v0174-session-2` ; aucune dépendance de code entre elles.*
 
 ## Story
@@ -15,9 +15,20 @@ paramètre ignoré.
 
 ## Contrainte
 
-Production réelle (0.17.3) : **aucune migration** (89, inchangé) ; la 0.17.3 redémarre sur une base passée par la 0.17.4
-(C-v0174s-7) ; une sauvegarde 0.17.3 s'importe. Un dépôt est modifié : **gate complet en cours de boucle** (`CLAUDE.md`,
+Production réelle (0.17.3) : **aucune migration** (89, inchangé) ; la 0.17.3 redémarre sur une base passée par la 0.17.4,
+**après qu'on a vidé `refresh_tokens`** (C-v0174s-7, récrit à la validation P2) ; une sauvegarde 0.17.3 s'importe. Un dépôt est modifié : **gate complet en cours de boucle** (`CLAUDE.md`,
 exception `kesh-db`). Code édité par l'outil Edit seulement.
+
+## Dérogation règle de splitting
+
+Comptée à la granularité de la règle (`kesh-api/routes/invoices` y est un module), cette sous-fiche touche plus de cinq
+modules : `kesh-db/repositories`, `kesh-db/entities`, `kesh-api/routes/{auth,setup,admin,session_settings}`,
+`kesh-api/middleware`, `kesh-api/auth`, `kesh-api/admin_backup`, `kesh-api/config`, `kesh-api/main` (validation P2,
+P2-12). **Gardée unique**, parce que la conception ne vit que dans `refresh_tokens.rs` (empreinte, liaisons, effacement)
+et l'appel de l'import (`admin.rs`) ; ailleurs, ce sont des commentaires (S-A8, S2-B1, S2-E2), un déplacement de lecture
+(S-E5), un opérateur (S-E6), un nom d'opération (S2-B2), un message (`main.rs:237`), et l'édition mécanique de #896.
+Découper ferait une story de commentaires sans conception. *Risque accepté* : une revue de code sur un diff large mais
+peu profond ; atténué par l'ordre des tâches (dépôt, puis import, puis LOW, puis #896) et un commit par tâche.
 
 ## Conception
 
@@ -89,7 +100,8 @@ neuf, clair, au client), la rotation, la grâce, la détection de vol, l'export 
 ### 5. #896 — retrait du paramètre ignoré (C-v0174s-8)
 
 `Config::from_fields_for_test` (`config.rs:448-…`) perd `_refresh_inactivity_ignored: TimeDelta` (`:455`) et son doc
-(`:441-447`) ; les **85** appels (80 fichiers : `crates/kesh-api/src/config.rs:2947`, `:2966`,
+(`:441-445` ; `:446` `#[doc(hidden)]` et `:447` `#[allow(clippy::too_many_arguments)]` restent — dix
+paramètres, au-dessus du seuil de clippy ; validation P2, P2-8) ; les **85** appels (80 fichiers : `crates/kesh-api/src/config.rs:2947`, `:2966`,
 `src/middleware/auth.rs:260`, et les fichiers de `crates/kesh-api/tests/`) perdent leur septième argument, par
 l'outil Edit. **Contrôle obligatoire** (lecture seule, script de lecture permis) : pour chaque appel, la ligne retirée
 est le septième argument de la version `7bd4d5c0`, et la suite des autres arguments est identique ; résultat (85/85)
@@ -186,8 +198,8 @@ l'empreinte) ; (c) `v0172s_failed_import_after_revocation_point_keeps_sessions` 
 destination **survit** à l'import refusé (la transaction annule aussi l'effacement). (d) La fixture
 `tests/fixtures/keshbackup-0.14.0-format1.keshbackup` s'importe toujours (les tests qui l'emploient restent verts).
 **Rouge avant correctif** : (a) seulement. (c) est **vert avant correctif** (le rollback existe en 0.17.3, `:5287`) — il
-n'est pas déclaré rouge (validation P1, R3) ; il tue la mutation M14 (effacement exécuté sur le `pool` au lieu de la
-transaction).
+n'est pas déclaré rouge (validation P1, R3) ; c'est un témoin du rollback, sans mutation attribuée (validation P2,
+P2-4 : sous M14, il reste vert).
 
 **AC-6 — La sauvegarde n'emporte aucun jeton utilisable.** `admin_backup_e2e.rs` (ou `admin_full_import_e2e.rs`) :
 après une connexion, l'export `.keshbackup` ; la table `refresh_tokens` de l'archive (NDJSON) ne contient **pas** la
@@ -260,7 +272,7 @@ liste ci-dessus est trié au Dev Agent Record.
 | M11 | `ROTATION_GRACE_SECS` 30 → 5, puis 30 → 60 | AC-9 (S-E3, 29 s puis 31 s) |
 | M12 | renouvellement `<=` → `<` | **équivalente en pratique** (égalité à la milliseconde), déclarée sans test |
 | M13 | `delete_expired_and_revoked` : clause `expires_at < ?`, puis clause `revoked_at < ?`, retirée (deux mutations) | `cleanup_removes_old_tokens` adapté (AC-4) |
-| M14 | `delete_clear_tokens_in_tx` exécutée sur le `pool` au lieu de la transaction | AC-5 (c) (la ligne de la destination disparaît malgré le refus) |
+| M14 | `delete_clear_tokens_in_tx` exécutée sur le `pool` au lieu de la transaction | AC-5 (a) : la restauration a déjà vidé la table par `DELETE FROM` dans sa transaction (`backup.rs`, `restore_tables_in_tx`) et en tient les verrous ; l'effacement hors transaction attend jusqu'à `innodb_lock_wait_timeout` (≈ 50 s), échoue, l'import rend 500 au lieu de 200 — durée déclarée (validation P2, P2-4) |
 | M15 | contrôle d'expiration de `refresh` retiré (`routes/auth.rs:481`) | `refresh_with_expired_token_returns_401` adapté (200 au lieu de 401) |
 | M16 | contrôle de révocation de `refresh` retiré (bloc `token.revoked_at.is_some()`, `:443-477`) | `all_refresh_error_codes_are_identical` adapté (200 au lieu de 401) |
 | M17 | `find_active_by_token` lie la valeur claire (aucun appelant de production) | `create_and_find_active_by_token` (R11) |
@@ -297,32 +309,37 @@ budget mémoire — le dire) ; démarrage de la 0.17.4 : `SELECT COUNT(*) FROM r
 <> '0'` = 0 ; l'onglet resté ouvert revient à la connexion **à son premier battement** après la mise à jour — au plus
 15 s après sa première activité (`activity_with` : `set_idle_deadline` rend `false`, 401, `routes/auth.rs:745-756` ; le
 renouvellement avec le même cookie échoue, `/login?reason=session_expired`) — et non « à l'échéance de son jeton
-d'accès », comme l'écrivait la fiche (validation P1, R10 et F15) ; reconnexion, puis la ligne neuve porte une empreinte. (b) **Retour** : redémarrer la 0.17.3 sur cette base —
-elle démarre (aucune migration inconnue), et demande une reconnexion. (c) Export `.keshbackup` après connexion :
+d'accès », comme l'écrivait la fiche (validation P1, R10 et F15) ; reconnexion, puis la ligne neuve porte une empreinte. (b) **Retour** : sous la 0.17.4, relever l'empreinte d'une ligne active ; arrêter
+Kesh, vider `refresh_tokens` par la commande du manuel (§ *Manuel*, sous-section « Passer à la 0.17.4 ») ; redémarrer la
+0.17.3 sur cette base — elle démarre (aucune migration inconnue) ; `POST /api/v1/auth/refresh` avec l'empreinte relevée
+**dans le corps** ⇒ 401 ; une reconnexion est demandée. *Témoin* (avant le vidage, sur une copie si le temps le permet) :
+la même empreinte présentée à la 0.17.3 rend 200 — c'est ce que le vidage ferme (validation P2, P2-6). (c) Export `.keshbackup` après connexion :
 `unzip -p <archive> data/refresh_tokens.ndjson` ne contient pas le cookie. `KESH_JWT_EXPIRY_MINUTES` ≥ la
 durée réglée pour tout contrôle 401 au `curl` (leçon N-A5). Chiffres et heures au Dev Agent Record.
 
 ## Manuel (`docs/manual/fr/admin-manual.tex` et PDF)
 
 - `:3027` → « Le refresh token n'est **jamais stocké en clair** : la table \texttt{refresh\_tokens} n'en garde qu'une
-  empreinte (SHA-256), si bien qu'une lecture de la base ou d'une sauvegarde ne permet pas de reprendre une session ;
-  30 jours est la durée du \emph{cookie} ; la ligne porte l'échéance d'inactivité de la session. »
+  empreinte (SHA-256), si bien que Kesh ne peut pas reprendre une session à partir d'une lecture de la base ou d'une
+  sauvegarde (voir \S\ref{sec:maj-0-17-4} pour un retour à la 0.17.3) ; 30 jours est la durée du \emph{cookie} ; la ligne
+  porte l'échéance d'inactivité de la session. »
 - **Les trois sites « jetons de session »** (validation P1, F1 et R5 ; `grep -nE "jetons? de session"
   docs/manual/fr/admin-manual.tex`, à refaire à l'étape 0) :
   - `:1665` (répétition de restauration) → « (mots de passe hachés, **empreintes** des jetons de session --- depuis la
     0.17.4 ; une sauvegarde antérieure porte encore des jetons en clair : \S\ref{sec:backup-ui-keshbackup}) » ;
   - `:1991` (dumps du NAS) → « condensés des mots de passe, **empreintes** des jetons de session (depuis la 0.17.4 ; les
     dumps **antérieurs** à la mise à jour portent encore des jetons en clair) » ;
-  - `:2263` → « … ainsi que les **empreintes** des jetons de session, inutilisables sans le jeton lui-même (depuis la
-    0.17.4). Une sauvegarde, une base ou un dump **antérieurs** à la 0.17.4 portent encore les jetons **en clair**, et le
+  - `:2263` → « … ainsi que les **empreintes** des jetons de session (depuis la 0.17.4). Une sauvegarde, une base ou un dump **antérieurs** à la 0.17.4 portent encore les jetons **en clair**, et le
     manuel des versions jusqu'à la 0.17.2 annonçait à tort un hachage : traitez-les comme le secret qu'ils sont. »
 - `:3039`, écart (a) : ajouter « … ; un battement qui croise un renouvellement de la même session peut être perdu de
-  même, et rattrapé au battement suivant ».
+  même, et rattrapé à l'activité suivante » (validation P2, P2-10 : rien ne le rattrape sans activité ensuite).
 - **Sous-section neuve « Passer à la 0.17.4 »** (`\subsubsection{Passer à la 0.17.4}\label{sec:maj-0-17-4}`, avant
   `sec:maj-0-17-3`, `:2513`, patron de la 0.17.2, `:2527`) — validation P1, F2 et R9 ; **la rédaction commune aux trois
   stories de la 0.17.4 revient à l'intégration**, cette sous-fiche y écrit sa part (fiche parente, § *Textes*, points 1 et
-  2) : aucune migration, retour à la 0.17.3 **sans restauration** au prix d'une reconnexion, sauvegarde complète
-  recommandée ; chaque utilisateur se reconnecte **une fois**, un onglet resté ouvert revenant à la connexion **à sa
+  2) : aucune migration, retour à la 0.17.3 **sans restauration**, **après avoir vidé la table des sessions** — `docker compose stop kesh-api`, puis `docker compose exec mariadb mariadb -u kesh -p kesh -e "DELETE FROM refresh_tokens"` (compte et base de Kesh : remplacer `kesh` par `MARIADB_USER` et `MARIADB_DATABASE` s'ils ont été changés ; le mot de passe demandé est celui de `DATABASE_URL`, saisi au clavier, aucune variable de l'hôte) — avec `docker-compose.prod.yml`, la même requête dans la base que nomme `DATABASE_URL` ;
+  tout le monde est déconnecté ; sans ce geste, une empreinte lue sous la 0.17.4 (base, dump, sauvegarde) ouvrirait une
+  session sous la 0.17.3, qui cherche la valeur reçue telle quelle (`refresh_tokens.rs:19-20`, cookie **ou corps**,
+  `routes/auth.rs:424-427`) — validation P2, P2-6 ; sauvegarde complète recommandée ; chaque utilisateur se reconnecte **une fois**, un onglet resté ouvert revenant à la connexion **à sa
   prochaine activité** (enregistrer avant de mettre à jour) ; jetons d'avant effacés au premier démarrage et à l'import
   d'une sauvegarde antérieure ; bases, dumps et sauvegardes antérieurs encore porteurs de jetons clairs.
 - § *Durée d'inactivité*, paragraphe **Mise à jour** (`:3051`) : une phrase de renvoi — « Pour la 0.17.4 (jetons de
@@ -330,11 +347,23 @@ durée réglée pour tout contrôle 401 au `curl` (leçon N-A5). Chiffres et heu
   0.17.3, est daté (« À la mise à jour vers la 0.17.3 : … »).
 - § *Dépannage* (`:3765`, « Cause ») — validation P1, F11 (5) : ajouter « juste après une mise à jour vers la 0.17.4 :
   la reconnexion unique (\S\ref{sec:maj-0-17-4}) ».
-- **Contrôle du PDF par motifs locaux** (validation P1, F14 : « empreinte » sort déjà ailleurs, une sonde globale réussirait
-  avant correctif) : `pdftotext docs/manual/fr/admin-manual.pdf - | tr '\n' ' ' | tr -s ' '` greppé sur « tel quel (non
-  haché » (absent), « n'en garde qu'une empreinte » (présent), « empreintes des jetons de session » (**trois**
-  occurrences), « jetons de session --- : d'où » et « mots de passe hachés, jetons de session : » (absents), « Passer à la
-  0.17.4 » (présent) ; motifs et sorties au Dev Agent Record.
+- **Contrôle du PDF par motifs** (validation P1, F14, puis P2, P2-1 : sous leur **forme réelle** dans le PDF aplati —
+  LaTeX y rend `’` et `—` —, chacun avec son attendu **avant** et **après**, l'« avant » constaté le 2026-11-05 sur le PDF
+  versionné par `pdftotext docs/manual/fr/admin-manual.pdf - | tr '\n' ' ' | tr -s ' ' | grep -oF '<motif>' | wc -l`) :
+
+  | Motif (PDF aplati) | Avant | Après |
+  |---|---|---|
+  | `tel quel (non haché` | 1 | 0 |
+  | `mots de passe hachés, jetons de session :` | 1 | 0 |
+  | `jetons de session — : d’où` | 1 | 0 |
+  | `ainsi que les jetons de session.` | 1 | 0 |
+  | `une empreinte (SHA-256), si bien` | 0 | 1 |
+  | `Passer à la 0.17.4` | 0 | ≥ 1 (titre ; la table des matières en ajoute une) |
+  | `DELETE FROM refresh_tokens` | 0 | ≥ 1 |
+
+  Chaque motif est donc une sonde **positive** d'un côté au moins : il rend un nombre non nul avant ou après, ce qui
+  prouve qu'il est bien formé. « empreintes des jetons de session » (trois sites) se compte au **`.tex`**
+  (`grep -c`), la césure de `pdftotext` pouvant couper un mot du PDF. Sorties au Dev Agent Record.
 
 ## README et spécifications
 
@@ -347,10 +376,12 @@ durée réglée pour tout contrôle 401 au `curl` (leçon N-A5). Chiffres et heu
 ## CHANGELOG (`## [0.17.4] — Non publié`, en tête, au-dessus de `[0.17.3]`)
 
 - **Sécurité** — « **Les jetons de session ne sont plus stockés en clair** ([#890](…/issues/890)) : la base, un dump SQL
-  ou une sauvegarde `.keshbackup` n'en gardent qu'une empreinte, qui ne permet pas de reprendre une session. *À la mise à
+  ou une sauvegarde `.keshbackup` n'en gardent qu'une empreinte, à partir de laquelle Kesh 0.17.4 ne reprend aucune
+  session. *À la mise à
   jour, chaque utilisateur se reconnecte une fois* ; les jetons d'avant sont effacés au premier démarrage et à l'import
-  d'une sauvegarde antérieure. Aucune migration : revenir à la 0.17.3 reste possible sans la sauvegarde (avec, là aussi,
-  une reconnexion) ; la sauvegarde complète avant la mise à jour reste recommandée. **Le manuel des versions jusqu'à la
+  d'une sauvegarde antérieure. Aucune migration : revenir à la 0.17.3 reste possible sans la sauvegarde, **à condition de
+  vider d'abord la table des sessions** (`DELETE FROM refresh_tokens`, Kesh arrêté ; commande au manuel
+  d'administration, « Passer à la 0.17.4 ») — tout le monde est déconnecté ; la sauvegarde complète avant la mise à jour reste recommandée. **Le manuel des versions jusqu'à la
   0.17.2 annonçait à tort un hachage** : une base, un dump ou une sauvegarde antérieurs à la 0.17.4 contiennent les jetons
   en clair — gardez-les comme le secret qu'ils sont. »
 - **Corrigé** — « Une panne de **lecture du réglage d'inactivité** ne fait plus perdre la session au renouvellement (le
@@ -377,6 +408,9 @@ durée réglée pour tout contrôle 401 au `curl` (leçon N-A5). Chiffres et heu
   (PDF régénéré ici, sous-section « Passer à la 0.17.4 »), R10/F15 (reconnexion au premier battement, entrée
   `data/refresh_tokens.ndjson`), R11 (M17, décision S-E6), F1/R5 (trois sites), F11 (3, 5), F14 (motifs locaux).
   Prochaine : validation P2 (Opus, complète).
+- 2026-11-05 — Validation P2 remédiée (détail au Change Log de la parente) : P2-1 (motifs PDF réels, avant/après), P2-4
+  (M14 → AC-5 (a)), P2-6 (retour à la 0.17.3 après vidage de `refresh_tokens`, recette (b) avec témoin), P2-8, P2-9,
+  P2-10, P2-12 (dérogation écrite). Prochaine : validation P3 (Sonnet, complète).
 
 ## Dev Agent Record
 

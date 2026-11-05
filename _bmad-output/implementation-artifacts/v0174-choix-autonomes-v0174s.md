@@ -42,7 +42,8 @@ Fiche : `v0174-session.md` (parente), `v0174-session-1.md` (serveur), `v0174-ses
 - **Coût assumé** : le nom de colonne `token` et son commentaire `'UUID v4 opaque'` mentent désormais ; ils ne se
   corrigent que par une migration. La documentation du dépôt (`refresh_tokens.rs`, `entities/refresh_token.rs`, README)
   le dit ; **issue demandée** pour renommer la colonne à la prochaine migration de la table (« on trace toujours »).
-- **Réversible** : oui — la 0.17.3 redémarre sur la base (aucune migration) ; ses sessions repartent par une
+- **Réversible** : oui — la 0.17.3 redémarre sur la base (aucune migration), après vidage de `refresh_tokens`
+  (C-v0174s-7) ; ses sessions repartent par une
   reconnexion (C-v0174s-7).
 
 ## C-v0174s-3 — Le hachage vit dans le dépôt `refresh_tokens`, les appelants passent le jeton clair
@@ -95,7 +96,9 @@ Fiche : `v0174-session.md` (parente), `v0174-session-1.md` (serveur), `v0174-ses
   clair ne reste en base — ni dans la sauvegarde suivante — après le premier démarrage ; la restauration complète fait
   de même dans sa transaction (`delete_clear_tokens_in_tx`), si bien qu'une sauvegarde 0.17.3 importée n'y replante
   aucun jeton clair. Le prédicat est une constante partagée (DRY). Placer l'effacement dans le nettoyage existant le fait
-  exercer par un test de dépôt, sans toucher `main.rs`.
+  exercer par un test de dépôt, sans autre changement de `main.rs` que son message. Le nettoyage du démarrage étant non
+  fatal (`main.rs:240-242`), « aucun jeton clair après le premier démarrage » suppose qu'il a réussi — sinon un
+  avertissement au journal, et l'effacement est repris au démarrage suivant (validation P2, P2-11).
 - **Écartées** : révoquer au lieu d'effacer (la valeur claire resterait en base, révoquée) ; ne rien effacer (les lignes
   sont inertes, mais la sauvegarde emporterait des jetons clairs jusqu'à leur expiration, jusqu'à 24 h) ; une migration de
   données (`DELETE` dans un `.sql`) — elle ferait une 90ᵉ migration, à trier P7, pour ce que le démarrage fait sans elle.
@@ -104,9 +107,17 @@ Fiche : `v0174-session.md` (parente), `v0174-session-1.md` (serveur), `v0174-ses
 ## C-v0174s-7 — Retour à la 0.17.3 : possible sans la sauvegarde
 
 - **Contexte** : P1 du `CLAUDE.md` (toute migration lie le retour à la sauvegarde d'avant).
-- **Retenu** : la 0.17.4 n'ajoute aucune migration : la 0.17.3 redémarre sur une base passée par la 0.17.4. Ses
-  sessions sont perdues (la 0.17.3 cherche le jeton clair, la base n'a que des empreintes) : une reconnexion. Dit au
-  CHANGELOG et au manuel d'administration. La sauvegarde avant mise à jour reste recommandée, comme toujours.
+- **Retenu** (**récrit à la validation P2, P2-6**) : la 0.17.4 n'ajoute aucune migration : la 0.17.3 redémarre sur une
+  base passée par la 0.17.4 — **après qu'on a vidé `refresh_tokens`**, Kesh arrêté (`DELETE FROM refresh_tokens`, par le
+  compte de Kesh, commande donnée au manuel d'administration, « Passer à la 0.17.4 ») ; tout le monde est déconnecté.
+  *Pourquoi* : la 0.17.3 cherche la valeur reçue telle quelle (`refresh_tokens.rs:19-20` ; cookie **ou corps**,
+  `routes/auth.rs:424-427`), et une empreinte a la forme d'un UUID : présentée à la 0.17.3, elle trouve sa ligne et ouvre
+  la session tant que son échéance n'est pas passée — quiconque aurait lu une base, un dump ou une sauvegarde pris sous
+  la 0.17.4 reprendrait une session. La 0.17.4 ne peut pas changer la 0.17.3 : le remède est un geste de l'administrateur,
+  écrit au manuel et au CHANGELOG, et éprouvé à la recette (b). La sauvegarde avant mise à jour reste recommandée.
+- **Écartées** : révoquer les lignes au lieu de les effacer (même effet, requête plus longue) ; « attendre l'échéance
+  réglée » (jusqu'à 24 h, invérifiable par l'administrateur) ; un mécanisme dans la 0.17.4 (inopérant : c'est la 0.17.3 qui
+  lit).
 - **Réversible** : sans objet.
 
 ## C-v0174s-8 — #896 : retrait mécanique, contrôlé par une lecture du diff
@@ -154,9 +165,10 @@ Fiche : `v0174-session.md` (parente), `v0174-session-1.md` (serveur), `v0174-ses
   `role="alert"` (annoncée une fois à l'apparition : « Votre session va bientôt se fermer faute d'activité. ») ; le compte
   à rebours visible (`m:ss`) est `aria-hidden="true"`, pour qu'un lecteur d'écran ne l'annonce pas à chaque seconde ; le
   bouton « Rester connecté » est un `<button>`. **Complété à la validation P1 (F12)** : la phrase annoncée dit comment
-  agir — « … faute d'activité : appuyez sur une touche ou choisissez « Rester connecté ». » (toute touche est une
-  activité) ; le bouton est atteignable au clavier **sauf** quand un dialogue modal est ouvert (son piège à focus enferme
-  la tabulation) — écart déclaré, tracé en issue avec les autres limites de l'avis (F13). Contraste du thème clair.
+  agir — « … faute d'activité : cliquez sur « Rester connecté », ou n'importe où dans Kesh hors du document affiché. »
+  (**sans promettre la touche**, validation P2, P2-3 : quand le focus est dans l'aperçu PDF, ses touches ne parviennent pas
+  à la page) ; le bouton est atteignable au clavier **sauf** quand un dialogue modal est ouvert (son piège à focus enferme
+  la tabulation) — écart déclaré, tracé par **#912** avec les autres limites de l'avis (F13). Contraste du thème clair.
 - **Écartées** : `role="alertdialog"` avec focus ; compte à rebours dans une région `aria-live`.
 - **Réversible** : oui.
 
@@ -183,7 +195,8 @@ Fiche : `v0174-session.md` (parente), `v0174-session-1.md` (serveur), `v0174-ses
   qu'au bouillonnement sur `document`, après avoir marqué l'événement « intercepté » en capture
   (`bits/utilities/dismissible-layer/use-dismissable-layer.svelte.js:84`, `:90`, `:110`) ; natif plutôt que `onpointerdown`,
   que Svelte 5 délègue à la racine de l'application ; (2) `pointer-events: auto` — `ScrollLock`, monté par
-  `Dialog.Content` quand `preventScroll` vaut `true` (défaut, `dialog-content.svelte:25`, `:78`), pose
+  `Dialog.Content` quand `preventScroll` vaut `true` (défaut, `dialog-content.svelte:25`, `:85` — branche `{:else}`, celle
+  de Kesh ; « `:78` » corrigé à la validation P2, P2-7), pose
   `document.body.style.pointerEvents = "none"` (`internal/body-scroll-lock.svelte.js:129`) ; (3) `z-index` > 50
   (`z-[60]`), la superposition et le contenu du dialogue étant `z-50` et montés après le layout. Échap reste au dialogue.
   À éprouver en Chromium à l'étape 0 ; si un point ne tient pas, l'écart est écrit (manuel) et l'issue demandée.

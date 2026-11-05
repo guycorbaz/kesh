@@ -4,7 +4,7 @@ Status: ready-for-dev
 
 *Sous-fiche de `v0174-session.md` (contexte, triage des LOW, issues demandées), qui fait foi pour ce qu'elle porte.
 Branche `story/v0174-session`, worktree `/home/gcorbaz/devel/kesh-0174s`, port **3177**, bases `kesh_v0174s` /
-`kesh_e2e_v0174s`. Registre `v0174-choix-autonomes-v0174s.md` : **C-v0174s-10 à 15** s'appliquent ici. Numéros de ligne
+`kesh_e2e_v0174s`. Registre `v0174-choix-autonomes-v0174s.md` : **C-v0174s-10 à 15, 17, 18 et 20** s'appliquent ici. Numéros de ligne
 de `7bd4d5c0`. Se développe **après** la `v0174-session-1` (même branche) ; aucune dépendance de code.*
 
 ## Story
@@ -68,8 +68,10 @@ essais sur bases jetables, captures sur base de démonstration.
 le champ — `!== null` rendrait l'avis, `undefined !== null`).
 
 - **Contenu** : une phrase statique dans un élément `role="alert"` — `session-idle-warning-announce` « Votre session va
-  bientôt se fermer faute d'activité : appuyez sur une touche ou choisissez « Rester connecté ». » (validation P1, F12 :
-  dire **comment** agir ; toute touche est une activité, `keydown` en capture sur `window`, `:258`) —, un compte à rebours visible `aria-hidden="true"` —
+  bientôt se fermer faute d'activité : cliquez sur « Rester connecté », ou n'importe où dans Kesh hors du document
+  affiché. » (validation P1, F12 : dire **comment** agir ; validation P2, P2-3 : **sans promettre la touche**, inopérante
+  quand le focus est dans l'aperçu PDF — ses touches ne parviennent pas à la page, `v0172-session.md:291-293` ; seul le
+  clic dans la page vaut dans le cas que l'avis vise) —, un compte à rebours visible `aria-hidden="true"` —
   `session-idle-warning-countdown` « Fermeture dans { $remaining }. » où `$remaining` est `m:ss` (`0:59`, arrondi au
   supérieur à la seconde) —, et un `<button type="button">` `session-idle-warning-stay` « Rester connecté », qui appelle
   `onStay` sur `click`. Attributs de test `data-testid="session-idle-warning"`,
@@ -90,7 +92,8 @@ le champ — `!== null` rendrait l'avis, `undefined !== null`).
      l'application : l'arrêt aurait lieu plus haut, à établir ; l'écouteur natif lève le doute). Le module d'inactivité,
      en capture sur `window`, a déjà noté l'activité avant cet arrêt.
   2. **`pointer-events: auto`** sur la racine de l'avis : un `Dialog.Content` à `preventScroll` vrai (défaut,
-     `bits/dialog/components/dialog-content.svelte:25`, `:78`) monte `ScrollLock`, qui pose
+     `bits/dialog/components/dialog-content.svelte:25`, `:85` — branche `{:else}`, celle qu'emploie Kesh, qui ne passe pas
+     `child` ; validation P2, P2-7) monte `ScrollLock`, qui pose
      `document.body.style.pointerEvents = "none"` (`internal/body-scroll-lock.svelte.js:129`) — sans `auto`, l'avis ne
      recevrait aucun clic. *(La lentille F écrivait « pas de `pointer-events: none` posé par `Dialog` en 2.16.5 » : faux,
      rejeté.)*
@@ -98,8 +101,7 @@ le champ — `!== null` rendrait l'avis, `undefined !== null`).
      z-50`) et le contenu (`z-50`) sont montés par un portail après le layout ; à égalité, le dialogue gagnerait.
   Échap n'est pas touché (il reste au dialogue ; c'est aussi une activité). **Clavier sous un dialogue** : le piège à focus
   du dialogue (`trapFocus` vrai par défaut) enferme la tabulation ; le bouton n'est pas atteignable au **Tab** tant
-  qu'un dialogue modal est ouvert — toute touche garde pourtant la session (`keydown` capturé), ce que dit la phrase
-  annoncée ; **écart déclaré**, en issue (parente, point 5). Un clic sur le bouton déplace le focus hors du dialogue, que
+  qu'un dialogue modal est ouvert — **écart déclaré**, tracé par **#912**. Un clic sur le bouton déplace le focus hors du dialogue, que
   le piège ramène : sans effet sur la saisie (AC-4 (c) le prouve). Si l'étape 0 constate qu'un des trois points ne tient
   pas en Chromium réel : l'écart est écrit au Change Log et au manuel, l'issue demandée, et l'AC-4 (c) est retirée avec
   motif.
@@ -107,11 +109,13 @@ le champ — `!== null` rendrait l'avis, `undefined !== null`).
   #640 : vérifier que le jeton employé est **défini**, `components/ui/jetons-non-definis.test.ts`), visible au-dessus de
   l'aperçu PDF (`<iframe>`) sans le masquer entièrement.
 - **i18n** : trois clés aux quatre catalogues (`crates/kesh-i18n/locales/{fr-CH,de-CH,it-CH,en-CH}/messages.ftl`), replis
-  Svelte égaux à la valeur fr-CH. de-CH « Ihre Sitzung wird wegen Inaktivität bald beendet: Drücken Sie eine Taste oder
-  wählen Sie «Angemeldet bleiben». » / « Ende in { $remaining }. » / « Angemeldet bleiben » (« beendet », comme
+  Svelte égaux à la valeur fr-CH. de-CH « Ihre Sitzung wird wegen Inaktivität bald beendet: Klicken Sie auf
+  «Angemeldet bleiben» oder irgendwo in Kesh ausserhalb des angezeigten Dokuments. » / « Ende in { $remaining }. » /
+  « Angemeldet bleiben » (« beendet », comme
   `login-session-idle` de-CH, `messages.ftl:2229` — validation P1, F10) ; it-CH « La sessione sta per essere chiusa per
-  inattività: premete un tasto o scegliete «Resta connesso». » / « Chiusura tra { $remaining }. » / « Resta connesso » ;
-  en-CH « Your session will soon be closed due to inactivity: press any key or choose “Stay signed in”. » /
+  inattività: cliccate su «Resta connesso» o in un punto qualsiasi di Kesh fuori dal documento visualizzato. » / « Chiusura tra { $remaining }. » / « Resta connesso » ;
+  en-CH « Your session will soon be closed due to inactivity: click “Stay signed in”, or anywhere in Kesh outside the
+  displayed document. » /
   « Closing in { $remaining }. » / « Stay signed in » (relus par le développement ; orthographe suisse : `ss`).
 
 ### 3. LOW navigateur de #898 et #899 (fiche parente, § *Triage*)
@@ -129,15 +133,16 @@ le champ — `!== null` rendrait l'avis, `undefined !== null`).
 3. **N-E5** — `sendHeartbeat`, branche d'échec (`:315`) : si `previousReported` n'est pas fini, `removeItem` de
    `KEY_REPORTED_ACTIVITY` (et `memory.delete` en repli) au lieu d'un `writeKey` qui ne fait rien ; l'activité redevient
    « à rapporter » et repart au pas de 15 s suivant.
-4. **Rec-e1** — `pointerout` sur `window` (capture, passif) : si `relatedTarget` est nul, `lastPointer = null` ; la
-   sortie suivante compte, même au même pixel. Ajouté à `addListeners`/`removeListeners` : c'est un **douzième**
-   écouteur — le garde « onze écouteurs » du test (`session-idle.svelte.test.ts:458`, `:493-494`, `toHaveLength(11)`) passe à
-   douze, avec un cas dédié (après `stop()`, un `pointerout` ne remet plus `lastPointer` à `null` : la sortie suivante au
-   même pixel ne compte pas) et la mutation W13 (validation P1, F9). **Prémisse non établie** : un `relatedTarget` nul
-   est certain pour une sortie de la fenêtre ; pour l'`<iframe>` d'un PDF (autre origine), il dépend du navigateur — à
-   **constater en Chromium** à la recette (d), résultat au Dev Agent Record ; s'il n'est pas nul, Rec-e1 reste ouvert et
-   l'issue est demandée. Un `pointerout` entre deux éléments de la page a un `relatedTarget` non nul : rien n'est remis à
-   zéro.
+4. **Rec-e1** — `pointerout` sur `window` (capture, passif) : si `relatedTarget` est nul **ou** un
+   `HTMLIFrameElement` (validation P2, P2-13), `lastPointer = null` ; la sortie suivante compte, même au même pixel. Le
+   pointeur qui passe de la page sur le cadre a pour `relatedTarget` l'`<iframe>` (un nœud de la page) ou `null` selon le
+   navigateur : les deux cas sont couverts, rien n'est à constater. Un `pointerout` entre deux éléments ordinaires de la
+   page ne remet rien à zéro. Ajouté à `addListeners`/`removeListeners`. **Ce n'est pas un écouteur d'activité** : le garde
+   « onze écouteurs » (`session-idle.svelte.test.ts:458`, `:493-494`, `toHaveLength(11)`) reste à **onze** — il porte sur
+   les écouteurs d'activité, chacun avec son témoin de fermeture —, et son commentaire le dit ; `pointerout` a ses propres
+   cas (Vitest : `relatedTarget` nul, puis `<iframe>`, puis un `<div>`). **Pas de garde sur son retrait par `stop()`** :
+   un `pointerout` resté posé ne fait que remettre `lastPointer` à `null`, sans effet observable, puisque `pointermove`
+   est retiré et que `start()` remet `lastPointer` à `null` (validation P2, P2-5 ; W13 retirée).
 
 ## Acceptance Criteria
 
@@ -154,11 +159,12 @@ au tic suivant ; (d) `stayActive()` appelée **après** l'échéance (minuterie 
 réécrite ; (e) dix `stayActive()` en 500 ms ⇒ dix écritures permises (pas de régulation), aucune erreur. **Rouge avant
 correctif.**
 
-**AC-3 — Le composant.** `SessionIdleWarning.test.ts` (neuf) : `warningRemainingMs = 59_400` ⇒ texte visible
-« Fermeture dans 1:00. » (arrondi au supérieur), puis `0:59` au tic suivant ; l'élément `role="alert"` porte la phrase
-statique et **son texte ne change pas** d'un tic à l'autre ; le compte à rebours est `aria-hidden="true"` ; un clic sur
-« Rester connecté » appelle `stayActive` **une** fois ; `document.activeElement` est **inchangé** par l'apparition de
-l'avis (un `<input>` focalisé avant le reste) ; `warningRemainingMs = null` ⇒ rien n'est rendu. Le test du layout racine
+**AC-3 — Le composant.** `SessionIdleWarning.test.ts` (neuf ; récrit à la validation P2, P2-2, sur les propriétés) :
+`render(SessionIdleWarning, { remainingMs: 59_400, onStay })` ⇒ texte visible « Fermeture dans 1:00. » (arrondi au
+supérieur) ; `rerender({ remainingMs: 58_400 })` ⇒ « 0:59 », et le texte de l'élément `role="alert"` (phrase statique)
+**est inchangé** ; le compte à rebours est `aria-hidden="true"` ; un clic sur « Rester connecté » appelle `onStay`
+**une** fois ; `document.activeElement` est **inchangé** par le rendu (un `<input>` focalisé avant le reste). Le cas
+« rien n'est rendu » appartient au layout seul. Le test du layout racine
 (`root-layout-session.test.ts`) : son simulacre de `sessionIdle` (`:11-16`) gagne `warningRemainingMs` (`null`, puis un
 nombre) et `stayActive` ; l'avis est rendu si et seulement si le champ est un nombre ; un champ absent du simulacre ne
 rend rien. **Et** un `pointerdown` émis sur l'avis **n'atteint pas** un écouteur posé sur `document` en bouillonnement
@@ -221,10 +227,9 @@ session ; (e) deux onglets : l'avis apparaît dans les deux, un clic dans l'un l
 | W7 | `.focus()` sur le bouton à l'apparition | AC-3 (`activeElement` inchangé) |
 | W8 | `stop()` ne remet pas `warningRemainingMs` à `null` | AC-1 (après la fermeture) |
 | W9 | N-E5 : `removeItem` remplacé par l'ancien `writeKey` | AC-5 (3) |
-| W10 | Rec-e1 : `lastPointer = null` retiré | AC-5 (4) |
+| W10 | Rec-e1 : `lastPointer = null` retiré, puis le cas `HTMLIFrameElement` retiré (deux mutations) | AC-5 (4) (cas `null`, puis cas `<iframe>`) |
 | W11 | régulation d'une seconde retirée de `recordActivity` | AC-5 (1) |
 | W12 | contrôle `gen === generation` retiré de `learnFromMe` | AC-5 (1) |
-| W13 | `removeEventListener('pointerout', …)` retiré de `removeListeners` | AC-5 (4), cas « après `stop()` » |
 | W14 | `stopPropagation()` retiré de l'écouteur natif de l'avis | AC-3 (l'espion de `document` le voit) ; AC-4 (c) |
 | W15 | `pointer-events: auto` retiré | AC-3 (classe) ; AC-4 (c) (clic impossible sous `ScrollLock`) |
 
@@ -240,7 +245,7 @@ Chaque mutation : motif vérifié unique, Vitest ciblé sous les deux verrous, r
 4. Tests (AC-1 à AC-6), LOW 1 et 2.
 5. Manuels (`.tex`), puis les **deux** PDF régénérés (`make fr` dans `docs/manual/`, sous les deux verrous — ce `make`
    reprend aussi les textes de la `v0174-session-1`) et contrôlés aplatis ; CHANGELOG.
-6. Mutations W1 à W15.
+6. Mutations W1 à W12, W14 et W15 (W13 retirée à la validation P2 ; numéros gardés).
 7. Gates : `cd frontend && npm run check && npm run lint-i18n-ownership && npm run test:unit && npm run build` ;
    `scripts/test-fast.sh --ci` (i18n et `textes_coherents.rs`) ; **E2E complet** au dernier commit de code — chacun sous
    les deux verrous ; recette et captures.
@@ -256,7 +261,8 @@ rendu, non 65 ms après le changement d'adresse, leçon N2-A1). Jointes au Dev A
 
 - **Utilisateur** (`docs/manual/fr/user-manual.tex:95-97`) : après la phrase de l'échéance, « **Environ une minute
   avant** (trente secondes si la durée réglée est d'une minute), Kesh affiche un avertissement avec un compte à rebours et
-  le bouton **Rester connecté** : un clic — ou toute touche, ou toute activité dans Kesh — garde la session ouverte. » ;
+  le bouton **Rester connecté** : un clic sur ce bouton, ou n'importe où dans Kesh hors du document affiché, garde la
+  session ouverte. » (validation P2, P2-3 : pas de promesse de touche) ;
   au `:97`, **seule la phrase en gras** (« Pendant une longue lecture dans l'aperçu, sortez le pointeur du document, ou
   cliquez à côté, au moins une fois par durée réglée … ; un avertissement avant la fermeture est demandé (CR \#895) ») est
   remplacée par « **Pendant une longue lecture dans l'aperçu, cliquez sur Rester connecté quand l'avertissement
@@ -300,6 +306,10 @@ rendu, non 65 ms après le changement d'adresse, leçon N2-A1). Jointes au Dev A
   2.16.5 ; prémisse « pas de `pointer-events: none` » rejetée), F4, F5, F6, F7 (composant à propriétés, condition
   `typeof`), F8, F9 (douzième écouteur, W13, prémisse `relatedTarget` à constater), F10, F11, F12 (phrase annoncée, clavier
   sous dialogue déclaré), F13 (issue demandée), F16 ; W13 à W15 ajoutées. Prochaine : validation P2 (Opus, complète).
+- 2026-11-05 — Validation P2 remédiée (détail au Change Log de la parente) : P2-2 (AC-3 sur les propriétés), P2-3
+  (annonce et manuels sans promesse de touche, quatre locales), P2-5 (W13 retirée, garde à onze écouteurs d'activité),
+  P2-7 (`:85`), P2-9, P2-13 (`relatedTarget` nul ou `<iframe>`, plus de constat), P2-14 (à #912). Prochaine :
+  validation P3 (Sonnet, complète).
 
 ## Dev Agent Record
 
