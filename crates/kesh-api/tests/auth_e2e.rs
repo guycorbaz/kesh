@@ -1127,6 +1127,70 @@ async fn refresh_replay_after_rotation_revokes_all(pool: MySqlPool) {
     );
 }
 
+/// #898 (S-E3) — la fenêtre de grâce de rotation vaut 30 s, ni moins ni plus :
+/// une rotation reculée de `secs` secondes puis rejouée. Rend (statut, nombre
+/// de lignes actives de l'utilisateur, nombre de lignes `theft_detected`).
+async fn replay_after_rotation_aged(
+    pool: &MySqlPool,
+    username: &str,
+    secs: i64,
+) -> (u16, i64, i64) {
+    let user_id = create_user(pool, username, "password123!", true).await;
+    let app = spawn_app(pool.clone()).await;
+    let (_at, rt_old) = login_and_get_tokens(&app, username, "password123!").await;
+    let resp = app
+        .client
+        .post(app.url("/api/v1/auth/refresh"))
+        .json(&json!({"refreshToken": rt_old}))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 200);
+    let reculee = sqlx::query(
+        "UPDATE refresh_tokens SET revoked_at = NOW(3) - INTERVAL ? SECOND WHERE token = ?",
+    )
+    .bind(secs)
+    .bind(token_digest(&rt_old))
+    .execute(pool)
+    .await
+    .unwrap();
+    assert_eq!(reculee.rows_affected(), 1, "la rotation est bien reculée");
+    let resp = app
+        .client
+        .post(app.url("/api/v1/auth/refresh"))
+        .json(&json!({"refreshToken": rt_old}))
+        .send()
+        .await
+        .unwrap();
+    let status = resp.status().as_u16();
+    let (actives, vols): (i64, i64) = sqlx::query_as(
+        "SELECT CAST(COALESCE(SUM(revoked_at IS NULL), 0) AS SIGNED), \
+                CAST(COALESCE(SUM(revoked_reason = 'theft_detected'), 0) AS SIGNED) \
+         FROM refresh_tokens WHERE user_id = ?",
+    )
+    .bind(user_id)
+    .fetch_one(pool)
+    .await
+    .unwrap();
+    (status, actives, vols)
+}
+
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn rotation_replayed_after_29_seconds_is_grace(pool: MySqlPool) {
+    let (status, actives, vols) = replay_after_rotation_aged(&pool, "grace29", 29).await;
+    assert_eq!(status, 401);
+    assert_eq!(actives, 1, "la ligne neuve reste active (grâce)");
+    assert_eq!(vols, 0, "aucune révocation pour vol");
+}
+
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn rotation_replayed_after_31_seconds_is_theft(pool: MySqlPool) {
+    let (status, actives, vols) = replay_after_rotation_aged(&pool, "theft31", 31).await;
+    assert_eq!(status, 401);
+    assert_eq!(actives, 0, "toutes les lignes révoquées (vol)");
+    assert_eq!(vols, 1, "la ligne neuve révoquée pour vol");
+}
+
 // --- 9.4 refresh_after_logout_does_not_mass_revoke ---
 #[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn refresh_after_logout_does_not_mass_revoke(pool: MySqlPool) {

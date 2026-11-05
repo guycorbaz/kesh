@@ -298,6 +298,25 @@ async fn middleware_refuses_past_idle_exp_whatever_exp(pool: MySqlPool) {
     );
 }
 
+/// #898 (S-B2/S-E2) — l'échéance elle-même est passée : `idle_exp = now` ⇒
+/// 401 (`now >= idle_exp`). Tue la mutation `>=` → `>`, sauf si la requête
+/// franchit la seconde entre la forge et le contrôle (rare ; elle rend alors
+/// 401 sous la mutation aussi).
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn middleware_refuses_idle_exp_equal_to_now(pool: MySqlPool) {
+    let uid = create_user(&pool, "bea", Role::Comptable).await;
+    let app = spawn_app(pool).await;
+    let tok = forge(uid, "Comptable", 900, Some(Utc::now().timestamp()));
+    let resp = app
+        .client
+        .get(app.url("/api/v1/auth/me"))
+        .header("Authorization", format!("Bearer {tok}"))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 401, "idle_exp = maintenant ⇒ 401");
+}
+
 // --- (c) et (j) renouvellement -----------------------------------------------
 
 #[sqlx::test(migrations = "../kesh-db/test-schema")]
@@ -482,6 +501,9 @@ async fn heartbeat_refuses_api_keys(pool: MySqlPool) {
         .await
         .unwrap();
     assert_eq!(resp.status(), 403, "clé d'API refusée");
+    // #899 (S2-B3) : le refus est bien celui de la clé d'API, non un autre 403.
+    let b: Value = resp.json().await.unwrap();
+    assert_eq!(b["error"]["code"], "API_KEY_MANAGEMENT_FORBIDDEN");
 
     // Revue de code P1 (S-B4/S-E8) : le refus de la clé d'API précède la
     // lecture du corps — un corps illisible rend 403, non 400.
@@ -499,6 +521,11 @@ async fn heartbeat_refuses_api_keys(pool: MySqlPool) {
             .await
             .unwrap();
         assert_eq!(resp.status(), 403, "clé d'API, corps {corps}");
+        let b: Value = resp.json().await.unwrap();
+        assert_eq!(
+            b["error"]["code"], "API_KEY_MANAGEMENT_FORBIDDEN",
+            "clé d'API, corps {corps}"
+        );
     }
     // Témoin : le même corps illisible, par une session, rend bien 400.
     let resp = app

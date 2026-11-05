@@ -156,7 +156,7 @@
 //!   `post`, `put`, `delete` et `patch`. Aucune route `GET` n'écrit au journal
 //!   aujourd'hui (remontée de l'AC1 : des `POST` et un `DELETE`) ; l'angle mort
 //!   est du même ordre que celui de l'audit (`GET /invoices/{id}/pdf`, plus bas).
-//! - **(vi)** **vingt-deux routes `SansEcritureAuJournal` sont rejouées quand
+//! - **(vi)** **vingt-trois routes `SansEcritureAuJournal` sont rejouées quand
 //!   même** : `onboarding::finalize` (enveloppe `AppError`, Story 15-5e2 — la
 //!   seule des neuf routes d'étape à l'être, cf. (iv)),
 //!   `company_invoice_settings::update_invoice_settings` (enveloppe `DbError`,
@@ -271,7 +271,14 @@
 //!   `DbError`, opération `supplier_invoices::delete`) : les verrous partagés
 //!   des clés étrangères de l'insertion des lignes forment un cycle avec une
 //!   validation aux comptes croisés ; tenues par leur revue, **aucune preuve
-//!   dynamique du rejeu**. Vingt-deux avec elles.
+//!   dynamique du rejeu**. Vingt-deux avec elles. Et — Story v0172-session
+//!   (0.17.3), #876, choix C-v0172s-59 — `session_settings::update_session_settings`
+//!   (enveloppe `DbError` `kesh_db::retry::retry_on_deadlock`, opération
+//!   `session_settings::update_session_settings`) : deux `PUT` simultanés à
+//!   version 0 sur table vide s'interbloquent sur le verrou d'intervalle du
+//!   `SELECT … FOR UPDATE` ; tenue par `session_settings_e2e.rs` (rejeu
+//!   exigé). Vingt-trois avec elle — recompté le 2026-11-05 depuis la table
+//!   et le corps de chaque route (revue de la 0.17.3, #899 S2-A1).
 //! - **(vii)** — **angles morts assumés du volet (c bis)** (revue P1 de la
 //!   15-5e2, L-3 = B-4 = A5). Le volet reconnaît un appel au **dernier
 //!   segment** du chemin appelé (`retry_with`) dans un arbre `syn` ; il ne voit
