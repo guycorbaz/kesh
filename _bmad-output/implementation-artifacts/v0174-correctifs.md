@@ -187,6 +187,46 @@ se vérifie à l'intégration contre `v0174-session`.
   limites assumées, **issue demandée** pour chacune (validation P2, P14 : « on trace toujours »).
 - **#540** (P2) est intégrée à la fiche 2 (C-v0174c-11) : `refs #540` ; `closes #540` proposé à la PR si la revue le confirme.
 
+## Dev Agent Record (gates)
+
+*Le développement des trois fiches s'est fait sur la même branche ; les gates complets ont tourné **une fois, au dernier
+commit de code** (`3f2a1cb8`, la spec E2E aux sélecteurs `data-testid` ; le backend à `53740b59`, aucun fichier Rust ni
+FTL ne changeant après), et non au dernier commit de chaque fiche comme le dit le § Gates : écart déclaré (station
+partagée, verrou commun). Chaque commande sous les deux verrous, une par prise ; journaux dans
+`/home/gcorbaz/devel/kesh-gate-logs/v0174c/`.*
+
+- **Backend** (`gate-final.log`, `nextest-final.log`, tête `53740b59`, base `kesh_v0174c` recréée à neuf) :
+  `scripts/test-fast.sh --ci` — garde des droits conforme, `cargo fmt --check` et `cargo clippy --workspace --all-targets
+  -D warnings` verts, **nextest 4776 exécutés, 4776 passés, 12 ignorés** ; `cargo build --workspace --all-targets` vert
+  (`build-final.log`, 0 avertissement) ; `cargo publish --dry-run -p kesh-import` vert (`publish-final.log`).
+  ⚠️ Un premier run (`53740b59` moins un commit) avait rendu 195 échecs : 2 réels — `services_motif::ac10_v1` (le chemin
+  `kesh_db::pool` de `main.rs`, faux rouge inscrit à `EXCEPTIONS_V1` comme celui de `lib.rs`) et
+  `textes_coherents::les_comptes_cites_en_exemple` (« ISO 3166-1 » au manuel, « 3166 » pris pour un compte : retiré) —, et
+  193 tests lib de `kesh-db` lancés contre la base `kesh` (la variable `DATABASE_URL` du profil de la station l'emportait
+  dans le script de gate ; corrigé hors dépôt). Ces deux gardes ne sont pas vues par un gate ciblé.
+- **Frontend** (`gate-front2.log`, tête `3f2a1cb8`) : `npm run check` 0 erreur (29 avertissements, tous antérieurs, aucun
+  dans un fichier touché sauf `ManualReminderDialog.svelte:50`, l'avertissement existant de `defaultLevel`) ;
+  `lint-i18n-ownership` PASS ; **Vitest 217 fichiers, 2668 tests verts** ; `npm run build` vert. ⚠️ Le run précédent
+  (`53740b59`) avait rougi sur `e2e-selecteurs-traduits.test.ts` (un `getByRole({ name: 'Modifier' })` de la spec neuve) :
+  corrigé par trois `data-testid` (`3f2a1cb8`).
+- **E2E complet** (`e2e-run-2.log`, `e2e-full-2.log`, tête `3f2a1cb8`, base `kesh_e2e_v0174c` recréée vide, port 3179,
+  dossiers `/tmp/kesh-e2e-v0174c-r2/`, backend tué par son PID, `ss -ltnp` : port libre avant et après) : **349 passés,
+  7 échoués, 17 ignorés** — les 7 sont exactement ceux de la KF-029 (#97) de `docs/testing.md` (`mode-expert.spec.ts:26`,
+  `:41`, `onboarding-path-b.spec.ts:65`, `:92`, `onboarding.spec.ts:57`, `:77`, `:150`) ; les cinq tests de
+  `v0174-correctifs.spec.ts` verts. ⚠️ Le run 1 (`e2e-full-1.log`) avait 12 échecs : les 7 mêmes et 5 du montage (le runner
+  ne recevait pas `KESH_INBOX_DIR` / `KESH_DOCUMENTS_DIR` : `helpers/inbox.ts:88`, « répertoire absent ») — corrigé au
+  script, rejoué (run 2).
+- **Captures** (thème clair) : `kesh-gate-logs/v0174c/captures-r2/v0174c-{888-lot-toutes-les-factures,
+  869-refus-verrou-nomme-la-date,872-projet-archive-sous-racine-archivee,817-contacts-refus-xx,
+  817-panneau-fournisseur-refus-xx,817-contact-pays-inconnu-avis}.png` (run 2 ; le run 1 a les mêmes dans `captures/`,
+  mêlées aux captures des autres specs, qui écrivaient aussi dans `KESH_E2E_CAPTURES_DIR`). L'avis du pays inconnu est
+  coupé par le défilement du dialogue (son début est visible).
+- **Manuel** : `make -C docs/manual user` (sous verrou, `make-user.log`, 3 passes, stable) ; PDF aplati contrôlé
+  (`pdf-controle.txt`) : les 13 phrases neuves présentes une fois chacune, « 3166 » absent. Aucune phrase retirée.
+  `grep -n -i 'date du jour' docs/manual/fr/user-manual.tex` (`manuel-date-du-jour.txt`) : aucune phrase ne décrit l'heure de
+  bascule.
+- **Migrations** : `ls crates/kesh-db/migrations/*.sql | wc -l` → 89, avant et après.
+
 ## Change Log
 
 - 2026-11-05 — fiche-index et trois fiches sœurs créées (Opus 5.5, autonomie). Prémisses établies au code (`7bd4d5c0`) :
@@ -231,3 +271,10 @@ se vérifie à l'intégration contre `v0174-session`.
   P8 (l'assistant au « Pour l'API » du CHANGELOG). Grep des valeurs : `402` (plus que dans l'entrée datée de la P1), `1478`,
   `seul le **début**`, `grep -o 'i18nMsg('`, `'): ContactResponse'`. Prochaine : validation P4 (Haiku, passe ciblée,
   `v0174-correctifs-validate-prompt-p4.md`).
+- 2026-11-05 — **Validation P4 (Haiku, passe ciblée sur `54949350`) : 0/0/0/3** (`kesh-gate-logs/v0174c-validate-p4.md`) —
+  validation terminée. Les trois LOW traités à l'étape 0 du développement (fiche 3 : critère de l'inventaire
+  `ContactResponse`, `sitesTotal` = nombre de la garde ; fiche 2 : classement des sites du second grep).
+- 2026-11-05 — **Développement des trois fiches** (Opus 5.5, autonomie) : commits `16039590` (fiche 1), `524fda2a`
+  (fiche 2), `15742cad` (fiche 3), `49b5826e` et `53740b59` (Dev Agent Records, gate), `3f2a1cb8` (spec E2E). Mutations :
+  7/7, 7/7, 9/9 tuées. Gates au § *Dev Agent Record (gates)*. Registre C-v0174c-22 à 27. Statut des fiches → review ;
+  prochaine : revue de code P1, un prompt par fiche (`v0174-correctifs-review-prompt-p1-{1,2,3}.md`).
