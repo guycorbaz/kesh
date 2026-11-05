@@ -3721,3 +3721,369 @@ async fn v0172_import_under_a_held_lock_is_refused_409_without_writing(pool: MyS
         );
     }
 }
+
+// =========================================================================
+// Story v0174-correctifs-1 (#819) — un relevé importé par la 0.17.3, dont des
+// identifiants portent une entité (`REF &amp; Co`), reste reconnu par la
+// lecture corrigée : le fichier par son empreinte, chaque ligne par l'alias de
+// sa clé (C-v0174c-5). XML synthétique, écrit ici ; IBAN du compte du montage.
+// =========================================================================
+
+const IBAN_819: &str = "CH4431999123000889012";
+
+/// Ligne 1 : `NtryRef` à entité (lu « Co » en 0.17.3), sans `TxDtls`.
+const LINE1_819: &str = r#"<Ntry><Amt Ccy="CHF">100.00</Amt><CdtDbtInd>CRDT</CdtDbtInd><BookgDt><Dt>2026-10-10</Dt></BookgDt><NtryRef>REF &amp; Co</NtryRef><AddtlNtryInf>Versement &amp; solde</AddtlNtryInf></Ntry>"#;
+/// Ligne 2 : sans `NtryRef`, `EndToEndId` à entité (lu « 7 » en 0.17.3), nom à
+/// entité (lu « Fils »).
+const LINE2_819: &str = r#"<Ntry><Amt Ccy="CHF">200.00</Amt><CdtDbtInd>CRDT</CdtDbtInd><BookgDt><Dt>2026-10-11</Dt></BookgDt><NtryDtls><TxDtls><Refs><EndToEndId>E2E &amp; 7</EndToEndId></Refs><RltdPties><Dbtr><Nm>Dupont &amp; Fils</Nm></Dbtr></RltdPties></TxDtls></NtryDtls></Ntry>"#;
+/// Ligne 3 : neuve, sans entité.
+const LINE3_819: &str = r#"<Ntry><Amt Ccy="CHF">50.00</Amt><CdtDbtInd>CRDT</CdtDbtInd><BookgDt><Dt>2026-10-12</Dt></BookgDt><NtryRef>NEW-3</NtryRef></Ntry>"#;
+
+/// Un relevé v04 : identifiant, IBAN tel qu'écrit, soldes et entrées fournis.
+fn camt_819(stmt_id: &str, iban_xml: &str, closing: &str, entries: &[&str]) -> Vec<u8> {
+    let ntries = entries.concat();
+    format!(
+        r#"<?xml version="1.0" encoding="UTF-8"?>
+<Document xmlns="urn:iso:std:iso:20022:tech:xsd:camt.053.001.04">
+  <BkToCstmrStmt>
+    <Stmt>
+      <Id>{stmt_id}</Id>
+      <FrToDt><FrDtTm>2026-10-01T00:00:00</FrDtTm><ToDtTm>2026-10-31T23:59:59</ToDtTm></FrToDt>
+      <Acct><Id><IBAN>{iban_xml}</IBAN></Id><Ccy>CHF</Ccy></Acct>
+      <Bal><Tp><CdOrPrtry><Cd>OPBD</Cd></CdOrPrtry></Tp><Amt Ccy="CHF">1000.00</Amt><CdtDbtInd>CRDT</CdtDbtInd><Dt><Dt>2026-10-01</Dt></Dt></Bal>
+      <Bal><Tp><CdOrPrtry><Cd>CLBD</Cd></CdOrPrtry></Tp><Amt Ccy="CHF">{closing}</Amt><CdtDbtInd>CRDT</CdtDbtInd><Dt><Dt>2026-10-31</Dt></Dt></Bal>
+      {ntries}
+    </Stmt>
+  </BkToCstmrStmt>
+</Document>
+"#
+    )
+    .into_bytes()
+}
+
+/// Le relevé « déjà importé » : lignes 1 et 2.
+fn first_file_819() -> Vec<u8> {
+    camt_819("STMT-819-A", IBAN_819, "1300.00", &[LINE1_819, LINE2_819])
+}
+
+/// Un autre fichier qui reprend les lignes 1 et 2 et ajoute la ligne 3.
+fn overlapping_file_819() -> Vec<u8> {
+    camt_819(
+        "STMT-819-B",
+        IBAN_819,
+        "1350.00",
+        &[LINE1_819, LINE2_819, LINE3_819],
+    )
+}
+
+fn sha256_hex_819(bytes: &[u8]) -> String {
+    use sha2::{Digest, Sha256};
+    Sha256::digest(bytes)
+        .iter()
+        .map(|b| format!("{b:02x}"))
+        .collect()
+}
+
+/// Enregistre le relevé par le dépôt, comme `create` l'aurait fait avec la
+/// lecture `parse` donnée : `parse_legacy_0173` pour « comme la 0.17.3 » (la
+/// preuve qu'elle lit comme la 0.17.3 est la caractérisation de `kesh-import`),
+/// `parse_camt053` pour le témoin. `file_hash` = SHA-256 des octets.
+async fn montage_819(
+    pool: &MySqlPool,
+    s: &TestSetup,
+    bytes: &[u8],
+    parse: fn(&[u8]) -> Result<Vec<kesh_import::ImportedStatement>, kesh_import::CamtError>,
+) -> i64 {
+    use kesh_db::entities::{BankImportSourceFormat, NewBankImport, NewBankTransaction};
+    let mut stmts = parse(bytes).expect("lecture du montage");
+    assert_eq!(stmts.len(), 1);
+    let stmt = stmts.remove(0);
+    let (draft, txs) = kesh_core::bank_imports::from_imported(
+        &stmt,
+        s.bank_account_id,
+        s.company_id,
+        sha256_hex_819(bytes),
+        "releve-0173.xml".into(),
+        Utc::now().naive_utc(),
+        s.user_id,
+    )
+    .expect("from_imported");
+    let new_import = NewBankImport {
+        company_id: draft.company_id,
+        bank_account_id: draft.bank_account_id,
+        filename: draft.filename,
+        file_hash: draft.file_hash,
+        source_format: BankImportSourceFormat::Camt053V04,
+        statement_id: draft.statement_id,
+        period_from: draft.period_from,
+        period_to: draft.period_to,
+        opening_balance: draft.opening_balance.map(|m| m.amount()),
+        closing_balance: draft.closing_balance.map(|m| m.amount()),
+        transaction_count: txs.len() as i32,
+        imported_by_user_id: draft.imported_by_user_id,
+    };
+    let new_txs = txs
+        .into_iter()
+        .map(|t| NewBankTransaction {
+            company_id: s.company_id,
+            bank_account_id: s.bank_account_id,
+            booking_date: t.booking_date,
+            value_date: t.value_date,
+            amount: t.amount.amount(),
+            currency: t.currency,
+            reference: t.reference,
+            details: t.details,
+            end_to_end_id: t.end_to_end_id,
+            transaction_id: t.transaction_id,
+            counterparty_iban: t.counterparty_iban,
+            counterparty_name: t.counterparty_name,
+        })
+        .collect();
+    let mut tx = pool.begin().await.unwrap();
+    let (import, _) =
+        kesh_db::repositories::bank_imports::create_with_transactions(&mut tx, new_import, new_txs)
+            .await
+            .expect("montage enregistré");
+    tx.commit().await.unwrap();
+    import.id
+}
+
+async fn post_819(
+    app: &TestApp,
+    s: &TestSetup,
+    path: &str,
+    bytes: Vec<u8>,
+    fields: &[(&str, String)],
+) -> (u16, Value) {
+    let form = build_multipart_with_text_fields(bytes, "releve-819.xml", s.bank_account_id, fields);
+    let r = app
+        .client
+        .post(app.url(path))
+        .bearer_auth(&s.jwt)
+        .multipart(form)
+        .send()
+        .await
+        .unwrap();
+    let st = r.status().as_u16();
+    (st, r.json().await.unwrap())
+}
+
+fn duplicate_indexes_819(preview: &Value) -> Vec<u64> {
+    let mut v: Vec<u64> = preview["warnings"]["duplicateLines"]
+        .as_array()
+        .expect("duplicateLines")
+        .iter()
+        .map(|d| d["newIndex"].as_u64().unwrap())
+        .collect();
+    v.sort();
+    v
+}
+
+async fn tx_count_of_import_819(pool: &MySqlPool, import_id: i64) -> i64 {
+    sqlx::query_scalar("SELECT COUNT(*) FROM bank_transactions WHERE import_id = ?")
+        .bind(import_id)
+        .fetch_one(pool)
+        .await
+        .unwrap()
+}
+
+/// AC-1.5 (a, b, c) et AC-1.7 — le relevé enregistré comme la 0.17.3 l'aurait
+/// fait reste reconnu : le même fichier par son empreinte ; un autre fichier
+/// qui reprend ses deux lignes, ligne par ligne (alias). Les transactions du
+/// montage gardent leur texte tronqué.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn camt_import_of_0173_stays_recognised_after_the_819_fix(pool: MySqlPool) {
+    let s = setup(&pool).await;
+    let app = spawn_app(pool.clone()).await;
+    let first = montage_819(
+        &pool,
+        &s,
+        &first_file_819(),
+        kesh_import::camt053::parse_legacy_0173,
+    )
+    .await;
+
+    // (b) le même fichier : refusé en doublon de fichier, signalé à l'aperçu.
+    let (st, body) = post_819(&app, &s, "/api/v1/bank-imports", first_file_819(), &[]).await;
+    assert_eq!(st, 422, "{body}");
+    assert_eq!(body["error"]["code"], "BANK_IMPORT_DUPLICATE_FILE");
+    let (st, preview) = post_819(
+        &app,
+        &s,
+        "/api/v1/bank-imports/preview",
+        first_file_819(),
+        &[],
+    )
+    .await;
+    assert_eq!(st, 200, "{preview}");
+    assert_eq!(
+        preview["warnings"]["duplicateFile"]["existingImportId"].as_i64(),
+        Some(first)
+    );
+    assert_eq!(duplicate_indexes_819(&preview), vec![0, 1]);
+
+    // (c) un autre fichier : les deux lignes reprises signalées…
+    let (st, preview) = post_819(
+        &app,
+        &s,
+        "/api/v1/bank-imports/preview",
+        overlapping_file_819(),
+        &[],
+    )
+    .await;
+    assert_eq!(st, 200, "{preview}");
+    assert!(preview["warnings"]["duplicateFile"].is_null());
+    assert_eq!(duplicate_indexes_819(&preview), vec![0, 1]);
+
+    // … et écartées par défaut : seule la ligne neuve s'enregistre.
+    let (st, created) = post_819(
+        &app,
+        &s,
+        "/api/v1/bank-imports",
+        overlapping_file_819(),
+        &[],
+    )
+    .await;
+    assert_eq!(st, 201, "{created}");
+    let second = created["id"].as_i64().unwrap();
+    assert_eq!(tx_count_of_import_819(&pool, second).await, 1);
+    let d = common::audit_details(&pool, "bank_imports", second, "bank_import.created")
+        .await
+        .unwrap();
+    assert_eq!(d["duplicate_lines_skipped"], 2, "{d}");
+
+    // AC-1.7 — les transactions du montage gardent leur texte de la 0.17.3.
+    type Texts819 = (Option<String>, Option<String>, Option<String>, String);
+    let rows: Vec<Texts819> = sqlx::query_as(
+        "SELECT reference, end_to_end_id, counterparty_name, details \
+         FROM bank_transactions WHERE import_id = ? ORDER BY booking_date",
+    )
+    .bind(first)
+    .fetch_all(&pool)
+    .await
+    .unwrap();
+    assert_eq!(
+        rows,
+        vec![
+            (Some("Co".into()), None, None, "solde".into()),
+            (None, Some("7".into()), Some("Fils".into()), String::new()),
+        ]
+    );
+}
+
+/// AC-1.5 (c), variante « import » : avec `confirmDuplicateLines=import`, les
+/// trois lignes s'enregistrent.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn camt_import_of_0173_overlap_forced_imports_all_three_819(pool: MySqlPool) {
+    let s = setup(&pool).await;
+    let app = spawn_app(pool.clone()).await;
+    montage_819(
+        &pool,
+        &s,
+        &first_file_819(),
+        kesh_import::camt053::parse_legacy_0173,
+    )
+    .await;
+    let (st, created) = post_819(
+        &app,
+        &s,
+        "/api/v1/bank-imports",
+        overlapping_file_819(),
+        &[("confirmDuplicateLines", "import".into())],
+    )
+    .await;
+    assert_eq!(st, 201, "{created}");
+    let id = created["id"].as_i64().unwrap();
+    assert_eq!(tx_count_of_import_819(&pool, id).await, 3);
+    let d = common::audit_details(&pool, "bank_imports", id, "bank_import.created")
+        .await
+        .unwrap();
+    assert_eq!(d["duplicate_lines_imported"], 2, "{d}");
+}
+
+/// AC-1.5 (d) — le témoin : montage par la lecture corrigée ; les deux lignes
+/// sont reconnues par leur clé neuve, sans alias.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn camt_import_witness_montage_by_corrected_reading_819(pool: MySqlPool) {
+    let s = setup(&pool).await;
+    let app = spawn_app(pool.clone()).await;
+    montage_819(&pool, &s, &first_file_819(), kesh_import::parse_camt053).await;
+    let (st, preview) = post_819(
+        &app,
+        &s,
+        "/api/v1/bank-imports/preview",
+        overlapping_file_819(),
+        &[],
+    )
+    .await;
+    assert_eq!(st, 200, "{preview}");
+    assert_eq!(duplicate_indexes_819(&preview), vec![0, 1]);
+    let (st, created) = post_819(
+        &app,
+        &s,
+        "/api/v1/bank-imports",
+        overlapping_file_819(),
+        &[],
+    )
+    .await;
+    assert_eq!(st, 201, "{created}");
+    assert_eq!(
+        tx_count_of_import_819(&pool, created["id"].as_i64().unwrap()).await,
+        1
+    );
+}
+
+/// AC-1.6 — le relevé dont la lecture héritée, ou sa sélection par IBAN,
+/// échoue s'importe, sans alias : les lignes du montage « 0.17.3 » ne sont
+/// alors pas reconnues — aucune erreur, jamais de `?`.
+async fn imports_without_alias_819(pool: MySqlPool, file: Vec<u8>) {
+    let s = setup(&pool).await;
+    let app = spawn_app(pool.clone()).await;
+    montage_819(
+        &pool,
+        &s,
+        &first_file_819(),
+        kesh_import::camt053::parse_legacy_0173,
+    )
+    .await;
+    let (st, preview) = post_819(&app, &s, "/api/v1/bank-imports/preview", file.clone(), &[]).await;
+    assert_eq!(st, 200, "{preview}");
+    assert!(
+        duplicate_indexes_819(&preview).is_empty(),
+        "sans alias, aucune ligne de la 0.17.3 n'est reconnue : {preview}"
+    );
+    let (st, created) = post_819(&app, &s, "/api/v1/bank-imports", file, &[]).await;
+    assert_eq!(st, 201, "{created}");
+    assert_eq!(
+        tx_count_of_import_819(&pool, created["id"].as_i64().unwrap()).await,
+        3
+    );
+}
+
+/// AC-1.6 (i) — une date en CDATA : la lecture héritée échoue (date lue vide).
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn camt_import_without_alias_when_the_legacy_reading_fails_819(pool: MySqlPool) {
+    let cdata_date = LINE3_819.replace("<Dt>2026-10-12</Dt>", "<Dt><![CDATA[2026-10-12]]></Dt>");
+    let file = camt_819(
+        "STMT-819-C",
+        IBAN_819,
+        "1350.00",
+        &[LINE1_819, LINE2_819, &cdata_date],
+    );
+    assert!(kesh_import::camt053::parse_legacy_0173(&file).is_err());
+    imports_without_alias_819(pool, file).await;
+}
+
+/// AC-1.6 (ii) — l'IBAN du relevé écrit avec une référence de caractère : la
+/// lecture héritée le lit tronqué, sa sélection par IBAN échoue.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn camt_import_without_alias_when_the_legacy_selection_fails_819(pool: MySqlPool) {
+    let file = camt_819(
+        "STMT-819-D",
+        "CH44&#51;1999123000889012",
+        "1350.00",
+        &[LINE1_819, LINE2_819, LINE3_819],
+    );
+    assert!(kesh_import::camt053::parse_legacy_0173(&file).is_ok());
+    imports_without_alias_819(pool, file).await;
+}

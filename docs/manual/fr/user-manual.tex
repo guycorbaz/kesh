@@ -2409,7 +2409,10 @@ qui \textbf{chevauchent un import précédent} sont \textbf{ignorées par défau
 (\emph{Ignorer les doublons (par défaut)}), et importées si vous choisissez \emph{Importer quand
 même}. Une devise non supportée bloque l'import — relevé CAMT.053, ou CSV dont le profil lit la
 colonne Devise ; un CSV dont le profil ne la lit pas est supposé en CHF, et la prévisualisation le
-dit (\S\ref{sec:import-csv}). \emph{Annuler} abandonne sans rien enregistrer.
+dit (\S\ref{sec:import-csv}). Depuis la version~0.17.4, un relevé CAMT.053 qui porte une
+référence d'entité inconnue (une forme \texttt{\&nom;} que le XML ne définit pas) est refusé, avec
+le message «~Fichier XML mal formé ou tronqué. Vérifiez l'export bancaire.~». \emph{Annuler}
+abandonne sans rien enregistrer.
 
 \textbf{Un seul enregistrement à la fois par compte.} Depuis la version~0.17.2, \emph{Confirmer
 l'import} attend la fin d'un autre enregistrement en cours sur le même compte bancaire --- un
@@ -2705,6 +2708,8 @@ Kesh détecte les transactions déjà importées en comparant une empreinte calc
 
 Le libellé n'en fait pas partie. Les doublons ne sont pas écartés en silence : l'aperçu les signale, et vous choisissez de les \textbf{ignorer} (choix par défaut) ou de les \textbf{importer quand même}. Un fichier déjà importé en entier est signalé à part, et ne s'importe qu'après confirmation.
 
+\textbf{Noms, libellés et références à «~\&~» (depuis la version~0.17.4).} Un nom, un libellé ou une référence d'un relevé CAMT.053 qui contient «~\&~», «~<~», une lettre codée (\texttt{\&\#xE9;} pour «~é~») ou une section CDATA est désormais lu \textbf{en entier} --- «~Dupont \& Fils~», et non plus «~Fils~». Les transactions déjà importées \textbf{ne sont pas relues} (Kesh ne garde pas le fichier) : elles gardent leur texte d'origine. Un fichier déjà importé reste signalé comme tel, et une ligne déjà importée, reprise par un autre fichier, reste reconnue comme doublon.
+
 Un relevé \textbf{saisi à la main} suit la même empreinte, mais n'offre pas «~ignorer~»~: une ligne en double se \textbf{corrige}, ou s'enregistre après confirmation, avec toutes les autres (\S\ref{sec:releve-manuel}).
 
 \subsection{Rejet partiel}
@@ -2883,7 +2888,7 @@ Exemple : le loyer est prélevé chaque mois par la régie. Une règle «~Loyer~
 \begin{enumerate}
     \item \emph{Administration} → \emph{Règles d'affectation} → \emph{Nouvelle règle}.
     \item Saisir le \textbf{libellé} de la règle (ex. «~Loyer~»).
-    \item Choisir le \textbf{type} de correspondance --- \emph{Contrepartie contient}, \emph{Contrepartie exacte}, \emph{Référence contient} ou \emph{IBAN exact} --- et saisir la \textbf{valeur} cherchée. Une règle porte \textbf{une seule} condition. Le type ne se choisit qu'à la création~: il ne se modifie plus ensuite.
+    \item Choisir le \textbf{type} de correspondance --- \emph{Contrepartie contient}, \emph{Contrepartie exacte}, \emph{Référence contient} ou \emph{IBAN exact} --- et saisir la \textbf{valeur} cherchée. Une règle porte \textbf{une seule} condition. Le type ne se choisit qu'à la création~: il ne se modifie plus ensuite. Une règle \emph{Contrepartie exacte} écrite sur un nom qu'une version antérieure à la~0.17.4 avait lu tronqué (un nom à «~\&~», par exemple «~Fils~» pour «~Dupont \& Fils~») ne reconnaît plus le nom désormais lu en entier~: corrigez sa valeur.
     \item Choisir le \textbf{compte de contrepartie}~: un compte de charge ou de produit, actif et imputable.
     \item Fixer la \textbf{priorité}, de 1 à 1000~: le \textbf{plus petit} nombre l'emporte.
     \item Au besoin, choisir un \textbf{projet analytique par défaut}.
