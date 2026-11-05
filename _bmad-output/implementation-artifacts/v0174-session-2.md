@@ -1,6 +1,6 @@
 # Story v0174-session-2 : la 0.17.4, côté navigateur — avertir avant la fermeture pour inactivité, avec « Rester connecté » (#895), et les LOW navigateur de la 0.17.3 (#898, #899)
 
-Status: ready-for-dev
+Status: review
 
 *Sous-fiche de `v0174-session.md` (contexte, triage des LOW, issues demandées), qui fait foi pour ce qu'elle porte.
 Branche `story/v0174-session`, worktree `/home/gcorbaz/devel/kesh-0174s`, port **3177**, bases `kesh_v0174s` /
@@ -311,11 +311,93 @@ rendu, non 65 ms après le changement d'adresse, leçon N2-A1). Jointes au Dev A
   validation P3 (Sonnet, complète).
 - 2026-11-05 — Validation P3 remédiée : P3-1 (annonce réduite à « cliquez sur « Rester connecté » », quatre catalogues ;
   manuel descriptif), P3-6 (`make admin user`). Prochaine : validation P4 (Haiku, ciblée).
+- 2026-11-05 — **Validation P4** (Haiku, ciblée, 0/0/0/3) : validation terminée ; P4-1 traité ici à l'étape 0 (la
+  phrase en gras du manuel utilisateur devient « Pendant une longue lecture dans l'aperçu, c'est le bouton Rester
+  connecté de l'avertissement qui garde la session ouverte. », descriptive).
+- 2026-11-05 — **Développement** (Opus 5.5, autonomie), après la sous-fiche 1, commits `cf5acdc8` (code, tests, i18n),
+  `92696469` (textes, PDF), `a2f7f854` (correction de la spec E2E après son premier passage). **Étape 0, lignes lues** :
+  `session-idle.svelte.ts` (`7bd4d5c0`) `:288` `if (w !== null && shared && now >= last + w) {`, `:292`
+  `if (heartbeatInFlight) return;`, `:296` `if (!(last > rep) || now - hb < HEARTBEAT_MIN_INTERVAL_MS) return;` — l'avis
+  est calculé entre les deux ; bits-ui **2.16.5** (`node_modules/bits-ui/package.json`) :
+  `internal/body-scroll-lock.svelte.js:129` `document.body.style.pointerEvents = "none";`,
+  `bits/dialog/components/dialog-content.svelte:25` `preventScroll = true,` et `:24` `trapFocus = true,`,
+  `bits/dialog/dialog.svelte.js:266` `"aria-modal": "true",`,
+  `bits/utilities/dismissible-layer/use-dismissable-layer.svelte.js:84` (capture, `#markInterceptedEvent`), `:90`
+  (bouillonnement, `#handleInteractOutside`), `:110` (`#isAnyEventIntercepted()` ⇒ aucune fermeture) ; le focus hors de
+  la couche (`focusin`, `:94`) appelle `onFocusOutside`, qui vaut `noop` par défaut
+  (`dismissible-layer.svelte:10`) — un clic sur le bouton, qui y déplace le focus, ne ferme donc pas le dialogue.
+  **Dialogue à champ de l'AC-4 (c)** : la création de contact (`routes/(app)/contacts/+page.svelte:811-815`, bouton
+  « Nouveau contact », champ `#form-name`), atteignable avec le seed `with-company` et fermé par défaut sur un geste
+  extérieur. **AC-4 sous `page.clock`** : l'horloge de la page coule après `install()` ; le serveur, en temps réel, n'atteint
+  jamais son échéance (connexion + 2 min) pendant un cas, si bien que le battement qui suit « Rester connecté » rend 200 —
+  constaté au premier passage de la spec (r0 : (b), (c), (d) verts, (a) rouge sur une assertion trop stricte du compte à
+  rebours, « 0:56 » lu au lieu de « 1:00 » parce que l'horloge coule après le saut ; corrigée, `a2f7f854`). Les trois
+  propriétés de C-v0174s-13 sont éprouvées en Chromium par l'AC-4 (c) : aucun écart, pas d'issue à demander. **Écart
+  de prémisse** : la fiche disait (§ *Conception* 3, point 2) qu'un `??` muté en `||` dans `currentLast` « rougit alors »
+  avec des cas démarrés à 1 000 000 ; c'est l'inverse — `memLast ?? now` et `memLast || now` ne diffèrent que si
+  `memLast` vaut 0, ce que l'horloge réelle ne produit jamais : démarrés à 1 000 000, les cas rendent la mutation
+  **équivalente en pratique**. Jouée (`Wx-nullish`) : elle survit, et c'est la conclusion juste.
 
 ## Dev Agent Record
 
 ### Agent Model Used
 
+Opus 5.5 (Claude Code), autonomie, 2026-11-05.
+
 ### Completion Notes List
 
+- **Rouges avant correctif** (`kesh-gate-logs/v0174s/rouges.log`, section « rouges navigateur », 19:32 ; module, layout
+  d'avant restaurés le temps du run par `git checkout --`, composant neuf mis de côté, puis remis à l'identique) :
+  **13 échecs** — AC-1 (trois cas), AC-2 (cinq cas), le cas (9) récrit (douze types écoutés : `pointerout` absent), N-E5,
+  Rec-e1 (deux cas), le layout (« un nombre ⇒ l'avis est rendu ») ; `SessionIdleWarning.test.ts` ne se charge pas
+  (composant absent). Verts avant, comme attendu : les gardes N-A3/N-E3 (comportements existants, rougis par leurs
+  mutations). **AC-4** : la spec jouée contre l'image publiée `gcorbaz/kesh:0.17.3` (conteneur `kesh-0174s-boot-0173`,
+  `rouges-e2e.log`, 21:01) — (a), (c), (d) **rouges** (avis jamais visible), (b) **vert** (témoin de non-régression).
+- **Tests** (périmètre `76f5007d` → `a2f7f854`) : `session-idle.svelte.test.ts` 34 → 52 `it(` littéraux (+18, dont un
+  dans une boucle à deux tours : +19 exécutés), `root-layout-session.test.ts` 2 → 4 (+2 littéraux, +3 exécutés),
+  `SessionIdleWarning.test.ts` neuf (6) ; spec E2E neuve (4 cas). Vitest complet : **212 fichiers, 2651 tests verts**
+  (`front-unit.log`).
+- **Compteur** `i18n-keys.test.ts` : `sitesTotal` 2826 → **2829** (+3, `grep -o 'i18nMsg(' SessionIdleWarning.svelte` = 3).
+  Trois clés par locale ; `cargo test -p kesh-i18n` compris dans le gate (vert).
+- **LOW, constatés** : (1) N-A3/N-E3 — six cas (régulation, `generation` de `/me` et du battement,
+  `heartbeatInFlight` à 20 s, `isValidMinutes` du battement et de `/me`) ; (2) N-A8/N-E10 — le cas (9) en garde de
+  principe (types écoutés), l'assertion littérale `470_000`, les cas 12 bis démarrés à 1 000 000 (et un second cas sans
+  activité préalable) ; (3) N-E5 — `removeKey` ; (4) Rec-e1 — `onPointerOut`, trois cas ; le garde « onze écouteurs »
+  reste à onze, commentaire ajouté.
+- **Mutations** (`mut/W*.log`, une prise par mutation, restauration `git checkout --` puis `touch`, copie propre vérifiée) :
+  **17 jouées, 16 tuées, 1 survit (`Wx-nullish`, hors liste)**. W1a (condition inversée) et W1b (`lead` à 0) : AC-1 ;
+  W2 : N = 1 ; W3 : sans stockage partagé ; W4 : AC-2 (a) et (e) ; W5 : AC-2 (d) ; W6 : texte de l'alerte ; W7 :
+  `activeElement` ; W8 : AC-1 (après la fermeture) ; W9 : N-E5 ; W10a (`lastPointer = null` retiré) : les deux cas,
+  W10b (cas `<iframe>` retiré) : le cas `<iframe>` ; W11 : régulation ; W12 : `generation` de `/me` ; W14 : l'espion de
+  `document` ; W15 : la classe `pointer-events-auto`. `Wx-nullish` (`memLast ?? now` → `||`) survit : équivalente en
+  pratique (écart de prémisse au Change Log).
+- **Gates** (frontend au commit `92696469`, contenu de code de `cf5acdc8` ; la spec E2E corrigée ensuite, `a2f7f854`,
+  passée à l'E2E complet) : `npm run check` 0 erreur, 29 avertissements préexistants, aucun sur un fichier de la story
+  (`front-check.log`) ; `lint-i18n-ownership` vert ; `test:unit` 2651/2651 ; `build` vert. Backend
+  `scripts/test-fast.sh --ci` 4753/4753 (sous-fiche 1). **E2E complet** r1 : 347 verts, 7 échecs (KF-029, la liste exacte
+  de `docs/testing.md`), 18 ignorés ; les quatre cas de `session-idle-warning.spec.ts` verts.
+- **Recette AC-8** (`recette-2.log`, 22:20 → 22:26, base `kesh_v0174s`, `KESH_JWT_EXPIRY_MINUTES=15`, N = 2 réglé par
+  l'écran Paramètres → Session, remis à 60 à la fin) : **(a)** avis 59,5 s après la dernière activité ; **(b)** clic ⇒
+  avis disparu, même page ; l'avis revient 61,1 s après le clic ; **(c)** sans clic, fermeture 120,7 s après la dernière
+  activité, `/login?reason=idle&minutes=2`, « Session fermée après 2 minutes d'inactivité » ; **(f)** dialogue « Nouveau
+  contact » avec saisie : avis 60,9 s après la saisie, clic ⇒ dialogue ouvert, saisie intacte ; **(e)** deux onglets :
+  avis dans les deux à 60,0 s, clic dans l'un ⇒ effacé dans l'autre en 1,3 s ; **(d)** aperçu d'un PDF : l'avis paraît
+  au-dessus et le clic le garde — **mais** l'avis est venu 89,9 s après l'entrée du pointeur dans le cadre, soit ≈ 60 s
+  après le dernier mouvement : en Chromium sans tête, qui ne rend pas le PDF, les mouvements dans le cadre vide ont été
+  vus par la page. Le volet « pointeur et défilement **dans** le document, non comptés » n'est donc **pas établi** par
+  cette recette ; il reste à jouer dans un navigateur à fenêtre (recette de Guy).
+- **Captures** (`kesh-gate-logs/v0174s/captures/`, 1280 × 800, au viewport, thème clair) : `v0174s-01-avis.png`,
+  `-02-avis-apercu-pdf.png`, `-03-avis-dialogue.png`, `-04-apres-clic.png`, `-05-fermeture.png`. Relevé à la capture :
+  dans l'annonce, le « ». » final passe seul à la ligne (largeur de 36 rem) — cosmétique, non corrigé.
+- **Manuels** (`make admin user`, 19:48) : PDF aplatis — « 895 » 0 dans les deux ; « Rester connecté » 1 (administration)
+  et 2 (utilisateur). La phrase « sortez le pointeur du document de temps en temps » reste dans « Passer à la 0.17.3 »
+  (historique de cette version), non reprise.
+- **Choix** : aucun choix neuf au registre.
+
 ### File List
+
+`frontend/src/lib/app/stores/session-idle.svelte.ts` et `.test.ts`, `frontend/src/lib/shared/components/SessionIdleWarning.svelte`
+et `.test.ts` (neufs), `frontend/src/routes/+layout.svelte`, `frontend/src/routes/root-layout-session.test.ts`,
+`frontend/src/lib/shared/i18n-keys.test.ts`, `frontend/tests/e2e/session-idle-warning.spec.ts` (neuf),
+`crates/kesh-i18n/locales/{fr-CH,de-CH,it-CH,en-CH}/messages.ftl`, `docs/manual/fr/user-manual.tex` et `.pdf`,
+`docs/manual/fr/admin-manual.tex` et `.pdf`, `docs/kesh-specifications.txt`, `CHANGELOG.md`.

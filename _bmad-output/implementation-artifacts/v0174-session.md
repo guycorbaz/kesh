@@ -239,3 +239,7 @@ touche un dépôt (`repositories/refresh_tokens.rs`) : **gate complet même en c
   déclarée au Project Lead par l'orchestrateur**), P3-6 (`make admin`, `make admin user`), P3-7 (AC-5 (a) asserte d'abord
   les lignes claires de l'archive), P3-8 (motif court). Aucun rejeté. Prochaine : validation P4 (Haiku, ciblée sur ce
   commit, `v0174-session-validate-prompt-p4.md`).
+- 2026-11-05 — **Validation P4** (Haiku, ciblée) : 0/0/0/3, validation terminée ; LOW traités à l'étape 0 du
+  développement. **Développement** (Opus 5.5) : les deux sous-fiches livrées, statut `review` (détail à leurs Change Log
+  et Dev Agent Record). Prompts de revue de code P1 : `v0174-session-review-prompt-p1-1.md` (serveur) et
+  `v0174-session-review-prompt-p1-2.md` (navigateur), Sonnet, trois lentilles chacun.

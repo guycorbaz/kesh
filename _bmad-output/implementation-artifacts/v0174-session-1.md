@@ -1,6 +1,6 @@
 # Story v0174-session-1 : la 0.17.4, côté serveur — le jeton de renouvellement n'est plus stocké qu'en empreinte (#890), le paramètre ignoré des tests retiré (#896), les LOW serveur de la 0.17.3 (#898, #899)
 
-Status: ready-for-dev
+Status: review
 
 *Sous-fiche de `v0174-session.md` (contexte, cause lue au code par issue, triage des LOW, issues demandées), qui fait foi pour
 ce qu'elle porte. Branche `story/v0174-session`, worktree `/home/gcorbaz/devel/kesh-0174s`, port **3177**, bases
@@ -425,11 +425,138 @@ durée réglée pour tout contrôle 401 au `curl` (leçon N-A5). Chiffres et heu
   P2-10, P2-12 (dérogation écrite). Prochaine : validation P3 (Sonnet, complète).
 - 2026-11-05 — Validation P3 remédiée : P3-2, P3-3, P3-4, P3-5, P3-6, P3-7, P3-8. Prochaine : validation P4 (Haiku,
   ciblée).
+- 2026-11-05 — **Validation P4** (Haiku, ciblée, 0/0/0/3) : validation terminée en quatre passes. Les trois LOW traités à
+  l'étape 0 du développement (commit `c21db740`) : P4-1 (phrase en gras du manuel utilisateur rendue descriptive,
+  `v0174-session-2.md`), P4-2 (tâche 6 récrite : « le test S-B2/S-E2 du point 1, les points 2, 3, 6, 9, 11 et 12 »), P4-3
+  (« onze » au registre, C-v0174s-1).
+- 2026-11-05 — **Développement** (Opus 5.5, autonomie) : tâches 1 à 9, commits `2bde7a77` (dépôt), `b537f0dd`
+  (`kesh-api`), `f330fe03` (#896), `05188efa` (LOW restants), `76f5007d` (textes). **Étape 0, lignes lues** (code
+  `7bd4d5c0`, `git diff --stat 7bd4d5c0 -- crates frontend docs` vide au départ) : `refresh_tokens.rs:32`
+  `.bind(&new.token)` ; `routes/auth.rs:481` `if token.expires_at < now {`, `:499` « Step 8 », `:527`
+  `installation_settings::get`, `:602` `users::update_password`, `:616` `new_session_deadline` ; `setup.rs:283`
+  `let deadline = new_session_deadline(&state).await?;` ; `admin.rs:495` `revoke_all_in_tx` ; `main.rs:237` « expired/revoked
+  tokens removed » ; `config.rs:455` `_refresh_inactivity_ignored: TimeDelta` ; `session_settings.rs:95`
+  `"installation_settings::update_session_idle_minutes"` ; `middleware/auth.rs:134`, `:137`, `auth/api_key.rs:31`
+  (`jwt::decode`). **Vecteur recalculé** : `printf '%s' '00000000-0000-4000-8000-000000000000' | sha256sum` ⇒
+  `db8055e0e0307d5a016bec4dc338d69875eb0fb7e614a8b125b08fb082095d98` ; 16 premiers octets mis en forme
+  `db8055e0-e030-7d5a-016b-ec4dc338d698`, 13ᵉ chiffre `7` forcé à `0` ⇒ `db8055e0-e030-0d5a-016b-ec4dc338d698`, égal à la
+  fiche. **Recensement #896** : 86 occurrences de `from_fields_for_test(` dans 80 fichiers, 85 appels, chacun portant
+  `TimeDelta::days(30)`, `TimeDelta::minutes(15)`, `TimeDelta::minutes(15)` en arguments 6, 7 et 8
+  (`kesh-gate-logs/v0174s/896-avant.txt`). **Inventaire des tests** (sonde de la fiche) : aucun site hors de la liste, hors
+  `bootstrap.rs:802` et `migrations_upgrade_path.rs:1734`, que la liste range parmi les verts sans modification (constaté
+  au gate). **Écarts constatés** : (1) la sonde `git grep -nE "\.token\b"` rend après le correctif, outre
+  `routes/auth.rs:1141`, la lecture `token_digest(&new.token)` (`refresh_tokens.rs:78`) et sa doc (`:68`) — le champ
+  `NewRefreshToken.token` reste le jeton clair à hacher, la fiche l'avait omis ; (2) `Cargo.lock` (+`sha2` à `kesh-db`,
+  aucune crate neuve) est entré dans le commit de `kesh-api` (`b537f0dd`, par `--amend`) et non dans celui du dépôt ;
+  (3) l'AC-5 (c) est un cas neuf (`v0174s_failed_import_keeps_legacy_rows`) plutôt qu'une modification de
+  `v0172s_failed_import_after_revocation_point_keeps_sessions`, qui reste tel quel (son assistant porte désormais
+  l'empreinte) ; (4) l'annotation S2-A3 est placée après l'annotation fautive elle-même (§ *CHANGELOG* de
+  `v0172-session.md`, `:779-781`), non après celle du § 3 (qui était juste) ; (5) les tests neufs de fin d'`auth_e2e.rs`
+  (assistant `refresh_cookie`, cinq cas) ont été ajoutés par un `cat >>` (ajout en fin de fichier, aucun remplacement),
+  non par l'outil Edit — déclaré ; tout le reste du code par l'outil Edit ; (6) le premier gate complet
+  (`gate-test-fast-r1-mauvaise-base.log`) est **invalide** : le shell portait `DATABASE_URL=…/kesh`, que le script de
+  prise gardait, si bien que les tests de bibliothèque de `kesh-db` ont visé la base `kesh` du dépôt principal, vide
+  (193 échecs « Table 'kesh.companies' doesn't exist », aucun ailleurs) ; script corrigé, base `kesh_v0174s` remise à
+  neuf, gate rejoué. Aucune écriture dans la base `kesh`. Détail : Dev Agent Record.
 
 ## Dev Agent Record
 
 ### Agent Model Used
 
+Opus 5.5 (Claude Code), autonomie, 2026-11-05.
+
 ### Completion Notes List
 
+- **Rouges avant correctif** (`kesh-gate-logs/v0174s/rouges.log`, 18:59 et 19:00) : AC-1 — `cargo test -p kesh-db --lib`
+  échoue à la compilation, `E0425 cannot find function token_digest` (fonction absente) ; AC-2 —
+  `login_stores_only_the_token_digest` (« connexion : aucune ligne ne porte le jeton clair », 1 au lieu de 0) et
+  `setup_admin_stores_only_the_token_digest` (idem) ; AC-3 — `legacy_clear_token_row_opens_nothing` (« renouvellement
+  par le corps », 200 au lieu de 401) ; AC-4 — `cleanup_deletes_legacy_clear_rows_and_keeps_digests` (0 effacée au lieu
+  de 1) ; AC-5 (a) — `v0174s_full_import_erases_legacy_clear_tokens` (2 jetons clairs restants au lieu de 0) ; AC-6 —
+  `v0174s_backup_carries_no_usable_token`. Verts avant correctif, comme déclaré : `independent_digest_matches_the_ac1_vector`
+  et `v0174s_failed_import_keeps_legacy_rows` (AC-5 (c), témoin du rollback).
+- **Tests** (périmètre `7bd4d5c0` → `76f5007d`, `grep -cE '#\[(sqlx::)?test'` aux deux bornes) : **14** attributs ajoutés,
+  0 retiré — `auth_e2e.rs` 44 → 49, `setup_admin_e2e.rs` 10 → 11, `admin_full_import_e2e.rs` 66 → 69,
+  `session_idle_e2e.rs` 12 → 13, `refresh_tokens_repository.rs` 11 → 13, `refresh_tokens.rs` 0 → 2. Assistant
+  `independent_refresh_digest` dans `tests/common/mod.rs` (`mod common;` ajouté à `auth_e2e.rs`, `setup_admin_e2e.rs`,
+  `admin_full_import_e2e.rs`).
+- **Tests adaptés** (§ *Tests existants qui changent*) : `logout_revokes_refresh_token`, `refresh_rotates_token`,
+  `refresh_replay_after_rotation_revokes_all`, `refresh_with_expired_token_returns_401`, `cleanup_removes_old_tokens`
+  (quatre lignes en empreintes, deux à garder : `removed == 2`, deux restantes), `all_refresh_error_codes_are_identical`,
+  `refresh_replay_within_grace_does_not_revoke_all`, `logout_invalidates_cookie` (deux sites), `row_expires_at` et les trois
+  `UPDATE` de `session_idle_e2e.rs`, `v0172s_refresh_row` (empreinte, via l'assistant neuf `insert_refresh_row`, partagé
+  avec `v0174s_legacy_row` — DRY), les recherches `WHERE token = ?` de `v0172s_*`, `create_and_find_active_by_token`,
+  `create_with_invalid_token_format_fails_check_constraint` (INSERT brut) + cas neuf
+  `create_hashes_any_value_into_a_valid_digest`. Chaque `UPDATE` de test adapté asserte `rows_affected() == 1`.
+- **#896, contrôle 85/85** (`scripts/check-896.py`, lecture seule, sortie `896-controle.txt`) : « appels 85, conformes 85,
+  lignes retirées 85, fichiers 80 » — pour chaque appel, les arguments de `7bd4d5c0` privés du septième égalent ceux
+  d'après. Sonde `git grep -n "_refresh_inactivity_ignored\|refresh_inactivity" -- crates` : vide.
+- **LOW, constatés** (§ *Conception* 6) : (1) `middleware_refuses_idle_exp_equal_to_now` (`session_idle_e2e.rs`) ;
+  commentaires S-A8 à `routes/auth.rs:46-50` et au battement ; (2) `rotation_replayed_after_29_seconds_is_grace`,
+  `rotation_replayed_after_31_seconds_is_theft` (`auth_e2e.rs`) ; (3) écart (a) du manuel ; (4) S-E5 vérifié par lecture :
+  `refresh` lit N à l'étape 7, avant `revoke_by_token(…, "rotation")` ; `change_password` appelle `new_session_deadline`
+  à l'étape 2-bis, avant `users::update_password` ; `setup` à l'étape 3-bis, avant `state.pool.begin()` de la section
+  critique ; (5) `if token.expires_at <= now {` ; (6) doc de `set_idle_deadline` ; (7) trois commentaires
+  `jwt::decode_session` ; (8) `"session_settings::update_session_settings"`, témoin de `session_settings_e2e.rs` aligné
+  (`git grep -n "installation_settings::update_session_idle_minutes" -- crates` : seul l'appel de dépôt reste,
+  `session_settings.rs:96`, nom de fonction et non d'opération) ; (9) code `API_KEY_MANAGEMENT_FORBIDDEN` asserté (quatre
+  réponses) ; (10) doc d'`activity` : 403, puis 400, puis 401 ; (11) `audit_route_registry.rs` : « vingt-trois », recompté
+  par `scripts/rejeu-sans-ecriture.py` (lecture seule) — 25 routes signalées, dont deux faux positifs du découpage
+  (`invoices::delete_invoice`, `onboarding::skip_bank`, vérifiés sans rejeu dans leur corps), soit les 22 nommées + 
+  `session_settings::update_session_settings` ; (12) deux annotations datées de `v0172-session.md` (« quatre `it(` dans
+  trois boucles » vérifié par `git show 11e5a38b..d38fcd8b -- 'frontend/**/*.test.ts'`).
+- **Mutations** (`kesh-gate-logs/v0174s/mut/M*.log`, une prise des deux verrous par mutation, restauration
+  `git checkout --` puis `touch`, copie propre vérifiée en fin de campagne) : **19 jouées, 18 tuées, 1 survit (M12,
+  déclarée équivalente)**. M1 (4 tests dont le vecteur, `login_stores_only_the_token_digest`,
+  `v0174s_backup_carries_no_usable_token`), M2 (les deux tests unitaires), M3 (`login_stores_only…`, `refresh_rotates_token`),
+  M4 (`refresh_rotates_token`), M5 (`logout_revokes_refresh_token`), M6 (`heartbeat_writes_deadline_from_idle_ms`),
+  M7 (`refresh_replay_within_grace_does_not_revoke_all`), M8 (`cleanup_deletes_legacy…`, `v0174s_full_import_erases…`),
+  M9 (`v0174s_full_import_erases…`), M10 (`middleware_refuses_idle_exp_equal_to_now`), M11a 30 → 5 (le cas 29 s), M11b
+  30 → 60 (le cas 31 s), M13a et M13b (clauses rendues fausses par `AND FALSE` plutôt que retirées, pour garder les
+  liaisons : `cleanup_removes_old_tokens`), M14 (`v0174s_full_import_erases…`, en **50,4 s** : l'attente du verrou,
+  comme prévu), M15 (`refresh_with_expired_token_returns_401`, `all_refresh_error_codes_are_identical`), M16
+  (`all_refresh_error_codes_are_identical`), M17 (`create_and_find_active_by_token`). M12 (`<=` → `<`) : 61 tests verts,
+  équivalente en pratique (égalité à la milliseconde), déclarée sans test.
+- **Gates** (au commit `92696469`, qui porte le dernier commit de code `cf5acdc8`) : `scripts/test-fast.sh --ci` sous les
+  deux verrous, bases remises à neuf — **4753 exécutés, 4753 verts, 12 ignorés** (`gate-test-fast.log`, 20:03) ;
+  `cargo build --workspace --all-targets` vert (`gate-build.log`) ; frontend — voir la sous-fiche 2. **E2E complet**
+  (r1, 372 tests sur un worker, 16,0 min, fin 21:51, au commit `a2f7f854`, dernier commit de code, base `kesh_e2e_v0174s` recréée vide, dossiers
+  `/tmp/kesh-e2e-v0174s-r1/`, backend tué par son PID, port 3177 libre avant et après) : **347 verts, 7 échecs, 18
+  ignorés** — les sept échecs sont exactement ceux de la KF-029 (#97) de `docs/testing.md` § *Les échecs attendus*
+  (`mode-expert.spec.ts:26`, `:41`, `onboarding-path-b.spec.ts:65`, `:92`, `onboarding.spec.ts:57`, `:77`, `:150`) ;
+  aucun autre.
+- **Recette** (`kesh-gate-logs/v0174s/recette-1.log`, base `kesh_v0174s`, port 3177 ; 0.17.4 = binaire du worktree,
+  0.17.3 = image publiée `gcorbaz/kesh:0.17.3`, conteneur nommé `kesh-0174s-boot-0173`, arrêté par son nom, **non
+  supprimé**). Troisième jeu, 22:18:40 → 22:19:20 ; les deux premiers sont gardés et déclarés (`recette-1-r1-sans-seed.log` :
+  base sans `admin/admin123` ; `recette-1-r2-recuperation-admin.log` : `KESH_ADMIN_*` posées, si bien que la
+  récupération d'administrateur réécrivait le mot de passe et révoquait ses sessions à chaque démarrage — variables
+  retirées pour la 0.17.4 ; le conteneur, créé au r2, les garde, d'où un utilisateur témoin Comptable pour le volet (b)).
+  **(a)** session ouverte sous la 0.17.3 : 1 ligne claire, qui porte le cookie tel quel ; au démarrage de la 0.17.4 :
+  0 ligne claire ; l'onglet resté ouvert : battement **401**, renouvellement **401** ; reconnexion : la ligne neuve porte
+  `0` en 15ᵉ position, le cookie n'est en clair dans aucune ligne. *(Binaire 0.17.3 : l'image publiée, non un
+  `git worktree` du tag.)* **(c)** export `.keshbackup` après connexion : le cookie apparaît 0 fois dans
+  `data/refresh_tokens.ndjson` (1 ligne). **(b)** deux empreintes relevées sous la 0.17.4 ; **témoin** : présentée dans
+  le corps à la 0.17.3, l'empreinte D1 rend **200** — le danger que le vidage ferme est réel ; `DELETE FROM
+  refresh_tokens` (Kesh arrêté, 4 lignes → 0, joué sur `kesh_v0174s` par le compte de dev) ; la 0.17.3 **redémarre** sur
+  la base (89 migrations) ; l'empreinte D2 présentée ensuite rend **401** ; reconnexion sous la 0.17.3 : 200. La commande
+  Compose du manuel n'est pas exécutée (le conteneur du compose est celui du dépôt principal, interdit) : constatée en
+  lecture contre `docker-compose.yml` (services `mariadb`, `kesh-api`).
+- **Manuel** (PDF régénérés par `make admin` à 19:22, puis `make admin user` à 19:48 ; contrôle aplati) : `tel quel (non
+  haché` 0, `mots de passe hachés, jetons de session :` 0, `jetons de session — : d’où` 0, `ainsi que les jetons de
+  session.` 0, `garde qu’une empreinte` 1, `Passer à la 0.17.4` 2, `DELETE FROM refresh_tokens` 2 — les sept attendus
+  « après » de la fiche. Au `.tex`, « empreintes des jetons de session » 2 et « `\textbf{empreintes}` des jetons de
+  session » 1 (le troisième site est en gras, comme la fiche le prescrit). Label neuf `sec:auth-jwt`.
+- **Choix** : aucun choix neuf au registre ; les écarts sont au Change Log.
+
 ### File List
+
+`crates/kesh-db/Cargo.toml`, `Cargo.lock`, `crates/kesh-db/src/repositories/refresh_tokens.rs`,
+`crates/kesh-db/src/entities/refresh_token.rs`, `crates/kesh-db/tests/refresh_tokens_repository.rs`,
+`crates/kesh-api/src/routes/{auth,admin,setup,session_settings}.rs`, `crates/kesh-api/src/main.rs`,
+`crates/kesh-api/src/middleware/auth.rs`, `crates/kesh-api/src/auth/api_key.rs`, `crates/kesh-api/src/admin_backup/mod.rs`,
+`crates/kesh-api/src/config.rs`, `crates/kesh-api/README.md`, `crates/kesh-api/tests/common/mod.rs`, et 78 autres fichiers
+de `crates/kesh-api/tests/` (#896 ; dont `auth_e2e.rs`, `auth_cookies_e2e.rs`, `session_idle_e2e.rs`,
+`setup_admin_e2e.rs`, `admin_full_import_e2e.rs`, `session_settings_e2e.rs`, `audit_route_registry.rs`, `common/mcp.rs`),
+`docs/manual/fr/admin-manual.tex` et `.pdf`, `docs/kesh-specifications.txt`, `CHANGELOG.md`,
+`_bmad-output/implementation-artifacts/v0172-session.md`, `v0174-session-1.md`, `v0174-session-2.md`,
+`v0174-choix-autonomes-v0174s.md`.
