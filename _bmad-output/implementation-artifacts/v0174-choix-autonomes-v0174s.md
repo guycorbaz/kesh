@@ -10,12 +10,14 @@ Fiche : `v0174-session.md` (parente), `v0174-session-1.md` (serveur), `v0174-ses
   et les LOW de #898/#899 (moitié serveur, moitié navigateur). Une fiche unique toucherait `kesh-db`, `kesh-api`,
   `kesh-i18n`, `frontend/src/lib/app/stores`, `frontend/src/lib/shared/components`, `frontend/src/routes` : six modules,
   au-dessus du seuil de cinq de la règle de splitting préventif.
-- **Retenu** : `v0174-session-1` (serveur : #890, #896, LOW serveur ; `kesh-db` et `kesh-api`, deux modules) et
+- **Retenu** : `v0174-session-1` (serveur : #890, #896, LOW serveur ; `kesh-db` et `kesh-api` — deux modules au
+  répertoire, une douzaine à la granularité de la règle, d'où la **dérogation écrite** dans la sous-fiche, motif de coût
+  et non l'exception de la règle, déclarée au Project Lead — validation P3, P3-4) et
   `v0174-session-2` (navigateur : #895, LOW navigateur ; quatre modules), sur la même branche, la 1 avant la 2. Aucune
   dépendance de code entre elles : le format du cookie de renouvellement ne change pas (C-v0174s-2), le navigateur n'a
   rien à apprendre du hachage. La parente porte le contexte commun, le triage des LOW et l'inventaire des textes.
-- **Écartées** : une fiche unique avec dérogation (précédent 0.17.3, C-v0172s-41) — ici l'indépendance des deux moitiés
-  ôte toute raison de déroger ; trois fiches (#896 à part) — #896 est une édition mécanique de tests, sans conception.
+- **Écartées** : une fiche unique avec dérogation (précédent 0.17.3, C-v0172s-41) — l'indépendance des deux moitiés
+  ôte toute raison de les garder ensemble ; trois fiches (#896 à part) — #896 est une édition mécanique de tests, sans conception.
 - **Réversible** : oui (fusion des deux fiches), tant que le développement n'a pas commencé.
 
 ## C-v0174s-2 — L'empreinte du jeton, sans migration : SHA-256 tronqué, mis en forme dans la colonne existante
@@ -165,9 +167,9 @@ Fiche : `v0174-session.md` (parente), `v0174-session-1.md` (serveur), `v0174-ses
   `role="alert"` (annoncée une fois à l'apparition : « Votre session va bientôt se fermer faute d'activité. ») ; le compte
   à rebours visible (`m:ss`) est `aria-hidden="true"`, pour qu'un lecteur d'écran ne l'annonce pas à chaque seconde ; le
   bouton « Rester connecté » est un `<button>`. **Complété à la validation P1 (F12)** : la phrase annoncée dit comment
-  agir — « … faute d'activité : cliquez sur « Rester connecté », ou n'importe où dans Kesh hors du document affiché. »
-  (**sans promettre la touche**, validation P2, P2-3 : quand le focus est dans l'aperçu PDF, ses touches ne parviennent pas
-  à la page) ; le bouton est atteignable au clavier **sauf** quand un dialogue modal est ouvert (son piège à focus enferme
+  agir — « … faute d'activité : cliquez sur « Rester connecté ». », le seul geste sûr (validation P3, P3-1 : « n'importe
+  où » fermerait un dialogue ouvert ; P2-3 : une touche est inopérante quand le focus est dans l'aperçu PDF) ; le manuel
+  décrit, sans impératif, ce qui compte aussi comme activité ; le bouton est atteignable au clavier **sauf** quand un dialogue modal est ouvert (son piège à focus enferme
   la tabulation) — écart déclaré, tracé par **#912** avec les autres limites de l'avis (F13). Contraste du thème clair.
 - **Écartées** : `role="alertdialog"` avec focus ; compte à rebours dans une région `aria-live`.
 - **Réversible** : oui.
@@ -245,8 +247,9 @@ Fiche : `v0174-session.md` (parente), `v0174-session-1.md` (serveur), `v0174-ses
 
 - **Contexte** (validation P1, R9) : la 1 laissait le PDF à la 2, si bien que son AC des textes n'était pas vérifiable
   seule et que la branche portait un PDF périmé entre les deux.
-- **Retenu** : la 1 régénère le PDF d'administration, la 2 les deux (`make fr`, sous les deux verrous) ; chacune contrôle
-  ses motifs dans le PDF aplati. Coût : un `make fr` de plus. C-v0174s-1 (« aucune dépendance ») tient de nouveau.
+- **Retenu** : la 1 régénère le PDF d'administration (`make admin`), la 2 les deux manuels (`make admin user`), sous les
+  deux verrous — `make fr` rebâtirait aussi la brochure (validation P3, P3-6) ; chacune contrôle ses motifs dans le PDF
+  aplati. Coût : un `make admin` de plus. C-v0174s-1 (« aucune dépendance ») tient de nouveau.
 - **Réversible** : oui.
 
 ## C-v0174s-19 — Les tests prouvent qu'ils atteignent leur chemin : `rows_affected`, un assistant d'empreinte unique

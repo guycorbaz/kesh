@@ -12,7 +12,8 @@ sous-fiches sœurs, sur la même branche, développées dans cet ordre :*
 - ***`v0174-session-2.md`** — le navigateur : #895, les LOW navigateur de #898 et #899.*
 
 *Issues en `refs` seulement dans les commits. Validation P1 (Sonnet, R 0/0/2/9, F 0/0/3/13) remédiée ; prochaine
-étape : validation P3 (Sonnet, complète, `v0174-session-validate-prompt-p3.md`), après la P2 (Opus, 0/0/6/9, remédiée).*
+étape : validation P4 (Haiku, ciblée, `v0174-session-validate-prompt-p4.md`), après la P2 (Opus, 0/0/6/9) et la P3
+(Sonnet, 0/0/1/7), remédiées.*
 
 ## Story
 
@@ -175,7 +176,7 @@ touche un dépôt (`repositories/refresh_tokens.rs`) : **gate complet même en c
   tokens* (`:3021-3030`), les trois sites « jetons de session » (`:1665`, `:1991`, `:2263`), l'écart (a) (`:3039`), le
   paragraphe *Mise à jour* (`:3051`, renvoi), le § *Dépannage* (`:3765`), et **sa part de la sous-section neuve « Passer
   à la 0.17.4 »** (ci-dessous) ; la 2 écrit § *Durée d'inactivité* (`:3043`, « Ce qui compte » ; `:3047`, `localStorage`)
-  et sa part de la même sous-section. **Chaque sous-fiche régénère les PDF qu'elle touche** (`make fr` dans
+  et sa part de la même sous-section. **Chaque sous-fiche régénère les PDF qu'elle touche** (`make admin` pour la 1, `make admin user` pour la 2, dans
   `docs/manual/`, sous les deux verrous) et les contrôle aplatis : la branche n'a jamais de PDF périmé entre les deux,
   et l'AC des textes de la 1 se vérifie sans la 2 (validation P1, R9).
 - **Sous-section « Passer à la 0.17.4 »** (`\subsubsection{Passer à la 0.17.4}\label{sec:maj-0-17-4}`, insérée **avant**
@@ -183,7 +184,7 @@ touche un dépôt (`repositories/refresh_tokens.rs`) : **gate complet même en c
   validation P1, F2 et R9. **Sa rédaction commune aux trois stories de la 0.17.4 revient à l'intégration** ; la session y
   apporte, et chaque sous-fiche écrit sa part sous un intitulé repérable pour l'union : (1, la 1) « **La 0.17.4 n'a
   aucune migration** : le retour à la 0.17.3 se fait **sans restauration**, **après avoir vidé la table des sessions**
-  (Kesh arrêté : `docker compose stop kesh-api`, puis `docker compose exec mariadb mariadb -u kesh -p kesh -e "DELETE FROM refresh_tokens"` (compte et base de Kesh : remplacer `kesh` par `MARIADB_USER` et `MARIADB_DATABASE` s'ils ont été changés ; le mot de passe demandé est celui de `DATABASE_URL`, saisi au clavier, aucune variable de l'hôte) — avec `docker-compose.prod.yml`, la même requête dans la base que nomme `DATABASE_URL`) — tout le monde est déconnecté ; sans ce geste, une empreinte lue dans une base, un dump ou une
+  (Kesh arrêté : avec `docker-compose.yml`, deux commandes **dans un bloc `lstlisting`** (validation P3, P3-2) — `docker compose stop kesh-api` puis `docker compose exec mariadb mariadb -u kesh -p kesh -e "DELETE FROM refresh_tokens"` (compte et base de Kesh : remplacer `kesh` par `MARIADB_USER` et `MARIADB_DATABASE` s'ils ont été changés ; le mot de passe demandé est celui de `DATABASE_URL`, saisi au clavier, aucune variable de l'hôte) ; avec `docker-compose.prod.yml` (base hébergée hors du compose, par exemple le MariaDB de DSM), une phrase : exécuter `DELETE FROM refresh_tokens;` dans la base de `DATABASE_URL` avec le client MariaDB habituel, Kesh arrêté (P3-3)) — tout le monde est déconnecté ; sans ce geste, une empreinte lue dans une base, un dump ou une
   sauvegarde de la 0.17.4 ouvrirait une session sous la 0.17.3 (validation P2, P2-6) ; la sauvegarde complète d'avant la
   mise à jour reste recommandée » ; (2, la 1) « **Chaque utilisateur se reconnecte une fois** :
   les jetons de session sont désormais stockés en empreinte, ceux d'avant ne sont plus reconnus — un onglet resté
@@ -230,3 +231,11 @@ touche un dépôt (`repositories/refresh_tokens.rs`) : **gate complet même en c
   (`:441-445`), P2-9, P2-10, P2-11, P2-12 (dérogation écrite), P2-13 (`relatedTarget` nul ou `<iframe>`), P2-14 (à
   #912), P2-15 (point 6 fait). Aucun rejeté. Prochaine : validation P3 (Sonnet, complète, braquée d'abord sur cette
   remédiation, `v0174-session-validate-prompt-p3.md`).
+- 2026-11-05 — **Validation P3** (Sonnet, complète) : **0/0/1/7**, remédiée (Opus 5.5) par retraits et formulations
+  simples : P3-1 (l'annonce ne dit plus que « cliquez sur « Rester connecté » » — « n'importe où » fermerait un dialogue
+  ouvert ; le manuel décrit, sans impératif, ce qui compte), P3-2 (commande en `lstlisting`), P3-3 (variante
+  `docker-compose.prod.yml` en une phrase ; recette (b) : requête jouée sur la base jetable, commande Compose constatée en
+  lecture), P3-4 et P3-5 (C-v0174s-1 aligné sur la dérogation de la 1, motif et ordre des tâches exacts ; **dérogation
+  déclarée au Project Lead par l'orchestrateur**), P3-6 (`make admin`, `make admin user`), P3-7 (AC-5 (a) asserte d'abord
+  les lignes claires de l'archive), P3-8 (motif court). Aucun rejeté. Prochaine : validation P4 (Haiku, ciblée sur ce
+  commit, `v0174-session-validate-prompt-p4.md`).

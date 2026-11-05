@@ -27,8 +27,12 @@ modules : `kesh-db/repositories`, `kesh-db/entities`, `kesh-api/routes/{auth,set
 P2-12). **Gardée unique**, parce que la conception ne vit que dans `refresh_tokens.rs` (empreinte, liaisons, effacement)
 et l'appel de l'import (`admin.rs`) ; ailleurs, ce sont des commentaires (S-A8, S2-B1, S2-E2), un déplacement de lecture
 (S-E5), un opérateur (S-E6), un nom d'opération (S2-B2), un message (`main.rs:237`), et l'édition mécanique de #896.
-Découper ferait une story de commentaires sans conception. *Risque accepté* : une revue de code sur un diff large mais
-peu profond ; atténué par l'ordre des tâches (dépôt, puis import, puis LOW, puis #896) et un commit par tâche.
+**Motif, dit tel qu'il est** (validation P3, P3-4) : ce n'est pas l'exception que la règle prévoit (cycles Cargo, fusions
+intermédiaires impossibles à tester) ; c'est un choix de coût — découper ferait une story de commentaires sans
+conception, et #896 (85 appels) serait la sous-story de rollout mécanique que la règle recommande, pour une seule
+édition. **Déclarée au Project Lead** par l'orchestrateur ; l'arbitrage lui revient. *Risque accepté* : une revue de
+code sur un diff large mais peu profond ; atténué par l'ordre des tâches — dépôt (tâche 3), import et les LOW de la
+tâche 4, #896 (tâche 5), LOW restants (tâche 6) (validation P3, P3-5) — et un commit par tâche.
 
 ## Conception
 
@@ -190,7 +194,9 @@ c'est M13 qui le prouve.
 
 **AC-5 — Effacement à l'import, sauvegarde 0.17.3 importable.** `admin_full_import_e2e.rs` : (a) une archive dont la
 table `refresh_tokens` porte des UUID clairs (forme 0.17.3 : lignes posées à la main avant l'export, actives et
-révoquées) s'importe (200) ; après l'import, `SELECT COUNT(*) FROM refresh_tokens WHERE SUBSTRING(token, 15, 1) <> '0'`
+révoquées) : **d'abord**, l'archive porte bien ces lignes (dans `data/refresh_tokens.ndjson`, autant de lignes à UUID
+clair que posées — validation P3, P3-7 : sans quoi le cas resterait vert à vide si l'export les écartait un jour) ;
+l'archive s'importe (200) ; après l'import, `SELECT COUNT(*) FROM refresh_tokens WHERE SUBSTRING(token, 15, 1) <> '0'`
 = 0 ; les lignes à empreinte de l'archive sont présentes et **toutes** révoquées ; (b) le cas existant
 `v0172s_full_import_revokes_every_session_and_keeps_idle_setting` (`:5183`) reste vrai, son assistant `v0172s_refresh_row`
 (`:5149`) posant désormais l'**empreinte** et rendant le jeton clair (les recherches `WHERE token = ?` liant
@@ -294,7 +300,8 @@ AC-5 (a), AC-6.
 5. #896 (§ *Conception* 5), contrôle 85/85.
 6. LOW 1 à 12 ; annotations de `v0172-session.md`.
 7. Textes (§ *Manuel*, *CHANGELOG*, *README*). **Le PDF du manuel d'administration est régénéré par cette sous-fiche**
-   (`make fr` sous les deux verrous) et contrôlé aplati : son AC-10 se vérifie sans la 2, qui le régénérera encore
+   (`make admin` dans `docs/manual/`, sous les deux verrous ; `make fr` régénérerait aussi le manuel utilisateur et la
+   brochure, que la 1 ne touche pas — validation P3, P3-6) et contrôlé aplati : son AC-10 se vérifie sans la 2, qui le régénérera encore
    (validation P1, R9).
 8. Mutations M1 à M17.
 9. Gate complet (`scripts/test-fast.sh --ci` sous les deux verrous), Vitest **non** requis (aucun fichier frontend),
@@ -310,7 +317,10 @@ budget mémoire — le dire) ; démarrage de la 0.17.4 : `SELECT COUNT(*) FROM r
 15 s après sa première activité (`activity_with` : `set_idle_deadline` rend `false`, 401, `routes/auth.rs:745-756` ; le
 renouvellement avec le même cookie échoue, `/login?reason=session_expired`) — et non « à l'échéance de son jeton
 d'accès », comme l'écrivait la fiche (validation P1, R10 et F15) ; reconnexion, puis la ligne neuve porte une empreinte. (b) **Retour** : sous la 0.17.4, relever l'empreinte d'une ligne active ; arrêter
-Kesh, vider `refresh_tokens` par la commande du manuel (§ *Manuel*, sous-section « Passer à la 0.17.4 ») ; redémarrer la
+Kesh, vider `refresh_tokens` — la requête du manuel jouée sur `kesh_v0174s` avec le compte de dev (le conteneur du compose
+standard est celui du dépôt principal, interdit aux agents) ; la commande Compose elle-même (services `mariadb` et
+`kesh-api`, option `-p` sans valeur, base `kesh`) est constatée en lecture contre `docker-compose.yml`, son exécution
+réelle revenant à la recette de l'installation (validation P3, P3-3) ; redémarrer la
 0.17.3 sur cette base — elle démarre (aucune migration inconnue) ; `POST /api/v1/auth/refresh` avec l'empreinte relevée
 **dans le corps** ⇒ 401 ; une reconnexion est demandée. *Témoin* (avant le vidage, sur une copie si le temps le permet) :
 la même empreinte présentée à la 0.17.3 rend 200 — c'est ce que le vidage ferme (validation P2, P2-6). (c) Export `.keshbackup` après connexion :
@@ -336,7 +346,7 @@ durée réglée pour tout contrôle 401 au `curl` (leçon N-A5). Chiffres et heu
 - **Sous-section neuve « Passer à la 0.17.4 »** (`\subsubsection{Passer à la 0.17.4}\label{sec:maj-0-17-4}`, avant
   `sec:maj-0-17-3`, `:2513`, patron de la 0.17.2, `:2527`) — validation P1, F2 et R9 ; **la rédaction commune aux trois
   stories de la 0.17.4 revient à l'intégration**, cette sous-fiche y écrit sa part (fiche parente, § *Textes*, points 1 et
-  2) : aucune migration, retour à la 0.17.3 **sans restauration**, **après avoir vidé la table des sessions** — `docker compose stop kesh-api`, puis `docker compose exec mariadb mariadb -u kesh -p kesh -e "DELETE FROM refresh_tokens"` (compte et base de Kesh : remplacer `kesh` par `MARIADB_USER` et `MARIADB_DATABASE` s'ils ont été changés ; le mot de passe demandé est celui de `DATABASE_URL`, saisi au clavier, aucune variable de l'hôte) — avec `docker-compose.prod.yml`, la même requête dans la base que nomme `DATABASE_URL` ;
+  2) : aucune migration, retour à la 0.17.3 **sans restauration**, **après avoir vidé la table des sessions** — avec `docker-compose.yml`, deux commandes **dans un bloc `lstlisting`** (validation P3, P3-2) — `docker compose stop kesh-api` puis `docker compose exec mariadb mariadb -u kesh -p kesh -e "DELETE FROM refresh_tokens"` (compte et base de Kesh : remplacer `kesh` par `MARIADB_USER` et `MARIADB_DATABASE` s'ils ont été changés ; le mot de passe demandé est celui de `DATABASE_URL`, saisi au clavier, aucune variable de l'hôte) ; avec `docker-compose.prod.yml` (base hébergée hors du compose, par exemple le MariaDB de DSM), une phrase : exécuter `DELETE FROM refresh_tokens;` dans la base de `DATABASE_URL` avec le client MariaDB habituel, Kesh arrêté (P3-3) ;
   tout le monde est déconnecté ; sans ce geste, une empreinte lue sous la 0.17.4 (base, dump, sauvegarde) ouvrirait une
   session sous la 0.17.3, qui cherche la valeur reçue telle quelle (`refresh_tokens.rs:19-20`, cookie **ou corps**,
   `routes/auth.rs:424-427`) — validation P2, P2-6 ; sauvegarde complète recommandée ; chaque utilisateur se reconnecte **une fois**, un onglet resté ouvert revenant à la connexion **à sa
@@ -357,7 +367,7 @@ durée réglée pour tout contrôle 401 au `curl` (leçon N-A5). Chiffres et heu
   | `mots de passe hachés, jetons de session :` | 1 | 0 |
   | `jetons de session — : d’où` | 1 | 0 |
   | `ainsi que les jetons de session.` | 1 | 0 |
-  | `une empreinte (SHA-256), si bien` | 0 | 1 |
+  | `garde qu’une empreinte` | 0 | 1 (motif court, sans trait d'union — validation P3, P3-8 ; s'il rend 0, contrôle au `.tex`) |
   | `Passer à la 0.17.4` | 0 | ≥ 1 (titre ; la table des matières en ajoute une) |
   | `DELETE FROM refresh_tokens` | 0 | ≥ 1 |
 
@@ -411,6 +421,8 @@ durée réglée pour tout contrôle 401 au `curl` (leçon N-A5). Chiffres et heu
 - 2026-11-05 — Validation P2 remédiée (détail au Change Log de la parente) : P2-1 (motifs PDF réels, avant/après), P2-4
   (M14 → AC-5 (a)), P2-6 (retour à la 0.17.3 après vidage de `refresh_tokens`, recette (b) avec témoin), P2-8, P2-9,
   P2-10, P2-12 (dérogation écrite). Prochaine : validation P3 (Sonnet, complète).
+- 2026-11-05 — Validation P3 remédiée : P3-2, P3-3, P3-4, P3-5, P3-6, P3-7, P3-8. Prochaine : validation P4 (Haiku,
+  ciblée).
 
 ## Dev Agent Record
 

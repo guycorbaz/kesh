@@ -68,10 +68,9 @@ essais sur bases jetables, captures sur base de démonstration.
 le champ — `!== null` rendrait l'avis, `undefined !== null`).
 
 - **Contenu** : une phrase statique dans un élément `role="alert"` — `session-idle-warning-announce` « Votre session va
-  bientôt se fermer faute d'activité : cliquez sur « Rester connecté », ou n'importe où dans Kesh hors du document
-  affiché. » (validation P1, F12 : dire **comment** agir ; validation P2, P2-3 : **sans promettre la touche**, inopérante
-  quand le focus est dans l'aperçu PDF — ses touches ne parviennent pas à la page, `v0172-session.md:291-293` ; seul le
-  clic dans la page vaut dans le cas que l'avis vise) —, un compte à rebours visible `aria-hidden="true"` —
+  bientôt se fermer faute d'activité : cliquez sur « Rester connecté ». » — le seul geste sûr (validation P3, P3-1 :
+  « n'importe où dans Kesh » fermerait un dialogue ouvert et en perdrait la saisie ; validation P2, P2-3 : une touche est
+  inopérante quand le focus est dans l'aperçu PDF) —, un compte à rebours visible `aria-hidden="true"` —
   `session-idle-warning-countdown` « Fermeture dans { $remaining }. » où `$remaining` est `m:ss` (`0:59`, arrondi au
   supérieur à la seconde) —, et un `<button type="button">` `session-idle-warning-stay` « Rester connecté », qui appelle
   `onStay` sur `click`. Attributs de test `data-testid="session-idle-warning"`,
@@ -110,12 +109,11 @@ le champ — `!== null` rendrait l'avis, `undefined !== null`).
   l'aperçu PDF (`<iframe>`) sans le masquer entièrement.
 - **i18n** : trois clés aux quatre catalogues (`crates/kesh-i18n/locales/{fr-CH,de-CH,it-CH,en-CH}/messages.ftl`), replis
   Svelte égaux à la valeur fr-CH. de-CH « Ihre Sitzung wird wegen Inaktivität bald beendet: Klicken Sie auf
-  «Angemeldet bleiben» oder irgendwo in Kesh ausserhalb des angezeigten Dokuments. » / « Ende in { $remaining }. » /
+  «Angemeldet bleiben». » / « Ende in { $remaining }. » /
   « Angemeldet bleiben » (« beendet », comme
   `login-session-idle` de-CH, `messages.ftl:2229` — validation P1, F10) ; it-CH « La sessione sta per essere chiusa per
-  inattività: cliccate su «Resta connesso» o in un punto qualsiasi di Kesh fuori dal documento visualizzato. » / « Chiusura tra { $remaining }. » / « Resta connesso » ;
-  en-CH « Your session will soon be closed due to inactivity: click “Stay signed in”, or anywhere in Kesh outside the
-  displayed document. » /
+  inattività: cliccate su «Resta connesso». » / « Chiusura tra { $remaining }. » / « Resta connesso » ;
+  en-CH « Your session will soon be closed due to inactivity: click “Stay signed in”. » /
   « Closing in { $remaining }. » / « Stay signed in » (relus par le développement ; orthographe suisse : `ss`).
 
 ### 3. LOW navigateur de #898 et #899 (fiche parente, § *Triage*)
@@ -243,7 +241,7 @@ Chaque mutation : motif vérifié unique, Vitest ciblé sous les deux verrous, r
 2. Tests rouges (AC-1 à AC-3 ; AC-4 (a), (c), (d)), constatés.
 3. Module (`warningRemainingMs`, `stayActive`, LOW 3 et 4), composant, layout, i18n.
 4. Tests (AC-1 à AC-6), LOW 1 et 2.
-5. Manuels (`.tex`), puis les **deux** PDF régénérés (`make fr` dans `docs/manual/`, sous les deux verrous — ce `make`
+5. Manuels (`.tex`), puis les **deux** PDF régénérés (`make admin user` dans `docs/manual/`, sous les deux verrous — ce `make`
    reprend aussi les textes de la `v0174-session-1`) et contrôlés aplatis ; CHANGELOG.
 6. Mutations W1 à W12, W14 et W15 (W13 retirée à la validation P2 ; numéros gardés).
 7. Gates : `cd frontend && npm run check && npm run lint-i18n-ownership && npm run test:unit && npm run build` ;
@@ -261,8 +259,9 @@ rendu, non 65 ms après le changement d'adresse, leçon N2-A1). Jointes au Dev A
 
 - **Utilisateur** (`docs/manual/fr/user-manual.tex:95-97`) : après la phrase de l'échéance, « **Environ une minute
   avant** (trente secondes si la durée réglée est d'une minute), Kesh affiche un avertissement avec un compte à rebours et
-  le bouton **Rester connecté** : un clic sur ce bouton, ou n'importe où dans Kesh hors du document affiché, garde la
-  session ouverte. » (validation P2, P2-3 : pas de promesse de touche) ;
+  le bouton **Rester connecté**, qui garde la session ouverte. Toute autre activité dans Kesh hors du document affiché la
+  garde aussi. » — description, sans impératif (validation P3, P3-1 : un clic « n'importe où » fermerait un dialogue
+  ouvert) ;
   au `:97`, **seule la phrase en gras** (« Pendant une longue lecture dans l'aperçu, sortez le pointeur du document, ou
   cliquez à côté, au moins une fois par durée réglée … ; un avertissement avant la fermeture est demandé (CR \#895) ») est
   remplacée par « **Pendant une longue lecture dans l'aperçu, cliquez sur Rester connecté quand l'avertissement
@@ -280,7 +279,7 @@ rendu, non 65 ms après le changement d'adresse, leçon N2-A1). Jointes au Dev A
 - `docs/kesh-specifications.txt` (`:2690` environ, à côté de la ligne d'acceptation du CR #891 ajoutée par la 0.17.3) : une
   ligne d'acceptation pour l'avis (CR #895) — validation P1, F11 (4).
 - Sonde du PDF aplati (les deux manuels) : « 895 » absent, « Rester connecté » présent. Les **deux** PDF sont régénérés
-  par cette sous-fiche (`make fr`).
+  par cette sous-fiche (`make admin user` ; la brochure n'est pas touchée — validation P3, P3-6).
 
 ## CHANGELOG (`## [0.17.4] — Non publié`)
 
@@ -310,6 +309,8 @@ rendu, non 65 ms après le changement d'adresse, leçon N2-A1). Jointes au Dev A
   (annonce et manuels sans promesse de touche, quatre locales), P2-5 (W13 retirée, garde à onze écouteurs d'activité),
   P2-7 (`:85`), P2-9, P2-13 (`relatedTarget` nul ou `<iframe>`, plus de constat), P2-14 (à #912). Prochaine :
   validation P3 (Sonnet, complète).
+- 2026-11-05 — Validation P3 remédiée : P3-1 (annonce réduite à « cliquez sur « Rester connecté » », quatre catalogues ;
+  manuel descriptif), P3-6 (`make admin user`). Prochaine : validation P4 (Haiku, ciblée).
 
 ## Dev Agent Record
 
