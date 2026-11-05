@@ -548,8 +548,10 @@ fn ordinary_amounts_and_dates_unchanged_819() {
 }
 
 /// Revue de code P1 (B-1 = E-4 = A-1) — la lecture corrigée d'un relevé
-/// **camt.053.001.08** (`v08::parse`) : entité, référence de caractère, espaces
-/// autour, CDATA. Tue la mutation MA-819-8 (`v08.rs` en lecture héritée).
+/// **camt.053.001.08** (`v08::parse`) : entité, référence de caractère, CDATA
+/// (les espaces autour d'une entité sont couverts en v04,
+/// `spaces_around_an_entity_are_kept_819`). Tue la mutation MA-819-8 (`v08.rs`
+/// en lecture héritée).
 #[test]
 fn v08_corrected_reading_resolves_entities_and_cdata_819() {
     let xml = r#"<?xml version="1.0" encoding="UTF-8"?>

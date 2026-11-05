@@ -19,7 +19,9 @@
 //!   [`inventory_of_kesh_messages_is_closed`] tient cette liste close.
 //!
 //! **Une seule divergence admise** (C-v017-1-11) : `v04_latin1_hors_texte.xml`,
-//! un fichier non UTF-8 dont les octets fautifs sont hors du texte lu. Sous 0.39
+//! un fichier non UTF-8 dont les octets fautifs sont hors du texte que lisait la
+//! 0.17.3 (la lecture corrigée de la 0.17.4 lit son CDATA, #819 ; le verdict ne
+//! change pas, la validation UTF-8 de l'entrée le refuse avant). Sous 0.39
 //! il se lit (référence `v04_latin1_hors_texte.0.39.json`) ; sous toute autre
 //! version, le lecteur valide l'UTF-8 de toute l'entrée et le refuse en
 //! `MalformedXml`. L'exception est **nominative** et **conditionnée par la

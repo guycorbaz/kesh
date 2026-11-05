@@ -251,6 +251,14 @@ tels que lus en 0.17.3) : relu en base.
 - 2026-11-06 — **Revue de code P1 (Sonnet, B, E, A)** : B 0/0/1/4, E 0/0/1/5, A 0/0/1/6 ; le MEDIUM unique, convergé
   (B-1 = E-4 = A-1 : la lecture corrigée d'un relevé v08 sans test ni mutation), remédié (`f3b5d5b1`) avec les LOW B-3, A-3,
   A-5, A-6, A-7 ; prémisses relues au code. Prochaine : revue P2 ciblée (Sonnet, `v0174-correctifs-review-prompt-p2-1.md`).
+- 2026-11-06 — **Revue de code P2 ciblée (Sonnet)** : 0/0/1/3 (`kesh-gate-logs/v0174c-review-p2-1.md`). M-1 (MEDIUM, prémisse
+  relue : `bank_imports_e2e.rs:4061-4071` — sans alias, l'aperçu ne signale rien et la création rend 3 transactions) : le
+  manuel promettait à tort que l'aperçu montre la première limite ; récrit — la ligne non reconnue s'importe une seconde fois
+  **sans signal** (vérifier la liste des transactions), seul le faux doublon est signalé ; CHANGELOG aligné. L-1 (les trois
+  causes d'échec de la relecture), L-2 (commentaire du test v08), L-3 (source du décompte ciblé), et la doc de
+  `camt053_golden.rs` (lecture du CDATA). Aucune ligne de production. Gate ciblé : `cargo fmt --check`, clippy `kesh-import`,
+  `cible-819-p2.log` 17/17, `textes_coherents` 23/23 ; PDF régénéré (`make-user3.log`), aplati (`pdf-controle3.txt`).
+  Prochaine : passe P3 ciblée (Haiku, `v0174-correctifs-review-prompt-p3-1.md`).
 
 ## Dev Agent Record
 
@@ -288,7 +296,7 @@ Claude Opus 5.5 (`claude-opus-5-5`), autonomie, worktree `/home/gcorbaz/devel/ke
   `Legacy0173`) **tuée** (`mut/MA-819-8.log`, 1 échec sur 17 : le test neuf) ; `invalid_char_refs_are_malformed_819`
   (`&#0;`, `&#xD800;`, B-3, vert d'emblée : il fige la branche) ; le témoin (d) d'AC-1.5 asserte que les clés qui ont égalé
   sont les clés neuves (`|ref & co|`, `|e2e & 7|`, A-3) ; manuel et CHANGELOG disent les deux limites de la reconnaissance
-  par alias (#915, A-6) ; README des fixtures (A-7). Ciblé : 11/11 (`*_819` de `kesh-import`). Total des mutations de la
+  par alias (#915, A-6) ; README des fixtures (A-7). Ciblé : 11/11 (`*_819` de `kesh-import`) — *source : `nextest-final.log` (gate complet de `f3b5d5b1`) ; journal ciblé versé à la revue P2 : `cible-819-p2.log`, 17/17 (`*_819` et `camt053_golden`).* Total des mutations de la
   fiche : 8/8 tuées.
 - Gates : au dernier commit de code de la story, fiche-index § *Dev Agent Record (gates)*.
 
