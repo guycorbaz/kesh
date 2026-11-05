@@ -312,21 +312,59 @@ fn manifeste(chemin: &Path) -> serde_json::Value {
     serde_json::from_str(&texte).expect("manifeste JSON")
 }
 
+/// Supprime la seconde base quand il sort de portée — **y compris sur un échec
+/// d'assertion** (déroulement de la panique) : le nettoyage de `#[sqlx::test]`
+/// ne connaît que sa propre base (E1-6 de la revue P1). Le `Drop` étant
+/// synchrone, la suppression se fait sur un fil et un exécuteur à part, par
+/// une connexion neuve à la base du test.
+struct BaseJetable {
+    options: sqlx::mysql::MySqlConnectOptions,
+    nom: String,
+}
+
+impl Drop for BaseJetable {
+    fn drop(&mut self) {
+        use sqlx::ConnectOptions;
+        let (options, nom) = (self.options.clone(), self.nom.clone());
+        let _ = std::thread::spawn(move || {
+            let Ok(rt) = tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+            else {
+                return;
+            };
+            rt.block_on(async {
+                if let Ok(mut c) = options.connect().await {
+                    let _ = sqlx::raw_sql(&format!("DROP DATABASE IF EXISTS `{nom}`"))
+                        .execute(&mut c)
+                        .await;
+                }
+            });
+        })
+        .join();
+    }
+}
+
 /// Une seconde base éphémère (`_sqlx_test_…`, espace de noms autorisé au
-/// compte de test), sur le même serveur que `pool`. Rend son pool et son nom.
-async fn seconde_base(pool: &MySqlPool) -> (MySqlPool, String) {
+/// compte de test), sur le même serveur que `pool`. Rend son pool, son nom et
+/// le garde qui la supprime.
+async fn seconde_base(pool: &MySqlPool) -> (MySqlPool, String, BaseJetable) {
     let nom = format!("_sqlx_test_v0174m_{}", uuid::Uuid::new_v4().simple());
     sqlx::raw_sql(&format!("CREATE DATABASE `{nom}`"))
         .execute(pool)
         .await
         .expect("création de la seconde base");
+    let garde = BaseJetable {
+        options: (*pool.connect_options()).clone(),
+        nom: nom.clone(),
+    };
     let options = (*pool.connect_options()).clone().database(&nom);
     let second = sqlx::mysql::MySqlPoolOptions::new()
         .max_connections(2)
         .connect_with(options)
         .await
         .expect("connexion à la seconde base");
-    (second, nom)
+    (second, nom, garde)
 }
 
 /// Les lignes d'une table, chaque valeur en hexadécimal (`NULL` marqué),
@@ -464,7 +502,7 @@ async fn t1_ter_importable_par_la_version_de_depart(pool: MySqlPool) {
         "assertion de montage : la source porte les données peuplées"
     );
 
-    let (seconde, nom) = seconde_base(&pool).await;
+    let (seconde, nom, garde) = seconde_base(&pool).await;
     montage::apply_migrations_up_to(
         &seconde,
         montage::migrations_before(PREMIERE_EN_ATTENTE, "mcp_prompts"),
@@ -507,10 +545,15 @@ async fn t1_ter_importable_par_la_version_de_depart(pool: MySqlPool) {
     }
 
     seconde.close().await;
-    sqlx::raw_sql(&format!("DROP DATABASE `{nom}`"))
-        .execute(&pool)
-        .await
-        .expect("suppression de la seconde base");
+    drop(garde);
+    let restantes: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM information_schema.SCHEMATA WHERE SCHEMA_NAME = ?",
+    )
+    .bind(&nom)
+    .fetch_one(&pool)
+    .await
+    .expect("SCHEMATA");
+    assert_eq!(restantes, 0, "la seconde base est supprimée par son garde");
 }
 
 // ---------------------------------------------------------------------------
@@ -632,6 +675,36 @@ async fn t5_dossier_non_creable(pool: MySqlPool) {
         message.contains(&format!("KESH_SKIP_PRE_UPGRADE_BACKUP={BINAIRE}")),
         "{message}"
     );
+}
+
+/// T6-bis (E1-2 de la revue P1) — la frontière du seuil : un espace libre
+/// **égal** au seuil écrit, un octet de moins refuse. Dossiers vides, si bien que
+/// le seuil vaut `seuil_d_espace(0, 0)` (la marge fixe).
+#[sqlx::test(migrations = false)]
+async fn t6_bis_frontiere_du_seuil(pool: MySqlPool) {
+    monter_base_partielle(&pool).await;
+    let seuil = crate::auto_backup::seuil_d_espace(0, 0);
+    let dossiers = Dossiers::neufs();
+    let env = |libre| -> Arc<dyn BackupEnv> {
+        Arc::new(EnvDeTest {
+            libre,
+            ecrivain: Ecrivain::Normal,
+            sync_refuse: false,
+        })
+    };
+    let refus = etape(&pool, &dossiers.config(None), env(seuil - 1), instant())
+        .await
+        .expect_err("un octet sous le seuil refuse");
+    assert!(
+        matches!(refus, Refus::Espace { libre: Ok(l), seuil: s, .. } if l == seuil - 1 && s == seuil),
+        "{refus:?}"
+    );
+    assert!(dossiers.sauvegardes().is_empty());
+    let issue = etape(&pool, &dossiers.config(None), env(seuil), instant())
+        .await
+        .expect("un espace égal au seuil écrit");
+    assert!(matches!(issue, Issue::Ecrite { .. }), "{issue:?}");
+    assert_eq!(dossiers.sauvegardes().len(), 1);
 }
 
 #[sqlx::test(migrations = false)]
@@ -925,4 +998,25 @@ fn messages_de_refus() {
     assert!(
         message_de_refus(&illisible, "0.17.4").contains("espace libre de /d illisible : statvfs")
     );
+    // E1-5 de la revue P1 — les trois autres causes.
+    let lecture = Refus::Lecture {
+        erreur: kesh_db::errors::DbError::NotFound,
+    };
+    assert!(
+        message_de_refus(&lecture, "0.17.4").contains("(lecture de la base : Entité non trouvée)")
+    );
+    let ecriture = Refus::Ecriture {
+        chemin: PathBuf::from("/b/pre-upgrade/f.keshbackup"),
+        erreur: BackupWriteError::new("zip", io::Error::other("disque plein")),
+    };
+    assert!(
+        message_de_refus(&ecriture, "0.17.4")
+            .contains("(écriture de /b/pre-upgrade/f.keshbackup : zip : disque plein)")
+    );
+    let tache = Refus::Tache {
+        erreur: "panique".to_string(),
+    };
+    let m = message_de_refus(&tache, "0.17.4");
+    assert!(m.contains("(tâche interrompue : panique)"), "{m}");
+    assert!(m.contains("KESH_SKIP_PRE_UPGRADE_BACKUP=0.17.4"), "{m}");
 }
