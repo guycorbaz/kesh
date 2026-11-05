@@ -223,7 +223,7 @@ cd /opt/kesh
 Télécharger le fichier de référence depuis le dépôt officiel, \textbf{au tag de la version que décrit ce manuel} (\texttt{v\keshVersion}) --- non à la branche \texttt{main}, qui peut être en avance sur l'image publiée ; pour une autre version, remplacez le tag dans l'adresse :
 
 \begin{lstlisting}[language=bash]
-curl -fsSL https://raw.githubusercontent.com/guycorbaz/kesh/v0.17.2/docker-compose.yml \
+curl -fsSL https://raw.githubusercontent.com/guycorbaz/kesh/v0.17.3/docker-compose.yml \
     -o docker-compose.yml
 \end{lstlisting}
 
@@ -234,7 +234,7 @@ Ce fichier désigne l'image publiée \texttt{gcorbaz/kesh:latest} : \keshcommand
 Copier le fichier d'exemple et l'adapter :
 
 \begin{lstlisting}[language=bash]
-curl -fsSL https://raw.githubusercontent.com/guycorbaz/kesh/v0.17.2/.env.example \
+curl -fsSL https://raw.githubusercontent.com/guycorbaz/kesh/v0.17.3/.env.example \
     -o .env
 \end{lstlisting}
 
@@ -570,7 +570,7 @@ Télécharger le \keshpath{docker-compose.yml} canonique depuis le dépôt Kesh,
 
 \begin{lstlisting}[language=bash]
 cd /volume1/docker/kesh
-DEPOT=https://raw.githubusercontent.com/guycorbaz/kesh/v0.17.2
+DEPOT=https://raw.githubusercontent.com/guycorbaz/kesh/v0.17.3
 curl -fsSL "$DEPOT/docker-compose.prod.yml" -o docker-compose.yml
 curl -fsSL "$DEPOT/.env.example" -o .env
 
@@ -1735,7 +1735,7 @@ Les exports ne doivent pas rester dans le dossier de téléchargements : Synolog
 \Needspace{15\baselineskip}
     \item \textbf{Compose et \keshpath{.env.example} au tag de la version relevée, et variables qu'il lit.} Remplacez \texttt{0.15.0} par la version relevée. Les exemples de cette sous-section portent \texttt{0.15.0}, la version de ce manuel ; une production qui satisfait le prérequis porte \textbf{0.15.0 ou plus} : à une version suivante, l'exemple recopié tel quel donnerait une copie qui n'est pas celle de la production. Le contrôle~9 arrête une \textbf{image} d'une autre version ; le tag de \keshcommand{DEPOT}, lui, n'est contrôlé par rien : remplacez les deux.
 \begin{lstlisting}[language=bash]
-DEPOT=https://raw.githubusercontent.com/guycorbaz/kesh/v0.17.2
+DEPOT=https://raw.githubusercontent.com/guycorbaz/kesh/v0.17.3
 curl -fsSL "$DEPOT/docker-compose.yml" -o "$COPIE/docker-compose.yml"
 curl -fsSL "$DEPOT/.env.example" -o "$COPIE/.env"
 grep -oE '\$\{?[A-Za-z_][A-Za-z0-9_]*' "$COPIE/docker-compose.yml" \
@@ -2054,7 +2054,7 @@ Les deux scripts sont des fichiers du dépôt Kesh, \keshpath{scripts/synology/k
 
 \begin{lstlisting}[language=bash]
 cd /volume1/docker/kesh
-DEPOT=https://raw.githubusercontent.com/guycorbaz/kesh/v0.17.2
+DEPOT=https://raw.githubusercontent.com/guycorbaz/kesh/v0.17.3
 curl -fsSLO "$DEPOT/scripts/synology/kesh-dump.sh"
 curl -fsSLO "$DEPOT/scripts/synology/kesh-restore.sh"
 chmod 700 kesh-dump.sh kesh-restore.sh
@@ -2509,6 +2509,20 @@ L'opération s'inscrit au journal d'audit sous \emph{Réparation de l'installati
 La session ouverte doit être \textbf{rouverte} --- reconnexion, ou au plus la durée du \textbf{jeton d'accès} (\texttt{KESH\_JWT\_EXPIRY\_MINUTES}) plus une minute ; d'ici là, certains écrans de la société répondent par une erreur, d'autres s'affichent vides. Si le journal du serveur porte « réparation de l'installation au démarrage » suivi d'une erreur, voir la section \emph{Dépannage}.
 
 \textbf{Limite} : les données de démonstration laissées par une réinitialisation antérieure (taux de TVA, réglages de facturation, contacts, articles, factures, avoirs) qui désignent la société effacée restent en base, invisibles et inertes (\#546).
+
+\subsubsection{Passer à la 0.17.3}\label{sec:maj-0-17-3}
+
+La 0.17.3 se pose sur la 0.17.2 : elle ne demande pas de nouveau compose, on tire l'image et on redémarre (\S\ref{sec:mise-a-jour}) --- après avoir retiré du \keshpath{.env} les variables nommées ci-dessous. Depuis une version antérieure à la 0.17.2, appliquez d'abord les sections suivantes (\S\ref{sec:maj-0-17-2}, puis \S\ref{sec:maj-0-17-1} et \S\ref{sec:maj-0-17-0} s'il le faut).
+
+\begin{sloppypar}
+\textbf{Avant la mise à jour, une sauvegarde complète est obligatoire --- la base, une sauvegarde d'installation \keshpath{.keshbackup} et le dossier des documents} (étape 1 de la procédure, \S\ref{sec:mise-a-jour}). \textbf{La 0.17.3 porte une migration} : une table système, \texttt{\_kesh\_installation\_settings}, qui garde la durée d'inactivité de la session. Elle ne modifie aucune ligne existante et n'est pas breaking : \texttt{kesh\_version\_min\_required} reste à \texttt{0.17.0}. Mais, comme toute migration, elle empêche la 0.17.2 de démarrer sur la base migrée (migration appliquée qu'elle ne connaît pas) : \textbf{le retour à la 0.17.2 ne passe que par cette sauvegarde} --- restaurer la base d'avant la mise à jour, puis reprendre l'image \texttt{gcorbaz/kesh:0.17.2} dans le compose. Une sauvegarde \keshpath{.keshbackup} prise en 0.17.2 s'importe dans la 0.17.3 (mêmes tables applicatives ; la table neuve est une table système, ni exportée ni restaurée).
+\end{sloppypar}
+
+\begin{sloppypar}
+\paragraph{Ce qu'il faut faire.} (1) \textbf{Retirer du \keshpath{.env}} (et du \keshpath{docker-compose.yml} si vous l'y aviez ajoutée) l'ancienne variable de durée d'inactivité, que le journal des modifications nomme : elle n'est plus lue, et Kesh l'ignore sans rien en dire (\S\ref{sec:configuration}). (2) Si vous aviez posé \texttt{KESH\_JWT\_EXPIRY\_MINUTES=480} pour contourner l'issue \#876 (\S\ref{sec:maj-0-17-2}), \textbf{le retirer aussi} : il ne prolonge plus la session et ne fait qu'allonger la validité d'un jeton d'accès dérobé ; une session ouverte avant la mise à jour peut alors prendre fin à sa première activité : reconnectez-vous une fois. (3) Après le redémarrage, \textbf{recharger chaque onglet de Kesh resté ouvert} : un onglet resté sur l'ancienne interface ne transmet pas l'activité, et sa session peut se fermer en pleine saisie. (4) \textbf{Régler la durée} dans \emph{Administration → Paramètres}, section \emph{Session} : 60 minutes par défaut, de 1 minute à 24 heures (\S\ref{sec:duree-inactivite}).
+\end{sloppypar}
+
+\paragraph{Ce qui change à l'écran.} La session ne se ferme plus pendant le travail : elle prend fin après la durée d'inactivité réglée, et toute activité dans Kesh la remet à zéro, dans tous les onglets ; à l'échéance, la page de connexion le dit. La lecture d'un PDF dans l'aperçu, sans geste hors du document, ne compte pas comme activité : pendant une longue lecture, sortez le pointeur du document de temps en temps. Le détail est au manuel utilisateur et au journal des modifications.
 
 \subsubsection{Passer à la 0.17.2}\label{sec:maj-0-17-2}
 
