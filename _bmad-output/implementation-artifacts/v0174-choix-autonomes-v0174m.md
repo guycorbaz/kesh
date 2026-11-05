@@ -73,6 +73,10 @@ Fiche : `v0174-mise-a-jour.md`. Issue #847 (P2), en `refs` seulement dans les co
   version du binaire (`CARGO_PKG_VERSION`) : elle s'éteint d'elle-même à la mise à jour suivante, si on l'oublie dans le
   `.env`. Posée avec une autre valeur, elle est ignorée et le journal le dit ; posée et utilisée, un avertissement est
   écrit. Transmise par les deux compose et décrite à `.env.example` (garde `configuration_transmise`).
+  *Annoté à l'étape 0 du développement (V7-3 de la validation P7)* : « le journal le dit » ne vaut que sur un plan *à
+  appliquer* (`Ecrite { echappatoire_ignoree: Some(valeur) }`) ; sur un autre plan, une autre valeur est ignorée sans
+  avertissement (fiche, point 6, AC-5, T11, M19 ; C-v0174m-34) ; de même « posée et utilisée » ne vaut avertissement que
+  si une migration est contournée (V4-12).
 - **Écartées** : un booléen (`=true`, oublié dans le `.env`, désactiverait en silence toutes les mises à jour suivantes) ;
   démarrer quand même avec un avertissement (c'est la discipline d'aujourd'hui, celle que #847 remplace) ; un réglage dans
   l'interface (impossible avant le démarrage).
