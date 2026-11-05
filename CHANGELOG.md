@@ -8,6 +8,12 @@ Le contenu est rédigé en français à destination des **fiduciaires, PME, ind�
 
 ---
 
+## [0.17.4] — Non publié
+
+### Ajouté
+
+- **Kesh se sauvegarde lui-même avant de mettre la base à jour** ([#847](https://github.com/guycorbaz/kesh/issues/847)) : au démarrage d'une version qui doit migrer la base, une sauvegarde complète — base et pièces — est écrite dans `backup/pre-upgrade/` avant toute migration ; elle se restaure dans la version de départ (manuel d'administration, *Revenir à la version précédente*). Si elle échoue, Kesh ne migre pas et le dit ; pour migrer quand même, en connaissance de cause : `KESH_SKIP_PRE_UPGRADE_BACKUP=<version>` dans le `.env` (les compose de la 0.17.4 la transmettent ; un compose antérieur, non : reprenez-en la ligne). Kesh n'en supprime aucune. La 0.17.4 n'ayant pas de migration, la mise à jour depuis la 0.17.3 n'en écrit pas.
+
 ## [0.17.3] — 2026-11-05
 
 ⚠️ **La 0.17.3 porte une migration** (une table système, `_kesh_installation_settings`, pour le réglage de la durée d'inactivité) : elle ne modifie aucune donnée existante et `kesh_version_min_required` reste à 0.17.0, mais une 0.17.2 ou une 0.17.1 refuse ensuite de démarrer sur la base. **Le retour à une version antérieure (0.17.2 ou 0.17.1) passe par la sauvegarde complète d'avant la mise à jour** — la base, une sauvegarde `.keshbackup` et le dossier des documents. Une sauvegarde `.keshbackup` prise en 0.17.2 s'importe dans la 0.17.3 (mêmes tables applicatives).

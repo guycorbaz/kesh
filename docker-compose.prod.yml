@@ -152,6 +152,8 @@ services:
       KESH_ADMIN_BACKUP_DIR: ${KESH_ADMIN_BACKUP_DIR:-}
       KESH_ADMIN_EXPORT_INMEM_MB: ${KESH_ADMIN_EXPORT_INMEM_MB:-}
       KESH_ADMIN_IMPORT_MAX_MB: ${KESH_ADMIN_IMPORT_MAX_MB:-}
+      # Sauvegarde avant mise à jour (0.17.4) : échappatoire, version exacte
+      KESH_SKIP_PRE_UPGRADE_BACKUP: ${KESH_SKIP_PRE_UPGRADE_BACKUP:-}
     ports:
       # Restriction host-side au loopback NAS (LAN privé v0.1.0, D5).
       # Accès via SSH tunnel ou reverse proxy DSM (futur v0.2+).

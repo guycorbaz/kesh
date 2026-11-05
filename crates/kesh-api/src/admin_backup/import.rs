@@ -169,9 +169,25 @@ fn lire_borne(entry: impl Read, nom: &str, max: u64) -> Result<Vec<u8>, AppError
 /// tests. Retourne [`AppError::InvalidBackupStructure`] (→400) sur toute
 /// anomalie. Synchrone, et lent sur une grosse archive (lecture disque,
 /// SHA-256) : l'appelant l'exécute en `spawn_blocking`.
+///
+/// L'inventaire attendu est celui du binaire ([`TABLES_TO_TRUNCATE`]) : le
+/// manifeste doit en porter exactement les tables.
 pub fn parse_and_verify<R: Read + Seek>(
     reader: R,
     limits: &ReadLimits,
+) -> Result<ParsedBackup<R>, AppError> {
+    parse_and_verify_avec_inventaire(reader, limits, TABLES_TO_TRUNCATE)
+}
+
+/// Story v0174-mise-a-jour (#847, C-v0174m-17 (b)) — [`parse_and_verify`] à
+/// inventaire paramétré : le manifeste doit porter **exactement** les tables
+/// d'`inventaire` (couverture et réciproque). Sert au test d'aller-retour de la
+/// sauvegarde avant mise à jour, qui joue l'import de la version de départ
+/// (inventaire plus court) ; la production passe par [`parse_and_verify`].
+pub(crate) fn parse_and_verify_avec_inventaire<R: Read + Seek>(
+    reader: R,
+    limits: &ReadLimits,
+    inventaire: &[&str],
 ) -> Result<ParsedBackup<R>, AppError> {
     let mut zip =
         ZipArchive::new(reader).map_err(|e| invalide(format!("conteneur ZIP illisible : {e}")))?;
@@ -231,7 +247,7 @@ pub fn parse_and_verify<R: Read + Seek>(
 
     // Couverture : chaque table applicative attendue doit figurer au manifeste
     // (sinon on ne saurait pas la restaurer correctement).
-    for &t in TABLES_TO_TRUNCATE {
+    for &t in inventaire {
         if !manifest.tables.contains_key(t) {
             return Err(invalide(format!("table '{t}' absente du manifeste")));
         }
@@ -240,7 +256,7 @@ pub fn parse_and_verify<R: Read + Seek>(
     // le manifeste — sinon ses lignes seraient comptées dans `total_rows` mais
     // jamais restaurées (table absente de TABLES_TO_TRUNCATE) ⇒ la garde de
     // cohérence du handler lèverait un faux `500` au lieu d'un `400` propre.
-    let known: HashSet<&str> = TABLES_TO_TRUNCATE.iter().copied().collect();
+    let known: HashSet<&str> = inventaire.iter().copied().collect();
     for table in manifest.tables.keys() {
         if !known.contains(table.as_str()) {
             return Err(invalide(format!(

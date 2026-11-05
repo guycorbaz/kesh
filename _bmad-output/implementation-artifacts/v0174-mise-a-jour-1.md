@@ -50,7 +50,8 @@ version qui doit migrer la base, écrive lui-même, avant toute migration, une s
 6. **Échappatoire** : `KESH_SKIP_PRE_UPGRADE_BACKUP=<version exacte du binaire>` dans le `.env`, transmise par
    `docker-compose.yml` et `docker-compose.prod.yml` (`${KESH_SKIP_PRE_UPGRADE_BACKUP:-}`). Évaluée **en premier** (après
    `FreshInstall`), si bien qu'elle vaut aussi contre un plan illisible (C-v0174m-31) : égale → aucune sauvegarde ; le plan
-   est alors lu **pour le journal seulement** — *à appliquer* ou illisible → avertissement « migration sans sauvegarde »,
+   est alors lu **pour décider de l'issue, et du seul avertissement dans les cas *à appliquer* ou illisible** (V7-1) —
+   *à appliquer* ou illisible → avertissement « migration sans sauvegarde »,
    `Issue::Contournee` ; *à jour*, *neuve* sous `FreshInstall`, *interrompue* → rien n'est dit (aucune migration n'est
    contournée), issue du plan (V4-12) ; *incohérent* (*neuve* hors `FreshInstall`) → `Refus::Plan`, que l'échappatoire ne
    franchit pas. Autre valeur → la valeur est ignorée : plan *à appliquer* → la sauvegarde se fait,
@@ -78,8 +79,13 @@ les commentaires des compose (incomplets, non faux : la story n'y touche pas).
   environnement: Arc<dyn BackupEnv>, now: NaiveDateTime) -> Result<Issue, Refus>` ;
   `Issue { InstallationNeuve, AJour, Interrompue, Contournee, Ecrite { chemin: PathBuf, echappatoire_ignoree:
   Option<String>, dossier_non_synchronise: Option<String> } }`, `Refus { Plan { erreur: Option<sqlx::Error> } /* None : incohérent */, Dossier { dir, erreur },
-  Espace { dir, libre: Option<u64>, seuil: u64, erreur: Option<io::Error> }, Lecture { erreur }, Ecriture { chemin, erreur },
-  Tache { erreur } }` — chaque variante porte les données de son message. **Les avertissements se décident sur la valeur rendue** (C-v0174m-34) : le module ne
+  Espace { dir, libre: Result<u64, io::Error>, seuil: u64 }, Lecture { erreur }, Ecriture { chemin, erreur },
+  Tache { erreur } }` — chaque variante porte les données de son message. *Étape 0 (V7-4)* : `libre` est un `Result` —
+  `Ok(octets)` sous le seuil (espace insuffisant), `Err(e)` (espace illisible) —, si bien que les deux états
+  contradictoires ne se représentent pas ; tailles en octets, converties en Mio (arrondi supérieur pour le seuil,
+  inférieur pour l'espace libre) dans `message_de_refus`. Types : `Plan` et `Lecture` portent la `sqlx::Error` / la
+  `DbError` d'origine, `Dossier` le texte d'`ensure_backup_dir`, `Ecriture` la `BackupWriteError`, `Tache` le texte de la
+  `JoinError`. **Les avertissements se décident sur la valeur rendue** (C-v0174m-34) : le module ne
   journalise pas les avertissements, `main.rs` les émet d'après l'`Issue` — « migration sans sauvegarde » **si et seulement
   si** `Issue::Contournee` ; « ignorée » si `echappatoire_ignoree` est `Some(valeur)` ; « dossier non synchronisé » si
   `dossier_non_synchronise` est `Some(erreur)` ; les tests assertent l'`Issue`, sans capturer `tracing`. `main.rs` : `Err` →
@@ -127,7 +133,8 @@ le plan incohérent**, dont le message ne la conseille pas.
 
 ## Acceptance Criteria
 
-**AC-1 — Pas de sauvegarde sans migration.** Base neuve (`FreshInstall`, ou plan *neuve*), base *à jour*, base
+**AC-1 — Pas de sauvegarde sans migration.** Base neuve (`FreshInstall` ; un plan *neuve* hors `FreshInstall` est le
+refus *incohérent* d'AC-4, V7-2), base *à jour*, base
 *interrompue* : aucun fichier, aucun dossier `pre-upgrade/` créé. (T2, T3, T4.)
 
 **AC-2 — Sauvegarde avant migration.** Base où reste au moins une migration : le fichier est écrit sous le nom du point 3,
