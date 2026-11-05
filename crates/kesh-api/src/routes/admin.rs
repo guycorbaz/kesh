@@ -179,7 +179,14 @@ async fn ensure_backup_dir(dir: &str) -> Result<(), String> {
 ///
 /// ⚠️ Le `.keshbackup` est un **secret** (hash de mots de passe, refresh
 /// tokens). L'import remplace les `refresh_tokens` ⇒ sessions destination
-/// invalidées (`sessionInvalidated: true`).
+/// invalidées (`sessionInvalidated: true`) ; et, depuis la Story v0172-session
+/// (0.17.3, #876, C-v0172s-23), il **révoque** dans sa transaction les lignes
+/// restaurées encore actives (motif `password_change`, que la contrainte
+/// `chk_refresh_tokens_revoked_reason` admet ; la distinction est portée par
+/// l'audit `admin.full_import`) : une ligne restaurée porte l'échéance
+/// d'inactivité de l'export, et son cookie se renouvellerait sinon. Le réglage
+/// de la durée d'inactivité (`_kesh_installation_settings`, table système)
+/// n'est pas restauré.
 pub async fn full_import(
     State(state): State<AppState>,
     Extension(current_user): Extension<CurrentUser>,
@@ -476,6 +483,18 @@ async fn run_backup_and_restore(
                 AppError::AdminFullImportFailed(format!("backfill client_number_canonical : {db}"))
             }
         })?;
+
+    // 5-quinquies. Story v0172-session (0.17.3, #876, C-v0172s-23) — toutes
+    //    les sessions sont révoquées, dans la transaction : une ligne restaurée
+    //    porte l'échéance d'inactivité de l'export et son cookie se
+    //    renouvellerait tant qu'elle n'est pas passée. Placée ici — après le
+    //    rejeu et avant le refus « aucun compte Admin » — si bien qu'un refus
+    //    ultérieur annule aussi la révocation (les sessions de la destination
+    //    restent alors actives). Motif `password_change` : la contrainte
+    //    `chk_refresh_tokens_revoked_reason` n'en admet que cinq.
+    kesh_db::repositories::refresh_tokens::revoke_all_in_tx(&mut tx, "password_change")
+        .await
+        .map_err(|e| AppError::AdminFullImportFailed(format!("révocation des sessions : {e}")))?;
 
     // Audit in-tx, user_id = MIN(admin) **du dataset restauré** (O-1). PAS
     // current_user (peut ne pas exister dans la source).

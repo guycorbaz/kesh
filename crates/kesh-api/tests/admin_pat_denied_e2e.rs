@@ -43,8 +43,8 @@ const LIB_RS: &str = include_str!("../src/lib.rs");
 const MARKER_BEGIN: &str = "KESH-ADMIN-ROUTES-BEGIN";
 const MARKER_END: &str = "KESH-ADMIN-ROUTES-END";
 
-/// Les **50 constructeurs de méthode** du bloc `admin_routes` (49 avant la
-/// Story v017-4a), un par couple
+/// Les **52 constructeurs de méthode** du bloc `admin_routes` (49 avant la
+/// Story v017-4a, 50 avant la Story v0172-session), un par couple
 /// (méthode, chemin). Les identifiants de chemin sont arbitraires : la couche
 /// répond **avant** le handler, donc aucune donnée n'a besoin d'exister.
 ///
@@ -92,6 +92,9 @@ const ADMIN_COUPLES: &[(&str, &str)] = &[
     ("GET", "/api/v1/admin/backup-schedule"),
     ("PUT", "/api/v1/admin/backup-schedule"),
     ("POST", "/api/v1/admin/backup-schedule/run"),
+    // Story v0172-session (0.17.3, CR #891) — la durée d'inactivité de la session.
+    ("GET", "/api/v1/admin/session-settings"),
+    ("PUT", "/api/v1/admin/session-settings"),
     ("GET", "/api/v1/admin/backups"),
     (
         "GET",
@@ -792,7 +795,7 @@ async fn error_code(resp: reqwest::Response) -> String {
 // Tests HTTP — le comportement
 // ============================================================================
 
-/// AC1, jambe `read-write` : les 50 couples rendent `API_KEY_ADMIN_FORBIDDEN`.
+/// AC1, jambe `read-write` : les 52 couples rendent `API_KEY_ADMIN_FORBIDDEN`.
 ///
 /// ⚠️ On asserte le **code**, pas le statut. Trois gardes distinctes rendent
 /// `403` sur ces routes — le RBAC, le gate de portée, et la couche : un test
@@ -869,7 +872,10 @@ async fn read_only_pat_is_stopped_by_the_right_guard_on_each_couple(pool: MySqlP
         // arrêtés par le gate de portée.
         // (14, 35) → (14, 36) : Story v017-4a (refs #849) — le `DELETE` d'un
         // brouillon de facture fournisseur est arrêté par le gate de portée.
-        (14, 36),
+        // (14, 36) → (15, 37) : Story v0172-session (refs #891) — le `GET` du
+        // réglage de la durée d'inactivité atteint la couche ; le `PUT` est
+        // arrêté par le gate de portée.
+        (15, 37),
         "la répartition attendue entre la couche et le gate de portée a changé"
     );
 }
@@ -922,9 +928,10 @@ async fn head_couples_are_denied_too(pool: MySqlPool) {
     // serveur MCP (clés, réglages), sans garde dans leur handler. 8 → 10 :
     // Story 32-8b (refs #723) — les deux `GET` des envois (liste, détail).
     // 10 → 12 : Story 32-10a-iii (refs #723) — les deux `GET` des prompts
-    // (liste, détail).
+    // (liste, détail). 12 → 13 : Story v0172-session (refs #891) — le `GET` du
+    // réglage de la durée d'inactivité, sans garde dans son handler.
     assert_eq!(
-        discriminating, 12,
+        discriminating, 13,
         "le nombre de couples HEAD discriminants a changé : un chemin dont le \
          handler rend déjà 403 par lui-même doit figurer dans GUARDED_BY_HANDLER"
     );

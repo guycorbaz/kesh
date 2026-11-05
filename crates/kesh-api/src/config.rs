@@ -198,13 +198,13 @@ pub struct Config {
     jwt_secret: String,
     /// Durée de vie d'un access token JWT (défaut 15 min).
     pub jwt_expiry: TimeDelta,
-    /// Lifetime absolu d'un refresh token (défaut 30 jours).
+    /// Durée de vie du cookie de renouvellement (défaut 30 jours), reposé à
+    /// chaque renouvellement. Story v0172-session (0.17.3) : la fin de session
+    /// est fixée par la durée d'inactivité réglée dans l'interface
+    /// (`_kesh_installation_settings`), non par une variable.
     pub refresh_token_max_lifetime: TimeDelta,
 
-    // --- Story 1.6 : session & rate limiting ---
-    /// Durée d'inactivité avant expiration du refresh token (défaut 15 min).
-    /// Sliding expiration : chaque refresh remet le compteur à zéro.
-    pub refresh_inactivity: TimeDelta,
+    // --- Story 1.6 : rate limiting ---
     /// Fenêtre de temps pour compter les tentatives de login échouées (défaut 15 min).
     pub rate_limit_window: TimeDelta,
     /// Nombre maximal de tentatives de login échouées par IP avant blocage (défaut 5).
@@ -358,7 +358,6 @@ impl std::fmt::Debug for Config {
                 "refresh_token_max_lifetime",
                 &self.refresh_token_max_lifetime,
             )
-            .field("refresh_inactivity", &self.refresh_inactivity)
             .field("rate_limit_window", &self.rate_limit_window)
             .field("rate_limit_max_attempts", &self.rate_limit_max_attempts)
             .field("rate_limit_block_duration", &self.rate_limit_block_duration)
@@ -438,6 +437,12 @@ impl Config {
     /// Panique si un invariant est violé — c'est un constructeur de
     /// tests, la panique est le bon signal pour un setup de test
     /// incorrect.
+    ///
+    /// `_refresh_inactivity_ignored` : **ignoré depuis la 0.17.3** (Story
+    /// v0172-session, C-v0172s-31) — la durée d'inactivité de la session vit
+    /// en base (`_kesh_installation_settings`), réglée dans l'interface. Le
+    /// paramètre est gardé pour ne pas toucher les quelque 78 fichiers de tests
+    /// qui l'appellent ; son retrait est un lot mécanique à part.
     #[doc(hidden)]
     #[allow(clippy::too_many_arguments)]
     pub fn from_fields_for_test(
@@ -447,7 +452,7 @@ impl Config {
         jwt_secret: String,
         jwt_expiry: TimeDelta,
         refresh_token_max_lifetime: TimeDelta,
-        refresh_inactivity: TimeDelta,
+        _refresh_inactivity_ignored: TimeDelta,
         rate_limit_window: TimeDelta,
         rate_limit_max_attempts: u32,
         rate_limit_block_duration: TimeDelta,
@@ -470,10 +475,6 @@ impl Config {
             refresh_token_max_lifetime > TimeDelta::zero()
                 && refresh_token_max_lifetime <= TimeDelta::days(365),
             "from_fields_for_test: refresh_token_max_lifetime must be in (0, 365d], got {refresh_token_max_lifetime}"
-        );
-        assert!(
-            refresh_inactivity > TimeDelta::zero() && refresh_inactivity <= TimeDelta::hours(24),
-            "from_fields_for_test: refresh_inactivity must be in (0, 24h], got {refresh_inactivity}"
         );
         assert!(
             rate_limit_window > TimeDelta::zero() && rate_limit_window <= TimeDelta::hours(24),
@@ -507,7 +508,6 @@ impl Config {
             jwt_secret,
             jwt_expiry,
             refresh_token_max_lifetime,
-            refresh_inactivity,
             rate_limit_window,
             rate_limit_max_attempts,
             rate_limit_block_duration,
@@ -730,29 +730,12 @@ impl Config {
         };
         let refresh_token_max_lifetime = TimeDelta::days(refresh_token_days);
 
-        // --- Story 1.6 : session & rate limiting ---
-
-        let refresh_inactivity_minutes = match env_nonempty("KESH_REFRESH_INACTIVITY_MINUTES") {
-            Some(val) => match val.parse::<i64>() {
-                Ok(m) if (1..=1440).contains(&m) => m,
-                Ok(m) => {
-                    tracing::warn!(
-                        "KESH_REFRESH_INACTIVITY_MINUTES={} hors borne [1, 1440], utilisation du défaut 15",
-                        m
-                    );
-                    15
-                }
-                Err(_) => {
-                    tracing::warn!(
-                        "KESH_REFRESH_INACTIVITY_MINUTES='{}' invalide, utilisation du défaut 15",
-                        val
-                    );
-                    15
-                }
-            },
-            None => 15,
-        };
-        let refresh_inactivity = TimeDelta::minutes(refresh_inactivity_minutes);
+        // --- Story 1.6 : rate limiting ---
+        //
+        // Story v0172-session (0.17.3, C-v0172s-31) : l'ancienne variable de
+        // durée d'inactivité n'est plus lue — ni lecture, ni avertissement ; la
+        // durée se règle dans l'interface et vit en base
+        // (`_kesh_installation_settings`).
 
         let rate_limit_window_minutes = match env_nonempty("KESH_RATE_LIMIT_WINDOW_MINUTES") {
             Some(val) => match val.parse::<i64>() {
@@ -1183,7 +1166,6 @@ impl Config {
             jwt_secret,
             jwt_expiry,
             refresh_token_max_lifetime,
-            refresh_inactivity,
             rate_limit_window,
             rate_limit_max_attempts,
             rate_limit_block_duration,
@@ -1632,7 +1614,6 @@ pub(crate) mod test_helpers {
             jwt_secret: "test-secret-32-bytes-minimum-test-secret-padding".to_string(),
             jwt_expiry: TimeDelta::minutes(15),
             refresh_token_max_lifetime: TimeDelta::days(30),
-            refresh_inactivity: TimeDelta::minutes(15),
             rate_limit_window: TimeDelta::minutes(15),
             rate_limit_max_attempts: 5,
             rate_limit_block_duration: TimeDelta::minutes(30),
@@ -1697,7 +1678,6 @@ mod tests {
             env::remove_var("KESH_JWT_SECRET");
             env::remove_var("KESH_JWT_EXPIRY_MINUTES");
             env::remove_var("KESH_REFRESH_TOKEN_MAX_LIFETIME_DAYS");
-            env::remove_var("KESH_REFRESH_INACTIVITY_MINUTES");
             env::remove_var("KESH_RATE_LIMIT_WINDOW_MINUTES");
             env::remove_var("KESH_RATE_LIMIT_MAX_ATTEMPTS");
             env::remove_var("KESH_RATE_LIMIT_BLOCK_MINUTES");
@@ -2683,43 +2663,12 @@ mod tests {
         assert_eq!(config.refresh_token_max_lifetime, TimeDelta::days(7));
     }
 
-    // --- Story 1.6 : tests config session & rate limiting ---
-
-    #[test]
-    fn config_refresh_inactivity_defaults_to_15_min() {
-        let _guard = env_lock();
-        reset_env();
-        set_minimum_required();
-
-        let config = Config::from_env().expect("Config should load");
-        assert_eq!(config.refresh_inactivity, TimeDelta::minutes(15));
-    }
-
-    #[test]
-    fn config_refresh_inactivity_respects_env() {
-        let _guard = env_lock();
-        reset_env();
-        set_minimum_required();
-        unsafe {
-            env::set_var("KESH_REFRESH_INACTIVITY_MINUTES", "5");
-        }
-
-        let config = Config::from_env().expect("Config should load");
-        assert_eq!(config.refresh_inactivity, TimeDelta::minutes(5));
-    }
-
-    #[test]
-    fn config_refresh_inactivity_out_of_bounds_falls_back() {
-        let _guard = env_lock();
-        reset_env();
-        set_minimum_required();
-        unsafe {
-            env::set_var("KESH_REFRESH_INACTIVITY_MINUTES", "9999");
-        }
-
-        let config = Config::from_env().expect("Config should load");
-        assert_eq!(config.refresh_inactivity, TimeDelta::minutes(15));
-    }
+    // --- Story 1.6 : tests config rate limiting ---
+    //
+    // Story v0172-session (0.17.3, C-v0172s-31) : les trois tests de l'ancienne
+    // variable de durée d'inactivité sont retirés avec sa lecture — la durée
+    // vit en base, réglée dans l'interface (tests du dépôt
+    // `installation_settings` et `tests/session_settings_e2e.rs`).
 
     #[test]
     fn config_rate_limit_defaults() {

@@ -114,6 +114,7 @@ mod tests {
             company_id: 5,
             exp: 9_999_999_999, // Story 10-5 — exp claim added to CurrentUser
             api_key_id: None,   // Story 17-2a — chemin JWT
+            idle_exp: None,     // Story v0172-session — jeton sans échéance
         };
         assert_eq!(user.user_id, 123);
         assert_eq!(user.company_id, 5);

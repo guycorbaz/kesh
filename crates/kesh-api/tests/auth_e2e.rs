@@ -1082,6 +1082,17 @@ async fn refresh_replay_after_rotation_revokes_all(pool: MySqlPool) {
     let body: serde_json::Value = resp.json().await.unwrap();
     let rt_new = body["refreshToken"].as_str().unwrap();
 
+    // Story v0172-session (#876, C-v0172s-17) — un rejeu dans les 30 s d'une
+    // rotation relève de la grâce (deux onglets) ; la détection de vol joue
+    // au-delà : la rotation est reculée de 60 s avant le rejeu.
+    sqlx::query(
+        "UPDATE refresh_tokens SET revoked_at = NOW(3) - INTERVAL 60 SECOND WHERE token = ?",
+    )
+    .bind(&rt_old)
+    .execute(&pool)
+    .await
+    .unwrap();
+
     // Replay old token → theft detection → mass revoke
     let resp = app
         .client
@@ -1696,8 +1707,73 @@ async fn all_refresh_error_codes_are_identical(pool: MySqlPool) {
         .unwrap();
     let body3: serde_json::Value = resp.json().await.unwrap();
 
+    // Case 4 (Story v0172-session, #876) : le cas 3 passe désormais par la
+    // grâce de rotation (30 s) ; le rejeu reculé de 60 s emprunte le chemin de
+    // la détection de vol — même code.
+    sqlx::query(
+        "UPDATE refresh_tokens SET revoked_at = NOW(3) - INTERVAL 60 SECOND WHERE token = ?",
+    )
+    .bind(&rt)
+    .execute(&pool)
+    .await
+    .unwrap();
+    let resp = app
+        .client
+        .post(app.url("/api/v1/auth/refresh"))
+        .json(&json!({"refreshToken": rt}))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 401);
+    let body4: serde_json::Value = resp.json().await.unwrap();
+
     // All should return the same error code (anti-enumeration)
     assert_eq!(body1["error"]["code"], "INVALID_REFRESH_TOKEN");
     assert_eq!(body2["error"]["code"], "INVALID_REFRESH_TOKEN");
     assert_eq!(body3["error"]["code"], "INVALID_REFRESH_TOKEN");
+    assert_eq!(body4["error"]["code"], "INVALID_REFRESH_TOKEN");
+}
+
+// --- Story v0172-session (#876, C-v0172s-17) : la grâce de rotation ---
+//
+// Deux onglets qui renouvellent avec le même jeton à quelques secondes
+// d'intervalle : le second reçoit 401, mais la session de l'autre reste vive
+// (pas de révocation générale).
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn refresh_replay_within_grace_does_not_revoke_all(pool: MySqlPool) {
+    let user_id = create_user(&pool, "user_grace", "password123!", true).await;
+    let app = spawn_app(pool.clone()).await;
+    let (_at, rt_old) = login_and_get_tokens(&app, "user_grace", "password123!").await;
+
+    let resp = app
+        .client
+        .post(app.url("/api/v1/auth/refresh"))
+        .json(&json!({"refreshToken": rt_old}))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 200);
+    let body: serde_json::Value = resp.json().await.unwrap();
+    let rt_new = body["refreshToken"].as_str().unwrap().to_string();
+
+    let resp = app
+        .client
+        .post(app.url("/api/v1/auth/refresh"))
+        .json(&json!({"refreshToken": rt_old}))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 401);
+    let body: serde_json::Value = resp.json().await.unwrap();
+    assert_eq!(body["error"]["code"], "INVALID_REFRESH_TOKEN");
+
+    let active: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM refresh_tokens WHERE user_id = ? AND token = ? AND revoked_at IS NULL",
+    )
+    .bind(user_id)
+    .bind(&rt_new)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(active, 1, "la ligne neuve reste active (grâce, pas de vol)");
 }

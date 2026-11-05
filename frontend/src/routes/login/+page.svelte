@@ -7,6 +7,7 @@
 	import { apiClient, isApiError } from '$lib/shared/utils/api-client';
 	import { appVersion } from '$lib/shared/utils/app-version.svelte';
 	import { featureFlags } from '$lib/shared/utils/feature-flags.svelte';
+	import { i18nMsg } from '$lib/shared/utils/i18n.svelte';
 	import { AlertTriangle, Clock, WifiOff, XCircle } from '@lucide/svelte';
 
 	let username = $state('');
@@ -15,8 +16,27 @@
 	let errorMessage = $state('');
 	let errorIcon = $state<'credentials' | 'rate' | 'network' | 'server' | 'session' | null>(null);
 
-	// Détection du paramètre ?reason=session_expired
-	const sessionExpired = $derived($page.url.searchParams.get('reason') === 'session_expired');
+	// Story v0172-session (0.17.3, #876) — fermeture pour inactivité :
+	// `?reason=idle&minutes=N` (N entier). Sans N valable, le message de session
+	// expirée. ⚠️ Sur `/login`, les messages i18n ne sont pas chargés (endpoint
+	// authentifié) : le repli français s'affiche quelle que soit la langue.
+	const idleMinutes = $derived.by(() => {
+		if ($page.url.searchParams.get('reason') !== 'idle') return null;
+		const raw = $page.url.searchParams.get('minutes') ?? '';
+		if (!/^[0-9]{1,4}$/.test(raw)) return null;
+		const n = Number(raw);
+		// Bornes du réglage (revue de code P1, N-B4/N-E6) : hors de 1 à 1440,
+		// le message de session expirée, sans durée.
+		return n >= 1 && n <= 1440 ? n : null;
+	});
+	const idleClosed = $derived(idleMinutes !== null);
+
+	// Détection du paramètre ?reason=session_expired (ou d'une fermeture pour
+	// inactivité sans durée lisible).
+	const sessionExpired = $derived(
+		$page.url.searchParams.get('reason') === 'session_expired' ||
+			($page.url.searchParams.get('reason') === 'idle' && idleMinutes === null),
+	);
 
 	async function handleLogin(e: SubmitEvent) {
 		e.preventDefault();
@@ -40,12 +60,16 @@
 				userId: number;
 				username: string;
 				role: string;
+				idleTimeoutMinutes?: number;
+				idleExpiresIn?: number | null;
 			}>('/api/v1/auth/login', { username, password });
 			authState.login({
 				userId: String(data.userId),
 				username: data.username,
 				role: data.role,
 				expiresIn: data.expiresIn,
+				idleTimeoutMinutes: data.idleTimeoutMinutes,
+				idleExpiresIn: data.idleExpiresIn,
 			});
 			await goto('/');
 		} catch (err) {
@@ -80,6 +104,28 @@
 <main class="flex min-h-screen items-center justify-center bg-surface-alt">
 	<div class="w-full max-w-sm rounded-lg border border-border bg-surface p-8 shadow-sm">
 		<h1 class="mb-6 text-center text-2xl font-semibold text-text">Kesh</h1>
+
+		<!-- Story v0172-session — session fermée pour inactivité -->
+		{#if idleClosed && !errorMessage}
+			<div
+				class="mb-4 flex items-center gap-2 rounded-md border border-warning/30 bg-warning/5 p-3 text-sm text-warning"
+				role="status"
+				data-testid="login-session-idle"
+			>
+				<Clock class="h-4 w-4 flex-shrink-0" aria-hidden="true" />
+				<!-- Singulier par une clé `-one` (précédent `supplier-invoices-count-one`) :
+				     `i18nMsg` n'évalue pas les sélecteurs Fluent (choix C-v0172s-60). -->
+				<span
+					>{idleMinutes === 1
+						? i18nMsg('login-session-idle-one', "Session fermée après 1 minute d'inactivité.")
+						: i18nMsg(
+								'login-session-idle',
+								"Session fermée après { $minutes } minutes d'inactivité.",
+								{ minutes: idleMinutes ?? 0 },
+							)}</span
+				>
+			</div>
+		{/if}
 
 		<!-- Message session expirée -->
 		{#if sessionExpired && !errorMessage}

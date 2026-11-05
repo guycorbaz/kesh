@@ -108,7 +108,7 @@ Kesh n'est pas conçu pour les grands groupes soumis à l'audit ordinaire (Art. 
     \item \textbf{Frontend} : SvelteKit 2 avec Svelte 5 et TypeScript, bundler Vite, CSS via Tailwind 4.
     \item \textbf{Base de données} : MariaDB 10.11+ (compatibilité MySQL 8 maintenue, mais MariaDB recommandée pour les optimisations spécifiques utilisées).
     \item \textbf{Déploiement} : Docker Compose, image officielle \keshpath{gcorbaz/kesh:latest} sur Docker Hub.
-    \item \textbf{Authentification} : JWT (HS256) avec refresh tokens et rotation, durée d'expiration courte (15 min) compensée par rafraîchissement automatique côté frontend.
+    \item \textbf{Authentification} : JWT (HS256) avec refresh tokens et rotation, jeton d'accès court (15 min) renouvelé à la première requête après son échéance ; la fin de session est fixée par la durée d'inactivité réglée dans l'interface (\S\ref{sec:duree-inactivite}).
     \item \textbf{Multi-tenant} : claim \texttt{company\_id} dans le JWT et scoping strict sur toutes les requêtes API et toutes les requêtes SQL (cf. Story Epic 7-1 « audit multi-tenant scoping refactor »).
 \end{itemize}
 
@@ -774,9 +774,8 @@ hexadécimal).
     \toprule
     \keshtableheader{Variable} & \keshtableheader{Description} & \keshtableheader{Défaut} \\
     \midrule
-    KESH\_JWT\_EXPIRY\_MINUTES & Durée access token. Borne [1, 1440]. & \texttt{15} \\
-    KESH\_REFRESH\_TOKEN\_MAX\_LIFETIME\_DAYS & Durée absolue refresh token. Borne [1, 365]. & \texttt{30} \\
-    KESH\_REFRESH\_INACTIVITY\_MINUTES & Inactivité avant expiration refresh (sliding). Borne [1, 1440]. & \texttt{15} \\
+    KESH\_JWT\_EXPIRY\_MINUTES & Durée du jeton d'accès (et de son cookie)~: rythme des renouvellements ; ne fixe pas la fin de session. Borne [1, 1440]. & \texttt{15} \\
+    KESH\_REFRESH\_TOKEN\_MAX\_LIFETIME\_DAYS & Durée de vie du \emph{cookie} de renouvellement, reposé à chaque renouvellement ; aucune durée absolue ne borne la session d'un utilisateur actif. Borne [1, 365]. & \texttt{30} \\
     KESH\_RATE\_LIMIT\_WINDOW\_MINUTES & Fenêtre de comptage des échecs login. Borne [1, 1440]. & \texttt{15} \\
     KESH\_RATE\_LIMIT\_MAX\_ATTEMPTS & Échecs login par IP avant blocage. Borne [1, 100]. & \texttt{5} \\
     KESH\_RATE\_LIMIT\_BLOCK\_MINUTES & Durée de blocage d'une IP. Borne [1, 1440]. & \texttt{30} \\
@@ -784,6 +783,10 @@ hexadécimal).
     KESH\_COOKIE\_SECURE & Flag \texttt{Secure} des cookies (\texttt{true}/\texttt{false}). \textbf{\texttt{false} uniquement en LAN HTTP strict}. & \texttt{true} \\
     \bottomrule
 \end{tabularx}
+
+\begin{sloppypar}
+Depuis la 0.17.3, \textbf{l'ancienne variable de durée d'inactivité n'est plus lue} (voir le journal des modifications de la 0.17.3)~: la durée se règle dans l'interface (\S\ref{sec:duree-inactivite}). Retirez-la de votre \keshpath{.env} et de votre \keshpath{docker-compose.yml}. Si vous aviez posé \texttt{KESH\_JWT\_EXPIRY\_MINUTES=480} pour contourner \#876, retirez-le aussi.
+\end{sloppypar}
 
 \paragraph{Journalisation.}\mbox{}\\
 \begin{tabularx}{\linewidth}{>{\bfseries\ttfamily}lXl}
@@ -1189,7 +1192,7 @@ KESH_PUBLIC_BASE_URL=https://kesh.mondomaine.ch
 \begin{itemize}
     \item \textbf{Anti-énumération} : la page « Mot de passe oublié ? » répond toujours par le même message générique, que le compte existe ou non. Un attaquant ne peut pas tester l'existence d'un compte.
     \item \textbf{Usage unique + expiration} : le lien expire après 30 minutes et ne fonctionne qu'une fois. Seule une empreinte du jeton est stockée en base.
-    \item \textbf{Révocation des sessions} : après réinitialisation, toutes les sessions actives du compte sont déconnectées.
+    \item \textbf{Révocation des sessions} : après réinitialisation, toutes les sessions actives du compte ne peuvent plus être renouvelées~: chacune prend fin à sa prochaine activité, au plus tard à l'échéance de son jeton d'accès (15 minutes par défaut).
     \item \textbf{Comptes sans email} : un utilisateur sans adresse email n'est pas récupérable par ce flux (le formulaire répond quand même par le message générique). Renseignez les emails via la page \emph{Utilisateurs} — ou utilisez le break-glass (section suivante).
     \item \textbf{Limitation de débit} : 5 requêtes de recovery par IP et par fenêtre de 15 minutes (blocage 30 minutes au-delà). Chaque demande est tracée dans le journal d'audit (\texttt{auth.password\_reset\_requested} / \texttt{auth.password\_reset\_completed}).
 \end{itemize}
@@ -1358,7 +1361,7 @@ KESH_ADMIN_PASSWORD=<nouveau-mdp-12+>  # nouveau mot de passe (>= 12 chars)
 WARN bootstrap: Recovery break-glass declenche pour user 'admin'...
 ERROR bootstrap: Recovery effectue -- RETIRER LES VARS DE .ENV
 \end{lstlisting}
-    \item \textbf{Se connecter} via l'écran de login avec le nouveau mot de passe. Les sessions actives sur ce compte ont été révoquées par le recovery — les autres onglets/devices devront se reconnecter.
+    \item \textbf{Se connecter} via l'écran de login avec le nouveau mot de passe. Les sessions actives sur ce compte ont été révoquées par le recovery ; elles ne peuvent plus être renouvelées~: chacune prend fin à sa prochaine activité, au plus tard à l'échéance de son jeton d'accès (15 minutes par défaut) ; les autres onglets/devices devront se reconnecter.
     \item \textbf{Retirer les variables \keshpath{KESH\_ADMIN\_*} de \keshpath{.env}} (les recommenter ou les supprimer). Tant qu'elles restent en place, un \keshpath{WARN bootstrap: retirer les vars de .env} apparaît à chaque redémarrage (no-op silencieux côté DB grâce à la détection « hash identique »).
     \item \begin{sloppypar}Appliquer le retrait (\keshcommand{docker compose up -d kesh-api} --- un \keshcommand{restart} garderait les variables dans le conteneur) et confirmer que les warnings bootstrap ont disparu des logs — preuve que les variables \keshpath{KESH\_ADMIN\_*} sont bien retirées.\end{sloppypar}
 \end{enumerate}
@@ -1443,7 +1446,7 @@ Une fois connecté, l'\textbf{assistant d'onboarding} (wizard) configure la comp
 
     La réinitialisation vide \textbf{toutes} les données comptables et commerciales (écritures, factures, avoirs, contacts, articles, taux, réglages, journal d'audit…) et ramène la société à son état initial, sous la même identité : la session reste ouverte. Elle s'inscrit au journal d'audit (\S\ref{sec:conformite-audit}). Les \textbf{fichiers} déjà produits --- PDF figés, pièces importées, sauvegardes prises avant un import --- restent sur le disque. Elle \textbf{conserve} les utilisateurs, les clés d'API et, depuis la 0.16.0, les clés du serveur MCP (\S\ref{sec:mcp-cles}) : ceux créés pendant la démonstration passent en production, \textbf{revoyez-les} --- une clé d'API saine garde son droit d'écriture si elle l'avait, et une clé du serveur MCP créée pendant la démonstration garde son accès en lecture aux livres de production. Les réglages du serveur MCP, eux, sont effacés : après la réinitialisation, le serveur MCP est \textbf{désactivé} (\S\ref{sec:mcp-activer}). Les \textbf{envois du serveur MCP} (\S\ref{sec:mcp-envois}) sont effacés aussi, qu'ils soient en attente, validés, refusés ou échus. Les \textbf{prompts du serveur MCP} sont effacés avec les données de la société --- versions d'administrateur, propositions d'agent et tout leur historique --- et les \textbf{prompts standard sont réinstallés aussitôt}, au texte de la version installée ; si cette réinstallation échoue, ils reviennent au démarrage suivant, et le journal du serveur le dit.
 
-    \textbf{Installation touchée par le défaut \#528} (société effacée par une réinitialisation d'une version antérieure), si elle compte \textbf{aucune ou une} société : la réinitialisation rattache à la société les utilisateurs qui désignaient la société effacée, et \textbf{révoque} les clés d'API qui la désignaient avant de les rattacher --- elles paraissent, révoquées, sur la page des clés : recréez celles qui servent. Depuis la 0.16.0, les clés du serveur MCP (\S\ref{sec:mcp-cles}) qui la désignaient sont traitées de même : \textbf{révoquées}, puis rattachées à la société. Sur une installation touchée restée \textbf{sans société}, le choix de la langue fait la même réparation. La session en cours doit alors être \textbf{rouverte} --- reconnexion, ou attendre le renouvellement de la session, au plus sa durée plus une minute ; d'ici là, certains écrans de la société répondent par une erreur, d'autres s'affichent vides. Une installation qui porte \textbf{deux sociétés ou plus} --- réelles ou provisoires, ces dernières venant du défaut \#542 (un redémarrage avant la création de l'administrateur en ajoutait une) --- n'était \textbf{pas} réinitialisable par ce bouton : il y répondait par une erreur interne et n'effaçait rien. Depuis la 0.13.0, une installation déjà touchée par \#528 ou \#542 est \textbf{réparée au premier démarrage} de la nouvelle version --- voir \S\ref{sec:reparation-installation} et, si la réparation échoue, la section \emph{Dépannage}.
+    \textbf{Installation touchée par le défaut \#528} (société effacée par une réinitialisation d'une version antérieure), si elle compte \textbf{aucune ou une} société : la réinitialisation rattache à la société les utilisateurs qui désignaient la société effacée, et \textbf{révoque} les clés d'API qui la désignaient avant de les rattacher --- elles paraissent, révoquées, sur la page des clés : recréez celles qui servent. Depuis la 0.16.0, les clés du serveur MCP (\S\ref{sec:mcp-cles}) qui la désignaient sont traitées de même : \textbf{révoquées}, puis rattachées à la société. Sur une installation touchée restée \textbf{sans société}, le choix de la langue fait la même réparation. La session en cours doit alors être \textbf{rouverte} --- reconnexion, ou attendre le renouvellement de la session, au plus la durée du \textbf{jeton d'accès} (\texttt{KESH\_JWT\_EXPIRY\_MINUTES}) plus une minute ; d'ici là, certains écrans de la société répondent par une erreur, d'autres s'affichent vides. Une installation qui porte \textbf{deux sociétés ou plus} --- réelles ou provisoires, ces dernières venant du défaut \#542 (un redémarrage avant la création de l'administrateur en ajoutait une) --- n'était \textbf{pas} réinitialisable par ce bouton : il y répondait par une erreur interne et n'effaçait rien. Depuis la 0.13.0, une installation déjà touchée par \#528 ou \#542 est \textbf{réparée au premier démarrage} de la nouvelle version --- voir \S\ref{sec:reparation-installation} et, si la réparation échoue, la section \emph{Dépannage}.
     \item \textbf{Type d'organisation} (indépendant, association, PME) et \textbf{langue comptable}.
     \item \textbf{Coordonnées} de l'organisation (raison sociale, adresse, numéro IDE) — ceci renomme la company provisoire et lève la bannière « nom provisoire ».
     \item \textbf{Compte bancaire} principal (optionnel, configurable plus tard).
@@ -2289,7 +2292,7 @@ Menu \textbf{Administration → Restaurer / Importer} (\keshpath{/admin/restore}
 \textbf{Cette fonction sert à restaurer \emph{votre} installation} --- la remettre dans un état antérieur, ou la déplacer telle quelle vers un autre serveur. Ce n'est \textbf{pas} un outil pour verser les données d'une \emph{autre} installation dans la vôtre~: c'est techniquement possible, et les conséquences sur le journal d'audit sont décrites plus bas (section \emph{Conformité OLICo}).
 
 \begin{keshwarning}
-\textbf{Opération destructrice et irréversible.} L'import \textbf{remplace l'intégralité des données} de l'installation actuelle par celles du fichier. À la fin, votre session est \textbf{invalidée} : après avoir lu le bilan de l'import, cliquez « Se reconnecter » et reconnectez-vous avec les \textbf{identifiants tels qu'ils étaient au moment de la sauvegarde} --- tout compte créé, renommé ou dont le mot de passe a changé \emph{depuis} cette sauvegarde revient à son état d'alors, et les comptes créés depuis n'existent plus. Avant toute suppression, Kesh crée \textbf{automatiquement une sauvegarde de l'état courant} côté serveur, en filet de sécurité --- dans le dossier de sauvegarde \keshcommand{KESH\_ADMIN\_BACKUP\_DIR}, défaut \keshpath{/data/backup}, monté sur \keshpath{./backup} par les compose fournis (voir \emph{La sauvegarde de sécurité pré-import} ci-dessous).
+\textbf{Opération destructrice et irréversible.} L'import \textbf{remplace l'intégralité des données} de l'installation actuelle par celles du fichier. À la fin, votre session est \textbf{invalidée}, comme celles de tous les utilisateurs, qui ne peuvent plus être renouvelées (détail plus bas) : après avoir lu le bilan de l'import, cliquez « Se reconnecter » et reconnectez-vous avec les \textbf{identifiants tels qu'ils étaient au moment de la sauvegarde} --- tout compte créé, renommé ou dont le mot de passe a changé \emph{depuis} cette sauvegarde revient à son état d'alors, et les comptes créés depuis n'existent plus. Avant toute suppression, Kesh crée \textbf{automatiquement une sauvegarde de l'état courant} côté serveur, en filet de sécurité --- dans le dossier de sauvegarde \keshcommand{KESH\_ADMIN\_BACKUP\_DIR}, défaut \keshpath{/data/backup}, monté sur \keshpath{./backup} par les compose fournis (voir \emph{La sauvegarde de sécurité pré-import} ci-dessous).
 \end{keshwarning}
 
 L'import \textbf{refuse} le fichier et préserve l'installation si :
@@ -2319,7 +2322,7 @@ L'import va au bout même si le navigateur, ou le proxy inverse, abandonne l'att
 
 \paragraph{Ce que dit l'écran à la fin de l'import (depuis la 0.15.0)}
 
-Un import réussi n'est plus suivi d'une déconnexion immédiate : l'écran annonce « \emph{Import réussi : l'installation est celle de la sauvegarde} », le nombre de \textbf{pièces justificatives restaurées} et, s'il en manque, un avertissement « \emph{Pièces référencées introuvables après la restauration : N} » --- elles restent introuvables (refus \texttt{410}) tant que le dossier des documents ne les porte pas. Prenez le temps de lire, puis cliquez \textbf{« Se reconnecter »} : la session est déjà invalidée, et l'écran de connexion attend les identifiants \textbf{de la sauvegarde}.
+Un import réussi n'est plus suivi d'une déconnexion immédiate : l'écran annonce « \emph{Import réussi : l'installation est celle de la sauvegarde} », le nombre de \textbf{pièces justificatives restaurées} et, s'il en manque, un avertissement « \emph{Pièces référencées introuvables après la restauration : N} » --- elles restent introuvables (refus \texttt{410}) tant que le dossier des documents ne les porte pas. Prenez le temps de lire, puis cliquez \textbf{« Se reconnecter »} : la session est déjà invalidée, et l'écran de connexion attend les identifiants \textbf{de la sauvegarde}. Les sessions de tous les utilisateurs ne peuvent plus être renouvelées~: chacune prend fin à sa prochaine activité, au plus tard à l'échéance de son jeton d'accès ; la vôtre, par \emph{Se reconnecter}. La durée d'inactivité réglée n'est pas restaurée~: celle de l'installation reste en vigueur.
 
 L'écran attend la réponse jusqu'à \textbf{une heure} (l'export aussi : il ne reçoit le fichier qu'une fois l'archive assemblée), sans jamais renvoyer la demande. Si la réponse ne revient pas --- délai dépassé, connexion coupée, ou proxy inverse qui abandonne l'attente (\texttt{502}, \texttt{504}) ---, l'écran affiche « \emph{La réponse du serveur n'est pas arrivée : l'import a pu aboutir. Reconnectez-vous pour vérifier l'état de l'installation.} » et propose \textbf{« Se reconnecter »} ; le bouton d'import est alors désactivé. \textbf{Ne relancez pas l'import} avant d'avoir vérifié : le serveur va au bout de la restauration même quand l'écran a cessé d'attendre ; l'entrée \keshcommand{admin.full\_import} du journal d'audit et le journal du serveur disent s'il a abouti. Pour réessayer une fois l'échec établi, rechargez la page. (Le message apparaît aussi quand la requête n'est jamais partie --- serveur injoignable, envoi coupé par le proxy --- : il reste prudent, et la vérification lève le doute.)
 
@@ -2357,7 +2360,7 @@ Deux opérations tournent en revanche \textbf{à chaque import}, dans la même o
 
 \begin{itemize}
     \item \textbf{Les numéros de client} : leur forme normalisée, qui sert à reconnaître deux numéros ne différant que par leur graphie, est recalculée ; une sauvegarde où deux clients actifs reviendraient au même numéro, ou dont une forme normalisée serait trop longue, est refusée, avec la liste des cas en cause.
-    \item \textbf{Une sauvegarde d'une installation touchée par \#528} --- elle date d'une 0.12.x, et n'est donc plus importable depuis la 0.16.0 : la réparation tourne toujours, sans effet sur une installation saine --- est réparée de la même façon qu'au démarrage (\S\ref{sec:reparation-installation}) --- sauf la suppression des sociétés provisoires en trop, faite au démarrage suivant ---, \textbf{dans la même opération} que l'import (tout ou rien), sous une entrée \emph{Réparation de l'installation} signée comme l'import. \textbf{Celui qui importe} est déconnecté ; les \textbf{autres sessions ouvertes} (autres navigateurs, autres utilisateurs) gardent l'ancienne société jusqu'à l'expiration de leur session (au plus sa durée plus une minute) et voient d'ici là des écrans en erreur ou vides : qu'elles se reconnectent. \textbf{Limite} : une sauvegarde \textbf{sans société} (exportée pendant la configuration, après une réinitialisation d'une version antérieure) importée sur une installation déjà configurée laisse ses utilisateurs sans société, et rien ne les rattache ensuite --- importez une autre sauvegarde.
+    \item \textbf{Une sauvegarde d'une installation touchée par \#528} --- elle date d'une 0.12.x, et n'est donc plus importable depuis la 0.16.0 : la réparation tourne toujours, sans effet sur une installation saine --- est réparée de la même façon qu'au démarrage (\S\ref{sec:reparation-installation}) --- sauf la suppression des sociétés provisoires en trop, faite au démarrage suivant ---, \textbf{dans la même opération} que l'import (tout ou rien), sous une entrée \emph{Réparation de l'installation} signée comme l'import. \textbf{Celui qui importe} est déconnecté ; les \textbf{autres sessions ouvertes} (autres navigateurs, autres utilisateurs) gardent l'ancienne société jusqu'à l'expiration de leur jeton d'accès (au plus \texttt{KESH\_JWT\_EXPIRY\_MINUTES} plus une minute) et voient d'ici là des écrans en erreur ou vides : qu'elles se reconnectent. \textbf{Limite} : une sauvegarde \textbf{sans société} (exportée pendant la configuration, après une réinitialisation d'une version antérieure) importée sur une installation déjà configurée laisse ses utilisateurs sans société, et rien ne les rattache ensuite --- importez une autre sauvegarde.
 \end{itemize}
 
 \begin{keshwarning}
@@ -2503,7 +2506,7 @@ Au premier démarrage de la nouvelle version, Kesh répare de lui-même une inst
 L'opération s'inscrit au journal d'audit sous \emph{Réparation de l'installation} (\texttt{installation.repaired}). Elle est \textbf{signée par le plus ancien administrateur actif, bien que personne ne l'ait faite} : son détail porte \texttt{trigger~: startup}, les clés révoquées (numéro, nom, créateur, dates de création et de dernière utilisation ; les clés d'API et celles du serveur MCP (\S\ref{sec:mcp-cles}) en deux listes distinctes) et les sociétés supprimées. Avant la création de l'administrateur, aucune entrée n'est écrite --- personne ne pourrait la signer --- et seul le journal du serveur en garde la trace. Sur une installation restée \textbf{sans} société, l'entrée existe mais n'est pas visible au journal : elle désigne la société effacée.
 \end{sloppypar}
 
-La session ouverte doit être \textbf{rouverte} --- reconnexion, ou au plus la durée de session plus une minute ; d'ici là, certains écrans de la société répondent par une erreur, d'autres s'affichent vides. Si le journal du serveur porte « réparation de l'installation au démarrage » suivi d'une erreur, voir la section \emph{Dépannage}.
+La session ouverte doit être \textbf{rouverte} --- reconnexion, ou au plus la durée du \textbf{jeton d'accès} (\texttt{KESH\_JWT\_EXPIRY\_MINUTES}) plus une minute ; d'ici là, certains écrans de la société répondent par une erreur, d'autres s'affichent vides. Si le journal du serveur porte « réparation de l'installation au démarrage » suivi d'une erreur, voir la section \emph{Dépannage}.
 
 \textbf{Limite} : les données de démonstration laissées par une réinitialisation antérieure (taux de TVA, réglages de facturation, contacts, articles, factures, avoirs) qui désignent la société effacée restent en base, invisibles et inertes (\#546).
 
@@ -2518,7 +2521,7 @@ La 0.17.2 est une version corrective, qui se pose sur la 0.17.1 : elle ne demand
 \paragraph{Ce qui change à l'écran.} Une facture fournisseur validée, payée ou annulée porte le bouton \emph{Repasser en brouillon} : une annulée repasse en brouillon en retirant du journal son écriture d'achat et sa contre-passation ; sur une payée, le refus dit ce qu'il faut défaire d'abord. La date d'une facture fournisseur créée depuis un document est proposée et marquée « à vérifier » ; la liste des factures fournisseur se pagine ; le menu latéral défile ; les dates des écrans comptables s'affichent à la forme suisse (\texttt{29.01.2026}). Le détail est au manuel utilisateur et au journal des modifications.
 
 \begin{sloppypar}
-\paragraph{La session, non corrigée dans cette version.} Avec les réglages par défaut (\texttt{KESH\_JWT\_EXPIRY\_MINUTES=15}, \texttt{KESH\_REFRESH\_INACTIVITY\_MINUTES=15}), une session se ferme environ quinze minutes après la connexion, même en activité continue (issue \#876). La correction est prévue pour la 0.17.3. D'ici là, le contournement consiste à allonger la durée du jeton d'accès dans le \keshpath{.env}, par exemple \texttt{KESH\_JWT\_EXPIRY\_MINUTES=480}, puis à redémarrer ; la contrepartie est qu'un jeton d'accès dérobé reste valable aussi longtemps.
+\paragraph{La session, non corrigée dans cette version.} Avec les réglages par défaut (jeton d'accès et durée d'inactivité de 15 minutes chacun), une session se ferme environ quinze minutes après la connexion, même en activité continue (issue \#876). Corrigée en 0.17.3 (\S\ref{sec:duree-inactivite})~: le contournement ci-dessous est à retirer en passant à la 0.17.3. D'ici là, le contournement consiste à allonger la durée du jeton d'accès dans le \keshpath{.env}, par exemple \texttt{KESH\_JWT\_EXPIRY\_MINUTES=480}, puis à redémarrer ; la contrepartie est qu'un jeton d'accès dérobé reste valable aussi longtemps.
 \end{sloppypar}
 
 \subsubsection{Passer à la 0.17.1}\label{sec:maj-0-17-1}
@@ -3006,11 +3009,37 @@ Configurations recommandées du reverse proxy :
 Kesh utilise un modèle JWT avec rotation de refresh tokens :
 
 \begin{itemize}
-    \item L'access token (JWT court, 15 min par défaut) est envoyé en cookie \texttt{HttpOnly; Secure; SameSite=Lax}.
-    \item Le refresh token (durée 30 jours par défaut) est stocké en DB (table \texttt{refresh\_tokens}) avec hash SHA-256 (jamais stocké en clair).
-    \item À chaque refresh, le token précédent est invalidé (rotation), une trace est conservée pour détection d'attaque par replay.
-    \item La déconnexion révoque tous les refresh tokens de la session.
+    \item L'access token (JWT court, 15 min par défaut) est envoyé en cookie \texttt{HttpOnly}, \texttt{Secure} (sauf \texttt{KESH\_COOKIE\_SECURE=false}), \texttt{SameSite=Strict}. Il porte l'échéance d'inactivité de la session (\texttt{idle\_exp}), contrôlée sans tolérance.
+    \item Le refresh token est stocké en DB (table \texttt{refresh\_tokens}) \textbf{tel quel} (non haché, suivi par \#890) ; 30 jours est la durée du \emph{cookie} ; la ligne porte l'\textbf{échéance d'inactivité} de la session.
+    \item À chaque refresh, le token précédent est invalidé (rotation), une trace est conservée pour détection d'attaque par replay. La rotation n'a lieu qu'à l'échéance du jeton d'accès et \textbf{ne prolonge pas} la session ; un rejeu dans les 30 secondes d'une rotation (deux onglets) est refusé sans révoquer les autres sessions --- l'onglet qui a perdu la course revient à la connexion.
+    \item La déconnexion révoque le jeton de renouvellement de la session.
 \end{itemize}
+
+\subsection{Durée d'inactivité de la session}\label{sec:duree-inactivite}
+
+\begin{sloppypar}
+\textbf{Où.} \emph{Administration → Paramètres}, section \emph{Session} (Administrateur seul ; refusé aux clés d'API). De 1 à 1440 minutes (24 heures), \textbf{60 minutes par défaut}. Le changement est tracé au journal d'audit (\emph{Durée d'inactivité de la session modifiée}, avec la valeur d'avant et d'après). Le réglage appartient à l'installation~: une restauration complète ne le restaure pas, celui de l'installation reste en vigueur.
+\end{sloppypar}
+
+\begin{sloppypar}
+\textbf{Exacte.} La session se ferme à la dernière activité de l'utilisateur plus la durée réglée, \textbf{à la seconde près, sauf quatre écarts}~: (a) l'activité est transmise au serveur au plus 15 secondes après qu'elle a eu lieu --- un navigateur fermé, mis en veille ou coupé du réseau dans ces 15 secondes ferme jusqu'à 15 secondes plus tôt ; (b) un onglet en arrière-plan~: le navigateur ralentit ses minuteries, l'écran de connexion peut n'apparaître qu'au retour sur l'onglet --- le serveur, lui, a refusé dès l'échéance ; (c) la transition qui suit un changement du réglage~: chaque session applique la nouvelle valeur à sa prochaine activité, une session déjà inactive garde son échéance --- un abaissement peut donc fermer une session dans le navigateur plus tôt que le serveur ne l'aurait fait ; (d) deux écarts sous la seconde (un battement rejoué après un renouvellement, une activité de la toute dernière seconde). Au-delà de l'échéance, le serveur refuse toute requête, quelle que soit la durée du jeton d'accès~: \texttt{KESH\_JWT\_EXPIRY\_MINUTES} ne règle plus que le rythme des renouvellements.
+\end{sloppypar}
+
+\begin{sloppypar}
+\textbf{Ce qui compte.} Toute activité dans Kesh~: clavier, souris (mouvement, clic, molette), toucher, retour sur l'onglet, dictée, collage, glisser-déposer d'un fichier --- dans n'importe quel onglet de Kesh du même navigateur. Ne comptent pas~: la lecture d'un PDF dans l'aperçu sans geste hors du document (le geste à faire est au manuel utilisateur ; un avertissement avant la fermeture est demandé, CR \#895), le travail dans un autre programme, les mises à jour que Kesh fait seul. Détail au manuel utilisateur.
+\end{sloppypar}
+
+\begin{sloppypar}
+\textbf{À l'échéance.} Le navigateur \textbf{déconnecte} la session au serveur (il attend la réponse jusqu'à deux secondes), puis affiche la page de connexion avec « Session fermée après N minutes d'inactivité », qui ne rétablit pas la session. Si la déconnexion n'a pas abouti (réseau coupé) et que l'échéance du serveur est plus tardive (écart c), revenir à une autre page de Kesh peut retrouver la session jusqu'à cette échéance. Si le navigateur refuse \texttt{localStorage}, l'activité n'est pas partagée entre onglets~: c'est le serveur qui ferme (message de session expirée), et l'écran reste affiché jusqu'à la prochaine action.
+\end{sloppypar}
+
+\begin{sloppypar}
+\textbf{Mise à jour.} L'ancienne variable de durée d'inactivité n'est plus lue (\S\ref{sec:configuration} : retirez-la si vous l'aviez posée). Les jetons émis avant la mise à jour restent valables jusqu'à \texttt{KESH\_JWT\_EXPIRY\_MINUTES}. \textbf{Après la mise à jour, rechargez chaque onglet de Kesh resté ouvert}~: un onglet resté sur l'ancienne interface ne transmet pas l'activité au serveur, et sa session peut se fermer en pleine saisie. Si vous aviez posé \texttt{KESH\_JWT\_EXPIRY\_MINUTES=480}, une session ouverte avant la mise à jour peut prendre fin à sa première activité qui suit~: reconnectez-vous une fois.
+\end{sloppypar}
+
+\begin{sloppypar}
+\textbf{Clients hors navigateur.} C'est l'interface web qui prolonge la session~: elle transmet l'activité au serveur, par une route qui exige le cookie de renouvellement. Un programme qui se connecte par mot de passe et renouvelle son jeton par le corps de la requête ne prolonge donc pas sa session~: elle prend fin à la connexion plus la durée réglée à ce moment-là, quelle que soit son activité. Les intégrations utilisent une clé d'API (\S\ref{sec:api-keys}), que la durée d'inactivité ne concerne pas.
+\end{sloppypar}
 
 \subsection{Clés API (PAT) — accès programmatique}\label{sec:api-keys}
 
@@ -3051,7 +3080,7 @@ Le contrôle d'accès basé sur les rôles est appliqué \textbf{au niveau de ch
 \label{sec:conformite-audit}
 
 \begin{sloppypar}
-La quasi-totalité des actions métier mutantes est enregistrée dans la table \texttt{audit\_log} --- 135 des 142 routes à verbe mutant au moment de la rédaction, dont, depuis la v0.13.0, la configuration d'une installation de production (une entrée par étape franchie), le chargement des données de démonstration (une entrée de synthèse) et leur réinitialisation (\texttt{installation.reset}, qui dit le nombre et la plage d'identifiants des entrées effacées). S'y ajoute une entrée qu'aucune route n'écrit d'elle-même : la réparation d'une installation touchée par \#528 ou \#542, au démarrage ou à l'import d'une sauvegarde (\texttt{installation.repaired}, \S\ref{sec:reparation-installation}). \keshAttention\ \emph{Les exceptions sont connues, comptées et suivies~: quatre routes exemptées --- les gestes de session, la connexion, la déconnexion, le renouvellement de session et le changement de son propre mot de passe (issue \#435) ---, et trois autres routes qui n'écrivent rien parce qu'elles ne modifient rien~: 135 + 4 + 3 = 142.} \keshAttention\ \emph{Limite connue, suivie par l'issue \#538~: l'entrée du chargement des données de démonstration n'est écrite que lorsqu'il aboutit. Un chargement interrompu --- ou refusé parce que la configuration de production a franchi l'étape entre-temps --- laisse la société renommée, le plan comptable et l'exercice \textbf{sans entrée au journal}.} La liste complète, route par route, est tenue dans le dépôt et contrôlée par un test~:
+La quasi-totalité des actions métier mutantes est enregistrée dans la table \texttt{audit\_log} --- 136 des 144 routes à verbe mutant au moment de la rédaction, dont, depuis la v0.13.0, la configuration d'une installation de production (une entrée par étape franchie), le chargement des données de démonstration (une entrée de synthèse) et leur réinitialisation (\texttt{installation.reset}, qui dit le nombre et la plage d'identifiants des entrées effacées). S'y ajoute une entrée qu'aucune route n'écrit d'elle-même : la réparation d'une installation touchée par \#528 ou \#542, au démarrage ou à l'import d'une sauvegarde (\texttt{installation.repaired}, \S\ref{sec:reparation-installation}). \keshAttention\ \emph{Les exceptions sont connues, comptées et suivies~: cinq routes exemptées --- les gestes de session, la connexion, la déconnexion, le renouvellement de session, le changement de son propre mot de passe (issue \#435) et le battement d'activité (issue \#876) ---, et trois autres routes qui n'écrivent rien parce qu'elles ne modifient rien~: 136 + 5 + 3 = 144.} \keshAttention\ \emph{Limite connue, suivie par l'issue \#538~: l'entrée du chargement des données de démonstration n'est écrite que lorsqu'il aboutit. Un chargement interrompu --- ou refusé parce que la configuration de production a franchi l'étape entre-temps --- laisse la société renommée, le plan comptable et l'exercice \textbf{sans entrée au journal}.} La liste complète, route par route, est tenue dans le dépôt et contrôlée par un test~:
 \end{sloppypar}
 
 \begin{itemize}
@@ -3719,7 +3748,7 @@ Kesh démarre quand même, sur l'installation \textbf{inchangée} : la connexion
 
 \paragraph{Symptômes} Plusieurs appels API consécutifs échouent en \texttt{401 Unauthorized} alors que l'utilisateur est censé être authentifié.
 
-\paragraph{Cause} Refresh token expiré ou invalidé (cf. KF \#54 « E2E test helpers cascade 401 », fermée Epic 9.5).
+\paragraph{Cause} La cause ordinaire~: la \textbf{session a été fermée par inactivité} (\S\ref{sec:duree-inactivite}) --- la page de connexion le dit ; un onglet resté en arrière-plan peut n'afficher la connexion qu'au retour. Sinon~: jeton de renouvellement expiré ou invalidé (cf. KF \#54 « E2E test helpers cascade 401 », fermée Epic 9.5).
 
 \paragraph{Solution} L'utilisateur doit se reconnecter. Si le problème persiste pour tous les utilisateurs, vérifier l'horloge système (drift NTP).
 
@@ -3897,7 +3926,7 @@ export global) ou par les mécanismes documentés ailleurs dans ce manuel :
     \item[QES] Qualified Electronic Signature (LSCSE Art. 2 let. e).
     \item[QR Bill] Standard suisse 2020+ de facture avec QR code (SIX).
     \item[RBAC] Role-Based Access Control.
-    \item[Refresh token] Token longue durée pour renouveler un access token JWT.
+    \item[Refresh token] Jeton (de renouvellement) qui renouvelle le jeton d'accès JWT ; sa ligne en base porte l'échéance d'inactivité de la session.
     \item[Tenant] Synonyme de \emph{company} dans un contexte multi-tenant.
 \end{description}
 

@@ -79,6 +79,7 @@ pub const ACTIONS: &[&str] = &[
     "admin.backup_schedule_updated",
     "admin.full_export",
     "admin.full_import",
+    "admin.session_settings_updated",
     "admin_break_glass_reset",
     "api_key.created",
     "api_key.revoked",

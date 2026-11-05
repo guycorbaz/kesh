@@ -42,6 +42,10 @@ pub struct CurrentUser {
     pub exp: i64,
     /// Story 17-2a (DC2) — `Some(<id clé>)` si authentifié par PAT, `None` si JWT.
     pub api_key_id: Option<i64>,
+    /// Story v0172-session (#876) — échéance d'inactivité de la session
+    /// (secondes Unix) portée par le jeton, `None` pour un jeton qui n'en
+    /// porte pas (émis avant la 0.17.3) et pour les clés d'API.
+    pub idle_exp: Option<i64>,
 }
 
 /// Middleware qui exige un JWT valide.
@@ -143,7 +147,21 @@ pub async fn require_auth(
         }
         current_user
     } else {
-        let claims = jwt::decode(&token, state.config.jwt_secret_bytes())?;
+        let session = jwt::decode_session(&token, state.config.jwt_secret_bytes())?;
+
+        // Story v0172-session (#876, C-v0172s-32) — l'échéance d'inactivité
+        // se contrôle STRICTEMENT, sans la tolérance de 60 s de `exp` : au-delà,
+        // aucune requête n'est acceptée, quel que soit `exp`. Un jeton sans
+        // `idle_exp` (émis avant la mise à jour) vit jusqu'à son `exp`.
+        if let Some(deadline) = session.idle_exp
+            && chrono::Utc::now().timestamp() >= deadline
+        {
+            return Err(AppError::Unauthenticated(
+                "session closed after inactivity (idle_exp)".into(),
+            ));
+        }
+        let idle_exp = session.idle_exp;
+        let claims = session.claims;
 
         let user_id: i64 = claims
             .sub
@@ -159,6 +177,7 @@ pub async fn require_auth(
             company_id: claims.company_id,
             exp: claims.exp,
             api_key_id: None,
+            idle_exp,
         }
     };
 

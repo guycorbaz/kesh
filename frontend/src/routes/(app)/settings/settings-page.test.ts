@@ -17,15 +17,60 @@ vi.mock('$lib/shared/utils/notify', () => ({ notifySuccess: vi.fn() }));
 const fetchCompanyCurrentMock = vi.fn<() => Promise<CompanyCurrentResponse>>();
 const lockBooksMock = vi.fn();
 const releaseBooksLockMock = vi.fn();
+// Story v0172-session (AC-8) : la fabrique remplace le module entier — elle
+// reçoit la lecture et l'enregistrement du réglage de la durée d'inactivité.
+const fetchSessionSettingsMock = vi.fn();
+const updateSessionSettingsMock = vi.fn();
 vi.mock('$lib/features/settings/settings.api', () => ({
 	fetchCompanyCurrent: () => fetchCompanyCurrentMock(),
 	updateCompanyContactDetails: vi.fn(),
 	updateCompanyEmail: vi.fn(),
 	lockBooks: (...a: unknown[]) => lockBooksMock(...a),
 	releaseBooksLock: (...a: unknown[]) => releaseBooksLockMock(...a),
+	fetchSessionSettings: (...a: unknown[]) => fetchSessionSettingsMock(...a),
+	updateSessionSettings: (...a: unknown[]) => updateSessionSettingsMock(...a),
 }));
 
 import Page from './+page.svelte';
+import { authState } from '$lib/app/stores/auth.svelte';
+
+// Story v0172-session (0.17.3, CR #891, AC-8) — la section « Session » n'est
+// rendue que pour l'Administrateur ; les autres rôles ne lisent pas le réglage.
+describe('page Paramètres — section Session (Story v0172-session)', () => {
+	beforeEach(() => {
+		vi.clearAllMocks();
+		fetchSessionSettingsMock.mockResolvedValue({
+			sessionIdleMinutes: 60,
+			version: 0,
+			min: 1,
+			max: 1440,
+		});
+	});
+
+	it('Administrateur : la section est rendue et lit le réglage', async () => {
+		authState.login(
+			{ userId: '1', username: 'admin', role: 'Admin', expiresIn: 900 },
+			{ broadcast: false },
+		);
+		fetchCompanyCurrentMock.mockResolvedValue(reponse(null));
+		const { findByTestId } = render(Page);
+		await findByTestId('settings-session');
+		expect(fetchSessionSettingsMock).toHaveBeenCalledTimes(1);
+		authState.clearSession({ broadcast: false });
+	});
+
+	for (const role of ['Comptable', 'Consultation']) {
+		it(`${role} : section absente, aucun GET du réglage`, async () => {
+			authState.login({ userId: '2', username: 'u', role, expiresIn: 900 }, { broadcast: false });
+			fetchCompanyCurrentMock.mockResolvedValue(reponse(null));
+			const { findByTestId, queryByTestId } = render(Page);
+			await findByTestId('settings-books-lock');
+			expect(queryByTestId('settings-session')).toBeNull();
+			expect(fetchSessionSettingsMock).not.toHaveBeenCalled();
+			authState.clearSession({ broadcast: false });
+		});
+	}
+});
 
 function reponse(description: string | null): CompanyCurrentResponse {
 	return {

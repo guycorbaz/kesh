@@ -246,8 +246,8 @@ async fn login_sets_two_httponly_cookies(pool: MySqlPool) {
     // CR Pass 3 AA3-M3 : asserter la valeur exacte `Max-Age=900` (= jwt_expiry
     // 15 minutes de `test_config()` paramètre 5 `TimeDelta::minutes(15)`).
     // Protège contre une régression silencieuse F-COOKIE-LIFETIME-P3-1 qui
-    // utiliserait `refresh_inactivity` (15 min sliding) au lieu de la durée
-    // canonique du token sur l'access cookie.
+    // utiliserait l'échéance d'inactivité de la ligne (réglée en base depuis la
+    // 0.17.3) au lieu de la durée canonique du token sur l'access cookie.
     assert!(
         access_cookie.contains("Max-Age=900"),
         "access cookie Max-Age should be 900 (jwt_expiry 15min), got: {access_cookie}"
@@ -268,10 +268,10 @@ async fn login_sets_two_httponly_cookies(pool: MySqlPool) {
     // CR Pass 3 AA3-M3 : asserter la valeur exacte `Max-Age=2592000` (= refresh
     // hard ceiling 30 jours de `test_config()` paramètre 6 `TimeDelta::days(30)`).
     // F-COOKIE-LIFETIME-P3-1 : ce ceiling est `refresh_token_max_lifetime` (30j
-    // hard côté browser), PAS `refresh_inactivity` (15 min sliding côté serveur).
+    // hard côté browser), PAS l'échéance d'inactivité de la ligne (côté serveur).
     assert!(
         refresh_cookie.contains("Max-Age=2592000"),
-        "refresh cookie Max-Age should be 2592000 (refresh_token_max_lifetime 30d hard ceiling, NOT refresh_inactivity 15min sliding), got: {refresh_cookie}"
+        "refresh cookie Max-Age should be 2592000 (refresh_token_max_lifetime 30d hard ceiling, NOT the row's inactivity deadline), got: {refresh_cookie}"
     );
 }
 

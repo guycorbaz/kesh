@@ -1203,13 +1203,14 @@ const EMPLACEMENTS_AUTORISES: &[Autorisation] = &[
         Forme::Exacte("env :: var_os ( name )"),
         1,
     ),
-    // Ses appels littéraux.
+    // Ses appels littéraux. 31 → 30 : Story v0172-session (0.17.3,
+    // C-v0172s-31) — l'ancienne variable de durée d'inactivité n'est plus lue.
     autorise(
         CONFIG,
         "Config::from_env",
         "env_nonempty",
         Forme::Litteral,
-        31,
+        30,
     ),
     autorise(
         CONFIG,
@@ -1873,9 +1874,11 @@ fn garde_lecture_du_code() {
     ] {
         assert!(a.noms.contains(nom), "l'ensemble lu doit contenir `{nom}`");
     }
+    // 41 → 40 : Story v0172-session (0.17.3, C-v0172s-31) — l'ancienne variable
+    // de durée d'inactivité n'est plus lue.
     assert!(
-        a.noms.len() >= 41,
-        "ensemble lu : {} noms, au moins 41 attendus",
+        a.noms.len() >= 40,
+        "ensemble lu : {} noms, au moins 40 attendus",
         a.noms.len()
     );
     assert_eq!(

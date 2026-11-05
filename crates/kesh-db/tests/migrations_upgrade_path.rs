@@ -41,9 +41,9 @@ async fn apply_migrations_up_to(
     assert!(
         n <= all.len(),
         "apply_migrations_up_to: n={} > total={} — vérifier que le calcul \
-         `total - 54` (fenêtre d'upgrade, FRONTIÈRE figée à 34) reste \
+         `total - 55` (fenêtre d'upgrade, FRONTIÈRE figée à 34) reste \
          cohérent avec l'ajout de migrations futures. Si une migration a été ajoutée à \
-         la branche, l'assertion `total == 88` du test upgrade_path_preserves_data \
+         la branche, l'assertion `total == 89` du test upgrade_path_preserves_data \
          doit également échouer, c'est son rôle : elle signale qu'il faut décider \
          explicitement si la fenêtre s'élargit (bumper `total` seul) ou si la \
          frontière doit rester à 34 (bumper `total` ET la fenêtre). Cf. garde-fou \
@@ -60,8 +60,8 @@ async fn apply_migrations_up_to(
     sub.run(pool).await
 }
 
-/// AC #15a — cas générique upgrade path : `total - 54` migrations appliquées
-/// (**34** à ce jour) + seed + `MIGRATOR.run()` final, qui applique les **54**
+/// AC #15a — cas générique upgrade path : `total - 55` migrations appliquées
+/// (**34** à ce jour) + seed + `MIGRATOR.run()` final, qui applique les **55**
 /// dernières. Assertion : seed préservé à travers la fenêtre d'upgrade.
 ///
 /// ⚠️ Les nombres ci-dessus se recomptent, ils ne se relisent pas — cf. le
@@ -121,13 +121,14 @@ async fn upgrade_path_preserves_data(pool: MySqlPool) {
     // + mcp_prompts (Story 32-10a-i, refs #723) = 86.
     // + bank_imports_manual_source (Story v016-2a, refs #816) = 87.
     // + supplier_invoices_draft (Story v017-4a, refs #849) = 88.
+    // + installation_settings (Story v0172-session, refs #876, refs #891) = 89.
     let total = kesh_db::MIGRATOR.migrations.len();
     assert_eq!(
-        total, 88,
-        "88 migrations attendues (87 précédentes + Story v017-4a : supplier_invoices_draft)"
+        total, 89,
+        "89 migrations attendues (88 précédentes + Story v0172-session : installation_settings)"
     );
 
-    // Étape 1 : applique toutes les migrations sauf les 54 dernières. La
+    // Étape 1 : applique toutes les migrations sauf les 55 dernières. La
     // fenêtre d'upgrade démarre donc à la 35ᵉ, `20260614000001_vat_accounts_config`
     // (Story 18-1a), et court jusqu'à la dernière du dépôt. Ne pas ré-énumérer
     // ici les migrations de la fenêtre : une liste nominative se périme à chaque
@@ -135,17 +136,17 @@ async fn upgrade_path_preserves_data(pool: MySqlPool) {
     // plus bas. Le seul nombre qui fait foi est celui du `total - N` ci-dessous.
     //
     // Note `total - N` : expression relative à la longueur totale, tandis que
-    // l'assertion `total == 88` ci-dessus est INTENTIONNELLEMENT codée en dur
+    // l'assertion `total == 89` ci-dessus est INTENTIONNELLEMENT codée en dur
     // pour fail-loud sur toute évolution non revue. À chaque migration ajoutée,
     // le mainteneur doit (1) bumper ce compte (2) incrémenter `N` du même pas,
     // de sorte que `total - N` — la frontière — reste **constant**.
     //
     // Frontière actuelle : **34**. Le test applique donc les 34 premières
     // migrations (jusqu'à `20260613000001_vat_rates_crud` incluse), seede des
-    // données, puis joue les 54 restantes comme « fenêtre d’upgrade ».
+    // données, puis joue les 55 restantes comme « fenêtre d’upgrade ».
     //
-    // ⚠️ `N` DOIT être incrémenté en même temps que `total`. Le laisser à 53
-    // avec `total = 88` porterait la frontière à 35 : le test continuerait de
+    // ⚠️ `N` DOIT être incrémenté en même temps que `total`. Le laisser à 54
+    // avec `total = 89` porterait la frontière à 35 : le test continuerait de
     // passer en testant une fenêtre plus étroite d'une migration.
     // Story 16-1a : 21 → 22, frontière inchangée (56 - 22 = 55 - 21 = 34).
     // Story 16-1a-bis : 22 → 23, frontière inchangée (57 - 23 = 34).
@@ -208,16 +209,17 @@ async fn upgrade_path_preserves_data(pool: MySqlPool) {
     // Story 32-10a-i : 51 → 52, frontière inchangée (86 - 52 = 34).
     // Story v016-2a : 52 → 53, frontière inchangée (87 - 53 = 34).
     // Story v017-4a : 53 → 54, frontière inchangée (88 - 54 = 34).
+    // Story v0172-session : 54 → 55, frontière inchangée (89 - 55 = 34).
     //
     // ⚠️ J'ai d'abord porté `total` à 69 SANS toucher à ce soustracteur : le socle
     // est alors passé de 34 à 35 migrations, la fenêtre a glissé d'un cran, et le
     // test a rougi non plus sur son compteur mais sur `COUNT(accounts) : expected
     // 4, got 2` — un échec qui ne ressemble en rien à sa cause. *Les deux nombres
     // se bougent du même pas, et le commentaire ci-dessus le disait.*
-    let n_before_upgrade_window = total - 54;
+    let n_before_upgrade_window = total - 55;
     apply_migrations_up_to(&pool, n_before_upgrade_window)
         .await
-        .expect("apply_migrations_up_to(total - 54) failed");
+        .expect("apply_migrations_up_to(total - 55) failed");
 
     // Étape 2 : seed 1 company + 1 user + 2 accounts + 1 invoice + 1 contact.
     let company_id: i64 = sqlx::query_scalar(
@@ -286,7 +288,7 @@ async fn upgrade_path_preserves_data(pool: MySqlPool) {
     .await
     .expect("INSERT invoice failed");
 
-    // Étape 3 : appliquer les 54 migrations restantes via MIGRATOR.run().
+    // Étape 3 : appliquer les 55 migrations restantes via MIGRATOR.run().
     kesh_db::MIGRATOR
         .run(&pool)
         .await
@@ -1171,7 +1173,16 @@ async fn bank_imports_manual_source_adds_no_table(pool: MySqlPool) {
         before.iter().any(|t| t == "bank_imports"),
         "montage : la base 0.16.x porte bank_imports"
     );
-    kesh_db::MIGRATOR.run(&pool).await.unwrap();
+    // Story v0172-session : jusqu'à cette migration incluse, et non plus le
+    // `MIGRATOR` complet — la 0.17.3 ajoute une table SYSTÈME
+    // (`_kesh_installation_settings`), contrôlée par son propre test
+    // (`installation_settings_adds_only_its_system_table`).
+    apply_migrations_up_to(
+        &pool,
+        common::migrations_before(MANUAL_SOURCE_VERSION, MANUAL_SOURCE_LABEL) + 1,
+    )
+    .await
+    .unwrap();
     assert_eq!(application_tables(&pool).await, before);
 }
 
@@ -1670,6 +1681,99 @@ async fn draft_migration_adds_no_table(pool: MySqlPool) {
         .await
         .unwrap();
     let before = application_tables(&pool).await;
-    kesh_db::MIGRATOR.run(&pool).await.unwrap();
+    // Story v0172-session : jusqu'à cette migration incluse (cf.
+    // `bank_imports_manual_source_adds_no_table`).
+    apply_migrations_up_to(
+        &pool,
+        common::migrations_before(DRAFT_VERSION, DRAFT_LABEL) + 1,
+    )
+    .await
+    .unwrap();
     assert_eq!(application_tables(&pool).await, before);
+}
+
+// ---------------------------------------------------------------------------
+// Story v0172-session (0.17.3, #876, CR #891) — `20261104000001_installation_settings`
+// ---------------------------------------------------------------------------
+
+const INSTALLATION_SETTINGS_VERSION: i64 = 20261104000001;
+const INSTALLATION_SETTINGS_LABEL: &str = "installation_settings";
+
+/// La migration de la 0.17.3 n'ajoute qu'une table **système**,
+/// `_kesh_installation_settings`, vide (les défauts vivent dans le code), et
+/// laisse intactes les lignes existantes — dont `refresh_tokens`, dont
+/// l'échéance change de sens sans être réécrite. L'inventaire des tables
+/// applicatives (celui d'une sauvegarde `.keshbackup`) ne change pas : une
+/// sauvegarde 0.17.2 reste importable.
+#[sqlx::test(migrations = false)]
+async fn installation_settings_adds_only_its_system_table(pool: MySqlPool) {
+    apply_migrations_up_to(
+        &pool,
+        common::migrations_before(INSTALLATION_SETTINGS_VERSION, INSTALLATION_SETTINGS_LABEL),
+    )
+    .await
+    .unwrap();
+    let company_id: i64 = sqlx::query_scalar(
+        "INSERT INTO companies (name, address, org_type, accounting_language, instance_language) \
+         VALUES ('Session SA', 'Rue 1, 1000 Lausanne', 'Pme', 'FR', 'FR') RETURNING id",
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    let user_id: i64 = sqlx::query_scalar(
+        "INSERT INTO users (username, password_hash, role, company_id) VALUES (?, ?, 'Admin', ?) \
+         RETURNING id",
+    )
+    .bind("session_admin")
+    .bind("$argon2id$v=19$m=19456,t=2,p=1$mock_salt$mock_hash_for_schema_test_only")
+    .bind(company_id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    sqlx::query(
+        "INSERT INTO refresh_tokens (user_id, token, expires_at) \
+         VALUES (?, '00000000-0000-4000-8000-000000000001', '2026-11-04 10:00:00.123')",
+    )
+    .bind(user_id)
+    .execute(&pool)
+    .await
+    .unwrap();
+    let before = application_tables(&pool).await;
+    let row_before: (i64, String, chrono::NaiveDateTime) =
+        sqlx::query_as("SELECT user_id, token, expires_at FROM refresh_tokens")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+
+    kesh_db::MIGRATOR.run(&pool).await.unwrap();
+
+    let mut expected = before.clone();
+    expected.push("_kesh_installation_settings".to_string());
+    expected.sort();
+    let mut after = application_tables(&pool).await;
+    after.sort();
+    assert_eq!(after, expected, "une seule table neuve, système");
+    assert!(
+        !kesh_db::backup::TABLES_TO_TRUNCATE.contains(&"_kesh_installation_settings"),
+        "table système : hors de l'inventaire d'une sauvegarde"
+    );
+    let rows: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM _kesh_installation_settings")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(
+        rows, 0,
+        "aucune ligne posée : les défauts vivent dans le code"
+    );
+    let row_after: (i64, String, chrono::NaiveDateTime) =
+        sqlx::query_as("SELECT user_id, token, expires_at FROM refresh_tokens")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(row_after, row_before, "ligne refresh_tokens intacte");
+    let settings = kesh_db::repositories::installation_settings::get(&pool)
+        .await
+        .unwrap();
+    assert_eq!(settings.session_idle_minutes, 60);
+    assert_eq!(settings.version, 0);
 }

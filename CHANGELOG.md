@@ -8,6 +8,27 @@ Le contenu est rédigé en français à destination des **fiduciaires, PME, ind�
 
 ---
 
+## [0.17.3] — Non publié
+
+⚠️ **La 0.17.3 porte une migration** (une table système, `_kesh_installation_settings`, pour le réglage de la durée d'inactivité) : elle ne modifie aucune donnée existante et `kesh_version_min_required` reste à 0.17.0, mais une 0.17.2 ou une 0.17.1 refuse ensuite de démarrer sur la base. **Le retour à une version antérieure (0.17.2 ou 0.17.1) passe par la sauvegarde complète d'avant la mise à jour** — la base, une sauvegarde `.keshbackup` et le dossier des documents. Une sauvegarde `.keshbackup` prise en 0.17.2 s'importe dans la 0.17.3 (mêmes tables applicatives).
+
+### Ajouté
+
+- **La durée d'inactivité de la session se règle dans Kesh** ([#891](https://github.com/guycorbaz/kesh/issues/891)) : Administration → Paramètres, section Session, de 1 minute à 24 heures, **60 minutes par défaut**. Le changement est tracé au journal d'audit.
+
+### Corrigé
+
+- **La session ne se ferme plus pendant que vous travaillez** ([#876](https://github.com/guycorbaz/kesh/issues/876)) : elle prenait fin quinze minutes après la connexion, même en pleine saisie, et la saisie en cours était perdue. Elle se ferme désormais **exactement** après la durée d'inactivité réglée, et **toute activité dans Kesh** — clavier, souris (mouvement, clic, molette), toucher, retour sur l'onglet — la remet à zéro, dans tous les onglets. À l'échéance, la page de connexion le dit ; ce qui n'était pas enregistré est perdu. La lecture d'un PDF dans l'aperçu, sans geste hors du document, ne compte pas comme activité : pendant une longue lecture, sortez le pointeur du document de temps en temps (un avertissement avant la fermeture est demandé : [#895](https://github.com/guycorbaz/kesh/issues/895)).
+- Recharger la page ou ouvrir un onglet ne renvoie plus à la connexion tant que la session vit.
+
+### Modifié
+
+- **`KESH_REFRESH_INACTIVITY_MINUTES` n'est plus lue** : Kesh l'ignore sans rien en dire ; retirez-la de votre `.env` et de votre `docker-compose`. *Si vous aviez posé `KESH_JWT_EXPIRY_MINUTES=480` pour contourner #876, retirez-le, puis reconnectez-vous une fois : il ne prolonge plus la session et allongerait inutilement la durée de validité des droits d'un utilisateur. Avec ce contournement, une session ouverte avant la mise à jour peut prendre fin à sa première activité qui suit : il faut alors se reconnecter une fois.* Après la mise à jour, **rechargez chaque onglet de Kesh resté ouvert** : un onglet resté sur l'ancienne interface ne transmet pas l'activité, et sa session peut se fermer en pleine saisie.
+- **Un programme qui se connecte par mot de passe ne prolonge plus sa session** : c'est l'interface web qui transmet l'activité, par une route qui exige le cookie de renouvellement ; une connexion par `/api/v1/auth/login`, renouvelée par le corps de la requête, prend fin à la connexion plus la durée réglée à ce moment-là, quelle que soit son activité. Les intégrations utilisent une clé d'API, que la durée d'inactivité ne concerne pas.
+- **Une restauration complète révoque les jetons de renouvellement restaurés** : aucune session, de la sauvegarde ou de l'installation, ne peut plus être renouvelée après l'import ; la durée d'inactivité réglée n'est pas restaurée. *(Ce n'est pas la correction d'un défaut publié : avec les réglages d'avant (15/15), ces jetons mouraient de fait avec le jeton d'accès.)*
+
+---
+
 ## [0.17.2] — 2026-11-04
 
 La 0.17.2 est une version corrective : **aucune migration**, aucune donnée réécrite, **le retour à la 0.17.1 est possible sans restauration**. La sauvegarde complète d'avant la mise à jour (base, `.keshbackup`, dossier des documents) reste recommandée. Le compose et le `.env` ne changent pas. Le détail est au manuel d'administration, *Passer à la 0.17.2*.

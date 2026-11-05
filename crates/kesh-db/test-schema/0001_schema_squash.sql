@@ -1,6 +1,6 @@
 -- SQUASH DU SCHÉMA DE TEST — Story 22-5 (#251). GÉNÉRÉ, NE PAS ÉDITER.
 -- Régénérer : scripts/regen-test-schema.sh
--- Équivalent des 88 migrations de crates/kesh-db/migrations/,
+-- Équivalent des 89 migrations de crates/kesh-db/migrations/,
 -- rejouées en UN batch DDL par base éphémère de test.
 --
 -- Le garde-fou crates/kesh-db/tests/test_schema_guard.rs compare ce schéma
@@ -39,6 +39,19 @@ CREATE TABLE `_kesh_backup_schedule` (
   CONSTRAINT `chk_kesh_backup_schedule_interval` CHECK (`interval_hours` in (6,12,24,168)),
   CONSTRAINT `chk_kesh_backup_schedule_retention` CHECK (`retention_count` between 1 and 60),
   CONSTRAINT `chk_kesh_backup_schedule_status` CHECK (`last_status` in ('ok','partial','failed','insufficient_space','disk_full'))
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+DROP TABLE IF EXISTS `_kesh_installation_settings`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!50503 SET character_set_client = utf8mb4 */;
+CREATE TABLE `_kesh_installation_settings` (
+  `id` tinyint(3) unsigned NOT NULL DEFAULT 1,
+  `session_idle_minutes` int(11) NOT NULL DEFAULT 60,
+  `version` int(11) NOT NULL DEFAULT 1,
+  `updated_at` datetime(3) NOT NULL DEFAULT current_timestamp(3) ON UPDATE current_timestamp(3),
+  PRIMARY KEY (`id`),
+  CONSTRAINT `chk_kesh_installation_settings_single_row` CHECK (`id` = 1),
+  CONSTRAINT `chk_kesh_installation_settings_idle` CHECK (`session_idle_minutes` between 1 and 1440)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 DROP TABLE IF EXISTS `_kesh_version`;
