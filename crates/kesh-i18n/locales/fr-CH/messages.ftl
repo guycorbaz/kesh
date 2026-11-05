@@ -2339,6 +2339,10 @@ settings-session-conflict-reload-failed = Conflit de version et rechargement imp
 settings-session-load-error = Impossible de lire la durée d'inactivité.
 login-session-idle = Session fermée après { $minutes } minutes d'inactivité.
 login-session-idle-one = Session fermée après 1 minute d'inactivité.
+# Story v0174-session-2 (0.17.4, #895) — l'avertissement avant la fermeture.
+session-idle-warning-announce = Votre session va bientôt se fermer faute d'activité : cliquez sur « Rester connecté ».
+session-idle-warning-countdown = Fermeture dans { $remaining }.
+session-idle-warning-stay = Rester connecté
 
 # --- Rappels débiteurs (Story 21-4, #231) ---
 dunning-title = Rappels débiteurs

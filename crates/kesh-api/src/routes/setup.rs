@@ -149,6 +149,13 @@ pub async fn create_admin(
     // que du password déjà validé (Step 1).
     let hash = password::hash_password_async(req.password.clone()).await?;
 
+    // Step 3-bis — lire N et calculer l'échéance de la session neuve **avant**
+    // la section critique (#898, S-E5) : une panne de cette lecture ne laisse
+    // plus un Administrateur créé sous un 500. La valeur est l'échéance de la
+    // session neuve à quelques millisecondes près (l'Administrateur est créé
+    // juste après), dans la tolérance de ± 2 s des tests de l'AC-3 (h) 0.17.3.
+    let deadline = new_session_deadline(&state).await?;
+
     // Step 4 — section critique atomique (Story 17-1, fix TOCTOU #133).
     //
     // Le check `user_count == 0` et l'INSERT du 1er admin s'exécutent dans UNE
@@ -278,9 +285,8 @@ pub async fn create_admin(
     state.users_exist.store(true, Ordering::Release);
 
     // Step 6 — JWT + refresh token (cohérent /login) ; Story v0172-session :
-    // l'échéance d'inactivité de la session neuve (`now + N`), dans la ligne
-    // et dans le jeton (`idle_exp`).
-    let deadline = new_session_deadline(&state).await?;
+    // l'échéance d'inactivité de la session neuve (`now + N`, calculée au
+    // Step 3-bis), dans la ligne et dans le jeton (`idle_exp`).
     let access_token = jwt::encode_session(
         user.id,
         user.role,

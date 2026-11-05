@@ -69,7 +69,6 @@ fn test_config(inbox: &Path, documents: &Path, max_file_bytes: u64) -> Config {
         TimeDelta::minutes(15),
         TimeDelta::days(30),
         TimeDelta::minutes(15),
-        TimeDelta::minutes(15),
         100,
         TimeDelta::minutes(30),
         12,

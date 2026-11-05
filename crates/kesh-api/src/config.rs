@@ -438,11 +438,9 @@ impl Config {
     /// tests, la panique est le bon signal pour un setup de test
     /// incorrect.
     ///
-    /// `_refresh_inactivity_ignored` : **ignoré depuis la 0.17.3** (Story
-    /// v0172-session, C-v0172s-31) — la durée d'inactivité de la session vit
-    /// en base (`_kesh_installation_settings`), réglée dans l'interface. Le
-    /// paramètre est gardé pour ne pas toucher les quelque 78 fichiers de tests
-    /// qui l'appellent ; son retrait est un lot mécanique à part.
+    /// La durée d'inactivité de la session n'est pas un paramètre : elle vit en
+    /// base (`_kesh_installation_settings`), réglée dans l'interface (0.17.3,
+    /// C-v0172s-31 ; paramètre ignoré retiré à la 0.17.4, #896).
     #[doc(hidden)]
     #[allow(clippy::too_many_arguments)]
     pub fn from_fields_for_test(
@@ -452,7 +450,6 @@ impl Config {
         jwt_secret: String,
         jwt_expiry: TimeDelta,
         refresh_token_max_lifetime: TimeDelta,
-        _refresh_inactivity_ignored: TimeDelta,
         rate_limit_window: TimeDelta,
         rate_limit_max_attempts: u32,
         rate_limit_block_duration: TimeDelta,
@@ -2952,7 +2949,6 @@ mod tests {
             TimeDelta::minutes(15),
             TimeDelta::days(30),
             TimeDelta::minutes(15),
-            TimeDelta::minutes(15),
             100,
             TimeDelta::minutes(30),
             12,
@@ -2970,7 +2966,6 @@ mod tests {
             TEST_JWT_SECRET.to_string(),
             TimeDelta::minutes(15),
             TimeDelta::days(30),
-            TimeDelta::minutes(15),
             TimeDelta::minutes(15),
             100,
             TimeDelta::minutes(30),

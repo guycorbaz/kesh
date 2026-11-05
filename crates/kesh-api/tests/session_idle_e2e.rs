@@ -55,7 +55,6 @@ fn test_config() -> Config {
         TimeDelta::minutes(15),
         TimeDelta::days(30),
         TimeDelta::minutes(15),
-        TimeDelta::minutes(15),
         100,
         TimeDelta::minutes(30),
         12,
@@ -199,9 +198,11 @@ fn forge(user_id: i64, role: &str, exp_offset: i64, idle_exp: Option<i64>) -> St
     .unwrap()
 }
 
+/// L'échéance de la ligne du jeton `token` (jeton clair ; la ligne porte son
+/// empreinte depuis la 0.17.4, #890).
 async fn row_expires_at(pool: &MySqlPool, token: &str) -> NaiveDateTime {
     sqlx::query_scalar("SELECT expires_at FROM refresh_tokens WHERE token = ?")
-        .bind(token)
+        .bind(common::independent_refresh_digest(token))
         .fetch_one(pool)
         .await
         .expect("ligne refresh_tokens")
@@ -297,6 +298,25 @@ async fn middleware_refuses_past_idle_exp_whatever_exp(pool: MySqlPool) {
     );
 }
 
+/// #898 (S-B2/S-E2) — l'échéance elle-même est passée : `idle_exp = now` ⇒
+/// 401 (`now >= idle_exp`). Tue la mutation `>=` → `>`, sauf si la requête
+/// franchit la seconde entre la forge et le contrôle (rare ; elle rend alors
+/// 401 sous la mutation aussi).
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn middleware_refuses_idle_exp_equal_to_now(pool: MySqlPool) {
+    let uid = create_user(&pool, "bea", Role::Comptable).await;
+    let app = spawn_app(pool).await;
+    let tok = forge(uid, "Comptable", 900, Some(Utc::now().timestamp()));
+    let resp = app
+        .client
+        .get(app.url("/api/v1/auth/me"))
+        .header("Authorization", format!("Bearer {tok}"))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 401, "idle_exp = maintenant ⇒ 401");
+}
+
 // --- (c) et (j) renouvellement -----------------------------------------------
 
 #[sqlx::test(migrations = "../kesh-db/test-schema")]
@@ -306,12 +326,13 @@ async fn refresh_copies_the_deadline(pool: MySqlPool) {
     let app = spawn_app(pool.clone()).await;
     let (_at, rt, _) = login(&app, "carol").await;
     let target = Utc::now().naive_utc() + TimeDelta::minutes(5);
-    sqlx::query("UPDATE refresh_tokens SET expires_at = ? WHERE token = ?")
+    let r = sqlx::query("UPDATE refresh_tokens SET expires_at = ? WHERE token = ?")
         .bind(target)
-        .bind(&rt)
+        .bind(common::independent_refresh_digest(&rt))
         .execute(&pool)
         .await
         .unwrap();
+    assert_eq!(r.rows_affected(), 1);
     let posee = row_expires_at(&pool, &rt).await;
     let resp = app
         .client
@@ -430,23 +451,25 @@ async fn heartbeat_refuses_foreign_revoked_or_expired_rows(pool: MySqlPool) {
     );
 
     let (at_g2, rt_g2, _) = login(&app, "gina").await;
-    sqlx::query(
+    let r = sqlx::query(
         "UPDATE refresh_tokens SET revoked_at = NOW(3), revoked_reason = 'logout' WHERE token = ?",
     )
-    .bind(&rt_g2)
+    .bind(common::independent_refresh_digest(&rt_g2))
     .execute(&pool)
     .await
     .unwrap();
+    assert_eq!(r.rows_affected(), 1);
     let resp = heartbeat(&app, &at_g2, &rt_g2, json!({ "idleMs": 0 })).await;
     assert_eq!(resp.status(), 401, "ligne révoquée");
 
     let (at_g3, rt_g3, _) = login(&app, "gina").await;
-    sqlx::query("UPDATE refresh_tokens SET expires_at = ? WHERE token = ?")
+    let r = sqlx::query("UPDATE refresh_tokens SET expires_at = ? WHERE token = ?")
         .bind(Utc::now().naive_utc() - TimeDelta::seconds(5))
-        .bind(&rt_g3)
+        .bind(common::independent_refresh_digest(&rt_g3))
         .execute(&pool)
         .await
         .unwrap();
+    assert_eq!(r.rows_affected(), 1);
     let resp = heartbeat(&app, &at_g3, &rt_g3, json!({ "idleMs": 0 })).await;
     assert_eq!(resp.status(), 401, "ligne expirée");
 
@@ -478,6 +501,9 @@ async fn heartbeat_refuses_api_keys(pool: MySqlPool) {
         .await
         .unwrap();
     assert_eq!(resp.status(), 403, "clé d'API refusée");
+    // #899 (S2-B3) : le refus est bien celui de la clé d'API, non un autre 403.
+    let b: Value = resp.json().await.unwrap();
+    assert_eq!(b["error"]["code"], "API_KEY_MANAGEMENT_FORBIDDEN");
 
     // Revue de code P1 (S-B4/S-E8) : le refus de la clé d'API précède la
     // lecture du corps — un corps illisible rend 403, non 400.
@@ -495,6 +521,11 @@ async fn heartbeat_refuses_api_keys(pool: MySqlPool) {
             .await
             .unwrap();
         assert_eq!(resp.status(), 403, "clé d'API, corps {corps}");
+        let b: Value = resp.json().await.unwrap();
+        assert_eq!(
+            b["error"]["code"], "API_KEY_MANAGEMENT_FORBIDDEN",
+            "clé d'API, corps {corps}"
+        );
     }
     // Témoin : le même corps illisible, par une session, rend bien 400.
     let resp = app
@@ -516,12 +547,13 @@ async fn nothing_is_accepted_past_the_deadline(pool: MySqlPool) {
     let app = spawn_app(pool.clone()).await;
     let (_at, rt, _) = login(&app, "jane").await;
     let passe = Utc::now().naive_utc() - TimeDelta::minutes(1);
-    sqlx::query("UPDATE refresh_tokens SET expires_at = ? WHERE token = ?")
+    let r = sqlx::query("UPDATE refresh_tokens SET expires_at = ? WHERE token = ?")
         .bind(passe)
-        .bind(&rt)
+        .bind(common::independent_refresh_digest(&rt))
         .execute(&pool)
         .await
         .unwrap();
+    assert_eq!(r.rows_affected(), 1);
     let posee = row_expires_at(&pool, &rt).await;
     let at = forge(uid, "Comptable", 900, Some(passe.and_utc().timestamp()));
     let resp = heartbeat(&app, &at, &rt, json!({ "idleMs": 0 })).await;

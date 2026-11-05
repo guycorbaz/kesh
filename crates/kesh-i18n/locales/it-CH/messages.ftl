@@ -2226,6 +2226,10 @@ settings-session-conflict-reload-failed = Conflitto di versione e ricaricamento 
 settings-session-load-error = Impossibile leggere la durata di inattività.
 login-session-idle = Sessione chiusa dopo { $minutes } minuti di inattività.
 login-session-idle-one = Sessione chiusa dopo 1 minuto di inattività.
+# Story v0174-session-2 (0.17.4, #895) — l'avviso prima della chiusura.
+session-idle-warning-announce = La sessione sta per essere chiusa per inattività: cliccate su «Resta connesso».
+session-idle-warning-countdown = Chiusura tra { $remaining }.
+session-idle-warning-stay = Resta connesso
 
 # --- Solleciti debitori (Story 21-4, #231) ---
 dunning-title = Solleciti debitori

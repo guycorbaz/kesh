@@ -131,10 +131,10 @@ pub async fn require_auth(
     // Story 17-2a (AC4/AC6, DC3) — discrimination JWT vs PAT APRÈS extraction
     // du token ET le gate `users_exist`. Le préfixe `kesh_pat_` est testé
     // case-sensitive exact (octets) : `KESH_PAT_` / `kesh_pat ` (espace)
-    // tombent en `jwt::decode` (échec 401). Un cookie ne contient jamais
+    // tombent en `jwt::decode_session` (échec 401). Un cookie ne contient jamais
     // `kesh_pat_` (en pratique seul le chemin bearer déclenche le PAT), et un
     // vrai JWS base64url ne commence jamais par `kesh_pat_`. Ne JAMAIS passer
-    // un PAT à `jwt::decode` (fausse erreur loggée + fuite timing).
+    // un PAT à `jwt::decode_session` (fausse erreur loggée + fuite timing).
     let current_user = if token.starts_with(crate::auth::api_key::PAT_PREFIX) {
         let (current_user, scope) = crate::auth::api_key::validate_pat(&token, &state.pool).await?;
 
@@ -264,7 +264,6 @@ mod tests {
             String::from_utf8(TEST_JWT_SECRET.to_vec()).unwrap(),
             TimeDelta::minutes(15),
             TimeDelta::days(30),
-            TimeDelta::minutes(15),
             TimeDelta::minutes(15),
             5,
             TimeDelta::minutes(30),

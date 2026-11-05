@@ -1,7 +1,8 @@
 //! Story 17-3a — Export complet d'installation Kesh au format `.keshbackup`.
 //!
 //! ⚠️ **Le `.keshbackup` est un secret** : il contient l'intégralité de la base
-//! (dont `users.password_hash` et `refresh_tokens`). Il n'est **pas chiffré**
+//! (dont `users.password_hash` et les empreintes des `refresh_tokens` — des
+//! jetons clairs dans une sauvegarde d'avant la 0.17.4, #890). Il n'est **pas chiffré**
 //! par défaut (responsabilité utilisateur — recommander GPG/age pour tout
 //! transit hors infra contrôlée). Le SHA-256 du manifeste sert à la détection
 //! d'altération, pas à la confidentialité.

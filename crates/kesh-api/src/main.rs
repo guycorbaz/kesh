@@ -227,14 +227,18 @@ async fn main() {
     // dans le handler du premier login.
     kesh_api::auth::password::warm_up_dummy_hash();
 
-    // 5c. Nettoyage des refresh tokens expirés/révoqués > 7 jours (story 1.6)
+    // 5c. Nettoyage des refresh tokens expirés/révoqués > 7 jours (story 1.6),
+    //     et des jetons clairs d'avant la 0.17.4 (#890, C-v0174s-6).
     let cleanup_cutoff = (chrono::Utc::now() - chrono::TimeDelta::days(7)).naive_utc();
     match kesh_db::repositories::refresh_tokens::delete_expired_and_revoked(&pool, cleanup_cutoff)
         .await
     {
         Ok(count) => {
             if count > 0 {
-                tracing::info!("startup cleanup: {} expired/revoked tokens removed", count);
+                tracing::info!(
+                    "startup cleanup: {} expired, revoked or pre-0.17.4 tokens removed",
+                    count
+                );
             }
         }
         Err(e) => {

@@ -71,7 +71,12 @@ async fn create_and_find_active_by_token(pool: MySqlPool) {
     .expect("create should succeed");
 
     assert_eq!(created.user_id, user_id);
-    assert_eq!(created.token, token_value);
+    // #890 : seule l'empreinte est stockée.
+    assert_eq!(
+        created.token_digest,
+        refresh_tokens::token_digest(&token_value)
+    );
+    assert_ne!(created.token_digest, token_value);
     assert!(created.revoked_at.is_none());
 
     let found = refresh_tokens::find_active_by_token(&pool, &token_value)
@@ -234,7 +239,29 @@ async fn create_with_invalid_token_format_fails_check_constraint(pool: MySqlPool
     let company_id = create_test_company(&pool).await;
     let user_id = create_test_user(&pool, "frank", company_id).await;
 
-    let result = refresh_tokens::create(
+    // #890 : `create` hache toute entrée, si bien que la contrainte de la
+    // colonne ne se voit plus par lui ; elle reste la garde de la colonne, et
+    // se constate par un INSERT brut.
+    let result =
+        sqlx::query("INSERT INTO refresh_tokens (user_id, token, expires_at) VALUES (?, ?, ?)")
+            .bind(user_id)
+            .bind("not-a-uuid")
+            .bind((Utc::now() + ChronoDuration::days(30)).naive_utc())
+            .execute(&pool)
+            .await
+            .map_err(kesh_db::errors::map_db_error);
+
+    assert!(matches!(result, Err(DbError::CheckConstraintViolation(_))));
+}
+
+/// #890 — `create` d'une valeur qui n'est pas un UUID réussit : seule son
+/// empreinte, toujours conforme à la contrainte, est stockée.
+#[sqlx::test(migrations = "./test-schema")]
+async fn create_hashes_any_value_into_a_valid_digest(pool: MySqlPool) {
+    let company_id = create_test_company(&pool).await;
+    let user_id = create_test_user(&pool, "frida", company_id).await;
+
+    let created = refresh_tokens::create(
         &pool,
         NewRefreshToken {
             user_id,
@@ -242,9 +269,13 @@ async fn create_with_invalid_token_format_fails_check_constraint(pool: MySqlPool
             expires_at: (Utc::now() + ChronoDuration::days(30)).naive_utc(),
         },
     )
-    .await;
-
-    assert!(matches!(result, Err(DbError::CheckConstraintViolation(_))));
+    .await
+    .expect("create hache la valeur");
+    assert_eq!(
+        created.token_digest,
+        refresh_tokens::token_digest("not-a-uuid")
+    );
+    assert_eq!(&created.token_digest[14..15], "0");
 }
 
 #[sqlx::test(migrations = "./test-schema")]
@@ -279,4 +310,48 @@ async fn deleting_user_cascades_to_refresh_tokens(pool: MySqlPool) {
         found.is_none(),
         "refresh_token should be cascaded when user is deleted"
     );
+}
+
+/// Story v0174-session-1 (#890, AC-4) — le nettoyage du démarrage efface une
+/// ligne forme 0.17.3 (UUID v4 clair, active, échéance future) et garde une
+/// ligne créée par `create` (empreinte, active, échéance future).
+#[sqlx::test(migrations = "./test-schema")]
+async fn cleanup_deletes_legacy_clear_rows_and_keeps_digests(pool: MySqlPool) {
+    let company_id = create_test_company(&pool).await;
+    let user_id = create_test_user(&pool, "henri", company_id).await;
+    let future = (Utc::now() + ChronoDuration::minutes(30)).naive_utc();
+
+    let legacy = make_token_uuid();
+    let inserted =
+        sqlx::query("INSERT INTO refresh_tokens (user_id, token, expires_at) VALUES (?, ?, ?)")
+            .bind(user_id)
+            .bind(&legacy)
+            .bind(future)
+            .execute(&pool)
+            .await
+            .expect("ligne forme 0.17.3");
+    assert_eq!(inserted.rows_affected(), 1);
+    let kept = refresh_tokens::create(
+        &pool,
+        NewRefreshToken {
+            user_id,
+            token: make_token_uuid(),
+            expires_at: future,
+        },
+    )
+    .await
+    .expect("create should succeed");
+
+    let cutoff = (Utc::now() - ChronoDuration::days(7)).naive_utc();
+    let removed = refresh_tokens::delete_expired_and_revoked(&pool, cutoff)
+        .await
+        .expect("cleanup");
+    assert_eq!(removed, 1, "seule la ligne forme 0.17.3 est effacée");
+
+    let ids: Vec<i64> = sqlx::query_scalar("SELECT id FROM refresh_tokens WHERE user_id = ?")
+        .bind(user_id)
+        .fetch_all(&pool)
+        .await
+        .unwrap();
+    assert_eq!(ids, vec![kept.id], "la ligne à empreinte reste");
 }

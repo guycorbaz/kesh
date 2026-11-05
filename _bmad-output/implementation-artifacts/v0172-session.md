@@ -778,7 +778,9 @@ Section `## [0.17.3] — Non publié` (à créer en tête si elle n'existe pas) 
   il ne prolonge plus la session et allongerait inutilement la durée de validité des droits d'un utilisateur ; les jetons émis avant la
   mise à jour restent valables jusqu'à huit heures.* *(Annoté le 2026-11-04, revue de code P1 : « huit heures » est faux, cf. S-A1
   au § 3 ; le CHANGELOG dit désormais qu'avec ce contournement il faut se reconnecter une fois, et une entrée « Un programme qui se
-  connecte par mot de passe ne prolonge plus sa session » s'ajoute (S-E9).)*
+  connecte par mot de passe ne prolonge plus sa session » s'ajoute (S-E9).)* *(Annoté le 2026-11-05, revue de la 0.17.4, #899 S2-A3 :
+  l'annotation précédente se trompe de cible — « huit heures » était juste (un jeton d'accès émis sous `KESH_JWT_EXPIRY_MINUTES=480`
+  vit jusqu'à son `exp`) ; c'est « la mise à jour ne déconnecte personne » (§ 3, S-A1) qui était faux.)*
 - **Une restauration complète révoque les jetons de renouvellement restaurés** : aucune session, de la sauvegarde ou de l'installation, ne
   peut plus être renouvelée après l'import ; la durée d'inactivité réglée n'est pas restaurée. *(Ce n'est pas la correction d'un défaut
   publié : avec les réglages d'avant (15/15), ces jetons mouraient de fait avec le jeton d'accès.)*
@@ -1197,7 +1199,10 @@ Vitest ajoutés.
   est le rouge avant correctif ci-dessus.
 - **Décomptes** (périmètre `11e5a38b` → `d38fcd8b`) : 1 attribut de test Rust ajouté (le test de course ; `heartbeat_refuses_api_keys`
   étendu), 0 retiré ; 11 `it(` Vitest littéraux ajoutés (dont deux dans des boucles), 0 retiré ; `sitesTotal` 2825 → 2826 ; une clé
-  i18n par locale (`login-session-idle-one`).
+  i18n par locale (`login-session-idle-one`). *(Annoté le 2026-11-05, revue de la 0.17.4, #899 N2-A2 : « dont deux dans des
+  boucles » est faux — **quatre** `it(` littéraux dans **trois** boucles (`git show 11e5a38b..d38fcd8b -- 'frontend/**/*.test.ts'`,
+  boucles `for (const [nom, geste] of gestes)`, `for (const vide of …)`, `for (const hors of …)`) ; et le script
+  `scripts/recette-e-v0172s.mjs` cité au Change Log vit sous `kesh-gate-logs/v0172s/scripts/`, non dans le dépôt.)*
 - **Recette (e)** : jouée (Change Log). **Non éprouvé** : le `blur` d'un changement de fenêtre du système (Alt-Tab) pendant que
   l'aperçu a le focus — la phrase du manuel utilisateur dit « peut aussi compter », ce que le code ferait si le navigateur émet ce
   `blur`.
