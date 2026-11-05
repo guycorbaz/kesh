@@ -47,16 +47,17 @@ Fiche : `v0174-session.md` (parente), `v0174-session-1.md` (serveur), `v0174-ses
 
 ## C-v0174s-3 — Le hachage vit dans le dépôt `refresh_tokens`, les appelants passent le jeton clair
 
-- **Contexte** : sept fonctions du dépôt reçoivent la valeur du jeton (`create`, `find_active_by_token`,
-  `find_by_token_include_revoked`, `revoke_by_token`, `set_idle_deadline`, `was_rotated_within`, et la recherche de
-  `refresh`) ; leurs appelants sont `routes/auth.rs` (huit appels) et `routes/setup.rs` (deux). Le précédent
+- **Contexte** : six fonctions du dépôt reçoivent la valeur du jeton (`create`, `find_active_by_token`,
+  `find_by_token_include_revoked`, `revoke_by_token`, `set_idle_deadline`, `was_rotated_within`) ; leurs appelants de
+  production sont `routes/auth.rs` (huit appels) et `routes/setup.rs` (un) — neuf ; `find_active_by_token` n'en a aucun
+  (tests seulement). *(« Sept fonctions … deux » à `setup.rs` corrigé à la validation P1, R7.)* Le précédent
   `password_reset_tokens` hache dans `kesh-api` et passe l'empreinte au dépôt (`password_reset_tokens.rs:1-10`).
 - **Retenu** : le dépôt hache lui-même (`pub fn token_digest(&str) -> String`, `kesh-db/src/repositories/refresh_tokens.rs`),
-  à l'entrée de chaque fonction ; les signatures et les dix appels de `kesh-api` **ne changent pas**. Un appelant ne peut
+  à l'entrée de chaque fonction ; les signatures et les neuf appels de `kesh-api` **ne changent pas**. Un appelant ne peut
   donc pas oublier de hacher. `sha2 = "0.10"` entre dans `kesh-db` (déjà au graphe par `kesh-api` : aucune crate neuve au
   `Cargo.lock`). Le champ lu de l'entité est renommé `token_digest` (`#[sqlx(rename = "token")]`) pour qu'aucun lecteur ne
   le prenne pour le jeton.
-- **Écartées** : le patron `password_reset_tokens` (empreinte calculée par l'appelant) — dix sites à tenir, et un oubli
+- **Écartées** : le patron `password_reset_tokens` (empreinte calculée par l'appelant) — neuf sites à tenir, et un oubli
   stockerait en clair sans que rien ne rougisse (la contrainte accepte un UUID) ; un type `TokenDigest` distinct — plus
   de code pour une garantie que l'encapsulation donne déjà.
 - **Réversible** : oui.
@@ -113,8 +114,9 @@ Fiche : `v0174-session.md` (parente), `v0174-session-1.md` (serveur), `v0174-ses
 - **Contexte** : `Config::from_fields_for_test` porte le paramètre ignoré `_refresh_inactivity_ignored: TimeDelta`
   (`config.rs:455`), septième argument, passé par **85** appels dans **80** fichiers — 86 occurrences de
   `from_fields_for_test(` moins la définition (`git grep -c "from_fields_for_test(" -- crates`, sommé ;
-  `git grep -l … | wc -l`), toutes à un argument par ligne (aucune occurrence n'a d'argument sur la ligne de l'appel,
-  `git grep -n "from_fields_for_test(" -- crates | grep -v "from_fields_for_test($"` ne rend que la définition). Il est
+  `git grep -l … | wc -l`), toutes à un argument par ligne (aucune occurrence n'a d'argument sur la ligne de l'appel :
+  `git grep -n "from_fields_for_test(" -- crates | grep -v "from_fields_for_test($"` rend une sortie **vide** — la
+  définition elle-même finit par `(` ; « ne rend que la définition » corrigé à la validation P1, R7). Il est
   suivi d'un autre `TimeDelta`
   (`rate_limit_window`) : retirer la mauvaise ligne **compile** et change en silence la configuration d'un test.
 - **Retenu** : retrait du paramètre et de la ligne correspondante à chaque appel, **par l'outil Edit** (consigne 14) ;
@@ -151,7 +153,10 @@ Fiche : `v0174-session.md` (parente), `v0174-session-1.md` (serveur), `v0174-ses
 - **Retenu** : aucun déplacement programmatique du focus. L'avis porte une phrase **statique** dans un élément
   `role="alert"` (annoncée une fois à l'apparition : « Votre session va bientôt se fermer faute d'activité. ») ; le compte
   à rebours visible (`m:ss`) est `aria-hidden="true"`, pour qu'un lecteur d'écran ne l'annonce pas à chaque seconde ; le
-  bouton « Rester connecté » est un `<button>` atteignable au clavier. Contraste du thème clair.
+  bouton « Rester connecté » est un `<button>`. **Complété à la validation P1 (F12)** : la phrase annoncée dit comment
+  agir — « … faute d'activité : appuyez sur une touche ou choisissez « Rester connecté ». » (toute touche est une
+  activité) ; le bouton est atteignable au clavier **sauf** quand un dialogue modal est ouvert (son piège à focus enferme
+  la tabulation) — écart déclaré, tracé en issue avec les autres limites de l'avis (F13). Contraste du thème clair.
 - **Écartées** : `role="alertdialog"` avec focus ; compte à rebours dans une région `aria-live`.
 - **Réversible** : oui.
 
@@ -171,11 +176,20 @@ Fiche : `v0174-session.md` (parente), `v0174-session-1.md` (serveur), `v0174-ses
   défaut, sur un geste hors de leur contenu (`interactOutsideBehavior`, employé en `'close'` par
   `WriteOffDialog.svelte:127`, `DeleteBankImportAction.svelte:132`). Un clic sur « Rester connecté » pendant une saisie dans
   un dialogue le fermerait et perdrait la saisie que l'avis veut sauver.
-- **Retenu** : exigence (AC), le moyen établi à l'étape 0 du développement : l'avis est visible et cliquable au-dessus de
-  la superposition d'un dialogue, et son clic ne ferme pas le dialogue. Piste à éprouver d'abord : rendre l'avis comme une
-  couche bits-ui empilée au-dessus (une couche plus haute de la pile ne fait pas réagir les couches inférieures),
-  sans prise du focus (`onOpenAutoFocus` empêché). Si l'étape 0 établit qu'aucun moyen simple n'existe, l'écart est
-  écrit (manuel : « bougez la souris dans Kesh ») et l'issue demandée.
+- **Retenu** (**récrit à la validation P1, F3**, établi dans `frontend/node_modules/bits-ui` 2.16.5) : un élément
+  ordinaire, **pas de primitive bits-ui** (`Dialog.Content` est toujours `aria-modal="true"`,
+  `bits/dialog/dialog.svelte.js:265-266`, contre C-v0174s-11), qui tient trois propriétés : (1) un écouteur **natif**
+  `pointerdown` en bouillonnement sur sa racine appelle `stopPropagation()` — la couche du dialogue ne décide de se fermer
+  qu'au bouillonnement sur `document`, après avoir marqué l'événement « intercepté » en capture
+  (`bits/utilities/dismissible-layer/use-dismissable-layer.svelte.js:84`, `:90`, `:110`) ; natif plutôt que `onpointerdown`,
+  que Svelte 5 délègue à la racine de l'application ; (2) `pointer-events: auto` — `ScrollLock`, monté par
+  `Dialog.Content` quand `preventScroll` vaut `true` (défaut, `dialog-content.svelte:25`, `:78`), pose
+  `document.body.style.pointerEvents = "none"` (`internal/body-scroll-lock.svelte.js:129`) ; (3) `z-index` > 50
+  (`z-[60]`), la superposition et le contenu du dialogue étant `z-50` et montés après le layout. Échap reste au dialogue.
+  À éprouver en Chromium à l'étape 0 ; si un point ne tient pas, l'écart est écrit (manuel) et l'issue demandée.
+- **Écartée** (piste de la fiche d'origine) : une primitive bits-ui « non modale » empilée au-dessus — elle n'existe pas
+  pour `Dialog` (toujours modale pour l'accessibilité), et `escapeKeydownBehavior="ignore"` sur la couche du dessus
+  aurait privé le dialogue d'Échap.
 - **Réversible** : oui.
 
 ## C-v0174s-14 — Sans `localStorage`, pas d'avertissement
@@ -197,4 +211,48 @@ Fiche : `v0174-session.md` (parente), `v0174-session-1.md` (serveur), `v0174-ses
   fiche découpée (précédents `v017-3-rapprochement-attente`, `v017-4-facture-fournisseur-brouillon`).
 - **Retenu** : `v0174-session: split`, `v0174-session-1: ready-for-dev`, `v0174-session-2: ready-for-dev`. Signalé au
   rapport.
+- **Réversible** : oui.
+
+## C-v0174s-17 — Une sous-section « Passer à la 0.17.4 », écrite par parts, rédigée en commun à l'intégration
+
+- **Contexte** (validation P1, F2 et R9) : chaque version a sa `\subsubsection{Passer à la 0.17.x}` au manuel
+  d'administration (`admin-manual.tex:2513` pour la 0.17.3, `:2527` pour la 0.17.2) ; la fiche ne confiait à personne celle
+  de la 0.17.4, et plaçait la consigne de mise à jour dans § *Durée d'inactivité*, où personne ne la cherche. Trois stories
+  écrivent la 0.17.4.
+- **Retenu** : la `v0174-session-1` crée `sec:maj-0-17-4` (avant `sec:maj-0-17-3`, patron de la 0.17.2) et y écrit sa part
+  (aucune migration, retour à la 0.17.3 sans restauration, reconnexion unique à la prochaine activité, dumps et sauvegardes
+  antérieurs porteurs de jetons clairs) ; la `v0174-session-2` y ajoute la sienne (l'avertissement) ; **la rédaction
+  commune aux trois stories revient à l'intégration** (union). Le paragraphe *Mise à jour* de § *Durée d'inactivité* y
+  renvoie.
+- **Écartée** : laisser la sous-section à `prepare-release` (elle n'écrit pas de texte) ; une phrase dans § *Durée
+  d'inactivité* seulement.
+- **Réversible** : oui.
+
+## C-v0174s-18 — Chaque sous-fiche régénère les PDF qu'elle touche
+
+- **Contexte** (validation P1, R9) : la 1 laissait le PDF à la 2, si bien que son AC des textes n'était pas vérifiable
+  seule et que la branche portait un PDF périmé entre les deux.
+- **Retenu** : la 1 régénère le PDF d'administration, la 2 les deux (`make fr`, sous les deux verrous) ; chacune contrôle
+  ses motifs dans le PDF aplati. Coût : un `make fr` de plus. C-v0174s-1 (« aucune dépendance ») tient de nouveau.
+- **Réversible** : oui.
+
+## C-v0174s-19 — Les tests prouvent qu'ils atteignent leur chemin : `rows_affected`, un assistant d'empreinte unique
+
+- **Contexte** (validation P1, R1 et R2) : après le hachage, un `UPDATE … WHERE token = ?` de test lié à la valeur claire
+  touche 0 ligne en silence ; deux tests de refus rendent le même 401 pour un jeton « inconnu » que pour leur cas ;
+  `cleanup_removes_old_tokens` deviendrait muet sur les clauses d'âge ; trois fichiers ont besoin d'une empreinte calculée
+  sans `token_digest`.
+- **Retenu** : chaque écriture de test adaptée asserte `rows_affected()` ; `cleanup_removes_old_tokens` en empreintes,
+  avec deux lignes à garder ; mutations M13 à M17 ; **un** assistant `independent_refresh_digest` dans
+  `crates/kesh-api/tests/common/mod.rs` (DRY), qui recalcule par `sha2` et rend le vecteur de l'AC-1.
+- **Réversible** : oui.
+
+## C-v0174s-20 — L'avis est un composant à propriétés ; le layout le rend sur `typeof … === 'number'`
+
+- **Contexte** (validation P1, F7) : un composant qui lit le module ne se teste que par un getter simulé non réactif ; et
+  `!== null` rend l'avis quand un simulacre du module n'expose pas le champ (`undefined !== null`, simulacre de
+  `root-layout-session.test.ts:11-16`).
+- **Retenu** : `SessionIdleWarning.svelte` reçoit `remainingMs` et `onStay` ; le layout le rend si
+  `typeof sessionIdle.warningRemainingMs === 'number'` ; le simulacre du test du layout gagne `warningRemainingMs` et
+  `stayActive`.
 - **Réversible** : oui.

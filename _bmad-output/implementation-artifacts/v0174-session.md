@@ -5,14 +5,14 @@ Status: split
 *Fiche parente, écrite le 2026-11-05 (Opus 5.5, autonomie) sur la liste acceptée par le Project Lead le même jour. Worktree
 `/home/gcorbaz/devel/kesh-0174s`, branche `story/v0174-session`, partie de `origin/main` = `7bd4d5c0` (rétrospective 0.17,
 après le merge de la v0.17.3) ; port **3177**, bases `kesh_v0174s` et `kesh_e2e_v0174s`. Clé courte `v0174s`, registre
-`v0174-choix-autonomes-v0174s.md` (**C-v0174s-1 à 16**). Numéros de ligne de `7bd4d5c0`. Découpée (C-v0174s-1) en deux
+`v0174-choix-autonomes-v0174s.md` (**C-v0174s-1 à 20**). Numéros de ligne de `7bd4d5c0`. Découpée (C-v0174s-1) en deux
 sous-fiches sœurs, sur la même branche, développées dans cet ordre :*
 
 - ***`v0174-session-1.md`** — le serveur : #890 (P1 sécurité), #896, les LOW serveur de #898 et #899 ;*
 - ***`v0174-session-2.md`** — le navigateur : #895, les LOW navigateur de #898 et #899.*
 
-*Issues en `refs` seulement dans les commits. Prochaine étape : validation P1 (Sonnet, lentilles R et F,
-`v0174-session-validate-prompt-p1.md`), sur les trois fichiers.*
+*Issues en `refs` seulement dans les commits. Validation P1 (Sonnet, R 0/0/2/9, F 0/0/3/13) remédiée ; prochaine
+étape : validation P2 (Opus, complète, `v0174-session-validate-prompt-p2.md`), sur les trois fichiers.*
 
 ## Story
 
@@ -56,10 +56,16 @@ jusqu'à l'échéance d'inactivité (`expires_at`, 60 minutes par défaut, jusqu
 - **la rotation** révoque l'ancien jeton (`routes/auth.rs:500`) et crée le neuf (`:506-517`) ; la détection de vol relit un
   jeton révoqué (`:431-476`), la grâce de rotation le compare à l'horloge de la base (`:449-453`).
 
-**Prémisse de l'issue à corriger** : « le manuel d'administration affirme un hash » **n'est plus vrai** — la 0.17.2 l'a
-corrigé, comme l'issue l'annonce : `docs/manual/fr/admin-manual.tex:3027` dit « stocké en DB … **tel quel** (non haché,
-suivi par \#890) ». Restent faux, ou à reformuler après le correctif : `admin-manual.tex:2263` (« ainsi que les **jetons
-de session** »), `:3027` lui-même, `crates/kesh-api/README.md:162` et `:180`, `entities/refresh_token.rs:9-12`,
+**Prémisse de l'issue à corriger** : « le manuel d'administration affirme un hash » **n'est plus vrai à `7bd4d5c0`** —
+mais la correction date de la **0.17.3**, non de la 0.17.2 comme l'issue l'annonçait (validation P1, R4) : au tag
+`v0.17.2`, `admin-manual.tex:3010` dit encore « stocké en DB … avec hash SHA-256 (jamais stocké en clair) »
+(`git show v0.17.2:docs/manual/fr/admin-manual.tex`), et c'est le commit de release de la 0.17.3 (`f135bd68`) qui écrit
+« **tel quel** (non haché, suivi par \#890) » (`:3027` aujourd'hui) — sans le dire au CHANGELOG 0.17.3. **Les manuels
+publiés jusqu'à la 0.17.2 annonçaient donc à tort un hachage** : un administrateur qui garde une base, un dump ou une
+sauvegarde de ces versions y a des jetons en clair ; le CHANGELOG `[0.17.4]` le dit (`v0174-session-1`), et
+l'orchestrateur le commente sur #890. Restent faux, ou à reformuler après le correctif : `admin-manual.tex:1665`
+(« mots de passe hachés, jetons de session »), `:1991` (dumps du NAS : « condensés des mots de passe, jetons de
+session ») et `:2263` (« ainsi que les **jetons de session** ») — validation P1, F1 et R5 —, `:3027` lui-même, `crates/kesh-api/README.md:162` et `:180`, `entities/refresh_token.rs:9-12`,
 `admin_backup/mod.rs:3-4`. Les clés d'API, les clés MCP et les jetons de réinitialisation sont déjà hachés (SHA-256 hex,
 `auth/api_key.rs:98-109`, `:121-127`) : **le jeton de renouvellement est le dernier secret de session gardé en clair.**
 
@@ -100,7 +106,7 @@ Légende : **1** = corrigé par `v0174-session-1` ; **2** = corrigé par `v0174-
 | #898 S-E3 — la grâce de 30 s survivrait à 5 s | `routes/auth.rs:412` ; `auth_e2e.rs` | **1** | deux cas : `revoked_at` reculé de 29 s ⇒ grâce, de 31 s ⇒ vol |
 | #898 S-E4 (b) — battement parti avec l'ancien cookie après une rotation | `routes/auth.rs:703-780` | **—** | sans effet : le 401 passe par le chemin 401 du navigateur, qui renouvelle avec le cookie neuf (partagé par les onglets) et rejoue (`api-client.ts`, chemin 401) |
 | #898 S-E4 (c) — un renouvellement recopie une échéance lue avant un battement | `routes/auth.rs:506-517` | **1** (texte) | perte d'au plus 15 s, rattrapée au battement suivant : l'écart (a) du manuel d'administration (`admin-manual.tex:3039`) la nomme désormais |
-| #898 S-E5 — `refresh` lit N après avoir tourné le jeton ; `setup` après avoir créé l'Administrateur | `routes/auth.rs:500-529` ; `setup.rs:262-283` | **1** | lire N **avant** l'étape 8 (`refresh`) et avant la section critique (`setup`) : une panne de lecture ne laisse plus ni jeton tourné sans cookie neuf, ni Administrateur créé sous un 500 |
+| #898 S-E5 — `refresh` lit N après avoir tourné le jeton ; `setup` après avoir créé l'Administrateur ; et (validation P1, R6) `change_password` après avoir changé le mot de passe et révoqué les sessions | `routes/auth.rs:500-529` ; `setup.rs:262-283` ; `routes/auth.rs:602-616` | **1** | lire N **avant** l'étape 8 (`refresh`), avant la section critique (`setup`) et avant l'étape 3 (`change_password`) : une panne de **lecture de N** ne laisse plus ni jeton tourné sans cookie neuf, ni Administrateur créé sous un 500, ni mot de passe changé et sessions révoquées sans cookie neuf (les autres étapes postérieures — encodage du jeton, création de la ligne — restent après, ce que le CHANGELOG ne prétend pas couvrir) |
 | #898 S-E6 — `expires_at < now` au renouvellement contre `now >= idle_exp` au middleware ; battement à `idleMs ≥ N` | `routes/auth.rs:481` ; `:734-756` | **1** / **—** | `<=` au renouvellement (alignement, mécanique) ; le battement à `idleMs ≥ N × 60 000` (échéance = maintenant, réponse `idleExpiresIn: 0`) n'est jamais envoyé par le navigateur (il ferme avant) et la requête suivante est refusée : sans portée, non corrigé |
 | #898 N-B3 / N-E7 — un battement en vol à la fermeture peut écraser la redirection « inactivité » | `session-idle.svelte.ts:302-351` ; `api-client.ts` (chemin 401) | **issue** | le 401 du battement n'arrive que si l'échéance du serveur est déjà passée (écarts a, c) ; l'effet est le message affiché (« session expirée » au lieu d'« inactivité »), la session étant fermée de toute façon. Le remède touche le chemin 401 générique d'`api-client.ts` (qui écrase tout `signal` passé, `api-client.ts:304-326`) : hors périmètre minimal |
 | #898 N-B5 — un renouvellement tenté à chaque chargement pour un visiteur déconnecté | `auth.svelte.ts` (`hydrate`) ; `lib.rs:1336` | **—** | vérifié : `/api/v1/auth/refresh` n'a aucun limiteur (`lib.rs:1336`, hors des `RateLimiter` de connexion et de récupération) ; un refus coûte une recherche par index. Rien à faire |
@@ -109,7 +115,7 @@ Légende : **1** = corrigé par `v0174-session-1` ; **2** = corrigé par `v0174-
 | #898 N-A8 / N-E10 — un test qui passe à vide, une assertion tautologique, des cas à `t = 0` | `session-idle.svelte.test.ts` | **2** | (9) écrit comme garde de principe, assertion littérale `470_000`, cas de `currentLast` démarrés à `1_000_000` |
 | #898 N-E5 — `previousReported = -Infinity` jamais réécrit après un échec | `session-idle.svelte.ts:293`, `:315` | **2** | `removeItem` de la clé quand `previousReported` n'est pas fini |
 | #898 N-E9 — `localStorage` lu à chaque `pointermove` | `session-idle.svelte.ts:217-221` | **—** | micro-coût sans mesure (lecture synchrone d'une clé, quelques dizaines par seconde au plus) ; un raccourci `memLast + w > now` ajouterait un invariant à tenir (monotonie de la clé) pour aucun effet observable |
-| #898 Rec-e1 — une sortie du document au même pixel que la précédente ne compte pas | `session-idle.svelte.ts:230-237` | **2** | `lastPointer = null` quand le pointeur quitte la page pour un `<iframe>` (`pointerout` dont `relatedTarget` est nul) |
+| #898 Rec-e1 — une sortie du document au même pixel que la précédente ne compte pas | `session-idle.svelte.ts:230-237` | **2** | `lastPointer = null` sur un `pointerout` dont `relatedTarget` est nul ; que ce soit le cas pour l'`<iframe>` d'un PDF reste à **constater en Chromium** à la recette (validation P1, F9) — sinon, issue |
 | #899 S2-B1 — trois commentaires présentent `jwt::decode` comme le chemin de production | `middleware/auth.rs:134`, `:137` ; `auth/api_key.rs:31` | **1** | commentaires corrigés (`jwt::decode_session`) |
 | #899 S2-B2 — nom d'opération de `retry_on_deadlock` | `routes/session_settings.rs:94-95` | **1** | nommer la route (`session_settings::update_session_settings`), témoin du test de course aligné |
 | #899 S2-B3 — `heartbeat_refuses_api_keys` n'asserte que 403 | `tests/session_idle_e2e.rs:465` | **1** | asserter aussi le code `API_KEY_MANAGEMENT_FORBIDDEN` |
@@ -137,6 +143,13 @@ table : aucun absent).*
    `'UUID v4 opaque'` à la prochaine migration de la table » (C-v0174s-2).
 4. Si l'étape 0 de la `v0174-session-2` ne trouve pas de moyen simple pour l'avis au-dessus d'un dialogue
    (C-v0174s-13) : l'écart, en issue.
+5. **Les trois limites de l'avis** (P4, une issue, validation P1, F13) — « Session : l'avertissement avant fermeture
+   (#895) (i) n'apparaît pas si le navigateur refuse `localStorage` (C-v0174s-14 : la fermeture vient alors du serveur,
+   sans avis) ; (ii) son bouton n'est pas atteignable à la **tabulation** quand un dialogue modal est ouvert (le piège à
+   focus du dialogue l'enferme ; toute touche reste une activité) ; (iii) dans un onglet en arrière-plan, il peut
+   apparaître en retard ou pas du tout (minuteries ralenties par le navigateur) ».
+6. **Commentaire sur #890** (par l'orchestrateur) : la prémisse « corrigé en 0.17.2 » est inexacte — le manuel de la
+   0.17.2 affirmait encore le hachage (`v0.17.2:docs/manual/fr/admin-manual.tex:3010`), corrigé en 0.17.3 (`f135bd68`).
 
 À la fermeture de #898 et #899 par la PR, l'orchestrateur y laisse un commentaire qui renvoie à la table ci-dessus (ce
 qui est corrigé, ce qui ne l'est pas et pourquoi).
@@ -155,9 +168,24 @@ touche un dépôt (`repositories/refresh_tokens.rs`) : **gate complet même en c
 ## Textes : qui écrit quoi
 
 - **Manuel d'administration** (`docs/manual/fr/admin-manual.tex` et PDF) : la 1 écrit § *Authentification JWT + refresh
-  tokens* (`:3021-3030`), § sauvegarde (`:2263`), l'écart (a) (`:3039`) et une phrase « Mise à jour vers la 0.17.4 » ;
-  la 2 écrit § *Durée d'inactivité* (`:3043`, « Ce qui compte » ; `:3047`, `localStorage`). La 2 régénère le PDF en
-  dernier (`make fr` dans `docs/manual/`, sous les deux verrous).
+  tokens* (`:3021-3030`), les trois sites « jetons de session » (`:1665`, `:1991`, `:2263`), l'écart (a) (`:3039`), le
+  paragraphe *Mise à jour* (`:3051`, renvoi), le § *Dépannage* (`:3765`), et **sa part de la sous-section neuve « Passer
+  à la 0.17.4 »** (ci-dessous) ; la 2 écrit § *Durée d'inactivité* (`:3043`, « Ce qui compte » ; `:3047`, `localStorage`)
+  et sa part de la même sous-section. **Chaque sous-fiche régénère les PDF qu'elle touche** (`make fr` dans
+  `docs/manual/`, sous les deux verrous) et les contrôle aplatis : la branche n'a jamais de PDF périmé entre les deux,
+  et l'AC des textes de la 1 se vérifie sans la 2 (validation P1, R9).
+- **Sous-section « Passer à la 0.17.4 »** (`\subsubsection{Passer à la 0.17.4}\label{sec:maj-0-17-4}`, insérée **avant**
+  `sec:maj-0-17-3`, `admin-manual.tex:2513`, sur le patron de la 0.17.2, `:2527`, qui n'avait pas de migration) —
+  validation P1, F2 et R9. **Sa rédaction commune aux trois stories de la 0.17.4 revient à l'intégration** ; la session y
+  apporte, et chaque sous-fiche écrit sa part sous un intitulé repérable pour l'union : (1, la 1) « **La 0.17.4 n'a
+  aucune migration** : le retour à la 0.17.3 se fait **sans restauration** (au prix d'une reconnexion) ; la sauvegarde
+  complète d'avant la mise à jour reste recommandée » ; (2, la 1) « **Chaque utilisateur se reconnecte une fois** :
+  les jetons de session sont désormais stockés en empreinte, ceux d'avant ne sont plus reconnus — un onglet resté
+  ouvert revient à la connexion **à sa prochaine activité** (premier battement refusé) ; enregistrez avant de mettre à
+  jour. Les bases, dumps et sauvegardes **antérieurs** à la mise à jour portent encore des jetons en clair : ils
+  restent des secrets » ; (3, la 2) « **Ce qui change à l'écran** : un avertissement une minute avant la fermeture pour
+  inactivité, avec *Rester connecté* ». Rien à retirer du `.env`. Le paragraphe *Mise à jour* de § *Durée
+  d'inactivité* (`:3051`) y renvoie au lieu d'en répéter le contenu.
 - **Manuel utilisateur** (`user-manual.tex` et PDF) : la 2 seule (`:95-97`).
 - **CHANGELOG** : section `## [0.17.4] — Non publié` en tête ; la 1 écrit *Sécurité* (#890) et *Corrigé* (LOW serveur,
   #896 n'y figure pas : sans effet pour l'utilisateur) ; la 2 écrit *Ajouté* (#895) et *Corrigé* (LOW navigateur). Trois
@@ -171,3 +199,17 @@ touche un dépôt (`repositories/refresh_tokens.rs`) : **gate complet même en c
   (C-v0174s-2 à 7), retrait mécanique de #896 (C-v0174s-8), triage des LOW (C-v0174s-9), avertissement (C-v0174s-10 à
   15), registre (C-v0174s-16). Prémisse corrigée : le manuel d'administration ne prétend plus le hachage depuis la 0.17.2.
   Prochaine : validation P1 (Sonnet, R et F).
+  *(Annoté le 2026-11-05, validation P1, R4 : « depuis la 0.17.2 » était faux à sa date — c'est depuis la 0.17.3,
+  `f135bd68` ; la prémisse est récrite au § #890.)*
+- 2026-11-05 — **Validation P1** (Sonnet, complète, lentilles R et F) : **R 0/0/2/9**, **F 0/0/3/13**, remédiée par
+  l'agent de fiche (Opus 5.5). Prémisse de chaque finding vérifiée au code — et, pour bits-ui, dans
+  `frontend/node_modules/bits-ui` 2.16.5. **Traités** : R1, R2 (tests muets : lignes à garder en empreintes,
+  `rows_affected() == 1`, assistant d'empreinte indépendant unique, mutations M13 à M15), R3, R4 (prémisse 0.17.3), R5
+  et F1 (trois sites « jetons de session », dumps antérieurs), R6 (troisième site S-E5 : `change_password`, corrigé),
+  R7, R8, R10, R11, F2 et R9 (sous-section « Passer à la 0.17.4 », PDF régénérés par chaque sous-fiche), F3 (piste
+  bits-ui remplacée, C-v0174s-13 récrit ; **prémisse partielle de F3 rejetée** : « pas de `pointer-events: none` posé
+  par `Dialog` en 2.16.5 » est faux — `ScrollLock`, monté par `Dialog.Content` quand `preventScroll` vaut `true` (défaut,
+  `dialog-content.svelte:25`, `:78`), pose `document.body.style.pointerEvents = "none"`,
+  `internal/body-scroll-lock.svelte.js:129` ; l'avis doit donc porter `pointer-events: auto`), F4 à F16 (F13 : issue
+  demandée, point 5). Choix ajoutés : C-v0174s-17 à 20. Prochaine : validation P2 (Opus, complète,
+  `v0174-session-validate-prompt-p2.md`).
