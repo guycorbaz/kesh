@@ -1001,7 +1001,7 @@ development_status:
   33-2-import-camt-refus: ready-for-dev
   33-3a-accueil-agregats: ready-for-dev
   33-3b-accueil-graphiques: ready-for-dev
-  33-4-bornes-annees: ready-for-dev
+  33-4-bornes-annees: review
   33-5-adresse-societe: ready-for-dev
   33-6-reglement-apres-commit: ready-for-dev
   33-7-traces-audit: ready-for-dev
