@@ -12,12 +12,11 @@
  * historique, écrit par une version antérieure, doit rester filtrable.
  */
 
+import { estDateStockable } from '$lib/shared/utils/date-filtre';
 import type { AuditLogQuery } from './audit-log.types';
 
 /** La taille de page par défaut, omise de l'URL. */
 export const DEFAULT_LIMIT = 50;
-
-const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
 /** Les filtres, sans la pagination — ce que l'export transmet. */
 export function filtersOnly(query: AuditLogQuery): AuditLogQuery {
@@ -53,9 +52,9 @@ export function parseQueryFromUrl(searchParams: URLSearchParams): AuditLogQuery 
 	const query: AuditLogQuery = {};
 
 	const dateFrom = searchParams.get('dateFrom');
-	if (dateFrom && DATE_RE.test(dateFrom)) query.dateFrom = dateFrom;
+	if (estDateStockable(dateFrom)) query.dateFrom = dateFrom;
 	const dateTo = searchParams.get('dateTo');
-	if (dateTo && DATE_RE.test(dateTo)) query.dateTo = dateTo;
+	if (estDateStockable(dateTo)) query.dateTo = dateTo;
 
 	const entityType = searchParams.get('entityType');
 	if (entityType && entityType.trim() !== '') query.entityType = entityType.trim();

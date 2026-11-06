@@ -12,7 +12,12 @@
 //! ⚠️ **Ce que cette garde ne voit pas** : une chaîne de date analysée à la main
 //! (`asOf`, `dateFrom` de l'audit et des écritures : éprouvées par leurs tests),
 //! un type daté caché derrière un alias, un `borner` posé après l'usage de la
-//! date. La revue les lit.
+//! date ; un item sur une seule ligne, un tuple (`struct D(NaiveDate)`) ou une
+//! variante tuple, faute de `nom: type` (aucun site réel à la story). ⚠️ **La
+//! preuve de classe B se cherche au fichier, non au handler** : deux structures
+//! du même fichier au même nom de champ partagent leur `borner`
+//! (`invoices.rs`, `dueDate`) ; ce sont les tests par champ de
+//! `dates_bornes_e2e.rs` qui les départagent. La revue les lit.
 
 use std::path::{Path, PathBuf};
 
@@ -38,13 +43,16 @@ enum Motif {
     ClasseB,
     /// Passé en chaîne à un service qui le borne ; le refus reste le sien.
     ParLeService,
+    /// Lot `accept` (*Pattern batch*) : refusé pour sa seule proposition, sous
+    /// ce `details.reason`, présent dans le fichier.
+    ParProposition(&'static str),
     /// `DateTime<Utc>` borné par `expiration_stockable` dans le même fichier.
     Expiration,
     /// Un type de réponse qui dérive aussi `Deserialize` : rien n'est reçu.
     Reponse,
 }
 
-use Motif::{ClasseA, ClasseB, Expiration, ParLeService, Reponse};
+use Motif::{ClasseA, ClasseB, Expiration, ParLeService, ParProposition, Reponse};
 
 const E2E: &str = "dates_bornes_e2e.rs";
 
@@ -99,7 +107,10 @@ const EXCEPTIONS: &[(&str, &str, &str, Motif)] = &[
         "routes/bank_accounts.rs",
         "CloseBankAccountBody",
         "closed_on",
-        ClasseA("bank_accounts_closed_e2e.rs", "+10000"),
+        ClasseA(
+            "bank_accounts_closed_e2e.rs",
+            "les_refus_de_la_cloture_dans_l_ordre",
+        ),
     ),
     (
         "routes/mcp_keys.rs",
@@ -258,6 +269,13 @@ const EXCEPTIONS: &[(&str, &str, &str, Motif)] = &[
         "as_of",
         ParLeService,
     ),
+    // Lot : une date hors plage ne dépend que de sa proposition.
+    (
+        "routes/reconciliation.rs",
+        "AcceptProposalInput",
+        "value_date",
+        ParProposition("value_date_out_of_range"),
+    ),
     // Expiration d'une clé d'API (#755).
     (
         "routes/api_keys.rs",
@@ -347,7 +365,7 @@ fn champs_dates(fichier: &str, source: &str) -> Vec<Champ> {
             }
             continue;
         }
-        if t.starts_with("#[") || !attributs.is_empty() && !attributs.ends_with(")]") {
+        if t.starts_with("#[") || !attributs.is_empty() && !attributs.ends_with(']') {
             attributs.push_str(t);
             continue;
         }
@@ -439,6 +457,11 @@ fn fautes(
             Expiration => {
                 if !source_de(e.0).contains("expiration_stockable(") {
                     f.push(format!("{lieu} : sans `expiration_stockable`"));
+                }
+            }
+            ParProposition(raison) => {
+                if !source_de(e.0).contains(raison) {
+                    f.push(format!("{lieu} : refus par proposition `{raison}` absent"));
                 }
             }
             ParLeService | Reponse => {}
@@ -644,4 +667,29 @@ fn sonde_une_classe_a_exige_sa_preuve() {
     let t = |_: &str| "async fn le_test()".to_string();
     let f = fautes(&extrait(), &exceptions, &vide, &t);
     assert!(!f.iter().any(|x| x.contains("preuve")), "{f:?}");
+}
+
+#[test]
+fn sonde_un_refus_par_proposition_exige_sa_raison() {
+    let exceptions = [(
+        "sonde.rs",
+        "Sonde",
+        "sans_borne",
+        ParProposition("la_raison"),
+    )];
+    let f = fautes(&extrait(), &exceptions, &vide, &vide);
+    assert!(f.iter().any(|x| x.contains("la_raison")), "{f:?}");
+    let source = |_: &str| "\"reason\": \"la_raison\"".to_string();
+    let f = fautes(&extrait(), &exceptions, &source, &vide);
+    assert!(!f.iter().any(|x| x.contains("la_raison")), "{f:?}");
+}
+
+/// Un attribut sans parenthèses n'avale pas le champ qui le suit.
+#[test]
+fn sonde_un_attribut_sans_parentheses() {
+    let source =
+        "#[derive(Deserialize)]\npub struct S {\n    #[doc_x]\n    pub jour: NaiveDate,\n}\n";
+    let c = champs_dates("s.rs", source);
+    assert_eq!(c.len(), 1, "{c:?}");
+    assert_eq!(c[0].champ, "jour");
 }

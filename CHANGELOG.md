@@ -17,8 +17,14 @@ Le contenu est rédigé en français à destination des **fiduciaires, PME, ind�
   interne, coupait la connexion sans réponse sur les listes filtrées, ou passait : une échéance en l'an 10000 était acceptée
   puis enregistrée vide, sans message. Les listes, les écritures, les factures, les rapports, les outils du serveur MCP et les
   relevés importés (CAMT.053, CSV, saisie manuelle) la refusent désormais, sans rien écrire. Sur `POST
-  /reconciliation/accept`, une telle date refuse tout le lot en `400` au lieu de la seule proposition. Une facture à l'an 9999
-  dont le délai du contact ferait tomber l'échéance après l'an 9999 est refusée.
+  /reconciliation/accept`, seule la proposition concernée est refusée, dans `failed[]`, sous un code stable
+  (`VALIDATION_ERROR`, `value_date_out_of_range`). Une facture à l'an 9999 dont le délai du contact ferait tomber l'échéance
+  après l'an 9999 est refusée.
+- **Un filtre de date n'interroge plus Kesh pendant la frappe**
+  ([#606](https://github.com/guycorbaz/kesh/issues/606)) : au clavier, l'année passe par `0002`, `0020`, `0202`. Les listes de
+  factures et d'écritures, l'échéancier et le journal d'audit gardent désormais leur dernier résultat jusqu'à ce que la date
+  soit complète, sans message d'erreur ni liste vidée ; à la sortie du champ, une date restée incomplète revient à celle du
+  filtre.
 - **Une clé d'API voulue temporaire ne devient plus permanente**
   ([#755](https://github.com/guycorbaz/kesh/issues/755)) : une expiration portée au-delà de l'an 9999 par son fuseau
   (`9999-12-31T23:59:59-05:00`) créait une clé sans expiration ; elle est refusée.

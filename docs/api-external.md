@@ -100,7 +100,14 @@ Par exemple `https://kesh.example.ch/api/v1` (l'hôte et le port sont ceux confi
 
 Toutes les requêtes sont **automatiquement restreintes à la company de la clé**. Vous n'avez aucun identifiant d'entreprise à transmettre.
 
-**Les dates** (*depuis la v0.17.5*, [#606](https://github.com/guycorbaz/kesh/issues/606)) : une date reçue doit porter une année de **1000 à 9999**, celles que la base sait tenir. Hors de cette plage, jamais de `500` ni d'écriture : selon la route, `400` JSON `VALIDATION_ERROR`, ou le refus d'une date mal formée sur cette route (`400` en texte sur un paramètre de requête, `422` en texte sur un corps), le message nommant la plage ; quelques routes gardent un refus existant, par exemple la période hors de l'exercice sur les rapports. Une expiration de clé se lit en UTC et a la même borne haute (`9999-12-31T23:59:59-05:00` est refusée).
+**Les dates** (*depuis la v0.17.5*, [#606](https://github.com/guycorbaz/kesh/issues/606)) : une date reçue doit porter une année de **1000 à 9999**, celles que la base sait tenir. Hors de cette plage, jamais de `500` ni d'écriture, et le refus dépend de la route :
+
+- `400` JSON `VALIDATION_ERROR` dont le message nomme la plage (`1000 à 9999`), sur la plupart des écritures, le grand livre et la liste des écritures ;
+- le refus d'une date mal formée, en **texte et non en JSON**, le message nommant la plage : `400` sur un paramètre de requête (listes de factures, échéancier, rapports de projet), `422` sur un corps (projets, création d'un lot de paiement) ;
+- un refus existant, conservé, dont le message ne nomme pas la plage : `400 REPORT_PERIOD_OUT_OF_FISCAL_YEAR` sur les rapports à exercice, `400 DATE_OUTSIDE_FISCAL_YEAR` sur `PUT /journal-entries/{id}`, `422 REMINDER_DATE_IN_FUTURE` sur une année future d'un rappel manuel ; le refus de `closedOn` et les filtres du journal d'audit disent la plage avec leurs propres mots ;
+- sur `POST /reconciliation/accept`, le refus de **la seule proposition**, en `200`, dans `failed[]` (voir « Accepter des propositions de rapprochement »). Une date **mal formée** y reste un `400` de tout le lot, dont le message ne nomme pas le champ : `corps JSON invalide : champ mal formé, ou champ `type` manquant…`.
+
+Une expiration de clé se lit en UTC et a la même borne haute (`9999-12-31T23:59:59-05:00` est refusée). Un relevé importé dont une date sort de la plage est refusé comme une date invalide de son format.
 
 ---
 
@@ -620,6 +627,8 @@ La réponse est un **succès partiel** en `200` : `{ accepted: [...], failed: [{
 **Compte bancaire clos** *(depuis la v0.13.3)* — pour `accept` comme pour `reject`, un lot dont le `bankAccountId` désigne un compte **clos** rend `200` avec **chaque** proposition dans `failed[]`, code `BANK_ACCOUNT_CLOSED` (`details.bankAccountId`), sans rien écrire ni prendre le verrou du compte ; ce pré-vol précède tous les refus **par proposition** ci-dessus (le `400` d'un corps invalide et le `404` d'un compte inconnu, qui refusent la requête entière, le précèdent). Le rapprochement manuel (`POST /reconciliation/manual`) et ventilé (`/split`) sur un compte clos sont refusés en `409 BANK_ACCOUNT_CLOSED`. Un compte clos n'a, par construction, aucune transaction en attente (la clôture le refuse) : ce refus n'est atteint que par une course — un lot préparé avant la clôture —, ou sur un compte clos que la fenêtre de la v0.13.3 a laissé avec une transaction en attente ([#651](https://github.com/guycorbaz/kesh/issues/651)). Rouvrir le compte, puis relire les propositions.
 
 **Plafond** *(depuis la v0.13.2)* : un lot de plus de **500** transactions (`proposals` ou `bankTransactionIds`) est refusé en `400 VALIDATION_ERROR` avant toute lecture — il sortait auparavant en `500`. Le **corps** reste borné par la limite par défaut d'Axum (2 Mo) : un lot `accept` de propositions ventilées, jusqu'à 50 lignes chacune, peut être refusé avant 500 propositions, en `400 VALIDATION_ERROR` « requête invalide (corps non-parsable) ».
+
+Une proposition `split` dont la date (`valueDate`, à défaut celle de la transaction) porte une année hors de 1000 à 9999 est refusée dans `failed[]` en `VALIDATION_ERROR`, avec `details: { reason: "value_date_out_of_range", valueDate }`, sans empêcher les autres *(depuis la v0.17.5)*.
 
 Une proposition datée dans un exercice **suivi d'un exercice clôturé** (données antérieures à la v0.13.0) est refusée dans `failed[]` en `LATER_FISCAL_YEAR_CLOSED`, avec `details: { fiscalYearId, fiscalYearName }` — l'exercice clôturé le plus proche — et `projectId` quand le projet de la facture est connu (jamais pour `split` ni `rule`) *(depuis la v0.13.0)*. Le rapprochement manuel et ventilé rendent le même refus en `400`.
 

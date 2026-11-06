@@ -836,10 +836,9 @@ pub enum AcceptProposalInput {
         /// standalone. Si absent → handler default = 3 couches
         /// `body.value_date.or(tx.value_date).unwrap_or(tx.booking_date)`.
         ///
-        /// Story 33-4 — hors de la plage de la base, le lot entier se refuse en
-        /// 400 comme sur une date mal formée : un corps invalide, l'exception
-        /// de *Pattern batch*, et non une erreur de la seule proposition.
-        #[serde(default, deserialize_with = "crate::dates_recues::date_opt")]
+        /// Story 33-4 — hors de la plage de la base, refusée par
+        /// `accept_one_split` pour cette seule proposition (*Pattern batch*).
+        #[serde(default)]
         value_date: Option<NaiveDate>,
     },
     /// Story 8-5b FR47 — application d'une `reconciliation_rule` pour
@@ -929,7 +928,7 @@ where
             Err(rej) => {
                 let message = match &rej {
                     JsonRejection::JsonDataError(_) | JsonRejection::JsonSyntaxError(_) => {
-                        "corps JSON malformé ou champ `type` requis manquant — valeurs acceptées : [\"invoice\", \"split\", \"rule\", \"supplier_invoice\"]".to_string()
+                        "corps JSON invalide : champ mal formé, ou champ `type` manquant — valeurs acceptées pour `type` : [\"invoice\", \"split\", \"rule\", \"supplier_invoice\"]".to_string()
                     }
                     JsonRejection::MissingJsonContentType(_) => {
                         "Content-Type attendu : application/json".to_string()
@@ -3676,6 +3675,20 @@ async fn accept_one_split(
 
     // Step h — résoudre entry_date 3 couches (F4''' Pass 3).
     let entry_date = value_date.or(bt.value_date).unwrap_or(bt.booking_date);
+
+    // Story 33-4 (#606) — une année que la base ne sait pas tenir ne dépend que
+    // de cette proposition : refusée seule, et avant toute liaison de la date
+    // (`-0001` ou `+70000` n'y sortiraient qu'en `DATABASE_ERROR`).
+    if !kesh_core::dates::annee_stockable(entry_date) {
+        return Err(FailedProposal {
+            bank_transaction_id,
+            error_code: "VALIDATION_ERROR".to_string(),
+            details: Some(serde_json::json!({
+                "reason": "value_date_out_of_range",
+                "valueDate": entry_date.to_string(),
+            })),
+        });
+    }
 
     // Step i — fiscal year.
     let fiscal_year = match fiscal_years::find_open_covering_date(tx, company_id, entry_date).await

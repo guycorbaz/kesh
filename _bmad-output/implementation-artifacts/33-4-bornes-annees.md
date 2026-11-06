@@ -100,11 +100,10 @@ déclarer au Change Log.
    averti au rapport, la borne reste à poser.
 2. **AC-2** : chaque champ à classer du tableau s'éprouve **avec des valeurs de son type réel** : `NaiveDate`, `%2B10000-01-01`, `%2B70000-01-01`, `-0001-01-01`,
    `0999-12-31` (en requête ; `+10000-01-01`… en JSON) ; `NaiveDateTime` (`sent_at`), `+10000-01-01T00:00:00`, `+70000-01-01T00:00:00`, `-0001-01-01T00:00:00`, `0999-12-31T00:00:00` ; `DateTime<Utc>` : l'AC-8. Chacune rend le refus de sa classe : A, l'existant, relevé par T1 ; B, 400 JSON `VALIDATION_ERROR` ; C, 400 en `Query`, 422 en corps. Jamais 500 ni 2xx.
-   **Refus de domaine conservés** : une année future sur `sent_at` garde `REMINDER_DATE_IN_FUTURE`. **Lot `POST …/accept`, `Split.value_date`, classe C** : une date hors plage refuse tout le lot en 400, comme une date mal formée au même extracteur ; l'exception « corps invalide » de *Pattern batch* (`CLAUDE.md`), déclarée ici. Si T1 relève un `200` : `failed[]` portant cette proposition vaut refus, `accepted[]` vaut échec.
+   **Refus de domaine conservés** : une année future sur `sent_at` garde `REMINDER_DATE_IN_FUTURE`. **Lot `POST …/accept`, `Split.value_date`** *(récrit le 2026-11-06, revue de code P1, B-1 = E-2 = A-2 ; la version d'avant se contredisait)* : la date hors plage est refusée pour **la seule proposition** (§ *Pattern batch*) : `200`, `failed[]`, `VALIDATION_ERROR`, `details.reason = value_date_out_of_range` ; un lot mixte accepte ses autres propositions.
    ⚠️ **Dans une chaîne de requête, `+` se lit comme un espace** et rendrait un 400 qui ne prouve rien : encoder `%2B`
    (`tests/open_items_e2e.rs:309`).
-3. **AC-3** : le refus nomme la plage : le corps de la réponse contient `1000 à 9999`, sur les classes B et C, sauf le lot `POST …/accept` (extracteur à message fixe, `routes/reconciliation.rs:926` : 400 seul, sur une proposition
-   par ailleurs valide), les onze arguments MCP directs (message fixe, AC-5), et les refus de domaine conservés de l'AC-2. La classe A garde son message tel quel. ⚠️ **Sans ce marqueur, le test d'un corps partiel de classe C passerait à vide** : un champ requis manquant rend aussi 422.
+3. **AC-3** : le refus nomme la plage : le corps de la réponse contient `1000 à 9999`, sur les classes B et C, sauf le lot `POST …/accept` (`failed[]`, AC-2), les onze arguments MCP directs (message fixe, AC-5), et les refus de domaine conservés de l'AC-2. La classe A garde son message tel quel. ⚠️ **Sans ce marqueur, le test d'un corps partiel de classe C passerait à vide** : un champ requis manquant rend aussi 422.
 4. **AC-4** : témoins acceptés, aux deux bornes, sur un site de chaque canal : `1000-01-01` et `9999-12-31` ne sont pas refusés pour
    leur plage.
 5. **AC-5** : outils MCP : même plage et aucune donnée lue. Onze arguments directs : `ArgumentsInvalides`, sur un jeu d'arguments complet et valide hors la seule date fautive, avec le témoin de forme : ce refus, à message fixe (`mcp/outil.rs:178-184`), est aussi celui d'un champ manquant. `kesh_postes_ouverts` et la liste des écritures (trois arguments) : refus de validation du service, message conservé, et les tests existants de `mcp_outils_e2e` passent sans modification.
@@ -119,6 +118,8 @@ déclarer au Change Log.
 11. **AC-11 — la lecture héritée reste celle de la 0.17.3 (frontière de C-e334-26)**, test `kesh-import` : (a) un relevé à `<Dt>0999-12-31</Dt>` : `parse` → `InvalidDate`, `parse_legacy_0173` → `Ok`, date `0999-12-31` ; (b) `<Dt>&#x32;026-10-10</Dt>` : `parse` → `Ok`, 2026-10-10 ; `parse_legacy_0173` → `Ok`, année 26, comme la 0.17.3 (chrono lit `%Y` sur 1 à 4 chiffres, `format/parse.rs:416`, à confirmer par ce test) ; (c) `parse` et `parse_legacy_0173` restent égales à leurs références `camt053_golden`, sans régénération. `git diff` de la story ne touche ni `parse_date`, ni `parse_with_version`, ni `parse_legacy_0173`, ni `handle_text`, ni `flush_pending` (à citer au Change Log).
 12. **AC-12 — contrats existants** : sans modification de leurs corps, `bank_accounts_closed_e2e`, `audit_log_e2e`, `open_items_e2e`, `contact_payment_terms_e2e` et `mcp_outils_e2e` passent, et `docs/api-external.md:241` ne change pas. T1 relève d'abord tout test qui épingle une date hors plage : `git grep -nE '\+10000|\+262142|\+70000|0999-|-0001-' -- crates/kesh-api/tests`, liste au Change Log (quatre fichiers à ce jour, relevés le 2026-11-06 : les quatre premiers cités ; `mcp_outils_e2e` n'épingle aucune date hors plage, il doit seulement rester vert). `dunning_reminders_e2e` passe aussi sans modification : son futur est calculé, hors de ce grep.
 13. **AC-13 — échéance calculée** : `POST /invoices` à `date = 9999-12-31`, sans `dueDate`, contact à délai de 30 jours → 400 JSON nommant la plage, jamais 500, rien d'écrit. Sans délai au contact, la même date n'est pas refusée pour sa plage.
+
+14. **AC-14 — une date tapée au clavier** *(ajouté à la revue P1)* : sur tout filtre qui interroge à la saisie (factures, échéancier, écritures, journal d'audit, postes ouverts), une année incomplète (`0002`, `0020`, `0202`) n'envoie rien, ne notifie rien et ne vide pas la liste ; le filtre garde sa dernière valeur valide ; à la sortie du champ, une date restée incomplète revient à celle du filtre ; effacer le champ retire le filtre. Un seul helper (`date-filtre.ts`). Preuve navigateur par `pressSequentially`, jamais `fill()`.
 
 ## Tâches
 
@@ -154,12 +155,11 @@ Après une mutation restaurée : `touch` du fichier (cargo garde sinon le binair
 
 Gate complet au dernier commit de code : `flock /tmp/station-heavy.lock flock /home/gcorbaz/devel/kesh-gate-logs/.gate.lock
 scripts/mem-guard.sh scripts/test-fast.sh`, base remise à neuf. **E2E complet** au dernier commit de code (la règle ne l'exempte
-pas, même sans écran touché) : rouge jugé contre `docs/testing.md`. `cargo publish --dry-run -p kesh-import` (CI). Aucune capture :
-aucun contrôle visible.
+pas, même sans écran touché) : rouge jugé contre `docs/testing.md`. `cargo publish --dry-run -p kesh-import` (CI). *(Corrigé le 2026-11-06, A-1 : « Aucune capture : aucun contrôle visible » était faux.)* Captures de la frappe : `kesh-gate-logs/e334/captures/`.
 
 ## Manuels
 
-Aucun comportement d'écran ne change : les champs de date du navigateur n'émettent que des années à quatre chiffres. **À contrôler,
+*(Corrigé le 2026-11-06, E-1 = B-3 = A-1. La phrase d'origine, « aucun comportement d'écran ne change : les champs de date du navigateur n'émettent que des années à quatre chiffres », était fausse : `0002` a quatre chiffres, et la frappe y passe.)* **Le comportement d'écran change, voir l'AC-14** : `user-manual.tex`, § *Recherche d'écritures*, et son PDF. **À contrôler,
 et à déclarer** : `/usr/bin/grep -n '9999\|1000-01-01' docs/manual/fr/*.tex` ; un `.tex` touché entraîne son PDF. La phrase de
 `docs/api-external.md` suffit pour l'API.
 

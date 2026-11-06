@@ -12,6 +12,7 @@
 	import { page } from '$app/state';
 
 	import { isApiError } from '$lib/shared/utils/api-client';
+	import { filtreDeLAdresse, saisieDeFiltre, sortieDeFiltre } from '$lib/shared/utils/date-filtre';
 	import { authState } from '$lib/app/stores/auth.svelte';
 	import { notifyError, notifySuccess } from '$lib/shared/utils/notify';
 	import { i18nMsg } from '$lib/shared/utils/i18n.svelte';
@@ -117,7 +118,7 @@
 		paymentStatus = (VALID_PAYMENT_STATUS as string[]).includes(rawPs)
 			? (rawPs as PaymentStatusFilter)
 			: 'unpaid';
-		dueBeforeFilter = params.get('dueBefore') ?? '';
+		dueBeforeFilter = filtreDeLAdresse(params.get('dueBefore'));
 		const rawContactId = parseInt(params.get('contactId') ?? '', 10);
 		if (Number.isFinite(rawContactId) && rawContactId > 0) {
 			try {
@@ -396,10 +397,12 @@
 			id="dd-due-before"
 			type="date"
 			value={dueBeforeFilter}
-			oninput={(e: Event) => {
-				dueBeforeFilter = (e.target as HTMLInputElement).value;
-				offset = 0;
-			}}
+			oninput={(e: Event) =>
+				saisieDeFiltre(e, (date) => {
+					dueBeforeFilter = date;
+					offset = 0;
+				})}
+			onblur={(e: Event) => sortieDeFiltre(e, dueBeforeFilter)}
 		/>
 	</div>
 	{#if canExportCsv}

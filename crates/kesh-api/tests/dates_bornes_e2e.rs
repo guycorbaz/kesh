@@ -458,8 +458,9 @@ enum Attendu {
     CRequete,
     /// `dates_recues` sur un corps : 422 en texte, marqueur.
     CCorps,
-    /// Lot `POST …/accept`, extracteur à message fixe : 400 seul.
-    CLot,
+    /// Lot `POST …/accept` (*Pattern batch*) : 200, et cette proposition dans
+    /// `failed[]`, `VALIDATION_ERROR`, `details.reason`.
+    ParProposition,
 }
 
 struct Releve {
@@ -540,7 +541,13 @@ impl Releve {
                 }
                 Attendu::CRequete => *s == 400 && t.contains(MARQUEUR),
                 Attendu::CCorps => *s == 422 && t.contains(MARQUEUR),
-                Attendu::CLot => *s == 400,
+                Attendu::ParProposition => {
+                    let j = serde_json::from_str::<Value>(t).unwrap_or(Value::Null);
+                    *s == 200
+                        && j["accepted"].as_array().is_some_and(Vec::is_empty)
+                        && j["failed"][0]["errorCode"] == "VALIDATION_ERROR"
+                        && j["failed"][0]["details"]["reason"] == "value_date_out_of_range"
+                }
             };
             if !ok {
                 fautes.push(format!("{v} → {s} {t}"));
@@ -635,7 +642,7 @@ macro_rules! champ_requete {
     };
 }
 
-use Attendu::{A, B, BFutur, CCorps, CLot, CRequete};
+use Attendu::{A, B, BFutur, CCorps, CRequete, ParProposition};
 
 champ_requete!(
     q_factures_date_from,
@@ -740,6 +747,21 @@ champ_requete!(
     "/api/v1/reports/balance-sheet/export?format=csv&fiscalYearId={fy}",
     "periodEnd",
     A,
+    true
+);
+// E-5 de la revue : `mode=cumulative` ne lit pas la période ; `fiscal_year` la lit.
+champ_requete!(
+    q_projet_exercice_debut,
+    "/api/v1/reports/project-expenses?projectId={projet}&mode=fiscal_year&fiscalYearId={fy}",
+    "periodStart",
+    CRequete,
+    true
+);
+champ_requete!(
+    q_projet_exercice_fin,
+    "/api/v1/reports/project-expenses?projectId={projet}&mode=fiscal_year&fiscalYearId={fy}",
+    "periodEnd",
+    CRequete,
     true
 );
 champ_requete!(
@@ -1278,7 +1300,7 @@ async fn compte_bancaire_unique(m: &Monde) -> i64 {
 champ_corps!(
     c_rapprochement_lot,
     "POST reconciliation/accept split.valueDate",
-    CLot,
+    ParProposition,
     &aujourd_hui(),
     facultatif,
     |m, v| {
@@ -1296,6 +1318,88 @@ champ_corps!(
         .await
     }
 );
+
+/// Le lot mixte (*Pattern batch*) : la proposition à la date hors plage tombe
+/// seule, sa voisine s'écrit, le code est le même pour les quatre valeurs.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn c_rapprochement_lot_mixte(pool: MySqlPool) {
+    let m = monter(&pool).await;
+    let compte = compte_bancaire_unique(&m).await;
+    for hors in HORS_PLAGE {
+        let bonne = m.transaction_du_jour(compte).await;
+        let mauvaise = m.transaction_du_jour(compte).await;
+        let avant: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM journal_entries")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        let (s, t) = m
+            .post(
+                "/api/v1/reconciliation/accept",
+                json!({"bankAccountId": compte, "proposals": [
+                    {"type": "split", "bankTransactionId": mauvaise,
+                     "splits": m.lignes_eclatement(), "valueDate": hors},
+                    {"type": "split", "bankTransactionId": bonne,
+                     "splits": m.lignes_eclatement()},
+                ]}),
+            )
+            .await;
+        assert_eq!(s, 200, "{hors} : {t}");
+        let c: Value = serde_json::from_str(&t).unwrap();
+        assert_eq!(c["accepted"].as_array().unwrap().len(), 1, "{hors} : {t}");
+        assert_eq!(c["accepted"][0]["bankTransactionId"], bonne, "{t}");
+        assert_eq!(c["failed"].as_array().unwrap().len(), 1, "{hors} : {t}");
+        assert_eq!(c["failed"][0]["bankTransactionId"], mauvaise, "{t}");
+        assert_eq!(c["failed"][0]["errorCode"], "VALIDATION_ERROR", "{t}");
+        assert_eq!(
+            c["failed"][0]["details"]["reason"], "value_date_out_of_range",
+            "{t}"
+        );
+        let apres: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM journal_entries")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        assert_eq!(apres, avant + 1, "une seule écriture : {hors}");
+        let statut: String =
+            sqlx::query_scalar("SELECT status FROM bank_transactions WHERE id = ?")
+                .bind(mauvaise)
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        assert_eq!(statut, "pending", "{hors}");
+    }
+}
+
+/// Le message d'une date mal formée sur ce lot nomme le champ, non le seul `type`.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn c_rapprochement_lot_date_mal_formee(pool: MySqlPool) {
+    let m = monter(&pool).await;
+    let compte = compte_bancaire_unique(&m).await;
+    let tx = m.transaction_du_jour(compte).await;
+    let (s, t) = m
+        .post(
+            "/api/v1/reconciliation/accept",
+            json!({"bankAccountId": compte, "proposals": [
+                {"type": "split", "bankTransactionId": tx,
+                 "splits": m.lignes_eclatement(), "valueDate": "2026-13-01"},
+            ]}),
+        )
+        .await;
+    assert_eq!(s, 400, "{t}");
+    assert!(
+        t.contains("VALIDATION_ERROR") && t.contains("champ mal formé"),
+        "{t}"
+    );
+}
+
+/// E-8 — `?dateFrom=` (vide) reste le refus d'une date mal formée, sans marqueur :
+/// `Option::<NaiveDate>::deserialize` est ce qu'appelait le dérivé.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn q_date_vide_reste_mal_formee(pool: MySqlPool) {
+    let m = monter(&pool).await;
+    let (s, t) = m.get("/api/v1/invoices?dateFrom=").await;
+    assert_eq!(s, 400, "{t}");
+    assert!(!t.contains(MARQUEUR), "{t}");
+}
 
 /// Le témoin du lot : un `200` n'y prouve rien, `failed[]` en rend un aussi. La
 /// proposition doit être **acceptée**, avec la date comme sans elle.
@@ -1630,7 +1734,8 @@ async fn cle_api_expiration_hors_plage_refusee(pool: MySqlPool) {
 
 /// `reconciliation.rs:527-528` lie `d ± N jours` en SQL. Une transaction au
 /// `9999-12-31`, qu'admettent le CAMT, le CSV et la saisie, donne une borne en
-/// l'an 10000 ; une au `1000-01-01`, une borne en 0999.
+/// l'an 10000 ; une au `1000-01-01`, une borne en 0999. ⚠️ Ce test ne prouve que
+/// l'absence de refus et de panique : il ne dit rien des candidats (C-e334-35).
 #[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn fenetre_de_rapprochement_aux_bornes(pool: MySqlPool) {
     let m = monter(&pool).await;
@@ -1769,7 +1874,7 @@ async fn mcp_arguments_par_le_service(pool: MySqlPool) {
         let mut args = base.clone();
         args[champ] = json!(a.p.exercice_fin.to_string());
         let r = b.appeler(&jeton, outil, args).await;
-        if r["result"]["isError"] == json!(true) {
+        if r["result"]["isError"] == json!(true) || r.get("error").is_some() {
             fautes.push(format!("témoin {outil} {champ} : {r}"));
         }
     }

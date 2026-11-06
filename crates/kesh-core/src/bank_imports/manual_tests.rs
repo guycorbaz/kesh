@@ -847,3 +847,15 @@ fn drafts_carry_manual_format_balances_and_signed_amounts() {
         && t.transaction_id.is_none()
         && t.counterparty_iban.is_none()));
 }
+
+/// Story 33-4 (AC-4) : les deux bornes passent, leurs voisines non.
+#[test]
+fn les_bornes_d_annee_de_la_saisie() {
+    for bon in ["1000-01-01", "9999-12-31"] {
+        assert!(parse_date(bon).is_ok(), "{bon}");
+    }
+    assert_eq!(
+        parse_date("0999-12-31"),
+        Err(ManualStatementReason::InvalidDate)
+    );
+}
