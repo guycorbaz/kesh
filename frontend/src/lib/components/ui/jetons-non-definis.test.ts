@@ -117,6 +117,10 @@ const NON_DEFINIS: Record<string, string> = {
 	card: '#645 — jeton shadcn, fond de carte',
 	'error-soft': '#645 — fond pâle des bandeaux de l\'import bancaire',
 	'warning-soft': '#645 — fond pâle des avertissements de l\'import',
+	// Story 33-3b : ni couleur ni classe, et hors de #645. Le relevé lit tout le texte, et
+	// prend pour `<préfixe de couleur>-<nom>` deux attributs des SVG de `features/homepage/`.
+	width: 'pas un jeton — l\'attribut SVG `stroke-width`',
+	anchor: 'pas un jeton — l\'attribut SVG `text-anchor`',
 	// `danger` retiré par la Story 31-1b (#503) : ses deux seuls emplois, les cadres d'erreur
 	// de la sauvegarde et de la restauration, passent au jeton défini `destructive`.
 	'surface-hover': '#645 — survol des lignes de trois listes',

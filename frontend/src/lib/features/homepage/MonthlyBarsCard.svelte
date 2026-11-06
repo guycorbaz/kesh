@@ -41,7 +41,8 @@
 			marginTop: 12,
 			marginBottom: wide ? 34 : 36,
 			marginLeft: 0,
-			marginRight: 8,
+			// Une étiquette centrée sur le dernier groupe ne déborde pas.
+			marginRight: wide ? 36 : 8,
 		};
 		// La marge suit la plus longue graduation.
 		const longest = Math.max(...monthlyBars(summary.months, base).ticks.map((t) => t.label.length));
@@ -132,12 +133,11 @@
 		<line x1={box.marginLeft} x2={width - box.marginRight} y1={chart.zeroY} y2={chart.zeroY} stroke="#64748b" stroke-width="1.5" />
 
 		{#each labels as label (label.index)}
-			{@const x = chart.groups[label.index].x + chart.groups[label.index].width / 2}
 			<text
 				class="axis"
-				{x}
+				x={chart.groups[label.index].x + chart.groups[label.index].width / 2}
 				y={box.height - 8}
-				text-anchor={!wide ? 'middle' : x + 70 > width ? 'end' : 'start'}
+				text-anchor="middle"
 			>{label.text}</text>
 		{/each}
 	</svg>

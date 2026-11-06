@@ -868,7 +868,10 @@ const ATTENDU = {
 	// littéraux ; `sitesNonResolus` et `relais` inchangés.
 	// Fusion de la release 0.17.4 (2026-11-06) : les trois stories réunies, **recompté à la
 	// source** par la garde elle-même après la fusion (non additionné) : **2832**.
-	sitesTotal: 2832,
+	// Story 33-3b (#918, 2026-11-06) : **2832 → 2861** (+29), les fichiers neufs de
+	// `lib/features/homepage/` : `ExpensePieCard.svelte` 14, `MonthlyBarsCard.svelte` 12,
+	// `HomepageCharts.svelte` 3. Que des littéraux ; `sitesNonResolus` et `relais` inchangés.
+	sitesTotal: 2861,
 	sitesNonResolus: 31,
 	relais: 6,
 	// Story 26-1 (#620, AC3-bis) : **10 → 11** — `lib/features/bank-import/
