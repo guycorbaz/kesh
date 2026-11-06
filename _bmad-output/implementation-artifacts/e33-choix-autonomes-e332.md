@@ -37,6 +37,8 @@ Registre propre à ces trois fiches, **versé par union** par l'orchestrateur. C
   `details` ; `currency` en est exclue (changée par e04122dc). L'index garde toutes les lignes d'une clé.
 - **Écartées** : (a) ne comparer que les identifiants stables : dans l'exemple de #915, ligne à seule `NtryRef`, rien ne les distingue ; (b)
   garder la clé seule : c'est #915.
+- **Limite écrite** (annoté le 2026-11-06, validation P1, R-4) : #915 est **réduit**, non supprimé. Une ligne neuve dont les sept textes, lus à l'ancienne, égalent ceux d'une ligne existante reste signalée comme doublon : rien ne la distingue
+  d'une ligne déjà importée. AC-F5 la fixe, manuel et CHANGELOG la disent, une issue de reliquat est demandée.
 - **Réversible** : oui, aucune donnée touchée.
 
 ### C-e332-4 — Clé d'alias égale, textes différents : importée et signalée
@@ -72,6 +74,24 @@ Registre propre à ces trois fiches, **versé par union** par l'orchestrateur. C
 - **Retenu** : l'alias reste ; C-e332-3 suffit à le rendre sûr.
 - **Écartée** : une date en dur : fausse pour toute installation montée plus tard, et chaque erreur serait une ligne en double.
 - **Réversible** : oui, le jour où plus aucune base ne porte de ligne d'avant la 0.17.4.
+
+### C-e332-21 — À l'aperçu, « déjà importé » passe avant le refus de relecture
+
+*(Ajouté le 2026-11-06, validation P1, R-5.)*
+
+- **Contexte** : un fichier que la 0.17.4 a importé et dont la relecture échoue, redéposé pour vérifier : le refus de relecture lui conseillerait un nouvel export, alors qu'il est déjà dans les livres. La création rendait déjà « déjà importé » d'abord (`:1276`).
+- **Retenu** : si la relecture échoue et qu'un import de même empreinte existe, l'aperçu rend `422 BANK_IMPORT_DUPLICATE_FILE`, comme la création sans confirmation. Relecture réussie : inchangé, `200` et avertissement. La confirmation à la création ne lève toujours pas le refus.
+- **Écartées** : (a) un `200` avec l'avertissement seul : l'écran offrirait une confirmation vouée au refus ; (b) un message de refus complété : un second texte à traduire pour dire ce que le code voisin dit déjà.
+- **Réversible** : oui.
+
+### C-e332-22 — La relecture héritée ne porte pas la borne d'années
+
+*(Ajouté le 2026-11-06, validation P1, M-R4-2, sur arbitrage de l'orchestrateur.)*
+
+- **Contexte** : la 33-4 borne les années des dates reçues, et `parse_date` sert aux deux lectures. Une borne de période coupée (`&#x32;026-10-01…`) se lit en l'an 26, sans erreur, dans la lecture héritée. Avec la borne, ce relevé serait refusé sans raison, et l'inventaire des causes de la 33-2 ne serait plus clos.
+- **Retenu** : `parse_legacy_0173` lit comme la 0.17.3, sans borne ; AC-S5 le fixe. La borne se pose à la lecture corrigée, ce que la 33-4 doit dire.
+- **Écartée** : laisser la borne jouer et admettre une cause de plus : la lecture ne serait plus celle dont dépend l'égalité des textes (C-e332-3).
+- **Réversible** : oui.
 
 ---
 
@@ -123,8 +143,8 @@ Registre propre à ces trois fiches, **versé par union** par l'orchestrateur. C
 ### C-e332-13 — Le camembert ne porte que les soldes strictement positifs
 
 - **Contexte** : une part négative n'a pas de sens géométrique.
-- **Retenu** : écartés du classement, de « Autres » et de la base, comptés dans `nonPositiveExpenseAccounts`.
-- **Écartée** : valeur absolue : un compte créditeur ferait paraître une dépense.
+- **Retenu** : soldes négatifs écartés du classement, de « Autres » et de la base, comptés dans `creditBalanceExpenseAccounts`. **Solde nul** (tranché le 2026-11-06, validation P1, R-7) : absent de tout champ, la requête gardant `HAVING balance != 0`, comme le compte de résultat (`income_statement.rs:83`) ; le champ s'appelait `nonPositiveExpenseAccounts` jusque-là.
+- **Écartée** : valeur absolue : un compte créditeur ferait paraître une dépense. Écartée aussi : compter les soldes nuls : la note parlerait de comptes que le compte de résultat ne montre pas.
 - **Réversible** : oui.
 
 ### C-e332-14 — Autant de mois que l'exercice
@@ -148,9 +168,9 @@ Registre propre à ces trois fiches, **versé par union** par l'orchestrateur. C
 ### C-e332-16 — Le SVG est une image, le tableau porte les données et les liens
 
 - **Contexte** : un `<rect>` cliquable n'est ni annoncé ni atteignable au clavier ; des `<a>` dans un `role="img"` sont présentés puis cachés selon le
-  lecteur d'écran.
-- **Retenu** : `role="img"`, titre et description chiffrés ; vrais liens au tableau ; `<a tabindex="-1">` pour la souris seulement.
-- **Écartée** : des `<a>` focalisables dans le SVG : 12 + 12 arrêts de tabulation sans étiquette utile, et une image qui n'en est plus une.
+  lecteur d'écran, et le contrôle `no-focusable-content` d'axe les refuse, `tabindex="-1"` compris (`axe.js:25720-25742`, lu, non joué).
+- **Retenu** (récrit le 2026-11-06, validation P1, R-1) : `role="img"`, titre et description chiffrés, **aucun élément focalisable dans le SVG** ; vrais liens au tableau voisin ; pour la souris, un écouteur unique sur le `<svg>` qui lit le `data-href` de la marque. Un squelette passe sous axe à l'étape 0.
+- **Écartées** : (a) des `<a>` focalisables dans le SVG : 12 + 12 arrêts de tabulation sans étiquette utile, et une image qui n'en est plus une ; (b) `<a tabindex="-1">` dans un `role="img"`, version d'origine de ce choix : voir le contexte ; (c) deux calques, l'un sous `aria-hidden` avec les `<a tabindex="-1">` : deux dessins à tenir alignés, pour le seul `Ctrl`+clic, que le tableau offre ; (d) des liens HTML superposés : un rectangle ne suit pas une part de camembert.
 - **Réversible** : oui.
 
 ### C-e332-17 — Jamais la couleur seule
@@ -179,3 +199,12 @@ Registre propre à ces trois fiches, **versé par union** par l'orchestrateur. C
 - **Retenu** : mois : `from`/`to` de l'API ; poste : l'exercice entier.
 - **Écartée** : poste jusqu'à la date du jour : le camembert porte tout l'exercice, une écriture future manquerait.
 - **Réversible** : oui.
+
+### C-e332-23 — Un exercice long : tous ses mois, moins d'étiquettes, aucun défilement
+
+*(Ajouté le 2026-11-06, validation P1, R-2. C-e332-14 n'est pas rouvert.)*
+
+- **Contexte** : rien ne borne la durée d'un exercice, et la base E2E en a un de 132 mois (`test_fixtures.rs:116-121`).
+- **Retenu** : un groupe par mois, sans `overflow-x` ; au-delà de 24 mois, carte pleine largeur ; étiquettes à seuils : 12, 24, 60 mois, puis repères d'année ; distance minimale testée. La spec E2E des graphiques crée son exercice de douze mois.
+- **Écartées** : (a) défilement horizontal : exige un élément focalisable (`scrollable-region-focusable`) et cache des mois ; (b) agrégation par trimestre ou par année au-delà d'un seuil : détache les barres des liens de mois, et le contrat rend des mois ; (c) changer le preset `with-company` : d'autres specs comptent sur sa largeur (« dérive d'horloge CI »).
+- **Réversible** : oui, frontend seul.

@@ -13,7 +13,8 @@ Docker (« oui, de manière autonome »).
 de 91 bugs au tag v0.17.5.**
 
 ⚠️ **Contrepartie BMAD des issues** — chaque issue tient le détail, cet epic le périmètre. Il se clôt quand les issues
-ci-dessous sont fermées et la v0.17.5 publiée.
+ci-dessous sont fermées et la v0.17.5 publiée. **Exceptions écrites** : #435 reste ouverte pour la connexion, la déconnexion et le renouvellement de session, tant que
+Guy n'a pas tranché (C-e334-11) ; le reliquat de #915 est tracé à part.
 
 ## Règle de cet epic pour les limites voisines (décision de Guy du 2026-11-06)
 
@@ -37,6 +38,7 @@ treize des quatorze bugs ouverts venaient des fiches et revues de la release ell
 | 33-8 | #486 (P2) | un compte désigné dans les paramètres ne s'archive plus sans avertissement | non |
 | 33-9 | #424, #287 | le test E2E `sidebar-navigation` cesse de lancer de fausses alertes | non |
 | 33-10 | #925 ; B1, B3 de la rétrospective 0.17.4 (B2 est dans `prompts/e33-commun.md`) | gate de release en mode CI, script de montée et de retour au dépôt | non |
+| 33-11 | #928 | la CI saute ses jobs lourds quand une PR ne touche que `_bmad-output/` (demande de Guy, 2026-11-06) | non |
 
 33-1b suit 33-1a, 33-3b suit 33-3a ; toutes les autres sont indépendantes. Une story qui découvrirait qu'il lui faut une
 migration le dit avant de l'écrire (numérotation).

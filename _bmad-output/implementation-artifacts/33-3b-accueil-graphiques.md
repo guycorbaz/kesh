@@ -4,7 +4,7 @@ Status: ready-for-dev
 
 *Fiche rédigée le 2026-11-06 en autonomie (Opus 5.5), worktree `/home/gcorbaz/devel/kesh-e33`, branche `story/33-0-kickoff`,
 numéros de ligne de `4ef19901`. Epic 33, release **0.17.5**, **sans migration**. Registre : `e33-choix-autonomes-e332.md`, choix
-`C-e332-k`. Issue **#918** : `closes` dans la PR, une fois les deux stories réunies ; **#165** et **#166** en `refs`, **non fermées**.
+`C-e332-k`. Issue **#918** : `closes` dans la PR, une fois les deux stories réunies.
 **Suit la 33-3a**, dont le contrat fait foi. Modules : `frontend`, `kesh-i18n`, manuel.*
 
 ## Story
@@ -33,38 +33,47 @@ d'écran.
    *Recette visuelle*). Jetons : `--color-primary #1e40af`, `--color-warning #d97706`, `--color-text-muted #64748b`, `--color-border
    #e2e8f0` (`frontend/src/app.css:12-33`).
 7. **L'accessibilité se contrôle déjà.** `homepage-dashboard.spec.ts:94-103` passe axe-core sur l'accueil peuplé : à étendre.
-8. **Le montage E2E.** `seedTestState('with-company')` sème une société, un exercice et cinq comptes (`crates/kesh-api/src/routes/test_endpoints.rs:78-82`,
-   `:200` ; à l'étape 0 : vérifier que l'exercice couvre la date du jour et qu'un des cinq comptes est une charge, sinon en créer un par l'API dans la spec) ;
-   `with-company-no-fy` sans exercice (`:88-91`, `:225`) ; `createJournalEntryViaApi` passe au **Zurich**, débit `10xx`, crédit
-   `3xxx` (`helpers/api-fixtures.ts:169-183`) : il faut une variante pour les charges. Sélecteurs `data-testid` seulement (garde
-   `e2e-selecteurs-traduits`, #326).
-9. **Le manuel** : `user-manual.tex:231-232`, « Il présente trois tuiles de synthèse ». Faux dès cette story.
-10. **#165 et #166** : voir § *Ce qui reste de #165 et #166*.
+8. **Le montage E2E.** `seedTestState('with-company')` sème un exercice **de 132 mois**, 2020-01-01 → 2030-12-31 (`crates/kesh-db/src/test_fixtures.rs:116-121`), ouvert : avec
+   C-e332-14, 132 groupes et 132 lignes de tableau. Comme il couvre tout, un exercice de plus y chevaucherait et serait refusé (`repositories/fiscal_years.rs:346`). `with-company-no-fy` sème la
+   société et les comptes, sans exercice (`test_endpoints.rs:88-91`, `:225` ; `test_fixtures.rs:265`, `:907`) : la spec part de là et **crée elle-même** un exercice civil de douze mois, par
+   `POST /api/v1/fiscal-years` (`routes/fiscal_years.rs:79-83` : `name`, `startDate`, `endDate`). Aucun helper n'existe : `createFiscalYearViaApi` à écrire. `homepage-dashboard.spec.ts:22-23` reste sur `with-company` : son test axe (`:94-103`) voit donc
+   le dessin à 132 mois, ce qui couvre le cas long sans autre montage. `createJournalEntryViaApi` passe au **Zurich**, débit `10xx`, crédit `3xxx`
+   (`helpers/api-fixtures.ts:169-183`) : il faut une variante pour les charges (étape 0 : le seed a bien un compte `Expense`). Sélecteurs `data-testid` seulement (garde `e2e-selecteurs-traduits`, #326).
+9. **Le manuel** : `user-manual.tex:232-233`, « Il présente trois tuiles de synthèse ». Faux dès cette story. Sa capture (`:235`, `dashboard.png`, `% TODO capture`) n'est pas au dépôt
+   (`docs/manual/fr/screenshots/` ne porte que `_placeholder.png`) : il n'y a pas de capture à refaire, seulement une légende à récrire.
+10. **axe et les descendants focalisables.** La règle `nested-interactive` s'applique à tout rôle à enfants présentationnels, dont `img` (`axe.js:14357-14362`, `:27383-27388`, axe-core 4.11.2 du dépôt principal), et son contrôle
+    `no-focusable-content` rend `false` dès qu'un descendant est focalisable, `tabindex="-1"` compris (`axe.js:25720-25742`). Lu, non joué. Un `<svg role="img">` qui ne contient **aucun** élément focalisable n'y est pas exposé.
 
 ## Décisions
 
 Décisions de Guy (#918, epic) : barres mensuelles revenus / dépenses sur douze mois, sans ligne de résultat ni cumul ; camembert à cinq
 parts plus « Autres » ; clic vers le détail ; SVG sans bibliothèque ; exercice ouvert même vide. Au registre :
 
-- **C-e332-16** : les deux `<svg>` sont des images (`role="img"`, titre et description) ; **les données et les liens vivent dans un vrai
-  tableau HTML**. Les `<a>` du SVG sont réservés à la souris (`tabindex="-1"`), le clavier et le lecteur d'écran passent par le tableau.
+- **C-e332-16** : les deux `<svg>` sont des images (`role="img"`, titre et description) **sans aucun élément focalisable** ; **les données et les seuls liens vivent dans un vrai
+  tableau HTML, voisin**. Le clic de souris sur une marque passe par un écouteur unique sur le `<svg>`, qui lit le `data-href` de la marque ; le clavier et le lecteur d'écran passent par le tableau.
 - **C-e332-17** : couleur jamais seule : trames SVG (`<pattern>`) et position ; les parts du camembert se numérotent par leur rang.
 - **C-e332-18** : « Autres » n'est pas cliquable.
 - **C-e332-19** : barres négatives dessinées sous l'axe ; l'échelle se calcule sur la valeur absolue la plus grande des deux signes.
 - **C-e332-20** : le lien d'un poste couvre l'exercice entier ; celui d'un mois, les bornes `from`/`to` que rend l'API.
+- **C-e332-23** : un exercice long reste dessiné mois par mois, sans défilement ; ses étiquettes se clairsèment par une règle à seuils.
 
 ## Critères d'acceptation
 
 ### Barres mensuelles
 
 - **AC1** — Pour chaque élément de `months`, deux barres : revenus, dépenses. Aucune ligne de résultat, aucun cumul, aucun solde.
-- **AC2** — Exercice de 12 mois : 12 groupes ; le dessin tient aussi pour 13 et 18 mois (`viewBox`, largeur calculée), sans chevauchement
-  d'étiquettes (une étiquette sur deux au-delà de 12 si la largeur l'exige, le tableau les portant toutes).
+- **AC2** — Un groupe par mois rendu, quel qu'en soit le nombre `n` (exercice de 12 mois : 12 groupes), à largeur égale, **sans défilement horizontal** : pas d'`overflow-x`, qui exposerait à
+  `scrollable-region-focusable`. `viewBox` de 720 de large jusqu'à 24 mois ; au-delà, 1200 de large et carte sur toute la largeur (`lg:col-span-2`). **Étiquettes, règle à seuils** (`axisLabels`, pure, C-e332-23) :
+  `n ≤ 12` : chaque mois, nom court ; `13 ≤ n ≤ 24` : un mois sur deux à partir du premier, mois et année à deux chiffres ; `25 ≤ n ≤ 60` : le premier mois de chaque trimestre civil, de même ; `n > 60` : chaque
+  janvier, l'année seule. Le tableau porte tous les mois.
+- **AC2-bis** — Test pur, pour `n` = 1, 12, 13, 18, 24, 25, 60, 61, 132 : `monthlyBars` rend `n` groupes, et `axisLabels` rend les indices attendus, deux étiquettes voisines étant distantes d'au moins 48 unités de `viewBox`. Les seuils ne se règlent
+  pas aux captures ; les marges, oui, tant que ce test reste vert.
 - **AC3** — Les hauteurs sont proportionnelles, calculées par `big.js` jusqu'au ratio, `Number` seulement sur le ratio géométrique. Une
   valeur négative part sous l'axe du zéro, qui est dessiné ; un jeu tout à zéro ne divise pas par zéro et ne dessine aucune barre.
 - **AC4** — Mois nom court, locale de `i18nLocale()`, `timeZone: 'UTC'` pour ne pas glisser d'un mois. Graduations en format suisse
   (`formatSwissAmount`).
-- **AC5** — Clic sur un mois (toute la hauteur du groupe) → `/journal-entries?dateFrom=<from>&dateTo=<to>`, bornes rendues par l'API.
+- **AC5** — Clic de souris sur un mois (toute la hauteur du groupe : un `<rect>` transparent, `pointer-events="all"`, dans le `<g data-href>` de la marque) → `/journal-entries?dateFrom=<from>&dateTo=<to>`, bornes rendues par
+  l'API.
 
 ### Camembert
 
@@ -72,21 +81,22 @@ parts plus « Autres » ; clic vers le détail ; SVG sans bibliothèque ; exerci
   expensePostsBase`, pas depuis `share`, arrondi.
 - **AC7** — **Une part à 100 %** se dessine (un arc de 360° ne se dessine pas : `<circle>` dans ce cas). Une part minuscule reste au
   tableau, même invisible au dessin.
-- **AC8** — Clic sur une part de compte → `ledgerHref(accountId, fiscalYear.startDate, fiscalYear.endDate)`. « Autres » : aucun lien
+- **AC8** — Clic de souris sur une part de compte (`<g data-href>`) → `ledgerHref(accountId, fiscalYear.startDate, fiscalYear.endDate)`. « Autres » : aucun lien ni `data-href`
   (C-e332-18), au dessin comme au tableau.
 - **AC9** — Montant et pourcentage lisibles pour chaque part, dans le tableau. `share` s'affiche tel que rendu, suivi de `%`.
-- **AC10** — `nonPositiveExpenseAccounts > 0` : une note sous le tableau, avec le nombre : « N comptes de charges au solde créditeur ou nul
-  ne figurent pas dans ce diagramme. » Absente à zéro.
+- **AC10** — `creditBalanceExpenseAccounts > 0` : une note sous le tableau, avec le nombre, singulier et pluriel par Fluent : « N comptes de charges au solde créditeur
+  ne figurent pas dans ce diagramme. » Absente à zéro. Un compte à solde nul n'y entre pas (33-3a, AC14).
 
 ### Accessibilité
 
 - **AC11** — Chaque `<svg>` : `role="img"`, `aria-labelledby` vers un `<title>` et un `<desc>` qui résument le contenu avec des chiffres
-  (exercice, totaux, nombre de postes, poste le plus gros), i18n.
+  (exercice, totaux, nombre de postes, poste le plus gros), i18n. **Aucun descendant focalisable** : ni `<a>`, ni `tabindex`, ni `<button>`, vérifié par le test du composant
+  (`svg a, svg [tabindex], svg button` ne rend rien).
 - **AC12** — Chaque graphique a son **tableau HTML** (`<caption>`, `<th scope>`) : mois, revenus, dépenses, avec un vrai lien sur le mois ;
   rang, compte, montant, part, avec un vrai lien sur le compte. Le tableau des mois est dans un `<details>` ouvrable au clavier ; celui des
   postes tient lieu de légende et reste visible.
-- **AC13** — Tout se fait au clavier : `Tab` atteint le `<summary>` et chaque lien du tableau, jamais un `<a>` du SVG ; focus visible
-  (`outline` de `app.css:71`). Test Playwright au clavier, pas seulement au clic.
+- **AC13** — Tout se fait au clavier : `Tab` atteint le `<summary>`, qui s'ouvre par `Enter`, puis chaque lien du tableau des mois, et chaque lien du tableau des postes ; le SVG n'offre aucun arrêt
+  de tabulation ; focus visible (`outline` de `app.css:71`). Test Playwright au clavier sur les **deux** chemins, pas seulement au clic.
 - **AC14** — La couleur n'est jamais seule : revenus pleins, dépenses tramées ; six trames ou motifs distincts au camembert, numéro de rang
   dans la légende. Contraste de chaque remplissage ≥ 3:1 sur blanc, vérifié par un test pur sur la palette (ratio WCAG calculé), « Autres »
   en gris.
@@ -98,8 +108,9 @@ parts plus « Autres » ; clic vers le détail ; SVG sans bibliothèque ; exerci
 - **AC17** — Échec de l'API : le message `homepage-charts-unavailable`, **jamais** un graphique vide (#388).
 - **AC18** — `state = "noOpenFiscalYear"` : phrase dédiée qui dit qu'aucun exercice n'est ouvert à la date du jour, à la place des deux
   graphiques, et aucun lien vers un autre exercice. **Trois** chemins y mènent (33-3a, AC2), une seule phrase.
-- **AC19** — Exercice ouvert et vide : le cadre des barres avec ses mois et le message « Aucun produit ni aucune charge dans cet exercice »
-  ; à la place du camembert, le même état, sans cercle plein trompeur. Des charges toutes créditrices : la note d'AC10, pas de camembert.
+- **AC19** — Exercice ouvert et vide (tous les montants de `months` à zéro) : le cadre des barres avec ses mois et le message « Aucun produit ni aucune charge dans cet exercice »
+  ; à la place du camembert, le même état, sans cercle plein trompeur. **`expensePosts` vide alors que l'exercice ne l'est pas** (des produits seuls, des charges toutes créditrices ou qui se
+  compensent) : à la place du camembert, le message « Aucun poste de charges à répartir dans cet exercice » (`homepage-charts-no-posts`), jamais la phrase d'un exercice vide, plus la note d'AC10 s'il y a lieu.
 
 ### Formats et langues
 
@@ -120,12 +131,16 @@ parts plus « Autres » ; clic vers le détail ; SVG sans bibliothèque ; exerci
 Lire le contrat réel de la 33-3a sur le dernier `HEAD` et les prémisses ci-dessus, lignes citées au Change Log. Charger la skill `dataviz`
 pour la palette et les marques avant la première ligne de dessin, sous réserve d'AC14 et des jetons de Kesh, qui priment.
 
+**Squelette sous axe, avant le reste du dessin** : sur l'accueil, un `<svg role="img">` à `<title>` et `<desc>` portant une barre et une part en `<g data-href>`, l'écouteur, et le tableau voisin dans son `<details>`. `AxeBuilder` joué, `<details>` fermé
+puis ouvert : aucune violation. **Sonde** : le même squelette avec un `<a tabindex="-1">` dans le SVG ; le résultat attendu est `nested-interactive` (prémisse 10), et s'il n'y a aucune violation, c'est que l'analyse ne voit pas le squelette : à élucider avant de continuer. Sorties dans
+`kesh-gate-logs/e333b/`, citées au Change Log. Si axe désigne autre chose sur le squelette, le corriger sans remettre d'élément focalisable dans le SVG : la conception ne se rouvre pas.
+
 ### T1 — Tests rouges
 
-- `features/homepage/homepage-charts.test.ts` (purs) : `monthlyBars` (positifs, négatifs, tout à zéro, 13 mois) ; `pieSlices` (trois parts,
+- `features/homepage/homepage-charts.test.ts` (purs) : `monthlyBars` (positifs, négatifs, tout à zéro) et `axisLabels` (AC2-bis) ; `pieSlices` (trois parts,
   une part à 100 %, part minuscule) ; `monthHref`, `monthLabel` (janvier en `timeZone` UTC) ; contraste de la palette.
-- `features/homepage/HomepageCharts.test.ts` : chaque AC d'état, de tableau, de lien, d'accessibilité statique (`role`, `aria-labelledby`,
-  `tabindex="-1"`, `<caption>`), « Autres » sans lien, note d'AC10.
+- `features/homepage/HomepageCharts.test.ts` : chaque AC d'état, de tableau, de lien, d'accessibilité statique (`role`, `aria-labelledby`, aucun descendant focalisable,
+  `<caption>`), clic sur une marque (`goto` moqué, reçoit son `data-href`), « Autres » sans lien ni `data-href`, note d'AC10, les deux états d'AC19.
 - `routes/(app)/homepage-page.test.ts` : la source neuve moquée ; son rejet mène à l'état d'échec, sans masquer les tuiles.
 - Rouges parce que les modules n'existent pas ; **chaque rouge est vu avant d'écrire le code**.
 
@@ -139,53 +154,48 @@ dépendance ajoutée à `package.json` (AC : `git diff` de `package.json` et `pa
 - `features/homepage/homepage-summary.api.ts` et son type, miroir du contrat de la 33-3a. `state` est une union, `fiscalYear` nul seulement
   avec `noOpenFiscalYear`.
 - `MonthlyBarsCard.svelte`, `ExpensePieCard.svelte`, mêmes classes que les tuiles (`rounded-lg border border-border bg-white p-6 shadow-sm`),
-  `data-testid` : `homepage-card-monthly-bars`, `homepage-card-expense-pie`, `homepage-chart-month-link`, `homepage-chart-post-link`,
-  `homepage-charts-no-open-year`, `homepage-charts-unavailable`, `homepage-charts-empty`.
-- `+page.svelte` : `loadSummary`, nouvel état, section `lg:grid-cols-2` **sous** la grille des tuiles.
+  `data-testid` : `homepage-card-monthly-bars`, `homepage-card-expense-pie`, `homepage-chart-month-link`, `homepage-chart-post-link` (liens du tableau),
+  `homepage-chart-month-mark`, `homepage-chart-post-mark` (marques du dessin), `homepage-charts-no-open-year`, `homepage-charts-unavailable`, `homepage-charts-empty`, `homepage-charts-no-posts`.
+- **Le clic de souris** : un seul écouteur sur le `<svg>`, `event.target.closest('[data-href]')` puis `goto`. Il déclenche des avertissements d'accessibilité de Svelte, levés par un `svelte-ignore` à codes nommés (à relever à l'étape 0), justifié en une ligne
+  (« le clavier passe par le tableau »). `npm run check` reste à zéro avertissement. `data-href` n'est jamais construit depuis un texte saisi : identifiants et dates seulement.
+- `+page.svelte` : `loadSummary`, nouvel état, section `lg:grid-cols-2` **sous** la grille des tuiles ; la carte des barres passe en `lg:col-span-2` au-delà de 24 mois (AC2).
 - Clés i18n, quatre locales.
 
 ### T4 — E2E (`frontend/tests/e2e/homepage-charts.spec.ts`)
 
-Une charge et un produit passés par l'API avec des montants marqués (`uniq`), aide `createExpenseEntryViaApi` à côté de
-`createJournalEntryViaApi`, même date locale :
+**Montage** (prémisse 8) : `seedTestState('with-company-no-fy')`, puis `createFiscalYearViaApi` : exercice civil de douze mois de l'année de la date du jour à Zurich, même règle que `createJournalEntryViaApi`, à côté duquel les deux aides s'écrivent. La spec vérifie
+d'emblée 12 groupes : ainsi, elle ne teste pas un dessin à 132 mois sans le savoir. Deux `test.describe` à leur propre `beforeAll` : les scénarios 7 et 8 (sans exercice) d'un côté, les autres de l'autre. Une charge et un produit passés par l'API avec des montants marqués (`uniq`), aide `createExpenseEntryViaApi`, même date locale :
 
 1. les valeurs traversent : le tableau affiche le montant au bon mois et au bon poste, lu par `data-*` ;
-2. clic sur un mois → URL à `dateFrom` / `dateTo`, l'écriture y figure ;
-3. clic sur une part → grand livre du compte généré ;
-4. **au clavier** : `Tab` jusqu'au lien du poste, `Enter`, même destination ;
+2. clic de souris sur la marque d'un mois → URL à `dateFrom` / `dateTo`, l'écriture y figure ;
+3. clic de souris sur la marque d'une part → grand livre du compte généré ; si le centre de la boîte ne tombe pas dans la part, `position` calculé dans la spec ;
+4. **au clavier, les deux chemins** : (a) `Tab` jusqu'au lien du poste, `Enter`, même destination que 3 ; (b) `Tab` jusqu'au `<summary>`, `Enter` pour l'ouvrir, `Tab` jusqu'au lien du mois, `Enter`, même URL que 2 ;
 5. contre-passation d'une écriture de charge dans l'exercice : le poste et le mois reviennent à leur valeur ;
 6. rôle `Consultation` : mêmes graphiques ;
 7. `seedTestState('with-company-no-fy')` : `homepage-charts-no-open-year` ;
-8. axe-core dans les deux états (AC15).
+8. axe-core dans les deux états (AC15), `<details>` ouvert à l'état peuplé.
 
 ### T5 — Captures
 
-Base de démonstration jetable, thème clair, `/home/gcorbaz/devel/kesh-gate-logs/e333b/captures/` : peuplé (12 mois, six parts), mois négatif
+Base de démonstration jetable, thème clair, `/home/gcorbaz/devel/kesh-gate-logs/e333b/captures/` : peuplé (12 mois, six parts), exercice de 132 mois, mois négatif
 (un avoir seul), une part à 100 %, vide, aucun exercice, chargement, échec, tableau des mois ouvert, focus clavier ; et un en `de-CH`.
 Jointes au Dev Agent Record et au prompt de revue. **Regardées**, pas seulement produites : un test dit qu'un élément existe, non qu'on le voit
 (#640).
 
 ### T6 — Manuel et CHANGELOG
 
-- `docs/manual/fr/user-manual.tex`, § *Tableau de bord* (`:229-`) : « trois tuiles » récrit ; `\subsection{Revenus, dépenses et principaux postes}`
+- `docs/manual/fr/user-manual.tex`, § *Tableau de bord* (`:229-`) : « trois tuiles » récrit (`:232-233`), légende de `:235` récrite ; le `% TODO capture` reste, aucune capture n'étant au dépôt ; `\subsection{Revenus, dépenses et principaux postes}`
   qui dit, en phrases de comptable : d'où viennent les chiffres (produits et charges du journal, non les flux bancaires) ; quel exercice, et
   « aucun exercice ouvert » ; **ce qui est écarté et ce qui ne l'est pas** : une écriture et sa contre-passation du même exercice disparaissent
   ensemble ; une contre-passation qui franchit l'exercice reste, comme un avoir, en montant négatif ; le total égale le compte de résultat ;
   Kesh ne passe pas d'écriture de clôture ; pourquoi le grand livre d'un poste ou les écritures d'un mois peuvent montrer des lignes que le graphique
-  n'a pas retenues ; ce qu'est « Autres » et les comptes au solde créditeur ; le clavier.
-- `make fr` dans `docs/manual/` ; PDF aplati (`pdftotext f.pdf - | tr '\n' ' ' | tr -s ' '`), phrases cherchées citées au Change Log.
-- `README.md`, § *Fonctionnalités*, et `website/index.html` si le tableau de bord y figure : relire, une ligne au besoin.
-- `CHANGELOG.md`, `## [0.17.5] — Non publié`, *Ajouté* : les deux graphiques, `refs` #918, #165, #166, avec ce qui est écarté.
-
-## Ce qui reste de #165 et #166
-
-Les deux restent ouvertes (P4, `v0.4-milestone`) ; l'orchestrateur le commente sur chacune :
-
-- **#165 (donut)** : livré ici : répartition des charges par compte, regroupement « Autres », montant et part. **Reste** : le choix des comptes par
-  l'utilisateur et sa persistance ; la descente par position, compte et sous-compte le long de `accounts.parent_id` (précision du 2026-06-29) ;
-  le choix de la période ; le total au centre de l'anneau ; la mutualisation avec #164.
-- **#166 (barres)** : livré ici : barres mensuelles groupées revenus / charges sur l'exercice ouvert. **Reste** : le choix des comptes et sa
-  persistance ; la période glissante réglable ; le solde net visible, que Guy a écarté pour #918 mais que #166 demandait.
+  n'a pas retenues ; ce qu'est « Autres » et les comptes au solde créditeur ; le clavier, et le fait qu'un clic sur le dessin ne s'ouvre pas dans un autre onglet, le lien du tableau le permettant.
+  **Deux limites écrites en toutes lettres** : C-e332-9 : la contre-passation à cheval sur deux exercices reste comptée de part et d'autre ; C-e332-14 : le graphique a autant de mois que
+  l'exercice, et non douze, et les étiquettes d'un exercice long se clairsèment, le tableau les portant toutes. (C-e332-4, la troisième limite lue par Guy, se dit au manuel par la 33-2, T5.)
+- `make fr` dans `docs/manual/` ; PDF aplati (`pdftotext f.pdf - | tr '\n' ' ' | tr -s ' '`), phrases cherchées citées au Change Log, dont celles de la paire à cheval et de l'exercice long.
+- `README.md:240`, ligne « v0.5+ (prévu) » : retirer #165 et #166, fermées et remplacées par #918 ; #164 et les budgets restent. Dans le même commit que les graphiques. § *Fonctionnalités*, et `website/index.html` si le tableau de bord y figure : relire, une
+  ligne au besoin.
+- `CHANGELOG.md`, `## [0.17.5] — Non publié`, *Ajouté* : les deux graphiques, `refs` #918, avec ce qui est écarté.
 
 ## Mutations (`kesh-gate-logs/e333b/vmut.sh`, sous le verrou)
 
@@ -197,12 +207,15 @@ Les deux restent ouvertes (P4, `v0.4-milestone`) ; l'orchestrateur le commente s
 | M4 | division par zéro non gardée | test pur, tout à zéro |
 | M5 | `timeZone` retiré de `monthLabel` | test pur, 1er janvier |
 | M6 | `dateTo` absent de `monthHref` | test pur, E2E 2 |
-| M7 | `tabindex="-1"` retiré | composant, axe |
+| M7 | un `<a href>` ajouté autour d'une marque du SVG | composant (AC11) ; axe, selon la sonde de T0 |
 | M8 | état d'échec rendu comme le vide | composant |
-| M9 | « Autres » rendu en lien | composant |
+| M9 | « Autres » rendu en lien, ou portant `data-href` | composant |
 | M10 | note d'AC10 retirée | composant |
 | M11 | `noOpenFiscalYear` non traité | composant, E2E 7 |
 | M12 | une couleur remplacée par un gris à 2:1 | test de contraste |
+| M13 | écouteur du `<svg>` retiré | composant, E2E 2 et 3 |
+| M14 | `axisLabels` sans seuil au-delà de 12 mois | test pur, AC2-bis |
+| M15 | phrase d'un exercice vide rendue pour `expensePosts` vide | composant, AC19 |
 
 Une survivante se traite ou se justifie au Change Log.
 
@@ -217,14 +230,19 @@ fichier par fichier contre `docs/testing.md`. Interdit : « rejouée au push ».
 - **Une fiche n'a pas dessiné le graphique** : les marges, les étiquettes et les trames se règlent aux captures. Ce qui ne se règle pas : AC3, AC6,
   AC7, AC11 à AC14.
 - **SVG écrit à la main, sans `{@html}`** : les noms de compte passent par l'échappement de Svelte.
-- **`aria-hidden` n'est pas retenu** : l'image a un texte de remplacement. axe tranche ; si `role="img"` et `<a tabindex="-1">` coexistent mal,
-  sortir les zones cliquables du `role="img"` en le disant au Change Log, sans retirer le texte de remplacement.
+- **Aucun `<a>` dans le SVG, sans repli** (C-e332-16) : la conception ne dépend pas de la façon dont axe traite `tabindex="-1"`, puisqu'il n'y a rien de focalisable. `aria-hidden` n'est pas retenu : l'image a un texte de remplacement. Ce que cela coûte : pas de
+  clic du milieu ni de `Ctrl`+clic sur une marque ; les vrais liens du tableau les permettent.
+- **Un exercice long** (C-e332-23) : 132 mois se lisent en barres fines et en repères d'année. Le lecteur a le tableau, fermé par défaut pour ne pas allonger l'accueil. Aucune agrégation par trimestre : elle détacherait les barres des liens de mois.
 - **Les mois à venir** sont vides parce que l'API rend zéro ; une écriture datée d'un mois futur y apparaît, comme au compte de résultat (33-3a,
   invariant). Pas de masquage côté écran.
 
 ## Change Log
 
 - 2026-11-06 — Fiche rédigée en autonomie (Opus 5.5).
+- 2026-11-06 — Remédiation de la validation P1 (rapport `kesh-gate-logs/e33-validate-p1-e332.md`, Opus 5.5, aucune compilation ni aucun test). Constats de cette fiche : R-1, R-2 (MEDIUM), R-8, F-1, F-3 (LOW), plus la suite de R-7 ; tous remédiés. **F-3 réfuté en
+  partie** : le rapport craint une capture montrant trois tuiles ; il n'y en a aucune au dépôt (`docs/manual/fr/screenshots/` ne porte que `_placeholder.png`, `user-manual.tex:235` en `% TODO capture`) : seule la légende change. Prémisses relues : `axe.js:14357-14362`, `:25720-25742`, `:27383-27388`, `:31237-31244` (R-1, **établi par lecture**, non joué : d'où le squelette et la sonde de T0) ; `test_fixtures.rs:116-121`, `:265`, `repositories/fiscal_years.rs:346`, `routes/fiscal_years.rs:79-83` (R-2) ; `gh issue view 165` et `166` : `CLOSED` (F-1) ; `README.md:240`, `user-manual.tex:232-233` (F-3).
+  **Conception changée** : plus aucun `<a>` dans le SVG, écouteur unique et `data-href`, tableau voisin pour le clavier ; le repli du Dev Note est retiré. **Choix ajouté** : C-e332-23. **Défaut voisin corrigé** : AC19 faisait dire « aucun produit ni aucune charge » à un exercice qui a des produits. #165 et #166 sorties de la fiche ; ce qu'elles demandaient au-delà de #918 n'y est plus
+  décrit, Guy les ayant fermées. Décomptes de cette fiche, recomptés : 23 AC, 15 mutations.
 
 ## Dev Agent Record
 

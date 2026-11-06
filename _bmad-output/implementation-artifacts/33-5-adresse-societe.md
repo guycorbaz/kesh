@@ -24,8 +24,8 @@ pour qu'une société enregistrée avec un pays invalide puisse de nouveau produ
   La même route est son remède. À couvrir (AC-5).
 - ⚠️ **La colonne `companies.country` (`fetch_country`, `:553`) n'est pas écrite par `update_in_tx`** (`companies.rs:903-910`), et ne sert
   que de repli quand `address_country` est vide. Elle reste telle quelle : aucune migration, et `validate_required` écrit toujours un
-  pays (`address_input.rs:37-42`).
-- **Le contrôle existe** : `StructuredAddressInput::validate_required` (`address_input.rs:106-114`), NPA et localité obligatoires, longueurs
+  pays (`crates/kesh-api/src/address_input.rs:37-42`).
+- **Le contrôle existe** : `StructuredAddressInput::validate_required` (`crates/kesh-api/src/address_input.rs:100-108`), NPA et localité obligatoires, longueurs
   SIX, pays ISO connu, `check_lengths(None)`. L'assistant l'emploie (`onboarding.rs`, `body.address.validate_required()`).
 - **Le patron de route** : `update_company_contact_details` (`companies.rs:240-312`) : `CompanyUpdate` reconstruit en full-replace,
   `update_in_tx`, audit `company.updated` borné aux champs touchés et écrit seulement si `version` a changé, routeur Admin (`lib.rs:453`).
@@ -40,7 +40,7 @@ pour qu'une société enregistrée avec un pays invalide puisse de nouveau produ
   panne en annonçant un succès. Le contact, lui, garde son pays à l'identique parce que la QR y est facultative).
 - `is_stub` ne bouge pas : le lever reste l'affaire de l'assistant (`companies.rs:233-235`).
 - `CompanyJson.address_country_known: bool`, par `is_known_country`. Le champ se relit aussi pour une société sans structure : pays vide
-  ⇒ `true` (`address_input.rs:154-159`).
+  ⇒ `true` (`crates/kesh-api/src/address_input.rs:141-146`).
 - **Écran** : dans *Paramètres → Organisation*, un bouton *Modifier* sur le patron e-mail/téléphone (Admin, 409 rechargé, message du
   serveur affiché), cinq champs ; le pays reste un champ libre de deux lettres, comme aux contacts. **Pas de sélecteur commun** : #910 reste
   ouverte (P4), son libellé en quatre langues n'est pas le moindre geste (C-e334-6). Un avis si `addressCountryKnown === false`.
@@ -64,7 +64,7 @@ pour qu'une société enregistrée avec un pays invalide puisse de nouveau produ
 8. **AC-8 — audit** : une entrée `company.updated`, `before`/`after` limités aux cinq composants ; aucune entrée sur un refus.
 9. **AC-9 — écran** : Admin voit *Modifier*, Comptable non ; préremplissage depuis `addressStructured` ; enregistrement, refus affiché, 409
    rechargé ; avis si le pays est inconnu (Vitest et `frontend/tests/e2e/company-contact-details.spec.ts`, élargie, ou spec voisine).
-10. **AC-10** : `audit_route_registry.rs` à jour : **145 routes, 137 tracées** (`:962,:978`), sous réserve de 33-7 (recoupement).
+10. **AC-10** : `audit_route_registry.rs` à jour, toutes assertions recomptées : `LIB_ROUTES` **145** (`:962`) et tracées **137** (`:978`) ; `LIB_ROUTES.len() + TEST_ENDPOINT_ROUTES.len()` **148** (`:1015`) ; `sans_ecriture` **120** (`:1385`), la route portant `SansEcritureAuJournal` comme ses jumelles (`:397-398`) ; `tout.len()` **148** (`:1404`) ; commentaires d'en-tête `:27,33,35`. Valeurs de la 33-5 seule : la 33-7 fait bouger tracées et exemptées (recoupement).
 
 ## Tâches
 
@@ -106,6 +106,7 @@ aujourd'hui ; le nom d'une société au QR.
 ## Change Log
 
 - 2026-11-06 : fiche créée (Opus 5.5).
+- 2026-11-06 : validation P1 (Sonnet 5.5), remédiation (Opus 5.5). Aucun finding au-dessus de LOW. **L-F5-1** : AC-10 nomme les cinq assertions et les commentaires (lus : `audit_route_registry.rs:962,978,1015,1385,1404`, le rapport disait « ~1384 »). **L-F5-2** : `crates/kesh-api/src/address_input.rs`, `:100-108`, `:141-146`, `:37` (lus). Aucun choix ajouté.
 
 ## Dev Agent Record
 

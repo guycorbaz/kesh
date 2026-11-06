@@ -77,7 +77,8 @@ clôtures et contre-passations de corrections écartées. Le reste, au registre 
 - **C-e332-10** : d'où l'**invariant** : `totalRevenues` et `totalExpenses` égalent ceux du compte de résultat de l'exercice.
 - **C-e332-11** : route sans trace d'audit et non servie au MCP.
 - **C-e332-12** : l'avoir reste compté ; les montants mensuels sont signés.
-- **C-e332-13** : au camembert, seuls les comptes de charges de solde **strictement positif** ; les autres sont comptés à part.
+- **C-e332-13** : au camembert, seuls les comptes de charges de solde **strictement positif**. Un compte **créditeur** est compté à part ; un compte **à solde nul** ne
+  paraît nulle part, comme au compte de résultat (`HAVING balance != 0`, `income_statement.rs:83`).
 - **C-e332-14** : autant de mois que l'exercice en couvre.
 - **C-e332-15** : « aucun exercice ouvert » est un `200` explicite, et un exercice couvrant le jour mais clos en relève.
 
@@ -103,11 +104,11 @@ clôtures et contre-passations de corrections écartées. Le reste, au registre 
   ],
   "otherExpenses": { "amount": "100.0000", "share": "33.3", "accountCount": 2 }, // null si au plus cinq comptes
   "expensePostsBase": "300.0000",       // somme des parts, base des pourcentages
-  "nonPositiveExpenseAccounts": 0       // comptes de charges écartés du camembert
+  "creditBalanceExpenseAccounts": 0     // comptes de charges au solde créditeur, écartés du camembert
 }
 // Aucun exercice ouvert à la date du jour
 { "state": "noOpenFiscalYear", "asOf": "2026-11-06", "fiscalYear": null, "months": [], "totalRevenues": "0", "totalExpenses": "0",
-  "expensePosts": [], "otherExpenses": null, "expensePostsBase": "0", "nonPositiveExpenseAccounts": 0 }
+  "expensePosts": [], "otherExpenses": null, "expensePostsBase": "0", "creditBalanceExpenseAccounts": 0 }
 ```
 
 ## Critères d'acceptation
@@ -158,9 +159,11 @@ clôtures et contre-passations de corrections écartées. Le reste, au registre 
   `accountCount = 2`.
 - **AC13** — Bornes : cinq comptes → `otherExpenses: null` ; six → `accountCount = 1` ; égalité de soldes → ordre par numéro de compte,
   déterministe.
-- **AC14** — Un compte de charges de solde négatif ou nul (après écart des paires) n'est **ni** dans `expensePosts`, **ni** dans
-  `otherExpenses`, et compte dans `nonPositiveExpenseAccounts`. `expensePostsBase` = somme de ce qui reste. Si le total des charges
-  est négatif, `expensePosts` est vide et `expensePostsBase = "0"`, sans division par zéro.
+- **AC14** — La requête par compte porte `HAVING balance != 0`, comme `fetch_section` (`income_statement.rs:83`) : un compte de charges **à solde nul** (après écart
+  des paires), par exemple des lignes qui se compensent sans former une paire, n'est dans aucun champ et n'est compté nulle part. Un compte de solde **négatif** n'est
+  **ni** dans `expensePosts`, **ni** dans `otherExpenses`, et compte dans `creditBalanceExpenseAccounts`. `expensePostsBase` = somme de ce qui reste. **Si aucun compte n'a de
+  solde positif**, `expensePosts` est vide et `expensePostsBase = "0"`, sans division par zéro. Un total des charges négatif ne suffit pas : un compte à +100 et un à −300
+  rendent un poste de 100, à `share = "100.0"`, et `creditBalanceExpenseAccounts = 1`.
 - **AC15** — `share` = `amount / expensePostsBase × 100`, une décimale, arrondi `MidpointAwayFromZero`. Exemple de test : 200 et 100
   → `66.7`, `33.3`. Pas de redressement de la somme à 100 : l'écran affiche ce qui est calculé.
 - **AC16** — `name` est le nom du compte, `number` son numéro, sans filtre `active` : un compte archivé qui porte des écritures reste un
@@ -200,7 +203,7 @@ janvier. `N−1` le précède immédiatement.
 | `credit_note_stays_counted` | 10 | idem |
 | `closing_a_year_writes_no_entry_and_changes_nothing` | 11 | idem |
 | `top_five_and_others`, `boundaries_five_six_and_ties` | 12, 13 | idem |
-| `non_positive_expense_accounts_are_left_out` | 14 | idem |
+| `credit_balance_expense_accounts_are_left_out`, `zero_balance_account_is_counted_nowhere` | 14 | idem |
 | `shares_are_rounded_once`, `archived_account_stays_a_post` | 15, 16 | idem |
 | `any_role_reads_without_token_refused`, `api_key_reads` | 17 | idem |
 | `reading_writes_nothing` | 19 | idem |
@@ -259,12 +262,13 @@ Dans `services/rapports.rs` ou `tests/services_motif.rs`, selon le voisinage : A
 | M9 | statut `Open` non contrôlé | `no_open_year_...` |
 | M10 | `take(5)` → `take(6)` | `top_five_...` |
 | M11 | tri croissant ; tri à égalité retiré | `top_five_...`, `boundaries_...` |
-| M12 | filtre `> 0` retiré | `non_positive_...` |
-| M13 | base = total des charges | `non_positive_...` |
+| M12 | filtre `> 0` retiré | `credit_balance_...` |
+| M13 | base = total des charges | `credit_balance_...` (+100 et −300) |
 | M14 | `Consultation` → `Comptable` | `any_role_...` |
 | M15 | `portee_mcp: Some(BooksRead)` | AC18 |
 | M16 | `from`/`to` non bornés | `months_follow_...` |
 | M17 | exclure les avoirs par `journal = 'Ventes'` et montant négatif (mutation d'intention) | `credit_note_stays_counted` |
+| M18 | `HAVING balance != 0` retiré de la requête par compte | `zero_balance_account_is_counted_nowhere` |
 
 ## Gates
 
@@ -288,9 +292,18 @@ qui n'a pas tourné.
 - **Performance** : deux requêtes groupées sur l'exercice, sur les index existants (`reverses_entry_id` unique, `fk`). Pas de mesure
   exigée ; à dire si une requête dépasse la seconde sur la base de démonstration.
 
+## Recoupements
+
+`routes/reports.rs` et `services/rapports.rs` : la **33-7** touche aussi ces deux fichiers et `mcp/outils/rapports.rs`, la **33-4** le premier et ce dernier ; `tests/services_motif.rs` : la
+33-3a l'amende peut-être d'une ligne (T3), la 33-7 aussi. Lignes distinctes, union à l'intégration. `tests/audit_route_registry.rs` : la route est en lecture, **aucune ligne à y ajouter** (prémisse 13).
+
 ## Change Log
 
 - 2026-11-06 — Fiche rédigée en autonomie (Opus 5.5).
+- 2026-11-06 — Remédiation de la validation P1 (rapport `kesh-gate-logs/e33-validate-p1-e332.md`, Opus 5.5, aucune compilation ni aucun test). R-7 (LOW) remédié, prémisse lue : `income_statement.rs:83`, `HAVING balance != 0` :
+  la requête par compte garde la clause, le solde nul ne paraît nulle part, et le champ devient `creditBalanceExpenseAccounts`, le mot « non positif » n'ayant plus d'objet. **Défaut voisin corrigé, trouvé en remédiant** : AC14 disait qu'un total
+  des charges négatif vidait `expensePosts`, ce qui est faux dès qu'un compte reste positif (+100 et −300). Recoupements ajoutés à partir de L-F4-1 et L-F7-2 du rapport `e33-validate-p1-e334.md`. C-e332-9 et C-e332-14, déjà lus par Guy,
+  ne sont pas rouverts ; ils se disent au manuel (33-3b, T6). Décomptes de cette fiche, recomptés : 19 AC, 18 lignes de mutation.
 
 ## Dev Agent Record
 

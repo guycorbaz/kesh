@@ -4,7 +4,7 @@ Status: ready-for-dev
 
 *Fiche rédigée le 2026-11-06 en autonomie (Opus 5.5), worktree `/home/gcorbaz/devel/kesh-e33`, branche `story/33-0-kickoff`,
 numéros de ligne de `4ef19901`. Epic 33, release **0.17.5**, **sans migration**. Registre :
-`e33-choix-autonomes-e332.md`, choix `C-e332-k`. Issues **#922** (faux négatif) et **#915** (faux positif), en `refs` dans les
+`e33-choix-autonomes-e332.md`, choix `C-e332-k`. Issues **#922** (faux négatif) et **#915** (faux positif, **réduit**, non supprimé : AC-F5), en `refs` dans les
 commits, `closes` dans la seule PR. Modules : `kesh-import` (un test), `kesh-core`, `kesh-api`, `kesh-i18n`, `frontend`,
 manuels : la logique tient dans deux crates, le reste suit.*
 
@@ -53,6 +53,13 @@ transaction réécrite, aucune migration. Aucune ligne réelle dans les captures
 
    Il n'y a pas d'autre site : une entité inconnue est refusée **avant**, par la lecture corrigée (`camt053/mod.rs:336-352`) ; la lecture héritée
    l'ignore.
+
+   **Une date coupée ne rend pas toujours `InvalidDate`.** `parse_date` (`camt053/mod.rs:863-873`) passe par chrono, dont le `%Y` sans signe
+   accepte de un à quatre chiffres (`chrono-0.4.45/src/format/parse.rs:381`, `:416`, lu, non exécuté : AC-S5 le jouera). `<Dt>&#x32;026-10-10</Dt>`
+   se lit donc, en lecture héritée, `026-10-10` : l'an 26, sans erreur. Sur une date de comptabilisation, c'est E4 ; sur une date de valeur ou une
+   borne de période (`:472`, `:476`, `:532`), rien n'échoue, et la lecture rend ce que rendait la 0.17.3. L'inventaire reste clos **à condition que
+   la lecture héritée reste sans borne d'année** : la 33-4 en pose une sur les dates reçues, et `parse_legacy_0173` passe par le même `parse_date`.
+   Avec cette borne, l'inventaire gagnerait une cause, et un relevé à borne de période coupée serait refusé à tort. AC-S5 le fixe.
 4. **Les relevés ordinaires ne sont pas touchés.** Un fichier sans entité ni CDATA donne « exactement les appels de la lecture
    héritée » (doc-comment `camt053/mod.rs:178-181`) ; la caractérisation le tient
    (`crates/kesh-import/tests/camt053_golden.rs:232`, `legacy_reading_matches_references_produced_under_quick_xml_039`). Un
@@ -70,7 +77,9 @@ transaction réécrite, aucune migration. Aucune ligne réelle dans les captures
    entre les versions** : `git log -- crates/kesh-import/src/camt053/mod.rs` ne porte que 076ac863 (création), dc51300e
    (dépendances), e04122dc (devise : d'où `currency` **hors** de la comparaison), 910e5d5a (0.17.0, tenue par la
    caractérisation), c2051805 (0.17.4, #819). Une ligne qu'a réellement importée la 0.17.x a donc en base exactement les textes que
-   recalcule `parse_legacy_0173`. C'est ce qui ferme #915 sans rouvrir #922 (C-e332-3).
+   recalcule `parse_legacy_0173`. C'est ce qui réduit #915 sans rouvrir #922 (C-e332-3). **Réduit, et non supprimé** : une ligne neuve dont les sept textes,
+   lus à l'ancienne, égalent ceux d'une ligne existante reste signalée comme doublon (typiquement une ligne qui ne porte que sa référence). Rien
+   ne la distingue d'une ligne vraiment déjà importée : AC-F5.
 7. **Le refus n'écrit rien, à condition de rester là où il est.** `create_camt_under_lock` n'écrit qu'à
    `create_import_or_roll_back` (`:1426`) et à la trace (`:1428`) ; tout `Err` avant abandonne la transaction (`:1261-1266`, M-4).
    L'appel `:1348` précède ces deux écritures.
@@ -92,6 +101,9 @@ Décision de Guy (#922, 2026-11-06, epic) : **refus de ce relevé, message clair
 - **C-e332-5** : un relevé sans ligne n'est pas refusé.
 - **C-e332-6** : 422 `BANK_IMPORT_LEGACY_REREAD_FAILED`, avec la cause en `details`.
 - **C-e332-7** : aucune borne dans le temps pour l'alias.
+- **C-e332-21** : à l'aperçu, un fichier déjà importé dont la relecture échoue reçoit le refus « déjà importé », non le conseil d'un nouvel
+  export : l'ordre de l'aperçu s'aligne sur celui de la création.
+- **C-e332-22** : la relecture héritée ne porte pas la borne d'années de la 33-4.
 
 ## Critères d'acceptation
 
@@ -114,15 +126,22 @@ Décision de Guy (#922, 2026-11-06, epic) : **refus de ce relevé, message clair
   quelles lignes y figurent déjà, et saisissez les autres avec un relevé saisi à la main. » Fallback Rust : la version française,
   comme les voisines.
 - **AC-R8** — Un relevé **sans ligne** dont la relecture échoue n'est pas refusé : aperçu `200`, création `201`, zéro transaction.
+- **AC-R9** — **Un fichier déjà importé ne reçoit pas de faux conseil** (C-e332-21). Fichier dont la relecture échoue et dont l'empreinte est
+  déjà en base (ce qu'a pu faire la 0.17.4) : l'aperçu rend `422 BANK_IMPORT_DUPLICATE_FILE`, `existingImportId` et `existingFilename` en `details`,
+  message « Ce fichier a déjà été importé. », et **non** `BANK_IMPORT_LEGACY_REREAD_FAILED` ; la création sans confirmation, de même (`:1276`,
+  inchangé) ; la création avec `confirmDuplicateFile=true` rend `BANK_IMPORT_LEGACY_REREAD_FAILED` (AC-R5). Relecture réussie : l'aperçu reste
+  `200` avec `warnings.duplicateFile` (AC-S1, volet (b)).
 
 ### Pas de refus à tort
 
 - **AC-N1** — Un relevé sans entité : aperçu `200`, création `201`, comme avant.
 - **AC-N2** — Un relevé à entités et CDATA dans ses textes, relisible (`first_file_819`) : aperçu `200`, création `201`.
-- **AC-N3** — **Toutes** les fixtures du dépôt que la lecture corrigée accepte
-  (`crates/kesh-import/tests/fixtures/camt053/*.xml`, 19 fichiers, `frontend/tests/e2e/fixtures/camt053_*.xml`, 4 fichiers), pour
-  l'IBAN de leur premier relevé : `legacy_0173_aliases` rend `Ok`. Une exception ne s'admet que nommée, cause dite, au Change Log,
-  et si sa construction relève d'E1 à E4. Le test échoue s'il a lu moins de 23 fichiers (pas de test muet).
+- **AC-N3** — Le test parcourt les fixtures du dépôt (`crates/kesh-import/tests/fixtures/camt053/*.xml`, 19 fichiers,
+  `frontend/tests/e2e/fixtures/camt053_*.xml`, 4 fichiers) et les range en deux classes. **Refusés** : la lecture corrigée rend une erreur (`v04_truncated*`,
+  `v04_invalid_iban`, etc.) : rien à relire. **Acceptés** : pour l'IBAN de leur premier relevé, `legacy_0173_aliases` rend `Ok`. Une
+  exception ne s'admet que nommée, cause dite, au Change Log, et si sa construction relève d'E1 à E4. **Pas de test muet** : le test échoue si
+  `acceptés + refusés ≠ 23`, et si `acceptés` diffère d'une constante en dur, relevée au développement et écrite au Change Log. `v04_multi_stmt.xml`
+  (deux IBAN distincts, donc sans E3 ni E4) et `v04_characterization.xml` (entités et CDATA, IBAN simple) sont nommés dans le test et passent, sans exception.
 
 ### Reconnaissance (la protection des livres)
 
@@ -137,6 +156,12 @@ Décision de Guy (#922, 2026-11-06, epic) : **refus de ce relevé, message clair
 - **AC-S4** — Le chemin de clé directe ne change pas : une ligne dont la clé égale une ligne existante est un doublon quels que
   soient ses textes (« le libellé n'en fait pas partie », `user-manual.tex:2716`). Le CSV et la saisie manuelle ne passent aucun
   alias et rendent ce qu'ils rendaient (`detect_duplicate_lines`).
+- **AC-S5** — **La relecture héritée reste celle de la 0.17.3, sans borne d'années** (C-e332-22). (a) `parse_legacy_0173` lit
+  `<Dt>0999-01-15</Dt>` en l'an 999 et `<Dt>&#x32;026-10-10</Dt>` en l'an 26, en `Ok` ; ce test ne dit rien de la lecture corrigée, qui relève de la
+  33-4. (b) Borne de période écrite `&#x32;026-10-01T00:00:00`, lignes ordinaires : aperçu `200`, création `201`, aucun refus, et la reconnaissance d'une
+  ligne déjà importée reste entière. (c) Date de comptabilisation écrite `&#x32;026-10-10` : refus, `cause = "misaligned"`, et non `"reading"`.
+  Les volets (a) et (b) sont verts sur `4ef19901` ; le (c) y est rouge, faute de refus. Tous les trois rougissent si une borne d'années entre dans le chemin de la lecture héritée, quel que soit
+  l'ordre de fusion de la 33-2 et de la 33-4.
 
 ### Faux doublon (#915)
 
@@ -150,12 +175,17 @@ Décision de Guy (#922, 2026-11-06, epic) : **refus de ce relevé, message clair
   index et ID existant), **informatif** : il ne désactive pas *Confirmer l'import*. Liste vide : aucun panneau. Quatre locales.
 - **AC-F4** — Les **sept** colonnes comparées sont exactement `value_date`, `reference`, `end_to_end_id`, `transaction_id`,
   `counterparty_iban`, `counterparty_name`, `details`, à égalité stricte, **sans** `currency` (e04122dc).
+- **AC-F5** — **La limite qui reste, caractérisée** : ligne neuve de référence `REF &amp; Co &lt;1&gt;` et ligne existante de référence « 1 », mêmes date,
+  montant et compte, et **mêmes sept textes** après lecture héritée : la ligne est dans `duplicateLines`, écartée par défaut, importable par
+  *Importer quand même*. Elle est indiscernable d'une ligne vraiment déjà importée. Elle se **voit** à l'aperçu : le faux doublon est réduit à ce cas,
+  non supprimé (C-e332-3).
 
 ### Reliquat de #923
 
-- **AC-L1** — Test : une entité inconnue dans un élément que Kesh ne lit pas (`<Stmt><Foo>&inconnue;</Foo>…`) rend
-  `CamtError::MalformedXml` en lecture corrigée. Le manuel dit déjà « un relevé qui porte une référence d'entité inconnue »
-  (`user-manual.tex:2419-2421`) : ajouter « où qu'elle soit dans le fichier ».
+- **AC-L1** — Test : une entité inconnue dans le **texte** d'un élément que Kesh ne lit pas (`<Stmt><Foo>&inconnue;</Foo>…`) rend
+  `CamtError::MalformedXml` en lecture corrigée (`Event::GeneralRef`, `camt053/mod.rs:336-352`). Second test, qui fixe la portée : dans un **attribut** non
+  lu (`<Stmt Foo="&inconnue;">`), elle n'est pas refusée, seul `Ccy` étant lu (`:259`). Le manuel dit déjà « un relevé qui porte une référence
+  d'entité inconnue » (`user-manual.tex:2419-2421`) : ajouter « où qu'elle soit dans le texte du fichier ».
 
 ## Tâches
 
@@ -182,6 +212,10 @@ Remplacer `imports_without_alias_819` et ses deux tests par des tests de **refus
 | `camt_alias_finds_the_row_with_equal_texts_915` | S3 | rend le premier `id` |
 | `camt_truncated_reference_is_not_a_false_duplicate_915` | F1 | ligne écartée |
 | `camt_cdata_reference_is_not_a_false_duplicate_915` | F2 | ligne écartée |
+| `camt_identical_texts_stay_a_duplicate_915` | F5 | vert : **témoin** de la limite, à garder vert à travers T3 |
+| `camt_refused_file_already_imported_says_so_922` | R9 | aperçu `200` au lieu de `422` ; montage : `montage_819` avec `kesh_import::camt053::parse`, la lecture de la 0.17.4 |
+| `camt_short_year_in_period_is_not_refused_922` | S5 (b) | vert : **témoin** ; rouge si la borne d'années atteint la relecture ; montage : une ligne enregistrée comme la 0.17.3, à reconnaître |
+| `camt_short_year_on_booking_date_is_misaligned_922` | S5 (c) | 200/201 au lieu de 422 ; `cause = "reading"` si la borne atteint la relecture |
 
 Dans le `mod` des alias de `routes/bank_imports.rs` (`:2570-` : `aliases_of`, `no_alias_when_*`, récrits) :
 `every_repository_fixture_rereads_922` (N3), `line_count_branch_is_reachable_922`, `misaligned_branch_is_reachable_922`.
@@ -189,7 +223,8 @@ Dans le `mod` des alias de `routes/bank_imports.rs` (`:2570-` : `aliases_of`, `n
 Dans `kesh-core/src/bank_imports.rs` : tests purs de la comparaison (F4 : **une ligne de test par colonne**, chaque colonne qui
 diffère fait passer de doublon à incertain ; S3 ; S4).
 
-Dans `crates/kesh-import/tests/` : `unknown_entity_in_an_unread_element_is_refused` (L1).
+Dans `crates/kesh-import/tests/` : `unknown_entity_in_an_unread_element_is_refused`, `unknown_entity_in_an_unread_attribute_is_not_refused` (L1) ;
+`legacy_reading_has_no_year_bound_922` (S5 (a), vert : **témoin**).
 
 ### T2 — Le refus (`routes/bank_imports.rs`, `errors.rs`, `kesh-i18n`)
 
@@ -198,14 +233,19 @@ Dans `crates/kesh-import/tests/` : `unknown_entity_in_an_unread_element_is_refus
   d'erreur » et « un tel fichier n'a pas pu être importé par la 0.17.3 », ce qui a été le défaut.
 - `AppError::BankImportLegacyRereadFailed { cause: &'static str }`, mappé à côté de `BankImportNoMatchingStatement`
   (`errors.rs:2405`), `422`, `tracing::warn!` de la cause seule (aucun contenu du fichier).
-- Les deux appels (`:1100`, `:1348`) propagent par `?`. L'aperçu reste derrière sa garde (`:1096`), la fonction porte la sienne.
-- ⚠️ Dans l'aperçu, le refus prime sur `warnings.duplicate_file` déjà calculé (`:1086`) ; à la création, `BANK_IMPORT_DUPLICATE_FILE`
-  reste premier (`:1276`). Asymétrie sans effet sur les livres, écrite au doc-comment.
+- La création (`:1348`) propage par `?`. L'aperçu reste derrière sa garde (`:1096`), la fonction porte la sienne.
+- **L'aperçu suit l'ordre de la création** (C-e332-21). La lecture de l'empreinte (`:1086`) garde `existing` (`id`, `filename`), et un échec de la
+  relecture (`:1100`) rend `AppError::BankImportDuplicateFile` si `existing` est posé, `BankImportLegacyRereadFailed` sinon. Une relecture réussie ne
+  change rien : `200`, `warnings.duplicate_file`. Le message passe par `setError`, sans code d'écran (`BankImportUpload.svelte:172-173`).
+- Doc-comment de `parse_legacy_0173` (`camt053/mod.rs:87`) : ajouter « **aucune borne d'année** : une borne sur les dates reçues se pose à la lecture
+  corrigée » (AC-S5). La 33-2 ne modifie pas `parse_date`.
 - Clé `bank-import-errors-legacy-reread-failed`, quatre locales, à côté des voisines.
 
 ### T3 — La comparaison (`kesh-core`, `routes/bank_imports.rs`)
 
-- `kesh-core` : `LineTexts` (les sept champs d'AC-F4, `PartialEq`), `LegacyLine { key: DuplicateKey, texts: LineTexts }` ;
+- `kesh-core` : `LineTexts` (les sept champs d'AC-F4, `PartialEq` **écrit à la main**, par destructuration exhaustive `let Self { .. } = self` et une clause par
+  champ : un champ ajouté ne compile pas sans être comparé, et une clause se retire sans toucher à la forme du type, ce qu'exigent M10 à M16),
+  `LegacyLine { key: DuplicateKey, texts: LineTexts }` ;
   `detect_duplicate_lines_with_aliases` prend `existing: &[(i64, DuplicateKey, LineTexts)]` et `aliases: &[Option<LegacyLine>]`, et
   rend `DuplicateLines { duplicates: Vec<DuplicateLine>, uncertain: Vec<UncertainLegacyLine> }`. L'index par clé porte **toutes** les
   lignes (`HashMap<&DuplicateKey, Vec<(i64, &LineTexts)>>`). `detect_duplicate_lines` garde sa signature et son résultat, et n'a pas
@@ -228,16 +268,22 @@ tests Vitest : panneau présent, absent, *Confirmer* non désactivé.
 
 - `docs/manual/fr/user-manual.tex`, § *Détection des doublons* (`:2718-2723`) : retirer les « deux limites » et dire ce qui est vrai
   à présent : le refus, ses causes en mots simples, quoi faire ; et le signalement d'une ligne qui ressemble sans être identique.
-  Limite restante, dite : une ligne déjà importée en 0.17.3 dont la référence porte un caractère spécial **et** dont la banque
-  aurait changé le libellé dans un nouvel export s'importe une seconde fois, **signalée** à l'aperçu. § *Import dans Kesh*
-  (`:2419-2421`) : le refus, et AC-L1. FAQ (`:3779`) : une entrée « Kesh refuse mon relevé… ».
+  **Limites restantes, dites toutes les deux** : (1) C-e332-4 : une ligne qui ressemble à une ligne existante sans porter les mêmes textes s'importe
+  et se **signale** ; c'est ainsi qu'une ligne déjà importée en 0.17.3, dont la référence porte un caractère spécial **et** dont la banque aurait changé le
+  libellé dans un nouvel export, s'importe une seconde fois, signalée à l'aperçu ; (2) AC-F5 : une ligne neuve dont tous les textes, lus à l'ancienne,
+  égalent ceux d'une ligne existante du même jour et du même montant reste signalée comme doublon ; l'aperçu la montre, et *Importer quand même* la récupère. Et, pour un fichier
+  déjà importé, le message reste « déjà importé » (AC-R9). § *Import dans Kesh* (`:2419-2421`) : le refus, et AC-L1. FAQ (`:3779`) : une entrée « Kesh refuse mon relevé… ».
 - `docs/manual/fr/admin-manual.tex:2553`, *Passer à la 0.17.4* : section d'historique, **non réécrite** ; ajouter une phrase datée
   « Depuis la 0.17.5, ces deux limites sont levées : … \S … ».
-- `docs/api-external.md` : le code d'erreur et `uncertainLegacyLines`, au tableau des imports (`:223`, renvoi ⁸).
+- `docs/api-external.md`, paragraphe **Ordre des refus** (`:771`, un tableau de ressources à `:223` n'étant pas un lieu de contrat) : le
+  `422 BANK_IMPORT_LEGACY_REREAD_FAILED`, `details.cause` et ses quatre valeurs ; son rang : à la création, après le `422 BANK_IMPORT_DUPLICATE_FILE` non confirmé
+  et la lecture du fichier, avant toute écriture, sans contournement par `confirm*` ; à l'aperçu, le `422 BANK_IMPORT_DUPLICATE_FILE` s'il est déjà importé (AC-R9).
+  Une phrase sur `warnings.uncertainLegacyLines` à côté, avec son sens : la ligne s'importe, sans choix.
 - `make fr` dans `docs/manual/` ; contrôle des PDF aplatis : `pdftotext f.pdf - | tr '\n' ' ' | tr -s ' '`, phrases cherchées citées
-  au Change Log (le refus présent ; « sans aucun signal » absent du manuel utilisateur).
+  au Change Log (le refus présent ; les deux limites présentes ; « sans aucun signal » absent du manuel utilisateur).
 - `CHANGELOG.md`, `## [0.17.5] — Non publié`, *Corrigé* : deux puces, `refs` #922 et #915, qui disent le refus et le signalement
-  avec leurs conditions (le reproche de #923 : CHANGELOG plus bref que le manuel). Le paragraphe de la 0.17.4 ne se récrit pas.
+  avec leurs conditions, et, pour #915, « réduit » : la limite d'AC-F5 y est écrite (le reproche de #923 : CHANGELOG plus bref que le manuel). Le paragraphe de la
+  0.17.4 ne se récrit pas.
 - Greper le symptôme : `git grep -nE "sans aucun signal|n'est pas reconnue|Jamais d'erreur|legacy_0173_aliases" -- docs crates`.
 
 ### T6 — Captures
@@ -271,12 +317,15 @@ Les **cinq** points de la « Fiche 1 » ; l'orchestrateur édite l'issue en le d
 | M7 | site de la création : idem | le volet création de R1, et R6 |
 | M8 | garde `new_txs.is_empty()` retirée | `camt_without_lines_is_not_refused_922` |
 | M9 | comparaison des textes retirée (alias par clé seule) | `..._not_a_false_duplicate_915` |
-| M10-M16 | une colonne retirée de `LineTexts::eq`, sept mutations | les tests purs par colonne |
+| M10-M16 | une clause retirée de `LineTexts::eq`, écrit à la main (T3), sept mutations | les tests purs par colonne |
 | M17 | index à la première ligne seule | `camt_alias_finds_the_row_with_equal_texts_915` |
 | M18 | incertaine écartée au lieu d'importée | F1 volet création |
 | M19 | `uncertain` non rendu à l'aperçu | F1 volet aperçu |
 | M20 | `details.uncertain_legacy_lines_imported` retiré | F1 volet trace |
 | M21 | alias appliqué sans contrôle à la clé directe (S4 inversé) | test pur S4 |
+| M22 | borne 1000-9999 ajoutée dans `parse_date` (une 33-4 mal placée) | `legacy_reading_has_no_year_bound_922`, `camt_short_year_in_period_is_not_refused_922` |
+| M23 | aperçu : le refus de relecture rendu même si `existing` est posé | `camt_refused_file_already_imported_says_so_922` |
+| M24 | aperçu : `existing` posé, relecture en échec, `200` au lieu d'un refus | idem |
 
 Une survivante se traite ou se justifie au Change Log ; un fichier muté restauré se `touch` (cargo garde sinon le binaire muté).
 
@@ -299,14 +348,27 @@ Commun : `e33-commun.md`, chaque commande lourde sous le double `flock` et `mem-
 - **Le coût du refus.** Il est réel pour un fichier qu'accepte la 0.17.4 et dont la banque écrirait une date en CDATA : la 0.17.5 le
   refuse, y compris sur une installation neuve, et tant que l'alias existe. Aucune fixture ni aucune banque connue n'y mène (prémisse
   4). C'est la décision de Guy, prise à ce prix ; C-e332-1 dit pourquoi on n'a pas tenté de la restreindre.
+- **Ce qui reste de #915.** AC-F5. Rien, à la lecture du fichier et de la base, ne sépare cette ligne d'une ligne vraiment déjà importée : la « réduction » est le
+  résultat honnête, et la PR, le CHANGELOG et le commentaire de fermeture disent « réduit ». Issue du reliquat demandée à l'orchestrateur (« on trace toujours »).
 - **Ne pas toucher** : l'empreinte de fichier (`compute_sha256_hex`, test `file_hash_is_sha256_of_received_bytes`), `DuplicateKey`,
   l'ordre des refus de la création.
 - **Interdit** : ouvrir un relevé réel. Un contrôle sur les fichiers réels de Guy, s'il est voulu, revient à l'orchestrateur, en local,
   et se rapporte en « conforme / non conforme » seulement.
 
+## Recoupements
+
+**33-4** (`kesh-import/src/camt053/mod.rs`) : elle borne les années des dates reçues, et `parse_date` est commun aux deux lectures. AC-S5 fixe que la relecture héritée n'en
+hérite pas ; la 33-2 ne touche pas à `parse_date` (T2). Ordre de fusion indifférent : la seconde fusion rejoue `camt053_golden`, `bank_imports_e2e` et les tests d'AC-S5.
+
 ## Change Log
 
 - 2026-11-06 — Fiche rédigée en autonomie (Opus 5.5).
+- 2026-11-06 — Remédiation de la validation P1 (rapport `kesh-gate-logs/e33-validate-p1-e332.md`, Opus 5.5, aucune compilation ni aucun test). Sept constats portent sur cette
+  fiche, tous remédiés, aucun réfuté : R-3, R-4, R-5, R-6, F-2, F-4 (LOW), et M-R4-2 (MEDIUM, rapport `e33-validate-p1-e334.md`). Prémisses relues : `routes/bank_imports.rs:1085-1090`,
+  `:1100`, `:1276`, `:1980-2006` ; `camt053/mod.rs:85-96`, `:259`, `:336-352`, `:472`, `:476`, `:530-532`, `:863-873` ; `chrono-0.4.45/src/format/parse.rs:381`, `:416` ;
+  `errors.rs:2419-2435` ; `BankImportUpload.svelte:172-173` ; `api-external.md:223`, `:771` ; 19 + 4 fixtures listées, `v04_multi_stmt.xml:17,77` (deux IBAN), `v04_characterization.xml:19`.
+  Conception : l'aperçu suit l'ordre de la création (C-e332-21) ; la relecture héritée reste sans borne (C-e332-22) ; `LineTexts::eq` écrit à la main.
+  Décomptes de cette fiche après remédiation, recomptés : 23 AC, 15 tests de route au tableau de T1, 24 mutations (M10-M16 comptant pour sept).
 
 ## Dev Agent Record
 

@@ -88,6 +88,7 @@ après règlement (`/usr/bin/grep -n 'règlement.*404' docs/api-external.md docs
 ## Change Log
 
 - 2026-11-06 : fiche créée (Opus 5.5).
+- 2026-11-06 : validation P1 (Sonnet 5.5) : aucun finding, lentilles R et F. Fiche inchangée, hors cette entrée (Opus 5.5).
 
 ## Dev Agent Record
 

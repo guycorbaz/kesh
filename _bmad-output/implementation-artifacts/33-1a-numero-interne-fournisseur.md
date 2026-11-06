@@ -33,34 +33,46 @@ afin de retrouver le papier sans dépendre du numéro du fournisseur, facultatif
 | F14 | Le registre de rejeu est vide depuis la 32-5a, et un test exige ce vide ; le manuel d'administration dit « vide depuis la 0.16.0 » | `post_restore.rs:210-227`, `tests/admin_full_import_e2e.rs:1597` (`report.is_empty()`), `admin-manual.tex:2358` |
 | F15 | Le service et le test de montée utilisent `supplier_invoices::list` ; les colonnes de `SupplierInvoice` sont écrites en trois listes | `services/factures_fournisseur.rs:119` ; `supplier_invoices.rs:41-47`, `:51-56`, `:2817-2822` |
 | F16 | MariaDB est en 10.11 en production comme en dev | `docker-compose.yml:4`, `docker-compose.dev.yml:56` |
+| F17 | Un exercice se renomme, et aucune route ne le supprime : `DELETE FROM fiscal_years` n'existe que dans des tests | `fiscal_years.rs:547`, `routes/fiscal_years.rs:310` ; `accounts.rs:1268`, `journal_entries.rs:3242` (blocs de test) |
+| F18 | Une lecture verrouillante par intervalle prend ses verrous dans l'ordre du parcours, choisi par l'optimiseur ; d'où le patron « un par un » de `close`. Création et clôture d'exercice sont rejouées sur interblocage | `fiscal_years.rs:1067-1072` ; `routes/fiscal_years.rs:283,343` |
+| F19 | `ConfigurationRequired` jette son champ et rend le texte fixe « configurez les paramètres de facturation » ; une variante dédiée existe déjà pour cette raison | `kesh-api/errors.rs:4483-4492`, `kesh-db/errors.rs:829-835` |
+| F20 | `audit_log.user_id` est `NOT NULL` à clé étrangère : une migration, sans auteur, n'y écrit pas ; le manuel le dit déjà du lettrage posé par une mise à jour | `20260413000001_audit_log.sql:15,21`, `user-manual.tex:1390` |
 
 ## Décisions de conception (registre pour le détail)
 
 - **Le compteur est une colonne de `fiscal_years`, non une table de séquence** (`C-e331-1`). La mécanique de
   `credit_note_number_sequences` (`credit_note_number_sequences.rs:17-76`) se réemploie dans son principe — lecture sous verrou,
   incrément, annulé par le rollback, jamais redescendu — mais pas dans sa forme : F2 l'interdit. Le compteur sur l'exercice ne
-  prend **aucun verrou neuf** (F4) et se restaure avec l'exercice.
+  prend **aucun verrou neuf** (F4), hors le cas des exercices frères (AC8), et se restaure avec l'exercice.
 - **Concurrence** (`C-e331-2`) : la ligne de réglages sérialise les validations d'une société, celle de l'exercice porte le
   compteur, la lecture du compteur et le contrôle de collision sont **verrouillants** (sous REPEATABLE READ, une lecture ordinaire
-  rendrait un instantané périmé). L'`UNIQUE` reste le filet.
+  rendrait un instantané périmé). Les compteurs des exercices frères (ci-dessous) se lisent verrouillés un par un, et seulement s'il y
+  en a. L'`UNIQUE` reste le filet.
 - **Un exercice dont le nom n'est pas une année** (`C-e331-3`) : `{YEAR}` vaut l'année de `start_date`, comme pour les factures
   clientes et les avoirs (exercice « 2025/2026 » commencé le 1.7.2025 : `FF-2025-001`). `{FY}` reste offert.
 - **« Configurable »** (`C-e331-4`) : le format réglable y répond (préfixe, année, largeur du compteur). Ni valeur de départ, ni
-  choix du mode de remise à zéro. Le format fournisseur **exige `{SEQ}`** (F9).
-- **Brouillon numéroté supprimé** (`C-e331-5`) : suppression permise, numéro perdu, **jamais réattribué** ; le trou est accepté
-  et l'audit garde l'instantané.
+  choix du mode de remise à zéro. Le format fournisseur **exige `{SEQ}` et `{YEAR}` ou `{FY}`** (F9, `C-e331-16`) : sans année, la
+  séquence repartirait à 1 sur les numéros de l'exercice précédent.
+- **Brouillon numéroté supprimé** (`C-e331-5`) : suppression permise, numéro perdu, **jamais réattribué**, y compris par un exercice
+  frère (AC13) ; le trou est accepté et l'audit garde l'instantané.
 - **Hors de tout exercice** (`C-e331-6`) : un brouillon hors exercice n'a pas de numéro et sa validation est refusée comme
   aujourd'hui (`FiscalYearInvalid`) ; à la migration, l'exercice se lit sur l'écriture d'achat, jamais sur la date : aucune
   facture n'en manque (F5).
 - **Changement de format en cours d'exercice** (`C-e331-7`) : vaut pour les numéros à venir ; les numéros attribués ne se
   réécrivent pas, le compteur continue.
-- **Collision** (`C-e331-8`) : même rendu pour deux exercices de même année civile (F11), ou format sans année. La validation
-  **saute** les numéros pris ; la migration numérote ces exercices à la suite l'un de l'autre. Le seul cas où la séquence ne
-  repart pas à 1.
+- **Exercices frères et collision** (`C-e331-8`) : deux exercices de la même société commençant la même année civile (F11) rendent
+  la même chaîne en format `{YEAR}`. Ils **partagent leur séquence** : la validation part du plus haut compteur des frères, jamais d'un
+  numéro libre plus bas, si bien qu'un numéro supprimé n'est pas réémis ; la migration les numérote à la suite l'un de l'autre. Le seul cas
+  où la séquence ne repart pas à 1. En format `{FY}`, les noms étant uniques, chaque exercice garde sa séquence. Le saut d'un numéro pris
+  reste un filet, **vers le haut seulement**. Ce qui reste ouvert est écrit à `C-e331-23`.
 - **Brouillon numéroté déplacé dans un autre exercice** (`C-e331-9`) : garde son numéro, le compteur du nouvel exercice ne
   bouge pas. Décision de Guy appliquée à la lettre : le papier est déjà classé.
 - **Libellé** (`C-e331-10`) : `Facture fournisseur FF-2026-001 (ABC-123) - Dupont SA`, et `Règlement fournisseur …` de même ; sans
-  numéro du fournisseur, `Facture fournisseur FF-2026-001 - Dupont SA`. Le numéro du fournisseur reste cherchable au journal.
+  numéro du fournisseur, `Facture fournisseur FF-2026-001 - Dupont SA` ; sans aucun numéro, `Facture fournisseur #12 - Dupont SA`, ce
+  qui ne se produit que par une insertion directe. Le numéro du fournisseur reste cherchable au journal.
+- **Le rendu impossible** (`C-e331-17`) : refus 400 par une variante et une clé propres, qui disent quoi changer (F19).
+- **Pas d'entrée d'audit pour la numérotation de l'existant** (`C-e331-24`) : une migration n'a pas d'auteur (F20). Le manuel et le
+  CHANGELOG disent l'ordre appliqué.
 - **Pas de `CHECK` « non brouillon ⇒ numéro »** (`C-e331-11`) : il ferait échouer la restauration d'une sauvegarde 0.17.4 avant le
   rejeu, et toute fixture qui insère une facture ouverte en SQL. L'absence se contrôle par test.
 - **Migration non breaking** (`C-e331-14`) : `ADD COLUMN` nullable ou avec défaut, `ADD UNIQUE` ; ni `DROP`, ni `MODIFY`, ni
@@ -124,7 +136,8 @@ antérieure insérée après (ordre par date) ; `open`, `paid`, `cancelled`, `dr
 chez deux fournisseurs ; un exercice « 2025/2026 » commencé le 1.7.2025 ; **deux exercices commençant la même année civile**
 (numérotés à la suite, aucun échec d'`UNIQUE`) ; un exercice sans facture. Assertions : numéro exact de chaque ligne, compteurs
 exacts, AC4 ligne à ligne, aucune facture non brouillon sans numéro, brouillon à `NULL`. Assertion de montage : la base partielle
-n'a pas la colonne.
+n'a pas la colonne. ⚠️ Pour AC4, `updated_at` des factures et des exercices est **épinglé à une date passée** à l'insertion : sans cela,
+une mutation M7 survit si migration et insertion tombent dans la même milliseconde (`DATETIME(3)`).
 
 **AC6 — Montée à vide.** Une base sans facture fournisseur monte sans erreur (`migrations_fresh_install`) ; le squash est régénéré
 (AC21).
@@ -135,10 +148,20 @@ n'a pas la colonne.
 ### La validation
 
 **AC8 — L'attribution.** `validate_in_tx`, sur une facture sans numéro, attribue le numéro **après** `check_written` (dernier refus de
-forme) et **avant** la construction du libellé : prochain numéro lu en lecture verrouillante sur `fiscal_years` (aucun verrou neuf,
-F4), `render(format, année de fy.start_date, fy.name, seq)`, contrôle de collision, écriture du compteur (`seq + 1`,
-`updated_at = updated_at`) ; le numéro part dans l'`UPDATE` de l'étape (6), celui qui passe à `open`. Le doc-comment des verrous
-(`:1259-1324`) porte l'étape (3 bis).
+forme) et **avant** la construction du libellé. Étape (3 bis), dans cet ordre :
+
+1. **La portée**, par une fonction pure `invoice_format::numbering_scope(template)` : `{FY}` présent, `FiscalYear` (les noms sont uniques,
+   F11) ; sinon `CalendarYear` (`validate_numbering_template` garantit alors `{YEAR}`).
+2. **Les frères**, en portée `CalendarYear` seulement : lecture ordinaire des `id` des **autres** exercices de la société dont
+   `start_date` est dans l'année civile de `fy.start_date`, intervalle semi-ouvert du 1er janvier au 1er janvier suivant, **tous statuts**
+   (un exercice clos a émis des numéros), triés par `start_date` ; puis le compteur de chacun, lu `FOR UPDATE` **un par un** (patron de
+   `close`, F18). Une seule ligne par année, le cas courant : aucun verrou neuf (F4).
+3. **Le départ** : `seq` = le plus grand de ces compteurs et de celui de `fy`, lu en lecture verrouillante.
+4. `render(format, année de fy.start_date, fy.name, seq)`, contrôle de collision (AC13) ; pris, `seq + 1` et on recommence.
+5. Le compteur de **`fy` seul** passe à `seq + 1`, `updated_at = updated_at`. Les compteurs ne redescendent jamais : le plus grand d'entre
+   eux non plus.
+
+Le numéro part dans l'`UPDATE` de l'étape (6), celui qui passe à `open`. Le doc-comment des verrous (`:1259-1324`) porte l'étape (3 bis).
 
 **AC9 — Le numéro survit.** `unvalidate` le garde : validée puis brouillon, annulée puis brouillon. Revalidée, la facture **reprend
 le même numéro sans lire ni écrire le compteur** (patron F10), et ce même si le format a changé entre-temps.
@@ -150,13 +173,31 @@ rollback.
 **AC11 — Séquence par exercice.** Validations entrelacées sur 2026 et 2027 : `FF-2026-001`, `FF-2027-001`, `FF-2026-002`.
 
 **AC12 — Concurrence.** N validations simultanées de la même société et du même exercice, par des transactions réelles : numéros tous
-distincts, suite sans trou, compteur à N+1, aucun échec sinon un interblocage rejoué. Test piloté par le patron de
-`rejeu_interblocage_e2e.rs`.
+distincts, suite sans trou, compteur à N+1, aucun échec sinon un interblocage rejoué. De même sur **deux exercices frères** : numéros
+tous distincts, en suite. Et **une validation en cours avec une création de brouillon** : le contrôle de collision pose un verrou
+d'intervalle sur l'`UNIQUE` quand la clé est absente, et l'insertion d'un brouillon (`internal_number NULL`) peut tomber dedans (première
+validation de la société) ; elle **attend** puis réussit, sans interblocage, le validateur n'ayant besoin d'aucun verrou du brouillonneur.
+Test piloté par le patron de `rejeu_interblocage_e2e.rs`. Une clôture qui croise une validation sur des frères peut interbloquer
+(ordre des dates contre exercice de la facture d'abord) : les deux routes sont rejouées (F6, F18), à lire en revue, non à forcer au test.
 
-**AC13 — Le saut.** Numéro déjà pris : deux exercices de même année civile ; retour à un format antérieur ; format sans année. La
-validation saute au premier libre, le compteur finit au-delà. Saut borné : au-delà de 100 000 essais, `DbError::Invariant`. Le
-rendu impossible (`FormatError`, nom d'exercice trop long pour le format) rend `DbError::ConfigurationRequired` (`errors.rs:4483`,
-400) et ne consomme rien (`C-e331-17`).
+**AC13 — Un numéro n'est jamais réémis.** Testé à `supplier_invoices_internal_number.rs`, exercices A (1.1.2026-30.6.2026) et
+B (1.7.2026-30.6.2027), format par défaut :
+
+- **(a) Brouillon numéroté supprimé, exercice frère** : A émet `FF-2026-001` à `-003` ; la `-003` repasse en brouillon et se supprime ; B
+  valide : `FF-2026-004`, **jamais `-003`**. Compteurs A = 4, B = 5. A valide ensuite : `FF-2026-005`.
+- **(b) Base migrée** : A = 6, B = 10 après migration ; A valide : `FF-2026-010`, compteur A = 11 ; B valide : `FF-2026-011`.
+- **(c) Frère créé après coup** : A à 4 ; B, créé alors, part de son défaut 1 ; sa première facture porte `FF-2026-004`.
+- **(d) Frère clos** : même chose, A étant clôturé : son compteur compte.
+- **(e) Format `{FY}`** : `FF-{FY}-{SEQ:03}`, A et B repartent chacun à 1 ; aucun verrou ni lecture de frère (mutation M20).
+- **(f) Retour à un format antérieur** : `FF-` puis `KF-` puis `FF-` dans le même exercice : le compteur continue, aucun numéro repris.
+- **(g) Le filet, vers le haut** : un numéro posé en SQL au-dessus du compteur (`FF-2026-005`, compteur 5) : la validation rend `-006`,
+  compteur 7. Saut borné : au-delà de 100 000 essais, `DbError::Invariant`.
+- **(h) Le rendu impossible** (`FormatError` : nom d'exercice trop long pour le format, ou accolade dans le nom) rend
+  `DbError::SupplierInternalNumberNotRenderable` (400, code `SUPPLIER_INTERNAL_NUMBER_NOT_RENDERABLE`, clé
+  `error-supplier-internal-number-not-renderable` aux **quatre** locales, recomptée par `grep -c`), qui nomme le format et l'exercice et dit
+  quoi changer ; rien n'est consommé (`C-e331-17`).
+
+Les cas restants, écrits : `C-e331-23` ; le manuel dit ce que fait une restauration (AC23).
 
 **AC14 — Personne d'autre n'écrit le numéro.** `create_draft`, `update_draft` et la complétion d'un document (`POST
 /imported-supplier-invoices/{id}/complete`) l'ignorent, même si le corps porte `internalNumber`. Un `update_draft` le préserve. La
@@ -165,11 +206,13 @@ validée suivante prend le numéro d'après, jamais celui du supprimé (`C-e331-
 
 ### Les libellés
 
-**AC15 — Les nouvelles écritures.** Selon `C-e331-10`, dans les deux sites de F7, par **une** fonction pure testée (numéro interne
-seul ; avec numéro du fournisseur ; numéro du fournisseur blanc, qui vaut absent — règle de `:956-959` ; sans numéro interne, ce qui
-ne se produit que par une insertion directe : repli sur le numéro du fournisseur). Une facture numérotée par la migration et réglée
-après porte son numéro au règlement. Revalidée, la nouvelle écriture d'achat aussi. `journal_entries.description` (`VARCHAR(500)`)
-tient au pire cas : 64 + 64 + 255 plus le texte fixe.
+**AC15 — Les nouvelles écritures.** Selon `C-e331-10`, dans les deux sites de F7, par **une** fonction pure testée, en `kesh-core`,
+`supplier_invoice_long_label(interne, fournisseur) -> Option<String>`, avec sa sœur `supplier_invoice_short_label` que réemploie la 33-1b :
+numéro interne seul ; avec numéro du fournisseur ; numéro du fournisseur blanc, qui vaut absent (règle de `:956-959`) ; numéro interne blanc ou
+absent, repli sur le numéro du fournisseur ; **aucun des deux : `None`, et le libellé porte `#<id>`, les deux sites alignés**. C'est la fin de
+`Facture fournisseur  - contact`, à double espace (`:1511`), et de `Règlement fournisseur <id> - contact` sans dièse (`:1875-1878`). Une
+facture numérotée par la migration et réglée après porte son numéro au règlement. Revalidée, la nouvelle écriture d'achat aussi.
+`journal_entries.description` (`VARCHAR(500)`) tient au pire cas : 64 + 64 + 255 plus le texte fixe.
 
 ### Le réglage, l'API, l'export
 
@@ -177,9 +220,9 @@ tient au pire cas : 64 + 64 + 255 plus le texte fixe.
 `SELECT` de repli de `company_invoice_settings.rs:37,53,247,350,1159` portent `supplier_internal_number_format`. `GET` et `PUT
 /company/invoice-settings` portent `supplierInternalNumberFormat` ; **absent du corps : préservé** (patron #216,
 `routes/company_invoice_settings.rs:295-302`), le formulaire ne l'envoyant qu'à partir de la 33-1b. Validation par une fonction neuve
-`invoice_format::validate_numbering_template`, qui exige en plus `{SEQ}` (`FormatError::NoSeqPlaceholder`, message FR comme ses
-voisines). Refus 400 pour `FF-{YEAR}`, pour un format vide, pour `FF-{YEAR}-{SEQ:11}`. Les formats client et avoir gardent
-`validate_template` (`C-e331-16`).
+`invoice_format::validate_numbering_template`, qui exige en plus `{SEQ}` (`FormatError::NoSeqPlaceholder`) **et** `{YEAR}` ou `{FY}`
+(`FormatError::NoYearPlaceholder`), messages FR comme leurs voisines. Refus 400 pour `FF-{YEAR}`, `FF-{SEQ:03}`, un format vide,
+`FF-{YEAR}-{SEQ:11}` ; acceptés le défaut et `FF-{FY}-{SEQ}`. Les formats client et avoir gardent `validate_template` (`C-e331-16`).
 
 **AC17 — L'API de la facture.** `internalNumber` (`string | null`) dans `SupplierInvoiceResponse` et `SupplierInvoiceListItemResponse`
 (`routes/supplier_invoices.rs:75,303`), donc dans toutes les réponses qui les réemploient. `supplierInvoiceNumber` ne change ni de nom
@@ -187,7 +230,7 @@ ni de valeur. Les trois listes de F15 et `SupplierInvoiceListItem` suivent. `sna
 
 **AC18 — MCP.** `kesh_factures_fournisseur` et sa fiche (`mcp/outils/factures_fournisseur.rs:54,101,167,225`) ajoutent `numero_interne`,
 `TexteNonFiable` comme `numero`, et `numero` garde son sens. `mcp_outils_e2e` et le test de contrat suivent. La pièce source de
-`kesh_ecriture` relève de la 33-1b.
+`kesh_ecriture` et la pièce de `kesh_postes_ouverts` relèvent de la 33-1b.
 
 **AC19 — L'export.** `serialize_supplier_invoices_csv` (`exports/csv_tables.rs:1206,1232`) gagne `internal_number` juste après
 `supplier_invoice_number` ; `company_invoice_settings` gagne `supplier_internal_number_format` (`:961,985`). Le compteur n'est pas
@@ -238,32 +281,43 @@ aussi une sauvegarde manuelle complète** — base, `.keshbackup`, dossier des d
 sauvegarde d'avant la mise à jour** : la 0.17.4 ne démarre plus sur la base migrée et refuse une sauvegarde de la 0.17.5 ; les factures déjà
 validées reçoivent un numéro par ordre de date, et les écritures passées ne changent pas. `:2283` (*Compatibilité*) : une sauvegarde 0.17.4
 s'importe dans la 0.17.5 et y reçoit les numéros ; pas l'inverse. **`:2358`, phrase « Depuis la 0.16.0, aucune de ces reprises n'est plus
-rejouée » et « vide depuis la 0.16.0 » : récrites**, la numérotation est rejouée. `:2527` (« la prochaine version qui migre ») : relu, renvoi à
-`sec:maj-0-17-5`. Le manuel utilisateur et le réglage à l'écran sont à la 33-1b.
+rejouée » et « vide depuis la 0.16.0 » : récrites**, la numérotation est rejouée. `:2529` (« la prochaine version qui migre ») : relu, renvoi à
+`sec:maj-0-17-5` ; `:2527` et `:2533` restent vrais de la 0.17.4, on n'y touche pas. Que la numérotation de l'existant **n'a pas d'entrée au journal
+d'audit** (`C-e331-24`). **§ *Importer*, `:2289`** : une restauration ramène les compteurs à la date de la sauvegarde ; un numéro attribué après elle
+peut donc être réattribué, et le numéro écrit sur le papier depuis lors se vérifie ; une sauvegarde 0.17.4 renumérote par date à l'import, de sorte qu'un
+retour à la 0.17.4 suivi d'une nouvelle montée peut décaler les numéros si des factures de date antérieure ont été saisies entre-temps (`C-e331-23`). Le
+manuel utilisateur et le réglage à l'écran sont à la 33-1b.
 
 **AC24 — CHANGELOG et API.** `## [0.17.5] — Non publié` (union) : *Ajouté*, le numéro interne, avec l'avertissement de migration et la
-sauvegarde, `refs #926`. `docs/api-external.md` : `internalNumber`, `supplierInternalNumberFormat`, cycle d'une facture.
+sauvegarde, `refs #926`. `docs/api-external.md` : `internalNumber` et le cycle d'une facture. `supplierInternalNumberFormat` n'y figure pas : le
+document ne décrit pas `/company/invoice-settings` (aucune occurrence de la route ni de `invoiceNumberFormat`), réglage d'écran resté hors du contrat
+externe, comme le format client.
 
 ## Tests qui rougissent avant le correctif
 
-À écrire d'abord et à constater rouges, note au Dev Agent Record : AC2/AC3/AC5 (colonne absente), AC8, AC9, AC13, AC15, AC16 (`FF-{YEAR}`
-accepté), AC20. Repository : `crates/kesh-db/tests/supplier_invoices_internal_number.rs`, sur le squash. Unitaire : `invoice_format.rs`
-(`validate_numbering_template`) ; la fonction de libellé.
+À écrire d'abord et à constater rouges, note au Dev Agent Record : AC2/AC3/AC5 (colonne absente), AC8, AC9, AC13, AC15, AC16 (`FF-{YEAR}` et
+`FF-{SEQ:03}` acceptés), AC20. Repository : `crates/kesh-db/tests/supplier_invoices_internal_number.rs`, sur le squash. Unitaire : `invoice_format.rs`
+(`validate_numbering_template`, `numbering_scope`) ; les fonctions de libellé.
+
+**Tests existants qui rougiront, à mettre à jour au même commit** : `supplier_invoices_draft.rs:482` (libellé de l'achat). Les fixtures
+`migrations_upgrade_path.rs:1292` et `support/lettering_documents.rs:802` écrivent elles-mêmes l'ancien libellé et n'assertent rien sur le code de
+production : elles ne bougent pas. `git grep -nE "(Facture|Règlement) fournisseur " crates/*/tests crates/*/src` rejoué à l'étape 0.
 
 ## Mutations nommées (sous le verrou, restauration `git checkout -- <fichier>` puis `touch`)
 
 | # | Mutation | Tuée par |
 |---|---|---|
 | M1 | Rang sans tri par date (`ORDER BY s.id`) | AC5 |
-| M2 | Sans `s.id` en dernier tri | AC5 (mêmes dates) |
+| M2 | Sans `s.id` en dernier tri | Probablement **aucune** : InnoDB parcourt dans l'ordre des `id` quel que soit l'ordre d'insertion, si bien que des `id` explicites n'y changent rien. À essayer sur AC5 (mêmes dates), et, si elle survit, à déclarer équivalente en pratique ; le tri reste écrit, l'ordre de `ROW_NUMBER` n'étant pas garanti sans lui |
 | M3 | `LPAD(n.rang, 3, '0')` | AC7 |
 | M4 | Partition par exercice au lieu de l'année civile | AC5 (même année : l'`UNIQUE` échoue) |
-| M5 | `status <> 'draft'` retiré ou réduit à `open` | AC5 |
+| M5a | `status <> 'draft'` réduit à `open` | AC5 |
+| M5b | `status <> 'draft'` retiré | **Équivalente, à déclarer** : la jointure interne sur `purchase_journal_entry_id` exclut déjà les brouillons (`chk_supplier_invoices_entry_iff_not_draft`, F5) |
 | M6 | Exercice lu par la date au lieu de l'écriture | AC5, ou le dire équivalente, preuve à l'appui (F5) |
-| M7 | `updated_at = updated_at` retiré, facture ou exercice | AC4 |
+| M7 | `updated_at = updated_at` retiré, facture ou exercice | AC4, `updated_at` épinglé (AC5) |
 | M8 | Compteur non initialisé par la migration | AC5, AC20 |
 | M9 | Revalidation qui tire un numéro neuf | AC9 |
-| M10 | Saut de collision retiré | AC13 |
+| M10 | Saut de collision retiré | AC13 (g) |
 | M11 | Lecture du compteur sans `FOR UPDATE` | AC12, ou équivalente sous le verrou de l'exercice : à prouver |
 | M12 | Attribution avant `check_written` | AC10 : indiscernable par le rollback ⇒ à déclarer équivalente si c'est le cas |
 | M13 | Libellé : le numéro du fournisseur à la place | AC15 |
@@ -272,13 +326,20 @@ accepté), AC20. Repository : `crates/kesh-db/tests/supplier_invoices_internal_n
 | M16 | Format absent du corps écrasé par le défaut | AC16 |
 | M17 | `update_draft` qui efface le numéro | AC14 |
 | M18 | Compteur décrémenté à la suppression | AC14 |
+| M19 | Départ sans les frères (compteur de `fy` seul) | AC13 (a), (b), (c) |
+| M20 | Frères lus aussi en portée `{FY}` | AC13 (e) |
+| M21 | Frères restreints aux exercices ouverts | AC13 (d) |
+| M22 | Compteur des frères lu sans `FOR UPDATE` | AC12 (frères), ou équivalente sous le verrou des réglages à l'échelle du test : à prouver, l'instantané restant périmé |
+| M23 | `{YEAR}` ou `{FY}` non exigé | AC16 (`FF-{SEQ:03}`) |
+| M24 | Rendu impossible rendu en `ConfigurationRequired` | AC13 (h) |
+| M25 | Libellé sans aucun numéro : chaîne vide au lieu de `#id` | AC15 |
 
 ## Tâches
 
-1. **Étape 0** : relire F1–F16 au code, citer les lignes ayant bougé ; `git grep -n "struct SupplierInvoice\b\|SupplierInvoice {"`.
+1. **Étape 0** : relire F1–F20 au code, citer les lignes ayant bougé ; `git grep -n "struct SupplierInvoice\b\|SupplierInvoice {"`.
 2. Tests rouges (ci-dessus).
 3. Migration ; `regen-test-schema.sh` ; P5, P6, P7.
-4. `invoice_format`, entité, listes de colonnes, attribution, libellés.
+4. `invoice_format`, entité, listes de colonnes, attribution, frères, libellés, variante d'erreur et sa clé aux quatre locales.
 5. Réglages, routes, MCP, CSV.
 6. Rejeu et tests d'import.
 7. Mutations.
@@ -318,3 +379,15 @@ migration sur une base peuplée ; la cohérence **migration / extrait de rejeu**
 ## Change Log
 
 - 2026-11-06 : fiche créée, `ready-for-dev`.
+- 2026-11-06, remédiation de la validation P1 (Opus 5.5, rapports `kesh-gate-logs/e33-validate-p1-e331-R.md` et `-F.md` ; passe 1 : 0 CRITICAL, 0 HIGH, 3 MEDIUM, 13 LOW, dont dix findings touchant cette fiche, 1 MEDIUM et 9 LOW). Prémisses relues aux lignes citées, toutes justes sauf ce qui est dit ci-dessous.
+  - **M-1 (lentille R)**, remédié, sur arbitrage de l'orchestrateur : format à `{SEQ}` et `{YEAR}` ou `{FY}` (AC16) ; départ au plus haut compteur des exercices frères, le saut ne servant plus que de filet (AC8, AC13). Le scénario du rapport devient AC13 (a), et le format sans année ne s'enregistre plus. **Changement de conception**, cas restants à `C-e331-23`.
+  - **L-5**, sans objet : le format sans année est refusé, le saut ne parcourt plus l'exercice précédent.
+  - **L-1 (R) et L4 (F)**, remédiés : variante et clé propres (AC13 h, F19), au lieu du texte générique.
+  - **L-2**, remédié : M5 scindée, M5b déclarée équivalente ; M7 sur un `updated_at` épinglé. Pour M2, **la remédiation proposée est réfutée** : des `id` explicites hors ordre d'insertion ne changent pas l'ordre de parcours d'InnoDB, qui suit la clé primaire. M2 s'essaie et se déclare si elle survit.
+  - **L-3**, remédié : prémisse vraie dans le cas d'une première validation de la société, où un `NULL` neuf tombe dans l'intervalle ; attente écrite et test à AC12.
+  - **L-4**, remédié : le cas sans numéro est tranché (`#id`, AC15), test existant qui rougit nommé. `migrations_upgrade_path.rs:1292` et `support/lettering_documents.rs:802` fabriquent le libellé sans rien asserter sur la production : ils ne rougissent pas, contrairement à ce que laissait entendre le rapport.
+  - **L-6**, remédié : limite acceptée (`C-e331-24`, F20). Nuance de prémisse : une écriture en SQL pur n'est pas impossible, c'est l'auteur qui manque (`audit_log.user_id NOT NULL`).
+  - **L3 (F)**, remédié : `:2529` au lieu de `:2527`, et `:2533` nommé pour n'y pas toucher (lus).
+  - **L5 (F)**, remédié : `supplierInternalNumberFormat` retiré de `api-external.md`, route hors du contrat (AC24).
+  - Décomptes de cette entrée, recomptés sur cette fiche : faits F17 à F20 ajoutés (20 au total) ; mutations M19 à M25 ajoutées et M5 scindée (26 lignes au tableau).
+  - Propagation : `grep` de `format sans année`, `sans {YEAR}`, `FF-{SEQ`, `requireSeq`, `:2527`, `ConfigurationRequired`, `premier libre`, `saute`, `aucun verrou neuf`, `réattribu` sur les deux fiches et le registre, exécuté après écriture ; résidus traités dans cette même remédiation : `aucun verrou neuf` (décisions de conception, C-e331-1), `jamais réattribué` au manuel utilisateur (33-1b, AC12, renvoi à la restauration). Les autres occurrences sont légitimes.
