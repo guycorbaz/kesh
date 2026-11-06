@@ -48,6 +48,11 @@ export interface PreviewWarnings {
 	encodingMismatch?: { profile: string; detected: string } | null;
 	duplicateFile?: DuplicateFilePayload | null;
 	duplicateLines: DuplicateLineWarning[];
+	/**
+	 * Story 33-2 (#915) — lignes CAMT.053 qui ressemblent à une ligne déjà importée
+	 * sans en porter les textes. Toujours présent ; informatif : elles s'importent.
+	 */
+	uncertainLegacyLines: UncertainLegacyLineWarning[];
 	invalidLines?: InvalidLinesPayload | null;
 	/**
 	 * ⚠️ **Optionnel, parce que le backend l'OMET quand la liste est vide** :
@@ -77,6 +82,11 @@ export interface DuplicateLineWarning {
 	newIndex: number;
 	existingTransactionId: number;
 	key: string;
+}
+
+export interface UncertainLegacyLineWarning {
+	newIndex: number;
+	existingTransactionId: number;
 }
 
 export interface InvalidLinesPayload {

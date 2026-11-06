@@ -102,7 +102,7 @@ function previewResp(o: PreviewOpts = {}): BankImportPreviewResponse {
 			statementId: null,
 			accountIban: 'CH0000000000000000000',
 		})),
-		warnings: { duplicateLines: [], ...o.warnings },
+		warnings: { duplicateLines: [], uncertainLegacyLines: [], ...o.warnings },
 		transactions: [
 			{
 				bookingDate: '2026-01-01',
@@ -883,5 +883,42 @@ describe('BankImportUpload — dates de l’aperçu en forme suisse (v0172, #880
 		expect(get(c, 'preview-tx-row').textContent).toContain('01.01.2026');
 		expect(c.textContent).toContain('02.01.2026 01:00');
 		expect(c.textContent).not.toMatch(/2026-0\d-\d{2}/);
+	});
+});
+
+// Story 33-2 (#915, AC-F3) — le panneau des lignes incertaines : phrase au singulier
+// ou au pluriel, tableau, et aucun obstacle à la confirmation.
+describe('BankImportUpload — lignes incertaines (Story 33-2)', () => {
+	const uncertain = (n: number) => ({
+		uncertainLegacyLines: Array.from({ length: n }, (_, i) => ({
+			newIndex: i,
+			existingTransactionId: 40 + i,
+		})),
+	});
+
+	it('une ligne : le singulier, une rangée, Confirmer reste actif', async () => {
+		const { c } = await mount();
+		await previewWithA(c, { warnings: uncertain(1) });
+		const panel = get(c, 'warning-uncertain-legacy-lines');
+		expect(panel.textContent).toContain('ligne ressemble');
+		expect(panel.textContent).toContain('Kesh l\'importe');
+		expect(panel.querySelectorAll('[data-testid="warning-uncertain-legacy-lines-row"]').length).toBe(1);
+		expect(panel.textContent).toContain('40');
+		expect(get<HTMLButtonElement>(c, 'bank-import-confirm').disabled).toBe(false);
+	});
+
+	it('deux lignes : le pluriel, deux rangées, Confirmer reste actif', async () => {
+		const { c } = await mount();
+		await previewWithA(c, { warnings: uncertain(2) });
+		const panel = get(c, 'warning-uncertain-legacy-lines');
+		expect(panel.textContent).toContain('lignes ressemblent');
+		expect(panel.querySelectorAll('[data-testid="warning-uncertain-legacy-lines-row"]').length).toBe(2);
+		expect(get<HTMLButtonElement>(c, 'bank-import-confirm').disabled).toBe(false);
+	});
+
+	it('liste vide : aucun panneau', async () => {
+		const { c } = await mount();
+		await previewWithA(c);
+		expect(q(c, 'warning-uncertain-legacy-lines')).toBeNull();
 	});
 });

@@ -631,6 +631,46 @@
 				</div>
 			{/if}
 
+			<!-- Story 33-2 (#915, C-e332-4) — lignes qui ressemblent à une ligne déjà
+			     importée sans en porter les textes. Informatif : elles s'importent, sans
+			     choix, et le panneau ne désactive pas « Confirmer l'import ». -->
+			{#if preview.warnings.uncertainLegacyLines.length > 0}
+				<div
+					class="mt-4 rounded border border-warning bg-warning-soft p-3"
+					data-testid="warning-uncertain-legacy-lines"
+				>
+					<p class="font-medium">
+						{preview.warnings.uncertainLegacyLines.length === 1
+							? i18nMsg(
+									'bank-import-warnings-uncertain-legacy-lines-summary-one',
+									"{ $count } ligne ressemble à une ligne déjà importée par une version antérieure (même date, même montant, même référence lue à l'ancienne), mais ses textes diffèrent (libellé, contrepartie, identifiants ou date de valeur). Kesh l'importe : vérifiez-la dans la liste des transactions du compte.",
+									{ count: 1 },
+								)
+							: i18nMsg(
+									'bank-import-warnings-uncertain-legacy-lines-summary-other',
+									"{ $count } lignes ressemblent à une ligne déjà importée par une version antérieure (même date, même montant, même référence lue à l'ancienne), mais leurs textes diffèrent (libellé, contrepartie, identifiants ou date de valeur). Kesh les importe : vérifiez-les dans la liste des transactions du compte.",
+									{ count: preview.warnings.uncertainLegacyLines.length },
+								)}
+					</p>
+					<table class="mt-2 w-full table-auto text-sm">
+						<thead>
+							<tr>
+								<th class="text-left">{i18nMsg('bank-import-labels-uncertain-col-index', 'Index')}</th>
+								<th class="text-left">{i18nMsg('bank-import-labels-uncertain-col-existing-id', 'ID existant')}</th>
+							</tr>
+						</thead>
+						<tbody>
+							{#each preview.warnings.uncertainLegacyLines as line (line.newIndex)}
+								<tr data-testid="warning-uncertain-legacy-lines-row">
+									<td>{line.newIndex}</td>
+									<td>{line.existingTransactionId}</td>
+								</tr>
+							{/each}
+						</tbody>
+					</table>
+				</div>
+			{/if}
+
 			<!-- Story 8-3 — panneau invalid lines (CSV partial) -->
 			{#if preview.warnings.invalidLines}
 				<div

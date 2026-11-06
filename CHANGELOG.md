@@ -8,6 +8,16 @@ Le contenu est rédigé en français à destination des **fiduciaires, PME, ind�
 
 ---
 
+## [0.17.5] — Non publié
+
+### Corrigé
+
+- **Un relevé CAMT.053 que Kesh ne sait pas relire est refusé, au lieu de doubler des lignes sans le dire** ([#922](https://github.com/guycorbaz/kesh/issues/922)) : pour reconnaître une ligne importée avant la 0.17.4, Kesh relit le fichier comme le faisaient les versions antérieures. Si cette relecture échouait — une date, un montant ou l'IBAN écrits avec une section CDATA ou une lettre codée, un fichier à plusieurs relevés du même compte que les deux lectures ne comprennent pas de la même façon —, l'import suivait son cours et une ligne déjà importée pouvait l'être une seconde fois, sans signal. Kesh refuse maintenant ce relevé, à l'aperçu comme à l'enregistrement, n'enregistre rien, et aucune confirmation ne lève ce refus : demandez à la banque un nouvel export, ou saisissez à la main les lignes qui manquent. Un relevé sans ligne n'est pas refusé ; un fichier déjà importé reste signalé comme tel. Pour l'API : `422 BANK_IMPORT_LEGACY_REREAD_FAILED`, `details.cause` (`docs/api-external.md`). Aucune fixture du dépôt ni aucune banque connue n'y mène, mais un fichier qu'acceptait la 0.17.4 peut être refusé.
+- **Une ligne neuve n'est plus prise pour un doublon sur la seule foi de sa référence tronquée : le faux doublon est réduit** ([#915](https://github.com/guycorbaz/kesh/issues/915)) : la référence lue à l'ancienne ne suffit plus, tous les textes de la ligne (libellé, contrepartie, identifiants, date de valeur) doivent aussi être ceux de la ligne existante. Une ligne qui ressemble sans porter les mêmes textes **s'importe et se signale** à l'aperçu (`warnings.uncertainLegacyLines`, et `details.uncertain_legacy_lines_imported` à la trace) : c'est aussi le cas d'une ligne importée en 0.17.3 dont la banque aurait changé le libellé dans un nouvel export, qui s'importe alors une seconde fois, signalée. **Limite restante** : une ligne neuve dont tous les textes, lus à l'ancienne, égalent ceux d'une ligne existante du même jour et du même montant reste signalée comme doublon ; rien ne la distingue d'une ligne déjà importée, l'aperçu la montre, et *Importer quand même* la récupère.
+- La portée du refus d'une entité inconnue dans un relevé CAMT.053 est écrite et testée : où qu'elle soit dans le texte du fichier, non dans un attribut que Kesh ne lit pas ([#923](https://github.com/guycorbaz/kesh/issues/923)).
+
+---
+
 ## [0.17.4] — 2026-11-06
 
 La 0.17.4 est une version corrective : la session plus sûre, une sauvegarde automatique avant les migrations à venir, et les défauts relevés à l'usage. Elle ne porte **aucune migration** ; seules les sessions ouvertes sont effacées au premier démarrage, si bien que **chaque utilisateur se reconnecte une fois**. **Le retour à la 0.17.3 est possible sans restauration, après avoir vidé la table des sessions** (manuel d'administration, *Passer à la 0.17.4*). La sauvegarde complète d'avant la mise à jour (base, `.keshbackup`, dossier des documents) reste recommandée. Le `.env` ne change pas ; les compose fournis transmettent une variable nouvelle, facultative (`KESH_SKIP_PRE_UPGRADE_BACKUP`).

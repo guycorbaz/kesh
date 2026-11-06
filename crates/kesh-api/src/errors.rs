@@ -713,6 +713,13 @@ pub enum AppError {
     #[error("Aucun statement ne correspond au compte sélectionné")]
     BankImportNoMatchingStatement { found_ibans: Vec<String> },
 
+    /// Story 33-2 (#922, C-e332-6) — un relevé CAMT.053 que Kesh ne sait pas relire
+    /// comme la 0.17.3 : impossible de vérifier qu'il ne reprend pas une ligne déjà
+    /// importée → `422`, sans écriture ni confirmation possible. `cause` :
+    /// `reading`, `selection`, `line_count` ou `misaligned`.
+    #[error("Relecture héritée du relevé impossible : {cause}")]
+    BankImportLegacyRereadFailed { cause: &'static str },
+
     /// Story 8-3 — fichier déjà importé pour cette company sans
     /// `confirmDuplicateFile=true`. **Code HTTP changé 8-3 : 409 → 422**
     /// (cohérence avec autres `BankImport*` qui sont aussi des refus
@@ -2411,6 +2418,25 @@ impl IntoResponse for AppError {
                             "Aucun statement ne correspond au compte sélectionné.",
                         ),
                         "details": { "foundIbans": found_ibans }
+                    }
+                });
+                (StatusCode::UNPROCESSABLE_ENTITY, Json(body)).into_response()
+            }
+
+            AppError::BankImportLegacyRereadFailed { cause } => {
+                // La cause seule : aucun contenu du fichier dans les journaux.
+                tracing::warn!(
+                    cause,
+                    "relevé CAMT.053 refusé : relecture héritée impossible"
+                );
+                let body = serde_json::json!({
+                    "error": {
+                        "code": "BANK_IMPORT_LEGACY_REREAD_FAILED",
+                        "message": t(
+                            "bank-import-errors-legacy-reread-failed",
+                            "Kesh ne peut pas vérifier que ce relevé ne reprend pas des lignes déjà importées par une version antérieure : il n'a rien enregistré. Demandez à votre banque un nouvel export de ce relevé ; à défaut, vérifiez dans la liste des transactions du compte quelles lignes y figurent déjà, et saisissez les autres avec un relevé saisi à la main.",
+                        ),
+                        "details": { "cause": cause }
                     }
                 });
                 (StatusCode::UNPROCESSABLE_ENTITY, Json(body)).into_response()

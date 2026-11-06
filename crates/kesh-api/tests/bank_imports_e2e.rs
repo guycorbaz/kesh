@@ -4289,7 +4289,10 @@ async fn camt_refused_file_already_imported_says_so_922(pool: MySqlPool) {
     for path in ["/api/v1/bank-imports/preview", "/api/v1/bank-imports"] {
         let (st, body) = post_819(&app, &s, path, file.clone(), &[]).await;
         assert_eq!(st, 422, "{path} : {body}");
-        assert_eq!(body["error"]["code"], "BANK_IMPORT_DUPLICATE_FILE", "{body}");
+        assert_eq!(
+            body["error"]["code"], "BANK_IMPORT_DUPLICATE_FILE",
+            "{body}"
+        );
         assert_eq!(
             body["error"]["details"]["existingImportId"].as_i64(),
             Some(existing),
