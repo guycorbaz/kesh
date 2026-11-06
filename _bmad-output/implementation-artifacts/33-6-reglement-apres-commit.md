@@ -1,6 +1,6 @@
 # Story 33-6 : le règlement n'est plus annoncé en échec après son commit (#450)
 
-Status: ready-for-dev
+Status: review
 
 *Fiche rédigée le 2026-11-06 en autonomie (Opus 5.5), worktree `/home/gcorbaz/devel/kesh-e33`, branche `story/33-0-kickoff`,
 numéros de ligne de `4ef19901`. Release **0.17.5**, Epic 33. **Aucune migration.** Registre : `e33-choix-autonomes-e334.md`,
@@ -57,13 +57,13 @@ lecture après le commit, pour qu'aucun 404 ni 500 n'annonce en échec un règle
 
 ## Tâches
 
-- [ ] **T1 — rouge** : `tests/invoice_settlement_response_e2e.rs`, AC-3, et tests `kesh-db` : `settle_invoice(...)` rend `outcome.invoice.version` égal à la ligne
+- [x] **T1 — rouge** : `tests/invoice_settlement_response_e2e.rs`, AC-3, et tests `kesh-db` : `settle_invoice(...)` rend `outcome.invoice.version` égal à la ligne
   relue, `outcome.amount_settled` égal au `SUM` : rouges à la compilation, écrits d'abord.
-- [ ] **T2** : forme `find_with_lines_in_tx` à `repositories/invoices.rs`, réemployée par `find_by_id_with_lines` (DRY) ; sorties des trois fonctions ; trois handlers.
+- [x] **T2** : forme `find_with_lines_in_tx` à `repositories/invoices.rs`, réemployée par `find_by_id_with_lines` (DRY) ; sorties des trois fonctions ; trois handlers.
   ⚠️ `kesh-db` touché : **gate complet même en cours de boucle** (`CLAUDE.md`, exception `kesh-db`).
-- [ ] **T3** : garde lexicale dans le même fichier de test.
-- [ ] **T4** : `mcp_envois.rs`, `mcp_sends` ; `mcp-sends-format.ts`, `McpSendDetail.test.ts`.
-- [ ] **T5** : CHANGELOG *Corrigé* (`refs #450`, `refs #768`, `refs #773`).
+- [x] **T3** : garde lexicale dans le même fichier de test.
+- [x] **T4** : `mcp_envois.rs`, `mcp_sends` ; `mcp-sends-format.ts`, `McpSendDetail.test.ts`.
+- [x] **T5** : CHANGELOG *Corrigé* (`refs #450`, `refs #768`, `refs #773`).
 
 ### Mutations nommées (P2)
 
@@ -92,10 +92,25 @@ après règlement (`/usr/bin/grep -n 'règlement.*404' docs/api-external.md docs
 - 2026-11-06 : validation P2 (Opus 5.5), remédiation (Opus 5.5). Un LOW. **L-R6-1** : tranché, forme `_in_tx` (lu : `mcp_sends.rs:235-266`). Prémisse du rapport nuancée : `trouver` ne fait qu'**une** requête, et non plusieurs ; le geste reste petit, mais touche `kesh-db`. « Quatre lignes » retiré.
 - 2026-11-06 : validation P3 (Sonnet 5.5, lentilles R et F), remédiation (Opus 5.5). Deux LOW, aucun réfuté. **L-R6-1** : tranché, traité, plus de condition à l'AC-7 ni à T4 (lus : `McpSendDetail.svelte:106-109,295-296`, `mcp-sends-format.ts:81-103`) ; le site est dans le format, non dans le composant. **L-R6-2** : AC-1 et M5 (lus : `invoice_settlements_write.rs:797-802`, `invoices.rs:1228-1233,1357-1361`). ⚠️ M5 changée plus que le rapport ne le demandait : un solde solde **tout** le reste (`:415`), si bien que `Decimal::ZERO` y est la valeur juste, et la mutation d'origine, placée sur le solde, aurait survécu. Mutations : 5, inchangées.
 
+- 2026-11-06 : développement (Opus 5.5), worktree `/home/gcorbaz/devel/kesh-e335`, commit de code `25b0ed3d`. **Étape 0** : les deux LOW de la P3 sont déjà portés par la fiche (lus : `mcp-sends-format.ts:81-103`, `invoice_settlements_write.rs:797-802`) ; aucun point « à établir ». **Prémisse corrigée, C-e334-33** : la fiche et sa P3 parlaient d'une réponse perdue « hors `ApiError` ». Lu : `api-client.ts:338-347`, `toFetchApiError` lève une `ApiError` de statut 0. Le correctif tel qu'écrit n'aurait donc jamais servi sur une vraie coupure : la branche vise `!isApiError(err) || err.status === 0`. Une capture et une phrase du manuel d'administration ajoutées, l'état étant visible. Le retour de `cancel_settlement` est un type neuf, `CancelledSettlement`, `cancel_settlement_in_tx` gardant le sien.
+
 ## Dev Agent Record
 
 ### Agent Model Used
 
+Claude Opus 5.5.
+
 ### Completion Notes List
 
+- **Rouges d'abord** (`kesh-gate-logs/e335/rouges.log`) : tests `kesh-db` rouges **à la compilation** (`E0609`, champs `invoice`, `lines`, `amount_settled`, `amount_due` absents) ; côté API, avant le correctif, 7 tests, 6 passés, 1 rouge, la garde `the_three_handlers_read_nothing_after_the_write`. ⚠️ **Les cinq tests d'égalité passaient déjà avant le correctif, et c'est attendu** : le comportement nominal ne change pas, le 404 n'étant pas reproductible (C-e334-10). Ils prouvent que la lecture dans la transaction rend le même état, et les mutations M1, M2, M4, M5 prouvent qu'ils mordent.
+- **Mutations** (`e335/mut/synthese-33-6.log`), cinq sur cinq tuées. M1 : `la_sortie_du_reglement_porte_la_facture_relue` et les trois tests HTTP de règlement. M2 : les tests HTTP dont `a_cancellation_returns_what_was_written`, et la sortie `kesh-db`. M3 : `the_three_handlers_read_nothing_after_the_write`. M4 : les trois tests HTTP de règlement. M5 : `a_write_off_returns_what_was_written`, `la_sortie_du_solde_porte_la_facture_relue`.
+- **Gates au commit `25b0ed3d`** (`e335/33-6/`) : `test-fast.sh --ci` vert, 4823 exécutés, 4823 passés, 12 ignorés ; `cargo build --workspace --all-targets` vert ; `npm run check` 0 erreur ; `lint-i18n-ownership` vert ; Vitest 2699 tests, 218 fichiers ; `npm run build` vert. **E2E complet** sur `kesh_e2e_e335` recréée : 377 tests, 352 passés, 18 ignorés, **7 échecs, tous de la KF-029** (`mode-expert:26,41`, `onboarding-path-b:65,92`, `onboarding:57,77,150`), 16,2 min.
+- **Capture** : `e335/captures/33-6-reponse-perdue-recharger.png`, réponses d'API simulées (requête de décision interrompue) sur base jetable, thème clair.
+- **Manuels** : `admin-manual.tex` (*Envoyer tel quel*), PDF régénéré, contrôlé aplati (« quand la réponse du serveur se perd » lu). `user-manual` et `api-external.md` : aucun 404 après règlement décrit (`:519` est le 404 d'une facture réellement introuvable). PDF de la brochure et du manuel utilisateur, régénérés sans changement de source, rétablis.
+- **AC-5** : `cancel_settlement_in_tx` et `reconciliation_cancel` ne lisent rien de plus ; les appelants `tests/` compilent sans modification, leurs champs étant conservés.
+- **Non traité, à tracer** : neuf sites de relecture après commit côté fournisseur (issue demandée, C-e334-8). Une réponse 500 ne propose pas *Recharger* : depuis le correctif, un 500 de la décision annule l'écriture, mais un proxy qui rendrait 502 ou 504 sur réponse perdue resterait sans bouton : à dire au commentaire de #773.
+- **Écart de méthode** : aucun fichier de code n'a été écrit par script hors des mutations.
+
 ### File List
+
+`crates/kesh-db/src/repositories/invoice_settlements_write.rs`, `crates/kesh-db/src/repositories/invoices.rs`, `crates/kesh-db/src/repositories/mcp_sends.rs`, `crates/kesh-db/tests/invoice_settlement.rs`, `crates/kesh-db/tests/invoice_write_off.rs`, `crates/kesh-api/src/routes/invoices.rs`, `crates/kesh-api/src/routes/mcp_envois.rs`, `crates/kesh-api/tests/invoice_settlement_response_e2e.rs` (neuf), `crates/kesh-api/tests/mcp_envois_e2e.rs`, `frontend/src/lib/features/mcp-sends/mcp-sends-format.ts`, `frontend/src/lib/features/mcp-sends/McpSendDetail.test.ts`, `docs/manual/fr/admin-manual.{tex,pdf}`, `CHANGELOG.md`, `_bmad-output/implementation-artifacts/33-6-reglement-apres-commit-review-prompt-p1.md` (neuf).
