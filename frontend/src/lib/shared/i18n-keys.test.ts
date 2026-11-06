@@ -868,7 +868,10 @@ const ATTENDU = {
 	// littéraux ; `sitesNonResolus` et `relais` inchangés.
 	// Fusion de la release 0.17.4 (2026-11-06) : les trois stories réunies, **recompté à la
 	// source** par la garde elle-même après la fusion (non additionné) : **2832**.
-	sitesTotal: 2832,
+	// Story 33-2 (#915, 2026-11-06) : **2832 → 2836** (+4) — le panneau des lignes incertaines
+	// de `BankImportUpload.svelte` : le résumé au singulier et au pluriel, et ses deux colonnes.
+	// Que des littéraux ; `sitesNonResolus` et `relais` inchangés.
+	sitesTotal: 2836,
 	sitesNonResolus: 31,
 	relais: 6,
 	// Story 26-1 (#620, AC3-bis) : **10 → 11** — `lib/features/bank-import/

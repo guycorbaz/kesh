@@ -219,3 +219,25 @@ Registre propre à ces trois fiches, **versé par union** par l'orchestrateur. C
 - **Retenu** : les barres décident sur `months`, avec une phrase juste dans tous ces cas (« Aucun mouvement net de produits ou de charges dans cet exercice ») ; le camembert décide sur `expensePosts`, avec une seule phrase pour le vide (« Aucun poste de charges à répartir dans cet exercice »), elle aussi juste dans tous les cas.
 - **Écartées** : (a) distinguer au camembert « exercice vide » et « sans poste » : une condition de plus pour deux phrases vraies toutes les deux ; (b) rendre un indicateur de lignes par l'API, pour séparer un exercice réellement vide d'un reclassement de produits : un champ de contrat pour une nuance de libellé.
 - **Réversible** : oui, frontend seul.
+
+---
+
+## Story 33-2 — choix du développement
+
+### C-e332-25 — Le plus petit `id` aussi sur le chemin de clé directe
+
+*(Ajouté le 2026-11-06, au développement.)*
+
+- **Contexte** : AC-S3 exige le plus petit `id` à `duplicateLines` comme à `uncertainLegacyLines`. L'ancien commentaire (F10) l'affirmait « déterministe via `or_insert` », mais `find_in_dedup_window` ne trie pas : le premier rencontré n'était le plus petit que par l'ordre de lecture du serveur.
+- **Retenu** : `min` explicite dans les deux chemins, partagé par `scan_lines` et donc aussi par le CSV et la saisie manuelle. Seul change, et rarement, l'`id` désigné quand plusieurs lignes portent la clé ; ni le nombre de doublons ni ce qui s'importe.
+- **Écartée** : `ORDER BY id` dans la requête : un repository touché pour une garantie qui se tient en mémoire.
+- **Réversible** : oui.
+
+### C-e332-26 — `UncertainLegacyLine` se sérialise lui-même
+
+*(Ajouté le 2026-11-06, au développement.)*
+
+- **Contexte** : `DuplicateLine` (core, avec `key`) est recopié en `DuplicateLineWarning` (API, camelCase). T3 de la fiche nomme directement `Vec<UncertainLegacyLine>` dans `PreviewWarnings`.
+- **Retenu** : le type de `kesh-core` porte `#[serde(rename_all = "camelCase")]` et paraît tel quel. Il a exactement les champs de la réponse.
+- **Écartée** : un type miroir à l'API : deux champs recopiés sans rien ajouter.
+- **Réversible** : oui.
