@@ -1,6 +1,6 @@
 # Story 33-2 : l'import CAMT refuse le relevé qu'il ne sait pas relire « à la 0.17.3 », et l'alias réduit le faux doublon
 
-Status: review
+Status: done
 
 *Fiche rédigée le 2026-11-06 en autonomie (Opus 5.5), worktree `/home/gcorbaz/devel/kesh-e33`, branche `story/33-0-kickoff`,
 numéros de ligne de `4ef19901`. Epic 33, release **0.17.5**, **sans migration**. Registre :
@@ -426,3 +426,4 @@ hérite pas ; la 33-2 ne touche pas à `parse_date` (T2). Ordre de fusion indiff
 **Captures** : `e332-01`, `02`, `03` reprises (`e2e-r4/`) ; la 02 montre le panneau neuf.
 
 **Écarts de méthode** : `.ftl`, `.tex`, `.md` modifiés par script, motif vérifié unique. Rust et Svelte par l'outil Edit seulement dans cette remédiation. **Non joué** : la coupe de MariaDB sans mode strict reste lue, non jouée.
+- 2026-11-06 — **Revue de code terminée** en quatre passes : P1 Opus/Opus/Sonnet (B 0/0/1/7, E 0/0/2/8, A 0/0/1/5), P2 ciblée Sonnet 0/0/1/5, P3 ciblée Haiku 0/0/1/4, P4 ciblée Sonnet 0/0/0/2. Les deux LOW de la P4 (intitulé « inventaire clos » de la prémisse 3 ; « donc » du CHANGELOG) restent tels quels, texte de fiche et formule juste. Gate complet et E2E au dernier commit de code `b7e964e9` ; le numéro de ligne du panneau des doublons passera au gate d'intégration.
