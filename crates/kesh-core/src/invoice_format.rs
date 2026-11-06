@@ -549,7 +549,8 @@ mod tests {
     // Story 33-1a (#926) — les libellés d'une facture fournisseur (AC15).
     #[test]
     fn supplier_invoice_labels_prefer_the_internal_number() {
-        let cas: [(Option<&str>, Option<&str>, Option<&str>, Option<&str>); 7] = [
+        type Numero<'a> = Option<&'a str>;
+        let cas: [(Numero, Numero, Numero, Numero); 7] = [
             (
                 Some("FF-2026-001"),
                 Some("ABC-123"),
