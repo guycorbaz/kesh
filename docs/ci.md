@@ -270,7 +270,7 @@ Le fail-fast avant les specs est le `globalSetup` de Playwright (`frontend/tests
 
 **Mise à jour 2026-05-21** (Story 10-1 D3) : alignement à `mariadb:10.11` partout (dev + CI + prod) pour parité avec la version Package Center Synology DSM 7.x du NAS de Guy (production v0.1.0). Compat MariaDB ≥ 10.6 confirmée par sanity check pre-flight (26 migrations passent sur 10.11 vierge, dont la VIRTUAL+UNIQUE column de `reconciliation_rules` Story 8-5b). *(Depuis la Story 33-1b, le plancher est 10.7 : `NATURAL_SORT_KEY`.)*
 
-**Historique** : la pipeline CI utilisait antérieurement MariaDB 11.4 (Story 6-1 décision 2026-04-15). Le passage à 10.11 dans Story 10-1 vise à éviter tout drift entre la version testée en CI et celle utilisée en prod sur le NAS. `architecture.md` impose toujours « MariaDB 10.6+ » comme minimum — 10.11 respecte le minimum avec marge.
+**Historique** : la pipeline CI utilisait antérieurement MariaDB 11.4 (Story 6-1 décision 2026-04-15). Le passage à 10.11 dans Story 10-1 vise à éviter tout drift entre la version testée en CI et celle utilisée en prod sur le NAS. `architecture.md` impose « MariaDB 10.7+ » comme minimum depuis la Story 33-1b (« 10.6+ » auparavant) — 10.11 respecte le minimum avec marge.
 
 ### Justification mono-version 10.11 (Story 10-2 AC #20)
 

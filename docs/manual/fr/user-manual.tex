@@ -2023,10 +2023,11 @@ dans l'e-banking. Le flux est en \textbf{deux temps} :
 
 \begin{enumerate}
     \item \emph{Quotidien} → \emph{Paiements fournisseurs} : créer un lot en
-    sélectionnant les factures à payer, que la sélection nomme par leurs deux numéros
-    (\emph{FF-2026-001 (ABC-123)})~; le détail d'un lot les nomme par le numéro interne --- seules les factures \textbf{validées} sont proposées,
-    jamais un brouillon, et \textbf{toutes} le sont, quel que soit leur nombre (depuis la
-    version~0.17.4~; avant, les 200 premières seulement) ---, puis télécharger le fichier
+    sélectionnant les factures à payer. La sélection les nomme par leurs deux numéros
+    (\emph{FF-2026-001 (ABC-123)}), le détail d'un lot par le numéro interne. Seules les
+    factures \textbf{validées} sont proposées, jamais un brouillon, et \textbf{toutes} le
+    sont, quel que soit leur nombre (depuis la version~0.17.4~; avant, les 200 premières
+    seulement). Puis télécharger le fichier
     \texttt{pain.001} généré et le déposer dans votre e-banking. Un lot ne dépasse pas
     500 factures~: au-delà, la création est refusée («~un lot de paiement ne peut pas dépasser
     500 factures~») --- faites-en plusieurs.
@@ -2782,7 +2783,7 @@ Chaque candidate reçoit un score, somme de trois critères :
 
 \begin{itemize}
     \item \textbf{Montant} (50\,\%) : le montant de la transaction égale exactement le reste dû \textbf{arrondi au centime}. Il n'y a pas de score intermédiaire : un écart d'un centime donne zéro sur ce critère.
-    \item \textbf{Référence} (40\,\%) : la référence de la transaction contient le numéro de la facture, ou l'inverse (score plein) ; ou les deux commencent par les mêmes quatre caractères au moins (demi-score).
+    \item \textbf{Référence} (40\,\%) : la référence de la transaction contient le numéro de la facture (pour une facture fournisseur, celui du fournisseur, jamais le numéro interne), ou l'inverse (score plein) ; ou les deux commencent par les mêmes quatre caractères au moins (demi-score).
     \item \textbf{Contact} (10\,\%) : le nom de la contrepartie contient celui du client de la facture, ou l'inverse.
 \end{itemize}
 
