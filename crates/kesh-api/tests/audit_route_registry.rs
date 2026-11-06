@@ -24,15 +24,15 @@
 //! ⚠️ Comparer des NOMBRES ne détecterait pas une route retirée pendant qu'une
 //! autre est ajoutée : le compte resterait égal et la dérive invisible. Le test
 //! `admin_pat_denied_e2e` peut compter, lui, parce qu'il opère sur un bloc clos
-//! entre marqueurs ; les 144 routes sont réparties dans tout le fichier.
+//! entre marqueurs ; les 145 routes sont réparties dans tout le fichier.
 //!
 //! # Deux fichiers, deux volets
 //!
 //! L'ensemble clos de l'INVENTAIRE est celui de `lib.rs` (142 routes à la
 //! release 0.17.0 — v017-3a, v016-2a et v017-4a réunies, mesuré le 2026-10-31 —,
-//! puis 144 à la 0.17.3, Story v0172-session ; dont `/mcp`, monté par
-//! `route_service` — Story 32-6a) ;
-//! celui du REGISTRE est plus large (147), car trois routes mutantes vivent dans
+//! puis 144 à la 0.17.3, Story v0172-session, et 145 à la 33-5 ; dont `/mcp`,
+//! monté par `route_service` — Story 32-6a) ;
+//! celui du REGISTRE est plus large (148), car trois routes mutantes vivent dans
 //! `routes/test_endpoints.rs` et sont montées par un `nest()`. D'où :
 //!
 //! - volet « route absente du registre » → sur les **deux** fichiers, faute de
@@ -396,6 +396,7 @@ const LIB_ROUTES: &[(&str, &str, Status, Rejeu)] = &[
     ("delete", "email_templates::restore_email_template_default", Traced, SansEcritureAuJournal),
     ("put", "companies::update_company_email", Traced, SansEcritureAuJournal),
     ("put", "companies::update_company_contact_details", Traced, SansEcritureAuJournal),
+    ("put", "companies::update_company_address", Traced, SansEcritureAuJournal),
     ("post", "fiscal_years::reopen_fiscal_year", Traced, SansEcritureAuJournal),
     ("post", "companies::unlock_company_books", Traced, SansEcritureAuJournal),
     ("post", "onboarding::reset", Traced, SansEcritureAuJournal),
@@ -959,8 +960,8 @@ fn the_registry_partition_is_what_the_story_declares() {
 
     assert_eq!(
         LIB_ROUTES.len(),
-        144,
-        "l'inventaire porte sur 144 routes (+ 1 : `/mcp`, 32-6a ; + 1 : la décision d'un \
+        145,
+        "l'inventaire porte sur 145 routes (+ 1 : l'adresse de la société, 33-5 ; + 1 : `/mcp`, 32-6a ;+ 1 : la décision d'un \
          envoi MCP, 32-8b ; + 5 : les routes mutantes des prompts du serveur MCP, 32-10a-iii ; \
          + 1 : le rattachement d'une transaction à une écriture, v017-3a ; + 2 : l'aperçu et \
          la création d'un relevé saisi à la main, v016-2a ; + 4 : le `PUT`, le `DELETE`, la \
@@ -974,8 +975,9 @@ fn the_registry_partition_is_what_the_story_declares() {
     // validation et la dévalidation d'une facture fournisseur, tracés).
     // Story v0172-session (#876, CR #891) : 135 → 136 (le `PUT` du réglage de la
     // durée d'inactivité, tracé ; le battement est exempté).
+    // Story 33-5 (#909) : 136 → 137 (la correction de l'adresse de la société).
     assert_eq!(
-        traced, 136,
+        traced, 137,
         "73 tracées avant la 25-1b, plus ses 14, plus la dévalidation (25-2-b-1, #440), \
          plus l'annulation d'un règlement client (25-3-a-1) et fournisseur (25-3-a-2, #414), \
          plus l'annulation d'un rapprochement (25-3-b, #418), plus le solde du reste \
@@ -999,7 +1001,8 @@ fn the_registry_partition_is_what_the_story_declares() {
          refs #671), plus la saisie manuelle d'un relevé (v016-2a, refs #816), plus le \
          `PUT`, le `DELETE`, la validation et la dévalidation d'une facture fournisseur \
          (v017-4a, refs #849), plus le réglage de la durée d'inactivité de la session \
-         (v0172-session, refs #891)"
+         (v0172-session, refs #891), plus la correction de l'adresse de la société \
+         (33-5, refs #909)"
     );
     assert_eq!(
         exempt, 5,
@@ -1012,7 +1015,7 @@ fn the_registry_partition_is_what_the_story_declares() {
     );
     assert_eq!(
         LIB_ROUTES.len() + TEST_ENDPOINT_ROUTES.len(),
-        147,
+        148,
         "le registre est plus large que l'inventaire, et c'est voulu"
     );
 }
@@ -1382,8 +1385,8 @@ fn the_replay_partition_is_what_the_story_declares() {
     );
     assert_eq!(exemptees, 3, "full_import, /seed, /reset");
     assert_eq!(
-        sans_ecriture, 119,
-        "118 routes de lib.rs (v0172-session : + 2 — le réglage de la durée d'inactivité \
+        sans_ecriture, 120,
+        "119 routes de lib.rs (33-5 : + 1 — l'adresse de la société ; v0172-session : + 2 — le réglage de la durée d'inactivité \
          et le battement d'activité ; v017-4a : + 4 — la saisie fournisseur et la complétion \
          d'import reclassées, le `PUT` et le `DELETE` d'un brouillon) — 112 avant \
          (la remise à zéro y est entrée, 15-7b2 ; la suppression d'un \
@@ -1401,7 +1404,8 @@ fn the_replay_partition_is_what_the_story_declares() {
     // Story v017-4a (#849) : 141 → 145 (quatre routes de la facture fournisseur).
     // Story v0172-session (#876, #891) : 145 → 147 (le réglage de la durée
     // d'inactivité, le battement d'activité).
-    assert_eq!(tout.len(), 147);
+    // Story 33-5 (#909) : 147 → 148 (l'adresse de la société).
+    assert_eq!(tout.len(), 148);
 }
 
 /// Visiteur `syn` d'un fichier de routes : relève chaque appel à la primitive

@@ -453,6 +453,11 @@ pub fn build_router_avec_registre(
             "/api/v1/companies/current/contact-details",
             put(routes::companies::update_company_contact_details),
         )
+        // Story 33-5 (#909) : corriger l'adresse de la société après l'assistant.
+        .route(
+            "/api/v1/companies/current/address",
+            put(routes::companies::update_company_address),
+        )
         // Story 14-2 : réouverture d'un exercice clôturé (Admin uniquement +
         // motif obligatoire + audit + garde LIFO). Plus strict que la clôture
         // (Comptable+, comptable_routes) — opération réglementaire sensible.

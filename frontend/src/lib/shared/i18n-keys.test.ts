@@ -868,7 +868,10 @@ const ATTENDU = {
 	// littéraux ; `sitesNonResolus` et `relais` inchangés.
 	// Fusion de la release 0.17.4 (2026-11-06) : les trois stories réunies, **recompté à la
 	// source** par la garde elle-même après la fusion (non additionné) : **2832**.
-	sitesTotal: 2832,
+	// Story 33-5 (#909) : **2832 → 2846** (+14), tous dans `settings/+page.svelte` — les cinq
+	// champs, Modifier, Enregistrer, Annuler, l'avis, l'aide, et les quatre messages de
+	// `saveAddress`. Que des littéraux ; `sitesNonResolus` et `relais` inchangés.
+	sitesTotal: 2846,
 	sitesNonResolus: 31,
 	relais: 6,
 	// Story 26-1 (#620, AC3-bis) : **10 → 11** — `lib/features/bank-import/

@@ -37,6 +37,10 @@ pub struct CompanyJson {
     pub address: String,
     /// Adresse structurée (source de vérité éditable, #213).
     pub address_structured: crate::address_input::StructuredAddressInput,
+    /// Faux si le pays enregistré n'est pas un code ISO connu (Story 33-5, #909) :
+    /// la QR-facture ne se produit pas, et l'écran le signale sans recopier la
+    /// liste. Un pays vide (société d'avant les composants) n'est pas inconnu.
+    pub address_country_known: bool,
     pub ide_number: Option<String>,
     pub org_type: String,
     pub accounting_language: String,
@@ -63,7 +67,10 @@ impl From<Company> for CompanyJson {
     fn from(c: Company) -> Self {
         let address_structured =
             crate::address_input::StructuredAddressInput::from(&c.structured_address());
+        let address_country_known =
+            crate::address_input::is_known_country(Some(&c.address_country));
         Self {
+            address_country_known,
             id: c.id,
             name: c.name,
             first_name: c.first_name,
@@ -300,6 +307,83 @@ pub async fn update_company_contact_details(
                 Some(serde_json::json!({
                     "before": { "phone": company.phone, "website": company.website },
                     "after": { "phone": updated.phone, "website": updated.website },
+                })),
+            ),
+        )
+        .await?;
+    }
+    tx.commit()
+        .await
+        .map_err(|e| AppError::Database(map_db_error(e)))?;
+    Ok(Json(CompanyJson::from(updated)))
+}
+
+/// Payload de `PUT /api/v1/companies/current/address` (Story 33-5, #909).
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UpdateCompanyAddressRequest {
+    pub address: crate::address_input::StructuredAddressInput,
+    pub version: i32,
+}
+
+/// PUT /api/v1/companies/current/address — corrige l'adresse de la société après
+/// l'assistant (Story 33-5, #909), sur le patron d'[`update_company_contact_details`].
+///
+/// ⛔ **`validate_required`, et non `validate_optional_keeping`** (C-e334-5) : un
+/// pays inconnu est refusé **même inchangé**. Le contact peut garder le sien parce
+/// que sa QR est facultative ; la société est créancière de toute QR-facture, et
+/// accepter son pays annoncerait un succès en laissant le PDF en panne.
+///
+/// `is_stub` ne bouge pas : le lever reste l'affaire de l'assistant. Une facture au
+/// PDF déjà figé ne change pas.
+pub async fn update_company_address(
+    State(state): State<AppState>,
+    Extension(current_user): Extension<CurrentUser>,
+    Json(req): Json<UpdateCompanyAddressRequest>,
+) -> Result<Json<CompanyJson>, AppError> {
+    let company = get_company_for(&current_user, &state.pool).await?;
+    let address = req.address.validate_required()?;
+
+    let changes = CompanyUpdate {
+        name: company.name.clone(),
+        first_name: company.first_name.clone(),
+        last_name: company.last_name.clone(),
+        address_structured: address,
+        ide_number: company.ide_number.clone(),
+        org_type: company.org_type,
+        accounting_language: company.accounting_language,
+        instance_language: company.instance_language,
+        // Reportés à l'identique : `update_in_tx` est un full-replace.
+        email: company.email.clone(),
+        phone: company.phone.clone(),
+        website: company.website.clone(),
+    };
+
+    let mut tx = state
+        .pool
+        .begin()
+        .await
+        .map_err(|e| AppError::Database(map_db_error(e)))?;
+    let updated = companies::update_in_tx(&mut tx, company.id, req.version, changes).await?;
+    // Le repository court-circuite le no-op sans incrémenter `version` (KF-004).
+    if updated.version != company.version {
+        audit_log::insert_in_tx(
+            &mut tx,
+            // `::user` est sûr : la route est dans `admin_routes`, seul bloc
+            // porteur de `require_not_pat`.
+            NewAuditLogEntry::user(
+                current_user.user_id,
+                "company.updated",
+                "company",
+                company.id,
+                // Les cinq composants seulement (25-1b, AC 4, 8, 9).
+                Some(serde_json::json!({
+                    "before": crate::address_input::StructuredAddressInput::from(
+                        &company.structured_address()
+                    ),
+                    "after": crate::address_input::StructuredAddressInput::from(
+                        &updated.structured_address()
+                    ),
                 })),
             ),
         )

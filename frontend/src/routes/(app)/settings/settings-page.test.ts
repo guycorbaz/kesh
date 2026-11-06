@@ -21,8 +21,10 @@ const releaseBooksLockMock = vi.fn();
 // reçoit la lecture et l'enregistrement du réglage de la durée d'inactivité.
 const fetchSessionSettingsMock = vi.fn();
 const updateSessionSettingsMock = vi.fn();
+const updateCompanyAddressMock = vi.fn();
 vi.mock('$lib/features/settings/settings.api', () => ({
 	fetchCompanyCurrent: () => fetchCompanyCurrentMock(),
+	updateCompanyAddress: (...a: unknown[]) => updateCompanyAddressMock(...a),
 	updateCompanyContactDetails: vi.fn(),
 	updateCompanyEmail: vi.fn(),
 	lockBooks: (...a: unknown[]) => lockBooksMock(...a),
@@ -184,5 +186,164 @@ describe('page Paramètres — erreurs du verrou de période (Story 28-2, A1/A2)
 	it('A2 — déverrouillage en échec imprévu → le générique', async () => {
 		const erreur = await deverrouiller(new Error('boom'));
 		expect(erreur.textContent).toBe('Erreur inattendue.');
+	});
+});
+
+// Story 33-5 (#909, AC-9) — corriger l'adresse de la société.
+describe('page Paramètres — adresse de la société (Story 33-5)', () => {
+	const structured = {
+		street: 'Rue Test',
+		building: '1',
+		postalCode: '1000',
+		city: 'Lausanne',
+		country: 'SU',
+	};
+
+	function societe(overrides: Record<string, unknown> = {}): CompanyCurrentResponse {
+		const base = reponse(null);
+		return {
+			...base,
+			company: {
+				...base.company,
+				addressStructured: structured,
+				addressCountryKnown: true,
+				...overrides,
+			} as CompanyCurrentResponse['company'],
+		};
+	}
+
+	function connecter(role: string) {
+		authState.login({ userId: '1', username: 'u', role, expiresIn: 900 }, { broadcast: false });
+	}
+
+	beforeEach(() => {
+		vi.clearAllMocks();
+		fetchSessionSettingsMock.mockResolvedValue({
+			sessionIdleMinutes: 60,
+			version: 0,
+			min: 1,
+			max: 1440,
+		});
+	});
+
+	it('Administrateur : préremplit depuis les composants et envoie la version', async () => {
+		connecter('Admin');
+		fetchCompanyCurrentMock.mockResolvedValue(societe());
+		updateCompanyAddressMock.mockResolvedValue({
+			...societe().company,
+			address: 'Rue Test 1\n1000 Lausanne\nCH',
+			version: 2,
+		});
+		const { findByTestId, getByTestId, queryByTestId } = render(Page);
+		await fireEvent.click(await findByTestId('settings-company-address-edit'));
+
+		const postal = getByTestId('settings-company-address-postal-code-input') as HTMLInputElement;
+		expect(postal.value).toBe('1000');
+		const country = getByTestId('settings-company-address-country-input') as HTMLInputElement;
+		expect(country.value).toBe('SU');
+		await fireEvent.input(country, { target: { value: 'CH' } });
+		await fireEvent.click(getByTestId('settings-company-address-save'));
+
+		await vi.waitFor(() => expect(updateCompanyAddressMock).toHaveBeenCalledTimes(1));
+		expect(updateCompanyAddressMock).toHaveBeenCalledWith({
+			address: { ...structured, country: 'CH' },
+			version: 1,
+		});
+		await vi.waitFor(() =>
+			expect(queryByTestId('settings-company-address-country-input')).toBeNull(),
+		);
+		authState.clearSession({ broadcast: false });
+	});
+
+	it('une société sans composants part de CH, le serveur en décide', async () => {
+		connecter('Admin');
+		fetchCompanyCurrentMock.mockResolvedValue(
+			societe({
+				addressStructured: { street: '', building: '', postalCode: '', city: '', country: '' },
+			}),
+		);
+		const { findByTestId, getByTestId } = render(Page);
+		await fireEvent.click(await findByTestId('settings-company-address-edit'));
+		const country = getByTestId('settings-company-address-country-input') as HTMLInputElement;
+		expect(country.value).toBe('CH');
+		authState.clearSession({ broadcast: false });
+	});
+
+	it('affiche le refus du serveur et garde le formulaire ouvert', async () => {
+		connecter('Admin');
+		fetchCompanyCurrentMock.mockResolvedValue(societe());
+		updateCompanyAddressMock.mockRejectedValue({
+			code: 'VALIDATION_ERROR',
+			message: 'adresse : le pays « XX » est inconnu',
+			status: 400,
+		});
+		const { findByTestId, getByTestId } = render(Page);
+		await fireEvent.click(await findByTestId('settings-company-address-edit'));
+		await fireEvent.click(getByTestId('settings-company-address-save'));
+		const error = await findByTestId('settings-company-address-error');
+		expect(error.textContent).toContain('XX');
+		expect(getByTestId('settings-company-address-country-input')).toBeTruthy();
+		authState.clearSession({ broadcast: false });
+	});
+
+	it('un conflit de version recharge la société et le dit', async () => {
+		connecter('Admin');
+		fetchCompanyCurrentMock.mockResolvedValueOnce(societe());
+		fetchCompanyCurrentMock.mockResolvedValueOnce(societe({ version: 9 }));
+		updateCompanyAddressMock.mockRejectedValue({
+			code: 'OPTIMISTIC_LOCK_CONFLICT',
+			message: 'conflit',
+			status: 409,
+		});
+		const { findByTestId, getByTestId } = render(Page);
+		await fireEvent.click(await findByTestId('settings-company-address-edit'));
+		await fireEvent.click(getByTestId('settings-company-address-save'));
+		const error = await findByTestId('settings-company-address-error');
+		expect(error.textContent).toContain('rechargées');
+		expect(fetchCompanyCurrentMock).toHaveBeenCalledTimes(2);
+
+		// Le second essai part avec la version rechargée.
+		updateCompanyAddressMock.mockResolvedValue(societe({ version: 10 }).company);
+		await fireEvent.click(getByTestId('settings-company-address-save'));
+		await vi.waitFor(() => expect(updateCompanyAddressMock).toHaveBeenCalledTimes(2));
+		expect(updateCompanyAddressMock.mock.calls[1][0].version).toBe(9);
+		authState.clearSession({ broadcast: false });
+	});
+
+	for (const role of ['Comptable', 'Consultation']) {
+		it(`${role} : lit l'adresse et l'avis, sans bouton Modifier`, async () => {
+			connecter(role);
+			fetchCompanyCurrentMock.mockResolvedValue(societe({ addressCountryKnown: false }));
+			const { findByTestId, queryByTestId } = render(Page);
+			await findByTestId('settings-company-address');
+			expect(queryByTestId('settings-company-address-edit')).toBeNull();
+			expect(queryByTestId('settings-company-address-country-unknown')).not.toBeNull();
+			authState.clearSession({ broadcast: false });
+		});
+	}
+
+	it("l'avis suit le jugement du serveur, et rien d'autre", async () => {
+		connecter('Admin');
+		fetchCompanyCurrentMock.mockResolvedValue(societe({ addressCountryKnown: true }));
+		const { findByTestId, queryByTestId } = render(Page);
+		await findByTestId('settings-company-address');
+		expect(queryByTestId('settings-company-address-country-unknown')).toBeNull();
+		authState.clearSession({ broadcast: false });
+	});
+
+	it("l'avis disparaît quand la correction est enregistrée", async () => {
+		connecter('Admin');
+		fetchCompanyCurrentMock.mockResolvedValue(societe({ addressCountryKnown: false }));
+		updateCompanyAddressMock.mockResolvedValue(
+			societe({ addressCountryKnown: true, version: 2 }).company,
+		);
+		const { findByTestId, getByTestId, queryByTestId } = render(Page);
+		await findByTestId('settings-company-address-country-unknown');
+		await fireEvent.click(getByTestId('settings-company-address-edit'));
+		await fireEvent.click(getByTestId('settings-company-address-save'));
+		await vi.waitFor(() =>
+			expect(queryByTestId('settings-company-address-country-unknown')).toBeNull(),
+		);
+		authState.clearSession({ broadcast: false });
 	});
 });

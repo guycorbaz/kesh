@@ -8,6 +8,14 @@ Le contenu est rédigé en français à destination des **fiduciaires, PME, ind�
 
 ---
 
+## [0.17.5] — Non publié
+
+### Ajouté
+
+- **L'adresse de la société se corrige dans les paramètres** ([#909](https://github.com/guycorbaz/kesh/issues/909), [#817](https://github.com/guycorbaz/kesh/issues/817)) : *Paramètres → Organisation*, bouton *Modifier* en face de l'adresse (administrateurs), sans repasser par l'assistant. Une société enregistrée avant la 0.17.4 avec un pays invalide, comme « SU », était privée de QR-factures sans remède : un avis le signale désormais, et la correction les rétablit. La même correction renseigne les champs d'une société qui n'avait qu'un texte d'adresse libre. Une facture dont le PDF est déjà figé ne change pas.
+
+---
+
 ## [0.17.4] — 2026-11-06
 
 La 0.17.4 est une version corrective : la session plus sûre, une sauvegarde automatique avant les migrations à venir, et les défauts relevés à l'usage. Elle ne porte **aucune migration** ; seules les sessions ouvertes sont effacées au premier démarrage, si bien que **chaque utilisateur se reconnecte une fois**. **Le retour à la 0.17.3 est possible sans restauration, après avoir vidé la table des sessions** (manuel d'administration, *Passer à la 0.17.4*). La sauvegarde complète d'avant la mise à jour (base, `.keshbackup`, dossier des documents) reste recommandée. Le `.env` ne change pas ; les compose fournis transmettent une variable nouvelle, facultative (`KESH_SKIP_PRE_UPGRADE_BACKUP`).

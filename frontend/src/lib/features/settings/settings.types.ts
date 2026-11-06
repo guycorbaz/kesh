@@ -1,7 +1,23 @@
+/** Adresse structurée de la société, telle que le serveur la rend et la reçoit. */
+export interface StructuredAddress {
+	street: string;
+	building: string;
+	postalCode: string;
+	city: string;
+	country: string | null;
+}
+
 export interface CompanyJson {
 	id: number;
 	name: string;
 	address: string;
+	/** Composants de l'adresse (#213), source du formulaire de correction (Story 33-5, #909). */
+	addressStructured: StructuredAddress;
+	/**
+	 * Faux si le pays enregistré n'est pas un code ISO connu (Story 33-5, #909) :
+	 * la QR-facture ne se produit pas. Jugé par le serveur, l'écran ne recopie pas la liste.
+	 */
+	addressCountryKnown: boolean;
 	ideNumber: string | null;
 	orgType: string;
 	accountingLanguage: string;
@@ -36,6 +52,12 @@ export interface UpdateCompanyContactDetailsRequest {
 	/** `null` ou vide = effacer (la ligne disparaît du PDF). */
 	phone: string | null;
 	website: string | null;
+	version: number;
+}
+
+/** Payload de `PUT /companies/current/address` (Admin-only, Story 33-5, #909). */
+export interface UpdateCompanyAddressRequest {
+	address: StructuredAddress;
 	version: number;
 }
 
