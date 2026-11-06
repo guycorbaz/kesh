@@ -138,9 +138,9 @@ Décision de Guy (#922, 2026-11-06, epic) : **refus de ce relevé, message clair
 - **AC-N1** — Un relevé sans entité : aperçu `200`, création `201`, comme avant.
 - **AC-N2** — Un relevé à entités et CDATA dans ses textes, relisible (`first_file_819`) : aperçu `200`, création `201`.
 - **AC-N3** — Le test parcourt les fixtures du dépôt (`crates/kesh-import/tests/fixtures/camt053/*.xml`, 19 fichiers,
-  `frontend/tests/e2e/fixtures/camt053_*.xml`, 4 fichiers) et les range en deux classes. **Refusés** : la lecture corrigée rend une erreur : rien à relire. **Acceptés** : pour l'IBAN de leur premier relevé, `legacy_0173_aliases` rend `Ok`. Une
+  `frontend/tests/e2e/fixtures/camt053_*.xml`, 4 fichiers) et les range en deux classes. **Refusés** : la lecture corrigée rend une erreur : rien à relire. **Acceptés** : pour **chaque IBAN** du fichier (revue P1, B6, E-6), `legacy_0173_aliases` rend `Ok`. Une
   exception ne s'admet que nommée, cause dite, au Change Log, et si sa construction relève d'E1 à E4. **Pas de test muet** : le test échoue si
-  `acceptés + refusés ≠ 23`, et si `acceptés` diffère d'une constante en dur, relevée au développement et écrite au Change Log. `v04_multi_stmt.xml`
+  `acceptés + refusés ≠ 23`, si `acceptés` diffère d'une constante en dur, relevée au développement et écrite au Change Log (19), et si les refusés ne sont pas exactement `v04_latin1`, `v04_latin1_hors_texte`, `v04_truncated`, `v04_truncated_after_stmt_close`. `v04_multi_stmt.xml`
   (deux IBAN distincts, donc sans E3 ni E4) et `v04_characterization.xml` (entités et CDATA, IBAN simple) sont nommés dans le test et passent, sans exception.
 
 ### Reconnaissance (la protection des livres)
@@ -327,6 +327,15 @@ Les **cinq** points de la « Fiche 1 » ; l'orchestrateur édite l'issue en le d
 | M23 | aperçu : le refus de relecture rendu même si `existing` est posé | `camt_refused_file_already_imported_says_so_922` |
 | M24 | aperçu : `existing` posé, relecture en échec, `200` au lieu d'un refus | idem |
 | M25 | textes de `LegacyLine` non coupés à la largeur de colonne | test pur de largeur (AC-F4) |
+| M4 (revue P1) | contrôle de date et de montant retiré | `camt_refused_when_an_amount_is_cut_in_the_same_statement_922`, `camt_short_year_on_booking_date_is_misaligned_922`, `misaligned_within_the_same_statement_922` |
+| M5 (revue P1) | désalignement sur la date seule | `camt_refused_when_an_amount_is_cut_in_the_same_statement_922`, `misaligned_within_the_same_statement_922` |
+| M25 (revue P1) | textes de `LegacyLine::from_draft` non coupés | `legacy_line_cuts_each_text_to_its_column_915`, `alias_key_comes_from_the_cut_texts_915` |
+| M26 | contrôle du rang retiré (`selection.position != statement_position`) | `camt_refused_when_the_readings_choose_other_statements_922`, `misaligned_when_the_readings_choose_other_statements_922` |
+| M27 | clé de l'alias calculée sur les textes non coupés | `alias_key_comes_from_the_cut_texts_915` |
+| M28 | doublon : le plus petit `id` de la clé, au lieu de celui des lignes aux mêmes textes | `duplicate_designates_the_smallest_id_among_equal_texts_915` |
+| M29-M35 | `existing_keys_with_texts` : une colonne vidée, une par colonne, sept mutations | `camt_full_line_through_the_database_stays_recognised_922`, `camt_line_restored_from_a_backup_stays_recognised_922` (et d'autres, selon la colonne) |
+| M36-M42 | `LineTexts::from_draft` : une colonne vidée, une par colonne, sept mutations | idem |
+| M43 (revue P2, L4) | rang forcé à 0 dans `select_statement_by_iban` | `misaligned_when_the_readings_choose_other_statements_922`, et le test de route |
 
 Une survivante se traite ou se justifie au Change Log ; un fichier muté restauré se `touch` (cargo garde sinon le binaire muté).
 

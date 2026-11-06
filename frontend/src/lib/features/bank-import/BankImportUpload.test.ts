@@ -929,4 +929,14 @@ describe('BankImportUpload — lignes incertaines (Story 33-2)', () => {
 		await previewWithA(c);
 		expect(q(c, 'warning-uncertain-legacy-lines')).toBeNull();
 	});
+
+	// Revue P2 (L3) — les deux panneaux voisins numérotent de la même façon.
+	it('le panneau des doublons numérote lui aussi à partir de 1', async () => {
+		const { c } = await mount();
+		await previewWithA(c, {
+			warnings: { duplicateLines: [{ newIndex: 0, existingTransactionId: 9, key: 'k' }] },
+		});
+		const row = get(c, 'warning-duplicate-lines-row');
+		expect(row.querySelector('td')?.textContent).toBe('1');
+	});
 });

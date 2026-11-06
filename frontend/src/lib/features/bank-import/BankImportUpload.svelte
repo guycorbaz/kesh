@@ -579,7 +579,7 @@
 					<table class="mt-2 w-full table-auto text-sm">
 						<thead>
 							<tr>
-								<th class="text-left">{i18nMsg('bank-import-labels-duplicate-col-index', 'Index')}</th>
+								<th class="text-left">{i18nMsg('bank-import-labels-duplicate-col-index', 'Ligne')}</th>
 								<th class="text-left">{i18nMsg('bank-import-labels-duplicate-col-existing-id', 'ID existant')}</th>
 								<th class="text-left">{i18nMsg('bank-import-labels-duplicate-col-key', 'Clé')}</th>
 							</tr>
@@ -587,7 +587,7 @@
 						<tbody>
 							{#each preview.warnings.duplicateLines as dup (dup.newIndex)}
 								<tr data-testid="warning-duplicate-lines-row">
-									<td>{dup.newIndex}</td>
+									<td>{dup.newIndex + 1}</td>
 									<td>{dup.existingTransactionId}</td>
 									<td><code>{dup.key}</code></td>
 								</tr>
