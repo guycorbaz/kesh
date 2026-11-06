@@ -4042,10 +4042,31 @@ async fn camt_import_witness_montage_by_corrected_reading_819(pool: MySqlPool) {
     );
 }
 
-/// AC-1.6 — le relevé dont la lecture héritée, ou sa sélection par IBAN,
-/// échoue s'importe, sans alias : les lignes du montage « 0.17.3 » ne sont
-/// alors pas reconnues — aucune erreur, jamais de `?`.
-async fn imports_without_alias_819(pool: MySqlPool, file: Vec<u8>) {
+// =========================================================================
+// Story 33-2 (#922, #915) — l'import CAMT.053 refuse le relevé qu'il ne sait pas
+// relire « à la 0.17.3 », et l'alias ne reconnaît plus une ligne que si tous ses
+// textes sont ceux de la lecture héritée. XML synthétique, écrit ici.
+// =========================================================================
+
+/// Attend le refus de relecture (AC-R1 à R4) : code, cause et message.
+fn assert_reread_refusal_922(status: u16, body: &Value, cause: &str) {
+    assert_eq!(status, 422, "{body}");
+    assert_eq!(
+        body["error"]["code"], "BANK_IMPORT_LEGACY_REREAD_FAILED",
+        "{body}"
+    );
+    assert_eq!(body["error"]["details"]["cause"], cause, "{body}");
+    assert!(
+        body["error"]["message"]
+            .as_str()
+            .is_some_and(|m| m.contains("Kesh ne peut pas vérifier")),
+        "{body}"
+    );
+}
+
+/// Le refus, à l'aperçu **et** à la création, sur un compte qui porte un relevé
+/// enregistré comme la 0.17.3 (le cas que l'import ne doit pas laisser passer).
+async fn assert_refused_on_both_routes_922(pool: MySqlPool, file: Vec<u8>, cause: &str) {
     let s = setup(&pool).await;
     let app = spawn_app(pool.clone()).await;
     montage_819(
@@ -4055,13 +4076,182 @@ async fn imports_without_alias_819(pool: MySqlPool, file: Vec<u8>) {
         kesh_import::camt053::parse_legacy_0173,
     )
     .await;
-    let (st, preview) = post_819(&app, &s, "/api/v1/bank-imports/preview", file.clone(), &[]).await;
-    assert_eq!(st, 200, "{preview}");
-    assert!(
-        duplicate_indexes_819(&preview).is_empty(),
-        "sans alias, aucune ligne de la 0.17.3 n'est reconnue : {preview}"
+    let (st, body) = post_819(&app, &s, "/api/v1/bank-imports/preview", file.clone(), &[]).await;
+    assert_reread_refusal_922(st, &body, cause);
+    let (st, body) = post_819(&app, &s, "/api/v1/bank-imports", file, &[]).await;
+    assert_reread_refusal_922(st, &body, cause);
+}
+
+/// LINE3 dont la date de comptabilisation est en CDATA : la lecture héritée la lit
+/// vide et échoue (E1).
+fn line3_cdata_date_922() -> String {
+    LINE3_819.replace("<Dt>2026-10-12</Dt>", "<Dt><![CDATA[2026-10-12]]></Dt>")
+}
+
+fn file_with_cdata_date_922() -> Vec<u8> {
+    camt_819(
+        "STMT-922-C",
+        IBAN_819,
+        "1350.00",
+        &[LINE1_819, LINE2_819, &line3_cdata_date_922()],
+    )
+}
+
+/// IBAN du compte écrit avec une référence de caractère : la lecture héritée n'en
+/// garde que le dernier morceau.
+const IBAN_CHAR_REF_922: &str = "CH44&#51;1999123000889012";
+
+/// Deux relevés du même compte : le premier à IBAN à référence de caractère (que
+/// la lecture corrigée sélectionne), le second à IBAN simple (que la lecture
+/// héritée sélectionne, ne lisant plus l'IBAN du premier).
+fn two_statements_922(first: &[&str], second: &[&str]) -> Vec<u8> {
+    fn stmt(id: &str, iban: &str, entries: &[&str]) -> String {
+        let doc = String::from_utf8(camt_819(id, iban, "1350.00", entries)).unwrap();
+        let from = doc.find("<Stmt>").unwrap();
+        let to = doc.find("</Stmt>").unwrap() + "</Stmt>".len();
+        doc[from..to].to_string()
+    }
+    let (a, b) = (
+        stmt("STMT-922-A", IBAN_CHAR_REF_922, first),
+        stmt("STMT-922-B", IBAN_819, second),
     );
-    let (st, created) = post_819(&app, &s, "/api/v1/bank-imports", file, &[]).await;
+    format!(
+        r#"<?xml version="1.0" encoding="UTF-8"?>
+<Document xmlns="urn:iso:std:iso:20022:tech:xsd:camt.053.001.04">
+  <BkToCstmrStmt>{a}{b}</BkToCstmrStmt>
+</Document>
+"#
+    )
+    .into_bytes()
+}
+
+/// AC-R1 — E1 : la lecture héritée échoue.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn camt_refused_when_the_legacy_reading_fails_922(pool: MySqlPool) {
+    let file = file_with_cdata_date_922();
+    assert!(kesh_import::camt053::parse_legacy_0173(&file).is_err());
+    assert_refused_on_both_routes_922(pool, file, "reading").await;
+}
+
+/// AC-R2 — E2 : la sélection par IBAN de la lecture héritée échoue.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn camt_refused_when_the_legacy_selection_fails_922(pool: MySqlPool) {
+    let file = camt_819(
+        "STMT-922-D",
+        IBAN_CHAR_REF_922,
+        "1350.00",
+        &[LINE1_819, LINE2_819, LINE3_819],
+    );
+    assert!(kesh_import::camt053::parse_legacy_0173(&file).is_ok());
+    assert_refused_on_both_routes_922(pool, file, "selection").await;
+}
+
+/// AC-R3 — E3 : les deux lectures choisissent deux relevés de longueurs différentes.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn camt_refused_when_line_counts_differ_922(pool: MySqlPool) {
+    let file = two_statements_922(&[LINE1_819, LINE2_819, LINE3_819], &[LINE1_819, LINE2_819]);
+    assert_refused_on_both_routes_922(pool, file, "line_count").await;
+}
+
+/// AC-R4 — E4 : même nombre de lignes, mais d'autres lignes : à d'autres dates
+/// d'abord ; à la même date et d'un autre montant ensuite (M5).
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn camt_refused_when_readings_are_misaligned_922(pool: MySqlPool) {
+    let other_date = LINE3_819.replace("2026-10-12", "2026-10-20");
+    let file = two_statements_922(
+        &[LINE1_819, LINE2_819, LINE3_819],
+        &[LINE1_819, LINE2_819, &other_date],
+    );
+    let s = setup(&pool).await;
+    let app = spawn_app(pool.clone()).await;
+    let (st, body) = post_819(&app, &s, "/api/v1/bank-imports/preview", file.clone(), &[]).await;
+    assert_reread_refusal_922(st, &body, "misaligned");
+    let (st, body) = post_819(&app, &s, "/api/v1/bank-imports", file, &[]).await;
+    assert_reread_refusal_922(st, &body, "misaligned");
+
+    // Même date, autre montant : les deux lectures ne parlent pas de la même ligne.
+    let other_amount = LINE3_819.replace(">50.00<", ">51.00<");
+    let file = two_statements_922(
+        &[LINE1_819, LINE2_819, LINE3_819],
+        &[LINE1_819, LINE2_819, &other_amount],
+    );
+    let (st, body) = post_819(&app, &s, "/api/v1/bank-imports/preview", file.clone(), &[]).await;
+    assert_reread_refusal_922(st, &body, "misaligned");
+    let (st, body) = post_819(&app, &s, "/api/v1/bank-imports", file, &[]).await;
+    assert_reread_refusal_922(st, &body, "misaligned");
+}
+
+/// AC-R5 — aucune confirmation ne lève le refus, pas même sur un relevé dont le
+/// solde est faux (refus de solde levé, refus de relecture maintenu).
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn camt_refusal_has_no_bypass_922(pool: MySqlPool) {
+    let s = setup(&pool).await;
+    let app = spawn_app(pool.clone()).await;
+    let confirm = [
+        ("confirmDuplicateLines", "import".to_string()),
+        ("confirmBalanceMismatch", "true".to_string()),
+        ("confirmDuplicateFile", "true".to_string()),
+    ];
+    let (st, body) = post_819(
+        &app,
+        &s,
+        "/api/v1/bank-imports",
+        file_with_cdata_date_922(),
+        &confirm,
+    )
+    .await;
+    assert_reread_refusal_922(st, &body, "reading");
+
+    let wrong_balance = camt_819(
+        "STMT-922-E",
+        IBAN_819,
+        "9999.00",
+        &[LINE1_819, LINE2_819, &line3_cdata_date_922()],
+    );
+    let (st, body) = post_819(&app, &s, "/api/v1/bank-imports", wrong_balance, &confirm).await;
+    assert_reread_refusal_922(st, &body, "reading");
+}
+
+async fn table_counts_922(pool: &MySqlPool) -> (i64, i64, i64) {
+    let mut out = [0_i64; 3];
+    for (i, table) in ["bank_imports", "bank_transactions", "audit_log"]
+        .iter()
+        .enumerate()
+    {
+        out[i] = sqlx::query_scalar(&format!("SELECT COUNT(*) FROM {table}"))
+            .fetch_one(pool)
+            .await
+            .unwrap();
+    }
+    (out[0], out[1], out[2])
+}
+
+/// AC-R6 — le refus n'écrit rien, et ne laisse ni verrou ni transaction : un
+/// import valide du même compte réussit juste après.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn camt_refusal_writes_nothing_then_a_valid_import_succeeds_922(pool: MySqlPool) {
+    let s = setup(&pool).await;
+    let app = spawn_app(pool.clone()).await;
+    let before = table_counts_922(&pool).await;
+    let (st, body) = post_819(
+        &app,
+        &s,
+        "/api/v1/bank-imports",
+        file_with_cdata_date_922(),
+        &[("confirmDuplicateLines", "import".into())],
+    )
+    .await;
+    assert_reread_refusal_922(st, &body, "reading");
+    assert_eq!(table_counts_922(&pool).await, before);
+
+    let (st, created) = post_819(
+        &app,
+        &s,
+        "/api/v1/bank-imports",
+        overlapping_file_819(),
+        &[],
+    )
+    .await;
     assert_eq!(st, 201, "{created}");
     assert_eq!(
         tx_count_of_import_819(&pool, created["id"].as_i64().unwrap()).await,
@@ -4069,30 +4259,288 @@ async fn imports_without_alias_819(pool: MySqlPool, file: Vec<u8>) {
     );
 }
 
-/// AC-1.6 (i) — une date en CDATA : la lecture héritée échoue (date lue vide).
+/// AC-R8 — un relevé sans ligne n'a rien à dédoubler : il n'est pas refusé, même
+/// si sa relecture échoue.
 #[sqlx::test(migrations = "../kesh-db/test-schema")]
-async fn camt_import_without_alias_when_the_legacy_reading_fails_819(pool: MySqlPool) {
-    let cdata_date = LINE3_819.replace("<Dt>2026-10-12</Dt>", "<Dt><![CDATA[2026-10-12]]></Dt>");
-    let file = camt_819(
-        "STMT-819-C",
-        IBAN_819,
-        "1350.00",
-        &[LINE1_819, LINE2_819, &cdata_date],
+async fn camt_without_lines_is_not_refused_922(pool: MySqlPool) {
+    let s = setup(&pool).await;
+    let app = spawn_app(pool.clone()).await;
+    let file = camt_819("STMT-922-F", IBAN_CHAR_REF_922, "1000.00", &[]);
+    let (st, preview) = post_819(&app, &s, "/api/v1/bank-imports/preview", file.clone(), &[]).await;
+    assert_eq!(st, 200, "{preview}");
+    let (st, created) = post_819(&app, &s, "/api/v1/bank-imports", file, &[]).await;
+    assert_eq!(st, 201, "{created}");
+    assert_eq!(
+        tx_count_of_import_819(&pool, created["id"].as_i64().unwrap()).await,
+        0
     );
-    assert!(kesh_import::camt053::parse_legacy_0173(&file).is_err());
-    imports_without_alias_819(pool, file).await;
 }
 
-/// AC-1.6 (ii) — l'IBAN du relevé écrit avec une référence de caractère : la
-/// lecture héritée le lit tronqué, sa sélection par IBAN échoue.
+/// AC-R9 (C-e332-21) — un fichier déjà importé (ce qu'a pu faire la 0.17.4) dont la
+/// relecture échoue reçoit « déjà importé », non le conseil d'un nouvel export ; la
+/// confirmation du fichier ne lève pas pour autant le refus de relecture.
 #[sqlx::test(migrations = "../kesh-db/test-schema")]
-async fn camt_import_without_alias_when_the_legacy_selection_fails_819(pool: MySqlPool) {
-    let file = camt_819(
-        "STMT-819-D",
-        "CH44&#51;1999123000889012",
-        "1350.00",
-        &[LINE1_819, LINE2_819, LINE3_819],
+async fn camt_refused_file_already_imported_says_so_922(pool: MySqlPool) {
+    let s = setup(&pool).await;
+    let app = spawn_app(pool.clone()).await;
+    let file = file_with_cdata_date_922();
+    let existing = montage_819(&pool, &s, &file, kesh_import::camt053::parse).await;
+
+    for path in ["/api/v1/bank-imports/preview", "/api/v1/bank-imports"] {
+        let (st, body) = post_819(&app, &s, path, file.clone(), &[]).await;
+        assert_eq!(st, 422, "{path} : {body}");
+        assert_eq!(body["error"]["code"], "BANK_IMPORT_DUPLICATE_FILE", "{body}");
+        assert_eq!(
+            body["error"]["details"]["existingImportId"].as_i64(),
+            Some(existing),
+            "{body}"
+        );
+        assert_eq!(
+            body["error"]["details"]["existingFilename"], "releve-0173.xml",
+            "{body}"
+        );
+    }
+
+    let (st, body) = post_819(
+        &app,
+        &s,
+        "/api/v1/bank-imports",
+        file,
+        &[("confirmDuplicateFile", "true".into())],
+    )
+    .await;
+    assert_reread_refusal_922(st, &body, "reading");
+}
+
+/// Un relevé équilibré du compte du montage (solde d'ouverture : 1000.00).
+fn file_with_922(stmt_id: &str, closing: &str, entries: &[&str]) -> Vec<u8> {
+    camt_819(stmt_id, IBAN_819, closing, entries)
+}
+
+/// Une ligne de 100.00 au 10 octobre, identifiant et libellé tels qu'écrits en XML.
+fn line_922(ref_xml: Option<&str>, libelle: Option<&str>) -> String {
+    let reference = ref_xml
+        .map(|r| format!("<NtryRef>{r}</NtryRef>"))
+        .unwrap_or_default();
+    let info = libelle
+        .map(|l| format!("<AddtlNtryInf>{l}</AddtlNtryInf>"))
+        .unwrap_or_default();
+    format!(
+        r#"<Ntry><Amt Ccy="CHF">100.00</Amt><CdtDbtInd>CRDT</CdtDbtInd><BookgDt><Dt>2026-10-10</Dt></BookgDt>{reference}{info}</Ntry>"#
+    )
+}
+
+/// Les `id` des transactions d'un import, par ordre croissant.
+async fn tx_ids_of_import_922(pool: &MySqlPool, import_id: i64) -> Vec<i64> {
+    sqlx::query_scalar("SELECT id FROM bank_transactions WHERE import_id = ? ORDER BY id")
+        .bind(import_id)
+        .fetch_all(pool)
+        .await
+        .unwrap()
+}
+
+/// `(newIndex, existingTransactionId)` d'un tableau d'avertissements de l'aperçu.
+fn pairs_922(preview: &Value, field: &str) -> Vec<(u64, i64)> {
+    preview["warnings"][field]
+        .as_array()
+        .unwrap_or_else(|| panic!("{field} absent : {preview}"))
+        .iter()
+        .map(|d| {
+            (
+                d["newIndex"].as_u64().unwrap(),
+                d["existingTransactionId"].as_i64().unwrap(),
+            )
+        })
+        .collect()
+}
+
+/// AC-S2 — référence en CDATA, lue vide en 0.17.3 : la ligne enregistrée ainsi
+/// reste reconnue par un autre fichier. Témoin de la protection des livres.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn camt_cdata_reference_stays_recognised_922(pool: MySqlPool) {
+    let s = setup(&pool).await;
+    let app = spawn_app(pool.clone()).await;
+    let line = line_922(Some("<![CDATA[REF-CD]]>"), Some("Versement"));
+    let first = file_with_922("STMT-922-G", "1100.00", &[&line]);
+    montage_819(&pool, &s, &first, kesh_import::camt053::parse_legacy_0173).await;
+    let other = file_with_922("STMT-922-H", "1150.00", &[&line, LINE3_819]);
+    let (st, preview) =
+        post_819(&app, &s, "/api/v1/bank-imports/preview", other.clone(), &[]).await;
+    assert_eq!(st, 200, "{preview}");
+    assert_eq!(duplicate_indexes_819(&preview), vec![0]);
+    let (st, created) = post_819(&app, &s, "/api/v1/bank-imports", other, &[]).await;
+    assert_eq!(st, 201, "{created}");
+    assert_eq!(
+        tx_count_of_import_819(&pool, created["id"].as_i64().unwrap()).await,
+        1
     );
-    assert!(kesh_import::camt053::parse_legacy_0173(&file).is_ok());
-    imports_without_alias_819(pool, file).await;
+}
+
+/// AC-S3 — deux lignes existantes de même clé d'alias, seule la seconde a les mêmes
+/// textes : c'est elle qui est désignée.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn camt_alias_finds_the_row_with_equal_texts_915(pool: MySqlPool) {
+    let s = setup(&pool).await;
+    let app = spawn_app(pool.clone()).await;
+    let reprise = line_922(Some("REF &amp; Co &lt;1&gt;"), Some("Libelle B"));
+    let first = file_with_922(
+        "STMT-915-A",
+        "1200.00",
+        &[&line_922(Some("1"), Some("Libelle A")), &reprise],
+    );
+    let import = montage_819(&pool, &s, &first, kesh_import::camt053::parse_legacy_0173).await;
+    let ids = tx_ids_of_import_922(&pool, import).await;
+    assert_eq!(ids.len(), 2);
+
+    let other = file_with_922("STMT-915-B", "1150.00", &[&reprise, LINE3_819]);
+    let (st, preview) = post_819(&app, &s, "/api/v1/bank-imports/preview", other, &[]).await;
+    assert_eq!(st, 200, "{preview}");
+    assert_eq!(pairs_922(&preview, "duplicateLines"), vec![(0, ids[1])]);
+    assert_eq!(pairs_922(&preview, "uncertainLegacyLines"), vec![]);
+}
+
+/// Monte `existing` comme la 0.17.3, puis dépose `new` : la ligne n'est pas un
+/// doublon, l'aperçu la signale, la création l'importe et la trace le compte.
+async fn assert_uncertain_not_duplicate_915(pool: MySqlPool, existing: &str, new: &str) {
+    let s = setup(&pool).await;
+    let app = spawn_app(pool.clone()).await;
+    let first = file_with_922("STMT-915-C", "1100.00", &[existing]);
+    let import = montage_819(&pool, &s, &first, kesh_import::camt053::parse_legacy_0173).await;
+    let ids = tx_ids_of_import_922(&pool, import).await;
+
+    let other = file_with_922("STMT-915-D", "1100.00", &[new]);
+    let (st, preview) =
+        post_819(&app, &s, "/api/v1/bank-imports/preview", other.clone(), &[]).await;
+    assert_eq!(st, 200, "{preview}");
+    assert_eq!(pairs_922(&preview, "duplicateLines"), vec![]);
+    assert_eq!(
+        pairs_922(&preview, "uncertainLegacyLines"),
+        vec![(0, ids[0])]
+    );
+
+    let (st, created) = post_819(&app, &s, "/api/v1/bank-imports", other, &[]).await;
+    assert_eq!(st, 201, "{created}");
+    let id = created["id"].as_i64().unwrap();
+    assert_eq!(tx_count_of_import_819(&pool, id).await, 1);
+    let d = common::audit_details(&pool, "bank_imports", id, "bank_import.created")
+        .await
+        .unwrap();
+    assert_eq!(d["uncertain_legacy_lines_imported"], 1, "{d}");
+    assert!(d.get("duplicate_lines_skipped").is_none(), "{d}");
+}
+
+/// AC-F1 — l'exemple de #915 : référence « 1 » et libellé A en base, ligne neuve
+/// `REF & Co <1>` au libellé B.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn camt_truncated_reference_is_not_a_false_duplicate_915(pool: MySqlPool) {
+    assert_uncertain_not_duplicate_915(
+        pool,
+        &line_922(Some("1"), Some("Libelle A")),
+        &line_922(Some("REF &amp; Co &lt;1&gt;"), Some("Libelle B")),
+    )
+    .await;
+}
+
+/// AC-F2 — second commentaire de #915 : référence en CDATA, ligne existante sans
+/// référence ni même libellé, même jour et même montant.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn camt_cdata_reference_is_not_a_false_duplicate_915(pool: MySqlPool) {
+    assert_uncertain_not_duplicate_915(
+        pool,
+        &line_922(None, Some("Libelle A")),
+        &line_922(Some("<![CDATA[REF-NEW]]>"), Some("Libelle B")),
+    )
+    .await;
+}
+
+/// AC-F5 — la limite qui reste : mêmes sept textes après lecture héritée, rien ne
+/// distingue la ligne d'une ligne déjà importée. Écartée par défaut, importable par
+/// `confirmDuplicateLines=import`.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn camt_identical_texts_stay_a_duplicate_915(pool: MySqlPool) {
+    let s = setup(&pool).await;
+    let app = spawn_app(pool.clone()).await;
+    let first = file_with_922("STMT-915-E", "1100.00", &[&line_922(Some("1"), None)]);
+    let import = montage_819(&pool, &s, &first, kesh_import::camt053::parse_legacy_0173).await;
+    let ids = tx_ids_of_import_922(&pool, import).await;
+
+    let new = line_922(Some("REF &amp; Co &lt;1&gt;"), None);
+    let other = file_with_922("STMT-915-F", "1150.00", &[&new, LINE3_819]);
+    let (st, preview) =
+        post_819(&app, &s, "/api/v1/bank-imports/preview", other.clone(), &[]).await;
+    assert_eq!(st, 200, "{preview}");
+    assert_eq!(pairs_922(&preview, "duplicateLines"), vec![(0, ids[0])]);
+    assert_eq!(pairs_922(&preview, "uncertainLegacyLines"), vec![]);
+
+    let (st, created) = post_819(&app, &s, "/api/v1/bank-imports", other, &[]).await;
+    assert_eq!(st, 201, "{created}");
+    assert_eq!(
+        tx_count_of_import_819(&pool, created["id"].as_i64().unwrap()).await,
+        1,
+        "écartée par défaut"
+    );
+
+    // Un autre fichier, autre empreinte : sa ligne LINE3 est déjà en base à présent,
+    // et *Importer quand même* reprend tout.
+    let other = file_with_922("STMT-915-G", "1150.00", &[&new, LINE3_819]);
+    let (st, created) = post_819(
+        &app,
+        &s,
+        "/api/v1/bank-imports",
+        other,
+        &[("confirmDuplicateLines", "import".into())],
+    )
+    .await;
+    assert_eq!(st, 201, "{created}");
+    assert_eq!(
+        tx_count_of_import_819(&pool, created["id"].as_i64().unwrap()).await,
+        2,
+        "Importer quand même"
+    );
+}
+
+/// AC-S5 (b) — une borne de période coupée par une référence se lit en l'an 26, sans
+/// erreur, à la lecture héritée : pas de refus, et la reconnaissance reste entière.
+/// Rougit si une borne d'années atteint la relecture (C-e332-22).
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn camt_short_year_in_period_is_not_refused_922(pool: MySqlPool) {
+    let s = setup(&pool).await;
+    let app = spawn_app(pool.clone()).await;
+    montage_819(
+        &pool,
+        &s,
+        &first_file_819(),
+        kesh_import::camt053::parse_legacy_0173,
+    )
+    .await;
+    let file = String::from_utf8(overlapping_file_819())
+        .unwrap()
+        .replace(
+            "<FrDtTm>2026-10-01T00:00:00</FrDtTm>",
+            "<FrDtTm>&#x32;026-10-01T00:00:00</FrDtTm>",
+        )
+        .into_bytes();
+    let (st, preview) = post_819(&app, &s, "/api/v1/bank-imports/preview", file.clone(), &[]).await;
+    assert_eq!(st, 200, "{preview}");
+    assert_eq!(duplicate_indexes_819(&preview), vec![0, 1]);
+    let (st, created) = post_819(&app, &s, "/api/v1/bank-imports", file, &[]).await;
+    assert_eq!(st, 201, "{created}");
+    assert_eq!(
+        tx_count_of_import_819(&pool, created["id"].as_i64().unwrap()).await,
+        1
+    );
+}
+
+/// AC-S5 (c) — la date de comptabilisation coupée se lit en l'an 26, sans erreur :
+/// c'est un désalignement, et non un échec de lecture.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn camt_short_year_on_booking_date_is_misaligned_922(pool: MySqlPool) {
+    let line3 = LINE3_819.replace("<Dt>2026-10-12</Dt>", "<Dt>&#x32;026-10-12</Dt>");
+    let file = camt_819(
+        "STMT-922-S",
+        IBAN_819,
+        "1350.00",
+        &[LINE1_819, LINE2_819, &line3],
+    );
+    assert_refused_on_both_routes_922(pool, file, "misaligned").await;
 }
