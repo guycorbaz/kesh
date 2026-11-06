@@ -173,3 +173,10 @@ Rédigé le 2026-11-06, à la rédaction des fiches. Numéros de ligne de `4ef19
 - **Retenu.** `internalNumber` et `supplierInvoiceNumber` ajoutés à `PaymentBatchItemResponse`, par une seule lecture dédiée, scopée société, réemployée par `from_parts` ; le détail en forme courte ; les échecs depuis `openInvoices`, déjà chargée. Limite courte voisine, corrigée ici selon la règle de l'epic.
 - **Écartées.** Ajouter les colonnes à `PaymentBatchItem` : cinq lectures, et l'entité sert aussi l'export. Une issue : la correction tient en une lecture.
 - **Réversible.** Oui.
+
+## C-e331-27 — La liste MCP des factures fournisseur perd quelques lignes par page
+
+- **Établi au développement.** `numero_interne` (AC18, `C-e331-22`) porte l'élément de `kesh_factures_fournisseur` à 372 octets : à 40 par défaut et 70 au maximum, les plafonds mesurés (13 312 et 23 552 octets, `mcp_outils_e2e::tailles_mesurees`) sont franchis, et l'outil refusait la page (« le résultat dépasse ce qu'un envoi peut porter »).
+- **Retenu.** 62 au maximum, 34 par défaut, révisés sur la mesure comme la balance âgée (`C-32-9-44`). `limit` à 63-70 devient un refus de paramètre : dit au CHANGELOG.
+- **Écartée.** Omettre le numéro à la liste : la fiche demande les deux (AC18). Remonter les plafonds : ils bornent la taille d'un envoi, ils ne se règlent pas ici.
+- **Réversible.** Oui.

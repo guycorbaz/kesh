@@ -479,7 +479,7 @@ async fn validation_passes_the_rc1_purchase_entry(pool: MySqlPool) {
     assert_eq!(date, jour(2026, 6, 15));
     assert_eq!(
         libelle,
-        "Facture fournisseur FF-G - Fournisseur rapproché SA"
+        "Facture fournisseur FF-2020-001 (FF-G) - Fournisseur rapproché SA"
     );
     let lignes: Vec<(i64, Decimal, Decimal, Option<i64>)> = sqlx::query_as(
         "SELECT account_id, debit, credit, project_id FROM journal_entry_lines \

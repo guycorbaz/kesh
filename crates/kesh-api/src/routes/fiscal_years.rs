@@ -396,13 +396,25 @@ pub async fn reopen_fiscal_year(
         )));
     }
 
-    let fy = fiscal_years::reopen(
-        &state.pool,
-        current_user.user_id,
-        current_user.company_id,
-        id,
-        motif,
-    )
+    // Story 33-1a (#926, C-e331-2) — rejouée sur interblocage : la réouverture tient
+    // l'exercice puis demande ses postérieurs, alors que la validation d'une facture
+    // fournisseur demande désormais les autres exercices de l'année. Transaction
+    // unique, audit compris, sûre à relancer ; un refus métier sort en
+    // `DbError::Invariant`, qui ne se rejoue pas.
+    let fy = kesh_db::retry::retry_on_deadlock("fiscal_years::reopen", || {
+        let motif = motif.clone();
+        let pool = state.pool.clone();
+        async move {
+            fiscal_years::reopen(
+                &pool,
+                current_user.user_id,
+                current_user.company_id,
+                id,
+                motif,
+            )
+            .await
+        }
+    })
     .await
     .map_err(map_reopen_error)?;
 

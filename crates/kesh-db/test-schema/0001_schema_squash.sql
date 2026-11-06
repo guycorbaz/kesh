@@ -1,6 +1,6 @@
 -- SQUASH DU SCHÉMA DE TEST — Story 22-5 (#251). GÉNÉRÉ, NE PAS ÉDITER.
 -- Régénérer : scripts/regen-test-schema.sh
--- Équivalent des 89 migrations de crates/kesh-db/migrations/,
+-- Équivalent des 90 migrations de crates/kesh-db/migrations/,
 -- rejouées en UN batch DDL par base éphémère de test.
 --
 -- Le garde-fou crates/kesh-db/tests/test_schema_guard.rs compare ce schéma
@@ -351,6 +351,7 @@ CREATE TABLE `company_invoice_settings` (
   `default_discount_account_id` bigint(20) DEFAULT NULL,
   `default_bank_fees_account_id` bigint(20) DEFAULT NULL,
   `default_bad_debt_account_id` bigint(20) DEFAULT NULL,
+  `supplier_internal_number_format` varchar(64) NOT NULL DEFAULT 'FF-{YEAR}-{SEQ:03}',
   PRIMARY KEY (`company_id`),
   KEY `fk_cis_receivable` (`default_receivable_account_id`),
   KEY `fk_cis_revenue` (`default_revenue_account_id`),
@@ -377,7 +378,8 @@ CREATE TABLE `company_invoice_settings` (
   CONSTRAINT `chk_cis_journal` CHECK (cast(`default_sales_journal` as char charset binary) in (cast('Achats' as char charset binary),cast('Ventes' as char charset binary),cast('Banque' as char charset binary),cast('Caisse' as char charset binary),cast('OD' as char charset binary))),
   CONSTRAINT `chk_cis_format_nonempty` CHECK (char_length(trim(`invoice_number_format`)) > 0),
   CONSTRAINT `chk_cis_je_template_nonempty` CHECK (char_length(trim(`journal_entry_description_template`)) > 0),
-  CONSTRAINT `chk_cis_cn_format_nonempty` CHECK (char_length(trim(`credit_note_number_format`)) > 0)
+  CONSTRAINT `chk_cis_cn_format_nonempty` CHECK (char_length(trim(`credit_note_number_format`)) > 0),
+  CONSTRAINT `chk_cis_supplier_format_nonempty` CHECK (char_length(trim(`supplier_internal_number_format`)) > 0)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 DROP TABLE IF EXISTS `contact_persons`;
@@ -586,13 +588,15 @@ CREATE TABLE `fiscal_years` (
   `status` varchar(10) NOT NULL DEFAULT 'Open' COMMENT 'Open|Closed',
   `created_at` datetime(3) NOT NULL DEFAULT current_timestamp(3),
   `updated_at` datetime(3) NOT NULL DEFAULT current_timestamp(3) ON UPDATE current_timestamp(3),
+  `supplier_invoice_next_number` bigint(20) NOT NULL DEFAULT 1,
   PRIMARY KEY (`id`),
   UNIQUE KEY `uq_fiscal_years_company_name` (`company_id`,`name`),
   UNIQUE KEY `uq_fiscal_years_company_start_date` (`company_id`,`start_date`),
   CONSTRAINT `fk_fiscal_years_company` FOREIGN KEY (`company_id`) REFERENCES `companies` (`id`),
   CONSTRAINT `chk_fiscal_years_dates` CHECK (`end_date` > `start_date`),
   CONSTRAINT `chk_fiscal_years_status` CHECK (cast(`status` as char charset binary) in (cast('Open' as char charset binary),cast('Closed' as char charset binary))),
-  CONSTRAINT `chk_fiscal_years_name_nonempty` CHECK (char_length(trim(`name`)) > 0)
+  CONSTRAINT `chk_fiscal_years_name_nonempty` CHECK (char_length(trim(`name`)) > 0),
+  CONSTRAINT `chk_fiscal_years_supplier_next_positive` CHECK (`supplier_invoice_next_number` >= 1)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 DROP TABLE IF EXISTS `imported_supplier_invoices`;
@@ -1235,6 +1239,7 @@ CREATE TABLE `supplier_invoices` (
   `company_id` bigint(20) NOT NULL,
   `contact_id` bigint(20) NOT NULL,
   `supplier_invoice_number` varchar(64) DEFAULT NULL,
+  `internal_number` varchar(64) DEFAULT NULL,
   `status` varchar(16) NOT NULL DEFAULT 'open',
   `invoice_date` date NOT NULL,
   `due_date` date DEFAULT NULL,
@@ -1254,6 +1259,7 @@ CREATE TABLE `supplier_invoices` (
   `updated_at` datetime(3) NOT NULL DEFAULT current_timestamp(3) ON UPDATE current_timestamp(3),
   `project_id` bigint(20) DEFAULT NULL,
   PRIMARY KEY (`id`),
+  UNIQUE KEY `uq_supplier_invoices_internal_number` (`company_id`,`internal_number`),
   KEY `fk_supplier_invoices_purchase_je` (`purchase_journal_entry_id`),
   KEY `fk_supplier_invoices_settlement_bank` (`settlement_bank_account_id`),
   KEY `fk_supplier_invoices_settlement_account` (`settlement_account_id`),

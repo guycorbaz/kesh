@@ -73,6 +73,9 @@ pub struct SupplierInvoiceResponse {
     pub id: i64,
     pub contact_id: i64,
     pub supplier_invoice_number: Option<String>,
+    /// Le numéro interne (Story 33-1a, #926) — **`null` pour un brouillon jamais
+    /// validé** ; le champ est toujours présent.
+    pub internal_number: Option<String>,
     pub status: String,
     pub invoice_date: NaiveDate,
     pub due_date: Option<NaiveDate>,
@@ -222,6 +225,7 @@ impl SupplierInvoiceResponse {
             id: inv.id,
             contact_id: inv.contact_id,
             supplier_invoice_number: inv.supplier_invoice_number,
+            internal_number: inv.internal_number,
             status: inv.status,
             invoice_date: inv.invoice_date,
             due_date: inv.due_date,
@@ -301,6 +305,7 @@ pub struct SupplierInvoiceListItemResponse {
     pub contact_id: i64,
     pub contact_name: String,
     pub supplier_invoice_number: Option<String>,
+    pub internal_number: Option<String>,
     pub status: String,
     pub invoice_date: NaiveDate,
     pub due_date: Option<NaiveDate>,
@@ -316,6 +321,7 @@ impl From<kesh_db::repositories::supplier_invoices::SupplierInvoiceListItem>
             contact_id: it.contact_id,
             contact_name: it.contact_name,
             supplier_invoice_number: it.supplier_invoice_number,
+            internal_number: it.internal_number,
             status: it.status,
             invoice_date: it.invoice_date,
             due_date: it.due_date,

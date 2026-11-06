@@ -41,9 +41,9 @@ async fn apply_migrations_up_to(
     assert!(
         n <= all.len(),
         "apply_migrations_up_to: n={} > total={} — vérifier que le calcul \
-         `total - 55` (fenêtre d'upgrade, FRONTIÈRE figée à 34) reste \
+         `total - 56` (fenêtre d'upgrade, FRONTIÈRE figée à 34) reste \
          cohérent avec l'ajout de migrations futures. Si une migration a été ajoutée à \
-         la branche, l'assertion `total == 89` du test upgrade_path_preserves_data \
+         la branche, l'assertion `total == 90` du test upgrade_path_preserves_data \
          doit également échouer, c'est son rôle : elle signale qu'il faut décider \
          explicitement si la fenêtre s'élargit (bumper `total` seul) ou si la \
          frontière doit rester à 34 (bumper `total` ET la fenêtre). Cf. garde-fou \
@@ -60,8 +60,8 @@ async fn apply_migrations_up_to(
     sub.run(pool).await
 }
 
-/// AC #15a — cas générique upgrade path : `total - 55` migrations appliquées
-/// (**34** à ce jour) + seed + `MIGRATOR.run()` final, qui applique les **55**
+/// AC #15a — cas générique upgrade path : `total - 56` migrations appliquées
+/// (**34** à ce jour) + seed + `MIGRATOR.run()` final, qui applique les **56**
 /// dernières. Assertion : seed préservé à travers la fenêtre d'upgrade.
 ///
 /// ⚠️ Les nombres ci-dessus se recomptent, ils ne se relisent pas — cf. le
@@ -122,13 +122,14 @@ async fn upgrade_path_preserves_data(pool: MySqlPool) {
     // + bank_imports_manual_source (Story v016-2a, refs #816) = 87.
     // + supplier_invoices_draft (Story v017-4a, refs #849) = 88.
     // + installation_settings (Story v0172-session, refs #876, refs #891) = 89.
+    // + supplier_invoice_internal_number (Story 33-1a, refs #926) = 90.
     let total = kesh_db::MIGRATOR.migrations.len();
     assert_eq!(
-        total, 89,
-        "89 migrations attendues (88 précédentes + Story v0172-session : installation_settings)"
+        total, 90,
+        "90 migrations attendues (89 précédentes + Story 33-1a : supplier_invoice_internal_number)"
     );
 
-    // Étape 1 : applique toutes les migrations sauf les 55 dernières. La
+    // Étape 1 : applique toutes les migrations sauf les 56 dernières. La
     // fenêtre d'upgrade démarre donc à la 35ᵉ, `20260614000001_vat_accounts_config`
     // (Story 18-1a), et court jusqu'à la dernière du dépôt. Ne pas ré-énumérer
     // ici les migrations de la fenêtre : une liste nominative se périme à chaque
@@ -136,17 +137,17 @@ async fn upgrade_path_preserves_data(pool: MySqlPool) {
     // plus bas. Le seul nombre qui fait foi est celui du `total - N` ci-dessous.
     //
     // Note `total - N` : expression relative à la longueur totale, tandis que
-    // l'assertion `total == 89` ci-dessus est INTENTIONNELLEMENT codée en dur
+    // l'assertion `total == 90` ci-dessus est INTENTIONNELLEMENT codée en dur
     // pour fail-loud sur toute évolution non revue. À chaque migration ajoutée,
     // le mainteneur doit (1) bumper ce compte (2) incrémenter `N` du même pas,
     // de sorte que `total - N` — la frontière — reste **constant**.
     //
     // Frontière actuelle : **34**. Le test applique donc les 34 premières
     // migrations (jusqu'à `20260613000001_vat_rates_crud` incluse), seede des
-    // données, puis joue les 55 restantes comme « fenêtre d’upgrade ».
+    // données, puis joue les 56 restantes comme « fenêtre d’upgrade ».
     //
-    // ⚠️ `N` DOIT être incrémenté en même temps que `total`. Le laisser à 54
-    // avec `total = 89` porterait la frontière à 35 : le test continuerait de
+    // ⚠️ `N` DOIT être incrémenté en même temps que `total`. Le laisser à 55
+    // avec `total = 90` porterait la frontière à 35 : le test continuerait de
     // passer en testant une fenêtre plus étroite d'une migration.
     // Story 16-1a : 21 → 22, frontière inchangée (56 - 22 = 55 - 21 = 34).
     // Story 16-1a-bis : 22 → 23, frontière inchangée (57 - 23 = 34).
@@ -210,16 +211,17 @@ async fn upgrade_path_preserves_data(pool: MySqlPool) {
     // Story v016-2a : 52 → 53, frontière inchangée (87 - 53 = 34).
     // Story v017-4a : 53 → 54, frontière inchangée (88 - 54 = 34).
     // Story v0172-session : 54 → 55, frontière inchangée (89 - 55 = 34).
+    // Story 33-1a : 55 → 56, frontière inchangée (90 - 56 = 34).
     //
     // ⚠️ J'ai d'abord porté `total` à 69 SANS toucher à ce soustracteur : le socle
     // est alors passé de 34 à 35 migrations, la fenêtre a glissé d'un cran, et le
     // test a rougi non plus sur son compteur mais sur `COUNT(accounts) : expected
     // 4, got 2` — un échec qui ne ressemble en rien à sa cause. *Les deux nombres
     // se bougent du même pas, et le commentaire ci-dessus le disait.*
-    let n_before_upgrade_window = total - 55;
+    let n_before_upgrade_window = total - 56;
     apply_migrations_up_to(&pool, n_before_upgrade_window)
         .await
-        .expect("apply_migrations_up_to(total - 55) failed");
+        .expect("apply_migrations_up_to(total - 56) failed");
 
     // Étape 2 : seed 1 company + 1 user + 2 accounts + 1 invoice + 1 contact.
     let company_id: i64 = sqlx::query_scalar(
@@ -288,7 +290,7 @@ async fn upgrade_path_preserves_data(pool: MySqlPool) {
     .await
     .expect("INSERT invoice failed");
 
-    // Étape 3 : appliquer les 55 migrations restantes via MIGRATOR.run().
+    // Étape 3 : appliquer les 56 migrations restantes via MIGRATOR.run().
     kesh_db::MIGRATOR
         .run(&pool)
         .await
@@ -1338,6 +1340,20 @@ async fn draft_migration_preserves_a_populated_base(pool: MySqlPool, frontiere: 
     apply_migrations_up_to(&pool, common::migrations_before(frontiere.0, frontiere.1))
         .await
         .expect("montage du schéma d'avant");
+    // Story 33-1a : le paiement, l'annulation et les lots du semis, passés par le dépôt
+    // courant, lisent deux colonnes de la migration 33-1a. Elles sont posées le temps du
+    // semis, et retirées avant la montée : `MIGRATOR.run()` les ajoute lui-même.
+    sqlx::query("ALTER TABLE supplier_invoices ADD COLUMN internal_number VARCHAR(64) NULL")
+        .execute(&pool)
+        .await
+        .unwrap();
+    sqlx::query(
+        "ALTER TABLE company_invoice_settings ADD COLUMN supplier_internal_number_format \
+         VARCHAR(64) NOT NULL DEFAULT 'FF-{YEAR}-{SEQ:03}'",
+    )
+    .execute(&pool)
+    .await
+    .unwrap();
     let entry_nullable: String = sqlx::query_scalar(
         "SELECT IS_NULLABLE FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() \
          AND TABLE_NAME = 'supplier_invoices' AND COLUMN_NAME = 'purchase_journal_entry_id'",
@@ -1511,6 +1527,15 @@ async fn draft_migration_preserves_a_populated_base(pool: MySqlPool, frontiere: 
     payment_batches::confirm_batch(&pool, company_id, d.batch_id, day, user_id)
         .await
         .expect("lot confirmé");
+
+    sqlx::query("ALTER TABLE supplier_invoices DROP COLUMN internal_number")
+        .execute(&pool)
+        .await
+        .unwrap();
+    sqlx::query("ALTER TABLE company_invoice_settings DROP COLUMN supplier_internal_number_format")
+        .execute(&pool)
+        .await
+        .unwrap();
 
     let watched = [
         "supplier_invoices",
@@ -1776,4 +1801,551 @@ async fn installation_settings_adds_only_its_system_table(pool: MySqlPool) {
         .unwrap();
     assert_eq!(settings.session_idle_minutes, 60);
     assert_eq!(settings.version, 0);
+}
+
+// ---------------------------------------------------------------------------
+// Story 33-1a (#926) — `20261106000001_supplier_invoice_internal_number`
+// ---------------------------------------------------------------------------
+
+const NUMERO_INTERNE_VERSION: i64 = 20261106000001;
+const NUMERO_INTERNE_LABEL: &str = "supplier_invoice_internal_number";
+/// Date passée épinglée sur les `updated_at` du décor : sans elle, une migration
+/// qui les toucherait survivrait à l'AC4 si elle tombait dans la même
+/// milliseconde que l'insertion (`DATETIME(3)`).
+const EPINGLE: &str = "2020-02-02 02:02:02.000";
+
+/// Le décor d'une société à l'état 0.17.4, en SQL brut : le dépôt lit désormais
+/// une colonne absente de la base partielle.
+struct SocieteAvantNumero {
+    company_id: i64,
+    user_id: i64,
+    expense: i64,
+    payable: i64,
+    bank: i64,
+    fournisseur_a: i64,
+    fournisseur_b: i64,
+}
+
+async fn societe_avant_numero(pool: &MySqlPool, nom: &str) -> SocieteAvantNumero {
+    let company_id: i64 = sqlx::query_scalar(
+        "INSERT INTO companies (name, address, org_type, accounting_language, instance_language) \
+         VALUES (?, 'Rue 1, 1000 Lausanne', 'Pme', 'FR', 'FR') RETURNING id",
+    )
+    .bind(nom)
+    .fetch_one(pool)
+    .await
+    .unwrap();
+    let user_id: i64 = sqlx::query_scalar(
+        "INSERT INTO users (username, password_hash, role, company_id) \
+         VALUES (?, ?, 'Comptable', ?) RETURNING id",
+    )
+    .bind(format!("u_{company_id}"))
+    .bind("$argon2id$v=19$m=19456,t=2,p=1$dGVzdHNhbHQ$dGVzdGhhc2h0ZXN0aGFzaHRlc3RoYXNo")
+    .bind(company_id)
+    .fetch_one(pool)
+    .await
+    .unwrap();
+    let mut comptes = Vec::new();
+    for (numero, libelle, genre) in [
+        ("4000", "Charges", "Expense"),
+        ("2000", "Créanciers", "Liability"),
+        ("1020", "Banque", "Asset"),
+    ] {
+        let id: i64 = sqlx::query_scalar(
+            "INSERT INTO accounts (company_id, number, name, account_type) \
+             VALUES (?, ?, ?, ?) RETURNING id",
+        )
+        .bind(company_id)
+        .bind(numero)
+        .bind(libelle)
+        .bind(genre)
+        .fetch_one(pool)
+        .await
+        .unwrap();
+        comptes.push(id);
+    }
+    let mut fournisseurs = Vec::new();
+    for nom_f in ["Fournisseur A SA", "Fournisseur B SA"] {
+        let id: i64 = sqlx::query_scalar(
+            "INSERT INTO contacts (company_id, contact_type, name, is_supplier) \
+             VALUES (?, 'Entreprise', ?, TRUE) RETURNING id",
+        )
+        .bind(company_id)
+        .bind(nom_f)
+        .fetch_one(pool)
+        .await
+        .unwrap();
+        fournisseurs.push(id);
+    }
+    SocieteAvantNumero {
+        company_id,
+        user_id,
+        expense: comptes[0],
+        payable: comptes[1],
+        bank: comptes[2],
+        fournisseur_a: fournisseurs[0],
+        fournisseur_b: fournisseurs[1],
+    }
+}
+
+async fn exercice_avant_numero(
+    pool: &MySqlPool,
+    s: &SocieteAvantNumero,
+    nom: &str,
+    debut: &str,
+    fin: &str,
+) -> i64 {
+    sqlx::query_scalar(
+        "INSERT INTO fiscal_years (company_id, name, start_date, end_date, status, updated_at) \
+         VALUES (?, ?, ?, ?, 'Open', ?) RETURNING id",
+    )
+    .bind(s.company_id)
+    .bind(nom)
+    .bind(debut)
+    .bind(fin)
+    .bind(EPINGLE)
+    .fetch_one(pool)
+    .await
+    .unwrap()
+}
+
+/// Une facture telle que l'écrivait la 0.17.4 : son écriture d'achat dans
+/// l'exercice `fy` (sauf brouillon), puis la ligne, `updated_at` épinglé.
+/// `date_ecriture` et `date_facture` peuvent différer : c'est l'écriture qui donne
+/// l'exercice (C-e331-6).
+#[allow(clippy::too_many_arguments)]
+async fn facture_avant_numero(
+    pool: &MySqlPool,
+    s: &SocieteAvantNumero,
+    fy: i64,
+    contact: i64,
+    statut: &str,
+    date_facture: &str,
+    date_ecriture: &str,
+    numero: Option<&str>,
+) -> i64 {
+    use kesh_db::entities::{Journal, NewJournalEntry, NewJournalEntryLine};
+    use rust_decimal::Decimal;
+    use rust_decimal_macros::dec;
+    let mut tx = pool.begin().await.unwrap();
+    let achat = if statut == "draft" {
+        None
+    } else {
+        let je = kesh_db::repositories::journal_entries::create_in_tx(
+            &mut tx,
+            fy,
+            s.user_id,
+            NewJournalEntry {
+                company_id: s.company_id,
+                entry_date: date_ecriture.parse().unwrap(),
+                journal: Journal::Achats,
+                description: format!(
+                    "Facture fournisseur {} - libellé figé",
+                    numero.unwrap_or("")
+                ),
+                project_id: None,
+                lines: vec![
+                    NewJournalEntryLine {
+                        account_id: s.expense,
+                        debit: dec!(100),
+                        credit: Decimal::ZERO,
+                        project_id: None,
+                    },
+                    NewJournalEntryLine {
+                        account_id: s.payable,
+                        debit: Decimal::ZERO,
+                        credit: dec!(100),
+                        project_id: None,
+                    },
+                ],
+            },
+            false,
+        )
+        .await
+        .expect("écriture d'achat de la 0.17.4");
+        Some(je.entry.id)
+    };
+    let (reglement, payee_le) = if statut == "paid" {
+        let je = kesh_db::repositories::journal_entries::create_in_tx(
+            &mut tx,
+            fy,
+            s.user_id,
+            NewJournalEntry {
+                company_id: s.company_id,
+                entry_date: date_ecriture.parse().unwrap(),
+                journal: Journal::Banque,
+                description: "Règlement fournisseur figé".into(),
+                project_id: None,
+                lines: vec![
+                    NewJournalEntryLine {
+                        account_id: s.payable,
+                        debit: dec!(100),
+                        credit: Decimal::ZERO,
+                        project_id: None,
+                    },
+                    NewJournalEntryLine {
+                        account_id: s.bank,
+                        debit: Decimal::ZERO,
+                        credit: dec!(100),
+                        project_id: None,
+                    },
+                ],
+            },
+            false,
+        )
+        .await
+        .expect("écriture de règlement de la 0.17.4");
+        (Some(je.entry.id), Some(format!("{date_ecriture} 00:00:00")))
+    } else {
+        (None, None)
+    };
+    let id: i64 = sqlx::query_scalar(
+        "INSERT INTO supplier_invoices (company_id, contact_id, supplier_invoice_number, status, \
+         invoice_date, total_amount, purchase_journal_entry_id, settlement_type, \
+         settlement_account_id, settlement_journal_entry_id, paid_at, updated_at) \
+         VALUES (?, ?, ?, ?, ?, 100, ?, ?, ?, ?, ?, ?) RETURNING id",
+    )
+    .bind(s.company_id)
+    .bind(contact)
+    .bind(numero)
+    .bind(statut)
+    .bind(date_facture)
+    .bind(achat)
+    .bind(reglement.map(|_| "internal_account"))
+    .bind(reglement.map(|_| s.bank))
+    .bind(reglement)
+    .bind(payee_le)
+    .bind(EPINGLE)
+    .fetch_one(&mut *tx)
+    .await
+    .unwrap();
+    tx.commit().await.unwrap();
+    id
+}
+
+/// `(numéro interne, version, updated_at)` d'une facture ; `updated_at` en texte.
+async fn etat_facture(pool: &MySqlPool, id: i64) -> (Option<String>, i32, String) {
+    sqlx::query_as(
+        "SELECT internal_number, version, DATE_FORMAT(updated_at, '%Y-%m-%d %H:%i:%s.%f') \
+         FROM supplier_invoices WHERE id = ?",
+    )
+    .bind(id)
+    .fetch_one(pool)
+    .await
+    .unwrap()
+}
+
+async fn compteur_exercice(pool: &MySqlPool, fy: i64) -> i64 {
+    sqlx::query_scalar("SELECT supplier_invoice_next_number FROM fiscal_years WHERE id = ?")
+        .bind(fy)
+        .fetch_one(pool)
+        .await
+        .unwrap()
+}
+
+/// Empreinte de toutes les écritures : description et `updated_at`, à l'octet.
+async fn empreinte_ecritures(pool: &MySqlPool) -> Vec<(i64, String, String)> {
+    sqlx::query_as(
+        "SELECT id, description, DATE_FORMAT(updated_at, '%Y-%m-%d %H:%i:%s.%f') \
+         FROM journal_entries ORDER BY id",
+    )
+    .fetch_all(pool)
+    .await
+    .unwrap()
+}
+
+/// AC2 à AC5 — une base 0.17.4 peuplée monte : chaque facture non brouillon reçoit
+/// son numéro, par société et année de début d'exercice, dans l'ordre
+/// `fy.start_date, invoice_date, id` ; les compteurs suivent ; rien d'autre ne bouge.
+#[sqlx::test(migrations = false)]
+async fn internal_number_migration_numbers_a_populated_base(pool: MySqlPool) {
+    apply_migrations_up_to(
+        &pool,
+        common::migrations_before(NUMERO_INTERNE_VERSION, NUMERO_INTERNE_LABEL),
+    )
+    .await
+    .expect("montage du schéma d'avant");
+    let colonne: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() \
+         AND TABLE_NAME = 'supplier_invoices' AND COLUMN_NAME = 'internal_number'",
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(colonne, 0, "montage : la base partielle n'a pas la colonne");
+
+    let a = societe_avant_numero(&pool, "Société A").await;
+    let b = societe_avant_numero(&pool, "Société B").await;
+    // Deux exercices commençant en 2025 (dont un « 2025/2026 » commencé le 1.7),
+    // un en 2026 commencé tard, un en 2027 sans facture.
+    let fy_s1 = exercice_avant_numero(&pool, &a, "2025-S1", "2025-01-01", "2025-06-30").await;
+    let fy_cheval = exercice_avant_numero(&pool, &a, "2025/2026", "2025-07-01", "2026-06-30").await;
+    let fy_2026 = exercice_avant_numero(&pool, &a, "2026-S2", "2026-07-01", "2026-12-31").await;
+    let fy_vide = exercice_avant_numero(&pool, &a, "2027", "2027-01-01", "2027-12-31").await;
+    let fy_b = exercice_avant_numero(&pool, &b, "2026", "2026-01-01", "2026-12-31").await;
+
+    let (fa, fb) = (a.fournisseur_a, a.fournisseur_b);
+    // Trois factures à la même date : ordre par `id`.
+    let s1 = facture_avant_numero(
+        &pool,
+        &a,
+        fy_s1,
+        fa,
+        "open",
+        "2025-03-01",
+        "2025-03-01",
+        Some("X-1"),
+    )
+    .await;
+    let s2 = facture_avant_numero(
+        &pool,
+        &a,
+        fy_s1,
+        fa,
+        "paid",
+        "2025-03-01",
+        "2025-03-01",
+        None,
+    )
+    .await;
+    // Même numéro du fournisseur chez un autre fournisseur.
+    let s3 = facture_avant_numero(
+        &pool,
+        &a,
+        fy_s1,
+        fb,
+        "cancelled",
+        "2025-03-01",
+        "2025-03-01",
+        Some("X-1"),
+    )
+    .await;
+    // Date antérieure, insérée après : ordre par date.
+    let s4 = facture_avant_numero(
+        &pool,
+        &a,
+        fy_s1,
+        fa,
+        "open",
+        "2025-02-01",
+        "2025-02-01",
+        Some("X-4"),
+    )
+    .await;
+    let s5 = facture_avant_numero(
+        &pool,
+        &a,
+        fy_cheval,
+        fa,
+        "open",
+        "2025-08-01",
+        "2025-08-01",
+        Some("X-5"),
+    )
+    .await;
+    // Sa date tomberait dans l'exercice 2026 : l'exercice est celui de l'écriture.
+    let s8 = facture_avant_numero(
+        &pool,
+        &a,
+        fy_cheval,
+        fa,
+        "open",
+        "2026-08-01",
+        "2026-03-01",
+        Some("X-8"),
+    )
+    .await;
+    let s6 = facture_avant_numero(
+        &pool,
+        &a,
+        fy_2026,
+        fa,
+        "open",
+        "2026-09-01",
+        "2026-09-01",
+        None,
+    )
+    .await;
+    let s7 = facture_avant_numero(
+        &pool,
+        &a,
+        fy_2026,
+        fb,
+        "paid",
+        "2026-09-02",
+        "2026-09-02",
+        Some("X-7"),
+    )
+    .await;
+    let brouillon = facture_avant_numero(
+        &pool,
+        &a,
+        fy_2026,
+        fa,
+        "draft",
+        "2026-10-01",
+        "2026-10-01",
+        Some("X-9"),
+    )
+    .await;
+    let sb = facture_avant_numero(
+        &pool,
+        &b,
+        fy_b,
+        b.fournisseur_a,
+        "open",
+        "2026-05-01",
+        "2026-05-01",
+        Some("X-1"),
+    )
+    .await;
+
+    let ecritures_avant = empreinte_ecritures(&pool).await;
+    assert_eq!(
+        ecritures_avant.len(),
+        11,
+        "montage : neuf achats, deux règlements"
+    );
+
+    kesh_db::MIGRATOR
+        .run(&pool)
+        .await
+        .expect("la migration passe");
+
+    for (id, attendu) in [
+        (s4, "FF-2025-001"),
+        (s1, "FF-2025-002"),
+        (s2, "FF-2025-003"),
+        (s3, "FF-2025-004"),
+        (s5, "FF-2025-005"),
+        (s8, "FF-2025-006"),
+        (s6, "FF-2026-001"),
+        (s7, "FF-2026-002"),
+        (sb, "FF-2026-001"),
+    ] {
+        let (numero, version, maj) = etat_facture(&pool, id).await;
+        assert_eq!(numero.as_deref(), Some(attendu), "facture {id}");
+        assert_eq!(version, 1, "AC4 : version intacte, facture {id}");
+        assert_eq!(
+            maj,
+            format!("{EPINGLE}000"),
+            "AC4 : updated_at intact, facture {id}"
+        );
+    }
+    let (numero, version, maj) = etat_facture(&pool, brouillon).await;
+    assert_eq!(numero, None, "un brouillon n'a pas de numéro");
+    assert_eq!((version, maj), (1, format!("{EPINGLE}000")));
+
+    for (fy, attendu) in [
+        (fy_s1, 5),
+        (fy_cheval, 7),
+        (fy_2026, 3),
+        (fy_vide, 1),
+        (fy_b, 2),
+    ] {
+        assert_eq!(
+            compteur_exercice(&pool, fy).await,
+            attendu,
+            "compteur de l'exercice {fy}"
+        );
+        let maj: String = sqlx::query_scalar(
+            "SELECT DATE_FORMAT(updated_at, '%Y-%m-%d %H:%i:%s.%f') FROM fiscal_years WHERE id = ?",
+        )
+        .bind(fy)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(
+            maj,
+            format!("{EPINGLE}000"),
+            "AC4 : updated_at de l'exercice {fy}"
+        );
+    }
+
+    assert_eq!(
+        empreinte_ecritures(&pool).await,
+        ecritures_avant,
+        "AC4 : aucune écriture ne bouge"
+    );
+    let sans_numero: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM supplier_invoices WHERE status <> 'draft' AND internal_number IS NULL",
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(sans_numero, 0, "aucune facture non brouillon sans numéro");
+    let format: String = sqlx::query_scalar(
+        "SELECT DEFAULT(supplier_internal_number_format) FROM company_invoice_settings LIMIT 1",
+    )
+    .fetch_optional(&pool)
+    .await
+    .unwrap()
+    .unwrap_or_else(|| "FF-{YEAR}-{SEQ:03}".into());
+    assert_eq!(format, "FF-{YEAR}-{SEQ:03}");
+}
+
+/// AC7 — la millième facture : `LPAD` seul tronquerait à `FF-2026-100` et l'`UNIQUE`
+/// échouerait à la montée.
+#[sqlx::test(migrations = false)]
+async fn internal_number_migration_keeps_the_thousandth(pool: MySqlPool) {
+    apply_migrations_up_to(
+        &pool,
+        common::migrations_before(NUMERO_INTERNE_VERSION, NUMERO_INTERNE_LABEL),
+    )
+    .await
+    .unwrap();
+    let s = societe_avant_numero(&pool, "Société mille").await;
+    let fy = exercice_avant_numero(&pool, &s, "2026", "2026-01-01", "2026-12-31").await;
+    // L'écriture d'achat peut être partagée : aucune unicité sur la colonne.
+    let premiere = facture_avant_numero(
+        &pool,
+        &s,
+        fy,
+        s.fournisseur_a,
+        "open",
+        "2026-01-01",
+        "2026-01-01",
+        None,
+    )
+    .await;
+    sqlx::query(
+        "INSERT INTO supplier_invoices (company_id, contact_id, status, invoice_date, total_amount, \
+         purchase_journal_entry_id) \
+         SELECT company_id, contact_id, 'open', invoice_date, total_amount, purchase_journal_entry_id \
+         FROM supplier_invoices, seq_1_to_1000 WHERE id = ?",
+    )
+    .bind(premiere)
+    .execute(&pool)
+    .await
+    .unwrap();
+
+    kesh_db::MIGRATOR
+        .run(&pool)
+        .await
+        .expect("la migration passe à 1 001 factures");
+
+    let rangs: Vec<(String,)> = sqlx::query_as(
+        "SELECT internal_number FROM supplier_invoices \
+         WHERE internal_number IN ('FF-2026-999', 'FF-2026-1000', 'FF-2026-1001', 'FF-2026-100') \
+         ORDER BY internal_number",
+    )
+    .fetch_all(&pool)
+    .await
+    .unwrap();
+    assert_eq!(
+        rangs.into_iter().map(|r| r.0).collect::<Vec<_>>(),
+        ["FF-2026-100", "FF-2026-1000", "FF-2026-1001", "FF-2026-999"]
+    );
+    assert_eq!(compteur_exercice(&pool, fy).await, 1002);
+}
+
+/// AC1 — la migration n'ajoute aucune table : `TABLES_TO_TRUNCATE` inchangé, donc
+/// les sauvegardes 0.17.4 restent importables.
+#[sqlx::test(migrations = false)]
+async fn internal_number_migration_adds_no_table(pool: MySqlPool) {
+    let n = common::migrations_before(NUMERO_INTERNE_VERSION, NUMERO_INTERNE_LABEL);
+    apply_migrations_up_to(&pool, n).await.unwrap();
+    let before = application_tables(&pool).await;
+    apply_migrations_up_to(&pool, n + 1).await.unwrap();
+    assert_eq!(application_tables(&pool).await, before);
 }

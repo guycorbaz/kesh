@@ -8,6 +8,21 @@ Le contenu est rédigé en français à destination des **fiduciaires, PME, ind�
 
 ---
 
+## [0.17.5] — Non publié
+
+⚠️ **Cette version porte une migration, la première à passer par la sauvegarde automatique avant mise à jour** (`backup/pre-upgrade/`, [#847](https://github.com/guycorbaz/kesh/issues/847)). **Prenez aussi une sauvegarde manuelle complète avant la mise à jour** — base, `.keshbackup` et dossier des documents. **Le retour à la 0.17.4 passe uniquement par la sauvegarde d'avant la mise à jour** : la 0.17.4 ne démarre plus sur une base migrée, et elle refuse une sauvegarde prise en 0.17.5 ; les numéros écrits sur le papier depuis la mise à jour seraient alors à refaire.
+
+### Ajouté
+
+- **Un numéro interne pour chaque facture fournisseur validée** ([#926](https://github.com/guycorbaz/kesh/issues/926)) : Kesh attribue à la validation un numéro unique et lisible, `FF-2026-001` par défaut, pour classer et retrouver les factures papier. Le numéro du fournisseur reste, facultatif. Un brouillon n'en a pas ; une facture repassée en brouillon garde le sien. L'année est celle du début de l'exercice ; la séquence repart à 1 à chaque année, et deux exercices commençant la même année se suivent. Le format se règle (un préfixe, `{YEAR}`, un séparateur sans chiffre, `{SEQ}` ou `{SEQ:NN}`). Les nouvelles écritures d'achat et de règlement portent le numéro : `Facture fournisseur FF-2026-001 (ABC-123) - Dupont SA`.
+  - **Les factures déjà saisies et validées sont numérotées à la mise à jour**, par société et par année de début d'exercice, dans l'ordre de la date de début de l'exercice, puis de la date de facture, puis de l'identifiant. Les libellés de leurs écritures passées ne changent pas. Cette numérotation n'a pas d'entrée propre au journal d'audit : une migration n'a pas d'auteur (à l'import d'une sauvegarde 0.17.4, l'entrée de l'import nomme la reprise et son nombre de lignes).
+  - **Serveur MCP** : `kesh_factures_fournisseur` et `kesh_facture_fournisseur` ajoutent `numeroInterne` ; `numero` reste le numéro du fournisseur. Pour tenir dans un envoi, la liste passe à 34 factures par page par défaut et 62 au plus (40 et 70 jusqu'ici).
+  - **Un numéro ne revient que dans trois cas** : la restauration d'une sauvegarde plus ancienne (les compteurs reviennent à sa date), le retour à la 0.17.4 suivi d'une nouvelle montée (les factures sont renumérotées par date, et le format revient au défaut), et la réinitialisation des données. Une sauvegarde 0.17.4 s'importe en 0.17.5 et y reçoit les numéros.
+
+### Corrigé
+
+- **La réouverture d'un exercice est rejouée sur interblocage** ([#926](https://github.com/guycorbaz/kesh/issues/926)) : croisée avec une validation, elle pouvait rendre une erreur 500.
+
 ## [0.17.4] — 2026-11-06
 
 La 0.17.4 est une version corrective : la session plus sûre, une sauvegarde automatique avant les migrations à venir, et les défauts relevés à l'usage. Elle ne porte **aucune migration** ; seules les sessions ouvertes sont effacées au premier démarrage, si bien que **chaque utilisateur se reconnecte une fois**. **Le retour à la 0.17.3 est possible sans restauration, après avoir vidé la table des sessions** (manuel d'administration, *Passer à la 0.17.4*). La sauvegarde complète d'avant la mise à jour (base, `.keshbackup`, dossier des documents) reste recommandée. Le `.env` ne change pas ; les compose fournis transmettent une variable nouvelle, facultative (`KESH_SKIP_PRE_UPGRADE_BACKUP`).

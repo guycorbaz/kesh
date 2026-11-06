@@ -177,7 +177,8 @@ fn bornes_des_schemas() {
         "les outils paginés"
     );
     // Valeurs mesurées (§ *Les tailles mesurées*), écrites en dur ; la
-    // balance âgée révisée sur la mesure (C-32-9-44 : 40 / 75 → 38 / 68).
+    // balance âgée révisée sur la mesure (C-32-9-44 : 40 / 75 → 38 / 68), les factures
+    // fournisseur aussi, qui portent le numéro interne (C-e331-27 : 70 / 40 → 62 / 34).
     let mesurees: BTreeMap<&str, (i64, i64)> = [
         ("kesh_plan_comptable", (70, 40)),
         ("kesh_ecritures", (22, 12)),
@@ -187,7 +188,7 @@ fn bornes_des_schemas() {
         ("kesh_factures", (40, 20)),
         ("kesh_echeancier", (40, 20)),
         ("kesh_balance_agee", (68, 38)),
-        ("kesh_factures_fournisseur", (70, 40)),
+        ("kesh_factures_fournisseur", (62, 34)),
         ("kesh_contacts", (22, 12)),
         ("kesh_pieces", (65, 35)),
     ]
@@ -1612,4 +1613,17 @@ async fn un_brouillon_lu_par_les_outils(pool: MySqlPool) {
         .find(|f| f["id"] == json!(id))
         .unwrap_or_else(|| panic!("le brouillon est listé : {liste}"));
     assert_eq!(ligne["statut"], json!("draft"), "{ligne}");
+
+    // Story 33-1a (#926, AC18) — le numéro interne s'ajoute à `numero`, à la fiche et à
+    // la liste, et survit au retour en brouillon ; `numero` garde celui du fournisseur.
+    assert!(
+        avant["numeroInterne"].to_string().contains("FF-"),
+        "{avant}"
+    );
+    assert_eq!(fiche["numeroInterne"], avant["numeroInterne"], "{fiche}");
+    assert_eq!(ligne["numeroInterne"], avant["numeroInterne"], "{ligne}");
+    assert!(
+        !avant["numero"].to_string().contains("FF-20"),
+        "`numero` reste le numéro du fournisseur : {avant}"
+    );
 }

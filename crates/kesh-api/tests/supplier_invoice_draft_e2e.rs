@@ -1454,3 +1454,200 @@ async fn unvalidate_under_the_period_lock_names_its_bounds_869(pool: MySqlPool) 
     assert_eq!(e["error"]["details"]["lockedThrough"], "2026-06-30", "{e}");
     assert_eq!(e["error"]["details"]["attempted"], "2026-06-15", "{e}");
 }
+
+// ---------------------------------------------------------------------------
+// Story 33-1a (#926) — le numéro interne, par HTTP
+// ---------------------------------------------------------------------------
+
+/// AC17 — `internalNumber` est toujours présent, nul pour un brouillon jamais
+/// validé ; `supplierInvoiceNumber` ne change ni de nom ni de valeur.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn internal_number_is_in_every_response(pool: MySqlPool) {
+    let c = setup(&pool).await;
+    let b = creer(&c, "ABC-1", "10.00").await;
+    assert_eq!(b.get("internalNumber"), Some(&Value::Null), "{b}");
+    assert_eq!(b["supplierInvoiceNumber"], "ABC-1");
+
+    let v = valider(&c, &b).await;
+    assert_eq!(v["internalNumber"], "FF-2020-001", "{v}");
+    assert_eq!(v["supplierInvoiceNumber"], "ABC-1");
+
+    let chemin = format!("/api/v1/supplier-invoices/{}", v["id"]);
+    let (s, fiche) = envoyer(&c, reqwest::Method::GET, &chemin, &c.admin, None).await;
+    assert_eq!(s, 200, "{fiche}");
+    assert_eq!(fiche["internalNumber"], "FF-2020-001");
+
+    let (s, liste) = envoyer(
+        &c,
+        reqwest::Method::GET,
+        "/api/v1/supplier-invoices",
+        &c.admin,
+        None,
+    )
+    .await;
+    assert_eq!(s, 200, "{liste}");
+    assert_eq!(
+        liste["items"][0]["internalNumber"], "FF-2020-001",
+        "{liste}"
+    );
+    assert_eq!(liste["items"][0]["supplierInvoiceNumber"], "ABC-1");
+}
+
+/// AC14 — ni la création, ni la modification, ni la complétion d'un document
+/// n'écrivent le numéro, même si le corps le porte.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn nobody_writes_the_internal_number_but_the_validation(pool: MySqlPool) {
+    let c = setup(&pool).await;
+    let mut body = corps(&c, "ABC-1", "10.00");
+    body["internalNumber"] = json!("FF-PIRATE");
+    let (s, b) = post(&c, "/api/v1/supplier-invoices", body.clone()).await;
+    assert_eq!(s, 201, "{b}");
+    assert_eq!(b["internalNumber"], Value::Null, "création : {b}");
+
+    let mut modif = body.clone();
+    modif["version"] = b["version"].clone();
+    let (s, m) = envoyer(
+        &c,
+        reqwest::Method::PUT,
+        &format!("/api/v1/supplier-invoices/{}", b["id"]),
+        &c.admin,
+        Some(modif),
+    )
+    .await;
+    assert_eq!(s, 200, "{m}");
+    assert_eq!(m["internalNumber"], Value::Null, "modification : {m}");
+
+    let doc = document(&pool, c.seeded.company_id, "num-interne", None).await;
+    let (s, k) = post(
+        &c,
+        &format!("/api/v1/imported-supplier-invoices/{doc}/complete"),
+        body,
+    )
+    .await;
+    assert_eq!(s, 200, "{k}");
+    assert_eq!(k["internalNumber"], Value::Null, "complétion : {k}");
+
+    assert_eq!(valider(&c, &m).await["internalNumber"], "FF-2020-001");
+}
+
+/// AC16 — le réglage : au défaut, préservé quand le corps l'omet, modifiable, refusé
+/// en 400 hors de la forme `<préfixe>{YEAR}<séparateur>{SEQ}`.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn the_internal_number_format_setting(pool: MySqlPool) {
+    let c = setup(&pool).await;
+    let chemin = "/api/v1/company/invoice-settings";
+    let (s, reglages) = envoyer(&c, reqwest::Method::GET, chemin, &c.admin, None).await;
+    assert_eq!(s, 200, "{reglages}");
+    assert_eq!(
+        reglages["supplierInternalNumberFormat"],
+        "FF-{YEAR}-{SEQ:03}"
+    );
+
+    // Absent du corps : préservé, sur une valeur qui n'est pas le défaut (M16).
+    let mut pose = reglages.clone();
+    pose["supplierInternalNumberFormat"] = json!("LF-{YEAR}-{SEQ:02}");
+    let (s, pose) = envoyer(&c, reqwest::Method::PUT, chemin, &c.admin, Some(pose)).await;
+    assert_eq!(s, 200, "{pose}");
+    let mut sans = pose.clone();
+    sans.as_object_mut()
+        .unwrap()
+        .remove("supplierInternalNumberFormat");
+    sans["invoiceNumberFormat"] = json!("F-{YEAR}-{SEQ:05}");
+    let (s, apres) = envoyer(&c, reqwest::Method::PUT, chemin, &c.admin, Some(sans)).await;
+    assert_eq!(s, 200, "{apres}");
+    assert_eq!(apres["invoiceNumberFormat"], "F-{YEAR}-{SEQ:05}");
+    assert_eq!(apres["supplierInternalNumberFormat"], "LF-{YEAR}-{SEQ:02}");
+
+    for ko in [
+        "",
+        "FF-{YEAR}",
+        "FF-{SEQ:03}",
+        "FF-{YEAR}-{SEQ:11}",
+        "FF-{FY}-{SEQ}",
+        "FF-{FY}-{YEAR}-{SEQ}",
+        "{YEAR}-{YEAR}-{SEQ}",
+        "{SEQ}-{YEAR}",
+        "FF-{YEAR}{SEQ}",
+        "FF-{YEAR}-1{SEQ}",
+        "FF-{YEAR}-{SEQ}-X",
+    ] {
+        let mut corps_ko = apres.clone();
+        corps_ko["supplierInternalNumberFormat"] = json!(ko);
+        let (s, b) = envoyer(&c, reqwest::Method::PUT, chemin, &c.admin, Some(corps_ko)).await;
+        assert_eq!(s, 400, "format {ko:?} : {b}");
+    }
+
+    let mut bon = apres.clone();
+    bon["supplierInternalNumberFormat"] = json!("KF-{YEAR}-{SEQ:04}");
+    let (s, change) = envoyer(&c, reqwest::Method::PUT, chemin, &c.admin, Some(bon)).await;
+    assert_eq!(s, 200, "{change}");
+    assert_eq!(change["supplierInternalNumberFormat"], "KF-{YEAR}-{SEQ:04}");
+
+    let b = creer(&c, "ABC-2", "10.00").await;
+    assert_eq!(valider(&c, &b).await["internalNumber"], "KF-2020-0001");
+
+    let audit: serde_json::Value = sqlx::query_scalar(
+        "SELECT details_json FROM audit_log WHERE action = 'company_invoice_settings.updated' \
+         ORDER BY id DESC LIMIT 1",
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(
+        audit["after"]["supplierInternalNumberFormat"], "KF-{YEAR}-{SEQ:04}",
+        "{audit}"
+    );
+}
+
+/// AC19 — l'export porte le numéro et le format, pas le compteur.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn the_export_carries_the_internal_number(pool: MySqlPool) {
+    let c = setup(&pool).await;
+    let b = creer(&c, "ABC-1", "10.00").await;
+    valider(&c, &b).await;
+    let octets = c
+        .app
+        .client
+        .get(c.app.url("/api/v1/exports/global.zip"))
+        .bearer_auth(&c.admin)
+        .send()
+        .await
+        .unwrap()
+        .bytes()
+        .await
+        .unwrap();
+    let mut archive = zip::ZipArchive::new(std::io::Cursor::new(octets)).expect("ZIP");
+    let mut lire = |nom: &str| {
+        use std::io::Read;
+        let mut texte = String::new();
+        archive
+            .by_name(nom)
+            .unwrap_or_else(|_| panic!("{nom} absent"))
+            .read_to_string(&mut texte)
+            .unwrap();
+        texte
+    };
+    let factures = lire("supplier_invoices.csv");
+    assert!(
+        factures
+            .lines()
+            .next()
+            .unwrap()
+            .contains("supplier_invoice_number;internal_number;")
+            || factures
+                .lines()
+                .next()
+                .unwrap()
+                .contains("supplier_invoice_number,internal_number,"),
+        "{factures}"
+    );
+    assert!(factures.contains("FF-2020-001"), "{factures}");
+    assert!(
+        lire("company_invoice_settings.csv").contains("supplier_internal_number_format"),
+        "le format est exporté"
+    );
+    assert!(
+        !lire("fiscal_years.csv").contains("supplier_invoice_next_number"),
+        "le compteur ne l'est pas"
+    );
+}

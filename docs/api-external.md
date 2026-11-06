@@ -579,6 +579,8 @@ Corps : `{ "version": n }` — le verrou optimiste. Réponse : la facture, même
 
 **L'échéance** — *depuis la v0.17.0* ([#853](https://github.com/guycorbaz/kesh/issues/853)), une échéance antérieure à la date de la facture est refusée à la création, à la complétion et au `PUT` : **`400 SUPPLIER_INVOICE_DUE_BEFORE_INVOICE_DATE`**, `details { invoiceDate, dueDate }` (`AAAA-MM-JJ`) — après le contrôle d'échelle des lignes, avant celui des coordonnées de paiement. Une échéance égale ou absente passe ; une facture existante ainsi datée reste lisible et payable.
 
+**Le numéro interne** — *depuis la v0.17.5* ([#926](https://github.com/guycorbaz/kesh/issues/926)), la facture porte **`internalNumber`** (`string | null`, à la fiche et à la liste, toujours présent) : le numéro que Kesh attribue **à la validation**, `FF-2026-001` au format par défaut, unique dans la société. `null` pour un brouillon jamais validé ; **une facture repassée en brouillon le garde** et le reprend à sa revalidation ; un brouillon numéroté supprimé le perd. Aucune route ne l'écrit : `internalNumber` est ignoré dans le corps de la création, du `PUT` et de la complétion. `supplierInvoiceNumber` ne change ni de nom ni de valeur : c'est le numéro **du fournisseur**, facultatif et sans unicité. Les factures validées avant la v0.17.5 ont été numérotées à la mise à jour.
+
 **Le filtre de la liste** — `GET /supplier-invoices?status=draft,open` : une ou plusieurs valeurs parmi `draft`, `open`, `paid`, `cancelled`, séparées par des virgules ; `total` compte le filtre ; sans paramètre, toutes les factures (inchangé) ; une valeur inconnue, ou un filtre vide, → `400 VALIDATION_ERROR`.
 
 ### Annuler le règlement d'une facture fournisseur
