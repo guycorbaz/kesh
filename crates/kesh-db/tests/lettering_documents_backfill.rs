@@ -178,6 +178,34 @@ async fn colonne_posterieure(pool: &MySqlPool, poser: bool) {
         .execute(pool)
         .await
         .expect("colonne postérieure à la fenêtre");
+    colonnes_du_numero_interne(pool, poser).await;
+}
+
+/// Même geste pour les colonnes de la migration `20261106000001` (Story 33-1a) que
+/// lisent les gestes vivants d'une facture fournisseur : le numéro interne, le format,
+/// le compteur. ⚠️ Le retrait est obligatoire avant la montée, pour la même raison.
+async fn colonnes_du_numero_interne(pool: &MySqlPool, poser: bool) {
+    let instructions: [&str; 3] = if poser {
+        [
+            "ALTER TABLE supplier_invoices ADD COLUMN internal_number VARCHAR(64) NULL",
+            "ALTER TABLE company_invoice_settings ADD COLUMN supplier_internal_number_format \
+             VARCHAR(64) NOT NULL DEFAULT 'FF-{YEAR}-{SEQ:03}'",
+            "ALTER TABLE fiscal_years ADD COLUMN supplier_invoice_next_number BIGINT NOT NULL \
+             DEFAULT 1",
+        ]
+    } else {
+        [
+            "ALTER TABLE supplier_invoices DROP COLUMN internal_number",
+            "ALTER TABLE company_invoice_settings DROP COLUMN supplier_internal_number_format",
+            "ALTER TABLE fiscal_years DROP COLUMN supplier_invoice_next_number",
+        ]
+    };
+    for sql in instructions {
+        sqlx::query(sql)
+            .execute(pool)
+            .await
+            .expect("colonnes du numéro interne");
+    }
 }
 
 /// La fixture étendue, puis (a), (b), (c). La base doit être montée jusqu'à M1
@@ -727,6 +755,7 @@ async fn backfill_pairs_reversals_by_position(pool: MySqlPool) {
     apply_migrations_up_to(&pool, migrations_before(M1, "lettering_documents_backfill"))
         .await
         .expect("migrations avant M1");
+    colonnes_du_numero_interne(&pool, true).await;
     let seeded = societe(&pool).await;
     let ach = achats(&pool, &seeded).await;
     let (jumelles, lignes) = ecriture(
@@ -774,6 +803,7 @@ async fn backfill_pairs_reversals_by_position(pool: MySqlPool) {
     .await
     .unwrap();
 
+    colonnes_du_numero_interne(&pool, false).await;
     // M1 seule : la paire de l'achat, pas celle de l'écriture manuelle.
     apply_migrations_up_to(
         &pool,
