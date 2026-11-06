@@ -180,3 +180,17 @@ Rédigé le 2026-11-06, à la rédaction des fiches. Numéros de ligne de `4ef19
 - **Retenu.** 62 au maximum, 34 par défaut, révisés sur la mesure comme la balance âgée (`C-32-9-44`). `limit` à 63-70 devient un refus de paramètre : dit au CHANGELOG.
 - **Écartée.** Omettre le numéro à la liste : la fiche demande les deux (AC18). Remonter les plafonds : ils bornent la taille d'un envoi, ils ne se règlent pas ici.
 - **Réversible.** Oui.
+
+## C-e331-28 — Deux champs d'erreur changent de nom, jamais de sens
+
+- **Établi au développement.** `ModificationGuard::DetachedSupplierSettlement` et `SettlementBatchContext` portaient un champ `supplier_invoice_number` qui, avec la 33-1b, contient la forme courte (le numéro interne d'abord).
+- **Retenu.** Renommés `supplier_invoice_label` : le nom ne ment pas, et ces deux types sont internes (l'API dit `documentNumber` et le message).
+- **Écartée.** Garder le nom : c'est le défaut que `C-e331-20` refuse pour `supplierInvoiceNumber`.
+- **Réversible.** Oui.
+
+## C-e331-29 — Les montages partiels posent les colonnes le temps du semis
+
+- **Établi au développement.** `draft_migration_preserves_a_populated_base` (`migrations_upgrade_path.rs`) et `lettering_documents_backfill.rs` montent une base antérieure, puis la sèment par le dépôt courant, qui lit désormais `internal_number`, `supplier_internal_number_format` et, pour la validation, `supplier_invoice_next_number`.
+- **Retenu.** Le patron déjà en place dans `lettering_documents_backfill.rs` (`colonne_posterieure`, Story 28-4a) : les colonnes sont posées le temps du semis et retirées avant la montée, que la migration les recrée. La migration 33-1a elle-même se teste sur un semis en SQL brut (AC5).
+- **Écartée.** Récrire ces semis en SQL : hors sujet, et ces tests prouvent autre chose.
+- **Réversible.** Oui.

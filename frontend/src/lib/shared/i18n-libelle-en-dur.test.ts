@@ -279,8 +279,13 @@ const SUFFIXES = ['Label', 'Text', 'Display'];
  * `Label`, `Text`, `Display` dans le diff de la story (`7bd4d5c0` → tête) ; `orphanProjects`,
  * `todayLocal`, `loadOpenInvoices`, `importDateOf`, `formatDate`, `computeMinDate` et
  * `countryUnknownNotice` n'en portent pas.*
+ *
+ * ⚠️ **77 → 79** (Story 33-1b, #926) : `supplierInvoiceShortLabel` et
+ * `supplierInvoiceLongLabel` (`supplier-invoice-label.ts`), nommées avant que le chiffre ne
+ * bouge. Elles rendent des numéros (des données) et `#id`, sans littéral à traduire :
+ * `conforme` **63 → 65** ; `ecartee` ne bouge pas.
  */
-const CANDIDATES_ATTENDUES = 77;
+const CANDIDATES_ATTENDUES = 79;
 
 /** Les trois délimiteurs de littéral en JS/TS. */
 const QUOTES = ["'", '"', '`'];
@@ -797,7 +802,7 @@ describe('libellés en dur — l’angle mort #255', () => {
 			else if (c.retours.length > 0) classes.ecartee += 1;
 			else classes.conforme += 1;
 		}
-		expect(classes).toEqual({ nonAnalysee: 0, enViolation: 0, ecartee: 14, conforme: 63 });
+		expect(classes).toEqual({ nonAnalysee: 0, enViolation: 0, ecartee: 14, conforme: 65 });
 		// La somme est recalculée depuis les classes, jamais depuis le total qu'elle contrôle.
 		const somme = Object.values(classes).reduce((a, b) => a + b, 0);
 		expect(somme).toBe(CANDIDATES_ATTENDUES);

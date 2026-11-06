@@ -214,7 +214,7 @@ describe("fiche facture fournisseur — annuler le règlement", () => {
       message: "Ce règlement appartient à un exercice clôturé.",
       status: 409,
     });
-    const { findByTestId, findByText } = render(Page);
+    const { findByTestId } = render(Page);
     await fireEvent.click(
       await findByTestId("supplier-invoice-settlement-cancel"),
     );
@@ -222,7 +222,10 @@ describe("fiche facture fournisseur — annuler le règlement", () => {
       (await findByTestId("supplier-invoice-settlement-cancel-error"))
         .textContent,
     ).toContain("exercice clôturé");
-    expect(await findByText("FF-9")).toBeTruthy();
+    expect(
+      (await findByTestId("supplier-invoice-detail-supplier-number"))
+        .textContent,
+    ).toContain("FF-9");
   });
 
   it("après `pay`, la réponse porte les champs : le bouton apparaît sans rechargement (mutation : `pay` sans champs)", async () => {
