@@ -332,6 +332,37 @@ test('un crédit du même montant ne propose jamais la facture fournisseur', asy
 	}
 });
 
+// Story 33-1b (AC11) : l'avis nomme la facture par son numéro interne, forme courte.
+test('une facture dans un lot en cours : l’avis nomme son numéro interne', async ({
+	page,
+}, testInfo) => {
+	await login(page);
+	const d = await decor(page, 'Lot', 'DBIT', true);
+	const ctx = await authedApiContext(page);
+	let lot: number | null = null;
+	try {
+		const res = await ctx.post('/api/v1/payment-batches', {
+			data: {
+				bankAccountId: d.bankAccountId,
+				requestedExecutionDate: PAYMENT_DATE,
+				supplierInvoiceIds: [d.supplierInvoiceId],
+			},
+		});
+		expect(res.ok(), await res.text()).toBeTruthy();
+		lot = (await res.json()).batch.id;
+		const interne = (await factureFournisseur(page, d.supplierInvoiceId)).internalNumber;
+		expect(interne).toBeTruthy();
+		const ligne = await ligneDeReconciliation(page, d);
+		const avis = ligne.getByTestId('proposal-notice');
+		await expect(avis).toContainText(`La facture fournisseur ${interne} de ce montant`);
+		await ligne.screenshot({ path: capturePath(testInfo, '33-1b-avis-lot-clair') });
+	} finally {
+		if (lot !== null) await ctx.post(`/api/v1/payment-batches/${lot}/cancel`, { data: {} });
+		await disposeContextSafe(ctx);
+		await nettoyer(page, d);
+	}
+});
+
 test('sans QR — un débit sans référence est désigné par le montant et le fournisseur, et accepté', async ({
 	page,
 }) => {
