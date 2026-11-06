@@ -35,7 +35,7 @@ afin de retrouver le papier sans dépendre du numéro du fournisseur, facultatif
 | F16 | MariaDB est en 10.11 en production comme en dev | `docker-compose.yml:4`, `docker-compose.dev.yml:56` |
 | F17 | `start_date` est immuable. Seule la réinitialisation supprime un exercice, et elle vide du même geste les factures fournisseur | `fiscal_years.rs:1047` ; `routes/onboarding.rs:309`, `kesh-seed/src/lib.rs:610-612`, `backup.rs:156` |
 | F18 | Une lecture verrouillante par intervalle prend ses verrous dans l'ordre du parcours, choisi par l'optimiseur ; d'où le patron « un par un » de `close`. Création et clôture d'exercice sont rejouées sur interblocage | `fiscal_years.rs:1067-1072` ; `routes/fiscal_years.rs:283,343` |
-| F20 | `audit_log.user_id` est `NOT NULL` à clé étrangère : une migration, sans auteur, n'y écrit pas ; le manuel le dit déjà du lettrage posé par une mise à jour | `20260413000001_audit_log.sql:15,21`, `user-manual.tex:1390` |
+| F20 | `audit_log.user_id` est `NOT NULL` (sa clé étrangère a été retirée par `20260910000001_audit_log_actor_label.sql:48`) : une migration, sans auteur, n'y écrit pas ; le manuel le dit déjà du lettrage posé par une mise à jour. À l'import, l'entrée `admin.full_import` nomme le rejeu et son nombre de lignes | `20260413000001_audit_log.sql:15`, `user-manual.tex:1390`, `admin.rs:526-540,639` |
 
 ## Décisions de conception (registre pour le détail)
 
@@ -181,7 +181,7 @@ exercice de la facture d'abord) : les deux routes sont rejouées (F6, F18), à l
 **La réouverture passe au rejeu** (limite voisine, `C-e331-2`) : `reopen` tient l'exercice puis demande ses postérieurs
 (`fiscal_years.rs:1258-1300`), et sa route n'est pas rejouée (`routes/fiscal_years.rs:398`), alors que la validation demande désormais les autres
 exercices de l'année. `retry_on_deadlock("fiscal_years::reopen", …)` à la route, motif cloné ; la transaction est unique, audit compris, donc sûre à
-relancer. Test route victime à `rejeu_interblocage_e2e.rs` (patron de `:1948`, témoin `warn!`). La phrase « `reopen` n'est pas rejouée » du doc-comment de
+relancer. Test route victime à `rejeu_interblocage_e2e.rs` (patron de `fiscal_year_close_is_replayed_when_it_is_the_deadlock_victim`, `:1376`, famille `DbError` : transaction lourde tenant l'exercice ouvert postérieur N, `reopen` de l'exercice clos M vu en attente sur `find_later_closed_in_tx`, la transaction demande M ; 200, rouvert, **une** entrée `fiscal_year.reopened`, témoin `warn!`). La phrase « `reopen` n'est pas rejouée » du doc-comment de
 `close` (`fiscal_years.rs:1098-1099`) se corrige : l'ordre reste, le motif devient d'éviter le cycle plutôt que d'en dépendre.
 
 **AC13 — Un numéro ne se réémet pas.** Testé à `supplier_invoices_internal_number.rs`, exercices A (1.1.2026-30.6.2026) et
@@ -201,7 +201,7 @@ B (1.7.2026-30.6.2027), format par défaut :
   `FOR UPDATE` ; la validation d'un autre brouillon de A, lancée en tâche, est **vue en attente** sur les réglages
   (`test_fixtures::attendre_une_requete_en_cours`, motifs `INSERT IGNORE` et `company_invoice_settings`). Son instantané est alors pris, `fetch_lines`
   (`:1356`) précédant les réglages (`:1421`). La session écrit `supplier_invoice_next_number = 5` sur A, ce que laissent des numéros émis puis supprimés,
-  et valide. Attendu : `FF-2026-005`, A = 6 ; sur l'instantané, on lirait 2 et `-002`, libre, serait réémis. Même montage, la session écrivant 5 sur **B** :
+  et commite. Attendu : `FF-2026-005`, A = 6 ; sur l'instantané, on lirait 2 et `-002`, libre, serait réémis. Même montage, la session écrivant 5 sur **B** :
   attendu `-005`, A = 6. Aucune de ces deux mutations ne se déclare équivalente : leur rouge est la preuve que le montage ne passe pas à vide.
 
 Les cas restants, écrits : `C-e331-23` ; le manuel les dit (AC23, et AC12 de la 33-1b).
@@ -230,7 +230,7 @@ facture numérotée par la migration et réglée après porte son numéro au rè
 `invoice_format::validate_numbering_template` : `validate_template`, puis la forme **`<préfixe>{YEAR}<séparateur>{SEQ}`** ou `{SEQ:NN}`, un seul `{YEAR}`
 puis un seul compteur, préfixe libre (vide admis), séparateur non vide et sans chiffre, rien après le compteur, aucun `{FY}`
 (`FormatError::NotNumberingShape`, message FR comme ses voisines, qui donne la forme et un exemple). Refus 400 pour un format vide, `FF-{YEAR}`, `FF-{SEQ:03}`,
-`FF-{YEAR}-{SEQ:11}`, `FF-{FY}-{SEQ}`, `FF-{FY}-{YEAR}-{SEQ}`, `{SEQ}-{YEAR}`, `FF-{YEAR}{SEQ}`, `FF-{YEAR}-1{SEQ}`, `FF-{YEAR}-{SEQ}-X` ; acceptés le défaut,
+`FF-{YEAR}-{SEQ:11}`, `FF-{FY}-{SEQ}`, `FF-{FY}-{YEAR}-{SEQ}`, `{YEAR}-{YEAR}-{SEQ}`, `{SEQ}-{YEAR}`, `FF-{YEAR}{SEQ}`, `FF-{YEAR}-1{SEQ}`, `FF-{YEAR}-{SEQ}-X` ; acceptés le défaut,
 `KF-{YEAR}-{SEQ:04}`, `{YEAR}/{SEQ}`, `F1-{YEAR}-{SEQ}`. Les formats client et avoir gardent `validate_template` (`C-e331-16`).
 
 **AC17 — L'API de la facture.** `internalNumber` (`string | null`) dans `SupplierInvoiceResponse` et `SupplierInvoiceListItemResponse`
@@ -292,15 +292,15 @@ sauvegarde d'avant la mise à jour** : la 0.17.4 ne démarre plus sur la base mi
 validées reçoivent un numéro par ordre de date, et les écritures passées ne changent pas. `:2283` (*Compatibilité*) : une sauvegarde 0.17.4
 s'importe dans la 0.17.5 et y reçoit les numéros ; pas l'inverse. **`:2358`, phrase « Depuis la 0.16.0, aucune de ces reprises n'est plus
 rejouée » et « vide depuis la 0.16.0 » : récrites**, la numérotation est rejouée. `:2529` (« la prochaine version qui migre ») : relu, renvoi à
-`sec:maj-0-17-5` ; `:2527` et `:2533` restent vrais de la 0.17.4, on n'y touche pas. Que la numérotation de l'existant **n'a pas d'entrée au journal
-d'audit** (`C-e331-24`). **§ *Importer*, `:2289`**, les trois cas de `C-e331-23`, donnés pour les seuls où un numéro peut revenir : une restauration ramène les
+`sec:maj-0-17-5` ; `:2527` et `:2533` restent vrais de la 0.17.4, on n'y touche pas. Que la numérotation de l'existant **n'a pas d'entrée propre au journal
+d'audit** à la montée, et qu'à l'import l'entrée `admin.full_import` nomme le rejeu et son nombre de lignes (`C-e331-24`). Au retour à la 0.17.4 : **les numéros écrits sur le papier depuis la mise à jour sont à refaire**. **§ *Importer*, `:2289`**, les trois cas de `C-e331-23`, donnés pour les seuls où un numéro peut revenir : une restauration ramène les
 compteurs à la date de la sauvegarde, si bien qu'un numéro attribué après elle peut être réattribué, et le numéro écrit sur le papier depuis lors se vérifie ; une
 sauvegarde 0.17.4 renumérote par date à l'import, de sorte qu'un retour à la 0.17.4 suivi d'une nouvelle montée peut décaler les numéros si des factures de date
 antérieure ont été saisies entre-temps, et elle ne porte pas le format réglé, qui revient au défaut ; une réinitialisation des données fait repartir les numéros de 1,
 le classement papier restant à la charge de qui l'ordonne. Le manuel utilisateur et le réglage à l'écran sont à la 33-1b.
 
 **AC24 — CHANGELOG et API.** `## [0.17.5] — Non publié` (union) : *Ajouté*, le numéro interne, avec l'avertissement de migration et la
-sauvegarde, `refs #926`. `docs/api-external.md` : `internalNumber` et le cycle d'une facture. `supplierInternalNumberFormat` n'y figure pas : le
+sauvegarde, l'ordre appliqué aux factures déjà saisies (`fy.start_date, invoice_date, id`), l'absence d'entrée d'audit propre à la montée et les trois cas où un numéro peut revenir, `refs #926`. `docs/api-external.md` : `internalNumber` et le cycle d'une facture. `supplierInternalNumberFormat` n'y figure pas : le
 document ne décrit pas `/company/invoice-settings` (aucune occurrence de la route ni de `invoiceNumberFormat`), réglage d'écran resté hors du contrat
 externe, comme le format client.
 
@@ -340,7 +340,7 @@ production : elles ne bougent pas. `git grep -nE "(Facture|Règlement) fournisse
 | M19 | Départ sans les autres exercices de l'année (compteur de `fy` seul) | AC13 (a), (b), (c), (e) |
 | M21 | Autres exercices de l'année restreints aux ouverts | AC13 (d) |
 | M22 | Compteur d'un autre exercice de l'année lu sans `FOR UPDATE` | AC13 (g) |
-| M23 | Forme non contrôlée : présence de `{YEAR}` et `{SEQ}` seule | AC16 (`FF-{FY}-{YEAR}-{SEQ}`, `{SEQ}-{YEAR}`, `FF-{YEAR}-1{SEQ}`, `FF-{YEAR}-{SEQ}-X`) |
+| M23 | Forme non contrôlée : présence de `{YEAR}` et `{SEQ}` seule | AC16 (`FF-{FY}-{YEAR}-{SEQ}`, `{YEAR}-{YEAR}-{SEQ}`, `{SEQ}-{YEAR}`, `FF-{YEAR}-1{SEQ}`, `FF-{YEAR}-{SEQ}-X`) |
 | M24 | `render` reçoit `fy.name` au lieu du nom vide | AC13 (e) |
 | M25 | Libellé sans aucun numéro : chaîne vide au lieu de `#id` | AC15 |
 | M26 | `reopen` sans rejeu à la route | AC12 (témoin `warn!`) |
@@ -351,7 +351,7 @@ production : elles ne bougent pas. `git grep -nE "(Facture|Règlement) fournisse
 2. Tests rouges (ci-dessus).
 3. Migration ; `regen-test-schema.sh` ; P5, P6, P7.
 4. `invoice_format`, entité, listes de colonnes, attribution, libellés.
-5. Réglages, routes (rejeu de `reopen` compris), MCP, CSV.
+5. Réglages, routes (rejeu de `reopen` compris, doc-comment d'`audit_route_registry.rs:124-129,159-160` suivi), MCP, CSV.
 6. Rejeu et tests d'import.
 7. Mutations.
 8. Gate complet, E2E complet, répétition (AC22).
@@ -388,6 +388,16 @@ migration sur une base peuplée ; la cohérence **migration / extrait de rejeu**
 *À compléter : sites P6 inspectés, tests rouges constatés, mutations, gates et chiffres, journal de la répétition.*
 
 ## Change Log
+
+- 2026-11-06, étape 0 du développement (Opus 5.5) : les neuf LOW de `kesh-gate-logs/e33-validate-p3-e331.md`, prémisses relues.
+  - **R-L1** : prémisse écrite à `C-e331-16` et `C-e331-23`, année de 1000 à 9999, que borne la 33-4 (`render` écrit `year.to_string()`, `invoice_format.rs:227`, sans remplissage ; `POST /fiscal-years` ne borne pas `start_date` à ce jour).
+  - **R-L2** : AC12 cite le patron `:1376` (lu : `fiscal_year_close_is_replayed_when_it_is_the_deadlock_victim`), assertion d'une seule entrée d'audit ajoutée.
+  - **R-L3** : F20 et `C-e331-24` : `fk_audit_log_user` retirée par `20260910000001_audit_log_actor_label.sql:48` (relu à la migration), `NOT NULL` suffit ; à l'import, `admin.full_import` nomme le rejeu.
+  - **R-L4** : `{YEAR}-{YEAR}-{SEQ}` ajouté à AC16 et M23, miroir à la 33-1b.
+  - **R-L5** : `audit_route_registry.rs` ajouté à la tâche 5.
+  - **F-L1** : AC24 porte l'ordre, l'absence d'entrée et les trois cas. **F-L2** : dialogue de la 33-1b, renvoi au manuel. **F-L3** : phrase ajoutée à AC23.
+  - **F-L4** : `internal_number` reste juste après `supplier_invoice_number` (AC19). Lu : l'export CSV porte une ligne d'en-tête et le dépôt n'a aucun lecteur par position (`exports_global_e2e` lit par nom) ; le manuel ne promet aucun ordre de colonnes.
+  - Réserve de rédaction du rapport : « et valide » devient « et commite » à AC13 (g).
 
 - 2026-11-06 : fiche créée, `ready-for-dev`.
 - 2026-11-06, remédiation de la validation P1 (Opus 5.5, rapports `kesh-gate-logs/e33-validate-p1-e331-R.md` et `-F.md` ; passe 1 : 0 CRITICAL, 0 HIGH, 3 MEDIUM, 13 LOW, dont dix findings touchant cette fiche, 1 MEDIUM et 9 LOW). Prémisses relues aux lignes citées, toutes justes sauf ce qui est dit ci-dessous.

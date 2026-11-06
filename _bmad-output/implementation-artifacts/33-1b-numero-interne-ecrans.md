@@ -127,13 +127,13 @@ service MCP (`services/factures_fournisseur.rs:119`), qui garde son comportement
 
 **AC6 — La fiche.** Titre en forme courte ; `<dl>` : **N° interne** (`supplier-invoice-detail-internal-number`), **N° fournisseur**
 (`supplier-invoice-detail-supplier-number`). Brouillon jamais validé : « attribué à la validation ». **Brouillon numéroté** : le numéro, et « conservé si la
-facture est revalidée ; perdu si elle est supprimée ». Le dialogue de suppression d'un brouillon numéroté avertit : « Le numéro sera perdu. Kesh ne le reprendra pas, sauf restauration d'une sauvegarde plus ancienne ou réinitialisation des données. »
+facture est revalidée ; perdu si elle est supprimée ». Le dialogue de suppression d'un brouillon numéroté avertit : « Le numéro sera perdu. Kesh ne le reprendra pas, hors les cas dits au manuel (sauvegarde restaurée, réinitialisation). »
 Après validation, le numéro paraît **sans recharger** (réponse de la route).
 
 **AC7 — Le réglage.** *Administration → Facturation* (`settings/invoicing/+page.svelte`, section *Numérotation*, `:288`) : champ **Format des factures
 fournisseur** (`settings-supplier-internal-number-format`), aide, aperçu, refus sur place. Le champ part dans le corps ; chargé et relu après conflit de
 version (`:159,:235`), comme `format`. Aide : « Un préfixe, `{YEAR}`, un séparateur, puis `{SEQ}` ou `{SEQ:03}`. S'applique aux numéros à venir : ceux déjà attribués ne changent pas. » `validateFormatTemplate` reçoit une option
-`numbering`, alignée sur `validate_numbering_template` (33-1a, AC16, mêmes cas acceptés et refusés) : une seule clé, `invoices-format-error-numbering`, aux quatre locales. Le champ client, lui, ne change pas de règle.
+`numbering`, alignée sur `validate_numbering_template` (33-1a, AC16, mêmes cas acceptés et refusés, `{YEAR}-{YEAR}-{SEQ}` compris) : une seule clé, `invoices-format-error-numbering`, aux quatre locales. Le champ client, lui, ne change pas de règle.
 Type `InvoiceSettings` (`invoices.types.ts`), `settings-invoicing-page.test.ts` suit.
 
 **AC8 — Les sites.** Chaque ligne de l'inventaire est appliquée, et un test le prouve au niveau où il vit : Vitest pour le libellé rendu, `*_e2e` pour les champs
@@ -147,7 +147,7 @@ alignés, `npm run lint-i18n-ownership` vert. Clés neuves recomptées par `grep
 **AC10 — E2E.** `frontend/tests/e2e/supplier-internal-number.spec.ts`, assertions **relatives** (la base partagée a un compteur qui ne redescend pas) :
 brouillon sans numéro → validé, numéro au motif `FF-AAAA-NNN` → présent à la liste → trouvé par `q` (numéro interne ; numéro du fournisseur) → tri croissant et
 décroissant, vérifiés sur l'ordre des lignes → repassé en brouillon : numéro conservé → revalidé : **le même** → réglage modifié (`KF-{YEAR}-{SEQ:04}`) → la facture
-suivante le porte, la première non → format `FF-{YEAR}` refusé sur place, `FF-{SEQ:03}` et `FF-{FY}-{SEQ}` aussi → postes ouverts du compte créanciers : la pièce dit le numéro interne → détail d'un lot : la facture dit le
+suivante le porte, la première non → format `FF-{YEAR}` refusé sur place, `FF-{SEQ:03}`, `FF-{FY}-{SEQ}` et `{YEAR}-{YEAR}-{SEQ}` aussi → postes ouverts du compte créanciers : la pièce dit le numéro interne → détail d'un lot : la facture dit le
 numéro interne. **Format restauré par un `afterAll`**, qui survit à un échec en cours de spec. `supplier-documents.spec.ts:476` suit (lien : numéro interne). Sans changer de nom : le
 `testid` `supplier-invoice-number` (`supplier-invoice-draft-cycle.spec.ts:313`, seule spec à le lire) et la propriété `supplierInvoiceNumber` envoyée à la création (`helpers/api-fixtures.ts`,
 `payment-batches`, `v0174-correctifs`, `supplier-invoices`, `supplier-documents`, `supplier-invoice-draft-cycle`) : ces cinq specs restent vertes.
@@ -255,6 +255,8 @@ Recherche par numéro interne au journal (le libellé de l'écriture la permet d
 *À compléter.*
 
 ## Change Log
+
+- 2026-11-06, étape 0 du développement de la 33-1a (Opus 5.5) : R-L4 (`{YEAR}-{YEAR}-{SEQ}`, AC7, AC10) et F-L2 (dialogue d'AC6, renvoi au manuel) reportés ici depuis `kesh-gate-logs/e33-validate-p3-e331.md`.
 
 - 2026-11-06 : fiche créée, `ready-for-dev`.
 - 2026-11-06, remédiation de la validation P1 (Opus 5.5, rapports `kesh-gate-logs/e33-validate-p1-e331-R.md` et `-F.md`). Findings touchant cette fiche : 2 MEDIUM et 4 LOW de la lentille F (M1, M2, L1, L2, L6, L7), 1 LOW de la lentille R (L-6), plus la propagation du M-1 de la lentille R. Prémisses relues aux lignes citées, toutes justes.
