@@ -1289,15 +1289,39 @@ champ_corps!(
             "valueDate",
             v,
         );
-        let r = m
+        m.post(
+            "/api/v1/reconciliation/accept",
+            json!({"bankAccountId": compte, "proposals": [proposition]}),
+        )
+        .await
+    }
+);
+
+/// Le témoin du lot : un `200` n'y prouve rien, `failed[]` en rend un aussi. La
+/// proposition doit être **acceptée**, avec la date comme sans elle.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn c_rapprochement_lot_temoin_accepte(pool: MySqlPool) {
+    let m = monter(&pool).await;
+    let compte = compte_bancaire_unique(&m).await;
+    for v in [Some(aujourd_hui()), None] {
+        let tx = m.transaction_du_jour(compte).await;
+        let proposition = avec(
+            json!({"type": "split", "bankTransactionId": tx, "splits": m.lignes_eclatement()}),
+            "valueDate",
+            v,
+        );
+        let (s, t) = m
             .post(
                 "/api/v1/reconciliation/accept",
                 json!({"bankAccountId": compte, "proposals": [proposition]}),
             )
             .await;
-        r
+        assert_eq!(s, 200, "{t}");
+        let corps: Value = serde_json::from_str(&t).unwrap();
+        assert_eq!(corps["accepted"].as_array().unwrap().len(), 1, "{t}");
+        assert_eq!(corps["failed"].as_array().unwrap().len(), 0, "{t}");
     }
-);
+}
 
 champ_corps!(
     c_rapprochement_manuel,
