@@ -1221,7 +1221,8 @@ mod tests {
     /// à incertain.
     #[test]
     fn each_of_the_seven_columns_counts_915() {
-        let cases: [(&str, fn(&mut LineTexts)); 7] = [
+        type Change = fn(&mut LineTexts);
+        let cases: [(&str, Change); 7] = [
             ("value_date", |t| t.value_date = None),
             ("reference", |t| t.reference = Some("Autre".into())),
             ("end_to_end_id", |t| t.end_to_end_id = None),
