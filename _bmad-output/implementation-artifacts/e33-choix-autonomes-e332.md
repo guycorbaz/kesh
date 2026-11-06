@@ -31,7 +31,7 @@ Registre propre à ces trois fiches, **versé par union** par l'orchestrateur. C
 ### C-e332-3 — Un alias ne reconnaît une ligne que si tous ses textes sont ceux de la lecture héritée
 
 - **Contexte** : #915 laisse trois voies : garder, borner dans le temps, ne plus écarter par défaut. Une ligne importée par la 0.17.x porte en
-  base **les textes** de cette lecture, jamais modifiés ensuite (17 sites `UPDATE`, aucun sur ces colonnes), et leur calcul n'a pas changé
+  base **les textes** de cette lecture, jamais modifiés ensuite (11 requêtes `UPDATE`, aucune sur ces colonnes ; « 17 sites », écrit ici jusqu'à la validation P3, comptait 6 commentaires), et leur calcul n'a pas changé
   depuis l'Epic 8 hors #819 et la devise.
 - **Retenu** : égalité stricte sur `value_date`, `reference`, `end_to_end_id`, `transaction_id`, `counterparty_iban`, `counterparty_name`,
   `details` ; `currency` en est exclue (changée par e04122dc). L'index garde toutes les lignes d'une clé.
@@ -39,7 +39,7 @@ Registre propre à ces trois fiches, **versé par union** par l'orchestrateur. C
   garder la clé seule : c'est #915.
 - **Limite écrite** (annoté le 2026-11-06, validation P1, R-4) : #915 est **réduit**, non supprimé. Une ligne neuve dont les sept textes, lus à l'ancienne, égalent ceux d'une ligne existante reste signalée comme doublon : rien ne la distingue
   d'une ligne déjà importée. AC-F5 la fixe, manuel et CHANGELOG la disent, une issue de reliquat est demandée.
-- **Réserve écrite** (annoté le 2026-11-06, validation P2) : le choix tient quel que soit le `sql_mode` du serveur. Le pool de production n'en pose aucun (`main.rs:91-94` ; `create_pool` n'a pas d'appelant), `docker-compose.yml` garde le défaut strict de l'image, et `docker-compose.prod.yml` laisse la base à l'utilisateur : le dépôt ne l'établit pas pour le NAS. Sur un serveur sans mode strict, un texte de plus de 255 caractères aurait été tronqué ; la ligne, si elle passe par l'alias, devient incertaine, importée et signalée (C-e332-4), jamais écartée en silence (AC-F4) ; une `reference` elle-même tronquée change la clé et s'importe sans signal, comme en 0.17.4.
+- **Réserve écrite** (annoté le 2026-11-06, validation P2) : le choix tient quel que soit le `sql_mode` du serveur. Le pool de production n'en pose aucun (`main.rs:91-94` ; `create_pool` n'a pas d'appelant), `docker-compose.yml` garde le défaut strict de l'image, et `docker-compose.prod.yml` laisse la base à l'utilisateur : le dépôt ne l'établit pas pour le NAS. Sur un serveur sans mode strict, un texte de plus de 255 caractères aurait été tronqué ; la ligne, si elle passe par l'alias, devient incertaine, importée et signalée (C-e332-4), jamais écartée en silence (AC-F4) ; une `reference` elle-même tronquée change la clé et s'importe sans signal, comme en 0.17.4. **Révisé le 2026-11-06, validation P3 (R-6, arbitrage de l'orchestrateur)** : le texte relu se coupe à la largeur de sa colonne avant l'égalité, une seule fois, si bien qu'un texte tronqué à l'écriture reste reconnu au lieu de devenir incertain ; l'exception de la `reference` demeure.
 - **Réversible** : oui, aucune donnée touchée.
 
 ### C-e332-4 — Clé d'alias égale, textes différents : importée et signalée

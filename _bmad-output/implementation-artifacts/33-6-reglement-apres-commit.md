@@ -34,14 +34,14 @@ lecture après le commit, pour qu'aucun 404 ni 500 n'annonce en échec un règle
 | Site | Décision |
 |---|---|
 | #768 point 1 : `decider_envoi` relit après commit (`routes/mcp_envois.rs:262-267`), un 500 annonce en échec une décision écrite | **Traité** : lecture dans la tx avant le commit. `mcp_sends::trouver` prend un `&MySqlPool` (`kesh-db/src/repositories/mcp_sends.rs:235-239`) : forme `trouver_in_tx`, réemployée par `trouver` (DRY), et ⚠️ `kesh-db` touché, gate complet |
-| #773 point 3 : si la réponse d'une décision se perd, l'écran ne propose pas *Recharger* | **Traité si le point 1 ne suffit pas à le rendre sans objet** : `McpSendDetail.svelte:106`, le `catch` non `ApiError` (délai, réseau) montre le bouton existant de `:296` ; une ligne et un test Vitest |
+| #773 point 3 : si la réponse d'une décision se perd, l'écran ne propose pas *Recharger* | **Traité** : le point 1 ne le rend pas sans objet (délai, coupure réseau). `erreurDeDecision` (`mcp-sends-format.ts:81-103`), hors `ApiError` : `recharger: true`, qui montre le bouton existant (`McpSendDetail.svelte:295-296`) ; une ligne et un test Vitest |
 | Facture fournisseur : `load_with_settlement_cancellation` après `pay`, `cancel`, `validate`, `unvalidate`, etc. (`supplier_invoices.rs:776,881,917,946,970,1002`, `imported_supplier_invoices.rs:141,595,700`) | **Non traité, à tracer** : neuf sites, et une lecture à quatre champs calculés ; déborde, et 33-1a/b récrit ce fichier. **Issue demandée à l'orchestrateur** (C-e334-8) |
 | Le reste de #768 (points 2 à 7) et de #773 | Autre nature : les deux issues restent ouvertes, chacune commentée de ce qui a été fait |
 
 ## Acceptance Criteria
 
 1. **AC-1** : `SettlementOutcome` porte `invoice: Invoice`, `lines: Vec<InvoiceLine>`, `amount_settled: Decimal`, lus dans la transaction, après la
-   dernière écriture et avant le commit. Mêmes champs pour `WriteOffOutcome` (avec `amount_due`), et pour un retour de `cancel_settlement`.
+   dernière écriture et avant le commit. Mêmes champs, plus `amount_due`, pour `WriteOffOutcome`. Le retour de `cancel_settlement` gagne `invoice`, `lines` et `amount_settled` : `amount_due_after` y est déjà (`invoice_settlements_write.rs:797-802`).
 2. **AC-2 — garde** : les corps de `settle_invoice_handler`, `write_off_invoice_handler` et `cancel_invoice_settlement_handler` ne contiennent ni
    `find_by_id_with_lines`, ni `amount_settled(`, ni `amount_due(`, ni `state.pool` après l'appel d'écriture (garde lexicale T3, avec **sonde positive**).
 3. **AC-3 — ce qui est rendu est ce qui est écrit** : pour les trois routes, la réponse HTTP égale champ à champ un `GET /invoices/{id}` qui la suit
@@ -51,7 +51,7 @@ lecture après le commit, pour qu'aucun 404 ni 500 n'annonce en échec un règle
 5. **AC-5** : aucun appelant des trois fonctions ne change de comportement (`grep` des sites en `tests/`, `reconciliation`, `kesh-report`), `reconciliation_cancel`
    ne lit rien de plus.
 6. **AC-6** : `decider_envoi` : la réponse vient de la tx ; égale à `GET /admin/mcp/sends/{id}` qui la suit ; ses refus inchangés.
-7. **AC-7** : (si traité) l'écran propose *Recharger* quand la décision échoue sans réponse du serveur.
+7. **AC-7** : l'écran propose *Recharger* quand la décision échoue sans réponse du serveur ; une `ApiError` garde son comportement.
 8. **AC-8** : une défaillance de la lecture interne fait échouer et annule la transaction : **pas de commit sans réponse**. Écrit au doc-comment, c'est ce
    qui ferme la classe.
 
@@ -62,7 +62,7 @@ lecture après le commit, pour qu'aucun 404 ni 500 n'annonce en échec un règle
 - [ ] **T2** : forme `find_with_lines_in_tx` à `repositories/invoices.rs`, réemployée par `find_by_id_with_lines` (DRY) ; sorties des trois fonctions ; trois handlers.
   ⚠️ `kesh-db` touché : **gate complet même en cours de boucle** (`CLAUDE.md`, exception `kesh-db`).
 - [ ] **T3** : garde lexicale dans le même fichier de test.
-- [ ] **T4** : `mcp_envois.rs`, `mcp_sends` ; `McpSendDetail.svelte` et son test si traité.
+- [ ] **T4** : `mcp_envois.rs`, `mcp_sends` ; `mcp-sends-format.ts`, `McpSendDetail.test.ts`.
 - [ ] **T5** : CHANGELOG *Corrigé* (`refs #450`, `refs #768`, `refs #773`).
 
 ### Mutations nommées (P2)
@@ -70,7 +70,7 @@ lecture après le commit, pour qu'aucun 404 ni 500 n'annonce en échec un règle
 - **M1** : la lecture d'`amount_settled` déplacée avant l'`INSERT` du règlement → rouge AC-3.
 - **M2** : la lecture de la facture déplacée avant l'incrément de `version` → rouge AC-3 (écart de version, celui qui ferait échouer le geste suivant en 409).
 - **M3** : `find_by_id_with_lines` réintroduit dans un handler → rouge AC-2. **M4** : `outcome.lines` rendu vide → rouge AC-3.
-- **M5** : `amount_due` omis du solde (retombé à `Decimal::ZERO`, plausible et faux sur une annulation) → rouge AC-3 côté annulation.
+- **M5** : l'`amount_due` du solde lu avant son écriture (le reste d'avant) → rouge AC-3, solde.
 
 ## Gates
 
@@ -90,6 +90,7 @@ après règlement (`/usr/bin/grep -n 'règlement.*404' docs/api-external.md docs
 - 2026-11-06 : fiche créée (Opus 5.5).
 - 2026-11-06 : validation P1 (Sonnet 5.5) : aucun finding, lentilles R et F. Fiche inchangée, hors cette entrée (Opus 5.5).
 - 2026-11-06 : validation P2 (Opus 5.5), remédiation (Opus 5.5). Un LOW. **L-R6-1** : tranché, forme `_in_tx` (lu : `mcp_sends.rs:235-266`). Prémisse du rapport nuancée : `trouver` ne fait qu'**une** requête, et non plusieurs ; le geste reste petit, mais touche `kesh-db`. « Quatre lignes » retiré.
+- 2026-11-06 : validation P3 (Sonnet 5.5, lentilles R et F), remédiation (Opus 5.5). Deux LOW, aucun réfuté. **L-R6-1** : tranché, traité, plus de condition à l'AC-7 ni à T4 (lus : `McpSendDetail.svelte:106-109,295-296`, `mcp-sends-format.ts:81-103`) ; le site est dans le format, non dans le composant. **L-R6-2** : AC-1 et M5 (lus : `invoice_settlements_write.rs:797-802`, `invoices.rs:1228-1233,1357-1361`). ⚠️ M5 changée plus que le rapport ne le demandait : un solde solde **tout** le reste (`:415`), si bien que `Decimal::ZERO` y est la valeur juste, et la mutation d'origine, placée sur le solde, aurait survécu. Mutations : 5, inchangées.
 
 ## Dev Agent Record
 

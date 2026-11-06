@@ -38,7 +38,7 @@ transaction réécrite, aucune migration. Aucune ligne réelle dans les captures
    héritée ne voit ni référence d'entité ni CDATA, et distribue chaque morceau de texte seul.
    - **E1, lecture.** Un champ obligatoire entièrement en CDATA ou en référence : date de comptabilisation
      (`emit_transactions`, `MissingRequiredField`), montant, sens (`CdtDbtInd` d'une `Ntry` sans `TxDtls`, `:726`), période du relevé, IBAN, devise du compte
-     (`finalize_statement`) ; ou coupé en deux par une référence, dont le dernier morceau ne se lit pas (`parse_date`,
+     (`finalize_statement`) ; montant ou sens d'un solde dont le code se lit (`apply_balance`, `:671-676` ; un code illisible laisse le solde ignoré, `:668-670`) ; ou coupé en deux par une référence, dont le dernier morceau ne se lit pas (`parse_date`,
      `InvalidDate`, `Decimal::from_str`, `InvalidAmount`, `parse_sign`, `:638`). Le sens perdu d'un `TxDtls` retombe sur celui de la `Ntry` (`:748-756`), et finit au besoin en E4, le montant signé différant.
    - **E2, sélection.** L'IBAN du compte écrit avec une référence : lu tronqué, il ne correspond plus (`select_statement_by_iban`,
      `:932-963`).
@@ -71,13 +71,13 @@ transaction réécrite, aucune migration. Aucune ligne réelle dans les captures
 6. **La lecture héritée donne plus que la clé.** Une ligne importée par la 0.17.3 porte en base les **textes** de cette lecture :
    `value_date`, `reference`, `end_to_end_id`, `transaction_id`, `counterparty_iban`, `counterparty_name`, `details`
    (`BankTransactionDraft::from`, `kesh-core/bank_imports.rs:85-100`, puis `new_txs`, `bank_imports.rs:1408-1424`, sans
-   transformation). **Ces colonnes ne changent jamais après l'import** : les 17 sites `UPDATE bank_transactions` de production ne
+   transformation). **Ces colonnes ne changent jamais après l'import** : les 11 requêtes `UPDATE bank_transactions` de production (17 occurrences de la chaîne, dont 6 commentaires) ne
    touchent que `status`, `matched_entry_id`, `auto_match_rejected_at`, `updated_at`, `version`
    (`git grep -n -A5 "UPDATE bank_transactions" -- crates/kesh-api/src crates/kesh-db/src`, `SET` relus : aucun ne nomme une colonne de texte, de date ni de montant). **Et leur calcul n'a pas changé
    entre les versions** : `git log -- crates/kesh-import/src/camt053/mod.rs` ne porte que 076ac863 (création), dc51300e
    (dépendances), e04122dc (devise : d'où `currency` **hors** de la comparaison), 910e5d5a (0.17.0, tenue par la
-   caractérisation), c2051805 (0.17.4, #819). Une ligne qu'a réellement importée la 0.17.x a donc en base exactement les textes que
-   recalcule `parse_legacy_0173`, **à une réserve près : la troncature à l'écriture**. Le pool de production (`kesh-api/src/main.rs:91-94`) ne pose aucun `sql_mode` : `create_pool`, qui en pose un strict (`kesh-db/src/pool.rs:42`), n'a aucun appelant. Reste donc celui du serveur, auquel sqlx n'ajoute que `PIPES_AS_CONCAT,NO_ENGINE_SUBSTITUTION`
+   caractérisation), c2051805 (0.17.4, #819) ; `v04.rs` et `v08.rs` n'ont changé qu'à c2051805 (`TextMode::Joined` passé) ; quick-xml passe de 0.39.4 à 0.42.0 à la 0.17.0, ce que 910e5d5a conserve octet pour octet (`camt053_golden.rs:232`). Une ligne importée par la 0.17.3 ou une version antérieure a donc en base exactement les textes que
+   recalcule `parse_legacy_0173` (une ligne de la 0.17.4 porte ceux de la lecture corrigée, et se retrouve par la clé directe), **à une réserve près : la troncature à l'écriture**. Le pool de production (`kesh-api/src/main.rs:91-94`) ne pose aucun `sql_mode` : `create_pool`, qui en pose un strict (`kesh-db/src/pool.rs:42`), n'a aucun appelant. Reste donc celui du serveur, auquel sqlx n'ajoute que `PIPES_AS_CONCAT,NO_ENGINE_SUBSTITUTION`
    (`sqlx-mysql-0.8.6/src/options/connect.rs:53-66`). `docker-compose.yml:33-37` n'en fixe aucun, et l'image `mariadb:10.11` est stricte par défaut (`STRICT_TRANS_TABLES`, relevé sur `kesh-mariadb-dev`, même image, sans réglage non plus) ; mais `docker-compose.prod.yml:7-9` laisse la base à l'utilisateur, et le manuel ne fait que recommander ce mode (`admin-manual.tex:1022`). **Le dépôt ne l'établit donc pas pour le NAS, et la conception n'en dépend pas** (AC-F4). C'est ce qui réduit #915 sans rouvrir #922 (C-e332-3). **Réduit, et non supprimé** : une ligne neuve dont les sept textes,
    lus à l'ancienne, égalent ceux d'une ligne existante reste signalée comme doublon (typiquement une ligne qui ne porte que sa référence). Rien
    ne la distingue d'une ligne vraiment déjà importée : AC-F5.
@@ -123,7 +123,7 @@ Décision de Guy (#922, 2026-11-06, epic) : **refus de ce relevé, message clair
   sont égaux à leur valeur d'avant, et un import valide du même compte, juste après, réussit (ni verrou ni transaction restés).
 - **AC-R7** — Message, quatre locales, clé `bank-import-errors-legacy-reread-failed`. Français :
   « Kesh ne peut pas vérifier que ce relevé ne reprend pas des lignes déjà importées par une version antérieure : il n'a rien
-  importé. Demandez à votre banque un nouvel export de ce relevé ; à défaut, vérifiez dans la liste des transactions du compte
+  enregistré. Demandez à votre banque un nouvel export de ce relevé ; à défaut, vérifiez dans la liste des transactions du compte
   quelles lignes y figurent déjà, et saisissez les autres avec un relevé saisi à la main. » Fallback Rust : la version française,
   comme les voisines.
 - **AC-R8** — Un relevé **sans ligne** dont la relecture échoue n'est pas refusé : aperçu `200`, création `201`, zéro transaction.
@@ -138,8 +138,7 @@ Décision de Guy (#922, 2026-11-06, epic) : **refus de ce relevé, message clair
 - **AC-N1** — Un relevé sans entité : aperçu `200`, création `201`, comme avant.
 - **AC-N2** — Un relevé à entités et CDATA dans ses textes, relisible (`first_file_819`) : aperçu `200`, création `201`.
 - **AC-N3** — Le test parcourt les fixtures du dépôt (`crates/kesh-import/tests/fixtures/camt053/*.xml`, 19 fichiers,
-  `frontend/tests/e2e/fixtures/camt053_*.xml`, 4 fichiers) et les range en deux classes. **Refusés** : la lecture corrigée rend une erreur (`v04_truncated*`,
-  `v04_invalid_iban`, etc.) : rien à relire. **Acceptés** : pour l'IBAN de leur premier relevé, `legacy_0173_aliases` rend `Ok`. Une
+  `frontend/tests/e2e/fixtures/camt053_*.xml`, 4 fichiers) et les range en deux classes. **Refusés** : la lecture corrigée rend une erreur : rien à relire. **Acceptés** : pour l'IBAN de leur premier relevé, `legacy_0173_aliases` rend `Ok`. Une
   exception ne s'admet que nommée, cause dite, au Change Log, et si sa construction relève d'E1 à E4. **Pas de test muet** : le test échoue si
   `acceptés + refusés ≠ 23`, et si `acceptés` diffère d'une constante en dur, relevée au développement et écrite au Change Log. `v04_multi_stmt.xml`
   (deux IBAN distincts, donc sans E3 ni E4) et `v04_characterization.xml` (entités et CDATA, IBAN simple) sont nommés dans le test et passent, sans exception.
@@ -153,7 +152,7 @@ Décision de Guy (#922, 2026-11-06, epic) : **refus de ce relevé, message clair
 - **AC-S2** — Même preuve avec une référence **en CDATA** (lue vide en 0.17.3) : la ligne enregistrée comme la 0.17.3 reste
   reconnue.
 - **AC-S3** — Plusieurs lignes existantes de même clé d'alias, seule la seconde a les mêmes textes : la ligne est reconnue, et
-  `existingTransactionId` est l'`id` de la **seconde** (le `or_insert` n'y fait plus obstacle).
+  `existingTransactionId` est l'`id` de la **seconde** (le `or_insert` n'y fait plus obstacle). Si aucune n'a les mêmes textes, ou si plusieurs les ont, l'`id` rendu, à `uncertainLegacyLines` comme à `duplicateLines`, est le **plus petit** de la clé.
 - **AC-S4** — Le chemin de clé directe ne change pas : une ligne dont la clé égale une ligne existante est un doublon quels que
   soient ses textes (« le libellé n'en fait pas partie », `user-manual.tex:2716`). Le CSV et la saisie manuelle ne passent aucun
   alias et rendent ce qu'ils rendaient (`detect_duplicate_lines`).
@@ -175,7 +174,7 @@ Décision de Guy (#922, 2026-11-06, epic) : **refus de ce relevé, message clair
 - **AC-F3** — Écran : `uncertainLegacyLines` non vide affiche le panneau `warning-uncertain-legacy-lines` (phrase chiffrée, au singulier ou au pluriel, tableau
   index et ID existant), **informatif** : il ne désactive pas *Confirmer l'import*. Liste vide : aucun panneau. Quatre locales.
 - **AC-F4** — Les **sept** colonnes comparées sont exactement `value_date`, `reference`, `end_to_end_id`, `transaction_id`,
-  `counterparty_iban`, `counterparty_name`, `details`, à égalité stricte, **sans** `currency` (e04122dc). **Quel que soit le `sql_mode` du serveur** (prémisse 6) : un texte stocké tronqué, sur un serveur sans mode strict, diffère comme un autre ; la ligne est incertaine, importée et signalée (C-e332-4), jamais écartée en silence. Seule exception, inchangée par cette story : une `reference` elle-même tronquée change la clé, et la ligne s'importe sans signal, comme en 0.17.4. En mode strict, un texte trop long n'a pas pu être stocké : le cas n'existe pas. Aucun test ne dépend du mode : ceux de cet AC sont purs.
+  `counterparty_iban`, `counterparty_name`, `details`, à égalité stricte **modulo la largeur de colonne**, **sans** `currency` (e04122dc). Le texte de la lecture héritée se coupe une fois, à la largeur de sa colonne (255 caractères ; `counterparty_iban`, 34 ; `details`, 65 535 octets, à une frontière de caractère ; `20260504000001_bank_imports.sql:64-69`). **Quel que soit le `sql_mode` du serveur** (prémisse 6), un texte qu'un serveur sans mode strict a tronqué à l'écriture reste donc reconnu : 300 caractères lus et leurs 255 premiers stockés, doublon ; leurs 254 premiers stockés, incertaine. Seule exception, inchangée par cette story : une `reference` elle-même tronquée change la clé, et la ligne s'importe sans signal, comme en 0.17.4. En mode strict, un texte trop long n'a pas pu être stocké : le cas n'existe pas. Aucun test ne dépend du mode : ceux de cet AC sont purs.
 - **AC-F5** — **La limite qui reste, caractérisée** : ligne neuve de référence `REF &amp; Co &lt;1&gt;` et ligne existante de référence « 1 », mêmes date,
   montant et compte, et **mêmes sept textes** après lecture héritée : la ligne est dans `duplicateLines`, écartée par défaut, importable par
   *Importer quand même*. Elle est indiscernable d'une ligne vraiment déjà importée. Elle se **voit** à l'aperçu : le faux doublon est réduit à ce cas,
@@ -222,7 +221,7 @@ Dans le `mod` des alias de `routes/bank_imports.rs` (`:2570-` : `aliases_of`, `n
 `every_repository_fixture_rereads_922` (N3), `line_count_branch_is_reachable_922`, `misaligned_branch_is_reachable_922`.
 
 Dans `kesh-core/src/bank_imports.rs` : tests purs de la comparaison (F4 : **une ligne de test par colonne**, chaque colonne qui
-diffère fait passer de doublon à incertain ; S3 ; S4).
+diffère fait passer de doublon à incertain ; la largeur de colonne ; S3, plus petit `id` compris ; S4).
 
 Dans `crates/kesh-import/tests/` : `unknown_entity_in_an_unread_element_is_refused`, `unknown_entity_in_an_unread_attribute_is_not_refused` (L1) ;
 `legacy_reading_has_no_year_bound_922` (S5 (a), vert : **témoin**).
@@ -246,7 +245,7 @@ Dans `crates/kesh-import/tests/` : `unknown_entity_in_an_unread_element_is_refus
 
 - `kesh-core` : `LineTexts` (les sept champs d'AC-F4, `PartialEq` **écrit à la main**, par destructuration exhaustive `let Self { .. } = self` et une clause par
   champ : un champ ajouté ne compile pas sans être comparé, et une clause se retire sans toucher à la forme du type, ce qu'exigent M10 à M16),
-  `LegacyLine { key: DuplicateKey, texts: LineTexts }` ;
+  `LegacyLine { key: DuplicateKey, texts: LineTexts }`, dont la construction coupe les textes à la largeur de leur colonne (AC-F4), `eq` restant strict ;
   `detect_duplicate_lines_with_aliases` prend `existing: &[(i64, DuplicateKey, LineTexts)]` et `aliases: &[Option<LegacyLine>]`, et
   rend `DuplicateLines { duplicates: Vec<DuplicateLine>, uncertain: Vec<UncertainLegacyLine> }`. L'index par clé porte **toutes** les
   lignes (`HashMap<&DuplicateKey, Vec<(i64, &LineTexts)>>`). `detect_duplicate_lines` garde sa signature et son résultat, et n'a pas
@@ -275,7 +274,7 @@ tests Vitest : panneau à une ligne et à deux lignes, absent, *Confirmer* non d
   égalent ceux d'une ligne existante du même jour et du même montant reste signalée comme doublon ; l'aperçu la montre, et *Importer quand même* la récupère. Et, pour un fichier
   déjà importé, le message reste « déjà importé » (AC-R9). § *Import dans Kesh* (`:2419-2421`) : le refus, et AC-L1. FAQ (`:3779`) : une entrée « Kesh refuse mon relevé… ».
 - `docs/manual/fr/admin-manual.tex:2553`, *Passer à la 0.17.4* : section d'historique, **non réécrite** ; ajouter une phrase datée
-  « Depuis la 0.17.5, ces deux limites sont levées : … \S … ».
+  « Depuis la 0.17.5, la première limite est levée (Kesh refuse le relevé qu'il ne sait pas relire) ; la seconde est réduite à une ligne dont tous les textes, lus à l'ancienne, égalent ceux d'une ligne existante : … \S … ».
 - `docs/api-external.md`, paragraphe **Ordre des refus** (`:771`, un tableau de ressources à `:223` n'étant pas un lieu de contrat) : le
   `422 BANK_IMPORT_LEGACY_REREAD_FAILED`, `details.cause` et ses quatre valeurs ; son rang : à la création, après, dans l'ordre (`routes/bank_imports.rs:1276-1348`), le `422 BANK_IMPORT_DUPLICATE_FILE` non confirmé, la lecture du fichier, la sélection, le `422 BANK_IMPORT_UNSUPPORTED_CURRENCY`
   et le refus de solde non confirmé, avant toute écriture, sans contournement par `confirm*` ; à l'aperçu, d'emblée, solde et devise n'y étant que des avertissements, ou le `422 BANK_IMPORT_DUPLICATE_FILE` s'il est déjà importé (AC-R9). Dire l'asymétrie : un client qui envoie un fichier à solde faux n'obtient ce refus, à la création, qu'après `confirmBalanceMismatch=true`.
@@ -285,7 +284,7 @@ tests Vitest : panneau à une ligne et à deux lignes, absent, *Confirmer* non d
 - `CHANGELOG.md`, `## [0.17.5] — Non publié`, *Corrigé* : deux puces, `refs` #922 et #915, qui disent le refus et le signalement
   avec leurs conditions, et, pour #915, « réduit » : la limite d'AC-F5 y est écrite (le reproche de #923 : CHANGELOG plus bref que le manuel). Le paragraphe de la
   0.17.4 ne se récrit pas.
-- Greper le symptôme : `git grep -nE "sans aucun signal|n'est pas reconnue|Jamais d'erreur|legacy_0173_aliases" -- docs crates`.
+- Greper le symptôme : `git grep -nE "sans aucun signal|n'est pas reconnue|Jamais d'erreur|ces deux limites|legacy_0173_aliases" -- docs crates CHANGELOG.md`.
 
 ### T6 — Captures
 
@@ -327,6 +326,7 @@ Les **cinq** points de la « Fiche 1 » ; l'orchestrateur édite l'issue en le d
 | M22 | borne 1000-9999 ajoutée dans `parse_date` (une 33-4 mal placée) | `legacy_reading_has_no_year_bound_922`, `camt_short_year_in_period_is_not_refused_922` |
 | M23 | aperçu : le refus de relecture rendu même si `existing` est posé | `camt_refused_file_already_imported_says_so_922` |
 | M24 | aperçu : `existing` posé, relecture en échec, `200` au lieu d'un refus | idem |
+| M25 | textes de `LegacyLine` non coupés à la largeur de colonne | test pur de largeur (AC-F4) |
 
 Une survivante se traite ou se justifie au Change Log ; un fichier muté restauré se `touch` (cargo garde sinon le binaire muté).
 
@@ -373,6 +373,9 @@ hérite pas ; la 33-2 ne touche pas à `parse_date` (T2). Ordre de fusion indiff
 - 2026-11-06 — Remédiation de la validation P2 (rapport `kesh-gate-logs/e33-validate-p2-e332.md`, Opus 5.5, aucune compilation ni aucun test, aucun commit). Quatre constats de cette fiche, tous LOW, tous remédiés, aucun réfuté : R-12, F-1, F-2, F-3. Prémisses relues : `camt053/mod.rs:638`, `:700-711`, `:722-727`, `:748-756` (R-12) ; `BankImportUpload.svelte:567-578`, `kesh-i18n/src/loader.rs:158` (F-1) ; `routes/bank_imports.rs:1056-1112`, `:1276-1320` (F-2).
   **Question restée ouverte en P1 et P2, le `sql_mode`** (C-e332-3) : relevée sans accès au NAS, à `main.rs:91-94`, `pool.rs:39-49`, `sqlx-mysql-0.8.6/src/options/connect.rs:53-66`, `docker-compose.yml:33-37`, `docker-compose.prod.yml:7-9`, `admin-manual.tex:1022`, et, en lecture seule, `SELECT @@GLOBAL.sql_mode` sur `kesh-mariadb-dev` (MariaDB 10.11.19 : `STRICT_TRANS_TABLES,ERROR_FOR_DIVISION_BY_ZERO,NO_AUTO_CREATE_USER,NO_ENGINE_SUBSTITUTION`). ⚠️ Le doc-comment de `create_pool` semble la trancher, mais cette fonction n'a aucun appelant : le dépôt ne l'établit pas pour une base fournie par l'utilisateur. AC-F4 ne dépend donc plus du mode : la conséquence, sur un serveur sans mode strict, est celle de C-e332-4. La troncature ne joue que sur une ligne passant par l'alias (une référence à entité ou CDATA, AC-S4) et portant un autre texte de plus de 255 caractères ; une référence elle-même tronquée change la clé, comme aujourd'hui (AC-F4).
   Décomptes de cette fiche, recomptés : 23 AC, 15 tests de route au tableau de T1, 24 mutations, inchangés (M6 et M7 récrites).
+- 2026-11-06 — Remédiation de la validation P3 (rapport `kesh-gate-logs/e33-validate-p3-e332.md`, aucune compilation ni aucun test, aucun commit). Huit constats de cette fiche, tous remédiés, aucun réfuté : F-1 (MEDIUM), R-2 à R-7, F-4 (LOW). Prémisses relues : `git grep -i "UPDATE bank_transactions"` (17 lignes ; les 11 requêtes et 6 commentaires sont le relevé du rapport, non recompté) ; `git log` de `v04.rs`, `v08.rs` ; `Cargo.lock` de `v0.16.0` et `v0.17.0` ; `camt053_tests.rs:239-244`, `fixtures/README.md:37` ; `camt053/mod.rs:663-676` ; `20260504000001_bank_imports.sql:61-69` ; `kesh-core/bank_imports.rs:446-498`.
+  **Conception changée (R-6, arbitrage)** : la largeur de colonne entre à AC-F4, coupée une fois à la construction de `LegacyLine` : `eq` reste symétrique, M10 à M16 tiennent. Une ligne dont un texte a été tronqué par un serveur sans mode strict n'est plus réimportée. La coupe de MariaDB sur `details` (octets, frontière de caractère) est lue, non jouée sur un serveur non strict. C-e332-3 révisé. AC-N3 ne nomme plus d'exemple : `v04_invalid_iban` n'y est pas refusé. L'admin-manuel dit désormais ce que dit le manuel utilisateur (F-1).
+  Décomptes de cette fiche, recomptés : 23 AC, 15 tests de route au tableau de T1, 25 mutations (M25 ajoutée).
 
 ## Dev Agent Record
 

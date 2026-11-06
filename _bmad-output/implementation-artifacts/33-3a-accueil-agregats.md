@@ -243,7 +243,7 @@ Dans `services/rapports.rs` ou `tests/services_motif.rs`, selon le voisinage : A
 
 ### T4 — Documents
 
-- `docs/api-external.md` : la route, au tableau des ressources, et un paragraphe sur le contrat (mois, paires, avoir, parts).
+- `docs/api-external.md` : un paragraphe sur la route et son contrat (mois, paires, avoir, parts), sur le modèle de `:259-261` ; aucune ligne au tableau des ressources, qui ne porte aucun rapport (`:209-226`).
 - **Pas de manuel ni de CHANGELOG utilisateur dans cette story** : rien n'est visible avant la 33-3b, qui les porte. Si les deux stories
   ne partaient pas dans la même release, la ligne `docs/api-external.md` resterait vraie seule.
 - `CHANGELOG.md`, `## [0.17.5] — Non publié` : la ligne de #918 s'écrit à la 33-3b ; ici, aucune.
@@ -307,6 +307,7 @@ qui n'a pas tourné.
   ne sont pas rouverts ; ils se disent au manuel (33-3b, T6). Décomptes de cette fiche, recomptés : 19 AC, 18 lignes de mutation.
 - 2026-11-06 — Remédiation de la validation P2 (rapport `kesh-gate-logs/e33-validate-p2-e332.md`, Opus 5.5, aucune compilation ni aucun test, aucun commit). Quatre constats de cette fiche, tous LOW, tous remédiés, aucun réfuté : R-3, R-4, R-5, R-11. Prémisses relues : `tests/services_motif.rs:2073-2075`, `:2145-2157`, `:2687-2710`, et `routes/reports.rs` absent de `SITES_NON_RESOLUS` (R-3) ; `routes/reports.rs:245-254` (`state.lecture()`) ; `rust_decimal-1.43.0/src/decimal.rs:1050`, `:1502-1509` (R-5, l'échelle exacte d'une division n'étant pas jouée) ; `repositories/journal_entries.rs:3093-3110`, et `kesh-report` en dépendance de `kesh-api` (`Cargo.toml:14`, R-11).
   Le handler se nomme `homepage_summary` : **aucune garde n'est amendée**, et le « peut-être » de T3 et des recoupements disparaît. Décomptes de cette fiche, recomptés : 19 AC, 18 lignes de mutation, inchangés.
+- 2026-11-06 — Remédiation de la validation P3 (rapport `kesh-gate-logs/e33-validate-p3-e332.md`, aucune compilation ni aucun test, aucun commit). **F-3 (LOW) remédié**, prémisse lue : `api-external.md:209-226`. **F-2 (LOW) réfuté** : à l'en-tête de T1, « neuf » veut dire *nouveau fichier*, comme à l'en-tête de T2, non un décompte ; rien à recompter (le tableau nomme vingt fonctions). Décomptes de cette fiche, recomptés : 19 AC, 18 lignes de mutation, inchangés.
 
 ## Dev Agent Record
 

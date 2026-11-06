@@ -50,7 +50,7 @@ pour qu'une société enregistrée avec un pays invalide puisse de nouveau produ
 ## Acceptance Criteria
 
 1. **AC-1** : `PUT …/address` valide → 200, `CompanyJson` à jour (`address`, `addressStructured`, `addressCountryKnown: true`), `version + 1`.
-2. **AC-2** : pays `XX` ou `SU` → 400 qui nomme le code ; rien n'est écrit ; pays de plus de deux lettres → 400 ; NPA ou localité vides → 400 ;
+2. **AC-2** : pays `XX` ou `SU` → 400 qui nomme le code ; rien n'est écrit ; **société dont `address_country` vaut déjà `SU` en SQL, `PUT` avec `SU` → 400, rien d'écrit, `version` inchangée** (C-e334-5) ; pays de plus de deux lettres → 400 ; NPA ou localité vides → 400 ;
    longueur SIX dépassée → 400.
 3. **AC-3 — le défaut de l'issue, de bout en bout** : société dont `address_country` est mis à `SU` en SQL (état d'une base d'avant la
    0.17.4) : `GET` du PDF d'une facture validée **refusé** avec « Pays invalide » (**test rouge avant**, par l'absence de la route) ; après le
@@ -78,7 +78,7 @@ pour qu'une société enregistrée avec un pays invalide puisse de nouveau produ
 
 ### Mutations nommées (P2)
 
-- **M1** : `validate_required` remplacée par `validate_optional_keeping(Some(pays courant))` → rouge AC-2/AC-3 (`SU` conservé).
+- **M1** : `validate_required` remplacée par `validate_optional_keeping(Some(pays courant))` → rouge AC-2 (`SU` stocké, `PUT` avec `SU` : accepté sous la mutation).
 - **M2** : `email: company.email.clone()` remplacé par `None` → rouge AC-7. **M3** : audit écrit sans la condition de version → rouge AC-4.
 - **M4** : la route posée sur le routeur des comptables → rouge AC-6. **M5** : `address_country_known` toujours `true` → rouge AC-3 et avis Vitest.
 
@@ -108,6 +108,7 @@ aujourd'hui ; le nom d'une société au QR.
 - 2026-11-06 : fiche créée (Opus 5.5).
 - 2026-11-06 : validation P1 (Sonnet 5.5), remédiation (Opus 5.5). Aucun finding au-dessus de LOW. **L-F5-1** : AC-10 nomme les cinq assertions et les commentaires (lus : `audit_route_registry.rs:962,978,1015,1385,1404`, le rapport disait « ~1384 »). **L-F5-2** : `crates/kesh-api/src/address_input.rs`, `:100-108`, `:141-146`, `:37` (lus). Aucun choix ajouté.
 - 2026-11-06 : validation P2 (Opus 5.5) : aucun finding. Fiche inchangée, hors cette entrée (Opus 5.5).
+- 2026-11-06 : validation P3 (Sonnet 5.5, lentilles R et F), remédiation (Opus 5.5). Un MEDIUM, non réfuté. **M-R5-1** : le cas de l'AC-2 tue M1 (lu : `address_input.rs:77-78`, `unchanged` calculé contre le pays stocké ; `:100-101`, `check_lengths(None)`). AC-3 inchangé : M1 n'y rougit pas, le `PUT` s'y faisant à `CH`. Mutations : 5, inchangées.
 
 ## Dev Agent Record
 

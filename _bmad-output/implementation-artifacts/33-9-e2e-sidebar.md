@@ -56,7 +56,7 @@ Le test **pose son état de départ et mesure une transition** ; il garde tout c
 
 ## Tâches
 
-- [ ] **T1** : étape 1, à l'identique. **T2** : réécriture du test, helper. **T3** : mutations. **T4** : tirages de l'AC-2. **T5** : `docs/testing.md`, `CLAUDE.md`, CHANGELOG (seulement si le correctif touche la production ; sinon rien à annoncer à l'utilisateur). **T6** : **dire à l'orchestrateur** que la mémoire `e2e-echecs-attendus.md` est périmée (8 à 11, KF-045), hors dépôt.
+- [ ] **T1** : étape 1, à l'identique. **T2** : réécriture du test, helper ; Vitest sur `frontend/src/lib/shared/e2e-selecteurs-traduits.test.ts`, qui lit cette spec : si le sélecteur « Administration » disparaît, retirer sa ligne de `DETTE_CONNUE` (`:176`), le test rougissant sur une ligne morte (`:204-214`), et le dire au Change Log. **T3** : mutations. **T4** : tirages de l'AC-2. **T5** : `docs/testing.md`, `CLAUDE.md`, CHANGELOG (seulement si le correctif touche la production ; sinon rien à annoncer à l'utilisateur). **T6** : **dire à l'orchestrateur** que la mémoire `e2e-echecs-attendus.md` est périmée (8 à 11, KF-045), hors dépôt.
 
 ### Mutations nommées
 
@@ -69,7 +69,7 @@ Rebuild du frontend à chaque mutation (`npm run build`, sous verrous), restaura
 
 ## Gates
 
-E2E complet au dernier commit de code, chaque rouge jugé contre `docs/testing.md`. Si seul le test change : Vitest et backend inchangés, pas de `test-fast.sh` requis, à déclarer. Le code de production touché (AC-6) ramène le gate complet.
+E2E complet au dernier commit de code, chaque rouge jugé contre `docs/testing.md`. Si seul le test change : Vitest ciblé sur la garde de T2, backend inchangé, pas de `test-fast.sh` requis, à déclarer. Le code de production touché (AC-6) ramène le gate complet.
 
 ## Manuels
 
@@ -84,6 +84,7 @@ Aucun sans correctif de production : pas de comportement visible. Avec l'AC-6 : 
 - 2026-11-06 : fiche créée (Opus 5.5).
 - 2026-11-06 : validation P1 (Sonnet 5.5), remédiation (Opus 5.5). Aucun finding au-dessus de LOW. **L-R9-1** : verdict (c) récrit, écarté comme explication du symptôme, gardé comme sonde (lus : `spec:81-93`, `+layout.svelte:268-272,391-393`, `+layout.ts:5`, le corps de #424 et de #287) ; le rapport le jugeait au code, sans exécution, et cette fiche non plus n'a rien exécuté : **le protocole reproduit d'abord**. Deux profils dits. **L-F9-1** : grep restreint, `:372` ajouté, `CLAUDE.md:192-195` relu (la fiche disait `:191`). Aucun choix ajouté.
 - 2026-11-06 : validation P2 (Opus 5.5), remédiation (Opus 5.5). Trois LOW, aucun réfuté. **L-R9-1** : (c) jugé sur trois observations, « autre défaut » retiré. **L-R9-2** : sonde de l'auto-dépliage, AC-6 élargi (lus : `+layout.svelte:229-231,258-272`, `:125` pour `/accounts`). **L-F9-3** : mention de `CLAUDE.md` retirée (`/usr/bin/grep -n sidebar CLAUDE.md` vide). La question `git log -L` est levée (lu : `git show e7f2a5c2:…spec.ts`, ligne 30). `CLAUDE.md:191` corrigé en `:192`, résidu de la P1 (`/usr/bin/grep -n '7 à 10' CLAUDE.md` : `:192,195`). Aucune exécution : le protocole reproduit d'abord.
+- 2026-11-06 : validation P3 (Sonnet 5.5, lentilles R et F), remédiation (Opus 5.5). Un LOW, non réfuté. **L-R9-1** : T2 et *Gates* (lus : `e2e-selecteurs-traduits.test.ts:176,204-214`). Mutations : 4, inchangées.
 
 ## Dev Agent Record
 

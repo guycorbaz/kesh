@@ -26,7 +26,7 @@ d'écran.
 4. **Le lien profond des rapports ne connaît que le grand livre** (`:569`, `tab !== 'general-ledger'` → sortie) : « Autres », qui n'a pas de
    compte unique, n'a pas de destination existante (C-e332-18).
 5. **Formats.** `formatSwissAmount(Big, decimals = 2)` (`features/journal-entries/balance.ts:129-139`) et `formatSwissDate`
-   (`reports.api.ts:238`). « Tout montant reste une chaîne décimale jusqu'ici et passe par `big.js` : jamais de `Number` sur un montant »
+   (`reports.api.ts:238`). ⚠️ **Sa branche `decimals = 0` est cassée** : `toFixed(0)` n'a pas de point, `decPart` vaut `undefined`, et la sortie est `1’000.undefined` (`:135-138`, lu, non exécuté). Aucun appelant ne passe `0` ; cette story la corrige (T2), et ce fichier sert aussi la saisie des écritures : le défaut à 2 ne bouge pas. « Tout montant reste une chaîne décimale jusqu'ici et passe par `big.js` : jamais de `Number` sur un montant »
    (`homepage.ts:3-5`). `i18nLocale()` donne la locale de l'installation, ⚠️ jamais `navigator.language`
    (`shared/utils/i18n.svelte.ts`) : elle sert au nom court des mois par `Intl.DateTimeFormat`.
 6. **Pas de bibliothèque de graphiques** : décision de Guy, et aucune n'est en dépendance à ajouter. Pas de thème sombre (`CLAUDE.md`,
@@ -84,7 +84,7 @@ parts plus « Autres » ; clic vers le détail ; SVG sans bibliothèque ; exerci
 - **AC8** — Clic de souris sur une part de compte (`<g data-href>`) → `ledgerHref(accountId, fiscalYear.startDate, fiscalYear.endDate)`. « Autres » : aucun lien ni `data-href`
   (C-e332-18), au dessin comme au tableau.
 - **AC9** — Montant et pourcentage lisibles pour chaque part, dans le tableau. `share` s'affiche tel que rendu, suivi de `%`.
-- **AC10** — `creditBalanceExpenseAccounts > 0` : une note sous le tableau, avec le nombre. **Deux clés, choisies par le composant** (`homepage-charts-credit-balance-note-one`, `-other`), le motif de `supplier-invoices-count-one` / `-other` (`supplier-invoices/+page.svelte:279-280`) : un sélecteur Fluent `{ $count -> … }` sortirait toujours sur sa variante par défaut, le backend pré-résolvant chaque message sans arguments (`kesh-i18n/src/loader.rs:158`).
+- **AC10** — `creditBalanceExpenseAccounts > 0` : une note sous le tableau, ou sous le message `homepage-charts-no-posts` s'il n'y a pas de tableau (AC19), avec le nombre. **Deux clés, choisies par le composant** (`homepage-charts-credit-balance-note-one`, `-other`), le motif de `supplier-invoices-count-one` / `-other` (`supplier-invoices/+page.svelte:279-280`) : un sélecteur Fluent `{ $count -> … }` sortirait toujours sur sa variante par défaut, le backend pré-résolvant chaque message sans arguments (`kesh-i18n/src/loader.rs:158`).
   « 1 compte de charges au solde créditeur ne figure pas dans ce diagramme. » ; « { $count } comptes de charges au solde créditeur ne figurent pas dans ce diagramme. » Absente à zéro. Un compte à solde nul n'y entre pas (33-3a, AC14).
 
 ### Accessibilité
@@ -98,14 +98,14 @@ parts plus « Autres » ; clic vers le détail ; SVG sans bibliothèque ; exerci
 - **AC13** — Tout se fait au clavier : `Tab` atteint le `<summary>`, qui s'ouvre par `Enter`, puis chaque lien du tableau des mois, et chaque lien du tableau des postes ; le SVG n'offre aucun arrêt
   de tabulation ; focus visible (`outline` de `app.css:71`). Test Playwright au clavier sur les **deux** chemins, pas seulement au clic.
 - **AC14** — La couleur n'est jamais seule : revenus pleins, dépenses tramées ; six trames ou motifs distincts au camembert, numéro de rang
-  dans la légende. Contraste de chaque remplissage ≥ 3:1 sur blanc, vérifié par un test pur sur la palette (ratio WCAG calculé ; pour un `<pattern>`, sur la couleur de son trait, sans égard à sa densité), « Autres »
+  dans la légende. Contraste de chaque remplissage ≥ 3:1 sur blanc, vérifié par un test pur sur la palette (ratio WCAG calculé par `contrastRatio` de `frontend/tests/e2e/helpers/contrast.ts`, importé comme à `button-destructive.test.ts:27` ; pour un `<pattern>`, sur la couleur de son trait, sans égard à sa densité), « Autres »
   en gris. La palette et les motifs sont une constante pure : le même test vérifie six motifs distincts, revenus pleins et dépenses tramées.
 - **AC15** — axe-core sans violation sur l'accueil **peuplé avec les graphiques**, et sur l'accueil sans exercice.
 
 ### États
 
 - **AC16** — Chargement : un état `loading` qui dit qu'il charge (`aria-busy`), sans barre fantôme.
-- **AC17** — Échec de l'API : le message `homepage-charts-unavailable`, **jamais** un graphique vide (#388).
+- **AC17** — Échec de l'API : le message `homepage-charts-unavailable`, **une seule fois**, à la place des deux graphiques, **jamais** un graphique vide (#388).
 - **AC18** — `state = "noOpenFiscalYear"` : phrase dédiée qui dit qu'aucun exercice n'est ouvert à la date du jour, à la place des deux
   graphiques, et aucun lien vers un autre exercice. **Trois** chemins y mènent (33-3a, AC2), une seule phrase.
 - **AC19** — **Chaque graphique décide sur sa seule donnée** (C-e332-24). **Barres** : tous les montants de `months` à zéro : le cadre avec ses mois et le message « Aucun mouvement net de produits ou de charges dans cet exercice » (`homepage-charts-empty`), juste pour un exercice vide comme pour un reclassement. **Camembert** : `expensePosts` vide, quelle qu'en soit la raison (exercice vide, produits seuls, charges toutes créditrices ou qui se
@@ -114,7 +114,7 @@ parts plus « Autres » ; clic vers le détail ; SVG sans bibliothèque ; exerci
 ### Formats et langues
 
 - **AC20** — Tout montant par `formatSwissAmount` (apostrophe typographique, point décimal), toute date par `formatSwissDate`. Graduations
-  sans décimales seulement si la valeur est ronde.
+  sans décimales seulement si la valeur est ronde (`tickLabel`, pure : `1’000`, `1’250.50`).
 - **AC21** — Toute chaîne visible par une clé `homepage-charts-*`, dans les quatre `messages.ftl` ; `npm run lint-i18n-ownership` vert.
   Aucun libellé traduit dans un sélecteur E2E.
 
@@ -137,15 +137,16 @@ puis ouvert : aucune violation. **Sonde** : le même squelette avec un `<a href=
 ### T1 — Tests rouges
 
 - `features/homepage/homepage-charts.test.ts` (purs) : `monthlyBars` (positifs, négatifs, tout à zéro) et `axisLabels` (AC2-bis) ; `pieSlices` (trois parts,
-  une part à 100 %, part minuscule) ; `monthHref`, `monthLabel` (janvier en `timeZone` UTC) ; palette (AC14 : contraste, six motifs distincts, revenus pleins, dépenses tramées).
+  une part à 100 %, part minuscule) ; `monthHref`, `monthLabel` (janvier en `timeZone` UTC) ; `tickLabel` (AC20) ; palette (AC14 : contraste, six motifs distincts, revenus pleins, dépenses tramées).
+- `features/journal-entries/balance.test.ts` : `formatSwissAmount(new Big('1000'), 0)` rend `1’000`.
 - `features/homepage/HomepageCharts.test.ts` : chaque AC d'état, de tableau, de lien, d'accessibilité statique (`role`, `aria-labelledby`, aucun descendant focalisable,
-  `<caption>`), clic sur une marque (`goto` moqué, reçoit son `data-href`), « Autres » sans lien ni `data-href`, note d'AC10 **au compte 1 (singulier) et au compte 2 (pluriel)**, et les trois cas d'AC19 : exercice vide ; produits seuls (barres dessinées, `homepage-charts-no-posts`) ; reclassement entre deux comptes de charges (`reclassification_keeps_the_pie` : `homepage-charts-empty` aux barres, part, tableau et note au camembert, pas de `homepage-charts-no-posts`).
+  `<caption>`), clic sur une marque (`goto` moqué, reçoit son `data-href`), « Autres » sans lien ni `data-href`, note d'AC10 **au compte 1 (singulier) et au compte 2 (pluriel)**, et les quatre cas d'AC19 : exercice vide ; produits seuls (barres dessinées, `homepage-charts-no-posts`) ; charges toutes créditrices (`homepage-charts-no-posts` **et** note) ; reclassement entre deux comptes de charges (`reclassification_keeps_the_pie` : `homepage-charts-empty` aux barres, part, tableau et note au camembert, pas de `homepage-charts-no-posts`).
 - `routes/(app)/homepage-page.test.ts` : la source neuve moquée ; son rejet mène à l'état d'échec, sans masquer les tuiles.
 - Rouges parce que les modules n'existent pas ; **chaque rouge est vu avant d'écrire le code**.
 
 ### T2 — Le calcul pur (`features/homepage/homepage-charts.ts`)
 
-Sur le modèle de `homepage.ts` : chaînes décimales, `Big`, retour de géométrie en nombres. `pieSlices` traite le cas 100 %. Aucune
+Sur le modèle de `homepage.ts` : chaînes décimales, `Big`, retour de géométrie en nombres. `pieSlices` traite le cas 100 %. `formatSwissAmount` corrigée pour `decimals = 0` (prémisse 5). Aucune
 dépendance ajoutée à `package.json` (AC : `git diff` de `package.json` et `package-lock.json` vide).
 
 ### T3 — L'API et les composants
@@ -177,7 +178,7 @@ d'emblée 12 groupes : ainsi, elle ne teste pas un dessin à 132 mois sans le sa
 ### T5 — Captures
 
 Base de démonstration jetable, thème clair, `/home/gcorbaz/devel/kesh-gate-logs/e333b/captures/` : peuplé (12 mois, six parts), exercices de 36 et de 132 mois, mois négatif
-(un avoir seul, donc aussi `homepage-charts-no-posts`), une part à 100 % avec la note d'AC10, vide, aucun exercice, chargement, échec, tableau des mois ouvert, focus clavier ; et un en `de-CH`.
+(un avoir seul, donc aussi `homepage-charts-no-posts`), une part à 100 % avec la note d'AC10, vide, aucun exercice, chargement, échec, tableau des mois ouvert, focus clavier ; et un en `de-CH` ; les tranches de 12 et de 36 mois, chacune à 360 px et à 1280 px de large.
 Jointes au Dev Agent Record et au prompt de revue. **Regardées**, pas seulement produites : un test dit qu'un élément existe, non qu'on le voit
 (#640).
 
@@ -218,6 +219,8 @@ Jointes au Dev Agent Record et au prompt de revue. **Regardées**, pas seulement
 | M16 | clé `-other` employée au compte 1 (AC10) | composant, compte 1 |
 | M17 | `axisLabels` sur l'indice (`i % 3`, `i % 12`), sans lire le mois | test pur, départ en mars (AC2-bis) |
 | M18 | deux parts de la palette partagent un motif | test pur, palette (AC14) |
+| M19 | barres décidées sur `expensePosts` et non sur `months` | composant, produits seuls (AC19) |
+| M20 | branche `decimals = 0` de `formatSwissAmount` rétablie | `balance.test.ts`, `tickLabel` (AC20) |
 
 Une survivante se traite ou se justifie au Change Log.
 
@@ -248,6 +251,8 @@ fichier par fichier contre `docs/testing.md`. Interdit : « rejouée au push ».
 - 2026-11-06 — Remédiation de la validation P2 (rapport `kesh-gate-logs/e33-validate-p2-e332.md`, Opus 5.5, aucune compilation ni aucun test, aucun commit). Huit constats de cette fiche, tous remédiés, aucun réfuté : R-1, R-2 (MEDIUM), R-6, R-7, R-8, R-9, R-10, R-13 (LOW). Prémisses relues : `kesh-i18n/src/loader.rs:158`, `i18n.svelte.ts:19-28`, `supplier-invoices/+page.svelte:279-280`, `messages.ftl:2685-2686` (R-1) ; `axe.js:25743-25757`, `:16037-16039` (R-6) ; `+layout.svelte:295`, `:381` (R-7) ; `api-fixtures.ts:183-184` (R-13). R-2 raisonné sur le contrat de la 33-3a, non joué.
   **Conception changée** : AC19 : chaque graphique décide sur sa seule donnée (C-e332-24), le camembert n'ayant plus qu'un message pour `expensePosts` vide, et la phrase des barres devenue juste pour un reclassement : **une condition en moins**. **Exigence retirée** (R-7, R-8, C-e332-23) : plus de distance minimale testée, qui ne prouvait pas la lisibilité, et trois tranches au lieu de quatre, tirées du mois rendu ; la pleine largeur commence à 13 mois. Estimation, non jouée, à 1200 unités en pleine largeur (environ 0,8 px par unité à 1280 px) : au moins 100 unités entre deux étiquettes jusqu'à 36 mois. La limite de la trame est écrite (AC2-bis).
   Décomptes de cette fiche, recomptés après remédiation : 23 AC, 18 mutations (15 + M16, M17, M18 ; M15 récrite).
+- 2026-11-06 — Remédiation de la validation P3 (rapport `kesh-gate-logs/e33-validate-p3-e332.md`, aucune compilation ni aucun test, aucun commit). Quatre constats de cette fiche, tous remédiés, aucun réfuté : R-1 (MEDIUM, arbitrage), R-8, R-9, R-10 (LOW). Prémisses relues : `balance.ts:129-139` ; `tests/e2e/helpers/contrast.ts`, `vite.config.ts:59` (`tests/**/*.test.ts` compris par Vitest), `button-destructive.test.ts:27`. R-9 : l'estimation écrite à l'entrée P2 (« au moins 100 unités ») était haute, environ 95 ; cette entrée, datée, reste telle quelle.
+  Décomptes de cette fiche, recomptés : 23 AC, 20 mutations (M19, M20 ajoutées).
 
 ## Dev Agent Record
 
