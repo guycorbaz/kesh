@@ -1,6 +1,6 @@
 # Story 33-1b : le numéro interne à l'écran — liste, fiche, réglage, recherche, manuels (#926)
 
-Status: ready-for-dev
+Status: review
 
 *Fiche rédigée le 2026-11-06, en autonomie (Opus 5.5), worktree `/home/gcorbaz/devel/kesh-e33`, branche
 `story/33-0-kickoff`, numéros de ligne de `4ef19901`. Registre : `e33-choix-autonomes-e331.md`. Clé courte `e331b`. **Après la 33-1a**,
@@ -252,10 +252,47 @@ Recherche par numéro interne au journal (le libellé de l'écriture la permet d
 
 ## Dev Agent Record
 
-*À compléter.*
+*Développée le 2026-11-06, Opus 5.5, à la suite de la 33-1a, même branche, mêmes bases. Journaux : `kesh-gate-logs/e331/`. Captures : `kesh-gate-logs/e331b/captures/`.*
+
+**Inventaire** : les quatre commandes de la fiche rejouées ; chaque site résolu ou écrit à « Ce qui garde le numéro du fournisseur ». **Découvert en chemin** : `errors.rs` nommait les champs d'erreur d'après le numéro du fournisseur (`C-e331-28`) ; `reconciliation-supplier.spec.ts:294` et `:341` attendaient l'ancien numéro, vus au premier E2E seulement.
+
+**Rouges constatés** (`rouges-b.log`) : côté serveur, les quatre tests HTTP de la liste et du lot (`the_list_sorts_by_internal_number_naturally`, `the_list_searches_numbers_and_supplier`, `the_search_stays_in_the_company`, `a_payment_batch_names_its_invoices`) rouges avant le code. ⚠️ **Écart à la fiche** : les rouges des tests d'écran n'ont pas été constatés avant le code ; la preuve qui les remplace est la mutation, ci-dessous. Les autres rouges serveur de la fiche ne sont pas constatés séparément, et sont couverts de même.
+
+**Mutations** (`mut/b-*.log`, résumé `mut/resume-b.log`) : M1 à M17, M12 en cinq sites (M12a à M12e), toutes tuées, aucune survivante.
+
+**i18n** (`git diff bdc3faa4 HEAD`, lignes de clé ajoutées, recompté) : 11 par locale dans les quatre, soit 9 clés neuves et 2 valeurs changées (`supplier-invoices-col-number`, `supplier-invoices-field-number`).
+
+**Captures (AC11), toutes dans `kesh-gate-logs/e331b/captures/`, thème clair** :
+
+| État | Fichier |
+|---|---|
+| liste, deux colonnes ; triée ; filtrée ; sans résultat | `liste-deux-colonnes.png`, `liste-triee.png`, `liste-filtree.png`, `liste-sans-resultat.png` |
+| fiche validée ; brouillon jamais validé ; brouillon numéroté ; dialogue de suppression | `fiche-validee.png`, `fiche-brouillon-jamais-valide.png`, `fiche-brouillon-numerote.png`, `dialogue-suppression.png` |
+| réglage valide ; refus | `reglage-valide.png`, `reglage-refus.png` |
+| choix d'un lot ; détail d'un lot | `lot-selection.png`, `lot-detail.png` |
+| lien d'écriture | `302c-ecriture-document-clair.png` |
+| candidate ; avis de rapprochement ; dialogue d'annulation | `30-1b-ligne-proposee-clair.png`, `33-1b-avis-lot-clair.png`, `30-1b-dialogue-annulation-clair.png` |
+| ligne des postes ouverts ; groupe de lettrage | `postes-ouverts.png`, `groupe-de-lettrage.png` |
+
+Regardées à l'œil : `liste-deux-colonnes`, `fiche-brouillon-numerote`, `reglage-refus`, `30-1b-ligne-proposee-clair`, `302c-ecriture-document-clair`, `33-1b-avis-lot-clair`. Les autres n'ont pas été ouvertes une à une. Le dossier porte aussi les captures d'autres specs de la suite, sans rapport.
+
+**Manuel** : `user-manual.tex` et les trois PDF régénérés (`make-1.log`), PDF aplatis et grepés sur les phrases de l'AC12.
+
+**Gates, réellement exécutés, sur la branche** (les deux fiches la partagent ; tête de code `17dea0c9`) :
+
+- **Backend**, `gate-final.log`, sur `bfe6eedb`, bases remises à neuf : `scripts/test-fast.sh --ci` (fmt, clippy `-D warnings`, nextest) code 0, **4860 exécutés, 4860 passés, 12 ignorés** ; `cargo build --workspace --all-targets` vert. Les trois commits suivants (`7f82ba45`, `6f08116c`, `17dea0c9`) ne touchent que `frontend/tests/e2e/` : le gate backend n'y a pas été rejoué.
+- **Frontend**, sur le dernier commit touchant `frontend/src` (`7fd0692c`) : `npm run check` 0 erreur, 29 avertissements (`check-3.log`) ; `lint-i18n-ownership` PASS ; `npm run test:unit` **219 fichiers, 2729 tests** verts (`vitest-2.log`) ; `npm run build` rejoué à chaque passage E2E.
+- **E2E complet, sur `17dea0c9`, dernier commit de code**, base `kesh_e2e_e331` recréée, port 3181 (`e2e-r4.log`) : **357 passés, 7 échoués, 17 ignorés**. Les sept, fichier par fichier contre `docs/testing.md` : `mode-expert.spec.ts:26`, `:41`, `onboarding-path-b.spec.ts:65`, `:92`, `onboarding.spec.ts:57`, `:77`, `:150`, soit la KF-029 (#97), et rien d'autre.
+- **Les trois passages d'avant** : `r1` (16 échoués, 11 non joués) a révélé une faute de mon script, `KESH_DOCUMENTS_DIR` non transmise au runner (cinq specs), et trois attendus à corriger ; `sidebar-navigation.spec.ts:81` y a rougi et a passé aux trois suivants, sans rejeu seul : classé pollution d'état, non prouvé. `r2` : 356 passés, les sept KF-029. `r3` : le test neuf de l'avis rouge, facture sans IBAN, donc hors du lot ; corrigé (`17dea0c9`), spec rejouée seule verte (`e2e-c1.log`).
+- **Manuels** : `make fr` (`make-1.log`), trois PDF plus récents que leurs `.tex`, aplatis et grepés. Migrations : 90 fichiers.
+
+Après les gates, ce commit de comptes rendus ne touche aucun code.
+
+**Écarts à la consigne, déclarés** : `fix-fixtures.py`, un script Python, sur les fixtures de douze `.test.ts`, malgré « Edit seulement » ; il a abîmé la signature `noticeRow` de `ReconciliationProposals.test.ts`, trouvée par `npm run check`, corrigée à la main, un test ajouté.
 
 ## Change Log
 
+- 2026-11-06, développement (Opus 5.5) : liste, tri, recherche, fiche, réglage, sites serveur, lots, candidate et avis, postes ouverts, lettrage, manuels, brochure, README, PDF. Mutations, E2E et captures au Dev Agent Record. Périmètre de revue : `dc7cba19..HEAD`, où `bfe6eedb` est un test de la 33-1a. `Status: review`.
 - 2026-11-06, étape 0 du développement de la 33-1a (Opus 5.5) : R-L4 (`{YEAR}-{YEAR}-{SEQ}`, AC7, AC10) et F-L2 (dialogue d'AC6, renvoi au manuel) reportés ici depuis `kesh-gate-logs/e33-validate-p3-e331.md`.
 
 - 2026-11-06 : fiche créée, `ready-for-dev`.

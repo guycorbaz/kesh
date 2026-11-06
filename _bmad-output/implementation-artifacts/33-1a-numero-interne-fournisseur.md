@@ -1,6 +1,6 @@
 # Story 33-1a : le numéro interne des factures fournisseur — colonne, format, attribution, numérotation de l'existant (#926)
 
-Status: ready-for-dev
+Status: review
 
 *Fiche rédigée le 2026-11-06, en autonomie (Opus 5.5), worktree `/home/gcorbaz/devel/kesh-e33`, branche
 `story/33-0-kickoff`, numéros de ligne de `4ef19901`. Registre : `e33-choix-autonomes-e331.md`, choix `C-e331-1` et suivants.
@@ -385,10 +385,50 @@ migration sur une base peuplée ; la cohérence **migration / extrait de rejeu**
 
 ## Dev Agent Record
 
-*À compléter : sites P6 inspectés, tests rouges constatés, mutations, gates et chiffres, journal de la répétition.*
+*Développée le 2026-11-06, Opus 5.5, worktree `/home/gcorbaz/devel/kesh-e331`, branche `story/33-1-numero-interne`, bases `kesh_e331` et `kesh_e2e_e331`, port 3181. Journaux : `kesh-gate-logs/e331/`.*
+
+**Étape 0.** F1 à F18 et F20 relus au code ; lignes décalées d'un ou deux crans seulement, sans fait changé. `git grep -nE "(Facture|Règlement) fournisseur "` rejoué : deux sites de production (`supplier_invoices.rs`), `supplier_invoices_draft.rs:482` en test, les fixtures `migrations_upgrade_path.rs:1292` et `support/lettering_documents.rs:802` n'assertent rien. Les neuf LOW de la validation P3 : Change Log. **Une correction de cette fiche** : le F-L4 écrivait que `exports_global_e2e` lit « par nom » ; il lit par `contains` sur le contenu du fichier. La conclusion tient : aucun lecteur par position au dépôt.
+
+**Sites P6** (`git grep -n "migrations.len()\|apply_migrations_up_to" crates/`) : `migrations_upgrade_path.rs:127` (`total` 89 → 90), `:219` (`total - 55` → `total - 56`, frontière figée à 34), commentaires et message suivis ; `pre_upgrade_backup/tests.rs:184,191,506` et `sauvegarde_avant_migration.rs:28,43`, par version, inchangés ; `accounts_role_backfill.rs`, `audit_log_company_id_backfill.rs`, `closing_accounts_backfill.rs`, `invoice_lines_revenue_account_backfill.rs`, `journal_entry_number_sequences_bootstrap.rs`, `lettering_documents_backfill.rs`, par `migrations_before`, inchangés.
+
+**P5** : ligne ajoutée à l'audit, recomptée : 90 fichiers, 90 lignes, `yes` 11, `tracked-by-sqlx` 79, `no` 0. **P7** : classe B au registre, tests du registre verts. **P8** : `crates/kesh-db/migrations.sha384` porte le checksum (le test `published_migrations_keep_their_checksums` l'exige), la migration n'a pas bougé depuis son premier passage. Squash régénéré par `scripts/regen-test-schema.sh`, `test_schema_guard` vert. **Forme de l'AC2** : `UPDATE … JOIN (table dérivée sur la même table)` passe tel quel sur MariaDB 10.11, aucun repli.
+
+**Rouges constatés** (`rouges.log`, code encore sans production, migration absente puis colonne posée sans attribution) : trois tests de montée (`internal_number_migration_*`, migration introuvable), deux montées anciennes (`draft_migration_preserves_*`), et douze tests de `supplier_invoices_internal_number`, soit dix-sept pour `kesh-db`. S'y ajoutent, en tête du journal, deux tests sur vingt d'`invoice_format` (`numbering_template_refuses_every_other_shape`, `supplier_invoice_labels_prefer_the_internal_number`) : dix-neuf en tout.
+
+**Mutations** (`mut/M*.log`, résumé `mut/resume-a.log`), toutes jouées, restauration `git checkout --` puis `touch`, et `touch` de `lib.rs` pour la migration (`sqlx::migrate!` ne suit pas le dossier) :
+
+- **Tuées** : M1, M3, M4, M5a, M6, M7a, M7b, M8, M9, M10, M11, M13 à M19, M21, M22 à M26 (la fiche n'a pas de M20).
+- **M2, équivalente en pratique** : InnoDB parcourt dans l'ordre des `id`, comme l'annonçait la fiche ; le tri reste écrit, l'ordre de `ROW_NUMBER` n'étant pas garanti sans lui.
+- **M5b, équivalente** : la jointure sur `purchase_journal_entry_id` exclut déjà les brouillons, F5.
+- **M12, équivalente** : attribuer avant `check_written` ne s'observe pas, le refus emportant tout par le rollback (AC10).
+- ⚠️ **M21 a d'abord survécu** : le test (d) laissait les trois numéros de A en place, et le filet du saut remontait de `-001` à `-004`, si bien qu'un exercice clos oublié ne se voyait pas. Le test supprime désormais la `-003` avant la clôture ; rejouée, M21 est tuée. *Un filet peut masquer l'invariant qu'il double.*
+
+**AC22, la répétition réelle** (`repetition-r2.log` ; `repetition-r1.log`, premier passage, garde une faute de script, sans objet pour le produit : le mot de passe de bris de glace et `KESH_TEST_MODE=false`). Image publiée `gcorbaz/kesh:0.17.4`, `sha256:11fe599a…`, données synthétiques, conteneurs `kesh-e331-r{1,2}-*`, arrêtés par leur nom et laissés arrêtés. Le binaire de la branche porte encore le numéro 0.17.4, Cargo n'étant pas bumpé (la release s'en charge) : la sauvegarde se nomme `…-0.17.4-to-0.17.4.keshbackup`. Résultats, tous constatés :
+
+- **(a) Montée** : `backup/pre-upgrade/` porte la sauvegarde, écrite avant la migration ; 89 → 90 migrations ; `/health` répond ; une facture à date antérieure insérée après prend le premier rang (`FF-2020-001`), trois à la même date suivent par `id`, le brouillon reste `NULL`, compteur à 5 ; empreintes MD5 des écritures et de `version`/`updated_at` des factures **identiques** ; la validation suivante rend `FF-2020-005` ; redémarrage sans migration ni seconde sauvegarde.
+- **(b) Reprise** : cette sauvegarde importée dans une seconde base à jour redonne les mêmes numéros, `REPLAYED_SENTINELS_ABSENT`, 5 lignes (4 factures, 1 exercice).
+- **(c) Retour** : l'image 0.17.4 refuse de démarrer sur la base migrée (code 1, `migration 20261106000001 was previously applied but is missing in the resolved migrations`) ; sur une base neuve, elle importe la sauvegarde `pre-upgrade/`, sans colonne `internal_number`, et redémarre ; elle refuse la sauvegarde prise après la montée (`400 IMPORT_SCHEMA_MISMATCH`, `unknownColumns: supplier_internal_number_format`).
+
+**Fait découvert** : `kesh_factures_fournisseur` dépassait ses plafonds mesurés avec `numero_interne` : bornes révisées à 62 / 34 (`C-e331-27`). Deux montages partiels lisaient les colonnes neuves (`C-e331-29`), et deux champs d'erreur changent de nom (`C-e331-28`, à la 33-1b).
+
+**Gates, réellement exécutés, sur la branche** (les deux fiches la partagent ; tête de code `17dea0c9`) :
+
+- **Backend**, `gate-final.log`, sur `bfe6eedb`, bases remises à neuf : `scripts/test-fast.sh --ci` (fmt, clippy `-D warnings`, nextest) code 0, **4860 exécutés, 4860 passés, 12 ignorés** ; `cargo build --workspace --all-targets` vert. Les trois commits suivants (`7f82ba45`, `6f08116c`, `17dea0c9`) ne touchent que `frontend/tests/e2e/` : le gate backend n'y a pas été rejoué.
+- **Frontend**, sur le dernier commit touchant `frontend/src` (`7fd0692c`) : `npm run check` 0 erreur, 29 avertissements (`check-3.log`) ; `lint-i18n-ownership` PASS ; `npm run test:unit` **219 fichiers, 2729 tests** verts (`vitest-2.log`) ; `npm run build` rejoué à chaque passage E2E.
+- **E2E complet, sur `17dea0c9`, dernier commit de code**, base `kesh_e2e_e331` recréée, port 3181 (`e2e-r4.log`) : **357 passés, 7 échoués, 17 ignorés**. Les sept, fichier par fichier contre `docs/testing.md` : `mode-expert.spec.ts:26`, `:41`, `onboarding-path-b.spec.ts:65`, `:92`, `onboarding.spec.ts:57`, `:77`, `:150`, soit la KF-029 (#97), et rien d'autre.
+- **Les trois passages d'avant** : `r1` (16 échoués, 11 non joués) a révélé une faute de mon script, `KESH_DOCUMENTS_DIR` non transmise au runner (cinq specs), et trois attendus à corriger ; `sidebar-navigation.spec.ts:81` y a rougi et a passé aux trois suivants, sans rejeu seul : classé pollution d'état, non prouvé. `r2` : 356 passés, les sept KF-029. `r3` : le test neuf de l'avis rouge, facture sans IBAN, donc hors du lot ; corrigé (`17dea0c9`), spec rejouée seule verte (`e2e-c1.log`).
+- **Manuels** : `make fr` (`make-1.log`), trois PDF plus récents que leurs `.tex`, aplatis et grepés. Migrations : 90 fichiers.
+
+Après les gates, ce commit de comptes rendus ne touche aucun code.
+
+Sur le code de la seule 33-1a, avant la 33-1b : `gate-a4.log`, 4850 exécutés, 4844 passés, 6 échoués, montages et attendus corrigés par `60eff6d1`, dont les bornes MCP (`C-e331-27`), qui sont du code de production ; il n'a pas été rejoué seul, le gate complet valant pour la tête.
+
+**Écarts à la consigne, déclarés.** La consigne dit « code édité par l'outil Edit seulement ». Ont été écrits par script Python : l'ajout initial des tests d'`invoice_format.rs` et `fix-fixtures.py` (douze `.test.ts` de la 33-1b, code) ; le manuel d'administration, `docs/api-external.md`, le CHANGELOG, le manuel utilisateur et les quatre `messages.ftl` (`am.py`, `api.py`, `um.py`, `i18n.py`, hors code au sens strict, déclarés quand même). Des tests ont été ajoutés par `cat >>` en fin de fichier. Un `git reset --soft HEAD~1` a retiré l'i18n d'un commit de cette fiche, sur la branche locale, sans rien perdre. Le gate `a1` à `a4` a précédé le code de la 33-1b : ses chiffres ne valent pas pour la tête.
 
 ## Change Log
 
+- 2026-11-06, développement (Opus 5.5) : migration `20261106000001`, attribution à la validation, libellés, réglage, API, MCP, CSV, rejeu de classe B, rejeu de `reopen`, manuel d'administration, CHANGELOG, API. Rouges, mutations, répétition et décomptes au Dev Agent Record. Choix ajoutés : `C-e331-27`, `C-e331-28`, `C-e331-29`. `Status: review`. **Dernier commit de la fiche avant la 33-1b : `dc7cba19`** ; un commit de test lui revient ensuite, `bfe6eedb` (M21).
+- 2026-11-06, annotation : le F-L4 de l'étape 0 ci-dessous dit qu'`exports_global_e2e` lit « par nom » ; il lit le contenu par `contains`. La conclusion tient : aucun lecteur par position.
 - 2026-11-06, étape 0 du développement (Opus 5.5) : les neuf LOW de `kesh-gate-logs/e33-validate-p3-e331.md`, prémisses relues.
   - **R-L1** : prémisse écrite à `C-e331-16` et `C-e331-23`, année de 1000 à 9999, que borne la 33-4 (`render` écrit `year.to_string()`, `invoice_format.rs:227`, sans remplissage ; `POST /fiscal-years` ne borne pas `start_date` à ce jour).
   - **R-L2** : AC12 cite le patron `:1376` (lu : `fiscal_year_close_is_replayed_when_it_is_the_deadlock_victim`), assertion d'une seule entrée d'audit ajoutée.
