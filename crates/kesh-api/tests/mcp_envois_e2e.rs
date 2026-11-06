@@ -747,6 +747,9 @@ async fn routes_de_decision_par_une_session_d_administrateur(pool: MySqlPool) {
         (r.json()["state"].clone(), r.json()["version"].clone()),
         (json!("approved"), json!(2))
     );
+    // Story 33-6 (#768, point 1, AC-6) : la réponse, lue dans la transaction de la
+    // décision, égale le détail qui la suit, champ à champ.
+    assert_eq!(r.json(), b.detail(&l.jwt, n).await.json());
     // Introuvable, ou d'une autre société : le même 404.
     let c2 = societe(&pool, "Autre société 328").await;
     let u2 = administrateur(&pool, c2, "admin-328-b").await;

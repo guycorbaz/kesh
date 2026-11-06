@@ -189,6 +189,37 @@ describe('McpSendDetail', () => {
 			expect(r.queryByTestId('mcp-send-reload')).not.toBeNull();
 		});
 
+		// Story 33-6 (#773, point 3, AC-7) : une réponse perdue ne dit pas si la
+		// décision a été écrite ; seul un rechargement le montre.
+		it('réponse perdue (réseau, délai) : son message et Recharger', async () => {
+			for (const code of ['NETWORK_ERROR', 'TIMEOUT']) {
+				const r = await monter();
+				mockApi.decideMcpSend.mockRejectedValueOnce(erreurApi(0, code, 'Serveur injoignable.'));
+				await fireEvent.click(r.getByTestId('mcp-send-approve'));
+				expect((await r.findByTestId('mcp-send-error')).textContent).toContain(
+					'Serveur injoignable.',
+				);
+				expect(r.queryByTestId('mcp-send-reload')).not.toBeNull();
+				cleanup();
+			}
+		});
+
+		it('erreur qui n’est pas une ApiError : Recharger aussi', async () => {
+			const r = await monter();
+			mockApi.decideMcpSend.mockRejectedValueOnce(new Error('coupure'));
+			await fireEvent.click(r.getByTestId('mcp-send-approve'));
+			await r.findByTestId('mcp-send-error');
+			expect(r.queryByTestId('mcp-send-reload')).not.toBeNull();
+		});
+
+		it('une ApiError répondue par le serveur (500) garde son comportement, sans Recharger', async () => {
+			const r = await monter();
+			mockApi.decideMcpSend.mockRejectedValueOnce(erreurApi(500, 'INTERNAL_ERROR', 'Erreur.'));
+			await fireEvent.click(r.getByTestId('mcp-send-approve'));
+			await r.findByTestId('mcp-send-error');
+			expect(r.queryByTestId('mcp-send-reload')).toBeNull();
+		});
+
 		it('404 : « Envoi introuvable »', async () => {
 			const r = await monter();
 			mockApi.decideMcpSend.mockRejectedValueOnce(erreurApi(404, 'NOT_FOUND', 'x'));

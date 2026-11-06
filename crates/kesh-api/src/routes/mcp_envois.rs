@@ -259,11 +259,16 @@ pub async fn decider_envoi(
         )
     };
     audit_log::insert_in_tx(&mut tx, entree).await?;
+    // Story 33-6 (#768, point 1) : la réponse se lit AVANT le commit. Relue après,
+    // un échec annoncerait en 500 une décision bel et bien écrite ; ici, il annule
+    // la décision, et le 500 dit vrai.
+    let apres = mcp_sends::trouver_in_tx(&mut tx, company_id, id)
+        .await?
+        .ok_or(AppError::Database(DbError::NotFound))?;
     tx.commit()
         .await
         .map_err(|e| AppError::Internal(format!("commit tx: {e}")))?;
 
-    let apres = trouver(&state, company_id, id).await?;
     Ok(Json(apres.into()))
 }
 

@@ -8,6 +8,14 @@ Le contenu est rédigé en français à destination des **fiduciaires, PME, ind�
 
 ---
 
+## [0.17.5] — Non publié
+
+### Corrigé
+
+- **Un règlement réussi n'est plus annoncé en échec** ([#450](https://github.com/guycorbaz/kesh/issues/450), [#768](https://github.com/guycorbaz/kesh/issues/768), [#773](https://github.com/guycorbaz/kesh/issues/773)) : le règlement d'une facture client, son solde et l'annulation d'un règlement relisaient la facture après l'avoir enregistrée ; un incident à cet instant rendait une erreur pour un geste bel et bien écrit, avec le risque de le rejouer. La réponse est désormais lue avant la validation de l'écriture : ou le geste est écrit et dit tel, ou il est annulé. Il en va de même de la décision sur un envoi du serveur MCP ; et si sa réponse se perd (coupure réseau, délai), l'écran propose *Recharger*.
+
+---
+
 ## [0.17.4] — 2026-11-06
 
 La 0.17.4 est une version corrective : la session plus sûre, une sauvegarde automatique avant les migrations à venir, et les défauts relevés à l'usage. Elle ne porte **aucune migration** ; seules les sessions ouvertes sont effacées au premier démarrage, si bien que **chaque utilisateur se reconnecte une fois**. **Le retour à la 0.17.3 est possible sans restauration, après avoir vidé la table des sessions** (manuel d'administration, *Passer à la 0.17.4*). La sauvegarde complète d'avant la mise à jour (base, `.keshbackup`, dossier des documents) reste recommandée. Le `.env` ne change pas ; les compose fournis transmettent une variable nouvelle, facultative (`KESH_SKIP_PRE_UPGRADE_BACKUP`).

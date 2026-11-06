@@ -14,9 +14,10 @@
 
 use chrono::NaiveDate;
 use rust_decimal::Decimal;
-use sqlx::MySqlPool;
+use sqlx::{MySql, MySqlPool, Transaction};
 
 use crate::entities::NewAuditLogEntry;
+use crate::entities::invoice::{Invoice, InvoiceLine};
 use crate::entities::{
     Journal, NewInvoiceSettlement, NewJournalEntry, SettlementChoice, SettlementKind,
     SettlementWriteOffNature,
@@ -31,16 +32,47 @@ use crate::repositories::settlement_cancellation::{
     SettlementCancelHit, settlement_entry_cancel_blocker,
 };
 use crate::repositories::{
-    audit_log, company_invoice_settings, fiscal_years, invoice_settlements, journal_entries,
+    audit_log, company_invoice_settings, fiscal_years, invoice_settlements, invoices,
+    journal_entries,
 };
 
-/// Ce que rend un règlement enregistré : l'écriture créée, et le résiduel après.
+/// Ce que rend un règlement enregistré : l'écriture créée, le résiduel après, et
+/// la facture telle que le commit l'écrit.
+///
+/// ⛔ **`invoice`, `lines` et `amount_settled` sont lus DANS la transaction**, après
+/// la dernière écriture et avant le commit (Story 33-6, #450) : l'appelant n'a plus
+/// de seconde lecture à faire, donc plus de 404 ni de 500 qui annonceraient en échec
+/// un règlement réussi, et qu'on rejouerait. Une défaillance de cette lecture fait
+/// échouer et annule la transaction : **pas de commit sans réponse**.
 #[derive(Debug, Clone)]
 pub struct SettlementOutcome {
     pub journal_entry_id: i64,
     pub amount_due_after: Decimal,
     /// `true` ssi le résiduel est tombé à zéro — c'est ce qui pose `paid_at`.
     pub fully_settled: bool,
+    pub invoice: Invoice,
+    pub lines: Vec<InvoiceLine>,
+    pub amount_settled: Decimal,
+}
+
+/// La facture, ses lignes et le réglé, lus dans la transaction d'une écriture de
+/// règlement, pour la réponse de celle-ci (Story 33-6, #450). À appeler après la
+/// dernière écriture et avant le commit. La ligne `invoices` est sous `FOR UPDATE`
+/// depuis le début du geste, et une transaction voit ses propres écritures.
+async fn read_after_write_in_tx(
+    tx: &mut Transaction<'_, MySql>,
+    company_id: i64,
+    invoice_id: i64,
+) -> Result<(Invoice, Vec<InvoiceLine>, Decimal), DbError> {
+    let (invoice, lines) = invoices::find_with_lines_in_tx(&mut *tx, company_id, invoice_id)
+        .await?
+        .ok_or_else(|| {
+            DbError::Invariant(format!(
+                "facture {invoice_id} introuvable dans la transaction de son règlement"
+            ))
+        })?;
+    let settled = invoice_settlements::amount_settled(&mut **tx, invoice_id).await?;
+    Ok((invoice, lines, settled))
 }
 
 /// Enregistre un règlement manuel et passe son écriture.
@@ -389,11 +421,16 @@ pub async fn settle_invoice(
     )
     .await?;
 
+    let (invoice, lines, amount_settled) =
+        read_after_write_in_tx(&mut tx, company_id, invoice_id).await?;
     tx.commit().await.map_err(map_db_error)?;
     Ok(SettlementOutcome {
         journal_entry_id: je.entry.id,
         amount_due_after: due_after,
         fully_settled,
+        invoice,
+        lines,
+        amount_settled,
     })
 }
 
@@ -405,11 +442,17 @@ pub async fn settle_invoice(
 /// la nature `rounding` est refusée (Story 25-4-d2a, AC 4).
 const ROUNDING_WRITE_OFF_LIMIT: Decimal = Decimal::from_parts(5, 0, 0, false, 2);
 
-/// Ce que rend un solde : l'écriture créée et le montant soldé (le reste exact).
+/// Ce que rend un solde : l'écriture créée, le montant soldé (le reste exact), et
+/// la facture telle que le commit l'écrit, lue dans la transaction (cf.
+/// [`SettlementOutcome`], Story 33-6, #450).
 #[derive(Debug, Clone)]
 pub struct WriteOffOutcome {
     pub journal_entry_id: i64,
     pub amount: Decimal,
+    pub invoice: Invoice,
+    pub lines: Vec<InvoiceLine>,
+    pub amount_settled: Decimal,
+    pub amount_due: Decimal,
 }
 
 /// Solde **tout** le reste dû d'une facture validée, en l'imputant au compte de
@@ -716,10 +759,17 @@ pub async fn write_off_invoice(
     )
     .await?;
 
+    let (invoice, lines, amount_settled) =
+        read_after_write_in_tx(&mut tx, company_id, invoice_id).await?;
+    let amount_due = invoice_settlements::amount_due(&mut *tx, invoice_id).await?;
     tx.commit().await.map_err(map_db_error)?;
     Ok(WriteOffOutcome {
         journal_entry_id: je.entry.id,
         amount,
+        invoice,
+        lines,
+        amount_settled,
+        amount_due,
     })
 }
 
@@ -1026,17 +1076,48 @@ pub async fn cancel_settlement_in_tx(
     })
 }
 
-/// Annule un règlement client, transaction comprise — mince enveloppement de
-/// [`cancel_settlement_in_tx`].
+/// Ce que rend [`cancel_settlement`] : l'annulation, et la facture telle que le
+/// commit l'écrit, lue dans la transaction (cf. [`SettlementOutcome`], Story 33-6,
+/// #450).
+#[derive(Debug, Clone)]
+pub struct CancelledSettlement {
+    /// L'écriture inverse, datée du jour.
+    pub reversal_journal_entry_id: i64,
+    /// Le reste dû après l'annulation.
+    pub amount_due_after: Decimal,
+    pub invoice: Invoice,
+    pub lines: Vec<InvoiceLine>,
+    pub amount_settled: Decimal,
+}
+
+/// Annule un règlement client, transaction comprise — enveloppe de
+/// [`cancel_settlement_in_tx`], qui relit la facture avant le commit.
+///
+/// La lecture vit ici, non dans la forme `_in_tx` : le dé-rapprochement réemploie
+/// celle-ci et n'a pas besoin de la facture (C-e334-9).
 pub async fn cancel_settlement(
     pool: &MySqlPool,
     user_id: i64,
     company_id: i64,
     invoice_id: i64,
     settlement_id: i64,
-) -> Result<SettlementCancellation, DbError> {
+) -> Result<CancelledSettlement, DbError> {
     let mut tx = pool.begin().await.map_err(map_db_error)?;
-    match cancel_settlement_in_tx(&mut tx, company_id, invoice_id, settlement_id, user_id).await {
+    let done = async {
+        let done = cancel_settlement_in_tx(&mut tx, company_id, invoice_id, settlement_id, user_id)
+            .await?;
+        let (invoice, lines, amount_settled) =
+            read_after_write_in_tx(&mut tx, company_id, invoice_id).await?;
+        Ok::<_, DbError>(CancelledSettlement {
+            reversal_journal_entry_id: done.reversal_journal_entry_id,
+            amount_due_after: done.amount_due_after,
+            invoice,
+            lines,
+            amount_settled,
+        })
+    }
+    .await;
+    match done {
         Ok(done) => {
             tx.commit().await.map_err(map_db_error)?;
             Ok(done)

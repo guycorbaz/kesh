@@ -76,9 +76,15 @@ export interface ErreurDeDecision {
  *   propre à l'écran ; les deux avec *Recharger* ;
  * - 404 : « Envoi introuvable » ;
  * - 400 : le message du serveur (taille, caractère invisible) ;
+ * - aucune réponse du serveur (réseau, délai : le client lève une `ApiError` de
+ *   statut 0 ; ou toute autre erreur) : son message, avec *Recharger* — la décision a
+ *   pu être écrite, et seul un rechargement le montre (Story 33-6, #773, point 3) ;
  * - le reste : le message lisible de l'erreur.
  */
 export function erreurDeDecision(err: unknown, modifie: boolean): ErreurDeDecision {
+	if (!isApiError(err) || err.status === 0) {
+		return { message: errorMessageOf(err), recharger: true, aideCaracteres: false };
+	}
 	if (isApiError(err) && err.status === 409) {
 		const message =
 			err.code === 'ILLEGAL_STATE_TRANSITION'
