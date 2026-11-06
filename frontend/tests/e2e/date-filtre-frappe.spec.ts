@@ -108,7 +108,9 @@ for (const f of FILTRES) {
 		await expect(page.locator(f.ligne).first()).toBeVisible();
 		await expect(page.locator('[data-sonner-toast]')).toHaveCount(0);
 
-		await champ.pressSequentially(f.annee.slice(3), { delay: 40 });
+		// `pressSequentially` refocaliserait le champ et recommencerait le segment de l'année :
+		// le dernier chiffre part du clavier, à la suite des autres.
+		await page.keyboard.type(f.annee.slice(3));
 		await expect(champ).toHaveValue(f.attendueFinale);
 		await expect.poll(() => envoyees).toContain(f.attendueFinale);
 		await expect(page.locator(f.ligne).first()).toBeVisible();
@@ -117,8 +119,10 @@ for (const f of FILTRES) {
 		await expect(page.locator('[data-sonner-toast]')).toHaveCount(0);
 
 		// La sortie du champ restaure une date laissée incomplète.
+		await page.locator('h1').first().click();
 		await champ.focus();
 		await champ.pressSequentially(f.jourMois + f.annee.slice(0, 2), { delay: 40 });
+		await expect(champ).not.toHaveValue(f.attendueFinale);
 		await page.locator('h1').first().click();
 		await expect(champ).toHaveValue(f.attendueFinale);
 		expect(refus).toEqual([]);
