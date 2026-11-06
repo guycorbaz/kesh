@@ -49,12 +49,6 @@
 	});
 	let chart = $derived(monthlyBars(summary.months, box));
 	let labels = $derived(axisLabels(summary.months, i18nLocale()));
-	let descArgs = $derived({
-		year: summary.fiscalYear.name,
-		revenues: chartAmount(summary.totalRevenues),
-		expenses: chartAmount(summary.totalExpenses),
-		months: n,
-	});
 </script>
 
 <div
@@ -89,8 +83,17 @@
 		<title id="homepage-bars-title">{i18nMsg('homepage-charts-bars-title', 'Revenus et dépenses par mois')}</title>
 		<desc id="homepage-bars-desc">
 			{n === 1
-				? i18nMsg('homepage-charts-bars-desc-one', '{ $year } : revenus { $revenues }, dépenses { $expenses }, sur un mois.', descArgs)
-				: i18nMsg('homepage-charts-bars-desc', '{ $year } : revenus { $revenues }, dépenses { $expenses }, sur { $months } mois.', descArgs)}
+				? i18nMsg('homepage-charts-bars-desc-one', '{ $year } : revenus { $revenues }, dépenses { $expenses }, sur un mois.', {
+						year: summary.fiscalYear.name,
+						revenues: chartAmount(summary.totalRevenues),
+						expenses: chartAmount(summary.totalExpenses),
+					})
+				: i18nMsg('homepage-charts-bars-desc', '{ $year } : revenus { $revenues }, dépenses { $expenses }, sur { $months } mois.', {
+						year: summary.fiscalYear.name,
+						revenues: chartAmount(summary.totalRevenues),
+						expenses: chartAmount(summary.totalExpenses),
+						months: n,
+					})}
 		</desc>
 		<ChartPatterns prefix={PREFIX} styles={[BAR_EXPENSE]} size={wide ? 12 : 10} />
 
