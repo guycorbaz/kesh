@@ -304,6 +304,13 @@ Aucun epic n'est ouvert. Candidats, **sans ordre décidé** (§ 9, Q5) :
    propose une décision par défaut pour chacune ?
 7. **#869** : faut-il ajouter « et l'exercice » au message de période verrouillée, maintenant que les bornes y figurent ?
 
+**Réponses de Guy (annoté le 2026-11-06, après la tenue de cette rétrospective).** Q1 : « oui » à la règle — les stories de
+l'Epic 33 corrigent les limites courtes et ne tracent que ce qui déborde. Q5 : l'Epic 33 (v0.17.5) porte #926, #922, #918 et
+une liste de défauts choisie par l'orchestrateur. L'audit des 247 issues ouvertes (`kesh-gate-logs/audit0174/`) a conduit,
+sur son accord, à fermer huit issues : #227, #578, #772 réglées ; #742, #287, #44 reportées dans #606, #424, #821 ; #165,
+#166 remplacées par #918. Compte après ces fermetures : 239 issues, 87 bugs. Q2, Q3, Q4, Q6, Q7 restent sans réponse ;
+B1 et B3 sont portées par la story 33-10.
+
 [#847]: https://github.com/guycorbaz/kesh/issues/847
 [#890]: https://github.com/guycorbaz/kesh/issues/890
 [#920]: https://github.com/guycorbaz/kesh/issues/920
