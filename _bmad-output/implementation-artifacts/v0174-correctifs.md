@@ -1,6 +1,6 @@
 # Story v0174-correctifs : la 0.17.4 — les bugs de l'usage réel (#819, #888, #889, #869, #872, #817, #842, #540, #901) — fiche-index
 
-Status: ready-for-dev
+Status: done
 
 *Fiche-index rédigée le 2026-11-05, en autonomie (Opus 5.5), worktree `/home/gcorbaz/devel/kesh-0174c`, branche
 `story/v0174-correctifs` partie de `7bd4d5c0` (le merge de la rétrospective de la série 0.17 sur `main`). Release **0.17.4**,

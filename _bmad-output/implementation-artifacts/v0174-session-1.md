@@ -1,6 +1,6 @@
 # Story v0174-session-1 : la 0.17.4, côté serveur — le jeton de renouvellement n'est plus stocké qu'en empreinte (#890), le paramètre ignoré des tests retiré (#896), les LOW serveur de la 0.17.3 (#898, #899)
 
-Status: review
+Status: done
 
 *Sous-fiche de `v0174-session.md` (contexte, cause lue au code par issue, triage des LOW, issues demandées), qui fait foi pour
 ce qu'elle porte. Branche `story/v0174-session`, worktree `/home/gcorbaz/devel/kesh-0174s`, port **3177**, bases
