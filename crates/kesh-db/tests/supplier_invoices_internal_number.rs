@@ -625,13 +625,17 @@ async fn a_fiscal_year_created_later_follows_the_year(pool: MySqlPool) {
     assert_eq!(d.numero_emis(&pool, dans_b()).await, "FF-2026-004");
 }
 
-/// (d) Même chose, A étant clôturé : son compteur compte.
+/// (d) Même chose, A étant clôturé : son compteur compte. ⚠️ La `-003` est supprimée
+/// avant la clôture : sans ce trou, le filet du saut masquerait un exercice clos
+/// oublié (M21 survivait au premier passage), en remontant de `-001` à `-004`.
 #[sqlx::test(migrations = "./test-schema")]
 async fn a_closed_fiscal_year_counts(pool: MySqlPool) {
     let d = decor(&pool).await;
-    for _ in 0..3 {
+    for _ in 0..2 {
         d.numero_emis(&pool, dans_a()).await;
     }
+    let troisieme = d.emettre(&pool, dans_a()).await;
+    d.supprimer(&pool, &troisieme).await;
     sqlx::query("UPDATE fiscal_years SET status = 'Closed' WHERE id = ?")
         .bind(d.a)
         .execute(&pool)
