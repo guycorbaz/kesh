@@ -38,6 +38,7 @@ Tenu le 2026-11-06 par l'agent de fiche (Opus 5.5), en autonomie ; 31 choix apr�
 - **C-e334-17 — `accounts::archive` reste, `archive_guarded` s'ajoute.** *Contexte* : 14 appels, surtout des montages. *Retenu* : pas de diffusion. *Réversible* : oui.
 - **C-e334-18 — La seconde face se corrige ici, pour l'inactif seulement.** *Contexte* : commentaire de #486 ; le type reconduit reste vérifié, #537 restant à part. *Retenu* : `changed` commande inactif et imputable. *Écartée* : ne plus rien valider à l'identique (agrandirait #537). *Réversible* : oui.
 - **C-e334-29 — Sous-comptes, désignation, version.** *Contexte* : L-R8-1 ; la version se contrôle à l'`UPDATE` (`repositories/accounts.rs:703-707`). *Retenu* : un écran périmé non confirmé reçoit le 409 de désignation, sur l'état courant, puis, s'il confirme, celui de version. *Écartée* : lire la version avant (une lecture de plus, pour un cas rare). *Réversible* : oui.
+- **C-e334-34 — L'écran des réglages charge les comptes archivés, et les marque.** *Contexte* : développement ; `fetchAccounts(false)` empêchait `withCurrentAccount` de résoudre un compte archivé : champ vide, effacé au premier geste (#271), cas que l'archivage confirmé rend ordinaire. *Retenu* : `fetchAccounts(true)`, les listes restent filtrées sur `active`, libellé « (archivé) ». *Écartée* : le laisser (la seconde face rouvrirait un effacement muet). *Réversible* : oui.
 
 ## 33-9
 

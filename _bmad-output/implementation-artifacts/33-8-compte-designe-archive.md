@@ -1,6 +1,6 @@
 # Story 33-8 : un compte désigné dans les paramètres de facturation ne s'archive plus sans avertissement (#486)
 
-Status: ready-for-dev
+Status: review
 
 *Fiche rédigée le 2026-11-06 en autonomie (Opus 5.5), worktree `/home/gcorbaz/devel/kesh-e33`, branche `story/33-0-kickoff`,
 numéros de ligne de `4ef19901`. Release **0.17.5**, Epic 33. **Aucune migration.** Registre : `e33-choix-autonomes-e334.md`,
@@ -48,12 +48,12 @@ quel réglage ; pour ne pas découvrir l'effet des mois plus tard, à la validat
 
 ## Tâches
 
-- [ ] **T1 — rouges** : `tests/accounts_designated_archive_e2e.rs`, AC-1 à 7.
-- [ ] **T2** : dépôt, `DbError`, `errors.rs`, route. ⚠️ `kesh-db` touché : gate complet en cours de boucle.
-- [ ] **T3** : `validate_account_of` ; grep des tests qui épinglent « compte archivé » sur `company_invoice_settings` : les ajuster en connaissance de cause, et le dire au Change Log.
-- [ ] **T4** : écran, types, API, Vitest, i18n quatre locales (`error-account-designated-in-settings`, `accounts-archive-designated-*`), `lint-i18n-ownership`.
-- [ ] **T5** : E2E, captures thème clair (dialogue normal, avertissement) dans `kesh-gate-logs/e334/captures/`.
-- [ ] **T6** : manuels, `docs/api-external.md`, CHANGELOG *Corrigé* (`refs #486`).
+- [x] **T1 — rouges** : `tests/accounts_designated_archive_e2e.rs`, AC-1 à 7.
+- [x] **T2** : dépôt, `DbError`, `errors.rs`, route. ⚠️ `kesh-db` touché : gate complet en cours de boucle.
+- [x] **T3** : `validate_account_of` ; grep des tests qui épinglent « compte archivé » sur `company_invoice_settings` : les ajuster en connaissance de cause, et le dire au Change Log.
+- [x] **T4** : écran, types, API, Vitest, i18n quatre locales (`error-account-designated-in-settings`, `accounts-archive-designated-*`), `lint-i18n-ownership`.
+- [x] **T5** : E2E, captures thème clair (dialogue normal, avertissement) dans `kesh-gate-logs/e335/captures/`.
+- [x] **T6** : manuels, `docs/api-external.md`, CHANGELOG *Corrigé* (`refs #486`).
 
 ### Mutations nommées (P2)
 
@@ -86,10 +86,24 @@ Gate complet, E2E complet au dernier commit de code. Aucune migration : la colon
 - 2026-11-06 : validation P1 (Sonnet 5.5), remédiation (Opus 5.5). Aucun finding au-dessus de LOW. **L-R8-1** : ordre décidé (C-e334-29, lu : `repositories/accounts.rs:681-710`), AC-4 élargi, M7. **L-R8-2** : lien réservé à l'Administrateur, AC-8, M8. Point « libellés de TVA à vérifier » levé, lu.
 - 2026-11-06 : validation P2 (Opus 5.5), remédiation (Opus 5.5). Un LOW. **L-R8-1** : M4 retirée, doublon de M7 : le refus annule la transaction (patron lu : `repositories/accounts.rs:692-695`), donc l'AC-1 reste vert, et c'est l'AC-4 qui tue ce déplacement. Numéros des autres mutations conservés : sept mutations, M1 à M3, M5 à M8.
 
+- 2026-11-07 : développement (Opus 5.5), worktree `/home/gcorbaz/devel/kesh-e335`, commits de code `32944fc0` et `d7dcb3c9`. **Étape 0** : la P3 ne rend aucun constat sur cette fiche ; aucun point « à établir ». **Grep de T1** (`gh issue list`, titres) : aucune issue ouverte sur les autres désignateurs sans avertissement, hors #286 pour l'article ; issue demandée. **Ajout hors fiche, C-e334-34** : lu, `settings/invoicing/+page.svelte` chargeait `fetchAccounts(false)`, si bien que `withCurrentAccount` ne résolvait pas un compte archivé : le champ s'affichait vide, et un geste l'effaçait (le défaut de #271). La fiche demandait qu'il « reste affiché » au manuel seulement. Deux gardes recomptées, que la fiche ne nommait pas : `i18n-keys.test.ts` (`sitesTotal` 2832 → 2849) et `i18n-libelle-en-dur.test.ts` (77 → 79, `conforme` 63 → 65) ; la seconde a rougi au gate de `32944fc0`, d'où `d7dcb3c9` et un rejeu de Vitest, `check` et l'E2E.
+
 ## Dev Agent Record
 
 ### Agent Model Used
 
+Claude Opus 5.5.
+
 ### Completion Notes List
 
+- **Rouges d'abord** (`kesh-gate-logs/e335/rouges.log`) : rouge à la compilation (`DESIGNATED_ACCOUNT_COLUMNS` absente) ; puis, la constante seule posée, 12 tests, 5 passés, 7 rouges, dont `an_archived_designation_no_longer_locks_the_settings` (`400 Compte TVA due : compte archivé`), qui établit la seconde face. Les cinq verts d'avant le correctif décrivent ce qui ne doit pas changer (non désigné, sous-comptes, version avec confirmation, autre société) et l'inventaire ; M2, M6 et M1 montrent que trois d'entre eux mordent.
+- **Mutations** (`e335/mut/synthese-33-8.log`), sept sur sept tuées. M1 : `each_of_the_ten_settings_stops_the_archive`, `two_settings_on_one_account_are_both_named`, `the_inventory_equals_the_real_columns`. M2 : `another_companys_designation_is_ignored`. M3 : les tests de confirmation. M5 : `an_archived_designation_no_longer_locks_the_settings`. M6 : `an_undesignated_account_archives_as_before`. M7 : `a_stale_version_without_confirmation_hits_the_designation_first`. M8 : le test Vitest du Comptable. M4 retirée à la validation.
+- **Gates** (`e335/33-8/`). Au commit `32944fc0` : `test-fast.sh --ci` vert, 4825 exécutés, 4825 passés, 12 ignorés ; `cargo build --workspace --all-targets` vert ; `lint-i18n-ownership` vert ; `npm run build` vert ; Vitest rouge, 2 échecs de `i18n-libelle-en-dur.test.ts`. Au commit `d7dcb3c9`, qui ne touche que ce fichier de test : Vitest 2702 tests, 218 fichiers, vert ; `npm run check` 0 erreur ; **E2E complet** sur `kesh_e2e_e335` recréée : 378 tests, 353 passés, 18 ignorés, **7 échecs, tous de la KF-029** (`mode-expert:26,41`, `onboarding-path-b:65,92`, `onboarding:57,77,150`), 16,2 min (`e2e-r33-8-2/`). `test-fast` et `build` n'ont pas été rejoués à `d7dcb3c9` : aucun fichier Rust n'y bouge.
+- **Captures** (`e335/captures/33-8-*.png`) : dialogue normal, avertissement Administrateur, réglage archivé. Le Comptable est couvert en Vitest (AC-8), sans capture.
+- **Manuels** : `user-manual.tex`, § `sec:plan-comptable-archivage` ; PDF régénéré, contrôlé aplati (« Archiver un compte désigné dans les paramètres », « Archiver quand même » lus). `docs/api-external.md` : le 409, `confirmDesignated`, l'ordre des refus. PDF de la brochure et du manuel d'administration, régénérés sans changement de source, rétablis.
+- **AC-9** : les appels de `accounts::archive(` n'ont pas changé ; `archive` lit désormais le `company_id` du compte, puis délègue, confirmation posée. `reactivate` n'est pas touché.
+- **Limite écrite** : la lecture de la désignation ne verrouille pas les réglages (doc-comment d'`archive_guarded`), comme `confirm_retype`. Autres désignateurs : issue demandée.
+
 ### File List
+
+`crates/kesh-db/src/errors.rs`, `crates/kesh-db/src/repositories/accounts.rs`, `crates/kesh-db/src/repositories/company_invoice_settings.rs`, `crates/kesh-api/src/errors.rs`, `crates/kesh-api/src/routes/accounts.rs`, `crates/kesh-api/src/routes/company_invoice_settings.rs`, `crates/kesh-api/tests/accounts_designated_archive_e2e.rs` (neuf), `crates/kesh-i18n/locales/{fr,de,en,it}-CH/messages.ftl`, `frontend/src/lib/features/accounts/accounts.types.ts`, `frontend/src/lib/shared/i18n-keys.test.ts`, `frontend/src/lib/shared/i18n-libelle-en-dur.test.ts`, `frontend/src/routes/(app)/accounts/+page.svelte`, `frontend/src/routes/(app)/accounts/accounts-page.test.ts`, `frontend/src/routes/(app)/settings/invoicing/+page.svelte`, `frontend/src/routes/(app)/settings/invoicing/settings-invoicing-page.test.ts`, `frontend/tests/e2e/accounts.spec.ts`, `docs/manual/fr/user-manual.{tex,pdf}`, `docs/api-external.md`, `CHANGELOG.md`, `_bmad-output/implementation-artifacts/33-8-compte-designe-archive-review-prompt-p1.md` (neuf).
