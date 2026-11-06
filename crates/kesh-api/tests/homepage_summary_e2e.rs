@@ -938,13 +938,36 @@ async fn reversal_pair_with_a_side_dated_outside_the_year_follows_the_income_sta
             .await
             .unwrap();
     }
+    // L'anomalie inverse : un côté daté dans les bornes, mais rattaché à N−1. Sans la
+    // condition d'exercice, sa date suffirait à écarter la paire.
+    let prev = c.previous_year(&pool).await;
+    // L'origine dans N−1, datée dans N : reste la contre-passation, −40 au mois du jour.
+    let origin_prev = c.charge(&pool, month_k(0), c.expense, dec!(40)).await;
+    journal_entries::reverse(&pool, co, origin_prev, u)
+        .await
+        .unwrap();
+    // La contre-passation dans N−1, datée dans N : reste l'origine, +70 au mois 1.
+    let income_two = post(&pool, u, f, co, month_k(1), c.bank, c.revenue, dec!(70)).await;
+    let reversal_two = journal_entries::reverse(&pool, co, income_two, u)
+        .await
+        .unwrap();
+    for (number, id) in [(9101_i64, origin_prev), (9102, reversal_two.entry.id)] {
+        sqlx::query("UPDATE journal_entries SET fiscal_year_id = ?, entry_number = ? WHERE id = ?")
+            .bind(prev)
+            .bind(number)
+            .bind(id)
+            .execute(&pool)
+            .await
+            .unwrap();
+    }
 
     let app = spawn_app(pool).await;
     let b = app.summary(&c.jwt).await;
     let today_month = month_index(&b, today());
     assert_ne!(today_month, 0, "montage : deux mois différents");
     assert_eq!(month_at(&b, 0), (dec!(300), dec!(0)), "{b}");
-    assert_eq!(month_at(&b, today_month), (dec!(0), dec!(-500)), "{b}");
+    assert_eq!(month_at(&b, 1), (dec!(70), dec!(0)), "{b}");
+    assert_eq!(month_at(&b, today_month), (dec!(0), dec!(-540)), "{b}");
     assert_eq!(b["creditBalanceExpenseAccounts"], 1, "{b}");
     assert_invariant(&app, &c.jwt, &b).await;
 }
