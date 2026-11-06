@@ -368,3 +368,66 @@ export async function createManualDebitStatementViaApi(
 		await disposeContextSafe(ctx);
 	}
 }
+
+/** La date du jour à Zurich, `AAAA-MM-JJ` : entre minuit et 2 h, la date UTC est la veille. */
+export function todayInZurich(): string {
+	return new Date().toLocaleDateString('sv-SE', { timeZone: 'Europe/Zurich' });
+}
+
+/**
+ * Story 33-3b — crée l'exercice civil de douze mois de l'année du jour, à Zurich. Pour une
+ * société sans exercice (`with-company-no-fy`). Renvoie l'année.
+ */
+export async function createFiscalYearViaApi(page: Page): Promise<string> {
+	const year = todayInZurich().slice(0, 4);
+	const ctx = await authedApiContext(page);
+	try {
+		const res = await ctx.post('/api/v1/fiscal-years', {
+			data: { name: `Exercice ${year}`, startDate: `${year}-01-01`, endDate: `${year}-12-31` },
+		});
+		expect(res.ok(), `create fiscal year: ${res.status()}`).toBeTruthy();
+		return year;
+	} finally {
+		await disposeContextSafe(ctx);
+	}
+}
+
+/**
+ * Story 33-3b — poste une charge datée du jour, à Zurich : débit du premier compte de
+ * charges, crédit d'un compte de classe 10. Renvoie l'id de l'écriture et le compte.
+ */
+export async function createExpenseEntryViaApi(
+	page: Page,
+	description: string,
+	amount: string,
+): Promise<{ id: number; accountId: number; accountNumber: string }> {
+	const ctx = await authedApiContext(page);
+	try {
+		const accRes = await ctx.get('/api/v1/accounts?includeArchived=false');
+		expect(accRes.ok(), `list accounts: ${accRes.status()}`).toBeTruthy();
+		const accounts: Array<{ id: number; number: string; accountType: string }> = await accRes.json();
+		const expense = accounts.find((a) => a.accountType === 'Expense');
+		const credit = accounts.find((a) => /^10[0-9]{2}$/.test(a.number));
+		expect(expense, 'montage : un compte de charges').toBeTruthy();
+		expect(credit, 'montage : un compte de classe 10').toBeTruthy();
+		const res = await ctx.post('/api/v1/journal-entries', {
+			data: {
+				entryDate: todayInZurich(),
+				journal: 'OD',
+				description,
+				lines: [
+					{ accountId: expense!.id, debit: amount, credit: '0.00' },
+					{ accountId: credit!.id, debit: '0.00', credit: amount },
+				],
+			},
+		});
+		expect(res.ok(), `create expense entry: ${res.status()}`).toBeTruthy();
+		return {
+			id: ((await res.json()) as { id: number }).id,
+			accountId: expense!.id,
+			accountNumber: expense!.number,
+		};
+	} finally {
+		await disposeContextSafe(ctx);
+	}
+}

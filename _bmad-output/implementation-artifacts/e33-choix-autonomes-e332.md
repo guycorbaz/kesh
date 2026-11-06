@@ -219,3 +219,22 @@ Registre propre à ces trois fiches, **versé par union** par l'orchestrateur. C
 - **Retenu** : les barres décident sur `months`, avec une phrase juste dans tous ces cas (« Aucun mouvement net de produits ou de charges dans cet exercice ») ; le camembert décide sur `expensePosts`, avec une seule phrase pour le vide (« Aucun poste de charges à répartir dans cet exercice »), elle aussi juste dans tous les cas.
 - **Écartées** : (a) distinguer au camembert « exercice vide » et « sans poste » : une condition de plus pour deux phrases vraies toutes les deux ; (b) rendre un indicateur de lignes par l'API, pour séparer un exercice réellement vide d'un reclassement de produits : un champ de contrat pour une nuance de libellé.
 - **Réversible** : oui, frontend seul.
+
+---
+
+## Développement de la 33-3b (worktree `kesh-e333`)
+
+### C-e332-25 — L'échelle des barres couvre le maximum de chaque signe
+
+- **Contexte** : C-e332-19 dit « l'échelle se calcule sur la valeur absolue la plus grande des deux signes », ce qui se lit de deux façons : un axe symétrique, ou un domaine de `−max(négatifs)` à `+max(positifs)`.
+- **Retenu** : le second, étendu à des graduations rondes (1, 2, 2,5 ou 5 × 10^k, jamais sous le centime). Hauteurs proportionnelles à la valeur absolue, axe du zéro là où il tombe.
+- **Écartée** : l'axe symétrique : un seul mois légèrement négatif gaspillerait la moitié du dessin, pour un cas rare.
+- **Réversible** : oui, frontend seul.
+
+### C-e332-26 — Aucune adaptation au téléphone du dessin : l'application ne descend pas sous 1280 px
+
+- **Contexte** : la fiche (T5, R-9 de la validation P3) demande des captures à 360 px, sur l'idée d'une carte réduite. Jouées, elles montrent autre chose : `(app)/+layout.svelte:295` pose `min-w-[1280px]`. À 360 px, la page mesure toujours 1280 px (920 px de débord, relevés par la capture) et se parcourt de côté ; la carte garde sa largeur de bureau.
+- **Retenu** : un corps de texte fixe en unités du `viewBox`, un par largeur (18 pour 720, 15 pour 1200), sans `@media`. Un premier essai à `@media (max-width: 640px)` a grossi les étiquettes sur une carte restée large : la capture l'a montré, il est retiré.
+- **Écartées** : (a) une requête de conteneur : du code pour une largeur que la carte n'atteint pas ; (b) retirer le `min-w-[1280px]` : hors de cette story, décision de mise en page de toute l'application.
+- **Limite écrite** : le jour où ce plancher tombe, le corps de 18 unités se relit (environ 0,4 d'échelle à 360 px).
+- **Réversible** : oui, CSS seul.

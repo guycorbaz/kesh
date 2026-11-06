@@ -230,9 +230,10 @@ Le mode guidé pas-à-pas est recommandé pour les nouveaux utilisateurs. Les ut
 \section{Tableau de bord}
 
 Le tableau de bord est votre page d'accueil après connexion. Il présente trois
-tuiles de synthèse :
+tuiles de synthèse, puis, dessous, les deux graphiques de l'exercice ouvert
+(section~\ref{sec:graphiques-accueil}) :
 
-\keshscreenshot{dashboard.png}{Tableau de bord : dernières écritures, factures ouvertes et comptes bancaires.}  % TODO capture: dashboard avec donnees demo
+\keshscreenshot{dashboard.png}{Tableau de bord : les trois tuiles, puis les revenus et dépenses par mois et les principaux postes de charges.}  % TODO capture: dashboard avec donnees demo
 
 \begin{itemize}
     \item \textbf{Dernières écritures} — les cinq plus récentes (date, numéro, libellé,
@@ -248,6 +249,57 @@ tuiles de synthèse :
 Un rôle \emph{Consultation} voit les mêmes chiffres, sans les boutons de saisie. Si une
 tuile ne peut pas se charger, elle le dit — elle n'affiche jamais « Aucune écriture » sur
 une comptabilité qui en contient.
+
+\subsection{Revenus, dépenses et principaux postes}\label{sec:graphiques-accueil}
+
+Les deux graphiques se lisent dans la \textbf{comptabilité} : les produits et les charges
+passés au journal, non les flux bancaires. Un virement reçu mais pas encore comptabilisé
+n'y figure pas, et une facture validée y figure à sa date même si elle n'est pas encaissée.
+
+\paragraph{Quel exercice.} L'exercice \textbf{ouvert à la date du jour}, même vide. Si aucun
+exercice ne couvre ce jour, ou si celui qui le couvre est clos, l'accueil dit qu'aucun
+exercice n'est ouvert à la date du jour, sans montrer un autre exercice à la place.
+
+\paragraph{Les barres.} Pour chaque mois, les revenus (pleins) et les dépenses (tramées),
+sans résultat ni cumul. Le graphique a \textbf{autant de mois que l'exercice}, et non douze :
+treize pour un exercice du 15 mars au 14 mars suivant. Sur un exercice long, tous les mois
+restent dessinés mais leurs étiquettes se clairsèment (au-delà de douze mois, un par
+trimestre ; au-delà de trente-six, chaque janvier) ; le tableau \emph{Détail par mois} les
+porte tous, et les chiffres. Un mois peut être négatif : sa barre part sous l'axe.
+
+\paragraph{Ce qui est écarté, et ce qui ne l'est pas.}
+\begin{itemize}
+    \item Une écriture et sa \textbf{contre-passation du même exercice} disparaissent
+    ensemble, de leurs deux mois. C'est le cas d'une correction, ou d'une facture fournisseur
+    annulée dans l'exercice.
+    \item Une \textbf{contre-passation qui franchit l'exercice reste comptée, de part et
+    d'autre} : l'écriture d'origine dans le premier exercice, la contre-passation dans le
+    second, en montant négatif. C'est le cas des transitoires, qui sont de vraies charges ; et
+    une correction passée en janvier d'une écriture de décembre se lit de même, en négatif en
+    janvier.
+    \item Un \textbf{avoir} reste compté à son mois, en revenus négatifs : c'est un fait
+    commercial, non une correction.
+    \item Kesh ne passe aucune écriture de clôture : il n'y a rien à écarter à ce titre.
+\end{itemize}
+Le total des barres \textbf{égale le compte de résultat} de l'exercice : c'est ce qui permet
+de les recouper. Le grand livre d'un poste ou les écritures d'un mois peuvent en revanche
+montrer des lignes que le graphique n'a pas retenues : les deux écritures d'une paire écartée,
+dont la somme est nulle.
+
+\paragraph{Les postes de charges.} Le diagramme montre les cinq comptes de charges au plus
+gros solde, puis \textbf{Autres}, qui réunit les suivants et n'ouvre aucun détail, faute d'un
+compte unique. Seuls comptent les soldes positifs : un compte de charges au \textbf{solde
+créditeur} n'y figure pas, une note dit combien de comptes sont dans ce cas, et les
+pourcentages se calculent sans eux. Un compte à solde nul n'y paraît pas, comme au compte de
+résultat. Pour cette raison, la somme des parts peut dépasser le total des dépenses des barres.
+Les pourcentages sont arrondis à une décimale, sans redressement : leur somme peut s'écarter
+de 100 d'un dixième.
+
+\paragraph{Vers le détail.} Un clic sur un mois ouvre les écritures de ce mois ; un clic sur
+une part ouvre le grand livre du compte, sur tout l'exercice. \textbf{Au clavier}, le dessin
+n'offre aucun arrêt : ces mêmes liens sont dans les deux tableaux, celui des postes toujours
+visible, celui des mois derrière \emph{Détail par mois}. Un clic sur le dessin ne s'ouvre pas
+dans un autre onglet ; le lien du tableau le permet.
 
 \subsection{Solde comptable, relevé et écart}\label{sec:solde-comptable}
 

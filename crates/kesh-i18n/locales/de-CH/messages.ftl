@@ -3342,3 +3342,27 @@ mcp-server-warning-proxy-any-v4 = { $entry }: Jedem IPv4-Peer wird sein X-Forwar
 mcp-server-warning-proxy-any-v6 = { $entry }: Jedem IPv6-Peer wird sein X-Forwarded-For-Header geglaubt.
 mcp-server-form-expires-invalid = Ungültiges Ablaufdatum: Wählen Sie einen kommenden Tag, spätestens den 30.12.9999.
 mcp-server-settings-retry = Erneut versuchen
+
+# Story 33-3b (#918) — die Diagramme der Startseite
+homepage-charts-loading = Diagramme werden geladen…
+homepage-charts-unavailable = Diagramme sind momentan nicht verfügbar.
+homepage-charts-no-open-year = Am heutigen Datum ist kein Geschäftsjahr offen.
+homepage-charts-empty = Keine Nettobewegung bei Erträgen oder Aufwänden in diesem Geschäftsjahr.
+homepage-charts-no-posts = Keine Aufwandsposten zu verteilen in diesem Geschäftsjahr.
+homepage-charts-bars-title = Einnahmen und Ausgaben pro Monat
+homepage-charts-bars-desc = { $year }: Einnahmen { $revenues }, Ausgaben { $expenses }, über { $months } Monate.
+homepage-charts-pie-title = Wichtigste Aufwandsposten
+homepage-charts-pie-desc = { $year }: { $count } Aufwandsposten, insgesamt { $base }. Der grösste: { $top }, { $share } %.
+homepage-charts-legend-revenues = Einnahmen
+homepage-charts-legend-expenses = Ausgaben
+homepage-charts-months-summary = Details pro Monat
+homepage-charts-month-mark-title = { $month }: Einnahmen { $revenues }, Ausgaben { $expenses }
+homepage-charts-post-mark-title = { $name }: { $amount }, { $share } %
+homepage-charts-others-label = Übrige ({ $count })
+homepage-charts-th-month = Monat
+homepage-charts-th-rank = Rang
+homepage-charts-th-account = Konto
+homepage-charts-th-amount = Betrag
+homepage-charts-th-share = Anteil
+homepage-charts-credit-balance-note-one = 1 Aufwandskonto mit Habensaldo ist in diesem Diagramm nicht enthalten.
+homepage-charts-credit-balance-note-other = { $count } Aufwandskonten mit Habensaldo sind in diesem Diagramm nicht enthalten.

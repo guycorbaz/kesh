@@ -8,6 +8,14 @@ Le contenu est rédigé en français à destination des **fiduciaires, PME, ind�
 
 ---
 
+## [0.17.5] — Non publié
+
+### Ajouté
+
+- **Deux graphiques sur la page d'accueil** ([#918](https://github.com/guycorbaz/kesh/issues/918)) : les revenus et les dépenses de chaque mois de l'exercice ouvert, et la part des cinq plus gros postes de charges, plus « Autres ». Les chiffres viennent de la comptabilité, non de la banque, et leur total égale le compte de résultat. Une écriture et sa contre-passation du même exercice sont écartées toutes les deux ; une contre-passation qui franchit l'exercice et un avoir restent comptés, en montants négatifs ; un compte de charges au solde créditeur est écarté des parts et signalé. Un clic sur un mois ouvre ses écritures, un clic sur une part le grand livre du compte ; tout se fait aussi au clavier, par les tableaux voisins. Le graphique a autant de mois que l'exercice, et non douze (manuel utilisateur, *Revenus, dépenses et principaux postes*). L'API porte la même lecture : `GET /reports/homepage-summary`.
+
+---
+
 ## [0.17.4] — 2026-11-06
 
 La 0.17.4 est une version corrective : la session plus sûre, une sauvegarde automatique avant les migrations à venir, et les défauts relevés à l'usage. Elle ne porte **aucune migration** ; seules les sessions ouvertes sont effacées au premier démarrage, si bien que **chaque utilisateur se reconnecte une fois**. **Le retour à la 0.17.3 est possible sans restauration, après avoir vidé la table des sessions** (manuel d'administration, *Passer à la 0.17.4*). La sauvegarde complète d'avant la mise à jour (base, `.keshbackup`, dossier des documents) reste recommandée. Le `.env` ne change pas ; les compose fournis transmettent une variable nouvelle, facultative (`KESH_SKIP_PRE_UPGRADE_BACKUP`).
