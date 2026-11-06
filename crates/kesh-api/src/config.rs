@@ -1674,11 +1674,43 @@ mod tests {
     /// tests se marchent dessus. On accepte un peu de poison safety :
     /// si un test panique en tenant le lock, on unwrap le poison et on
     /// continue (les tests suivants re-init l'état).
-    pub(super) fn env_lock() -> MutexGuard<'static, ()> {
+    ///
+    /// Le garde rend aussi `DATABASE_URL` à sa valeur d'avant quand il est
+    /// relâché : `reset_env()` l'efface, et sous `cargo test` (un seul
+    /// processus, contrairement à nextest) les tests `#[sqlx::test]` du même
+    /// binaire qui tournent ensuite ne trouveraient plus la base — c'est ce
+    /// que la CI de la 0.17.4 a constaté sur `pre_upgrade_backup::tests`.
+    pub(super) fn env_lock() -> EnvGuard {
         static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
-        LOCK.get_or_init(|| Mutex::new(()))
+        let lock = LOCK
+            .get_or_init(|| Mutex::new(()))
             .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        EnvGuard {
+            database_url: env::var_os("DATABASE_URL"),
+            _lock: lock,
+        }
+    }
+
+    /// Garde de [`env_lock`] : sérialise les tests d'environnement et
+    /// restitue `DATABASE_URL` au relâchement (avant le verrou, champ déclaré
+    /// en dernier).
+    pub(super) struct EnvGuard {
+        database_url: Option<std::ffi::OsString>,
+        _lock: MutexGuard<'static, ()>,
+    }
+
+    impl Drop for EnvGuard {
+        fn drop(&mut self) {
+            // SAFETY: le verrou est encore tenu (le champ `_lock` est relâché
+            // après ce corps).
+            unsafe {
+                match &self.database_url {
+                    Some(v) => env::set_var("DATABASE_URL", v),
+                    None => env::remove_var("DATABASE_URL"),
+                }
+            }
+        }
     }
 
     /// Reset des variables d'environnement communes entre tests.
