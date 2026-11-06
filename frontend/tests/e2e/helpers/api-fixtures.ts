@@ -255,6 +255,8 @@ export async function createSupplierInvoiceViaApi(
 		invoiceDate: string;
 		dueDate: string | null;
 		amount: string;
+		/** Facultatif : sans coordonnées, la facture n'entre pas dans un lot de paiement. */
+		creditorIban?: string;
 	},
 ): Promise<{ supplierId: number; supplierInvoiceId: number }> {
 	const ctx = await authedApiContext(page);
@@ -293,6 +295,7 @@ export async function createSupplierInvoiceViaApi(
 				invoiceDate: opts.invoiceDate,
 				dueDate: opts.dueDate,
 				paymentReference: opts.paymentReference,
+				creditorIban: opts.creditorIban,
 				lines: [
 					{
 						description: 'Fourniture',

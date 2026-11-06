@@ -93,6 +93,7 @@ async function decor(
 	tag: string,
 	sens: 'DBIT' | 'CRDT',
 	withReference: boolean,
+	creditorIban?: string,
 ): Promise<Decor> {
 	const unique = `${Date.now()}${Math.floor(Math.random() * 1000)}`;
 	const supplierName = `Fournisseur ${tag} ${unique}`;
@@ -109,6 +110,7 @@ async function decor(
 		invoiceDate: '2026-02-10',
 		dueDate: '2026-03-12',
 		amount,
+		creditorIban,
 	});
 	const bankAccountId = await wiredBankAccountViaApi(page, TEST_IBAN);
 	let xml = fs.readFileSync(FIXTURE, 'utf8');
@@ -337,7 +339,7 @@ test('une facture dans un lot en cours : l’avis nomme son numéro interne', as
 	page,
 }, testInfo) => {
 	await login(page);
-	const d = await decor(page, 'Lot', 'DBIT', true);
+	const d = await decor(page, 'Lot', 'DBIT', false, 'CH5604835012345678009');
 	const ctx = await authedApiContext(page);
 	let lot: number | null = null;
 	try {
@@ -349,7 +351,9 @@ test('une facture dans un lot en cours : l’avis nomme son numéro interne', as
 			},
 		});
 		expect(res.ok(), await res.text()).toBeTruthy();
-		lot = (await res.json()).batch.id;
+		const corps = await res.json();
+		expect(corps.batch, JSON.stringify(corps.failed)).toBeTruthy();
+		lot = corps.batch.id;
 		const interne = (await factureFournisseur(page, d.supplierInvoiceId)).internalNumber;
 		expect(interne).toBeTruthy();
 		const ligne = await ligneDeReconciliation(page, d);
