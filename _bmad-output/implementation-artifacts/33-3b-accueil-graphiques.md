@@ -1,6 +1,6 @@
 # Story 33-3b : les deux graphiques de la page d'accueil, dessinés en SVG dans Kesh, avec le clic vers le détail
 
-Status: ready-for-dev
+Status: review
 
 *Fiche rédigée le 2026-11-06 en autonomie (Opus 5.5), worktree `/home/gcorbaz/devel/kesh-e33`, branche `story/33-0-kickoff`,
 numéros de ligne de `4ef19901`. Epic 33, release **0.17.5**, **sans migration**. Registre : `e33-choix-autonomes-e332.md`, choix
@@ -254,6 +254,34 @@ fichier par fichier contre `docs/testing.md`. Interdit : « rejouée au push ».
 - 2026-11-06 — Remédiation de la validation P3 (rapport `kesh-gate-logs/e33-validate-p3-e332.md`, aucune compilation ni aucun test, aucun commit). Quatre constats de cette fiche, tous remédiés, aucun réfuté : R-1 (MEDIUM, arbitrage), R-8, R-9, R-10 (LOW). Prémisses relues : `balance.ts:129-139` ; `tests/e2e/helpers/contrast.ts`, `vite.config.ts:59` (`tests/**/*.test.ts` compris par Vitest), `button-destructive.test.ts:27`. R-9 : l'estimation écrite à l'entrée P2 (« au moins 100 unités ») était haute, environ 95 ; cette entrée, datée, reste telle quelle.
   Décomptes de cette fiche, recomptés : 23 AC, 20 mutations (M19, M20 ajoutées).
 
+- 2026-11-06 — Développement (Opus 5.5, worktree `kesh-e333`). **Étape 0** : aucun LOW de la validation P3 ne reste ouvert pour cette fiche (R-1, R-8, R-9, R-10 remédiés à la P3 ; lignes relues : AC17, AC19, T5, M19, M20). Prémisses relues : `(app)/+page.svelte`, `balance.ts:129-139`, `query-helpers.ts`, `reports.api.ts:473-481`, `test_fixtures.rs:293-299` (`4000 Charges CI`, `Expense` : le compte de charges de `with-company-no-fy`), le contrat réel (`homepage_summary.rs`). **T0, squelette sous axe, joué avant le dessin** : `kesh-gate-logs/e333b/t0.log`, spec conservée `squelette.spec.ts.joue`, injecté sur l'accueil réel : `T0 fermé []`, `T0 ouvert []`, `T0 sonde ["nested-interactive(1)"]`. La prémisse 10, jusque-là lue, est donc jouée, et la conception ne bouge pas. **Palette** passée au validateur de la skill `dataviz` (cinq teintes : toutes les vérifications passent ; `#1e40af` et `#c2410c` restent ceux d'AC14 aux barres).
+  **Trouvé en regardant les captures** : (1) à 360 px, l'application reste à 1280 px (`(app)/+layout.svelte:295`, `min-w-[1280px]`, 920 px de débord) : un `@media (max-width: 640px)`, écrit d'abord, grossissait les étiquettes sur une carte restée large ; retiré (C-e332-26) ; (2) à 36 mois, deux étiquettes l'une sur l'autre (ancrage de fin) : centrées, marge droite de 36 unités ; (3) la capture `de-CH` restait en français tant que la page n'était pas rechargée : les messages ne se chargent qu'à un montage authentifié (`routes/+layout.svelte:72`), limite ancienne, issue demandée.
+  **Écarts à la fiche** : `homepage-charts-empty` et `-no-posts` gardent le point final ; M13 et M17 jouées en deux variantes ; `M12` porte sur `BAR_EXPENSE` ; T5 : le chargement, l'échec et les exercices longs passent par une réponse d'API simulée (spec de captures non versionnée, `captures.spec.ts.joue`) ; `monthlyBars` prend sa boîte en paramètre, `chartWidth(n)` porte le seuil d'AC2.
+
 ## Dev Agent Record
 
-*À remplir au développement.*
+**Modèle** : Opus 5.5. **Commits** : `086f6df4` (les graphiques), `571f48cb` (PDF, prompts), `63143e72` (étiquettes, gardes frontend : **dernier commit de code**).
+
+**Rouges** (`kesh-gate-logs/e333/rouges.log`) : `homepage-charts.test.ts` et `HomepageCharts.test.ts`, modules absents ; `balance.test.ts`, `expected '1’000.undefined' to be '1’000'`, ce qui établit à l'exécution le défaut de la prémisse 5.
+
+**Décomptes** (recomptés, périmètre `97162a47` → `63143e72`) : `homepage-charts.test.ts` 25 `it`, `HomepageCharts.test.ts` 17, `balance.test.ts` +1, `homepage-page.test.ts` +1, `homepage-charts.spec.ts` 10 `test`. Clés `homepage-charts-*` : 22 dans chacune des quatre locales. `package.json` et `package-lock.json` inchangés. 23 AC.
+
+**Gardes frontend amendées** (rouges au premier gate, à bon droit) : `i18n-keys.test.ts` `sitesTotal` 2832 → 2861 (+29 : 14, 12, 3 aux trois fichiers neufs) ; `i18n-libelle-en-dur.test.ts` 77 → 81, `conforme` 63 → 67, les quatre déclarations nommées ; `jetons-non-definis.test.ts` : `width`, `anchor`, attributs SVG `stroke-width` et `text-anchor` pris pour des classes, hors de #645. ⚠️ Les deux premiers compteurs sont à recompter à l'intégration avec les autres stories de l'epic.
+
+**Mutations** (`kesh-gate-logs/e333b/mut/synthese.log`, jouées sur Vitest) : **22 lignes, 22 tuées** : M1 à M20, M13 et M17 en deux variantes. **Non jouées sous mutation** : les volets E2E de M6, M7, M11, M13 (`axe`, E2E 2, 3, 7) ; le composant les tue d'abord. La sonde de T0 tient lieu de preuve pour `axe` sur M7.
+
+**Gates au dernier commit de code `63143e72`** (`kesh-gate-logs/e333/gate2.out`) : `scripts/test-fast.sh --ci`, base remise à neuf : **4845 exécutés, 4845 passés, 12 ignorés** (`textes_coherents` compris) ; `cargo build --workspace --all-targets` vert ; `npm run check` : 0 erreur, 29 avertissements, aucun dans `features/homepage` (`npm run check` les porte déjà sans cette story : aucun des fichiers touchés) ; `lint-i18n-ownership` vert ; `npm run test:unit` : **220 fichiers, 2740 tests, tous verts** ; `npm run build` vert.
+
+**E2E complet au dernier commit de code**, base recréée vide :
+- `kesh-gate-logs/e333b/e2e-complet-r2.log` : 387 tests, **345 passés, 13 échecs, 18 ignorés, 11 non exécutés**, 15,8 min. Les 10 de `homepage-charts.spec.ts` passent.
+- **7 échecs KF-029 (#97)**, attendus, `docs/testing.md` : `mode-expert:26`, `:41`, `onboarding-path-b:65`, `:92`, `onboarding:57`, `:77`, `:150`.
+- **6 échecs de mon montage** : `KESH_INBOX_DIR` non passé au runner (message de `helpers/inbox.ts:88`, cinq fois ; `ENOENT` sur `/tmp/kesh-e2e/inbox` une fois) : `backup-restore-new-install:140`, `:262`, `inbox-import:59`, `session-idle-warning:122`, `supplier-documents:78`, `supplier-invoice-draft-cycle:654`. Montage corrigé, ces cinq fichiers rejoués entiers au même commit (`e2e-rejeu-r3.log`) : **25 passés, 1 échec**, `backup-restore-new-install:140` (`/login?reason=session_expired` au lieu de `/onboarding/restore`, `:217`) ; rejoué seul (`e2e-rejeu-r4.log`), la spec passe : **3 passés sur 3**. Intermittent, sans lien établi avec cette story ; la même ligne figure à des journaux antérieurs (`321b-p1rem-e2e.log`, `328b-p1-e2e.log`). Cause non établie : issue demandée.
+- Les 11 non exécutés ne sont pas identifiés un par un ; je les rattache par raisonnement aux blocs en série de ces specs, non par relevé.
+
+**Captures** (thème clair, regardées) : `kesh-gate-logs/e333b/captures/` : `peuple-12`, `exercice-36` et leurs `-360`, `exercice-132`, `mois-negatif`, `part-100-note`, `vide`, `aucun-exercice`, `chargement`, `echec`, `tableau-ouvert`, `focus-clavier`, `de-CH` ; 14 fichiers. Reprises au binaire de `63143e72` (`caps4.log`, 12 + 1 passés).
+
+**Manuel** : `user-manual.tex` et `.pdf`, `make fr`. PDF aplati, phrases cherchées et trouvées : « Revenus, dépenses et principaux postes », « reste comptée, de part et d’autre », « autant de mois que l’exercice, et non douze », « égale le compte de résultat », « les deux graphiques de l’exercice ouvert », « ne s’ouvre pas dans un autre onglet ». `admin-manual.pdf` et `marketing-brochure.pdf`, régénérés sans changement de texte, sont restaurés (`git checkout --`), non commités. ⚠️ `63143e72` touche le dessin et non le texte : le PDF reste juste.
+
+**README** : #165 et #166 retirées de la ligne « v0.5+ », une ligne « Tableau de bord » aux Fonctionnalités. `website/` : aucune mention du tableau de bord, rien à changer. **CHANGELOG** : `[0.17.5] — Non publié`, *Ajouté*.
+
+**Choix** : C-e332-25, C-e332-26 (`e33-choix-autonomes-e332.md`).

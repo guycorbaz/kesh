@@ -999,8 +999,8 @@ development_status:
   33-1a-numero-interne-fournisseur: ready-for-dev
   33-1b-numero-interne-ecrans: ready-for-dev
   33-2-import-camt-refus: ready-for-dev
-  33-3a-accueil-agregats: ready-for-dev
-  33-3b-accueil-graphiques: ready-for-dev
+  33-3a-accueil-agregats: review
+  33-3b-accueil-graphiques: review
   33-4-bornes-annees: ready-for-dev
   33-5-adresse-societe: ready-for-dev
   33-6-reglement-apres-commit: ready-for-dev

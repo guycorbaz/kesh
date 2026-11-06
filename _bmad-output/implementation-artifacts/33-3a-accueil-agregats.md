@@ -1,6 +1,6 @@
 # Story 33-3a : les chiffres des graphiques de l'accueil — revenus et charges par mois, postes de charges, sur l'exercice ouvert
 
-Status: ready-for-dev
+Status: review
 
 *Fiche rédigée le 2026-11-06 en autonomie (Opus 5.5), worktree `/home/gcorbaz/devel/kesh-e33`, branche `story/33-0-kickoff`,
 numéros de ligne de `4ef19901`. Epic 33, release **0.17.5**, **sans migration**. Registre : `e33-choix-autonomes-e332.md`, choix
@@ -309,6 +309,20 @@ qui n'a pas tourné.
   Le handler se nomme `homepage_summary` : **aucune garde n'est amendée**, et le « peut-être » de T3 et des recoupements disparaît. Décomptes de cette fiche, recomptés : 19 AC, 18 lignes de mutation, inchangés.
 - 2026-11-06 — Remédiation de la validation P3 (rapport `kesh-gate-logs/e33-validate-p3-e332.md`, aucune compilation ni aucun test, aucun commit). **F-3 (LOW) remédié**, prémisse lue : `api-external.md:209-226`. **F-2 (LOW) réfuté** : à l'en-tête de T1, « neuf » veut dire *nouveau fichier*, comme à l'en-tête de T2, non un décompte ; rien à recompter (le tableau nomme vingt fonctions). Décomptes de cette fiche, recomptés : 19 AC, 18 lignes de mutation, inchangés.
 
+- 2026-11-06 — Développement (Opus 5.5, worktree `kesh-e333`, branche `story/33-3-accueil`). **Étape 0** : aucun LOW de la validation P3 ne reste ouvert pour cette fiche (F-3 remédié, F-2 réfuté, lignes relues : `33-3a` T1 et T4). Prémisses relues sur `bdc3faa4` : `git grep -n reverses_entry_id -- crates/kesh-db/src/repositories/credit_notes.rs` vide ; aucune nouvelle façon de contre-passer hors `reverse_in_tx_inner` (`reconciliation_link.rs:596-597` est un filtre, `supplier_invoices.rs:1042` une lecture verrouillante) ; `fiscal_years.rs:676-696` ; `income_statement.rs:74-85`. **Écarts à la fiche** : un test de plus (`no_positive_balance_leaves_an_empty_pie`) et deux écritures à date anormale posées en SQL dans `totals_equal_...`, sans lesquelles M7 survivait (le filtre de dates masque celui d'exercice) ; deux lignes forgées dans `other_company_never_enters`, sans lesquelles M8 survivait (`fiscal_year_id` scope déjà la société) ; une mutation de plus, M6b (le sens du solde par compte, distinct de M6). `SUM(CASE …)` en une requête mensuelle, au lieu d'une somme par type.
+
 ## Dev Agent Record
 
-*À remplir au développement.*
+**Modèle** : Opus 5.5. **Commit de code** : `97162a47` (route, service, module, tests) ; `docs/api-external.md` y est.
+
+**Rouges** (`kesh-gate-logs/e333/rouges.log`) : 31 tests sur un stub de `kesh-report` et sans route : 21 de `homepage_summary_e2e` (404, ou `generate` qui rend l'état vide) et 10 purs de `homepage_summary`, tous rouges. Le test d'AC18 s'est écrit après la route, faute de service à appeler : sa force vient de M14 et M15.
+
+**Décomptes** (recomptés, périmètre `bdc3faa4` → `97162a47`) : `homepage_summary_e2e.rs` : 21 `#[sqlx::test]` ; `homepage_summary.rs` : 10 `#[test]` ; `services_motif.rs` : +1 (`synthese_accueil_motif`). 19 AC.
+
+**Mutations** (`kesh-gate-logs/e333a/mut/synthese.log`, `vmut.sh`, `vmut.py`) : **22 lignes jouées, 22 tuées** : M1 à M18, dont M6b ajoutée, et M8, M11, M16 en deux variantes (a, b). Le journal porte une première ligne `M18 COMPILE` : le motif laissait une barre oblique inverse devant le guillemet ; motif corrigé, rejouée, tuée par `zero_balance_account_is_counted_nowhere`.
+
+**Gates au dernier commit de code de la paire** (`63143e72`, la 33-3b le suit sur cette branche ; journaux `kesh-gate-logs/e333/gate2.out`) : `scripts/test-fast.sh --ci`, base remise à neuf : **4845 exécutés, 4845 passés, 12 ignorés** ; `cargo build --workspace --all-targets` vert. E2E : voir la 33-3b, cette story n'a pas d'écran.
+
+**Limite** : `Utc::now().date_naive()` au service, écrite au doc-comment et aux Dev Notes ; issue demandée.
+
+**Écart à une consigne, à dire** : le premier jet du service, de la route, de `lib.rs`, de `services/mod.rs` et du test d'AC18 a été posé par un script `python3` de remplacement, ce que la consigne 14 interdit sur du code (l'outil Edit seul). `git diff --stat` et les lignes supprimées contrôlés aussitôt : insertions seules, aucune ligne perdue. Le reste a été édité par Edit.
