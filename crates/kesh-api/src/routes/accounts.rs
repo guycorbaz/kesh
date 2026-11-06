@@ -114,6 +114,10 @@ pub struct UpdateAccountRequest {
 #[serde(rename_all = "camelCase")]
 pub struct ArchiveAccountRequest {
     pub version: i32,
+    /// Archiver un compte désigné dans les paramètres de facturation (Story 33-8,
+    /// #486). Absent : `409 ACCOUNT_DESIGNATED_IN_SETTINGS`, qui nomme les réglages.
+    #[serde(default)]
+    pub confirm_designated: bool,
 }
 
 /// Story 14-3a (#269) — réactivation d'un compte archivé.
@@ -343,7 +347,15 @@ pub async fn archive_account(
         .await?
         .ok_or(AppError::Database(DbError::NotFound))?;
 
-    let account = accounts::archive(&state.pool, id, req.version, current_user.user_id).await?;
+    let account = accounts::archive_guarded(
+        &state.pool,
+        id,
+        req.version,
+        current_user.user_id,
+        current_user.company_id,
+        req.confirm_designated,
+    )
+    .await?;
     Ok(Json(response(&state, account).await?))
 }
 

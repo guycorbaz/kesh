@@ -8,6 +8,14 @@ Le contenu est rédigé en français à destination des **fiduciaires, PME, ind�
 
 ---
 
+## [0.17.5] — Non publié
+
+### Corrigé
+
+- **Un compte désigné dans les paramètres de facturation ne s'archive plus sans avertissement** ([#486](https://github.com/guycorbaz/kesh/issues/486)) : le dialogue nomme les réglages qui le désignent et ce qu'il en coûte, et *Archiver quand même* passe outre ; l'archivage reste ouvert au Comptable, seul l'Administrateur a le lien vers les paramètres. Un compte déjà archivé n'empêche plus d'enregistrer un autre réglage. ⚠️ Pour une intégration : `PUT /accounts/{id}/archive` rend désormais `409 ACCOUNT_DESIGNATED_IN_SETTINGS` sur un tel compte, sauf avec `"confirmDesignated": true`.
+
+---
+
 ## [0.17.4] — 2026-11-06
 
 La 0.17.4 est une version corrective : la session plus sûre, une sauvegarde automatique avant les migrations à venir, et les défauts relevés à l'usage. Elle ne porte **aucune migration** ; seules les sessions ouvertes sont effacées au premier démarrage, si bien que **chaque utilisateur se reconnecte une fois**. **Le retour à la 0.17.3 est possible sans restauration, après avoir vidé la table des sessions** (manuel d'administration, *Passer à la 0.17.4*). La sauvegarde complète d'avant la mise à jour (base, `.keshbackup`, dossier des documents) reste recommandée. Le `.env` ne change pas ; les compose fournis transmettent une variable nouvelle, facultative (`KESH_SKIP_PRE_UPGRADE_BACKUP`).

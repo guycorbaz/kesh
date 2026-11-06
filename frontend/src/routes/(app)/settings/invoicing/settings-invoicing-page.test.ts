@@ -28,9 +28,9 @@ vi.mock('$lib/features/invoices/invoices.api', () => ({
 	getInvoiceSettings: () => getInvoiceSettingsMock(),
 	updateInvoiceSettings: (req: unknown) => updateInvoiceSettingsMock(req),
 }));
-const fetchAccountsMock = vi.fn<() => Promise<AccountResponse[]>>();
+const fetchAccountsMock = vi.fn<(includeArchived?: boolean) => Promise<AccountResponse[]>>();
 vi.mock('$lib/features/accounts/accounts.api', () => ({
-	fetchAccounts: () => fetchAccountsMock(),
+	fetchAccounts: (includeArchived?: boolean) => fetchAccountsMock(includeArchived),
 }));
 
 // Story 15-6c (#474, AC8) : la page lit les comptes bancaires pour écarter des
@@ -264,6 +264,25 @@ describe('Administration → Facturation — compte créanciers', () => {
 		expect(values).not.toContain('1'); // actif
 		expect(values).not.toContain('5'); // charge non imputable
 		expect(values).not.toContain('6'); // archivé
+	});
+
+	// Story 33-8 (#486) — le serveur ne rend un compte archivé que sur demande : le mock
+	// le simule, sans quoi la liste complète masquerait l'oubli du paramètre.
+	it('un compte désigné puis archivé reste affiché, marqué, et non proposé aux autres champs', async () => {
+		const ARCHIVED = account(9, '2099', 'Liability', { active: false });
+		fetchAccountsMock.mockImplementation(async (includeArchived) =>
+			includeArchived ? [...ACCOUNTS, ARCHIVED] : ACCOUNTS,
+		);
+		getInvoiceSettingsMock.mockResolvedValue(settings({ defaultPayableAccountId: 9 }));
+		const { findByTestId, container } = render(Page);
+		const select = (await findByTestId('settings-payable-account')) as HTMLSelectElement;
+		await waitFor(() => expect(select.value).toBe('9'));
+		expect(select.selectedOptions[0].textContent).toContain('(archivé)');
+		const vatPayable = container.querySelector('select[id$="-vat-payable"]') as HTMLSelectElement;
+		expect(optionValues(vatPayable)).toContain('2');
+		expect(optionValues(vatPayable)).not.toContain('9');
+		fetchAccountsMock.mockReset();
+		fetchAccountsMock.mockResolvedValue(ACCOUNTS);
 	});
 
 	it('envoie le compte choisi à l’enregistrement (mutation : champ non envoyé)', async () => {

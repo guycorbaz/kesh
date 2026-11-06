@@ -111,6 +111,13 @@
 	let vatRecoverableOptions = $derived(
 		withCurrentAccount(assetAccounts, vatRecoverableId, accounts),
 	);
+	/** Le libellé d'une option ; un compte archivé, seule valeur en place qui peut l'être, le dit (#486). */
+	function accountOptionLabel(a: AccountResponse): string {
+		const label = `${a.number} — ${a.name}`;
+		return a.active
+			? label
+			: `${label} ${i18nMsg('settings-invoicing-account-archived', '(archivé)')}`;
+	}
 	let vatDecompteOptions = $derived(withCurrentAccount(liabilityAccounts, vatDecompteId, accounts));
 	let roundingOptions = $derived(withCurrentAccount(resultAccounts, roundingId, accounts));
 	// Story 25-4-d1 : un écart soldé est, lui aussi, un résultat — charge ou produit.
@@ -148,7 +155,9 @@
 			// Story 15-6c (AC8) : lancée avec les deux autres, mais son échec n'est
 			// pas une erreur de chargement — il laisse simplement les menus non filtrés.
 			const banks = listBankAccounts(false, true).catch(() => []);
-			const [s, a] = await Promise.all([getInvoiceSettings(), fetchAccounts(false)]);
+			// Story 33-8 (#486) : archivés compris, pour que `withCurrentAccount` résolve un
+			// compte désigné puis archivé ; les filtres ci-dessus ne le proposent à personne.
+			const [s, a] = await Promise.all([getInvoiceSettings(), fetchAccounts(true)]);
 			bankLinkedAccountIds = new Set(
 				(await banks)
 					.map((b) => b.journalAccountId)
@@ -342,7 +351,7 @@
 				>
 					<option value={null}>{i18nMsg('settings-invoicing-select-none', '— Sélectionner —')}</option>
 					{#each receivableOptions as a (a.id)}
-						<option value={a.id}>{a.number} — {a.name}</option>
+						<option value={a.id}>{accountOptionLabel(a)}</option>
 					{/each}
 				</select>
 			</div>
@@ -358,7 +367,7 @@
 				>
 					<option value={null}>{i18nMsg('settings-invoicing-select-none', '— Sélectionner —')}</option>
 					{#each payableOptions as a (a.id)}
-						<option value={a.id}>{a.number} — {a.name}</option>
+						<option value={a.id}>{accountOptionLabel(a)}</option>
 					{/each}
 				</select>
 			</div>
@@ -373,7 +382,7 @@
 				>
 					<option value={null}>{i18nMsg('settings-invoicing-select-none', '— Sélectionner —')}</option>
 					{#each revenueOptions as a (a.id)}
-						<option value={a.id}>{a.number} — {a.name}</option>
+						<option value={a.id}>{accountOptionLabel(a)}</option>
 					{/each}
 				</select>
 			</div>
@@ -412,7 +421,7 @@
 				>
 					<option value={null}>{i18nMsg('settings-invoicing-select-none', '— Sélectionner —')}</option>
 					{#each vatPayableOptions as a (a.id)}
-						<option value={a.id}>{a.number} — {a.name}</option>
+						<option value={a.id}>{accountOptionLabel(a)}</option>
 					{/each}
 				</select>
 			</div>
@@ -427,7 +436,7 @@
 				>
 					<option value={null}>{i18nMsg('settings-invoicing-select-none', '— Sélectionner —')}</option>
 					{#each vatRecoverableOptions as a (a.id)}
-						<option value={a.id}>{a.number} — {a.name}</option>
+						<option value={a.id}>{accountOptionLabel(a)}</option>
 					{/each}
 				</select>
 			</div>
@@ -442,7 +451,7 @@
 				>
 					<option value={null}>{i18nMsg('settings-invoicing-select-none', '— Sélectionner —')}</option>
 					{#each vatDecompteOptions as a (a.id)}
-						<option value={a.id}>{a.number} — {a.name}</option>
+						<option value={a.id}>{accountOptionLabel(a)}</option>
 					{/each}
 				</select>
 			</div>
@@ -493,7 +502,7 @@
 				>
 					<option value={null}>{i18nMsg('settings-invoicing-select-none', '— Sélectionner —')}</option>
 					{#each roundingOptions as a (a.id)}
-						<option value={a.id}>{a.number} — {a.name}</option>
+						<option value={a.id}>{accountOptionLabel(a)}</option>
 					{/each}
 				</select>
 			</div>
@@ -522,7 +531,7 @@
 					>
 						<option value={null}>{i18nMsg('settings-invoicing-select-none', '— Sélectionner —')}</option>
 						{#each field.options as a (a.id)}
-							<option value={a.id}>{a.number} — {a.name}</option>
+							<option value={a.id}>{accountOptionLabel(a)}</option>
 						{/each}
 					</select>
 				</div>

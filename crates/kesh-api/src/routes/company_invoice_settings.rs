@@ -147,8 +147,9 @@ fn parse_journal(raw: &str) -> Result<Journal, AppError> {
 
 /// Valide un des six comptes **historiques** des réglages (créance, produit,
 /// TVA due, TVA récupérable, décompte TVA, créanciers) : existence, société,
-/// `active` et type, toujours ; postabilité **seulement si la valeur change**
-/// par rapport à `current` (Story 15-5b, AC10, AC11 — exemption « inchangé »).
+/// et type, toujours ; `active` et postabilité **seulement si la valeur change**
+/// par rapport à `current` (Story 15-5b, AC10, AC11 ; Story 33-8, #486 — exemption
+/// « inchangé »).
 async fn validate_account(
     state: &AppState,
     company_id: i64,
@@ -169,21 +170,23 @@ async fn validate_account(
 }
 
 /// Forme générale de [`validate_account`] (Story 25-4-c3-a1) : plusieurs types
-/// acceptés, et la postabilité exigée ou non.
+/// acceptés, et `changed` qui dit si la valeur change.
 ///
-/// ⚠️ `require_postable` est exigé pour un compte que des **écritures
+/// ⚠️ L'imputabilité est exigée pour un compte que des **écritures
 /// automatiques** utiliseront : elles passent `enforce_postable = false`
 /// (`journal_entries::create_in_tx`), si bien que la garde doit tenir ici, au
 /// moment où le compte est désigné. Tous les champs l'exigent désormais quand
 /// la valeur **change** — les six champs historiques depuis la Story 15-5b
 /// (#429) ; une valeur inchangée en est exemptée, pour qu'un compte devenu non
-/// imputable après coup ne bloque pas tout enregistrement.
+/// imputable après coup ne bloque pas tout enregistrement. Le compte archivé suit
+/// la même règle (Story 33-8, #486) : un compte archivé sur confirmation reste
+/// désigné, et ne doit pas verrouiller les réglages. Le type, lui, reste vérifié.
 async fn validate_account_of(
     state: &AppState,
     company_id: i64,
     account_id: Option<i64>,
     accepted: &[AccountType],
-    require_postable: bool,
+    changed: bool,
     field_label: &str,
 ) -> Result<(), AppError> {
     let Some(id) = account_id else {
@@ -197,7 +200,7 @@ async fn validate_account_of(
             "{field_label} : compte introuvable"
         )));
     }
-    if !account.active {
+    if changed && !account.active {
         return Err(AppError::Validation(format!(
             "{field_label} : compte archivé"
         )));
@@ -209,7 +212,7 @@ async fn validate_account_of(
             attendus.join(" ou ")
         )));
     }
-    if require_postable && !account.postable {
+    if changed && !account.postable {
         return Err(AppError::Validation(format!(
             "{field_label} : compte non imputable (compte de regroupement, de résultat ou de clôture)"
         )));

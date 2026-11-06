@@ -3422,6 +3422,21 @@ impl IntoResponse for AppError {
                 // écritures, dont l'exercice 2025 qui est clos » AVANT de demander
                 // la confirmation. C'est tout l'écart entre un avertissement
                 // bloquant et un refus sec.
+                //
+                // Story 33-8 (#486) : même patron, le refus nomme les réglages.
+                DbError::AccountDesignatedInSettings { settings } => {
+                    let body = serde_json::json!({
+                        "error": {
+                            "code": "ACCOUNT_DESIGNATED_IN_SETTINGS",
+                            "message": t(
+                                "error-account-designated-in-settings",
+                                "Ce compte est désigné dans les paramètres de facturation : confirmez pour l’archiver quand même.",
+                            ),
+                            "details": { "settings": settings }
+                        }
+                    });
+                    (StatusCode::CONFLICT, Json(body)).into_response()
+                }
                 DbError::AccountHasEntries {
                     entry_count,
                     closed_fiscal_years,

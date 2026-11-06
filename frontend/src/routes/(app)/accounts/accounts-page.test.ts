@@ -21,6 +21,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/svelte';
 import { authState } from '$lib/app/stores/auth.svelte';
 import type { AccountResponse } from '$lib/features/accounts/accounts.types';
+import { toast } from 'svelte-sonner';
 
 vi.mock('$app/environment', () => ({ browser: true }));
 
@@ -34,11 +35,12 @@ vi.mock('svelte-sonner', () => ({
 
 const fetchAccountsMock = vi.fn<() => Promise<AccountResponse[]>>();
 const updateAccountMock = vi.fn();
+const archiveAccountMock = vi.fn();
 vi.mock('$lib/features/accounts/accounts.api', () => ({
 	fetchAccounts: () => fetchAccountsMock(),
 	updateAccount: (id: number, req: unknown) => updateAccountMock(id, req),
 	createAccount: vi.fn(),
-	archiveAccount: vi.fn(),
+	archiveAccount: (id: number, req: unknown) => archiveAccountMock(id, req),
 	reactivateAccount: vi.fn(),
 }));
 
@@ -173,5 +175,111 @@ describe('retypage d’un compte mouvementé — avertissement bloquant', () => 
 		// Et le message du serveur est affiché tel quel plutôt qu'un
 		// « undefined écriture(s) ».
 		expect(await screen.findByText('Ce compte porte des écritures.')).toBeTruthy();
+	});
+});
+
+// Story 33-8 (#486, AC-8) — archiver un compte désigné dans les paramètres.
+describe('archivage d’un compte désigné — avertissement, puis confirmation', () => {
+	function designated(settings: unknown) {
+		return {
+			code: 'ACCOUNT_DESIGNATED_IN_SETTINGS',
+			message: 'Ce compte est désigné.',
+			status: 409,
+			details: { settings },
+		};
+	}
+
+	async function openAndConfirm() {
+		await fireEvent.click(await screen.findByTestId('account-row-6500-archive-button'));
+		await fireEvent.click(await screen.findByTestId('account-archive-dialog-confirm'));
+	}
+
+	beforeEach(() => {
+		archiveAccountMock.mockReset();
+		vi.mocked(toast.error).mockClear();
+	});
+
+	it('Administrateur : les réglages par leur libellé, le lien, et la confirmation archive', async () => {
+		archiveAccountMock.mockRejectedValueOnce(designated(['discount', 'vatPayable']));
+		archiveAccountMock.mockResolvedValueOnce(account({ active: false }));
+		render(Page);
+		await openAndConfirm();
+
+		const items = await screen.findAllByTestId('account-archive-designated-setting');
+		expect(items.map((i) => i.textContent)).toEqual([
+			"Compte d'escompte accordé",
+			'Compte TVA due (Passif)',
+		]);
+		expect(screen.getByTestId('account-archive-designated-link').getAttribute('href')).toBe(
+			'/settings/invoicing',
+		);
+		expect(screen.queryByTestId('account-archive-designated-admin-only')).toBeNull();
+		expect(toast.error).not.toHaveBeenCalled();
+		expect(archiveAccountMock).toHaveBeenCalledWith(42, { version: 1 });
+
+		await fireEvent.click(screen.getByTestId('account-archive-dialog-anyway'));
+		await waitFor(() => expect(archiveAccountMock).toHaveBeenCalledTimes(2));
+		expect(archiveAccountMock).toHaveBeenLastCalledWith(42, {
+			version: 1,
+			confirmDesignated: true,
+		});
+		await waitFor(() =>
+			expect(screen.queryByTestId('account-archive-designated')).toBeNull(),
+		);
+	});
+
+	it('Comptable : aucun lien, le texte « Un administrateur… », et sa confirmation archive', async () => {
+		await authState.logout();
+		authState.login({ userId: '2', username: 'compta', role: 'Comptable', expiresIn: 3600 });
+		archiveAccountMock.mockRejectedValueOnce(designated(['rounding']));
+		archiveAccountMock.mockResolvedValueOnce(account({ active: false }));
+		render(Page);
+		await openAndConfirm();
+
+		await screen.findByTestId('account-archive-designated');
+		expect(screen.queryByTestId('account-archive-designated-link')).toBeNull();
+		expect(screen.getByTestId('account-archive-designated-admin-only')).toBeTruthy();
+
+		await fireEvent.click(screen.getByTestId('account-archive-dialog-anyway'));
+		await waitFor(() =>
+			expect(archiveAccountMock).toHaveBeenLastCalledWith(42, {
+				version: 1,
+				confirmDesignated: true,
+			}),
+		);
+	});
+
+	it('un 409 de version garde son message, sans liste ni confirmation', async () => {
+		archiveAccountMock.mockRejectedValueOnce({
+			code: 'OPTIMISTIC_LOCK_CONFLICT',
+			message: 'conflit',
+			status: 409,
+		});
+		render(Page);
+		await openAndConfirm();
+		await waitFor(() =>
+			expect(toast.error).toHaveBeenCalledWith('Les données ont été modifiées. Rechargez la page.'),
+		);
+		expect(screen.queryByTestId('account-archive-designated')).toBeNull();
+		expect(screen.queryByTestId('account-archive-dialog-anyway')).toBeNull();
+	});
+
+	it('details illisible : le message du serveur, plutôt qu’une liste à trous', async () => {
+		archiveAccountMock.mockRejectedValueOnce(designated('receivable'));
+		render(Page);
+		await openAndConfirm();
+		await waitFor(() => expect(toast.error).toHaveBeenCalledWith('Ce compte est désigné.'));
+		expect(screen.queryByTestId('account-archive-designated')).toBeNull();
+	});
+
+	it('rouvrir le dialogue repart de la première question', async () => {
+		archiveAccountMock.mockRejectedValueOnce(designated(['discount']));
+		render(Page);
+		await openAndConfirm();
+		await screen.findByTestId('account-archive-designated');
+		await fireEvent.click(screen.getByTestId('account-archive-dialog-cancel'));
+		await fireEvent.click(await screen.findByTestId('account-row-6500-archive-button'));
+		await screen.findByTestId('account-archive-dialog-confirm');
+		expect(screen.queryByTestId('account-archive-designated')).toBeNull();
 	});
 });

@@ -1,5 +1,10 @@
 import { test, expect } from '@playwright/test';
-import { seedTestState, clearAuthStorage } from './helpers/test-state';
+import {
+	seedTestState,
+	clearAuthStorage,
+	authedApiContext,
+	disposeContextSafe,
+} from './helpers/test-state';
 
 /**
  * Tests E2E — Plan comptable (Story 3.1)
@@ -28,6 +33,53 @@ async function loginAndGoToAccounts(page: import('@playwright/test').Page) {
 	await page.goto('/accounts');
 	await expect(page).toHaveURL('/accounts');
 }
+
+// Story 33-8 (#486) — le refus et sa confirmation traversent la frontière HTTP.
+test('un compte désigné dans les paramètres : l’avertissement, puis « Archiver quand même »', async ({
+	page,
+}) => {
+	await loginAndGoToAccounts(page);
+	const ctx = await authedApiContext(page);
+	const number = `D${Date.now().toString().slice(-5)}`;
+	const lire = async () => (await ctx.get('/api/v1/company/invoice-settings')).json();
+	const initial = await lire();
+	try {
+		const cree = await ctx.post('/api/v1/accounts', {
+			data: { number, name: 'Compte désigné', accountType: 'Expense' },
+		});
+		expect(cree.ok(), `création du compte : ${cree.status()}`).toBeTruthy();
+		const { id } = (await cree.json()) as { id: number };
+		const pose = await ctx.put('/api/v1/company/invoice-settings', {
+			data: { ...initial, defaultDiscountAccountId: id },
+		});
+		expect(pose.ok(), `désignation : ${pose.status()}`).toBeTruthy();
+
+		await page.reload();
+		await page.locator(`[data-testid="account-row-${number}-archive-button"]`).click();
+		await page.locator('[data-testid="account-archive-dialog-confirm"]').click();
+
+		await expect(page.getByTestId('account-archive-designated-setting')).toContainText(
+			/escompte/i,
+		);
+		await expect(page.getByTestId('account-archive-designated-link')).toHaveAttribute(
+			'href',
+			'/settings/invoicing',
+		);
+		// Le refus n'a rien écrit : la ligne est toujours là, derrière le dialogue.
+		await expect(page.locator(`[data-testid="account-row-${number}"]`)).toHaveCount(1);
+
+		await page.getByTestId('account-archive-dialog-anyway').click();
+		await expect(page.locator(`[data-testid="account-row-${number}"]`)).toHaveCount(0);
+		expect((await lire()).defaultDiscountAccountId, 'le réglage ne bouge pas').toBe(id);
+	} finally {
+		const courant = await lire();
+		const rendu = await ctx.put('/api/v1/company/invoice-settings', {
+			data: { ...courant, defaultDiscountAccountId: initial.defaultDiscountAccountId },
+		});
+		expect(rendu.ok(), `restauration : ${rendu.status()}`).toBeTruthy();
+		await disposeContextSafe(ctx);
+	}
+});
 
 test.describe('Page plan comptable — affichage', () => {
 	test('affiche le titre Plan comptable', async ({ page }) => {

@@ -881,6 +881,19 @@ pas un compte mouvementé. ⚠️ Ce refus est **neuf** : la requête aboutissai
 auparavant sans avertir, alors qu'elle reclasse rétroactivement tout
 l'historique du compte, exercices clos compris.
 
+**Archiver un compte désigné dans les paramètres de facturation exige aussi une
+confirmation** *(depuis la v0.17.5)*. Sans elle, `PUT /accounts/{id}/archive`
+répond **`409 ACCOUNT_DESIGNATED_IN_SETTINGS`**, sans rien écrire ni consommer la
+version, et `details.settings` nomme les réglages : `receivable`, `revenue`,
+`vatPayable`, `vatRecoverable`, `vatDecompte`, `payable`, `rounding`, `discount`,
+`bankFees`, `badDebt`. Pour passer outre, renvoyer la même requête avec
+`"confirmDesignated": true` : le réglage reste tel quel, et l'entrée d'audit
+`account.archived` porte `designated_settings`. ⚠️ **Changement** pour un client
+qui archive un tel compte : la requête aboutissait auparavant. Ordre des refus :
+sous-comptes actifs, désignation, version. `PUT /company/invoice-settings` ne
+refuse plus un compte archivé reconduit à l'identique ; choisir un compte archivé
+reste refusé.
+
 ¹ **Les mutations de taux de TVA ne sont pas accessibles via l'API** :
 `POST /vat-rates`, `PUT /vat-rates/{id}` et `DELETE /vat-rates/{id}` sont
 réservées au rôle **Administrateur**, et l'administration est fermée aux clés
