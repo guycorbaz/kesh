@@ -13,8 +13,7 @@ Docker (« oui, de manière autonome »).
 de 91 bugs au tag v0.17.5.**
 
 ⚠️ **Contrepartie BMAD des issues** — chaque issue tient le détail, cet epic le périmètre. Il se clôt quand les issues
-ci-dessous sont fermées et la v0.17.5 publiée. **Exceptions écrites** : #435 reste ouverte pour la connexion, la déconnexion et le renouvellement de session, tant que
-Guy n'a pas tranché (C-e334-11) ; le reliquat de #915 est tracé à part.
+ci-dessous sont fermées et la v0.17.5 publiée. **Exception écrite** : le reliquat de #915 est tracé à part.
 
 ## Règle de cet epic pour les limites voisines (décision de Guy du 2026-11-06)
 
@@ -56,6 +55,8 @@ et retrouver les **factures papier**.
   leurs écritures passées. Les nouvelles écritures portent le numéro.
 - **Visible** : liste (colonne triable et cherchable), fiche, libellé des écritures d'achat et de règlement. La pièce reçue
   reste intacte.
+
+**#435 et clés d'API, 2026-11-06.** Connexion, déconnexion et renouvellement de session **ne se tracent pas** au journal d'audit (« non ») : #435 se ferme sur le changement de mot de passe, cette décision écrite au manuel. **Une clé d'API ne peut pas changer le mot de passe** (C-e334-27 confirmé).
 
 **#922, 2026-11-06.** Si la relecture « à la 0.17.3 » échoue, Kesh **refuse l'import de ce relevé** avec un message clair.
 
