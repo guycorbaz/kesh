@@ -433,6 +433,7 @@ fn mcp_societe(company_id: i64, user_id: i64, portees: &[Portee]) -> ContexteAcc
     ContexteAcces::mcp(
         company_id,
         user_id,
+        1,
         portees.iter().copied().collect::<BTreeSet<_>>(),
     )
 }

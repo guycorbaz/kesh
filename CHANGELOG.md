@@ -8,6 +8,15 @@ Le contenu est rédigé en français à destination des **fiduciaires, PME, ind�
 
 ---
 
+## [0.17.5] — Non publié
+
+### Corrigé
+
+- **Le journal d'audit dit qu'un mot de passe a été changé, et qu'un vol de jeton a révoqué des sessions** ([#435](https://github.com/guycorbaz/kesh/issues/435)) : « Mot de passe modifié », sans aucun secret, dans la même transaction que le changement ; « Vol de jeton détecté, sessions révoquées », avec le nombre de sessions, au nom du titulaire de la session et non de l'auteur du rejeu, que Kesh ne connaît pas. La connexion, la déconnexion et le renouvellement de session ne s'inscrivent pas au journal, par décision (manuels).
+- **Pour l'API : une clé ne change plus le mot de passe** (refs [#435](https://github.com/guycorbaz/kesh/issues/435)) : `PUT /api/v1/auth/password` rend `403 API_KEY_OPERATION_FORBIDDEN` à une clé `read-write`, même avec le bon mot de passe courant ; la route lui rendait auparavant un cookie de session et un jeton neufs.
+- **L'export du grand livre se trace comme un export** ([#729](https://github.com/guycorbaz/kesh/issues/729)) : « Rapport exporté », avec son format, et non plus comme une consultation. Les lignes déjà écrites ne changent pas.
+- **La consultation d'un rapport par un agent se distingue au journal d'audit** ([#776](https://github.com/guycorbaz/kesh/issues/776)) : le détail de la ligne porte le canal (`channel`) et le numéro de la clé du serveur MCP (`mcp_key_id`), à partir de cette version. Une consultation ou un export de rapport par une clé d'API paraît désormais comme fait par cette clé, et non par son créateur seul.
+
 ## [0.17.4] — 2026-11-06
 
 La 0.17.4 est une version corrective : la session plus sûre, une sauvegarde automatique avant les migrations à venir, et les défauts relevés à l'usage. Elle ne porte **aucune migration** ; seules les sessions ouvertes sont effacées au premier démarrage, si bien que **chaque utilisateur se reconnecte une fois**. **Le retour à la 0.17.3 est possible sans restauration, après avoir vidé la table des sessions** (manuel d'administration, *Passer à la 0.17.4*). La sauvegarde complète d'avant la mise à jour (base, `.keshbackup`, dossier des documents) reste recommandée. Le `.env` ne change pas ; les compose fournis transmettent une variable nouvelle, facultative (`KESH_SKIP_PRE_UPGRADE_BACKUP`).

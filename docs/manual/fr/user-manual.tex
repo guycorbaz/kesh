@@ -3595,9 +3595,13 @@ imports, réconciliations, exports, gestion des utilisateurs, modification de
 la société et la configuration initiale de l'installation — avec l'auteur,
 l'horodatage et le contexte.
 
-\keshAttention\ \textbf{Une famille d'opérations n'y figure pas encore} : les \emph{gestes de
-session} --- connexion, déconnexion, changement de votre propre mot de passe. C'est
-un manque connu et suivi, pas un oubli.
+\keshAttention\ \textbf{La connexion, la déconnexion et le renouvellement de session n'y
+figurent pas, par décision}. Le changement de votre propre mot de passe y figure («~Mot de
+passe modifié~»), sans aucun secret. Le vol d'un jeton de session aussi («~Vol de jeton détecté,
+sessions révoquées~», avec le nombre de sessions révoquées)~: l'auteur affiché est le
+\textbf{titulaire de la session}, non l'auteur du rejeu, que Kesh ne connaît pas~; un rejeu qui
+ne révoque plus aucune session n'est pas inscrit. L'export d'un rapport se distingue de sa
+consultation, grand livre compris~: «~Rapport exporté~», avec son format au détail.
 
 \begin{keshnote}
 Ce journal d'audit est \textbf{insert-only} : aucune entrée ne peut être modifiée,
@@ -3637,10 +3641,9 @@ transactions à rapprocher) est prévu mais pas encore disponible.
           marque --- c'est l'action «~Outil du serveur MCP appelé~» et le numéro de la clé, au
           détail, qui le distinguent~; et la \textbf{consultation d'un rapport} par un agent
           (grand livre, balance, bilan, compte de résultat, balance âgée) paraît comme
-          «~Rapport généré~», au nom du créateur de la clé, \textbf{exactement comme une
-          consultation à l'écran}~: rien, dans cette ligne, ne dit qu'elle vient du serveur MCP~;
-          seule la ligne «~Outil du serveur MCP appelé~», inscrite à part pour le même appel, le
-          révèle --- limite connue, issue \#776), l'action et le type d'entité
+          «~Rapport généré~», au nom du créateur de la clé~: à partir de la 0.17.5, son détail
+          dit qu'elle vient du serveur MCP et de quelle clé --- \texttt{channel} et
+          \texttt{mcp\_key\_id} ---, une ligne plus ancienne ne le disant pas), l'action et le type d'entité
           \textbf{traduits}, le numéro de la pièce --- «~---~» quand l'opération ne vise pas une pièce
           précise --- et un bouton qui déplie le \textbf{détail} enregistré.
     \item \textbf{Une action ancienne}, écrite par une version antérieure et absente de la liste
@@ -3748,10 +3751,11 @@ chaque appel d'un \textbf{outil} par l'agent paraît comme «~Outil du serveur M
 \textbf{au nom de l'Administrateur qui a créé la clé}, avec le numéro de la clé au détail, et
 chaque prompt servi comme «~Prompt du serveur MCP servi~»~; la liste des outils et celle des
 prompts, que l'agent demande aussi, n'y laissent aucune trace~; chaque décision sur
-un envoi, comme «~Envoi du serveur MCP validé~» ou «~refusé~». \keshAttention\ Une
-consultation de rapport par l'agent paraît comme «~Rapport généré~», exactement comme une
-consultation faite à l'écran~; seule la ligne «~Outil du serveur MCP appelé~» de même heure
-permet de les rapprocher (limite connue, issue \#776).
+un envoi, comme «~Envoi du serveur MCP validé~» ou «~refusé~». Une
+consultation de rapport par l'agent paraît comme «~Rapport généré~», et, à partir de la 0.17.5,
+son détail dit le canal et le numéro de la clé (\texttt{channel}, \texttt{mcp\_key\_id})~; pour
+une ligne plus ancienne, seule la ligne «~Outil du serveur MCP appelé~» de même heure permet de
+les rapprocher.
 
 \paragraph{Ce que Kesh garantit, et ce qu'il ne garantit pas.} Sous une clé requise, ce qui
 part est exactement ce qu'un Administrateur a vu et accepté. Kesh ne garantit pas que l'agent
@@ -3936,7 +3940,7 @@ Le journal d'audit garde toujours la trace de l'action originale ET de l'action 
     \item[Grand-livre] Ensemble des comptes individuels reprenant toutes les écritures qui les concernent.
     \item[IDE] Identifiant Unique des Entreprises (Suisse), format CHE-XXX.XXX.XXX.
     \item[Journal] Enregistrement chronologique de toutes les écritures comptables.
-    \item[Journal d'audit (angl. audit log)] Registre des modifications comptables (qui, quand, quelle valeur), exigé par le CO Art. 957a. \keshAttention\ \emph{La couverture n'est pas totale --- voir la section «~Traçabilité~» pour la famille d'opérations qui n'y figure pas encore (les gestes de session).} Il se consulte à l'écran, \emph{Administration} → \emph{Journal d'audit} (\S\ref{sec:tracabilite}). À ne pas confondre avec le \emph{journal} des écritures, ci-dessus. Aucune entrée ne peut y être modifiée, ni supprimée sur une installation en service.
+    \item[Journal d'audit (angl. audit log)] Registre des modifications comptables (qui, quand, quelle valeur), exigé par le CO Art. 957a. \keshAttention\ \emph{Il ne porte ni la connexion, ni la déconnexion, ni le renouvellement de session, par décision --- voir la section «~Traçabilité~».} Il se consulte à l'écran, \emph{Administration} → \emph{Journal d'audit} (\S\ref{sec:tracabilite}). À ne pas confondre avec le \emph{journal} des écritures, ci-dessus. Aucune entrée ne peut y être modifiée, ni supprimée sur une installation en service.
     \item[Lettrage] Marque posée sur des lignes d'un même compte d'actif ou de passif dont la
           somme est nulle, pour dire qu'elles se soldent entre elles (une écriture et sa
           contre-passation, un acompte et sa reprise\ldots). Le lettrage manuel, les

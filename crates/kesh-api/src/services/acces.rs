@@ -72,6 +72,21 @@ pub struct ContexteAcces {
     company_id: i64,
     user_id: i64,
     canal: Canal,
+    origine: OrigineTrace,
+}
+
+/// D'où vient une lecture, pour l'écrire à sa trace d'audit (Story 33-7, #776).
+///
+/// Distincte de [`Canal`] à dessein (C-e334-15) : le canal dit ce qu'une requête a le
+/// droit de lire, et se compare dans des tests où un numéro de clé n'a rien à faire.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum OrigineTrace {
+    /// Une session de l'interface (JWT).
+    Session,
+    /// Une clé d'API, de ce numéro.
+    CleApi(i64),
+    /// Une clé du serveur MCP, de ce numéro.
+    Mcp(i64),
 }
 
 impl ContexteAcces {
@@ -82,16 +97,26 @@ impl ContexteAcces {
             company_id: u.company_id,
             user_id: u.user_id,
             canal: Canal::Api { role: u.role },
+            origine: match u.api_key_id {
+                Some(id) => OrigineTrace::CleApi(id),
+                None => OrigineTrace::Session,
+            },
         }
     }
 
-    /// Contexte d'une requête du serveur MCP, avec les portées de sa clé.
-    pub fn mcp(company_id: i64, user_id: i64, portees: BTreeSet<Portee>) -> Self {
+    /// Contexte d'une requête du serveur MCP : la clé `cle_id`, et ses portées.
+    pub fn mcp(company_id: i64, user_id: i64, cle_id: i64, portees: BTreeSet<Portee>) -> Self {
         Self {
             company_id,
             user_id,
             canal: Canal::Mcp { portees },
+            origine: OrigineTrace::Mcp(cle_id),
         }
+    }
+
+    /// D'où vient la lecture — ce que sa trace d'audit en dit.
+    pub fn origine_trace(&self) -> OrigineTrace {
+        self.origine
     }
 
     /// Société dont on lit les livres.

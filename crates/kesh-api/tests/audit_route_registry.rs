@@ -315,6 +315,19 @@ enum Status {
 
 use Status::{Exempt, NoMatter, Traced};
 
+/// Story 33-7 (C-e334-11, C-e334-28) — le motif des gestes de session : une
+/// décision, et non un manque suivi. `auth::refresh` écrit tout de même une entrée
+/// sur le seul chemin du vol de jeton, ce que le motif dit.
+const DECISION_GESTES_SESSION: &str = "décision de Guy du 2026-11-06 — les gestes de session ne se tracent pas, hors la révocation de masse d'un vol de jeton";
+
+/// Les seuls handlers à qui [`DECISION_GESTES_SESSION`] tient lieu de motif.
+const HANDLERS_DECISION_GESTES_SESSION: [&str; 4] = [
+    "auth::login",
+    "auth::logout",
+    "auth::refresh",
+    "auth::activity",
+];
+
 /// Statut de rejeu sur interblocage d'une route mutante (Story 15-5e1, AC1).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Rejeu {
@@ -539,11 +552,11 @@ const LIB_ROUTES: &[(&str, &str, Status, Rejeu)] = &[
     ("put", "projects::update_project", Traced, SansEcritureAuJournal),
     ("post", "projects::archive_project", Traced, SansEcritureAuJournal),
     ("post", "projects::unarchive_project", Traced, SansEcritureAuJournal),
-    ("put", "auth::change_password", Exempt("issue #435 — change_password, login, logout, refresh"), SansEcritureAuJournal),
+    ("put", "auth::change_password", Traced, SansEcritureAuJournal),
     // Story v0172-session (0.17.3, #876) — le battement d'activité n'écrit que
     // l'échéance d'une session (`refresh_tokens.expires_at`), comme le
     // renouvellement : exempté avec lui, statut de rejeu des routes d'auth.
-    ("post", "auth::activity", Exempt("issue #876 — le battement d'activité n'écrit que l'échéance d'une session, comme le renouvellement"), SansEcritureAuJournal),
+    ("post", "auth::activity", Exempt(DECISION_GESTES_SESSION), SansEcritureAuJournal),
     ("put", "profile::set_mode", Traced, SansEcritureAuJournal),
     ("post", "onboarding::set_language", Traced, SansEcritureAuJournal),
     ("post", "onboarding::set_mode", Traced, SansEcritureAuJournal),
@@ -555,9 +568,9 @@ const LIB_ROUTES: &[(&str, &str, Status, Rejeu)] = &[
     ("post", "onboarding::set_bank_account", Traced, SansEcritureAuJournal),
     ("post", "onboarding::skip_bank", Traced, SansEcritureAuJournal),
     ("post", "onboarding::finalize", Traced, SansEcritureAuJournal),
-    ("post", "auth::login", Exempt("issue #435 — change_password, login, logout, refresh"), SansEcritureAuJournal),
-    ("post", "auth::logout", Exempt("issue #435 — change_password, login, logout, refresh"), SansEcritureAuJournal),
-    ("post", "auth::refresh", Exempt("issue #435 — change_password, login, logout, refresh"), SansEcritureAuJournal),
+    ("post", "auth::login", Exempt(DECISION_GESTES_SESSION), SansEcritureAuJournal),
+    ("post", "auth::logout", Exempt(DECISION_GESTES_SESSION), SansEcritureAuJournal),
+    ("post", "auth::refresh", Exempt(DECISION_GESTES_SESSION), SansEcritureAuJournal),
     ("post", "setup::create_admin", Traced, SansEcritureAuJournal),
     ("post", "auth::forgot_password", Traced, SansEcritureAuJournal),
     ("post", "auth::reset_password", Traced, SansEcritureAuJournal),];
@@ -974,8 +987,9 @@ fn the_registry_partition_is_what_the_story_declares() {
     // validation et la dévalidation d'une facture fournisseur, tracés).
     // Story v0172-session (#876, CR #891) : 135 → 136 (le `PUT` du réglage de la
     // durée d'inactivité, tracé ; le battement est exempté).
+    // Story 33-7 (#435) : 136 → 137 (le changement de mot de passe, tracé).
     assert_eq!(
-        traced, 136,
+        traced, 137,
         "73 tracées avant la 25-1b, plus ses 14, plus la dévalidation (25-2-b-1, #440), \
          plus l'annulation d'un règlement client (25-3-a-1) et fournisseur (25-3-a-2, #414), \
          plus l'annulation d'un rapprochement (25-3-b, #418), plus le solde du reste \
@@ -999,11 +1013,12 @@ fn the_registry_partition_is_what_the_story_declares() {
          refs #671), plus la saisie manuelle d'un relevé (v016-2a, refs #816), plus le \
          `PUT`, le `DELETE`, la validation et la dévalidation d'une facture fournisseur \
          (v017-4a, refs #849), plus le réglage de la durée d'inactivité de la session \
-         (v0172-session, refs #891)"
+         (v0172-session, refs #891), plus le changement de mot de passe (33-7, refs #435)"
     );
     assert_eq!(
-        exempt, 5,
-        "4 routes d'auth (#435) et le battement d'activité (#876, v0172-session)"
+        exempt, 4,
+        "connexion, déconnexion, renouvellement et battement d'activité : \
+         DECISION_GESTES_SESSION (33-7)"
     );
     assert_eq!(
         no_matter, 3,
@@ -1065,14 +1080,51 @@ fn every_exemption_names_the_issue_that_follows_it() {
     // ⛔ C'est la garde qui empêche l'exemption de devenir la sortie la moins
     // coûteuse : écrire une justification est plus rapide que tracer une route,
     // et une justification sans suivi ne se distingue pas d'un oubli.
+    // Limite qui reste (Story 33-7, C-e334-28) : `issue #` n'y prouve pas que
+    // l'issue soit ouverte — une seule chaîne ne peut pas le dire.
     for (verb, handler, status, _) in LIB_ROUTES.iter().chain(TEST_ENDPOINT_ROUTES) {
         if let Exempt(motif) = status {
             assert!(
-                motif.contains("issue #") || motif.contains("jamais monté en production"),
+                motif_recevable(handler, motif),
                 "l'exemption de `{verb} {handler}` doit nommer l'issue qui la \
                  suit, ou dire pourquoi aucune n'est nécessaire — trouvé : {motif:?}"
             );
         }
+    }
+}
+
+/// Story 33-7 (AC-10, C-e334-28) — ce qui rend une exemption recevable : une issue
+/// qui la suit, un chemin jamais monté en production, ou, **pour les seuls
+/// [`HANDLERS_DECISION_GESTES_SESSION`]**, la décision de Guy sur les gestes de
+/// session : une décision ne devient pas la sortie la moins coûteuse.
+fn motif_recevable(handler: &str, motif: &str) -> bool {
+    motif.contains("issue #")
+        || motif.contains("jamais monté en production")
+        || (motif == DECISION_GESTES_SESSION && HANDLERS_DECISION_GESTES_SESSION.contains(&handler))
+}
+
+#[test]
+fn motif_recevable_ne_laisse_la_decision_qu_aux_gestes_de_session() {
+    let cas: &[(&str, &str, bool)] = &[
+        ("invoices::create", "issue #1 — suivi", true),
+        ("invoices::create", "jamais monté en production", true),
+        ("auth::login", "issue #1 — suivi", true),
+        ("auth::login", DECISION_GESTES_SESSION, true),
+        ("auth::logout", DECISION_GESTES_SESSION, true),
+        ("auth::refresh", DECISION_GESTES_SESSION, true),
+        ("auth::activity", DECISION_GESTES_SESSION, true),
+        ("auth::change_password", DECISION_GESTES_SESSION, false),
+        ("invoices::create", DECISION_GESTES_SESSION, false),
+        ("auth::login", "une raison quelconque", false),
+        ("invoices::create", "une raison quelconque", false),
+        ("auth::login", "décision de Guy", false),
+    ];
+    for (handler, motif, attendu) in cas {
+        assert_eq!(
+            motif_recevable(handler, motif),
+            *attendu,
+            "{handler} : {motif:?}"
+        );
     }
 }
 
