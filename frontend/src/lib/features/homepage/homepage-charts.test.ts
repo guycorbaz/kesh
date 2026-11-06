@@ -1,5 +1,6 @@
 // Story 33-3b (#918) — le calcul pur des graphiques de l'accueil.
-import { describe, it, expect } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { describe, it, expect, vi } from 'vitest';
 import Big from 'big.js';
 import { contrastRatio } from '../../../../tests/e2e/helpers/contrast';
 import {
@@ -9,12 +10,15 @@ import {
 	PIE_PALETTE,
 	axisLabels,
 	axisTicks,
+	chartAmount,
 	chartWidth,
+	followMark,
 	markHref,
 	monthHref,
 	monthLabel,
 	monthlyBars,
 	pieSlices,
+	postStyle,
 	tickLabel,
 } from './homepage-charts';
 import type { MonthSummary } from './homepage-summary.api';
@@ -135,6 +139,29 @@ describe('axisLabels (AC2, tiré du mois rendu)', () => {
 		expect(indices(132, '2020-01').length).toBe(11);
 		expect(textes(132, '2020-01')[0]).toBe('2020');
 	});
+
+	// AC2-bis, les douze combinaisons : le premier et le dernier mois étiquetés, et leur
+	// nombre, écrits à la main depuis le calendrier.
+	it.each([
+		[1, '2026-01', 1, '2026-01', '2026-01'],
+		[1, '2026-03', 1, '2026-03', '2026-03'],
+		[12, '2026-01', 12, '2026-01', '2026-12'],
+		[12, '2026-03', 12, '2026-03', '2027-02'],
+		[13, '2026-01', 5, '2026-01', '2027-01'],
+		[13, '2026-03', 4, '2026-04', '2027-01'],
+		[36, '2026-01', 12, '2026-01', '2028-10'],
+		[36, '2026-03', 12, '2026-04', '2029-01'],
+		[37, '2026-01', 4, '2026-01', '2029-01'],
+		[37, '2026-03', 3, '2027-01', '2029-01'],
+		[132, '2020-01', 11, '2020-01', '2030-01'],
+		[132, '2020-03', 11, '2021-01', '2031-01'],
+	])('%i mois depuis %s : %i étiquettes, de %s à %s', (n, start, count, first, last) => {
+		const list = months(n, start);
+		const labels = axisLabels(list, 'fr-CH');
+		expect(labels).toHaveLength(count);
+		expect(list[labels[0].index].month).toBe(first);
+		expect(list[labels[count - 1].index].month).toBe(last);
+	});
 });
 
 describe('axisTicks et tickLabel (AC20)', () => {
@@ -158,6 +185,22 @@ describe('axisTicks et tickLabel (AC20)', () => {
 		const t = axisTicks(new Big('0.01'), new Big('0'));
 		expect(t.length).toBeLessThan(10);
 		expect(t.some((v) => v.gte('0.01'))).toBe(true);
+	});
+
+	it('sous dix centimes, aucun pas de 0,025 : chaque graduation est un nombre de centimes', () => {
+		const t = axisTicks(new Big('0.10'), new Big('0'));
+		expect(t.map((v) => v.toString())).toEqual(['0', '0.05', '0.1']);
+		// Au-dessus, le pas de 2,5 reste : 25 centimes s'écrivent.
+		expect(axisTicks(new Big('1'), new Big('0')).map((v) => v.toString())).toContain('0.25');
+	});
+});
+
+describe('chartAmount (E-2)', () => {
+	it('deux décimales, quatre seulement pour une fraction de centime', () => {
+		expect(chartAmount('1000')).toBe('1’000.00');
+		expect(chartAmount('1250.5000')).toBe('1’250.50');
+		expect(chartAmount('0.0040')).toBe('0.0040');
+		expect(chartAmount('-12.3456')).toBe('-12.3456');
 	});
 });
 
@@ -213,12 +256,34 @@ describe('pieSlices', () => {
 		expect(r[0].path).toBeNull();
 	});
 
-	it('une part minuscule reste rendue, sans valeur non finie', () => {
+	it('une part minuscule reste rendue, et la grande part se dessine : un cercle (B-1, E-1)', () => {
 		const r = pieSlices([post(1, '999999', '100.0'), post(2, '0.0001', '0.0')], null, '999999.0001', geo);
 		expect(r).toHaveLength(2);
 		expect(r[1].path).not.toContain('NaN');
 		expect(r[1].full).toBe(false);
 		expect(r[1].endAngle).toBeCloseTo(2 * Math.PI, 6);
+		expect(r[0].full, 'extrémités confondues : le SVG omettrait l’arc').toBe(true);
+		expect(r[0].path).toBeNull();
+	});
+
+	it('20’000.00 et 0.01 : le cas réaliste du disque blanc', () => {
+		const r = pieSlices([post(1, '20000.00', '100.0'), post(2, '0.01', '0.0')], null, '20000.01', geo);
+		expect(r[0].full).toBe(true);
+		expect(r[0].path).toBeNull();
+	});
+
+	it('99,9 % : un vrai arc, grand, aux extrémités distinctes', () => {
+		const r = pieSlices([post(1, '999', '99.9'), post(2, '1', '0.1')], null, '1000', geo);
+		expect(r[0].full).toBe(false);
+		const m = /L([\d.]+ [\d.]+) A90 90 0 1 1 ([\d.]+ [\d.]+) Z$/.exec(r[0].path ?? '');
+		expect(m, r[0].path ?? '').not.toBeNull();
+		expect(m![1]).not.toBe(m![2]);
+	});
+
+	it('une petite part aux extrémités confondues n’est pas un cercle', () => {
+		const r = pieSlices([post(1, '20000.00', '100.0'), post(2, '0.01', '0.0')], null, '20000.01', geo);
+		expect(r[1].full).toBe(false);
+		expect(r[1].path).not.toBeNull();
 	});
 
 	it('aucune part : aucun dessin, et une base nulle ne divise pas', () => {
@@ -248,6 +313,21 @@ describe('monthHref, monthLabel, markHref', () => {
 		}
 	});
 
+	it('followMark navigue vers la marque, et ne fait rien hors d’une marque', () => {
+		const navigate = vi.fn();
+		const g = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+		g.setAttribute('data-href', '/x');
+		g.dispatchEvent(new Event('click'));
+		g.addEventListener('click', (e) => followMark(e, navigate));
+		g.dispatchEvent(new Event('click'));
+		expect(navigate).toHaveBeenCalledWith('/x');
+		navigate.mockClear();
+		const bare = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+		bare.addEventListener('click', (e) => followMark(e, navigate));
+		bare.dispatchEvent(new Event('click'));
+		expect(navigate).not.toHaveBeenCalled();
+	});
+
 	it('markHref lit le data-href de la marque la plus proche, et rien hors d’une marque', () => {
 		const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
 		const g = document.createElementNS('http://www.w3.org/2000/svg', 'g');
@@ -263,6 +343,17 @@ describe('monthHref, monthLabel, markHref', () => {
 
 describe('palette (AC14)', () => {
 	const white = '#ffffff';
+	it('revenus et « Autres » gardent la valeur de leur jeton d’`app.css`', () => {
+		const css = readFileSync('src/app.css', 'utf-8');
+		expect(css).toContain(`--color-primary: ${BAR_REVENUE.color};`);
+		expect(css).toContain(`--color-text-muted: ${OTHERS_STYLE.color};`);
+	});
+
+	it('postStyle : la palette par rang, « Autres » au-delà', () => {
+		expect(postStyle(0)).toBe(PIE_PALETTE[0]);
+		expect(postStyle(5)).toBe(OTHERS_STYLE);
+	});
+
 	it('chaque remplissage a un contraste d’au moins 3:1 sur blanc', () => {
 		for (const s of [BAR_REVENUE, BAR_EXPENSE, OTHERS_STYLE, ...PIE_PALETTE]) {
 			expect(contrastRatio(s.color, white), s.color).toBeGreaterThanOrEqual(3);

@@ -175,6 +175,36 @@ describe('accessibilité (AC11 à AC13)', () => {
 		expect(bars.querySelector('desc')?.textContent).toContain('1’000.00');
 		expect(pie.querySelector('desc')?.textContent).toContain('Loyer');
 		expect(pie.querySelector('desc')?.textContent).toContain('66.7');
+		expect(pie.querySelector('desc')?.textContent).toContain('2 comptes de charges');
+	});
+
+	it('la description compte les comptes de « Autres », et connaît le singulier (B-5)', () => {
+		const a = render(HomepageCharts, {
+			state: 'ready',
+			summary: summary({
+				expensePosts: [post(6000, 'Loyer', '50', '50.0')],
+				otherExpenses: { amount: '50', share: '50.0', accountCount: 4 },
+				expensePostsBase: '100',
+			}),
+		});
+		expect(screen.getByTestId('homepage-card-expense-pie').querySelector('desc')?.textContent).toContain(
+			'5 comptes de charges',
+		);
+		a.unmount();
+		const b = render(HomepageCharts, {
+			state: 'ready',
+			summary: summary({
+				months: months([['0', '100']]),
+				expensePosts: [post(6000, 'Loyer', '100', '100.0')],
+				expensePostsBase: '100',
+			}),
+		});
+		const pieDesc = screen.getByTestId('homepage-card-expense-pie').querySelector('desc')?.textContent;
+		expect(pieDesc).toContain('un seul compte de charges');
+		expect(pieDesc).toContain('Loyer');
+		const barsDesc = screen.getByTestId('homepage-card-monthly-bars').querySelector('desc')?.textContent;
+		expect(barsDesc).toContain('sur un mois');
+		b.unmount();
 	});
 
 	it('le tableau des mois : caption, th scope, vrai lien, dans un details', () => {

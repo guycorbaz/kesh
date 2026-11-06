@@ -3,8 +3,6 @@
 	// Le SVG est une image (`role="img"`), sans aucun élément focalisable ; le clavier
 	// et le lecteur d'écran passent par le vrai tableau voisin (C-e332-16).
 	import { goto } from '$app/navigation';
-	import Big from 'big.js';
-	import { formatSwissAmount } from '$lib/features/journal-entries/balance';
 	import { i18nLocale, i18nMsg } from '$lib/shared/utils/i18n.svelte';
 	import ChartPatterns from './ChartPatterns.svelte';
 	import {
@@ -12,9 +10,10 @@
 		BAR_REVENUE,
 		FULL_WIDTH_ABOVE_MONTHS,
 		axisLabels,
+		chartAmount,
 		chartFill,
 		chartWidth,
-		markHref,
+		followMark,
 		monthHref,
 		monthLabel,
 		monthYearLabel,
@@ -50,15 +49,12 @@
 	});
 	let chart = $derived(monthlyBars(summary.months, box));
 	let labels = $derived(axisLabels(summary.months, i18nLocale()));
-
-	function open(event: MouseEvent) {
-		const href = markHref(event.target);
-		if (href) void goto(href);
-	}
-
-	function amount(raw: string): string {
-		return formatSwissAmount(new Big(raw));
-	}
+	let descArgs = $derived({
+		year: summary.fiscalYear.name,
+		revenues: chartAmount(summary.totalRevenues),
+		expenses: chartAmount(summary.totalExpenses),
+		months: n,
+	});
 </script>
 
 <div
@@ -84,25 +80,22 @@
 	<!-- Un seul écouteur sur l'image : le clavier passe par le tableau. -->
 	<!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_noninteractive_element_interactions -->
 	<svg
-		class="chart mt-3 h-auto w-full {wide ? 'wide' : ''}"
+		class="chart mt-3 h-auto w-full {wide ? 'wide max-w-[1200px]' : 'max-w-3xl'}"
 		role="img"
 		aria-labelledby="homepage-bars-title homepage-bars-desc"
 		viewBox="0 0 {width} {box.height}"
-		onclick={open}
+		onclick={(event) => followMark(event, goto)}
 	>
 		<title id="homepage-bars-title">{i18nMsg('homepage-charts-bars-title', 'Revenus et dépenses par mois')}</title>
 		<desc id="homepage-bars-desc">
-			{i18nMsg('homepage-charts-bars-desc', '{ $year } : revenus { $revenues }, dépenses { $expenses }, sur { $months } mois.', {
-				year: summary.fiscalYear.name,
-				revenues: amount(summary.totalRevenues),
-				expenses: amount(summary.totalExpenses),
-				months: n,
-			})}
+			{n === 1
+				? i18nMsg('homepage-charts-bars-desc-one', '{ $year } : revenus { $revenues }, dépenses { $expenses }, sur un mois.', descArgs)
+				: i18nMsg('homepage-charts-bars-desc', '{ $year } : revenus { $revenues }, dépenses { $expenses }, sur { $months } mois.', descArgs)}
 		</desc>
 		<ChartPatterns prefix={PREFIX} styles={[BAR_EXPENSE]} size={wide ? 12 : 10} />
 
 		{#each chart.ticks as tick (tick.value.toString())}
-			<line x1={box.marginLeft} x2={width - box.marginRight} y1={tick.y} y2={tick.y} stroke="#e2e8f0" />
+			<line x1={box.marginLeft} x2={width - box.marginRight} y1={tick.y} y2={tick.y} stroke="var(--color-border)" />
 			<text class="axis" x={box.marginLeft - 8} y={tick.y} text-anchor="end" dominant-baseline="middle">{tick.label}</text>
 		{/each}
 
@@ -116,8 +109,8 @@
 				<title>
 					{i18nMsg('homepage-charts-month-mark-title', '{ $month } : revenus { $revenues }, dépenses { $expenses }', {
 						month: monthYearLabel(group.month.month, i18nLocale()),
-						revenues: amount(group.month.revenues),
-						expenses: amount(group.month.expenses),
+						revenues: chartAmount(group.month.revenues),
+						expenses: chartAmount(group.month.expenses),
 					})}
 				</title>
 				<rect class="hit" x={group.x} y={chart.plotTop} width={group.width} height={chart.plotBottom - chart.plotTop} fill="transparent" pointer-events="all" />
@@ -130,7 +123,7 @@
 			</g>
 		{/each}
 
-		<line x1={box.marginLeft} x2={width - box.marginRight} y1={chart.zeroY} y2={chart.zeroY} stroke="#64748b" stroke-width="1.5" />
+		<line x1={box.marginLeft} x2={width - box.marginRight} y1={chart.zeroY} y2={chart.zeroY} stroke="var(--color-text-muted)" stroke-width="1.5" />
 
 		{#each labels as label (label.index)}
 			<text
@@ -167,8 +160,8 @@
 						<th scope="row" class="py-1 text-left font-normal">
 							<a class="text-primary underline" href={monthHref(m)} data-testid="homepage-chart-month-link">{monthYearLabel(m.month, i18nLocale())}</a>
 						</th>
-						<td class="py-1 text-right font-mono">{amount(m.revenues)}</td>
-						<td class="py-1 text-right font-mono">{amount(m.expenses)}</td>
+						<td class="py-1 text-right font-mono">{chartAmount(m.revenues)}</td>
+						<td class="py-1 text-right font-mono">{chartAmount(m.expenses)}</td>
 					</tr>
 				{/each}
 			</tbody>
@@ -177,11 +170,12 @@
 </div>
 
 <style>
-	/* Corps en unités du `viewBox`, un par largeur. La mise en page de l'application ne
-	   descend pas sous 1280 px (`min-w-[1280px]`, `(app)/+layout.svelte`), si bien que la
-	   carte ne se réduit jamais au format d'un téléphone (C-e332-26). */
+	/* Corps en unités du `viewBox`, un par largeur, sans adaptation au téléphone. La page
+	   ne descend pas sous 1280 px (`min-w-[1280px]`, `(app)/+layout.svelte`) : une fenêtre
+	   plus étroite la parcourt de côté. Sous 1024 px, `lg:` repasse la grille sur une
+	   colonne : la carte s'élargit, et `max-w-*` borne le dessin (C-e332-26). */
 	.chart :global(.axis) {
-		fill: #64748b;
+		fill: var(--color-text-muted);
 		font-size: 18px;
 	}
 	.chart.wide :global(.axis) {
@@ -191,6 +185,6 @@
 		cursor: pointer;
 	}
 	.mark:hover .hit {
-		fill: #f1f5f9;
+		fill: var(--color-surface-alt);
 	}
 </style>

@@ -909,6 +909,46 @@ async fn reversal_across_two_years_counts_on_both_sides(pool: MySqlPool) {
     assert_invariant(&app, &c.jwt, &from_prev).await;
 }
 
+/// Revue P1 (B-1, E-1, A-1) — un côté d'une paire daté hors des bornes de son exercice,
+/// l'anomalie que signale la préparation de clôture, posée en SQL. Le compte de résultat
+/// ne retient que l'autre côté : la synthèse aussi. Écarter la paire sur le seul
+/// `fiscal_year_id` rendrait 0 là où le compte de résultat rend ±X.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn reversal_pair_with_a_side_dated_outside_the_year_follows_the_income_statement(
+    pool: MySqlPool,
+) {
+    let c = setup(&pool, "paireanormale").await;
+    let (u, f, co) = (c.user_id, c.fy_id, c.company_id);
+    let outside = last_day_before(year_start());
+    // L'origine hors bornes : reste la contre-passation, −500 au mois du jour.
+    let charge = c.charge(&pool, month_k(0), c.expense, dec!(500)).await;
+    journal_entries::reverse(&pool, co, charge, u)
+        .await
+        .unwrap();
+    // La contre-passation hors bornes : reste l'origine, +300 au mois 0.
+    let income = post(&pool, u, f, co, month_k(0), c.bank, c.revenue, dec!(300)).await;
+    let reversal = journal_entries::reverse(&pool, co, income, u)
+        .await
+        .unwrap();
+    for id in [charge, reversal.entry.id] {
+        sqlx::query("UPDATE journal_entries SET entry_date = ? WHERE id = ?")
+            .bind(outside)
+            .bind(id)
+            .execute(&pool)
+            .await
+            .unwrap();
+    }
+
+    let app = spawn_app(pool).await;
+    let b = app.summary(&c.jwt).await;
+    let today_month = month_index(&b, today());
+    assert_ne!(today_month, 0, "montage : deux mois différents");
+    assert_eq!(month_at(&b, 0), (dec!(300), dec!(0)), "{b}");
+    assert_eq!(month_at(&b, today_month), (dec!(0), dec!(-500)), "{b}");
+    assert_eq!(b["creditBalanceExpenseAccounts"], 1, "{b}");
+    assert_invariant(&app, &c.jwt, &b).await;
+}
+
 #[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn cancelled_supplier_invoice_disappears(pool: MySqlPool) {
     let seeded = seed_accounting_company(&pool).await.unwrap();

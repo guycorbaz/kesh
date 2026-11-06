@@ -14,7 +14,8 @@
 //! - **Une écriture et sa contre-passation du même exercice** s'écartent
 //!   **ensemble** (C-e332-9). Écarter un seul côté fausserait un mois ; une paire
 //!   vaut zéro, compte par compte (miroir figé, pas de chaîne), si bien que
-//!   l'invariant tient.
+//!   l'invariant tient. Un côté daté hors des bornes de l'exercice n'appartient pas à
+//!   la lecture : l'autre reste compté, comme au compte de résultat.
 //! - **Une paire à cheval sur deux exercices reste comptée** de part et d'autre :
 //!   c'est l'usage de `reverse_at_next_fiscal_year_start` (les transitoires), et
 //!   rien d'autre que l'exercice ne distingue une transitoire d'une correction.
@@ -33,6 +34,11 @@
 //!
 //! Aucune écriture, aucune trace d'audit : l'accueil se charge à chaque visite
 //! (C-e332-11).
+//!
+//! ⚠️ **Limite** : les deux requêtes se suivent sans instantané commun, comme les deux
+//! sections du compte de résultat. Une écriture passée entre elles sépare, pour une
+//! lecture, les barres du camembert ; les totaux, tirés de la seule requête mensuelle,
+//! restent cohérents avec leurs mois, et la lecture suivante rattrape.
 
 use chrono::{Datelike, Months, NaiveDate};
 use kesh_db::entities::fiscal_year::FiscalYearStatus;
@@ -48,12 +54,20 @@ use crate::errors::ReportError;
 const NAMED_POSTS: usize = 5;
 
 /// Écarte une écriture et sa contre-passation **du même exercice**, des deux côtés
-/// (C-e332-9). Fragment partagé par les deux requêtes de ce module.
+/// (C-e332-9). Fragment partagé par les deux requêtes de ce module, qui lient deux
+/// fois les bornes de l'exercice à sa suite.
+///
+/// La paire se juge comme le compte de résultat juge une écriture : exercice **et**
+/// date dans ses bornes. Si l'un des côtés porte une date anormale (l'anomalie que
+/// signale la préparation de clôture), le compte de résultat ne retient que l'autre :
+/// la synthèse le retient aussi, sans quoi l'invariant tomberait.
 const REVERSAL_PAIR_EXCLUSION: &str = "\
     AND NOT EXISTS (SELECT 1 FROM journal_entries o \
-                     WHERE o.id = je.reverses_entry_id AND o.fiscal_year_id = je.fiscal_year_id) \
+                     WHERE o.id = je.reverses_entry_id AND o.fiscal_year_id = je.fiscal_year_id \
+                       AND o.entry_date BETWEEN ? AND ?) \
     AND NOT EXISTS (SELECT 1 FROM journal_entries r \
-                     WHERE r.reverses_entry_id = je.id AND r.fiscal_year_id = je.fiscal_year_id) ";
+                     WHERE r.reverses_entry_id = je.id AND r.fiscal_year_id = je.fiscal_year_id \
+                       AND r.entry_date BETWEEN ? AND ?) ";
 
 /// L'état de la synthèse.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
@@ -265,6 +279,10 @@ async fn fetch_months(
         .bind(fiscal_year_id)
         .bind(start)
         .bind(end)
+        .bind(start)
+        .bind(end)
+        .bind(start)
+        .bind(end)
         .fetch_all(pool)
         .await
         .map_err(map_db_error)?;
@@ -300,6 +318,10 @@ async fn fetch_expense_balances(
         .bind(company_id)
         .bind(company_id)
         .bind(fiscal_year_id)
+        .bind(start)
+        .bind(end)
+        .bind(start)
+        .bind(end)
         .bind(start)
         .bind(end)
         .fetch_all(pool)
@@ -502,5 +524,23 @@ mod tests {
         // 1 sur 16 : 6,25 %, jamais 6,2 %.
         let r = rank_expense_posts(vec![bal("6000", dec!(15)), bal("6100", dec!(1))]);
         assert_eq!(shares(&r), ["93.8", "6.3"]);
+    }
+
+    /// Le manuel dit « au plus trois dixièmes » : six parts, 0,05 chacune au plus. Ce
+    /// cas atteint la borne (12,25 → 12,3 cinq fois, 38,75 → 38,8).
+    #[test]
+    fn shares_can_sum_to_three_tenths_above_one_hundred() {
+        let r = rank_expense_posts(vec![
+            bal("6000", dec!(155)),
+            bal("6100", dec!(49)),
+            bal("6200", dec!(49)),
+            bal("6300", dec!(49)),
+            bal("6400", dec!(49)),
+            bal("6500", dec!(49)),
+        ]);
+        let others = r.others.as_ref().unwrap().share;
+        assert_eq!(others.to_string(), "12.3");
+        let sum: Decimal = r.posts.iter().map(|p| p.share).sum::<Decimal>() + others;
+        assert_eq!(sum, dec!(100.3));
     }
 }

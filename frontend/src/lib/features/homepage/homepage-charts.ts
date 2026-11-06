@@ -18,7 +18,7 @@ export interface ChartStyle {
 	pattern: ChartPattern;
 }
 
-/** Revenus : pleins, en `--color-primary`. */
+/** Revenus : pleins, de la valeur de `--color-primary` (un test les tient égales). */
 export const BAR_REVENUE: ChartStyle = { color: '#1e40af', pattern: 'solid' };
 /** Dépenses : tramées. */
 export const BAR_EXPENSE: ChartStyle = { color: '#c2410c', pattern: 'diagonal' };
@@ -94,13 +94,17 @@ export interface MonthlyBars {
 /** Le plus petit pas de graduation : le centime, qu'une étiquette sait écrire. */
 const MIN_TICK_STEP = new Big('0.01');
 
-/** Le pas rond (1, 2, 2,5 ou 5 × 10^k) qui donne environ quatre intervalles. */
+/**
+ * Le pas rond (1, 2, 2,5 ou 5 × 10^k) qui donne environ quatre intervalles. Pas de
+ * 2,5 × 0,01 : 0,025 n'est plus un nombre de centimes, et l'étiquette l'arrondirait.
+ */
 function niceStep(span: Big): Big {
 	const raw = span.div(4);
 	if (raw.lte(MIN_TICK_STEP)) return MIN_TICK_STEP;
 	const magnitude = new Big(10).pow(raw.e);
 	const mantissa = raw.div(magnitude);
-	const nice = ['1', '2', '2.5', '5', '10'].find((m) => mantissa.lte(m)) ?? '10';
+	const steps = magnitude.lt('0.1') ? ['1', '2', '5', '10'] : ['1', '2', '2.5', '5', '10'];
+	const nice = steps.find((m) => mantissa.lte(m)) ?? '10';
 	return magnitude.times(nice);
 }
 
@@ -251,6 +255,21 @@ export function markHref(target: EventTarget | null): string | null {
 	return target.closest('[data-href]')?.getAttribute('data-href') ?? null;
 }
 
+/** L'écouteur unique d'un `<svg>` : suit la marque cliquée, s'il y en a une (C-e332-16). */
+export function followMark(event: Event, navigate: (href: string) => unknown): void {
+	const href = markHref(event.target);
+	if (href) void navigate(href);
+}
+
+/**
+ * Un montant affiché : deux décimales, quatre s'il porte une fraction de centime, comme
+ * au règlement (Story 25-4-d2b). Un `0.0040` ne s'écrit pas `0.00` à côté de sa barre.
+ */
+export function chartAmount(raw: string): string {
+	const value = new Big(raw);
+	return formatSwissAmount(value, value.eq(value.round(2)) ? 2 : 4);
+}
+
 // --- Camembert ------------------------------------------------------------------
 
 export interface PieGeometry {
@@ -266,8 +285,13 @@ export interface PieSlice {
 	accountId: number | null;
 	startAngle: number;
 	endAngle: number;
-	/** `null` pour une part à 100 % : un arc de 360° ne se dessine pas. */
+	/** `null` pour une part pleine (`full`) : un arc de 360° ne se dessine pas. */
 	path: string | null;
+	/**
+	 * La part fait le tour : ses deux extrémités, une fois écrites, se confondent. Vrai à
+	 * 100 %, et dès qu'il ne reste qu'une fraction infime pour les autres : un arc dont
+	 * les extrémités sont égales est omis par le SVG, et le disque sortirait blanc.
+	 */
 	full: boolean;
 	style: ChartStyle;
 }
@@ -277,6 +301,11 @@ function pointAt({ cx, cy, r }: PieGeometry, angle: number): string {
 	const x = cx + r * Math.sin(angle);
 	const y = cy - r * Math.cos(angle);
 	return `${Number(x.toFixed(3))} ${Number(y.toFixed(3))}`;
+}
+
+/** Le style du poste de rang `index` (à partir de 0) : « Autres » au-delà de la palette. */
+export function postStyle(index: number): ChartStyle {
+	return PIE_PALETTE[index] ?? OTHERS_STYLE;
 }
 
 /**
@@ -293,7 +322,7 @@ export function pieSlices(
 	const baseBig = new Big(base);
 	if (baseBig.lte(0)) return [];
 	const items = [
-		...posts.map((p, i) => ({ amount: p.amount, accountId: p.accountId, style: PIE_PALETTE[i] ?? OTHERS_STYLE })),
+		...posts.map((p, i) => ({ amount: p.amount, accountId: p.accountId, style: postStyle(i) })),
 		...(others ? [{ amount: others.amount, accountId: null, style: OTHERS_STYLE }] : []),
 	];
 	const turn = 2 * Math.PI;
@@ -302,8 +331,10 @@ export function pieSlices(
 		const start = cumulated.div(baseBig).toNumber() * turn;
 		cumulated = cumulated.plus(item.amount);
 		const end = cumulated.div(baseBig).toNumber() * turn;
-		const full = new Big(item.amount).eq(baseBig);
 		const large = end - start > Math.PI ? 1 : 0;
+		const from = pointAt(geometry, start);
+		const to = pointAt(geometry, end);
+		const full = large === 1 && from === to;
 		const { cx, cy, r } = geometry;
 		return {
 			rank: i + 1,
@@ -311,9 +342,7 @@ export function pieSlices(
 			startAngle: start,
 			endAngle: end,
 			full,
-			path: full
-				? null
-				: `M${cx} ${cy} L${pointAt(geometry, start)} A${r} ${r} 0 ${large} 1 ${pointAt(geometry, end)} Z`,
+			path: full ? null : `M${cx} ${cy} L${from} A${r} ${r} 0 ${large} 1 ${to} Z`,
 			style: item.style,
 		};
 	});

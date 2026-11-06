@@ -3,17 +3,17 @@
 	// « Autres ». Le tableau tient lieu de légende, et porte les seuls liens
 	// (C-e332-16) ; « Autres » n'en a pas (C-e332-18).
 	import { goto } from '$app/navigation';
-	import Big from 'big.js';
-	import { formatSwissAmount } from '$lib/features/journal-entries/balance';
 	import { ledgerHref } from '$lib/features/reports/reports.api';
 	import { i18nMsg } from '$lib/shared/utils/i18n.svelte';
 	import ChartPatterns from './ChartPatterns.svelte';
 	import {
 		OTHERS_STYLE,
 		PIE_PALETTE,
+		chartAmount,
 		chartFill,
-		markHref,
+		followMark,
 		pieSlices,
+		postStyle,
 		type ChartStyle,
 	} from './homepage-charts';
 	import type { ExpensePost, HomepageSummary } from './homepage-summary.api';
@@ -43,14 +43,10 @@
 		return ledgerHref(accountId, summary.fiscalYear.startDate, summary.fiscalYear.endDate);
 	}
 
-	function open(event: MouseEvent) {
-		const href = markHref(event.target);
-		if (href) void goto(href);
-	}
-
-	function amount(raw: string): string {
-		return formatSwissAmount(new Big(raw));
-	}
+	/** Le nombre de comptes que le diagramme répartit, ceux de « Autres » compris. */
+	let accountCount = $derived(
+		summary.expensePosts.length + (summary.otherExpenses?.accountCount ?? 0),
+	);
 
 	function othersLabel(count: number): string {
 		return i18nMsg('homepage-charts-others-label', 'Autres ({ $count })', { count });
@@ -71,21 +67,33 @@
 			role="img"
 			aria-labelledby="homepage-pie-title homepage-pie-desc"
 			viewBox="0 0 200 200"
-			onclick={open}
+			onclick={(event) => followMark(event, goto)}
 		>
 			<title id="homepage-pie-title">{i18nMsg('homepage-charts-pie-title', 'Principaux postes de charges')}</title>
 			<desc id="homepage-pie-desc">
-				{i18nMsg(
-					'homepage-charts-pie-desc',
-					'{ $year } : { $count } postes de charges, pour un total de { $base }. Le plus gros : { $top }, { $share } %.',
-					{
-						year: summary.fiscalYear.name,
-						count: slices.length,
-						base: amount(summary.expensePostsBase),
-						top: summary.expensePosts[0].name,
-						share: summary.expensePosts[0].share,
-					},
-				)}
+				{#if accountCount === 1}
+					{i18nMsg(
+						'homepage-charts-pie-desc-one',
+						'{ $year } : un seul compte de charges, pour un total de { $base } : { $top }.',
+						{
+							year: summary.fiscalYear.name,
+							base: chartAmount(summary.expensePostsBase),
+							top: summary.expensePosts[0].name,
+						},
+					)}
+				{:else}
+					{i18nMsg(
+						'homepage-charts-pie-desc',
+						'{ $year } : { $count } comptes de charges, pour un total de { $base }. Le plus gros : { $top }, { $share } %.',
+						{
+							year: summary.fiscalYear.name,
+							count: accountCount,
+							base: chartAmount(summary.expensePostsBase),
+							top: summary.expensePosts[0].name,
+							share: summary.expensePosts[0].share,
+						},
+					)}
+				{/if}
 			</desc>
 			<ChartPatterns prefix={PREFIX} styles={STYLES} />
 			{#each slices as slice (slice.rank)}
@@ -100,13 +108,13 @@
 						{post
 							? i18nMsg('homepage-charts-post-mark-title', '{ $name } : { $amount }, { $share } %', {
 									name: post.name,
-									amount: amount(post.amount),
+									amount: chartAmount(post.amount),
 									share: post.share,
 								})
 							: summary.otherExpenses
 								? i18nMsg('homepage-charts-post-mark-title', '{ $name } : { $amount }, { $share } %', {
 										name: othersLabel(summary.otherExpenses.accountCount),
-										amount: amount(summary.otherExpenses.amount),
+										amount: chartAmount(summary.otherExpenses.amount),
 										share: summary.otherExpenses.share,
 									})
 								: ''}
@@ -114,7 +122,8 @@
 					{#if slice.full}
 						<circle cx={GEOMETRY.cx} cy={GEOMETRY.cy} r={GEOMETRY.r} fill={chartFill(PREFIX, slice.style)} stroke={slice.style.color} />
 					{:else}
-						<path d={slice.path} fill={chartFill(PREFIX, slice.style)} stroke="#ffffff" stroke-width="2" />
+						<!-- Le trait porte la couleur : le fond d'une trame est blanc comme la carte. -->
+						<path d={slice.path} fill={chartFill(PREFIX, slice.style)} stroke={slice.style.color} />
 					{/if}
 				</g>
 			{/each}
@@ -134,12 +143,12 @@
 				{#each summary.expensePosts as post, i (post.accountId)}
 					<tr class="border-b border-border last:border-0" data-account-id={post.accountId} data-amount={post.amount} data-share={post.share}>
 						<td class="whitespace-nowrap py-1">
-							<svg class="mr-1 inline-block align-[-2px]" aria-hidden="true" width="14" height="14"><rect width="14" height="14" fill={chartFill(PREFIX, PIE_PALETTE[i])} stroke={PIE_PALETTE[i].color} /></svg>{i + 1}
+							<svg class="mr-1 inline-block align-[-2px]" aria-hidden="true" width="14" height="14"><rect width="14" height="14" fill={chartFill(PREFIX, postStyle(i))} stroke={postStyle(i).color} /></svg>{i + 1}
 						</td>
-						<th scope="row" class="py-1 text-left font-normal break-words">
+						<th scope="row" class="py-1 text-left font-normal [overflow-wrap:anywhere]">
 							<a class="text-primary underline" href={postHref(post.accountId)} data-testid="homepage-chart-post-link">{post.number} {post.name}</a>
 						</th>
-						<td class="py-1 text-right font-mono">{amount(post.amount)}</td>
+						<td class="py-1 text-right font-mono">{chartAmount(post.amount)}</td>
 						<td class="whitespace-nowrap py-1 text-right font-mono">{post.share} %</td>
 					</tr>
 				{/each}
@@ -149,7 +158,7 @@
 							<svg class="mr-1 inline-block align-[-2px]" aria-hidden="true" width="14" height="14"><rect width="14" height="14" fill={chartFill(PREFIX, OTHERS_STYLE)} stroke={OTHERS_STYLE.color} /></svg>{summary.expensePosts.length + 1}
 						</td>
 						<th scope="row" class="py-1 text-left font-normal">{othersLabel(summary.otherExpenses.accountCount)}</th>
-						<td class="py-1 text-right font-mono">{amount(summary.otherExpenses.amount)}</td>
+						<td class="py-1 text-right font-mono">{chartAmount(summary.otherExpenses.amount)}</td>
 						<td class="whitespace-nowrap py-1 text-right font-mono">{summary.otherExpenses.share} %</td>
 					</tr>
 				{/if}

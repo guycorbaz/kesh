@@ -17,17 +17,19 @@
 
 <defs>
 	{#each styles.filter((s) => s.pattern !== 'solid') as style (style.pattern)}
-		<pattern id={patternId(prefix, style)} width={size} height={size} patternUnits="userSpaceOnUse">
+		<!-- Une hachure est une ligne droite dans une maille tournée : elle se raccorde d'une
+		     maille à l'autre, ce qu'une ligne tournée dans une maille droite ne fait pas. -->
+		<pattern
+			id={patternId(prefix, style)}
+			width={size}
+			height={size}
+			patternUnits="userSpaceOnUse"
+			patternTransform={style.pattern === 'diagonal' ? 'rotate(45)' : style.pattern === 'reverse-diagonal' ? 'rotate(-45)' : undefined}
+		>
 			<rect width={size} height={size} fill="#ffffff" />
-			{#if style.pattern === 'diagonal' || style.pattern === 'reverse-diagonal'}
-				<g transform="rotate({style.pattern === 'diagonal' ? 45 : -45} {size / 2} {size / 2})">
-					<line x1={-size} y1={size / 2} x2={size * 2} y2={size / 2} stroke={style.color} stroke-width={stroke} />
-					<line x1={-size} y1={size / 2 - size} x2={size * 2} y2={size / 2 - size} stroke={style.color} stroke-width={stroke} />
-					<line x1={-size} y1={size / 2 + size} x2={size * 2} y2={size / 2 + size} stroke={style.color} stroke-width={stroke} />
-				</g>
-			{:else if style.pattern === 'dots'}
+			{#if style.pattern === 'dots'}
 				<circle cx={size / 2} cy={size / 2} r={size * 0.3} fill={style.color} />
-			{:else if style.pattern === 'horizontal'}
+			{:else if style.pattern === 'horizontal' || style.pattern === 'diagonal' || style.pattern === 'reverse-diagonal'}
 				<line x1="0" y1={size / 2} x2={size} y2={size / 2} stroke={style.color} stroke-width={stroke} />
 			{:else if style.pattern === 'cross'}
 				<line x1="0" y1={size / 2} x2={size} y2={size / 2} stroke={style.color} stroke-width={stroke * 0.7} />

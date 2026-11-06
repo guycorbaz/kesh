@@ -393,26 +393,38 @@ export async function createFiscalYearViaApi(page: Page): Promise<string> {
 }
 
 /**
- * Story 33-3b — poste une charge datée du jour, à Zurich : débit du premier compte de
- * charges, crédit d'un compte de classe 10. Renvoie l'id de l'écriture et le compte.
+ * Story 33-3b — poste une charge : débit d'un compte de charges, crédit d'un compte de
+ * classe 10. Par défaut, le premier compte de charges et la date du jour à Zurich ; `number`
+ * désigne un compte de charges, créé s'il n'existe pas ; `date`, un autre jour. Renvoie l'id
+ * de l'écriture et le compte.
  */
 export async function createExpenseEntryViaApi(
 	page: Page,
 	description: string,
 	amount: string,
+	opts: { number?: string; date?: string } = {},
 ): Promise<{ id: number; accountId: number; accountNumber: string }> {
 	const ctx = await authedApiContext(page);
 	try {
 		const accRes = await ctx.get('/api/v1/accounts?includeArchived=false');
 		expect(accRes.ok(), `list accounts: ${accRes.status()}`).toBeTruthy();
 		const accounts: Array<{ id: number; number: string; accountType: string }> = await accRes.json();
-		const expense = accounts.find((a) => a.accountType === 'Expense');
+		let expense = accounts.find(
+			(a) => a.accountType === 'Expense' && (opts.number === undefined || a.number === opts.number),
+		);
+		if (!expense && opts.number !== undefined) {
+			const created = await ctx.post('/api/v1/accounts', {
+				data: { number: opts.number, name: `Charge ${opts.number}`, accountType: 'Expense' },
+			});
+			expect(created.ok(), `create account: ${created.status()}`).toBeTruthy();
+			expense = (await created.json()) as { id: number; number: string; accountType: string };
+		}
 		const credit = accounts.find((a) => /^10[0-9]{2}$/.test(a.number));
 		expect(expense, 'montage : un compte de charges').toBeTruthy();
 		expect(credit, 'montage : un compte de classe 10').toBeTruthy();
 		const res = await ctx.post('/api/v1/journal-entries', {
 			data: {
-				entryDate: todayInZurich(),
+				entryDate: opts.date ?? todayInZurich(),
 				journal: 'OD',
 				description,
 				lines: [

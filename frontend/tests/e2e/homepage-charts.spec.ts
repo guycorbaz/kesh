@@ -84,18 +84,32 @@ test.describe.serial('Graphiques de l’accueil, exercice ouvert (33-3b)', () =>
 		expect(await post.getAttribute('data-share')).toBe('100.0');
 	});
 
-	test('2. clic de souris sur la marque d’un mois : ses écritures', async ({ page }) => {
+	test('2. clic de souris sur la marque d’un mois : ses écritures, et elles seules', async ({ page }) => {
 		await login(page);
-		const mark = page.locator(`[data-testid="homepage-chart-month-mark"][data-month="${currentMonth()}"]`);
+		// Une écriture d'un autre mois du même exercice : janvier, ou décembre en janvier.
+		const month = currentMonth();
+		const other = month.endsWith('-01') ? `${fiscalYear}-12-15` : `${fiscalYear}-01-15`;
+		const otherLabel = uniq('Charge autre mois');
+		await createExpenseEntryViaApi(page, otherLabel, '1.00', { number: '6990', date: other });
+		await page.goto('/');
+
+		const mark = page.locator(`[data-testid="homepage-chart-month-mark"][data-month="${month}"]`);
 		await mark.click();
-		const today = todayInZurich();
-		await expect(page).toHaveURL(new RegExp(`/journal-entries\\?dateFrom=${today.slice(0, 7)}-01&dateTo=${today.slice(0, 7)}-\\d\\d`));
+		const [y, m] = month.split('-').map(Number);
+		const lastDay = String(new Date(Date.UTC(y, m, 0)).getUTCDate()).padStart(2, '0');
+		await expect(page).toHaveURL(new RegExp(`/journal-entries\\?dateFrom=${month}-01&dateTo=${month}-${lastDay}$`));
 		await expect(page.locator('tr').filter({ hasText: expenseLabel })).toHaveCount(1);
+		await expect(page.locator('tr').filter({ hasText: otherLabel })).toHaveCount(0);
 	});
 
-	test('3. clic de souris sur une part : le grand livre du compte, généré', async ({ page }) => {
+	test('3. clic de souris sur une part dessinée en arc : le grand livre du compte, généré', async ({ page }) => {
 		await login(page);
-		await page.getByTestId('homepage-chart-post-mark').first().click();
+		const mark = page.getByTestId('homepage-chart-post-mark').first();
+		await expect(mark.locator('path'), 'le navigateur clique un arc, non un disque').toHaveCount(1);
+		// La part fait presque le tour depuis midi : le centre de sa boîte est sa pointe.
+		// Le point à neuf heures, à mi-rayon, est dans la part.
+		const box = (await mark.boundingBox())!;
+		await mark.click({ position: { x: box.width * 0.25, y: box.height * 0.5 } });
 		await expect(page).toHaveURL(
 			new RegExp(`/reports\\?tab=general-ledger&accountId=${expenseAccountId}&from=${fiscalYear}-01-01&to=${fiscalYear}-12-31`),
 		);
@@ -164,8 +178,42 @@ test.describe.serial('Graphiques de l’accueil, exercice ouvert (33-3b)', () =>
 		await clearAuthStorage(page);
 		await login(page, username, 'MotDePasse12345');
 		await expect(page.getByTestId('homepage-chart-month-mark')).toHaveCount(12);
-		await expect(page.getByTestId('homepage-chart-post-link')).toHaveCount(1);
+		await expect(page.getByTestId('homepage-chart-post-link')).toHaveCount(2);
 		await expect(page.getByTestId('homepage-chart-month-link')).toHaveCount(12);
+	});
+
+	test('6b. six parts depuis l’API : cinq comptes et « Autres », et le clic sur un arc', async ({ page }) => {
+		await login(page);
+		let largest = 0;
+		for (const [number, amount] of [
+			['6100', '900.00'],
+			['6200', '700.00'],
+			['6300', '500.00'],
+			['6400', '300.00'],
+			['6500', '200.00'],
+			['6600', '100.00'],
+		]) {
+			const posted = await createExpenseEntryViaApi(page, uniq(`Charge ${number}`), amount, { number });
+			if (number === '6100') largest = posted.accountId;
+		}
+		await page.goto('/');
+
+		// Base : 2'800, plus 123.45 (le compte du scénario 1) et 1.00 (celui du scénario 2).
+		const marks = page.getByTestId('homepage-chart-post-mark');
+		await expect(marks).toHaveCount(5);
+		await expect(page.getByTestId('homepage-chart-others-mark')).toHaveCount(1);
+		await expect(
+			page.getByTestId('homepage-card-expense-pie').locator('svg[role="img"] path'),
+			'six arcs réellement rendus, aucun disque',
+		).toHaveCount(6);
+		const first = page.locator(`tr[data-account-id="${largest}"]`);
+		expect(await first.getAttribute('data-share')).toBe('31.9');
+		const others = page.getByTestId('homepage-chart-others-row');
+		expect(Number(await others.getAttribute('data-amount'))).toBe(224.45);
+		await expect(others).toContainText('3');
+
+		await marks.first().click();
+		await expect(page).toHaveURL(new RegExp(`/reports\\?tab=general-ledger&accountId=${largest}&`));
 	});
 
 	test('8a. axe-core sans violation, tableau des mois fermé puis ouvert', async ({ page }) => {
