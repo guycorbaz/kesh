@@ -294,8 +294,40 @@ describe('session-idle — abaissement depuis l’écran (AC-8)', () => {
 });
 
 describe('session-idle — sondes, arrêt (9, 10, 13)', () => {
-	it('une requête de fond ne modifie pas lastActivity', async () => {
+	// #898 (N-A8/N-E10) — garde de principe, non un rouge possible : une requête
+	// de fond ne peut pas modifier `lastActivity`, parce que le module n'écoute
+	// que des gestes de l'utilisateur — il ne s'abonne à rien d'`apiClient`.
+	// L'assertion porte donc sur ce qu'il écoute : exactement ces douze types
+	// (onze écouteurs d'activité, plus `pointerout`, qui ne note rien).
+	it('une requête de fond ne modifie pas lastActivity : le module n’écoute que des gestes', async () => {
+		const poses: string[] = [];
+		const surFenetre = window.addEventListener.bind(window);
+		const surDocument = document.addEventListener.bind(document);
+		vi.spyOn(window, 'addEventListener').mockImplementation((t, l, o) => {
+			poses.push(t);
+			surFenetre(t, l, o);
+		});
+		vi.spyOn(document, 'addEventListener').mockImplementation((t, l, o) => {
+			poses.push(t);
+			surDocument(t, l, o);
+		});
 		startAtLogin();
+		expect([...poses].sort()).toEqual(
+			[
+				'keydown',
+				'pointerdown',
+				'wheel',
+				'touchstart',
+				'dragover',
+				'drop',
+				'pointermove',
+				'pointerout',
+				'focus',
+				'blur',
+				'input',
+				'visibilitychange',
+			].sort(),
+		);
 		const avant = key(KEY_LAST_ACTIVITY);
 		setInterval(() => void getMock('/api/v1/admin/backup-schedule'), 1_000);
 		await advance(5_000);
@@ -345,7 +377,8 @@ describe('session-idle — la conciliation (11, 12, 12 bis, 17, 18)', () => {
 			localStorage.setItem(KEY_REPORTED_ACTIVITY, '470000');
 			sessionIdle.start(init);
 			expect(key(KEY_LAST_ACTIVITY)).toBe(480_000);
-			expect(key(KEY_REPORTED_ACTIVITY)).toBe(480_000 > 470_000 ? 470_000 : 0);
+			// #898 (N-A8) : la valeur littérale, non une expression qui la recalcule.
+			expect(key(KEY_REPORTED_ACTIVITY)).toBe(470_000);
 			await advance(1_000);
 			expect(postMock).toHaveBeenCalledTimes(1);
 			expect(postMock.mock.calls[0][1]).toEqual({ idleMs: 21_000 });
@@ -382,14 +415,29 @@ describe('session-idle — la conciliation (11, 12, 12 bis, 17, 18)', () => {
 			}
 		});
 	}
+	// #898 (N-A8/N-E10) : démarré à 1 000 000, non à 0 — à t = 0, une valeur
+	// nulle de l'horloge se confond avec une absence.
 	it('lastActivity effacée en cours de session : réécrite, fermeture à l’échéance attendue (12 bis)', async () => {
+		vi.setSystemTime(1_000_000);
 		startAtLogin();
 		await advance(10_000);
 		fire('keydown');
 		localStorage.removeItem(KEY_LAST_ACTIVITY);
 		await advance(1_000);
-		expect(key(KEY_LAST_ACTIVITY)).toBe(10_000);
+		expect(key(KEY_LAST_ACTIVITY)).toBe(1_010_000);
 		await advance(W - 1_000 - 1_000);
+		expect(fetchMock).not.toHaveBeenCalled();
+		await advance(1_000);
+		expect(fetchMock).toHaveBeenCalledTimes(1);
+	});
+	it('lastActivity effacée sans activité préalable : la dernière valeur connue est réécrite (12 bis)', async () => {
+		vi.setSystemTime(1_000_000);
+		startAtLogin();
+		await advance(10_000);
+		localStorage.removeItem(KEY_LAST_ACTIVITY);
+		await advance(1_000);
+		expect(key(KEY_LAST_ACTIVITY)).toBe(1_000_000);
+		await advance(W - 11_000 - 1_000);
 		expect(fetchMock).not.toHaveBeenCalled();
 		await advance(1_000);
 		expect(fetchMock).toHaveBeenCalledTimes(1);
@@ -454,7 +502,10 @@ describe('session-idle — sans localStorage, N inconnu (14, 15)', () => {
 // Revue de code P1 (N-A1/N-E1) — après `stop()`, aucun des onze écouteurs ne
 // produit plus rien. Chaque geste est tiré au-delà de l'échéance : un écouteur
 // resté posé appellerait `recordActivity`, qui fermerait la session (le
-// témoin de chaque cas, sans `stop()`, le montre).
+// témoin de chaque cas, sans `stop()`, le montre). Ce sont les onze écouteurs
+// d'**activité** : `pointerout` (0.17.4, #898 Rec-e1) n'en est pas un — il ne
+// fait que remettre la position retenue à zéro, sans effet observable une fois
+// `pointermove` retiré — et a ses propres cas plus bas.
 describe('session-idle — stop() retire chacun des onze écouteurs (10)', () => {
 	const gestes: Array<[string, () => void]> = [
 		['keydown', () => fire('keydown')],
@@ -592,5 +643,240 @@ describe('session-idle — valeurs vides et non finies (12 ter)', () => {
 		expect(key(KEY_LAST_ACTIVITY)).toBe(1_000_000);
 		await advance(1_000);
 		expect(fetchMock).not.toHaveBeenCalled();
+	});
+});
+
+// ---------------------------------------------------------------------------
+// Story v0174-session-2 (0.17.4, #895) — l'avertissement avant la fermeture
+// ---------------------------------------------------------------------------
+
+const T0 = 1_000_000;
+
+describe('session-idle — l’avertissement, au bon moment (#895, AC-1)', () => {
+	it('N = 2 : null à w − 60 001 ms, 60 000 au tic de w − 60 000, décroît, null après la fermeture', async () => {
+		vi.setSystemTime(T0);
+		startAtLogin();
+		expect(sessionIdle.warningRemainingMs).toBeNull();
+		await advance(W - 60_001);
+		expect(sessionIdle.warningRemainingMs).toBeNull();
+		await advance(1);
+		expect(sessionIdle.warningRemainingMs).toBe(60_000);
+		await advance(1_000);
+		expect(sessionIdle.warningRemainingMs).toBe(59_000);
+		await advance(1_000);
+		expect(sessionIdle.warningRemainingMs).toBe(58_000);
+		await advance(58_000);
+		expect(fetchMock).toHaveBeenCalledWith('/api/v1/auth/logout', expect.anything());
+		expect(sessionIdle.warningRemainingMs).toBeNull();
+		await advance(0);
+		expect(replaceMock).toHaveBeenCalledWith('/login?reason=idle&minutes=2');
+	});
+	it('N = 1 : l’avertissement paraît à 30 s de l’échéance', async () => {
+		vi.setSystemTime(T0);
+		sessionIdle.start({ idleTimeoutMinutes: 1, idleExpiresIn: 60 });
+		await advance(29_000);
+		expect(sessionIdle.warningRemainingMs).toBeNull();
+		await advance(1_000);
+		expect(sessionIdle.warningRemainingMs).toBe(30_000);
+	});
+	it('sans stockage partagé : jamais d’avertissement', async () => {
+		vi.setSystemTime(T0);
+		vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
+			throw new Error('QuotaExceeded');
+		});
+		startAtLogin();
+		for (let t = 0; t < W + 30_000; t += 10_000) {
+			await advance(10_000);
+			expect(sessionIdle.warningRemainingMs).toBeNull();
+		}
+	});
+});
+
+describe('session-idle — toute activité, et « Rester connecté », l’effacent (#895, AC-2)', () => {
+	async function jusquALAvis() {
+		vi.setSystemTime(T0);
+		startAtLogin();
+		await advance(W - 60_000);
+		expect(sessionIdle.warningRemainingMs).toBe(60_000);
+	}
+	it('(a) stayActive() : effacé aussitôt, lastActivity = now, battement au tic suivant (idleMs ≤ 1 000)', async () => {
+		await jusquALAvis();
+		await advance(500);
+		sessionIdle.stayActive();
+		expect(sessionIdle.warningRemainingMs).toBeNull();
+		expect(key(KEY_LAST_ACTIVITY)).toBe(T0 + W - 60_000 + 500);
+		await advance(500);
+		expect(postMock).toHaveBeenCalledTimes(1);
+		const [, corps] = postMock.mock.calls[0] as [string, { idleMs: number }];
+		expect(corps.idleMs).toBeLessThanOrEqual(1_000);
+		// L'ancienne échéance (T0 + W) arrive sans fermeture, et l'avis ne revient
+		// pas : le suivant n'est dû qu'une minute avant la nouvelle échéance.
+		await advance(59_000);
+		expect(Date.now()).toBe(T0 + W);
+		expect(fetchMock).not.toHaveBeenCalled();
+		expect(sessionIdle.warningRemainingMs).toBeNull();
+	});
+	it('(b) un keydown pendant l’avis : effacé au tic suivant', async () => {
+		await jusquALAvis();
+		await advance(500);
+		fire('keydown');
+		expect(sessionIdle.warningRemainingMs).toBe(60_000);
+		await advance(500);
+		expect(sessionIdle.warningRemainingMs).toBeNull();
+	});
+	it('(c) un autre onglet écrit lastActivity = now : effacé au tic suivant', async () => {
+		await jusquALAvis();
+		localStorage.setItem(KEY_LAST_ACTIVITY, String(Date.now()));
+		await advance(1_000);
+		expect(sessionIdle.warningRemainingMs).toBeNull();
+	});
+	it('(d) stayActive() après l’échéance (minuterie arrêtée) : fermeture, lastActivity non réécrite', async () => {
+		vi.setSystemTime(T0);
+		startAtLogin();
+		const avant = key(KEY_LAST_ACTIVITY);
+		vi.clearAllTimers();
+		vi.setSystemTime(T0 + W + 500);
+		sessionIdle.stayActive();
+		await advance(0);
+		expect(key(KEY_LAST_ACTIVITY)).toBe(avant);
+		expect(fetchMock).toHaveBeenCalledWith('/api/v1/auth/logout', expect.anything());
+	});
+	it('(e) dix stayActive() en 500 ms : dix écritures, aucune erreur', async () => {
+		await jusquALAvis();
+		const ecrit = vi.spyOn(Storage.prototype, 'setItem');
+		for (let i = 0; i < 10; i++) {
+			expect(() => sessionIdle.stayActive()).not.toThrow();
+			vi.setSystemTime(Date.now() + 50);
+		}
+		const surLast = ecrit.mock.calls.filter(([k]) => k === KEY_LAST_ACTIVITY);
+		expect(surLast).toHaveLength(10);
+	});
+});
+
+describe('session-idle — mutations plausibles gardées (#898, N-A3/N-E3)', () => {
+	it('régulation d’écriture : dix keydown en 500 ms ⇒ une écriture de lastActivity', async () => {
+		vi.setSystemTime(T0);
+		startAtLogin();
+		await advance(5_000);
+		const ecrit = vi.spyOn(Storage.prototype, 'setItem');
+		for (let i = 0; i < 10; i++) {
+			fire('keydown');
+			vi.setSystemTime(Date.now() + 50);
+		}
+		expect(ecrit.mock.calls.filter(([k]) => k === KEY_LAST_ACTIVITY)).toHaveLength(1);
+	});
+	it('generation : une réponse de /me résolue après stop() n’écrit rien', async () => {
+		vi.setSystemTime(T0);
+		let resoudre: (v: unknown) => void = () => {};
+		getMock.mockReturnValue(new Promise((r) => (resoudre = r)));
+		sessionIdle.start({});
+		await advance(0);
+		const avant = key(KEY_LAST_ACTIVITY);
+		sessionIdle.stop();
+		resoudre({ idleTimeoutMinutes: 3, idleExpiresIn: 1 });
+		await advance(0);
+		expect(sessionIdle.minutes).toBeNull();
+		expect(key(KEY_LAST_ACTIVITY)).toBe(avant);
+	});
+	it('generation : une réponse de battement résolue après stop() ne change pas N', async () => {
+		vi.setSystemTime(T0);
+		let resoudre: (v: unknown) => void = () => {};
+		postMock.mockReturnValue(new Promise((r) => (resoudre = r)));
+		startAtLogin();
+		await advance(1_000);
+		fire('keydown');
+		await advance(1_000);
+		expect(postMock).toHaveBeenCalledTimes(1);
+		sessionIdle.stop();
+		resoudre({ idleTimeoutMinutes: 5, idleExpiresIn: 300 });
+		await advance(0);
+		expect(sessionIdle.minutes).toBe(N);
+	});
+	it('heartbeatInFlight : un battement qui met 20 s à répondre ⇒ aucun second envoi pendant ce temps', async () => {
+		vi.setSystemTime(T0);
+		let resoudre: (v: unknown) => void = () => {};
+		postMock.mockReturnValue(new Promise((r) => (resoudre = r)));
+		startAtLogin();
+		await advance(1_000);
+		fire('keydown');
+		await advance(1_000);
+		expect(postMock).toHaveBeenCalledTimes(1);
+		for (let i = 0; i < 20; i++) {
+			fire('keydown');
+			await advance(1_000);
+		}
+		expect(postMock).toHaveBeenCalledTimes(1);
+		resoudre({ idleTimeoutMinutes: N, idleExpiresIn: N * 60 });
+		await advance(0);
+		fire('keydown');
+		await advance(1_000);
+		expect(postMock).toHaveBeenCalledTimes(2);
+	});
+	it('isValidMinutes : une réponse { idleTimeoutMinutes: 0 } du battement ne change pas N', async () => {
+		vi.setSystemTime(T0);
+		postMock.mockResolvedValue({ idleTimeoutMinutes: 0, idleExpiresIn: 0 });
+		startAtLogin();
+		await advance(1_000);
+		fire('keydown');
+		await advance(1_000);
+		expect(postMock).toHaveBeenCalledTimes(1);
+		expect(sessionIdle.minutes).toBe(N);
+	});
+	it('isValidMinutes : une réponse { idleTimeoutMinutes: 0 } de /me laisse N inconnu', async () => {
+		vi.setSystemTime(T0);
+		getMock.mockResolvedValue({ idleTimeoutMinutes: 0, idleExpiresIn: 0 });
+		sessionIdle.start({});
+		await advance(0);
+		expect(sessionIdle.minutes).toBeNull();
+		await advance(W * 2);
+		expect(replaceMock).not.toHaveBeenCalled();
+	});
+});
+
+describe('session-idle — un battement en échec sans activité rapportée (#898, N-E5)', () => {
+	it('reportedActivity absente : la clé est retirée, l’activité repart au pas de 15 s suivant', async () => {
+		vi.setSystemTime(T0);
+		postMock.mockRejectedValueOnce({ code: 'NETWORK_ERROR' });
+		startAtLogin();
+		await advance(1_000);
+		localStorage.removeItem(KEY_REPORTED_ACTIVITY);
+		fire('keydown');
+		await advance(1_000);
+		expect(postMock).toHaveBeenCalledTimes(1);
+		expect(localStorage.getItem(KEY_REPORTED_ACTIVITY)).toBeNull();
+		await advance(15_000);
+		expect(postMock).toHaveBeenCalledTimes(2);
+	});
+});
+
+describe('session-idle — sortir du document par le même point (#898, Rec-e1)', () => {
+	function out(relatedTarget: EventTarget | null) {
+		fire('pointerout', { relatedTarget });
+	}
+	for (const [nom, cible] of [
+		['relatedTarget nul (le pointeur quitte la page)', () => null],
+		['relatedTarget <iframe> (le pointeur passe sur l’aperçu)', () => document.createElement('iframe')],
+	] as const) {
+		it(`${nom} : le retour au même pixel compte`, async () => {
+			vi.setSystemTime(T0);
+			startAtLogin();
+			await advance(5_000);
+			move(7, 7);
+			expect(key(KEY_LAST_ACTIVITY)).toBe(T0 + 5_000);
+			await advance(5_000);
+			out(cible());
+			move(7, 7);
+			expect(key(KEY_LAST_ACTIVITY)).toBe(T0 + 10_000);
+		});
+	}
+	it('pointerout vers un <div> de la page : le même pixel ne compte toujours pas', async () => {
+		vi.setSystemTime(T0);
+		startAtLogin();
+		await advance(5_000);
+		move(7, 7);
+		await advance(5_000);
+		out(document.createElement('div'));
+		move(7, 7);
+		expect(key(KEY_LAST_ACTIVITY)).toBe(T0 + 5_000);
 	});
 });

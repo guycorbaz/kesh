@@ -27,6 +27,8 @@ pub mod logging;
 pub mod mail;
 pub mod mcp;
 pub mod middleware;
+// Story v0174-mise-a-jour (#847) — appelé par `main.rs`, crate binaire distinct.
+pub mod pre_upgrade_backup;
 pub mod qr_decode;
 pub mod retry;
 pub mod routes;

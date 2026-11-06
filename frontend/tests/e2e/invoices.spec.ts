@@ -517,8 +517,11 @@ test.describe('Factures — création brouillon', () => {
 		await page.getByRole('combobox', { name: /Rechercher un contact/ }).fill(contactName);
 		await page.getByRole('option', { name: new RegExp(contactName) }).first().click();
 
-		// Échéance = date du jour + 30 (calcul UTC identique à addDaysIso).
-		const today = new Date().toISOString().slice(0, 10);
+		// Échéance = date du jour + 30 (calcul UTC identique à addDaysIso). La date du jour
+		// est celle du POSTE, comme la propose le formulaire depuis la 0.17.4 (#889) — la date
+		// UTC rendait la veille entre minuit et 1 h (2 h en été) et ce test rougissait.
+		const now = new Date();
+		const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
 		const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(today)!;
 		const expectedDue = new Date(Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3]) + 30))
 			.toISOString()

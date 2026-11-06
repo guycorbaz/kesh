@@ -21,7 +21,7 @@ use axum::{
 };
 use chrono::Utc;
 
-use kesh_db::backup::InstallationExport;
+use kesh_db::backup::{InstallationExport, Inventaire};
 use kesh_db::entities::AUDIT_ENTITY_ID_NONE;
 use kesh_db::entities::audit_log::NewAuditLogEntry;
 
@@ -80,9 +80,14 @@ pub async fn full_export(
         let temporaire = tempfile::spooled_tempfile_in(seuil, &backup_dir);
         write_keshbackup(&export, &documents, temporaire)
     };
-    let (archive, meta) = build_keshbackup(&state.pool, documents_dir(&state), remplir)
-        .await
-        .map_err(AppError::from)?;
+    let (archive, meta) = build_keshbackup(
+        &state.pool,
+        Inventaire::Binaire,
+        documents_dir(&state),
+        remplir,
+    )
+    .await
+    .map_err(AppError::from)?;
 
     // Audit best-effort (handler-level, pas dans build_keshbackup — réutilisé
     // sans audit par le backup pré-import 17-3c). Un échec d'INSERT n'empêche
@@ -140,7 +145,10 @@ fn corps_de_l_archive(archive: tempfile::SpooledTempFile) -> Result<Body, AppErr
 /// créé** l'est en `0700`, parents compris (`DirBuilder` récursif) ; un dossier
 /// existant (montage de l'hôte) n'est pas modifié. Rend le détail de l'échec
 /// (journal seulement) : l'appelant choisit la variante d'erreur.
-async fn ensure_backup_dir(dir: &str) -> Result<(), String> {
+///
+/// `pub(crate)` depuis la story v0174-mise-a-jour (#847) : la sauvegarde avant
+/// mise à jour crée par elle son sous-dossier `pre-upgrade/` (DRY).
+pub(crate) async fn ensure_backup_dir(dir: &str) -> Result<(), String> {
     let mut builder = tokio::fs::DirBuilder::new();
     builder.recursive(true);
     #[cfg(unix)]
@@ -186,7 +194,10 @@ async fn ensure_backup_dir(dir: &str) -> Result<(), String> {
 /// l'audit `admin.full_import`) : une ligne restaurée porte l'échéance
 /// d'inactivité de l'export, et son cookie se renouvellerait sinon. Le réglage
 /// de la durée d'inactivité (`_kesh_installation_settings`, table système)
-/// n'est pas restauré.
+/// n'est pas restauré. Depuis la 0.17.4 (#890), les lignes d'une sauvegarde
+/// antérieure qui portent un jeton **clair** sont d'abord effacées, dans la
+/// même transaction (`delete_clear_tokens_in_tx`) : seules des empreintes
+/// restent, toutes révoquées.
 pub async fn full_import(
     State(state): State<AppState>,
     Extension(current_user): Extension<CurrentUser>,
@@ -492,6 +503,17 @@ async fn run_backup_and_restore(
     //    ultérieur annule aussi la révocation (les sessions de la destination
     //    restent alors actives). Motif `password_change` : la contrainte
     //    `chk_refresh_tokens_revoked_reason` n'en admet que cinq.
+    //
+    //    Story v0174-session-1 (0.17.4, #890, C-v0174s-6) — juste avant, les
+    //    lignes qui ne portent pas une empreinte (jetons clairs d'une sauvegarde
+    //    d'avant la 0.17.4) sont **effacées**, dans la même transaction : une
+    //    sauvegarde 0.17.3 n'y replante aucun jeton clair, et un refus ultérieur
+    //    annule aussi cet effacement.
+    kesh_db::repositories::refresh_tokens::delete_clear_tokens_in_tx(&mut tx)
+        .await
+        .map_err(|e| {
+            AppError::AdminFullImportFailed(format!("effacement des jetons clairs : {e}"))
+        })?;
     kesh_db::repositories::refresh_tokens::revoke_all_in_tx(&mut tx, "password_change")
         .await
         .map_err(|e| AppError::AdminFullImportFailed(format!("révocation des sessions : {e}")))?;
@@ -707,9 +729,14 @@ async fn write_pre_import_backup(state: &AppState) -> Result<bool, AppError> {
             write_keshbackup(&export, &documents, fichier).map(|(_, meta)| meta)
         })
     };
-    let meta = build_keshbackup(&state.pool, documents_dir(state), remplir)
-        .await
-        .map_err(avant_sauvegarde)?;
+    let meta = build_keshbackup(
+        &state.pool,
+        Inventaire::Binaire,
+        documents_dir(state),
+        remplir,
+    )
+    .await
+    .map_err(avant_sauvegarde)?;
     tracing::info!(
         path = %path.display(),
         bytes = meta.byte_size,

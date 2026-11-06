@@ -1932,7 +1932,7 @@ dependencies = [
 
 [[package]]
 name = "kesh-api"
-version = "0.17.3"
+version = "0.17.4"
 dependencies = [
  "argon2",
  "axum",
@@ -1988,7 +1988,7 @@ dependencies = [
 
 [[package]]
 name = "kesh-core"
-version = "0.17.3"
+version = "0.17.4"
 dependencies = [
  "chrono",
  "kesh-import",
@@ -2003,7 +2003,7 @@ dependencies = [
 
 [[package]]
 name = "kesh-db"
-version = "0.17.3"
+version = "0.17.4"
 dependencies = [
  "chrono",
  "dotenvy",
@@ -2018,6 +2018,7 @@ dependencies = [
  "semver",
  "serde",
  "serde_json",
+ "sha2",
  "sqlx",
  "thiserror 2.0.21",
  "tokio",
@@ -2027,7 +2028,7 @@ dependencies = [
 
 [[package]]
 name = "kesh-i18n"
-version = "0.17.3"
+version = "0.17.4"
 dependencies = [
  "chrono",
  "fluent-bundle",
@@ -2042,7 +2043,7 @@ dependencies = [
 
 [[package]]
 name = "kesh-import"
-version = "0.17.3"
+version = "0.17.4"
 dependencies = [
  "chardetng",
  "chrono",
@@ -2059,7 +2060,7 @@ dependencies = [
 
 [[package]]
 name = "kesh-payment"
-version = "0.17.3"
+version = "0.17.4"
 dependencies = [
  "chrono",
  "quick-xml",
@@ -2070,7 +2071,7 @@ dependencies = [
 
 [[package]]
 name = "kesh-qrbill"
-version = "0.17.3"
+version = "0.17.4"
 dependencies = [
  "chrono",
  "kesh-core",
@@ -2086,7 +2087,7 @@ dependencies = [
 
 [[package]]
 name = "kesh-reconciliation"
-version = "0.17.3"
+version = "0.17.4"
 dependencies = [
  "chrono",
  "kesh-db",
@@ -2102,7 +2103,7 @@ dependencies = [
 
 [[package]]
 name = "kesh-report"
-version = "0.17.3"
+version = "0.17.4"
 dependencies = [
  "chrono",
  "criterion",
@@ -2121,7 +2122,7 @@ dependencies = [
 
 [[package]]
 name = "kesh-seed"
-version = "0.17.3"
+version = "0.17.4"
 dependencies = [
  "chrono",
  "dotenvy",

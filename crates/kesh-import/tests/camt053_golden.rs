@@ -19,11 +19,24 @@
 //!   [`inventory_of_kesh_messages_is_closed`] tient cette liste close.
 //!
 //! **Une seule divergence admise** (C-v017-1-11) : `v04_latin1_hors_texte.xml`,
-//! un fichier non UTF-8 dont les octets fautifs sont hors du texte lu. Sous 0.39
+//! un fichier non UTF-8 dont les octets fautifs sont hors du texte que lisait la
+//! 0.17.3 (la lecture corrigée de la 0.17.4 lit son CDATA, #819 ; le verdict ne
+//! change pas, la validation UTF-8 de l'entrée le refuse avant). Sous 0.39
 //! il se lit (référence `v04_latin1_hors_texte.0.39.json`) ; sous toute autre
 //! version, le lecteur valide l'UTF-8 de toute l'entrée et le refuse en
 //! `MalformedXml`. L'exception est **nominative** et **conditionnée par la
 //! version de `quick-xml` lue au `Cargo.lock`**.
+//!
+//! **Deux lectures, comparées toutes deux** (0.17.4, #819, C-v0174c-6).
+//! - La **lecture héritée** (`kesh_import::camt053::parse_legacy_0173`) égale
+//!   **toutes** les références — c'est la preuve qu'elle lit comme la 0.17.3, et
+//!   que la clé de doublon qu'elle recalcule est celle qu'une ligne déjà importée
+//!   porte en base.
+//! - La **lecture corrigée** (`parse_camt053`) égale les mêmes références, sauf
+//!   `v04_characterization`, la seule fixture à entités et CDATA lus, comparée à
+//!   `v04_characterization.0.17.4.json` (écrite à la main : la référence 0.39 à
+//!   trois valeurs près). Qu'elle égale toutes les autres prouve que la lecture
+//!   sans rognage du lecteur ne change rien aux fichiers ordinaires.
 //!
 //! **Régénération** (`KESH_GOLDEN_REGEN=1`) : verrouillée. Elle panique si la
 //! variable `CI` est définie, ou si le `Cargo.lock` ne résout pas `quick-xml` en
@@ -49,6 +62,13 @@ const UTF8_EXCEPTION: &str = "v04_latin1_hors_texte";
 /// Sa référence, produite sous 0.39 et nommée comme telle.
 const UTF8_EXCEPTION_REFERENCE: &str = "v04_latin1_hors_texte.0.39.json";
 
+/// La seule fixture que la lecture corrigée (0.17.4, #819) lit autrement que la
+/// référence 0.39 : ses entités et son CDATA (C-v0174c-6).
+const CORRECTED_EXCEPTION: &str = "v04_characterization";
+/// Sa référence de la lecture corrigée, écrite à la main : la référence 0.39 à
+/// trois valeurs près (fiche v0174-correctifs-1, AC-1.4).
+const CORRECTED_EXCEPTION_REFERENCE: &str = "v04_characterization.0.17.4.json";
+
 /// Nombres minimaux de fixtures attendues : 14 + 5 neuves (Story v017-1) dans
 /// le crate, 4 au frontend. Garde contre un test qui passerait à vide (dossier
 /// déplacé, motif de fichier faux).
@@ -59,13 +79,32 @@ const MIN_FRONTEND_FIXTURES: usize = 4;
 /// comparés entiers ; tout autre `MalformedXml` relaie une erreur de
 /// bibliothèque et se compare au variant seul. Liste close : le garde
 /// [`inventory_of_kesh_messages_is_closed`] compte les sites du source.
-const KESH_MESSAGES: [&str; 5] = [
+const KESH_MESSAGES: [&str; 6] = [
     "élément racine <Document> introuvable",
     "préfixe namespace non lié : ",
     "fin de fichier inattendue, éléments non fermés : ",
     ".CdtDbtInd inattendu : ",
     "nom de tag non UTF-8 : ",
+    "référence d'entité inconnue : ",
 ];
+
+/// Les deux lectures du parseur (C-v0174c-6).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Lecture {
+    /// `parse_camt053`, la lecture de la 0.17.4.
+    Corrigee,
+    /// `parse_legacy_0173`, la lecture de la 0.17.3.
+    Heritee,
+}
+
+impl Lecture {
+    fn parse(self, bytes: &[u8]) -> Result<Vec<ImportedStatement>, CamtError> {
+        match self {
+            Lecture::Corrigee => parse_camt053(bytes),
+            Lecture::Heritee => kesh_import::camt053::parse_legacy_0173(bytes),
+        }
+    }
+}
 
 /// Version de `quick-xml` résolue par le `Cargo.lock` du workspace.
 fn locked_quick_xml_version() -> String {
@@ -187,9 +226,21 @@ fn render(v: &Value) -> String {
     s
 }
 
+/// La lecture héritée égale **toutes** les références 0.39 (C-v0174c-6) : elle
+/// lit comme la 0.17.3. Seule à pouvoir régénérer (verrouillé, sous 0.39).
 #[test]
-fn parser_output_matches_references_produced_under_quick_xml_039() {
-    let regen = regen_mode();
+fn legacy_reading_matches_references_produced_under_quick_xml_039() {
+    compare_with_references(Lecture::Heritee, regen_mode());
+}
+
+/// La lecture corrigée égale les mêmes références, sauf `v04_characterization`,
+/// comparée à sa référence 0.17.4 (C-v0174c-6, #819).
+#[test]
+fn corrected_reading_matches_references_except_the_characterization() {
+    compare_with_references(Lecture::Corrigee, false);
+}
+
+fn compare_with_references(lecture: Lecture, regen: bool) {
     let golden_dir = crate_dir().join(GOLDEN_DIR);
     if regen {
         std::fs::create_dir_all(&golden_dir).expect("création du dossier des références");
@@ -200,11 +251,13 @@ fn parser_output_matches_references_produced_under_quick_xml_039() {
 
     for (stem, path) in inputs() {
         let bytes = std::fs::read(&path).expect("lecture de la fixture");
-        let result = parse_camt053(&bytes);
+        let result = lecture.parse(&bytes);
         let actual = render(&characterize(&result));
 
         let reference_name = if stem == UTF8_EXCEPTION {
             UTF8_EXCEPTION_REFERENCE.to_string()
+        } else if stem == CORRECTED_EXCEPTION && lecture == Lecture::Corrigee {
+            CORRECTED_EXCEPTION_REFERENCE.to_string()
         } else {
             format!("{stem}.json")
         };
@@ -235,7 +288,7 @@ fn parser_output_matches_references_produced_under_quick_xml_039() {
         });
         if expected != actual {
             failures.push(format!(
-                "{stem} : la sortie du parseur diffère de sa référence {reference_name}\n--- attendu\n{expected}--- obtenu\n{actual}"
+                "{stem} ({lecture:?}) : la sortie du parseur diffère de sa référence {reference_name}\n--- attendu\n{expected}--- obtenu\n{actual}"
             ));
         }
         checked += 1;
@@ -264,6 +317,8 @@ fn every_reference_has_an_input() {
         let name = entry.unwrap().file_name().into_string().unwrap();
         let stem = if name == UTF8_EXCEPTION_REFERENCE {
             UTF8_EXCEPTION.to_string()
+        } else if name == CORRECTED_EXCEPTION_REFERENCE {
+            CORRECTED_EXCEPTION.to_string()
         } else {
             name.strip_suffix(".json")
                 .unwrap_or_else(|| panic!("fichier inattendu dans camt053_golden : {name}"))
@@ -302,8 +357,25 @@ fn characterization_fixture_reaches_the_forms_it_freezes() {
         "CRLF intérieur attendu dans details : {:?}",
         txs[1].details
     );
-    // Les sorties fautives des entités et du CDATA (comportement de 0.16, défaut
-    // tracé par #819 ; ne pas corriger ici) sont figées par la référence JSON.
+    // Les entités et le CDATA (#819) : la lecture corrigée les lit en entier —
+    // la lecture héritée, elle, garde la sortie fautive de la 0.17.3, figée par
+    // la référence 0.39.
+    assert_eq!(txs[0].reference.as_deref(), Some("REF & Co <1>"));
+    assert_eq!(txs[0].details, "Versement de Müller à Genève");
+    assert_eq!(
+        txs[1].counterparty_name.as_deref(),
+        Some("Dupont & Fils, établissement Müller")
+    );
+    let legacy =
+        kesh_import::camt053::parse_legacy_0173(&load_crate_fixture("v04_characterization.xml"))
+            .expect("lecture héritée");
+    let old = &legacy[0].transactions;
+    assert_eq!(old[0].reference.as_deref(), Some("1"));
+    assert_eq!(old[0].details, "");
+    assert_eq!(
+        old[1].counterparty_name.as_deref(),
+        Some("tablissement Müller")
+    );
 }
 
 /// Un nom accentué encodé en Latin-1 **dans un texte lu** est refusé, sous les

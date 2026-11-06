@@ -58,6 +58,12 @@ const ALLOWED_REAL_MIGRATOR_FILES: &[&str] = &[
     "crates/kesh-db/tests/client_number_canonical_backfill.rs",
     // Le garde-fou lui-même : il compare les deux chemins, il lui faut le vrai.
     "crates/kesh-db/tests/test_schema_guard.rs",
+    // Story v0174-mise-a-jour (#847) : la sauvegarde avant mise à jour lit une
+    // base arrêtée avant une migration (fenêtre partielle), ou entièrement
+    // migrée par le vrai `MIGRATOR` (le squash ne laisserait qu'une ligne dans
+    // `_sqlx_migrations`) — tests internes et test du binaire.
+    "crates/kesh-api/src/pre_upgrade_backup/tests.rs",
+    "crates/kesh-api/tests/sauvegarde_avant_migration.rs",
 ];
 
 /// Les deux graphies licites du squash, selon le crate du test.

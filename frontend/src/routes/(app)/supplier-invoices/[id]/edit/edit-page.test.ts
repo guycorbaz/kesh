@@ -284,5 +284,40 @@ describe('page d’édition d’un brouillon', () => {
 		expect(codes.some((c) => c.includes('ARCHIVE-DU-BROUILLON'))).toBe(true);
 		expect(codes.some((c) => c.includes('ARCHIVE-AUTRE'))).toBe(false);
 		expect(sel.value).toBe('2');
+		// Story v0174-correctifs-3 (#872, AC-3.11) : l'archivé porte la marque, l'actif non.
+		expect(codes.find((c) => c.includes('ARCHIVE-DU-BROUILLON'))).toContain('(archivé)');
+		expect(codes.find((c) => c.includes('ACTIF'))).not.toContain('(archivé)');
+	});
+
+	// Story v0174-correctifs-3 (#872, AC-3.10) — le projet du brouillon est un enfant archivé
+	// dont la racine est archivée aussi (donc écartée) : il reste affiché, marqué, et
+	// sélectionné ; la racine n'est pas offerte.
+	it('un sous-projet archivé sous une racine archivée reste affiché et sélectionné (MC-872)', async () => {
+		const p = (id: number, code: string, archived: boolean, parentId: number | null) => ({
+			id,
+			parentId,
+			code,
+			name: code,
+			description: null,
+			archived,
+			startDate: null,
+			endDate: null,
+			version: 1,
+			createdAt: '2026-01-01T00:00:00',
+		});
+		vi.mocked(listProjects).mockResolvedValueOnce([
+			p(1, 'R', true, null),
+			p(2, 'R-E', true, 1),
+			p(3, 'A', false, null),
+		]);
+		getMock.mockResolvedValue(draft({ projectId: 2 }));
+		const { findByTestId } = render(Page);
+		const sel = (await findByTestId('supplier-invoice-project')) as HTMLSelectElement;
+		const labels = [...sel.options].map((o) => o.textContent ?? '');
+		const enfant = labels.find((l) => l.includes('R-E'));
+		expect(enfant).toBeDefined();
+		expect(enfant).toContain('(archivé)');
+		expect(labels.some((l) => /^\s*R — R/.test(l))).toBe(false);
+		await waitFor(() => expect(sel.value).toBe('2'));
 	});
 });

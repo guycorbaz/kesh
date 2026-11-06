@@ -26,6 +26,7 @@
 		formatInvoiceTotal,
 	} from '$lib/features/invoices/invoice-helpers';
 	import { createInvoice, getInvoice, updateInvoice, getInvoiceSettings } from '$lib/features/invoices/invoices.api';
+	import { todayLocal } from '$lib/shared/utils/local-date';
 	import { getContact } from '$lib/features/contacts/contacts.api';
 	import { i18nMsg } from '$lib/shared/utils/i18n.svelte';
 	import type { InvoiceSettingsResponse } from '$lib/features/invoices/invoices.types';
@@ -112,10 +113,6 @@
 		return rest;
 	}
 
-	function todayIso(): string {
-		const d = new Date();
-		return d.toISOString().slice(0, 10);
-	}
 
 	function initLines(): LineState[] {
 		if (invoice && invoice.lines.length > 0) {
@@ -152,7 +149,8 @@
 	// svelte-ignore state_referenced_locally
 	const initialInvoice = invoice;
 	let selectedContact = $state<ContactResponse | null>(null);
-	let date = $state<string>(initialInvoice?.date ?? todayIso());
+	// #889 : la date du jour du poste, non celle d'UTC (la veille entre minuit et 1 h).
+	let date = $state<string>(initialInvoice?.date ?? todayLocal());
 	let dueDate = $state<string>(initialInvoice?.dueDate ?? '');
 	let paymentTerms = $state<string>(initialInvoice?.paymentTerms ?? '');
 	// Projet analytique document-level (Epic 19, Story 19-4).

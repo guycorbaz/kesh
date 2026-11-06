@@ -91,17 +91,15 @@ pub async fn update_session_settings(
     // `SELECT … FOR UPDATE`, puis leurs `INSERT` s'attendent l'un l'autre :
     // InnoDB annule la victime en 1213. Rejouée, elle relit la ligne validée
     // par l'autre et rend le conflit optimiste (409), non un 500.
-    let s = kesh_db::retry::retry_on_deadlock(
-        "installation_settings::update_session_idle_minutes",
-        || {
-            installation_settings::update_session_idle_minutes(
-                &state.pool,
-                req.version,
-                current_user.user_id,
-                req.session_idle_minutes,
-            )
-        },
-    )
+    // Nom d'opération = la route (patron de `kesh_db::retry` ; #899, S2-B2).
+    let s = kesh_db::retry::retry_on_deadlock("session_settings::update_session_settings", || {
+        installation_settings::update_session_idle_minutes(
+            &state.pool,
+            req.version,
+            current_user.user_id,
+            req.session_idle_minutes,
+        )
+    })
     .await?;
     Ok(Json(s.into()))
 }

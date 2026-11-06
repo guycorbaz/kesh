@@ -7,6 +7,7 @@
 	import { apiClient, isApiError } from '$lib/shared/utils/api-client';
 	import { isPlausibleEmail } from '$lib/shared/utils/email';
 	import { authState } from '$lib/app/stores/auth.svelte';
+	import { formatSwissDate } from '$lib/features/reports/reports.api';
 	import { toast } from 'svelte-sonner';
 	import { UserPlus, Pencil, KeyRound, UserX } from '@lucide/svelte';
 	import type { Role, UserResponse, UserListResponse } from '$lib/shared/types/user';
@@ -268,14 +269,12 @@
 	}
 
 	// --- Helpers ---
+	// #889 (0.17.4) : `createdAt` est un horodatage UTC sans décalage ; `new Date(iso)` le
+	// lisait comme une heure LOCALE. `formatSwissDate` rend sa date à Zurich ; une date
+	// illisible garde son `—`.
 	function formatDate(iso: string): string {
-		const date = new Date(iso);
-		if (isNaN(date.getTime())) return '—';
-		return date.toLocaleDateString('fr-CH', {
-			day: '2-digit',
-			month: '2-digit',
-			year: 'numeric',
-		});
+		if (isNaN(new Date(iso).getTime())) return '—';
+		return formatSwissDate(iso);
 	}
 
 	function isCurrentUser(user: UserResponse): boolean {

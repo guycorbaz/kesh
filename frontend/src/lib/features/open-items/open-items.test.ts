@@ -17,7 +17,6 @@ import {
 	screenUrl,
 	selectionSum,
 	sideOf,
-	todayLocal,
 } from './open-items';
 import { group, groupLine, refusal } from './open-items.test.fixtures';
 import type { DocumentRef, SelectedLine } from './open-items.types';
@@ -27,13 +26,8 @@ function sel(lineId: number, debit: string, credit: string, inOpenPeriod = true)
 }
 
 describe('AC1 — dates et état d’URL (test 1)', () => {
-	it('todayLocal lit la date LOCALE, jamais l’UTC (mutation : toISOString)', () => {
-		// 23:30 le 31 décembre en heure locale : en UTC+1 c'est déjà… le même jour
-		// local ; la date construite par champs locaux ne dépend pas du fuseau.
-		const d = new Date(2026, 11, 31, 23, 30);
-		expect(todayLocal(d)).toBe('2026-12-31');
-		expect(todayLocal(new Date(2026, 0, 5, 0, 10))).toBe('2026-01-05');
-	});
+	// Le test de `todayLocal` a déménagé avec lui dans `$lib/shared/utils/local-date.test.ts`
+	// (Story v0174-correctifs-3, #889).
 
 	it('isIsoDate refuse les dates impossibles et hors plage du serveur', () => {
 		expect(isIsoDate('2026-02-28')).toBe(true);

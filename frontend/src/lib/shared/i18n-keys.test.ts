@@ -856,7 +856,19 @@ const ATTENDU = {
 	// fin de session pour inactivité). Que des littéraux.
 	// Remédiation de la revue de code P1 de v0172-session (2026-11-04) : **2825 → 2826**
 	// (+1), `login/+page.svelte` 1 → 2 (`login-session-idle-one`, le singulier ; N-B4).
-	sitesTotal: 2826,
+	// v0174-session-2 (0.17.4, #895, 2026-11-05) : **2826 → 2829** (+3), `grep -o 'i18nMsg('`
+	// sur le fichier neuf `lib/shared/components/SessionIdleWarning.svelte` (0 → 3 :
+	// l'annonce, le compte à rebours, le bouton). Que des littéraux.
+	// v0174-correctifs (0.17.4, 2026-11-05) : **2826 → 2829** (+3) — le nombre est celui que
+	// la garde rend au run ; `grep -oE '(i18nMsg|[^a-zA-Z]msg)\('` aux deux bornes
+	// (`7bd4d5c0` → tête, 2845 → 2848, hors tests) ne sert que de contrôle de l'écart.
+	// Fichiers touchés hors tests : `contacts/+page.svelte` (`contacts-country-unknown`,
+	// #817), `SupplierInvoiceForm.svelte` (`supplier-invoices-project-archived-option`, #872),
+	// `supplier-invoice-unvalidate.ts` (`…-period-locked-named`, #869), +1 chacun. Que des
+	// littéraux ; `sitesNonResolus` et `relais` inchangés.
+	// Fusion de la release 0.17.4 (2026-11-06) : les trois stories réunies, **recompté à la
+	// source** par la garde elle-même après la fusion (non additionné) : **2832**.
+	sitesTotal: 2832,
 	sitesNonResolus: 31,
 	relais: 6,
 	// Story 26-1 (#620, AC3-bis) : **10 → 11** — `lib/features/bank-import/

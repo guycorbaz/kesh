@@ -207,7 +207,7 @@
 		</label>
 		<label class="block text-sm">
 			{i18nMsg('supplier-invoices-new-supplier-country', 'Pays')}
-			<input class="mt-1 w-full rounded border px-2 py-1" maxlength="2" bind:value={address.country} />
+			<input class="mt-1 w-full rounded border px-2 py-1" data-testid="supplier-new-country" maxlength="2" bind:value={address.country} />
 		</label>
 	</div>
 

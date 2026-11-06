@@ -176,13 +176,18 @@ pub async fn run_inbox_import(
     // Story v017-5 (#854, AC-6-bis) — la connexion du verrou est FERMÉE à sa
     // restitution, jamais rendue au pool. Quand le client (ou un proxy) abandonne
     // la requête, hyper abandonne ce futur à son prochain `await` : le
-    // `RELEASE_LOCK` du point (2) n'est jamais exécuté, et une connexion rendue
-    // au pool garderait le verrou dans sa session — jusqu'à dix minutes
-    // d'inactivité (`idle_timeout` par défaut de `sqlx`), ou jusqu'à trente
-    // minutes après sa création si elle resservait (`max_lifetime`) ; l'import suivant
-    // répondait 409, ou 200 en reprenant la même session (verrou ré-entrant)
-    // sans la libérer. Fermée, la session s'achève et MariaDB rend le verrou.
-    // Coût : une connexion neuve par import.
+    // `RELEASE_LOCK` du point (2) n'est jamais exécuté. Avant la 0.17.4, une
+    // connexion rendue au pool gardait alors le verrou dans sa session —
+    // jusqu'à dix minutes d'inactivité (`idle_timeout` par défaut de `sqlx`), ou
+    // jusqu'à trente minutes après sa création si elle resservait
+    // (`max_lifetime`) ; l'import suivant répondait 409, ou 200 en reprenant la
+    // même session (verrou ré-entrant) sans la libérer. Depuis la 0.17.4
+    // (#842), le pool de production rend tout verrou au retour d'une connexion
+    // (`kesh_db::pool::avec_remise_a_zero_de_session`) ; la fermeture reste, en
+    // défense en profondeur : la connexion du verrou n'est jamais réutilisée,
+    // quel que soit le pool qu'on lui passe (un pool de test, sans crochet).
+    // Fermée, la session s'achève et MariaDB rend le verrou. Coût : une
+    // connexion neuve par import.
     lock_conn.close_on_drop();
 
     let db_name: Option<String> = sqlx::query_scalar("SELECT DATABASE()")

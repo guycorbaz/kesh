@@ -16,6 +16,7 @@
 	import { formatSwissDate } from '$lib/features/reports/reports.api';
 	import { isApiError } from '$lib/shared/utils/api-client';
 	import { i18nMsg } from '$lib/shared/utils/i18n.svelte';
+	import { todayLocal } from '$lib/shared/utils/local-date';
 
 	const id = Number(page.params.id);
 
@@ -23,8 +24,8 @@
 	let loading = $state(true);
 	let errorMsg = $state('');
 
-	const today = new Date().toISOString().slice(0, 10);
-	let paymentDate = $state(today);
+	// #889 : la date du jour du poste, non celle d'UTC (la veille entre minuit et 1 h).
+	let paymentDate = $state(todayLocal());
 	let acting = $state(false);
 	let actionError = $state('');
 
@@ -107,7 +108,7 @@
 		{#if batch.confirmedAt}
 			<dt class="text-text-muted">{i18nMsg('payment-batches-confirmed-at', 'Confirmé le')}</dt>
 			<dd data-testid="payment-batch-confirmed-at">
-				{formatSwissDate(batch.confirmedAt.slice(0, 10))}
+				{formatSwissDate(batch.confirmedAt)}
 			</dd>
 		{/if}
 	</dl>

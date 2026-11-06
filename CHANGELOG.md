@@ -8,6 +8,58 @@ Le contenu est rédigé en français à destination des **fiduciaires, PME, ind�
 
 ---
 
+## [0.17.4] — 2026-11-06
+
+La 0.17.4 est une version corrective : la session plus sûre, une sauvegarde automatique avant les migrations à venir, et les défauts relevés à l'usage. Elle ne porte **aucune migration** ; seules les sessions ouvertes sont effacées au premier démarrage, si bien que **chaque utilisateur se reconnecte une fois**. **Le retour à la 0.17.3 est possible sans restauration, après avoir vidé la table des sessions** (manuel d'administration, *Passer à la 0.17.4*). La sauvegarde complète d'avant la mise à jour (base, `.keshbackup`, dossier des documents) reste recommandée. Le `.env` ne change pas ; les compose fournis transmettent une variable nouvelle, facultative (`KESH_SKIP_PRE_UPGRADE_BACKUP`).
+
+### Ajouté
+
+- **Un avertissement avant la fermeture pour inactivité** ([#895](https://github.com/guycorbaz/kesh/issues/895)) : une minute avant l'échéance, Kesh affiche un compte à rebours et un bouton **Rester connecté**. Il couvre la lecture d'un PDF dans l'aperçu, où Kesh ne voit pas vos gestes.
+- **Kesh se sauvegarde lui-même avant de mettre la base à jour** ([#847](https://github.com/guycorbaz/kesh/issues/847)) : au démarrage d'une version qui doit migrer la base, une sauvegarde complète — base et pièces — est écrite dans `backup/pre-upgrade/` avant toute migration ; elle se restaure dans la version de départ (manuel d'administration, *Revenir à la version précédente*). Si elle échoue, Kesh ne migre pas et le dit ; pour migrer quand même, en connaissance de cause : `KESH_SKIP_PRE_UPGRADE_BACKUP=<version>` dans le `.env` (les compose de la 0.17.4 la transmettent ; un compose antérieur, non : reprenez-en la ligne). Kesh n'en supprime aucune. La 0.17.4 n'ayant pas de migration, la mise à jour depuis la 0.17.3 n'en écrit pas.
+
+### Sécurité
+
+- **Les jetons de session ne sont plus stockés en clair** ([#890](https://github.com/guycorbaz/kesh/issues/890)) : la base, un dump SQL ou une sauvegarde `.keshbackup` n'en gardent qu'une empreinte, à partir de laquelle Kesh 0.17.4 ne reprend aucune session. *À la mise à jour, chaque utilisateur se reconnecte une fois* ; les jetons d'avant sont effacés au premier démarrage et à l'import d'une sauvegarde antérieure. Aucune migration : revenir à la 0.17.3 reste possible sans la sauvegarde, **à condition de vider d'abord la table des sessions** (`DELETE FROM refresh_tokens`, Kesh arrêté ; commande au manuel d'administration, « Passer à la 0.17.4 ») — tout le monde est déconnecté ; la sauvegarde complète avant la mise à jour reste recommandée. **Le manuel des versions jusqu'à la 0.17.2 annonçait à tort un hachage** : une base, un dump ou une sauvegarde antérieurs à la 0.17.4 contiennent les jetons en clair — gardez-les comme le secret qu'ils sont.
+
+### Corrigé
+
+- **L'import CAMT.053 lit les noms et libellés qui contiennent « & », une lettre codée ou une section CDATA**
+  ([#819](https://github.com/guycorbaz/kesh/issues/819)) : « Dupont & Fils » était lu « Fils », un libellé en CDATA était vide.
+  Les transactions déjà importées ne sont pas relues ; un fichier ou une ligne déjà importés restent reconnus comme doublons
+  (une ligne reprise par un autre fichier l'est par la référence que lisait la version précédente : deux limites rares — une
+  ligne neuve signalée doublon à tort, que l'aperçu montre, ou, si cette relecture échoue, une ligne non reconnue, importée une
+  seconde fois sans signal : vérifier alors les transactions du compte —, [#915](https://github.com/guycorbaz/kesh/issues/915),
+  [#922](https://github.com/guycorbaz/kesh/issues/922)).
+  Une règle d'affectation *Contrepartie exacte* écrite sur un nom tronqué est à corriger. Un fichier qui porte une entité
+  inconnue est désormais refusé.
+- **Le pays d'une adresse est contrôlé sur la liste ISO** ([#817](https://github.com/guycorbaz/kesh/issues/817)) : « SU » ou
+  « XX » sont refusés à la saisie d'un contact ou dans l'assistant, au lieu de faire échouer la QR-facture plus tard. Un
+  contact déjà enregistré avec un tel code se lit et se modifie toujours ; l'écran signale son pays inconnu, et un pays
+  changé doit être valide. Pour l'API : `POST` et `PUT /api/v1/contacts` et l'étape des coordonnées de l'assistant
+  (`POST /api/v1/onboarding/coordinates`) refusent en `400 VALIDATION_ERROR` un pays nouveau ou modifié hors de la liste ISO (il
+  passait), et les réponses de contact portent un champ neuf, `addressCountryKnown`.
+- **Toutes les factures validées sont proposées pour un lot de paiement** ([#888](https://github.com/guycorbaz/kesh/issues/888)),
+  non plus les 200 premières.
+- **La date du jour est celle de votre poste, non plus celle d'UTC** ([#889](https://github.com/guycorbaz/kesh/issues/889)) :
+  entre minuit et 1 h (2 h en été), la facture, le règlement, le solde, le rappel manuel, l'avoir, le lot de paiement, le
+  paiement d'une facture fournisseur, l'expiration minimale d'une clé d'API et les noms des fichiers exportés proposaient la
+  veille. L'envoi d'un document, le gel d'un PDF, un rappel, la confirmation d'un lot, la date d'import d'un document et la
+  création d'un utilisateur s'affichent à leur date suisse.
+- **Le refus de repasser une facture fournisseur en brouillon sous le verrou de période dit jusqu'à quand**
+  ([#869](https://github.com/guycorbaz/kesh/issues/869)). Pour l'API : `400 PERIOD_LOCKED` porte `details.lockedThrough` et
+  `details.attempted` (`docs/api-external.md`).
+- **Un brouillon de facture fournisseur montre son projet archivé** ([#872](https://github.com/guycorbaz/kesh/issues/872)),
+  marqué « (archivé) », même quand son projet parent l'est aussi.
+- **Une requête interrompue ne bloque plus un compte bancaire** ([#842](https://github.com/guycorbaz/kesh/issues/842)) : le
+  verrou du compte, et l'état des clés étrangères d'une restauration interrompue
+  ([#540](https://github.com/guycorbaz/kesh/issues/540)), sont rendus au retour de la connexion au pool, au lieu d'y rester
+  jusqu'à une demi-heure.
+- Une panne de **lecture du réglage d'inactivité** ne fait plus perdre la session au renouvellement (le réglage est lu avant que le jeton ne soit remplacé), ne laisse plus un mot de passe changé sans session neuve, ni l'assistant d'installation en erreur après avoir créé l'Administrateur (refs [#898](https://github.com/guycorbaz/kesh/issues/898)).
+- Après un battement d'activité en échec, l'activité est de nouveau transmise au serveur ; ressortir du document affiché par le même point de l'écran compte comme activité (refs [#898](https://github.com/guycorbaz/kesh/issues/898)).
+- La 0.17.1 est datée du 2026-11-04, jour de sa publication ([#901](https://github.com/guycorbaz/kesh/issues/901)).
+
+---
+
 ## [0.17.3] — 2026-11-05
 
 ⚠️ **La 0.17.3 porte une migration** (une table système, `_kesh_installation_settings`, pour le réglage de la durée d'inactivité) : elle ne modifie aucune donnée existante et `kesh_version_min_required` reste à 0.17.0, mais une 0.17.2 ou une 0.17.1 refuse ensuite de démarrer sur la base. **Le retour à une version antérieure (0.17.2 ou 0.17.1) passe par la sauvegarde complète d'avant la mise à jour** — la base, une sauvegarde `.keshbackup` et le dossier des documents. Une sauvegarde `.keshbackup` prise en 0.17.2 s'importe dans la 0.17.3 (mêmes tables applicatives).
@@ -57,7 +109,7 @@ Ce qui change à l'écran : le bouton *Repasser en brouillon* (l'ancien *Dévali
 
 ---
 
-## [0.17.1] — 2026-11-03
+## [0.17.1] — 2026-11-04
 
 La 0.17.1 est une version corrective : **aucune migration**, aucune donnée réécrite, **le retour à la 0.17.0 est possible sans restauration**. La sauvegarde complète d'avant la mise à jour (base, `.keshbackup`, dossier des documents) reste recommandée. Le compose et le `.env` ne changent pas. Le détail est au manuel d'administration, *Passer à la 0.17.1*.
 

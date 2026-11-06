@@ -267,6 +267,15 @@ pub struct Config {
     /// l'exploitant.
     pub admin_backup_dir: String,
 
+    /// Story v0174-mise-a-jour (#847) — échappatoire de la **sauvegarde avant
+    /// mise à jour** (`crate::pre_upgrade_backup`). Lu depuis
+    /// `KESH_SKIP_PRE_UPGRADE_BACKUP` ; vide ou absente → `None` (la sauvegarde
+    /// se fait). Elle ne vaut que si sa valeur est **exactement** la version du
+    /// binaire (`CARGO_PKG_VERSION`) : oubliée dans le `.env`, elle s'éteint
+    /// d'elle-même à la mise à jour suivante ; une autre valeur est ignorée, et
+    /// le journal le dit.
+    pub skip_pre_upgrade_backup: Option<String>,
+
     /// Story 12-5b (#194) — répertoire de stockage des **justificatifs**
     /// (copies des fichiers de factures importées, `{sha256hex}.{ext}`). Hors DB.
     /// Lu depuis `KESH_DOCUMENTS_DIR` ; défaut `/data/documents` (PAS `/tmp` :
@@ -438,11 +447,9 @@ impl Config {
     /// tests, la panique est le bon signal pour un setup de test
     /// incorrect.
     ///
-    /// `_refresh_inactivity_ignored` : **ignoré depuis la 0.17.3** (Story
-    /// v0172-session, C-v0172s-31) — la durée d'inactivité de la session vit
-    /// en base (`_kesh_installation_settings`), réglée dans l'interface. Le
-    /// paramètre est gardé pour ne pas toucher les quelque 78 fichiers de tests
-    /// qui l'appellent ; son retrait est un lot mécanique à part.
+    /// La durée d'inactivité de la session n'est pas un paramètre : elle vit en
+    /// base (`_kesh_installation_settings`), réglée dans l'interface (0.17.3,
+    /// C-v0172s-31 ; paramètre ignoré retiré à la 0.17.4, #896).
     #[doc(hidden)]
     #[allow(clippy::too_many_arguments)]
     pub fn from_fields_for_test(
@@ -452,7 +459,6 @@ impl Config {
         jwt_secret: String,
         jwt_expiry: TimeDelta,
         refresh_token_max_lifetime: TimeDelta,
-        _refresh_inactivity_ignored: TimeDelta,
         rate_limit_window: TimeDelta,
         rate_limit_max_attempts: u32,
         rate_limit_block_duration: TimeDelta,
@@ -518,6 +524,7 @@ impl Config {
             admin_export_inmem_mib: 50,
             admin_import_max_mib: DEFAULT_ADMIN_IMPORT_MAX_MIB,
             admin_backup_dir: "/tmp".to_string(),
+            skip_pre_upgrade_backup: None,
             documents_dir: "/tmp/kesh-documents-test".to_string(),
             inbox_dir: "/tmp/kesh-inbox-test".to_string(),
             inbox_max_file_bytes: 25 * 1024 * 1024,
@@ -954,6 +961,12 @@ impl Config {
         let admin_backup_dir = env_nonempty("KESH_ADMIN_BACKUP_DIR")
             .unwrap_or_else(|| DEFAULT_ADMIN_BACKUP_DIR.to_string());
 
+        // Story v0174-mise-a-jour (#847) — échappatoire de la sauvegarde avant
+        // mise à jour : sans défaut, vide = absente (les compose transmettent
+        // `${KESH_SKIP_PRE_UPGRADE_BACKUP:-}`). Sa valeur n'est comparée qu'au
+        // démarrage, par `pre_upgrade_backup` (version exacte du binaire).
+        let skip_pre_upgrade_backup = env_nonempty("KESH_SKIP_PRE_UPGRADE_BACKUP");
+
         // Story 12-5b (#194) — KESH_DOCUMENTS_DIR : stockage des justificatifs
         // importés. Défaut `/data/documents` (volume persistant Docker, PAS /tmp).
         let documents_dir =
@@ -1176,6 +1189,7 @@ impl Config {
             admin_export_inmem_mib,
             admin_import_max_mib,
             admin_backup_dir,
+            skip_pre_upgrade_backup,
             documents_dir,
             inbox_dir,
             inbox_max_file_bytes,
@@ -1624,6 +1638,7 @@ pub(crate) mod test_helpers {
             admin_export_inmem_mib: 50,
             admin_import_max_mib: DEFAULT_ADMIN_IMPORT_MAX_MIB,
             admin_backup_dir: "/tmp".to_string(),
+            skip_pre_upgrade_backup: None,
             documents_dir: "/tmp/kesh-documents-test".to_string(),
             inbox_dir: "/tmp/kesh-inbox-test".to_string(),
             inbox_max_file_bytes: 25 * 1024 * 1024,
@@ -1659,11 +1674,43 @@ mod tests {
     /// tests se marchent dessus. On accepte un peu de poison safety :
     /// si un test panique en tenant le lock, on unwrap le poison et on
     /// continue (les tests suivants re-init l'état).
-    pub(super) fn env_lock() -> MutexGuard<'static, ()> {
+    ///
+    /// Le garde rend aussi `DATABASE_URL` à sa valeur d'avant quand il est
+    /// relâché : `reset_env()` l'efface, et sous `cargo test` (un seul
+    /// processus, contrairement à nextest) les tests `#[sqlx::test]` du même
+    /// binaire qui tournent ensuite ne trouveraient plus la base — c'est ce
+    /// que la CI de la 0.17.4 a constaté sur `pre_upgrade_backup::tests`.
+    pub(super) fn env_lock() -> EnvGuard {
         static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
-        LOCK.get_or_init(|| Mutex::new(()))
+        let lock = LOCK
+            .get_or_init(|| Mutex::new(()))
             .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        EnvGuard {
+            database_url: env::var_os("DATABASE_URL"),
+            _lock: lock,
+        }
+    }
+
+    /// Garde de [`env_lock`] : sérialise les tests d'environnement et
+    /// restitue `DATABASE_URL` au relâchement (avant le verrou, champ déclaré
+    /// en dernier).
+    pub(super) struct EnvGuard {
+        database_url: Option<std::ffi::OsString>,
+        _lock: MutexGuard<'static, ()>,
+    }
+
+    impl Drop for EnvGuard {
+        fn drop(&mut self) {
+            // SAFETY: le verrou est encore tenu (le champ `_lock` est relâché
+            // après ce corps).
+            unsafe {
+                match &self.database_url {
+                    Some(v) => env::set_var("DATABASE_URL", v),
+                    None => env::remove_var("DATABASE_URL"),
+                }
+            }
+        }
     }
 
     /// Reset des variables d'environnement communes entre tests.
@@ -2952,7 +2999,6 @@ mod tests {
             TimeDelta::minutes(15),
             TimeDelta::days(30),
             TimeDelta::minutes(15),
-            TimeDelta::minutes(15),
             100,
             TimeDelta::minutes(30),
             12,
@@ -2970,7 +3016,6 @@ mod tests {
             TEST_JWT_SECRET.to_string(),
             TimeDelta::minutes(15),
             TimeDelta::days(30),
-            TimeDelta::minutes(15),
             TimeDelta::minutes(15),
             100,
             TimeDelta::minutes(30),

@@ -129,7 +129,11 @@ const VIDE_SIGNIFIANT: &[&str] = &["KESH_LOG_FILE_PATH"];
 /// forme `${NOM}` ferait avertir Compose à chaque `up` sur le flux recommandé
 /// (choix C76, C79). Contrôle de la raison : la variable est lue, et chacune de
 /// ses lignes d'affectation dans `.env.example` est commentée.
-const SANS_DEFAUT: &[&str] = &["KESH_ADMIN_PASSWORD"];
+///
+/// `KESH_SKIP_PRE_UPGRADE_BACKUP` (story v0174-mise-a-jour, #847) :
+/// l'échappatoire de la sauvegarde avant mise à jour — vide = absente = la
+/// sauvegarde se fait ; un défaut la désactiverait pour toutes les mises à jour.
+const SANS_DEFAUT: &[&str] = &["KESH_ADMIN_PASSWORD", "KESH_SKIP_PRE_UPGRADE_BACKUP"];
 
 /// Les deux compose distribués.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -1205,12 +1209,13 @@ const EMPLACEMENTS_AUTORISES: &[Autorisation] = &[
     ),
     // Ses appels littéraux. 31 → 30 : Story v0172-session (0.17.3,
     // C-v0172s-31) — l'ancienne variable de durée d'inactivité n'est plus lue.
+    // 30 → 31 : story v0174-mise-a-jour (#847), KESH_SKIP_PRE_UPGRADE_BACKUP.
     autorise(
         CONFIG,
         "Config::from_env",
         "env_nonempty",
         Forme::Litteral,
-        30,
+        31,
     ),
     autorise(
         CONFIG,

@@ -33,6 +33,7 @@ vi.mock('$lib/shared/utils/notify', () => ({
 
 import JournalEntryForm from './JournalEntryForm.svelte';
 import type { AccountResponse } from '$lib/features/accounts/accounts.types';
+import { pinClock } from '$lib/shared/utils/pin-clock.test-helper';
 
 function account(id: number, number: string): AccountResponse {
 	return {
@@ -106,5 +107,23 @@ describe('JournalEntryForm — mode création', () => {
 		expect(toastError).toHaveBeenCalledWith(serveur);
 		expect(onSuccess).not.toHaveBeenCalled();
 		expect(onStale).not.toHaveBeenCalled();
+	});
+});
+
+// Story v0174-correctifs-3 (#889, AC-3.6) — la date par défaut d'une écriture est celle du
+// poste (déjà locale avant la 0.17.4 : ce test fige le remplacement par `todayLocal`).
+describe('JournalEntryForm — date par défaut locale (#889)', () => {
+	pinClock();
+	it('à 00 h 30 le 5 novembre à Zurich, l’écriture est datée du 5', () => {
+		render(JournalEntryForm, {
+			props: {
+				accounts: [account(1, '1000')],
+				accountsLoadError: false,
+				onSuccess: vi.fn(),
+				onCancel: vi.fn(),
+				onStale: vi.fn()
+			}
+		});
+		expect((document.getElementById('entry-date') as HTMLInputElement).value).toBe('2026-11-05');
 	});
 });

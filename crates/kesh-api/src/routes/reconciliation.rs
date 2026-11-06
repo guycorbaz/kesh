@@ -1807,7 +1807,8 @@ async fn accept_once(
             bank_account_id, ..
         }) => {
             // HP4-1 Pass 4 + HP5-1 Pass 5 : drop tx_outer pour rollback +
-            // retour au pool. Lock advisory libéré à fin de session.
+            // retour au pool. Lock advisory rendu au retour de la connexion
+            // au pool (`kesh_db::pool::avec_remise_a_zero_de_session`, #842).
             drop(tx_outer);
             Err(AppError::ReconciliationLockReleaseFailed { bank_account_id })
         }

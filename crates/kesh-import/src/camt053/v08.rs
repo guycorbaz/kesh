@@ -19,8 +19,13 @@ use crate::types::ImportedStatement;
 
 /// Continue le parsing d'un document v08 à partir d'un reader déjà
 /// positionné après le tag `<Document>` ouvrant.
+///
+/// Le texte d'un élément se lit en entier, entités et CDATA compris (#819).
+/// Le lecteur fourni ne doit **pas** rogner le texte (`trim_text(false)`, le
+/// défaut de quick-xml) : rogné morceau par morceau, « Dupont &amp; Fils » se
+/// lirait « Dupont&Fils ».
 pub fn parse<R: std::io::BufRead>(
     reader: &mut NsReader<R>,
 ) -> Result<Vec<ImportedStatement>, CamtError> {
-    super::parse_with_version(reader, "001.08")
+    super::parse_with_version(reader, "001.08", super::TextMode::Joined)
 }

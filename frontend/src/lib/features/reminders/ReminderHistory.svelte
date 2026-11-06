@@ -54,8 +54,9 @@
 						class="border-b border-border {cancelled ? 'text-text-muted line-through' : ''}"
 						data-testid="reminder-history-row"
 					>
-						<!-- Story v0171 (#879) : dates en forme suisse. -->
-						<td class="py-2 pr-2">{formatSwissDate(r.sentAt.slice(0, 10))}</td>
+						<!-- Story v0171 (#879) : dates en forme suisse ; 0.17.4 (#889) : des instants
+						     UTC, lus entiers — leur date suisse. -->
+						<td class="py-2 pr-2">{formatSwissDate(r.sentAt)}</td>
 						<td class="py-2 pr-2">
 							{i18nMsg('reminders-level-name', 'Rappel { $level }', { level: r.levelNumber })}
 						</td>
@@ -73,7 +74,7 @@
 								data-testid="reminder-history-cancelled-at"
 							>
 								{i18nMsg('reminders-history-cancelled-at', 'Annulé le { $date }', {
-									date: formatSwissDate(r.cancelledAt!.slice(0, 10)),
+									date: formatSwissDate(r.cancelledAt!),
 								})}
 							</td>
 						</tr>

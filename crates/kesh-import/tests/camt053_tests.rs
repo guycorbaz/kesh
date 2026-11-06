@@ -369,3 +369,233 @@ fn ntry_currency_is_that_of_its_amount_not_of_amtdtls() {
     assert_eq!(tx.currency, "CHF");
     assert_eq!(tx.amount, dec!(-30.00));
 }
+
+// ── Story v0174-correctifs-1 (#819) : le texte d'un élément se lit EN ENTIER,
+//    entités (`&amp;`, `&#xE9;`) et sections CDATA comprises. Écrits et vus
+//    ROUGES sur le code d'avant (Dev Agent Record de la fiche). XML inventé.
+
+/// Un relevé v04 d'une seule entrée (avec un `TxDtls`) dont on fournit les
+/// textes bruts — tels qu'écrits dans le XML, entités et CDATA compris.
+/// IBAN, noms et montants inventés.
+fn one_entry(ntry_ref: &str, addtl: &str, name: &str, ustrd: &str) -> Vec<u8> {
+    format!(
+        r#"<?xml version="1.0" encoding="UTF-8"?>
+<Document xmlns="urn:iso:std:iso:20022:tech:xsd:camt.053.001.04">
+  <BkToCstmrStmt>
+    <Stmt>
+      <Id>STMT-819</Id>
+      <FrToDt>
+        <FrDtTm>2026-10-01T00:00:00</FrDtTm>
+        <ToDtTm>2026-10-31T23:59:59</ToDtTm>
+      </FrToDt>
+      <Acct>
+        <Id>
+          <IBAN>CH9300762011623852957</IBAN>
+        </Id>
+        <Ccy>CHF</Ccy>
+      </Acct>
+      <Ntry>
+        <Amt Ccy="CHF">10.00</Amt>
+        <CdtDbtInd>CRDT</CdtDbtInd>
+        <BookgDt>
+          <Dt>2026-10-10</Dt>
+        </BookgDt>
+        <NtryRef>{ntry_ref}</NtryRef>
+        <AcctSvcrRef>TX-819</AcctSvcrRef>
+        <NtryDtls>
+          <TxDtls>
+            <RltdPties>
+              <Dbtr>
+                <Nm>{name}</Nm>
+              </Dbtr>
+            </RltdPties>
+            <RmtInf>
+              <Ustrd>{ustrd}</Ustrd>
+            </RmtInf>
+          </TxDtls>
+        </NtryDtls>
+        <AddtlNtryInf>{addtl}</AddtlNtryInf>
+      </Ntry>
+    </Stmt>
+  </BkToCstmrStmt>
+</Document>
+"#
+    )
+    .into_bytes()
+}
+
+/// Un relevé v04 d'une entrée sans `TxDtls` : `AddtlNtryInf` y devient `details`.
+fn one_entry_without_txdtls(ntry_ref: &str, addtl: &str) -> Vec<u8> {
+    let xml = String::from_utf8(one_entry(ntry_ref, addtl, "X", "X")).unwrap();
+    let start = xml.find("<NtryDtls>").unwrap();
+    let end = xml.find("</NtryDtls>").unwrap() + "</NtryDtls>".len();
+    format!("{}{}", &xml[..start], &xml[end..]).into_bytes()
+}
+
+fn only_tx(xml: &[u8]) -> kesh_import::ImportedTransaction {
+    let mut stmts = parse_camt053(xml).expect("parse OK");
+    assert_eq!(stmts.len(), 1);
+    let mut txs = std::mem::take(&mut stmts[0].transactions);
+    assert_eq!(txs.len(), 1);
+    txs.remove(0)
+}
+
+fn name_of(nm: &str) -> Option<String> {
+    only_tx(&one_entry("R", "I", nm, "U")).counterparty_name
+}
+
+/// AC-1.1 — les entités prédéfinies se résolvent dans le nom.
+#[test]
+fn entities_in_name_are_resolved_819() {
+    assert_eq!(
+        name_of("Dupont &amp; Fils").as_deref(),
+        Some("Dupont & Fils")
+    );
+    assert_eq!(name_of("a &lt; b &gt; c").as_deref(), Some("a < b > c"));
+    assert_eq!(
+        name_of("&quot;Atelier&quot; l&apos;Ours").as_deref(),
+        Some("\"Atelier\" l'Ours")
+    );
+}
+
+/// AC-1.1 — les références de caractère, hexadécimale et décimale.
+#[test]
+fn char_refs_in_name_are_resolved_819() {
+    assert_eq!(
+        name_of("&#xE9;tablissement").as_deref(),
+        Some("établissement")
+    );
+    assert_eq!(
+        name_of("&#233;tablissement").as_deref(),
+        Some("établissement")
+    );
+}
+
+/// AC-1.1 — les blancs AUTOUR d'une entité sont gardés ; seuls les blancs
+/// extérieurs du texte tombent (C-v0174c-21).
+#[test]
+fn spaces_around_an_entity_are_kept_819() {
+    assert_eq!(name_of("A &amp; B").as_deref(), Some("A & B"));
+    assert_eq!(name_of("A&amp;B").as_deref(), Some("A&B"));
+    assert_eq!(name_of("  A &amp; B  ").as_deref(), Some("A & B"));
+}
+
+/// AC-1.1 — une entité en tête et en queue du texte.
+#[test]
+fn entity_at_start_and_end_819() {
+    assert_eq!(name_of("&amp;Co").as_deref(), Some("&Co"));
+    assert_eq!(name_of("Co&amp;").as_deref(), Some("Co&"));
+}
+
+/// AC-1.1 — une référence d'entrée (`NtryRef`) entière, et un `Ustrd` en
+/// UNE partie.
+#[test]
+fn entities_in_reference_and_ustrd_819() {
+    let tx = only_tx(&one_entry_without_txdtls("REF &amp; Co &lt;1&gt;", "I"));
+    assert_eq!(tx.reference.as_deref(), Some("REF & Co <1>"));
+    let tx = only_tx(&one_entry("R", "I", "N", "A &amp; B"));
+    assert_eq!(tx.details, "A & B", "une seule partie, non « A B »");
+}
+
+/// AC-1.2 — le CDATA se lit.
+#[test]
+fn cdata_is_read_819() {
+    let tx = only_tx(&one_entry_without_txdtls(
+        "R",
+        "<![CDATA[Versement de Müller à Genève]]>",
+    ));
+    assert_eq!(tx.details, "Versement de Müller à Genève");
+    let tx = only_tx(&one_entry(
+        "R",
+        "I",
+        "N",
+        "Facture <![CDATA[n° 12]]> octobre",
+    ));
+    assert_eq!(tx.details, "Facture n° 12 octobre");
+    assert_eq!(name_of("<![CDATA[ Dupont ]]>").as_deref(), Some("Dupont"));
+    let tx = only_tx(&one_entry("R", "I", "N", "<![CDATA[ligne 1\r\nligne 2]]>"));
+    assert_eq!(tx.details, "ligne 1\r\nligne 2", "CRLF du CDATA gardé");
+}
+
+/// AC-1.3 — un texte coupé par un commentaire se lit comme en 0.17.3 : le
+/// dernier fragment gagne (C-v0174c-3, écartée b). Vert avant : il fige.
+#[test]
+fn text_split_by_a_comment_reads_as_in_0173_819() {
+    assert_eq!(name_of("A<!-- x -->B").as_deref(), Some("B"));
+}
+
+/// AC-1.3 — une entité inconnue refuse le fichier, au message de Kesh.
+#[test]
+fn unknown_entity_is_malformed_819() {
+    let r = parse_camt053(&one_entry("R", "I", "Dupont &foo; Fils", "U"));
+    match r {
+        Err(CamtError::MalformedXml(m)) => assert!(
+            m.contains("référence d'entité inconnue : foo"),
+            "message de Kesh attendu : {m}"
+        ),
+        other => panic!("Err(MalformedXml) attendu, obtenu {other:?}"),
+    }
+}
+
+/// AC-1.3 — un fichier ordinaire garde montants et dates (témoin).
+#[test]
+fn ordinary_amounts_and_dates_unchanged_819() {
+    let tx = only_tx(&one_entry("R", "I", "N", "U"));
+    assert_eq!(tx.amount, dec!(10.00));
+    assert_eq!(tx.booking_date.to_string(), "2026-10-10");
+    assert_eq!(tx.reference.as_deref(), Some("R"));
+    assert_eq!(tx.details, "U");
+}
+
+/// Revue de code P1 (B-1 = E-4 = A-1) — la lecture corrigée d'un relevé
+/// **camt.053.001.08** (`v08::parse`) : entité, référence de caractère, CDATA
+/// (les espaces autour d'une entité sont couverts en v04,
+/// `spaces_around_an_entity_are_kept_819`). Tue la mutation MA-819-8 (`v08.rs`
+/// en lecture héritée).
+#[test]
+fn v08_corrected_reading_resolves_entities_and_cdata_819() {
+    let xml = r#"<?xml version="1.0" encoding="UTF-8"?>
+<Document xmlns="urn:iso:std:iso:20022:tech:xsd:camt.053.001.08">
+  <BkToCstmrStmt>
+    <Stmt>
+      <Id>STMT-V08-819</Id>
+      <FrToDt><FrDtTm>2026-10-01T00:00:00</FrDtTm><ToDtTm>2026-10-31T23:59:59</ToDtTm></FrToDt>
+      <Acct><Id><IBAN>CH5604835012345678009</IBAN></Id><Ccy>CHF</Ccy></Acct>
+      <Ntry>
+        <Amt Ccy="CHF">20.00</Amt>
+        <CdtDbtInd>CRDT</CdtDbtInd>
+        <BookgDt><Dt>2026-10-12</Dt></BookgDt>
+        <NtryRef>REF &amp; Co &lt;8&gt;</NtryRef>
+        <NtryDtls>
+          <TxDtls>
+            <RltdPties><Dbtr><Pty><Nm>Dupont &amp; Fils, &#xE9;tablissement</Nm></Pty></Dbtr></RltdPties>
+            <RmtInf><Ustrd>Facture <![CDATA[n° 8]]> octobre</Ustrd></RmtInf>
+          </TxDtls>
+        </NtryDtls>
+      </Ntry>
+    </Stmt>
+  </BkToCstmrStmt>
+</Document>
+"#;
+    let tx = only_tx(xml.as_bytes());
+    assert_eq!(
+        tx.counterparty_name.as_deref(),
+        Some("Dupont & Fils, établissement")
+    );
+    assert_eq!(tx.reference.as_deref(), Some("REF & Co <8>"));
+    assert_eq!(tx.details, "Facture n° 8 octobre");
+}
+
+/// Revue de code P1 (B-3) — une référence de caractère invalide (`&#0;`, un
+/// demi-codet `&#xD800;`) refuse le fichier en `MalformedXml` (relais de
+/// quick-xml), au lieu d'être ignorée.
+#[test]
+fn invalid_char_refs_are_malformed_819() {
+    for r in ["&#0;", "&#xD800;"] {
+        let res = parse_camt053(&one_entry("R", "I", &format!("Dupont {r} Fils"), "U"));
+        assert!(
+            matches!(res, Err(CamtError::MalformedXml(_))),
+            "{r} : Err(MalformedXml) attendu, obtenu {res:?}"
+        );
+    }
+}

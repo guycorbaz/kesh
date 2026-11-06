@@ -917,8 +917,9 @@ pub enum AppError {
     },
 
     /// `RELEASE_LOCK` failure (HP3-1 Pass 3 + HP4-1/HP5-1 Pass 4-5
-    /// caller pattern correction) → `500`. Le lock advisory restera
-    /// tenu jusqu'à fin de session MariaDB (cf. L22).
+    /// caller pattern correction) → `500`. Le lock advisory est rendu au
+    /// retour de la connexion au pool (`kesh_db::pool::avec_remise_a_zero_de_session`,
+    /// 0.17.4, #842).
     #[error("Échec de libération du verrou de réconciliation")]
     ReconciliationLockReleaseFailed { bank_account_id: i64 },
 
@@ -4256,11 +4257,21 @@ impl IntoResponse for AppError {
                     let mut args = FluentArgs::new();
                     args.set("lockedThrough", locked_through.to_string());
                     args.set("attempted", attempted.to_string());
-                    build_response(
-                        StatusCode::BAD_REQUEST,
-                        "PERIOD_LOCKED",
-                        &t_args("journal-entries-period-locked", &fallback, &args),
-                    )
+                    // #869 (0.17.4) — les bornes du verrou en `details`, pour que
+                    // l'écran les dise ; le message ne change pas. Les mêmes noms
+                    // que le `failed[]` de l'acceptation par lot
+                    // (`period_locked_failed_proposal`).
+                    let body = serde_json::json!({
+                        "error": {
+                            "code": "PERIOD_LOCKED",
+                            "message": t_args("journal-entries-period-locked", &fallback, &args),
+                            "details": {
+                                "lockedThrough": locked_through.to_string(),
+                                "attempted": attempted.to_string(),
+                            },
+                        }
+                    });
+                    (StatusCode::BAD_REQUEST, Json(body)).into_response()
                 }
                 DbError::IllegalStateTransition(m) => {
                     tracing::warn!("illegal state: {m}");

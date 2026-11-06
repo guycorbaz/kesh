@@ -28,6 +28,7 @@
 		writeOffNatureLabel,
 	} from './write-off';
 	import type { InvoiceSettingsResponse, WriteOffNature } from './invoices.types';
+	import { todayLocal } from '$lib/shared/utils/local-date';
 
 	export type WriteOffPayload = { nature: WriteOffNature; settledOn: string };
 
@@ -60,18 +61,15 @@
 		onConfirm,
 	}: Props = $props();
 
-	function todayIso(): string {
-		return new Date().toISOString().slice(0, 10);
-	}
-
 	let nature = $state<WriteOffNature | null>(null);
-	let settledOn = $state(todayIso());
+	// #889 : la date du jour du poste, non celle d'UTC (la veille entre minuit et 1 h).
+	let settledOn = $state(todayLocal());
 
 	// La saisie seule est réinitialisée à l'ouverture.
 	$effect(() => {
 		if (open) {
 			nature = null;
-			settledOn = todayIso();
+			settledOn = todayLocal();
 		}
 	});
 

@@ -14,6 +14,7 @@ import SettleInvoiceDialog from './SettleInvoiceDialog.svelte';
 import SettleInvoiceDialogHost from './SettleInvoiceDialogHost.test.svelte';
 import type { BankAccountSummary } from '$lib/features/bank-accounts/bank-accounts.api';
 import type { AccountResponse } from '$lib/features/accounts/accounts.types';
+import { pinClock } from '$lib/shared/utils/pin-clock.test-helper';
 
 const banque = {
 	id: 1,
@@ -253,5 +254,19 @@ describe('SettleInvoiceDialog — la contrepartie n’est pas le compte débiteu
 			expect((getByTestId('settle-bank') as HTMLSelectElement).value).toBe('2'),
 		);
 		expect(await findByText(refus)).toBeTruthy();
+	});
+});
+
+// Story v0174-correctifs-3 (#889, AC-3.6, site 2) — la date par défaut d'un règlement est
+// celle du poste : à 00 h 30 le 5 novembre à Zurich, le 5.
+describe('SettleInvoiceDialog — date par défaut locale (#889)', () => {
+	pinClock();
+	it('le règlement est daté du 5 novembre', async () => {
+		ouvrir('10.00');
+		await waitFor(() =>
+			expect((document.getElementById('settle-date') as HTMLInputElement).value).toBe(
+				'2026-11-05',
+			),
+		);
 	});
 });

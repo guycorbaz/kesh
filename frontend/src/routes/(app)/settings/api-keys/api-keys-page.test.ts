@@ -28,6 +28,21 @@ vi.mock('$lib/features/api-keys/api-keys.api', () => ({
 
 import { toast } from 'svelte-sonner';
 import Page from './+page.svelte';
+import { pinClock } from '$lib/shared/utils/pin-clock.test-helper';
+
+// Story v0174-correctifs-3 (#889, AC-3.6, site 14) — à 00 h 30 le 5 novembre à Zurich,
+// l'expiration minimale d'une clé est le lendemain du jour du poste : le 6.
+describe('page des clés d’API — expiration minimale locale (#889)', () => {
+	pinClock();
+	it('le minimum du champ d’expiration est le 6 novembre', async () => {
+		listApiKeysMock.mockResolvedValue([]);
+		const { findByTestId } = render(Page);
+		await fireEvent.click(await findByTestId('api-keys-create-button'));
+		expect((await findByTestId('api-keys-expires-input') as HTMLInputElement).min).toBe(
+			'2026-11-06',
+		);
+	});
+});
 
 describe('page des clés d’API — échec du chargement (Story 28-2, B6)', () => {
 	beforeEach(() => {

@@ -15,6 +15,7 @@
 	import { authState } from '$lib/app/stores/auth.svelte';
 	import { notifyError, notifySuccess } from '$lib/shared/utils/notify';
 	import { i18nMsg } from '$lib/shared/utils/i18n.svelte';
+	import { todayLocal } from '$lib/shared/utils/local-date';
 	import {
 		listDueDates,
 		settleInvoice,
@@ -294,8 +295,8 @@
 			const url = URL.createObjectURL(blob);
 			const a = document.createElement('a');
 			a.href = url;
-			const today = new Date().toISOString().slice(0, 10);
-			a.download = `echeancier-${today}.csv`;
+			// #889 : la date du jour du poste, non celle d'UTC (la veille entre minuit et 1 h).
+			a.download = `echeancier-${todayLocal()}.csv`;
 			document.body.appendChild(a);
 			a.click();
 			a.remove();

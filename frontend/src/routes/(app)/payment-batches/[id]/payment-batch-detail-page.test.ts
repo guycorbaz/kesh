@@ -25,6 +25,7 @@ vi.mock('$lib/features/payment-batches/payment-batches.api', () => ({
 }));
 
 import Page from './+page.svelte';
+import { pinClock } from '$lib/shared/utils/pin-clock.test-helper';
 
 function lot(over: Partial<PaymentBatchResponse> = {}): PaymentBatchResponse {
 	return {
@@ -65,5 +66,29 @@ describe('fiche d’un lot de virements — dates (v0171)', () => {
 		);
 		expect(container.textContent).not.toContain('2026-02-03');
 		expect(container.textContent).not.toContain('10:15');
+	});
+});
+
+// Story v0174-correctifs-3 (#889) — à 00 h 30 le 5 novembre à Zurich : la date de paiement
+// proposée à la confirmation est le 5 (site 12) ; « Confirmé le » d'un instant à 23 h 30
+// UTC la veille s'affiche le 5 (h).
+describe('fiche d’un lot — la date du jour et l’instant à l’heure suisse (#889)', () => {
+	pinClock();
+
+	it('la date de paiement proposée est le 5 novembre (site 12)', async () => {
+		getMock.mockResolvedValue(lot({ status: 'generated' as never, confirmedAt: null }));
+		const { findByTestId } = render(Page);
+		const actions = await findByTestId('payment-batch-actions');
+		expect((actions.querySelector('input[type="date"]') as HTMLInputElement).value).toBe(
+			'2026-11-05',
+		);
+	});
+
+	it('« Confirmé le » d’un instant à 23 h 30 UTC : `05.11.2026` (h)', async () => {
+		getMock.mockResolvedValue(lot({ confirmedAt: '2026-11-04T23:30:00' }));
+		const { findByTestId } = render(Page);
+		expect((await findByTestId('payment-batch-confirmed-at')).textContent?.trim()).toBe(
+			'05.11.2026',
+		);
 	});
 });

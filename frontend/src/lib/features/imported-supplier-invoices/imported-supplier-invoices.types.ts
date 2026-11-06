@@ -59,10 +59,11 @@ export function hasQr(row: ImportedSupplierInvoice): boolean {
 /**
  * Date d'import (`createdAt`, horodatage naïf UTC) au format suisse — partagée par la
  * liste « Documents à traiter » et le sélecteur de la fiche (Story 30-2c, AC20).
- * ⚠️ Angle mort assumé (revue P1 de la 30-2a) : la date est celle d'UTC.
+ * Depuis la 0.17.4 (#889), la date suisse de l'instant (horodatage entier) — non plus
+ * celle d'UTC, l'angle mort assumé de la revue P1 de la 30-2a.
  */
 export function importDateOf(row: ImportedSupplierInvoice): string {
-	return formatSwissDate(row.createdAt.slice(0, 10));
+	return formatSwissDate(row.createdAt);
 }
 
 /**

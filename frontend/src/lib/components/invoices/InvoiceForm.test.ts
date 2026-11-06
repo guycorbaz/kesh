@@ -58,6 +58,7 @@ vi.mock('$app/navigation', () => ({ goto: vi.fn() }));
 vi.mock('$lib/shared/utils/notify', () => ({ notifyError: vi.fn(), notifySuccess: vi.fn() }));
 
 import InvoiceForm from './InvoiceForm.svelte';
+import { pinClock } from '$lib/shared/utils/pin-clock.test-helper';
 
 const MARKER = /Compte invalide/;
 const BLOCK_MSG = /Compte de produit invalide sur les lignes suivantes/;
@@ -868,5 +869,18 @@ describe('InvoiceForm — taux de TVA désactivé (v0172, #882)', () => {
 		const [s] = selects(container);
 		expect(s.value).toBe('2.60');
 		expect(optionLabels(s).some((l) => l.includes('(désactivé)'))).toBe(false);
+	});
+});
+
+// Story v0174-correctifs-3 (#889, AC-3.6, site 1) — la date par défaut d'une facture neuve
+// est celle du poste : à 00 h 30 le 5 novembre à Zurich, le 5, non la veille (UTC).
+describe('InvoiceForm — date par défaut locale (#889)', () => {
+	pinClock();
+	it('une facture neuve est datée du 5 novembre', async () => {
+		const { container } = render(InvoiceForm, {});
+		await settle();
+		expect((container.querySelector('#invoice-date') as HTMLInputElement).value).toBe(
+			'2026-11-05',
+		);
 	});
 });

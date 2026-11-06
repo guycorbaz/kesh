@@ -2188,6 +2188,7 @@ contact-salutation-madame = Frau
 # lecteur. Orthographe suisse : Strasse s'écrit avec deux s, et aucune ligne de DONNEES de
 # ce fichier n'emploie l'eszett. (Revue de code 23-1b, passe 1.)
 contact-error-address-npa-city = PLZ und Ort sind erforderlich, wenn eine Adresse erfasst wird
+contacts-country-unknown = Der Ländercode « { $code } » ist kein bekannter ISO-Code: Die QR-Rechnung dieses Kontakts kann nicht erstellt werden. Korrigieren Sie ihn (CH, FR, DE…); die übrigen Felder werden gespeichert, ohne ihn zu ändern.
 contact-error-person-name = Vorname und Name sind für eine Person erforderlich
 contact-persons-add = Hinzufügen
 contact-persons-add-error = Die Person konnte nicht hinzugefügt werden
@@ -2228,6 +2229,10 @@ settings-session-conflict-reload-failed = Versionskonflikt und Neuladen fehlgesc
 settings-session-load-error = Die Inaktivitätsdauer kann nicht gelesen werden.
 login-session-idle = Sitzung nach { $minutes } Minuten Inaktivität beendet.
 login-session-idle-one = Sitzung nach 1 Minute Inaktivität beendet.
+# Story v0174-session-2 (0.17.4, #895) — die Warnung vor dem Sitzungsende.
+session-idle-warning-announce = Ihre Sitzung wird wegen Inaktivität bald beendet: Klicken Sie auf «Angemeldet bleiben».
+session-idle-warning-countdown = Ende in { $remaining }.
+session-idle-warning-stay = Angemeldet bleiben
 
 # --- Mahnwesen (Story 21-4, #231) ---
 dunning-title = Mahnungen
@@ -2624,6 +2629,7 @@ supplier-invoices-pay-submit = Bezahlen
 supplier-invoices-pay-title = Rechnung bezahlen
 supplier-invoices-pay-transfer = Banküberweisung
 supplier-invoices-project-none = — Keines
+supplier-invoices-project-archived-option = { $label } (archiviert)
 supplier-invoices-save = Speichern
 supplier-invoices-scan = QR-Rechnung scannen
 supplier-invoices-scan-detected = Gläubiger erkannt
@@ -2666,6 +2672,7 @@ supplier-invoices-unvalidate-blocked-fiscal-year-closed = Die Einkaufsbuchung di
 supplier-invoices-unvalidate-blocked-later-fiscal-year-closed = Ein späteres Geschäftsjahr als das dieser Rechnung ist abgeschlossen: Damit sie in den Entwurf zurückgesetzt werden kann, muss ein Administrator die späteren abgeschlossenen Geschäftsjahre wieder eröffnen, beginnend mit dem neuesten.
 supplier-invoices-unvalidate-blocked-reversed = Die Einkaufsbuchung dieser Rechnung wurde storniert: Sie kann nicht mehr gelöscht werden, und die Rechnung lässt sich nicht in den Entwurf zurücksetzen.
 supplier-invoices-unvalidate-blocked-period-locked = Die Einkaufsbuchung dieser Rechnung ist in einer gesperrten Periode datiert: Damit sie in den Entwurf zurückgesetzt werden kann, muss ein Administrator die Periodensperre vor dieses Datum zurücksetzen.
+supplier-invoices-unvalidate-blocked-period-locked-named = Die Einkaufsbuchung dieser Rechnung ist in der bis zum { $date } gesperrten Periode datiert: Damit sie in den Entwurf zurückgesetzt werden kann, muss ein Administrator die Periodensperre vor dieses Datum zurücksetzen.
 supplier-invoices-unvalidate-blocked-lettered = Die Einkaufsbuchung dieser Rechnung ist ausgeglichen: Heben Sie den Ausgleich zuerst auf und setzen Sie die Rechnung dann in den Entwurf zurück.
 supplier-invoices-unvalidate-error = Die Rechnung konnte nicht in den Entwurf zurückgesetzt werden.
 supplier-invoices-edit-title = Entwurf bearbeiten

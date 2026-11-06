@@ -155,6 +155,20 @@ describe('supplierInvoiceUnvalidateMessage', () => {
 		);
 	});
 
+	// Story v0174-correctifs-3 (#869, AC-3.12) — le serveur donne la borne du verrou
+	// (`details.lockedThrough`) ; l'écran la nomme, en forme suisse. Sans elle, la phrase
+	// d'aujourd'hui.
+	it('PERIOD_LOCKED nommé : la date du verrou, au format suisse (MC-869)', () => {
+		const m = supplierInvoiceUnvalidateMessage('PERIOD_LOCKED', { lockedThrough: '2026-03-31' });
+		expect(m).toContain('31.03.2026');
+		expect(m).toBe(
+			rempli('supplier-invoices-unvalidate-blocked-period-locked-named', { date: '31.03.2026' }),
+		);
+		expect(supplierInvoiceUnvalidateMessage('PERIOD_LOCKED', null)).toBe(
+			valeurFr('supplier-invoices-unvalidate-blocked-period-locked'),
+		);
+	});
+
 	it('un code inconnu rend le repli générique, égal au catalogue', () => {
 		expect(supplierInvoiceUnvalidateMessage('INTERNAL_ERROR', null)).toBe(REPLI);
 		expect(valeurFr('supplier-invoices-unvalidate-error')).toBe(REPLI);

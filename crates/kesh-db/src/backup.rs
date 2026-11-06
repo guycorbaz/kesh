@@ -375,8 +375,12 @@ pub struct InstallationExport {
     pub min_required: String,
     /// Identifiant informatif de l'installation ([`read_instance_id`]).
     pub instance_id: i64,
-    /// Une entrée par table de [`TABLES_TO_TRUNCATE`], dans son ordre.
-    pub tables: Vec<(&'static str, TableExport)>,
+    /// Une entrée par table de l'inventaire lu ([`Inventaire`]) : celles de
+    /// [`TABLES_TO_TRUNCATE`] dans son ordre ([`Inventaire::Binaire`]), ou
+    /// celles du schéma présent, triées par nom ([`Inventaire::SchemaPresent`],
+    /// story v0174-mise-a-jour, #847). Noms possédés : le second inventaire est
+    /// lu dans la base.
+    pub tables: Vec<(String, TableExport)>,
     /// Story 31-1a (#503, AC1) — les fichiers du dossier des documents que la
     /// base désigne, lus **dans le même instantané** que les tables, après
     /// elles ([`read_referenced_files`]).
@@ -450,7 +454,7 @@ type BoxFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
 
 /// Étape du cœur de la sauvegarde, signalée à l'observateur de
 /// [`export_installation_in`].
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 enum Etape {
     /// L'instantané est ouvert, aucune lecture n'a eu lieu.
     Ouvert,
@@ -458,7 +462,37 @@ enum Etape {
     ///
     /// Le champ n'est lu que par les tests (la production passe un observateur
     /// vide) : sans l'attribut, `clippy -D warnings` rougirait sur la cible lib.
-    ApresTable(#[cfg_attr(not(test), allow(dead_code))] &'static str),
+    ApresTable(#[cfg_attr(not(test), allow(dead_code))] String),
+}
+
+/// Story v0174-mise-a-jour (#847) — l'inventaire des tables qu'une lecture de
+/// l'installation emporte.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Inventaire {
+    /// [`TABLES_TO_TRUNCATE`], dans son ordre : l'inventaire **du binaire**,
+    /// celui de toute sauvegarde prise sur une base à jour.
+    Binaire,
+    /// Les tables du schéma **présent** — celles de `information_schema.TABLES`
+    /// de `DATABASE()` dont le nom ne commence pas par `_`, triées —, lues dans
+    /// l'instantané : l'inventaire de la version qui a créé ce schéma. C'est
+    /// celui de la sauvegarde avant mise à jour, prise par le binaire neuf sur
+    /// une base que ses migrations n'ont pas encore touchée.
+    SchemaPresent,
+}
+
+/// Story v0174-mise-a-jour (#847) — le **seul** point d'entrée de la lecture de
+/// l'installation pour une sauvegarde : choisit, selon `inventaire`, entre
+/// [`export_installation`] et [`export_installation_schema_present`]. La
+/// garde `admin_backup::export::tests::chaque_lecture_n_a_qu_un_appelant`
+/// (`kesh-api`) y tient.
+pub async fn lire_installation(
+    pool: &MySqlPool,
+    inventaire: Inventaire,
+) -> Result<InstallationExport, DbError> {
+    match inventaire {
+        Inventaire::Binaire => export_installation(pool).await,
+        Inventaire::SchemaPresent => export_installation_schema_present(pool).await,
+    }
 }
 
 /// Lit toute l'installation — `min_required`, `instance_id`, puis chaque table
@@ -473,28 +507,70 @@ enum Etape {
 /// même si toutes les tables ont été lues (C-28-3-20).
 pub async fn export_installation(pool: &MySqlPool) -> Result<InstallationExport, DbError> {
     let mut snap = ReadSnapshot::begin(pool).await?;
-    let export = export_installation_in(&mut snap, &mut |_| Box::pin(async {})).await?;
+    let export =
+        export_installation_in(&mut snap, Inventaire::Binaire, &mut |_| Box::pin(async {})).await?;
     snap.finish().await?;
     Ok(export)
 }
 
-/// Cœur de [`export_installation`] : emprunte l'instantané (sans le clore) et
-/// appelle l'observateur après l'ouverture puis après chaque table.
+/// Story v0174-mise-a-jour (#847) — comme [`export_installation`], à
+/// l'inventaire du schéma présent ([`Inventaire::SchemaPresent`]) : même
+/// instantané unique, la liste des tables lue **dans** l'instantané.
+pub async fn export_installation_schema_present(
+    pool: &MySqlPool,
+) -> Result<InstallationExport, DbError> {
+    let mut snap = ReadSnapshot::begin(pool).await?;
+    let export = export_installation_in(&mut snap, Inventaire::SchemaPresent, &mut |_| {
+        Box::pin(async {})
+    })
+    .await?;
+    snap.finish().await?;
+    Ok(export)
+}
+
+/// Story v0174-mise-a-jour (#847) — les tables applicatives du schéma présent :
+/// `information_schema.TABLES` de `DATABASE()` (même prédicat que la garde
+/// `tests::backup_inventory_matches_schema`, sans filtre sur `TABLE_TYPE`,
+/// C-v0174m-24), les noms en `_` (tables système) écartés **en Rust**, triés.
+///
+/// Le prédicat du préfixe vaut celui de la garde par convention : toute table
+/// système commence par `_`, aucune table de [`TABLES_TO_TRUNCATE`] ne commence
+/// par `_` — figé par `tests::convention_du_prefixe_des_tables_systeme` (T16).
+async fn tables_du_schema_present(snap: &mut ReadSnapshot) -> Result<Vec<String>, DbError> {
+    let noms: Vec<String> = sqlx::query_scalar(
+        "SELECT TABLE_NAME FROM information_schema.TABLES WHERE TABLE_SCHEMA = DATABASE()",
+    )
+    .fetch_all(snap.conn())
+    .await
+    .map_err(map_db_error)?;
+    let mut tables: Vec<String> = noms.into_iter().filter(|n| !n.starts_with('_')).collect();
+    tables.sort();
+    Ok(tables)
+}
+
+/// Cœur de [`export_installation`] et de [`export_installation_schema_present`] :
+/// emprunte l'instantané (sans le clore), y résout l'inventaire, et appelle
+/// l'observateur après l'ouverture puis après chaque table.
 ///
 /// Il ne reçoit **aucun pool** : une lecture neuve écrite ici n'a d'autre
 /// exécuteur que l'instantané. L'observateur est vide en production ; les
 /// tests y placent une écriture concurrente, sur une autre connexion.
 async fn export_installation_in(
     snap: &mut ReadSnapshot,
+    inventaire: Inventaire,
     obs: &mut (dyn FnMut(Etape) -> BoxFuture<'static, ()> + Send),
 ) -> Result<InstallationExport, DbError> {
     obs(Etape::Ouvert).await;
     let min_required = read_min_required(snap).await?;
     let instance_id = read_instance_id(snap).await?;
-    let mut tables = Vec::with_capacity(TABLES_TO_TRUNCATE.len());
-    for &table in TABLES_TO_TRUNCATE {
-        let export = export_table(snap, table).await?;
-        tables.push((table, export));
+    let noms: Vec<String> = match inventaire {
+        Inventaire::Binaire => TABLES_TO_TRUNCATE.iter().map(|t| t.to_string()).collect(),
+        Inventaire::SchemaPresent => tables_du_schema_present(snap).await?,
+    };
+    let mut tables = Vec::with_capacity(noms.len());
+    for table in noms {
+        let export = export_table(snap, &table).await?;
+        tables.push((table.clone(), export));
         obs(Etape::ApresTable(table)).await;
     }
     // Story 31-1a (AC1) : dans le même instantané, après les tables.
@@ -615,9 +691,11 @@ pub struct TableRestore {
 /// 2. `DELETE FROM <table>` pour les tables applicatives — **`onboarding_state`
 ///    exclue** (DC11, état local destination) — ordre enfants→parents ;
 /// 3. `INSERT` paramétrés (colonnes explicites du manifeste) parents→enfants ;
-/// 4. `SET FOREIGN_KEY_CHECKS = 1` — **rétabli systématiquement**, succès ou
-///    erreur, pour ne jamais rendre une connexion au pool avec les FK
-///    désactivées (corruption silencieuse).
+/// 4. `SET FOREIGN_KEY_CHECKS = 1` — **rétabli ici**, succès ou erreur, pour ne
+///    jamais rendre une connexion au pool avec les FK désactivées (corruption
+///    silencieuse) ; à l'abandon d'une requête (future abandonnée avant ce
+///    point), par le crochet du pool, `crate::pool::avec_remise_a_zero_de_session`
+///    (0.17.4, #540).
 ///
 /// Retourne `(tables_restaurées, lignes_restaurées)`. `_kesh_version`,
 /// `_sqlx_migrations` et `onboarding_state` ne sont jamais touchées. Le caller
@@ -626,12 +704,33 @@ pub async fn restore_tables_in_tx(
     tx: &mut Transaction<'_, MySql>,
     tables: &BTreeMap<String, TableRestore>,
 ) -> Result<(usize, usize), DbError> {
+    restore_tables_in_tx_avec_inventaire(tx, tables, TABLES_TO_TRUNCATE).await
+}
+
+/// Story v0174-mise-a-jour (#847, C-v0174m-17 (b)) — [`restore_tables_in_tx`]
+/// à inventaire paramétré : seules les tables de [`TABLES_TO_TRUNCATE`] qui
+/// figurent dans `inventaire` sont vidées puis réinsérées, dans l'ordre de la
+/// liste canonique ; exclusions `onboarding_state` et `audit_log` inchangées.
+///
+/// Sert au test d'aller-retour de la sauvegarde avant mise à jour, qui restaure
+/// dans une base au schéma d'une version antérieure (inventaire plus court).
+/// La production passe par [`restore_tables_in_tx`], inventaire du binaire.
+pub async fn restore_tables_in_tx_avec_inventaire(
+    tx: &mut Transaction<'_, MySql>,
+    tables: &BTreeMap<String, TableRestore>,
+    inventaire: &[&str],
+) -> Result<(usize, usize), DbError> {
     sqlx::query("SET FOREIGN_KEY_CHECKS = 0")
         .execute(&mut **tx)
         .await
         .map_err(map_db_error)?;
 
-    let result = restore_body(tx, tables).await;
+    let ordre: Vec<&str> = TABLES_TO_TRUNCATE
+        .iter()
+        .copied()
+        .filter(|t| inventaire.contains(t))
+        .collect();
+    let result = restore_body(tx, tables, &ordre).await;
 
     // Rétablissement systématique (même sur erreur du corps).
     let reset = sqlx::query("SET FOREIGN_KEY_CHECKS = 1")
@@ -654,6 +753,7 @@ pub async fn restore_tables_in_tx(
 async fn restore_body(
     tx: &mut Transaction<'_, MySql>,
     tables: &BTreeMap<String, TableRestore>,
+    ordre: &[&str],
 ) -> Result<(usize, usize), DbError> {
     // DELETE enfants→parents (ordre TABLES_TO_TRUNCATE) — DEUX exclusions.
     //
@@ -672,7 +772,10 @@ async fn restore_body(
     // un manifeste portant une table hors inventaire (`parse_and_verify`,
     // `kesh-api/src/admin_backup/import.rs`, contrôle « hors inventaire
     // applicatif »). L'en sortir rendrait **tout backup existant inimportable**.
-    for &table in TABLES_TO_TRUNCATE {
+    //
+    // `ordre` : `TABLES_TO_TRUNCATE` filtré par l'inventaire (Story
+    // v0174-mise-a-jour) — la liste canonique entière en production.
+    for &table in ordre {
         if table == "onboarding_state" || table == "audit_log" {
             continue;
         }
@@ -686,7 +789,7 @@ async fn restore_body(
     // cohérent/lisible.
     let mut tables_restored = 0usize;
     let mut rows_restored = 0usize;
-    for &table in TABLES_TO_TRUNCATE.iter().rev() {
+    for &table in ordre.iter().rev() {
         if table == "onboarding_state" {
             continue;
         }
@@ -840,23 +943,77 @@ mod tests {
     use super::*;
     use sqlx::MySqlPool;
 
+    /// Les tables système du schéma, que [`TABLES_TO_TRUNCATE`] exclut — lues
+    /// par `backup_inventory_matches_schema` et par la garde de convention
+    /// `convention_du_prefixe_des_tables_systeme` (story v0174-mise-a-jour, T16).
+    const TABLES_SYSTEME: &[&str] = &[
+        "_sqlx_migrations",
+        "_kesh_version",
+        "_kesh_backup_schedule",
+        "_kesh_installation_settings",
+    ];
+
+    /// Story v0174-mise-a-jour (#847, T16) — **la convention du préfixe**, sur
+    /// laquelle repose l'inventaire du schéma présent
+    /// ([`Inventaire::SchemaPresent`] : les tables qui ne commencent pas par
+    /// `_`) : il équivaut au prédicat de `backup_inventory_matches_schema` (qui
+    /// exclut [`TABLES_SYSTEME`]) si et seulement si (1) chaque table système
+    /// commence par `_`, (2) aucune table de [`TABLES_TO_TRUNCATE`] ne commence
+    /// par `_`, (3) toute table du schéma hors [`TABLES_TO_TRUNCATE`] commence
+    /// par `_`. Une table système nommée sans `_` serait emportée par la
+    /// sauvegarde avant mise à jour, et la version de départ la refuserait.
+    #[sqlx::test(migrations = "./test-schema")]
+    async fn convention_du_prefixe_des_tables_systeme(pool: MySqlPool) {
+        for t in TABLES_SYSTEME {
+            assert!(t.starts_with('_'), "table système sans préfixe `_` : {t}");
+        }
+        for t in TABLES_TO_TRUNCATE {
+            assert!(
+                !t.starts_with('_'),
+                "table applicative au préfixe `_` (réservé aux tables système) : {t}"
+            );
+        }
+        let schema: Vec<String> = sqlx::query_scalar(
+            "SELECT TABLE_NAME FROM information_schema.TABLES WHERE TABLE_SCHEMA = DATABASE()",
+        )
+        .fetch_all(&pool)
+        .await
+        .expect("information_schema.TABLES");
+        assert!(
+            schema.len() > TABLES_TO_TRUNCATE.len(),
+            "assertion de montage : le schéma porte les tables applicatives et système"
+        );
+        for t in &schema {
+            if !TABLES_TO_TRUNCATE.contains(&t.as_str()) {
+                assert!(
+                    t.starts_with('_'),
+                    "table hors TABLES_TO_TRUNCATE sans préfixe `_` : {t} — elle serait \
+                     emportée par la sauvegarde avant mise à jour"
+                );
+            }
+        }
+    }
+
     /// Garantit que [`TABLES_TO_TRUNCATE`] reste synchro avec le schéma réel.
     /// Si une future migration ajoute/retire une table applicative, ce test
     /// échoue avec le delta, forçant la mise à jour de la const avant merge.
     /// (Promu de `test_fixtures.rs`, Story 17-3a — la const vit désormais ici.)
     #[sqlx::test(migrations = "./test-schema")]
     async fn backup_inventory_matches_schema(pool: MySqlPool) {
-        let db_tables: Vec<String> = sqlx::query_scalar(
+        // Story v0174-mise-a-jour (T16) : la liste des tables système, écrite
+        // en dur dans la requête jusqu'à la 0.17.3, est extraite en constante,
+        // que la garde de convention ci-dessous lit aussi.
+        let db_tables: Vec<String> = sqlx::query_scalar::<_, String>(
             "SELECT TABLE_NAME FROM information_schema.TABLES \
              WHERE TABLE_SCHEMA = DATABASE() \
-               AND TABLE_NAME NOT IN ('_sqlx_migrations', '_kesh_version', \
-                                      '_kesh_backup_schedule', \
-                                      '_kesh_installation_settings') \
              ORDER BY TABLE_NAME",
         )
         .fetch_all(&pool)
         .await
-        .expect("information_schema query");
+        .expect("information_schema query")
+        .into_iter()
+        .filter(|t| !TABLES_SYSTEME.contains(&t.as_str()))
+        .collect();
 
         let mut hardcoded: Vec<&str> = TABLES_TO_TRUNCATE.to_vec();
         hardcoded.sort();
@@ -1670,12 +1827,12 @@ mod tests {
         let compteur = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
         let mut obs = observateur_qui_supprime(
             pool.clone(),
-            cible,
+            cible.clone(),
             company_id,
             import_id,
             std::sync::Arc::clone(&compteur),
         );
-        let export = export_installation_in(&mut snap, &mut obs)
+        let export = export_installation_in(&mut snap, Inventaire::Binaire, &mut obs)
             .await
             .expect("sauvegarde");
         snap.finish().await.expect("clôture de l'instantané");
@@ -1728,7 +1885,7 @@ mod tests {
     async fn sauvegarde_ignore_une_suppression_entre_deux_tables(pool: MySqlPool) {
         let (company_id, import_id) = monter_import(&pool).await;
         let snap = ReadSnapshot::begin(&pool).await.expect("instantané");
-        let cible = Etape::ApresTable("bank_transactions");
+        let cible = Etape::ApresTable("bank_transactions".to_string());
         sauvegarder_pendant_suppression(&pool, snap, cible, company_id, import_id).await;
     }
 
@@ -1746,7 +1903,7 @@ mod tests {
         .await
         .expect("session READ COMMITTED");
         let snap = ReadSnapshot::begin_on(conn).await.expect("instantané");
-        let cible = Etape::ApresTable("bank_transactions");
+        let cible = Etape::ApresTable("bank_transactions".to_string());
         sauvegarder_pendant_suppression(&pool, snap, cible, company_id, import_id).await;
     }
 
@@ -1919,7 +2076,7 @@ mod tests {
         let export = export_installation(&pool)
             .await
             .expect("export_installation");
-        let noms: Vec<&str> = export.tables.iter().map(|(nom, _)| *nom).collect();
+        let noms: Vec<&str> = export.tables.iter().map(|(nom, _)| nom.as_str()).collect();
         assert_eq!(noms, TABLES_TO_TRUNCATE);
         assert_eq!(export.min_required, min_required_attendu, "min_required");
         assert_eq!(export.instance_id, instance_id_attendu, "instance_id");
@@ -2265,7 +2422,7 @@ mod tests {
             }
         };
         let mut snap = ReadSnapshot::begin(&pool).await.expect("instantané");
-        let export = export_installation_in(&mut snap, &mut obs)
+        let export = export_installation_in(&mut snap, Inventaire::Binaire, &mut obs)
             .await
             .expect("sauvegarde");
         snap.finish().await.expect("clôture");

@@ -223,7 +223,7 @@ cd /opt/kesh
 Télécharger le fichier de référence depuis le dépôt officiel, \textbf{au tag de la version que décrit ce manuel} (\texttt{v\keshVersion}) --- non à la branche \texttt{main}, qui peut être en avance sur l'image publiée ; pour une autre version, remplacez le tag dans l'adresse :
 
 \begin{lstlisting}[language=bash]
-curl -fsSL https://raw.githubusercontent.com/guycorbaz/kesh/v0.17.3/docker-compose.yml \
+curl -fsSL https://raw.githubusercontent.com/guycorbaz/kesh/v0.17.4/docker-compose.yml \
     -o docker-compose.yml
 \end{lstlisting}
 
@@ -234,7 +234,7 @@ Ce fichier désigne l'image publiée \texttt{gcorbaz/kesh:latest} : \keshcommand
 Copier le fichier d'exemple et l'adapter :
 
 \begin{lstlisting}[language=bash]
-curl -fsSL https://raw.githubusercontent.com/guycorbaz/kesh/v0.17.3/.env.example \
+curl -fsSL https://raw.githubusercontent.com/guycorbaz/kesh/v0.17.4/.env.example \
     -o .env
 \end{lstlisting}
 
@@ -570,7 +570,7 @@ Télécharger le \keshpath{docker-compose.yml} canonique depuis le dépôt Kesh,
 
 \begin{lstlisting}[language=bash]
 cd /volume1/docker/kesh
-DEPOT=https://raw.githubusercontent.com/guycorbaz/kesh/v0.17.3
+DEPOT=https://raw.githubusercontent.com/guycorbaz/kesh/v0.17.4
 curl -fsSL "$DEPOT/docker-compose.prod.yml" -o docker-compose.yml
 curl -fsSL "$DEPOT/.env.example" -o .env
 
@@ -809,7 +809,8 @@ Depuis la 0.17.3, \textbf{l'ancienne variable de durée d'inactivité n'est plus
     KESH\_BANK\_IMPORT\_MAX\_MB & Taille max fichier bank-import (CAMT.053/CSV), MiB. Borne [1, 100]. & \texttt{10} \\
     KESH\_ADMIN\_EXPORT\_INMEM\_MB & Plafond en mémoire de l'export \texttt{.keshbackup} (au-delà : débordement dans un temporaire du dossier de sauvegarde). Borne [1, 2048]. & \texttt{50} \\
     KESH\_ADMIN\_IMPORT\_MAX\_MB & Taille max upload \texttt{.keshbackup} à l'import (à relever avec le proxy inverse). Borne [1, 10240]. & \texttt{2048} \\
-    KESH\_ADMIN\_BACKUP\_DIR & Dossier de la sauvegarde de sécurité pré-import, des sauvegardes automatiques (sous-dossier \texttt{auto/}, depuis la 0.15.0) et des temporaires de l'export et de l'import, monté sur \texttt{./backup} par les compose fournis. Hors Docker : un dossier inscriptible. Vide = défaut. & \texttt{/data/backup} \\
+    KESH\_ADMIN\_BACKUP\_DIR & Dossier de la sauvegarde de sécurité pré-import, des sauvegardes automatiques (sous-dossier \texttt{auto/}, depuis la 0.15.0), des sauvegardes avant mise à jour (sous-dossier \texttt{pre-upgrade/}, depuis la 0.17.4) et des temporaires de l'export et de l'import, monté sur \texttt{./backup} par les compose fournis. Hors Docker : un dossier inscriptible. Vide = défaut. & \texttt{/data/backup} \\
+    KESH\_SKIP\_PRE\_UPGRADE\_BACKUP & Depuis la 0.17.4 : migrer \textbf{sans} la sauvegarde avant mise à jour, en connaissance de cause (\S\ref{sec:sauvegarde-avant-maj}). Ne vaut que si la valeur est \textbf{exactement} la version du binaire ; toute autre valeur est ignorée. À retirer après la mise à jour. & \textit{(vide)} \\
     \bottomrule
 \end{tabularx}
 
@@ -1662,7 +1663,7 @@ La répétition d'une clôture sur une copie (\S\ref{sec:repetition-cloture}) co
 \paragraph{Ce qu'elle suppose.} Une production qui \textbf{exporte en format 2} (Kesh 0.15.0 ou plus) : le fichier \keshcommand{.keshbackup} emporte alors les pièces et en annonce le nombre. Cela se vérifie \textbf{avant de rien créer}, et sans rien télécharger : sur la production, la page \emph{Administration → Sauvegarde complète} dit que le fichier emporte « les pièces justificatives » ; une version antérieure ne le dit pas. Une production antérieure se \textbf{met d'abord à jour} (section \emph{Mise à jour de Kesh}, \S\ref{sec:mise-a-jour}), geste distinct de la répétition. Une sauvegarde de format 1 ne vaut pas répétition : ses pièces ne sont pas dans le fichier et, dans la copie, dont le dossier des documents est neuf, toutes les pièces référencées seraient manquantes.
 
 \begin{keshwarning}[title=\faExclamationTriangle\ La copie porte les données réelles]
-Le fichier \keshcommand{.keshbackup} est un \textbf{secret} (mots de passe hachés, jetons de session : \S\ref{sec:backup-ui-keshbackup}), et la copie restaurée contient toute la comptabilité, les pièces et une sauvegarde de sécurité. Tout ce qui touche la répétition reste dans le dossier de la copie, et la répétition se termine par sa \textbf{destruction} --- y compris si elle s'arrête en chemin.
+Le fichier \keshcommand{.keshbackup} est un \textbf{secret} (mots de passe hachés, empreintes des jetons de session --- depuis la 0.17.4 ; une sauvegarde antérieure porte encore des jetons en clair : \S\ref{sec:backup-ui-keshbackup}), et la copie restaurée contient toute la comptabilité, les pièces et une sauvegarde de sécurité. Tout ce qui touche la répétition reste dans le dossier de la copie, et la répétition se termine par sa \textbf{destruction} --- y compris si elle s'arrête en chemin.
 \end{keshwarning}
 
 \paragraph{Conventions.} Les commandes se tapent dans un même terminal, dans l'ordre. \keshcommand{COPIE} désigne le dossier de la copie, toujours écrit \textbf{sans barre finale}. Chaque commande Compose qui désigne la copie porte \keshcommand{-p kesh-repetition}, \keshcommand{-{}-project-directory "\$COPIE"} et des \keshcommand{-f} explicites : le nom de projet ne dépend ni du dossier courant ni d'une variable du terminal, le \keshpath{.env} lu est celui de la copie, et le fichier d'override est nommé, donc vu. Ne les abrégez pas par un alias ou une fonction : une session où l'alias manque retomberait sur les valeurs implicites. « \textbf{Arrêt} » veut dire, partout : faire ce que dit, pour l'endroit où l'on s'arrête, la rubrique \emph{En cas d'arrêt} (en fin de sous-section) --- détruire ce qui a été créé, rien s'il n'y a rien ---, puis, pour reprendre, repartir du contrôle~1 avec un \textbf{nouveau dossier} : une nouvelle date, ou, le même jour, un suffixe (\keshpath{kesh-repetition-AAAAMMJJ-2}) --- jamais un \keshcommand{mkdir -p}, jamais un \keshcommand{rm} improvisé.
@@ -1735,7 +1736,7 @@ Les exports ne doivent pas rester dans le dossier de téléchargements : Synolog
 \Needspace{15\baselineskip}
     \item \textbf{Compose et \keshpath{.env.example} au tag de la version relevée, et variables qu'il lit.} Remplacez \texttt{0.15.0} par la version relevée. Les exemples de cette sous-section portent \texttt{0.15.0}, la version de ce manuel ; une production qui satisfait le prérequis porte \textbf{0.15.0 ou plus} : à une version suivante, l'exemple recopié tel quel donnerait une copie qui n'est pas celle de la production. Le contrôle~9 arrête une \textbf{image} d'une autre version ; le tag de \keshcommand{DEPOT}, lui, n'est contrôlé par rien : remplacez les deux.
 \begin{lstlisting}[language=bash]
-DEPOT=https://raw.githubusercontent.com/guycorbaz/kesh/v0.17.3
+DEPOT=https://raw.githubusercontent.com/guycorbaz/kesh/v0.17.4
 curl -fsSL "$DEPOT/docker-compose.yml" -o "$COPIE/docker-compose.yml"
 curl -fsSL "$DEPOT/.env.example" -o "$COPIE/.env"
 grep -oE '\$\{?[A-Za-z_][A-Za-z0-9_]*' "$COPIE/docker-compose.yml" \
@@ -1988,7 +1989,7 @@ Hyper Backup est l'outil principal Synology pour les backups versionnés vers st
     \item Lancer Hyper Backup → \textbf{+ Tâche de sauvegarde de données} → choisir la destination (ex. \emph{Synology C2 Backup} pour offsite managé, \emph{S3 Storage} pour AWS/Wasabi/Backblaze, \emph{Dossier local} pour HDD USB attaché au NAS).
     \item Cocher les dossiers à backup :
         \begin{itemize}
-            \item \textbf{Obligatoire} : \keshpath{/volume1/docker/kesh/} --- le compose, \keshpath{.env}, \keshpath{log/}, \keshpath{inbox/}, \keshpath{documents/}, \keshpath{backup/}, les deux fichiers d'identifiants (\keshpath{kesh-dump.cnf}, \keshpath{kesh-restore.cnf}), les deux scripts et le dossier \keshpath{dump/}, où la tâche planifiée dépose le \textbf{dump de la base} (\keshpath{kesh\_pre\_backup.sql.gz}). La base elle-même n'est pas dans ce dossier : seul ce dump l'y fait entrer. \keshpath{documents/} porte les documents fournisseur importés --- la majeure partie du dossier depuis la 0.14.0 --- et les PDF des factures émises (\S\ref{sec:pdf-factures-sauvegarde}) ; avec \keshpath{docker-compose.yml}, c'est le dossier de \texttt{KESH\_DOCUMENTS\_HOST\_DIR} s'il est posé --- à ajouter alors à la tâche de sauvegarde. \keshpath{backup/} (sauvegarde de sécurité prise avant chaque import d'installation), \keshpath{dump/} et \keshpath{avant-restauration/} (dumps de sécurité de \keshpath{kesh-restore.sh}) contiennent des \textbf{secrets} --- condensés des mots de passe, jetons de session --- : d'où leurs droits réservés à root et le chiffrement client-side ci-dessous (\S\ref{sec:backup-ui-keshbackup}). À restaurer avec la base.
+            \item \textbf{Obligatoire} : \keshpath{/volume1/docker/kesh/} --- le compose, \keshpath{.env}, \keshpath{log/}, \keshpath{inbox/}, \keshpath{documents/}, \keshpath{backup/}, les deux fichiers d'identifiants (\keshpath{kesh-dump.cnf}, \keshpath{kesh-restore.cnf}), les deux scripts et le dossier \keshpath{dump/}, où la tâche planifiée dépose le \textbf{dump de la base} (\keshpath{kesh\_pre\_backup.sql.gz}). La base elle-même n'est pas dans ce dossier : seul ce dump l'y fait entrer. \keshpath{documents/} porte les documents fournisseur importés --- la majeure partie du dossier depuis la 0.14.0 --- et les PDF des factures émises (\S\ref{sec:pdf-factures-sauvegarde}) ; avec \keshpath{docker-compose.yml}, c'est le dossier de \texttt{KESH\_DOCUMENTS\_HOST\_DIR} s'il est posé --- à ajouter alors à la tâche de sauvegarde. \keshpath{backup/} (sauvegarde de sécurité prise avant chaque import d'installation), \keshpath{dump/} et \keshpath{avant-restauration/} (dumps de sécurité de \keshpath{kesh-restore.sh}) contiennent des \textbf{secrets} --- condensés des mots de passe, empreintes des jetons de session (depuis la 0.17.4 ; les dumps \textbf{antérieurs} à la mise à jour portent encore des jetons en clair) --- : d'où leurs droits réservés à root et le chiffrement client-side ci-dessous (\S\ref{sec:backup-ui-keshbackup}). À restaurer avec la base.
         \end{itemize}
     \item \emph{Facultatif} : cocher l'application \textbf{Container Manager} dans \emph{Applications} pour sauvegarder la configuration des projets --- \textbf{à vérifier d'abord} sur votre NAS : voir la note sur l'arrêt possible des applications sauvegardées, plus bas. La sauvegarde de Kesh n'en dépend pas : le compose et \keshpath{.env} sont dans le dossier coché ci-dessus.
     \item Activer le \textbf{chiffrement client-side} (mot de passe différent du KESH\_JWT\_SECRET, stocké séparément offline — la perte de ce mot de passe rend les backups illisibles).
@@ -2054,7 +2055,7 @@ Les deux scripts sont des fichiers du dépôt Kesh, \keshpath{scripts/synology/k
 
 \begin{lstlisting}[language=bash]
 cd /volume1/docker/kesh
-DEPOT=https://raw.githubusercontent.com/guycorbaz/kesh/v0.17.3
+DEPOT=https://raw.githubusercontent.com/guycorbaz/kesh/v0.17.4
 curl -fsSLO "$DEPOT/scripts/synology/kesh-dump.sh"
 curl -fsSLO "$DEPOT/scripts/synology/kesh-restore.sh"
 chmod 700 kesh-dump.sh kesh-restore.sh
@@ -2260,7 +2261,7 @@ Et régler \keshcommand{default\_storage\_engine=InnoDB} dans la configuration d
 L'\textbf{export global} (CSV, \textbf{Administration → Export global}) ne bénéficie \textbf{pas encore} de cette garantie : il lit ses tables l'une après l'autre (issue \#465).
 
 \begin{keshwarning}
-Le fichier \keshcommand{.keshbackup} est un \textbf{secret} : il contient les \textbf{condensés (hash) des mots de passe} de tous les utilisateurs, les \textbf{condensés des clés API (PAT)}, depuis la 0.16.0 les \textbf{condensés des clés du serveur MCP} et les \textbf{envois du serveur MCP} --- des données de vos livres qu'un agent a demandées, \textbf{en clair}, en attente ou validées, y compris une version que vous avez \textbf{modifiée} (\S\ref{sec:mcp-envois}) ---, ainsi que les \textbf{jetons de session}. Il n'est \textbf{pas chiffré} par défaut. Conservez-le et transmettez-le comme une donnée hautement sensible — chiffrez-le pour tout transit hors de votre infrastructure contrôlée (par ex. \keshcommand{gpg} ou \keshcommand{age}).
+Le fichier \keshcommand{.keshbackup} est un \textbf{secret} : il contient les \textbf{condensés (hash) des mots de passe} de tous les utilisateurs, les \textbf{condensés des clés API (PAT)}, depuis la 0.16.0 les \textbf{condensés des clés du serveur MCP} et les \textbf{envois du serveur MCP} --- des données de vos livres qu'un agent a demandées, \textbf{en clair}, en attente ou validées, y compris une version que vous avez \textbf{modifiée} (\S\ref{sec:mcp-envois}) ---, ainsi que les \textbf{empreintes} des jetons de session (depuis la 0.17.4). Une sauvegarde, une base ou un dump \textbf{antérieurs} à la 0.17.4 portent encore les jetons \textbf{en clair}, et le manuel des versions jusqu'à la 0.17.2 annonçait à tort un hachage : traitez-les comme le secret qu'ils sont. Le fichier n'est \textbf{pas chiffré} par défaut. Conservez-le et transmettez-le comme une donnée hautement sensible — chiffrez-le pour tout transit hors de votre infrastructure contrôlée (par ex. \keshcommand{gpg} ou \keshcommand{age}).
 \end{keshwarning}
 
 \paragraph{Ce que la sauvegarde emporte (format 2, depuis la 0.15.0)}
@@ -2374,7 +2375,7 @@ Il n'existe pas de commande qui rejouerait les reprises : depuis la 0.16.0, aucu
 \begin{itemize}
     \item \keshcommand{KESH\_ADMIN\_IMPORT\_MAX\_MB} — taille maximale d'un fichier \keshcommand{.keshbackup} importé, en Mio (défaut \textbf{2048} depuis la 0.15.0, 512 avant ; bornes [1, 10240]). La relever exige de relever aussi la taille admise par le proxy inverse (\S\ref{sec:reverse-proxy}).
     \item \keshcommand{KESH\_ADMIN\_EXPORT\_INMEM\_MB} — plafond en mémoire de l'export ; au-delà, l'archive déborde dans un fichier temporaire anonyme du dossier de sauvegarde, puis est téléchargée (défaut \textbf{50}, bornes [1, 2048]).
-    \item \sloppy\keshcommand{KESH\_ADMIN\_BACKUP\_DIR} — dossier de la sauvegarde de sécurité pré-import, des sauvegardes automatiques (sous-dossier \keshpath{auto/}, depuis la 0.15.0, \S\ref{sec:sauvegarde-automatique}) et des temporaires de l'export et de l'import (défaut \keshpath{/data/backup}, y compris quand la variable est vide, monté sur \keshpath{./backup} par les compose fournis ; créé en \texttt{0700} s'il n'existe pas). Une autre valeur doit être un chemin \textbf{monté}, sans quoi la sauvegarde retourne dans le conteneur ; hors Docker, un dossier inscriptible.
+    \item \sloppy\keshcommand{KESH\_ADMIN\_BACKUP\_DIR} — dossier de la sauvegarde de sécurité pré-import, des sauvegardes automatiques (sous-dossier \keshpath{auto/}, depuis la 0.15.0, \S\ref{sec:sauvegarde-automatique}), des sauvegardes avant mise à jour (sous-dossier \keshpath{pre-upgrade/}, depuis la 0.17.4, \S\ref{sec:sauvegarde-avant-maj}) et des temporaires de l'export et de l'import (défaut \keshpath{/data/backup}, y compris quand la variable est vide, monté sur \keshpath{./backup} par les compose fournis ; créé en \texttt{0700} s'il n'existe pas). Une autre valeur doit être un chemin \textbf{monté}, sans quoi la sauvegarde retourne dans le conteneur ; hors Docker, un dossier inscriptible.
 \end{itemize}
 
 \subsubsection{La sauvegarde automatique}\label{sec:sauvegarde-automatique}
@@ -2406,6 +2407,16 @@ Depuis la 0.15.0, Kesh écrit \textbf{lui-même}, à intervalle régulier, une s
 \paragraph{Ce qu'elle ne remplace pas.} Les sauvegardes automatiques sont sur le \textbf{même disque} que Kesh : un disque perdu les emporte avec l'installation. \textbf{Copiez-les ailleurs} --- sur Synology, la sauvegarde du répertoire du compose emporte déjà \keshpath{./backup} (\S\ref{sec:backup-dsm}). Ce sont des \textbf{secrets}, comme tout fichier \keshcommand{.keshbackup}. Elles ne contiennent pas le \keshpath{.env}, et la sauvegarde ne tourne que si Kesh tourne.
 
 \paragraph{Journal d'audit.} « Réglage de la sauvegarde automatique modifié » (\keshcommand{admin.backup\_schedule\_updated}, avant et après), « Sauvegarde lancée manuellement » (\keshcommand{admin.backup\_run}, statut et fichier) et « Sauvegarde du serveur téléchargée » (\keshcommand{admin.backup\_downloaded}, nom et taille). Une sauvegarde automatique réussie n'est pas inscrite (ce serait une entrée par jour) : son état se lit au panneau.
+
+\subsubsection{La sauvegarde avant mise à jour}\label{sec:sauvegarde-avant-maj}
+
+Depuis la 0.17.4, au démarrage d'une version qui doit \textbf{migrer la base}, Kesh écrit d'abord, avant toute migration, une sauvegarde d'installation complète --- la base \textbf{et} les pièces, au format 2 --- dans le sous-dossier \keshpath{pre-upgrade/} du dossier de sauvegarde (\keshpath{./backup/pre-upgrade} avec les compose fournis, \keshpath{/volume1/docker/kesh/backup/pre-upgrade} sur Synology), sous le nom \keshcommand{kesh-pre-upgrade-AAAAMMJJTHHMMSSmmmZ-<de>-to-<vers>.keshbackup} : l'heure UTC à la milliseconde, la version de départ et la version d'arrivée. Le journal du serveur (\keshcommand{docker compose logs kesh-api}) annonce l'écriture, puis donne le \textbf{chemin} du fichier écrit. Elle se restaure dans la \textbf{version de départ} (une 0.15.0 ou plus récente) : elle porte exactement les tables de celle-ci. Elle emporte \textbf{toutes} les tables de la base dont le nom ne commence pas par \texttt{\_} : une table ou une vue ajoutée \textbf{à la main} dans la base de Kesh y entre, et la version de départ la refuse alors à l'import (« présente dans le manifeste mais hors inventaire applicatif ») --- dans ce cas, le retour passe par le vidage de sécurité (\S\ref{sec:revenir-version-precedente}).
+
+Il n'y a \textbf{pas} de sauvegarde quand aucune migration n'est à appliquer --- la plupart des redémarrages, et toute version sans migration ---, ni sur une installation neuve. Pendant l'écriture, le serveur ne répond pas : le conteneur s'affiche « unhealthy » un moment, sans être redémarré. Avant d'écrire, Kesh mesure l'espace libre comme la sauvegarde automatique (\S\ref{sec:sauvegarde-automatique}, \emph{Espace disque requis}), avec la plus grande sauvegarde de \keshpath{auto/} et de \keshpath{pre-upgrade/}.
+
+\paragraph{Si elle échoue, Kesh ne migre pas.} État des migrations illisible, dossier non créable, espace insuffisant, lecture de la base ou écriture en échec : le journal porte « \emph{FATAL : mise à jour refusée --- la sauvegarde avant mise à jour n'a pas pu être préparée (…)} », la cause entre parenthèses, et Kesh s'arrête \textbf{sans avoir appliqué aucune migration}. Corrigez la cause. Pour migrer quand même, \textbf{en connaissance de cause}, posez dans le \keshpath{.env} la version \textbf{exacte} du binaire, par exemple \keshcommand{KESH\_SKIP\_PRE\_UPGRADE\_BACKUP=0.17.4} ; une autre valeur est ignorée, et le journal le dit. Les compose de la 0.17.4 la transmettent ; \textbf{un compose antérieur ne la transmet pas} : ajoutez sous \texttt{environment:} du service \texttt{kesh-api} la ligne \keshcommand{KESH\_SKIP\_PRE\_UPGRADE\_BACKUP: \$\{KESH\_SKIP\_PRE\_UPGRADE\_BACKUP:-\}}. Retirez la variable après la mise à jour. Un \textbf{état des migrations incohérent} (\keshcommand{\_kesh\_version} présente, \keshcommand{\_sqlx\_migrations} absente ou vide : restauration partielle, table vidée à la main) ne se contourne pas : le message s'arrête à « Corrigez la cause », et la variable n'y change rien --- restaurez la base depuis une sauvegarde. Après un refus ou une migration en échec, le conteneur (\texttt{restart: unless-stopped}) redémarre en boucle et réessaie à chaque tour : arrêtez-le (\keshcommand{docker compose stop kesh-api}) le temps de corriger.
+
+\paragraph{Kesh n'en supprime aucune.} Chaque tentative écrit son fichier. Retirez les anciennes à la main une fois la mise à jour \textbf{réussie et éprouvée} --- tant qu'elle n'a pas réussi, n'en supprimez aucune. Un fichier \keshcommand{.keshbackup.partial} laissé par un arrêt brutal n'est pas une sauvegarde : il peut être supprimé. C'est un \textbf{secret}, sur le même disque que Kesh : \textbf{copiez-la ailleurs}, comme les autres sauvegardes du serveur. Pour revenir à la version de départ avec elle, voir \S\ref{sec:revenir-version-precedente}.
 
 \subsubsection{Restaurer sur une nouvelle machine}\label{sec:restauration-machine-neuve}
 
@@ -2481,7 +2492,7 @@ Les versions de Kesh sont publiées sur GitHub avec un tag \texttt{vX.Y.Z} (vers
 \subsection{Procédure de mise à jour standard}
 
 \begin{enumerate}
-    \item \textbf{Sauvegarder} la base de données --- avec \keshpath{docker-compose.yml}, le volume \texttt{<projet>\_kesh-mariadb-data} ; sur Synology avec \keshpath{docker-compose.prod.yml}, un dump par \keshpath{kesh-dump.sh} (\S\ref{sec:backup-dsm}) --- (cf. section précédente). \textbf{Pour passer à la 0.13.0 ou à la 0.13.1, cette sauvegarde est le seul retour en arrière possible} : une fois migrée, la base refuse tout binaire antérieur --- 0.12.x après la 0.13.0 (\S\ref{sec:maj-0-13-sans-retour}), 0.13.0 après la 0.13.1 (\S\ref{sec:maj-0-13-1-sans-retour}). La 0.13.2 n'a pas de migration : le retour à la 0.13.1 se fait sans restaurer, à condition d'avoir retiré la colonne Devise des profils CSV (\S\ref{sec:maj-0-13-2-retour}). La 0.13.3 en a une, que la 0.13.2 ne connaît pas et sur laquelle elle refuse de démarrer : \textbf{le retour à la 0.13.2 passe par cette sauvegarde} (\S\ref{sec:maj-0-13-3-retour}). La 0.13.4 n'a pas de migration : le retour à la 0.13.3 se fait en reprenant son image, sans restaurer (\S\ref{sec:maj-0-13-4-retour}).
+    \item \textbf{Sauvegarder} la base de données --- avec \keshpath{docker-compose.yml}, le volume \texttt{<projet>\_kesh-mariadb-data} ; sur Synology avec \keshpath{docker-compose.prod.yml}, un dump par \keshpath{kesh-dump.sh} (\S\ref{sec:backup-dsm}) --- (cf. section précédente). \textbf{Pour passer à la 0.13.0 ou à la 0.13.1, cette sauvegarde est le seul retour en arrière possible} : une fois migrée, la base refuse tout binaire antérieur --- 0.12.x après la 0.13.0 (\S\ref{sec:maj-0-13-sans-retour}), 0.13.0 après la 0.13.1 (\S\ref{sec:maj-0-13-1-sans-retour}). La 0.13.2 n'a pas de migration : le retour à la 0.13.1 se fait sans restaurer, à condition d'avoir retiré la colonne Devise des profils CSV (\S\ref{sec:maj-0-13-2-retour}). La 0.13.3 en a une, que la 0.13.2 ne connaît pas et sur laquelle elle refuse de démarrer : \textbf{le retour à la 0.13.2 passe par cette sauvegarde} (\S\ref{sec:maj-0-13-3-retour}). La 0.13.4 n'a pas de migration : le retour à la 0.13.3 se fait en reprenant son image, sans restaurer (\S\ref{sec:maj-0-13-4-retour}). Cette sauvegarde manuelle reste recommandée ; depuis la 0.17.4, Kesh écrit \textbf{en plus} la sienne avant toute migration (\S\ref{sec:sauvegarde-avant-maj}).
     \item \textbf{Lire le changelog} de la nouvelle version pour identifier les breaking changes éventuels et les migrations nécessaires.
     \item \textbf{Mettre à jour le fichier compose} --- \textbf{obligatoire pour passer à la 0.13.0} (\S\ref{sec:maj-0-13}) : re-télécharger le compose et y reporter ses adaptations locales, puis vérifier les placeholders de \keshpath{.env} --- dont les lignes \texttt{MARIADB\_ROOT\_PASSWORD} et \texttt{MARIADB\_PASSWORD} : une valeur entre chevrons y est acceptée par Compose, et pour root rien d'autre ne la signale. Sur une base déjà créée, \textbf{ne remplacez pas} ces deux valeurs dans \keshpath{.env} --- ni des chevrons, ni \texttt{kesh\_dev} : la base a gardé celles de sa création, et une valeur neuve n'y change rien (1045 pour Kesh, sauvegarde en échec pour root) ; changez-les par le \S\ref{sec:mariadb-mdp}, \texttt{ALTER USER} d'abord. Pour les versions suivantes : selon le changelog (nouvelles variables, changement d'image).
     \item \textbf{Tirer la nouvelle image} : \keshcommand{docker compose pull kesh-api}.
@@ -2491,7 +2502,7 @@ Les versions de Kesh sont publiées sur GitHub avec un tag \texttt{vX.Y.Z} (vers
 \end{enumerate}
 
 \begin{keshwarning}
-Toujours sauvegarder \textbf{avant} la mise à jour. Une migration DB peut être irréversible. En cas de problème, la restauration depuis sauvegarde reste votre filet de sécurité.
+Toujours sauvegarder \textbf{avant} la mise à jour. Une migration DB peut être irréversible. En cas de problème, la restauration depuis sauvegarde reste votre filet de sécurité. Depuis la 0.17.4, Kesh écrit en plus sa propre sauvegarde avant de migrer, dans \keshpath{backup/pre-upgrade/} (\S\ref{sec:sauvegarde-avant-maj}) : elle ne remplace pas la vôtre, prise hors du disque de Kesh.
 \end{keshwarning}
 
 \paragraph{Réparation de l'installation au premier démarrage (0.13.0).}\label{sec:reparation-installation}
@@ -2509,6 +2520,46 @@ L'opération s'inscrit au journal d'audit sous \emph{Réparation de l'installati
 La session ouverte doit être \textbf{rouverte} --- reconnexion, ou au plus la durée du \textbf{jeton d'accès} (\texttt{KESH\_JWT\_EXPIRY\_MINUTES}) plus une minute ; d'ici là, certains écrans de la société répondent par une erreur, d'autres s'affichent vides. Si le journal du serveur porte « réparation de l'installation au démarrage » suivi d'une erreur, voir la section \emph{Dépannage}.
 
 \textbf{Limite} : les données de démonstration laissées par une réinitialisation antérieure (taux de TVA, réglages de facturation, contacts, articles, factures, avoirs) qui désignent la société effacée restent en base, invisibles et inertes (\#546).
+
+\subsubsection{Passer à la 0.17.4}\label{sec:maj-0-17-4}
+
+La 0.17.4 se pose sur la 0.17.3 : elle n'exige ni nouveau compose ni nouvelle variable de \keshpath{.env} ; on tire l'image et on redémarre (\S\ref{sec:mise-a-jour}). Depuis une version antérieure à la 0.17.3, appliquez d'abord les sections suivantes (\S\ref{sec:maj-0-17-3}, puis \S\ref{sec:maj-0-17-2} s'il le faut). \textbf{Prenez avant la mise à jour la sauvegarde complète} --- la base, une sauvegarde \keshpath{.keshbackup} et le dossier des documents ---, comme avant toute mise à jour d'une installation qui tient des livres : la 0.17.4 n'a pas de migration, mais c'est cette sauvegarde qui rattrape un imprévu.
+
+\begin{sloppypar}
+\paragraph{La sauvegarde avant mise à jour.} Depuis la 0.17.4, Kesh écrit lui-même une sauvegarde complète --- base et pièces --- dans \keshpath{backup/pre-upgrade/} au démarrage d'une version qui doit migrer la base, et refuse de migrer si elle échoue (\S\ref{sec:sauvegarde-avant-maj}). La 0.17.4 n'ayant pas de migration, la mise à jour depuis la 0.17.3 \textbf{n'en écrit pas} : la première sera celle de la prochaine version qui migre. Pour disposer, lors de cette mise à jour-là, de l'échappatoire \keshcommand{KESH\_SKIP\_PRE\_UPGRADE\_BACKUP}, reprenez le compose de la 0.17.4, ou ajoutez sous \texttt{environment:} du service \texttt{kesh-api} la ligne \keshcommand{KESH\_SKIP\_PRE\_UPGRADE\_BACKUP: \$\{KESH\_SKIP\_PRE\_UPGRADE\_BACKUP:-\}}. Les fichiers de \keshpath{pre-upgrade/} sont des secrets, jamais supprimés par Kesh : retirez-les à la main une fois une mise à jour réussie et éprouvée.
+\end{sloppypar}
+
+\begin{sloppypar}
+\paragraph{Aucune migration, retour à la 0.17.3 après vidage des sessions.} \textbf{La 0.17.4 n'a aucune migration} : elle ne modifie pas le schéma, et \texttt{kesh\_version\_min\_required} reste à \texttt{0.17.0}. \textbf{Le retour à la 0.17.3 se fait sans restauration}, \textbf{après avoir vidé la table des sessions}, Kesh arrêté. Avec \keshpath{docker-compose.yml}, deux commandes (compte et base de Kesh : remplacez \texttt{kesh} par \texttt{MARIADB\_USER} et \texttt{MARIADB\_DATABASE} s'ils ont été changés ; le mot de passe demandé est celui de \texttt{DATABASE\_URL}, saisi au clavier) :
+\end{sloppypar}
+
+\begin{lstlisting}[language=bash]
+docker compose stop kesh-api
+docker compose exec mariadb mariadb -u kesh -p kesh \
+  -e "DELETE FROM refresh_tokens"
+\end{lstlisting}
+
+\begin{sloppypar}
+Avec \keshpath{docker-compose.prod.yml} (base hébergée hors du compose, par exemple le MariaDB de DSM), exécutez \texttt{DELETE FROM refresh\_tokens;} dans la base de \texttt{DATABASE\_URL} avec le client MariaDB habituel, Kesh arrêté. Puis reprenez l'image \texttt{gcorbaz/kesh:0.17.3} dans le compose et redémarrez. Tout le monde est déconnecté. \textbf{Sans ce geste}, une empreinte lue dans une base, un dump ou une sauvegarde de la 0.17.4 ouvrirait une session sous la 0.17.3, qui cherche la valeur reçue telle quelle. Après un retour, \textbf{un relevé CAMT.053 réimporté} qui reprend des lignes enregistrées par la 0.17.4 peut les doubler quand leur référence porte un caractère spécial (la 0.17.3 la lit tronquée, ci-dessous) : vérifiez les doublons de l'import.
+\end{sloppypar}
+
+\begin{sloppypar}
+\paragraph{Chaque utilisateur se reconnecte une fois.} Les jetons de session sont désormais stockés en empreinte (\S\ref{sec:auth-jwt}) ; ceux d'avant ne sont plus reconnus, et sont effacés au premier démarrage de la 0.17.4 comme à l'import d'une sauvegarde antérieure. Un onglet resté ouvert revient à la connexion \textbf{à sa prochaine activité} : enregistrez avant de mettre à jour. Les bases, dumps et sauvegardes \textbf{antérieurs} à la mise à jour portent encore des jetons en clair : ils restent des secrets (\S\ref{sec:backup-ui-keshbackup}).
+\end{sloppypar}
+
+\paragraph{Ce qui change à l'écran.} Un avertissement paraît une minute avant la fermeture pour inactivité (trente secondes pour une durée d'une minute), avec un compte à rebours et le bouton \emph{Rester connecté} (\S\ref{sec:duree-inactivite}). Le détail est au manuel utilisateur et au journal des modifications.
+
+\begin{sloppypar}
+\paragraph{Import CAMT.053 : les caractères spéciaux, et les règles à revoir.} Les noms, libellés et références qui contiennent « \& », « < », une lettre codée ou une section CDATA sont désormais lus en entier (\#819). \textbf{Les transactions déjà importées ne sont pas corrigées} : elles gardent leur texte tronqué (« Fils » pour « Dupont \& Fils »). Un relevé déjà importé reste refusé en doublon de fichier, et une ligne déjà importée, reprise par un autre fichier, reste reconnue : pour la retrouver, Kesh lit aussi le fichier comme le faisait la 0.17.3. Deux limites, rares : une ligne neuve peut être signalée doublon à tort --- l'aperçu la montre ---, et, \textbf{si cette relecture échoue}, une ligne déjà importée dont la référence porte un caractère spécial n'est pas reconnue et s'importe une seconde fois sans signal (\#922) : après un import qui chevauche un relevé importé en 0.17.3, \textbf{vérifiez la liste des transactions du compte}. Une règle d'affectation \emph{Contrepartie exacte} écrite sur un nom tronqué ne reconnaît plus le nom entier : \textbf{corrigez-la}. Un fichier qui porte une entité inconnue est refusé (« Fichier XML mal formé ou tronqué »).
+\end{sloppypar}
+
+\begin{sloppypar}
+\paragraph{Pays des adresses.} Le pays d'une adresse est contrôlé sur la liste ISO (\#817). Un contact, ou la société, enregistré avec un pays hors de cette liste (« SU », « XX ») se lit toujours ; le contact \textbf{reste modifiable} sans toucher au pays, l'écran signale le code inconnu, et changer le pays exige un code valide. La société, elle, ne corrige pas son adresse par l'écran après l'assistant (\#909) : enregistrée avec un pays invalide, elle ne produit pas de QR-facture, et la correction passe aujourd'hui par l'administrateur de la base. Pour les intégrations : \texttt{POST} et \texttt{PUT /api/v1/contacts} et \texttt{POST /api/v1/onboarding/coordinates} refusent en \texttt{400 VALIDATION\_ERROR} un pays nouveau ou modifié hors de la liste, et les réponses de contact portent le champ \texttt{addressCountryKnown} ; le refus \texttt{PERIOD\_LOCKED} porte \texttt{details.lockedThrough} et \texttt{details.attempted} (\#869).
+\end{sloppypar}
+
+\begin{sloppypar}
+\paragraph{Verrou du compte bancaire.} Aucune action (\#842, \#540) : chaque connexion à la base est remise à zéro quand elle revient au pool, si bien qu'une requête interrompue ne bloque plus un compte bancaire. Cela exige MariaDB \textbf{10.5 ou plus récent}, ce que la version prérequise (10.11) satisfait (l'image \texttt{mariadb:10.11} de \keshpath{docker-compose.yml} en fait partie ; avec \keshpath{docker-compose.prod.yml}, vérifiez la version du MariaDB hôte) ; sur une base plus ancienne, chaque connexion serait fermée à sa restitution (correct, plus lent).
+\end{sloppypar}
 
 \subsubsection{Passer à la 0.17.3}\label{sec:maj-0-17-3}
 
@@ -2973,7 +3024,7 @@ Une mise à jour majeure (par exemple v0.1 → v1.0) peut comporter des breaking
     \item Surveiller les logs pendant 24--48h post-update.
 \end{enumerate}
 
-\subsection{Rollback en cas d'échec}
+\subsection{Revenir à la version précédente}\label{sec:revenir-version-precedente}
 
 Si une mise à jour échoue ou révèle un bug bloquant :
 
@@ -2989,6 +3040,15 @@ docker compose up -d
 # 3. Si les migrations DB ont ete appliquees et sont irreversibles, restaurer
 # la sauvegarde DB d'avant la mise a jour (cf. section Restauration).
 \end{lstlisting}
+
+\paragraph{Avec la sauvegarde avant mise à jour (depuis la 0.17.4).} Quand la version neuve a migré la base, la version de départ \textbf{ne démarre plus} sur elle. Le fichier que Kesh a écrit avant de migrer (\S\ref{sec:sauvegarde-avant-maj}) la rend, dans cet ordre :
+\begin{enumerate}
+    \item \textbf{Où il est} : dans \keshpath{backup/pre-upgrade/} du répertoire du compose (\keshpath{/volume1/docker/kesh/backup/pre-upgrade} sur Synology), au nom \keshcommand{kesh-pre-upgrade-…-<de>-to-<vers>.keshbackup}, qui porte les deux versions. Il est en \texttt{0600}, propriétaire \texttt{root} : récupérez-le en SSH, \keshcommand{sudo cp} vers un dossier partagé puis \keshcommand{sudo chown}, comme la sauvegarde pré-import (\S\ref{sec:backup-ui-keshbackup}, \emph{La sauvegarde de sécurité pré-import}).
+    \item \textbf{Lequel} : le plus ancien fichier écrit depuis le dernier démarrage réussi de la version de départ ; les fichiers ne sont jamais supprimés.
+    \item \textbf{Faites d'abord un vidage de sécurité de la base actuelle} --- par le script de sauvegarde (\S\ref{sec:script-sauvegarde}), ou par \keshpath{kesh-dump.sh} sur Synology (\S\ref{sec:backup-dsm}) ---, et ne le supprimez qu'une fois la restauration vérifiée.
+    \item \textbf{Restaurez} le fichier dans une \textbf{installation neuve} de la version de départ --- l'image \texttt{<de>} du nom, épinglée (\texttt{image: gcorbaz/kesh:<de>}) ---, sur une base vide, par la procédure \emph{Restaurer sur une nouvelle machine} (\S\ref{sec:restauration-machine-neuve}) ; hors Docker, la base vide se prépare par l'\emph{Initialisation manuelle de la base} (\S\ref{sec:init-db-manuelle}). Ces procédures décrivent une machine neuve : leur application \textbf{sur la machine même} n'est pas éprouvée --- vidage de sécurité d'abord, fichier \keshpath{pre-upgrade/} conservé. \textbf{Procédure non éprouvée sur Synology} (la base y est distincte du compose).
+\end{enumerate}
+Ce que le retour perd : la saisie faite depuis la mise à jour ; les réglages hors fichier (ceux de l'installation, comme la sauvegarde automatique ou la durée d'inactivité) reviennent aux défauts de l'installation neuve.
 
 Revenir à l'image précédente \textbf{ne défait pas} la réparation de l'installation faite au premier démarrage (\S\ref{sec:reparation-installation}) : les clés révoquées restent révoquées --- aucune ne se réactive ---, et les sociétés provisoires supprimées ne reviennent pas ; seule la restauration de la sauvegarde d'avant la mise à jour les rend. La réparation n'impose elle-même aucune version minimale ; le retour à la version précédente n'est possible que si \textbf{aucune autre} migration de la release ne relève la version minimale exigée --- vérifiez-le au CHANGELOG. Cette condition ne suffit pas toujours : une release qui ajoute une migration ferme le retour sans restauration, qu'elle relève ou non la version minimale, car la version précédente refuse de démarrer sur une base qui porte une migration qu'elle ne connaît pas --- c'est le cas de la 0.13.3 (\S\ref{sec:maj-0-13-3-retour}). Pour la 0.13.2, le retour exige en plus que les profils CSV ne lisent plus la colonne Devise (\S\ref{sec:maj-0-13-2}).
 
@@ -3018,13 +3078,13 @@ Configurations recommandées du reverse proxy :
     \item Rotation périodique du \texttt{KESH\_JWT\_SECRET} : tous les 6--12 mois en production. Une rotation invalide tous les tokens existants, forçant les utilisateurs à se reconnecter.
 \end{itemize}
 
-\subsection{Authentification JWT + refresh tokens}
+\subsection{Authentification JWT + refresh tokens}\label{sec:auth-jwt}
 
 Kesh utilise un modèle JWT avec rotation de refresh tokens :
 
 \begin{itemize}
     \item L'access token (JWT court, 15 min par défaut) est envoyé en cookie \texttt{HttpOnly}, \texttt{Secure} (sauf \texttt{KESH\_COOKIE\_SECURE=false}), \texttt{SameSite=Strict}. Il porte l'échéance d'inactivité de la session (\texttt{idle\_exp}), contrôlée sans tolérance.
-    \item Le refresh token est stocké en DB (table \texttt{refresh\_tokens}) \textbf{tel quel} (non haché, suivi par \#890) ; 30 jours est la durée du \emph{cookie} ; la ligne porte l'\textbf{échéance d'inactivité} de la session.
+    \item Le refresh token n'est \textbf{jamais stocké en clair} : la table \texttt{refresh\_tokens} n'en garde qu'une empreinte (SHA-256), si bien que Kesh ne peut pas reprendre une session à partir d'une lecture de la base ou d'une sauvegarde (voir \S\ref{sec:maj-0-17-4} pour un retour à la 0.17.3) ; 30 jours est la durée du \emph{cookie} ; la ligne porte l'\textbf{échéance d'inactivité} de la session.
     \item À chaque refresh, le token précédent est invalidé (rotation), une trace est conservée pour détection d'attaque par replay. La rotation n'a lieu qu'à l'échéance du jeton d'accès et \textbf{ne prolonge pas} la session ; un rejeu dans les 30 secondes d'une rotation (deux onglets) est refusé sans révoquer les autres sessions --- l'onglet qui a perdu la course revient à la connexion.
     \item La déconnexion révoque le jeton de renouvellement de la session.
 \end{itemize}
@@ -3036,19 +3096,19 @@ Kesh utilise un modèle JWT avec rotation de refresh tokens :
 \end{sloppypar}
 
 \begin{sloppypar}
-\textbf{Exacte.} La session se ferme à la dernière activité de l'utilisateur plus la durée réglée, \textbf{à la seconde près, sauf quatre écarts}~: (a) l'activité est transmise au serveur au plus 15 secondes après qu'elle a eu lieu --- un navigateur fermé, mis en veille ou coupé du réseau dans ces 15 secondes ferme jusqu'à 15 secondes plus tôt ; (b) un onglet en arrière-plan~: le navigateur ralentit ses minuteries, l'écran de connexion peut n'apparaître qu'au retour sur l'onglet --- le serveur, lui, a refusé dès l'échéance ; (c) la transition qui suit un changement du réglage~: chaque session applique la nouvelle valeur à sa prochaine activité, une session déjà inactive garde son échéance --- un abaissement peut donc fermer une session dans le navigateur plus tôt que le serveur ne l'aurait fait ; (d) deux écarts sous la seconde (un battement rejoué après un renouvellement, une activité de la toute dernière seconde). Au-delà de l'échéance, le serveur refuse toute requête, quelle que soit la durée du jeton d'accès~: \texttt{KESH\_JWT\_EXPIRY\_MINUTES} ne règle plus que le rythme des renouvellements.
+\textbf{Exacte.} La session se ferme à la dernière activité de l'utilisateur plus la durée réglée, \textbf{à la seconde près, sauf quatre écarts}~: (a) l'activité est transmise au serveur au plus 15 secondes après qu'elle a eu lieu --- un navigateur fermé, mis en veille ou coupé du réseau dans ces 15 secondes ferme jusqu'à 15 secondes plus tôt ; un battement qui croise un renouvellement de la même session peut être perdu de même, et rattrapé à l'activité suivante ; (b) un onglet en arrière-plan~: le navigateur ralentit ses minuteries, l'écran de connexion peut n'apparaître qu'au retour sur l'onglet --- le serveur, lui, a refusé dès l'échéance ; (c) la transition qui suit un changement du réglage~: chaque session applique la nouvelle valeur à sa prochaine activité, une session déjà inactive garde son échéance --- un abaissement peut donc fermer une session dans le navigateur plus tôt que le serveur ne l'aurait fait ; (d) deux écarts sous la seconde (un battement rejoué après un renouvellement, une activité de la toute dernière seconde). Au-delà de l'échéance, le serveur refuse toute requête, quelle que soit la durée du jeton d'accès~: \texttt{KESH\_JWT\_EXPIRY\_MINUTES} ne règle plus que le rythme des renouvellements.
 \end{sloppypar}
 
 \begin{sloppypar}
-\textbf{Ce qui compte.} Toute activité dans Kesh~: clavier, souris (mouvement, clic, molette), toucher, retour sur l'onglet, dictée, collage, glisser-déposer d'un fichier --- dans n'importe quel onglet de Kesh du même navigateur. Ne comptent pas~: la lecture d'un PDF dans l'aperçu sans geste hors du document (le geste à faire est au manuel utilisateur ; un avertissement avant la fermeture est demandé, CR \#895), le travail dans un autre programme, les mises à jour que Kesh fait seul. Détail au manuel utilisateur.
+\textbf{Ce qui compte.} Toute activité dans Kesh~: clavier, souris (mouvement, clic, molette), toucher, retour sur l'onglet, dictée, collage, glisser-déposer d'un fichier --- dans n'importe quel onglet de Kesh du même navigateur. Ne comptent pas~: la lecture d'un PDF dans l'aperçu sans geste hors du document (une minute avant l'échéance --- trente secondes pour une durée d'une minute ---, un avertissement propose de rester connecté ; détail au manuel utilisateur), le travail dans un autre programme, les mises à jour que Kesh fait seul. Détail au manuel utilisateur.
 \end{sloppypar}
 
 \begin{sloppypar}
-\textbf{À l'échéance.} Le navigateur \textbf{déconnecte} la session au serveur (il attend la réponse jusqu'à deux secondes), puis affiche la page de connexion avec « Session fermée après N minutes d'inactivité », qui ne rétablit pas la session. Si la déconnexion n'a pas abouti (réseau coupé) et que l'échéance du serveur est plus tardive (écart c), revenir à une autre page de Kesh peut retrouver la session jusqu'à cette échéance. Si le navigateur refuse \texttt{localStorage}, l'activité n'est pas partagée entre onglets~: c'est le serveur qui ferme (message de session expirée), et l'écran reste affiché jusqu'à la prochaine action.
+\textbf{À l'échéance.} Le navigateur \textbf{déconnecte} la session au serveur (il attend la réponse jusqu'à deux secondes), puis affiche la page de connexion avec « Session fermée après N minutes d'inactivité », qui ne rétablit pas la session. Si la déconnexion n'a pas abouti (réseau coupé) et que l'échéance du serveur est plus tardive (écart c), revenir à une autre page de Kesh peut retrouver la session jusqu'à cette échéance. Si le navigateur refuse \texttt{localStorage}, l'activité n'est pas partagée entre onglets~: c'est le serveur qui ferme (message de session expirée), aucun avertissement ne précède la fermeture, et l'écran reste affiché jusqu'à la prochaine action.
 \end{sloppypar}
 
 \begin{sloppypar}
-\textbf{Mise à jour.} L'ancienne variable de durée d'inactivité n'est plus lue (\S\ref{sec:configuration} : retirez-la si vous l'aviez posée). Les jetons émis avant la mise à jour restent valables jusqu'à \texttt{KESH\_JWT\_EXPIRY\_MINUTES}. \textbf{Après la mise à jour, rechargez chaque onglet de Kesh resté ouvert}~: un onglet resté sur l'ancienne interface ne transmet pas l'activité au serveur, et sa session peut se fermer en pleine saisie. Si vous aviez posé \texttt{KESH\_JWT\_EXPIRY\_MINUTES=480}, une session ouverte avant la mise à jour peut prendre fin à sa première activité qui suit~: reconnectez-vous une fois.
+\textbf{Mise à jour.} Pour la 0.17.4 (jetons de session en empreinte, une reconnexion), voir \S\ref{sec:maj-0-17-4}. À la mise à jour vers la 0.17.3 : l'ancienne variable de durée d'inactivité n'est plus lue (\S\ref{sec:configuration} : retirez-la si vous l'aviez posée). Les jetons émis avant la mise à jour restent valables jusqu'à \texttt{KESH\_JWT\_EXPIRY\_MINUTES}. \textbf{Après la mise à jour, rechargez chaque onglet de Kesh resté ouvert}~: un onglet resté sur l'ancienne interface ne transmet pas l'activité au serveur, et sa session peut se fermer en pleine saisie. Si vous aviez posé \texttt{KESH\_JWT\_EXPIRY\_MINUTES=480}, une session ouverte avant la mise à jour peut prendre fin à sa première activité qui suit~: reconnectez-vous une fois.
 \end{sloppypar}
 
 \begin{sloppypar}
@@ -3755,14 +3815,14 @@ Causes courantes :
 
 \paragraph{Conduite}\mbox{}\\
 \begin{sloppypar}
-Kesh démarre quand même, sur l'installation \textbf{inchangée} : la connexion et l'export d'une sauvegarde fonctionnent. Exportez une sauvegarde, puis redémarrez le service une fois (\keshcommand{docker compose restart kesh-api}) : chaque démarrage rejoue la réparation. \keshcommand{docker compose up -d} ne suffit pas ici --- sur un conteneur dont ni l'image ni la configuration n'ont changé, il ne redémarre rien. Si le message revient, ouvrez un ticket en le joignant. Une société provisoire laissée en place porte un avertissement distinct (« société provisoire … conservée »), sans effet sur le reste de la réparation. Pour revenir à la version précédente, voir \S\ref{sec:reparation-installation} et la section \emph{Rollback en cas d'échec}.
+Kesh démarre quand même, sur l'installation \textbf{inchangée} : la connexion et l'export d'une sauvegarde fonctionnent. Exportez une sauvegarde, puis redémarrez le service une fois (\keshcommand{docker compose restart kesh-api}) : chaque démarrage rejoue la réparation. \keshcommand{docker compose up -d} ne suffit pas ici --- sur un conteneur dont ni l'image ni la configuration n'ont changé, il ne redémarre rien. Si le message revient, ouvrez un ticket en le joignant. Une société provisoire laissée en place porte un avertissement distinct (« société provisoire … conservée »), sans effet sur le reste de la réparation. Pour revenir à la version précédente, voir \S\ref{sec:reparation-installation} et la section \emph{Revenir à la version précédente} (\S\ref{sec:revenir-version-precedente}).
 \end{sloppypar}
 
 \subsection{Erreurs 401 en cascade côté frontend}
 
 \paragraph{Symptômes} Plusieurs appels API consécutifs échouent en \texttt{401 Unauthorized} alors que l'utilisateur est censé être authentifié.
 
-\paragraph{Cause} La cause ordinaire~: la \textbf{session a été fermée par inactivité} (\S\ref{sec:duree-inactivite}) --- la page de connexion le dit ; un onglet resté en arrière-plan peut n'afficher la connexion qu'au retour. Sinon~: jeton de renouvellement expiré ou invalidé (cf. KF \#54 « E2E test helpers cascade 401 », fermée Epic 9.5).
+\paragraph{Cause} La cause ordinaire~: la \textbf{session a été fermée par inactivité} (\S\ref{sec:duree-inactivite}) --- la page de connexion le dit ; un onglet resté en arrière-plan peut n'afficher la connexion qu'au retour ; juste après une mise à jour vers la 0.17.4~: la reconnexion unique (\S\ref{sec:maj-0-17-4}). Sinon~: jeton de renouvellement expiré ou invalidé (cf. KF \#54 « E2E test helpers cascade 401 », fermée Epic 9.5).
 
 \paragraph{Solution} L'utilisateur doit se reconnecter. Si le problème persiste pour tous les utilisateurs, vérifier l'horloge système (drift NTP).
 

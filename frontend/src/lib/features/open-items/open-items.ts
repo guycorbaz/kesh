@@ -22,13 +22,12 @@ export const MAX_LINES_PER_GROUP = 200;
 // Dates et état d'URL (AC1)
 // ---------------------------------------------------------------------------
 
-/** La date **locale** du navigateur, `AAAA-MM-JJ` (C-15-1c-5 — jamais l'UTC). */
-export function todayLocal(now: Date = new Date()): string {
-	const y = String(now.getFullYear()).padStart(4, '0');
-	const m = String(now.getMonth() + 1).padStart(2, '0');
-	const d = String(now.getDate()).padStart(2, '0');
-	return `${y}-${m}-${d}`;
-}
+/**
+ * La date **locale** du navigateur, `AAAA-MM-JJ` (C-15-1c-5 — jamais l'UTC). Déplacée dans
+ * `$lib/shared/utils/local-date` (Story v0174-correctifs-3, #889) ; réexportée ici pour
+ * les importeurs existants.
+ */
+export { todayLocal } from '$lib/shared/utils/local-date';
 
 /**
  * Vrai si `s` est une date réelle `AAAA-MM-JJ` d'une année entre 1000 et 9999

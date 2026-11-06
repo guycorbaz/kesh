@@ -36,7 +36,6 @@ fn test_config() -> Config {
         TimeDelta::minutes(15),
         TimeDelta::days(30),
         TimeDelta::minutes(15),
-        TimeDelta::minutes(15),
         100,
         TimeDelta::minutes(30),
         12,
@@ -278,6 +277,74 @@ async fn coordinates_rejects_country_name(pool: MySqlPool) {
         .await
         .unwrap();
     assert_eq!(resp.status(), 200);
+    let body: serde_json::Value = resp.json().await.unwrap();
+    assert_eq!(body["stepCompleted"], 5);
+}
+
+/// Story v0174-correctifs-2 (#817, AC-2.7) — un code de deux lettres hors de la
+/// liste ISO (« XX ») est refusé à l'étape des coordonnées, en 400
+/// `VALIDATION_ERROR` qui le nomme ; l'étape n'avance pas, rien n'est écrit.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn coordinates_rejects_unknown_iso_country_817(pool: MySqlPool) {
+    let app = spawn_app(pool.clone()).await;
+    create_test_company(&pool).await;
+    ensure_admin_user(&pool, &test_config()).await.unwrap();
+    let token = login(&app).await;
+    advance_to_step_2(&app, &token).await;
+    for (path, body) in [
+        ("/api/v1/onboarding/start-production", None),
+        (
+            "/api/v1/onboarding/org-type",
+            Some(json!({ "orgType": "Pme" })),
+        ),
+        (
+            "/api/v1/onboarding/accounting-language",
+            Some(json!({ "language": "FR" })),
+        ),
+    ] {
+        let mut req = app
+            .client
+            .post(app.url(path))
+            .header("Authorization", auth(&token));
+        if let Some(b) = body {
+            req = req.json(&b);
+        }
+        let resp = req.send().await.unwrap();
+        assert_eq!(resp.status(), 200, "{path}");
+    }
+    let avant: Vec<(String, String)> =
+        sqlx::query_as("SELECT name, address_country FROM companies ORDER BY id")
+            .fetch_all(&pool)
+            .await
+            .unwrap();
+
+    let resp = app
+        .client
+        .post(app.url("/api/v1/onboarding/coordinates"))
+        .header("Authorization", auth(&token))
+        .json(&json!({ "name": "Test SA", "address": {"street":"Rue Test","building":"1","postalCode":"1000","city":"Lausanne","country":"XX"}, "ideNumber": null }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 400);
+    let body: serde_json::Value = resp.json().await.unwrap();
+    assert_eq!(body["error"]["code"], "VALIDATION_ERROR");
+    let message = body["error"]["message"].as_str().unwrap_or_default();
+    assert!(message.contains("« XX »"), "motif inattendu : {message}");
+
+    let apres: Vec<(String, String)> =
+        sqlx::query_as("SELECT name, address_country FROM companies ORDER BY id")
+            .fetch_all(&pool)
+            .await
+            .unwrap();
+    assert_eq!(apres, avant, "rien d'écrit");
+    let resp = app
+        .client
+        .get(app.url("/api/v1/onboarding/state"))
+        .header("Authorization", auth(&token))
+        .send()
+        .await
+        .unwrap();
     let body: serde_json::Value = resp.json().await.unwrap();
     assert_eq!(body["stepCompleted"], 5);
 }

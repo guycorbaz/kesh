@@ -11,6 +11,12 @@
 //!    lit `_kesh_version.kesh_version_min_required` et refuse le boot si
 //!    le binaire courant est plus ancien que ce min_required (évite une
 //!    corruption silencieuse sur downgrade par erreur).
+//!    3c. Sauvegarde avant mise à jour (story v0174-mise-a-jour, #847) —
+//!    `pre_upgrade_backup::sauvegarder_avant_migration` : s'il reste des
+//!    migrations à appliquer, une sauvegarde complète (base et pièces) dans
+//!    `<KESH_ADMIN_BACKUP_DIR>/pre-upgrade/` ; son échec refuse le démarrage
+//!    **avant** toute migration (échappatoire
+//!    `KESH_SKIP_PRE_UPGRADE_BACKUP=<version exacte>`).
 //! 4. Migrations (`MIGRATOR.run()`) — avance partielle de la story 8.2,
 //!    strictement limitée à `run()`.
 //!    Record boot version (story 10-2) — `record_boot_version` met à
@@ -78,8 +84,11 @@ async fn main() {
         }
     };
 
-    // 3. Pool MariaDB — obligatoire (story 1.5)
-    let pool = match MySqlPoolOptions::new()
+    // 3. Pool MariaDB — obligatoire (story 1.5). La session de chaque
+    // connexion est remise à zéro à son retour au pool (#842, #540) : un verrou
+    // de compte ou `FOREIGN_KEY_CHECKS = 0` laissés par une requête abandonnée
+    // ne survivent pas.
+    let pool = match kesh_db::pool::avec_remise_a_zero_de_session(MySqlPoolOptions::new())
         .max_connections(5)
         .acquire_timeout(config.db_connect_timeout)
         .connect(&config.database_url)
@@ -119,25 +128,13 @@ async fn main() {
     // sur ce path car le pool n'a fait qu'un SELECT court (pas de transactions
     // ouvertes côté serveur). Pattern à reviser si une future Story introduit
     // des transactions writeable avant le check.
-    match kesh_db::version::check_downgrade_protection(&pool, env!("CARGO_PKG_VERSION")).await {
-        Ok(kesh_db::version::DowngradeCheckOutcome::FreshInstall) => {
-            tracing::info!(
-                "Vérification de version DB : fresh install (table _kesh_version absente, sera créée par MIGRATOR.run())"
-            );
-        }
-        Ok(kesh_db::version::DowngradeCheckOutcome::Aligned) => {
-            tracing::info!(
-                "Vérification de version DB : binaire v{} aligné avec kesh_version_min_required",
-                env!("CARGO_PKG_VERSION")
-            );
-        }
-        Ok(kesh_db::version::DowngradeCheckOutcome::BinaryAhead { db_min, binary }) => {
-            tracing::info!(
-                "Vérification de version DB : binaire v{} > kesh_version_min_required v{} (upgrade)",
-                binary,
-                db_min
-            );
-        }
+    let outcome = match kesh_db::version::check_downgrade_protection(
+        &pool,
+        env!("CARGO_PKG_VERSION"),
+    )
+    .await
+    {
+        Ok(o) => o,
         Err(err @ kesh_db::version::VersionError::DowngradeRefused { .. }) => {
             // Réutilise le Display français du variant plutôt que de dupliquer
             // le message ici (évite drift maintenance).
@@ -150,6 +147,69 @@ async fn main() {
                 e
             );
             std::process::exit(1);
+        }
+    };
+    match &outcome {
+        kesh_db::version::DowngradeCheckOutcome::FreshInstall => {
+            tracing::info!(
+                "Vérification de version DB : fresh install (table _kesh_version absente, sera créée par MIGRATOR.run())"
+            );
+        }
+        kesh_db::version::DowngradeCheckOutcome::Aligned => {
+            tracing::info!(
+                "Vérification de version DB : binaire v{} aligné avec kesh_version_min_required",
+                env!("CARGO_PKG_VERSION")
+            );
+        }
+        kesh_db::version::DowngradeCheckOutcome::BinaryAhead { db_min, binary } => {
+            tracing::info!(
+                "Vérification de version DB : binaire v{} > kesh_version_min_required v{} (upgrade)",
+                binary,
+                db_min
+            );
+        }
+    }
+
+    // 3c. Sauvegarde avant mise à jour (story v0174-mise-a-jour, #847) — s'il
+    //     reste des migrations, une sauvegarde complète de l'état d'avant ;
+    //     un refus arrête le démarrage AVANT toute migration. Les
+    //     avertissements se décident sur l'issue rendue (C-v0174m-34).
+    {
+        use kesh_api::pre_upgrade_backup::{self as avant_maj, Issue};
+        let vers = env!("CARGO_PKG_VERSION");
+        match avant_maj::sauvegarder_avant_migration(
+            &pool,
+            &config,
+            &outcome,
+            vers,
+            Arc::new(kesh_api::auto_backup::RealBackupEnv),
+            chrono::Utc::now().naive_utc(),
+        )
+        .await
+        {
+            Err(refus) => {
+                tracing::error!("{}", avant_maj::message_de_refus(&refus, vers));
+                std::process::exit(1);
+            }
+            Ok(Issue::Contournee) => {
+                tracing::warn!("{}", avant_maj::message_echappatoire_utilisee(vers));
+            }
+            Ok(Issue::Ecrite {
+                chemin,
+                echappatoire_ignoree,
+                dossier_non_synchronise,
+            }) => {
+                if let Some(valeur) = echappatoire_ignoree {
+                    tracing::warn!("{}", avant_maj::message_echappatoire_ignoree(&valeur, vers));
+                }
+                if let Some(erreur) = dossier_non_synchronise {
+                    tracing::warn!(
+                        "{}",
+                        avant_maj::message_dossier_non_synchronise(&chemin, &erreur)
+                    );
+                }
+            }
+            Ok(Issue::InstallationNeuve | Issue::AJour | Issue::Interrompue) => {}
         }
     }
 
@@ -227,14 +287,18 @@ async fn main() {
     // dans le handler du premier login.
     kesh_api::auth::password::warm_up_dummy_hash();
 
-    // 5c. Nettoyage des refresh tokens expirés/révoqués > 7 jours (story 1.6)
+    // 5c. Nettoyage des refresh tokens expirés/révoqués > 7 jours (story 1.6),
+    //     et des jetons clairs d'avant la 0.17.4 (#890, C-v0174s-6).
     let cleanup_cutoff = (chrono::Utc::now() - chrono::TimeDelta::days(7)).naive_utc();
     match kesh_db::repositories::refresh_tokens::delete_expired_and_revoked(&pool, cleanup_cutoff)
         .await
     {
         Ok(count) => {
             if count > 0 {
-                tracing::info!("startup cleanup: {} expired/revoked tokens removed", count);
+                tracing::info!(
+                    "startup cleanup: {} expired, revoked or pre-0.17.4 tokens removed",
+                    count
+                );
             }
         }
         Err(e) => {

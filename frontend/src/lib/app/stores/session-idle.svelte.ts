@@ -39,6 +39,12 @@
  * valeurs en mémoire, **continue d'envoyer le battement** de l'activité de
  * son onglet, mais **ne ferme rien de lui-même** : c'est le serveur qui ferme
  * (C-v0172s-45).
+ *
+ * Story v0174-session-2 (0.17.4, #895) — une minute avant l'échéance (la
+ * moitié de N si N = 1), `warningRemainingMs` porte le temps restant : le
+ * layout affiche alors l'avertissement et son bouton « Rester connecté »
+ * (`stayActive`). Toute activité, dans n'importe quel onglet, l'efface au tic
+ * suivant ; sans stockage partagé, pas d'avertissement (C-v0174s-14).
  */
 
 import { apiClient } from '$lib/shared/utils/api-client';
@@ -59,6 +65,12 @@ export const HEARTBEAT_MIN_INTERVAL_MS = 15_000;
 export const LOGOUT_TIMEOUT_MS = 2_000;
 /** Écriture de l'activité au plus une fois par seconde (ms). */
 const ACTIVITY_WRITE_THROTTLE_MS = 1_000;
+/**
+ * Story v0174-session-2 (#895, C-v0174s-10) — l'avertissement paraît une
+ * minute avant l'échéance (ms) ; la moitié de la durée si elle est plus courte
+ * (`min(WARNING_LEAD_MS, N × 60 000 / 2)` : 30 s pour N = 1).
+ */
+export const WARNING_LEAD_MS = 60_000;
 
 /** Bornes de N (minutes), miroir du serveur. */
 const MIN_MINUTES = 1;
@@ -123,6 +135,17 @@ function readKey(key: string): number | null {
 	return Number.isFinite(v) ? v : null;
 }
 
+/** Retire une clé (stockage partagé et repli en mémoire) — #898, N-E5. */
+function removeKey(key: string): void {
+	memory.delete(key);
+	if (!shared) return;
+	try {
+		window.localStorage.removeItem(key);
+	} catch {
+		shared = false;
+	}
+}
+
 /** Écrit une valeur finie ; une valeur non finie n'est jamais écrite. */
 function writeKey(key: string, value: number): void {
 	if (!Number.isFinite(value)) return;
@@ -141,6 +164,13 @@ function writeKey(key: string, value: number): void {
 // ---------------------------------------------------------------------------
 
 let minutes = $state<number | null>(null);
+/**
+ * Story v0174-session-2 (#895) — le temps restant avant la fermeture (ms)
+ * quand l'avertissement doit être affiché, `null` sinon. Écrit par `tick`
+ * seulement (et remis à `null` par `stayActive` et `stop`) ; toujours `null`
+ * sans stockage partagé, puisque rien ne ferme alors localement (C-v0174s-14).
+ */
+let warningRemainingMs = $state<number | null>(null);
 let running = false;
 /** Incrémenté à chaque `start()` / `stop()` : une réponse tardive d'un démarrage
  * précédent (`/me`) est ignorée. */
@@ -236,6 +266,17 @@ function onPointerMove(e: Event): void {
 	recordActivity();
 }
 
+/**
+ * #898 (Rec-e1) — le pointeur quitte la page, ou passe sur un `<iframe>` (le
+ * cadre de l'aperçu, dont la page ne reçoit plus les gestes) : la position
+ * retenue est oubliée, si bien que le retour suivant compte, même au même
+ * pixel. Ce n'est **pas** un écouteur d'activité : il ne note rien.
+ */
+function onPointerOut(e: Event): void {
+	const to = (e as PointerEvent).relatedTarget;
+	if (to === null || to instanceof HTMLIFrameElement) lastPointer = null;
+}
+
 /** La cible est la fenêtre elle-même (tout autre cible de `focus`/`blur` est
  * un nœud du document : un élément qui prend ou perd le focus). */
 function targetsWindow(e: Event): boolean {
@@ -261,6 +302,7 @@ const LISTENER_OPTIONS: AddEventListenerOptions = { capture: true, passive: true
 function addListeners(): void {
 	for (const type of WINDOW_EVENTS) window.addEventListener(type, recordActivity, LISTENER_OPTIONS);
 	window.addEventListener('pointermove', onPointerMove, LISTENER_OPTIONS);
+	window.addEventListener('pointerout', onPointerOut, LISTENER_OPTIONS);
 	window.addEventListener('focus', onFocus, LISTENER_OPTIONS);
 	window.addEventListener('blur', onBlur, LISTENER_OPTIONS);
 	document.addEventListener('input', recordActivity, LISTENER_OPTIONS);
@@ -270,6 +312,7 @@ function addListeners(): void {
 function removeListeners(): void {
 	for (const type of WINDOW_EVENTS) window.removeEventListener(type, recordActivity, LISTENER_OPTIONS);
 	window.removeEventListener('pointermove', onPointerMove, LISTENER_OPTIONS);
+	window.removeEventListener('pointerout', onPointerOut, LISTENER_OPTIONS);
 	window.removeEventListener('focus', onFocus, LISTENER_OPTIONS);
 	window.removeEventListener('blur', onBlur, LISTENER_OPTIONS);
 	document.removeEventListener('input', recordActivity, LISTENER_OPTIONS);
@@ -289,6 +332,12 @@ function tick(): void {
 		void closeSession();
 		return;
 	}
+	// #895 — l'avertissement, calculé ici, AVANT les sorties du battement : un
+	// utilisateur inactif sort plus bas (`!(last > rep)`), et un calcul placé en
+	// fin de fonction ne s'exécuterait jamais pour lui (validation P1, F8).
+	const remaining = w !== null ? last + w - now : Infinity;
+	warningRemainingMs =
+		w !== null && shared && remaining <= Math.min(WARNING_LEAD_MS, w / 2) ? remaining : null;
 	if (heartbeatInFlight) return;
 	const rep = readKey(KEY_REPORTED_ACTIVITY) ?? -Infinity;
 	// `heartbeatAt` absente ⇒ battement permis (R5-3).
@@ -312,7 +361,16 @@ async function sendHeartbeat(idleMs: number, previousReported: number, gen: numb
 		// Échec (réseau, 5xx) : l'activité redevient « à rapporter » ; `heartbeatAt`
 		// garde sa valeur, si bien que l'envoi se retente au pas de 15 s suivant.
 		// Un 401 définitif a déjà effacé la session et redirigé (chemin 401).
-		if (gen === generation) writeKey(KEY_REPORTED_ACTIVITY, previousReported);
+		// #898 (N-E5) : sans activité rapportée avant (`-Infinity`), `writeKey`
+		// n'écrirait rien et l'activité resterait marquée « rapportée » — la clé
+		// est retirée, et l'activité repart au pas de 15 s suivant.
+		if (gen === generation) {
+			if (Number.isFinite(previousReported)) {
+				writeKey(KEY_REPORTED_ACTIVITY, previousReported);
+			} else {
+				removeKey(KEY_REPORTED_ACTIVITY);
+			}
+		}
 	} finally {
 		heartbeatInFlight = false;
 	}
@@ -396,8 +454,32 @@ export const sessionIdle = {
 		timer = setInterval(tick, TICK_MS);
 	},
 
+	/**
+	 * Story v0174-session-2 (#895, C-v0174s-12) — « Rester connecté » : une
+	 * activité explicite, rien de plus. Même contrôle préalable de l'échéance
+	 * que `recordActivity` (au-delà, la session se ferme), puis l'activité est
+	 * notée **sans** la régulation d'une seconde et l'avertissement s'efface
+	 * aussitôt. Le battement part au tic suivant, par le chemin ordinaire (un
+	 * second chemin d'envoi contournerait la régulation entre onglets).
+	 * Nécessaire en plus des écouteurs : une technologie d'assistance n'émet
+	 * qu'un `click`.
+	 */
+	stayActive(): void {
+		if (!running) return;
+		const now = Date.now();
+		if (deadlineReached(now)) {
+			void closeSession();
+			return;
+		}
+		lastWriteAt = now;
+		writeKey(KEY_LAST_ACTIVITY, now);
+		memLast = now;
+		warningRemainingMs = null;
+	},
+
 	/** Retire écouteurs et minuterie ; n'écrit rien. Idempotente. */
 	stop(): void {
+		warningRemainingMs = null;
 		if (!running) return;
 		running = false;
 		generation += 1;
@@ -416,5 +498,10 @@ export const sessionIdle = {
 	/** N courant, lu par la fermeture (`?minutes=`). */
 	get minutes(): number | null {
 		return minutes;
+	},
+
+	/** #895 — temps restant (ms) pendant l'avertissement, `null` sinon. Réactif. */
+	get warningRemainingMs(): number | null {
+		return warningRemainingMs;
 	},
 };

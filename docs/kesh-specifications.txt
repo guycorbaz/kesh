@@ -2688,9 +2688,10 @@ L'utilisateur peut attacher des justificatifs aux écritures, lettrer des écrit
 
 - **Given** un refresh_token valide, **When** POST /api/v1/auth/refresh, **Then** nouveau access_token + nouveau refresh_token
 - **Given** aucune activité pendant la durée réglée par l'Administrateur (60 minutes par défaut, Administration → Paramètres), **When** une requête ou un renouvellement, **Then** refus 401 et retour à la connexion (CR #891)
+- **Given** une session sans activité depuis la durée réglée moins une minute (moins la moitié de la durée si elle est d'une minute), **When** le navigateur affiche Kesh, **Then** un avertissement propose « Rester connecté », sans déplacer le focus, au-dessus de tout dialogue ouvert ; un clic garde la session (CR #895)
 - **Given** 5 tentatives de login échouées en 15 minutes pour une IP, **When** 6ème tentative, **Then** réponse 429 Too Many Requests
 - **Given** IP bloquée, **When** attente de 30 minutes, **Then** les tentatives de login sont à nouveau autorisées
-- **And** le refresh_token est un UUID opaque stocké en base (table refresh_tokens: id, user_id, token, expires_at)
+- **And** le refresh_token est un UUID opaque stocké en base **sous forme d'empreinte** (depuis la 0.17.4, #890) (table refresh_tokens: id, user_id, token, expires_at)
 - **And** un changement de mot de passe ou une désactivation de compte invalide tous les refresh_tokens de l'utilisateur
 
 ### Story 1.7 : Gestion des utilisateurs (CRUD)

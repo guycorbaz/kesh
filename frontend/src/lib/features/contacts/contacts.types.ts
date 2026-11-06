@@ -44,6 +44,13 @@ export interface ContactResponse {
 	address: string | null;
 	/** Adresse structurée (source de vérité éditable, #213). */
 	addressStructured: StructuredAddress;
+	/**
+	 * `false` si le pays de l'adresse n'est pas un code ISO 3166-1 alpha-2 connu — un
+	 * contact enregistré avant la 0.17.4 avec « SU », par exemple (#817) : sa QR-facture
+	 * ne pourra pas être produite, et l'écran le signale. `true` sans adresse. Calculé par
+	 * le serveur : l'écran ne recopie pas la liste ISO.
+	 */
+	addressCountryKnown: boolean;
 	email: string | null;
 	phone: string | null;
 	/** Forme normalisée `CHE109322551` (12 chars) ou null. Formatée à l'affichage. */

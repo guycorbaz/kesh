@@ -180,6 +180,11 @@ pub struct ContactResponse {
     pub address: Option<String>,
     /// Adresse structurée (source de vérité éditable côté frontend, #213).
     pub address_structured: crate::address_input::StructuredAddressInput,
+    /// `false` si le pays de l'adresse n'est pas un code ISO 3166-1 alpha-2
+    /// connu — un contact enregistré avant la 0.17.4 avec « SU », par exemple
+    /// (#817) : la QR-facture de ce contact ne pourra pas être produite, et
+    /// l'écran le signale. `true` sans adresse.
+    pub address_country_known: bool,
     pub email: Option<String>,
     pub phone: Option<String>,
     /// Forme normalisée `"CHE109322551"`. Le frontend la formate pour l'affichage.
@@ -205,7 +210,10 @@ pub struct ContactResponse {
 
 impl From<Contact> for ContactResponse {
     fn from(c: Contact) -> Self {
+        let address_country_known = c.structured_address().is_none()
+            || crate::address_input::is_known_country(c.address_country.as_deref());
         Self {
+            address_country_known,
             id: c.id,
             company_id: c.company_id,
             contact_type: c.contact_type,
@@ -359,6 +367,9 @@ fn validate_common(
     client_number: Option<String>,
     default_payment_terms: Option<String>,
     default_payment_terms_days: Option<i32>,
+    // #817 (0.17.4) — le pays déjà enregistré (mise à jour), `None` à la
+    // création : un pays inchangé est toléré même hors de la liste ISO.
+    stored_country: Option<&str>,
 ) -> Result<ValidatedFields, AppError> {
     // #213 — Personne : prénom + nom séparés, `name` recomposé « Prénom Nom ».
     // Entreprise : raison sociale unique (prénom/nom laissés vides).
@@ -388,8 +399,9 @@ fn validate_common(
         )));
     }
 
-    // Adresse structurée (#213) : longueurs SIX type S, bloc vide → None.
-    let address_structured = address_structured.validate_optional()?;
+    // Adresse structurée (#213) : longueurs SIX type S, bloc vide → None ; pays
+    // connu de la liste ISO, sauf s'il est inchangé (#817).
+    let address_structured = address_structured.validate_optional_keeping(stored_country)?;
 
     let email = normalize_optional(email);
     if let Some(ref e) = email {
@@ -652,6 +664,7 @@ pub async fn create_contact(
         req.client_number,
         req.default_payment_terms,
         req.default_payment_terms_days,
+        None,
     )?;
 
     let a = v.address_structured.as_ref();
@@ -701,7 +714,7 @@ pub async fn update_contact(
     Json(req): Json<UpdateContactRequest>,
 ) -> Result<Json<ContactResponse>, AppError> {
     // Story 6.2: Multi-tenant scoping via find_by_id_in_company (IDOR check)
-    let _existing = contacts::find_by_id_in_company(&state.pool, id, current_user.company_id)
+    let existing = contacts::find_by_id_in_company(&state.pool, id, current_user.company_id)
         .await?
         .ok_or(AppError::Database(DbError::NotFound))?;
 
@@ -719,6 +732,8 @@ pub async fn update_contact(
         req.client_number,
         req.default_payment_terms,
         req.default_payment_terms_days,
+        // #817 — le pays stocké : inchangé, il est toléré même hors liste ISO.
+        existing.address_country.as_deref(),
     )?;
 
     let a = v.address_structured.as_ref();
@@ -872,6 +887,7 @@ mod tests {
             None,
             None,
             Some(fifty_ligatures),
+            None,
             None,
             None,
         );
