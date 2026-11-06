@@ -782,7 +782,7 @@ describe('Écran d’import — libellés traduits (Story 27-3, AC17)', () => {
 	];
 	// Mots ambigus (un IBAN, une date peuvent les contenir) : cherchés en nœud
 	// de texte entier.
-	const FR_WHOLE = /> *(Code|IBAN|Index|Date|Transactions) *</;
+	const FR_WHOLE = /> *(Code|IBAN|Ligne|Date|Transactions) *</;
 
 	it('V13 — chaque clé de l’AC17 apparaît, aucun texte fr en dur ne subsiste', async () => {
 		i18nMode.keys = true;
