@@ -1,6 +1,6 @@
 # Story v0174-correctifs-3 : les écrans — toutes les factures d'un lot (#888), la date du jour à l'heure suisse (#889), le projet archivé d'un brouillon (#872), la date du verrou au repassage en brouillon (#869)
 
-Status: review
+Status: done
 
 *Fiche sœur de `v0174-correctifs.md` (l'index), rédigée le 2026-11-05 en autonomie (Opus 5.5), worktree
 `/home/gcorbaz/devel/kesh-0174c`, branche `story/v0174-correctifs` partie de `7bd4d5c0`. Release **0.17.4**, **sans
