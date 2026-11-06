@@ -15,6 +15,7 @@ Tenu le 2026-11-06 par l'agent de fiche (Opus 5.5), en autonomie ; 31 choix apr�
 - **C-e334-5 — `validate_required`, pays strict même inchangé.** *Contexte* : le contact garde un pays inconnu inchangé (`validate_optional_keeping`) parce que sa QR est facultative. *Retenu* : pour la société, créancière de toute QR, refuser : c'est la correction, et l'accepter annoncerait un succès avec une QR toujours en panne. *Écartée* : le patron du contact. *Réversible* : oui.
 - **C-e334-6 — Pas de sélecteur commun.** *Contexte* : #910, liste ISO en quatre langues. *Retenu* : champ à deux lettres, comme contacts, et avis. *Écartée* : l'intégrer (déborde). #910 reste ouverte. *Réversible* : oui.
 - **C-e334-7 — Route dédiée `PUT /companies/current/address`.** *Contexte* : patron existant d'une route par groupe de coordonnées, et `is_stub` réservé à l'assistant. *Retenu* : troisième route du patron, Admin. *Écartée* : une route générique ; réouvrir l'assistant. *Réversible* : oui. Compteurs du registre d'audit à recompter avec 33-7.
+- **C-e334-32 — L'ancien texte reste affiché pendant l'édition ; la trace reprend la forme de la réponse.** *Contexte* : développement ; une société d'avant les composants n'a que le texte libre, et le formulaire part vide. *Retenu* : le texte reste au-dessus du formulaire, le pays préremplit `CH` s'il est vide ; `before`/`after` sérialisent `StructuredAddressInput` (clés `postalCode`, comme l'API), sans type de plus. Une spec neuve, `company-address.spec.ts`, plutôt qu'élargir la voisine. *Réversible* : oui.
 
 ## 33-6
 

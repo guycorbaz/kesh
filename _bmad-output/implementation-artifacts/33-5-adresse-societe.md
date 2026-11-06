@@ -1,6 +1,6 @@
 # Story 33-5 : corriger l'adresse de la société après l'assistant (#909)
 
-Status: ready-for-dev
+Status: review
 
 *Fiche rédigée le 2026-11-06 en autonomie (Opus 5.5), worktree `/home/gcorbaz/devel/kesh-e33`, branche `story/33-0-kickoff`,
 numéros de ligne de `4ef19901`. Release **0.17.5**, Epic 33. **Aucune migration.** Registre : `e33-choix-autonomes-e334.md`,
@@ -68,13 +68,13 @@ pour qu'une société enregistrée avec un pays invalide puisse de nouveau produ
 
 ## Tâches
 
-- [ ] **T1 — rouge d'abord** : `crates/kesh-api/tests/company_address_e2e.rs`, AC-1 à 8 ; AC-3 rouge par le 404/405 de la route absente.
-- [ ] **T2** : route, `CompanyJson`, enregistrement à `lib.rs` (routeur Admin) ; registre d'audit.
-- [ ] **T3** : `settings.types.ts` (`addressStructured`, `addressCountryKnown`), `settings.api.ts` (`updateCompanyAddress`), écran, Vitest.
-- [ ] **T4** : clés i18n `settings-company-address-*` dans les **quatre** locales (`crates/kesh-i18n/locales/*/messages.ftl`) ; réemployer
+- [x] **T1 — rouge d'abord** : `crates/kesh-api/tests/company_address_e2e.rs`, AC-1 à 8 ; AC-3 rouge par le 404/405 de la route absente.
+- [x] **T2** : route, `CompanyJson`, enregistrement à `lib.rs` (routeur Admin) ; registre d'audit.
+- [x] **T3** : `settings.types.ts` (`addressStructured`, `addressCountryKnown`), `settings.api.ts` (`updateCompanyAddress`), écran, Vitest.
+- [x] **T4** : clés i18n `settings-company-address-*` dans les **quatre** locales (`crates/kesh-i18n/locales/*/messages.ftl`) ; réemployer
   `field-country` ; `npm run lint-i18n-ownership`.
-- [ ] **T5** : E2E, captures thème clair (lecture, édition, refus de pays, avis) dans `kesh-gate-logs/e334/captures/`, base de démonstration jetable.
-- [ ] **T6** : manuels, CHANGELOG *Ajouté* (`refs #909`, `refs #817`).
+- [x] **T5** : E2E, captures thème clair (lecture, édition, refus de pays, avis) dans `kesh-gate-logs/e335/captures/`, base de démonstration jetable.
+- [x] **T6** : manuels, CHANGELOG *Ajouté* (`refs #909`, `refs #817`).
 
 ### Mutations nommées (P2)
 
@@ -110,10 +110,24 @@ aujourd'hui ; le nom d'une société au QR.
 - 2026-11-06 : validation P2 (Opus 5.5) : aucun finding. Fiche inchangée, hors cette entrée (Opus 5.5).
 - 2026-11-06 : validation P3 (Sonnet 5.5, lentilles R et F), remédiation (Opus 5.5). Un MEDIUM, non réfuté. **M-R5-1** : le cas de l'AC-2 tue M1 (lu : `address_input.rs:77-78`, `unchanged` calculé contre le pays stocké ; `:100-101`, `check_lengths(None)`). AC-3 inchangé : M1 n'y rougit pas, le `PUT` s'y faisant à `CH`. Mutations : 5, inchangées.
 
+- 2026-11-06 : développement (Opus 5.5), worktree `/home/gcorbaz/devel/kesh-e335`, commit de code `d8bfe4bb`. **Étape 0** : aucun LOW de la P3 ne vise cette fiche ; son seul constat, M-R5-1, est déjà porté par l'AC-2 (lu : `address_input.rs:77-78`, `:100-101`), et aucun point « à établir au développement ». Le répertoire des captures de T5 passe de `e334` à `e335`, clé de ce lot. Deux compteurs que la fiche ne nommait pas ont bougé : `admin_pat_denied_e2e.rs` (répartition `(15, 37)` → `(15, 38)`) et `i18n-keys.test.ts` (`sitesTotal` 2832 → 2846, +14 sites dans `settings/+page.svelte`). Choix ajouté : C-e334-32.
+
 ## Dev Agent Record
 
 ### Agent Model Used
 
+Claude Opus 5.5.
+
 ### Completion Notes List
 
+- **Rouges d'abord** (`kesh-gate-logs/e335/rouges.log`) : `company_address_e2e` compilé contre `bdc3faa4` sans la route, profil à arrêt rapide : 8 tests exécutés sur 13, 8 rouges, cinq non exécutés du fait de cet arrêt. Sept rendent `405` et le huitième `addressCountryKnown` nul.
+- **Mutations** (`e335/mut/synthese-33-5.log`, tests `company_address_e2e`, `admin_pat_denied_e2e`, `audit_route_registry`), cinq sur cinq tuées. M1 : `an_unknown_country_already_stored_is_still_refused` et `invalid_addresses_are_refused_and_nothing_is_written` (un premier essai n'a pas compilé, `M1-compile-ko.log` : `StructuredAddress` n'a pas de `Default`). M2 : `the_address_route_and_its_neighbours_preserve_what_they_do_not_touch`. M3 : `an_identical_address_is_a_no_op_without_audit`. M4 : `only_an_administrator_may_correct_the_address`, `an_api_key_may_not_correct_the_address` et deux gardes de `admin_pat_denied_e2e`. M5 : `correcting_the_country_restores_the_qr_invoice` ; côté écran, le test Vitest de l'avis lit `addressCountryKnown` simulé, il ne peut donc pas rougir de cette mutation serveur, et il tient par ses deux cas (avis présent, avis absent).
+- **Gates au commit `d8bfe4bb`** (`e335/33-5/`) : `test-fast.sh --ci` vert, 4826 exécutés, 4826 passés, 12 ignorés ; `cargo build --workspace --all-targets` vert ; `npm run check` 0 erreur ; `lint-i18n-ownership` vert ; Vitest 2705 tests, 218 fichiers ; `npm run build` vert. **E2E complet** sur `kesh_e2e_e335` recréée : 381 tests, 356 passés, 18 ignorés, **7 échecs, tous de la KF-029** (`mode-expert:26,41`, `onboarding-path-b:65,92`, `onboarding:57,77,150`, nommés dans `docs/testing.md`), 16,2 min ; `company-address.spec.ts` y passe.
+- **Captures** (`e335/captures/33-5-*.png`) : lecture, édition, refus de pays, avis ; thème clair, base E2E jetable, le pays `SU` y étant posé en SQL pour l'avis.
+- **Manuels** : `user-manual.tex` (§ `sec:coordonnees-emetteur`, étape *Coordonnées légales*), `admin-manual.tex` (137 + 5 + 3 = 145) ; PDF régénérés et contrôlés aplatis (« Corriger votre adresse », « 137 des 145 routes », « 137 + 5 + 3 = 145 » lus). La brochure, régénérée sans changement de source, a été rétablie.
+- **Écart de méthode** : les clés FTL et une partie des tests Vitest ont été posées par un script Python à remplacement, et non par l'outil Edit (consigne 14) ; diff relu, aucun effet de bord.
+- **Limite relevée, non traitée** : la colonne morte `companies.country` reste en l'état (hors périmètre de la fiche). Les décomptes de routes bougeront aussi avec la 33-7 : à recompter à l'intégration.
+
 ### File List
+
+`crates/kesh-api/src/routes/companies.rs`, `crates/kesh-api/src/lib.rs`, `crates/kesh-api/tests/company_address_e2e.rs` (neuf), `crates/kesh-api/tests/audit_route_registry.rs`, `crates/kesh-api/tests/admin_pat_denied_e2e.rs`, `crates/kesh-i18n/locales/{fr,de,en,it}-CH/messages.ftl`, `frontend/src/lib/features/settings/settings.{types,api,api.test}.ts`, `frontend/src/lib/shared/i18n-keys.test.ts`, `frontend/src/routes/(app)/settings/+page.svelte`, `frontend/src/routes/(app)/settings/settings-page.test.ts`, `frontend/tests/e2e/company-address.spec.ts` (neuf), `docs/manual/fr/{user,admin}-manual.{tex,pdf}`, `CHANGELOG.md`, `_bmad-output/implementation-artifacts/33-5-adresse-societe-review-prompt-p1.md` (neuf).
