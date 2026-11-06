@@ -612,13 +612,17 @@ async fn after_migration_the_highest_counter_of_the_year_rules(pool: MySqlPool) 
 }
 
 /// (c) Exercice créé après coup : il part de son défaut, mais sa première facture
-/// suit l'année.
+/// suit l'année. ⚠️ La `-003` est supprimée avant la création : sans ce trou, le
+/// filet du saut remonterait de `-001` à `-004` et masquerait un départ qui ignore
+/// les autres exercices (M19 ne rougissait pas ici, revue P1, A-M1).
 #[sqlx::test(migrations = "./test-schema")]
 async fn a_fiscal_year_created_later_follows_the_year(pool: MySqlPool) {
     let d = decor(&pool).await;
-    for _ in 0..3 {
+    for _ in 0..2 {
         d.numero_emis(&pool, dans_a()).await;
     }
+    let troisieme = d.emettre(&pool, dans_a()).await;
+    d.supprimer(&pool, &troisieme).await;
     assert_eq!(compteur(&pool, d.a).await, 4);
     let b = d.exercice_b(&pool).await;
     assert_eq!(compteur(&pool, b).await, 1);

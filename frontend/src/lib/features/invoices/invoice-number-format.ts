@@ -117,9 +117,9 @@ export function validateDescriptionTemplate(template: string): FormatValidationR
  * La forme d'un format de numérotation interne, miroir de
  * `kesh_core::invoice_format::validate_numbering_template` (Story 33-1b, #926) :
  * `<préfixe>{YEAR}<séparateur>{SEQ}` ou `{SEQ:NN}`, séparateur non vide et sans chiffre,
- * rien après le compteur, aucun `{FY}`.
+ * rien après le compteur, aucun `{FY}`, ni blanc en tête ni tabulation.
  */
-const NUMBERING_SHAPE_RE = /^[^{}]*\{YEAR\}([^{}0-9]+)\{SEQ(:\d+)?\}$/;
+const NUMBERING_SHAPE_RE = /^(?![ \t])[^{}\t]*\{YEAR\}([^{}0-9\t]+)\{SEQ(:\d+)?\}$/;
 
 /**
  * Valide un template de format (règles identiques au backend). `numbering` : le format du

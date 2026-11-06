@@ -82,6 +82,10 @@ describe('validateFormatTemplate, option numbering', () => {
 		'FF-{YEAR}{SEQ}',
 		'FF-{YEAR}-1{SEQ}',
 		'FF-{YEAR}-{SEQ}-X',
+		' FF-{YEAR}-{SEQ}',
+		'\tFF-{YEAR}-{SEQ}',
+		'FF\t-{YEAR}-{SEQ}',
+		'FF-{YEAR}\t{SEQ}',
 	]) {
 		it(`refuse ${JSON.stringify(ko)}`, () => {
 			expect(validateFormatTemplate(ko, { numbering: true }).ok).toBe(false);

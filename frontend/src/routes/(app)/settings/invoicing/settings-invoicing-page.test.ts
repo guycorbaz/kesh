@@ -226,6 +226,8 @@ describe('Administration → Facturation — solde du reste', () => {
 
 		await fireEvent.input(champ, { target: { value: 'FF-{YEAR}' } });
 		expect(await findByTestId('settings-supplier-format-error')).toBeTruthy();
+		// Revue P1 de la 33-1b (B-F3) : le bouton suit ce champ, comme les deux autres formats.
+		expect(container.querySelector<HTMLButtonElement>('button[type="submit"]')?.disabled).toBe(true);
 		await fireEvent.submit(container.querySelector('form')!);
 		expect(updateInvoiceSettingsMock).not.toHaveBeenCalled();
 

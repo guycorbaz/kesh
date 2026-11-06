@@ -14,11 +14,17 @@ import type { SupplierInvoiceListItemResponse } from '$lib/features/supplier-inv
 vi.mock('$app/state', async () => ({
 	page: (await import('./page-state.test-helper.svelte')).pageState,
 }));
+const navigation = vi.hoisted(() => ({
+	avant: [] as ((nav: { to: { url: URL } | null }) => void)[],
+}));
 vi.mock('$app/navigation', () => ({
 	goto: vi.fn(async (cible: string) => {
 		const m = await import('./page-state.test-helper.svelte');
 		m.pageState.url = new URL(cible, m.pageState.url);
 	}),
+	beforeNavigate: (rappel: (nav: { to: { url: URL } | null }) => void) => {
+		navigation.avant.push(rappel);
+	},
 }));
 import { pageState } from './page-state.test-helper.svelte';
 import { goto } from '$app/navigation';
@@ -404,5 +410,40 @@ describe('liste des factures fournisseurs — le numéro interne (33-1b, #926)',
 		await waitFor(() => expect(pageState.url.searchParams.get('q')).toBe('Dupont'));
 		expect(pageState.url.searchParams.get('offset')).toBeNull();
 		await waitFor(() => expect(lastQuery().q).toBe('Dupont'));
+	});
+
+	// Revue P1 de la 33-1b (B-F1, E-M1) : une frappe en attente ne ramène personne à la liste.
+	const auDelaDeLaFrappe = () => new Promise((fin) => setTimeout(fin, 350));
+
+	it('AC4 — l’écran quitté avant la fin de la frappe : aucune navigation tardive', async () => {
+		const { findByTestId, unmount } = render(Page);
+		const champ = await findByTestId('supplier-invoices-search');
+		await fireEvent.input(champ, { target: { value: 'Dupont' } });
+		unmount();
+		await auDelaDeLaFrappe();
+		expect(goto).not.toHaveBeenCalled();
+	});
+
+	it('AC4 — une navigation vers un autre écran annule la frappe en attente, même écran monté', async () => {
+		navigation.avant.length = 0;
+		const { findByTestId } = render(Page);
+		const champ = await findByTestId('supplier-invoices-search');
+		await fireEvent.input(champ, { target: { value: 'Dupont' } });
+		for (const rappel of navigation.avant) {
+			rappel({ to: { url: new URL('http://localhost/supplier-invoices/42') } });
+		}
+		await auDelaDeLaFrappe();
+		expect(goto).not.toHaveBeenCalled();
+	});
+
+	it('AC4 — une navigation dans la liste (tri, page) garde la frappe en attente', async () => {
+		navigation.avant.length = 0;
+		const { findByTestId } = render(Page);
+		const champ = await findByTestId('supplier-invoices-search');
+		await fireEvent.input(champ, { target: { value: 'Dupont' } });
+		for (const rappel of navigation.avant) {
+			rappel({ to: { url: new URL('http://localhost/supplier-invoices?sort=internalNumber') } });
+		}
+		await waitFor(() => expect(pageState.url.searchParams.get('q')).toBe('Dupont'));
 	});
 });

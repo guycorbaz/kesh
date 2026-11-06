@@ -209,7 +209,8 @@ pub fn validate_template(template: &str) -> Result<(), FormatError> {
 /// [`validate_template`], puis la forme `<préfixe>{YEAR}<séparateur>{SEQ}` ou
 /// `{SEQ:NN}` — un seul `{YEAR}` suivi d'un seul compteur, préfixe libre (vide
 /// admis), séparateur non vide et sans chiffre, rien après le compteur, aucun
-/// `{FY}`.
+/// `{FY}`, ni blanc en tête ni tabulation : invisibles sur le papier, ils rendraient
+/// un numéro impossible à recopier.
 ///
 /// Cette forme est ce qui rend un numéro **injectif**, pour une année écrite sur
 /// quatre chiffres : le rang est la suite de chiffres finale, le séparateur ce qui
@@ -219,6 +220,9 @@ pub fn validate_template(template: &str) -> Result<(), FormatError> {
 /// avoir gardent [`validate_template`].
 pub fn validate_numbering_template(template: &str) -> Result<(), FormatError> {
     validate_template(template)?;
+    if template.starts_with(char::is_whitespace) || template.contains('\t') {
+        return Err(FormatError::NotNumberingShape);
+    }
     let tokens = parse(template)?;
     let sans_prefixe = match tokens.as_slice() {
         [Token::Literal(_), reste @ ..] => reste,
@@ -234,9 +238,10 @@ pub fn validate_numbering_template(template: &str) -> Result<(), FormatError> {
     }
 }
 
-/// Un numéro vide ou blanc vaut absent (règle de K8, `closing_checks`).
+/// Le numéro sans ses blancs de bord ; vide ou blanc, il vaut absent (règle de K8,
+/// `closing_checks`, dont le SQL est le miroir de ces libellés).
 fn non_blank(numero: Option<&str>) -> Option<&str> {
-    numero.filter(|n| !n.trim().is_empty())
+    numero.map(str::trim).filter(|n| !n.is_empty())
 }
 
 /// La forme **courte** du libellé d'une facture fournisseur, celle qui la nomme
@@ -531,6 +536,10 @@ mod tests {
             "FF-{YEAR}{SEQ}",
             "FF-{YEAR}-1{SEQ}",
             "FF-{YEAR}-{SEQ}-X",
+            " FF-{YEAR}-{SEQ}",
+            "\tFF-{YEAR}-{SEQ}",
+            "FF\t-{YEAR}-{SEQ}",
+            "FF-{YEAR}\t{SEQ}",
         ] {
             assert_eq!(
                 validate_numbering_template(ko),
@@ -550,7 +559,7 @@ mod tests {
     #[test]
     fn supplier_invoice_labels_prefer_the_internal_number() {
         type Numero<'a> = Option<&'a str>;
-        let cas: [(Numero, Numero, Numero, Numero); 7] = [
+        let cas: [(Numero, Numero, Numero, Numero); 8] = [
             (
                 Some("FF-2026-001"),
                 Some("ABC-123"),
@@ -578,6 +587,12 @@ mod tests {
             ),
             (None, None, None, None),
             (Some(""), Some(" "), None, None),
+            (
+                Some(" FF-2026-001 "),
+                Some(" ABC "),
+                Some("FF-2026-001"),
+                Some("FF-2026-001 (ABC)"),
+            ),
         ];
         for (interne, fournisseur, courte, longue) in cas {
             assert_eq!(

@@ -220,8 +220,9 @@ pub const POST_RESTORE_BACKFILLS: &[PostRestoreBackfill] = &[
         label: "20261106000001_supplier_invoice_internal_number.sql",
         // CLASSE B (C-e331-13). Une sauvegarde 0.17.4 n'a ni numéros ni compteurs :
         // elle les reçoit ici, comme à la montée. Une sauvegarde 0.17.5 garde les
-        // siens : les rejouer écraserait des compteurs plus hauts que les rangs,
-        // ce qu'un brouillon numéroté supprimé laisse, et donc réémettrait un numéro.
+        // siens et n'a rien à y gagner : les `UPDATE` sont gardés (`internal_number IS
+        // NULL`, `GREATEST`) et n'écraseraient rien, mais une facture sans numéro, s'il
+        // s'en trouvait, y recevrait un rang sans objet.
         //
         // Sentinelle valide : la colonne est ajoutée par le MÊME fichier que les
         // deux `UPDATE`.

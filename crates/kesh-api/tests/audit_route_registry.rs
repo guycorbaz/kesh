@@ -126,7 +126,9 @@
 //!   (`PUT /fiscal-years/{id}`, Story 15-12a) : il tient l'exercice puis son
 //!   homonyme, la clôture tient ses antérieurs puis l'exercice — renommer un
 //!   exercice au nom d'un antérieur pendant sa clôture peut faire du renommage
-//!   la victime, en 500, sur un renommage que le pré-contrôle aurait refusé.
+//!   la victime, en 500, sur un renommage que le pré-contrôle aurait refusé. Depuis
+//!   la Story 33-1a, la validation d'une facture fournisseur forme le même cycle
+//!   avec deux exercices d'une année : elle tient le sien, puis demande l'autre.
 //!   `POST /fiscal-years/{id}/close` et, depuis la Story 33-1a,
 //!   `POST /fiscal-years/{id}/reopen` ne sont plus de la liste : elles sont rejouées
 //!   (point (vi)). Le lot de **rejet** (`reconciliation::post_reject`, non

@@ -1873,6 +1873,28 @@ async fn a_payment_batch_names_its_invoices(pool: MySqlPool) {
     .await;
     assert_eq!(s, 200, "{annule}");
     controle(&annule, "annulation");
+
+    // La confirmation (revue P1, A-F3) : le lot annulé rend la facture à un second lot.
+    let (s, lot) = post(
+        &c,
+        "/api/v1/payment-batches",
+        json!({
+            "bankAccountId": c.f.bank_account_id,
+            "requestedExecutionDate": "2026-06-20",
+            "supplierInvoiceIds": [v["id"]],
+        }),
+    )
+    .await;
+    assert_eq!(s, 200, "{lot}");
+    let id = lot["batch"]["id"].as_i64().unwrap();
+    let (s, confirme) = post(
+        &c,
+        &format!("/api/v1/payment-batches/{id}/confirm"),
+        json!({ "paymentDate": "2026-06-20" }),
+    )
+    .await;
+    assert_eq!(s, 200, "{confirme}");
+    controle(&confirme, "confirmation");
 }
 
 /// AC14 — postes ouverts : `document.number` garde le numéro du fournisseur, le numéro

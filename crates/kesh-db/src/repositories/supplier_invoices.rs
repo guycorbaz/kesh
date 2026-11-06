@@ -964,9 +964,12 @@ const MAX_INTERNAL_NUMBER_SKIPS: i64 = 100_000;
 ///    posée hors de l'application ; sans lui, elle bloquerait toute validation ;
 /// 4. seul le compteur de `fy` avance. Les compteurs ne redescendent jamais.
 ///
-/// ⚠️ **Toutes ces lectures sont verrouillantes** : l'instantané de la transaction est pris
-/// avant l'attente sur les réglages (`fetch_lines` précède l'étape (2 bis)), et une lecture
-/// ordinaire y rendrait un compteur périmé (C-e331-2).
+/// ⚠️ **Les lectures de compteur et le contrôle de collision sont verrouillants** :
+/// l'instantané de la transaction est pris avant l'attente sur les réglages (`fetch_lines`
+/// précède l'étape (2 bis)), et une lecture ordinaire y rendrait un compteur périmé
+/// (C-e331-2). La liste des `id` du point 1, elle, ne l'est pas : un exercice créé pendant
+/// cette attente, et dont un numéro serait émis puis supprimé dans le même temps, y
+/// échapperait. Course résiduelle assumée, sans chemin réaliste (C-e331-23).
 ///
 /// Le nom d'exercice reste vide : le format n'a pas de `{FY}`
 /// ([`kesh_core::invoice_format::validate_numbering_template`]), et `render` refuserait sinon

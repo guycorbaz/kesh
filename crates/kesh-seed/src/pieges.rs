@@ -106,6 +106,13 @@ pub const CHAMPS: &[ChampPiege] = &[
         64,
         13,
     ),
+    champ(
+        "ff_numero_interne",
+        "supplier_invoices",
+        "internal_number",
+        64,
+        40,
+    ),
     champ("ff_iban", "supplier_invoices", "creditor_iban", 34, 14),
     champ(
         "ff_qr_iban",
@@ -607,6 +614,15 @@ pub async fn semer(
         user_id,
     )
     .await?;
+    // Story 33-1b (#926) — le numéro interne, qu'aucun dépôt ne laisse saisir : le préfixe
+    // du format, réglable par l'Administrateur, y porterait le même texte (`_` et chiffres
+    // sont admis), mais `largeurs_des_pieges` relit la colonne égale au texte semé.
+    sqlx::query("UPDATE supplier_invoices SET internal_number = ? WHERE id = ?")
+        .bind(seme(marque, "ff_numero_interne"))
+        .bind(ff.invoice.id)
+        .execute(pool)
+        .await
+        .map_err(map_db_error)?;
 
     // La pièce rattachée, `completed`, sans fichier ni donnée du QR.
     let piece = imported_supplier_invoices::create(

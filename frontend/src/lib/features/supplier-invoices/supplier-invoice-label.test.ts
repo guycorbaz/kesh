@@ -62,6 +62,14 @@ const cas: {
 		longue: 'ABC-123',
 	},
 	{ nom: 'les deux blancs', interne: '', fournisseur: ' ', prefere: null, courte: '#7', longue: '#7' },
+	{
+		nom: 'les blancs de bord tombent, comme au contrôle K8',
+		interne: ' FF-2026-001 ',
+		fournisseur: ' ABC ',
+		prefere: 'FF-2026-001',
+		courte: 'FF-2026-001',
+		longue: 'FF-2026-001 (ABC)',
+	},
 ];
 
 describe('le libellé d’une facture fournisseur', () => {

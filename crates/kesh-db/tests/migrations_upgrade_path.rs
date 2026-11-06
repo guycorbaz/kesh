@@ -2274,13 +2274,15 @@ async fn internal_number_migration_numbers_a_populated_base(pool: MySqlPool) {
     .await
     .unwrap();
     assert_eq!(sans_numero, 0, "aucune facture non brouillon sans numéro");
+    // Lu au schéma : le décor ne pose aucune ligne de réglages (revue P1, A-L6).
     let format: String = sqlx::query_scalar(
-        "SELECT DEFAULT(supplier_internal_number_format) FROM company_invoice_settings LIMIT 1",
+        "SELECT TRIM(BOTH '''' FROM COLUMN_DEFAULT) FROM information_schema.columns \
+         WHERE table_schema = DATABASE() AND table_name = 'company_invoice_settings' \
+         AND column_name = 'supplier_internal_number_format'",
     )
-    .fetch_optional(&pool)
+    .fetch_one(&pool)
     .await
-    .unwrap()
-    .unwrap_or_else(|| "FF-{YEAR}-{SEQ:03}".into());
+    .unwrap();
     assert_eq!(format, "FF-{YEAR}-{SEQ:03}");
 }
 

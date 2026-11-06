@@ -604,7 +604,10 @@
 			<Button
 				type="submit"
 				data-testid="settings-invoicing-save"
-				disabled={submitting || !formatValidation.ok || !descriptionValidation.ok}
+				disabled={submitting ||
+					!formatValidation.ok ||
+					!supplierFormatValidation.ok ||
+					!descriptionValidation.ok}
 			>
 				{submitting
 					? i18nMsg('common-saving', 'Enregistrement…')

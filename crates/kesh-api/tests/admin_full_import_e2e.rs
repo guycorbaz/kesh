@@ -5615,8 +5615,10 @@ async fn full_import_of_a_0_17_4_backup_gives_the_numbers(pool: MySqlPool) {
     );
 }
 
-/// Une sauvegarde 0.17.5 garde les siens : numéros non contigus (un brouillon
-/// numéroté supprimé), compteur au-delà du plus grand ; l'entrée est sautée.
+/// Une sauvegarde 0.17.5 garde les siens : le **dernier** numéro émis est supprimé,
+/// si bien que le compteur (4) passe le plus grand numéro plus un (3) : seule la
+/// restauration de la colonne le redonne, un recalcul depuis les numéros le perdrait.
+/// L'entrée est sautée.
 #[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn full_import_of_a_0_17_5_backup_keeps_the_numbers(pool: MySqlPool) {
     use kesh_db::repositories::supplier_invoices;
@@ -5626,8 +5628,8 @@ async fn full_import_of_a_0_17_5_backup_keeps_the_numbers(pool: MySqlPool) {
     let u = biz.ctx.user_id;
     let supplier = pret_pour_les_achats(&pool, &biz).await;
     facture_numerotee(&pool, &biz, supplier, (2026, 2, 1)).await;
-    let perdue = facture_numerotee(&pool, &biz, supplier, (2026, 3, 1)).await;
-    facture_numerotee(&pool, &biz, supplier, (2026, 4, 1)).await;
+    facture_numerotee(&pool, &biz, supplier, (2026, 3, 1)).await;
+    let perdue = facture_numerotee(&pool, &biz, supplier, (2026, 4, 1)).await;
     let brouillon =
         supplier_invoices::unvalidate(&pool, c, perdue.invoice.id, perdue.invoice.version, u)
             .await
@@ -5638,7 +5640,7 @@ async fn full_import_of_a_0_17_5_backup_keeps_the_numbers(pool: MySqlPool) {
 
     let attendus = vec![
         Some("FF-2020-001".to_string()),
-        Some("FF-2020-003".to_string()),
+        Some("FF-2020-002".to_string()),
     ];
     assert_eq!(numeros_internes(&pool, c).await, attendus);
     assert_eq!(compteur_de_la_societe(&pool, c).await, 4);

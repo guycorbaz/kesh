@@ -15,8 +15,10 @@ export interface SupplierInvoiceNumbers {
 	supplierInvoiceNumber?: string | null;
 }
 
+/** Le numéro sans ses blancs de bord, `null` s'il n'en reste rien, comme `closing_checks.rs`. */
 function nonBlank(numero: string | null | undefined): string | null {
-	return numero && numero.trim() !== '' ? numero : null;
+	const net = numero?.trim();
+	return net ? net : null;
 }
 
 /**

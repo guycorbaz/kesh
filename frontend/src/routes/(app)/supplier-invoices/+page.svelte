@@ -32,7 +32,8 @@
 	 * fournisseur) passent par l'adresse, comme le reste : tri et recherche se font au serveur,
 	 * la liste étant paginée, et un geste ramène `offset` à 0.
 	 */
-	import { goto } from '$app/navigation';
+	import { onDestroy } from 'svelte';
+	import { beforeNavigate, goto } from '$app/navigation';
 	import { page } from '$app/state';
 	import { authState } from '$lib/app/stores/auth.svelte';
 	import { listSupplierInvoices } from '$lib/features/supplier-invoices/supplier-invoices.api';
@@ -101,6 +102,19 @@
 			navigate({ q: value.trim() === '' ? null : value, offset: null }, { replaceState: true });
 		}, SEARCH_DEBOUNCE_MS);
 	}
+
+	function cancelPendingSearch(): void {
+		clearTimeout(searchTimer);
+		searchTimer = undefined;
+	}
+
+	// Une frappe en attente ne ramène personne à la liste : elle s'annule dès que l'on part
+	// vers un autre écran, une navigation lente restant sinon exposée au minuteur, et au
+	// démontage. Un geste dans la liste (tri, page) la garde : elle s'y ajoutera.
+	beforeNavigate(({ to }) => {
+		if (to?.url.pathname !== page.url.pathname) cancelPendingSearch();
+	});
+	onDestroy(cancelPendingSearch);
 
 	/** En-tête N° interne : non trié → croissant → décroissant → croissant. */
 	function toggleNumberSort(): void {
