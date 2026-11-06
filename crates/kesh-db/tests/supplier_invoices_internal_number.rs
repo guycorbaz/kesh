@@ -872,16 +872,10 @@ async fn purchase_and_settlement_labels_carry_the_internal_number(pool: MySqlPoo
             libelle_ecriture(&pool, v.invoice.purchase_journal_entry_id.unwrap()).await,
             format!("Facture fournisseur {attendu} - {nom}")
         );
-        let payee = supplier_invoices::pay(
-            &pool,
-            d.company(),
-            v.invoice.id,
-            compte.clone(),
-            dans_a(),
-            d.user(),
-        )
-        .await
-        .unwrap();
+        let payee =
+            supplier_invoices::pay(&pool, d.company(), v.invoice.id, compte, dans_a(), d.user())
+                .await
+                .unwrap();
         assert_eq!(
             libelle_ecriture(&pool, payee.invoice.settlement_journal_entry_id.unwrap()).await,
             format!("Règlement fournisseur {attendu} - {nom}")
@@ -908,16 +902,10 @@ async fn settlement_label_falls_back_without_internal_number(pool: MySqlPool) {
             .execute(&pool)
             .await
             .unwrap();
-        let payee = supplier_invoices::pay(
-            &pool,
-            d.company(),
-            v.invoice.id,
-            compte.clone(),
-            dans_a(),
-            d.user(),
-        )
-        .await
-        .unwrap();
+        let payee =
+            supplier_invoices::pay(&pool, d.company(), v.invoice.id, compte, dans_a(), d.user())
+                .await
+                .unwrap();
         let etiquette = attendu
             .map(str::to_string)
             .unwrap_or_else(|| format!("#{}", v.invoice.id));
