@@ -198,7 +198,7 @@ test.describe.serial('Graphiques de l’accueil, exercice ouvert (33-3b)', () =>
 		}
 		await page.goto('/');
 
-		// Base : 2'800, plus 123.45 (le compte du scénario 1) et 1.00 (celui du scénario 2).
+		// Base : 2'700, plus 123.45 (le compte du scénario 1) et 1.00 (celui du scénario 2).
 		const marks = page.getByTestId('homepage-chart-post-mark');
 		await expect(marks).toHaveCount(5);
 		await expect(page.getByTestId('homepage-chart-others-mark')).toHaveCount(1);

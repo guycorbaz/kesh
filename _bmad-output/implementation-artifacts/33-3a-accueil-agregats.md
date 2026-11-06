@@ -1,6 +1,6 @@
 # Story 33-3a : les chiffres des graphiques de l'accueil — revenus et charges par mois, postes de charges, sur l'exercice ouvert
 
-Status: review
+Status: done
 
 *Fiche rédigée le 2026-11-06 en autonomie (Opus 5.5), worktree `/home/gcorbaz/devel/kesh-e33`, branche `story/33-0-kickoff`,
 numéros de ligne de `4ef19901`. Epic 33, release **0.17.5**, **sans migration**. Registre : `e33-choix-autonomes-e332.md`, choix
@@ -281,6 +281,8 @@ Dans `services/rapports.rs` ou `tests/services_motif.rs`, selon le voisinage : A
 
 *Depuis la revue P1, M3 est tuée par `reversal_pair_with_a_side_dated_outside_...`, non plus par `reversal_across_...` : la borne de date y suffit désormais, et la condition d'exercice ne se voit que sur un côté daté dans les bornes mais rattaché à un autre exercice.*
 
+*Annoté le 2026-11-06, revue de code P2, L-2 : **M4 aussi** est désormais tuée par `reversal_pair_with_a_side_dated_outside_...` (`e333a/mut/synthese.log`), non par `reversal_across_...`, qui passe sous M4 (`mut/M4.log`). La ligne de M4 ci-dessus, comme celle de M3, dit ce que la fiche prévoyait. `reversal_across_...` ne garde plus aucune des deux conditions d'exercice.*
+
 ## Gates
 
 Commun : `e33-commun.md`. Entre passes : `cargo fmt --all -- --check`, clippy du workspace,
@@ -324,6 +326,8 @@ qui n'a pas tourné.
   **B-2 (LOW)** : limite écrite au doc-comment du module, même précédent que les deux sections du compte de résultat ; issue demandée. **B-3, E-2 (LOW)** : la date en UTC, issue ouverte par l'orchestrateur. **A-2 (LOW), remédié** : « trois dixièmes au plus » ; test `shares_can_sum_to_three_tenths_above_one_hundred`, qui atteint 100,3. **A-3 (LOW), remédié** : M20 à M24 jouées, toutes tuées. **Reste non jouée** : la mutation du 401 d'AC17, qui exigerait de sortir la route de `authenticated_routes` ; le test le contrôle directement, sans preuve par mutation.
   Décomptes recomptés, périmètre `bdc3faa4` → `HEAD` : `homepage_summary_e2e.rs` 22 `#[sqlx::test]`, `homepage_summary.rs` 11 `#[test]`, `services_motif.rs` +1. Table de mutations : 29 lignes au total ; **12 rejouées à cette passe** (M1 à M4, M17, à motif changé, et les sept neuves), 12 tuées après le test ajouté pour M3 (`kesh-gate-logs/e333a/mut/synthese.log`, M20 à sa ligne `purs`, le banc d'intégration ne lançant pas les tests purs de `kesh-report`) ; les 17 autres visent du code inchangé, non rejouées, au journal `mut/synthese-p0.log`.
   **Gates au dernier commit de code `6425ef97`** (`kesh-gate-logs/e333/gate4.out`), sous le verrou, base remise à neuf : `scripts/test-fast.sh --ci` : **4847 exécutés, 4847 passés, 12 ignorés** ; `cargo build --workspace --all-targets` vert ; `npm run check` : 0 erreur, 29 avertissements, inchangés ; `lint-i18n-ownership` vert ; `test:unit` : **220 fichiers, 2761 tests, tous verts** ; `npm run build` vert. **E2E complet, montage complet** (`KESH_INBOX_DIR`, `KESH_DOCUMENTS_DIR` et `KESH_ADMIN_BACKUP_DIR` côté runner), base recréée vide (`kesh-gate-logs/e333b/e2e-complet-r6.log`) : 388 tests, **363 passés, 7 échecs, 18 ignorés, aucun non exécuté**, 16,7 min. Les 7 échecs sont les KF-029 (#97) de `docs/testing.md` : `mode-expert:26`, `:41`, `onboarding-path-b:65`, `:92`, `onboarding:57`, `:77`, `:150`. `backup-restore-new-install:140` passe à ce run. Un premier gate, à `0cf88f6b`, avait rougi sur `i18n-entrees-a-variables` (un objet d'arguments partagé, écrit à cette remédiation, que la garde ne lit pas) : d'où `6425ef97`, et ce gate rejoué entier. Les mutations jouées avant ce dernier commit, qui ne change que l'écriture des arguments, ne sont pas rejouées.
+- 2026-11-06 — Remédiation de la revue de code P2 ciblée (rapport `kesh-gate-logs/e333-review-p2.md`, Opus 5.5, commune aux deux stories : 0 au-dessus de LOW, boucle fermée). Pour cette fiche : **L-2** remédié, note datée sous la table des mutations ; **L-6** remédié : « du même exercice » était devenu trop large pour un côté à date anormale ; `api-external.md`, `CHANGELOG.md`, manuel `.tex` et PDF le disent ; **L-7** : l'issue de B-2 est ouverte par l'orchestrateur. Aucune prémisse réfutée (lues : `mut/synthese.log`, `mut/M4.log`, les trois textes). Aucun fichier de production touché : pas de gate complet rejoué, celui de `6425ef97` reste le dernier.
+- 2026-11-06 — **Synthèse de la revue de code.** Passe 1, trois lentilles, Sonnet 5.5 : 0 CRITICAL, 0 HIGH, 3 MEDIUM relevés, soit **un seul défaut** vu par les trois (B-1 = E-1 = A-1, en production), 5 LOW. Passe 2 ciblée sur la remédiation, commune à la 33-3b, Opus 5.5 : 0 au-dessus de LOW, 7 LOW, dont 2 pour cette fiche et L-7. **Décisions** : invariant gardé sans réserve (le code suit le compte de résultat) ; B-2, limite écrite et tracée en issue ; mutation du 401 non jouée, dite ; aucun reclassement de sévérité.
 
 ## Dev Agent Record
 
