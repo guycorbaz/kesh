@@ -33,6 +33,7 @@ use kesh_db::entities::{
 use kesh_db::repositories::{fiscal_years, imported_supplier_invoices, journal_entries};
 
 use crate::AppState;
+use crate::dates_recues::borner;
 use crate::errors::AppError;
 use crate::helpers::get_company_for;
 use crate::middleware::auth::CurrentUser;
@@ -595,6 +596,7 @@ pub async fn create_journal_entry(
     Extension(current_user): Extension<CurrentUser>,
     Json(req): Json<CreateJournalEntryRequest>,
 ) -> Result<(StatusCode, Json<JournalEntryResponse>), AppError> {
+    borner(req.entry_date, "entryDate")?;
     let company = get_company_for(&current_user, &state.pool).await?;
 
     // Refus de FORME d'abord (Story 15-8a, C-15-8-16) : ils ne lisent pas la

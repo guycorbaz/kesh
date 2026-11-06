@@ -58,6 +58,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
 use crate::AppState;
+use crate::dates_recues::borner_opt;
 use crate::errors::AppError;
 use crate::middleware::auth::CurrentUser;
 
@@ -834,7 +835,11 @@ pub enum AcceptProposalInput {
         /// M6''' Pass 3 Opus — `value_date` optional cohérent avec `/split`
         /// standalone. Si absent → handler default = 3 couches
         /// `body.value_date.or(tx.value_date).unwrap_or(tx.booking_date)`.
-        #[serde(default)]
+        ///
+        /// Story 33-4 — hors de la plage de la base, le lot entier se refuse en
+        /// 400 comme sur une date mal formée : un corps invalide, l'exception
+        /// de *Pattern batch*, et non une erreur de la seule proposition.
+        #[serde(default, deserialize_with = "crate::dates_recues::date_opt")]
         value_date: Option<NaiveDate>,
     },
     /// Story 8-5b FR47 — application d'une `reconciliation_rule` pour
@@ -4767,6 +4772,7 @@ pub async fn post_manual(
     Json(body): Json<ManualMatchBody>,
 ) -> Result<Json<ManualMatchResponse>, AppError> {
     // Step 0 — validation body de surface.
+    borner_opt(body.value_date, "valueDate")?;
     if body.bank_account_id <= 0 {
         return Err(AppError::Validation(
             "bankAccountId doit être strictement positif".into(),
@@ -5185,6 +5191,7 @@ pub async fn post_split(
     Json(body): Json<SplitBody>,
 ) -> Result<Json<SplitResponse>, AppError> {
     // Step 0 — validation surface body.
+    borner_opt(body.value_date, "valueDate")?;
     if body.bank_account_id <= 0 {
         return Err(AppError::Validation(
             "bankAccountId doit être strictement positif".into(),

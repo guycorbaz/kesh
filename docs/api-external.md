@@ -100,6 +100,8 @@ Par exemple `https://kesh.example.ch/api/v1` (l'hôte et le port sont ceux confi
 
 Toutes les requêtes sont **automatiquement restreintes à la company de la clé**. Vous n'avez aucun identifiant d'entreprise à transmettre.
 
+**Les dates** (*depuis la v0.17.5*, [#606](https://github.com/guycorbaz/kesh/issues/606)) : une date reçue doit porter une année de **1000 à 9999**, celles que la base sait tenir. Hors de cette plage, jamais de `500` ni d'écriture : selon la route, `400` JSON `VALIDATION_ERROR`, ou le refus d'une date mal formée sur cette route (`400` en texte sur un paramètre de requête, `422` en texte sur un corps), le message nommant la plage ; quelques routes gardent un refus existant, par exemple la période hors de l'exercice sur les rapports. Une expiration de clé se lit en UTC et a la même borne haute (`9999-12-31T23:59:59-05:00` est refusée).
+
 ---
 
 ## 6. Exemples

@@ -30,6 +30,7 @@ use kesh_db::errors::{DbError, map_db_error};
 use kesh_db::repositories::{audit_log, bank_accounts, onboarding, vat_rates};
 
 use crate::AppState;
+use crate::dates_recues::{borner, borner_opt};
 use crate::errors::AppError;
 use crate::middleware::auth::CurrentUser;
 use crate::routes::limits::scale_within;
@@ -294,6 +295,8 @@ pub async fn create_vat_rate(
     Extension(current_user): Extension<CurrentUser>,
     Json(body): Json<CreateVatRateBody>,
 ) -> Result<(StatusCode, Json<VatRateResponse>), AppError> {
+    borner(body.valid_from, "validFrom")?;
+    borner_opt(body.valid_to, "validTo")?;
     assert_onboarding_complete(&state.pool).await?;
 
     let category = validate_category(&body.category)?;
@@ -375,6 +378,7 @@ pub async fn update_vat_rate(
     Path(id): Path<i64>,
     Json(body): Json<UpdateVatRateBody>,
 ) -> Result<Json<VatRateResponse>, AppError> {
+    borner_opt(body.valid_to, "validTo")?;
     assert_onboarding_complete(&state.pool).await?;
 
     let validated_label = validate_label(body.label.as_deref())?;

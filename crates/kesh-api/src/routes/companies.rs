@@ -13,6 +13,7 @@ use kesh_db::errors::map_db_error;
 use kesh_db::repositories::{audit_log, bank_accounts, companies};
 
 use crate::AppState;
+use crate::dates_recues::{borner, borner_opt};
 use crate::errors::AppError;
 use crate::helpers::get_company_for;
 use crate::middleware::auth::CurrentUser;
@@ -397,6 +398,7 @@ pub async fn lock_company_books(
     Extension(current_user): Extension<CurrentUser>,
     Json(req): Json<LockBooksRequest>,
 ) -> Result<Json<CompanyJson>, AppError> {
+    borner(req.through, "through")?;
     let company = get_company_for(&current_user, &state.pool).await?;
     let updated =
         companies::lock_books(&state.pool, current_user.user_id, company.id, req.through).await?;
@@ -410,6 +412,7 @@ pub async fn unlock_company_books(
     Extension(current_user): Extension<CurrentUser>,
     Json(req): Json<UnlockBooksRequest>,
 ) -> Result<Json<CompanyJson>, AppError> {
+    borner_opt(req.through, "through")?;
     let company = get_company_for(&current_user, &state.pool).await?;
     let updated = companies::unlock_books(
         &state.pool,

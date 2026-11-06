@@ -8,6 +8,23 @@ Le contenu est rédigé en français à destination des **fiduciaires, PME, ind�
 
 ---
 
+## [0.17.5] — Non publié
+
+### Corrigé
+
+- **Une date hors de l'an 1000 à l'an 9999 est refusée partout, comme une date mal formée**
+  ([#606](https://github.com/guycorbaz/kesh/issues/606)) : selon le champ et l'année, une telle date rendait une erreur
+  interne, coupait la connexion sans réponse sur les listes filtrées, ou passait : une échéance en l'an 10000 était acceptée
+  puis enregistrée vide, sans message. Les listes, les écritures, les factures, les rapports, les outils du serveur MCP et les
+  relevés importés (CAMT.053, CSV, saisie manuelle) la refusent désormais, sans rien écrire. Sur `POST
+  /reconciliation/accept`, une telle date refuse tout le lot en `400` au lieu de la seule proposition. Une facture à l'an 9999
+  dont le délai du contact ferait tomber l'échéance après l'an 9999 est refusée.
+- **Une clé d'API voulue temporaire ne devient plus permanente**
+  ([#755](https://github.com/guycorbaz/kesh/issues/755)) : une expiration portée au-delà de l'an 9999 par son fuseau
+  (`9999-12-31T23:59:59-05:00`) créait une clé sans expiration ; elle est refusée.
+
+---
+
 ## [0.17.4] — 2026-11-06
 
 La 0.17.4 est une version corrective : la session plus sûre, une sauvegarde automatique avant les migrations à venir, et les défauts relevés à l'usage. Elle ne porte **aucune migration** ; seules les sessions ouvertes sont effacées au premier démarrage, si bien que **chaque utilisateur se reconnecte une fois**. **Le retour à la 0.17.3 est possible sans restauration, après avoir vidé la table des sessions** (manuel d'administration, *Passer à la 0.17.4*). La sauvegarde complète d'avant la mise à jour (base, `.keshbackup`, dossier des documents) reste recommandée. Le `.env` ne change pas ; les compose fournis transmettent une variable nouvelle, facultative (`KESH_SKIP_PRE_UPGRADE_BACKUP`).

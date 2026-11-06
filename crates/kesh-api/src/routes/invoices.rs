@@ -37,6 +37,7 @@ use kesh_i18n::formatting::{format_date, format_money};
 use kesh_i18n::{FluentArgs, Locale};
 
 use crate::AppState;
+use crate::dates_recues::{borner, borner_opt};
 use crate::errors::AppError;
 use crate::helpers::get_company_for;
 use crate::middleware::auth::CurrentUser;
@@ -127,9 +128,9 @@ pub struct ListInvoicesQuery {
     pub status: Option<String>,
     #[serde(default)]
     pub contact_id: Option<i64>,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "crate::dates_recues::date_opt")]
     pub date_from: Option<NaiveDate>,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "crate::dates_recues::date_opt")]
     pub date_to: Option<NaiveDate>,
     /// Story 21-6a (D10) — `all` (défaut, no-op) | `paused` | `not-paused`.
     #[serde(default)]
@@ -653,6 +654,8 @@ pub async fn create_invoice(
     Extension(current_user): Extension<CurrentUser>,
     Json(req): Json<CreateInvoiceRequest>,
 ) -> Result<(StatusCode, Json<InvoiceResponse>), AppError> {
+    borner(req.date, "date")?;
+    borner_opt(req.due_date, "dueDate")?;
     let company = get_company_for(&current_user, &state.pool).await?;
 
     let contact = ensure_contact_belongs_to_company(&state, req.contact_id, company.id).await?;
@@ -689,6 +692,9 @@ pub async fn create_invoice(
             None => req.date,
         },
     };
+    // Story 33-4 (AC-13) : `date + délai` peut sortir de la plage que
+    // `checked_add_signed` admet encore ; la base écrirait `NULL` sans erreur.
+    borner(due_date, "dueDate")?;
     let payment_terms = payment_terms.or_else(|| {
         if !due_from_contact_days {
             return None;
@@ -739,6 +745,8 @@ pub async fn update_invoice(
     Path(id): Path<i64>,
     Json(req): Json<UpdateInvoiceRequest>,
 ) -> Result<Json<InvoiceResponse>, AppError> {
+    borner(req.date, "date")?;
+    borner_opt(req.due_date, "dueDate")?;
     let company = get_company_for(&current_user, &state.pool).await?;
 
     // #245 : à l'update, AUCUN pré-remplissage depuis le contact (on édite
@@ -941,11 +949,11 @@ pub struct ListDueDatesQuery {
     pub search: Option<String>,
     #[serde(default)]
     pub contact_id: Option<i64>,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "crate::dates_recues::date_opt")]
     pub date_from: Option<NaiveDate>,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "crate::dates_recues::date_opt")]
     pub date_to: Option<NaiveDate>,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "crate::dates_recues::date_opt")]
     pub due_before: Option<NaiveDate>,
     #[serde(default)]
     pub payment_status: Option<PaymentStatusParam>,
@@ -1135,6 +1143,7 @@ pub async fn settle_invoice_handler(
     Path(id): Path<i64>,
     Json(req): Json<SettleInvoiceRequest>,
 ) -> Result<Json<SettleInvoiceResponse>, AppError> {
+    borner(req.settled_on, "settledOn")?;
     let company = get_company_for(&current_user, &state.pool).await?;
     let (choice, amount, settled_on) = req.into_parts()?;
     let outcome = kesh_db::retry::retry_on_deadlock("invoices::settle", || {
@@ -1204,6 +1213,7 @@ pub async fn write_off_invoice_handler(
     Path(id): Path<i64>,
     Json(req): Json<WriteOffInvoiceRequest>,
 ) -> Result<Json<WriteOffInvoiceResponse>, AppError> {
+    borner(req.settled_on, "settledOn")?;
     let company = get_company_for(&current_user, &state.pool).await?;
     let nature =
         kesh_db::entities::SettlementWriteOffNature::parse(&req.nature).ok_or_else(|| {

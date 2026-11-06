@@ -24,7 +24,9 @@ pub struct KeshGrandLivre;
 #[serde(deny_unknown_fields, rename_all = "camelCase")]
 struct Arguments {
     account_id: i64,
+    #[serde(deserialize_with = "crate::dates_recues::date")]
     from: NaiveDate,
+    #[serde(deserialize_with = "crate::dates_recues::date")]
     to: NaiveDate,
     limit: Option<i64>,
     offset: Option<i64>,

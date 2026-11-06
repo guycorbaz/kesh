@@ -43,6 +43,7 @@ use kesh_report::{
 use serde::Deserialize;
 
 use crate::AppState;
+use crate::dates_recues::borner;
 use crate::errors::AppError;
 use crate::middleware::auth::CurrentUser;
 use crate::services::acces::ContexteAcces;
@@ -267,6 +268,8 @@ pub async fn get_general_ledger(
     Extension(current_user): Extension<CurrentUser>,
     Query(query): Query<GeneralLedgerQuery>,
 ) -> Result<Json<GeneralLedger>, AppError> {
+    borner(query.from, "from")?;
+    borner(query.to, "to")?;
     let acces = ContexteAcces::depuis_api(&current_user);
     let rapport =
         rapports::grand_livre(&acces, &state.lecture(), query.demande(), Affichage).await?;
@@ -284,6 +287,8 @@ pub async fn export_general_ledger(
     Extension(current_user): Extension<CurrentUser>,
     Query(query): Query<GeneralLedgerExportQuery>,
 ) -> Result<Response, AppError> {
+    borner(query.from, "from")?;
+    borner(query.to, "to")?;
     let format = validate_format(&query.format)?;
 
     let span = tracing::info_span!(
@@ -542,7 +547,9 @@ pub struct ProjectReportQuery {
     pub mode: ProjectModeParam,
     /// Requis si `mode == fiscal_year`.
     pub fiscal_year_id: Option<i64>,
+    #[serde(default, deserialize_with = "crate::dates_recues::date_opt")]
     pub period_start: Option<NaiveDate>,
+    #[serde(default, deserialize_with = "crate::dates_recues::date_opt")]
     pub period_end: Option<NaiveDate>,
     /// Export uniquement — ignoré par les endpoints JSON.
     pub format: Option<String>,

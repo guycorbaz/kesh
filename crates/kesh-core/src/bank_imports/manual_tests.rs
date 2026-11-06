@@ -230,6 +230,16 @@ fn parse_refuses_missing_and_malformed_strings_with_their_field() {
             Box::new(|r| r.period_from = None),
             invalid(None, F::PeriodFrom, R::Required),
         ),
+        // Story 33-4 (AC-7) : la forme à quatre chiffres laisse passer `0999`,
+        // que la base ne sait pas tenir.
+        (
+            Box::new(|r| r.period_to = Some("0999-12-31".into())),
+            invalid(None, F::PeriodTo, R::InvalidDate),
+        ),
+        (
+            Box::new(|r| r.lines.as_mut().unwrap()[0].value_date = Some("0999-12-31".into())),
+            invalid(Some(1), F::ValueDate, R::InvalidDate),
+        ),
         (
             Box::new(|r| r.period_to = Some("2026-9-30".into())),
             invalid(None, F::PeriodTo, R::InvalidDate),

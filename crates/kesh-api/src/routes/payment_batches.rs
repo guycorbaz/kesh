@@ -20,6 +20,7 @@ use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 
 use crate::AppState;
+use crate::dates_recues::borner;
 use crate::errors::AppError;
 use crate::helpers::get_company_for;
 use crate::middleware::auth::CurrentUser;
@@ -129,6 +130,7 @@ pub struct CreatePaymentBatchResponse {
 #[serde(rename_all = "camelCase")]
 pub struct CreatePaymentBatchRequest {
     pub bank_account_id: i64,
+    #[serde(deserialize_with = "crate::dates_recues::date")]
     pub requested_execution_date: NaiveDate,
     pub supplier_invoice_ids: Vec<i64>,
 }
@@ -267,6 +269,7 @@ pub async fn confirm_payment_batch(
     Path(id): Path<i64>,
     Json(req): Json<ConfirmPaymentBatchRequest>,
 ) -> Result<Json<PaymentBatchResponse>, AppError> {
+    borner(req.payment_date, "paymentDate")?;
     let company = get_company_for(&current_user, &state.pool).await?;
     let b = kesh_db::retry::retry_on_deadlock("payment_batches::confirm", || {
         payment_batches::confirm_batch(

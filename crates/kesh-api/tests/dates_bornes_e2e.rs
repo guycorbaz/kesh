@@ -47,12 +47,7 @@ const TEST_ADMIN_PASSWORD: &str = "e2e-test-admin-password";
 const MARQUEUR: &str = "1000 à 9999";
 
 /// Les quatre valeurs hors plage d'un `NaiveDate` (AC-2).
-const HORS_PLAGE: [&str; 4] = [
-    "+10000-01-01",
-    "+70000-01-01",
-    "-0001-01-01",
-    "0999-12-31",
-];
+const HORS_PLAGE: [&str; 4] = ["+10000-01-01", "+70000-01-01", "-0001-01-01", "0999-12-31"];
 
 static SEQ: AtomicI64 = AtomicI64::new(1);
 
@@ -130,7 +125,8 @@ async fn monter(pool: &MySqlPool) -> Monde {
         .expect("i18n"),
     );
     kesh_api::errors::init_error_i18n(i18n.clone(), config.locale);
-    let state = AppState::new_for_tests(pool.clone(), Arc::new(config), Arc::new(rate_limiter), i18n);
+    let state =
+        AppState::new_for_tests(pool.clone(), Arc::new(config), Arc::new(rate_limiter), i18n);
     let app = build_router(state, "nonexistent-static-dir".to_string());
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr: SocketAddr = listener.local_addr().unwrap();
@@ -162,7 +158,12 @@ impl Monde {
         self.societe.accounts[numero]
     }
 
-    async fn envoyer(&self, methode: reqwest::Method, chemin: &str, corps: Option<Value>) -> Reponse {
+    async fn envoyer(
+        &self,
+        methode: reqwest::Method,
+        chemin: &str,
+        corps: Option<Value>,
+    ) -> Reponse {
         let mut req = self
             .client
             .request(methode, format!("{}{}", self.base_url, chemin))
@@ -187,11 +188,13 @@ impl Monde {
     }
 
     async fn post(&self, chemin: &str, corps: Value) -> Reponse {
-        self.envoyer(reqwest::Method::POST, chemin, Some(corps)).await
+        self.envoyer(reqwest::Method::POST, chemin, Some(corps))
+            .await
     }
 
     async fn put(&self, chemin: &str, corps: Value) -> Reponse {
-        self.envoyer(reqwest::Method::PUT, chemin, Some(corps)).await
+        self.envoyer(reqwest::Method::PUT, chemin, Some(corps))
+            .await
     }
 
     /// L'identifiant et la version d'une réponse de création.
@@ -203,7 +206,10 @@ impl Monde {
             reponse.1
         );
         let v: Value = serde_json::from_str(&reponse.1).unwrap();
-        (v["id"].as_i64().unwrap(), v["version"].as_i64().unwrap_or(0))
+        (
+            v["id"].as_i64().unwrap(),
+            v["version"].as_i64().unwrap_or(0),
+        )
     }
 
     async fn contact(&self, fournisseur: bool, delai: Option<i32>) -> i64 {
@@ -375,7 +381,12 @@ impl Monde {
     }
 
     /// Une transaction bancaire en attente, déposée par le dépôt.
-    async fn transaction(&self, compte: i64, date: NaiveDate, montant: rust_decimal::Decimal) -> i64 {
+    async fn transaction(
+        &self,
+        compte: i64,
+        date: NaiveDate,
+        montant: rust_decimal::Decimal,
+    ) -> i64 {
         let n = seq();
         let mut tx = self.pool.begin().await.unwrap();
         let import = NewBankImport {
@@ -478,7 +489,11 @@ impl Releve {
 
     /// La classe que déduit le relevé (C-e334-1).
     fn classe_deduite(&self) -> char {
-        let refuses = self.lignes.iter().filter(|(_, r)| (400..500).contains(&r.0)).count();
+        let refuses = self
+            .lignes
+            .iter()
+            .filter(|(_, r)| (400..500).contains(&r.0))
+            .count();
         if refuses == self.lignes.len() {
             'A'
         } else if self.lignes.iter().any(|(_, r)| est_refus_json(r)) {
@@ -509,21 +524,19 @@ impl Releve {
 
         let mut fautes = Vec::new();
         for (v, (s, t)) in &self.lignes {
-            let code = serde_json::from_str::<Value>(t).ok().map(|j| j["error"]["code"].clone());
+            let code = serde_json::from_str::<Value>(t)
+                .ok()
+                .map(|j| j["error"]["code"].clone());
             let ok = match attendu {
                 Attendu::A => (400..500).contains(s),
                 Attendu::B => {
-                    *s == 400
-                        && code == Some(json!("VALIDATION_ERROR"))
-                        && t.contains(MARQUEUR)
+                    *s == 400 && code == Some(json!("VALIDATION_ERROR")) && t.contains(MARQUEUR)
                 }
                 Attendu::BFutur if v.starts_with('+') => {
                     *s == 422 && code == Some(json!("REMINDER_DATE_IN_FUTURE"))
                 }
                 Attendu::BFutur => {
-                    *s == 400
-                        && code == Some(json!("VALIDATION_ERROR"))
-                        && t.contains(MARQUEUR)
+                    *s == 400 && code == Some(json!("VALIDATION_ERROR")) && t.contains(MARQUEUR)
                 }
                 Attendu::CRequete => *s == 400 && t.contains(MARQUEUR),
                 Attendu::CCorps => *s == 422 && t.contains(MARQUEUR),
@@ -624,25 +637,140 @@ macro_rules! champ_requete {
 
 use Attendu::{A, B, BFutur, CCorps, CLot, CRequete};
 
-champ_requete!(q_factures_date_from, "/api/v1/invoices", "dateFrom", CRequete, true);
-champ_requete!(q_factures_date_to, "/api/v1/invoices", "dateTo", CRequete, true);
-champ_requete!(q_echeancier_date_from, "/api/v1/invoices/due-dates", "dateFrom", CRequete, true);
-champ_requete!(q_echeancier_date_to, "/api/v1/invoices/due-dates", "dateTo", CRequete, true);
-champ_requete!(q_echeancier_due_before, "/api/v1/invoices/due-dates", "dueBefore", CRequete, true);
-champ_requete!(q_bilan_debut, "/api/v1/reports/balance-sheet?fiscalYearId={fy}", "periodStart", CRequete, true);
-champ_requete!(q_bilan_fin, "/api/v1/reports/balance-sheet?fiscalYearId={fy}", "periodEnd", CRequete, true);
-champ_requete!(q_grand_livre_from, "/api/v1/reports/general-ledger?to=2026-12-31", "from", CRequete, false);
-champ_requete!(q_grand_livre_to, "/api/v1/reports/general-ledger?from=2025-01-01", "to", CRequete, false);
-champ_requete!(q_grand_livre_export_from, "/api/v1/reports/general-ledger/export?format=csv&to=2026-12-31", "from", CRequete, false);
-champ_requete!(q_grand_livre_export_to, "/api/v1/reports/general-ledger/export?format=csv&from=2025-01-01", "to", CRequete, false);
-champ_requete!(q_journaux_debut, "/api/v1/reports/journals?fiscalYearId={fy}", "periodStart", CRequete, true);
-champ_requete!(q_journaux_fin, "/api/v1/reports/journals?fiscalYearId={fy}", "periodEnd", CRequete, true);
-champ_requete!(q_export_debut, "/api/v1/reports/balance-sheet/export?format=csv&fiscalYearId={fy}", "periodStart", CRequete, true);
-champ_requete!(q_export_fin, "/api/v1/reports/balance-sheet/export?format=csv&fiscalYearId={fy}", "periodEnd", CRequete, true);
-champ_requete!(q_projet_debut, "/api/v1/reports/project-expenses?projectId={projet}&mode=cumulative", "periodStart", CRequete, true);
-champ_requete!(q_projet_fin, "/api/v1/reports/project-expenses?projectId={projet}&mode=cumulative", "periodEnd", CRequete, true);
-champ_requete!(q_ecritures_date_from, "/api/v1/journal-entries", "dateFrom", A, true);
-champ_requete!(q_ecritures_date_to, "/api/v1/journal-entries", "dateTo", A, true);
+champ_requete!(
+    q_factures_date_from,
+    "/api/v1/invoices",
+    "dateFrom",
+    CRequete,
+    true
+);
+champ_requete!(
+    q_factures_date_to,
+    "/api/v1/invoices",
+    "dateTo",
+    CRequete,
+    true
+);
+champ_requete!(
+    q_echeancier_date_from,
+    "/api/v1/invoices/due-dates",
+    "dateFrom",
+    CRequete,
+    true
+);
+champ_requete!(
+    q_echeancier_date_to,
+    "/api/v1/invoices/due-dates",
+    "dateTo",
+    CRequete,
+    true
+);
+champ_requete!(
+    q_echeancier_due_before,
+    "/api/v1/invoices/due-dates",
+    "dueBefore",
+    CRequete,
+    true
+);
+champ_requete!(
+    q_bilan_debut,
+    "/api/v1/reports/balance-sheet?fiscalYearId={fy}",
+    "periodStart",
+    A,
+    true
+);
+champ_requete!(
+    q_bilan_fin,
+    "/api/v1/reports/balance-sheet?fiscalYearId={fy}",
+    "periodEnd",
+    A,
+    true
+);
+champ_requete!(
+    q_grand_livre_from,
+    "/api/v1/reports/general-ledger?to=2026-12-31",
+    "from",
+    B,
+    false
+);
+champ_requete!(
+    q_grand_livre_to,
+    "/api/v1/reports/general-ledger?from=2025-01-01",
+    "to",
+    B,
+    false
+);
+champ_requete!(
+    q_grand_livre_export_from,
+    "/api/v1/reports/general-ledger/export?format=csv&to=2026-12-31",
+    "from",
+    B,
+    false
+);
+champ_requete!(
+    q_grand_livre_export_to,
+    "/api/v1/reports/general-ledger/export?format=csv&from=2025-01-01",
+    "to",
+    B,
+    false
+);
+champ_requete!(
+    q_journaux_debut,
+    "/api/v1/reports/journals?fiscalYearId={fy}",
+    "periodStart",
+    A,
+    true
+);
+champ_requete!(
+    q_journaux_fin,
+    "/api/v1/reports/journals?fiscalYearId={fy}",
+    "periodEnd",
+    A,
+    true
+);
+champ_requete!(
+    q_export_debut,
+    "/api/v1/reports/balance-sheet/export?format=csv&fiscalYearId={fy}",
+    "periodStart",
+    A,
+    true
+);
+champ_requete!(
+    q_export_fin,
+    "/api/v1/reports/balance-sheet/export?format=csv&fiscalYearId={fy}",
+    "periodEnd",
+    A,
+    true
+);
+champ_requete!(
+    q_projet_debut,
+    "/api/v1/reports/project-expenses?projectId={projet}&mode=cumulative",
+    "periodStart",
+    CRequete,
+    true
+);
+champ_requete!(
+    q_projet_fin,
+    "/api/v1/reports/project-expenses?projectId={projet}&mode=cumulative",
+    "periodEnd",
+    CRequete,
+    true
+);
+// Chaînes analysées par `analyser_date` : 400 JSON de validation.
+champ_requete!(
+    q_ecritures_date_from,
+    "/api/v1/journal-entries",
+    "dateFrom",
+    B,
+    true
+);
+champ_requete!(
+    q_ecritures_date_to,
+    "/api/v1/journal-entries",
+    "dateTo",
+    B,
+    true
+);
 
 // ---------------------------------------------------------------------------
 // Corps (29)
@@ -728,24 +856,51 @@ async fn verrou(m: &Monde, date: Option<&str>) {
         .unwrap();
 }
 
-champ_corps!(c_verrou_pose, "POST books-lock through", B, "2021-01-01", |m, v| {
-    verrou(m, None).await;
-    m.post("/api/v1/companies/current/books-lock", avec(json!({}), "through", v)).await
-});
+champ_corps!(
+    c_verrou_pose,
+    "POST books-lock through",
+    B,
+    "2021-01-01",
+    |m, v| {
+        verrou(m, None).await;
+        m.post(
+            "/api/v1/companies/current/books-lock",
+            avec(json!({}), "through", v),
+        )
+        .await
+    }
+);
 
-champ_corps!(c_verrou_retrait, "POST books-lock/release through", B, "2021-01-01", facultatif, |m, v| {
-    verrou(m, Some("2022-01-01")).await;
-    m.post(
-        "/api/v1/companies/current/books-lock/release",
-        avec(json!({"motif": "Correction"}), "through", v),
-    )
-    .await
-});
+champ_corps!(
+    c_verrou_retrait,
+    "POST books-lock/release through",
+    B,
+    "2021-01-01",
+    facultatif,
+    |m, v| {
+        verrou(m, Some("2022-01-01")).await;
+        m.post(
+            "/api/v1/companies/current/books-lock/release",
+            avec(json!({"motif": "Correction"}), "through", v),
+        )
+        .await
+    }
+);
 
-champ_corps!(c_avoir_date, "POST credit-notes date", B, &aujourd_hui(), |m, v| {
-    let (f, _) = m.facture_validee().await;
-    m.post("/api/v1/credit-notes", avec(json!({"invoiceId": f}), "date", v)).await
-});
+champ_corps!(
+    c_avoir_date,
+    "POST credit-notes date",
+    B,
+    &aujourd_hui(),
+    |m, v| {
+        let (f, _) = m.facture_validee().await;
+        m.post(
+            "/api/v1/credit-notes",
+            avec(json!({"invoiceId": f}), "date", v),
+        )
+        .await
+    }
+);
 
 /// Les exercices créés par un test précédent de la boucle ne doivent pas faire
 /// chevaucher le suivant.
@@ -757,36 +912,72 @@ async fn sans_exercices_neufs(m: &Monde) {
         .unwrap();
 }
 
-champ_corps!(c_exercice_debut, "POST fiscal-years startDate", B, "1500-01-01", |m, v| {
-    sans_exercices_neufs(m).await;
-    m.post(
-        "/api/v1/fiscal-years",
-        avec(json!({"name": format!("Borne {}", seq()), "endDate": "1500-12-31"}), "startDate", v),
-    )
-    .await
-});
+champ_corps!(
+    c_exercice_debut,
+    "POST fiscal-years startDate",
+    B,
+    "1500-01-01",
+    |m, v| {
+        sans_exercices_neufs(m).await;
+        m.post(
+            "/api/v1/fiscal-years",
+            avec(
+                json!({"name": format!("Borne {}", seq()), "endDate": "1500-12-31"}),
+                "startDate",
+                v,
+            ),
+        )
+        .await
+    }
+);
 
-champ_corps!(c_exercice_fin, "POST fiscal-years endDate", B, "2035-12-31", |m, v| {
-    sans_exercices_neufs(m).await;
-    m.post(
-        "/api/v1/fiscal-years",
-        avec(json!({"name": format!("Borne {}", seq()), "startDate": "2035-01-01"}), "endDate", v),
-    )
-    .await
-});
+champ_corps!(
+    c_exercice_fin,
+    "POST fiscal-years endDate",
+    B,
+    "2035-12-31",
+    |m, v| {
+        sans_exercices_neufs(m).await;
+        m.post(
+            "/api/v1/fiscal-years",
+            avec(
+                json!({"name": format!("Borne {}", seq()), "startDate": "2035-01-01"}),
+                "endDate",
+                v,
+            ),
+        )
+        .await
+    }
+);
 
-champ_corps!(c_facture_date, "POST invoices date", B, &aujourd_hui(), |m, v| {
-    let client = m.contact(false, None).await;
-    m.post(
-        "/api/v1/invoices",
-        avec(json!({"contactId": client, "lines": Monde::lignes_facture()}), "date", v),
-    )
-    .await
-});
+champ_corps!(
+    c_facture_date,
+    "POST invoices date",
+    B,
+    &aujourd_hui(),
+    |m, v| {
+        let client = m.contact(false, None).await;
+        m.post(
+            "/api/v1/invoices",
+            avec(
+                json!({"contactId": client, "lines": Monde::lignes_facture()}),
+                "date",
+                v,
+            ),
+        )
+        .await
+    }
+);
 
-champ_corps!(c_facture_echeance, "POST invoices dueDate", B, "2027-01-01", facultatif, |m, v| {
-    let client = m.contact(false, None).await;
-    m.post(
+champ_corps!(
+    c_facture_echeance,
+    "POST invoices dueDate",
+    B,
+    "2027-01-01",
+    facultatif,
+    |m, v| {
+        let client = m.contact(false, None).await;
+        m.post(
         "/api/v1/invoices",
         avec(
             json!({"contactId": client, "date": aujourd_hui(), "lines": Monde::lignes_facture()}),
@@ -795,26 +986,39 @@ champ_corps!(c_facture_echeance, "POST invoices dueDate", B, "2027-01-01", facul
         ),
     )
     .await
-});
+    }
+);
 
-champ_corps!(c_facture_maj_date, "PUT invoices date", B, &aujourd_hui(), |m, v| {
-    let client = m.contact(false, None).await;
-    let (f, version) = m.facture_brouillon().await;
-    m.put(
-        &format!("/api/v1/invoices/{f}"),
-        avec(
-            json!({"contactId": client, "lines": Monde::lignes_facture(), "version": version}),
-            "date",
-            v,
-        ),
-    )
-    .await
-});
+champ_corps!(
+    c_facture_maj_date,
+    "PUT invoices date",
+    B,
+    &aujourd_hui(),
+    |m, v| {
+        let client = m.contact(false, None).await;
+        let (f, version) = m.facture_brouillon().await;
+        m.put(
+            &format!("/api/v1/invoices/{f}"),
+            avec(
+                json!({"contactId": client, "lines": Monde::lignes_facture(), "version": version}),
+                "date",
+                v,
+            ),
+        )
+        .await
+    }
+);
 
-champ_corps!(c_facture_maj_echeance, "PUT invoices dueDate", B, "2027-01-01", facultatif, |m, v| {
-    let client = m.contact(false, None).await;
-    let (f, version) = m.facture_brouillon().await;
-    m.put(
+champ_corps!(
+    c_facture_maj_echeance,
+    "PUT invoices dueDate",
+    B,
+    "2027-01-01",
+    facultatif,
+    |m, v| {
+        let client = m.contact(false, None).await;
+        let (f, version) = m.facture_brouillon().await;
+        m.put(
         &format!("/api/v1/invoices/{f}"),
         avec(
             json!({"contactId": client, "date": aujourd_hui(), "lines": Monde::lignes_facture(), "version": version}),
@@ -823,11 +1027,17 @@ champ_corps!(c_facture_maj_echeance, "PUT invoices dueDate", B, "2027-01-01", fa
         ),
     )
     .await
-});
+    }
+);
 
-champ_corps!(c_reglement, "POST settlements settledOn", B, &aujourd_hui(), |m, v| {
-    let (f, _) = m.facture_validee().await;
-    m.post(
+champ_corps!(
+    c_reglement,
+    "POST settlements settledOn",
+    B,
+    &aujourd_hui(),
+    |m, v| {
+        let (f, _) = m.facture_validee().await;
+        m.post(
         &format!("/api/v1/invoices/{f}/settlements"),
         avec(
             json!({"settlementType": "internal_account", "accountId": m.compte("1000"), "amount": "108.10"}),
@@ -836,10 +1046,16 @@ champ_corps!(c_reglement, "POST settlements settledOn", B, &aujourd_hui(), |m, v
         ),
     )
     .await
-});
+    }
+);
 
-champ_corps!(c_solde, "POST write-off settledOn", B, &aujourd_hui(), |m, v| {
-    sqlx::query(
+champ_corps!(
+    c_solde,
+    "POST write-off settledOn",
+    B,
+    &aujourd_hui(),
+    |m, v| {
+        sqlx::query(
         "UPDATE company_invoice_settings SET default_discount_account_id = ? WHERE company_id = ?",
     )
     .bind(m.compte("4000"))
@@ -847,39 +1063,57 @@ champ_corps!(c_solde, "POST write-off settledOn", B, &aujourd_hui(), |m, v| {
     .execute(&m.pool)
     .await
     .unwrap();
-    let (f, _) = m.facture_validee().await;
-    let reglement = m
-        .post(
-            &format!("/api/v1/invoices/{f}/settlements"),
-            json!({"settlementType": "internal_account", "accountId": m.compte("1000"),
+        let (f, _) = m.facture_validee().await;
+        let reglement = m
+            .post(
+                &format!("/api/v1/invoices/{f}/settlements"),
+                json!({"settlementType": "internal_account", "accountId": m.compte("1000"),
                    "amount": "40.00", "settledOn": aujourd_hui()}),
+            )
+            .await;
+        assert_eq!(reglement.0, 200, "{}", reglement.1);
+        let lu = m.get(&format!("/api/v1/invoices/{f}")).await;
+        let version = serde_json::from_str::<Value>(&lu.1).unwrap()["version"]
+            .as_i64()
+            .unwrap();
+        m.post(
+            &format!("/api/v1/invoices/{f}/write-off"),
+            avec(
+                json!({"nature": "discount", "version": version}),
+                "settledOn",
+                v,
+            ),
         )
-        .await;
-    assert_eq!(reglement.0, 200, "{}", reglement.1);
-    let lu = m.get(&format!("/api/v1/invoices/{f}")).await;
-    let version = serde_json::from_str::<Value>(&lu.1).unwrap()["version"].as_i64().unwrap();
-    m.post(
-        &format!("/api/v1/invoices/{f}/write-off"),
-        avec(json!({"nature": "discount", "version": version}), "settledOn", v),
-    )
-    .await
-});
+        .await
+    }
+);
 
-champ_corps!(c_ecriture_date, "POST journal-entries entryDate", B, &aujourd_hui(), |m, v| {
-    m.post(
-        "/api/v1/journal-entries",
-        avec(
-            json!({"journal": "OD", "description": "Bornes", "lines": m.lignes_ecriture()}),
-            "entryDate",
-            v,
-        ),
-    )
-    .await
-});
+champ_corps!(
+    c_ecriture_date,
+    "POST journal-entries entryDate",
+    B,
+    &aujourd_hui(),
+    |m, v| {
+        m.post(
+            "/api/v1/journal-entries",
+            avec(
+                json!({"journal": "OD", "description": "Bornes", "lines": m.lignes_ecriture()}),
+                "entryDate",
+                v,
+            ),
+        )
+        .await
+    }
+);
 
-champ_corps!(c_ecriture_maj_date, "PUT journal-entries entryDate", B, &aujourd_hui(), |m, v| {
-    let (e, version) = m.ecriture().await;
-    m.put(
+champ_corps!(
+    c_ecriture_maj_date,
+    "PUT journal-entries entryDate",
+    A,
+    &aujourd_hui(),
+    |m, v| {
+        let (e, version) = m.ecriture().await;
+        m.put(
         &format!("/api/v1/journal-entries/{e}"),
         avec(
             json!({"journal": "OD", "description": "Bornes", "lines": m.lignes_ecriture(), "version": version}),
@@ -888,56 +1122,93 @@ champ_corps!(c_ecriture_maj_date, "PUT journal-entries entryDate", B, &aujourd_h
         ),
     )
     .await
-});
+    }
+);
 
-champ_corps!(c_lot_execution, "POST payment-batches requestedExecutionDate", B, &aujourd_hui(), |m, v| {
-    let compte = compte_bancaire_unique(m).await;
-    let f = m.facture_fournisseur_validee().await;
-    m.post(
-        "/api/v1/payment-batches",
-        avec(
-            json!({"bankAccountId": compte, "supplierInvoiceIds": [f]}),
-            "requestedExecutionDate",
-            v,
-        ),
-    )
-    .await
-});
-
-champ_corps!(c_lot_confirmation, "POST payment-batches/confirm paymentDate", B, &aujourd_hui(), |m, v| {
-    let compte = compte_bancaire_unique(m).await;
-    let f = m.facture_fournisseur_validee().await;
-    let lot = m
-        .post(
+champ_corps!(
+    c_lot_execution,
+    "POST payment-batches requestedExecutionDate",
+    CCorps,
+    &aujourd_hui(),
+    |m, v| {
+        let compte = compte_bancaire_unique(m).await;
+        let f = m.facture_fournisseur_validee().await;
+        m.post(
             "/api/v1/payment-batches",
-            json!({"bankAccountId": compte, "supplierInvoiceIds": [f],
-                   "requestedExecutionDate": aujourd_hui()}),
+            avec(
+                json!({"bankAccountId": compte, "supplierInvoiceIds": [f]}),
+                "requestedExecutionDate",
+                v,
+            ),
         )
-        .await;
-    assert_eq!(lot.0, 200, "{}", lot.1);
-    let lot = serde_json::from_str::<Value>(&lot.1).unwrap()["batch"]["id"].as_i64().unwrap();
-    m.post(
-        &format!("/api/v1/payment-batches/{lot}/confirm"),
-        avec(json!({}), "paymentDate", v),
-    )
-    .await
-});
+        .await
+    }
+);
 
-champ_corps!(c_projet_debut, "POST projects startDate", CCorps, "2026-01-01", facultatif, |m, v| {
-    m.post(
-        "/api/v1/projects",
-        avec(json!({"code": format!("P{}", seq()), "name": "Projet"}), "startDate", v),
-    )
-    .await
-});
+champ_corps!(
+    c_lot_confirmation,
+    "POST payment-batches/confirm paymentDate",
+    B,
+    &aujourd_hui(),
+    |m, v| {
+        let compte = compte_bancaire_unique(m).await;
+        let f = m.facture_fournisseur_validee().await;
+        let lot = m
+            .post(
+                "/api/v1/payment-batches",
+                json!({"bankAccountId": compte, "supplierInvoiceIds": [f],
+                   "requestedExecutionDate": aujourd_hui()}),
+            )
+            .await;
+        assert_eq!(lot.0, 200, "{}", lot.1);
+        let lot = serde_json::from_str::<Value>(&lot.1).unwrap()["batch"]["id"]
+            .as_i64()
+            .unwrap();
+        m.post(
+            &format!("/api/v1/payment-batches/{lot}/confirm"),
+            avec(json!({}), "paymentDate", v),
+        )
+        .await
+    }
+);
 
-champ_corps!(c_projet_fin, "POST projects endDate", CCorps, "2026-01-01", facultatif, |m, v| {
-    m.post(
-        "/api/v1/projects",
-        avec(json!({"code": format!("P{}", seq()), "name": "Projet"}), "endDate", v),
-    )
-    .await
-});
+champ_corps!(
+    c_projet_debut,
+    "POST projects startDate",
+    CCorps,
+    "2026-01-01",
+    facultatif,
+    |m, v| {
+        m.post(
+            "/api/v1/projects",
+            avec(
+                json!({"code": format!("P{}", seq()), "name": "Projet"}),
+                "startDate",
+                v,
+            ),
+        )
+        .await
+    }
+);
+
+champ_corps!(
+    c_projet_fin,
+    "POST projects endDate",
+    CCorps,
+    "2026-01-01",
+    facultatif,
+    |m, v| {
+        m.post(
+            "/api/v1/projects",
+            avec(
+                json!({"code": format!("P{}", seq()), "name": "Projet"}),
+                "endDate",
+                v,
+            ),
+        )
+        .await
+    }
+);
 
 async fn projet(m: &Monde) -> (i64, i64) {
     let r = m
@@ -949,74 +1220,117 @@ async fn projet(m: &Monde) -> (i64, i64) {
     Monde::id_version(&r, "projet")
 }
 
-champ_corps!(c_projet_maj_debut, "PUT projects startDate", CCorps, "2026-01-01", facultatif, |m, v| {
-    let (p, version) = projet(m).await;
-    m.put(
-        &format!("/api/v1/projects/{p}"),
-        avec(json!({"code": format!("P{}", seq()), "name": "Projet", "version": version}), "startDate", v),
-    )
-    .await
-});
+champ_corps!(
+    c_projet_maj_debut,
+    "PUT projects startDate",
+    CCorps,
+    "2026-01-01",
+    facultatif,
+    |m, v| {
+        let (p, version) = projet(m).await;
+        m.put(
+            &format!("/api/v1/projects/{p}"),
+            avec(
+                json!({"code": format!("P{}", seq()), "name": "Projet", "version": version}),
+                "startDate",
+                v,
+            ),
+        )
+        .await
+    }
+);
 
-champ_corps!(c_projet_maj_fin, "PUT projects endDate", CCorps, "2026-01-01", facultatif, |m, v| {
-    let (p, version) = projet(m).await;
-    m.put(
-        &format!("/api/v1/projects/{p}"),
-        avec(json!({"code": format!("P{}", seq()), "name": "Projet", "version": version}), "endDate", v),
-    )
-    .await
-});
+champ_corps!(
+    c_projet_maj_fin,
+    "PUT projects endDate",
+    CCorps,
+    "2026-01-01",
+    facultatif,
+    |m, v| {
+        let (p, version) = projet(m).await;
+        m.put(
+            &format!("/api/v1/projects/{p}"),
+            avec(
+                json!({"code": format!("P{}", seq()), "name": "Projet", "version": version}),
+                "endDate",
+                v,
+            ),
+        )
+        .await
+    }
+);
 
 /// Un test de réconciliation : le compte bancaire n'est créé qu'une fois (son
 /// IBAN est unique), les transactions, une par valeur.
 async fn compte_bancaire_unique(m: &Monde) -> i64 {
-    let existant: Option<i64> = sqlx::query_scalar("SELECT id FROM bank_accounts WHERE company_id = ? LIMIT 1")
-        .bind(m.company_id())
-        .fetch_optional(&m.pool)
-        .await
-        .unwrap();
+    let existant: Option<i64> =
+        sqlx::query_scalar("SELECT id FROM bank_accounts WHERE company_id = ? LIMIT 1")
+            .bind(m.company_id())
+            .fetch_optional(&m.pool)
+            .await
+            .unwrap();
     match existant {
         Some(id) => id,
         None => m.compte_bancaire().await,
     }
 }
 
-champ_corps!(c_rapprochement_lot, "POST reconciliation/accept split.valueDate", CLot, &aujourd_hui(), facultatif, |m, v| {
-    let compte = compte_bancaire_unique(m).await;
-    let tx = m.transaction_du_jour(compte).await;
-    let proposition = avec(
-        json!({"type": "split", "bankTransactionId": tx, "splits": m.lignes_eclatement()}),
-        "valueDate",
-        v,
-    );
-    let r = m
-        .post(
-            "/api/v1/reconciliation/accept",
-            json!({"bankAccountId": compte, "proposals": [proposition]}),
-        )
-        .await;
-    r
-});
-
-champ_corps!(c_rapprochement_manuel, "POST reconciliation/manual valueDate", CCorps, &aujourd_hui(), facultatif, |m, v| {
-    let compte = compte_bancaire_unique(m).await;
-    let tx = m.transaction_du_jour(compte).await;
-    m.post(
-        "/api/v1/reconciliation/manual",
-        avec(
-            json!({"bankAccountId": compte, "bankTransactionId": tx,
-                   "counterpartyAccountId": m.compte("4000"), "description": "Bornes"}),
+champ_corps!(
+    c_rapprochement_lot,
+    "POST reconciliation/accept split.valueDate",
+    CLot,
+    &aujourd_hui(),
+    facultatif,
+    |m, v| {
+        let compte = compte_bancaire_unique(m).await;
+        let tx = m.transaction_du_jour(compte).await;
+        let proposition = avec(
+            json!({"type": "split", "bankTransactionId": tx, "splits": m.lignes_eclatement()}),
             "valueDate",
             v,
-        ),
-    )
-    .await
-});
+        );
+        let r = m
+            .post(
+                "/api/v1/reconciliation/accept",
+                json!({"bankAccountId": compte, "proposals": [proposition]}),
+            )
+            .await;
+        r
+    }
+);
 
-champ_corps!(c_rapprochement_eclate, "POST reconciliation/split valueDate", CCorps, &aujourd_hui(), facultatif, |m, v| {
-    let compte = compte_bancaire_unique(m).await;
-    let tx = m.transaction_du_jour(compte).await;
-    m.post(
+champ_corps!(
+    c_rapprochement_manuel,
+    "POST reconciliation/manual valueDate",
+    B,
+    &aujourd_hui(),
+    facultatif,
+    |m, v| {
+        let compte = compte_bancaire_unique(m).await;
+        let tx = m.transaction_du_jour(compte).await;
+        m.post(
+            "/api/v1/reconciliation/manual",
+            avec(
+                json!({"bankAccountId": compte, "bankTransactionId": tx,
+                   "counterpartyAccountId": m.compte("4000"), "description": "Bornes"}),
+                "valueDate",
+                v,
+            ),
+        )
+        .await
+    }
+);
+
+champ_corps!(
+    c_rapprochement_eclate,
+    "POST reconciliation/split valueDate",
+    B,
+    &aujourd_hui(),
+    facultatif,
+    |m, v| {
+        let compte = compte_bancaire_unique(m).await;
+        let tx = m.transaction_du_jour(compte).await;
+        m.post(
         "/api/v1/reconciliation/split",
         avec(
             json!({"bankAccountId": compte, "bankTransactionId": tx, "splits": m.lignes_eclatement()}),
@@ -1025,20 +1339,37 @@ champ_corps!(c_rapprochement_eclate, "POST reconciliation/split valueDate", CCor
         ),
     )
     .await
-});
+    }
+);
 
-champ_corps!(c_fournisseur_date, "POST supplier-invoices invoiceDate", B, &aujourd_hui(), |m, v| {
-    let f = m.contact(true, None).await;
-    m.post(
-        "/api/v1/supplier-invoices",
-        avec(json!({"contactId": f, "lines": m.lignes_fournisseur()}), "invoiceDate", v),
-    )
-    .await
-});
+champ_corps!(
+    c_fournisseur_date,
+    "POST supplier-invoices invoiceDate",
+    B,
+    &aujourd_hui(),
+    |m, v| {
+        let f = m.contact(true, None).await;
+        m.post(
+            "/api/v1/supplier-invoices",
+            avec(
+                json!({"contactId": f, "lines": m.lignes_fournisseur()}),
+                "invoiceDate",
+                v,
+            ),
+        )
+        .await
+    }
+);
 
-champ_corps!(c_fournisseur_echeance, "POST supplier-invoices dueDate", B, "2027-01-01", facultatif, |m, v| {
-    let f = m.contact(true, None).await;
-    m.post(
+champ_corps!(
+    c_fournisseur_echeance,
+    "POST supplier-invoices dueDate",
+    B,
+    "2027-01-01",
+    facultatif,
+    |m, v| {
+        let f = m.contact(true, None).await;
+        m.post(
         "/api/v1/supplier-invoices",
         avec(
             json!({"contactId": f, "invoiceDate": aujourd_hui(), "lines": m.lignes_fournisseur()}),
@@ -1047,34 +1378,51 @@ champ_corps!(c_fournisseur_echeance, "POST supplier-invoices dueDate", B, "2027-
         ),
     )
     .await
-});
+    }
+);
 
-champ_corps!(c_fournisseur_maj_date, "PUT supplier-invoices invoiceDate", B, &aujourd_hui(), |m, v| {
-    let f = m.contact(true, None).await;
-    let cree = m
+champ_corps!(
+    c_fournisseur_maj_date,
+    "PUT supplier-invoices invoiceDate",
+    B,
+    &aujourd_hui(),
+    |m, v| {
+        let f = m.contact(true, None).await;
+        let cree = m
         .post(
             "/api/v1/supplier-invoices",
             json!({"contactId": f, "invoiceDate": aujourd_hui(), "lines": m.lignes_fournisseur()}),
         )
         .await;
-    let (id, version) = Monde::id_version(&cree, "brouillon");
-    m.put(
-        &format!("/api/v1/supplier-invoices/{id}"),
-        avec(json!({"contactId": f, "lines": m.lignes_fournisseur(), "version": version}), "invoiceDate", v),
-    )
-    .await
-});
+        let (id, version) = Monde::id_version(&cree, "brouillon");
+        m.put(
+            &format!("/api/v1/supplier-invoices/{id}"),
+            avec(
+                json!({"contactId": f, "lines": m.lignes_fournisseur(), "version": version}),
+                "invoiceDate",
+                v,
+            ),
+        )
+        .await
+    }
+);
 
-champ_corps!(c_fournisseur_maj_echeance, "PUT supplier-invoices dueDate", B, "2027-01-01", facultatif, |m, v| {
-    let f = m.contact(true, None).await;
-    let cree = m
+champ_corps!(
+    c_fournisseur_maj_echeance,
+    "PUT supplier-invoices dueDate",
+    B,
+    "2027-01-01",
+    facultatif,
+    |m, v| {
+        let f = m.contact(true, None).await;
+        let cree = m
         .post(
             "/api/v1/supplier-invoices",
             json!({"contactId": f, "invoiceDate": aujourd_hui(), "lines": m.lignes_fournisseur()}),
         )
         .await;
-    let (id, version) = Monde::id_version(&cree, "brouillon");
-    m.put(
+        let (id, version) = Monde::id_version(&cree, "brouillon");
+        m.put(
         &format!("/api/v1/supplier-invoices/{id}"),
         avec(
             json!({"contactId": f, "invoiceDate": aujourd_hui(), "lines": m.lignes_fournisseur(), "version": version}),
@@ -1083,31 +1431,54 @@ champ_corps!(c_fournisseur_maj_echeance, "PUT supplier-invoices dueDate", B, "20
         ),
     )
     .await
-});
+    }
+);
 
-champ_corps!(c_fournisseur_reglement, "POST supplier-invoices/pay paymentDate", B, &aujourd_hui(), |m, v| {
-    let f = m.facture_fournisseur_validee().await;
-    m.post(
-        &format!("/api/v1/supplier-invoices/{f}/pay"),
-        avec(
-            json!({"settlementType": "internal_account", "accountId": m.compte("1000")}),
-            "paymentDate",
-            v,
-        ),
-    )
-    .await
-});
+champ_corps!(
+    c_fournisseur_reglement,
+    "POST supplier-invoices/pay paymentDate",
+    B,
+    &aujourd_hui(),
+    |m, v| {
+        let f = m.facture_fournisseur_validee().await;
+        m.post(
+            &format!("/api/v1/supplier-invoices/{f}/pay"),
+            avec(
+                json!({"settlementType": "internal_account", "accountId": m.compte("1000")}),
+                "paymentDate",
+                v,
+            ),
+        )
+        .await
+    }
+);
 
-champ_corps!(c_tva_debut, "POST vat-rates validFrom", B, "2030-01-01", |m, v| {
-    m.post(
-        "/api/v1/vat-rates",
-        avec(json!({"category": format!("cat{}", seq()), "rate": taux()}), "validFrom", v),
-    )
-    .await
-});
+champ_corps!(
+    c_tva_debut,
+    "POST vat-rates validFrom",
+    B,
+    "2030-01-01",
+    |m, v| {
+        m.post(
+            "/api/v1/vat-rates",
+            avec(
+                json!({"category": format!("cat{}", seq()), "rate": taux()}),
+                "validFrom",
+                v,
+            ),
+        )
+        .await
+    }
+);
 
-champ_corps!(c_tva_fin, "POST vat-rates validTo", B, "2031-01-01", facultatif, |m, v| {
-    m.post(
+champ_corps!(
+    c_tva_fin,
+    "POST vat-rates validTo",
+    B,
+    "2031-01-01",
+    facultatif,
+    |m, v| {
+        m.post(
         "/api/v1/vat-rates",
         avec(
             json!({"category": format!("cat{}", seq()), "rate": taux(), "validFrom": "2030-01-01"}),
@@ -1116,22 +1487,30 @@ champ_corps!(c_tva_fin, "POST vat-rates validTo", B, "2031-01-01", facultatif, |
         ),
     )
     .await
-});
+    }
+);
 
-champ_corps!(c_tva_maj_fin, "PUT vat-rates validTo", B, "2031-01-01", facultatif, |m, v| {
-    let r = m
+champ_corps!(
+    c_tva_maj_fin,
+    "PUT vat-rates validTo",
+    B,
+    "2031-01-01",
+    facultatif,
+    |m, v| {
+        let r = m
         .post(
             "/api/v1/vat-rates",
             json!({"category": format!("cat{}", seq()), "rate": taux(), "validFrom": "2030-01-01"}),
         )
         .await;
-    let (id, version) = Monde::id_version(&r, "taux");
-    m.put(
-        &format!("/api/v1/vat-rates/{id}"),
-        avec(json!({"active": true, "version": version}), "validTo", v),
-    )
-    .await
-});
+        let (id, version) = Monde::id_version(&r, "taux");
+        m.put(
+            &format!("/api/v1/vat-rates/{id}"),
+            avec(json!({"active": true, "version": version}), "validTo", v),
+        )
+        .await
+    }
+);
 
 /// `sent_at` (`NaiveDateTime`) : valeurs de son type (AC-2).
 #[sqlx::test(migrations = "../kesh-db/test-schema")]
@@ -1210,8 +1589,15 @@ async fn cle_api_expiration_hors_plage_refusee(pool: MySqlPool) {
         .await;
     eprintln!("TEMOIN|POST api-keys expiresAt|{s} {t}");
     assert_eq!(s, 201, "{t}");
+    // La réponse de création ne porte pas l'expiration : la colonne fait foi.
     let v: Value = serde_json::from_str(&t).unwrap();
-    assert!(v["expiresAt"].is_string(), "expiresAt non nul : {t}");
+    let ecrite: Option<chrono::NaiveDateTime> =
+        sqlx::query_scalar("SELECT expires_at FROM api_keys WHERE id = ?")
+            .bind(v["id"].as_i64().unwrap())
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert!(ecrite.is_some(), "expires_at non nul : {t}");
 }
 
 // ---------------------------------------------------------------------------
@@ -1236,7 +1622,9 @@ async fn fenetre_de_rapprochement_aux_bornes(pool: MySqlPool) {
         m.transaction(compte, jour, montant).await;
     }
     let (s, t) = m
-        .get(&format!("/api/v1/reconciliation/proposals?bankAccountId={compte}"))
+        .get(&format!(
+            "/api/v1/reconciliation/proposals?bankAccountId={compte}"
+        ))
         .await;
     eprintln!(
         "RELEVE|GET reconciliation/proposals|9999-12-31|{s}|{}",
@@ -1264,11 +1652,27 @@ async fn mcp_arguments_directs(pool: MySqlPool) {
     let cas: Vec<(&str, &str, Value)> = vec![
         ("kesh_factures", "dateFrom", json!({})),
         ("kesh_factures", "dateTo", json!({})),
-        ("kesh_echeancier", "dateFrom", json!({"paymentStatus": "all"})),
+        (
+            "kesh_echeancier",
+            "dateFrom",
+            json!({"paymentStatus": "all"}),
+        ),
         ("kesh_echeancier", "dateTo", json!({"paymentStatus": "all"})),
-        ("kesh_echeancier", "dueBefore", json!({"paymentStatus": "all"})),
-        ("kesh_grand_livre", "from", json!({"accountId": cpt, "to": fin})),
-        ("kesh_grand_livre", "to", json!({"accountId": cpt, "from": debut})),
+        (
+            "kesh_echeancier",
+            "dueBefore",
+            json!({"paymentStatus": "all"}),
+        ),
+        (
+            "kesh_grand_livre",
+            "from",
+            json!({"accountId": cpt, "to": fin}),
+        ),
+        (
+            "kesh_grand_livre",
+            "to",
+            json!({"accountId": cpt, "from": debut}),
+        ),
         ("kesh_bilan", "periodStart", json!({"fiscalYearId": fy})),
         ("kesh_bilan", "periodEnd", json!({"fiscalYearId": fy})),
         ("kesh_balance", "periodStart", json!({"fiscalYearId": fy})),
@@ -1310,8 +1714,10 @@ async fn mcp_arguments_directs(pool: MySqlPool) {
     assert!(fautes.is_empty(), "{}", fautes.join("\n"));
 }
 
-/// `kesh_ecritures` et `kesh_postes_ouverts` : le refus du service, traduit,
-/// message conservé.
+/// `kesh_ecritures` et `kesh_postes_ouverts` : le refus du service, que
+/// `depuis_app_error` traduit (`mcp/textes.rs:315`, `AppError::Validation` →
+/// arguments invalides, texte fixe). Le témoin de forme passe sur les mêmes
+/// arguments : le refus vient bien de la date.
 #[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn mcp_arguments_par_le_service(pool: MySqlPool) {
     let a = societe_piegee(&pool, "Société bornes", 'A').await;
@@ -1332,12 +1738,116 @@ async fn mcp_arguments_par_le_service(pool: MySqlPool) {
                 "RELEVE|MCP {outil} {champ}|{v}|-|{}",
                 r.to_string().chars().take(160).collect::<String>()
             );
-            if r["result"]["isError"] != json!(true) || !r.to_string().contains(MARQUEUR) {
+            if r != attendu_outil_en_erreur(1, TEXTE_ARGUMENTS_INVALIDES) {
                 fautes.push(format!("{outil} {champ} {v} : {r}"));
             }
+        }
+        let mut args = base.clone();
+        args[champ] = json!(a.p.exercice_fin.to_string());
+        let r = b.appeler(&jeton, outil, args).await;
+        if r["result"]["isError"] == json!(true) {
+            fautes.push(format!("témoin {outil} {champ} : {r}"));
         }
     }
     assert!(fautes.is_empty(), "{}", fautes.join("\n"));
 }
 
-const _: Attendu = A;
+// ---------------------------------------------------------------------------
+// AC-4 — les deux bornes ne sont pas refusées pour leur plage, un site par canal
+// ---------------------------------------------------------------------------
+
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn bornes_acceptees_sur_chaque_canal(pool: MySqlPool) {
+    let m = monter(&pool).await;
+    for jour in ["1000-01-01", "9999-12-31"] {
+        // Requête, classe C.
+        let (s, t) = m.get(&format!("/api/v1/invoices?dateFrom={jour}")).await;
+        assert_eq!(s, 200, "{jour} : {t}");
+        // Requête, chaîne analysée.
+        let (s, t) = m
+            .get(&format!("/api/v1/journal-entries?dateTo={jour}"))
+            .await;
+        assert_eq!(s, 200, "{jour} : {t}");
+        // Corps, classe C.
+        let (s, t) = m
+            .post(
+                "/api/v1/projects",
+                json!({"code": format!("P{}", seq()), "name": "Projet", "startDate": jour}),
+            )
+            .await;
+        assert_eq!(s, 201, "{jour} : {t}");
+        // Corps, classe B : la date passe la borne ; le refus qui reste n'est
+        // pas celui de la plage.
+        let (s, t) = m
+            .post(
+                "/api/v1/journal-entries",
+                json!({"entryDate": jour, "journal": "OD", "description": "Bornes",
+                       "lines": m.lignes_ecriture()}),
+            )
+            .await;
+        assert!(!t.contains(MARQUEUR), "{jour} : {s} {t}");
+        assert_eq!(s, 400, "pas d'exercice à cette date : {t}");
+        assert!(t.contains("NO_FISCAL_YEAR"), "{t}");
+    }
+    // MCP, argument direct : le filtre lit et ne refuse pas.
+    let a = societe_piegee(&pool, "Société bornes", 'A').await;
+    let jeton = cle_de(&pool, &a, &LECTURE, SendValidation::Exempt).await;
+    let b = banc(&pool);
+    for jour in ["1000-01-01", "9999-12-31"] {
+        let r = b
+            .appeler(&jeton, "kesh_factures", json!({"dateFrom": jour}))
+            .await;
+        assert_ne!(r["result"]["isError"], json!(true), "{jour} : {r}");
+    }
+}
+
+/// Le test croisé (C-e334-2) : `kesh-import`, qui n'a aucune dépendance interne,
+/// porte sa propre copie de la plage ; les deux ne divergent pas.
+#[test]
+fn la_plage_de_kesh_import_est_celle_de_kesh_core() {
+    assert_eq!(kesh_import::ANNEE_MIN, kesh_core::dates::ANNEE_MIN);
+    assert_eq!(kesh_import::ANNEE_MAX, kesh_core::dates::ANNEE_MAX);
+}
+
+// ---------------------------------------------------------------------------
+// AC-13 — l'échéance calculée
+// ---------------------------------------------------------------------------
+
+/// `9999-12-31` + le délai du contact tomberait en l'an 10000, que
+/// `checked_add_signed` laisse passer et que la base écrirait `NULL`.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn echeance_calculee_hors_plage(pool: MySqlPool) {
+    let m = monter(&pool).await;
+    let avec_delai = m.contact(false, Some(30)).await;
+    let avant: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM invoices")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    let (s, t) = m
+        .post(
+            "/api/v1/invoices",
+            json!({"contactId": avec_delai, "date": "9999-12-31", "lines": Monde::lignes_facture()}),
+        )
+        .await;
+    eprintln!("RELEVE|POST invoices échéance calculée|9999-12-31|{s}|{t}");
+    assert_eq!(s, 400, "{t}");
+    assert!(
+        t.contains("VALIDATION_ERROR") && t.contains(MARQUEUR),
+        "{t}"
+    );
+    let apres: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM invoices")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(avant, apres, "rien d'écrit");
+
+    // Sans délai au contact, la même date n'est pas refusée pour sa plage.
+    let sans_delai = m.contact(false, None).await;
+    let (s, t) = m
+        .post(
+            "/api/v1/invoices",
+            json!({"contactId": sans_delai, "date": "9999-12-31", "lines": Monde::lignes_facture()}),
+        )
+        .await;
+    assert_eq!(s, 201, "{t}");
+}

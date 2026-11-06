@@ -71,7 +71,9 @@ pub struct CreateProjectBody {
     pub code: String,
     pub name: String,
     pub description: Option<String>,
+    #[serde(default, deserialize_with = "crate::dates_recues::date_opt")]
     pub start_date: Option<NaiveDate>,
+    #[serde(default, deserialize_with = "crate::dates_recues::date_opt")]
     pub end_date: Option<NaiveDate>,
 }
 
@@ -82,7 +84,9 @@ pub struct UpdateProjectBody {
     pub code: String,
     pub name: String,
     pub description: Option<String>,
+    #[serde(default, deserialize_with = "crate::dates_recues::date_opt")]
     pub start_date: Option<NaiveDate>,
+    #[serde(default, deserialize_with = "crate::dates_recues::date_opt")]
     pub end_date: Option<NaiveDate>,
     pub version: i32,
 }

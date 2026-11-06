@@ -23,6 +23,7 @@
 use axum::extract::{Query, State};
 use axum::{Extension, Json};
 use chrono::NaiveDate;
+use kesh_core::dates::annee_stockable;
 use serde::{Deserialize, Serialize};
 use std::str::FromStr;
 
@@ -48,24 +49,6 @@ fn default_limit() -> i64 {
 }
 fn default_offset() -> i64 {
     0
-}
-
-/// Borne basse acceptée pour une date de filtre.
-///
-/// ⛔ **Ce n'est pas du zèle.** `NaiveDate::from_str("-0001-01-01")` **réussit**,
-/// et une année négative — comme une année au-delà de 65535
-/// (`sqlx-mysql-0.8.6/src/types/chrono.rs:263-264`, `u16::try_from`) — fait
-/// **paniquer** la liaison de paramètre. Une panique n'est pas une 500 : aucune
-/// couche ne la rattrape.
-fn borne_basse() -> NaiveDate {
-    NaiveDate::from_ymd_opt(1000, 1, 1).expect("1000-01-01 est une date valide")
-}
-
-/// Borne haute acceptée. `0999-12-31` se lierait sans erreur et rendrait
-/// simplement tout le journal ; la plage est refusée **aux deux bornes** pour
-/// qu'elle soit la même des deux côtés.
-fn borne_haute() -> NaiveDate {
-    NaiveDate::from_ymd_opt(9999, 12, 31).expect("9999-12-31 est une date valide")
 }
 
 /// Filtres reçus par la liste **et** par l'export.
@@ -232,7 +215,15 @@ fn parse_date(valeur: Option<&str>, nom: &str) -> Result<Option<NaiveDate>, AppE
             &args,
         ))
     })?;
-    if date < borne_basse() || date > borne_haute() {
+    // ⛔ **Ce n'est pas du zèle.** `NaiveDate::from_str("-0001-01-01")` réussit ;
+    // une année négative ou au-delà de 65535 ne s'encode pas
+    // (`sqlx-mysql-0.8.6/src/types/chrono.rs:263-264`, `u16::try_from`) : par
+    // `QueryBuilder::push_bind`, c'est une **panique**, aucune réponse, la
+    // connexion tombe (`sqlx-core-0.8.6/src/query_builder.rs:158`) ; par
+    // `query().bind()`, une erreur, donc un 500. Relevé à l'exécution, Story
+    // 33-4. `0999-12-31` se lierait sans erreur et rendrait simplement tout le
+    // journal : la plage est refusée aux deux bornes.
+    if !annee_stockable(date) {
         return Err(AppError::Validation(t_args(
             "audit-log-query-error-date-out-of-range",
             &format!("{nom} doit être compris entre 1000-01-01 et 9999-12-31"),
