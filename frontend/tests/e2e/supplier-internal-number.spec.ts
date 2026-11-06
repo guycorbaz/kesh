@@ -269,6 +269,34 @@ test.describe('Le numéro interne', () => {
 			await expect(page.getByTestId('open-items-list')).toContainText(v.internalNumber);
 			await capture(page, testInfo, 'postes-ouverts');
 
+			// Un groupe de lettrage nomme sa facture par le numéro interne.
+			const payee = await valider(d, await brouillon(d, null));
+			const comptes = (await (await d.ctx.get('/api/v1/accounts')).json()) as Array<{
+				id: number;
+				number: string;
+			}>;
+			const reglement = await d.ctx.post(`/api/v1/supplier-invoices/${payee.id}/pay`, {
+				data: {
+					settlementType: 'internal_account',
+					accountId: comptes.find((c) => c.number === '1000')!.id,
+					paymentDate: new Date().toISOString().slice(0, 10),
+				},
+			});
+			expect(reglement.ok(), await reglement.text()).toBeTruthy();
+			const relue = await (await d.ctx.get(`/api/v1/supplier-invoices/${payee.id}`)).json();
+			const ecriture = await (
+				await d.ctx.get(`/api/v1/journal-entries/${relue.purchaseJournalEntryId}`)
+			).json();
+			const code = (ecriture.lines as Array<{ letteringCode: string | null }>).find(
+				(l) => l.letteringCode,
+			)?.letteringCode;
+			expect(code, 'le lettrage de la pièce').toBeTruthy();
+			await page.goto(`/open-items?group=${code}`);
+			await expect(page.getByTestId('lettering-group-origin')).toContainText(
+				payee.internalNumber,
+			);
+			await capture(page, testInfo, 'groupe-de-lettrage');
+
 			// La sélection d'un lot montre les deux numéros ; le détail, le numéro interne.
 			await page.goto('/payment-batches');
 			await expect(page.locator('body')).toContainText(`${v.internalNumber} (ABC-LOT)`);
