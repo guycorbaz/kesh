@@ -1,6 +1,6 @@
 # Story v0174-session-2 : la 0.17.4, côté navigateur — avertir avant la fermeture pour inactivité, avec « Rester connecté » (#895), et les LOW navigateur de la 0.17.3 (#898, #899)
 
-Status: review
+Status: done
 
 *Sous-fiche de `v0174-session.md` (contexte, triage des LOW, issues demandées), qui fait foi pour ce qu'elle porte.
 Branche `story/v0174-session`, worktree `/home/gcorbaz/devel/kesh-0174s`, port **3177**, bases `kesh_v0174s` /

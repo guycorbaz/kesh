@@ -1,6 +1,6 @@
 # Story v0174-mise-a-jour-1 : la 0.17.4 — la sauvegarde avant migration, version minimale (#847)
 
-Status: review
+Status: done
 
 *Seule sous-fiche à développer de `v0174-mise-a-jour.md` (parente en `split`, qui garde l'analyse du code ; la sœur
 `v0174-mise-a-jour-2.md` est `superseded`). Récrite le 2026-11-05 en **version minimale**, sur décision du Project Lead

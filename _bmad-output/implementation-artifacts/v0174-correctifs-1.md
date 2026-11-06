@@ -1,6 +1,6 @@
 # Story v0174-correctifs-1 : l'import CAMT.053 lit les références d'entité et le CDATA (#819), sans dédoubler les lignes déjà importées
 
-Status: review
+Status: done
 
 *Fiche sœur de `v0174-correctifs.md` (l'index : contraintes communes, CHANGELOG, manuels, ordre), rédigée le 2026-11-05 en
 autonomie (Opus 5.5), worktree `/home/gcorbaz/devel/kesh-0174c`, branche `story/v0174-correctifs` partie de `7bd4d5c0`.

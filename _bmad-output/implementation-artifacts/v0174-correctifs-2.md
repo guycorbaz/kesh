@@ -1,6 +1,6 @@
 # Story v0174-correctifs-2 : le serveur — les bornes du verrou de période (#869), le pays d'une adresse (#817), le verrou du compte rendu au pool (#842, #540), la date de la 0.17.1 (#901)
 
-Status: review
+Status: done
 
 *Fiche sœur de `v0174-correctifs.md` (l'index), rédigée le 2026-11-05 en autonomie (Opus 5.5), worktree
 `/home/gcorbaz/devel/kesh-0174c`, branche `story/v0174-correctifs` partie de `7bd4d5c0`. Release **0.17.4**, **sans
