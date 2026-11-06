@@ -2827,7 +2827,7 @@ async fn ac324b_b_les_bornes_des_listes_de_factures(pool: MySqlPool) {
             DemandeListeFacturesFournisseur {
                 limit,
                 offset,
-                statuts: Vec::new(),
+                ..Default::default()
             },
         )
         .await

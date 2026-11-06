@@ -330,6 +330,8 @@ pub struct ReconciliationView {
     /// Le numéro (celui du fournisseur, libre) de la facture fournisseur
     /// réglée, pour un règlement fournisseur (Story 30-1a).
     pub supplier_invoice_number: Option<String>,
+    /// Le numéro interne de cette facture (Story 33-1b, #926).
+    pub internal_number: Option<String>,
     /// Le premier motif qui refuse l'annulation, ou `None`.
     pub cancel_blocker: Option<SettlementCancelHit>,
 }
@@ -365,7 +367,7 @@ pub async fn get_view(
         Err(DbError::NotFound) => return Ok(None),
         Err(e) => return Err(e),
     };
-    let (kind, invoice_number, supplier_invoice_number) =
+    let (kind, invoice_number, supplier_invoice_number, internal_number) =
         if bt.status == BankTransactionStatus::Reconciled {
             let kind = classify(&mut tx, company_id, matched_entry(&bt)?, false).await?;
             match kind {
@@ -377,7 +379,7 @@ pub async fn get_view(
                         company_id,
                     )
                     .await?;
-                    (Some(kind), number, None)
+                    (Some(kind), number, None, None)
                 }
                 ReconciliationKind::SupplierSettlement {
                     supplier_invoice_id,
@@ -390,12 +392,20 @@ pub async fn get_view(
                         company_id,
                     )
                     .await?;
-                    (Some(kind), None, number)
+                    let interne = number_of(
+                        &mut tx,
+                        "SELECT internal_number FROM supplier_invoices \
+                         WHERE id = ? AND company_id = ?",
+                        supplier_invoice_id,
+                        company_id,
+                    )
+                    .await?;
+                    (Some(kind), None, number, interne)
                 }
-                ReconciliationKind::Entry => (Some(kind), None, None),
+                ReconciliationKind::Entry => (Some(kind), None, None, None),
             }
         } else {
-            (None, None, None)
+            (None, None, None, None)
         };
     let blocker = cancel_blocker(&mut tx, company_id, &bt).await?;
     tx.commit().await.map_err(map_db_error)?;
@@ -404,6 +414,7 @@ pub async fn get_view(
         kind,
         invoice_number,
         supplier_invoice_number,
+        internal_number,
         cancel_blocker: blocker,
     }))
 }

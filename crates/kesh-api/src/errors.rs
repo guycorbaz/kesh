@@ -4811,7 +4811,7 @@ fn settlement_counterparty_message(
         (SettlementAccountRole::Counterparty, ClaimSide::Payable) => match batch {
             Some(ctx) => {
                 let invoice = ctx
-                    .supplier_invoice_number
+                    .supplier_invoice_label
                     .clone()
                     .unwrap_or_else(|| format!("#{}", ctx.supplier_invoice_id));
                 args.set("invoice", invoice.clone());
@@ -5809,7 +5809,7 @@ mod tests {
             Some(SettlementBatchContext {
                 payment_batch_id: 5,
                 supplier_invoice_id: 42,
-                supplier_invoice_number: Some("FF-7".into()),
+                supplier_invoice_label: Some("FF-7".into()),
             }),
         ))
         .into_response();
@@ -5831,7 +5831,7 @@ mod tests {
             Some(SettlementBatchContext {
                 payment_batch_id: 5,
                 supplier_invoice_id: 42,
-                supplier_invoice_number: None,
+                supplier_invoice_label: None,
             }),
         ))
         .into_response();

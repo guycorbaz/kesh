@@ -194,6 +194,8 @@ pub struct JournalEntryDetailResponse {
 pub struct EntrySourceDocumentResponse {
     pub supplier_invoice_id: i64,
     pub supplier_invoice_number: Option<String>,
+    /// Story 33-1b (#926) — le numéro interne, que dit le lien.
+    pub internal_number: Option<String>,
     pub original_filename: String,
 }
 
@@ -202,6 +204,7 @@ impl From<imported_supplier_invoices::EntrySourceDocument> for EntrySourceDocume
         Self {
             supplier_invoice_id: d.supplier_invoice_id,
             supplier_invoice_number: d.supplier_invoice_number,
+            internal_number: d.internal_number,
             original_filename: d.original_filename,
         }
     }

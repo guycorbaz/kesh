@@ -98,6 +98,7 @@ function makeProposalWithCandidate(
 				supplierInvoiceId: null,
 				contactName: null,
 				invoiceNumber: `INV-2026-${invoiceId}`,
+				internalNumber: null,
 				invoiceAmount: amounts.invoiceAmount,
 				invoiceTotalTtc: amounts.invoiceTotalTtc,
 				invoiceDate: '2026-05-10',
@@ -748,6 +749,7 @@ function ruleCandidate(ruleId: number, counterpartyAccountId: number): Candidate
 		supplierInvoiceId: null,
 		contactName: null,
 		invoiceNumber: null,
+		internalNumber: null,
 		invoiceAmount: null,
 		invoiceTotalTtc: null,
 		invoiceDate: null,
@@ -1342,6 +1344,7 @@ function supplierCandidate(
 function noticeRow(
 	bankTransactionId: number,
 	supplierInvoiceNumber: string | null,
+	internalNumber: null,
 ): GetProposalsResponse['proposals'][number] {
 	const p = makeProposalWithoutCandidate(bankTransactionId);
 	return {

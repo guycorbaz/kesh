@@ -1256,7 +1256,8 @@ async fn unvalidate_route_redrafts_a_cancelled_invoice_and_names_what_to_undo(po
             Value::Null
         ]
     );
-    assert_eq!(e["error"]["details"]["documentNumber"], "FF-R7P");
+    // Story 33-1b (#926) : la forme courte, le numéro interne d'abord.
+    assert_eq!(e["error"]["details"]["documentNumber"], "FF-2020-002");
 
     // SUPPLIER_INVOICE_PAID_RECONCILED.
     let r = fournisseur_rapproche::reglement_rapproche(
@@ -1650,4 +1651,248 @@ async fn the_export_carries_the_internal_number(pool: MySqlPool) {
         !lire("fiscal_years.csv").contains("supplier_invoice_next_number"),
         "le compteur ne l'est pas"
     );
+}
+
+// ---------------------------------------------------------------------------
+// Story 33-1b (#926) — le tri, la recherche, la société, les lots
+// ---------------------------------------------------------------------------
+
+async fn liste(c: &Ctx, requete: &str) -> (u16, Value) {
+    envoyer(
+        c,
+        reqwest::Method::GET,
+        &format!("/api/v1/supplier-invoices{requete}"),
+        &c.admin,
+        None,
+    )
+    .await
+}
+
+fn numeros_de(b: &Value) -> Vec<Value> {
+    b["items"]
+        .as_array()
+        .unwrap_or_else(|| panic!("items : {b}"))
+        .iter()
+        .map(|i| i["internalNumber"].clone())
+        .collect()
+}
+
+/// Trois factures validées, puis leurs numéros posés en SQL pour exercer le tri : 1000
+/// passe après 999 ; plus un brouillon sans numéro.
+async fn trois_numeros(pool: &MySqlPool, c: &Ctx) {
+    for (saisi, interne) in [
+        ("A-1", "FF-2026-1000"),
+        ("A-2", "FF-2026-999"),
+        ("A-3", "FF-2025-1000"),
+    ] {
+        let b = creer(c, saisi, "10.00").await;
+        let v = valider(c, &b).await;
+        sqlx::query("UPDATE supplier_invoices SET internal_number = ? WHERE id = ?")
+            .bind(interne)
+            .bind(v["id"].as_i64())
+            .execute(pool)
+            .await
+            .unwrap();
+    }
+    creer(c, "A-4", "10.00").await;
+}
+
+/// AC3 — tri naturel, sans numéro à la fin dans les deux sens ; `sort` absent : l'ordre
+/// d'aujourd'hui ; valeur hors liste : 400.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn the_list_sorts_by_internal_number_naturally(pool: MySqlPool) {
+    let c = setup(&pool).await;
+    trois_numeros(&pool, &c).await;
+
+    let (s, b) = liste(&c, "?sort=internalNumber&order=asc").await;
+    assert_eq!(s, 200, "{b}");
+    assert_eq!(
+        numeros_de(&b),
+        [
+            json!("FF-2025-1000"),
+            json!("FF-2026-999"),
+            json!("FF-2026-1000"),
+            Value::Null
+        ]
+    );
+    let (_, b) = liste(&c, "?sort=internalNumber&order=desc").await;
+    assert_eq!(
+        numeros_de(&b),
+        [
+            json!("FF-2026-1000"),
+            json!("FF-2026-999"),
+            json!("FF-2025-1000"),
+            Value::Null
+        ]
+    );
+    // `order` absent : croissant.
+    let (_, b) = liste(&c, "?sort=internalNumber").await;
+    assert_eq!(numeros_de(&b)[0], json!("FF-2025-1000"));
+
+    // `sort` absent : `invoice_date DESC, id DESC`, le dernier créé d'abord.
+    let (_, b) = liste(&c, "").await;
+    assert_eq!(b["items"][0]["supplierInvoiceNumber"], "A-4");
+    assert_eq!(b["items"][3]["supplierInvoiceNumber"], "A-1");
+
+    for mauvais in [
+        "?sort=contactName",
+        "?sort=internal_number",
+        "?sort=internalNumber&order=up",
+    ] {
+        let (s, b) = liste(&c, mauvais).await;
+        assert_eq!(s, 400, "{mauvais} : {b}");
+    }
+}
+
+/// AC4 — `q` trouve le numéro interne, celui du fournisseur et le nom du fournisseur ; `%` et
+/// `_` sont échappés ; `total` compte le filtre ; cumulable avec `status` ; blanc : aucun
+/// filtre ; au-delà de 128 : 400.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn the_list_searches_numbers_and_supplier(pool: MySqlPool) {
+    let c = setup(&pool).await;
+    trois_numeros(&pool, &c).await;
+    let total = |b: &Value| b["total"].as_i64().unwrap();
+
+    let (s, b) = liste(&c, "?q=FF-2026-999").await;
+    assert_eq!(s, 200, "{b}");
+    assert_eq!(numeros_de(&b), [json!("FF-2026-999")]);
+    assert_eq!(total(&b), 1, "total compte le filtre");
+
+    let (_, b) = liste(&c, "?q=A-2").await;
+    assert_eq!(
+        numeros_de(&b),
+        [json!("FF-2026-999")],
+        "numéro du fournisseur"
+    );
+
+    let (_, b) = liste(&c, "?q=rapproch").await;
+    assert_eq!(total(&b), 4, "nom du fournisseur");
+
+    let (_, b) = liste(&c, "?q=A-4&status=open").await;
+    assert_eq!(total(&b), 0, "cumulable avec le statut");
+    let (_, b) = liste(&c, "?q=A-4&status=draft").await;
+    assert_eq!(total(&b), 1);
+
+    // `%` et `_` n'ont pas leur sens de joker.
+    let (_, b) = liste(&c, "?q=%25").await;
+    assert_eq!(total(&b), 0, "% échappé");
+    let (_, b) = liste(&c, "?q=A_2").await;
+    assert_eq!(total(&b), 0, "_ échappé");
+
+    let (s, b) = liste(&c, "?q=%20%20").await;
+    assert_eq!(s, 200, "{b}");
+    assert_eq!(total(&b), 4, "q blanc : aucun filtre");
+
+    let (s, b) = liste(&c, &format!("?q={}", "x".repeat(129))).await;
+    assert_eq!(s, 400, "{b}");
+    let (s, _) = liste(&c, &format!("?q={}", "x".repeat(128))).await;
+    assert_eq!(s, 200);
+}
+
+/// AC5 — `q` et `sort` ne franchissent pas la société.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn the_search_stays_in_the_company(pool: MySqlPool) {
+    let c = setup(&pool).await;
+    creer(&c, "CHEZ-A", "10.00").await;
+    let autre = kesh_db::test_fixtures::seed_stub_company_only(&pool)
+        .await
+        .unwrap();
+    let contact: i64 = sqlx::query_scalar(
+        "INSERT INTO contacts (company_id, contact_type, name, is_supplier) \
+         VALUES (?, 'Entreprise', 'Fournisseur de B', TRUE) RETURNING id",
+    )
+    .bind(autre)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    sqlx::query(
+        "INSERT INTO supplier_invoices (company_id, contact_id, supplier_invoice_number, \
+         internal_number, status, invoice_date, total_amount) \
+         VALUES (?, ?, 'CHEZ-B', 'FF-2026-777', 'draft', '2026-03-01', 0)",
+    )
+    .bind(autre)
+    .bind(contact)
+    .execute(&pool)
+    .await
+    .unwrap();
+
+    for q in ["CHEZ-B", "FF-2026-777", "Fournisseur%20de%20B"] {
+        let (s, b) = liste(&c, &format!("?q={q}")).await;
+        assert_eq!(s, 200, "{b}");
+        assert_eq!(b["total"], 0, "{q} : l'autre société ne se voit pas ({b})");
+    }
+    let (_, b) = liste(&c, "?sort=internalNumber").await;
+    assert_eq!(b["total"], 1, "{b}");
+}
+
+/// AC16 — toutes les réponses d'un lot rendent les numéros de chaque facture ; `#id`
+/// n'est plus la seule chose qu'un lot sait de ses factures.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn a_payment_batch_names_its_invoices(pool: MySqlPool) {
+    let c = setup(&pool).await;
+    let b = creer(&c, "ABC-LOT", "10.00").await;
+    let v = valider(&c, &b).await;
+    let (s, lot) = post(
+        &c,
+        "/api/v1/payment-batches",
+        json!({
+            "bankAccountId": c.f.bank_account_id,
+            "requestedExecutionDate": "2026-06-20",
+            "supplierInvoiceIds": [v["id"]],
+        }),
+    )
+    .await;
+    assert_eq!(s, 200, "{lot}");
+    let controle = |lot: &Value, contexte: &str| {
+        let item = &lot["items"][0];
+        assert_eq!(
+            item["internalNumber"], v["internalNumber"],
+            "{contexte} : {lot}"
+        );
+        assert_eq!(
+            item["supplierInvoiceNumber"], "ABC-LOT",
+            "{contexte} : {lot}"
+        );
+    };
+    controle(&lot["batch"], "création");
+    let id = lot["batch"]["id"].as_i64().unwrap();
+    let (_, detail) = envoyer(
+        &c,
+        reqwest::Method::GET,
+        &format!("/api/v1/payment-batches/{id}"),
+        &c.admin,
+        None,
+    )
+    .await;
+    controle(&detail, "détail");
+    let (s, annule) = post(
+        &c,
+        &format!("/api/v1/payment-batches/{id}/cancel"),
+        json!({}),
+    )
+    .await;
+    assert_eq!(s, 200, "{annule}");
+    controle(&annule, "annulation");
+}
+
+/// AC14 — postes ouverts : `document.number` garde le numéro du fournisseur, le numéro
+/// interne s'ajoute à côté, et `kesh_postes_ouverts` suit au niveau du service.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn the_open_items_document_carries_both_numbers(pool: MySqlPool) {
+    let c = setup(&pool).await;
+    let b = creer(&c, "ABC-PO", "10.00").await;
+    let v = valider(&c, &b).await;
+    let (s, body) = envoyer(
+        &c,
+        reqwest::Method::GET,
+        &format!("/api/v1/accounts/{}/open-items", c.seeded.accounts["2000"]),
+        &c.admin,
+        None,
+    )
+    .await;
+    assert_eq!(s, 200, "{body}");
+    let doc = &body["items"][0]["document"];
+    assert_eq!(doc["type"], "supplierInvoice", "{body}");
+    assert_eq!(doc["number"], "ABC-PO", "la valeur du champ ne change pas");
+    assert_eq!(doc["internalNumber"], v["internalNumber"]);
 }

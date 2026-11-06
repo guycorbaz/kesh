@@ -825,7 +825,7 @@ Le panneau \textbf{ne bloque rien}~: la clôture garde son seul refus, l'exercic
     \item[Documents fournisseur à traiter] Des documents déposés dans le dossier d'import, avec ou sans QR-code, attendent qu'une facture en soit créée, ou d'être retirés de la liste (\S\ref{sec:import-factures}). Lien~: \emph{Ouvrir les documents à traiter}.
     \item[Écritures incohérentes] Des écritures déséquilibrées, à moins de deux lignes, datées hors de leur exercice, ou appartenant à un autre exercice mais datées dans celui-ci. Chaque écriture listée mène à sa fiche.
     \item[Exercice suivant] Aucun exercice ne suit celui-ci~: créez-le pour y passer les écritures de l'année qui vient --- et pour contre-passer vos transitoires au début de cet exercice (\S\ref{sec:transitoires}). Bouton~: \emph{Créer l'exercice suivant}, qui ouvre la création d'un exercice (administrateur et comptable).
-    \item[Factures fournisseur en brouillon] Depuis la version~0.17.0~: des factures fournisseur datées dans l'exercice sont restées en \textbf{brouillon}~: jamais validées, leur achat n'est pas en comptabilité (\S\ref{sec:brouillon-fournisseur}). Le panneau nomme les \textbf{vingt premiers} brouillons, chacun menant à sa fiche, et dit «~… et N autres~» au-delà~; le lien \emph{Ouvrir les brouillons de factures fournisseurs} ouvre la liste des factures fournisseurs \textbf{filtrée sur les brouillons, de tous les exercices} (depuis la version~0.17.2)~: son compte peut donc dépasser celui du contrôle, qui ne compte que les brouillons datés dans l'exercice.
+    \item[Factures fournisseur en brouillon] Depuis la version~0.17.0~: des factures fournisseur datées dans l'exercice sont restées en \textbf{brouillon}~: jamais validées, leur achat n'est pas en comptabilité (\S\ref{sec:brouillon-fournisseur}). Le panneau nomme les \textbf{vingt premiers} brouillons, par leur numéro interne pour un brouillon qui en a gardé un (\S\ref{sec:numero-interne-fournisseur}), chacun menant à sa fiche, et dit «~… et N autres~» au-delà~; le lien \emph{Ouvrir les brouillons de factures fournisseurs} ouvre la liste des factures fournisseurs \textbf{filtrée sur les brouillons, de tous les exercices} (depuis la version~0.17.2)~: son compte peut donc dépasser celui du contrôle, qui ne compte que les brouillons datés dans l'exercice.
 \end{description}
 
 \paragraph{Ce que les contrôles ne disent pas.}
@@ -1141,8 +1141,8 @@ En revanche, \textbf{archiver un contact libère son numéro} : vous pouvez le r
 Le numéro de facture est généré automatiquement selon un pattern configurable dans \emph{Administration} → \emph{Facturation} :
 
 \begin{itemize}
-    \item Pattern par défaut : \texttt{F-AAAA-NNNN} (ex. F-2026-0042).
-    \item Patterns alternatifs : \texttt{INV-AAAAMM-NNN}, \texttt{F\{company\_id\}-AAAA-NNNN}, etc.
+    \item Pattern par défaut : \texttt{F-\{YEAR\}-\{SEQ:04\}} (ex. F-2026-0042).
+    \item Le pattern s'écrit avec \texttt{\{YEAR\}} (l'année de début de l'exercice), \texttt{\{FY\}} (le nom de l'exercice), \texttt{\{SEQ\}} ou \texttt{\{SEQ:NN\}} (le compteur, sur NN chiffres au moins, de 1 à 10), et du texte libre : par exemple \texttt{INV-\{YEAR\}-\{SEQ:03\}}. Le mois et la société n'y entrent pas.
     \item La numérotation est séquentielle dans un exercice (CO Art. 957a al. 2 ch. 5 « traçabilité ») : les numéros sont attribués dans l'ordre et \textbf{jamais réattribués}. Elle peut en revanche comporter des \textbf{trous} --- supprimer un brouillon déjà numéroté en laisse un, le compteur ne redescendant pas. Un trou se voit et s'explique ; c'est la réattribution qui serait fautive, et elle n'a pas lieu.
     \item Deux validations simultanées reçoivent toujours deux numéros distincts : le compteur de numérotation est \textbf{verrouillé} le temps de la validation, et une contrainte d'unicité de la base interdit d'attribuer deux fois le même numéro. Une validation qui croise une autre opération (un rapprochement bancaire, par exemple) est \textbf{rejouée automatiquement} ; si le conflit se répète trois fois de suite, la validation échoue sans rien enregistrer et peut simplement être relancée.
 \end{itemize}
@@ -1594,7 +1594,9 @@ paiement à charger dans votre e-banking. Ces écrans sont dans le menu
 
 \emph{Quotidien} → \emph{Factures fournisseurs} → \textbf{« Enregistrer une facture »}
 ouvre la page de saisie (réservée aux rôles qui peuvent créer~; les autres n'y voient
-rien à saisir). Renseigner le fournisseur (un contact marqué « fournisseur »), la date,
+rien à saisir). Renseigner le fournisseur (un contact marqué « fournisseur »), le \textbf{numéro du
+fournisseur} (facultatif~: celui qu'il a écrit sur sa facture ; Kesh attribue le sien à la validation,
+\S\ref{sec:numero-interne-fournisseur}), la date,
 l'échéance éventuelle, les coordonnées de paiement (IBAN ou QR-IBAN du créancier,
 référence, montant attendu --- toutes facultatives), le projet analytique éventuel et les
 lignes (description, montant, compte de charge, taux de TVA applicable --- l'impôt
@@ -1682,11 +1684,32 @@ nomme le compte et renvoie à ces paramètres, où un administrateur doit le
 remplacer~; rien n'est passé au journal, et la facture reste en brouillon. (Jusqu'à la
 version~0.17.0, c'est l'enregistrement même qui était refusé.)
 
+\subsection{Le numéro interne}\label{sec:numero-interne-fournisseur}
+
+Depuis la version~0.17.5, Kesh attribue à chaque facture fournisseur \textbf{validée} un \textbf{numéro interne} unique dans la société, \texttt{FF-2026-001} au format par défaut, pour classer et retrouver les \textbf{factures papier}. Le numéro du fournisseur reste, facultatif~: il sert aux recherches, mais deux fournisseurs peuvent avoir la même numérotation, et certains n'en ont pas. La liste montre les deux, en deux colonnes~; la colonne \emph{N° interne} se trie, et le champ de recherche trouve le numéro interne, le numéro du fournisseur et le nom du fournisseur. Les nouvelles écritures portent les deux au libellé~: \emph{Facture fournisseur FF-2026-001 (ABC-123) - Dupont SA}, \emph{Règlement fournisseur FF-2026-001 (ABC-123) - Dupont SA}~; les écritures d'avant la mise à jour gardent le leur.
+
+\textbf{Quand il naît.} À la validation, jamais avant~: un brouillon jamais validé n'en a pas, et sa fiche dit «~Attribué à la validation~». Une facture repassée en brouillon \textbf{garde} le sien, et le reprend à sa revalidation. Les factures déjà saisies et validées l'ont reçu à la mise à jour vers la version~0.17.5, par ordre de date.
+
+\textbf{Le classement papier.}
+\begin{itemize}
+    \item Écrivez le numéro sur le papier \textbf{après} la validation, jamais avant.
+    \item Pour les \textbf{factures déjà saisies}, numérotées à la mise à jour, le relevé de la liste triée par numéro interne sert à annoter le papier d'un coup.
+    \item Repassée en brouillon et revalidée, une facture garde le numéro~: rien à réécrire.
+    \item Un brouillon numéroté qu'on supprime perd son numéro~: Kesh ne le reprend pas. Annotez le papier «~annulée~» et laissez le trou.
+    \item \textbf{Trois cas seulement font revenir un numéro}~: la restauration d'une sauvegarde plus ancienne, le retour à la version~0.17.4 suivi d'une nouvelle mise à jour, et la réinitialisation des données. Le manuel d'administration dit quoi faire (§~\emph{Importer} et §~\emph{Passer à la 0.17.5}).
+    \item Une facture dont la date passe dans un autre exercice garde son numéro, même si l'année du numéro n'est plus celle de l'exercice.
+    \item Si le format change, les anciens numéros restent~: il vaut pour les numéros à venir.
+\end{itemize}
+
+\textbf{Le format} se règle dans \emph{Administration} → \emph{Facturation}, section \emph{Numérotation}, champ \emph{Format des factures fournisseur}~: un préfixe libre, \texttt{\{YEAR\}}, un séparateur sans chiffre, puis \texttt{\{SEQ\}} ou \texttt{\{SEQ:NN\}}, rien après --- le défaut est \texttt{FF-\{YEAR\}-\{SEQ:03\}}. Le nom de l'exercice n'y entre pas.
+
+\textbf{Les exercices particuliers.} \texttt{\{YEAR\}} est l'année de \textbf{début} de l'exercice~: un exercice 2025/2026 commencé le 1\textsuperscript{er} juillet 2025 numérote \texttt{FF-2025-001}. La séquence repart à 1 à chaque année~; deux exercices commençant la même année se suivent au lieu de repartir à 1, et un numéro supprimé dans l'un n'est pas repris par l'autre.
+
 \subsection{Le brouillon~: modifier, valider, supprimer}\label{sec:brouillon-fournisseur}
 
 Une facture fournisseur suit le cycle \textbf{brouillon} → \textbf{validée} → \textbf{payée}
 (depuis la version~0.17.0). La liste dit son état par un badge, la fiche à côté de son
-numéro~: \emph{Brouillon},
+numéro interne (\S\ref{sec:numero-interne-fournisseur}~; un brouillon jamais validé n'en a pas, sa fiche se titre alors par le numéro du fournisseur, à défaut par son identifiant)~: \emph{Brouillon},
 \emph{Validée} --- validée et à payer ---, \emph{Payée}, \emph{Annulée}.
 
 \textbf{Un brouillon} n'a rien passé au journal~: il n'entre dans aucun rapport ni solde, la
@@ -1694,7 +1717,7 @@ réconciliation ne le propose jamais pour un débit, et aucun lot de paiement ne
 fiche ne propose ni \emph{Payer} ni \emph{Annuler la facture}~; elle propose~:
 \begin{description}
     \item[Modifier] (comptable ou administrateur) ouvre la page d'édition, le formulaire de la
-          saisie pré-rempli~; \emph{Enregistrer} remplace la facture --- fournisseur, numéro,
+          saisie pré-rempli~; \emph{Enregistrer} remplace la facture --- fournisseur, numéro du fournisseur,
           dates, coordonnées, projet, lignes ---, toujours sans rien passer au journal. Si la
           facture a été modifiée entre-temps dans une autre session, l'enregistrement est refusé
           et vous invite à recharger la page. Un projet \textbf{archivé} déjà imputé au brouillon
@@ -1738,7 +1761,9 @@ facture redevient un brouillon modifiable~: corrigez-la, puis validez-la de nouv
 geste à choisir pour une faute de saisie, plutôt que l'annulation suivie d'une nouvelle saisie,
 qui laisserait aux livres la facture annulée et sa contre-passation. L'écriture supprimée laisse
 un \textbf{trou} dans la numérotation des écritures, que le journal d'audit explique (voir
-«~Numérotation~», au chapitre des écritures)~; le geste y est inscrit sous son propre nom.
+«~Numérotation~», au chapitre des écritures)~; le geste y est inscrit sous son propre nom. La facture
+garde, elle, son \textbf{numéro interne}, qu'elle reprend à sa revalidation
+(\S\ref{sec:numero-interne-fournisseur})~: seul le numéro de l'écriture change.
 
 \textbf{Une facture annulée} repasse aussi en brouillon, depuis la version~0.17.2 --- celle qui
 n'aurait jamais dû être saisie~: doublon, facture d'essai, saisie faite avant que le cycle
@@ -1942,7 +1967,7 @@ reviennent à zéro, et la facture passe à \emph{annulée}. Le journal d'audit 
 l'achat et sa contre-passation restent aux livres, la correction se voit. Une \textbf{faute de
 saisie} --- un compte, une date, un total --- se corrige plutôt en repassant la facture en
 brouillon (\S\ref{sec:repasser-brouillon})~: rien ne reste aux livres de la saisie fautive, hors
-le trou de numérotation. Un \textbf{brouillon} ne s'annule pas --- rien n'est au journal~: il se
+le trou de numérotation des écritures, le numéro interne étant, lui, conservé. Un \textbf{brouillon} ne s'annule pas --- rien n'est au journal~: il se
 supprime (administrateur) ou se corrige.
 
 \textbf{Les factures annulées dans la liste.} Depuis la version~0.17.0, la liste des factures
@@ -1998,7 +2023,8 @@ dans l'e-banking. Le flux est en \textbf{deux temps} :
 
 \begin{enumerate}
     \item \emph{Quotidien} → \emph{Paiements fournisseurs} : créer un lot en
-    sélectionnant les factures à payer --- seules les factures \textbf{validées} sont proposées,
+    sélectionnant les factures à payer, que la sélection nomme par leurs deux numéros
+    (\emph{FF-2026-001 (ABC-123)})~; le détail d'un lot les nomme par le numéro interne --- seules les factures \textbf{validées} sont proposées,
     jamais un brouillon, et \textbf{toutes} le sont, quel que soit leur nombre (depuis la
     version~0.17.4~; avant, les 200 premières seulement) ---, puis télécharger le fichier
     \texttt{pain.001} généré et le déposer dans votre e-banking. Un lot ne dépasse pas
@@ -2213,7 +2239,7 @@ traitez le document.
 \end{keshwarning}
 
 Le détail d'une \textbf{écriture} d'achat ou de règlement d'une facture fournisseur qui a un
-document montre « Facture fournisseur \emph{numéro} », lien vers la fiche, et \emph{Voir le
+document montre « Facture fournisseur \emph{numéro interne} », lien vers la fiche, et \emph{Voir le
 document}. Un règlement annulé n'est plus rattaché à la facture, pas plus que celui d'une
 facture payée puis annulée~: son écriture ne montre plus le document. L'écriture d'achat
 d'une facture annulée, elle, le montre toujours.
@@ -2748,9 +2774,9 @@ La réconciliation consiste à passer en comptabilité les transactions bancaire
 
 \paragraph{Une facture datée de plus d'un jour après le paiement n'est pas proposée.}\label{sec:facture-posterieure} Un paiement ne peut pas précéder la facture qu'il règle de \textbf{plus d'un jour}. Depuis la version~0.13.3, la proposition applique la même règle que l'acceptation, sur la même date --- la \textbf{date de valeur} de la transaction, à défaut sa date de comptabilisation~: une facture datée de \textbf{plus d'un jour après} le paiement n'est donc plus proposée, et une facture proposée n'est plus refusée parce qu'elle serait postérieure au paiement. Ce refus ne se voit plus que si la facture a été \textbf{redatée} entre l'affichage des propositions et leur acceptation~: la ligne apparaît alors dans les \emph{Échecs partiels} avec le motif «~Le paiement est daté de plus d'un jour avant la facture~». De même, si un \textbf{rappel est annulé} entre l'affichage des propositions et leur acceptation, la date qui fait courir les 30 jours peut reculer, et la facture être refusée pour un paiement trop tardif~: la ligne apparaît dans les \emph{Échecs partiels}, avec le motif générique de la facture non éligible. Le règlement saisi depuis la fiche de la facture, ou depuis la page des échéances, refuse lui aussi un règlement daté avant la facture~: l'écran n'accepte aucune date antérieure à la date de la facture, et son calendrier n'en propose aucune. Il n'a en revanche aucune limite de 30 jours~: c'est par lui qu'on enregistre un paiement que la réconciliation ne propose pas (reçu plus de 30 jours après l'échéance et le dernier rappel) --- en rattachant ensuite la transaction à ce règlement (\S\ref{sec:rattacher-reglement}). Vérifiez la date de la facture~: si le paiement est réellement antérieur --- un acompte, par exemple ---, il ne règle pas cette facture.
 
-\paragraph{Un débit~: les factures fournisseur.}\label{sec:matching-fournisseur} Depuis la version~0.14.0, une transaction \textbf{débitrice} en CHF reçoit les factures \textbf{fournisseur validées} et non payées (\S\ref{sec:factures-fournisseurs}) qui pourraient lui correspondre --- c'est le processus pour qui saisit après coup les factures des paiements de son relevé~: \textbf{saisir, puis valider} la facture, puis laisser la réconciliation la régler. Un \textbf{brouillon} n'est jamais proposé (\S\ref{sec:brouillon-fournisseur}). Une facture fournisseur est \textbf{candidate} si elle est validée et non payée, si son \textbf{total} (TTC) est \textbf{exactement} égal au montant du débit --- le paiement d'une facture fournisseur est toujours du total, sans paiement partiel ni tolérance~; un total à plus de deux décimales n'est jamais proposé, ce qui depuis la version~0.17.0 ne se produit plus que pour une facture enregistrée avant (\S\ref{sec:facture-fournisseur-sous-centime}) ---, si elle n'est \textbf{pas engagée dans un lot de paiement en cours} (\S\ref{sec:paiements-fournisseurs}), et si le paiement tombe \textbf{au plus 7 jours avant la date de la facture} (un achat payé en ligne, facturé à l'expédition) et \textbf{au plus un an après la plus tardive de sa date et de son échéance} --- sa date seule, si elle n'a pas d'échéance. La date à laquelle la facture a été \textbf{saisie} ne compte pas~: une facture saisie des mois après le paiement est proposée. Elle est notée comme une facture client, à une différence près~: la \textbf{référence} du paiement compte si elle est \textbf{égale} à la référence de paiement de la facture (la référence QR ou SCOR qu'elle porte) ou à son numéro --- espaces ignorés, majuscules ou minuscules indifférentes ---, en entier et sur six caractères au moins~; un numéro court («~1~», «~Loyer~») ou une référence qui n'en contient qu'une partie ne compte pas. À score égal, la facture échue la première passe en tête (\S\ref{sec:imputation-score-egal}).
+\paragraph{Un débit~: les factures fournisseur.}\label{sec:matching-fournisseur} Depuis la version~0.14.0, une transaction \textbf{débitrice} en CHF reçoit les factures \textbf{fournisseur validées} et non payées (\S\ref{sec:factures-fournisseurs}) qui pourraient lui correspondre --- c'est le processus pour qui saisit après coup les factures des paiements de son relevé~: \textbf{saisir, puis valider} la facture, puis laisser la réconciliation la régler. Un \textbf{brouillon} n'est jamais proposé (\S\ref{sec:brouillon-fournisseur}). Une facture fournisseur est \textbf{candidate} si elle est validée et non payée, si son \textbf{total} (TTC) est \textbf{exactement} égal au montant du débit --- le paiement d'une facture fournisseur est toujours du total, sans paiement partiel ni tolérance~; un total à plus de deux décimales n'est jamais proposé, ce qui depuis la version~0.17.0 ne se produit plus que pour une facture enregistrée avant (\S\ref{sec:facture-fournisseur-sous-centime}) ---, si elle n'est \textbf{pas engagée dans un lot de paiement en cours} (\S\ref{sec:paiements-fournisseurs}), et si le paiement tombe \textbf{au plus 7 jours avant la date de la facture} (un achat payé en ligne, facturé à l'expédition) et \textbf{au plus un an après la plus tardive de sa date et de son échéance} --- sa date seule, si elle n'a pas d'échéance. La date à laquelle la facture a été \textbf{saisie} ne compte pas~: une facture saisie des mois après le paiement est proposée. Elle est notée comme une facture client, à une différence près~: la \textbf{référence} du paiement compte si elle est \textbf{égale} à la référence de paiement de la facture (la référence QR ou SCOR qu'elle porte) ou au numéro du fournisseur --- le numéro interne n'y entre jamais, il ne figure sur aucun relevé~; espaces ignorés, majuscules ou minuscules indifférentes ---, en entier et sur six caractères au moins~; un numéro court («~1~», «~Loyer~») ou une référence qui n'en contient qu'une partie ne compte pas. À score égal, la facture échue la première passe en tête (\S\ref{sec:imputation-score-egal}).
 
-\textbf{Un lot de paiement en cours sur ce compte.} Si une facture fournisseur validée du montant \textbf{exact} du débit figure dans un lot de paiement \textbf{en cours} (fichier généré, non confirmé) sur le compte bancaire de la transaction, la ligne ne propose \textbf{rien} --- ni facture, ni règle --- et dit pourquoi, en nommant la facture et le lot~: ce débit est peut-être le paiement de ce lot, et accepter une autre facture du même montant (la mensualité suivante, typiquement) réglerait deux fois la même dépense. Si le débit est bien le paiement du lot, \textbf{annulez le lot}~: la facture sera alors proposée ici. Sinon, affectez la transaction à la main. Si vous \textbf{confirmez} plutôt le lot, la confirmation enregistre un paiement par facture~: un lot d'\textbf{une} facture produit un paiement égal au débit, qui se rattache ensuite à lui (\S\ref{sec:rattacher-reglement})~; un lot de \textbf{plusieurs} factures débité par la banque en une seule ligne ne s'y rattache pas --- aucun paiement n'égale la somme --- et la transaction resterait en attente (issue \#823~; voir l'encadré «~Dépense déjà réglée~» ci-dessous). Un lot \textbf{oublié} --- fichier généré mais jamais transmis à la banque --- retient ainsi, tant qu'il reste en cours, tout débit de ce montant sur ce compte, sans limite de date~: annulez-le (\S\ref{sec:paiements-fournisseurs}).
+\textbf{Un lot de paiement en cours sur ce compte.} Si une facture fournisseur validée du montant \textbf{exact} du débit figure dans un lot de paiement \textbf{en cours} (fichier généré, non confirmé) sur le compte bancaire de la transaction, la ligne ne propose \textbf{rien} --- ni facture, ni règle --- et dit pourquoi, en nommant la facture, par son numéro interne, et le lot~: ce débit est peut-être le paiement de ce lot, et accepter une autre facture du même montant (la mensualité suivante, typiquement) réglerait deux fois la même dépense. Si le débit est bien le paiement du lot, \textbf{annulez le lot}~: la facture sera alors proposée ici. Sinon, affectez la transaction à la main. Si vous \textbf{confirmez} plutôt le lot, la confirmation enregistre un paiement par facture~: un lot d'\textbf{une} facture produit un paiement égal au débit, qui se rattache ensuite à lui (\S\ref{sec:rattacher-reglement})~; un lot de \textbf{plusieurs} factures débité par la banque en une seule ligne ne s'y rattache pas --- aucun paiement n'égale la somme --- et la transaction resterait en attente (issue \#823~; voir l'encadré «~Dépense déjà réglée~» ci-dessous). Un lot \textbf{oublié} --- fichier généré mais jamais transmis à la banque --- retient ainsi, tant qu'il reste en cours, tout débit de ce montant sur ce compte, sans limite de date~: annulez-le (\S\ref{sec:paiements-fournisseurs}).
 
 Chaque candidate reçoit un score, somme de trois critères :
 
@@ -2804,7 +2830,7 @@ bancaire relié à un autre compte du grand livre (issue \#827)~; un paiement qu
 
 \begin{itemize}
     \item la candidate affichée est la \textbf{première} que propose Kesh~: pour un crédit, la facture client la mieux notée s'il y en a une --- à score égal, celle qu'impute la règle de la loi (\S\ref{sec:imputation-score-egal}) ---, avec son numéro et le \textbf{montant qui reste à payer}, au centime --- si la facture est déjà réglée en partie, ce montant est suivi du total d'origine, par exemple «~600, reste dû sur 1000~»~;
-    \item pour un débit, la facture fournisseur la mieux notée, avec le badge \emph{Facture fournisseur}, le nom du fournisseur, son numéro (à défaut, «~\#~» suivi de son identifiant) et son total~;
+    \item pour un débit, la facture fournisseur la mieux notée, avec le badge \emph{Facture fournisseur}, le nom du fournisseur, ses deux numéros (\emph{FF-2026-001 (ABC-123)}, un seul s'il n'y en a qu'un~; à défaut, «~\#~» suivi de son identifiant) et son total~;
     \item une ligne de débit dont le montant est celui d'une facture fournisseur d'un \textbf{lot de paiement en cours sur ce compte} ne propose rien et dit pourquoi, en nommant la facture et le lot (\S\ref{sec:matching-fournisseur})~; \emph{Accepter} ne la traite pas~;
     \item une \textbf{règle} n'est affichée, avec le badge \emph{Règle} et la mention «~libellé → compte~», que s'il n'y a \textbf{aucune} facture candidate, ni facture désignée que le paiement dépasse de quelques centimes --- même une facture de score faible passe devant elle~: une facture candidate est rapprochée du paiement par sa référence, le nom de son client ou son montant exact, et accepter une règle à sa place porterait ce paiement en produit, la facture restant due (\S\ref{sec:faq-aucun-match}). La page le rappelle au-dessus de la liste~;
     \item sans candidate, la ligne indique «~Aucune correspondance~» et porte une case, comme les autres~; \emph{Accepter} ne la traite pas --- tant qu'une telle ligne est cochée, il reste grisé et la page le dit~; elle se rejette, ou s'impute par \emph{Affecter manuellement} ou \emph{Éclater}~; toute ligne en CHF de montant non nul, crédit ou débit, se rattache aussi à une écriture déjà passée --- règlement saisi depuis une fiche, écriture saisie au journal (\emph{Rattacher à une écriture existante}, \S\ref{sec:rattacher-reglement}).
@@ -3027,7 +3053,7 @@ comptes de tiers et de passage. Le rapprochement des relevés bancaires se fait 
 Réconciliation~; les comptes bancaires n'apparaissent pas ici.~»}
 
 Chaque ligne ouverte dit sa date, son écriture (exercice et numéro), son journal, son libellé,
-sa \textbf{pièce} --- facture, avoir, facture fournisseur, règlement, transaction bancaire, en
+sa \textbf{pièce} --- facture, avoir, facture fournisseur (par son numéro interne, à défaut celui du fournisseur), règlement, transaction bancaire, en
 lien vers sa fiche quand elle en a une ---, son débit ou son crédit, et son \textbf{motif}, sur
 deux lignes~:
 
@@ -3073,7 +3099,7 @@ nulle, dont \textbf{une au moins en période ouverte}~; sinon, il dit ce qui man
 exemple). La sélection survit au changement de page. Seules les lignes lettrables à la main
 ont une case~: une ligne déjà lettrée (son code est indiqué) ou une ligne d'une
 \textbf{pièce} --- facture, avoir, facture fournisseur, règlement ---, dont le lettrage suit la
-pièce et ses règlements, n'en ont pas. Une ligne seulement \textbf{rapprochée d'une transaction
+pièce et ses règlements, n'en ont pas. Un groupe de lettrage dit de même sa facture fournisseur par son numéro interne. Une ligne seulement \textbf{rapprochée d'une transaction
 bancaire}, elle, en a une~: la transaction ne la possède pas. Une fois le
 groupe posé, son code s'affiche, en lien vers le groupe, et ses lignes quittent la liste. Si
 une ligne a changé entre-temps (lettrée par quelqu'un d'autre, écriture modifiée ou
@@ -3593,7 +3619,7 @@ Kesh tient un \textbf{journal d'audit} (\texttt{audit\_log}) des actions
 comptables significatives — création, modification et annulation d'entités,
 imports, réconciliations, exports, gestion des utilisateurs, modification de
 la société et la configuration initiale de l'installation — avec l'auteur,
-l'horodatage et le contexte.
+l'horodatage et le contexte. Depuis la version~0.17.5, le lettrage d'une facture fournisseur y nomme la pièce par son numéro interne et celui du fournisseur (\texttt{documentNumber}~: \texttt{FF-2026-001 (ABC-123)})~; les entrées passées gardent le seul numéro du fournisseur.
 
 \keshAttention\ \textbf{Une famille d'opérations n'y figure pas encore} : les \emph{gestes de
 session} --- connexion, déconnexion, changement de votre propre mot de passe. C'est

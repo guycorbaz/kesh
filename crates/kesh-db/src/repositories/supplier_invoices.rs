@@ -219,10 +219,49 @@ pub async fn get(
 /// `chk_supplier_invoices_status_v2` (Story v017-4a).
 pub const SUPPLIER_INVOICE_STATUSES: [&str; 4] = ["draft", "open", "paid", "cancelled"];
 
+/// L'ordre de la liste (Story 33-1b, #926) : une liste fermée, jamais de texte du
+/// client dans la requête.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum SupplierInvoiceSort {
+    /// `invoice_date DESC, id DESC` : l'ordre d'avant la 0.17.5.
+    #[default]
+    DateDesc,
+    /// Le numéro interne, tri **naturel** (`FF-2026-999` avant `FF-2026-1000`,
+    /// `NATURAL_SORT_KEY`, MariaDB 10.7 au moins), sans numéro à la fin.
+    InternalNumberAsc,
+    /// De même, décroissant ; sans numéro à la fin aussi.
+    InternalNumberDesc,
+}
+
+impl SupplierInvoiceSort {
+    fn order_by(self) -> &'static str {
+        match self {
+            Self::DateDesc => "si.invoice_date DESC, si.id DESC",
+            Self::InternalNumberAsc => {
+                "si.internal_number IS NULL, NATURAL_SORT_KEY(si.internal_number) ASC, si.id ASC"
+            }
+            Self::InternalNumberDesc => {
+                "si.internal_number IS NULL, NATURAL_SORT_KEY(si.internal_number) DESC, si.id DESC"
+            }
+        }
+    }
+}
+
+/// Le filtre de [`list_filtered`], neutre par défaut.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct SupplierInvoiceListFilter<'a> {
+    /// Les statuts retenus ; **vide = tous** (Story v017-4a, AC-15) — la route refuse
+    /// un filtre vide ou inconnu avant d'appeler.
+    pub statuses: &'a [&'a str],
+    /// La recherche (Story 33-1b) : numéro interne, numéro et nom du fournisseur.
+    /// `None`, vide ou blanche : aucun filtre.
+    pub q: Option<&'a str>,
+    /// L'ordre ; défaut : la date.
+    pub sort: SupplierInvoiceSort,
+}
+
 /// Liste paginée des factures fournisseurs d'une company (les plus récentes
-/// d'abord). `statuses` filtre par statut (Story v017-4a, AC-15) ; **vide =
-/// tous** — la route refuse un filtre vide ou inconnu avant d'appeler. `total`
-/// compte le filtre.
+/// d'abord), filtrée par statut. Cf. [`list_filtered`].
 pub async fn list(
     pool: &MySqlPool,
     company_id: i64,
@@ -230,7 +269,31 @@ pub async fn list(
     limit: i64,
     offset: i64,
 ) -> Result<(Vec<SupplierInvoiceListItem>, i64), DbError> {
-    let filter = if statuses.is_empty() {
+    list_filtered(
+        pool,
+        company_id,
+        SupplierInvoiceListFilter {
+            statuses,
+            ..Default::default()
+        },
+        limit,
+        offset,
+    )
+    .await
+}
+
+/// Liste paginée des factures fournisseurs d'une company, selon `filtre`. `total`
+/// compte le filtre, recherche comprise ; tout passe par des marqueurs, `%` et `_`
+/// de la recherche sont échappés (Story 33-1b, #926).
+pub async fn list_filtered(
+    pool: &MySqlPool,
+    company_id: i64,
+    filtre: SupplierInvoiceListFilter<'_>,
+    limit: i64,
+    offset: i64,
+) -> Result<(Vec<SupplierInvoiceListItem>, i64), DbError> {
+    let statuses = filtre.statuses;
+    let mut filter = if statuses.is_empty() {
         String::new()
     } else {
         format!(
@@ -238,25 +301,46 @@ pub async fn list(
             statuses.iter().map(|_| "?").collect::<Vec<_>>().join(", ")
         )
     };
-    let count_sql =
-        format!("SELECT COUNT(*) FROM supplier_invoices si WHERE si.company_id = ?{filter}");
+    let motif = filtre
+        .q
+        .map(str::trim)
+        .filter(|q| !q.is_empty())
+        .map(|q| format!("%{}%", crate::util::search::escape_like(q)));
+    if motif.is_some() {
+        filter.push_str(
+            " AND (si.internal_number LIKE ? ESCAPE '\\\\' \
+             OR si.supplier_invoice_number LIKE ? ESCAPE '\\\\' \
+             OR c.name LIKE ? ESCAPE '\\\\')",
+        );
+    }
+    // JOIN contacts pour le nom du fournisseur (AC11), au décompte aussi : la recherche
+    // le lit. INNER JOIN sûr : contact_id est une FK RESTRICT non-nullable.
+    let count_sql = format!(
+        "SELECT COUNT(*) FROM supplier_invoices si JOIN contacts c ON c.id = si.contact_id \
+         WHERE si.company_id = ?{filter}"
+    );
     let mut count = sqlx::query_scalar::<_, i64>(&count_sql).bind(company_id);
     for s in statuses {
         count = count.bind(*s);
     }
+    if let Some(m) = &motif {
+        count = count.bind(m).bind(m).bind(m);
+    }
     let total: i64 = count.fetch_one(pool).await.map_err(map_db_error)?;
 
-    // JOIN contacts pour le nom du fournisseur (AC11). INNER JOIN sûr : contact_id
-    // est une FK RESTRICT non-nullable.
     let items_sql = format!(
         "SELECT si.id, si.contact_id, c.name AS contact_name, si.supplier_invoice_number, \
          si.internal_number, si.status, si.invoice_date, si.due_date, si.total_amount \
          FROM supplier_invoices si JOIN contacts c ON c.id = si.contact_id \
-         WHERE si.company_id = ?{filter} ORDER BY si.invoice_date DESC, si.id DESC LIMIT ? OFFSET ?"
+         WHERE si.company_id = ?{filter} ORDER BY {} LIMIT ? OFFSET ?",
+        filtre.sort.order_by()
     );
     let mut q = sqlx::query_as::<_, SupplierInvoiceListItem>(&items_sql).bind(company_id);
     for s in statuses {
         q = q.bind(*s);
+    }
+    if let Some(m) = &motif {
+        q = q.bind(m).bind(m).bind(m);
     }
     let items = q
         .bind(limit)
@@ -1069,10 +1153,11 @@ pub async fn unvalidate_in_tx(
         .map_err(map_db_error)?
         .ok_or(DbError::NotFound)?;
     // Revue P1, E-6 : un numéro vide ou blanc vaut absent (même règle que K8).
-    let document_label = inv
-        .supplier_invoice_number
-        .clone()
-        .filter(|n| !n.trim().is_empty());
+    // Story 33-1b (#926) : la forme courte, le numéro interne d'abord.
+    let document_label = kesh_core::invoice_format::supplier_invoice_short_label(
+        inv.internal_number.as_deref(),
+        inv.supplier_invoice_number.as_deref(),
+    );
     let refus = |blocker, document_id, hint| DbError::SupplierInvoiceNotUnvalidatable {
         blocker,
         document_id,

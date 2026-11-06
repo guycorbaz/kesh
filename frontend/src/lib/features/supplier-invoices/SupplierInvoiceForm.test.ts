@@ -550,6 +550,7 @@ function initial(over: Partial<SupplierInvoiceFormInitial> = {}): SupplierInvoic
 	return {
 		contactId: 1,
 		supplierInvoiceNumber: 'FF-1',
+		internalNumber: null,
 		invoiceDate: '2026-05-10',
 		dueDate: '2026-06-09',
 		creditorIban: 'CH9300762011623852957',

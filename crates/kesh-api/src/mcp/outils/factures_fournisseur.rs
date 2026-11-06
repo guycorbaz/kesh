@@ -154,8 +154,9 @@ impl McpTool for KeshFacturesFournisseur {
             let demande = DemandeListeFacturesFournisseur {
                 limit: Some(limit),
                 offset: Some(offset),
-                // L'outil n'a pas de filtre de statut (Story v017-4a, AC-15).
-                statuts: Vec::new(),
+                // L'outil n'a ni filtre de statut (Story v017-4a, AC-15), ni recherche,
+                // ni tri (Story 33-1b, AC4) : l'ordre des dates reste le sien.
+                ..Default::default()
             };
             let page = factures_fournisseur::lister(ctx.acces(), ctx.lecture(), demande)
                 .await

@@ -131,6 +131,8 @@ pub struct ProposalNotice {
     /// Le numéro de la facture chez le fournisseur ; nullable (l'écran affiche
     /// alors `#id`).
     pub supplier_invoice_number: Option<String>,
+    /// Story 33-1b (#926) — le numéro interne, que dit l'avis.
+    pub internal_number: Option<String>,
     pub payment_batch_id: i64,
 }
 
@@ -182,6 +184,9 @@ pub struct ReconciliationCandidate {
     /// règle, ou si le contact est introuvable.
     pub contact_name: Option<String>,
     pub invoice_number: Option<String>,
+    /// Story 33-1b (#926) — le numéro interne d'une facture fournisseur ; `None` pour une
+    /// facture cliente et une règle.
+    pub internal_number: Option<String>,
     /// Montant à régler de la facture : son **reste dû** (#420, Story 25-4-c),
     /// le montant comparé à la transaction — le TTC tant que rien n'est réglé.
     pub invoice_amount: Option<String>,
@@ -1232,6 +1237,7 @@ pub async fn get_proposals(
                             code: NOTICE_SUPPLIER_INVOICE_IN_PAYMENT_BATCH,
                             supplier_invoice_id: held.supplier_invoice_id,
                             supplier_invoice_number: held.supplier_invoice_number,
+                            internal_number: held.internal_number,
                             payment_batch_id: held.payment_batch_id,
                         });
                     } else {
@@ -1268,6 +1274,7 @@ pub async fn get_proposals(
                                     supplier_invoice_id: Some(si.id),
                                     contact_name: contact_name_of(si.contact_id),
                                     invoice_number: si.supplier_invoice_number.clone(),
+                                    internal_number: si.internal_number.clone(),
                                     // Le TTC au centime : le règlement
                                     // fournisseur est binaire, pas de reste dû.
                                     invoice_amount: Some(
@@ -1321,6 +1328,7 @@ pub async fn get_proposals(
                                 supplier_invoice_id: None,
                                 contact_name: contact_name_of(inv.contact_id),
                                 invoice_number: inv.invoice_number.clone(),
+                                internal_number: None,
                                 // #420 (25-4-c) : montant affiché dans l'UI candidats
                                 // = reste dû, la grandeur comparée à la tx (après le
                                 // HT, #246, puis le TTC, qui affichait 1 000 pour un
@@ -1376,6 +1384,7 @@ pub async fn get_proposals(
                     supplier_invoice_id: None,
                     contact_name: None,
                     invoice_number: None,
+                    internal_number: None,
                     invoice_amount: None,
                     invoice_total_ttc: None,
                     invoice_date: None,
@@ -5679,6 +5688,8 @@ pub struct ReconciliationTransactionResponse {
     pub supplier_invoice_id: Option<i64>,
     /// Le numéro (celui du fournisseur, libre et nullable) de cette facture.
     pub supplier_invoice_number: Option<String>,
+    /// Story 33-1b (#926) — son numéro interne, que dit la confirmation.
+    pub internal_number: Option<String>,
     pub cancellable: bool,
     /// Code du premier motif qui refuse l'annulation.
     pub cancel_blocked_by: Option<&'static str>,
@@ -5722,6 +5733,7 @@ pub async fn get_reconciliation_transaction(
         invoice_number: view.invoice_number,
         supplier_invoice_id,
         supplier_invoice_number: view.supplier_invoice_number,
+        internal_number: view.internal_number,
         cancellable: hit.is_none(),
         cancel_blocked_by: hit.as_ref().map(|h| h.0.code()),
         cancel_blocked_label: hit.as_ref().and_then(|h| h.2.clone()),
@@ -7065,6 +7077,7 @@ mod candidate_order_tests {
             supplier_invoice_id: None,
             contact_name: None,
             invoice_number: Some(format!("F-{id}")),
+            internal_number: None,
             invoice_amount: Some("100".to_string()),
             invoice_total_ttc: None,
             invoice_date: None,
@@ -7090,6 +7103,7 @@ mod candidate_order_tests {
             supplier_invoice_id: None,
             contact_name: None,
             invoice_number: None,
+            internal_number: None,
             invoice_amount: None,
             invoice_total_ttc: None,
             invoice_date: None,

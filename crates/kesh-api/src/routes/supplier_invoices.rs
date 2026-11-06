@@ -649,6 +649,12 @@ pub struct ListSupplierInvoicesQuery {
     /// Story v017-4a (AC-15) — une ou plusieurs valeurs parmi `draft`, `open`,
     /// `paid`, `cancelled`, séparées par des virgules ; absent = tous.
     pub status: Option<String>,
+    /// Story 33-1b (#926) — recherche : numéro interne, numéro et nom du fournisseur.
+    pub q: Option<String>,
+    /// Story 33-1b (#926) — `internalNumber`, seule valeur admise ; absent : la date.
+    pub sort: Option<String>,
+    /// Story 33-1b (#926) — `asc` (défaut) ou `desc`, avec `sort`.
+    pub order: Option<String>,
 }
 
 /// Corps de `PUT /api/v1/supplier-invoices/{id}` (Story v017-4a, AC-8) : celui
@@ -688,6 +694,11 @@ pub async fn list_supplier_invoices(
             limit: params.limit,
             offset: params.offset,
             statuts: factures_fournisseur::statuts_du_filtre(params.status.as_deref())?,
+            recherche: factures_fournisseur::recherche_du_filtre(params.q.as_deref())?,
+            tri: factures_fournisseur::tri_du_filtre(
+                params.sort.as_deref(),
+                params.order.as_deref(),
+            )?,
         },
     )
     .await?;

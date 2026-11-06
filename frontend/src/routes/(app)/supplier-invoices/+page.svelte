@@ -26,6 +26,11 @@
 	 * gestes (boutons, case) **naviguent**, ils ne posent pas d'état local. Le filtre ne porte
 	 * que sur le statut : depuis le contrôle de clôture K8, la liste montre les brouillons de
 	 * tous les exercices.
+	 *
+	 * Story 33-1b (#926) — deux colonnes, **N° interne** (triable) et **N° fournisseur** ;
+	 * `?sort=internalNumber`, `?order=asc|desc` et `?q=` (numéro interne, numéro et nom du
+	 * fournisseur) passent par l'adresse, comme le reste : tri et recherche se font au serveur,
+	 * la liste étant paginée, et un geste ramène `offset` à 0.
 	 */
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
@@ -69,6 +74,39 @@
 		const n = intParam(page.url.searchParams.get('limit'));
 		return n === null || n < 1 ? DEFAULT_LIMIT : Math.min(n, MAX_LIMIT);
 	});
+	/** La recherche de l'adresse ; une valeur blanche ne filtre pas. */
+	const searchTerm = $derived((page.url.searchParams.get('q') ?? '').trim());
+	/** Le tri de l'adresse : une seule colonne, toute autre valeur est ignorée. */
+	const sortedByNumber = $derived(page.url.searchParams.get('sort') === 'internalNumber');
+	const sortOrder = $derived.by((): 'asc' | 'desc' =>
+		page.url.searchParams.get('order') === 'desc' ? 'desc' : 'asc',
+	);
+
+	/** Le champ de recherche ; l'adresse ne suit qu'après la frappe temporisée. */
+	let searchInput = $state('');
+	let searchTimer: ReturnType<typeof setTimeout> | undefined;
+	const SEARCH_DEBOUNCE_MS = 300;
+
+	// L'adresse change sans passer par le champ (lien, retour arrière) : le champ la suit.
+	$effect(() => {
+		const term = page.url.searchParams.get('q') ?? '';
+		if (searchTimer === undefined) searchInput = term;
+	});
+
+	function onSearchInput(value: string): void {
+		searchInput = value;
+		clearTimeout(searchTimer);
+		searchTimer = setTimeout(() => {
+			searchTimer = undefined;
+			navigate({ q: value.trim() === '' ? null : value, offset: null }, { replaceState: true });
+		}, SEARCH_DEBOUNCE_MS);
+	}
+
+	/** En-tête N° interne : non trié → croissant → décroissant → croissant. */
+	function toggleNumberSort(): void {
+		const next = sortedByNumber && sortOrder === 'asc' ? 'desc' : 'asc';
+		navigate({ sort: 'internalNumber', order: next, offset: null });
+	}
 
 	let items = $state<SupplierInvoiceListItemResponse[]>([]);
 	let total = $state(0);
@@ -126,17 +164,24 @@
 		cancelled: boolean,
 		off: number,
 		lim: number,
+		q: string,
+		sorted: boolean,
+		order: 'asc' | 'desc',
 	) {
 		const seq = ++requestSeq;
 		errorMsg = '';
 		try {
-			const res = await listSupplierInvoices(
-				filter
-					? { limit: lim, offset: off, status: [filter] }
+			const res = await listSupplierInvoices({
+				limit: lim,
+				offset: off,
+				...(filter
+					? { status: [filter] }
 					: cancelled
-						? { limit: lim, offset: off }
-						: { limit: lim, offset: off, status: WITHOUT_CANCELLED },
-			);
+						? {}
+						: { status: WITHOUT_CANCELLED }),
+				...(q ? { q } : {}),
+				...(sorted ? { sort: 'internalNumber' as const, order } : {}),
+			});
 			if (seq !== requestSeq) return;
 			// Page au-delà du total (dernière ligne supprimée, signet ancien) : la
 			// dernière page, sans nouvelle entrée d'historique.
@@ -159,7 +204,7 @@
 
 	// L'adresse change (geste, lien, retour arrière) : la liste se relit.
 	$effect(() => {
-		void load(statusFilter, showCancelled, offset, limit);
+		void load(statusFilter, showCancelled, offset, limit, searchTerm, sortedByNumber, sortOrder);
 	});
 </script>
 
@@ -212,6 +257,20 @@
 	</label>
 {/if}
 
+<label class="mb-4 block max-w-md text-sm">
+	<span class="mb-1 block">
+		{i18nMsg('supplier-invoices-search-label', 'Rechercher un numéro ou un fournisseur')}
+	</span>
+	<input
+		type="search"
+		class="w-full rounded border px-2 py-1"
+		data-testid="supplier-invoices-search"
+		value={searchInput}
+		oninput={(e) => onSearchInput(e.currentTarget.value)}
+		maxlength="128"
+	/>
+</label>
+
 {#if loading}
 	<p class="text-sm text-text-muted">{i18nMsg('common-loading', 'Chargement…')}</p>
 {:else if errorMsg}
@@ -220,7 +279,11 @@
 	<!-- Revue de code P1 (B-4 = E-4) : le message dit ce qui est vide — le filtre, la liste
 	     sans les annulées, ou toute la liste. -->
 	<p class="text-sm text-text-muted" data-testid="supplier-invoices-empty">
-		{#if statusFilter}
+		{#if searchTerm}
+			{i18nMsg('supplier-invoices-empty-search', 'Aucune facture ne correspond à « { $term } ».', {
+				term: searchTerm,
+			})}
+		{:else if statusFilter}
 			{i18nMsg('supplier-invoices-empty-filtered', 'Aucune facture « { $status } ».', {
 				status: supplierInvoiceStatusLabel(statusFilter),
 			})}
@@ -237,7 +300,21 @@
 	<table class="w-full border-collapse text-sm" data-testid="supplier-invoices-table">
 		<thead>
 			<tr class="border-b text-left text-text-muted">
-				<th class="py-2">{i18nMsg('supplier-invoices-col-number', 'N°')}</th>
+				<th
+					class="py-2"
+					aria-sort={sortedByNumber ? (sortOrder === 'asc' ? 'ascending' : 'descending') : 'none'}
+				>
+					<button
+						type="button"
+						class="underline-offset-2 hover:underline"
+						data-testid="supplier-invoices-sort-internal-number"
+						onclick={toggleNumberSort}
+					>
+						{i18nMsg('supplier-invoices-col-internal-number', 'N° interne')}
+						{#if sortedByNumber}<span aria-hidden="true">{sortOrder === 'asc' ? '▲' : '▼'}</span>{/if}
+					</button>
+				</th>
+				<th class="py-2">{i18nMsg('supplier-invoices-col-number', 'N° fournisseur')}</th>
 				<th class="py-2">{i18nMsg('supplier-invoices-col-supplier', 'Fournisseur')}</th>
 				<th class="py-2">{i18nMsg('supplier-invoices-col-date', 'Date')}</th>
 				<th class="py-2">{i18nMsg('supplier-invoices-col-due', 'Échéance')}</th>
@@ -252,7 +329,12 @@
 					data-testid="supplier-invoice-row"
 					onclick={() => goto(`/supplier-invoices/${inv.id}`)}
 				>
-					<td class="py-2 font-mono">{inv.supplierInvoiceNumber ?? `#${inv.id}`}</td>
+					<td class="py-2 font-mono" data-testid="supplier-invoice-row-internal-number"
+						>{inv.internalNumber ?? '—'}</td
+					>
+					<td class="py-2 font-mono" data-testid="supplier-invoice-row-supplier-number"
+						>{inv.supplierInvoiceNumber ?? '—'}</td
+					>
 					<td class="py-2">{inv.contactName}</td>
 					<!-- Story v0171 (#871) : dates en forme suisse. -->
 					<td class="py-2" data-testid="supplier-invoice-row-date">{formatSwissDate(inv.invoiceDate)}</td>

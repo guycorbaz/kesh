@@ -119,6 +119,8 @@ export type JournalCode = 'Achats' | 'Ventes' | 'Banque' | 'Caisse' | 'OD';
 export interface InvoiceSettingsResponse {
 	companyId: number;
 	invoiceNumberFormat: string;
+	/** Format du numéro interne des factures fournisseur (Story 33-1a, #926). */
+	supplierInternalNumberFormat: string;
 	defaultReceivableAccountId: number | null;
 	defaultRevenueAccountId: number | null;
 	defaultVatPayableAccountId: number | null;
@@ -147,6 +149,7 @@ export interface InvoiceSettingsResponse {
 
 export interface UpdateInvoiceSettingsRequest {
 	invoiceNumberFormat: string;
+	supplierInternalNumberFormat: string;
 	defaultReceivableAccountId: number | null;
 	defaultRevenueAccountId: number | null;
 	defaultVatPayableAccountId: number | null;

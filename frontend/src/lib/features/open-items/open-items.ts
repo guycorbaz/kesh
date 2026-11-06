@@ -9,6 +9,7 @@
  */
 import Big from 'big.js';
 import { isApiError } from '$lib/shared/utils/api-client';
+import { supplierInvoicePreferredNumber } from '$lib/features/supplier-invoices/supplier-invoice-label';
 import type { DocumentRef, LetteringDetail, SelectedLine } from './open-items.types';
 
 /**
@@ -150,8 +151,13 @@ export function groupDocument(
 ): { number: string; href: string | null } | null {
 	for (const l of group.lines) {
 		const d = l.document;
-		if (d && (d.type === 'invoice' || d.type === 'supplierInvoice') && d.number) {
+		if (d?.type === 'invoice' && d.number) {
 			return { number: d.number, href: documentHref(d) };
+		}
+		if (d?.type === 'supplierInvoice') {
+			// Story 33-1b (#926) — une facture sans numéro du fournisseur y gagne un numéro.
+			const number = supplierInvoicePreferredNumber(d.internalNumber, d.number);
+			if (number) return { number, href: documentHref(d) };
 		}
 	}
 	for (const l of group.lines) {

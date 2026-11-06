@@ -740,9 +740,17 @@ async fn entry_lookup_covers_purchase_and_settlement(pool: MySqlPool) {
         "pas encore de document"
     );
     rattacher(&pool, c, doc.id, inv).await.expect("rattaché");
+    let interne: Option<String> =
+        sqlx::query_scalar("SELECT internal_number FROM supplier_invoices WHERE id = ?")
+            .bind(inv)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert!(interne.is_some(), "montage : la facture est numérotée");
     let attendu = repo::EntrySourceDocument {
         supplier_invoice_id: inv,
         supplier_invoice_number: Some("FF-E".into()),
+        internal_number: interne,
         original_filename: "e1.png".into(),
     };
     for entry in [achat, reglement] {

@@ -57,7 +57,7 @@
 
 - **Backend** : Rust 1.97 (édition 2024), Axum, SQLx
 - **Frontend** : SvelteKit 2 + Svelte 5, TypeScript, Tailwind CSS 4
-- **Base de données** : MariaDB 10.11+ (parité prod NAS Synology Package Center DSM, compat ≥ 10.6 — cf. Story 10-1 D3)
+- **Base de données** : MariaDB 10.11+ (parité prod NAS Synology Package Center DSM, compat ≥ 10.7, à cause du tri naturel de `NATURAL_SORT_KEY` (Story 33-1b) — cf. Story 10-1 D3)
 - **Déploiement** : Docker Compose (web app uniquement)
 - **Tests** : `cargo test`, Vitest, Playwright
 

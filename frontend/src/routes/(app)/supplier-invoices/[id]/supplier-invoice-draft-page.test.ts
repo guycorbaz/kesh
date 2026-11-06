@@ -77,6 +77,7 @@ function inv(partial: Partial<SupplierInvoiceResponse> = {}): SupplierInvoiceRes
 		id: 9,
 		contactId: 1,
 		supplierInvoiceNumber: 'FF-9',
+		internalNumber: null,
 		status: 'draft',
 		invoiceDate: '2026-06-15',
 		dueDate: null,

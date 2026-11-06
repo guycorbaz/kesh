@@ -853,6 +853,12 @@ async fn forecast_equals_delete_over_http(pool: MySqlPool) {
     let possedee = cle_de_ligne(&pool, achat(&pool, si).await, achats.payable).await;
     // La même, sans numéro de facture (revue P1, E LOW-3) : message sans suffixe.
     let si_sans = facture_fournisseur(&pool, s, &achats, dec!(30.00), jours_avant(80), None).await;
+    // Story 33-1b (#926) : « sans numéro » veut dire sans aucun des deux.
+    sqlx::query("UPDATE supplier_invoices SET internal_number = NULL WHERE id = ?")
+        .bind(si_sans)
+        .execute(&pool)
+        .await
+        .unwrap();
     supplier_invoices::cancel(&pool, s.company_id, si_sans, s.admin_user_id)
         .await
         .expect("annulation");
@@ -902,12 +908,12 @@ async fn forecast_equals_delete_over_http(pool: MySqlPool) {
         if key == possedee {
             assert_eq!(
                 refus["error"]["details"],
-                json!({ "documentId": si, "documentNumber": "FF-12" })
+                json!({ "documentId": si, "documentNumber": "FF-2020-001" })
             );
             assert_eq!(
                 refus["error"]["message"],
                 "Une de ces lignes appartient à une pièce : elle ne se lettre ni ne se délettre \
-                 à la main. (FF-12)"
+                 à la main. (FF-2020-001)"
             );
         }
         if key == possedee_sans {

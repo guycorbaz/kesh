@@ -597,8 +597,20 @@
 	</div>
 
 	<div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
+		<div class="block text-sm" data-testid="supplier-invoice-form-internal-number">
+			{i18nMsg('supplier-invoices-col-internal-number', 'N° interne')}
+			<p class="mt-1 py-1">
+				{#if initial?.internalNumber}
+					<span class="font-mono">{initial.internalNumber}</span>
+				{:else}
+					<span class="text-text-muted">
+						{i18nMsg('supplier-invoices-internal-number-pending', 'Attribué à la validation')}
+					</span>
+				{/if}
+			</p>
+		</div>
 		<label class="block text-sm">
-			{i18nMsg('supplier-invoices-field-number', 'N° facture fournisseur')}
+			{i18nMsg('supplier-invoices-field-number', 'N° du fournisseur (facultatif)')}
 			<input class="mt-1 w-full rounded border px-2 py-1" data-testid="supplier-invoice-number" bind:value={fNumber} />
 		</label>
 		<label class="block text-sm">

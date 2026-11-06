@@ -816,7 +816,7 @@ async fn first_document_owner(
             .map(|o| DbError::LetteringLineOwnedByDocument {
                 blocker: o.kind.reversal_blocker(),
                 document_id: Some(o.id),
-                document_label: o.number.clone(),
+                document_label: o.display_label(),
             })
     }))
 }
@@ -1879,7 +1879,7 @@ async fn dissolve_document_in_tx(
 /// relecture `FOR UPDATE` ne prend aucun verrou neuf et lit la ligne courante —
 /// après l'`UPDATE` du paiement, le statut `paid` et l'écriture de règlement).
 const SYNC_SUPPLIER_INVOICE_SQL: &str = "SELECT status, purchase_journal_entry_id, \
-     settlement_journal_entry_id, supplier_invoice_number FROM supplier_invoices \
+     settlement_journal_entry_id, internal_number, supplier_invoice_number FROM supplier_invoices \
      WHERE id = ? AND company_id = ? FOR UPDATE";
 
 /// P2 — la découverte d'une facture fournisseur, **par statut** (C-15-1a2-15) :
@@ -1903,10 +1903,11 @@ async fn discover_supplier_invoice_document(
     company_id: i64,
     supplier_invoice_id: i64,
 ) -> Result<Option<PieceDocument>, DbError> {
-    let (status, purchase_entry_id, settlement_entry_id, number): (
+    let (status, purchase_entry_id, settlement_entry_id, interne, fournisseur): (
         String,
         Option<i64>,
         Option<i64>,
+        Option<String>,
         Option<String>,
     ) = sqlx::query_as(SYNC_SUPPLIER_INVOICE_SQL)
         .bind(supplier_invoice_id)
@@ -1980,7 +1981,12 @@ async fn discover_supplier_invoice_document(
         document: DocumentRef {
             document_type: DocumentKind::SupplierInvoice,
             id: supplier_invoice_id,
-            number,
+            // Story 33-1b (#926, C-e331-25) : la forme longue, celle du libellé. Les
+            // entrées d'audit passées gardent le seul numéro du fournisseur.
+            number: kesh_core::invoice_format::supplier_invoice_long_label(
+                interne.as_deref(),
+                fournisseur.as_deref(),
+            ),
         },
     }))
 }

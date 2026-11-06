@@ -16,6 +16,10 @@
 	} from '$lib/features/payment-batches/payment-batches.types';
 	import { listSupplierInvoices } from '$lib/features/supplier-invoices/supplier-invoices.api';
 	import type { SupplierInvoiceListItemResponse } from '$lib/features/supplier-invoices/supplier-invoices.types';
+	import {
+		supplierInvoiceLongLabel,
+		supplierInvoiceShortLabel,
+	} from '$lib/features/supplier-invoices/supplier-invoice-label';
 	import { listBankAccounts } from '$lib/features/bank-accounts/bank-accounts.api';
 	import type { BankAccountSummary } from '$lib/features/bank-accounts/bank-accounts.api';
 	import { bankAccountOptionLabel } from '$lib/features/bank-accounts/format';
@@ -183,7 +187,7 @@
 								onchange={() => toggle(inv.id)}
 								data-testid="payment-batch-invoice-checkbox"
 							/>
-							<span class="flex-1">{inv.supplierInvoiceNumber ?? `#${inv.id}`} — {inv.contactName}</span>
+							<span class="flex-1">{supplierInvoiceLongLabel(inv)} — {inv.contactName}</span>
 							<span class="tabular-nums">{formatBatchTotal(inv.totalAmount)}</span>
 						</label>
 					{/each}
@@ -222,7 +226,11 @@
 			</p>
 			<ul class="ml-4 list-disc text-sm text-destructive">
 				{#each lastResult.failed as f (f.supplierInvoiceId)}
-					<li>#{f.supplierInvoiceId} — {failedItemLabel(f.errorCode)}</li>
+					<li>
+						{supplierInvoiceShortLabel(
+							openInvoices.find((i) => i.id === f.supplierInvoiceId) ?? { id: f.supplierInvoiceId },
+						)} — {failedItemLabel(f.errorCode)}
+					</li>
 				{/each}
 			</ul>
 		{/if}

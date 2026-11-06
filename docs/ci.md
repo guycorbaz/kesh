@@ -268,7 +268,7 @@ Le fail-fast avant les specs est le `globalSetup` de Playwright (`frontend/tests
 
 ## Décision MariaDB 10.11 (Story 10-1 D3 — parité prod NAS)
 
-**Mise à jour 2026-05-21** (Story 10-1 D3) : alignement à `mariadb:10.11` partout (dev + CI + prod) pour parité avec la version Package Center Synology DSM 7.x du NAS de Guy (production v0.1.0). Compat MariaDB ≥ 10.6 confirmée par sanity check pre-flight (26 migrations passent sur 10.11 vierge, dont la VIRTUAL+UNIQUE column de `reconciliation_rules` Story 8-5b).
+**Mise à jour 2026-05-21** (Story 10-1 D3) : alignement à `mariadb:10.11` partout (dev + CI + prod) pour parité avec la version Package Center Synology DSM 7.x du NAS de Guy (production v0.1.0). Compat MariaDB ≥ 10.6 confirmée par sanity check pre-flight (26 migrations passent sur 10.11 vierge, dont la VIRTUAL+UNIQUE column de `reconciliation_rules` Story 8-5b). *(Depuis la Story 33-1b, le plancher est 10.7 : `NATURAL_SORT_KEY`.)*
 
 **Historique** : la pipeline CI utilisait antérieurement MariaDB 11.4 (Story 6-1 décision 2026-04-15). Le passage à 10.11 dans Story 10-1 vise à éviter tout drift entre la version testée en CI et celle utilisée en prod sur le NAS. `architecture.md` impose toujours « MariaDB 10.6+ » comme minimum — 10.11 respecte le minimum avec marge.
 
@@ -278,7 +278,7 @@ La pipeline CI utilise **un seul service MariaDB** en version 10.11 — aucune m
 
 - **Cible prod unique** : le NAS Synology Package Center DSM ≥ 7.2 ne propose que MariaDB 10.x stable (10.11 spécifiquement). Une matrice qui inclurait 11.x ferait passer des tests sur un moteur que personne ne tournera en prod, sans gain de couverture.
 - **Bugs 10.11-specific seraient masqués par 11** : si une feature dépend d'un comportement spécifique à MariaDB 11, elle passerait sur la branche matrice 11 mais casserait silencieusement sur 10.11 — sans matrice, le test 10.11 attrape immédiatement.
-- **Compat upstream MariaDB ≥ 10.6 documentée** : la migration `crates/kesh-db/migrations/20260513000001_reconciliation_rules.sql:27-28` documente la compat 10.6+ pour les opérateurs hors NAS Synology qui voudraient tourner sur 10.6/10.7/10.8/10.9/10.10. Cette compat **n'est pas testée par la CI projet** — c'est de la documentation, pas une garantie.
+- **Compat upstream MariaDB ≥ 10.7 documentée** : le tri des numéros internes emploie `NATURAL_SORT_KEY`, apparue en 10.7 (Story 33-1b, `C-e331-19`) ; la migration `crates/kesh-db/migrations/20260513000001_reconciliation_rules.sql:27-28`, qui ne se touche pas, parle encore de 10.6+ pour sa propre colonne. Pour les opérateurs hors NAS Synology qui voudraient tourner sur 10.7/10.8/10.9/10.10, cette compat **n'est pas testée par la CI projet** — c'est de la documentation, pas une garantie.
 
 ## Dette technique CI
 

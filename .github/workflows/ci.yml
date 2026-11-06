@@ -46,7 +46,7 @@ jobs:
     services:
       mariadb:
         # Story 10-1 D3 : pin 10.11 = parité prod NAS Synology Package Center DSM.
-        # Compat MariaDB ≥ 10.6 (cf. migration reconciliation_rules.sql VIRTUAL+UNIQUE).
+        # Compat MariaDB ≥ 10.7 : NATURAL_SORT_KEY (Story 33-1b) ; ≥ 10.6 pour reconciliation_rules.sql (VIRTUAL+UNIQUE).
         image: mariadb:10.11
         # Story 31-2 (A2) — tirage AUTHENTIFIÉ : anonyme, il tombait sous la
         # limite de Docker Hub (429) et faisait rougir le job sans rapport avec

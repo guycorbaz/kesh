@@ -1729,3 +1729,50 @@ async fn t_k8_brouillons_fournisseur_dans_l_exercice(pool: MySqlPool) {
     assert_eq!(items[1]["id"], b2);
     assert_eq!(items[1]["label"], "FF-2 — Fournisseur K8 SA");
 }
+
+// ---------------------------------------------------------------------------
+// Story 33-1b (#926) — K8 nomme un brouillon numéroté par son numéro interne
+// ---------------------------------------------------------------------------
+
+#[sqlx::test(migrations = "./test-schema")]
+async fn k8_names_a_numbered_draft_by_its_internal_number(pool: MySqlPool) {
+    let seeded = seed_accounting_company(&pool).await.unwrap();
+    let c = seeded.company_id;
+    let ct = contact(&pool, c, "Fournisseur K8").await;
+    let mut ids = Vec::new();
+    for (jour_du_mois, fournisseur, interne) in [
+        (1, Some("ABC"), Some("FF-2026-007")),
+        (2, Some("ABC"), None),
+        (3, Some("  "), None),
+    ] {
+        let id = sqlx::query(
+            "INSERT INTO supplier_invoices (company_id, contact_id, supplier_invoice_number, \
+             internal_number, status, invoice_date, total_amount) VALUES (?, ?, ?, ?, 'draft', ?, 0)",
+        )
+        .bind(c)
+        .bind(ct)
+        .bind(fournisseur)
+        .bind(interne)
+        .bind(ymd(2026, 3, jour_du_mois))
+        .execute(&pool)
+        .await
+        .unwrap()
+        .last_insert_id() as i64;
+        ids.push(id);
+    }
+    let k = checks(&pool, c, seeded.fiscal_year_id).await;
+    match &find(&k, CheckCode::DraftSupplierInvoices).details {
+        CheckDetails::DraftSupplierInvoices(d) => {
+            let labels: Vec<&str> = d.invoices.iter().map(|i| i.label.as_str()).collect();
+            assert_eq!(
+                labels,
+                [
+                    "FF-2026-007 — Fournisseur K8",
+                    "ABC — Fournisseur K8",
+                    "Fournisseur K8"
+                ]
+            );
+        }
+        other => panic!("{other:?}"),
+    }
+}

@@ -915,3 +915,159 @@ async fn settlement_label_falls_back_without_internal_number(pool: MySqlPool) {
         );
     }
 }
+
+// ---------------------------------------------------------------------------
+// Story 33-1b (#926) — ce qui nomme la facture ailleurs que sur son écran
+// ---------------------------------------------------------------------------
+
+/// AC8 — le refus de dévalidation d'une facture payée la nomme par son numéro interne.
+#[sqlx::test(migrations = "./test-schema")]
+async fn the_refused_unvalidation_names_the_internal_number(pool: MySqlPool) {
+    let d = decor(&pool).await;
+    let b = supplier_invoices::create_draft(&pool, d.nouvelle(dans_a(), Some("ABC")), d.user())
+        .await
+        .unwrap();
+    let v = d.valider(&pool, &b).await;
+    let payee = supplier_invoices::pay(
+        &pool,
+        d.company(),
+        v.invoice.id,
+        SettlementChoice::InternalAccount {
+            account_id: d.seeded.accounts["1000"],
+        },
+        dans_a(),
+        d.user(),
+    )
+    .await
+    .unwrap();
+    let err = supplier_invoices::unvalidate(
+        &pool,
+        d.company(),
+        payee.invoice.id,
+        payee.invoice.version,
+        d.user(),
+    )
+    .await
+    .expect_err("une facture payée ne se dévalide pas");
+    match err {
+        DbError::SupplierInvoiceNotUnvalidatable { document_label, .. } => {
+            assert_eq!(document_label.as_deref(), Some("FF-2026-001"));
+        }
+        other => panic!("{other:?}"),
+    }
+}
+
+/// AC8, AC14 — `document_owners` : `number` garde le numéro du fournisseur, le numéro
+/// interne est à côté, et le refus (contre-passation, lettrage) dit la forme courte.
+#[sqlx::test(migrations = "./test-schema")]
+async fn the_owner_keeps_its_number_and_names_the_internal_one(pool: MySqlPool) {
+    use kesh_db::repositories::journal_entries;
+    let d = decor(&pool).await;
+    let b = supplier_invoices::create_draft(&pool, d.nouvelle(dans_a(), Some("ABC")), d.user())
+        .await
+        .unwrap();
+    let v = d.valider(&pool, &b).await;
+    let achat = v.invoice.purchase_journal_entry_id.unwrap();
+    let mut conn = pool.acquire().await.unwrap();
+    let owners = journal_entries::document_owners(&mut conn, d.company(), &[achat])
+        .await
+        .unwrap();
+    let owner = &owners[&achat][0];
+    assert_eq!(owner.number.as_deref(), Some("ABC"));
+    assert_eq!(owner.internal_number.as_deref(), Some("FF-2026-001"));
+    assert_eq!(owner.display_label().as_deref(), Some("FF-2026-001"));
+    let blockers = journal_entries::reversal_blockers(&mut conn, d.company(), achat)
+        .await
+        .unwrap();
+    assert_eq!(
+        blockers[0].2.as_deref(),
+        Some("FF-2026-001"),
+        "{blockers:?}"
+    );
+}
+
+/// AC15 — l'audit du lettrage : une facture payée écrit `documentNumber` à la forme
+/// longue ; une entrée passée reste identique à l'octet.
+#[sqlx::test(migrations = "./test-schema")]
+async fn the_lettering_audit_carries_the_long_form(pool: MySqlPool) {
+    let d = decor(&pool).await;
+    let compte = SettlementChoice::InternalAccount {
+        account_id: d.seeded.accounts["1000"],
+    };
+    // Une entrée passée, posée telle que l'écrivait la 0.17.4.
+    let passee: i64 = sqlx::query(
+        "INSERT INTO audit_log (user_id, action, entity_type, entity_id, company_id, details_json) \
+         VALUES (?, 'lettering.created', 'lettering', 1, ?, \
+         '{\"documentType\":\"supplierInvoice\",\"documentNumber\":\"ABC\"}')",
+    )
+    .bind(d.user())
+    .bind(d.company())
+    .execute(&pool)
+    .await
+    .unwrap()
+    .last_insert_id() as i64;
+    let empreinte = |id: i64| {
+        let pool = pool.clone();
+        async move {
+            sqlx::query_scalar::<_, serde_json::Value>(
+                "SELECT details_json FROM audit_log WHERE id = ?",
+            )
+            .bind(id)
+            .fetch_one(&pool)
+            .await
+            .unwrap()
+            .to_string()
+        }
+    };
+    let avant = empreinte(passee).await;
+
+    for (numero, attendu) in [
+        (Some("ABC-123"), "FF-2026-001 (ABC-123)"),
+        (None, "FF-2026-002"),
+    ] {
+        let b = supplier_invoices::create_draft(&pool, d.nouvelle(dans_a(), numero), d.user())
+            .await
+            .unwrap();
+        let v = d.valider(&pool, &b).await;
+        supplier_invoices::pay(&pool, d.company(), v.invoice.id, compte, dans_a(), d.user())
+            .await
+            .unwrap();
+        let detail: serde_json::Value = sqlx::query_scalar(
+            "SELECT details_json FROM audit_log WHERE action = 'lettering.created' \
+             AND JSON_EXTRACT(details_json, '$.documentId') = ?",
+        )
+        .bind(v.invoice.id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(detail["documentNumber"], attendu, "{detail}");
+    }
+    assert_eq!(
+        empreinte(passee).await,
+        avant,
+        "l'entrée passée ne bouge pas"
+    );
+}
+
+/// AC16 — `invoice_numbers` ne franchit pas la société (M17).
+#[sqlx::test(migrations = "./test-schema")]
+async fn the_batch_numbers_stay_in_the_company(pool: MySqlPool) {
+    use kesh_db::repositories::payment_batches;
+    let d = decor(&pool).await;
+    let v = d.emettre(&pool, dans_a()).await;
+    let autre = kesh_db::test_fixtures::seed_stub_company_only(&pool)
+        .await
+        .unwrap();
+    let ici = payment_batches::invoice_numbers(&pool, d.company(), &[v.invoice.id])
+        .await
+        .unwrap();
+    assert_eq!(
+        ici[&v.invoice.id].0.as_deref(),
+        Some("FF-2026-001"),
+        "la facture de la société"
+    );
+    let ailleurs = payment_batches::invoice_numbers(&pool, autre, &[v.invoice.id])
+        .await
+        .unwrap();
+    assert!(ailleurs.is_empty(), "{ailleurs:?}");
+}
