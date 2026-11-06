@@ -7,7 +7,7 @@ Contexte frais, une seule lentille. Modèle : Sonnet ou Opus (Haiku n'est permis
 - **Worktree** : `/home/gcorbaz/devel/kesh-e333`, branche `story/33-3-accueil`.
 - **Diff à relire** : `git diff 1e76cda7 HEAD` (`1e76cda7` est le dernier commit relu en P1).
 - **Rapports de la P1**, à lire pour contrôler la remédiation : `/home/gcorbaz/devel/kesh-gate-logs/e333a-review-p1-{B,E,A}.md`, `e333b-review-p1-{B,E,A}.md`. **Comptes rendus** : Change Log et Dev Agent Record de `33-3a-accueil-agregats.md` et `33-3b-accueil-graphiques.md`, registre `e33-choix-autonomes-e332.md` (C-e332-9, C-e332-26).
-- **Journaux** : `kesh-gate-logs/e333a/mut/`, `e333b/mut/`, `e333/gate3.out`, `e333b/e2e-complet-r5.log`, le rejeu de M7 `e333b/m7-e2e.log`. **Captures** : `kesh-gate-logs/e333b/captures/`, à regarder, `reel-six-parts-1280.png` et `pres-de-100-1280.png` d'abord, puis les `*-fenetre.png`.
+- **Journaux** : `kesh-gate-logs/e333a/mut/`, `e333b/mut/`, `e333/gate4.out`, `e333b/e2e-complet-r6.log`, le rejeu de M7 `e333b/m7-e2e.log`. **Captures** : `kesh-gate-logs/e333b/captures/`, à regarder, `reel-six-parts-1280.png` et `pres-de-100-1280.png` d'abord, puis les `*-fenetre.png`.
 - **Rapport, seul fichier écrit** : `/home/gcorbaz/devel/kesh-gate-logs/e333-review-p2.md`.
 
 ## Interdits

@@ -132,7 +132,7 @@ clôtures et contre-passations de corrections écartées. Le reste, au registre 
 - **AC5** — **Invariant** (C-e332-10) : `totalRevenues` et `totalExpenses` égalent `totalRevenues` et `totalExpenses` de
   `GET /reports/income-statement?fiscalYearId=<id>`, comparés en `Decimal`, sur un montage qui mêle écritures ordinaires, une paire
   dans l'exercice, une paire à cheval, un avoir et une charge créditrice. Et `Σ months[].revenues = totalRevenues`, de même pour les
-  dépenses.
+  dépenses. Un côté de paire à date anormale (hors des bornes de son exercice, ou dans ses bornes mais rattaché à un autre exercice) y compris : la paire ne s'écarte que si ses deux côtés appartiennent à la lecture (revue P1, B-1).
 - **AC6** — Société : les écritures et les comptes d'une autre société n'y entrent jamais.
 
 ### Contre-passations
@@ -223,9 +223,11 @@ Dans `services/rapports.rs` ou `tests/services_motif.rs`, selon le voisinage : A
 
   ```sql
   AND NOT EXISTS (SELECT 1 FROM journal_entries o
-                   WHERE o.id = je.reverses_entry_id AND o.fiscal_year_id = je.fiscal_year_id)
+                   WHERE o.id = je.reverses_entry_id AND o.fiscal_year_id = je.fiscal_year_id
+                     AND o.entry_date BETWEEN ? AND ?)
   AND NOT EXISTS (SELECT 1 FROM journal_entries r
-                   WHERE r.reverses_entry_id = je.id AND r.fiscal_year_id = je.fiscal_year_id)
+                   WHERE r.reverses_entry_id = je.id AND r.fiscal_year_id = je.fiscal_year_id
+                     AND r.entry_date BETWEEN ? AND ?)
   ```
 
 - Requête mensuelle : `DATE_FORMAT(je.entry_date, '%Y-%m')`, `a.account_type`, somme selon le type, mêmes jointures et mêmes filtres que
@@ -270,6 +272,14 @@ Dans `services/rapports.rs` ou `tests/services_motif.rs`, selon le voisinage : A
 | M16 | `from`/`to` non bornés | `months_follow_...` |
 | M17 | exclure les avoirs par `journal = 'Ventes'` et montant négatif (mutation d'intention) | `credit_note_stays_counted` |
 | M18 | `HAVING balance != 0` retiré de la requête par compte | `zero_balance_account_is_counted_nowhere` |
+| M19a, M19b | borne de date retirée du côté de l'origine, du côté de la contre-passation (revue P1) | `reversal_pair_with_a_side_dated_outside_...` |
+| M20 | arrondi au pair au lieu de `MidpointAwayFromZero` (revue P1, A-3) | purs : `share_rounds_midpoint_...`, `shares_can_sum_...` |
+| M21 | `rescale(1)` retiré (A-3) | `credit_balance_...` (`"100.0"`) |
+| M22 | `credit_balance_accounts` à zéro (A-3) | `credit_balance_...`, `no_positive_balance_...`, `reversal_across_...` |
+| M23 | une écriture d'audit au service (A-3) | `reading_writes_nothing`, `synthese_accueil_motif` |
+| M24 | `fiscal_years::close` insère une écriture (A-3) | `closing_a_year_writes_no_entry_...` |
+
+*Depuis la revue P1, M3 est tuée par `reversal_pair_with_a_side_dated_outside_...`, non plus par `reversal_across_...` : la borne de date y suffit désormais, et la condition d'exercice ne se voit que sur un côté daté dans les bornes mais rattaché à un autre exercice.*
 
 ## Gates
 
@@ -310,6 +320,10 @@ qui n'a pas tourné.
 - 2026-11-06 — Remédiation de la validation P3 (rapport `kesh-gate-logs/e33-validate-p3-e332.md`, aucune compilation ni aucun test, aucun commit). **F-3 (LOW) remédié**, prémisse lue : `api-external.md:209-226`. **F-2 (LOW) réfuté** : à l'en-tête de T1, « neuf » veut dire *nouveau fichier*, comme à l'en-tête de T2, non un décompte ; rien à recompter (le tableau nomme vingt fonctions). Décomptes de cette fiche, recomptés : 19 AC, 18 lignes de mutation, inchangés.
 
 - 2026-11-06 — Développement (Opus 5.5, worktree `kesh-e333`, branche `story/33-3-accueil`). **Étape 0** : aucun LOW de la validation P3 ne reste ouvert pour cette fiche (F-3 remédié, F-2 réfuté, lignes relues : `33-3a` T1 et T4). Prémisses relues sur `bdc3faa4` : `git grep -n reverses_entry_id -- crates/kesh-db/src/repositories/credit_notes.rs` vide ; aucune nouvelle façon de contre-passer hors `reverse_in_tx_inner` (`reconciliation_link.rs:596-597` est un filtre, `supplier_invoices.rs:1042` une lecture verrouillante) ; `fiscal_years.rs:676-696` ; `income_statement.rs:74-85`. **Écarts à la fiche** : un test de plus (`no_positive_balance_leaves_an_empty_pie`) et deux écritures à date anormale posées en SQL dans `totals_equal_...`, sans lesquelles M7 survivait (le filtre de dates masque celui d'exercice) ; deux lignes forgées dans `other_company_never_enters`, sans lesquelles M8 survivait (`fiscal_year_id` scope déjà la société) ; une mutation de plus, M6b (le sens du solde par compte, distinct de M6). `SUM(CASE …)` en une requête mensuelle, au lieu d'une somme par type.
+- 2026-11-06 — Remédiation de la revue de code P1 (rapports `kesh-gate-logs/e333a-review-p1-{B,E,A}.md`, Sonnet 5.5 ; aucune prémisse réfutée, lues au code). **B-1 = E-1 = A-1 (MEDIUM, production), remédié** : prémisse lue, `income_statement.rs:80-81` filtre l'exercice **et** la date, l'exclusion de paire le seul exercice. `REVERSAL_PAIR_EXCLUSION` porte `o.entry_date BETWEEN ? AND ?` et `r.entry_date BETWEEN ? AND ?`, quatre liaisons de plus dans les deux requêtes ; test `reversal_pair_with_a_side_dated_outside_the_year_follows_the_income_statement`, quatre paires à date anormale, posées en SQL ; AC5, T2 et C-e332-9 amendés ; le manuel et `api-external.md` gardent l'invariant sans réserve : ils le disent juste désormais. ⚠️ Le correctif s'est écrit avant son test : le rouge n'a pas été vu sur le code d'avant, c'est M19a et M19b qui en tiennent lieu. **Survivante trouvée et traitée** : M3 survivait à ce correctif (la date suffisait à faire le tri à cheval) ; deux paires de plus au test, rattachées à l'exercice précédent et datées dans les bornes, la tuent.
+  **B-2 (LOW)** : limite écrite au doc-comment du module, même précédent que les deux sections du compte de résultat ; issue demandée. **B-3, E-2 (LOW)** : la date en UTC, issue ouverte par l'orchestrateur. **A-2 (LOW), remédié** : « trois dixièmes au plus » ; test `shares_can_sum_to_three_tenths_above_one_hundred`, qui atteint 100,3. **A-3 (LOW), remédié** : M20 à M24 jouées, toutes tuées. **Reste non jouée** : la mutation du 401 d'AC17, qui exigerait de sortir la route de `authenticated_routes` ; le test le contrôle directement, sans preuve par mutation.
+  Décomptes recomptés, périmètre `bdc3faa4` → `HEAD` : `homepage_summary_e2e.rs` 22 `#[sqlx::test]`, `homepage_summary.rs` 11 `#[test]`, `services_motif.rs` +1. Table de mutations : 29 lignes au total ; **12 rejouées à cette passe** (M1 à M4, M17, à motif changé, et les sept neuves), 12 tuées après le test ajouté pour M3 (`kesh-gate-logs/e333a/mut/synthese.log`, M20 à sa ligne `purs`, le banc d'intégration ne lançant pas les tests purs de `kesh-report`) ; les 17 autres visent du code inchangé, non rejouées, au journal `mut/synthese-p0.log`.
+  **Gates au dernier commit de code `6425ef97`** (`kesh-gate-logs/e333/gate4.out`), sous le verrou, base remise à neuf : `scripts/test-fast.sh --ci` : **4847 exécutés, 4847 passés, 12 ignorés** ; `cargo build --workspace --all-targets` vert ; `npm run check` : 0 erreur, 29 avertissements, inchangés ; `lint-i18n-ownership` vert ; `test:unit` : **220 fichiers, 2761 tests, tous verts** ; `npm run build` vert. **E2E complet, montage complet** (`KESH_INBOX_DIR`, `KESH_DOCUMENTS_DIR` et `KESH_ADMIN_BACKUP_DIR` côté runner), base recréée vide (`kesh-gate-logs/e333b/e2e-complet-r6.log`) : 388 tests, **363 passés, 7 échecs, 18 ignorés, aucun non exécuté**, 16,7 min. Les 7 échecs sont les KF-029 (#97) de `docs/testing.md` : `mode-expert:26`, `:41`, `onboarding-path-b:65`, `:92`, `onboarding:57`, `:77`, `:150`. `backup-restore-new-install:140` passe à ce run. Un premier gate, à `0cf88f6b`, avait rougi sur `i18n-entrees-a-variables` (un objet d'arguments partagé, écrit à cette remédiation, que la garde ne lit pas) : d'où `6425ef97`, et ce gate rejoué entier. Les mutations jouées avant ce dernier commit, qui ne change que l'écriture des arguments, ne sont pas rejouées.
 
 ## Dev Agent Record
 
