@@ -133,7 +133,7 @@
 			<caption class="sr-only">{i18nMsg('homepage-charts-pie-title', 'Principaux postes de charges')}</caption>
 			<thead>
 				<tr class="border-b border-border text-left text-text-muted">
-					<th scope="col" class="py-1 font-medium">{i18nMsg('homepage-charts-th-rank', 'Rang')}</th>
+					<th scope="col" class="py-1 pr-3 font-medium">{i18nMsg('homepage-charts-th-rank', 'Rang')}</th>
 					<th scope="col" class="py-1 font-medium">{i18nMsg('homepage-charts-th-account', 'Compte')}</th>
 					<th scope="col" class="py-1 text-right font-medium">{i18nMsg('homepage-charts-th-amount', 'Montant')}</th>
 					<th scope="col" class="py-1 text-right font-medium">{i18nMsg('homepage-charts-th-share', 'Part')}</th>
@@ -142,24 +142,24 @@
 			<tbody>
 				{#each summary.expensePosts as post, i (post.accountId)}
 					<tr class="border-b border-border last:border-0" data-account-id={post.accountId} data-amount={post.amount} data-share={post.share}>
-						<td class="whitespace-nowrap py-1">
+						<td class="whitespace-nowrap py-1 pr-3">
 							<svg class="mr-1 inline-block align-[-2px]" aria-hidden="true" width="14" height="14"><rect width="14" height="14" fill={chartFill(PREFIX, postStyle(i))} stroke={postStyle(i).color} /></svg>{i + 1}
 						</td>
 						<th scope="row" class="py-1 text-left font-normal [overflow-wrap:anywhere]">
 							<a class="text-primary underline" href={postHref(post.accountId)} data-testid="homepage-chart-post-link">{post.number} {post.name}</a>
 						</th>
-						<td class="py-1 text-right font-mono">{chartAmount(post.amount)}</td>
-						<td class="whitespace-nowrap py-1 text-right font-mono">{post.share} %</td>
+						<td class="py-1 pl-3 text-right font-mono">{chartAmount(post.amount)}</td>
+						<td class="whitespace-nowrap py-1 pl-3 text-right font-mono">{post.share} %</td>
 					</tr>
 				{/each}
 				{#if summary.otherExpenses}
 					<tr data-testid="homepage-chart-others-row" data-amount={summary.otherExpenses.amount}>
-						<td class="whitespace-nowrap py-1">
+						<td class="whitespace-nowrap py-1 pr-3">
 							<svg class="mr-1 inline-block align-[-2px]" aria-hidden="true" width="14" height="14"><rect width="14" height="14" fill={chartFill(PREFIX, OTHERS_STYLE)} stroke={OTHERS_STYLE.color} /></svg>{summary.expensePosts.length + 1}
 						</td>
 						<th scope="row" class="py-1 text-left font-normal">{othersLabel(summary.otherExpenses.accountCount)}</th>
-						<td class="py-1 text-right font-mono">{chartAmount(summary.otherExpenses.amount)}</td>
-						<td class="whitespace-nowrap py-1 text-right font-mono">{summary.otherExpenses.share} %</td>
+						<td class="py-1 pl-3 text-right font-mono">{chartAmount(summary.otherExpenses.amount)}</td>
+						<td class="whitespace-nowrap py-1 pl-3 text-right font-mono">{summary.otherExpenses.share} %</td>
 					</tr>
 				{/if}
 			</tbody>
