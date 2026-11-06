@@ -241,3 +241,22 @@ Registre propre à ces trois fiches, **versé par union** par l'orchestrateur. C
 - **Retenu** : le type de `kesh-core` porte `#[serde(rename_all = "camelCase")]` et paraît tel quel. Il a exactement les champs de la réponse.
 - **Écartée** : un type miroir à l'API : deux champs recopiés sans rien ajouter.
 - **Réversible** : oui.
+
+### C-e332-27 — Un doublon désigne une ligne qui a vraiment les mêmes textes
+
+*(Ajouté le 2026-11-06, revue de code P1, L-A1.)*
+
+- **Contexte** : AC-S3 disait « le plus petit `id` de la clé » aussi quand plusieurs lignes portent les mêmes textes. Le code rend le plus petit **parmi elles**.
+- **Retenu** : le code, l'AC corrigée. L'`id` affiché doit désigner une ligne qui égale vraiment celle du relevé : c'est celle que l'utilisateur ira voir.
+- **Écartée** : le plus petit de la clé : il pourrait désigner une ligne aux textes différents, et donc une autre transaction.
+- **Réversible** : oui.
+
+### C-e332-28 — Deux lectures, un seul relevé : le rang, sous la cause `misaligned`
+
+*(Ajouté le 2026-11-06, revue de code P1, E-1, qui annote C-e332-2.)*
+
+- **Contexte** : le contrôle de date et de montant infère « même relevé » de « mêmes lignes » : deux relevés du même compte, mêmes dates, mêmes montants, autres références, passaient, et la ligne déjà importée revenait sans signal.
+- **Retenu** : `select_statement_by_iban` rend le rang du relevé choisi ; la relecture compare les deux rangs, après le nombre de lignes, et refuse en `misaligned`. Le contrôle de date et de montant reste, pour les lignes d'un même relevé (AC-S5 (c)). `line_count` garde son sens, et l'API ses quatre valeurs.
+- **Écartées** : (a) une cinquième cause : rien de plus à dire à l'utilisateur, le message est le même, et un client devrait la traiter comme `misaligned` ; (b) `selection` : elle dit « aucun relevé ne porte l'IBAN », ce qui n'est pas le cas ; (c) comparer aussi la référence : c'est précisément ce qui diffère entre les deux lectures d'une même ligne ; (d) sélectionner par rang dans la lecture héritée (C-e332-2 (b)) : la 0.17.3 aurait lu l'autre relevé, et la ligne aurait été reconnue à tort ou raté.
+- **Ce qui reste** : un relevé choisi vide (E-10) n'est pas relu (C-e332-5) : le premier relevé, à IBAN à référence, sans ligne, s'enregistre à zéro ligne, comme en 0.17.4, là où la 0.17.3 aurait lu le second ; rien n'est écrit à tort, et `ignoredStatements` le montre.
+- **Réversible** : oui.

@@ -655,14 +655,23 @@
 					<table class="mt-2 w-full table-auto text-sm">
 						<thead>
 							<tr>
-								<th class="text-left">{i18nMsg('bank-import-labels-uncertain-col-index', 'Index')}</th>
+								<th class="text-left">{i18nMsg('bank-import-labels-uncertain-col-index', 'Ligne')}</th>
+								<th class="text-left">{i18nMsg('bank-import-labels-tx-col-date', 'Date')}</th>
+								<th class="text-left">{i18nMsg('bank-import-labels-tx-col-amount', 'Montant')}</th>
+								<th class="text-left">{i18nMsg('bank-import-labels-tx-col-details', 'Détails')}</th>
 								<th class="text-left">{i18nMsg('bank-import-labels-uncertain-col-existing-id', 'ID existant')}</th>
 							</tr>
 						</thead>
 						<tbody>
+							<!-- Le rang part de 1, et la ligne se dit par ce que l'écran en montre :
+							     c'est elle que l'utilisateur doit retrouver dans la liste du compte. -->
 							{#each preview.warnings.uncertainLegacyLines as line (line.newIndex)}
+								{@const tx = preview.transactions[line.newIndex]}
 								<tr data-testid="warning-uncertain-legacy-lines-row">
-									<td>{line.newIndex}</td>
+									<td>{line.newIndex + 1}</td>
+									<td>{tx ? formatSwissDate(tx.bookingDate) : ''}</td>
+									<td>{tx ? `${tx.amount} ${tx.currency}` : ''}</td>
+									<td>{tx?.details ?? ''}</td>
 									<td>{line.existingTransactionId}</td>
 								</tr>
 							{/each}

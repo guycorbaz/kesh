@@ -24,7 +24,12 @@ vi.mock('./bank-profile.api', () => ({
 }));
 
 vi.mock('$lib/shared/utils/i18n.svelte', () => ({
-	i18nMsg: (key: string, fallback: string) => (i18nMode.keys ? key : fallback),
+	// Interpole comme le vrai `i18nMsg` : la phrase chiffrée du panneau se contrôle
+	// (Story 33-2, revue P1, L-A4).
+	i18nMsg: (key: string, fallback: string, args?: Record<string, string | number>) =>
+		i18nMode.keys
+			? key
+			: fallback.replace(/\{\s*\$(\w+)\s*\}/g, (_, k: string) => String(args?.[k] ?? '')),
 }));
 
 import * as api from './bank-import.api';
@@ -900,10 +905,13 @@ describe('BankImportUpload — lignes incertaines (Story 33-2)', () => {
 		const { c } = await mount();
 		await previewWithA(c, { warnings: uncertain(1) });
 		const panel = get(c, 'warning-uncertain-legacy-lines');
-		expect(panel.textContent).toContain('ligne ressemble');
+		expect(panel.textContent).toContain('1 ligne ressemble');
 		expect(panel.textContent).toContain('Kesh l\'importe');
-		expect(panel.querySelectorAll('[data-testid="warning-uncertain-legacy-lines-row"]').length).toBe(1);
-		expect(panel.textContent).toContain('40');
+		const rows = panel.querySelectorAll('[data-testid="warning-uncertain-legacy-lines-row"]');
+		expect(rows.length).toBe(1);
+		// Revue P1 (B7, E-10) — le rang part de 1, et la ligne se dit : date, montant, détails.
+		const cells = [...rows[0].querySelectorAll('td')].map((td) => td.textContent);
+		expect(cells).toEqual(['1', '01.01.2026', '1.00 CHF', 'tx-A', '40']);
 		expect(get<HTMLButtonElement>(c, 'bank-import-confirm').disabled).toBe(false);
 	});
 
@@ -911,7 +919,7 @@ describe('BankImportUpload — lignes incertaines (Story 33-2)', () => {
 		const { c } = await mount();
 		await previewWithA(c, { warnings: uncertain(2) });
 		const panel = get(c, 'warning-uncertain-legacy-lines');
-		expect(panel.textContent).toContain('lignes ressemblent');
+		expect(panel.textContent).toContain('2 lignes ressemblent');
 		expect(panel.querySelectorAll('[data-testid="warning-uncertain-legacy-lines-row"]').length).toBe(2);
 		expect(get<HTMLButtonElement>(c, 'bank-import-confirm').disabled).toBe(false);
 	});

@@ -4302,6 +4302,12 @@ async fn camt_refused_file_already_imported_says_so_922(pool: MySqlPool) {
             body["error"]["details"]["existingFilename"], "releve-0173.xml",
             "{body}"
         );
+        assert!(
+            body["error"]["message"]
+                .as_str()
+                .is_some_and(|m| m.contains("déjà été importé")),
+            "{body}"
+        );
     }
 
     let (st, body) = post_819(
@@ -4546,4 +4552,190 @@ async fn camt_short_year_on_booking_date_is_misaligned_922(pool: MySqlPool) {
         &[LINE1_819, LINE2_819, &line3],
     );
     assert_refused_on_both_routes_922(pool, file, "misaligned").await;
+}
+
+// =========================================================================
+// Revue P1 de la 33-2 — le même relevé dans les deux lectures (E-1), une ligne
+// complète à travers la base (B1, E-2, M-A1), et l'aller-retour d'une sauvegarde.
+// =========================================================================
+
+/// AC-R4 (revue P1, E-1) — deux relevés du même compte, le premier à IBAN à référence :
+/// mêmes lignes, dates et montants, autres références. Les deux lectures choisissent
+/// deux relevés différents, ce que ni le nombre, ni les dates, ni les montants ne
+/// montrent : sans le contrôle du rang, la ligne déjà importée revient sans signal.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn camt_refused_when_the_readings_choose_other_statements_922(pool: MySqlPool) {
+    let s = setup(&pool).await;
+    let app = spawn_app(pool.clone()).await;
+    let reprise = line_922(Some("REF &amp; Co"), Some("Libelle A"));
+    let first = file_with_922("STMT-922-T", "1100.00", &[&reprise]);
+    montage_819(&pool, &s, &first, kesh_import::camt053::parse_legacy_0173).await;
+
+    let autre = line_922(Some("AUTRE"), Some("Libelle B"));
+    let file = two_statements_922(&[&reprise], &[&autre]);
+    let (st, body) = post_819(&app, &s, "/api/v1/bank-imports/preview", file.clone(), &[]).await;
+    assert_reread_refusal_922(st, &body, "misaligned");
+    let (st, body) = post_819(
+        &app,
+        &s,
+        "/api/v1/bank-imports",
+        file,
+        &[("confirmBalanceMismatch", "true".into())],
+    )
+    .await;
+    assert_reread_refusal_922(st, &body, "misaligned");
+}
+
+/// AC-R4 — dans le même relevé, un montant coupé par une référence se lit autrement, à
+/// la même date : les deux lectures ne parlent pas de la même ligne (M5).
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn camt_refused_when_an_amount_is_cut_in_the_same_statement_922(pool: MySqlPool) {
+    let line3 = LINE3_819.replace(">50.00<", ">5&#48;.00<");
+    let file = camt_819(
+        "STMT-922-U",
+        IBAN_819,
+        "1350.00",
+        &[LINE1_819, LINE2_819, &line3],
+    );
+    assert_refused_on_both_routes_922(pool, file, "misaligned").await;
+}
+
+/// Une ligne bancaire complète : les sept colonnes remplies, chaque texte portant un
+/// morceau que la lecture héritée perd. `<TxId>` n'est lu par aucune lecture : la
+/// colonne `transaction_id` vient d'`AcctSvcrRef`.
+const FULL_LINE_922: &str = r#"<Ntry><Amt Ccy="CHF">100.00</Amt><CdtDbtInd>CRDT</CdtDbtInd><BookgDt><Dt>2026-10-10</Dt></BookgDt><ValDt><Dt>2026-10-11</Dt></ValDt><NtryRef>NTRY &amp; 1</NtryRef><NtryDtls><TxDtls><Refs><TxId>TXID-1</TxId><AcctSvcrRef>SVC &amp; 9</AcctSvcrRef><EndToEndId>E2E &amp; 7</EndToEndId></Refs><RltdPties><Dbtr><Nm>Dupont &amp; Fils</Nm></Dbtr><DbtrAcct><Id><IBAN>CH9300762011623852957</IBAN></Id></DbtrAcct></RltdPties><RmtInf><Ustrd>Facture &amp; 12</Ustrd><Ustrd>Solde</Ustrd><Strd><CdtrRefInf><Ref>RF &amp; 18</Ref></CdtrRefInf></Strd></RmtInf></TxDtls></NtryDtls></Ntry>"#;
+
+type StoredTexts922 = (
+    Option<chrono::NaiveDate>,
+    Option<String>,
+    Option<String>,
+    Option<String>,
+    Option<String>,
+    Option<String>,
+    String,
+);
+
+/// Les sept colonnes de la ligne, telles qu'en base.
+async fn stored_texts_922(pool: &MySqlPool, tx_id: i64) -> StoredTexts922 {
+    sqlx::query_as(
+        "SELECT value_date, reference, end_to_end_id, transaction_id, counterparty_iban, \
+         counterparty_name, details FROM bank_transactions WHERE id = ?",
+    )
+    .bind(tx_id)
+    .fetch_one(pool)
+    .await
+    .unwrap()
+}
+
+/// Ce que la lecture de la 0.17.3 fait de [`FULL_LINE_922`].
+fn full_line_as_read_by_0173() -> StoredTexts922 {
+    (
+        chrono::NaiveDate::from_ymd_opt(2026, 10, 11),
+        Some("18".to_string()),
+        Some("7".to_string()),
+        Some("9".to_string()),
+        Some("CH9300762011623852957".to_string()),
+        Some("Fils".to_string()),
+        // `Ustrd` s'accumule morceau par morceau : rien ne s'y perd, mais les morceaux se
+        // rejoignent par une espace, sans l'entité.
+        "Facture 12 Solde".to_string(),
+    )
+}
+
+/// Revue P1 (B1, E-2, M-A1) — la ligne complète, enregistrée comme la 0.17.3, traverse
+/// la base et reste reconnue : la preuve vaut pour les sept colonnes, et le test échoue
+/// si l'une d'elles n'était pas remplie au montage.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn camt_full_line_through_the_database_stays_recognised_922(pool: MySqlPool) {
+    let s = setup(&pool).await;
+    let app = spawn_app(pool.clone()).await;
+    let first = file_with_922("STMT-922-V", "1100.00", &[FULL_LINE_922]);
+    let import = montage_819(&pool, &s, &first, kesh_import::camt053::parse_legacy_0173).await;
+    let ids = tx_ids_of_import_922(&pool, import).await;
+    assert_eq!(
+        stored_texts_922(&pool, ids[0]).await,
+        full_line_as_read_by_0173(),
+        "assertion de montage : les sept colonnes, comme les lit la 0.17.3"
+    );
+
+    let other = file_with_922("STMT-922-W", "1150.00", &[FULL_LINE_922, LINE3_819]);
+    let (st, preview) =
+        post_819(&app, &s, "/api/v1/bank-imports/preview", other.clone(), &[]).await;
+    assert_eq!(st, 200, "{preview}");
+    assert_eq!(pairs_922(&preview, "uncertainLegacyLines"), vec![]);
+    assert_eq!(pairs_922(&preview, "duplicateLines"), vec![(0, ids[0])]);
+    let (st, created) = post_819(&app, &s, "/api/v1/bank-imports", other, &[]).await;
+    assert_eq!(st, 201, "{created}");
+    assert_eq!(
+        tx_count_of_import_819(&pool, created["id"].as_i64().unwrap()).await,
+        1,
+        "seule la ligne neuve s'enregistre"
+    );
+}
+
+/// Axe laissé ouvert par la revue P1 — l'aller-retour d'une sauvegarde `.keshbackup` :
+/// la ligne, retirée de la base puis restaurée, retrouve ses sept colonnes et reste
+/// reconnue. Le NULL compte autant : `sparse` laisse vides cinq de ses colonnes.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn camt_line_restored_from_a_backup_stays_recognised_922(pool: MySqlPool) {
+    let s = setup(&pool).await;
+    let app = spawn_app(pool.clone()).await;
+    let admin = create_user(&pool, "root", Role::Admin, s.company_id).await;
+    let admin_jwt = forge_jwt(admin, "Admin", s.company_id);
+    let sparse = line_922(Some("REF &amp; Co &lt;2&gt;"), None).replace("100.00", "70.00");
+    let first = file_with_922("STMT-922-X", "1170.00", &[FULL_LINE_922, &sparse]);
+    let import = montage_819(&pool, &s, &first, kesh_import::camt053::parse_legacy_0173).await;
+    let ids = tx_ids_of_import_922(&pool, import).await;
+
+    let export = app
+        .client
+        .get(app.url("/api/v1/admin/full-export"))
+        .bearer_auth(&admin_jwt)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(export.status(), 200);
+    let backup = export.bytes().await.unwrap().to_vec();
+
+    // La ligne ne doit pouvoir revenir que par la sauvegarde.
+    sqlx::query("DELETE FROM bank_transactions WHERE import_id = ?")
+        .bind(import)
+        .execute(&pool)
+        .await
+        .unwrap();
+    sqlx::query("DELETE FROM bank_imports WHERE id = ?")
+        .bind(import)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+    let form = multipart::Form::new().part(
+        "file",
+        multipart::Part::bytes(backup)
+            .file_name("installation.keshbackup")
+            .mime_str("application/octet-stream")
+            .unwrap(),
+    );
+    let restored = app
+        .client
+        .post(app.url("/api/v1/admin/full-import"))
+        .bearer_auth(&admin_jwt)
+        .multipart(form)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(restored.status(), 200);
+    assert_eq!(
+        stored_texts_922(&pool, ids[0]).await,
+        full_line_as_read_by_0173()
+    );
+
+    let other = file_with_922("STMT-922-Y", "1170.00", &[FULL_LINE_922, &sparse]);
+    let (st, preview) = post_819(&app, &s, "/api/v1/bank-imports/preview", other, &[]).await;
+    assert_eq!(st, 200, "{preview}");
+    assert_eq!(pairs_922(&preview, "uncertainLegacyLines"), vec![]);
+    assert_eq!(
+        pairs_922(&preview, "duplicateLines"),
+        vec![(0, ids[0]), (1, ids[1])]
+    );
 }

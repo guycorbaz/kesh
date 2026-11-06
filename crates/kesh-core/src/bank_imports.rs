@@ -486,8 +486,9 @@ impl PartialEq for LineTexts {
 impl Eq for LineTexts {}
 
 /// Ce que la lecture de la 0.17.3 donnait d'une ligne dont la clé a changé depuis
-/// (#819, 33-2) : sa clé, et ses textes coupés à la largeur de leur colonne, ce qui
-/// les rend comparables à une ligne stockée quel que soit le `sql_mode` du serveur.
+/// (#819, 33-2) : ses textes coupés à la largeur de leur colonne, et la clé qui en
+/// dérive, ce qui les rend comparables à une ligne stockée quel que soit le `sql_mode`
+/// du serveur.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct LegacyLine {
     key: DuplicateKey,
@@ -495,12 +496,20 @@ pub struct LegacyLine {
 }
 
 impl LegacyLine {
-    /// La coupe se fait ici, une seule fois : l'égalité de [`LineTexts`] reste stricte.
-    pub fn new(key: DuplicateKey, texts: LineTexts) -> Self {
-        Self {
-            key,
-            texts: texts.cut_to_column_width(),
-        }
+    /// La ligne que porte le brouillon d'une lecture héritée. La coupe se fait ici, une
+    /// seule fois : l'égalité de [`LineTexts`] reste stricte. La clé se calcule **après**
+    /// la coupe : une clé stockée dérive d'un identifiant déjà coupé (revue P1, E-3).
+    pub fn from_draft(t: &BankTransactionDraft, bank_account_id: i64) -> Self {
+        let texts = LineTexts::from_draft(t).cut_to_column_width();
+        let key = dedup_key_scalar(
+            t.booking_date,
+            t.amount.amount(),
+            texts.reference.as_deref(),
+            texts.end_to_end_id.as_deref(),
+            texts.transaction_id.as_deref(),
+            bank_account_id,
+        );
+        Self { key, texts }
     }
 
     /// La clé de doublon que la ligne porte en base si la 0.17.3 l'a importée.
@@ -1150,7 +1159,10 @@ mod tests {
     }
 
     fn alias(reference: &str, t: LineTexts) -> Option<LegacyLine> {
-        Some(LegacyLine::new(key(reference), t))
+        Some(LegacyLine {
+            key: key(reference),
+            texts: t.cut_to_column_width(),
+        })
     }
 
     fn new_line() -> Vec<BankTransactionDraft> {
@@ -1298,6 +1310,28 @@ mod tests {
         assert_eq!(r.uncertain[0].existing_transaction_id, 40);
     }
 
+    /// AC-S3 (revue P1, L-A1, C-e332-27) — un doublon désigne une ligne qui a vraiment
+    /// les mêmes textes : le plus petit `id` parmi elles, non le plus petit de la clé.
+    #[test]
+    fn duplicate_designates_the_smallest_id_among_equal_texts_915() {
+        let other = LineTexts {
+            details: "autre".into(),
+            ..texts()
+        };
+        let existing = vec![
+            existing_row(40, "Co", other),
+            existing_row(60, "Co", texts()),
+            existing_row(50, "Co", texts()),
+        ];
+        let r = detect_duplicate_lines_with_aliases(
+            &new_line(),
+            17,
+            &existing,
+            &[alias("Co", texts())],
+        );
+        assert_eq!(r.duplicates[0].existing_transaction_id, 50);
+    }
+
     /// Un alias qui n'égale aucune clé existante : ligne neuve, ni doublon ni incertaine.
     #[test]
     fn alias_without_a_matching_key_is_nothing_915() {
@@ -1340,8 +1374,7 @@ mod tests {
     /// libellé, à une frontière de caractère ; un texte plus court ne change pas.
     #[test]
     fn legacy_line_cuts_each_text_to_its_column_915() {
-        let t = LineTexts {
-            value_date: None,
+        let long = BankTransactionDraft {
             reference: Some("r".repeat(256)),
             end_to_end_id: Some("e".repeat(256)),
             transaction_id: Some("t".repeat(256)),
@@ -1349,8 +1382,9 @@ mod tests {
             counterparty_name: Some("n".repeat(256)),
             // 2 octets par « é » : le 65 535e octet tombe au milieu d'un caractère.
             details: "é".repeat(40_000),
+            ..draft(date(2026, 10, 10), dec!(10.00), None, None, None)
         };
-        let cut = LegacyLine::new(key("x"), t).texts;
+        let cut = LegacyLine::from_draft(&long, 17).texts;
         assert_eq!(cut.reference.unwrap().chars().count(), 255);
         assert_eq!(cut.end_to_end_id.unwrap().chars().count(), 255);
         assert_eq!(cut.transaction_id.unwrap().chars().count(), 255);
@@ -1358,8 +1392,54 @@ mod tests {
         assert_eq!(cut.counterparty_name.unwrap().chars().count(), 255);
         assert_eq!(cut.details.len(), 65_534);
 
-        let kept = LegacyLine::new(key("x"), texts()).texts;
-        assert_eq!(kept, texts());
+        // Exactement la largeur : rien ne change.
+        let exact = BankTransactionDraft {
+            reference: Some("r".repeat(255)),
+            counterparty_iban: Some("I".repeat(34)),
+            details: "d".repeat(65_535),
+            ..draft(date(2026, 10, 10), dec!(10.00), None, None, None)
+        };
+        let kept = LegacyLine::from_draft(&exact, 17).texts;
+        assert_eq!(kept, LineTexts::from_draft(&exact));
+    }
+
+    /// Revue P1 (E-3, B2) — la clé de l'alias se calcule sur les textes coupés : un
+    /// identifiant de plus de 255 caractères, tronqué à l'écriture par un serveur sans
+    /// mode strict, reste reconnu, qu'il soit la référence ou un de ses replis.
+    #[test]
+    fn alias_key_comes_from_the_cut_texts_915() {
+        let cases: [fn(String) -> BankTransactionDraft; 3] = [
+            |s| BankTransactionDraft {
+                reference: Some(s),
+                ..draft(date(2026, 10, 10), dec!(10.00), None, None, None)
+            },
+            |s| BankTransactionDraft {
+                end_to_end_id: Some(s),
+                ..draft(date(2026, 10, 10), dec!(10.00), None, None, None)
+            },
+            |s| BankTransactionDraft {
+                transaction_id: Some(s),
+                ..draft(date(2026, 10, 10), dec!(10.00), None, None, None)
+            },
+        ];
+        for build in cases {
+            let read = build("x".repeat(300));
+            let stored = build("x".repeat(255));
+            let existing = vec![(
+                42,
+                dedup_key_from_draft(&stored, 17),
+                LineTexts::from_draft(&stored),
+            )];
+            let alias = LegacyLine::from_draft(&read, 17);
+            let r = detect_duplicate_lines_with_aliases(
+                std::slice::from_ref(&read),
+                17,
+                &existing,
+                &[Some(alias)],
+            );
+            assert_eq!(r.duplicates.len(), 1, "{r:?}");
+            assert!(r.uncertain.is_empty(), "{r:?}");
+        }
     }
 
     /// `detect_duplicate_lines` rend le plus petit `id` quel que soit l'ordre d'entrée.

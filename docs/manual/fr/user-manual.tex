@@ -2418,7 +2418,7 @@ même}. Une devise non supportée bloque l'import — relevé CAMT.053, ou CSV d
 colonne Devise ; un CSV dont le profil ne la lit pas est supposé en CHF, et la prévisualisation le
 dit (\S\ref{sec:import-csv}). Depuis la version~0.17.4, un relevé CAMT.053 qui porte une
 référence d'entité inconnue (une forme \texttt{\&nom;} que le XML ne définit pas), où qu'elle soit
-dans le texte du fichier, est refusé, avec le message «~Fichier XML mal formé ou tronqué. Vérifiez
+dans le texte du document, est refusé, avec le message «~Fichier XML mal formé ou tronqué. Vérifiez
 l'export bancaire.~». Depuis la version~0.17.5, un relevé CAMT.053 que Kesh ne sait pas relire comme
 les versions antérieures est refusé lui aussi, sans confirmation possible
 (\S\ref{sec:doublons-kesh}). \emph{Annuler} abandonne sans rien enregistrer.
@@ -2719,13 +2719,15 @@ Le libellé n'en fait pas partie. Les doublons ne sont pas écartés en silence 
 
 \textbf{Noms, libellés et références à «~\&~» (depuis la version~0.17.4).} Un nom, un libellé ou une référence d'un relevé CAMT.053 qui contient «~\&~», «~<~», une lettre codée (\texttt{\&\#xE9;} pour «~é~») ou une section CDATA est désormais lu \textbf{en entier} --- «~Dupont \& Fils~», et non plus «~Fils~». Les transactions déjà importées \textbf{ne sont pas relues} (Kesh ne garde pas le fichier) : elles gardent leur texte d'origine. Un fichier déjà importé reste signalé comme tel. Une ligne déjà importée, reprise par un autre fichier, reste reconnue comme doublon~: Kesh relit le fichier comme le faisaient les versions antérieures, et reconnaît la ligne si la référence ainsi lue et tous ses textes (libellé, contrepartie, identifiants, date de valeur) sont ceux d'une ligne du compte.
 
-\textbf{Le relevé que Kesh ne sait pas relire est refusé (depuis la version~0.17.5, \#922).} Si cette relecture échoue --- une date, un montant ou l'IBAN écrits avec une section CDATA ou une lettre codée, ou un fichier à plusieurs relevés du même compte que les deux lectures ne comprennent pas de la même façon ---, Kesh ne peut plus vérifier que le relevé ne reprend pas des lignes déjà importées~: il le \textbf{refuse}, à l'aperçu comme à l'enregistrement, n'enregistre rien, et aucune confirmation ne lève ce refus. Demandez à votre banque un nouvel export de ce relevé~; à défaut, vérifiez dans la liste des transactions du compte quelles lignes y figurent déjà, et saisissez les autres avec un relevé saisi à la main (\S\ref{sec:releve-manuel}). Un relevé sans aucune ligne n'est pas refusé. Si ce fichier a déjà été importé, le message reste «~déjà importé~»~: il n'y a rien à refaire.
+\textbf{Le relevé que Kesh ne sait pas relire est refusé (depuis la version~0.17.5, \#922).} Si cette relecture échoue --- la date de comptabilisation, un montant ou l'IBAN du compte écrits avec une section CDATA ou une lettre codée, ou un fichier à plusieurs relevés du même compte dont les deux lectures ne choisissent pas le même ---, Kesh ne peut plus vérifier que le relevé ne reprend pas des lignes déjà importées~: il le \textbf{refuse}, à l'aperçu comme à l'enregistrement, n'enregistre rien, et aucune confirmation ne lève ce refus. Demandez à votre banque un nouvel export de ce relevé~; à défaut, vérifiez dans la liste des transactions du compte quelles lignes y figurent déjà, et saisissez les autres avec un relevé saisi à la main (\S\ref{sec:releve-manuel}). Un relevé sans aucune ligne n'est pas refusé. Si ce fichier a déjà été importé, le message reste «~déjà importé~»~: il n'y a rien à refaire.
 
 \textbf{Une ligne qui ressemble sans être identique est importée et signalée (depuis la version~0.17.5, \#915).} L'aperçu montre alors un avertissement~: la ligne ressemble à une ligne déjà importée (même date, même montant, même référence lue à l'ancienne), mais ses textes diffèrent. Kesh l'importe, sans vous demander de choix~: vérifiez-la dans la liste des transactions du compte. Deux limites restent~:
 \begin{itemize}
-    \item une ligne déjà importée en 0.17.3, dont la référence porte un caractère spécial \textbf{et} dont la banque aurait changé le libellé dans un nouvel export, s'importe une seconde fois, signalée à l'aperçu~;
+    \item une ligne importée avant la version~0.17.4, dont la référence porte un caractère spécial \textbf{et} dont la banque aurait changé l'un des textes (libellé, contrepartie, identifiants, date de valeur) dans un nouvel export, s'importe une seconde fois, signalée à l'aperçu~;
     \item une ligne neuve dont tous les textes, lus à l'ancienne, égalent ceux d'une ligne existante du même jour et du même montant reste signalée comme doublon~; rien ne la distingue d'une ligne déjà importée. L'aperçu la montre, et \emph{Importer quand même} la récupère~: vérifiez les doublons signalés avant de confirmer.
 \end{itemize}
+
+Un cas reste sans signal, hors norme~: sur un serveur de base de données sans mode strict, une ligne importée depuis la version~0.17.4 dont l'identifiant dépasse 255~caractères (la norme en admet 35) et porte un caractère spécial a été tronquée à l'écriture~; un autre fichier qui la reprend ne la reconnaît pas.
 
 Un relevé \textbf{saisi à la main} suit la même empreinte, mais n'offre pas «~ignorer~»~: une ligne en double se \textbf{corrige}, ou s'enregistre après confirmation, avec toutes les autres (\S\ref{sec:releve-manuel}).
 

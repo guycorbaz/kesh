@@ -1,4 +1,4 @@
-# Story 33-2 : l'import CAMT refuse le relevé qu'il ne sait pas relire « à la 0.17.3 », et l'alias ne signale plus un faux doublon
+# Story 33-2 : l'import CAMT refuse le relevé qu'il ne sait pas relire « à la 0.17.3 », et l'alias réduit le faux doublon
 
 Status: review
 
@@ -49,7 +49,7 @@ transaction réécrite, aucune migration. Aucune ligne réelle dans les captures
    - **E4, désalignement — défaut neuf, le LOW de #923.** La même forme, avec le même nombre de lignes : les deux lectures
      rendent deux relevés différents, et le `zip` (`:1996-2004`) fabrique des alias de lignes sans rapport. Aucune sortie vide,
      aucun signal. **À traiter comme les trois autres** : une paire dont la date de comptabilisation ou le montant diffère veut
-     dire que les deux lectures ne parlent pas de la même ligne.
+     dire que les deux lectures ne parlent pas de la même ligne. *(Annoté à la revue P1, E-1 : l'inverse ne vaut pas. Deux relevés de mêmes dates et de mêmes montants, choisis différemment par les deux lectures, passaient ce contrôle, et la ligne déjà importée revenait sans signal. E4 porte donc aussi le **rang** du relevé choisi, comparé entre les deux lectures. L'inventaire annoncé « clos » ne l'était pas.)*
 
    Il n'y a pas d'autre site : une entité inconnue est refusée **avant**, par la lecture corrigée (`camt053/mod.rs:336-352`) ; la lecture héritée
    l'ignore.
@@ -116,7 +116,7 @@ Décision de Guy (#922, 2026-11-06, epic) : **refus de ce relevé, message clair
 - **AC-R3** — Nombre de lignes différent (E3 : deux relevés du même IBAN, le premier à référence de caractère, trois lignes contre
   deux) : idem, `cause = "line_count"`. **Cette branche est exercée pour la première fois.**
 - **AC-R4** — Même nombre, lignes différentes (E4 : second relevé de trois lignes à d'autres dates) : idem, `cause = "misaligned"`.
-  Une paire est désalignée si sa date de comptabilisation **ou** son montant normalisé diffère.
+  Une paire est désalignée si sa date de comptabilisation **ou** son montant normalisé diffère ; **et, quelles qu'en soient les lignes, si les deux lectures ne choisissent pas le relevé de même rang** (revue P1, E-1, C-e332-28 : mêmes dates, mêmes montants, autres références).
 - **AC-R5** — Aucun contournement : `confirmDuplicateLines=import`, `confirmBalanceMismatch=true` et `confirmDuplicateFile=true`
   ensemble ne lèvent pas le refus.
 - **AC-R6** — **Rien n'est écrit** : après le refus de la création, `COUNT(*)` de `bank_imports`, `bank_transactions` et `audit_log`
@@ -129,7 +129,7 @@ Décision de Guy (#922, 2026-11-06, epic) : **refus de ce relevé, message clair
 - **AC-R8** — Un relevé **sans ligne** dont la relecture échoue n'est pas refusé : aperçu `200`, création `201`, zéro transaction.
 - **AC-R9** — **Un fichier déjà importé ne reçoit pas de faux conseil** (C-e332-21). Fichier dont la relecture échoue et dont l'empreinte est
   déjà en base (ce qu'a pu faire la 0.17.4) : l'aperçu rend `422 BANK_IMPORT_DUPLICATE_FILE`, `existingImportId` et `existingFilename` en `details`,
-  message « Ce fichier a déjà été importé. », et **non** `BANK_IMPORT_LEGACY_REREAD_FAILED` ; la création sans confirmation, de même (`:1276`,
+  message « Ce fichier a déjà été importé pour cette entreprise. » (`bank-import-errors-duplicate-file`, français ; le repli Rust est plus court), et **non** `BANK_IMPORT_LEGACY_REREAD_FAILED` ; la création sans confirmation, de même (`:1276`,
   inchangé) ; la création avec `confirmDuplicateFile=true` rend `BANK_IMPORT_LEGACY_REREAD_FAILED` (AC-R5). Relecture réussie : l'aperçu reste
   `200` avec `warnings.duplicateFile` (AC-S1, volet (b)).
 
@@ -152,7 +152,7 @@ Décision de Guy (#922, 2026-11-06, epic) : **refus de ce relevé, message clair
 - **AC-S2** — Même preuve avec une référence **en CDATA** (lue vide en 0.17.3) : la ligne enregistrée comme la 0.17.3 reste
   reconnue.
 - **AC-S3** — Plusieurs lignes existantes de même clé d'alias, seule la seconde a les mêmes textes : la ligne est reconnue, et
-  `existingTransactionId` est l'`id` de la **seconde** (le `or_insert` n'y fait plus obstacle). Si aucune n'a les mêmes textes, ou si plusieurs les ont, l'`id` rendu, à `uncertainLegacyLines` comme à `duplicateLines`, est le **plus petit** de la clé.
+  `existingTransactionId` est l'`id` de la **seconde** (le `or_insert` n'y fait plus obstacle). Si aucune n'a les mêmes textes, l'`id` rendu à `uncertainLegacyLines` est le **plus petit** de la clé ; si plusieurs les ont, l'`id` rendu à `duplicateLines` est le plus petit **parmi elles** (revue P1, L-A1, C-e332-27).
 - **AC-S4** — Le chemin de clé directe ne change pas : une ligne dont la clé égale une ligne existante est un doublon quels que
   soient ses textes (« le libellé n'en fait pas partie », `user-manual.tex:2716`). Le CSV et la saisie manuelle ne passent aucun
   alias et rendent ce qu'ils rendaient (`detect_duplicate_lines`).
@@ -172,9 +172,9 @@ Décision de Guy (#922, 2026-11-06, epic) : **refus de ce relevé, message clair
 - **AC-F2** — Le cas du second commentaire : ligne neuve à référence en CDATA ; ligne existante sans référence, autre libellé,
   même jour, même montant. Même résultat.
 - **AC-F3** — Écran : `uncertainLegacyLines` non vide affiche le panneau `warning-uncertain-legacy-lines` (phrase chiffrée, au singulier ou au pluriel, tableau
-  index et ID existant), **informatif** : il ne désactive pas *Confirmer l'import*. Liste vide : aucun panneau. Quatre locales.
+  rang à partir de 1, date, montant, détails et ID existant ; revue P1, B7), **informatif** : il ne désactive pas *Confirmer l'import*. Liste vide : aucun panneau. Quatre locales.
 - **AC-F4** — Les **sept** colonnes comparées sont exactement `value_date`, `reference`, `end_to_end_id`, `transaction_id`,
-  `counterparty_iban`, `counterparty_name`, `details`, à égalité stricte **modulo la largeur de colonne**, **sans** `currency` (e04122dc). Le texte de la lecture héritée se coupe une fois, à la largeur de sa colonne (255 caractères ; `counterparty_iban`, 34 ; `details`, 65 535 octets, à une frontière de caractère ; `20260504000001_bank_imports.sql:64-69`). **Quel que soit le `sql_mode` du serveur** (prémisse 6), un texte qu'un serveur sans mode strict a tronqué à l'écriture reste donc reconnu : 300 caractères lus et leurs 255 premiers stockés, doublon ; leurs 254 premiers stockés, incertaine. Seule exception, inchangée par cette story : une `reference` elle-même tronquée change la clé, et la ligne s'importe sans signal, comme en 0.17.4. En mode strict, un texte trop long n'a pas pu être stocké : le cas n'existe pas. Aucun test ne dépend du mode : ceux de cet AC sont purs.
+  `counterparty_iban`, `counterparty_name`, `details`, à égalité stricte **modulo la largeur de colonne**, **sans** `currency` (e04122dc). Le texte de la lecture héritée se coupe une fois, à la largeur de sa colonne (255 caractères ; `counterparty_iban`, 34 ; `details`, 65 535 octets, à une frontière de caractère ; `20260504000001_bank_imports.sql:64-69`). **Quel que soit le `sql_mode` du serveur** (prémisse 6), un texte qu'un serveur sans mode strict a tronqué à l'écriture reste donc reconnu : 300 caractères lus et leurs 255 premiers stockés, doublon ; leurs 254 premiers stockés, incertaine. *(Revue P1, E-3 : la clé de l'alias se calcule sur les textes coupés, et un identifiant tronqué, référence ou repli, reste reconnu.)* Seule exception : une ligne lue par la 0.17.4 ou une version ultérieure, dont l'identifiant à entité ou CDATA dépasse 255 caractères, tronquée à l'écriture : ni sa clé directe ni son alias n'égalent la clé stockée, et elle s'importe sans signal, comme en 0.17.4. Hors norme (`Max35Text`), écrit aux manuels et au CHANGELOG. En mode strict, un texte trop long n'a pas pu être stocké : le cas n'existe pas. Aucun test ne dépend du mode : ceux de cet AC sont purs.
 - **AC-F5** — **La limite qui reste, caractérisée** : ligne neuve de référence `REF &amp; Co &lt;1&gt;` et ligne existante de référence « 1 », mêmes date,
   montant et compte, et **mêmes sept textes** après lecture héritée : la ligne est dans `duplicateLines`, écartée par défaut, importable par
   *Importer quand même*. Elle est indiscernable d'une ligne vraiment déjà importée. Elle se **voit** à l'aperçu : le faux doublon est réduit à ce cas,
