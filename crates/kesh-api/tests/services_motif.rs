@@ -1382,6 +1382,44 @@ async fn ac8_c_lec_refus_avant_la_lecture(pool: MySqlPool) {
     assert!(echecs.is_empty(), "{}", echecs.join("\n"));
 }
 
+/// Story 33-3a, AC18 — la synthèse de l'accueil : le canal MCP est refusé quelle
+/// que soit la portée, avant toute lecture ; l'API la lit sur une `Lecture` en
+/// lecture seule, pour tous les rôles.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn synthese_accueil_motif(pool: MySqlPool) {
+    let livres = poser_livres(&pool).await;
+    let lecture = lecture_seule(&pool).await;
+    assert_eq!(rapports::EXIGENCE_SYNTHESE_ACCUEIL.portee_mcp, None);
+
+    let toutes: Vec<Portee> = TOUTES.into_iter().collect();
+    for portees in [&[][..], &toutes[..]] {
+        let refuse = rapports::synthese_accueil(&mcp(&livres, portees), &lecture).await;
+        assert!(
+            matches!(refuse, Err(AppError::Forbidden)),
+            "canal MCP, portées {portees:?} : {:?}",
+            refuse.err()
+        );
+    }
+    // Refus avant la lecture : une société inexistante rendrait autrement une
+    // synthèse vide, sans erreur.
+    let refuse_sans_livres = rapports::synthese_accueil(
+        &mcp_societe(INEXISTANT, livres.user_id(), &toutes),
+        &lecture,
+    )
+    .await;
+    assert!(matches!(refuse_sans_livres, Err(AppError::Forbidden)));
+
+    // Contrôle positif, sur la connexion en lecture seule.
+    let lue = rapports::synthese_accueil(&api(&livres, Role::Consultation), &lecture)
+        .await
+        .expect("lecture seule : aucune écriture ni verrou");
+    assert_eq!(
+        lue.state,
+        kesh_report::homepage_summary::SummaryState::Open,
+        "contrôle : l'exercice des livres couvre le jour"
+    );
+}
+
 /// AC8 (d) — les exports ne sont jamais servis au MCP, même avec toutes les
 /// portées.
 #[sqlx::test(migrations = "../kesh-db/test-schema")]

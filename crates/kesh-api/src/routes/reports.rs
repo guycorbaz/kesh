@@ -31,8 +31,8 @@ use kesh_db::entities::journal_entry::Journal;
 use kesh_report::pdf::{ProjectExpensesPdfLabels, ProjectReturnPdfLabels, VatPdfLabels};
 use kesh_report::project_report::ProjectPeriodMode;
 use kesh_report::{
-    AgedReceivables, BalanceSheet, GeneralLedger, IncomeStatement, JournalReport, PdfContext,
-    ProjectExpensesReport, ProjectReturnReport, ReportPeriod, TrialBalance, VatReport,
+    AgedReceivables, BalanceSheet, GeneralLedger, HomepageSummary, IncomeStatement, JournalReport,
+    PdfContext, ProjectExpensesReport, ProjectReturnReport, ReportPeriod, TrialBalance, VatReport,
     render_aged_receivables_csv, render_balance_sheet_csv, render_balance_sheet_pdf,
     render_general_ledger_csv, render_general_ledger_pdf, render_income_statement_csv,
     render_income_statement_pdf, render_journal_report_csv, render_journal_report_pdf,
@@ -251,6 +251,21 @@ pub async fn get_income_statement(
     let rapport =
         rapports::compte_de_resultat(&acces, &state.lecture(), query.demande(), Affichage).await?;
     Ok(Json(rapport.afficher(&state.trace()).await))
+}
+
+/// `GET /api/v1/reports/homepage-summary` — les chiffres des graphiques de
+/// l'accueil, pour l'exercice ouvert à la date du jour (Story 33-3a, #918).
+///
+/// Sans le préfixe `get_` des neuf autres handlers de rapport : celui-ci **ne
+/// trace pas** (`rapports::synthese_accueil`, C-e332-11), et la garde
+/// `ac10_vii_le_bon_usage_a_chaque_handler` les tient tous par ce préfixe.
+pub async fn homepage_summary(
+    State(state): State<AppState>,
+    Extension(current_user): Extension<CurrentUser>,
+) -> Result<Json<HomepageSummary>, AppError> {
+    let acces = ContexteAcces::depuis_api(&current_user);
+    let synthese = rapports::synthese_accueil(&acces, &state.lecture()).await?;
+    Ok(Json(synthese))
 }
 
 /// GET /api/v1/reports/trial-balance

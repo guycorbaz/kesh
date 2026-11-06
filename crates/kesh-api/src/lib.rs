@@ -1234,6 +1234,11 @@ pub fn build_router_avec_registre(
             "/api/v1/reports/balance-sheet",
             get(routes::reports::get_balance_sheet),
         )
+        // Story 33-3a (#918) : les chiffres des graphiques de l'accueil, sans trace.
+        .route(
+            "/api/v1/reports/homepage-summary",
+            get(routes::reports::homepage_summary),
+        )
         .route(
             "/api/v1/reports/income-statement",
             get(routes::reports::get_income_statement),

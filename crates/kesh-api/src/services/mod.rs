@@ -268,6 +268,17 @@
 //! la complétion, l'écart, les fournisseurs proposés, les documents — restent
 //! sur `state.pool`, figés par la garde (iii) : aucun outil ne les sert.
 //!
+//! # La synthèse de l'accueil — Story 33-3a, sans trace
+//!
+//! | Service | Route | Exigence API / MCP |
+//! |---|---|---|
+//! | `rapports::synthese_accueil` | `GET /reports/homepage-summary` | `Consultation` / jamais servi |
+//!
+//! L'inventaire clos des écritures sur les chemins de lecture s'y étend :
+//! `kesh_report::homepage_summary::generate` et `fiscal_years::find_covering_date`
+//! ne font que des `SELECT` (établi par lecture, confirmé par
+//! `tests/services_motif.rs`, sur une `Lecture` en lecture seule).
+//!
 //! # La lecture seule du MCP — Q11, tranchée le 2026-10-24
 //!
 //! La réponse de Guy à Q11 : la lecture seule est **tenue par l'application**
