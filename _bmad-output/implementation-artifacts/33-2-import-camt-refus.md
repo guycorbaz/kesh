@@ -37,9 +37,9 @@ transaction réécrite, aucune migration. Aucune ligne réelle dans les captures
    `:1050`, `:1288`). L'écart entre les deux lectures vient du seul `TextMode` (`camt053/mod.rs:202-207`, `:313-355`) : la lecture
    héritée ne voit ni référence d'entité ni CDATA, et distribue chaque morceau de texte seul.
    - **E1, lecture.** Un champ obligatoire entièrement en CDATA ou en référence : date de comptabilisation
-     (`emit_transactions`, `MissingRequiredField`), montant, période du relevé, IBAN, devise du compte
+     (`emit_transactions`, `MissingRequiredField`), montant, sens (`CdtDbtInd` d'une `Ntry` sans `TxDtls`, `:726`), période du relevé, IBAN, devise du compte
      (`finalize_statement`) ; ou coupé en deux par une référence, dont le dernier morceau ne se lit pas (`parse_date`,
-     `InvalidDate`, `Decimal::from_str`, `InvalidAmount`).
+     `InvalidDate`, `Decimal::from_str`, `InvalidAmount`, `parse_sign`, `:638`). Le sens perdu d'un `TxDtls` retombe sur celui de la `Ntry` (`:748-756`), et finit au besoin en E4, le montant signé différant.
    - **E2, sélection.** L'IBAN du compte écrit avec une référence : lu tronqué, il ne correspond plus (`select_statement_by_iban`,
      `:932-963`).
    - **E3, nombre de lignes.** Atteignable, contrairement à ce que laisse croire l'absence de test (#923) : la structure
@@ -77,7 +77,8 @@ transaction réécrite, aucune migration. Aucune ligne réelle dans les captures
    entre les versions** : `git log -- crates/kesh-import/src/camt053/mod.rs` ne porte que 076ac863 (création), dc51300e
    (dépendances), e04122dc (devise : d'où `currency` **hors** de la comparaison), 910e5d5a (0.17.0, tenue par la
    caractérisation), c2051805 (0.17.4, #819). Une ligne qu'a réellement importée la 0.17.x a donc en base exactement les textes que
-   recalcule `parse_legacy_0173`. C'est ce qui réduit #915 sans rouvrir #922 (C-e332-3). **Réduit, et non supprimé** : une ligne neuve dont les sept textes,
+   recalcule `parse_legacy_0173`, **à une réserve près : la troncature à l'écriture**. Le pool de production (`kesh-api/src/main.rs:91-94`) ne pose aucun `sql_mode` : `create_pool`, qui en pose un strict (`kesh-db/src/pool.rs:42`), n'a aucun appelant. Reste donc celui du serveur, auquel sqlx n'ajoute que `PIPES_AS_CONCAT,NO_ENGINE_SUBSTITUTION`
+   (`sqlx-mysql-0.8.6/src/options/connect.rs:53-66`). `docker-compose.yml:33-37` n'en fixe aucun, et l'image `mariadb:10.11` est stricte par défaut (`STRICT_TRANS_TABLES`, relevé sur `kesh-mariadb-dev`, même image, sans réglage non plus) ; mais `docker-compose.prod.yml:7-9` laisse la base à l'utilisateur, et le manuel ne fait que recommander ce mode (`admin-manual.tex:1022`). **Le dépôt ne l'établit donc pas pour le NAS, et la conception n'en dépend pas** (AC-F4). C'est ce qui réduit #915 sans rouvrir #922 (C-e332-3). **Réduit, et non supprimé** : une ligne neuve dont les sept textes,
    lus à l'ancienne, égalent ceux d'une ligne existante reste signalée comme doublon (typiquement une ligne qui ne porte que sa référence). Rien
    ne la distingue d'une ligne vraiment déjà importée : AC-F5.
 7. **Le refus n'écrit rien, à condition de rester là où il est.** `create_camt_under_lock` n'écrit qu'à
@@ -171,10 +172,10 @@ Décision de Guy (#922, 2026-11-06, epic) : **refus de ce relevé, message clair
   `bank_import.created` porte `details.uncertain_legacy_lines_imported = 1`.
 - **AC-F2** — Le cas du second commentaire : ligne neuve à référence en CDATA ; ligne existante sans référence, autre libellé,
   même jour, même montant. Même résultat.
-- **AC-F3** — Écran : `uncertainLegacyLines` non vide affiche le panneau `warning-uncertain-legacy-lines` (nombre, phrase, tableau
+- **AC-F3** — Écran : `uncertainLegacyLines` non vide affiche le panneau `warning-uncertain-legacy-lines` (phrase chiffrée, au singulier ou au pluriel, tableau
   index et ID existant), **informatif** : il ne désactive pas *Confirmer l'import*. Liste vide : aucun panneau. Quatre locales.
 - **AC-F4** — Les **sept** colonnes comparées sont exactement `value_date`, `reference`, `end_to_end_id`, `transaction_id`,
-  `counterparty_iban`, `counterparty_name`, `details`, à égalité stricte, **sans** `currency` (e04122dc).
+  `counterparty_iban`, `counterparty_name`, `details`, à égalité stricte, **sans** `currency` (e04122dc). **Quel que soit le `sql_mode` du serveur** (prémisse 6) : un texte stocké tronqué, sur un serveur sans mode strict, diffère comme un autre ; la ligne est incertaine, importée et signalée (C-e332-4), jamais écartée en silence. Seule exception, inchangée par cette story : une `reference` elle-même tronquée change la clé, et la ligne s'importe sans signal, comme en 0.17.4. En mode strict, un texte trop long n'a pas pu être stocké : le cas n'existe pas. Aucun test ne dépend du mode : ceux de cet AC sont purs.
 - **AC-F5** — **La limite qui reste, caractérisée** : ligne neuve de référence `REF &amp; Co &lt;1&gt;` et ligne existante de référence « 1 », mêmes date,
   montant et compte, et **mêmes sept textes** après lecture héritée : la ligne est dans `duplicateLines`, écartée par défaut, importable par
   *Importer quand même*. Elle est indiscernable d'une ligne vraiment déjà importée. Elle se **voit** à l'aperçu : le faux doublon est réduit à ce cas,
@@ -258,11 +259,11 @@ Dans `crates/kesh-import/tests/` : `unknown_entity_in_an_unread_element_is_refus
 ### T4 — Écran
 
 `bank-import.types.ts` (`uncertainLegacyLines: UncertainLegacyLineWarning[]`) ; panneau après `warning-duplicate-lines`
-(`BankImportUpload.svelte:567`), mêmes classes ; clés `bank-import-warnings-uncertain-legacy-lines-summary`,
-`bank-import-labels-uncertain-col-index`, `-existing-id`, quatre locales. Français du résumé : « ressemblent à une ligne déjà importée
-par une version antérieure (même date, même montant, même référence lue à l'ancienne), mais leur libellé ou leur contrepartie
-diffèrent. Kesh les importe : vérifiez-les dans la liste des transactions du compte. » Fixture `BankImportUpload.test.ts:105` étendue ;
-tests Vitest : panneau présent, absent, *Confirmer* non désactivé.
+(`BankImportUpload.svelte:567`), mêmes classes ; **deux clés choisies par le composant**, `bank-import-warnings-uncertain-legacy-lines-summary-one` et `-other`, le motif de `supplier-invoices-count-one` / `-other` (un sélecteur Fluent ne jouerait pas : `kesh-i18n/src/loader.rs:158`, messages pré-résolus sans arguments),
+`bank-import-labels-uncertain-col-index`, `-existing-id`, quatre locales. Français du résumé, nombre compris : « 1 ligne ressemble à une ligne déjà importée
+par une version antérieure (même date, même montant, même référence lue à l'ancienne), mais ses textes diffèrent (libellé, contrepartie, identifiants ou date de valeur). Kesh l'importe : vérifiez-la dans la liste des transactions du compte. » ; « { $count } lignes ressemblent à une ligne déjà importée
+par une version antérieure (même date, même montant, même référence lue à l'ancienne), mais leurs textes diffèrent (libellé, contrepartie, identifiants ou date de valeur). Kesh les importe : vérifiez-les dans la liste des transactions du compte. » Fixture `BankImportUpload.test.ts:105` étendue ;
+tests Vitest : panneau à une ligne et à deux lignes, absent, *Confirmer* non désactivé.
 
 ### T5 — Manuels et CHANGELOG
 
@@ -276,8 +277,8 @@ tests Vitest : panneau présent, absent, *Confirmer* non désactivé.
 - `docs/manual/fr/admin-manual.tex:2553`, *Passer à la 0.17.4* : section d'historique, **non réécrite** ; ajouter une phrase datée
   « Depuis la 0.17.5, ces deux limites sont levées : … \S … ».
 - `docs/api-external.md`, paragraphe **Ordre des refus** (`:771`, un tableau de ressources à `:223` n'étant pas un lieu de contrat) : le
-  `422 BANK_IMPORT_LEGACY_REREAD_FAILED`, `details.cause` et ses quatre valeurs ; son rang : à la création, après le `422 BANK_IMPORT_DUPLICATE_FILE` non confirmé
-  et la lecture du fichier, avant toute écriture, sans contournement par `confirm*` ; à l'aperçu, le `422 BANK_IMPORT_DUPLICATE_FILE` s'il est déjà importé (AC-R9).
+  `422 BANK_IMPORT_LEGACY_REREAD_FAILED`, `details.cause` et ses quatre valeurs ; son rang : à la création, après, dans l'ordre (`routes/bank_imports.rs:1276-1348`), le `422 BANK_IMPORT_DUPLICATE_FILE` non confirmé, la lecture du fichier, la sélection, le `422 BANK_IMPORT_UNSUPPORTED_CURRENCY`
+  et le refus de solde non confirmé, avant toute écriture, sans contournement par `confirm*` ; à l'aperçu, d'emblée, solde et devise n'y étant que des avertissements, ou le `422 BANK_IMPORT_DUPLICATE_FILE` s'il est déjà importé (AC-R9). Dire l'asymétrie : un client qui envoie un fichier à solde faux n'obtient ce refus, à la création, qu'après `confirmBalanceMismatch=true`.
   Une phrase sur `warnings.uncertainLegacyLines` à côté, avec son sens : la ligne s'importe, sans choix.
 - `make fr` dans `docs/manual/` ; contrôle des PDF aplatis : `pdftotext f.pdf - | tr '\n' ' ' | tr -s ' '`, phrases cherchées citées
   au Change Log (le refus présent ; les deux limites présentes ; « sans aucun signal » absent du manuel utilisateur).
@@ -313,8 +314,8 @@ Les **cinq** points de la « Fiche 1 » ; l'orchestrateur édite l'issue en le d
 | M3 | `LineCount` → `Ok(vec![])` | `..._line_counts_differ_922` |
 | M4 | contrôle de désalignement retiré | `..._misaligned_922` |
 | M5 | désalignement sur la date seule | une paire de même date et d'autre montant, dans le même test |
-| M6 | site de l'aperçu : `.unwrap_or_default()` au lieu de `?` | le volet aperçu de R1 |
-| M7 | site de la création : idem | le volet création de R1, et R6 |
+| M6 | site de l'aperçu : l'échec ignoré, `existing` absent (`200` au lieu du refus) | le volet aperçu de R1 |
+| M7 | site de la création : `.unwrap_or_default()` au lieu de `?` | le volet création de R1, et R6 |
 | M8 | garde `new_txs.is_empty()` retirée | `camt_without_lines_is_not_refused_922` |
 | M9 | comparaison des textes retirée (alias par clé seule) | `..._not_a_false_duplicate_915` |
 | M10-M16 | une clause retirée de `LineTexts::eq`, écrit à la main (T3), sept mutations | les tests purs par colonne |
@@ -369,6 +370,9 @@ hérite pas ; la 33-2 ne touche pas à `parse_date` (T2). Ordre de fusion indiff
   `errors.rs:2419-2435` ; `BankImportUpload.svelte:172-173` ; `api-external.md:223`, `:771` ; 19 + 4 fixtures listées, `v04_multi_stmt.xml:17,77` (deux IBAN), `v04_characterization.xml:19`.
   Conception : l'aperçu suit l'ordre de la création (C-e332-21) ; la relecture héritée reste sans borne (C-e332-22) ; `LineTexts::eq` écrit à la main.
   Décomptes de cette fiche après remédiation, recomptés : 23 AC, 15 tests de route au tableau de T1, 24 mutations (M10-M16 comptant pour sept).
+- 2026-11-06 — Remédiation de la validation P2 (rapport `kesh-gate-logs/e33-validate-p2-e332.md`, Opus 5.5, aucune compilation ni aucun test, aucun commit). Quatre constats de cette fiche, tous LOW, tous remédiés, aucun réfuté : R-12, F-1, F-2, F-3. Prémisses relues : `camt053/mod.rs:638`, `:700-711`, `:722-727`, `:748-756` (R-12) ; `BankImportUpload.svelte:567-578`, `kesh-i18n/src/loader.rs:158` (F-1) ; `routes/bank_imports.rs:1056-1112`, `:1276-1320` (F-2).
+  **Question restée ouverte en P1 et P2, le `sql_mode`** (C-e332-3) : relevée sans accès au NAS, à `main.rs:91-94`, `pool.rs:39-49`, `sqlx-mysql-0.8.6/src/options/connect.rs:53-66`, `docker-compose.yml:33-37`, `docker-compose.prod.yml:7-9`, `admin-manual.tex:1022`, et, en lecture seule, `SELECT @@GLOBAL.sql_mode` sur `kesh-mariadb-dev` (MariaDB 10.11.19 : `STRICT_TRANS_TABLES,ERROR_FOR_DIVISION_BY_ZERO,NO_AUTO_CREATE_USER,NO_ENGINE_SUBSTITUTION`). ⚠️ Le doc-comment de `create_pool` semble la trancher, mais cette fonction n'a aucun appelant : le dépôt ne l'établit pas pour une base fournie par l'utilisateur. AC-F4 ne dépend donc plus du mode : la conséquence, sur un serveur sans mode strict, est celle de C-e332-4. La troncature ne joue que sur une ligne passant par l'alias (une référence à entité ou CDATA, AC-S4) et portant un autre texte de plus de 255 caractères ; une référence elle-même tronquée change la clé, comme aujourd'hui (AC-F4).
+  Décomptes de cette fiche, recomptés : 23 AC, 15 tests de route au tableau de T1, 24 mutations, inchangés (M6 et M7 récrites).
 
 ## Dev Agent Record
 

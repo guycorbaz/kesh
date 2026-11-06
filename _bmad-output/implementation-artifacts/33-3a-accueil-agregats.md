@@ -56,7 +56,7 @@ total égale le compte de résultat.
    directement » (`services/mod.rs`, R5). Les trois tuiles de l'accueil ne tracent pas. Voir C-e332-11.
 9. **Le motif des services** (`services/mod.rs`) : R1 (pas d'`AppState` ni d'Axum), R2 (`acces.exiger` en première instruction), R3
    (une `Exigence` nommée), R4 (`Lecture` seulement), R7 (test de refus, contrôle positif, exécution sur une `Lecture` en lecture
-   seule), R8 (garde lexicale de `tests/services_motif.rs`, à amender en connaissance de cause).
+   seule), R8 (garde lexicale de `tests/services_motif.rs`, que T3 laisse entière).
 10. **L'exercice du jour.** `fiscal_years::find_covering_date` (`fiscal_years.rs:676-696`) le lit sans verrou, quel que soit son statut.
     ⛔ **Ne pas employer `find_open_covering_date`** : elle prend un `FOR UPDATE` dans une transaction (`fiscal_years.rs:753-758`, et le doc-comment du module, `:100-125`).
     La date du jour en écriture : `Utc::now().date_naive()` (`reverse_in_tx_inner`).
@@ -142,7 +142,7 @@ clôtures et contre-passations de corrections écartées. Le reste, au registre 
   seulement l'un des côtés rend M à +500 ou M+k à −500 : c'est ce que le test sépare. Idem pour un revenu.
 - **AC8** — **Paire à cheval** (`reverse_at_next_fiscal_year_start`, origine en N−1, contre-passation au premier jour de N, seul N
   ouvert à la date du jour) : la contre-passation **compte** dans le mois de N (−X), et le total égale le compte de résultat de N.
-  Aucun autre montant n'est écarté.
+  Aucun autre montant n'est écarté. **Lue depuis N−1** (encore ouvert, `generate` appelé avec une date de N−1, la route lisant `Utc::now()`) : l'origine **compte**, à son mois (+X), et le total égale le compte de résultat de N−1.
 - **AC9** — **Annulation d'une facture fournisseur dans le même exercice** (le socle) : l'achat et sa contre-passation disparaissent
   ensemble, sans mention particulière du type de pièce.
 - **AC10** — Un **avoir** (écriture sans `reverses_entry_id`) reste compté, à son mois, en revenus négatifs.
@@ -164,8 +164,8 @@ clôtures et contre-passations de corrections écartées. Le reste, au registre 
   **ni** dans `expensePosts`, **ni** dans `otherExpenses`, et compte dans `creditBalanceExpenseAccounts`. `expensePostsBase` = somme de ce qui reste. **Si aucun compte n'a de
   solde positif**, `expensePosts` est vide et `expensePostsBase = "0"`, sans division par zéro. Un total des charges négatif ne suffit pas : un compte à +100 et un à −300
   rendent un poste de 100, à `share = "100.0"`, et `creditBalanceExpenseAccounts = 1`.
-- **AC15** — `share` = `amount / expensePostsBase × 100`, une décimale, arrondi `MidpointAwayFromZero`. Exemple de test : 200 et 100
-  → `66.7`, `33.3`. Pas de redressement de la somme à 100 : l'écran affiche ce qui est calculé.
+- **AC15** — `share` = `amount / expensePostsBase × 100`, **toujours une décimale écrite**, arrondi `MidpointAwayFromZero`. Exemples de test : 200 et 100
+  → `66.7`, `33.3` ; 100 et 100 → `50.0`, `50.0` ; un seul poste → `100.0`. Pas de redressement de la somme à 100 : l'écran affiche ce qui est calculé.
 - **AC16** — `name` est le nom du compte, `number` son numéro, sans filtre `active` : un compte archivé qui porte des écritures reste un
   poste, comme au compte de résultat.
 
@@ -217,6 +217,8 @@ Dans `services/rapports.rs` ou `tests/services_motif.rs`, selon le voisinage : A
 - `pub async fn generate(pool, company_id, today: NaiveDate) -> Result<HomepageSummary, ReportError>` ; `today` en paramètre pour les
   tests et pour R1.
 - Fonctions pures `calendar_months(start, end) -> Vec<MonthBounds>`, `rank_expense_posts(rows) -> RankedPosts`, sans I/O.
+  `rank_expense_posts` range un solde `> 0` en poste et **tout le reste** en créditeur : c'est la clause `HAVING balance != 0` seule qui écarte le zéro (sans quoi M18 survivrait, la clause étant redondante).
+  `share` : `round_dp_with_strategy(1, MidpointAwayFromZero)` puis `rescale(1)`, car l'arrondi rend sa valeur telle quelle dès que l'échelle est ≤ 1 (`rust_decimal-1.43.0/src/decimal.rs:1502-1509`) : sans cela, `"50"` et non `"50.0"`.
 - Constante partagée (DRY) par les deux requêtes :
 
   ```sql
@@ -235,9 +237,8 @@ Dans `services/rapports.rs` ou `tests/services_motif.rs`, selon le voisinage : A
 ### T3 — Le service et la route
 
 - `services/rapports.rs` : `EXIGENCE_SYNTHESE_ACCUEIL`, `synthese_accueil(acces, lecture) -> Result<HomepageSummary, AppError>`, qui rend
-  directement (R5), date du jour par `Utc::now().date_naive()`. Inscrire le service à l'inventaire de `services/mod.rs`. Si la garde
-  lexicale de `tests/services_motif.rs` l'exige, l'amender d'une ligne.
-- `routes/reports.rs` : `get_homepage_summary`, sur le modèle de `get_income_statement`, sans `Rapport`.
+  directement (R5), date du jour par `Utc::now().date_naive()`. Inscrire le service à l'inventaire de `services/mod.rs`.
+- `routes/reports.rs` : **`homepage_summary`, sans le préfixe `get_`**, sur le modèle de `get_income_statement`, sans `Rapport`. La garde `ac10_vii_le_bon_usage_a_chaque_handler` (`tests/services_motif.rs:2687-2710`) compte neuf `get_…` qui appellent `.afficher(` : elle reste entière, **sans amendement**, et le nom dit que ce handler ne trace pas. `ac10_i_ii_handlers_sans_le_pool` reste vraie (`state.lecture()`, pas `state.pool`).
 - `lib.rs` : `.route("/api/v1/reports/homepage-summary", get(...))`, dans le bloc de la Story 9-1 (`:1232`).
 
 ### T4 — Documents
@@ -254,7 +255,7 @@ Dans `services/rapports.rs` ou `tests/services_motif.rs`, selon le voisinage : A
 | M1 | `NOT EXISTS` de l'origine retiré | `reversal_pair_in_the_year_...` (M+k à −500) |
 | M2 | `NOT EXISTS` de la contre-passation retiré | idem (M à +500) |
 | M3 | condition d'exercice retirée du premier | `reversal_across_two_years_...`, et `totals_equal_...` |
-| M4 | condition d'exercice retirée du second | test d'une paire à cheval lue depuis N−1 ouvert |
+| M4 | condition d'exercice retirée du second | `reversal_across_two_years_...`, volet lu depuis N−1 (AC8) |
 | M5 | sens de `Revenue` inversé | `signs_...` |
 | M6 | sens de `Expense` inversé | `signs_...` |
 | M7 | filtre `je.fiscal_year_id` retiré | `totals_equal_...` |
@@ -295,7 +296,7 @@ qui n'a pas tourné.
 ## Recoupements
 
 `routes/reports.rs` et `services/rapports.rs` : la **33-7** touche aussi ces deux fichiers et `mcp/outils/rapports.rs`, la **33-4** le premier et ce dernier ; `tests/services_motif.rs` : la
-33-3a l'amende peut-être d'une ligne (T3), la 33-7 aussi. Lignes distinctes, union à l'intégration. `tests/audit_route_registry.rs` : la route est en lecture, **aucune ligne à y ajouter** (prémisse 13).
+33-3a n'y amende aucune garde (T3) et peut y ajouter le test d'AC18, la 33-7 y touche aussi. Lignes distinctes, union à l'intégration. `tests/audit_route_registry.rs` : la route est en lecture, **aucune ligne à y ajouter** (prémisse 13).
 
 ## Change Log
 
@@ -304,6 +305,8 @@ qui n'a pas tourné.
   la requête par compte garde la clause, le solde nul ne paraît nulle part, et le champ devient `creditBalanceExpenseAccounts`, le mot « non positif » n'ayant plus d'objet. **Défaut voisin corrigé, trouvé en remédiant** : AC14 disait qu'un total
   des charges négatif vidait `expensePosts`, ce qui est faux dès qu'un compte reste positif (+100 et −300). Recoupements ajoutés à partir de L-F4-1 et L-F7-2 du rapport `e33-validate-p1-e334.md`. C-e332-9 et C-e332-14, déjà lus par Guy,
   ne sont pas rouverts ; ils se disent au manuel (33-3b, T6). Décomptes de cette fiche, recomptés : 19 AC, 18 lignes de mutation.
+- 2026-11-06 — Remédiation de la validation P2 (rapport `kesh-gate-logs/e33-validate-p2-e332.md`, Opus 5.5, aucune compilation ni aucun test, aucun commit). Quatre constats de cette fiche, tous LOW, tous remédiés, aucun réfuté : R-3, R-4, R-5, R-11. Prémisses relues : `tests/services_motif.rs:2073-2075`, `:2145-2157`, `:2687-2710`, et `routes/reports.rs` absent de `SITES_NON_RESOLUS` (R-3) ; `routes/reports.rs:245-254` (`state.lecture()`) ; `rust_decimal-1.43.0/src/decimal.rs:1050`, `:1502-1509` (R-5, l'échelle exacte d'une division n'étant pas jouée) ; `repositories/journal_entries.rs:3093-3110`, et `kesh-report` en dépendance de `kesh-api` (`Cargo.toml:14`, R-11).
+  Le handler se nomme `homepage_summary` : **aucune garde n'est amendée**, et le « peut-être » de T3 et des recoupements disparaît. Décomptes de cette fiche, recomptés : 19 AC, 18 lignes de mutation, inchangés.
 
 ## Dev Agent Record
 

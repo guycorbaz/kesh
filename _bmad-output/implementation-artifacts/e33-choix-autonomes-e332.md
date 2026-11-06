@@ -39,6 +39,7 @@ Registre propre à ces trois fiches, **versé par union** par l'orchestrateur. C
   garder la clé seule : c'est #915.
 - **Limite écrite** (annoté le 2026-11-06, validation P1, R-4) : #915 est **réduit**, non supprimé. Une ligne neuve dont les sept textes, lus à l'ancienne, égalent ceux d'une ligne existante reste signalée comme doublon : rien ne la distingue
   d'une ligne déjà importée. AC-F5 la fixe, manuel et CHANGELOG la disent, une issue de reliquat est demandée.
+- **Réserve écrite** (annoté le 2026-11-06, validation P2) : le choix tient quel que soit le `sql_mode` du serveur. Le pool de production n'en pose aucun (`main.rs:91-94` ; `create_pool` n'a pas d'appelant), `docker-compose.yml` garde le défaut strict de l'image, et `docker-compose.prod.yml` laisse la base à l'utilisateur : le dépôt ne l'établit pas pour le NAS. Sur un serveur sans mode strict, un texte de plus de 255 caractères aurait été tronqué ; la ligne, si elle passe par l'alias, devient incertaine, importée et signalée (C-e332-4), jamais écartée en silence (AC-F4) ; une `reference` elle-même tronquée change la clé et s'importe sans signal, comme en 0.17.4.
 - **Réversible** : oui, aucune donnée touchée.
 
 ### C-e332-4 — Clé d'alias égale, textes différents : importée et signalée
@@ -168,7 +169,7 @@ Registre propre à ces trois fiches, **versé par union** par l'orchestrateur. C
 ### C-e332-16 — Le SVG est une image, le tableau porte les données et les liens
 
 - **Contexte** : un `<rect>` cliquable n'est ni annoncé ni atteignable au clavier ; des `<a>` dans un `role="img"` sont présentés puis cachés selon le
-  lecteur d'écran, et le contrôle `no-focusable-content` d'axe les refuse, `tabindex="-1"` compris (`axe.js:25720-25742`, lu, non joué).
+  lecteur d'écran, et le contrôle `no-focusable-content` d'axe refuse tout descendant focalisable de rôle widget, donc un `<a href>`, `tabindex="-1"` compris (`axe.js:25720-25757`, `:16037-16039`, lu, non joué).
 - **Retenu** (récrit le 2026-11-06, validation P1, R-1) : `role="img"`, titre et description chiffrés, **aucun élément focalisable dans le SVG** ; vrais liens au tableau voisin ; pour la souris, un écouteur unique sur le `<svg>` qui lit le `data-href` de la marque. Un squelette passe sous axe à l'étape 0.
 - **Écartées** : (a) des `<a>` focalisables dans le SVG : 12 + 12 arrêts de tabulation sans étiquette utile, et une image qui n'en est plus une ; (b) `<a tabindex="-1">` dans un `role="img"`, version d'origine de ce choix : voir le contexte ; (c) deux calques, l'un sous `aria-hidden` avec les `<a tabindex="-1">` : deux dessins à tenir alignés, pour le seul `Ctrl`+clic, que le tableau offre ; (d) des liens HTML superposés : un rectangle ne suit pas une part de camembert.
 - **Réversible** : oui.
@@ -202,9 +203,19 @@ Registre propre à ces trois fiches, **versé par union** par l'orchestrateur. C
 
 ### C-e332-23 — Un exercice long : tous ses mois, moins d'étiquettes, aucun défilement
 
-*(Ajouté le 2026-11-06, validation P1, R-2. C-e332-14 n'est pas rouvert.)*
+*(Ajouté le 2026-11-06, validation P1, R-2. C-e332-14 n'est pas rouvert. Simplifié le même jour, validation P2, R-7 et R-8 : quatre tranches et une distance minimale testée, qui ne prouvait pas la lisibilité.)*
 
-- **Contexte** : rien ne borne la durée d'un exercice, et la base E2E en a un de 132 mois (`test_fixtures.rs:116-121`).
-- **Retenu** : un groupe par mois, sans `overflow-x` ; au-delà de 24 mois, carte pleine largeur ; étiquettes à seuils : 12, 24, 60 mois, puis repères d'année ; distance minimale testée. La spec E2E des graphiques crée son exercice de douze mois.
-- **Écartées** : (a) défilement horizontal : exige un élément focalisable (`scrollable-region-focusable`) et cache des mois ; (b) agrégation par trimestre ou par année au-delà d'un seuil : détache les barres des liens de mois, et le contrat rend des mois ; (c) changer le preset `with-company` : d'autres specs comptent sur sa largeur (« dérive d'horloge CI »).
+- **Contexte** : rien ne borne la durée d'un exercice, et la base E2E en a un de 132 mois (`test_fixtures.rs:116-121`). Ces exercices n'existent presque pas en production : la règle reste simple.
+- **Retenu** : un groupe par mois, sans `overflow-x` ; au-delà de 12 mois, carte pleine largeur ; étiquettes tirées du mois rendu : jusqu'à 12 mois, chacun ; de 13 à 36, chaque début de trimestre civil ; au-delà, chaque janvier. La lisibilité se regarde aux captures. La spec E2E des graphiques crée son exercice de douze mois.
+- **Limite écrite** : à partir d'une soixantaine de mois (estimation, non jouée), la trame d'une barre ne se voit plus ; seule la position sépare revenus et dépenses, et le tableau porte les chiffres.
+- **Écartées** : (a) défilement horizontal : exige un élément focalisable (`scrollable-region-focusable`) et cache des mois ; (b) agrégation par trimestre ou par année au-delà d'un seuil : détache les barres des liens de mois, et le contrat rend des mois ; (c) changer le preset `with-company` : d'autres specs comptent sur sa largeur (« dérive d'horloge CI ») ; (d) mesurer la largeur du texte en test : une exigence de plus pour des exercices rares.
+- **Réversible** : oui, frontend seul.
+
+### C-e332-24 — Barres et camembert décident chacun sur sa seule donnée
+
+*(Ajouté le 2026-11-06, validation P2, R-2.)*
+
+- **Contexte** : des montants mensuels nuls n'impliquent pas l'absence de poste. Un reclassement entre deux comptes de charges (débit 6000, crédit 6100) laisse `months` à zéro et un poste à 100 %, et un état « exercice vide » commun aux deux graphiques masquait cette part en affirmant une phrase fausse.
+- **Retenu** : les barres décident sur `months`, avec une phrase juste dans tous ces cas (« Aucun mouvement net de produits ou de charges dans cet exercice ») ; le camembert décide sur `expensePosts`, avec une seule phrase pour le vide (« Aucun poste de charges à répartir dans cet exercice »), elle aussi juste dans tous les cas.
+- **Écartées** : (a) distinguer au camembert « exercice vide » et « sans poste » : une condition de plus pour deux phrases vraies toutes les deux ; (b) rendre un indicateur de lignes par l'API, pour séparer un exercice réellement vide d'un reclassement de produits : un champ de contrat pour une nuance de libellé.
 - **Réversible** : oui, frontend seul.

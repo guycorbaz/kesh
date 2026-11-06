@@ -33,7 +33,7 @@ lecture après le commit, pour qu'aucun 404 ni 500 n'annonce en échec un règle
 
 | Site | Décision |
 |---|---|
-| #768 point 1 : `decider_envoi` relit après commit (`routes/mcp_envois.rs:262-267`), un 500 annonce en échec une décision écrite | **Traité** : quatre lignes, lecture dans la tx avant le commit, si `mcp_sends::trouver` accepte un `Executor` (sinon sa forme `_in_tx`) |
+| #768 point 1 : `decider_envoi` relit après commit (`routes/mcp_envois.rs:262-267`), un 500 annonce en échec une décision écrite | **Traité** : lecture dans la tx avant le commit. `mcp_sends::trouver` prend un `&MySqlPool` (`kesh-db/src/repositories/mcp_sends.rs:235-239`) : forme `trouver_in_tx`, réemployée par `trouver` (DRY), et ⚠️ `kesh-db` touché, gate complet |
 | #773 point 3 : si la réponse d'une décision se perd, l'écran ne propose pas *Recharger* | **Traité si le point 1 ne suffit pas à le rendre sans objet** : `McpSendDetail.svelte:106`, le `catch` non `ApiError` (délai, réseau) montre le bouton existant de `:296` ; une ligne et un test Vitest |
 | Facture fournisseur : `load_with_settlement_cancellation` après `pay`, `cancel`, `validate`, `unvalidate`, etc. (`supplier_invoices.rs:776,881,917,946,970,1002`, `imported_supplier_invoices.rs:141,595,700`) | **Non traité, à tracer** : neuf sites, et une lecture à quatre champs calculés ; déborde, et 33-1a/b récrit ce fichier. **Issue demandée à l'orchestrateur** (C-e334-8) |
 | Le reste de #768 (points 2 à 7) et de #773 | Autre nature : les deux issues restent ouvertes, chacune commentée de ce qui a été fait |
@@ -89,6 +89,7 @@ après règlement (`/usr/bin/grep -n 'règlement.*404' docs/api-external.md docs
 
 - 2026-11-06 : fiche créée (Opus 5.5).
 - 2026-11-06 : validation P1 (Sonnet 5.5) : aucun finding, lentilles R et F. Fiche inchangée, hors cette entrée (Opus 5.5).
+- 2026-11-06 : validation P2 (Opus 5.5), remédiation (Opus 5.5). Un LOW. **L-R6-1** : tranché, forme `_in_tx` (lu : `mcp_sends.rs:235-266`). Prémisse du rapport nuancée : `trouver` ne fait qu'**une** requête, et non plusieurs ; le geste reste petit, mais touche `kesh-db`. « Quatre lignes » retiré.
 
 ## Dev Agent Record
 

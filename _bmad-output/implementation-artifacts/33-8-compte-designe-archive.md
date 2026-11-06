@@ -58,7 +58,7 @@ quel réglage ; pour ne pas découvrir l'effet des mois plus tard, à la validat
 ### Mutations nommées (P2)
 
 - **M1** : ne lire que neuf colonnes (retirer `default_bad_debt`) → rouge AC-1, AC-6. **M2** : requête sans `company_id` → rouge AC-5.
-- **M3** : `confirm_designated` ignoré → rouge AC-3. **M4** : refus après l'`UPDATE` → rouge AC-1 (`version`). **M5** : `changed` remis à `true` pour l'inactif → rouge AC-7.
+- **M3** : `confirm_designated` ignoré → rouge AC-3. **M5** : `changed` remis à `true` pour l'inactif → rouge AC-7.
 - **M6** : `designated_settings` toujours écrit → rouge AC-4 (audit exact).
 - **M7** : désignation lue après l'`UPDATE` ou version contrôlée avant elle → rouge AC-4 (version périmée sans confirmation). **M8** : lien affiché à tous les rôles → rouge AC-8.
 
@@ -84,6 +84,7 @@ Gate complet, E2E complet au dernier commit de code. Aucune migration : la colon
 
 - 2026-11-06 : fiche créée (Opus 5.5).
 - 2026-11-06 : validation P1 (Sonnet 5.5), remédiation (Opus 5.5). Aucun finding au-dessus de LOW. **L-R8-1** : ordre décidé (C-e334-29, lu : `repositories/accounts.rs:681-710`), AC-4 élargi, M7. **L-R8-2** : lien réservé à l'Administrateur, AC-8, M8. Point « libellés de TVA à vérifier » levé, lu.
+- 2026-11-06 : validation P2 (Opus 5.5), remédiation (Opus 5.5). Un LOW. **L-R8-1** : M4 retirée, doublon de M7 : le refus annule la transaction (patron lu : `repositories/accounts.rs:692-695`), donc l'AC-1 reste vert, et c'est l'AC-4 qui tue ce déplacement. Numéros des autres mutations conservés : sept mutations, M1 à M3, M5 à M8.
 
 ## Dev Agent Record
 

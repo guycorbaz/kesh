@@ -49,14 +49,14 @@ avoir la même numérotation, et certains n'en ont pas. Kesh ajoute un **numéro
 et retrouver les **factures papier**.
 
 - Attribution **à la validation** : un brouillon n'a pas de numéro ; une facture repassée en brouillon garde le sien.
-- Année de l'exercice, séquence qui repart à 1 à chaque exercice, « dans l'idéal configurable ».
-- Format réglable comme pour les factures clientes ; **défaut `FF-{YEAR}-{SEQ:03}`**, pour distinguer les deux familles.
+- Année de début de l'exercice, séquence qui repart à 1 à chaque année ; deux exercices de même année de début partagent leur séquence.
+- Format réglable, **défaut `FF-{YEAR}-{SEQ:03}`**, pour distinguer les deux familles. **Sans `{FY}`** (accord de Guy du 2026-11-06 : « oui, pars sur cette recommandation ») ; forme `<préfixe>{YEAR}<séparateur>{SEQ}` (choix C-e331-16 de la remédiation, pour qu'un numéro ne puisse pas réapparaître). Limites dites au manuel : restauration d'une sauvegarde, retour à la 0.17.4 suivi d'une nouvelle montée, réinitialisation des données.
 - **Les factures déjà saisies et validées sont numérotées** à la migration, par ordre de date, sans réécrire le libellé de
   leurs écritures passées. Les nouvelles écritures portent le numéro.
 - **Visible** : liste (colonne triable et cherchable), fiche, libellé des écritures d'achat et de règlement. La pièce reçue
   reste intacte.
 
-**#435 et clés d'API, 2026-11-06.** Connexion, déconnexion et renouvellement de session **ne se tracent pas** au journal d'audit (« non ») : #435 se ferme sur le changement de mot de passe, cette décision écrite au manuel. **Une clé d'API ne peut pas changer le mot de passe** (C-e334-27 confirmé).
+**#435 et clés d'API, 2026-11-06.** Connexion, déconnexion et renouvellement de session **ne se tracent pas** au journal d'audit (« non »), ni le signal d'activité (« ok pour le signal d'activité ») : #435 se ferme sur le changement de mot de passe, cette décision écrite au manuel. **Une clé d'API ne peut pas changer le mot de passe** (C-e334-27 confirmé).
 
 **#922, 2026-11-06.** Si la relecture « à la 0.17.3 » échoue, Kesh **refuse l'import de ce relevé** avec un message clair.
 

@@ -107,6 +107,7 @@ aujourd'hui ; le nom d'une société au QR.
 
 - 2026-11-06 : fiche créée (Opus 5.5).
 - 2026-11-06 : validation P1 (Sonnet 5.5), remédiation (Opus 5.5). Aucun finding au-dessus de LOW. **L-F5-1** : AC-10 nomme les cinq assertions et les commentaires (lus : `audit_route_registry.rs:962,978,1015,1385,1404`, le rapport disait « ~1384 »). **L-F5-2** : `crates/kesh-api/src/address_input.rs`, `:100-108`, `:141-146`, `:37` (lus). Aucun choix ajouté.
+- 2026-11-06 : validation P2 (Opus 5.5) : aucun finding. Fiche inchangée, hors cette entrée (Opus 5.5).
 
 ## Dev Agent Record
 

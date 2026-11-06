@@ -104,8 +104,9 @@ sous-story de déploiement, à revoir fichier par fichier. Un écart de patron d
 **AC1 — Le libellé, une seule définition par langage.** `frontend/src/lib/features/supplier-invoices/supplier-invoice-label.ts` : `supplierInvoicePreferredNumber`
 (numéro ou `null`, pour `documentLabel` et `groupDocument`, qui ont leur propre repli), `supplierInvoiceShortLabel` et `supplierInvoiceLongLabel`, testées (Vitest) : les deux
 numéros ; l'interne seul ; le fournisseur seul ; ni l'un ni l'autre ; **numéro blanc = absent** (règle de K8, `closing_checks.rs:499`). Côté serveur,
-`kesh_core` `supplier_invoice_short_label` et `supplier_invoice_long_label` (33-1a, AC15), et l'expression SQL de K8 alignée sur elles. **Plus aucun**
-`supplierInvoiceNumber ?? ` dans `frontend/src` hors de ce fichier, test `git grep` à l'appui.
+`kesh_core` `supplier_invoice_short_label` et `supplier_invoice_long_label` (33-1a, AC15), et l'expression SQL de K8 alignée sur elles. **Plus aucun repli**
+`supplierInvoiceNumber ??` vers `#id` hors de ce fichier : `git grep -nE 'supplierInvoiceNumber \?\?($| .#)' -- frontend/src` ne rend plus rien (il rend six sites à `cf880931`, et ne touche pas
+`SupplierInvoiceForm.svelte:178`, gardé à dessein). `ReconciliationProposals.svelte:543`, qui lit `.invoiceNumber ??`, se contrôle à part.
 
 **AC2 — La colonne.** Liste : `supplier-invoices-col-internal-number` (colonne, `font-mono`), avant **N° fournisseur** ; un brouillon jamais validé rend
 `—`, un brouillon numéroté rend son numéro.
@@ -126,13 +127,13 @@ service MCP (`services/factures_fournisseur.rs:119`), qui garde son comportement
 
 **AC6 — La fiche.** Titre en forme courte ; `<dl>` : **N° interne** (`supplier-invoice-detail-internal-number`), **N° fournisseur**
 (`supplier-invoice-detail-supplier-number`). Brouillon jamais validé : « attribué à la validation ». **Brouillon numéroté** : le numéro, et « conservé si la
-facture est revalidée ; perdu si elle est supprimée ». Le dialogue de suppression d'un brouillon numéroté avertit que le numéro ne sera pas réattribué.
+facture est revalidée ; perdu si elle est supprimée ». Le dialogue de suppression d'un brouillon numéroté avertit : « Le numéro sera perdu. Kesh ne le reprendra pas, sauf restauration d'une sauvegarde plus ancienne ou réinitialisation des données. »
 Après validation, le numéro paraît **sans recharger** (réponse de la route).
 
 **AC7 — Le réglage.** *Administration → Facturation* (`settings/invoicing/+page.svelte`, section *Numérotation*, `:288`) : champ **Format des factures
 fournisseur** (`settings-supplier-internal-number-format`), aide, aperçu, refus sur place. Le champ part dans le corps ; chargé et relu après conflit de
-version (`:159,:235`), comme `format`. Aide : « S'applique aux numéros à venir : ceux déjà attribués ne changent pas. » `validateFormatTemplate` reçoit une option
-`numbering`, alignée sur `validate_numbering_template` (`{SEQ}` et `{YEAR}` ou `{FY}`) : `invoices-format-error-no-seq`, `invoices-format-error-no-year`, aux quatre locales. Le champ client, lui, ne change pas de règle.
+version (`:159,:235`), comme `format`. Aide : « Un préfixe, `{YEAR}`, un séparateur, puis `{SEQ}` ou `{SEQ:03}`. S'applique aux numéros à venir : ceux déjà attribués ne changent pas. » `validateFormatTemplate` reçoit une option
+`numbering`, alignée sur `validate_numbering_template` (33-1a, AC16, mêmes cas acceptés et refusés) : une seule clé, `invoices-format-error-numbering`, aux quatre locales. Le champ client, lui, ne change pas de règle.
 Type `InvoiceSettings` (`invoices.types.ts`), `settings-invoicing-page.test.ts` suit.
 
 **AC8 — Les sites.** Chaque ligne de l'inventaire est appliquée, et un test le prouve au niveau où il vit : Vitest pour le libellé rendu, `*_e2e` pour les champs
@@ -146,7 +147,7 @@ alignés, `npm run lint-i18n-ownership` vert. Clés neuves recomptées par `grep
 **AC10 — E2E.** `frontend/tests/e2e/supplier-internal-number.spec.ts`, assertions **relatives** (la base partagée a un compteur qui ne redescend pas) :
 brouillon sans numéro → validé, numéro au motif `FF-AAAA-NNN` → présent à la liste → trouvé par `q` (numéro interne ; numéro du fournisseur) → tri croissant et
 décroissant, vérifiés sur l'ordre des lignes → repassé en brouillon : numéro conservé → revalidé : **le même** → réglage modifié (`KF-{YEAR}-{SEQ:04}`) → la facture
-suivante le porte, la première non → format `FF-{YEAR}` refusé sur place, `FF-{SEQ:03}` aussi → postes ouverts du compte créanciers : la pièce dit le numéro interne → détail d'un lot : la facture dit le
+suivante le porte, la première non → format `FF-{YEAR}` refusé sur place, `FF-{SEQ:03}` et `FF-{FY}-{SEQ}` aussi → postes ouverts du compte créanciers : la pièce dit le numéro interne → détail d'un lot : la facture dit le
 numéro interne. **Format restauré par un `afterAll`**, qui survit à un échec en cours de spec. `supplier-documents.spec.ts:476` suit (lien : numéro interne). Sans changer de nom : le
 `testid` `supplier-invoice-number` (`supplier-invoice-draft-cycle.spec.ts:313`, seule spec à le lire) et la propriété `supplierInvoiceNumber` envoyée à la création (`helpers/api-fixtures.ts`,
 `payment-batches`, `v0174-correctifs`, `supplier-invoices`, `supplier-documents`, `supplier-invoice-draft-cycle`) : ces cinq specs restent vertes.
@@ -161,9 +162,9 @@ et l'avis de rapprochement ; une ligne des postes ouverts et un groupe de lettra
   du fournisseur reste facultatif et cherchable.
 - **Conduite à tenir pour le classement papier** : écrire le numéro sur le papier **après** la validation, jamais avant ; le relevé de la liste, triée par numéro interne, sert
   à annoter d'un coup les **factures déjà saisies** (numérotées par date à la mise à jour) ; repassée en brouillon et revalidée, une facture **garde** le numéro, rien à
-  réécrire ; brouillon numéroté supprimé : **le numéro n'est jamais réattribué** (hors restauration d'une sauvegarde, renvoi au manuel d'administration, `C-e331-23`), annoter le papier « annulée » et laisser le trou ; date déplacée vers un autre exercice : le
+  réécrire ; brouillon numéroté supprimé : Kesh ne reprend pas le numéro, annoter le papier « annulée » et laisser le trou ; **trois cas seulement font revenir un numéro** : la restauration d'une sauvegarde plus ancienne, le retour à la 0.17.4 suivi d'une nouvelle montée, et la réinitialisation des données (renvoi au manuel d'administration, `C-e331-23`) ; date déplacée vers un autre exercice : le
   numéro ne change pas, même si son année n'est plus celle de l'exercice ; format changé : les anciens numéros restent.
-- Exercices particuliers : année de début d'exercice dans `{YEAR}`, `{FY}` pour le nom ; deux exercices commençant la même année se suivent au lieu de repartir à 1, et un numéro supprimé dans l'un n'est pas repris par l'autre ; le format exige `{SEQ}` et `{YEAR}` ou `{FY}`.
+- Exercices particuliers : `{YEAR}` est l'année de début de l'exercice ; deux exercices commençant la même année se suivent au lieu de repartir à 1, et un numéro supprimé dans l'un n'est pas repris par l'autre. Le format s'écrit : un préfixe libre, `{YEAR}`, un séparateur sans chiffre, `{SEQ}` ou `{SEQ:NN}` ; le nom de l'exercice n'y entre pas.
 - **`:1592` et suivantes** (saisie) : le numéro du fournisseur, facultatif, n'y est pas nommé : à dire. **`:1689`** (« à côté de son numéro ») : le numéro interne ; un brouillon jamais validé n'en a pas. **`:1697`** (« fournisseur, numéro, ») : « numéro du fournisseur ».
 - § `sec:brouillon-fournisseur` (`:1685`) et `sec:repasser-brouillon` (`:1732`, relire `:1740` et `:1746-1747` : la « numérotation des écritures » y est nommée et reste juste, le numéro interne s'ajoute à part) : le sort du numéro. `:1945` (« le trou de numérotation ») : préciser « des écritures », le numéro interne étant, lui, conservé.
 - **Clôture, `:828`** (K8, « nomme les vingt premiers brouillons ») : un brouillon numéroté s'y nomme par son numéro interne.
@@ -179,7 +180,7 @@ et l'avis de rapprochement ; une ligne des postes ouverts et un groupe de lettra
 **Manuel d'administration** : renvoi au réglage depuis `sec:maj-0-17-5`. Manuels DE, EN, IT : dossiers sans contenu traduit (`docs/manual/{de,en}/README.md`), rien à faire.
 
 **AC13 — CHANGELOG, API, version de MariaDB.** Section `[0.17.5]` : l'entrée de la 33-1a complétée (écrans, recherche, réglage). `docs/api-external.md` : `q`, `sort`, `order` ; les champs ajoutés à
-`:636,:664,:863` ; `internalNumber` dans `document` (`:353-354`, `:417-418`, `:425`). README « Fonctionnalités » relu. **`README.md:60`, `docs/ci.md:271,281` et le commentaire de `ci.yml:49`** : « compat ≥ 10.6 » devient « ≥ 10.7 », à cause du tri ; la migration `20260513000001` et son commentaire ne se touchent pas (P8). `admin-manual.tex:109` (« 10.11+ ») reste juste.
+`:636,:664,:863` ; `internalNumber` dans `document` (`:353-354`, `:417-418`, `:425`). README « Fonctionnalités » relu. **`README.md:60`, `docs/ci.md:271,281`, le commentaire de `ci.yml:49` et `marketing-brochure.tex:345` (avec son PDF)** : « compat ≥ 10.6 » devient « ≥ 10.7 », à cause du tri ; la migration `20260513000001` et son commentaire ne se touchent pas (P8), `docs/kesh-prd-v0.2.md` et `docs/kesh-specifications.txt`, historiques, non plus. `admin-manual.tex:109` : « 10.11+ » reste juste, le membre « compatibilité MySQL 8 maintenue » se retire, `NATURAL_SORT_KEY` étant propre à MariaDB (`C-e331-19`).
 
 **AC14 — Postes ouverts et lettrage.** `DocumentResponse` et `Piece` portent le numéro interne, `number` et `numero` gardent leur valeur (test `*_e2e` aux deux bouts, `open_items_e2e.rs:516` suit). `documentLabel` et `groupDocument` (Vitest) : numéro interne, à défaut celui du fournisseur, à défaut le repli existant ; une facture sans numéro du fournisseur a son groupe nommé. Pour une facture cliente ou un avoir, rien ne change.
 
@@ -214,7 +215,7 @@ AC1 (fichier absent), AC3 et AC4 (`sort`, `q` ignorés : l'ordre et le total ne 
 | M8 | `sort` inconnu accepté | AC3 |
 | M9 | Tri qui ne remet pas `offset` à 0 | AC3 |
 | M10 | Réglage non envoyé au `PUT` | AC7, AC10 |
-| M11 | Option `numbering` retirée, ou réduite à `{SEQ}` | AC7, AC10 |
+| M11 | Option `numbering` retirée, ou réduite à la présence de `{SEQ}` et `{YEAR}` | AC7, AC10 |
 | M12 | Une ligne de l'inventaire serveur rendue à l'ancien numéro (une par ligne du tableau des refus) | AC8 |
 | M13 | `documentLabel` qui préfère le numéro du fournisseur | AC14 |
 | M14 | `groupDocument` sans numéro interne | AC14 |
@@ -263,3 +264,10 @@ Recherche par numéro interne au journal (le libellé de l'écriture la permet d
   - **Propagation du M-1** : `requireSeq` devient l'option `numbering` (AC7, M11), `FF-{SEQ:03}` refusé (AC7, AC10), AC12 *Exercices particuliers*.
   - Décomptes de cette entrée, recomptés sur cette fiche : AC 13 → 16, mutations 12 → 17, repositories touchés 5 → 8 (nommés à la dérogation).
   - Propagation : `grep` de `requireSeq`, `format sans année`, `FF-{SEQ`, `letterings.rs:1882`, `git grep`, `10.6`, `quatre specs` sur les deux fiches et le registre, exécuté après écriture ; `docs/ci.md` corrigé à `:281`, seul résidu.
+- 2026-11-06, remédiation de la validation P2 (Opus 5.5, rapport `kesh-gate-logs/e33-validate-p2-e331.md`). Findings touchant cette fiche : 1 MEDIUM et 3 LOW (F-M1, R-L4, F-L1, F-L2), plus la propagation de la simplification de l'orchestrateur (`{FY}` retiré du format fournisseur, 33-1a). Prémisses relues aux lignes citées, justes.
+  - **F-M1**, remédié : AC12 dit les trois cas où un numéro revient, le dialogue d'AC6 aussi, sans « jamais ». L'aide d'AC7 reste vraie sans réserve : un changement de format ne fait plus revenir de numéro.
+  - **R-L4**, remédié : motif d'AC1 exécuté à `cf880931`, il rend six sites et ne touche pas `SupplierInvoiceForm.svelte:178` ; `:543` à part.
+  - **F-L1**, remédié : la brochure à AC13, avec son PDF. **F-L2**, remédié : `admin-manual.tex:109` n'était pas juste, le membre MySQL 8 se retire (`ADD COLUMN IF NOT EXISTS` dans quatre fichiers de migration, et non cinq, compte `git grep -il`).
+  - **Propagation** : AC7 (une seule clé, `invoices-format-error-numbering`, au lieu de deux), AC10 (`FF-{FY}-{SEQ}` refusé), AC12 *Exercices particuliers*, M11.
+  - Décomptes, recomptés par `grep -c` : AC 16, mutations 17, inchangés.
+  - Propagation : `grep` de `{FY}`, `no-seq`, `no-year`, `frère`, `réattribu` sur cette fiche, exécuté après écriture ; `{FY}` ne reste qu'au format client (AC12) et au refus d'AC10.
