@@ -299,7 +299,10 @@ test.describe('Le numéro interne', () => {
 
 			// La sélection d'un lot montre les deux numéros ; le détail, le numéro interne.
 			await page.goto('/payment-batches');
-			await expect(page.locator('body')).toContainText(`${v.internalNumber} (ABC-LOT)`);
+			await page.getByTestId('payment-batch-new').click();
+			await expect(page.getByTestId('payment-batch-form')).toContainText(
+				`${v.internalNumber} (ABC-LOT)`,
+			);
 			await capture(page, testInfo, 'lot-selection');
 			const bankAccountId = await wiredBankAccountViaApi(page, 'CH9300762011623852957');
 			const res = await d.ctx.post('/api/v1/payment-batches', {

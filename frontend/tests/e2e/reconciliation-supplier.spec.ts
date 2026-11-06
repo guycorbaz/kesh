@@ -192,7 +192,12 @@ async function nettoyer(page: Page, d: Decor): Promise<void> {
 async function factureFournisseur(
 	page: Page,
 	id: number,
-): Promise<{ status: string; paidAt: string | null; settlementJournalEntryId: number | null }> {
+): Promise<{
+	status: string;
+	paidAt: string | null;
+	settlementJournalEntryId: number | null;
+	internalNumber: string | null;
+}> {
 	const ctx = await authedApiContext(page);
 	try {
 		const res = await ctx.get(`/api/v1/supplier-invoices/${id}`);
@@ -203,6 +208,7 @@ async function factureFournisseur(
 			status: inv.status,
 			paidAt: inv.paidAt ?? null,
 			settlementJournalEntryId: inv.settlementJournalEntryId ?? null,
+			internalNumber: inv.internalNumber ?? null,
 		};
 	} finally {
 		await disposeContextSafe(ctx);
@@ -291,7 +297,9 @@ test('avec QR — un débit propose la facture fournisseur, Accepter la règle, 
 		await row.getByTestId('detail-tx-cancel-reconciliation').click();
 		const dialog = page.getByTestId('reconciliation-cancel-dialog');
 		const texte = dialog.getByTestId('reconciliation-cancel-confirm-text');
-		await expect(texte).toContainText(`facture fournisseur ${d.number}`);
+		// Story 33-1b : le texte nomme la facture par son numéro interne, forme courte.
+		expect(paid.internalNumber).toBeTruthy();
+		await expect(texte).toContainText(`facture fournisseur ${paid.internalNumber}`);
 		// Story v017-4b (#849, décision Q4) : l'état `open` se nomme « validée ».
 		await expect(texte).toContainText('redeviendra validée, à payer');
 		await dialog.screenshot({ path: capturePath(testInfo, '30-1b-dialogue-annulation-clair') });
@@ -337,8 +345,10 @@ test('sans QR — un débit sans référence est désigné par le montant et le 
 			'data-supplier-invoice-id',
 			d.supplierInvoiceId.toString(),
 		);
-		// Sans numéro : l'identifiant, précédé de « # ».
-		await expect(candidate).toContainText(`#${d.supplierInvoiceId}`);
+		// Story 33-1b : sans numéro du fournisseur, le numéro interne, et aucune parenthèse.
+		const interne = (await factureFournisseur(page, d.supplierInvoiceId)).internalNumber;
+		expect(interne).toBeTruthy();
+		await expect(candidate).toContainText(interne!);
 		await accepter(page, d);
 		const paid = await factureFournisseur(page, d.supplierInvoiceId);
 		expect(paid.status).toBe('paid');
