@@ -1648,15 +1648,15 @@ async fn les_cinq_rapports_disent_le_canal_et_la_cle(pool: MySqlPool) {
         let args = premier_jeu(outil, &a.p);
         let r = b.appeler(&jeton, outil, args).await;
         assert_eq!(r["result"]["isError"], json!(false), "{outil} : {r}");
-        let lignes: Vec<(String, i64, String, Option<i64>, Vec<u8>)> = sqlx::query_as(
-            "SELECT action, user_id, actor_type, actor_api_key_id, details_json FROM audit_log \
+        let lignes: Vec<(i64, String, Option<i64>, Vec<u8>)> = sqlx::query_as(
+            "SELECT user_id, actor_type, actor_api_key_id, details_json FROM audit_log \
              WHERE id > ? AND action = 'report.generated' ORDER BY id",
         )
         .bind(repere.unwrap_or(0))
         .fetch_all(&pool)
         .await
         .unwrap();
-        let [(_, user_id, actor_type, cle_api, details)] = lignes.as_slice() else {
+        let [(user_id, actor_type, cle_api, details)] = lignes.as_slice() else {
             fautes.push(format!("{outil} : {} trace(s) de rapport", lignes.len()));
             continue;
         };
