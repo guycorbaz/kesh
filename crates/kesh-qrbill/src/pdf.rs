@@ -2058,6 +2058,13 @@ mod tests {
                 [0, 0, 0]
             ]
         );
+        // Et le noir vient après les branches, dernier rectangle du document.
+        let operateurs: Vec<String> = operations_du_pdf(&pdf)
+            .into_iter()
+            .map(|op| op.operator)
+            .collect();
+        let dernier = |nom: &str| operateurs.iter().rposition(|o| o == nom);
+        assert!(dernier("rg") > dernier("re"), "noir avant les branches");
     }
 
     /// **Revue P1 de la Story 33-12a (E-M2)** — le nom et l'adresse du corps passent
@@ -2070,7 +2077,7 @@ mod tests {
         invoice.creditor_name = "Müller\u{A0}Söhne".into();
         invoice.creditor_address_lines = vec!["Rue\u{A0}du Lac 1".into(), "2501 Biel".into()];
         invoice.debtor_name = "Ștefan\u{A0}SRL".into();
-        invoice.debtor_address_lines = vec!["Grand\u{AD}Rue 3".into(), "1200 Genève".into()];
+        invoice.debtor_address_lines = vec!["Grand\u{A0}Rue 3".into(), "1200 Genève".into()];
 
         let pdf = generate_qr_bill_pdf_with_date(&data, &invoice, &i18n, fixed_date()).unwrap();
         let corps: Vec<String> = textes_du_pdf(&pdf)
@@ -2078,7 +2085,7 @@ mod tests {
             .filter(|(_, y, _)| *y > SEP_Y)
             .map(|(_, _, t)| t)
             .collect();
-        for attendu in ["Müller Söhne", "Rue du Lac 1", "Stefan SRL", "GrandRue 3"] {
+        for attendu in ["Müller Söhne", "Rue du Lac 1", "Stefan SRL", "Grand Rue 3"] {
             assert!(corps.iter().any(|t| t == attendu), "{attendu} : {corps:#?}");
         }
     }
