@@ -14,10 +14,15 @@ use kesh_api::auth::password::hash_password;
 use kesh_api::config::Config;
 use kesh_api::{AppState, build_router};
 use kesh_db::entities::user::{NewUser, Role};
-use kesh_db::entities::{NewInvoice, NewInvoiceLine};
+use kesh_db::entities::{
+    NewInvoice, NewInvoiceLine, NewSupplierInvoice, NewSupplierInvoiceLine, SettlementChoice,
+    SettlementWriteOffNature,
+};
+use kesh_db::errors::DbError;
 use kesh_db::repositories::company_invoice_settings::DESIGNATED_ACCOUNT_COLUMNS;
-use kesh_db::repositories::{invoices, users};
-use kesh_db::test_fixtures::{SeededCompany, seed_accounting_company};
+use kesh_db::repositories::{invoice_settlements_write, invoices, supplier_invoices, users};
+use kesh_db::test_fixtures::{SeededCompany, designate_rounding_account, seed_accounting_company};
+use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
 use serde_json::{Value, json};
 use sqlx::MySqlPool;
@@ -252,7 +257,7 @@ async fn a_confirmed_archive_goes_through_and_the_setting_stays(pool: MySqlPool)
     let details = audit_details(&pool, "account", id, "account.archived")
         .await
         .expect("details_json");
-    assert_eq!(details["designated_settings"], json!(["receivable"]));
+    assert_eq!(details["designatedSettings"], json!(["receivable"]));
     let kept: Option<i64> = sqlx::query_scalar(
         "SELECT default_receivable_account_id FROM company_invoice_settings WHERE company_id = ?",
     )
@@ -261,18 +266,32 @@ async fn a_confirmed_archive_goes_through_and_the_setting_stays(pool: MySqlPool)
     .await
     .unwrap();
     assert_eq!(kept, Some(id), "le réglage ne bouge pas");
+}
 
+// ---------------------------------------------------------------------------
+// Ce que le dialogue annonce, réglage par réglage (revue P1, A M-2, E-1, E-2, B M2) :
+// chaque fois le témoin avant l'archivage, puis la variante d'erreur exacte.
+// ---------------------------------------------------------------------------
+
+/// Un brouillon de facture : TVA et compte de produit au choix du test.
+async fn draft_invoice(
+    pool: &MySqlPool,
+    seeded: &SeededCompany,
+    price: Decimal,
+    vat: Decimal,
+    revenue: Option<i64>,
+) -> Result<i64, DbError> {
     let contact_id: i64 = sqlx::query_scalar(
         "INSERT INTO contacts (company_id, contact_type, name, is_client) \
          VALUES (?, 'Entreprise', 'Client 33-8', TRUE) RETURNING id",
     )
     .bind(seeded.company_id)
-    .fetch_one(&pool)
+    .fetch_one(pool)
     .await
     .unwrap();
     let date = NaiveDate::from_ymd_opt(2026, 4, 1).unwrap();
     let (invoice, _) = invoices::create(
-        &pool,
+        pool,
         seeded.admin_user_id,
         NewInvoice {
             company_id: seeded.company_id,
@@ -284,20 +303,443 @@ async fn a_confirmed_archive_goes_through_and_the_setting_stays(pool: MySqlPool)
             lines: vec![NewInvoiceLine {
                 description: "Prestation".into(),
                 quantity: dec!(1),
-                unit_price: dec!(100.00),
-                vat_rate: dec!(0),
-                revenue_account_id: Some(seeded.accounts["3000"]),
+                unit_price: price,
+                vat_rate: vat,
+                revenue_account_id: revenue,
             }],
         },
     )
+    .await?;
+    Ok(invoice.id)
+}
+
+async fn validate_new_invoice(
+    pool: &MySqlPool,
+    seeded: &SeededCompany,
+    price: Decimal,
+    vat: Decimal,
+) -> Result<i64, DbError> {
+    let revenue = Some(seeded.accounts["3000"]);
+    let id = draft_invoice(pool, seeded, price, vat, revenue)
+        .await
+        .expect("brouillon");
+    invoices::validate_invoice(pool, seeded.company_id, id, seeded.admin_user_id)
+        .await
+        .map(|_| id)
+}
+
+async fn validate_new_supplier_invoice(
+    pool: &MySqlPool,
+    seeded: &SeededCompany,
+    number: &str,
+    vat: Decimal,
+) -> Result<(), DbError> {
+    let contact_id: i64 = sqlx::query_scalar(
+        "INSERT INTO contacts (company_id, contact_type, name, is_client, is_supplier) \
+         VALUES (?, 'Entreprise', ?, FALSE, TRUE) RETURNING id",
+    )
+    .bind(seeded.company_id)
+    .bind(format!("Fournisseur {number}"))
+    .fetch_one(pool)
     .await
     .unwrap();
-    assert!(
-        invoices::validate_invoice(&pool, seeded.company_id, invoice.id, seeded.admin_user_id)
+    let draft = supplier_invoices::create_draft(
+        pool,
+        NewSupplierInvoice {
+            company_id: seeded.company_id,
+            contact_id,
+            supplier_invoice_number: Some(number.into()),
+            invoice_date: NaiveDate::from_ymd_opt(2026, 4, 1).unwrap(),
+            due_date: None,
+            creditor_iban: Some("CH9300762011623852957".into()),
+            creditor_qr_iban: None,
+            payment_reference: None,
+            expected_payment_amount: None,
+            project_id: None,
+            lines: vec![NewSupplierInvoiceLine {
+                description: "Achat".into(),
+                quantity: dec!(1),
+                unit_price: dec!(100.00),
+                vat_rate: vat,
+                expense_account_id: seeded.accounts["4000"],
+            }],
+        },
+        seeded.admin_user_id,
+    )
+    .await
+    .expect("brouillon fournisseur");
+    supplier_invoices::validate(
+        pool,
+        seeded.company_id,
+        draft.invoice.id,
+        draft.invoice.version,
+        seeded.admin_user_id,
+    )
+    .await
+    .map(|_| ())
+}
+
+/// Désigne un compte neuf pour `column`, puis rend de quoi l'archiver sur confirmation.
+async fn designated_account(
+    pool: &MySqlPool,
+    seeded: &SeededCompany,
+    column: &str,
+    kind: &str,
+) -> i64 {
+    let id = new_account(pool, seeded.company_id, "9501", kind).await;
+    designate(pool, seeded.company_id, column, id).await;
+    id
+}
+
+async fn archive_confirmed(app: &TestApp, id: i64) {
+    let resp = app
+        .archive(id, json!({ "version": 1, "confirmDesignated": true }))
+        .await;
+    assert_eq!(resp.status(), 200);
+}
+
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn archived_receivable_refuses_the_validation_of_an_invoice(pool: MySqlPool) {
+    let seeded = seed_accounting_company(&pool).await.unwrap();
+    let app = spawn_app(&pool).await;
+    let id = designated_account(&pool, &seeded, "default_receivable_account_id", "Asset").await;
+    validate_new_invoice(&pool, &seeded, dec!(100.00), dec!(0))
+        .await
+        .expect("témoin");
+
+    archive_confirmed(&app, id).await;
+
+    let err = validate_new_invoice(&pool, &seeded, dec!(100.00), dec!(0))
+        .await
+        .expect_err("refusée");
+    assert!(matches!(err, DbError::InactiveOrInvalidAccounts), "{err:?}");
+}
+
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn archived_vat_payable_refuses_only_an_invoice_with_vat(pool: MySqlPool) {
+    let seeded = seed_accounting_company(&pool).await.unwrap();
+    let app = spawn_app(&pool).await;
+    let id = designated_account(
+        &pool,
+        &seeded,
+        "default_vat_payable_account_id",
+        "Liability",
+    )
+    .await;
+    validate_new_invoice(&pool, &seeded, dec!(100.00), dec!(8.10))
+        .await
+        .expect("témoin");
+
+    archive_confirmed(&app, id).await;
+
+    let err = validate_new_invoice(&pool, &seeded, dec!(100.00), dec!(8.10))
+        .await
+        .expect_err("refusée");
+    assert!(matches!(err, DbError::InactiveOrInvalidAccounts), "{err:?}");
+    validate_new_invoice(&pool, &seeded, dec!(100.00), dec!(0))
+        .await
+        .expect("sans TVA, ce compte n'est pas employé");
+}
+
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn archived_default_revenue_refuses_a_line_without_its_own_account(pool: MySqlPool) {
+    let seeded = seed_accounting_company(&pool).await.unwrap();
+    let app = spawn_app(&pool).await;
+    let id = designated_account(&pool, &seeded, "default_revenue_account_id", "Revenue").await;
+    let validate_without_own_account = async || {
+        let draft = draft_invoice(&pool, &seeded, dec!(100.00), dec!(0), None)
             .await
-            .is_err(),
-        "ce que dit le dialogue : l'écriture sur ce compte est refusée"
+            .expect("le brouillon ne contrôle pas le compte par défaut");
+        invoices::validate_invoice(&pool, seeded.company_id, draft, seeded.admin_user_id).await
+    };
+    validate_without_own_account()
+        .await
+        .expect("témoin : le compte par défaut s'applique");
+
+    archive_confirmed(&app, id).await;
+
+    let err = validate_without_own_account()
+        .await
+        .expect_err("refusée à la validation");
+    assert!(matches!(err, DbError::InvalidRevenueAccounts(_)), "{err:?}");
+    validate_new_invoice(&pool, &seeded, dec!(100.00), dec!(0))
+        .await
+        .expect("une ligne à son propre compte n'emploie pas le réglage");
+}
+
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn archived_payable_refuses_the_validation_of_a_supplier_invoice(pool: MySqlPool) {
+    let seeded = seed_accounting_company(&pool).await.unwrap();
+    let app = spawn_app(&pool).await;
+    let id = designated_account(&pool, &seeded, "default_payable_account_id", "Liability").await;
+    validate_new_supplier_invoice(&pool, &seeded, "F1", dec!(0))
+        .await
+        .expect("témoin");
+
+    archive_confirmed(&app, id).await;
+
+    let err = validate_new_supplier_invoice(&pool, &seeded, "F2", dec!(0))
+        .await
+        .expect_err("refusée");
+    assert!(matches!(err, DbError::InactiveOrInvalidAccounts), "{err:?}");
+}
+
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn archived_vat_recoverable_refuses_only_a_supplier_invoice_with_vat(pool: MySqlPool) {
+    let seeded = seed_accounting_company(&pool).await.unwrap();
+    let app = spawn_app(&pool).await;
+    let id = designated_account(
+        &pool,
+        &seeded,
+        "default_vat_recoverable_account_id",
+        "Asset",
+    )
+    .await;
+    let payable = new_account(&pool, seeded.company_id, "9502", "Liability").await;
+    designate(
+        &pool,
+        seeded.company_id,
+        "default_payable_account_id",
+        payable,
+    )
+    .await;
+    validate_new_supplier_invoice(&pool, &seeded, "F1", dec!(8.10))
+        .await
+        .expect("témoin");
+
+    archive_confirmed(&app, id).await;
+
+    let err = validate_new_supplier_invoice(&pool, &seeded, "F2", dec!(8.10))
+        .await
+        .expect_err("refusée");
+    assert!(matches!(err, DbError::InactiveOrInvalidAccounts), "{err:?}");
+    validate_new_supplier_invoice(&pool, &seeded, "F3", dec!(0))
+        .await
+        .expect("sans TVA, ce compte n'est pas employé");
+}
+
+/// Le dialogue ne promet aucun refus pour le décompte TVA : aucune écriture ne le lit.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn archived_vat_decompte_refuses_nothing(pool: MySqlPool) {
+    let seeded = seed_accounting_company(&pool).await.unwrap();
+    let app = spawn_app(&pool).await;
+    let id = designated_account(
+        &pool,
+        &seeded,
+        "default_vat_decompte_account_id",
+        "Liability",
+    )
+    .await;
+    let payable = new_account(&pool, seeded.company_id, "9502", "Liability").await;
+    designate(
+        &pool,
+        seeded.company_id,
+        "default_payable_account_id",
+        payable,
+    )
+    .await;
+    let recoverable = new_account(&pool, seeded.company_id, "9503", "Asset").await;
+    designate(
+        &pool,
+        seeded.company_id,
+        "default_vat_recoverable_account_id",
+        recoverable,
+    )
+    .await;
+
+    archive_confirmed(&app, id).await;
+
+    validate_new_invoice(&pool, &seeded, dec!(100.00), dec!(8.10))
+        .await
+        .expect("facture avec TVA");
+    validate_new_supplier_invoice(&pool, &seeded, "F1", dec!(8.10))
+        .await
+        .expect("facture fournisseur avec TVA");
+}
+
+/// Une facture à arrondir, et un règlement qui laisse un écart, emploient ce compte.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn archived_rounding_refuses_what_writes_a_rounding(pool: MySqlPool) {
+    let seeded = seed_accounting_company(&pool).await.unwrap();
+    let app = spawn_app(&pool).await;
+    let id = designate_rounding_account(&pool, seeded.company_id)
+        .await
+        .unwrap();
+    validate_new_invoice(&pool, &seeded, dec!(100.03), dec!(0))
+        .await
+        .expect("témoin : l'arrondi à 5 centimes s'écrit");
+
+    let resp = app
+        .archive(id, json!({ "version": 1, "confirmDesignated": true }))
+        .await;
+    assert_eq!(resp.status(), 200);
+
+    let err = validate_new_invoice(&pool, &seeded, dec!(100.03), dec!(0))
+        .await
+        .expect_err("refusée");
+    assert!(
+        matches!(err, DbError::RoundingAccountNotConfigured { .. }),
+        "{err:?}"
     );
+    validate_new_invoice(&pool, &seeded, dec!(100.00), dec!(0))
+        .await
+        .expect("un total déjà rond n'emploie pas ce compte");
+
+    // Un règlement au centime d'un reste brut hors centime : l'autre emploi de ce compte.
+    sqlx::query(
+        "UPDATE company_invoice_settings SET round_to_5_centimes = FALSE WHERE company_id = ?",
+    )
+    .bind(seeded.company_id)
+    .execute(&pool)
+    .await
+    .unwrap();
+    let invoice = validate_new_invoice(&pool, &seeded, dec!(10.0050), dec!(0))
+        .await
+        .expect("hors arrondi à 5 centimes, la validation n'emploie pas ce compte");
+    let err = invoice_settlements_write::settle_invoice(
+        &pool,
+        seeded.admin_user_id,
+        seeded.company_id,
+        invoice,
+        SettlementChoice::InternalAccount {
+            account_id: seeded.accounts["1000"],
+        },
+        dec!(10.01),
+        NaiveDate::from_ymd_opt(2026, 4, 2).unwrap(),
+    )
+    .await
+    .expect_err("l'écart d'arrondi n'a plus de compte");
+    assert!(
+        matches!(err, DbError::RoundingAccountNotConfigured { .. }),
+        "{err:?}"
+    );
+}
+
+/// Solder une facture emploie le compte de sa nature, et de celle-là seulement.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn archived_write_off_account_refuses_a_write_off_of_that_nature(pool: MySqlPool) {
+    let seeded = seed_accounting_company(&pool).await.unwrap();
+    let app = spawn_app(&pool).await;
+    for (column, nature, kept) in [
+        (
+            "default_discount_account_id",
+            SettlementWriteOffNature::Discount,
+            SettlementWriteOffNature::BankFees,
+        ),
+        (
+            "default_bank_fees_account_id",
+            SettlementWriteOffNature::BankFees,
+            SettlementWriteOffNature::BadDebt,
+        ),
+        (
+            "default_bad_debt_account_id",
+            SettlementWriteOffNature::BadDebt,
+            SettlementWriteOffNature::Discount,
+        ),
+    ] {
+        sqlx::query(
+            "UPDATE company_invoice_settings SET default_discount_account_id = ?, \
+             default_bank_fees_account_id = ?, default_bad_debt_account_id = ? \
+             WHERE company_id = ?",
+        )
+        .bind(seeded.accounts["4000"])
+        .bind(seeded.accounts["4000"])
+        .bind(seeded.accounts["4000"])
+        .bind(seeded.company_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+        let number = match nature {
+            SettlementWriteOffNature::Discount => "9501",
+            SettlementWriteOffNature::BankFees => "9502",
+            _ => "9503",
+        };
+        let id = new_account(&pool, seeded.company_id, number, "Expense").await;
+        designate(&pool, seeded.company_id, column, id).await;
+        let write_off = |nature| {
+            let pool = pool.clone();
+            let company_id = seeded.company_id;
+            let user = seeded.admin_user_id;
+            let seeded = &seeded;
+            async move {
+                let invoice = validate_new_invoice(&pool, seeded, dec!(100.00), dec!(0))
+                    .await
+                    .expect("facture validée");
+                let version: i32 = sqlx::query_scalar("SELECT version FROM invoices WHERE id = ?")
+                    .bind(invoice)
+                    .fetch_one(&pool)
+                    .await
+                    .unwrap();
+                invoice_settlements_write::write_off_invoice(
+                    &pool,
+                    user,
+                    company_id,
+                    invoice,
+                    nature,
+                    NaiveDate::from_ymd_opt(2026, 4, 2).unwrap(),
+                    version,
+                )
+                .await
+            }
+        };
+        write_off(nature).await.expect("témoin");
+
+        archive_confirmed(&app, id).await;
+
+        let err = write_off(nature).await.expect_err("refusé");
+        assert!(
+            matches!(err, DbError::WriteOffAccountNotConfigured { .. }),
+            "{column} : {err:?}"
+        );
+        write_off(kept)
+            .await
+            .expect("une autre nature n'est pas touchée");
+    }
+}
+
+/// Revue P1 (E-8) — la confirmation explicitement fausse vaut son absence ; sur un
+/// compte non désigné, elle ne change rien à la trace.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn explicit_confirmation_values_change_nothing_else(pool: MySqlPool) {
+    let (app, seeded) = setup(&pool).await;
+    let designated = new_account(&pool, seeded.company_id, "9501", "Expense").await;
+    designate(
+        &pool,
+        seeded.company_id,
+        "default_discount_account_id",
+        designated,
+    )
+    .await;
+    let resp = app
+        .archive(
+            designated,
+            json!({ "version": 1, "confirmDesignated": false }),
+        )
+        .await;
+    assert_eq!(resp.status(), 409);
+
+    let plain = new_account(&pool, seeded.company_id, "9502", "Expense").await;
+    let resp = app
+        .archive(plain, json!({ "version": 1, "confirmDesignated": true }))
+        .await;
+    assert_eq!(resp.status(), 200);
+    let details = audit_details(&pool, "account", plain, "account.archived")
+        .await
+        .expect("details_json");
+    assert!(details.get("designatedSettings").is_none(), "{details}");
+}
+
+/// Revue P1 (E-8) — une société sans ligne de réglages ne désigne rien.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn a_company_without_settings_designates_nothing(pool: MySqlPool) {
+    let (app, seeded) = setup(&pool).await;
+    sqlx::query("DELETE FROM company_invoice_settings WHERE company_id = ?")
+        .bind(seeded.company_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let id = new_account(&pool, seeded.company_id, "9501", "Expense").await;
+    assert_eq!(app.archive(id, json!({ "version": 1 })).await.status(), 200);
 }
 
 /// AC-4 — non désigné : 200 sans confirmation, audit exactement inchangé (M6).
@@ -313,7 +755,7 @@ async fn an_undesignated_account_archives_as_before(pool: MySqlPool) {
         .await
         .expect("details_json");
     assert!(
-        details.get("designated_settings").is_none(),
+        details.get("designatedSettings").is_none(),
         "le snapshot reste exactement celui d'avant : {details}"
     );
 }
@@ -338,9 +780,9 @@ async fn active_children_are_refused_first(pool: MySqlPool) {
     )
     .await;
 
-    let resp = app
-        .archive(parent, json!({ "version": 1, "confirmDesignated": true }))
-        .await;
+    // ⚠️ Sans confirmation (revue P1, M1) : confirmée, la désignation laisserait
+    // passer, et les deux ordres rendraient le même refus.
+    let resp = app.archive(parent, json!({ "version": 1 })).await;
     assert_eq!(resp.status(), 409);
     let body: Value = resp.json().await.unwrap();
     assert_eq!(body["error"]["code"], "ILLEGAL_STATE_TRANSITION", "{body}");
@@ -464,10 +906,12 @@ async fn another_companys_designation_is_ignored(pool: MySqlPool) {
 /// AC-6 — la liste égale les colonnes réelles : un onzième réglage ne se tait pas.
 #[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn the_inventory_equals_the_real_columns(pool: MySqlPool) {
+    // Revue P1 (A L-7) : par la clé étrangère vers `accounts`, non par le nom de la
+    // colonne, qu'un onzième réglage pourrait ne pas suivre.
     let columns: Vec<String> = sqlx::query_scalar(
-        "SELECT CAST(COLUMN_NAME AS CHAR) FROM information_schema.COLUMNS \
+        "SELECT CAST(COLUMN_NAME AS CHAR) FROM information_schema.KEY_COLUMN_USAGE \
          WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'company_invoice_settings' \
-         AND COLUMN_NAME LIKE 'default\\_%\\_account\\_id'",
+         AND REFERENCED_TABLE_NAME = 'accounts'",
     )
     .fetch_all(&pool)
     .await
@@ -562,6 +1006,98 @@ async fn an_archived_designation_no_longer_locks_the_settings(pool: MySqlPool) {
             .as_str()
             .unwrap()
             .contains("archivé"),
+        "{refused}"
+    );
+}
+
+/// Revue P1 (B M3) — **le type reste vérifié** pour les six champs historiques, même
+/// reconduit et même archivé (`validate_account`, à chaque enregistrement). Les quatre
+/// comptes d'écart ne sont revalidés, type compris, que s'ils changent
+/// (`resolve_designated_account`) : asymétrie antérieure, que ce test épingle.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn the_type_stays_checked_for_a_historical_field_only(pool: MySqlPool) {
+    let seeded = seed_accounting_company(&pool).await.unwrap();
+    let app = spawn_app(&pool).await;
+    let path = "/api/v1/company/invoice-settings";
+    let vat = new_account(&pool, seeded.company_id, "9501", "Liability").await;
+    designate(
+        &pool,
+        seeded.company_id,
+        "default_vat_payable_account_id",
+        vat,
+    )
+    .await;
+    let rounding = new_account(&pool, seeded.company_id, "9502", "Expense").await;
+    designate(
+        &pool,
+        seeded.company_id,
+        "default_rounding_account_id",
+        rounding,
+    )
+    .await;
+
+    // Le compte d'écart retypé en actif, archivé, reconduit : rien ne le revalide.
+    sqlx::query("UPDATE accounts SET active = FALSE, account_type = 'Asset' WHERE id = ?")
+        .bind(rounding)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let body: Value = app
+        .client
+        .get(app.url(path))
+        .bearer_auth(&app.token)
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    let resp = app
+        .client
+        .put(app.url(path))
+        .bearer_auth(&app.token)
+        .json(&body)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(
+        resp.status(),
+        200,
+        "témoin : {}",
+        resp.text().await.unwrap()
+    );
+
+    // Le champ historique retypé et archivé, reconduit à l'identique : le type parle.
+    sqlx::query("UPDATE accounts SET active = FALSE, account_type = 'Asset' WHERE id = ?")
+        .bind(vat)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let body: Value = app
+        .client
+        .get(app.url(path))
+        .bearer_auth(&app.token)
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    let resp = app
+        .client
+        .put(app.url(path))
+        .bearer_auth(&app.token)
+        .json(&body)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 400);
+    let refused: Value = resp.json().await.unwrap();
+    assert!(
+        refused["error"]["message"]
+            .as_str()
+            .unwrap()
+            .contains("type de compte incompatible"),
         "{refused}"
     );
 }

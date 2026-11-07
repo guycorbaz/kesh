@@ -281,8 +281,6 @@ describe('Administration → Facturation — compte créanciers', () => {
 		const vatPayable = container.querySelector('select[id$="-vat-payable"]') as HTMLSelectElement;
 		expect(optionValues(vatPayable)).toContain('2');
 		expect(optionValues(vatPayable)).not.toContain('9');
-		fetchAccountsMock.mockReset();
-		fetchAccountsMock.mockResolvedValue(ACCOUNTS);
 	});
 
 	it('envoie le compte choisi à l’enregistrement (mutation : champ non envoyé)', async () => {

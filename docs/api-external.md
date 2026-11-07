@@ -888,7 +888,7 @@ version, et `details.settings` nomme les réglages : `receivable`, `revenue`,
 `vatPayable`, `vatRecoverable`, `vatDecompte`, `payable`, `rounding`, `discount`,
 `bankFees`, `badDebt`. Pour passer outre, renvoyer la même requête avec
 `"confirmDesignated": true` : le réglage reste tel quel, et l'entrée d'audit
-`account.archived` porte `designated_settings`. ⚠️ **Changement** pour un client
+`account.archived` porte `designatedSettings`. ⚠️ **Changement** pour un client
 qui archive un tel compte : la requête aboutissait auparavant. Ordre des refus :
 sous-comptes actifs, désignation, version. `PUT /company/invoice-settings` ne
 refuse plus un compte archivé reconduit à l'identique ; choisir un compte archivé

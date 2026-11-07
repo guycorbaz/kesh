@@ -3411,19 +3411,8 @@ impl IntoResponse for AppError {
                         "Conflit de version — la ressource a été modifiée",
                     ),
                 ),
-                // Story 25-2-a ([#382], [#274]) — **409 et non 400** : le payload
-                // est valide, c'est l'ÉTAT du compte qui s'y oppose. Même lecture
-                // que `OptimisticLockConflict` ci-dessus, et symétrique inverse de
-                // `ReversalAccountsArchived`, qui reste un 400 parce qu'un compte
-                // archivé y est une donnée d'entrée invalide.
-                //
-                // ⛔ **Le refus NOMME l'ampleur**, sans quoi il ne serait qu'un
-                // obstacle à contourner : l'écran doit pouvoir écrire « douze
-                // écritures, dont l'exercice 2025 qui est clos » AVANT de demander
-                // la confirmation. C'est tout l'écart entre un avertissement
-                // bloquant et un refus sec.
-                //
-                // Story 33-8 (#486) : même patron, le refus nomme les réglages.
+                // Story 33-8 (#486) : le même patron que `AccountHasEntries` ci-dessous,
+                // le refus nomme les réglages.
                 DbError::AccountDesignatedInSettings { settings } => {
                     let body = serde_json::json!({
                         "error": {
@@ -3437,6 +3426,17 @@ impl IntoResponse for AppError {
                     });
                     (StatusCode::CONFLICT, Json(body)).into_response()
                 }
+                // Story 25-2-a ([#382], [#274]) — **409 et non 400** : le payload
+                // est valide, c'est l'ÉTAT du compte qui s'y oppose. Même lecture
+                // que `OptimisticLockConflict` ci-dessus, et symétrique inverse de
+                // `ReversalAccountsArchived`, qui reste un 400 parce qu'un compte
+                // archivé y est une donnée d'entrée invalide.
+                //
+                // ⛔ **Le refus NOMME l'ampleur**, sans quoi il ne serait qu'un
+                // obstacle à contourner : l'écran doit pouvoir écrire « douze
+                // écritures, dont l'exercice 2025 qui est clos » AVANT de demander
+                // la confirmation. C'est tout l'écart entre un avertissement
+                // bloquant et un refus sec.
                 DbError::AccountHasEntries {
                     entry_count,
                     closed_fiscal_years,

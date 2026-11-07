@@ -101,6 +101,7 @@
 	// Story 33-8 (#486) — les réglages qui désignent le compte, rendus par le 409 :
 	// `null` tant que le serveur n'a rien signalé.
 	let archiveDesignated = $state<string[] | null>(null);
+	let archiveDesignatedMessage = $state('');
 
 	// Réactivation (Story 14-3a, #269) — action directe idempotente.
 	//
@@ -370,6 +371,36 @@
 		}
 	}
 
+	/**
+	 * Ce que l'archivage entraîne pour ce réglage, et rien de plus (revue P1 de la 33-8) :
+	 * chaque phrase est éprouvée, réglage par réglage, par `accounts_designated_archive_e2e.rs`.
+	 * Le décompte TVA n'est lu par aucune écriture ; les autres ne refusent que le geste qui les emploie.
+	 */
+	function designatedSettingEffect(code: string): string {
+		switch (code) {
+			case 'receivable':
+				return i18nMsg('accounts-archive-effect-receivable', 'la validation d’une facture sera refusée.');
+			case 'revenue':
+				return i18nMsg('accounts-archive-effect-revenue', 'la validation d’une facture dont une ligne est sans compte de produit sera refusée.');
+			case 'vatPayable':
+				return i18nMsg('accounts-archive-effect-vat-payable', 'la validation d’une facture portant de la TVA sera refusée.');
+			case 'vatRecoverable':
+				return i18nMsg('accounts-archive-effect-vat-recoverable', 'la validation d’une facture fournisseur portant de la TVA sera refusée.');
+			case 'vatDecompte':
+				return i18nMsg('accounts-archive-effect-vat-decompte', 'Aucune écriture ne l’emploie : son archivage n’en refuse aucune.');
+			case 'payable':
+				return i18nMsg('accounts-archive-effect-payable', 'la validation d’une facture fournisseur sera refusée.');
+			case 'rounding':
+				return i18nMsg('accounts-archive-effect-rounding', 'une écriture qui porte un écart d’arrondi sera refusée : une facture à arrondir, ou un règlement au centime.');
+			case 'discount':
+			case 'bankFees':
+			case 'badDebt':
+				return i18nMsg('accounts-archive-effect-write-off', 'le solde d’une facture de cette nature sera refusé.');
+			default:
+				return '';
+		}
+	}
+
 	async function submitArchive(confirmDesignated = false) {
 		if (!archiveTarget) return;
 		archiveSubmitting = true;
@@ -385,11 +416,11 @@
 			await loadAccounts();
 		} catch (err) {
 			if (isApiError(err)) {
-				const designated =
-					err.code === 'ACCOUNT_DESIGNATED_IN_SETTINGS' ? readDesignatedSettings(err.details) : null;
-				if (designated) {
-					// Une question à poser, non une erreur : le dialogue reste ouvert.
-					archiveDesignated = designated;
+				if (err.code === 'ACCOUNT_DESIGNATED_IN_SETTINGS') {
+					// Une question à poser, non une erreur : le dialogue reste ouvert. `details`
+					// illisible : la même question sans liste, le Comptable n'étant jamais enfermé.
+					archiveDesignated = readDesignatedSettings(err.details) ?? [];
+					archiveDesignatedMessage = err.message;
 				} else if (err.code === 'OPTIMISTIC_LOCK_CONFLICT') {
 					toast.error(i18nMsg('accounts-error-stale', 'Les données ont été modifiées. Rechargez la page.'));
 				} else {
@@ -779,14 +810,18 @@
 		{#if archiveDesignated}
 			<!-- Story 33-8 (#486) : le réglage est réservé à l'Administrateur, l'archivage
 			     ouvert au Comptable : le lien ne s'affiche qu'à qui peut le suivre. -->
-			<div class="mt-2 space-y-2 text-sm" data-testid="account-archive-designated">
-				<p>{i18nMsg('accounts-archive-designated-intro', 'Ce compte est désigné dans les paramètres de facturation :')}</p>
-				<ul class="list-disc pl-5">
-					{#each archiveDesignated as code (code)}
-						<li data-testid="account-archive-designated-setting">{designatedSettingLabel(code)}</li>
-					{/each}
-				</ul>
-				<p>{i18nMsg('accounts-archive-designated-effect', 'Archivé, il y reste désigné : une écriture qui l’emploie sera refusée, à la validation d’une facture ou à un règlement, tant qu’un autre compte n’est pas désigné.')}</p>
+			<div class="mt-2 space-y-2 text-sm" role="alert" data-testid="account-archive-designated">
+				{#if archiveDesignated.length > 0}
+					<p>{i18nMsg('accounts-archive-designated-intro', 'Ce compte est désigné dans les paramètres de facturation :')}</p>
+					<ul class="list-disc pl-5">
+						{#each archiveDesignated as code (code)}
+							<li data-testid="account-archive-designated-setting">{designatedSettingLabel(code)} : {designatedSettingEffect(code)}</li>
+						{/each}
+					</ul>
+				{:else}
+					<p>{archiveDesignatedMessage}</p>
+				{/if}
+				<p>{i18nMsg('accounts-archive-designated-effect', 'Archivé, il y reste désigné, tant qu’un autre compte ne l’y remplace pas.')}</p>
 				{#if authState.currentUser?.role === 'Admin'}
 					<a class="underline" href="/settings/invoicing" data-testid="account-archive-designated-link">
 						{i18nMsg('accounts-archive-designated-link', 'Modifier les paramètres de facturation')}

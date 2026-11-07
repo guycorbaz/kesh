@@ -150,6 +150,12 @@ fn parse_journal(raw: &str) -> Result<Journal, AppError> {
 /// et type, toujours ; `active` et postabilité **seulement si la valeur change**
 /// par rapport à `current` (Story 15-5b, AC10, AC11 ; Story 33-8, #486 — exemption
 /// « inchangé »).
+///
+/// **Différence avec les quatre comptes d'écart** (arrondi, escompte, frais bancaires,
+/// pertes), [`resolve_designated_account`] : ceux-ci ne sont revalidés, type compris,
+/// que s'ils changent ; les six champs ci-dessus, à chaque enregistrement, pour le
+/// type, l'existence et la société. Épinglé par
+/// `the_type_stays_checked_for_a_historical_field_only`.
 async fn validate_account(
     state: &AppState,
     company_id: i64,
@@ -226,11 +232,11 @@ async fn validate_account_of(
 /// société).
 ///
 /// ⚠️ Validé **seulement s'il change**. Le compte désigné peut devenir archivé
-/// ou non imputable par une autre route (l'archivage n'est pas gardé, #486) ;
+/// ou non imputable par une autre route (l'archivage avertit, sans refuser : #486) ;
 /// le revalider à chaque enregistrement bloquerait tout changement SANS
 /// rapport — un format de numérotation — sur un champ que l'utilisateur n'a
-/// pas touché. L'écriture qui lit le réglage refusera d'écrire sur un compte
-/// devenu invalide : c'est là que la garde doit tenir, pas ici.
+/// pas touché. L'écriture qui lit le réglage refuse d'écrire sur un compte
+/// devenu invalide : c'est là que la garde tient.
 async fn resolve_designated_account(
     state: &AppState,
     company_id: i64,

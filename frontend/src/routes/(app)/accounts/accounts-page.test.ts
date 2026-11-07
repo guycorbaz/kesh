@@ -206,10 +206,8 @@ describe('archivage d’un compte désigné — avertissement, puis confirmation
 		await openAndConfirm();
 
 		const items = await screen.findAllByTestId('account-archive-designated-setting');
-		expect(items.map((i) => i.textContent)).toEqual([
-			"Compte d'escompte accordé",
-			'Compte TVA due (Passif)',
-		]);
+		expect(items[0].textContent).toContain("Compte d'escompte accordé");
+		expect(items[1].textContent).toContain('Compte TVA due (Passif)');
 		expect(screen.getByTestId('account-archive-designated-link').getAttribute('href')).toBe(
 			'/settings/invoicing',
 		);
@@ -264,12 +262,57 @@ describe('archivage d’un compte désigné — avertissement, puis confirmation
 		expect(screen.queryByTestId('account-archive-dialog-anyway')).toBeNull();
 	});
 
-	it('details illisible : le message du serveur, plutôt qu’une liste à trous', async () => {
+	// Revue P1 (A L-2) : le Comptable n'est jamais enfermé, même si `details` est illisible.
+	it('details illisible : le message du serveur, sans liste, et la confirmation reste offerte', async () => {
 		archiveAccountMock.mockRejectedValueOnce(designated('receivable'));
+		archiveAccountMock.mockResolvedValueOnce(account({ active: false }));
 		render(Page);
 		await openAndConfirm();
-		await waitFor(() => expect(toast.error).toHaveBeenCalledWith('Ce compte est désigné.'));
-		expect(screen.queryByTestId('account-archive-designated')).toBeNull();
+		const avis = await screen.findByTestId('account-archive-designated');
+		expect(avis.textContent).toContain('Ce compte est désigné.');
+		expect(screen.queryByTestId('account-archive-designated-setting')).toBeNull();
+		await fireEvent.click(screen.getByTestId('account-archive-dialog-anyway'));
+		await waitFor(() =>
+			expect(archiveAccountMock).toHaveBeenLastCalledWith(42, {
+				version: 1,
+				confirmDesignated: true,
+			}),
+		);
+	});
+
+	// Revue P1 (A M-2, E-2, E-3) : l'effet se dit réglage par réglage, et n'en promet aucun
+	// pour le décompte TVA, qu'aucune écriture ne lit.
+	it('chaque réglage dit son propre effet', async () => {
+		archiveAccountMock.mockRejectedValueOnce(
+			designated([
+				'receivable',
+				'revenue',
+				'vatPayable',
+				'vatRecoverable',
+				'vatDecompte',
+				'payable',
+				'rounding',
+				'discount',
+				'bankFees',
+				'badDebt',
+			]),
+		);
+		render(Page);
+		await openAndConfirm();
+		const items = await screen.findAllByTestId('account-archive-designated-setting');
+		const textes = items.map((i) => i.textContent ?? '');
+		expect(textes).toHaveLength(10);
+		for (const texte of textes) expect(texte).toContain(' : ');
+		expect(textes[0]).toContain('validation d’une facture');
+		expect(textes[1]).toContain('sans compte de produit');
+		expect(textes[2]).toContain('portant de la TVA');
+		expect(textes[3]).toContain('fournisseur portant de la TVA');
+		expect(textes[4]).toContain('Aucune écriture');
+		expect(textes[5]).toContain('facture fournisseur');
+		expect(textes[6]).toContain('écart d’arrondi');
+		for (const i of [7, 8, 9]) expect(textes[i]).toContain('solde');
+		const avis = screen.getByTestId('account-archive-designated');
+		expect(avis.getAttribute('role')).toBe('alert');
 	});
 
 	it('rouvrir le dialogue repart de la première question', async () => {

@@ -352,7 +352,6 @@ pub async fn archive_account(
         id,
         req.version,
         current_user.user_id,
-        current_user.company_id,
         req.confirm_designated,
     )
     .await?;

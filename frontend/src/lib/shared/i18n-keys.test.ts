@@ -871,8 +871,9 @@ const ATTENDU = {
 	// Story 33-8 (#486) : **2832 → 2849** (+17) : `accounts/+page.svelte` +16 (les dix libellés
 	// de réglages, l'intro, l'effet, le lien, « Un administrateur… », « Archiver quand même » et
 	// son « Archivage… »), `settings/invoicing/+page.svelte` +1 (« (archivé) »). Que des
-	// littéraux ; `sitesNonResolus` et `relais` inchangés.
-	sitesTotal: 2849,
+	// littéraux ; `sitesNonResolus` et `relais` inchangés. Revue P1 : **2849 → 2857** (+8), les
+	// huit effets par réglage de `designatedSettingEffect`.
+	sitesTotal: 2857,
 	sitesNonResolus: 31,
 	relais: 6,
 	// Story 26-1 (#620, AC3-bis) : **10 → 11** — `lib/features/bank-import/

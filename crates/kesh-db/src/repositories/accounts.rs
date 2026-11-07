@@ -687,14 +687,7 @@ pub async fn archive(
     version: i32,
     user_id: i64,
 ) -> Result<Account, DbError> {
-    let company_id: Option<i64> =
-        sqlx::query_scalar("SELECT company_id FROM accounts WHERE id = ?")
-            .bind(id)
-            .fetch_optional(pool)
-            .await
-            .map_err(map_db_error)?;
-    let company_id = company_id.ok_or(DbError::NotFound)?;
-    archive_guarded(pool, id, version, user_id, company_id, true).await
+    archive_guarded(pool, id, version, user_id, true).await
 }
 
 /// Archive un compte, et refuse sans confirmation un compte désigné dans les
@@ -707,17 +700,33 @@ pub async fn archive(
 /// version : un écran périmé non confirmé reçoit donc d'abord le refus de désignation,
 /// puis, s'il confirme, le conflit de version.
 ///
-/// ⚠️ Limite : la lecture ne verrouille pas les réglages. Un `PUT` concurrent des
-/// paramètres peut désigner le compte juste après elle, comme pour `confirm_retype`.
+/// La société est celle du compte, lue ici : aucun appelant ne peut en faire lire
+/// une autre (revue P1, A L-5).
+///
+/// ⚠️ **Limite assumée (C-e334-37)** : un `PUT` concurrent des paramètres, qui a
+/// validé le compte encore actif, peut le désigner juste après cette lecture. La
+/// verrouiller ne suffirait pas : il faudrait aussi que le `PUT` verrouille le compte
+/// qu'il valide. Le compte reste alors archivé et désigné, et l'écriture qui l'emploie
+/// est refusée : l'écart se voit à l'usage, il n'écrit rien de faux.
 pub async fn archive_guarded(
     pool: &MySqlPool,
     id: i64,
     version: i32,
     user_id: i64,
-    company_id: i64,
     confirm_designated: bool,
 ) -> Result<Account, DbError> {
     let mut tx = pool.begin().await.map_err(map_db_error)?;
+
+    let company_id: Option<i64> =
+        sqlx::query_scalar("SELECT company_id FROM accounts WHERE id = ?")
+            .bind(id)
+            .fetch_optional(&mut *tx)
+            .await
+            .map_err(map_db_error)?;
+    let Some(company_id) = company_id else {
+        tx.rollback().await.map_err(map_db_error)?;
+        return Err(DbError::NotFound);
+    };
 
     // Vérifier que le compte n'a pas d'enfants actifs
     let children: (i64,) =
@@ -779,7 +788,7 @@ pub async fn archive_guarded(
     // implicitement, mais être explicite évite tout ambiguïté).
     let mut details = account_snapshot_json(&account);
     if !designated.is_empty() {
-        details["designated_settings"] = serde_json::json!(designated);
+        details["designatedSettings"] = serde_json::json!(designated);
     }
     if let Err(e) = audit_log::insert_in_tx(
         &mut tx,
