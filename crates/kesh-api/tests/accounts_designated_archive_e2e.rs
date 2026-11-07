@@ -700,13 +700,10 @@ async fn archived_write_off_account_refuses_a_write_off_of_that_nature(pool: MyS
 }
 
 // ---------------------------------------------------------------------------
-// La règle générale que dit le dialogue (revue P2, F1, F2) : tant que le compte est
-// archivé, toute écriture qui l'emploie est refusée, y compris le règlement d'une pièce
-// déjà validée sur lui ; pour celle-ci, un autre compte désigné n'y change rien, seule
-// la réactivation le lève (`journal_entries.rs`, garde `active` inconditionnelle ; le
-// compte de créance ou de créanciers est lu sur l'écriture de la pièce). Un réglage lu
-// au moment de l'écriture (TVA due, arrondi, comptes d'écart) cesse, lui, d'employer le
-// compte dès qu'un autre le remplace : la règle ne dit rien de plus.
+// La règle que dit le dialogue (revues P2 et P3) : tant que le compte est archivé, toute
+// écriture qui l'emploie est refusée, y compris sur une pièce déjà validée ; pour lever
+// le blocage, le réactiver (`journal_entries.rs`, garde `active` inconditionnelle). Le
+// dialogue ne promet aucun autre remède : ces deux tests ne le font pas non plus.
 // ---------------------------------------------------------------------------
 
 async fn reactivate(pool: &MySqlPool, seeded: &SeededCompany, id: i64) {
@@ -755,7 +752,7 @@ async fn archived_receivable_refuses_the_settlement_of_a_validated_invoice_until
     .await;
     let err = settle(dec!(10.00))
         .await
-        .expect_err("un autre compte désigné ne vaut que pour les pièces à venir");
+        .expect_err("toujours refusé, un autre compte désigné");
     assert!(matches!(err, DbError::InactiveOrInvalidAccounts), "{err:?}");
 
     reactivate(&pool, &seeded, id).await;
@@ -805,7 +802,7 @@ async fn archived_payable_refuses_the_payment_of_a_validated_supplier_invoice_un
     .await;
     let err = pay(invoice)
         .await
-        .expect_err("un autre compte désigné ne vaut que pour les pièces à venir");
+        .expect_err("toujours refusé, un autre compte désigné");
     assert!(matches!(err, DbError::InactiveOrInvalidAccounts), "{err:?}");
 
     reactivate(&pool, &seeded, id).await;

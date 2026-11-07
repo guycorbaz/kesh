@@ -169,6 +169,18 @@ describe('Administration → Facturation — compte de différences d’arrondi'
 		});
 	});
 
+	// Story 33-8, revue P3 (L3) : le serveur conserve sans contrôle un compte créanciers
+	// absent du corps (AC19 de la 15-5b) ; l'écran, lui, l'envoie toujours.
+	it('le compte créanciers part à chaque enregistrement, même inchangé (mutation : champ retiré)', async () => {
+		getInvoiceSettingsMock.mockResolvedValue(settings({ defaultPayableAccountId: 3 }));
+		updateInvoiceSettingsMock.mockResolvedValue(settings({ defaultPayableAccountId: 3, version: 4 }));
+		const { findByTestId, container } = render(Page);
+		await findByTestId('settings-round-to-5-centimes');
+		await fireEvent.submit(container.querySelector('form')!);
+		await waitFor(() => expect(updateInvoiceSettingsMock).toHaveBeenCalledTimes(1));
+		expect(updateInvoiceSettingsMock.mock.calls[0][0]).toHaveProperty('defaultPayableAccountId', 3);
+	});
+
 	// Story 25-4-e (#495) — le montant minimum : chargé, envoyé, vide = aucun seuil.
 	it('le montant minimum est chargé et envoyé ; vide, il part à null (mutation : chaîne vide envoyée)', async () => {
 		getInvoiceSettingsMock.mockResolvedValue(settings({ minimumInvoiceAmount: '5.00' }));

@@ -293,9 +293,9 @@ describe('archivage d’un compte désigné — avertissement, puis confirmation
 			'Compte créanciers (Passif)',
 		]);
 		const regle = screen.getByTestId('account-archive-designated-effect').textContent ?? '';
-		expect(regle).toContain('toute écriture qui l’emploie est refusée');
-		expect(regle).toContain('y compris le règlement d’une pièce déjà validée');
-		expect(regle).toContain('il faut le réactiver');
+		expect(regle).toBe(
+			'Tant que ce compte est archivé, toute écriture qui l’emploie est refusée, y compris sur une pièce déjà validée. Pour lever le blocage, réactivez-le.',
+		);
 		expect(screen.getAllByTestId('account-archive-designated-effect')).toHaveLength(1);
 		expect(screen.getByTestId('account-archive-designated-vat-decompte').textContent).toContain(
 			'n’est employé par aucune écriture',
@@ -310,6 +310,23 @@ describe('archivage d’un compte désigné — avertissement, puis confirmation
 		await openAndConfirm();
 		await screen.findByTestId('account-archive-designated-effect');
 		expect(screen.queryByTestId('account-archive-designated-vat-decompte')).toBeNull();
+	});
+
+	// Revue P3 (L1) : le décompte TVA seul n'emporte pas la règle, qui le contredirait en apparence.
+	it('le décompte TVA seul : sa phrase, sans la règle générale', async () => {
+		archiveAccountMock.mockRejectedValueOnce(designated(['vatDecompte']));
+		render(Page);
+		await openAndConfirm();
+		await screen.findByTestId('account-archive-designated-vat-decompte');
+		expect(screen.queryByTestId('account-archive-designated-effect')).toBeNull();
+	});
+
+	it('details illisible : la règle générale reste dite', async () => {
+		archiveAccountMock.mockRejectedValueOnce(designated('receivable'));
+		render(Page);
+		await openAndConfirm();
+		await screen.findByTestId('account-archive-designated');
+		expect(screen.getByTestId('account-archive-designated-effect')).toBeTruthy();
 	});
 
 	it('rouvrir le dialogue repart de la première question', async () => {
