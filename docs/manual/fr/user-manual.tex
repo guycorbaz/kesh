@@ -409,17 +409,7 @@ Pour retrouver un compte archivé, cocher \emph{Afficher les archivés} en haut 
 Ce n'est pas bloquant : la marche à suivre est de \textbf{réactiver} le compte, d'émettre l'avoir, puis de le \textbf{ré-archiver}. Les deux mouvements étant journalisés, la manœuvre reste traçable.
 \end{keshwarning}
 
-\paragraph{Archiver un compte désigné dans les paramètres.} Si le compte est désigné dans \emph{Administration} → \emph{Facturation} --- créance, produit, TVA, créanciers, arrondi, escompte, frais bancaires, pertes ---, le dialogue d'archivage vous le dit, nomme les réglages concernés et dit ce que chacun entraîne. Rien n'est archivé tant que vous n'avez pas cliqué sur \textbf{Archiver quand même}. Ce choix reste possible, y compris pour un comptable, qui ne peut pas changer ces paramètres (un administrateur voit un lien pour y aller)~: une société qui n'accorde pas d'escompte peut vouloir ranger ce compte, désigné d'office. \textbf{Le réglage ne bouge pas}~: le compte archivé y reste désigné, et ce qui suit est refusé tant qu'un autre compte ne le remplace pas~:
-\begin{itemize}
-    \item \textbf{créance}~: la validation d'une facture~;
-    \item \textbf{produit}~: la validation d'une facture dont une ligne est sans compte de produit~;
-    \item \textbf{TVA due}~: la validation d'une facture portant de la TVA~;
-    \item \textbf{créanciers}~: la validation d'une facture fournisseur~;
-    \item \textbf{TVA récupérable}~: la validation d'une facture fournisseur portant de la TVA~;
-    \item \textbf{différences d'arrondi}~: une écriture qui porte un écart d'arrondi, soit une facture à arrondir, soit un règlement au centime~;
-    \item \textbf{escompte, frais bancaires, pertes}~: le solde d'une facture de cette nature.
-\end{itemize}
-Le compte de \textbf{décompte TVA}, lui, n'est employé par aucune écriture~: l'archiver n'en refuse aucune. Un compte archivé n'empêche pas d'enregistrer les autres paramètres, et il reste affiché dans son champ, marqué «~(archivé)~»~: seul le fait de \emph{choisir} un compte archivé est refusé.
+\paragraph{Archiver un compte désigné dans les paramètres.} Si le compte est désigné dans \emph{Administration} → \emph{Facturation} --- créance, produit, TVA, créanciers, arrondi, escompte, frais bancaires, pertes ---, le dialogue d'archivage vous le dit, nomme les réglages concernés et dit ce que l'archivage entraîne. Rien n'est archivé tant que vous n'avez pas cliqué sur \textbf{Archiver quand même}. Ce choix reste possible, y compris pour un comptable, qui ne peut pas changer ces paramètres (un administrateur voit un lien pour y aller)~: une société qui n'accorde pas d'escompte peut vouloir ranger ce compte, désigné d'office. \textbf{Le réglage ne bouge pas}~: le compte archivé y reste désigné. \textbf{Tant qu'il est archivé, toute écriture qui l'emploie est refusée, y compris le règlement d'une pièce déjà validée sur ce compte}~; pour lever le blocage, il faut le \textbf{réactiver}. Désigner un autre compte dans les paramètres ne vaut que pour les pièces à venir~: une facture déjà validée garde le compte de créance de son écriture, une facture fournisseur celui de créanciers de la sienne, et leur règlement reste refusé jusqu'à la réactivation --- pour une facture client, son solde et son avoir aussi. Le compte de \textbf{décompte TVA}, lui, n'est employé par aucune écriture~: à ce titre, l'archiver n'en refuse aucune. Un compte archivé n'empêche pas d'enregistrer les autres paramètres, et il reste affiché dans son champ, marqué «~(archivé)~»~: seul le fait de \emph{choisir} un compte archivé est refusé.
 
 \subsection{Rôles des comptes}
 

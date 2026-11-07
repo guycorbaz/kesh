@@ -12,7 +12,7 @@ Le contenu est rédigé en français à destination des **fiduciaires, PME, ind�
 
 ### Corrigé
 
-- **Un compte désigné dans les paramètres de facturation ne s'archive plus sans avertissement** ([#486](https://github.com/guycorbaz/kesh/issues/486)) : le dialogue nomme les réglages qui le désignent et ce qu'il en coûte, et *Archiver quand même* passe outre ; l'archivage reste ouvert au Comptable, seul l'Administrateur a le lien vers les paramètres. Un compte déjà archivé n'empêche plus d'enregistrer un autre réglage. ⚠️ Pour une intégration : `PUT /accounts/{id}/archive` rend désormais `409 ACCOUNT_DESIGNATED_IN_SETTINGS` sur un tel compte, sauf avec `"confirmDesignated": true`.
+- **Un compte désigné dans les paramètres de facturation ne s'archive plus sans avertissement** ([#486](https://github.com/guycorbaz/kesh/issues/486)) : le dialogue nomme les réglages qui le désignent et dit ce qu'il en coûte : tant que le compte est archivé, toute écriture qui l'emploie est refusée, y compris le règlement d'une pièce déjà validée sur lui, et seule sa réactivation lève le blocage ; *Archiver quand même* passe outre ; l'archivage reste ouvert au Comptable, seul l'Administrateur a le lien vers les paramètres. Un compte déjà archivé n'empêche plus d'enregistrer un autre réglage. ⚠️ Pour une intégration : `PUT /accounts/{id}/archive` rend désormais `409 ACCOUNT_DESIGNATED_IN_SETTINGS` sur un tel compte, sauf avec `"confirmDesignated": true`.
 
 ---
 

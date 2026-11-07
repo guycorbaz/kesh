@@ -38,7 +38,7 @@ quel réglage ; pour ne pas découvrir l'effet des mois plus tard, à la validat
 
 1. **AC-1** : pour chacun des dix réglages (table), `PUT …/archive` sans confirmation → 409 `ACCOUNT_DESIGNATED_IN_SETTINGS`, `details.settings` exact ; **le compte reste actif, `version` inchangée, aucun audit**. Rouge avant.
 2. **AC-2** : compte désigné par deux réglages → les deux codes.
-3. **AC-3** : avec `confirmDesignated: true` → 200, compte archivé, audit portant `designated_settings`. Le réglage **reste** tel quel.
+3. **AC-3** : avec `confirmDesignated: true` → 200, compte archivé, audit portant `designated_settings`. Le réglage **reste** tel quel. *(Annoté le 2026-11-07, revue P2, L7 : la clé s'écrit `designatedSettings` depuis la remédiation de la P1, comme le reste du JSON de l'audit ; vaut aussi pour la section d'en-tête et M6.)*
 4. **AC-4** : compte non désigné → 200 sans confirmation, audit exactement inchangé. Sous-compte actif, désigné → refus existant d'abord. Version périmée, avec confirmation → 409 `OPTIMISTIC_LOCK_CONFLICT`. **Version périmée, sans confirmation, compte désigné → 409 `ACCOUNT_DESIGNATED_IN_SETTINGS`**, puis, sa confirmation envoyée à la même version, 409 `OPTIMISTIC_LOCK_CONFLICT` ; compte inchangé aux deux.
 5. **AC-5** : **isolation** : un compte d'une autre société de même numéro, ou une désignation d'une autre société, ne déclenche rien (test à deux sociétés).
 6. **AC-6 — inventaire** : la liste des dix codes égale les colonnes `default_%_account_id` de `company_invoice_settings`, recalculées en base.

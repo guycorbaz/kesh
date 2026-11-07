@@ -154,7 +154,9 @@ fn parse_journal(raw: &str) -> Result<Journal, AppError> {
 /// **Différence avec les quatre comptes d'écart** (arrondi, escompte, frais bancaires,
 /// pertes), [`resolve_designated_account`] : ceux-ci ne sont revalidés, type compris,
 /// que s'ils changent ; les six champs ci-dessus, à chaque enregistrement, pour le
-/// type, l'existence et la société. Épinglé par
+/// type, l'existence et la société, **à une exception près** : le compte créanciers
+/// absent du corps est conservé sans contrôle (AC19 de la 15-5b, plus bas ; l'écran
+/// l'envoie toujours). Épinglé par
 /// `the_type_stays_checked_for_a_historical_field_only`.
 async fn validate_account(
     state: &AppState,

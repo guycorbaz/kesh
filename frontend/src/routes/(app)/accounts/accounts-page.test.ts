@@ -280,39 +280,36 @@ describe('archivage d’un compte désigné — avertissement, puis confirmation
 		);
 	});
 
-	// Revue P1 (A M-2, E-2, E-3) : l'effet se dit réglage par réglage, et n'en promet aucun
-	// pour le décompte TVA, qu'aucune écriture ne lit.
-	it('chaque réglage dit son propre effet', async () => {
-		archiveAccountMock.mockRejectedValueOnce(
-			designated([
-				'receivable',
-				'revenue',
-				'vatPayable',
-				'vatRecoverable',
-				'vatDecompte',
-				'payable',
-				'rounding',
-				'discount',
-				'bankFees',
-				'badDebt',
-			]),
-		);
+	// Revue P2 (F1, F2) : une règle générale, dite une fois, et non une liste par réglage,
+	// qui a été fausse deux fois ; le décompte TVA, qu'aucune écriture ne lit, a son mot.
+	it('les réglages par leur seul libellé, la règle générale une fois, le décompte TVA à part', async () => {
+		archiveAccountMock.mockRejectedValueOnce(designated(['receivable', 'vatDecompte', 'payable']));
 		render(Page);
 		await openAndConfirm();
 		const items = await screen.findAllByTestId('account-archive-designated-setting');
-		const textes = items.map((i) => i.textContent ?? '');
-		expect(textes).toHaveLength(10);
-		for (const texte of textes) expect(texte).toContain(' : ');
-		expect(textes[0]).toContain('validation d’une facture');
-		expect(textes[1]).toContain('sans compte de produit');
-		expect(textes[2]).toContain('portant de la TVA');
-		expect(textes[3]).toContain('fournisseur portant de la TVA');
-		expect(textes[4]).toContain('Aucune écriture');
-		expect(textes[5]).toContain('facture fournisseur');
-		expect(textes[6]).toContain('écart d’arrondi');
-		for (const i of [7, 8, 9]) expect(textes[i]).toContain('solde');
+		expect(items.map((i) => i.textContent?.trim())).toEqual([
+			'Compte créance client (Actif)',
+			'Compte de décompte TVA (Passif)',
+			'Compte créanciers (Passif)',
+		]);
+		const regle = screen.getByTestId('account-archive-designated-effect').textContent ?? '';
+		expect(regle).toContain('toute écriture qui l’emploie est refusée');
+		expect(regle).toContain('y compris le règlement d’une pièce déjà validée');
+		expect(regle).toContain('il faut le réactiver');
+		expect(screen.getAllByTestId('account-archive-designated-effect')).toHaveLength(1);
+		expect(screen.getByTestId('account-archive-designated-vat-decompte').textContent).toContain(
+			'n’est employé par aucune écriture',
+		);
 		const avis = screen.getByTestId('account-archive-designated');
 		expect(avis.getAttribute('role')).toBe('alert');
+	});
+
+	it('sans le décompte TVA, la règle seule', async () => {
+		archiveAccountMock.mockRejectedValueOnce(designated(['rounding']));
+		render(Page);
+		await openAndConfirm();
+		await screen.findByTestId('account-archive-designated-effect');
+		expect(screen.queryByTestId('account-archive-designated-vat-decompte')).toBeNull();
 	});
 
 	it('rouvrir le dialogue repart de la première question', async () => {

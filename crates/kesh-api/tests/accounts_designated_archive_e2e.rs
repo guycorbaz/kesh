@@ -20,7 +20,9 @@ use kesh_db::entities::{
 };
 use kesh_db::errors::DbError;
 use kesh_db::repositories::company_invoice_settings::DESIGNATED_ACCOUNT_COLUMNS;
-use kesh_db::repositories::{invoice_settlements_write, invoices, supplier_invoices, users};
+use kesh_db::repositories::{
+    accounts, invoice_settlements_write, invoices, supplier_invoices, users,
+};
 use kesh_db::test_fixtures::{SeededCompany, designate_rounding_account, seed_accounting_company};
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
@@ -232,8 +234,7 @@ async fn two_settings_on_one_account_are_both_named(pool: MySqlPool) {
     assert_eq!(settings_of(&body), vec!["discount", "badDebt"]);
 }
 
-/// AC-3 — confirmé : archivé, tracé, le réglage reste tel quel ; et l'effet que
-/// l'écran annonce est vrai : la validation d'une facture qui l'emploie est refusée.
+/// AC-3 — confirmé : archivé, tracé, le réglage reste tel quel.
 #[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn a_confirmed_archive_goes_through_and_the_setting_stays(pool: MySqlPool) {
     let seeded = seed_accounting_company(&pool).await.unwrap();
@@ -269,8 +270,9 @@ async fn a_confirmed_archive_goes_through_and_the_setting_stays(pool: MySqlPool)
 }
 
 // ---------------------------------------------------------------------------
-// Ce que le dialogue annonce, réglage par réglage (revue P1, A M-2, E-1, E-2, B M2) :
-// chaque fois le témoin avant l'archivage, puis la variante d'erreur exacte.
+// Ce que l'archivage refuse, réglage par réglage (revue P1, A M-2, E-1, E-2, B M2) :
+// le témoin avant l'archivage, puis la variante d'erreur exacte. Le dialogue n'en dit
+// plus la liste (revue P2, F1, F2) : il dit la règle générale, éprouvée plus bas.
 // ---------------------------------------------------------------------------
 
 /// Un brouillon de facture : TVA et compte de produit au choix du test.
@@ -333,7 +335,7 @@ async fn validate_new_supplier_invoice(
     seeded: &SeededCompany,
     number: &str,
     vat: Decimal,
-) -> Result<(), DbError> {
+) -> Result<i64, DbError> {
     let contact_id: i64 = sqlx::query_scalar(
         "INSERT INTO contacts (company_id, contact_type, name, is_client, is_supplier) \
          VALUES (?, 'Entreprise', ?, FALSE, TRUE) RETURNING id",
@@ -376,7 +378,7 @@ async fn validate_new_supplier_invoice(
         seeded.admin_user_id,
     )
     .await
-    .map(|_| ())
+    .map(|_| draft.invoice.id)
 }
 
 /// Désigne un compte neuf pour `column`, puis rend de quoi l'archiver sur confirmation.
@@ -695,6 +697,116 @@ async fn archived_write_off_account_refuses_a_write_off_of_that_nature(pool: MyS
             .await
             .expect("une autre nature n'est pas touchée");
     }
+}
+
+// ---------------------------------------------------------------------------
+// La règle générale que dit le dialogue (revue P2, F1, F2) : tant que le compte est
+// archivé, toute écriture qui l'emploie est refusée, y compris le règlement d'une pièce
+// déjà validée sur lui ; un autre compte désigné n'y change rien, seule la réactivation
+// le lève (`journal_entries.rs`, garde `active` inconditionnelle).
+// ---------------------------------------------------------------------------
+
+async fn reactivate(pool: &MySqlPool, seeded: &SeededCompany, id: i64) {
+    let (_, version) = account_state(pool, id).await;
+    accounts::reactivate(pool, id, version, seeded.admin_user_id, false)
+        .await
+        .expect("réactivé");
+}
+
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn archived_receivable_refuses_the_settlement_of_a_validated_invoice_until_reactivated(
+    pool: MySqlPool,
+) {
+    let seeded = seed_accounting_company(&pool).await.unwrap();
+    let app = spawn_app(&pool).await;
+    let id = designated_account(&pool, &seeded, "default_receivable_account_id", "Asset").await;
+    let invoice = validate_new_invoice(&pool, &seeded, dec!(100.00), dec!(0))
+        .await
+        .expect("validée sur ce compte");
+    let settle = |amount: Decimal| {
+        invoice_settlements_write::settle_invoice(
+            &pool,
+            seeded.admin_user_id,
+            seeded.company_id,
+            invoice,
+            SettlementChoice::InternalAccount {
+                account_id: seeded.accounts["1000"],
+            },
+            amount,
+            NaiveDate::from_ymd_opt(2026, 4, 2).unwrap(),
+        )
+    };
+    settle(dec!(10.00)).await.expect("témoin : un acompte");
+
+    archive_confirmed(&app, id).await;
+
+    let err = settle(dec!(10.00)).await.expect_err("refusé");
+    assert!(matches!(err, DbError::InactiveOrInvalidAccounts), "{err:?}");
+    let other = new_account(&pool, seeded.company_id, "9502", "Asset").await;
+    designate(
+        &pool,
+        seeded.company_id,
+        "default_receivable_account_id",
+        other,
+    )
+    .await;
+    let err = settle(dec!(10.00))
+        .await
+        .expect_err("un autre compte désigné ne vaut que pour les pièces à venir");
+    assert!(matches!(err, DbError::InactiveOrInvalidAccounts), "{err:?}");
+
+    reactivate(&pool, &seeded, id).await;
+    settle(dec!(90.00))
+        .await
+        .expect("réactivé, le règlement passe");
+}
+
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn archived_payable_refuses_the_payment_of_a_validated_supplier_invoice_until_reactivated(
+    pool: MySqlPool,
+) {
+    let seeded = seed_accounting_company(&pool).await.unwrap();
+    let app = spawn_app(&pool).await;
+    let id = designated_account(&pool, &seeded, "default_payable_account_id", "Liability").await;
+    let witness = validate_new_supplier_invoice(&pool, &seeded, "F1", dec!(0))
+        .await
+        .expect("validée sur ce compte");
+    let invoice = validate_new_supplier_invoice(&pool, &seeded, "F2", dec!(0))
+        .await
+        .expect("validée sur ce compte");
+    let pay = |invoice: i64| {
+        supplier_invoices::pay(
+            &pool,
+            seeded.company_id,
+            invoice,
+            SettlementChoice::InternalAccount {
+                account_id: seeded.accounts["1000"],
+            },
+            NaiveDate::from_ymd_opt(2026, 4, 2).unwrap(),
+            seeded.admin_user_id,
+        )
+    };
+    pay(witness).await.expect("témoin");
+
+    archive_confirmed(&app, id).await;
+
+    let err = pay(invoice).await.expect_err("refusé");
+    assert!(matches!(err, DbError::InactiveOrInvalidAccounts), "{err:?}");
+    let other = new_account(&pool, seeded.company_id, "9502", "Liability").await;
+    designate(
+        &pool,
+        seeded.company_id,
+        "default_payable_account_id",
+        other,
+    )
+    .await;
+    let err = pay(invoice)
+        .await
+        .expect_err("un autre compte désigné ne vaut que pour les pièces à venir");
+    assert!(matches!(err, DbError::InactiveOrInvalidAccounts), "{err:?}");
+
+    reactivate(&pool, &seeded, id).await;
+    pay(invoice).await.expect("réactivé, le paiement passe");
 }
 
 /// Revue P1 (E-8) — la confirmation explicitement fausse vaut son absence ; sur un

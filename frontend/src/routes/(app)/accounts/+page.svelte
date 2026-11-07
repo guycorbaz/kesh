@@ -371,36 +371,6 @@
 		}
 	}
 
-	/**
-	 * Ce que l'archivage entraîne pour ce réglage, et rien de plus (revue P1 de la 33-8) :
-	 * chaque phrase est éprouvée, réglage par réglage, par `accounts_designated_archive_e2e.rs`.
-	 * Le décompte TVA n'est lu par aucune écriture ; les autres ne refusent que le geste qui les emploie.
-	 */
-	function designatedSettingEffect(code: string): string {
-		switch (code) {
-			case 'receivable':
-				return i18nMsg('accounts-archive-effect-receivable', 'la validation d’une facture sera refusée.');
-			case 'revenue':
-				return i18nMsg('accounts-archive-effect-revenue', 'la validation d’une facture dont une ligne est sans compte de produit sera refusée.');
-			case 'vatPayable':
-				return i18nMsg('accounts-archive-effect-vat-payable', 'la validation d’une facture portant de la TVA sera refusée.');
-			case 'vatRecoverable':
-				return i18nMsg('accounts-archive-effect-vat-recoverable', 'la validation d’une facture fournisseur portant de la TVA sera refusée.');
-			case 'vatDecompte':
-				return i18nMsg('accounts-archive-effect-vat-decompte', 'Aucune écriture ne l’emploie : son archivage n’en refuse aucune.');
-			case 'payable':
-				return i18nMsg('accounts-archive-effect-payable', 'la validation d’une facture fournisseur sera refusée.');
-			case 'rounding':
-				return i18nMsg('accounts-archive-effect-rounding', 'une écriture qui porte un écart d’arrondi sera refusée : une facture à arrondir, ou un règlement au centime.');
-			case 'discount':
-			case 'bankFees':
-			case 'badDebt':
-				return i18nMsg('accounts-archive-effect-write-off', 'le solde d’une facture de cette nature sera refusé.');
-			default:
-				return '';
-		}
-	}
-
 	async function submitArchive(confirmDesignated = false) {
 		if (!archiveTarget) return;
 		archiveSubmitting = true;
@@ -815,13 +785,19 @@
 					<p>{i18nMsg('accounts-archive-designated-intro', 'Ce compte est désigné dans les paramètres de facturation :')}</p>
 					<ul class="list-disc pl-5">
 						{#each archiveDesignated as code (code)}
-							<li data-testid="account-archive-designated-setting">{designatedSettingLabel(code)} : {designatedSettingEffect(code)}</li>
+							<li data-testid="account-archive-designated-setting">{designatedSettingLabel(code)}</li>
 						{/each}
 					</ul>
 				{:else}
 					<p>{archiveDesignatedMessage}</p>
 				{/if}
-				<p>{i18nMsg('accounts-archive-designated-effect', 'Archivé, il y reste désigné, tant qu’un autre compte ne l’y remplace pas.')}</p>
+				<!-- Revue P2 de la 33-8 (F1, F2) : une règle, non une liste par réglage, qui a été
+				     fausse deux fois. Elle est celle de `journal_entries.rs`, garde `active`
+				     inconditionnelle ; seul le décompte TVA n'est lu par aucune écriture. -->
+				<p data-testid="account-archive-designated-effect">{i18nMsg('accounts-archive-designated-effect', 'Archivé, il y reste désigné. Tant qu’il est archivé, toute écriture qui l’emploie est refusée, y compris le règlement d’une pièce déjà validée sur ce compte ; pour lever le blocage, il faut le réactiver. Désigner un autre compte ne vaut que pour les pièces à venir.')}</p>
+				{#if archiveDesignated.includes('vatDecompte')}
+					<p data-testid="account-archive-designated-vat-decompte">{i18nMsg('accounts-archive-effect-vat-decompte', 'Le compte de décompte TVA, lui, n’est employé par aucune écriture : à ce titre, son archivage n’en refuse aucune.')}</p>
+				{/if}
 				{#if authState.currentUser?.role === 'Admin'}
 					<a class="underline" href="/settings/invoicing" data-testid="account-archive-designated-link">
 						{i18nMsg('accounts-archive-designated-link', 'Modifier les paramètres de facturation')}
