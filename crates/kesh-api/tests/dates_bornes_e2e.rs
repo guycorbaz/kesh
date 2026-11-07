@@ -1369,7 +1369,8 @@ async fn c_rapprochement_lot_mixte(pool: MySqlPool) {
     }
 }
 
-/// Le message d'une date mal formée sur ce lot nomme le champ, non le seul `type`.
+/// Le message d'une date mal formée sur ce lot parle d'un champ mal formé, sans le
+/// nommer, et non plus du seul `type` (`docs/api-external.md`, § 5).
 #[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn c_rapprochement_lot_date_mal_formee(pool: MySqlPool) {
     let m = monter(&pool).await;
