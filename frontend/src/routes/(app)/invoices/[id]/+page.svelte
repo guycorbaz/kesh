@@ -31,6 +31,7 @@
 		writeOffInvoice,
 	} from '$lib/features/invoices/invoices.api';
 	import { pdfErrorMessage } from '$lib/shared/utils/pdf-error';
+	import { isUnknownOutcome } from '$lib/shared/utils/unknown-outcome';
 	import { fetchAccounts } from '$lib/features/accounts/accounts.api';
 	import type { AccountResponse } from '$lib/features/accounts/accounts.types';
 	import type { InvoiceSettingsResponse } from '$lib/features/invoices/invoices.types';
@@ -458,6 +459,28 @@
 	let markOpen = $state(false);
 	let markSubmitting = $state(false);
 	let markError = $state('');
+	// Revue P1 de la 33-6 (E-4 = A-4) : sans réponse, le règlement a pu être écrit, et
+	// son POST ne porte aucune version : un second clic en écrirait un second.
+	// `verify` : relu, à vérifier ; `blocked` : pas encore relu, le geste reste fermé.
+	let settleOutcome = $state<'known' | 'verify' | 'blocked'>('known');
+	let settleRereading = $state(false);
+
+	/** Relit facture et règlements ; seule une relecture entière rouvre le geste. */
+	async function rereadAfterUnknownOutcome() {
+		settleOutcome = 'blocked';
+		settleRereading = true;
+		try {
+			const [relue, reglements] = await Promise.all([getInvoice(id), listInvoiceSettlements(id)]);
+			invoice = relue;
+			settlements = reglements;
+			settlementsLoaded = true;
+			settleOutcome = 'verify';
+		} catch {
+			// `settleOutcome` reste `blocked` : « Relire » est le seul geste offert.
+		} finally {
+			settleRereading = false;
+		}
+	}
 
 	// Story 25-4-d2b (#490) — solder le reste.
 	let writeOffOpen = $state(false);
@@ -592,8 +615,12 @@
 					: i18nMsg('invoice-settle-success-partial', 'Règlement partiel enregistré'),
 			);
 			markOpen = false;
+			settleOutcome = 'known';
 		} catch (err) {
-			if (isApiError(err)) {
+			if (!isApiError(err) || isUnknownOutcome(err)) {
+				markOpen = false;
+				await rereadAfterUnknownOutcome();
+			} else if (isApiError(err)) {
 				markError = err.message;
 				notifyError(err.message);
 			} else {
@@ -968,12 +995,41 @@
 			{/if}
 		</div>
 	{:else if invoice?.status === 'validated'}
+		{#if settleOutcome !== 'known'}
+			<div
+				class="w-full space-y-2 rounded-md border border-warning bg-warning/10 px-3 py-2 text-sm"
+				role="alert"
+				data-testid="settle-unknown-outcome"
+			>
+				<p>
+					{settleOutcome === 'verify'
+						? i18nMsg(
+								'invoice-settle-unknown-outcome',
+								'L’issue du règlement n’est pas connue : la réponse du serveur n’est pas parvenue, et il a pu être enregistré. Vérifiez les montants et la liste des règlements ci-dessous avant de réessayer.',
+							)
+						: i18nMsg(
+								'invoice-settle-unknown-reread-failed',
+								'L’issue du règlement n’est pas connue, et la facture n’a pas pu être relue. Le règlement reste indisponible tant qu’elle n’a pas été relue.',
+							)}
+				</p>
+				{#if settleOutcome === 'blocked' && !settleRereading}
+					<Button variant="outline" onclick={rereadAfterUnknownOutcome} data-testid="settle-unknown-reread">
+						{i18nMsg('invoice-settle-unknown-reread', 'Relire')}
+					</Button>
+				{/if}
+			</div>
+		{/if}
 		<div class="flex gap-2">
 			<!-- Le bouton disparaît quand la facture est soldée. Annuler un
 			     règlement se fait depuis la liste des règlements (Story 25-3-a-1),
 			     par contre-passation — pas par un retrait de drapeau. -->
 			{#if !invoice.paidAt}
-				<Button variant="outline" onclick={() => (markOpen = true)} data-testid="settle-open">
+				<Button
+					variant="outline"
+					onclick={() => (markOpen = true)}
+					disabled={settleOutcome === 'blocked'}
+					data-testid="settle-open"
+				>
 					{i18nMsg('invoice-settle-button', 'Enregistrer un règlement')}
 				</Button>
 				<!-- Story 25-4-d2b (#490) : réservé au Comptable et à l'Administrateur. -->

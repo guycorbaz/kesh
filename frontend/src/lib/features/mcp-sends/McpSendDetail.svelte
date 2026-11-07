@@ -47,6 +47,8 @@
 	let envoiEnCours = $state(false);
 	let erreur = $state<ErreurDeDecision | null>(null);
 	let dialogueRefus = $state(false);
+	/** Le texte modifié qu'un rechargement n'a pas pu reprendre : l'envoi a changé. */
+	let texteNonRepris = $state<string | null>(null);
 
 	const modifiee = $derived(valeur !== recu);
 	const octets = $derived(octetsUtf8(valeur));
@@ -64,6 +66,7 @@
 		chargement = true;
 		erreurDeChargement = null;
 		erreur = null;
+		texteNonRepris = null;
 		if (!Number.isSafeInteger(id) || id < 1) {
 			// Un numéro illisible (`/admin/mcp/sends/abc`) : aucun envoi ne le porte.
 			detail = null;
@@ -71,9 +74,28 @@
 			chargement = false;
 			return;
 		}
+		// Revue P1 de la 33-6 (B4 = E-3) : un rechargement ne perd pas ce qui a été écrit.
+		const avant = detail;
+		const saisie = valeur !== recu ? valeur : null;
+		const edition = enEdition;
 		try {
-			poser(await getMcpSend(id));
+			const relu = await getMcpSend(id);
+			if (!relu) throw new Error('réponse vide');
+			poser(relu);
+			if (saisie !== null) {
+				if (relu.state === 'pending' && relu.version === avant?.version) {
+					valeur = saisie;
+					enEdition = edition;
+				} else {
+					texteNonRepris = saisie;
+				}
+			}
 		} catch (err) {
+			if (avant && !(isApiError(err) && err.status === 404)) {
+				// Une relecture en échec garde l'écran, le texte et le moyen de réessayer.
+				erreur = { message: errorMessageOf(err), recharger: true, aideCaracteres: false };
+				return;
+			}
 			detail = null;
 			erreurDeChargement =
 				isApiError(err) && err.status === 404
@@ -94,6 +116,8 @@
 		erreur = null;
 		try {
 			const apres = await decideMcpSend(detail.id, corps);
+			// Une réponse vide n'est pas un succès : `erreurDeDecision` en fait une issue inconnue.
+			if (!apres) throw new Error('réponse vide');
 			poser(apres);
 			dialogueRefus = false;
 			notifySuccess(
@@ -297,6 +321,22 @@
 						{i18nMsg('mcp-sends-reload', 'Recharger')}
 					</Button>
 				{/if}
+			</div>
+		{/if}
+
+		{#if texteNonRepris !== null}
+			<div
+				class="space-y-2 rounded-md border border-warning bg-warning/10 px-3 py-2 text-sm"
+				role="alert"
+				data-testid="mcp-send-edit-not-kept"
+			>
+				<p>
+					{i18nMsg(
+						'mcp-sends-edit-not-kept',
+						'L’envoi a changé : votre texte modifié n’a pas été repris. Le voici, si vous en avez besoin :',
+					)}
+				</p>
+				<pre class="whitespace-pre-wrap break-words font-mono text-xs">{texteNonRepris}</pre>
 			</div>
 		{/if}
 

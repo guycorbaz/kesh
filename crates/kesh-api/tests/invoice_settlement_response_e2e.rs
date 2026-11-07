@@ -4,8 +4,9 @@
 //! ⚠️ **Le 404 d'origine n'est pas reproductible ici** : sa fenêtre tient entre
 //! deux requêtes SQL, et aucun crochet de test n'existe en production pour la
 //! forcer (C-e334-10). La garantie repose donc sur deux preuves : **AC-3**, la
-//! réponse égale champ à champ un `GET` qui la suit, et **AC-2**, la garde
-//! lexicale qui interdit la relecture dans les trois handlers.
+//! réponse égale champ à champ un `GET` qui la suit, et **AC-2**, une garde de
+//! structure, lue par `syn` : rien ne s'attend après l'écriture dans les trois
+//! handlers, ni après le commit dans les fonctions qui écrivent.
 
 use std::net::SocketAddr;
 use std::sync::Arc;
@@ -21,6 +22,7 @@ use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
 use serde_json::{Value, json};
 use sqlx::MySqlPool;
+use syn::visit::{self, Visit};
 
 const TEST_JWT_SECRET: &[u8] = b"test-secret-32-bytes-minimum-test-secret-padding";
 const ADMIN_PASSWORD: &str = "admin123";
@@ -366,72 +368,239 @@ async fn a_cancellation_returns_what_was_written(pool: MySqlPool) {
     );
 }
 
-// ---------------------------------------------------------------------------
-// AC-2 — la garde lexicale
-// ---------------------------------------------------------------------------
+/// Revue P1 (E-11) : deux règlements dont un annulé, reste partiel des deux côtés.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn a_partial_cancellation_returns_what_was_written(pool: MySqlPool) {
+    let (app, id) = setup(&pool, dec!(100.00)).await;
+    app.settle(id, "40.00").await;
+    app.settle(id, "60.00").await;
+    let list = app.get(&format!("/api/v1/invoices/{id}/settlements")).await;
+    let last = list.as_array().unwrap().last().unwrap()["id"]
+        .as_i64()
+        .unwrap();
 
-/// Le corps d'une fonction de `routes/invoices.rs`, depuis `pub async fn <nom>(`
-/// jusqu'à la fonction suivante du fichier.
-fn body_of<'a>(source: &'a str, name: &str) -> &'a str {
-    let marker = format!("pub async fn {name}(");
-    let start = source
-        .find(&marker)
-        .unwrap_or_else(|| panic!("fonction introuvable : {name}"));
-    let rest = &source[start + marker.len()..];
-    let end = rest.find("\n}\n").expect("fin de fonction");
-    &rest[..end]
+    let response = app
+        .post(
+            &format!("/api/v1/invoices/{id}/settlements/{last}/cancel"),
+            None,
+        )
+        .await;
+
+    app.assert_response_is_what_was_written(id, &response).await;
+    let invoice = &response["invoice"];
+    assert_eq!(decimal(&invoice["amountSettled"]), dec!(40.00));
+    assert_eq!(decimal(&invoice["amountDue"]), dec!(60.00));
+    assert!(invoice["paidAt"].is_null());
 }
 
-const FORBIDDEN: [&str; 3] = ["find_by_id_with_lines", "amount_settled(", "amount_due("];
+// ---------------------------------------------------------------------------
+// AC-2, AC-8 — rien ne s'attend après l'écriture, ni après le commit
+// ---------------------------------------------------------------------------
 
-/// Ce qui suit l'écriture ne relit rien : ni la facture, ni les montants, ni le
-/// pool. Une relecture y rendrait un 404 ou un 500 sur un règlement déjà commité.
-#[test]
-fn the_three_handlers_read_nothing_after_the_write() {
-    let source = include_str!("../src/routes/invoices.rs");
-    for (handler, write_call) in [
-        ("settle_invoice_handler", "settle_invoice("),
-        ("write_off_invoice_handler", "write_off_invoice("),
-        ("cancel_invoice_settlement_handler", "cancel_settlement("),
-    ] {
-        let body = body_of(source, handler);
-        let at = body
-            .find(write_call)
-            .unwrap_or_else(|| panic!("{handler} : appel d'écriture introuvable"));
-        // L'appel d'écriture se referme sur son `retry_on_deadlock` : `.await?;`.
-        let after = &body[at + body[at..].find(".await?;").expect("fin de l'appel")..];
-        for token in FORBIDDEN.iter().chain(["state.pool"].iter()) {
-            assert!(
-                !after.contains(token),
-                "{handler} relit après le commit : `{token}`"
-            );
+/// Ce qu'une fonction fait autour d'un appel : les `.await` qui le suivent, dans son
+/// bloc et dans chaque bloc englobant, et si `read` l'a précédé.
+///
+/// ⛔ **Un ensemble clos, non une liste de formes** (revue P1, B2, B3, E-5) : une liste
+/// de relectures interdites laissait passer `factures::detail(.., &state.lecture(), id)`
+/// et sautait sur `.await.map_err(..)?;`. Lue par `syn`, la règle ne dépend ni de la
+/// forme de la relecture, ni de celle de la fin de l'appel. Une lecture dans la
+/// transaction ne se distingue pas d'une lecture après le commit par son résultat
+/// (C-e334-10), d'où cette preuve de structure.
+#[derive(Debug, PartialEq)]
+struct AroundCall {
+    awaits_after: usize,
+    read_before: bool,
+}
+
+/// Le nom de l'appel d'un `Expr`, méthode ou fonction, s'il en porte un.
+struct Contains<'a> {
+    name: &'a str,
+    found: bool,
+}
+
+impl<'ast> Visit<'ast> for Contains<'_> {
+    fn visit_expr_call(&mut self, call: &'ast syn::ExprCall) {
+        if let syn::Expr::Path(path) = &*call.func {
+            self.found |= path
+                .path
+                .segments
+                .last()
+                .is_some_and(|s| s.ident == self.name);
         }
+        visit::visit_expr_call(self, call);
+    }
+    fn visit_expr_method_call(&mut self, call: &'ast syn::ExprMethodCall) {
+        self.found |= call.method == self.name;
+        visit::visit_expr_method_call(self, call);
     }
 }
 
-/// ⛔ La sonde positive : sans elle, une extraction cassée rendrait la garde
-/// verte à vide. Une relecture écrite dans un corps doit être trouvée par les mêmes
-/// jetons, et les corps réels ne doivent pas être tronqués.
+fn stmt_calls(stmt: &syn::Stmt, name: &str) -> bool {
+    let mut visitor = Contains { name, found: false };
+    visitor.visit_stmt(stmt);
+    visitor.found
+}
+
+#[derive(Default)]
+struct CountAwaits(usize);
+
+impl<'ast> Visit<'ast> for CountAwaits {
+    fn visit_expr_await(&mut self, node: &'ast syn::ExprAwait) {
+        self.0 += 1;
+        visit::visit_expr_await(self, node);
+    }
+}
+
+/// Descend vers l'appel, bloc par bloc : un bloc voisin (l'autre bras d'un `match`,
+/// celui du `rollback`) ne porte pas l'appel, et n'est donc pas compté.
+struct Around<'a> {
+    target: &'a str,
+    read: Option<&'a str>,
+    found: bool,
+    awaits_after: usize,
+    read_before: bool,
+}
+
+impl<'ast> Visit<'ast> for Around<'_> {
+    fn visit_block(&mut self, block: &'ast syn::Block) {
+        let Some(at) = block.stmts.iter().position(|s| stmt_calls(s, self.target)) else {
+            return;
+        };
+        self.found = true;
+        let mut awaits = CountAwaits::default();
+        for stmt in &block.stmts[at + 1..] {
+            awaits.visit_stmt(stmt);
+        }
+        self.awaits_after += awaits.0;
+        if let Some(read) = self.read {
+            self.read_before |= block.stmts[..at].iter().any(|s| stmt_calls(s, read));
+        }
+        visit::visit_stmt(self, &block.stmts[at]);
+    }
+}
+
+fn around(source: &str, function: &str, target: &str, read: Option<&str>) -> AroundCall {
+    let file = syn::parse_file(source).expect("source lisible");
+    let item = file
+        .items
+        .iter()
+        .find_map(|item| match item {
+            syn::Item::Fn(f) if f.sig.ident == function => Some(f),
+            _ => None,
+        })
+        .unwrap_or_else(|| panic!("fonction introuvable : {function}"));
+    let mut visitor = Around {
+        target,
+        read,
+        found: false,
+        awaits_after: 0,
+        read_before: false,
+    };
+    visitor.visit_block(&item.block);
+    assert!(visitor.found, "{function} : appel de {target} introuvable");
+    AroundCall {
+        awaits_after: visitor.awaits_after,
+        read_before: visitor.read_before,
+    }
+}
+
+const HANDLERS: &str = include_str!("../src/routes/invoices.rs");
+const WRITES: &str = include_str!("../../kesh-db/src/repositories/invoice_settlements_write.rs");
+const SENDS: &str = include_str!("../src/routes/mcp_envois.rs");
+
+/// Les handlers ne relisent rien : après l'écriture, plus aucune attente.
 #[test]
-fn the_guard_sees_a_real_read_in_the_same_file() {
-    let source = include_str!("../src/routes/invoices.rs");
-    assert!(
-        source.contains("find_by_id_with_lines"),
-        "sonde : le fichier porte encore des lectures de la facture"
+fn the_three_handlers_wait_for_nothing_after_the_write() {
+    for (handler, write) in [
+        ("settle_invoice_handler", "settle_invoice"),
+        ("write_off_invoice_handler", "write_off_invoice"),
+        ("cancel_invoice_settlement_handler", "cancel_settlement"),
+    ] {
+        assert_eq!(
+            around(HANDLERS, handler, write, None).awaits_after,
+            0,
+            "{handler} attend encore après l'écriture"
+        );
+    }
+}
+
+/// « Pas de commit sans réponse » : la réponse est lue avant le commit, et rien ne
+/// s'attend après lui, aux trois fonctions d'écriture et à la décision d'un envoi.
+#[test]
+fn the_response_is_read_before_the_commit_and_nothing_waits_after_it() {
+    for (source, function, read) in [
+        (WRITES, "settle_invoice", "read_after_write_in_tx"),
+        (WRITES, "write_off_invoice", "read_after_write_in_tx"),
+        (WRITES, "cancel_settlement", "read_after_write_in_tx"),
+        (SENDS, "decider_envoi", "trouver_in_tx"),
+    ] {
+        assert_eq!(
+            around(source, function, "commit", Some(read)),
+            AroundCall {
+                awaits_after: 0,
+                read_before: true,
+            },
+            "{function}"
+        );
+    }
+}
+
+/// ⛔ La sonde positive passe par le même découpage que la garde : sans elle, une
+/// lecture cassée la rendrait verte à vide.
+#[test]
+fn the_guard_sees_every_form_of_reread() {
+    let write = "async fn f() { let a = g().await?; write(x).await?; REREAD }";
+    for (form, reread) in [
+        (
+            "la relecture d'origine",
+            "let b = find(&state.pool, 1).await?;",
+        ),
+        (
+            "le service",
+            "let c = factures::detail(&ctx, &state.lecture(), 1).await?;",
+        ),
+        ("une autre fin", "let d = find(1).await.map_err(boom)?;"),
+        ("sans point-virgule", "h().await"),
+    ] {
+        let source = write.replace("REREAD", reread);
+        assert_eq!(
+            around(&source, "f", "write", None).awaits_after,
+            1,
+            "{form}"
+        );
+    }
+    assert_eq!(
+        around(&write.replace("REREAD", "Ok(1)"), "f", "write", None).awaits_after,
+        0,
+        "ce qui précède l'écriture ne compte pas, et le rendu non plus"
     );
-    let probe = "\npub async fn sonde(\n) {\n    let x = 1.await?;\n    find_by_id_with_lines(&state.pool);\n}\n";
-    let body = body_of(probe, "sonde");
-    assert!(body.contains(FORBIDDEN[0]) && body.contains("state.pool"));
-    let lengths: Vec<usize> = [
-        "settle_invoice_handler",
-        "write_off_invoice_handler",
-        "cancel_invoice_settlement_handler",
-    ]
-    .iter()
-    .map(|h| body_of(source, h).len())
-    .collect();
-    assert!(
-        lengths.iter().all(|l| *l > 200),
-        "extraction trop courte : {lengths:?}"
+
+    let committed = "async fn f() { read(1).await?; tx.commit().await?; Ok(1) }";
+    assert_eq!(
+        around(committed, "f", "commit", Some("read")),
+        AroundCall {
+            awaits_after: 0,
+            read_before: true
+        }
+    );
+    let late = "async fn f() { tx.commit().await?; read(1).await?; Ok(1) }";
+    assert_eq!(
+        around(late, "f", "commit", Some("read")),
+        AroundCall {
+            awaits_after: 1,
+            read_before: false
+        }
+    );
+    // L'autre bras du `match`, celui du `rollback`, n'est pas « après le commit ».
+    let arms = "async fn f() { let d = read(1).await; match d {
+        Ok(d) => { tx.commit().await?; Ok(d) }
+        Err(e) => { tx.rollback().await; Err(e) }
+    } }";
+    assert_eq!(
+        around(arms, "f", "commit", Some("read")),
+        AroundCall {
+            awaits_after: 0,
+            read_before: true
+        }
     );
 }

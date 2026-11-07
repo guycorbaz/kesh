@@ -62,7 +62,7 @@ const HTML_BRUT = '{' + '@html';
  * viderait et un catalogue vidé du préfixe resteraient égaux). Recompté à la main :
  * `grep -c '^mcp-sends-' crates/kesh-i18n/locales/fr-CH/messages.ftl`.
  */
-const NOMBRE_DE_CLES = 48;
+const NOMBRE_DE_CLES = 50;
 
 /** Valeurs d'un catalogue — clés de tête et valeurs d'une ligne (aucune clé du préfixe n'en a plusieurs). */
 function catalogue(locale: string): Map<string, string> {
