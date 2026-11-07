@@ -11,7 +11,7 @@ error-forbidden = Accès interdit
 error-api-key-read-only = Cette clé API est en lecture seule (scope « read »). Seules les requêtes GET sont autorisées.
 error-api-key-management-forbidden = La gestion des clés API n'est pas autorisée via une clé API. Utilisez l'interface web.
 error-api-key-admin-forbidden = Les routes d'administration ne sont pas accessibles via une clé API, quel que soit le rôle de son créateur. Utilisez l'interface web.
-error-api-key-operation-forbidden = Cette opération n'est pas accessible via une clé API. Utilisez l'interface web.
+error-api-key-operation-forbidden = Opération réservée à une session ouverte dans le navigateur ; une clé d'API ne peut pas l'effectuer.
 error-cannot-disable-self = Impossible de désactiver son propre compte
 error-cannot-disable-last-admin = Impossible de désactiver le dernier administrateur
 
@@ -3180,6 +3180,8 @@ audit-log-action-mcp-send-approved = Envoi du serveur MCP validé
 audit-log-action-mcp-send-refused = Envoi du serveur MCP refusé
 audit-log-action-mcp-server-settings-updated = Réglages du serveur MCP modifiés
 audit-log-action-mcp-tool-called = Outil du serveur MCP appelé
+audit-log-action-auth-password-changed = Mot de passe modifié
+audit-log-action-auth-session-theft-detected = Vol de jeton détecté, sessions révoquées
 audit-log-action-auth-password-reset-requested = Réinitialisation de mot de passe demandée
 audit-log-action-auth-password-reset-completed = Réinitialisation de mot de passe effectuée
 audit-log-action-admin-break-glass-reset = Réinitialisation d'urgence de l'administrateur

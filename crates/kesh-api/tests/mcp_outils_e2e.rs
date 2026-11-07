@@ -1680,3 +1680,62 @@ async fn le_numero_interne_d_une_ecriture_et_d_un_poste(pool: MySqlPool) {
     assert_eq!(piece["numeroInterne"]["nonFiable"], interne, "{piece}");
     assert_eq!(piece["numero"]["nonFiable"], fournisseur, "{piece}");
 }
+
+// ---------------------------------------------------------------------------
+// Story 33-7, AC-7 (#776) — la trace d'un rapport lu par un agent
+// ---------------------------------------------------------------------------
+
+/// AC-7 — chacun des cinq outils de rapport inscrit `channel: "mcp"` et le numéro
+/// de **sa** clé, au nom du créateur de la clé, `actor_type = user`. Le numéro de
+/// la clé diffère de celui de l'utilisateur (assertion de montage : sans quoi
+/// `mcp_key_id = user_id` passerait à vide).
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn les_cinq_rapports_disent_le_canal_et_la_cle(pool: MySqlPool) {
+    let a = societe_piegee(&pool, "Société A 337", 'A').await;
+    // Des clés leurres : le numéro de la clé servie s'écarte de celui de l'utilisateur.
+    for _ in 0..3 {
+        common::mcp::cle(&pool, a.c, a.u, &LECTURE, SendValidation::Exempt).await;
+    }
+    let (cle_id, jeton) = common::mcp::cle(&pool, a.c, a.u, &LECTURE, SendValidation::Exempt).await;
+    assert_ne!(cle_id, a.u, "montage : numéro de clé ≠ utilisateur");
+    let b = banc(&pool);
+
+    let mut fautes = Vec::new();
+    for outil in [
+        "kesh_grand_livre",
+        "kesh_balance",
+        "kesh_bilan",
+        "kesh_compte_de_resultat",
+        "kesh_balance_agee",
+    ] {
+        let repere: Option<i64> = sqlx::query_scalar("SELECT MAX(id) FROM audit_log")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        let args = premier_jeu(outil, &a.p);
+        let r = b.appeler(&jeton, outil, args).await;
+        assert_eq!(r["result"]["isError"], json!(false), "{outil} : {r}");
+        let lignes: Vec<(i64, String, Option<i64>, Vec<u8>)> = sqlx::query_as(
+            "SELECT user_id, actor_type, actor_api_key_id, details_json FROM audit_log \
+             WHERE id > ? AND action = 'report.generated' ORDER BY id",
+        )
+        .bind(repere.unwrap_or(0))
+        .fetch_all(&pool)
+        .await
+        .unwrap();
+        let [(user_id, actor_type, cle_api, details)] = lignes.as_slice() else {
+            fautes.push(format!("{outil} : {} trace(s) de rapport", lignes.len()));
+            continue;
+        };
+        let details: Value = serde_json::from_slice(details).unwrap();
+        if details["channel"] != json!("mcp") || details["mcp_key_id"] != json!(cle_id) {
+            fautes.push(format!("{outil} : détail {details}"));
+        }
+        if (*user_id, actor_type.as_str(), *cle_api) != (a.u, "user", None) {
+            fautes.push(format!(
+                "{outil} : auteur {user_id}, {actor_type}, {cle_api:?}"
+            ));
+        }
+    }
+    assert!(fautes.is_empty(), "AC-7 :\n{}", fautes.join("\n"));
+}

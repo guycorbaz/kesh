@@ -219,6 +219,121 @@ async fn revoke_all_for_user_revokes_all_active_tokens(pool: MySqlPool) {
     assert_eq!(second_call, 0);
 }
 
+/// Crée une session de `user_id` échéant à `expires_at` ; rend son numéro de ligne.
+async fn session(pool: &MySqlPool, user_id: i64, expires_at: chrono::NaiveDateTime) -> i64 {
+    refresh_tokens::create(
+        pool,
+        NewRefreshToken {
+            user_id,
+            token: make_token_uuid(),
+            expires_at,
+        },
+    )
+    .await
+    .expect("create should succeed")
+    .id
+}
+
+/// Story 33-7 (#435), revue P2, L3 — le contrat de la fonction elle-même : deux
+/// sessions vivantes comptées, l'échue révoquée sans être comptée, la révoquée
+/// laissée à son motif, et un autre utilisateur intact.
+#[sqlx::test(migrations = "./test-schema")]
+async fn revoke_all_for_user_counting_live_counts_only_live_sessions(pool: MySqlPool) {
+    let company_id = create_test_company(&pool).await;
+    let user_id = create_test_user(&pool, "victor", company_id).await;
+    let autre = create_test_user(&pool, "wanda", company_id).await;
+    let futur = (Utc::now() + ChronoDuration::days(30)).naive_utc();
+    let passe = (Utc::now() - ChronoDuration::hours(1)).naive_utc();
+
+    session(&pool, user_id, futur).await;
+    session(&pool, user_id, futur).await;
+    session(&pool, user_id, passe).await;
+    let deja = session(&pool, user_id, futur).await;
+    sqlx::query(
+        "UPDATE refresh_tokens SET revoked_at = NOW(3), revoked_reason = 'logout' WHERE id = ?",
+    )
+    .bind(deja)
+    .execute(&pool)
+    .await
+    .unwrap();
+    let voisine = session(&pool, autre, futur).await;
+
+    let vivantes =
+        refresh_tokens::revoke_all_for_user_counting_live(&pool, user_id, "theft_detected")
+            .await
+            .expect("la révocation doit réussir");
+    assert_eq!(vivantes, 2, "seules les deux sessions vivantes se comptent");
+
+    let restantes: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM refresh_tokens WHERE user_id = ? AND revoked_at IS NULL",
+    )
+    .bind(user_id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(restantes, 0, "l'échue est révoquée aussi");
+
+    let motifs: Vec<String> = sqlx::query_scalar(
+        "SELECT revoked_reason FROM refresh_tokens WHERE user_id = ? ORDER BY id",
+    )
+    .bind(user_id)
+    .fetch_all(&pool)
+    .await
+    .unwrap();
+    assert_eq!(
+        motifs,
+        vec![
+            "theft_detected",
+            "theft_detected",
+            "theft_detected",
+            "logout"
+        ],
+        "aucun motif écrasé"
+    );
+
+    let voisine_revoquee: Option<chrono::NaiveDateTime> =
+        sqlx::query_scalar("SELECT revoked_at FROM refresh_tokens WHERE id = ?")
+            .bind(voisine)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert!(
+        voisine_revoquee.is_none(),
+        "un autre utilisateur n'est pas touché"
+    );
+}
+
+/// Story 33-7 (#435), revue P2, L5 — les deux instructions passent par
+/// `idx_refresh_tokens_user_id`. Sur `idx_refresh_tokens_expires_at`, que l'optimiseur
+/// choisit sur une table vide ou presque (relevé à l'`EXPLAIN`), la transaction
+/// verrouillerait les sessions vivantes de **tous** les utilisateurs jusqu'au commit.
+/// La seconde est aussi celle de `revoke_all_for_user` (revue P3, L2).
+///
+/// Ce test établit que l'indice est posé et honoré, rien de plus : sur une table
+/// peuplée, l'optimiseur retient déjà l'index de l'utilisateur sans indice (revue P3,
+/// L1, 5000 lignes synthétiques), et le test serait vert sur toute table.
+#[sqlx::test(migrations = "./test-schema")]
+async fn revoke_live_statements_go_through_the_user_id_index(pool: MySqlPool) {
+    for sql in [
+        refresh_tokens::REVOKE_LIVE_FOR_USER_SQL,
+        refresh_tokens::REVOKE_REST_FOR_USER_SQL,
+    ] {
+        let lignes = sqlx::query(&format!("EXPLAIN {sql}"))
+            .bind("theft_detected")
+            .bind(1_i64)
+            .fetch_all(&pool)
+            .await
+            .expect("EXPLAIN doit réussir");
+        assert_eq!(lignes.len(), 1, "une seule table au plan : {sql}");
+        let cle: Option<String> = sqlx::Row::try_get(&lignes[0], "key").expect("colonne key");
+        assert_eq!(
+            cle.as_deref(),
+            Some("idx_refresh_tokens_user_id"),
+            "index retenu pour : {sql}"
+        );
+    }
+}
+
 #[sqlx::test(migrations = "./test-schema")]
 async fn create_with_unknown_user_id_fails_with_fk_violation(pool: MySqlPool) {
     let result = refresh_tokens::create(

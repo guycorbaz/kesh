@@ -11,7 +11,7 @@ error-forbidden = Access denied
 error-api-key-read-only = This API key is read-only (scope "read"). Only GET requests are allowed.
 error-api-key-management-forbidden = API key management is not allowed via an API key. Use the web interface.
 error-api-key-admin-forbidden = Administration routes are not reachable with an API key, whatever the role of its creator. Use the web interface.
-error-api-key-operation-forbidden = This operation is not reachable with an API key. Use the web interface.
+error-api-key-operation-forbidden = Operation reserved for a session opened in the browser; an API key cannot perform it.
 error-cannot-disable-self = Cannot disable your own account
 error-cannot-disable-last-admin = Cannot disable the last administrator
 
@@ -3113,6 +3113,8 @@ audit-log-action-mcp-send-approved = MCP server send approved
 audit-log-action-mcp-send-refused = MCP server send refused
 audit-log-action-mcp-server-settings-updated = MCP server settings changed
 audit-log-action-mcp-tool-called = MCP server tool called
+audit-log-action-auth-password-changed = Password changed
+audit-log-action-auth-session-theft-detected = Token theft detected, sessions revoked
 audit-log-action-auth-password-reset-requested = Password reset requested
 audit-log-action-auth-password-reset-completed = Password reset completed
 audit-log-action-admin-break-glass-reset = Emergency administrator reset

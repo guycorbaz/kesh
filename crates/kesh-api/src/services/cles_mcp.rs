@@ -110,6 +110,7 @@ pub async fn authentifier(
         acces: ContexteAcces::mcp(
             row.company_id,
             row.created_by_user_id,
+            row.mcp_key_id,
             row.scopes.as_set().clone(),
         ),
         validation: row.send_validation,

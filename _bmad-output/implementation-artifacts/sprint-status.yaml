@@ -1010,7 +1010,7 @@ development_status:
   33-4-bornes-annees: done
   33-5-adresse-societe: done
   33-6-reglement-apres-commit: done
-  33-7-traces-audit: ready-for-dev
+  33-7-traces-audit: done
   33-8-compte-designe-archive: ready-for-dev
   33-9-e2e-sidebar: ready-for-dev
   33-10-outillage-release: ready-for-dev

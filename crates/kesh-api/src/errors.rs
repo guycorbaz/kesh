@@ -216,18 +216,21 @@ pub enum AppError {
     #[error("Administration interdite via clé API")]
     ApiKeyAdminForbidden,
 
-    // --- Story 27-1 — une opération réservée à l'interface web (#632) ---
+    // --- Story 27-1 — une opération fermée aux clés d'API (#632) ---
     /// Une requête authentifiée par clé d'API (`read-write` : une clé `read`
     /// est arrêtée avant, `API_KEY_READ_ONLY`) atteint une opération réservée
-    /// à l'interface web → `403` code `API_KEY_OPERATION_FORBIDDEN`.
-    /// Aujourd'hui : la suppression d'un import bancaire
-    /// (`DELETE /api/v1/bank-imports/{id}`, décision du Project Lead du
-    /// 2026-10-12, C-27-1-16).
+    /// aux sessions ouvertes dans le navigateur → `403` code
+    /// `API_KEY_OPERATION_FORBIDDEN`. Aujourd'hui : la suppression d'un import
+    /// bancaire (`DELETE /api/v1/bank-imports/{id}`, décision du Project Lead
+    /// du 2026-10-12, C-27-1-16), qui se fait à l'interface web, et le
+    /// changement de mot de passe (`PUT /api/v1/auth/password`, Story 33-7,
+    /// décision du 2026-11-06), qui n'a pas encore d'écran. D'où un message
+    /// qui ne renvoie pas à l'interface web (revue P2 de la 33-7, M1).
     ///
     /// **Distincte des deux précédentes à dessein** (doctrine D2 de la 22-4a) :
     /// [`AppError::ApiKeyManagementForbidden`] parle de gestion de clés,
-    /// [`AppError::ApiKeyAdminForbidden`] de routes d'administration — or la
-    /// suppression est une route Comptable. Rendue par le handler lui-même
+    /// [`AppError::ApiKeyAdminForbidden`] de routes d'administration — or ces
+    /// opérations n'en sont pas. Rendue par le handler lui-même
     /// (pas de `require_not_pat`, dont la garde d'`admin_pat_denied_e2e`
     /// interdit un second consommateur).
     #[error("Opération interdite via clé API")]
@@ -1738,13 +1741,13 @@ impl IntoResponse for AppError {
                 ),
             ),
 
-            // Story 27-1 — opération réservée à l'interface web (#632).
+            // Story 27-1 (#632), Story 33-7 — opération fermée aux clés d'API.
             AppError::ApiKeyOperationForbidden => build_response(
                 StatusCode::FORBIDDEN,
                 "API_KEY_OPERATION_FORBIDDEN",
                 &t(
                     "error-api-key-operation-forbidden",
-                    "Cette opération n'est pas accessible via une clé API. Utilisez l'interface web.",
+                    "Opération réservée à une session ouverte dans le navigateur ; une clé d'API ne peut pas l'effectuer.",
                 ),
             ),
 
