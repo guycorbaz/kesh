@@ -995,30 +995,6 @@
 			{/if}
 		</div>
 	{:else if invoice?.status === 'validated'}
-		{#if settleOutcome !== 'known'}
-			<div
-				class="w-full space-y-2 rounded-md border border-warning bg-warning/10 px-3 py-2 text-sm"
-				role="alert"
-				data-testid="settle-unknown-outcome"
-			>
-				<p>
-					{settleOutcome === 'verify'
-						? i18nMsg(
-								'invoice-settle-unknown-outcome',
-								'L’issue du règlement n’est pas connue : la réponse du serveur n’est pas parvenue, et il a pu être enregistré. Vérifiez les montants et la liste des règlements ci-dessous avant de réessayer.',
-							)
-						: i18nMsg(
-								'invoice-settle-unknown-reread-failed',
-								'L’issue du règlement n’est pas connue, et la facture n’a pas pu être relue. Le règlement reste indisponible tant qu’elle n’a pas été relue.',
-							)}
-				</p>
-				{#if settleOutcome === 'blocked' && !settleRereading}
-					<Button variant="outline" onclick={rereadAfterUnknownOutcome} data-testid="settle-unknown-reread">
-						{i18nMsg('invoice-settle-unknown-reread', 'Relire')}
-					</Button>
-				{/if}
-			</div>
-		{/if}
 		<div class="flex gap-2">
 			<!-- Le bouton disparaît quand la facture est soldée. Annuler un
 			     règlement se fait depuis la liste des règlements (Story 25-3-a-1),
@@ -1164,6 +1140,31 @@
 		</div>
 	{/if}
 </div>
+
+{#if settleOutcome !== 'known'}
+	<div
+		class="mb-6 space-y-2 rounded-md border border-warning bg-warning/10 px-3 py-2 text-sm"
+		role="alert"
+		data-testid="settle-unknown-outcome"
+	>
+		<p>
+			{settleOutcome === 'verify'
+				? i18nMsg(
+						'invoice-settle-unknown-outcome',
+						'L’issue du règlement n’est pas connue : la réponse du serveur n’est pas parvenue, et il a pu être enregistré. Vérifiez les montants et la liste des règlements ci-dessous avant de réessayer.',
+					)
+				: i18nMsg(
+						'invoice-settle-unknown-reread-failed',
+						'L’issue du règlement n’est pas connue, et la facture n’a pas pu être relue. Le règlement reste indisponible tant qu’elle n’a pas été relue.',
+					)}
+		</p>
+		{#if settleOutcome === 'blocked' && !settleRereading}
+			<Button variant="outline" onclick={rereadAfterUnknownOutcome} data-testid="settle-unknown-reread">
+				{i18nMsg('invoice-settle-unknown-reread', 'Relire')}
+			</Button>
+		{/if}
+	</div>
+{/if}
 
 {#if loading}
 	<p class="text-sm text-text-muted">Chargement…</p>
