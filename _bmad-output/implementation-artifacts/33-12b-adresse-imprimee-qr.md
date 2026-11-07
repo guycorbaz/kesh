@@ -82,3 +82,13 @@ Ces numéros sont ceux de cette fiche : la M6 de la 33-12a est une autre mutatio
 
 **Capture regardée** : `captures/p1-insecable.png`, société `Müller&Söhne` à espaces insécables, débiteur `Ștefan` : corps et section disent `Müller & Söhne SA`, `Stefan Popescu SRL`, `Rue du Lac 12`.
 - 2026-11-07 — Revue de code P2 ciblée (Opus) : 0 C, 0 H, 1 M, 8 L. P2-M1 : « un avoir ne change pas » était faux pour U+2019 et U+2014 ; `pdf.rs`, le test d'avoir, ce § et le manuel le disent. LOW : voir § *Remédiation P2*. Issues ouvertes par l'orchestrateur : **#955** (le champ refusé non nommé), **#956** (écarts mineurs), **#957** (PDF déjà figés) ; les limites d'impression sont à #944.
+
+## Remédiation P2
+
+*Rédigé le 2026-11-07, Opus 5.5. Commit `d863f30d`, puis le PDF. **Aucune ligne exécutable de production** : `crates/` ne change que par des commentaires et sous `#[cfg(test)]`.*
+
+**Traité.** P2-M1, trois textes, une paire au test d'avoir (`L’Atelier` → `L'Atelier`, `Paul—Henri` → `Paul-Henri`), phrase au manuel. P2-L1 : commentaire de l'E2E. P2-L2 : doc-comment de `texte_imprime`. P2-L3 : doc-comment de `couper_ligne`. P2-L4 : 17 `Tj` comptés après le dernier `re`, au lieu de tout le document ; mono-page dit à `operations_du_pdf`. P2-L5 : `borne_de_997_octets_exacte`, à 997 et 998. P2-L6 : `M13-texte-recu-debiteur`, `M13-compo-paie-debiteur` jouées ; `quatre sites` à la fiche 33-12a. P2-L7 : « à deux exceptions près ». P2-L8 : le lot de rappels nommé au manuel, renvoi à #955 ; le texte de l'envoi unitaire d'une facture n'est pas établi, donc non écrit. Aucun LOW laissé à une issue neuve.
+
+**Mutations.** `mut/p2-resume.log` : 6 jouées, 6 rouges : les deux M13 déclarées, `borne-998`, `borne-996`, `avoir-apostrophe-gardee`, `croix-sans-texte-apres`. Décompte de la remédiation P1 corrigé : 25 mutations plus ces deux, soit M13 aux huit combinaisons de blocs et de formes.
+
+**Exécuté.** `cargo fmt --check` vert, `cargo clippy -p kesh-qrbill --all-targets -D warnings` vert, `cargo test -p kesh-qrbill` : 104 + 2 tests verts ; PDF du manuel régénéré sous verrou, contrôlé aplati (`user-manual-33-12-p2.txt`). **Pas de gate complet**, la production n'ayant pas changé depuis `80bc4363` ; le test E2E n'a changé que par un commentaire.
