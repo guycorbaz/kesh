@@ -1,3 +1,4 @@
+# last_updated: 2026-11-07 (Epic 33 : 33-12a et 33-12b done, #941 ; validation close au plafond de huit passes, revue de code P1 à P4 close sur 0 au-dessus de LOW ; dernier gate complet à 80bc4363)
 # last_updated: 2026-11-07 (Epic 33 : 33-12, jeu de caractères de la QR-facture, ajoutée ; #941)
 # last_updated: 2026-11-06 (Epic 33 : validation terminée en quatre passes, P1 11 M → P2 1 H + 9 M → P3 4 M → P4 ciblée 0 retenu ; développement à lancer)
 # last_updated: 2026-11-06 (Epic 33 : validation P1 remédiée sur douze fiches ; 33-11 à sa P1 ; annotation : l'en-tête « douze stories au backlog » valait au kickoff, 33-11 s'y ajoute : quatorze clés avec 33-0, treize ready-for-dev)
@@ -1010,6 +1011,6 @@ development_status:
   33-9-e2e-sidebar: ready-for-dev
   33-10-outillage-release: ready-for-dev
   33-11-filtre-ci: ready-for-dev  # 2026-11-06 : demande de Guy ; fiche écrite par l'orchestrateur, validation P1 à lancer.
-  33-12a-jeu-caracteres-qr: review  # 2026-11-07 : #941, P1, trouvée à la revue de la 33-5
-  33-12b-adresse-imprimee-qr: review  # 2026-11-07 : #941, NPA et localité absents du reçu et de la partie paiement
+  33-12a-jeu-caracteres-qr: done  # 2026-11-07 : #941, P1, trouvée à la revue de la 33-5
+  33-12b-adresse-imprimee-qr: done  # 2026-11-07 : #941, NPA et localité absents du reçu et de la partie paiement
   epic-33-retrospective: optional
