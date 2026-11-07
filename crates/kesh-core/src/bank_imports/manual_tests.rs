@@ -230,6 +230,16 @@ fn parse_refuses_missing_and_malformed_strings_with_their_field() {
             Box::new(|r| r.period_from = None),
             invalid(None, F::PeriodFrom, R::Required),
         ),
+        // Story 33-4 (AC-7) : la forme à quatre chiffres laisse passer `0999`,
+        // que la base ne sait pas tenir.
+        (
+            Box::new(|r| r.period_to = Some("0999-12-31".into())),
+            invalid(None, F::PeriodTo, R::InvalidDate),
+        ),
+        (
+            Box::new(|r| r.lines.as_mut().unwrap()[0].value_date = Some("0999-12-31".into())),
+            invalid(Some(1), F::ValueDate, R::InvalidDate),
+        ),
         (
             Box::new(|r| r.period_to = Some("2026-9-30".into())),
             invalid(None, F::PeriodTo, R::InvalidDate),
@@ -836,4 +846,16 @@ fn drafts_carry_manual_format_balances_and_signed_amounts() {
     assert!(txs.iter().all(|t| t.end_to_end_id.is_none()
         && t.transaction_id.is_none()
         && t.counterparty_iban.is_none()));
+}
+
+/// Story 33-4 (AC-4) : les deux bornes passent, leurs voisines non.
+#[test]
+fn les_bornes_d_annee_de_la_saisie() {
+    for bon in ["1000-01-01", "9999-12-31"] {
+        assert!(parse_date(bon).is_ok(), "{bon}");
+    }
+    assert_eq!(
+        parse_date("0999-12-31"),
+        Err(ManualStatementReason::InvalidDate)
+    );
 }

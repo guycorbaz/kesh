@@ -601,8 +601,10 @@ fn parse_row(record: &csv::StringRecord, line: usize, profile: &CsvProfile) -> R
         }
     };
     let booking_date = match NaiveDate::parse_from_str(date_raw, &profile.date_format) {
-        Ok(d) => d,
-        Err(_) => {
+        // Story 33-4 : une année que la base ne sait pas tenir est une date
+        // invalide, comme une date mal formée.
+        Ok(d) if crate::annee_recevable(d) => d,
+        _ => {
             return RowParse::err(CsvLineError::new(
                 line,
                 CsvLineErrorCode::InvalidDate,
@@ -2125,6 +2127,26 @@ mod tests {
             }
             other => panic!("expected PartialFailure, got {other:?}"),
         }
+    }
+
+    /// Story 33-4 (AC-7) : une année que la base ne sait pas tenir est une date
+    /// invalide ; les deux bornes passent.
+    #[test]
+    fn annee_hors_plage_est_une_date_invalide() {
+        let profil = split_profile(DebitSign::Positive);
+        for hors in ["0999-12-31", "+10000-01-01", "-0001-01-01"] {
+            let csv = format!("date;debit;credit\n{hors};5.00;\n2026-01-02;5.00;\n");
+            match parse_csv_collect(csv.as_bytes(), &profil) {
+                ParseCsvOutcome::PartialFailure { errors, .. } => {
+                    assert_eq!(errors.len(), 1, "{hors}");
+                    assert_eq!(errors[0].code, CsvLineErrorCode::InvalidDate, "{hors}");
+                }
+                other => panic!("{hors} : {other:?}"),
+            }
+        }
+        let csv = "date;debit;credit\n1000-01-01;5.00;\n9999-12-31;5.00;\n";
+        let stmt = parse_csv(csv.as_bytes(), &profil).expect("bornes admises");
+        assert_eq!(stmt.transactions.len(), 2);
     }
 
     /// AC14-7-quater (M24) : sur une même ligne, la date est lue avant le

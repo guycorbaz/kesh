@@ -17,6 +17,7 @@ pub mod audit_labels;
 pub mod auth;
 pub mod auto_backup;
 pub mod config;
+pub mod dates_recues;
 pub mod document_storage;
 pub mod errors;
 pub mod exports;

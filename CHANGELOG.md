@@ -31,6 +31,24 @@ Le contenu est rédigé en français à destination des **fiduciaires, PME, ind�
 ### Ajouté
 
 - **Deux graphiques sur la page d'accueil** ([#918](https://github.com/guycorbaz/kesh/issues/918)) : les revenus et les dépenses de chaque mois de l'exercice ouvert, et la part des cinq plus gros postes de charges, plus « Autres ». Les chiffres viennent de la comptabilité, non de la banque, et leur total égale le compte de résultat. Une écriture et sa contre-passation du même exercice sont écartées toutes les deux, sauf si l'une porte une date hors des bornes de l'exercice : l'autre reste alors comptée, comme au compte de résultat ; une contre-passation qui franchit l'exercice et un avoir restent comptés, en montants négatifs ; un compte de charges au solde créditeur est écarté des parts et signalé. Un clic sur un mois ouvre ses écritures, un clic sur une part le grand livre du compte ; tout se fait aussi au clavier, par les tableaux voisins. Le graphique a autant de mois que l'exercice, et non douze (manuel utilisateur, *Revenus, dépenses et principaux postes*). L'API porte la même lecture : `GET /reports/homepage-summary`.
+### Corrigé
+
+- **Une date hors de l'an 1000 à l'an 9999 est refusée partout, comme une date mal formée**
+  ([#606](https://github.com/guycorbaz/kesh/issues/606)) : selon le champ et l'année, une telle date rendait une erreur
+  interne, coupait la connexion sans réponse sur les listes filtrées, ou passait : une échéance en l'an 10000 était acceptée
+  puis enregistrée vide, sans message. Les listes, les écritures, les factures, les rapports, les outils du serveur MCP et les
+  relevés importés (CAMT.053, CSV, saisie manuelle) la refusent désormais, sans rien écrire. Sur `POST
+  /reconciliation/accept`, seule la proposition concernée est refusée, dans `failed[]`, sous un code stable
+  (`VALIDATION_ERROR`, `value_date_out_of_range`). Une facture à l'an 9999 dont le délai du contact ferait tomber l'échéance
+  après l'an 9999 est refusée.
+- **Un filtre de date n'interroge plus Kesh pendant la frappe**
+  ([#606](https://github.com/guycorbaz/kesh/issues/606)) : au clavier, l'année passe par `0002`, `0020`, `0202`. Les listes de
+  factures et d'écritures, l'échéancier et le journal d'audit gardent désormais leur dernier résultat jusqu'à ce que la date
+  soit complète, sans message d'erreur ni liste vidée ; à la sortie du champ, une date restée incomplète revient à celle du
+  filtre.
+- **Une clé d'API voulue temporaire ne devient plus permanente**
+  ([#755](https://github.com/guycorbaz/kesh/issues/755)) : une expiration portée au-delà de l'an 9999 par son fuseau
+  (`9999-12-31T23:59:59-05:00`) créait une clé sans expiration ; elle est refusée.
 
 ---
 

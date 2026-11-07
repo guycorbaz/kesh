@@ -29,6 +29,7 @@ use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 
 use crate::AppState;
+use crate::dates_recues::{borner, borner_opt};
 use crate::errors::AppError;
 use crate::helpers::get_company_for;
 use crate::middleware::auth::CurrentUser;
@@ -542,6 +543,8 @@ impl CreateSupplierInvoiceRequest {
         company_id: i64,
         source: PaymentSource,
     ) -> Result<kesh_db::entities::NewSupplierInvoice, AppError> {
+        borner(self.invoice_date, "invoiceDate")?;
+        borner_opt(self.due_date, "dueDate")?;
         for (index, line) in self.lines.iter().enumerate() {
             if !scale_within(&line.quantity.normalize(), MAX_DECIMAL_SCALE) {
                 return Err(line_scale_error(index, "la quantité"));
@@ -946,6 +949,7 @@ pub async fn pay_supplier_invoice(
     Path(id): Path<i64>,
     Json(req): Json<PaySupplierInvoiceRequest>,
 ) -> Result<Json<SupplierInvoiceResponse>, AppError> {
+    borner(req.payment_date, "paymentDate")?;
     let company = get_company_for(&current_user, &state.pool).await?;
     let (choice, payment_date) = req.into_choice()?;
     kesh_db::retry::retry_on_deadlock("supplier_invoices::pay", || {

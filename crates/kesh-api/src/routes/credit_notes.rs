@@ -19,6 +19,7 @@ use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 
 use crate::AppState;
+use crate::dates_recues::borner;
 use crate::errors::AppError;
 use crate::helpers::get_company_for;
 use crate::middleware::auth::CurrentUser;
@@ -189,6 +190,7 @@ pub async fn create_credit_note(
     Extension(current_user): Extension<CurrentUser>,
     Json(req): Json<CreateCreditNoteRequest>,
 ) -> Result<(StatusCode, Json<CreditNoteResponse>), AppError> {
+    borner(req.date, "date")?;
     let company = get_company_for(&current_user, &state.pool).await?;
     let issued = kesh_db::retry::retry_on_deadlock("credit_notes::create", || {
         credit_notes::create_credit_note(

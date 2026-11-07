@@ -15,6 +15,7 @@ use axum::extract::{Path, State};
 use axum::http::StatusCode;
 use axum::{Extension, Json};
 use chrono::{DateTime, NaiveDateTime, Utc};
+use kesh_core::dates::expiration_stockable;
 use serde::{Deserialize, Serialize};
 
 use kesh_db::entities::api_key::{ApiKey, ApiKeyScope, NewApiKey};
@@ -142,6 +143,16 @@ pub async fn create(
     {
         return Err(AppError::Validation(
             "la date d'expiration doit être dans le futur".into(),
+        ));
+    }
+    // #755 — l'année se lit en UTC : `9999-12-31T23:59:59-05:00` est en l'an
+    // 10000, que la colonne écrirait `NULL` sans erreur : la clé voulue
+    // temporaire deviendrait permanente.
+    if let Some(exp) = req.expires_at
+        && !expiration_stockable(exp)
+    {
+        return Err(AppError::Validation(
+            "la date d'expiration ne peut pas dépasser le 9999-12-31 (UTC)".into(),
         ));
     }
     let expires_at: Option<NaiveDateTime> = req.expires_at.map(|dt| dt.naive_utc());

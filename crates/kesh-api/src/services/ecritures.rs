@@ -83,9 +83,10 @@ pub struct DemandeListeEcritures {
 fn analyser_date(valeur: Option<&str>, nom: &str) -> Result<Option<NaiveDate>, AppError> {
     match valeur {
         Some(s) if !s.is_empty() => {
-            Ok(Some(NaiveDate::from_str(s).map_err(|e| {
-                AppError::Validation(format!("{nom} invalide ({e})"))
-            })?))
+            let date = NaiveDate::from_str(s)
+                .map_err(|e| AppError::Validation(format!("{nom} invalide ({e})")))?;
+            crate::dates_recues::borner(date, nom)?;
+            Ok(Some(date))
         }
         _ => Ok(None),
     }

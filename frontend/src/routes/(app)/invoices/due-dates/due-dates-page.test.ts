@@ -62,6 +62,7 @@ vi.mock("$lib/features/contacts/contacts.api", () => ({
 }));
 
 import Page from "./+page.svelte";
+import { notifyError } from "$lib/shared/utils/notify";
 import { pinClock } from "$lib/shared/utils/pin-clock.test-helper";
 
 function item(partial: Partial<DueDateItem> = {}): DueDateItem {
@@ -219,5 +220,35 @@ describe("échéancier — date du jour locale (#889)", () => {
     const { findAllByTestId } = render(Page);
     const paid = await findAllByTestId("due-dates-paid-at");
     expect(paid.map((d) => d.textContent?.trim())).toEqual(["04.11.2026"]);
+  });
+});
+
+describe("échéancier — une date en cours de frappe (Story 33-4)", () => {
+  it("l'année tapée n'interroge pas, ne notifie rien, ne vide ni la liste ni les totaux (mutation : valeur appliquée sans contrôle)", async () => {
+    const { findAllByTestId, container } = render(Page);
+    await waitFor(() => expect(listDueDatesMock).toHaveBeenCalled());
+    await waitFor(() =>
+      expect(container.querySelector("#dd-due-before")).not.toBeNull(),
+    );
+    const input = container.querySelector("#dd-due-before") as HTMLInputElement;
+    const avant = listDueDatesMock.mock.calls.length;
+    for (const v of ["0002-12-31", "0020-12-31", "0202-12-31"]) {
+      await fireEvent.input(input, { target: { value: v } });
+      expect(input.value).toBe(v);
+    }
+    await new Promise((r) => setTimeout(r, 0));
+    expect(listDueDatesMock.mock.calls.length).toBe(avant);
+    expect(vi.mocked(notifyError)).not.toHaveBeenCalled();
+    expect((await findAllByTestId("due-dates-date")).length).toBeGreaterThan(0);
+
+    await fireEvent.input(input, { target: { value: "2026-12-31" } });
+    await waitFor(() =>
+      expect(listDueDatesMock).toHaveBeenLastCalledWith(
+        expect.objectContaining({ dueBefore: "2026-12-31" }),
+      ),
+    );
+    await fireEvent.input(input, { target: { value: "0202-12-31" } });
+    await fireEvent.blur(input);
+    expect(input.value).toBe("2026-12-31");
   });
 });

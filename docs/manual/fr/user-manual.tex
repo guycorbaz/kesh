@@ -840,6 +840,12 @@ exigerait de renuméroter des écritures existantes, ce qu'une comptabilité ne 
     \item Statut (brouillon / validée / annulée).
 \end{itemize}
 
+\textbf{Taper une date dans un filtre.} Depuis la version~0.17.5, ici comme dans la liste des
+factures, l'échéancier et le journal d'audit, un filtre de date ne s'applique qu'une fois la date
+complète, année comprise~: pendant la frappe, la liste garde son
+dernier résultat, sans message. Si vous quittez le champ sur une date incomplète, il revient à la
+date du filtre.
+
 \begin{keshtip}
 La recherche full-text utilise l'index MariaDB FULLTEXT (Story 7-4). Pour rechercher un mot incomplet, ajoutez \texttt{*} : \texttt{Marc*} matche \texttt{Marcel}, \texttt{Marcus}, \texttt{Marchand}.
 \end{keshtip}

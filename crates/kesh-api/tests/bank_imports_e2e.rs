@@ -4739,3 +4739,44 @@ async fn camt_line_restored_from_a_backup_stays_recognised_922(pool: MySqlPool) 
         vec![(0, ids[0]), (1, ids[1])]
     );
 }
+
+/// Story 33-4 (AC-7, E-6 de la revue) — un relevé CAMT à une année que la base ne
+/// sait pas tenir : refusé à l'aperçu comme à la création, en `INVALID_DATE`, sans
+/// rien écrire. ⚠️ Pour le CSV, `confirm_partial_import` importe les lignes valides
+/// et écarte celle-là, comme toute date mal formée : c'est ce geste, non ce refus.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn camt_a_une_annee_hors_plage_est_refuse_sans_rien_ecrire(pool: MySqlPool) {
+    let s = setup(&pool).await;
+    let app = spawn_app(pool.clone()).await;
+    let xml = String::from_utf8(read_fixture("v04_minimal.xml"))
+        .unwrap()
+        .replacen(
+            "<BookgDt>\n          <Dt>2026-05-15</Dt>",
+            "<BookgDt>\n          <Dt>0999-12-31</Dt>",
+            1,
+        )
+        .into_bytes();
+    assert_ne!(xml, read_fixture("v04_minimal.xml"), "le relevé a changé");
+    for chemin in ["/api/v1/bank-imports/preview", "/api/v1/bank-imports"] {
+        let resp = app
+            .client
+            .post(app.url(chemin))
+            .bearer_auth(&s.jwt)
+            .multipart(build_multipart(
+                xml.clone(),
+                "v04_minimal.xml",
+                s.bank_account_id,
+            ))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), 400, "{chemin}");
+        let body: Value = resp.json().await.unwrap();
+        assert_eq!(body["error"]["details"]["kind"], "INVALID_DATE", "{body}");
+    }
+    let lignes: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM bank_transactions")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(lignes, 0, "rien d'écrit");
+}

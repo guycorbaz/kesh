@@ -10,6 +10,7 @@
 import Big from 'big.js';
 import { isApiError } from '$lib/shared/utils/api-client';
 import { supplierInvoicePreferredNumber } from '$lib/features/supplier-invoices/supplier-invoice-label';
+import { estDateStockable as isIsoDate } from '$lib/shared/utils/date-filtre';
 import type { DocumentRef, LetteringDetail, SelectedLine } from './open-items.types';
 
 /**
@@ -33,15 +34,9 @@ export { todayLocal } from '$lib/shared/utils/local-date';
 /**
  * Vrai si `s` est une date réelle `AAAA-MM-JJ` d'une année entre 1000 et 9999
  * — la plage que le serveur accepte (`parse_as_of`) : l'écran ne provoque
- * jamais son 400.
+ * jamais son 400. Le prédicat est commun à tous les filtres de date (Story 33-4).
  */
-export function isIsoDate(s: string | null | undefined): s is string {
-	if (!s || !/^\d{4}-\d{2}-\d{2}$/.test(s)) return false;
-	const [y, m, d] = s.split('-').map(Number);
-	if (y < 1000) return false;
-	const dt = new Date(Date.UTC(y, m - 1, d));
-	return dt.getUTCFullYear() === y && dt.getUTCMonth() === m - 1 && dt.getUTCDate() === d;
-}
+export { isIsoDate };
 
 /** L'état de l'écran porté par l'URL. */
 export interface ScreenState {

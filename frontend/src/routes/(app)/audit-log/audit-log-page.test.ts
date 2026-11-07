@@ -313,4 +313,38 @@ describe('revue P1', () => {
 		expect(url.value.searchParams.get('action')).toBe('contact.created');
 		expect(url.value.searchParams.get('entityId')).toBe('12');
 	});
+
+	for (const [testid, cle] of [
+		['audit-log-filter-date-from', 'dateFrom'],
+		['audit-log-filter-date-to', 'dateTo'],
+	]) {
+		it(`Story 33-4 — ${testid} : l’année tapée n’interroge pas (mutation : valeur appliquée sans contrôle)`, async () => {
+			const { findByTestId, getByTestId } = render(Page);
+			await findByTestId('audit-log-row');
+			const input = getByTestId(testid) as HTMLInputElement;
+			const avant = listMock.mock.calls.length;
+			for (const v of ['0002-09-01', '0020-09-01', '0202-09-01']) {
+				await fireEvent.change(input, { target: { value: v } });
+				expect(input.value).toBe(v);
+			}
+			await new Promise((r) => setTimeout(r, 0));
+			expect(listMock.mock.calls.length).toBe(avant);
+			expect(getByTestId('audit-log-row')).toBeTruthy();
+
+			await fireEvent.change(input, { target: { value: '2026-09-01' } });
+			await waitFor(() =>
+				expect(listMock).toHaveBeenLastCalledWith(expect.objectContaining({ [cle]: '2026-09-01' })),
+			);
+			await fireEvent.change(input, { target: { value: '0202-09-01' } });
+			await fireEvent.blur(input);
+			expect(input.value).toBe('2026-09-01');
+		});
+	}
+
+	it('Story 33-4 — une date de l’adresse que le serveur refuserait n’est pas envoyée', async () => {
+		url.value = new URL('http://localhost/audit-log?dateFrom=0202-09-01');
+		render(Page);
+		await waitFor(() => expect(listMock).toHaveBeenCalled());
+		expect((listMock.mock.calls[0][0] as Record<string, unknown>).dateFrom).toBeUndefined();
+	});
 });

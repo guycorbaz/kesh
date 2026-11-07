@@ -87,6 +87,20 @@ describe('serializeQuery', () => {
 });
 
 describe('parseQueryFromUrl', () => {
+	// Story 33-4 (L-2 de la revue P2, mutation : revenir à un simple test de chaîne non vide).
+	it('garde une date réelle, ignore un lien ancien que le serveur refuserait', () => {
+		const gardee = parseQueryFromUrl(new URLSearchParams('dateFrom=2026-01-31&dateTo=9999-12-31'));
+		expect(gardee.dateFrom).toBe('2026-01-31');
+		expect(gardee.dateTo).toBe('9999-12-31');
+		for (const ancien of ['0202-01-01', '2026-02-30', '2026-1-5', '2026-01-31T10:00:00']) {
+			const lue = parseQueryFromUrl(
+				new URLSearchParams({ dateFrom: ancien, dateTo: ancien }),
+			);
+			expect(lue.dateFrom, ancien).toBeUndefined();
+			expect(lue.dateTo, ancien).toBeUndefined();
+		}
+	});
+
 	it('parse les champs valides', () => {
 		const search = new URLSearchParams(
 			'description=facture&amountMin=100&sortBy=EntryDate&sortDir=Asc&offset=25&limit=50'

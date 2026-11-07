@@ -58,6 +58,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
 use crate::AppState;
+use crate::dates_recues::borner_opt;
 use crate::errors::AppError;
 use crate::middleware::auth::CurrentUser;
 
@@ -839,6 +840,9 @@ pub enum AcceptProposalInput {
         /// M6''' Pass 3 Opus — `value_date` optional cohérent avec `/split`
         /// standalone. Si absent → handler default = 3 couches
         /// `body.value_date.or(tx.value_date).unwrap_or(tx.booking_date)`.
+        ///
+        /// Story 33-4 — hors de la plage de la base, refusée par
+        /// `accept_one_split` pour cette seule proposition (*Pattern batch*).
         #[serde(default)]
         value_date: Option<NaiveDate>,
     },
@@ -929,7 +933,7 @@ where
             Err(rej) => {
                 let message = match &rej {
                     JsonRejection::JsonDataError(_) | JsonRejection::JsonSyntaxError(_) => {
-                        "corps JSON malformé ou champ `type` requis manquant — valeurs acceptées : [\"invoice\", \"split\", \"rule\", \"supplier_invoice\"]".to_string()
+                        "corps JSON invalide : champ mal formé, ou champ `type` manquant — valeurs acceptées pour `type` : [\"invoice\", \"split\", \"rule\", \"supplier_invoice\"]".to_string()
                     }
                     JsonRejection::MissingJsonContentType(_) => {
                         "Content-Type attendu : application/json".to_string()
@@ -3681,6 +3685,20 @@ async fn accept_one_split(
     // Step h — résoudre entry_date 3 couches (F4''' Pass 3).
     let entry_date = value_date.or(bt.value_date).unwrap_or(bt.booking_date);
 
+    // Story 33-4 (#606) — une année que la base ne sait pas tenir ne dépend que
+    // de cette proposition : refusée seule, et avant toute liaison de la date
+    // (`-0001` ou `+70000` n'y sortiraient qu'en `DATABASE_ERROR`).
+    if !kesh_core::dates::annee_stockable(entry_date) {
+        return Err(FailedProposal {
+            bank_transaction_id,
+            error_code: "VALIDATION_ERROR".to_string(),
+            details: Some(serde_json::json!({
+                "reason": "value_date_out_of_range",
+                "valueDate": entry_date.to_string(),
+            })),
+        });
+    }
+
     // Step i — fiscal year.
     let fiscal_year = match fiscal_years::find_open_covering_date(tx, company_id, entry_date).await
     {
@@ -4776,6 +4794,7 @@ pub async fn post_manual(
     Json(body): Json<ManualMatchBody>,
 ) -> Result<Json<ManualMatchResponse>, AppError> {
     // Step 0 — validation body de surface.
+    borner_opt(body.value_date, "valueDate")?;
     if body.bank_account_id <= 0 {
         return Err(AppError::Validation(
             "bankAccountId doit être strictement positif".into(),
@@ -5194,6 +5213,7 @@ pub async fn post_split(
     Json(body): Json<SplitBody>,
 ) -> Result<Json<SplitResponse>, AppError> {
     // Step 0 — validation surface body.
+    borner_opt(body.value_date, "valueDate")?;
     if body.bank_account_id <= 0 {
         return Err(AppError::Validation(
             "bankAccountId doit être strictement positif".into(),

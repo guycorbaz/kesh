@@ -35,6 +35,7 @@ use kesh_db::repositories::fiscal_years::{
 use kesh_db::snapshot::ReadSnapshot;
 
 use crate::AppState;
+use crate::dates_recues::borner;
 use crate::errors::{AppError, t};
 use crate::middleware::auth::CurrentUser;
 use crate::routes::api_keys::ensure_not_pat;
@@ -260,6 +261,8 @@ pub async fn create_fiscal_year(
     Extension(current_user): Extension<CurrentUser>,
     Json(req): Json<CreateFiscalYearRequest>,
 ) -> Result<(StatusCode, Json<FiscalYearResponse>), AppError> {
+    borner(req.start_date, "startDate")?;
+    borner(req.end_date, "endDate")?;
     // Pré-validation client-side back-up : nom non vide.
     let name = req.name.trim().to_string();
     if name.is_empty() {
