@@ -2783,9 +2783,11 @@ Chaque candidate reçoit un score, somme de trois critères :
 
 \begin{itemize}
     \item \textbf{Montant} (50\,\%) : le montant de la transaction égale exactement le reste dû \textbf{arrondi au centime}. Il n'y a pas de score intermédiaire : un écart d'un centime donne zéro sur ce critère.
-    \item \textbf{Référence} (40\,\%) : la référence de la transaction contient le numéro de la facture (pour une facture fournisseur, celui du fournisseur, jamais le numéro interne), ou l'inverse (score plein) ; ou les deux commencent par les mêmes quatre caractères au moins (demi-score).
+    \item \textbf{Référence} (40\,\%) : la référence de la transaction contient le numéro de la facture, ou l'inverse (score plein) ; ou les deux commencent par les mêmes quatre caractères au moins (demi-score).
     \item \textbf{Contact} (10\,\%) : le nom de la contrepartie contient celui du client de la facture, ou l'inverse.
 \end{itemize}
+
+Une facture fournisseur suit une autre règle de référence, plus stricte, qui n'emploie jamais le numéro interne (\S\ref{sec:matching-fournisseur}).
 
 Une candidate dont le score vaut zéro n'est pas proposée.
 

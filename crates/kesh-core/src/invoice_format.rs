@@ -239,7 +239,10 @@ pub fn validate_numbering_template(template: &str) -> Result<(), FormatError> {
 }
 
 /// Le numéro sans ses blancs de bord ; vide ou blanc, il vaut absent (règle de K8,
-/// `closing_checks`, dont le SQL est le miroir de ces libellés).
+/// `closing_checks`). ⚠️ Trois définitions du blanc, non un miroir : `str::trim` retire
+/// tout `White_Space` Unicode, `TRIM` de MariaDB l'espace ASCII seule, `trim` de
+/// JavaScript le `White_Space` et U+FEFF. Elles ne s'écartent que sur un numéro saisi
+/// avec une tabulation, un saut de ligne, une espace insécable ou un BOM.
 fn non_blank(numero: Option<&str>) -> Option<&str> {
     numero.map(str::trim).filter(|n| !n.is_empty())
 }

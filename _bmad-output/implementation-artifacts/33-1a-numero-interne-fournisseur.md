@@ -1,6 +1,6 @@
 # Story 33-1a : le numéro interne des factures fournisseur — colonne, format, attribution, numérotation de l'existant (#926)
 
-Status: review
+Status: done
 
 *Fiche rédigée le 2026-11-06, en autonomie (Opus 5.5), worktree `/home/gcorbaz/devel/kesh-e33`, branche
 `story/33-0-kickoff`, numéros de ligne de `4ef19901`. Registre : `e33-choix-autonomes-e331.md`, choix `C-e331-1` et suivants.
@@ -437,6 +437,10 @@ Sur le code de la seule 33-1a, avant la 33-1b : `gate-a4.log`, 4850 exécutés, 
 
 ## Change Log
 
+- 2026-11-07, **fin de boucle, `Status: done`** (Opus 5.5). Tendance recomptée sur les rapports, passes communes aux deux fiches depuis la remédiation : **P1, trois lentilles : 3 MEDIUM, 23 LOW (B 1 + 8, E 0 + 7, A 2 + 8) → P2 ciblée, une lentille, sur `f1b2df5a..00162556` : 0 CRITICAL, 0 HIGH, 0 MEDIUM, 7 LOW** (`e331-review-p2.md`). La boucle se clôt sur une passe sans finding au-dessus de LOW. Modèles : les lentilles E et A de la P1 de la 33-1a déclarent Opus 5.5 dans leur rapport ; les autres rapports ne déclarent pas le leur. *(Note datée : l'entrée de remédiation ci-dessous dit « trois lentilles Opus » ; ce n'est établi par les rapports que pour ces deux-là.)*
+  - **LOW de la P2, soldés sans ligne exécutable** : P2-L1, le commentaire « miroir » corrigé (`invoice_format.rs`, `closing_checks.rs`, `supplier-invoice-label.ts`) ; P2-L2, limite écrite à `C-e331-16` ; P2-L3, porté à #947 par l'orchestrateur ; P2-L4, écrit à `C-e331-26` ; P2-L5, la parenthèse retirée de la liste générique, renvoi au paragraphe du débit, contre `matching.rs:87-104`, `.tex` et PDF (`make-p2.log`, PDF aplati contrôlé) ; P2-L6, commentaire de `ff_numero_interne` ; P2-L7, ci-après.
+  - **Note datée, P2-L7** : la remédiation P1 a traversé minuit, code du 2026-11-06 à 21:29, gates du 2026-11-07. Les entrées passées ne sont pas réécrites.
+  - **Décisions** : aucun code exécutable après `398748cd` ; pas de gate complet après ces commentaires et ces documents, sur consigne de l'orchestrateur ; les chiffres qui valent sont donc ceux de `398748cd` (4862 tests backend, 2737 frontend, E2E 357 passés et les sept KF-029). La répétition au manifeste 0.17.5 reste à l'intégration, à la charge de l'orchestrateur. Rien n'est poussé.
 - 2026-11-07, remédiation de la revue P1 (Opus 5.5 ; `f1b2df5a..00162556`). Trois lentilles Opus sur la 33-1a : B 1 MEDIUM, 8 LOW ; E 7 LOW ; A 2 MEDIUM, 8 LOW. Aucun finding réfuté. **MEDIUM** : B-M1 (brochure, MySQL), A-M1 (AC13 (c)), A-M2 (décomptes des rouges). **LOW corrigés** : B-L1, E-L7 (commentaire ; « les seuls » gardé, AC23), B-L3 (lignes modifiées), B-L5, E-L2 (blanc de tête et tabulation refusés), B-L7 (colonnes CSV au CHANGELOG), B-L8, E-L5, A-L1 (fiche, `C-e331-27`, manuel), E-L4 (entrée retirée du CHANGELOG : le croisement n'existe que depuis cette version), A-L2, A-L3, A-L4, A-L5, A-L6. **Écrits sans correction de code** : B-L2, E-L1, A-L7 (renommage, `C-e331-2`, registre, issue demandée). **Reportés à l'intégration** : E-L3, A-L8, B-L4, E-L6. **Sans effet** : B-L6. P2 ciblée : `33-1-review-prompt-p2.md`.
 - 2026-11-06, développement (Opus 5.5) : migration `20261106000001`, attribution à la validation, libellés, réglage, API, MCP, CSV, rejeu de classe B, rejeu de `reopen`, manuel d'administration, CHANGELOG, API. Rouges, mutations, répétition et décomptes au Dev Agent Record. Choix ajoutés : `C-e331-27`, `C-e331-28`, `C-e331-29`. `Status: review`. **Dernier commit de la fiche avant la 33-1b : `dc7cba19`** ; un commit de test lui revient ensuite, `bfe6eedb` (M21).
 - 2026-11-06, annotation : le F-L4 de l'étape 0 ci-dessous dit qu'`exports_global_e2e` lit « par nom » ; il lit le contenu par `contains`. La conclusion tient : aucun lecteur par position.

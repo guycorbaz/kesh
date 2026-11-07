@@ -15,7 +15,10 @@ export interface SupplierInvoiceNumbers {
 	supplierInvoiceNumber?: string | null;
 }
 
-/** Le numéro sans ses blancs de bord, `null` s'il n'en reste rien, comme `closing_checks.rs`. */
+/**
+ * Le numéro sans ses blancs de bord, `null` s'il n'en reste rien. Ce `trim` n'est pas tout à
+ * fait celui de Rust ni celui de MariaDB : voir `non_blank`, `kesh_core::invoice_format`.
+ */
 function nonBlank(numero: string | null | undefined): string | null {
 	const net = numero?.trim();
 	return net ? net : null;

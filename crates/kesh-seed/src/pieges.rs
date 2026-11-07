@@ -614,9 +614,10 @@ pub async fn semer(
         user_id,
     )
     .await?;
-    // Story 33-1b (#926) — le numéro interne, qu'aucun dépôt ne laisse saisir : le préfixe
-    // du format, réglable par l'Administrateur, y porterait le même texte (`_` et chiffres
-    // sont admis), mais `largeurs_des_pieges` relit la colonne égale au texte semé.
+    // Story 33-1b (#926) — le numéro interne, qu'aucun dépôt ne laisse poser tel quel : un
+    // numéro émis est préfixe, année, séparateur et rang, jamais le seul texte semé, or
+    // `largeurs_des_pieges` relit la colonne égale à ce texte. D'où cet `UPDATE`, après la
+    // validation : le libellé de l'écriture d'achat garde le numéro réellement émis.
     sqlx::query("UPDATE supplier_invoices SET internal_number = ? WHERE id = ?")
         .bind(seme(marque, "ff_numero_interne"))
         .bind(ff.invoice.id)

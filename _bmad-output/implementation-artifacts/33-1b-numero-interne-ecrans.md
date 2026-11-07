@@ -1,6 +1,6 @@
 # Story 33-1b : le numéro interne à l'écran — liste, fiche, réglage, recherche, manuels (#926)
 
-Status: review
+Status: done
 
 *Fiche rédigée le 2026-11-06, en autonomie (Opus 5.5), worktree `/home/gcorbaz/devel/kesh-e33`, branche
 `story/33-0-kickoff`, numéros de ligne de `4ef19901`. Registre : `e33-choix-autonomes-e331.md`. Clé courte `e331b`. **Après la 33-1a**,
@@ -310,6 +310,10 @@ Après les gates, ce commit de comptes rendus ne touche aucun code.
 
 ## Change Log
 
+- 2026-11-07, **fin de boucle, `Status: done`** (Opus 5.5). Tendance recomptée sur les rapports, passes communes aux deux fiches depuis la remédiation : **P1, trois lentilles : 5 MEDIUM, 14 LOW (B 1 + 4, E 2 + 4, A 2 + 6), soit trois défauts distincts au-dessus de LOW → P2 ciblée, une lentille, sur `f1b2df5a..00162556` : 0 CRITICAL, 0 HIGH, 0 MEDIUM, 7 LOW** (`e331-review-p2.md`). La boucle se clôt sur une passe sans finding au-dessus de LOW. Modèles : les lentilles E et A de la P1 de la 33-1a déclarent Opus 5.5 dans leur rapport ; les autres rapports ne déclarent pas le leur. *(Note datée : l'entrée de remédiation ci-dessous dit « trois lentilles Opus » ; ce n'est établi par les rapports que pour ces deux-là.)*
+  - **LOW de la P2, soldés sans ligne exécutable** : P2-L1, le commentaire « miroir » corrigé (`invoice_format.rs`, `closing_checks.rs`, `supplier-invoice-label.ts`) ; P2-L2, limite écrite à `C-e331-16` ; P2-L3, porté à #947 par l'orchestrateur ; P2-L4, écrit à `C-e331-26` ; P2-L5, la parenthèse retirée de la liste générique, renvoi au paragraphe du débit, contre `matching.rs:87-104`, `.tex` et PDF (`make-p2.log`, PDF aplati contrôlé) ; P2-L6, commentaire de `ff_numero_interne` ; P2-L7, ci-après.
+  - **Note datée, P2-L7** : la remédiation P1 a traversé minuit, code du 2026-11-06 à 21:29, gates du 2026-11-07. Les entrées passées ne sont pas réécrites.
+  - **Décisions** : aucun code exécutable après `398748cd` ; pas de gate complet après ces commentaires et ces documents, sur consigne de l'orchestrateur ; les chiffres qui valent sont donc ceux de `398748cd` (4862 tests backend, 2737 frontend, E2E 357 passés et les sept KF-029). La répétition au manifeste 0.17.5 reste à l'intégration, à la charge de l'orchestrateur. Rien n'est poussé.
 - 2026-11-07, remédiation de la revue P1 (Opus 5.5 ; `f1b2df5a..00162556`). Trois lentilles Opus sur la 33-1b : B 1 MEDIUM, 4 LOW ; E 2 MEDIUM, 4 LOW ; A 2 MEDIUM, 6 LOW. Aucun finding réfuté ; les MEDIUM se recoupent : la frappe temporisée, la brochure, les deux champs MCP. Détail au Dev Agent Record. **Non corrigés, issues demandées** : F2 de B, F4 de B pour la garde de version, L3 de E pour les deux angles d'écran. **Pour la rétrospective** : F8 de A, les rouges d'écran non constatés avant le code ont laissé passer F2 et F3 de A. P2 ciblée : `33-1-review-prompt-p2.md`.
 - 2026-11-06, développement (Opus 5.5) : liste, tri, recherche, fiche, réglage, sites serveur, lots, candidate et avis, postes ouverts, lettrage, manuels, brochure, README, PDF. Mutations, E2E et captures au Dev Agent Record. Périmètre de revue : `dc7cba19..HEAD`, où `bfe6eedb` est un test de la 33-1a. `Status: review`.
 - 2026-11-06, étape 0 du développement de la 33-1a (Opus 5.5) : R-L4 (`{YEAR}-{YEAR}-{SEQ}`, AC7, AC10) et F-L2 (dialogue d'AC6, renvoi au manuel) reportés ici depuis `kesh-gate-logs/e33-validate-p3-e331.md`.

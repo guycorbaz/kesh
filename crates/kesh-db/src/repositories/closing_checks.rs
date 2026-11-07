@@ -496,7 +496,8 @@ const DRAFT_SUPPLIER_COUNT_SQL: &str = "SELECT CAST(COUNT(*) AS SIGNED) FROM sup
 /// K8 : les premières, libellées « <numéro> — <fournisseur> », ou le seul
 /// fournisseur sans numéro. Le numéro est la forme courte, le numéro interne d'abord,
 /// à défaut celui du fournisseur, un numéro vide valant absent (Story 33-1b, #926 :
-/// miroir SQL de `kesh_core::invoice_format::supplier_invoice_short_label`) ;
+/// même règle que `kesh_core::invoice_format::supplier_invoice_short_label`, à ceci près
+/// que `TRIM` ne retire ici que l'espace ASCII, comme le dit son `non_blank`) ;
 /// `CONCAT_WS` ignore le `NULL`.
 const DRAFT_SUPPLIER_LIST_SQL: &str = "SELECT si.id, \
      CAST(CONCAT_WS(' — ', \
