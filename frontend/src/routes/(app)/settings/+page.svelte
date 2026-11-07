@@ -406,6 +406,7 @@
 										addressError = '';
 									}}
 									disabled={addressSubmitting}
+									data-testid="settings-company-address-cancel"
 								>
 									{msg('common-cancel', 'Annuler')}
 								</Button>

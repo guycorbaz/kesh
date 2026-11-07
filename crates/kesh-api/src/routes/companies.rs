@@ -1,6 +1,6 @@
 //! Routes company — lecture de la configuration de l'organisation,
 //! et mise à jour de l'e-mail de contact (Story 20-3b1, Reply-To des
-//! e-mails métier).
+//! e-mails métier), des coordonnées (16-3a) et de l'adresse (33-5, #909).
 
 use axum::Extension;
 use axum::Json;
@@ -67,8 +67,10 @@ impl From<Company> for CompanyJson {
     fn from(c: Company) -> Self {
         let address_structured =
             crate::address_input::StructuredAddressInput::from(&c.structured_address());
-        let address_country_known =
-            crate::address_input::is_known_country(Some(&c.address_country));
+        // Sans la normalisation d'`is_known_country` : le PDF transmet la colonne telle
+        // quelle, et refuse `ch` ; l'avis doit dire la même chose que lui.
+        let address_country_known = c.address_country.trim().is_empty()
+            || kesh_qrbill::is_iso_3166_alpha2(&c.address_country);
         Self {
             address_country_known,
             id: c.id,
@@ -342,7 +344,7 @@ pub async fn update_company_address(
     Json(req): Json<UpdateCompanyAddressRequest>,
 ) -> Result<Json<CompanyJson>, AppError> {
     let company = get_company_for(&current_user, &state.pool).await?;
-    let address = req.address.validate_required()?;
+    let address = req.address.validate_required_for_qr()?;
 
     let changes = CompanyUpdate {
         name: company.name.clone(),
@@ -367,6 +369,15 @@ pub async fn update_company_address(
     let updated = companies::update_in_tx(&mut tx, company.id, req.version, changes).await?;
     // Le repository court-circuite le no-op sans incrémenter `version` (KF-004).
     if updated.version != company.version {
+        // Les cinq composants (25-1b, AC 4, 8, 9) ; plus l'ancien texte quand ils ne
+        // le redonnent pas : c'est le cas d'une société d'avant les composants, dont
+        // la route écrase la seule source de l'adresse.
+        let mut before = serde_json::json!(crate::address_input::StructuredAddressInput::from(
+            &company.structured_address()
+        ));
+        if company.address != company.structured_address().combined() {
+            before["address"] = serde_json::json!(company.address);
+        }
         audit_log::insert_in_tx(
             &mut tx,
             // `::user` est sûr : la route est dans `admin_routes`, seul bloc
@@ -376,11 +387,8 @@ pub async fn update_company_address(
                 "company.updated",
                 "company",
                 company.id,
-                // Les cinq composants seulement (25-1b, AC 4, 8, 9).
                 Some(serde_json::json!({
-                    "before": crate::address_input::StructuredAddressInput::from(
-                        &company.structured_address()
-                    ),
+                    "before": before,
                     "after": crate::address_input::StructuredAddressInput::from(
                         &updated.structured_address()
                     ),

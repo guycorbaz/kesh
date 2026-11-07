@@ -961,7 +961,7 @@ fn the_registry_partition_is_what_the_story_declares() {
     assert_eq!(
         LIB_ROUTES.len(),
         145,
-        "l'inventaire porte sur 145 routes (+ 1 : l'adresse de la société, 33-5 ; + 1 : `/mcp`, 32-6a ;+ 1 : la décision d'un \
+        "l'inventaire porte sur 145 routes (+ 1 : l'adresse de la société, 33-5 ; + 1 : `/mcp`, 32-6a ; + 1 : la décision d'un \
          envoi MCP, 32-8b ; + 5 : les routes mutantes des prompts du serveur MCP, 32-10a-iii ; \
          + 1 : le rattachement d'une transaction à une écriture, v017-3a ; + 2 : l'aperçu et \
          la création d'un relevé saisi à la main, v016-2a ; + 4 : le `PUT`, le `DELETE`, la \

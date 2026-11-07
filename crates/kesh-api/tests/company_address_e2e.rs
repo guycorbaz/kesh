@@ -339,6 +339,149 @@ async fn invalid_addresses_are_refused_and_nothing_is_written(pool: MySqlPool) {
     assert_eq!(audit_count(&pool).await, audit_before, "aucune trace");
 }
 
+/// Revue P1 (A-M3, E-M2) — un caractère que la QR-facture refuse est refusé ici :
+/// répondre 200 laisserait la QR-facture en panne en annonçant un succès. Le refus
+/// nomme le champ et le caractère ; rien n'est écrit.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn a_character_the_qr_bill_refuses_is_refused_here(pool: MySqlPool) {
+    let (app, token, _, _) = setup(&pool).await;
+    let before = app.company(&token).await;
+    let version = before["version"].as_i64().unwrap();
+    let audit_before = audit_count(&pool).await;
+    let with = |key: &str, value: &str| {
+        let mut address = valid_address();
+        address[key] = json!(value);
+        address
+    };
+    for (address, field, code) in [
+        // ⚠️ Des caractères que SIX exclut aussi : la liste de `kesh-qrbill` va être
+        // recalée sur la directive (33-12), et ces tests ne doivent pas l'épingler.
+        (with("street", "Rue \u{2603} Cie"), "rue", "U+2603"),
+        (with("building", "1\n2"), "numéro", "U+000A"),
+        (with("postalCode", "18\u{2603}00"), "NPA", "U+2603"),
+        (with("city", "Ve\u{2603}vey"), "localité", "U+2603"),
+    ] {
+        let resp = app.put_address(&token, address, version).await;
+        assert_eq!(resp.status(), 400, "{field}");
+        let body: Value = resp.json().await.unwrap();
+        let message = body["error"]["message"].as_str().unwrap();
+        assert!(
+            message.contains(field) && message.contains(code),
+            "le refus nomme le champ et le caractère : {message}"
+        );
+    }
+    assert_eq!(app.company(&token).await, before, "rien n'est écrit");
+    assert_eq!(audit_count(&pool).await, audit_before, "aucune trace");
+}
+
+/// Le témoin du refus ci-dessus : ce que la route accepte, la QR-facture le produit.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn what_the_route_accepts_the_qr_bill_produces(pool: MySqlPool) {
+    let (app, token, company_id, admin_id) = setup(&pool).await;
+    let invoice_id = seed_validated_invoice(&pool, company_id, admin_id).await;
+    let version = app.company(&token).await["version"].as_i64().unwrap();
+    let address = json!({
+        "street": "Chemin de l'Église-Saint-Jürg",
+        "building": "7b",
+        "postalCode": "CH-1800",
+        "city": "Châtel-Saint-Denis",
+        "country": "CH",
+    });
+    assert_eq!(
+        app.put_address(&token, address, version).await.status(),
+        200
+    );
+    assert_eq!(app.get_pdf(&token, invoice_id).await.status(), 200);
+}
+
+/// Revue P1 (A-L7, E-L4) — les bornes SIX acceptées, multioctets compris : le compte
+/// est en caractères, non en octets.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn the_exact_length_limits_are_accepted(pool: MySqlPool) {
+    let (app, token, _, _) = setup(&pool).await;
+    let version = app.company(&token).await["version"].as_i64().unwrap();
+    let address = json!({
+        "street": "é".repeat(70),
+        "building": "é".repeat(16),
+        "postalCode": "é".repeat(16),
+        "city": "é".repeat(35),
+        "country": "CH",
+    });
+    let resp = app.put_address(&token, address.clone(), version).await;
+    assert_eq!(resp.status(), 200);
+    assert_eq!(app.company(&token).await["addressStructured"], address);
+}
+
+/// Revue P1 (B L-4, A-L7) — l'ordre : la saisie se juge avant la version.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn an_invalid_address_at_a_stale_version_is_a_400(pool: MySqlPool) {
+    let (app, token, _, _) = setup(&pool).await;
+    let version = app.company(&token).await["version"].as_i64().unwrap();
+    let mut address = valid_address();
+    address["country"] = json!("XX");
+    let resp = app.put_address(&token, address, version - 1).await;
+    assert_eq!(resp.status(), 400);
+}
+
+/// Revue P1 (E-L3) — `ß` ne se change pas en `SS`, le Soudan du Sud.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn a_non_ascii_country_is_not_uppercased_into_a_known_code(pool: MySqlPool) {
+    let (app, token, _, _) = setup(&pool).await;
+    let version = app.company(&token).await["version"].as_i64().unwrap();
+    let mut address = valid_address();
+    address["country"] = json!("ß");
+    let resp = app.put_address(&token, address, version).await;
+    assert_eq!(resp.status(), 400);
+}
+
+/// Revue P1 (A-L6) — un pays en minuscules, que le PDF refuse, reçoit l'avis.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn a_lowercase_stored_country_is_not_known(pool: MySqlPool) {
+    let (app, token, company_id, admin_id) = setup(&pool).await;
+    let invoice_id = seed_validated_invoice(&pool, company_id, admin_id).await;
+    force_country(&pool, company_id, "ch").await;
+    let company = app.company(&token).await;
+    assert_eq!(company["addressCountryKnown"], false, "{company}");
+    assert_eq!(
+        app.get_pdf(&token, invoice_id).await.status(),
+        400,
+        "le PDF le refuse bien : l'avis dit vrai"
+    );
+}
+
+/// Revue P1 (E-M3) — l'ancien texte libre d'une société d'avant les composants, seule
+/// source de son adresse, reste à l'audit.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn the_overwritten_free_text_stays_in_the_audit(pool: MySqlPool) {
+    let (app, token, company_id, _) = setup(&pool).await;
+    sqlx::query(
+        "UPDATE companies SET address = 'Ancienne adresse libre', address_street = '', \
+         address_building = '', address_postal_code = '', address_city = '', \
+         address_country = '' WHERE id = ?",
+    )
+    .bind(company_id)
+    .execute(&pool)
+    .await
+    .unwrap();
+    let version = app.company(&token).await["version"].as_i64().unwrap();
+
+    assert_eq!(
+        app.put_address(&token, valid_address(), version)
+            .await
+            .status(),
+        200
+    );
+
+    let details = audit_details(&pool, "company", company_id, "company.updated")
+        .await
+        .expect("details_json");
+    assert_eq!(details["before"]["address"], "Ancienne adresse libre");
+    assert!(
+        details["after"].get("address").is_none(),
+        "le nouveau texte se déduit des composants : {details}"
+    );
+}
+
 /// AC-2, C-e334-5 — un pays inconnu reste refusé **même inchangé** : c'est la
 /// correction elle-même. L'accepter annoncerait un succès en laissant la
 /// QR-facture en panne (mutation M1).
@@ -563,12 +706,26 @@ async fn another_company_is_never_touched(pool: MySqlPool) {
 /// effacé en silence, en 200. Et le sens inverse : les routes voisines ne
 /// touchent pas l'adresse.
 #[sqlx::test(migrations = "../kesh-db/test-schema")]
-async fn the_address_route_and_its_neighbours_preserve_what_they_do_not_touch(pool: MySqlPool) {
+async fn an_independant_keeps_what_the_address_route_does_not_touch(pool: MySqlPool) {
+    assert_neighbours_preserve(pool, "Independant").await;
+}
+
+/// Le même, pour une PME : un `org_type` fixe laisserait l'autre test vert.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn a_pme_keeps_what_the_address_route_does_not_touch(pool: MySqlPool) {
+    assert_neighbours_preserve(pool, "Pme").await;
+}
+
+async fn assert_neighbours_preserve(pool: MySqlPool, org_type: &str) {
     let (app, token, company_id, _) = setup(&pool).await;
     sqlx::query(
-        "UPDATE companies SET ide_number = 'CHE109322551', email = 'reply@demo.ch', \
-         phone = '+41 21 123 45 67', website = 'https://demo.ch', is_stub = TRUE WHERE id = ?",
+        "UPDATE companies SET first_name = 'Prénom Essai', last_name = 'Nom Essai', \
+         ide_number = 'CHE109322551', email = 'reply@demo.ch', \
+         phone = '+41 21 123 45 67', website = 'https://demo.ch', is_stub = TRUE, \
+         org_type = ?, accounting_language = 'DE', instance_language = 'IT', \
+         books_locked_through = '2020-12-31' WHERE id = ?",
     )
+    .bind(org_type)
     .bind(company_id)
     .execute(&pool)
     .await
@@ -601,8 +758,14 @@ async fn the_address_route_and_its_neighbours_preserve_what_they_do_not_touch(po
         "website",
         "booksLockedThrough",
     ] {
+        // ⚠️ Une valeur nulle ou égale au défaut comparerait vide à vide : le montage
+        // pose chaque champ (revue P1, E-M1).
+        assert!(!before[field].is_null(), "montage : {field} non posé");
         assert_eq!(after[field], before[field], "champ {field} perdu");
     }
+    assert_eq!(before["orgType"], org_type, "montage");
+    assert_eq!(before["accountingLanguage"], "DE", "montage");
+    assert_eq!(before["instanceLanguage"], "IT", "montage");
     assert!(snapshot(pool.clone()).await, "is_stub ne se lève pas ici");
 
     // Le sens inverse : e-mail, puis coordonnées, sur l'adresse corrigée.

@@ -12,7 +12,7 @@ Le contenu est rédigé en français à destination des **fiduciaires, PME, ind�
 
 ### Ajouté
 
-- **L'adresse de la société se corrige dans les paramètres** ([#909](https://github.com/guycorbaz/kesh/issues/909), [#817](https://github.com/guycorbaz/kesh/issues/817)) : *Paramètres → Organisation*, bouton *Modifier* en face de l'adresse (administrateurs), sans repasser par l'assistant. Une société enregistrée avant la 0.17.4 avec un pays invalide, comme « SU », était privée de QR-factures sans remède : un avis le signale désormais, et la correction les rétablit. La même correction renseigne les champs d'une société qui n'avait qu'un texte d'adresse libre. Une facture dont le PDF est déjà figé ne change pas.
+- **L'adresse de la société se corrige dans les paramètres** ([#909](https://github.com/guycorbaz/kesh/issues/909), [#817](https://github.com/guycorbaz/kesh/issues/817)) : *Paramètres → Organisation*, bouton *Modifier* en face de l'adresse (administrateurs), sans repasser par l'assistant. Une société enregistrée avant la 0.17.4 avec un pays invalide, comme « SU », était privée de QR-factures sans remède : un avis le signale désormais, et la correction les rétablit. La même correction renseigne les champs d'une société qui n'avait qu'un texte d'adresse libre, dont l'ancien texte reste au journal d'audit. Un caractère que la QR-facture n'admet pas est refusé, le message nomme le champ et le caractère. Une facture dont le PDF est déjà figé ne change pas.
 
 ---
 

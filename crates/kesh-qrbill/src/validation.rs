@@ -214,6 +214,12 @@ fn check_charset(field: &'static str, value: &str) -> Result<(), QrBillError> {
     Ok(())
 }
 
+/// Le premier caractère de `value` que la QR-facture n'admet pas : la même règle que
+/// [`validate`], pour qu'une saisie puisse être refusée avant d'échouer au PDF.
+pub fn first_qr_refused_char(value: &str) -> Option<char> {
+    value.chars().find(|c| !is_six_annex_c_char(*c))
+}
+
 /// Implémente le whitelist SIX Annex C + 3 additions documentées (C1 review
 /// pass 1 G2 C). Voir `check_charset` pour la liste des exclusions.
 fn is_six_annex_c_char(c: char) -> bool {

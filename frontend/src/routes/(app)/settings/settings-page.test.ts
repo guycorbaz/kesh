@@ -347,3 +347,33 @@ describe('page Paramètres — adresse de la société (Story 33-5)', () => {
 		authState.clearSession({ broadcast: false });
 	});
 });
+
+// Revue P1 (E-L6) — Annuler referme sans envoyer, et Modifier repart de l'enregistré.
+describe('page Paramètres — adresse : Annuler', () => {
+	it('Annuler n’envoie rien et Modifier repart des valeurs enregistrées', async () => {
+		authState.login({ userId: '1', username: 'u', role: 'Admin', expiresIn: 900 }, { broadcast: false });
+		vi.clearAllMocks();
+		fetchSessionSettingsMock.mockResolvedValue({ sessionIdleMinutes: 60, version: 0, min: 1, max: 1440 });
+		const base = reponse(null);
+		fetchCompanyCurrentMock.mockResolvedValue({
+			...base,
+			company: {
+				...base.company,
+				addressStructured: { street: 'Rue Test', building: '1', postalCode: '1000', city: 'Lausanne', country: 'CH' },
+				addressCountryKnown: true,
+			} as CompanyCurrentResponse['company'],
+		});
+		const { findByTestId, getByTestId, queryByTestId } = render(Page);
+		await fireEvent.click(await findByTestId('settings-company-address-edit'));
+		await fireEvent.input(getByTestId('settings-company-address-city-input'), {
+			target: { value: 'Ailleurs' },
+		});
+		await fireEvent.click(getByTestId('settings-company-address-cancel'));
+		expect(queryByTestId('settings-company-address-city-input')).toBeNull();
+		expect(updateCompanyAddressMock).not.toHaveBeenCalled();
+		await fireEvent.click(getByTestId('settings-company-address-edit'));
+		const city = getByTestId('settings-company-address-city-input') as HTMLInputElement;
+		expect(city.value).toBe('Lausanne');
+		authState.clearSession({ broadcast: false });
+	});
+});

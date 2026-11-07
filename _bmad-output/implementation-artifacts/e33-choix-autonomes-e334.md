@@ -1,6 +1,6 @@
 # Epic 33 — registre des choix autonomes : fiches 33-4 à 33-10 (clé e334)
 
-Tenu le 2026-11-06 par l'agent de fiche (Opus 5.5), en autonomie ; 31 choix après la remédiation de la validation P1 (révisés : C-e334-1, 4, 11, 24, 25 ; neufs : C-e334-26 à 31), inchangés en nombre après la P2 (révisés : C-e334-1, 11, 12, 27, 28, 30) et après la P3 (révisés : C-e334-11, 28). Se verse **par union** au registre de l'epic. Chaque entrée : contexte, retenu, écartées, réversibilité.
+Tenu le 2026-11-06 par l'agent de fiche (Opus 5.5), en autonomie ; 31 choix après la remédiation de la validation P1 (révisés : C-e334-1, 4, 11, 24, 25 ; neufs : C-e334-26 à 31), inchangés en nombre après la P2 (révisés : C-e334-1, 11, 12, 27, 28, 30) et après la P3 (révisés : C-e334-11, 28) ; le développement en ajoute ensuite, sur chaque branche, à partir de C-e334-32. Se verse **par union** au registre de l'epic. Chaque entrée : contexte, retenu, écartées, réversibilité.
 
 ## 33-4
 

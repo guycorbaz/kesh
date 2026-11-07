@@ -80,7 +80,7 @@ pour qu'une société enregistrée avec un pays invalide puisse de nouveau produ
 
 - **M1** : `validate_required` remplacée par `validate_optional_keeping(Some(pays courant))` → rouge AC-2 (`SU` stocké, `PUT` avec `SU` : accepté sous la mutation).
 - **M2** : `email: company.email.clone()` remplacé par `None` → rouge AC-7. **M3** : audit écrit sans la condition de version → rouge AC-4.
-- **M4** : la route posée sur le routeur des comptables → rouge AC-6. **M5** : `address_country_known` toujours `true` → rouge AC-3 et avis Vitest.
+- **M4** : la route posée sur le routeur des comptables → rouge AC-6. **M5** : `address_country_known` toujours `true` → rouge AC-3. *(« et avis Vitest » retiré à la remédiation de la P1 : ce test lit la valeur simulée, une mutation serveur ne peut pas le faire rougir.)*
 
 ## Gates
 
