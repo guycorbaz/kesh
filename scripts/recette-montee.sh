@@ -305,7 +305,7 @@ lancer_binaire() { # $1 = suffixe du journal, $2 = port de la base
     "PATH=$PATH_FERME" "HOME=$D/home" \
     "DATABASE_URL=$(url_base "$2")" \
     "KESH_HOST=127.0.0.1" "KESH_PORT=$PORT_API" "KESH_COOKIE_SECURE=false" \
-    "KESH_STATIC_DIR=$STATIQUE" \
+    "KESH_STATIC_DIR=$STATIQUE" "KESH_LOCALES_DIR=$RACINE/crates/kesh-i18n/locales" \
     "KESH_INBOX_DIR=$D/inbox" "KESH_DOCUMENTS_DIR=$D/documents" "KESH_ADMIN_BACKUP_DIR=$D/backup" \
     "KESH_ADMIN_USERNAME=$ADMIN_NOM" "KESH_ADMIN_PASSWORD=$ADMIN_MDP" "KESH_JWT_SECRET=$JWT" \
     "KESH_SMTP_HOST=$SMTP_HOTE" "KESH_SMTP_USER=$SMTP_NOM" "KESH_SMTP_PASSWORD=$SMTP_MDP" "KESH_SMTP_FROM=$SMTP_DE" \
@@ -344,7 +344,9 @@ ecarts_hors_attendu() { # $1 = phase, $2, $3 = étiquettes
   [ -z "$faute" ] || echec "$1" "écart hors de --diff-attendu ($2 → $3) :$faute"
 }
 journal_sans_erreur() { # $1 = phase, $2 = journal
-  if sed 's/\x1b\[[0-9;]*m//g' "$2" | /usr/bin/grep -qE 'panicked at| ERROR '; then
+  # « Recovery effectué » est au niveau ERROR à dessein : c'est l'avis du compte d'administration
+  # réinitialisé par les variables du script, attendu ici sur toute base peuplée.
+  if sed 's/\x1b\[[0-9;]*m//g' "$2" | /usr/bin/grep -v 'Recovery effectué' | /usr/bin/grep -qE 'panicked at| ERROR '; then
     echec "$1" "erreur au journal $2"
   fi
 }
@@ -363,10 +365,9 @@ JOUR=$(date +%F)
 COMPTES=$(api GET /api/v1/accounts)
 compte_numero() { printf '%s' "$COMPTES" | jq -r --arg n "$1" '[.[]|select(.number==$n)][0].id // empty'; }
 CAISSE=$(compte_numero 1000)
-BANQUE_J=$(compte_numero 1020)
 CREANCIERS=$(compte_numero 2000)
 CHARGE=$(printf '%s' "$COMPTES" | jq -r '[.[]|select(.accountType=="Expense" and .active and .postable)][0].id // empty')
-[ -n "$CAISSE" ] && [ -n "$BANQUE_J" ] && [ -n "$CREANCIERS" ] && [ -n "$CHARGE" ] \
+[ -n "$CAISSE" ] && [ -n "$CREANCIERS" ] && [ -n "$CHARGE" ] \
   || echec 1 "plan comptable inattendu"
 
 R=$(api POST /api/v1/contacts -d '{"contactType":"Personne","name":"Synthetique","firstName":"Pia","lastName":"Synthetique","isClient":true,"isSupplier":false,"addressStructured":{"street":"Marktgasse","building":"28","postalCode":"9400","city":"Rorschach","country":"CH"},"defaultPaymentTerms":"30 jours net"}')
@@ -407,7 +408,7 @@ SQL "SELECT GROUP_CONCAT(CONCAT(id,':',status) ORDER BY id) FROM supplier_invoic
 IBAN=CH4431999123000889012
 COMPTE=$(api GET /api/v1/bank-accounts | jq -r --arg i "$IBAN" '[.[]|(.account // .)|select(.iban==$i)][0].id // empty')
 if [ -z "$COMPTE" ]; then
-  R=$(api POST /api/v1/bank-accounts -d "{\"bankName\":\"Banque Synthetique\",\"iban\":\"$IBAN\",\"isPrimary\":false,\"journalAccountId\":$BANQUE_J}")
+  R=$(api POST /api/v1/bank-accounts -d "{\"bankName\":\"Banque Synthetique\",\"iban\":\"$IBAN\",\"isPrimary\":false,\"journalAccountId\":null}")
   COMPTE=$(id_de 1 "compte bancaire" "$R") || exit $?
 fi
 camt preview "$RACINE/scripts/fixtures/recette/releve-A.xml" "$COMPTE" > "$L/apercu-A.json"

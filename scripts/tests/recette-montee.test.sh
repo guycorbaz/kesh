@@ -118,7 +118,7 @@ case "/$chemin" in
     else exit 7; fi ;;
   /api/v1/auth/login) reponse='{"accessToken":"jeton-factice"}' ;;
   /api/v1/accounts)
-    reponse='[{"id":1,"number":"1000","accountType":"Asset","active":true,"postable":true},{"id":2,"number":"1020","accountType":"Asset","active":true,"postable":true},{"id":3,"number":"2000","accountType":"Liability","active":true,"postable":true},{"id":4,"number":"6000","accountType":"Expense","active":true,"postable":true}]' ;;
+    reponse='[{"id":1,"number":"1000","accountType":"Asset","active":true,"postable":true},{"id":2,"number":"1100","accountType":"Asset","active":true,"postable":true},{"id":3,"number":"2000","accountType":"Liability","active":true,"postable":true},{"id":4,"number":"6000","accountType":"Expense","active":true,"postable":true}]' ;;
   /api/v1/bank-accounts) reponse='[]' ;;
   /api/v1/bank-imports/preview) reponse='{"previewFingerprint":"f"}' ;;
   /api/v1/company/invoice-settings) reponse='{}' ;;
@@ -141,6 +141,9 @@ env > "\$FX/binaire-env.txt"
 pwd > "\$FX/binaire-pwd.txt"
 echo "\$KESH_ADMIN_BACKUP_DIR" > "\$FX/binaire-backup.txt"
 echo oui > "\$FX/migre"
+# Comme le vrai binaire, sur toute base peuplée : l'avis du compte réinitialisé, au niveau ERROR.
+echo "2026-01-01T00:00:00Z ERROR kesh_api::auth::bootstrap: Recovery effectué"
+[ "\${ERREUR_JOURNAL:-non}" != oui ] || echo "2026-01-01T00:00:00Z ERROR kesh_api: autre chose"
 if [ "\${PRE_UPGRADE:-oui}" = oui ] && [ "\${N_REEL:-1}" -gt 0 ]; then
   mkdir -p "\$KESH_ADMIN_BACKUP_DIR/pre-upgrade"
   echo factice > "\$KESH_ADMIN_BACKUP_DIR/pre-upgrade/x.keshbackup"
@@ -285,8 +288,8 @@ ordre=$(/usr/bin/grep -oE '▶ phase [1-5]' "$FX/sortie" | tr -d '▶ phase' | t
 echo "  environnement fermé du binaire"
 D=$(/usr/bin/grep -oE 'dossier .*$' "$FX/sortie" | tail -1 | sed 's/^dossier //')
 case "$D" in "$WORK/jetable/"*) ok "dossier sous la racine jetable" ;; *) fail "dossier : $D" ;; esac
-noms=$(cut -d= -f1 "$FX/binaire-env.txt" | /usr/bin/grep -vxE 'PWD|SHLVL|_|OLDPWD' | sort | tr '\n' ' ')
-attendu="DATABASE_URL HOME KESH_ADMIN_BACKUP_DIR KESH_ADMIN_PASSWORD KESH_ADMIN_USERNAME KESH_COOKIE_SECURE KESH_DOCUMENTS_DIR KESH_HOST KESH_INBOX_DIR KESH_JWT_SECRET KESH_PORT KESH_SMTP_FROM KESH_SMTP_HOST KESH_SMTP_PASSWORD KESH_SMTP_USER KESH_STATIC_DIR PATH "
+noms=$(cut -d= -f1 "$FX/binaire-env.txt" | /usr/bin/grep -vxE 'PWD|SHLVL|_|OLDPWD' | LC_ALL=C sort | tr '\n' ' ')
+attendu="DATABASE_URL HOME KESH_ADMIN_BACKUP_DIR KESH_ADMIN_PASSWORD KESH_ADMIN_USERNAME KESH_COOKIE_SECURE KESH_DOCUMENTS_DIR KESH_HOST KESH_INBOX_DIR KESH_JWT_SECRET KESH_LOCALES_DIR KESH_PORT KESH_SMTP_FROM KESH_SMTP_HOST KESH_SMTP_PASSWORD KESH_SMTP_USER KESH_STATIC_DIR PATH "
 [ "$noms" = "$attendu" ] && ok "liste exacte" || fail "liste : $noms"
 /usr/bin/grep -qE 'sonde|KESH_RECETTE_RELANCE' "$FX/binaire-env.txt" && fail "une sonde a traversé" || ok "aucune sonde"
 [ "$(cat "$FX/binaire-pwd.txt")" = "$D/cwd" ] && ok "pwd = \$D/cwd" || fail "pwd : $(cat "$FX/binaire-pwd.txt")"
@@ -340,6 +343,11 @@ avec --diff-attendu migrations,invoices; lancer "${AV[@]}"
 preparer "N_REEL=1" "ECART=invoices"
 avec --diff-attendu migrations,invoice; lancer "${AV[@]}"
 [ "$RC" -eq 12 ] && ok "un nom proche ne couvre pas" || fail "code $RC"
+
+echo "  journal du binaire"
+preparer "N_REEL=1" "ERREUR_JOURNAL=oui"
+lancer "${BASE_ARGS[@]}"
+[ "$RC" -eq 12 ] && sortie_dit "erreur au journal" && ok "une erreur au journal : échec" || fail "code $RC"
 
 echo "  migrations"
 preparer "N_REEL=2"
