@@ -1,6 +1,6 @@
 # Story 33-6 : le règlement n'est plus annoncé en échec après son commit (#450)
 
-Status: ready-for-dev
+Status: done
 
 *Fiche rédigée le 2026-11-06 en autonomie (Opus 5.5), worktree `/home/gcorbaz/devel/kesh-e33`, branche `story/33-0-kickoff`,
 numéros de ligne de `4ef19901`. Release **0.17.5**, Epic 33. **Aucune migration.** Registre : `e33-choix-autonomes-e334.md`,
@@ -57,13 +57,13 @@ lecture après le commit, pour qu'aucun 404 ni 500 n'annonce en échec un règle
 
 ## Tâches
 
-- [ ] **T1 — rouge** : `tests/invoice_settlement_response_e2e.rs`, AC-3, et tests `kesh-db` : `settle_invoice(...)` rend `outcome.invoice.version` égal à la ligne
+- [x] **T1 — rouge** : `tests/invoice_settlement_response_e2e.rs`, AC-3, et tests `kesh-db` : `settle_invoice(...)` rend `outcome.invoice.version` égal à la ligne
   relue, `outcome.amount_settled` égal au `SUM` : rouges à la compilation, écrits d'abord.
-- [ ] **T2** : forme `find_with_lines_in_tx` à `repositories/invoices.rs`, réemployée par `find_by_id_with_lines` (DRY) ; sorties des trois fonctions ; trois handlers.
+- [x] **T2** : forme `find_with_lines_in_tx` à `repositories/invoices.rs`, réemployée par `find_by_id_with_lines` (DRY) ; sorties des trois fonctions ; trois handlers.
   ⚠️ `kesh-db` touché : **gate complet même en cours de boucle** (`CLAUDE.md`, exception `kesh-db`).
-- [ ] **T3** : garde lexicale dans le même fichier de test.
-- [ ] **T4** : `mcp_envois.rs`, `mcp_sends` ; `mcp-sends-format.ts`, `McpSendDetail.test.ts`.
-- [ ] **T5** : CHANGELOG *Corrigé* (`refs #450`, `refs #768`, `refs #773`).
+- [x] **T3** : garde lexicale dans le même fichier de test.
+- [x] **T4** : `mcp_envois.rs`, `mcp_sends` ; `mcp-sends-format.ts`, `McpSendDetail.test.ts`.
+- [x] **T5** : CHANGELOG *Corrigé* (`refs #450`, `refs #768`, `refs #773`).
 
 ### Mutations nommées (P2)
 
@@ -92,10 +92,60 @@ après règlement (`/usr/bin/grep -n 'règlement.*404' docs/api-external.md docs
 - 2026-11-06 : validation P2 (Opus 5.5), remédiation (Opus 5.5). Un LOW. **L-R6-1** : tranché, forme `_in_tx` (lu : `mcp_sends.rs:235-266`). Prémisse du rapport nuancée : `trouver` ne fait qu'**une** requête, et non plusieurs ; le geste reste petit, mais touche `kesh-db`. « Quatre lignes » retiré.
 - 2026-11-06 : validation P3 (Sonnet 5.5, lentilles R et F), remédiation (Opus 5.5). Deux LOW, aucun réfuté. **L-R6-1** : tranché, traité, plus de condition à l'AC-7 ni à T4 (lus : `McpSendDetail.svelte:106-109,295-296`, `mcp-sends-format.ts:81-103`) ; le site est dans le format, non dans le composant. **L-R6-2** : AC-1 et M5 (lus : `invoice_settlements_write.rs:797-802`, `invoices.rs:1228-1233,1357-1361`). ⚠️ M5 changée plus que le rapport ne le demandait : un solde solde **tout** le reste (`:415`), si bien que `Decimal::ZERO` y est la valeur juste, et la mutation d'origine, placée sur le solde, aurait survécu. Mutations : 5, inchangées.
 
+- 2026-11-06 : développement (Opus 5.5), worktree `/home/gcorbaz/devel/kesh-e335`, commit de code `25b0ed3d`. **Étape 0** : les deux LOW de la P3 sont déjà portés par la fiche (lus : `mcp-sends-format.ts:81-103`, `invoice_settlements_write.rs:797-802`) ; aucun point « à établir ». **Prémisse corrigée, C-e334-33** : la fiche et sa P3 parlaient d'une réponse perdue « hors `ApiError` ». Lu : `api-client.ts:338-347`, `toFetchApiError` lève une `ApiError` de statut 0. Le correctif tel qu'écrit n'aurait donc jamais servi sur une vraie coupure : la branche vise `!isApiError(err) || err.status === 0`. Une capture et une phrase du manuel d'administration ajoutées, l'état étant visible. Le retour de `cancel_settlement` est un type neuf, `CancelledSettlement`, `cancel_settlement_in_tx` gardant le sien.
+
+- 2026-11-07 : remédiation de la revue P1 (Opus 5.5), commits `737e4c57`, `80cf06cb`. Passe 1 (trois lentilles) : 0 CRITICAL, 0 HIGH, des MEDIUM. Sur décision de l'orchestrateur, tout ce qui suit est traité ici :
+  - **E-4 = A-4, le rejeu sur réponse perdue** (P1 à la lettre du barème) : prémisse lue, `invoices/[id]/+page.svelte` et `invoices/due-dates/+page.svelte` sont les deux seuls appelants de `settleInvoice` (`git grep`). Sur `!isApiError(err) || isUnknownOutcome(err)` : dialogue fermé, relecture, avis ; bouton indisponible jusqu'à une relecture entière réussie, *Relire*. **Côté fournisseur, pas de double écriture** : `paySupplierInvoice` ne porte pas de montant, et un second envoi est refusé par `inv.status != "open"` (`supplier_invoices.rs:1747`) ; seul manque l'affichage après coup (issue demandée). CHANGELOG récrit. C-e334-36.
+  - **E-2** : `isUnknownOutcome`, 502 et 504 compris ; **B5** : le message dit pourquoi *Recharger* ; **B4 = E-3** : ni l'échec du GET, ni un GET réussi ne perdent le texte sans le dire ; **E-9** : une réponse vide est une issue inconnue.
+  - **B2, B3, A-2, A-3, E-5, E-6, E-7** : la garde lexicale, qui énumérait des formes, cède la place à une garde de structure lue par `syn`, sur l'ensemble clos « aucun `.await` après l'écriture ni après le commit, la lecture avant lui », pour les trois handlers, les trois fonctions et `decider_envoi`, sonde passant par le même découpage. Égalités MCP pour une version modifiée et un refus ; annulation partielle (E-11).
+  - **B1 = E-1 = A-1** : `admin-manual.tex:3437` récrit. **A-5, B7, E-8** : doc-comments. **A-6** : `R-read-before-writeoff` mord sur le solde lui-même. **A-7** : File List. **E-10, A-8** : l'échec du `COMMIT` reste une issue inconnue, dit au manuel.
+  - La capture a montré l'avis écrasé dans la rangée des boutons, et une garde de replis (`i18n-repli-divergent-actif.test.ts`) a rougi au gate de `737e4c57` : `80cf06cb`, d'où un rejeu complet.
+  - **Écart de méthode** : la garde Rust et les ajouts `mcp_envois_e2e.rs` ont été posés par un script Python (consigne 14) ; diff relu.
+
+- 2026-11-07 : remédiation de la revue P2 (Opus 5.5), commit de code `242b9191`. **P2 ciblée (Sonnet 5.5) : 0 C, 0 H, 2 M, 6 LOW.** Prémisses lues, aucune réfutée. Tout le code passé par l'outil Edit.
+  - **P2-2** (`errors.rs:1642`, `ConnectionUnavailable` → 503 sur une erreur d'E/S au `COMMIT`) : `isSettlementOutcomeUnknown`, dans `unknown-outcome.ts`, pour les deux seuls appelants de `settleInvoice` : tout 5xx et toute erreur hors `ApiError` valent issue inconnue ; seul un 4xx laisse le dialogue ouvert. `isUnknownOutcome` est inchangé pour la sauvegarde, la restauration et les envois MCP ; son doc-comment renvoie au cas du règlement. Le repli `common-error`, inatteignable, est retiré des deux écrans (`sitesTotal` 2840 → 2838). L'avis disait « la réponse du serveur n'est pas parvenue », faux pour un 5xx : « le serveur ne l'a pas confirmé », aux quatre locales et aux deux replis.
+  - **P2-1** : la garde `syn` n'est plus un découpage en blocs ; elle parcourt les `.await` du corps dans leur ordre d'évaluation et exige que celui de l'appel soit le dernier, hors `rollback`. La sonde `the_guard_sees_a_wait_in_a_match_arm_or_the_same_statement` porte les trois formes du rapport (bras de `match`, `if let`, même instruction) ; **rouge d'avant** journalisé (`rouges.log` : « le bras d'un match sur l'appel », `left: 0`, `right: 1`). **Limites écrites au doc-comment**, sans forme de plus : une attente dans les jetons d'une macro, une relecture dans une fonction appelée, une tâche lancée sans `.await`.
+  - **LOW** : **P2-3**, la facture capturée avant l'envoi (`const cible`). **P2-4** et **P2-5** : `user-manual.tex` (panne du serveur, autre onglet ou page rechargée, attendre une minute après un délai dépassé), PDF régénéré ; le titre du CHANGELOG ne promet plus que le geste dans l'onglet, avec la limite et le renvoi **#951**. **P2-6** : deux angles sur trois, un texte relu identique à la saisie ne se signale plus, une décision réussie retire l'avis ; le troisième (un 404 au rechargement efface le texte sans le dire) demande de déplacer le bloc hors de `{:else if detail}` : **issue demandée**. **P2-7** : dit au doc-comment, sans changement (sûr dans le bon sens). **P2-8** : E2E d'un règlement partiel coupé, le bouton rouvert propose `100.00`, le reste relu.
+  - **Rouges d'avant** (`rouges.log`) : seize Vitest (douze du prédicat absent, 500 et 503 sur la fiche, 503 et P2-3 sur l'échéancier), deux de `McpSendDetail`, un de la garde `syn`.
+  - **Mutations** (`e335/mut/synthese-33-6-p3.log`), quinze sur quinze tuées : `R-match` (relecture dans le bras `Ok` d'un `match` sur le commit de `settle_invoice` : `the_response_is_read_before_the_commit_and_nothing_waits_after_it`), `V-5xx`, `V-non-api`, `V-page-5xx`, `V-due-5xx`, `V-due-cible`, `V-mcp-same`, `V-mcp-clear` ; et les sept `R-*` de la P2, rejouées contre la garde neuve, chacune rouge pour la même raison qu'avant.
+  - **Gates à `242b9191`** (`e335/33-6-p2/`) : `test-fast.sh --ci` 4826 exécutés, 4826 passés, 12 ignorés ; `cargo build --workspace --all-targets` vert ; `npm run check` 0 erreur ; `lint-i18n-ownership` vert ; Vitest 2734 tests, 218 fichiers ; `npm run build` vert. **E2E complet** sur `kesh_e2e_e335` recréée (`e2e-r33-6-p2/`) : 380 tests, 355 passés, 18 ignorés, **7 échecs, tous de la KF-029** (`mode-expert:26,41`, `onboarding-path-b:65,92`, `onboarding:57,77,150`) ; les trois tests de `invoices-settle-unknown-outcome.spec.ts` passent. Captures rejouées (`captures/33-6-p1-*.png`), avis relu sur la capture de la fiche.
+  - Prompt de la P3 ciblée : `33-6-reglement-apres-commit-review-prompt-p3.md`, bornes `d17b3439..242b9191`.
+  - *(Annoté le 2026-11-07, revue P3, P3-6 : les journaux par mutation de cette remédiation ont été **écrasés** : `local n=$1 … log=$L/33-6-p3-$n.log` développe `$n` avant de l'affecter, si bien que les quinze passages ont écrit le seul `mut/33-6-p3-.log`, qui ne garde que `V-mcp-clear`. La synthèse, écrite après chaque passage, reste juste ; la raison du rouge de `R-match` ne se lit plus qu'à elle. Le rouge d'avant de la sonde ne nomme que la première de ses trois formes, l'`assert_eq!` arrêtant la boucle ; les deux autres sont tracées à la lecture, non exécutées.)*
+
+- 2026-11-07 : **revue de code terminée.** Tendance, recomptée sur les rapports `kesh-gate-logs/e336-review-p1-{A,B,E}.md`, `e336-review-p2.md`, `e336-review-p3.md` : **P1, trois lentilles (Opus 5.5) : 0 C, 0 H, 13 M, 16 LOW → P2 ciblée (Sonnet 5.5) : 0 C, 0 H, 2 M, 6 LOW → P3 ciblée (Opus 5.5) : 0 C, 0 H, 0 M, 6 LOW.** Boucle fermée sur une passe sans constat au-dessus de LOW. Développement et remédiations : Opus 5.5. Solde des LOW de la P3, sans ligne exécutable de production :
+  - **P3-1** : le doc-comment d'`isUnknownOutcome` dit le vrai motif (un rejeu sans danger : version de l'envoi MCP, sauvegarde en double).
+  - **P3-2** : les écarts de la garde `syn` écrits à ses limites (ordre textuel, boucle, base de l'`.await`, exemption de tout `.await` qui contient un `rollback`, faux positifs bruyants).
+  - **P3-5** : le manuel ne promet plus de borne (« laissez-lui du temps, relisez »), PDF régénéré et contrôlé aplati.
+  - **P3-6** : note datée ci-dessus.
+  - **P3-3** (échéancier : le refus de la facture A affiché dans le dialogue de B) et **P3-4** (`McpSendDetail` : le texte non repris disparaît après un refus suivi de *Recharger*) touchent la production : non traités ici, issues ouvertes par l'orchestrateur.
+  - **Gates de ce dernier commit** : aucune ligne exécutable de production ; `cargo fmt` vert. Le gate complet reste celui de `242b9191` (ci-dessus).
+
 ## Dev Agent Record
 
 ### Agent Model Used
 
+Claude Opus 5.5.
+
 ### Completion Notes List
 
+- **Rouges d'abord** (`kesh-gate-logs/e335/rouges.log`) : tests `kesh-db` rouges **à la compilation** (`E0609`, champs `invoice`, `lines`, `amount_settled`, `amount_due` absents) ; côté API, avant le correctif, 7 tests, 6 passés, 1 rouge, la garde `the_three_handlers_read_nothing_after_the_write`. ⚠️ **Les cinq tests d'égalité passaient déjà avant le correctif, et c'est attendu** : le comportement nominal ne change pas, le 404 n'étant pas reproductible (C-e334-10). Ils prouvent que la lecture dans la transaction rend le même état, et les mutations M1, M2, M4, M5 prouvent qu'ils mordent.
+- **Mutations** (`e335/mut/synthese-33-6.log`), cinq sur cinq tuées. M1 : `la_sortie_du_reglement_porte_la_facture_relue` et les trois tests HTTP de règlement. M2 : les tests HTTP dont `a_cancellation_returns_what_was_written`, et la sortie `kesh-db`. M3 : `the_three_handlers_read_nothing_after_the_write`. M4 : les trois tests HTTP de règlement. M5 : `a_write_off_returns_what_was_written`, `la_sortie_du_solde_porte_la_facture_relue`.
+- **Gates au commit `25b0ed3d`** (`e335/33-6/`) : `test-fast.sh --ci` vert, 4823 exécutés, 4823 passés, 12 ignorés ; `cargo build --workspace --all-targets` vert ; `npm run check` 0 erreur ; `lint-i18n-ownership` vert ; Vitest 2699 tests, 218 fichiers ; `npm run build` vert. **E2E complet** sur `kesh_e2e_e335` recréée : 377 tests, 352 passés, 18 ignorés, **7 échecs, tous de la KF-029** (`mode-expert:26,41`, `onboarding-path-b:65,92`, `onboarding:57,77,150`), 16,2 min.
+- **Capture** : `e335/captures/33-6-reponse-perdue-recharger.png`, réponses d'API simulées (requête de décision interrompue) sur base jetable, thème clair.
+- **Manuels** : `admin-manual.tex` (*Envoyer tel quel*), PDF régénéré, contrôlé aplati (« quand la réponse du serveur se perd » lu). `user-manual` et `api-external.md` : aucun 404 après règlement décrit (`:519` est le 404 d'une facture réellement introuvable). PDF de la brochure et du manuel utilisateur, régénérés sans changement de source, rétablis.
+- **AC-5** : `cancel_settlement_in_tx` et `reconciliation_cancel` ne lisent rien de plus ; les appelants `tests/` compilent sans modification, leurs champs étant conservés.
+- **Non traité, à tracer** : neuf sites de relecture après commit côté fournisseur (issue demandée, C-e334-8). Une réponse 500 ne propose pas *Recharger* : depuis le correctif, un 500 de la décision annule l'écriture, mais un proxy qui rendrait 502 ou 504 sur réponse perdue resterait sans bouton : à dire au commentaire de #773.
+- **Écart de méthode** : aucun fichier de code n'a été écrit par script hors des mutations.
+
+- **Remédiation P1, rouges** (`e335/rouges.log`) : Vitest, 20 rouges sur 57, dont les cas d'issue inconnue des deux écrans et de `McpSendDetail` ; Rust, 36 passés sur 36, ces preuves-là (garde `syn`, égalités) ne rougissant que sous mutation : c'est écrit ici pour ne pas passer pour un rouge.
+- **Mutations P1** (`e335/mut/synthese-33-6-p2.log`), seize sur seize tuées : `R-decider`, `R-settle`, `R-writeoff`, `R-cancel` (relecture remise après le commit), `R-service`, `R-mapped` (formes que l'ancienne garde laissait passer), `R-read-before-writeoff`, `V-page-condition`, `V-page-open`, `V-page-list`, `V-due-condition`, `V-due-open`, `V-mcp-rule`, `V-mcp-screen`, `V-mcp-text`, `V-mcp-silent`.
+- **Gates à `80cf06cb`** (`e335/33-6-p1b/`) : `test-fast.sh --ci` 4825 passés, 12 ignorés ; build vert ; `check`, `lint-i18n-ownership`, `npm run build` verts ; Vitest 2716, 218 fichiers ; **E2E complet** 379 tests, 354 passés, 18 ignorés, 7 échecs tous KF-029, 15,9 min, les deux tests `invoices-settle-unknown-outcome.spec.ts` passant.
+- **Captures** (`e335/captures/33-6-p1-*.png`) : fiche à l'issue inconnue, échéancier en relecture échouée puis relu, texte non repris.
+- **Manuels** : `admin-manual` et `user-manual`, PDF contrôlés aplatis (« Si la réponse se perd » lu, « annoncée en échec alors » absent) ; brochure rétablie.
+
 ### File List
+
+*(Ajouts de la remédiation, et oublis de la première liste signalés par A-7.)* `frontend/src/routes/(app)/invoices/[id]/+page.svelte`, `frontend/src/routes/(app)/invoices/due-dates/+page.svelte`, leurs tests, `frontend/src/lib/features/mcp-sends/McpSendDetail.svelte`, `mcp-sends-i18n.test.ts`, `frontend/src/lib/shared/i18n-keys.test.ts`, `i18n-repli-divergent-actif.test.ts`, `frontend/tests/e2e/invoices-settle-unknown-outcome.spec.ts` (neuf), `crates/kesh-i18n/locales/{fr,de,en,it}-CH/messages.ftl`, `docs/manual/fr/user-manual.{tex,pdf}`, `_bmad-output/implementation-artifacts/e33-choix-autonomes-e334.md`, `sprint-status.yaml`, `33-6-reglement-apres-commit-review-prompt-p2.md` (neuf).
+
+
+`crates/kesh-db/src/repositories/invoice_settlements_write.rs`, `crates/kesh-db/src/repositories/invoices.rs`, `crates/kesh-db/src/repositories/mcp_sends.rs`, `crates/kesh-db/tests/invoice_settlement.rs`, `crates/kesh-db/tests/invoice_write_off.rs`, `crates/kesh-api/src/routes/invoices.rs`, `crates/kesh-api/src/routes/mcp_envois.rs`, `crates/kesh-api/tests/invoice_settlement_response_e2e.rs` (neuf), `crates/kesh-api/tests/mcp_envois_e2e.rs`, `frontend/src/lib/features/mcp-sends/mcp-sends-format.ts`, `frontend/src/lib/features/mcp-sends/McpSendDetail.test.ts`, `docs/manual/fr/admin-manual.{tex,pdf}`, `CHANGELOG.md`, `_bmad-output/implementation-artifacts/33-6-reglement-apres-commit-review-prompt-p1.md` (neuf).

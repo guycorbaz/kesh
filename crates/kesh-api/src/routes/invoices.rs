@@ -1159,14 +1159,12 @@ pub async fn settle_invoice_handler(
     })
     .await?;
 
-    let (invoice, lines) = invoices::find_by_id_with_lines(&state.pool, company.id, id)
-        .await?
-        .ok_or(AppError::Database(DbError::NotFound))?;
-    let settled =
-        kesh_db::repositories::invoice_settlements::amount_settled(&state.pool, id).await?;
+    // Story 33-6 (#450) — rien ne se relit ici : `outcome` porte ce que la
+    // transaction a écrit, et une relecture après le commit annoncerait en échec un
+    // règlement réussi. Garde : `invoice_settlement_response_e2e.rs`.
     Ok(Json(SettleInvoiceResponse {
-        invoice: InvoiceResponse::from_parts(invoice, lines)
-            .with_settlement(settled, outcome.amount_due_after),
+        invoice: InvoiceResponse::from_parts(outcome.invoice, outcome.lines)
+            .with_settlement(outcome.amount_settled, outcome.amount_due_after),
         journal_entry_id: outcome.journal_entry_id,
         amount_due_after: outcome.amount_due_after,
         fully_settled: outcome.fully_settled,
@@ -1235,14 +1233,10 @@ pub async fn write_off_invoice_handler(
     })
     .await?;
 
-    let (invoice, lines) = invoices::find_by_id_with_lines(&state.pool, company.id, id)
-        .await?
-        .ok_or(AppError::Database(DbError::NotFound))?;
-    let settled =
-        kesh_db::repositories::invoice_settlements::amount_settled(&state.pool, id).await?;
-    let due = kesh_db::repositories::invoice_settlements::amount_due(&state.pool, id).await?;
+    // Story 33-6 (#450) — cf. `settle_invoice_handler` : aucune relecture.
     Ok(Json(WriteOffInvoiceResponse {
-        invoice: InvoiceResponse::from_parts(invoice, lines).with_settlement(settled, due),
+        invoice: InvoiceResponse::from_parts(outcome.invoice, outcome.lines)
+            .with_settlement(outcome.amount_settled, outcome.amount_due),
         journal_entry_id: outcome.journal_entry_id,
         amount: outcome.amount,
     }))
@@ -1364,14 +1358,10 @@ pub async fn cancel_invoice_settlement_handler(
     })
     .await?;
 
-    let (invoice, lines) = invoices::find_by_id_with_lines(&state.pool, company.id, id)
-        .await?
-        .ok_or(AppError::Database(DbError::NotFound))?;
-    let settled =
-        kesh_db::repositories::invoice_settlements::amount_settled(&state.pool, id).await?;
+    // Story 33-6 (#450) — cf. `settle_invoice_handler` : aucune relecture.
     Ok(Json(CancelSettlementResponse {
-        invoice: InvoiceResponse::from_parts(invoice, lines)
-            .with_settlement(settled, done.amount_due_after),
+        invoice: InvoiceResponse::from_parts(done.invoice, done.lines)
+            .with_settlement(done.amount_settled, done.amount_due_after),
         reversal_journal_entry_id: done.reversal_journal_entry_id,
     }))
 }

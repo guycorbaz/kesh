@@ -881,7 +881,12 @@ const ATTENDU = {
 	// Story 33-5 (#909) : **2832 → 2846** (+14), tous dans `settings/+page.svelte` — les cinq
 	// champs, Modifier, Enregistrer, Annuler, l'avis, l'aide, et les quatre messages de
 	// `saveAddress`. Que des littéraux ; `sitesNonResolus` et `relais` inchangés.
-	sitesTotal: 2846,
+	// Story 33-6, revue P1 : **2832 → 2840** (+8) : la fiche facture +3, l'échéancier +3,
+	// `mcp-sends-format.ts` +1, `McpSendDetail.svelte` +1. Que des littéraux ;
+	// `sitesNonResolus` et `relais` inchangés.
+	// Story 33-6, revue P2 : **2840 → 2838** (−2) : le repli `common-error` de la fiche et de
+	// l'échéancier, inatteignable depuis `isSettlementOutcomeUnknown`.
+	sitesTotal: 2838,
 	sitesNonResolus: 31,
 	relais: 6,
 	// Story 26-1 (#620, AC3-bis) : **10 → 11** — `lib/features/bank-import/

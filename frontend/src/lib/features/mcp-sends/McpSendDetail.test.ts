@@ -189,6 +189,133 @@ describe('McpSendDetail', () => {
 			expect(r.queryByTestId('mcp-send-reload')).not.toBeNull();
 		});
 
+		// Story 33-6 (#773, point 3, AC-7) : une réponse perdue ne dit pas si la
+		// décision a été écrite ; seul un rechargement le montre.
+		// Revue P1 : la règle est `isUnknownOutcome` (E-2), et le message dit pourquoi le
+		// bouton est là (B5).
+		it('réponse perdue (réseau, délai, passerelle) : l’issue inconnue et Recharger', async () => {
+			for (const [status, code] of [
+				[0, 'NETWORK_ERROR'],
+				[0, 'TIMEOUT'],
+				[502, 'BAD_GATEWAY'],
+				[504, 'GATEWAY_TIMEOUT'],
+			] as const) {
+				const r = await monter();
+				mockApi.decideMcpSend.mockRejectedValueOnce(erreurApi(status, code, 'Serveur injoignable.'));
+				await fireEvent.click(r.getByTestId('mcp-send-approve'));
+				expect((await r.findByTestId('mcp-send-error')).textContent).toContain(
+					'a pu être enregistrée',
+				);
+				expect(r.queryByTestId('mcp-send-reload')).not.toBeNull();
+				cleanup();
+			}
+		});
+
+		it('une réponse vide de la décision est une issue inconnue, non un écran vide (E-9)', async () => {
+			const r = await monter();
+			mockApi.decideMcpSend.mockResolvedValueOnce(undefined as unknown as Detail);
+			await fireEvent.click(r.getByTestId('mcp-send-approve'));
+			await r.findByTestId('mcp-send-error');
+			expect(r.queryByTestId('mcp-send-reload')).not.toBeNull();
+			expect(r.queryByTestId('mcp-send-title')).not.toBeNull();
+		});
+
+		// Revue P1 (B4 = E-3) : Recharger ne perd pas ce que l'Administrateur a écrit.
+		it('Recharger en échec : écran et texte modifié gardés, Recharger toujours là', async () => {
+			const r = await monter();
+			await modifier(r, 'mon texte');
+			mockApi.decideMcpSend.mockRejectedValueOnce(erreurApi(0, 'NETWORK_ERROR', 'x'));
+			await fireEvent.click(r.getByTestId('mcp-send-approve-modified'));
+			await r.findByTestId('mcp-send-reload');
+			mockApi.getMcpSend.mockRejectedValueOnce(erreurApi(0, 'NETWORK_ERROR', 'Injoignable.'));
+			await fireEvent.click(r.getByTestId('mcp-send-reload'));
+			await waitFor(() => expect(mockApi.getMcpSend).toHaveBeenCalledTimes(2));
+			await r.findByTestId('mcp-send-reload');
+			expect(r.queryByTestId('mcp-send-title')).not.toBeNull();
+			expect(textarea(r.getByTestId).value).toBe('mon texte');
+		});
+
+		it('Recharger réussi, envoi inchangé : le texte modifié reste dans le champ', async () => {
+			const r = await monter();
+			await modifier(r, 'mon texte');
+			mockApi.decideMcpSend.mockRejectedValueOnce(erreurApi(0, 'NETWORK_ERROR', 'x'));
+			await fireEvent.click(r.getByTestId('mcp-send-approve-modified'));
+			await r.findByTestId('mcp-send-reload');
+			mockApi.getMcpSend.mockResolvedValueOnce(envoi());
+			await fireEvent.click(r.getByTestId('mcp-send-reload'));
+			await waitFor(() => expect(r.queryByTestId('mcp-send-reload')).toBeNull());
+			expect(textarea(r.getByTestId).value).toBe('mon texte');
+			expect(r.queryByTestId('mcp-send-edit-not-kept')).toBeNull();
+		});
+
+		it('Recharger réussi, envoi décidé entre-temps : le texte n’est pas perdu sans le dire', async () => {
+			const r = await monter();
+			await modifier(r, 'mon texte');
+			mockApi.decideMcpSend.mockRejectedValueOnce(erreurApi(0, 'NETWORK_ERROR', 'x'));
+			await fireEvent.click(r.getByTestId('mcp-send-approve-modified'));
+			await r.findByTestId('mcp-send-reload');
+			mockApi.getMcpSend.mockResolvedValueOnce(envoi({ state: 'approved', version: 6 }));
+			await fireEvent.click(r.getByTestId('mcp-send-reload'));
+			const avis = await r.findByTestId('mcp-send-edit-not-kept');
+			expect(avis.textContent).toContain('mon texte');
+		});
+
+		it('Recharger réussi, le texte relu est celui de l’utilisateur : rien à signaler (P2-6)', async () => {
+			const r = await monter();
+			await modifier(r, 'mon texte');
+			mockApi.decideMcpSend.mockRejectedValueOnce(erreurApi(0, 'NETWORK_ERROR', 'x'));
+			await fireEvent.click(r.getByTestId('mcp-send-approve-modified'));
+			await r.findByTestId('mcp-send-reload');
+			mockApi.getMcpSend.mockResolvedValueOnce(
+				envoi({ state: 'approved', version: 6, content: 'mon texte' }),
+			);
+			await fireEvent.click(r.getByTestId('mcp-send-reload'));
+			await waitFor(() => expect(r.queryByTestId('mcp-send-reload')).toBeNull());
+			expect(r.queryByTestId('mcp-send-edit-not-kept')).toBeNull();
+		});
+
+		it('une décision réussie retire l’avis du texte non repris (P2-6)', async () => {
+			const r = await monter();
+			await modifier(r, 'mon texte');
+			mockApi.decideMcpSend.mockRejectedValueOnce(erreurApi(0, 'NETWORK_ERROR', 'x'));
+			await fireEvent.click(r.getByTestId('mcp-send-approve-modified'));
+			await r.findByTestId('mcp-send-reload');
+			mockApi.getMcpSend.mockResolvedValueOnce(envoi({ version: 6 }));
+			await fireEvent.click(r.getByTestId('mcp-send-reload'));
+			await r.findByTestId('mcp-send-edit-not-kept');
+			mockApi.decideMcpSend.mockResolvedValueOnce(envoi({ state: 'approved', version: 7 }));
+			await fireEvent.click(r.getByTestId('mcp-send-approve'));
+			await waitFor(() => expect(r.queryByTestId('mcp-send-edit-not-kept')).toBeNull());
+		});
+
+		it('sans texte modifié, Recharger ne signale rien', async () => {
+			const r = await monter();
+			mockApi.decideMcpSend.mockRejectedValueOnce(erreurApi(0, 'NETWORK_ERROR', 'x'));
+			await fireEvent.click(r.getByTestId('mcp-send-approve'));
+			await r.findByTestId('mcp-send-reload');
+			mockApi.getMcpSend.mockResolvedValueOnce(envoi({ state: 'approved', version: 6 }));
+			await fireEvent.click(r.getByTestId('mcp-send-reload'));
+			await waitFor(() => expect(mockApi.getMcpSend).toHaveBeenCalledTimes(2));
+			await waitFor(() => expect(r.queryByTestId('mcp-send-reload')).toBeNull());
+			expect(r.queryByTestId('mcp-send-edit-not-kept')).toBeNull();
+		});
+
+		it('erreur qui n’est pas une ApiError : Recharger aussi', async () => {
+			const r = await monter();
+			mockApi.decideMcpSend.mockRejectedValueOnce(new Error('coupure'));
+			await fireEvent.click(r.getByTestId('mcp-send-approve'));
+			await r.findByTestId('mcp-send-error');
+			expect(r.queryByTestId('mcp-send-reload')).not.toBeNull();
+		});
+
+		it('une ApiError répondue par le serveur (500) garde son comportement, sans Recharger', async () => {
+			const r = await monter();
+			mockApi.decideMcpSend.mockRejectedValueOnce(erreurApi(500, 'INTERNAL_ERROR', 'Erreur.'));
+			await fireEvent.click(r.getByTestId('mcp-send-approve'));
+			await r.findByTestId('mcp-send-error');
+			expect(r.queryByTestId('mcp-send-reload')).toBeNull();
+		});
+
 		it('404 : « Envoi introuvable »', async () => {
 			const r = await monter();
 			mockApi.decideMcpSend.mockRejectedValueOnce(erreurApi(404, 'NOT_FOUND', 'x'));

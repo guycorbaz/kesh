@@ -747,6 +747,21 @@ async fn routes_de_decision_par_une_session_d_administrateur(pool: MySqlPool) {
         (r.json()["state"].clone(), r.json()["version"].clone()),
         (json!("approved"), json!(2))
     );
+    // Story 33-6 (#768, point 1, AC-6) : la réponse, lue dans la transaction de la
+    // décision, égale le détail qui la suit, champ à champ.
+    assert_eq!(r.json(), b.detail(&l.jwt, n).await.json());
+    // Revue P1 (E-7) : de même pour une version modifiée, et pour un refus, dont le
+    // contenu et le résumé s'effacent.
+    let m = b.deposer(&l.requise.1, "piege").await;
+    let r = b.valider(&l.jwt, m, Some("texte de remplacement")).await;
+    assert_eq!(r.statut, StatusCode::OK);
+    assert_eq!(r.json()["modified"], json!(true));
+    assert_eq!(r.json(), b.detail(&l.jwt, m).await.json());
+    let m = b.deposer(&l.requise.1, "piege").await;
+    let r = b.refuser(&l.jwt, m).await;
+    assert_eq!(r.statut, StatusCode::OK);
+    assert_eq!(r.json()["content"], Value::Null);
+    assert_eq!(r.json(), b.detail(&l.jwt, m).await.json());
     // Introuvable, ou d'une autre société : le même 404.
     let c2 = societe(&pool, "Autre société 328").await;
     let u2 = administrateur(&pool, c2, "admin-328-b").await;
