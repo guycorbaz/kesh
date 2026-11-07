@@ -69,6 +69,9 @@ Le contenu est rédigé en français à destination des **fiduciaires, PME, ind�
 - **Un compte désigné dans les paramètres de facturation ne s'archive plus sans avertissement** ([#486](https://github.com/guycorbaz/kesh/issues/486)) : le dialogue nomme les réglages qui le désignent et dit ce qu'il en coûte : tant que ce compte est archivé, toute écriture qui l'emploie est refusée, y compris sur une pièce déjà validée, et sa réactivation lève le blocage ; *Archiver quand même* passe outre ; l'archivage reste ouvert au Comptable, seul l'Administrateur a le lien vers les paramètres. Un compte déjà archivé n'empêche plus d'enregistrer un autre réglage. ⚠️ Pour une intégration : `PUT /accounts/{id}/archive` rend désormais `409 ACCOUNT_DESIGNATED_IN_SETTINGS` sur un tel compte, sauf avec `"confirmDesignated": true`.
 
 ---
+### Corrigé
+
+- **Le menu latéral garde le groupe que vous avez replié** ([#424](https://github.com/guycorbaz/kesh/issues/424)) : ouvrir une page d'un groupe replié le déplie pour cette page, sans plus enregistrer ce dépliage comme votre choix. Le groupe reste déplié pendant que vous naviguez, et il redevient tel que vous l'aviez laissé au prochain chargement de la page. Un groupe que le dépliage automatique avait déjà enregistré comme ouvert le reste : un clic pour le replier suffit à corriger ce choix.
 
 ## [0.17.4] — 2026-11-06
 

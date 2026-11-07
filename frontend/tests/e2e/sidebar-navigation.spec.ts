@@ -36,6 +36,11 @@ async function loginAsAdmin(page: Page): Promise<void> {
 	await expect(page).toHaveURL('/');
 }
 
+/** Le choix enregistré pour le groupe Administration ; `null` s'il n'y en a aucun. */
+function choixEnregistre(page: Page): Promise<string | null> {
+	return page.evaluate(() => localStorage.getItem('kesh:sidebar:expanded:administration'));
+}
+
 test.describe('Sidebar navigation v014-1', () => {
 	// ⚠️ Le groupe se cible par `data-testid`, jamais par `has-text("Administration")`. Le
 	// libellé est traduit depuis la story 23-3b : identique en français, en allemand et en
@@ -58,6 +63,10 @@ test.describe('Sidebar navigation v014-1', () => {
 	test('navigue vers les 5 entrées Administration', async ({ page }) => {
 		await loginAsAdmin(page);
 		const sidebar = page.locator('nav[aria-label="Navigation principale"]');
+		await expect(sidebar.locator('[data-testid="nav-group-administration"]')).not.toHaveAttribute(
+			'open',
+			/.*/,
+		);
 		await sidebar.locator('[data-testid="nav-group-administration"] summary').click();
 
 		const routes = [
@@ -82,20 +91,73 @@ test.describe('Sidebar navigation v014-1', () => {
 		await loginAsAdmin(page);
 		const sidebar = page.locator('nav[aria-label="Navigation principale"]');
 		const adminDetails = sidebar.locator('[data-testid="nav-group-administration"]');
+		const summary = sidebar.locator('[data-testid="nav-group-administration"] summary');
+
+		// L'état de départ se pose : aucun choix enregistré, groupe fermé. Un groupe ouvert
+		// ici échoue net, avant le clic, et ne se confond pas avec un défaut de persistance.
+		await page.evaluate(() => localStorage.removeItem('kesh:sidebar:expanded:administration'));
+		await page.reload();
+		await expect(adminDetails).not.toHaveAttribute('open', /.*/);
 
 		// Ouvrir le groupe (persiste via localStorage).
-		await sidebar.locator('[data-testid="nav-group-administration"] summary').click();
+		await summary.click();
 		await expect(adminDetails).toHaveAttribute('open', '');
 
-		// Vérifier la clé localStorage.
-		const stored = await page.evaluate(() =>
-			localStorage.getItem('kesh:sidebar:expanded:administration'),
-		);
-		expect(stored).toBe('true');
+		// #424 : `open` se pose au clic, `toggle` est une tâche, et l'écriture la suit de
+		// quelques millisecondes (mesuré : `null`, puis `'true'` 4 à 6 ms plus tard). Lire
+		// une seule fois tombe parfois entre les deux : on attend donc la valeur. Ce poll ne
+		// masque rien : sans écriture, il échoue (mutation M1 de la Story 33-9).
+		await expect.poll(() => choixEnregistre(page), { timeout: 2000 }).toBe('true');
 
 		// Reload — l'état doit persister.
 		await page.reload();
 		await expect(adminDetails).toHaveAttribute('open', '');
+
+		// Sens inverse : un groupe replié reste replié, même choix, même persistance.
+		await summary.click();
+		await expect(adminDetails).not.toHaveAttribute('open', /.*/);
+		await expect.poll(() => choixEnregistre(page), { timeout: 2000 }).toBe('false');
+		await page.reload();
+		await expect(adminDetails).not.toHaveAttribute('open', /.*/);
+	});
+
+	test('auto-expand : le choix enregistré ne change pas (#424)', async ({ page }) => {
+		// On compte les `toggle` du groupe : c'est après le premier que l'écriture aurait lieu,
+		// et aucune attente fixe ne dirait qu'elle n'a pas eu lieu.
+		await page.addInitScript(() => {
+			const w = window as unknown as { __togglesAdmin: number };
+			w.__togglesAdmin = 0;
+			document.addEventListener(
+				'toggle',
+				(e) => {
+					const cible = e.target as HTMLElement;
+					if (cible.getAttribute('data-testid') === 'nav-group-administration') {
+						w.__togglesAdmin += 1;
+					}
+				},
+				true,
+			);
+		});
+		await loginAsAdmin(page);
+		await page.evaluate(() => {
+			localStorage.setItem('kesh:sidebar:expanded:administration', 'false');
+		});
+
+		await page.goto('/accounts');
+		const adminDetails = page.locator(
+			'nav[aria-label="Navigation principale"] [data-testid="nav-group-administration"]',
+		);
+		await expect(adminDetails).toHaveAttribute('open', '');
+		await expect
+			.poll(() =>
+				page.evaluate(() => (window as unknown as { __togglesAdmin: number }).__togglesAdmin),
+			)
+			.toBeGreaterThan(0);
+		expect(await choixEnregistre(page), 'le dépliage automatique n’écrit rien').toBe('false');
+
+		// Hors du groupe, le choix enregistré s'applique de nouveau.
+		await page.goto('/');
+		await expect(adminDetails).not.toHaveAttribute('open', /.*/);
 	});
 
 	test('auto-expand groupe contenant la route active (F12 Pass 3 Opus)', async ({ page }) => {
