@@ -9,7 +9,7 @@ La pipeline `ci.yml` se déclenche sur :
 - **Pull request** vers `main` → le job `changes`, puis 4 jobs (`backend`, `frontend`, `docker-build`, `e2e-smoke`), sauf si la PR ne porte que `_bmad-output/`
 - **Push** sur `main` (= merge de PR) → `changes`, puis les mêmes 4 jobs, toujours
 
-**Le filtre, et son périmètre étroit** *(Story 33-11, #928)* : le job `changes` lance `scripts/ci-seuls-artefacts.sh`, qui rend `code=false` **seulement** sur une `pull_request` dont le diff, non vide, ne nomme que des fichiers sous `_bmad-output/`. Les quatre jobs sont alors sautés, et un job sauté compte pour réussi aux checks requis ; c'est pourquoi le filtre n'est pas un `paths-ignore` au niveau du workflow, qui les laisserait en attente. Tout le reste échoue vers la CI complète : `push`, diff vide, SHA inconnu, `git` en échec, renommage depuis ou vers un autre dossier, et `changes` lui-même en échec : les conditions excluent le seul cas `changes` réussi et sortie `false`. **Manuels, `docs/`, `README.md`, `CHANGELOG.md`, `CLAUDE.md` et `website/` restent hors du filtre**, parce que des tests les lisent (`textes_coherents.rs`, `mcp_matrice_manuel.rs`, `configuration_transmise.rs`). `changes` n'est pas un check requis. ⚠️ **Élargir le périmètre demande de vérifier d'abord que rien ne lit les fichiers visés** : l'erreur de ce filtre est muette, elle saute des tests à tort. Le comportement réel de GitHub (job sauté, échec, annulation) est relevé à la Story 33-11, sur de vraies PR.
+**Le filtre, et son périmètre étroit** *(Story 33-11, #928)* : le job `changes` lance `scripts/ci-seuls-artefacts.sh`, qui rend `code=false` **seulement** sur une `pull_request` dont le diff, non vide, ne nomme que des fichiers sous `_bmad-output/`. Les quatre jobs **doivent** alors être sautés, et un job sauté **doit** compter pour réussi aux checks requis — ce que la documentation de GitHub affirme et que les relevés de l'AC-6 de la story n'ont pas encore confirmé (`_bmad-output/implementation-artifacts/33-11-filtre-ci-preuves-ac6.md`) ; c'est pourquoi le filtre n'est pas un `paths-ignore` au niveau du workflow, qui les laisserait en attente. Tout le reste échoue vers la CI complète : `push`, diff vide, SHA inconnu, `git` en échec, renommage depuis ou vers un autre dossier, et `changes` lui-même en échec : les conditions excluent le seul cas `changes` réussi et sortie `false`. Son annulation et son délai dépassé ne relèvent de cette règle que si GitHub ne saute pas alors les quatre jobs, ce qui reste à relever. **Manuels, `docs/`, `README.md`, `CHANGELOG.md`, `CLAUDE.md` et `website/` restent hors du filtre**, parce que des tests les lisent (`textes_coherents.rs`, `mcp_matrice_manuel.rs`, `configuration_transmise.rs`). `changes` n'est pas un check requis. ⚠️ **Élargir le périmètre demande de vérifier d'abord que rien ne lit les fichiers visés** : l'erreur de ce filtre est muette, elle saute des tests à tort. Le comportement réel de GitHub (job sauté, échec, annulation, délai dépassé) **n'est pas encore relevé** : il le sera aux preuves de l'AC-6 de la Story 33-11, sur de vraies PR, et ce paragraphe se rétracte si elles le contredisent.
 
 *(Jusqu'à la Story 33-11, 2026-11-07, ce document disait : « Aucun filtre `paths:` : les quatre jobs tournent à chaque push, même sur un commit de documentation seule. » Il n'y a toujours aucun filtre `paths:`.)*
 
@@ -57,7 +57,7 @@ si elle échoue), puis `npm ci`, `npx playwright install --with-deps chromium` e
 `npx playwright test tests/e2e/smoke.spec.ts`. En cas d'échec : journal du backend, et `frontend/test-results/`
 (traces) téléversé, rétention 3 jours.
 
-Il exerce aussi, **sur chaque PR**, le chemin « image + utilisateur `kesh` + migrations au démarrage » que reprend le
+Il exerce aussi, **sur chaque PR que le filtre ne saute pas**, le chemin « image + utilisateur `kesh` + migrations au démarrage » que reprend le
 smoke `/health` de `release.yml`. **Durée mesurée au premier run** (PR #702, 2026-10-23) : **16 min 29 s** — ≈ 10 min pour
 `npx playwright install --with-deps chromium`, ≈ 5 min de construction de l'image depuis le cache `gha`, ≈ 4 s pour la
 spec. Au-delà des 10 min visées : le cache des navigateurs (D-6-1-A) est le levier, à mettre en place.
@@ -79,7 +79,7 @@ d'un privilège que la production n'a pas (Stories 29-4 et 29-8, `INNODB_TRX`). 
 `docs/testing.md` § « Base de dev jetable ».
 
 ⚠️ **Le smoke de `release.yml` ne se vérifie qu'à la publication** : un échec y bloque la release avant le push de
-l'image. Le risque est borné par `e2e-smoke`, qui exerce sur chaque PR la même image avec le même utilisateur. Premier
+l'image. Le risque est borné par `e2e-smoke`, qui exerce sur chaque PR non filtrée la même image avec le même utilisateur. Premier
 smoke de publication en utilisateur `kesh` (#698) : tag `v0.15.0`, 2026-10-24, **vert** (run 40080415340).
 
 ## Reproduction locale
@@ -209,6 +209,7 @@ tiré **anonymement**, et un `429` de Docker Hub faisait échouer le job `backen
 
 | Job | Timeout | Motivation |
 |---|---|---|
+| `changes` | 10 min | `checkout` en `fetch-depth: 0`, test du script, puis le script ; quelques secondes attendues, non mesurées. Son dépassement fait annuler le job, cas relevé à l'AC-6 (e) de la Story 33-11 |
 | `backend` | 120 min | Compilation + `cargo test -j1 --test-threads=1` ; 19 min 14 s mesurées sur runner le 2026-08-16 (PR #311). La marge est délibérée : un timeout se dimensionne sur le pire cas (cf. commentaire de `ci.yml`) |
 | `frontend` | 20 min | Build Vite + Vitest + svelte-check ≈ 5 min |
 | `docker-build` | 20 min | Build multi-stage ≈ 8 min |
