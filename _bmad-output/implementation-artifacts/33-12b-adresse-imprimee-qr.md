@@ -1,6 +1,6 @@
 # Story 33-12b : le reçu et la partie paiement impriment l'adresse entière (#941)
 
-Status: in-progress
+Status: review
 
 *Fiche rédigée le 2026-11-07 par l'orchestrateur (Opus 5.5), worktree `/home/gcorbaz/devel/kesh-e33`. Release **0.17.5**, Epic 33, ajoutée après le kickoff : P1 de conformité trouvé à la revue de la 33-5, dans le cadre donné par Guy (« quelques bugs de ton choix »). **Aucune migration.** Registre : `e33-choix-autonomes-e3312.md`. Découpée à la P2 de validation (F-H1 : prémisse fausse, remédiation et correctif dans le même fichier). Rapports : `kesh-gate-logs/e3312-validate-p{1,2,3,4,5,6,7,8}.md`. Le registre a été créé à l'étape 0 du développement. Commits en `refs #941` ; à la PR : `closes #941` une fois les deux réunies.*
 
@@ -47,3 +47,21 @@ Ces numéros sont ceux de cette fiche : la M6 de la 33-12a est une autre mutatio
 - 2026-11-07 — P6 (passe ciblée sur `c4557034`) 0 C, 0 H, 1 M, 5 L. P6-M1 : `couper_ligne` (l. 15, AC3, M8 et M12). P6-L1 : citation `pdf.rs:187`, ligne lue. P6-L2 : débordement dit juste, calcul refait depuis les pas de `pdf.rs` ; le corps de #944 ne parle pas de la largeur des 27 `W`, l'orchestrateur l'y ajoute. P6-L3 : type K exclu d'AC2, M15. P6-L4 : conditions de M11 et M13, M14. P6-L5 : en-tête. Fiche et registre seuls, aucune exécution.
 - 2026-11-07 — P7 (passe ciblée sur `08667b7d`) 1 H, 4 M, 5 L. P7-H1 : motif faux du type K retiré, le bon écrit (`validation.rs:348`, `types.rs:40`, `invoice_pdf_service.rs:294,311`, directive v2.4 relue à l'historique des versions). P7-M1 : distribution du cas de neuf lignes, recalculée depuis les pas de `pdf.rs`. P7-M2 : tests nommés pour M8, M12, M14, M15 ; M15 gardée, la branche K restant au code. P7-M3 : M13 sous deux formes, couverture nommée. P7-M4, P7-L5 : au registre. P7-L1 (colonnes de la rue longue), P7-L2 (numérotation), P7-L3 (pas de la référence). Aucune règle nouvelle, aucune exécution.
 - 2026-11-07 — **Validation terminée au plafond des huit passes** (`CLAUDE.md`, § *Review Iteration Rule*). Tendance recomptée sur les huit rapports, CRITICAL/HIGH/MEDIUM/LOW : P1 0/1/6/7 → P2 0/1/6/8 → P3 0/0/6/12 → P4 0/1/8/7 → P5 0/0/3/5 → P6 0/0/1/5 → P7 0/1/4/5 → P8 0/0/1/3. Modèles : P1 Sonnet, P2 Opus, P3 Sonnet, P4 Opus (fiches et rapports) ; P5 à P8, passes ciblées d'une lentille, dont les rapports n'inscrivent pas le modèle. Signal de non-convergence levé et déclaré à Guy aux P2 (F-H1, né de la remédiation) et P4 (sept constats au-dessus de LOW nés de la P3), d'où le découpage puis la réduction (#944) ; remontée P6 → P7 (P7-H1, né de la remédiation P6), signalée à l'orchestrateur. Clôture sur un MEDIUM corrigé sans passe de plus, aux deux conditions écrites : P8-M1 recontrôlé à l'étape 0, ligne lue ci-dessous ; depuis la P6 la remédiation revient au développeur, non à l'orchestrateur. P8-L1 à L3 repris. Recontrôle de P8-M1, lignes lues : `33-12a-jeu-caracteres-qr.md:21` et `sonde.log:59` (U+00F3 hors des perdus) : `Łódź` rend `Lódz`, corrigé aux deux endroits (AC4, répartition des mutations).
+
+## Dev Agent Record
+
+*Rédigé le 2026-11-07, Opus 5.5. Journaux hors dépôt : `kesh-gate-logs/e3312/`.*
+
+**Livré.** `pdf.rs` : `lignes_adresse` compose le type S (`name`, `rue numéro`, `NPA localité`, pays hors de Suisse, `LI` compris), type K non composé ; `joindre` ; `couper_ligne` ; `MAX_CARACTERES_RECU` = 27, `MAX_CARACTERES_PAIEMENT` = 46 ; `dessiner_reference`, partagée entre le reçu et la partie paiement.
+
+**Rouges, avant le code.** `rouges-b.log` : 10 tests rouges (`couper_ligne_*` trois, `lignes_adresse_compose_le_type_s`, `lignes_adresse_npa_localite_repliees`, `quatre_blocs_impriment_la_composition`, `rue_longue_les_y_suivent`, `le_pays_s_imprime_hors_de_suisse`, `cinq_cas_au_dessus_du_point_de_depot`, `chaque_site_imprime_la_base_des_lettres`). Verts dès l'abord, ce qu'ils gardent existant déjà : `lignes_adresse_type_k_ne_compose_rien`, `sans_reference_aucune_rubrique`, `constantes_de_coupe_recalculees`.
+
+**Mutations.** `mut/b-resume.log`, jouées à `0615d640` : 24 jouées, 24 rouges : M1 à M15 de la fiche, M11 et M13 sous leurs deux formes, M14 sur le NPA et sur la localité, et M16 à M20 ajoutées (les deux largeurs, le pas, le pas de la référence, la remise au noir). Aucune survivante, aucune équivalente. **Écart à la répartition de la fiche** : M14 sur le NPA, dont `90-001` n'a pas de lettre à replier, est tuée par `lignes_adresse_compose_le_type_s` ; `lignes_adresse_npa_localite_repliees` tue M14 sur la localité. Le commit suivant, `00d7c26f`, ne touche qu'une assertion de test, non reprise par les mutations.
+
+**Gates.** Au dernier commit de code `00d7c26f` (`gate-b2/`) : `test-fast.sh --ci` sur base remise à neuf, nextest **4840 exécutés, 12 ignorés**, 0 échec ; `cargo build --workspace --all-targets` vert ; **E2E complet** : 353 réussis, 18 ignorés, **7 échecs, ceux de KF-029** ; aucun autre. À `0615d640` (`gate-b/`), un premier `test-fast` a échoué sur clippy (un `.clone()` de test), d'où `00d7c26f` ; le frontend, inchangé depuis, y est vert : `npm run check`, `lint-i18n-ownership`, Vitest, `npm run build`. Un E2E lancé à cet état a été arrêté, par son PID, pour repartir du commit corrigé.
+
+**Tests neufs**, de `03618ed6` à `00d7c26f`, `pdf.rs` : 29 → 40, douze neufs, `lignes_adresse_passe_chaque_champ_par_texte_imprime` retiré, sa substance reprise par `lignes_adresse_compose_le_type_s` et `lignes_adresse_type_k_ne_compose_rien`.
+
+**Captures regardées**, les cinq d'AC6 : `captures/b-1-suisse-courte.png`, `b-2-rue-longue.png`, `b-3-debiteur-etranger.png`, `b-4-creancier-li.png`, `b-5-sans-numero.png`, et `b-caracteres.pdf` par `pdftotext`. Rien ne recouvre le QR ; la rue longue se coupe à des frontières de mots ; le `Lódz` et le préfixe sortent comme écrit.
+
+
