@@ -2,7 +2,7 @@
 
 Une lentille, contexte frais, Sonnet ou Opus. Kesh (comptabilité suisse, Rust/Axum, 0.17.5, sans migration) tient des livres réels. Passe **ciblée sur la remédiation P2**, qui n'a touché aucune ligne exécutable de production : commentaires, tests, manuel, fiches.
 
-Relis par références, jamais le fichier sur disque : `git -C /home/gcorbaz/devel/kesh-e3312 diff ace978ae SHA_FIN`, où `SHA_FIN` est le dernier commit de la branche `story/33-12-qr-facture`, à relever par `git log -1`, et à inscrire au rapport. Rapport P2 : `/home/gcorbaz/devel/kesh-gate-logs/e3312-review-p2.md`. Fiches : `_bmad-output/implementation-artifacts/33-12a-jeu-caracteres-qr.md`, `33-12b-adresse-imprimee-qr.md`, § *Remédiation P2*.
+Relis par références, jamais le fichier sur disque : `git -C /home/gcorbaz/devel/kesh-e3312 diff ace978ae d7914e80` (le commit suivant ne pose que ces bornes dans ce prompt). Rapport P2 : `/home/gcorbaz/devel/kesh-gate-logs/e3312-review-p2.md`. Fiches : `_bmad-output/implementation-artifacts/33-12a-jeu-caracteres-qr.md`, `33-12b-adresse-imprimee-qr.md`, § *Remédiation P2*.
 
 **Écris ton rapport à `/home/gcorbaz/devel/kesh-gate-logs/e3312-review-p3.md`**, et rien d'autre : lecture seule partout ailleurs.
 
