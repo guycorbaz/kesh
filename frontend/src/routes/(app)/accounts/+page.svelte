@@ -794,7 +794,7 @@
 				<!-- Revue P2 de la 33-8 (F1, F2) : une règle, non une liste par réglage, qui a été
 				     fausse deux fois. Elle est celle de `journal_entries.rs`, garde `active`
 				     inconditionnelle ; seul le décompte TVA n'est lu par aucune écriture. -->
-				<p data-testid="account-archive-designated-effect">{i18nMsg('accounts-archive-designated-effect', 'Archivé, il y reste désigné. Tant qu’il est archivé, toute écriture qui l’emploie est refusée, y compris le règlement d’une pièce déjà validée sur ce compte ; pour lever le blocage, il faut le réactiver. Désigner un autre compte ne vaut que pour les pièces à venir.')}</p>
+				<p data-testid="account-archive-designated-effect">{i18nMsg('accounts-archive-designated-effect', 'Archivé, il y reste désigné. Tant qu’il est archivé, toute écriture qui l’emploie est refusée, y compris le règlement d’une pièce déjà validée sur ce compte : pour celle-ci, il faut le réactiver, désigner un autre compte n’y changeant rien.')}</p>
 				{#if archiveDesignated.includes('vatDecompte')}
 					<p data-testid="account-archive-designated-vat-decompte">{i18nMsg('accounts-archive-effect-vat-decompte', 'Le compte de décompte TVA, lui, n’est employé par aucune écriture : à ce titre, son archivage n’en refuse aucune.')}</p>
 				{/if}

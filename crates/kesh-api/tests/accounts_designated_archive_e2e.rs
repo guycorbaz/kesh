@@ -702,8 +702,11 @@ async fn archived_write_off_account_refuses_a_write_off_of_that_nature(pool: MyS
 // ---------------------------------------------------------------------------
 // La règle générale que dit le dialogue (revue P2, F1, F2) : tant que le compte est
 // archivé, toute écriture qui l'emploie est refusée, y compris le règlement d'une pièce
-// déjà validée sur lui ; un autre compte désigné n'y change rien, seule la réactivation
-// le lève (`journal_entries.rs`, garde `active` inconditionnelle).
+// déjà validée sur lui ; pour celle-ci, un autre compte désigné n'y change rien, seule
+// la réactivation le lève (`journal_entries.rs`, garde `active` inconditionnelle ; le
+// compte de créance ou de créanciers est lu sur l'écriture de la pièce). Un réglage lu
+// au moment de l'écriture (TVA due, arrondi, comptes d'écart) cesse, lui, d'employer le
+// compte dès qu'un autre le remplace : la règle ne dit rien de plus.
 // ---------------------------------------------------------------------------
 
 async fn reactivate(pool: &MySqlPool, seeded: &SeededCompany, id: i64) {
