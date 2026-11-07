@@ -3,6 +3,7 @@
 //! The payload is a newline-separated string whose fields follow the strict
 //! order defined by SIX 2.2 §3. ECC level M, UTF-8.
 
+use crate::texte::texte_code;
 use crate::types::{Address, QrBillData, QrBillError};
 use crate::validation::{normalize_iban, validate};
 use qrcodegen::{QrCode, QrCodeEcc};
@@ -54,9 +55,13 @@ pub fn build_payload(data: &QrBillData) -> Result<String, QrBillError> {
     lines.push(data.reference.ref_value().into());
 
     // AddInf.
-    lines.push(data.unstructured_message.clone().unwrap_or_default());
+    lines.push(texte_code(
+        data.unstructured_message.as_deref().unwrap_or_default(),
+    ));
     lines.push("EPD".into());
-    lines.push(data.billing_information.clone().unwrap_or_default());
+    lines.push(texte_code(
+        data.billing_information.as_deref().unwrap_or_default(),
+    ));
 
     // AltPmtInf omitted (both lines absent — valid per SIX).
 
@@ -83,11 +88,11 @@ pub fn build_payload(data: &QrBillData) -> Result<String, QrBillError> {
 /// type **K** (Combined) they are empty strings (SIX §3.3).
 fn push_address_block(lines: &mut Vec<String>, addr: &Address) {
     lines.push(addr.address_type.code().into());
-    lines.push(addr.name.clone());
-    lines.push(addr.line1.clone());
-    lines.push(addr.line2.clone());
-    lines.push(addr.postal_code.clone());
-    lines.push(addr.town.clone());
+    lines.push(texte_code(&addr.name));
+    lines.push(texte_code(&addr.line1));
+    lines.push(texte_code(&addr.line2));
+    lines.push(texte_code(&addr.postal_code));
+    lines.push(texte_code(&addr.town));
     lines.push(addr.country.clone());
 }
 
@@ -222,6 +227,112 @@ mod tests {
         let lines: Vec<&str> = payload.split('\n').collect();
         let idx = lines.iter().position(|l| *l == "NON").unwrap();
         assert_eq!(lines[idx + 1], "");
+    }
+
+    /// **AC5** (Story 33-12a, #941) — chacun des douze champs texte porte
+    /// `texte_code` de sa valeur, à sa position exacte. Les valeurs sont toutes
+    /// distinctes : un champ échangé ou oublié rougit à sa position.
+    #[test]
+    fn payload_porte_texte_code_a_chaque_position() {
+        let adresse = |prefixe: &str| Address {
+            address_type: AddressType::Structured,
+            name: format!("{prefixe}\u{2019}nom"),
+            line1: format!("\u{A0}{prefixe}\u{2014}rue "),
+            line2: format!("{prefixe}\u{AD}12"),
+            postal_code: format!(" {prefixe}10"),
+            town: format!("{prefixe}\u{A0}Ville\u{AD}"),
+            country: "CH".into(),
+        };
+        let mut data = sample(Reference::None, "CH9300762011623852957");
+        // Une lettre hors WinAnsi dans chaque champ : le code la garde (C-e3312-1).
+        data.creditor = adresse("Č");
+        data.ultimate_debtor = Some(adresse("Ł"));
+        data.unstructured_message = Some("\u{A0}Message\u{2019}ć ".into());
+        data.billing_information = Some("//Ș1\u{AD}/10 ".into());
+
+        let payload = build_payload(&data).unwrap();
+        let lignes: Vec<&str> = payload.split('\n').collect();
+        for (position, attendu) in [
+            (5, "Č'nom"),
+            (6, "Č-rue"),
+            (7, "Č12"),
+            (8, "Č10"),
+            (9, "Č Ville"),
+            (21, "Ł'nom"),
+            (22, "Ł-rue"),
+            (23, "Ł12"),
+            (24, "Ł10"),
+            (25, "Ł Ville"),
+            (29, "Message'ć"),
+            (31, "//Ș1/10"),
+        ] {
+            assert_eq!(lignes[position], attendu, "position {position}");
+        }
+    }
+
+    /// **AC8** (Story 33-12a) — une rue faite d'invisibles reste admise, et sort
+    /// vide du code au lieu d'y porter des blancs.
+    #[test]
+    fn rue_d_invisibles_sort_vide_du_code() {
+        let mut data = sample(Reference::None, "CH9300762011623852957");
+        data.creditor = Address {
+            address_type: AddressType::Structured,
+            name: "Max".into(),
+            line1: "\u{A0}\u{AD} ".into(),
+            line2: String::new(),
+            postal_code: "1003".into(),
+            town: "Lausanne".into(),
+            country: "CH".into(),
+        };
+        let payload = build_payload(&data).unwrap();
+        assert_eq!(payload.split('\n').nth(6), Some(""));
+    }
+
+    /// **Revue P1 (E-L3)** — la borne de 997 octets porte sur le code normalisé : un
+    /// brut au-delà, dont la normalisation raccourcit les octets, passe ; un code
+    /// réellement au-delà reste refusé.
+    #[test]
+    fn borne_de_997_octets_sur_le_code_normalise() {
+        let mut data = sample(Reference::None, "CH9300762011623852957");
+        data.creditor.name = "\u{2019}".repeat(70);
+        data.unstructured_message = Some("\u{2019}".repeat(140));
+        data.billing_information = Some("\u{2019}".repeat(140));
+        let brut: usize = 350 * '\u{2019}'.len_utf8();
+        assert!(brut > 997, "montage : {brut} octets bruts");
+        assert!(build_payload(&data).unwrap().len() <= 997);
+
+        let mut trop = sample(Reference::None, "CH9300762011623852957");
+        trop.creditor.name = "é".repeat(70);
+        trop.creditor.line1 = "é".repeat(70);
+        trop.ultimate_debtor = Some(trop.creditor.clone());
+        trop.unstructured_message = Some("é".repeat(140));
+        trop.billing_information = Some("é".repeat(140));
+        assert!(matches!(
+            build_payload(&trop),
+            Err(QrBillError::PdfGeneration(_))
+        ));
+    }
+
+    /// **Revue P2 (P2-L5)** — la borne elle-même : 997 octets passent, 998 non.
+    #[test]
+    fn borne_de_997_octets_exacte() {
+        let mut data = sample(Reference::None, "CH9300762011623852957");
+        data.creditor.name = "é".repeat(70);
+        data.creditor.line1 = "é".repeat(70);
+        data.ultimate_debtor = Some(data.creditor.clone());
+        data.unstructured_message = Some("é".repeat(140));
+        let sans = build_payload(&data).unwrap().len();
+        let reste = 997 - sans;
+        assert!(reste <= 140, "montage : {reste} octets à combler");
+
+        data.billing_information = Some("x".repeat(reste));
+        assert_eq!(build_payload(&data).unwrap().len(), 997);
+
+        data.billing_information = Some("x".repeat(reste + 1));
+        assert!(matches!(
+            build_payload(&data),
+            Err(QrBillError::PdfGeneration(_))
+        ));
     }
 
     #[test]

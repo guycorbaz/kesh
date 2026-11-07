@@ -12,6 +12,7 @@
 pub mod generator;
 pub mod parser;
 pub mod pdf;
+pub(crate) mod texte;
 pub mod types;
 pub mod validation;
 

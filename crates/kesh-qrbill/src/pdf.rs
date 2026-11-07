@@ -9,7 +9,11 @@
 //! Uses `BuiltinFont::Helvetica` (PDF standard 14) — no external font embedding.
 
 use crate::generator::{build_payload, render_qr_image};
-use crate::types::{InvoicePdfData, QrBillData, QrBillError, QrBillI18n, Reference, ReminderPdf};
+use crate::texte::texte_imprime;
+use crate::types::{
+    Address, AddressType, InvoicePdfData, QrBillData, QrBillError, QrBillI18n, Reference,
+    ReminderPdf,
+};
 use chrono::{Datelike, NaiveDate};
 use kesh_core::text::is_invisible;
 use printpdf::{
@@ -396,11 +400,21 @@ fn draw_invoice_section(
     let left = 20.0;
     let mut y = PAGE_H - 20.0;
 
-    // Creditor header (top-left).
-    layer.use_text(&inv.creditor_name, 14.0, Mm(left), Mm(y), helv_bold);
+    // Creditor header (top-left). Le nom et l'adresse passent par `texte_imprime` : le
+    // § 4.1.1 admet U+00A0, U+00AD et U+0218 à U+021B, que `lopdf` perdrait ici en
+    // silence, sur une pièce qui se fige (Story 33-12a). Un avoir et un rappel passent par
+    // le même chemin : U+2019 et U+2014 y deviennent `'` et `-` comme au code, et les 125
+    // lettres leur base ; tout autre caractère hors du jeu y reste traité comme avant.
+    layer.use_text(
+        texte_imprime(&inv.creditor_name),
+        14.0,
+        Mm(left),
+        Mm(y),
+        helv_bold,
+    );
     y -= 5.0;
     for line in &inv.creditor_address_lines {
-        layer.use_text(line, 9.0, Mm(left), Mm(y), helv);
+        layer.use_text(texte_imprime(line), 9.0, Mm(left), Mm(y), helv);
         y -= 4.0;
     }
     // Bloc « identité » de l'émetteur : IDE puis coordonnées de contact
@@ -500,10 +514,10 @@ fn draw_invoice_section(
         helv_bold,
     );
     y -= 5.0;
-    layer.use_text(&inv.debtor_name, 10.0, Mm(left), Mm(y), helv);
+    layer.use_text(texte_imprime(&inv.debtor_name), 10.0, Mm(left), Mm(y), helv);
     y -= 4.5;
     for line in &inv.debtor_address_lines {
-        layer.use_text(line, 9.0, Mm(left), Mm(y), helv);
+        layer.use_text(texte_imprime(line), 9.0, Mm(left), Mm(y), helv);
         y -= 4.0;
     }
 
@@ -730,6 +744,150 @@ fn draw_separator(layer: &PdfLayerReference) {
     // Scissors glyph is outside Helvetica's WinAnsi encoding; omitted in v0.1.
 }
 
+// ----- Adresses de la section de paiement -----
+
+/// Pas vertical entre deux lignes d'adresse de la section de paiement, en mm.
+const ADRESSE_PAS: f32 = 3.5;
+
+/// Les lignes à imprimer pour une adresse, nom compris, chacune passée par
+/// [`texte_imprime`] : le seul chemin de tout texte d'adresse vers le reçu et la
+/// partie paiement (Stories 33-12a et 33-12b, #941).
+///
+/// En type S, `name`, `rue numéro`, `NPA localité`, le pays devant le NPA hors de
+/// Suisse, `LI` compris (`LI-9490 Vaduz`, sans espace, ce qui garde le préfixe au NPA
+/// à la coupe, C-e3312-5). En type K, rien n'est composé : aucun chemin d'impression
+/// n'emploie ce type, et la directive v2.4 l'a retiré (C-e3312-7).
+///
+/// Un champ vide après `texte_imprime` ne laisse ni ligne vide ni espace de tête.
+fn lignes_adresse(addr: &Address) -> Vec<String> {
+    let lignes = match addr.address_type {
+        AddressType::Structured => {
+            let npa = texte_imprime(&addr.postal_code);
+            let npa = if addr.country == "CH" || npa.is_empty() {
+                npa
+            } else {
+                format!("{}-{npa}", addr.country)
+            };
+            [
+                texte_imprime(&addr.name),
+                joindre(texte_imprime(&addr.line1), texte_imprime(&addr.line2)),
+                joindre(npa, texte_imprime(&addr.town)),
+            ]
+        }
+        AddressType::Combined => [
+            texte_imprime(&addr.name),
+            texte_imprime(&addr.line1),
+            texte_imprime(&addr.line2),
+        ],
+    };
+    lignes.into_iter().filter(|l| !l.is_empty()).collect()
+}
+
+/// Deux morceaux séparés d'une espace, sans espace de tête ni de fin si l'un est vide.
+fn joindre(a: String, b: String) -> String {
+    match (a.is_empty(), b.is_empty()) {
+        (_, true) => a,
+        (true, false) => b,
+        (false, false) => format!("{a} {b}"),
+    }
+}
+
+/// Caractères par ligne d'adresse au reçu : une colonne de 52 mm (`RECEIPT_W` moins
+/// deux marges de 5 mm), à 8 pt, calibrée sur la largeur moyenne des capitales
+/// d'Helvetica (677/1000 em, 1,911 mm), comme `IDENTITY_MAX_CHARS` : 51,6 mm.
+///
+/// Aux minuscules (490/1000 em), on tiendrait 37 caractères, mais une adresse en
+/// capitales recouvrirait alors le QR, à x = 67. Le prix : une rue en minuscules de
+/// 28 à 37 caractères, qui tenait, se coupe à une frontière de mot.
+///
+/// ⚠️ Une moyenne n'est pas une borne : 27 `W` occupent 72 mm depuis x = 5, jusqu'à
+/// x = 77, dix millimètres sur le QR. Limite écrite, à #944.
+const MAX_CARACTERES_RECU: usize = 27;
+
+/// Caractères par ligne d'adresse en partie paiement, même calibrage : 88 mm depuis
+/// x = 117, au bord droit moins 5 mm, soit 87,9 mm. Le débiteur, à x = 67 et sous le
+/// QR, n'a pas de borne droite propre : il reçoit la même largeur.
+const MAX_CARACTERES_PAIEMENT: usize = 46;
+
+/// Coupe une ligne au-delà de `max` caractères, à une frontière de mot. Un mot plus
+/// long que `max` se coupe à la limite. Rien n'est tronqué.
+///
+/// La coupe est gloutonne : si le premier mot de la localité ne tient pas à côté du
+/// NPA, le NPA reste seul sur sa ligne, l'adresse restant entière (C-e3312-6). Les
+/// espaces multiples intérieures se réduisent à une, sur toute ligne : les lignes
+/// rejointes par une espace redonnent l'entrée à ces espaces près, hors un mot coupé à
+/// la limite, que seule leur concaténation redonne.
+fn couper_ligne(ligne: &str, max: usize) -> Vec<String> {
+    debug_assert!(max > 0, "une largeur nulle ne coupe rien");
+    let mut lignes = Vec::new();
+    let mut courante = String::new();
+    for mot in ligne.split(' ').filter(|mot| !mot.is_empty()) {
+        if !courante.is_empty() {
+            if courante.chars().count() + 1 + mot.chars().count() <= max {
+                courante.push(' ');
+                courante.push_str(mot);
+                continue;
+            }
+            lignes.push(std::mem::take(&mut courante));
+        }
+        let caracteres: Vec<char> = mot.chars().collect();
+        for morceau in caracteres.chunks(max) {
+            if !courante.is_empty() {
+                lignes.push(std::mem::take(&mut courante));
+            }
+            courante = morceau.iter().collect();
+        }
+    }
+    if !courante.is_empty() {
+        lignes.push(courante);
+    }
+    lignes
+}
+
+/// La rubrique *Référence* et sa valeur groupée, un pas de 6 sous `y` puis de 3 : au
+/// reçu (§ 3.6.2 de la directive) comme en partie paiement. Rien sans référence.
+fn dessiner_reference(
+    layer: &PdfLayerReference,
+    data: &QrBillData,
+    i18n: &QrBillI18n,
+    x: f32,
+    y: &mut f32,
+    helv: &IndirectFontRef,
+    helv_bold: &IndirectFontRef,
+) {
+    if let Reference::Qrr(qrr) = &data.reference {
+        *y -= 6.0;
+        layer.use_text(
+            i18n.get("invoice-pdf-qr-reference"),
+            6.0,
+            Mm(x),
+            Mm(*y),
+            helv_bold,
+        );
+        *y -= 3.0;
+        layer.use_text(format_qrr(qrr), 8.0, Mm(x), Mm(*y), helv);
+    }
+}
+
+/// Dessine les lignes de [`lignes_adresse`], coupées à `max` caractères, à l'abscisse
+/// `x`, chacune un pas sous la précédente, à partir de `y`, qui est laissé sur la
+/// dernière ligne dessinée.
+fn dessiner_adresse(
+    layer: &PdfLayerReference,
+    addr: &Address,
+    x: f32,
+    y: &mut f32,
+    max: usize,
+    helv: &IndirectFontRef,
+) {
+    for ligne in lignes_adresse(addr) {
+        for morceau in couper_ligne(&ligne, max) {
+            *y -= ADRESSE_PAS;
+            layer.use_text(morceau, 8.0, Mm(x), Mm(*y), helv);
+        }
+    }
+}
+
 // ----- Receipt column (left, 62 mm) -----
 
 fn draw_receipt(
@@ -761,12 +919,8 @@ fn draw_receipt(
     );
     y -= 3.0;
     layer.use_text(format_iban(&data.creditor_iban), 8.0, Mm(x), Mm(y), helv);
-    y -= 3.5;
-    layer.use_text(&data.creditor.name, 8.0, Mm(x), Mm(y), helv);
-    y -= 3.5;
-    layer.use_text(&data.creditor.line1, 8.0, Mm(x), Mm(y), helv);
-    y -= 3.5;
-    layer.use_text(&data.creditor.line2, 8.0, Mm(x), Mm(y), helv);
+    dessiner_adresse(layer, &data.creditor, x, &mut y, MAX_CARACTERES_RECU, helv);
+    dessiner_reference(layer, data, i18n, x, &mut y, helv, helv_bold);
 
     // Amount + currency.
     y -= 8.0;
@@ -802,12 +956,7 @@ fn draw_receipt(
         helv_bold,
     );
     if let Some(debtor) = &data.ultimate_debtor {
-        y -= 3.5;
-        layer.use_text(&debtor.name, 8.0, Mm(x), Mm(y), helv);
-        y -= 3.5;
-        layer.use_text(&debtor.line1, 8.0, Mm(x), Mm(y), helv);
-        y -= 3.5;
-        layer.use_text(&debtor.line2, 8.0, Mm(x), Mm(y), helv);
+        dessiner_adresse(layer, debtor, x, &mut y, MAX_CARACTERES_RECU, helv);
     }
 
     // "Acceptance point" at bottom-right of the receipt column.
@@ -863,27 +1012,23 @@ fn draw_payment_part(
     );
     y -= 3.0;
     layer.use_text(format_iban(&data.creditor_iban), 8.0, Mm(tx), Mm(y), helv);
-    y -= 3.5;
-    layer.use_text(&data.creditor.name, 8.0, Mm(tx), Mm(y), helv);
-    y -= 3.5;
-    layer.use_text(&data.creditor.line1, 8.0, Mm(tx), Mm(y), helv);
-    y -= 3.5;
-    layer.use_text(&data.creditor.line2, 8.0, Mm(tx), Mm(y), helv);
+    dessiner_adresse(
+        layer,
+        &data.creditor,
+        tx,
+        &mut y,
+        MAX_CARACTERES_PAIEMENT,
+        helv,
+    );
 
-    if let Reference::Qrr(qrr) = &data.reference {
-        y -= 6.0;
-        layer.use_text(
-            i18n.get("invoice-pdf-qr-reference"),
-            6.0,
-            Mm(tx),
-            Mm(y),
-            helv_bold,
-        );
-        y -= 3.0;
-        layer.use_text(format_qrr(qrr), 8.0, Mm(tx), Mm(y), helv);
-    }
+    dessiner_reference(layer, data, i18n, tx, &mut y, helv, helv_bold);
 
-    if let Some(msg) = &data.unstructured_message {
+    let message = data
+        .unstructured_message
+        .as_deref()
+        .map(texte_imprime)
+        .filter(|message| !message.is_empty());
+    if let Some(msg) = message {
         y -= 6.0;
         layer.use_text(
             i18n.get("invoice-pdf-qr-additional-info"),
@@ -931,12 +1076,7 @@ fn draw_payment_part(
         helv_bold,
     );
     if let Some(debtor) = &data.ultimate_debtor {
-        dy -= 3.5;
-        layer.use_text(&debtor.name, 8.0, Mm(dx), Mm(dy), helv);
-        dy -= 3.5;
-        layer.use_text(&debtor.line1, 8.0, Mm(dx), Mm(dy), helv);
-        dy -= 3.5;
-        layer.use_text(&debtor.line2, 8.0, Mm(dx), Mm(dy), helv);
+        dessiner_adresse(layer, debtor, dx, &mut dy, MAX_CARACTERES_PAIEMENT, helv);
     }
 
     Ok(())
@@ -1024,6 +1164,10 @@ fn draw_swiss_cross(layer: &PdfLayerReference, cx: f32, cy: f32) {
     .with_mode(printpdf::path::PaintMode::Fill);
     layer.add_rect(h);
     layer.add_rect(v);
+
+    // ⚠️ Le texte suivant hérite du remplissage : rester en blanc rendait la partie
+    // paiement entière invisible sur le papier, le contenu du PDF restant intact.
+    layer.set_fill_color(Color::Rgb(Rgb::new(0.0, 0.0, 0.0, None)));
 }
 
 // ----- Helpers -----
@@ -1365,6 +1509,637 @@ mod tests {
             bytes.len() > 1_000,
             "PDF suspiciously small: {}",
             bytes.len()
+        );
+    }
+
+    /// Les textes dessinés d'un PDF, en mm depuis le bas à gauche, par relecture du
+    /// contenu : `load_mem`, `get_page_content`, `Content::decode`, puis pour chaque
+    /// `Tj`, le décodage WinAnsi, à la position du `Td` précédent.
+    ///
+    /// ⚠️ `Document::extract_text` n'est pas employé : il lit en StandardEncoding et
+    /// rend `Shne` pour `Söhne` (constaté à l'étape 0 de la Story 33-12a).
+    fn textes_du_pdf(bytes: &[u8]) -> Vec<(f32, f32, String)> {
+        const MM_PAR_POINT: f32 = 25.4 / 72.0;
+        let mut textes = Vec::new();
+        let mut position = (0.0, 0.0);
+        for op in operations_du_pdf(bytes) {
+            match op.operator.as_str() {
+                "Td" => {
+                    position = (
+                        nombre(&op.operands[0]) * MM_PAR_POINT,
+                        nombre(&op.operands[1]) * MM_PAR_POINT,
+                    );
+                }
+                "Tj" => textes.push((position.0, position.1, texte_du_tj(&op))),
+                _ => {}
+            }
+        }
+        textes
+    }
+
+    /// Les opérations de contenu d'un PDF, pages à la suite. Une QR-facture n'a qu'une
+    /// page : ses lecteurs ne remettent ni position ni couleur à zéro entre deux pages.
+    fn operations_du_pdf(bytes: &[u8]) -> Vec<printpdf::lopdf::content::Operation> {
+        use printpdf::lopdf::{Document, content::Content};
+
+        let doc = Document::load_mem(bytes).expect("PDF relisible");
+        doc.get_pages()
+            .values()
+            .flat_map(|page| {
+                let brut = doc.get_page_content(*page).expect("contenu de page");
+                Content::decode(&brut)
+                    .expect("contenu décodable")
+                    .operations
+            })
+            .collect()
+    }
+
+    /// Une opérande numérique de contenu PDF.
+    fn nombre(o: &printpdf::lopdf::Object) -> f32 {
+        use printpdf::lopdf::Object;
+        match o {
+            Object::Integer(i) => *i as f32,
+            Object::Real(r) => *r,
+            autre => panic!("opérande numérique attendue : {autre:?}"),
+        }
+    }
+
+    /// Le texte d'un `Tj`, décodé en WinAnsi.
+    fn texte_du_tj(op: &printpdf::lopdf::content::Operation) -> String {
+        use printpdf::lopdf::{Document, Object};
+        let Object::String(octets, _) = &op.operands[0] else {
+            panic!("opérande de Tj inattendue : {:?}", op.operands);
+        };
+        Document::decode_text(Some("WinAnsiEncoding"), octets)
+    }
+
+    /// Le texte dessiné à `(x, y)` mm, à la tolérance des arrondis en points.
+    fn texte_a(textes: &[(f32, f32, String)], x: f32, y: f32) -> &str {
+        textes
+            .iter()
+            .find(|(tx, ty, _)| (tx - x).abs() < 0.01 && (ty - y).abs() < 0.01)
+            .map(|(_, _, t)| t.as_str())
+            .unwrap_or_else(|| panic!("rien à ({x}, {y}) dans {textes:#?}"))
+    }
+
+    /// Une adresse de type S, la seule que la production imprime.
+    fn adresse_s(name: &str, line1: &str, line2: &str, npa: &str, ville: &str) -> Address {
+        Address {
+            address_type: AddressType::Structured,
+            name: name.into(),
+            line1: line1.into(),
+            line2: line2.into(),
+            postal_code: npa.into(),
+            town: ville.into(),
+            country: "CH".into(),
+        }
+    }
+
+    /// Les textes du PDF d'une QR-facture à référence QRR (celle de la fixture),
+    /// pour ce créancier et ce débiteur.
+    fn textes_pour(creancier: Address, debiteur: Address) -> Vec<(f32, f32, String)> {
+        let (mut data, invoice, i18n) = invoice_fixture();
+        data.creditor = creancier;
+        data.ultimate_debtor = Some(debiteur);
+        let pdf = generate_qr_bill_pdf_with_date(&data, &invoice, &i18n, fixed_date()).unwrap();
+        textes_du_pdf(&pdf)
+    }
+
+    /// Une adresse de type S, à l'étranger.
+    fn adresse_etrangere(
+        name: &str,
+        line1: &str,
+        line2: &str,
+        npa: &str,
+        ville: &str,
+        pays: &str,
+    ) -> Address {
+        Address {
+            country: pays.into(),
+            ..adresse_s(name, line1, line2, npa, ville)
+        }
+    }
+
+    fn creancier_ordinaire() -> Address {
+        adresse_s("Robert Schneider SA", "Rue du Lac", "1268", "2501", "Biel")
+    }
+
+    fn debiteur_ordinaire() -> Address {
+        adresse_s("Pia Rutschmann", "Marktgasse", "28", "9400", "Rorschach")
+    }
+
+    /// **AC1 et AC2** (Story 33-12b, #941) — la composition, par paires : `name`,
+    /// `rue numéro`, `NPA localité`, sans ligne vide ni espace de tête, avec le pays
+    /// hors de Suisse.
+    #[test]
+    fn lignes_adresse_compose_le_type_s() {
+        for (addr, attendu) in [
+            (
+                adresse_s("Max", "Rue du Lac", "12", "1003", "Lausanne"),
+                vec!["Max", "Rue du Lac 12", "1003 Lausanne"],
+            ),
+            (
+                adresse_s("Max", "Rue du Lac", "", "1003", "Lausanne"),
+                vec!["Max", "Rue du Lac", "1003 Lausanne"],
+            ),
+            (
+                adresse_s("Max", "", "12", "1003", "Lausanne"),
+                vec!["Max", "12", "1003 Lausanne"],
+            ),
+            (
+                adresse_s("Max", "", "", "1003", "Lausanne"),
+                vec!["Max", "1003 Lausanne"],
+            ),
+            (
+                adresse_s(
+                    "Čolić\u{A0}",
+                    "\u{A0}\u{AD}",
+                    "\u{AD}",
+                    " 1003",
+                    "Lausanne\u{A0}",
+                ),
+                vec!["Colic", "1003 Lausanne"],
+            ),
+            (
+                adresse_etrangere("Max", "Hauptstrasse", "5", "78462", "Konstanz", "DE"),
+                vec!["Max", "Hauptstrasse 5", "DE-78462 Konstanz"],
+            ),
+            // Inatteignable après `validate`, qui refuse ce NPA ; la garde reste écrite.
+            (
+                adresse_etrangere("Max", "Hauptstrasse", "5", "\u{AD}", "Konstanz", "DE"),
+                vec!["Max", "Hauptstrasse 5", "Konstanz"],
+            ),
+            (
+                adresse_etrangere("Max", "Städtle", "5", "9490", "Vaduz", "LI"),
+                vec!["Max", "Städtle 5", "LI-9490 Vaduz"],
+            ),
+        ] {
+            assert_eq!(lignes_adresse(&addr), attendu, "{addr:?}");
+        }
+    }
+
+    /// **M14 de la Story 33-12b** — NPA et localité passent par `texte_imprime`.
+    #[test]
+    fn lignes_adresse_npa_localite_repliees() {
+        let addr = adresse_etrangere("Max", "Rynek", "1", "90-001", "Łódź", "PL");
+        assert_eq!(lignes_adresse(&addr)[2], "PL-90-001 Lódz");
+    }
+
+    /// **AC1 et AC2** (Story 33-12b, C-e3312-7) — en type K, rien n'est composé :
+    /// aucune recomposition, aucun préfixe, y compris à l'étranger.
+    #[test]
+    fn lignes_adresse_type_k_ne_compose_rien() {
+        let k = Address {
+            address_type: AddressType::Combined,
+            name: "Max".into(),
+            line1: "Łódzka 2".into(),
+            line2: "78462 Konstanz".into(),
+            postal_code: String::new(),
+            town: String::new(),
+            country: "DE".into(),
+        };
+        assert_eq!(lignes_adresse(&k), ["Max", "Lódzka 2", "78462 Konstanz"]);
+    }
+
+    /// **AC3** (Story 33-12b) — un mot plus long que `max` se coupe à la limite, sans
+    /// perte.
+    #[test]
+    fn couper_ligne_mot_long_sans_perte() {
+        let mot = "A".repeat(30);
+        let lignes = couper_ligne(&mot, 27);
+        assert_eq!(lignes, ["A".repeat(27), "A".repeat(3)]);
+        assert_eq!(lignes.concat(), mot);
+
+        // Un mot long après un mot court part sur sa propre ligne.
+        let lignes = couper_ligne(&format!("Rue {mot}"), 27);
+        assert_eq!(lignes, ["Rue".to_string(), "A".repeat(27), "A".repeat(3)]);
+
+        // Un mot long coupé laisse sa fin ouverte au mot suivant.
+        let lignes = couper_ligne(&format!("{mot} fin"), 27);
+        assert_eq!(lignes, ["A".repeat(27), "AAA fin".to_string()]);
+    }
+
+    /// **AC3** (Story 33-12b) — une rue longue : aucune ligne au-delà de `max`, les
+    /// lignes rejointes par une espace redonnent l'entrée ; aucun de ses mots ne
+    /// dépasse `max`.
+    #[test]
+    fn couper_ligne_rue_entiere() {
+        let rue = "Chemin des Trois-Fontaines de la Vieille Tour du Haut-Plateau 12";
+        for (max, attendu) in [
+            (
+                27,
+                vec![
+                    "Chemin des Trois-Fontaines",
+                    "de la Vieille Tour du",
+                    "Haut-Plateau 12",
+                ],
+            ),
+            (
+                46,
+                vec![
+                    "Chemin des Trois-Fontaines de la Vieille Tour",
+                    "du Haut-Plateau 12",
+                ],
+            ),
+        ] {
+            let lignes = couper_ligne(rue, max);
+            assert_eq!(lignes, attendu);
+            assert!(lignes.iter().all(|l| l.chars().count() <= max));
+            assert_eq!(lignes.join(" "), rue);
+        }
+        assert_eq!(couper_ligne("", 27), Vec::<String>::new());
+    }
+
+    /// **AC3** (Story 33-12b, revue P1) — les frontières, là où elles mordent : une
+    /// jointure à exactement `max` tient, à `max + 1` elle se coupe, et les longueurs
+    /// se comptent en caractères : ces 27 caractères font 52 octets.
+    #[test]
+    fn couper_ligne_frontieres_en_caracteres() {
+        let juste = format!("{} {}", "é".repeat(12), "é".repeat(14));
+        assert_eq!(juste.chars().count(), 27, "montage");
+        assert_eq!(couper_ligne(&juste, 27), std::slice::from_ref(&juste));
+
+        let un_de_plus = format!("{} {}", "é".repeat(12), "é".repeat(15));
+        assert_eq!(
+            couper_ligne(&un_de_plus, 27),
+            ["é".repeat(12), "é".repeat(15)]
+        );
+
+        // Une jointure à `max` au milieu d'une ligne plus longue.
+        assert_eq!(
+            couper_ligne("aaaaaaaaaaaaa bbbbbbbbbbbbb cc", 27),
+            ["aaaaaaaaaaaaa bbbbbbbbbbbbb", "cc"]
+        );
+
+        // Un mot de `max` caractères tient seul, le suivant part à la ligne.
+        let mot = "é".repeat(27);
+        assert_eq!(
+            couper_ligne(&format!("{mot} x"), 27),
+            [mot, "x".to_string()]
+        );
+    }
+
+    /// **AC3** (Story 33-12b, revue P1, tranché) — les espaces multiples intérieures
+    /// se réduisent à une, sur une ligne courte comme sur une ligne coupée : un seul
+    /// chemin, et la jointure redonne l'entrée à ces espaces près. Aucune lettre perdue.
+    #[test]
+    fn couper_ligne_reduit_les_espaces_multiples() {
+        assert_eq!(couper_ligne("Rue  du   Lac", 27), ["Rue du Lac"]);
+        assert_eq!(
+            couper_ligne("Chemin  des Trois-Fontaines  de la Tour", 27),
+            ["Chemin des Trois-Fontaines", "de la Tour"]
+        );
+    }
+
+    /// **AC3** (Story 33-12b, C-e3312-6) — la coupe est gloutonne : le NPA peut rester
+    /// seul sur sa ligne, l'adresse restant entière ; le préfixe, lui, reste au NPA.
+    #[test]
+    fn couper_ligne_npa_peut_rester_seul() {
+        assert_eq!(
+            couper_ligne("FR-69400 Villefranche-sur-Saône", 27),
+            ["FR-69400", "Villefranche-sur-Saône"]
+        );
+    }
+
+    /// **AC3** (Story 33-12b, C-e3312-4) — les deux constantes se recalculent depuis
+    /// la largeur de leur colonne et le calibrage sur les capitales.
+    #[test]
+    fn constantes_de_coupe_recalculees() {
+        let mm_par_caractere = 8.0 * 0.677 * 25.4 / 72.0;
+        let recu = RECEIPT_W - 2.0 * 5.0;
+        assert_eq!(MAX_CARACTERES_RECU, (recu / mm_par_caractere) as usize);
+        let paiement = PAGE_W - 5.0 - (RECEIPT_W + 5.0 + 50.0);
+        assert_eq!(paiement, 88.0, "montage : tx = 117");
+        assert_eq!(
+            MAX_CARACTERES_PAIEMENT,
+            (paiement / mm_par_caractere) as usize
+        );
+    }
+
+    /// **AC1, AC5** (Story 33-12b) et **M13** — aux quatre blocs, créancier et débiteur
+    /// distincts : `name`, `rue numéro`, `NPA localité`, dans cet ordre, aux positions
+    /// exactes ; au reçu, la référence entre le créancier et le montant.
+    #[test]
+    fn quatre_blocs_impriment_la_composition() {
+        let textes = textes_pour(creancier_ordinaire(), debiteur_ordinaire());
+        for (x, y, attendu) in [
+            (5.0, 86.5, "Robert Schneider SA"),
+            (5.0, 83.0, "Rue du Lac 1268"),
+            (5.0, 79.5, "2501 Biel"),
+            (5.0, 73.5, "Reference"),
+            (5.0, 70.5, "00 00000 00004 20000 00000 01008"),
+            (5.0, 62.5, "Currency"),
+            (5.0, 51.0, "Payable by"),
+            (5.0, 47.5, "Pia Rutschmann"),
+            (5.0, 44.0, "Marktgasse 28"),
+            (5.0, 40.5, "9400 Rorschach"),
+            (117.0, 86.5, "Robert Schneider SA"),
+            (117.0, 83.0, "Rue du Lac 1268"),
+            (117.0, 79.5, "2501 Biel"),
+            (117.0, 73.5, "Reference"),
+            (67.0, 26.0, "Pia Rutschmann"),
+            (67.0, 22.5, "Marktgasse 28"),
+            (67.0, 19.0, "9400 Rorschach"),
+        ] {
+            assert_eq!(texte_a(&textes, x, y), attendu, "à ({x}, {y})");
+        }
+    }
+
+    /// **AC5** (Story 33-12b) — sans référence, aucune rubrique, ni au reçu ni en
+    /// partie paiement, et le montant remonte d'autant.
+    #[test]
+    fn sans_reference_aucune_rubrique() {
+        let (mut data, invoice, i18n) = invoice_fixture();
+        data.creditor_iban = "CH9300762011623852957".into();
+        data.reference = Reference::None;
+        data.creditor = creancier_ordinaire();
+        let pdf = generate_qr_bill_pdf_with_date(&data, &invoice, &i18n, fixed_date()).unwrap();
+        let textes = textes_du_pdf(&pdf);
+        assert!(!textes.iter().any(|(_, _, t)| t == "Reference"));
+        assert_eq!(texte_a(&textes, 5.0, 71.5), "Currency");
+    }
+
+    /// **AC4** (Story 33-12b) et **M11** — une rue longue, trois lignes au reçu et deux
+    /// en partie paiement : `y` exacts, pas de 3,5, bloc suivant décalé d'autant.
+    #[test]
+    fn rue_longue_les_y_suivent() {
+        let longue = adresse_s(
+            "Robert Schneider SA",
+            "Chemin des Trois-Fontaines de la Vieille Tour du Haut-Plateau",
+            "12",
+            "2501",
+            "Biel",
+        );
+        let debiteur = adresse_s(
+            "Pia Rutschmann",
+            "Chemin des Trois-Fontaines de la Vieille Tour du Haut-Plateau",
+            "12",
+            "9400",
+            "Rorschach",
+        );
+        let textes = textes_pour(longue, debiteur);
+        for (x, y, attendu) in [
+            (5.0, 37.0, "Chemin des Trois-Fontaines"),
+            (5.0, 33.5, "de la Vieille Tour du"),
+            (5.0, 30.0, "Haut-Plateau 12"),
+            (5.0, 26.5, "9400 Rorschach"),
+            (67.0, 22.5, "Chemin des Trois-Fontaines de la Vieille Tour"),
+            (67.0, 19.0, "du Haut-Plateau 12"),
+            (67.0, 15.5, "9400 Rorschach"),
+            (5.0, 83.0, "Chemin des Trois-Fontaines"),
+            (5.0, 79.5, "de la Vieille Tour du"),
+            (5.0, 76.0, "Haut-Plateau 12"),
+            (5.0, 72.5, "2501 Biel"),
+            (5.0, 66.5, "Reference"),
+            (5.0, 55.5, "Currency"),
+            (5.0, 44.0, "Payable by"),
+            (5.0, 40.5, "Pia Rutschmann"),
+            (117.0, 83.0, "Chemin des Trois-Fontaines de la Vieille Tour"),
+            (117.0, 79.5, "du Haut-Plateau 12"),
+            (117.0, 76.0, "2501 Biel"),
+            (117.0, 70.0, "Reference"),
+            (117.0, 61.0, "Additional information"),
+        ] {
+            assert_eq!(texte_a(&textes, x, y), attendu, "à ({x}, {y})");
+        }
+    }
+
+    /// **AC2 et AC4** (Story 33-12b) — le pays, créancier et débiteur, reçu et partie
+    /// paiement : `LI` compris, jamais `CH`.
+    #[test]
+    fn le_pays_s_imprime_hors_de_suisse() {
+        let textes = textes_pour(
+            adresse_etrangere("Vaduz AG", "Städtle", "5", "9490", "Vaduz", "LI"),
+            adresse_etrangere("Jan", "ulica Długa", "5", "90-001", "Łódź", "PL"),
+        );
+        for (x, y, attendu) in [
+            (5.0, 79.5, "LI-9490 Vaduz"),
+            (117.0, 79.5, "LI-9490 Vaduz"),
+            (5.0, 44.0, "ulica Dluga 5"),
+            (5.0, 40.5, "PL-90-001 Lódz"),
+            (67.0, 19.0, "PL-90-001 Lódz"),
+        ] {
+            assert_eq!(texte_a(&textes, x, y), attendu, "à ({x}, {y})");
+        }
+        let suisse = textes_pour(creancier_ordinaire(), debiteur_ordinaire());
+        assert!(!suisse.iter().any(|(_, _, t)| t.starts_with("CH-")));
+    }
+
+    /// **AC4** (Story 33-12b) — les cinq cas, tous à référence QRR : rien sous le point
+    /// de dépôt (y = 5), et aucune ligne vide dessinée dans la section de paiement.
+    #[test]
+    fn cinq_cas_au_dessus_du_point_de_depot() {
+        let rue = "Avenue du Général-Guisan et de la Promenade des Anciens-Bains";
+        for (creancier, debiteur) in [
+            (creancier_ordinaire(), debiteur_ordinaire()),
+            (
+                adresse_s("Robert Schneider SA", rue, "1268", "2501", "Biel"),
+                adresse_s("Pia Rutschmann", rue, "28", "9400", "Rorschach"),
+            ),
+            (
+                creancier_ordinaire(),
+                adresse_etrangere("Jan", "ulica Długa", "5", "90-001", "Łódź", "PL"),
+            ),
+            (
+                adresse_etrangere("Vaduz AG", "Städtle", "5", "9490", "Vaduz", "LI"),
+                debiteur_ordinaire(),
+            ),
+            (
+                adresse_s("Robert Schneider SA", "Rue du Lac", "", "2501", "Biel"),
+                adresse_s("Pia Rutschmann", "", "", "9400", "Rorschach"),
+            ),
+        ] {
+            let textes = textes_pour(creancier, debiteur);
+            let section: Vec<_> = textes.iter().filter(|(_, y, _)| *y < SEP_Y).collect();
+            assert!(
+                section.iter().any(|(_, _, t)| t == "Reference"),
+                "montage : un QRR"
+            );
+            for (x, y, t) in section {
+                assert!(!t.is_empty(), "ligne vide à ({x}, {y})");
+                // Le seul texte au point de dépôt est son intitulé ; une ligne à
+                // moins d'un pas au-dessus le recouvrirait (y = 5 ne suffit pas).
+                if t != "Acceptance point" {
+                    assert!(*y >= 5.0 + ADRESSE_PAS, "{t:?} à ({x}, {y})");
+                }
+            }
+        }
+    }
+
+    /// **AC6** (Story 33-12a, #941), repris à la jonction de la 33-12b — sur un PDF
+    /// réel, les trois lignes de chacun des quatre blocs (`name`, `rue numéro`,
+    /// `NPA localité`, dix champs en tout) et le message impriment la base des lettres
+    /// hors WinAnsi.
+    #[test]
+    fn chaque_site_imprime_la_base_des_lettres() {
+        let (mut data, invoice, i18n) = invoice_fixture();
+        data.creditor = adresse_s("Čolić", "Łódzka", "1ł", "1003", "Łask");
+        data.ultimate_debtor = Some(adresse_s("Ștefan", "Țară", "2ń", "1200", "Żary"));
+        data.unstructured_message = Some("Merci Ž ć".into());
+
+        let pdf = generate_qr_bill_pdf_with_date(&data, &invoice, &i18n, fixed_date()).unwrap();
+        let textes = textes_du_pdf(&pdf);
+
+        for (x, y, attendu) in [
+            (5.0, 86.5, "Colic"),
+            (5.0, 83.0, "Lódzka 1l"),
+            (5.0, 79.5, "1003 Lask"),
+            (5.0, 47.5, "Stefan"),
+            (5.0, 44.0, "Tara 2n"),
+            (5.0, 40.5, "1200 Zary"),
+            (117.0, 86.5, "Colic"),
+            (117.0, 83.0, "Lódzka 1l"),
+            (117.0, 79.5, "1003 Lask"),
+            (67.0, 26.0, "Stefan"),
+            (67.0, 22.5, "Tara 2n"),
+            (67.0, 19.0, "1200 Zary"),
+            (117.0, 61.5, "Merci Ž c"),
+        ] {
+            assert_eq!(texte_a(&textes, x, y), attendu, "à ({x}, {y})");
+        }
+    }
+
+    /// Chaque texte dessiné du PDF, avec la couleur de remplissage (`rg`) en vigueur
+    /// au moment de son `Tj` : noir par défaut, comme le veut la norme PDF.
+    fn couleurs_des_textes(bytes: &[u8]) -> Vec<(String, Vec<f32>)> {
+        let mut textes = Vec::new();
+        let mut couleur = vec![0.0, 0.0, 0.0];
+        for op in operations_du_pdf(bytes) {
+            match op.operator.as_str() {
+                "rg" => couleur = op.operands.iter().map(nombre).collect(),
+                "Tj" => textes.push((texte_du_tj(&op), couleur.clone())),
+                _ => {}
+            }
+        }
+        textes
+    }
+
+    /// **#941, constaté à la capture de la Story 33-12a** — tout texte s'imprime en
+    /// noir. `draw_swiss_cross` laissait le remplissage en blanc : la partie paiement
+    /// entière (compte, créancier, référence, message, montant, débiteur) sortait
+    /// invisible sur le papier, alors qu'elle était présente au contenu du PDF.
+    /// Aucun test relisant le texte ne pouvait le voir.
+    #[test]
+    fn chaque_texte_s_imprime_en_noir() {
+        let (data, invoice, i18n) = invoice_fixture();
+        let pdf = generate_qr_bill_pdf_with_date(&data, &invoice, &i18n, fixed_date()).unwrap();
+        let textes = couleurs_des_textes(&pdf);
+        assert!(
+            textes.iter().any(|(t, _)| t == "Robert Schneider SA"),
+            "montage : le créancier est lu"
+        );
+        let invisibles: Vec<_> = textes
+            .iter()
+            .filter(|(_, couleur)| couleur.as_slice() != [0.0, 0.0, 0.0])
+            .collect();
+        assert!(
+            invisibles.is_empty(),
+            "textes pas en noir : {invisibles:#?}"
+        );
+
+        // La croix elle-même : blanc, rouge, blanc, puis seulement le noir. Une remise
+        // au noir placée avant ses branches garderait les textes noirs.
+        let couleurs: Vec<Vec<i32>> = operations_du_pdf(&pdf)
+            .iter()
+            .filter(|op| op.operator == "rg")
+            .map(|op| {
+                op.operands
+                    .iter()
+                    .map(|o| (nombre(o) * 100.0).round() as i32)
+                    .collect()
+            })
+            .collect();
+        assert_eq!(
+            couleurs,
+            [
+                [0, 0, 0],
+                [100, 100, 100],
+                [85, 0, 0],
+                [100, 100, 100],
+                [0, 0, 0]
+            ]
+        );
+        // Et le noir vient après les branches, dernier rectangle du document.
+        let operateurs: Vec<String> = operations_du_pdf(&pdf)
+            .into_iter()
+            .map(|op| op.operator)
+            .collect();
+        let dernier = |nom: &str| operateurs.iter().rposition(|o| o == nom);
+        assert!(dernier("rg") > dernier("re"), "noir avant les branches");
+
+        // Les 17 textes qui suivent la croix sont ceux que le défaut effaçait, avec cette
+        // fixture : compte, créancier, référence, message, montant, débiteur.
+        let apres_la_croix = operateurs[dernier("re").expect("la croix") + 1..]
+            .iter()
+            .filter(|o| *o == "Tj")
+            .count();
+        assert_eq!(apres_la_croix, 17);
+    }
+
+    /// **Revue P1 de la Story 33-12a (E-M2)** — le nom et l'adresse du corps passent
+    /// par `texte_imprime`. U+00A0, U+00AD et U+0218 à U+021B, refusés avant la story,
+    /// y atteignent `lopdf`, qui les perd : `MüllerSöhne`, puis le PDF se fige.
+    #[test]
+    fn corps_imprime_nom_et_adresse_par_texte_imprime() {
+        let (mut data, mut invoice, i18n) = invoice_fixture();
+        data.ultimate_debtor = Some(debiteur_ordinaire());
+        invoice.creditor_name = "Müller\u{A0}Söhne".into();
+        invoice.creditor_address_lines = vec!["Rue\u{A0}du Lac 1".into(), "2501 Biel".into()];
+        invoice.debtor_name = "Ștefan\u{A0}SRL".into();
+        invoice.debtor_address_lines = vec!["Grand\u{A0}Rue 3".into(), "1200 Genève".into()];
+
+        let pdf = generate_qr_bill_pdf_with_date(&data, &invoice, &i18n, fixed_date()).unwrap();
+        let corps: Vec<String> = textes_du_pdf(&pdf)
+            .into_iter()
+            .filter(|(_, y, _)| *y > SEP_Y)
+            .map(|(_, _, t)| t)
+            .collect();
+        for attendu in ["Müller Söhne", "Rue du Lac 1", "Stefan SRL", "Grand Rue 3"] {
+            assert!(corps.iter().any(|t| t == attendu), "{attendu} : {corps:#?}");
+        }
+    }
+
+    /// **Revues P1 (E-M2) et P2 (P2-M1) de la Story 33-12a** — un avoir ne passe par aucune
+    /// validation de jeu. Son texte ordinaire sort inchangé ; U+2019 et U+2014 deviennent
+    /// `'` et `-`, comme au code, ce qui change bien l'imprimé d'avant ; tout autre
+    /// caractère hors du § 4.1.1 reste traité comme avant, gardé s'il est en WinAnsi, perdu
+    /// par `lopdf` sinon.
+    #[test]
+    fn avoir_texte_ordinaire_inchange() {
+        let (_, mut invoice, i18n) = invoice_fixture();
+        invoice.creditor_name = "Müller & Söhne SA".into();
+        invoice.creditor_address_lines = vec!["Rue du Lac 1268".into(), "L\u{2019}Atelier".into()];
+        invoice.debtor_name = "Pia – Rutschmann".into();
+        invoice.debtor_address_lines = vec!["AЩB".into(), "Paul\u{2014}Henri".into()];
+
+        let pdf = generate_credit_note_pdf_with_date(&invoice, &i18n, fixed_date()).unwrap();
+        let textes: Vec<String> = textes_du_pdf(&pdf).into_iter().map(|(_, _, t)| t).collect();
+        for attendu in [
+            "Müller & Söhne SA",
+            "Rue du Lac 1268",
+            "Pia – Rutschmann",
+            "AB",
+            "L'Atelier",
+            "Paul-Henri",
+        ] {
+            assert!(
+                textes.iter().any(|t| t == attendu),
+                "{attendu} : {textes:#?}"
+            );
+        }
+    }
+
+    /// **Revue P1 (E-L4)** — un message fait d'invisibles sort vide du code : ni valeur
+    /// ni intitulé sur le papier.
+    #[test]
+    fn message_d_invisibles_sans_intitule() {
+        let (mut data, invoice, i18n) = invoice_fixture();
+        data.unstructured_message = Some("\u{A0}\u{AD}".into());
+        let pdf = generate_qr_bill_pdf_with_date(&data, &invoice, &i18n, fixed_date()).unwrap();
+        let textes = textes_du_pdf(&pdf);
+        assert!(
+            !textes.iter().any(|(_, _, t)| t == "Additional information"),
+            "{textes:#?}"
         );
     }
 

@@ -75,6 +75,13 @@ Le contenu est rédigé en français à destination des **fiduciaires, PME, ind�
 ### Ajouté
 
 - **Pour qui contribue au dépôt : la CI saute ses jobs lourds sur une PR qui ne porte que `_bmad-output/`** (refs [#928](https://github.com/guycorbaz/kesh/issues/928)). *(À confirmer par les relevés de l'AC-6 de la Story 33-11 avant la release : cette entrée se récrit si GitHub ne se comporte pas comme prévu.)* Tout autre fichier, manuels, `docs/`, `CHANGELOG.md` et `README.md` compris, fait tourner la suite complète, de même que tout push sur `main`. Sans effet sur Kesh lui-même.
+### Corrigé
+
+- **La partie paiement de la QR-facture s'imprime** ([#941](https://github.com/guycorbaz/kesh/issues/941)) : depuis la première version, tout son texte — compte, créancier, référence, message, montant, débiteur — sortait en blanc sur blanc, seuls le titre et le code QR restant visibles. Le code QR, lu par les banques, n'était pas touché, et le reçu non plus. Un PDF déjà figé garde ce défaut.
+- **Le reçu et la partie paiement impriment l'adresse entière et la référence** ([#941](https://github.com/guycorbaz/kesh/issues/941)) : le NPA et la localité du créancier et du débiteur, que le papier omettait alors que le code QR les porte, la rue et le numéro sur une même ligne, le pays devant le NPA hors de Suisse (`LI-9490 Vaduz`), et la référence au reçu. Une ligne trop longue se coupe entre deux mots. Les très longues adresses restent une limite ([#944](https://github.com/guycorbaz/kesh/issues/944)). Un PDF déjà figé ne change pas ; une facture jamais ouverte, ou un rappel régénéré, prendra le nouveau rendu.
+- **La QR-facture suit le jeu de caractères de la directive SIX** ([#941](https://github.com/guycorbaz/kesh/issues/941)) : un nom à « & », comme *Müller & Söhne*, reçoit sa QR-facture, là où le téléchargement du PDF était refusé ; les lettres Ș, ș, Ț, ț passent aussi. Le code QR normalise l'apostrophe typographique, le tiret cadratin, l'espace insécable et le trait d'union conditionnel. Au reçu et à la partie paiement, et pour le nom et l'adresse de l'émetteur et du destinataire au corps d'une facture, d'un rappel ou d'un avoir, où l'apostrophe typographique et le tiret cadratin deviennent aussi droits, les 125 lettres que la police du PDF ne porte pas s'impriment par leur base (*Čolić* devient « Colic », au lieu de « oli ») alors que le code QR les garde : écart assumé, levé par une police embarquée ([#943](https://github.com/guycorbaz/kesh/issues/943)), le reste du corps de la facture perdant encore ces lettres. Un PDF déjà figé ne change pas ; une facture jamais ouverte, ou un rappel régénéré, prendra le nouveau rendu.
+
+---
 
 ## [0.17.4] — 2026-11-06
 
