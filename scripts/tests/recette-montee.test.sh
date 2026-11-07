@@ -40,21 +40,27 @@ cat > "$FX/docker" <<'FACTICE'
 FX="$(dirname "$0")"
 . "$FX/conf"
 printf 'ARGV %s\n' "$*" >> "$FX/docker.log"
+# Le témoin de la relance : l'environnement que reçoit réellement `docker`.
+env >> "$FX/docker-env.txt"
 tout=" $* "
 migre=$(cat "$FX/migre" 2>/dev/null || echo non)
 case "${1:-}" in
   ps) cat "$FX/ps.txt" 2>/dev/null; exit 0 ;;
+  context)
+    [ "${CONTEXTE_ECHEC:-non}" != oui ] || exit 1
+    echo "${CONTEXTE_HOTE:-unix:///var/run/docker.sock}"; exit 0 ;;
+  image) [ "${IMAGE_ABSENTE:-non}" != oui ] || exit 1; exit 0 ;;
+  pull) [ "${PULL_ECHEC:-non}" != oui ] || exit 1; exit 0 ;;
   inspect)
     if [ "${INSPECT_AUTRE:-non}" = oui ]; then echo un-autre-jeton; else cat "$FX/jeton"; fi
     exit 0 ;;
   stop)
-    case "$2" in *-image-*) : > "$FX/up-image.stop"; rm -f "$FX/up-image" ;; esac
+    case "$2" in *-image-*) [ "${IMAGE_SOURDE:-non}" = oui ] || rm -f "$FX/up-image" ;; esac
     exit 0 ;;
   run)
+    for a in "$@"; do case "$a" in kesh.recette=*) printf '%s\n' "${a#kesh.recette=}" > "$FX/jeton" ;; esac; done
     case "$tout" in
-      *" mariadb:10.11 "*)
-        for a in "$@"; do case "$a" in kesh.recette=*) printf '%s\n' "${a#kesh.recette=}" > "$FX/jeton" ;; esac; done
-        echo idfactice; exit 0 ;;
+      *" mariadb:10.11 "*) echo idfactice; exit 0 ;;
     esac
     if [ "$migre" = oui ] && [ "${IMAGE_DEMARRE_SUR_MIGRE:-non}" != oui ]; then
       echo "${MESSAGE_REFUS:-Error: migration 20261013000001 was previously applied but is missing in the resolved migrations}"
@@ -76,6 +82,11 @@ case "${1:-}" in
       "SELECT COUNT(*) FROM _sqlx_migrations")
         if [ "$migre" = oui ]; then echo $((88 + ${N_REEL:-1})); else echo 88; fi ;;
       "SELECT COUNT(*) FROM bank_transactions") echo 2 ;;
+      "SELECT COUNT(*) FROM invoice_settlements") echo 1 ;;
+      *"CONCAT(id,':',status)"*"FROM supplier_invoices"*)
+        echo "${STATUTS_FOURNISSEUR:-1:open,2:paid,3:cancelled,4:draft}" ;;
+      *"GROUP_CONCAT(status"*"FROM invoices"*)
+        echo "${STATUTS_CLIENTS:-validated,validated,draft}" ;;
       *"FROM _sqlx_migrations"*) echo "migrations-$migre" ;;
       "SELECT * FROM "*)
         t=${sql#SELECT \* FROM }; t=${t%% *}
@@ -112,6 +123,21 @@ done
 chemin=${url#http://*/}
 chemin=${chemin%%\?*}
 reponse='{"id":1,"version":1,"status":"x","remainingAmount":"1.00"}'
+# Un refus de l'API sur un chemin choisi : `--fail-with-body` rend alors 22.
+if [ -n "${API_ECHEC:-}" ]; then
+  case "/$chemin" in
+    *"$API_ECHEC"*) printf '{"error":{"code":"REFUS_FACTICE"}}'; exit 22 ;;
+  esac
+fi
+# Une réponse sans identifiant, sur un chemin choisi.
+if [ -n "${API_SANS_ID:-}" ]; then
+  case "/$chemin" in *"$API_SANS_ID"*) printf '{}'; exit 0 ;; esac
+fi
+# Une erreur que le binaire écrit APRÈS le démarrage, pendant l'empreinte.
+if [ "${ERREUR_TARDIVE:-non}" = oui ] && [ -f "$FX/up-binaire" ] && [ "/$chemin" = /api/v1/auth/login ]; then
+  : > "$FX/erreur-tardive"
+  sleep 0.3
+fi
 case "/$chemin" in
   /health)
     if { [ -f "$FX/up-image" ] || [ -f "$FX/up-binaire" ]; }; then reponse=ok
@@ -144,21 +170,38 @@ echo oui > "\$FX/migre"
 # Comme le vrai binaire, sur toute base peuplée : l'avis du compte réinitialisé, au niveau ERROR.
 echo "2026-01-01T00:00:00Z ERROR kesh_api::auth::bootstrap: Recovery effectué"
 [ "\${ERREUR_JOURNAL:-non}" != oui ] || echo "2026-01-01T00:00:00Z ERROR kesh_api: autre chose"
+# H1 de la revue P1 : une erreur en tête d'un journal bien plus long que le tampon d'un tube
+# (64 Kio) : ce qui écrit encore y bloque forcément, et prend donc SIGPIPE à coup sûr.
+if [ "\${JOURNAL_LONG:-non}" = oui ]; then
+  echo "2026-01-01T00:00:00Z ERROR kesh_api: en tête d'un long journal"
+  for _ in \$(seq 1 8000); do echo "2026-01-01T00:00:00Z  INFO kesh_api: remplissage du journal, ligne sans intérêt"; done
+fi
+case "\$DATABASE_URL" in
+  *":\${PORT_IMPORT:-0}/"*) [ "\${ERREUR_IMPORT:-non}" != oui ] || echo "2026-01-01T00:00:00Z ERROR kesh_api: pendant l'import" ;;
+esac
 if [ "\${PRE_UPGRADE:-oui}" = oui ] && [ "\${N_REEL:-1}" -gt 0 ]; then
   mkdir -p "\$KESH_ADMIN_BACKUP_DIR/pre-upgrade"
   echo factice > "\$KESH_ADMIN_BACKUP_DIR/pre-upgrade/x.keshbackup"
 fi
 echo \$\$ > "\$FX/up-binaire"
 trap 'rm -f "\$FX/up-binaire"; exit 0' TERM
-while :; do sleep 0.05; done
+while :; do
+  if [ -f "\$FX/erreur-tardive" ]; then
+    rm -f "\$FX/erreur-tardive"
+    echo "2026-01-01T00:00:00Z ERROR kesh_api: pendant une requête de l'empreinte"
+  fi
+  sleep 0.05
+done
 FACTICE
 chmod +x "$FX/docker" "$FX/curl" "$DEPOT/target/debug/kesh-api"
 
 # Deux ports libres, trouvés au moment du test, sous la plage éphémère du système : les
 # connexions à la base des autres tests y prendraient sinon le port entre deux contrôles.
+ports_a_l_ecoute() { ss -ltn | awk '{print $4}' | sed 's/.*://'; }
 port_libre() {
-  local p=$1
-  while ss -ltn | awk '{print $4}' | sed 's/.*://' | /usr/bin/grep -qx "$p"; do p=$((p + 2)); done
+  local p=$1 pris
+  pris=$(ports_a_l_ecoute)
+  while /usr/bin/grep -qx "$p" <<<"$pris"; do p=$((p + 2)); done
   echo "$p"
 }
 PA=$(port_libre 23310)
@@ -166,8 +209,8 @@ PB=$(port_libre 23410)
 
 # Remet les factices à neuf. Arguments : lignes de `conf`.
 preparer() {
-  : > "$FX/docker.log"; : > "$FX/curl.log"
-  rm -f "$FX/migre" "$FX/up-image" "$FX/up-binaire" "$FX/ps.txt" "$FX/binaire-env.txt" "$FX/binaire-pwd.txt" "$FX/jeton"
+  : > "$FX/docker.log"; : > "$FX/curl.log"; : > "$FX/docker-env.txt"
+  rm -f "$FX/migre" "$FX/up-image" "$FX/up-binaire" "$FX/ps.txt" "$FX/binaire-env.txt" "$FX/binaire-pwd.txt" "$FX/jeton" "$FX/erreur-tardive"
   printf '%s\n' "$@" > "$FX/conf"
 }
 
@@ -226,6 +269,16 @@ avec --port-api 80; refuse "port-api sous 1024" "${AV[@]}"
 avec --port-api 70000; refuse "port-api trop grand" "${AV[@]}"
 avec --port-base abc; refuse "port-base non entier" "${AV[@]}"
 avec --port-base 65535; refuse "--import et --port-base 65535" "${AV[@]}" --import
+avec --port-api 08080; refuse "port-api à zéro de tête" "${AV[@]}"
+avec --port-base "$PA"; refuse "port-api égal à port-base" "${AV[@]}"
+avec --port-base "$((PA - 1))"; refuse "--port-base + 1 égal à port-api, avec --import" "${AV[@]}" --import
+avec --migrations-attendues 08; refuse "--migrations-attendues à zéro de tête" "${AV[@]}"
+
+echo "  entrées de la mauvaise nature"
+echo ':' > "$DEPOT/target/debug/non-executable"
+avec --binaire target/debug/non-executable; refuse "--binaire non exécutable" "${AV[@]}"
+avec --static target/debug/kesh-api; refuse "--static qui est un fichier" "${AV[@]}"
+
 # Un port réellement pris : le système le choisit, si bien qu'aucune connexion en cours
 # ne l'occupe déjà. Rend le port dans PRIS, le processus dans ECOUTE.
 ecouter() {
@@ -233,12 +286,12 @@ ecouter() {
   : > "$f"
   python3 -c 'import socket,sys,time
 s=socket.socket(); s.bind(("127.0.0.1",0)); s.listen(1)
-open(sys.argv[1],"w").write(str(s.getsockname()[1])); time.sleep(60)' "$f" &
+open(sys.argv[1],"w").write(str(s.getsockname()[1])); time.sleep(60)' "$f" </dev/null >/dev/null 2>&1 &
   ECOUTE=$!
   for _ in $(seq 1 100); do [ -s "$f" ] && break; sleep 0.05; done
   PRIS=$(cat "$f")
   [ -n "$PRIS" ] || { echo "montage : aucun port d'écoute" >&2; exit 2; }
-  ss -ltn | awk '{print $4}' | sed 's/.*://' | /usr/bin/grep -qx "$PRIS" \
+  /usr/bin/grep -qx "$PRIS" <<<"$(ports_a_l_ecoute)" \
     || { echo "montage : le port $PRIS n'écoute pas" >&2; exit 2; }
 }
 ecouter
@@ -266,9 +319,29 @@ preparer "N=1"
 echo kesh-recette-db-123 > "$FX/ps.txt"
 lancer "${BASE_ARGS[@]}"
 if [ "$RC" -eq 4 ] && sortie_dit 'docker stop <nom>' && sortie_dit kesh-recette-db-123 \
-  && [ "$(wc -l < "$FX/docker.log")" -eq 1 ] && /usr/bin/grep -q 'ARGV ps ' "$FX/docker.log" && [ ! -s "$FX/curl.log" ]; then
+  && ! /usr/bin/grep -qE 'ARGV (run|stop|pull) ' "$FX/docker.log" && /usr/bin/grep -q 'ARGV ps ' "$FX/docker.log" && [ ! -s "$FX/curl.log" ]; then
   ok "refusé, nom et geste dits"
 else fail "code $RC : $(cat "$FX/sortie" | tail -2)"; fi
+
+echo "  le démon : tout démon non local est refusé, avant toute autre commande"
+for hote in ssh://guy@ailleurs tcp://10.0.0.1:2375 fd://; do
+  preparer "N_REEL=1" "CONTEXTE_HOTE=$hote"
+  lancer "${BASE_ARGS[@]}"
+  if [ "$RC" -eq 5 ] && ! /usr/bin/grep -qvE 'ARGV context ' "$FX/docker.log" && [ -s "$FX/docker.log" ] \
+    && ! sortie_dit "$hote"; then ok "$hote refusé, sans le nommer ni rien lancer"
+  else fail "$hote : code $RC, $(wc -l < "$FX/docker.log") appels"; fi
+done
+preparer "N_REEL=1" "CONTEXTE_ECHEC=oui"
+lancer "${BASE_ARGS[@]}"
+[ "$RC" -eq 5 ] && ok "contexte illisible : refusé" || fail "contexte illisible : code $RC"
+
+echo "  les images : tirées d'avance, seulement si elles manquent"
+preparer "N_REEL=1" "IMAGE_ABSENTE=oui"
+lancer "${BASE_ARGS[@]}"
+if [ "$RC" -eq 0 ] && /usr/bin/grep -q 'ARGV pull gcorbaz/kesh:0.17.4' "$FX/docker.log" && /usr/bin/grep -q 'ARGV pull mariadb:10.11' "$FX/docker.log"; then ok "tirées quand elles manquent"; else fail "tirage : code $RC"; fi
+preparer "N_REEL=1" "IMAGE_ABSENTE=oui" "PULL_ECHEC=oui"
+lancer "${BASE_ARGS[@]}"
+if [ "$RC" -eq 5 ] && ! /usr/bin/grep -q 'ARGV run ' "$FX/docker.log"; then ok "tirage en échec : refusé, rien lancé"; else fail "tirage en échec : code $RC"; fi
 
 # --- AC-5 : le chemin nominal, l'environnement et les conteneurs ----------------------
 APPELANT="$WORK/parent-appelant/appelant"
@@ -276,9 +349,18 @@ mkdir -p "$APPELANT"
 echo 'KESH_ADMIN_BACKUP_DIR=/inexistant/sonde' | tee "$APPELANT/.env" "$WORK/parent-appelant/.env" "$DEPOT/.env" >/dev/null
 preparer "N_REEL=1"
 RC=0
-(cd "$APPELANT" && DATABASE_URL=mysql://sonde:sonde@sonde.invalid/sonde KESH_ADMIN_BACKUP_DIR=/inexistant/sonde \
-  KESH_SMTP_PASSWORD=sonde-smtp KESH_RECETTE_RELANCE=1 KESH_DOCKER="$FX/docker" KESH_CURL="$FX/curl" RECETTE_RACINE_JETABLE="$WORK/jetable" \
+# Une fonction exportée au nom d'un outil : elle ne doit pas traverser la relance.
+sonde_fonction() { echo sonde; }
+(cd "$APPELANT" && export -f sonde_fonction && DATABASE_URL=mysql://sonde:sonde@sonde.invalid/sonde KESH_ADMIN_BACKUP_DIR=/inexistant/sonde \
+  KESH_SMTP_PASSWORD=sonde-smtp KESH_RECETTE_RELANCE=1 DOCKER_HOST=tcp://sonde.invalid:2375 DOCKER_CONTEXT=sonde DOCKER_CONFIG=/inexistant/sonde \
+  HOME="$WORK/home-sonde" KESH_DOCKER="$FX/docker" KESH_CURL="$FX/curl" RECETTE_RACINE_JETABLE="$WORK/jetable" \
   bash "$DEPOT/scripts/recette-montee.sh" "${BASE_ARGS[@]}" --import --diff-attendu migrations) > "$FX/sortie" 2>&1 || RC=$?
+echo "  la relance : ce que reçoit réellement docker"
+noms=$(cut -d= -f1 "$FX/docker-env.txt" | /usr/bin/grep -E '^[A-Za-z_][A-Za-z0-9_]*$' | /usr/bin/grep -vxE 'PWD|SHLVL|_|OLDPWD' | LC_ALL=C sort -u | tr '\n' ' ')
+[ "$noms" = "HOME KESH_CURL KESH_DOCKER PATH RECETTE_RACINE_JETABLE " ] && ok "liste exacte, sonde positive comprise" || fail "docker reçoit : $noms"
+/usr/bin/grep -qE 'sonde|BASH_FUNC|KESH_RECETTE_RELANCE' "$FX/docker-env.txt" && fail "une sonde atteint docker" || ok "ni variable sonde, ni fonction exportée"
+/usr/bin/grep -qx 'HOME=/nonexistent' "$FX/docker-env.txt" && ok "HOME neutralisé" || fail "HOME : $(/usr/bin/grep -m1 '^HOME=' "$FX/docker-env.txt")"
+/usr/bin/grep -qx 'PATH=/usr/bin:/bin' "$FX/docker-env.txt" && ok "PATH fermé" || fail "PATH"
 echo "  chemin nominal, cinq phases"
 [ "$RC" -eq 0 ] && ok "code 0" || { fail "code $RC"; tail -5 "$FX/sortie"; }
 for p in "phase 1" "phase 2" "phase 3" "phase 4" "phase 5"; do sortie_dit "▶ $p" && ok "$p jouée" || fail "$p"; done
@@ -308,6 +390,7 @@ for m in "--rm" "--label kesh.recette=" "--tmpfs /var/lib/mysql" "-p 127.0.0.1:$
 done
 run_image=$(/usr/bin/grep -m1 'ARGV run .*gcorbaz/kesh:' "$FX/docker.log" || true)
 case "$run_image" in *"--network host"*) ok "image : --network host" ;; *) fail "image : réseau" ;; esac
+case "$run_image" in *"--label kesh.recette="*) ok "image : son label" ;; *) fail "image sans label" ;; esac
 for m in "PATH=" "HOME=" "KESH_STATIC_DIR="; do
   case "$run_image" in *"-e $m"*) fail "image reçoit $m" ;; *) ok "image sans $m" ;; esac
 done
@@ -331,6 +414,34 @@ preparer "N_REEL=1" "INSPECT_AUTRE=oui"
 lancer "${BASE_ARGS[@]}"
 [ "$RC" -eq 5 ] && ok "un autre jeton fait refuser" || fail "code $RC"
 if /usr/bin/grep -q 'ARGV run .*gcorbaz/kesh:' "$FX/docker.log"; then fail "image lancée malgré tout"; else ok "image non lancée"; fi
+if /usr/bin/grep -q 'ARGV stop ' "$FX/docker.log"; then fail "un conteneur qui n'est pas le nôtre arrêté"; else ok "un conteneur étranger n'est pas arrêté"; fi
+
+echo "  le peuplement : un refus de l'API, un état inattendu"
+for chemin in /validate /settlements /pay /cancel /invoice-settings; do
+  preparer "N_REEL=1" "API_ECHEC=$chemin"
+  lancer "${BASE_ARGS[@]}"
+  [ "$RC" -eq 11 ] && ok "refus sur $chemin : phase 1 en échec" || fail "$chemin : code $RC"
+done
+preparer "N_REEL=1" "STATUTS_FOURNISSEUR=1:draft,2:draft,3:draft,4:draft"
+lancer "${BASE_ARGS[@]}"
+[ "$RC" -eq 11 ] && sortie_dit "statuts" && ok "statuts fournisseur inattendus : échec" || fail "statuts fournisseur : code $RC"
+preparer "N_REEL=1" "STATUTS_CLIENTS=draft,draft,draft"
+lancer "${BASE_ARGS[@]}"
+[ "$RC" -eq 11 ] && sortie_dit "statuts" && ok "statuts clients inattendus : échec" || fail "statuts clients : code $RC"
+/usr/bin/grep -q 'ARGV stop kesh-recette-db-' "$FX/docker.log" && ok "phase en échec : base arrêtée" || fail "phase en échec : base non arrêtée"
+
+echo "  la dernière ligne nomme le dossier, même quand une réponse n'a pas d'identifiant"
+preparer "N_REEL=1" "API_SANS_ID=/supplier-invoices"
+lancer "${BASE_ARGS[@]}"
+[ "$RC" -eq 11 ] && [ "$(tail -1 "$FX/sortie" | cut -d' ' -f1-4)" = "recette-montee : code 11," ] && ok "dernière ligne écrite" || fail "code $RC, dernière ligne : $(tail -1 "$FX/sortie")"
+
+echo "  un client docker sourd ne fige pas la sortie"
+preparer "N_REEL=1" "IMAGE_SOURDE=oui" "STATUTS_CLIENTS=draft,draft,draft"
+RC=0
+KESH_DOCKER="$FX/docker" KESH_CURL="$FX/curl" RECETTE_RACINE_JETABLE="$WORK/jetable" \
+  timeout 90 bash "$DEPOT/scripts/recette-montee.sh" "${BASE_ARGS[@]}" > "$FX/sortie" 2>&1 || RC=$?
+[ "$RC" -eq 11 ] && /usr/bin/grep -q 'ARGV stop kesh-recette-db-' "$FX/docker.log" && ok "sortie bornée, base arrêtée" || fail "code $RC (124 : figé)"
+rm -f "$FX/up-image"
 
 # --- AC-5 : l'enchaînement --------------------------------------------------------
 echo "  écart d'empreinte"
@@ -348,6 +459,15 @@ echo "  journal du binaire"
 preparer "N_REEL=1" "ERREUR_JOURNAL=oui"
 lancer "${BASE_ARGS[@]}"
 [ "$RC" -eq 12 ] && sortie_dit "erreur au journal" && ok "une erreur au journal : échec" || fail "code $RC"
+preparer "N_REEL=1" "JOURNAL_LONG=oui"
+lancer "${BASE_ARGS[@]}"
+[ "$RC" -eq 12 ] && sortie_dit "erreur au journal" && ok "une erreur en tête d'un long journal : échec" || fail "journal long, muet : code $RC"
+preparer "N_REEL=1" "ERREUR_TARDIVE=oui"
+lancer "${BASE_ARGS[@]}"
+[ "$RC" -eq 12 ] && sortie_dit "erreur au journal" && ok "une erreur écrite pendant l'empreinte : échec" || fail "erreur tardive : code $RC"
+preparer "N_REEL=1" "ERREUR_IMPORT=oui" "PORT_IMPORT=$((PB + 1))"
+lancer "${BASE_ARGS[@]}" --import
+[ "$RC" -eq 15 ] && sortie_dit "erreur au journal" && ok "une erreur au journal de l'import : échec" || fail "journal de l'import : code $RC"
 
 echo "  migrations"
 preparer "N_REEL=2"
@@ -367,6 +487,10 @@ lancer "${BASE_ARGS[@]}"
 preparer "N_REEL=1" "CODE_REFUS=0"
 lancer "${BASE_ARGS[@]}"
 [ "$RC" -eq 13 ] && ok "image qui sort en 0 : échec" || fail "code $RC"
+# Sur une migration breaking, le refus vient de `check_downgrade_protection`, avant sqlx.
+preparer "N_REEL=1" "MESSAGE_REFUS='FATAL : La base a été migrée par Kesh v0.18.0, le binaire courant v0.17.4 ne peut pas la downgrader sans risque.'"
+lancer "${BASE_ARGS[@]}"
+[ "$RC" -eq 0 ] && ok "le refus d'une migration breaking est reconnu" || fail "refus breaking : code $RC, $(tail -2 "$FX/sortie" | head -1)"
 
 echo "  N = 0"
 preparer "N_REEL=0"
@@ -383,6 +507,21 @@ echo 'SQL "SELECT 1" > /dev/null && api GET /api/v1/accounts > /dev/null && [ -d
 preparer "N_REEL=1"
 lancer "${BASE_ARGS[@]}" --apres "$WORK/kesh-gate-logs/verifs.sh"
 [ "$RC" -eq 0 ] && ok "le crochet dispose de SQL, api, L" || fail "code $RC"
+# M3 : une vérification qui échoue en tête, la dernière ligne réussissant.
+printf '%s\n' 'false' 'true' > "$WORK/kesh-gate-logs/verifs.sh"
+preparer "N_REEL=1"
+lancer "${BASE_ARGS[@]}" --apres "$WORK/kesh-gate-logs/verifs.sh"
+[ "$RC" -eq 12 ] && ok "le premier statut non nul fait échouer le crochet" || fail "crochet, première ligne en échec : code $RC"
+# L12 : il tourne dans le dossier jetable, sans la sonde de l'appelant.
+printf '%s\n' 'pwd > "$L/crochet-pwd.txt"' 'echo "$HOME" > "$L/crochet-home.txt"' 'env > "$L/crochet-env.txt"' > "$WORK/kesh-gate-logs/verifs.sh"
+preparer "N_REEL=1"
+RC=0
+DOCKER_HOST=tcp://sonde.invalid:2375 KESH_DOCKER="$FX/docker" KESH_CURL="$FX/curl" RECETTE_RACINE_JETABLE="$WORK/jetable" \
+  bash "$DEPOT/scripts/recette-montee.sh" "${BASE_ARGS[@]}" --apres "$WORK/kesh-gate-logs/verifs.sh" > "$FX/sortie" 2>&1 || RC=$?
+D=$(/usr/bin/grep -oE 'dossier .*$' "$FX/sortie" | tail -1 | sed 's/^dossier //')
+[ "$RC" -eq 0 ] && [ "$(cat "$D/journal/crochet-pwd.txt")" = "$D/cwd" ] && [ "$(cat "$D/journal/crochet-home.txt")" = "$D/home" ] \
+  && ok "le crochet tourne dans \$D/cwd, HOME sous \$D" || fail "crochet : code $RC"
+/usr/bin/grep -q sonde "$D/journal/crochet-env.txt" && fail "une sonde atteint le crochet" || ok "aucune sonde au crochet"
 
 # --- AC-7 -------------------------------------------------------------------------
 echo "  AC-7 : aucun chemin de la station, aucune donnée réelle"

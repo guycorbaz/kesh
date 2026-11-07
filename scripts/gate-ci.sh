@@ -15,13 +15,16 @@
 # en root ; tests en `kesh`. La commande `cargo test` et la boucle sont gardées
 # égales au workflow par `scripts/tests/gate-ci.test.sh`.
 #
-# Écarts à la CI, tous déclarés : le nom de la base, le datadir en tmpfs du MariaDB
-# de dev, et les variables du runner GitHub.
+# Écarts à la CI, tous déclarés : le nom de la base, le MariaDB de dev (datadir en
+# tmpfs, durabilité réduite, d'autres bases à côté), ses droits déjà posés (l'étape
+# *Apply dev grants* n'est pas rejouée), `HOME` réel (`~/.cargo/config.toml` lu) et les
+# variables du runner GitHub. `cargo test` s'arrête au premier binaire en échec, comme
+# en CI : le décompte d'un rouge ne couvre que les binaires déjà passés.
 #
 # ⛔ Le script recrée une base sur le MariaDB de dev, jamais le conteneur lui-même
 # (`restart` efface les bases de tous), et ne pose aucun droit : ceux de `kesh`
-# couvrent déjà `kesh%`. Refuse si un `.env` est atteignable depuis le dépôt : la CI
-# n'en a aucun, et `dotenvy` le lirait.
+# couvrent déjà `kesh%`. Refuse si un `.env` est atteignable depuis le dépôt ou l'un de
+# ses crates : la CI n'en a aucun, et `dotenvy` le lirait.
 #
 # Sous `mem-guard` s'il n'y est pas déjà ; les verrous de la station restent à
 # l'appelant. Injections de test : KESH_DOCKER, KESH_CARGO, KESH_NO_MEMGUARD.
@@ -51,6 +54,15 @@ while :; do
   [ "$d" != / ] || break
   d=$(dirname "$d")
 done
+# `cargo test` lance chaque binaire depuis le dossier de son crate.
+ENV_DANS_LE_DEPOT=$(find "$RACINE" \( -name target -o -name node_modules -o -name .git \) -prune -o -name .env -print)
+[ -z "$ENV_DANS_LE_DEPOT" ] || refus "« $ENV_DANS_LE_DEPOT » atteignable depuis le dépôt : la CI n'en a aucun" 3
+
+# Résolu ici, chez l'appelant, et éprouvé avant le premier appel.
+if [ -n "$JOURNAL" ]; then
+  JOURNAL=$(realpath -m -- "$JOURNAL") || refus "journal illisible" 2
+  touch -- "$JOURNAL" 2>/dev/null || refus "journal « $JOURNAL » impossible à écrire" 2
+fi
 
 if [ -z "${KESH_MEMGUARD_ACTIVE:-}" ] && [ -z "${KESH_NO_MEMGUARD:-}" ]; then
   export KESH_MEMGUARD_ACTIVE=1
@@ -62,8 +74,9 @@ cd "$RACINE" || refus "dépôt illisible" 2
 [ -n "$JOURNAL" ] || JOURNAL=$(mktemp "${TMPDIR:-/tmp}/gate-ci.XXXXXX.log") \
   || refus "journal temporaire impossible" 2
 
-# `root`, comme les étapes de migration et de seed de la CI ; mot de passe par
-# l'environnement, jamais en argument.
+# `root`, comme les étapes de migration et de seed de la CI ; mot de passe de dev, publié
+# au dépôt, passé par l'environnement de `mariadb` et non par `-p` (l'argument de `docker
+# exec`, lui, se lit au `ps`).
 sql_root() {
   "$DOCKER" exec -i -e "MYSQL_PWD=$MDP_ROOT" "$CONTENEUR" mariadb -uroot "$@"
 }

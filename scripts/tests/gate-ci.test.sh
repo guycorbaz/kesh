@@ -63,7 +63,7 @@ lancer() {
   echo "$d" > "$WORK/bin/courant"
   echo "${STUB_CARGO_CODE:-0}" > "$WORK/bin/code-cargo"
   echo "${STUB_DOCKER_CODE:-0}" > "$WORK/bin/code-docker"
-  KESH_DOCKER="$WORK/bin/docker" KESH_CARGO="$WORK/bin/cargo" KESH_NO_MEMGUARD=1 \
+  TMPDIR="$WORK" KESH_DOCKER="$WORK/bin/docker" KESH_CARGO="$WORK/bin/cargo" KESH_NO_MEMGUARD=1 \
     bash "$d/scripts/gate-ci.sh" "$@"
 }
 
@@ -88,6 +88,24 @@ cp "$SCRIPT_SRC" "$d/scripts/gate-ci.sh"
 if lancer "$d" kesh_ci_x >/dev/null 2>&1; then fail "dans un parent : accepté"
 elif [ -s "$d/appels.log" ]; then fail "dans un parent : des appels"
 else ok "dans un parent"; fi
+
+# `cargo test` lance chaque binaire depuis son crate, et `dotenvy` remonte de là.
+d=$(depot); mkdir -p "$d/crates/kesh-api"; touch "$d/crates/kesh-api/.env"
+if lancer "$d" kesh_ci_x >/dev/null 2>&1; then fail "dans un crate : accepté"
+elif [ -s "$d/appels.log" ]; then fail "dans un crate : des appels"
+else ok "dans un crate"; fi
+d=$(depot); mkdir -p "$d/target/x" "$d/frontend/node_modules/y"; touch "$d/target/x/.env" "$d/frontend/node_modules/y/.env"
+if lancer "$d" kesh_ci_x >/dev/null 2>&1; then ok "sous target/ et node_modules/ : ignoré (sonde positive)"; else fail "target/ refusé à tort"; fi
+
+echo "  journal : éprouvé avant tout appel"
+d=$(depot)
+if lancer "$d" kesh_ci_x "$WORK/inexistant/journal.log" >/dev/null 2>&1; then fail "dossier du journal absent : accepté"
+elif [ -s "$d/appels.log" ]; then fail "dossier du journal absent : des appels"
+else ok "dossier du journal absent : refusé, zéro appel"; fi
+d=$(depot); APPELANT=$(mktemp -d "$WORK/appelant.XXXXXX")
+(cd "$APPELANT" && lancer "$d" kesh_ci_x relatif.log >/dev/null 2>&1) || fail "journal relatif en échec"
+[ -s "$APPELANT/relatif.log" ] && ok "journal relatif : chez l'appelant" || fail "journal relatif : ailleurs"
+[ ! -e "$d/relatif.log" ] && ok "et non dans le dépôt" || fail "journal relatif dans le dépôt"
 
 # --- Le chemin nominal --------------------------------------------------------------
 echo "  environnement fermé, et la base forcée"

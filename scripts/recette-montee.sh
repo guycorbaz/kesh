@@ -22,38 +22,52 @@
 # `.keshbackup` de `pre-upgrade/` dans une installation neuve, relève d'une autre recette.
 #
 # ⛔ Une liste blanche, non une liste noire : ce script ne connaît aucun accès réel, et
-# n'en nomme aucun. Son environnement est fermé (il se relance par `env -i`), sa base est
-# un conteneur `mariadb:10.11` qu'il crée lui-même, il n'écrit que dans un dossier
-# `mktemp -d` sous `/tmp`, qu'il nomme à sa dernière ligne et n'efface pas ; aucune option
-# ne désigne un hôte, une base, une URL ni un lieu d'écriture. Il n'emploie pas le MariaDB
-# de dev. Les verrous de la station et le plafond mémoire restent à l'appelant.
+# n'en nomme aucun. Son environnement est fermé (il se relance par `env -i`, `HOME`
+# neutralisé), il refuse tout démon Docker non local, sa base est un conteneur
+# `mariadb:10.11` qu'il crée lui-même, il n'écrit que dans un dossier `mktemp -d` sous
+# `/tmp`, qu'il nomme à sa dernière ligne et n'efface pas ; aucune option ne désigne un
+# hôte, une base, une URL ni un lieu d'écriture. Il n'emploie pas le MariaDB de dev. Les
+# verrous de la station et le plafond mémoire restent à l'appelant.
+#
+# ⚠️ Ce périmètre est celui du script, NON du crochet `--apres` : le crochet est du code de
+# l'appelant, exécuté avec les droits du script et avec ses mots de passe factices. Il part
+# de `$D/cwd`, `HOME` sous `$D`, et s'arrête au premier statut non nul, mais rien ne
+# l'empêche d'atteindre `docker`, le réseau ou un autre dossier : il se relit comme du code.
+# L'empreinte ne couvre pas tout non plus : `docs/testing.md` dit exactement ce qu'elle
+# regarde, et aucun document n'est peuplé ni comparé.
 #
 # Codes : 2 option ou entrée refusée ; 3 `.env` atteignable ; 4 conteneur de recette déjà
-# présent ; 5 outil manquant ou conteneur de base inattendu.
+# présent ; 5 outil manquant, démon non local, image indisponible ou conteneur de base
+# inattendu.
 #
 # Variables de test (les seules qui traversent la relance) : KESH_DOCKER, KESH_CURL,
-# RECETTE_RACINE_JETABLE (sous /tmp).
+# RECETTE_RACINE_JETABLE (sous /tmp). Qui les pose exécute déjà ce qu'il veut.
 
 set -uo pipefail
 
 # --- L'environnement fermé -----------------------------------------------------------
 # Aucun marqueur : l'environnement se compare à la liste, et le script se relance tant
 # qu'il diffère. Une variable exportée sous un nom de marqueur ne fait donc rien sauter.
+# La liste vient de `env`, non de `compgen -e`, qui ne voit pas les fonctions exportées.
+# `HOME` est neutralisé : ni la configuration de `docker` (contexte, `credsStore`), ni celle de
+# `curl`, ni celle de `jq`.
 PATH_FERME=/usr/bin:/bin
+HOME_FERME=/nonexistent
 environnement_ferme() {
-  local n
+  local e
   [ "${PATH:-}" = "$PATH_FERME" ] || return 1
-  while IFS= read -r n; do
-    case "$n" in
+  [ "${HOME:-}" = "$HOME_FERME" ] || return 1
+  while IFS= read -r -d '' e; do
+    case "${e%%=*}" in
       PATH | HOME | KESH_DOCKER | KESH_CURL | RECETTE_RACINE_JETABLE) ;;
       PWD | SHLVL | _ | OLDPWD) ;;
       *) return 1 ;;
     esac
-  done < <(compgen -e)
+  done < <(/usr/bin/env -0)
   return 0
 }
 if ! environnement_ferme; then
-  relance=("PATH=$PATH_FERME" "HOME=${HOME:-/nonexistent}")
+  relance=("PATH=$PATH_FERME" "HOME=$HOME_FERME")
   [ -z "${KESH_DOCKER:-}" ] || relance+=("KESH_DOCKER=$KESH_DOCKER")
   [ -z "${KESH_CURL:-}" ] || relance+=("KESH_CURL=$KESH_CURL")
   [ -z "${RECETTE_RACINE_JETABLE:-}" ] || relance+=("RECETTE_RACINE_JETABLE=$RECETTE_RACINE_JETABLE")
@@ -93,19 +107,28 @@ done
 [[ "$IMAGE" =~ ^gcorbaz/kesh:[0-9]+\.[0-9]+\.[0-9]+(-[a-z0-9.]+)?$ ]] \
   || refus "image « $IMAGE » : gcorbaz/kesh:X.Y.Z exigée"
 [[ "$PREFIXE" =~ ^kesh-[a-z0-9]+$ ]] || refus "préfixe « $PREFIXE » hors du motif kesh-<mot>"
-[[ "$MIGRATIONS" =~ ^[0-9]+$ ]] || refus "--migrations-attendues : un entier"
+[[ "$MIGRATIONS" =~ ^(0|[1-9][0-9]*)$ ]] || refus "--migrations-attendues : un entier, sans zéro de tête"
 
-port_valide() { [[ "$1" =~ ^[0-9]+$ ]] && [ "$1" -ge 1024 ] && [ "$1" -le 65535 ]; }
+for outil in jq md5sum awk ss realpath join "$CURL"; do
+  command -v "$outil" >/dev/null || refus "outil manquant : $outil" 5
+done
+
+port_valide() { [[ "$1" =~ ^[1-9][0-9]*$ ]] && [ "$1" -ge 1024 ] && [ "$1" -le 65535 ]; }
 port_valide "$PORT_API" || refus "--port-api : entier de 1024 à 65535"
 port_valide "$PORT_BASE" || refus "--port-base : entier de 1024 à 65535"
+[ "$PORT_API" != "$PORT_BASE" ] || refus "--port-api et --port-base sont égaux"
 PORTS=("$PORT_API" "$PORT_BASE")
 if [ "$IMPORT" = 1 ]; then
   PORT_BASE_2=$((PORT_BASE + 1))
   port_valide "$PORT_BASE_2" || refus "--import : --port-base + 1 hors de 1024 à 65535"
+  [ "$PORT_API" != "$PORT_BASE_2" ] || refus "--import : --port-base + 1 égale --port-api"
   PORTS+=("$PORT_BASE_2")
 fi
+# ⛔ Jamais `… | grep -q` sous `pipefail` : sa sortie à la première ligne tue en `SIGPIPE` ce
+# qui écrit encore, le tube vaut 141, et un « trouvé » se lit « absent ».
+PORTS_PRIS=$(ss -ltn 2>/dev/null | awk '{print $4}' | sed 's/.*://') || refus "ss en échec" 5
 for p in "${PORTS[@]}"; do
-  if ss -ltn 2>/dev/null | awk '{print $4}' | sed 's/.*://' | /usr/bin/grep -qx "$p"; then
+  if /usr/bin/grep -qx "$p" <<<"$PORTS_PRIS"; then
     refus "port $p déjà pris"
   fi
 done
@@ -124,6 +147,8 @@ sous() {
 [ -n "$STATIQUE" ] || refus "--static manque"
 BINAIRE=$(sous --binaire "$BINAIRE" "$RACINE") || exit 2
 STATIQUE=$(sous --static "$STATIQUE" "$RACINE") || exit 2
+[ -f "$BINAIRE" ] && [ -x "$BINAIRE" ] || refus "--binaire : pas un fichier exécutable"
+[ -d "$STATIQUE" ] || refus "--static : pas un dossier"
 if [ -n "$APRES" ]; then
   VOISIN=$(realpath -m -- "$RACINE/../kesh-gate-logs")
   APRES=$(sous --apres "$APRES" "$VOISIN") || exit 2
@@ -148,15 +173,28 @@ while :; do
   d=$(dirname "$d")
 done
 
-for outil in jq md5sum awk ss realpath; do
-  command -v "$outil" >/dev/null || refus "outil manquant : $outil" 5
-done
+# Le démon visé : un socket local, seul. Le script ne lit aucun fichier de configuration : il
+# demande à `docker`, et ne dit pas ce qu'il a vu.
+HOTE_DOCKER=$("$DOCKER" context inspect --format '{{.Endpoints.docker.Host}}' 2>/dev/null) \
+  || refus "contexte Docker illisible" 5
+case "$HOTE_DOCKER" in
+  unix:///*) ;;
+  *) refus "le démon Docker visé n'est pas local : la recette ne joue que sur cette machine" 5 ;;
+esac
 
 restes=$("$DOCKER" ps -a --filter label=kesh.recette --format '{{.Names}}') \
   || refus "docker ps en échec" 5
 if [ -n "$restes" ]; then
-  refus "conteneurs d'un run précédent : $restes. Pour les retirer : docker stop <nom>" 4
+  refus "conteneurs d'un run précédent, ou d'un run en cours : $restes. Pour retirer un reste : docker stop <nom>" 4
 fi
+
+# Tirées d'avance : un tirage dans `docker run` se confondrait avec une image qui ne répond
+# pas, et laisserait un client qu'aucun `docker stop` n'atteint.
+for image in mariadb:10.11 "$IMAGE"; do
+  if ! "$DOCKER" image inspect "$image" >/dev/null 2>&1; then
+    "$DOCKER" pull "$image" >/dev/null 2>&1 || refus "image $image indisponible" 5
+  fi
+done
 
 # --- Le dossier jetable : le script n'écrit que là ----------------------------------------
 D=$(mktemp -d "$RACINE_JETABLE/kesh-recette.XXXXXX") || refus "dossier jetable impossible" 5
@@ -187,9 +225,24 @@ PID_BINAIRE=""
 PID_IMAGE=""
 
 # --- La sortie, sur tout chemin ----------------------------------------------------------
+# Arrête un conteneur par son nom, s'il porte le jeton de ce run, et lui seul : un homonyme
+# n'est pas à nous. `--rm` le retire.
+arreter_conteneur() { # $1 = nom
+  local vu
+  vu=$("$DOCKER" inspect -f '{{index .Config.Labels "kesh.recette"}}' "$1" 2>/dev/null) || return 0
+  [ "$vu" = "$JETON" ] || return 0
+  "$DOCKER" stop "$1" >/dev/null 2>&1
+}
 arreter_image() {
+  local i
   if [ -n "$PID_IMAGE" ]; then
-    "$DOCKER" stop "$CT_IMAGE" >/dev/null 2>&1
+    arreter_conteneur "$CT_IMAGE"
+    # L'attente est bornée : un client qui ne rend pas la main ne fige pas la sortie.
+    for i in $(seq 1 100); do
+      kill -0 "$PID_IMAGE" 2>/dev/null || break
+      sleep 0.2
+    done
+    kill "$PID_IMAGE" 2>/dev/null
     wait "$PID_IMAGE" 2>/dev/null
     PID_IMAGE=""
   fi
@@ -206,13 +259,19 @@ nettoyer() {
   trap - EXIT
   arreter_binaire
   arreter_image
-  "$DOCKER" stop "$CT_BASE" >/dev/null 2>&1
-  "$DOCKER" stop "$CT_BASE_2" >/dev/null 2>&1
-  ss -ltnp 2>/dev/null > "$L/ss-final.txt"
-  echo "recette-montee : code $code, dossier $D"
+  arreter_conteneur "$CT_BASE"
+  arreter_conteneur "$CT_BASE_2"
+  # Les seuls ports de la recette : le reste de la station n'a rien à faire au journal.
+  ss -ltn 2>/dev/null | awk -v api=":$PORT_API\$" -v base=":$PORT_BASE\$" '$4 ~ api || $4 ~ base' > "$L/ss-final.txt"
+  [ ! -s "$L/ss-final.txt" ] || echo "recette-montee : un port de la recette écoute encore ($L/ss-final.txt)" >&2
+  # Sur la sortie d'origine : un `echec` peut survenir sous une redirection de son appelant.
+  echo "recette-montee : code $code, dossier $D" >&3
   exit "$code"
 }
+exec 3>&1
 trap nettoyer EXIT
+trap 'exit 143' TERM
+trap 'exit 130' INT
 echec() {
   echo "recette-montee : ÉCHEC phase $1 : $2" >&2
   exit "$((10 + $1))"
@@ -233,7 +292,8 @@ lancer_base() { # $1 = nom, $2 = port hôte
   }
   local i
   for i in $(seq 1 90); do
-    "$DOCKER" exec -e "MYSQL_PWD=$MDP_KESH" "$1" mariadb -ukesh -N "$BASE" -e "SELECT 1" >/dev/null 2>&1 && return 0
+    # Par TCP : le serveur temporaire de l'initialisation n'écoute pas sur ce port.
+    "$DOCKER" exec -e "MYSQL_PWD=$MDP_KESH" "$1" mariadb -h127.0.0.1 -ukesh -N "$BASE" -e "SELECT 1" >/dev/null 2>&1 && return 0
     sleep 1
   done
   return 1
@@ -247,14 +307,14 @@ SQL() {
 }
 
 # --- L'API -------------------------------------------------------------------------------
-C() { "$CURL" --noproxy '*' -s "$@"; }
+C() { "$CURL" -q --noproxy '*' -s "$@"; }
 TOKEN=""
 attendre_sante() { # $1 = PID du processus servi
   local i
-  for i in $(seq 1 150); do
+  for i in $(seq 1 750); do
     C -f "$URL/health" >/dev/null 2>&1 && return 0
     kill -0 "$1" 2>/dev/null || return 1
-    sleep 1
+    sleep 0.2
   done
   return 1
 }
@@ -267,10 +327,11 @@ login() {
   done
   return 1
 }
+# Un refus de l'API rend un statut non nul, et garde le corps pour le diagnostic.
 api() {
   local m=$1 p=$2
   shift 2
-  C -X "$m" "$URL$p" -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' "$@"
+  C --fail-with-body -X "$m" "$URL$p" -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' "$@"
 }
 # Un identifiant rendu par l'API, ou la phase échoue.
 id_de() { # $1 = phase, $2 = étiquette, $3 = JSON
@@ -289,7 +350,7 @@ camt() { # $1 = preview|create, $2 = fichier, $3 = compte, reste = champs -F
 # --- Les serveurs ------------------------------------------------------------------------
 # L'image précédente : aucun chemin de l'hôte, aucune variable héritée, `-e NOM=VALEUR`.
 lancer_image() { # $1 = suffixe du journal
-  "$DOCKER" run --rm --name "$CT_IMAGE" --network host \
+  "$DOCKER" run --rm --name "$CT_IMAGE" --label "kesh.recette=$JETON" --network host \
     -e "DATABASE_URL=$(url_base "$PORT_BASE")" \
     -e "KESH_HOST=127.0.0.1" -e "KESH_PORT=$PORT_API" -e "KESH_COOKIE_SECURE=false" \
     -e "KESH_TEST_MODE=true" \
@@ -315,7 +376,9 @@ lancer_binaire() { # $1 = suffixe du journal, $2 = port de la base
 }
 
 # --- L'empreinte -------------------------------------------------------------------------
-TABLES="journal_entries journal_entry_lines invoices invoice_lines invoice_settlements supplier_invoices supplier_invoice_lines bank_imports bank_transactions bank_accounts contacts"
+# Ce qu'elle couvre est dit à `docs/testing.md` : y tenir la liste à jour.
+TABLES="journal_entries journal_entry_lines invoices invoice_lines invoice_settlements supplier_invoices supplier_invoice_lines bank_imports bank_transactions bank_accounts contacts accounts companies fiscal_years company_invoice_settings"
+AUDIT_MAX=0
 empreinte() { # $1 = étiquette
   local o=$L/empreinte-$1 t id
   mkdir -p "$o"
@@ -323,11 +386,16 @@ empreinte() { # $1 = étiquette
   for t in $TABLES; do
     SQL "SELECT * FROM $t ORDER BY id" > "$o/$t" || return 1
   done
+  # `users`, sans ce que réécrit l'avis « Recovery effectué » à chaque démarrage.
+  SQL "SELECT id, username, role, active, company_id, email FROM users ORDER BY id" > "$o/users" || return 1
+  # `audit_log`, jusqu'à la dernière entrée d'avant la montée : la suite s'écrit, légitimement.
+  [ "$1" != avant ] || AUDIT_MAX=$(SQL "SELECT COALESCE(MAX(id), 0) FROM audit_log") || return 1
+  SQL "SELECT * FROM audit_log WHERE id <= $AUDIT_MAX ORDER BY id" > "$o/audit_log" || return 1
   SQL "SELECT kesh_version_min_required FROM _kesh_version" > "$o/min_required" || return 1
   login || return 1
   : > "$o/api"
-  for id in $(cat "$L/ids-factures"); do api GET "/api/v1/invoices/$id" | jq -S . >> "$o/api"; done
-  for id in $(cat "$L/ids-fournisseur"); do api GET "/api/v1/supplier-invoices/$id" | jq -S . >> "$o/api"; done
+  for id in $(cat "$L/ids-factures"); do api GET "/api/v1/invoices/$id" | jq -S . >> "$o/api" || return 1; done
+  for id in $(cat "$L/ids-fournisseur"); do api GET "/api/v1/supplier-invoices/$id" | jq -S . >> "$o/api" || return 1; done
   (cd "$o" && md5sum -- *) | awk '{print $2, $1}' | sort > "$L/empreinte-$1.md5"
 }
 # Les fichiers qui diffèrent entre deux empreintes, un par ligne.
@@ -347,9 +415,12 @@ ecarts_hors_attendu() { # $1 = phase, $2, $3 = étiquettes
 journal_sans_erreur() { # $1 = phase, $2 = journal
   # « Recovery effectué » est au niveau ERROR à dessein : c'est l'avis du compte d'administration
   # réinitialisé par les variables du script, attendu ici sur toute base peuplée.
-  if sed 's/\x1b\[[0-9;]*m//g' "$2" | /usr/bin/grep -v 'Recovery effectué' | /usr/bin/grep -qE 'panicked at| ERROR '; then
-    echec "$1" "erreur au journal $2"
-  fi
+  # ⛔ Capturé, jamais `| grep -q` : sous `pipefail`, le `SIGPIPE` de ce qui écrit encore ferait
+  # lire un journal long, à l'erreur en tête, comme un journal sans erreur.
+  [ -r "$2" ] || echec "$1" "journal illisible : $2"
+  local erreurs
+  erreurs=$(sed 's/\x1b\[[0-9;]*m//g' "$2" | /usr/bin/grep -v 'Recovery effectué' | /usr/bin/grep -E 'panicked at| ERROR ')
+  [ -z "$erreurs" ] || echec "$1" "erreur au journal $2"
 }
 nb_migrations() { SQL "SELECT COUNT(*) FROM _sqlx_migrations"; }
 
@@ -363,7 +434,7 @@ C -f -X POST "$URL/api/v1/_test/seed" -H 'Content-Type: application/json' -d '{"
   || echec 1 "_test/seed en échec"
 login || echec 1 "connexion impossible"
 JOUR=$(date +%F)
-COMPTES=$(api GET /api/v1/accounts)
+COMPTES=$(api GET /api/v1/accounts) || echec 1 "lecture du plan comptable en échec : $COMPTES"
 compte_numero() { printf '%s' "$COMPTES" | jq -r --arg n "$1" '[.[]|select(.number==$n)][0].id // empty'; }
 CAISSE=$(compte_numero 1000)
 CREANCIERS=$(compte_numero 2000)
@@ -371,45 +442,68 @@ CHARGE=$(printf '%s' "$COMPTES" | jq -r '[.[]|select(.accountType=="Expense" and
 [ -n "$CAISSE" ] && [ -n "$CREANCIERS" ] && [ -n "$CHARGE" ] \
   || echec 1 "plan comptable inattendu"
 
-R=$(api POST /api/v1/contacts -d '{"contactType":"Personne","name":"Synthetique","firstName":"Pia","lastName":"Synthetique","isClient":true,"isSupplier":false,"addressStructured":{"street":"Marktgasse","building":"28","postalCode":"9400","city":"Rorschach","country":"CH"},"defaultPaymentTerms":"30 jours net"}')
+# Un appel du peuplement : tout refus de l'API fait échouer la phase, avec son corps.
+peupler() { # $1 = étiquette, reste = arguments d'`api` ; rend le corps sur la sortie
+  local etiquette=$1 corps
+  shift
+  corps=$(api "$@") || echec 1 "$etiquette : refus de l'API : $(printf '%s' "$corps" | head -c 300)"
+  printf '%s' "$corps"
+}
+R=$(peupler client POST /api/v1/contacts -d '{"contactType":"Personne","name":"Synthetique","firstName":"Pia","lastName":"Synthetique","isClient":true,"isSupplier":false,"addressStructured":{"street":"Marktgasse","building":"28","postalCode":"9400","city":"Rorschach","country":"CH"},"defaultPaymentTerms":"30 jours net"}') || exit $?
 CLIENT=$(id_de 1 client "$R") || exit $?
 : > "$L/ids-factures"
 for q in 4.5 1 2; do
-  R=$(api POST /api/v1/invoices -d "{\"contactId\":$CLIENT,\"date\":\"$JOUR\",\"dueDate\":\"$JOUR\",\"paymentTerms\":\"30 jours net\",\"lines\":[{\"description\":\"Conseil\",\"quantity\":\"$q\",\"unitPrice\":\"200.00\",\"vatRate\":\"8.10\"}]}")
-  id_de 1 facture "$R" >> "$L/ids-factures" || exit $?
+  R=$(peupler facture POST /api/v1/invoices -d "{\"contactId\":$CLIENT,\"date\":\"$JOUR\",\"dueDate\":\"$JOUR\",\"paymentTerms\":\"30 jours net\",\"lines\":[{\"description\":\"Conseil\",\"quantity\":\"$q\",\"unitPrice\":\"200.00\",\"vatRate\":\"8.10\"}]}") || exit $?
+  V=$(id_de 1 facture "$R") || exit $?
+  printf '%s\n' "$V" >> "$L/ids-factures"
 done
 F1=$(sed -n 1p "$L/ids-factures")
 F2=$(sed -n 2p "$L/ids-factures")
-api POST "/api/v1/invoices/$F1/validate" >/dev/null
-api POST "/api/v1/invoices/$F2/validate" >/dev/null
-DU=$(api GET "/api/v1/invoices/$F2" | jq -r '.remainingAmount // .amountDue // .totalTtc // empty')
-api POST "/api/v1/invoices/$F2/settlements" -d "{\"settlementType\":\"internal_account\",\"accountId\":$CAISSE,\"amount\":\"$DU\",\"settledOn\":\"$JOUR\"}" >/dev/null
+peupler "validation de la facture 1" POST "/api/v1/invoices/$F1/validate" >/dev/null || exit $?
+peupler "validation de la facture 2" POST "/api/v1/invoices/$F2/validate" >/dev/null || exit $?
+R=$(peupler "lecture de la facture 2" GET "/api/v1/invoices/$F2") || exit $?
+DU=$(printf '%s' "$R" | jq -r '.remainingAmount // .amountDue // .totalTtc // empty')
+[ -n "$DU" ] || echec 1 "reste dû de la facture 2 illisible"
+peupler "règlement de la facture 2" POST "/api/v1/invoices/$F2/settlements" -d "{\"settlementType\":\"internal_account\",\"accountId\":$CAISSE,\"amount\":\"$DU\",\"settledOn\":\"$JOUR\"}" >/dev/null || exit $?
 
-api GET /api/v1/company/invoice-settings | jq --argjson p "$CREANCIERS" '.defaultPayableAccountId=$p' \
-  | api PUT /api/v1/company/invoice-settings --data-binary @- >/dev/null
-R=$(api POST /api/v1/contacts -d '{"contactType":"Entreprise","name":"Fournisseur Synthetique SA","isClient":false,"isSupplier":true}')
+R=$(peupler "lecture des réglages de facturation" GET /api/v1/company/invoice-settings) || exit $?
+R=$(printf '%s' "$R" | jq --argjson p "$CREANCIERS" '.defaultPayableAccountId=$p') || echec 1 "réglages de facturation illisibles"
+printf '%s' "$R" > "$L/reglages-facturation.json"
+peupler "écriture des réglages de facturation" PUT /api/v1/company/invoice-settings --data-binary "@$L/reglages-facturation.json" >/dev/null || exit $?
+R=$(peupler fournisseur POST /api/v1/contacts -d '{"contactType":"Entreprise","name":"Fournisseur Synthetique SA","isClient":false,"isSupplier":true}') || exit $?
 FOURNISSEUR=$(id_de 1 fournisseur "$R") || exit $?
 : > "$L/ids-fournisseur"
 for a in 123.45 80.00 55.50 10.00; do
-  R=$(api POST /api/v1/supplier-invoices -d "{\"contactId\":$FOURNISSEUR,\"supplierInvoiceNumber\":\"F-$a\",\"invoiceDate\":\"$JOUR\",\"dueDate\":null,\"paymentReference\":null,\"lines\":[{\"description\":\"Fourniture\",\"quantity\":\"1\",\"unitPrice\":\"$a\",\"vatRate\":\"0\",\"expenseAccountId\":$CHARGE}]}")
-  id_de 1 "facture fournisseur" "$R" >> "$L/ids-fournisseur" || exit $?
+  R=$(peupler "facture fournisseur" POST /api/v1/supplier-invoices -d "{\"contactId\":$FOURNISSEUR,\"supplierInvoiceNumber\":\"F-$a\",\"invoiceDate\":\"$JOUR\",\"dueDate\":null,\"paymentReference\":null,\"lines\":[{\"description\":\"Fourniture\",\"quantity\":\"1\",\"unitPrice\":\"$a\",\"vatRate\":\"0\",\"expenseAccountId\":$CHARGE}]}") || exit $?
+  V=$(id_de 1 "facture fournisseur" "$R") || exit $?
+  printf '%s\n' "$V" >> "$L/ids-fournisseur"
 done
 for n in 1 2 3; do
   SI=$(sed -n "${n}p" "$L/ids-fournisseur")
-  V=$(api GET "/api/v1/supplier-invoices/$SI" | jq .version)
-  api POST "/api/v1/supplier-invoices/$SI/validate" -d "{\"version\":$V}" >/dev/null
+  R=$(peupler "lecture de la facture fournisseur $SI" GET "/api/v1/supplier-invoices/$SI") || exit $?
+  V=$(printf '%s' "$R" | jq .version)
+  peupler "validation de la facture fournisseur $SI" POST "/api/v1/supplier-invoices/$SI/validate" -d "{\"version\":$V}" >/dev/null || exit $?
 done
 SI2=$(sed -n 2p "$L/ids-fournisseur")
 SI3=$(sed -n 3p "$L/ids-fournisseur")
-api POST "/api/v1/supplier-invoices/$SI2/pay" -d "{\"settlementType\":\"internal_account\",\"accountId\":$CAISSE,\"paymentDate\":\"$JOUR\"}" >/dev/null
-api POST "/api/v1/supplier-invoices/$SI3/cancel" >/dev/null
+peupler "paiement de la facture fournisseur" POST "/api/v1/supplier-invoices/$SI2/pay" -d "{\"settlementType\":\"internal_account\",\"accountId\":$CAISSE,\"paymentDate\":\"$JOUR\"}" >/dev/null || exit $?
+peupler "annulation de la facture fournisseur" POST "/api/v1/supplier-invoices/$SI3/cancel" >/dev/null || exit $?
+
+# L'état réel, relu en base : c'est lui que l'empreinte va comparer.
 SQL "SELECT GROUP_CONCAT(CONCAT(id,':',status) ORDER BY id) FROM supplier_invoices" > "$L/statuts-fournisseur.txt"
+SQL "SELECT GROUP_CONCAT(status ORDER BY id) FROM invoices" > "$L/statuts-clients.txt"
+[ "$(cat "$L/statuts-fournisseur.txt")" = "1:open,2:paid,3:cancelled,4:draft" ] \
+  || echec 1 "statuts fournisseur inattendus : $(cat "$L/statuts-fournisseur.txt")"
+[ "$(cat "$L/statuts-clients.txt")" = "validated,validated,draft" ] \
+  || echec 1 "statuts clients inattendus : $(cat "$L/statuts-clients.txt")"
+[ "$(SQL 'SELECT COUNT(*) FROM invoice_settlements')" = 1 ] || echec 1 "règlement client absent"
 
 # L'IBAN d'exemple du relevé synthétique.
 IBAN=CH4431999123000889012
-COMPTE=$(api GET /api/v1/bank-accounts | jq -r --arg i "$IBAN" '[.[]|(.account // .)|select(.iban==$i)][0].id // empty')
+R=$(peupler "lecture des comptes bancaires" GET /api/v1/bank-accounts) || exit $?
+COMPTE=$(printf '%s' "$R" | jq -r --arg i "$IBAN" '[.[]|(.account // .)|select(.iban==$i)][0].id // empty')
 if [ -z "$COMPTE" ]; then
-  R=$(api POST /api/v1/bank-accounts -d "{\"bankName\":\"Banque Synthetique\",\"iban\":\"$IBAN\",\"isPrimary\":false,\"journalAccountId\":null}")
+  R=$(peupler "compte bancaire" POST /api/v1/bank-accounts -d "{\"bankName\":\"Banque Synthetique\",\"iban\":\"$IBAN\",\"isPrimary\":false,\"journalAccountId\":null}") || exit $?
   COMPTE=$(id_de 1 "compte bancaire" "$R") || exit $?
 fi
 camt preview "$RACINE/scripts/fixtures/recette/releve-A.xml" "$COMPTE" > "$L/apercu-A.json"
@@ -440,13 +534,23 @@ if [ "$MIGRATIONS" -gt 0 ]; then
 else
   [ "$NB_PRE" -eq 0 ] || echec 2 "une sauvegarde pre-upgrade sans migration"
 fi
-journal_sans_erreur 2 "$L/binaire-montee.log"
 empreinte apres || echec 2 "empreinte après"
 ecarts_hors_attendu 2 avant apres
 if [ -n "$APRES" ]; then
+  # Sans `||` à droite : il neutraliserait le `set -e` du sous-shell, et seul le dernier
+  # statut du crochet compterait.
   # shellcheck disable=SC1091
-  (. "$D/apres.sh") > "$L/apres.log" 2>&1 || echec 2 "crochet --apres en échec ($L/apres.log)"
+  (
+    cd "$D/cwd" || exit 1
+    HOME=$D/home
+    set -e
+    . "$D/apres.sh"
+  ) > "$L/apres.log" 2>&1
+  CODE_APRES=$?
+  [ "$CODE_APRES" -eq 0 ] || echec 2 "crochet --apres en échec, code $CODE_APRES ($L/apres.log)"
 fi
+# Lu en dernier : ce qu'empreinte et crochet ont fait écrire au binaire compte aussi.
+journal_sans_erreur 2 "$L/binaire-montee.log"
 arreter_binaire
 
 # --- Phase 3 : refus ---------------------------------------------------------------------
@@ -454,11 +558,11 @@ if [ "$MIGRATIONS" -gt 0 ]; then
   echo "▶ phase 3 : l'image précédente refuse la base migrée"
   lancer_image refus
   i=0
-  while kill -0 "$PID_IMAGE" 2>/dev/null && [ "$i" -lt 60 ]; do
+  while kill -0 "$PID_IMAGE" 2>/dev/null && [ "$i" -lt 300 ]; do
     if C -f "$URL/health" >/dev/null 2>&1; then
       echec 3 "l'image démarre sur la base migrée"
     fi
-    sleep 1
+    sleep 0.2
     i=$((i + 1))
   done
   kill -0 "$PID_IMAGE" 2>/dev/null && echec 3 "l'image n'est pas sortie en 60 s"
@@ -466,8 +570,15 @@ if [ "$MIGRATIONS" -gt 0 ]; then
   CODE_IMAGE=$?
   PID_IMAGE=""
   [ "$CODE_IMAGE" -ne 0 ] || echec 3 "l'image sort en 0"
-  /usr/bin/grep -q 'previously applied but is missing' "$L/image-refus.log" \
-    || echec 3 "le journal ne dit pas le refus ($L/image-refus.log)"
+  # Deux refus justes : `sqlx`, ou, sur une migration breaking, `check_downgrade_protection`,
+  # qui passe avant lui. Ni l'un ni l'autre : l'image a échoué pour une autre raison.
+  if /usr/bin/grep -q 'previously applied but is missing' "$L/image-refus.log"; then
+    echo "  refusée : migration inconnue d'elle (sqlx)"
+  elif /usr/bin/grep -q 'La base a été migrée par Kesh' "$L/image-refus.log"; then
+    echo "  refusée : version minimale relevée (migration breaking)"
+  else
+    echec 3 "le journal ne dit pas le refus ($L/image-refus.log)"
+  fi
 else
   echo "▶ phase 3 : sautée, aucune migration, donc aucun refus à observer"
 fi
@@ -495,6 +606,7 @@ if [ "$IMPORT" = 1 ]; then
   [ "$CODE_HTTP" = 200 ] || echec 5 "import : HTTP $CODE_HTTP ($L/import-reponse.json)"
   empreinte import || echec 5 "empreinte import"
   ecarts_hors_attendu 5 avant import
+  journal_sans_erreur 5 "$L/binaire-import.log"
   arreter_binaire
 fi
 

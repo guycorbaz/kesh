@@ -1716,6 +1716,9 @@ mod tests {
                     }
                 }
                 for (nom, valeur) in &self.environnement {
+                    if env::var_os(nom).as_ref() == Some(valeur) {
+                        continue;
+                    }
                     env::set_var(nom, valeur);
                 }
             }
