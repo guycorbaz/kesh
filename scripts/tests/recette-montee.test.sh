@@ -151,14 +151,15 @@ while :; do sleep 0.05; done
 FACTICE
 chmod +x "$FX/docker" "$FX/curl" "$DEPOT/target/debug/kesh-api"
 
-# Deux ports libres, trouvés au moment du test.
+# Deux ports libres, trouvés au moment du test, sous la plage éphémère du système : les
+# connexions à la base des autres tests y prendraient sinon le port entre deux contrôles.
 port_libre() {
   local p=$1
   while ss -ltn | awk '{print $4}' | sed 's/.*://' | /usr/bin/grep -qx "$p"; do p=$((p + 2)); done
   echo "$p"
 }
-PA=$(port_libre 39310)
-PB=$(port_libre 39410)
+PA=$(port_libre 23310)
+PB=$(port_libre 23410)
 
 # Remet les factices à neuf. Arguments : lignes de `conf`.
 preparer() {
@@ -222,26 +223,28 @@ avec --port-api 80; refuse "port-api sous 1024" "${AV[@]}"
 avec --port-api 70000; refuse "port-api trop grand" "${AV[@]}"
 avec --port-base abc; refuse "port-base non entier" "${AV[@]}"
 avec --port-base 65535; refuse "--import et --port-base 65535" "${AV[@]}" --import
-# Un port réellement pris.
-python3 -c 'import socket,sys,time
-s=socket.socket(); s.setsockopt(socket.SOL_SOCKET,socket.SO_REUSEADDR,1); s.bind(("127.0.0.1",int(sys.argv[1]))); s.listen(1); time.sleep(60)' "$PA" &
-ECOUTE=$!
-for _ in $(seq 1 50); do ss -ltn | /usr/bin/grep -q ":$PA " && break; sleep 0.1; done
-refuse "port-api pris" "${BASE_ARGS[@]}"
-kill "$ECOUTE" 2>/dev/null; wait "$ECOUTE" 2>/dev/null || true
-python3 -c 'import socket,sys,time
-s=socket.socket(); s.setsockopt(socket.SOL_SOCKET,socket.SO_REUSEADDR,1); s.bind(("127.0.0.1",int(sys.argv[1]))); s.listen(1); time.sleep(60)' "$((PB + 1))" &
-ECOUTE=$!
-for _ in $(seq 1 50); do ss -ltn | /usr/bin/grep -q ":$((PB + 1)) " && break; sleep 0.1; done
-refuse "--port-base + 1 pris, avec --import" "${BASE_ARGS[@]}" --import
+# Un port réellement pris : le système le choisit, si bien qu'aucune connexion en cours
+# ne l'occupe déjà. Rend le port dans PRIS, le processus dans ECOUTE.
+ecouter() {
+  local f="$FX/port-ecoute"
+  : > "$f"
+  python3 -c 'import socket,sys,time
+s=socket.socket(); s.bind(("127.0.0.1",0)); s.listen(1)
+open(sys.argv[1],"w").write(str(s.getsockname()[1])); time.sleep(60)' "$f" &
+  ECOUTE=$!
+  for _ in $(seq 1 100); do [ -s "$f" ] && break; sleep 0.05; done
+  PRIS=$(cat "$f")
+  [ -n "$PRIS" ] || { echo "montage : aucun port d'écoute" >&2; exit 2; }
+  ss -ltn | awk '{print $4}' | sed 's/.*://' | /usr/bin/grep -qx "$PRIS" \
+    || { echo "montage : le port $PRIS n'écoute pas" >&2; exit 2; }
+}
+ecouter
+avec --port-api "$PRIS"; refuse "port-api pris" "${AV[@]}"
+avec --port-base "$PRIS"; refuse "port-base pris" "${AV[@]}"
+avec --port-base "$((PRIS - 1))"; refuse "--port-base + 1 pris, avec --import" "${AV[@]}" --import
 kill "$ECOUTE" 2>/dev/null; wait "$ECOUTE" 2>/dev/null || true
 
 echo "  dossier jetable"
-preparer "N=1"
-RC=0
-KESH_DOCKER="$FX/docker" KESH_CURL="$FX/curl" RECETTE_RACINE_JETABLE="$WORK/../" \
-  bash "$DEPOT/scripts/recette-montee.sh" "${BASE_ARGS[@]}" > "$FX/sortie" 2>&1 || RC=$?
-# `$WORK/..` vaut /tmp : admis. C'est l'exemple du refus suivant qui compte.
 RC2=0
 preparer "N=1"
 KESH_DOCKER="$FX/docker" KESH_CURL="$FX/curl" RECETTE_RACINE_JETABLE=/var \
