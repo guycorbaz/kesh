@@ -18,7 +18,11 @@ fn recette_montee_refuse_ce_qui_sort_de_son_perimetre_et_enchaine_ses_phases() {
         test_script.display()
     );
 
+    // Borné en mémoire et en durée, comme celui de `gate-ci.sh` (C-e334-38) : un processus de
+    // fond resté vivant ou une relecture sans fin ne fige ni n'épuise la station.
     let output = Command::new("bash")
+        .arg("-c")
+        .arg(r#"ulimit -v 4000000 && exec timeout -k 10 600 bash "$0""#)
         .arg(&test_script)
         .env_remove("KESH_DOCKER")
         .env_remove("KESH_CURL")

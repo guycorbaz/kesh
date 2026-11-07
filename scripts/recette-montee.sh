@@ -31,8 +31,10 @@
 #
 # ⚠️ Ce périmètre est celui du script, NON du crochet `--apres` : le crochet est du code de
 # l'appelant, exécuté avec les droits du script et avec ses mots de passe factices. Il part
-# de `$D/cwd`, `HOME` sous `$D`, et s'arrête au premier statut non nul, mais rien ne
-# l'empêche d'atteindre `docker`, le réseau ou un autre dossier : il se relit comme du code.
+# de `$D/cwd`, `HOME` sous `$D`, et tourne sous `set -e`, avec ses exceptions : un échec dans
+# une condition (`if`, `&&`, `||`), dans une fonction appelée d'une condition ou dans un
+# `local x=$(…)` ne l'arrête pas. Rien ne l'empêche d'atteindre `docker`, le réseau ou un autre
+# dossier : il se relit comme du code.
 # L'empreinte ne couvre pas tout non plus : `docs/testing.md` dit exactement ce qu'elle
 # regarde, et aucun document n'est peuplé ni comparé.
 #
@@ -46,8 +48,9 @@
 set -uo pipefail
 
 # --- L'environnement fermé -----------------------------------------------------------
-# Aucun marqueur : l'environnement se compare à la liste, et le script se relance tant
-# qu'il diffère. Une variable exportée sous un nom de marqueur ne fait donc rien sauter.
+# Aucun marqueur ne fait sauter la comparaison : l'environnement se compare à la liste, et le
+# script se relance, une fois, s'il diffère. Une variable exportée sous un nom de marqueur ne
+# fait donc rien sauter.
 # La liste vient de `env`, non de `compgen -e`, qui ne voit pas les fonctions exportées.
 # `HOME` est neutralisé : ni la configuration de `docker` (contexte, `credsStore`), ni celle de
 # `curl`, ni celle de `jq`.
@@ -66,13 +69,21 @@ environnement_ferme() {
   done < <(/usr/bin/env -0)
   return 0
 }
+# Une seule relance : le premier argument `--relance-faite`, que seule la relance pose, ne fait
+# rien sauter — l'environnement se compare encore — mais interdit de relancer une seconde fois.
+# Sans lui, un bash qui exporterait de lui-même une variable hors de la liste relancerait sans fin.
 if ! environnement_ferme; then
+  if [ "${1:-}" = --relance-faite ]; then
+    echo "recette-montee : refus : environnement non fermable, même après relance" >&2
+    exit 5
+  fi
   relance=("PATH=$PATH_FERME" "HOME=$HOME_FERME")
   [ -z "${KESH_DOCKER:-}" ] || relance+=("KESH_DOCKER=$KESH_DOCKER")
   [ -z "${KESH_CURL:-}" ] || relance+=("KESH_CURL=$KESH_CURL")
   [ -z "${RECETTE_RACINE_JETABLE:-}" ] || relance+=("RECETTE_RACINE_JETABLE=$RECETTE_RACINE_JETABLE")
-  exec /usr/bin/env -i "${relance[@]}" /usr/bin/bash "$0" "$@"
+  exec /usr/bin/env -i "${relance[@]}" /usr/bin/bash "$0" --relance-faite "$@"
 fi
+[ "${1:-}" != --relance-faite ] || shift
 
 DOCKER=${KESH_DOCKER:-docker}
 CURL=${KESH_CURL:-curl}
@@ -109,7 +120,7 @@ done
 [[ "$PREFIXE" =~ ^kesh-[a-z0-9]+$ ]] || refus "préfixe « $PREFIXE » hors du motif kesh-<mot>"
 [[ "$MIGRATIONS" =~ ^(0|[1-9][0-9]*)$ ]] || refus "--migrations-attendues : un entier, sans zéro de tête"
 
-for outil in jq md5sum awk ss realpath join "$CURL"; do
+for outil in jq md5sum awk ss realpath join "$CURL" "$DOCKER"; do
   command -v "$outil" >/dev/null || refus "outil manquant : $outil" 5
 done
 
@@ -233,16 +244,32 @@ arreter_conteneur() { # $1 = nom
   [ "$vu" = "$JETON" ] || return 0
   "$DOCKER" stop "$1" >/dev/null 2>&1
 }
-arreter_image() {
+# Le client `docker run` attaché ne sort pas sur SIGTERM : il le relaie au conteneur, où
+# `kesh-api`, PID 1 sans gestionnaire de signal, l'ignore. Seul SIGKILL l'arrête à coup sûr.
+attendre_fin() { # $1 = PID, $2 = nombre de pas de 0,2 s ; rend 1 s'il vit encore
   local i
+  for i in $(seq 1 "$2"); do
+    kill -0 "$1" 2>/dev/null || return 0
+    sleep 0.2
+  done
+  ! kill -0 "$1" 2>/dev/null
+}
+arreter_image() {
   if [ -n "$PID_IMAGE" ]; then
     arreter_conteneur "$CT_IMAGE"
-    # L'attente est bornée : un client qui ne rend pas la main ne fige pas la sortie.
-    for i in $(seq 1 100); do
-      kill -0 "$PID_IMAGE" 2>/dev/null || break
-      sleep 0.2
-    done
-    kill "$PID_IMAGE" 2>/dev/null
+    # L'attente est bornée, `wait` compris : 20 s après `docker stop`, puis SIGTERM et 2 s,
+    # puis SIGKILL. Le `wait` ne vient qu'une fois le client mort.
+    if ! attendre_fin "$PID_IMAGE" 100; then
+      kill "$PID_IMAGE" 2>/dev/null
+      if ! attendre_fin "$PID_IMAGE" 10; then
+        kill -KILL "$PID_IMAGE" 2>/dev/null
+        attendre_fin "$PID_IMAGE" 10
+      fi
+      # Le conteneur, lui, peut survivre à son client, ou n'avoir été créé qu'après le premier
+      # `docker stop` : un second essai, puis son nom, pour le retirer à la main.
+      arreter_conteneur "$CT_IMAGE"
+      echo "recette-montee : client docker de l'image tué ; si le conteneur reste : docker stop $CT_IMAGE" >&2
+    fi
     wait "$PID_IMAGE" 2>/dev/null
     PID_IMAGE=""
   fi
@@ -262,12 +289,16 @@ nettoyer() {
   arreter_conteneur "$CT_BASE"
   arreter_conteneur "$CT_BASE_2"
   # Les seuls ports de la recette : le reste de la station n'a rien à faire au journal.
-  ss -ltn 2>/dev/null | awk -v api=":$PORT_API\$" -v base=":$PORT_BASE\$" '$4 ~ api || $4 ~ base' > "$L/ss-final.txt"
+  # `PORT_BASE_2` n'existe qu'avec `--import` : sinon, le motif vide ne retient rien.
+  ss -ltn 2>/dev/null | awk -v api=":$PORT_API\$" -v base=":$PORT_BASE\$" -v base2="${PORT_BASE_2:+:$PORT_BASE_2\$}" \
+    '$4 ~ api || $4 ~ base || (base2 != "" && $4 ~ base2)' > "$L/ss-final.txt"
   [ ! -s "$L/ss-final.txt" ] || echo "recette-montee : un port de la recette écoute encore ($L/ss-final.txt)" >&2
   # Sur la sortie d'origine : un `echec` peut survenir sous une redirection de son appelant.
   echo "recette-montee : code $code, dossier $D" >&3
   exit "$code"
 }
+# Le descripteur 3 ne se transmet à aucun processus de fond (`3>&-` aux lancements) : un
+# appelant qui lit la sortie par un tube attendrait sinon la fin de tout survivant.
 exec 3>&1
 trap nettoyer EXIT
 trap 'exit 143' TERM
@@ -307,12 +338,15 @@ SQL() {
 }
 
 # --- L'API -------------------------------------------------------------------------------
-C() { "$CURL" -q --noproxy '*' -s "$@"; }
+# Tout appel est borné : un serveur qui accepte sans répondre ne fige ni une attente ni une
+# phase, et un SIGTERM reçu pendant un appel est traité au plus tard à son terme. Un appel
+# plus long (export, import) repasse `--max-time` : pour `curl`, la dernière valeur l'emporte.
+C() { "$CURL" -q --noproxy '*' -s --connect-timeout 5 --max-time 60 "$@"; }
 TOKEN=""
 attendre_sante() { # $1 = PID du processus servi
   local i
   for i in $(seq 1 750); do
-    C -f "$URL/health" >/dev/null 2>&1 && return 0
+    C -f --max-time 5 "$URL/health" >/dev/null 2>&1 && return 0
     kill -0 "$1" 2>/dev/null || return 1
     sleep 0.2
   done
@@ -357,7 +391,7 @@ lancer_image() { # $1 = suffixe du journal
     -e "KESH_INBOX_DIR=/tmp/inbox" -e "KESH_DOCUMENTS_DIR=/tmp/documents" -e "KESH_ADMIN_BACKUP_DIR=/tmp/backup" \
     -e "KESH_ADMIN_USERNAME=$ADMIN_NOM" -e "KESH_ADMIN_PASSWORD=$ADMIN_MDP" -e "KESH_JWT_SECRET=$JWT" \
     -e "KESH_SMTP_HOST=$SMTP_HOTE" -e "KESH_SMTP_USER=$SMTP_NOM" -e "KESH_SMTP_PASSWORD=$SMTP_MDP" -e "KESH_SMTP_FROM=$SMTP_DE" \
-    "$IMAGE" > "$L/image-$1.log" 2>&1 &
+    "$IMAGE" > "$L/image-$1.log" 2>&1 3>&- &
   PID_IMAGE=$!
 }
 # Le binaire neuf : liste exacte, depuis `$D/cwd`. Tout ce qu'il écrit est sous `$D` ; il ne lit
@@ -371,14 +405,14 @@ lancer_binaire() { # $1 = suffixe du journal, $2 = port de la base
     "KESH_INBOX_DIR=$D/inbox" "KESH_DOCUMENTS_DIR=$D/documents" "KESH_ADMIN_BACKUP_DIR=$D/backup" \
     "KESH_ADMIN_USERNAME=$ADMIN_NOM" "KESH_ADMIN_PASSWORD=$ADMIN_MDP" "KESH_JWT_SECRET=$JWT" \
     "KESH_SMTP_HOST=$SMTP_HOTE" "KESH_SMTP_USER=$SMTP_NOM" "KESH_SMTP_PASSWORD=$SMTP_MDP" "KESH_SMTP_FROM=$SMTP_DE" \
-    "$BINAIRE") > "$L/binaire-$1.log" 2>&1 < /dev/null &
+    "$BINAIRE") > "$L/binaire-$1.log" 2>&1 < /dev/null 3>&- &
   PID_BINAIRE=$!
 }
 
 # --- L'empreinte -------------------------------------------------------------------------
 # Ce qu'elle couvre est dit à `docs/testing.md` : y tenir la liste à jour.
 TABLES="journal_entries journal_entry_lines invoices invoice_lines invoice_settlements supplier_invoices supplier_invoice_lines bank_imports bank_transactions bank_accounts contacts accounts companies fiscal_years company_invoice_settings"
-AUDIT_MAX=0
+AUDIT_N=0
 AUDIT_DECALAGE=0
 empreinte() { # $1 = étiquette
   local o=$L/empreinte-$1 t id
@@ -390,11 +424,13 @@ empreinte() { # $1 = étiquette
   done
   # `users`, sans ce que réécrit l'avis « Recovery effectué » à chaque démarrage.
   SQL "SELECT id, username, role, active, company_id, email FROM users ORDER BY id" > "$o/users" || return 1
-  # `audit_log`, les `AUDIT_MAX` entrées d'avant la montée, sans leur numéro : la suite
-  # s'écrit, légitimement, et l'import d'une sauvegarde ajoute ses entrées après celles de
-  # l'installation qui la reçoit (`AUDIT_DECALAGE`, relevé juste avant l'import).
-  [ "$1" != avant ] || AUDIT_MAX=$(SQL "SELECT COALESCE(MAX(id), 0) FROM audit_log") || return 1
-  SQL "SELECT user_id, action, entity_type, entity_id, details_json, created_at, actor_type, actor_api_key_id, actor_label, company_id FROM audit_log WHERE id > $AUDIT_DECALAGE AND id <= $AUDIT_DECALAGE + $AUDIT_MAX ORDER BY id" > "$o/audit_log" || return 1
+  # `audit_log`, les `AUDIT_N` premières entrées, sans leur numéro : celles d'avant la montée.
+  # La suite s'écrit, légitimement, et l'import d'une sauvegarde ajoute ses entrées, dans
+  # l'ordre, après celles de l'installation qui la reçoit (`AUDIT_DECALAGE`, relevé juste avant
+  # l'import). Compter, et non borner par numéro : un numéro sauté (rollback) ne décale rien.
+  # Hypothèse restante : aucune entrée écrite entre ce relevé et la restauration.
+  [ "$1" != avant ] || AUDIT_N=$(SQL "SELECT COUNT(*) FROM audit_log") || return 1
+  SQL "SELECT user_id, action, entity_type, entity_id, details_json, created_at, actor_type, actor_api_key_id, actor_label, company_id FROM audit_log WHERE id > $AUDIT_DECALAGE ORDER BY id LIMIT $AUDIT_N" > "$o/audit_log" || return 1
   SQL "SELECT kesh_version_min_required FROM _kesh_version" > "$o/min_required" || return 1
   login || return 1
   : > "$o/api"
@@ -516,7 +552,7 @@ camt create "$RACINE/scripts/fixtures/recette/releve-A.xml" "$COMPTE" \
 [ "$(SQL 'SELECT COUNT(*) FROM bank_transactions')" = 2 ] || echec 1 "relevé synthétique non importé ($L/import-A.json)"
 
 empreinte avant || echec 1 "empreinte avant"
-C -f -o "$D/avant.keshbackup" "$URL/api/v1/admin/full-export" -H "Authorization: Bearer $TOKEN" \
+C -f --max-time 600 -o "$D/avant.keshbackup" "$URL/api/v1/admin/full-export" -H "Authorization: Bearer $TOKEN" \
   || echec 1 "export .keshbackup en échec"
 [ -s "$D/avant.keshbackup" ] || echec 1 ".keshbackup vide"
 arreter_image
@@ -563,7 +599,7 @@ if [ "$MIGRATIONS" -gt 0 ]; then
   lancer_image refus
   i=0
   while kill -0 "$PID_IMAGE" 2>/dev/null && [ "$i" -lt 300 ]; do
-    if C -f "$URL/health" >/dev/null 2>&1; then
+    if C -f --max-time 5 "$URL/health" >/dev/null 2>&1; then
       echec 3 "l'image démarre sur la base migrée"
     fi
     sleep 0.2
@@ -606,7 +642,7 @@ if [ "$IMPORT" = 1 ]; then
   attendre_sante "$PID_BINAIRE" || echec 5 "le binaire ne répond pas ($L/binaire-import.log)"
   login || echec 5 "connexion impossible"
   AUDIT_DECALAGE=$(SQL "SELECT COALESCE(MAX(id), 0) FROM audit_log") || echec 5 "journal d'audit illisible"
-  CODE_HTTP=$(C -o "$L/import-reponse.json" -w '%{http_code}' -X POST "$URL/api/v1/admin/full-import" \
+  CODE_HTTP=$(C --max-time 600 -o "$L/import-reponse.json" -w '%{http_code}' -X POST "$URL/api/v1/admin/full-import" \
     -H "Authorization: Bearer $TOKEN" -F "file=@$D/avant.keshbackup")
   [ "$CODE_HTTP" = 200 ] || echec 5 "import : HTTP $CODE_HTTP ($L/import-reponse.json)"
   empreinte import || echec 5 "empreinte import"

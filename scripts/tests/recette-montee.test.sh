@@ -66,7 +66,13 @@ case "${1:-}" in
       echo "${MESSAGE_REFUS:-Error: migration 20261013000001 was previously applied but is missing in the resolved migrations}"
       exit "${CODE_REFUS:-1}"
     fi
+    # Comme le vrai client attaché : il relaie SIGTERM au conteneur au lieu de sortir, et
+    # `kesh-api`, PID 1 sans gestionnaire, l'ignore (revue P2, M1). Seul SIGKILL l'arrête.
+    trap '' TERM
     echo $$ > "$FX/up-image"
+    echo $$ > "$FX/pid-run-image"
+    # L1 de la revue P2 : le client ne doit pas tenir la sortie d'origine du script.
+    [ ! -e "/proc/$$/fd/3" ] || echo "run $$" >> "$FX/fd3"
     while [ -f "$FX/up-image" ]; do sleep 0.05; done
     exit 0 ;;
   exec)
@@ -165,6 +171,7 @@ FX="$FX"
 . "\$FX/conf"
 env > "\$FX/binaire-env.txt"
 pwd > "\$FX/binaire-pwd.txt"
+[ ! -e "/proc/\$\$/fd/3" ] || echo "binaire \$\$" >> "\$FX/fd3"
 echo "\$KESH_ADMIN_BACKUP_DIR" > "\$FX/binaire-backup.txt"
 echo oui > "\$FX/migre"
 # Comme le vrai binaire, sur toute base peuplée : l'avis du compte réinitialisé, au niveau ERROR.
@@ -210,7 +217,8 @@ PB=$(port_libre 23410)
 # Remet les factices à neuf. Arguments : lignes de `conf`.
 preparer() {
   : > "$FX/docker.log"; : > "$FX/curl.log"; : > "$FX/docker-env.txt"
-  rm -f "$FX/migre" "$FX/up-image" "$FX/up-binaire" "$FX/ps.txt" "$FX/binaire-env.txt" "$FX/binaire-pwd.txt" "$FX/jeton" "$FX/erreur-tardive"
+  rm -f "$FX/migre" "$FX/up-image" "$FX/up-binaire" "$FX/ps.txt" "$FX/binaire-env.txt" "$FX/binaire-pwd.txt" "$FX/jeton" "$FX/erreur-tardive" \
+    "$FX/pid-run-image" "$FX/fd3"
   printf '%s\n' "$@" > "$FX/conf"
 }
 
@@ -361,6 +369,14 @@ noms=$(cut -d= -f1 "$FX/docker-env.txt" | /usr/bin/grep -E '^[A-Za-z_][A-Za-z0-9
 /usr/bin/grep -qE 'sonde|BASH_FUNC|KESH_RECETTE_RELANCE' "$FX/docker-env.txt" && fail "une sonde atteint docker" || ok "ni variable sonde, ni fonction exportée"
 /usr/bin/grep -qx 'HOME=/nonexistent' "$FX/docker-env.txt" && ok "HOME neutralisé" || fail "HOME : $(/usr/bin/grep -m1 '^HOME=' "$FX/docker-env.txt")"
 /usr/bin/grep -qx 'PATH=/usr/bin:/bin' "$FX/docker-env.txt" && ok "PATH fermé" || fail "PATH"
+echo "  les processus de fond ne tiennent pas la sortie d'origine (revue P2, L1)"
+[ -s "$FX/binaire-env.txt" ] && /usr/bin/grep -q 'ARGV run .*gcorbaz/kesh:' "$FX/docker.log" \
+  && ok "image et binaire lancés (sonde)" || fail "image ou binaire non lancé"
+[ ! -s "$FX/fd3" ] && ok "ni le client docker ni le binaire n'héritent du descripteur 3" || fail "descripteur 3 hérité : $(tr '\n' ' ' < "$FX/fd3")"
+echo "  chaque appel curl est borné dans le temps (revue P2, L7)"
+nb_curl=$(/usr/bin/grep -c '^ARGV ' "$FX/curl.log" || true)
+sans_borne=$(/usr/bin/grep '^ARGV ' "$FX/curl.log" | /usr/bin/grep -vc -- '--max-time' || true)
+[ "$nb_curl" -gt 10 ] && [ "$sans_borne" -eq 0 ] && ok "$nb_curl appels, tous à --max-time" || fail "$sans_borne appel(s) sur $nb_curl sans --max-time"
 echo "  chemin nominal, cinq phases"
 [ "$RC" -eq 0 ] && ok "code 0" || { fail "code $RC"; tail -5 "$FX/sortie"; }
 for p in "phase 1" "phase 2" "phase 3" "phase 4" "phase 5"; do sortie_dit "▶ $p" && ok "$p jouée" || fail "$p"; done
@@ -436,12 +452,42 @@ lancer "${BASE_ARGS[@]}"
 [ "$RC" -eq 11 ] && [ "$(tail -1 "$FX/sortie" | cut -d' ' -f1-4)" = "recette-montee : code 11," ] && ok "dernière ligne écrite" || fail "code $RC, dernière ligne : $(tail -1 "$FX/sortie")"
 
 echo "  un client docker sourd ne fige pas la sortie"
+# Sourd à `docker stop` ET à SIGTERM, comme le vrai client attaché (revue P2, M1).
 preparer "N_REEL=1" "IMAGE_SOURDE=oui" "STATUTS_CLIENTS=draft,draft,draft"
 RC=0
 KESH_DOCKER="$FX/docker" KESH_CURL="$FX/curl" RECETTE_RACINE_JETABLE="$WORK/jetable" \
-  timeout 90 bash "$DEPOT/scripts/recette-montee.sh" "${BASE_ARGS[@]}" > "$FX/sortie" 2>&1 || RC=$?
-[ "$RC" -eq 11 ] && /usr/bin/grep -q 'ARGV stop kesh-recette-db-' "$FX/docker.log" && ok "sortie bornée, base arrêtée" || fail "code $RC (124 : figé)"
+  timeout -k 10 90 bash "$DEPOT/scripts/recette-montee.sh" "${BASE_ARGS[@]}" > "$FX/sortie" 2>&1 || RC=$?
+[ "$RC" -eq 11 ] && /usr/bin/grep -q 'ARGV stop kesh-recette-db-' "$FX/docker.log" && ok "sortie bornée, base arrêtée" || fail "code $RC (124 ou 137 : figé)"
+PID_SOURD=$(cat "$FX/pid-run-image" 2>/dev/null || true)
+if [ -z "$PID_SOURD" ]; then fail "client sourd jamais lancé"
+elif kill -0 "$PID_SOURD" 2>/dev/null; then fail "le client sourd vit encore après la sortie"
+else ok "le client sourd ne survit pas au script"; fi
+sortie_dit "client docker de l'image tué" && sortie_dit "docker stop kesh-recette-image-" \
+  && ok "le client tué est dit, et le conteneur nommé" || fail "rien ne dit le client tué"
+[ "$(tail -1 "$FX/sortie" | cut -d' ' -f1-4)" = "recette-montee : code 11," ] && ok "dernière ligne écrite" || fail "dernière ligne : $(tail -1 "$FX/sortie")"
 rm -f "$FX/up-image"
+
+echo "  docker est un outil comme les autres (revue P2, L3)"
+preparer "N=1"
+RC=0
+KESH_DOCKER="$WORK/dehors/docker-absent" KESH_CURL="$FX/curl" RECETTE_RACINE_JETABLE="$WORK/jetable" \
+  bash "$DEPOT/scripts/recette-montee.sh" "${BASE_ARGS[@]}" > "$FX/sortie" 2>&1 || RC=$?
+[ "$RC" -eq 5 ] && sortie_dit "outil manquant : $WORK/dehors/docker-absent" && [ ! -s "$FX/curl.log" ] \
+  && ok "docker introuvable : outil manquant, code 5" || fail "docker introuvable : code $RC, $(tail -1 "$FX/sortie")"
+
+echo "  la relance ne boucle pas (revue P2, L4)"
+# Un environnement que la relance ne ferme jamais, comme un bash qui exporterait de lui-même
+# une variable hors de la liste : ici, une variable exigée que la relance ne pose pas.
+mkdir -p "$WORK/depot-boucle/scripts"
+# shellcheck disable=SC2016
+/usr/bin/sed 's#^  \[ "${PATH:-}" = "$PATH_FERME" \] || return 1$#  [ -n "${JAMAIS_POSEE:-}" ] || return 1#' \
+  "$SCRIPT_SRC" > "$WORK/depot-boucle/scripts/recette-montee.sh"
+if /usr/bin/grep -qF '[ -n "${JAMAIS_POSEE:-}" ] || return 1' "$WORK/depot-boucle/scripts/recette-montee.sh"; then
+  RC=0
+  timeout -k 2 20 bash "$WORK/depot-boucle/scripts/recette-montee.sh" "${BASE_ARGS[@]}" > "$FX/sortie" 2>&1 || RC=$?
+  [ "$RC" -eq 5 ] && sortie_dit "environnement non fermable" && ok "une seule relance, puis refus (code 5)" \
+    || fail "relance sans fin ou refus muet : code $RC (124 : boucle)"
+else fail "montage : PATH_FERME introuvable dans le script"; fi
 
 # --- AC-5 : l'enchaînement --------------------------------------------------------
 echo "  écart d'empreinte"
@@ -522,6 +568,25 @@ D=$(/usr/bin/grep -oE 'dossier .*$' "$FX/sortie" | tail -1 | sed 's/^dossier //'
 [ "$RC" -eq 0 ] && [ "$(cat "$D/journal/crochet-pwd.txt")" = "$D/cwd" ] && [ "$(cat "$D/journal/crochet-home.txt")" = "$D/home" ] \
   && ok "le crochet tourne dans \$D/cwd, HOME sous \$D" || fail "crochet : code $RC"
 /usr/bin/grep -q sonde "$D/journal/crochet-env.txt" && fail "une sonde atteint le crochet" || ok "aucune sonde au crochet"
+
+echo "  le port de la seconde base, resté à l'écoute, est signalé (revue P2, L6)"
+# Le crochet laisse un processus écouter sur `--port-base + 1`, le port de la phase 5 : le
+# docker factice n'y lance rien, si bien que seul ce processus peut s'y trouver à la fin.
+# shellcheck disable=SC2016
+printf '%s\n' 'python3 -c "import socket,sys,time
+s=socket.socket(); s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+s.bind((\"127.0.0.1\", int(sys.argv[1]))); s.listen(1); time.sleep(30)" "$((PORT_BASE + 1))" </dev/null >/dev/null 2>&1 3>&- &' \
+  'echo $! > "$L/ecoute.pid"' 'for _ in $(seq 1 100); do o=$(ss -ltn); /usr/bin/grep -q ":$((PORT_BASE + 1)) " <<<"$o" && break; sleep 0.05; done' \
+  > "$WORK/kesh-gate-logs/verifs.sh"
+preparer "N_REEL=1"
+lancer "${BASE_ARGS[@]}" --import --apres "$WORK/kesh-gate-logs/verifs.sh"
+D=$(/usr/bin/grep -oE 'dossier .*$' "$FX/sortie" | tail -1 | sed 's/^dossier //')
+PID_ECOUTE=$(cat "$D/journal/ecoute.pid" 2>/dev/null || true)
+[ -n "$PID_ECOUTE" ] && kill -0 "$PID_ECOUTE" 2>/dev/null && ok "écoute du crochet vivante à la sortie (sonde)" || fail "montage : l'écoute du crochet est morte"
+[ "$RC" -eq 0 ] && sortie_dit "un port de la recette écoute encore" \
+  && /usr/bin/grep -q ":$((PB + 1))\b" "$D/journal/ss-final.txt" \
+  && ok "port de la seconde base signalé" || fail "port de la seconde base muet : code $RC"
+[ -z "$PID_ECOUTE" ] || { kill "$PID_ECOUTE" 2>/dev/null; true; }
 
 # --- AC-7 -------------------------------------------------------------------------
 echo "  AC-7 : aucun chemin de la station, aucune donnée réelle"
