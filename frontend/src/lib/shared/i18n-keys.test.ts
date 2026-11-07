@@ -886,7 +886,14 @@ const ATTENDU = {
 	// `sitesNonResolus` et `relais` inchangés.
 	// Story 33-6, revue P2 : **2840 → 2838** (−2) : le repli `common-error` de la fiche et de
 	// l'échéancier, inatteignable depuis `isSettlementOutcomeUnknown`.
-	sitesTotal: 2838,
+	// Story 33-8 (#486) : **2832 → 2849** (+17) : `accounts/+page.svelte` +16 (les dix libellés
+	// de réglages, l'intro, l'effet, le lien, « Un administrateur… », « Archiver quand même » et
+	// son « Archivage… »), `settings/invoicing/+page.svelte` +1 (« (archivé) »). Que des
+	// littéraux ; `sitesNonResolus` et `relais` inchangés. Revue P1 : **2849 → 2857** (+8), les
+	// huit effets par réglage de `designatedSettingEffect`. Revue P2 : **2857 → 2850** (−7) :
+	// `designatedSettingEffect` retirée (−8), la phrase du décompte TVA posée à part (+1).
+	// Revue P4 : **2850 → 2849** (−1), la phrase du décompte TVA retirée.
+	sitesTotal: 2849,
 	sitesNonResolus: 31,
 	relais: 6,
 	// Story 26-1 (#620, AC3-bis) : **10 → 11** — `lib/features/bank-import/

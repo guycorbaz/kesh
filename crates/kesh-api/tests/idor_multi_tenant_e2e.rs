@@ -952,7 +952,7 @@ async fn settings_designated_accounts_absent_preserves_null_clears(pool: MySqlPo
 }
 
 /// Story 25-4-c3-a1 — un compte d'arrondi devenu **archivé** après sa désignation
-/// (l'archivage n'est pas gardé, #486) ne doit pas bloquer l'enregistrement d'un
+/// (l'archivage avertit, sans refuser : #486) ne doit pas bloquer l'enregistrement d'un
 /// réglage SANS rapport : reconduit tel quel, il n'est pas revalidé. Le changer
 /// pour un compte invalide, lui, reste refusé.
 #[sqlx::test(migrations = "../kesh-db/test-schema")]

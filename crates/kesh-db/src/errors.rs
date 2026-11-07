@@ -903,6 +903,14 @@ pub enum DbError {
         to_type: &'static str,
     },
 
+    /// Le compte est désigné dans les paramètres de facturation : l'archiver sans
+    /// confirmation est refusé, le refus nomme les réglages (Story 33-8, #486).
+    #[error("Le compte est désigné dans les paramètres de facturation : {settings:?}")]
+    AccountDesignatedInSettings {
+        /// Les codes de `DESIGNATED_ACCOUNT_COLUMNS`.
+        settings: Vec<&'static str>,
+    },
+
     /// Un rôle de compte **singleton** est déjà porté par un autre compte actif
     /// de la même société (Story 14-3a).
     ///
@@ -1562,6 +1570,7 @@ impl DbError {
             Self::SupplierLineNotInCentimes { .. } => "SUPPLIER_INVOICE_LINE_NOT_IN_CENTIMES",
             Self::DateOutsideFiscalYear => "DATE_OUTSIDE_FISCAL_YEAR",
             Self::AccountHasEntries { .. } => "ACCOUNT_HAS_ENTRIES",
+            Self::AccountDesignatedInSettings { .. } => "ACCOUNT_DESIGNATED_IN_SETTINGS",
             Self::AccountRoleAlreadyAssigned { .. } => "ACCOUNT_ROLE_ALREADY_ASSIGNED",
             Self::AccountParentArchived { .. } => "ACCOUNT_PARENT_ARCHIVED",
             Self::AccountRoleInvalidForType { .. } => "ACCOUNT_ROLE_INVALID_FOR_TYPE",

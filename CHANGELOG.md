@@ -64,6 +64,11 @@ Le contenu est rédigé en français à destination des **fiduciaires, PME, ind�
 - **Pour l'API : une clé ne change plus le mot de passe** (refs [#435](https://github.com/guycorbaz/kesh/issues/435)) : `PUT /api/v1/auth/password` rend `403 API_KEY_OPERATION_FORBIDDEN` à une clé `read-write`, même avec le bon mot de passe courant et quel que soit le corps ; la route lui rendait auparavant un cookie de session et un jeton neufs. Le message de ce refus, partagé avec la suppression d'un import bancaire, devient « Opération réservée à une session ouverte dans le navigateur ; une clé d'API ne peut pas l'effectuer. » (il disait « Utilisez l'interface web », qui n'a pas d'écran pour le mot de passe) ; le code ne change pas.
 - **L'export du grand livre se trace comme un export** ([#729](https://github.com/guycorbaz/kesh/issues/729)) : « Rapport exporté », avec son format, et non plus comme une consultation. Les lignes déjà écrites ne changent pas.
 - **La consultation d'un rapport par un agent se distingue au journal d'audit** ([#776](https://github.com/guycorbaz/kesh/issues/776)) : le détail de la ligne porte le canal (`channel`) et le numéro de la clé du serveur MCP (`mcp_key_id`), à partir de cette version. Une consultation ou un export de rapport par une clé d'API paraît désormais comme fait par cette clé, et non par son créateur seul.
+### Corrigé
+
+- **Un compte désigné dans les paramètres de facturation ne s'archive plus sans avertissement** ([#486](https://github.com/guycorbaz/kesh/issues/486)) : le dialogue nomme les réglages qui le désignent et dit ce qu'il en coûte : tant que ce compte est archivé, toute écriture qui l'emploie est refusée, y compris sur une pièce déjà validée, et sa réactivation lève le blocage ; *Archiver quand même* passe outre ; l'archivage reste ouvert au Comptable, seul l'Administrateur a le lien vers les paramètres. Un compte déjà archivé n'empêche plus d'enregistrer un autre réglage. ⚠️ Pour une intégration : `PUT /accounts/{id}/archive` rend désormais `409 ACCOUNT_DESIGNATED_IN_SETTINGS` sur un tel compte, sauf avec `"confirmDesignated": true`.
+
+---
 
 ## [0.17.4] — 2026-11-06
 

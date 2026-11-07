@@ -3440,6 +3440,21 @@ impl IntoResponse for AppError {
                         "Conflit de version — la ressource a été modifiée",
                     ),
                 ),
+                // Story 33-8 (#486) : le même patron que `AccountHasEntries` ci-dessous,
+                // le refus nomme les réglages.
+                DbError::AccountDesignatedInSettings { settings } => {
+                    let body = serde_json::json!({
+                        "error": {
+                            "code": "ACCOUNT_DESIGNATED_IN_SETTINGS",
+                            "message": t(
+                                "error-account-designated-in-settings",
+                                "Ce compte est désigné dans les paramètres de facturation : confirmez pour l’archiver quand même.",
+                            ),
+                            "details": { "settings": settings }
+                        }
+                    });
+                    (StatusCode::CONFLICT, Json(body)).into_response()
+                }
                 // Story 25-2-a ([#382], [#274]) — **409 et non 400** : le payload
                 // est valide, c'est l'ÉTAT du compte qui s'y oppose. Même lecture
                 // que `OptimisticLockConflict` ci-dessus, et symétrique inverse de
