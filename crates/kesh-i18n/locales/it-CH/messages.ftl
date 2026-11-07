@@ -11,7 +11,7 @@ error-forbidden = Accesso negato
 error-api-key-read-only = Questa chiave API è in sola lettura (scope «read»). Sono consentite solo le richieste GET.
 error-api-key-management-forbidden = La gestione delle chiavi API non è consentita tramite una chiave API. Utilizzare l'interfaccia web.
 error-api-key-admin-forbidden = Le rotte di amministrazione non sono accessibili tramite una chiave API, indipendentemente dal ruolo del suo creatore. Utilizzare l'interfaccia web.
-error-api-key-operation-forbidden = Questa operazione non è accessibile tramite una chiave API. Utilizzare l'interfaccia web.
+error-api-key-operation-forbidden = Operazione riservata a una sessione aperta nel browser; una chiave API non può eseguirla.
 error-cannot-disable-self = Impossibile disattivare il proprio account
 error-cannot-disable-last-admin = Impossibile disattivare l'ultimo amministratore
 

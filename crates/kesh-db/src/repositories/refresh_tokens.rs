@@ -199,6 +199,27 @@ pub async fn revoke_all_for_user(
     Ok(rows_affected)
 }
 
+/// Première instruction de [`revoke_all_for_user_counting_live`] : révoque et compte
+/// les sessions vivantes d'un utilisateur (liaisons : motif, `user_id`). Publique pour
+/// que son plan d'exécution se teste (`refresh_tokens_repository.rs`).
+///
+/// ⚠️ `FORCE INDEX` : sans lui, l'optimiseur retient `idx_refresh_tokens_expires_at`
+/// sur une table vide ou presque (relevé à l'`EXPLAIN`, revue P2 de la 33-7, L5), et
+/// la transaction verrouillerait jusqu'au commit les sessions vivantes de **tous**
+/// les utilisateurs, dont les rotations et connexions attendraient.
+pub const REVOKE_LIVE_FOR_USER_SQL: &str = "UPDATE refresh_tokens \
+     FORCE INDEX (idx_refresh_tokens_user_id) \
+     SET revoked_at = NOW(3), revoked_reason = ? \
+     WHERE user_id = ? AND revoked_at IS NULL AND expires_at > NOW(3)";
+
+/// Seconde instruction de [`revoke_all_for_user_counting_live`] : révoque ce qui reste
+/// d'un utilisateur, les sessions échues (liaisons : motif, `user_id`). Même index
+/// imposé que la première, par symétrie.
+pub const REVOKE_REST_FOR_USER_SQL: &str = "UPDATE refresh_tokens \
+     FORCE INDEX (idx_refresh_tokens_user_id) \
+     SET revoked_at = NOW(3), revoked_reason = ? \
+     WHERE user_id = ? AND revoked_at IS NULL";
+
 /// Story 33-7 (#435) — révoque comme [`revoke_all_for_user`], et rend le nombre de
 /// sessions **vivantes** ainsi fermées, non celui des lignes.
 ///
@@ -206,34 +227,27 @@ pub async fn revoke_all_for_user(
 /// `revoked_at IS NULL`, `expires_at` passé, jusqu'à la purge du démarrage. Elle est
 /// révoquée ici aussi, sans être comptée : pour le journal d'audit, seule une session
 /// qu'on pouvait encore renouveler a été fermée. Deux `UPDATE` dans une transaction,
-/// sans lecture verrouillante : le premier compte, le second finit le travail.
+/// sans lecture verrouillante : le premier compte ([`REVOKE_LIVE_FOR_USER_SQL`]), le
+/// second finit le travail ([`REVOKE_REST_FOR_USER_SQL`]).
 pub async fn revoke_all_for_user_counting_live(
     pool: &MySqlPool,
     user_id: i64,
     reason: &str,
 ) -> Result<u64, DbError> {
     let mut tx = pool.begin().await.map_err(map_db_error)?;
-    let vivantes = sqlx::query(
-        "UPDATE refresh_tokens \
-         SET revoked_at = NOW(3), revoked_reason = ? \
-         WHERE user_id = ? AND revoked_at IS NULL AND expires_at > NOW(3)",
-    )
-    .bind(reason)
-    .bind(user_id)
-    .execute(&mut *tx)
-    .await
-    .map_err(map_db_error)?
-    .rows_affected();
-    sqlx::query(
-        "UPDATE refresh_tokens \
-         SET revoked_at = NOW(3), revoked_reason = ? \
-         WHERE user_id = ? AND revoked_at IS NULL",
-    )
-    .bind(reason)
-    .bind(user_id)
-    .execute(&mut *tx)
-    .await
-    .map_err(map_db_error)?;
+    let vivantes = sqlx::query(REVOKE_LIVE_FOR_USER_SQL)
+        .bind(reason)
+        .bind(user_id)
+        .execute(&mut *tx)
+        .await
+        .map_err(map_db_error)?
+        .rows_affected();
+    sqlx::query(REVOKE_REST_FOR_USER_SQL)
+        .bind(reason)
+        .bind(user_id)
+        .execute(&mut *tx)
+        .await
+        .map_err(map_db_error)?;
     tx.commit().await.map_err(map_db_error)?;
     Ok(vivantes)
 }

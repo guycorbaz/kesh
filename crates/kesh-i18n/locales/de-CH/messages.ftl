@@ -11,7 +11,7 @@ error-forbidden = Zugriff verweigert
 error-api-key-read-only = Dieser API-Schlüssel ist schreibgeschützt (Scope «read»). Nur GET-Anfragen sind erlaubt.
 error-api-key-management-forbidden = Die Verwaltung von API-Schlüsseln ist über einen API-Schlüssel nicht erlaubt. Verwenden Sie die Weboberfläche.
 error-api-key-admin-forbidden = Administrationsrouten sind über einen API-Schlüssel nicht zugänglich, unabhängig von der Rolle seines Erstellers. Verwenden Sie die Weboberfläche.
-error-api-key-operation-forbidden = Dieser Vorgang ist über einen API-Schlüssel nicht zugänglich. Verwenden Sie die Weboberfläche.
+error-api-key-operation-forbidden = Vorgang einer im Browser geöffneten Sitzung vorbehalten; ein API-Schlüssel kann ihn nicht ausführen.
 error-cannot-disable-self = Das eigene Konto kann nicht deaktiviert werden
 error-cannot-disable-last-admin = Der letzte Administrator kann nicht deaktiviert werden
 

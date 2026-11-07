@@ -329,6 +329,10 @@ impl Auteur {
 
     /// Le détail d'une trace, avec ce qu'il dit de son origine : rien pour une session
     /// ni pour une clé d'API, `channel` et `mcp_key_id` pour le serveur MCP.
+    ///
+    /// ⚠️ Un détail qui n'est pas un objet JSON est rendu tel quel, **sans** l'origine
+    /// MCP : les huit appelants passent tous un `json!({…})`, et un appelant neuf qui
+    /// passerait autre chose perdrait `channel` sans rien signaler.
     fn detail(&self, mut detail: serde_json::Value) -> serde_json::Value {
         if let (OrigineTrace::Mcp(id), Some(objet)) = (self.origine, detail.as_object_mut()) {
             objet.insert("channel".into(), serde_json::json!("mcp"));
