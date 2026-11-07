@@ -703,7 +703,7 @@ pub async fn archive(
 /// La société est celle du compte, lue ici : aucun appelant ne peut en faire lire
 /// une autre (revue P1, A L-5).
 ///
-/// ⚠️ **Limite assumée (C-e334-37)** : un `PUT` concurrent des paramètres, qui a
+/// ⚠️ **Limite assumée (C-e334-45)** : un `PUT` concurrent des paramètres, qui a
 /// validé le compte encore actif, peut le désigner juste après cette lecture. La
 /// verrouiller ne suffirait pas : il faudrait aussi que le `PUT` verrouille le compte
 /// qu'il valide. Le compte reste alors archivé et désigné, et l'écriture qui l'emploie

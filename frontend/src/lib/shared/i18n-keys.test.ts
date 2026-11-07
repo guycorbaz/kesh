@@ -893,7 +893,9 @@ const ATTENDU = {
 	// huit effets par réglage de `designatedSettingEffect`. Revue P2 : **2857 → 2850** (−7) :
 	// `designatedSettingEffect` retirée (−8), la phrase du décompte TVA posée à part (+1).
 	// Revue P4 : **2850 → 2849** (−1), la phrase du décompte TVA retirée.
-	sitesTotal: 2849,
+	// Fusion de la release 0.17.5 (2026-11-07) : les treize branches de l'Epic 33 réunies,
+	// **recompté à la source** par la garde elle-même après la fusion (non additionné) : **2922**.
+	sitesTotal: 2922,
 	sitesNonResolus: 31,
 	relais: 6,
 	// Story 26-1 (#620, AC3-bis) : **10 → 11** — `lib/features/bank-import/

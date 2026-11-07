@@ -297,8 +297,11 @@ const SUFFIXES = ['Label', 'Text', 'Display'];
  * `i18nMsg`, repli sur le code du réglage) et `accountOptionLabel` (`settings/invoicing/+page.svelte`,
  * numéro et nom du compte, « (archivé) » par `i18nMsg`) : aucun littéral affiché, donc `conforme`
  * **63 → 65** ; `ecartee` ne bouge pas.
+ *
+ * Fusion de la release 0.17.5 (2026-11-07) : les trois stories réunies, **85** candidates,
+ * `conforme` **71**, recomptés par la garde après la fusion (non additionnés).
  */
-const CANDIDATES_ATTENDUES = 85; // recompté par la garde à la fusion de la 0.17.5
+const CANDIDATES_ATTENDUES = 85;
 
 /** Les trois délimiteurs de littéral en JS/TS. */
 const QUOTES = ["'", '"', '`'];

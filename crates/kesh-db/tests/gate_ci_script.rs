@@ -20,7 +20,7 @@ fn gate_ci_script_rejoue_la_commande_de_la_ci_dans_un_environnement_ferme() {
     );
 
     // Borné en mémoire et en durée : le 2026-11-07, un cas de ce test a pris 27 Go et fait
-    // tomber la station, hors de tout plafond (C-e334-38). En CI, aucun autre ne s'applique.
+    // tomber la station, hors de tout plafond (C-e334-54). En CI, aucun autre ne s'applique.
     let output = Command::new("bash")
         .arg("-c")
         .arg(r#"ulimit -v 4000000 && exec timeout -k 10 600 bash "$0""#)
