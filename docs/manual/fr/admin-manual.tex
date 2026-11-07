@@ -223,7 +223,7 @@ cd /opt/kesh
 Télécharger le fichier de référence depuis le dépôt officiel, \textbf{au tag de la version que décrit ce manuel} (\texttt{v\keshVersion}) --- non à la branche \texttt{main}, qui peut être en avance sur l'image publiée ; pour une autre version, remplacez le tag dans l'adresse :
 
 \begin{lstlisting}[language=bash]
-curl -fsSL https://raw.githubusercontent.com/guycorbaz/kesh/v0.17.4/docker-compose.yml \
+curl -fsSL https://raw.githubusercontent.com/guycorbaz/kesh/v0.17.5/docker-compose.yml \
     -o docker-compose.yml
 \end{lstlisting}
 
@@ -234,7 +234,7 @@ Ce fichier désigne l'image publiée \texttt{gcorbaz/kesh:latest} : \keshcommand
 Copier le fichier d'exemple et l'adapter :
 
 \begin{lstlisting}[language=bash]
-curl -fsSL https://raw.githubusercontent.com/guycorbaz/kesh/v0.17.4/.env.example \
+curl -fsSL https://raw.githubusercontent.com/guycorbaz/kesh/v0.17.5/.env.example \
     -o .env
 \end{lstlisting}
 
@@ -570,7 +570,7 @@ Télécharger le \keshpath{docker-compose.yml} canonique depuis le dépôt Kesh,
 
 \begin{lstlisting}[language=bash]
 cd /volume1/docker/kesh
-DEPOT=https://raw.githubusercontent.com/guycorbaz/kesh/v0.17.4
+DEPOT=https://raw.githubusercontent.com/guycorbaz/kesh/v0.17.5
 curl -fsSL "$DEPOT/docker-compose.prod.yml" -o docker-compose.yml
 curl -fsSL "$DEPOT/.env.example" -o .env
 
@@ -1736,7 +1736,7 @@ Les exports ne doivent pas rester dans le dossier de téléchargements : Synolog
 \Needspace{15\baselineskip}
     \item \textbf{Compose et \keshpath{.env.example} au tag de la version relevée, et variables qu'il lit.} Remplacez \texttt{0.15.0} par la version relevée. Les exemples de cette sous-section portent \texttt{0.15.0}, la version de ce manuel ; une production qui satisfait le prérequis porte \textbf{0.15.0 ou plus} : à une version suivante, l'exemple recopié tel quel donnerait une copie qui n'est pas celle de la production. Le contrôle~9 arrête une \textbf{image} d'une autre version ; le tag de \keshcommand{DEPOT}, lui, n'est contrôlé par rien : remplacez les deux.
 \begin{lstlisting}[language=bash]
-DEPOT=https://raw.githubusercontent.com/guycorbaz/kesh/v0.17.4
+DEPOT=https://raw.githubusercontent.com/guycorbaz/kesh/v0.17.5
 curl -fsSL "$DEPOT/docker-compose.yml" -o "$COPIE/docker-compose.yml"
 curl -fsSL "$DEPOT/.env.example" -o "$COPIE/.env"
 grep -oE '\$\{?[A-Za-z_][A-Za-z0-9_]*' "$COPIE/docker-compose.yml" \
@@ -2055,7 +2055,7 @@ Les deux scripts sont des fichiers du dépôt Kesh, \keshpath{scripts/synology/k
 
 \begin{lstlisting}[language=bash]
 cd /volume1/docker/kesh
-DEPOT=https://raw.githubusercontent.com/guycorbaz/kesh/v0.17.4
+DEPOT=https://raw.githubusercontent.com/guycorbaz/kesh/v0.17.5
 curl -fsSLO "$DEPOT/scripts/synology/kesh-dump.sh"
 curl -fsSLO "$DEPOT/scripts/synology/kesh-restore.sh"
 chmod 700 kesh-dump.sh kesh-restore.sh
@@ -2537,14 +2537,18 @@ La 0.17.5 se pose sur la 0.17.4 : elle n'exige ni nouveau compose ni nouvelle va
 \end{keshwarning}
 
 \begin{sloppypar}
-\paragraph{Une migration, non breaking.} La 0.17.5 porte \textbf{une migration}, \texttt{20261106000001\_supplier\_invoice\_internal\_number}. Elle n'ajoute aucune table, et \texttt{kesh\_version\_min\_required} reste à \texttt{0.17.0}. C'est \textbf{la première sauvegarde automatique réelle} : au démarrage, avant de migrer, Kesh écrit une sauvegarde complète dans \keshpath{backup/pre-upgrade/}, et refuse de migrer si elle échoue (\S\ref{sec:sauvegarde-avant-maj}). Elle ne dispense pas de la sauvegarde manuelle.
+\paragraph{Une migration, non breaking.} La 0.17.5 porte \textbf{une migration}, \texttt{20261106000001\_supplier\_invoice\_internal\_number}. Elle n'ajoute aucune table, et \texttt{kesh\_version\_min\_required} reste à \texttt{0.17.0}. C'est \textbf{la première sauvegarde automatique réelle} : au démarrage, avant de migrer, Kesh écrit une sauvegarde complète dans \keshpath{backup/pre-upgrade/}, sous un nom qui finit par \keshcommand{-0.17.4-to-0.17.5.keshbackup}, et refuse de migrer si elle échoue (\S\ref{sec:sauvegarde-avant-maj}) : le journal porte alors « \emph{FATAL : mise à jour refusée} » avec sa cause, et aucune migration n'est appliquée. Pour migrer quand même, en connaissance de cause, posez \keshcommand{KESH\_SKIP\_PRE\_UPGRADE\_BACKUP=0.17.5} dans le \keshpath{.env} --- la version exacte du binaire --- et retirez-la après la mise à jour. Cette sauvegarde ne dispense pas de la sauvegarde manuelle : elle est sur le même disque que Kesh.
 \end{sloppypar}
 
 \paragraph{Les factures déjà saisies reçoivent un numéro.} Toute facture fournisseur validée, payée ou annulée reçoit à la mise à jour un numéro interne au format par défaut, \texttt{FF-2026-001}, par société et par année de début d'exercice, dans l'ordre de la date de début de l'exercice, puis de la date de facture, puis de l'identifiant ; deux exercices commençant la même année se suivent. Un brouillon n'en reçoit pas. \textbf{Les écritures passées ne changent pas} : ni leur libellé, ni leur date de modification. Cette numérotation \textbf{n'a pas d'entrée propre au journal d'audit} à la mise à jour : une migration n'a pas d'auteur ; à l'import d'une sauvegarde de la 0.17.4, l'entrée \keshcommand{admin.full\_import} nomme la reprise et le nombre de lignes qu'elle a modifiées, factures et exercices additionnés. Le format se règle ensuite dans \emph{Administration → Facturation} ; ce réglage et le classement du papier sont au manuel utilisateur, \emph{Le numéro interne}.
 
-\paragraph{Le retour à la 0.17.4.} La 0.17.4 \textbf{ne démarre plus} sur la base migrée (\texttt{migration 20261106000001 was previously applied but is missing in the resolved migrations}), et elle \textbf{refuse} une sauvegarde prise en 0.17.5 (\texttt{IMPORT\_SCHEMA\_MISMATCH}, \texttt{400}). Le retour se fait donc sur une base neuve, par la sauvegarde d'avant la mise à jour --- celle de \keshpath{backup/pre-upgrade/}, ou la vôtre --- que la 0.17.4 importe. Tout ce qui a été saisi depuis la mise à jour est perdu, et \textbf{les numéros écrits sur le papier depuis la mise à jour sont à refaire}. Ces trois comportements ont été constatés avec l'image publiée \texttt{gcorbaz/kesh:0.17.4}, sur des données de démonstration.
+\paragraph{Le retour à la 0.17.4.} La 0.17.4 \textbf{ne démarre plus} sur la base migrée (\texttt{migration 20261106000001 was previously applied but is missing in the resolved migrations}), et elle \textbf{refuse} une sauvegarde prise en 0.17.5 (\texttt{IMPORT\_SCHEMA\_MISMATCH}, \texttt{400}). Le retour se fait donc sur une base neuve, par la sauvegarde d'avant la mise à jour --- celle de \keshpath{backup/pre-upgrade/}, ou la vôtre --- que la 0.17.4 importe : vidage de sécurité de la base actuelle, puis installation 0.17.4 neuve (\texttt{image: gcorbaz/kesh:0.17.4}) sur une base vide, et import du fichier depuis l'assistant, lien \emph{Restaurer une sauvegarde}, comme au \S\ref{sec:revenir-version-precedente}. Tout ce qui a été saisi depuis la mise à jour est perdu, et \textbf{les numéros écrits sur le papier depuis la mise à jour sont à refaire}. Ces comportements ont été constatés à la préparation de la release, avec l'image publiée \texttt{gcorbaz/kesh:0.17.4} et des données synthétiques sur deux exercices : la sauvegarde \keshpath{pre-upgrade/} écrite avant la migration, le refus de la 0.17.4 sur la base migrée et sur une sauvegarde 0.17.5, l'import du fichier \keshpath{pre-upgrade/} dans une 0.17.4 neuve, données identiques à celles d'avant la mise à jour.
 
 \paragraph{MariaDB 10.7 au minimum.} Le tri des numéros internes emploie \texttt{NATURAL\_SORT\_KEY}. La version livrée et testée reste 10.11.
+
+\begin{sloppypar}
+\paragraph{Pour les intégrations.} Les outils MCP des factures fournisseur ajoutent \texttt{numeroInterne} ; les exports CSV gagnent \texttt{internal\_number} (factures fournisseur) et \texttt{supplier\_internal\_number\_format} (réglages), au milieu des colonnes existantes : un script qui lit par position est à adapter. \texttt{PUT /api/v1/accounts/\{id\}/archive} rend \texttt{409 ACCOUNT\_DESIGNATED\_IN\_SETTINGS} sur un compte désigné dans les paramètres de facturation, sauf avec \texttt{"confirmDesignated": true} (\#486) ; \texttt{PUT /api/v1/auth/password} refuse une clé d'API (\texttt{403 API\_KEY\_OPERATION\_FORBIDDEN}, \#435) ; l'import CAMT.053 peut rendre \texttt{422 BANK\_IMPORT\_LEGACY\_REREAD\_FAILED} (\#922) ; une date hors de l'an 1000 à l'an 9999 est refusée partout, sans rien écrire --- sur \texttt{POST /api/v1/reconciliation/accept}, par proposition dans \texttt{failed[]} (\#606). Le détail est au journal des modifications.
+\end{sloppypar}
 
 \subsubsection{Passer à la 0.17.4}\label{sec:maj-0-17-4}
 
