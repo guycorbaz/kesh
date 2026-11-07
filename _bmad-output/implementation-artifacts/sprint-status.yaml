@@ -1004,7 +1004,7 @@ development_status:
   33-4-bornes-annees: ready-for-dev
   33-5-adresse-societe: ready-for-dev
   33-6-reglement-apres-commit: ready-for-dev
-  33-7-traces-audit: review
+  33-7-traces-audit: done
   33-8-compte-designe-archive: ready-for-dev
   33-9-e2e-sidebar: ready-for-dev
   33-10-outillage-release: ready-for-dev

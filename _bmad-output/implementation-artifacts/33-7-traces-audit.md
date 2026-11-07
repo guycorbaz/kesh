@@ -1,6 +1,6 @@
 # Story 33-7 : le journal d'audit : changement de mot de passe, vol de jeton, export du grand livre, consultation par le MCP (#435, #729, #776)
 
-Status: review
+Status: done
 
 *Fiche rédigée le 2026-11-06 en autonomie (Opus 5.5), worktree `/home/gcorbaz/devel/kesh-e33`, branche `story/33-0-kickoff`,
 numéros de ligne de `4ef19901`. Release **0.17.5**, Epic 33. **Aucune migration.** Registre : `e33-choix-autonomes-e334.md`,
@@ -135,6 +135,7 @@ Tracer connexion, déconnexion, renouvellement : écarté par Guy le 2026-11-06 
   - **L3** : rien à faire (formulation reprise de `user-manual.tex:79`, la revue n'en demande pas).
   - **Gates, `138e59de`** (`e337/p4/gates-head.log`, arbre propre, bases `kesh_e337` et `kesh_e2e_e337` recréées, chaque commande sous `flock /tmp/station-heavy.lock flock …/.gate.lock scripts/mem-guard.sh`) : `scripts/test-fast.sh --ci` vert, fmt, clippy, **nextest 4833 exécutés, 4833 passés, 12 ignorés** ; `cargo build --workspace --all-targets` vert ; `npm run build` vert (pour l'E2E ; frontend non touché). **E2E complet au même commit, après le code** (`e337/p4/e2e-r4/playwright.log`, port 3186, `kesh_e2e_e337` recréée vide, dossiers `/tmp/kesh-e2e-e337-r4/…` au backend et au runner, `smtpConfigured:true`, backend tué par PID, `ss -ltnp` vide avant et après) : **377 tests, 352 passés, 18 ignorés, 7 échecs**, les sept de la KF-029 (#97) seuls, nommés à `docs/testing.md:394-400` : `mode-expert:26,41`, `onboarding-path-b:65,92`, `onboarding:57,77,150`. Aucune régression.
   - Réfuté : aucun. Prochaine : passe P4 ciblée, `33-7-traces-audit-review-prompt-p4.md`.
+- 2026-11-07 : revue P4 ciblée (Haiku 4.5, une lentille, `c9830962..138e59de`, rapport `kesh-gate-logs/e337-review-p4.md`) : **0/0/0/3**, aucun réfuté. Vérifiés par l'orchestrateur, comme un « 0 » se vérifie : **L1** (le test d'`EXPLAIN` couvre les constantes, non l'appel) — lu : `refresh_tokens.rs:191`, `revoke_all_for_user` exécute bien `REVOKE_REST_FOR_USER_SQL` ; le trou de test est porté à #958 (angles non couverts de la révocation), par commentaire ; **L2** (version de MariaDB non journalisée) — relevée : `SELECT VERSION()` sur `kesh-mariadb-dev` rend `10.11.19-MariaDB-ubu2204` ; **L3** (la remise à zéro des bases de `gates-337-p4.sh` n'est pas sous verrou) : la phrase « chaque commande sous `flock` » de l'entrée précédente vaut pour les gates, non pour cette étape légère ; entrée passée non réécrite. **Revue de code terminée** : P1 trois lentilles B 0/0/0/8, E 0/0/1/8, A 0/0/1/5 → P2 0/0/2/5 → P3 ciblée (Sonnet) 0/0/1/3 → P4 ciblée (Haiku) 0/0/0/3 ; la boucle se clôt sur une passe sans finding au-dessus de LOW (modèles des P1 et P2 : leurs entrées). Story **done**.
 
 ## Dev Agent Record
 
