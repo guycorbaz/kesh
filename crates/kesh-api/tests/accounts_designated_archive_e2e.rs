@@ -13,15 +13,16 @@ use common::{audit_actions, audit_details};
 use kesh_api::auth::password::hash_password;
 use kesh_api::config::Config;
 use kesh_api::{AppState, build_router};
+use kesh_db::entities::journal_entry::Journal;
 use kesh_db::entities::user::{NewUser, Role};
 use kesh_db::entities::{
-    NewInvoice, NewInvoiceLine, NewSupplierInvoice, NewSupplierInvoiceLine, SettlementChoice,
-    SettlementWriteOffNature,
+    NewInvoice, NewInvoiceLine, NewJournalEntry, NewJournalEntryLine, NewSupplierInvoice,
+    NewSupplierInvoiceLine, SettlementChoice, SettlementWriteOffNature,
 };
 use kesh_db::errors::DbError;
 use kesh_db::repositories::company_invoice_settings::DESIGNATED_ACCOUNT_COLUMNS;
 use kesh_db::repositories::{
-    accounts, invoice_settlements_write, invoices, supplier_invoices, users,
+    accounts, invoice_settlements_write, invoices, journal_entries, supplier_invoices, users,
 };
 use kesh_db::test_fixtures::{SeededCompany, designate_rounding_account, seed_accounting_company};
 use rust_decimal::Decimal;
@@ -522,9 +523,10 @@ async fn archived_vat_recoverable_refuses_only_a_supplier_invoice_with_vat(pool:
 
 /// Aucun flux automatique ne lit le décompte TVA. Le dialogue n'en tire plus d'exception
 /// (revue P4, F1) : une écriture saisie à la main l'emploie (décompte, paiement à l'AFC),
-/// et la garde `active` la refuse comme pour tout autre compte archivé.
+/// et la garde `active` la refuse comme pour tout autre compte archivé — prouvé ici, la
+/// P4 ne l'ayant établi qu'à la lecture ; réactivé, la même saisie passe.
 #[sqlx::test(migrations = "../kesh-db/test-schema")]
-async fn archived_vat_decompte_refuses_nothing(pool: MySqlPool) {
+async fn archived_vat_decompte_refuses_a_manual_entry_but_no_automatic_flow(pool: MySqlPool) {
     let seeded = seed_accounting_company(&pool).await.unwrap();
     let app = spawn_app(&pool).await;
     let id = designated_account(
@@ -559,6 +561,42 @@ async fn archived_vat_decompte_refuses_nothing(pool: MySqlPool) {
     validate_new_supplier_invoice(&pool, &seeded, "F1", dec!(8.10))
         .await
         .expect("facture fournisseur avec TVA");
+
+    // Le paiement à l'AFC, saisi à la main : débit du décompte, crédit de la caisse.
+    let manual_entry = || {
+        journal_entries::create(
+            &pool,
+            seeded.fiscal_year_id,
+            seeded.admin_user_id,
+            NewJournalEntry {
+                company_id: seeded.company_id,
+                entry_date: NaiveDate::from_ymd_opt(2026, 4, 3).unwrap(),
+                journal: Journal::OD,
+                description: "Paiement à l'AFC".into(),
+                project_id: None,
+                lines: vec![
+                    NewJournalEntryLine {
+                        account_id: id,
+                        debit: dec!(5.00),
+                        credit: Decimal::ZERO,
+                        project_id: None,
+                    },
+                    NewJournalEntryLine {
+                        account_id: seeded.accounts["1000"],
+                        debit: Decimal::ZERO,
+                        credit: dec!(5.00),
+                        project_id: None,
+                    },
+                ],
+            },
+        )
+    };
+    let err = manual_entry()
+        .await
+        .expect_err("une saisie sur le décompte archivé est refusée");
+    assert!(matches!(err, DbError::InactiveOrInvalidAccounts), "{err:?}");
+    reactivate(&pool, &seeded, id).await;
+    manual_entry().await.expect("réactivé, la saisie passe");
 }
 
 /// Une facture à arrondir, et un règlement qui laisse un écart, emploient ce compte.
