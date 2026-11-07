@@ -1,0 +1,15 @@
+# Epic 33 — registre des choix autonomes : fiches 33-12a et 33-12b (clé e3312)
+
+Créé le 2026-11-07 à l'étape 0 du développement (Opus 5.5). Se verse **par union** au registre de l'epic. Chaque entrée : contexte, retenu, écartées, réversibilité.
+
+## 33-12a
+
+- **C-e3312-1 — Deux niveaux, un seul sens : le code d'abord, l'imprimé en dérive.** Décision de la fiche, remaniée à la P3 de validation, rognage de la P4 (texte en fiche). *Contexte* : § 3.6.2 exige l'égalité ; Helvetica intégrée ne porte pas 125 lettres du § 4.1.1. *Retenu* : `texte_code` (typographie, invisibles, rognage), `texte_imprime` = repli de `texte_code`. Le code garde Čolić, l'imprimé dit Colic : écart assumé, levé par #943. *Écartées* : replier aussi le code (dégrade des noms que le code porte juste aujourd'hui, et `Ĳ → IJ` allonge après validation) ; une police embarquée ici (#943). *Réversible* : oui, sans donnée, hors PDF déjà figés. Confirmée par la sonde de l'étape 0 : 127 points perdus à l'encodage sur 324, les 125 et U+00A0, U+00AD ; aucun relu autrement.
+- **C-e3312-2 — Ordre d'intégration** : 33-5, puis 33-12a, puis 33-12b ; la signature de `check_charset` reste stable. Décision de la fiche.
+- **C-e3312-3 — `lignes_adresse(addr: &Address) -> Vec<String>`, privée à `pdf.rs`, nom compris ; trois lignes, vides comprises, en phase a.** *Contexte* : P5-M2 ; AC6 demande une fonction pure unique, dont la 33-12b dépend. *Retenu* : une fonction d'adresse et une boucle de dessin unique, qui ferment les douze sites dès la phase a, sans bouger une position ; la 33-12b ne change que le corps. *Écartée* : `texte_imprime` seule comme « la fonction » (ne voit pas un site qui la contourne, et la 33-12b aurait dû en inventer une seconde). *Réversible* : oui.
+
+## 33-12b
+
+- **C-e3312-4 — Coupe calibrée sur les capitales : 27 au reçu, 46 en partie paiement, débiteur compris.** *Contexte* : P5-L1, P5-L5. *Retenu* : 677/1000 em à 8 pt, 1,911 mm par caractère, le rapport de `IDENTITY_MAX_CHARS` ; deux constantes recalculées par un test. *Écartées* : la moyenne des minuscules (37 au reçu : une adresse en capitales recouvre le QR) ; une table AFM (sortie de la story, #944). *Prix* : une rue en minuscules de 28 à 37 caractères se coupe alors qu'elle tenait, à une frontière de mot. *Réversible* : oui, une constante, hors PDF déjà figés.
+- **C-e3312-5 — Préfixe de pays sans espace, `LI-9490 Vaduz`.** *Contexte* : les figures 19 et 20 de la directive montrent `LI - 9490 Vaduz` et `DE- 78462 Konstanz`, en image, sans forme unique. *Retenu* : sans espace, ce qui le garde collé au NPA à la coupe. *Réversible* : oui.
+- **C-e3312-6 — Le NPA peut rester seul sur sa ligne.** *Contexte* : P5-L2 ; coupe gloutonne. *Retenu* : limite écrite et testée, l'adresse restant entière ; une règle de plus pour un cas rare n'apporterait qu'une localité coupée en plein mot. *Écartée* : couper le premier mot de la localité. *Réversible* : oui.
