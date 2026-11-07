@@ -1675,11 +1675,16 @@ mod tests {
     /// si un test panique en tenant le lock, on unwrap le poison et on
     /// continue (les tests suivants re-init l'état).
     ///
-    /// Le garde rend aussi `DATABASE_URL` à sa valeur d'avant quand il est
-    /// relâché : `reset_env()` l'efface, et sous `cargo test` (un seul
-    /// processus, contrairement à nextest) les tests `#[sqlx::test]` du même
-    /// binaire qui tournent ensuite ne trouveraient plus la base — c'est ce
-    /// que la CI de la 0.17.4 a constaté sur `pre_upgrade_backup::tests`.
+    /// Le garde rend **tout** l'environnement à son état d'avant quand il est
+    /// relâché : `reset_env()` en efface une trentaine de variables, et sous
+    /// `cargo test` (un seul processus, contrairement à nextest) les tests du
+    /// même binaire qui tournent ensuite les liraient effacées — c'est ce que
+    /// la CI de la 0.17.4 a constaté sur `pre_upgrade_backup::tests`, pour
+    /// `DATABASE_URL` (Story 33-10, #925).
+    ///
+    /// ⚠️ **Ce qu'il ne couvre pas** : un `cargo test` local **parallèle** peut
+    /// lire l'environnement pendant qu'un test le tient. Ni la CI
+    /// (`--test-threads=1`) ni nextest (un processus par test) ne sont concernés.
     pub(super) fn env_lock() -> EnvGuard {
         static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
         let lock = LOCK
@@ -1687,16 +1692,16 @@ mod tests {
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner());
         EnvGuard {
-            database_url: env::var_os("DATABASE_URL"),
+            environnement: env::vars_os().collect(),
             _lock: lock,
         }
     }
 
-    /// Garde de [`env_lock`] : sérialise les tests d'environnement et
-    /// restitue `DATABASE_URL` au relâchement (avant le verrou, champ déclaré
-    /// en dernier).
+    /// Garde de [`env_lock`] : sérialise les tests d'environnement et restitue
+    /// tout l'environnement au relâchement (avant le verrou, champ déclaré en
+    /// dernier).
     pub(super) struct EnvGuard {
-        database_url: Option<std::ffi::OsString>,
+        environnement: Vec<(std::ffi::OsString, std::ffi::OsString)>,
         _lock: MutexGuard<'static, ()>,
     }
 
@@ -1705,12 +1710,42 @@ mod tests {
             // SAFETY: le verrou est encore tenu (le champ `_lock` est relâché
             // après ce corps).
             unsafe {
-                match &self.database_url {
-                    Some(v) => env::set_var("DATABASE_URL", v),
-                    None => env::remove_var("DATABASE_URL"),
+                for (nom, _) in env::vars_os() {
+                    if !self.environnement.iter().any(|(n, _)| *n == nom) {
+                        env::remove_var(nom);
+                    }
+                }
+                for (nom, valeur) in &self.environnement {
+                    env::set_var(nom, valeur);
                 }
             }
         }
+    }
+
+    /// Story 33-10 (#925) — le garde rend **tout** l'environnement : une `KESH_*` posée
+    /// sous le garde disparaît, une variable effacée revient. Sous `cargo test` (un seul
+    /// processus), ce qu'un test y laisserait, le suivant le lirait.
+    #[test]
+    fn env_lock_restitue_tout_l_environnement() {
+        const SONDE: &str = "KESH_SONDE_ENV_LOCK_33_10";
+        let chemin_avant = {
+            let _g = env_lock();
+            let chemin = env::var_os("PATH").expect("montage : PATH présent");
+            // SAFETY: le verrou est tenu.
+            unsafe {
+                env::set_var(SONDE, "posée");
+                env::remove_var("PATH");
+            }
+            assert!(env::var_os(SONDE).is_some(), "montage : la sonde est posée");
+            chemin
+        };
+        let _g = env_lock();
+        assert_eq!(env::var_os(SONDE), None, "la variable posée est retirée");
+        assert_eq!(
+            env::var_os("PATH"),
+            Some(chemin_avant),
+            "la variable effacée est rendue"
+        );
     }
 
     /// Reset des variables d'environnement communes entre tests.
