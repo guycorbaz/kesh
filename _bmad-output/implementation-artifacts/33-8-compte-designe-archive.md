@@ -1,6 +1,6 @@
 # Story 33-8 : un compte désigné dans les paramètres de facturation ne s'archive plus sans avertissement (#486)
 
-Status: review
+Status: done
 
 *Fiche rédigée le 2026-11-06 en autonomie (Opus 5.5), worktree `/home/gcorbaz/devel/kesh-e33`, branche `story/33-0-kickoff`,
 numéros de ligne de `4ef19901`. Release **0.17.5**, Epic 33. **Aucune migration.** Registre : `e33-choix-autonomes-e334.md`,
@@ -135,6 +135,7 @@ Gate complet, E2E complet au dernier commit de code. Aucune migration : la colon
     - **E2E complet** (`e2e-r33-8-p4/`, `kesh_e2e_e335` recréée vide) : 378 tests, 353 passés, 18 ignorés, **7 échecs, tous de la KF-029** (`mode-expert:26,41`, `onboarding-path-b:65,92`, `onboarding:57,77,150`), 16,1 min ; port 3185 libre après le run.
     - Test ciblé avant commit : `accounts_designated_archive_e2e`, 25 sur 25.
   - Prompt de la P5 ciblée : `33-8-compte-designe-archive-review-prompt-p5.md`, bornes `62c08cbe..8ec3a46a`, rapport `kesh-gate-logs/e338-review-p5.md`.
+- 2026-11-07 : revue P5 ciblée (Sonnet 5.5, une lentille, `62c08cbe..8ec3a46a`, rapport `kesh-gate-logs/e338-review-p5.md`) : **0/0/0/1**, aucun réfuté. **L1** (« fichiers modifiés après restauration : 1 », deux fois, dans `mut/synthese-33-8-p5b.log`, contre « `git status` propre ») : le fichier compté était le prompt P5, encore non suivi pendant les mutations — vu par l'orchestrateur à 16:06 (`?? _bmad-output/implementation-artifacts/33-8-compte-designe-archive-review-prompt-p5.md`), commité ensuite dans `fd0411be` ; aucun fichier de code n'était modifié (les deux `.diff` ne touchent que le fichier visé). Vérifié par l'orchestrateur : l'E2E de `8ec3a46a` (`e2e-r33-8-p4/playwright.log`, fin) rend 7 échecs, les sept de la KF-029 de `docs/testing.md`, 353 passés, 18 ignorés ; nextest 4838/4838, 12 ignorés. **Revue de code terminée** : la boucle se clôt sur une passe sans finding au-dessus de LOW (P4 0/0/1/3 → P5 0/0/0/1 ; passes antérieures : leurs entrées). Story **done**.
 
 ## Dev Agent Record
 
