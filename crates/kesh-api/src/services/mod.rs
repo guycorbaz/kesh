@@ -53,7 +53,7 @@
 //!   outils du MCP se déclare en outre `READ ONLY` (mode de session, 32-6a ;
 //!   Q11, tranchée le 2026-10-24). Ce qu'un handler doit lire pour sa présentation
 //!   (le contexte PDF) passe par une fonction de service. L'action d'audit reste
-//!   un **littéral** à chaque `NewAuditLogEntry::user(` (garde
+//!   un **littéral** à chaque `NewAuditLogEntry::user(` ou `for_actor(` (garde
 //!   `tests/audit_label_registry.rs`). Les envois du serveur MCP (Story 32-8b)
 //!   ont leurs poignées propres, sans pool visible : `LectureEnvois` (une
 //!   relecture, sur le pool en lecture seule du MCP) et `EcritureEnvois` (le

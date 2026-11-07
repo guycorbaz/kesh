@@ -1737,8 +1737,18 @@ async fn les_huit_emetteurs_attribuent_la_trace_a_la_cle_d_api(pool: MySqlPool) 
     let livres = poser_livres(&pool).await;
     let app = spawn_app(pool.clone()).await;
     let jwt = forge_jwt(livres.user_id(), "Admin", livres.company_id());
+    // Des clés leurres : le numéro de la clé servie s'écarte de celui de l'utilisateur
+    // (assertion de montage : sans quoi `actor_api_key_id = user_id` passerait à vide).
+    for nom in ["leurre-1", "leurre-2", "leurre-3"] {
+        common::create_key_via_http(&app.client, &app.base_url, &jwt, nom, "read").await;
+    }
     let (cle_id, cle) =
         common::create_key_via_http(&app.client, &app.base_url, &jwt, "lecture", "read").await;
+    assert_ne!(
+        cle_id,
+        livres.user_id(),
+        "montage : numéro de clé ≠ utilisateur"
+    );
 
     let mut echecs = Vec::new();
     for ligne in TABLE_DES_TRACES {

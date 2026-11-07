@@ -321,9 +321,136 @@ async fn une_cle_d_api_ne_change_pas_le_mot_de_passe(pool: MySqlPool) {
     assert_eq!(app.login("denis", NOUVEAU_MDP).await.status(), 401);
 }
 
+/// AC-2 — le refus précède la lecture du corps : une clé au corps illisible reçoit le
+/// même 403 (patron d'`activity`, #899). Une session au corps illisible reçoit,
+/// elle, le refus du corps : c'est la sonde qui montre que ce corps est bien refusé.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn une_cle_au_corps_illisible_recoit_le_403(pool: MySqlPool) {
+    utilisateur(&pool, "lena", Role::Comptable).await;
+    let app = lancer(pool.clone()).await;
+    let (acces, _) = app.session("lena").await;
+    let (_, rw) =
+        common::create_key_via_http(&app.client, &app.base, &acces, "rw", "read-write").await;
+    let illisible = |bearer: String| {
+        app.client
+            .put(app.url("/api/v1/auth/password"))
+            .bearer_auth(bearer)
+            .header("Content-Type", "application/json")
+            .body("{pas du json")
+            .send()
+    };
+
+    let r = illisible(rw).await.unwrap();
+    assert_eq!(r.status(), 403);
+    let b: Value = r.json().await.unwrap();
+    assert_eq!(code(&b), "API_KEY_OPERATION_FORBIDDEN");
+
+    let r = illisible(acces).await.unwrap();
+    assert_eq!(r.status(), 400, "session : le refus du corps, inchangé");
+}
+
 // ---------------------------------------------------------------------------
 // AC-3 — le vol de jeton
 // ---------------------------------------------------------------------------
+
+/// Fait échoir un jeton non révoqué : c'est ainsi que finit une session inactive, dont
+/// la ligne reste à `revoked_at IS NULL` jusqu'à la purge du démarrage.
+async fn faire_echoir(pool: &MySqlPool, jeton: &str) {
+    let r = sqlx::query(
+        "UPDATE refresh_tokens SET expires_at = NOW(3) - INTERVAL 1 HOUR WHERE token = ?",
+    )
+    .bind(token_digest(jeton))
+    .execute(pool)
+    .await
+    .unwrap();
+    assert_eq!(r.rows_affected(), 1, "le jeton est bien échu");
+}
+
+/// Les lignes de l'utilisateur encore à `revoked_at IS NULL`.
+async fn non_revoquees(pool: &MySqlPool, u: i64) -> i64 {
+    sqlx::query_scalar(
+        "SELECT COUNT(*) FROM refresh_tokens WHERE user_id = ? AND revoked_at IS NULL",
+    )
+    .bind(u)
+    .fetch_one(pool)
+    .await
+    .unwrap()
+}
+
+/// M-E1 — `revoked_sessions` compte les sessions vivantes : une ligne échue à côté de
+/// deux vivantes est révoquée, sans être comptée.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn une_session_echue_n_est_pas_comptee(pool: MySqlPool) {
+    let u = utilisateur(&pool, "marc", Role::Comptable).await;
+    let app = lancer(pool.clone()).await;
+    let (_, rt_a) = app.session("marc").await;
+    let (_, rt_echu) = app.session("marc").await;
+    let (_, _rt_c) = app.session("marc").await;
+    jeton_rejouable(&app, &pool, &rt_a).await;
+    faire_echoir(&pool, &rt_echu).await;
+    assert_eq!(non_revoquees(&pool, u).await, 3, "montage : trois lignes");
+
+    assert_eq!(app.refresh(&rt_a).await.status(), 401);
+
+    let e = entrees(&pool, SESSION_THEFT).await;
+    assert_eq!(e.len(), 1, "une entrée");
+    let d: Value = serde_json::from_slice(e[0].4.as_ref().unwrap()).unwrap();
+    assert_eq!(
+        d,
+        json!({ "revoked_sessions": 2 }),
+        "deux sessions vivantes"
+    );
+    assert_eq!(
+        non_revoquees(&pool, u).await,
+        0,
+        "la ligne échue est révoquée aussi"
+    );
+}
+
+/// M-E1 — aucune session vivante : rien à annoncer, aucune entrée ; la ligne échue est
+/// tout de même révoquée, et le rejeu reste un 401.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn sans_session_vivante_aucune_entree(pool: MySqlPool) {
+    let u = utilisateur(&pool, "nina", Role::Comptable).await;
+    let app = lancer(pool.clone()).await;
+    let (_, rt) = app.session("nina").await;
+    let r = app.refresh(&rt).await;
+    assert_eq!(r.status(), 200, "rotation");
+    let b: Value = r.json().await.unwrap();
+    let neuf = b["refreshToken"].as_str().unwrap().to_string();
+    reculer_rotation(&pool, &rt).await;
+    faire_echoir(&pool, &neuf).await;
+    assert_eq!(
+        non_revoquees(&pool, u).await,
+        1,
+        "montage : une ligne échue"
+    );
+
+    assert_eq!(app.refresh(&rt).await.status(), 401);
+
+    assert!(entrees(&pool, SESSION_THEFT).await.is_empty());
+    assert_eq!(non_revoquees(&pool, u).await, 0, "révoquée quand même");
+}
+
+/// L-E5 — un rejeu après une reconnexion du titulaire révoque une session neuve : il
+/// s'écrit donc de nouveau. La borne est d'une entrée par lot de sessions.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn un_rejeu_apres_reconnexion_s_ecrit_de_nouveau(pool: MySqlPool) {
+    utilisateur(&pool, "olga", Role::Comptable).await;
+    let app = lancer(pool.clone()).await;
+    let (_, rt) = app.session("olga").await;
+    jeton_rejouable(&app, &pool, &rt).await;
+    assert_eq!(app.refresh(&rt).await.status(), 401);
+    assert_eq!(entrees(&pool, SESSION_THEFT).await.len(), 1);
+
+    let _ = app.session("olga").await;
+    assert_eq!(app.refresh(&rt).await.status(), 401);
+
+    let e = entrees(&pool, SESSION_THEFT).await;
+    assert_eq!(e.len(), 2, "une entrée par lot de sessions");
+    let d: Value = serde_json::from_slice(e[1].4.as_ref().unwrap()).unwrap();
+    assert_eq!(d, json!({ "revoked_sessions": 1 }));
+}
 
 /// AC-3 — rejeu hors de la grâce : une entrée attribuée au titulaire, le nombre
 /// de sessions révoquées juste, 401 inchangé. Second rejeu : 401, rien de plus.

@@ -465,21 +465,24 @@ pub async fn refresh(
                 return Err(AppError::InvalidRefreshToken("token just rotated".into()));
             }
             // Détection de vol : mass revoke tous les tokens de l'utilisateur
-            let revoked_count =
-                refresh_tokens::revoke_all_for_user(&state.pool, token.user_id, "theft_detected")
-                    .await?;
+            let vivantes = refresh_tokens::revoke_all_for_user_counting_live(
+                &state.pool,
+                token.user_id,
+                "theft_detected",
+            )
+            .await?;
             tracing::warn!(
                 user_id = token.user_id,
-                revoked_count = revoked_count,
+                live_sessions_revoked = vivantes,
                 "token replay detected, revoking all sessions"
             );
             // Story 33-7 (#435, C-e334-12) — au journal d'audit, au mieux : le 401 et
-            // la révocation ne dépendent pas de l'entrée. Seulement si une session a
-            // été révoquée : le jeton rejoué garde son motif `rotation`, chaque rejeu
-            // suivant repasse ici, et cette route est publique. L'auteur écrit est le
-            // titulaire de la session, l'auteur du rejeu étant inconnu de Kesh.
-            if revoked_count > 0 {
-                tracer_vol_de_jeton(&state, token.user_id, revoked_count).await;
+            // la révocation ne dépendent pas de l'entrée. Seulement si une session
+            // vivante a été fermée : le jeton rejoué garde son motif `rotation`, chaque
+            // rejeu suivant repasse ici, et cette route est publique. L'auteur écrit est
+            // le titulaire de la session, l'auteur du rejeu étant inconnu de Kesh.
+            if vivantes > 0 {
+                tracer_vol_de_jeton(&state, token.user_id, vivantes).await;
             }
             return Err(AppError::InvalidRefreshToken(
                 "token replay detected".into(),
@@ -616,19 +619,38 @@ async fn tracer_vol_de_jeton(state: &AppState, user_id: i64, revoked_sessions: u
 ///
 /// Changement de mot de passe par l'utilisateur authentifié.
 /// Séquence : verify current → hash new → update DB et audit → revoke all → new tokens.
+///
+/// Story 33-7 (C-e334-27) — une clé d'API qui connaît le mot de passe courant ne le
+/// change pas : la route lui rendrait un cookie de session et un jeton neufs. Le corps
+/// s'extrait en `Result`, jugé **après** ce refus (patron d'[`activity`], #899) : une
+/// clé reçoit donc le 403 même avec un corps illisible. Une clé `read` est arrêtée
+/// avant, par le middleware (`API_KEY_READ_ONLY`).
 pub async fn change_password(
     State(state): State<AppState>,
     axum::Extension(current_user): axum::Extension<CurrentUser>,
     jar: CookieJar,
-    Json(req): Json<ChangePasswordRequest>,
-) -> Result<(CookieJar, Json<RefreshResponse>), AppError> {
-    // Story 33-7 (C-e334-27) — une clé d'API qui connaît le mot de passe courant ne le
-    // change pas : la route lui rendrait un cookie de session et un jeton neufs. Une clé
-    // `read` est arrêtée avant, par le middleware (`API_KEY_READ_ONLY`).
+    body: Result<Json<ChangePasswordRequest>, axum::extract::rejection::JsonRejection>,
+) -> axum::response::Response {
+    use axum::response::IntoResponse;
     if current_user.api_key_id.is_some() {
-        return Err(AppError::ApiKeyOperationForbidden);
+        return AppError::ApiKeyOperationForbidden.into_response();
     }
+    let Json(req) = match body {
+        Ok(b) => b,
+        Err(rejet) => return rejet.into_response(),
+    };
+    change_password_with(state, current_user, jar, req)
+        .await
+        .into_response()
+}
 
+/// Le changement, une fois la clé d'API écartée et le corps lu ([`change_password`]).
+async fn change_password_with(
+    state: AppState,
+    current_user: CurrentUser,
+    jar: CookieJar,
+    req: ChangePasswordRequest,
+) -> Result<(CookieJar, Json<RefreshResponse>), AppError> {
     // Validation du nouveau mot de passe (politique configurable — story 1.7)
     password::validate_password(&req.new_password, state.config.password_min_length)?;
 

@@ -170,13 +170,15 @@ pub async fn revoke_by_token(pool: &MySqlPool, token: &str, reason: &str) -> Res
     Ok(rows_affected > 0)
 }
 
-/// Révoque tous les refresh tokens actifs d'un utilisateur avec une raison.
+/// Révoque tous les refresh tokens non révoqués d'un utilisateur avec une raison,
+/// échus compris.
 ///
-/// Utilisé au changement de mot de passe (reason="password_change"),
-/// à la détection de vol (reason="theft_detected"), et à la
-/// désactivation de compte (reason="admin_disable", story 1.7).
+/// Utilisé au changement de mot de passe (reason="password_change") et à la
+/// désactivation de compte (reason="admin_disable", story 1.7) ; la détection de vol
+/// passe par [`revoke_all_for_user_counting_live`].
 ///
-/// Retourne le nombre de tokens effectivement révoqués.
+/// Retourne le nombre de **lignes** révoquées, qui peut dépasser celui des sessions
+/// vivantes : ses appelants ne s'en servent que pour leur journal de serveur.
 pub async fn revoke_all_for_user(
     pool: &MySqlPool,
     user_id: i64,
@@ -195,6 +197,45 @@ pub async fn revoke_all_for_user(
     .rows_affected();
 
     Ok(rows_affected)
+}
+
+/// Story 33-7 (#435) — révoque comme [`revoke_all_for_user`], et rend le nombre de
+/// sessions **vivantes** ainsi fermées, non celui des lignes.
+///
+/// Une session qui prend fin par inactivité n'est pas révoquée : sa ligne reste à
+/// `revoked_at IS NULL`, `expires_at` passé, jusqu'à la purge du démarrage. Elle est
+/// révoquée ici aussi, sans être comptée : pour le journal d'audit, seule une session
+/// qu'on pouvait encore renouveler a été fermée. Deux `UPDATE` dans une transaction,
+/// sans lecture verrouillante : le premier compte, le second finit le travail.
+pub async fn revoke_all_for_user_counting_live(
+    pool: &MySqlPool,
+    user_id: i64,
+    reason: &str,
+) -> Result<u64, DbError> {
+    let mut tx = pool.begin().await.map_err(map_db_error)?;
+    let vivantes = sqlx::query(
+        "UPDATE refresh_tokens \
+         SET revoked_at = NOW(3), revoked_reason = ? \
+         WHERE user_id = ? AND revoked_at IS NULL AND expires_at > NOW(3)",
+    )
+    .bind(reason)
+    .bind(user_id)
+    .execute(&mut *tx)
+    .await
+    .map_err(map_db_error)?
+    .rows_affected();
+    sqlx::query(
+        "UPDATE refresh_tokens \
+         SET revoked_at = NOW(3), revoked_reason = ? \
+         WHERE user_id = ? AND revoked_at IS NULL",
+    )
+    .bind(reason)
+    .bind(user_id)
+    .execute(&mut *tx)
+    .await
+    .map_err(map_db_error)?;
+    tx.commit().await.map_err(map_db_error)?;
+    Ok(vivantes)
 }
 
 /// Story v0172-session (#876) — écrit l'échéance d'inactivité d'une session

@@ -3597,10 +3597,15 @@ l'horodatage et le contexte.
 
 \keshAttention\ \textbf{La connexion, la déconnexion et le renouvellement de session n'y
 figurent pas, par décision}. Le changement de votre propre mot de passe y figure («~Mot de
-passe modifié~»), sans aucun secret. Le vol d'un jeton de session aussi («~Vol de jeton détecté,
-sessions révoquées~», avec le nombre de sessions révoquées)~: l'auteur affiché est le
+passe modifié~»), sans aucun secret ; l'écran de ce changement n'existe pas encore (voir «~Gestion de votre
+compte~»), et seul le passage par l'API sous session l'écrit. Le rejeu d'un jeton de session déjà renouvelé aussi («~Vol de jeton détecté,
+sessions révoquées~», avec le nombre de sessions vivantes révoquées)~: l'auteur affiché est le
 \textbf{titulaire de la session}, non l'auteur du rejeu, que Kesh ne connaît pas~; un rejeu qui
-ne révoque plus aucune session n'est pas inscrit. L'export d'un rapport se distingue de sa
+ne ferme aucune session vivante n'est pas inscrit. Kesh observe un rejeu, non un vol~: un
+renouvellement dont la réponse s'est perdue (coupure réseau, mise en veille) le produit aussi.
+Si vous n'en voyez pas la cause, réinitialisez votre mot de passe («~Mot de passe oublié~»). L'entrée est écrite au mieux~: si
+elle échoue, vos sessions restent fermées, et seul le journal du serveur en garde la trace.
+L'export d'un rapport se distingue de sa
 consultation, grand livre compris~: «~Rapport exporté~», avec son format au détail.
 
 \begin{keshnote}
