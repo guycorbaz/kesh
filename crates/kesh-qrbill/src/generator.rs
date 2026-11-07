@@ -313,6 +313,28 @@ mod tests {
         ));
     }
 
+    /// **Revue P2 (P2-L5)** — la borne elle-même : 997 octets passent, 998 non.
+    #[test]
+    fn borne_de_997_octets_exacte() {
+        let mut data = sample(Reference::None, "CH9300762011623852957");
+        data.creditor.name = "é".repeat(70);
+        data.creditor.line1 = "é".repeat(70);
+        data.ultimate_debtor = Some(data.creditor.clone());
+        data.unstructured_message = Some("é".repeat(140));
+        let sans = build_payload(&data).unwrap().len();
+        let reste = 997 - sans;
+        assert!(reste <= 140, "montage : {reste} octets à combler");
+
+        data.billing_information = Some("x".repeat(reste));
+        assert_eq!(build_payload(&data).unwrap().len(), 997);
+
+        data.billing_information = Some("x".repeat(reste + 1));
+        assert!(matches!(
+            build_payload(&data),
+            Err(QrBillError::PdfGeneration(_))
+        ));
+    }
+
     #[test]
     fn qr_matrix_renders() {
         let data = sample(Reference::None, "CH9300762011623852957");

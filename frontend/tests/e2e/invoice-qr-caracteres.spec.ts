@@ -16,7 +16,7 @@ import {
  * Tests E2E — une QR-facture dont le débiteur porte « & » (Story 33-12a, #941).
  *
  * `Müller & Söhne` est au jeu de caractères de la directive (§ 4.1.1) : le PDF se
- * produit, là où Kesh répondait « caractère non autorisé » à un nom réel. Seul un
+ * produit, là où le téléchargement du PDF était refusé pour un nom réel. Seul un
  * E2E voit le nom traverser la route jusqu'au fichier.
  */
 

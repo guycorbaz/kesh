@@ -402,8 +402,9 @@ fn draw_invoice_section(
 
     // Creditor header (top-left). Le nom et l'adresse passent par `texte_imprime` : le
     // § 4.1.1 admet U+00A0, U+00AD et U+0218 à U+021B, que `lopdf` perdrait ici en
-    // silence, sur une pièce qui se fige (Story 33-12a). Un avoir, qu'aucun contrôle de
-    // jeu ne précède, passe par le même chemin : ce qui n'est pas au jeu y reste tel quel.
+    // silence, sur une pièce qui se fige (Story 33-12a). Un avoir et un rappel passent par
+    // le même chemin : U+2019 et U+2014 y deviennent `'` et `-` comme au code, et les 125
+    // lettres leur base ; tout autre caractère hors du jeu y reste traité comme avant.
     layer.use_text(
         texte_imprime(&inv.creditor_name),
         14.0,
@@ -814,7 +815,8 @@ const MAX_CARACTERES_PAIEMENT: usize = 46;
 /// La coupe est gloutonne : si le premier mot de la localité ne tient pas à côté du
 /// NPA, le NPA reste seul sur sa ligne, l'adresse restant entière (C-e3312-6). Les
 /// espaces multiples intérieures se réduisent à une, sur toute ligne : les lignes
-/// rejointes par une espace redonnent l'entrée à ces espaces près.
+/// rejointes par une espace redonnent l'entrée à ces espaces près, hors un mot coupé à
+/// la limite, que seule leur concaténation redonne.
 fn couper_ligne(ligne: &str, max: usize) -> Vec<String> {
     debug_assert!(max > 0, "une largeur nulle ne coupe rien");
     let mut lignes = Vec::new();
@@ -1535,7 +1537,8 @@ mod tests {
         textes
     }
 
-    /// Les opérations de contenu d'un PDF, pages à la suite.
+    /// Les opérations de contenu d'un PDF, pages à la suite. Une QR-facture n'a qu'une
+    /// page : ses lecteurs ne remettent ni position ni couleur à zéro entre deux pages.
     fn operations_du_pdf(bytes: &[u8]) -> Vec<printpdf::lopdf::content::Operation> {
         use printpdf::lopdf::{Document, content::Content};
 
@@ -2033,8 +2036,6 @@ mod tests {
             invisibles.is_empty(),
             "textes pas en noir : {invisibles:#?}"
         );
-        // Les 17 textes qui suivent la croix sont ceux que le défaut effaçait.
-        assert!(textes.len() > 17, "montage : {} textes", textes.len());
 
         // La croix elle-même : blanc, rouge, blanc, puis seulement le noir. Une remise
         // au noir placée avant ses branches garderait les textes noirs.
@@ -2065,6 +2066,14 @@ mod tests {
             .collect();
         let dernier = |nom: &str| operateurs.iter().rposition(|o| o == nom);
         assert!(dernier("rg") > dernier("re"), "noir avant les branches");
+
+        // Les 17 textes qui suivent la croix sont ceux que le défaut effaçait, avec cette
+        // fixture : compte, créancier, référence, message, montant, débiteur.
+        let apres_la_croix = operateurs[dernier("re").expect("la croix") + 1..]
+            .iter()
+            .filter(|o| *o == "Tj")
+            .count();
+        assert_eq!(apres_la_croix, 17);
     }
 
     /// **Revue P1 de la Story 33-12a (E-M2)** — le nom et l'adresse du corps passent
@@ -2090,16 +2099,18 @@ mod tests {
         }
     }
 
-    /// **Revue P1 de la Story 33-12a (E-M2)** — un avoir ne passe par aucune validation
-    /// de jeu : son texte ordinaire sort inchangé, et un caractère hors du § 4.1.1
-    /// reste traité comme avant, gardé s'il est en WinAnsi, perdu par `lopdf` sinon.
+    /// **Revues P1 (E-M2) et P2 (P2-M1) de la Story 33-12a** — un avoir ne passe par aucune
+    /// validation de jeu. Son texte ordinaire sort inchangé ; U+2019 et U+2014 deviennent
+    /// `'` et `-`, comme au code, ce qui change bien l'imprimé d'avant ; tout autre
+    /// caractère hors du § 4.1.1 reste traité comme avant, gardé s'il est en WinAnsi, perdu
+    /// par `lopdf` sinon.
     #[test]
     fn avoir_texte_ordinaire_inchange() {
         let (_, mut invoice, i18n) = invoice_fixture();
         invoice.creditor_name = "Müller & Söhne SA".into();
-        invoice.creditor_address_lines = vec!["Rue du Lac 1268".into()];
+        invoice.creditor_address_lines = vec!["Rue du Lac 1268".into(), "L\u{2019}Atelier".into()];
         invoice.debtor_name = "Pia – Rutschmann".into();
-        invoice.debtor_address_lines = vec!["AЩB".into()];
+        invoice.debtor_address_lines = vec!["AЩB".into(), "Paul\u{2014}Henri".into()];
 
         let pdf = generate_credit_note_pdf_with_date(&invoice, &i18n, fixed_date()).unwrap();
         let textes: Vec<String> = textes_du_pdf(&pdf).into_iter().map(|(_, _, t)| t).collect();
@@ -2108,6 +2119,8 @@ mod tests {
             "Rue du Lac 1268",
             "Pia – Rutschmann",
             "AB",
+            "L'Atelier",
+            "Paul-Henri",
         ] {
             assert!(
                 textes.iter().any(|t| t == attendu),

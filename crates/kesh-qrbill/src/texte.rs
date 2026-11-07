@@ -38,8 +38,8 @@ pub(crate) fn texte_code(s: &str) -> String {
     normalise.trim_matches(' ').to_string()
 }
 
-/// Le texte d'un champ tel qu'il s'imprime sur la section de paiement :
-/// [`texte_code`], puis le repli des lettres hors WinAnsi sur leur base.
+/// Le texte d'un champ tel qu'il s'imprime sur la section de paiement et, au corps, pour
+/// le nom et l'adresse : [`texte_code`], puis le repli des lettres hors WinAnsi sur leur base.
 ///
 /// Les lettres que WinAnsi porte (é, Š, Œ, €…) restent telles quelles. `Ĳ` rend
 /// `IJ` : l'imprimé peut donc être plus long que le code, ce qui ne touche ni les
