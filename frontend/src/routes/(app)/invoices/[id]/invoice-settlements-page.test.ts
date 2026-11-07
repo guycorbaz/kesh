@@ -44,6 +44,7 @@ vi.mock("$lib/app/stores/auth.svelte", () => ({
 const getInvoiceMock = vi.fn();
 const listSettlementsMock = vi.fn();
 const cancelSettlementMock = vi.fn();
+const settleMock = vi.fn();
 vi.mock("$lib/features/invoices/invoices.api", () => ({
   getInvoice: (id: number) => getInvoiceMock(id),
   listInvoiceSettlements: (id: number) => listSettlementsMock(id),
@@ -52,14 +53,16 @@ vi.mock("$lib/features/invoices/invoices.api", () => ({
   deleteInvoice: vi.fn(),
   validateInvoice: vi.fn(),
   unvalidateInvoice: vi.fn(),
-  settleInvoice: vi.fn(),
+  settleInvoice: (id: number, payload: unknown) => settleMock(id, payload),
   getInvoiceEmailPreview: vi.fn(),
   sendInvoiceEmail: vi.fn(),
   getInvoiceSettings: vi.fn(async () => ({})),
   writeOffInvoice: vi.fn(),
 }));
 vi.mock("$lib/features/accounts/accounts.api", () => ({
-  fetchAccounts: vi.fn(async () => []),
+  fetchAccounts: vi.fn(async () => [
+    { id: 1, number: "1000", name: "Caisse", accountType: "Asset", active: true, postable: true, role: null },
+  ]),
 }));
 vi.mock("$lib/features/bank-accounts/bank-accounts.api", () => ({
   listBankAccounts: vi.fn(async () => []),
@@ -258,5 +261,122 @@ describe("fiche facture — créer un avoir sur une facture réglée (Story 25-4
     const { findByText, queryByTestId } = render(Page);
     expect(await findByText("F-2026-005", { exact: false })).toBeTruthy();
     expect(queryByTestId("invoice-detail-rounding")).toBeNull();
+  });
+});
+
+// Revue P1 de la 33-6 (E-4 = A-4) : sans réponse, le règlement a pu être écrit, et le
+// POST ne porte pas de version : un second clic écrirait un second règlement.
+describe("fiche facture — règlement à l'issue inconnue", () => {
+  const aRegler = () => invoice({ paidAt: null, amountSettled: "0.00", amountDue: "100.00" });
+
+  async function regler() {
+    const r = render(Page);
+    await fireEvent.click(await r.findByTestId("settle-open"));
+    await fireEvent.change(await r.findByTestId("settle-type"), {
+      target: { value: "internal_account" },
+    });
+    await fireEvent.change(await r.findByTestId("settle-account"), { target: { value: "1" } });
+    await fireEvent.click(r.getByTestId("settle-confirm"));
+    return r;
+  }
+
+  beforeEach(() => {
+    getInvoiceMock.mockReset();
+    getInvoiceMock.mockResolvedValue(aRegler());
+    listSettlementsMock.mockReset();
+    listSettlementsMock.mockResolvedValue([]);
+    settleMock.mockReset();
+  });
+
+  for (const [nom, erreur] of [
+    ["coupure réseau", { code: "NETWORK_ERROR", status: 0, message: "Serveur injoignable." }],
+    ["délai dépassé", { code: "TIMEOUT", status: 0, message: "Pas de réponse." }],
+    ["502 du proxy", { code: "BAD_GATEWAY", status: 502, message: "Passerelle." }],
+    ["504 du proxy", { code: "GATEWAY_TIMEOUT", status: 504, message: "Passerelle." }],
+    ["500 du serveur", { code: "INTERNAL_ERROR", status: 500, message: "Erreur interne." }],
+    ["503 au commit", { code: "SERVICE_UNAVAILABLE", status: 503, message: "Base injoignable." }],
+    ["réponse illisible", new TypeError("réponse vide")],
+  ] as const) {
+    it(`${nom} : plus de geste identique, facture et règlements relus, issue dite`, async () => {
+      settleMock.mockRejectedValue(erreur);
+      const r = await regler();
+      const avis = await r.findByTestId("settle-unknown-outcome");
+      expect(avis.getAttribute("role")).toBe("alert");
+      await waitFor(() => expect(r.queryByTestId("settle-confirm")).toBeNull());
+      expect(settleMock).toHaveBeenCalledTimes(1);
+      await waitFor(() => expect(getInvoiceMock).toHaveBeenCalledTimes(2));
+      await waitFor(() => expect(listSettlementsMock).toHaveBeenCalledTimes(2));
+      await waitFor(() =>
+        expect((r.getByTestId("settle-open") as HTMLButtonElement).disabled).toBe(false),
+      );
+    });
+  }
+
+  it("relecture en échec : bouton indisponible jusqu'à une relecture réussie", async () => {
+    settleMock.mockRejectedValue({ code: "NETWORK_ERROR", status: 0, message: "x" });
+    const r = render(Page);
+    await fireEvent.click(await r.findByTestId("settle-open"));
+    getInvoiceMock.mockRejectedValue({ code: "NETWORK_ERROR", status: 0, message: "x" });
+    await fireEvent.change(await r.findByTestId("settle-type"), {
+      target: { value: "internal_account" },
+    });
+    await fireEvent.change(await r.findByTestId("settle-account"), { target: { value: "1" } });
+    await fireEvent.click(r.getByTestId("settle-confirm"));
+    await r.findByTestId("settle-unknown-reread");
+    expect((r.getByTestId("settle-open") as HTMLButtonElement).disabled).toBe(true);
+
+    getInvoiceMock.mockRejectedValueOnce({ code: "NETWORK_ERROR", status: 0, message: "x" });
+    await fireEvent.click(r.getByTestId("settle-unknown-reread"));
+    await waitFor(() => expect(getInvoiceMock.mock.calls.length).toBeGreaterThan(2));
+    expect((r.getByTestId("settle-open") as HTMLButtonElement).disabled).toBe(true);
+
+    getInvoiceMock.mockReset();
+    getInvoiceMock.mockResolvedValue(aRegler());
+    await fireEvent.click(await r.findByTestId("settle-unknown-reread"));
+    await waitFor(() =>
+      expect((r.getByTestId("settle-open") as HTMLButtonElement).disabled).toBe(false),
+    );
+    expect(r.queryByTestId("settle-unknown-reread")).toBeNull();
+    expect(r.getByTestId("settle-unknown-outcome")).toBeTruthy();
+  });
+
+  it("une liste de règlements illisible n'est pas une relecture réussie", async () => {
+    settleMock.mockRejectedValue({ code: "NETWORK_ERROR", status: 0, message: "x" });
+    const r = render(Page);
+    await fireEvent.click(await r.findByTestId("settle-open"));
+    listSettlementsMock.mockRejectedValue({ code: "NETWORK_ERROR", status: 0, message: "x" });
+    await fireEvent.change(await r.findByTestId("settle-type"), {
+      target: { value: "internal_account" },
+    });
+    await fireEvent.change(await r.findByTestId("settle-account"), { target: { value: "1" } });
+    await fireEvent.click(r.getByTestId("settle-confirm"));
+    await r.findByTestId("settle-unknown-reread");
+    expect((r.getByTestId("settle-open") as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it("un refus du serveur reste un refus : dialogue ouvert, message, aucune relecture", async () => {
+    settleMock.mockRejectedValue({ code: "VALIDATION_ERROR", status: 400, message: "Trop-perçu." });
+    const r = await regler();
+    await r.findByText("Trop-perçu.");
+    expect(r.getByTestId("settle-confirm")).toBeTruthy();
+    expect(r.queryByTestId("settle-unknown-outcome")).toBeNull();
+    expect(getInvoiceMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("un règlement réussi ensuite retire l'avis", async () => {
+    settleMock.mockRejectedValueOnce({ code: "TIMEOUT", status: 0, message: "x" });
+    const r = await regler();
+    await r.findByTestId("settle-unknown-outcome");
+    await waitFor(() =>
+      expect((r.getByTestId("settle-open") as HTMLButtonElement).disabled).toBe(false),
+    );
+    settleMock.mockResolvedValueOnce({ invoice: aRegler(), fullySettled: false });
+    await fireEvent.click(r.getByTestId("settle-open"));
+    await fireEvent.change(await r.findByTestId("settle-type"), {
+      target: { value: "internal_account" },
+    });
+    await fireEvent.change(await r.findByTestId("settle-account"), { target: { value: "1" } });
+    await fireEvent.click(r.getByTestId("settle-confirm"));
+    await waitFor(() => expect(r.queryByTestId("settle-unknown-outcome")).toBeNull());
   });
 });

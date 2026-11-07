@@ -959,6 +959,7 @@ pub fn serialize_company_invoice_settings_csv<W: Write>(
         "default_sales_journal",
         "journal_entry_description_template",
         "credit_note_number_format",
+        "supplier_internal_number_format",
         "default_payable_account_id",
         "default_rounding_account_id",
         "round_to_5_centimes",
@@ -983,6 +984,7 @@ pub fn serialize_company_invoice_settings_csv<W: Write>(
             cis.default_sales_journal.as_str().to_string(),
             txt(cis.journal_entry_description_template.clone()),
             txt(cis.credit_note_number_format.clone()),
+            txt(cis.supplier_internal_number_format.clone()),
             fmt_opt_i64(cis.default_payable_account_id),
             fmt_opt_i64(cis.default_rounding_account_id),
             fmt_bool(cis.round_to_5_centimes),
@@ -1204,6 +1206,7 @@ pub fn serialize_supplier_invoices_csv<W: Write>(
         "company_id",
         "contact_id",
         "supplier_invoice_number",
+        "internal_number",
         "status",
         "invoice_date",
         "due_date",
@@ -1230,6 +1233,7 @@ pub fn serialize_supplier_invoices_csv<W: Write>(
             si.company_id.to_string(),
             si.contact_id.to_string(),
             fmt_opt_str(&si.supplier_invoice_number),
+            fmt_opt_str(&si.internal_number),
             txt(si.status.clone()),
             fmt_date(si.invoice_date),
             fmt_opt_date(si.due_date),
@@ -2517,6 +2521,11 @@ mod tests {
     /// leur motif. Chacune est une colonne **technique** : aucune ne porte une
     /// information que l'export ne dirait pas déjà ailleurs.
     const COLONNES_HORS_EXPORT: &[(&str, &str, &str)] = &[
+        (
+            "fiscal_years",
+            "supplier_invoice_next_number",
+            "compteur du numéro interne (Story 33-1a) : un compteur technique, comme les autres (`exports/global.rs`), que les numéros exportés rendent lisible",
+        ),
         (
             "invoices",
             "pdf_storage_path",

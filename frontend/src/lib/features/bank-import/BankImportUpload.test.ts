@@ -24,7 +24,12 @@ vi.mock('./bank-profile.api', () => ({
 }));
 
 vi.mock('$lib/shared/utils/i18n.svelte', () => ({
-	i18nMsg: (key: string, fallback: string) => (i18nMode.keys ? key : fallback),
+	// Interpole comme le vrai `i18nMsg` : la phrase chiffrée du panneau se contrôle
+	// (Story 33-2, revue P1, L-A4).
+	i18nMsg: (key: string, fallback: string, args?: Record<string, string | number>) =>
+		i18nMode.keys
+			? key
+			: fallback.replace(/\{\s*\$(\w+)\s*\}/g, (_, k: string) => String(args?.[k] ?? '')),
 }));
 
 import * as api from './bank-import.api';
@@ -102,7 +107,7 @@ function previewResp(o: PreviewOpts = {}): BankImportPreviewResponse {
 			statementId: null,
 			accountIban: 'CH0000000000000000000',
 		})),
-		warnings: { duplicateLines: [], ...o.warnings },
+		warnings: { duplicateLines: [], uncertainLegacyLines: [], ...o.warnings },
 		transactions: [
 			{
 				bookingDate: '2026-01-01',
@@ -777,7 +782,7 @@ describe('Écran d’import — libellés traduits (Story 27-3, AC17)', () => {
 	];
 	// Mots ambigus (un IBAN, une date peuvent les contenir) : cherchés en nœud
 	// de texte entier.
-	const FR_WHOLE = /> *(Code|IBAN|Index|Date|Transactions) *</;
+	const FR_WHOLE = /> *(Code|IBAN|Ligne|Date|Transactions) *</;
 
 	it('V13 — chaque clé de l’AC17 apparaît, aucun texte fr en dur ne subsiste', async () => {
 		i18nMode.keys = true;
@@ -883,5 +888,55 @@ describe('BankImportUpload — dates de l’aperçu en forme suisse (v0172, #880
 		expect(get(c, 'preview-tx-row').textContent).toContain('01.01.2026');
 		expect(c.textContent).toContain('02.01.2026 01:00');
 		expect(c.textContent).not.toMatch(/2026-0\d-\d{2}/);
+	});
+});
+
+// Story 33-2 (#915, AC-F3) — le panneau des lignes incertaines : phrase au singulier
+// ou au pluriel, tableau, et aucun obstacle à la confirmation.
+describe('BankImportUpload — lignes incertaines (Story 33-2)', () => {
+	const uncertain = (n: number) => ({
+		uncertainLegacyLines: Array.from({ length: n }, (_, i) => ({
+			newIndex: i,
+			existingTransactionId: 40 + i,
+		})),
+	});
+
+	it('une ligne : le singulier, une rangée, Confirmer reste actif', async () => {
+		const { c } = await mount();
+		await previewWithA(c, { warnings: uncertain(1) });
+		const panel = get(c, 'warning-uncertain-legacy-lines');
+		expect(panel.textContent).toContain('1 ligne ressemble');
+		expect(panel.textContent).toContain('Kesh l\'importe');
+		const rows = panel.querySelectorAll('[data-testid="warning-uncertain-legacy-lines-row"]');
+		expect(rows.length).toBe(1);
+		// Revue P1 (B7, E-10) — le rang part de 1, et la ligne se dit : date, montant, détails.
+		const cells = [...rows[0].querySelectorAll('td')].map((td) => td.textContent);
+		expect(cells).toEqual(['1', '01.01.2026', '1.00 CHF', 'tx-A', '40']);
+		expect(get<HTMLButtonElement>(c, 'bank-import-confirm').disabled).toBe(false);
+	});
+
+	it('deux lignes : le pluriel, deux rangées, Confirmer reste actif', async () => {
+		const { c } = await mount();
+		await previewWithA(c, { warnings: uncertain(2) });
+		const panel = get(c, 'warning-uncertain-legacy-lines');
+		expect(panel.textContent).toContain('2 lignes ressemblent');
+		expect(panel.querySelectorAll('[data-testid="warning-uncertain-legacy-lines-row"]').length).toBe(2);
+		expect(get<HTMLButtonElement>(c, 'bank-import-confirm').disabled).toBe(false);
+	});
+
+	it('liste vide : aucun panneau', async () => {
+		const { c } = await mount();
+		await previewWithA(c);
+		expect(q(c, 'warning-uncertain-legacy-lines')).toBeNull();
+	});
+
+	// Revue P2 (L3) — les deux panneaux voisins numérotent de la même façon.
+	it('le panneau des doublons numérote lui aussi à partir de 1', async () => {
+		const { c } = await mount();
+		await previewWithA(c, {
+			warnings: { duplicateLines: [{ newIndex: 0, existingTransactionId: 9, key: 'k' }] },
+		});
+		const row = get(c, 'warning-duplicate-lines-row');
+		expect(row.querySelector('td')?.textContent).toBe('1');
 	});
 });

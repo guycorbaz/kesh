@@ -216,18 +216,21 @@ pub enum AppError {
     #[error("Administration interdite via clé API")]
     ApiKeyAdminForbidden,
 
-    // --- Story 27-1 — une opération réservée à l'interface web (#632) ---
+    // --- Story 27-1 — une opération fermée aux clés d'API (#632) ---
     /// Une requête authentifiée par clé d'API (`read-write` : une clé `read`
     /// est arrêtée avant, `API_KEY_READ_ONLY`) atteint une opération réservée
-    /// à l'interface web → `403` code `API_KEY_OPERATION_FORBIDDEN`.
-    /// Aujourd'hui : la suppression d'un import bancaire
-    /// (`DELETE /api/v1/bank-imports/{id}`, décision du Project Lead du
-    /// 2026-10-12, C-27-1-16).
+    /// aux sessions ouvertes dans le navigateur → `403` code
+    /// `API_KEY_OPERATION_FORBIDDEN`. Aujourd'hui : la suppression d'un import
+    /// bancaire (`DELETE /api/v1/bank-imports/{id}`, décision du Project Lead
+    /// du 2026-10-12, C-27-1-16), qui se fait à l'interface web, et le
+    /// changement de mot de passe (`PUT /api/v1/auth/password`, Story 33-7,
+    /// décision du 2026-11-06), qui n'a pas encore d'écran. D'où un message
+    /// qui ne renvoie pas à l'interface web (revue P2 de la 33-7, M1).
     ///
     /// **Distincte des deux précédentes à dessein** (doctrine D2 de la 22-4a) :
     /// [`AppError::ApiKeyManagementForbidden`] parle de gestion de clés,
-    /// [`AppError::ApiKeyAdminForbidden`] de routes d'administration — or la
-    /// suppression est une route Comptable. Rendue par le handler lui-même
+    /// [`AppError::ApiKeyAdminForbidden`] de routes d'administration — or ces
+    /// opérations n'en sont pas. Rendue par le handler lui-même
     /// (pas de `require_not_pat`, dont la garde d'`admin_pat_denied_e2e`
     /// interdit un second consommateur).
     #[error("Opération interdite via clé API")]
@@ -712,6 +715,13 @@ pub enum AppError {
     /// `found_ibans` aide l'utilisateur à corriger le compte cible.
     #[error("Aucun statement ne correspond au compte sélectionné")]
     BankImportNoMatchingStatement { found_ibans: Vec<String> },
+
+    /// Story 33-2 (#922, C-e332-6) — un relevé CAMT.053 que Kesh ne sait pas relire
+    /// comme la 0.17.3 : impossible de vérifier qu'il ne reprend pas une ligne déjà
+    /// importée → `422`, sans écriture ni confirmation possible. `cause` :
+    /// `reading`, `selection`, `line_count` ou `misaligned`.
+    #[error("Relecture héritée du relevé impossible : {cause}")]
+    BankImportLegacyRereadFailed { cause: &'static str },
 
     /// Story 8-3 — fichier déjà importé pour cette company sans
     /// `confirmDuplicateFile=true`. **Code HTTP changé 8-3 : 409 → 422**
@@ -1731,13 +1741,13 @@ impl IntoResponse for AppError {
                 ),
             ),
 
-            // Story 27-1 — opération réservée à l'interface web (#632).
+            // Story 27-1 (#632), Story 33-7 — opération fermée aux clés d'API.
             AppError::ApiKeyOperationForbidden => build_response(
                 StatusCode::FORBIDDEN,
                 "API_KEY_OPERATION_FORBIDDEN",
                 &t(
                     "error-api-key-operation-forbidden",
-                    "Cette opération n'est pas accessible via une clé API. Utilisez l'interface web.",
+                    "Opération réservée à une session ouverte dans le navigateur ; une clé d'API ne peut pas l'effectuer.",
                 ),
             ),
 
@@ -2411,6 +2421,25 @@ impl IntoResponse for AppError {
                             "Aucun statement ne correspond au compte sélectionné.",
                         ),
                         "details": { "foundIbans": found_ibans }
+                    }
+                });
+                (StatusCode::UNPROCESSABLE_ENTITY, Json(body)).into_response()
+            }
+
+            AppError::BankImportLegacyRereadFailed { cause } => {
+                // La cause seule : aucun contenu du fichier dans les journaux.
+                tracing::warn!(
+                    cause,
+                    "relevé CAMT.053 refusé : relecture héritée impossible"
+                );
+                let body = serde_json::json!({
+                    "error": {
+                        "code": "BANK_IMPORT_LEGACY_REREAD_FAILED",
+                        "message": t(
+                            "bank-import-errors-legacy-reread-failed",
+                            "Kesh ne peut pas vérifier que ce relevé ne reprend pas des lignes déjà importées par une version antérieure : il n'a rien enregistré. Demandez à votre banque un nouvel export de ce relevé ; à défaut, vérifiez dans la liste des transactions du compte quelles lignes y figurent déjà, et saisissez les autres avec un relevé saisi à la main.",
+                        ),
+                        "details": { "cause": cause }
                     }
                 });
                 (StatusCode::UNPROCESSABLE_ENTITY, Json(body)).into_response()
@@ -3411,6 +3440,21 @@ impl IntoResponse for AppError {
                         "Conflit de version — la ressource a été modifiée",
                     ),
                 ),
+                // Story 33-8 (#486) : le même patron que `AccountHasEntries` ci-dessous,
+                // le refus nomme les réglages.
+                DbError::AccountDesignatedInSettings { settings } => {
+                    let body = serde_json::json!({
+                        "error": {
+                            "code": "ACCOUNT_DESIGNATED_IN_SETTINGS",
+                            "message": t(
+                                "error-account-designated-in-settings",
+                                "Ce compte est désigné dans les paramètres de facturation : confirmez pour l’archiver quand même.",
+                            ),
+                            "details": { "settings": settings }
+                        }
+                    });
+                    (StatusCode::CONFLICT, Json(body)).into_response()
+                }
                 // Story 25-2-a ([#382], [#274]) — **409 et non 400** : le payload
                 // est valide, c'est l'ÉTAT du compte qui s'y oppose. Même lecture
                 // que `OptimisticLockConflict` ci-dessus, et symétrique inverse de
@@ -4811,7 +4855,7 @@ fn settlement_counterparty_message(
         (SettlementAccountRole::Counterparty, ClaimSide::Payable) => match batch {
             Some(ctx) => {
                 let invoice = ctx
-                    .supplier_invoice_number
+                    .supplier_invoice_label
                     .clone()
                     .unwrap_or_else(|| format!("#{}", ctx.supplier_invoice_id));
                 args.set("invoice", invoice.clone());
@@ -5809,7 +5853,7 @@ mod tests {
             Some(SettlementBatchContext {
                 payment_batch_id: 5,
                 supplier_invoice_id: 42,
-                supplier_invoice_number: Some("FF-7".into()),
+                supplier_invoice_label: Some("FF-7".into()),
             }),
         ))
         .into_response();
@@ -5831,7 +5875,7 @@ mod tests {
             Some(SettlementBatchContext {
                 payment_batch_id: 5,
                 supplier_invoice_id: 42,
-                supplier_invoice_number: None,
+                supplier_invoice_label: None,
             }),
         ))
         .into_response();

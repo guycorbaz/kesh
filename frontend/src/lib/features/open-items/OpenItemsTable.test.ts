@@ -41,7 +41,7 @@ describe('AC2 — colonnes, exercice et numéro, pièces, ordre (test 3)', () =>
 	});
 
 	it('les cinq types de pièce : quatre liens possibles, règlement sans facture et transaction sans lien', () => {
-		const doc = { id: 5, number: 'N-1', invoiceId: null, invoiceNumber: null };
+		const doc = { id: 5, number: 'N-1', internalNumber: null, invoiceId: null, invoiceNumber: null };
 		const data = view({
 			items: [
 				item({ lineId: 1, document: { ...doc, type: 'invoice' } }),
@@ -137,12 +137,12 @@ describe('AC4, AC10 — la case (test 5, test 11)', () => {
 			items: [
 				item({
 					lineId: 1,
-					document: { type: 'bankTransaction', id: 3, number: null, invoiceId: null, invoiceNumber: null },
+					document: { type: 'bankTransaction', id: 3, number: null, internalNumber: null, invoiceId: null, invoiceNumber: null },
 				}),
 				item({
 					lineId: 2,
 					manuallyLetterable: false,
-					document: { type: 'invoice', id: 4, number: 'F-4', invoiceId: null, invoiceNumber: null },
+					document: { type: 'invoice', id: 4, number: 'F-4', internalNumber: null, invoiceId: null, invoiceNumber: null },
 				}),
 			],
 		});

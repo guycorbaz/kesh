@@ -114,6 +114,7 @@ sortie! {
         nature: NaturePiece,
         id: i64,
         numero: Option<TexteNonFiable>,
+        numero_interne: Option<TexteNonFiable>,
         facture_id: Option<i64>,
         numero_facture: Option<TexteNonFiable>,
     }
@@ -165,6 +166,7 @@ fn piece(d: DocumentOwner) -> Piece {
         kind,
         id,
         number,
+        internal_number,
         invoice_id,
         invoice_number,
     } = d;
@@ -172,6 +174,7 @@ fn piece(d: DocumentOwner) -> Piece {
         nature: nature(kind),
         id,
         numero: number.map(TexteNonFiable::de),
+        numero_interne: internal_number.map(TexteNonFiable::de),
         facture_id: invoice_id,
         numero_facture: invoice_number.map(TexteNonFiable::de),
     }

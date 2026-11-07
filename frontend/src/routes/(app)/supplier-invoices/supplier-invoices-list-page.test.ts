@@ -14,11 +14,17 @@ import type { SupplierInvoiceListItemResponse } from '$lib/features/supplier-inv
 vi.mock('$app/state', async () => ({
 	page: (await import('./page-state.test-helper.svelte')).pageState,
 }));
+const navigation = vi.hoisted(() => ({
+	avant: [] as ((nav: { to: { url: URL } | null }) => void)[],
+}));
 vi.mock('$app/navigation', () => ({
 	goto: vi.fn(async (cible: string) => {
 		const m = await import('./page-state.test-helper.svelte');
 		m.pageState.url = new URL(cible, m.pageState.url);
 	}),
+	beforeNavigate: (rappel: (nav: { to: { url: URL } | null }) => void) => {
+		navigation.avant.push(rappel);
+	},
 }));
 import { pageState } from './page-state.test-helper.svelte';
 import { goto } from '$app/navigation';
@@ -42,6 +48,7 @@ function item(over: Partial<SupplierInvoiceListItemResponse>): SupplierInvoiceLi
 		contactId: 1,
 		contactName: 'Dubarde SA',
 		supplierInvoiceNumber: 'FF-1',
+		internalNumber: null,
 		status: 'open',
 		invoiceDate: '2026-05-10',
 		dueDate: null,
@@ -329,5 +336,114 @@ describe('liste des factures fournisseurs — pagination et filtre (v0172, #870)
 		serveur(1);
 		const { findByTestId } = render(Page);
 		expect((await findByTestId('supplier-invoices-count')).textContent?.trim()).toBe('1 facture');
+	});
+});
+
+// Story 33-1b (#926) — les deux colonnes, le tri et la recherche par l'adresse.
+describe('liste des factures fournisseurs — le numéro interne (33-1b, #926)', () => {
+	const lastQuery = () => listMock.mock.calls[listMock.mock.calls.length - 1][0];
+	const at = (search: string) => {
+		pageState.url = new URL(`http://localhost/supplier-invoices${search}`);
+	};
+
+	it('AC2 — deux colonnes ; un brouillon jamais validé rend « — », un brouillon numéroté son numéro', async () => {
+		listMock.mockImplementation(async () => ({
+			items: [
+				item({ id: 1, status: 'draft', internalNumber: null, supplierInvoiceNumber: 'ABC' }),
+				item({ id: 2, status: 'draft', internalNumber: 'FF-2026-002', supplierInvoiceNumber: null }),
+			],
+			total: 2,
+			offset: 0,
+			limit: 50,
+		}));
+		const { findAllByTestId } = render(Page);
+		const internes = await findAllByTestId('supplier-invoice-row-internal-number');
+		const fournisseurs = await findAllByTestId('supplier-invoice-row-supplier-number');
+		expect(internes.map((c) => c.textContent?.trim())).toEqual(['—', 'FF-2026-002']);
+		expect(fournisseurs.map((c) => c.textContent?.trim())).toEqual(['ABC', '—']);
+	});
+
+	it('AC3 — l’en-tête trie par l’adresse, ramène `offset` à 0 (M9), et dit le sens par `aria-sort`', async () => {
+		at('?offset=50');
+		const { findByTestId } = render(Page);
+		const bouton = await findByTestId('supplier-invoices-sort-internal-number');
+		expect(bouton.closest('th')?.getAttribute('aria-sort')).toBe('none');
+		await fireEvent.click(bouton);
+		await waitFor(() => {
+			expect(pageState.url.searchParams.get('sort')).toBe('internalNumber');
+			expect(pageState.url.searchParams.get('order')).toBe('asc');
+			expect(pageState.url.searchParams.get('offset')).toBeNull();
+		});
+		await waitFor(() => expect(lastQuery().sort).toBe('internalNumber'));
+		expect(lastQuery().order).toBe('asc');
+		expect(lastQuery().offset).toBe(0);
+		const trie = await findByTestId('supplier-invoices-sort-internal-number');
+		expect(trie.closest('th')?.getAttribute('aria-sort')).toBe('ascending');
+		await fireEvent.click(trie);
+		await waitFor(() => expect(lastQuery().order).toBe('desc'));
+	});
+
+	it('AC3 — `sort` absent : aucun tri demandé, l’ordre d’aujourd’hui', async () => {
+		render(Page);
+		await waitFor(() => expect(listMock).toHaveBeenCalled());
+		expect(lastQuery()).toEqual({ limit: 50, offset: 0, status: ['draft', 'open', 'paid'] });
+	});
+
+	it('AC4 — `?q=` part au serveur, et le champ l’affiche ; la liste vide le dit', async () => {
+		listMock.mockImplementation(async () => ({ items: [], total: 0, offset: 0, limit: 50 }));
+		at('?q=FF-2026');
+		const { findByTestId } = render(Page);
+		await waitFor(() => expect(lastQuery().q).toBe('FF-2026'));
+		const champ = (await findByTestId('supplier-invoices-search')) as HTMLInputElement;
+		expect(champ.value).toBe('FF-2026');
+		expect((await findByTestId('supplier-invoices-empty')).textContent?.trim()).toBe(
+			'Aucune facture ne correspond à « FF-2026 ».',
+		);
+	});
+
+	it('AC4 — la frappe est temporisée, puis écrit `q` à l’adresse et remet `offset` à 0', async () => {
+		at('?offset=50');
+		const { findByTestId } = render(Page);
+		const champ = await findByTestId('supplier-invoices-search');
+		await fireEvent.input(champ, { target: { value: 'Dupont' } });
+		expect(pageState.url.searchParams.get('q')).toBeNull();
+		await waitFor(() => expect(pageState.url.searchParams.get('q')).toBe('Dupont'));
+		expect(pageState.url.searchParams.get('offset')).toBeNull();
+		await waitFor(() => expect(lastQuery().q).toBe('Dupont'));
+	});
+
+	// Revue P1 de la 33-1b (B-F1, E-M1) : une frappe en attente ne ramène personne à la liste.
+	const auDelaDeLaFrappe = () => new Promise((fin) => setTimeout(fin, 350));
+
+	it('AC4 — l’écran quitté avant la fin de la frappe : aucune navigation tardive', async () => {
+		const { findByTestId, unmount } = render(Page);
+		const champ = await findByTestId('supplier-invoices-search');
+		await fireEvent.input(champ, { target: { value: 'Dupont' } });
+		unmount();
+		await auDelaDeLaFrappe();
+		expect(goto).not.toHaveBeenCalled();
+	});
+
+	it('AC4 — une navigation vers un autre écran annule la frappe en attente, même écran monté', async () => {
+		navigation.avant.length = 0;
+		const { findByTestId } = render(Page);
+		const champ = await findByTestId('supplier-invoices-search');
+		await fireEvent.input(champ, { target: { value: 'Dupont' } });
+		for (const rappel of navigation.avant) {
+			rappel({ to: { url: new URL('http://localhost/supplier-invoices/42') } });
+		}
+		await auDelaDeLaFrappe();
+		expect(goto).not.toHaveBeenCalled();
+	});
+
+	it('AC4 — une navigation dans la liste (tri, page) garde la frappe en attente', async () => {
+		navigation.avant.length = 0;
+		const { findByTestId } = render(Page);
+		const champ = await findByTestId('supplier-invoices-search');
+		await fireEvent.input(champ, { target: { value: 'Dupont' } });
+		for (const rappel of navigation.avant) {
+			rappel({ to: { url: new URL('http://localhost/supplier-invoices?sort=internalNumber') } });
+		}
+		await waitFor(() => expect(pageState.url.searchParams.get('q')).toBe('Dupont'));
 	});
 });

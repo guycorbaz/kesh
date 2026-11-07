@@ -599,3 +599,62 @@ fn invalid_char_refs_are_malformed_819() {
         );
     }
 }
+
+/// Un relevé v04 d'une ligne, sur lequel les tests de la 33-2 greffent un élément
+/// du `Stmt` ou la date de comptabilisation de la ligne.
+fn releve_33_2(stmt_open: &str, stmt_extra: &str, booking_date: &str) -> Vec<u8> {
+    format!(
+        r#"<?xml version="1.0" encoding="UTF-8"?>
+<Document xmlns="urn:iso:std:iso:20022:tech:xsd:camt.053.001.04">
+  <BkToCstmrStmt>
+    {stmt_open}
+      {stmt_extra}
+      <Id>STMT-33-2</Id>
+      <FrToDt><FrDtTm>2026-10-01T00:00:00</FrDtTm><ToDtTm>2026-10-31T23:59:59</ToDtTm></FrToDt>
+      <Acct><Id><IBAN>CH4431999123000889012</IBAN></Id><Ccy>CHF</Ccy></Acct>
+      <Ntry><Amt Ccy="CHF">10.00</Amt><CdtDbtInd>CRDT</CdtDbtInd><BookgDt><Dt>{booking_date}</Dt></BookgDt></Ntry>
+    </Stmt>
+  </BkToCstmrStmt>
+</Document>
+"#
+    )
+    .into_bytes()
+}
+
+/// AC-L1 (33-2, #923) — une entité inconnue dans le **texte** d'un élément que Kesh
+/// ne lit pas est refusée : la portée du refus est le texte du fichier entier.
+#[test]
+fn unknown_entity_in_an_unread_element_is_refused() {
+    let xml = releve_33_2("<Stmt>", "<Foo>&inconnue;</Foo>", "2026-10-10");
+    assert!(
+        matches!(parse_camt053(&xml), Err(CamtError::MalformedXml(_))),
+        "{:?}",
+        parse_camt053(&xml)
+    );
+}
+
+/// AC-L1 (33-2, #923) — la borne de cette portée : dans un **attribut** non lu,
+/// l'entité inconnue n'est pas refusée (seul `Ccy` est lu).
+#[test]
+fn unknown_entity_in_an_unread_attribute_is_not_refused() {
+    let xml = releve_33_2(r#"<Stmt Foo="&inconnue;">"#, "", "2026-10-10");
+    let stmts = parse_camt053(&xml).expect("attribut non lu : accepté");
+    assert_eq!(stmts[0].transactions.len(), 1);
+}
+
+/// AC-S5 (a) (33-2, C-e332-22) — la relecture héritée lit comme la 0.17.3, **sans
+/// borne d'années** : une année à un, deux ou trois chiffres n'y est pas une erreur.
+/// Une borne sur les dates reçues se pose à la lecture corrigée (33-4) ; ce test ne
+/// dit rien de celle-ci.
+#[test]
+fn legacy_reading_has_no_year_bound_922() {
+    use chrono::Datelike;
+    let read = |date: &str| {
+        let xml = releve_33_2("<Stmt>", "", date);
+        kesh_import::camt053::parse_legacy_0173(&xml).expect("lecture héritée")[0].transactions[0]
+            .booking_date
+            .year()
+    };
+    assert_eq!(read("0999-01-15"), 999);
+    assert_eq!(read("&#x32;026-10-10"), 26);
+}

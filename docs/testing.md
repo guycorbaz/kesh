@@ -369,7 +369,7 @@ KESH_BACKEND_URL=http://localhost:3001 npm run test:e2e
 
 ## Les échecs attendus — la suite ne passe PAS au vert, et il faut le savoir
 
-⚠️ **`npm run test:e2e` ne passe PAS au vert : le compte attendu est de 7 à 10 échecs, quelle que
+⚠️ **`npm run test:e2e` ne passe PAS au vert : le compte attendu est de 7 à 9 échecs, quelle que
 soit l'heure** (formule ci-dessous ; la dépendance à l'heure de la KF-051 a disparu le 2026-10-13,
 Story 28-8 — cf. la note historique sous le tableau). Ces échecs sont ATTENDUS.
 Sans cette liste, la règle du `CLAUDE.md` — « la suite complète tourne en local avant tout
@@ -399,11 +399,10 @@ une régression — mais cela ne se conclut qu'après le rejeu isolé, jamais au
 | `onboarding.spec.ts:77` | KF-029 (#97) |
 | `onboarding.spec.ts:150` | KF-029 (#97) |
 | **un huitième, VARIABLE** | pollution d'état entre specs — voir ci-dessous |
-| `sidebar-navigation.spec.ts:75` | **KF-052 (#424)** — déterministe, dépend de la route d'atterrissage |
 
 *2026-10-13, Story 28-8 : malgré son intitulé, ce tableau est la liste **vivante** des échecs
 attendus — il a reçu des lignes après le 2026-08-26 ; les deux lignes KF-051 (#421, ex-KF-045)
-en sont retirées, le rappel de l'E2E étant daté d'une heure avant l'appel.*
+en sont retirées, le rappel de l'E2E étant daté d'une heure avant l'appel. 2026-11-07, Story 33-9 : la ligne `sidebar-navigation.spec.ts:75` (`:75` à l'époque, `:90` aujourd'hui ; KF-052, #424) en est retirée à son tour, le test attendant désormais l'écriture.*
 
 ⏰ **Note historique — la KF-051 (#421, ex-KF-045), corrigée.** Deux tests,
 `invoices.spec.ts` « historique des rappels affiché » et « axe-core sans violations sur la fiche »,
@@ -412,6 +411,8 @@ la route compare à `Utc::now().naive_utc()` (`dunning_reminders.rs:261`, garde 
 future »), si bien qu'avant **12:00 UTC** midi était futur et la route rendait **422**. Corrigée par
 la Story 28-8 : le helper date le rappel d'une heure avant l'appel. **Un test qui dépend de l'heure
 ne rougit que pour la moitié des gens qui le lancent.**
+
+⏰ **Note historique — la KF-052 (#424), corrigée par la Story 33-9, le 2026-11-07.** Le test est à `sidebar-navigation.spec.ts:90` depuis cette story (`:81` avant elle). Reproduite : rouge dans l'un des deux tirages de suite relevés, ce qui n'est pas une fréquence, `Expected "true"`, `Received null`, et, par une sonde sur le chemin même du test, `null` puis `"true"` 4 à 6 ms plus tard, deux tirages sur cinq. `open` se pose au clic, `toggle` est une tâche, l'écriture la suit, et le test lisait une seule fois entre les deux : il attend désormais la valeur. **La « route d'atterrissage » ci-dessous est réfutée à l'exécution** (la route est `/` à chaque tirage), et le profil « déterministe, échoue seul » n'a pas été retrouvé (cent passages seul, sans rouge). La sonde a aussi montré un vrai défaut, corrigé avec lui : le dépliage automatique écrivait au stockage, contre son commentaire. ⚠️ **Ce qui n'est pas établi** : deux suites complètes après le correctif, sans autre échec que les sept attendus (et vingt passages de la spec seule) sont compatibles avec un défaut de même fréquence ; l'écart entre les deux tirages sur cinq de la sonde et les cent passages sans rouge n'est pas expliqué. La preuve est de forme : le test n'a plus de lecture unique, et sa mutation M1 montre que son attente n'est pas vide. Si ce test rougit de nouveau, ce n'est donc pas forcément une régression de la persistance. Les deux paragraphes suivants restent tels qu'écrits à leur date.
 
 ⚠️ **La KF-052 dépend de l'état, pas de l'heure** : le groupe « Administration » s'auto-ouvre
 sans persister quand la route active y tombe, et le test suppose le groupe fermé. Elle a **passé
@@ -425,8 +426,7 @@ Relevé du 2026-09-11 à 16:23 UTC : le test échoue dans la suite et **passe se
 c'était donc la pollution, pas la KF-052. *Lire la liste nominative ne suffit pas à nommer la
 cause : sur ce test, elle donne deux réponses, et c'est le rejeu qui tranche.*
 
-⇒ **Le compte attendu est `7 + (1 si la KF-052 se déclenche) + 0 à 2 de pollution`**, soit
-**7 à 10** — la borne basse est 7 parce qu'un run sans aucune pollution est observé (registre de
+⇒ **Le compte attendu est `7 + 0 à 2 de pollution`**, soit **7 à 9** *(7 à 10 jusqu'au 2026-11-07, avec la KF-052 ; relevé daté : ce qui suit ne change pas)* — la borne basse est 7 parce qu'un run sans aucune pollution est observé (registre de
 sprint, 28-4a : « E2E 273 + 7 KF-029 »).
 
 **Relevé du 2026-10-13** (Story 28-8, 22:33 UTC, après 12:00 UTC ; base `kesh_e2e_288` reconstruite) :
@@ -596,6 +596,30 @@ reproductible de façon déterministe.
 **Quand la lancer** : à toute modification d'un des deux scripts, de la section Synology du manuel ou de l'image
 `mariadb:10.11` qu'ils emploient — et citer sa sortie au Dev Agent Record. Elle n'est pas dans le gate : elle
 exige Docker et des conteneurs, et elle ne dépend que de ces fichiers.
+
+## La recette de montée et de retour — `scripts/recette-montee.sh`
+
+Story 33-10 (#925). Elle joue, depuis l'image publiée précédente et sur des données synthétiques, ce qu'une release à migration doit éprouver : base peuplée, montée par le binaire neuf, refus de l'image précédente sur la base migrée, retour par le dump, et, avec `--import`, le `.keshbackup` dans le binaire neuf. Cinq phases, chacune son code de sortie.
+
+```sh
+flock "$GATE_LOGS/.gate.lock" scripts/mem-guard.sh scripts/recette-montee.sh \
+  --image gcorbaz/kesh:0.17.4 --binaire target/debug/kesh-api --static frontend/build \
+  --port-api 3190 --port-base 3391 --migrations-attendues 1 --diff-attendu migrations,supplier_invoices \
+  --apres ../kesh-gate-logs/rel0175/verifs-0175.sh --import
+```
+
+- **`--diff-attendu`** nomme les fichiers d'empreinte qui peuvent différer après la montée et à l'import : `migrations`, `min_required`, `api`, `users`, `audit_log`, ou une table. Tout autre écart échoue.
+- **Ce que l'empreinte couvre, exactement** : les tables `journal_entries`, `journal_entry_lines`, `invoices`, `invoice_lines`, `invoice_settlements`, `supplier_invoices`, `supplier_invoice_lines`, `bank_imports`, `bank_transactions`, `bank_accounts`, `contacts`, `accounts`, `companies`, `fiscal_years`, `company_invoice_settings`, entières ; `users` sans son condensat, sa version ni ses dates (le binaire réinitialise le compte d'administration à chaque démarrage, avis `Recovery effectué`) ; `audit_log`, les entrées d'avant la montée seulement, comptées et non bornées par numéro, sans leur numéro (l'import d'une sauvegarde les ajoute, dans l'ordre, après celles de l'installation qui la reçoit ; une entrée écrite entre le relevé et la restauration ferait signaler un écart à tort) ; `_sqlx_migrations`, `_kesh_version` ; l'API des factures client et fournisseur peuplées. **Ne sont pas comparées** les autres tables (séquences de numérotation, TVA, projets, règles, lots, pièces importées, sessions…). **Aucun document n'est peuplé ni comparé** : les pièces de l'image vivent dans son `/tmp` et disparaissent avec elle, si bien qu'une recette verte n'établit rien du dossier des documents, le troisième élément de la sauvegarde d'avant une mise à jour.
+- **Le peuplement est vérifié** : un refus de l'API fait échouer la phase 1, et les statuts relus en base doivent être ceux attendus (`1:open,2:paid,3:cancelled,4:draft` côté fournisseur, `validated,validated,draft` côté client, un règlement).
+- **`--apres`** est le crochet de la release, pour ce qui ne vaut que pour elle ; il dispose de `SQL`, `api`, `L`, doit se trouver sous `../kesh-gate-logs/`, part de `$D/cwd` avec `HOME` sous `$D`, et tourne sous `set -e`, avec ses exceptions : un échec dans une condition (`if`, `&&`, `||`), dans une fonction appelée d'une condition ou dans un `local x=$(…)` ne l'arrête pas. ⚠️ **C'est du code de l'appelant, exécuté avec les droits du script** : rien ne l'empêche d'atteindre `docker`, le réseau ou un autre dossier. Il se relit avant la release, comme le reste du code.
+- **`--prefixe`** nomme les conteneurs (`kesh-recette` par défaut), base et image, tous au label `kesh.recette`. Un conteneur à ce label, d'un run tué ou d'un run en cours, fait refuser en donnant son nom : `docker stop <nom>` le retire, s'il s'agit bien d'un reste.
+- **Rien d'extérieur, pour le script lui-même** : il se relance par `env -i`, `HOME` neutralisé (aucune configuration de `docker`, `curl` ni `jq` n'est lue), il refuse tout démon Docker qui n'est pas un socket local (`docker context inspect`), sa base est un conteneur `mariadb:10.11` qu'il crée lui-même, il n'écrit que dans un dossier `mktemp -d` sous `/tmp`, qu'il nomme à sa dernière ligne et n'efface pas. Il n'emploie pas le MariaDB de dev, aucune option ne désigne un hôte, une base ou une URL, et il n'arrête que les conteneurs qui portent le jeton de son run. `KESH_DOCKER` et `KESH_CURL`, ses variables de test, traversent la relance et s'exécutent : qui les pose exécute déjà ce qu'il veut. ⚠️ **Conséquences de `HOME` neutralisé et de `PATH=/usr/bin:/bin`** : `docker` doit se trouver dans l'un de ces deux dossiers (sinon « outil manquant », code 5) ; un Docker sans racine ou Docker Desktop, dont le contexte vit sous `~/.docker`, n'est pas joint (refus, code 5) ; et les tirages se font **sans les identifiants** de la station, donc anonymes et soumis à la limite de débit de Docker Hub : une station qui doit s'authentifier tire d'avance `mariadb:10.11` et l'image visée, que le script trouve alors sans tirer.
+- **`releve-B.xml`** n'est lu par aucune phase : il reprend les lignes du relevé A et en ajoute une, pour le crochet d'une release qui toucherait à la reconnaissance des doublons.
+- **Son test** (`scripts/tests/recette-montee.test.sh`, factices seulement) prend **99 à 104 s** sous nextest à la station (deux tirages, le 2026-11-07, après la revue P2 ; 71 s seul et 100 s sous nextest avant elle), dont, par construction et non mesurés, 22 à 24 s pour le cas du client `docker` sourd, qui attend la fin de l'arrêt borné : chaque scénario va de la relance à la sortie. Son enveloppe Rust le borne à 4 Go de mémoire virtuelle et 600 s.
+
+⚠️ **Limite assumée de la phase 4** : le retour joué ici passe par le dump. La procédure du manuel d'administration, par le `.keshbackup` de `pre-upgrade/` dans une installation neuve, c'est #920, et une recette distincte. Une sauvegarde `pre-upgrade/` écrite n'est donc pas, ici, une sauvegarde restaurée.
+
+⚠️ **`scripts/gate-ci.sh`, l'autre script** : la suite backend telle que la CI la lance (`docs/ci.md`).
 
 ## Cleanup entre tests (dette technique acceptée)
 

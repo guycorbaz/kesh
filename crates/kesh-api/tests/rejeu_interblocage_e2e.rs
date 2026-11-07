@@ -2469,3 +2469,61 @@ async fn payment_batch_creation_is_replayed_when_it_is_the_deadlock_victim(pool:
         "une seule entrée d'audit"
     );
 }
+
+// ============================================================
+// Test 33-1a — réouverture d'un exercice victime (Story 33-1a, AC12, #926)
+// ============================================================
+
+/// `POST /fiscal-years/{M}/reopen`, victime, est **rejouée**.
+///
+/// Montage : M **clos**, N **ouvert**, M < N. La transaction lourde tient N ; la
+/// réouverture de M, lancée en tâche, tient M puis est vue en attente sur
+/// `find_later_closed_in_tx` (motifs `ORDER BY start_date ASC` et `FOR UPDATE`), qui
+/// parcourt les postérieurs. La transaction demande M : cycle ; InnoDB annule la
+/// réouverture, plus légère ; la transaction obtient M, annule ; la route rejoue et
+/// rend **200**, M rouvert, une seule entrée d'audit.
+///
+/// ⛔ **Tue la mutation M26** (appeler `fiscal_years::reopen` hors de son enveloppe
+/// dans la route) : 500, et pas de témoin de rejeu.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn fiscal_year_reopen_is_replayed_when_it_is_the_deadlock_victim(pool: MySqlPool) {
+    let ctx = monter(&pool).await;
+    let capture = CaptureRejeu::installer();
+    let m = exercice_sql(&pool, ctx.company_id(), 2010, "Closed").await;
+    let n = exercice_sql(&pool, ctx.company_id(), 2015, "Open").await;
+
+    let mut lourde = transaction_lourde(&pool).await;
+    sqlx::query("SELECT id FROM fiscal_years WHERE id = ? FOR UPDATE")
+        .bind(n)
+        .fetch_one(&mut *lourde)
+        .await
+        .unwrap();
+
+    let route = requete_en_tache(
+        &ctx,
+        reqwest::Method::POST,
+        &format!("/api/v1/fiscal-years/{m}/reopen"),
+        Some(json!({ "motif": "Correction d'une écriture" })),
+    );
+    let (status, corps) = victime(
+        &pool,
+        lourde,
+        route,
+        &["ORDER BY start_date ASC", "FOR UPDATE"],
+        "SELECT id FROM fiscal_years WHERE id = ? FOR UPDATE",
+        m,
+    )
+    .await;
+
+    assert_eq!(status, 200, "⛔ l'interblocage doit être rejoué : {corps}");
+    assert_eq!(corps["status"], "Open");
+    let audits: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM audit_log WHERE action = 'fiscal_year.reopened' AND entity_id = ?",
+    )
+    .bind(m)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(audits, 1, "une seule entrée d'audit");
+    capture.exiger_un_rejeu("fiscal_years::reopen");
+}

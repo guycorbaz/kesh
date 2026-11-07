@@ -18,6 +18,7 @@
 	import {
 		ACCOUNT_ROLES,
 		accountRoleKey,
+		readDesignatedSettings,
 		readRetypeImpact,
 		type AccountResponse,
 		type AccountRole,
@@ -97,6 +98,10 @@
 	let archiveOpen = $state(false);
 	let archiveTarget = $state<AccountResponse | null>(null);
 	let archiveSubmitting = $state(false);
+	// Story 33-8 (#486) — les réglages qui désignent le compte, rendus par le 409 :
+	// `null` tant que le serveur n'a rien signalé.
+	let archiveDesignated = $state<string[] | null>(null);
+	let archiveDesignatedMessage = $state('');
 
 	// Réactivation (Story 14-3a, #269) — action directe idempotente.
 	//
@@ -334,14 +339,46 @@
 	// --- Archive ---
 	function openArchive(account: AccountResponse) {
 		archiveTarget = account;
+		archiveDesignated = null;
 		archiveOpen = true;
 	}
 
-	async function submitArchive() {
+	/** Le libellé d'un réglage désigné, celui de l'écran des paramètres ; repli : le code. */
+	function designatedSettingLabel(code: string): string {
+		switch (code) {
+			case 'receivable':
+				return i18nMsg('settings-invoicing-receivable-account', 'Compte créance client (Actif)');
+			case 'revenue':
+				return i18nMsg('settings-invoicing-revenue-account', 'Compte produit (Revenue)');
+			case 'vatPayable':
+				return i18nMsg('invoices-settings-vat-payable', 'Compte TVA due (Passif)');
+			case 'vatRecoverable':
+				return i18nMsg('invoices-settings-vat-recoverable', 'Compte TVA récupérable (Actif)');
+			case 'vatDecompte':
+				return i18nMsg('invoices-settings-vat-decompte', 'Compte de décompte TVA (Passif)');
+			case 'payable':
+				return i18nMsg('settings-invoicing-payable-account', 'Compte créanciers (Passif)');
+			case 'rounding':
+				return i18nMsg('settings-invoicing-rounding-account', "Compte de différences d'arrondi");
+			case 'discount':
+				return i18nMsg('settings-invoicing-discount-account', "Compte d'escompte accordé");
+			case 'bankFees':
+				return i18nMsg('settings-invoicing-bank-fees-account', 'Compte de frais bancaires');
+			case 'badDebt':
+				return i18nMsg('settings-invoicing-bad-debt-account', 'Compte de pertes sur créances');
+			default:
+				return code;
+		}
+	}
+
+	async function submitArchive(confirmDesignated = false) {
 		if (!archiveTarget) return;
 		archiveSubmitting = true;
 		try {
-			await archiveAccount(archiveTarget.id, { version: archiveTarget.version });
+			await archiveAccount(archiveTarget.id, {
+				version: archiveTarget.version,
+				...(confirmDesignated ? { confirmDesignated: true } : {}),
+			});
 			toast.success(
 				i18nMsg('accounts-archived', 'Compte { $number } archivé', { number: archiveTarget.number })
 			);
@@ -349,7 +386,12 @@
 			await loadAccounts();
 		} catch (err) {
 			if (isApiError(err)) {
-				if (err.code === 'OPTIMISTIC_LOCK_CONFLICT') {
+				if (err.code === 'ACCOUNT_DESIGNATED_IN_SETTINGS') {
+					// Une question à poser, non une erreur : le dialogue reste ouvert. `details`
+					// illisible : la même question sans liste, le Comptable n'étant jamais enfermé.
+					archiveDesignated = readDesignatedSettings(err.details) ?? [];
+					archiveDesignatedMessage = err.message;
+				} else if (err.code === 'OPTIMISTIC_LOCK_CONFLICT') {
 					toast.error(i18nMsg('accounts-error-stale', 'Les données ont été modifiées. Rechargez la page.'));
 				} else {
 					toast.error(err.message);
@@ -735,13 +777,50 @@
 				{i18nMsg('accounts-archive-confirm', 'Le compte ne sera plus disponible dans les sélections futures, mais restera visible dans les écritures existantes.')}
 			</Dialog.Description>
 		</Dialog.Header>
+		{#if archiveDesignated}
+			<!-- Story 33-8 (#486) : le réglage est réservé à l'Administrateur, l'archivage
+			     ouvert au Comptable : le lien ne s'affiche qu'à qui peut le suivre. -->
+			<div class="mt-2 space-y-2 text-sm" role="alert" data-testid="account-archive-designated">
+				{#if archiveDesignated.length > 0}
+					<p>{i18nMsg('accounts-archive-designated-intro', 'Ce compte est désigné dans les paramètres de facturation :')}</p>
+					<ul class="list-disc pl-5">
+						{#each archiveDesignated as code (code)}
+							<li data-testid="account-archive-designated-setting">{designatedSettingLabel(code)}</li>
+						{/each}
+					</ul>
+				{:else}
+					<p>{archiveDesignatedMessage}</p>
+				{/if}
+				<!-- Revues P2 à P4 de la 33-8 : une règle, sans liste par geste ni exception par
+				     réglage, qui ont été fausses quatre fois. Elle est celle de `journal_entries.rs`,
+				     garde `active` inconditionnelle, vaut pour les dix réglages, décompte TVA compris
+				     (son compte reçoit à la main le décompte et le paiement à l'AFC), et ne dit
+				     d'autre remède que la réactivation. -->
+				<p data-testid="account-archive-designated-effect">{i18nMsg('accounts-archive-designated-effect', 'Tant que ce compte est archivé, toute écriture qui l’emploie est refusée, y compris sur une pièce déjà validée. Pour lever le blocage, réactivez-le.')}</p>
+				{#if authState.currentUser?.role === 'Admin'}
+					<a class="underline" href="/settings/invoicing" data-testid="account-archive-designated-link">
+						{i18nMsg('accounts-archive-designated-link', 'Modifier les paramètres de facturation')}
+					</a>
+				{:else}
+					<p class="text-text-muted" data-testid="account-archive-designated-admin-only">
+						{i18nMsg('accounts-archive-designated-admin-only', 'Un administrateur peut changer ce réglage.')}
+					</p>
+				{/if}
+			</div>
+		{/if}
 		<Dialog.Footer class="mt-4">
 			<Dialog.Close>
 				<Button variant="outline" type="button" autofocus data-testid="account-archive-dialog-cancel">{i18nMsg('common-cancel', 'Annuler')}</Button>
 			</Dialog.Close>
-			<Button variant="destructive" disabled={archiveSubmitting} onclick={submitArchive} data-testid="account-archive-dialog-confirm">
-				{archiveSubmitting ? i18nMsg('accounts-archiving', 'Archivage…') : i18nMsg('accounts-archive', 'Archiver')}
-			</Button>
+			{#if archiveDesignated}
+				<Button variant="destructive" disabled={archiveSubmitting} onclick={() => submitArchive(true)} data-testid="account-archive-dialog-anyway">
+					{archiveSubmitting ? i18nMsg('accounts-archiving', 'Archivage…') : i18nMsg('accounts-archive-anyway', 'Archiver quand même')}
+				</Button>
+			{:else}
+				<Button variant="destructive" disabled={archiveSubmitting} onclick={() => submitArchive()} data-testid="account-archive-dialog-confirm">
+					{archiveSubmitting ? i18nMsg('accounts-archiving', 'Archivage…') : i18nMsg('accounts-archive', 'Archiver')}
+				</Button>
+			{/if}
 		</Dialog.Footer>
 	</Dialog.Content>
 </Dialog.Root>

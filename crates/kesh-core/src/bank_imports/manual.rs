@@ -726,7 +726,11 @@ fn parse_date(s: &str) -> Result<NaiveDate, ManualStatementReason> {
     if !shape_ok {
         return Err(ManualStatementReason::InvalidDate);
     }
-    NaiveDate::parse_from_str(s, "%Y-%m-%d").map_err(|_| ManualStatementReason::InvalidDate)
+    // Story 33-4 : la forme à quatre chiffres laisse passer `0999`.
+    NaiveDate::parse_from_str(s, "%Y-%m-%d")
+        .ok()
+        .filter(|d| crate::dates::annee_stockable(*d))
+        .ok_or(ManualStatementReason::InvalidDate)
 }
 
 fn parse_required_decimal(s: Option<&str>) -> Result<Decimal, ManualStatementReason> {

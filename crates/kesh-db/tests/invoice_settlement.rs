@@ -2192,3 +2192,116 @@ mod compte_bancaire_clos {
         );
     }
 }
+
+// ===========================================================================
+// Story 33-6 (#450) — ce que rend le règlement est lu dans sa transaction
+// ===========================================================================
+
+/// La ligne relue après le commit : `(version, paid_at)`, et le `SUM` du réglé.
+async fn relu(pool: &MySqlPool, inv: i64) -> (i32, Option<chrono::NaiveDateTime>, Decimal) {
+    let (version, paid_at): (i32, Option<chrono::NaiveDateTime>) =
+        sqlx::query_as("SELECT version, paid_at FROM invoices WHERE id = ?")
+            .bind(inv)
+            .fetch_one(pool)
+            .await
+            .unwrap();
+    let settled: Decimal = sqlx::query_scalar(
+        "SELECT COALESCE(SUM(amount), 0) FROM invoice_settlements WHERE invoice_id = ?",
+    )
+    .bind(inv)
+    .fetch_one(pool)
+    .await
+    .unwrap();
+    (version, paid_at, settled)
+}
+
+/// AC-1 : la sortie porte la facture d'APRÈS l'incrément de `version`, ses lignes
+/// et le réglé d'APRÈS l'insertion, ce que relirait une lecture hors transaction.
+#[sqlx::test(migrations = "./test-schema")]
+async fn la_sortie_du_reglement_porte_la_facture_relue(pool: MySqlPool) {
+    let seeded = seed_accounting_company(&pool).await.expect("seed");
+    let inv = validated_invoice(&pool, &seeded, dec!(100.00), ymd(2026, 3, 1)).await;
+    let choice = SettlementChoice::InternalAccount {
+        account_id: seeded.accounts["1000"],
+    };
+
+    let partiel = invoice_settlements_write::settle_invoice(
+        &pool,
+        seeded.admin_user_id,
+        seeded.company_id,
+        inv,
+        choice,
+        dec!(30.00),
+        ymd(2026, 3, 5),
+    )
+    .await
+    .expect("règlement partiel");
+    let (version, paid_at, settled) = relu(&pool, inv).await;
+    assert_eq!(partiel.invoice.version, version);
+    assert_eq!(partiel.invoice.paid_at, paid_at);
+    assert_eq!(partiel.amount_settled, settled);
+    assert_eq!(partiel.amount_settled, dec!(30.00));
+    assert_eq!(partiel.lines.len(), 1);
+
+    let total = invoice_settlements_write::settle_invoice(
+        &pool,
+        seeded.admin_user_id,
+        seeded.company_id,
+        inv,
+        choice,
+        dec!(70.00),
+        ymd(2026, 3, 6),
+    )
+    .await
+    .expect("règlement du reste");
+    let (version, paid_at, settled) = relu(&pool, inv).await;
+    assert_eq!(total.invoice.version, version);
+    assert!(total.invoice.paid_at.is_some());
+    assert_eq!(total.invoice.paid_at, paid_at);
+    assert_eq!(total.amount_settled, settled);
+}
+
+/// AC-1 : `cancel_settlement` rend l'état d'après la contre-passation.
+#[sqlx::test(migrations = "./test-schema")]
+async fn la_sortie_de_l_annulation_porte_la_facture_relue(pool: MySqlPool) {
+    let seeded = seed_accounting_company(&pool).await.expect("seed");
+    let inv = validated_invoice(&pool, &seeded, dec!(100.00), ymd(2026, 3, 1)).await;
+    let out = invoice_settlements_write::settle_invoice(
+        &pool,
+        seeded.admin_user_id,
+        seeded.company_id,
+        inv,
+        SettlementChoice::InternalAccount {
+            account_id: seeded.accounts["1000"],
+        },
+        dec!(100.00),
+        ymd(2026, 3, 5),
+    )
+    .await
+    .expect("règlement");
+    let settlement_id: i64 =
+        sqlx::query_scalar("SELECT id FROM invoice_settlements WHERE journal_entry_id = ?")
+            .bind(out.journal_entry_id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+
+    let done = invoice_settlements_write::cancel_settlement(
+        &pool,
+        seeded.admin_user_id,
+        seeded.company_id,
+        inv,
+        settlement_id,
+    )
+    .await
+    .expect("annulation");
+
+    let (version, paid_at, settled) = relu(&pool, inv).await;
+    assert_eq!(done.invoice.version, version);
+    assert_eq!(done.invoice.paid_at, paid_at);
+    assert!(done.invoice.paid_at.is_none(), "la facture est rouverte");
+    assert_eq!(done.amount_settled, settled);
+    assert_eq!(done.amount_settled, Decimal::ZERO);
+    assert_eq!(done.amount_due_after, dec!(100.00));
+    assert_eq!(done.lines.len(), 1);
+}

@@ -693,7 +693,7 @@ async fn confirm_batch_after_a_relink_to_the_payable_is_a_contextual_400(pool: M
     assert_eq!(details["role"], "counterparty");
     let msg = body["error"]["message"].as_str().unwrap();
     assert!(
-        msg.contains("FF-1") && msg.contains("2000") && msg.contains("lot"),
+        msg.contains("FF-2020-001") && msg.contains("2000") && msg.contains("lot"),
         "message de lot attendu : {msg}"
     );
     assert!(!msg.contains('$') && !msg.contains('\u{2068}'), "{msg}");

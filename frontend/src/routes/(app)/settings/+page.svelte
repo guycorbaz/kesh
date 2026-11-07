@@ -7,6 +7,7 @@
 	import { lockBooks, releaseBooksLock } from '$lib/features/settings/settings.api';
 	import {
 		fetchCompanyCurrent,
+		updateCompanyAddress,
 		updateCompanyContactDetails,
 		updateCompanyEmail
 	} from '$lib/features/settings/settings.api';
@@ -161,6 +162,66 @@
 		}
 	}
 
+	// Story 33-5 (#909) — corriger l'adresse après l'assistant, sur le patron des
+	// deux éditions ci-dessus. Le pays reste un champ libre de deux lettres, comme
+	// aux contacts : le serveur juge, l'écran affiche son message.
+	let addressEditing = $state(false);
+	let addressForm = $state({ street: '', building: '', postalCode: '', city: '', country: 'CH' });
+	let addressSubmitting = $state(false);
+	let addressError = $state('');
+
+	function startAddressEdit() {
+		const current = data?.company.addressStructured;
+		addressForm = {
+			street: current?.street ?? '',
+			building: current?.building ?? '',
+			postalCode: current?.postalCode ?? '',
+			city: current?.city ?? '',
+			// Une société d'avant les composants n'a pas de pays : CH est le défaut du serveur.
+			country: current?.country?.trim() || 'CH',
+		};
+		addressError = '';
+		addressEditing = true;
+	}
+
+	async function saveAddress() {
+		if (!data) return;
+		addressSubmitting = true;
+		addressError = '';
+		try {
+			const updated = await updateCompanyAddress({
+				address: { ...addressForm },
+				version: data.company.version,
+			});
+			data = { ...data, company: updated };
+			addressEditing = false;
+			notifySuccess(msg('settings-company-address-saved', 'Adresse de la société enregistrée'));
+		} catch (err) {
+			if (isApiError(err)) {
+				if (err.code === 'OPTIMISTIC_LOCK_CONFLICT') {
+					try {
+						data = await fetchCompanyCurrent();
+						addressError = msg(
+							'settings-company-address-conflict',
+							'Conflit de version — les données ont été rechargées, réessayez.',
+						);
+					} catch {
+						addressError = msg(
+							'settings-company-address-conflict-reload-failed',
+							'Conflit de version et rechargement impossible — rechargez la page.',
+						);
+					}
+				} else {
+					addressError = err.message;
+				}
+			} else {
+				addressError = msg('common-error', 'Erreur inattendue');
+			}
+		} finally {
+			addressSubmitting = false;
+		}
+	}
+
 	onMount(async () => {
 		try {
 			data = await fetchCompanyCurrent();
@@ -294,7 +355,79 @@
 				</div>
 				<div class="col-span-2">
 					<dt class="font-medium text-text-muted">{msg('settings-field-address', 'Adresse')}</dt>
-					<dd class="whitespace-pre-line">{data.company.address}</dd>
+					<!-- Story 33-5 (#909) : le texte reste affiché pendant l'édition — une société
+					     d'avant les composants n'a que lui, et il faut le voir pour le ressaisir. -->
+					<dd class="flex items-center gap-3">
+						<span class="whitespace-pre-line" data-testid="settings-company-address">{data.company.address}</span>
+						{#if isAdmin && !addressEditing}
+							<Button size="sm" variant="outline" onclick={startAddressEdit} data-testid="settings-company-address-edit">
+								{msg('common-edit', 'Modifier')}
+							</Button>
+						{/if}
+					</dd>
+					{#if addressEditing}
+						<dd class="mt-2 max-w-md space-y-2">
+							<div class="grid grid-cols-3 gap-2">
+								<div class="col-span-2">
+									<label for="company-address-street" class="text-xs text-text-muted">{msg('field-street', 'Rue')}</label>
+									<Input id="company-address-street" type="text" bind:value={addressForm.street} maxlength={70} data-testid="settings-company-address-street-input" />
+								</div>
+								<div>
+									<label for="company-address-building" class="text-xs text-text-muted">{msg('field-building', 'N°')}</label>
+									<Input id="company-address-building" type="text" bind:value={addressForm.building} maxlength={16} data-testid="settings-company-address-building-input" />
+								</div>
+								<div>
+									<label for="company-address-postal-code" class="text-xs text-text-muted">{msg('field-postal-code', 'NPA')}</label>
+									<Input id="company-address-postal-code" type="text" bind:value={addressForm.postalCode} maxlength={16} data-testid="settings-company-address-postal-code-input" />
+								</div>
+								<div>
+									<label for="company-address-city" class="text-xs text-text-muted">{msg('field-city', 'Localité')}</label>
+									<Input id="company-address-city" type="text" bind:value={addressForm.city} maxlength={35} data-testid="settings-company-address-city-input" />
+								</div>
+								<div>
+									<label for="company-address-country" class="text-xs text-text-muted">{msg('field-country', 'Pays')}</label>
+									<Input id="company-address-country" type="text" bind:value={addressForm.country} maxlength={2} placeholder="CH" data-testid="settings-company-address-country-input" />
+								</div>
+							</div>
+							{#if addressError}
+								<p class="text-xs text-destructive" data-testid="settings-company-address-error">
+									{addressError}
+								</p>
+							{/if}
+							<div class="flex gap-2">
+								<Button size="sm" onclick={saveAddress} disabled={addressSubmitting} data-testid="settings-company-address-save">
+									{msg('common-save', 'Enregistrer')}
+								</Button>
+								<Button
+									size="sm"
+									variant="outline"
+									onclick={() => {
+										addressEditing = false;
+										addressError = '';
+									}}
+									disabled={addressSubmitting}
+									data-testid="settings-company-address-cancel"
+								>
+									{msg('common-cancel', 'Annuler')}
+								</Button>
+							</div>
+						</dd>
+					{/if}
+					{#if data.company.addressCountryKnown === false}
+						<p class="mt-1 text-xs text-warning" data-testid="settings-company-address-country-unknown">
+							{msg(
+								'settings-company-address-country-unknown',
+								'Le code pays « { $code } » de la société n’est pas un code ISO connu : ses QR-factures ne peuvent pas être produites. Un administrateur peut corriger l’adresse ici (CH, FR, DE…).',
+								{ code: data.company.addressStructured.country ?? '' },
+							)}
+						</p>
+					{/if}
+					<p class="mt-1 text-xs text-text-muted">
+						{msg(
+							'settings-company-address-help',
+							'Adresse de l’émetteur et du créancier sur vos factures et leurs QR-factures. NPA et localité obligatoires ; pays en code ISO à deux lettres. Un PDF déjà figé ne change pas.',
+						)}
+					</p>
 				</div>
 				{#if data.company.ideNumber}
 					<div>

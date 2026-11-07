@@ -3173,6 +3173,7 @@ async fn journal_entry_detail_shows_the_document(pool: MySqlPool) {
     let attendu = json!({
         "supplierInvoiceId": inv,
         "supplierInvoiceNumber": "FF-2026-100",
+        "internalNumber": "FF-2020-001",
         "originalFilename": "facture.png",
     });
     for entry in [purchase, settlement] {

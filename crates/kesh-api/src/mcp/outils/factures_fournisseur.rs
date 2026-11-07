@@ -22,10 +22,12 @@ use crate::services::factures_fournisseur::{
     self, DemandeListeFacturesFournisseur, FicheFactureFournisseur,
 };
 
-/// Taille de page par défaut (§ *Les tailles mesurées*).
-pub const LIMITE_DEFAUT: i64 = 40;
-/// Taille de page maximale de l'outil (le service admet 200).
-pub const LIMITE_MAX_MCP: i64 = 70;
+/// Taille de page par défaut (§ *Les tailles mesurées*). Révisée sur la mesure quand
+/// l'élément a gagné le numéro interne (C-e331-27 : 40 → 34).
+pub const LIMITE_DEFAUT: i64 = 34;
+/// Taille de page maximale de l'outil (le service admet 200). Révisée de même
+/// (C-e331-27 : 70 → 62).
+pub const LIMITE_MAX_MCP: i64 = 62;
 
 /// La liste.
 pub struct KeshFacturesFournisseur;
@@ -52,6 +54,7 @@ sortie! {
         fournisseur_id: i64,
         fournisseur: TexteNonFiable,
         numero: Option<TexteNonFiable>,
+        numero_interne: Option<TexteNonFiable>,
         statut: Code<StatutFactureFournisseur>,
         date: Date,
         echeance: Option<Date>,
@@ -99,6 +102,7 @@ sortie! {
         id: i64,
         fournisseur_id: i64,
         numero: Option<TexteNonFiable>,
+        numero_interne: Option<TexteNonFiable>,
         statut: Code<StatutFactureFournisseur>,
         date: Date,
         echeance: Option<Date>,
@@ -128,7 +132,7 @@ impl McpTool for KeshFacturesFournisseur {
     }
 
     fn schema_entree(&self) -> &'static str {
-        r#"{"type":"object","properties":{"limit":{"type":"integer","minimum":1,"maximum":70,"default":40},"offset":{"type":"integer","minimum":0}},"additionalProperties":false}"#
+        r#"{"type":"object","properties":{"limit":{"type":"integer","minimum":1,"maximum":62,"default":34},"offset":{"type":"integer","minimum":0}},"additionalProperties":false}"#
     }
 
     fn portee(&self) -> Portee {
@@ -150,8 +154,9 @@ impl McpTool for KeshFacturesFournisseur {
             let demande = DemandeListeFacturesFournisseur {
                 limit: Some(limit),
                 offset: Some(offset),
-                // L'outil n'a pas de filtre de statut (Story v017-4a, AC-15).
-                statuts: Vec::new(),
+                // L'outil n'a ni filtre de statut (Story v017-4a, AC-15), ni recherche,
+                // ni tri (Story 33-1b, AC4) : l'ordre des dates reste le sien.
+                ..Default::default()
             };
             let page = factures_fournisseur::lister(ctx.acces(), ctx.lecture(), demande)
                 .await
@@ -165,6 +170,7 @@ impl McpTool for KeshFacturesFournisseur {
                         fournisseur_id: f.contact_id,
                         fournisseur: TexteNonFiable::de(f.contact_name),
                         numero: f.supplier_invoice_number.map(TexteNonFiable::de),
+                        numero_interne: f.internal_number.map(TexteNonFiable::de),
                         statut: Code::parmi(f.status, STATUTS_FACTURE_FOURNISSEUR),
                         date: Date(f.invoice_date),
                         echeance: f.due_date.map(Date),
@@ -223,6 +229,7 @@ impl McpTool for KeshFactureFournisseur {
                 id: f.id,
                 fournisseur_id: f.contact_id,
                 numero: f.supplier_invoice_number.map(TexteNonFiable::de),
+                numero_interne: f.internal_number.map(TexteNonFiable::de),
                 statut: Code::parmi(f.status, STATUTS_FACTURE_FOURNISSEUR),
                 date: Date(f.invoice_date),
                 echeance: f.due_date.map(Date),

@@ -43,8 +43,8 @@ const LIB_RS: &str = include_str!("../src/lib.rs");
 const MARKER_BEGIN: &str = "KESH-ADMIN-ROUTES-BEGIN";
 const MARKER_END: &str = "KESH-ADMIN-ROUTES-END";
 
-/// Les **52 constructeurs de méthode** du bloc `admin_routes` (49 avant la
-/// Story v017-4a, 50 avant la Story v0172-session), un par couple
+/// Les **53 constructeurs de méthode** du bloc `admin_routes` (49 avant la
+/// Story v017-4a, 50 avant la Story v0172-session, 52 avant la 33-5), un par couple
 /// (méthode, chemin). Les identifiants de chemin sont arbitraires : la couche
 /// répond **avant** le handler, donc aucune donnée n'a besoin d'exister.
 ///
@@ -82,6 +82,7 @@ const ADMIN_COUPLES: &[(&str, &str)] = &[
     ("DELETE", "/api/v1/admin/email-templates/invoice/fr"),
     ("PUT", "/api/v1/companies/current/email"),
     ("PUT", "/api/v1/companies/current/contact-details"),
+    ("PUT", "/api/v1/companies/current/address"),
     ("POST", "/api/v1/fiscal-years/1/reopen"),
     // Story 24-4c (#380) : DÉVERROUILLER une période. Admin-only, comme la
     // réouverture d'exercice ci-dessus et pour la même raison — la POSE, elle,
@@ -794,7 +795,7 @@ async fn error_code(resp: reqwest::Response) -> String {
 // Tests HTTP — le comportement
 // ============================================================================
 
-/// AC1, jambe `read-write` : les 52 couples rendent `API_KEY_ADMIN_FORBIDDEN`.
+/// AC1, jambe `read-write` : les 53 couples rendent `API_KEY_ADMIN_FORBIDDEN`.
 ///
 /// ⚠️ On asserte le **code**, pas le statut. Trois gardes distinctes rendent
 /// `403` sur ces routes — le RBAC, le gate de portée, et la couche : un test
@@ -874,7 +875,9 @@ async fn read_only_pat_is_stopped_by_the_right_guard_on_each_couple(pool: MySqlP
         // (14, 36) → (15, 37) : Story v0172-session (refs #891) — le `GET` du
         // réglage de la durée d'inactivité atteint la couche ; le `PUT` est
         // arrêté par le gate de portée.
-        (15, 37),
+        // (15, 37) → (15, 38) : Story 33-5 (refs #909) — le `PUT` de l'adresse de
+        // la société est arrêté par le gate de portée.
+        (15, 38),
         "la répartition attendue entre la couche et le gate de portée a changé"
     );
 }

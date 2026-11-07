@@ -42,6 +42,9 @@ pub enum FormatError {
     NoPlaceholder,
     RenderedTooLong(usize),
     UnmatchedBrace,
+    /// Le format n'a pas la forme d'un format de numérotation
+    /// `<préfixe>{YEAR}<séparateur>{SEQ}` — cf. [`validate_numbering_template`].
+    NotNumberingShape,
 }
 
 impl fmt::Display for FormatError {
@@ -72,6 +75,11 @@ impl fmt::Display for FormatError {
                 "Le format générerait un numéro de {n} caractères (max {MAX_RENDERED_LEN})"
             ),
             Self::UnmatchedBrace => write!(f, "Accolade non appariée dans le format"),
+            Self::NotNumberingShape => write!(
+                f,
+                "Le format doit s'écrire : un préfixe libre, {{YEAR}}, un séparateur sans chiffre, \
+                 puis {{SEQ}} ou {{SEQ:NN}}, rien après (exemple : FF-{{YEAR}}-{{SEQ:03}})"
+            ),
         }
     }
 }
@@ -195,6 +203,77 @@ pub fn validate_template(template: &str) -> Result<(), FormatError> {
         return Err(FormatError::RenderedTooLong(worst_case_len));
     }
     Ok(())
+}
+
+/// Valide un **format de numérotation interne** (Story 33-1a, #926 ; C-e331-16) :
+/// [`validate_template`], puis la forme `<préfixe>{YEAR}<séparateur>{SEQ}` ou
+/// `{SEQ:NN}` — un seul `{YEAR}` suivi d'un seul compteur, préfixe libre (vide
+/// admis), séparateur non vide et sans chiffre, rien après le compteur, aucun
+/// `{FY}`, ni blanc en tête ni tabulation : invisibles sur le papier, ils rendraient
+/// un numéro impossible à recopier.
+///
+/// Cette forme est ce qui rend un numéro **injectif**, pour une année écrite sur
+/// quatre chiffres : le rang est la suite de chiffres finale, le séparateur ce qui
+/// la précède sans chiffre, l'année les quatre chiffres d'avant. Deux formats ne
+/// rendent donc la même chaîne que pour la même année et le même rang, si bien
+/// qu'un changement de format ne fait revenir aucun numéro. Les formats client et
+/// avoir gardent [`validate_template`].
+pub fn validate_numbering_template(template: &str) -> Result<(), FormatError> {
+    validate_template(template)?;
+    if template.starts_with(char::is_whitespace) || template.contains('\t') {
+        return Err(FormatError::NotNumberingShape);
+    }
+    let tokens = parse(template)?;
+    let sans_prefixe = match tokens.as_slice() {
+        [Token::Literal(_), reste @ ..] => reste,
+        tous => tous,
+    };
+    match sans_prefixe {
+        [Token::Year, Token::Literal(separateur), Token::Seq(_)]
+            if !separateur.chars().any(|c| c.is_ascii_digit()) =>
+        {
+            Ok(())
+        }
+        _ => Err(FormatError::NotNumberingShape),
+    }
+}
+
+/// Le numéro sans ses blancs de bord ; vide ou blanc, il vaut absent (règle de K8,
+/// `closing_checks`). ⚠️ Trois définitions du blanc, non un miroir : `str::trim` retire
+/// tout `White_Space` Unicode, `TRIM` de MariaDB l'espace ASCII seule, `trim` de
+/// JavaScript le `White_Space` et U+FEFF. Elles ne s'écartent que sur un numéro saisi
+/// avec une tabulation, un saut de ligne, une espace insécable ou un BOM.
+fn non_blank(numero: Option<&str>) -> Option<&str> {
+    numero.map(str::trim).filter(|n| !n.is_empty())
+}
+
+/// La forme **courte** du libellé d'une facture fournisseur, celle qui la nomme
+/// dans une phrase : le numéro interne, à défaut celui du fournisseur. Un numéro
+/// vide ou blanc vaut absent ; `None` si aucun des deux n'existe, à l'appelant de
+/// dire `#<id>` (Story 33-1a, #926 ; C-e331-20).
+pub fn supplier_invoice_short_label(
+    interne: Option<&str>,
+    fournisseur: Option<&str>,
+) -> Option<String> {
+    non_blank(interne)
+        .or(non_blank(fournisseur))
+        .map(str::to_string)
+}
+
+/// La forme **longue** du libellé d'une facture fournisseur, celle qui sert à
+/// reconnaître la pièce : `FF-2026-001 (ABC-123)`, le numéro interne seul si le
+/// fournisseur n'en a pas donné, celui du fournisseur seul si la facture n'a pas de
+/// numéro interne. Un numéro vide ou blanc vaut absent ; `None` si aucun des deux
+/// n'existe, à l'appelant de dire `#<id>` (Story 33-1a, #926 ; C-e331-10).
+pub fn supplier_invoice_long_label(
+    interne: Option<&str>,
+    fournisseur: Option<&str>,
+) -> Option<String> {
+    match (non_blank(interne), non_blank(fournisseur)) {
+        (Some(i), Some(f)) => Some(format!("{i} ({f})")),
+        (Some(n), None) | (None, Some(n)) => Some(n.to_string()),
+        (None, None) => None,
+    }
 }
 
 /// Rend un template avec les valeurs données.
@@ -433,5 +512,102 @@ mod tests {
             validate_description_template("{FOO}"),
             Err(FormatError::UnknownPlaceholder(_))
         ));
+    }
+
+    // Story 33-1a (#926) — le format de numérotation interne (AC16).
+    #[test]
+    fn numbering_template_accepts_the_numbering_shape() {
+        for ok in [
+            "FF-{YEAR}-{SEQ:03}",
+            "KF-{YEAR}-{SEQ:04}",
+            "{YEAR}/{SEQ}",
+            "F1-{YEAR}-{SEQ}",
+        ] {
+            assert_eq!(validate_numbering_template(ok), Ok(()), "{ok}");
+        }
+    }
+
+    #[test]
+    fn numbering_template_refuses_every_other_shape() {
+        for ko in [
+            "FF-{YEAR}",
+            "FF-{SEQ:03}",
+            "FF-{FY}-{SEQ}",
+            "FF-{FY}-{YEAR}-{SEQ}",
+            "{YEAR}-{YEAR}-{SEQ}",
+            "{SEQ}-{YEAR}",
+            "FF-{YEAR}{SEQ}",
+            "FF-{YEAR}-1{SEQ}",
+            "FF-{YEAR}-{SEQ}-X",
+            " FF-{YEAR}-{SEQ}",
+            "\tFF-{YEAR}-{SEQ}",
+            "FF\t-{YEAR}-{SEQ}",
+            "FF-{YEAR}\t{SEQ}",
+        ] {
+            assert_eq!(
+                validate_numbering_template(ko),
+                Err(FormatError::NotNumberingShape),
+                "{ko}"
+            );
+        }
+        assert_eq!(validate_numbering_template(""), Err(FormatError::Empty));
+        assert_eq!(validate_numbering_template("   "), Err(FormatError::Empty));
+        assert_eq!(
+            validate_numbering_template("FF-{YEAR}-{SEQ:11}"),
+            Err(FormatError::InvalidSeqPadding(11))
+        );
+    }
+
+    // Story 33-1a (#926) — les libellés d'une facture fournisseur (AC15).
+    #[test]
+    fn supplier_invoice_labels_prefer_the_internal_number() {
+        type Numero<'a> = Option<&'a str>;
+        let cas: [(Numero, Numero, Numero, Numero); 8] = [
+            (
+                Some("FF-2026-001"),
+                Some("ABC-123"),
+                Some("FF-2026-001"),
+                Some("FF-2026-001 (ABC-123)"),
+            ),
+            (
+                Some("FF-2026-001"),
+                None,
+                Some("FF-2026-001"),
+                Some("FF-2026-001"),
+            ),
+            (
+                Some("FF-2026-001"),
+                Some("   "),
+                Some("FF-2026-001"),
+                Some("FF-2026-001"),
+            ),
+            (None, Some("ABC-123"), Some("ABC-123"), Some("ABC-123")),
+            (
+                Some("  "),
+                Some("ABC-123"),
+                Some("ABC-123"),
+                Some("ABC-123"),
+            ),
+            (None, None, None, None),
+            (Some(""), Some(" "), None, None),
+            (
+                Some(" FF-2026-001 "),
+                Some(" ABC "),
+                Some("FF-2026-001"),
+                Some("FF-2026-001 (ABC)"),
+            ),
+        ];
+        for (interne, fournisseur, courte, longue) in cas {
+            assert_eq!(
+                supplier_invoice_short_label(interne, fournisseur).as_deref(),
+                courte,
+                "courte : {interne:?}, {fournisseur:?}"
+            );
+            assert_eq!(
+                supplier_invoice_long_label(interne, fournisseur).as_deref(),
+                longue,
+                "longue : {interne:?}, {fournisseur:?}"
+            );
+        }
     }
 }

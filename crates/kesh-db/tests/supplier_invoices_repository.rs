@@ -754,7 +754,8 @@ async fn cancel_paid_invoice_detaches_its_settlement(pool: MySqlPool) {
         use kesh_db::errors::ModificationGuard;
         let attendu = ModificationGuard::DetachedSupplierSettlement {
             supplier_invoice_id: created.invoice.id,
-            supplier_invoice_number: Some("FF-2026-001".into()),
+            // Story 33-1b (#926) : la forme courte, le numéro interne d'abord.
+            supplier_invoice_label: created.invoice.internal_number.clone(),
         };
         let mut conn = pool.acquire().await.unwrap();
         let garde = journal_entries::modification_guard(&mut conn, c, settlement)

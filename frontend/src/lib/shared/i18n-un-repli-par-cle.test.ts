@@ -233,8 +233,12 @@ const PREFIXES = [
  * (`7bd4d5c0` → tête) : `supplier-invoices-project-archived-option` (#872) et
  * `supplier-invoices-unvalidate-blocked-period-locked-named` (#869). La troisième clé neuve,
  * `contacts-country-unknown` (#817), n'est pas d'un préfixe relevé. Aucune retirée.
+ *
+ * ⚠️ **Story 33-1b** (#926) : **401 → 407** (+6) : `supplier-invoices-col-internal-number`,
+ * `-search-label`, `-empty-search`, `-internal-number-kept`, `-internal-number-pending`,
+ * `-delete-confirm-number`. Aucune retirée.
  */
-const CLES_RELEVEES = 401;
+const CLES_RELEVEES = 407;
 
 
 /** Relève, pour chaque clé du domaine, l'ensemble de ses replis littéraux distincts. */

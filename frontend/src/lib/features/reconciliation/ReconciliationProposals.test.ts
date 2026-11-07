@@ -98,6 +98,7 @@ function makeProposalWithCandidate(
 				supplierInvoiceId: null,
 				contactName: null,
 				invoiceNumber: `INV-2026-${invoiceId}`,
+				internalNumber: null,
 				invoiceAmount: amounts.invoiceAmount,
 				invoiceTotalTtc: amounts.invoiceTotalTtc,
 				invoiceDate: '2026-05-10',
@@ -748,6 +749,7 @@ function ruleCandidate(ruleId: number, counterpartyAccountId: number): Candidate
 		supplierInvoiceId: null,
 		contactName: null,
 		invoiceNumber: null,
+		internalNumber: null,
 		invoiceAmount: null,
 		invoiceTotalTtc: null,
 		invoiceDate: null,
@@ -1319,6 +1321,7 @@ function supplierCandidate(
 	supplierInvoiceId: number,
 	invoiceNumber: string | null,
 	contactName: string | null,
+	internalNumber: string | null = null,
 ): Candidate {
 	return {
 		candidateType: 'supplier_invoice' as const,
@@ -1326,6 +1329,7 @@ function supplierCandidate(
 		supplierInvoiceId,
 		contactName,
 		invoiceNumber,
+		internalNumber,
 		invoiceAmount: '480',
 		invoiceTotalTtc: null,
 		invoiceDate: '2026-03-01',
@@ -1342,6 +1346,7 @@ function supplierCandidate(
 function noticeRow(
 	bankTransactionId: number,
 	supplierInvoiceNumber: string | null,
+	internalNumber: string | null = null,
 ): GetProposalsResponse['proposals'][number] {
 	const p = makeProposalWithoutCandidate(bankTransactionId);
 	return {
@@ -1351,6 +1356,7 @@ function noticeRow(
 			code: 'supplier_invoice_in_payment_batch',
 			supplierInvoiceId: 77,
 			supplierInvoiceNumber,
+			internalNumber,
 			paymentBatchId: 12,
 		},
 	};
@@ -1448,6 +1454,23 @@ describe('ReconciliationProposals — factures fournisseur (Story 30-1b)', () =>
 		await fireEvent.click(view.getAllByTestId('tx-checkbox')[0]);
 		expect(view.getByTestId('reconciliation-accept-btn').hasAttribute('disabled')).toBe(true);
 		expect(view.getByTestId('reconciliation-reject-btn').hasAttribute('disabled')).toBe(false);
+	});
+
+	// Story 33-1b (#926) — l'avis nomme par le numéro interne ; la candidate montre les deux.
+	it('33-1b — l’avis dit le numéro interne, la candidate les deux numéros', async () => {
+		mockApi.getProposals.mockResolvedValue({
+			proposals: [
+				noticeRow(5, 'ABC-LOT', 'FF-2026-005'),
+				makeProposalWithCandidates(1, [supplierCandidate(55, 'ABC-17', 'Garage', 'FF-2026-017')]),
+			],
+			hasMore: false,
+		} satisfies GetProposalsResponse);
+		const view = render(ReconciliationProposals, { bankAccountId: 17 });
+		const [notice] = await view.findAllByTestId('proposal-notice');
+		expect(notice.textContent).toContain('FF-2026-005');
+		expect(notice.textContent).not.toContain('ABC-LOT');
+		const [candidate] = await view.findAllByTestId('candidate-top-1');
+		expect(candidate.textContent).toContain('FF-2026-017 (ABC-17)');
 	});
 
 	it('T-b39 — le repli de la notice et celui de la priorité égalent le catalogue fr-CH', () => {

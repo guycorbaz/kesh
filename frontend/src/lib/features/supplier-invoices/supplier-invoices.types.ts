@@ -28,6 +28,8 @@ export interface SupplierInvoiceResponse {
 	id: number;
 	contactId: number;
 	supplierInvoiceNumber: string | null;
+	/** Le numéro interne (Story 33-1a, #926) : `null` pour un brouillon jamais validé. */
+	internalNumber: string | null;
 	status: SupplierInvoiceStatus;
 	invoiceDate: string;
 	dueDate: string | null;
@@ -136,6 +138,7 @@ export interface SupplierInvoiceListItemResponse {
 	contactId: number;
 	contactName: string;
 	supplierInvoiceNumber: string | null;
+	internalNumber: string | null;
 	status: SupplierInvoiceStatus;
 	invoiceDate: string;
 	dueDate: string | null;
@@ -204,6 +207,11 @@ export interface ListSupplierInvoicesQuery {
 	 * (`?status=draft,open,paid`) ; absent ou vide : tous.
 	 */
 	status?: SupplierInvoiceStatus[];
+	/** Story 33-1b (#926) — recherche : numéro interne, numéro et nom du fournisseur. */
+	q?: string;
+	/** Story 33-1b (#926) — tri ; absent : la date, de la plus récente à la plus ancienne. */
+	sort?: 'internalNumber';
+	order?: 'asc' | 'desc';
 }
 
 export interface ListResponse<T> {

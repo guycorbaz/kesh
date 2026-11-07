@@ -34,7 +34,8 @@ use sha2::{Digest, Sha256};
 
 use kesh_core::bank_imports::{
     self as core_bank_imports, BankImportDraft, BankTransactionDraft, DuplicateKey, DuplicateLine,
-    SourceFormatTag, dedup_key_from_draft, dedup_key_scalar, detect_duplicate_lines_with_aliases,
+    DuplicateLines, LegacyLine, LineTexts, SourceFormatTag, UncertainLegacyLine,
+    dedup_key_from_draft, dedup_key_scalar, detect_duplicate_lines_with_aliases,
 };
 use kesh_db::entities::{
     BankImport, BankImportSourceFormat, NewAuditLogEntry, NewBankImport, NewBankTransaction,
@@ -153,6 +154,10 @@ pub struct PreviewWarnings {
     /// Story 8-3 — transactions chevauchant un import précédent
     /// (clé composite `(date, amount, ref_normalized, account)`).
     pub duplicate_lines: Vec<DuplicateLineWarning>,
+    /// Story 33-2 (#915, C-e332-4) — lignes CAMT.053 dont la référence, lue comme en
+    /// 0.17.3, égale celle d'une ligne existante du même jour et du même montant,
+    /// sans en porter les textes. **Informatif** : elles s'importent, sans choix.
+    pub uncertain_legacy_lines: Vec<UncertainLegacyLine>,
     /// Story 8-3 — lignes CSV invalides (parse partial mode).
     /// Overridable via `confirmPartialImport`.
     pub invalid_lines: Option<InvalidLinesPayload>,
@@ -924,6 +929,9 @@ pub(crate) fn normalize_iban(s: &str) -> String {
 
 struct StatementSelection {
     selected: ImportedStatement,
+    /// Rang du relevé choisi dans le fichier. Story 33-2 : c'est lui qui dit si les
+    /// deux lectures parlent du même relevé.
+    position: usize,
     ignored: Vec<ImportedStatement>,
 }
 
@@ -934,12 +942,12 @@ fn select_statement_by_iban(
     target_iban: &str,
 ) -> Result<StatementSelection, AppError> {
     let target = normalize_iban(target_iban);
-    let mut selected: Option<ImportedStatement> = None;
+    let mut selected: Option<(usize, ImportedStatement)> = None;
     let mut ignored: Vec<ImportedStatement> = Vec::new();
-    for stmt in statements {
+    for (position, stmt) in statements.into_iter().enumerate() {
         if normalize_iban(&stmt.account_iban) == target {
             if selected.is_none() {
-                selected = Some(stmt);
+                selected = Some((position, stmt));
             } else {
                 // Plus d'un statement avec le même IBAN — fusionner ou
                 // garder le premier ? Pour v0.1 on garde le premier et
@@ -952,8 +960,9 @@ fn select_statement_by_iban(
         }
     }
     match selected {
-        Some(stmt) => Ok(StatementSelection {
+        Some((position, stmt)) => Ok(StatementSelection {
             selected: stmt,
+            position,
             ignored,
         }),
         None => Err(AppError::BankImportNoMatchingStatement {
@@ -1082,11 +1091,11 @@ pub async fn preview(
     }
 
     // Story 8-3 — détection fichier déjà importé (FR43 partie 1).
-    if let Some(existing) =
+    let existing_file =
         bank_imports::find_by_company_and_hash(&state.pool, current_user.company_id, &file_hash)
-            .await?
-    {
-        warnings.duplicate_file = Some(duplicate_file_payload(&existing));
+            .await?;
+    if let Some(existing) = &existing_file {
+        warnings.duplicate_file = Some(duplicate_file_payload(existing));
     }
 
     // Story 8-3 — détection ligne-par-ligne (FR43 partie 2).
@@ -1096,14 +1105,27 @@ pub async fn preview(
     if !stmt.transactions.is_empty() {
         // #819 — la clé qu'une ligne déjà importée porte en base, recalculée
         // par la lecture de la 0.17.3 (hors du verrou du compte : l'aperçu
-        // n'en prend pas).
-        let aliases = legacy_0173_aliases(
+        // n'en prend pas). Story 33-2 (#922, C-e332-21) : si la relecture échoue,
+        // l'aperçu suit l'ordre de la création, « déjà importé » d'abord.
+        let aliases = match legacy_0173_aliases(
             &fields.file_bytes,
             &bank_account.iban,
+            selection.position,
             &stmt.transactions,
             fields.bank_account_id,
-        );
-        warnings.duplicate_lines = compute_duplicate_lines_warnings(
+        ) {
+            Ok(aliases) => aliases,
+            Err(failure) => {
+                return Err(match existing_file {
+                    Some(existing) => AppError::BankImportDuplicateFile {
+                        existing_import_id: existing.id,
+                        existing_filename: existing.filename,
+                    },
+                    None => failure.into(),
+                });
+            }
+        };
+        let detected = compute_duplicate_lines_warnings(
             &state.pool,
             current_user.company_id,
             fields.bank_account_id,
@@ -1113,6 +1135,8 @@ pub async fn preview(
             &aliases,
         )
         .await?;
+        warnings.duplicate_lines = detected.duplicates;
+        warnings.uncertain_legacy_lines = detected.uncertain;
     }
 
     let source_format = version_to_source_format(&stmt)?;
@@ -1344,19 +1368,32 @@ async fn create_camt_under_lock(
     )
     .await?;
     // #819 — alias de la lecture de la 0.17.3, sous le verrou du compte (là où
-    // le fichier est lu) : une ligne déjà importée reste reconnue.
+    // le fichier est lu) : une ligne déjà importée reste reconnue. Story 33-2
+    // (#922) : relecture impossible = refus, avant toute écriture, sans
+    // confirmation possible ; la transaction s'annule en sortant.
     let aliases = legacy_0173_aliases(
         &fields.file_bytes,
         &bank_account.iban,
+        selection.position,
         &stmt.transactions,
         fields.bank_account_id,
-    );
-    let duplicate_lines = detect_duplicate_lines_for_imported(
+    )?;
+    let DetectedLines {
+        duplicates: duplicate_lines,
+        uncertain,
+    } = detect_duplicate_lines_for_imported(
         &stmt.transactions,
         fields.bank_account_id,
         &existing,
         &aliases,
     );
+    // Story 33-2 (#915, C-e332-4) — ces lignes s'importent ; la trace les compte.
+    if !uncertain.is_empty() {
+        details_extra.insert(
+            "uncertain_legacy_lines_imported".into(),
+            serde_json::json!(uncertain.len()),
+        );
+    }
 
     // M5 (Pass 1 review) — invariant d'alignement positionnel :
     // `tx_drafts` (sortie `from_imported`) et `stmt.transactions`
@@ -1728,7 +1765,8 @@ pub(crate) fn duplicate_file_payload(existing: &BankImport) -> DuplicateFilePayl
 
 /// Story 8-3 — calcule les warnings `duplicateLines` en chargeant la
 /// fenêtre `[period_from, period_to]` et en comparant via
-/// [`detect_duplicate_lines_with_aliases`]. Retourne `Vec` vide si aucun doublon.
+/// [`detect_duplicate_lines_with_aliases`]. Rend les doublons et les lignes
+/// incertaines, listes vides si rien n'est détecté.
 ///
 /// Variante préview (utilise `&MySqlPool`). Pour `create`, voir la
 /// version transaction-bound dans le handler. `aliases` : ceux de
@@ -1740,8 +1778,8 @@ async fn compute_duplicate_lines_warnings(
     period_from: chrono::NaiveDate,
     period_to: chrono::NaiveDate,
     new_txs: &[kesh_import::ImportedTransaction],
-    aliases: &[Option<DuplicateKey>],
-) -> Result<Vec<DuplicateLineWarning>, AppError> {
+    aliases: &[Option<LegacyLine>],
+) -> Result<DetectedLines, AppError> {
     let existing = bank_transactions::find_in_dedup_window(
         pool,
         company_id,
@@ -1915,91 +1953,171 @@ impl ImportAuditAction {
 
 /// Story v016-2a (#816) — les clés de doublon des transactions **existantes**
 /// de la fenêtre, `(id, DuplicateKey)`, telles que les compare
-/// [`detect_duplicate_lines_with_aliases`]. Partagée par l'import d'un fichier
-/// ([`detect_duplicate_lines_for_imported`]) et la saisie d'un relevé
-/// (`routes/bank_statements_manual.rs`).
+/// [`detect_duplicate_lines`](kesh_core::bank_imports::detect_duplicate_lines). Sert
+/// la saisie d'un relevé (`routes/bank_statements_manual.rs`) ; l'import d'un fichier
+/// passe par [`existing_keys_with_texts`] (Story 33-2).
 pub(crate) fn existing_dedup_keys(
     existing: &[kesh_db::entities::BankTransaction],
 ) -> Vec<(i64, DuplicateKey)> {
     existing
         .iter()
+        .map(|t| (t.id, existing_dedup_key(t)))
+        .collect()
+}
+
+/// La clé de doublon d'une transaction existante.
+fn existing_dedup_key(t: &kesh_db::entities::BankTransaction) -> DuplicateKey {
+    dedup_key_scalar(
+        t.booking_date,
+        t.amount,
+        t.reference.as_deref(),
+        t.end_to_end_id.as_deref(),
+        t.transaction_id.as_deref(),
+        t.bank_account_id,
+    )
+}
+
+/// Story 33-2 — les transactions existantes avec leurs textes, tels que les compare
+/// [`detect_duplicate_lines_with_aliases`].
+fn existing_keys_with_texts(
+    existing: &[kesh_db::entities::BankTransaction],
+) -> Vec<(i64, DuplicateKey, LineTexts)> {
+    existing
+        .iter()
         .map(|t| {
             (
                 t.id,
-                dedup_key_scalar(
-                    t.booking_date,
-                    t.amount,
-                    t.reference.as_deref(),
-                    t.end_to_end_id.as_deref(),
-                    t.transaction_id.as_deref(),
-                    t.bank_account_id,
-                ),
+                existing_dedup_key(t),
+                LineTexts {
+                    value_date: t.value_date,
+                    reference: t.reference.clone(),
+                    end_to_end_id: t.end_to_end_id.clone(),
+                    transaction_id: t.transaction_id.clone(),
+                    counterparty_iban: t.counterparty_iban.clone(),
+                    counterparty_name: t.counterparty_name.clone(),
+                    details: t.details.clone(),
+                },
             )
         })
         .collect()
 }
 
+/// Résultat de la détection, sous sa forme sérialisable.
+struct DetectedLines {
+    duplicates: Vec<DuplicateLineWarning>,
+    uncertain: Vec<UncertainLegacyLine>,
+}
+
 /// Story 8-3 — wrapper qui mappe `&[ImportedTransaction]` → drafts +
-/// `&[BankTransaction]` → `(id, DuplicateKey)` puis appelle
+/// `&[BankTransaction]` → `(id, DuplicateKey, LineTexts)` puis appelle
 /// [`detect_duplicate_lines_with_aliases`]. Retourne les warnings sérialisables.
 /// `aliases` : ceux de [`legacy_0173_aliases`] en CAMT.053 (#819), vide en CSV.
 fn detect_duplicate_lines_for_imported(
     new_txs: &[kesh_import::ImportedTransaction],
     bank_account_id: i64,
     existing: &[kesh_db::entities::BankTransaction],
-    aliases: &[Option<DuplicateKey>],
-) -> Vec<DuplicateLineWarning> {
+    aliases: &[Option<LegacyLine>],
+) -> DetectedLines {
     let drafts: Vec<BankTransactionDraft> =
         new_txs.iter().map(BankTransactionDraft::from).collect();
-    let existing_keys = existing_dedup_keys(existing);
-    detect_duplicate_lines_with_aliases(&drafts, bank_account_id, &existing_keys, aliases)
-        .into_iter()
-        .map(|d: DuplicateLine| DuplicateLineWarning {
-            new_index: d.new_index,
-            existing_transaction_id: d.existing_transaction_id,
-            key: d.key,
-        })
-        .collect()
+    let existing_rows = existing_keys_with_texts(existing);
+    let DuplicateLines {
+        duplicates,
+        uncertain,
+    } = detect_duplicate_lines_with_aliases(&drafts, bank_account_id, &existing_rows, aliases);
+    DetectedLines {
+        duplicates: duplicates
+            .into_iter()
+            .map(|d: DuplicateLine| DuplicateLineWarning {
+                new_index: d.new_index,
+                existing_transaction_id: d.existing_transaction_id,
+                key: d.key,
+            })
+            .collect(),
+        uncertain,
+    }
 }
 
-/// #819 (0.17.4) — les **alias** de clé de doublon d'un relevé CAMT.053 : pour
-/// chaque ligne, la clé que la lecture de la 0.17.3 lui donnait, quand elle
-/// diffère de celle de la lecture corrigée.
+/// Story 33-2 (#922) — ce qui empêche de relire un relevé CAMT.053 comme la 0.17.3.
+/// Aucune de ces causes ne s'efface par une confirmation (C-e332-1, C-e332-2).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum LegacyRereadFailure {
+    /// La lecture héritée rend une erreur (champ obligatoire en CDATA ou coupé).
+    Reading,
+    /// Aucun relevé de la lecture héritée ne porte l'IBAN du compte.
+    Selection,
+    /// Les deux lectures n'ont pas le même nombre de lignes : elles ont choisi deux
+    /// relevés différents d'un fichier qui en porte plusieurs du même compte.
+    LineCount,
+    /// Même nombre de lignes, mais les deux lectures ne parlent pas des mêmes lignes :
+    /// elles ont choisi deux relevés différents (quelles qu'en soient les lignes), ou,
+    /// dans le même relevé, une paire diffère par sa date de comptabilisation ou son
+    /// montant.
+    Misaligned,
+}
+
+impl From<LegacyRereadFailure> for AppError {
+    fn from(failure: LegacyRereadFailure) -> Self {
+        let cause = match failure {
+            LegacyRereadFailure::Reading => "reading",
+            LegacyRereadFailure::Selection => "selection",
+            LegacyRereadFailure::LineCount => "line_count",
+            LegacyRereadFailure::Misaligned => "misaligned",
+        };
+        AppError::BankImportLegacyRereadFailed { cause }
+    }
+}
+
+/// #819 (0.17.4) — les **alias** d'un relevé CAMT.053 : pour chaque ligne dont la clé
+/// a changé, ce que la lecture de la 0.17.3 en donnait (sa clé et ses textes).
 ///
 /// La 0.17.3 ne lisait d'un identifiant à entité (`REF &amp; Co`) que son
 /// dernier morceau (« Co ») ; la clé enregistrée en base pour une ligne qu'elle a
 /// importée en dérive. Sans alias, un autre fichier qui reprend cette ligne ne la
 /// reconnaîtrait plus et l'importerait deux fois. Le fichier est relu par
-/// `parse_legacy_0173`, le même relevé choisi par IBAN.
+/// `parse_legacy_0173`, et le relevé qu'elle choisit par IBAN doit être celui de la
+/// lecture corrigée, au rang `statement_position` du fichier. Une ligne dont les deux
+/// clés sont égales (le cas ordinaire) n'a pas d'alias.
 ///
-/// **Jamais d'erreur** : si la lecture héritée échoue, si sa sélection par IBAN
-/// échoue, ou si les deux lectures n'ont pas le même nombre de lignes, le
-/// résultat est vide (aucun alias) et l'import suit son cours — un tel fichier
-/// n'a pas pu être importé par la 0.17.3. Une ligne dont les deux clés sont
-/// égales (le cas ordinaire) n'a pas d'alias.
+/// **Si la relecture échoue, le relevé est refusé** (Story 33-2, #922) : Kesh ne peut
+/// plus vérifier qu'il ne reprend pas une ligne déjà importée, et l'importer sans
+/// alias pourrait la doubler sans signal. La fonction le dit par
+/// [`LegacyRereadFailure`]. Un relevé sans ligne n'a rien à vérifier : `Ok`, sans le
+/// relire (C-e332-5).
 fn legacy_0173_aliases(
     file_bytes: &[u8],
     target_iban: &str,
+    statement_position: usize,
     new_txs: &[kesh_import::ImportedTransaction],
     bank_account_id: i64,
-) -> Vec<Option<DuplicateKey>> {
-    let Ok(stmts) = kesh_import::camt053::parse_legacy_0173(file_bytes) else {
-        return Vec::new();
-    };
-    let Ok(selection) = select_statement_by_iban(stmts, target_iban) else {
-        return Vec::new();
-    };
+) -> Result<Vec<Option<LegacyLine>>, LegacyRereadFailure> {
+    if new_txs.is_empty() {
+        return Ok(Vec::new());
+    }
+    let stmts = kesh_import::camt053::parse_legacy_0173(file_bytes)
+        .map_err(|_| LegacyRereadFailure::Reading)?;
+    let selection =
+        select_statement_by_iban(stmts, target_iban).map_err(|_| LegacyRereadFailure::Selection)?;
     let legacy = &selection.selected.transactions;
     if legacy.len() != new_txs.len() {
-        return Vec::new();
+        return Err(LegacyRereadFailure::LineCount);
+    }
+    // Revue P1 (E-1) — deux relevés du même compte peuvent porter les mêmes dates et
+    // les mêmes montants : seul le rang dit que c'est le même relevé.
+    if selection.position != statement_position {
+        return Err(LegacyRereadFailure::Misaligned);
     }
     legacy
         .iter()
         .zip(new_txs)
         .map(|(old, new)| {
-            let old_key = dedup_key_from_draft(&BankTransactionDraft::from(old), bank_account_id);
+            let line = LegacyLine::from_draft(&BankTransactionDraft::from(old), bank_account_id);
             let new_key = dedup_key_from_draft(&BankTransactionDraft::from(new), bank_account_id);
-            (old_key != new_key).then_some(old_key)
+            let old_key = line.key();
+            if old_key.booking_date != new_key.booking_date || old_key.amount != new_key.amount {
+                return Err(LegacyRereadFailure::Misaligned);
+            }
+            Ok((*old_key != new_key).then_some(line))
         })
         .collect()
 }
@@ -2195,7 +2313,8 @@ async fn preview_csv(
             // CSV : aucune lecture héritée, aucun alias (#819 ne touche que le CAMT).
             &[],
         )
-        .await?;
+        .await?
+        .duplicates;
     }
 
     let preview_txs: Vec<PreviewTransaction> = stmt
@@ -2443,7 +2562,8 @@ async fn create_csv_under_lock(
         fields.bank_account_id,
         &existing,
         &[],
-    );
+    )
+    .duplicates;
 
     // M5 (Pass 1 review) — invariant d'alignement positionnel ; cf. CAMT path.
     debug_assert_eq!(
@@ -2586,12 +2706,41 @@ mod legacy_alias_tests {
         )
     }
 
-    fn aliases_of(bytes: &[u8]) -> Vec<Option<DuplicateKey>> {
+    fn aliases_of(bytes: &[u8]) -> Result<Vec<Option<LegacyLine>>, LegacyRereadFailure> {
         let stmts = parse_camt053(bytes).expect("lecture corrigée");
-        let stmt = select_statement_by_iban(stmts, IBAN)
-            .expect("sélection corrigée")
-            .selected;
-        legacy_0173_aliases(bytes, IBAN, &stmt.transactions, 17)
+        let selection = select_statement_by_iban(stmts, IBAN).expect("sélection corrigée");
+        legacy_0173_aliases(
+            bytes,
+            IBAN,
+            selection.position,
+            &selection.selected.transactions,
+            17,
+        )
+    }
+
+    /// Deux `Stmt` du même compte : le premier à IBAN à référence de caractère, que
+    /// seule la lecture corrigée lui reconnaît ; le second à IBAN simple.
+    fn two_statements(first: &[&str], second: &[&str]) -> Vec<u8> {
+        two_statements_with("CH44&#51;1999123000889012", first, second)
+    }
+
+    /// Deux `Stmt` : le premier à l'IBAN écrit tel que donné, le second à IBAN simple.
+    fn two_statements_with(first_iban: &str, first: &[&str], second: &[&str]) -> Vec<u8> {
+        let stmt_of = |iban: &str, entries: &[&str]| {
+            let doc = String::from_utf8(camt(iban, entries)).unwrap();
+            let from = doc.find("<Stmt>").unwrap();
+            let to = doc.find("</Stmt>").unwrap() + "</Stmt>".len();
+            doc[from..to].to_string()
+        };
+        let (a, b) = (stmt_of(first_iban, first), stmt_of(IBAN, second));
+        format!(
+            r#"<?xml version="1.0" encoding="UTF-8"?>
+<Document xmlns="urn:iso:std:iso:20022:tech:xsd:camt.053.001.04">
+  <BkToCstmrStmt>{a}{b}</BkToCstmrStmt>
+</Document>
+"#
+        )
+        .into_bytes()
     }
 
     /// AC-1.6 — l'alias n'est passé que s'il diffère de la clé neuve : une
@@ -2606,32 +2755,180 @@ mod legacy_alias_tests {
                 &entry("2026-10-11", "PLAIN-2"),
             ],
         );
-        let aliases = aliases_of(&bytes);
+        let aliases = aliases_of(&bytes).expect("relecture");
         assert_eq!(aliases.len(), 2);
         let alias = aliases[0].as_ref().expect("alias de la ligne à entité");
-        assert_eq!(alias.reference_normalized, "co");
+        assert_eq!(alias.key().reference_normalized, "co");
         assert_eq!(aliases[1], None, "ligne sans entité : aucun alias");
     }
 
-    /// AC-1.6 (i) — la lecture héritée échoue (date en CDATA, lue vide) :
-    /// aucun alias, jamais d'erreur.
+    /// AC-R1 — la lecture héritée échoue (date en CDATA, lue vide).
     #[test]
-    fn no_alias_when_the_legacy_reading_fails_819() {
+    fn refusal_when_the_legacy_reading_fails_922() {
         let bytes = camt(IBAN, &[&entry("<![CDATA[2026-10-10]]>", "REF &amp; Co")]);
         assert!(kesh_import::camt053::parse_legacy_0173(&bytes).is_err());
-        assert!(aliases_of(&bytes).is_empty());
+        assert_eq!(aliases_of(&bytes), Err(LegacyRereadFailure::Reading));
     }
 
-    /// AC-1.6 (ii) — la sélection héritée échoue (IBAN à référence de
-    /// caractère, lu tronqué en 0.17.3) : aucun alias.
+    /// AC-R2 — la sélection héritée échoue (IBAN à référence de caractère, lu tronqué
+    /// en 0.17.3).
     #[test]
-    fn no_alias_when_the_legacy_selection_fails_819() {
+    fn refusal_when_the_legacy_selection_fails_922() {
         let bytes = camt(
             "CH44&#51;1999123000889012",
             &[&entry("2026-10-10", "REF &amp; Co")],
         );
         assert!(kesh_import::camt053::parse_legacy_0173(&bytes).is_ok());
-        assert!(aliases_of(&bytes).is_empty());
+        assert!(matches!(
+            parse_camt053(&bytes),
+            Ok(stmts) if stmts[0].account_iban == IBAN
+        ));
+        assert_eq!(aliases_of(&bytes), Err(LegacyRereadFailure::Selection));
+    }
+
+    /// AC-R3 — la branche existe : deux relevés du même IBAN, trois lignes contre deux.
+    #[test]
+    fn line_count_branch_is_reachable_922() {
+        let (a, b, c) = (
+            entry("2026-10-10", "A"),
+            entry("2026-10-11", "B"),
+            entry("2026-10-12", "C"),
+        );
+        let bytes = two_statements(&[&a, &b, &c], &[&a, &b]);
+        assert_eq!(aliases_of(&bytes), Err(LegacyRereadFailure::LineCount));
+    }
+
+    /// AC-R4 — dans le **même** relevé : une date de comptabilisation ou un montant que
+    /// la lecture héritée lit autrement.
+    #[test]
+    fn misaligned_within_the_same_statement_922() {
+        let a = entry("2026-10-10", "A");
+        let cut_date = entry("&#x32;026-10-11", "B");
+        assert_eq!(
+            aliases_of(&camt(IBAN, &[&a, &cut_date])),
+            Err(LegacyRereadFailure::Misaligned)
+        );
+        let cut_amount = entry("2026-10-11", "B").replace(">10.00<", ">1&#48;.00<");
+        assert_eq!(
+            aliases_of(&camt(IBAN, &[&a, &cut_amount])),
+            Err(LegacyRereadFailure::Misaligned)
+        );
+    }
+
+    /// AC-R4 (revue P1, E-1) — les deux lectures choisissent deux relevés, de mêmes
+    /// dates et de mêmes montants, dans les deux sens : l'IBAN du premier relevé n'est
+    /// celui du compte que pour la lecture corrigée, ou que pour la lecture héritée.
+    #[test]
+    fn misaligned_when_the_readings_choose_other_statements_922() {
+        let (a, other) = (
+            entry("2026-10-10", "REF &amp; Co"),
+            entry("2026-10-10", "AUTRE"),
+        );
+        let bytes = two_statements(&[&a], &[&other]);
+        assert_eq!(aliases_of(&bytes), Err(LegacyRereadFailure::Misaligned));
+
+        let mirror = format!("XX&#51;{IBAN}");
+        let bytes = two_statements_with(&mirror, &[&a], &[&other]);
+        assert_eq!(aliases_of(&bytes), Err(LegacyRereadFailure::Misaligned));
+    }
+
+    /// Revue P1 (E-3) — un identifiant trop long pour sa colonne a un alias, à sa clé
+    /// coupée, même sans aucune entité : c'est celle qu'un serveur sans mode strict a
+    /// stockée.
+    #[test]
+    fn identifier_longer_than_its_column_has_a_cut_alias_915() {
+        let long = "x".repeat(300);
+        let bytes = camt(IBAN, &[&entry("2026-10-10", &long)]);
+        let aliases = aliases_of(&bytes).expect("relecture");
+        let alias = aliases[0].as_ref().expect("alias de l'identifiant long");
+        assert_eq!(alias.key().reference_normalized, "x".repeat(255));
+    }
+
+    /// AC-R8 — un relevé sans ligne n'a rien à vérifier, sa relecture échouerait-elle.
+    #[test]
+    fn no_refusal_without_lines_922() {
+        let bytes = camt("CH44&#51;1999123000889012", &[]);
+        assert_eq!(aliases_of(&bytes), Ok(vec![]));
+    }
+
+    /// AC-N3 — **aucun relevé du dépôt n'est refusé à tort.** Les fixtures de
+    /// `kesh-import` et de l'E2E se rangent en deux classes, par exécution : refusés
+    /// par la lecture corrigée (rien à relire), acceptés (la relecture doit aboutir).
+    /// Les totaux sont en dur : sans eux, un dossier vide passerait.
+    #[test]
+    fn every_repository_fixture_rereads_922() {
+        /// Relevé au développement de la 33-2 (Change Log) : 19 + 4 fixtures, dont 4
+        /// que la lecture corrigée refuse.
+        const FIXTURES: usize = 23;
+        const ACCEPTED: usize = 19;
+
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let mut paths: Vec<std::path::PathBuf> = Vec::new();
+        for (dir, prefix) in [
+            ("crates/kesh-import/tests/fixtures/camt053", ""),
+            ("frontend/tests/e2e/fixtures", "camt053_"),
+        ] {
+            for entry in std::fs::read_dir(root.join(dir)).expect("dossier de fixtures") {
+                let path = entry.expect("entrée").path();
+                let name = path.file_name().unwrap().to_string_lossy().into_owned();
+                if name.starts_with(prefix) && name.ends_with(".xml") {
+                    paths.push(path);
+                }
+            }
+        }
+        paths.sort();
+
+        let mut accepted = Vec::new();
+        let mut refused = Vec::new();
+        for path in &paths {
+            let name = path.file_name().unwrap().to_string_lossy().into_owned();
+            let bytes = std::fs::read(path).expect("lecture de la fixture");
+            let Ok(stmts) = parse_camt053(&bytes) else {
+                refused.push(name);
+                continue;
+            };
+            // Revue P1 (B6, E-6) — chaque compte du fichier, non le seul premier.
+            let ibans: std::collections::BTreeSet<String> =
+                stmts.iter().map(|s| s.account_iban.clone()).collect();
+            for iban in ibans {
+                let selection = select_statement_by_iban(stmts.clone(), &iban)
+                    .expect("sélection par l'IBAN d'un de ses relevés");
+                let aliases = legacy_0173_aliases(
+                    &bytes,
+                    &iban,
+                    selection.position,
+                    &selection.selected.transactions,
+                    17,
+                );
+                assert!(
+                    aliases.is_ok(),
+                    "{name}, {iban} refusé à tort : {aliases:?}"
+                );
+            }
+            accepted.push(name);
+        }
+
+        assert_eq!(
+            accepted.len() + refused.len(),
+            FIXTURES,
+            "{accepted:?} {refused:?}"
+        );
+        assert_eq!(accepted.len(), ACCEPTED, "refusés : {refused:?}");
+        assert_eq!(
+            refused,
+            [
+                "v04_latin1.xml",
+                "v04_latin1_hors_texte.xml",
+                "v04_truncated.xml",
+                "v04_truncated_after_stmt_close.xml",
+            ]
+        );
+        for named in ["v04_multi_stmt.xml", "v04_characterization.xml"] {
+            assert!(
+                accepted.iter().any(|n| n == named),
+                "{named} : {accepted:?}"
+            );
+        }
     }
 }
 

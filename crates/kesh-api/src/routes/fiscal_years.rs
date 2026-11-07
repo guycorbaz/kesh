@@ -35,6 +35,7 @@ use kesh_db::repositories::fiscal_years::{
 use kesh_db::snapshot::ReadSnapshot;
 
 use crate::AppState;
+use crate::dates_recues::borner;
 use crate::errors::{AppError, t};
 use crate::middleware::auth::CurrentUser;
 use crate::routes::api_keys::ensure_not_pat;
@@ -260,6 +261,8 @@ pub async fn create_fiscal_year(
     Extension(current_user): Extension<CurrentUser>,
     Json(req): Json<CreateFiscalYearRequest>,
 ) -> Result<(StatusCode, Json<FiscalYearResponse>), AppError> {
+    borner(req.start_date, "startDate")?;
+    borner(req.end_date, "endDate")?;
     // Pré-validation client-side back-up : nom non vide.
     let name = req.name.trim().to_string();
     if name.is_empty() {
@@ -396,13 +399,25 @@ pub async fn reopen_fiscal_year(
         )));
     }
 
-    let fy = fiscal_years::reopen(
-        &state.pool,
-        current_user.user_id,
-        current_user.company_id,
-        id,
-        motif,
-    )
+    // Story 33-1a (#926, C-e331-2) — rejouée sur interblocage : la réouverture tient
+    // l'exercice puis demande ses postérieurs, alors que la validation d'une facture
+    // fournisseur demande désormais les autres exercices de l'année. Transaction
+    // unique, audit compris, sûre à relancer ; un refus métier sort en
+    // `DbError::Invariant`, qui ne se rejoue pas.
+    let fy = kesh_db::retry::retry_on_deadlock("fiscal_years::reopen", || {
+        let motif = motif.clone();
+        let pool = state.pool.clone();
+        async move {
+            fiscal_years::reopen(
+                &pool,
+                current_user.user_id,
+                current_user.company_id,
+                id,
+                motif,
+            )
+            .await
+        }
+    })
     .await
     .map_err(map_reopen_error)?;
 

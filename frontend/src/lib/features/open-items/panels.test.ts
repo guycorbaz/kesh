@@ -96,11 +96,11 @@ describe('AC6 — le panneau d’un groupe (test 9)', () => {
 			lines: [
 				groupLine({
 					id: 1,
-					document: { type: 'creditNote', id: 3, number: 'AV-1', invoiceId: null, invoiceNumber: null },
+					document: { type: 'creditNote', id: 3, number: 'AV-1', internalNumber: null, invoiceId: null, invoiceNumber: null },
 				}),
 				groupLine({
 					id: 2,
-					document: { type: 'invoice', id: 4, number: 'F-9', invoiceId: null, invoiceNumber: null },
+					document: { type: 'invoice', id: 4, number: 'F-9', internalNumber: null, invoiceId: null, invoiceNumber: null },
 				}),
 			],
 		});

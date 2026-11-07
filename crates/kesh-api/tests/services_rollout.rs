@@ -433,6 +433,7 @@ fn mcp_societe(company_id: i64, user_id: i64, portees: &[Portee]) -> ContexteAcc
     ContexteAcces::mcp(
         company_id,
         user_id,
+        1,
         portees.iter().copied().collect::<BTreeSet<_>>(),
     )
 }
@@ -2827,7 +2828,7 @@ async fn ac324b_b_les_bornes_des_listes_de_factures(pool: MySqlPool) {
             DemandeListeFacturesFournisseur {
                 limit,
                 offset,
-                statuts: Vec::new(),
+                ..Default::default()
             },
         )
         .await

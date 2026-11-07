@@ -35,7 +35,10 @@ vi.mock('$lib/features/invoices/invoices.api', () => ({
 	deleteInvoice: vi.fn(),
 }));
 
+import { tick } from 'svelte';
 import Page from './+page.svelte';
+import { listInvoices } from '$lib/features/invoices/invoices.api';
+import { notifyError } from '$lib/shared/utils/notify';
 
 function facture(over: Partial<InvoiceListItemResponse> = {}): InvoiceListItemResponse {
 	return {
@@ -85,5 +88,44 @@ describe('liste des factures — dates (v0171)', () => {
 			),
 		);
 		expect(dialog()).not.toContain('2026-03-02');
+	});
+});
+
+describe('liste des factures — une date en cours de frappe (Story 33-4)', () => {
+	const frappe = ['0002-11-06', '0020-11-06', '0202-11-06'];
+
+	for (const id of ['invoice-date-from', 'invoice-date-to']) {
+		it(`#${id} : l’année tapée n’interroge pas, ne notifie rien, ne vide pas la liste (mutation : valeur appliquée sans contrôle)`, async () => {
+			const { findByTestId, container } = render(Page);
+			await findByTestId('invoice-row-date');
+			const input = container.querySelector(`#${id}`) as HTMLInputElement;
+			const avant = vi.mocked(listInvoices).mock.calls.length;
+			for (const v of frappe) {
+				await fireEvent.input(input, { target: { value: v } });
+				expect(input.value, 'le champ garde la frappe').toBe(v);
+			}
+			await tick();
+			expect(vi.mocked(listInvoices).mock.calls.length).toBe(avant);
+			expect(notifyError).not.toHaveBeenCalled();
+			expect((await findByTestId('invoice-row-date')).textContent?.trim()).toBe('02.03.2026');
+
+			await fireEvent.input(input, { target: { value: '2026-11-06' } });
+			const cle = id === 'invoice-date-from' ? 'dateFrom' : 'dateTo';
+			await waitFor(() =>
+				expect(vi.mocked(listInvoices)).toHaveBeenLastCalledWith(
+					expect.objectContaining({ [cle]: '2026-11-06' }),
+				),
+			);
+		});
+	}
+
+	it('la sortie du champ restaure la dernière date valide', async () => {
+		const { findByTestId, container } = render(Page);
+		await findByTestId('invoice-row-date');
+		const input = container.querySelector('#invoice-date-from') as HTMLInputElement;
+		await fireEvent.input(input, { target: { value: '2026-01-31' } });
+		await fireEvent.input(input, { target: { value: '0202-01-31' } });
+		await fireEvent.blur(input);
+		expect(input.value).toBe('2026-01-31');
 	});
 });

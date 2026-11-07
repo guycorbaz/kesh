@@ -267,6 +267,10 @@
 
 	function handleToggle(key: string, e: Event): void {
 		const open = (e.currentTarget as HTMLDetailsElement).open;
+		// `toggle` part aussi quand Kesh pose lui-même `open` : au montage, et à
+		// l'auto-dépliage ci-dessus. L'état vaut alors déjà `open`, et ce n'est pas un
+		// choix de l'utilisateur : rien à écrire (#424, Story 33-9).
+		if (open === expandedState[key]) return;
 		expandedState = { ...expandedState, [key]: open };
 		persistGroupState(key, open);
 	}

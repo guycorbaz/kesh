@@ -12,6 +12,7 @@
 pub mod generator;
 pub mod parser;
 pub mod pdf;
+pub(crate) mod texte;
 pub mod types;
 pub mod validation;
 
@@ -25,4 +26,4 @@ pub use types::{
     Address, AddressType, Currency, InvoiceLinePdf, InvoicePdfData, InvoiceVatLinePdf, QrBillData,
     QrBillError, QrBillI18n, Reference, ReminderPdf,
 };
-pub use validation::{is_iso_3166_alpha2, validate};
+pub use validation::{champ_vide_pour_qr, first_qr_refused_char, is_iso_3166_alpha2, validate};

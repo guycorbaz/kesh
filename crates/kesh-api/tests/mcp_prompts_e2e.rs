@@ -294,7 +294,7 @@ fn liste_du_catalogue(cat: &Catalogue) -> Value {
 }
 
 fn acces(c: i64, u: i64, portees: &[Portee]) -> ContexteAcces {
-    ContexteAcces::mcp(c, u, portees.iter().copied().collect::<BTreeSet<_>>())
+    ContexteAcces::mcp(c, u, 1, portees.iter().copied().collect::<BTreeSet<_>>())
 }
 
 // ---------------------------------------------------------------------------

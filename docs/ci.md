@@ -6,10 +6,12 @@ Documentation de la pipeline GitHub Actions définie dans `.github/workflows/ci.
 
 La pipeline `ci.yml` se déclenche sur :
 
-- **Pull request** vers `main` → 4 jobs (`backend`, `frontend`, `docker-build`, `e2e-smoke`)
-- **Push** sur `main` (= merge de PR) → mêmes 4 jobs
+- **Pull request** vers `main` → le job `changes`, puis 4 jobs (`backend`, `frontend`, `docker-build`, `e2e-smoke`), qui doivent être sautés si la PR ne porte que `_bmad-output/` (cas nominal encore à relever ; l'échec, l'annulation et le délai dépassé du filtre l'ont été, voir ci-dessous)
+- **Push** sur `main` (= merge de PR) → `changes`, puis les mêmes 4 jobs, toujours
 
-Aucun filtre `paths:` : les quatre jobs tournent à chaque push, même sur un commit de documentation seule.
+**Le filtre, et son périmètre étroit** *(Story 33-11, #928)* : le job `changes` lance `scripts/ci-seuls-artefacts.sh`, qui rend `code=false` **seulement** sur une `pull_request` dont le diff, non vide, ne nomme que des fichiers sous `_bmad-output/`. Les quatre jobs **doivent** alors être sautés, et un job sauté **doit** compter pour réussi aux checks requis — ce que la documentation de GitHub affirme et que les relevés de l'AC-6 de la story n'ont pas encore confirmé (`_bmad-output/implementation-artifacts/33-11-filtre-ci-preuves-ac6.md`) ; c'est pourquoi le filtre n'est pas un `paths-ignore` au niveau du workflow, qui les laisserait en attente. Tout le reste échoue vers la CI complète : `push`, diff vide, SHA inconnu, `git` en échec, renommage depuis ou vers un autre dossier, et `changes` lui-même en échec : les conditions excluent le seul cas `changes` réussi et sortie `false`. **Relevé le 2026-11-07 sur la PR #965** (commits temporaires défaits par `git revert` avant la fusion) : `changes` en **échec** (run 42402136024) — les quatre jobs tournent jusqu'au vert, aucun sauté ; `changes` **annulé** (run 42406580735) — les quatre `cancelled`, aucun sauté, PR `BLOCKED` ; `changes` au **délai dépassé** (run 42406684036) — `changes` `cancelled`, les quatre tournent jusqu'au vert, aucun sauté. Le filtre échoue donc fermé dans les trois cas. **Manuels, `docs/`, `README.md`, `CHANGELOG.md`, `CLAUDE.md` et `website/` restent hors du filtre**, parce que des tests les lisent (`textes_coherents.rs`, `mcp_matrice_manuel.rs`, `configuration_transmise.rs`). `changes` n'est pas un check requis. ⚠️ **Élargir le périmètre demande de vérifier d'abord que rien ne lit les fichiers visés** : l'erreur de ce filtre est muette, elle saute des tests à tort. **Reste à relever** : le cas nominal — une PR qui ne porte que `_bmad-output/` saute les quatre jobs **et** reste fusionnable (`CLEAN`, quatre contextes `SKIPPED`) ; il ne peut l'être qu'une fois `ci.yml` hors du diff, sur la PR de la rétrospective de l'Epic 33 (relevé (c) de l'AC-6), et ce paragraphe se rétracte s'il le contredit.
+
+*(Jusqu'à la Story 33-11, 2026-11-07, ce document disait : « Aucun filtre `paths:` : les quatre jobs tournent à chaque push, même sur un commit de documentation seule. » Il n'y a toujours aucun filtre `paths:`.)*
 
 *(Jusqu'à la Story 31-2, ce document décrivait un job `e2e` complet qui n'avait jamais existé dans `ci.yml` — issue #577. Il décrit désormais le dépôt ; les décisions D-6-1-* relatives à ce job sont annotées « non retenu » en fin de document.)*
 
@@ -20,6 +22,8 @@ La pipeline `release.yml` se déclenche **uniquement** sur push de tag `v*.*.*` 
 ### Schéma d'exécution
 
 ```
+                    [changes]                        ← filtre des artefacts, non requis
+                   /    |    \
 [backend]         [frontend]         [docker-build]   ← sanity, no push
                                            |
                                       [e2e-smoke]     ← image de la PR, une spec Playwright
@@ -27,10 +31,11 @@ La pipeline `release.yml` se déclenche **uniquement** sur push de tag `v*.*.*` 
 
 | Job (nom affiché) | Trigger | Timeout | Dépendances | Vérification requise de `main` |
 |---|---|---|---|---|
-| `backend` (Backend (Rust)) | push, PR | 120 min | — | oui |
-| `frontend` (Frontend (Svelte)) | push, PR | 20 min | — | oui |
-| `docker-build` (Docker build (sanity)) | push, PR | 20 min | — | oui |
-| `e2e-smoke` (E2E smoke (Playwright)) | push, PR | 25 min | `docker-build` | oui — depuis le 2026-10-24 (décision de Guy) |
+| `changes` (Filtre des artefacts) | push, PR | 10 min | — | non |
+| `backend` (Backend (Rust)) | push, PR | 120 min | `changes` | oui |
+| `frontend` (Frontend (Svelte)) | push, PR | 20 min | `changes` | oui |
+| `docker-build` (Docker build (sanity)) | push, PR | 20 min | `changes` | oui |
+| `e2e-smoke` (E2E smoke (Playwright)) | push, PR | 25 min | `changes`, `docker-build` | oui — depuis le 2026-10-24 (décision de Guy) |
 | `docker` (release) | push tag `v*.*.*` | (défaut) | — | — |
 
 ### Le smoke E2E — job `e2e-smoke` (Story 31-2, #577)
@@ -52,7 +57,7 @@ si elle échoue), puis `npm ci`, `npx playwright install --with-deps chromium` e
 `npx playwright test tests/e2e/smoke.spec.ts`. En cas d'échec : journal du backend, et `frontend/test-results/`
 (traces) téléversé, rétention 3 jours.
 
-Il exerce aussi, **sur chaque PR**, le chemin « image + utilisateur `kesh` + migrations au démarrage » que reprend le
+Il exerce aussi, **sur chaque PR que le filtre ne saute pas**, le chemin « image + utilisateur `kesh` + migrations au démarrage » que reprend le
 smoke `/health` de `release.yml`. **Durée mesurée au premier run** (PR #702, 2026-10-23) : **16 min 29 s** — ≈ 10 min pour
 `npx playwright install --with-deps chromium`, ≈ 5 min de construction de l'image depuis le cache `gha`, ≈ 4 s pour la
 spec. Au-delà des 10 min visées : le cache des navigateurs (D-6-1-A) est le levier, à mettre en place.
@@ -74,7 +79,7 @@ d'un privilège que la production n'a pas (Stories 29-4 et 29-8, `INNODB_TRX`). 
 `docs/testing.md` § « Base de dev jetable ».
 
 ⚠️ **Le smoke de `release.yml` ne se vérifie qu'à la publication** : un échec y bloque la release avant le push de
-l'image. Le risque est borné par `e2e-smoke`, qui exerce sur chaque PR la même image avec le même utilisateur. Premier
+l'image. Le risque est borné par `e2e-smoke`, qui exerce sur chaque PR non filtrée la même image avec le même utilisateur. Premier
 smoke de publication en utilisateur `kesh` (#698) : tag `v0.15.0`, 2026-10-24, **vert** (run 40080415340).
 
 ## Reproduction locale
@@ -89,6 +94,8 @@ cargo build --workspace --all-targets
 cargo clippy --workspace --all-targets -- -D warnings
 cargo test --workspace -j1 -- --test-threads=1
 ```
+
+**`scripts/gate-ci.sh kesh_ci_<suffixe> [journal]`** rejoue la dernière ligne telle quelle, comme la CI : base recréée sur le MariaDB de dev, migrations appliquées une à une par `mariadb … < fichier`, seed, puis `cargo test` dans un environnement fermé, sans `DATABASE_URL` du shell ni variable de l'appelant, et refus si un `.env` est atteignable, à la racine, dans un parent ou dans un crate. Dernière ligne de sa sortie standard : `gate-ci : N passés, M échoués, K ignorés`, recomptée depuis `test result:` (le journal et le code suivent, sur la sortie d'erreur). Le journal donné doit être un fichier ordinaire (sinon refus, code 2 : un périphérique comme `/dev/full` se relirait sans fin) ; s'il s'écrit mal en cours de route, aucun décompte n'est rendu (code 5). ⚠️ `cargo test` s'arrête au premier binaire en échec, comme en CI : le décompte d'un rouge ne couvre que les binaires déjà passés. Écarts déclarés : le nom de la base, le MariaDB de dev (datadir en tmpfs, durabilité réduite, d'autres bases à côté), ses droits déjà posés, `HOME` réel (la configuration cargo de la station est lue), les variables du runner. **Les tests des deux scripts de la Story 33-10 ajoutent une à deux minutes à la suite** (`recette-montee.test.sh` : 99 à 104 s sous nextest à la station, deux tirages, dont, par construction et non mesurés, 22 à 24 s pour le seul cas du client `docker` sourd ; `gate-ci.test.sh` < 1 s), et demandent `python3`, `ss`, `jq`, `realpath`, `md5sum`, `timeout`, présents sur `ubuntu-latest`. Leurs enveloppes Rust les bornent à 4 Go de mémoire virtuelle et 600 s. **Mesuré le 2026-11-07, Story 33-10, à la station, cible déjà compilée : 18 min 37 s, 206 binaires, 4823 passés, 0 échoué, 16 ignorés** ; sans cible chaude, davantage, et la CI n'a pas de tmpfs. `scripts/test-fast.sh`, lui, lance nextest, un processus par test : avec le correctif `env_lock` de la 0.17.4 défait, il reste vert (4815 passés) quand `gate-ci.sh` rend les **17 échecs** que la CI avait rendus.
 
 **Pourquoi `-j1 --test-threads=1`** : les tests partagent un état global (i18n, locale d'erreurs) et l'isolation cross-binary SQLx exige une exécution séquentielle pour éviter `PoolTimedOut`. Cf. mémo projet `feedback_sqlx_mysql_gotchas`.
 
@@ -204,6 +211,7 @@ tiré **anonymement**, et un `429` de Docker Hub faisait échouer le job `backen
 
 | Job | Timeout | Motivation |
 |---|---|---|
+| `changes` | 10 min | `checkout` en `fetch-depth: 0`, test du script, puis le script ; quelques secondes attendues, non mesurées. Son dépassement fait annuler le job, cas à relever à l'AC-6 (e) de la Story 33-11 |
 | `backend` | 120 min | Compilation + `cargo test -j1 --test-threads=1` ; 19 min 14 s mesurées sur runner le 2026-08-16 (PR #311). La marge est délibérée : un timeout se dimensionne sur le pire cas (cf. commentaire de `ci.yml`) |
 | `frontend` | 20 min | Build Vite + Vitest + svelte-check ≈ 5 min |
 | `docker-build` | 20 min | Build multi-stage ≈ 8 min |
@@ -268,9 +276,9 @@ Le fail-fast avant les specs est le `globalSetup` de Playwright (`frontend/tests
 
 ## Décision MariaDB 10.11 (Story 10-1 D3 — parité prod NAS)
 
-**Mise à jour 2026-05-21** (Story 10-1 D3) : alignement à `mariadb:10.11` partout (dev + CI + prod) pour parité avec la version Package Center Synology DSM 7.x du NAS de Guy (production v0.1.0). Compat MariaDB ≥ 10.6 confirmée par sanity check pre-flight (26 migrations passent sur 10.11 vierge, dont la VIRTUAL+UNIQUE column de `reconciliation_rules` Story 8-5b).
+**Mise à jour 2026-05-21** (Story 10-1 D3) : alignement à `mariadb:10.11` partout (dev + CI + prod) pour parité avec la version Package Center Synology DSM 7.x du NAS de Guy (production v0.1.0). Compat MariaDB ≥ 10.6 confirmée par sanity check pre-flight (26 migrations passent sur 10.11 vierge, dont la VIRTUAL+UNIQUE column de `reconciliation_rules` Story 8-5b). *(Depuis la Story 33-1b, le plancher est 10.7 : `NATURAL_SORT_KEY`.)*
 
-**Historique** : la pipeline CI utilisait antérieurement MariaDB 11.4 (Story 6-1 décision 2026-04-15). Le passage à 10.11 dans Story 10-1 vise à éviter tout drift entre la version testée en CI et celle utilisée en prod sur le NAS. `architecture.md` impose toujours « MariaDB 10.6+ » comme minimum — 10.11 respecte le minimum avec marge.
+**Historique** : la pipeline CI utilisait antérieurement MariaDB 11.4 (Story 6-1 décision 2026-04-15). Le passage à 10.11 dans Story 10-1 vise à éviter tout drift entre la version testée en CI et celle utilisée en prod sur le NAS. `architecture.md` impose « MariaDB 10.7+ » comme minimum depuis la Story 33-1b (« 10.6+ » auparavant) — 10.11 respecte le minimum avec marge.
 
 ### Justification mono-version 10.11 (Story 10-2 AC #20)
 
@@ -278,7 +286,7 @@ La pipeline CI utilise **un seul service MariaDB** en version 10.11 — aucune m
 
 - **Cible prod unique** : le NAS Synology Package Center DSM ≥ 7.2 ne propose que MariaDB 10.x stable (10.11 spécifiquement). Une matrice qui inclurait 11.x ferait passer des tests sur un moteur que personne ne tournera en prod, sans gain de couverture.
 - **Bugs 10.11-specific seraient masqués par 11** : si une feature dépend d'un comportement spécifique à MariaDB 11, elle passerait sur la branche matrice 11 mais casserait silencieusement sur 10.11 — sans matrice, le test 10.11 attrape immédiatement.
-- **Compat upstream MariaDB ≥ 10.6 documentée** : la migration `crates/kesh-db/migrations/20260513000001_reconciliation_rules.sql:27-28` documente la compat 10.6+ pour les opérateurs hors NAS Synology qui voudraient tourner sur 10.6/10.7/10.8/10.9/10.10. Cette compat **n'est pas testée par la CI projet** — c'est de la documentation, pas une garantie.
+- **Compat upstream MariaDB ≥ 10.7 documentée** : le tri des numéros internes emploie `NATURAL_SORT_KEY`, apparue en 10.7 (Story 33-1b, `C-e331-19`) ; la migration `crates/kesh-db/migrations/20260513000001_reconciliation_rules.sql:27-28`, qui ne se touche pas, parle encore de 10.6+ pour sa propre colonne. Pour les opérateurs hors NAS Synology qui voudraient tourner sur 10.7/10.8/10.9/10.10, cette compat **n'est pas testée par la CI projet** — c'est de la documentation, pas une garantie.
 
 ## Dette technique CI
 

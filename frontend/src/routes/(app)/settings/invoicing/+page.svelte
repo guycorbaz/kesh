@@ -47,6 +47,7 @@
 	let loadError = $state('');
 
 	let format = $state('');
+	let supplierFormat = $state('');
 	let descriptionTemplate = $state('');
 	let receivableId = $state<number | null>(null);
 	let revenueId = $state<number | null>(null);
@@ -111,6 +112,13 @@
 	let vatRecoverableOptions = $derived(
 		withCurrentAccount(assetAccounts, vatRecoverableId, accounts),
 	);
+	/** Le libellé d'une option ; un compte archivé, seule valeur en place qui peut l'être, le dit (#486). */
+	function accountOptionLabel(a: AccountResponse): string {
+		const label = `${a.number} — ${a.name}`;
+		return a.active
+			? label
+			: `${label} ${i18nMsg('settings-invoicing-account-archived', '(archivé)')}`;
+	}
 	let vatDecompteOptions = $derived(withCurrentAccount(liabilityAccounts, vatDecompteId, accounts));
 	let roundingOptions = $derived(withCurrentAccount(resultAccounts, roundingId, accounts));
 	// Story 25-4-d1 : un écart soldé est, lui aussi, un résultat — charge ou produit.
@@ -139,6 +147,13 @@
 	let formatPreview = $derived(
 		formatValidation.ok ? previewInvoiceNumber(format, 2026, '2026', 1) : '',
 	);
+	// Story 33-1b (#926) — le numéro interne a une forme fixe (`validate_numbering_template`).
+	let supplierFormatValidation = $derived(
+		validateFormatTemplate(supplierFormat, { numbering: true }),
+	);
+	let supplierFormatPreview = $derived(
+		supplierFormatValidation.ok ? previewInvoiceNumber(supplierFormat, 2026, '', 1) : '',
+	);
 	let descriptionValidation = $derived(validateDescriptionTemplate(descriptionTemplate));
 
 	let isAdmin = $derived(authState.currentUser?.role === 'Admin');
@@ -148,7 +163,9 @@
 			// Story 15-6c (AC8) : lancée avec les deux autres, mais son échec n'est
 			// pas une erreur de chargement — il laisse simplement les menus non filtrés.
 			const banks = listBankAccounts(false, true).catch(() => []);
-			const [s, a] = await Promise.all([getInvoiceSettings(), fetchAccounts(false)]);
+			// Story 33-8 (#486) : archivés compris, pour que `withCurrentAccount` résolve un
+			// compte désigné puis archivé ; les filtres ci-dessus ne le proposent à personne.
+			const [s, a] = await Promise.all([getInvoiceSettings(), fetchAccounts(true)]);
 			bankLinkedAccountIds = new Set(
 				(await banks)
 					.map((b) => b.journalAccountId)
@@ -157,6 +174,7 @@
 			settings = s;
 			accounts = a;
 			format = s.invoiceNumberFormat;
+			supplierFormat = s.supplierInternalNumberFormat;
 			descriptionTemplate = s.journalEntryDescriptionTemplate;
 			receivableId = s.defaultReceivableAccountId;
 			revenueId = s.defaultRevenueAccountId;
@@ -194,6 +212,13 @@
 			);
 			return;
 		}
+		if (!supplierFormatValidation.ok) {
+			notifyError(
+				supplierFormatValidation.error ??
+					i18nMsg('settings-invoicing-format-invalid', 'Format invalide'),
+			);
+			return;
+		}
 		if (!descriptionValidation.ok) {
 			notifyError(
 				descriptionValidation.error ??
@@ -205,6 +230,7 @@
 		try {
 			const updated = await updateInvoiceSettings({
 				invoiceNumberFormat: format,
+				supplierInternalNumberFormat: supplierFormat,
 				defaultReceivableAccountId: receivableId,
 				defaultRevenueAccountId: revenueId,
 				defaultVatPayableAccountId: vatPayableId,
@@ -233,6 +259,7 @@
 						const fresh = await getInvoiceSettings();
 						settings = fresh;
 						format = fresh.invoiceNumberFormat;
+						supplierFormat = fresh.supplierInternalNumberFormat;
 						descriptionTemplate = fresh.journalEntryDescriptionTemplate;
 						receivableId = fresh.defaultReceivableAccountId;
 						revenueId = fresh.defaultRevenueAccountId;
@@ -307,6 +334,34 @@
 			</div>
 
 			<div>
+				<label class="mb-1 block text-sm font-medium" for="supplier-format">
+					{i18nMsg('settings-invoicing-supplier-format-label', 'Format des factures fournisseur')}
+				</label>
+				<Input
+					id="supplier-format"
+					data-testid="settings-supplier-internal-number-format"
+					bind:value={supplierFormat}
+					placeholder="FF-{'{YEAR}'}-{'{SEQ:03}'}"
+				/>
+				<p class="mt-1 text-xs text-text-muted">
+					{i18nMsg(
+						'settings-invoicing-supplier-format-help',
+						"Un préfixe, {YEAR}, un séparateur, puis {SEQ} ou {SEQ:03}. S'applique aux numéros à venir : ceux déjà attribués ne changent pas.",
+					)}
+				</p>
+				{#if supplierFormatValidation.ok}
+					<p class="mt-1 text-sm" data-testid="settings-supplier-format-preview">
+						{i18nMsg('settings-invoicing-format-preview', 'Aperçu')} :
+						<span class="font-mono">{supplierFormatPreview}</span>
+					</p>
+				{:else}
+					<p class="mt-1 text-sm text-destructive" data-testid="settings-supplier-format-error">
+						{supplierFormatValidation.error}
+					</p>
+				{/if}
+			</div>
+
+			<div>
 				<label class="mb-1 block text-sm font-medium" for="desc">
 					{i18nMsg('settings-invoicing-description-template', "Libellé de l'écriture comptable")}
 				</label>
@@ -342,7 +397,7 @@
 				>
 					<option value={null}>{i18nMsg('settings-invoicing-select-none', '— Sélectionner —')}</option>
 					{#each receivableOptions as a (a.id)}
-						<option value={a.id}>{a.number} — {a.name}</option>
+						<option value={a.id}>{accountOptionLabel(a)}</option>
 					{/each}
 				</select>
 			</div>
@@ -358,7 +413,7 @@
 				>
 					<option value={null}>{i18nMsg('settings-invoicing-select-none', '— Sélectionner —')}</option>
 					{#each payableOptions as a (a.id)}
-						<option value={a.id}>{a.number} — {a.name}</option>
+						<option value={a.id}>{accountOptionLabel(a)}</option>
 					{/each}
 				</select>
 			</div>
@@ -373,7 +428,7 @@
 				>
 					<option value={null}>{i18nMsg('settings-invoicing-select-none', '— Sélectionner —')}</option>
 					{#each revenueOptions as a (a.id)}
-						<option value={a.id}>{a.number} — {a.name}</option>
+						<option value={a.id}>{accountOptionLabel(a)}</option>
 					{/each}
 				</select>
 			</div>
@@ -412,7 +467,7 @@
 				>
 					<option value={null}>{i18nMsg('settings-invoicing-select-none', '— Sélectionner —')}</option>
 					{#each vatPayableOptions as a (a.id)}
-						<option value={a.id}>{a.number} — {a.name}</option>
+						<option value={a.id}>{accountOptionLabel(a)}</option>
 					{/each}
 				</select>
 			</div>
@@ -427,7 +482,7 @@
 				>
 					<option value={null}>{i18nMsg('settings-invoicing-select-none', '— Sélectionner —')}</option>
 					{#each vatRecoverableOptions as a (a.id)}
-						<option value={a.id}>{a.number} — {a.name}</option>
+						<option value={a.id}>{accountOptionLabel(a)}</option>
 					{/each}
 				</select>
 			</div>
@@ -442,7 +497,7 @@
 				>
 					<option value={null}>{i18nMsg('settings-invoicing-select-none', '— Sélectionner —')}</option>
 					{#each vatDecompteOptions as a (a.id)}
-						<option value={a.id}>{a.number} — {a.name}</option>
+						<option value={a.id}>{accountOptionLabel(a)}</option>
 					{/each}
 				</select>
 			</div>
@@ -493,7 +548,7 @@
 				>
 					<option value={null}>{i18nMsg('settings-invoicing-select-none', '— Sélectionner —')}</option>
 					{#each roundingOptions as a (a.id)}
-						<option value={a.id}>{a.number} — {a.name}</option>
+						<option value={a.id}>{accountOptionLabel(a)}</option>
 					{/each}
 				</select>
 			</div>
@@ -522,7 +577,7 @@
 					>
 						<option value={null}>{i18nMsg('settings-invoicing-select-none', '— Sélectionner —')}</option>
 						{#each field.options as a (a.id)}
-							<option value={a.id}>{a.number} — {a.name}</option>
+							<option value={a.id}>{accountOptionLabel(a)}</option>
 						{/each}
 					</select>
 				</div>
@@ -558,7 +613,10 @@
 			<Button
 				type="submit"
 				data-testid="settings-invoicing-save"
-				disabled={submitting || !formatValidation.ok || !descriptionValidation.ok}
+				disabled={submitting ||
+					!formatValidation.ok ||
+					!supplierFormatValidation.ok ||
+					!descriptionValidation.ok}
 			>
 				{submitting
 					? i18nMsg('common-saving', 'Enregistrement…')

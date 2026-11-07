@@ -8,10 +8,16 @@
 //! (rendu, **puis** trace d'export) : un handler ne peut ni obtenir le contenu
 //! sans écrire la trace, ni tracer un export dont le rendu a échoué.
 //!
-//! La trace s'écrit sur la [`Trace`], par l'une des sept fonctions d'audit de ce
+//! La trace s'écrit sur la [`Trace`], par l'une des huit fonctions d'audit de ce
 //! module (best-effort : un échec est journalisé par `warn!`, jamais remonté).
 //! L'aiguillage `tracer` choisit **quelle fonction** appeler, jamais **quelle
-//! action** écrire : l'action reste un littéral à chaque `NewAuditLogEntry::user(`.
+//! action** écrire : l'action reste un littéral à chaque
+//! `NewAuditLogEntry::for_actor(`.
+//!
+//! Chaque trace dit son origine (Story 33-7, #776) : une clé d'API par sa colonne
+//! `actor_type`, une clé du serveur MCP par `channel` et `mcp_key_id` au détail, et
+//! une session par rien de plus — un détail sans `channel` se lit « écran, ou ligne
+//! antérieure à la 0.17.5 ».
 
 use chrono::{NaiveDate, Utc};
 use kesh_db::entities::AUDIT_ENTITY_ID_NONE;
@@ -20,16 +26,16 @@ use kesh_db::entities::audit_log::NewAuditLogEntry;
 use kesh_db::entities::journal_entry::Journal;
 use kesh_report::project_report::{ProjectPeriodMode, resolve_scope};
 use kesh_report::{
-    AgedReceivables, BalanceSheet, GeneralLedger, IncomeStatement, JournalReport, LedgerOptions,
-    LedgerPeriod, MAX_LEDGER_LIMIT, ProjectExpensesReport, ProjectReportScope, ProjectReturnReport,
-    ReportPeriod, TrialBalance, VatReport, generate_aged_receivables, generate_balance_sheet,
-    generate_general_ledger, generate_income_statement, generate_journal_report,
-    generate_project_expenses, generate_project_return, generate_trial_balance,
-    generate_vat_report,
+    AgedReceivables, BalanceSheet, GeneralLedger, HomepageSummary, IncomeStatement, JournalReport,
+    LedgerOptions, LedgerPeriod, MAX_LEDGER_LIMIT, ProjectExpensesReport, ProjectReportScope,
+    ProjectReturnReport, ReportPeriod, TrialBalance, VatReport, generate_aged_receivables,
+    generate_balance_sheet, generate_general_ledger, generate_homepage_summary,
+    generate_income_statement, generate_journal_report, generate_project_expenses,
+    generate_project_return, generate_trial_balance, generate_vat_report,
 };
 
 use crate::errors::AppError;
-use crate::services::acces::{ContexteAcces, Exigence, Portee};
+use crate::services::acces::{ContexteAcces, Exigence, OrigineTrace, Portee};
 use crate::services::poignees::{Lecture, Trace};
 
 // ===========================================================================
@@ -75,8 +81,7 @@ impl FormatExport {
 #[derive(Debug, Clone, Copy)]
 pub struct Affichage;
 
-/// Usage « export » dans un format : trace `report.exported` (sauf le grand
-/// livre, #729). Jamais servi au MCP.
+/// Usage « export » dans un format : trace `report.exported`. Jamais servi au MCP.
 #[derive(Debug, Clone, Copy)]
 pub struct Export(pub FormatExport);
 
@@ -293,17 +298,57 @@ enum DetailsTrace {
 pub struct Rapport<T, U> {
     contenu: T,
     details: DetailsTrace,
-    user_id: i64,
+    auteur: Auteur,
     usage: U,
+}
+
+/// L'auteur d'une trace : l'utilisateur, et d'où vient sa lecture (Story 33-7, #776).
+#[derive(Debug, Clone, Copy)]
+struct Auteur {
+    user_id: i64,
+    origine: OrigineTrace,
+}
+
+impl Auteur {
+    fn de(acces: &ContexteAcces) -> Self {
+        Self {
+            user_id: acces.user_id(),
+            origine: acces.origine_trace(),
+        }
+    }
+
+    /// Le numéro de clé d'API, pour `actor_type` et `actor_api_key_id`. Une clé du
+    /// serveur MCP n'en est pas une : elle paraît au nom de son créateur, et son numéro
+    /// va au détail ([`Auteur::detail`]).
+    fn cle_api(&self) -> Option<i64> {
+        match self.origine {
+            OrigineTrace::CleApi(id) => Some(id),
+            OrigineTrace::Session | OrigineTrace::Mcp(_) => None,
+        }
+    }
+
+    /// Le détail d'une trace, avec ce qu'il dit de son origine : rien pour une session
+    /// ni pour une clé d'API, `channel` et `mcp_key_id` pour le serveur MCP.
+    ///
+    /// ⚠️ Un détail qui n'est pas un objet JSON est rendu tel quel, **sans** l'origine
+    /// MCP : les huit appelants passent tous un `json!({…})`, et un appelant neuf qui
+    /// passerait autre chose perdrait `channel` sans rien signaler.
+    fn detail(&self, mut detail: serde_json::Value) -> serde_json::Value {
+        if let (OrigineTrace::Mcp(id), Some(objet)) = (self.origine, detail.as_object_mut()) {
+            objet.insert("channel".into(), serde_json::json!("mcp"));
+            objet.insert("mcp_key_id".into(), serde_json::json!(id));
+        }
+        detail
+    }
 }
 
 impl<T, U> Rapport<T, U> {
     /// Constructeur commun des neuf services.
-    fn nouveau(contenu: T, details: DetailsTrace, user_id: i64, usage: U) -> Self {
+    fn nouveau(contenu: T, details: DetailsTrace, acces: &ContexteAcces, usage: U) -> Self {
         Self {
             contenu,
             details,
-            user_id,
+            auteur: Auteur::de(acces),
             usage,
         }
     }
@@ -345,7 +390,7 @@ impl<T, U> Rapport<T, U> {
 impl<T> Rapport<T, Affichage> {
     /// Écrit la trace de consultation sur la `Trace`, puis rend le contenu.
     pub async fn afficher(self, trace: &Trace) -> T {
-        tracer(trace, self.user_id, &self.details, None).await;
+        tracer(trace, self.auteur, &self.details, None).await;
         self.contenu
     }
 }
@@ -359,15 +404,19 @@ impl<T> Rapport<T, Export> {
         rendre: impl FnOnce(&T) -> Result<Vec<u8>, AppError>,
     ) -> Result<Vec<u8>, AppError> {
         let corps = rendre(&self.contenu)?;
-        tracer(trace, self.user_id, &self.details, Some(self.usage.0)).await;
+        tracer(trace, self.auteur, &self.details, Some(self.usage.0)).await;
         Ok(corps)
     }
 }
 
-/// L'aiguillage commun : selon la forme du rapport et l'usage, l'une des sept
-/// fonctions d'audit — huit chemins, l'export du grand livre gardant
-/// `emit_ledger_audit` (`report.generated`, sans format : #729, conservé).
-async fn tracer(trace: &Trace, user_id: i64, details: &DetailsTrace, format: Option<FormatExport>) {
+/// L'aiguillage commun : selon la forme du rapport et l'usage, l'une des huit
+/// fonctions d'audit.
+async fn tracer(
+    trace: &Trace,
+    auteur: Auteur,
+    details: &DetailsTrace,
+    format: Option<FormatExport>,
+) {
     match (details, format) {
         (
             DetailsTrace::Periode {
@@ -380,7 +429,7 @@ async fn tracer(trace: &Trace, user_id: i64, details: &DetailsTrace, format: Opt
         ) => {
             emit_report_audit(
                 trace,
-                user_id,
+                auteur,
                 report_type,
                 *fiscal_year_id,
                 period.start_date,
@@ -400,7 +449,7 @@ async fn tracer(trace: &Trace, user_id: i64, details: &DetailsTrace, format: Opt
         ) => {
             emit_report_export_audit(
                 trace,
-                user_id,
+                auteur,
                 report_type,
                 f.as_str(),
                 *fiscal_year_id,
@@ -410,17 +459,33 @@ async fn tracer(trace: &Trace, user_id: i64, details: &DetailsTrace, format: Opt
             )
             .await
         }
-        // #729 : l'export du grand livre est tracé comme une consultation.
         (
             DetailsTrace::GrandLivre {
                 period,
                 account_ids,
             },
-            _,
+            None,
         ) => {
             emit_ledger_audit(
                 trace,
-                user_id,
+                auteur,
+                period.from,
+                period.to,
+                account_ids.as_deref(),
+            )
+            .await
+        }
+        (
+            DetailsTrace::GrandLivre {
+                period,
+                account_ids,
+            },
+            Some(f),
+        ) => {
+            emit_ledger_export_audit(
+                trace,
+                auteur,
+                f.as_str(),
                 period.from,
                 period.to,
                 account_ids.as_deref(),
@@ -428,10 +493,10 @@ async fn tracer(trace: &Trace, user_id: i64, details: &DetailsTrace, format: Opt
             .await
         }
         (DetailsTrace::BalanceAgee { as_of }, None) => {
-            emit_aged_receivables_audit(trace, user_id, *as_of).await
+            emit_aged_receivables_audit(trace, auteur, *as_of).await
         }
         (DetailsTrace::BalanceAgee { as_of }, Some(_)) => {
-            emit_aged_receivables_export_audit(trace, user_id, *as_of).await
+            emit_aged_receivables_export_audit(trace, auteur, *as_of).await
         }
         (
             DetailsTrace::Projet {
@@ -441,7 +506,7 @@ async fn tracer(trace: &Trace, user_id: i64, details: &DetailsTrace, format: Opt
             },
             None,
         ) => {
-            emit_project_report_audit(trace, user_id, report_type, *project_id, mode.as_str()).await
+            emit_project_report_audit(trace, auteur, report_type, *project_id, mode.as_str()).await
         }
         (
             DetailsTrace::Projet {
@@ -453,7 +518,7 @@ async fn tracer(trace: &Trace, user_id: i64, details: &DetailsTrace, format: Opt
         ) => {
             emit_project_report_export_audit(
                 trace,
-                user_id,
+                auteur,
                 report_type,
                 f.as_str(),
                 *project_id,
@@ -553,7 +618,7 @@ pub async fn bilan<U: Usage>(
     let period = resoudre_periode(acces, lecture, &demande).await?;
     let contenu = generate_balance_sheet(lecture.pool(), acces.company_id(), &period).await?;
     let details = details_periode("balance-sheet", &demande, &period, None);
-    Ok(Rapport::nouveau(contenu, details, acces.user_id(), usage))
+    Ok(Rapport::nouveau(contenu, details, acces, usage))
 }
 
 /// Le compte de résultat.
@@ -568,7 +633,7 @@ pub async fn compte_de_resultat<U: Usage>(
     let period = resoudre_periode(acces, lecture, &demande).await?;
     let contenu = generate_income_statement(lecture.pool(), acces.company_id(), &period).await?;
     let details = details_periode("income-statement", &demande, &period, None);
-    Ok(Rapport::nouveau(contenu, details, acces.user_id(), usage))
+    Ok(Rapport::nouveau(contenu, details, acces, usage))
 }
 
 /// La balance des comptes.
@@ -583,7 +648,7 @@ pub async fn balance<U: Usage>(
     let period = resoudre_periode(acces, lecture, &demande).await?;
     let contenu = generate_trial_balance(lecture.pool(), acces.company_id(), &period).await?;
     let details = details_periode("trial-balance", &demande, &period, None);
-    Ok(Rapport::nouveau(contenu, details, acces.user_id(), usage))
+    Ok(Rapport::nouveau(contenu, details, acces, usage))
 }
 
 /// Les journaux (cinq sections, ou un seul journal filtré).
@@ -601,7 +666,7 @@ pub async fn journaux<U: Usage>(
             .await?;
     let journal_filter = demande.journal.map(|j| j.as_str().to_string());
     let details = details_periode("journals", &demande.periode, &period, journal_filter);
-    Ok(Rapport::nouveau(contenu, details, acces.user_id(), usage))
+    Ok(Rapport::nouveau(contenu, details, acces, usage))
 }
 
 /// Le rapport de TVA.
@@ -616,7 +681,7 @@ pub async fn tva<U: Usage>(
     let period = resoudre_periode(acces, lecture, &demande).await?;
     let contenu = generate_vat_report(lecture.pool(), acces.company_id(), &period).await?;
     let details = details_periode("vat", &demande, &period, None);
-    Ok(Rapport::nouveau(contenu, details, acces.user_id(), usage))
+    Ok(Rapport::nouveau(contenu, details, acces, usage))
 }
 
 /// Le grand livre — deux régimes : l'affichage lit `offset` et borne `limit`
@@ -653,7 +718,7 @@ pub async fn grand_livre<U: Usage>(
         period,
         account_ids: options.account_ids,
     };
-    Ok(Rapport::nouveau(contenu, details, acces.user_id(), usage))
+    Ok(Rapport::nouveau(contenu, details, acces, usage))
 }
 
 /// La balance âgée des débiteurs, arrêtée à aujourd'hui (UTC) — date calculée
@@ -667,7 +732,7 @@ pub async fn balance_agee<U: Usage>(
     let as_of = Utc::now().naive_utc().date();
     let contenu = generate_aged_receivables(lecture.pool(), acces.company_id(), as_of).await?;
     let details = DetailsTrace::BalanceAgee { as_of };
-    Ok(Rapport::nouveau(contenu, details, acces.user_id(), usage))
+    Ok(Rapport::nouveau(contenu, details, acces, usage))
 }
 
 /// Résout `(scope, ProjectPeriodMode)` d'un rapport de projet. Valide
@@ -739,7 +804,7 @@ pub async fn depenses_projet<U: Usage>(
         project_id: demande.project_id,
         mode,
     };
-    Ok(Rapport::nouveau(contenu, details, acces.user_id(), usage))
+    Ok(Rapport::nouveau(contenu, details, acces, usage))
 }
 
 /// Le rendement par projet.
@@ -758,7 +823,7 @@ pub async fn rendement_projet<U: Usage>(
         project_id: demande.project_id,
         mode,
     };
-    Ok(Rapport::nouveau(contenu, details, acces.user_id(), usage))
+    Ok(Rapport::nouveau(contenu, details, acces, usage))
 }
 
 /// Nom et `accounting_language` de la société du contexte — ce que le handler
@@ -782,13 +847,37 @@ pub async fn identite_societe(
     Ok(row)
 }
 
+/// Exigence de [`synthese_accueil`] : tous rôles (les droits des rapports) ;
+/// jamais servie au MCP (C-e332-11 : ouvrir un outil est une décision à part).
+pub const EXIGENCE_SYNTHESE_ACCUEIL: Exigence = Exigence {
+    role_api: Role::Consultation,
+    portee_mcp: None,
+};
+
+/// La synthèse des graphiques de l'accueil (Story 33-3a, #918), pour l'exercice
+/// ouvert à la date du jour.
+///
+/// Une lecture **sans trace**, qui rend directement (règle R5) : l'accueil se
+/// charge à chaque visite, une trace par visite noierait le journal, et les trois
+/// tuiles n'en écrivent aucune (C-e332-11). ⚠️ La date est celle de l'horloge en
+/// UTC, comme à la contre-passation : dans la première ou les deux premières heures
+/// du 1er janvier à Zurich, l'accueil lit encore l'exercice précédent.
+pub async fn synthese_accueil(
+    acces: &ContexteAcces,
+    lecture: &Lecture,
+) -> Result<HomepageSummary, AppError> {
+    acces.exiger(EXIGENCE_SYNTHESE_ACCUEIL)?;
+    let today = Utc::now().date_naive();
+    Ok(generate_homepage_summary(lecture.pool(), acces.company_id(), today).await?)
+}
+
 // ===========================================================================
-// La trace — sept fonctions d'audit, sur la `Trace`
+// La trace — huit fonctions d'audit, sur la `Trace`
 // ===========================================================================
 
 /// Story 21-7 — audit best-effort génération balance âgée (as_of, pas de période).
 /// Bespoke (ne réutilise pas `emit_report_audit`, signature période).
-async fn emit_aged_receivables_audit(trace: &Trace, user_id: i64, as_of: NaiveDate) {
+async fn emit_aged_receivables_audit(trace: &Trace, auteur: Auteur, as_of: NaiveDate) {
     let result = async {
         let mut tx = trace
             .pool()
@@ -797,15 +886,16 @@ async fn emit_aged_receivables_audit(trace: &Trace, user_id: i64, as_of: NaiveDa
             .map_err(kesh_db::errors::map_db_error)?;
         kesh_db::repositories::audit_log::insert_in_tx(
             &mut tx,
-            NewAuditLogEntry::user(
-                user_id,
+            NewAuditLogEntry::for_actor(
+                auteur.user_id,
+                auteur.cle_api(),
                 "report.generated",
                 "report",
                 AUDIT_ENTITY_ID_NONE,
-                Some(serde_json::json!({
+                Some(auteur.detail(serde_json::json!({
                     "report_type": "aged-receivables",
                     "as_of": as_of.format("%Y-%m-%d").to_string(),
-                })),
+                }))),
             ),
         )
         .await?;
@@ -814,12 +904,12 @@ async fn emit_aged_receivables_audit(trace: &Trace, user_id: i64, as_of: NaiveDa
     }
     .await;
     if let Err(e) = result {
-        tracing::warn!(error = ?e, user_id, "audit insert failed (report.generated aged) — non-blocking");
+        tracing::warn!(error = ?e, user_id = auteur.user_id, "audit insert failed (report.generated aged) — non-blocking");
     }
 }
 
 /// Story 21-7 — audit best-effort export balance âgée (CSV).
-async fn emit_aged_receivables_export_audit(trace: &Trace, user_id: i64, as_of: NaiveDate) {
+async fn emit_aged_receivables_export_audit(trace: &Trace, auteur: Auteur, as_of: NaiveDate) {
     let result = async {
         let mut tx = trace
             .pool()
@@ -828,16 +918,17 @@ async fn emit_aged_receivables_export_audit(trace: &Trace, user_id: i64, as_of: 
             .map_err(kesh_db::errors::map_db_error)?;
         kesh_db::repositories::audit_log::insert_in_tx(
             &mut tx,
-            NewAuditLogEntry::user(
-                user_id,
+            NewAuditLogEntry::for_actor(
+                auteur.user_id,
+                auteur.cle_api(),
                 "report.exported",
                 "report",
                 AUDIT_ENTITY_ID_NONE,
-                Some(serde_json::json!({
+                Some(auteur.detail(serde_json::json!({
                     "report_type": "aged-receivables",
                     "format": "csv",
                     "as_of": as_of.format("%Y-%m-%d").to_string(),
-                })),
+                }))),
             ),
         )
         .await?;
@@ -846,7 +937,7 @@ async fn emit_aged_receivables_export_audit(trace: &Trace, user_id: i64, as_of: 
     }
     .await;
     if let Err(e) = result {
-        tracing::warn!(error = ?e, user_id, "audit insert failed (report.exported aged) — non-blocking");
+        tracing::warn!(error = ?e, user_id = auteur.user_id, "audit insert failed (report.exported aged) — non-blocking");
     }
 }
 
@@ -856,7 +947,7 @@ async fn emit_aged_receivables_export_audit(trace: &Trace, user_id: i64, as_of: 
 /// que le grand livre n'a pas — il franchit les exercices.
 async fn emit_ledger_audit(
     trace: &Trace,
-    user_id: i64,
+    auteur: Auteur,
     from: NaiveDate,
     to: NaiveDate,
     account_ids: Option<&[i64]>,
@@ -869,17 +960,18 @@ async fn emit_ledger_audit(
             .map_err(kesh_db::errors::map_db_error)?;
         kesh_db::repositories::audit_log::insert_in_tx(
             &mut tx,
-            NewAuditLogEntry::user(
-                user_id,
+            NewAuditLogEntry::for_actor(
+                auteur.user_id,
+                auteur.cle_api(),
                 "report.generated",
                 "report",
                 AUDIT_ENTITY_ID_NONE,
-                Some(serde_json::json!({
+                Some(auteur.detail(serde_json::json!({
                     "report_type": "general-ledger",
                     "period_start": from.format("%Y-%m-%d").to_string(),
                     "period_end": to.format("%Y-%m-%d").to_string(),
                     "account_ids": account_ids,
-                })),
+                }))),
             ),
         )
         .await?;
@@ -890,6 +982,51 @@ async fn emit_ledger_audit(
 
     if let Err(e) = result {
         tracing::warn!(error = %e, "audit report.generated (general-ledger) non enregistré");
+    }
+}
+
+/// Trace l'export du grand livre (Story 33-7, #729) : `report.exported`, avec son
+/// format, comme les autres exports ; distincte de [`emit_ledger_audit`], la
+/// consultation.
+async fn emit_ledger_export_audit(
+    trace: &Trace,
+    auteur: Auteur,
+    format: &str,
+    from: NaiveDate,
+    to: NaiveDate,
+    account_ids: Option<&[i64]>,
+) {
+    let result = async {
+        let mut tx = trace
+            .pool()
+            .begin()
+            .await
+            .map_err(kesh_db::errors::map_db_error)?;
+        kesh_db::repositories::audit_log::insert_in_tx(
+            &mut tx,
+            NewAuditLogEntry::for_actor(
+                auteur.user_id,
+                auteur.cle_api(),
+                "report.exported",
+                "report",
+                AUDIT_ENTITY_ID_NONE,
+                Some(auteur.detail(serde_json::json!({
+                    "report_type": "general-ledger",
+                    "format": format,
+                    "period_start": from.format("%Y-%m-%d").to_string(),
+                    "period_end": to.format("%Y-%m-%d").to_string(),
+                    "account_ids": account_ids,
+                }))),
+            ),
+        )
+        .await?;
+        tx.commit().await.map_err(kesh_db::errors::map_db_error)?;
+        Ok::<(), kesh_db::errors::DbError>(())
+    }
+    .await;
+
+    if let Err(e) = result {
+        tracing::warn!(error = %e, format, "audit report.exported (general-ledger) non enregistré");
     }
 }
 
@@ -920,7 +1057,7 @@ async fn emit_ledger_audit(
 /// `payment.created`, etc.).
 async fn emit_report_audit(
     trace: &Trace,
-    user_id: i64,
+    auteur: Auteur,
     report_type: &str,
     fiscal_year_id: i64,
     period_start: NaiveDate,
@@ -937,22 +1074,19 @@ async fn emit_report_audit(
             &mut tx,
             // Story 9-5-2 (Epic 9.5) — clés snake_case pour cohérence SQL JSON
             // path `details_json->>'$.field_name'` future-proof.
-            // Story 17-2a (DC5) — `::user` : audit READ-path (report.generated).
-            // Limitation L2 documentée : non threadé actor_api_key_id (4 callers,
-            // chemin lecture non-mutation hors scope strict AC8(b)) → `actor_type='user'`
-            // même via PAT. Couverture exhaustive = v0.3.
-            NewAuditLogEntry::user(
-                user_id,
+            NewAuditLogEntry::for_actor(
+                auteur.user_id,
+                auteur.cle_api(),
                 "report.generated",
                 "report",
                 AUDIT_ENTITY_ID_NONE,
-                Some(serde_json::json!({
+                Some(auteur.detail(serde_json::json!({
                     "report_type": report_type,
                     "fiscal_year_id": fiscal_year_id,
                     "period_start": period_start.format("%Y-%m-%d").to_string(),
                     "period_end": period_end.format("%Y-%m-%d").to_string(),
                     "journal_filter": journal_filter,
-                })),
+                }))),
             ),
         )
         .await?;
@@ -964,7 +1098,7 @@ async fn emit_report_audit(
     if let Err(e) = result {
         tracing::warn!(
             error = ?e,
-            user_id,
+            user_id = auteur.user_id,
             report_type,
             fiscal_year_id,
             "audit insert failed (report.generated) — non-blocking"
@@ -980,7 +1114,7 @@ async fn emit_report_audit(
 #[allow(clippy::too_many_arguments)]
 async fn emit_report_export_audit(
     trace: &Trace,
-    user_id: i64,
+    auteur: Auteur,
     report_type: &str,
     format: &str,
     fiscal_year_id: i64,
@@ -997,21 +1131,20 @@ async fn emit_report_export_audit(
         kesh_db::repositories::audit_log::insert_in_tx(
             &mut tx,
             // Story 9-5-2 (Epic 9.5) — clés snake_case.
-            // Story 17-2a (DC5) — `::user` : audit READ-path (report.exported),
-            // limitation L2 (cf. emit_report_audit) → `actor_type='user'` même via PAT.
-            NewAuditLogEntry::user(
-                user_id,
+            NewAuditLogEntry::for_actor(
+                auteur.user_id,
+                auteur.cle_api(),
                 "report.exported",
                 "report",
                 AUDIT_ENTITY_ID_NONE,
-                Some(serde_json::json!({
+                Some(auteur.detail(serde_json::json!({
                     "report_type": report_type,
                     "format": format,
                     "fiscal_year_id": fiscal_year_id,
                     "period_start": period_start.format("%Y-%m-%d").to_string(),
                     "period_end": period_end.format("%Y-%m-%d").to_string(),
                     "journal_filter": journal_filter,
-                })),
+                }))),
             ),
         )
         .await?;
@@ -1023,7 +1156,7 @@ async fn emit_report_export_audit(
     if let Err(e) = result {
         tracing::warn!(
             error = ?e,
-            user_id,
+            user_id = auteur.user_id,
             report_type,
             format,
             fiscal_year_id,
@@ -1035,7 +1168,7 @@ async fn emit_report_export_audit(
 /// Story 19-6a — audit best-effort génération d'un rapport projet.
 async fn emit_project_report_audit(
     trace: &Trace,
-    user_id: i64,
+    auteur: Auteur,
     report_type: &str,
     project_id: i64,
     mode: &str,
@@ -1048,16 +1181,17 @@ async fn emit_project_report_audit(
             .map_err(kesh_db::errors::map_db_error)?;
         kesh_db::repositories::audit_log::insert_in_tx(
             &mut tx,
-            NewAuditLogEntry::user(
-                user_id,
+            NewAuditLogEntry::for_actor(
+                auteur.user_id,
+                auteur.cle_api(),
                 "report.generated",
                 "report",
                 AUDIT_ENTITY_ID_NONE,
-                Some(serde_json::json!({
+                Some(auteur.detail(serde_json::json!({
                     "report_type": report_type,
                     "project_id": project_id,
                     "mode": mode,
-                })),
+                }))),
             ),
         )
         .await?;
@@ -1066,14 +1200,14 @@ async fn emit_project_report_audit(
     }
     .await;
     if let Err(e) = result {
-        tracing::warn!(error = ?e, user_id, report_type, project_id, "audit insert failed (report.generated project) — non-blocking");
+        tracing::warn!(error = ?e, user_id = auteur.user_id, report_type, project_id, "audit insert failed (report.generated project) — non-blocking");
     }
 }
 
 /// Story 19-6a — audit best-effort export d'un rapport projet.
 async fn emit_project_report_export_audit(
     trace: &Trace,
-    user_id: i64,
+    auteur: Auteur,
     report_type: &str,
     format: &str,
     project_id: i64,
@@ -1087,17 +1221,18 @@ async fn emit_project_report_export_audit(
             .map_err(kesh_db::errors::map_db_error)?;
         kesh_db::repositories::audit_log::insert_in_tx(
             &mut tx,
-            NewAuditLogEntry::user(
-                user_id,
+            NewAuditLogEntry::for_actor(
+                auteur.user_id,
+                auteur.cle_api(),
                 "report.exported",
                 "report",
                 AUDIT_ENTITY_ID_NONE,
-                Some(serde_json::json!({
+                Some(auteur.detail(serde_json::json!({
                     "report_type": report_type,
                     "format": format,
                     "project_id": project_id,
                     "mode": mode,
-                })),
+                }))),
             ),
         )
         .await?;
@@ -1106,6 +1241,6 @@ async fn emit_project_report_export_audit(
     }
     .await;
     if let Err(e) = result {
-        tracing::warn!(error = ?e, user_id, report_type, format, project_id, "audit insert failed (report.exported project) — non-blocking");
+        tracing::warn!(error = ?e, user_id = auteur.user_id, report_type, format, project_id, "audit insert failed (report.exported project) — non-blocking");
     }
 }

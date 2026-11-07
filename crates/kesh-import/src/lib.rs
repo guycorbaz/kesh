@@ -29,6 +29,19 @@ pub mod csv;
 pub mod error;
 pub mod types;
 
+/// Première année qu'un relevé peut porter : celle qu'une colonne de date de la
+/// base sait tenir (Story 33-4). Ce crate n'a aucune dépendance interne, si bien
+/// que la plage de `kesh_core::dates` y est recopiée ; `kesh-api` teste l'égalité.
+pub const ANNEE_MIN: i32 = 1000;
+
+/// Dernière année qu'un relevé peut porter (cf. [`ANNEE_MIN`]).
+pub const ANNEE_MAX: i32 = 9999;
+
+/// Une date de relevé dans la plage de la base.
+pub(crate) fn annee_recevable(date: chrono::NaiveDate) -> bool {
+    (ANNEE_MIN..=ANNEE_MAX).contains(&chrono::Datelike::year(&date))
+}
+
 pub use camt053::parse as parse_camt053;
 pub use csv::{
     ColumnMapping, CsvProfile, DEFAULT_CSV_CURRENCY, DebitSign, DetectedEncoding,

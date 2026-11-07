@@ -237,6 +237,17 @@ pub async fn trouver(
     company_id: i64,
     id: i64,
 ) -> Result<Option<EnvoiDetail>, DbError> {
+    let mut conn = pool.acquire().await.map_err(map_db_error)?;
+    trouver_in_tx(&mut conn, company_id, id).await
+}
+
+/// Comme [`trouver`], sur la connexion d'une transaction : la décision d'un envoi y
+/// lit ce qu'elle va committer (Story 33-6, #768, point 1).
+pub async fn trouver_in_tx(
+    conn: &mut sqlx::MySqlConnection,
+    company_id: i64,
+    id: i64,
+) -> Result<Option<EnvoiDetail>, DbError> {
     let Some(row) = sqlx::query_as::<_, DetailRow>(&format!(
         "SELECT {}, s.summary, s.content, s.version {JOINTURES} \
          WHERE s.company_id = ? AND s.id = ? LIMIT 1",
@@ -244,7 +255,7 @@ pub async fn trouver(
     ))
     .bind(company_id)
     .bind(id)
-    .fetch_optional(pool)
+    .fetch_optional(conn)
     .await
     .map_err(map_db_error)?
     else {

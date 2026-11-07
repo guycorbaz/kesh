@@ -21,5 +21,5 @@ use crate::types::ImportedStatement;
 pub fn parse<R: std::io::BufRead>(
     reader: &mut NsReader<R>,
 ) -> Result<Vec<ImportedStatement>, CamtError> {
-    super::parse_with_version(reader, "001.04", super::TextMode::Joined)
+    super::parse_corrige(reader, "001.04")
 }

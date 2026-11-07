@@ -2305,7 +2305,8 @@ async fn group_detail_of_reversal_pairs(pool: MySqlPool) {
             (
                 ReversalBlocker::OwnedBySupplierInvoice,
                 Some(si),
-                Some("FF-12")
+                // Story 33-1b (#926) : le refus dit la forme courte.
+                Some("FF-2020-001")
             )
         ),
         other => panic!("attendu LetteringLineOwnedByDocument, obtenu {other:?}"),

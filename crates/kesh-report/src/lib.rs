@@ -18,6 +18,7 @@ pub mod balance_sheet;
 pub mod csv;
 pub mod errors;
 pub mod general_ledger;
+pub mod homepage_summary;
 pub mod income_statement;
 pub mod journal_report;
 pub mod opening;
@@ -37,6 +38,7 @@ pub use general_ledger::{
     GeneralLedger, LedgerLine, LedgerOptions, LedgerPeriod, LedgerSection, MAX_LEDGER_LIMIT,
     generate as generate_general_ledger,
 };
+pub use homepage_summary::{HomepageSummary, generate as generate_homepage_summary};
 pub use income_statement::{IncomeStatement, generate as generate_income_statement};
 pub use journal_report::{
     JournalEntryLineRow, JournalEntryRow, JournalReport, JournalSection,

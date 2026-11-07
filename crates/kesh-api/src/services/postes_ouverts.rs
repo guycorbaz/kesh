@@ -59,13 +59,12 @@ pub struct DemandePostesOuverts {
 /// base lirait comme une date invalide (revue P1, B-1 = E-1) — un 400, jamais
 /// un 500 ni un solde faux.
 fn parse_as_of(as_of: Option<&str>) -> Result<NaiveDate, AppError> {
-    use chrono::Datelike;
     match as_of {
         Some(s) if !s.is_empty() => {
             let date = s
                 .parse::<NaiveDate>()
                 .map_err(|e| AppError::Validation(format!("asOf invalide ({e})")))?;
-            if !(1000..=9999).contains(&date.year()) {
+            if !kesh_core::dates::annee_stockable(date) {
                 return Err(AppError::Validation(
                     "asOf invalide (année hors de 1000 à 9999)".into(),
                 ));

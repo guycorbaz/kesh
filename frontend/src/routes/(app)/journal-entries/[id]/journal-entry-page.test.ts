@@ -592,6 +592,7 @@ describe('fiche d’écriture — le document de la facture fournisseur (30-2c, 
 	const DOC = {
 		supplierInvoiceId: 44,
 		supplierInvoiceNumber: 'FF-44',
+		internalNumber: 'FF-2026-044',
 		originalFilename: 'facture-44.png'
 	};
 
@@ -601,7 +602,8 @@ describe('fiche d’écriture — le document de la facture fournisseur (30-2c, 
 		fetchSupplierDocMock.mockResolvedValue(new Blob(['x'], { type: 'image/png' }));
 		await renderEntry(entry({ sourceDocument: DOC }));
 		const link = screen.getByTestId('entry-supplier-invoice-link');
-		expect(link.textContent?.trim()).toBe('Facture fournisseur FF-44');
+		// Story 33-1b (#926) : le numéro interne, non celui du fournisseur.
+		expect(link.textContent?.trim()).toBe('Facture fournisseur FF-2026-044');
 		expect(link.getAttribute('href')).toBe('/supplier-invoices/44');
 		await fireEvent.click(screen.getByTestId('entry-source-document-view'));
 		expect(await screen.findByTestId('document-preview-image')).toBeTruthy();
@@ -611,7 +613,9 @@ describe('fiche d’écriture — le document de la facture fournisseur (30-2c, 
 	});
 
 	it('facture sans numéro : le lien dit son identifiant', async () => {
-		await renderEntry(entry({ sourceDocument: { ...DOC, supplierInvoiceNumber: null } }));
+		await renderEntry(
+			entry({ sourceDocument: { ...DOC, supplierInvoiceNumber: null, internalNumber: null } })
+		);
 		expect(screen.getByTestId('entry-supplier-invoice-link').textContent?.trim()).toBe(
 			'Facture fournisseur #44'
 		);

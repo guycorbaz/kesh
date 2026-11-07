@@ -33,6 +33,7 @@ use kesh_db::entities::{
 use kesh_db::repositories::{fiscal_years, imported_supplier_invoices, journal_entries};
 
 use crate::AppState;
+use crate::dates_recues::borner;
 use crate::errors::AppError;
 use crate::helpers::get_company_for;
 use crate::middleware::auth::CurrentUser;
@@ -194,6 +195,8 @@ pub struct JournalEntryDetailResponse {
 pub struct EntrySourceDocumentResponse {
     pub supplier_invoice_id: i64,
     pub supplier_invoice_number: Option<String>,
+    /// Story 33-1b (#926) — le numéro interne, que dit le lien.
+    pub internal_number: Option<String>,
     pub original_filename: String,
 }
 
@@ -202,6 +205,7 @@ impl From<imported_supplier_invoices::EntrySourceDocument> for EntrySourceDocume
         Self {
             supplier_invoice_id: d.supplier_invoice_id,
             supplier_invoice_number: d.supplier_invoice_number,
+            internal_number: d.internal_number,
             original_filename: d.original_filename,
         }
     }
@@ -595,6 +599,7 @@ pub async fn create_journal_entry(
     Extension(current_user): Extension<CurrentUser>,
     Json(req): Json<CreateJournalEntryRequest>,
 ) -> Result<(StatusCode, Json<JournalEntryResponse>), AppError> {
+    borner(req.entry_date, "entryDate")?;
     let company = get_company_for(&current_user, &state.pool).await?;
 
     // Refus de FORME d'abord (Story 15-8a, C-15-8-16) : ils ne lisent pas la

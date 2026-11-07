@@ -44,6 +44,10 @@
 <script lang="ts">
 	import { errorMessageOf } from '$lib/shared/utils/error-message';
 	import { i18nMsg } from '$lib/shared/utils/i18n.svelte';
+	import {
+		supplierInvoiceLongLabel,
+		supplierInvoiceShortLabel,
+	} from '$lib/features/supplier-invoices/supplier-invoice-label';
 	// v0172-correctifs (#880, C-v0172b-11) : date en forme suisse, cellule et `aria-label`.
 	import { formatSwissDate } from '$lib/features/reports/reports.api';
 	import {
@@ -498,7 +502,11 @@
 									'reconciliation-labels-notice-supplier-invoice-in-batch',
 									'La facture fournisseur { $invoice } de ce montant figure dans le lot de paiement n° { $batch } en cours sur ce compte. Si cette transaction est le paiement de ce lot, annulez le lot : la facture vous sera alors proposée ici. Sinon, affectez la transaction à la main.',
 									{
-										invoice: p.notice.supplierInvoiceNumber ?? `#${p.notice.supplierInvoiceId}`,
+										invoice: supplierInvoiceShortLabel({
+											id: p.notice.supplierInvoiceId,
+											internalNumber: p.notice.internalNumber,
+											supplierInvoiceNumber: p.notice.supplierInvoiceNumber,
+										}),
 										batch: p.notice.paymentBatchId,
 									},
 								)}
@@ -539,8 +547,11 @@
 										data-candidate-type="supplier_invoice"
 										data-supplier-invoice-id={p.candidates[0].supplierInvoiceId}
 									>
-										{#if p.candidates[0].contactName}{p.candidates[0].contactName} — {/if}{p.candidates[0]
-											.invoiceNumber ?? `#${p.candidates[0].supplierInvoiceId}`}
+										{#if p.candidates[0].contactName}{p.candidates[0].contactName} — {/if}{supplierInvoiceLongLabel({
+											id: p.candidates[0].supplierInvoiceId ?? 0,
+											internalNumber: p.candidates[0].internalNumber,
+											supplierInvoiceNumber: p.candidates[0].invoiceNumber,
+										})}
 										({p.candidates[0].invoiceAmount})
 									</span>
 								{:else}

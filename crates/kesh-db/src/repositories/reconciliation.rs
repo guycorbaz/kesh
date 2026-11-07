@@ -845,6 +845,8 @@ pub struct SupplierInvoiceInAccountBatch {
     pub supplier_invoice_id: i64,
     /// Le numéro de la facture chez le fournisseur, s'il y en a un.
     pub supplier_invoice_number: Option<String>,
+    /// Le numéro interne de la facture (Story 33-1b, #926).
+    pub internal_number: Option<String>,
     pub payment_batch_id: i64,
 }
 
@@ -877,7 +879,7 @@ where
     E: sqlx::Executor<'e, Database = MySql>,
 {
     sqlx::query_as::<_, SupplierInvoiceInAccountBatch>(&format!(
-        "SELECT si.id AS supplier_invoice_id, si.supplier_invoice_number, \
+        "SELECT si.id AS supplier_invoice_id, si.supplier_invoice_number, si.internal_number, \
                 pb.id AS payment_batch_id \
          FROM supplier_invoices si \
          JOIN payment_batch_items pbi ON pbi.supplier_invoice_id = si.id \

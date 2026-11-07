@@ -73,6 +73,7 @@ describe('AC2 — la table des liens de pièce (test 3)', () => {
 		type: 'invoice',
 		id: 5,
 		number: 'F-1',
+		internalNumber: null,
 		invoiceId: null,
 		invoiceNumber: null,
 		...over,
@@ -97,11 +98,11 @@ describe('AC6 — le numéro de la pièce d’un groupe `document` (C-15-1c-25)'
 			lines: [
 				groupLine({
 					id: 1,
-					document: { type: 'creditNote', id: 3, number: 'AV-1', invoiceId: null, invoiceNumber: null },
+					document: { type: 'creditNote', id: 3, number: 'AV-1', internalNumber: null, invoiceId: null, invoiceNumber: null },
 				}),
 				groupLine({
 					id: 2,
-					document: { type: 'invoice', id: 4, number: 'F-9', invoiceId: null, invoiceNumber: null },
+					document: { type: 'invoice', id: 4, number: 'F-9', internalNumber: null, invoiceId: null, invoiceNumber: null },
 				}),
 			],
 		});
@@ -112,12 +113,37 @@ describe('AC6 — le numéro de la pièce d’un groupe `document` (C-15-1c-25)'
 		const settled = group({
 			lines: [
 				groupLine({
-					document: { type: 'settlement', id: 8, number: null, invoiceId: 4, invoiceNumber: 'F-9' },
+					document: { type: 'settlement', id: 8, number: null, internalNumber: null, invoiceId: 4, invoiceNumber: 'F-9' },
 				}),
 			],
 		});
 		expect(groupDocument(settled)).toEqual({ number: 'F-9', href: '/invoices/4' });
 		expect(groupDocument(group())).toBeNull();
+	});
+
+	// Story 33-1b (#926, AC14).
+	it('une facture fournisseur : le numéro interne, même sans numéro du fournisseur', () => {
+		const de = (number: string | null, internalNumber: string | null) =>
+			group({
+				origin: 'document',
+				lines: [
+					groupLine({
+						document: {
+							type: 'supplierInvoice',
+							id: 6,
+							number,
+							internalNumber,
+							invoiceId: null,
+							invoiceNumber: null,
+						},
+					}),
+				],
+			});
+		const href = '/supplier-invoices/6';
+		expect(groupDocument(de('ABC', 'FF-2026-001'))).toEqual({ number: 'FF-2026-001', href });
+		expect(groupDocument(de(null, 'FF-2026-001'))).toEqual({ number: 'FF-2026-001', href });
+		expect(groupDocument(de('ABC', null))).toEqual({ number: 'ABC', href });
+		expect(groupDocument(de(null, null))).toBeNull();
 	});
 });
 

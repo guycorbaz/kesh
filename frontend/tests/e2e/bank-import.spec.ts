@@ -125,6 +125,41 @@ test('imports a CAMT.053 v04 file end-to-end', async ({ page }) => {
 	await expect(page.getByTestId('bank-import-list-row').first()).toBeVisible();
 });
 
+// Story 33-2 (#922) — un relevé dont la date est en CDATA : la lecture de la 0.17.3 ne
+// sait pas le relire, Kesh le refuse à l'aperçu et rien n'est listé. XML synthétique.
+test('refuses a CAMT.053 statement it cannot reread as 0.17.3 did', async ({ page }) => {
+	await login(page);
+	await ensureBankAccount(page);
+	await page.goto('/bank-import');
+	await expect(page.getByTestId('bank-import-page-title')).toBeVisible();
+	const rowsBefore = await page.getByTestId('bank-import-list-row').count();
+
+	const xml = `<?xml version="1.0" encoding="UTF-8"?>
+<Document xmlns="urn:iso:std:iso:20022:tech:xsd:camt.053.001.04">
+  <BkToCstmrStmt>
+    <Stmt>
+      <Id>STMT-33-2-E2E</Id>
+      <FrToDt><FrDtTm>2026-10-01T00:00:00</FrDtTm><ToDtTm>2026-10-31T23:59:59</ToDtTm></FrToDt>
+      <Acct><Id><IBAN>${TEST_IBAN}</IBAN></Id><Ccy>CHF</Ccy></Acct>
+      <Ntry><Amt Ccy="CHF">10.00</Amt><CdtDbtInd>CRDT</CdtDbtInd><BookgDt><Dt><![CDATA[2026-10-10]]></Dt></BookgDt><NtryRef>REF-33-2</NtryRef></Ntry>
+    </Stmt>
+  </BkToCstmrStmt>
+</Document>
+`;
+	await page.getByTestId('bank-account-select').selectOption({ index: 1 });
+	await page.getByTestId('bank-import-file-input').setInputFiles({
+		name: 'releve-33-2.xml',
+		mimeType: 'application/xml',
+		buffer: Buffer.from(xml),
+	});
+
+	const error = page.getByTestId('bank-import-error');
+	await expect(error).toBeVisible();
+	await expect(error).toHaveAttribute('data-error-code', 'BANK_IMPORT_LEGACY_REREAD_FAILED');
+	await expect(page.getByTestId('bank-import-preview')).toBeHidden();
+	await expect(page.getByTestId('bank-import-list-row')).toHaveCount(rowsBefore);
+});
+
 test('requires bank account selection before upload', async ({ page }) => {
 	await login(page);
 	await ensureBankAccount(page);

@@ -3,6 +3,7 @@
 	import { untrack } from 'svelte';
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
+	import { saisieDeFiltre, sortieDeFiltre } from '$lib/shared/utils/date-filtre';
 	import { Button } from '$lib/components/ui/button';
 	import { Input } from '$lib/components/ui/input';
 	import * as Select from '$lib/components/ui/select';
@@ -212,11 +213,17 @@
 	}
 
 	// Handlers filtres immédiats.
-	function onDateFromChange() {
-		immediateLoad();
+	function onDateFromChange(e: Event) {
+		saisieDeFiltre(e, (date) => {
+			dateFrom = date;
+			immediateLoad();
+		});
 	}
-	function onDateToChange() {
-		immediateLoad();
+	function onDateToChange(e: Event) {
+		saisieDeFiltre(e, (date) => {
+			dateTo = date;
+			immediateLoad();
+		});
 	}
 	function onJournalChange(value: string) {
 		journalFilter = (value as Journal) || '';
@@ -417,8 +424,9 @@
 				<Input
 					id="filter-date-from"
 					type="date"
-					bind:value={dateFrom}
+					value={dateFrom}
 					onchange={onDateFromChange}
+					onblur={(e: Event) => sortieDeFiltre(e, dateFrom)}
 				/>
 			</div>
 			<div>
@@ -428,8 +436,9 @@
 				<Input
 					id="filter-date-to"
 					type="date"
-					bind:value={dateTo}
+					value={dateTo}
 					onchange={onDateToChange}
+					onblur={(e: Event) => sortieDeFiltre(e, dateTo)}
 				/>
 			</div>
 			<div>

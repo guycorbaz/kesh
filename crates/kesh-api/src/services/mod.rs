@@ -53,7 +53,7 @@
 //!   outils du MCP se déclare en outre `READ ONLY` (mode de session, 32-6a ;
 //!   Q11, tranchée le 2026-10-24). Ce qu'un handler doit lire pour sa présentation
 //!   (le contexte PDF) passe par une fonction de service. L'action d'audit reste
-//!   un **littéral** à chaque `NewAuditLogEntry::user(` (garde
+//!   un **littéral** à chaque `NewAuditLogEntry::user(` ou `for_actor(` (garde
 //!   `tests/audit_label_registry.rs`). Les envois du serveur MCP (Story 32-8b)
 //!   ont leurs poignées propres, sans pool visible : `LectureEnvois` (une
 //!   relecture, sur le pool en lecture seule du MCP) et `EcritureEnvois` (le
@@ -267,6 +267,17 @@
 //! autres gestionnaires de `routes/imported_supplier_invoices.rs` — l'import,
 //! la complétion, l'écart, les fournisseurs proposés, les documents — restent
 //! sur `state.pool`, figés par la garde (iii) : aucun outil ne les sert.
+//!
+//! # La synthèse de l'accueil — Story 33-3a, sans trace
+//!
+//! | Service | Route | Exigence API / MCP |
+//! |---|---|---|
+//! | `rapports::synthese_accueil` | `GET /reports/homepage-summary` | `Consultation` / jamais servi |
+//!
+//! L'inventaire clos des écritures sur les chemins de lecture s'y étend :
+//! `kesh_report::homepage_summary::generate` et `fiscal_years::find_covering_date`
+//! ne font que des `SELECT` (établi par lecture, confirmé par
+//! `tests/services_motif.rs`, sur une `Lecture` en lecture seule).
 //!
 //! # La lecture seule du MCP — Q11, tranchée le 2026-10-24
 //!

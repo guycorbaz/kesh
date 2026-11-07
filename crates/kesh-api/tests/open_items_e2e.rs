@@ -513,7 +513,14 @@ async fn document_object_shape(pool: MySqlPool) {
     let doc = &body["items"][0]["document"];
     assert_eq!(
         cles(doc),
-        ensemble(&["type", "id", "number", "invoiceId", "invoiceNumber"])
+        ensemble(&[
+            "type",
+            "id",
+            "number",
+            "internalNumber",
+            "invoiceId",
+            "invoiceNumber"
+        ])
     );
     assert_eq!(doc["type"], "bankTransaction");
     assert_eq!(doc["id"], tx);

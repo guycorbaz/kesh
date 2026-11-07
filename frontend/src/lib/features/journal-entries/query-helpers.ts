@@ -6,6 +6,7 @@
  * supporter le partage de lien, le rafraîchissement, et le retour arrière.
  */
 
+import { estDateStockable } from '$lib/shared/utils/date-filtre';
 import type { Journal, JournalEntryListQuery, SortBy, SortDirection } from './journal-entries.types';
 
 const VALID_SORT_BY: SortBy[] = ['EntryDate', 'EntryNumber', 'Journal', 'Description'];
@@ -85,10 +86,10 @@ export function parseQueryFromUrl(searchParams: URLSearchParams): JournalEntryLi
 	if (amountMax && amountMax.trim() !== '') query.amountMax = amountMax;
 
 	const dateFrom = searchParams.get('dateFrom');
-	if (dateFrom && dateFrom.trim() !== '') query.dateFrom = dateFrom;
+	if (estDateStockable(dateFrom)) query.dateFrom = dateFrom;
 
 	const dateTo = searchParams.get('dateTo');
-	if (dateTo && dateTo.trim() !== '') query.dateTo = dateTo;
+	if (estDateStockable(dateTo)) query.dateTo = dateTo;
 
 	const journal = searchParams.get('journal');
 	if (journal && (VALID_JOURNAL as string[]).includes(journal)) {

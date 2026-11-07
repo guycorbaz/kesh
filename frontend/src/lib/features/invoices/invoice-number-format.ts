@@ -114,9 +114,36 @@ export function validateDescriptionTemplate(template: string): FormatValidationR
 }
 
 /**
- * Valide un template de format (règles identiques au backend).
+ * La forme d'un format de numérotation interne, miroir de
+ * `kesh_core::invoice_format::validate_numbering_template` (Story 33-1b, #926) :
+ * `<préfixe>{YEAR}<séparateur>{SEQ}` ou `{SEQ:NN}`, séparateur non vide et sans chiffre,
+ * rien après le compteur, aucun `{FY}`, ni blanc en tête ni tabulation.
  */
-export function validateFormatTemplate(template: string): FormatValidationResult {
+const NUMBERING_SHAPE_RE = /^(?![ \t])[^{}\t]*\{YEAR\}([^{}0-9\t]+)\{SEQ(:\d+)?\}$/;
+
+/**
+ * Valide un template de format (règles identiques au backend). `numbering` : le format du
+ * numéro interne des factures fournisseur, qui a une forme fixe ; les formats client et
+ * avoir n'y sont pas soumis.
+ */
+export function validateFormatTemplate(
+	template: string,
+	options: { numbering?: boolean } = {},
+): FormatValidationResult {
+	const base = validateTemplateRules(template);
+	if (base.ok && options.numbering && !NUMBERING_SHAPE_RE.test(template)) {
+		return {
+			ok: false,
+			error: i18nMsg(
+				'invoices-format-error-numbering',
+				"Le format doit s'écrire : un préfixe libre, {YEAR}, un séparateur sans chiffre, puis {SEQ} ou {SEQ:NN}, rien après (exemple : FF-{YEAR}-{SEQ:03})",
+			),
+		};
+	}
+	return base;
+}
+
+function validateTemplateRules(template: string): FormatValidationResult {
 	if (!template || template.trim().length === 0) {
 		return {
 			ok: false,

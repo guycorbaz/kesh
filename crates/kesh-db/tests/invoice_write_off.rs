@@ -1622,3 +1622,30 @@ async fn write_off_cancel_and_rank_1_bis_under_a_frozen_lettering(pool: MySqlPoo
         "marques de B intactes"
     );
 }
+
+/// Story 33-6 (#450, AC-1) — la sortie du solde porte la facture, ses lignes, le
+/// réglé et le reste d'après le solde, lus dans sa transaction.
+#[sqlx::test(migrations = "./test-schema")]
+async fn la_sortie_du_solde_porte_la_facture_relue(pool: MySqlPool) {
+    let seeded = company(&pool).await;
+    let inv = validated_invoice(&pool, &seeded, &[(dec!(100.00), dec!(0))]).await;
+    settle_cash(&pool, &seeded, inv, dec!(90.00)).await;
+
+    let out = write_off(&pool, &seeded, inv, Nature::Discount)
+        .await
+        .expect("solde");
+
+    let (read_version, paid_at): (i32, Option<chrono::NaiveDateTime>) =
+        sqlx::query_as("SELECT version, paid_at FROM invoices WHERE id = ?")
+            .bind(inv)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(out.invoice.version, read_version);
+    assert_eq!(out.invoice.paid_at, paid_at);
+    assert!(out.invoice.paid_at.is_some());
+    assert_eq!(out.lines.len(), 1);
+    assert_eq!(out.amount, dec!(10.00));
+    assert_eq!(out.amount_settled, dec!(100.00));
+    assert_eq!(out.amount_due, Decimal::ZERO);
+}

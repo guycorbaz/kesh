@@ -34,6 +34,7 @@ function view(partial: Partial<ReconciliationTransactionResponse>): Reconciliati
 		invoiceNumber: null,
 		supplierInvoiceId: null,
 		supplierInvoiceNumber: null,
+		internalNumber: null,
 		cancellable: true,
 		cancelBlockedBy: null,
 		cancelBlockedLabel: null,
@@ -156,6 +157,7 @@ describe('CancelReconciliationDialog — règlement fournisseur (Story 30-1b, T-
 			kind: 'supplier_settlement',
 			supplierInvoiceId: 31,
 			supplierInvoiceNumber: 'FF-2026-0042',
+			internalNumber: null,
 		});
 		expect(t).toContain('facture fournisseur FF-2026-0042');
 		// Story v017-4b (#849, décision Q4) : l'état `open` se nomme « validée ».
@@ -168,6 +170,7 @@ describe('CancelReconciliationDialog — règlement fournisseur (Story 30-1b, T-
 			kind: 'supplier_settlement',
 			supplierInvoiceId: 31,
 			supplierInvoiceNumber: null,
+			internalNumber: null,
 		});
 		expect(t).toContain('facture fournisseur #31');
 	});
@@ -178,6 +181,7 @@ describe('CancelReconciliationDialog — règlement fournisseur (Story 30-1b, T-
 			kind: 'supplier_settlement',
 			supplierInvoiceId: 31,
 			supplierInvoiceNumber: 'FF-1',
+			internalNumber: null,
 		});
 		const ecriture = await texte({ kind: 'entry' });
 		expect(new Set([client, fournisseur, ecriture]).size).toBe(3);

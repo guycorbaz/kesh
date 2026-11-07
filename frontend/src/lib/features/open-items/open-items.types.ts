@@ -21,6 +21,8 @@ export interface DocumentRef {
 	type: DocumentType;
 	id: number;
 	number: string | null;
+	/** Pour `supplierInvoice` : le numéro interne ; `null` sinon (Story 33-1b, #926). */
+	internalNumber: string | null;
 	/** Pour `settlement` : la facture réglée ; `null` sinon. */
 	invoiceId: number | null;
 	invoiceNumber: string | null;

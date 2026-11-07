@@ -101,7 +101,8 @@ pub const AUDIT_ENTITY_ID_NONE: i64 = 0;
 /// Entrée du journal d'audit persistée en base.
 ///
 /// Story 17-2a (DC5) : `actor_type` + `actor_api_key_id` distinguent une
-/// action UI web (`User`) d'une mutation via PAT (`ApiKey`). `user_id` reste
+/// action UI web (`User`) d'une action via PAT (`ApiKey`) : mutation, ou lecture d'un
+/// rapport depuis la Story 33-7. `user_id` reste
 /// **toujours** renseigné (NOT NULL) — même via PAT, il porte le créateur de
 /// la clé (imputabilité conservée).
 #[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
@@ -113,7 +114,7 @@ pub struct AuditLogEntry {
     pub entity_type: String,
     pub entity_id: i64,
     pub details_json: Option<serde_json::Value>,
-    /// Story 17-2a (DC5) — `User` (UI web / JWT) ou `ApiKey` (mutation via PAT).
+    /// Story 17-2a (DC5) — `User` (UI web / JWT) ou `ApiKey` (action via PAT).
     pub actor_type: ActorType,
     /// Story 17-2a (DC5) — id de la clé API si `actor_type = ApiKey`, sinon `None`.
     /// Pas de FK (pointeur logique — l'audit survit 10 ans à la révocation/suppression de la clé).
