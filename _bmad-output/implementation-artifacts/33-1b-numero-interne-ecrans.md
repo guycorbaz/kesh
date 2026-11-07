@@ -288,10 +288,29 @@ Regardées à l'œil : `liste-deux-colonnes`, `fiche-brouillon-numerote`, `regla
 
 Après les gates, ce commit de comptes rendus ne touche aucun code.
 
+**Remédiation de la revue P1** (`e331b-review-p1-{B,E,A}.md`).
+
+- **La frappe temporisée, B-F1, E-M1** : rouge constaté **avant** le code (`rouges-p1-front.log`, huit rouges sur quatre fichiers, dont les deux de la frappe). `onDestroy` annule le minuteur, et `beforeNavigate` l'annule aussi vers un autre écran : une navigation lente restait sinon exposée, écran encore monté. Un geste dans la liste le garde. **B-F2 regardé** : `navigate` lit `page.url` au tir, et seul un `goto` encore en vol y serait écrasé, fenêtre de quelques millisecondes : non corrigé, issue demandée.
+- **Champs MCP, A-F2** : `le_numero_interne_d_une_ecriture_et_d_un_poste` (`mcp_outils_e2e.rs`) nomme chaque champ ; trois lignes à `mcp_enveloppe_e2e.rs`, `factures[].numeroInterne` comprise, qui manquait aussi, sur un piège neuf `ff_numero_interne`, posé en SQL (`pieges.rs`, le motif y est écrit) ; M18 et M19 ci-dessous.
+- **Autres LOW corrigés** : A-F3 (confirmation assertée), F3 de B (bouton des réglages), les blancs de bord (F5 de B, L2 de E, F4 de A : coupés dans les deux libellés, K8 restant le miroir), E-L1, A-F5 (lecture après commit : `warn`, puis `#id`), L3 de E pour `order` seul (`api-external.md`), L4 de E et F6 de A (manuel), F4 de B et F7 de A (plancher, manuel, `ci.md`).
+- **`MySQL` et `10.6`, grepés sur tout le dépôt.** Corrigés : la brochure, `ci.md:273`, `architecture.md:51`. **Laissés comme historique** : `docs/kesh-prd-v0.2.md` et `docs/kesh-specifications.txt`, brouillons de mars 2026 (ils annoncent aussi une application de bureau), `ci.md:271`, daté et déjà annoté, le CHANGELOG, les fiches et rétrospectives. **Justes** : `ci.yml:49`, `bank_imports.rs:144`, `admin-manual.tex:54` et `:172`, les commentaires sur les codes d'erreur MySQL.
+- **Mutations** (`mut/resume-p1.log`), toutes tuées : M18 (`kesh_ecriture`) et M19 (`kesh_postes_ouverts`), chacune par le test nommé et par `inventaire_couvert` ; M20 (`onDestroy`), M21 (`beforeNavigate`), M22 (le geste dans la liste perd la frappe) ; M23 (`non_blank`) et M24 (blancs du format).
+
+**Gates de la remédiation**, sur `398748cd`, dernier commit de code ; `b95f82b2` et `00162556` n'ajoutent que documents et PDF :
+
+- **Backend**, bases à neuf (`gate-p1.log`) : `test-fast.sh --ci` code 0, **4862 exécutés, 4862 passés, 12 ignorés** ; `cargo build --workspace --all-targets` vert.
+- **Frontend** : check 0 erreur, 29 avertissements ; `lint-i18n-ownership` PASS ; **219 fichiers, 2737 tests** verts (`vitest-p1.log`) ; build rejoué par l'E2E.
+- **E2E complet** (`e2e-r5.log`) : **357 passés, 7 échoués, 17 ignorés** ; les sept sont les KF-029, fichier par fichier.
+- **`sidebar-navigation.spec.ts:81`, jugé pollution sans preuve au premier compte rendu : rejoué seul**, sur la base d'après la suite (`e2e-c2.log`) et sur une base recréée vide (`e2e-c3.log`) : **vert deux fois**. Selon `docs/testing.md`, un échec qui passe seul relève de la pollution, non de la KF-052 ; il n'a plus rougi aux quatre passages suivants.
+- **Manuels** : `make fr` (`make-p1.log`), trois PDF aplatis et grepés ; aucune phrase « Compatibilité MySQL » à la brochure.
+
+**Écart déclaré** : un `sed -i` sur les quatre appels de `from_parts`, en `payment_batches.rs`, malgré « Edit seulement ». Mécanique, compilé.
+
 **Écarts à la consigne, déclarés** : `fix-fixtures.py`, un script Python, sur les fixtures de douze `.test.ts`, malgré « Edit seulement » ; il a abîmé la signature `noticeRow` de `ReconciliationProposals.test.ts`, trouvée par `npm run check`, corrigée à la main, un test ajouté.
 
 ## Change Log
 
+- 2026-11-07, remédiation de la revue P1 (Opus 5.5 ; `f1b2df5a..00162556`). Trois lentilles Opus sur la 33-1b : B 1 MEDIUM, 4 LOW ; E 2 MEDIUM, 4 LOW ; A 2 MEDIUM, 6 LOW. Aucun finding réfuté ; les MEDIUM se recoupent : la frappe temporisée, la brochure, les deux champs MCP. Détail au Dev Agent Record. **Non corrigés, issues demandées** : F2 de B, F4 de B pour la garde de version, L3 de E pour les deux angles d'écran. **Pour la rétrospective** : F8 de A, les rouges d'écran non constatés avant le code ont laissé passer F2 et F3 de A. P2 ciblée : `33-1-review-prompt-p2.md`.
 - 2026-11-06, développement (Opus 5.5) : liste, tri, recherche, fiche, réglage, sites serveur, lots, candidate et avis, postes ouverts, lettrage, manuels, brochure, README, PDF. Mutations, E2E et captures au Dev Agent Record. Périmètre de revue : `dc7cba19..HEAD`, où `bfe6eedb` est un test de la 33-1a. `Status: review`.
 - 2026-11-06, étape 0 du développement de la 33-1a (Opus 5.5) : R-L4 (`{YEAR}-{YEAR}-{SEQ}`, AC7, AC10) et F-L2 (dialogue d'AC6, renvoi au manuel) reportés ici depuis `kesh-gate-logs/e33-validate-p3-e331.md`.
 
