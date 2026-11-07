@@ -1,3 +1,4 @@
+# last_updated: 2026-11-07 (Epic 33 : 33-12, jeu de caractères de la QR-facture, ajoutée ; #941)
 # last_updated: 2026-11-06 (Epic 33 : validation terminée en quatre passes, P1 11 M → P2 1 H + 9 M → P3 4 M → P4 ciblée 0 retenu ; développement à lancer)
 # last_updated: 2026-11-06 (Epic 33 : validation P1 remédiée sur douze fiches ; 33-11 à sa P1 ; annotation : l'en-tête « douze stories au backlog » valait au kickoff, 33-11 s'y ajoute : quatorze clés avec 33-0, treize ready-for-dev)
 # last_updated: 2026-11-06 (Epic 33 : 33-11, filtre de CI, ajoutée sur demande de Guy)
@@ -1009,4 +1010,5 @@ development_status:
   33-9-e2e-sidebar: ready-for-dev
   33-10-outillage-release: ready-for-dev
   33-11-filtre-ci: ready-for-dev  # 2026-11-06 : demande de Guy ; fiche écrite par l'orchestrateur, validation P1 à lancer.
+  33-12-jeu-caracteres-qr: ready-for-dev  # 2026-11-07 : #941, P1, trouvée à la revue de la 33-5 ; ajoutée par l'orchestrateur
   epic-33-retrospective: optional
