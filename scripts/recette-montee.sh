@@ -299,7 +299,8 @@ lancer_image() { # $1 = suffixe du journal
     "$IMAGE" > "$L/image-$1.log" 2>&1 &
   PID_IMAGE=$!
 }
-# Le binaire neuf : liste exacte, depuis `$D/cwd`, tous les chemins sous `$D`.
+# Le binaire neuf : liste exacte, depuis `$D/cwd`. Tout ce qu'il écrit est sous `$D` ; il ne lit
+# hors de là que ses textes et son frontend, dans le dépôt.
 lancer_binaire() { # $1 = suffixe du journal, $2 = port de la base
   (cd "$D/cwd" && exec /usr/bin/env -i \
     "PATH=$PATH_FERME" "HOME=$D/home" \

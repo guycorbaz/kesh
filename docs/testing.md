@@ -597,6 +597,26 @@ reproductible de façon déterministe.
 `mariadb:10.11` qu'ils emploient — et citer sa sortie au Dev Agent Record. Elle n'est pas dans le gate : elle
 exige Docker et des conteneurs, et elle ne dépend que de ces fichiers.
 
+## La recette de montée et de retour — `scripts/recette-montee.sh`
+
+Story 33-10 (#925). Elle joue, depuis l'image publiée précédente et sur des données synthétiques, ce qu'une release à migration doit éprouver : base peuplée, montée par le binaire neuf, refus de l'image précédente sur la base migrée, retour par le dump, et, avec `--import`, le `.keshbackup` dans le binaire neuf. Cinq phases, chacune son code de sortie.
+
+```sh
+flock "$GATE_LOGS/.gate.lock" scripts/mem-guard.sh scripts/recette-montee.sh \
+  --image gcorbaz/kesh:0.17.4 --binaire target/debug/kesh-api --static frontend/build \
+  --port-api 3190 --port-base 3391 --migrations-attendues 1 --diff-attendu migrations,supplier_invoices \
+  --apres ../kesh-gate-logs/rel0175/verifs-0175.sh --import
+```
+
+- **`--diff-attendu`** nomme les fichiers d'empreinte qui peuvent différer après la montée : `migrations`, `min_required`, `api`, ou une table. Tout autre écart échoue.
+- **`--apres`** est le crochet de la release, pour ce qui ne vaut que pour elle ; il dispose de `SQL`, `api`, `L`, et doit se trouver sous `../kesh-gate-logs/`.
+- **`--prefixe`** nomme les conteneurs (`kesh-recette` par défaut) ; un conteneur de recette resté d'un run tué fait refuser, en donnant son nom : `docker stop <nom>` le retire.
+- **Rien d'extérieur** : le script se relance par `env -i`, sa base est un conteneur `mariadb:10.11` qu'il crée lui-même, il n'écrit que dans un dossier `mktemp -d` sous `/tmp`, qu'il nomme à sa dernière ligne et n'efface pas. Il n'emploie pas le MariaDB de dev, et aucune option ne désigne un hôte, une base ou une URL.
+
+⚠️ **Limite assumée de la phase 4** : le retour joué ici passe par le dump. La procédure du manuel d'administration, par le `.keshbackup` de `pre-upgrade/` dans une installation neuve, c'est #920, et une recette distincte. Une sauvegarde `pre-upgrade/` écrite n'est donc pas, ici, une sauvegarde restaurée.
+
+⚠️ **`scripts/gate-ci.sh`, l'autre script** : la suite backend telle que la CI la lance (`docs/ci.md`).
+
 ## Cleanup entre tests (dette technique acceptée)
 
 - **Pas de reset entre tests individuels d'une même spec** (dette `D-6-4-A`). Si un test pollue (création + archivage incomplet), le test suivant peut être affecté. Mitigation : convention de cleanup explicite dans chaque test, ou adoption progressive de `test.beforeEach(seedTestState(...))` si symptômes apparaissent.
