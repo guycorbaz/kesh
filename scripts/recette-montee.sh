@@ -391,7 +391,10 @@ empreinte() { # $1 = étiquette
   SQL "SELECT id, username, role, active, company_id, email FROM users ORDER BY id" > "$o/users" || return 1
   # `audit_log`, jusqu'à la dernière entrée d'avant la montée : la suite s'écrit, légitimement.
   [ "$1" != avant ] || AUDIT_MAX=$(SQL "SELECT COALESCE(MAX(id), 0) FROM audit_log") || return 1
-  SQL "SELECT * FROM audit_log WHERE id <= $AUDIT_MAX ORDER BY id" > "$o/audit_log" || return 1
+  # Les dates à part : l'import d'une sauvegarde les réécrit aujourd'hui (constaté à la
+  # recette de la Story 33-10), et il faut pouvoir le dire sans taire le reste de la table.
+  SQL "SELECT id, user_id, action, entity_type, entity_id, details_json, actor_type, actor_api_key_id, actor_label, company_id FROM audit_log WHERE id <= $AUDIT_MAX ORDER BY id" > "$o/audit_log" || return 1
+  SQL "SELECT id, created_at FROM audit_log WHERE id <= $AUDIT_MAX ORDER BY id" > "$o/audit_log_dates" || return 1
   SQL "SELECT kesh_version_min_required FROM _kesh_version" > "$o/min_required" || return 1
   login || return 1
   : > "$o/api"
