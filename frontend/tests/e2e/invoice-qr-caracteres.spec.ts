@@ -70,9 +70,11 @@ test('un débiteur au nom portant « & » reçoit sa QR-facture', async ({ page 
 		expect(octets.subarray(0, 5).toString()).toBe('%PDF-');
 
 		// Le nom traverse jusqu'au papier : au corps et en partie paiement, le NPA et
-		// la localité aussi. Au reçu, ce nom long se coupe.
+		// la localité aussi. Au reçu, ce nom long se coupe. La fixture crée une personne
+		// de prénom « Pia » : Kesh compose son nom affiché avec.
 		const contenu = contenuDuPdf(octets);
-		expect(contenu.split(`<${hexWinAnsi(nom)}> tj`).length - 1).toBeGreaterThanOrEqual(2);
+		const affiche = `<${hexWinAnsi(`Pia ${nom}`)}> tj`;
+		expect(contenu.split(affiche).length - 1).toBe(2);
 		expect(contenu).toContain(`<${hexWinAnsi('9400 Rorschach')}> tj`);
 	} finally {
 		await disposeContextSafe(ctx);
