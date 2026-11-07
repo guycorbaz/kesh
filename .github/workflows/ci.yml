@@ -31,7 +31,6 @@ jobs:
     outputs:
       code: ${{ steps.decision.outputs.code }}
     steps:
-      - run: sleep 180
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
