@@ -88,6 +88,14 @@ Gate complet, E2E complet au dernier commit de code. Aucune migration : la colon
 
 - 2026-11-07 : développement (Opus 5.5), worktree `/home/gcorbaz/devel/kesh-e335`, commits de code `32944fc0` et `d7dcb3c9`. **Étape 0** : la P3 ne rend aucun constat sur cette fiche ; aucun point « à établir ». **Grep de T1** (`gh issue list`, titres) : aucune issue ouverte sur les autres désignateurs sans avertissement, hors #286 pour l'article ; issue demandée. **Ajout hors fiche, C-e334-34** : lu, `settings/invoicing/+page.svelte` chargeait `fetchAccounts(false)`, si bien que `withCurrentAccount` ne résolvait pas un compte archivé : le champ s'affichait vide, et un geste l'effaçait (le défaut de #271). La fiche demandait qu'il « reste affiché » au manuel seulement. Deux gardes recomptées, que la fiche ne nommait pas : `i18n-keys.test.ts` (`sitesTotal` 2832 → 2849) et `i18n-libelle-en-dur.test.ts` (77 → 79, `conforme` 63 → 65) ; la seconde a rougi au gate de `32944fc0`, d'où `d7dcb3c9` et un rejeu de Vitest, `check` et l'E2E.
 
+- 2026-11-07 : remédiation de la revue P1 (Opus 5.5), commit `0f2bba8b`. Passe 1 (trois lentilles) : 0 CRITICAL, 0 HIGH, des MEDIUM. Traités :
+  - **A M-2, E-1, E-2, E-3, B M2** : le dialogue disait le même effet pour dix réglages, faux pour `vatDecompte`. Une phrase par réglage, quatre locales, `user-manual.tex`, chacune prouvée par un témoin avant l'archivage puis la variante d'erreur (`archived_*`). ⚠️ **Prémisse nuancée** : A et l'orchestrateur donnent `revenue` refusé « plus tôt » ; c'est vrai du compte **explicite** d'une ligne, non du **réglage** : lu `invoices.rs:645-648` (« les lignes sans compte ne sont PAS contrôlées ici ») et constaté par le test, le compte par défaut archivé n'est refusé qu'à la validation. La phrase de `user-manual.tex:412`, qui contredisait `:219` sur la TVA, prend l'escompte pour exemple.
+  - **B M1 = A M-1** : `active_children_are_refused_first` sans confirmation, M9. **B M3** : le type, test et M10 ; différence écrite au doc-comment de `validate_account` et au manuel d'administration. **A L-2** : `details` illisible, plus d'enfermement (Vitest corrigé, il épinglait le défaut).
+  - **LOW** : commentaires périmés (`company_invoice_settings.rs:229,232`, `idor_multi_tenant_e2e.rs:955`, `errors.rs:3423`, le bras déplacé) ; `designatedSettings` ; `role="alert"` ; promesse de la fiche au manuel d'administration (§ *Un compte désigné puis archivé*) ; A L-5, B L4 : la société se lit sur le compte, `archive_guarded` perd son paramètre ; A L-7 : l'inventaire par clé étrangère ; E-8 : confirmation explicite fausse, confirmation sur un compte non désigné, société sans réglages, mock remis à zéro hors du test ; L7 : capture Comptable.
+  - **Tranchés** : la course (C-e334-37) et le réarchivage (C-e334-38).
+  - **Réfuté** : B L6, « trois tests suivants tournent en Comptable » : lu `accounts-page.test.ts`, le `beforeEach` du fichier reconnecte l'Administrateur avant chaque test, et l'`afterEach` déconnecte.
+  - **Écart de méthode** : aucun script sur le code hors des mutations.
+
 ## Dev Agent Record
 
 ### Agent Model Used
@@ -103,6 +111,12 @@ Claude Opus 5.5.
 - **Manuels** : `user-manual.tex`, § `sec:plan-comptable-archivage` ; PDF régénéré, contrôlé aplati (« Archiver un compte désigné dans les paramètres », « Archiver quand même » lus). `docs/api-external.md` : le 409, `confirmDesignated`, l'ordre des refus. PDF de la brochure et du manuel d'administration, régénérés sans changement de source, rétablis.
 - **AC-9** : les appels de `accounts::archive(` n'ont pas changé ; `archive` lit désormais le `company_id` du compte, puis délègue, confirmation posée. `reactivate` n'est pas touché.
 - **Limite écrite** : la lecture de la désignation ne verrouille pas les réglages (doc-comment d'`archive_guarded`), comme `confirm_retype`. Autres désignateurs : issue demandée.
+
+- **Remédiation P1, rouges** (`e335/rouges.log`) : Rust, 23 tests, 22 passés, 1 rouge (`designatedSettings`). Les preuves `archived_*` passaient avant le code, ce qu'elles doivent faire : elles établissent des refus existants, non un comportement neuf, et leur première écriture a corrigé trois prémisses (le `revenue`, le compte créanciers à désigner au montage, un numéro de compte en double). Vitest, 2 rouges sur 11 (`chaque réglage dit son propre effet`, `details illisible`).
+- **Mutations P1** (`e335/mut/synthese-33-8-p2.log`), huit sur huit tuées : `M9-ordre`, `M10-type`, `M11-societe`, `M12-cle`, `V-enferme`, `V-effet`, `V-decompte`, `V-reglages`.
+- **Gates à `0f2bba8b`** (`e335/33-8-p1/`) : `test-fast.sh --ci` 4836 passés, 12 ignorés ; build vert ; `check`, `lint-i18n-ownership`, `npm run build` verts ; Vitest 2703, 218 fichiers ; **E2E complet** 378 tests, 352 passés, 18 ignorés, 8 échecs : les 7 de la KF-029 et `sidebar-navigation.spec.ts:81` (KF-052, #424, liste de `docs/testing.md`).
+- **Captures** : `e335/captures/33-8-p1-avertissement-comptable.png`, et celles du dialogue, de l'avertissement Administrateur et du réglage archivé, reprises.
+- **Manuels** : `user-manual` et `admin-manual`, PDF contrôlés aplatis (« décompte TVA, lui », « Un compte désigné puis archivé » lus ; « non-assujetti peut vouloir » absent) ; brochure rétablie.
 
 ### File List
 
