@@ -1,6 +1,6 @@
 # Story 33-9 : le test E2E `sidebar-navigation` cesse de lancer de fausses alertes (#424, #287)
 
-Status: in-progress
+Status: review
 
 *Fiche rédigée le 2026-11-06 en autonomie (Opus 5.5), worktree `/home/gcorbaz/devel/kesh-e33`, branche `story/33-0-kickoff`,
 numéros de ligne de `4ef19901`. Release **0.17.5**, Epic 33. **Aucune migration, a priori aucun code de production.** Registre :
@@ -91,6 +91,21 @@ Aucun sans correctif de production : pas de comportement visible. Avec l'AC-6 : 
 
 ### Agent Model Used
 
+Opus 5.5 (`claude-opus-5-5`).
+
 ### Completion Notes List
 
+- **Verdict** : (a), écriture tardive, reproduite (Change Log) ; l'auto-dépliage écrivait au stockage : **défaut de production**, corrigé (AC-6). La story touche donc la production, ce que la fiche prévoyait : gate complet, CHANGELOG, manuel relu.
+- **Correctif** : `handleToggle` n'écrit plus quand l'état vaut déjà `open`, c'est-à-dire quand Kesh a posé `open` lui-même, à l'auto-dépliage et au montage. Effet de bord voulu : le montage n'écrit plus `'true'` pour *Quotidien* et *Mensuel*.
+- **Rouges** (`e339/e2e-rrouge/playwright.log`, `e339/rouges.log`), spec réécrite, production d'origine : 10 passés, 1 échec, le test neuf, `Expected "false"`, `Received "true"`.
+- **Mutations** (`e339/mut/resume.txt`), témoin M0 vert, M1 à M4 de la fiche et **M5** (garde de `handleToggle` retirée) toutes tuées, `git status` vide après chacune, frontend reconstruit à chacune et après la dernière.
+- **AC-2, `d96707e2`** : spec seule, `--repeat-each=20` : **220 passés, aucun rouge** (11 tests × 20) ; suite complète, deux tirages sur base neuve : **353 passés, 18 ignorés, 7 échecs**, les sept de la KF-029, deux fois, aucun `sidebar-navigation`. ⚠️ **Ce que cela n'établit pas** : avant le correctif, la spec seule ne rougissait pas non plus (cent passages) et la suite une fois sur deux : deux suites vertes sont compatibles avec un défaut de même fréquence, et leur probabilité par le seul hasard n'est pas négligeable. La preuve qui compte est de forme : le test n'a plus de lecture unique, et M1 montre que son attente n'est pas vide.
+- **Gates, `d96707e2`** : `test-fast.sh --ci` vert, **nextest 4813 exécutés, 4813 passés, 12 ignorés** ; `cargo build --workspace --all-targets` vert ; frontend : `check`, `lint-i18n-ownership`, `test:unit` **2696 tests, 218 fichiers**, `build` verts (dont `e2e-selecteurs-traduits.test.ts`, inchangée : le site « Administration » de `DETTE_CONNUE` existe toujours, la spec gardant son commentaire `has-text("Administration")`). Journal : `e339/gates-head.log`.
+- **AC-5, contrôles** : `/usr/bin/grep -nE '7 à 10|sidebar-navigation[^ ]*:75' docs/testing.md CLAUDE.md` ne rend que les annotations historiques voulues et le relevé daté (`testing.md:405,422,429,448`, `CLAUDE.md:195`) ; `git grep -n 'sidebar-navigation' -- frontend/ ':!frontend/tests/e2e/sidebar-navigation.spec.ts'` : `e2e-selecteurs-traduits.test.ts:176`, seul.
+- **Manuel** : `user-manual.tex:132-137` décrit les groupes dépliables, et rien de leur mémorisation ; `/usr/bin/grep -niE 'replier|replié|déplie'` n'en dit rien d'autre : relu, rien à changer, PDF non régénéré.
+- **Captures** (thème clair, `e339/captures/`) : `/accounts`, groupe déplié pour la page ; `/`, groupe replié comme choisi. Aucun contrôle neuf.
+- ⚠️ **#424 disait aussi « déterministe, échoue seul »** (2026-08-30) : ce profil n'a pas été retrouvé en 100 + 220 passages, et sa cause d'alors reste non établie. La mémoire `e2e-echecs-attendus.md`, hors dépôt, est périmée (T6) : à dire à l'orchestrateur.
+
 ### File List
+
+`frontend/src/routes/(app)/+layout.svelte`, `frontend/tests/e2e/sidebar-navigation.spec.ts`, `docs/testing.md`, `CLAUDE.md`, `CHANGELOG.md`, `_bmad-output/implementation-artifacts/{33-9-e2e-sidebar.md,33-9-e2e-sidebar-review-prompt-p1.md,sprint-status.yaml}`.
