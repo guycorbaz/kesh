@@ -90,6 +90,8 @@ cargo clippy --workspace --all-targets -- -D warnings
 cargo test --workspace -j1 -- --test-threads=1
 ```
 
+**`scripts/gate-ci.sh kesh_ci_<suffixe> [journal]`** rejoue la dernière ligne telle quelle, comme la CI : base recréée sur le MariaDB de dev, migrations appliquées une à une par `mariadb … < fichier`, seed, puis `cargo test` dans un environnement fermé, sans `DATABASE_URL` du shell ni variable de l'appelant, et refus si un `.env` est atteignable. Dernière ligne : `gate-ci : N passés, M échoués, K ignorés`, recomptée depuis `test result:`. Écarts déclarés : le nom de la base, le datadir en tmpfs, les variables du runner. **Mesuré le 2026-11-07, Story 33-10, à la station, cible déjà compilée : 18 min 37 s, 206 binaires, 4823 passés, 0 échoué, 16 ignorés** ; sans cible chaude, davantage, et la CI n'a pas de tmpfs. `scripts/test-fast.sh`, lui, lance nextest, un processus par test : avec le correctif `env_lock` de la 0.17.4 défait, il reste vert (4815 passés) quand `gate-ci.sh` rend les **17 échecs** que la CI avait rendus.
+
 **Pourquoi `-j1 --test-threads=1`** : les tests partagent un état global (i18n, locale d'erreurs) et l'isolation cross-binary SQLx exige une exécution séquentielle pour éviter `PoolTimedOut`. Cf. mémo projet `feedback_sqlx_mysql_gotchas`.
 
 ### Frontend (Svelte)

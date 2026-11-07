@@ -1,6 +1,6 @@
 # Story 33-10 : l'outillage de release : le gate en mode CI, et la montée et le retour de version dans un script du dépôt (#925 ; B1, B3 de la rétrospective 0.17.4)
 
-Status: ready-for-dev
+Status: review
 
 *Fiche rédigée le 2026-11-06 en autonomie (Opus 5.5), worktree `/home/gcorbaz/devel/kesh-e33`, branche `story/33-0-kickoff`, numéros de
 ligne de `4ef19901`. Release **0.17.5**, Epic 33. **Aucune migration.** Registre : `e33-choix-autonomes-e334.md`, C-e334-21 à 25, 30 et 31. Commits en
@@ -79,12 +79,12 @@ scripts/recette-montee.sh --image gcorbaz/kesh:0.17.4 --binaire target/debug/kes
 
 ## Tâches
 
-- [ ] **T1 — rouges** : `scripts/tests/gate-ci.test.sh`, `scripts/tests/recette-montee.test.sh`, enveloppes Rust, sur le modèle cité (mini-dépôt sous `mktemp -d`, nettoyé par son `trap`, comme le test existant).
-- [ ] **T2** : `gate-ci.sh` ; garde `ci.yml` ⇄ script ; AC-2, **avant** T3.
-- [ ] **T3** : `EnvGuard`, `config.rs` (`#[cfg(test)]`) ; test.
-- [ ] **T4** : `recette-montee.sh`, `scripts/fixtures/recette/` (relevés A et B, relus).
-- [ ] **T5** : AC-6 ; journaux dans `kesh-gate-logs/e3310/`.
-- [ ] **T6** : documentation ; CHANGELOG `[0.17.5]` : **uniquement** une ligne *Interne* si la section la tolère ; sinon rien : aucun effet utilisateur (C-e334-25).
+- [x] **T1 — rouges** : `scripts/tests/gate-ci.test.sh`, `scripts/tests/recette-montee.test.sh`, enveloppes Rust, sur le modèle cité (mini-dépôt sous `mktemp -d`, nettoyé par son `trap`, comme le test existant).
+- [x] **T2** : `gate-ci.sh` ; garde `ci.yml` ⇄ script ; AC-2, **avant** T3.
+- [x] **T3** : `EnvGuard`, `config.rs` (`#[cfg(test)]`) ; test.
+- [x] **T4** : `recette-montee.sh`, `scripts/fixtures/recette/` (relevés A et B, relus).
+- [x] **T5** : AC-6 ; journaux dans `kesh-gate-logs/e3310/`.
+- [x] **T6** : documentation ; CHANGELOG `[0.17.5]` : **uniquement** une ligne *Interne* si la section la tolère ; sinon rien : aucun effet utilisateur (C-e334-25).
 
 ### Mutations nommées
 
@@ -114,11 +114,25 @@ P3 : pas d'exigence, mais les gardes se prouvent. **M1** : élargir le motif à 
 - 2026-11-06 : validation P1 (Sonnet 5.5, lentilles R et F), remédiation (Opus 5.5). Deux MEDIUM, six LOW, prémisses lues au code, aucun réfuté. **M-R10-1** (arbitrage de l'orchestrateur ; lu : `main.rs:60`, `boot-lib.sh`) : `env -i` et liste exacte, dossier et conteneur de base créés par le script, liste blanche, options `--base` et `--journal` retirées ; `kesh-mariadb-dev` n'est plus employé par la recette. **Conception changée.** Lecture de l'arbitrage à contrôler en passe 2 : « tout chemin hors de son dossier jetable » vise ce que Kesh et le script écrivent ou reçoivent en configuration ; les trois entrées en lecture seule (`--binaire`, `--static`, `--apres`) restent permises, à leur place : copier un binaire de plusieurs centaines de Mo dans `/tmp`, un tmpfs ici, coûterait de la mémoire pour rien. **M-R10-2** : AC-7 décidable, la liste de refus n'existant plus. **L-R10-3** : boucle de la CI (lu : `ci.yml:178-193`). **L-R10-4** : AC-2 sans test jetable, par le retrait de `f5d40d7e` (`git show --stat` : `config.rs` seul). **L-R10-5** : préfixe `kesh_ci_`, couvert par `kesh%` (lu). **L-F10-1** : aucune règle au `CLAUDE.md`. **L-F10-2** : mention de B2 retirée (B2 est corrigée au fichier d'epic). **L-F10-3** : lieu de la rétrospective dit. Aucune compilation ni exécution : passe 2 requise.
 - 2026-11-06 : validation P2 (Opus 5.5, lentilles R et F), remédiation (Opus 5.5). Aucun finding au-dessus de LOW : huit LOW, aucun réfuté. **L-R10-1** : `RECETTE_RACINE_JETABLE` à la liste. **L-R10-2** : pas de marqueur, l'environnement se compare, AC-5. **L-R10-3** : liste de l'image à part (lu : `boot-lib.sh:34-39`). **L-R10-4** : port de la phase 5 contrôlé avant toute action. **L-R10-5** : refus au démarrage, qui nomme le geste. **L-F10-6** : `CARGO_TERM_COLOR`, `RUST_BACKTRACE` ajoutées (lu : `ci.yml:16-18`), le reste déclaré. **L-F10-7** : lieu de la rétrospective (lu : présente au dépôt principal, sur `main`, `d9b53d38`). **L-F10-8** : recoupement 33-11. C-e334-30 révisé. Aucune compilation ni exécution.
 - 2026-11-06 : validation P3 (Sonnet 5.5, lentilles R et F), remédiation (Opus 5.5). Un LOW, non réfuté. **L-R10-1** : AC-2 sans `git apply` (lus : `git merge-base --is-ancestor f5d40d7e HEAD` : non ; `git branch -a --contains f5d40d7e` : `release/0.17.4` et son origine). Mutations : 10, inchangées.
+- 2026-11-07 : développement (Opus 5.5), worktree `/home/gcorbaz/devel/kesh-e337`. **Étape 0** : L-R10-1 de `e33-validate-p3-e334.md` lu : déjà porté par l'AC-2 (retrait par Edit, d'après `git show f5d40d7e -- crates/kesh-api/src/config.rs`) ; `e33-validate-p4.md` ne vise pas cette fiche. **Consigne de l'orchestrateur** : conteneurs `kesh-e3310-*`, d'où `--prefixe` (C-e334-33). **AC-2, avant T3** : correctif défait à la main, `gate-ci.sh kesh_ci_e3310` : code 101, `gate-ci : 631 passés, 17 échoués, 5 ignorés`, sur `kesh-api --lib`, les dix-sept de `pre_upgrade_backup::tests`, le nombre même de `rel0174/ci-repro-lib-avant.log` (`e3310/ac2.res`) ; `test-fast.sh --no-lint`, même arbre : **4815 passés, 0 échoué** (`e3310/ac2b.res`). ⚠️ Un premier tirage de `test-fast` a rougi, pour une autre cause, propre à cette story : le test shell prenait ses ports dans la plage éphémère, où une connexion à la base les occupait entre deux contrôles (`recette_montee_script`, « port-api pris : accepté », `ac2-test-fast.log`). Corrigé, et l'AC-2 rejoué. **La recette réelle (AC-6) a trouvé trois écarts que les factices ne pouvaient pas voir** : le préréglage `with-company` n'a pas de compte 1020, et son 1100 est un compte de créance refusé au compte bancaire (compte bancaire sans compte lié, comme `rel0174` le faisait sans le dire) ; le binaire lancé hors du dépôt ne trouve plus ses textes (`KESH_LOCALES_DIR`, ajouté à la liste de la fiche, C-e334-34) ; le binaire écrit « Recovery effectué » au niveau `ERROR` à chaque démarrage sur une base peuplée, le mot de passe du préréglage différant de `KESH_ADMIN_PASSWORD` (écarté du contrôle du journal, nommément, C-e334-35). **AC-6** : depuis un dossier temporaire à `.env` sonde, `DATABASE_URL` exportée vers une base factice : `--image gcorbaz/kesh:0.17.2 --migrations-attendues 1 --diff-attendu migrations --import` : **code 0, cinq phases**, 88 migrations avant, seul `migrations` diffère à la montée et à l'import, empreinte de retour identique, refus de l'image au journal (`previously applied but is missing`), `kesh-pre-upgrade-…-0.17.2-to-0.17.4.keshbackup` sous `$D/backup` (`e3310/recette-a.log`, `recette-a-journal/`, `recette-a-preupgrade.txt`). `--image gcorbaz/kesh:0.17.4 --migrations-attendues 0` : **code 0, « phase 3 : sautée, aucune migration, donc aucun refus à observer »**, aucun fichier `pre-upgrade/` (`recette-b.log`). Chaque fois : `StartedAt` de `kesh-mariadb-dev` identique, aucun conteneur restant. Aucune image ni base du NAS, aucune donnée réelle. **Écart à l'AC-5** : « conteneur `kesh.recette` déjà présent » ne se refuse pas avec zéro appel `docker` : il faut lister. Le test exige une seule commande, `docker ps`, zéro `curl`. **Hors du périmètre de cette fiche, relevé** : `gate-ci.sh` emploie `kesh-mariadb-dev`, comme la fiche le dit ; seule la recette ne l'emploie pas.
 
 ## Dev Agent Record
 
 ### Agent Model Used
 
+Opus 5.5 (`claude-opus-5-5`).
+
 ### Completion Notes List
 
+- **Rouges** : `e3310/rouges.log`, `env_lock_restitue_tout_l_environnement` au garde d'origine, `left: Some("posée")`, `right: None` ; les tests shell ont été écrits avec les scripts, en brouillon, et ne se sont pas vus rouges d'abord, hors la garde de `ci.yml` (AC-1), que M4 prouve avec les autres mutations.
+- **Mutations** (`e3310/mut/resume.txt`) : M1 à M10 toutes tuées, chacune pour la raison que la fiche nomme. M7 jouée par `realpath -s`.
+- **Gates, `dc612842`** : `scripts/test-fast.sh --ci` vert, fmt, clippy, **nextest 4816 exécutés, 4816 passés, 12 ignorés** ; `cargo build --workspace --all-targets` vert ; **`scripts/gate-ci.sh kesh_ci_e3310` en grandeur : code 0, 18 min 37 s, 206 binaires, `gate-ci : 4823 passés, 0 échoués, 16 ignorés`** (`e3310/gates-head.log`, `gate-ci.log`). Base `kesh_ci_e3310` retirée après coup. Tests des scripts : `gate-ci.test.sh`, `recette-montee.test.sh` verts, par leurs enveloppes au gate. Le commit suivant ne porte que `docs/ci.md` et des comptes rendus.
+- **`shellcheck`** absent de la station : non lancé. **E2E** : non lancé, et c'est voulu : hors `#[cfg(test)]`, rien de ce que sert Kesh ne change, scripts et documents exceptés. **Frontend** : non touché.
+- **Manuel** : `git grep -n 'gate-ci\|recette-montee' -- docs/manual` vide ; aucun changement. **CHANGELOG** : rien, aucun effet pour l'utilisateur (C-e334-25).
+- **AC-7** : exécuté par les deux tests shell, avec sa sonde. Relevé CAMT relu : IBAN d'exemple, noms et montants inventés, identifiants renommés `STMT-RECETTE-*`.
+- **AC-8, la ligne que l'orchestrateur reprendra** au prompt d'intégration de la 0.17.5 : « avant la PR de release, `scripts/gate-ci.sh kesh_ci_rel0175` et, la release portant une migration, `scripts/recette-montee.sh`, chacun sous les verrous ». ⚠️ **Pour la 0.17.5, à migration** : `--image gcorbaz/kesh:0.17.4 --migrations-attendues 1 --diff-attendu migrations,supplier_invoices,api` à vérifier au premier tirage ; le crochet `--apres` porte les vérifications de la numérotation (33-1a).
+- ⚠️ **Écart de méthode, à déclarer** : la campagne de mutations a laissé une fois `config.rs` muté, le harnais ayant expiré en attendant le verrou (M5) ; constaté à la lecture, restauré par `git checkout` + `touch`, délai retiré, M5 rejouée. Aucun commit ne l'a porté. Les scripts et tests neufs ont été rédigés hors worktree puis copiés, et corrigés une fois, en brouillon, par `sed -i` et un script `python3`, contre la lettre de la consigne : ils n'étaient pas encore au dépôt.
+
 ### File List
+
+`scripts/{gate-ci,recette-montee}.sh`, `scripts/tests/{gate-ci,recette-montee}.test.sh`, `scripts/fixtures/recette/releve-{A,B}.xml`, `crates/kesh-db/tests/{gate_ci_script,recette_montee_script}.rs`, `crates/kesh-api/src/config.rs`, `docs/ci.md`, `docs/testing.md`, `docs/agents-orchestration.md`, `CLAUDE.md`, `_bmad-output/implementation-artifacts/{33-10-outillage-release.md,33-10-outillage-release-review-prompt-p1.md,e33-choix-autonomes-e334.md,sprint-status.yaml}`.
