@@ -1040,6 +1040,10 @@ fn draw_swiss_cross(layer: &PdfLayerReference, cx: f32, cy: f32) {
     .with_mode(printpdf::path::PaintMode::Fill);
     layer.add_rect(h);
     layer.add_rect(v);
+
+    // ⚠️ Le texte suivant hérite du remplissage : rester en blanc rendait la partie
+    // paiement entière invisible sur le papier, le contenu du PDF restant intact.
+    layer.set_fill_color(Color::Rgb(Rgb::new(0.0, 0.0, 0.0, None)));
 }
 
 // ----- Helpers -----
@@ -1504,6 +1508,70 @@ mod tests {
         ] {
             assert_eq!(texte_a(&textes, x, y), attendu, "à ({x}, {y})");
         }
+    }
+
+    /// Chaque texte dessiné du PDF, avec la couleur de remplissage (`rg`) en vigueur
+    /// au moment de son `Tj` : noir par défaut, comme le veut la norme PDF.
+    fn couleurs_des_textes(bytes: &[u8]) -> Vec<(String, Vec<f32>)> {
+        use printpdf::lopdf::{Document, Object, content::Content};
+
+        let doc = Document::load_mem(bytes).expect("PDF relisible");
+        let mut textes = Vec::new();
+        for page in doc.get_pages().values() {
+            let brut = doc.get_page_content(*page).expect("contenu de page");
+            let contenu = Content::decode(&brut).expect("contenu décodable");
+            let mut couleur = vec![0.0, 0.0, 0.0];
+            for op in &contenu.operations {
+                match op.operator.as_str() {
+                    "rg" => {
+                        couleur = op
+                            .operands
+                            .iter()
+                            .map(|o| match o {
+                                Object::Integer(i) => *i as f32,
+                                Object::Real(r) => *r,
+                                autre => panic!("opérande de rg inattendue : {autre:?}"),
+                            })
+                            .collect();
+                    }
+                    "Tj" => {
+                        let Object::String(octets, _) = &op.operands[0] else {
+                            panic!("opérande de Tj inattendue : {:?}", op.operands);
+                        };
+                        textes.push((
+                            Document::decode_text(Some("WinAnsiEncoding"), octets),
+                            couleur.clone(),
+                        ));
+                    }
+                    _ => {}
+                }
+            }
+        }
+        textes
+    }
+
+    /// **#941, constaté à la capture de la Story 33-12a** — tout texte s'imprime en
+    /// noir. `draw_swiss_cross` laissait le remplissage en blanc : la partie paiement
+    /// entière (compte, créancier, référence, message, montant, débiteur) sortait
+    /// invisible sur le papier, alors qu'elle était présente au contenu du PDF.
+    /// Aucun test relisant le texte ne pouvait le voir.
+    #[test]
+    fn chaque_texte_s_imprime_en_noir() {
+        let (data, invoice, i18n) = invoice_fixture();
+        let pdf = generate_qr_bill_pdf_with_date(&data, &invoice, &i18n, fixed_date()).unwrap();
+        let textes = couleurs_des_textes(&pdf);
+        assert!(
+            textes.iter().any(|(t, _)| t == "Robert Schneider SA"),
+            "montage : le créancier est lu"
+        );
+        let invisibles: Vec<_> = textes
+            .iter()
+            .filter(|(_, couleur)| couleur.as_slice() != [0.0, 0.0, 0.0])
+            .collect();
+        assert!(
+            invisibles.is_empty(),
+            "textes pas en noir : {invisibles:#?}"
+        );
     }
 
     /// Date de création figée — sans elle, deux générations successives

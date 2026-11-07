@@ -1170,7 +1170,9 @@ Le choix du format dépend du compte bancaire principal : s'il porte un QR-IBAN,
 
 \textbf{L'imprimé dit la même chose que le code, à une exception près, assumée.} La police du PDF ne porte pas 125 lettres du jeu (Č, ł, Ș\ldots). Dans la section de paiement, elles s'impriment désormais par leur lettre de base~: \emph{Čolić} s'imprime «~Colic~», alors que le code QR, lu par la banque, garde \emph{Čolić}. Jusqu'ici, elles disparaissaient du papier («~oli~»). Une police embarquée lèvera cet écart (issue \#943)~; d'ici là, le \textbf{corps de la facture}, au-dessus de la section de paiement, n'a pas ce repli et perd encore ces lettres. Un message long peut aussi sortir de la feuille, faute de borne de largeur (issue \#944)~: le code QR, lui, le porte entier.
 
-\textbf{Un PDF déjà figé ne change pas} (\S\ref{sec:pdf-fige}). Une facture jamais ouverte, ou un rappel régénéré, prendra le nouveau rendu.
+\textbf{La partie paiement s'imprime depuis la version~0.17.5.} Auparavant, tout son texte (compte, créancier, référence, message, montant, débiteur) sortait en blanc sur blanc~; seuls son titre et le code QR se voyaient, et le code QR restait lu par les banques.
+
+\textbf{Un PDF déjà figé ne change pas} (\S\ref{sec:pdf-fige})~: il garde sa partie paiement sans texte. Une facture jamais ouverte, ou un rappel régénéré, prendra le nouveau rendu.
 
 \subsubsection{Le PDF émis est figé}\label{sec:pdf-fige}
 
