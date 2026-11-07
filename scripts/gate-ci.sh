@@ -28,6 +28,10 @@
 #
 # Sous `mem-guard` s'il n'y est pas déjà ; les verrous de la station restent à
 # l'appelant. Injections de test : KESH_DOCKER, KESH_CARGO, KESH_NO_MEMGUARD.
+#
+# Codes : 2 argument ou journal refusé (le journal doit être un fichier ordinaire),
+# 3 `.env` atteignable, 4 base, migration ou seed en échec, 5 journal mal écrit ;
+# sinon, celui de `cargo test`.
 
 set -uo pipefail
 
@@ -62,6 +66,10 @@ ENV_DANS_LE_DEPOT=$(find "$RACINE" \( -name target -o -name node_modules -o -nam
 if [ -n "$JOURNAL" ]; then
   JOURNAL=$(realpath -m -- "$JOURNAL") || refus "journal illisible" 2
   touch -- "$JOURNAL" 2>/dev/null || refus "journal « $JOURNAL » impossible à écrire" 2
+  # Un fichier ordinaire, et rien d'autre : `touch` accepte un dossier ou un périphérique,
+  # et le décompte final relit le journal — `/dev/full` ou `/dev/zero` se lisent sans fin
+  # (le 2026-11-07, un `sed` y a pris 27 Go et fait tomber la station).
+  [ -f "$JOURNAL" ] || refus "journal « $JOURNAL » : pas un fichier ordinaire" 2
 fi
 
 if [ -z "${KESH_MEMGUARD_ACTIVE:-}" ] && [ -z "${KESH_NO_MEMGUARD:-}" ]; then
@@ -108,7 +116,10 @@ ENV_CI=(
 
 echo "▶ cargo test, comme la CI"
 env -i "${ENV_CI[@]}" "$CARGO" test --workspace -j1 -- --test-threads=1 2>&1 | tee "$JOURNAL"
-CODE=${PIPESTATUS[0]}
+CODES=("${PIPESTATUS[@]}")
+CODE=${CODES[0]}
+# Un journal tronqué (disque plein) donnerait un décompte partiel pris pour le vrai.
+[ "${CODES[1]}" -eq 0 ] || refus "journal « $JOURNAL » mal écrit : aucun décompte (cargo : code $CODE)" 5
 
 # Recompté depuis les lignes `test result:`, jamais recopié.
 sed 's/\x1b\[[0-9;]*m//g' "$JOURNAL" | awk '

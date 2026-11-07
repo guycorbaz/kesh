@@ -28,6 +28,8 @@ cat > "$WORK/bin/docker" <<'FACTICE'
 #!/usr/bin/env bash
 ici="$(dirname "$0")"
 echo "docker $*" >> "$(cat "$ici/courant")/appels.log"
+# `verrouiller` : un journal rendu non inscriptible après le contrôle d'entrée.
+[ ! -s "$ici/verrouiller" ] || chmod a-w "$(cat "$ici/verrouiller")"
 cat >/dev/null
 exit "$(cat "$ici/code-docker")"
 FACTICE
@@ -146,6 +148,23 @@ STUB_CARGO_CODE=101 lancer "$d" kesh_ci_x >/dev/null 2>&1 && c=0 || c=$?
 d=$(depot)
 STUB_CARGO_CODE=0 lancer "$d" kesh_ci_x >/dev/null 2>&1 && c=0 || c=$?
 [ "$c" -eq 0 ] && ok "0 propagé" || fail "code $c"
+
+# Revue P2, L5 : un journal qui ne s'écrit pas en entier ne donne pas de décompte, et un
+# dossier n'est pas un journal. `/dev/full` se « touche », mais toute écriture y échoue.
+echo "  le journal mal écrit ne passe pas pour un vert"
+d=$(depot)
+STUB_CARGO_CODE=0 lancer "$d" kesh_ci_x /dev/full > "$WORK/sortie-full" 2>&1 && c=0 || c=$?
+[ "$c" -ne 0 ] && ok "journal plein : code $c" || fail "journal plein : code 0"
+/usr/bin/grep -q 'gate-ci : 0 passés' "$WORK/sortie-full" && fail "un décompte à zéro affiché" || ok "aucun décompte affiché"
+d=$(depot); mkdir -p "$WORK/journal-dossier"
+if lancer "$d" kesh_ci_x "$WORK/journal-dossier" >/dev/null 2>&1; then fail "journal-dossier : accepté"
+elif [ -s "$d/appels.log" ]; then fail "journal-dossier : des appels"
+else ok "journal-dossier : refusé, zéro appel"; fi
+d=$(depot); : > "$WORK/journal-verrouille"; echo "$WORK/journal-verrouille" > "$WORK/bin/verrouiller"
+STUB_CARGO_CODE=0 lancer "$d" kesh_ci_x "$WORK/journal-verrouille" > "$WORK/sortie-verrou" 2>&1 && c=0 || c=$?
+: > "$WORK/bin/verrouiller"
+[ "$c" -eq 5 ] && ok "tee en échec : code 5" || fail "tee en échec : code $c"
+/usr/bin/grep -q 'passés,' "$WORK/sortie-verrou" && fail "tee en échec : un décompte affiché" || ok "tee en échec : aucun décompte"
 
 echo "  une migration en échec arrête tout"
 d=$(depot)
