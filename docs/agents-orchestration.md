@@ -166,6 +166,8 @@ messages `refs #N`.
 ```sh
 flock "$GATE_LOGS/.gate.lock" scripts/test-fast.sh
 flock "$GATE_LOGS/.gate.lock" bash -c 'cmd1 && cmd2'     # plusieurs commandes
+flock "$GATE_LOGS/.gate.lock" scripts/gate-ci.sh kesh_ci_<clé>   # la suite comme la CI
+flock "$GATE_LOGS/.gate.lock" scripts/mem-guard.sh scripts/recette-montee.sh …   # montée et retour
 ```
 
 Sont lourds : `scripts/test-fast.sh` complet, `cargo build --workspace`, Vitest complet, E2E
