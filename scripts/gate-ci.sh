@@ -17,7 +17,7 @@
 #
 # Écarts à la CI, tous déclarés : le nom de la base, le MariaDB de dev (datadir en
 # tmpfs, durabilité réduite, d'autres bases à côté), ses droits déjà posés (l'étape
-# *Apply dev grants* n'est pas rejouée), `HOME` réel (`~/.cargo/config.toml` lu) et les
+# *Apply dev grants* n'est pas rejouée), `HOME` réel (la configuration cargo de la station est lue) et les
 # variables du runner GitHub. `cargo test` s'arrête au premier binaire en échec, comme
 # en CI : le décompte d'un rouge ne couvre que les binaires déjà passés.
 #

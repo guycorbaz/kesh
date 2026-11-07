@@ -384,7 +384,8 @@ empreinte() { # $1 = étiquette
   mkdir -p "$o"
   SQL "SELECT version, description, success, HEX(checksum) FROM _sqlx_migrations ORDER BY version" > "$o/migrations" || return 1
   for t in $TABLES; do
-    SQL "SELECT * FROM $t ORDER BY id" > "$o/$t" || return 1
+    # `ORDER BY 1` : la première colonne, `id` ou `company_id` (réglages de facturation).
+    SQL "SELECT * FROM $t ORDER BY 1" > "$o/$t" || return 1
   done
   # `users`, sans ce que réécrit l'avis « Recovery effectué » à chaque démarrage.
   SQL "SELECT id, username, role, active, company_id, email FROM users ORDER BY id" > "$o/users" || return 1
