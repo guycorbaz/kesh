@@ -1,6 +1,6 @@
 # Story 33-6 : le règlement n'est plus annoncé en échec après son commit (#450)
 
-Status: review
+Status: done
 
 *Fiche rédigée le 2026-11-06 en autonomie (Opus 5.5), worktree `/home/gcorbaz/devel/kesh-e33`, branche `story/33-0-kickoff`,
 numéros de ligne de `4ef19901`. Release **0.17.5**, Epic 33. **Aucune migration.** Registre : `e33-choix-autonomes-e334.md`,
@@ -110,6 +110,15 @@ après règlement (`/usr/bin/grep -n 'règlement.*404' docs/api-external.md docs
   - **Mutations** (`e335/mut/synthese-33-6-p3.log`), quinze sur quinze tuées : `R-match` (relecture dans le bras `Ok` d'un `match` sur le commit de `settle_invoice` : `the_response_is_read_before_the_commit_and_nothing_waits_after_it`), `V-5xx`, `V-non-api`, `V-page-5xx`, `V-due-5xx`, `V-due-cible`, `V-mcp-same`, `V-mcp-clear` ; et les sept `R-*` de la P2, rejouées contre la garde neuve, chacune rouge pour la même raison qu'avant.
   - **Gates à `242b9191`** (`e335/33-6-p2/`) : `test-fast.sh --ci` 4826 exécutés, 4826 passés, 12 ignorés ; `cargo build --workspace --all-targets` vert ; `npm run check` 0 erreur ; `lint-i18n-ownership` vert ; Vitest 2734 tests, 218 fichiers ; `npm run build` vert. **E2E complet** sur `kesh_e2e_e335` recréée (`e2e-r33-6-p2/`) : 380 tests, 355 passés, 18 ignorés, **7 échecs, tous de la KF-029** (`mode-expert:26,41`, `onboarding-path-b:65,92`, `onboarding:57,77,150`) ; les trois tests de `invoices-settle-unknown-outcome.spec.ts` passent. Captures rejouées (`captures/33-6-p1-*.png`), avis relu sur la capture de la fiche.
   - Prompt de la P3 ciblée : `33-6-reglement-apres-commit-review-prompt-p3.md`, bornes `d17b3439..242b9191`.
+  - *(Annoté le 2026-11-07, revue P3, P3-6 : les journaux par mutation de cette remédiation ont été **écrasés** : `local n=$1 … log=$L/33-6-p3-$n.log` développe `$n` avant de l'affecter, si bien que les quinze passages ont écrit le seul `mut/33-6-p3-.log`, qui ne garde que `V-mcp-clear`. La synthèse, écrite après chaque passage, reste juste ; la raison du rouge de `R-match` ne se lit plus qu'à elle. Le rouge d'avant de la sonde ne nomme que la première de ses trois formes, l'`assert_eq!` arrêtant la boucle ; les deux autres sont tracées à la lecture, non exécutées.)*
+
+- 2026-11-07 : **revue de code terminée.** Tendance, recomptée sur les rapports `kesh-gate-logs/e336-review-p1-{A,B,E}.md`, `e336-review-p2.md`, `e336-review-p3.md` : **P1, trois lentilles (Opus 5.5) : 0 C, 0 H, 13 M, 16 LOW → P2 ciblée (Sonnet 5.5) : 0 C, 0 H, 2 M, 6 LOW → P3 ciblée (Opus 5.5) : 0 C, 0 H, 0 M, 6 LOW.** Boucle fermée sur une passe sans constat au-dessus de LOW. Développement et remédiations : Opus 5.5. Solde des LOW de la P3, sans ligne exécutable de production :
+  - **P3-1** : le doc-comment d'`isUnknownOutcome` dit le vrai motif (un rejeu sans danger : version de l'envoi MCP, sauvegarde en double).
+  - **P3-2** : les écarts de la garde `syn` écrits à ses limites (ordre textuel, boucle, base de l'`.await`, exemption de tout `.await` qui contient un `rollback`, faux positifs bruyants).
+  - **P3-5** : le manuel ne promet plus de borne (« laissez-lui du temps, relisez »), PDF régénéré et contrôlé aplati.
+  - **P3-6** : note datée ci-dessus.
+  - **P3-3** (échéancier : le refus de la facture A affiché dans le dialogue de B) et **P3-4** (`McpSendDetail` : le texte non repris disparaît après un refus suivi de *Recharger*) touchent la production : non traités ici, issues ouvertes par l'orchestrateur.
+  - **Gates de ce dernier commit** : aucune ligne exécutable de production ; `cargo fmt` vert. Le gate complet reste celui de `242b9191` (ci-dessus).
 
 ## Dev Agent Record
 

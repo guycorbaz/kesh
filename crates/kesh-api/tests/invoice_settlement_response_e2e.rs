@@ -412,6 +412,16 @@ async fn a_partial_cancellation_returns_what_was_written(pool: MySqlPool) {
 /// lancée à part (`tokio::spawn`) sans `.await`. La revue reste le filet de ces
 /// formes, sans qu'on en ajoute une liste ici.
 ///
+/// ⚠️ **Et ses écarts propres** (revue P3, P3-2) : l'ordre suivi est l'ordre
+/// **textuel** de `syn`, qui n'est celui de l'évaluation qu'hors boucles et blocs
+/// différés ; une boucle qui rejoue après le commit une attente écrite avant lui
+/// échappe donc, sans bruit. Les attentes logées dans la **base** de l'`.await` de
+/// l'appel (`appel().and_then(|_| relire()).await`) sont vues avant lui, et ne
+/// comptent pas. Est exempté tout `.await` dont la base **contient** un `rollback`,
+/// et non le seul `tx.rollback().await` : sans portée sur la propriété gardée, le
+/// commit n'ayant pas eu lieu sur ces chemins. Un bloc `async` défini avant d'être
+/// attendu, ou une branche morte qui porte l'appel, font au contraire rougir à tort.
+///
 /// ⛔ **Un ensemble clos, non une liste de formes** (revue P1, B2, B3, E-5) : une liste
 /// de relectures interdites laissait passer `factures::detail(.., &state.lecture(), id)`
 /// et sautait sur `.await.map_err(..)?;`. Lue par `syn`, la règle ne dépend ni de la
@@ -453,7 +463,8 @@ fn expr_calls(expr: &syn::Expr, name: &str) -> bool {
     visitor.found
 }
 
-/// Parcourt les `.await` du corps dans leur ordre d'évaluation : l'intérieur d'un
+/// Parcourt les `.await` du corps dans leur ordre textuel, qui est celui de
+/// l'évaluation hors boucles et blocs différés (voir les écarts ci-dessus) : l'intérieur d'un
 /// `.await` avant lui, le scrutateur d'un `match` avant ses bras. Le premier qui porte
 /// l'appel est le sien ; tout `.await` suivant compte, sauf un `rollback`.
 struct Around<'a> {

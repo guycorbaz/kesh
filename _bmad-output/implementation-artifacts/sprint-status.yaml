@@ -1,3 +1,4 @@
+# last_updated: 2026-11-07 (Epic 33 : 33-6 done, revue de code en trois passes, P1 13 M → P2 2 M → P3 0 au-dessus de LOW)
 # last_updated: 2026-11-06 (Epic 33 : validation terminée en quatre passes, P1 11 M → P2 1 H + 9 M → P3 4 M → P4 ciblée 0 retenu ; développement à lancer)
 # last_updated: 2026-11-06 (Epic 33 : validation P1 remédiée sur douze fiches ; 33-11 à sa P1 ; annotation : l'en-tête « douze stories au backlog » valait au kickoff, 33-11 s'y ajoute : quatorze clés avec 33-0, treize ready-for-dev)
 # last_updated: 2026-11-06 (Epic 33 : 33-11, filtre de CI, ajoutée sur demande de Guy)
@@ -1003,7 +1004,7 @@ development_status:
   33-3b-accueil-graphiques: ready-for-dev
   33-4-bornes-annees: ready-for-dev
   33-5-adresse-societe: ready-for-dev
-  33-6-reglement-apres-commit: review
+  33-6-reglement-apres-commit: done
   33-7-traces-audit: ready-for-dev
   33-8-compte-designe-archive: ready-for-dev
   33-9-e2e-sidebar: ready-for-dev

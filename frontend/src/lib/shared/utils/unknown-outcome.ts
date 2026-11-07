@@ -21,8 +21,9 @@ import { isApiError } from './api-error';
  *
  * Faux pour toute erreur qui n'est pas une `ApiError` : à l'appelant de dire
  * ce qu'il en fait (la sauvegarde la traite aussi en issue inconnue, l'import
- * non). Le 503 n'en est pas pour une opération qui n'écrit rien de définitif :
- * Kesh l'émet quand la base est injoignable. Pour un règlement, voir
+ * non). Le 503 n'en est pas là où un rejeu est sans danger : la décision sur un
+ * envoi MCP porte une version (un rejeu rend 409), une sauvegarde en double ne fait
+ * aucun tort. Pour une écriture qu'un rejeu doublerait, voir
  * {@link isSettlementOutcomeUnknown}.
  */
 export function isUnknownOutcome(err: unknown): boolean {
