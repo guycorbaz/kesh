@@ -1172,7 +1172,11 @@ Le choix du format dépend du compte bancaire principal : s'il porte un QR-IBAN,
 
 \textbf{La partie paiement s'imprime depuis la version~0.17.5.} Auparavant, tout son texte (compte, créancier, référence, message, montant, débiteur) sortait en blanc sur blanc~; seuls son titre et le code QR se voyaient, et le code QR restait lu par les banques.
 
-\textbf{Un PDF déjà figé ne change pas} (\S\ref{sec:pdf-fige})~: il garde sa partie paiement sans texte. Une facture jamais ouverte, ou un rappel régénéré, prendra le nouveau rendu.
+\textbf{Le reçu et la partie paiement portent l'adresse entière.} Depuis la version~0.17.5, le créancier et le débiteur s'y impriment sur trois lignes~: le nom, la rue et le numéro, le NPA et la localité, que le papier omettait jusqu'ici alors que le code QR les porte. Hors de Suisse, Liechtenstein compris, le pays précède le NPA (\texttt{LI-9490 Vaduz}, \texttt{DE-78462 Konstanz}). Une ligne vide ne s'imprime pas, et une ligne trop longue se coupe entre deux mots, à 27~caractères au reçu et à 46 en partie paiement~: rien n'est tronqué. Le reçu porte désormais aussi la référence, s'il y en a une.
+
+\textbf{Ce que cette coupe ne garantit pas.} Elle compte des caractères, non des largeurs~: une ligne faite de lettres très larges peut encore atteindre le code QR au reçu, et une adresse remplissant tous ses champs jusqu'à leur limite peut descendre hors de la feuille. Le code QR, lui, reste complet (issue \#944). Une rue de 28 à 37~caractères, qui tenait au reçu, se coupe désormais en deux lignes.
+
+\textbf{Un PDF déjà figé ne change pas} (\S\ref{sec:pdf-fige})~: il garde sa partie paiement sans texte et son adresse sans NPA ni localité. Une facture jamais ouverte, ou un rappel régénéré, prendra le nouveau rendu.
 
 \subsubsection{Le PDF émis est figé}\label{sec:pdf-fige}
 

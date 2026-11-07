@@ -1,6 +1,6 @@
 # Story 33-12b : le reçu et la partie paiement impriment l'adresse entière (#941)
 
-Status: ready-for-dev
+Status: in-progress
 
 *Fiche rédigée le 2026-11-07 par l'orchestrateur (Opus 5.5), worktree `/home/gcorbaz/devel/kesh-e33`. Release **0.17.5**, Epic 33, ajoutée après le kickoff : P1 de conformité trouvé à la revue de la 33-5, dans le cadre donné par Guy (« quelques bugs de ton choix »). **Aucune migration.** Registre : `e33-choix-autonomes-e3312.md`. Découpée à la P2 de validation (F-H1 : prémisse fausse, remédiation et correctif dans le même fichier). Rapports : `kesh-gate-logs/e3312-validate-p{1,2,3,4,5,6,7,8}.md`. Le registre a été créé à l'étape 0 du développement. Commits en `refs #941` ; à la PR : `closes #941` une fois les deux réunies.*
 
