@@ -1017,7 +1017,7 @@ development_status:
   33-8-compte-designe-archive: done
   33-9-e2e-sidebar: done
   33-10-outillage-release: done
-  33-11-filtre-ci: review  # 2026-11-06 : demande de Guy ; fiche écrite par l'orchestrateur, validation P1 à lancer.
+  33-11-filtre-ci: done  # 2026-11-07 : relevés (a), (b), (d), (e) de l'AC-6 conformes sur la PR #965 ; (c) à la PR de la rétrospective.
   33-12a-jeu-caracteres-qr: done  # 2026-11-07 : #941, P1, trouvée à la revue de la 33-5
   33-12b-adresse-imprimee-qr: done  # 2026-11-07 : #941, NPA et localité absents du reçu et de la partie paiement
   epic-33-retrospective: optional

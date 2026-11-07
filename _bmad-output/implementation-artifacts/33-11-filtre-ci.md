@@ -1,6 +1,6 @@
 # Story 33-11 : la CI saute ses jobs lourds quand une PR ne touche que `_bmad-output/`
 
-Status: review
+Status: done
 
 *Epic 33 (v0.17.5). Demande de Guy du 2026-11-06 : « oui, ajoute un filtre ci pour éviter de perdre du temps inutile ». Clé de choix `C-e3311-k`, registre `e33-choix-autonomes-e3311.md`. Aucune migration, aucun code de production. Commits en `refs #928` ; PR d'intégration : `refs #928` ; **`closes #928` à la PR de la rétrospective**, qui porte la dernière preuve (AC-6 c).*
 
@@ -99,6 +99,12 @@ Story sans code de production : `scripts/tests/ci-seuls-artefacts.test.sh`, `she
   - **F3** : « fichier supprimé » porte un artefact, pour que seule la suppression le rende hors du périmètre ; le nom à retour à la ligne est **sous** le dossier, `false` attendu. Mutations du script, jouées par Edit puis `git checkout --` et `touch` : **M12** (`|| [ -n "$nom" ]` retiré) tuée par « sans NUL final » et « dernier nom sans NUL » ; **M13** (`--diff-filter=d`) tuée par « supprimé, avec un artefact » et le renommage ; **M14** (lecture par lignes) tuée par sept cas, dont le nouveau. Journaux `e3311/p3/mut/M12…M14`.
   - **F4** : `docs/ci.md:9` et la ligne `changes` du tableau au conditionnel, « cas à relever » ; `CHANGELOG.md`, réserve « à confirmer avant la release » ; `CLAUDE.md:297`, le script est lancé par `changes`, dont les conditions lisent la sortie. **F5** : étape « textes au relevé » au mode opératoire, T6 à la fiche. **F6** : (c) se relève après la fin de `Filtre des artefacts`.
   - Issue de suite : **#961**. Test shell vert, 54 assertions (`e3311/p3/test-shell.log`). **Boucle de revue close** sur une passe sans finding au-dessus de LOW ; tendance P1 (A 0/0/2/5, B 0/0/0/5, E 0/0/3/6) → P2 0/0/0/6. **La fiche reste en `review`** : elle passe `done` sur les relevés de l'AC-6 (a), (b), (d), (e), par l'orchestrateur.
+- 2026-11-07 : **relevés de l'AC-6 (a), (b), (d), (e)**, par l'orchestrateur, sur la PR de release [#965](https://github.com/guycorbaz/kesh/pull/965) (mode opératoire `33-11-filtre-ci-preuves-ac6.md`) — tous conformes, aucun job requis `skipped`, la condition reste (pas de passage à `always()`) :
+  - (a) run 42398838476 (PR #965, tête 9a78413a), 2026-11-07 19:35 : Filtre des artefacts success, motif « hors du périmètre : .github/workflows/ci.yml » ; Backend, Frontend, Docker build, E2E smoke : success ; mergeStateStatus CLEAN.
+  - (b) run 42402136024 (commit temporaire fb61b0ba, exit 1 en tête du job changes) : à 19:38, E2E smoke sorti de queued — Filtre failure, Frontend/Backend/E2E in_progress, Docker success ; fin 20:30 — Filtre failure, les quatre requis success, aucun skipped ; rollup des quatre : COMPLETED SUCCESS ; mergeStateStatus UNSTABLE.
+  - (d) run 42406580735 (commit temporaire 39a54840, sleep 180 en tête du job changes) : Filtre in_progress à 20:31:03, gh run cancel à 20:31:04 ; fin : run cancelled, Filtre et les quatre requis cancelled, aucun skipped ; rollup des quatre : COMPLETED CANCELLED ; mergeStateStatus BLOCKED. La condition reste.
+  - (e) run 42406684036 (commit temporaire ce81d08b, timeout-minutes 1 et sleep 180 sur le job changes) : fin 21:10 — run cancelled ; Filtre cancelled (délai dépassé) ; les quatre requis exécutés, success, aucun skipped ; rollup des quatre : COMPLETED SUCCESS ; mergeStateStatus UNSTABLE. La condition reste.
+  Commits temporaires `fb61b0ba`, `39a54840`, `ce81d08b` défaits par `git revert --no-edit` (`2c261c9d`, `b83a5fa1`, `c2d5bcf7`) ; arbre égal à `9a78413a` après chacun (`git diff --stat` vide). Textes passés au relevé (`docs/ci.md`, CHANGELOG, `CLAUDE.md`), le cas nominal restant à relever en (c), sur la PR de la rétrospective (#928 reste ouverte jusque-là). Story **done**, sur (a), (b), (d), (e), comme le prévoit le mode opératoire.
 
 ## Dev Agent Record
 
