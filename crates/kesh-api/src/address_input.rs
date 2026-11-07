@@ -36,7 +36,8 @@ pub struct StructuredAddressInput {
 impl StructuredAddressInput {
     fn normalized_country(&self) -> String {
         match self.country.as_deref().map(str::trim) {
-            Some(c) if !c.is_empty() => c.to_uppercase(),
+            // ASCII seulement : `to_uppercase` changerait `ß` en `SS`, un code connu.
+            Some(c) if !c.is_empty() => c.to_ascii_uppercase(),
             _ => "CH".to_string(),
         }
     }
@@ -105,6 +106,29 @@ impl StructuredAddressInput {
             ));
         }
         Ok(self.build())
+    }
+
+    /// [`Self::validate_required`], plus le jeu de caractères de la QR-facture : pour
+    /// la correction de l'adresse de la société (Story 33-5, #909), qui ne doit pas
+    /// annoncer un succès en laissant la QR-facture en panne. La règle reste celle de
+    /// `kesh-qrbill`, et le refus nomme le champ et le caractère.
+    pub fn validate_required_for_qr(&self) -> Result<StructuredAddress, AppError> {
+        let address = self.validate_required()?;
+        for (label, value) in [
+            ("rue", &address.street),
+            ("numéro", &address.building),
+            ("NPA", &address.postal_code),
+            ("localité", &address.city),
+        ] {
+            if let Some(c) = kesh_qrbill::first_qr_refused_char(value) {
+                return Err(AppError::Validation(format!(
+                    "adresse : le champ {label} contient un caractère que la QR-facture n'admet pas : « {} » (U+{:04X})",
+                    c.escape_debug(),
+                    c as u32
+                )));
+            }
+        }
+        Ok(address)
     }
 
     /// Validation **optionnelle** (contact / débiteur) : `None` si le bloc est

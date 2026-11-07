@@ -1,6 +1,6 @@
 # Epic 33 — registre des choix autonomes : fiches 33-4 à 33-10 (clé e334)
 
-Tenu le 2026-11-06 par l'agent de fiche (Opus 5.5), en autonomie ; 31 choix après la remédiation de la validation P1 (révisés : C-e334-1, 4, 11, 24, 25 ; neufs : C-e334-26 à 31), inchangés en nombre après la P2 (révisés : C-e334-1, 11, 12, 27, 28, 30) et après la P3 (révisés : C-e334-11, 28). Se verse **par union** au registre de l'epic. Chaque entrée : contexte, retenu, écartées, réversibilité.
+Tenu le 2026-11-06 par l'agent de fiche (Opus 5.5), en autonomie ; 31 choix après la remédiation de la validation P1 (révisés : C-e334-1, 4, 11, 24, 25 ; neufs : C-e334-26 à 31), inchangés en nombre après la P2 (révisés : C-e334-1, 11, 12, 27, 28, 30) et après la P3 (révisés : C-e334-11, 28) ; le développement en ajoute ensuite, sur chaque branche, à partir de C-e334-32. Se verse **par union** au registre de l'epic. Chaque entrée : contexte, retenu, écartées, réversibilité.
 
 ## 33-4
 
@@ -15,6 +15,8 @@ Tenu le 2026-11-06 par l'agent de fiche (Opus 5.5), en autonomie ; 31 choix apr�
 - **C-e334-5 — `validate_required`, pays strict même inchangé.** *Contexte* : le contact garde un pays inconnu inchangé (`validate_optional_keeping`) parce que sa QR est facultative. *Retenu* : pour la société, créancière de toute QR, refuser : c'est la correction, et l'accepter annoncerait un succès avec une QR toujours en panne. *Écartée* : le patron du contact. *Réversible* : oui.
 - **C-e334-6 — Pas de sélecteur commun.** *Contexte* : #910, liste ISO en quatre langues. *Retenu* : champ à deux lettres, comme contacts, et avis. *Écartée* : l'intégrer (déborde). #910 reste ouverte. *Réversible* : oui.
 - **C-e334-7 — Route dédiée `PUT /companies/current/address`.** *Contexte* : patron existant d'une route par groupe de coordonnées, et `is_stub` réservé à l'assistant. *Retenu* : troisième route du patron, Admin. *Écartée* : une route générique ; réouvrir l'assistant. *Réversible* : oui. Compteurs du registre d'audit à recompter avec 33-7.
+- **C-e334-32 — L'ancien texte reste affiché pendant l'édition ; la trace reprend la forme de la réponse.** *Contexte* : développement ; une société d'avant les composants n'a que le texte libre, et le formulaire part vide. *Retenu* : le texte reste au-dessus du formulaire, le pays préremplit `CH` s'il est vide ; `before`/`after` sérialisent `StructuredAddressInput` (clés `postalCode`, comme l'API), sans type de plus. Une spec neuve, `company-address.spec.ts`, plutôt qu'élargir la voisine. *Réversible* : oui.
+- **C-e334-35 — Le jeu de caractères à la seule route ; le texte d'audit quand il n'est pas déductible.** *Contexte* : revue P1. *Retenu* : `validate_required_for_qr`, par la règle de `kesh-qrbill`, sans toucher `validate_required` (l'assistant et les contacts : **#952**) ; `before.address` seulement quand les composants ne redonnent pas le texte. *Écartée* : recopier la liste ; poser la règle à l'assistant dans cette story. *Réversible* : oui.
 
 ## 33-6
 

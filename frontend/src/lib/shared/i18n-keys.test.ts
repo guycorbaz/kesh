@@ -878,7 +878,10 @@ const ATTENDU = {
 	// `lib/features/homepage/` : `ExpensePieCard.svelte` 15, `MonthlyBarsCard.svelte` 13,
 	// `HomepageCharts.svelte` 3 (2861 jusqu'à la revue P1, B-5, qui ajoute les deux
 	// singuliers). Que des littéraux ; `sitesNonResolus` et `relais` inchangés.
-	sitesTotal: 2863,
+	// Story 33-5 (#909) : **2832 → 2846** (+14), tous dans `settings/+page.svelte` — les cinq
+	// champs, Modifier, Enregistrer, Annuler, l'avis, l'aide, et les quatre messages de
+	// `saveAddress`. Que des littéraux ; `sitesNonResolus` et `relais` inchangés.
+	sitesTotal: 2846,
 	sitesNonResolus: 31,
 	relais: 6,
 	// Story 26-1 (#620, AC3-bis) : **10 → 11** — `lib/features/bank-import/

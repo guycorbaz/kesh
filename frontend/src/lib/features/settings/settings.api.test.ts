@@ -12,7 +12,11 @@ vi.mock('$lib/shared/utils/api-client', () => ({
 }));
 
 import { apiClient } from '$lib/shared/utils/api-client';
-import { updateCompanyContactDetails, updateCompanyEmail } from './settings.api';
+import {
+	updateCompanyAddress,
+	updateCompanyContactDetails,
+	updateCompanyEmail,
+} from './settings.api';
 
 describe('settings.api — updateCompanyEmail (20-3b2)', () => {
 	it('PUT email + version au bon path', async () => {
@@ -35,6 +39,25 @@ describe('settings.api — updateCompanyEmail (20-3b2)', () => {
 		expect(apiClient.put).toHaveBeenCalledWith('/api/v1/companies/current/email', {
 			email: null,
 			version: 2,
+		});
+	});
+});
+
+describe('settings.api — updateCompanyAddress (33-5, #909)', () => {
+	// Le seul lien entre l'écran et la route est ce littéral de chemin.
+	it('PUT address + version au bon path', async () => {
+		(apiClient.put as ReturnType<typeof vi.fn>).mockResolvedValue({ id: 1, version: 4 });
+		const address = {
+			street: 'Rue Test',
+			building: '1',
+			postalCode: '1000',
+			city: 'Lausanne',
+			country: 'CH',
+		};
+		await updateCompanyAddress({ address, version: 3 });
+		expect(apiClient.put).toHaveBeenCalledWith('/api/v1/companies/current/address', {
+			address,
+			version: 3,
 		});
 	});
 });

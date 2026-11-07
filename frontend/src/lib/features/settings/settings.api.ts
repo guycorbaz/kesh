@@ -3,6 +3,7 @@ import type {
 	CompanyCurrentResponse,
 	CompanyJson,
 	SessionSettings,
+	UpdateCompanyAddressRequest,
 	UpdateCompanyContactDetailsRequest,
 	UpdateCompanyEmailRequest,
 	UpdateSessionSettingsRequest
@@ -29,6 +30,14 @@ export async function updateCompanyContactDetails(
 	req: UpdateCompanyContactDetailsRequest
 ): Promise<CompanyJson> {
 	return apiClient.put<CompanyJson>('/api/v1/companies/current/contact-details', req);
+}
+
+/**
+ * Corrige l'adresse de la société après l'assistant (Story 33-5, #909). Admin-only,
+ * verrou optimiste, même patron que `updateCompanyContactDetails`.
+ */
+export async function updateCompanyAddress(req: UpdateCompanyAddressRequest): Promise<CompanyJson> {
+	return apiClient.put<CompanyJson>('/api/v1/companies/current/address', req);
 }
 
 /**

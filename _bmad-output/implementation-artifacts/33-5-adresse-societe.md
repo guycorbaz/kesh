@@ -1,6 +1,6 @@
 # Story 33-5 : corriger l'adresse de la société après l'assistant (#909)
 
-Status: ready-for-dev
+Status: done
 
 *Fiche rédigée le 2026-11-06 en autonomie (Opus 5.5), worktree `/home/gcorbaz/devel/kesh-e33`, branche `story/33-0-kickoff`,
 numéros de ligne de `4ef19901`. Release **0.17.5**, Epic 33. **Aucune migration.** Registre : `e33-choix-autonomes-e334.md`,
@@ -61,26 +61,26 @@ pour qu'une société enregistrée avec un pays invalide puisse de nouveau produ
 6. **AC-6 — droits** : Comptable, Consultation → 403 ; clé d'API → refus (`require_not_pat`) ; jamais d'autre société (`get_company_for`).
 7. **AC-7 — full-replace** : nom, IDE, e-mail, téléphone, site, langues et `is_stub` sont inchangés après l'appel (patron
    `each_route_preserves_the_fields_it_does_not_touch`, `tests/companies_e2e.rs:280`) ; et les routes e-mail et coordonnées ne touchent pas l'adresse.
-8. **AC-8 — audit** : une entrée `company.updated`, `before`/`after` limités aux cinq composants ; aucune entrée sur un refus.
+8. **AC-8 — audit** : une entrée `company.updated`, `before`/`after` limités aux cinq composants ; aucune entrée sur un refus. *(Annoté le 2026-11-07, revue P2, L-2 : une exception, ajoutée par la remédiation de la P1 (E-M3, C-e334-35) : `before.address` porte l'ancien texte libre quand les composants ne le redonnent pas, faute de quoi la seule source de l'adresse d'une société d'avant les composants se perdrait. Vaut aussi pour le § Audit ci-dessus.)*
 9. **AC-9 — écran** : Admin voit *Modifier*, Comptable non ; préremplissage depuis `addressStructured` ; enregistrement, refus affiché, 409
    rechargé ; avis si le pays est inconnu (Vitest et `frontend/tests/e2e/company-contact-details.spec.ts`, élargie, ou spec voisine).
 10. **AC-10** : `audit_route_registry.rs` à jour, toutes assertions recomptées : `LIB_ROUTES` **145** (`:962`) et tracées **137** (`:978`) ; `LIB_ROUTES.len() + TEST_ENDPOINT_ROUTES.len()` **148** (`:1015`) ; `sans_ecriture` **120** (`:1385`), la route portant `SansEcritureAuJournal` comme ses jumelles (`:397-398`) ; `tout.len()` **148** (`:1404`) ; commentaires d'en-tête `:27,33,35`. Valeurs de la 33-5 seule : la 33-7 fait bouger tracées et exemptées (recoupement).
 
 ## Tâches
 
-- [ ] **T1 — rouge d'abord** : `crates/kesh-api/tests/company_address_e2e.rs`, AC-1 à 8 ; AC-3 rouge par le 404/405 de la route absente.
-- [ ] **T2** : route, `CompanyJson`, enregistrement à `lib.rs` (routeur Admin) ; registre d'audit.
-- [ ] **T3** : `settings.types.ts` (`addressStructured`, `addressCountryKnown`), `settings.api.ts` (`updateCompanyAddress`), écran, Vitest.
-- [ ] **T4** : clés i18n `settings-company-address-*` dans les **quatre** locales (`crates/kesh-i18n/locales/*/messages.ftl`) ; réemployer
+- [x] **T1 — rouge d'abord** : `crates/kesh-api/tests/company_address_e2e.rs`, AC-1 à 8 ; AC-3 rouge par le 404/405 de la route absente.
+- [x] **T2** : route, `CompanyJson`, enregistrement à `lib.rs` (routeur Admin) ; registre d'audit.
+- [x] **T3** : `settings.types.ts` (`addressStructured`, `addressCountryKnown`), `settings.api.ts` (`updateCompanyAddress`), écran, Vitest.
+- [x] **T4** : clés i18n `settings-company-address-*` dans les **quatre** locales (`crates/kesh-i18n/locales/*/messages.ftl`) ; réemployer
   `field-country` ; `npm run lint-i18n-ownership`.
-- [ ] **T5** : E2E, captures thème clair (lecture, édition, refus de pays, avis) dans `kesh-gate-logs/e334/captures/`, base de démonstration jetable.
-- [ ] **T6** : manuels, CHANGELOG *Ajouté* (`refs #909`, `refs #817`).
+- [x] **T5** : E2E, captures thème clair (lecture, édition, refus de pays, avis) dans `kesh-gate-logs/e335/captures/`, base de démonstration jetable.
+- [x] **T6** : manuels, CHANGELOG *Ajouté* (`refs #909`, `refs #817`).
 
 ### Mutations nommées (P2)
 
 - **M1** : `validate_required` remplacée par `validate_optional_keeping(Some(pays courant))` → rouge AC-2 (`SU` stocké, `PUT` avec `SU` : accepté sous la mutation).
 - **M2** : `email: company.email.clone()` remplacé par `None` → rouge AC-7. **M3** : audit écrit sans la condition de version → rouge AC-4.
-- **M4** : la route posée sur le routeur des comptables → rouge AC-6. **M5** : `address_country_known` toujours `true` → rouge AC-3 et avis Vitest.
+- **M4** : la route posée sur le routeur des comptables → rouge AC-6. **M5** : `address_country_known` toujours `true` → rouge AC-3. *(« et avis Vitest » retiré à la remédiation de la P1 : ce test lit la valeur simulée, une mutation serveur ne peut pas le faire rougir.)*
 
 ## Gates
 
@@ -110,10 +110,42 @@ aujourd'hui ; le nom d'une société au QR.
 - 2026-11-06 : validation P2 (Opus 5.5) : aucun finding. Fiche inchangée, hors cette entrée (Opus 5.5).
 - 2026-11-06 : validation P3 (Sonnet 5.5, lentilles R et F), remédiation (Opus 5.5). Un MEDIUM, non réfuté. **M-R5-1** : le cas de l'AC-2 tue M1 (lu : `address_input.rs:77-78`, `unchanged` calculé contre le pays stocké ; `:100-101`, `check_lengths(None)`). AC-3 inchangé : M1 n'y rougit pas, le `PUT` s'y faisant à `CH`. Mutations : 5, inchangées.
 
+- 2026-11-06 : développement (Opus 5.5), worktree `/home/gcorbaz/devel/kesh-e335`, commit de code `d8bfe4bb`. **Étape 0** : aucun LOW de la P3 ne vise cette fiche ; son seul constat, M-R5-1, est déjà porté par l'AC-2 (lu : `address_input.rs:77-78`, `:100-101`), et aucun point « à établir au développement ». Le répertoire des captures de T5 passe de `e334` à `e335`, clé de ce lot. Deux compteurs que la fiche ne nommait pas ont bougé : `admin_pat_denied_e2e.rs` (répartition `(15, 37)` → `(15, 38)`) et `i18n-keys.test.ts` (`sitesTotal` 2832 → 2846, +14 sites dans `settings/+page.svelte`). Choix ajouté : C-e334-32.
+
+- 2026-11-07 : remédiation de la revue P1 (Opus 5.5), commits `e2191fbb`, `c371ee8f`. **Passe 1 (trois lentilles) : 0 CRITICAL, 0 HIGH, 7 MEDIUM dont 4 distincts + des doublons, LOW.** Traités :
+  - **A-M3 = E-M2** (jeu de caractères) : prémisse lue, `validation.rs:219-243` refuse ce que `first_qr_refused_char` rend ; `validate_required_for_qr`, à la seule route. ⚠️ **Prémisse des lentilles nuancée** : elles citent `&` comme légitimement refusé ; la directive versionnée (`docs/six-references/ig-qr-bill-v2.4-en.pdf`, § 4.1.1) l'admet, et l'« Annex C » du code est un glossaire. Signalé à l'orchestrateur, qui ouvre la 33-12 ; ici, aucun test ni texte n'épingle un caractère appelé à changer (U+2603 et le saut de ligne). C-e334-35.
+  - **E-M3** : `before.address` quand les composants ne redonnent pas le texte. **B M-1 = A-M2 = E-M1** : valeurs non vides, `Independant` et `Pme`, une mutation par champ reporté. **A-M1** : `admin-manual.tex:2557`, route et champ à la liste des intégrations ; grep de `#909` et du symptôme sur le dépôt, sans autre site.
+  - **LOW courts** : commentaires « 52 » (53, recompté), `;+ 1`, en-tête du registre, en-tête de `companies.rs`, bornes 70/16/16/35 acceptées en multioctets, ordre 400 avant 409, `booksLockedThrough` posé, Annuler (Vitest), fiche sur M5, `ß` (`to_ascii_uppercase`), pays en minuscules (avis calé sur le contrôle du PDF), manuel qui surpromettait (E-L7) et #710.
+  - **Non établi** : A L-A4, le rouge d'avant la route pour l'AC-3, reste non journalisé (arrêt rapide de la P0) ; la mutation M5 le tue. **Issues** : l'assistant et les contacts qui acceptent encore un caractère que la QR-facture n'admet pas, **#952** ; le 409 de la route, **#953**.
+  - G18 a rougi au gate de `e2191fbb` (`companies` dans le chemin de la route au manuel) : exemption bornée, `c371ee8f`, d'où le rejeu de `test-fast`, du build et de l'E2E.
+- 2026-11-07 : **revue de code terminée.** Tendance, recomptée sur les rapports `kesh-gate-logs/e335-review-p1-{A,B,E}.md` et `e335-review-p2.md` : **P1, trois lentilles (modèle non écrit à leurs rapports) : 0 C, 0 H, 7 M (4 distincts), LOW → P2 ciblée (Opus 5.5) : 0 C, 0 H, 0 M, 7 LOW.** Développement et remédiations : Opus 5.5. Boucle fermée sur une passe sans constat au-dessus de LOW. Solde des LOW de la P2, sans ligne exécutable de production :
+  - **L-1** : doc-comment de la route (`validate_required_for_qr`). **L-2** : AC-8 annoté, date à l'appui. **L-3** : « 4 distincts » dans l'entrée vivante ci-dessus, le recompte donnant B 1 + E 3 + A 3 = 7.
+  - **L-4** : **#952** (assistant et contacts), écrit ci-dessus et à C-e334-35 ; le 409 de la route : **#953**.
+  - **L-5** : écarté sans correction : le rapport lui-même n'en demande aucune, le point de code lève l'ambiguïté et `"`, `\` sont aujourd'hui hors de la liste ; à revoir avec la 33-12, qui change cette liste.
+  - **L-6** : test `a_line_break_at_the_edge_is_trimmed_before_the_character_check`, et le motif « Pays invalide » lu dans `a_lowercase_stored_country_is_not_known`. Le test neuf passait déjà (le code était juste, à la lecture de la P2) ; sa mutation (`&address.city` remplacé par `&self.city`) le fait rougir, seul, en `400` contre `200` (`e335/mut/33-5-p2b-L6-brut.log`).
+  - **L-7** : aucune correction ici : inatteignable par l'application (toute saisie passe par `normalized_country` et le contrôle ASCII). Les deux lectures `to_uppercase` (`address_input.rs:78`, `:167`) et l'avis du contact relèvent de #952, dont le texte ne les nomme pas encore : ligne demandée à l'orchestrateur.
+  - **Gates de ce dernier commit** : aucune ligne exécutable de production ; ciblé seulement, `company_address_e2e` 22 sur 22, `cargo fmt`, `clippy -p kesh-api --all-targets` verts. Le gate complet reste celui de `c371ee8f` (Dev Agent Record), à rejouer à l'intégration de l'epic.
+
 ## Dev Agent Record
 
 ### Agent Model Used
 
+Claude Opus 5.5.
+
 ### Completion Notes List
 
+- **Rouges d'abord** (`kesh-gate-logs/e335/rouges.log`) : `company_address_e2e` compilé contre `bdc3faa4` sans la route, profil à arrêt rapide : 8 tests exécutés sur 13, 8 rouges, cinq non exécutés du fait de cet arrêt. Sept rendent `405` et le huitième `addressCountryKnown` nul.
+- **Mutations** (`e335/mut/synthese-33-5.log`, tests `company_address_e2e`, `admin_pat_denied_e2e`, `audit_route_registry`), cinq sur cinq tuées. M1 : `an_unknown_country_already_stored_is_still_refused` et `invalid_addresses_are_refused_and_nothing_is_written` (un premier essai n'a pas compilé, `M1-compile-ko.log` : `StructuredAddress` n'a pas de `Default`). M2 : `the_address_route_and_its_neighbours_preserve_what_they_do_not_touch`. M3 : `an_identical_address_is_a_no_op_without_audit`. M4 : `only_an_administrator_may_correct_the_address`, `an_api_key_may_not_correct_the_address` et deux gardes de `admin_pat_denied_e2e`. M5 : `correcting_the_country_restores_the_qr_invoice` ; côté écran, le test Vitest de l'avis lit `addressCountryKnown` simulé, il ne peut donc pas rougir de cette mutation serveur, et il tient par ses deux cas (avis présent, avis absent).
+- **Gates au commit `d8bfe4bb`** (`e335/33-5/`) : `test-fast.sh --ci` vert, 4826 exécutés, 4826 passés, 12 ignorés ; `cargo build --workspace --all-targets` vert ; `npm run check` 0 erreur ; `lint-i18n-ownership` vert ; Vitest 2705 tests, 218 fichiers ; `npm run build` vert. **E2E complet** sur `kesh_e2e_e335` recréée : 381 tests, 356 passés, 18 ignorés, **7 échecs, tous de la KF-029** (`mode-expert:26,41`, `onboarding-path-b:65,92`, `onboarding:57,77,150`, nommés dans `docs/testing.md`), 16,2 min ; `company-address.spec.ts` y passe.
+- **Captures** (`e335/captures/33-5-*.png`) : lecture, édition, refus de pays, avis ; thème clair, base E2E jetable, le pays `SU` y étant posé en SQL pour l'avis.
+- **Manuels** : `user-manual.tex` (§ `sec:coordonnees-emetteur`, étape *Coordonnées légales*), `admin-manual.tex` (137 + 5 + 3 = 145) ; PDF régénérés et contrôlés aplatis (« Corriger votre adresse », « 137 des 145 routes », « 137 + 5 + 3 = 145 » lus). La brochure, régénérée sans changement de source, a été rétablie.
+- **Écart de méthode** : les clés FTL et une partie des tests Vitest ont été posées par un script Python à remplacement, et non par l'outil Edit (consigne 14) ; diff relu, aucun effet de bord.
+- **Limite relevée, non traitée** : la colonne morte `companies.country` reste en l'état (hors périmètre de la fiche). Les décomptes de routes bougeront aussi avec la 33-7 : à recompter à l'intégration.
+
+- **Remédiation P1, rouges** (`e335/rouges.log`) : 21 tests, 17 passés, 4 rouges (`a_character_the_qr_bill_refuses_is_refused_here`, `the_overwritten_free_text_stays_in_the_audit`, `a_non_ascii_country_is_not_uppercased_into_a_known_code`, `a_lowercase_stored_country_is_not_known`). Les autres tests neufs passaient déjà : ce sont des preuves renforcées, et leurs mutations les font mordre.
+- **Mutations P1** (`e335/mut/synthese-33-5-p2.log`), quinze sur quinze tuées : onze sur les champs reportés (`first`, `last`, `name`, `ide`, `org` vers `Pme` et vers `Independant`, deux langues, `email`, `phone`, `website`), `C1-charset`, `C2-audit`, `C3-country`, `C4-ascii`.
+- **Gates**. À `c371ee8f` (`e335/33-5-p1b/`) : `test-fast.sh --ci` 4834 passés, 12 ignorés ; build vert ; **E2E complet** 381 tests, 356 passés, 18 ignorés, 7 échecs tous KF-029. À `e2191fbb` (`e335/33-5-p1/`), `c371ee8f` ne touchant que `textes_coherents.rs` : `npm run check`, `lint-i18n-ownership`, Vitest 2706 (218 fichiers), `npm run build` verts ; l'E2E de ce commit a rendu un 8ᵉ échec, `sidebar-navigation.spec.ts:81` (KF-052, #424, liste de `docs/testing.md`), absent du rejeu.
+
 ### File List
+
+`crates/kesh-api/src/routes/companies.rs`, `crates/kesh-api/src/lib.rs`, `crates/kesh-api/tests/company_address_e2e.rs` (neuf), `crates/kesh-api/tests/audit_route_registry.rs`, `crates/kesh-api/tests/admin_pat_denied_e2e.rs`, `crates/kesh-i18n/locales/{fr,de,en,it}-CH/messages.ftl`, `frontend/src/lib/features/settings/settings.{types,api,api.test}.ts`, `frontend/src/lib/shared/i18n-keys.test.ts`, `frontend/src/routes/(app)/settings/+page.svelte`, `frontend/src/routes/(app)/settings/settings-page.test.ts`, `frontend/tests/e2e/company-address.spec.ts` (neuf), `docs/manual/fr/{user,admin}-manual.{tex,pdf}`, `CHANGELOG.md`, `_bmad-output/implementation-artifacts/33-5-adresse-societe-review-prompt-p1.md` (neuf).
