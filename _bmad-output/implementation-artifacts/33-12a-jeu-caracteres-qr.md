@@ -22,7 +22,7 @@ En tant que titulaire d'une société ou d'un contact dont le nom porte « & »,
 - **Le code garde donc Čolić comme aujourd'hui.** Dans la section de paiement, l'imprimé égale le code sur les champs qu'il imprime, sauf sur ces 125 lettres, qui jusqu'ici disparaissaient du papier (Čolić s'imprime « oli », constaté à la sonde de l'étape 0) et s'impriment désormais par leur base (« Colic ») : écart résiduel à § 3.6.2, assumé, dit à Guy et au manuel, levé par #943 (police embarquée). NPA et localité n'arrivent à l'imprimé qu'avec la 33-12b. Un message long peut aussi sortir de la feuille, faute de borne de largeur (#944) : il s'imprime juste, mais pas entier sur le papier.
 - Rien n'est réécrit en base. U+2018, « “ », « ” », U+2013, U+2026 restent refusés (#942).
 
-**Le reste du PDF n'est pas dans cette story** (corps de la facture, avoirs, `kesh-report`) : hors du périmètre, leurs trous actuels restent et sont tracés à #943.
+**Le reste du PDF n'est pas dans cette story** (corps de la facture, avoirs, `kesh-report`) : hors du périmètre, leurs trous actuels restent et sont tracés à #943. *(Annoté le 2026-11-07, revue P1 : le nom et l'adresse du corps sortent de cette phrase, passés par `texte_imprime`, E-M2 ; le jeu élargi les y amenait, perdus puis figés. Le reste du corps reste hors du périmètre.)*
 
 **C-e3312-2 — Ordre d'intégration** : 33-5, puis 33-12a, puis 33-12b. La signature de `check_charset` reste stable : la fonction publique de la 33-5 y délègue.
 
@@ -80,4 +80,4 @@ M1 re-exclure `&` ; M2 retirer U+0218 ; M3 admettre U+007F ; M4 admettre U+0080 
 **AC10, tri du grep.** Modifiés, car ils parlent du jeu de caractères : `validation.rs` (fonction, commentaires, tests), `types.rs:384`, `invoice_pdf_service.rs:499`. Laissés, car ils désignent la version de la norme ou d'autres limites, non le jeu : `CLAUDE.md:64`, `.github/PULL_REQUEST_TEMPLATE.md`, `address_input.rs:13`, `invoice_pdf_service.rs:394`, `entities/address.rs:9`, `kesh-db/errors.rs:1438`, `kesh-qrbill` (`Cargo.toml`, `README.md`, `generator.rs`, `lib.rs`, `parser.rs`, `types.rs:93`, `validation.rs:1,11,39,400,407,543`), `docs/kesh-specifications.txt`, `docs/change_request.md` (archivé), `website/index.html:114`. Migrations non touchées. ⚠️ `website/index.html:114` promet « fully compliant with SIX 2.2 » : à revoir à la release, l'écart de C-e3312-1 et #944 l'amendant.
 
 **Écarts à la fiche.** (1) C-e3312-8, ci-dessus. (2) Un E2E neuf, que la fiche ne demandait pas. (3) Le test d'AC6 suit la jonction de la 33-12b, comme le demande son AC4 : son état en phase a est au commit `03618ed6`.
-
+- 2026-11-07 — Revue de code P1 (B : 0 C, 0 H, 1 M, 5 L ; E : 0, 0, 2, 5 ; A : 0, 0, 2, 6), remédiée sur l'arbitrage de l'orchestrateur ; voir le Dev Agent Record, § *Remédiation P1*.

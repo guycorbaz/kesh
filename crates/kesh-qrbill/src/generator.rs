@@ -288,6 +288,31 @@ mod tests {
         assert_eq!(payload.split('\n').nth(6), Some(""));
     }
 
+    /// **Revue P1 (E-L3)** — la borne de 997 octets porte sur le code normalisé : un
+    /// brut au-delà, dont la normalisation raccourcit les octets, passe ; un code
+    /// réellement au-delà reste refusé.
+    #[test]
+    fn borne_de_997_octets_sur_le_code_normalise() {
+        let mut data = sample(Reference::None, "CH9300762011623852957");
+        data.creditor.name = "\u{2019}".repeat(70);
+        data.unstructured_message = Some("\u{2019}".repeat(140));
+        data.billing_information = Some("\u{2019}".repeat(140));
+        let brut: usize = 350 * '\u{2019}'.len_utf8();
+        assert!(brut > 997, "montage : {brut} octets bruts");
+        assert!(build_payload(&data).unwrap().len() <= 997);
+
+        let mut trop = sample(Reference::None, "CH9300762011623852957");
+        trop.creditor.name = "é".repeat(70);
+        trop.creditor.line1 = "é".repeat(70);
+        trop.ultimate_debtor = Some(trop.creditor.clone());
+        trop.unstructured_message = Some("é".repeat(140));
+        trop.billing_information = Some("é".repeat(140));
+        assert!(matches!(
+            build_payload(&trop),
+            Err(QrBillError::PdfGeneration(_))
+        ));
+    }
+
     #[test]
     fn qr_matrix_renders() {
         let data = sample(Reference::None, "CH9300762011623852957");

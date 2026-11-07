@@ -188,6 +188,9 @@ mod tests {
             ("x ", "x"),
             ("\u{AD}", ""),
             (" \u{AD} ", ""),
+            // L'ordre : le retrait d'abord, sans quoi une espace de bordure resterait.
+            ("\u{AD} x", "x"),
+            ("x \u{AD}", "x"),
             ("a b", "a b"),
             ("Čolić & Söhne", "Čolić & Söhne"),
         ] {
@@ -259,6 +262,31 @@ mod tests {
                 "U+{cp:04X} perdu à l'encodage"
             );
         }
+    }
+
+    /// **AC4, revue P1** — tout caractère du § 4.1.1 hors des 125 lettres sort de
+    /// `texte_imprime` comme de `texte_code` : le repli ne touche rien d'autre.
+    #[test]
+    fn texte_imprime_identite_hors_des_125_lettres() {
+        let repliees: Vec<char> = LETTRES_REPLIEES
+            .iter()
+            .flat_map(|(lettres, _)| lettres.chars())
+            .collect();
+        let mut compte = 0;
+        for c in caracteres_4_1_1()
+            .into_iter()
+            .filter(|c| !repliees.contains(c))
+        {
+            let entree = c.to_string();
+            assert_eq!(
+                texte_imprime(&entree),
+                texte_code(&entree),
+                "U+{:04X}",
+                c as u32
+            );
+            compte += 1;
+        }
+        assert_eq!(compte, 324 - 125, "montage : 199 caractères");
     }
 
     /// **AC4** — les lettres que WinAnsi porte restent ; le repli part de `texte_code`.

@@ -400,11 +400,20 @@ fn draw_invoice_section(
     let left = 20.0;
     let mut y = PAGE_H - 20.0;
 
-    // Creditor header (top-left).
-    layer.use_text(&inv.creditor_name, 14.0, Mm(left), Mm(y), helv_bold);
+    // Creditor header (top-left). Le nom et l'adresse passent par `texte_imprime` : le
+    // § 4.1.1 admet U+00A0, U+00AD et U+0218 à U+021B, que `lopdf` perdrait ici en
+    // silence, sur une pièce qui se fige (Story 33-12a). Un avoir, qu'aucun contrôle de
+    // jeu ne précède, passe par le même chemin : ce qui n'est pas au jeu y reste tel quel.
+    layer.use_text(
+        texte_imprime(&inv.creditor_name),
+        14.0,
+        Mm(left),
+        Mm(y),
+        helv_bold,
+    );
     y -= 5.0;
     for line in &inv.creditor_address_lines {
-        layer.use_text(line, 9.0, Mm(left), Mm(y), helv);
+        layer.use_text(texte_imprime(line), 9.0, Mm(left), Mm(y), helv);
         y -= 4.0;
     }
     // Bloc « identité » de l'émetteur : IDE puis coordonnées de contact
@@ -504,10 +513,10 @@ fn draw_invoice_section(
         helv_bold,
     );
     y -= 5.0;
-    layer.use_text(&inv.debtor_name, 10.0, Mm(left), Mm(y), helv);
+    layer.use_text(texte_imprime(&inv.debtor_name), 10.0, Mm(left), Mm(y), helv);
     y -= 4.5;
     for line in &inv.debtor_address_lines {
-        layer.use_text(line, 9.0, Mm(left), Mm(y), helv);
+        layer.use_text(texte_imprime(line), 9.0, Mm(left), Mm(y), helv);
         y -= 4.0;
     }
 
@@ -803,11 +812,11 @@ const MAX_CARACTERES_PAIEMENT: usize = 46;
 /// long que `max` se coupe à la limite. Rien n'est tronqué.
 ///
 /// La coupe est gloutonne : si le premier mot de la localité ne tient pas à côté du
-/// NPA, le NPA reste seul sur sa ligne, l'adresse restant entière (C-e3312-6).
+/// NPA, le NPA reste seul sur sa ligne, l'adresse restant entière (C-e3312-6). Les
+/// espaces multiples intérieures se réduisent à une, sur toute ligne : les lignes
+/// rejointes par une espace redonnent l'entrée à ces espaces près.
 fn couper_ligne(ligne: &str, max: usize) -> Vec<String> {
-    if !ligne.is_empty() && ligne.chars().count() <= max {
-        return vec![ligne.to_string()];
-    }
+    debug_assert!(max > 0, "une largeur nulle ne coupe rien");
     let mut lignes = Vec::new();
     let mut courante = String::new();
     for mot in ligne.split(' ').filter(|mot| !mot.is_empty()) {
@@ -1012,7 +1021,12 @@ fn draw_payment_part(
 
     dessiner_reference(layer, data, i18n, tx, &mut y, helv, helv_bold);
 
-    if let Some(msg) = &data.unstructured_message {
+    let message = data
+        .unstructured_message
+        .as_deref()
+        .map(texte_imprime)
+        .filter(|message| !message.is_empty());
+    if let Some(msg) = message {
         y -= 6.0;
         layer.use_text(
             i18n.get("invoice-pdf-qr-additional-info"),
@@ -1022,7 +1036,7 @@ fn draw_payment_part(
             helv_bold,
         );
         y -= 3.0;
-        layer.use_text(texte_imprime(msg), 8.0, Mm(tx), Mm(y), helv);
+        layer.use_text(msg, 8.0, Mm(tx), Mm(y), helv);
     }
 
     // Amount + currency (below QR).
@@ -1503,46 +1517,57 @@ mod tests {
     /// ⚠️ `Document::extract_text` n'est pas employé : il lit en StandardEncoding et
     /// rend `Shne` pour `Söhne` (constaté à l'étape 0 de la Story 33-12a).
     fn textes_du_pdf(bytes: &[u8]) -> Vec<(f32, f32, String)> {
-        use printpdf::lopdf::{Document, Object, content::Content};
-
-        fn nombre(o: &Object) -> f32 {
-            match o {
-                Object::Integer(i) => *i as f32,
-                Object::Real(r) => *r,
-                autre => panic!("opérande de Td inattendue : {autre:?}"),
-            }
-        }
-
         const MM_PAR_POINT: f32 = 25.4 / 72.0;
-        let doc = Document::load_mem(bytes).expect("PDF relisible");
         let mut textes = Vec::new();
-        for page in doc.get_pages().values() {
-            let brut = doc.get_page_content(*page).expect("contenu de page");
-            let contenu = Content::decode(&brut).expect("contenu décodable");
-            let mut position = (0.0, 0.0);
-            for op in &contenu.operations {
-                match op.operator.as_str() {
-                    "Td" => {
-                        position = (
-                            nombre(&op.operands[0]) * MM_PAR_POINT,
-                            nombre(&op.operands[1]) * MM_PAR_POINT,
-                        );
-                    }
-                    "Tj" => {
-                        let Object::String(octets, _) = &op.operands[0] else {
-                            panic!("opérande de Tj inattendue : {:?}", op.operands);
-                        };
-                        textes.push((
-                            position.0,
-                            position.1,
-                            Document::decode_text(Some("WinAnsiEncoding"), octets),
-                        ));
-                    }
-                    _ => {}
+        let mut position = (0.0, 0.0);
+        for op in operations_du_pdf(bytes) {
+            match op.operator.as_str() {
+                "Td" => {
+                    position = (
+                        nombre(&op.operands[0]) * MM_PAR_POINT,
+                        nombre(&op.operands[1]) * MM_PAR_POINT,
+                    );
                 }
+                "Tj" => textes.push((position.0, position.1, texte_du_tj(&op))),
+                _ => {}
             }
         }
         textes
+    }
+
+    /// Les opérations de contenu d'un PDF, pages à la suite.
+    fn operations_du_pdf(bytes: &[u8]) -> Vec<printpdf::lopdf::content::Operation> {
+        use printpdf::lopdf::{Document, content::Content};
+
+        let doc = Document::load_mem(bytes).expect("PDF relisible");
+        doc.get_pages()
+            .values()
+            .flat_map(|page| {
+                let brut = doc.get_page_content(*page).expect("contenu de page");
+                Content::decode(&brut)
+                    .expect("contenu décodable")
+                    .operations
+            })
+            .collect()
+    }
+
+    /// Une opérande numérique de contenu PDF.
+    fn nombre(o: &printpdf::lopdf::Object) -> f32 {
+        use printpdf::lopdf::Object;
+        match o {
+            Object::Integer(i) => *i as f32,
+            Object::Real(r) => *r,
+            autre => panic!("opérande numérique attendue : {autre:?}"),
+        }
+    }
+
+    /// Le texte d'un `Tj`, décodé en WinAnsi.
+    fn texte_du_tj(op: &printpdf::lopdf::content::Operation) -> String {
+        use printpdf::lopdf::{Document, Object};
+        let Object::String(octets, _) = &op.operands[0] else {
+            panic!("opérande de Tj inattendue : {:?}", op.operands);
+        };
+        Document::decode_text(Some("WinAnsiEncoding"), octets)
     }
 
     /// Le texte dessiné à `(x, y)` mm, à la tolérance des arrondis en points.
@@ -1636,6 +1661,11 @@ mod tests {
                 adresse_etrangere("Max", "Hauptstrasse", "5", "78462", "Konstanz", "DE"),
                 vec!["Max", "Hauptstrasse 5", "DE-78462 Konstanz"],
             ),
+            // Inatteignable après `validate`, qui refuse ce NPA ; la garde reste écrite.
+            (
+                adresse_etrangere("Max", "Hauptstrasse", "5", "\u{AD}", "Konstanz", "DE"),
+                vec!["Max", "Hauptstrasse 5", "Konstanz"],
+            ),
             (
                 adresse_etrangere("Max", "Städtle", "5", "9490", "Vaduz", "LI"),
                 vec!["Max", "Städtle 5", "LI-9490 Vaduz"],
@@ -1714,11 +1744,48 @@ mod tests {
             assert!(lignes.iter().all(|l| l.chars().count() <= max));
             assert_eq!(lignes.join(" "), rue);
         }
-        // Aux bornes, en caractères et non en octets.
-        let tout_juste = "é".repeat(27);
-        assert_eq!(couper_ligne(&tout_juste, 27).concat(), tout_juste);
-        assert_eq!(couper_ligne(&tout_juste, 27).len(), 1);
         assert_eq!(couper_ligne("", 27), Vec::<String>::new());
+    }
+
+    /// **AC3** (Story 33-12b, revue P1) — les frontières, là où elles mordent : une
+    /// jointure à exactement `max` tient, à `max + 1` elle se coupe, et les longueurs
+    /// se comptent en caractères : ces 27 caractères font 52 octets.
+    #[test]
+    fn couper_ligne_frontieres_en_caracteres() {
+        let juste = format!("{} {}", "é".repeat(12), "é".repeat(14));
+        assert_eq!(juste.chars().count(), 27, "montage");
+        assert_eq!(couper_ligne(&juste, 27), [juste.clone()]);
+
+        let un_de_plus = format!("{} {}", "é".repeat(12), "é".repeat(15));
+        assert_eq!(
+            couper_ligne(&un_de_plus, 27),
+            ["é".repeat(12), "é".repeat(15)]
+        );
+
+        // Une jointure à `max` au milieu d'une ligne plus longue.
+        assert_eq!(
+            couper_ligne("aaaaaaaaaaaaa bbbbbbbbbbbbb cc", 27),
+            ["aaaaaaaaaaaaa bbbbbbbbbbbbb", "cc"]
+        );
+
+        // Un mot de `max` caractères tient seul, le suivant part à la ligne.
+        let mot = "é".repeat(27);
+        assert_eq!(
+            couper_ligne(&format!("{mot} x"), 27),
+            [mot, "x".to_string()]
+        );
+    }
+
+    /// **AC3** (Story 33-12b, revue P1, tranché) — les espaces multiples intérieures
+    /// se réduisent à une, sur une ligne courte comme sur une ligne coupée : un seul
+    /// chemin, et la jointure redonne l'entrée à ces espaces près. Aucune lettre perdue.
+    #[test]
+    fn couper_ligne_reduit_les_espaces_multiples() {
+        assert_eq!(couper_ligne("Rue  du   Lac", 27), ["Rue du Lac"]);
+        assert_eq!(
+            couper_ligne("Chemin  des Trois-Fontaines  de la Tour", 27),
+            ["Chemin des Trois-Fontaines", "de la Tour"]
+        );
     }
 
     /// **AC3** (Story 33-12b, C-e3312-6) — la coupe est gloutonne : le NPA peut rester
@@ -1800,8 +1867,22 @@ mod tests {
             "2501",
             "Biel",
         );
-        let textes = textes_pour(longue, debiteur_ordinaire());
+        let debiteur = adresse_s(
+            "Pia Rutschmann",
+            "Chemin des Trois-Fontaines de la Vieille Tour du Haut-Plateau",
+            "12",
+            "9400",
+            "Rorschach",
+        );
+        let textes = textes_pour(longue, debiteur);
         for (x, y, attendu) in [
+            (5.0, 37.0, "Chemin des Trois-Fontaines"),
+            (5.0, 33.5, "de la Vieille Tour du"),
+            (5.0, 30.0, "Haut-Plateau 12"),
+            (5.0, 26.5, "9400 Rorschach"),
+            (67.0, 22.5, "Chemin des Trois-Fontaines de la Vieille Tour"),
+            (67.0, 19.0, "du Haut-Plateau 12"),
+            (67.0, 15.5, "9400 Rorschach"),
             (5.0, 83.0, "Chemin des Trois-Fontaines"),
             (5.0, 79.5, "de la Vieille Tour du"),
             (5.0, 76.0, "Haut-Plateau 12"),
@@ -1872,20 +1953,25 @@ mod tests {
                 "montage : un QRR"
             );
             for (x, y, t) in section {
-                assert!(*y >= 5.0 - 0.01, "{t:?} à ({x}, {y})");
                 assert!(!t.is_empty(), "ligne vide à ({x}, {y})");
+                // Le seul texte au point de dépôt est son intitulé ; une ligne à
+                // moins d'un pas au-dessus le recouvrirait (y = 5 ne suffit pas).
+                if t != "Acceptance point" {
+                    assert!(*y >= 5.0 + ADRESSE_PAS, "{t:?} à ({x}, {y})");
+                }
             }
         }
     }
 
     /// **AC6** (Story 33-12a, #941), repris à la jonction de la 33-12b — sur un PDF
-    /// réel, les douze sites de dessin (six champs, reçu et partie paiement) et le
-    /// message impriment la base des lettres hors WinAnsi.
+    /// réel, les trois lignes de chacun des quatre blocs (`name`, `rue numéro`,
+    /// `NPA localité`, dix champs en tout) et le message impriment la base des lettres
+    /// hors WinAnsi.
     #[test]
     fn chaque_site_imprime_la_base_des_lettres() {
         let (mut data, invoice, i18n) = invoice_fixture();
-        data.creditor = adresse_s("Čolić", "Łódzka", "1ł", "1003", "Lausanne");
-        data.ultimate_debtor = Some(adresse_s("Ștefan", "Țară", "2ń", "1200", "Genève"));
+        data.creditor = adresse_s("Čolić", "Łódzka", "1ł", "1003", "Łask");
+        data.ultimate_debtor = Some(adresse_s("Ștefan", "Țară", "2ń", "1200", "Żary"));
         data.unstructured_message = Some("Merci Ž ć".into());
 
         let pdf = generate_qr_bill_pdf_with_date(&data, &invoice, &i18n, fixed_date()).unwrap();
@@ -1894,12 +1980,16 @@ mod tests {
         for (x, y, attendu) in [
             (5.0, 86.5, "Colic"),
             (5.0, 83.0, "Lódzka 1l"),
+            (5.0, 79.5, "1003 Lask"),
             (5.0, 47.5, "Stefan"),
             (5.0, 44.0, "Tara 2n"),
+            (5.0, 40.5, "1200 Zary"),
             (117.0, 86.5, "Colic"),
             (117.0, 83.0, "Lódzka 1l"),
+            (117.0, 79.5, "1003 Lask"),
             (67.0, 26.0, "Stefan"),
             (67.0, 22.5, "Tara 2n"),
+            (67.0, 19.0, "1200 Zary"),
             (117.0, 61.5, "Merci Ž c"),
         ] {
             assert_eq!(texte_a(&textes, x, y), attendu, "à ({x}, {y})");
@@ -1909,38 +1999,13 @@ mod tests {
     /// Chaque texte dessiné du PDF, avec la couleur de remplissage (`rg`) en vigueur
     /// au moment de son `Tj` : noir par défaut, comme le veut la norme PDF.
     fn couleurs_des_textes(bytes: &[u8]) -> Vec<(String, Vec<f32>)> {
-        use printpdf::lopdf::{Document, Object, content::Content};
-
-        let doc = Document::load_mem(bytes).expect("PDF relisible");
         let mut textes = Vec::new();
-        for page in doc.get_pages().values() {
-            let brut = doc.get_page_content(*page).expect("contenu de page");
-            let contenu = Content::decode(&brut).expect("contenu décodable");
-            let mut couleur = vec![0.0, 0.0, 0.0];
-            for op in &contenu.operations {
-                match op.operator.as_str() {
-                    "rg" => {
-                        couleur = op
-                            .operands
-                            .iter()
-                            .map(|o| match o {
-                                Object::Integer(i) => *i as f32,
-                                Object::Real(r) => *r,
-                                autre => panic!("opérande de rg inattendue : {autre:?}"),
-                            })
-                            .collect();
-                    }
-                    "Tj" => {
-                        let Object::String(octets, _) = &op.operands[0] else {
-                            panic!("opérande de Tj inattendue : {:?}", op.operands);
-                        };
-                        textes.push((
-                            Document::decode_text(Some("WinAnsiEncoding"), octets),
-                            couleur.clone(),
-                        ));
-                    }
-                    _ => {}
-                }
+        let mut couleur = vec![0.0, 0.0, 0.0];
+        for op in operations_du_pdf(bytes) {
+            match op.operator.as_str() {
+                "rg" => couleur = op.operands.iter().map(nombre).collect(),
+                "Tj" => textes.push((texte_du_tj(&op), couleur.clone())),
+                _ => {}
             }
         }
         textes
@@ -1967,6 +2032,94 @@ mod tests {
         assert!(
             invisibles.is_empty(),
             "textes pas en noir : {invisibles:#?}"
+        );
+        // Les 17 textes qui suivent la croix sont ceux que le défaut effaçait.
+        assert!(textes.len() > 17, "montage : {} textes", textes.len());
+
+        // La croix elle-même : blanc, rouge, blanc, puis seulement le noir. Une remise
+        // au noir placée avant ses branches garderait les textes noirs.
+        let couleurs: Vec<Vec<i32>> = operations_du_pdf(&pdf)
+            .iter()
+            .filter(|op| op.operator == "rg")
+            .map(|op| {
+                op.operands
+                    .iter()
+                    .map(|o| (nombre(o) * 100.0).round() as i32)
+                    .collect()
+            })
+            .collect();
+        assert_eq!(
+            couleurs,
+            [
+                [0, 0, 0],
+                [100, 100, 100],
+                [85, 0, 0],
+                [100, 100, 100],
+                [0, 0, 0]
+            ]
+        );
+    }
+
+    /// **Revue P1 de la Story 33-12a (E-M2)** — le nom et l'adresse du corps passent
+    /// par `texte_imprime`. U+00A0, U+00AD et U+0218 à U+021B, refusés avant la story,
+    /// y atteignent `lopdf`, qui les perd : `MüllerSöhne`, puis le PDF se fige.
+    #[test]
+    fn corps_imprime_nom_et_adresse_par_texte_imprime() {
+        let (mut data, mut invoice, i18n) = invoice_fixture();
+        data.ultimate_debtor = Some(debiteur_ordinaire());
+        invoice.creditor_name = "Müller\u{A0}Söhne".into();
+        invoice.creditor_address_lines = vec!["Rue\u{A0}du Lac 1".into(), "2501 Biel".into()];
+        invoice.debtor_name = "Ștefan\u{A0}SRL".into();
+        invoice.debtor_address_lines = vec!["Grand\u{AD}Rue 3".into(), "1200 Genève".into()];
+
+        let pdf = generate_qr_bill_pdf_with_date(&data, &invoice, &i18n, fixed_date()).unwrap();
+        let corps: Vec<String> = textes_du_pdf(&pdf)
+            .into_iter()
+            .filter(|(_, y, _)| *y > SEP_Y)
+            .map(|(_, _, t)| t)
+            .collect();
+        for attendu in ["Müller Söhne", "Rue du Lac 1", "Stefan SRL", "GrandRue 3"] {
+            assert!(corps.iter().any(|t| t == attendu), "{attendu} : {corps:#?}");
+        }
+    }
+
+    /// **Revue P1 de la Story 33-12a (E-M2)** — un avoir ne passe par aucune validation
+    /// de jeu : son texte ordinaire sort inchangé, et un caractère hors du § 4.1.1
+    /// reste traité comme avant, gardé s'il est en WinAnsi, perdu par `lopdf` sinon.
+    #[test]
+    fn avoir_texte_ordinaire_inchange() {
+        let (_, mut invoice, i18n) = invoice_fixture();
+        invoice.creditor_name = "Müller & Söhne SA".into();
+        invoice.creditor_address_lines = vec!["Rue du Lac 1268".into()];
+        invoice.debtor_name = "Pia – Rutschmann".into();
+        invoice.debtor_address_lines = vec!["AЩB".into()];
+
+        let pdf = generate_credit_note_pdf_with_date(&invoice, &i18n, fixed_date()).unwrap();
+        let textes: Vec<String> = textes_du_pdf(&pdf).into_iter().map(|(_, _, t)| t).collect();
+        for attendu in [
+            "Müller & Söhne SA",
+            "Rue du Lac 1268",
+            "Pia – Rutschmann",
+            "AB",
+        ] {
+            assert!(
+                textes.iter().any(|t| t == attendu),
+                "{attendu} : {textes:#?}"
+            );
+        }
+    }
+
+    /// **Revue P1 (E-L4)** — un message fait d'invisibles sort vide du code : ni valeur
+    /// ni intitulé sur le papier.
+    #[test]
+    fn message_d_invisibles_sans_intitule() {
+        let (mut data, invoice, i18n) = invoice_fixture();
+        data.unstructured_message = Some("\u{A0}\u{AD}".into());
+        let pdf = generate_qr_bill_pdf_with_date(&data, &invoice, &i18n, fixed_date()).unwrap();
+        let textes = textes_du_pdf(&pdf);
+        assert!(
+            !textes.iter().any(|(_, _, t)| t == "Additional information"),
+            "{textes:#?}"
         );
     }
 
