@@ -57,6 +57,7 @@ Toute la décision vit dans le script, le YAML n'est que de la plomberie.
 - [x] T3. `ci.yml` : job `changes`, conditions (AC-3).
 - [x] T4. Textes (AC-8). CHANGELOG `[0.17.5]`, *Ajouté*.
 - [x] T5. `actionlint` si disponible, sinon lecture ligne à ligne, déclarée.
+- [ ] T6. *(Ajoutée le 2026-11-07, revue P2, F5 ; à l'orchestrateur.)* Une fois l'AC-6 (a), (b), (d), (e) relevé, repasser du conditionnel au relevé `docs/ci.md`, `CHANGELOG.md` et `CLAUDE.md:297`, PR citée (mode opératoire).
 
 ## Mutations
 
@@ -92,6 +93,12 @@ Story sans code de production : `scripts/tests/ci-seuls-artefacts.test.sh`, `she
   - **E-5** : cas ajoutés, fichier supprimé seul, nom à retour à la ligne, dernier nom sans NUL. **E-6 = B-L1** : garde ancrée sur la ligne entière (`contient_ligne`, `grep -qxF`), `id: decision` et `steps.decision.outputs.code` exacts, `continue-on-error` refusé ; un cinquième job n'est pas contrôlé (sens sûr, voir issues). **B-L2** : l'ouverture se lit sur la ligne du job `backend` et s'exige aux quatre. **B-L5** : l'insertion dans le passage historique de `CLAUDE.md:293` retirée, l'annotation datée suffit.
   - **A-L-2** : `changes` au tableau des timeouts de `docs/ci.md`. **A-L-3 = E-8** : `docs/ci.md:12` et `CLAUDE.md:297` au conditionnel jusqu'aux relevés, « conditions des quatre jobs » ; « sur chaque PR » (`docs/ci.md:60,82`) précisé. **A-L-5** : (b) et (d) calés sur l'état des jobs ; « ne pas fusionner tant que le revert n'est pas poussé et vert ». **A-L-4 = B-L4 = E-9** : limite (2) précisée. **B-L3** : coût de `changes` non mesuré, limite (3).
   - Réfuté : aucun. Gates : voir *Completion Notes*. Prochaine : passe P2 ciblée (`33-11-filtre-ci-review-prompt-p2.md`).
+- 2026-11-07 — **Revue P2 ciblée** (Sonnet 5.5, rapport `kesh-gate-logs/e3311-review-p2.md`) : 0 CRITICAL, 0 HIGH, 0 MEDIUM, 6 LOW (F1 à F6), aucun réfuté. Soldés par l'outil Edit, sans toucher le script ni `ci.yml` ; seul le test change.
+  - **F1** : la garde lit en ligne entière `EVENEMENT:`, `BASE:`, `TETE:` et les deux lignes `run:` (test, puis script vers `$GITHUB_OUTPUT`) ; l'ordre se lit sur ces deux lignes exactes. Mutations sur des copies de `ci.yml` (`CI_YML_POUR_TEST`, `e3311/p3/mut/`) : `BASE`/`TETE` permutés, `run: echo code=false`, test commenté : **trois tuées**, deux assertions chacune. Le test d'avant n'était pas rejoué contre elles : qu'il les laissait passer se lit à ses sous-chaînes (rapport, F1).
+  - **F2** : `grep -m1 -nxF … || l_… =` ; une ligne absente rend un échec nommé (« ligne ? », vu aux mutations ci-dessus), et non plus un arrêt muet. `contient`, devenu sans usage, est retiré.
+  - **F3** : « fichier supprimé » porte un artefact, pour que seule la suppression le rende hors du périmètre ; le nom à retour à la ligne est **sous** le dossier, `false` attendu. Mutations du script, jouées par Edit puis `git checkout --` et `touch` : **M12** (`|| [ -n "$nom" ]` retiré) tuée par « sans NUL final » et « dernier nom sans NUL » ; **M13** (`--diff-filter=d`) tuée par « supprimé, avec un artefact » et le renommage ; **M14** (lecture par lignes) tuée par sept cas, dont le nouveau. Journaux `e3311/p3/mut/M12…M14`.
+  - **F4** : `docs/ci.md:9` et la ligne `changes` du tableau au conditionnel, « cas à relever » ; `CHANGELOG.md`, réserve « à confirmer avant la release » ; `CLAUDE.md:297`, le script est lancé par `changes`, dont les conditions lisent la sortie. **F5** : étape « textes au relevé » au mode opératoire, T6 à la fiche. **F6** : (c) se relève après la fin de `Filtre des artefacts`.
+  - Issue de suite : **#961**. Test shell vert, 54 assertions (`e3311/p3/test-shell.log`). **Boucle de revue close** sur une passe sans finding au-dessus de LOW ; tendance P1 (A 0/0/2/5, B 0/0/0/5, E 0/0/3/6) → P2 0/0/0/6. **La fiche reste en `review`** : elle passe `done` sur les relevés de l'AC-6 (a), (b), (d), (e), par l'orchestrateur.
 
 ## Dev Agent Record
 

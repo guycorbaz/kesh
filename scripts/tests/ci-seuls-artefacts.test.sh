@@ -138,12 +138,15 @@ attendu "renommage de _bmad-output/ vers crates/" true "$(lancer "$d" pull_reque
 d=$(depot)
 attendu "diff vide" true "$(lancer "$d" pull_request)"
 
-d=$(depot); g -C "$d" rm -q crates/x.rs; g -C "$d" commit -qm supprime
-attendu "un fichier supprimé, seul" true "$(lancer "$d" pull_request)"
+# Avec un artefact, pour que le diff ne soit pas vide : seule la suppression le rend « hors ».
+d=$(depot); g -C "$d" rm -q crates/x.rs; ecrire "$d" _bmad-output/a.md
+attendu "un fichier supprimé, avec un artefact" true "$(lancer "$d" pull_request)"
 
-d=$(depot); ecrire "$d" "crates/a
-_bmad-output/b"
-attendu "un nom à retour à la ligne, hors du dossier" true "$(lancer "$d" pull_request)"
+# Un nom SOUS le dossier, dont la seconde ligne serait hors du dossier : une lecture par
+# lignes, ou une sortie sans `-z`, le jugerait hors du périmètre.
+d=$(depot); ecrire "$d" "_bmad-output/a
+crates/b"
+attendu "un nom à retour à la ligne, sous le dossier" false "$(lancer "$d" pull_request)"
 
 d=$(depot); ecrire "$d" _bmad-output/a.md
 attendu "arguments manquants" true "$(cd "$d" && bash "$SCRIPT" pull_request 2>/dev/null)"
@@ -211,10 +214,6 @@ COND="if: \${{ $OUVERTURE && $SAUT }}"
 COND_SMOKE="if: \${{ $OUVERTURE && $SAUT && needs.docker-build.result == 'success' }}"
 
 # Sans tube : `printf | grep -q` sous `pipefail` peut lire un « trouvé » comme « absent ».
-contient() {
-  local titre=$1 texte=$2 motif=$3
-  if grep -qF -- "$motif" <<<"$texte"; then ok "$titre"; else fail "$titre : « $motif » absent"; fi
-}
 # La ligne entière, à son indentation : une condition d'étape, plus indentée, ou une ligne
 # commentée ne la remplacent pas.
 contient_ligne() {
@@ -250,16 +249,24 @@ echo "  ci.yml : le job changes"
 b=$(bloc changes)
 contient_ligne "timeout" "$b" "    timeout-minutes: 10"
 contient_ligne "historique entier" "$b" "          fetch-depth: 0"
-contient "événement" "$b" 'github.event_name'
-contient "base" "$b" 'github.event.pull_request.base.sha'
-contient "tête" "$b" 'github.event.pull_request.head.sha'
-contient "sortie" "$b" '>> "$GITHUB_OUTPUT"'
+# Lignes entières : une base et une tête permutées, ou une ligne `run:` qui n'appelle plus
+# le script, ne passent pas.
+LIGNE_TEST='        run: bash scripts/tests/ci-seuls-artefacts.test.sh'
+LIGNE_DECISION='        run: bash scripts/ci-seuls-artefacts.sh "$EVENEMENT" "$BASE" "$TETE" >> "$GITHUB_OUTPUT"'
+contient_ligne "événement" "$b" '          EVENEMENT: ${{ github.event_name }}'
+contient_ligne "base" "$b" '          BASE: ${{ github.event.pull_request.base.sha }}'
+contient_ligne "tête" "$b" '          TETE: ${{ github.event.pull_request.head.sha }}'
+contient_ligne "l'étape des tests lance le test" "$b" "$LIGNE_TEST"
+contient_ligne "l'étape decision lance le script, sortie vers GITHUB_OUTPUT" "$b" "$LIGNE_DECISION"
 contient_ligne "sortie du job, de l'étape decision" "$b" '      code: ${{ steps.decision.outputs.code }}'
 contient_ligne "l'étape qui écrit la sortie s'appelle decision" "$b" '        id: decision'
 if grep -qE '^    (needs|if):' <<<"$b"; then fail "changes a une dépendance ou une condition"; else ok "ni needs ni if"; fi
 if grep -qF 'continue-on-error' <<<"$b"; then fail "continue-on-error : un test rouge n'arrêterait plus le job"; else ok "aucun continue-on-error"; fi
-l_test=$(grep -n 'ci-seuls-artefacts.test.sh' <<<"$b" | head -1 | cut -d: -f1)
-l_sortie=$(grep -n 'GITHUB_OUTPUT' <<<"$b" | head -1 | cut -d: -f1)
+# Une ligne absente ne doit pas arrêter le test sans rapport (`set -e`, `pipefail`).
+l_test=$(grep -m1 -nxF -- "$LIGNE_TEST" <<<"$b") || l_test=
+l_sortie=$(grep -m1 -nxF -- "$LIGNE_DECISION" <<<"$b") || l_sortie=
+l_test=${l_test%%:*}
+l_sortie=${l_sortie%%:*}
 if [ -n "$l_test" ] && [ -n "$l_sortie" ] && [ "$l_test" -lt "$l_sortie" ]; then
   ok "les tests précèdent l'écriture de la sortie"
 else

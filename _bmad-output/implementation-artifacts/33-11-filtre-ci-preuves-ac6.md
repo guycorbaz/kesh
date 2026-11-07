@@ -75,6 +75,10 @@ Pousser, et relever à la fin du run : `Filtre des artefacts` doit être `cancel
 - **Aucun `skipped`** : la condition reste.
 - **Un job `skipped`** : **même sanction qu'en (d)**, le filtre passe à `always()`, et (a), (b), (d), (e) se rejouent.
 
+## Une fois (a), (b), (d), (e) relevés, avant la fusion : les textes passent au relevé
+
+Les textes sont au conditionnel tant que rien n'a tourné. Une fois (a), (b), (d) et (e) relevés, et avant de fusionner, repasser au relevé, PR et runs cités : `docs/ci.md` (§ du filtre, l. 9 et 12, et la ligne `changes` du tableau des timeouts), `CHANGELOG.md` (entrée *Ajouté* du filtre, sa réserve retirée) et `CLAUDE.md:297`. Si un relevé contredit le texte, c'est le texte qui change, ou le filtre qui part. Puis `cargo test -p kesh-api --test textes_coherents`.
+
 ## (c) Après la fusion : la PR de la rétrospective
 
 Seul moment où `ci.yml` n'est plus dans le diff. La PR ne porte que `_bmad-output/`, avec `closes #928`. **Attendu** : `Filtre des artefacts` `success`, motif `seulement des artefacts de travail` ; **les quatre contextes requis en `SKIPPED`** au rollup ; et la PR fusionnable.
@@ -82,7 +86,8 @@ Seul moment où `ci.yml` n'est plus dans le diff. La PR ne porte que `_bmad-outp
 - **`mergeStateStatus` à `UNKNOWN`** : GitHub calcule encore ; réinterroger une minute plus tard, avant toute conclusion.
 - **`BEHIND`** : `main` a bougé, sans rapport avec le filtre ; la protection étant `strict`, mettre la branche à jour (bouton *Update branch*, ou `gh api -X PUT repos/guycorbaz/kesh/pulls/<PR>/update-branch`), puis **relever de nouveau le motif de la décision sur le run qui suit la mise à jour** : il dit si le filtre reste efficace après une fusion de `main` dans la branche.
 - **`CLEAN`**, les quatre contextes `SKIPPED` : le filtre est prouvé.
-- **`BLOCKED`** ou un contexte requis **en attente** (`PENDING`, absent du rollup) alors que les quatre sont sautés : **le filtre est retiré, et Guy prévenu**. Un `BLOCKED` d'une autre cause (revue, conversation) se lève d'abord, et ne compte pas contre le filtre.
+- ⚠️ **Relever après la fin de `Filtre des artefacts`** : tant qu'il tourne, les quatre contextes sont en attente et la PR est `BLOCKED`, sans rien dire du filtre.
+- **`BLOCKED`** ou un contexte requis **en attente** (`PENDING`, absent du rollup) alors que `Filtre des artefacts` est terminé et que les quatre sont sautés : **le filtre est retiré, et Guy prévenu**. Un `BLOCKED` d'une autre cause (revue, conversation) se lève d'abord, et ne compte pas contre le filtre.
 
 (c) garde l'issue ouverte, non la story : la story passe `done` sur (a), (b), (d) et (e).
 

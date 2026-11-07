@@ -12,7 +12,7 @@ Le contenu est rédigé en français à destination des **fiduciaires, PME, ind�
 
 ### Ajouté
 
-- **Pour qui contribue au dépôt : la CI saute ses jobs lourds sur une PR qui ne porte que `_bmad-output/`** (refs [#928](https://github.com/guycorbaz/kesh/issues/928)). Tout autre fichier, manuels, `docs/`, `CHANGELOG.md` et `README.md` compris, fait tourner la suite complète, de même que tout push sur `main`. Sans effet sur Kesh lui-même.
+- **Pour qui contribue au dépôt : la CI saute ses jobs lourds sur une PR qui ne porte que `_bmad-output/`** (refs [#928](https://github.com/guycorbaz/kesh/issues/928)). *(À confirmer par les relevés de l'AC-6 de la Story 33-11 avant la release : cette entrée se récrit si GitHub ne se comporte pas comme prévu.)* Tout autre fichier, manuels, `docs/`, `CHANGELOG.md` et `README.md` compris, fait tourner la suite complète, de même que tout push sur `main`. Sans effet sur Kesh lui-même.
 
 ## [0.17.4] — 2026-11-06
 
