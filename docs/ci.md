@@ -6,10 +6,12 @@ Documentation de la pipeline GitHub Actions définie dans `.github/workflows/ci.
 
 La pipeline `ci.yml` se déclenche sur :
 
-- **Pull request** vers `main` → 4 jobs (`backend`, `frontend`, `docker-build`, `e2e-smoke`)
-- **Push** sur `main` (= merge de PR) → mêmes 4 jobs
+- **Pull request** vers `main` → le job `changes`, puis 4 jobs (`backend`, `frontend`, `docker-build`, `e2e-smoke`), sauf si la PR ne porte que `_bmad-output/`
+- **Push** sur `main` (= merge de PR) → `changes`, puis les mêmes 4 jobs, toujours
 
-Aucun filtre `paths:` : les quatre jobs tournent à chaque push, même sur un commit de documentation seule.
+**Le filtre, et son périmètre étroit** *(Story 33-11, #928)* : le job `changes` lance `scripts/ci-seuls-artefacts.sh`, qui rend `code=false` **seulement** sur une `pull_request` dont le diff, non vide, ne nomme que des fichiers sous `_bmad-output/`. Les quatre jobs sont alors sautés, et un job sauté compte pour réussi aux checks requis ; c'est pourquoi le filtre n'est pas un `paths-ignore` au niveau du workflow, qui les laisserait en attente. Tout le reste échoue vers la CI complète : `push`, diff vide, SHA inconnu, `git` en échec, renommage depuis ou vers un autre dossier, et `changes` lui-même en échec : les conditions excluent le seul cas `changes` réussi et sortie `false`. **Manuels, `docs/`, `README.md`, `CHANGELOG.md`, `CLAUDE.md` et `website/` restent hors du filtre**, parce que des tests les lisent (`textes_coherents.rs`, `mcp_matrice_manuel.rs`, `configuration_transmise.rs`). `changes` n'est pas un check requis. ⚠️ **Élargir le périmètre demande de vérifier d'abord que rien ne lit les fichiers visés** : l'erreur de ce filtre est muette, elle saute des tests à tort. Le comportement réel de GitHub (job sauté, échec, annulation) est relevé à la Story 33-11, sur de vraies PR.
+
+*(Jusqu'à la Story 33-11, 2026-11-07, ce document disait : « Aucun filtre `paths:` : les quatre jobs tournent à chaque push, même sur un commit de documentation seule. » Il n'y a toujours aucun filtre `paths:`.)*
 
 *(Jusqu'à la Story 31-2, ce document décrivait un job `e2e` complet qui n'avait jamais existé dans `ci.yml` — issue #577. Il décrit désormais le dépôt ; les décisions D-6-1-* relatives à ce job sont annotées « non retenu » en fin de document.)*
 
@@ -20,6 +22,8 @@ La pipeline `release.yml` se déclenche **uniquement** sur push de tag `v*.*.*` 
 ### Schéma d'exécution
 
 ```
+                    [changes]                        ← filtre des artefacts, non requis
+                   /    |    \
 [backend]         [frontend]         [docker-build]   ← sanity, no push
                                            |
                                       [e2e-smoke]     ← image de la PR, une spec Playwright
@@ -27,10 +31,11 @@ La pipeline `release.yml` se déclenche **uniquement** sur push de tag `v*.*.*` 
 
 | Job (nom affiché) | Trigger | Timeout | Dépendances | Vérification requise de `main` |
 |---|---|---|---|---|
-| `backend` (Backend (Rust)) | push, PR | 120 min | — | oui |
-| `frontend` (Frontend (Svelte)) | push, PR | 20 min | — | oui |
-| `docker-build` (Docker build (sanity)) | push, PR | 20 min | — | oui |
-| `e2e-smoke` (E2E smoke (Playwright)) | push, PR | 25 min | `docker-build` | oui — depuis le 2026-10-24 (décision de Guy) |
+| `changes` (Filtre des artefacts) | push, PR | 10 min | — | non |
+| `backend` (Backend (Rust)) | push, PR | 120 min | `changes` | oui |
+| `frontend` (Frontend (Svelte)) | push, PR | 20 min | `changes` | oui |
+| `docker-build` (Docker build (sanity)) | push, PR | 20 min | `changes` | oui |
+| `e2e-smoke` (E2E smoke (Playwright)) | push, PR | 25 min | `changes`, `docker-build` | oui — depuis le 2026-10-24 (décision de Guy) |
 | `docker` (release) | push tag `v*.*.*` | (défaut) | — | — |
 
 ### Le smoke E2E — job `e2e-smoke` (Story 31-2, #577)

@@ -68,7 +68,7 @@ Story sans code de production : `scripts/tests/ci-seuls-artefacts.test.sh`, `she
 ## Dev Notes
 
 - Une erreur dans ce filtre peut faire sauter des tests à tort : le risque est **muet**. D'où un périmètre d'un seul dossier, des conditions par exclusion, et `main` jamais filtré, qui reste le filet.
-- **Limites assumées.** (1) L'annulation d'un run pendant `changes` se juge sur pièce (AC-6 (d)), la documentation étant muette. (2) Le script et ses tests viennent de la PR elle-même ; mais une PR qui les modifie sort du périmètre, et un script faux doit encore passer ses tests.
+- **Limites assumées.** (1) L'annulation d'un run pendant `changes` se juge sur pièce (AC-6 (d)), la documentation étant muette sur les jobs non démarrés. (2) Le script et ses tests viennent de la PR elle-même ; mais une PR qui les modifie sort du périmètre, et un script faux doit encore passer ses tests.
 - Élargir le périmètre plus tard demande de vérifier d'abord que rien ne lit les fichiers visés (F5).
 
 ## Recoupements
