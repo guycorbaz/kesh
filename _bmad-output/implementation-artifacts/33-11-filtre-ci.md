@@ -1,6 +1,6 @@
 # Story 33-11 : la CI saute ses jobs lourds quand une PR ne touche que `_bmad-output/`
 
-Status: ready-for-dev
+Status: review
 
 *Epic 33 (v0.17.5). Demande de Guy du 2026-11-06 : « oui, ajoute un filtre ci pour éviter de perdre du temps inutile ». Clé de choix `C-e3311-k`, registre `e33-choix-autonomes-e3311.md`. Aucune migration, aucun code de production. Commits en `refs #928` ; PR d'intégration : `refs #928` ; **`closes #928` à la PR de la rétrospective**, qui porte la dernière preuve (AC-6 c).*
 
@@ -51,11 +51,11 @@ Toute la décision vit dans le script, le YAML n'est que de la plomberie.
 
 ## Tâches
 
-- [ ] T1. Relire F1 à F7 au code, lignes citées au Change Log.
-- [ ] T2. Tests d'abord, rouges ; script ; verts (AC-1, AC-2, AC-4, AC-5).
-- [ ] T3. `ci.yml` : job `changes`, conditions (AC-3).
-- [ ] T4. Textes (AC-8). CHANGELOG `[0.17.5]`, *Ajouté*.
-- [ ] T5. `actionlint` si disponible, sinon lecture ligne à ligne, déclarée.
+- [x] T1. Relire F1 à F7 au code, lignes citées au Change Log.
+- [x] T2. Tests d'abord, rouges ; script ; verts (AC-1, AC-2, AC-4, AC-5).
+- [x] T3. `ci.yml` : job `changes`, conditions (AC-3).
+- [x] T4. Textes (AC-8). CHANGELOG `[0.17.5]`, *Ajouté*.
+- [x] T5. `actionlint` si disponible, sinon lecture ligne à ligne, déclarée.
 
 ## Mutations
 
@@ -81,3 +81,23 @@ Story sans code de production : `scripts/tests/ci-seuls-artefacts.test.sh`, `she
 - 2026-11-06 — Première validation (Opus 5.5, rapport `e33-validate-p2-e334.md` : 1 HIGH, 2 MEDIUM, 2 LOW), remédiation (Opus 5.5), aucun réfuté, aucune exécution de Kesh ni de la CI. **H-R11-1** : conditions par exclusion, arbitrage de l'orchestrateur (`!cancelled()`, `changes` non requis ; attribution à Guy corrigée le 2026-11-06, il n'a décidé que le filtre lui-même) ; tests avant la sortie ; AC-6 (b) ; documentation relue (F3). **M-R11-2** : tranché, AC-2 et AC-5 alignés. **M-R11-3** : l'extraction passe dans le script, testée sur un dépôt réel ; **l'API est écartée**, sonde F7. **L-R11-4** : sans objet, sans API. **L-F11-5** : `closes #928` à la PR de la rétrospective, *Ajouté*, *Recoupements*. **Retirés** : le choix ouvert de T3, la lecture sur l'entrée standard, le cas et la mutation `..` (git refuse ce chemin, F7), et la « PR de plus de fichiers que l'API n'en rend ». Le script de test se renomme selon le patron `scripts/tests/*.test.sh`. Mutations : 8. Passe suivante requise.
 - 2026-11-06 — Validation P3 (Sonnet 5.5, rapport `e33-validate-p3-e334.md` : 1 MEDIUM, 4 LOW), remédiation (Opus 5.5), aucun réfuté, aucune exécution de la CI. **M-R11-1** : relevé AC-6 (d), conduite fixée d'avance (arbitrage de l'orchestrateur) ; la limite (1) des Dev Notes ne décide plus rien. **L-R11-2** : garde `needs.changes.result == 'success'`, M9. **L-R11-3**, **L-R11-4** : *Conception*, garde de l'AC-5 (lu : `ci.yml:11,45,211,255,338`). **L-F11-5** : AC-8 (lus : `docs/ci.md:9-12,21-28`). Documentation lue ce jour (*Workflow cancellation*, *Contexts* pour la phrase de F3, que la P3 n'avait pas lue) : **un job sous `always()` ne s'annule plus**, coût que le rapport n'avait pas mesuré, écrit à l'AC-6 (d). Mutations : 9.
 - 2026-11-06 — **Validation terminée** en quatre passes (P1 de cette fiche en P2 de l'epic). P4 ciblée Haiku (`e33-validate-p4.md`) : MEDIUM **réfuté** par l'orchestrateur, ligne lue : « les trois expressions de la *Conception* » désigne `github.event_name`, `base.sha`, `head.sha`, bien présentes au point « Job `changes` » ; le rapport y cherchait `needs.changes`. LOW (« documentation muette », Dev Notes limite (1)) renvoyé à l'étape 0. Ces remédiations de Change Log ne touchent aucune règle.
+- 2026-11-07 — Développement (Opus 5.5), worktree `/home/gcorbaz/devel/kesh-e337`. **Étape 0** : LOW de la P4 (`e33-validate-p4.md`, Dev Notes limite (1), « documentation muette ») : corrigé, « muette sur les jobs non démarrés » (lus : `33-11-filtre-ci.md:31,83`) ; son MEDIUM reste réfuté, comme le dit l'entrée précédente. LOW de la P3 déjà portés. **T1, F1 à F7 relus** : déclencheurs et jobs à `ci.yml:3-7,21,208,252,334`, `needs: docker-build` à `:337` ; F2 non rejoué (`gh` en lecture, relevé de la P3 repris) ; F4 refait, `git grep -n '_bmad-output' -- crates frontend/src frontend/tests scripts .github` : trois mentions, trois commentaires ; F5 : `textes_coherents` lu et joué ; F6 : `CLAUDE.md:293`, `docs/ci.md:9-12` ; F7 : éprouvé par les cas du test. **Le symptôme** (`git grep -nE 'aucun filtre|Aucun filtre|quatre jobs|4 jobs|paths:'` sur `CLAUDE.md docs README.md website .github`) : `docs/ci.md:9,10,12`, `CLAUDE.md:293`, traités ; `CLAUDE.md:248` (« ses quatre jobs », la protection de `main`) reste vrai ; `deploy-pages.yml:9` (`paths:`) est un autre workflow. **Écarts à la fiche** : aucun. Le passage historique de `CLAUDE.md` reste, annoté et daté. **AC-6 : rien n'a tourné, cela revient à l'orchestrateur** (`33-11-filtre-ci-preuves-ac6.md`) : le filtre n'est donc **pas prouvé** sur GitHub.
+
+## Dev Agent Record
+
+### Agent Model Used
+
+Opus 5.5 (`claude-opus-5-5`).
+
+### Completion Notes List
+
+- **Rouges** : `e3311/rouges.log`, la garde de `ci.yml` sur le workflow d'origine, quinze assertions rouges, chacune nommée. ⚠️ Le script a été écrit avant la fin de ses cas, en brouillon : ses cas ne se sont pas vus rouges d'abord, et ce sont les mutations qui les prouvent.
+- **Mutations** (`e3311/mut/resume.txt`) : M1 à M9 toutes tuées par le test shell. M8 jouée sur le job `frontend` ; M9 sur les quatre.
+- **Gates, conformes à la fiche et au prompt** : `bash scripts/tests/ci-seuls-artefacts.test.sh` vert ; `cargo test -p kesh-api --test textes_coherents`, sous verrou, 23 passés (`e3311/textes.log`) ; **`actionlint` et `shellcheck` absents de la station** : lecture ligne à ligne du YAML, et `yaml.safe_load` : cinq jobs, `needs` et `if` relus. Aucun gate complet, ni E2E : aucun code de production ; le gate complet revient à l'intégration, et la PR d'intégration exerce le workflow pour de bon.
+- **Ce qui reste à prouver** : AC-6 (a), (b), (c), (d) et AC-7, sur de vraies PR. La story ne passe `done` qu'après (a), (b), (d).
+- ⚠️ **Écart de méthode, à déclarer** : script et test rédigés hors worktree, corrigés en brouillon par un script `python3`, puis copiés. Ils n'étaient pas encore au dépôt ; `ci.yml` a été édité par l'outil Edit.
+- Choix : C-e3311-1 à 3. Aucune migration, aucun code de production ; CHANGELOG *Ajouté*, `refs #928`.
+
+### File List
+
+`.github/workflows/ci.yml`, `scripts/ci-seuls-artefacts.sh`, `scripts/tests/ci-seuls-artefacts.test.sh`, `docs/ci.md`, `CLAUDE.md`, `CHANGELOG.md`, `_bmad-output/implementation-artifacts/{33-11-filtre-ci.md,33-11-filtre-ci-preuves-ac6.md,33-11-filtre-ci-review-prompt-p1.md,e33-choix-autonomes-e3311.md,sprint-status.yaml}`.
