@@ -864,8 +864,15 @@ fn avec(mut corps: Value, cle: &str, v: Option<String>) -> Value {
 }
 
 /// Un taux de TVA neuf : `(société, taux, début)` est unique.
+///
+/// ⚠️ `SEQ` est commun au processus : sous `cargo test` (la CI), les 63 tests de ce
+/// binaire le font monter au-delà de 90, et `10 + seq()` sortait de 0 à 100 (refus
+/// « Le taux doit être compris entre 0 et 100. »), ce que `nextest`, un processus par
+/// test, ne montre pas. Vu par `scripts/gate-ci.sh` à l'intégration de la 0.17.5.
+/// Les centièmes portent le compteur : 8000 taux distincts, tous de 10,00 à 89,99.
 fn taux() -> String {
-    format!("{}.00", 10 + seq())
+    let n = seq();
+    format!("{}.{:02}", 10 + (n / 100) % 80, n % 100)
 }
 
 /// Le verrou de période de la société, posé ou retiré en SQL (montage).
