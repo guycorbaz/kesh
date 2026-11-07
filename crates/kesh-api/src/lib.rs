@@ -17,6 +17,7 @@ pub mod audit_labels;
 pub mod auth;
 pub mod auto_backup;
 pub mod config;
+pub mod dates_recues;
 pub mod document_storage;
 pub mod errors;
 pub mod exports;
@@ -452,6 +453,11 @@ pub fn build_router_avec_registre(
         .route(
             "/api/v1/companies/current/contact-details",
             put(routes::companies::update_company_contact_details),
+        )
+        // Story 33-5 (#909) : corriger l'adresse de la société après l'assistant.
+        .route(
+            "/api/v1/companies/current/address",
+            put(routes::companies::update_company_address),
         )
         // Story 14-2 : réouverture d'un exercice clôturé (Admin uniquement +
         // motif obligatoire + audit + garde LIFO). Plus strict que la clôture
@@ -1233,6 +1239,11 @@ pub fn build_router_avec_registre(
         .route(
             "/api/v1/reports/balance-sheet",
             get(routes::reports::get_balance_sheet),
+        )
+        // Story 33-3a (#918) : les chiffres des graphiques de l'accueil, sans trace.
+        .route(
+            "/api/v1/reports/homepage-summary",
+            get(routes::reports::homepage_summary),
         )
         .route(
             "/api/v1/reports/income-statement",

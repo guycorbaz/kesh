@@ -1104,7 +1104,7 @@ pub async fn close_bank_account(
     // `chrono` admet des années signées et au-delà de 9999, que la colonne `DATE`
     // de MariaDB refuserait en `500`. Hors de `1000..=9999` (le domaine de
     // `DATE`) : `400`, avant toute transaction.
-    if !(1000..=9999).contains(&chrono::Datelike::year(&closed_on)) {
+    if !kesh_core::dates::annee_stockable(closed_on) {
         return Err(AppError::Validation(
             "closedOn doit être une date entre l'an 1000 et l'an 9999".to_string(),
         ));

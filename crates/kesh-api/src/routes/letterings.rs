@@ -333,6 +333,9 @@ pub struct DocumentResponse {
     pub kind: &'static str,
     pub id: i64,
     pub number: Option<String>,
+    /// Pour `supplierInvoice` : le numéro interne ; `null` sinon (Story 33-1b, #926).
+    /// `number` garde le numéro du fournisseur.
+    pub internal_number: Option<String>,
     /// Pour `settlement` : la facture réglée ; `null` sinon.
     pub invoice_id: Option<i64>,
     pub invoice_number: Option<String>,
@@ -344,6 +347,7 @@ impl From<DocumentOwner> for DocumentResponse {
             kind: o.kind.as_str(),
             id: o.id,
             number: o.number,
+            internal_number: o.internal_number,
             invoice_id: o.invoice_id,
             invoice_number: o.invoice_number,
         }

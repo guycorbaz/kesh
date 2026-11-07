@@ -12,10 +12,12 @@
 	import { page } from '$app/state';
 
 	import { isApiError } from '$lib/shared/utils/api-client';
+	import { filtreDeLAdresse, saisieDeFiltre, sortieDeFiltre } from '$lib/shared/utils/date-filtre';
 	import { authState } from '$lib/app/stores/auth.svelte';
 	import { notifyError, notifySuccess } from '$lib/shared/utils/notify';
 	import { i18nMsg } from '$lib/shared/utils/i18n.svelte';
 	import { todayLocal } from '$lib/shared/utils/local-date';
+	import { isSettlementOutcomeUnknown } from '$lib/shared/utils/unknown-outcome';
 	import {
 		listDueDates,
 		settleInvoice,
@@ -96,6 +98,19 @@
 	let markTarget = $state<DueDateItem | null>(null);
 	let markSubmitting = $state(false);
 	let markError = $state('');
+	// Revue P1 de la 33-6 (E-4 = A-4) : même geste que la fiche facture. Tant que la liste
+	// n'a pas été relue, ses montants sont périmés : aucun « Régler » n'est offert.
+	let settleUnknownNumber = $state<string | null>(null);
+	let settleOutcome = $state<'known' | 'verify' | 'blocked'>('known');
+	let settleRereading = $state(false);
+
+	async function rereadAfterUnknownOutcome() {
+		settleOutcome = 'blocked';
+		settleRereading = true;
+		const relue = await load();
+		settleRereading = false;
+		if (relue) settleOutcome = 'verify';
+	}
 	// Chargés une fois : le dialogue de règlement en a besoin pour proposer une
 	// contrepartie (Story 24-3, #372).
 	let settleAccounts = $state<AccountResponse[]>([]);
@@ -117,7 +132,7 @@
 		paymentStatus = (VALID_PAYMENT_STATUS as string[]).includes(rawPs)
 			? (rawPs as PaymentStatusFilter)
 			: 'unpaid';
-		dueBeforeFilter = params.get('dueBefore') ?? '';
+		dueBeforeFilter = filtreDeLAdresse(params.get('dueBefore'));
 		const rawContactId = parseInt(params.get('contactId') ?? '', 10);
 		if (Number.isFinite(rawContactId) && rawContactId > 0) {
 			try {
@@ -168,7 +183,8 @@
 		});
 	}
 
-	async function load() {
+	/** Vrai si la liste affichée est celle que le serveur vient de rendre. */
+	async function load(): Promise<boolean> {
 		const seq = ++loadSeq;
 		loading = true;
 		try {
@@ -182,12 +198,13 @@
 				limit,
 				offset,
 			});
-			if (seq !== loadSeq) return;
+			if (seq !== loadSeq) return false;
 			items = res.items;
 			total = res.total;
 			summary = res.summary;
+			return true;
 		} catch (err) {
-			if (seq !== loadSeq) return;
+			if (seq !== loadSeq) return false;
 			if (isApiError(err)) notifyError(err.message);
 			items = [];
 			total = 0;
@@ -200,6 +217,7 @@
 				overdueCount: 0,
 				overdueTotal: '0',
 			};
+			return false;
 		} finally {
 			if (seq === loadSeq) loading = false;
 		}
@@ -249,10 +267,13 @@
 
 	async function handleSettleConfirm(payload: SettlementPayload) {
 		if (!markTarget) return;
+		// Capturée avant l'envoi : une autre ligne peut s'ouvrir pendant l'attente, et
+		// l'avis nomme la facture réglée (revue P2 de la 33-6, P2-3).
+		const cible = markTarget;
 		markSubmitting = true;
 		markError = '';
 		try {
-			const res = await settleInvoice(markTarget.id, payload);
+			const res = await settleInvoice(cible.id, payload);
 			notifySuccess(
 				res.fullySettled
 					? i18nMsg('invoice-settle-success-full', 'Règlement enregistré — facture soldée')
@@ -260,16 +281,20 @@
 			);
 			markOpen = false;
 			markTarget = null;
+			settleOutcome = 'known';
 			// ⚠️ Rechargement systématique : un règlement PARTIEL laisse la facture
 			// dans la liste, avec un résiduel moindre. Ne recharger que sur solde
 			// complet ferait afficher un montant périmé.
 			await load();
 		} catch (err) {
-			if (isApiError(err)) {
+			if (isSettlementOutcomeUnknown(err)) {
+				settleUnknownNumber = cible.invoiceNumber;
+				markOpen = false;
+				markTarget = null;
+				await rereadAfterUnknownOutcome();
+			} else if (isApiError(err)) {
 				markError = err.message;
 				notifyError(err.message);
-			} else {
-				markError = i18nMsg('common-error', 'Erreur inattendue');
 			}
 		} finally {
 			markSubmitting = false;
@@ -334,6 +359,37 @@
 	</div>
 </div>
 
+{#if settleOutcome !== 'known'}
+	<div
+		class="mb-4 space-y-2 rounded-md border border-warning bg-warning/10 px-3 py-2 text-sm"
+		role="alert"
+		data-testid="due-dates-settle-unknown"
+	>
+		<p>
+			{settleOutcome === 'verify'
+				? i18nMsg(
+						'due-dates-settle-unknown',
+						'L’issue du règlement de la facture { $number } n’est pas connue : le serveur ne l’a pas confirmé, et il a pu être enregistré. Vérifiez son reste dû ci-dessous, ou sa fiche, avant de réessayer.',
+						{ number: settleUnknownNumber ?? '' },
+					)
+				: i18nMsg(
+						'due-dates-settle-unknown-reread-failed',
+						'L’issue du règlement de la facture { $number } n’est pas connue, et la liste n’a pas pu être relue. Les règlements restent indisponibles tant qu’elle n’a pas été relue.',
+						{ number: settleUnknownNumber ?? '' },
+					)}
+		</p>
+		{#if settleOutcome === 'blocked' && !settleRereading}
+			<Button
+				variant="outline"
+				onclick={rereadAfterUnknownOutcome}
+				data-testid="due-dates-settle-unknown-reread"
+			>
+				{i18nMsg('invoice-settle-unknown-reread', 'Relire')}
+			</Button>
+		{/if}
+	</div>
+{/if}
+
 <!-- Summary -->
 <div class="mb-4 rounded-md border border-border bg-surface-alt px-4 py-3 text-sm">
 	<strong>{summary.unpaidCount}</strong>
@@ -396,10 +452,12 @@
 			id="dd-due-before"
 			type="date"
 			value={dueBeforeFilter}
-			oninput={(e: Event) => {
-				dueBeforeFilter = (e.target as HTMLInputElement).value;
-				offset = 0;
-			}}
+			oninput={(e: Event) =>
+				saisieDeFiltre(e, (date) => {
+					dueBeforeFilter = date;
+					offset = 0;
+				})}
+			onblur={(e: Event) => sortieDeFiltre(e, dueBeforeFilter)}
 		/>
 	</div>
 	{#if canExportCsv}
@@ -474,7 +532,13 @@
 					>
 					<td class="py-2 pr-2 text-right">
 						{#if !inv.paidAt}
-							<Button variant="outline" size="sm" onclick={() => openMark(inv)}>
+							<Button
+								variant="outline"
+								size="sm"
+								onclick={() => openMark(inv)}
+								disabled={settleOutcome === 'blocked'}
+								data-testid="due-dates-settle-{inv.id}"
+							>
 								{i18nMsg('invoice-settle-button-short', 'Régler')}
 							</Button>
 						{/if}

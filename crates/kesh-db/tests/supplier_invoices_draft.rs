@@ -479,7 +479,7 @@ async fn validation_passes_the_rc1_purchase_entry(pool: MySqlPool) {
     assert_eq!(date, jour(2026, 6, 15));
     assert_eq!(
         libelle,
-        "Facture fournisseur FF-G - Fournisseur rapproché SA"
+        "Facture fournisseur FF-2020-001 (FF-G) - Fournisseur rapproché SA"
     );
     let lignes: Vec<(i64, Decimal, Decimal, Option<i64>)> = sqlx::query_as(
         "SELECT account_id, debit, credit, project_id FROM journal_entry_lines \
@@ -796,12 +796,17 @@ async fn unvalidation_status_refusals(pool: MySqlPool) {
         Some(SupplierUnvalidationBlocker::Paid),
         "{err:?}"
     );
-    // Le refus nomme la pièce par son numéro ; un numéro blanc vaut absent
-    // (revue P1, E-6) — ni « () » au message, ni `documentNumber: ""`.
+    // Le refus nomme la pièce par son numéro interne (Story 33-1b, #926) ; un numéro
+    // blanc vaut absent (revue P1, E-6) — ni « () » au message, ni `documentNumber: ""`.
     assert!(
-        matches!(&err, DbError::SupplierInvoiceNotUnvalidatable { document_label: Some(n), .. } if n == "FF-P"),
+        matches!(&err, DbError::SupplierInvoiceNotUnvalidatable { document_label: Some(n), .. } if n.starts_with("FF-20")),
         "{err:?}"
     );
+    sqlx::query("UPDATE supplier_invoices SET internal_number = NULL WHERE id = ?")
+        .bind(paid)
+        .execute(&pool)
+        .await
+        .unwrap();
     sqlx::query("UPDATE supplier_invoices SET supplier_invoice_number = '  ' WHERE id = ?")
         .bind(paid)
         .execute(&pool)

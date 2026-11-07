@@ -396,11 +396,187 @@ pub struct DuplicateLine {
     pub key: String,
 }
 
+/// Largeur de `bank_transactions.reference`, `end_to_end_id`, `transaction_id`
+/// et `counterparty_name` : `VARCHAR(255)`, en caractères
+/// (`20260504000001_bank_imports.sql`).
+const TEXT_COLUMN_CHARS: usize = 255;
+/// Largeur de `bank_transactions.counterparty_iban` : `VARCHAR(34)`.
+const IBAN_COLUMN_CHARS: usize = 34;
+/// Largeur de `bank_transactions.details` : `TEXT`, en octets.
+const DETAILS_COLUMN_BYTES: usize = 65_535;
+
+/// Les **sept textes** qu'une ligne porte en base en dehors de sa clé, et qui ne
+/// changent plus après l'import (33-2, C-e332-3). Sans `currency` : son calcul a
+/// changé depuis les premières versions (e04122dc), une ligne ancienne ne l'égale
+/// donc pas forcément.
+#[derive(Clone, Debug)]
+pub struct LineTexts {
+    pub value_date: Option<NaiveDate>,
+    pub reference: Option<String>,
+    pub end_to_end_id: Option<String>,
+    pub transaction_id: Option<String>,
+    pub counterparty_iban: Option<String>,
+    pub counterparty_name: Option<String>,
+    pub details: String,
+}
+
+impl LineTexts {
+    /// Les textes d'un brouillon, tels qu'il les porte.
+    pub fn from_draft(t: &BankTransactionDraft) -> Self {
+        Self {
+            value_date: t.value_date,
+            reference: t.reference.clone(),
+            end_to_end_id: t.end_to_end_id.clone(),
+            transaction_id: t.transaction_id.clone(),
+            counterparty_iban: t.counterparty_iban.clone(),
+            counterparty_name: t.counterparty_name.clone(),
+            details: t.details.clone(),
+        }
+    }
+
+    /// Les mêmes textes, coupés à la largeur de leur colonne : ce qu'un serveur sans
+    /// mode strict en aurait gardé à l'écriture (33-2, AC-F4).
+    fn cut_to_column_width(self) -> Self {
+        let cut = |s: Option<String>, chars: usize| s.map(|s| cut_to_chars(s, chars));
+        let mut details = self.details;
+        details.truncate(details.floor_char_boundary(DETAILS_COLUMN_BYTES));
+        Self {
+            value_date: self.value_date,
+            reference: cut(self.reference, TEXT_COLUMN_CHARS),
+            end_to_end_id: cut(self.end_to_end_id, TEXT_COLUMN_CHARS),
+            transaction_id: cut(self.transaction_id, TEXT_COLUMN_CHARS),
+            counterparty_iban: cut(self.counterparty_iban, IBAN_COLUMN_CHARS),
+            counterparty_name: cut(self.counterparty_name, TEXT_COLUMN_CHARS),
+            details,
+        }
+    }
+}
+
+/// Les `chars` premiers caractères de `s`.
+fn cut_to_chars(mut s: String, chars: usize) -> String {
+    if let Some((end, _)) = s.char_indices().nth(chars) {
+        s.truncate(end);
+    }
+    s
+}
+
+/// Égalité stricte des sept textes. **Écrite à la main**, par destructuration
+/// exhaustive : un champ ajouté à [`LineTexts`] ne compile pas sans être nommé ici.
+impl PartialEq for LineTexts {
+    fn eq(&self, other: &Self) -> bool {
+        let Self {
+            value_date,
+            reference,
+            end_to_end_id,
+            transaction_id,
+            counterparty_iban,
+            counterparty_name,
+            details,
+        } = self;
+        *value_date == other.value_date
+            && *reference == other.reference
+            && *end_to_end_id == other.end_to_end_id
+            && *transaction_id == other.transaction_id
+            && *counterparty_iban == other.counterparty_iban
+            && *counterparty_name == other.counterparty_name
+            && *details == other.details
+    }
+}
+
+impl Eq for LineTexts {}
+
+/// Ce que la lecture de la 0.17.3 donnait d'une ligne dont la clé a changé depuis
+/// (#819, 33-2) : ses textes coupés à la largeur de leur colonne, et la clé qui en
+/// dérive, ce qui les rend comparables à une ligne stockée quel que soit le `sql_mode`
+/// du serveur.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct LegacyLine {
+    key: DuplicateKey,
+    texts: LineTexts,
+}
+
+impl LegacyLine {
+    /// La ligne que porte le brouillon d'une lecture héritée. La coupe se fait ici, une
+    /// seule fois : l'égalité de [`LineTexts`] reste stricte. La clé se calcule **après**
+    /// la coupe : une clé stockée dérive d'un identifiant déjà coupé (revue P1, E-3).
+    pub fn from_draft(t: &BankTransactionDraft, bank_account_id: i64) -> Self {
+        let texts = LineTexts::from_draft(t).cut_to_column_width();
+        let key = dedup_key_scalar(
+            t.booking_date,
+            t.amount.amount(),
+            texts.reference.as_deref(),
+            texts.end_to_end_id.as_deref(),
+            texts.transaction_id.as_deref(),
+            bank_account_id,
+        );
+        Self { key, texts }
+    }
+
+    /// La clé de doublon que la ligne porte en base si la 0.17.3 l'a importée.
+    pub fn key(&self) -> &DuplicateKey {
+        &self.key
+    }
+}
+
+/// Une ligne dont l'alias égale la clé d'une ligne existante, **sans** en porter les
+/// textes (33-2, C-e332-4) : ni doublon ni silence. Elle s'importe, et l'aperçu la
+/// signale.
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UncertainLegacyLine {
+    pub new_index: usize,
+    /// Le plus petit `id` des lignes existantes de cette clé.
+    pub existing_transaction_id: i64,
+}
+
+/// Le résultat de [`detect_duplicate_lines_with_aliases`].
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct DuplicateLines {
+    pub duplicates: Vec<DuplicateLine>,
+    pub uncertain: Vec<UncertainLegacyLine>,
+}
+
+/// Lignes existantes par clé, chacune avec sa charge (`()` sans alias, ses textes
+/// sinon).
+type KeyIndex<'a, V> = std::collections::HashMap<&'a DuplicateKey, Vec<(i64, V)>>;
+
+/// Le plus petit `id` d'un groupe de lignes de même clé : déterministe quel que soit
+/// l'ordre de lecture (`find_in_dedup_window` ne trie pas).
+fn smallest_id<V>(rows: &[(i64, V)]) -> Option<i64> {
+    rows.iter().map(|(id, _)| *id).min()
+}
+
+/// Le parcours commun aux deux détections : une ligne dont la clé égale celle d'une
+/// ligne existante est un doublon, **quels que soient ses textes** ; sinon `on_miss`
+/// décide, à partir de son index.
+fn scan_lines<V>(
+    new: &[BankTransactionDraft],
+    bank_account_id: i64,
+    index: &KeyIndex<'_, V>,
+    mut on_miss: impl FnMut(usize) -> Option<DuplicateLine>,
+) -> Vec<DuplicateLine> {
+    let mut out = Vec::new();
+    for (idx, tx) in new.iter().enumerate() {
+        let key = dedup_key_from_draft(tx, bank_account_id);
+        let direct = index.get(&key).and_then(|rows| smallest_id(rows));
+        if let Some(existing_id) = direct {
+            out.push(DuplicateLine {
+                new_index: idx,
+                existing_transaction_id: existing_id,
+                key: key.to_string(),
+            });
+        } else if let Some(line) = on_miss(idx) {
+            out.push(line);
+        }
+    }
+    out
+}
+
 /// Détecte les doublons ligne-par-ligne entre un nouvel import et les
 /// transactions existantes (Story 8-3 FR43 partie 2).
 ///
-/// Compare en `O(N + M)` via une `HashMap<DuplicateKey, i64>`
-/// construite sur les transactions existantes. Pour chaque transaction
+/// Compare en `O(N + M)` via un index par [`DuplicateKey`]
+/// construit sur les transactions existantes. Pour chaque transaction
 /// nouvelle, retourne un [`DuplicateLine`] si la clé matche.
 ///
 /// Le caller (`kesh-api`) construit `existing_keys` via :
@@ -424,75 +600,81 @@ pub fn detect_duplicate_lines(
     bank_account_id: i64,
     existing_keys: &[(i64, DuplicateKey)],
 ) -> Vec<DuplicateLine> {
-    detect_duplicate_lines_with_aliases(new, bank_account_id, existing_keys, &[])
+    let mut index: KeyIndex<'_, ()> = KeyIndex::with_capacity(existing_keys.len());
+    for (id, key) in existing_keys {
+        index.entry(key).or_default().push((*id, ()));
+    }
+    scan_lines(new, bank_account_id, &index, |_| None)
 }
 
-/// Variante de [`detect_duplicate_lines`] qui reconnaît aussi une ligne par un
-/// **alias** de sa clé (0.17.4, #819).
+/// Variante de [`detect_duplicate_lines`] qui reconnaît aussi une ligne par son
+/// **alias**, ce que la 0.17.3 en lisait (0.17.4, #819 ; 33-2, #915).
 ///
-/// `aliases` est aligné par index sur `new` (un tableau plus court, ou vide,
-/// vaut `None` pour les lignes restantes). Une ligne neuve est un doublon si sa
-/// clé **ou** son alias égale une clé existante ; la clé est essayée d'abord, si
-/// bien qu'un alias égal à la clé ne produit jamais deux [`DuplicateLine`]. Le
-/// champ [`DuplicateLine::key`] porte la clé qui a égalé.
+/// `aliases` est aligné par index sur `new` (un tableau plus court, ou vide, vaut
+/// `None` pour les lignes restantes). La clé de la ligne est essayée d'abord : si
+/// elle égale une clé existante, c'est un doublon, **quels que soient ses textes**.
+/// Sinon, si son alias égale une clé existante :
+///
+/// - une ligne de cette clé porte les mêmes sept textes ([`LineTexts`]) : doublon,
+///   désignant le plus petit `id` parmi celles qui les portent ;
+/// - aucune : [`UncertainLegacyLine`], désignant le plus petit `id` de la clé. La
+///   clé d'alias seule ne suffit plus, car elle ne compare qu'un morceau de la
+///   référence (#915).
+///
+/// Le champ [`DuplicateLine::key`] porte la clé qui a égalé. **Limite (AC-F5)** : une
+/// ligne neuve dont les sept textes, lus à l'ancienne, égalent ceux d'une ligne
+/// existante reste un doublon : rien ne la distingue d'une ligne déjà importée.
 ///
 /// L'usage : la lecture CAMT.053 de la 0.17.4 lit en entier un identifiant qui
 /// porte une entité (`REF &amp; Co`), là où la 0.17.3 n'en gardait que le
 /// dernier morceau ; la clé d'une ligne déjà importée diffère donc de celle que
-/// calcule la lecture neuve. `kesh-api` passe, pour chaque ligne, la clé de la
-/// lecture de la 0.17.3 quand elle diffère, pour qu'une ligne reprise par un
-/// autre fichier reste reconnue. Sans alias, le résultat est exactement celui de
-/// [`detect_duplicate_lines`] (CSV, saisie manuelle).
+/// calcule la lecture neuve. Sans alias, les doublons sont exactement ceux de
+/// [`detect_duplicate_lines`] (CSV), et aucune ligne n'est incertaine.
+///
+/// **Plusieurs lignes de même clé** (F10, Pass 3 review) : possible après
+/// `confirmDuplicateLines=import`. Le comptage côté **nouvelles** transactions reste
+/// correct ; `existing_transaction_id` n'en désigne qu'une.
 pub fn detect_duplicate_lines_with_aliases(
     new: &[BankTransactionDraft],
     bank_account_id: i64,
-    existing_keys: &[(i64, DuplicateKey)],
-    aliases: &[Option<DuplicateKey>],
-) -> Vec<DuplicateLine> {
-    use std::collections::HashMap;
-
-    // Construit l'index des clés existantes — premier `id` rencontré
-    // par clé est conservé (les collisions inter-imports existants
-    // sont théoriquement impossibles puisque la déduplication est
-    // appliquée à chaque INSERT, mais l'invariant n'est pas garanti
-    // par la base de données).
-    //
-    // **F10 (Pass 3 review)** — limitation connue : si
-    // `confirmDuplicateLines=import` a été utilisé sur un import
-    // précédent (override explicite), la table `bank_transactions`
-    // peut contenir N rangs avec la même clé composite. Dans ce cas,
-    // l'`existing_transaction_id` rapporté pour le nouveau match
-    // pointe seulement sur le **plus petit `id`** (déterministe via
-    // `or_insert`). Le comptage côté **nouvelles** transactions
-    // (champ `details_json.duplicate_lines_skipped: N`) reste correct
-    // — c'est la traçabilité de la collision côté existant qui est
-    // simplifiée. Acceptable v0.1 ; renvoyer `Vec<i64>` par clé
-    // serait une extension type-safe v0.2.
-    let mut index: HashMap<&DuplicateKey, i64> = HashMap::with_capacity(existing_keys.len());
-    for (id, key) in existing_keys {
-        index.entry(key).or_insert(*id);
+    existing: &[(i64, DuplicateKey, LineTexts)],
+    aliases: &[Option<LegacyLine>],
+) -> DuplicateLines {
+    let mut index: KeyIndex<'_, &LineTexts> = KeyIndex::with_capacity(existing.len());
+    for (id, key, texts) in existing {
+        index.entry(key).or_default().push((*id, texts));
     }
 
-    let mut out = Vec::new();
-    for (idx, tx) in new.iter().enumerate() {
-        let key = dedup_key_from_draft(tx, bank_account_id);
-        if let Some(&existing_id) = index.get(&key) {
-            out.push(DuplicateLine {
+    let mut uncertain = Vec::new();
+    let duplicates = scan_lines(new, bank_account_id, &index, |idx| {
+        let alias = aliases.get(idx)?.as_ref()?;
+        let rows = index.get(&alias.key)?;
+        let same_texts = rows
+            .iter()
+            .filter(|(_, texts)| **texts == alias.texts)
+            .map(|(id, _)| *id)
+            .min();
+        match same_texts {
+            Some(existing_transaction_id) => Some(DuplicateLine {
                 new_index: idx,
-                existing_transaction_id: existing_id,
-                key: key.to_string(),
-            });
-        } else if let Some(Some(alias)) = aliases.get(idx)
-            && let Some(&existing_id) = index.get(alias)
-        {
-            out.push(DuplicateLine {
-                new_index: idx,
-                existing_transaction_id: existing_id,
-                key: alias.to_string(),
-            });
+                existing_transaction_id,
+                key: alias.key.to_string(),
+            }),
+            None => {
+                if let Some(existing_transaction_id) = smallest_id(rows) {
+                    uncertain.push(UncertainLegacyLine {
+                        new_index: idx,
+                        existing_transaction_id,
+                    });
+                }
+                None
+            }
         }
+    });
+    DuplicateLines {
+        duplicates,
+        uncertain,
     }
-    out
 }
 
 /// Vérifie que la devise du relevé importé est supportée par le
@@ -959,6 +1141,40 @@ mod tests {
         )
     }
 
+    /// Des textes de référence : tous remplis, pour qu'une colonne qui diffère se voie.
+    fn texts() -> LineTexts {
+        LineTexts {
+            value_date: Some(date(2026, 10, 11)),
+            reference: Some("Co".into()),
+            end_to_end_id: Some("E2E".into()),
+            transaction_id: Some("TX".into()),
+            counterparty_iban: Some("CH00".into()),
+            counterparty_name: Some("Fils".into()),
+            details: "solde".into(),
+        }
+    }
+
+    fn existing_row(id: i64, reference: &str, t: LineTexts) -> (i64, DuplicateKey, LineTexts) {
+        (id, key(reference), t)
+    }
+
+    fn alias(reference: &str, t: LineTexts) -> Option<LegacyLine> {
+        Some(LegacyLine {
+            key: key(reference),
+            texts: t.cut_to_column_width(),
+        })
+    }
+
+    fn new_line() -> Vec<BankTransactionDraft> {
+        vec![draft(
+            date(2026, 10, 10),
+            dec!(10.00),
+            Some("REF & Co"),
+            None,
+            None,
+        )]
+    }
+
     /// Des alias vides rendent exactement ce que rend `detect_duplicate_lines`.
     #[test]
     fn aliases_empty_behaves_like_detect_duplicate_lines_819() {
@@ -966,42 +1182,35 @@ mod tests {
             draft(date(2026, 10, 10), dec!(10.00), Some("A"), None, None),
             draft(date(2026, 10, 10), dec!(10.00), Some("B"), None, None),
         ];
-        let existing = vec![(42, key("b"))];
-        let plain = detect_duplicate_lines(&new, 17, &existing);
-        assert_eq!(
-            detect_duplicate_lines_with_aliases(&new, 17, &existing, &[]),
-            plain
-        );
-        assert_eq!(
-            detect_duplicate_lines_with_aliases(&new, 17, &existing, &[None, None]),
-            plain
-        );
+        let plain = detect_duplicate_lines(&new, 17, &[(42, key("b"))]);
+        let existing = vec![existing_row(42, "b", texts())];
+        for aliases in [&[][..], &[None, None][..]] {
+            let r = detect_duplicate_lines_with_aliases(&new, 17, &existing, aliases);
+            assert_eq!(r.duplicates, plain);
+            assert!(r.uncertain.is_empty());
+        }
         assert_eq!(plain.len(), 1);
     }
 
-    /// Un alias qui égale une clé existante fait un doublon, sous la clé de
-    /// l'alias.
+    /// Un alias qui égale une clé existante, aux mêmes textes, fait un doublon, sous
+    /// la clé de l'alias.
     #[test]
-    fn alias_matching_an_existing_key_is_a_duplicate_819() {
-        let new = vec![draft(
-            date(2026, 10, 10),
-            dec!(10.00),
-            Some("REF & Co"),
-            None,
-            None,
-        )];
-        let existing = vec![(42, key("Co"))];
-        assert!(detect_duplicate_lines(&new, 17, &existing).is_empty());
-        let r = detect_duplicate_lines_with_aliases(&new, 17, &existing, &[Some(key("Co"))]);
-        assert_eq!(r.len(), 1);
-        assert_eq!(r[0].new_index, 0);
-        assert_eq!(r[0].existing_transaction_id, 42);
-        assert_eq!(r[0].key, key("Co").to_string());
+    fn alias_with_equal_texts_is_a_duplicate_819() {
+        let new = new_line();
+        assert!(detect_duplicate_lines(&new, 17, &[(42, key("Co"))]).is_empty());
+        let existing = vec![existing_row(42, "Co", texts())];
+        let r = detect_duplicate_lines_with_aliases(&new, 17, &existing, &[alias("Co", texts())]);
+        assert_eq!(r.duplicates.len(), 1);
+        assert_eq!(r.duplicates[0].new_index, 0);
+        assert_eq!(r.duplicates[0].existing_transaction_id, 42);
+        assert_eq!(r.duplicates[0].key, key("Co").to_string());
+        assert!(r.uncertain.is_empty());
     }
 
-    /// Un alias égal à la clé neuve n'est pas compté deux fois.
+    /// AC-S4 — un alias égal à la clé neuve n'est pas compté deux fois, et la clé
+    /// directe ne regarde pas les textes (« le libellé n'en fait pas partie »).
     #[test]
-    fn alias_equal_to_the_key_is_not_counted_twice_819() {
+    fn direct_key_is_a_duplicate_whatever_its_texts_819() {
         let new = vec![draft(
             date(2026, 10, 10),
             dec!(10.00),
@@ -1009,10 +1218,242 @@ mod tests {
             None,
             None,
         )];
-        let existing = vec![(42, key("a"))];
-        let r = detect_duplicate_lines_with_aliases(&new, 17, &existing, &[Some(key("a"))]);
-        assert_eq!(r.len(), 1);
-        assert_eq!(r[0].key, key("a").to_string());
+        let other = LineTexts {
+            details: "autre libellé".into(),
+            ..texts()
+        };
+        let existing = vec![existing_row(42, "a", other)];
+        let r = detect_duplicate_lines_with_aliases(&new, 17, &existing, &[alias("a", texts())]);
+        assert_eq!(r.duplicates.len(), 1);
+        assert_eq!(r.duplicates[0].key, key("a").to_string());
+        assert!(r.uncertain.is_empty());
+    }
+
+    /// AC-F4 — **chacune** des sept colonnes, seule à différer, fait passer de doublon
+    /// à incertain.
+    #[test]
+    fn each_of_the_seven_columns_counts_915() {
+        type Change = fn(&mut LineTexts);
+        let cases: [(&str, Change); 7] = [
+            ("value_date", |t| t.value_date = None),
+            ("reference", |t| t.reference = Some("Autre".into())),
+            ("end_to_end_id", |t| t.end_to_end_id = None),
+            ("transaction_id", |t| t.transaction_id = None),
+            ("counterparty_iban", |t| t.counterparty_iban = None),
+            ("counterparty_name", |t| t.counterparty_name = None),
+            ("details", |t| t.details = "autre".into()),
+        ];
+        let new = new_line();
+        for (column, change) in cases {
+            let mut stored = texts();
+            change(&mut stored);
+            let existing = vec![existing_row(42, "Co", stored)];
+            let r =
+                detect_duplicate_lines_with_aliases(&new, 17, &existing, &[alias("Co", texts())]);
+            assert!(r.duplicates.is_empty(), "{column} : {r:?}");
+            assert_eq!(
+                r.uncertain,
+                vec![UncertainLegacyLine {
+                    new_index: 0,
+                    existing_transaction_id: 42
+                }],
+                "{column}"
+            );
+        }
+    }
+
+    /// AC-S3 — une clé portée par plusieurs lignes : celle qui a les mêmes textes est
+    /// désignée, où qu'elle soit dans la lecture.
+    #[test]
+    fn alias_finds_the_row_with_equal_texts_915() {
+        let other = LineTexts {
+            details: "autre".into(),
+            ..texts()
+        };
+        let existing = vec![
+            existing_row(50, "Co", other.clone()),
+            existing_row(60, "Co", texts()),
+            existing_row(40, "Co", other),
+        ];
+        let r = detect_duplicate_lines_with_aliases(
+            &new_line(),
+            17,
+            &existing,
+            &[alias("Co", texts())],
+        );
+        assert_eq!(r.duplicates[0].existing_transaction_id, 60);
+    }
+
+    /// AC-S3 — plusieurs lignes ont les mêmes textes, ou aucune : le plus petit `id`
+    /// de la clé, quel que soit l'ordre de lecture (la requête ne trie pas).
+    #[test]
+    fn smallest_id_when_several_or_none_have_the_texts_915() {
+        let existing = vec![
+            existing_row(60, "Co", texts()),
+            existing_row(40, "Co", texts()),
+        ];
+        let r = detect_duplicate_lines_with_aliases(
+            &new_line(),
+            17,
+            &existing,
+            &[alias("Co", texts())],
+        );
+        assert_eq!(r.duplicates[0].existing_transaction_id, 40);
+
+        let other = LineTexts {
+            details: "lu autrement".into(),
+            ..texts()
+        };
+        let r =
+            detect_duplicate_lines_with_aliases(&new_line(), 17, &existing, &[alias("Co", other)]);
+        assert!(r.duplicates.is_empty());
+        assert_eq!(r.uncertain[0].existing_transaction_id, 40);
+    }
+
+    /// AC-S3 (revue P1, L-A1, C-e332-27) — un doublon désigne une ligne qui a vraiment
+    /// les mêmes textes : le plus petit `id` parmi elles, non le plus petit de la clé.
+    #[test]
+    fn duplicate_designates_the_smallest_id_among_equal_texts_915() {
+        let other = LineTexts {
+            details: "autre".into(),
+            ..texts()
+        };
+        let existing = vec![
+            existing_row(40, "Co", other),
+            existing_row(60, "Co", texts()),
+            existing_row(50, "Co", texts()),
+        ];
+        let r = detect_duplicate_lines_with_aliases(
+            &new_line(),
+            17,
+            &existing,
+            &[alias("Co", texts())],
+        );
+        assert_eq!(r.duplicates[0].existing_transaction_id, 50);
+    }
+
+    /// Un alias qui n'égale aucune clé existante : ligne neuve, ni doublon ni incertaine.
+    #[test]
+    fn alias_without_a_matching_key_is_nothing_915() {
+        let existing = vec![existing_row(42, "autre", texts())];
+        let r = detect_duplicate_lines_with_aliases(
+            &new_line(),
+            17,
+            &existing,
+            &[alias("Co", texts())],
+        );
+        assert_eq!(r, DuplicateLines::default());
+    }
+
+    /// AC-F4 — un serveur sans mode strict a tronqué le texte à l'écriture : les
+    /// 255 premiers caractères stockés égalent les 300 lus ; les 254 premiers, non. Pur :
+    /// aucun test ne dépend du `sql_mode`.
+    #[test]
+    fn stored_text_is_compared_modulo_the_column_width_915() {
+        let lu = "é".repeat(300);
+        let with_name = |name: String| LineTexts {
+            counterparty_name: Some(name),
+            ..texts()
+        };
+        let read = alias("Co", with_name(lu.clone()));
+        let run = |stored: LineTexts| {
+            detect_duplicate_lines_with_aliases(
+                &new_line(),
+                17,
+                &[existing_row(42, "Co", stored)],
+                std::slice::from_ref(&read),
+            )
+        };
+        let r = run(with_name("é".repeat(255)));
+        assert_eq!(r.duplicates.len(), 1, "{r:?}");
+        let r = run(with_name("é".repeat(254)));
+        assert_eq!(r.uncertain.len(), 1, "{r:?}");
+    }
+
+    /// AC-F4 — les largeurs : 255 caractères, 34 pour l'IBAN, 65 535 octets pour le
+    /// libellé, à une frontière de caractère ; un texte plus court ne change pas.
+    #[test]
+    fn legacy_line_cuts_each_text_to_its_column_915() {
+        let long = BankTransactionDraft {
+            reference: Some("r".repeat(256)),
+            end_to_end_id: Some("e".repeat(256)),
+            transaction_id: Some("t".repeat(256)),
+            counterparty_iban: Some("I".repeat(35)),
+            counterparty_name: Some("n".repeat(256)),
+            // 2 octets par « é » : le 65 535e octet tombe au milieu d'un caractère.
+            details: "é".repeat(40_000),
+            ..draft(date(2026, 10, 10), dec!(10.00), None, None, None)
+        };
+        let cut = LegacyLine::from_draft(&long, 17).texts;
+        assert_eq!(cut.reference.unwrap().chars().count(), 255);
+        assert_eq!(cut.end_to_end_id.unwrap().chars().count(), 255);
+        assert_eq!(cut.transaction_id.unwrap().chars().count(), 255);
+        assert_eq!(cut.counterparty_iban.unwrap().chars().count(), 34);
+        assert_eq!(cut.counterparty_name.unwrap().chars().count(), 255);
+        assert_eq!(cut.details.len(), 65_534);
+
+        // Exactement la largeur : rien ne change.
+        let exact = BankTransactionDraft {
+            reference: Some("r".repeat(255)),
+            counterparty_iban: Some("I".repeat(34)),
+            details: "d".repeat(65_535),
+            ..draft(date(2026, 10, 10), dec!(10.00), None, None, None)
+        };
+        let kept = LegacyLine::from_draft(&exact, 17).texts;
+        assert_eq!(kept, LineTexts::from_draft(&exact));
+    }
+
+    /// Revue P1 (E-3, B2) — la clé de l'alias se calcule sur les textes coupés : un
+    /// identifiant de plus de 255 caractères, tronqué à l'écriture par un serveur sans
+    /// mode strict, reste reconnu, qu'il soit la référence ou un de ses replis.
+    #[test]
+    fn alias_key_comes_from_the_cut_texts_915() {
+        let cases: [fn(String) -> BankTransactionDraft; 3] = [
+            |s| BankTransactionDraft {
+                reference: Some(s),
+                ..draft(date(2026, 10, 10), dec!(10.00), None, None, None)
+            },
+            |s| BankTransactionDraft {
+                end_to_end_id: Some(s),
+                ..draft(date(2026, 10, 10), dec!(10.00), None, None, None)
+            },
+            |s| BankTransactionDraft {
+                transaction_id: Some(s),
+                ..draft(date(2026, 10, 10), dec!(10.00), None, None, None)
+            },
+        ];
+        for build in cases {
+            let read = build("x".repeat(300));
+            let stored = build("x".repeat(255));
+            let existing = vec![(
+                42,
+                dedup_key_from_draft(&stored, 17),
+                LineTexts::from_draft(&stored),
+            )];
+            let alias = LegacyLine::from_draft(&read, 17);
+            let r = detect_duplicate_lines_with_aliases(
+                std::slice::from_ref(&read),
+                17,
+                &existing,
+                &[Some(alias)],
+            );
+            assert_eq!(r.duplicates.len(), 1, "{r:?}");
+            assert!(r.uncertain.is_empty(), "{r:?}");
+        }
+    }
+
+    /// `detect_duplicate_lines` rend le plus petit `id` quel que soit l'ordre d'entrée.
+    #[test]
+    fn plain_detection_gives_the_smallest_id_915() {
+        let new = vec![draft(
+            date(2026, 10, 10),
+            dec!(10.00),
+            Some("A"),
+            None,
+            None,
+        )];
+        let r = detect_duplicate_lines(&new, 17, &[(60, key("a")), (40, key("a"))]);
+        assert_eq!(r[0].existing_transaction_id, 40);
     }
 
     #[test]

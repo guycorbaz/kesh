@@ -73,6 +73,7 @@
 	import { isStaleDocumentRefusal } from '$lib/features/imported-supplier-invoices/stale-refusal';
 	import { formatSwissDate } from '$lib/features/reports/reports.api';
 	import { readableAmount } from '$lib/features/supplier-invoices/supplier-invoice-form';
+	import { supplierInvoiceShortLabel } from '$lib/features/supplier-invoices/supplier-invoice-label';
 
 	const id = Number(page.params.id);
 
@@ -593,12 +594,32 @@
 {:else if invoice}
 	<div class="mb-6 flex items-center justify-between">
 		<h1 class="text-2xl font-semibold">
-			{invoice.supplierInvoiceNumber ?? `#${invoice.id}`}
+			{supplierInvoiceShortLabel(invoice)}
 		</h1>
 		<span data-testid="supplier-invoice-status">{supplierInvoiceStatusLabel(invoice.status)}</span>
 	</div>
 
 	<dl class="mb-6 grid grid-cols-2 gap-2 text-sm">
+		<dt class="text-text-muted">{i18nMsg('supplier-invoices-col-internal-number', 'N° interne')}</dt>
+		<dd data-testid="supplier-invoice-detail-internal-number">
+			{#if invoice.internalNumber}
+				<span class="font-mono">{invoice.internalNumber}</span>
+				{#if invoice.status === 'draft'}
+					<span class="block text-xs text-text-muted" data-testid="supplier-invoice-detail-number-kept">
+						{i18nMsg(
+							'supplier-invoices-internal-number-kept',
+							'Conservé si la facture est revalidée ; perdu si elle est supprimée.',
+						)}
+					</span>
+				{/if}
+			{:else}
+				{i18nMsg('supplier-invoices-internal-number-pending', 'Attribué à la validation')}
+			{/if}
+		</dd>
+		<dt class="text-text-muted">{i18nMsg('supplier-invoices-col-number', 'N° fournisseur')}</dt>
+		<dd class="font-mono" data-testid="supplier-invoice-detail-supplier-number">
+			{invoice.supplierInvoiceNumber ?? '—'}
+		</dd>
 		<dt class="text-text-muted">{i18nMsg('supplier-invoices-col-date', 'Date')}</dt>
 		<!-- Story v0171 (#871) : dates en forme suisse. -->
 		<dd data-testid="supplier-invoice-detail-date">{formatSwissDate(invoice.invoiceDate)}</dd>
@@ -1081,6 +1102,15 @@
 				'Ce brouillon sera supprimé définitivement. S’il a un document, celui-ci reviendra dans les documents à traiter.',
 			)}
 		</p>
+		{#if invoice?.internalNumber}
+			<p class="text-sm" data-testid="supplier-invoice-delete-number-warning">
+				{i18nMsg(
+					'supplier-invoices-delete-confirm-number',
+					'Le numéro { $number } sera perdu. Kesh ne le reprendra pas, hors les cas dits au manuel (sauvegarde restaurée, réinitialisation).',
+					{ number: invoice.internalNumber },
+				)}
+			</p>
+		{/if}
 		<Dialog.Footer>
 			<Button variant="outline" onclick={() => (deleteOpen = false)}>
 				{i18nMsg('common-cancel', 'Annuler')}

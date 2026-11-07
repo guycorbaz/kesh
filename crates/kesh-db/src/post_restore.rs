@@ -208,22 +208,27 @@ pub struct ReplayedBackfill {
 /// système, et sont énumérées avec leur justification dans
 /// [`EXEMPT_MIGRATIONS`].
 pub const POST_RESTORE_BACKFILLS: &[PostRestoreBackfill] = &[
-    // ⚠️ **VIDE depuis la Story 32-5a (#723)** — la création de `mcp_keys` et de
-    // `mcp_server_settings` (20261025000001) a refermé la fenêtre d'importabilité
-    // sur la seule entrée qu'il portait, le rejeu du lettrage `20261010000001`
-    // (Story 15-1a2-ii, #518), désormais dans [`RETIRED_BACKFILLS`] : une
-    // sauvegarde assez ancienne pour en avoir besoin ne porte pas `mcp_keys`, donc
-    // est refusée au contrôle de couverture bien avant tout rejeu. Il avait déjà été
-    // vide de la Story 25-2-c (#381) à la Story 15-1a2-ii, pour la même raison
-    // (création de `journal_entry_number_sequences`, 20260917000001). Il n'est pas
-    // mort, il attend la prochaine migration de backfill postérieure à la dernière
-    // créatrice de table.
-    //
-    // ⚠️ **Ce que le registre vide coûte aux tests unitaires qui ne parcourent QUE
-    // lui** : ils retournent à vide (état connu de la 25-2-c). Les tests de la
-    // machinerie de rejeu gardent leur matière par `post_restore_class_a.rs`
-    // (`.chain(RETIRED_BACKFILLS.iter())`) et par `replay_retired`
-    // (`admin_full_import_e2e.rs`).
+    // Il a été VIDE de la Story 32-5a (#723, la création de `mcp_keys` et de
+    // `mcp_server_settings`, 20261025000001, avait refermé la fenêtre sur le rejeu du
+    // lettrage `20261010000001`, passé à [`RETIRED_BACKFILLS`]) à la Story 33-1a, et
+    // déjà de la Story 25-2-c (#381) à la Story 15-1a2-ii, pour la même raison.
+    // Les tests de la machinerie de rejeu de classe A gardent leur matière par
+    // `post_restore_class_a.rs` (`.chain(RETIRED_BACKFILLS.iter())`) et par
+    // `replay_retired` (`admin_full_import_e2e.rs`) : cette entrée est de classe B.
+    PostRestoreBackfill {
+        version: 20261106000001,
+        label: "20261106000001_supplier_invoice_internal_number.sql",
+        // CLASSE B (C-e331-13). Une sauvegarde 0.17.4 n'a ni numéros ni compteurs :
+        // elle les reçoit ici, comme à la montée. Une sauvegarde 0.17.5 garde les
+        // siens et n'a rien à y gagner : les `UPDATE` sont gardés (`internal_number IS
+        // NULL`, `GREATEST`) et n'écraseraient rien, mais une facture sans numéro, s'il
+        // s'en trouvait, y recevrait un rang sans objet.
+        //
+        // Sentinelle valide : la colonne est ajoutée par le MÊME fichier que les
+        // deux `UPDATE`.
+        trigger: BackfillTrigger::Sentinels(&[("supplier_invoices", "internal_number")]),
+        sql: include_str!("post_restore/20261106000001_supplier_invoice_internal_number.sql"),
+    },
 ];
 
 // ⚠️ **Le registre a été VIDE entre les Stories 24-2 et 24-3, et ce n'était pas

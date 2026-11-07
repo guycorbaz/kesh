@@ -84,7 +84,9 @@ pub fn parse(xml: &[u8]) -> Result<Vec<ImportedStatement>, CamtError> {
 /// références d'entité et les sections CDATA sont ignorées. `kesh-api` s'en sert
 /// pour recalculer la clé de doublon qu'une ligne déjà importée porte en base
 /// (#819) ; elle ne doit servir à rien d'autre. Même détection de version et
-/// mêmes erreurs que [`parse`], sauf l'entité inconnue, ignorée.
+/// mêmes erreurs que [`parse`], sauf l'entité inconnue, ignorée. **Aucune borne
+/// d'année** : une borne sur les dates reçues se pose à la lecture corrigée, sans
+/// quoi un relevé que lisait la 0.17.3 serait refusé à tort (33-2, C-e332-22).
 #[doc(hidden)]
 pub fn parse_legacy_0173(xml: &[u8]) -> Result<Vec<ImportedStatement>, CamtError> {
     let mut reader = reader_for(xml, TextMode::Legacy0173);
@@ -93,6 +95,43 @@ pub fn parse_legacy_0173(xml: &[u8]) -> Result<Vec<ImportedStatement>, CamtError
         Version::V08 => "001.08",
     };
     parse_with_version(&mut reader, version, TextMode::Legacy0173)
+}
+
+/// La lecture corrigée : le texte entier, et les années que la base sait tenir
+/// (Story 33-4, C-e334-26).
+///
+/// ⛔ **La borne vit ici, et non dans [`parse_date`] ni dans
+/// [`parse_with_version`]**, communs à [`parse_legacy_0173`] : la lecture héritée
+/// recalcule la clé de doublon d'une ligne déjà importée, elle doit rester celle
+/// de la 0.17.3. Elle ne rencontre d'ailleurs jamais une date hors plage dans un
+/// import : la lecture corrigée passe avant et refuse le relevé.
+pub(crate) fn parse_corrige<R: std::io::BufRead>(
+    reader: &mut NsReader<R>,
+    version: &str,
+) -> Result<Vec<ImportedStatement>, CamtError> {
+    let stmts = parse_with_version(reader, version, TextMode::Joined)?;
+    refuser_annees_hors_plage(&stmts)?;
+    Ok(stmts)
+}
+
+/// Toute date du relevé rendu : la période, la comptabilisation et la valeur.
+fn refuser_annees_hors_plage(stmts: &[ImportedStatement]) -> Result<(), CamtError> {
+    let dates = stmts.iter().flat_map(|s| {
+        [Some(s.period_from), Some(s.period_to)]
+            .into_iter()
+            .chain(
+                s.transactions
+                    .iter()
+                    .flat_map(|t| [Some(t.booking_date), t.value_date]),
+            )
+            .flatten()
+    });
+    for date in dates {
+        if !crate::annee_recevable(date) {
+            return Err(CamtError::InvalidDate(date.to_string()));
+        }
+    }
+    Ok(())
 }
 
 /// Façon de lire le texte d'un élément (#819, C-v0174c-5).

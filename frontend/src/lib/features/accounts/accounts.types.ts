@@ -143,8 +143,24 @@ export function readRetypeImpact(details: Record<string, unknown> | undefined): 
 	};
 }
 
+/**
+ * Les codes de réglages d'un refus `ACCOUNT_DESIGNATED_IN_SETTINGS` (Story 33-8,
+ * #486), ou `null` si `details` est illisible : l'écran rend alors le message du
+ * serveur plutôt qu'une liste à trous.
+ */
+export function readDesignatedSettings(
+	details: Record<string, unknown> | undefined,
+): string[] | null {
+	const settings = details?.settings;
+	if (!Array.isArray(settings) || settings.length === 0) return null;
+	if (!settings.every((s) => typeof s === 'string')) return null;
+	return settings as string[];
+}
+
 export interface ArchiveAccountRequest {
 	version: number;
+	/** Archiver un compte désigné dans les paramètres de facturation (Story 33-8, #486). */
+	confirmDesignated?: boolean;
 }
 
 /** Story 14-3a (#269) — réactivation d'un compte archivé. */

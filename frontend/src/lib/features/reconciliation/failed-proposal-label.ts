@@ -69,10 +69,11 @@
  *   `race_during_update`, et depuis la Story 30-1b `supplier_invoice_not_open`,
  *   `supplier_invoice_in_payment_batch`) : deux ont leur libellé, les six autres partagent
  *   « n'est pas éligible » ;
- * - `VALIDATION_ERROR` porte six raisons sur huit sites (`splits_count_out_of_range`,
+ * - `VALIDATION_ERROR` porte sept raisons sur neuf sites (`splits_count_out_of_range`,
  *   `split_description_too_long`, `split_amount_not_positive`, `split_amount_scale_too_high`,
  *   `counterparty_equals_bank_ledger` — sur deux sites, la proposition ventilée et, depuis la
- *   Story 15-6d (#524), la proposition par règle —, `zero_amount_transaction`), toutes rendues
+ *   Story 15-6d (#524), la proposition par règle —, `zero_amount_transaction`, et, depuis la
+ *   Story 33-4, `value_date_out_of_range`, que l'écran n'émet pas), toutes rendues
  *   « Erreur de validation » par la clé globale `error-validation`.
  * Le code brut reste en `title` de chaque refus, pour le support.
  */

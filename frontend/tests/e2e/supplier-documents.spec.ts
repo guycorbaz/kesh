@@ -473,7 +473,8 @@ test.describe('Le document depuis l’écriture (Story 30-2c)', () => {
 
 		await page.goto(`/journal-entries/${inv.purchaseJournalEntryId}`);
 		const link = page.getByTestId('entry-supplier-invoice-link');
-		await expect(link).toHaveText(`Facture fournisseur ${number}`);
+		// Story 33-1b (#926) : le lien dit le numéro interne, attribué à la validation.
+		await expect(link).toHaveText(`Facture fournisseur ${inv.internalNumber}`);
 		await expect(link).toHaveAttribute('href', `/supplier-invoices/${inv.id}`);
 		await page.getByTestId('entry-source-document-view').click();
 		await expect(
@@ -496,7 +497,7 @@ async function createInvoiceAndAttachViaApi(
 	number: string,
 	expenseAccountId: number,
 	importedId: number,
-): Promise<{ id: number; purchaseJournalEntryId: number }> {
+): Promise<{ id: number; purchaseJournalEntryId: number; internalNumber: string }> {
 	const ctx = await authedApiContext(page);
 	try {
 		const created = await ctx.post('/api/v1/supplier-invoices', {
@@ -528,7 +529,11 @@ async function createInvoiceAndAttachViaApi(
 			data: { importedSupplierInvoiceId: importedId },
 		});
 		expect(attached.status(), `rattachement : ${await attached.text()}`).toBe(200);
-		return { id: inv.id, purchaseJournalEntryId: inv.purchaseJournalEntryId };
+		return {
+			id: inv.id,
+			purchaseJournalEntryId: inv.purchaseJournalEntryId,
+			internalNumber: inv.internalNumber,
+		};
 	} finally {
 		await disposeContextSafe(ctx);
 	}

@@ -49,6 +49,8 @@ pub struct InvoiceSettingsResponse {
     pub default_sales_journal: String,
     pub journal_entry_description_template: String,
     pub credit_note_number_format: String,
+    /// Story 33-1a (#926) — format du numéro interne des factures fournisseur.
+    pub supplier_internal_number_format: String,
     pub default_payable_account_id: Option<i64>,
     /// Story 25-4-c3-a1 (#476) — compte de différences d'arrondi.
     pub default_rounding_account_id: Option<i64>,
@@ -76,6 +78,7 @@ impl From<CompanyInvoiceSettings> for InvoiceSettingsResponse {
             default_sales_journal: s.default_sales_journal.as_str().to_string(),
             journal_entry_description_template: s.journal_entry_description_template,
             credit_note_number_format: s.credit_note_number_format,
+            supplier_internal_number_format: s.supplier_internal_number_format,
             default_payable_account_id: s.default_payable_account_id,
             default_rounding_account_id: s.default_rounding_account_id,
             round_to_5_centimes: s.round_to_5_centimes,
@@ -103,6 +106,11 @@ pub struct UpdateInvoiceSettingsRequest {
     /// gère pas encore ; sans ça, tout enregistrement des réglages échouait en 422.
     #[serde(default)]
     pub credit_note_number_format: Option<String>,
+    /// Story 33-1a (#926) — format du numéro interne. **Absent du corps : préservé**
+    /// (patron #216) : le formulaire ne l'envoie qu'à partir de la Story 33-1b, et
+    /// une clé d'API ou un onglet ouvert avant la mise à jour ne l'efface pas.
+    #[serde(default)]
+    pub supplier_internal_number_format: Option<String>,
     /// Story 12.2 — compte créanciers. **Absent du corps : préservé** (Story
     /// 15-5b, #521, choix C25 — patron du compte d'arrondi) : l'écran
     /// *Administration → Facturation* ne l'envoie pas, et chaque enregistrement
@@ -147,8 +155,17 @@ fn parse_journal(raw: &str) -> Result<Journal, AppError> {
 
 /// Valide un des six comptes **historiques** des réglages (créance, produit,
 /// TVA due, TVA récupérable, décompte TVA, créanciers) : existence, société,
-/// `active` et type, toujours ; postabilité **seulement si la valeur change**
-/// par rapport à `current` (Story 15-5b, AC10, AC11 — exemption « inchangé »).
+/// et type, toujours ; `active` et postabilité **seulement si la valeur change**
+/// par rapport à `current` (Story 15-5b, AC10, AC11 ; Story 33-8, #486 — exemption
+/// « inchangé »).
+///
+/// **Différence avec les quatre comptes d'écart** (arrondi, escompte, frais bancaires,
+/// pertes), [`resolve_designated_account`] : ceux-ci ne sont revalidés, type compris,
+/// que s'ils changent ; les six champs ci-dessus, à chaque enregistrement, pour le
+/// type, l'existence et la société, **à une exception près** : le compte créanciers
+/// absent du corps est conservé sans contrôle (AC19 de la 15-5b, plus bas ; l'écran
+/// l'envoie toujours). Épinglé par
+/// `the_type_stays_checked_for_a_historical_field_only`.
 async fn validate_account(
     state: &AppState,
     company_id: i64,
@@ -169,21 +186,23 @@ async fn validate_account(
 }
 
 /// Forme générale de [`validate_account`] (Story 25-4-c3-a1) : plusieurs types
-/// acceptés, et la postabilité exigée ou non.
+/// acceptés, et `changed` qui dit si la valeur change.
 ///
-/// ⚠️ `require_postable` est exigé pour un compte que des **écritures
+/// ⚠️ L'imputabilité est exigée pour un compte que des **écritures
 /// automatiques** utiliseront : elles passent `enforce_postable = false`
 /// (`journal_entries::create_in_tx`), si bien que la garde doit tenir ici, au
 /// moment où le compte est désigné. Tous les champs l'exigent désormais quand
 /// la valeur **change** — les six champs historiques depuis la Story 15-5b
 /// (#429) ; une valeur inchangée en est exemptée, pour qu'un compte devenu non
-/// imputable après coup ne bloque pas tout enregistrement.
+/// imputable après coup ne bloque pas tout enregistrement. Le compte archivé suit
+/// la même règle (Story 33-8, #486) : un compte archivé sur confirmation reste
+/// désigné, et ne doit pas verrouiller les réglages. Le type, lui, reste vérifié.
 async fn validate_account_of(
     state: &AppState,
     company_id: i64,
     account_id: Option<i64>,
     accepted: &[AccountType],
-    require_postable: bool,
+    changed: bool,
     field_label: &str,
 ) -> Result<(), AppError> {
     let Some(id) = account_id else {
@@ -197,7 +216,7 @@ async fn validate_account_of(
             "{field_label} : compte introuvable"
         )));
     }
-    if !account.active {
+    if changed && !account.active {
         return Err(AppError::Validation(format!(
             "{field_label} : compte archivé"
         )));
@@ -209,7 +228,7 @@ async fn validate_account_of(
             attendus.join(" ou ")
         )));
     }
-    if require_postable && !account.postable {
+    if changed && !account.postable {
         return Err(AppError::Validation(format!(
             "{field_label} : compte non imputable (compte de regroupement, de résultat ou de clôture)"
         )));
@@ -223,11 +242,11 @@ async fn validate_account_of(
 /// société).
 ///
 /// ⚠️ Validé **seulement s'il change**. Le compte désigné peut devenir archivé
-/// ou non imputable par une autre route (l'archivage n'est pas gardé, #486) ;
+/// ou non imputable par une autre route (l'archivage avertit, sans refuser : #486) ;
 /// le revalider à chaque enregistrement bloquerait tout changement SANS
 /// rapport — un format de numérotation — sur un champ que l'utilisateur n'a
-/// pas touché. L'écriture qui lit le réglage refusera d'écrire sur un compte
-/// devenu invalide : c'est là que la garde doit tenir, pas ici.
+/// pas touché. L'écriture qui lit le réglage refuse d'écrire sur un compte
+/// devenu invalide : c'est là que la garde tient.
 async fn resolve_designated_account(
     state: &AppState,
     company_id: i64,
@@ -300,11 +319,18 @@ pub async fn update_invoice_settings(
         .credit_note_number_format
         .clone()
         .unwrap_or(current.credit_note_number_format);
+    let supplier_internal_number_format = req
+        .supplier_internal_number_format
+        .clone()
+        .unwrap_or(current.supplier_internal_number_format);
 
     // 1. Valider le format (facture + avoir — même grammaire {YEAR}/{FY}/{SEQ:NN}).
     invoice_format::validate_template(&req.invoice_number_format)
         .map_err(|e| AppError::Validation(e.to_string()))?;
     invoice_format::validate_template(&credit_note_number_format)
+        .map_err(|e| AppError::Validation(e.to_string()))?;
+    // Le numéro interne, lui, a une forme fixe (C-e331-16).
+    invoice_format::validate_numbering_template(&supplier_internal_number_format)
         .map_err(|e| AppError::Validation(e.to_string()))?;
 
     // 2. Valider le template de description.
@@ -448,6 +474,7 @@ pub async fn update_invoice_settings(
         default_sales_journal: journal,
         journal_entry_description_template: req.journal_entry_description_template,
         credit_note_number_format,
+        supplier_internal_number_format,
         default_payable_account_id,
         default_rounding_account_id,
         // Changer le réglage ne touche aucune pièce émise : leur arrondi est figé.

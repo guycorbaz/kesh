@@ -150,7 +150,9 @@ struct ArgumentsListe {
     search: Option<String>,
     status: Option<StatutArg>,
     contact_id: Option<i64>,
+    #[serde(default, deserialize_with = "crate::dates_recues::date_opt")]
     date_from: Option<NaiveDate>,
+    #[serde(default, deserialize_with = "crate::dates_recues::date_opt")]
     date_to: Option<NaiveDate>,
     paused: Option<SuspensionArg>,
     sort_by: Option<TriFactures>,
@@ -164,8 +166,11 @@ struct ArgumentsListe {
 struct ArgumentsEcheancier {
     search: Option<String>,
     contact_id: Option<i64>,
+    #[serde(default, deserialize_with = "crate::dates_recues::date_opt")]
     date_from: Option<NaiveDate>,
+    #[serde(default, deserialize_with = "crate::dates_recues::date_opt")]
     date_to: Option<NaiveDate>,
+    #[serde(default, deserialize_with = "crate::dates_recues::date_opt")]
     due_before: Option<NaiveDate>,
     payment_status: Option<PaiementArg>,
     sort_by: Option<TriFactures>,

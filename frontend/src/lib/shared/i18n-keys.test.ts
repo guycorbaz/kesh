@@ -868,7 +868,34 @@ const ATTENDU = {
 	// littéraux ; `sitesNonResolus` et `relais` inchangés.
 	// Fusion de la release 0.17.4 (2026-11-06) : les trois stories réunies, **recompté à la
 	// source** par la garde elle-même après la fusion (non additionné) : **2832**.
-	sitesTotal: 2832,
+	// Story 33-1b (#926) : la liste, la fiche, le formulaire, le réglage et le format
+	// fournisseur, **recompté** par la garde : **2847** ; `sitesNonResolus` inchangé.
+	// Story 33-2 (#915, 2026-11-06) : **2832 → 2839** (+7) — le panneau des lignes incertaines
+	// de `BankImportUpload.svelte` : le résumé au singulier et au pluriel, et ses cinq colonnes
+	// (trois clés de colonnes réemployées). Que des littéraux ; `sitesNonResolus` et `relais`
+	// inchangés.
+	// Story 33-3b (#918, 2026-11-06) : **2832 → 2863** (+31), les fichiers neufs de
+	// `lib/features/homepage/` : `ExpensePieCard.svelte` 15, `MonthlyBarsCard.svelte` 13,
+	// `HomepageCharts.svelte` 3 (2861 jusqu'à la revue P1, B-5, qui ajoute les deux
+	// singuliers). Que des littéraux ; `sitesNonResolus` et `relais` inchangés.
+	// Story 33-5 (#909) : **2832 → 2846** (+14), tous dans `settings/+page.svelte` — les cinq
+	// champs, Modifier, Enregistrer, Annuler, l'avis, l'aide, et les quatre messages de
+	// `saveAddress`. Que des littéraux ; `sitesNonResolus` et `relais` inchangés.
+	// Story 33-6, revue P1 : **2832 → 2840** (+8) : la fiche facture +3, l'échéancier +3,
+	// `mcp-sends-format.ts` +1, `McpSendDetail.svelte` +1. Que des littéraux ;
+	// `sitesNonResolus` et `relais` inchangés.
+	// Story 33-6, revue P2 : **2840 → 2838** (−2) : le repli `common-error` de la fiche et de
+	// l'échéancier, inatteignable depuis `isSettlementOutcomeUnknown`.
+	// Story 33-8 (#486) : **2832 → 2849** (+17) : `accounts/+page.svelte` +16 (les dix libellés
+	// de réglages, l'intro, l'effet, le lien, « Un administrateur… », « Archiver quand même » et
+	// son « Archivage… »), `settings/invoicing/+page.svelte` +1 (« (archivé) »). Que des
+	// littéraux ; `sitesNonResolus` et `relais` inchangés. Revue P1 : **2849 → 2857** (+8), les
+	// huit effets par réglage de `designatedSettingEffect`. Revue P2 : **2857 → 2850** (−7) :
+	// `designatedSettingEffect` retirée (−8), la phrase du décompte TVA posée à part (+1).
+	// Revue P4 : **2850 → 2849** (−1), la phrase du décompte TVA retirée.
+	// Fusion de la release 0.17.5 (2026-11-07) : les treize branches de l'Epic 33 réunies,
+	// **recompté à la source** par la garde elle-même après la fusion (non additionné) : **2922**.
+	sitesTotal: 2922,
 	sitesNonResolus: 31,
 	relais: 6,
 	// Story 26-1 (#620, AC3-bis) : **10 → 11** — `lib/features/bank-import/

@@ -28,9 +28,9 @@ vi.mock('$lib/features/invoices/invoices.api', () => ({
 	getInvoiceSettings: () => getInvoiceSettingsMock(),
 	updateInvoiceSettings: (req: unknown) => updateInvoiceSettingsMock(req),
 }));
-const fetchAccountsMock = vi.fn<() => Promise<AccountResponse[]>>();
+const fetchAccountsMock = vi.fn<(includeArchived?: boolean) => Promise<AccountResponse[]>>();
 vi.mock('$lib/features/accounts/accounts.api', () => ({
-	fetchAccounts: () => fetchAccountsMock(),
+	fetchAccounts: (includeArchived?: boolean) => fetchAccountsMock(includeArchived),
 }));
 
 // Story 15-6c (#474, AC8) : la page lit les comptes bancaires pour écarter des
@@ -74,6 +74,7 @@ function settings(overrides: Partial<InvoiceSettingsResponse> = {}): InvoiceSett
 	return {
 		companyId: 1,
 		invoiceNumberFormat: 'F-{YEAR}-{SEQ:04}',
+		supplierInternalNumberFormat: 'FF-{YEAR}-{SEQ:03}',
 		defaultReceivableAccountId: null,
 		defaultRevenueAccountId: null,
 		defaultVatPayableAccountId: null,
@@ -212,6 +213,33 @@ describe('Administration → Facturation — solde du reste', () => {
 		}
 	});
 
+	// Story 33-1b (#926, AC7) — le format des factures fournisseur.
+	it('le format fournisseur : chargé, envoyé au `PUT` (M10), refusé sur place sans envoi', async () => {
+		getInvoiceSettingsMock.mockResolvedValue(settings());
+		updateInvoiceSettingsMock.mockResolvedValue(settings({ version: 4 }));
+		const { findByTestId, container, queryByTestId } = render(Page);
+		const champ = (await findByTestId('settings-supplier-internal-number-format')) as HTMLInputElement;
+		await waitFor(() => expect(champ.value).toBe('FF-{YEAR}-{SEQ:03}'));
+		expect((await findByTestId('settings-supplier-format-preview')).textContent).toContain(
+			'FF-2026-001',
+		);
+
+		await fireEvent.input(champ, { target: { value: 'FF-{YEAR}' } });
+		expect(await findByTestId('settings-supplier-format-error')).toBeTruthy();
+		// Revue P1 de la 33-1b (B-F3) : le bouton suit ce champ, comme les deux autres formats.
+		expect(container.querySelector<HTMLButtonElement>('button[type="submit"]')?.disabled).toBe(true);
+		await fireEvent.submit(container.querySelector('form')!);
+		expect(updateInvoiceSettingsMock).not.toHaveBeenCalled();
+
+		await fireEvent.input(champ, { target: { value: 'KF-{YEAR}-{SEQ:04}' } });
+		expect(queryByTestId('settings-supplier-format-error')).toBeNull();
+		await fireEvent.submit(container.querySelector('form')!);
+		await waitFor(() => expect(updateInvoiceSettingsMock).toHaveBeenCalledTimes(1));
+		expect(updateInvoiceSettingsMock.mock.calls[0][0].supplierInternalNumberFormat).toBe(
+			'KF-{YEAR}-{SEQ:04}',
+		);
+	});
+
 	it('envoie les trois comptes à l’enregistrement (mutation : un champ non envoyé)', async () => {
 		getInvoiceSettingsMock.mockResolvedValue(settings({ defaultBadDebtAccountId: 3 }));
 		updateInvoiceSettingsMock.mockResolvedValue(settings({ version: 4 }));
@@ -245,6 +273,19 @@ describe('Administration → Facturation — solde du reste', () => {
 // sans ce champ, la saisie de toute facture fournisseur bloquée sur des
 // créanciers devenus non imputables n'avait aucun recours à l'écran.
 describe('Administration → Facturation — compte créanciers', () => {
+	// Story 33-8, revue P3 (L3) : le serveur conserve sans contrôle un compte créanciers
+	// absent du corps (AC19 de la 15-5b) ; l'écran, lui, l'envoie toujours. Rangé ici à
+	// la revue P4 (L2).
+	it('le compte créanciers part à chaque enregistrement, même inchangé (mutation : champ retiré)', async () => {
+		getInvoiceSettingsMock.mockResolvedValue(settings({ defaultPayableAccountId: 3 }));
+		updateInvoiceSettingsMock.mockResolvedValue(settings({ defaultPayableAccountId: 3, version: 4 }));
+		const { findByTestId, container } = render(Page);
+		await findByTestId('settings-round-to-5-centimes');
+		await fireEvent.submit(container.querySelector('form')!);
+		await waitFor(() => expect(updateInvoiceSettingsMock).toHaveBeenCalledTimes(1));
+		expect(updateInvoiceSettingsMock.mock.calls[0][0]).toHaveProperty('defaultPayableAccountId', 3);
+	});
+
 	// Le compte créanciers en place, DEVENU non imputable (sous-comptes créés) :
 	// avec un compte imputable, l'affichage marcherait sans `withCurrentAccount`.
 	const NON_POSTABLE_PAYABLE = account(7, '2000', 'Liability', { postable: false });
@@ -264,6 +305,23 @@ describe('Administration → Facturation — compte créanciers', () => {
 		expect(values).not.toContain('1'); // actif
 		expect(values).not.toContain('5'); // charge non imputable
 		expect(values).not.toContain('6'); // archivé
+	});
+
+	// Story 33-8 (#486) — le serveur ne rend un compte archivé que sur demande : le mock
+	// le simule, sans quoi la liste complète masquerait l'oubli du paramètre.
+	it('un compte désigné puis archivé reste affiché, marqué, et non proposé aux autres champs', async () => {
+		const ARCHIVED = account(9, '2099', 'Liability', { active: false });
+		fetchAccountsMock.mockImplementation(async (includeArchived) =>
+			includeArchived ? [...ACCOUNTS, ARCHIVED] : ACCOUNTS,
+		);
+		getInvoiceSettingsMock.mockResolvedValue(settings({ defaultPayableAccountId: 9 }));
+		const { findByTestId, container } = render(Page);
+		const select = (await findByTestId('settings-payable-account')) as HTMLSelectElement;
+		await waitFor(() => expect(select.value).toBe('9'));
+		expect(select.selectedOptions[0].textContent).toContain('(archivé)');
+		const vatPayable = container.querySelector('select[id$="-vat-payable"]') as HTMLSelectElement;
+		expect(optionValues(vatPayable)).toContain('2');
+		expect(optionValues(vatPayable)).not.toContain('9');
 	});
 
 	it('envoie le compte choisi à l’enregistrement (mutation : champ non envoyé)', async () => {

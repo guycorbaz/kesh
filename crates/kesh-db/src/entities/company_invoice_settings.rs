@@ -33,6 +33,10 @@ pub struct CompanyInvoiceSettings {
     pub journal_entry_description_template: String,
     /// Format du numéro d'avoir (note de crédit). Story 12.1. Défaut `AV-{YEAR}-{SEQ:04}`.
     pub credit_note_number_format: String,
+    /// Format du numéro interne des factures fournisseur (Story 33-1a, #926).
+    /// Défaut `FF-{YEAR}-{SEQ:03}`, forme contrôlée par
+    /// `invoice_format::validate_numbering_template`.
+    pub supplier_internal_number_format: String,
     /// Compte créanciers (2000) par défaut, contrepartie de l'écriture d'achat
     /// des factures fournisseurs, type Liability. Story 12.2.
     pub default_payable_account_id: Option<i64>,
@@ -80,6 +84,8 @@ pub struct CompanyInvoiceSettingsUpdate {
     pub default_sales_journal: Journal,
     pub journal_entry_description_template: String,
     pub credit_note_number_format: String,
+    /// Story 33-1a (#926) — la valeur résolue (la route préserve l'absent).
+    pub supplier_internal_number_format: String,
     pub default_payable_account_id: Option<i64>,
     /// Story 25-4-c3-a1 — absent du corps, il vaut `None` (comme les comptes
     /// TVA) : le remplacement est intégral.

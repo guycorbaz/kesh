@@ -485,17 +485,16 @@ const TABLE_DES_TRACES: &[Ligne] = &[
         action: "report.generated",
         details: r#"{"report_type": "general-ledger", "period_start": "$du", "period_end": "$au", "account_ids": ["$compte"]}"#,
     },
-    // #729 : l'export du grand livre est tracé en consultation, sans format —
-    // comportement d'aujourd'hui, conservé ; son correctif modifiera cette ligne
-    // en connaissance de cause.
+    // Story 33-7 (#729) : l'export du grand livre se trace comme un export, avec
+    // son format, et non plus comme une consultation.
     Ligne {
         num: 12,
-        nom: "grand_livre_export_pdf_export_grand_livre_trace_en_consultation_729",
+        nom: "grand_livre_export_pdf",
         svc: Svc::GrandLivre,
         usage: Usg::Pdf,
         dem: Dem::GrandLivre { filtre: false },
-        action: "report.generated",
-        details: r#"{"report_type": "general-ledger", "period_start": "$du", "period_end": "$au", "account_ids": null}"#,
+        action: "report.exported",
+        details: r#"{"report_type": "general-ledger", "format": "pdf", "period_start": "$du", "period_end": "$au", "account_ids": null}"#,
     },
     Ligne {
         num: 13,
@@ -854,12 +853,13 @@ fn mcp(livres: &Livres, portees: &[Portee]) -> ContexteAcces {
     ContexteAcces::mcp(
         livres.company_id(),
         livres.user_id(),
+        1,
         portees.iter().copied().collect::<BTreeSet<_>>(),
     )
 }
 
 fn mcp_societe(company_id: i64, user_id: i64, portees: &[Portee]) -> ContexteAcces {
-    ContexteAcces::mcp(company_id, user_id, portees.iter().copied().collect())
+    ContexteAcces::mcp(company_id, user_id, 1, portees.iter().copied().collect())
 }
 
 /// Les cinq portées : l'énumération unique de la base (Story 32-5b, AC-b2).
@@ -1382,6 +1382,44 @@ async fn ac8_c_lec_refus_avant_la_lecture(pool: MySqlPool) {
     assert!(echecs.is_empty(), "{}", echecs.join("\n"));
 }
 
+/// Story 33-3a, AC18 — la synthèse de l'accueil : le canal MCP est refusé quelle
+/// que soit la portée, avant toute lecture ; l'API la lit sur une `Lecture` en
+/// lecture seule, pour tous les rôles.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn synthese_accueil_motif(pool: MySqlPool) {
+    let livres = poser_livres(&pool).await;
+    let lecture = lecture_seule(&pool).await;
+    assert_eq!(rapports::EXIGENCE_SYNTHESE_ACCUEIL.portee_mcp, None);
+
+    let toutes: Vec<Portee> = TOUTES.into_iter().collect();
+    for portees in [&[][..], &toutes[..]] {
+        let refuse = rapports::synthese_accueil(&mcp(&livres, portees), &lecture).await;
+        assert!(
+            matches!(refuse, Err(AppError::Forbidden)),
+            "canal MCP, portées {portees:?} : {:?}",
+            refuse.err()
+        );
+    }
+    // Refus avant la lecture : une société inexistante rendrait autrement une
+    // synthèse vide, sans erreur.
+    let refuse_sans_livres = rapports::synthese_accueil(
+        &mcp_societe(INEXISTANT, livres.user_id(), &toutes),
+        &lecture,
+    )
+    .await;
+    assert!(matches!(refuse_sans_livres, Err(AppError::Forbidden)));
+
+    // Contrôle positif, sur la connexion en lecture seule.
+    let lue = rapports::synthese_accueil(&api(&livres, Role::Consultation), &lecture)
+        .await
+        .expect("lecture seule : aucune écriture ni verrou");
+    assert_eq!(
+        lue.state,
+        kesh_report::homepage_summary::SummaryState::Open,
+        "contrôle : l'exercice des livres couvre le jour"
+    );
+}
+
 /// AC8 (d) — les exports ne sont jamais servis au MCP, même avec toutes les
 /// portées.
 #[sqlx::test(migrations = "../kesh-db/test-schema")]
@@ -1665,6 +1703,131 @@ async fn ac9_b_table_des_traces_au_service(pool: MySqlPool) {
         }
     }
     assert!(echecs.is_empty(), "AC9 (b) :\n{}", echecs.join("\n"));
+}
+
+// ============================================================
+// Story 33-7 — AC-6 (#729) et AC-8 : l'export du grand livre, l'attribution
+// ============================================================
+
+/// La ligne « export CSV du grand livre » — hors de la table, qui garde une ligne
+/// par couple (service, usage) nommé par son AC ; même forme que la ligne 12.
+const GRAND_LIVRE_EXPORT_CSV: Ligne = Ligne {
+    num: 0,
+    nom: "grand_livre_export_csv",
+    svc: Svc::GrandLivre,
+    usage: Usg::Csv,
+    dem: Dem::GrandLivre { filtre: false },
+    action: "report.exported",
+    details: r#"{"report_type": "general-ledger", "format": "csv", "period_start": "$du", "period_end": "$au", "account_ids": null}"#,
+};
+
+/// AC-6 (#729) — l'export CSV du grand livre, par la route, trace `report.exported`
+/// et son format. Le PDF et l'écran sont les lignes 12 et 11 de la table, jouées
+/// aux deux chemins par `table_des_traces_par_la_route` et
+/// `ac9_b_table_des_traces_au_service`.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn export_csv_du_grand_livre_trace_son_format(pool: MySqlPool) {
+    let livres = poser_livres(&pool).await;
+    let app = spawn_app(pool.clone()).await;
+    let jwt = forge_jwt(livres.user_id(), "Admin", livres.company_id());
+    let ligne = &GRAND_LIVRE_EXPORT_CSV;
+    let repere = repere_audit(&pool).await;
+    let resp = app
+        .client
+        .get(app.url(&requete(ligne, &livres)))
+        .bearer_auth(&jwt)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 200);
+    let traces = traces_depuis(&pool, livres.user_id(), repere).await;
+    let attendu = resoudre(
+        ligne.details,
+        &symboles_route(ligne, &livres, Utc::now().naive_utc().date()),
+    );
+    verifier_trace("route", ligne, &traces, &[attendu]).unwrap();
+}
+
+/// L'auteur de la dernière trace : `(actor_type, actor_api_key_id, user_id,
+/// details_json)`.
+async fn auteur_de_la_derniere_trace(pool: &MySqlPool) -> (String, Option<i64>, i64, Value) {
+    let (actor_type, cle, user_id, details): (String, Option<i64>, i64, Vec<u8>) = sqlx::query_as(
+        "SELECT actor_type, actor_api_key_id, user_id, details_json FROM audit_log \
+         ORDER BY id DESC LIMIT 1",
+    )
+    .fetch_one(pool)
+    .await
+    .unwrap();
+    (
+        actor_type,
+        cle,
+        user_id,
+        serde_json::from_slice(&details).unwrap(),
+    )
+}
+
+/// AC-8 — en table, les dix-neuf lignes (donc les huit émetteurs), par la route :
+/// sous une clé d'API, `actor_type = api_key` et le bon `actor_api_key_id` ; sous
+/// une session, `user` et rien. Dans les deux cas, ni `channel` ni `mcp_key_id` :
+/// c'est la colonne qui dit la clé d'API.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn les_huit_emetteurs_attribuent_la_trace_a_la_cle_d_api(pool: MySqlPool) {
+    let livres = poser_livres(&pool).await;
+    let app = spawn_app(pool.clone()).await;
+    let jwt = forge_jwt(livres.user_id(), "Admin", livres.company_id());
+    // Des clés leurres : le numéro de la clé servie s'écarte de celui de l'utilisateur
+    // (assertion de montage : sans quoi `actor_api_key_id = user_id` passerait à vide).
+    for nom in ["leurre-1", "leurre-2", "leurre-3"] {
+        common::create_key_via_http(&app.client, &app.base_url, &jwt, nom, "read").await;
+    }
+    let (cle_id, cle) =
+        common::create_key_via_http(&app.client, &app.base_url, &jwt, "lecture", "read").await;
+    assert_ne!(
+        cle_id,
+        livres.user_id(),
+        "montage : numéro de clé ≠ utilisateur"
+    );
+
+    let mut echecs = Vec::new();
+    for ligne in TABLE_DES_TRACES {
+        let url = requete(ligne, &livres);
+        for (nom, bearer, attendu_type, attendu_cle) in [
+            ("session", &jwt, "user", None),
+            ("clé d'API", &cle, "api_key", Some(cle_id)),
+        ] {
+            let repere = repere_audit(&pool).await;
+            let resp = app
+                .client
+                .get(app.url(&url))
+                .bearer_auth(bearer)
+                .send()
+                .await
+                .unwrap();
+            let nom = format!("#{} {} par {nom}", ligne.num, ligne.nom);
+            if resp.status() != 200 {
+                echecs.push(format!("{nom} : {}", resp.status()));
+                continue;
+            }
+            if repere_audit(&pool).await == repere {
+                echecs.push(format!("{nom} : aucune trace"));
+                continue;
+            }
+            let (actor_type, cle_ecrite, user_id, details) =
+                auteur_de_la_derniere_trace(&pool).await;
+            if actor_type != attendu_type || cle_ecrite != attendu_cle {
+                echecs.push(format!(
+                    "{nom} : ({actor_type}, {cle_ecrite:?}), attendu ({attendu_type}, {attendu_cle:?})"
+                ));
+            }
+            if user_id != livres.user_id() {
+                echecs.push(format!("{nom} : user_id {user_id}"));
+            }
+            if details.get("channel").is_some() || details.get("mcp_key_id").is_some() {
+                echecs.push(format!("{nom} : canal MCP dans {details}"));
+            }
+        }
+    }
+    assert!(echecs.is_empty(), "AC-8 :\n{}", echecs.join("\n"));
 }
 
 /// AC9 (c) — `exporter` avec un rendu qui échoue → `Err`, et **aucune** trace.

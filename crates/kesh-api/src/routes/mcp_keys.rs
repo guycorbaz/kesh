@@ -32,7 +32,8 @@
 use axum::extract::{Path, State};
 use axum::http::StatusCode;
 use axum::{Extension, Json};
-use chrono::{DateTime, Datelike, NaiveDateTime, Utc};
+use chrono::{DateTime, NaiveDateTime, Utc};
+use kesh_core::dates::expiration_stockable;
 use serde::{Deserialize, Serialize};
 
 use kesh_db::entities::SendValidation;
@@ -170,11 +171,6 @@ pub fn cite(raw: &str) -> String {
     }
 }
 
-/// Année maximale d'une expiration : la colonne `expires_at` est un
-/// `DATETIME(3)`, borné à `9999-12-31` (revue de code P1, E1 = B9 — au-delà,
-/// l'écriture échouait en base, en 500).
-pub const EXPIRY_MAX_YEAR: i32 = 9999;
-
 /// Les portées demandées, lues **strictement** : une chaîne inconnue (dont
 /// `books:write`, `admin`, `read`) ou une liste vide est refusée ; les doublons
 /// sont normalisés (un ensemble ne les connaît pas). La portée inconnue citée au
@@ -290,7 +286,7 @@ pub async fn create_mcp_key(
         )));
     }
     if let Some(exp) = req.expires_at
-        && exp.year() > EXPIRY_MAX_YEAR
+        && !expiration_stockable(exp)
     {
         return Err(AppError::Validation(t(
             "admin-mcp-keys-error-expiry-out-of-range",

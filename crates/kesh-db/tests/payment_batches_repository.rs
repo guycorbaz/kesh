@@ -727,7 +727,15 @@ async fn confirm_batch_refuses_then_passes_once_the_bank_is_relinked(pool: MySql
             assert_eq!(account_number.as_deref(), Some("2000"));
             assert_eq!(ctx_batch.payment_batch_id, batch_id);
             assert_eq!(ctx_batch.supplier_invoice_id, inv);
-            assert_eq!(ctx_batch.supplier_invoice_number.as_deref(), Some("FF-001"));
+            // Story 33-1b (#926) : le refus nomme la facture par son numéro interne.
+            let interne: Option<String> =
+                sqlx::query_scalar("SELECT internal_number FROM supplier_invoices WHERE id = ?")
+                    .bind(inv)
+                    .fetch_one(&pool)
+                    .await
+                    .unwrap();
+            assert!(interne.is_some(), "montage : la facture est numérotée");
+            assert_eq!(ctx_batch.supplier_invoice_label, interne);
         }
         other => panic!("refus contextualisé attendu, obtenu {other:?}"),
     }

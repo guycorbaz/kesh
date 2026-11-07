@@ -44,14 +44,17 @@ vi.mock("$lib/app/stores/auth.svelte", () => ({
 }));
 
 const listDueDatesMock = vi.fn();
+const settleMock = vi.fn();
 const exportDueDatesCsvMock = vi.hoisted(() => vi.fn());
 vi.mock("$lib/features/invoices/invoices.api", () => ({
   listDueDates: (q: unknown) => listDueDatesMock(q),
-  settleInvoice: vi.fn(),
+  settleInvoice: (id: number, payload: unknown) => settleMock(id, payload),
   exportDueDatesCsv: (q: unknown) => exportDueDatesCsvMock(q),
 }));
 vi.mock("$lib/features/accounts/accounts.api", () => ({
-  fetchAccounts: vi.fn(async () => []),
+  fetchAccounts: vi.fn(async () => [
+    { id: 1, number: "1000", name: "Caisse", accountType: "Asset", active: true, postable: true, role: null },
+  ]),
 }));
 vi.mock("$lib/features/bank-accounts/bank-accounts.api", () => ({
   listBankAccounts: vi.fn(async () => []),
@@ -62,6 +65,7 @@ vi.mock("$lib/features/contacts/contacts.api", () => ({
 }));
 
 import Page from "./+page.svelte";
+import { notifyError } from "$lib/shared/utils/notify";
 import { pinClock } from "$lib/shared/utils/pin-clock.test-helper";
 
 function item(partial: Partial<DueDateItem> = {}): DueDateItem {
@@ -219,5 +223,116 @@ describe("échéancier — date du jour locale (#889)", () => {
     const { findAllByTestId } = render(Page);
     const paid = await findAllByTestId("due-dates-paid-at");
     expect(paid.map((d) => d.textContent?.trim())).toEqual(["04.11.2026"]);
+  });
+});
+
+describe("échéancier — une date en cours de frappe (Story 33-4)", () => {
+  it("l'année tapée n'interroge pas, ne notifie rien, ne vide ni la liste ni les totaux (mutation : valeur appliquée sans contrôle)", async () => {
+    const { findAllByTestId, container } = render(Page);
+    await waitFor(() => expect(listDueDatesMock).toHaveBeenCalled());
+    await waitFor(() =>
+      expect(container.querySelector("#dd-due-before")).not.toBeNull(),
+    );
+    const input = container.querySelector("#dd-due-before") as HTMLInputElement;
+    const avant = listDueDatesMock.mock.calls.length;
+    for (const v of ["0002-12-31", "0020-12-31", "0202-12-31"]) {
+      await fireEvent.input(input, { target: { value: v } });
+      expect(input.value).toBe(v);
+    }
+    await new Promise((r) => setTimeout(r, 0));
+    expect(listDueDatesMock.mock.calls.length).toBe(avant);
+    expect(vi.mocked(notifyError)).not.toHaveBeenCalled();
+    expect((await findAllByTestId("due-dates-date")).length).toBeGreaterThan(0);
+
+    await fireEvent.input(input, { target: { value: "2026-12-31" } });
+    await waitFor(() =>
+      expect(listDueDatesMock).toHaveBeenLastCalledWith(
+        expect.objectContaining({ dueBefore: "2026-12-31" }),
+      ),
+    );
+    await fireEvent.input(input, { target: { value: "0202-12-31" } });
+    await fireEvent.blur(input);
+    expect(input.value).toBe("2026-12-31");
+  });
+});
+
+// Revue P1 de la 33-6 (E-4 = A-4) : le même geste, depuis l'échéancier.
+describe("échéancier — règlement à l'issue inconnue", () => {
+  async function regler() {
+    const r = render(Page);
+    await fireEvent.click(await r.findByTestId("due-dates-settle-5"));
+    await fireEvent.change(await r.findByTestId("settle-type"), {
+      target: { value: "internal_account" },
+    });
+    await fireEvent.change(await r.findByTestId("settle-account"), { target: { value: "1" } });
+    await fireEvent.click(r.getByTestId("settle-confirm"));
+    return r;
+  }
+
+  beforeEach(() => {
+    settleMock.mockReset();
+  });
+
+  it("sans réponse : le dialogue se ferme, la liste est relue, l'issue est dite et nomme la facture", async () => {
+    settleMock.mockRejectedValue({ code: "NETWORK_ERROR", status: 0, message: "x" });
+    const r = await regler();
+    const avis = await r.findByTestId("due-dates-settle-unknown");
+    expect(avis.textContent).toContain("F-2026-005");
+    await waitFor(() => expect(r.queryByTestId("settle-confirm")).toBeNull());
+    await waitFor(() => expect(listDueDatesMock.mock.calls.length).toBeGreaterThan(1));
+    await waitFor(() =>
+      expect((r.getByTestId("due-dates-settle-5") as HTMLButtonElement).disabled).toBe(false),
+    );
+  });
+
+  it("un 503 à l'instant du commit vaut issue inconnue : dialogue fermé, liste relue (P2-2)", async () => {
+    settleMock.mockRejectedValue({ code: "SERVICE_UNAVAILABLE", status: 503, message: "Base." });
+    const r = await regler();
+    await r.findByTestId("due-dates-settle-unknown");
+    await waitFor(() => expect(r.queryByTestId("settle-confirm")).toBeNull());
+    await waitFor(() => expect(listDueDatesMock.mock.calls.length).toBeGreaterThan(1));
+  });
+
+  it("l'avis nomme la facture réglée, même si une autre a été ouverte pendant l'envoi (P2-3)", async () => {
+    listDueDatesMock.mockResolvedValue(
+      response([item(), item({ id: 6, invoiceNumber: "F-2026-006" })]),
+    );
+    let rejeter: (err: unknown) => void = () => {};
+    settleMock.mockReturnValue(new Promise((_, reject) => (rejeter = reject)));
+    const r = await regler();
+    await fireEvent.click(await r.findByTestId("due-dates-settle-6"));
+    rejeter({ code: "NETWORK_ERROR", status: 0, message: "x" });
+    const avis = await r.findByTestId("due-dates-settle-unknown");
+    expect(avis.textContent).toContain("F-2026-005");
+    expect(avis.textContent).not.toContain("F-2026-006");
+  });
+
+  it("relecture en échec : la liste vidée n'offre aucun geste, Relire la rétablit", async () => {
+    settleMock.mockRejectedValue({ code: "NETWORK_ERROR", status: 0, message: "x" });
+    const r = render(Page);
+    await fireEvent.click(await r.findByTestId("due-dates-settle-5"));
+    listDueDatesMock.mockRejectedValue({ code: "NETWORK_ERROR", status: 0, message: "x" });
+    await fireEvent.change(await r.findByTestId("settle-type"), {
+      target: { value: "internal_account" },
+    });
+    await fireEvent.change(await r.findByTestId("settle-account"), { target: { value: "1" } });
+    await fireEvent.click(r.getByTestId("settle-confirm"));
+    await r.findByTestId("due-dates-settle-unknown-reread");
+
+    listDueDatesMock.mockResolvedValue(response([item()]));
+    await fireEvent.click(r.getByTestId("due-dates-settle-unknown-reread"));
+    await waitFor(() =>
+      expect((r.getByTestId("due-dates-settle-5") as HTMLButtonElement).disabled).toBe(false),
+    );
+    expect(r.queryByTestId("due-dates-settle-unknown-reread")).toBeNull();
+    expect(r.getByTestId("due-dates-settle-unknown")).toBeTruthy();
+  });
+
+  it("un refus du serveur garde le dialogue ouvert, sans relecture", async () => {
+    settleMock.mockRejectedValue({ code: "VALIDATION_ERROR", status: 400, message: "Trop-perçu." });
+    const r = await regler();
+    await r.findByText("Trop-perçu.");
+    expect(r.getByTestId("settle-confirm")).toBeTruthy();
+    expect(r.queryByTestId("due-dates-settle-unknown")).toBeNull();
   });
 });

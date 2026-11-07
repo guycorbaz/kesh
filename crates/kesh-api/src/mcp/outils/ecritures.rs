@@ -155,6 +155,7 @@ sortie! {
     struct PieceSource {
         facture_fournisseur_id: i64,
         numero_facture_fournisseur: Option<TexteNonFiable>,
+        numero_interne_facture_fournisseur: Option<TexteNonFiable>,
     }
 }
 
@@ -308,11 +309,13 @@ impl McpTool for KeshEcriture {
                     let ecritures::EntrySourceDocument {
                         supplier_invoice_id,
                         supplier_invoice_number,
+                        internal_number,
                         original_filename: _,
                     } = p;
                     PieceSource {
                         facture_fournisseur_id: supplier_invoice_id,
                         numero_facture_fournisseur: supplier_invoice_number.map(TexteNonFiable::de),
+                        numero_interne_facture_fournisseur: internal_number.map(TexteNonFiable::de),
                     }
                 }),
             };

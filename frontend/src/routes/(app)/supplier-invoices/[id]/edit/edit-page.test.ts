@@ -104,6 +104,7 @@ function draft(partial: Partial<SupplierInvoiceResponse> = {}): SupplierInvoiceR
 		id: 9,
 		contactId: 1,
 		supplierInvoiceNumber: 'FF-9',
+		internalNumber: null,
 		status: 'draft',
 		invoiceDate: '2026-05-10',
 		dueDate: null,

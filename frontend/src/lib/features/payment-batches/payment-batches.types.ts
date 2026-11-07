@@ -7,6 +7,9 @@ export type PaymentBatchStatus = 'generated' | 'confirmed' | 'cancelled';
 
 export interface PaymentBatchItemResponse {
 	supplierInvoiceId: number;
+	/** Story 33-1b (#926, C-e331-26) — les deux numéros de la facture du lot. */
+	internalNumber: string | null;
+	supplierInvoiceNumber: string | null;
 	position: number;
 	endToEndId: string;
 	amount: string;

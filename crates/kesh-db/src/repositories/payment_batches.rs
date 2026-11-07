@@ -593,16 +593,21 @@ pub async fn confirm_batch(
                     role,
                     batch: None,
                 }) => {
-                    let supplier_invoice_number: Option<String> = sqlx::query_scalar(
-                        "SELECT supplier_invoice_number FROM supplier_invoices \
+                    let numeros: Option<(Option<String>, Option<String>)> = sqlx::query_as(
+                        "SELECT internal_number, supplier_invoice_number FROM supplier_invoices \
                          WHERE id = ? AND company_id = ?",
                     )
                     .bind(item.supplier_invoice_id)
                     .bind(company_id)
                     .fetch_optional(&mut *tx)
                     .await
-                    .map_err(map_db_error)?
-                    .flatten();
+                    .map_err(map_db_error)?;
+                    let supplier_invoice_label = numeros.and_then(|(interne, fournisseur)| {
+                        kesh_core::invoice_format::supplier_invoice_short_label(
+                            interne.as_deref(),
+                            fournisseur.as_deref(),
+                        )
+                    });
                     return Err(DbError::SettlementCounterpartyIsClaimAccount {
                         account_id,
                         account_number,
@@ -611,7 +616,7 @@ pub async fn confirm_batch(
                         batch: Some(SettlementBatchContext {
                             payment_batch_id: batch_id,
                             supplier_invoice_id: item.supplier_invoice_id,
-                            supplier_invoice_number,
+                            supplier_invoice_label,
                         }),
                     });
                 }
@@ -762,6 +767,33 @@ pub async fn cancel_batch(
             Err(e)
         }
     }
+}
+
+/// Les numéros des factures d'un lot (Story 33-1b, #926, C-e331-26) :
+/// `facture → (numéro interne, numéro du fournisseur)`, scopés société. Une seule lecture,
+/// pour toutes les réponses ; `PaymentBatchItem`, ses lectures et l'export ne changent pas.
+pub async fn invoice_numbers(
+    pool: &MySqlPool,
+    company_id: i64,
+    supplier_invoice_ids: &[i64],
+) -> Result<std::collections::HashMap<i64, (Option<String>, Option<String>)>, DbError> {
+    if supplier_invoice_ids.is_empty() {
+        return Ok(Default::default());
+    }
+    let marqueurs = vec!["?"; supplier_invoice_ids.len()].join(", ");
+    let sql = format!(
+        "SELECT id, internal_number, supplier_invoice_number FROM supplier_invoices \
+         WHERE company_id = ? AND id IN ({marqueurs})"
+    );
+    let mut q = sqlx::query_as::<_, (i64, Option<String>, Option<String>)>(&sql).bind(company_id);
+    for id in supplier_invoice_ids {
+        q = q.bind(*id);
+    }
+    let lignes = q.fetch_all(pool).await.map_err(map_db_error)?;
+    Ok(lignes
+        .into_iter()
+        .map(|(id, interne, fournisseur)| (id, (interne, fournisseur)))
+        .collect())
 }
 
 /// Récupère un lot + ses items (scopé company). `None` si introuvable.

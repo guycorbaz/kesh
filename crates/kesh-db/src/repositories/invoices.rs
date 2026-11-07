@@ -831,10 +831,22 @@ pub async fn find_by_id_with_lines(
     company_id: i64,
     id: i64,
 ) -> Result<Option<(Invoice, Vec<InvoiceLine>)>, DbError> {
+    let mut conn = pool.acquire().await.map_err(map_db_error)?;
+    find_with_lines_in_tx(&mut conn, company_id, id).await
+}
+
+/// Comme [`find_by_id_with_lines`], sur la connexion d'une transaction : une
+/// écriture y lit ce qu'elle va committer, pour le rendre sans seconde lecture
+/// (Story 33-6, #450).
+pub async fn find_with_lines_in_tx(
+    conn: &mut sqlx::MySqlConnection,
+    company_id: i64,
+    id: i64,
+) -> Result<Option<(Invoice, Vec<InvoiceLine>)>, DbError> {
     let invoice_opt = sqlx::query_as::<_, Invoice>(FIND_INVOICE_SCOPED_SQL)
         .bind(id)
         .bind(company_id)
-        .fetch_optional(pool)
+        .fetch_optional(&mut *conn)
         .await
         .map_err(map_db_error)?;
 
@@ -846,7 +858,7 @@ pub async fn find_by_id_with_lines(
         "SELECT {LINE_COLUMNS} FROM invoice_lines WHERE invoice_id = ? ORDER BY position ASC"
     ))
     .bind(id)
-    .fetch_all(pool)
+    .fetch_all(&mut *conn)
     .await
     .map_err(map_db_error)?;
 

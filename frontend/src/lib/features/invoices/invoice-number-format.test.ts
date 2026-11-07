@@ -62,3 +62,37 @@ describe('validateFormatTemplate', () => {
 		expect(validateFormatTemplate('a'.repeat(65)).ok).toBe(false);
 	});
 });
+
+// Story 33-1b (#926) — l'option `numbering`, miroir de `validate_numbering_template`.
+describe('validateFormatTemplate, option numbering', () => {
+	for (const ok of ['FF-{YEAR}-{SEQ:03}', 'KF-{YEAR}-{SEQ:04}', '{YEAR}/{SEQ}', 'F1-{YEAR}-{SEQ}']) {
+		it(`accepte ${ok}`, () => {
+			expect(validateFormatTemplate(ok, { numbering: true }).ok).toBe(true);
+		});
+	}
+	for (const ko of [
+		'',
+		'FF-{YEAR}',
+		'FF-{SEQ:03}',
+		'FF-{YEAR}-{SEQ:11}',
+		'FF-{FY}-{SEQ}',
+		'FF-{FY}-{YEAR}-{SEQ}',
+		'{YEAR}-{YEAR}-{SEQ}',
+		'{SEQ}-{YEAR}',
+		'FF-{YEAR}{SEQ}',
+		'FF-{YEAR}-1{SEQ}',
+		'FF-{YEAR}-{SEQ}-X',
+		' FF-{YEAR}-{SEQ}',
+		'\tFF-{YEAR}-{SEQ}',
+		'FF\t-{YEAR}-{SEQ}',
+		'FF-{YEAR}\t{SEQ}',
+	]) {
+		it(`refuse ${JSON.stringify(ko)}`, () => {
+			expect(validateFormatTemplate(ko, { numbering: true }).ok).toBe(false);
+		});
+	}
+	it('ne change pas la règle des formats client et avoir', () => {
+		expect(validateFormatTemplate('F-{YEAR}').ok).toBe(true);
+		expect(validateFormatTemplate('{FY}{SEQ}').ok).toBe(true);
+	});
+});

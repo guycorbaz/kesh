@@ -26,6 +26,7 @@ use kesh_db::repositories::{
 
 use crate::AppState;
 use crate::audit::AuditActor;
+use crate::dates_recues::borner;
 use crate::errors::AppError;
 use crate::middleware::auth::CurrentUser;
 
@@ -261,6 +262,9 @@ pub async fn record_manual_reminder(
     if body.sent_at > Utc::now().naive_utc() {
         return Err(AppError::ReminderDateInFuture);
     }
+    // Story 33-4 — après le refus du futur, qui garde son code : reste le passé
+    // que la base ne sait pas tenir.
+    borner(body.sent_at.date(), "sentAt")?;
     validate_note_len(&body.note, REMINDER_NOTE_MAX)?;
 
     // Snapshot du frais du niveau visé (config courante).

@@ -1112,8 +1112,9 @@ pub async fn modification_guard(
         }));
     }
 
-    let detached: Option<(i64, Option<String>)> = sqlx::query_as(&format!(
-        "SELECT si.id, si.supplier_invoice_number FROM {DETACHED_SETTLEMENT_TRACES} \
+    let detached: Option<(i64, Option<String>, Option<String>)> = sqlx::query_as(&format!(
+        "SELECT si.id, si.internal_number, si.supplier_invoice_number \
+         FROM {DETACHED_SETTLEMENT_TRACES} \
            AND si.status = 'cancelled' AND {DETACHED_SETTLEMENT_ENTRY} = ? \
          ORDER BY si.id LIMIT 1"
     ))
@@ -1124,14 +1125,15 @@ pub async fn modification_guard(
     .await
     .map_err(map_db_error)?;
 
-    Ok(
-        detached.map(|(supplier_invoice_id, supplier_invoice_number)| {
-            ModificationGuard::DetachedSupplierSettlement {
-                supplier_invoice_id,
-                supplier_invoice_number,
-            }
-        }),
-    )
+    Ok(detached.map(|(supplier_invoice_id, interne, fournisseur)| {
+        ModificationGuard::DetachedSupplierSettlement {
+            supplier_invoice_id,
+            supplier_invoice_label: kesh_core::invoice_format::supplier_invoice_short_label(
+                interne.as_deref(),
+                fournisseur.as_deref(),
+            ),
+        }
+    }))
 }
 
 /// Convertit une garde d'écriture en refus (Story 15-8a, D2) : une écriture
@@ -2205,14 +2207,34 @@ pub struct DocumentOwner {
     /// `invoice_settlements`, transaction bancaire).
     pub id: i64,
     /// Numéro de la pièce quand elle en a un (facture, avoir, facture
-    /// fournisseur), sinon `None` — lu sur la MÊME ligne que `id`.
+    /// fournisseur), sinon `None` — lu sur la MÊME ligne que `id`. Pour une facture
+    /// fournisseur, celui **du fournisseur** ; le numéro interne est à côté.
     pub number: Option<String>,
+    /// Pour [`DocumentKind::SupplierInvoice`] : le numéro interne (Story 33-1b, #926) ;
+    /// `None` sinon.
+    pub internal_number: Option<String>,
     /// Pour [`DocumentKind::Settlement`] : la facture réglée
     /// (`invoice_settlements.invoice_id`) ; `None` sinon.
     pub invoice_id: Option<i64>,
     /// Pour [`DocumentKind::Settlement`] : le numéro de la facture réglée
     /// (`None` aussi si elle n'en a pas) ; `None` sinon.
     pub invoice_number: Option<String>,
+}
+
+impl DocumentOwner {
+    /// Ce qui nomme la pièce dans un refus (Story 33-1b, C-e331-20) : pour une facture
+    /// fournisseur, la forme courte, le numéro interne d'abord ; pour une autre pièce,
+    /// son numéro tel quel.
+    pub fn display_label(&self) -> Option<String> {
+        if self.kind == DocumentKind::SupplierInvoice {
+            kesh_core::invoice_format::supplier_invoice_short_label(
+                self.internal_number.as_deref(),
+                self.number.as_deref(),
+            )
+        } else {
+            self.number.clone()
+        }
+    }
 }
 
 /// Taille d'une tranche de [`document_owners`] : une instruction par tranche.
@@ -2257,6 +2279,7 @@ pub async fn document_owners(
         kind: i64,
         id: i64,
         number: Option<String>,
+        internal_number: Option<String>,
         invoice_id: Option<i64>,
         invoice_number: Option<String>,
     }
@@ -2277,6 +2300,7 @@ pub async fn document_owners(
         let sql = format!(
             "SELECT d.entry_id, CAST({inv} AS SIGNED) AS kind, i.id, \
                     CAST(i.invoice_number AS CHAR) AS number, \
+                    CAST(NULL AS CHAR) AS internal_number, \
                     CAST(NULL AS SIGNED) AS invoice_id, CAST(NULL AS CHAR) AS invoice_number \
                FROM (SELECT journal_entry_id AS entry_id, MIN(id) AS id FROM invoices \
                       WHERE journal_entry_id IN ({liste}) GROUP BY journal_entry_id) d \
@@ -2284,14 +2308,14 @@ pub async fn document_owners(
                JOIN journal_entries je ON je.id = d.entry_id AND je.company_id = ? \
              UNION ALL \
              SELECT d.entry_id, CAST({cn} AS SIGNED), c.id, CAST(c.credit_note_number AS CHAR), \
-                    CAST(NULL AS SIGNED), CAST(NULL AS CHAR) \
+                    CAST(NULL AS CHAR), CAST(NULL AS SIGNED), CAST(NULL AS CHAR) \
                FROM (SELECT journal_entry_id AS entry_id, MIN(id) AS id FROM credit_notes \
                       WHERE journal_entry_id IN ({liste}) GROUP BY journal_entry_id) d \
                JOIN credit_notes c ON c.id = d.id \
                JOIN journal_entries je ON je.id = d.entry_id AND je.company_id = ? \
              UNION ALL \
              SELECT d.entry_id, CAST({si} AS SIGNED), s.id, CAST(s.supplier_invoice_number AS CHAR), \
-                    CAST(NULL AS SIGNED), CAST(NULL AS CHAR) \
+                    CAST(s.internal_number AS CHAR), CAST(NULL AS SIGNED), CAST(NULL AS CHAR) \
                FROM (SELECT u.entry_id, MIN(u.id) AS id FROM ( \
                        SELECT purchase_journal_entry_id AS entry_id, id FROM supplier_invoices \
                         WHERE purchase_journal_entry_id IN ({liste}) \
@@ -2303,7 +2327,7 @@ pub async fn document_owners(
                JOIN journal_entries je ON je.id = d.entry_id AND je.company_id = ? \
              UNION ALL \
              SELECT d.entry_id, CAST({st} AS SIGNED), st.id, CAST(NULL AS CHAR), \
-                    CAST(st.invoice_id AS SIGNED), CAST(inv.invoice_number AS CHAR) \
+                    CAST(NULL AS CHAR), CAST(st.invoice_id AS SIGNED), CAST(inv.invoice_number AS CHAR) \
                FROM (SELECT journal_entry_id AS entry_id, MIN(id) AS id FROM invoice_settlements \
                       WHERE journal_entry_id IN ({liste}) GROUP BY journal_entry_id) d \
                JOIN invoice_settlements st ON st.id = d.id \
@@ -2311,7 +2335,7 @@ pub async fn document_owners(
                JOIN journal_entries je ON je.id = d.entry_id AND je.company_id = ? \
              UNION ALL \
              SELECT d.entry_id, CAST({bt} AS SIGNED), d.id, CAST(NULL AS CHAR), \
-                    CAST(NULL AS SIGNED), CAST(NULL AS CHAR) \
+                    CAST(NULL AS CHAR), CAST(NULL AS SIGNED), CAST(NULL AS CHAR) \
                FROM (SELECT matched_entry_id AS entry_id, MIN(id) AS id FROM bank_transactions \
                       WHERE matched_entry_id IN ({liste}) GROUP BY matched_entry_id) d \
                JOIN journal_entries je ON je.id = d.entry_id AND je.company_id = ?",
@@ -2338,6 +2362,7 @@ pub async fn document_owners(
                 kind: DocumentKind::from_rank(row.kind)?,
                 id: row.id,
                 number: row.number,
+                internal_number: row.internal_number,
                 invoice_id: row.invoice_id,
                 invoice_number: row.invoice_number,
             });
@@ -2454,7 +2479,8 @@ pub async fn reversal_blockers(
         .remove(&id)
     {
         for owner in owners {
-            blockers.push((owner.kind.reversal_blocker(), Some(owner.id), owner.number));
+            let etiquette = owner.display_label();
+            blockers.push((owner.kind.reversal_blocker(), Some(owner.id), etiquette));
         }
     }
     if row.archived_account_number.is_some() {

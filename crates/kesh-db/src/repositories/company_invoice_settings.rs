@@ -19,7 +19,7 @@
 use std::collections::BTreeSet;
 
 use sqlx::mysql::MySqlPool;
-use sqlx::{MySql, QueryBuilder};
+use sqlx::{MySql, QueryBuilder, Row};
 
 use crate::entities::audit_log::NewAuditLogEntry;
 use crate::entities::{
@@ -34,10 +34,62 @@ const COLUMNS: &str = "company_id, invoice_number_format, default_receivable_acc
     default_revenue_account_id, default_vat_payable_account_id, \
     default_vat_recoverable_account_id, default_vat_decompte_account_id, \
     default_sales_journal, journal_entry_description_template, \
-    credit_note_number_format, default_payable_account_id, \
+    credit_note_number_format, supplier_internal_number_format, default_payable_account_id, \
     default_rounding_account_id, round_to_5_centimes, minimum_invoice_amount, \
     default_discount_account_id, default_bank_fees_account_id, default_bad_debt_account_id, \
     version, created_at, updated_at";
+
+/// Les dix comptes que les paramètres de facturation désignent : la colonne, et le
+/// code stable que l'API rend pour elle (Story 33-8, #486). Un test compare cette
+/// liste aux colonnes `default_%_account_id` réelles : un onzième réglage ne se tait
+/// pas.
+pub const DESIGNATED_ACCOUNT_COLUMNS: [(&str, &str); 10] = [
+    ("default_receivable_account_id", "receivable"),
+    ("default_revenue_account_id", "revenue"),
+    ("default_vat_payable_account_id", "vatPayable"),
+    ("default_vat_recoverable_account_id", "vatRecoverable"),
+    ("default_vat_decompte_account_id", "vatDecompte"),
+    ("default_payable_account_id", "payable"),
+    ("default_rounding_account_id", "rounding"),
+    ("default_discount_account_id", "discount"),
+    ("default_bank_fees_account_id", "bankFees"),
+    ("default_bad_debt_account_id", "badDebt"),
+];
+
+/// Les codes des réglages de `company_id` qui désignent `account_id`, dans l'ordre
+/// de [`DESIGNATED_ACCOUNT_COLUMNS`] (Story 33-8, #486). Lecture seule, sans verrou :
+/// une société sans ligne de réglages ne désigne rien.
+pub async fn designations_of_account<'e, E>(
+    executor: E,
+    company_id: i64,
+    account_id: i64,
+) -> Result<Vec<&'static str>, DbError>
+where
+    E: sqlx::Executor<'e, Database = MySql>,
+{
+    let columns = DESIGNATED_ACCOUNT_COLUMNS
+        .iter()
+        .map(|(column, _)| *column)
+        .collect::<Vec<_>>()
+        .join(", ");
+    let rows = sqlx::query(&format!(
+        "SELECT {columns} FROM company_invoice_settings WHERE company_id = ?"
+    ))
+    .bind(company_id)
+    .fetch_all(executor)
+    .await
+    .map_err(map_db_error)?;
+    let mut codes = Vec::new();
+    for row in &rows {
+        for (column, code) in DESIGNATED_ACCOUNT_COLUMNS {
+            let designated: Option<i64> = row.try_get(column).map_err(map_db_error)?;
+            if designated == Some(account_id) {
+                codes.push(code);
+            }
+        }
+    }
+    Ok(codes)
+}
 
 fn settings_snapshot_json(s: &CompanyInvoiceSettings) -> serde_json::Value {
     serde_json::json!({
@@ -51,6 +103,7 @@ fn settings_snapshot_json(s: &CompanyInvoiceSettings) -> serde_json::Value {
         "defaultSalesJournal": s.default_sales_journal.as_str(),
         "journalEntryDescriptionTemplate": s.journal_entry_description_template,
         "creditNoteNumberFormat": s.credit_note_number_format,
+        "supplierInternalNumberFormat": s.supplier_internal_number_format,
         "defaultPayableAccountId": s.default_payable_account_id,
         "defaultRoundingAccountId": s.default_rounding_account_id,
         "roundTo5Centimes": s.round_to_5_centimes,
@@ -245,6 +298,7 @@ fn is_no_op_change(
         && before.default_sales_journal == changes.default_sales_journal
         && before.journal_entry_description_template == changes.journal_entry_description_template
         && before.credit_note_number_format == changes.credit_note_number_format
+        && before.supplier_internal_number_format == changes.supplier_internal_number_format
         && before.default_payable_account_id == changes.default_payable_account_id
         && before.default_rounding_account_id == changes.default_rounding_account_id
         && before.round_to_5_centimes == changes.round_to_5_centimes
@@ -348,6 +402,7 @@ pub async fn update(
              default_vat_recoverable_account_id = ?, default_vat_decompte_account_id = ?, \
              default_sales_journal = ?, \
              journal_entry_description_template = ?, credit_note_number_format = ?, \
+             supplier_internal_number_format = ?, \
              default_payable_account_id = ?, default_rounding_account_id = ?, \
              round_to_5_centimes = ?, minimum_invoice_amount = ?, \
              default_discount_account_id = ?, default_bank_fees_account_id = ?, \
@@ -363,6 +418,7 @@ pub async fn update(
     .bind(changes.default_sales_journal)
     .bind(&changes.journal_entry_description_template)
     .bind(&changes.credit_note_number_format)
+    .bind(&changes.supplier_internal_number_format)
     .bind(changes.default_payable_account_id)
     .bind(changes.default_rounding_account_id)
     .bind(changes.round_to_5_centimes)
@@ -1157,6 +1213,7 @@ pub async fn insert_with_defaults_in_tx(
                     cis.default_vat_recoverable_account_id, cis.default_vat_decompte_account_id, \
                     cis.default_sales_journal, \
                     cis.journal_entry_description_template, cis.credit_note_number_format, \
+                    cis.supplier_internal_number_format, \
                     cis.default_payable_account_id, cis.default_rounding_account_id, \
                     cis.round_to_5_centimes, cis.minimum_invoice_amount, \
                     cis.default_discount_account_id, cis.default_bank_fees_account_id, \

@@ -16,6 +16,7 @@
 	import { Input } from '$lib/components/ui/input';
 	import { i18nLocale, i18nMsg } from '$lib/shared/utils/i18n.svelte';
 	import { isApiError } from '$lib/shared/utils/api-client';
+	import { saisieDeFiltre, sortieDeFiltre } from '$lib/shared/utils/date-filtre';
 	import { notifyError } from '$lib/shared/utils/notify';
 	import {
 		exportAuditLogCsv,
@@ -241,8 +242,13 @@
 				type="date"
 				min="1000-01-01"
 				max="9999-12-31"
-				bind:value={dateFrom}
-				onchange={applyFilters}
+				value={dateFrom}
+				onchange={(e: Event) =>
+					saisieDeFiltre(e, (date) => {
+						dateFrom = date;
+						applyFilters();
+					})}
+				onblur={(e: Event) => sortieDeFiltre(e, dateFrom)}
 			/>
 		</div>
 		<div>
@@ -255,8 +261,13 @@
 				type="date"
 				min="1000-01-01"
 				max="9999-12-31"
-				bind:value={dateTo}
-				onchange={applyFilters}
+				value={dateTo}
+				onchange={(e: Event) =>
+					saisieDeFiltre(e, (date) => {
+						dateTo = date;
+						applyFilters();
+					})}
+				onblur={(e: Event) => sortieDeFiltre(e, dateTo)}
 			/>
 		</div>
 		<div>

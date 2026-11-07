@@ -33,7 +33,9 @@ pub struct KeshCompteDeResultat;
 #[serde(deny_unknown_fields, rename_all = "camelCase")]
 struct ArgumentsPeriode {
     fiscal_year_id: i64,
+    #[serde(default, deserialize_with = "crate::dates_recues::date_opt")]
     period_start: Option<NaiveDate>,
+    #[serde(default, deserialize_with = "crate::dates_recues::date_opt")]
     period_end: Option<NaiveDate>,
 }
 
@@ -41,7 +43,9 @@ struct ArgumentsPeriode {
 #[serde(deny_unknown_fields, rename_all = "camelCase")]
 struct ArgumentsBalance {
     fiscal_year_id: i64,
+    #[serde(default, deserialize_with = "crate::dates_recues::date_opt")]
     period_start: Option<NaiveDate>,
+    #[serde(default, deserialize_with = "crate::dates_recues::date_opt")]
     period_end: Option<NaiveDate>,
     limit: Option<i64>,
     offset: Option<i64>,

@@ -7,7 +7,7 @@
  * l'adresse qu'au montage).
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, cleanup, waitFor } from '@testing-library/svelte';
+import { render, fireEvent, cleanup, waitFor } from '@testing-library/svelte';
 
 vi.mock('$app/state', () => ({
 	page: { url: new URL('http://localhost/journal-entries') },
@@ -85,4 +85,36 @@ describe('liste du journal — dates en forme suisse (v0172, #880)', () => {
 		expect(banner.textContent).toContain('31.12.2025');
 		expect(banner.textContent).not.toContain('2025-12-31');
 	});
+});
+
+describe('journal — une date en cours de frappe (Story 33-4)', () => {
+	for (const [id, cle] of [
+		['filter-date-from', 'dateFrom'],
+		['filter-date-to', 'dateTo'],
+	]) {
+		it(`#${id} : l’année tapée n’interroge pas et ne vide pas la liste (mutation : valeur appliquée sans contrôle)`, async () => {
+			const { container } = render(Page);
+			await waitFor(() => expect(container.textContent).toContain('Écriture 2'));
+			const input = container.querySelector(`#${id}`) as HTMLInputElement;
+			const avant = fetchEntriesMock.mock.calls.length;
+			// Chromium émet `change` à chaque segment.
+			for (const v of ['0002-11-06', '0020-11-06', '0202-11-06']) {
+				await fireEvent.change(input, { target: { value: v } });
+				expect(input.value).toBe(v);
+			}
+			await new Promise((r) => setTimeout(r, 0));
+			expect(fetchEntriesMock.mock.calls.length).toBe(avant);
+			expect(container.textContent).toContain('Écriture 2');
+
+			await fireEvent.change(input, { target: { value: '2026-11-06' } });
+			await waitFor(() =>
+				expect(fetchEntriesMock).toHaveBeenLastCalledWith(
+					expect.objectContaining({ [cle]: '2026-11-06' }),
+				),
+			);
+			await fireEvent.change(input, { target: { value: '0202-11-06' } });
+			await fireEvent.blur(input);
+			expect(input.value).toBe('2026-11-06');
+		});
+	}
 });

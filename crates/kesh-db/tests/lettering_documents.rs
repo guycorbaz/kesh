@@ -1649,6 +1649,13 @@ async fn supplier_audit_details_carry_the_invoice(pool: MySqlPool) {
     .await;
     let anonyme =
         facture_fournisseur(&pool, &seeded, &a, dec!(80.00), jours_avant(100), None).await;
+    // Story 33-1b (#926) : « sans numéro » veut dire sans aucun des deux, et une facture
+    // numérotée porte la forme longue.
+    sqlx::query("UPDATE supplier_invoices SET internal_number = NULL WHERE id = ?")
+        .bind(anonyme)
+        .execute(&pool)
+        .await
+        .unwrap();
     for s in [numerotee, anonyme] {
         payer(&pool, &seeded, &a, s, jours_avant(90)).await;
         supplier_invoices::cancel_settlement(&pool, seeded.company_id, s, seeded.admin_user_id)
@@ -1657,7 +1664,7 @@ async fn supplier_audit_details_carry_the_invoice(pool: MySqlPool) {
     }
 
     for (s, numero) in [
-        (numerotee, serde_json::json!("FF-77")),
+        (numerotee, serde_json::json!("FF-2020-001 (FF-77)")),
         (anonyme, serde_json::Value::Null),
     ] {
         for action in ["lettering.created", "lettering.removed"] {

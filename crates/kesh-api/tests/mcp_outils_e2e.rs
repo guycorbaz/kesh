@@ -177,7 +177,8 @@ fn bornes_des_schemas() {
         "les outils paginés"
     );
     // Valeurs mesurées (§ *Les tailles mesurées*), écrites en dur ; la
-    // balance âgée révisée sur la mesure (C-32-9-44 : 40 / 75 → 38 / 68).
+    // balance âgée révisée sur la mesure (C-32-9-44 : 40 / 75 → 38 / 68), les factures
+    // fournisseur aussi, qui portent le numéro interne (C-e331-27 : 70 / 40 → 62 / 34).
     let mesurees: BTreeMap<&str, (i64, i64)> = [
         ("kesh_plan_comptable", (70, 40)),
         ("kesh_ecritures", (22, 12)),
@@ -187,7 +188,7 @@ fn bornes_des_schemas() {
         ("kesh_factures", (40, 20)),
         ("kesh_echeancier", (40, 20)),
         ("kesh_balance_agee", (68, 38)),
-        ("kesh_factures_fournisseur", (70, 40)),
+        ("kesh_factures_fournisseur", (62, 34)),
         ("kesh_contacts", (22, 12)),
         ("kesh_pieces", (65, 35)),
     ]
@@ -1612,4 +1613,129 @@ async fn un_brouillon_lu_par_les_outils(pool: MySqlPool) {
         .find(|f| f["id"] == json!(id))
         .unwrap_or_else(|| panic!("le brouillon est listé : {liste}"));
     assert_eq!(ligne["statut"], json!("draft"), "{ligne}");
+
+    // Story 33-1a (#926, AC18) — le numéro interne s'ajoute à `numero`, à la fiche et à
+    // la liste, et survit au retour en brouillon ; `numero` garde celui du fournisseur.
+    use kesh_seed::pieges;
+    let interne = pieges::texte_seme('A', pieges::par_cle("ff_numero_interne"));
+    assert_eq!(
+        avant["numeroInterne"]["nonFiable"],
+        json!(interne),
+        "{avant}"
+    );
+    assert_eq!(fiche["numeroInterne"], avant["numeroInterne"], "{fiche}");
+    assert_eq!(ligne["numeroInterne"], avant["numeroInterne"], "{ligne}");
+    assert_eq!(
+        avant["numero"]["nonFiable"],
+        json!(pieges::texte_seme('A', pieges::par_cle("ff_numero"))),
+        "`numero` reste le numéro du fournisseur : {avant}"
+    );
+}
+
+/// Story 33-1b (#926, AC8 ; revue P1, A-F2) — `kesh_ecriture` et `kesh_postes_ouverts`
+/// disent le numéro interne de la facture fournisseur à côté de celui du fournisseur,
+/// chacun sous son nom : le test nomme le champ, là où l'inventaire de
+/// `mcp_enveloppe_e2e` ne voit que la sortie de l'outil (M18, M19 de la 33-1b).
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn le_numero_interne_d_une_ecriture_et_d_un_poste(pool: MySqlPool) {
+    use kesh_seed::pieges;
+    let a = societe_piegee(&pool, "Société A 329", 'A').await;
+    let jeton = cle_de(&pool, &a, &LECTURE, SendValidation::Exempt).await;
+    let b = banc(&pool);
+    let interne = json!(pieges::texte_seme(
+        'A',
+        pieges::par_cle("ff_numero_interne")
+    ));
+    let fournisseur = json!(pieges::texte_seme('A', pieges::par_cle("ff_numero")));
+
+    let ecriture = structure(
+        &b.appeler(&jeton, "kesh_ecriture", json!({"id": a.p.ecriture_achat}))
+            .await,
+        "kesh_ecriture",
+    );
+    let source = &ecriture["pieceSource"];
+    assert_eq!(
+        source["numeroInterneFactureFournisseur"]["nonFiable"], interne,
+        "{ecriture}"
+    );
+    assert_eq!(
+        source["numeroFactureFournisseur"]["nonFiable"], fournisseur,
+        "{ecriture}"
+    );
+
+    let postes = structure(
+        &b.appeler(
+            &jeton,
+            "kesh_postes_ouverts",
+            json!({"accountId": a.p.compte_cr}),
+        )
+        .await,
+        "kesh_postes_ouverts",
+    );
+    let piece = elements("kesh_postes_ouverts", &postes)
+        .iter()
+        .map(|p| &p["piece"])
+        .find(|p| p["id"] == json!(a.p.facture_fournisseur))
+        .unwrap_or_else(|| panic!("le poste de la facture : {postes}"));
+    assert_eq!(piece["numeroInterne"]["nonFiable"], interne, "{piece}");
+    assert_eq!(piece["numero"]["nonFiable"], fournisseur, "{piece}");
+}
+
+// ---------------------------------------------------------------------------
+// Story 33-7, AC-7 (#776) — la trace d'un rapport lu par un agent
+// ---------------------------------------------------------------------------
+
+/// AC-7 — chacun des cinq outils de rapport inscrit `channel: "mcp"` et le numéro
+/// de **sa** clé, au nom du créateur de la clé, `actor_type = user`. Le numéro de
+/// la clé diffère de celui de l'utilisateur (assertion de montage : sans quoi
+/// `mcp_key_id = user_id` passerait à vide).
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn les_cinq_rapports_disent_le_canal_et_la_cle(pool: MySqlPool) {
+    let a = societe_piegee(&pool, "Société A 337", 'A').await;
+    // Des clés leurres : le numéro de la clé servie s'écarte de celui de l'utilisateur.
+    for _ in 0..3 {
+        common::mcp::cle(&pool, a.c, a.u, &LECTURE, SendValidation::Exempt).await;
+    }
+    let (cle_id, jeton) = common::mcp::cle(&pool, a.c, a.u, &LECTURE, SendValidation::Exempt).await;
+    assert_ne!(cle_id, a.u, "montage : numéro de clé ≠ utilisateur");
+    let b = banc(&pool);
+
+    let mut fautes = Vec::new();
+    for outil in [
+        "kesh_grand_livre",
+        "kesh_balance",
+        "kesh_bilan",
+        "kesh_compte_de_resultat",
+        "kesh_balance_agee",
+    ] {
+        let repere: Option<i64> = sqlx::query_scalar("SELECT MAX(id) FROM audit_log")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        let args = premier_jeu(outil, &a.p);
+        let r = b.appeler(&jeton, outil, args).await;
+        assert_eq!(r["result"]["isError"], json!(false), "{outil} : {r}");
+        let lignes: Vec<(i64, String, Option<i64>, Vec<u8>)> = sqlx::query_as(
+            "SELECT user_id, actor_type, actor_api_key_id, details_json FROM audit_log \
+             WHERE id > ? AND action = 'report.generated' ORDER BY id",
+        )
+        .bind(repere.unwrap_or(0))
+        .fetch_all(&pool)
+        .await
+        .unwrap();
+        let [(user_id, actor_type, cle_api, details)] = lignes.as_slice() else {
+            fautes.push(format!("{outil} : {} trace(s) de rapport", lignes.len()));
+            continue;
+        };
+        let details: Value = serde_json::from_slice(details).unwrap();
+        if details["channel"] != json!("mcp") || details["mcp_key_id"] != json!(cle_id) {
+            fautes.push(format!("{outil} : détail {details}"));
+        }
+        if (*user_id, actor_type.as_str(), *cle_api) != (a.u, "user", None) {
+            fautes.push(format!(
+                "{outil} : auteur {user_id}, {actor_type}, {cle_api:?}"
+            ));
+        }
+    }
+    assert!(fautes.is_empty(), "AC-7 :\n{}", fautes.join("\n"));
 }

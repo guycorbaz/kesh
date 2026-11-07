@@ -170,31 +170,95 @@ pub async fn revoke_by_token(pool: &MySqlPool, token: &str, reason: &str) -> Res
     Ok(rows_affected > 0)
 }
 
-/// Révoque tous les refresh tokens actifs d'un utilisateur avec une raison.
+/// Révoque tous les refresh tokens non révoqués d'un utilisateur avec une raison,
+/// échus compris.
 ///
-/// Utilisé au changement de mot de passe (reason="password_change"),
-/// à la détection de vol (reason="theft_detected"), et à la
-/// désactivation de compte (reason="admin_disable", story 1.7).
+/// Utilisé au changement de mot de passe (reason="password_change") et à la
+/// désactivation de compte (reason="admin_disable", story 1.7) ; la détection de vol
+/// passe par [`revoke_all_for_user_counting_live`].
 ///
-/// Retourne le nombre de tokens effectivement révoqués.
+/// Retourne le nombre de **lignes** révoquées, qui peut dépasser celui des sessions
+/// vivantes : ses appelants ne s'en servent que pour leur journal de serveur.
+///
+/// Même instruction que la seconde de [`revoke_all_for_user_counting_live`]
+/// ([`REVOKE_REST_FOR_USER_SQL`], index de l'utilisateur imposé), donc même plan, testé
+/// par le même `EXPLAIN`.
 pub async fn revoke_all_for_user(
     pool: &MySqlPool,
     user_id: i64,
     reason: &str,
 ) -> Result<u64, DbError> {
-    let rows_affected = sqlx::query(
-        "UPDATE refresh_tokens \
-         SET revoked_at = NOW(3), revoked_reason = ? \
-         WHERE user_id = ? AND revoked_at IS NULL",
-    )
-    .bind(reason)
-    .bind(user_id)
-    .execute(pool)
-    .await
-    .map_err(map_db_error)?
-    .rows_affected();
+    let rows_affected = sqlx::query(REVOKE_REST_FOR_USER_SQL)
+        .bind(reason)
+        .bind(user_id)
+        .execute(pool)
+        .await
+        .map_err(map_db_error)?
+        .rows_affected();
 
     Ok(rows_affected)
+}
+
+/// Première instruction de [`revoke_all_for_user_counting_live`] : révoque et compte
+/// les sessions vivantes d'un utilisateur (liaisons : motif, `user_id`). Publique pour
+/// que son plan d'exécution se teste (`refresh_tokens_repository.rs`).
+///
+/// ⚠️ `FORCE INDEX` : sans lui, l'optimiseur retient `idx_refresh_tokens_expires_at`
+/// sur une table vide ou presque (relevé à l'`EXPLAIN`, revue P2 de la 33-7, L5), et
+/// la transaction verrouillerait jusqu'au commit les sessions vivantes de **tous**
+/// les utilisateurs, dont les rotations et connexions attendraient.
+///
+/// Portée de la mesure : ce plan fautif n'a été relevé que sur une table vide. Sur une
+/// table peuplée (5000 lignes synthétiques, 50 utilisateurs, statistiques à jour,
+/// MariaDB 10.11, revue P3 de la 33-7, L1), l'optimiseur retient déjà
+/// `idx_refresh_tokens_user_id` sans indice. L'indice ne corrige donc pas un plan
+/// observé en service : il rend le plan indépendant des statistiques. Le test
+/// d'`EXPLAIN` (`refresh_tokens_repository.rs`) établit que l'indice est posé et
+/// honoré, non qu'un autre plan serait choisi sans lui.
+pub const REVOKE_LIVE_FOR_USER_SQL: &str = "UPDATE refresh_tokens \
+     FORCE INDEX (idx_refresh_tokens_user_id) \
+     SET revoked_at = NOW(3), revoked_reason = ? \
+     WHERE user_id = ? AND revoked_at IS NULL AND expires_at > NOW(3)";
+
+/// Seconde instruction de [`revoke_all_for_user_counting_live`] : révoque ce qui reste
+/// d'un utilisateur, les sessions échues (liaisons : motif, `user_id`). Même index
+/// imposé que la première, par symétrie. C'est aussi l'instruction unique de
+/// [`revoke_all_for_user`] (changement de mot de passe, désactivation de compte).
+pub const REVOKE_REST_FOR_USER_SQL: &str = "UPDATE refresh_tokens \
+     FORCE INDEX (idx_refresh_tokens_user_id) \
+     SET revoked_at = NOW(3), revoked_reason = ? \
+     WHERE user_id = ? AND revoked_at IS NULL";
+
+/// Story 33-7 (#435) — révoque comme [`revoke_all_for_user`], et rend le nombre de
+/// sessions **vivantes** ainsi fermées, non celui des lignes.
+///
+/// Une session qui prend fin par inactivité n'est pas révoquée : sa ligne reste à
+/// `revoked_at IS NULL`, `expires_at` passé, jusqu'à la purge du démarrage. Elle est
+/// révoquée ici aussi, sans être comptée : pour le journal d'audit, seule une session
+/// qu'on pouvait encore renouveler a été fermée. Deux `UPDATE` dans une transaction,
+/// sans lecture verrouillante : le premier compte ([`REVOKE_LIVE_FOR_USER_SQL`]), le
+/// second finit le travail ([`REVOKE_REST_FOR_USER_SQL`]).
+pub async fn revoke_all_for_user_counting_live(
+    pool: &MySqlPool,
+    user_id: i64,
+    reason: &str,
+) -> Result<u64, DbError> {
+    let mut tx = pool.begin().await.map_err(map_db_error)?;
+    let vivantes = sqlx::query(REVOKE_LIVE_FOR_USER_SQL)
+        .bind(reason)
+        .bind(user_id)
+        .execute(&mut *tx)
+        .await
+        .map_err(map_db_error)?
+        .rows_affected();
+    sqlx::query(REVOKE_REST_FOR_USER_SQL)
+        .bind(reason)
+        .bind(user_id)
+        .execute(&mut *tx)
+        .await
+        .map_err(map_db_error)?;
+    tx.commit().await.map_err(map_db_error)?;
+    Ok(vivantes)
 }
 
 /// Story v0172-session (#876) — écrit l'échéance d'inactivité d'une session

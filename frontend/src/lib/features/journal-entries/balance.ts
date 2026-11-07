@@ -135,7 +135,9 @@ export function formatSwissAmount(big: Big, decimals = 2): string {
 	const [intPart, decPart] = unsigned.split('.');
 	// Insérer une apostrophe tous les 3 chiffres en partant de la droite.
 	const withSeparators = intPart.replace(/\B(?=(\d{3})+(?!\d))/g, '\u2019');
-	return `${negative ? '-' : ''}${withSeparators}.${decPart}`;
+	// Story 33-3b : `toFixed(0)` n'a pas de point, donc pas de partie décimale.
+	const fraction = decPart === undefined ? '' : `.${decPart}`;
+	return `${negative ? '-' : ''}${withSeparators}${fraction}`;
 }
 
 export function classifyLine(line: {

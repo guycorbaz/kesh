@@ -18,8 +18,37 @@ env:
   RUST_BACKTRACE: 1
 
 jobs:
+  # Story 33-11 (#928) — une PR qui ne porte que `_bmad-output/` n'attend pas la suite
+  # complète. Toute la décision vit dans `scripts/ci-seuls-artefacts.sh`, testé ici
+  # même, avant toute sortie : ce job n'est que de la plomberie, et il n'est pas requis.
+  # ⛔ Le filtre échoue vers la CI complète : seule une sortie `false` d'un `changes`
+  # RÉUSSI saute un job, d'où les conditions par exclusion des quatre jobs ci-dessous.
+  # Un `paths-ignore` au niveau du workflow laisserait les checks requis en attente.
+  changes:
+    name: Filtre des artefacts
+    runs-on: ubuntu-latest
+    timeout-minutes: 1
+    outputs:
+      code: ${{ steps.decision.outputs.code }}
+    steps:
+      - run: sleep 180
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Tests du filtre
+        run: bash scripts/tests/ci-seuls-artefacts.test.sh
+      - name: Décision
+        id: decision
+        env:
+          EVENEMENT: ${{ github.event_name }}
+          BASE: ${{ github.event.pull_request.base.sha }}
+          TETE: ${{ github.event.pull_request.head.sha }}
+        run: bash scripts/ci-seuls-artefacts.sh "$EVENEMENT" "$BASE" "$TETE" >> "$GITHUB_OUTPUT"
+
   backend:
     name: Backend (Rust)
+    needs: changes
+    if: ${{ !cancelled() && !(needs.changes.result == 'success' && needs.changes.outputs.code == 'false') }}
     runs-on: ubuntu-latest
     # Historique : la suite `cargo test --workspace -j1 --test-threads=1` a
     # dépassé 30 min à partir de l'Epic 21 (le job était annulé à ~30m17s), d'où
@@ -46,7 +75,7 @@ jobs:
     services:
       mariadb:
         # Story 10-1 D3 : pin 10.11 = parité prod NAS Synology Package Center DSM.
-        # Compat MariaDB ≥ 10.6 (cf. migration reconciliation_rules.sql VIRTUAL+UNIQUE).
+        # Compat MariaDB ≥ 10.7 : NATURAL_SORT_KEY (Story 33-1b) ; ≥ 10.6 pour reconciliation_rules.sql (VIRTUAL+UNIQUE).
         image: mariadb:10.11
         # Story 31-2 (A2) — tirage AUTHENTIFIÉ : anonyme, il tombait sous la
         # limite de Docker Hub (429) et faisait rougir le job sans rapport avec
@@ -207,6 +236,8 @@ jobs:
 
   frontend:
     name: Frontend (Svelte)
+    needs: changes
+    if: ${{ !cancelled() && !(needs.changes.result == 'success' && needs.changes.outputs.code == 'false') }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
     defaults:
@@ -251,6 +282,8 @@ jobs:
 
   docker-build:
     name: Docker build (sanity)
+    needs: changes
+    if: ${{ !cancelled() && !(needs.changes.result == 'success' && needs.changes.outputs.code == 'false') }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -334,7 +367,8 @@ jobs:
   e2e-smoke:
     name: E2E smoke (Playwright)
     runs-on: ubuntu-latest
-    needs: docker-build
+    needs: [changes, docker-build]
+    if: ${{ !cancelled() && !(needs.changes.result == 'success' && needs.changes.outputs.code == 'false') && needs.docker-build.result == 'success' }}
     timeout-minutes: 25
     services:
       mariadb:

@@ -1010,6 +1010,11 @@ const MULTI_SOCIETE: &[&str] = &[
 /// Les occurrences **assumées** de [`MULTI_SOCIETE`] : liste fermée, un
 /// fragment normalisé par site, chacun trouvé une et une seule fois.
 const MULTI_SOCIETE_ASSUME: &[(&str, &str)] = &[
+    // Le chemin d'une route, Story 33-5 : `companies` n'y promet aucune multi-société.
+    (
+        "docs/manual/fr/admin-manual.tex",
+        "PUT /api/v1/companies/current/address",
+    ),
     // Dit l'absence (deux occurrences : `super-admin`, `sélecteur de société`).
     (
         "docs/manual/fr/admin-manual.tex",
@@ -1108,9 +1113,10 @@ const MULTI_SOCIETE_ASSUME: &[(&str, &str)] = &[
 /// le nom de table du remède de moteur ; + 1 le 2026-10-26, Story 32-6c : le
 /// journal du filtre d'adresse ; + 3 le 2026-10-27, Story 32-7 : le second volet
 /// de P7-H3 et le 401 d'une origine admise par une autre société, § « Le serveur
-/// MCP »). Un motif qui cesserait de voir
+/// MCP » ; + 1 le 2026-11-07, Story 33-5 : le chemin de la route de l'adresse).
+/// Un motif qui cesserait de voir
 /// un site rougit (A-9, B10 : `>=` laissait passer une occurrence perdue).
-const MULTI_SOCIETE_TOTAL: usize = 21;
+const MULTI_SOCIETE_TOTAL: usize = 22;
 
 /// **G18** (#127) — une installation porte une société : la documentation
 /// utilisateur ne promet pas le contraire. Chaque occurrence de

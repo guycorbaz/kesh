@@ -16,6 +16,11 @@
 	import RecentEntriesCard from '$lib/features/homepage/RecentEntriesCard.svelte';
 	import OpenInvoicesCard from '$lib/features/homepage/OpenInvoicesCard.svelte';
 	import BankAccountsCard from '$lib/features/homepage/BankAccountsCard.svelte';
+	import HomepageCharts from '$lib/features/homepage/HomepageCharts.svelte';
+	import {
+		fetchHomepageSummary,
+		type HomepageSummary,
+	} from '$lib/features/homepage/homepage-summary.api';
 
 	type LoadState = 'loading' | 'ready' | 'error';
 
@@ -33,6 +38,17 @@
 	let reminderCount = $state(0);
 	let bankAccounts = $state<BankAccountSummary[]>([]);
 	let bankState = $state<LoadState>('loading');
+	let chartsState = $state<LoadState>('loading');
+	let chartSummary = $state<HomepageSummary | null>(null);
+
+	async function loadCharts() {
+		try {
+			chartSummary = await fetchHomepageSummary();
+			chartsState = 'ready';
+		} catch {
+			chartsState = 'error';
+		}
+	}
 
 	async function loadEntries() {
 		try {
@@ -78,6 +94,7 @@
 		void loadInvoices();
 		void loadBankAccounts();
 		void loadReminders();
+		void loadCharts();
 	});
 </script>
 
@@ -100,3 +117,5 @@
 		<BankAccountsCard accounts={bankAccounts} />
 	{/if}
 </div>
+
+<HomepageCharts state={chartsState} summary={chartSummary} />

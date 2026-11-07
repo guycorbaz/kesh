@@ -78,8 +78,9 @@ const ZERO: &str = "0.0000";
 ///
 /// ⚠️ **`RETIRED_BACKFILLS` entre dans la source depuis la Story 24-2 (#371).**
 /// La création de `invoice_settlements` a refermé la fenêtre d'importabilité
-/// au-delà des deux entrées que portait `POST_RESTORE_BACKFILLS`, qui est donc
-/// **vide** — et ces deux tests, qui en dérivaient, tourneraient à vide. Les
+/// au-delà des deux entrées que portait `POST_RESTORE_BACKFILLS`, qui ne porte plus
+/// de classe A depuis (sa seule entrée, Story 33-1a, est de classe B) — et ces deux
+/// tests, qui en dérivaient, tourneraient à vide. Les
 /// entrées retirées restent des cas d'espèce parfaitement valides pour éprouver
 /// la MACHINERIE : c'est elle qu'on protège ici, pas le fait qu'une entrée soit
 /// aujourd'hui atteignable en production.

@@ -494,11 +494,16 @@ const DRAFT_SUPPLIER_COUNT_SQL: &str = "SELECT CAST(COUNT(*) AS SIGNED) FROM sup
      WHERE company_id = ? AND status = 'draft' AND invoice_date BETWEEN ? AND ?";
 
 /// K8 : les premières, libellées « <numéro> — <fournisseur> », ou le seul
-/// fournisseur sans numéro (un numéro vide vaut absent).
+/// fournisseur sans numéro. Le numéro est la forme courte, le numéro interne d'abord,
+/// à défaut celui du fournisseur, un numéro vide valant absent (Story 33-1b, #926 :
+/// même règle que `kesh_core::invoice_format::supplier_invoice_short_label`, à ceci près
+/// que `TRIM` ne retire ici que l'espace ASCII, comme le dit son `non_blank`) ;
+/// `CONCAT_WS` ignore le `NULL`.
 const DRAFT_SUPPLIER_LIST_SQL: &str = "SELECT si.id, \
-     CAST(CASE WHEN si.supplier_invoice_number IS NULL OR TRIM(si.supplier_invoice_number) = '' \
-          THEN c.name ELSE CONCAT(si.supplier_invoice_number, ' — ', c.name) END \
-          AS CHAR CHARACTER SET utf8mb4), \
+     CAST(CONCAT_WS(' — ', \
+          COALESCE(NULLIF(TRIM(si.internal_number), ''), \
+                   NULLIF(TRIM(si.supplier_invoice_number), '')), \
+          c.name) AS CHAR CHARACTER SET utf8mb4), \
      si.invoice_date FROM supplier_invoices si \
      INNER JOIN contacts c ON c.id = si.contact_id \
      WHERE si.company_id = ? AND si.status = 'draft' AND si.invoice_date BETWEEN ? AND ? \

@@ -7,6 +7,7 @@
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
 	import { isApiError } from '$lib/shared/utils/api-client';
+	import { filtreDeLAdresse, saisieDeFiltre, sortieDeFiltre } from '$lib/shared/utils/date-filtre';
 	import { notifyError, notifySuccess } from '$lib/shared/utils/notify';
 
 	import { listInvoices, deleteInvoice } from '$lib/features/invoices/invoices.api';
@@ -76,8 +77,8 @@
 		statusFilter = (VALID_STATUS as string[]).includes(rawStatus)
 			? (rawStatus as InvoiceStatus)
 			: '';
-		dateFromFilter = params.get('dateFrom') ?? '';
-		dateToFilter = params.get('dateTo') ?? '';
+		dateFromFilter = filtreDeLAdresse(params.get('dateFrom'));
+		dateToFilter = filtreDeLAdresse(params.get('dateTo'));
 		const rawPaused = params.get('paused') ?? 'all';
 		pausedFilter = (VALID_PAUSED as string[]).includes(rawPaused)
 			? (rawPaused as PausedFilter)
@@ -349,10 +350,12 @@
 			id="invoice-date-from"
 			type="date"
 			value={dateFromFilter}
-			oninput={(e: Event) => {
-				dateFromFilter = (e.target as HTMLInputElement).value;
-				offset = 0;
-			}}
+			oninput={(e: Event) =>
+				saisieDeFiltre(e, (date) => {
+					dateFromFilter = date;
+					offset = 0;
+				})}
+			onblur={(e: Event) => sortieDeFiltre(e, dateFromFilter)}
 		/>
 	</div>
 	<div>
@@ -361,10 +364,12 @@
 			id="invoice-date-to"
 			type="date"
 			value={dateToFilter}
-			oninput={(e: Event) => {
-				dateToFilter = (e.target as HTMLInputElement).value;
-				offset = 0;
-			}}
+			oninput={(e: Event) =>
+				saisieDeFiltre(e, (date) => {
+					dateToFilter = date;
+					offset = 0;
+				})}
+			onblur={(e: Event) => sortieDeFiltre(e, dateToFilter)}
 		/>
 	</div>
 	{#if contactFilter || dateFromFilter || dateToFilter}

@@ -24,15 +24,15 @@
 //! ⚠️ Comparer des NOMBRES ne détecterait pas une route retirée pendant qu'une
 //! autre est ajoutée : le compte resterait égal et la dérive invisible. Le test
 //! `admin_pat_denied_e2e` peut compter, lui, parce qu'il opère sur un bloc clos
-//! entre marqueurs ; les 144 routes sont réparties dans tout le fichier.
+//! entre marqueurs ; les 145 routes sont réparties dans tout le fichier.
 //!
 //! # Deux fichiers, deux volets
 //!
 //! L'ensemble clos de l'INVENTAIRE est celui de `lib.rs` (142 routes à la
 //! release 0.17.0 — v017-3a, v016-2a et v017-4a réunies, mesuré le 2026-10-31 —,
-//! puis 144 à la 0.17.3, Story v0172-session ; dont `/mcp`, monté par
-//! `route_service` — Story 32-6a) ;
-//! celui du REGISTRE est plus large (147), car trois routes mutantes vivent dans
+//! puis 144 à la 0.17.3, Story v0172-session, et 145 à la 33-5 ; dont `/mcp`,
+//! monté par `route_service` — Story 32-6a) ;
+//! celui du REGISTRE est plus large (148), car trois routes mutantes vivent dans
 //! `routes/test_endpoints.rs` et sont montées par un `nest()`. D'où :
 //!
 //! - volet « route absente du registre » → sur les **deux** fichiers, faute de
@@ -121,16 +121,16 @@
 //!   que **toute route mutante a été examinée**. Autres candidates nommées en
 //!   revue P1 de la 15-5e2 (L-5), sans cycle démontré : `PUT /invoices/{id}`
 //!   quand le projet change (sentinelle, projet, facture),
-//!   `POST /projects/{id}/archive` et `POST /fiscal-years/{id}/reopen` — elles
-//!   prennent des verrous que les flux rejoués prennent aussi. Pour `/reopen`,
-//!   le cycle est nommé : la réouverture tient Y-1 puis parcourt les
-//!   postérieurs ; une contre-passation tient une origine postérieure puis
-//!   parcourt depuis le premier exercice (préexistant). Et le **renommage**
+//!   et `POST /projects/{id}/archive` — elle prend des verrous que les flux
+//!   rejoués prennent aussi. Et le **renommage**
 //!   (`PUT /fiscal-years/{id}`, Story 15-12a) : il tient l'exercice puis son
 //!   homonyme, la clôture tient ses antérieurs puis l'exercice — renommer un
 //!   exercice au nom d'un antérieur pendant sa clôture peut faire du renommage
-//!   la victime, en 500, sur un renommage que le pré-contrôle aurait refusé.
-//!   `POST /fiscal-years/{id}/close` n'est plus de la liste : elle est rejouée
+//!   la victime, en 500, sur un renommage que le pré-contrôle aurait refusé. Depuis
+//!   la Story 33-1a, la validation d'une facture fournisseur forme le même cycle
+//!   avec deux exercices d'une année : elle tient le sien, puis demande l'autre.
+//!   `POST /fiscal-years/{id}/close` et, depuis la Story 33-1a,
+//!   `POST /fiscal-years/{id}/reopen` ne sont plus de la liste : elles sont rejouées
 //!   (point (vi)). Le lot de **rejet** (`reconciliation::post_reject`, non
 //!   rejoué) verrouille ses transactions par identifiant croissant depuis la
 //!   Story 27-1 (AC4-bis), comme la suppression d'un import, ce qui ferme leur
@@ -156,9 +156,13 @@
 //!   `post`, `put`, `delete` et `patch`. Aucune route `GET` n'écrit au journal
 //!   aujourd'hui (remontée de l'AC1 : des `POST` et un `DELETE`) ; l'angle mort
 //!   est du même ordre que celui de l'audit (`GET /invoices/{id}/pdf`, plus bas).
-//! - **(vi)** **vingt-trois routes `SansEcritureAuJournal` sont rejouées quand
-//!   même** : `onboarding::finalize` (enveloppe `AppError`, Story 15-5e2 — la
-//!   seule des neuf routes d'étape à l'être, cf. (iv)),
+//! - **(vi)** **vingt-quatre routes `SansEcritureAuJournal` sont rejouées quand
+//!   même** : `fiscal_years::reopen_fiscal_year` (enveloppe `DbError`, Story 33-1a,
+//!   #926 : la réouverture tient un exercice puis demande ses postérieurs, la
+//!   validation d'une facture fournisseur tient le sien puis demande ceux de son
+//!   année ; tenue par `fiscal_year_reopen_is_replayed_when_it_is_the_deadlock_victim`,
+//!   `rejeu_interblocage_e2e.rs`), `onboarding::finalize` (enveloppe `AppError`, Story
+//!   15-5e2 — la seule des neuf routes d'étape à l'être, cf. (iv)),
 //!   `company_invoice_settings::update_invoice_settings` (enveloppe `DbError`,
 //!   exposée par l'avance des réglages de la saisie fournisseur — choix C70),
 //!   et — Story 15-12a, #543 — `fiscal_years::create_fiscal_year` et
@@ -315,6 +319,19 @@ enum Status {
 
 use Status::{Exempt, NoMatter, Traced};
 
+/// Story 33-7 (C-e334-11, C-e334-28) — le motif des gestes de session : une
+/// décision, et non un manque suivi. `auth::refresh` écrit tout de même une entrée
+/// sur le seul chemin du vol de jeton, ce que le motif dit.
+const DECISION_GESTES_SESSION: &str = "décision de Guy du 2026-11-06 — les gestes de session ne se tracent pas, hors la révocation de masse d'un vol de jeton";
+
+/// Les seuls handlers à qui [`DECISION_GESTES_SESSION`] tient lieu de motif.
+const HANDLERS_DECISION_GESTES_SESSION: [&str; 4] = [
+    "auth::login",
+    "auth::logout",
+    "auth::refresh",
+    "auth::activity",
+];
+
 /// Statut de rejeu sur interblocage d'une route mutante (Story 15-5e1, AC1).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Rejeu {
@@ -396,6 +413,7 @@ const LIB_ROUTES: &[(&str, &str, Status, Rejeu)] = &[
     ("delete", "email_templates::restore_email_template_default", Traced, SansEcritureAuJournal),
     ("put", "companies::update_company_email", Traced, SansEcritureAuJournal),
     ("put", "companies::update_company_contact_details", Traced, SansEcritureAuJournal),
+    ("put", "companies::update_company_address", Traced, SansEcritureAuJournal),
     ("post", "fiscal_years::reopen_fiscal_year", Traced, SansEcritureAuJournal),
     ("post", "companies::unlock_company_books", Traced, SansEcritureAuJournal),
     ("post", "onboarding::reset", Traced, SansEcritureAuJournal),
@@ -539,11 +557,11 @@ const LIB_ROUTES: &[(&str, &str, Status, Rejeu)] = &[
     ("put", "projects::update_project", Traced, SansEcritureAuJournal),
     ("post", "projects::archive_project", Traced, SansEcritureAuJournal),
     ("post", "projects::unarchive_project", Traced, SansEcritureAuJournal),
-    ("put", "auth::change_password", Exempt("issue #435 — change_password, login, logout, refresh"), SansEcritureAuJournal),
+    ("put", "auth::change_password", Traced, SansEcritureAuJournal),
     // Story v0172-session (0.17.3, #876) — le battement d'activité n'écrit que
     // l'échéance d'une session (`refresh_tokens.expires_at`), comme le
     // renouvellement : exempté avec lui, statut de rejeu des routes d'auth.
-    ("post", "auth::activity", Exempt("issue #876 — le battement d'activité n'écrit que l'échéance d'une session, comme le renouvellement"), SansEcritureAuJournal),
+    ("post", "auth::activity", Exempt(DECISION_GESTES_SESSION), SansEcritureAuJournal),
     ("put", "profile::set_mode", Traced, SansEcritureAuJournal),
     ("post", "onboarding::set_language", Traced, SansEcritureAuJournal),
     ("post", "onboarding::set_mode", Traced, SansEcritureAuJournal),
@@ -555,9 +573,9 @@ const LIB_ROUTES: &[(&str, &str, Status, Rejeu)] = &[
     ("post", "onboarding::set_bank_account", Traced, SansEcritureAuJournal),
     ("post", "onboarding::skip_bank", Traced, SansEcritureAuJournal),
     ("post", "onboarding::finalize", Traced, SansEcritureAuJournal),
-    ("post", "auth::login", Exempt("issue #435 — change_password, login, logout, refresh"), SansEcritureAuJournal),
-    ("post", "auth::logout", Exempt("issue #435 — change_password, login, logout, refresh"), SansEcritureAuJournal),
-    ("post", "auth::refresh", Exempt("issue #435 — change_password, login, logout, refresh"), SansEcritureAuJournal),
+    ("post", "auth::login", Exempt(DECISION_GESTES_SESSION), SansEcritureAuJournal),
+    ("post", "auth::logout", Exempt(DECISION_GESTES_SESSION), SansEcritureAuJournal),
+    ("post", "auth::refresh", Exempt(DECISION_GESTES_SESSION), SansEcritureAuJournal),
     ("post", "setup::create_admin", Traced, SansEcritureAuJournal),
     ("post", "auth::forgot_password", Traced, SansEcritureAuJournal),
     ("post", "auth::reset_password", Traced, SansEcritureAuJournal),];
@@ -959,8 +977,8 @@ fn the_registry_partition_is_what_the_story_declares() {
 
     assert_eq!(
         LIB_ROUTES.len(),
-        144,
-        "l'inventaire porte sur 144 routes (+ 1 : `/mcp`, 32-6a ; + 1 : la décision d'un \
+        145,
+        "l'inventaire porte sur 145 routes (+ 1 : l'adresse de la société, 33-5 ; + 1 : `/mcp`, 32-6a ; + 1 : la décision d'un \
          envoi MCP, 32-8b ; + 5 : les routes mutantes des prompts du serveur MCP, 32-10a-iii ; \
          + 1 : le rattachement d'une transaction à une écriture, v017-3a ; + 2 : l'aperçu et \
          la création d'un relevé saisi à la main, v016-2a ; + 4 : le `PUT`, le `DELETE`, la \
@@ -974,8 +992,11 @@ fn the_registry_partition_is_what_the_story_declares() {
     // validation et la dévalidation d'une facture fournisseur, tracés).
     // Story v0172-session (#876, CR #891) : 135 → 136 (le `PUT` du réglage de la
     // durée d'inactivité, tracé ; le battement est exempté).
+    // Story 33-5 (#909) : 136 → 137 (la correction de l'adresse de la société).
+    // Story 33-7 (#435) : 136 → 137 (le changement de mot de passe, tracé).
+    // Fusion de la release 0.17.5 (2026-11-07) : les deux réunies, **138**.
     assert_eq!(
-        traced, 136,
+        traced, 138,
         "73 tracées avant la 25-1b, plus ses 14, plus la dévalidation (25-2-b-1, #440), \
          plus l'annulation d'un règlement client (25-3-a-1) et fournisseur (25-3-a-2, #414), \
          plus l'annulation d'un rapprochement (25-3-b, #418), plus le solde du reste \
@@ -999,11 +1020,13 @@ fn the_registry_partition_is_what_the_story_declares() {
          refs #671), plus la saisie manuelle d'un relevé (v016-2a, refs #816), plus le \
          `PUT`, le `DELETE`, la validation et la dévalidation d'une facture fournisseur \
          (v017-4a, refs #849), plus le réglage de la durée d'inactivité de la session \
-         (v0172-session, refs #891)"
+         (v0172-session, refs #891), plus la correction de l'adresse de la société \
+         (33-5, refs #909), plus le changement de mot de passe (33-7, refs #435)"
     );
     assert_eq!(
-        exempt, 5,
-        "4 routes d'auth (#435) et le battement d'activité (#876, v0172-session)"
+        exempt, 4,
+        "connexion, déconnexion, renouvellement et battement d'activité : \
+         DECISION_GESTES_SESSION (33-7)"
     );
     assert_eq!(
         no_matter, 3,
@@ -1012,7 +1035,7 @@ fn the_registry_partition_is_what_the_story_declares() {
     );
     assert_eq!(
         LIB_ROUTES.len() + TEST_ENDPOINT_ROUTES.len(),
-        147,
+        148,
         "le registre est plus large que l'inventaire, et c'est voulu"
     );
 }
@@ -1065,14 +1088,51 @@ fn every_exemption_names_the_issue_that_follows_it() {
     // ⛔ C'est la garde qui empêche l'exemption de devenir la sortie la moins
     // coûteuse : écrire une justification est plus rapide que tracer une route,
     // et une justification sans suivi ne se distingue pas d'un oubli.
+    // Limite qui reste (Story 33-7, C-e334-28) : `issue #` n'y prouve pas que
+    // l'issue soit ouverte — une seule chaîne ne peut pas le dire.
     for (verb, handler, status, _) in LIB_ROUTES.iter().chain(TEST_ENDPOINT_ROUTES) {
         if let Exempt(motif) = status {
             assert!(
-                motif.contains("issue #") || motif.contains("jamais monté en production"),
+                motif_recevable(handler, motif),
                 "l'exemption de `{verb} {handler}` doit nommer l'issue qui la \
                  suit, ou dire pourquoi aucune n'est nécessaire — trouvé : {motif:?}"
             );
         }
+    }
+}
+
+/// Story 33-7 (AC-10, C-e334-28) — ce qui rend une exemption recevable : une issue
+/// qui la suit, un chemin jamais monté en production, ou, **pour les seuls
+/// [`HANDLERS_DECISION_GESTES_SESSION`]**, la décision de Guy sur les gestes de
+/// session : une décision ne devient pas la sortie la moins coûteuse.
+fn motif_recevable(handler: &str, motif: &str) -> bool {
+    motif.contains("issue #")
+        || motif.contains("jamais monté en production")
+        || (motif == DECISION_GESTES_SESSION && HANDLERS_DECISION_GESTES_SESSION.contains(&handler))
+}
+
+#[test]
+fn motif_recevable_ne_laisse_la_decision_qu_aux_gestes_de_session() {
+    let cas: &[(&str, &str, bool)] = &[
+        ("invoices::create", "issue #1 — suivi", true),
+        ("invoices::create", "jamais monté en production", true),
+        ("auth::login", "issue #1 — suivi", true),
+        ("auth::login", DECISION_GESTES_SESSION, true),
+        ("auth::logout", DECISION_GESTES_SESSION, true),
+        ("auth::refresh", DECISION_GESTES_SESSION, true),
+        ("auth::activity", DECISION_GESTES_SESSION, true),
+        ("auth::change_password", DECISION_GESTES_SESSION, false),
+        ("invoices::create", DECISION_GESTES_SESSION, false),
+        ("auth::login", "une raison quelconque", false),
+        ("invoices::create", "une raison quelconque", false),
+        ("auth::login", "décision de Guy", false),
+    ];
+    for (handler, motif, attendu) in cas {
+        assert_eq!(
+            motif_recevable(handler, motif),
+            *attendu,
+            "{handler} : {motif:?}"
+        );
     }
 }
 
@@ -1382,8 +1442,8 @@ fn the_replay_partition_is_what_the_story_declares() {
     );
     assert_eq!(exemptees, 3, "full_import, /seed, /reset");
     assert_eq!(
-        sans_ecriture, 119,
-        "118 routes de lib.rs (v0172-session : + 2 — le réglage de la durée d'inactivité \
+        sans_ecriture, 120,
+        "119 routes de lib.rs (33-5 : + 1 — l'adresse de la société ; v0172-session : + 2 — le réglage de la durée d'inactivité \
          et le battement d'activité ; v017-4a : + 4 — la saisie fournisseur et la complétion \
          d'import reclassées, le `PUT` et le `DELETE` d'un brouillon) — 112 avant \
          (la remise à zéro y est entrée, 15-7b2 ; la suppression d'un \
@@ -1401,7 +1461,8 @@ fn the_replay_partition_is_what_the_story_declares() {
     // Story v017-4a (#849) : 141 → 145 (quatre routes de la facture fournisseur).
     // Story v0172-session (#876, #891) : 145 → 147 (le réglage de la durée
     // d'inactivité, le battement d'activité).
-    assert_eq!(tout.len(), 147);
+    // Story 33-5 (#909) : 147 → 148 (l'adresse de la société).
+    assert_eq!(tout.len(), 148);
 }
 
 /// Visiteur `syn` d'un fichier de routes : relève chaque appel à la primitive

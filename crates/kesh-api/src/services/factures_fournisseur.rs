@@ -13,7 +13,9 @@
 use kesh_db::entities::Role;
 use kesh_db::entities::supplier_invoice::{SupplierInvoice, SupplierInvoiceLine};
 use kesh_db::errors::DbError;
-use kesh_db::repositories::supplier_invoices::{self, SupplierInvoiceSettlementView};
+use kesh_db::repositories::supplier_invoices::{
+    self, SupplierInvoiceListFilter, SupplierInvoiceSettlementView, SupplierInvoiceSort,
+};
 
 /// Réexporté pour l'outil MCP de la 32-9a (C-32-9-25) : `src/mcp/` ne nomme pas
 /// `kesh_db::repositories`. `SupplierInvoiceSettlementView`, qui porte le
@@ -55,6 +57,56 @@ pub struct DemandeListeFacturesFournisseur {
     /// construit par [`statuts_du_filtre`] (la route), laissé vide par l'outil
     /// MCP, qui n'en change pas.
     pub statuts: Vec<&'static str>,
+    /// Story 33-1b (#926) — la recherche (numéro interne, numéro et nom du
+    /// fournisseur), construite par [`recherche_du_filtre`] ; `None` par défaut,
+    /// laissée ainsi par l'outil MCP.
+    pub recherche: Option<String>,
+    /// Story 33-1b (#926) — l'ordre, construit par [`tri_du_filtre`] ; la date par
+    /// défaut, laissée ainsi par l'outil MCP.
+    pub tri: SupplierInvoiceSort,
+}
+
+/// Longueur maximale de `?q=`, en caractères.
+pub const RECHERCHE_MAX_CARACTERES: usize = 128;
+
+/// Le filtre `?q=` (Story 33-1b, #926) : absent, vide ou blanc → aucune recherche ;
+/// au-delà de [`RECHERCHE_MAX_CARACTERES`] → `400 VALIDATION_ERROR`.
+pub fn recherche_du_filtre(param: Option<&str>) -> Result<Option<String>, AppError> {
+    let Some(valeur) = param.map(str::trim).filter(|q| !q.is_empty()) else {
+        return Ok(None);
+    };
+    if valeur.chars().count() > RECHERCHE_MAX_CARACTERES {
+        return Err(AppError::Validation(format!(
+            "q : {RECHERCHE_MAX_CARACTERES} caractères au plus"
+        )));
+    }
+    Ok(Some(valeur.to_string()))
+}
+
+/// Les filtres `?sort=` et `?order=` (Story 33-1b, #926) : une liste fermée, jamais
+/// d'interpolation. `sort` absent : l'ordre d'aujourd'hui ; `order` absent : croissant.
+/// Une valeur hors liste → `400 VALIDATION_ERROR`.
+pub fn tri_du_filtre(
+    sort: Option<&str>,
+    order: Option<&str>,
+) -> Result<SupplierInvoiceSort, AppError> {
+    let descendant = match order {
+        None | Some("asc") => false,
+        Some("desc") => true,
+        Some(autre) => {
+            return Err(AppError::Validation(format!(
+                "order : valeur inconnue '{autre}' (attendu : asc, desc)"
+            )));
+        }
+    };
+    match sort {
+        None => Ok(SupplierInvoiceSort::DateDesc),
+        Some("internalNumber") if descendant => Ok(SupplierInvoiceSort::InternalNumberDesc),
+        Some("internalNumber") => Ok(SupplierInvoiceSort::InternalNumberAsc),
+        Some(autre) => Err(AppError::Validation(format!(
+            "sort : valeur inconnue '{autre}' (attendu : internalNumber)"
+        ))),
+    }
 }
 
 /// Le filtre `?status=` de `GET /api/v1/supplier-invoices` (Story v017-4a,
@@ -115,9 +167,18 @@ pub async fn lister(
             .await?;
     let limit = demande.limit.unwrap_or(LIMITE_DEFAUT).clamp(1, LIMITE_MAX);
     let offset = demande.offset.unwrap_or(0).max(0);
-    let (items, total) =
-        supplier_invoices::list(lecture.pool(), company.id, &demande.statuts, limit, offset)
-            .await?;
+    let (items, total) = supplier_invoices::list_filtered(
+        lecture.pool(),
+        company.id,
+        SupplierInvoiceListFilter {
+            statuses: &demande.statuts,
+            q: demande.recherche.as_deref(),
+            sort: demande.tri,
+        },
+        limit,
+        offset,
+    )
+    .await?;
     Ok(PageFacturesFournisseur {
         items,
         total,

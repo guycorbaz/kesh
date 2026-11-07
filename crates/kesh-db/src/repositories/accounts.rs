@@ -15,7 +15,7 @@ use sqlx::mysql::MySqlPool;
 use crate::entities::account::{Account, AccountRole, AccountType, AccountUpdate, NewAccount};
 use crate::entities::audit_log::NewAuditLogEntry;
 use crate::errors::{DbError, map_db_error};
-use crate::repositories::audit_log;
+use crate::repositories::{audit_log, company_invoice_settings};
 
 /// Colonnes de `accounts` sélectionnées pour hydrater [`Account`], sous forme de
 /// littéral — un `macro_rules!` plutôt qu'un `const` pour rester utilisable dans
@@ -678,13 +678,55 @@ pub async fn update(
 
 /// Archive un compte (active = false). Verrouillage optimiste + audit log (Story 3.5).
 /// Retourne `IllegalStateTransition` si le compte a des sous-comptes actifs.
+///
+/// Sans l'avertissement de [`archive_guarded`], que seule la route emploie : c'est
+/// la forme des montages de tests (`confirm_designated = true`).
 pub async fn archive(
     pool: &MySqlPool,
     id: i64,
     version: i32,
     user_id: i64,
 ) -> Result<Account, DbError> {
+    archive_guarded(pool, id, version, user_id, true).await
+}
+
+/// Archive un compte, et refuse sans confirmation un compte désigné dans les
+/// paramètres de facturation (Story 33-8, #486) : `AccountDesignatedInSettings`,
+/// qui nomme les réglages et ne consomme pas la version. Confirmé, le réglage reste
+/// tel quel, et l'audit nomme ce qui le désignait.
+///
+/// **Ordre des refus (C-e334-29)** : sous-comptes actifs, désignation, version. La
+/// désignation se lit sur l'état courant, juste avant l'`UPDATE` qui contrôle la
+/// version : un écran périmé non confirmé reçoit donc d'abord le refus de désignation,
+/// puis, s'il confirme, le conflit de version.
+///
+/// La société est celle du compte, lue ici : aucun appelant ne peut en faire lire
+/// une autre (revue P1, A L-5).
+///
+/// ⚠️ **Limite assumée (C-e334-45)** : un `PUT` concurrent des paramètres, qui a
+/// validé le compte encore actif, peut le désigner juste après cette lecture. La
+/// verrouiller ne suffirait pas : il faudrait aussi que le `PUT` verrouille le compte
+/// qu'il valide. Le compte reste alors archivé et désigné, et l'écriture qui l'emploie
+/// est refusée : l'écart se voit à l'usage, il n'écrit rien de faux.
+pub async fn archive_guarded(
+    pool: &MySqlPool,
+    id: i64,
+    version: i32,
+    user_id: i64,
+    confirm_designated: bool,
+) -> Result<Account, DbError> {
     let mut tx = pool.begin().await.map_err(map_db_error)?;
+
+    let company_id: Option<i64> =
+        sqlx::query_scalar("SELECT company_id FROM accounts WHERE id = ?")
+            .bind(id)
+            .fetch_optional(&mut *tx)
+            .await
+            .map_err(map_db_error)?;
+    let Some(company_id) = company_id else {
+        tx.rollback().await.map_err(map_db_error)?;
+        return Err(DbError::NotFound);
+    };
 
     // Vérifier que le compte n'a pas d'enfants actifs
     let children: (i64,) =
@@ -698,6 +740,15 @@ pub async fn archive(
         return Err(DbError::IllegalStateTransition(
             "impossible d'archiver un compte avec des sous-comptes actifs".into(),
         ));
+    }
+
+    let designated =
+        company_invoice_settings::designations_of_account(&mut *tx, company_id, id).await?;
+    if !designated.is_empty() && !confirm_designated {
+        tx.rollback().await.map_err(map_db_error)?;
+        return Err(DbError::AccountDesignatedInSettings {
+            settings: designated,
+        });
     }
 
     let rows = sqlx::query(
@@ -735,6 +786,10 @@ pub async fn archive(
     // Rollback explicite en cas d'erreur pour cohérence stylistique avec
     // les autres branches de la fonction (le Drop de tx rollback déjà
     // implicitement, mais être explicite évite tout ambiguïté).
+    let mut details = account_snapshot_json(&account);
+    if !designated.is_empty() {
+        details["designatedSettings"] = serde_json::json!(designated);
+    }
     if let Err(e) = audit_log::insert_in_tx(
         &mut tx,
         NewAuditLogEntry::user(
@@ -742,7 +797,7 @@ pub async fn archive(
             "account.archived".to_string(),
             "account".to_string(),
             id,
-            Some(account_snapshot_json(&account)),
+            Some(details),
         ),
     )
     .await

@@ -1,3 +1,17 @@
+# last_updated: 2026-11-07 (release 0.17.5 : treize branches de l'Epic 33 fusionnées sur release/0.17.5, gates et recettes de montée jouées ; 33-11 reste review, AC-6 sur la PR ; epic-33 in-progress jusqu'à la rétrospective)
+# last_updated: 2026-11-07 (Epic 33 : 33-12a et 33-12b done, #941 ; validation close au plafond de huit passes, revue de code P1 à P4 close sur 0 au-dessus de LOW ; dernier gate complet à 80bc4363)
+# last_updated: 2026-11-07 (Epic 33 : 33-12, jeu de caractères de la QR-facture, ajoutée ; #941)
+# last_updated: 2026-11-07 (Epic 33 : 33-1a et 33-1b done, revue P1 remédiée, P2 ciblée à 0 au-dessus de LOW ; répétition au manifeste 0.17.5 à l'intégration ; non poussé)
+# last_updated: 2026-11-06 (Epic 33 : 33-3a et 33-3b done, revue de code terminée en deux passes, P2 ciblée 0 au-dessus de LOW)
+# last_updated: 2026-11-07 (Epic 33 : 33-4 done, bornes d'années et frappe des filtres de date ; revue de code P1 1 H + 2 M → P2 ciblée 0 au-dessus de LOW ; aucune migration)
+# last_updated: 2026-11-07 (Epic 33 : 33-5 done, revue de code en deux passes, P1 7 M → P2 0 au-dessus de LOW)
+# last_updated: 2026-11-07 (Epic 33 : 33-6 done, revue de code en trois passes, P1 13 M → P2 2 M → P3 0 au-dessus de LOW)
+# last_updated: 2026-11-07 (33-9-e2e-sidebar : revue de code close, P1 B/E/A 0/0/1/3-0/0/0/4-0/0/1/3 → P2 ciblée 0/0/0/2 ; done ; suite : #959)
+# last_updated: 2026-11-06 (Epic 33 : validation terminée en quatre passes, P1 11 M → P2 1 H + 9 M → P3 4 M → P4 ciblée 0 retenu ; développement à lancer)
+# last_updated: 2026-11-06 (Epic 33 : validation P1 remédiée sur douze fiches ; 33-11 à sa P1 ; annotation : l'en-tête « douze stories au backlog » valait au kickoff, 33-11 s'y ajoute : quatorze clés avec 33-0, treize ready-for-dev)
+# last_updated: 2026-11-06 (Epic 33 : 33-11, filtre de CI, ajoutée sur demande de Guy)
+# last_updated: 2026-11-06 (Epic 33 : douze fiches écrites, ready-for-dev ; validation P1 à lancer)
+# last_updated: 2026-11-06 (Epic 33 ouvert, kickoff : epic-33-numerotation-et-defauts.md ; douze stories au backlog, cible v0.17.5)
 # last_updated: 2026-11-06 (rétrospective de la 0.17.4, tenue en autonomie : release-0.17.4-retro-2026-11-06.md ; release-0.17.4-retrospective done ; Status des sept fiches v0174 alignés sur le registre)
 # last_updated: 2026-11-05 (v0174-correctifs : validation terminée (P4 ciblée Haiku 0/0/0/3) ; développement des trois fiches ; review)
 # last_updated: 2026-11-05 (v0174-correctifs : validations P1, P2 et P3 remédiées ; validation P4 ciblée à lancer)
@@ -989,3 +1003,21 @@ development_status:
   21-6c-integrations-decouvrabilite: done  # 2026-07-17 bmad-create-story validate CONVERGÉ 2 passes (Sonnet→Haiku, trend 1M → 0, budget 2/8, rotation orthogonale à l'auteur Opus). P1 Sonnet vérification EXHAUSTIVE (81 outils) — M1 MEDIUM : helper `overdueDate` local non-exporté de reminders.spec.ts réutilisé par l'AC 16 → test dashboard dans son propre spec homepage-reminders.spec.ts + promotion `overdueDate` dans api-fixtures.ts (DRY). Le reste confirmé exact avec profondeur inhabituelle : piège n°1 (verrou optimiste) vérifié jusqu'au SQL (set_dunning_pause fait version+1 sur les 2 branches, mark/unmark envoient invoice.version), 5 contrats backend + RBAC structurel, INVOICE_NOT_PAUSED=422, wrappers absents/ReminderResponse présent, points d'insertion, lint #30. P2 Haiku 0 finding, 0 erreur de catégorie (garde-fou anti-hallucination a tenu 4e story consécutive), patch P1 confirmé + reprise nulle bien les 2 colonnes (SQL vérifié). Spec SCELLÉE. Prochaine : bmad-dev-story 21-6c. // 2026-07-17 bmad-create-story — spec créée (`21-6c-integrations-decouvrabilite.md`, 20 ACs, 8 tasks), cartographie ground-truth 3 agents Explore (fiche facture / dashboard / backend+tests). FRONTEND PUR (endpoints history/pause/resume livrés 21-5a, 0 code Rust, 0 migration). Consomme 21-6a (dunningPausedAt sur InvoiceResponse) + 21-6b (feature reminders/ + page). Décisions Guy figées : D-c1 pause via modale (note optionnelle) + reprise DIRECTE (backend nulle la note) ; D-c2 compteur dans le widget « Factures ouvertes » EXISTANT (1er fetch du dashboard, patron widget bancaire onMount+catch VIDE+masquage) ; D-c3 liens croisés BIDIRECTIONNELS échéancier ↔ Rappels. **PIÈGE n°1 (confirmé ground-truth) : verrou optimiste** — pause_dunning/resume_dunning renvoient DunningPauseResponse (PAS InvoiceResponse complet) et INCRÉMENTENT version → l'UI DOIT ré-appliquer `{ ...invoice, version, dunningPausedAt, dunningPausedNote }` sinon la prochaine action (mark-paid/unmark/validate/delete envoient invoice.version) prend un 409. Test anti-régression obligatoire (AC 15). PIÈGE n°2 : compteur dashboard = /dunning/reminders Comptable+ → garde canManage AVANT fetch (Consultation ne fetch pas, pas de 403). Wrappers listReminderHistory/pauseDunning/resumeDunning + type DunningPauseResponse ABSENTS (confirmé grep) → à créer. ReminderResponse existe déjà (réutilisé pour l'historique). Rappel manuel n'exige PAS facture échue (juste validated+non-payée) → peupler l'historique en test est simple. Badge = DunningPausedBadge 21-6a (--color-text AA). Hors scope : lien balance âgée → 21-7 ; deep-link fiche contact impossible ; cumuls non affichés (L21-8). Prochaine : bmad-create-story validate 21-6c. // SPLIT de 21-6. Historique des rappels sur la fiche facture (1re <section> de la page — patron settings/dunning) + toggle suspension UI + compteur dashboard D25 (dérivé CLIENT de GET /dunning/reminders, aucun endpoint de comptage — cf. L21-8 ; widget « factures ouvertes » aujourd'hui 100% statique, 21-6c y introduit le 1er fetch, patron = widget bancaire onMount+catch silencieux ; RBAC : liste = Comptable+ → un rôle Consultation prend un 403, à avaler) + liens croisés échéancier ↔ Rappels. Lien vers la balance âgée REPORTÉ à 21-7 (/reports n'a aucune synchro URL, l'onglet n'est pas adressable). Deep-link fiche contact IMPOSSIBLE (/contacts/[id] n'existe pas, édition en modale). CONSOMME 21-6a (exposition suspension pour le toggle) ET 21-6b (la page à lier).
   21-7-balance-agee: done  # kesh-report::aged_receivables (Non échu + 1-30/31-60/61-90/90+, TTC via 21-2, réconciliation totaux) + route + CSV Comptable+ (G2 B2) + vue frontend + drill-down. Flottante après 21-2
   21-8-doc-e2e-relances: done  # manuels (cycle, CGV/frais hors QR, recommandé mise en demeure, LPD) + E2E round-trip MockMailer (config→échue→liste→envoi unitaire+lot→historique→suspension ; balance âgée) + A4 credit-notes.spec → api-fixtures
+  epic-33: in-progress
+  33-0-kickoff: done  # 2026-11-06 : epic-33-numerotation-et-defauts.md ; 246 issues et 91 bugs au tag v0.17.4 ; objectif : moins de chacun au tag v0.17.5.
+  33-1a-numero-interne-fournisseur: done
+  33-1b-numero-interne-ecrans: done
+  33-2-import-camt-refus: done  # 2026-11-06 : revue de code terminée en quatre passes, LOW restants au Change Log.
+  33-3a-accueil-agregats: done
+  33-3b-accueil-graphiques: done
+  33-4-bornes-annees: done
+  33-5-adresse-societe: done
+  33-6-reglement-apres-commit: done
+  33-7-traces-audit: done
+  33-8-compte-designe-archive: done
+  33-9-e2e-sidebar: done
+  33-10-outillage-release: done
+  33-11-filtre-ci: review  # 2026-11-06 : demande de Guy ; fiche écrite par l'orchestrateur, validation P1 à lancer.
+  33-12a-jeu-caracteres-qr: done  # 2026-11-07 : #941, P1, trouvée à la revue de la 33-5
+  33-12b-adresse-imprimee-qr: done  # 2026-11-07 : #941, NPA et localité absents du reçu et de la partie paiement
+  epic-33-retrospective: optional

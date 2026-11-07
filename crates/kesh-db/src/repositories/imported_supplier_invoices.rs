@@ -373,6 +373,8 @@ pub async fn detach_in_tx(
 pub struct EntrySourceDocument {
     pub supplier_invoice_id: i64,
     pub supplier_invoice_number: Option<String>,
+    /// Le numéro interne de la facture (Story 33-1b, #926).
+    pub internal_number: Option<String>,
     pub original_filename: String,
 }
 
@@ -396,7 +398,7 @@ where
     E: sqlx::Executor<'e, Database = MySql>,
 {
     sqlx::query_as::<_, EntrySourceDocument>(
-        "SELECT si.id AS supplier_invoice_id, si.supplier_invoice_number, \
+        "SELECT si.id AS supplier_invoice_id, si.supplier_invoice_number, si.internal_number, \
                 isi.original_filename \
          FROM supplier_invoices si \
          JOIN imported_supplier_invoices isi \

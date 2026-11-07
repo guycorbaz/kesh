@@ -444,6 +444,44 @@ mod tests {
         })
     }
 
+    /// **AC9** (Story 33-12a, #941) — un code bâti avec `&`, `<`, Ș et U+00A0, rendu
+    /// par le générateur de production, se relit par le décodeur de l'import à la
+    /// valeur de `texte_code`, en UTF-8. Le décodeur n'est pas modifié : il lit
+    /// aussi les QR de tiers.
+    #[test]
+    fn code_au_jeu_du_paragraphe_4_1_1_se_relit() {
+        let mut data = donnees_spc_test();
+        data.creditor = Address {
+            address_type: AddressType::Structured,
+            name: "Max Muster & Söhne".into(),
+            line1: "Rue <Ștefan\u{A0}cel Mare>".into(),
+            line2: "12".into(),
+            postal_code: "1003".into(),
+            town: "Lausanne".into(),
+            country: "CH".into(),
+        };
+        let payload = build_payload(&data).unwrap();
+        let qr = kesh_qrbill::generator::render_qr_image(&payload).unwrap();
+
+        // Un module = 8 pixels, zone de silence de 4 modules.
+        const ECHELLE: u32 = 8;
+        let cote = (qr.size() as u32 + 8) * ECHELLE;
+        let image = image::GrayImage::from_fn(cote, cote, |x, y| {
+            let (mx, my) = ((x / ECHELLE) as i32 - 4, (y / ECHELLE) as i32 - 4);
+            image::Luma([if qr.get_module(mx, my) { 0u8 } else { 255u8 }])
+        });
+        let mut png = Vec::new();
+        image::DynamicImage::ImageLuma8(image)
+            .write_to(&mut std::io::Cursor::new(&mut png), image::ImageFormat::Png)
+            .unwrap();
+
+        let relu = decode_spc_from_image_bytes(&png)
+            .expect("décodage")
+            .expect("un QR SPC");
+        assert_eq!(relu.creditor.name, "Max Muster & Söhne");
+        assert_eq!(relu.creditor.street_or_line1, "Rue <Ștefan cel Mare>");
+    }
+
     #[test]
     fn decode_spc_from_png_roundtrip() {
         let (png, payload) = render_spc_qr_png();

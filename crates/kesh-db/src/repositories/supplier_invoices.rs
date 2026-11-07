@@ -38,8 +38,8 @@ use crate::repositories::invoice_settlements::{self, ClaimSubject};
 use crate::repositories::{audit_log, letterings};
 
 /// SELECT scopé multi-tenant (anti-IDOR — toujours `AND company_id = ?`).
-const FIND_SCOPED_SQL: &str = "SELECT id, company_id, contact_id, supplier_invoice_number, status, \
-    invoice_date, due_date, total_amount, creditor_iban, creditor_qr_iban, payment_reference, \
+const FIND_SCOPED_SQL: &str = "SELECT id, company_id, contact_id, supplier_invoice_number, \
+    internal_number, status, invoice_date, due_date, total_amount, creditor_iban, creditor_qr_iban, payment_reference, \
     expected_payment_amount, project_id, purchase_journal_entry_id, settlement_type, settlement_bank_account_id, \
     settlement_account_id, settlement_journal_entry_id, paid_at, version, created_at, updated_at \
     FROM supplier_invoices WHERE id = ? AND company_id = ?";
@@ -49,7 +49,8 @@ const FIND_SCOPED_SQL: &str = "SELECT id, company_id, contact_id, supplier_invoi
 /// même liste et même ordre que [`FIND_SCOPED_SQL`]. Qui ajoute un champ à
 /// l'entité l'ajoute aux deux.
 pub const SUPPLIER_INVOICE_COLUMNS_SI: &str = "si.id, si.company_id, si.contact_id, \
-    si.supplier_invoice_number, si.status, si.invoice_date, si.due_date, si.total_amount, \
+    si.supplier_invoice_number, si.internal_number, si.status, si.invoice_date, si.due_date, \
+    si.total_amount, \
     si.creditor_iban, si.creditor_qr_iban, si.payment_reference, si.expected_payment_amount, \
     si.project_id, si.purchase_journal_entry_id, si.settlement_type, \
     si.settlement_bank_account_id, si.settlement_account_id, si.settlement_journal_entry_id, \
@@ -72,6 +73,7 @@ pub struct SupplierInvoiceListItem {
     pub contact_id: i64,
     pub contact_name: String,
     pub supplier_invoice_number: Option<String>,
+    pub internal_number: Option<String>,
     pub status: String,
     pub invoice_date: chrono::NaiveDate,
     pub due_date: Option<chrono::NaiveDate>,
@@ -84,6 +86,7 @@ fn snapshot_json(inv: &SupplierInvoice, lines: &[SupplierInvoiceLine]) -> serde_
         "companyId": inv.company_id,
         "contactId": inv.contact_id,
         "supplierInvoiceNumber": inv.supplier_invoice_number,
+        "internalNumber": inv.internal_number,
         "status": inv.status,
         "invoiceDate": inv.invoice_date.to_string(),
         "totalAmount": inv.total_amount.to_string(),
@@ -216,10 +219,49 @@ pub async fn get(
 /// `chk_supplier_invoices_status_v2` (Story v017-4a).
 pub const SUPPLIER_INVOICE_STATUSES: [&str; 4] = ["draft", "open", "paid", "cancelled"];
 
+/// L'ordre de la liste (Story 33-1b, #926) : une liste fermée, jamais de texte du
+/// client dans la requête.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum SupplierInvoiceSort {
+    /// `invoice_date DESC, id DESC` : l'ordre d'avant la 0.17.5.
+    #[default]
+    DateDesc,
+    /// Le numéro interne, tri **naturel** (`FF-2026-999` avant `FF-2026-1000`,
+    /// `NATURAL_SORT_KEY`, MariaDB 10.7 au moins), sans numéro à la fin.
+    InternalNumberAsc,
+    /// De même, décroissant ; sans numéro à la fin aussi.
+    InternalNumberDesc,
+}
+
+impl SupplierInvoiceSort {
+    fn order_by(self) -> &'static str {
+        match self {
+            Self::DateDesc => "si.invoice_date DESC, si.id DESC",
+            Self::InternalNumberAsc => {
+                "si.internal_number IS NULL, NATURAL_SORT_KEY(si.internal_number) ASC, si.id ASC"
+            }
+            Self::InternalNumberDesc => {
+                "si.internal_number IS NULL, NATURAL_SORT_KEY(si.internal_number) DESC, si.id DESC"
+            }
+        }
+    }
+}
+
+/// Le filtre de [`list_filtered`], neutre par défaut.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct SupplierInvoiceListFilter<'a> {
+    /// Les statuts retenus ; **vide = tous** (Story v017-4a, AC-15) — la route refuse
+    /// un filtre vide ou inconnu avant d'appeler.
+    pub statuses: &'a [&'a str],
+    /// La recherche (Story 33-1b) : numéro interne, numéro et nom du fournisseur.
+    /// `None`, vide ou blanche : aucun filtre.
+    pub q: Option<&'a str>,
+    /// L'ordre ; défaut : la date.
+    pub sort: SupplierInvoiceSort,
+}
+
 /// Liste paginée des factures fournisseurs d'une company (les plus récentes
-/// d'abord). `statuses` filtre par statut (Story v017-4a, AC-15) ; **vide =
-/// tous** — la route refuse un filtre vide ou inconnu avant d'appeler. `total`
-/// compte le filtre.
+/// d'abord), filtrée par statut. Cf. [`list_filtered`].
 pub async fn list(
     pool: &MySqlPool,
     company_id: i64,
@@ -227,7 +269,31 @@ pub async fn list(
     limit: i64,
     offset: i64,
 ) -> Result<(Vec<SupplierInvoiceListItem>, i64), DbError> {
-    let filter = if statuses.is_empty() {
+    list_filtered(
+        pool,
+        company_id,
+        SupplierInvoiceListFilter {
+            statuses,
+            ..Default::default()
+        },
+        limit,
+        offset,
+    )
+    .await
+}
+
+/// Liste paginée des factures fournisseurs d'une company, selon `filtre`. `total`
+/// compte le filtre, recherche comprise ; tout passe par des marqueurs, `%` et `_`
+/// de la recherche sont échappés (Story 33-1b, #926).
+pub async fn list_filtered(
+    pool: &MySqlPool,
+    company_id: i64,
+    filtre: SupplierInvoiceListFilter<'_>,
+    limit: i64,
+    offset: i64,
+) -> Result<(Vec<SupplierInvoiceListItem>, i64), DbError> {
+    let statuses = filtre.statuses;
+    let mut filter = if statuses.is_empty() {
         String::new()
     } else {
         format!(
@@ -235,25 +301,46 @@ pub async fn list(
             statuses.iter().map(|_| "?").collect::<Vec<_>>().join(", ")
         )
     };
-    let count_sql =
-        format!("SELECT COUNT(*) FROM supplier_invoices si WHERE si.company_id = ?{filter}");
+    let motif = filtre
+        .q
+        .map(str::trim)
+        .filter(|q| !q.is_empty())
+        .map(|q| format!("%{}%", crate::util::search::escape_like(q)));
+    if motif.is_some() {
+        filter.push_str(
+            " AND (si.internal_number LIKE ? ESCAPE '\\\\' \
+             OR si.supplier_invoice_number LIKE ? ESCAPE '\\\\' \
+             OR c.name LIKE ? ESCAPE '\\\\')",
+        );
+    }
+    // JOIN contacts pour le nom du fournisseur (AC11), au décompte aussi : la recherche
+    // le lit. INNER JOIN sûr : contact_id est une FK RESTRICT non-nullable.
+    let count_sql = format!(
+        "SELECT COUNT(*) FROM supplier_invoices si JOIN contacts c ON c.id = si.contact_id \
+         WHERE si.company_id = ?{filter}"
+    );
     let mut count = sqlx::query_scalar::<_, i64>(&count_sql).bind(company_id);
     for s in statuses {
         count = count.bind(*s);
     }
+    if let Some(m) = &motif {
+        count = count.bind(m).bind(m).bind(m);
+    }
     let total: i64 = count.fetch_one(pool).await.map_err(map_db_error)?;
 
-    // JOIN contacts pour le nom du fournisseur (AC11). INNER JOIN sûr : contact_id
-    // est une FK RESTRICT non-nullable.
     let items_sql = format!(
         "SELECT si.id, si.contact_id, c.name AS contact_name, si.supplier_invoice_number, \
-         si.status, si.invoice_date, si.due_date, si.total_amount \
+         si.internal_number, si.status, si.invoice_date, si.due_date, si.total_amount \
          FROM supplier_invoices si JOIN contacts c ON c.id = si.contact_id \
-         WHERE si.company_id = ?{filter} ORDER BY si.invoice_date DESC, si.id DESC LIMIT ? OFFSET ?"
+         WHERE si.company_id = ?{filter} ORDER BY {} LIMIT ? OFFSET ?",
+        filtre.sort.order_by()
     );
     let mut q = sqlx::query_as::<_, SupplierInvoiceListItem>(&items_sql).bind(company_id);
     for s in statuses {
         q = q.bind(*s);
+    }
+    if let Some(m) = &motif {
+        q = q.bind(m).bind(m).bind(m);
     }
     let items = q
         .bind(limit)
@@ -846,6 +933,122 @@ pub async fn delete_draft_in_tx(
     })
 }
 
+/// Le libellé d'une pièce au journal : la forme longue de
+/// [`kesh_core::invoice_format::supplier_invoice_long_label`], à défaut `#<id>`, ce qui ne
+/// se produit que pour une facture posée hors de l'application. Écrit une seule fois pour
+/// l'écriture d'achat et le règlement (C-e331-10).
+fn document_long_label(id: i64, interne: Option<&str>, fournisseur: Option<&str>) -> String {
+    kesh_core::invoice_format::supplier_invoice_long_label(interne, fournisseur)
+        .unwrap_or_else(|| format!("#{id}"))
+}
+
+/// Borne du saut d'un numéro déjà pris (C-e331-8) : le saut n'est qu'un filet pour une
+/// donnée posée hors de l'application, et au-delà, c'est cette donnée qu'il faut regarder.
+const MAX_INTERNAL_NUMBER_SKIPS: i64 = 100_000;
+
+/// Attribue le numéro interne d'une facture fournisseur à sa validation (Story 33-1a,
+/// #926), étape (3 bis) de [`validate_in_tx`] : l'appelant tient déjà les réglages et
+/// l'exercice `fy` en `FOR UPDATE`.
+///
+/// **La séquence appartient à l'année de début de l'exercice** (C-e331-8), si bien que
+/// deux exercices commençant la même année civile la partagent :
+///
+/// 1. les **autres** exercices de l'année, tous statuts (un exercice clos a émis des
+///    numéros) : leurs `id` par une lecture ordinaire, puis leur compteur `FOR UPDATE`
+///    **un par un**, triés par date (patron de [`super::fiscal_years::close`] : une lecture
+///    verrouillante par intervalle prendrait ses verrous dans l'ordre du plan). Une seule
+///    ligne par année, le cas courant : aucun verrou neuf ;
+/// 2. le départ est le plus grand de ces compteurs et de celui de `fy`, jamais un numéro
+///    libre plus bas : c'est ce qui fait qu'un numéro supprimé ne revient pas ;
+/// 3. le contrôle de collision ne sert plus que de filet, **vers le haut**, pour une donnée
+///    posée hors de l'application ; sans lui, elle bloquerait toute validation ;
+/// 4. seul le compteur de `fy` avance. Les compteurs ne redescendent jamais.
+///
+/// ⚠️ **Les lectures de compteur et le contrôle de collision sont verrouillants** :
+/// l'instantané de la transaction est pris avant l'attente sur les réglages (`fetch_lines`
+/// précède l'étape (2 bis)), et une lecture ordinaire y rendrait un compteur périmé
+/// (C-e331-2). La liste des `id` du point 1, elle, ne l'est pas : un exercice créé pendant
+/// cette attente, et dont un numéro serait émis puis supprimé dans le même temps, y
+/// échapperait. Course résiduelle assumée, sans chemin réaliste (C-e331-23).
+///
+/// Le nom d'exercice reste vide : le format n'a pas de `{FY}`
+/// ([`kesh_core::invoice_format::validate_numbering_template`]), et `render` refuserait sinon
+/// un nom à accolade. Une erreur de rendu ne vient donc que d'un format posé hors de
+/// l'application : `DbError::Invariant`, comme aux sites client et avoir.
+async fn attribute_internal_number_in_tx(
+    tx: &mut sqlx::Transaction<'_, sqlx::MySql>,
+    company_id: i64,
+    fy: &crate::entities::FiscalYear,
+    format: &str,
+) -> Result<String, DbError> {
+    use chrono::Datelike;
+    let year = fy.start_date.year();
+    let borne = |annee: i32| {
+        chrono::NaiveDate::from_ymd_opt(annee, 1, 1).ok_or_else(|| {
+            DbError::Invariant(format!("année de début d'exercice inattendue : {annee}"))
+        })
+    };
+    let autres: Vec<i64> = sqlx::query_scalar(
+        "SELECT id FROM fiscal_years WHERE company_id = ? AND start_date >= ? AND start_date < ? \
+         AND id <> ? ORDER BY start_date",
+    )
+    .bind(company_id)
+    .bind(borne(year)?)
+    .bind(borne(year + 1)?)
+    .bind(fy.id)
+    .fetch_all(&mut **tx)
+    .await
+    .map_err(map_db_error)?;
+
+    const COMPTEUR_SQL: &str = "SELECT supplier_invoice_next_number FROM fiscal_years \
+         WHERE id = ? AND company_id = ? FOR UPDATE";
+    let mut seq: i64 = 1;
+    for id in autres.into_iter().chain(std::iter::once(fy.id)) {
+        let compteur: i64 = sqlx::query_scalar(COMPTEUR_SQL)
+            .bind(id)
+            .bind(company_id)
+            .fetch_one(&mut **tx)
+            .await
+            .map_err(map_db_error)?;
+        seq = seq.max(compteur);
+    }
+
+    for _ in 0..MAX_INTERNAL_NUMBER_SKIPS {
+        let numero = kesh_core::invoice_format::render(format, year, "", seq).map_err(|e| {
+            DbError::Invariant(format!(
+                "rendu du numéro interne échoué (format invalide ?) : {e}"
+            ))
+        })?;
+        let pris: Option<i64> = sqlx::query_scalar(
+            "SELECT id FROM supplier_invoices WHERE company_id = ? AND internal_number = ? \
+             FOR UPDATE",
+        )
+        .bind(company_id)
+        .bind(&numero)
+        .fetch_optional(&mut **tx)
+        .await
+        .map_err(map_db_error)?;
+        if pris.is_some() {
+            seq += 1;
+            continue;
+        }
+        sqlx::query(
+            "UPDATE fiscal_years SET supplier_invoice_next_number = ?, updated_at = updated_at \
+             WHERE id = ? AND company_id = ?",
+        )
+        .bind(seq + 1)
+        .bind(fy.id)
+        .bind(company_id)
+        .execute(&mut **tx)
+        .await
+        .map_err(map_db_error)?;
+        return Ok(numero);
+    }
+    Err(DbError::Invariant(format!(
+        "numéro interne introuvable après {MAX_INTERNAL_NUMBER_SKIPS} essais, à partir de {seq}"
+    )))
+}
+
 /// Valide un brouillon, transaction comprise — cf. [`validate_in_tx`].
 pub async fn validate(
     pool: &MySqlPool,
@@ -953,10 +1156,11 @@ pub async fn unvalidate_in_tx(
         .map_err(map_db_error)?
         .ok_or(DbError::NotFound)?;
     // Revue P1, E-6 : un numéro vide ou blanc vaut absent (même règle que K8).
-    let document_label = inv
-        .supplier_invoice_number
-        .clone()
-        .filter(|n| !n.trim().is_empty());
+    // Story 33-1b (#926) : la forme courte, le numéro interne d'abord.
+    let document_label = kesh_core::invoice_format::supplier_invoice_short_label(
+        inv.internal_number.as_deref(),
+        inv.supplier_invoice_number.as_deref(),
+    );
     let refus = |blocker, document_id, hint| DbError::SupplierInvoiceNotUnvalidatable {
         blocker,
         document_id,
@@ -1285,6 +1489,13 @@ async fn matched_transaction_locked(
 /// (4)    —                      exigence du compte créanciers
 ///                               (ConfigurationRequired) sur les réglages lus en
 ///                               (2 bis) : aucun verrou neuf
+/// (3 bis) fiscal_years          numéro interne (Story 33-1a) : les AUTRES exercices
+///                               de l'année de début, un par un FOR UPDATE, triés par
+///                               date — aucun verrou neuf s'il n'y en a pas, le cas
+///                               courant ; puis `supplier_invoices` : contrôle de
+///                               collision FOR UPDATE, verrou d'intervalle sur l'UNIQUE
+///                               quand la clé est absente
+///                               (attribute_internal_number_in_tx)
 /// (5)    journal_entries        create_in_tx — compteur des écritures FOR UPDATE ;
 ///                               l'insertion reprend des verrous PARTAGÉS sur
 ///                               companies et sur chaque compte écrit
@@ -1508,8 +1719,29 @@ pub async fn validate_in_tx(
     // `DesignatedAccountsNotPostable`.
     designated.check_written(&generated.roles, &settings)?;
     let entry_lines = generated.lines;
-    let number_label = supplier_invoice_number.clone().unwrap_or_default();
-    let description = format!("Facture fournisseur {number_label} - {contact_name}");
+    // (3 bis) Le numéro interne (Story 33-1a, #926) : après le dernier refus de forme,
+    // avant le libellé. Une facture qui en a déjà un le reprend sans lire ni écrire le
+    // compteur (brouillon revalidé, C-e331-9).
+    let internal_number = match inv.internal_number.clone() {
+        Some(numero) => numero,
+        None => {
+            attribute_internal_number_in_tx(
+                tx,
+                company_id,
+                &fy,
+                &settings.supplier_internal_number_format,
+            )
+            .await?
+        }
+    };
+    let description = format!(
+        "Facture fournisseur {} - {contact_name}",
+        document_long_label(
+            id,
+            Some(&internal_number),
+            supplier_invoice_number.as_deref()
+        )
+    );
     let je = journal_entries::create_in_tx(
         &mut *tx,
         fy.id,
@@ -1536,11 +1768,12 @@ pub async fn validate_in_tx(
     //     brouillon ».
     let rows = sqlx::query(
         "UPDATE supplier_invoices SET status = 'open', purchase_journal_entry_id = ?, \
-         total_amount = ?, version = version + 1 \
+         total_amount = ?, internal_number = ?, version = version + 1 \
          WHERE id = ? AND company_id = ? AND version = ? AND status = 'draft'",
     )
     .bind(je.entry.id)
     .bind(total_ttc)
+    .bind(&internal_number)
     .bind(id)
     .bind(company_id)
     .bind(version)
@@ -1872,10 +2105,11 @@ pub async fn pay_in_tx_as(
         .ok_or(DbError::FiscalYearInvalid)?;
 
     // (5) Écriture de règlement : D 2000 / C contrepartie (TTC).
-    let number_label = inv
-        .supplier_invoice_number
-        .clone()
-        .unwrap_or_else(|| inv.id.to_string());
+    let number_label = document_long_label(
+        inv.id,
+        inv.internal_number.as_deref(),
+        inv.supplier_invoice_number.as_deref(),
+    );
     let contact_name: String =
         sqlx::query_scalar("SELECT name FROM contacts WHERE id = ? AND company_id = ?")
             .bind(inv.contact_id)
@@ -2815,8 +3049,8 @@ pub async fn list_all_by_company(
     company_id: i64,
 ) -> Result<Vec<SupplierInvoice>, DbError> {
     sqlx::query_as::<_, SupplierInvoice>(
-        "SELECT id, company_id, contact_id, supplier_invoice_number, status, invoice_date, \
-         due_date, total_amount, creditor_iban, creditor_qr_iban, payment_reference, \
+        "SELECT id, company_id, contact_id, supplier_invoice_number, internal_number, status, \
+         invoice_date, due_date, total_amount, creditor_iban, creditor_qr_iban, payment_reference, \
          expected_payment_amount, project_id, purchase_journal_entry_id, settlement_type, \
          settlement_bank_account_id, settlement_account_id, settlement_journal_entry_id, \
          paid_at, version, created_at, updated_at \

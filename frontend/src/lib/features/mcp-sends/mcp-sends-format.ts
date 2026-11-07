@@ -3,6 +3,7 @@
 import { i18nLocale, i18nMsg } from '$lib/shared/utils/i18n.svelte';
 import { isApiError } from '$lib/shared/utils/api-client';
 import { errorMessageOf } from '$lib/shared/utils/error-message';
+import { isUnknownOutcome } from '$lib/shared/utils/unknown-outcome';
 import type { McpSendState } from './mcp-sends.types';
 
 /**
@@ -58,10 +59,10 @@ export function etatAffiche(state: McpSendState, modified: boolean): string {
 	}
 }
 
-/** Ce que l'écran montre après une décision refusée par le serveur. */
+/** Ce que l'écran montre après une décision refusée, ou dont l'issue n'est pas connue. */
 export interface ErreurDeDecision {
 	message: string;
-	/** Vrai pour un 409 : l'envoi a changé, l'écran propose *Recharger*. */
+	/** Vrai si l'envoi a changé (409) ou peut avoir changé (issue inconnue) : *Recharger*. */
 	recharger: boolean;
 	/** Vrai pour un 400 sur une version modifiée : l'aide aux caractères refusés. */
 	aideCaracteres: boolean;
@@ -76,9 +77,22 @@ export interface ErreurDeDecision {
  *   propre à l'écran ; les deux avec *Recharger* ;
  * - 404 : « Envoi introuvable » ;
  * - 400 : le message du serveur (taille, caractère invisible) ;
+ * - issue inconnue (`isUnknownOutcome` : réseau, délai, passerelle ; ou une réponse
+ *   illisible) : le dire, avec *Recharger* — la décision a pu être écrite, et seul un
+ *   rechargement le montre (Story 33-6, #773, point 3) ;
  * - le reste : le message lisible de l'erreur.
  */
 export function erreurDeDecision(err: unknown, modifie: boolean): ErreurDeDecision {
+	if (!isApiError(err) || isUnknownOutcome(err)) {
+		return {
+			message: i18nMsg(
+				'mcp-sends-error-unknown-outcome',
+				'La réponse du serveur n’est pas parvenue : la décision a pu être enregistrée. Rechargez pour le savoir.',
+			),
+			recharger: true,
+			aideCaracteres: false,
+		};
+	}
 	if (isApiError(err) && err.status === 409) {
 		const message =
 			err.code === 'ILLEGAL_STATE_TRANSITION'

@@ -22,6 +22,9 @@ function buildQueryString(q: ListSupplierInvoicesQuery): string {
 	// Story v017-4b (AC-15) : valeurs séparées par des virgules ; une liste vide n'est
 	// pas envoyée (le serveur refuserait `status=` vide en 400).
 	if (q.status !== undefined && q.status.length > 0) p.set('status', q.status.join(','));
+	if (q.q !== undefined && q.q.trim() !== '') p.set('q', q.q);
+	if (q.sort !== undefined) p.set('sort', q.sort);
+	if (q.order !== undefined) p.set('order', q.order);
 	const s = p.toString();
 	return s ? `?${s}` : '';
 }

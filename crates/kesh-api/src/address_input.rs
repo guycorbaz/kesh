@@ -36,7 +36,8 @@ pub struct StructuredAddressInput {
 impl StructuredAddressInput {
     fn normalized_country(&self) -> String {
         match self.country.as_deref().map(str::trim) {
-            Some(c) if !c.is_empty() => c.to_uppercase(),
+            // ASCII seulement : `to_uppercase` changerait `ß` en `SS`, un code connu.
+            Some(c) if !c.is_empty() => c.to_ascii_uppercase(),
             _ => "CH".to_string(),
         }
     }
@@ -97,14 +98,45 @@ impl StructuredAddressInput {
     /// (SIX type S), longueurs respectées.
     /// Le pays doit être un code ISO connu (#817) : aucune valeur n'est encore
     /// enregistrée à l'assistant.
+    ///
+    /// « Obligatoire » se juge par la règle de la QR-facture,
+    /// [`kesh_qrbill::champ_vide_pour_qr`], et non par `trim().is_empty()` : un champ
+    /// fait du seul trait d'union conditionnel (U+00AD), que `trim` laisse, serait
+    /// accepté ici puis refusé au PDF (revue de l'intégration 0.17.5, M-1). La règle
+    /// vaut pour l'assistant comme pour la correction de l'adresse.
     pub fn validate_required(&self) -> Result<StructuredAddress, AppError> {
         self.check_lengths(None)?;
-        if self.postal_code.trim().is_empty() || self.city.trim().is_empty() {
-            return Err(AppError::Validation(
-                "adresse : le NPA et la localité sont obligatoires (format structuré exigé par les banques suisses)".into(),
-            ));
+        for (label, value) in [("NPA", &self.postal_code), ("localité", &self.city)] {
+            if kesh_qrbill::champ_vide_pour_qr(value) {
+                return Err(AppError::Validation(format!(
+                    "adresse : le champ {label} est obligatoire (format structuré exigé par les banques suisses)"
+                )));
+            }
         }
         Ok(self.build())
+    }
+
+    /// [`Self::validate_required`], plus le jeu de caractères de la QR-facture : pour
+    /// la correction de l'adresse de la société (Story 33-5, #909), qui ne doit pas
+    /// annoncer un succès en laissant la QR-facture en panne. La règle reste celle de
+    /// `kesh-qrbill`, et le refus nomme le champ et le caractère.
+    pub fn validate_required_for_qr(&self) -> Result<StructuredAddress, AppError> {
+        let address = self.validate_required()?;
+        for (label, value) in [
+            ("rue", &address.street),
+            ("numéro", &address.building),
+            ("NPA", &address.postal_code),
+            ("localité", &address.city),
+        ] {
+            if let Some(c) = kesh_qrbill::first_qr_refused_char(value) {
+                return Err(AppError::Validation(format!(
+                    "adresse : le champ {label} contient un caractère que la QR-facture n'admet pas : « {} » (U+{:04X})",
+                    c.escape_debug(),
+                    c as u32
+                )));
+            }
+        }
+        Ok(address)
     }
 
     /// Validation **optionnelle** (contact / débiteur) : `None` si le bloc est
@@ -243,5 +275,30 @@ mod tests {
                 "{c}"
             );
         }
+    }
+
+    /// Revue de l'intégration 0.17.5 (M-1) — l'assistant juge « obligatoire » par la
+    /// règle de la QR-facture : un NPA ou une localité sans rien de visible est
+    /// refusé, champ nommé ; un U+00AD entre deux lettres reste admis.
+    #[test]
+    fn required_fields_with_nothing_visible_are_refused() {
+        for (postal, city, label) in [
+            ("1000", "\u{AD}", "localité"),
+            ("\u{AD}\u{A0}\u{AD}", "Lausanne", "NPA"),
+            ("", "Lausanne", "NPA"),
+            ("1000", "  ", "localité"),
+        ] {
+            let mut a = addr(None);
+            a.postal_code = postal.into();
+            a.city = city.into();
+            let m = message(a.validate_required());
+            assert!(
+                m.contains(&format!("le champ {label} est obligatoire")),
+                "{postal:?} / {city:?} : {m}"
+            );
+        }
+        let mut a = addr(None);
+        a.city = "Lau\u{AD}sanne".into();
+        assert!(a.validate_required().is_ok());
     }
 }
