@@ -295,6 +295,24 @@ async fn components_are_trimmed_and_the_country_uppercased(pool: MySqlPool) {
     );
 }
 
+/// Revue P2 (L-6) — le jeu de caractères juge la valeur rognée, celle que le PDF
+/// relit : un saut de ligne en bord, venu d'un copier-coller, n'est pas refusé.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn a_line_break_at_the_edge_is_trimmed_before_the_character_check(pool: MySqlPool) {
+    let (app, token, _, _) = setup(&pool).await;
+    let version = app.company(&token).await["version"].as_i64().unwrap();
+    let mut address = valid_address();
+    address["city"] = json!("Vevey\n");
+    assert_eq!(
+        app.put_address(&token, address, version).await.status(),
+        200
+    );
+    assert_eq!(
+        app.company(&token).await["addressStructured"],
+        valid_address()
+    );
+}
+
 /// AC-2 — chaque refus nomme ce qu'il refuse, et rien n'est écrit.
 #[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn invalid_addresses_are_refused_and_nothing_is_written(pool: MySqlPool) {
@@ -442,10 +460,19 @@ async fn a_lowercase_stored_country_is_not_known(pool: MySqlPool) {
     force_country(&pool, company_id, "ch").await;
     let company = app.company(&token).await;
     assert_eq!(company["addressCountryKnown"], false, "{company}");
+    let resp = app.get_pdf(&token, invoice_id).await;
     assert_eq!(
-        app.get_pdf(&token, invoice_id).await.status(),
+        resp.status(),
         400,
         "le PDF le refuse bien : l'avis dit vrai"
+    );
+    let body: Value = resp.json().await.unwrap();
+    assert!(
+        body["error"]["message"]
+            .as_str()
+            .unwrap()
+            .contains("Pays invalide"),
+        "le refus vient bien du pays : {body}"
     );
 }
 

@@ -331,7 +331,9 @@ pub struct UpdateCompanyAddressRequest {
 /// PUT /api/v1/companies/current/address — corrige l'adresse de la société après
 /// l'assistant (Story 33-5, #909), sur le patron d'[`update_company_contact_details`].
 ///
-/// ⛔ **`validate_required`, et non `validate_optional_keeping`** (C-e334-5) : un
+/// ⛔ **`validate_required_for_qr`, et non `validate_optional_keeping`** (C-e334-5,
+/// C-e334-35) : il passe par `validate_required`, puis juge les composants rognés
+/// au jeu de caractères de la QR-facture. Un
 /// pays inconnu est refusé **même inchangé**. Le contact peut garder le sien parce
 /// que sa QR est facultative ; la société est créancière de toute QR-facture, et
 /// accepter son pays annoncerait un succès en laissant le PDF en panne.
