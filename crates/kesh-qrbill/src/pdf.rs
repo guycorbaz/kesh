@@ -1716,7 +1716,8 @@ mod tests {
         }
         // Aux bornes, en caractères et non en octets.
         let tout_juste = "é".repeat(27);
-        assert_eq!(couper_ligne(&tout_juste, 27), [tout_juste.clone()]);
+        assert_eq!(couper_ligne(&tout_juste, 27).concat(), tout_juste);
+        assert_eq!(couper_ligne(&tout_juste, 27).len(), 1);
         assert_eq!(couper_ligne("", 27), Vec::<String>::new());
     }
 
