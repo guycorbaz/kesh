@@ -46,11 +46,20 @@ fi
 
 [ -s "$liste" ] || conclure true "diff vide"
 
-while IFS= read -r -d '' nom || [ -n "$nom" ]; do
+# Ouvert sous contrôle : une lecture impossible ne laisse pas la boucle retomber sur `false`.
+exec 3< "$liste" || conclure true "liste des fichiers illisible"
+lus=0
+while IFS= read -r -d '' nom <&3 || [ -n "$nom" ]; do
+  lus=$((lus + 1))
   case "$nom" in
     _bmad-output/?*) ;;
     *) conclure true "hors du périmètre : $nom" ;;
   esac
-done < "$liste"
+done
+exec 3<&-
+
+# Chaque nom lu doit avoir eu son NUL : sinon la sortie de `git` est incomplète.
+termines=$(tr -cd '\0' < "$liste" | wc -c) || conclure true "liste des fichiers illisible"
+[ "$lus" -gt 0 ] && [ "$lus" -eq "$termines" ] || conclure true "sortie de git incomplète"
 
 conclure false "seulement des artefacts de travail"

@@ -89,6 +89,19 @@ g -C "$d" merge -q --no-edit main
 ecrire "$d" _bmad-output/c.md
 attendu "fusion de main dans la branche : la PR n'apporte que des artefacts" false "$(lancer "$d" pull_request)"
 
+# `main` avance APRÈS la dernière fusion, et `base` est sa pointe : seul `base...tête` (la base
+# de fusion) ignore ce que `main` a reçu ; `base..tête` y verrait `crates/z.rs`, absent de la
+# branche. C'est le cas qui distingue les trois points des deux (E-3 de la revue P1).
+d=$(depot)
+g -C "$d" checkout -qb travail
+ecrire "$d" _bmad-output/a.md
+g -C "$d" checkout -q main
+ecrire "$d" crates/z.rs
+g -C "$d" tag -f base >/dev/null
+g -C "$d" checkout -q travail
+ecrire "$d" _bmad-output/b.md
+attendu "main avancée après la branche : trois points" false "$(lancer "$d" pull_request)"
+
 # --- Les cas qui ne filtrent pas -------------------------------------------------
 d=$(depot); ecrire "$d" _bmad-output/a.md
 attendu "push, même diff" true "$(lancer "$d" push)"
@@ -125,6 +138,13 @@ attendu "renommage de _bmad-output/ vers crates/" true "$(lancer "$d" pull_reque
 d=$(depot)
 attendu "diff vide" true "$(lancer "$d" pull_request)"
 
+d=$(depot); g -C "$d" rm -q crates/x.rs; g -C "$d" commit -qm supprime
+attendu "un fichier supprimé, seul" true "$(lancer "$d" pull_request)"
+
+d=$(depot); ecrire "$d" "crates/a
+_bmad-output/b"
+attendu "un nom à retour à la ligne, hors du dossier" true "$(lancer "$d" pull_request)"
+
 d=$(depot); ecrire "$d" _bmad-output/a.md
 attendu "arguments manquants" true "$(cd "$d" && bash "$SCRIPT" pull_request 2>/dev/null)"
 attendu "aucun argument" true "$(cd "$d" && bash "$SCRIPT" 2>/dev/null)"
@@ -151,6 +171,25 @@ chmod +x "$WORK/git-factice/git"
 attendu "git qui rend un artefact puis sort en 1" true \
   "$(cd "$d" && PATH="$WORK/git-factice:$PATH" bash "$SCRIPT" pull_request aaa bbb 2>/dev/null)"
 
+# E-4, E-5 : une sortie qui ne finit pas par NUL est une sortie incomplète, et le dernier nom,
+# sans terminateur, se lit quand même : ni l'un ni l'autre ne retombe sur `false`.
+mkdir -p "$WORK/git-tronque"
+cat > "$WORK/git-tronque/git" <<'FACTICE'
+#!/usr/bin/env bash
+printf '_bmad-output/a.md\0_bmad-output/b.md'
+exit 0
+FACTICE
+chmod +x "$WORK/git-tronque/git"
+attendu "sortie de git sans NUL final : incomplète" true \
+  "$(cd "$d" && PATH="$WORK/git-tronque:$PATH" bash "$SCRIPT" pull_request aaa bbb 2>/dev/null)"
+cat > "$WORK/git-tronque/git" <<'FACTICE'
+#!/usr/bin/env bash
+printf '_bmad-output/a.md\0crates/x.rs'
+exit 0
+FACTICE
+attendu "le dernier nom sans NUL est lu" true \
+  "$(cd "$d" && PATH="$WORK/git-tronque:$PATH" bash "$SCRIPT" pull_request aaa bbb 2>/dev/null)"
+
 # Le script n'écrit qu'une ligne sur sa sortie, et le motif ailleurs.
 d=$(depot); ecrire "$d" _bmad-output/a.md
 echo "  une seule ligne sur la sortie, motif sur la sortie d'erreur"
@@ -164,34 +203,42 @@ e=$(cd "$d" && bash "$SCRIPT" pull_request "$(g rev-parse base)" HEAD 2>&1 >/dev
 bloc() { awk -v j="  $1:" '$0 == j {p=1; print; next} p && /^  [A-Za-z0-9_-]+:$/ {exit} p {print}' "$CI_YML"; }
 
 SAUT="!(needs.changes.result == 'success' && needs.changes.outputs.code == 'false')"
-# Ouverture de la condition (AC-3 ; AC-6 (d), si le relevé impose `always()`).
+# Ouverture de la condition (AC-3 ; AC-6 (d), si le relevé impose `always()`). Elle se lit sur
+# la ligne exacte du job `backend`, non n'importe où dans le fichier, puis s'exige aux quatre.
 OUVERTURE='!cancelled()'
-if grep -qF "always() && $SAUT" "$CI_YML"; then OUVERTURE='always()'; fi
+if grep -qxF "    if: \${{ always() && $SAUT }}" <<<"$(bloc backend)"; then OUVERTURE='always()'; fi
 COND="if: \${{ $OUVERTURE && $SAUT }}"
 COND_SMOKE="if: \${{ $OUVERTURE && $SAUT && needs.docker-build.result == 'success' }}"
 
+# Sans tube : `printf | grep -q` sous `pipefail` peut lire un « trouvé » comme « absent ».
 contient() {
   local titre=$1 texte=$2 motif=$3
-  if printf '%s\n' "$texte" | grep -qF -- "$motif"; then ok "$titre"; else fail "$titre : « $motif » absent"; fi
+  if grep -qF -- "$motif" <<<"$texte"; then ok "$titre"; else fail "$titre : « $motif » absent"; fi
+}
+# La ligne entière, à son indentation : une condition d'étape, plus indentée, ou une ligne
+# commentée ne la remplacent pas.
+contient_ligne() {
+  local titre=$1 texte=$2 ligne=$3
+  if grep -qxF -- "$ligne" <<<"$texte"; then ok "$titre"; else fail "$titre : ligne « $ligne » absente"; fi
 }
 
 echo "  ci.yml : les trois jobs lourds dépendent de changes, et leur condition est par exclusion"
 for job in backend frontend docker-build; do
   b=$(bloc "$job")
-  contient "$job : needs" "$b" "    needs: changes"
-  contient "$job : condition" "$b" "    $COND"
+  contient_ligne "$job : needs" "$b" "    needs: changes"
+  contient_ligne "$job : condition" "$b" "    $COND"
 done
 
 echo "  ci.yml : e2e-smoke"
 b=$(bloc e2e-smoke)
-contient "e2e-smoke : needs" "$b" "    needs: [changes, docker-build]"
-contient "e2e-smoke : condition" "$b" "    $COND_SMOKE"
+contient_ligne "e2e-smoke : needs" "$b" "    needs: [changes, docker-build]"
+contient_ligne "e2e-smoke : condition" "$b" "    $COND_SMOKE"
 
 echo "  ci.yml : les noms de checks requis ne bougent pas"
-contient "backend" "$(bloc backend)" "    name: Backend (Rust)"
-contient "frontend" "$(bloc frontend)" "    name: Frontend (Svelte)"
-contient "docker-build" "$(bloc docker-build)" "    name: Docker build (sanity)"
-contient "e2e-smoke" "$(bloc e2e-smoke)" "    name: E2E smoke (Playwright)"
+contient_ligne "backend" "$(bloc backend)" "    name: Backend (Rust)"
+contient_ligne "frontend" "$(bloc frontend)" "    name: Frontend (Svelte)"
+contient_ligne "docker-build" "$(bloc docker-build)" "    name: Docker build (sanity)"
+contient_ligne "e2e-smoke" "$(bloc e2e-smoke)" "    name: E2E smoke (Playwright)"
 
 echo "  ci.yml : aucune condition positive sur la sortie"
 if grep -qF "outputs.code == 'true'" "$CI_YML"; then fail "== 'true' présent"; else ok "aucun == 'true'"; fi
@@ -201,16 +248,18 @@ if grep -qE '^\s*(paths|paths-ignore):' "$CI_YML"; then fail "filtre de chemin a
 
 echo "  ci.yml : le job changes"
 b=$(bloc changes)
-contient "timeout" "$b" "    timeout-minutes: 10"
-contient "sans dépendance : fetch-depth" "$b" "fetch-depth: 0"
+contient_ligne "timeout" "$b" "    timeout-minutes: 10"
+contient_ligne "historique entier" "$b" "          fetch-depth: 0"
 contient "événement" "$b" 'github.event_name'
 contient "base" "$b" 'github.event.pull_request.base.sha'
 contient "tête" "$b" 'github.event.pull_request.head.sha'
 contient "sortie" "$b" '>> "$GITHUB_OUTPUT"'
-contient "sortie du job" "$b" 'code: ${{ steps.'
-if printf '%s\n' "$b" | grep -qE '^    (needs|if):'; then fail "changes a une dépendance ou une condition"; else ok "ni needs ni if"; fi
-l_test=$(printf '%s\n' "$b" | grep -n 'ci-seuls-artefacts.test.sh' | head -1 | cut -d: -f1)
-l_sortie=$(printf '%s\n' "$b" | grep -n 'GITHUB_OUTPUT' | head -1 | cut -d: -f1)
+contient_ligne "sortie du job, de l'étape decision" "$b" '      code: ${{ steps.decision.outputs.code }}'
+contient_ligne "l'étape qui écrit la sortie s'appelle decision" "$b" '        id: decision'
+if grep -qE '^    (needs|if):' <<<"$b"; then fail "changes a une dépendance ou une condition"; else ok "ni needs ni if"; fi
+if grep -qF 'continue-on-error' <<<"$b"; then fail "continue-on-error : un test rouge n'arrêterait plus le job"; else ok "aucun continue-on-error"; fi
+l_test=$(grep -n 'ci-seuls-artefacts.test.sh' <<<"$b" | head -1 | cut -d: -f1)
+l_sortie=$(grep -n 'GITHUB_OUTPUT' <<<"$b" | head -1 | cut -d: -f1)
 if [ -n "$l_test" ] && [ -n "$l_sortie" ] && [ "$l_test" -lt "$l_sortie" ]; then
   ok "les tests précèdent l'écriture de la sortie"
 else
