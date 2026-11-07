@@ -112,6 +112,13 @@ aujourd'hui ; le nom d'une société au QR.
 
 - 2026-11-06 : développement (Opus 5.5), worktree `/home/gcorbaz/devel/kesh-e335`, commit de code `d8bfe4bb`. **Étape 0** : aucun LOW de la P3 ne vise cette fiche ; son seul constat, M-R5-1, est déjà porté par l'AC-2 (lu : `address_input.rs:77-78`, `:100-101`), et aucun point « à établir au développement ». Le répertoire des captures de T5 passe de `e334` à `e335`, clé de ce lot. Deux compteurs que la fiche ne nommait pas ont bougé : `admin_pat_denied_e2e.rs` (répartition `(15, 37)` → `(15, 38)`) et `i18n-keys.test.ts` (`sitesTotal` 2832 → 2846, +14 sites dans `settings/+page.svelte`). Choix ajouté : C-e334-32.
 
+- 2026-11-07 : remédiation de la revue P1 (Opus 5.5), commits `e2191fbb`, `c371ee8f`. **Passe 1 (trois lentilles) : 0 CRITICAL, 0 HIGH, 7 MEDIUM dont 3 distincts + des doublons, LOW.** Traités :
+  - **A-M3 = E-M2** (jeu de caractères) : prémisse lue, `validation.rs:219-243` refuse ce que `first_qr_refused_char` rend ; `validate_required_for_qr`, à la seule route. ⚠️ **Prémisse des lentilles nuancée** : elles citent `&` comme légitimement refusé ; la directive versionnée (`docs/six-references/ig-qr-bill-v2.4-en.pdf`, § 4.1.1) l'admet, et l'« Annex C » du code est un glossaire. Signalé à l'orchestrateur, qui ouvre la 33-12 ; ici, aucun test ni texte n'épingle un caractère appelé à changer (U+2603 et le saut de ligne). C-e334-35.
+  - **E-M3** : `before.address` quand les composants ne redonnent pas le texte. **B M-1 = A-M2 = E-M1** : valeurs non vides, `Independant` et `Pme`, une mutation par champ reporté. **A-M1** : `admin-manual.tex:2557`, route et champ à la liste des intégrations ; grep de `#909` et du symptôme sur le dépôt, sans autre site.
+  - **LOW courts** : commentaires « 52 » (53, recompté), `;+ 1`, en-tête du registre, en-tête de `companies.rs`, bornes 70/16/16/35 acceptées en multioctets, ordre 400 avant 409, `booksLockedThrough` posé, Annuler (Vitest), fiche sur M5, `ß` (`to_ascii_uppercase`), pays en minuscules (avis calé sur le contrôle du PDF), manuel qui surpromettait (E-L7) et #710.
+  - **Non établi** : A L-A4, le rouge d'avant la route pour l'AC-3, reste non journalisé (arrêt rapide de la P0) ; la mutation M5 le tue. **Issues demandées** : voir le rapport.
+  - G18 a rougi au gate de `e2191fbb` (`companies` dans le chemin de la route au manuel) : exemption bornée, `c371ee8f`, d'où le rejeu de `test-fast`, du build et de l'E2E.
+
 ## Dev Agent Record
 
 ### Agent Model Used
@@ -127,6 +134,10 @@ Claude Opus 5.5.
 - **Manuels** : `user-manual.tex` (§ `sec:coordonnees-emetteur`, étape *Coordonnées légales*), `admin-manual.tex` (137 + 5 + 3 = 145) ; PDF régénérés et contrôlés aplatis (« Corriger votre adresse », « 137 des 145 routes », « 137 + 5 + 3 = 145 » lus). La brochure, régénérée sans changement de source, a été rétablie.
 - **Écart de méthode** : les clés FTL et une partie des tests Vitest ont été posées par un script Python à remplacement, et non par l'outil Edit (consigne 14) ; diff relu, aucun effet de bord.
 - **Limite relevée, non traitée** : la colonne morte `companies.country` reste en l'état (hors périmètre de la fiche). Les décomptes de routes bougeront aussi avec la 33-7 : à recompter à l'intégration.
+
+- **Remédiation P1, rouges** (`e335/rouges.log`) : 21 tests, 17 passés, 4 rouges (`a_character_the_qr_bill_refuses_is_refused_here`, `the_overwritten_free_text_stays_in_the_audit`, `a_non_ascii_country_is_not_uppercased_into_a_known_code`, `a_lowercase_stored_country_is_not_known`). Les autres tests neufs passaient déjà : ce sont des preuves renforcées, et leurs mutations les font mordre.
+- **Mutations P1** (`e335/mut/synthese-33-5-p2.log`), quinze sur quinze tuées : onze sur les champs reportés (`first`, `last`, `name`, `ide`, `org` vers `Pme` et vers `Independant`, deux langues, `email`, `phone`, `website`), `C1-charset`, `C2-audit`, `C3-country`, `C4-ascii`.
+- **Gates**. À `c371ee8f` (`e335/33-5-p1b/`) : `test-fast.sh --ci` 4834 passés, 12 ignorés ; build vert ; **E2E complet** 381 tests, 356 passés, 18 ignorés, 7 échecs tous KF-029. À `e2191fbb` (`e335/33-5-p1/`), `c371ee8f` ne touchant que `textes_coherents.rs` : `npm run check`, `lint-i18n-ownership`, Vitest 2706 (218 fichiers), `npm run build` verts ; l'E2E de ce commit a rendu un 8ᵉ échec, `sidebar-navigation.spec.ts:81` (KF-052, #424, liste de `docs/testing.md`), absent du rejeu.
 
 ### File List
 
