@@ -379,6 +379,7 @@ lancer_binaire() { # $1 = suffixe du journal, $2 = port de la base
 # Ce qu'elle couvre est dit à `docs/testing.md` : y tenir la liste à jour.
 TABLES="journal_entries journal_entry_lines invoices invoice_lines invoice_settlements supplier_invoices supplier_invoice_lines bank_imports bank_transactions bank_accounts contacts accounts companies fiscal_years company_invoice_settings"
 AUDIT_MAX=0
+AUDIT_DECALAGE=0
 empreinte() { # $1 = étiquette
   local o=$L/empreinte-$1 t id
   mkdir -p "$o"
@@ -389,12 +390,11 @@ empreinte() { # $1 = étiquette
   done
   # `users`, sans ce que réécrit l'avis « Recovery effectué » à chaque démarrage.
   SQL "SELECT id, username, role, active, company_id, email FROM users ORDER BY id" > "$o/users" || return 1
-  # `audit_log`, jusqu'à la dernière entrée d'avant la montée : la suite s'écrit, légitimement.
+  # `audit_log`, les `AUDIT_MAX` entrées d'avant la montée, sans leur numéro : la suite
+  # s'écrit, légitimement, et l'import d'une sauvegarde ajoute ses entrées après celles de
+  # l'installation qui la reçoit (`AUDIT_DECALAGE`, relevé juste avant l'import).
   [ "$1" != avant ] || AUDIT_MAX=$(SQL "SELECT COALESCE(MAX(id), 0) FROM audit_log") || return 1
-  # Les dates à part : l'import d'une sauvegarde les réécrit aujourd'hui (constaté à la
-  # recette de la Story 33-10), et il faut pouvoir le dire sans taire le reste de la table.
-  SQL "SELECT id, user_id, action, entity_type, entity_id, details_json, actor_type, actor_api_key_id, actor_label, company_id FROM audit_log WHERE id <= $AUDIT_MAX ORDER BY id" > "$o/audit_log" || return 1
-  SQL "SELECT id, created_at FROM audit_log WHERE id <= $AUDIT_MAX ORDER BY id" > "$o/audit_log_dates" || return 1
+  SQL "SELECT user_id, action, entity_type, entity_id, details_json, created_at, actor_type, actor_api_key_id, actor_label, company_id FROM audit_log WHERE id > $AUDIT_DECALAGE AND id <= $AUDIT_DECALAGE + $AUDIT_MAX ORDER BY id" > "$o/audit_log" || return 1
   SQL "SELECT kesh_version_min_required FROM _kesh_version" > "$o/min_required" || return 1
   login || return 1
   : > "$o/api"
@@ -605,6 +605,7 @@ if [ "$IMPORT" = 1 ]; then
   lancer_binaire import "$PORT_BASE_2"
   attendre_sante "$PID_BINAIRE" || echec 5 "le binaire ne répond pas ($L/binaire-import.log)"
   login || echec 5 "connexion impossible"
+  AUDIT_DECALAGE=$(SQL "SELECT COALESCE(MAX(id), 0) FROM audit_log") || echec 5 "journal d'audit illisible"
   CODE_HTTP=$(C -o "$L/import-reponse.json" -w '%{http_code}' -X POST "$URL/api/v1/admin/full-import" \
     -H "Authorization: Bearer $TOKEN" -F "file=@$D/avant.keshbackup")
   [ "$CODE_HTTP" = 200 ] || echec 5 "import : HTTP $CODE_HTTP ($L/import-reponse.json)"
