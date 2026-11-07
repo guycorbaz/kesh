@@ -84,7 +84,9 @@ pub fn parse(xml: &[u8]) -> Result<Vec<ImportedStatement>, CamtError> {
 /// références d'entité et les sections CDATA sont ignorées. `kesh-api` s'en sert
 /// pour recalculer la clé de doublon qu'une ligne déjà importée porte en base
 /// (#819) ; elle ne doit servir à rien d'autre. Même détection de version et
-/// mêmes erreurs que [`parse`], sauf l'entité inconnue, ignorée.
+/// mêmes erreurs que [`parse`], sauf l'entité inconnue, ignorée. **Aucune borne
+/// d'année** : une borne sur les dates reçues se pose à la lecture corrigée, sans
+/// quoi un relevé que lisait la 0.17.3 serait refusé à tort (33-2, C-e332-22).
 #[doc(hidden)]
 pub fn parse_legacy_0173(xml: &[u8]) -> Result<Vec<ImportedStatement>, CamtError> {
     let mut reader = reader_for(xml, TextMode::Legacy0173);
