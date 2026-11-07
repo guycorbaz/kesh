@@ -12,7 +12,7 @@ Le contenu est rédigé en français à destination des **fiduciaires, PME, ind�
 
 ### Corrigé
 
-- **Le menu latéral garde le groupe que vous avez replié** ([#424](https://github.com/guycorbaz/kesh/issues/424)) : ouvrir une page d'un groupe replié le déplie pour cette page, sans plus enregistrer ce dépliage comme votre choix. Sur les autres pages, le groupe redevient tel que vous l'aviez laissé.
+- **Le menu latéral garde le groupe que vous avez replié** ([#424](https://github.com/guycorbaz/kesh/issues/424)) : ouvrir une page d'un groupe replié le déplie pour cette page, sans plus enregistrer ce dépliage comme votre choix. Le groupe reste déplié pendant que vous naviguez, et il redevient tel que vous l'aviez laissé au prochain chargement de la page. Un groupe que le dépliage automatique avait déjà enregistré comme ouvert le reste : un clic pour le replier suffit à corriger ce choix.
 
 ## [0.17.4] — 2026-11-06
 
