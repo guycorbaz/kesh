@@ -189,10 +189,10 @@ npm run test:e2e
 Pré-requis : MariaDB démarré + seed CI appliqué + Playwright browsers installés (cf. `PLAYWRIGHT_HOST_PLATFORM_OVERRIDE=ubuntu24.04-x64` sur Ubuntu 26.04+ — limitation upstream Playwright ≤ 1.49).
 
 ⚠️ **« Vert » ne veut pas dire 0 échec, et sans cette précision la règle ci-dessus est
-invérifiable.** La suite rend **7 à 10 échecs attendus** — sept de la KF-029 (#97), ouverte depuis
-avril, plus la KF-052 quand elle se déclenche et **zéro à deux échecs qui changent d'identité d'un run
+invérifiable.** La suite rend **7 à 9 échecs attendus** — sept de la KF-029 (#97), ouverte depuis
+avril, et **zéro à deux échecs qui changent d'identité d'un run
 à l'autre** — pollution d'état entre specs, et non défaut de la spec qui rougit. *(« 8 échecs » jusqu'au
-2026-10-14 : `docs/testing.md` est passé à « 7 à 10 » à la Story 28-8, ce paragraphe n'avait pas suivi.)* La liste nominative, le motif de chacun et **la marche à suivre pour distinguer un échec
+2026-10-14 : `docs/testing.md` est passé à « 7 à 10 » à la Story 28-8, ce paragraphe n'avait pas suivi ; « 7 à 10 », avec la KF-052, jusqu'au 2026-11-07, Story 33-9.)* La liste nominative, le motif de chacun et **la marche à suivre pour distinguer un échec
 connu d'une régression** sont dans `docs/testing.md` § *« Les échecs attendus »*. Un rouge ne se
 juge pas au nombre : il se juge fichier par fichier contre cette liste.
 

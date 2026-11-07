@@ -56,7 +56,7 @@ Le test **pose son état de départ et mesure une transition** ; il garde tout c
 
 ## Tâches
 
-- [ ] **T1** : étape 1, à l'identique. **T2** : réécriture du test, helper ; Vitest sur `frontend/src/lib/shared/e2e-selecteurs-traduits.test.ts`, qui lit cette spec : si le sélecteur « Administration » disparaît, retirer sa ligne de `DETTE_CONNUE` (`:176`), le test rougissant sur une ligne morte (`:204-214`), et le dire au Change Log. **T3** : mutations. **T4** : tirages de l'AC-2. **T5** : `docs/testing.md`, `CLAUDE.md`, CHANGELOG (seulement si le correctif touche la production ; sinon rien à annoncer à l'utilisateur). **T6** : **dire à l'orchestrateur** que la mémoire `e2e-echecs-attendus.md` est périmée (8 à 11, KF-045), hors dépôt.
+- [x] **T1** : étape 1, à l'identique. **T2** : réécriture du test, helper ; Vitest sur `frontend/src/lib/shared/e2e-selecteurs-traduits.test.ts`, qui lit cette spec : si le sélecteur « Administration » disparaît, retirer sa ligne de `DETTE_CONNUE` (`:176`), le test rougissant sur une ligne morte (`:204-214`), et le dire au Change Log. **T3** : mutations. **T4** : tirages de l'AC-2. **T5** : `docs/testing.md`, `CLAUDE.md`, CHANGELOG (seulement si le correctif touche la production ; sinon rien à annoncer à l'utilisateur). **T6** : **dire à l'orchestrateur** que la mémoire `e2e-echecs-attendus.md` est périmée (8 à 11, KF-045), hors dépôt.
 
 ### Mutations nommées
 
