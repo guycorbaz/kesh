@@ -72,6 +72,9 @@ Le contenu est rédigé en français à destination des **fiduciaires, PME, ind�
 ### Corrigé
 
 - **Le menu latéral garde le groupe que vous avez replié** ([#424](https://github.com/guycorbaz/kesh/issues/424)) : ouvrir une page d'un groupe replié le déplie pour cette page, sans plus enregistrer ce dépliage comme votre choix. Le groupe reste déplié pendant que vous naviguez, et il redevient tel que vous l'aviez laissé au prochain chargement de la page. Un groupe que le dépliage automatique avait déjà enregistré comme ouvert le reste : un clic pour le replier suffit à corriger ce choix.
+### Ajouté
+
+- **Pour qui contribue au dépôt : la CI saute ses jobs lourds sur une PR qui ne porte que `_bmad-output/`** (refs [#928](https://github.com/guycorbaz/kesh/issues/928)). *(À confirmer par les relevés de l'AC-6 de la Story 33-11 avant la release : cette entrée se récrit si GitHub ne se comporte pas comme prévu.)* Tout autre fichier, manuels, `docs/`, `CHANGELOG.md` et `README.md` compris, fait tourner la suite complète, de même que tout push sur `main`. Sans effet sur Kesh lui-même.
 
 ## [0.17.4] — 2026-11-06
 
