@@ -1754,7 +1754,7 @@ mod tests {
     fn couper_ligne_frontieres_en_caracteres() {
         let juste = format!("{} {}", "é".repeat(12), "é".repeat(14));
         assert_eq!(juste.chars().count(), 27, "montage");
-        assert_eq!(couper_ligne(&juste, 27), [juste.clone()]);
+        assert_eq!(couper_ligne(&juste, 27), std::slice::from_ref(&juste));
 
         let un_de_plus = format!("{} {}", "é".repeat(12), "é".repeat(15));
         assert_eq!(
