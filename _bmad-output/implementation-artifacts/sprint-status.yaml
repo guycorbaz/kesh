@@ -1007,6 +1007,6 @@ development_status:
   33-7-traces-audit: ready-for-dev
   33-8-compte-designe-archive: ready-for-dev
   33-9-e2e-sidebar: ready-for-dev
-  33-10-outillage-release: review
+  33-10-outillage-release: done
   33-11-filtre-ci: ready-for-dev  # 2026-11-06 : demande de Guy ; fiche écrite par l'orchestrateur, validation P1 à lancer.
   epic-33-retrospective: optional
