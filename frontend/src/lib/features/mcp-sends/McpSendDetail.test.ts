@@ -260,6 +260,34 @@ describe('McpSendDetail', () => {
 			expect(avis.textContent).toContain('mon texte');
 		});
 
+		it('Recharger réussi, le texte relu est celui de l’utilisateur : rien à signaler (P2-6)', async () => {
+			const r = await monter();
+			await modifier(r, 'mon texte');
+			mockApi.decideMcpSend.mockRejectedValueOnce(erreurApi(0, 'NETWORK_ERROR', 'x'));
+			await fireEvent.click(r.getByTestId('mcp-send-approve-modified'));
+			await r.findByTestId('mcp-send-reload');
+			mockApi.getMcpSend.mockResolvedValueOnce(
+				envoi({ state: 'approved', version: 6, content: 'mon texte' }),
+			);
+			await fireEvent.click(r.getByTestId('mcp-send-reload'));
+			await waitFor(() => expect(r.queryByTestId('mcp-send-reload')).toBeNull());
+			expect(r.queryByTestId('mcp-send-edit-not-kept')).toBeNull();
+		});
+
+		it('une décision réussie retire l’avis du texte non repris (P2-6)', async () => {
+			const r = await monter();
+			await modifier(r, 'mon texte');
+			mockApi.decideMcpSend.mockRejectedValueOnce(erreurApi(0, 'NETWORK_ERROR', 'x'));
+			await fireEvent.click(r.getByTestId('mcp-send-approve-modified'));
+			await r.findByTestId('mcp-send-reload');
+			mockApi.getMcpSend.mockResolvedValueOnce(envoi({ version: 6 }));
+			await fireEvent.click(r.getByTestId('mcp-send-reload'));
+			await r.findByTestId('mcp-send-edit-not-kept');
+			mockApi.decideMcpSend.mockResolvedValueOnce(envoi({ state: 'approved', version: 7 }));
+			await fireEvent.click(r.getByTestId('mcp-send-approve'));
+			await waitFor(() => expect(r.queryByTestId('mcp-send-edit-not-kept')).toBeNull());
+		});
+
 		it('sans texte modifié, Recharger ne signale rien', async () => {
 			const r = await monter();
 			mockApi.decideMcpSend.mockRejectedValueOnce(erreurApi(0, 'NETWORK_ERROR', 'x'));

@@ -293,6 +293,8 @@ describe("fiche facture — règlement à l'issue inconnue", () => {
     ["délai dépassé", { code: "TIMEOUT", status: 0, message: "Pas de réponse." }],
     ["502 du proxy", { code: "BAD_GATEWAY", status: 502, message: "Passerelle." }],
     ["504 du proxy", { code: "GATEWAY_TIMEOUT", status: 504, message: "Passerelle." }],
+    ["500 du serveur", { code: "INTERNAL_ERROR", status: 500, message: "Erreur interne." }],
+    ["503 au commit", { code: "SERVICE_UNAVAILABLE", status: 503, message: "Base injoignable." }],
     ["réponse illisible", new TypeError("réponse vide")],
   ] as const) {
     it(`${nom} : plus de geste identique, facture et règlements relus, issue dite`, async () => {

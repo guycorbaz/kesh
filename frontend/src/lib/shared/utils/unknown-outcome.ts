@@ -21,7 +21,9 @@ import { isApiError } from './api-error';
  *
  * Faux pour toute erreur qui n'est pas une `ApiError` : à l'appelant de dire
  * ce qu'il en fait (la sauvegarde la traite aussi en issue inconnue, l'import
- * non). Le 503 n'en est pas : Kesh l'émet quand la base est injoignable.
+ * non). Le 503 n'en est pas pour une opération qui n'écrit rien de définitif :
+ * Kesh l'émet quand la base est injoignable. Pour un règlement, voir
+ * {@link isSettlementOutcomeUnknown}.
  */
 export function isUnknownOutcome(err: unknown): boolean {
 	if (!isApiError(err)) return false;
@@ -31,4 +33,22 @@ export function isUnknownOutcome(err: unknown): boolean {
 		err.status === 502 ||
 		err.status === 504
 	);
+}
+
+/**
+ * Vrai si l'échec d'un **règlement de facture** ne prouve pas qu'il n'a pas été écrit
+ * (revue P2 de la 33-6, P2-2) : tout ce que dit {@link isUnknownOutcome}, tout 5xx, et
+ * toute erreur qui n'est pas une `ApiError`.
+ *
+ * Une panne pendant le `COMMIT` remonte en 503 alors que la base a pu le valider ; et
+ * le POST d'un règlement ne porte aucune version, si bien qu'un second clic écrirait un
+ * second règlement. Une relecture inutile coûte un clic, une écriture de trop se
+ * corrige dans les livres. Seul un 4xx, refus certain, laisse le dialogue ouvert.
+ *
+ * Une exception levée après un succès (P2-7) se lit donc aussi « issue inconnue » :
+ * c'est sans danger, la relecture montre l'écriture.
+ */
+export function isSettlementOutcomeUnknown(err: unknown): boolean {
+	if (!isApiError(err)) return true;
+	return isUnknownOutcome(err) || err.status >= 500;
 }

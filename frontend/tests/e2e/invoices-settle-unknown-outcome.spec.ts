@@ -114,6 +114,28 @@ test("fiche facture : réponse coupée après l'écriture, aucun second geste à
   expect(await settlementCount(page, id)).toBe(1);
 });
 
+test("fiche facture : règlement partiel coupé, le bouton rouvert propose le reste relu", async ({
+  page,
+}) => {
+  await login(page);
+  const id = await validatedInvoice(page);
+  await cutResponseAfterWrite(page, id);
+  await page.goto(`/invoices/${id}`);
+  await page.getByTestId("settle-open").click();
+  await page.locator("#settle-amount").fill("8.10");
+  await fillAndConfirm(page);
+
+  await expect(page.getByTestId("settle-unknown-outcome")).toBeVisible();
+  await expect(page.getByTestId("settle-confirm")).toHaveCount(0);
+  // Partiel : la facture reste à régler, c'est l'état `verify` qui rouvre le geste,
+  // et le montant proposé est le reste relu, non celui d'avant l'envoi.
+  await expect(page.getByTestId("settle-open")).toBeEnabled();
+  await page.getByTestId("settle-open").click();
+  await expect(page.locator("#settle-amount")).toHaveValue("100.00");
+  await expect(page.getByTestId("settle-unknown-outcome")).toBeVisible();
+  expect(await settlementCount(page, id)).toBe(1);
+});
+
 test("échéancier : réponse coupée après l'écriture, aucun second geste à portée de clic", async ({
   page,
 }) => {

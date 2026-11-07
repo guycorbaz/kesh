@@ -86,7 +86,8 @@
 				if (relu.state === 'pending' && relu.version === avant?.version) {
 					valeur = saisie;
 					enEdition = edition;
-				} else {
+				} else if (relu.content !== saisie) {
+					// Égal : la décision dont la réponse s'était perdue l'a bel et bien repris.
 					texteNonRepris = saisie;
 				}
 			}
@@ -119,6 +120,7 @@
 			// Une réponse vide n'est pas un succès : `erreurDeDecision` en fait une issue inconnue.
 			if (!apres) throw new Error('réponse vide');
 			poser(apres);
+			texteNonRepris = null;
 			dialogueRefus = false;
 			notifySuccess(
 				corps.decision === 'refuse'

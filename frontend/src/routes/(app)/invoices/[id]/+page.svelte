@@ -31,7 +31,7 @@
 		writeOffInvoice,
 	} from '$lib/features/invoices/invoices.api';
 	import { pdfErrorMessage } from '$lib/shared/utils/pdf-error';
-	import { isUnknownOutcome } from '$lib/shared/utils/unknown-outcome';
+	import { isSettlementOutcomeUnknown } from '$lib/shared/utils/unknown-outcome';
 	import { fetchAccounts } from '$lib/features/accounts/accounts.api';
 	import type { AccountResponse } from '$lib/features/accounts/accounts.types';
 	import type { InvoiceSettingsResponse } from '$lib/features/invoices/invoices.types';
@@ -617,14 +617,12 @@
 			markOpen = false;
 			settleOutcome = 'known';
 		} catch (err) {
-			if (!isApiError(err) || isUnknownOutcome(err)) {
+			if (isSettlementOutcomeUnknown(err)) {
 				markOpen = false;
 				await rereadAfterUnknownOutcome();
 			} else if (isApiError(err)) {
 				markError = err.message;
 				notifyError(err.message);
-			} else {
-				markError = i18nMsg('common-error', 'Erreur inattendue');
 			}
 		} finally {
 			markSubmitting = false;
@@ -1151,7 +1149,7 @@
 			{settleOutcome === 'verify'
 				? i18nMsg(
 						'invoice-settle-unknown-outcome',
-						'L’issue du règlement n’est pas connue : la réponse du serveur n’est pas parvenue, et il a pu être enregistré. Vérifiez les montants et la liste des règlements ci-dessous avant de réessayer.',
+						'L’issue du règlement n’est pas connue : le serveur ne l’a pas confirmé, et il a pu être enregistré. Vérifiez les montants et la liste des règlements ci-dessous avant de réessayer.',
 					)
 				: i18nMsg(
 						'invoice-settle-unknown-reread-failed',

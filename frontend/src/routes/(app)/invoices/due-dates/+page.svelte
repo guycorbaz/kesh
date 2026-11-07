@@ -16,7 +16,7 @@
 	import { notifyError, notifySuccess } from '$lib/shared/utils/notify';
 	import { i18nMsg } from '$lib/shared/utils/i18n.svelte';
 	import { todayLocal } from '$lib/shared/utils/local-date';
-	import { isUnknownOutcome } from '$lib/shared/utils/unknown-outcome';
+	import { isSettlementOutcomeUnknown } from '$lib/shared/utils/unknown-outcome';
 	import {
 		listDueDates,
 		settleInvoice,
@@ -266,10 +266,13 @@
 
 	async function handleSettleConfirm(payload: SettlementPayload) {
 		if (!markTarget) return;
+		// Capturée avant l'envoi : une autre ligne peut s'ouvrir pendant l'attente, et
+		// l'avis nomme la facture réglée (revue P2 de la 33-6, P2-3).
+		const cible = markTarget;
 		markSubmitting = true;
 		markError = '';
 		try {
-			const res = await settleInvoice(markTarget.id, payload);
+			const res = await settleInvoice(cible.id, payload);
 			notifySuccess(
 				res.fullySettled
 					? i18nMsg('invoice-settle-success-full', 'Règlement enregistré — facture soldée')
@@ -283,16 +286,14 @@
 			// complet ferait afficher un montant périmé.
 			await load();
 		} catch (err) {
-			if (!isApiError(err) || isUnknownOutcome(err)) {
-				settleUnknownNumber = markTarget?.invoiceNumber ?? null;
+			if (isSettlementOutcomeUnknown(err)) {
+				settleUnknownNumber = cible.invoiceNumber;
 				markOpen = false;
 				markTarget = null;
 				await rereadAfterUnknownOutcome();
 			} else if (isApiError(err)) {
 				markError = err.message;
 				notifyError(err.message);
-			} else {
-				markError = i18nMsg('common-error', 'Erreur inattendue');
 			}
 		} finally {
 			markSubmitting = false;
@@ -367,7 +368,7 @@
 			{settleOutcome === 'verify'
 				? i18nMsg(
 						'due-dates-settle-unknown',
-						'L’issue du règlement de la facture { $number } n’est pas connue : la réponse du serveur n’est pas parvenue, et il a pu être enregistré. Vérifiez son reste dû ci-dessous, ou sa fiche, avant de réessayer.',
+						'L’issue du règlement de la facture { $number } n’est pas connue : le serveur ne l’a pas confirmé, et il a pu être enregistré. Vérifiez son reste dû ci-dessous, ou sa fiche, avant de réessayer.',
 						{ number: settleUnknownNumber ?? '' },
 					)
 				: i18nMsg(

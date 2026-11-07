@@ -397,8 +397,20 @@ async fn a_partial_cancellation_returns_what_was_written(pool: MySqlPool) {
 // AC-2, AC-8 — rien ne s'attend après l'écriture, ni après le commit
 // ---------------------------------------------------------------------------
 
-/// Ce qu'une fonction fait autour d'un appel : les `.await` qui le suivent, dans son
-/// bloc et dans chaque bloc englobant, et si `read` l'a précédé.
+/// Ce qu'une fonction fait autour d'un appel : les `.await` de tout son corps qui
+/// suivent celui de l'appel, et si `read` l'a précédé.
+///
+/// **Le critère** (revue P2, P2-1) : l'`.await` de l'appel est le dernier du corps,
+/// hors `rollback`, où qu'il soit : instruction suivante, bras d'un `match` ou d'un
+/// `if let` sur l'appel, même instruction. Ce n'est plus le découpage en blocs qui
+/// décide. Un commit dans un bras, suivi d'un autre bras sans lui, compte donc ce
+/// second bras : la garde rougit plutôt que de se taire.
+///
+/// ⚠️ **Ce qui lui reste invisible, et qu'elle ne prétend pas voir** : une attente
+/// dans les jetons d'une macro (`tokio::join!`, `try_join!` : `syn` ne les lit pas) ;
+/// une relecture dans une fonction appelée, dont le corps n'est pas lu ; une tâche
+/// lancée à part (`tokio::spawn`) sans `.await`. La revue reste le filet de ces
+/// formes, sans qu'on en ajoute une liste ici.
 ///
 /// ⛔ **Un ensemble clos, non une liste de formes** (revue P1, B2, B3, E-5) : une liste
 /// de relectures interdites laissait passer `factures::detail(.., &state.lecture(), id)`
@@ -435,24 +447,15 @@ impl<'ast> Visit<'ast> for Contains<'_> {
     }
 }
 
-fn stmt_calls(stmt: &syn::Stmt, name: &str) -> bool {
+fn expr_calls(expr: &syn::Expr, name: &str) -> bool {
     let mut visitor = Contains { name, found: false };
-    visitor.visit_stmt(stmt);
+    visitor.visit_expr(expr);
     visitor.found
 }
 
-#[derive(Default)]
-struct CountAwaits(usize);
-
-impl<'ast> Visit<'ast> for CountAwaits {
-    fn visit_expr_await(&mut self, node: &'ast syn::ExprAwait) {
-        self.0 += 1;
-        visit::visit_expr_await(self, node);
-    }
-}
-
-/// Descend vers l'appel, bloc par bloc : un bloc voisin (l'autre bras d'un `match`,
-/// celui du `rollback`) ne porte pas l'appel, et n'est donc pas compté.
+/// Parcourt les `.await` du corps dans leur ordre d'évaluation : l'intérieur d'un
+/// `.await` avant lui, le scrutateur d'un `match` avant ses bras. Le premier qui porte
+/// l'appel est le sien ; tout `.await` suivant compte, sauf un `rollback`.
 struct Around<'a> {
     target: &'a str,
     read: Option<&'a str>,
@@ -462,20 +465,17 @@ struct Around<'a> {
 }
 
 impl<'ast> Visit<'ast> for Around<'_> {
-    fn visit_block(&mut self, block: &'ast syn::Block) {
-        let Some(at) = block.stmts.iter().position(|s| stmt_calls(s, self.target)) else {
-            return;
-        };
-        self.found = true;
-        let mut awaits = CountAwaits::default();
-        for stmt in &block.stmts[at + 1..] {
-            awaits.visit_stmt(stmt);
+    fn visit_expr_await(&mut self, node: &'ast syn::ExprAwait) {
+        visit::visit_expr_await(self, node);
+        if self.found {
+            if !expr_calls(&node.base, "rollback") {
+                self.awaits_after += 1;
+            }
+        } else if expr_calls(&node.base, self.target) {
+            self.found = true;
+        } else if let Some(read) = self.read {
+            self.read_before |= expr_calls(&node.base, read);
         }
-        self.awaits_after += awaits.0;
-        if let Some(read) = self.read {
-            self.read_before |= block.stmts[..at].iter().any(|s| stmt_calls(s, read));
-        }
-        visit::visit_stmt(self, &block.stmts[at]);
     }
 }
 
@@ -603,4 +603,33 @@ fn the_guard_sees_every_form_of_reread() {
             read_before: true
         }
     );
+}
+
+/// Revue P2 (P2-1) — l'attente qui n'est pas dans une instruction suivant l'appel :
+/// le bras d'un `match` sur l'appel, un `if let`, et la même instruction.
+#[test]
+fn the_guard_sees_a_wait_in_a_match_arm_or_the_same_statement() {
+    for (form, source) in [
+        (
+            "le bras d'un match sur l'appel",
+            "async fn f() { match tx.commit().await {
+                Ok(()) => { read(1).await?; Ok(1) }
+                Err(e) => Err(e),
+            } }",
+        ),
+        (
+            "le bras d'un if let sur l'appel",
+            "async fn f() { if let Ok(()) = tx.commit().await { read(1).await } else { Ok(1) } }",
+        ),
+        (
+            "la même instruction",
+            "async fn f() { Ok(Json(read(tx.commit().await?).await?)) }",
+        ),
+    ] {
+        assert_eq!(
+            around(source, "f", "commit", None).awaits_after,
+            1,
+            "{form}"
+        );
+    }
 }

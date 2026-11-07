@@ -254,6 +254,28 @@ describe("échéancier — règlement à l'issue inconnue", () => {
     );
   });
 
+  it("un 503 à l'instant du commit vaut issue inconnue : dialogue fermé, liste relue (P2-2)", async () => {
+    settleMock.mockRejectedValue({ code: "SERVICE_UNAVAILABLE", status: 503, message: "Base." });
+    const r = await regler();
+    await r.findByTestId("due-dates-settle-unknown");
+    await waitFor(() => expect(r.queryByTestId("settle-confirm")).toBeNull());
+    await waitFor(() => expect(listDueDatesMock.mock.calls.length).toBeGreaterThan(1));
+  });
+
+  it("l'avis nomme la facture réglée, même si une autre a été ouverte pendant l'envoi (P2-3)", async () => {
+    listDueDatesMock.mockResolvedValue(
+      response([item(), item({ id: 6, invoiceNumber: "F-2026-006" })]),
+    );
+    let rejeter: (err: unknown) => void = () => {};
+    settleMock.mockReturnValue(new Promise((_, reject) => (rejeter = reject)));
+    const r = await regler();
+    await fireEvent.click(await r.findByTestId("due-dates-settle-6"));
+    rejeter({ code: "NETWORK_ERROR", status: 0, message: "x" });
+    const avis = await r.findByTestId("due-dates-settle-unknown");
+    expect(avis.textContent).toContain("F-2026-005");
+    expect(avis.textContent).not.toContain("F-2026-006");
+  });
+
   it("relecture en échec : la liste vidée n'offre aucun geste, Relire la rétablit", async () => {
     settleMock.mockRejectedValue({ code: "NETWORK_ERROR", status: 0, message: "x" });
     const r = render(Page);

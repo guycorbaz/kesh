@@ -1286,11 +1286,14 @@ Pour relancer les factures en retard, Kesh dispose d'un \textbf{écran de rappel
 
 \subsection{Enregistrer et annuler un règlement}\label{sec:reglement-client}
 
-\textbf{Si la réponse se perd.} Une coupure réseau peut survenir une fois le règlement écrit. Rien
-n'empêchant d'enregistrer un second règlement partiel, la fiche et l'échéancier ferment alors le
-dialogue, relisent la facture et disent que l'issue n'est pas connue~: vérifiez ce qui est écrit
-avant de réessayer. Tant que la relecture n'a pas réussi, le règlement reste indisponible, et
-\emph{Relire} la relance.
+\textbf{Si la réponse se perd.} Une coupure réseau ou une panne du serveur peut survenir une fois le
+règlement écrit. Rien n'empêchant d'enregistrer un second règlement partiel, la fiche et l'échéancier
+ferment alors le dialogue, relisent la facture et disent que l'issue n'est pas connue~: vérifiez ce
+qui est écrit avant de réessayer. Tant que la relecture n'a pas réussi, le règlement reste
+indisponible, et \emph{Relire} la relance. Cette protection ne vaut que dans l'onglet où le règlement
+a été lancé~: n'en relancez pas un depuis un autre onglet, ou après avoir rechargé la page, sans
+avoir vérifié la liste des règlements. Après un délai dépassé, le serveur peut encore écrire~:
+attendez une minute et relisez avant de réessayer.
 
 \textbf{Enregistrer.} Sur la fiche d'une facture validée, \emph{Enregistrer un règlement}~: le
 mode (virement sur un compte bancaire, ou espèces et un autre compte de contrepartie), le montant
