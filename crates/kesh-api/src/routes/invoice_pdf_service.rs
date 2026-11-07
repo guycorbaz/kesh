@@ -496,7 +496,7 @@ pub(crate) fn map_qrbill_error(err: QrBillError) -> AppError {
             AppError::InvoiceNotPdfReady(format!("Pays invalide: {c}"))
         }
         QrBillError::InvalidCharset { field, codepoint } => AppError::InvoiceNotPdfReady(format!(
-            "Champ {field} contient un caractère non autorisé par SIX 2.2 (U+{codepoint:04X})"
+            "Champ {field} contient un caractère non autorisé par la directive QR-facture, § 4.1.1 (U+{codepoint:04X})"
         )),
         QrBillError::PdfGeneration(msg) => AppError::PdfGenerationFailed(msg),
         // #151 code-review : la garde géométrique (lignes + récap TVA débordant)

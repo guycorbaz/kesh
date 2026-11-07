@@ -4,6 +4,7 @@
 //! recursive checksum (SIX Annex B), and field-length constraints.
 
 use crate::types::{Address, Currency, QrBillData, QrBillError, Reference};
+use kesh_core::text::is_invisible;
 use rust_decimal::Decimal;
 
 pub const NAME_MAX: usize = 70;
@@ -190,21 +191,14 @@ pub fn build_qrr(company_id: u64, invoice_id: u64) -> Result<String, QrBillError
     Ok(format!("{}{}", body, check))
 }
 
-/// Vérifie qu'une chaîne ne contient que des caractères autorisés par
-/// SIX QR Bill 2.2 §2.5 (Annex C, jeu de caractères restreint).
+/// Vérifie qu'une chaîne ne contient que des caractères du jeu de la QR-facture :
+/// § 4.1.1 de la directive (`docs/six-references/ig-qr-bill-v2.4-en.pdf`).
 ///
-/// C1 (review pass 1 G2 C) : whitelist stricte dérivée de SIX Annex C +
-/// 3 ajouts pragmatiques pour couvrir le copy-paste réel macOS/Word/€ :
-/// - U+2019 (apostrophe typographique « ' »)
-/// - U+2014 (cadratin « — »)
-/// - U+20AC (signe euro « € »)
-///
-/// Caractères explicitement exclus de Annex C : `<`, `>`, `&`, `"` (HTML),
-/// caractères de contrôle (`U+007F`, `U+0080-009F`), NBSP (U+00A0), soft
-/// hyphen (U+00AD), multiplication × (U+00D7) et division ÷ (U+00F7).
+/// Le jeu admet donc `&`, `<`, `>`, `"`, U+00A0 et U+00AD. Avant la Story 33-12a
+/// (#941), Kesh les refusait, au nom d'une « annexe C » qui n'est qu'un glossaire.
 fn check_charset(field: &'static str, value: &str) -> Result<(), QrBillError> {
     for c in value.chars() {
-        if !is_six_annex_c_char(c) {
+        if !est_caractere_qr(c) {
             return Err(QrBillError::InvalidCharset {
                 field,
                 codepoint: c as u32,
@@ -214,34 +208,28 @@ fn check_charset(field: &'static str, value: &str) -> Result<(), QrBillError> {
     Ok(())
 }
 
-/// Implémente le whitelist SIX Annex C + 3 additions documentées (C1 review
-/// pass 1 G2 C). Voir `check_charset` pour la liste des exclusions.
-fn is_six_annex_c_char(c: char) -> bool {
-    // ASCII printable subset autorisé par Annex C (exclut < > & " et contrôles).
-    // CRITICAL pass 2 : RETIRER `\n` du whitelist — c'est le séparateur de
-    // payload SIX (cf. generator.rs `lines.join("\n")`). L'admettre dans un
-    // champ d'adresse corromprait silencieusement l'ordre des champs après
-    // le `join`, produisant un QR Code parseable mais sémantiquement faux.
-    if c == ' '
-        || matches!(c,
-            'A'..='Z' | 'a'..='z' | '0'..='9'
-            | '!' | '#' | '$' | '%' | '*' | '+' | ',' | '-' | '.' | '/'
-            | ':' | ';' | '=' | '?' | '@' | '_' | '\'' | '(' | ')'
-        )
-    {
-        return true;
-    }
-    // Latin-1 supplément + Latin Ext-A : restreint aux lettres accentuées.
-    // Exclut NBSP (00A0), soft hyphen (00AD), × (00D7), ÷ (00F7).
-    let cp = c as u32;
-    if (0x00A1..=0x00FF).contains(&cp) && cp != 0x00AD && cp != 0x00D7 && cp != 0x00F7 {
-        return true;
-    }
-    if (0x0100..=0x017F).contains(&cp) {
-        return true;
-    }
-    // Additions pragmatiques C1:a (curly apostrophe, em-dash, euro sign).
-    matches!(cp, 0x2019 | 0x2014 | 0x20AC)
+/// Le § 4.1.1 de la directive, plus U+2019 et U+2014, deux additions de Kesh pour
+/// le copier-coller, que `crate::texte::texte_code` normalise avant le code.
+///
+/// ⚠️ `\n` et `\r` restent hors du jeu : ce sont les séparateurs du code, et les
+/// admettre dans un champ décalerait silencieusement tous les suivants.
+fn est_caractere_qr(c: char) -> bool {
+    matches!(
+        c as u32,
+        0x0020..=0x007E        // Basic Latin
+            | 0x00A0..=0x00FF  // Latin-1 Supplement
+            | 0x0100..=0x017F  // Latin Extended-A
+            | 0x0218..=0x021B  // Ș ș Ț ț
+            | 0x20AC           // €
+            | 0x2019           // addition : apostrophe typographique
+            | 0x2014 // addition : cadratin
+    )
+}
+
+/// Vrai si un champ obligatoire ne porte rien de visible : `trim` ne voit ni
+/// U+00AD ni U+200B, qui s'imprimeraient à vide.
+fn est_vide(valeur: &str) -> bool {
+    valeur.chars().all(is_invisible)
 }
 
 fn check_len(field: &'static str, value: &str, max: usize) -> Result<(), QrBillError> {
@@ -313,7 +301,7 @@ pub fn is_iso_3166_alpha2(code: &str) -> bool {
 fn validate_address(field_prefix: &'static str, addr: &Address) -> Result<(), QrBillError> {
     use crate::types::AddressType;
 
-    if addr.name.trim().is_empty() {
+    if est_vide(&addr.name) {
         return Err(QrBillError::FieldEmpty(field_prefix_name(field_prefix)));
     }
     check_len(field_prefix_name(field_prefix), &addr.name, NAME_MAX)?;
@@ -325,10 +313,10 @@ fn validate_address(field_prefix: &'static str, addr: &Address) -> Result<(), Qr
             // rue (element 3) ≤70, n° bâtiment (element 4) ≤16, NPA ≤16,
             // localité ≤35. La rue peut être vide (adresse sans rue nommée),
             // mais NPA + localité sont requis.
-            if addr.postal_code.trim().is_empty() {
+            if est_vide(&addr.postal_code) {
                 return Err(QrBillError::FieldEmpty(field_prefix_postal(field_prefix)));
             }
-            if addr.town.trim().is_empty() {
+            if est_vide(&addr.town) {
                 return Err(QrBillError::FieldEmpty(field_prefix_town(field_prefix)));
             }
             check_len(field_prefix_line1(field_prefix), &addr.line1, STREET_MAX)?;
@@ -348,13 +336,21 @@ fn validate_address(field_prefix: &'static str, addr: &Address) -> Result<(), Qr
             // SIX §3.3 type K : `line2` doit contenir a minima NPA + localité.
             // Une chaîne vide produirait un payload parseable mais non conforme.
             // PstCd/TwnNm (element 5/6) doivent rester vides en type K.
-            if addr.line2.trim().is_empty() {
+            if est_vide(&addr.line2) {
                 return Err(QrBillError::FieldEmpty(field_prefix_line2(field_prefix)));
             }
             check_len(field_prefix_line1(field_prefix), &addr.line1, ADDR_LINE_MAX)?;
             check_len(field_prefix_line2(field_prefix), &addr.line2, ADDR_LINE_MAX)?;
+            check_len(
+                field_prefix_postal(field_prefix),
+                &addr.postal_code,
+                POSTAL_CODE_MAX,
+            )?;
+            check_len(field_prefix_town(field_prefix), &addr.town, TOWN_MAX)?;
             check_charset(field_prefix_line1(field_prefix), &addr.line1)?;
             check_charset(field_prefix_line2(field_prefix), &addr.line2)?;
+            check_charset(field_prefix_postal(field_prefix), &addr.postal_code)?;
+            check_charset(field_prefix_town(field_prefix), &addr.town)?;
         }
     }
     validate_country(&addr.country)?;
@@ -601,27 +597,207 @@ mod tests {
         assert!(validate_address("creditor", &addr).is_ok());
     }
 
+    /// **AC1 et AC2** (Story 33-12a, #941) — balayage U+0000–U+024F et points de
+    /// l'euro, contre les plages écrites depuis le § 4.1.1 de la directive, plus
+    /// U+2019 et U+2014, seules additions, normalisées au code.
     #[test]
-    fn charset_html_unsafe_chars_rejected() {
-        // C1 (review pass 1 G2 C) : `<`, `>`, `&`, `"` exclus par Annex C.
-        for s in ["A<B", "A>B", "A&B", "A\"B"] {
-            let addr = Address {
-                address_type: crate::types::AddressType::Combined,
-                name: s.into(),
-                line1: "rue".into(),
-                line2: "1003 Lausanne".into(),
-                postal_code: String::new(),
-                town: String::new(),
-                country: "CH".into(),
-            };
-            assert!(
-                matches!(
-                    validate_address("creditor", &addr),
-                    Err(QrBillError::InvalidCharset { .. })
-                ),
-                "expected charset rejection for: {s}"
+    fn jeu_du_paragraphe_4_1_1_balaye() {
+        let admis = |cp: u32| {
+            crate::texte::PLAGES_4_1_1
+                .iter()
+                .any(|&(bas, haut)| (bas..=haut).contains(&cp))
+                || matches!(cp, 0x2014 | 0x2019)
+        };
+        for cp in (0x0000..=0x024F).chain([0x2014, 0x2019, 0x20AB, 0x20AC, 0x20AD]) {
+            let c = char::from_u32(cp).unwrap();
+            let verdict = check_charset("champ", &c.to_string());
+            assert_eq!(verdict.is_ok(), admis(cp), "U+{cp:04X} : {verdict:?}");
+            if let Err(e) = verdict {
+                assert!(
+                    matches!(e, QrBillError::InvalidCharset { codepoint, .. } if codepoint == cp),
+                    "U+{cp:04X} : {e:?}"
+                );
+            }
+        }
+    }
+
+    /// **AC1** — les bornes du jeu, écrites une à une, sans passer par les plages.
+    #[test]
+    fn bornes_du_paragraphe_4_1_1() {
+        for (cp, admis) in [
+            (0x001F, false),
+            (0x0020, true),
+            (0x007E, true),
+            (0x007F, false),
+            (0x009F, false),
+            (0x00A0, true),
+            (0x00AD, true),
+            (0x00D7, true),
+            (0x00F7, true),
+            (0x00FF, true),
+            (0x0100, true),
+            (0x017F, true),
+            (0x0180, false),
+            (0x0217, false),
+            (0x0218, true),
+            (0x021B, true),
+            (0x021C, false),
+            (0x20AB, false),
+            (0x20AC, true),
+            (0x20AD, false),
+        ] {
+            let c = char::from_u32(cp).unwrap();
+            assert_eq!(
+                check_charset("champ", &c.to_string()).is_ok(),
+                admis,
+                "U+{cp:04X}"
             );
         }
+    }
+
+    /// **AC2** — reste refusé : les contrôles, dont les séparateurs de lignes du
+    /// code, et la typographie que la fiche laisse à #942.
+    #[test]
+    fn refus_maintenus() {
+        for c in [
+            '\n', '\r', '\t', '\u{7F}', '\u{80}', '\u{9F}', '\u{2018}', '\u{201C}', '\u{201D}',
+            '\u{2013}', '\u{2026}', '张',
+        ] {
+            assert!(
+                matches!(
+                    check_charset("champ", &format!("a{c}b")),
+                    Err(QrBillError::InvalidCharset { .. })
+                ),
+                "U+{:04X}",
+                c as u32
+            );
+        }
+    }
+
+    /// **AC10** — les signes qu'une ancienne lecture excluait sont au § 4.1.1.
+    #[test]
+    fn signes_html_admis_au_paragraphe_4_1_1() {
+        for s in [
+            "A<B",
+            "A>B",
+            "A&B",
+            "A\"B",
+            "[a]{b}|\\^`~",
+            "2\u{D7}3\u{F7}4",
+        ] {
+            assert!(check_charset("champ", s).is_ok(), "{s}");
+        }
+    }
+
+    /// Une adresse de type K, à compléter.
+    fn adresse_k() -> Address {
+        Address {
+            address_type: crate::types::AddressType::Combined,
+            name: "Max".into(),
+            line1: "rue".into(),
+            line2: "1003 Lausanne".into(),
+            postal_code: String::new(),
+            town: String::new(),
+            country: "CH".into(),
+        }
+    }
+
+    /// **AC7** — en type K, `postal_code` et `town` sont contrôlés comme le reste.
+    #[test]
+    fn type_k_npa_et_localite_controles() {
+        for (npa, ville, champ) in [
+            ("\u{2013}", "", "creditor.postal_code"),
+            ("", "\u{2013}", "creditor.town"),
+        ] {
+            let addr = Address {
+                postal_code: npa.into(),
+                town: ville.into(),
+                ..adresse_k()
+            };
+            let err = validate_address("creditor", &addr).unwrap_err();
+            assert!(
+                matches!(err, QrBillError::InvalidCharset { field, .. } if field == champ),
+                "{champ} : {err:?}"
+            );
+        }
+        for (npa, ville, champ) in [
+            (
+                "1".repeat(POSTAL_CODE_MAX + 1),
+                String::new(),
+                "creditor.postal_code",
+            ),
+            (String::new(), "v".repeat(TOWN_MAX + 1), "creditor.town"),
+        ] {
+            let addr = Address {
+                postal_code: npa,
+                town: ville,
+                ..adresse_k()
+            };
+            let err = validate_address("creditor", &addr).unwrap_err();
+            assert!(
+                matches!(err, QrBillError::FieldTooLong { field, .. } if field == champ),
+                "{champ} : {err:?}"
+            );
+        }
+    }
+
+    /// **AC8** — les champs obligatoires faits des seuls invisibles sont refusés ;
+    /// `is_invisible` voit ce que `trim` ne voit pas (U+00AD, U+200B).
+    #[test]
+    fn champs_obligatoires_d_invisibles_refuses() {
+        let s = || Address {
+            address_type: crate::types::AddressType::Structured,
+            name: "Max".into(),
+            line1: String::new(),
+            line2: String::new(),
+            postal_code: "1003".into(),
+            town: "Lausanne".into(),
+            country: "CH".into(),
+        };
+        for invisibles in ["\u{AD}", " \u{AD}\u{A0}", "\u{200B}"] {
+            for (addr, champ) in [
+                (
+                    Address {
+                        name: invisibles.into(),
+                        ..s()
+                    },
+                    "creditor.name",
+                ),
+                (
+                    Address {
+                        postal_code: invisibles.into(),
+                        ..s()
+                    },
+                    "creditor.postal_code",
+                ),
+                (
+                    Address {
+                        town: invisibles.into(),
+                        ..s()
+                    },
+                    "creditor.town",
+                ),
+                (
+                    Address {
+                        line2: invisibles.into(),
+                        ..adresse_k()
+                    },
+                    "creditor.line2",
+                ),
+            ] {
+                let err = validate_address("creditor", &addr).unwrap_err();
+                assert!(
+                    matches!(err, QrBillError::FieldEmpty(f) if f == champ),
+                    "{champ}, {invisibles:?} : {err:?}"
+                );
+            }
+        }
+        // Une rue facultative d'invisibles reste admise.
+        let rue = Address {
+            line1: "\u{A0}\u{AD}".into(),
+            ..s()
+        };
+        assert!(validate_address("creditor", &rue).is_ok());
     }
 
     fn sample_data_with_iban(iban: &str, reference: Reference) -> QrBillData {
@@ -740,11 +916,10 @@ mod tests {
 
     #[test]
     fn charset_latin_extended_accepted() {
-        // Pass 2 : `&` retiré du fixture — exclu d'Annex C strict (cf. C1).
-        // Test couvre les diacritiques latin (Ü, ô) qui restent acceptés.
+        // `&` y est rétabli : le § 4.1.1 l'admet (Story 33-12a, #941).
         let addr = Address {
             address_type: crate::types::AddressType::Combined,
-            name: "Müller Cie SA".into(),
+            name: "Müller & Cie SA".into(),
             line1: "Rue de l'Hôpital 1".into(),
             line2: "1003 Lausanne".into(),
             postal_code: String::new(),

@@ -9,7 +9,10 @@
 //! Uses `BuiltinFont::Helvetica` (PDF standard 14) — no external font embedding.
 
 use crate::generator::{build_payload, render_qr_image};
-use crate::types::{InvoicePdfData, QrBillData, QrBillError, QrBillI18n, Reference, ReminderPdf};
+use crate::texte::texte_imprime;
+use crate::types::{
+    Address, InvoicePdfData, QrBillData, QrBillError, QrBillI18n, Reference, ReminderPdf,
+};
 use chrono::{Datelike, NaiveDate};
 use kesh_core::text::is_invisible;
 use printpdf::{
@@ -730,6 +733,39 @@ fn draw_separator(layer: &PdfLayerReference) {
     // Scissors glyph is outside Helvetica's WinAnsi encoding; omitted in v0.1.
 }
 
+// ----- Adresses de la section de paiement -----
+
+/// Pas vertical entre deux lignes d'adresse de la section de paiement, en mm.
+const ADRESSE_PAS: f32 = 3.5;
+
+/// Les lignes à imprimer pour une adresse, nom compris, chacune passée par
+/// [`texte_imprime`] : le seul chemin de tout texte d'adresse vers le reçu et la
+/// partie paiement (Story 33-12a, #941).
+///
+/// Trois lignes, `name`, `line1`, `line2`, vides comprises : les positions restent
+/// celles d'avant la story, seules les lettres changent.
+fn lignes_adresse(addr: &Address) -> Vec<String> {
+    [&addr.name, &addr.line1, &addr.line2]
+        .into_iter()
+        .map(|champ| texte_imprime(champ))
+        .collect()
+}
+
+/// Dessine les lignes de [`lignes_adresse`] à l'abscisse `x`, chacune un pas sous
+/// la précédente, à partir de `y`, qui est laissé sur la dernière ligne dessinée.
+fn dessiner_adresse(
+    layer: &PdfLayerReference,
+    addr: &Address,
+    x: f32,
+    y: &mut f32,
+    helv: &IndirectFontRef,
+) {
+    for ligne in lignes_adresse(addr) {
+        *y -= ADRESSE_PAS;
+        layer.use_text(ligne, 8.0, Mm(x), Mm(*y), helv);
+    }
+}
+
 // ----- Receipt column (left, 62 mm) -----
 
 fn draw_receipt(
@@ -761,12 +797,7 @@ fn draw_receipt(
     );
     y -= 3.0;
     layer.use_text(format_iban(&data.creditor_iban), 8.0, Mm(x), Mm(y), helv);
-    y -= 3.5;
-    layer.use_text(&data.creditor.name, 8.0, Mm(x), Mm(y), helv);
-    y -= 3.5;
-    layer.use_text(&data.creditor.line1, 8.0, Mm(x), Mm(y), helv);
-    y -= 3.5;
-    layer.use_text(&data.creditor.line2, 8.0, Mm(x), Mm(y), helv);
+    dessiner_adresse(layer, &data.creditor, x, &mut y, helv);
 
     // Amount + currency.
     y -= 8.0;
@@ -802,12 +833,7 @@ fn draw_receipt(
         helv_bold,
     );
     if let Some(debtor) = &data.ultimate_debtor {
-        y -= 3.5;
-        layer.use_text(&debtor.name, 8.0, Mm(x), Mm(y), helv);
-        y -= 3.5;
-        layer.use_text(&debtor.line1, 8.0, Mm(x), Mm(y), helv);
-        y -= 3.5;
-        layer.use_text(&debtor.line2, 8.0, Mm(x), Mm(y), helv);
+        dessiner_adresse(layer, debtor, x, &mut y, helv);
     }
 
     // "Acceptance point" at bottom-right of the receipt column.
@@ -863,12 +889,7 @@ fn draw_payment_part(
     );
     y -= 3.0;
     layer.use_text(format_iban(&data.creditor_iban), 8.0, Mm(tx), Mm(y), helv);
-    y -= 3.5;
-    layer.use_text(&data.creditor.name, 8.0, Mm(tx), Mm(y), helv);
-    y -= 3.5;
-    layer.use_text(&data.creditor.line1, 8.0, Mm(tx), Mm(y), helv);
-    y -= 3.5;
-    layer.use_text(&data.creditor.line2, 8.0, Mm(tx), Mm(y), helv);
+    dessiner_adresse(layer, &data.creditor, tx, &mut y, helv);
 
     if let Reference::Qrr(qrr) = &data.reference {
         y -= 6.0;
@@ -893,7 +914,7 @@ fn draw_payment_part(
             helv_bold,
         );
         y -= 3.0;
-        layer.use_text(msg, 8.0, Mm(tx), Mm(y), helv);
+        layer.use_text(texte_imprime(msg), 8.0, Mm(tx), Mm(y), helv);
     }
 
     // Amount + currency (below QR).
@@ -931,12 +952,7 @@ fn draw_payment_part(
         helv_bold,
     );
     if let Some(debtor) = &data.ultimate_debtor {
-        dy -= 3.5;
-        layer.use_text(&debtor.name, 8.0, Mm(dx), Mm(dy), helv);
-        dy -= 3.5;
-        layer.use_text(&debtor.line1, 8.0, Mm(dx), Mm(dy), helv);
-        dy -= 3.5;
-        layer.use_text(&debtor.line2, 8.0, Mm(dx), Mm(dy), helv);
+        dessiner_adresse(layer, debtor, dx, &mut dy, helv);
     }
 
     Ok(())
@@ -1366,6 +1382,128 @@ mod tests {
             "PDF suspiciously small: {}",
             bytes.len()
         );
+    }
+
+    /// Les textes dessinés d'un PDF, en mm depuis le bas à gauche, par relecture du
+    /// contenu : `load_mem`, `get_page_content`, `Content::decode`, puis pour chaque
+    /// `Tj`, le décodage WinAnsi, à la position du `Td` précédent.
+    ///
+    /// ⚠️ `Document::extract_text` n'est pas employé : il lit en StandardEncoding et
+    /// rend `Shne` pour `Söhne` (constaté à l'étape 0 de la Story 33-12a).
+    fn textes_du_pdf(bytes: &[u8]) -> Vec<(f32, f32, String)> {
+        use printpdf::lopdf::{Document, Object, content::Content};
+
+        fn nombre(o: &Object) -> f32 {
+            match o {
+                Object::Integer(i) => *i as f32,
+                Object::Real(r) => *r,
+                autre => panic!("opérande de Td inattendue : {autre:?}"),
+            }
+        }
+
+        const MM_PAR_POINT: f32 = 25.4 / 72.0;
+        let doc = Document::load_mem(bytes).expect("PDF relisible");
+        let mut textes = Vec::new();
+        for page in doc.get_pages().values() {
+            let brut = doc.get_page_content(*page).expect("contenu de page");
+            let contenu = Content::decode(&brut).expect("contenu décodable");
+            let mut position = (0.0, 0.0);
+            for op in &contenu.operations {
+                match op.operator.as_str() {
+                    "Td" => {
+                        position = (
+                            nombre(&op.operands[0]) * MM_PAR_POINT,
+                            nombre(&op.operands[1]) * MM_PAR_POINT,
+                        );
+                    }
+                    "Tj" => {
+                        let Object::String(octets, _) = &op.operands[0] else {
+                            panic!("opérande de Tj inattendue : {:?}", op.operands);
+                        };
+                        textes.push((
+                            position.0,
+                            position.1,
+                            Document::decode_text(Some("WinAnsiEncoding"), octets),
+                        ));
+                    }
+                    _ => {}
+                }
+            }
+        }
+        textes
+    }
+
+    /// Le texte dessiné à `(x, y)` mm, à la tolérance des arrondis en points.
+    fn texte_a(textes: &[(f32, f32, String)], x: f32, y: f32) -> &str {
+        textes
+            .iter()
+            .find(|(tx, ty, _)| (tx - x).abs() < 0.01 && (ty - y).abs() < 0.01)
+            .map(|(_, _, t)| t.as_str())
+            .unwrap_or_else(|| panic!("rien à ({x}, {y}) dans {textes:#?}"))
+    }
+
+    /// Une adresse de type S, la seule que la production imprime.
+    fn adresse_s(name: &str, line1: &str, line2: &str, npa: &str, ville: &str) -> Address {
+        Address {
+            address_type: AddressType::Structured,
+            name: name.into(),
+            line1: line1.into(),
+            line2: line2.into(),
+            postal_code: npa.into(),
+            town: ville.into(),
+            country: "CH".into(),
+        }
+    }
+
+    /// **AC6** (Story 33-12a, #941) — la composition rend le nom et les deux lignes,
+    /// vides comprises, chacun par `texte_imprime`, en type S comme en type K.
+    #[test]
+    fn lignes_adresse_passe_chaque_champ_par_texte_imprime() {
+        let s = adresse_s("Čolić\u{A0}", "", "\u{AD}", "1003", "Lausanne");
+        assert_eq!(lignes_adresse(&s), ["Colic", "", ""]);
+
+        let k = Address {
+            address_type: AddressType::Combined,
+            name: "Max".into(),
+            line1: "Łódzka 2".into(),
+            line2: "1003 Lausanne".into(),
+            postal_code: String::new(),
+            town: String::new(),
+            country: "CH".into(),
+        };
+        assert_eq!(lignes_adresse(&k), ["Max", "Lódzka 2", "1003 Lausanne"]);
+    }
+
+    /// **AC6** (Story 33-12a, #941) — sur un PDF réel, les douze sites de dessin
+    /// (six champs, reçu et partie paiement) et le message impriment la base des
+    /// lettres hors WinAnsi, aux positions d'avant la story.
+    #[test]
+    fn chaque_site_imprime_la_base_des_lettres() {
+        let (mut data, invoice, i18n) = invoice_fixture();
+        data.creditor = adresse_s("Čolić", "Łódzka", "1ł", "1003", "Lausanne");
+        data.ultimate_debtor = Some(adresse_s("Ștefan", "Țară", "2ń", "1200", "Genève"));
+        data.unstructured_message = Some("Merci Ž ć".into());
+
+        let pdf = generate_qr_bill_pdf_with_date(&data, &invoice, &i18n, fixed_date()).unwrap();
+        let textes = textes_du_pdf(&pdf);
+
+        for (x, y, attendu) in [
+            (5.0, 86.5, "Colic"),
+            (5.0, 83.0, "Lódzka"),
+            (5.0, 79.5, "1l"),
+            (5.0, 56.5, "Stefan"),
+            (5.0, 53.0, "Tara"),
+            (5.0, 49.5, "2n"),
+            (117.0, 86.5, "Colic"),
+            (117.0, 83.0, "Lódzka"),
+            (117.0, 79.5, "1l"),
+            (67.0, 26.0, "Stefan"),
+            (67.0, 22.5, "Tara"),
+            (67.0, 19.0, "2n"),
+            (117.0, 61.5, "Merci Ž c"),
+        ] {
+            assert_eq!(texte_a(&textes, x, y), attendu, "à ({x}, {y})");
+        }
     }
 
     /// Date de création figée — sans elle, deux générations successives
