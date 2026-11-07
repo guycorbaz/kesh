@@ -1,6 +1,6 @@
 # Story 33-12a : le jeu de caractères de la QR-facture est celui de SIX ; le code et l'imprimé ne s'écartent qu'en ce qui est écrit ici (#941)
 
-Status: in-progress
+Status: review
 
 *Fiche rédigée le 2026-11-07 par l'orchestrateur (Opus 5.5), worktree `/home/gcorbaz/devel/kesh-e33`. Release **0.17.5**, Epic 33, ajoutée après le kickoff : P1 de conformité trouvé à la revue de la 33-5, dans le cadre donné par Guy (« quelques bugs de ton choix »). **Aucune migration.** Registre : `e33-choix-autonomes-e3312.md`. Découpée à la P2 de validation (F-H1 : prémisse fausse, remédiation et correctif dans le même fichier). Rapports : `kesh-gate-logs/e3312-validate-p{1,2,3,4,5,6,7,8}.md`. Le registre a été créé à l'étape 0 du développement. Commits en `refs #941` ; à la PR : `closes #941` une fois les deux réunies.*
 
@@ -60,3 +60,24 @@ M1 re-exclure `&` ; M2 retirer U+0218 ; M3 admettre U+007F ; M4 admettre U+0080 
 - 2026-11-07 — **Validation terminée au plafond des huit passes** (`CLAUDE.md`, § *Review Iteration Rule*). Tendance recomptée sur les huit rapports, CRITICAL/HIGH/MEDIUM/LOW : P1 0/1/6/7 → P2 0/1/6/8 → P3 0/0/6/12 → P4 0/1/8/7 → P5 0/0/3/5 → P6 0/0/1/5 → P7 0/1/4/5 → P8 0/0/1/3. Modèles : P1 Sonnet, P2 Opus, P3 Sonnet, P4 Opus (fiches et rapports) ; P5 à P8, passes ciblées d'une lentille, dont les rapports n'inscrivent pas le modèle. Signal de non-convergence levé et déclaré à Guy aux P2 (F-H1, né de la remédiation) et P4 (sept constats au-dessus de LOW nés de la P3), d'où le découpage puis la réduction (#944) ; remontée P6 → P7 (P7-H1, né de la remédiation P6), signalée à l'orchestrateur. Clôture sur un MEDIUM corrigé sans passe de plus, aux deux conditions écrites : P8-M1 recontrôlé à l'étape 0, ligne lue ci-dessous ; depuis la P6 la remédiation revient au développeur, non à l'orchestrateur. P8-L1 à L3 repris.
 - 2026-11-07 — Recontrôle de P8-M1, étape 0 : `33-12a-jeu-caracteres-qr.md:21`, lu : « Les lettres que WinAnsi porte (é, Š, Œ, €…) restent telles quelles » ; sonde, `sonde.log:59`, lu : « perdus hors Extended-A : [00A0, 00AD, 0218, 0219, 021A, 021B] », U+00F3 n'y est pas. `ó` reste donc : `Łódź` rend `Lódz`.
 - 2026-11-07 — Développement. **Constat à la capture, hors de ce que la fiche prévoyait, dit à l'orchestrateur au rapport** : la partie paiement entière sortait blanc sur blanc (`draw_swiss_cross`, `1 1 1 rg` laissé en vigueur, 17 `Tj`), lue juste par tous les tests et par `pdftotext`, invisible à la capture. Corrigé ici, règle de l'epic sur les limites courtes, C-e3312-8 ; rouge `rouges-a-couleur.log`, test `chaque_texte_s_imprime_en_noir`, mutation M21. Aucun AC réécrit.
+
+## Dev Agent Record
+
+*Rédigé le 2026-11-07, Opus 5.5. Journaux hors dépôt : `kesh-gate-logs/e3312/`.*
+
+**Livré.** `texte.rs` : `texte_code`, `texte_imprime`, table de repli close de 125 lettres. `validation.rs` : `est_caractere_qr` au § 4.1.1 plus U+2019 et U+2014, `est_vide` par `is_invisible` sur les quatre champs obligatoires, type K contrôlé. `generator.rs` : les douze champs par `texte_code`. `pdf.rs` : `lignes_adresse`, `dessiner_adresse`, message par `texte_imprime`. **Hors de la fiche** : la remise au noir à la fin de `draw_swiss_cross` (C-e3312-8).
+
+**Rouges, avant le code.** `rouges-a.log` (`texte_code` et `texte_imprime` neutres, prédicat d'origine) : 15 tests de `kesh-qrbill` rouges, dont `chaque_site_imprime_la_base_des_lettres` ; `refus_maintenus` vert, ce qu'il garde étant déjà refusé. AC9 : `InvalidCharset { field: "creditor.name", codepoint: 38 }`. E2E, `rouges-a-e2e.log`, sur le binaire d'avant le code : 400 `INVOICE_NOT_PDF_READY`, U+0026. Couleur, `rouges-a-couleur.log` : 17 textes.
+
+**Mutations.** `mut/a-resume.log` : 32 jouées, 32 rouges : M1 à M20, M14b et M14b-message, M6 aux cinq sites et sur la fonction, M17 et M18 à toutes leurs branches, M21 (la remise au noir). Aucune équivalente, aucune survivante. M6 se joue par test : l'outil de la sonde a tenu.
+
+**Gates, au dernier commit de code `03618ed6`** (`gate-a/`) : `test-fast.sh --ci` sur base remise à neuf, nextest **4829 exécutés, 12 ignorés**, 0 échec ; `cargo build --workspace --all-targets` vert ; `npm run check`, `lint-i18n-ownership` verts ; Vitest **2696 (218 fichiers)** ; `npm run build` vert. **E2E complet** : 336 réussis, 18 ignorés, 13 échecs. Nommés contre `docs/testing.md` : les sept de KF-029 (`mode-expert:26,41`, `onboarding-path-b:65,92`, `onboarding:57,77,150`) ; **six dus à mon montage**, `KESH_INBOX_DIR` non passé au runner (`backup-restore-new-install:140,262`, `inbox-import:59`, `session-idle-warning:122`, `supplier-documents:78`, `supplier-invoice-draft-cycle:654`), rejoués après correction du script avec leurs fichiers entiers : 26 réussis (`e2e-rejeu.log`). Le test neuf `invoice-qr-caracteres` y est vert. **L'E2E n'a donc pas été rejoué en entier sur ce montage corrigé.**
+
+**Tests neufs**, de `65441c20` à `03618ed6` : `validation.rs` 24 → 29, six neufs, `charset_html_unsafe_chars_rejected` retiré, `signes_html_admis_au_paragraphe_4_1_1` disant le contraire ; `generator.rs` 2, `texte.rs` 5, `pdf.rs` 3, `qr_decode.rs` 1 ; un E2E.
+
+**Captures regardées** : `captures/a-caracteres.png` (avant le correctif : partie paiement sans texte) et `captures/a2-caracteres.png` (noms à `&`, `<`, Ș, Čolić : tout s'imprime, code et reçu conformes à C-e3312-1).
+
+**AC10, tri du grep.** Modifiés, car ils parlent du jeu de caractères : `validation.rs` (fonction, commentaires, tests), `types.rs:384`, `invoice_pdf_service.rs:499`. Laissés, car ils désignent la version de la norme ou d'autres limites, non le jeu : `CLAUDE.md:64`, `.github/PULL_REQUEST_TEMPLATE.md`, `address_input.rs:13`, `invoice_pdf_service.rs:394`, `entities/address.rs:9`, `kesh-db/errors.rs:1438`, `kesh-qrbill` (`Cargo.toml`, `README.md`, `generator.rs`, `lib.rs`, `parser.rs`, `types.rs:93`, `validation.rs:1,11,39,400,407,543`), `docs/kesh-specifications.txt`, `docs/change_request.md` (archivé), `website/index.html:114`. Migrations non touchées. ⚠️ `website/index.html:114` promet « fully compliant with SIX 2.2 » : à revoir à la release, l'écart de C-e3312-1 et #944 l'amendant.
+
+**Écarts à la fiche.** (1) C-e3312-8, ci-dessus. (2) Un E2E neuf, que la fiche ne demandait pas. (3) Le test d'AC6 suit la jonction de la 33-12b, comme le demande son AC4 : son état en phase a est au commit `03618ed6`.
+
