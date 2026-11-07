@@ -392,17 +392,52 @@ async fn a_character_the_qr_bill_refuses_is_refused_here(pool: MySqlPool) {
     assert_eq!(audit_count(&pool).await, audit_before, "aucune trace");
 }
 
-/// Le témoin du refus ci-dessus : ce que la route accepte, la QR-facture le produit.
+/// Revue P1 de l'intégration 0.17.5 (M-1) — un NPA ou une localité qui ne porte
+/// rien de visible est refusé ici, par la règle de la QR-facture : U+00AD est dans
+/// le jeu du § 4.1.1 et `trim()` ne le retire pas, si bien que la route répondait
+/// 200 et que le PDF échouait ensuite sur un champ vide. Rien n'est écrit.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn a_required_field_with_nothing_visible_is_refused_here(pool: MySqlPool) {
+    let (app, token, _, _) = setup(&pool).await;
+    let before = app.company(&token).await;
+    let version = before["version"].as_i64().unwrap();
+    let audit_before = audit_count(&pool).await;
+    let with = |key: &str, value: &str| {
+        let mut address = valid_address();
+        address[key] = json!(value);
+        address
+    };
+    for (address, field) in [
+        (with("city", "\u{AD}"), "localité"),
+        (with("postalCode", "\u{AD}\u{A0}\u{AD}"), "NPA"),
+    ] {
+        let resp = app.put_address(&token, address, version).await;
+        assert_eq!(resp.status(), 400, "{field}");
+        let body: Value = resp.json().await.unwrap();
+        let message = body["error"]["message"].as_str().unwrap();
+        assert!(
+            message.contains(&format!("le champ {field} est obligatoire")),
+            "le refus nomme le champ : {message}"
+        );
+    }
+    assert_eq!(app.company(&token).await, before, "rien n'est écrit");
+    assert_eq!(audit_count(&pool).await, audit_before, "aucune trace");
+}
+
+/// Le témoin des refus ci-dessus : ce que la route accepte, la QR-facture le produit.
+/// `&` et `’` (U+2019) y figurent : depuis la 33-12a (#941), la saisie les admet comme
+/// le PDF (C-rel0175-1), et ce test l'épingle. Un U+00AD au milieu d'une localité
+/// visible reste admis : la garde ne vise que le champ qui ne porte rien de visible.
 #[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn what_the_route_accepts_the_qr_bill_produces(pool: MySqlPool) {
     let (app, token, company_id, admin_id) = setup(&pool).await;
     let invoice_id = seed_validated_invoice(&pool, company_id, admin_id).await;
     let version = app.company(&token).await["version"].as_i64().unwrap();
     let address = json!({
-        "street": "Chemin de l'Église-Saint-Jürg",
+        "street": "Rue Müller & Fils’ de l'Église-Saint-Jürg",
         "building": "7b",
         "postalCode": "CH-1800",
-        "city": "Châtel-Saint-Denis",
+        "city": "Châtel-Saint-\u{AD}Denis",
         "country": "CH",
     });
     assert_eq!(

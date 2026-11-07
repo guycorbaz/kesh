@@ -234,7 +234,14 @@ fn est_caractere_qr(c: char) -> bool {
 
 /// Vrai si un champ obligatoire ne porte rien de visible : `trim` ne voit ni
 /// U+00AD ni U+200B, qui s'imprimeraient à vide.
-fn est_vide(valeur: &str) -> bool {
+///
+/// C'est la règle par laquelle [`validate`] refuse un nom, un NPA, une localité
+/// (adresse de type S) ou une ligne 2 (type K) vides (`FieldEmpty`). Elle est
+/// publique pour qu'une saisie la reprenne telle quelle : U+00AD appartient au jeu
+/// du § 4.1.1 ([`first_qr_refused_char`] ne le refuse pas), si bien qu'un champ fait
+/// de lui seul passerait `trim().is_empty()` puis ferait échouer la QR-facture
+/// (revue de l'intégration 0.17.5, M-1).
+pub fn champ_vide_pour_qr(valeur: &str) -> bool {
     valeur.chars().all(is_invisible)
 }
 
@@ -307,7 +314,7 @@ pub fn is_iso_3166_alpha2(code: &str) -> bool {
 fn validate_address(field_prefix: &'static str, addr: &Address) -> Result<(), QrBillError> {
     use crate::types::AddressType;
 
-    if est_vide(&addr.name) {
+    if champ_vide_pour_qr(&addr.name) {
         return Err(QrBillError::FieldEmpty(field_prefix_name(field_prefix)));
     }
     check_len(field_prefix_name(field_prefix), &addr.name, NAME_MAX)?;
@@ -319,10 +326,10 @@ fn validate_address(field_prefix: &'static str, addr: &Address) -> Result<(), Qr
             // rue (element 3) ≤70, n° bâtiment (element 4) ≤16, NPA ≤16,
             // localité ≤35. La rue peut être vide (adresse sans rue nommée),
             // mais NPA + localité sont requis.
-            if est_vide(&addr.postal_code) {
+            if champ_vide_pour_qr(&addr.postal_code) {
                 return Err(QrBillError::FieldEmpty(field_prefix_postal(field_prefix)));
             }
-            if est_vide(&addr.town) {
+            if champ_vide_pour_qr(&addr.town) {
                 return Err(QrBillError::FieldEmpty(field_prefix_town(field_prefix)));
             }
             check_len(field_prefix_line1(field_prefix), &addr.line1, STREET_MAX)?;
@@ -342,7 +349,7 @@ fn validate_address(field_prefix: &'static str, addr: &Address) -> Result<(), Qr
             // SIX §3.3 type K : `line2` doit contenir a minima NPA + localité.
             // Une chaîne vide produirait un payload parseable mais non conforme.
             // PstCd/TwnNm (element 5/6) doivent rester vides en type K.
-            if est_vide(&addr.line2) {
+            if champ_vide_pour_qr(&addr.line2) {
                 return Err(QrBillError::FieldEmpty(field_prefix_line2(field_prefix)));
             }
             check_len(field_prefix_line1(field_prefix), &addr.line1, ADDR_LINE_MAX)?;
