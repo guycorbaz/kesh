@@ -20,12 +20,12 @@ use kesh_db::entities::audit_log::NewAuditLogEntry;
 use kesh_db::entities::journal_entry::Journal;
 use kesh_report::project_report::{ProjectPeriodMode, resolve_scope};
 use kesh_report::{
-    AgedReceivables, BalanceSheet, GeneralLedger, IncomeStatement, JournalReport, LedgerOptions,
-    LedgerPeriod, MAX_LEDGER_LIMIT, ProjectExpensesReport, ProjectReportScope, ProjectReturnReport,
-    ReportPeriod, TrialBalance, VatReport, generate_aged_receivables, generate_balance_sheet,
-    generate_general_ledger, generate_income_statement, generate_journal_report,
-    generate_project_expenses, generate_project_return, generate_trial_balance,
-    generate_vat_report,
+    AgedReceivables, BalanceSheet, GeneralLedger, HomepageSummary, IncomeStatement, JournalReport,
+    LedgerOptions, LedgerPeriod, MAX_LEDGER_LIMIT, ProjectExpensesReport, ProjectReportScope,
+    ProjectReturnReport, ReportPeriod, TrialBalance, VatReport, generate_aged_receivables,
+    generate_balance_sheet, generate_general_ledger, generate_homepage_summary,
+    generate_income_statement, generate_journal_report, generate_project_expenses,
+    generate_project_return, generate_trial_balance, generate_vat_report,
 };
 
 use crate::errors::AppError;
@@ -780,6 +780,30 @@ pub async fn identite_societe(
             .await
             .map_err(kesh_db::errors::map_db_error)?;
     Ok(row)
+}
+
+/// Exigence de [`synthese_accueil`] : tous rôles (les droits des rapports) ;
+/// jamais servie au MCP (C-e332-11 : ouvrir un outil est une décision à part).
+pub const EXIGENCE_SYNTHESE_ACCUEIL: Exigence = Exigence {
+    role_api: Role::Consultation,
+    portee_mcp: None,
+};
+
+/// La synthèse des graphiques de l'accueil (Story 33-3a, #918), pour l'exercice
+/// ouvert à la date du jour.
+///
+/// Une lecture **sans trace**, qui rend directement (règle R5) : l'accueil se
+/// charge à chaque visite, une trace par visite noierait le journal, et les trois
+/// tuiles n'en écrivent aucune (C-e332-11). ⚠️ La date est celle de l'horloge en
+/// UTC, comme à la contre-passation : dans la première ou les deux premières heures
+/// du 1er janvier à Zurich, l'accueil lit encore l'exercice précédent.
+pub async fn synthese_accueil(
+    acces: &ContexteAcces,
+    lecture: &Lecture,
+) -> Result<HomepageSummary, AppError> {
+    acces.exiger(EXIGENCE_SYNTHESE_ACCUEIL)?;
+    let today = Utc::now().date_naive();
+    Ok(generate_homepage_summary(lecture.pool(), acces.company_id(), today).await?)
 }
 
 // ===========================================================================

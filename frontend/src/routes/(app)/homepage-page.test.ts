@@ -25,6 +25,9 @@ vi.mock('$lib/features/invoices/invoices.api', () => ({
 vi.mock('$lib/features/reminders/reminders.api', () => ({
 	listReminders: vi.fn().mockResolvedValue({ groups: [] }),
 }));
+vi.mock('$lib/features/homepage/homepage-summary.api', () => ({
+	fetchHomepageSummary: vi.fn().mockRejectedValue(new Error('réseau')),
+}));
 
 import Page from './+page.svelte';
 
@@ -32,5 +35,13 @@ describe('page d’accueil — câblage des échecs', () => {
 	it('un rejet de listBankAccounts affiche la tuile bancaire en échec', async () => {
 		render(Page);
 		await waitFor(() => expect(screen.getByTestId('homepage-bank-unavailable')).toBeTruthy());
+	});
+
+	it('Story 33-3b : un rejet de la synthèse le dit, sans masquer les tuiles', async () => {
+		render(Page);
+		await waitFor(() => expect(screen.getByTestId('homepage-charts-unavailable')).toBeTruthy());
+		expect(screen.getByTestId('homepage-card-recent-entries')).toBeTruthy();
+		expect(screen.getByTestId('homepage-card-open-invoices')).toBeTruthy();
+		expect(document.querySelector('svg[role="img"]')).toBeNull();
 	});
 });

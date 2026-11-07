@@ -874,7 +874,11 @@ const ATTENDU = {
 	// de `BankImportUpload.svelte` : le résumé au singulier et au pluriel, et ses cinq colonnes
 	// (trois clés de colonnes réemployées). Que des littéraux ; `sitesNonResolus` et `relais`
 	// inchangés.
-	sitesTotal: 2839,
+	// Story 33-3b (#918, 2026-11-06) : **2832 → 2863** (+31), les fichiers neufs de
+	// `lib/features/homepage/` : `ExpensePieCard.svelte` 15, `MonthlyBarsCard.svelte` 13,
+	// `HomepageCharts.svelte` 3 (2861 jusqu'à la revue P1, B-5, qui ajoute les deux
+	// singuliers). Que des littéraux ; `sitesNonResolus` et `relais` inchangés.
+	sitesTotal: 2863,
 	sitesNonResolus: 31,
 	relais: 6,
 	// Story 26-1 (#620, AC3-bis) : **10 → 11** — `lib/features/bank-import/

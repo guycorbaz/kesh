@@ -284,8 +284,16 @@ const SUFFIXES = ['Label', 'Text', 'Display'];
  * `supplierInvoiceLongLabel` (`supplier-invoice-label.ts`), nommées avant que le chiffre ne
  * bouge. Elles rendent des numéros (des données) et `#id`, sans littéral à traduire :
  * `conforme` **63 → 65** ; `ecartee` ne bouge pas.
+ *
+ * ⚠️ **77 → 81, et les quatre déclarations sont NOMMÉES** (Story 33-3b, #918) : `tickLabel`,
+ * `monthLabel`, `monthYearLabel` (`lib/features/homepage/homepage-charts.ts`), un montant ou
+ * une date mis en forme par `formatSwissAmount` et `Intl` ; `othersLabel`
+ * (`lib/features/homepage/ExpensePieCard.svelte`), par `i18nMsg`
+ * (`homepage-charts-others-label`) : aucun littéral, donc `conforme` **63 → 67** ; `ecartee`
+ * ne bouge pas. *Identifiées en cherchant les suffixes `Label`, `Text`, `Display` dans le
+ * diff de la story (`97162a47` → tête).*
  */
-const CANDIDATES_ATTENDUES = 79;
+const CANDIDATES_ATTENDUES = 81;
 
 /** Les trois délimiteurs de littéral en JS/TS. */
 const QUOTES = ["'", '"', '`'];
@@ -802,7 +810,7 @@ describe('libellés en dur — l’angle mort #255', () => {
 			else if (c.retours.length > 0) classes.ecartee += 1;
 			else classes.conforme += 1;
 		}
-		expect(classes).toEqual({ nonAnalysee: 0, enViolation: 0, ecartee: 14, conforme: 65 });
+		expect(classes).toEqual({ nonAnalysee: 0, enViolation: 0, ecartee: 14, conforme: 67 });
 		// La somme est recalculée depuis les classes, jamais depuis le total qu'elle contrôle.
 		const somme = Object.values(classes).reduce((a, b) => a + b, 0);
 		expect(somme).toBe(CANDIDATES_ATTENDUES);

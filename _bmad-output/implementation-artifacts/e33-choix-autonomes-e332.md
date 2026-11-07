@@ -118,6 +118,7 @@ Registre propre à ces trois fiches, **versé par union** par l'orchestrateur. C
   total de N+1 s'écarterait du compte de résultat, sans que l'utilisateur puisse le recouper ; (b) distinguer par l'audit (`dating`) : lire le journal
   d'audit pour calculer un chiffre comptable, et le cas `Today` à cheval resterait indistinct.
 - **Conséquence assumée** : la correction, en janvier, d'une écriture de décembre apparaît en négatif en janvier, comme au compte de résultat.
+- **Précisé le 2026-11-06, revue de code P1 (B-1, E-1, A-1)** : une paire s'écarte si les deux écritures sont dans l'exercice lu, **date dans ses bornes comprise**. Le choix d'origine ne regardait que `fiscal_year_id`, ce qui rompait C-e332-10 pour un côté à date anormale, l'anomalie que la préparation de clôture signale.
 - **Réversible** : oui, deux conditions SQL. **Porté à la connaissance de Guy** au rapport.
 
 ### C-e332-10 — L'invariant
@@ -260,3 +261,28 @@ Registre propre à ces trois fiches, **versé par union** par l'orchestrateur. C
 - **Écartées** : (a) une cinquième cause : rien de plus à dire à l'utilisateur, le message est le même, et un client devrait la traiter comme `misaligned` ; (b) `selection` : elle dit « aucun relevé ne porte l'IBAN », ce qui n'est pas le cas ; (c) comparer aussi la référence : c'est précisément ce qui diffère entre les deux lectures d'une même ligne ; (d) sélectionner par rang dans la lecture héritée (C-e332-2 (b)) : la 0.17.3 aurait lu l'autre relevé, et la ligne aurait été reconnue à tort ou raté.
 - **Ce qui reste** : un relevé choisi vide (E-10) n'est pas relu (C-e332-5) : le premier relevé, à IBAN à référence, sans ligne, s'enregistre à zéro ligne, comme en 0.17.4, là où la 0.17.3 aurait lu le second ; rien n'est écrit à tort, et `ignoredStatements` le montre.
 - **Réversible** : oui.
+
+## Développement de la 33-3b (worktree `kesh-e333`)
+
+### C-e332-29 — L'échelle des barres couvre le maximum de chaque signe
+
+*(Numéroté **C-e332-25** dans la branche `story/33-3-accueil`, au Change Log de la 33-3b et à ses prompts de revue ; renuméroté à l'intégration de la release 0.17.5, le 2026-11-07, pour lever le doublon avec le C-e332-25 de la 33-2. Le code et la fiche citent le nouveau numéro.)*
+
+- **Contexte** : C-e332-19 dit « l'échelle se calcule sur la valeur absolue la plus grande des deux signes », ce qui se lit de deux façons : un axe symétrique, ou un domaine de `−max(négatifs)` à `+max(positifs)`.
+- **Retenu** : le second, étendu à des graduations rondes (1, 2, 2,5 ou 5 × 10^k, jamais sous le centime). Hauteurs proportionnelles à la valeur absolue, axe du zéro là où il tombe.
+- **Écartée** : l'axe symétrique : un seul mois légèrement négatif gaspillerait la moitié du dessin, pour un cas rare.
+- **Précisé le 2026-11-06, revue de code P1 (B-2)** : « jamais sous le centime » n'était pas tenu pour 0,025 : le pas de 2,5 est écarté sous 0,1.
+- **Réversible** : oui, frontend seul.
+
+### C-e332-30 — Aucune adaptation au téléphone du dessin : l'application ne descend pas sous 1280 px
+
+*(Numéroté **C-e332-26** dans la branche `story/33-3-accueil`, au Change Log de la 33-3b et à ses prompts de revue ; renuméroté à l'intégration de la release 0.17.5, le 2026-11-07, pour lever le doublon avec le C-e332-26 de la 33-2. Le code et la fiche citent le nouveau numéro.)*
+
+*(Récrit le 2026-11-06, revue de code P1, A-3 et E-4 : le motif écrit d'abord, « la carte garde sa largeur de bureau », était faux. La version d'origine disait aussi qu'un `@media` retiré avait grossi les étiquettes « sur une carte restée large » : elles restaient grossies.)*
+
+- **Contexte** : la fiche (T5, R-9 de la validation P3) demande des captures à 360 px, sur l'idée d'une carte réduite. `(app)/+layout.svelte:295` pose `min-w-[1280px]` : la page ne se réduit jamais, et **une fenêtre étroite la parcourt de côté**. Mais `lg:grid-cols-2` lit la largeur de la fenêtre, non celle de la page : **sous 1024 px, la grille passe sur une colonne, et la carte s'élargit** (`caps5.log` : 1008 px de carte à 360 et à 800 px de fenêtre, contre 492 px à 1280).
+- **Ce que voit une fenêtre étroite** (captures `*-360-fenetre.png`, `*-800-fenetre.png`, l'écran et non la page entière, données simulées) : à 360 px, le début du dessin, sur un seul écran, le reste en défilant de côté ; à 800 px, le dessin entier jusqu'à douze mois (768 px), son début au-delà (958 px ; corrigé le 2026-11-06, revue P2, L-3) ; 920 et 480 px de débord horizontal, ceux de toute l'application.
+- **Retenu** : pas d'adaptation au téléphone. Un corps de texte fixe en unités du `viewBox` (18 pour 720, 15 pour 1200), et un plafond au dessin, pour que le passage à une colonne ne grossisse pas les étiquettes sans limite : `max-w-3xl` à douze mois (768 px mesurés, corps d'environ 19 px), `max-w-[1200px]` au-delà.
+- **Écartées** : (a) un `@media (max-width: 640px)`, essayé d'abord : il grossissait les étiquettes pour une largeur que la carte n'atteint pas ; (b) une requête de conteneur : du code pour une largeur que la carte n'atteint pas ; (c) retirer le `min-w-[1280px]` : hors de cette story, décision de mise en page de toute l'application.
+- **Limite écrite** : le jour où ce plancher tombe, le corps de 18 unités se relit.
+- **Réversible** : oui, CSS seul.

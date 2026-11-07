@@ -46,6 +46,13 @@ describe('isValidAmount', () => {
 });
 
 describe('formatSwissAmount (P9)', () => {
+	// Story 33-3b (AC20) : `toFixed(0)` n'a pas de point ; rendait `1’000.undefined`.
+	it('sans décimales : ni point, ni « undefined »', () => {
+		expect(formatSwissAmount(new Big('1000'), 0)).toBe('1’000');
+		expect(formatSwissAmount(new Big('-1234567'), 0)).toBe('-1’234’567');
+		expect(formatSwissAmount(new Big('0'), 0)).toBe('0');
+	});
+
 	it('formate un petit montant avec 2 décimales', () => {
 		expect(formatSwissAmount(new Big('1234.5'))).toBe("1\u2019234.50");
 	});
