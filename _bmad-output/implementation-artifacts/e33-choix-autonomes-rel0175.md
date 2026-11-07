@@ -9,6 +9,10 @@ Tenu le 2026-11-07 par l'agent d'intégration (Opus 5.5), worktree `/home/gcorba
   délègue à `est_caractere_qr`, comme la fiche 33-12a le prévoyait (C-e3312-2) ; `is_six_annex_c_char` disparaît.
   *Conséquence* : la saisie de l'adresse de la société admet désormais « & », `<`, `>`, `"`, comme la QR-facture.
   *Écartée* : garder les deux règles, qui refuseraient à la saisie ce que le PDF accepte. *Réversible* : oui.
+  *Limite, relevée par la revue P1 de l'intégration (M-1) et levée par C-rel0175-9* : le § 4.1.1 admet aussi U+00AD,
+  que `trim()` ne retire pas ; un NPA ou une localité faits de lui seul (ou de U+00AD et U+00A0) passaient la route en
+  200, puis la QR-facture échouait sur `FieldEmpty` — ce que l'`is_six_annex_c_char` de la 33-5 fermait en excluant
+  U+00AD. Cette conséquence n'avait pas été examinée à la résolution.
 - **C-rel0175-2 — Renuméroter les choix en doublon, sans réécrire les Change Logs.** *Contexte* : six branches
   avaient numéroté à partir de `C-e334-32`, et la 33-3b avait repris `C-e332-25`/`26`. *Retenu* : la 33-4 garde
   32 à 39 ; 33-5 → 40, 41 ; 33-6 → 42, 43 ; 33-8 → 44 à 46 ; 33-7 → 47, 48 ; 33-10 → 49 à 54 ; 33-3b → C-e332-29, 30.
@@ -36,3 +40,18 @@ Tenu le 2026-11-07 par l'agent d'intégration (Opus 5.5), worktree `/home/gcorba
 - **C-rel0175-8 — CHANGELOG `[0.17.5]` réordonné.** Treize sections réunies en *Ajouté* (4) et *Corrigé* (19), puces
   reprises mot pour mot, un avertissement de tête et un « En bref » pour le Project Lead. La réserve de l'entrée du
   filtre de CI (33-11) est laissée : elle tombe avec l'AC-6.
+- **C-rel0175-9 — « Obligatoire » se juge par la règle de la QR-facture, à l'assistant comme à la correction.**
+  *Contexte* : M-1 de la revue P1 (`kesh-gate-logs/rel0175-review-p1.md`), limite de C-rel0175-1. *Retenu* :
+  `kesh-qrbill` rend publique la règle par laquelle `validate` refuse un champ vide (`est_vide`, renommée
+  `champ_vide_pour_qr`, réexportée, mêmes appels internes, aucune logique copiée) ; `validate_required` l'applique au
+  NPA et à la localité, champ par champ, message « adresse : le champ {NPA|localité} est obligatoire (format structuré
+  exigé par les banques suisses) » — au lieu du message commun aux deux champs, qu'aucun test ni aucune locale ne
+  relisait (message serveur en français, #710). `validate_required_for_qr` l'hérite ; l'assistant (`onboarding.rs`)
+  suit donc aussi : c'était une ligne, et il écrit la même adresse que la QR-facture lit. Un U+00AD entre deux lettres
+  reste admis (le code QR le retire). *Écartées* : la garde dans `validate_required_for_qr` seule, qui laissait
+  l'assistant accepter ce que le PDF refuse ; la reprise de `is_invisible` dans `kesh-api`, qui aurait doublé la règle.
+  *Laissé* : les contrôles de lecture de `invoice_pdf_service.rs` (lignes 287 et 310, `trim().is_empty()` sur
+  l'adresse lue) ; une adresse stockée avant ce correctif, ou un contact (dont l'adresse reste facultative et non
+  contrôlée sur le jeu, #952), y tombent sur le message générique du champ vide de `kesh-qrbill` au lieu du message
+  « adresse incomplète » : la QR-facture est refusée dans les deux cas, seul le message diffère — issue demandée
+  (LOW). *Réversible* : oui.
