@@ -520,7 +520,9 @@ async fn archived_vat_recoverable_refuses_only_a_supplier_invoice_with_vat(pool:
         .expect("sans TVA, ce compte n'est pas employé");
 }
 
-/// Le dialogue ne promet aucun refus pour le décompte TVA : aucune écriture ne le lit.
+/// Aucun flux automatique ne lit le décompte TVA. Le dialogue n'en tire plus d'exception
+/// (revue P4, F1) : une écriture saisie à la main l'emploie (décompte, paiement à l'AFC),
+/// et la garde `active` la refuse comme pour tout autre compte archivé.
 #[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn archived_vat_decompte_refuses_nothing(pool: MySqlPool) {
     let seeded = seed_accounting_company(&pool).await.unwrap();

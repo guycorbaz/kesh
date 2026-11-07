@@ -280,9 +280,10 @@ describe('archivage d’un compte désigné — avertissement, puis confirmation
 		);
 	});
 
-	// Revue P2 (F1, F2) : une règle générale, dite une fois, et non une liste par réglage,
-	// qui a été fausse deux fois ; le décompte TVA, qu'aucune écriture ne lit, a son mot.
-	it('les réglages par leur seul libellé, la règle générale une fois, le décompte TVA à part', async () => {
+	// Revues P2 à P4 : une règle générale, dite une fois et sans condition, pour tout
+	// réglage, décompte TVA compris (son compte reçoit à la main le décompte et le paiement
+	// à l'AFC, que la garde refuse aussi).
+	it('les réglages par leur seul libellé, la règle générale une fois', async () => {
 		archiveAccountMock.mockRejectedValueOnce(designated(['receivable', 'vatDecompte', 'payable']));
 		render(Page);
 		await openAndConfirm();
@@ -297,28 +298,18 @@ describe('archivage d’un compte désigné — avertissement, puis confirmation
 			'Tant que ce compte est archivé, toute écriture qui l’emploie est refusée, y compris sur une pièce déjà validée. Pour lever le blocage, réactivez-le.',
 		);
 		expect(screen.getAllByTestId('account-archive-designated-effect')).toHaveLength(1);
-		expect(screen.getByTestId('account-archive-designated-vat-decompte').textContent).toContain(
-			'n’est employé par aucune écriture',
-		);
+		expect(screen.queryByTestId('account-archive-designated-vat-decompte')).toBeNull();
 		const avis = screen.getByTestId('account-archive-designated');
 		expect(avis.getAttribute('role')).toBe('alert');
 	});
 
-	it('sans le décompte TVA, la règle seule', async () => {
-		archiveAccountMock.mockRejectedValueOnce(designated(['rounding']));
+	// Revue P4 (F1) : le décompte TVA seul n'a plus d'exception, la règle vaut pour lui.
+	it('le décompte TVA seul : la règle générale, sans autre phrase', async () => {
+		archiveAccountMock.mockRejectedValueOnce(designated(['vatDecompte']));
 		render(Page);
 		await openAndConfirm();
 		await screen.findByTestId('account-archive-designated-effect');
 		expect(screen.queryByTestId('account-archive-designated-vat-decompte')).toBeNull();
-	});
-
-	// Revue P3 (L1) : le décompte TVA seul n'emporte pas la règle, qui le contredirait en apparence.
-	it('le décompte TVA seul : sa phrase, sans la règle générale', async () => {
-		archiveAccountMock.mockRejectedValueOnce(designated(['vatDecompte']));
-		render(Page);
-		await openAndConfirm();
-		await screen.findByTestId('account-archive-designated-vat-decompte');
-		expect(screen.queryByTestId('account-archive-designated-effect')).toBeNull();
 	});
 
 	it('details illisible : la règle générale reste dite', async () => {

@@ -250,7 +250,6 @@ accounts-archive-title = Archiver le compte { $number } ?
 error-account-designated-in-settings = Ce compte est désigné dans les paramètres de facturation : confirmez pour l’archiver quand même.
 accounts-archive-designated-intro = Ce compte est désigné dans les paramètres de facturation :
 accounts-archive-designated-effect = Tant que ce compte est archivé, toute écriture qui l’emploie est refusée, y compris sur une pièce déjà validée. Pour lever le blocage, réactivez-le.
-accounts-archive-effect-vat-decompte = Le compte de décompte TVA n’est employé par aucune écriture : son archivage n’en refuse aucune.
 accounts-archive-designated-link = Modifier les paramètres de facturation
 accounts-archive-designated-admin-only = Un administrateur peut changer ce réglage.
 accounts-archive-anyway = Archiver quand même

@@ -791,17 +791,12 @@
 				{:else}
 					<p>{archiveDesignatedMessage}</p>
 				{/if}
-				<!-- Revues P2 et P3 de la 33-8 : une règle, non une liste par geste, qui a été
-				     fausse trois fois. Elle est celle de `journal_entries.rs`, garde `active`
-				     inconditionnelle, et ne dit d'autre remède que la réactivation, toujours
-				     vraie. Le décompte TVA, que nulle écriture ne lit, a sa phrase, seule
-				     quand il est le seul réglage listé. -->
-				{#if !archiveDesignated.length || archiveDesignated.some((code) => code !== 'vatDecompte')}
-					<p data-testid="account-archive-designated-effect">{i18nMsg('accounts-archive-designated-effect', 'Tant que ce compte est archivé, toute écriture qui l’emploie est refusée, y compris sur une pièce déjà validée. Pour lever le blocage, réactivez-le.')}</p>
-				{/if}
-				{#if archiveDesignated.includes('vatDecompte')}
-					<p data-testid="account-archive-designated-vat-decompte">{i18nMsg('accounts-archive-effect-vat-decompte', 'Le compte de décompte TVA n’est employé par aucune écriture : son archivage n’en refuse aucune.')}</p>
-				{/if}
+				<!-- Revues P2 à P4 de la 33-8 : une règle, sans liste par geste ni exception par
+				     réglage, qui ont été fausses quatre fois. Elle est celle de `journal_entries.rs`,
+				     garde `active` inconditionnelle, vaut pour les dix réglages, décompte TVA compris
+				     (son compte reçoit à la main le décompte et le paiement à l'AFC), et ne dit
+				     d'autre remède que la réactivation. -->
+				<p data-testid="account-archive-designated-effect">{i18nMsg('accounts-archive-designated-effect', 'Tant que ce compte est archivé, toute écriture qui l’emploie est refusée, y compris sur une pièce déjà validée. Pour lever le blocage, réactivez-le.')}</p>
 				{#if authState.currentUser?.role === 'Admin'}
 					<a class="underline" href="/settings/invoicing" data-testid="account-archive-designated-link">
 						{i18nMsg('accounts-archive-designated-link', 'Modifier les paramètres de facturation')}

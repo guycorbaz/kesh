@@ -250,7 +250,6 @@ accounts-archive-title = Archiviare il conto { $number }?
 error-account-designated-in-settings = Questo conto è designato nelle impostazioni di fatturazione: confermare per archiviarlo comunque.
 accounts-archive-designated-intro = Questo conto è designato nelle impostazioni di fatturazione:
 accounts-archive-designated-effect = Finché questo conto è archiviato, ogni registrazione che lo usa è rifiutata, anche su un documento già convalidato. Per togliere il blocco, riattivarlo.
-accounts-archive-effect-vat-decompte = Il conto di rendiconto IVA non è usato da alcuna registrazione: la sua archiviazione non ne rifiuta alcuna.
 accounts-archive-designated-link = Modificare le impostazioni di fatturazione
 accounts-archive-designated-admin-only = Un amministratore può modificare questa impostazione.
 accounts-archive-anyway = Archiviare comunque

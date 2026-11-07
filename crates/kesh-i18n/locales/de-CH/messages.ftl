@@ -250,7 +250,6 @@ accounts-archive-title = Konto { $number } archivieren?
 error-account-designated-in-settings = Dieses Konto ist in den Rechnungseinstellungen festgelegt: Bestätigen Sie, um es trotzdem zu archivieren.
 accounts-archive-designated-intro = Dieses Konto ist in den Rechnungseinstellungen festgelegt:
 accounts-archive-designated-effect = Solange dieses Konto archiviert ist, wird jede Buchung abgelehnt, die es verwendet, auch auf einem bereits validierten Beleg. Um die Sperre aufzuheben, reaktivieren Sie es.
-accounts-archive-effect-vat-decompte = Das MWST-Abrechnungskonto wird von keiner Buchung verwendet: Seine Archivierung lehnt keine ab.
 accounts-archive-designated-link = Rechnungseinstellungen ändern
 accounts-archive-designated-admin-only = Ein Administrator kann diese Einstellung ändern.
 accounts-archive-anyway = Trotzdem archivieren

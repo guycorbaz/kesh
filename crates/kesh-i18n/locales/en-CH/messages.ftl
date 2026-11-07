@@ -250,7 +250,6 @@ accounts-archive-title = Archive account { $number }?
 error-account-designated-in-settings = This account is designated in the invoicing settings: confirm to archive it anyway.
 accounts-archive-designated-intro = This account is designated in the invoicing settings:
 accounts-archive-designated-effect = While this account is archived, any entry that uses it is refused, including on a document already validated. To lift the block, reactivate it.
-accounts-archive-effect-vat-decompte = The VAT statement account is used by no entry: archiving it refuses none.
 accounts-archive-designated-link = Change the invoicing settings
 accounts-archive-designated-admin-only = An administrator can change this setting.
 accounts-archive-anyway = Archive anyway
