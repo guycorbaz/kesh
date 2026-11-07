@@ -179,22 +179,22 @@ pub async fn revoke_by_token(pool: &MySqlPool, token: &str, reason: &str) -> Res
 ///
 /// Retourne le nombre de **lignes** révoquées, qui peut dépasser celui des sessions
 /// vivantes : ses appelants ne s'en servent que pour leur journal de serveur.
+///
+/// Même instruction que la seconde de [`revoke_all_for_user_counting_live`]
+/// ([`REVOKE_REST_FOR_USER_SQL`], index de l'utilisateur imposé), donc même plan, testé
+/// par le même `EXPLAIN`.
 pub async fn revoke_all_for_user(
     pool: &MySqlPool,
     user_id: i64,
     reason: &str,
 ) -> Result<u64, DbError> {
-    let rows_affected = sqlx::query(
-        "UPDATE refresh_tokens \
-         SET revoked_at = NOW(3), revoked_reason = ? \
-         WHERE user_id = ? AND revoked_at IS NULL",
-    )
-    .bind(reason)
-    .bind(user_id)
-    .execute(pool)
-    .await
-    .map_err(map_db_error)?
-    .rows_affected();
+    let rows_affected = sqlx::query(REVOKE_REST_FOR_USER_SQL)
+        .bind(reason)
+        .bind(user_id)
+        .execute(pool)
+        .await
+        .map_err(map_db_error)?
+        .rows_affected();
 
     Ok(rows_affected)
 }
@@ -207,6 +207,14 @@ pub async fn revoke_all_for_user(
 /// sur une table vide ou presque (relevé à l'`EXPLAIN`, revue P2 de la 33-7, L5), et
 /// la transaction verrouillerait jusqu'au commit les sessions vivantes de **tous**
 /// les utilisateurs, dont les rotations et connexions attendraient.
+///
+/// Portée de la mesure : ce plan fautif n'a été relevé que sur une table vide. Sur une
+/// table peuplée (5000 lignes synthétiques, 50 utilisateurs, statistiques à jour,
+/// MariaDB 10.11, revue P3 de la 33-7, L1), l'optimiseur retient déjà
+/// `idx_refresh_tokens_user_id` sans indice. L'indice ne corrige donc pas un plan
+/// observé en service : il rend le plan indépendant des statistiques. Le test
+/// d'`EXPLAIN` (`refresh_tokens_repository.rs`) établit que l'indice est posé et
+/// honoré, non qu'un autre plan serait choisi sans lui.
 pub const REVOKE_LIVE_FOR_USER_SQL: &str = "UPDATE refresh_tokens \
      FORCE INDEX (idx_refresh_tokens_user_id) \
      SET revoked_at = NOW(3), revoked_reason = ? \
@@ -214,7 +222,8 @@ pub const REVOKE_LIVE_FOR_USER_SQL: &str = "UPDATE refresh_tokens \
 
 /// Seconde instruction de [`revoke_all_for_user_counting_live`] : révoque ce qui reste
 /// d'un utilisateur, les sessions échues (liaisons : motif, `user_id`). Même index
-/// imposé que la première, par symétrie.
+/// imposé que la première, par symétrie. C'est aussi l'instruction unique de
+/// [`revoke_all_for_user`] (changement de mot de passe, désactivation de compte).
 pub const REVOKE_REST_FOR_USER_SQL: &str = "UPDATE refresh_tokens \
      FORCE INDEX (idx_refresh_tokens_user_id) \
      SET revoked_at = NOW(3), revoked_reason = ? \

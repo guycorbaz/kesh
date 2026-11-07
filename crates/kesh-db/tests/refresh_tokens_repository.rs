@@ -307,6 +307,11 @@ async fn revoke_all_for_user_counting_live_counts_only_live_sessions(pool: MySql
 /// `idx_refresh_tokens_user_id`. Sur `idx_refresh_tokens_expires_at`, que l'optimiseur
 /// choisit sur une table vide ou presque (relevé à l'`EXPLAIN`), la transaction
 /// verrouillerait les sessions vivantes de **tous** les utilisateurs jusqu'au commit.
+/// La seconde est aussi celle de `revoke_all_for_user` (revue P3, L2).
+///
+/// Ce test établit que l'indice est posé et honoré, rien de plus : sur une table
+/// peuplée, l'optimiseur retient déjà l'index de l'utilisateur sans indice (revue P3,
+/// L1, 5000 lignes synthétiques), et le test serait vert sur toute table.
 #[sqlx::test(migrations = "./test-schema")]
 async fn revoke_live_statements_go_through_the_user_id_index(pool: MySqlPool) {
     for sql in [
