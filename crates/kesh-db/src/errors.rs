@@ -147,8 +147,9 @@ pub enum ModificationGuard {
     /// sortie de banque réelle : il ne se modifie pas, il se contre-passe.
     DetachedSupplierSettlement {
         supplier_invoice_id: i64,
-        /// `supplier_invoices.supplier_invoice_number` est nullable.
-        supplier_invoice_number: Option<String>,
+        /// Ce qui nomme la facture : la forme courte, le numéro interne d'abord (Story
+        /// 33-1b, #926) ; `None` si elle n'a aucun numéro.
+        supplier_invoice_label: Option<String>,
     },
     /// Une ligne de l'écriture porte une **marque de lettrage** (Story
     /// 15-1a-ii, AC8) : elle se délettre d'abord (`DELETE
@@ -187,9 +188,9 @@ impl ModificationGuard {
         match self {
             Self::Owned { document_label, .. } => document_label.clone(),
             Self::DetachedSupplierSettlement {
-                supplier_invoice_number,
+                supplier_invoice_label,
                 ..
-            } => supplier_invoice_number.clone(),
+            } => supplier_invoice_label.clone(),
             Self::Lettered { code } => Some(code.clone()),
         }
     }
@@ -1525,8 +1526,9 @@ impl SettlementAccountRole {
 pub struct SettlementBatchContext {
     pub payment_batch_id: i64,
     pub supplier_invoice_id: i64,
-    /// Numéro de la facture fournisseur, relu par `confirm_batch`.
-    pub supplier_invoice_number: Option<String>,
+    /// Ce qui nomme la facture fournisseur, relu par `confirm_batch` : la forme courte,
+    /// le numéro interne d'abord (Story 33-1b, #926).
+    pub supplier_invoice_label: Option<String>,
 }
 
 impl DbError {

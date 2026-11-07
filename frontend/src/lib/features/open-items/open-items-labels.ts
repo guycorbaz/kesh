@@ -8,6 +8,7 @@
  */
 import { i18nMsg } from '$lib/shared/utils/i18n.svelte';
 import { formatSwissAmount } from '$lib/features/journal-entries/balance';
+import { supplierInvoicePreferredNumber } from '$lib/features/supplier-invoices/supplier-invoice-label';
 import Big from 'big.js';
 import { sideOf, type LetterBlocker } from './open-items';
 import type {
@@ -154,7 +155,7 @@ export function documentLabel(doc: DocumentRef): string {
 			return doc.number ?? '—';
 		case 'supplierInvoice':
 			return (
-				doc.number ??
+				supplierInvoicePreferredNumber(doc.internalNumber, doc.number) ??
 				i18nMsg('open-items-document-supplier-invoice', 'facture fournisseur')
 			);
 		case 'settlement':

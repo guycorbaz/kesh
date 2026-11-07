@@ -48,7 +48,7 @@ Phasage : v0.1 couvre le cœur comptable + facturation QR Bill + import CAMT + r
 
 ### Contraintes & Dépendances Techniques
 
-- **Stack imposée** : Rust (Axum), Svelte, MariaDB 10.6+, Docker
+- **Stack imposée** : Rust (Axum), Svelte, MariaDB 10.7+, Docker *(10.6+ jusqu'à la Story 33-1b : `NATURAL_SORT_KEY` apparaît en 10.7)*
 - **Arithmétique** : `rust_decimal` exclusivement, jamais de f64 pour les montants
 - **Standards SIX** : QR Bill 2.2 (dimensions 46×46mm, position A4, police, croix suisse), pain.001.001.09.ch.03 (validation XSD, SPS 2026), CAMT.053.001.04
 - **Encodage** : UTF-8 + ISO-8859-1 (import CSV, détection automatique)

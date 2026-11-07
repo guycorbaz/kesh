@@ -28,6 +28,7 @@
 	import { getInvoiceSettings } from '$lib/features/invoices/invoices.api';
 	import { authState } from '$lib/app/stores/auth.svelte';
 	import { i18nMsg } from '$lib/features/onboarding/onboarding.svelte';
+	import { supplierInvoiceShortLabel } from '$lib/features/supplier-invoices/supplier-invoice-label';
 	import { toast } from 'svelte-sonner';
 	import { fetchAccounts } from '$lib/features/accounts/accounts.api';
 	import type { AccountResponse } from '$lib/features/accounts/accounts.types';
@@ -558,9 +559,11 @@
 						data-testid="entry-supplier-invoice-link"
 					>
 						{i18nMsg('journal-entries-supplier-invoice-link', 'Facture fournisseur { $number }', {
-							number:
-								entry.sourceDocument.supplierInvoiceNumber ??
-								`#${entry.sourceDocument.supplierInvoiceId}`
+							number: supplierInvoiceShortLabel({
+								id: entry.sourceDocument.supplierInvoiceId,
+								internalNumber: entry.sourceDocument.internalNumber,
+								supplierInvoiceNumber: entry.sourceDocument.supplierInvoiceNumber,
+							}),
 						})}
 					</a>
 					<button

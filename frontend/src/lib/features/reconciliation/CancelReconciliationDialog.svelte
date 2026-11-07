@@ -19,6 +19,7 @@
 	import { Button } from '$lib/components/ui/button';
 	import * as Dialog from '$lib/components/ui/dialog';
 	import { i18nMsg } from '$lib/shared/utils/i18n.svelte';
+	import { supplierInvoiceShortLabel } from '$lib/features/supplier-invoices/supplier-invoice-label';
 	import { isApiError } from '$lib/shared/utils/api-client';
 	import { errorMessageOf } from '$lib/shared/utils/error-message';
 	import { cancelReconciliation, getReconciliationTransaction } from './reconciliation.api';
@@ -89,7 +90,13 @@
 			return i18nMsg(
 				'reconciliation-cancel-confirm-supplier-invoice',
 				"Une écriture inverse datée d'aujourd'hui sera passée, le paiement de la facture fournisseur { $invoice } sera retiré et la facture redeviendra validée, à payer ; la transaction redeviendra à rapprocher.",
-				{ invoice: view.supplierInvoiceNumber ?? `#${view.supplierInvoiceId ?? ''}` },
+				{
+					invoice: supplierInvoiceShortLabel({
+						id: view.supplierInvoiceId ?? 0,
+						internalNumber: view.internalNumber,
+						supplierInvoiceNumber: view.supplierInvoiceNumber,
+					}),
+				},
 			);
 		}
 		return i18nMsg(

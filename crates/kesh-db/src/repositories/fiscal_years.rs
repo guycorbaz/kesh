@@ -1096,7 +1096,8 @@ pub async fn list_by_company(
 ///
 /// **Pourquoi cet ordre** : la clôture acquiert ses antérieurs **avant** Y.
 /// Verrouiller Y d'abord l'exposerait au cycle avec une réouverture de Y-1 (qui
-/// tient Y-1 puis demande les postérieurs) — et `reopen` n'est pas rejouée.
+/// tient Y-1 puis demande les postérieurs). `reopen` est rejouée depuis la Story
+/// 33-1a : cet ordre reste, pour éviter le cycle plutôt que d'en dépendre.
 ///
 /// ⚠️ **Ce n'est pas l'ordre de tous les flux** : la contre-passation et les
 /// quatre annulations tiennent l'exercice d'une origine, puis parcourent depuis

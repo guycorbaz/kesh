@@ -177,7 +177,8 @@ fn bornes_des_schemas() {
         "les outils paginés"
     );
     // Valeurs mesurées (§ *Les tailles mesurées*), écrites en dur ; la
-    // balance âgée révisée sur la mesure (C-32-9-44 : 40 / 75 → 38 / 68).
+    // balance âgée révisée sur la mesure (C-32-9-44 : 40 / 75 → 38 / 68), les factures
+    // fournisseur aussi, qui portent le numéro interne (C-e331-27 : 70 / 40 → 62 / 34).
     let mesurees: BTreeMap<&str, (i64, i64)> = [
         ("kesh_plan_comptable", (70, 40)),
         ("kesh_ecritures", (22, 12)),
@@ -187,7 +188,7 @@ fn bornes_des_schemas() {
         ("kesh_factures", (40, 20)),
         ("kesh_echeancier", (40, 20)),
         ("kesh_balance_agee", (68, 38)),
-        ("kesh_factures_fournisseur", (70, 40)),
+        ("kesh_factures_fournisseur", (62, 34)),
         ("kesh_contacts", (22, 12)),
         ("kesh_pieces", (65, 35)),
     ]
@@ -1612,4 +1613,70 @@ async fn un_brouillon_lu_par_les_outils(pool: MySqlPool) {
         .find(|f| f["id"] == json!(id))
         .unwrap_or_else(|| panic!("le brouillon est listé : {liste}"));
     assert_eq!(ligne["statut"], json!("draft"), "{ligne}");
+
+    // Story 33-1a (#926, AC18) — le numéro interne s'ajoute à `numero`, à la fiche et à
+    // la liste, et survit au retour en brouillon ; `numero` garde celui du fournisseur.
+    use kesh_seed::pieges;
+    let interne = pieges::texte_seme('A', pieges::par_cle("ff_numero_interne"));
+    assert_eq!(
+        avant["numeroInterne"]["nonFiable"],
+        json!(interne),
+        "{avant}"
+    );
+    assert_eq!(fiche["numeroInterne"], avant["numeroInterne"], "{fiche}");
+    assert_eq!(ligne["numeroInterne"], avant["numeroInterne"], "{ligne}");
+    assert_eq!(
+        avant["numero"]["nonFiable"],
+        json!(pieges::texte_seme('A', pieges::par_cle("ff_numero"))),
+        "`numero` reste le numéro du fournisseur : {avant}"
+    );
+}
+
+/// Story 33-1b (#926, AC8 ; revue P1, A-F2) — `kesh_ecriture` et `kesh_postes_ouverts`
+/// disent le numéro interne de la facture fournisseur à côté de celui du fournisseur,
+/// chacun sous son nom : le test nomme le champ, là où l'inventaire de
+/// `mcp_enveloppe_e2e` ne voit que la sortie de l'outil (M18, M19 de la 33-1b).
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn le_numero_interne_d_une_ecriture_et_d_un_poste(pool: MySqlPool) {
+    use kesh_seed::pieges;
+    let a = societe_piegee(&pool, "Société A 329", 'A').await;
+    let jeton = cle_de(&pool, &a, &LECTURE, SendValidation::Exempt).await;
+    let b = banc(&pool);
+    let interne = json!(pieges::texte_seme(
+        'A',
+        pieges::par_cle("ff_numero_interne")
+    ));
+    let fournisseur = json!(pieges::texte_seme('A', pieges::par_cle("ff_numero")));
+
+    let ecriture = structure(
+        &b.appeler(&jeton, "kesh_ecriture", json!({"id": a.p.ecriture_achat}))
+            .await,
+        "kesh_ecriture",
+    );
+    let source = &ecriture["pieceSource"];
+    assert_eq!(
+        source["numeroInterneFactureFournisseur"]["nonFiable"], interne,
+        "{ecriture}"
+    );
+    assert_eq!(
+        source["numeroFactureFournisseur"]["nonFiable"], fournisseur,
+        "{ecriture}"
+    );
+
+    let postes = structure(
+        &b.appeler(
+            &jeton,
+            "kesh_postes_ouverts",
+            json!({"accountId": a.p.compte_cr}),
+        )
+        .await,
+        "kesh_postes_ouverts",
+    );
+    let piece = elements("kesh_postes_ouverts", &postes)
+        .iter()
+        .map(|p| &p["piece"])
+        .find(|p| p["id"] == json!(a.p.facture_fournisseur))
+        .unwrap_or_else(|| panic!("le poste de la facture : {postes}"));
+    assert_eq!(piece["numeroInterne"]["nonFiable"], interne, "{piece}");
+    assert_eq!(piece["numero"]["nonFiable"], fournisseur, "{piece}");
 }

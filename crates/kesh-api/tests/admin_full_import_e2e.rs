@@ -951,12 +951,13 @@ fn strip_column(manifest: &mut Value, table: &str, column: &str) {
 /// tout rejeu. Ces deux entrées-là ont donc quitté `POST_RESTORE_BACKFILLS` —
 /// c'est le mécanisme qui fonctionne, pas une régression.
 ///
-/// ⚠️ **Le registre de production est VIDE depuis la Story 32-5a (#723)** — il
-/// l'a été entre les Stories 24-2 et 24-3, puis de la 25-2-c à la 15-1a2-ii, et
-/// la création de `mcp_keys` l'a vidé de nouveau en refermant la fenêtre sur le
-/// rejeu du lettrage (`20261010000001`), passé à son tour au registre retiré. Ce
-/// que ce helper injecte, ce sont les entrées RETIRÉES, et elles seules — le
-/// lettrage compris depuis la 32-5a.
+/// ⚠️ **Le registre de production a été VIDE de la Story 32-5a (#723) à la Story
+/// 33-1a** — il l'avait été entre les Stories 24-2 et 24-3, puis de la 25-2-c à la
+/// 15-1a2-ii : la création de `mcp_keys` l'avait vidé de nouveau en refermant la
+/// fenêtre sur le rejeu du lettrage (`20261010000001`), passé à son tour au registre
+/// retiré. Il porte aujourd'hui la seule numérotation interne (33-1a). Ce que ce
+/// helper injecte, ce sont les entrées RETIRÉES, et elles seules — le lettrage
+/// compris depuis la 32-5a.
 ///
 /// Ces cas gardent pourtant toute leur substance : ils éprouvent la MACHINERIE
 /// (ordre, sémantique OU des sentinelles, classes A/B, codes de sortie, nombre
@@ -1091,8 +1092,8 @@ async fn full_import_replays_revenue_account_backfill(pool: MySqlPool) {
     import_ok(&app, &biz.ctx.jwt, &manifest, &data).await;
     // Story 24-2 (#371) : ces deux entrées-là ont quitté le registre de
     // production (fenêtre refermée), le rejeu est donc déclenché explicitement
-    // sur les entrées retirées — cf. `replay_retired`, qui dit pourquoi le
-    // registre de production, lui, est vide depuis la Story 32-5a.
+    // sur les entrées retirées — cf. `replay_retired`, qui dit pourquoi elles ont
+    // quitté le registre de production.
     let report = replay_retired(&pool, &manifest).await;
 
     assert_eq!(
@@ -1174,8 +1175,8 @@ async fn full_import_replays_class_a_even_when_column_is_present(pool: MySqlPool
     import_ok(&app, &biz.ctx.jwt, &manifest, &data).await;
     // Story 24-2 (#371) : ces deux entrées-là ont quitté le registre de
     // production (fenêtre refermée), le rejeu est donc déclenché explicitement
-    // sur les entrées retirées — cf. `replay_retired`, qui dit pourquoi le
-    // registre de production, lui, est vide depuis la Story 32-5a.
+    // sur les entrées retirées — cf. `replay_retired`, qui dit pourquoi elles ont
+    // quitté le registre de production.
     let report = replay_retired(&pool, &manifest).await;
 
     assert_eq!(
@@ -1221,8 +1222,8 @@ async fn full_import_replays_role_and_postable_when_both_columns_absent(pool: My
     import_ok(&app, &biz.ctx.jwt, &manifest, &data).await;
     // Story 24-2 (#371) : ces deux entrées-là ont quitté le registre de
     // production (fenêtre refermée), le rejeu est donc déclenché explicitement
-    // sur les entrées retirées — cf. `replay_retired`, qui dit pourquoi le
-    // registre de production, lui, est vide depuis la Story 32-5a.
+    // sur les entrées retirées — cf. `replay_retired`, qui dit pourquoi elles ont
+    // quitté le registre de production.
     let report = replay_retired(&pool, &manifest).await;
 
     assert_eq!(
@@ -1314,8 +1315,8 @@ async fn full_import_replays_when_only_one_sentinel_is_absent(pool: MySqlPool) {
     import_ok(&app, &biz.ctx.jwt, &manifest, &data).await;
     // Story 24-2 (#371) : ces deux entrées-là ont quitté le registre de
     // production (fenêtre refermée), le rejeu est donc déclenché explicitement
-    // sur les entrées retirées — cf. `replay_retired`, qui dit pourquoi le
-    // registre de production, lui, est vide depuis la Story 32-5a.
+    // sur les entrées retirées — cf. `replay_retired`, qui dit pourquoi elles ont
+    // quitté le registre de production.
     let report = replay_retired(&pool, &manifest).await;
 
     let e = retired_entry(&report, ROLE_POSTABLE);
@@ -1386,8 +1387,8 @@ async fn full_import_skips_role_backfill_when_sentinels_are_present(pool: MySqlP
     import_ok(&app, &biz.ctx.jwt, &manifest, &data).await;
     // Story 24-2 (#371) : ces deux entrées-là ont quitté le registre de
     // production (fenêtre refermée), le rejeu est donc déclenché explicitement
-    // sur les entrées retirées — cf. `replay_retired`, qui dit pourquoi le
-    // registre de production, lui, est vide depuis la Story 32-5a.
+    // sur les entrées retirées — cf. `replay_retired`, qui dit pourquoi elles ont
+    // quitté le registre de production.
     let report = replay_retired(&pool, &manifest).await;
 
     assert_eq!(
@@ -1500,8 +1501,8 @@ async fn full_import_replays_backfills_in_increasing_version_order(pool: MySqlPo
     import_ok(&app, &biz.ctx.jwt, &manifest, &data).await;
     // Story 24-2 (#371) : ces deux entrées-là ont quitté le registre de
     // production (fenêtre refermée), le rejeu est donc déclenché explicitement
-    // sur les entrées retirées — cf. `replay_retired`, qui dit pourquoi le
-    // registre de production, lui, est vide depuis la Story 32-5a.
+    // sur les entrées retirées — cf. `replay_retired`, qui dit pourquoi elles ont
+    // quitté le registre de production.
     let report = replay_retired(&pool, &manifest).await;
 
     assert!(
@@ -1587,15 +1588,11 @@ async fn full_import_report_mirrors_the_production_registry(pool: MySqlPool) {
     // rien. Une entrée de classe A est rejouée à chaque import, et sur cette
     // base à jour (une facture validée, non soldée) elle ne touche rien.
     //
-    // ⚠️ **Story 32-5a (#723) : le registre de production est VIDE**, comme de
-    // la 25-2-c à la 15-1a2-ii — la création de `mcp_keys` a refermé la fenêtre
-    // sur le rejeu du lettrage. Le rapport est donc vide, égal au registre vide
-    // (assertion ci-dessus), et la boucle qui suit est vacuement verte ; elle
-    // reprendra matière à la prochaine entrée. L'assertion de montage « au moins
-    // une entrée » de la 15-1a2-ii est retirée avec elle.
+    // Story 33-1a (#926) : le registre n'est plus vide, l'assertion de montage de la
+    // 15-1a2-ii revient, et la boucle qui suit a de nouveau matière.
     assert!(
-        report.is_empty(),
-        "registre de production vide depuis la Story 32-5a : got {report:?}"
+        !report.is_empty(),
+        "montage : le registre de production porte au moins une entrée"
     );
     for (e, entree) in report
         .iter()
@@ -5453,5 +5450,215 @@ async fn v0174s_backup_carries_no_usable_token(pool: MySqlPool) {
     assert!(
         v0174s_archived_tokens(&backup).contains(&common::independent_refresh_digest(&cookie)),
         "elle porte son empreinte"
+    );
+}
+
+// ============================================================================
+// Story 33-1a (#926) — AC20 : le numéro interne rejoué à l'import
+// ============================================================================
+
+const NUMERO_INTERNE_VERSION: i64 = 20261106000001;
+
+/// Crée et valide une facture fournisseur par le vrai moteur.
+async fn facture_numerotee(
+    pool: &MySqlPool,
+    biz: &Business,
+    supplier: i64,
+    date: (i32, u32, u32),
+) -> kesh_db::repositories::supplier_invoices::SupplierInvoiceWithLines {
+    use kesh_db::entities::{NewSupplierInvoice, NewSupplierInvoiceLine};
+    use rust_decimal_macros::dec;
+    kesh_db::repositories::supplier_invoices::create_validated(
+        pool,
+        NewSupplierInvoice {
+            company_id: biz.ctx.company_id,
+            contact_id: supplier,
+            supplier_invoice_number: Some("ABC".into()),
+            invoice_date: chrono::NaiveDate::from_ymd_opt(date.0, date.1, date.2).unwrap(),
+            due_date: None,
+            creditor_iban: None,
+            creditor_qr_iban: None,
+            payment_reference: None,
+            expected_payment_amount: None,
+            project_id: None,
+            lines: vec![NewSupplierInvoiceLine {
+                description: "Achat".into(),
+                quantity: dec!(1),
+                unit_price: dec!(50),
+                vat_rate: dec!(0),
+                expense_account_id: biz.accounts["4000"],
+            }],
+        },
+        biz.ctx.user_id,
+    )
+    .await
+    .expect("facture fournisseur")
+}
+
+/// Un fournisseur, et le compte créanciers aux réglages.
+async fn pret_pour_les_achats(pool: &MySqlPool, biz: &Business) -> i64 {
+    sqlx::query(
+        "UPDATE company_invoice_settings SET default_payable_account_id = ? WHERE company_id = ?",
+    )
+    .bind(biz.accounts["2000"])
+    .bind(biz.ctx.company_id)
+    .execute(pool)
+    .await
+    .unwrap();
+    sqlx::query_scalar(
+        "INSERT INTO contacts (company_id, contact_type, name, is_supplier) \
+         VALUES (?, 'Entreprise', 'Fournisseur 33-1a', TRUE) RETURNING id",
+    )
+    .bind(biz.ctx.company_id)
+    .fetch_one(pool)
+    .await
+    .unwrap()
+}
+
+async fn numeros_internes(pool: &MySqlPool, company_id: i64) -> Vec<Option<String>> {
+    sqlx::query_scalar(
+        "SELECT internal_number FROM supplier_invoices WHERE company_id = ? ORDER BY id",
+    )
+    .bind(company_id)
+    .fetch_all(pool)
+    .await
+    .unwrap()
+}
+
+async fn compteur_de_la_societe(pool: &MySqlPool, company_id: i64) -> i64 {
+    sqlx::query_scalar("SELECT supplier_invoice_next_number FROM fiscal_years WHERE company_id = ?")
+        .bind(company_id)
+        .fetch_one(pool)
+        .await
+        .unwrap()
+}
+
+async fn entree_numero_interne(pool: &MySqlPool) -> Value {
+    backfill_report(pool)
+        .await
+        .into_iter()
+        .find(|e| e["version"] == NUMERO_INTERNE_VERSION)
+        .expect("le rapport porte la numérotation interne")
+}
+
+/// Une sauvegarde 0.17.4 — sans les trois colonnes — reçoit les numéros et les
+/// compteurs de la migration, par la vraie route et le registre de production ; le
+/// format revient au défaut ; la validation suivante prend le numéro d'après.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn full_import_of_a_0_17_4_backup_gives_the_numbers(pool: MySqlPool) {
+    let app = spawn_app(pool.clone()).await;
+    let biz = seed_business(&pool, "NI").await;
+    let c = biz.ctx.company_id;
+    let supplier = pret_pour_les_achats(&pool, &biz).await;
+    let seconde = facture_numerotee(&pool, &biz, supplier, (2026, 5, 1)).await;
+    let premiere = facture_numerotee(&pool, &biz, supplier, (2026, 2, 1)).await;
+    assert_eq!(
+        seconde.invoice.internal_number.as_deref(),
+        Some("FF-2020-001")
+    );
+    assert_eq!(
+        premiere.invoice.internal_number.as_deref(),
+        Some("FF-2020-002")
+    );
+    sqlx::query(
+        "UPDATE company_invoice_settings SET supplier_internal_number_format = 'KF-{YEAR}-{SEQ}' \
+         WHERE company_id = ?",
+    )
+    .bind(c)
+    .execute(&pool)
+    .await
+    .unwrap();
+
+    let backup = export_backup(&app, &biz.ctx.jwt).await;
+    let (mut manifest, data) = unzip(&backup);
+    strip_column(&mut manifest, "supplier_invoices", "internal_number");
+    strip_column(
+        &mut manifest,
+        "fiscal_years",
+        "supplier_invoice_next_number",
+    );
+    strip_column(
+        &mut manifest,
+        "company_invoice_settings",
+        "supplier_internal_number_format",
+    );
+    import_ok(&app, &biz.ctx.jwt, &manifest, &data).await;
+
+    // Numérotés par date, comme à la montée.
+    assert_eq!(
+        numeros_internes(&pool, c).await,
+        vec![
+            Some("FF-2020-002".to_string()),
+            Some("FF-2020-001".to_string())
+        ]
+    );
+    assert_eq!(compteur_de_la_societe(&pool, c).await, 3);
+    let format: String = sqlx::query_scalar(
+        "SELECT supplier_internal_number_format FROM company_invoice_settings WHERE company_id = ?",
+    )
+    .bind(c)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(format, "FF-{YEAR}-{SEQ:03}", "le format revient au défaut");
+    let entree = entree_numero_interne(&pool).await;
+    assert_eq!(entree["outcome"], "REPLAYED_SENTINELS_ABSENT", "{entree}");
+    assert_eq!(
+        entree["rows_affected"], 3,
+        "deux factures, un exercice : {entree}"
+    );
+
+    let suivante = facture_numerotee(&pool, &biz, supplier, (2026, 6, 1)).await;
+    assert_eq!(
+        suivante.invoice.internal_number.as_deref(),
+        Some("FF-2020-003")
+    );
+}
+
+/// Une sauvegarde 0.17.5 garde les siens : le **dernier** numéro émis est supprimé,
+/// si bien que le compteur (4) passe le plus grand numéro plus un (3) : seule la
+/// restauration de la colonne le redonne, un recalcul depuis les numéros le perdrait.
+/// L'entrée est sautée.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn full_import_of_a_0_17_5_backup_keeps_the_numbers(pool: MySqlPool) {
+    use kesh_db::repositories::supplier_invoices;
+    let app = spawn_app(pool.clone()).await;
+    let biz = seed_business(&pool, "NJ").await;
+    let c = biz.ctx.company_id;
+    let u = biz.ctx.user_id;
+    let supplier = pret_pour_les_achats(&pool, &biz).await;
+    facture_numerotee(&pool, &biz, supplier, (2026, 2, 1)).await;
+    facture_numerotee(&pool, &biz, supplier, (2026, 3, 1)).await;
+    let perdue = facture_numerotee(&pool, &biz, supplier, (2026, 4, 1)).await;
+    let brouillon =
+        supplier_invoices::unvalidate(&pool, c, perdue.invoice.id, perdue.invoice.version, u)
+            .await
+            .unwrap();
+    supplier_invoices::delete_draft(&pool, c, brouillon.invoice.id, u)
+        .await
+        .unwrap();
+
+    let attendus = vec![
+        Some("FF-2020-001".to_string()),
+        Some("FF-2020-002".to_string()),
+    ];
+    assert_eq!(numeros_internes(&pool, c).await, attendus);
+    assert_eq!(compteur_de_la_societe(&pool, c).await, 4);
+
+    let backup = export_backup(&app, &biz.ctx.jwt).await;
+    let (manifest, data) = unzip(&backup);
+    import_ok(&app, &biz.ctx.jwt, &manifest, &data).await;
+
+    assert_eq!(numeros_internes(&pool, c).await, attendus);
+    assert_eq!(compteur_de_la_societe(&pool, c).await, 4);
+    let entree = entree_numero_interne(&pool).await;
+    assert_eq!(entree["outcome"], "SKIPPED", "{entree}");
+    assert_eq!(entree["rows_affected"], 0, "{entree}");
+
+    let suivante = facture_numerotee(&pool, &biz, supplier, (2026, 6, 1)).await;
+    assert_eq!(
+        suivante.invoice.internal_number.as_deref(),
+        Some("FF-2020-004"),
+        "le numéro supprimé n'est pas repris"
     );
 }

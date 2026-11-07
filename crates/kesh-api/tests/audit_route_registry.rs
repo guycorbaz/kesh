@@ -121,16 +121,16 @@
 //!   que **toute route mutante a été examinée**. Autres candidates nommées en
 //!   revue P1 de la 15-5e2 (L-5), sans cycle démontré : `PUT /invoices/{id}`
 //!   quand le projet change (sentinelle, projet, facture),
-//!   `POST /projects/{id}/archive` et `POST /fiscal-years/{id}/reopen` — elles
-//!   prennent des verrous que les flux rejoués prennent aussi. Pour `/reopen`,
-//!   le cycle est nommé : la réouverture tient Y-1 puis parcourt les
-//!   postérieurs ; une contre-passation tient une origine postérieure puis
-//!   parcourt depuis le premier exercice (préexistant). Et le **renommage**
+//!   et `POST /projects/{id}/archive` — elle prend des verrous que les flux
+//!   rejoués prennent aussi. Et le **renommage**
 //!   (`PUT /fiscal-years/{id}`, Story 15-12a) : il tient l'exercice puis son
 //!   homonyme, la clôture tient ses antérieurs puis l'exercice — renommer un
 //!   exercice au nom d'un antérieur pendant sa clôture peut faire du renommage
-//!   la victime, en 500, sur un renommage que le pré-contrôle aurait refusé.
-//!   `POST /fiscal-years/{id}/close` n'est plus de la liste : elle est rejouée
+//!   la victime, en 500, sur un renommage que le pré-contrôle aurait refusé. Depuis
+//!   la Story 33-1a, la validation d'une facture fournisseur forme le même cycle
+//!   avec deux exercices d'une année : elle tient le sien, puis demande l'autre.
+//!   `POST /fiscal-years/{id}/close` et, depuis la Story 33-1a,
+//!   `POST /fiscal-years/{id}/reopen` ne sont plus de la liste : elles sont rejouées
 //!   (point (vi)). Le lot de **rejet** (`reconciliation::post_reject`, non
 //!   rejoué) verrouille ses transactions par identifiant croissant depuis la
 //!   Story 27-1 (AC4-bis), comme la suppression d'un import, ce qui ferme leur
@@ -156,9 +156,13 @@
 //!   `post`, `put`, `delete` et `patch`. Aucune route `GET` n'écrit au journal
 //!   aujourd'hui (remontée de l'AC1 : des `POST` et un `DELETE`) ; l'angle mort
 //!   est du même ordre que celui de l'audit (`GET /invoices/{id}/pdf`, plus bas).
-//! - **(vi)** **vingt-trois routes `SansEcritureAuJournal` sont rejouées quand
-//!   même** : `onboarding::finalize` (enveloppe `AppError`, Story 15-5e2 — la
-//!   seule des neuf routes d'étape à l'être, cf. (iv)),
+//! - **(vi)** **vingt-quatre routes `SansEcritureAuJournal` sont rejouées quand
+//!   même** : `fiscal_years::reopen_fiscal_year` (enveloppe `DbError`, Story 33-1a,
+//!   #926 : la réouverture tient un exercice puis demande ses postérieurs, la
+//!   validation d'une facture fournisseur tient le sien puis demande ceux de son
+//!   année ; tenue par `fiscal_year_reopen_is_replayed_when_it_is_the_deadlock_victim`,
+//!   `rejeu_interblocage_e2e.rs`), `onboarding::finalize` (enveloppe `AppError`, Story
+//!   15-5e2 — la seule des neuf routes d'étape à l'être, cf. (iv)),
 //!   `company_invoice_settings::update_invoice_settings` (enveloppe `DbError`,
 //!   exposée par l'avance des réglages de la saisie fournisseur — choix C70),
 //!   et — Story 15-12a, #543 — `fiscal_years::create_fiscal_year` et

@@ -1,6 +1,6 @@
 # Story 33-1b : le numéro interne à l'écran — liste, fiche, réglage, recherche, manuels (#926)
 
-Status: ready-for-dev
+Status: done
 
 *Fiche rédigée le 2026-11-06, en autonomie (Opus 5.5), worktree `/home/gcorbaz/devel/kesh-e33`, branche
 `story/33-0-kickoff`, numéros de ligne de `4ef19901`. Registre : `e33-choix-autonomes-e331.md`. Clé courte `e331b`. **Après la 33-1a**,
@@ -127,13 +127,13 @@ service MCP (`services/factures_fournisseur.rs:119`), qui garde son comportement
 
 **AC6 — La fiche.** Titre en forme courte ; `<dl>` : **N° interne** (`supplier-invoice-detail-internal-number`), **N° fournisseur**
 (`supplier-invoice-detail-supplier-number`). Brouillon jamais validé : « attribué à la validation ». **Brouillon numéroté** : le numéro, et « conservé si la
-facture est revalidée ; perdu si elle est supprimée ». Le dialogue de suppression d'un brouillon numéroté avertit : « Le numéro sera perdu. Kesh ne le reprendra pas, sauf restauration d'une sauvegarde plus ancienne ou réinitialisation des données. »
+facture est revalidée ; perdu si elle est supprimée ». Le dialogue de suppression d'un brouillon numéroté avertit : « Le numéro sera perdu. Kesh ne le reprendra pas, hors les cas dits au manuel (sauvegarde restaurée, réinitialisation). »
 Après validation, le numéro paraît **sans recharger** (réponse de la route).
 
 **AC7 — Le réglage.** *Administration → Facturation* (`settings/invoicing/+page.svelte`, section *Numérotation*, `:288`) : champ **Format des factures
 fournisseur** (`settings-supplier-internal-number-format`), aide, aperçu, refus sur place. Le champ part dans le corps ; chargé et relu après conflit de
 version (`:159,:235`), comme `format`. Aide : « Un préfixe, `{YEAR}`, un séparateur, puis `{SEQ}` ou `{SEQ:03}`. S'applique aux numéros à venir : ceux déjà attribués ne changent pas. » `validateFormatTemplate` reçoit une option
-`numbering`, alignée sur `validate_numbering_template` (33-1a, AC16, mêmes cas acceptés et refusés) : une seule clé, `invoices-format-error-numbering`, aux quatre locales. Le champ client, lui, ne change pas de règle.
+`numbering`, alignée sur `validate_numbering_template` (33-1a, AC16, mêmes cas acceptés et refusés, `{YEAR}-{YEAR}-{SEQ}` compris) : une seule clé, `invoices-format-error-numbering`, aux quatre locales. Le champ client, lui, ne change pas de règle.
 Type `InvoiceSettings` (`invoices.types.ts`), `settings-invoicing-page.test.ts` suit.
 
 **AC8 — Les sites.** Chaque ligne de l'inventaire est appliquée, et un test le prouve au niveau où il vit : Vitest pour le libellé rendu, `*_e2e` pour les champs
@@ -147,7 +147,7 @@ alignés, `npm run lint-i18n-ownership` vert. Clés neuves recomptées par `grep
 **AC10 — E2E.** `frontend/tests/e2e/supplier-internal-number.spec.ts`, assertions **relatives** (la base partagée a un compteur qui ne redescend pas) :
 brouillon sans numéro → validé, numéro au motif `FF-AAAA-NNN` → présent à la liste → trouvé par `q` (numéro interne ; numéro du fournisseur) → tri croissant et
 décroissant, vérifiés sur l'ordre des lignes → repassé en brouillon : numéro conservé → revalidé : **le même** → réglage modifié (`KF-{YEAR}-{SEQ:04}`) → la facture
-suivante le porte, la première non → format `FF-{YEAR}` refusé sur place, `FF-{SEQ:03}` et `FF-{FY}-{SEQ}` aussi → postes ouverts du compte créanciers : la pièce dit le numéro interne → détail d'un lot : la facture dit le
+suivante le porte, la première non → format `FF-{YEAR}` refusé sur place, `FF-{SEQ:03}`, `FF-{FY}-{SEQ}` et `{YEAR}-{YEAR}-{SEQ}` aussi → postes ouverts du compte créanciers : la pièce dit le numéro interne → détail d'un lot : la facture dit le
 numéro interne. **Format restauré par un `afterAll`**, qui survit à un échec en cours de spec. `supplier-documents.spec.ts:476` suit (lien : numéro interne). Sans changer de nom : le
 `testid` `supplier-invoice-number` (`supplier-invoice-draft-cycle.spec.ts:313`, seule spec à le lire) et la propriété `supplierInvoiceNumber` envoyée à la création (`helpers/api-fixtures.ts`,
 `payment-batches`, `v0174-correctifs`, `supplier-invoices`, `supplier-documents`, `supplier-invoice-draft-cycle`) : ces cinq specs restent vertes.
@@ -252,9 +252,71 @@ Recherche par numéro interne au journal (le libellé de l'écriture la permet d
 
 ## Dev Agent Record
 
-*À compléter.*
+*Développée le 2026-11-06, Opus 5.5, à la suite de la 33-1a, même branche, mêmes bases. Journaux : `kesh-gate-logs/e331/`. Captures : `kesh-gate-logs/e331b/captures/`.*
+
+**Inventaire** : les quatre commandes de la fiche rejouées ; chaque site résolu ou écrit à « Ce qui garde le numéro du fournisseur ». **Découvert en chemin** : `errors.rs` nommait les champs d'erreur d'après le numéro du fournisseur (`C-e331-28`) ; `reconciliation-supplier.spec.ts:294` et `:341` attendaient l'ancien numéro, vus au premier E2E seulement.
+
+**Rouges constatés** (`rouges-b.log`) : côté serveur, les quatre tests HTTP de la liste et du lot (`the_list_sorts_by_internal_number_naturally`, `the_list_searches_numbers_and_supplier`, `the_search_stays_in_the_company`, `a_payment_batch_names_its_invoices`) rouges avant le code. ⚠️ **Écart à la fiche** : les rouges des tests d'écran n'ont pas été constatés avant le code ; la preuve qui les remplace est la mutation, ci-dessous. Les autres rouges serveur de la fiche ne sont pas constatés séparément, et sont couverts de même.
+
+**Mutations** (`mut/b-*.log`, résumé `mut/resume-b.log`) : M1 à M17, M12 en cinq sites (M12a à M12e), toutes tuées, aucune survivante.
+
+**i18n** (`git diff bdc3faa4 HEAD`, lignes de clé ajoutées, recompté) : 11 par locale dans les quatre, soit 9 clés neuves et 2 valeurs changées (`supplier-invoices-col-number`, `supplier-invoices-field-number`).
+
+**Captures (AC11), toutes dans `kesh-gate-logs/e331b/captures/`, thème clair** :
+
+| État | Fichier |
+|---|---|
+| liste, deux colonnes ; triée ; filtrée ; sans résultat | `liste-deux-colonnes.png`, `liste-triee.png`, `liste-filtree.png`, `liste-sans-resultat.png` |
+| fiche validée ; brouillon jamais validé ; brouillon numéroté ; dialogue de suppression | `fiche-validee.png`, `fiche-brouillon-jamais-valide.png`, `fiche-brouillon-numerote.png`, `dialogue-suppression.png` |
+| réglage valide ; refus | `reglage-valide.png`, `reglage-refus.png` |
+| choix d'un lot ; détail d'un lot | `lot-selection.png`, `lot-detail.png` |
+| lien d'écriture | `302c-ecriture-document-clair.png` |
+| candidate ; avis de rapprochement ; dialogue d'annulation | `30-1b-ligne-proposee-clair.png`, `33-1b-avis-lot-clair.png`, `30-1b-dialogue-annulation-clair.png` |
+| ligne des postes ouverts ; groupe de lettrage | `postes-ouverts.png`, `groupe-de-lettrage.png` |
+
+Regardées à l'œil : `liste-deux-colonnes`, `fiche-brouillon-numerote`, `reglage-refus`, `30-1b-ligne-proposee-clair`, `302c-ecriture-document-clair`, `33-1b-avis-lot-clair`. Les autres n'ont pas été ouvertes une à une. Le dossier porte aussi les captures d'autres specs de la suite, sans rapport.
+
+**Manuel** : `user-manual.tex` et les trois PDF régénérés (`make-1.log`), PDF aplatis et grepés sur les phrases de l'AC12.
+
+**Gates, réellement exécutés, sur la branche** (les deux fiches la partagent ; tête de code `17dea0c9`) :
+
+- **Backend**, `gate-final.log`, sur `bfe6eedb`, bases remises à neuf : `scripts/test-fast.sh --ci` (fmt, clippy `-D warnings`, nextest) code 0, **4860 exécutés, 4860 passés, 12 ignorés** ; `cargo build --workspace --all-targets` vert. Les trois commits suivants (`7f82ba45`, `6f08116c`, `17dea0c9`) ne touchent que `frontend/tests/e2e/` : le gate backend n'y a pas été rejoué.
+- **Frontend**, sur le dernier commit touchant `frontend/src` (`7fd0692c`) : `npm run check` 0 erreur, 29 avertissements (`check-3.log`) ; `lint-i18n-ownership` PASS ; `npm run test:unit` **219 fichiers, 2729 tests** verts (`vitest-2.log`) ; `npm run build` rejoué à chaque passage E2E.
+- **E2E complet, sur `17dea0c9`, dernier commit de code**, base `kesh_e2e_e331` recréée, port 3181 (`e2e-r4.log`) : **357 passés, 7 échoués, 17 ignorés**. Les sept, fichier par fichier contre `docs/testing.md` : `mode-expert.spec.ts:26`, `:41`, `onboarding-path-b.spec.ts:65`, `:92`, `onboarding.spec.ts:57`, `:77`, `:150`, soit la KF-029 (#97), et rien d'autre.
+- **Les trois passages d'avant** : `r1` (16 échoués, 11 non joués) a révélé une faute de mon script, `KESH_DOCUMENTS_DIR` non transmise au runner (cinq specs), et trois attendus à corriger ; `sidebar-navigation.spec.ts:81` y a rougi et a passé aux trois suivants, sans rejeu seul : classé pollution d'état, non prouvé. `r2` : 356 passés, les sept KF-029. `r3` : le test neuf de l'avis rouge, facture sans IBAN, donc hors du lot ; corrigé (`17dea0c9`), spec rejouée seule verte (`e2e-c1.log`).
+- **Manuels** : `make fr` (`make-1.log`), trois PDF plus récents que leurs `.tex`, aplatis et grepés. Migrations : 90 fichiers.
+
+Après les gates, ce commit de comptes rendus ne touche aucun code.
+
+**Remédiation de la revue P1** (`e331b-review-p1-{B,E,A}.md`).
+
+- **La frappe temporisée, B-F1, E-M1** : rouge constaté **avant** le code (`rouges-p1-front.log`, huit rouges sur quatre fichiers, dont les deux de la frappe). `onDestroy` annule le minuteur, et `beforeNavigate` l'annule aussi vers un autre écran : une navigation lente restait sinon exposée, écran encore monté. Un geste dans la liste le garde. **B-F2 regardé** : `navigate` lit `page.url` au tir, et seul un `goto` encore en vol y serait écrasé, fenêtre de quelques millisecondes : non corrigé, issue demandée.
+- **Champs MCP, A-F2** : `le_numero_interne_d_une_ecriture_et_d_un_poste` (`mcp_outils_e2e.rs`) nomme chaque champ ; trois lignes à `mcp_enveloppe_e2e.rs`, `factures[].numeroInterne` comprise, qui manquait aussi, sur un piège neuf `ff_numero_interne`, posé en SQL (`pieges.rs`, le motif y est écrit) ; M18 et M19 ci-dessous.
+- **Autres LOW corrigés** : A-F3 (confirmation assertée), F3 de B (bouton des réglages), les blancs de bord (F5 de B, L2 de E, F4 de A : coupés dans les deux libellés, K8 restant le miroir), E-L1, A-F5 (lecture après commit : `warn`, puis `#id`), L3 de E pour `order` seul (`api-external.md`), L4 de E et F6 de A (manuel), F4 de B et F7 de A (plancher, manuel, `ci.md`).
+- **`MySQL` et `10.6`, grepés sur tout le dépôt.** Corrigés : la brochure, `ci.md:273`, `architecture.md:51`. **Laissés comme historique** : `docs/kesh-prd-v0.2.md` et `docs/kesh-specifications.txt`, brouillons de mars 2026 (ils annoncent aussi une application de bureau), `ci.md:271`, daté et déjà annoté, le CHANGELOG, les fiches et rétrospectives. **Justes** : `ci.yml:49`, `bank_imports.rs:144`, `admin-manual.tex:54` et `:172`, les commentaires sur les codes d'erreur MySQL.
+- **Mutations** (`mut/resume-p1.log`), toutes tuées : M18 (`kesh_ecriture`) et M19 (`kesh_postes_ouverts`), chacune par le test nommé et par `inventaire_couvert` ; M20 (`onDestroy`), M21 (`beforeNavigate`), M22 (le geste dans la liste perd la frappe) ; M23 (`non_blank`) et M24 (blancs du format).
+
+**Gates de la remédiation**, sur `398748cd`, dernier commit de code ; `b95f82b2` et `00162556` n'ajoutent que documents et PDF :
+
+- **Backend**, bases à neuf (`gate-p1.log`) : `test-fast.sh --ci` code 0, **4862 exécutés, 4862 passés, 12 ignorés** ; `cargo build --workspace --all-targets` vert.
+- **Frontend** : check 0 erreur, 29 avertissements ; `lint-i18n-ownership` PASS ; **219 fichiers, 2737 tests** verts (`vitest-p1.log`) ; build rejoué par l'E2E.
+- **E2E complet** (`e2e-r5.log`) : **357 passés, 7 échoués, 17 ignorés** ; les sept sont les KF-029, fichier par fichier.
+- **`sidebar-navigation.spec.ts:81`, jugé pollution sans preuve au premier compte rendu : rejoué seul**, sur la base d'après la suite (`e2e-c2.log`) et sur une base recréée vide (`e2e-c3.log`) : **vert deux fois**. Selon `docs/testing.md`, un échec qui passe seul relève de la pollution, non de la KF-052 ; il n'a plus rougi aux quatre passages suivants.
+- **Manuels** : `make fr` (`make-p1.log`), trois PDF aplatis et grepés ; aucune phrase « Compatibilité MySQL » à la brochure.
+
+**Écart déclaré** : un `sed -i` sur les quatre appels de `from_parts`, en `payment_batches.rs`, malgré « Edit seulement ». Mécanique, compilé.
+
+**Écarts à la consigne, déclarés** : `fix-fixtures.py`, un script Python, sur les fixtures de douze `.test.ts`, malgré « Edit seulement » ; il a abîmé la signature `noticeRow` de `ReconciliationProposals.test.ts`, trouvée par `npm run check`, corrigée à la main, un test ajouté.
 
 ## Change Log
+
+- 2026-11-07, **fin de boucle, `Status: done`** (Opus 5.5). Tendance recomptée sur les rapports, passes communes aux deux fiches depuis la remédiation : **P1, trois lentilles : 5 MEDIUM, 14 LOW (B 1 + 4, E 2 + 4, A 2 + 6), soit trois défauts distincts au-dessus de LOW → P2 ciblée, une lentille, sur `f1b2df5a..00162556` : 0 CRITICAL, 0 HIGH, 0 MEDIUM, 7 LOW** (`e331-review-p2.md`). La boucle se clôt sur une passe sans finding au-dessus de LOW. Modèles : les lentilles E et A de la P1 de la 33-1a déclarent Opus 5.5 dans leur rapport ; les autres rapports ne déclarent pas le leur. *(Note datée : l'entrée de remédiation ci-dessous dit « trois lentilles Opus » ; ce n'est établi par les rapports que pour ces deux-là.)*
+  - **LOW de la P2, soldés sans ligne exécutable** : P2-L1, le commentaire « miroir » corrigé (`invoice_format.rs`, `closing_checks.rs`, `supplier-invoice-label.ts`) ; P2-L2, limite écrite à `C-e331-16` ; P2-L3, porté à #947 par l'orchestrateur ; P2-L4, écrit à `C-e331-26` ; P2-L5, la parenthèse retirée de la liste générique, renvoi au paragraphe du débit, contre `matching.rs:87-104`, `.tex` et PDF (`make-p2.log`, PDF aplati contrôlé) ; P2-L6, commentaire de `ff_numero_interne` ; P2-L7, ci-après.
+  - **Note datée, P2-L7** : la remédiation P1 a traversé minuit, code du 2026-11-06 à 21:29, gates du 2026-11-07. Les entrées passées ne sont pas réécrites.
+  - **Décisions** : aucun code exécutable après `398748cd` ; pas de gate complet après ces commentaires et ces documents, sur consigne de l'orchestrateur ; les chiffres qui valent sont donc ceux de `398748cd` (4862 tests backend, 2737 frontend, E2E 357 passés et les sept KF-029). La répétition au manifeste 0.17.5 reste à l'intégration, à la charge de l'orchestrateur. Rien n'est poussé.
+- 2026-11-07, remédiation de la revue P1 (Opus 5.5 ; `f1b2df5a..00162556`). Trois lentilles Opus sur la 33-1b : B 1 MEDIUM, 4 LOW ; E 2 MEDIUM, 4 LOW ; A 2 MEDIUM, 6 LOW. Aucun finding réfuté ; les MEDIUM se recoupent : la frappe temporisée, la brochure, les deux champs MCP. Détail au Dev Agent Record. **Non corrigés, issues demandées** : F2 de B, F4 de B pour la garde de version, L3 de E pour les deux angles d'écran. **Pour la rétrospective** : F8 de A, les rouges d'écran non constatés avant le code ont laissé passer F2 et F3 de A. P2 ciblée : `33-1-review-prompt-p2.md`.
+- 2026-11-06, développement (Opus 5.5) : liste, tri, recherche, fiche, réglage, sites serveur, lots, candidate et avis, postes ouverts, lettrage, manuels, brochure, README, PDF. Mutations, E2E et captures au Dev Agent Record. Périmètre de revue : `dc7cba19..HEAD`, où `bfe6eedb` est un test de la 33-1a. `Status: review`.
+- 2026-11-06, étape 0 du développement de la 33-1a (Opus 5.5) : R-L4 (`{YEAR}-{YEAR}-{SEQ}`, AC7, AC10) et F-L2 (dialogue d'AC6, renvoi au manuel) reportés ici depuis `kesh-gate-logs/e33-validate-p3-e331.md`.
 
 - 2026-11-06 : fiche créée, `ready-for-dev`.
 - 2026-11-06, remédiation de la validation P1 (Opus 5.5, rapports `kesh-gate-logs/e33-validate-p1-e331-R.md` et `-F.md`). Findings touchant cette fiche : 2 MEDIUM et 4 LOW de la lentille F (M1, M2, L1, L2, L6, L7), 1 LOW de la lentille R (L-6), plus la propagation du M-1 de la lentille R. Prémisses relues aux lignes citées, toutes justes.

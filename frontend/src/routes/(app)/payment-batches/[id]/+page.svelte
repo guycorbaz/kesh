@@ -13,6 +13,7 @@
 		paymentBatchStatusLabel,
 	} from '$lib/features/payment-batches/payment-batch-helpers';
 	import type { PaymentBatchResponse } from '$lib/features/payment-batches/payment-batches.types';
+	import { supplierInvoiceShortLabel } from '$lib/features/supplier-invoices/supplier-invoice-label';
 	import { formatSwissDate } from '$lib/features/reports/reports.api';
 	import { isApiError } from '$lib/shared/utils/api-client';
 	import { i18nMsg } from '$lib/shared/utils/i18n.svelte';
@@ -135,7 +136,11 @@
 				<tr class="border-b">
 					<td class="py-2">
 						<a class="text-primary underline" href={`/supplier-invoices/${item.supplierInvoiceId}`}>
-							#{item.supplierInvoiceId}
+							{supplierInvoiceShortLabel({
+								id: item.supplierInvoiceId,
+								internalNumber: item.internalNumber,
+								supplierInvoiceNumber: item.supplierInvoiceNumber,
+							})}
 						</a>
 					</td>
 					<td class="py-2 font-mono text-xs">{item.endToEndId}</td>

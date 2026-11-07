@@ -270,7 +270,7 @@ pub const TEMOINS: &[(&str, Jeux, Complet)] = &[
     (
         "kesh_factures_fournisseur",
         |_| vec![json!({})],
-        |_| json!({"limit": 70, "offset": 0}),
+        |_| json!({"limit": 62, "offset": 0}),
     ),
     (
         "kesh_facture_fournisseur",

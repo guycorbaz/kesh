@@ -33,20 +33,12 @@ use crate::routes::ListResponse;
 #[serde(rename_all = "camelCase")]
 pub struct PaymentBatchItemResponse {
     pub supplier_invoice_id: i64,
+    /// Story 33-1b (#926, C-e331-26) — les numéros de la facture, que dit l'écran.
+    pub internal_number: Option<String>,
+    pub supplier_invoice_number: Option<String>,
     pub position: i32,
     pub end_to_end_id: String,
     pub amount: Decimal,
-}
-
-impl From<PaymentBatchItem> for PaymentBatchItemResponse {
-    fn from(i: PaymentBatchItem) -> Self {
-        Self {
-            supplier_invoice_id: i.supplier_invoice_id,
-            position: i.position,
-            end_to_end_id: i.end_to_end_id,
-            amount: i.amount,
-        }
-    }
 }
 
 #[derive(Serialize)]
@@ -65,7 +57,40 @@ pub struct PaymentBatchResponse {
 }
 
 impl PaymentBatchResponse {
-    fn from_parts(b: PaymentBatch, items: Vec<PaymentBatchItem>) -> Self {
+    /// La réponse d'un lot : les numéros de ses factures viennent d'une seule lecture,
+    /// scopée société (Story 33-1b, C-e331-26) ; `PaymentBatchItem` ne les porte pas.
+    ///
+    /// ⚠️ La lecture suit le commit du lot : son échec ne doit pas annoncer en échec une
+    /// opération enregistrée, règlements compris. L'écran retombe alors sur `#id`.
+    async fn from_parts(
+        pool: &sqlx::MySqlPool,
+        company_id: i64,
+        b: PaymentBatch,
+        items: Vec<PaymentBatchItem>,
+    ) -> Self {
+        let ids: Vec<i64> = items.iter().map(|i| i.supplier_invoice_id).collect();
+        let mut numeros = payment_batches::invoice_numbers(pool, company_id, &ids)
+            .await
+            .unwrap_or_else(|e| {
+                tracing::warn!(batch_id = b.id, error = %e, "numéros des factures d'un lot illisibles");
+                Default::default()
+            });
+        let items = items
+            .into_iter()
+            .map(|i| {
+                let (internal_number, supplier_invoice_number) = numeros
+                    .remove(&i.supplier_invoice_id)
+                    .unwrap_or((None, None));
+                PaymentBatchItemResponse {
+                    supplier_invoice_id: i.supplier_invoice_id,
+                    internal_number,
+                    supplier_invoice_number,
+                    position: i.position,
+                    end_to_end_id: i.end_to_end_id,
+                    amount: i.amount,
+                }
+            })
+            .collect();
         Self {
             id: b.id,
             bank_account_id: b.bank_account_id,
@@ -76,7 +101,7 @@ impl PaymentBatchResponse {
             confirmed_at: b.confirmed_at,
             version: b.version,
             created_at: b.created_at,
-            items: items.into_iter().map(Into::into).collect(),
+            items,
         }
     }
 }
@@ -188,9 +213,12 @@ pub async fn create_payment_batch(
     })
     .await?;
 
-    let batch = outcome
-        .batch
-        .map(|b| PaymentBatchResponse::from_parts(b.batch, b.items));
+    let batch = match outcome.batch {
+        Some(b) => {
+            Some(PaymentBatchResponse::from_parts(&state.pool, company.id, b.batch, b.items).await)
+        }
+        None => None,
+    };
     let failed = outcome
         .failed
         .into_iter()
@@ -234,7 +262,9 @@ pub async fn get_payment_batch(
     let b = payment_batches::get(&state.pool, company.id, id)
         .await?
         .ok_or(AppError::Database(DbError::NotFound))?;
-    Ok(Json(PaymentBatchResponse::from_parts(b.batch, b.items)))
+    Ok(Json(
+        PaymentBatchResponse::from_parts(&state.pool, company.id, b.batch, b.items).await,
+    ))
 }
 
 /// `GET /api/v1/payment-batches/{id}/pain001` — télécharger le fichier XML.
@@ -278,7 +308,9 @@ pub async fn confirm_payment_batch(
         )
     })
     .await?;
-    Ok(Json(PaymentBatchResponse::from_parts(b.batch, b.items)))
+    Ok(Json(
+        PaymentBatchResponse::from_parts(&state.pool, company.id, b.batch, b.items).await,
+    ))
 }
 
 /// `POST /api/v1/payment-batches/{id}/cancel` — annuler (Comptable+).
@@ -290,5 +322,55 @@ pub async fn cancel_payment_batch(
     let company = get_company_for(&current_user, &state.pool).await?;
     let b =
         payment_batches::cancel_batch(&state.pool, company.id, id, current_user.user_id).await?;
-    Ok(Json(PaymentBatchResponse::from_parts(b.batch, b.items)))
+    Ok(Json(
+        PaymentBatchResponse::from_parts(&state.pool, company.id, b.batch, b.items).await,
+    ))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::time::Duration;
+
+    /// Revue P1 de la 33-1b (E-L1, A-F5) : la lecture des numéros suit le commit du lot. Un
+    /// pool qui ne répond plus laisse la réponse entière, sans numéro : le lot est écrit.
+    #[tokio::test]
+    async fn an_unreadable_number_leaves_the_answer_whole() {
+        let pool = sqlx::mysql::MySqlPoolOptions::new()
+            .acquire_timeout(Duration::from_millis(50))
+            .connect_lazy("mysql://kesh:x@127.0.0.1:1/kesh")
+            .unwrap();
+        let moment = NaiveDate::from_ymd_opt(2026, 6, 20)
+            .unwrap()
+            .and_hms_opt(12, 0, 0)
+            .unwrap();
+        let lot = PaymentBatch {
+            id: 7,
+            company_id: 1,
+            bank_account_id: 2,
+            status: "confirmed".into(),
+            requested_execution_date: moment.date(),
+            total_amount: Decimal::ONE,
+            msg_id: "M".into(),
+            payment_info_id: "P".into(),
+            confirmed_at: Some(moment),
+            version: 2,
+            created_at: moment,
+            updated_at: moment,
+        };
+        let ligne = PaymentBatchItem {
+            id: 1,
+            payment_batch_id: 7,
+            supplier_invoice_id: 42,
+            position: 1,
+            end_to_end_id: "E".into(),
+            amount: Decimal::ONE,
+            created_at: moment,
+        };
+        let reponse = PaymentBatchResponse::from_parts(&pool, 1, lot, vec![ligne]).await;
+        assert_eq!(reponse.status, "confirmed");
+        assert_eq!(reponse.items[0].supplier_invoice_id, 42);
+        assert_eq!(reponse.items[0].internal_number, None);
+        assert_eq!(reponse.items[0].supplier_invoice_number, None);
+    }
 }

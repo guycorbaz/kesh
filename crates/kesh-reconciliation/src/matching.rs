@@ -787,6 +787,7 @@ mod tests {
             company_id: 100,
             contact_id: 60,
             supplier_invoice_number: number.map(String::from),
+            internal_number: None,
             status: "open".to_string(),
             invoice_date: NaiveDate::from_ymd_opt(2026, 5, 10).unwrap(),
             due_date: None,

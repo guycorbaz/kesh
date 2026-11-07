@@ -868,7 +868,9 @@ const ATTENDU = {
 	// littéraux ; `sitesNonResolus` et `relais` inchangés.
 	// Fusion de la release 0.17.4 (2026-11-06) : les trois stories réunies, **recompté à la
 	// source** par la garde elle-même après la fusion (non additionné) : **2832**.
-	sitesTotal: 2832,
+	// Story 33-1b (#926) : la liste, la fiche, le formulaire, le réglage et le format
+	// fournisseur, **recompté** par la garde : **2847** ; `sitesNonResolus` inchangé.
+	sitesTotal: 2847,
 	sitesNonResolus: 31,
 	relais: 6,
 	// Story 26-1 (#620, AC3-bis) : **10 → 11** — `lib/features/bank-import/

@@ -47,6 +47,7 @@
 	let loadError = $state('');
 
 	let format = $state('');
+	let supplierFormat = $state('');
 	let descriptionTemplate = $state('');
 	let receivableId = $state<number | null>(null);
 	let revenueId = $state<number | null>(null);
@@ -139,6 +140,13 @@
 	let formatPreview = $derived(
 		formatValidation.ok ? previewInvoiceNumber(format, 2026, '2026', 1) : '',
 	);
+	// Story 33-1b (#926) — le numéro interne a une forme fixe (`validate_numbering_template`).
+	let supplierFormatValidation = $derived(
+		validateFormatTemplate(supplierFormat, { numbering: true }),
+	);
+	let supplierFormatPreview = $derived(
+		supplierFormatValidation.ok ? previewInvoiceNumber(supplierFormat, 2026, '', 1) : '',
+	);
 	let descriptionValidation = $derived(validateDescriptionTemplate(descriptionTemplate));
 
 	let isAdmin = $derived(authState.currentUser?.role === 'Admin');
@@ -157,6 +165,7 @@
 			settings = s;
 			accounts = a;
 			format = s.invoiceNumberFormat;
+			supplierFormat = s.supplierInternalNumberFormat;
 			descriptionTemplate = s.journalEntryDescriptionTemplate;
 			receivableId = s.defaultReceivableAccountId;
 			revenueId = s.defaultRevenueAccountId;
@@ -194,6 +203,13 @@
 			);
 			return;
 		}
+		if (!supplierFormatValidation.ok) {
+			notifyError(
+				supplierFormatValidation.error ??
+					i18nMsg('settings-invoicing-format-invalid', 'Format invalide'),
+			);
+			return;
+		}
 		if (!descriptionValidation.ok) {
 			notifyError(
 				descriptionValidation.error ??
@@ -205,6 +221,7 @@
 		try {
 			const updated = await updateInvoiceSettings({
 				invoiceNumberFormat: format,
+				supplierInternalNumberFormat: supplierFormat,
 				defaultReceivableAccountId: receivableId,
 				defaultRevenueAccountId: revenueId,
 				defaultVatPayableAccountId: vatPayableId,
@@ -233,6 +250,7 @@
 						const fresh = await getInvoiceSettings();
 						settings = fresh;
 						format = fresh.invoiceNumberFormat;
+						supplierFormat = fresh.supplierInternalNumberFormat;
 						descriptionTemplate = fresh.journalEntryDescriptionTemplate;
 						receivableId = fresh.defaultReceivableAccountId;
 						revenueId = fresh.defaultRevenueAccountId;
@@ -303,6 +321,34 @@
 					</p>
 				{:else}
 					<p class="mt-1 text-sm text-destructive">{formatValidation.error}</p>
+				{/if}
+			</div>
+
+			<div>
+				<label class="mb-1 block text-sm font-medium" for="supplier-format">
+					{i18nMsg('settings-invoicing-supplier-format-label', 'Format des factures fournisseur')}
+				</label>
+				<Input
+					id="supplier-format"
+					data-testid="settings-supplier-internal-number-format"
+					bind:value={supplierFormat}
+					placeholder="FF-{'{YEAR}'}-{'{SEQ:03}'}"
+				/>
+				<p class="mt-1 text-xs text-text-muted">
+					{i18nMsg(
+						'settings-invoicing-supplier-format-help',
+						"Un préfixe, {YEAR}, un séparateur, puis {SEQ} ou {SEQ:03}. S'applique aux numéros à venir : ceux déjà attribués ne changent pas.",
+					)}
+				</p>
+				{#if supplierFormatValidation.ok}
+					<p class="mt-1 text-sm" data-testid="settings-supplier-format-preview">
+						{i18nMsg('settings-invoicing-format-preview', 'Aperçu')} :
+						<span class="font-mono">{supplierFormatPreview}</span>
+					</p>
+				{:else}
+					<p class="mt-1 text-sm text-destructive" data-testid="settings-supplier-format-error">
+						{supplierFormatValidation.error}
+					</p>
 				{/if}
 			</div>
 
@@ -558,7 +604,10 @@
 			<Button
 				type="submit"
 				data-testid="settings-invoicing-save"
-				disabled={submitting || !formatValidation.ok || !descriptionValidation.ok}
+				disabled={submitting ||
+					!formatValidation.ok ||
+					!supplierFormatValidation.ok ||
+					!descriptionValidation.ok}
 			>
 				{submitting
 					? i18nMsg('common-saving', 'Enregistrement…')

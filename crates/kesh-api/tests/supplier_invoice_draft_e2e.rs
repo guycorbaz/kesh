@@ -1256,7 +1256,8 @@ async fn unvalidate_route_redrafts_a_cancelled_invoice_and_names_what_to_undo(po
             Value::Null
         ]
     );
-    assert_eq!(e["error"]["details"]["documentNumber"], "FF-R7P");
+    // Story 33-1b (#926) : la forme courte, le numéro interne d'abord.
+    assert_eq!(e["error"]["details"]["documentNumber"], "FF-2020-002");
 
     // SUPPLIER_INVOICE_PAID_RECONCILED.
     let r = fournisseur_rapproche::reglement_rapproche(
@@ -1453,4 +1454,467 @@ async fn unvalidate_under_the_period_lock_names_its_bounds_869(pool: MySqlPool) 
     assert_eq!((s, code(&e)), (400, "PERIOD_LOCKED"), "{e}");
     assert_eq!(e["error"]["details"]["lockedThrough"], "2026-06-30", "{e}");
     assert_eq!(e["error"]["details"]["attempted"], "2026-06-15", "{e}");
+}
+
+// ---------------------------------------------------------------------------
+// Story 33-1a (#926) — le numéro interne, par HTTP
+// ---------------------------------------------------------------------------
+
+/// AC17 — `internalNumber` est toujours présent, nul pour un brouillon jamais
+/// validé ; `supplierInvoiceNumber` ne change ni de nom ni de valeur.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn internal_number_is_in_every_response(pool: MySqlPool) {
+    let c = setup(&pool).await;
+    let b = creer(&c, "ABC-1", "10.00").await;
+    assert_eq!(b.get("internalNumber"), Some(&Value::Null), "{b}");
+    assert_eq!(b["supplierInvoiceNumber"], "ABC-1");
+
+    let v = valider(&c, &b).await;
+    assert_eq!(v["internalNumber"], "FF-2020-001", "{v}");
+    assert_eq!(v["supplierInvoiceNumber"], "ABC-1");
+
+    let chemin = format!("/api/v1/supplier-invoices/{}", v["id"]);
+    let (s, fiche) = envoyer(&c, reqwest::Method::GET, &chemin, &c.admin, None).await;
+    assert_eq!(s, 200, "{fiche}");
+    assert_eq!(fiche["internalNumber"], "FF-2020-001");
+
+    let (s, liste) = envoyer(
+        &c,
+        reqwest::Method::GET,
+        "/api/v1/supplier-invoices",
+        &c.admin,
+        None,
+    )
+    .await;
+    assert_eq!(s, 200, "{liste}");
+    assert_eq!(
+        liste["items"][0]["internalNumber"], "FF-2020-001",
+        "{liste}"
+    );
+    assert_eq!(liste["items"][0]["supplierInvoiceNumber"], "ABC-1");
+}
+
+/// AC14 — ni la création, ni la modification, ni la complétion d'un document
+/// n'écrivent le numéro, même si le corps le porte.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn nobody_writes_the_internal_number_but_the_validation(pool: MySqlPool) {
+    let c = setup(&pool).await;
+    let mut body = corps(&c, "ABC-1", "10.00");
+    body["internalNumber"] = json!("FF-PIRATE");
+    let (s, b) = post(&c, "/api/v1/supplier-invoices", body.clone()).await;
+    assert_eq!(s, 201, "{b}");
+    assert_eq!(b["internalNumber"], Value::Null, "création : {b}");
+
+    let mut modif = body.clone();
+    modif["version"] = b["version"].clone();
+    let (s, m) = envoyer(
+        &c,
+        reqwest::Method::PUT,
+        &format!("/api/v1/supplier-invoices/{}", b["id"]),
+        &c.admin,
+        Some(modif),
+    )
+    .await;
+    assert_eq!(s, 200, "{m}");
+    assert_eq!(m["internalNumber"], Value::Null, "modification : {m}");
+
+    let doc = document(&pool, c.seeded.company_id, "num-interne", None).await;
+    let (s, k) = post(
+        &c,
+        &format!("/api/v1/imported-supplier-invoices/{doc}/complete"),
+        body,
+    )
+    .await;
+    assert_eq!(s, 200, "{k}");
+    assert_eq!(k["internalNumber"], Value::Null, "complétion : {k}");
+
+    assert_eq!(valider(&c, &m).await["internalNumber"], "FF-2020-001");
+}
+
+/// AC16 — le réglage : au défaut, préservé quand le corps l'omet, modifiable, refusé
+/// en 400 hors de la forme `<préfixe>{YEAR}<séparateur>{SEQ}`.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn the_internal_number_format_setting(pool: MySqlPool) {
+    let c = setup(&pool).await;
+    let chemin = "/api/v1/company/invoice-settings";
+    let (s, reglages) = envoyer(&c, reqwest::Method::GET, chemin, &c.admin, None).await;
+    assert_eq!(s, 200, "{reglages}");
+    assert_eq!(
+        reglages["supplierInternalNumberFormat"],
+        "FF-{YEAR}-{SEQ:03}"
+    );
+
+    // Absent du corps : préservé, sur une valeur qui n'est pas le défaut (M16).
+    let mut pose = reglages.clone();
+    pose["supplierInternalNumberFormat"] = json!("LF-{YEAR}-{SEQ:02}");
+    let (s, pose) = envoyer(&c, reqwest::Method::PUT, chemin, &c.admin, Some(pose)).await;
+    assert_eq!(s, 200, "{pose}");
+    let mut sans = pose.clone();
+    sans.as_object_mut()
+        .unwrap()
+        .remove("supplierInternalNumberFormat");
+    sans["invoiceNumberFormat"] = json!("F-{YEAR}-{SEQ:05}");
+    let (s, apres) = envoyer(&c, reqwest::Method::PUT, chemin, &c.admin, Some(sans)).await;
+    assert_eq!(s, 200, "{apres}");
+    assert_eq!(apres["invoiceNumberFormat"], "F-{YEAR}-{SEQ:05}");
+    assert_eq!(apres["supplierInternalNumberFormat"], "LF-{YEAR}-{SEQ:02}");
+
+    for ko in [
+        "",
+        "FF-{YEAR}",
+        "FF-{SEQ:03}",
+        "FF-{YEAR}-{SEQ:11}",
+        "FF-{FY}-{SEQ}",
+        "FF-{FY}-{YEAR}-{SEQ}",
+        "{YEAR}-{YEAR}-{SEQ}",
+        "{SEQ}-{YEAR}",
+        "FF-{YEAR}{SEQ}",
+        "FF-{YEAR}-1{SEQ}",
+        "FF-{YEAR}-{SEQ}-X",
+    ] {
+        let mut corps_ko = apres.clone();
+        corps_ko["supplierInternalNumberFormat"] = json!(ko);
+        let (s, b) = envoyer(&c, reqwest::Method::PUT, chemin, &c.admin, Some(corps_ko)).await;
+        assert_eq!(s, 400, "format {ko:?} : {b}");
+    }
+
+    let mut bon = apres.clone();
+    bon["supplierInternalNumberFormat"] = json!("KF-{YEAR}-{SEQ:04}");
+    let (s, change) = envoyer(&c, reqwest::Method::PUT, chemin, &c.admin, Some(bon)).await;
+    assert_eq!(s, 200, "{change}");
+    assert_eq!(change["supplierInternalNumberFormat"], "KF-{YEAR}-{SEQ:04}");
+
+    let b = creer(&c, "ABC-2", "10.00").await;
+    assert_eq!(valider(&c, &b).await["internalNumber"], "KF-2020-0001");
+
+    let audit: serde_json::Value = sqlx::query_scalar(
+        "SELECT details_json FROM audit_log WHERE action = 'company_invoice_settings.updated' \
+         ORDER BY id DESC LIMIT 1",
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(
+        audit["after"]["supplierInternalNumberFormat"], "KF-{YEAR}-{SEQ:04}",
+        "{audit}"
+    );
+}
+
+/// AC19 — l'export porte le numéro et le format, pas le compteur.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn the_export_carries_the_internal_number(pool: MySqlPool) {
+    let c = setup(&pool).await;
+    let b = creer(&c, "ABC-1", "10.00").await;
+    valider(&c, &b).await;
+    let octets = c
+        .app
+        .client
+        .get(c.app.url("/api/v1/exports/global.zip"))
+        .bearer_auth(&c.admin)
+        .send()
+        .await
+        .unwrap()
+        .bytes()
+        .await
+        .unwrap();
+    let mut archive = zip::ZipArchive::new(std::io::Cursor::new(octets)).expect("ZIP");
+    let mut lire = |nom: &str| {
+        use std::io::Read;
+        let mut texte = String::new();
+        archive
+            .by_name(nom)
+            .unwrap_or_else(|_| panic!("{nom} absent"))
+            .read_to_string(&mut texte)
+            .unwrap();
+        texte
+    };
+    let factures = lire("supplier_invoices.csv");
+    assert!(
+        factures
+            .lines()
+            .next()
+            .unwrap()
+            .contains("supplier_invoice_number;internal_number;")
+            || factures
+                .lines()
+                .next()
+                .unwrap()
+                .contains("supplier_invoice_number,internal_number,"),
+        "{factures}"
+    );
+    assert!(factures.contains("FF-2020-001"), "{factures}");
+    assert!(
+        lire("company_invoice_settings.csv").contains("supplier_internal_number_format"),
+        "le format est exporté"
+    );
+    assert!(
+        !lire("fiscal_years.csv").contains("supplier_invoice_next_number"),
+        "le compteur ne l'est pas"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Story 33-1b (#926) — le tri, la recherche, la société, les lots
+// ---------------------------------------------------------------------------
+
+async fn liste(c: &Ctx, requete: &str) -> (u16, Value) {
+    envoyer(
+        c,
+        reqwest::Method::GET,
+        &format!("/api/v1/supplier-invoices{requete}"),
+        &c.admin,
+        None,
+    )
+    .await
+}
+
+fn numeros_de(b: &Value) -> Vec<Value> {
+    b["items"]
+        .as_array()
+        .unwrap_or_else(|| panic!("items : {b}"))
+        .iter()
+        .map(|i| i["internalNumber"].clone())
+        .collect()
+}
+
+/// Trois factures validées, puis leurs numéros posés en SQL pour exercer le tri : 1000
+/// passe après 999 ; plus un brouillon sans numéro.
+async fn trois_numeros(pool: &MySqlPool, c: &Ctx) {
+    for (saisi, interne) in [
+        ("A-1", "FF-2026-1000"),
+        ("A-2", "FF-2026-999"),
+        ("A-3", "FF-2025-1000"),
+    ] {
+        let b = creer(c, saisi, "10.00").await;
+        let v = valider(c, &b).await;
+        sqlx::query("UPDATE supplier_invoices SET internal_number = ? WHERE id = ?")
+            .bind(interne)
+            .bind(v["id"].as_i64())
+            .execute(pool)
+            .await
+            .unwrap();
+    }
+    creer(c, "A-4", "10.00").await;
+}
+
+/// AC3 — tri naturel, sans numéro à la fin dans les deux sens ; `sort` absent : l'ordre
+/// d'aujourd'hui ; valeur hors liste : 400.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn the_list_sorts_by_internal_number_naturally(pool: MySqlPool) {
+    let c = setup(&pool).await;
+    trois_numeros(&pool, &c).await;
+
+    let (s, b) = liste(&c, "?sort=internalNumber&order=asc").await;
+    assert_eq!(s, 200, "{b}");
+    assert_eq!(
+        numeros_de(&b),
+        [
+            json!("FF-2025-1000"),
+            json!("FF-2026-999"),
+            json!("FF-2026-1000"),
+            Value::Null
+        ]
+    );
+    let (_, b) = liste(&c, "?sort=internalNumber&order=desc").await;
+    assert_eq!(
+        numeros_de(&b),
+        [
+            json!("FF-2026-1000"),
+            json!("FF-2026-999"),
+            json!("FF-2025-1000"),
+            Value::Null
+        ]
+    );
+    // `order` absent : croissant.
+    let (_, b) = liste(&c, "?sort=internalNumber").await;
+    assert_eq!(numeros_de(&b)[0], json!("FF-2025-1000"));
+
+    // `sort` absent : `invoice_date DESC, id DESC`, le dernier créé d'abord.
+    let (_, b) = liste(&c, "").await;
+    assert_eq!(b["items"][0]["supplierInvoiceNumber"], "A-4");
+    assert_eq!(b["items"][3]["supplierInvoiceNumber"], "A-1");
+
+    for mauvais in [
+        "?sort=contactName",
+        "?sort=internal_number",
+        "?sort=internalNumber&order=up",
+    ] {
+        let (s, b) = liste(&c, mauvais).await;
+        assert_eq!(s, 400, "{mauvais} : {b}");
+    }
+}
+
+/// AC4 — `q` trouve le numéro interne, celui du fournisseur et le nom du fournisseur ; `%` et
+/// `_` sont échappés ; `total` compte le filtre ; cumulable avec `status` ; blanc : aucun
+/// filtre ; au-delà de 128 : 400.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn the_list_searches_numbers_and_supplier(pool: MySqlPool) {
+    let c = setup(&pool).await;
+    trois_numeros(&pool, &c).await;
+    let total = |b: &Value| b["total"].as_i64().unwrap();
+
+    let (s, b) = liste(&c, "?q=FF-2026-999").await;
+    assert_eq!(s, 200, "{b}");
+    assert_eq!(numeros_de(&b), [json!("FF-2026-999")]);
+    assert_eq!(total(&b), 1, "total compte le filtre");
+
+    let (_, b) = liste(&c, "?q=A-2").await;
+    assert_eq!(
+        numeros_de(&b),
+        [json!("FF-2026-999")],
+        "numéro du fournisseur"
+    );
+
+    let (_, b) = liste(&c, "?q=rapproch").await;
+    assert_eq!(total(&b), 4, "nom du fournisseur");
+
+    let (_, b) = liste(&c, "?q=A-4&status=open").await;
+    assert_eq!(total(&b), 0, "cumulable avec le statut");
+    let (_, b) = liste(&c, "?q=A-4&status=draft").await;
+    assert_eq!(total(&b), 1);
+
+    // `%` et `_` n'ont pas leur sens de joker.
+    let (_, b) = liste(&c, "?q=%25").await;
+    assert_eq!(total(&b), 0, "% échappé");
+    let (_, b) = liste(&c, "?q=A_2").await;
+    assert_eq!(total(&b), 0, "_ échappé");
+
+    let (s, b) = liste(&c, "?q=%20%20").await;
+    assert_eq!(s, 200, "{b}");
+    assert_eq!(total(&b), 4, "q blanc : aucun filtre");
+
+    let (s, b) = liste(&c, &format!("?q={}", "x".repeat(129))).await;
+    assert_eq!(s, 400, "{b}");
+    let (s, _) = liste(&c, &format!("?q={}", "x".repeat(128))).await;
+    assert_eq!(s, 200);
+}
+
+/// AC5 — `q` et `sort` ne franchissent pas la société.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn the_search_stays_in_the_company(pool: MySqlPool) {
+    let c = setup(&pool).await;
+    creer(&c, "CHEZ-A", "10.00").await;
+    let autre = kesh_db::test_fixtures::seed_stub_company_only(&pool)
+        .await
+        .unwrap();
+    let contact: i64 = sqlx::query_scalar(
+        "INSERT INTO contacts (company_id, contact_type, name, is_supplier) \
+         VALUES (?, 'Entreprise', 'Fournisseur de B', TRUE) RETURNING id",
+    )
+    .bind(autre)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    sqlx::query(
+        "INSERT INTO supplier_invoices (company_id, contact_id, supplier_invoice_number, \
+         internal_number, status, invoice_date, total_amount) \
+         VALUES (?, ?, 'CHEZ-B', 'FF-2026-777', 'draft', '2026-03-01', 0)",
+    )
+    .bind(autre)
+    .bind(contact)
+    .execute(&pool)
+    .await
+    .unwrap();
+
+    for q in ["CHEZ-B", "FF-2026-777", "Fournisseur%20de%20B"] {
+        let (s, b) = liste(&c, &format!("?q={q}")).await;
+        assert_eq!(s, 200, "{b}");
+        assert_eq!(b["total"], 0, "{q} : l'autre société ne se voit pas ({b})");
+    }
+    let (_, b) = liste(&c, "?sort=internalNumber").await;
+    assert_eq!(b["total"], 1, "{b}");
+}
+
+/// AC16 — toutes les réponses d'un lot rendent les numéros de chaque facture ; `#id`
+/// n'est plus la seule chose qu'un lot sait de ses factures.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn a_payment_batch_names_its_invoices(pool: MySqlPool) {
+    let c = setup(&pool).await;
+    let b = creer(&c, "ABC-LOT", "10.00").await;
+    let v = valider(&c, &b).await;
+    let (s, lot) = post(
+        &c,
+        "/api/v1/payment-batches",
+        json!({
+            "bankAccountId": c.f.bank_account_id,
+            "requestedExecutionDate": "2026-06-20",
+            "supplierInvoiceIds": [v["id"]],
+        }),
+    )
+    .await;
+    assert_eq!(s, 200, "{lot}");
+    let controle = |lot: &Value, contexte: &str| {
+        let item = &lot["items"][0];
+        assert_eq!(
+            item["internalNumber"], v["internalNumber"],
+            "{contexte} : {lot}"
+        );
+        assert_eq!(
+            item["supplierInvoiceNumber"], "ABC-LOT",
+            "{contexte} : {lot}"
+        );
+    };
+    controle(&lot["batch"], "création");
+    let id = lot["batch"]["id"].as_i64().unwrap();
+    let (_, detail) = envoyer(
+        &c,
+        reqwest::Method::GET,
+        &format!("/api/v1/payment-batches/{id}"),
+        &c.admin,
+        None,
+    )
+    .await;
+    controle(&detail, "détail");
+    let (s, annule) = post(
+        &c,
+        &format!("/api/v1/payment-batches/{id}/cancel"),
+        json!({}),
+    )
+    .await;
+    assert_eq!(s, 200, "{annule}");
+    controle(&annule, "annulation");
+
+    // La confirmation (revue P1, A-F3) : le lot annulé rend la facture à un second lot.
+    let (s, lot) = post(
+        &c,
+        "/api/v1/payment-batches",
+        json!({
+            "bankAccountId": c.f.bank_account_id,
+            "requestedExecutionDate": "2026-06-20",
+            "supplierInvoiceIds": [v["id"]],
+        }),
+    )
+    .await;
+    assert_eq!(s, 200, "{lot}");
+    let id = lot["batch"]["id"].as_i64().unwrap();
+    let (s, confirme) = post(
+        &c,
+        &format!("/api/v1/payment-batches/{id}/confirm"),
+        json!({ "paymentDate": "2026-06-20" }),
+    )
+    .await;
+    assert_eq!(s, 200, "{confirme}");
+    controle(&confirme, "confirmation");
+}
+
+/// AC14 — postes ouverts : `document.number` garde le numéro du fournisseur, le numéro
+/// interne s'ajoute à côté, et `kesh_postes_ouverts` suit au niveau du service.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn the_open_items_document_carries_both_numbers(pool: MySqlPool) {
+    let c = setup(&pool).await;
+    let b = creer(&c, "ABC-PO", "10.00").await;
+    let v = valider(&c, &b).await;
+    let (s, body) = envoyer(
+        &c,
+        reqwest::Method::GET,
+        &format!("/api/v1/accounts/{}/open-items", c.seeded.accounts["2000"]),
+        &c.admin,
+        None,
+    )
+    .await;
+    assert_eq!(s, 200, "{body}");
+    let doc = &body["items"][0]["document"];
+    assert_eq!(doc["type"], "supplierInvoice", "{body}");
+    assert_eq!(doc["number"], "ABC-PO", "la valeur du champ ne change pas");
+    assert_eq!(doc["internalNumber"], v["internalNumber"]);
 }

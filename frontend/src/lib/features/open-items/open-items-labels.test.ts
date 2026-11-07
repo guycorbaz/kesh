@@ -73,12 +73,12 @@ describe('AC4 — pourquoi pas de case, par cause et dans l’ordre (test 5)', (
 	it('pièce qui bloque : « son lettrage suit sa pièce » ; une transaction bancaire seule, rien', () => {
 		const owned = item({
 			manuallyLetterable: false,
-			document: { type: 'invoice', id: 1, number: 'F-1', invoiceId: null, invoiceNumber: null },
+			document: { type: 'invoice', id: 1, number: 'F-1', internalNumber: null, invoiceId: null, invoiceNumber: null },
 		});
 		expect(noCheckboxLabel(owned)).toBe('son lettrage suit sa pièce et ses règlements');
 		const bank = item({
 			manuallyLetterable: false,
-			document: { type: 'bankTransaction', id: 1, number: null, invoiceId: null, invoiceNumber: null },
+			document: { type: 'bankTransaction', id: 1, number: null, internalNumber: null, invoiceId: null, invoiceNumber: null },
 		});
 		expect(noCheckboxLabel(bank)).toBe('');
 	});
@@ -96,7 +96,7 @@ describe('AC4 — ce qui manque au bouton', () => {
 });
 
 describe('AC2 — le texte d’une pièce', () => {
-	const d = { id: 1, number: null, invoiceId: null, invoiceNumber: null };
+	const d = { id: 1, number: null, internalNumber: null, invoiceId: null, invoiceNumber: null };
 	it('numéro, « facture fournisseur » sans numéro, « règlement de », « transaction bancaire »', () => {
 		expect(documentLabel({ ...d, type: 'invoice', number: 'F-1' })).toBe('F-1');
 		expect(documentLabel({ ...d, type: 'creditNote', number: 'AV-2' })).toBe('AV-2');
@@ -106,6 +106,24 @@ describe('AC2 — le texte d’une pièce', () => {
 			'règlement de F-9',
 		);
 		expect(documentLabel({ ...d, type: 'bankTransaction' })).toBe('transaction bancaire');
+	});
+
+	// Story 33-1b (#926, AC14) — le numéro interne, à défaut celui du fournisseur.
+	it('facture fournisseur : le numéro interne d’abord', () => {
+		const si = { ...d, type: 'supplierInvoice' as const };
+		expect(documentLabel({ ...si, number: 'ABC', internalNumber: 'FF-2026-001' })).toBe(
+			'FF-2026-001',
+		);
+		expect(documentLabel({ ...si, internalNumber: 'FF-2026-001' })).toBe('FF-2026-001');
+		expect(documentLabel({ ...si, number: 'ABC', internalNumber: null })).toBe('ABC');
+		expect(documentLabel({ ...si, internalNumber: null })).toBe('facture fournisseur');
+	});
+
+	it('une facture cliente ou un avoir ne change pas', () => {
+		expect(documentLabel({ ...d, type: 'invoice', number: 'F-1', internalNumber: null })).toBe('F-1');
+		expect(documentLabel({ ...d, type: 'creditNote', number: 'AV-2', internalNumber: null })).toBe(
+			'AV-2',
+		);
 	});
 });
 

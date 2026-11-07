@@ -99,6 +99,8 @@ export interface JournalEntryDetailResponse extends JournalEntryResponse {
 export interface JournalEntrySourceDocument {
 	supplierInvoiceId: number;
 	supplierInvoiceNumber: string | null;
+	/** Story 33-1b (#926) — le numéro interne de la facture. */
+	internalNumber: string | null;
 	originalFilename: string;
 }
 

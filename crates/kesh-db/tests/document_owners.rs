@@ -604,6 +604,7 @@ fn possede(
         kind,
         id,
         number: number.map(str::to_string),
+        internal_number: None,
         invoice_id: invoice.map(|(i, _)| i),
         invoice_number: invoice.and_then(|(_, n)| n.map(str::to_string)),
     }

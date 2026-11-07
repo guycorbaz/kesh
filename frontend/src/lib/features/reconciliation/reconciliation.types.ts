@@ -33,6 +33,8 @@ export interface ReconciliationCandidate {
 	/** Story 30-1b — le nom du client ou du fournisseur ; `null` pour une règle. */
 	contactName: string | null;
 	invoiceNumber: string | null;
+	/** Story 33-1b (#926) — le numéro interne d'une facture fournisseur ; `null` sinon. */
+	internalNumber: string | null;
 	/** Montant à régler : le reste dû de la facture (Story 25-4-c, #420). */
 	invoiceAmount: string | null;
 	/** TTC, présent seulement si la facture est déjà réglée en partie (Story 25-4-c). */
@@ -56,6 +58,7 @@ export interface ProposalNotice {
 	code: 'supplier_invoice_in_payment_batch';
 	supplierInvoiceId: number;
 	supplierInvoiceNumber: string | null;
+	internalNumber: string | null;
 	paymentBatchId: number;
 }
 
@@ -181,6 +184,7 @@ export interface ReconciliationTransactionResponse {
 	/** Story 30-1a — la facture fournisseur réglée, si `kind = supplier_settlement`. */
 	supplierInvoiceId: number | null;
 	supplierInvoiceNumber: string | null;
+	internalNumber: string | null;
 	cancellable: boolean;
 	cancelBlockedBy: ReconciliationCancelCode | null;
 	/** Numéro du compte archivé (rang 4). */

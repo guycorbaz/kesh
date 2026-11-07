@@ -74,6 +74,7 @@ function settings(overrides: Partial<InvoiceSettingsResponse> = {}): InvoiceSett
 	return {
 		companyId: 1,
 		invoiceNumberFormat: 'F-{YEAR}-{SEQ:04}',
+		supplierInternalNumberFormat: 'FF-{YEAR}-{SEQ:03}',
 		defaultReceivableAccountId: null,
 		defaultRevenueAccountId: null,
 		defaultVatPayableAccountId: null,
@@ -210,6 +211,33 @@ describe('Administration → Facturation — solde du reste', () => {
 			expect(values).not.toContain('2');
 			expect(values).not.toContain('5');
 		}
+	});
+
+	// Story 33-1b (#926, AC7) — le format des factures fournisseur.
+	it('le format fournisseur : chargé, envoyé au `PUT` (M10), refusé sur place sans envoi', async () => {
+		getInvoiceSettingsMock.mockResolvedValue(settings());
+		updateInvoiceSettingsMock.mockResolvedValue(settings({ version: 4 }));
+		const { findByTestId, container, queryByTestId } = render(Page);
+		const champ = (await findByTestId('settings-supplier-internal-number-format')) as HTMLInputElement;
+		await waitFor(() => expect(champ.value).toBe('FF-{YEAR}-{SEQ:03}'));
+		expect((await findByTestId('settings-supplier-format-preview')).textContent).toContain(
+			'FF-2026-001',
+		);
+
+		await fireEvent.input(champ, { target: { value: 'FF-{YEAR}' } });
+		expect(await findByTestId('settings-supplier-format-error')).toBeTruthy();
+		// Revue P1 de la 33-1b (B-F3) : le bouton suit ce champ, comme les deux autres formats.
+		expect(container.querySelector<HTMLButtonElement>('button[type="submit"]')?.disabled).toBe(true);
+		await fireEvent.submit(container.querySelector('form')!);
+		expect(updateInvoiceSettingsMock).not.toHaveBeenCalled();
+
+		await fireEvent.input(champ, { target: { value: 'KF-{YEAR}-{SEQ:04}' } });
+		expect(queryByTestId('settings-supplier-format-error')).toBeNull();
+		await fireEvent.submit(container.querySelector('form')!);
+		await waitFor(() => expect(updateInvoiceSettingsMock).toHaveBeenCalledTimes(1));
+		expect(updateInvoiceSettingsMock.mock.calls[0][0].supplierInternalNumberFormat).toBe(
+			'KF-{YEAR}-{SEQ:04}',
+		);
 	});
 
 	it('envoie les trois comptes à l’enregistrement (mutation : un champ non envoyé)', async () => {

@@ -1,4 +1,5 @@
 # last_updated: 2026-11-07 (Epic 33 : 33-12, jeu de caractères de la QR-facture, ajoutée ; #941)
+# last_updated: 2026-11-07 (Epic 33 : 33-1a et 33-1b done, revue P1 remédiée, P2 ciblée à 0 au-dessus de LOW ; répétition au manifeste 0.17.5 à l'intégration ; non poussé)
 # last_updated: 2026-11-06 (Epic 33 : validation terminée en quatre passes, P1 11 M → P2 1 H + 9 M → P3 4 M → P4 ciblée 0 retenu ; développement à lancer)
 # last_updated: 2026-11-06 (Epic 33 : validation P1 remédiée sur douze fiches ; 33-11 à sa P1 ; annotation : l'en-tête « douze stories au backlog » valait au kickoff, 33-11 s'y ajoute : quatorze clés avec 33-0, treize ready-for-dev)
 # last_updated: 2026-11-06 (Epic 33 : 33-11, filtre de CI, ajoutée sur demande de Guy)
@@ -997,8 +998,8 @@ development_status:
   21-8-doc-e2e-relances: done  # manuels (cycle, CGV/frais hors QR, recommandé mise en demeure, LPD) + E2E round-trip MockMailer (config→échue→liste→envoi unitaire+lot→historique→suspension ; balance âgée) + A4 credit-notes.spec → api-fixtures
   epic-33: in-progress
   33-0-kickoff: done  # 2026-11-06 : epic-33-numerotation-et-defauts.md ; 246 issues et 91 bugs au tag v0.17.4 ; objectif : moins de chacun au tag v0.17.5.
-  33-1a-numero-interne-fournisseur: ready-for-dev
-  33-1b-numero-interne-ecrans: ready-for-dev
+  33-1a-numero-interne-fournisseur: done
+  33-1b-numero-interne-ecrans: done
   33-2-import-camt-refus: ready-for-dev
   33-3a-accueil-agregats: ready-for-dev
   33-3b-accueil-graphiques: ready-for-dev

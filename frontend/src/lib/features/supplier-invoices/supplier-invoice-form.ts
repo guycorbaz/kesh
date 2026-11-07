@@ -35,6 +35,7 @@ export type SupplierInvoiceFormInitial = Pick<
 	SupplierInvoiceResponse,
 	| 'contactId'
 	| 'supplierInvoiceNumber'
+	| 'internalNumber'
 	| 'invoiceDate'
 	| 'dueDate'
 	| 'creditorIban'

@@ -22,6 +22,10 @@ pub struct SupplierInvoice {
     pub contact_id: i64,
     /// Numéro de la facture chez le fournisseur (texte libre, optionnel).
     pub supplier_invoice_number: Option<String>,
+    /// Numéro interne attribué par Kesh à la validation (Story 33-1a, #926), pour
+    /// classer et retrouver le papier : `None` pour un brouillon jamais validé,
+    /// conservé par une facture repassée en brouillon. Unique par société.
+    pub internal_number: Option<String>,
     /// 'draft' (brouillon, sans écriture — Story v017-4a) | 'open' (validée,
     /// à payer ; l'écran dit « Validée ») | 'paid' (réglée) | 'cancelled'
     /// (annulée).

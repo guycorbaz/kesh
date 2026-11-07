@@ -157,6 +157,12 @@ const INVENTAIRE: &[LigneInventaire] = &[
         &[("kesh_ecriture", 1)],
     ),
     nf(
+        "kesh_ecriture",
+        "pieceSource.numeroInterneFactureFournisseur",
+        "ff_numero_interne",
+        &[("kesh_ecriture", 1)],
+    ),
+    nf(
         "kesh_grand_livre",
         "sections[].numero",
         "compte_k1_numero",
@@ -275,6 +281,12 @@ const INVENTAIRE: &[LigneInventaire] = &[
         "ff_numero",
         &[("kesh_postes_ouverts", 1)],
     ),
+    nf(
+        "kesh_postes_ouverts",
+        "postes[].piece.numeroInterne",
+        "ff_numero_interne",
+        &[("kesh_postes_ouverts", 1)],
+    ),
     exempte(
         "kesh_postes_ouverts",
         "postes[].piece.numeroFacture",
@@ -345,6 +357,15 @@ const INVENTAIRE: &[LigneInventaire] = &[
         "kesh_factures_fournisseur",
         "factures[].numero",
         "ff_numero",
+        &[
+            ("kesh_factures_fournisseur", 0),
+            ("kesh_facture_fournisseur", 0),
+        ],
+    ),
+    nf(
+        "kesh_factures_fournisseur",
+        "factures[].numeroInterne",
+        "ff_numero_interne",
         &[
             ("kesh_factures_fournisseur", 0),
             ("kesh_facture_fournisseur", 0),
