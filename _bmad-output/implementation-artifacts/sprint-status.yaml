@@ -1,3 +1,4 @@
+# last_updated: 2026-11-10 (Epic 34 ouvert, kickoff : epic-34-reconciliation-comptes-bancaires.md ; douze stories au backlog, cible v0.17.6)
 # last_updated: 2026-11-10 (rétrospective de l'Epic 33 tenue avec Guy, epic-33-retro-2026-11-10.md ; epic-33 done)
 # last_updated: 2026-11-07 (release 0.17.5 : treize branches de l'Epic 33 fusionnées sur release/0.17.5, gates et recettes de montée jouées ; 33-11 reste review, AC-6 sur la PR ; epic-33 in-progress jusqu'à la rétrospective)
 # last_updated: 2026-11-07 (Epic 33 : 33-12a et 33-12b done, #941 ; validation close au plafond de huit passes, revue de code P1 à P4 close sur 0 au-dessus de LOW ; dernier gate complet à 80bc4363)
@@ -1022,3 +1023,18 @@ development_status:
   33-12a-jeu-caracteres-qr: done  # 2026-11-07 : #941, P1, trouvée à la revue de la 33-5
   33-12b-adresse-imprimee-qr: done  # 2026-11-07 : #941, NPA et localité absents du reçu et de la partie paiement
   epic-33-retrospective: done
+  epic-34: in-progress
+  34-0-kickoff: done  # 2026-11-10 : epic-34-reconciliation-comptes-bancaires.md ; 261 issues et 109 bugs au tag v0.17.5 ; objectif : moins de chacun au tag v0.17.6.
+  34-1-assistant-compte-bancaire: backlog  # #966
+  34-2-solde-ouverture-compte-bancaire: backlog  # #533
+  34-3-ecriture-manuelle: backlog  # #967
+  34-4-transaction-deja-comptabilisee: backlog  # #828
+  34-5-reglement-idempotent: backlog  # #951, P1 ; migration probable
+  34-6-societe-apres-409: backlog  # #953
+  34-7-exercice-interblocage: backlog  # #945
+  34-8-fournisseur-relecture-apres-commit: backlog  # #938
+  34-9-rapport-import-dossier: backlog  # #969
+  34-10-graphiques-couleurs-unies: backlog  # #970
+  34-11a-carte-credit-compte: backlog  # #972 ; migration probable ; après 34-3
+  34-11b-carte-credit-releve: backlog  # #972 ; après 34-11a
+  epic-34-retrospective: optional
