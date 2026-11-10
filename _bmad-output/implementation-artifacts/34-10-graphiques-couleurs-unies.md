@@ -79,7 +79,8 @@ chaque part, contraste contre le fond de la carte), et des teintes **dans les je
    plausible (`999'999'999.99`). **Règle tranchée** *(P2-10-3 : jsdom n'a pas de mise en page, ni `getBBox` ni
    `getComputedTextLength`)* : une fonction pure `centerFontSize(label, holeDiameter)` (taille de police décroissante avec la
    longueur du texte, bornée), testée en Vitest pour 4 et 14 caractères ; aucune mesure de rendu exigée. Quand `totalExpenses`
-   diffère de `expensePostsBase`, la note existante des comptes au solde créditeur (`homepage-charts-credit-balance-note-one` /
+   diffère de `expensePostsBase` **en valeur** (`"30"` et `"30.00"` sont égaux, P7-F2) **et qu'il y a des postes** (P7-F1,
+   cf. la condition complète ci-dessous), la note existante des comptes au solde créditeur (`homepage-charts-credit-balance-note-one` /
    `-other`, fr `messages.ftl:3477-3478`, inchangée : elle ne dit que le nombre de comptes écartés) reste, et **une phrase jointe
    après elle**, clé neuve `homepage-charts-pie-base-note` (« Les parts portent sur { $base }. »), dit sur quelle base portent les
    parts (C-e342-17 ; *P4-F5 : la note existante ne le dit pas*). *(P5-5)* Elle est jointe **sous la même condition** que

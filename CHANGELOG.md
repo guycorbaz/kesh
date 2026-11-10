@@ -8,6 +8,14 @@ Le contenu est rédigé en français à destination des **fiduciaires, PME, ind�
 
 ---
 
+## [0.17.6] — Non publié
+
+### Changé
+
+- **Les graphiques de l'accueil en couleurs unies** ([#970](https://github.com/guycorbaz/kesh/issues/970)) : les hachures sont retirées. Les barres portent les revenus en vert, à gauche, et les dépenses en rouge, à droite. Le diagramme des postes de charges devient un **anneau**, avec **le total des dépenses de l'exercice au centre** — celui des barres et du compte de résultat ; ses parts sont rouge, vert, bleu, violet et cyan, puis gris pour « Autres », séparées par un liseré blanc, et se suivent dans l'ordre du tableau, dans le sens horaire à partir de midi. Quand un compte de charges est au solde créditeur, la carte dit sur quel montant portent les parts. La position des barres, la légende, le tableau des postes et les valeurs au survol disent ce que la couleur ne dit pas : en vision daltonienne, le rouge et le vert se distinguent par leur clarté, non par leur teinte.
+
+---
+
 ## [0.17.5] — 2026-11-07
 
 ⚠️ **Avant la mise à jour, prenez une sauvegarde complète** — la base, le `.keshbackup` **et** le dossier des documents. Cette version porte **une migration** (non breaking), la première à passer par la sauvegarde que Kesh écrit lui-même avant de migrer ([#847](https://github.com/guycorbaz/kesh/issues/847)) : au démarrage, il dépose une sauvegarde complète dans `backup/pre-upgrade/`, et **refuse de migrer si elle échoue** (échappatoire : `KESH_SKIP_PRE_UPGRADE_BACKUP`). **La migration donne un numéro interne aux factures fournisseur déjà validées** (`FF-2025-001`, `FF-2026-001`…). **Le retour à la 0.17.4 passe uniquement par la sauvegarde d'avant la mise à jour** : la 0.17.4 ne démarre plus sur une base migrée, et elle refuse une sauvegarde prise en 0.17.5 ; les numéros écrits sur le papier depuis la mise à jour seraient alors à refaire (manuel d'administration, *Passer à la 0.17.5*).

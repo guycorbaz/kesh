@@ -8,37 +8,45 @@ import Big from 'big.js';
 import { formatSwissAmount } from '$lib/features/journal-entries/balance';
 import type { ExpensePost, MonthSummary, OtherExpenses } from './homepage-summary.api';
 
-// --- Palette (AC14, C-e332-17) -------------------------------------------------
-
-/** Motif d'un remplissage : la couleur n'est jamais seule. */
-export type ChartPattern = 'solid' | 'diagonal' | 'reverse-diagonal' | 'dots' | 'horizontal' | 'cross';
+// --- Palette (Story 34-10, #970, C-e342-15) -----------------------------------
+//
+// Couleurs unies, sur décision de Guy : les trames de la 33-3b (AC14, C-e332-17) sont
+// retirées. Chaque couleur est une constante hexadécimale ÉGALE à son jeton d'`app.css`
+// (`token`) : les tests de contraste lisent `#rrggbb`, jsdom ne charge pas `app.css`, et
+// un test tient les deux égales nom par nom.
+//
+// Ce que la couleur ne porte pas, et qui reste : la position des barres (revenus à
+// gauche), la légende, le rang écrit au tableau, l'ordre des parts (sens horaire depuis
+// midi), les valeurs au survol. Rouge et vert se confondent par la teinte en vision
+// deutéranope ou protanope ; leur clarté (1,96:1 entre eux) les sépare encore (C-e342-18).
 
 export interface ChartStyle {
+	/** La valeur `#rrggbb` du jeton, écrite en clair dans `fill`. */
 	color: string;
-	pattern: ChartPattern;
+	/** Le jeton d'`app.css` dont `color` est la valeur. */
+	token: string;
 }
 
-/** Revenus : pleins, de la valeur de `--color-primary` (un test les tient égales). */
-export const BAR_REVENUE: ChartStyle = { color: '#1e40af', pattern: 'solid' };
-/** Dépenses : tramées. */
-export const BAR_EXPENSE: ChartStyle = { color: '#c2410c', pattern: 'diagonal' };
+/** Revenus : vert, la valeur de `--color-success`. */
+export const BAR_REVENUE: ChartStyle = { color: '#16a34a', token: '--color-chart-revenue' };
+/** Dépenses : rouge, la valeur de `--color-destructive`. */
+export const BAR_EXPENSE: ChartStyle = { color: '#b91c1c', token: '--color-chart-expense' };
 
 /**
- * Les cinq postes nommés, par rang. Teintes passées au validateur de palette (vision
- * des couleurs comprise) ; chacune a son motif, et le rang est écrit à la légende.
+ * Les cinq postes nommés, par rang : rouge, vert, bleu, puis violet et cyan (#970).
  * Le rang, non le compte, porte la couleur : un classement qui change repeint les
  * parts, et le tableau voisin dit toujours quelle part est quel compte.
  */
 export const PIE_PALETTE: readonly ChartStyle[] = [
-	{ color: '#2563eb', pattern: 'solid' },
-	{ color: '#c2410c', pattern: 'diagonal' },
-	{ color: '#0d9488', pattern: 'dots' },
-	{ color: '#a21caf', pattern: 'reverse-diagonal' },
-	{ color: '#65a30d', pattern: 'horizontal' },
+	{ color: '#b91c1c', token: '--color-chart-1' },
+	{ color: '#16a34a', token: '--color-chart-2' },
+	{ color: '#1e40af', token: '--color-chart-3' },
+	{ color: '#7c3aed', token: '--color-chart-4' },
+	{ color: '#0891b2', token: '--color-chart-5' },
 ];
 
-/** « Autres » : gris (`--color-text-muted`), le sixième motif. */
-export const OTHERS_STYLE: ChartStyle = { color: '#64748b', pattern: 'cross' };
+/** « Autres » : gris, la valeur de `--color-text-muted`. */
+export const OTHERS_STYLE: ChartStyle = { color: '#64748b', token: '--color-text-muted' };
 
 // --- Barres mensuelles ----------------------------------------------------------
 
@@ -270,12 +278,48 @@ export function chartAmount(raw: string): string {
 	return formatSwissAmount(value, value.eq(value.round(2)) ? 2 : 4);
 }
 
-// --- Camembert ------------------------------------------------------------------
+// --- Anneau des postes (Story 34-10, AC-3) -------------------------------------
 
 export interface PieGeometry {
 	cx: number;
 	cy: number;
+	/** Rayon extérieur. */
 	r: number;
+	/** Rayon intérieur : le trou, où s'écrit le total des dépenses. */
+	innerR: number;
+}
+
+/** L'anneau de l'accueil, dans un `viewBox` de 200 : trou à 60 % du rayon extérieur. */
+export const PIE_GEOMETRY: PieGeometry = { cx: 100, cy: 100, r: 96, innerR: 96 * 0.6 };
+
+/**
+ * La part qui fait le tour : un cercle au rayon médian, sans remplissage, dont le trait a
+ * l'épaisseur de l'anneau. Un arc de 360° ne se dessine pas.
+ */
+export function fullRing({ r, innerR }: PieGeometry): { r: number; width: number } {
+	return { r: (r + innerR) / 2, width: r - innerR };
+}
+
+/** Plafond et plancher de la taille du texte du centre, en unités du `viewBox`. */
+export const CENTER_FONT_MAX = 22;
+export const CENTER_FONT_MIN = 8;
+
+/**
+ * La taille du texte du centre (AC-4, C-e342-24) : une règle pure, jsdom n'ayant pas de
+ * mise en page. Un caractère compte pour 0,6 em (chiffres d'Inter, large), et le texte
+ * occupe au plus 85 % du diamètre du trou ; le résultat est borné.
+ */
+export function centerFontSize(text: string, holeDiameter: number): number {
+	const fitting = (holeDiameter * 0.85) / (Math.max(text.length, 1) * 0.6);
+	return Math.max(CENTER_FONT_MIN, Math.min(CENTER_FONT_MAX, fitting));
+}
+
+/**
+ * Deux montants décimaux diffèrent-ils en VALEUR ? `"30"` et `"30.00"` sont égaux : le
+ * serveur ne promet pas la même écriture pour deux champs (P7-F2).
+ */
+export function differentAmounts(a: string, b: string): boolean {
+	return !new Big(a).eq(new Big(b));
 }
 
 export interface PieSlice {
@@ -290,13 +334,13 @@ export interface PieSlice {
 	/**
 	 * La part fait le tour : ses deux extrémités, une fois écrites, se confondent. Vrai à
 	 * 100 %, et dès qu'il ne reste qu'une fraction infime pour les autres : un arc dont
-	 * les extrémités sont égales est omis par le SVG, et le disque sortirait blanc.
+	 * les extrémités sont égales est omis par le SVG, et l'anneau sortirait blanc.
 	 */
 	full: boolean;
 	style: ChartStyle;
 }
 
-function pointAt({ cx, cy, r }: PieGeometry, angle: number): string {
+function pointAt({ cx, cy }: PieGeometry, r: number, angle: number): string {
 	// Sens horaire depuis midi. Arrondi à trois décimales : assez pour le dessin.
 	const x = cx + r * Math.sin(angle);
 	const y = cy - r * Math.cos(angle);
@@ -332,30 +376,24 @@ export function pieSlices(
 		cumulated = cumulated.plus(item.amount);
 		const end = cumulated.div(baseBig).toNumber() * turn;
 		const large = end - start > Math.PI ? 1 : 0;
-		const from = pointAt(geometry, start);
-		const to = pointAt(geometry, end);
+		const { r, innerR } = geometry;
+		const from = pointAt(geometry, r, start);
+		const to = pointAt(geometry, r, end);
 		const full = large === 1 && from === to;
-		const { cx, cy, r } = geometry;
+		// Secteur d'anneau : arc extérieur dans le sens horaire, segment vers l'intérieur,
+		// arc intérieur à rebours, puis fermeture sur le point de départ.
+		const innerFrom = pointAt(geometry, innerR, start);
+		const innerTo = pointAt(geometry, innerR, end);
 		return {
 			rank: i + 1,
 			accountId: item.accountId,
 			startAngle: start,
 			endAngle: end,
 			full,
-			path: full ? null : `M${cx} ${cy} L${from} A${r} ${r} 0 ${large} 1 ${to} Z`,
+			path: full
+				? null
+				: `M${from} A${r} ${r} 0 ${large} 1 ${to} L${innerTo} A${innerR} ${innerR} 0 ${large} 0 ${innerFrom} Z`,
 			style: item.style,
 		};
 	});
-}
-
-// --- Motifs ---------------------------------------------------------------------
-
-/** L'identifiant du `<pattern>` d'un style, dans un graphique donné. */
-export function patternId(prefix: string, style: ChartStyle): string {
-	return `${prefix}-${style.pattern}`;
-}
-
-/** La valeur de `fill` d'un style : sa couleur s'il est plein, son motif sinon. */
-export function chartFill(prefix: string, style: ChartStyle): string {
-	return style.pattern === 'solid' ? style.color : `url(#${patternId(prefix, style)})`;
 }

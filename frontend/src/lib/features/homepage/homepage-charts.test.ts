@@ -6,13 +6,19 @@ import { contrastRatio } from '../../../../tests/e2e/helpers/contrast';
 import {
 	BAR_EXPENSE,
 	BAR_REVENUE,
+	CENTER_FONT_MAX,
+	CENTER_FONT_MIN,
 	OTHERS_STYLE,
+	PIE_GEOMETRY,
 	PIE_PALETTE,
 	axisLabels,
 	axisTicks,
+	centerFontSize,
 	chartAmount,
 	chartWidth,
+	differentAmounts,
 	followMark,
+	fullRing,
 	markHref,
 	monthHref,
 	monthLabel,
@@ -212,7 +218,7 @@ describe('pieSlices', () => {
 		amount,
 		share,
 	});
-	const geo = { cx: 100, cy: 100, r: 90 };
+	const geo = { cx: 100, cy: 100, r: 90, innerR: 54 };
 
 	it('trois parts : sens horaire depuis midi, angles depuis amount / base et non depuis share', () => {
 		// 1/3 : `share` vaut 33.3, ce qui donnerait 119,88° ; le vrai angle est 120°.
@@ -226,8 +232,29 @@ describe('pieSlices', () => {
 		expect(r[0].startAngle).toBeCloseTo(0, 6);
 		expect(r[0].endAngle).toBeCloseTo((2 * Math.PI) / 3, 6);
 		expect(r[2].endAngle).toBeCloseTo(2 * Math.PI, 6);
-		expect(r[0].path).toMatch(/^M100 100 L100(\.0+)? 10(\.0+)? A90 90 0 0 1 /);
+		// Secteur d'anneau (34-10, AC-3) : arc extérieur depuis midi, segment, arc intérieur
+		// à rebours, refermé sur le point intérieur de midi.
+		expect(r[0].path).toMatch(
+			/^M100 10 A90 90 0 0 1 [\d.]+ [\d.]+ L[\d.]+ [\d.]+ A54 54 0 0 0 100 46 Z$/,
+		);
 		expect(r.map((s) => s.rank)).toEqual([1, 2, 3]);
+	});
+
+	it('un anneau, non un camembert : aucune part ne passe par le centre (34-10, AC-3)', () => {
+		const r = pieSlices([post(1, '75', '75.0'), post(2, '25', '25.0')], null, '100', geo);
+		for (const s of r) {
+			expect(s.path).not.toContain('100 100');
+			expect(s.path).toContain('A54 54 ');
+		}
+	});
+
+	it('la géométrie de l’accueil : rayon intérieur à 60 % du rayon extérieur (AC-3)', () => {
+		expect(PIE_GEOMETRY.innerR / PIE_GEOMETRY.r).toBeCloseTo(0.6, 6);
+		expect(PIE_GEOMETRY.innerR).toBeGreaterThan(0);
+	});
+
+	it('la part pleine : un cercle au rayon médian, trait de l’épaisseur de l’anneau (AC-3)', () => {
+		expect(fullRing(geo)).toEqual({ r: 72, width: 36 });
 	});
 
 	it('« Autres » vient en dernier, sans compte', () => {
@@ -245,8 +272,10 @@ describe('pieSlices', () => {
 
 	it('une part de plus de la moitié porte le grand arc', () => {
 		const r = pieSlices([post(1, '75', '75.0'), post(2, '25', '25.0')], null, '100', geo);
-		expect(r[0].path).toContain(' 0 1 1 ');
-		expect(r[1].path).toContain(' 0 0 1 ');
+		expect(r[0].path).toContain('A90 90 0 1 1 ');
+		expect(r[0].path).toContain('A54 54 0 1 0 ');
+		expect(r[1].path).toContain('A90 90 0 0 1 ');
+		expect(r[1].path).toContain('A54 54 0 0 0 ');
 	});
 
 	it('une part à 100 % : un cercle, aucun arc de 360°', () => {
@@ -275,7 +304,7 @@ describe('pieSlices', () => {
 	it('99,9 % : un vrai arc, grand, aux extrémités distinctes', () => {
 		const r = pieSlices([post(1, '999', '99.9'), post(2, '1', '0.1')], null, '1000', geo);
 		expect(r[0].full).toBe(false);
-		const m = /L([\d.]+ [\d.]+) A90 90 0 1 1 ([\d.]+ [\d.]+) Z$/.exec(r[0].path ?? '');
+		const m = /^M([\d.]+ [\d.]+) A90 90 0 1 1 ([\d.]+ [\d.]+) L/.exec(r[0].path ?? '');
 		expect(m, r[0].path ?? '').not.toBeNull();
 		expect(m![1]).not.toBe(m![2]);
 	});
@@ -341,35 +370,93 @@ describe('monthHref, monthLabel, markHref', () => {
 	});
 });
 
-describe('palette (AC14)', () => {
-	const white = '#ffffff';
-	it('revenus et « Autres » gardent la valeur de leur jeton d’`app.css`', () => {
-		const css = readFileSync('src/app.css', 'utf-8');
-		expect(css).toContain(`--color-primary: ${BAR_REVENUE.color};`);
-		expect(css).toContain(`--color-text-muted: ${OTHERS_STYLE.color};`);
+describe('jetons des graphiques (34-10, AC-1)', () => {
+	const css = readFileSync('src/app.css', 'utf-8');
+	/** La valeur hexadécimale d'un jeton, `undefined` s'il est absent ou écrit en alias. */
+	const tokenValue = (name: string): string | undefined =>
+		new RegExp(`${name}:\\s*(#[0-9a-f]{6});`, 'i').exec(css)?.[1];
+
+	it('chaque constante égale son jeton, nom par nom, en hexadécimal', () => {
+		expect(BAR_REVENUE.token).toBe('--color-chart-revenue');
+		expect(BAR_EXPENSE.token).toBe('--color-chart-expense');
+		expect(PIE_PALETTE.map((s) => s.token)).toEqual([
+			'--color-chart-1',
+			'--color-chart-2',
+			'--color-chart-3',
+			'--color-chart-4',
+			'--color-chart-5',
+		]);
+		expect(OTHERS_STYLE.token).toBe('--color-text-muted');
+		for (const s of [BAR_REVENUE, BAR_EXPENSE, ...PIE_PALETTE, OTHERS_STYLE]) {
+			expect(css, s.token).toContain(`${s.token}: ${s.color};`);
+		}
 	});
+
+	it('revenus = succès, dépenses = destructif ; postes rouge, vert, bleu, violet, cyan', () => {
+		expect(tokenValue('--color-chart-revenue')).toBe(tokenValue('--color-success'));
+		expect(tokenValue('--color-chart-expense')).toBe(tokenValue('--color-destructive'));
+		expect(BAR_REVENUE.color).toBe('#16a34a');
+		expect(BAR_EXPENSE.color).toBe('#b91c1c');
+		expect(PIE_PALETTE.map((s) => s.color)).toEqual(['#b91c1c', '#16a34a', '#1e40af', '#7c3aed', '#0891b2']);
+		expect(OTHERS_STYLE.color).toBe('#64748b');
+	});
+});
+
+describe('palette (34-10, AC-7)', () => {
+	const white = '#ffffff';
 
 	it('postStyle : la palette par rang, « Autres » au-delà', () => {
 		expect(postStyle(0)).toBe(PIE_PALETTE[0]);
 		expect(postStyle(5)).toBe(OTHERS_STYLE);
 	});
 
-	it('chaque remplissage a un contraste d’au moins 3:1 sur blanc', () => {
+	it('chaque couleur a un contraste d’au moins 3:1 sur blanc', () => {
 		for (const s of [BAR_REVENUE, BAR_EXPENSE, OTHERS_STYLE, ...PIE_PALETTE]) {
 			expect(contrastRatio(s.color, white), s.color).toBeGreaterThanOrEqual(3);
 		}
 	});
 
-	it('revenus pleins, dépenses tramées', () => {
-		expect(BAR_REVENUE.pattern).toBe('solid');
-		expect(BAR_EXPENSE.pattern).not.toBe('solid');
+	it('revenus et dépenses : deux couleurs, d’au moins 1,5:1 entre elles (la clarté les sépare)', () => {
+		expect(BAR_REVENUE.color).not.toBe(BAR_EXPENSE.color);
+		expect(contrastRatio(BAR_REVENUE.color, BAR_EXPENSE.color)).toBeGreaterThanOrEqual(1.5);
 	});
 
-	it('six motifs distincts au camembert, « Autres » en gris comprise', () => {
+	it('six couleurs distinctes à l’anneau, « Autres » en gris comprise', () => {
 		const all = [...PIE_PALETTE, OTHERS_STYLE];
 		expect(PIE_PALETTE).toHaveLength(5);
-		expect(new Set(all.map((s) => s.pattern)).size).toBe(6);
 		expect(new Set(all.map((s) => s.color)).size).toBe(6);
-		expect(OTHERS_STYLE.color).toBe('#64748b');
+	});
+
+	it('aucun motif dans le module : couleurs unies seulement', () => {
+		const source = readFileSync('src/lib/features/homepage/homepage-charts.ts', 'utf-8');
+		expect(source).not.toMatch(/ChartPattern|chartFill|patternId|pattern/i);
+	});
+});
+
+describe('centerFontSize (34-10, AC-4, C-e342-24)', () => {
+	const hole = 2 * PIE_GEOMETRY.innerR;
+
+	it('décroît avec la longueur du texte, bornée par un plancher et un plafond', () => {
+		const short = centerFontSize('1.00', hole);
+		const long = centerFontSize('999’999’999.99', hole);
+		expect(short).toBeLessThanOrEqual(CENTER_FONT_MAX);
+		expect(long).toBeLessThan(short);
+		expect(long).toBeGreaterThanOrEqual(CENTER_FONT_MIN);
+		expect(CENTER_FONT_MIN).toBeGreaterThan(0);
+	});
+
+	it('le plus long montant plausible tient dans le trou, à la règle de la fonction', () => {
+		const text = '-999’999’999.99';
+		const size = centerFontSize(text, hole);
+		expect(size).toBeGreaterThan(CENTER_FONT_MIN);
+		expect(text.length * size * 0.6).toBeLessThanOrEqual(hole * 0.85 + 1e-9);
+	});
+});
+
+describe('differentAmounts (34-10, AC-4, P7-F2)', () => {
+	it('compare des valeurs, non des chaînes', () => {
+		expect(differentAmounts('30', '30.00')).toBe(false);
+		expect(differentAmounts('-50', '30')).toBe(true);
+		expect(differentAmounts('300.0000', '300')).toBe(false);
 	});
 });

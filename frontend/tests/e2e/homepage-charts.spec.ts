@@ -51,6 +51,22 @@ async function tabTo(page: Page, target: Locator) {
 
 const currentMonth = () => todayInZurich().slice(0, 7);
 
+/**
+ * Clique un point de l'anneau des postes (Story 34-10, AC-8) : à l'angle donné (radians,
+ * sens horaire depuis midi), à 80 % du rayon extérieur, au milieu de l'anneau dont le trou
+ * va jusqu'à 60 % et porte le total. Géométrie de `PIE_GEOMETRY` : `viewBox` de 200,
+ * centre (100, 100), rayon 96.
+ */
+async function clickRing(page: Page, angle: number) {
+	const svg = page.getByTestId('homepage-card-expense-pie').locator('svg[role="img"]');
+	const box = (await svg.boundingBox())!;
+	const scale = box.width / 200;
+	const radius = 96 * 0.8 * scale;
+	const x = box.x + 100 * scale + radius * Math.sin(angle);
+	const y = box.y + 100 * scale - radius * Math.cos(angle);
+	await page.mouse.click(x, y);
+}
+
 test.describe.serial('Graphiques de l’accueil, exercice ouvert (33-3b)', () => {
 	const expenseLabel = uniq('Charge graphiques');
 	let expenseAccountId = 0;
@@ -105,11 +121,10 @@ test.describe.serial('Graphiques de l’accueil, exercice ouvert (33-3b)', () =>
 	test('3. clic de souris sur une part dessinée en arc : le grand livre du compte, généré', async ({ page }) => {
 		await login(page);
 		const mark = page.getByTestId('homepage-chart-post-mark').first();
-		await expect(mark.locator('path'), 'le navigateur clique un arc, non un disque').toHaveCount(1);
-		// La part fait presque le tour depuis midi : le centre de sa boîte est sa pointe.
-		// Le point à neuf heures, à mi-rayon, est dans la part.
-		const box = (await mark.boundingBox())!;
-		await mark.click({ position: { x: box.width * 0.25, y: box.height * 0.5 } });
+		await expect(mark.locator('path'), 'le navigateur clique un secteur d’anneau, non un cercle').toHaveCount(1);
+		// La part fait presque le tour depuis midi, et le centre de l'anneau est un trou qui
+		// porte le total : le point à neuf heures, dans l'épaisseur de l'anneau, est dans la part.
+		await clickRing(page, (3 * Math.PI) / 2);
 		await expect(page).toHaveURL(
 			new RegExp(`/reports\\?tab=general-ledger&accountId=${expenseAccountId}&from=${fiscalYear}-01-01&to=${fiscalYear}-12-31`),
 		);
@@ -204,7 +219,7 @@ test.describe.serial('Graphiques de l’accueil, exercice ouvert (33-3b)', () =>
 		await expect(page.getByTestId('homepage-chart-others-mark')).toHaveCount(1);
 		await expect(
 			page.getByTestId('homepage-card-expense-pie').locator('svg[role="img"] path'),
-			'six arcs réellement rendus, aucun disque',
+			'six secteurs d’anneau réellement rendus, aucun cercle ; le centre n’est pas un path',
 		).toHaveCount(6);
 		const first = page.locator(`tr[data-account-id="${largest}"]`);
 		expect(await first.getAttribute('data-share')).toBe('31.9');
@@ -212,7 +227,9 @@ test.describe.serial('Graphiques de l’accueil, exercice ouvert (33-3b)', () =>
 		expect(Number(await others.getAttribute('data-amount'))).toBe(224.45);
 		await expect(others).toContainText('3');
 
-		await marks.first().click();
+		// La première part va de midi à 31,9 % du tour : son milieu, dans l'anneau (le centre
+		// de sa boîte peut tomber dans le trou ou sur le total).
+		await clickRing(page, 0.319 * Math.PI);
 		await expect(page).toHaveURL(new RegExp(`/reports\\?tab=general-ledger&accountId=${largest}&`));
 	});
 

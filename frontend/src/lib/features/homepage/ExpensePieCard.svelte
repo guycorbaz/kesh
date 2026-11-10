@@ -2,19 +2,21 @@
 	// Story 33-3b (#918) — la part des plus gros postes de charges, cinq plus
 	// « Autres ». Le tableau tient lieu de légende, et porte les seuls liens
 	// (C-e332-16) ; « Autres » n'en a pas (C-e332-18).
+	// Story 34-10 (#970) : un anneau en couleurs unies, séparées par un liseré de la
+	// couleur de la carte, le total des dépenses de l'exercice au centre (C-e342-17).
 	import { goto } from '$app/navigation';
 	import { ledgerHref } from '$lib/features/reports/reports.api';
 	import { i18nMsg } from '$lib/shared/utils/i18n.svelte';
-	import ChartPatterns from './ChartPatterns.svelte';
 	import {
 		OTHERS_STYLE,
-		PIE_PALETTE,
+		PIE_GEOMETRY,
+		centerFontSize,
 		chartAmount,
-		chartFill,
+		differentAmounts,
 		followMark,
+		fullRing,
 		pieSlices,
 		postStyle,
-		type ChartStyle,
 	} from './homepage-charts';
 	import type { ExpensePost, HomepageSummary } from './homepage-summary.api';
 
@@ -23,15 +25,26 @@
 	}
 	let { summary }: Props = $props();
 
-	const PREFIX = 'homepage-pie';
-	const GEOMETRY = { cx: 100, cy: 100, r: 96 };
-	const STYLES: readonly ChartStyle[] = [...PIE_PALETTE, OTHERS_STYLE];
+	const GEOMETRY = PIE_GEOMETRY;
+	const RING = fullRing(GEOMETRY);
+	const HOLE = 2 * GEOMETRY.innerR;
 
 	let slices = $derived(
 		pieSlices(summary.expensePosts, summary.otherExpenses, summary.expensePostsBase, GEOMETRY),
 	);
 	let hasPosts = $derived(summary.expensePosts.length > 0);
 	let creditCount = $derived(summary.creditBalanceExpenseAccounts);
+
+	/** Le total des dépenses de l'exercice, celui des barres et du compte de résultat. */
+	let totalLabel = $derived(i18nMsg('homepage-charts-pie-total-label', 'Total des dépenses'));
+	let totalAmount = $derived(chartAmount(summary.totalExpenses));
+	/**
+	 * Les parts portent sur une autre base que le total du centre : à le dire, et seulement
+	 * s'il y a des parts (AC-4, validation P6). Comparaison en valeur (P7-F2).
+	 */
+	let baseDiffers = $derived(
+		hasPosts && differentAmounts(summary.totalExpenses, summary.expensePostsBase),
+	);
 
 	/** Le poste de cette part, `null` pour « Autres ». */
 	function postOf(accountId: number | null): ExpensePost | null {
@@ -74,28 +87,32 @@
 				{#if accountCount === 1}
 					{i18nMsg(
 						'homepage-charts-pie-desc-one',
-						'{ $year } : un seul compte de charges, pour un total de { $base } : { $top }.',
+						'{ $year } : un seul compte de charges, { $top } ; total des dépenses { $total }.',
 						{
 							year: summary.fiscalYear.name,
-							base: chartAmount(summary.expensePostsBase),
+							total: totalAmount,
 							top: summary.expensePosts[0].name,
 						},
 					)}
 				{:else}
 					{i18nMsg(
 						'homepage-charts-pie-desc',
-						'{ $year } : { $count } comptes de charges, pour un total de { $base }. Le plus gros : { $top }, { $share } %.',
+						'{ $year } : { $count } comptes de charges, total des dépenses { $total }. Le plus gros : { $top }, { $share } %. Les parts suivent l’ordre du tableau, dans le sens horaire à partir de midi.',
 						{
 							year: summary.fiscalYear.name,
 							count: accountCount,
-							base: chartAmount(summary.expensePostsBase),
+							total: totalAmount,
 							top: summary.expensePosts[0].name,
 							share: summary.expensePosts[0].share,
 						},
 					)}
 				{/if}
+				{#if baseDiffers}
+					{i18nMsg('homepage-charts-pie-desc-base', 'Parts calculées sur { $base }.', {
+						base: chartAmount(summary.expensePostsBase),
+					})}
+				{/if}
 			</desc>
-			<ChartPatterns prefix={PREFIX} styles={STYLES} />
 			{#each slices as slice (slice.rank)}
 				{@const post = postOf(slice.accountId)}
 				<g
@@ -120,13 +137,33 @@
 								: ''}
 					</title>
 					{#if slice.full}
-						<circle cx={GEOMETRY.cx} cy={GEOMETRY.cy} r={GEOMETRY.r} fill={chartFill(PREFIX, slice.style)} stroke={slice.style.color} />
+						<!-- La part qui fait le tour : un cercle au rayon médian, au trait de l'épaisseur de l'anneau. -->
+						<circle cx={GEOMETRY.cx} cy={GEOMETRY.cy} r={RING.r} fill="none" stroke={slice.style.color} stroke-width={RING.width} />
 					{:else}
-						<!-- Le trait porte la couleur : le fond d'une trame est blanc comme la carte. -->
-						<path d={slice.path} fill={chartFill(PREFIX, slice.style)} stroke={slice.style.color} />
+						<!-- Le liseré, de la couleur de la carte, marque chaque limite quelle que soit la paire de teintes (C-e342-16). -->
+						<path d={slice.path} fill={slice.style.color} stroke="var(--color-surface)" stroke-width="1.5" stroke-linejoin="round" />
 					{/if}
 				</g>
 			{/each}
+			<!-- Le centre : ni une part ni un `path`, hors de toute marque (AC-3, AC-4). -->
+			<g data-testid="homepage-chart-pie-total" pointer-events="none">
+				<text
+					x={GEOMETRY.cx}
+					y={GEOMETRY.cy - 4}
+					text-anchor="middle"
+					fill="var(--color-text)"
+					font-size={centerFontSize(totalLabel, HOLE)}
+				>{totalLabel}</text>
+				<text
+					x={GEOMETRY.cx}
+					y={GEOMETRY.cy + 4}
+					text-anchor="middle"
+					dominant-baseline="hanging"
+					fill="var(--color-text)"
+					font-weight="600"
+					font-size={centerFontSize(totalAmount, HOLE)}
+				>{totalAmount}</text>
+			</g>
 		</svg>
 
 		<table class="mt-3 w-full text-sm">
@@ -143,7 +180,7 @@
 				{#each summary.expensePosts as post, i (post.accountId)}
 					<tr class="border-b border-border last:border-0" data-account-id={post.accountId} data-amount={post.amount} data-share={post.share}>
 						<td class="whitespace-nowrap py-1 pr-3">
-							<svg class="mr-1 inline-block align-[-2px]" aria-hidden="true" width="14" height="14"><rect width="14" height="14" fill={chartFill(PREFIX, postStyle(i))} stroke={postStyle(i).color} /></svg>{i + 1}
+							<svg class="mr-1 inline-block align-[-2px]" aria-hidden="true" width="14" height="14"><rect width="14" height="14" fill={postStyle(i).color} /></svg>{i + 1}
 						</td>
 						<th scope="row" class="py-1 text-left font-normal [overflow-wrap:anywhere]">
 							<a class="text-primary underline" href={postHref(post.accountId)} data-testid="homepage-chart-post-link">{post.number} {post.name}</a>
@@ -155,7 +192,7 @@
 				{#if summary.otherExpenses}
 					<tr data-testid="homepage-chart-others-row" data-amount={summary.otherExpenses.amount}>
 						<td class="whitespace-nowrap py-1 pr-3">
-							<svg class="mr-1 inline-block align-[-2px]" aria-hidden="true" width="14" height="14"><rect width="14" height="14" fill={chartFill(PREFIX, OTHERS_STYLE)} stroke={OTHERS_STYLE.color} /></svg>{summary.expensePosts.length + 1}
+							<svg class="mr-1 inline-block align-[-2px]" aria-hidden="true" width="14" height="14"><rect width="14" height="14" fill={OTHERS_STYLE.color} /></svg>{summary.expensePosts.length + 1}
 						</td>
 						<th scope="row" class="py-1 text-left font-normal">{othersLabel(summary.otherExpenses.accountCount)}</th>
 						<td class="py-1 pl-3 text-right font-mono">{chartAmount(summary.otherExpenses.amount)}</td>
@@ -177,6 +214,14 @@
 	{:else if creditCount > 1}
 		<p class="mt-2 text-sm text-text-muted" data-testid="homepage-charts-credit-note">
 			{i18nMsg('homepage-charts-credit-balance-note-other', '{ $count } comptes de charges au solde créditeur ne figurent pas dans ce diagramme.', { count: creditCount })}
+		</p>
+	{/if}
+	{#if baseDiffers}
+		<!-- Après la note des comptes créditeurs si elle est rendue, seule sinon (AC-4). -->
+		<p class="mt-2 text-sm text-text-muted" data-testid="homepage-charts-pie-base-note">
+			{i18nMsg('homepage-charts-pie-base-note', 'Les parts portent sur { $base }.', {
+				base: chartAmount(summary.expensePostsBase),
+			})}
 		</p>
 	{/if}
 </div>
