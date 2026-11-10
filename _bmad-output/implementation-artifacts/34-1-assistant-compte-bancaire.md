@@ -227,7 +227,7 @@ Opus 5.5 (`claude-opus-5-5`), en autonomie.
   - `scripts/gate-ci.sh kesh_ci_e3401` à `b732d3ba` : **5157 passés, 0 échec, 16 ignorés** (`gate-ci.log`) ;
   - frontend à `166826c5` : `npm run check` 0 erreur (29 avertissements, aucun dans les fichiers de la story),
     `lint-i18n-ownership` vert, `npm run build` vert ; `test:unit` 2 rouges (les deux compteurs de garde), corrigés par
-    `c9025b3a` (tests seuls) et **rejoué en entier au dernier commit** (`front-test-unit-2.log`, chiffres ci-dessous) ;
+    `c9025b3a` (tests seuls) et **rejoué en entier à `c9025b3a`** : **2893 passés, 224 fichiers** (`front-test-unit-2.log`) ;
   - **E2E complet** (`e2e-r1.*`, base `kesh_e2e_e3401` recréée, port 3341, recette entière, `KESH_INBOX_DIR` et
     `KESH_DOCUMENTS_DIR` passés aussi au runner) : **386 passés, 7 échecs, 18 ignorés** ; les sept sont ceux de la KF-029 (#97)
     de `docs/testing.md` § « Les échecs attendus » (`mode-expert.spec.ts:26`, `:41`, `onboarding-path-b.spec.ts:65`, `:92`,
