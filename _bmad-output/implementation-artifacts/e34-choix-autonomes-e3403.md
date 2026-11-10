@@ -65,3 +65,20 @@
 - **Contexte** : la fiche écrit que l'avis ne couvre pas les comptes de TVA ; l'issue est ouverte (#981).
 - **Retenu** : le § *Écriture manuelle* le dit, avec le numéro, comme il cite #823 et #827.
 - **Réversible** : oui.
+
+### C-e3403-8 — L'avis créanciers reformulé (décision de l'orchestrateur, revue de code P1, B1-5)
+
+- **Contexte** : le texte de l'AC-4 (« saisissez et validez la facture sans la payer depuis sa fiche ») se lisait aussi
+  « validez-la depuis sa fiche » ou « ne la payez pas depuis sa fiche » ; les traductions reprenaient l'ambiguïté.
+- **Retenu** (sens dicté par l'orchestrateur) : fr « saisissez la facture et validez-la depuis sa fiche, sans y enregistrer
+  de paiement : le paiement est cette transaction, et la facture vous sera proposée ici, à accepter » ; de, en, it de même
+  sens ; repli, test et manuel (`user-manual.tex`, § *Écriture manuelle*) alignés. L'AC-4 de la fiche garde le texte
+  d'origine (relevé daté) ; ce choix le remplace.
+- **Réversible** : oui, catalogues.
+
+### C-e3403-9 — L'avis suit le rôle, non le sens de la transaction (revue de code P1, E1-2)
+
+- **Contexte** : un débit sur le compte débiteurs (remboursement d'un client) ou un crédit sur le compte créanciers reçoit
+  le conseil du cas nominal, qui ne s'y applique pas (le texte reste conditionnel : « Pour un paiement de client… »).
+- **Retenu** : tel quel dans la story ; une variante selon le signe est demandée en issue.
+- **Réversible** : oui.

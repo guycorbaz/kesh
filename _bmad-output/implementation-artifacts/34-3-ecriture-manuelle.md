@@ -221,6 +221,7 @@ Frontend surtout ; aucun fichier `kesh-db`. Gate ciblé entre les passes (`npm r
 - *(F3-5)* L'avis AC-4 ne couvre ni les comptes de TVA (`VatRecoverable`, `VatPayable`, `VatSettlement`), ni un compte
   débiteurs ou créanciers dont le rôle n'est pas posé. **Issue demandée** pour les comptes de TVA (une écriture manuelle y
   fausse le décompte sans signal) ; le second cas découle du choix « rôle explicite » (Story 14-3a) et n'appelle pas d'issue.
+  *(Annoté le 2026-11-10, revue de code P1, A1-2 : l'issue des comptes de TVA est ouverte, **#981**.)*
 - Le second côté d'un virement entre deux comptes propres : #823, et le signal de la 34-4.
 
 ## Recoupements
@@ -344,7 +345,7 @@ pas construire un mélange de sources pendant l'écriture de l'implémentation ;
   rejoué seul sur base vide **avec** `KESH_E2E_CAPTURES_DIR` posé (je l'avais posé pour toute la suite), il rougit encore
   (`e2e-r2-backup-restore-seul.log` : `admin-restore-files-restored` introuvable) ; rejoué seul **sans** cette variable,
   ses trois tests passent (`e2e-r4-backup-restore-sans-captures.log`). C'est le mode « captures » de cette spec qui la fait
-  rougir, sans rapport avec la story : issue demandée. (Effet de bord du même choix : toutes les specs qui capturent ont
+  rougir, sans rapport avec la story : **#994** (KF-058). (Effet de bord du même choix : toutes les specs qui capturent ont
   écrit leurs images dans `kesh-gate-logs/e3403/captures/` ; seules les `e3403-*` sont de la story.)
 - **M1 sur l'E2E** (`mut/M1-e2e.log`, `mut/M1-e2e-run.log`) : build muté, base vide, spec seule → **rouge**, pour la bonne
   raison (`reconciliation-manual-entry.spec.ts:125`, l'option `2000` absente : `Expected: 1, Received: 0`) ; fichier
@@ -357,7 +358,7 @@ pas construire un mélange de sources pendant l'écriture de l'implémentation ;
   « Débiteurs (capture) », au rôle `Receivable`, est créé par le script de capture (`scripts/captures-e3403.mjs`, hors dépôt).
 - **Constat voisin, non traité** : dans *Éclater*, l'indicateur d'équilibre n'affiche que « Balance » (catalogue fr
   `reconciliation-split-balance-indicator = Balance`, même clé pour les deux états ; le repli détaillé n'est jamais
-  affiché) — visible sur `e3403-5`. Préexistant ; corrigé ici, il aurait rouvert tous les gates : issue demandée.
+  affiché) — visible sur `e3403-5`. Préexistant ; corrigé ici, il aurait rouvert tous les gates : **#993**.
 
 **Écarts à la consigne** : les tests neufs de `TransactionSplitModal.test.ts` ont été ajoutés par un `cat >>` (ajout en fin de
 fichier, non un remplacement), le reste par l'outil Edit ; l'outil ne manquait de rien, c'était un raccourci. Mon script de
