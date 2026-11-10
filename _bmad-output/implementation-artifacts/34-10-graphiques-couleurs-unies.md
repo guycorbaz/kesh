@@ -82,7 +82,10 @@ chaque part, contraste contre le fond de la carte), et des teintes **dans les je
    diffère de `expensePostsBase`, la note existante des comptes au solde créditeur (`homepage-charts-credit-balance-note-one` /
    `-other`, fr `messages.ftl:3477-3478`, inchangée : elle ne dit que le nombre de comptes écartés) reste, et **une phrase jointe
    après elle**, clé neuve `homepage-charts-pie-base-note` (« Les parts portent sur { $base }. »), dit sur quelle base portent les
-   parts (C-e342-17 ; *P4-F5 : la note existante ne le dit pas*). **`<desc>`** *(P2-10-2 : il dit aujourd'hui « pour un total de { $base } »,
+   parts (C-e342-17 ; *P4-F5 : la note existante ne le dit pas*). *(P5-5)* Elle est jointe **sous la même condition** que
+   `homepage-charts-pie-desc-base` (`totalExpenses ≠ expensePostsBase`), **après** la note dans le DOM si celle-ci est rendue,
+   seule sinon ; Vitest : présente, avec 30.00, dans le cas « différents » (fixture ci-dessous), absente dans le cas « égaux ».
+   **`<desc>`** *(P2-10-2 : il dit aujourd'hui « pour un total de { $base } »,
    `ExpensePieCard.svelte:74-92`, qui contredirait le centre)*. **Tranché à la validation P3 (P3-10-1)** : le `<desc>` existe
    déjà en **deux clés**, choisies par le nombre de comptes — `homepage-charts-pie-desc-one` (« … un seul compte de charges,
    pour un total de { $base } : { $top }. ») et `homepage-charts-pie-desc` (« … pour un total de { $base }. Le plus gros : … ») ;
@@ -197,6 +200,7 @@ Aucun fichier de code commun avec les autres stories de l'Epic 34. `user-manual.
     le cas sans poste est dit (pas d'anneau, pas de total) ;
   - LOW : **P2-10-2** (lu : `ExpensePieCard.svelte:74-92`) → `<desc>` à deux clés, M6 ; **P2-10-3** → règle pure de taille de
     police, testée en Vitest ; **P2-10-4** → garde sans les `*.test.ts`, assertion par `querySelector`.
+  - CHANGELOG : *Changé* gardé (rendu d'une fonction existante modifié), cohérent avec la 34-3 (C-e342-22).
 - 2026-11-10 : Validation P3 (Sonnet), remédiation (Opus 5.5). Rapport `kesh-gate-logs/e34-validate-p3-e342.md`, pour cette
   fiche 0 C, 0 H, 1 M, 1 LOW, tous retenus :
   - **P3-10-1** MEDIUM, **né de la remédiation P2** (P2-10-2 ne disait rien des deux clés existantes du `<desc>`) : lus
@@ -209,7 +213,10 @@ Aucun fichier de code commun avec les autres stories de l'Epic 34. `user-manual.
   cette fiche 2 LOW, retenus après lecture : **F5** (lu : fr `messages.ftl:3477-3478`, la note des comptes créditeurs ne dit
   que leur nombre) → la base des parts se dit par une phrase jointe, clé neuve `homepage-charts-pie-base-note`, AC-4 et T3 ;
   C-e342-17 annotée au registre ; **F6** → M8, la condition de jointure.
-  - CHANGELOG : *Changé* gardé (rendu d'une fonction existante modifié), cohérent avec la 34-3 (C-e342-22).
+- 2026-11-10 : Validation P5 ciblée (Sonnet), remédiation (Opus 5.5). Rapport `kesh-gate-logs/e34-validate-p5-e342.md`, pour
+  cette fiche 2 LOW, retenus : **P5-4** → la sous-puce CHANGELOG de la P2, déplacée par les insertions P3 et P4, est remise
+  sous son entrée, texte inchangé ; **P5-5** → phrase jointe spécifiée à l'AC-4 (place, condition, Vitest présente/absente),
+  `homepage-charts-pie-base-note` ajoutée à C-e342-25.
 
 ## Dev Agent Record
 

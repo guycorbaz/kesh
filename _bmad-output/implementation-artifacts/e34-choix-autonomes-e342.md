@@ -231,5 +231,7 @@ Mise à jour par union, jamais par écrasement.*
   dire ce qu'il advenait de celles-là (finding P3-10-1).
 - **Retenu** : les deux clés existantes disent le total des dépenses (`totalExpenses`) ; une clé neuve
   `homepage-charts-pie-desc-base` (« Parts calculées sur { $base }. ») est jointe par le Svelte quand la base diffère.
+  *(Complété à la validation P5, P5-5 : sous la même condition, la phrase visible `homepage-charts-pie-base-note` est jointe
+  après la note des comptes créditeurs — C-e342-17 annotée.)*
 - **Écartée** : quatre clés (nombre de comptes × égalité), qui doublent les textes à traduire pour une seule phrase de plus.
 - **Réversible** : oui.

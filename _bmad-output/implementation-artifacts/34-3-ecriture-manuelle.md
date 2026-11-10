@@ -132,8 +132,10 @@ compte est écartée. Aucun rôle ne se déduit du numéro d'un compte (Story 14
    par `| cut -d: -f1 | sort | uniq -c` au commit `73c365af`).
    **Règle des commentaires** *(validation P4 ciblée, F1 : la P3 disait « ceux qui citent une story datée restent » tout en
    listant à réécrire des lignes qui en citent une)* : **la citation de story reste, la phrase qui nomme le geste se réécrit**
-   (« Story 8-5a-base FR45 — réconciliation manuelle » devient « Story 8-5a-base FR45 — écriture manuelle (ex-réconciliation
-   manuelle, renommée par la 34-3) » ou une forme équivalente qui ne réponde plus à la garde). Elle s'applique à **tous** les
+   (« Story 8-5a-base FR45 — réconciliation manuelle » devient « Story 8-5a-base FR45 — écriture manuelle (geste rebaptisé par
+   la 34-3) », **sans l'ancien nom** ; en-têtes de/en/it : « Manuelle Buchung (Geste von der 34-3 umbenannt) », « Manual entry
+   (renamed by 34-3) », « Registrazione manuale (rinominata dalla 34-3) » — *P5-1 : l'exemple de la P4 citait « réconciliation
+   manuelle » et répondait encore à la garde ; ces quatre formes, passées à la garde, n'y répondent pas*). Elle s'applique à **tous** les
    commentaires que la garde rend :
    - qui citent la story 8-5a-base : `ReconciliationProposals.svelte:574`, `ReconciliationProposals.test.ts:260`,
      `ManualMatchModal.svelte:2`, `reconciliation.api.ts:67`, `reconciliation.types.ts:142`, et l'**en-tête de catalogue**
@@ -141,7 +143,8 @@ compte est écartée. Aucun rôle ne se déduit du numéro d'un compte (Story 14
      titre renommés *(F3 : c'est le seul en-tête que la garde rend ; le libellé d'audit n'en a pas)* ;
    - qui n'en citent pas : `ReconciliationProposals.svelte:15`, `:115`, `:200`, `:298`, `ReconciliationProposals.test.ts:279`,
      `:553`, `:556` (donnée de test, réécrite avec son assertion), `:601`, `bank-accounts.api.ts:2`, et *(F2)*
-     `failed-proposal-label.ts:298`, `:327`, `failed-proposal-label.test.ts:329`, `:341`.
+     `failed-proposal-label.ts:298`, `:327`, `failed-proposal-label.test.ts:329`, `:341`, et *(P5-2)* le commentaire E2E
+     `frontend/tests/e2e/reconciliation-manual.spec.ts:54`.
    **Survivants attendus après la story**, et eux seuls : le libellé d'audit `audit-log-action-reconciliation-manual-matched`
    (C-e342-3 ; fr `:3150`, de `:3077`, en `:3083`, it `:3078`) et `admin-manual.tex:2100` (« n'en est pas affectée ; ce manuel »,
    faux positif) — **cinq lignes**. Sortie et nombre résiduel copiés au Change Log. ⚠️ La garde est ligne à ligne : un libellé coupé
@@ -268,6 +271,14 @@ parallèle, ses textes nomment déjà « Écriture manuelle » (C-e342-5).
   - **F3** (lus : fr `messages.ftl:1507`, de/en/it `:1440`, et le libellé d'audit fr `:3150`, de `:3077`, en `:3083`, it `:3078`,
     sans en-tête) → « commentaire d'en-tête » du libellé d'audit retiré, en-tête réel classé ;
   - **F4** (lu : `i18n-repli-catalogue.ts:82-104`, `startsWith`) → préfixes écrits en entier.
+- 2026-11-10 : Validation P5 ciblée (Sonnet), remédiation (Opus 5.5). Rapport `kesh-gate-logs/e34-validate-p5-e342.md`, pour
+  cette fiche 1 M, 2 LOW, tous retenus :
+  - **P5-1** MEDIUM, **né de la remédiation P4** (F1) : l'exemple de réécriture gardait « réconciliation manuelle » ; remplacé
+    par une forme sans l'ancien nom, et ses trois équivalents d'en-tête de/en/it. **Garde rejouée** sur les quatre formes
+    (`echo … | grep -ciE '<motif de l'AC-6>'`) : 0 ligne chacune ; les cinq survivants annoncés restent justes ;
+  - **P5-2** (lu : `reconciliation-manual.spec.ts:54`) → ajouté à la liste « n'en citent pas » ;
+  - **P5-3** : *(annotation datée de l'entrée P4, non réécrite)* « les six lignes qui citent la 8-5a-base » se lit « cinq
+    commentaires de code et l'en-tête de catalogue en quatre locales, soit neuf lignes ».
 
 ## Dev Agent Record
 
