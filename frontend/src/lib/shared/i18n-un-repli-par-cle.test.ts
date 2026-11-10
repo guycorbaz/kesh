@@ -237,8 +237,14 @@ const PREFIXES = [
  * ⚠️ **Story 33-1b** (#926) : **401 → 407** (+6) : `supplier-invoices-col-internal-number`,
  * `-search-label`, `-empty-search`, `-internal-number-kept`, `-internal-number-pending`,
  * `-delete-confirm-number`. Aucune retirée.
+ *
+ * ⚠️ **Story 34-9** (#969, #974) : **407 → 426** (+19) : vingt et une clés neuves du rapport
+ * d'import, toutes `imported-supplier-invoices-` (quatre `-report-summary-*`, trois
+ * `-report-state-*`, six `-report-duplicate*`, `-report-refused`, `-report-moved-to`, deux
+ * `-report-skipped-*`, `-report-truncated`, trois `-notice-*`), et deux retirées
+ * (`-report-accepted`, `-report-failed`).
  */
-const CLES_RELEVEES = 407;
+const CLES_RELEVEES = 426;
 
 
 /** Relève, pour chaque clé du domaine, l'ensemble de ses replis littéraux distincts. */

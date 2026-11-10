@@ -435,7 +435,7 @@
 									</span>
 								{/if}
 							</div>
-						{:else}
+						{:else if row.state === 'not-processed'}
 							<span class="font-mono">{row.fileName}</span> —
 							<span>
 								<span class="font-medium"
