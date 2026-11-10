@@ -1450,8 +1450,8 @@ reconciliation-manual-error-counterparty-required = Gegenkonto erforderlich
 reconciliation-manual-error-description-too-long = Bezeichnung zu lang (max. { $max } Zeichen)
 reconciliation-manual-description-placeholder = Bankgebühren Mai
 # Story 34-3 (#967, AC-4) — Hinweis, wenn das Gegenkonto die Rolle Debitoren oder Kreditoren trägt.
-reconciliation-manual-claim-notice-receivable = Dieses Konto ist das Debitorenkonto. Eine manuelle Buchung begleicht keine Kundenrechnung: Sie bliebe offen. Für eine Kundenzahlung erfassen Sie die Zahlung im Rechnungsdetail und ordnen Sie die Transaktion dann dieser Zahlung zu.
-reconciliation-manual-claim-notice-payable = Dieses Konto ist das Kreditorenkonto. Eine manuelle Buchung begleicht keine Lieferantenrechnung: Sie bliebe unbezahlt. Für die Zahlung eines Lieferanten erfassen und validieren Sie die Rechnung, ohne sie im Rechnungsdetail zu bezahlen: Sie wird Ihnen hier zum Akzeptieren vorgeschlagen. Ist sie bereits bezahlt, ordnen Sie die Transaktion dieser Zahlung zu.
+reconciliation-manual-claim-notice-receivable = Dieses Konto ist das Debitorenkonto. Eine manuelle Buchung begleicht keine Kundenrechnung: Die Rechnung bliebe offen. Für eine Kundenzahlung erfassen Sie die Zahlung im Rechnungsdetail und ordnen Sie die Transaktion dann dieser Zahlung zu.
+reconciliation-manual-claim-notice-payable = Dieses Konto ist das Kreditorenkonto. Eine manuelle Buchung begleicht keine Lieferantenrechnung: Die Rechnung bliebe unbezahlt. Für die Zahlung eines Lieferanten erfassen Sie die Rechnung und validieren Sie sie im Rechnungsdetail, ohne dort eine Zahlung zu erfassen: Die Zahlung ist diese Transaktion, und die Rechnung wird Ihnen hier zum Akzeptieren vorgeschlagen. Ist sie bereits bezahlt, ordnen Sie die Transaktion dieser Zahlung zu.
 
 # Story 8-5a-bis FR48 — Aufteilung einer aggregierten Transaktion.
 reconciliation-split-button-label = Aufteilen

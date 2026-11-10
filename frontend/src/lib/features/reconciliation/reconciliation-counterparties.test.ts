@@ -7,7 +7,7 @@
 
 import { describe, it, expect } from 'vitest';
 import type { AccountResponse } from '$lib/features/accounts/accounts.types';
-import { claimRoleOf, counterpartyAccounts } from './reconciliation-counterparties';
+import { claimRoleOf, claimRoleOfId, counterpartyAccounts } from './reconciliation-counterparties';
 
 function compte(
 	id: number,
@@ -96,5 +96,25 @@ describe('claimRoleOf (Story 34-3, AC-4)', () => {
 	it('aucun compte choisi : aucun rôle', () => {
 		expect(claimRoleOf(undefined)).toBeNull();
 		expect(claimRoleOf(null)).toBeNull();
+	});
+});
+
+// Revue de code P1 (B1-1) — la seule règle d'affichage de l'avis, par identifiant.
+describe('claimRoleOfId (Story 34-3, AC-4)', () => {
+	const plan = [
+		compte(1, '1100', { role: 'Receivable' }),
+		compte(2, '2000', { accountType: 'Liability', role: 'Payable' }),
+		compte(3, '6900', { accountType: 'Expense' }),
+	];
+
+	it('rend le rôle du compte de la liste', () => {
+		expect(claimRoleOfId(plan, 1)).toBe('Receivable');
+		expect(claimRoleOfId(plan, 2)).toBe('Payable');
+		expect(claimRoleOfId(plan, 3)).toBeNull();
+	});
+
+	it('aucun compte choisi, ou compte hors de la liste : aucun rôle', () => {
+		expect(claimRoleOfId(plan, null)).toBeNull();
+		expect(claimRoleOfId(plan, 99)).toBeNull();
 	});
 });

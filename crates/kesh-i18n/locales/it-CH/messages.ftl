@@ -1451,7 +1451,7 @@ reconciliation-manual-error-description-too-long = Descrizione troppo lunga (max
 reconciliation-manual-description-placeholder = Spese bancarie maggio
 # Story 34-3 (#967, AC-4) — avviso non bloccante quando la contropartita ha il ruolo debitori o creditori.
 reconciliation-manual-claim-notice-receivable = Questo conto è quello dei debitori. Una registrazione manuale non salda alcuna fattura cliente: resterebbe dovuta. Per il pagamento di un cliente, registrare il pagamento dalla scheda della fattura, poi collegarvi la transazione.
-reconciliation-manual-claim-notice-payable = Questo conto è quello dei creditori. Una registrazione manuale non salda alcuna fattura fornitore: resterebbe da pagare. Per il pagamento di un fornitore, registrare e convalidare la fattura senza pagarla dalla sua scheda: verrà proposta qui, da accettare. Se è già pagata, collegare la transazione a tale pagamento.
+reconciliation-manual-claim-notice-payable = Questo conto è quello dei creditori. Una registrazione manuale non salda alcuna fattura fornitore: resterebbe da pagare. Per il pagamento di un fornitore, registrare la fattura e convalidarla dalla sua scheda, senza registrarvi alcun pagamento: il pagamento è questa transazione, e la fattura verrà proposta qui, da accettare. Se è già pagata, collegare la transazione a tale pagamento.
 
 # Story 8-5a-bis FR48 — suddivisione di una transazione aggregata.
 reconciliation-split-button-label = Suddividi

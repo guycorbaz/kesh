@@ -1518,7 +1518,7 @@ reconciliation-manual-error-description-too-long = Description trop longue (max 
 reconciliation-manual-description-placeholder = Frais bancaires mai
 # Story 34-3 (#967, AC-4) — avis non bloquant quand la contrepartie porte le rôle débiteurs ou créanciers.
 reconciliation-manual-claim-notice-receivable = Ce compte est celui des débiteurs. Une écriture manuelle ne règle aucune facture client : elle resterait due. Pour un paiement de client, enregistrez le règlement depuis la fiche de la facture, puis rattachez-y la transaction.
-reconciliation-manual-claim-notice-payable = Ce compte est celui des créanciers. Une écriture manuelle ne règle aucune facture fournisseur : elle resterait à payer. Pour le paiement d'un fournisseur, saisissez et validez la facture sans la payer depuis sa fiche : elle vous sera proposée ici, à accepter. Si elle est déjà payée, rattachez la transaction à ce paiement.
+reconciliation-manual-claim-notice-payable = Ce compte est celui des créanciers. Une écriture manuelle ne règle aucune facture fournisseur : elle resterait à payer. Pour le paiement d'un fournisseur, saisissez la facture et validez-la depuis sa fiche, sans y enregistrer de paiement : le paiement est cette transaction, et la facture vous sera proposée ici, à accepter. Si elle est déjà payée, rattachez la transaction à ce paiement.
 
 # Story 8-5a-bis FR48 — éclatement de transaction agrégée.
 reconciliation-split-button-label = Éclater

@@ -44,3 +44,15 @@ export function claimRoleOf(account: AccountResponse | null | undefined): ClaimR
 	const role = account?.role;
 	return role === 'Receivable' || role === 'Payable' ? role : null;
 }
+
+/**
+ * Le rôle de créance du compte `accountId`, lu dans la liste proposée ; `null` si aucun compte
+ * n'est choisi ou s'il n'est pas dans la liste. Seule règle d'affichage de l'avis (revue de
+ * code P1, B1-1) : le composant d'avis et la rangée d'*Éclater* qui le porte la partagent.
+ */
+export function claimRoleOfId(
+	accounts: readonly AccountResponse[],
+	accountId: number | null,
+): ClaimRole | null {
+	return accountId === null ? null : claimRoleOf(accounts.find((a) => a.id === accountId));
+}

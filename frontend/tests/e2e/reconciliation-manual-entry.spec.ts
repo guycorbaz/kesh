@@ -118,6 +118,13 @@ test('une écriture manuelle se passe sur un compte de classe 2, jamais sur celu
 		// Le dialogue ne propose pas le compte de la banque, et propose le compte de classe 2.
 		const champ = modal.locator('input[aria-autocomplete="list"]');
 		await champ.focus();
+		// Revue de code P1 (B1-3, E1-4, A1-1) : ancre positive d'abord — la liste est chargée et
+		// montre les voisins de classe 1 (`1100`), sans le compte de la banque ; l'absence qui
+		// suit ne peut donc pas passer à vide.
+		await champ.fill(banque!.number.slice(0, 1));
+		const voisins = modal.getByRole('option');
+		await expect(voisins.filter({ hasText: '1100' })).toHaveCount(1);
+		await expect(voisins.filter({ hasText: banque!.number })).toHaveCount(0);
 		await champ.fill(banque!.number);
 		await expect(modal.getByRole('option')).toHaveCount(0);
 		await champ.fill('2000');

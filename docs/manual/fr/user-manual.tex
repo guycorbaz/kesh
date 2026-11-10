@@ -2954,7 +2954,7 @@ Pour passer en comptabilité une transaction qu'aucune facture ne règle --- int
 
 \begin{enumerate}
     \item Cliquer sur \emph{Écriture manuelle} sur la ligne de la transaction.
-    \item Choisir le \textbf{compte de contrepartie}~: le sélecteur propose \textbf{tout compte actif et imputable} de la société, de toute classe, \textbf{sauf celui de la banque} --- le compte du grand livre relié au compte bancaire (voir plus bas). Compléter au besoin la description, la date de valeur et le projet analytique.
+    \item Choisir le \textbf{compte de contrepartie}~: le sélecteur propose \textbf{tout compte actif et imputable} de la société, de toute classe, \textbf{sauf celui de la banque} --- le compte du grand livre relié au compte bancaire (voir plus bas). Ouverte sans rien taper, la liste ne montre que les \textbf{premiers} comptes du plan (vingt au plus, dans l'ordre des numéros)~: tapez le numéro ou une partie du nom pour atteindre les autres. Compléter au besoin la description, la date de valeur et le projet analytique.
     \item Cliquer sur \emph{Passer l'écriture}.
 \end{enumerate}
 
@@ -2963,7 +2963,7 @@ Kesh passe \textbf{une} écriture entre le compte de la banque et ce compte de c
 \paragraph{Une écriture manuelle ne règle aucune facture.} Le compte débiteurs et le compte créanciers sont proposés comme les autres, mais une écriture manuelle sur l'un d'eux ne règle \textbf{aucune} facture~: la facture resterait due, sans lettrage, et rien d'autre ne le signalerait. Quand le compte choisi porte le rôle \emph{Créances clients} ou \emph{Dettes fournisseurs} (voir «~Rôles des comptes~»), un avis le dit sous le sélecteur, sans rien bloquer, et rappelle le geste juste~:
 \begin{itemize}
     \item pour un \textbf{paiement de client}, enregistrez le règlement depuis la fiche de la facture (\S\ref{sec:reglement-client}), puis rattachez-y la transaction (\S\ref{sec:rattacher-reglement})~;
-    \item pour le \textbf{paiement d'un fournisseur}, saisissez et validez la facture sans la payer depuis sa fiche~: elle vous sera proposée dans la réconciliation, à accepter (\S\ref{sec:matching-fournisseur})~; si elle est déjà payée, rattachez la transaction à ce paiement (\S\ref{sec:rattacher-reglement}).
+    \item pour le \textbf{paiement d'un fournisseur}, saisissez la facture et validez-la depuis sa fiche, sans y enregistrer de paiement~: le paiement est cette transaction, et la facture vous sera proposée dans la réconciliation, à accepter (\S\ref{sec:matching-fournisseur})~; si elle est déjà payée, rattachez la transaction à ce paiement (\S\ref{sec:rattacher-reglement}).
 \end{itemize}
 L'avis ne suit que le \textbf{rôle} du compte, jamais son numéro~: un compte de créances ou de dettes auquel ce rôle n'est pas attribué n'avertit pas. Un compte de \textbf{TVA} n'avertit pas non plus, alors qu'une écriture manuelle y fausse le décompte de TVA (issue \#981).
 

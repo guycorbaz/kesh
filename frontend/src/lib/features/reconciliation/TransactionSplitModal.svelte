@@ -36,7 +36,7 @@
 	import type { ProjectResponse } from '$lib/features/projects/projects.types';
 	import type { ReconciliationProposal, SplitProposalLine } from './reconciliation.types';
 	import { splitTransaction } from './reconciliation.api';
-	import { claimRoleOf, counterpartyAccounts } from './reconciliation-counterparties';
+	import { claimRoleOfId, counterpartyAccounts } from './reconciliation-counterparties';
 	import CounterpartyClaimNotice from './CounterpartyClaimNotice.svelte';
 
 	type Props = {
@@ -342,7 +342,7 @@
 								</td>
 							</tr>
 							<!-- Story 34-3 (AC-4) — l'avis débiteurs / créanciers, sous la ligne concernée. -->
-							{#if claimRoleOf(filteredAccounts.find((a) => a.id === line.counterpartyAccountId)) !== null}
+							{#if claimRoleOfId(filteredAccounts, line.counterpartyAccountId) !== null}
 								<tr data-testid={`split-row-notice-${i}`}>
 									<td colspan={projects.length > 0 ? 5 : 4} class="pb-1">
 										<CounterpartyClaimNotice

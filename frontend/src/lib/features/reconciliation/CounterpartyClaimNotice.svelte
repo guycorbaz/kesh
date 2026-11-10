@@ -6,12 +6,12 @@
   resterait due, sans lettrage, et rien ne le signalerait. L'avis le dit et renvoie au geste
   juste (règlement depuis la fiche puis rattachement ; pour un fournisseur, facture validée
   puis acceptée ici). Il ne bloque rien : signaler, jamais bloquer. Il ne s'affiche que pour
-  le rôle explicite du compte (`claimRoleOf`), jamais pour un numéro.
+  le rôle explicite du compte (`claimRoleOfId`), jamais pour un numéro.
 -->
 <script lang="ts">
 	import { i18nMsg } from '$lib/shared/utils/i18n.svelte';
 	import type { AccountResponse } from '$lib/features/accounts/accounts.types';
-	import { claimRoleOf } from './reconciliation-counterparties';
+	import { claimRoleOfId } from './reconciliation-counterparties';
 
 	type Props = {
 		/** Les comptes proposés, où se lit le compte choisi. */
@@ -24,9 +24,8 @@
 
 	let { accounts, accountId, line }: Props = $props();
 
-	const role = $derived(
-		accountId === null ? null : claimRoleOf(accounts.find((a) => a.id === accountId)),
-	);
+	// Revue de code P1 (B1-1) : même règle que la rangée d'*Éclater* qui porte l'avis.
+	const role = $derived(claimRoleOfId(accounts, accountId));
 </script>
 
 {#if role !== null}
@@ -45,7 +44,7 @@
 		{:else}
 			{i18nMsg(
 				'reconciliation-manual-claim-notice-payable',
-				"Ce compte est celui des créanciers. Une écriture manuelle ne règle aucune facture fournisseur : elle resterait à payer. Pour le paiement d'un fournisseur, saisissez et validez la facture sans la payer depuis sa fiche : elle vous sera proposée ici, à accepter. Si elle est déjà payée, rattachez la transaction à ce paiement.",
+				"Ce compte est celui des créanciers. Une écriture manuelle ne règle aucune facture fournisseur : elle resterait à payer. Pour le paiement d'un fournisseur, saisissez la facture et validez-la depuis sa fiche, sans y enregistrer de paiement : le paiement est cette transaction, et la facture vous sera proposée ici, à accepter. Si elle est déjà payée, rattachez la transaction à ce paiement.",
 			)}
 		{/if}
 	</p>

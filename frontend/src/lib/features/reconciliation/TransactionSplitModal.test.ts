@@ -389,4 +389,59 @@ describe('TransactionSplitModal — contreparties et avis (Story 34-3)', () => {
 			expect(r.queryByTestId('counterparty-claim-account-notice')).toBeNull(),
 		);
 	});
+
+	// Revue de code P1 (B1-2, E1-3, A1-3) — les lignes sont rendues par indice (`(i)`) : l'avis
+	// doit suivre la ligne après une suppression, et deux lignes sur le même compte en portent
+	// chacune un.
+	it('AC-4 — après suppression d’une ligne, l’avis suit sa ligne (data-line du nouvel indice)', async () => {
+		const r = monter(210);
+		await fireEvent.click(await r.findByTestId('split-add-line'));
+		await choisir(r, 0, '5000');
+		await choisir(r, 1, '6900');
+		await choisir(r, 2, '2000');
+		await waitFor(() => {
+			const a = r.getAllByTestId('counterparty-claim-account-notice');
+			expect(a).toHaveLength(1);
+			expect(a[0].getAttribute('data-line')).toBe('2');
+		});
+		await fireEvent.click(await r.findByTestId('split-remove-0'));
+		await waitFor(() => {
+			const a = r.getAllByTestId('counterparty-claim-account-notice');
+			expect(a).toHaveLength(1);
+			expect(a[0].getAttribute('data-role')).toBe('Payable');
+			expect(a[0].getAttribute('data-line')).toBe('1');
+		});
+		// La rangée qui porte l'avis est bien celle qui suit la ligne 1, et aucune autre.
+		expect(r.queryByTestId('split-row-notice-0')).toBeNull();
+		expect(r.getByTestId('split-row-notice-1')).toBeTruthy();
+	});
+
+	it('AC-4 — deux lignes sur le compte débiteurs : un avis sous chacune', async () => {
+		const r = monter(210);
+		await choisir(r, 0, '1100');
+		await choisir(r, 1, '1100');
+		await waitFor(() => {
+			const a = r.getAllByTestId('counterparty-claim-account-notice');
+			expect(a.map((n) => n.getAttribute('data-line'))).toEqual(['0', '1']);
+			expect(a.every((n) => n.getAttribute('data-role') === 'Receivable')).toBe(true);
+		});
+		// Sans projet, la rangée couvre les quatre colonnes de l'en-tête.
+		const cellule = r.getByTestId('split-row-notice-0').querySelector('td') as HTMLTableCellElement;
+		expect(cellule.getAttribute('colspan')).toBe('4');
+		expect(r.getByTestId('split-lines-table').querySelectorAll('thead th')).toHaveLength(4);
+	});
+
+	it('AC-4 — avec des projets, la rangée de l’avis couvre les cinq colonnes', async () => {
+		listProjectsMock.mockResolvedValueOnce([
+			{ id: 5, parentId: null, code: 'CHALET', name: 'Chalet', archived: false },
+		]);
+		const r = monter(210);
+		await r.findByTestId('split-line-project-0');
+		await choisir(r, 0, '1100');
+		const rangee = await r.findByTestId('split-row-notice-0');
+		const cellule = rangee.querySelector('td') as HTMLTableCellElement;
+		expect(cellule.getAttribute('colspan')).toBe('5');
+		// Contrôle croisé : l'en-tête compte bien cinq colonnes.
+		expect(r.getByTestId('split-lines-table').querySelectorAll('thead th')).toHaveLength(5);
+	});
 });

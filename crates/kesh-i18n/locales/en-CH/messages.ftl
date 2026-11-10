@@ -1450,8 +1450,8 @@ reconciliation-manual-error-counterparty-required = Counterparty account require
 reconciliation-manual-error-description-too-long = Description too long (max { $max } characters)
 reconciliation-manual-description-placeholder = Bank fees May
 # Story 34-3 (#967, AC-4) — non-blocking notice when the counterparty holds the receivable or payable role.
-reconciliation-manual-claim-notice-receivable = This account is the accounts receivable account. A manual entry settles no customer invoice: it would remain due. For a customer payment, record the payment from the invoice page, then link the transaction to it.
-reconciliation-manual-claim-notice-payable = This account is the accounts payable account. A manual entry settles no supplier invoice: it would remain unpaid. For a supplier payment, enter and validate the invoice without paying it from its page: it will be proposed here, to accept. If it is already paid, link the transaction to that payment.
+reconciliation-manual-claim-notice-receivable = This is the accounts receivable account. A manual entry settles no customer invoice: it would remain due. For a customer payment, record the payment from the invoice page, then link the transaction to it.
+reconciliation-manual-claim-notice-payable = This is the accounts payable account. A manual entry settles no supplier invoice: it would remain unpaid. For a supplier payment, enter the invoice and validate it from its page, without recording a payment there: the payment is this transaction, and the invoice will be proposed here, to accept. If it is already paid, link the transaction to that payment.
 
 # Story 8-5a-bis FR48 — split aggregated transaction.
 reconciliation-split-button-label = Split

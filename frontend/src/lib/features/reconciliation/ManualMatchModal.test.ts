@@ -286,7 +286,7 @@ describe('ManualMatchModal — la liste des contreparties (Story 15-6d, Story 34
 const AVIS_DEBITEURS =
 	'Ce compte est celui des débiteurs. Une écriture manuelle ne règle aucune facture client : elle resterait due. Pour un paiement de client, enregistrez le règlement depuis la fiche de la facture, puis rattachez-y la transaction.';
 const AVIS_CREANCIERS =
-	"Ce compte est celui des créanciers. Une écriture manuelle ne règle aucune facture fournisseur : elle resterait à payer. Pour le paiement d'un fournisseur, saisissez et validez la facture sans la payer depuis sa fiche : elle vous sera proposée ici, à accepter. Si elle est déjà payée, rattachez la transaction à ce paiement.";
+	"Ce compte est celui des créanciers. Une écriture manuelle ne règle aucune facture fournisseur : elle resterait à payer. Pour le paiement d'un fournisseur, saisissez la facture et validez-la depuis sa fiche, sans y enregistrer de paiement : le paiement est cette transaction, et la facture vous sera proposée ici, à accepter. Si elle est déjà payée, rattachez la transaction à ce paiement.";
 
 describe('ManualMatchModal — avis débiteurs / créanciers (Story 34-3, AC-4)', () => {
 	function plan(): AccountResponse[] {
@@ -350,7 +350,12 @@ describe('ManualMatchModal — avis débiteurs / créanciers (Story 34-3, AC-4)'
 	it('un compte de TVA n’avertit pas (hors périmètre écrit)', async () => {
 		const r = monter();
 		await choisir(r, '1170');
-		await r.findByTestId('manual-match-submit');
+		// Revue de code P1 (B1-6) : prouver d'abord que le choix a pris — le champ montre le
+		// compte et la validation est active —, sans quoi l'absence passerait à vide.
+		const champ = document.querySelector('input[aria-autocomplete="list"]') as HTMLInputElement;
+		await waitFor(() => expect(champ.value).toContain('1170'));
+		const submit = (await r.findByTestId('manual-match-submit')) as HTMLButtonElement;
+		await waitFor(() => expect(submit.disabled).toBe(false));
 		expect(r.queryByTestId('counterparty-claim-account-notice')).toBeNull();
 	});
 });
