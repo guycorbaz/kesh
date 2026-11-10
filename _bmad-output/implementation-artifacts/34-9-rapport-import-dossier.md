@@ -180,19 +180,20 @@ importé(s) ».
 
 ## Tâches
 
-- [ ] **T0 — étape 0** : relire les prémisses ; reproduire sur une installation **jetable** (jamais la base du NAS) l'import
+- [x] **T0 — étape 0** : relire les prémisses ; reproduire sur une installation **jetable** (jamais la base du NAS) l'import
   mixte, avec une capture de l'écran actuel (« avant »), pour établir ce que Guy a vu.
-- [ ] **T1 — rouge** : tests serveur AC-3, Vitest AC-6, E2E AC-7 ; rouges journalisés (`kesh-gate-logs/e342/rouges.log`).
-- [ ] **T2** : `inbox_import.rs` — `dispose_failed` reçoit le `details` et y **fusionne** `movedTo` (lu de `move_to_failed`,
+- [x] **T1 — rouge** : tests serveur AC-3, Vitest AC-6, E2E AC-7 ; rouges journalisés (`kesh-gate-logs/e342/rouges.log` ;
+  journal réel : `kesh-gate-logs/e349/rouges.log`, la clé de l'agent de développement étant `e349`).
+- [x] **T2** : `inbox_import.rs` — `dispose_failed` reçoit le `details` et y **fusionne** `movedTo` (lu de `move_to_failed`,
   qui rend le nom au lieu d'un booléen) ; une fonction qui construit le `details` du doublon depuis un `ImportedSupplierInvoice`
   (DRY, trois sites) ; relecture après `rollback` pour les deux courses (`:577`, `:658`) ; `FileOutcome::Skipped` porte un code,
   le rapport `skipped` et `truncatedAt`, `warnings` garde ses chaînes ; agrégation extraite en fonction pure (AC-3, P3-9-1). Doc-comment du module (`:1-26`) à jour.
-- [ ] **T3** : `imported-supplier-invoices.types.ts` (`details` d'un doublon, `skipped`, `truncatedAt`), `+page.svelte` (lignes,
+- [x] **T3** : `imported-supplier-invoices.types.ts` (`details` d'un doublon, `skipped`, `truncatedAt`), `+page.svelte` (lignes,
   anciens testids gardés, résumé composé, ancres `id="imported-<id>"`, notifications), i18n, `error-label.ts` si un libellé
   change (la garde de cardinalité suit) ; assertions existantes : `import-page.test.ts:183`, `supplier-documents.spec.ts:110`,
   clés `imported-supplier-invoices-report-accepted` / `-failed` (garde `i18n-keys.test.ts`) — gardées ou retirées avec leur
   garde.
-- [ ] **T4** : manuels (`.tex` ; PDF à l'intégration), `docs/api-external.md` ; CHANGELOG *Corrigé* (`refs #969`, `refs #974`).
+- [x] **T4** : manuels (`.tex` ; PDF à l'intégration), `docs/api-external.md` ; CHANGELOG *Corrigé* (`refs #969`, `refs #974`).
 - [ ] **T5** : captures (thème clair, base jetable) : rapport mixte, notification d'avertissement, lien suivi jusqu'à la ligne.
 
 ### Mutations nommées
@@ -246,11 +247,88 @@ Aucun fichier commun avec les autres stories du groupe. `inbox_import.rs` n'est 
   fiche 0 C, 0 H, 0 M, 1 LOW, retenu : **P3-9-1** (lu : `inbox_import.rs:301-317`, agrégation dans la boucle privée) →
   extraction en fonction pure prescrite à l'AC-3, M9. En passant, le préfixe `…` du résumé est écrit
   (`imported-supplier-invoices-report`), comme pour la 34-4 (P3-4-1).
+- 2026-11-10/11 : Développement (Opus 5.5, worktree `/home/gcorbaz/devel/kesh-e349`, clé `e349`, base `665de151`).
+  **Étape 0** : aucun LOW de validation en suspens pour cette fiche (P3-9-1 déjà prescrit à l'AC-3 ; P4 et P5 ne portent pas
+  sur la 34-9). Prémisses relues au commit de base par `git show 665de151:crates/kesh-api/src/inbox_import.rs | sed -n` :
+  `:87` (`STABILITY_DELAY` = 25 ms), `:301-317` (agrégation dans la boucle, `Skipped(warning) => report.warnings.push`),
+  `:322-325` (troncature), `:366-372` (`FILE_TOO_LARGE` avec `byteSize`, `maxBytes`), `:397-399` (instable), `:577`, `:581`,
+  `:658` (les trois `dispose_failed(…, ERR_DUPLICATE, None)`), `:856` (`random_suffix`), `:882-884` (disparu) — toutes
+  justes. Capture « avant » de l'import mixte sur base jetable (`kesh_e2e_e349`) : `kesh-gate-logs/e349/captures/avant-rapport-mixte.png`
+  — « 1 document(s) importé(s). » en tête, le doublon en dernière ligne rouge, sans lien ni mention de `failed/` : le
+  constat de Guy reproduit. **Rouges** (`kesh-gate-logs/e349/rouges.log`) : 7/7 tests serveur, 13/20 Vitest, 2/5 E2E
+  (nouvelle spec contre l'écran du commit de base). Choix neufs : C-e349-1 à C-e349-10
+  (`e34-choix-autonomes-e349.md`). **Consigne Edit** : tout le code a été édité à l'outil Edit ; un seul écart, `cargo fmt`
+  (le formateur du projet, non un script de remplacement) sur `inbox_import_e2e.rs`, commit `de4e7514`. Les mutations
+  passent par un script (`kesh-gate-logs/e349/mut-e349.py`, motif vérifié unique, restauration `git checkout --` + `touch`),
+  comme le permet la consigne.
 
 ## Dev Agent Record
 
 ### Agent Model Used
 
+Claude Opus 5.5 (agent de développement autonome de l'Epic 34).
+
 ### Completion Notes List
 
+- **Serveur** (`inbox_import.rs`) : `details.movedTo` fusionné sur toute entrée `failed[]` (`with_moved_to`, `move_to_failed`
+  rend le nom rangé) ; un `DUPLICATE` porte `existingDocumentId`, `existingStatus`, `supplierInvoiceId`
+  (`duplicate_details`, une définition pour les trois sites) ; relecture par l'empreinte après le `rollback` aux deux sites
+  de course (`reread_duplicate`, une erreur journalisée et non escaladée, C-e349-1) ; `SkipReason` (`UNSTABLE`,
+  `VANISHED`), `skipped[]`, `truncatedAt` ; `warnings[]` gardé, mêmes chaînes, déprécié ; agrégation extraite en fonctions
+  pures `push_outcome` et `mark_truncated`, testées dans `mod tests`.
+- **AC-3** : les deux courses **se montent sans crochet de production** (C-e349-6) — verrou de ligne tenu par une
+  transaction du test, attente lue dans `information_schema.PROCESSLIST` ; l'instabilité aussi (un fil qui écrit dans le
+  fichier pendant l'import). `VANISHED` ne se monte pas sans crochet : couvert par le test unitaire de `push_outcome` (M9).
+- **Écran** : résumé composé segment par segment (aucun sélecteur Fluent), une ligne par fichier dans l'ordre des noms
+  (`data-testid="inbox-import-file-row"`, `data-state`), anciens testids portés par l'intérieur de la ligne (C-e349-4),
+  lien `#imported-<id>` ou `/supplier-invoices/<id>`, ancre sur chaque ligne de la liste, phrase `failed/`, notification
+  d'avertissement ou de succès, une seule notification si le rechargement échoue (C-e349-7), bordure d'avertissement
+  (C-e349-8). `warnings[]` n'est plus affiché.
+- **Textes** : 21 clés neuves dans les quatre catalogues, 2 retirées (`-report-accepted`, `-report-failed`, C-e349-5) ;
+  aucune ne porte `->` (test du catalogue réel). Gardes ajustées : `i18n-keys.test.ts` sites 2922 → 2942 (+20),
+  `i18n-un-repli-par-cle.test.ts` clés 407 → 426 (+19), recomptés par les gardes elles-mêmes.
+- **Documentation** : `docs/api-external.md` (contrat étendu, `warnings[]` déprécié) ; `user-manual.tex` (paragraphe « Le
+  rapport d'import », « Ce qui reste refusé ») ; `admin-manual.tex` (`sec:inbox-import` : renommage, vidage à la main ;
+  `:2283` « Ce qui reste hors du fichier » relu, juste sans changement). PDF non régénérés (C-e342-20 : à l'intégration).
+  CHANGELOG `## [0.17.6] — Non publié`, *Corrigé*, `refs #969`, `refs #974`.
+- **Tests ajoutés** (`665de151` → `HEAD`, recomptés par `git show <ref>:<fichier> | grep -c`) : `inbox_import_e2e.rs`
+  44 → 50 `#[sqlx::test]` (+6 : quatre doublons, instable, troncature) et un test étendu
+  (`import_file_too_large_and_directory_ignored`) ; `inbox_import.rs` 0 → 5 `#[test]` ; `import-page.test.ts` 7 → 20
+  tests exécutés (un réécrit, treize neufs dont quatre par locale) ; `inbox-import.spec.ts` 3 → 5 tests.
+- **Mutations** (`kesh-gate-logs/e349/mut/*.log`, chaîne `mut/chaine.log`) : les dix rougissent — M1 (2 tests), M2 (1),
+  M2-écran (Vitest mixte), M3 (3), M4 (2 Vitest), M5 (3 Vitest), M6 (unitaire + `FILE_TOO_LARGE`), M7 (course
+  `discarded`), M8 (2 Vitest), M9 (unitaire + instable). M4 et M5 n'ont **pas** été rejouées en E2E (un `npm run build`
+  muté chacune) : le rouge E2E de `e2e-r1`, où l'écran du commit de base n'affiche aucune ligne `inbox-import-file-row`,
+  établit déjà que la spec rougit sans la ligne du doublon.
+- **Gates au dernier commit de code** — déclarés tels qu'ils ont tourné :
+  - backend, au commit `de4e7514` (le commit suivant, `51709afd`, ne touche que le frontend) : bases remises à neuf ;
+    `scripts/test-fast.sh --ci` **5149 exécutés, 5149 passés, 12 ignorés** (`gate-test-fast.log`) ;
+    `cargo build --workspace --all-targets` vert (`gate-build.log`) ; `scripts/gate-ci.sh kesh_ci_e349` **5156 passés,
+    0 échoué, 16 ignorés** (`gate-ci.log`) ;
+  - frontend, au commit `de4e7514` : `npm run check` **rouge** (1 erreur de type, `row.skipped` dans le `{:else}`),
+    `npm run test:unit` **rouge** (2 gardes i18n de décompte, 2892/2894), `npm run build` vert, `lint-i18n-ownership`
+    vert — corrigés au commit `51709afd` ; depuis, `lint-i18n-ownership` vert, et les trois fichiers Vitest concernés
+    rejoués isolément, verts (11, 4 et 20 tests, `verts-vitest-gardes.log`). **En attente** (pause `PAUSE-HEAVY` de la
+    station, décision de Guy du 2026-11-11) : `npm run check`, `npm run test:unit` complet, `npm run build`, E2E complet
+    et captures « après », rejoués par `kesh-gate-logs/e349/gates2-e349.sh` à la levée de la pause.
+
 ### File List
+
+- `crates/kesh-api/src/inbox_import.rs`
+- `crates/kesh-api/src/routes/imported_supplier_invoices.rs`
+- `crates/kesh-api/tests/inbox_import_e2e.rs`
+- `crates/kesh-i18n/locales/{fr,de,it,en}-CH/messages.ftl`
+- `frontend/src/routes/(app)/supplier-invoices/import/+page.svelte`
+- `frontend/src/routes/(app)/supplier-invoices/import/import-page.test.ts`
+- `frontend/src/lib/features/imported-supplier-invoices/imported-supplier-invoices.types.ts`
+- `frontend/src/lib/features/imported-supplier-invoices/imported-supplier-invoices.api.ts`
+- `frontend/src/lib/shared/i18n-keys.test.ts`
+- `frontend/src/lib/shared/i18n-un-repli-par-cle.test.ts`
+- `frontend/tests/e2e/inbox-import.spec.ts`
+- `frontend/tests/e2e/helpers/inbox.ts`
+- `docs/api-external.md`
+- `docs/manual/fr/user-manual.tex`
+- `docs/manual/fr/admin-manual.tex`
+- `CHANGELOG.md`
+- `_bmad-output/implementation-artifacts/e34-choix-autonomes-e349.md`
+- `_bmad-output/implementation-artifacts/34-9-rapport-import-dossier-review-prompt-p1.md`
