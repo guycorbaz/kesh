@@ -337,6 +337,50 @@ Rust n'est touché, hormis les `.ftl` : `cargo test -p kesh-i18n` et `textes_coh
   Ni Rust, ni `.ftl`, ni manuel ne sont touchés : `test-fast` et `make` ne sont pas relancés. **Captures différées** par
   la pause des commandes lourdes (`PAUSE-HEAVY`, décision de Guy du 2026-11-11, priorité à la release de mybibli) : elles
   sont rejouées à la levée de la pause. Le prompt de la passe P3 est `34-6-societe-apres-409-review-prompt-p3.md`.
+  - *(Annoté le 2026-11-11, revue P3 A3-4 et A3-5. Les issues demandées ci-dessus sont **#997**, pour `aria-describedby`,
+    et **#996**, pour le contraste. Le décompte de cette entrée est faux d'un LOW : l'A2-5 est absorbé par le MEDIUM
+    commun, si bien que la passe rend **12 L**, et non 13.)*
+- 2026-11-11 : **revue de code P3 (Opus, trois lentilles) : 0 C, 0 H, 1 M, 13 L.**
+  - B rend 1 M et 6 L ; E rend 0 M et 4 L ; A rend 1 M et 5 L, soit 2 M et 15 L bruts.
+  - Le MEDIUM (P3-B1 = A3-1) est un seul défaut : E le classe LOW (E3-1), et A3-2 en porte le corollaire. Il est compté une
+    fois, sous M.
+  - Les LOW communs comptent une fois : P3-B3 = E3-3 = A3-3, et P3-B6 = E3-4.
+  - Rapports : `kesh-gate-logs/e346-review-p3-{B,E,A}.md`.
+
+  Remédiation (Opus 5.5), faite pendant la pause des commandes lourdes : rouges `8444ca86`, correctif `89397483`.
+
+  Sort de chaque finding :
+  - **P3-B1 = A3-1 (M), avec E3-1 et le premier cas de A3-2 : traité** (**C-e346-11**).
+    - Le correctif : une séquence client est attribuée au départ de chaque requête. À version égale, `adoptCompany`
+      n'adopte que la réponse d'une requête partie après celle dont vient `data`.
+    - Le test `:898` est corrigé : il dit que la version 5 vient de l'écriture d'un autre, et le modèle porte cette
+      écriture.
+    - Deux tests neufs jouent le vrai serveur, un verrou à version égale :
+      - « verrouillage à version égale » : l'écran montre la borne. Il était vert avant, et la mutation `<` → `<=`
+        d'`adoptCompany` doit le faire rougir.
+      - « une relecture partie avant le verrou… » : rouge d'abord.
+    - Limite assumée et écrite à C-e346-11 : la séquence ordonne les départs, non le traitement au serveur.
+  - **P3-B2 (L), traité** par la même séquence : une relecture refusée parce que plus ancienne juge le bloc contre
+    `data` ; rouge d'abord.
+  - **E3-2 (L) et le second cas de A3-2** (une version qui baisse après une restauration) : non traités, **issue
+    demandée** (P4). Adopter son propre succès quoi qu'il arrive ferait reculer l'écran quand deux succès se croisent.
+  - **P3-B3 = E3-3 = A3-3 (L), traité** : `vi.resetAllMocks()` remplace `vi.clearAllMocks()` dans les six `beforeEach`
+    de `settings-page.test.ts`. Aucun test n'a rougi du changement.
+  - **P3-B6 = E3-4 (L), traité** : l'avis se vide au départ de l'envoi (**C-e346-4 renversé**) ; rouge d'abord.
+  - **P3-B5 (L), traité** : `read-only:bg-input/50 read-only:cursor-progress` sur les huit champs. Le style est posé
+    dans la page, le composant `Input` étant partagé : d'autres écrans emploient `readonly` à demeure.
+  - **P3-B7 (L), traité** : le titre du test dit « pendant l'envoi ».
+  - **P3-B4 (L)** : avec A3-1.
+  - **A3-4, A3-5 (L), traités** : annotation datée de l'entrée P2.
+  - **A3-6 (L), traité** : l'écart est dit au `rouges.log`, section P3.
+
+  **Différé par `PAUSE-HEAVY`** (toujours en place), à jouer à sa levée, au dernier commit de code `89397483` :
+  - les mutations, dont `<` → `<=` d'`adoptCompany` et la garde de séquence ;
+  - Vitest complet, `npm run check`, `lint-i18n-ownership`, `build` et l'E2E complet ;
+  - les captures, déjà différées en P2.
+
+  Seuls les deux fichiers de test de la story ont tourné, isolés sous `mem-guard`, comme la pause le permet : 74 verts.
+  Le manuel ne change pas. Le prompt de la passe P4 est `34-6-societe-apres-409-review-prompt-p4.md`.
 
 ## Dev Agent Record
 
@@ -400,4 +444,5 @@ Opus 5.5 (claude-opus-5-5), en autonomie.
 - `CHANGELOG.md`
 - `_bmad-output/implementation-artifacts/34-6-societe-apres-409.md`, `34-6-societe-apres-409-review-prompt-p1.md`,
   `34-6-societe-apres-409-review-prompt-p2.md`, `34-6-societe-apres-409-review-prompt-p3.md`,
+  `34-6-societe-apres-409-review-prompt-p4.md`,
   `e34-choix-autonomes-e346.md`, `sprint-status.yaml`

@@ -44,6 +44,11 @@ Choix tranchés en autonomie au développement (Opus 5.5, 2026-11-10), à côté
 - **Écartée.** Effacer l'avis au début de chaque envoi : il disparaîtrait pendant l'envoi, et un refus 400 ferait perdre la
   valeur concurrente qu'enregistrer remplacera.
 - **Réversible.** Oui.
+- *(Renversé le 2026-11-11, revue de code P3, P3-B6 = E3-4, sur consigne de l'orchestrateur : l'avis se vide au départ
+  de chaque envoi. L'option écartée ci-dessus est retenue, pour deux raisons : un avis qui reste à côté d'un refus d'une
+  autre nature est périmé, et un second conflit identique ne change aucun nœud de la région vive, si bien qu'un lecteur
+  d'écran ne l'annonce pas. Le prix, que les deux lentilles acceptent : la valeur concurrente n'est plus montrée après
+  un refus 400. Le clic suivant redonne un 409, qui la remontre.)*
 
 ## C-e346-5 — journaux et captures sous `kesh-gate-logs/e346/`
 
@@ -127,4 +132,37 @@ Choix tranchés en autonomie au développement (Opus 5.5, 2026-11-10), à côté
     un écrasement.
 - **Écartée.** Verrouiller les trois blocs pendant une relecture : la course resterait entre deux enregistrements réussis,
   et l'Administrateur serait bloqué sans raison visible.
+- **Réversible.** Oui.
+- *(Complété le 2026-11-11, revue de code P3 : « à version égale, elle remplace » n'était pas sûr pour le verrou de
+  période, qui ne change pas la version. Voir C-e346-11.)*
+
+## C-e346-11 — une séquence de départ départage deux sociétés de même version
+
+- **Contexte.** Revue de code P3, P3-B1 = A3-1 (MEDIUM ; E3-1 et A3-2 le classaient LOW). `lock_books` et `unlock_books`
+  écrivent `books_locked_through` sans changer la version (`companies.rs:1043`, `:1171`). Le cas réel d'un verrouillage
+  est donc toujours une société de même version que `data`. Une relecture partie avant le verrou et revenue après portait
+  la même version sans la borne. Elle remplaçait `data`, et l'écran réaffichait « Aucun verrou ».
+- **Retenu** (la piste de l'orchestrateur).
+  - Un numéro de séquence client, `nextSeq()`, est attribué **au départ** de chaque requête qui rend la société :
+    relecture, enregistrement d'un bloc, verrouillage, déverrouillage. `dataSeq` est la séquence de la requête dont vient
+    `data` ; le chargement initial vaut 0.
+  - `adoptCompany` adopte toujours une version supérieure. À version égale, il n'adopte que si la requête est partie après
+    celle de `data`. Il rend vrai s'il a adopté.
+  - P3-B2, réglé du même coup : quand une relecture est refusée parce que plus ancienne, le bloc en 409 est jugé contre
+    `data.company`, copie et version prises ensemble. Il n'est plus jugé contre la société relue, ce qui pouvait fermer
+    l'édition sur « déjà enregistrées » à tort.
+- **Limite assumée.** La séquence ordonne les départs, non le traitement au serveur. Un cas reste possible : une requête
+  partie après le verrou, mais servie avant qu'il ne soit écrit, et revenue après sa réponse. Il faut deux requêtes
+  envoyées à quelques millisecondes d'intervalle, et l'effet se limite à l'affichage : le serveur fait foi, et le
+  rechargement de la page rétablit l'écran.
+- **Version qui baisse** (E3-2, second cas de A3-2) : après la restauration d'un `.keshbackup` faite ailleurs, la version
+  du serveur peut baisser, et un onglet resté ouvert garde l'ancien affichage jusqu'au rechargement. Adopter son propre
+  succès quoi qu'il arrive est écarté : deux succès dont les réponses se croisent feraient alors reculer l'écran. **Issue
+  demandée (P4).**
+- **Écartées.**
+  - Ne pas toucher `booksLockedThrough` lors des adoptions qui ne viennent pas du verrou : la même course vaudrait en
+    sens inverse, pour un déverrouillage.
+  - Faire incrémenter la version par le verrou côté serveur : changement de serveur, hors du périmètre de la story (« rien
+    ne change côté serveur »). Il ferait aussi rendre un 409 à tout autre onglet qui édite la société au moment d'un
+    verrouillage.
 - **Réversible.** Oui.
