@@ -323,10 +323,10 @@ describe('TransactionSplitModal — contreparties et avis (Story 34-3)', () => {
 		});
 	}
 
-	async function optionsDeLigne(
-		r: ReturnType<typeof render>,
-		ligne: number,
-	): Promise<HTMLElement[]> {
+	/** Ce que les aides lisent du rendu (le type générique de `render` ne s'infère pas ici). */
+	type Rendu = { findByTestId: (id: string) => Promise<HTMLElement> };
+
+	async function optionsDeLigne(r: Rendu, ligne: number): Promise<HTMLElement[]> {
 		const rang = await r.findByTestId(`split-row-${ligne}`);
 		const champ = rang.querySelector('input[aria-autocomplete="list"]') as HTMLInputElement;
 		await fireEvent.focus(champ);
@@ -337,7 +337,7 @@ describe('TransactionSplitModal — contreparties et avis (Story 34-3)', () => {
 		});
 	}
 
-	async function choisir(r: ReturnType<typeof render>, ligne: number, numero: string) {
+	async function choisir(r: Rendu, ligne: number, numero: string) {
 		const rang = await r.findByTestId(`split-row-${ligne}`);
 		const champ = rang.querySelector('input[aria-autocomplete="list"]') as HTMLInputElement;
 		await fireEvent.focus(champ);
