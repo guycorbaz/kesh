@@ -1026,7 +1026,7 @@ development_status:
   epic-33-retrospective: done
   epic-34: in-progress
   34-0-kickoff: done  # 2026-11-10 : epic-34-reconciliation-comptes-bancaires.md ; 261 issues et 109 bugs au tag v0.17.5 ; objectif : moins de chacun au tag v0.17.6.
-  34-1-assistant-compte-bancaire: ready-for-dev  # #966
+  34-1-assistant-compte-bancaire: review  # #966
   34-2-solde-ouverture-compte-bancaire: ready-for-dev  # #533
   34-3-ecriture-manuelle: ready-for-dev  # #967
   34-4-transaction-deja-comptabilisee: ready-for-dev  # #828
