@@ -80,12 +80,22 @@ d'IBAN et il est lié à un compte de dette. Seuls les quatre derniers chiffres 
 complet n'est jamais enregistré. Le relevé entre par l'import CSV ou par la saisie manuelle. Le prélèvement mensuel est
 un virement entre les deux comptes.
 
-## Questions ouvertes, à trancher à la spécification
+**Relevés de carte, 2026-11-10.** « pdf principalement, mais je dois pouvoir avoir des csv ». La 34-11b couvre donc
+deux chemins, sans lecture automatique d'un PDF :
 
-- **#972** : sous quelle forme Guy reçoit-il ses relevés de carte ? PDF seul, ou CSV/Excel ? Cela décide si la 34-11b
-  suffit telle quelle.
+- la **saisie manuelle du relevé** (#816) à partir du PDF, qui est le chemin principal ;
+- l'**import CSV** par un profil d'import.
+
+Le PDF du relevé peut être joint comme pièce s'il existe déjà un moyen de le faire. La lecture automatique d'un PDF de
+relevé est hors de cet epic : la fiche la trace en issue si elle l'estime utile.
+
+**Conduite, 2026-11-10.** L'epic est mené **en autonomie** jusqu'à l'image Docker (« mène l'épic en autonomie »). Les
+choix se consignent aux registres `e34-choix-autonomes-<clé>.md`.
+
+## Question ouverte, à trancher à la spécification
+
 - **#951** : la protection contre le double règlement passe-t-elle par une version ou par une clé d'idempotence ? Dans
-  les deux cas, le contrat de la route change.
+  les deux cas, le contrat de la route change. La fiche tranche et consigne son choix.
 
 ## Production
 
