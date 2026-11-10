@@ -36,13 +36,13 @@ ci-dessous sont fermées et que la v0.17.6 est publiée.
 | 34-2 | #533 (P2) | solde d'ouverture saisi à la création du compte bancaire, par le mécanisme du mode *Compléter* | non attendue |
 | 34-3 | #967 (P2) | réconciliation : « Écriture manuelle » (l'ancien *Affecter manuellement*) et *Éclater* sur tout compte imputable sauf celui de la banque | non |
 | 34-4 | #828 (P2) | réconciliation : signaler une transaction qui semble déjà comptabilisée, et confirmer avant de l'affecter | non attendue |
-| 34-5 | #951 (P1) | règlement d'une facture : idempotence côté serveur | **probable** |
+| 34-5 | #951 (P1) | règlement d'une facture : idempotence côté serveur, par la version de la facture (C-e343-1) | non (fiche) |
 | 34-6 | #953 (P2) | édition de la société : le second essai après un 409 n'écrase plus l'écriture concurrente | non |
 | 34-7 | #945 (P2) | renommer un exercice : rejeu sur interblocage | non |
 | 34-8 | #938 (P2) | factures fournisseur : la relecture après commit n'annonce plus en échec un geste écrit | non |
 | 34-9 | #969 (P2) | import du dossier : une ligne par fichier, doublon « déjà importé » avec lien vers la pièce existante, avertissement si un fichier échoue | non |
 | 34-10 | #970 | accueil : barres en couleurs unies (recettes en vert, dépenses en rouge), anneau avec le total des dépenses au centre, parts en couleurs unies | non |
-| 34-11a | #972 (P2) | carte de crédit : compte sans IBAN lié à un compte de dette, quatre derniers chiffres seulement ; inventaire clos des sites qui lisent l'IBAN | **probable** |
+| 34-11a | #972 (P2) | carte de crédit : compte sans IBAN lié à un compte de dette, quatre derniers chiffres seulement ; inventaire clos des sites qui lisent l'IBAN | **oui, breaking** (fiche : `min_required` 0.17.6) |
 | 34-11b | #972 | carte de crédit : relevé (CSV ou saisie manuelle), réconciliation, prélèvement mensuel comme virement, manuel pas à pas | non attendue |
 
 **Ordre et dépendances :**
@@ -50,6 +50,7 @@ ci-dessous sont fermées et que la v0.17.6 est publiée.
 - 34-11a et 34-11b viennent **après 34-3** : la contrepartie d'un achat par carte est souvent un compte de charge, mais le
   prélèvement passe par un compte de classe 2.
 - 34-11b suit 34-11a. 34-2 touche le même formulaire que 34-1 et la suit.
+- 34-4 passe après 34-3 (même composant, même § du manuel), et 34-11b après 34-4 (compte des écritures rapprochées ailleurs).
 - Toutes les autres stories sont indépendantes.
 - Le découpage de #972 en deux stories applique la règle de splitting préventif : la story touche plus de cinq modules
   (comptes bancaires, import, réconciliation, QR-facture, `pain.001`, sauvegarde).
@@ -99,7 +100,7 @@ choix se consignent aux registres `e34-choix-autonomes-<clé>.md`.
 
 ## Production
 
-**Deux migrations probables** (34-5 et 34-11a). Si l'une d'elles est écrite :
+**Une migration, breaking** (34-11a, d'après sa fiche : l'IBAN devient facultatif ; `kesh_version_min_required` passe à 0.17.6). La 34-5 n'en porte plus. En conséquence :
 
 - la sauvegarde d'avant la mise à jour s'écrit en tête des notes de version et au manuel d'administration ;
 - Kesh écrit en plus sa propre sauvegarde dans `backup/pre-upgrade/` (#847) ;

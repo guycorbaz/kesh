@@ -1,0 +1,209 @@
+# Story 34-8 : une facture fournisseur n'est plus annoncée en échec après son commit (#938)
+
+Status: ready-for-dev
+
+*Fiche rédigée le 2026-11-10 en autonomie (Opus 5.5), worktree `/home/gcorbaz/devel/kesh-e34`, branche `chore/epic-34-kickoff`,
+numéros de ligne de `a75835db`. Release **0.17.6**, Epic 34. **Aucune migration.** C'est la ligne « Non traité, à tracer » de
+la fiche 33-6, qui fermait le même défaut côté client. Registre : `e34-choix-autonomes-e343.md`, C-e343-9 à 12. Commits en
+`refs #938` ; à la PR : `closes #938`.*
+
+## Story
+
+En tant que Comptable, je veux que la réponse d'un geste sur une facture fournisseur (valider, repasser en brouillon,
+modifier, payer, annuler, annuler le règlement, compléter un document, joindre ou détacher un document) dise ce qui a été
+écrit, sans relecture après le commit. Ainsi, aucun 404 ni 500 n'annonce en échec un geste réussi, et l'écran relit après
+une réponse perdue au lieu de se taire.
+
+## Ce que le code dit (prémisses établies)
+
+- **Le défaut est là : neuf relectures après le commit.** Elles passent toutes par
+  `SupplierInvoiceResponse::load_with_settlement_cancellation(&state.pool, …)`
+  (`crates/kesh-api/src/routes/supplier_invoices.rs:268-277`), qui ouvre une transaction de lecture neuve
+  (`get_settlement_view`, `crates/kesh-db/src/repositories/supplier_invoices.rs:3002-3038`) et rend 404 si la facture manque.
+  Numéros relus à `a75835db`, différents de ceux de la fiche 33-6 parce que la 33-1 a récrit le fichier :
+
+  | Route | Handler | Écriture | Relecture |
+  |---|---|---|---|
+  | `PUT /supplier-invoices/{id}` | `update_supplier_invoice` | `update_supplier_invoice_once` (tx propre, `:805-848`) | `:796` |
+  | `POST …/validate` | `validate_supplier_invoice` | `supplier_invoices::validate` (`in_own_tx!`, `:1053-1064`) | `:901` |
+  | `POST …/unvalidate` | `unvalidate_supplier_invoice` | `supplier_invoices::unvalidate` (`in_own_tx!`, `:1067-1078`) | `:937` |
+  | `POST …/pay` | `pay_supplier_invoice` | `supplier_invoices::pay` (`:1890-1915`) | `:967` |
+  | `POST …/cancel` | `cancel_supplier_invoice` | `supplier_invoices::cancel` (`:2678-2694`) | `:991` |
+  | `POST …/settlement/cancel` | `cancel_supplier_invoice_settlement` | `supplier_invoices::cancel_settlement` (`:2951-2967`) | `:1023` |
+  | `POST /imported-supplier-invoices/{id}/complete` | `complete_import` (`imported_supplier_invoices.rs:128-149`) | `complete_import_once` (`:159-240`) | `:141` |
+  | `POST /supplier-invoices/{id}/source-document` | `attach_source_document` (`:577-603`) | `attach_source_document_once` (`:607-670`) | `:595` |
+  | `DELETE /supplier-invoices/{id}/source-document` | `detach_source_document` (`:689-708`) | `detach_source_document_once` (`:712-…`) | `:700` |
+
+- **Trois de ces angles morts sont écrits et assumés.** `imported_supplier_invoices.rs:120-123` (C-30-2-42, « patron de
+  `pay` »), `:573-578` et `:682-685` (C-30-2-52) : « une erreur de base entre le `COMMIT` et la relecture rend une erreur alors
+  que [le geste est fait] ». La story les ferme, et ces doc-comments sont récrits.
+- **La lecture est déjà transactionnelle.** `get_settlement_view` lit la facture, ses lignes, les deux motifs de refus, le
+  dernier lot confirmé et le document dans **une** transaction (`:3007-3029`), avec `&mut tx` partout. L'extraire en
+  `get_settlement_view_in_tx` coûte une signature.
+- ⚠️ **Sa règle propre** (doc-comment, `:2985-3001`) : aucune de ces lectures ne doit devenir verrouillante. Dans une
+  transaction d'écriture, une lecture ordinaire voit l'instantané de la **première** lecture ordinaire de la transaction, plus
+  ses propres écritures. Ce que la transaction a écrit est donc juste. Ce qui vient d'autres lignes peut dater du début de la
+  transaction : les drapeaux d'annulation sont indicatifs, le geste suivant les recalcule sous verrou (C-e343-10). À écrire au
+  doc-comment de la forme `_in_tx`.
+- **Les enveloppes.**
+  - `validate` et `unvalidate` passent par la macro `in_own_tx!` (`:411-424`), que la garde `syn` de la 33-6 ne lit pas
+    (limite écrite, `invoice_settlement_response_e2e.rs:409-412`).
+  - `pay`, `cancel` et `cancel_settlement` sont écrites en clair.
+  - Les formes `_in_tx` (`pay_in_tx`, `cancel_in_tx`, `cancel_settlement_in_tx`, `validate_in_tx`, `unvalidate_in_tx`) sont
+    réemployées par la confirmation d'un lot et par le rapprochement : elles ne doivent rien lire de plus.
+- **La vue garde les noms de champs.** `SupplierInvoiceSettlementView` (`:2973-2990`) a `invoice` et `lines` comme
+  `SupplierInvoiceWithLines` (`:64`). Appelants des cinq enveloppes hors des routes : **155** sites, tous en test, dans `kesh-db/tests/`, `kesh-api/tests/` et
+  `kesh-report/tests/`. Décompte : `git grep -nE "supplier_invoices::<f>\(" -- crates`, hors `_in_tx` et hors
+  `src/routes` ; `validate` 18, `unvalidate` 29, `pay` 40, `cancel` 43, `cancel_settlement` 25. Ceux qui lisent `.invoice` ou `.lines` compilent sans changement.
+  `SupplierSettlementCancellation.invoice` (`:2763-2768`) est un `SupplierInvoiceWithLines`.
+- **La garde de structure de la 33-6** (`crates/kesh-api/tests/invoice_settlement_response_e2e.rs:395-516`) : `Around`,
+  `around`, `expr_calls`. Elle est réutilisable telle quelle, à condition de la sortir du fichier (C-e343-11).
+  `tests/common/` existe.
+- **Un couplage à prévoir.** `services_motif.rs:2480-2483` compte les fonctions de `routes/supplier_invoices.rs` (11 `pub async
+  fn`, 13 `async fn`). Retirer `load_with_settlement_cancellation` change ces nombres. Pour `imported_supplier_invoices.rs`
+  (`:2391-2394`, 9 et 12), la garde rougit si une signature change de visibilité. Recompter à la source, et mettre à jour
+  avec la raison.
+- **L'écran** (commentaire de Guy sur #938, 2026-11-07). Fiche `frontend/src/routes/(app)/supplier-invoices/[id]/+page.svelte` :
+  - `pay()` (`:193-221`) n'affiche rien sur une erreur hors `ApiError` (`:215-217`) ;
+  - `cancelSettlement()` (`:259-263`), `cancel()` (`:299-300`) et `confirmValidate()` (`:383-386`) affichent `common-error`
+    sans relire ;
+  - `confirmUnvalidate()` (`:432-444`) relit seulement sur `isStaleState`.
+
+  `reloadAfterRefusal()` (`:477-483`) existe. `isSettlementOutcomeUnknown` (`frontend/src/lib/shared/utils/unknown-outcome.ts`)
+  aussi.
+- **Pas de double écriture côté fournisseur.**
+  - Payer : la garde est `inv.status != "open"`, `kesh-db/src/repositories/supplier_invoices.rs:1980`.
+  - Valider et repasser en brouillon : la version.
+  - Annuler et annuler le règlement : le statut.
+  - Compléter : `IMPORT_NOT_PENDING_COMPLETION`.
+  - Joindre : `IMPORT_NOT_PENDING_COMPLETION`. Détacher : `SOURCE_DOCUMENT_NOT_FOUND`.
+
+  Le défaut est un affichage faux, non un geste doublé : P2.
+
+## Acceptance Criteria
+
+1. **AC-1 — kesh-db.**
+   - `get_settlement_view_in_tx(tx, company_id, id) -> Result<Option<SupplierInvoiceSettlementView>, DbError>`, réemployée par
+     `get_settlement_view` (DRY).
+   - `commit_with_view(tx, company_id, id, result)` lit la vue après l'écriture et avant le commit. Une vue absente (`None`)
+     après une écriture réussie est une `DbError::Invariant` qui annule la transaction.
+   - `validate`, `unvalidate`, `pay`, `cancel` et `cancel_settlement` la terminent, et rendent la vue
+     (`SupplierSettlementCancellation.invoice` devient la vue).
+   - Les formes `_in_tx` ne changent pas.
+2. **AC-2 — routes.**
+   - Les six handlers de `supplier_invoices.rs` et les trois de `imported_supplier_invoices.rs` construisent leur réponse par
+     `SupplierInvoiceResponse::from_view` sur la vue rendue par l'écriture.
+   - Les quatre fonctions `_once` lisent la vue dans leur transaction, avant leur `commit`, et la rendent.
+   - `load_with_settlement_cancellation` est **retirée**, et ses mentions dans les doc-comments sont reprises (`git grep`).
+3. **AC-3 — garde de structure** (C-e343-11). Le visiteur passe dans `crates/kesh-api/tests/common/`, avec ses limites écrites.
+   - Pour les **neuf** handlers : aucun `.await` après l'appel d'écriture.
+   - Pour les **cinq** enveloppes et les **quatre** fonctions `_once` : la vue lue avant le commit, rien d'attendu après.
+   - Une **sonde positive** passe par le même découpage : une relecture remise après le commit dans un handler factice rend la
+     garde rouge.
+   - La garde du client (33-6) passe par le module commun, sans changer d'assertion.
+4. **AC-4 — ce qui est rendu est ce qui est écrit.** Pour chacun des neuf gestes, la réponse HTTP égale, champ à champ, un
+   `GET /supplier-invoices/{id}` qui la suit : `status`, `version`, `paidAt`, `settlementJournalEntryId`, `internalNumber`,
+   lignes, `settlementCancellable`, `cancellable` et leurs motifs, `lastConfirmedBatch`, `sourceDocument`.
+5. **AC-5 — pas de commit sans réponse.** Une lecture de vue en échec annule la transaction : c'est écrit au doc-comment de
+   `commit_with_view`. Ce n'est pas reproductible sans crochet de production (voir la section suivante).
+6. **AC-6 — les refus inchangés.** Les tests existants de ces neuf routes (statut, version, verrou de période, lot généré,
+   document déjà traité…) passent sans modification d'assertion. Seules les constructions de type peuvent changer.
+7. **AC-7 — le rejeu sur interblocage reste sûr.** `supplier_invoice_is_replayed_when_it_is_the_deadlock_victim` et
+   `supplier_invoice_unvalidation_is_replayed_when_it_is_the_deadlock_victim` (`rejeu_interblocage_e2e.rs:821-969`) passent :
+   la vue vient de la tentative qui a réussi.
+8. **AC-8 — écran** (C-e343-12).
+   - Sur les cinq gestes de la fiche (payer, annuler le règlement, annuler, valider, repasser en brouillon),
+     `isSettlementOutcomeUnknown(err)` (réponse perdue, 5xx, erreur hors `ApiError`) mène à une relecture
+     (`reloadAfterRefusal`) et à un avis : « L'issue n'est pas connue : la facture a été relue, vérifiez-la avant de
+     réessayer. »
+   - Un 4xx garde son traitement actuel.
+   - `pay()` n'est plus muet hors `ApiError`.
+   - Pas d'état bloquant : un second envoi est refusé par le statut ou la version.
+9. **AC-9 — textes.**
+   - Les doc-comments C-30-2-42 et C-30-2-52 des trois routes de documents ne décrivent plus d'erreur entre le commit et la
+     relecture.
+   - Celui d'`isSettlementOutcomeUnknown` couvre la fiche fournisseur.
+   - `docs/api-external.md:888` (joindre) dit « renvoyée après un succès dont la réponse s'est perdue (coupure réseau, ou
+     erreur entre la validation et la relecture de la facture) ». La parenthèse perd sa seconde branche, et le conseil de
+     relire reste pour la coupure réseau. `:890` (détacher) ne parle que de la réponse perdue : il est gardé tel quel, après
+     vérification.
+   - Le manuel d'administration ou d'utilisation : là où il décrit ce cas, aligné, et le PDF contrôlé aplati.
+   - CHANGELOG *Corrigé* (`refs #938`).
+
+## Ce qui ne se reproduit pas, et ce qui le remplace
+
+Comme à la 33-6 (C-e334-10), le 404 ou le 500 **entre** le commit et la relecture ne se provoque pas sans crochet de
+production : la fenêtre est entre deux requêtes SQL. Les tests d'égalité (AC-4) passent **déjà** avant le correctif, et c'est
+attendu : le comportement nominal ne change pas. **Le rouge d'avant vient de la garde de structure (AC-3)**, à l'exécution,
+et de la compilation des tests `kesh-db` qui lisent un champ de la vue sur le retour de `pay` ou de `validate`
+(`settlement_cancel_blocker`, par exemple). Les mutations prouvent que les égalités mordent.
+
+## Tâches
+
+- [ ] **T1 — rouges d'abord**, journalisés dans `kesh-gate-logs/e343/rouges.log` :
+  - la garde de l'AC-3, rouge à l'exécution sur les neuf handlers ;
+  - les tests `kesh-db` (`supplier_invoices_repository.rs` ou un fichier neuf) qui lisent `view.settlement_cancel_blocker` sur
+    le retour de `pay`, rouges à la compilation ;
+  - le Vitest de l'AC-8 pour `pay()` hors `ApiError`, rouge.
+- [ ] **T2 — `kesh-db`** : `get_settlement_view_in_tx`, `commit_with_view` et les cinq enveloppes.
+  - `validate` et `unvalidate` quittent `in_own_tx!`. La macro reste pour `create_draft` et `update_draft` si elle a encore
+    des usages ; sinon elle est retirée.
+  - ⚠️ `kesh-db` est touché : **gate complet même en cours de boucle**.
+- [ ] **T3 — routes** : les neuf handlers et les quatre `_once`. `load_with_settlement_cancellation` est retirée. Les comptes
+  de `services_motif.rs` sont recomptés.
+- [ ] **T4 — garde** : module commun, garde fournisseur, sonde positive, et la garde client rebranchée.
+- [ ] **T5 — égalités AC-4** dans `crates/kesh-api/tests/supplier_invoice_response_e2e.rs` (neuf), un test par geste. Les
+  montages de `supplier_invoice_draft_e2e.rs` et de `supplier_settlement_cancel_e2e.rs` sont à réemployer, sans copie
+  (règle DRY : aide commune si deux fichiers en ont besoin).
+- [ ] **T6 — écran** : AC-8, avec une clé i18n `supplier-invoices-unknown-outcome` aux quatre locales et un repli identique.
+  Vitest : un cas par geste (réponse perdue → relecture et avis ; 400 → message, sans relecture).
+- [ ] **T7 — E2E** : un paiement dont la réponse est coupée (`page.route(…).abort()`, patron de
+  `invoices-settle-unknown-outcome.spec.ts`). La fiche relue montre `payée` et l'avis. Un second clic sur *Payer* n'est pas
+  offert, puisque le statut a changé.
+- [ ] **T8 — textes** (AC-9) et **captures** de l'avis, en thème clair, dans `kesh-gate-logs/e343/captures/`.
+
+### Mutations nommées
+
+- **M1** : dans `pay`, la vue lue **avant** `pay_in_tx` → rouge AC-4 (`status: open` rendu pour une facture payée).
+- **M2** : dans `validate`, la vue lue avant `validate_in_tx` → rouge AC-4 (`internalNumber` absent, `version` d'avant).
+- **M3** : `load_with_settlement_cancellation` réintroduite dans `cancel_supplier_invoice` → rouge AC-3.
+- **M4** : dans `attach_source_document_once`, la vue lue après le `commit` → rouge AC-3.
+- **M5** : `commit_with_view` valide malgré une vue `None` → rouge du test `kesh-db` de `commit_with_view`. Le test écrit une
+  ligne témoin dans la transaction et passe un identifiant de facture absent. Il attend `DbError::Invariant`, et le témoin
+  absent après coup : la transaction est annulée.
+- **M6** : la fiche relit seulement sur `ApiError` → rouge Vitest AC-8 (cas hors `ApiError`).
+
+## Gates
+
+`scripts/test-fast.sh` à chaque patch `kesh-db`, frontend entier, E2E complet au dernier commit de code. Pas de `sqlx` :
+aucune migration, aucun schéma.
+
+## Ce qui ne se traite pas ici
+
+- **La création d'une facture fournisseur** (`POST /supplier-invoices`, page `supplier-invoices/new`) n'a ni version ni clé.
+  Une réponse perdue suivie d'un second clic crée un **second brouillon**. Il n'y a pas d'écriture au journal, et le doublon
+  se voit dans la liste, mais l'opération est enregistrée et annoncée en échec. **Issue demandée** (P2 proposé). Elle n'est
+  pas traitée ici : autre nature, la même question que #951.
+- **La page d'édition** (`[id]/edit`) : son `PUT` porte la version. Un rejeu rend 409, que la page traite déjà
+  (`describeSubmitError`). Rien à faire.
+- **La confirmation d'un lot de paiement** et **l'acceptation d'un rapprochement** : elles passent par les formes `_in_tx` et
+  ne relisent pas par `load_with_settlement_cancellation`. Hors de #938.
+
+## Recoupements
+
+- `unknown-outcome.ts` : **34-5** en récrit aussi le doc-comment (C-e343-5). Fusion par union.
+- `rejeu_interblocage_e2e.rs` : 34-5 et 34-7 y touchent d'autres tests.
+- `routes/supplier_invoices.rs` et `imported_supplier_invoices.rs` : **34-9** (#969, l'import du dossier) touche
+  `post_inbox_import`, dans le même fichier mais une autre fonction. Union.
+
+## Change Log
+
+- 2026-11-10 : fiche créée (Opus 5.5).
+
+## Dev Agent Record
+
+### Agent Model Used
+
+### Completion Notes List
+
+### File List
