@@ -820,17 +820,113 @@ describe('page Paramètres — conflit de version des trois éditions (Story 34-
 			expect(updateCompanyEmailMock.mock.calls[0][0]).toEqual({ email: 'moi@test.ch', version: 2 });
 		});
 
-		it('les champs sont inactifs pendant l’envoi et la relecture (E1-3)', async () => {
+		// Revue P2 (B2) : en lecture seule et non désactivés, les champs gardent le focus.
+		it('les champs sont en lecture seule pendant l’envoi et la relecture, sans perdre le focus (E1-3, B2)', async () => {
 			fetchCompanyCurrentMock.mockResolvedValueOnce(societe());
 			let release: (v: unknown) => void = () => {};
 			updateCompanyEmailMock.mockReturnValueOnce(new Promise((r) => (release = r)));
 			const { findByTestId, getByTestId } = render(Page);
 			await fireEvent.click(await findByTestId('settings-company-email-edit'));
 			await fireEvent.click(getByTestId('settings-company-email-save'));
-			await vi.waitFor(() =>
-				expect((getByTestId('settings-company-email-input') as HTMLInputElement).disabled).toBe(true),
-			);
+			const input = getByTestId('settings-company-email-input') as HTMLInputElement;
+			await vi.waitFor(() => expect(input.readOnly).toBe(true));
+			expect(input.disabled).toBe(false);
 			release(societe({ version: 2 }).company);
 		});
+
+		// Revue P2 (P2-B1 = E2-1 = A2-5 ; C-e346-10) : une relecture partie avant le succès
+		// d'un autre bloc et revenue après ne fait reculer ni `data` ni la version d'une
+		// édition ouverte. Le bloc adresse est celui qui adopte (A2-4).
+		it('une relecture plus ancienne que le succès d’un autre bloc ne fait rien reculer', async () => {
+			fetchCompanyCurrentMock.mockResolvedValueOnce(societe());
+			let relire: (v: CompanyCurrentResponse) => void = () => {};
+			fetchCompanyCurrentMock.mockReturnValueOnce(new Promise((r) => (relire = r)));
+			updateCompanyEmailMock.mockRejectedValueOnce(CONFLIT);
+			updateCompanyContactDetailsMock.mockResolvedValueOnce(
+				societe({ version: 10, website: 'https://moi.ch' }).company,
+			);
+			const { findByTestId, getByTestId } = render(Page);
+			await fireEvent.click(await findByTestId('settings-company-address-edit'));
+			await fireEvent.click(getByTestId('settings-company-email-edit'));
+			await fireEvent.click(getByTestId('settings-company-contact-edit'));
+			// 1. L'e-mail reçoit un 409 : sa relecture part, et reste en vol.
+			await fireEvent.click(getByTestId('settings-company-email-save'));
+			await vi.waitFor(() => expect(fetchCompanyCurrentMock).toHaveBeenCalledTimes(2));
+			// 2. Les coordonnées réussissent (version 10) : l'adresse, inchangée, adopte 10.
+			await saisir(getByTestId, 'settings-company-website-input', 'https://moi.ch');
+			await fireEvent.click(getByTestId('settings-company-contact-save'));
+			await vi.waitFor(() => expect(getByTestId('settings-company-website').textContent).toBe('https://moi.ch'));
+			// 3. La relecture de l'e-mail revient, servie avant le succès : version 9.
+			relire(societe({ version: 9 }));
+			await findByTestId('settings-company-email-error');
+			// L'affichage ne revient pas à l'ancienne valeur, et l'adresse part avec 10.
+			expect(getByTestId('settings-company-website').textContent).toBe('https://moi.ch');
+			updateCompanyAddressMock.mockResolvedValueOnce(societe({ version: 11 }).company);
+			await saisir(getByTestId, 'settings-company-address-city-input', 'Morges');
+			await fireEvent.click(getByTestId('settings-company-address-save'));
+			await vi.waitFor(() => expect(updateCompanyAddressMock).toHaveBeenCalledTimes(1));
+			expect(updateCompanyAddressMock.mock.calls[0][0].version).toBe(10);
+		});
+
+		it('adresse ouverte : une relecture où ses champs ont bougé ne lui fait pas adopter la version (A2-4)', async () => {
+			fetchCompanyCurrentMock.mockResolvedValueOnce(societe());
+			fetchCompanyCurrentMock.mockResolvedValueOnce(
+				relue({ addressStructured: { ...ADRESSE, street: 'Avenue Neuve' } }),
+			);
+			updateCompanyEmailMock.mockRejectedValueOnce(CONFLIT);
+			const { findByTestId, getByTestId } = render(Page);
+			await fireEvent.click(await findByTestId('settings-company-address-edit'));
+			await fireEvent.click(getByTestId('settings-company-email-edit'));
+			await saisir(getByTestId, 'settings-company-email-input', 'moi@test.ch');
+			await fireEvent.click(getByTestId('settings-company-email-save'));
+			await findByTestId('settings-company-email-error');
+			updateCompanyAddressMock.mockRejectedValueOnce(CONFLIT);
+			fetchCompanyCurrentMock.mockResolvedValueOnce(
+				relue({ addressStructured: { ...ADRESSE, street: 'Avenue Neuve' } }),
+			);
+			await saisir(getByTestId, 'settings-company-address-city-input', 'Morges');
+			await fireEvent.click(getByTestId('settings-company-address-save'));
+			await vi.waitFor(() => expect(updateCompanyAddressMock).toHaveBeenCalledTimes(1));
+			expect(updateCompanyAddressMock.mock.calls[0][0].version).toBe(1);
+			expect(
+				(await findByTestId('settings-company-address-conflict-merged-street')).textContent,
+			).toContain('Avenue Neuve');
+		});
+
+		it('le verrou de période fait adopter la société rendue aux éditions inchangées (E2-3)', async () => {
+			fetchCompanyCurrentMock.mockResolvedValueOnce(societe());
+			lockBooksMock.mockResolvedValueOnce(societe({ version: 5, booksLockedThrough: '2026-01-31' }).company);
+			updateCompanyEmailMock.mockResolvedValueOnce(societe({ version: 6, email: 'moi@test.ch' }).company);
+			const { findByTestId, getByTestId, container } = render(Page);
+			await fireEvent.click(await findByTestId('settings-company-email-edit'));
+			const date = container.querySelector('#books-lock-through') as HTMLInputElement;
+			await fireEvent.input(date, { target: { value: '2026-01-31' } });
+			await fireEvent.click(getByTestId('books-lock-submit'));
+			await vi.waitFor(() => expect(lockBooksMock).toHaveBeenCalledTimes(1));
+			await saisir(getByTestId, 'settings-company-email-input', 'moi@test.ch');
+			await vi.waitFor(() =>
+				expect((getByTestId('books-lock-submit') as HTMLButtonElement).disabled).toBe(true),
+			);
+			await fireEvent.click(getByTestId('settings-company-email-save'));
+			await vi.waitFor(() => expect(updateCompanyEmailMock).toHaveBeenCalledTimes(1));
+			expect(updateCompanyEmailMock.mock.calls[0][0].version).toBe(5);
+		});
+	});
+
+	// Revue P2 (E2-2) : l'adresse retirée ailleurs pendant l'édition.
+	it('adresse relue absente : les champs non touchés sont repris vides, le pays reste CH', async () => {
+		fetchCompanyCurrentMock.mockResolvedValueOnce(societe());
+		fetchCompanyCurrentMock.mockResolvedValueOnce(relue({ addressStructured: null }));
+		updateCompanyAddressMock.mockRejectedValueOnce(CONFLIT);
+		const { findByTestId, getByTestId, queryByTestId } = render(Page);
+		await fireEvent.click(await findByTestId('settings-company-address-edit'));
+		await saisir(getByTestId, 'settings-company-address-city-input', 'Morges');
+		await fireEvent.click(getByTestId('settings-company-address-save'));
+		expect((await findByTestId('settings-company-address-conflict-changed-city')).textContent).toContain('(vide)');
+		expect((await findByTestId('settings-company-address-conflict-merged-street')).textContent).toContain('(vide)');
+		expect((getByTestId('settings-company-address-street-input') as HTMLInputElement).value).toBe('');
+		expect((getByTestId('settings-company-address-city-input') as HTMLInputElement).value).toBe('Morges');
+		expect((getByTestId('settings-company-address-country-input') as HTMLInputElement).value).toBe('CH');
+		expect(queryByTestId('settings-company-address-conflict-merged-country')).toBeNull();
 	});
 });
