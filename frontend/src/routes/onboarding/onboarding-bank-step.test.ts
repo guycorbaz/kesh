@@ -230,7 +230,7 @@ describe('étape bancaire de l’assistant — corps envoyé (Story 34-1, AC-1, 
 		await fireEvent.change(select());
 		await soumettre();
 		await waitFor(() => expect(api.setBankAccount).toHaveBeenCalledTimes(1));
-		const corps = vi.mocked(api.setBankAccount).mock.calls[0][0] as Record<string, unknown>;
+		const corps = vi.mocked(api.setBankAccount).mock.calls[0][0];
 		expect(corps).toHaveProperty('description', null);
 		expect(corps).toHaveProperty('journalAccountId', null);
 		unmount();
