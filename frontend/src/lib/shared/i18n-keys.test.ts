@@ -895,7 +895,12 @@ const ATTENDU = {
 	// Revue P4 : **2850 → 2849** (−1), la phrase du décompte TVA retirée.
 	// Fusion de la release 0.17.5 (2026-11-07) : les treize branches de l'Epic 33 réunies,
 	// **recompté à la source** par la garde elle-même après la fusion (non additionné) : **2922**.
-	sitesTotal: 2922,
+	// Story 34-1 (#966) : **2922 → 2928** (+6), tous dans `routes/onboarding/+page.svelte`
+	// (relais `msg`) : `bank-accounts-labels-description`, `-help-description`,
+	// `-labels-journal-account-id`, `-labels-not-configured`, `onboarding-bank-editable-later`,
+	// `onboarding-bank-ledger-load-error`. Que des littéraux ; `sitesNonResolus` et `relais`
+	// inchangés.
+	sitesTotal: 2928,
 	sitesNonResolus: 31,
 	relais: 6,
 	// Story 26-1 (#620, AC3-bis) : **10 → 11** — `lib/features/bank-import/

@@ -237,8 +237,12 @@ const PREFIXES = [
  * ⚠️ **Story 33-1b** (#926) : **401 → 407** (+6) : `supplier-invoices-col-internal-number`,
  * `-search-label`, `-empty-search`, `-internal-number-kept`, `-internal-number-pending`,
  * `-delete-confirm-number`. Aucune retirée.
+ *
+ * ⚠️ **Story 34-1** (#966) : **407 → 409** (+2) : `onboarding-bank-editable-later` et
+ * `onboarding-bank-ledger-load-error` (relais `msg` de `routes/onboarding/+page.svelte`).
+ * Les quatre `bank-accounts-*` réemployées ne sont pas d'un préfixe relevé. Aucune retirée.
  */
-const CLES_RELEVEES = 407;
+const CLES_RELEVEES = 409;
 
 
 /** Relève, pour chaque clé du domaine, l'ensemble de ses replis littéraux distincts. */
