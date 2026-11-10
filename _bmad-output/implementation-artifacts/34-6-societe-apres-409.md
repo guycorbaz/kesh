@@ -259,6 +259,37 @@ Rust n'est touché, hormis les `.ftl` : `cargo test -p kesh-i18n` et `textes_coh
   - **Écart à la consigne Edit** : les quinze tests ajoutés à la fin de `settings-page.test.ts` l'ont été par un `cat >>`
     (ajout en fin de fichier, sans remplacement) ; le reste du code par Edit ou Write (fichiers neufs). Les mutations, par
     un script à motif vérifié unique, restaurées par `git checkout --` et `touch`.
+- 2026-11-10 : **revue de code P1 (Opus, trois lentilles) : 0 C, 0 H, 2 M, 12 L** (B : 1 M, 3 L ; E : 1 M, 3 L ; A : 1 M,
+  6 L ; B-1 et E1-1 sont le même défaut, compté une fois dans les 2 M). Rapports `kesh-gate-logs/e346-review-p1-{B,E,A}.md`.
+  Remédiation (Opus 5.5) : rouges `c8139a8c`, correctif `499e79d8`, PDF `1572872c`. Sort de chaque finding :
+  - **B-1 = E1-1 (M), traité** : chaque édition ouverte envoie la version de sa copie, et n'adopte celle d'une société
+    plus récente que si ses propres champs n'y ont pas bougé (`sameBlockValues`, `syncOpenBlocks` ; **C-e346-8**). Rouge
+    d'abord : « deux éditions ouvertes » (le bloc coordonnées partait avec la version 9 relue par l'e-mail, au lieu de 1).
+    Un test garde l'absence de conflit parasite après le succès d'un autre bloc. Mutations : M7 (envoyer
+    `data.company.version`) et M8 (adopter sans condition) rougissent le premier test, M9 (n'adopter jamais) le second.
+    Manuel : une phrase sur les blocs ouverts ensemble ; capture `e346-deux-blocs-ouverts.png`.
+  - **A-1 (M), traité** : test AC-3 des coordonnées ; M3c (la M3 sur les coordonnées) le rougit.
+  - **E1-2 et A-2 (L), traités** : un second conflit et une relecture impossible après un premier avis, pour l'e-mail et
+    les coordonnées ; M2e, M2c (copie non mise à jour), M10e, M10c (avis non effacé) rougissent chacune son test.
+  - **E1-3 (L), traité** : les champs sont inactifs pendant l'envoi et la relecture (**C-e346-9**) ; test, M11.
+  - **B-3 (L), traité** : les testids des lignes sous les champs sont en kebab-case (`postal-code`) ; test, M12.
+  - **B-4 (L), traité** : `emptyAddress()` pour les deux états de l'adresse, et des littéraux typés au lieu des
+    `as CompanyJson`.
+  - **A-4, A-5 (L), traités** : le manuel cite « Repris de l'enregistrement entre-temps », et décrit la condition du
+    message « rechargées » sans la restreindre à un autre bloc.
+  - **A-6 (L), traité** : Annuler puis Modifier remet l'avis à zéro, testé pour l'e-mail et les coordonnées (sans mutation
+    propre).
+  - **A-7 (L), traité** : l'AC-2 de l'e-mail vérifie le second envoi, avec la version relue.
+  - **A-3 (L), traité** : ventilation des rouges corrigée par une annotation datée au Dev Agent Record.
+  - **B-2 (L), en partie non traité** : l'avis qui reste à côté d'un refus 400 est une décision (C-e346-4), maintenue. Les
+    lignes sous les champs qui ne suivent pas la saisie modifiée après le 409 : **issue demandée** (P4).
+  - **E1-4 (L), non traité, issue demandée** (P4) : `trim()` de JavaScript et `str::trim` de Rust ne retirent pas les
+    mêmes caractères (U+0085, U+FEFF). Il faudrait aligner la normalisation sur le serveur, hors de cet écran.
+
+  Gates au dernier commit de code `499e79d8` : `npm run check` 0 erreur, 29 avertissements ; `lint-i18n-ownership` PASS ;
+  `test:unit` 223 fichiers, 2928 tests verts (2915 + 13) ; `build` vert ; E2E complet r4 (dossiers au runner), 386 passés,
+  7 échecs (les sept de la KF-029), 18 ignorés ; `make user` et PDF contrôlé aplati. Ni Rust ni `.ftl` touchés :
+  `test-fast` non relancé. Le prompt de la passe P2 est `34-6-societe-apres-409-review-prompt-p2.md`.
 
 ## Dev Agent Record
 
@@ -270,7 +301,9 @@ Opus 5.5 (claude-opus-5-5), en autonomie.
 
 - **Rouges d'abord** (`kesh-gate-logs/e346/rouges.log`) : Vitest, `company-conflict.test.ts` rouge à l'import et 12 rouges
   de page (les AC-2 et AC-5 bis a) étaient verts avant le correctif : ils fixent le message actuel) ; E2E sur le frontend
-  de base, 3 rouges (AC-1 adresse, conflit des coordonnées, AC-4), éléments introuvables.
+  de base, 3 rouges (AC-1 adresse, conflit des coordonnées, AC-4), éléments introuvables. *(Annoté le 2026-11-10, revue
+  P1 A-3 : les verts d'avant le correctif étaient quatre, et non trois. Ce sont l'AC-2 de l'adresse, l'AC-2 de l'e-mail,
+  l'AC-5 bis a) et l'AC-6. Le total de 12 rouges reste juste.)*
 - **Mutations** (`kesh-gate-logs/e346/mut/M1..M6.log`), toutes rouges : M1 9 tests, M2 1 (AC-5 de page), M3 1 (AC-3),
   M4 3, M5 1 (AC-4), M6 7. Aucune équivalente. Le fichier restauré n'a laissé aucune modification (`git status`).
 - **Tests**, recomptés à la source de `665de151` à `HEAD` : `company-conflict.test.ts` 0 → 19 `it(` ;

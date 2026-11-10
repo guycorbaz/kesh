@@ -76,3 +76,32 @@ Choix tranchés en autonomie au développement (Opus 5.5, 2026-11-10), à côté
   des API ou des écrans sans formulaire à version (`McpPromptVersion.svelte` ne rend qu'une version de prompt ;
   `OpenItemsScreen.svelte` marque la liste périmée sur un 409). **Seul écran confirmé : `bank-accounts`**, issue demandée.
 - **Réversible.** Sans objet (lecture).
+
+## C-e346-8 — une version par édition ouverte, adoptée seulement si ses champs n'ont pas bougé
+
+- **Contexte.** Revue de code P1, B-1 = E1-1 (MEDIUM). Les trois blocs envoyaient `data.company.version`, et la relecture
+  d'un bloc remplaçait `data` pour toute la page. Un bloc resté ouvert enregistrait donc ensuite avec la version relue, et
+  écrasait sans la montrer l'écriture concurrente portée sur ses propres champs : #953 par un autre chemin. Consigne de
+  l'orchestrateur : un bloc ouvert n'envoie jamais une version plus récente que les valeurs qu'il a montrées, et pas de
+  conflit parasite après l'enregistrement réussi d'un autre bloc de la page.
+- **Retenu.** Les deux pistes proposées, combinées. Chaque bloc garde la version de sa copie (`emailVersion`,
+  `contactVersion`, `addressVersion`), prise à `start*Edit` et mise à jour par sa propre relecture ; c'est elle qu'il
+  envoie. Quand la page reçoit une société plus récente (succès d'un bloc, ou relecture après un 409), `syncOpenBlocks`
+  fait adopter la nouvelle version à chaque édition ouverte **dont les champs n'y ont pas bougé** (`sameBlockValues`, aux
+  normalisations de `companyEditConflict`). Les blocs ont des champs disjoints : l'enregistrement d'un autre bloc laisse
+  les siens égaux, et le bloc adopte la version sans 409 parasite. Si ses champs ont bougé, il garde l'ancienne version, et
+  son enregistrement reçoit son propre 409, jugé par `companyEditConflict` contre sa copie.
+- **Écartées.**
+  - La version par bloc seule : un 409 sans danger, mais à chaque enregistrement d'un autre bloc (« rechargées »).
+  - Rejuger et afficher l'avis des autres blocs dès la relecture : un avis qui apparaît dans un bloc où l'Administrateur
+    n'a pas cliqué, et un second chemin d'affichage à tenir à côté du premier.
+- **Réversible.** Oui.
+
+## C-e346-9 — les champs inactifs pendant l'envoi et la relecture
+
+- **Contexte.** Revue de code P1, E1-3 (LOW) : les frappes faites pendant l'envoi et la relecture étaient jugées sans avoir
+  été envoyées, puis écrasées par la saisie fusionnée.
+- **Retenu.** Les champs des trois blocs sont `disabled` tant que `*Submitting` est vrai, comme leurs boutons l'étaient
+  déjà. La saisie jugée est alors celle qui est partie.
+- **Écartée.** Capturer la saisie au clic : les frappes ultérieures seraient encore écrasées par la saisie fusionnée.
+- **Réversible.** Oui.
