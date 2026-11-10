@@ -9,10 +9,14 @@ la fiche 33-6, qui fermait le même défaut côté client. Registre : `e34-choix
 
 ## Story
 
-En tant que Comptable, je veux que la réponse d'un geste sur une facture fournisseur (valider, repasser en brouillon,
-modifier, payer, annuler, annuler le règlement, compléter un document, joindre ou détacher un document) dise ce qui a été
-écrit, sans relecture après le commit. Ainsi, aucun 404 ni 500 n'annonce en échec un geste réussi, et l'écran relit après
-une réponse perdue au lieu de se taire.
+En tant que Comptable, je veux deux choses :
+- que la réponse des neuf gestes sur une facture fournisseur (valider, repasser en brouillon, modifier, payer, annuler,
+  annuler le règlement, compléter un document, joindre ou détacher un document) dise ce qui a été écrit, sans relecture
+  après le commit, pour qu'aucun 404 ni 500 n'annonce en échec un geste réussi ;
+- que la fiche relise après une réponse perdue au lieu de se taire, pour ses sept gestes (tous sauf modifier et compléter,
+  qui vivent sur d'autres pages, voir « Ce qui ne se traite pas ici »).
+
+*(Phrase scindée à la validation P3, 34-8-F3.)*
 
 ## Ce que le code dit (prémisses établies)
 
@@ -89,8 +93,15 @@ une réponse perdue au lieu de se taire.
    - `get_settlement_view_in_tx(tx, company_id, id) -> Result<Option<SupplierInvoiceSettlementView>, DbError>`, réemployée par
      `get_settlement_view` (DRY).
    - **Signature** (validation P1, 34-8-F4 ; P2, 34-8-F2 et F4 ; C-e343-15) :
-     `pub async fn commit_with_view<T, E: From<DbError>>(tx: Transaction<'_, MySql>, company_id: i64, id: i64,
-     result: Result<T, E>) -> Result<(SupplierInvoiceSettlementView, T), E>`.
+     `pub async fn commit_with_view<T, E: From<DbError>>(tx: Transaction<'_, MySql>, company_id: i64,
+     result: Result<T, E>, view_id: impl FnOnce(&T) -> i64) -> Result<(SupplierInvoiceSettlementView, T), E>`.
+     - **L'identifiant vient d'une fermeture `view_id`, appelée seulement sur `Ok`** (validation P3, 34-8-F1). La complétion
+       **crée** la facture : son identifiant n'existe qu'au retour de `create_draft_in_tx`
+       (`routes/imported_supplier_invoices.rs:194`, puis `created.invoice.id`, `:202`). Un `id: i64` passé avant l'écriture ne
+       la servirait pas.
+       - La complétion passe `|c| c.invoice.id`.
+       - Les autres passent `|_| id`, l'identifiant étant celui du chemin.
+       - Sur `Err`, la fermeture n'est pas appelée, et aucun identifiant factice n'est inventé.
      - **Générique sur l'erreur**, pour servir aussi les quatre `_once` de `kesh-api`, qui travaillent en `AppError`
        (`AppError: From<DbError>`). Une seule lecture-puis-commit, et non quatre copies.
      - **`pub`**, parce que `kesh-api` l'appelle et que le test de M5 vit dans `kesh-db/tests/`. Une fonction
@@ -117,9 +128,17 @@ une réponse perdue au lieu de se taire.
    - `load_with_settlement_cancellation` est **retirée**, et ses mentions dans les doc-comments sont reprises (`git grep`).
 3. **AC-3 — garde de structure** (C-e343-11). Le visiteur passe dans `crates/kesh-api/tests/common/`, avec ses limites écrites.
    - Pour les **neuf** handlers : aucun `.await` après l'appel d'écriture.
-   - Pour les **cinq** enveloppes et les **quatre** fonctions `_once` : la vue lue avant le commit, rien d'attendu après.
-   - Une **sonde positive** passe par le même découpage : une relecture remise après le commit dans un handler factice rend la
-     garde rouge.
+   - Pour les **cinq** enveloppes et les **quatre** fonctions `_once`, l'assertion qui mord est que la fonction **appelle
+     `commit_with_view` et non `commit`** (`tx.commit()`). « Rien d'attendu après » est trivialement vrai de l'appel final.
+     Les enveloppes sont lues dans `crates/kesh-db/src/repositories/supplier_invoices.rs` par
+     `include_str!("../../kesh-db/src/…")`, comme la garde de la 33-6 lit déjà `invoice_settlements_write.rs`
+     (`invoice_settlement_response_e2e.rs:519`).
+   - Pour `commit_with_view` elle-même : la vue lue avant le commit, rien d'attendu après.
+   - Une **sonde positive** passe par le même découpage :
+     - une relecture remise après le commit dans un handler factice rend la garde rouge ;
+     - une enveloppe factice qui appelle `tx.commit()` au lieu de `commit_with_view` la rend rouge aussi.
+
+     *(Validation P3, 34-8-F4.)*
    - La garde du client (33-6) passe par le module commun, sans changer d'assertion.
 4. **AC-4 — ce qui est rendu est ce qui est écrit.** Pour chacun des neuf gestes, la réponse HTTP égale, champ à champ, un
    `GET /supplier-invoices/{id}` qui la suit : `status`, `version`, `paidAt`, `settlementJournalEntryId`, `internalNumber`,
@@ -151,6 +170,15 @@ une réponse perdue au lieu de se taire.
    - Un 4xx garde son traitement actuel.
    - `pay()` n'est plus muet hors `ApiError`.
    - Pas d'état bloquant : un second envoi est refusé par le statut ou la version.
+   - **L'état de l'avis** (validation P3, 34-8-F2) :
+     - une variable `cycleOutcome: 'known' | 'verify' | 'reread-failed'` ;
+     - l'avis est un **encadré persistant** sous les gestes, `data-testid="supplier-unknown-outcome"`, et non une
+       notification ;
+     - il disparaît au geste suivant (`clearCycleErrors`, qui le remet à `known`) ou à une relecture réussie lancée par la
+       page ;
+     - pour `attach()` : si la relecture montre le document joint, le sélecteur se ferme et l'encadré `verify` s'affiche. Si
+       elle ne le montre pas, l'erreur remonte au sélecteur avec le texte de l'issue inconnue, et le document reste
+       sélectionnable.
 9. **AC-9 — textes.**
    - Les doc-comments C-30-2-42 et C-30-2-52 des trois routes de documents ne décrivent plus d'erreur entre le commit et la
      relecture.
@@ -209,10 +237,13 @@ et de la compilation des tests `kesh-db` qui lisent un champ de la vue sur le re
 
 - **M1** : dans `pay`, la vue lue **avant** `pay_in_tx` → rouge AC-4 (`status: open` rendu pour une facture payée).
 - **M2** : dans `validate`, la vue lue avant `validate_in_tx` → rouge AC-4 (`internalNumber` absent, `version` d'avant).
+- *Forme de M1 et M2* (validation P3, 34-8-F5) : `commit_with_view` lit toujours après le résultat. Le mutant appelle donc
+  `get_settlement_view_in_tx` **avant** l'écriture, puis `tx.commit()` directement, en contournant `commit_with_view`. Ce
+  mutant est exprimable. Il rougit aussi la garde de l'AC-3 (commit direct).
 - **M3** : `load_with_settlement_cancellation` réintroduite dans `cancel_supplier_invoice` → rouge AC-3.
 - **M4** : dans `attach_source_document_once`, la vue lue après le `commit` → rouge AC-3.
 - **M5** : `commit_with_view` valide malgré une vue `None` → rouge du test `kesh-db` de `commit_with_view`. Le test écrit une
-  ligne témoin dans la transaction et passe un identifiant de facture absent. Il attend `DbError::Invariant`, et le témoin
+  ligne témoin dans la transaction et passe `view_id` rendant un identifiant de facture absent. Il attend `DbError::Invariant`, et le témoin
   absent après coup : la transaction est annulée.
 - **M6** : la fiche relit seulement sur `ApiError` → rouge Vitest AC-8 (cas hors `ApiError`).
 
@@ -282,6 +313,17 @@ aucune migration, aucun schéma.
     - **F3** : recoupement 34-11a récrit (34-11a1, 34-11a2, page `:888`).
     - **F4** : `pub`.
     - **F5** : 12 et 11, comptés.
+- 2026-11-10 : **validation P3 (Sonnet) : 1 M, 4 L, tous remédiés** (Opus 5.5). Rapport
+  `kesh-gate-logs/e34-validate-p3-e343.md`. Prémisses relues : `imported_supplier_invoices.rs:194,202` et
+  `invoice_settlement_response_e2e.rs:519`.
+  - **F1 (M), né de la remédiation P2** (C-e343-15) : `commit_with_view` prend une fermeture `view_id`, appelée sur `Ok`. Les
+    sites corrigés : AC-1, AC-3, M5, C-e343-15. C-e343-9 est annoté « remplacée par C-e343-15 ».
+  - **LOW** :
+    - **F2** : état, encadré et `data-testid` de l'avis, cas d'`attach`.
+    - **F3** : phrase *Story* scindée.
+    - **F4** : la garde lit `kesh-db` par `include_str!`, et l'assertion qui mord est « `commit_with_view`, non `commit` »,
+      avec sa sonde. Prémisse du rapport nuancée : la garde de la 33-6 lit déjà un fichier de `kesh-db`.
+    - **F5** : forme des mutants M1 et M2.
 
 ## Dev Agent Record
 

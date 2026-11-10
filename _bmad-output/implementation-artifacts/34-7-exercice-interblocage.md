@@ -57,7 +57,9 @@ aboutisse, ou soit refusé pour son vrai motif. Il ne doit pas finir en erreur 5
      `fiscal_year.updated`, un rejeu capturé sous `"fiscal_years::update_name"`.
    - **Rouge d'avant** : 500, et aucun rejeu.
 2. **AC-2 — un renommage valide rejoué aboutit**, par un montage déterministe (validation P2, 34-7-F1).
-   - La transaction lourde **insère**, sans la valider, un exercice au nom visé :
+   - La transaction obtenue par **`transaction_lourde`** (`rejeu_interblocage_e2e.rs:217-233`, 500 lignes de lest, ce qui fait
+     de la route la victime, la plus légère) **insère** ensuite, sans la valider, un exercice au nom visé. Une transaction
+     légère qui n'insérerait qu'une ligne pourrait devenir la victime à la place de la route (validation P3, 34-7-F1) :
      `INSERT INTO fiscal_years (company_id, name, start_date, end_date, status)`, avec des dates d'une autre année que M et N,
      pour ne pas heurter `uq_fiscal_years_company_start_date`. Le schéma n'a aucun déclencheur sur `fiscal_years`, seulement
      des `CHECK` (`test-schema/0001_schema_squash.sql:585-600`).
@@ -133,6 +135,8 @@ Les autres candidates du point (iv), sans cycle démontré : `PUT /invoices/{id}
   - **F1 (M), neuf** : le montage de l'AC-2 ne pouvait former aucun cycle. Le montage déterministe proposé, par une ligne
     insérée et non validée, est adopté (arbitrage de l'orchestrateur), avec ses points à établir à l'étape 0.
   - **F2 (L)** : M2 remplacée par une mutation qui compile.
+- 2026-11-10 : **validation P3 (Sonnet) : 0 M, 1 L, remédié** (Opus 5.5). **F1** : l'AC-2 nomme `transaction_lourde`
+  (`:217-233` lu).
 
 ## Dev Agent Record
 

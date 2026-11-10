@@ -156,6 +156,9 @@
   - Une macro `in_own_tx_with_view!` : la garde `syn` ne lit pas les jetons d'une macro (limite écrite à la 33-6), et
     `validate` et `unvalidate` passent aujourd'hui par `in_own_tx!` (`:411-424`).
 - **Réversible.** Oui.
+- *(Annoté le 2026-11-10, validation P3, 34-8-F1 : la signature de `commit_with_view` écrite ci-dessus est **remplacée par
+  C-e343-15**, générique sur l'erreur et dont l'identifiant vient d'une fermeture `view_id`. Le texte ci-dessus est laissé
+  tel quel.)*
 
 ## C-e343-10 — #938 : l'instantané de la transaction d'écriture
 
@@ -216,7 +219,8 @@
   C-e343-6 écartait « remplacer la saisie par les valeurs relues » à cause du travail perdu, ce qui ne vaut que pour les
   champs modifiés.
 - **Retenu**, sur arbitrage de l'orchestrateur. Après la relecture, chaque champ tel que `input = base` prend `stored`.
-  Aucune saisie n'est perdue, et l'avis nomme les champs repris. Seuls les champs modifiés des deux côtés, à des valeurs
+  Aucune saisie n'est perdue, et l'avis nomme les champs repris. L'avis de fusion s'affiche dans **tout** cas où des champs sont repris,
+  `unchanged` compris (validation P3, 34-6-F1). `already-saved` exige au moins un champ modifié avant la fusion (34-6-F2). Seuls les champs modifiés des deux côtés, à des valeurs
   différentes, sont en conflit.
 - **Écartée.** Garder l'ancienne valeur et l'annoncer « rétablie » : le second clic écraserait encore un travail que
   l'Administrateur n'a pas voulu toucher.
@@ -226,8 +230,11 @@
 
 - **Contexte.** Validation P2, 34-8-F2 et F4. Les quatre `_once` de `kesh-api` travaillent en `AppError`. Le test de M5 vit
   dans `kesh-db/tests/`.
-- **Retenu.** `pub async fn commit_with_view<T, E: From<DbError>>(…, result: Result<T, E>) -> Result<(View, T), E>` : une
-  seule lecture-puis-commit pour les cinq enveloppes et les quatre `_once`. Elle est `pub`, parce que `kesh-api` et les tests
-  d'intégration l'appellent.
+- **Retenu.** `pub async fn commit_with_view<T, E: From<DbError>>(tx, company_id, result: Result<T, E>, view_id: impl
+  FnOnce(&T) -> i64) -> Result<(View, T), E>` : une seule lecture-puis-commit pour les cinq enveloppes et les quatre `_once`.
+  Elle est `pub`, parce que `kesh-api` et les tests d'intégration l'appellent.
+- **L'identifiant vient d'une fermeture `view_id`, appelée seulement sur `Ok`** (validation P3, 34-8-F1). La complétion crée
+  la facture, dont l'identifiant n'existe qu'au retour (`imported_supplier_invoices.rs:194,202`). La forme précédente,
+  `id: i64` en argument, ne la servait pas.
 - **Écartée.** Une aide jumelle côté `kesh-api` : deux copies de la même règle.
 - **Réversible.** Oui.

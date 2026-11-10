@@ -69,13 +69,18 @@ l'adresse qu'un collègue vient de corriger, ni ma propre correction déjà enre
      enregistré ».
   3. **Sinon** : sous chaque champ en conflit, « Enregistré entre-temps : *valeur* », la valeur vide se disant « (vide) ». Un
      avis dit qu'enregistrer de nouveau remplacera ces valeurs. La saisie modifiée reste.
+- **L'avis de fusion s'affiche dans tout `kind` où `merged ≠ ∅`**, `unchanged` compris (validation P3, 34-6-F1). Le
+  « message actuel » du cas 1 ne vaut que si `merged = ∅` **et** `changed = ∅`. Sinon le formulaire change sous les yeux de
+  l'Administrateur sans le lui dire. Avec `already-saved`, l'édition se ferme, et la fusion n'a plus d'objet.
 - **La copie prend les valeurs relues après toute relecture réussie**, quel que soit le cas, si bien qu'un second conflit se
   compare à elles (validation P2, 34-6-F5).
 - **Les définitions, champ par champ** (validation P1, 34-6-F1) :
   - `merged = { f : input[f] = base[f] ∧ stored[f] ≠ base[f] }` : la saisie y prend `stored[f]` (fusion, P2) ;
   - `changed = { f : input[f] ≠ base[f] ∧ stored[f] ≠ base[f] ∧ stored[f] ≠ input[f] }`. Un champ modifié ailleurs **à la
     même valeur que la saisie** n'est pas en conflit : enregistrer ne le remplacera pas, et l'avis ne le nomme pas ;
-  - `already-saved` si et seulement si `stored[f] = input[f]` pour tout champ du bloc, **après** la fusion ;
+  - `already-saved` si et seulement si `stored[f] = input[f]` pour tout champ du bloc, **après** la fusion, **et** qu'au
+    moins un champ avait `input[f] ≠ base[f]` **avant** la fusion. Sans modification, rien n'a été enregistré par
+    l'Administrateur, et le cas est `unchanged` (validation P3, 34-6-F2) ;
   - `unchanged` si `changed = ∅` et que le bloc n'est pas `already-saved` ;
   - `changed` sinon.
 - **Une fonction pure** `companyEditConflict(base, stored, input, fields)` dans
@@ -96,14 +101,17 @@ l'adresse qu'un collègue vient de corriger, ni ma propre correction déjà enre
    saisie `Morges` gardée et l'avis de remplacement. **Rien n'est écrit tant qu'il n'a pas cliqué de nouveau.** Second clic :
    `Morges` est écrit. **Rouge d'avant** : l'E2E réécrit à partir de `company-address.spec.ts:128-157`, où rien n'affiche
    `Nyon`.
-2. **AC-2 — aucun champ du bloc n'a changé.** Un 409 dû à un autre bloc (le téléphone modifié pendant l'édition de l'adresse)
-   donne le message actuel, sans valeur affichée. L'essai suivant aboutit.
+2. **AC-2 — aucun champ du bloc n'a changé.** L'Administrateur a modifié au moins un champ de l'adresse. Un 409 dû à un autre
+   bloc (le téléphone modifié pendant l'édition) donne le message actuel, sans valeur affichée. L'essai suivant aboutit. Cet
+   AC vaut quand `merged = ∅` et `changed = ∅`. Avec `merged ≠ ∅`, c'est l'AC-5 ter.
 3. **AC-3 — déjà enregistré.** Valeur relue égale à la saisie : l'édition se ferme sur « déjà enregistré ». Aucun second
    envoi.
 4. **AC-4 — les trois blocs.** AC-1 à AC-3 valent pour l'e-mail (un champ), les coordonnées (deux champs, dont un seul peut
    avoir changé) et l'adresse (cinq composants).
 5. **AC-5 — second conflit** (récrit à la validation P2, 34-6-F1). Premier conflit sur la ville (`Nyon` affiché). Puis une
-   troisième écriture concurrente sur **la rue seule**. Le second 409 montre la rue, et **la ville n'est plus dans l'avis**.
+   troisième écriture concurrente sur **la rue seule**. Au second 409, la rue est **reprise** (avis de fusion :
+   l'Administrateur ne l'a pas modifiée), et **la ville n'est plus dans l'avis de conflit** (`kind = 'unchanged'`, `merged`
+   contenant la rue). *(Reformulé à la validation P3, 34-6-F1 : la rue n'est pas « en conflit », elle est fusionnée.)*
    - Avec la copie relue, la ville est revenue à `stored = base`, si bien qu'elle n'est plus en conflit.
    - Avec l'ancienne copie, elle le serait encore.
    - C'est l'assertion que M2 fait rougir. Une troisième écriture sur la même ville ne la distinguerait pas.
@@ -139,7 +147,8 @@ l'adresse qu'un collègue vient de corriger, ni ma propre correction déjà enre
   - E2E de l'AC-1.
 - [ ] **T2** : `company-conflict.ts` et ses tests. On couvre les trois cas, puis un champ égal à la saisie (AC-5 bis), vide
   contre `null`, les espaces, un pays en minuscules, un pays vide contre `CH`, et `addressStructured` à `null`. Puis la
-  fusion (AC-5 ter) et les deux montages de l'AC-5 bis.
+  fusion (AC-5 ter), le cas `kind = 'unchanged'` avec `merged ≠ ∅`, la saisie sans modification (ni `already-saved` ni
+  avis), et les deux montages de l'AC-5 bis.
 - [ ] **T3** : `CompanyConflictNotice.svelte`, les trois blocs, la copie prise à `start*Edit` et mise à jour après toute
   relecture réussie, la saisie fusionnée.
 - [ ] **T4** : i18n aux quatre locales, et les gardes de replis.
@@ -226,6 +235,12 @@ Rust n'est touché, hormis les `.ftl` : `cargo test -p kesh-i18n` et `textes_coh
     - **F5** : la copie est mise à jour après toute relecture.
     - **F6** : recoupement avec 34-11a1.
     - **F7** : AC-5 bis en deux montages.
+- 2026-11-10 : **validation P3 (Sonnet) : 1 M, 1 L, tous remédiés** (Opus 5.5). Rapport
+  `kesh-gate-logs/e34-validate-p3-e343.md`.
+  - **F1 (M), né de la remédiation P2** (la fusion, C-e343-14). L'avis de fusion s'affiche dans tout `kind` où
+    `merged ≠ ∅`. L'AC-2 est borné à `merged = ∅` et `changed = ∅`, l'AC-5 reformulé (la rue reprise, et non en conflit),
+    et T2 gagne un cas. La sévérité baisse : P2 3 M, P3 1 M.
+  - **F2 (L)** : `already-saved` exige au moins un champ modifié avant la fusion.
 
 ## Dev Agent Record
 

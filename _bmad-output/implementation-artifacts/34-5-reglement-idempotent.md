@@ -71,7 +71,7 @@ pas écrit deux fois au journal, et le reste dû ne baisse pas deux fois.
   sans `version` y devient `422`. **Recenser par `git grep` au développement**, sans se fier à cette liste.
 - **L'outillage de release poste aussi un règlement.**
   - `scripts/recette-montee.sh:507` envoie `POST /api/v1/invoices/$F2/settlements` sans version, juste après la lecture de la
-    facture (`:505`, `R=$(… GET /api/v1/invoices/$F2)`), qui porte `.version`.
+    facture (`:504`, `R=$(… GET /api/v1/invoices/$F2)`), qui porte `.version`. Le `jq` du reste dû est à `:505`.
   - Le script peuple l'image **précédente**. Pour la 0.17.6, c'est la 0.17.5, qui ignore le champ : rien ne casse maintenant.
     Mais dès que l'image de départ porte la 0.17.6, le peuplement rendrait 422.
   - `scripts/tests/recette-montee.test.sh:436` énumère `/settlements` parmi les chemins d'échec simulés.
@@ -92,8 +92,10 @@ au registre.
    300 : le premier rend 200, le second `409 OPTIMISTIC_LOCK_CONFLICT`. En base, une ligne `invoice_settlements`, une écriture
    de règlement, une entrée d'audit `invoice.partially_settled`, et un reste dû de 200. **Test rouge avant le correctif** : la
    route actuelle ignore le champ inconnu et rend 200 deux fois.
-3. **AC-3 — envois simultanés.** Deux envois lancés en parallèle avec la même version : exactement un 200 et un 409, quel que
-   soit l'ordre d'arrivée. Une seule écriture.
+3. **AC-3 — envois simultanés.** Le montage de l'AC-2 : 100 sur une facture de 300, deux envois lancés en parallèle avec la
+   même version. Exactement un 200 et un 409, quel que soit l'ordre d'arrivée, et une seule écriture.
+   - Les montants sont fixés pour que M2 rougisse par « deux 200 ». Un règlement du total serait refusé au second envoi par le
+     trop-perçu (validation P3, 34-5-F2).
 4. **AC-4 — ordre des refus** (C-e343-3). Les refus de forme précèdent la transaction et ne changent pas : le corps à la
    route (`into_parts`), puis le montant non positif (`amountMustBePositive`, `invoice_settlements_write.rs:108-110`).
    **Parmi les refus lus sous le verrou de l'étape (1)**, le statut vient d'abord : une facture annulée ou en brouillon rend
@@ -166,7 +168,10 @@ au registre.
     recopiées (règle DRY).
     - `kesh-db/tests/support/` (le module existe) : `settle_at_current_version(pool, …)`, qui lit la version puis appelle
       `settle_invoice`.
-    - `kesh-api/tests/common/` : la même aide, ou un réemploi si le module de `kesh-db` est visible.
+    - `kesh-api/tests/common/` : la même aide, ou un réemploi si le module de `kesh-db` est visible. Trois des six fichiers
+      appelants ne déclarent pas `mod common;` : `invoice_echeancier_e2e.rs`, `invoice_send_email_e2e.rs` et
+      `reconciliation_e2e.rs` (`grep -c "^mod common"` = 0). Ils le déclarent, ce qui ne produit pas d'avertissement, le module
+      portant `#![allow(dead_code)]` (`common/mod.rs:9`) ; ou ils gardent une lecture locale (validation P3, 34-5-F4).
     - `kesh-report/tests/aged_receivables.rs` : un seul appel, avec une lecture locale.
 
     Les dossiers `tests/` de crates différents ne partagent aucun module, et `kesh-db` n'a pas de feature de test
@@ -181,14 +186,16 @@ au registre.
   1. une transaction de test tient la facture par `SELECT … FROM invoices WHERE id = ? FOR UPDATE` ;
   2. les deux requêtes partent, avec la même version ;
   3. on attend qu'elles soient **toutes deux** en attente sur le `FOR UPDATE` de l'étape (1)
-     (`attendre_une_requete_en_cours`, motif `FROM invoices` et `FOR UPDATE`, deux occurrences) ;
+     (`kesh_db::test_fixtures::attendre_des_requetes_en_cours(pool, motifs, 2, …)`, `test_fixtures.rs:582`, motifs
+     `FROM invoices` et `FOR UPDATE`) ;
   4. la transaction de test est annulée.
 
   Code juste : un 200, un 409, une écriture. Sous M2, les deux lectures ordinaires de la version précèdent l'attente : deux
   200. Sans ce montage, M2 ne rougit que si les deux lectures précèdent le premier commit, ce que rien ne garantit.
-  ⚠️ **À établir à l'étape 0** : qu'`attendre_une_requete_en_cours` sait attendre deux requêtes sur le même motif. Il faudra
-  peut-être l'élargir à un compte d'occurrences. Si le montage ne peut pas être tenu, le dire au Change Log, et M2 est
-  déclarée non prouvée.
+  L'attente de plusieurs requêtes existe déjà : `attendre_une_requete_en_cours` (`:566-572`) en est le cas `au_moins = 1`
+  (Story 30-1a), visible de `kesh-api/tests` par `kesh_db::test_fixtures` (`rejeu_interblocage_e2e.rs:47`). Validation P3,
+  34-5-F1. ⚠️ Reste **à établir à l'étape 0** : ce que rend `PROCESSLIST` sous ce montage à deux requêtes. Si le montage ne
+  peut pas être tenu, le dire au Change Log, et M2 est déclarée non prouvée.
 - [ ] **T5 — frontend.**
   - `SettleInvoiceRequest.version: number` ; la fiche et l'échéancier l'envoient.
   - `settleOutcome` gagne deux états, `conflict` (relu, rien d'enregistré) et `conflict-blocked` (pas relu). Les clés i18n,
@@ -196,6 +203,14 @@ au registre.
     - fiche : `invoice-settle-conflict`, `invoice-settle-conflict-reread-failed` ;
     - échéancier : `due-dates-settle-conflict` et `due-dates-settle-conflict-reread-failed`, avec `{ $number }`, passé par
       le troisième argument d'`i18nMsg` (validation P2, 34-5-F7).
+  - **Câblage** (validation P3, 34-5-F3). Aujourd'hui, le bouton n'est désactivé que pour `blocked`
+    (`invoices/[id]/+page.svelte:1004`, échéancier `due-dates/+page.svelte:539`), et *Relire* n'est offert qu'en `blocked`
+    (`:1159`, échéancier `:381`). La fiche change trois choses :
+    - les **deux** états bloquants, `blocked` et `conflict-blocked`, désactivent le geste et offrent *Relire* ;
+    - la relecture (`rereadAfterUnknownOutcome`, `:468-483`, et sa jumelle de l'échéancier, `:104-112`) prend en paramètre
+      l'état bloquant et l'état d'arrivée, aujourd'hui écrits en dur ;
+    - l'encadré de conflit a son propre `data-testid` (par exemple `settle-conflict`), distinct de `settle-unknown-outcome`
+      (`:1146`), pour que l'AC-7 distingue `conflict` de `verify`.
   - Vitest de l'AC-7 : 409, relecture en échec, texte sans « n'est pas connue » ; puis *Relire* réussi, texte de conflit.
   - Tests Vitest : `invoice-settlements-page.test.ts`, et le test de l'échéancier. On vérifie la version envoyée, puis le 409
     (dialogue fermé, relecture, avis), puis un 400 (dialogue ouvert).
@@ -293,6 +308,19 @@ de la KF-029 se nomment un par un.
     - **F7** : clés de l'échéancier.
     - **F8** : aide par crate, C-e343-13.
     - **F9** : ordre des refus, « sous le verrou ».
+- 2026-11-10 : **validation P3 (Sonnet) : 0 M, 5 L, tous remédiés** (Opus 5.5). Rapport
+  `kesh-gate-logs/e34-validate-p3-e343.md`. Prémisses relues :
+  - `test_fixtures.rs:566-582` ;
+  - `^mod common` dans les six fichiers `kesh-api/tests` ;
+  - `recette-montee.sh:504-505` ;
+  - `invoices/[id]/+page.svelte:1004,1146,1159` et `due-dates/+page.svelte:104-112`.
+
+  Les remédiations :
+  - **F1** : `attendre_des_requetes_en_cours(…, 2, …)` existe, et le conditionnel est retiré.
+  - **F2** : l'AC-3 reprend 100 sur 300.
+  - **F3** : câblage des états bloquants, relecture paramétrée, `data-testid` propre.
+  - **F4** : `mod common;` dans trois fichiers.
+  - **F5** : `:504`.
 
 ## Dev Agent Record
 
