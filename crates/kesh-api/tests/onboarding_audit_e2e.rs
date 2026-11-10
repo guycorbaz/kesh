@@ -785,6 +785,8 @@ async fn bank_account_created_updated_unchanged(pool: MySqlPool) {
         before_keys,
         BTreeSet::from([
             "bank_name",
+            // Story 34-1 (#966, AC-5) : la description entre dans les instantanés.
+            "description",
             "iban_present",
             "qr_iban_present",
             "is_primary",

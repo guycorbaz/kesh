@@ -2867,6 +2867,9 @@ onboarding-finalize-error = Abschluss fehlgeschlagen — bitte erneut versuchen.
 onboarding-bank-required = Bankname und IBAN sind erforderlich
 onboarding-bank-save-error = Fehler beim Speichern des Bankkontos
 onboarding-bank-skip-error = Fehler beim Überspringen des Bankkontos
+# Story 34-1 (#966) — l'étape bancaire pose la description et le compte comptable lié.
+onboarding-bank-editable-later = Die Beschreibung und das verknüpfte Buchhaltungskonto lassen sich später unter Administration → Bankkonten ändern.
+onboarding-bank-ledger-load-error = Die Kontenliste konnte nicht geladen werden: Das Bankkonto kann später verknüpft werden.
 onboarding-save = Speichern
 payment-batches-cancel = Stapel stornieren
 payment-batches-cancel-confirm = Diesen Stapel stornieren? Die Rechnungen werden wieder zahlbar.

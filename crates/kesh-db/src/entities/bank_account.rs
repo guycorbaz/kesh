@@ -31,9 +31,10 @@ pub struct BankAccount {
     /// [`BANK_ACCOUNT_DESCRIPTION_MAX_CHARS`] caractères) ; `None` = absente,
     /// l'affichage est alors celui de la banque seule. Non unique.
     ///
-    /// Écrite **seulement** par la création de la route et par le `PUT`
-    /// (`update_for_company`, remplacement complet) ; aucun autre écrivain du
-    /// dépôt ne la touche.
+    /// Écrite **seulement** par la création de la route, par le `PUT`
+    /// (`update_for_company`, remplacement complet) et — Story 34-1 (#966) —
+    /// par l'étape bancaire de l'assistant (`upsert_primary_in_tx`, champ
+    /// absent = inchangé) ; aucun autre écrivain du dépôt ne la touche.
     pub description: Option<String>,
     /// IBAN normalisé sans espaces.
     pub iban: String,

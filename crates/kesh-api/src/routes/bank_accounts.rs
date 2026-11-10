@@ -279,7 +279,11 @@ fn is_forbidden_in_description(c: char) -> bool {
 /// `"Épargne\n"` est accepté et stocké `"Épargne"`) : au plus
 /// [`BANK_ACCOUNT_DESCRIPTION_MAX_CHARS`] caractères Unicode, aucun caractère
 /// de [`is_forbidden_in_description`].
-fn normalize_description(description: Option<&str>) -> Result<Option<String>, AppError> {
+///
+/// `pub(crate)` depuis la Story 34-1 (#966, C-e341-2) : l'étape bancaire de
+/// l'assistant (`routes::onboarding::set_bank_account`) l'appelle — un seul
+/// contrôle, un seul message.
+pub(crate) fn normalize_description(description: Option<&str>) -> Result<Option<String>, AppError> {
     let Some(trimmed) = description.map(str::trim).filter(|d| !d.is_empty()) else {
         return Ok(None);
     };
@@ -350,7 +354,11 @@ fn validate_bank_input(
 /// postabilité est contrôlée dans la transaction du dépôt, sous le verrou de
 /// la ligne et **seulement si la valeur change** (choix C10) — un compte lié
 /// devenu non imputable après coup reste accepté tel quel (D-A0, choix C6).
-async fn validate_journal_account_id(
+///
+/// `pub(crate)` depuis la Story 34-1 (#966, C-e341-2) : l'étape bancaire de
+/// l'assistant l'appelle comme la création (`require_postable = true`), sur le
+/// pool et avant sa transaction.
+pub(crate) async fn validate_journal_account_id(
     pool: &sqlx::MySqlPool,
     company_id: i64,
     journal_account_id: Option<i64>,

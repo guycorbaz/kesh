@@ -1,7 +1,8 @@
 <!--
   Story 8-5a-zero — Form pour lier/délier un bank_account au plan comptable.
 
-  Filtre client-side classe 1/2 actifs Asset|Liability (cohérent avec
+  Filtre client-side : comptes actifs, imputables, Asset|Liability, hors
+  comptes de créance (`linkableLedgerAccounts`, Story 34-1 ; cohérent avec la
   validation serveur qui rejette Revenue/Expense). Le bouton submit est
   désactivé si la sélection courante est identique à la valeur initiale
   (no-op KF-004 cohérent — court-circuit serveur-side aussi).
@@ -11,8 +12,11 @@
 	import { errorMessageOf } from '$lib/shared/utils/error-message';
 	import { notifySuccess } from '$lib/shared/utils/notify';
 	import type { AccountResponse } from '$lib/features/accounts/accounts.types';
-	import { withCurrentAccount, withoutAccountIds } from '$lib/features/accounts/account-options';
-	import { bankAccountOptionLabel } from '$lib/features/bank-accounts/format';
+	import { withCurrentAccount } from '$lib/features/accounts/account-options';
+	import {
+		bankAccountOptionLabel,
+		linkableLedgerAccounts,
+	} from '$lib/features/bank-accounts/format';
 	import {
 		updateBankAccountJournalLink,
 		type BankAccountSummary,
@@ -48,20 +52,19 @@
 	let submitting = $state(false);
 	let errorMessage = $state<string | null>(null);
 
-	// Filtre client-side : Asset|Liability ET (number startsWith '1' ou '2')
-	// — pattern §validation-account-type + §frontend-flow Pass 3 Opus L1'''.
-	// Story 15-6c (AC7) : puis sans les comptes de créance désignés.
+	// Story 15-6c (AC7) : sans les comptes de créance désignés.
+	//
+	// Story 34-1 (#966, C-e341-5, C-e3401-1) : le filtre est celui de
+	// `linkableLedgerAccounts`, source unique des deux écrans. Le filtre propre à
+	// ce formulaire sur le NUMÉRO (« commence par 1 ou 2 ») est retiré : aucun
+	// sens ne se déduit d'un numéro (Story 14-3a), le serveur ne le contrôle pas,
+	// et le formulaire de création de la même page ne l'appliquait pas — un
+	// compte d'actif numéroté hors des classes 1 et 2 se liait à la création,
+	// mais n'était pas proposé ici.
 	const eligibleAccounts = $derived(
-		withoutAccountIds(
-			accounts.filter(
-				(a) =>
-					a.active &&
-					a.postable && // 14-3b : compte lié posté à la réconciliation
-					(a.accountType === 'Asset' || a.accountType === 'Liability') &&
-					(a.number.startsWith('1') || a.number.startsWith('2')),
-			),
-			claimAccountIds,
-		).sort((a, b) => a.number.localeCompare(b.number)),
+		linkableLedgerAccounts(accounts, claimAccountIds).sort((a, b) =>
+			a.number.localeCompare(b.number),
+		),
 	);
 
 	// Issue #271 : un compte lié AVANT de devenir non-postable — ou d'être

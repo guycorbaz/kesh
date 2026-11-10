@@ -8,6 +8,13 @@ Le contenu est rédigé en français à destination des **fiduciaires, PME, ind�
 
 ---
 
+## [0.17.6] — Non publié
+
+### Ajouté
+
+- **L'assistant de démarrage pose la description et le compte comptable du compte bancaire** (refs [#966](https://github.com/guycorbaz/kesh/issues/966)) : à l'étape *Compte bancaire*, deux champs facultatifs suivent le QR-IBAN, la **description** (60 caractères au plus, comme sur la page *Comptes bancaires*) et le **compte comptable lié**. La liste propose les comptes actifs et imputables de type actif ou passif, sans le compte débiteurs ni le compte créanciers ; le compte **1020 y est présélectionné s'il existe**, une simple proposition de l'écran, qui se change ou se retire. La page et le manuel disent que ces choix **se modifient ensuite** dans *Administration → Comptes bancaires*. Un compte lié dès l'installation se réconcilie sans passer d'abord par cette page (jusqu'ici : `BANK_ACCOUNT_NOT_CONFIGURED`). Les contrôles et les messages sont ceux de la création d'un compte ; un compte de rôle débiteurs ou créanciers est refusé, même renuméroté. Pour qui appelle l'API, `POST /onboarding/bank-account` accepte `description` et `journalAccountId` : absents, ils restent tels quels ; à `null`, ils sont effacés.
+  - Sur la page *Comptes bancaires*, le formulaire *Lier* propose désormais les mêmes comptes que la création, sans plus écarter un compte d'actif ou de passif dont le numéro ne commence pas par 1 ou 2.
+
 ## [0.17.5] — 2026-11-07
 
 ⚠️ **Avant la mise à jour, prenez une sauvegarde complète** — la base, le `.keshbackup` **et** le dossier des documents. Cette version porte **une migration** (non breaking), la première à passer par la sauvegarde que Kesh écrit lui-même avant de migrer ([#847](https://github.com/guycorbaz/kesh/issues/847)) : au démarrage, il dépose une sauvegarde complète dans `backup/pre-upgrade/`, et **refuse de migrer si elle échoue** (échappatoire : `KESH_SKIP_PRE_UPGRADE_BACKUP`). **La migration donne un numéro interne aux factures fournisseur déjà validées** (`FF-2025-001`, `FF-2026-001`…). **Le retour à la 0.17.4 passe uniquement par la sauvegarde d'avant la mise à jour** : la 0.17.4 ne démarre plus sur une base migrée, et elle refuse une sauvegarde prise en 0.17.5 ; les numéros écrits sur le papier depuis la mise à jour seraient alors à refaire (manuel d'administration, *Passer à la 0.17.5*).

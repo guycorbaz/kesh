@@ -379,6 +379,57 @@ pub async fn number_in_company(
         .map_err(map_db_error)
 }
 
+/// Verrou d'une lecture de compte par rôle singleton
+/// ([`find_singleton_role_in_tx`]) — Story 34-1 (#966).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RoleLookupLock {
+    /// Lecture ordinaire, sans verrou de ligne : l'appelant tient déjà de quoi
+    /// sérialiser (l'étape bancaire de l'assistant tient `onboarding_state` en
+    /// `FOR UPDATE`, et la finalisation reverrouille ces lignes).
+    None,
+    /// `FOR UPDATE` : la ligne du compte (et l'entrée d'index du rôle, ou
+    /// l'intervalle où elle serait) reste verrouillée jusqu'à la fin de la
+    /// transaction — la finalisation de l'assistant
+    /// (`company_invoice_settings::insert_with_defaults_in_tx`).
+    ForUpdate,
+}
+
+/// L'identifiant du compte **actif** qui porte le rôle singleton `role`, lu dans
+/// la transaction de l'appelant — `None` si aucun compte actif ne le porte
+/// (Story 34-1, #966, T3).
+///
+/// Interroge la colonne générée `singleton_role` (le rôle si le compte est actif
+/// et le rôle singleton, `NULL` sinon), donc l'index unique
+/// `uq_accounts_company_singleton_role` : au plus une ligne, et le filtre
+/// `active` est déjà encodé. ⛔ Lit le **rôle**, jamais le numéro (Story 14-3a) :
+/// un plan renuméroté est suivi.
+///
+/// Source unique de cette lecture : la finalisation de l'assistant
+/// (`insert_with_defaults_in_tx`, trois rôles, [`RoleLookupLock::ForUpdate`]) et
+/// l'étape bancaire de l'assistant (comptes `Receivable` et `Payable` qu'un
+/// compte bancaire ne peut pas lier, [`RoleLookupLock::None`]).
+pub async fn find_singleton_role_in_tx(
+    tx: &mut sqlx::Transaction<'_, sqlx::MySql>,
+    company_id: i64,
+    role: AccountRole,
+    lock: RoleLookupLock,
+) -> Result<Option<i64>, DbError> {
+    let sql = match lock {
+        RoleLookupLock::None => {
+            "SELECT id FROM accounts WHERE company_id = ? AND singleton_role = ? ORDER BY id LIMIT 1"
+        }
+        RoleLookupLock::ForUpdate => {
+            "SELECT id FROM accounts WHERE company_id = ? AND singleton_role = ? ORDER BY id LIMIT 1 FOR UPDATE"
+        }
+    };
+    sqlx::query_scalar::<_, i64>(sql)
+        .bind(company_id)
+        .bind(role)
+        .fetch_optional(&mut **tx)
+        .await
+        .map_err(map_db_error)
+}
+
 /// `include_archived` : si `false`, seuls les comptes actifs sont retournés.
 /// Pas de pagination — un plan comptable est borné à ~200-400 comptes.
 pub async fn list_by_company(

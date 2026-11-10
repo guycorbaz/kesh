@@ -1129,38 +1129,37 @@ pub async fn insert_with_defaults_in_tx(
     // F1 CRITICAL FIX: Lock accounts rows during lookup to prevent concurrent deletes.
     // SELECT FOR UPDATE prevents other transactions from modifying these rows until commit.
     // ORDER BY id LIMIT 1 ensures deterministic single-row lock (schema uniqueness guarantee).
-    let receivable = sqlx::query_scalar::<_, Option<i64>>(
-        "SELECT id FROM accounts WHERE company_id = ? AND singleton_role = ? ORDER BY id LIMIT 1 FOR UPDATE"
+    //
+    // Story 34-1 (#966) : les trois lectures passent par la source unique
+    // `accounts::find_singleton_role_in_tx`, que l'étape bancaire de l'assistant
+    // emploie aussi (sans verrou) ; même requête, même ordre, même `FOR UPDATE`.
+    use super::accounts::{RoleLookupLock, find_singleton_role_in_tx};
+    let receivable = find_singleton_role_in_tx(
+        tx,
+        company_id,
+        AccountRole::Receivable,
+        RoleLookupLock::ForUpdate,
     )
-    .bind(company_id)
-    .bind(AccountRole::Receivable)
-    .fetch_optional(&mut **tx)
-    .await
-    .map_err(map_db_error)?
-    .flatten();
+    .await?;
 
-    let revenue = sqlx::query_scalar::<_, Option<i64>>(
-        "SELECT id FROM accounts WHERE company_id = ? AND singleton_role = ? ORDER BY id LIMIT 1 FOR UPDATE"
+    let revenue = find_singleton_role_in_tx(
+        tx,
+        company_id,
+        AccountRole::DefaultRevenue,
+        RoleLookupLock::ForUpdate,
     )
-    .bind(company_id)
-    .bind(AccountRole::DefaultRevenue)
-    .fetch_optional(&mut **tx)
-    .await
-    .map_err(map_db_error)?
-    .flatten();
+    .await?;
 
     // Story 12.2 : compte créanciers 2000 (contrepartie achat fournisseur).
     // OPTIONNEL (non fail-fast) — présent dans les charts standards mais
     // l'absence ne doit pas bloquer la finalisation d'onboarding.
-    let payable = sqlx::query_scalar::<_, Option<i64>>(
-        "SELECT id FROM accounts WHERE company_id = ? AND singleton_role = ? ORDER BY id LIMIT 1 FOR UPDATE"
+    let payable = find_singleton_role_in_tx(
+        tx,
+        company_id,
+        AccountRole::Payable,
+        RoleLookupLock::ForUpdate,
     )
-    .bind(company_id)
-    .bind(AccountRole::Payable)
-    .fetch_optional(&mut **tx)
-    .await
-    .map_err(map_db_error)?
-    .flatten();
+    .await?;
 
     // P1-004 + P1-007: Early NULL validation before INSERT (fail-fast pattern).
     // Si aucun compte actif ne porte les rôles Receivable/DefaultRevenue (Story 14-3b),

@@ -20,7 +20,7 @@
 	import { qrIbanHasValidQrIid } from '$lib/shared/utils/iban';
 	import { fetchAccounts } from '$lib/features/accounts/accounts.api';
 	import type { AccountResponse } from '$lib/features/accounts/accounts.types';
-	import { withCurrentAccount, withoutAccountIds } from '$lib/features/accounts/account-options';
+	import { withCurrentAccount } from '$lib/features/accounts/account-options';
 	import { getInvoiceSettings } from '$lib/features/invoices/invoices.api';
 	import { Button } from '$lib/components/ui/button';
 	import { Input } from '$lib/components/ui/input';
@@ -43,6 +43,7 @@
 		BANK_ACCOUNT_DESCRIPTION_MAX,
 		bankAccountName,
 		formatChfBalance,
+		linkableLedgerAccounts,
 	} from '$lib/features/bank-accounts/format';
 
 	let bankAccounts = $state<BankAccountSummary[]>([]);
@@ -156,17 +157,11 @@
 	// Story 15-6c (#474, AC7) : le compte débiteurs et le compte créanciers
 	// désignés sont écartés AVANT `withCurrentAccount` — un lien existant vers
 	// l'un d'eux (donnée antérieure) reste affiché, mais n'est plus proposé.
-	let linkableAccounts = $derived(
-		withoutAccountIds(
-			accounts.filter(
-				(a) =>
-					a.active &&
-					a.postable && // 14-3b : compte lié posté à la réconciliation
-					(a.accountType === 'Asset' || a.accountType === 'Liability'),
-			),
-			claimAccountIds,
-		),
-	);
+	//
+	// Story 34-1 (#966, C-e341-5) : le filtre vit dans `linkableLedgerAccounts`
+	// (`format.ts`), source unique partagée avec l'étape bancaire de l'assistant
+	// et le formulaire de lien.
+	let linkableAccounts = $derived(linkableLedgerAccounts(accounts, claimAccountIds));
 
 	function accountLabel(journalAccountId: number | null): string {
 		if (journalAccountId === null) {
