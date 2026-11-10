@@ -1393,8 +1393,16 @@ async fn import_file_too_large_and_directory_ignored(pool: MySqlPool) {
     // Story 34-9 (AC-2, AC-3, M6) — `movedTo` se FUSIONNE dans le `details` du
     // refus : la taille et la limite restent, à côté du nom rangé (suffixe aléa).
     let size = qr_invoice_png(dec!(10.00), "Big SA").len() as u64;
-    assert_eq!(failed[0]["details"]["byteSize"].as_u64(), Some(size), "{body}");
-    assert_eq!(failed[0]["details"]["maxBytes"].as_u64(), Some(10), "{body}");
+    assert_eq!(
+        failed[0]["details"]["byteSize"].as_u64(),
+        Some(size),
+        "{body}"
+    );
+    assert_eq!(
+        failed[0]["details"]["maxBytes"].as_u64(),
+        Some(10),
+        "{body}"
+    );
     assert_moved_to(&app, &failed[0], "big.png", None);
 }
 
@@ -1421,12 +1429,7 @@ fn failed_entry<'a>(report: &'a Value, file_name: &str) -> &'a Value {
 /// AC-2 — `details.movedTo` est un nom de fichier seul (aucun chemin), de la
 /// forme `{stem}_{8 caractères}.{ext}`, **présent** dans `<inbox>/failed/`. Avec
 /// `hash8`, le suffixe est exactement celui de l'empreinte. Rend le nom.
-fn assert_moved_to(
-    app: &TestApp,
-    entry: &Value,
-    file_name: &str,
-    hash8: Option<&str>,
-) -> String {
+fn assert_moved_to(app: &TestApp, entry: &Value, file_name: &str, hash8: Option<&str>) -> String {
     let moved = entry["details"]["movedTo"]
         .as_str()
         .unwrap_or_else(|| panic!("details.movedTo absent : {entry}"))
@@ -1530,7 +1533,10 @@ async fn duplicate_names_the_pending_document(pool: MySqlPool) {
     assert_moved_to(&app, entry, "b.png", Some(&sha256_hex(&png)[..8]));
     assert_eq!(b2["skipped"], json!([]), "{b2}");
     assert!(b2["truncatedAt"].is_null(), "{b2}");
-    assert!(b2.get("truncatedAt").is_some(), "la clé est toujours là : {b2}");
+    assert!(
+        b2.get("truncatedAt").is_some(),
+        "la clé est toujours là : {b2}"
+    );
 }
 
 /// AC-1, AC-3 (site `completed`) — un doublon d'un document transformé en
@@ -1714,7 +1720,10 @@ async fn unstable_file_is_skipped_with_its_reason(pool: MySqlPool) {
         warnings[0].as_str().unwrap().contains("en-cours.png"),
         "{report}"
     );
-    assert!(report["accepted"].as_array().unwrap().is_empty(), "{report}");
+    assert!(
+        report["accepted"].as_array().unwrap().is_empty(),
+        "{report}"
+    );
     assert!(report["failed"].as_array().unwrap().is_empty(), "{report}");
     assert!(path.exists(), "le fichier instable reste dans le dossier");
 }
@@ -1737,7 +1746,11 @@ async fn truncation_reports_the_limit(pool: MySqlPool) {
     let warnings = report["warnings"].as_array().unwrap();
     assert_eq!(warnings.len(), 1, "{report}");
     assert!(warnings[0].as_str().unwrap().contains('1'), "{report}");
-    assert_eq!(inbox_files(&app).len(), 1, "un fichier reste pour le prochain import");
+    assert_eq!(
+        inbox_files(&app).len(),
+        1,
+        "un fichier reste pour le prochain import"
+    );
 }
 
 #[sqlx::test(migrations = "../kesh-db/test-schema")]
