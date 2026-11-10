@@ -305,7 +305,7 @@
 	let addressForm = $state({ street: '', building: '', postalCode: '', city: '', country: 'CH' });
 	let addressSubmitting = $state(false);
 	let addressError = $state('');
-	let addressBase = $state({ ...addressForm });
+	let addressBase = $state({ street: '', building: '', postalCode: '', city: '', country: 'CH' });
 	let addressConflict = $state<CompanyConflictNoticeState | null>(null);
 
 	function startAddressEdit() {
