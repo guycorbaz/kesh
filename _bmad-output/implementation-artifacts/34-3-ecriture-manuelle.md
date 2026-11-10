@@ -371,6 +371,26 @@ fiche non commitée : ce Dev Agent Record a été réécrit ; le script ne resta
   CHANGELOG), `b25b77b3` (types des tests), `ca2f4a17` (compteur i18n, sélecteur E2E), `f9480a34` (registre, prompt P1),
   et celui-ci (fiche, `Status: review`). Choix neufs : C-e3403-1 à C-e3403-7. Aucune migration, aucune ligne exécutable de
   `crates/` modifiée (deux commentaires).
+- 2026-11-11 : **revue de code P1** (Opus, trois lentilles B, E, A ; rapports `kesh-gate-logs/e3403-review-p1-{B,E,A}.md`) :
+  **0 C, 0 H, 0 M, 15 LOW** (B 6, E 5, A 4). Remédiation (Opus 5.5) au commit `584a1183` (code, tests, catalogues,
+  manuel), et `15b41959` (fiche, registre) :
+  - **corrigés** : B1-1 (`claimRoleOfId`, seule règle d'affichage de l'avis) ; B1-2 = E1-3 = A1-3 (Vitest : l'avis suit
+    sa ligne après suppression, deux lignes débiteurs, `colspan` 4 et 5 contre l'en-tête) ; B1-3 = E1-4 = A1-1 (ancre
+    positive de l'E2E avant l'absence du compte de la banque ; M2 à rejouer sur l'E2E) ; B1-6 (le test TVA prouve
+    d'abord le choix) ; B1-4 (de « Die Rechnung bliebe ») ; A1-4 (en « This is the … account ») ; B1-5 (avis créanciers
+    reformulé, quatre locales, repli, test, manuel — décision de l'orchestrateur, C-e3403-8) ; E1-1 (manuel : la liste
+    ouverte sans frappe ne montre que les vingt premiers comptes) ; A1-2 (#981, #993, #994 cités ; `:222` annotée) ;
+  - **issues demandées** : E1-1 (comportement : menu sans frappe limité aux vingt premiers comptes), E1-2 (avis
+    indépendant du sens de la transaction, C-e3403-9), E1-5 (compte choisi sorti de la liste, champ vide : #271,
+    fermée, ne vise que les `<select>` de configuration — non couvert) ;
+  - symptômes grepés (anciens textes de l'avis, « Sie bliebe », « This account is the accounts ») : seul reste
+    `user-manual.tex:3957`, la FAQ fournisseur, déjà sans ambiguïté (« saisissez, puis validez »), laissée telle quelle ;
+  - gates de la remédiation **tels qu'ils ont tourné** : `cargo test -p kesh-i18n` 41 passés, 0 échec ;
+    `textes_coherents` 23 passés ; `lint-i18n-ownership` vert ; Vitest du dossier `reconciliation` 16 fichiers,
+    290 tests verts, `npm run check` 0 erreur (hors verrou, avant la séquence). **Différés par la pause des commandes
+    lourdes** (`PAUSE-HEAVY`, priorité à mybibli, 2026-11-11) : `npm run check` sous verrou, Vitest complet, `npm run
+    build`, M2 sur l'E2E, E2E complet — à jouer à la levée de la pause, au commit `584a1183`.
+  - Suite : passe ciblée P2 (Haiku), prompt `34-3-ecriture-manuelle-review-prompt-p2-ciblee.md`.
 
 ### File List
 
