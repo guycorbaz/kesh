@@ -4,7 +4,7 @@ Status: ready-for-dev
 
 *Fiche rédigée le 2026-11-10 en autonomie (Opus 5.5), worktree `/home/gcorbaz/devel/kesh-e34`, branche `chore/epic-34-kickoff`,
 numéros de ligne de `a75835db`. Release **0.17.6**, Epic 34. **Aucune migration** ; frontend seul. Registre :
-`e34-choix-autonomes-e342.md`, C-e342-15 à C-e342-18, C-e342-20, C-e342-22, C-e342-24. Commits en `refs #970` ; à la PR : `closes #970`. Défait l'AC14 de la
+`e34-choix-autonomes-e342.md`, C-e342-15 à C-e342-18, C-e342-20, C-e342-22, C-e342-24, C-e342-25. Commits en `refs #970` ; à la PR : `closes #970`. Défait l'AC14 de la
 Story 33-3b et son choix C-e332-17 (« jamais la couleur seule » par les trames) sur décision de Guy.*
 
 ## Story
@@ -81,8 +81,15 @@ chaque part, contraste contre le fond de la carte), et des teintes **dans les je
    longueur du texte, bornée), testée en Vitest pour 4 et 14 caractères ; aucune mesure de rendu exigée. Quand `totalExpenses`
    diffère de `expensePostsBase`, la note existante des comptes au solde créditeur reste, et dit en plus que les parts portent
    sur `{ $base }` (C-e342-17). **`<desc>`** *(P2-10-2 : il dit aujourd'hui « pour un total de { $base } »,
-   `ExpensePieCard.svelte:74-92`, qui contredirait le centre)* : « … total des dépenses { $total } » ; et, quand les deux
-   diffèrent, « ; parts calculées sur { $base } » — deux clés (égaux, différents), quatre locales, Vitest des deux.
+   `ExpensePieCard.svelte:74-92`, qui contredirait le centre)*. **Tranché à la validation P3 (P3-10-1)** : le `<desc>` existe
+   déjà en **deux clés**, choisies par le nombre de comptes — `homepage-charts-pie-desc-one` (« … un seul compte de charges,
+   pour un total de { $base } : { $top }. ») et `homepage-charts-pie-desc` (« … pour un total de { $base }. Le plus gros : … ») ;
+   catalogues fr `:3464-3465`, de `:3391-3392`, it `:3392-3393`, en `:3397-3398` ; replis `ExpensePieCard.svelte:77`, `:87`. Les **deux**
+   passent de `{ $base }` à « total des dépenses { $total } » (`totalExpenses`) ; une clé neuve `homepage-charts-pie-desc-base`
+   (« Parts calculées sur { $base }. »), jointe par le Svelte **seulement** quand `totalExpenses ≠ expensePostsBase`. Quatre
+   locales, replis égaux. Vitest des **quatre** cas (un compte / plusieurs × égaux / différents). Après la story,
+   `git grep -n -F 'pour un total de { $base }' -- frontend crates` ne rend rien (et ses équivalents de/en/it, `insgesamt { $base }`,
+   `totalling { $base }`, `per un totale di { $base }`).
    **Total négatif ou nul** *(F10-3 ; fixture corrigée à la validation P2, P2-10-1 : `HomepageCharts.test.ts:108-119` monte
    `totalExpenses: '-50'` **sans poste**, `expensePostsBase` y vaut `'0'` par défaut, `:36`, et la carte n'y dessine aucun
    anneau)* : fixture **neuve avec postes** — un poste à 30, un compte au solde créditeur à −80 : `totalExpenses: '-50'`,
@@ -146,7 +153,10 @@ chaque part, contraste contre le fond de la carte), et des teintes **dans les je
 - **M3** : rayon intérieur nul (retour au camembert) → rouge AC-3.
 - **M4** : centre sur `expensePostsBase` → rouge AC-4 (fixture neuve avec un poste à 30 et `totalExpenses: '-50'` : le centre
   dirait 30.00).
-- **M6** : `<desc>` laissé sur `{ $base }` → rouge AC-4 (Vitest du `<desc>`, cas différents).
+- **M6** : `{ $base }` encore présent dans l'une des deux clés existantes du `<desc>` (`-one` ou sans suffixe) → rouge AC-4
+  (Vitest du `<desc>`, cas « différents » du nombre de comptes concerné).
+- **M7** : `centerFontSize` rend une taille constante → rouge AC-4 (la taille pour 14 caractères doit être strictement inférieure
+  à celle pour 4, et au moins égale au plancher lisible que la fonction déclare).
 - **M5** : `#facc15` (jaune, 1,5:1 sur blanc) en cinquième couleur → rouge AC-7.
 
 ## Gates
@@ -183,6 +193,14 @@ Aucun fichier de code commun avec les autres stories de l'Epic 34. `user-manual.
     le cas sans poste est dit (pas d'anneau, pas de total) ;
   - LOW : **P2-10-2** (lu : `ExpensePieCard.svelte:74-92`) → `<desc>` à deux clés, M6 ; **P2-10-3** → règle pure de taille de
     police, testée en Vitest ; **P2-10-4** → garde sans les `*.test.ts`, assertion par `querySelector`.
+- 2026-11-10 : Validation P3 (Sonnet), remédiation (Opus 5.5). Rapport `kesh-gate-logs/e34-validate-p3-e342.md`, pour cette
+  fiche 0 C, 0 H, 1 M, 1 LOW, tous retenus :
+  - **P3-10-1** MEDIUM, **né de la remédiation P2** (P2-10-2 ne disait rien des deux clés existantes du `<desc>`) : lus
+    `ExpensePieCard.svelte:74-92` et les catalogues (fr `:3464-3465`, de `:3391-3392`, it `:3392-3393`, en `:3397-3398`) ; les deux
+    clés passent au total des dépenses, une clé neuve `homepage-charts-pie-desc-base` est jointe quand la base diffère, Vitest des
+    quatre cas, M6 reformulée. Symptôme grepé (`git grep -F 'pour un total de { $base }'`) : 2 lignes de catalogue fr, 2 replis,
+    tous nommés à l'AC-4 ;
+  - **P3-10-2** LOW → M7 pour `centerFontSize`.
   - CHANGELOG : *Changé* gardé (rendu d'une fonction existante modifié), cohérent avec la 34-3 (C-e342-22).
 
 ## Dev Agent Record

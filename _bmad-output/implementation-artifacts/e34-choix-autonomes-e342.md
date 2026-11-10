@@ -218,3 +218,15 @@ Mise à jour par union, jamais par écrasement.*
 - **Retenu** : une fonction pure de la longueur du texte, testée en Vitest ; aucune mesure de rendu.
 - **Écartée** : une mesure en E2E (`boundingBox`), coûteuse pour un montant que le harnais n'atteint pas.
 - **Réversible** : oui.
+
+## Ajouts de la validation P3 (2026-11-10)
+
+### C-e342-25 — Le `<desc>` de l'anneau : deux clés existantes au total, une clé jointe pour la base
+
+- **Contexte** : le `<desc>` existe en deux clés selon le nombre de comptes (`homepage-charts-pie-desc-one`,
+  `homepage-charts-pie-desc`), toutes deux « pour un total de { $base } » ; la remédiation P2 en prescrivait deux autres sans
+  dire ce qu'il advenait de celles-là (finding P3-10-1).
+- **Retenu** : les deux clés existantes disent le total des dépenses (`totalExpenses`) ; une clé neuve
+  `homepage-charts-pie-desc-base` (« Parts calculées sur { $base }. ») est jointe par le Svelte quand la base diffère.
+- **Écartée** : quatre clés (nombre de comptes × égalité), qui doublent les textes à traduire pour une seule phrase de plus.
+- **Réversible** : oui.

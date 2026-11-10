@@ -94,7 +94,10 @@ une écriture manuelle ou que je l'éclate, afin de ne pas compter deux fois un 
 ### Écran
 
 5. **AC-5 — l'avertissement** : sur une ligne dont `settlementCount + entryCount > 0` ou `matchedElsewhereCount > 0`, un
-   avertissement (`data-testid="already-booked-warning"`), sous la ligne, sans numéro d'issue :
+   avertissement (`data-testid="already-booked-warning"`), sous la ligne, sans numéro d'issue. **Préfixe des clés** *(Validation
+   P3, P3-4-1)* : dans cette fiche, `…-already-booked-…` se lit **`reconciliation-labels-already-booked-…`**, le préfixe des avis
+   de ligne (`reconciliation-labels-notice-…`) ; `frontend/scripts/lint-i18n-ownership.js` admet une clé `reconciliation-*` dans
+   `src/lib/features/reconciliation/`, où vit `ReconciliationProposals.svelte` :
    - (a) si `settlementCount + entryCount > 0` : **deux clés**, choisies par le Svelte selon le nombre —
      `…-already-booked-one` : « Cette transaction semble déjà comptabilisée : une écriture non rapprochée du compte de la
      banque lui correspond. Rattachez-la (*Rattacher à une écriture existante*) plutôt que de passer une écriture : elle serait
@@ -244,6 +247,10 @@ aucune ligne commune prévue.
     seulement) → clause des 5 centimes retirée du texte (a) ; **P2-4-4** (lu : `34-2-solde-ouverture-compte-bancaire.md:17-19`)
     → écriture d'ouverture nommée au bruit attendu.
   - CHANGELOG : *Ajouté* (C-e342-22).
+- 2026-11-10 : Validation P3 (Sonnet), remédiation (Opus 5.5). Rapport `kesh-gate-logs/e34-validate-p3-e342.md`, pour cette
+  fiche 0 C, 0 H, 0 M, 1 LOW, retenu : **P3-4-1** (lu : `frontend/scripts/lint-i18n-ownership.js:1-20`, propriété par dossier
+  de fonctionnalité) → préfixe `reconciliation-labels-already-booked-…` écrit à l'AC-5 ; il vaut aussi pour les clés que la
+  34-11b ajoutera (`-transfer`, `-transfer-among`).
 
 ## Dev Agent Record
 

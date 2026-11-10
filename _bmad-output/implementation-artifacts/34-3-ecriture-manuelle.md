@@ -114,19 +114,28 @@ compte est écartée. Aucun rôle ne se déduit du numéro d'un compte (Story 14
    manuelle » (ou « passée par une écriture manuelle ») dans les quatre locales, et leurs replis Svelte/TS sont identiques au
    catalogue fr. ⚠️ *(Validation P2, P2-3-3)* `i18n-repli-divergent-actif.test.ts:142` **ne contrôle pas** cet écart : il ne
    retient que les clés dont les replis divergent **entre plusieurs sites**, et chacun de ces replis n'a qu'un site. Le contrôle
-   est donc un test neuf, dans `failed-proposal-label.test.ts` (patron de `:357`) ou un test qui compare repli et catalogue fr
-   pour les clés touchées par `ecartsAuCatalogue` (`frontend/src/lib/shared/i18n-repli-catalogue.ts:82`, patron de
-   `mcp-prompts-i18n.test.ts`), sur les **huit** clés de cet AC (quatre `failed-rule-masked*`, l'avis du lot, trois de F3-2) et
-   celle du bouton.
+   est donc un test neuf, dans `failed-proposal-label.test.ts` (patron de `:357`) ou un test qui compare repli et catalogue fr,
+   sur la **liste fermée** des **huit** clés de cet AC (quatre `failed-rule-masked*`, l'avis du lot, trois de F3-2) et celle du
+   bouton. *(Validation P3, P3-3-2)* `ecartsAuCatalogue` (`frontend/src/lib/shared/i18n-repli-catalogue.ts:82-104`) juge **par
+   préfixe** et signale aussi les clés du préfixe qu'aucun site littéral ne demande : appelé tel quel sur les trois préfixes
+   (`reconciliation-labels-`, `-failed-`, `-manual-`), il signalerait des voisines sans rapport. Le test **filtre** son résultat
+   sur la liste fermée (ou compare relevé des replis et catalogue clé par clé), et asserte aussi que chacune des neuf clés est
+   **présente** dans le relevé.
    **Garde de contrôle** *(P2-3-1 : la forme de la P1, avec `manuell`, captait « manuelle » et le libellé neuf lui-même, 197
    lignes)*, insensible à la casse, sur le **geste**, non sur le mot :
-   `git grep -niE 'affect(er|ation|ée?s?|ez)[^.]{0,20}(manuel|à la main)|manuell zu(weisen|gewiesen)?\b|ordnen [^.]{0,30} manuell zu|manueller abgleich|assign(ed)?[^.]{0,12}manual|assegna[a-z]* (manual|a mano)|riconciliazione manuale|manual reconciliation|réconciliation manuelle' -- crates/kesh-i18n frontend/src frontend/tests 'docs/manual/fr/*.tex'`.
-   Au commit de rédaction elle rend **91 lignes** (catalogues fr 12, de 12, en 9, it 9 ; `user-manual.tex` 18 ;
-   `admin-manual.tex` 1 ; `frontend/src` 29 ; `frontend/tests` 1 ; recompté par `| cut -d: -f1 | sort | uniq -c`). **Survivants attendus après la story**, et eux seuls : le libellé d'audit
-   `audit-log-action-reconciliation-manual-matched` (C-e342-3, quatre locales) et son commentaire d'en-tête de catalogue ;
-   `admin-manual.tex:2100` (« n'en est pas affectée ; ce manuel », faux positif) ; les commentaires historiques datés
+   `git grep -niE 'affect(er|ation|ée?s?|ez)[^.]{0,20}(manuel|à la main)|manuell zu(weisen|gewiesen)?\b|ordnen [^.]{0,30} manuell zu|manueller abgleich|assign(ed)?[^.]{0,30}manual|assegn[a-z]*[^.]{0,30}(manual|a mano)|riconciliazione manuale|manual reconciliation|réconciliation manuelle' -- crates/kesh-i18n frontend/src frontend/tests 'docs/manual/fr/*.tex'`.
+   *(Validation P3, P3-3-1 : la forme de la P2 limitait « assign … manual » à 12 caractères et voulait « assegna » collé à
+   « manual » / « a mano » ; elle manquait « otherwise assign the transaction manually » et « assegnare la transazione a mano »,
+   trois messages par locale en anglais et en italien.)* Au commit de rédaction elle rend **97 lignes** (catalogues fr 12, de 12,
+   en 12, it 12 ; `user-manual.tex` 18 ; `admin-manual.tex` 1 ; `frontend/src` 29 ; `frontend/tests` 1 ; rejouée et recomptée
+   par `| cut -d: -f1 | sort | uniq -c` au commit `73c365af`). **Survivants attendus après la story**, et eux seuls : le libellé
+   d'audit `audit-log-action-reconciliation-manual-matched` (C-e342-3, quatre locales) et son commentaire d'en-tête de
+   catalogue ; `admin-manual.tex:2100` (« n'en est pas affectée ; ce manuel », faux positif) ; les commentaires historiques datés
    (« Story 8-5a-base FR45 — réconciliation manuelle », `reconciliation.api.ts`, `reconciliation.types.ts`,
-   `bank-accounts.api.ts`). Sortie et nombre résiduel copiés au Change Log. ⚠️ La garde est ligne à ligne : un libellé coupé
+   `bank-accounts.api.ts`). *(P3-3-3)* Les commentaires de code qui **décrivent le geste** se réécrivent avec lui :
+   `ReconciliationProposals.svelte:15`, `:115`, `:200`, `:298`, `:574`, `ReconciliationProposals.test.ts:260`, `:279`, `:553`,
+   `:556`, `:601`, `ManualMatchModal.svelte:2` ; ceux qui citent une story datée restent. Sortie, nombre résiduel et arbitrage de
+   chaque commentaire copiés au Change Log. ⚠️ La garde est ligne à ligne : un libellé coupé
    par la ligne (`user-manual.tex:2902-2903`, « \emph{Affecter » / « manuellement} ») lui échappe ; il est listé à l'AC-8.
 7. **AC-7 — E2E de bout en bout** (`reconciliation-manual-entry.spec.ts`, neuf) : relevé saisi par l'API, un débit d'un
    montant unique ; *Réconciliation* → *Écriture manuelle* sur la ligne → choix d'un compte **de classe 1 ou 2** autre que celui
@@ -232,6 +241,15 @@ parallèle, ses textes nomment déjà « Écriture manuelle » (C-e342-5).
     citation.
   - CHANGELOG : *Changé* gardé (comportement d'un geste existant modifié ; admis par l'orchestrateur), cohérent avec la 34-10 ;
     la 34-4 en *Ajouté*, la 34-9 en *Corrigé* (C-e342-22).
+- 2026-11-10 : Validation P3 (Sonnet), remédiation (Opus 5.5). Rapport `kesh-gate-logs/e34-validate-p3-e342.md`, pour cette
+  fiche 0 C, 0 H, 1 M, 2 LOW, tous retenus :
+  - **P3-3-1** MEDIUM, **défaut d'origine non vu par la P2** (motifs anglais et italien hérités de la P1) : garde élargie,
+    **rejouée** au commit `73c365af` : 97 lignes, catalogues 12 / 12 / 12 / 12 (les six de plus sont les trois messages
+    `-supplier-invoice-in-batch`, `-supplier-payment-hold`, `-notice-supplier-invoice-in-batch` en anglais et en italien) ;
+  - **P3-3-2** LOW (lu : `i18n-repli-catalogue.ts:82-104`, filtre par préfixe) → test filtré sur la liste fermée, présence
+    assertée ;
+  - **P3-3-3** LOW (lus : `ReconciliationProposals.svelte:15`, `:115`, `:200`, `:298`, `:574`, `.test.ts:260`, `:279`, `:553`,
+    `:556`, `:601`, `ManualMatchModal.svelte:2`) → commentaires du geste listés, à réécrire.
 
 ## Dev Agent Record
 

@@ -109,7 +109,10 @@ importé(s) ».
    désigne un fichier présent dans `failed/`. Un test `FILE_TOO_LARGE` asserte `byteSize`, `maxBytes` et `movedTo` ensemble.
    Un test `skipped` (`UNSTABLE`, fichier modifié pendant le délai de stabilité, `STABILITY_DELAY` de 25 ms `:87`, si le
    montage le permet, sinon `VANISHED`) ; **s'il ne se monte pas sans crochet de production, le dire au Change Log** *(P2-9-3)*,
-   et un test unitaire de la conversion `FileOutcome::Skipped(code)` → `skipped[]` (et `warnings[]`), qui se monte toujours ;
+   et un test unitaire de la conversion `FileOutcome::Skipped(code)` → `skipped[]` (et `warnings[]`), qui se monte toujours :
+   *(Validation P3, P3-9-1)* l'agrégation vit aujourd'hui dans la boucle privée de `process_inbox` (`:301-317`) ; elle
+   s'**extrait** en fonction pure (p. ex. `push_outcome(&mut InboxImportReport, file_name, FileOutcome)`), appelée par la
+   boucle et testée seule, dans `mod tests` du fichier ;
    un test `truncatedAt` (limite basse par `Config`). Les tests existants passent, le contrat n'étant qu'étendu.
 
 ### Écran
@@ -130,7 +133,8 @@ importé(s) ».
    - *refusé* : nom, motif (`importErrorLabel`), et la même phrase sur `failed/` ;
    - *non traité* (`skipped`) : nom, motif traduit — « en cours d'écriture, laissé dans le dossier : relancez l'import » ou
      « disparu pendant l'import » (#974).
-   En tête du rapport, un **résumé composé par le Svelte** à partir d'une clé par segment — `…-summary-imported`,
+   En tête du rapport, un **résumé composé par le Svelte** à partir d'une clé par segment (`…` = `imported-supplier-invoices-report`,
+   le préfixe des clés voisines `imported-supplier-invoices-report-accepted` / `-failed`) — `…-summary-imported`,
    `…-summary-duplicates`, `…-summary-refused`, `…-summary-not-processed`, chacune « { $n } … » et au pluriel par « (s) »
    comme les messages voisins —, les segments nuls omis, joints par « , » et terminés par « . ». ⛔ **Pas de sélecteur Fluent**
    *(F9-1)* : le client reçoit les messages pré-résolus sans arguments, un sélecteur y arriverait figé. Si `truncatedAt` est posé,
@@ -182,7 +186,7 @@ importé(s) ».
 - [ ] **T2** : `inbox_import.rs` — `dispose_failed` reçoit le `details` et y **fusionne** `movedTo` (lu de `move_to_failed`,
   qui rend le nom au lieu d'un booléen) ; une fonction qui construit le `details` du doublon depuis un `ImportedSupplierInvoice`
   (DRY, trois sites) ; relecture après `rollback` pour les deux courses (`:577`, `:658`) ; `FileOutcome::Skipped` porte un code,
-  le rapport `skipped` et `truncatedAt`, `warnings` garde ses chaînes. Doc-comment du module (`:1-26`) à jour.
+  le rapport `skipped` et `truncatedAt`, `warnings` garde ses chaînes ; agrégation extraite en fonction pure (AC-3, P3-9-1). Doc-comment du module (`:1-26`) à jour.
 - [ ] **T3** : `imported-supplier-invoices.types.ts` (`details` d'un doublon, `skipped`, `truncatedAt`), `+page.svelte` (lignes,
   anciens testids gardés, résumé composé, ancres `id="imported-<id>"`, notifications), i18n, `error-label.ts` si un libellé
   change (la garde de cardinalité suit) ; assertions existantes : `import-page.test.ts:183`, `supplier-documents.spec.ts:110`,
@@ -201,6 +205,8 @@ importé(s) ».
 - **M6** : `movedTo` écrase `details` au lieu de s'y fusionner → rouge AC-3 (`FILE_TOO_LARGE` sans `byteSize`).
 - **M7** : site `:577` rendant l'état lu avant la course (`discarded`) → rouge AC-3 (course `discarded`).
 - **M8** : l'écran ignore `skipped` → rouge AC-6 (ligne *non traité*, `n = 4`).
+- **M9** : `skipped` jamais rempli côté serveur (la fonction d'agrégation pousse en `warnings` seulement) → rouge AC-3 (test
+  unitaire de la conversion), même si le test d'instabilité ne se monte pas.
 
 ## Gates
 
@@ -236,6 +242,10 @@ Aucun fichier commun avec les autres stories du groupe. `inbox_import.rs` n'est 
   lignes) → assertions à réécrire nommées (trois lignes, ordre, résumé) ; **P2-9-2** (lu : `git show a75835db:crates/kesh-api/src/inbox_import.rs`,
   `:322-325`, `:397-399`, `:882-884`) → lignes de #974 corrigées ; **P2-9-3** (lu : `:87`, 25 ms) → sortie écrite et test de
   conversion ; **P2-9-4** (lu : `:255`) → `C-1`/`C-2`, ensemble des états. CHANGELOG : *Corrigé* (C-e342-22).
+- 2026-11-10 : Validation P3 (Sonnet), remédiation (Opus 5.5). Rapport `kesh-gate-logs/e34-validate-p3-e342.md`, pour cette
+  fiche 0 C, 0 H, 0 M, 1 LOW, retenu : **P3-9-1** (lu : `inbox_import.rs:301-317`, agrégation dans la boucle privée) →
+  extraction en fonction pure prescrite à l'AC-3, M9. En passant, le préfixe `…` du résumé est écrit
+  (`imported-supplier-invoices-report`), comme pour la 34-4 (P3-4-1).
 
 ## Dev Agent Record
 
