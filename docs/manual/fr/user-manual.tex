@@ -1958,6 +1958,14 @@ même qu'un compte bancaire lié au compte créanciers~--- et ne le propose pas 
 fournisseurs~: un compte qui l'a perdu reste proposé, et c'est l'enregistrement qui est refusé.
 Choisissez un autre compte, ou reliez le compte bancaire à son propre compte de banque.
 
+\textbf{Si la réponse se perd.} Une coupure réseau ou une panne du serveur peut survenir une fois
+le geste écrit --- payer, annuler le règlement, annuler la facture, la valider, la repasser en
+brouillon, joindre ou détacher son document. La fiche relit alors la facture et dit, dans un
+encadré, que l'issue n'est pas connue~: vérifiez ce que montre la fiche relue avant de réessayer.
+Si la relecture elle-même échoue, l'encadré le dit~: rechargez la page avant de réessayer. Un second
+envoi ne s'écrit pas deux fois~: la facture --- ou son document --- a changé entre-temps, et Kesh
+le refuse.
+
 \textbf{Lettrage.} Une facture fournisseur \textbf{payée} est \textbf{lettrée} d'office~: sa
 ligne d'achat au compte créanciers et celle du paiement sur ce compte forment un groupe de
 lettrage («~pièce~»)~: la colonne «~Lettrage~» du grand livre porte son code sur ces deux lignes,
