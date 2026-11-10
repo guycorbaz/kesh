@@ -10,9 +10,12 @@
 	import {
 		OTHERS_STYLE,
 		PIE_GEOMETRY,
+		SEPARATOR_WIDTH,
 		centerFontSize,
+		centerLines,
 		chartAmount,
 		differentAmounts,
+		drawOrder,
 		followMark,
 		fullRing,
 		pieSlices,
@@ -38,6 +41,9 @@
 	/** Le total des dépenses de l'exercice, celui des barres et du compte de résultat. */
 	let totalLabel = $derived(i18nMsg('homepage-charts-pie-total-label', 'Total des dépenses'));
 	let totalAmount = $derived(chartAmount(summary.totalExpenses));
+	let labelSize = $derived(centerFontSize(totalLabel, HOLE));
+	let amountSize = $derived(centerFontSize(totalAmount, HOLE));
+	let lines = $derived(centerLines(GEOMETRY.cy, labelSize, amountSize));
 	/**
 	 * Les parts portent sur une autre base que le total du centre : à le dire, et seulement
 	 * s'il y a des parts (AC-4, validation P6). Comparaison en valeur (P7-F2).
@@ -113,7 +119,8 @@
 					})}
 				{/if}
 			</desc>
-			{#each slices as slice (slice.rank)}
+			<!-- Les parts étroites, sans liseré, se peignent en dernier : aucun liseré ne les recouvre (revue P1, B1-1). -->
+			{#each drawOrder(slices) as slice (slice.rank)}
 				{@const post = postOf(slice.accountId)}
 				<g
 					class={post ? 'mark' : ''}
@@ -140,8 +147,13 @@
 						<!-- La part qui fait le tour : un cercle au rayon médian, au trait de l'épaisseur de l'anneau. -->
 						<circle cx={GEOMETRY.cx} cy={GEOMETRY.cy} r={RING.r} fill="none" stroke={slice.style.color} stroke-width={RING.width} />
 					{:else}
-						<!-- Le liseré, de la couleur de la carte, marque chaque limite quelle que soit la paire de teintes (C-e342-16). -->
-						<path d={slice.path} fill={slice.style.color} stroke="var(--color-surface)" stroke-width="1.5" />
+						<!-- Le liseré, de la couleur de la carte, marque chaque limite quelle que soit la paire de teintes (C-e342-16) ; une part étroite n'en porte pas (C-e3410-9). -->
+						<path
+							d={slice.path}
+							fill={slice.style.color}
+							stroke={slice.separated ? 'var(--color-surface)' : undefined}
+							stroke-width={slice.separated ? SEPARATOR_WIDTH : undefined}
+						/>
 					{/if}
 				</g>
 			{/each}
@@ -149,19 +161,19 @@
 			<g data-testid="homepage-chart-pie-total" pointer-events="none">
 				<text
 					x={GEOMETRY.cx}
-					y={GEOMETRY.cy - 4}
+					y={lines.labelY}
 					text-anchor="middle"
 					fill="var(--color-text)"
-					font-size={centerFontSize(totalLabel, HOLE)}
+					font-size={labelSize}
 				>{totalLabel}</text>
 				<text
 					x={GEOMETRY.cx}
-					y={GEOMETRY.cy + 4}
+					y={lines.amountY}
 					text-anchor="middle"
 					dominant-baseline="hanging"
 					fill="var(--color-text)"
 					font-weight="600"
-					font-size={centerFontSize(totalAmount, HOLE)}
+					font-size={amountSize}
 				>{totalAmount}</text>
 			</g>
 		</svg>

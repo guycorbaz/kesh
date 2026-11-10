@@ -439,4 +439,33 @@ describe('34-10 (#970) — couleurs unies et anneau', () => {
 		expect(screen.queryByTestId('homepage-chart-pie-total')).toBeNull();
 		expect(screen.queryByTestId('homepage-charts-pie-base-note')).toBeNull();
 	});
+
+	it('revue P1, B1-1 : une part de 0,2 % reste visible — sans liseré, peinte en dernier, une unité au moins', () => {
+		render(HomepageCharts, {
+			state: 'ready',
+			summary: summary({
+				// Une part minuscule AU MILIEU : « Autres » est plus gros que le dernier poste.
+				expensePosts: [post(6000, 'Loyer', '900', '90.0'), post(6100, 'Timbres', '2', '0.2')],
+				otherExpenses: { amount: '98', share: '9.8', accountCount: 6 },
+				expensePostsBase: '1000',
+				totalExpenses: '1000',
+			}),
+		});
+		const paths = Array.from(pieCard().querySelectorAll('svg[role="img"] path'));
+		const tiny = screen.getAllByTestId('homepage-chart-post-mark')[1].querySelector('path')!;
+		// Rien ne se peint par-dessus elle : c'est le dernier `path` de l'image.
+		expect(paths[paths.length - 1]).toBe(tiny);
+		// Aucun liseré ne la recouvre : elle n'en porte pas, et ses voisines sont dessous.
+		expect(tiny.getAttribute('stroke')).toBeNull();
+		expect(paths[0].getAttribute('stroke')).toBe('var(--color-surface)');
+		// Sa largeur dessinée, à l'arc intérieur (le plus étroit), fait au moins une unité.
+		const m = /L(-?[\d.]+) (-?[\d.]+) A[\d.]+ [\d.]+ 0 [01] 0 (-?[\d.]+) (-?[\d.]+) Z$/.exec(
+			tiny.getAttribute('d') ?? '',
+		);
+		expect(m).not.toBeNull();
+		const [x1, y1, x2, y2] = m!.slice(1).map(Number);
+		expect(Math.hypot(x2 - x1, y2 - y1)).toBeGreaterThanOrEqual(1);
+		// Elle reste un lien vers son grand livre.
+		expect(tiny.closest('[data-href]')?.getAttribute('data-href')).toContain('accountId=6100');
+	});
 });

@@ -315,6 +315,22 @@ export function centerFontSize(text: string, holeDiameter: number): number {
 }
 
 /**
+ * Les ordonnées des deux lignes du centre (revue P1, B1-4) : le libellé (ligne de base
+ * alphabétique) au-dessus, le montant (`dominant-baseline="hanging"`) au-dessous. L'écart
+ * suit la taille du libellé — ses jambages, environ 0,25 em, plus une marge —, et le bloc
+ * (hauteur de capitale prise à 0,75 em pour chacune) est centré sur `cy`.
+ */
+export function centerLines(
+	cy: number,
+	labelSize: number,
+	amountSize: number,
+): { labelY: number; amountY: number } {
+	const gap = 0.3 * labelSize + 1;
+	const amountY = cy + (gap + 0.75 * labelSize - 0.75 * amountSize) / 2;
+	return { labelY: amountY - gap, amountY };
+}
+
+/**
  * Deux montants décimaux diffèrent-ils en VALEUR ? `"30"` et `"30.00"` sont égaux : le
  * serveur ne promet pas la même écriture pour deux champs (P7-F2).
  */
@@ -327,17 +343,53 @@ export interface PieSlice {
 	rank: number;
 	/** `null` pour « Autres », qui n'a pas de compte unique. */
 	accountId: number | null;
+	/** Angles vrais, de `amount / base` : ceux du montant. */
 	startAngle: number;
 	endAngle: number;
+	/**
+	 * Angles dessinés : une part non nulle fait au moins `MIN_SLICE_ANGLE`, pris sur la plus
+	 * grande, pour rester visible (revue P1, B1-1). Le tableau porte les vrais montants.
+	 */
+	displayStart: number;
+	displayEnd: number;
 	/** `null` pour une part pleine (`full`) : un arc de 360° ne se dessine pas. */
 	path: string | null;
 	/**
-	 * La part fait le tour : ses deux extrémités, une fois écrites, se confondent. Vrai à
-	 * 100 %, et dès qu'il ne reste qu'une fraction infime pour les autres : un arc dont
-	 * les extrémités sont égales est omis par le SVG, et l'anneau sortirait blanc.
+	 * La part fait le tour : ses extrémités, extérieures ou intérieures, une fois écrites, se
+	 * confondent. Un arc dont les extrémités sont égales est omis par le SVG. Avec l'angle
+	 * minimal, cela n'arrive qu'à une part seule.
 	 */
 	full: boolean;
+	/**
+	 * La part porte le liseré blanc (C-e342-16). Une part plus étroite que
+	 * `SEPARATED_MIN_ANGLE` n'en porte pas et se dessine par-dessus ses voisines
+	 * (`drawOrder`) : leur liseré, qui mord de `SEPARATOR_WIDTH / 2` de chaque côté de la
+	 * limite, ne la recouvre pas, et la moitié qui reste chez la voisine marque encore la
+	 * limite.
+	 */
+	separated: boolean;
 	style: ChartStyle;
+}
+
+/** Largeur du liseré entre les parts, en unités du `viewBox`. */
+export const SEPARATOR_WIDTH = 1.5;
+/**
+ * Angle dessiné minimal d'une part non nulle (≈ 1,15°) : au moins une unité de `viewBox` à
+ * l'arc intérieur, le plus étroit (57,6 × 0,02 = 1,15).
+ */
+export const MIN_SLICE_ANGLE = 0.02;
+/**
+ * En dessous de cet angle dessiné (≈ 3,4°), une part ne porte pas de liseré : à l'arc
+ * intérieur, elle garderait moins de deux unités une fois ses deux demi-liserés retirés.
+ */
+export const SEPARATED_MIN_ANGLE = 0.06;
+
+/**
+ * L'ordre de peinture : les parts à liseré d'abord, puis les étroites, chacune dans
+ * l'ordre des rangs. Une part étroite n'est ainsi recouverte par aucun liseré.
+ */
+export function drawOrder(slices: PieSlice[]): PieSlice[] {
+	return [...slices.filter((s) => s.separated), ...slices.filter((s) => !s.separated)];
 }
 
 function pointAt({ cx, cy }: PieGeometry, r: number, angle: number): string {
@@ -371,25 +423,51 @@ export function pieSlices(
 	];
 	const turn = 2 * Math.PI;
 	let cumulated = new Big(0);
-	return items.map((item, i) => {
+	const real = items.map((item) => {
 		const start = cumulated.div(baseBig).toNumber() * turn;
 		cumulated = cumulated.plus(item.amount);
-		const end = cumulated.div(baseBig).toNumber() * turn;
+		return { start, end: cumulated.div(baseBig).toNumber() * turn };
+	});
+
+	// Angles dessinés : chaque part étroite monte à MIN_SLICE_ANGLE ; la plus grande cède
+	// l'écart. Une seule part fait le tour, rien à céder.
+	const spans = real.map(({ start, end }) => end - start);
+	if (spans.length > 1) {
+		const largest = spans.indexOf(Math.max(...spans));
+		let deficit = 0;
+		spans.forEach((span, i) => {
+			if (i !== largest && span < MIN_SLICE_ANGLE) {
+				deficit += MIN_SLICE_ANGLE - span;
+				spans[i] = MIN_SLICE_ANGLE;
+			}
+		});
+		spans[largest] -= deficit;
+	}
+
+	const { r, innerR } = geometry;
+	let displayed = 0;
+	return items.map((item, i) => {
+		const start = displayed;
+		const end = i === items.length - 1 ? turn : start + spans[i];
+		displayed = end;
 		const large = end - start > Math.PI ? 1 : 0;
-		const { r, innerR } = geometry;
 		const from = pointAt(geometry, r, start);
 		const to = pointAt(geometry, r, end);
-		const full = large === 1 && from === to;
 		// Secteur d'anneau : arc extérieur dans le sens horaire, segment vers l'intérieur,
 		// arc intérieur à rebours, puis fermeture sur le point de départ.
 		const innerFrom = pointAt(geometry, innerR, start);
 		const innerTo = pointAt(geometry, innerR, end);
+		// Pleine dès que l'un des deux arcs aurait ses extrémités confondues (revue P1, E1-2).
+		const full = large === 1 && (from === to || innerFrom === innerTo);
 		return {
 			rank: i + 1,
 			accountId: item.accountId,
-			startAngle: start,
-			endAngle: end,
+			startAngle: real[i].start,
+			endAngle: real[i].end,
+			displayStart: start,
+			displayEnd: end,
 			full,
+			separated: end - start >= SEPARATED_MIN_ANGLE,
 			path: full
 				? null
 				: `M${from} A${r} ${r} 0 ${large} 1 ${to} L${innerTo} A${innerR} ${innerR} 0 ${large} 0 ${innerFrom} Z`,

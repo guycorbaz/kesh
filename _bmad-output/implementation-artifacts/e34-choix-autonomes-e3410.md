@@ -73,3 +73,40 @@ union, jamais par écrasement.*
 - **Écartées** : inscrire `linejoin` à la table fermée `NON_DEFINIS` (elle tient des jetons à définir sous #645, non des attributs) ;
   modifier la garde (hors de la zone de la story).
 - **Réversible** : oui.
+
+## Ajouts de la revue de code P1 (2026-11-10)
+
+### C-e3410-9 — Une part étroite reste visible : angle dessiné minimal, sans liseré, peinte en dernier
+
+- **Contexte** : B1-1 = E1-1 (MEDIUM). Le liseré de 1,5 unité, centré sur le contour, mangeait 0,75 unité de chaque côté de
+  chaque part : une part de moins d'environ 0,3 % disparaissait sous lui, cliquable mais invisible, et ses voisines étaient
+  rognées.
+- **Retenu**, deux gestes : (1) **angle dessiné minimal** `MIN_SLICE_ANGLE = 0,02` rad (≈ 1,15°, 0,32 % du tour, 1,15 unité à
+  l'arc intérieur), l'écart étant pris sur la plus grande part ; les angles vrais (`startAngle`, `endAngle`) restent ceux du
+  montant, le tableau porte les montants exacts ; (2) une part dessinée sous `SEPARATED_MIN_ANGLE = 0,06` rad (≈ 3,4°) ne porte
+  **pas** de liseré et se peint **après** les autres (`drawOrder`) : le demi-liseré de la voisine qui mordait sur elle est
+  recouvert, celui qui reste chez la voisine marque encore la limite. Une part au-dessus du seuil garde au moins 1,96 unité à
+  l'arc intérieur une fois ses deux demi-liserés retirés. Effet de bord voulu : plus de part « pleine » par arrondi à côté
+  d'une part minuscule (E1-3), et `full` teste aussi les extrémités intérieures (E1-2).
+- **Écartées** : liseré en rayons tracés à part (même recouvrement d'une part plus étroite que le rayon) ; liseré seulement
+  entre parts assez larges, sans angle minimal (une part de 0,0001 % resterait invisible, faute de largeur) ; `paint-order`
+  (ne change rien au recouvrement par la voisine) ; renoncer au liseré (contraire à C-e342-16).
+- **Coût** : le dessin d'une part minuscule n'est plus proportionnel (au plus 0,32 % du tour ajoutés par part, pris sur la
+  plus grande) ; dit au manuel et au CHANGELOG.
+- **Réversible** : oui, deux constantes.
+
+### C-e3410-10 — Écart vertical du centre proportionnel au libellé
+
+- **Contexte** : B1-4 (LOW), écart fixe de 8 unités entre les deux lignes du centre.
+- **Retenu** : `centerLines(cy, labelSize, amountSize)` : écart = 0,3 × taille du libellé + 1, bloc centré sur `cy` (hauteurs
+  prises à 0,75 em).
+- **Réversible** : oui.
+
+### C-e3410-11 — Le test de `centerFontSize` ne recopie plus la formule
+
+- **Contexte** : B1-2 (LOW), test circulaire.
+- **Retenu** : on vérifie ce qui se décide sans mise en page — le montant plausible le plus long (`-999’999’999.9999`) n'est pas
+  écrasé au plancher, un texte de trente caractères l'est (débordement assumé au-delà, non plausible), un montant court atteint
+  le plafond. La largeur réelle des chiffres d'Inter n'est pas mesurée (jsdom) ; la capture la montre.
+- **Écartée** : une mesure `getBBox` en E2E (C-e342-24 l'avait écartée pour un montant que le harnais n'atteint pas).
+- **Réversible** : oui.

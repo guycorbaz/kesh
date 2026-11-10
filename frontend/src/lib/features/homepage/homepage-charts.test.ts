@@ -8,15 +8,20 @@ import {
 	BAR_REVENUE,
 	CENTER_FONT_MAX,
 	CENTER_FONT_MIN,
+	MIN_SLICE_ANGLE,
 	OTHERS_STYLE,
 	PIE_GEOMETRY,
 	PIE_PALETTE,
+	SEPARATED_MIN_ANGLE,
+	SEPARATOR_WIDTH,
 	axisLabels,
 	axisTicks,
 	centerFontSize,
+	centerLines,
 	chartAmount,
 	chartWidth,
 	differentAmounts,
+	drawOrder,
 	followMark,
 	fullRing,
 	markHref,
@@ -285,20 +290,75 @@ describe('pieSlices', () => {
 		expect(r[0].path).toBeNull();
 	});
 
-	it('une part minuscule reste rendue, et la grande part se dessine : un cercle (B-1, E-1)', () => {
+	/** Les deux extrémités d'un arc du `path` (extérieur ou intérieur), et leur corde. */
+	const chord = (path: string | null, which: 'outer' | 'inner'): number => {
+		const re =
+			which === 'outer'
+				? /^M(-?[\d.]+) (-?[\d.]+) A[\d.]+ [\d.]+ 0 [01] 1 (-?[\d.]+) (-?[\d.]+) L/
+				: /L(-?[\d.]+) (-?[\d.]+) A[\d.]+ [\d.]+ 0 [01] 0 (-?[\d.]+) (-?[\d.]+) Z$/;
+		const m = re.exec(path ?? '');
+		expect(m, path ?? 'path nul').not.toBeNull();
+		const [x1, y1, x2, y2] = m!.slice(1).map(Number);
+		return Math.hypot(x2 - x1, y2 - y1);
+	};
+
+	it('une part minuscule reste VISIBLE : au moins MIN_SLICE_ANGLE, prise sur la plus grande (revue P1, B1-1)', () => {
 		const r = pieSlices([post(1, '999999', '100.0'), post(2, '0.0001', '0.0')], null, '999999.0001', geo);
 		expect(r).toHaveLength(2);
-		expect(r[1].path).not.toContain('NaN');
-		expect(r[1].full).toBe(false);
+		// Les angles vrais restent ceux du montant ; seuls les angles dessinés changent.
 		expect(r[1].endAngle).toBeCloseTo(2 * Math.PI, 6);
-		expect(r[0].full, 'extrémités confondues : le SVG omettrait l’arc').toBe(true);
-		expect(r[0].path).toBeNull();
+		expect(r[1].displayEnd - r[1].displayStart).toBeCloseTo(MIN_SLICE_ANGLE, 9);
+		expect(r[0].displayEnd - r[0].displayStart).toBeCloseTo(2 * Math.PI - MIN_SLICE_ANGLE, 9);
+		// Plus de cercle ni de rayon blanc dégénéré (E1-3) : deux vrais secteurs.
+		expect(r[0].full).toBe(false);
+		expect(r[1].full).toBe(false);
+		// Visible : au moins une unité de `viewBox` à l'arc intérieur, le plus étroit.
+		expect(chord(r[1].path, 'inner')).toBeGreaterThanOrEqual(1);
+		expect(chord(r[1].path, 'outer')).toBeGreaterThanOrEqual(1);
 	});
 
-	it('20’000.00 et 0.01 : le cas réaliste du disque blanc', () => {
+	it('une part étroite n’a pas de liseré, et se dessine par-dessus ses voisines (B1-1)', () => {
+		const r = pieSlices(
+			[post(1, '900', '99.4'), post(2, '2', '0.2')],
+			{ amount: '3', share: '0.3', accountCount: 2 },
+			'905',
+			geo,
+		);
+		expect(r.map((s) => s.separated)).toEqual([true, false, false]);
+		// Ordre de dessin : les parts à liseré d'abord, puis les étroites, rang conservé.
+		expect(drawOrder(r).map((s) => s.rank)).toEqual([1, 2, 3]);
+		const mixed = pieSlices(
+			[post(1, '900', '90.0'), post(2, '2', '0.2')],
+			{ amount: '98', share: '9.8', accountCount: 6 },
+			'1000',
+			geo,
+		);
+		expect(mixed.map((s) => s.separated)).toEqual([true, false, true]);
+		expect(drawOrder(mixed).map((s) => s.rank)).toEqual([1, 3, 2]);
+	});
+
+	it('une part assez large pour son liseré garde au moins une unité visible de chaque côté', () => {
+		// Le liseré mange SEPARATOR_WIDTH / 2 de chaque côté : à l'arc intérieur, une part
+		// séparée doit garder au moins une unité une fois les deux demi-liserés retirés.
+		expect(SEPARATED_MIN_ANGLE * PIE_GEOMETRY.innerR - SEPARATOR_WIDTH).toBeGreaterThanOrEqual(1);
+		expect(MIN_SLICE_ANGLE * PIE_GEOMETRY.innerR).toBeGreaterThanOrEqual(1);
+	});
+
+	it('20’000.00 et 0.01 : la grande part n’est plus un cercle, la petite se voit (E1-3)', () => {
 		const r = pieSlices([post(1, '20000.00', '100.0'), post(2, '0.01', '0.0')], null, '20000.01', geo);
-		expect(r[0].full).toBe(true);
-		expect(r[0].path).toBeNull();
+		expect(r[0].full).toBe(false);
+		expect(r[0].path).not.toBeNull();
+		expect(chord(r[1].path, 'inner')).toBeGreaterThanOrEqual(1);
+	});
+
+	it('extrémités intérieures confondues : la part est pleine, jamais un secteur au trou rempli (E1-2)', () => {
+		// Une seule part : cercle. Toute autre part non nulle fait au moins MIN_SLICE_ANGLE,
+		// si bien qu'aucune n'a ses points intérieurs confondus.
+		const r = pieSlices([post(1, '1000000', '100.0'), post(2, '0.000002', '0.0')], null, '1000000.000002', geo);
+		for (const s of r) {
+			expect(s.full).toBe(false);
+			expect(chord(s.path, 'inner')).toBeGreaterThan(0);
+		}
 	});
 
 	it('99,9 % : un vrai arc, grand, aux extrémités distinctes', () => {
@@ -309,11 +369,6 @@ describe('pieSlices', () => {
 		expect(m![1]).not.toBe(m![2]);
 	});
 
-	it('une petite part aux extrémités confondues n’est pas un cercle', () => {
-		const r = pieSlices([post(1, '20000.00', '100.0'), post(2, '0.01', '0.0')], null, '20000.01', geo);
-		expect(r[1].full).toBe(false);
-		expect(r[1].path).not.toBeNull();
-	});
 
 	it('aucune part : aucun dessin, et une base nulle ne divise pas', () => {
 		expect(pieSlices([], null, '0', geo)).toEqual([]);
@@ -445,11 +500,44 @@ describe('centerFontSize (34-10, AC-4, C-e342-24)', () => {
 		expect(CENTER_FONT_MIN).toBeGreaterThan(0);
 	});
 
-	it('le plus long montant plausible tient dans le trou, à la règle de la fonction', () => {
-		const text = '-999’999’999.99';
-		const size = centerFontSize(text, hole);
-		expect(size).toBeGreaterThan(CENTER_FONT_MIN);
-		expect(text.length * size * 0.6).toBeLessThanOrEqual(hole * 0.85 + 1e-9);
+	it('le plus long montant plausible reste au-dessus du plancher ; au-delà, le plancher tient (revue P1, B1-2)', () => {
+		// La règle (0,6 em, 85 % du trou) n'est pas recopiée ici : ce qui se vérifie sans mise
+		// en page, c'est que le montant plausible le plus long n'est PAS écrasé au plancher
+		// — la règle s'applique, elle n'est pas bornée — et qu'un texte hors de toute plausibilité
+		// (trente caractères) reste au plancher : son débordement est assumé, non silencieux.
+		expect(centerFontSize('-999’999’999.9999', hole)).toBeGreaterThan(CENTER_FONT_MIN);
+		expect(centerFontSize('x'.repeat(30), hole)).toBe(CENTER_FONT_MIN);
+		// Le plafond est atteint par un montant court : il n'y a pas de croissance sans fin.
+		expect(centerFontSize('0.00', hole)).toBe(CENTER_FONT_MAX);
+	});
+});
+
+describe('centerLines (revue P1, B1-4)', () => {
+	it('l’écart entre le libellé et le montant suit la taille du libellé', () => {
+		const small = centerLines(100, 8, 11);
+		const big = centerLines(100, 22, 22);
+		// La ligne de base du libellé laisse au moins ses jambages (≈ 0,25 em) et une unité
+		// avant le haut du montant (`hanging`).
+		for (const [lines, label] of [
+			[small, 8],
+			[big, 22],
+		] as const) {
+			expect(lines.amountY - lines.labelY).toBeGreaterThanOrEqual(0.25 * label + 1);
+		}
+		expect(big.amountY - big.labelY).toBeGreaterThan(small.amountY - small.labelY);
+	});
+
+	it('le bloc des deux lignes est centré sur le centre de l’anneau', () => {
+		for (const [label, amount] of [
+			[9, 12],
+			[22, 22],
+			[8, 8],
+		]) {
+			const { labelY, amountY } = centerLines(100, label, amount);
+			const top = labelY - 0.75 * label;
+			const bottom = amountY + 0.75 * amount;
+			expect((top + bottom) / 2).toBeCloseTo(100, 6);
+		}
 	});
 });
 
