@@ -351,13 +351,15 @@ describe('pieSlices', () => {
 		expect(chord(r[1].path, 'inner')).toBeGreaterThanOrEqual(1);
 	});
 
-	it('extrémités intérieures confondues : la part est pleine, jamais un secteur au trou rempli (E1-2)', () => {
-		// Une seule part : cercle. Toute autre part non nulle fait au moins MIN_SLICE_ANGLE,
-		// si bien qu'aucune n'a ses points intérieurs confondus.
+	it('aucun arc intérieur aux extrémités confondues : le trou n’est jamais rempli (E1-2)', () => {
+		// Un reste de 2e-12 du tour : sans angle minimal, les extrémités se confondraient. Toute
+		// part non nulle fait au moins MIN_SLICE_ANGLE, si bien que les deux arcs de chaque
+		// part ont des extrémités distinctes, l'intérieur compris.
 		const r = pieSlices([post(1, '1000000', '100.0'), post(2, '0.000002', '0.0')], null, '1000000.000002', geo);
 		for (const s of r) {
 			expect(s.full).toBe(false);
-			expect(chord(s.path, 'inner')).toBeGreaterThan(0);
+			expect(chord(s.path, 'inner')).toBeGreaterThanOrEqual(1);
+			expect(chord(s.path, 'outer')).toBeGreaterThanOrEqual(1);
 		}
 	});
 

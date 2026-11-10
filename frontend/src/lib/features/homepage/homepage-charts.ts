@@ -355,8 +355,7 @@ export interface PieSlice {
 	/** `null` pour une part pleine (`full`) : un arc de 360° ne se dessine pas. */
 	path: string | null;
 	/**
-	 * La part fait le tour : ses extrémités, extérieures ou intérieures, une fois écrites, se
-	 * confondent. Un arc dont les extrémités sont égales est omis par le SVG. Avec l'angle
+	 * La part fait le tour : ses extrémités extérieures, une fois écrites, se confondent. Un arc dont les extrémités sont égales est omis par le SVG. Avec l'angle
 	 * minimal, cela n'arrive qu'à une part seule.
 	 */
 	full: boolean;
@@ -457,8 +456,11 @@ export function pieSlices(
 		// arc intérieur à rebours, puis fermeture sur le point de départ.
 		const innerFrom = pointAt(geometry, innerR, start);
 		const innerTo = pointAt(geometry, innerR, end);
-		// Pleine dès que l'un des deux arcs aurait ses extrémités confondues (revue P1, E1-2).
-		const full = large === 1 && (from === to || innerFrom === innerTo);
+		// Pleine quand l'arc extérieur a ses extrémités confondues : une part seule. Les
+		// extrémités intérieures ne peuvent pas l'être sans que les extérieures le soient : toute
+		// autre part fait au moins MIN_SLICE_ANGLE, soit plus d'une unité à l'arc intérieur
+		// (revue P1, E1-2 ; une garde sur les points intérieurs était une mutation équivalente).
+		const full = large === 1 && from === to;
 		return {
 			rank: i + 1,
 			accountId: item.accountId,
