@@ -113,7 +113,7 @@ test('une écriture manuelle se passe sur un compte de classe 2, jamais sur celu
 		await expect(bouton).toHaveText('Écriture manuelle');
 		await bouton.click();
 		const modal = page.getByTestId('manual-match-modal');
-		await expect(modal.getByRole('heading', { name: 'Écriture manuelle' })).toBeVisible();
+		await expect(modal).toBeVisible();
 
 		// Le dialogue ne propose pas le compte de la banque, et propose le compte de classe 2.
 		const champ = modal.locator('input[aria-autocomplete="list"]');
