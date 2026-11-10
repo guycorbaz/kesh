@@ -48,6 +48,12 @@ export function isUnknownOutcome(err: unknown): boolean {
  *
  * Une exception levée après un succès (P2-7) se lit donc aussi « issue inconnue » :
  * c'est sans danger, la relecture montre l'écriture.
+ *
+ * Story 34-8 (#938, AC-8) — la **fiche d'une facture fournisseur** l'emploie aussi,
+ * pour ses sept gestes (payer, annuler le règlement, annuler, valider, repasser en
+ * brouillon, joindre et détacher un document) : une issue inconnue relit la facture
+ * et le dit. Là, pas d'état bloquant : chacun de ces gestes est gardé par le statut
+ * ou par la version, si bien qu'un second envoi est refusé sans rien écrire deux fois.
  */
 export function isSettlementOutcomeUnknown(err: unknown): boolean {
 	if (!isApiError(err)) return true;

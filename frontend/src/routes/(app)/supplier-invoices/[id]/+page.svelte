@@ -60,6 +60,8 @@
 	import { listProjects } from '$lib/features/projects/projects.api';
 	import type { ProjectResponse } from '$lib/features/projects/projects.types';
 	import { isApiError } from '$lib/shared/utils/api-client';
+	import { isSettlementOutcomeUnknown } from '$lib/shared/utils/unknown-outcome';
+	import type { ApiError } from '$lib/shared/types/api';
 	import { i18nMsg } from '$lib/shared/utils/i18n.svelte';
 	import { notifyInfo, notifyWarning, notifyError, notifySuccess } from '$lib/shared/utils/notify';
 	import {
@@ -144,6 +146,47 @@
 	const loadSourceDocument = () => fetchSupplierInvoiceSourceDocument(id);
 
 	/**
+	 * Story 34-8 (#938, AC-8, C-e343-12) — l'issue du dernier geste de la fiche :
+	 * - `known` : connue (succès, ou refus affiché sous son bouton) ;
+	 * - `verify` : la réponse s'est perdue (`isSettlementOutcomeUnknown`), la facture a
+	 *   été relue ; l'encadré dit de la vérifier avant de réessayer ;
+	 * - `reread-failed` : la réponse s'est perdue et la relecture a échoué ; l'encadré
+	 *   dit de recharger la page. L'écran n'affirme jamais une relecture qui n'a pas eu
+	 *   lieu (le défaut que la revue P1 de la 33-6 a corrigé côté client).
+	 *
+	 * Pas d'état bloquant (contrairement au règlement client) : chacun des sept gestes
+	 * est gardé par le statut ou par la version, si bien qu'un second envoi est refusé
+	 * sans rien écrire deux fois. L'encadré disparaît au geste suivant
+	 * (`clearCycleErrors`) ou à une relecture réussie lancée par la page.
+	 */
+	let cycleOutcome = $state<'known' | 'verify' | 'reread-failed'>('known');
+
+	/** Le texte de l'encadré d'issue inconnue (AC-8, deux avis selon la relecture). */
+	function unknownOutcomeText(kind: 'verify' | 'reread-failed'): string {
+		return kind === 'verify'
+			? i18nMsg(
+					'supplier-invoices-unknown-outcome',
+					'L’issue n’est pas connue : la facture a été relue, vérifiez-la avant de réessayer.',
+				)
+			: i18nMsg(
+					'supplier-invoices-unknown-outcome-reread-failed',
+					'L’issue n’est pas connue, et la facture n’a pas pu être relue : rechargez la page avant de réessayer.',
+				);
+	}
+
+	/**
+	 * Story 34-8 (AC-8) — après un échec dont l'issue n'est pas connue (réponse perdue,
+	 * 5xx, erreur hors `ApiError` : le serveur a pu écrire), relit la facture et pose
+	 * l'avis. Rend `true` si c'était le cas : l'appelant n'affiche alors pas son propre
+	 * message, qui dirait un échec. Un 4xx, refus certain, rend `false`.
+	 */
+	async function rereadAfterUnknownOutcome(err: unknown): Promise<boolean> {
+		if (!isSettlementOutcomeUnknown(err)) return false;
+		cycleOutcome = (await reloadAfterRefusal()) ? 'verify' : 'reread-failed';
+		return true;
+	}
+
+	/**
 	 * Story 30-2c (AC25) — `paidAt` est un horodatage naïf (« 2026-06-20T00:00:00 ») :
 	 * la fiche n'en montre que la date, au format suisse. Sans date, la phrase sans date
 	 * (deux clés : une seule à variable rendrait « Facture réglée le . »).
@@ -213,7 +256,9 @@
 				paymentDate,
 			});
 		} catch (err) {
-			if (isApiError(err)) payError = err.message;
+			// Story 34-8 (AC-8) : une réponse perdue n'est plus muette — relecture et avis.
+			if (await rereadAfterUnknownOutcome(err)) return;
+			payError = isApiError(err) ? err.message : i18nMsg('common-error', 'Erreur inattendue');
 		} finally {
 			paying = false;
 		}
@@ -257,6 +302,7 @@
 				),
 			);
 		} catch (err) {
+			if (await rereadAfterUnknownOutcome(err)) return; // Story 34-8 (AC-8)
 			settlementCancelError = isApiError(err)
 				? err.message
 				: i18nMsg('common-error', 'Erreur inattendue');
@@ -297,6 +343,7 @@
 				),
 			);
 		} catch (err) {
+			if (await rereadAfterUnknownOutcome(err)) return; // Story 34-8 (AC-8)
 			cancelError = isApiError(err) ? err.message : i18nMsg('common-error', 'Erreur inattendue');
 		} finally {
 			cancelling = false;
@@ -325,12 +372,14 @@
 	 * Efface les refus des gestes du cycle (revue P1, B-2) : au début de **tout geste qui
 	 * change le statut** — valider, repasser en brouillon, supprimer, et (revue P2, B2-2 = A2-2 = E2-1)
 	 * payer, annuler le règlement, annuler la facture. Les refus sont rendus hors des blocs
-	 * de statut : rien d'autre ne les masque.
+	 * de statut : rien d'autre ne les masque. Story 34-8 (AC-8) : l'encadré d'issue
+	 * inconnue part avec eux.
 	 */
 	function clearCycleErrors() {
 		validateError = '';
 		unvalidateError = '';
 		deleteError = '';
+		cycleOutcome = 'known';
 	}
 
 	/**
@@ -382,6 +431,7 @@
 			);
 		} catch (err) {
 			validateOpen = false;
+			if (await rereadAfterUnknownOutcome(err)) return; // Story 34-8 (AC-8)
 			validateError = isApiError(err) ? err.message : i18nMsg('common-error', 'Erreur inattendue');
 			if (isStaleState(err)) await reloadAfterRefusal();
 		} finally {
@@ -431,6 +481,7 @@
 			);
 		} catch (err) {
 			unvalidateOpen = false;
+			if (await rereadAfterUnknownOutcome(err)) return; // Story 34-8 (AC-8)
 			if (isApiError(err)) {
 				// `details` : le lot, la transaction, l'écriture de paiement (AC-8) ; ou,
 				// revue P1 (E-4), le nom de l'exercice postérieur clos.
@@ -473,12 +524,20 @@
 	 * Relit la facture après un refus qui dit l'écran périmé (revue P1, B2 = E5) ;
 	 * un échec de cette relecture laisse l'écran tel quel — le refus, lui, est
 	 * affiché.
+	 *
+	 * Story 34-8 (AC-8, validation P1, 34-8-F2) : rend `true` si la relecture a
+	 * réussi, `false` sinon — l'avis d'issue inconnue en dépend. Une relecture
+	 * réussie retire l'encadré d'une issue inconnue précédente : la fiche montre
+	 * désormais l'état écrit.
 	 */
-	async function reloadAfterRefusal() {
+	async function reloadAfterRefusal(): Promise<boolean> {
 		try {
 			await load();
+			cycleOutcome = 'known';
+			return true;
 		} catch {
 			// L'écran reste celui d'avant ; le message du refus suffit.
+			return false;
 		}
 	}
 
@@ -488,11 +547,39 @@
 	 * l'affiche sans se fermer. Sur un refus `404`/`409`, la facture est relue
 	 * d'abord : si elle a désormais un document (joint ailleurs), le sélecteur se
 	 * ferme sur elle et le refus se dit par une notification.
+	 *
+	 * Story 34-8 (AC-8, C-e348-2) — une issue inconnue relit la facture :
+	 * - elle montre un document : le sélecteur se ferme, l'encadré `verify` s'affiche ;
+	 * - elle n'en montre pas : l'erreur remonte au sélecteur avec le texte de l'issue
+	 *   inconnue, le document reste sélectionnable, et l'encadré ne s'affiche pas ;
+	 * - la relecture échoue : le sélecteur se ferme (sa liste n'est plus sûre) et
+	 *   l'encadré `reread-failed` dit de recharger la page.
 	 */
 	async function attach(importedSupplierInvoiceId: number) {
+		cycleOutcome = 'known';
 		try {
 			invoice = await attachSourceDocument(id, importedSupplierInvoiceId);
 		} catch (err) {
+			if (isSettlementOutcomeUnknown(err)) {
+				if (!(await reloadAfterRefusal())) {
+					showPicker = false;
+					cycleOutcome = 'reread-failed';
+					return;
+				}
+				if (invoice?.sourceDocument) {
+					showPicker = false;
+					showPreview = false;
+					detachError = '';
+					cycleOutcome = 'verify';
+					return;
+				}
+				const unknown: ApiError = {
+					code: isApiError(err) ? err.code : 'UNKNOWN_OUTCOME',
+					status: isApiError(err) ? err.status : 0,
+					message: unknownOutcomeText('verify'),
+				};
+				throw unknown;
+			}
 			if (isStaleDocumentRefusal(err)) {
 				await reloadAfterRefusal();
 				if (invoice?.sourceDocument) {
@@ -524,6 +611,7 @@
 		// `disabled={detaching}` (revue P1) ; la garde ne dépend pas du rendu.
 		if (detaching) return;
 		detachError = '';
+		cycleOutcome = 'known';
 		if (
 			!confirm(
 				i18nMsg(
@@ -544,6 +632,13 @@
 				),
 			);
 		} catch (err) {
+			// Story 34-8 (AC-8) : une réponse perdue relit la facture, sans « Erreur
+			// inattendue » ; l'aperçu se ferme, la facture relue dit si le document est parti.
+			if (isSettlementOutcomeUnknown(err)) {
+				showPreview = false;
+				await rereadAfterUnknownOutcome(err);
+				return;
+			}
 			detachError = isApiError(err) ? err.message : i18nMsg('common-error', 'Erreur inattendue');
 			if (isStaleDocumentRefusal(err)) {
 				showPreview = false;
@@ -751,6 +846,19 @@
 	{#if unvalidateError}
 		<p class="mb-6 text-sm text-destructive" role="alert" data-testid="supplier-invoice-unvalidate-error">
 			{unvalidateError}
+		</p>
+	{/if}
+	<!-- Story 34-8 (#938, AC-8, C-e348-1) : l'issue inconnue d'un des sept gestes, en
+	     encadré persistant — non une notification, qui passerait. Rendu ici, hors des blocs
+	     de statut, comme les refus du cycle : la facture relue a souvent changé de statut. -->
+	{#if cycleOutcome !== 'known'}
+		<p
+			class="mb-6 rounded-md border border-warning bg-warning/10 px-3 py-2 text-sm"
+			role="status"
+			data-testid="supplier-unknown-outcome"
+			data-outcome={cycleOutcome}
+		>
+			{unknownOutcomeText(cycleOutcome)}
 		</p>
 	{/if}
 
