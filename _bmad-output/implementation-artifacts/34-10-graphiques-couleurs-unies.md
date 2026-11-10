@@ -4,7 +4,7 @@ Status: ready-for-dev
 
 *Fiche rédigée le 2026-11-10 en autonomie (Opus 5.5), worktree `/home/gcorbaz/devel/kesh-e34`, branche `chore/epic-34-kickoff`,
 numéros de ligne de `a75835db`. Release **0.17.6**, Epic 34. **Aucune migration** ; frontend seul. Registre :
-`e34-choix-autonomes-e342.md`, C-e342-15 à C-e342-18, C-e342-20. Commits en `refs #970` ; à la PR : `closes #970`. Défait l'AC14 de la
+`e34-choix-autonomes-e342.md`, C-e342-15 à C-e342-18, C-e342-20, C-e342-22, C-e342-24. Commits en `refs #970` ; à la PR : `closes #970`. Défait l'AC14 de la
 Story 33-3b et son choix C-e332-17 (« jamais la couleur seule » par les trames) sur décision de Guy.*
 
 ## Story
@@ -76,12 +76,20 @@ chaque part, contraste contre le fond de la carte), et des teintes **dans les je
    `HomepageCharts.test.ts:133` (`circle` dans la part pleine) reste juste.
 4. **AC-4 — le centre** : au centre, sur deux lignes, « Total des dépenses » et le **total des dépenses de l'exercice**
    (`totalExpenses`), au format suisse (`chartAmount`), en `--color-text` ; il tient dans le trou pour le plus long montant
-   plausible (`999'999'999.99`, test de rendu : la largeur du texte mesurée ou bornée par la taille de police calculée sur sa
-   longueur). Quand `totalExpenses` diffère de `expensePostsBase`, la note existante des comptes au solde créditeur reste, et
-   dit en plus que les parts portent sur `{ $base }` (C-e342-17). Le `<desc>` dit le total. **Total négatif ou nul** *(F10-3 ;
-   cas monté par `HomepageCharts.test.ts:113`, `totalExpenses: '-50'` pour `expensePostsBase: '100'`)* : le centre l'affiche tel
-   quel, signe compris (`chartAmount`, « -50.00 »), puisque c'est le total du compte de résultat ; la note des parts dit alors
-   sur quelle base elles portent. Test de ce cas.
+   plausible (`999'999'999.99`). **Règle tranchée** *(P2-10-3 : jsdom n'a pas de mise en page, ni `getBBox` ni
+   `getComputedTextLength`)* : une fonction pure `centerFontSize(label, holeDiameter)` (taille de police décroissante avec la
+   longueur du texte, bornée), testée en Vitest pour 4 et 14 caractères ; aucune mesure de rendu exigée. Quand `totalExpenses`
+   diffère de `expensePostsBase`, la note existante des comptes au solde créditeur reste, et dit en plus que les parts portent
+   sur `{ $base }` (C-e342-17). **`<desc>`** *(P2-10-2 : il dit aujourd'hui « pour un total de { $base } »,
+   `ExpensePieCard.svelte:74-92`, qui contredirait le centre)* : « … total des dépenses { $total } » ; et, quand les deux
+   diffèrent, « ; parts calculées sur { $base } » — deux clés (égaux, différents), quatre locales, Vitest des deux.
+   **Total négatif ou nul** *(F10-3 ; fixture corrigée à la validation P2, P2-10-1 : `HomepageCharts.test.ts:108-119` monte
+   `totalExpenses: '-50'` **sans poste**, `expensePostsBase` y vaut `'0'` par défaut, `:36`, et la carte n'y dessine aucun
+   anneau)* : fixture **neuve avec postes** — un poste à 30, un compte au solde créditeur à −80 : `totalExpenses: '-50'`,
+   `expensePostsBase: '30'`, `creditBalanceExpenseAccounts: 1` ; le centre affiche « -50.00 », signe compris (c'est le total du
+   compte de résultat), et la note dit que les parts portent sur 30.00. **Sans poste** (`expensePosts` vide), pas d'anneau,
+   donc pas de total au centre : la carte garde son message `homepage-charts-no-posts` et sa note ; le total reste lisible aux
+   barres et au compte de résultat (C-e342-17).
 5. **AC-5 — couleurs unies au camembert** : rang 1 rouge, 2 vert, 3 bleu, 4 violet, 5 cyan, « Autres » gris ; la pastille de
    chaque ligne du tableau porte la couleur de sa part ; le **rang** reste écrit dans le tableau (il relie la part à son
    compte sans la couleur).
@@ -96,9 +104,11 @@ chaque part, contraste contre le fond de la carte), et des teintes **dans les je
 7. **AC-7 — tests de palette** (remplacent ceux de l'AC14, `homepage-charts.test.ts:344-375`) : contraste ≥ 3:1 sur blanc
    de chaque couleur (`contrastRatio`, `tests/e2e/helpers/contrast.ts`) ; revenus ≠ dépenses et contraste entre eux ≥ 1,5:1 ;
    six couleurs distinctes à l'anneau ; aucune mention de motif dans le module (`ChartPattern`, `chartFill`, `patternId`
-   retirés). `ChartPatterns.svelte` supprimé, et `git grep -n 'ChartPatterns\|patternId\|chartFill\|<pattern' frontend/src`
-   ne rend rien.
-8. **AC-8 — rendu** : `HomepageCharts.test.ts` : aucune balise `<pattern>` ; chaque barre `fill` = la constante (égale au
+   retirés). `ChartPatterns.svelte` supprimé, et
+   `git grep -n 'ChartPatterns\|patternId\|chartFill\|<pattern' -- frontend/src ':!*.test.ts'` ne rend rien (tests exclus,
+   P2-10-4).
+8. **AC-8 — rendu** : `HomepageCharts.test.ts` : aucune balise `<pattern>`, assertée par `document.querySelector('pattern')`
+   nul (non par une chaîne `'<pattern'`, P2-10-4) ; chaque barre `fill` = la constante (égale au
    jeton, AC-1) ; l'anneau rend son total au centre (`data-testid="homepage-chart-pie-total"`) ; part pleine en `circle`.
    **E2E `homepage-charts.spec.ts` : deux clics à réécrire** *(F10-1)* — le test 3 (`:105-113`) clique « à neuf heures, à
    mi-rayon » (`x = 0,25 × largeur`), qui tombe dans le trou d'un anneau à 60 % : cliquer à **≈ 80 % du rayon** (dans
@@ -134,7 +144,9 @@ chaque part, contraste contre le fond de la carte), et des teintes **dans les je
 - **M2** : une constante de l'anneau différente de son jeton → rouge AC-1.
 - **M2-bis** : jeton écrit en alias (`var(--color-success)`) → rouge AC-1 (égalité nom par nom).
 - **M3** : rayon intérieur nul (retour au camembert) → rouge AC-3.
-- **M4** : centre sur `expensePostsBase` → rouge AC-4 (cas d'un compte au solde créditeur, et cas `totalExpenses: '-50'`).
+- **M4** : centre sur `expensePostsBase` → rouge AC-4 (fixture neuve avec un poste à 30 et `totalExpenses: '-50'` : le centre
+  dirait 30.00).
+- **M6** : `<desc>` laissé sur `{ $base }` → rouge AC-4 (Vitest du `<desc>`, cas différents).
 - **M5** : `#facc15` (jaune, 1,5:1 sur blanc) en cinquième couleur → rouge AC-7.
 
 ## Gates
@@ -164,6 +176,14 @@ Aucun fichier de code commun avec les autres stories de l'Epic 34. `user-manual.
   total négatif affiché tel quel, testé ; **F10-4** (lu : `user-manual.tex:288-296`) → AC-9 ; **F10-5** (contrastes entre parts
   recalculés : 1,12, 1,35, 1,53) → ordre des parts à l'AC-6 et au `<desc>` ; **F10-6** → part pleine en `circle` au trait épais.
   Transversal **X-1** : PDF à l'intégration (AC-9).
+- 2026-11-10 : Validation P2 (Opus), remédiation (Opus 5.5). Rapport `kesh-gate-logs/e34-validate-p2-e342.md`, pour cette
+  fiche 0 C, 0 H, 1 M, 3 LOW, tous retenus après lecture :
+  - **P2-10-1** MEDIUM, **né de la remédiation P1** (F10-3 citait une fixture sans poste, et une base de `'100'` qu'elle ne porte
+    pas ; lus : `HomepageCharts.test.ts:30-40`, `:108-119`) → fixture neuve avec un poste et un compte créditeur, M4 réécrite ;
+    le cas sans poste est dit (pas d'anneau, pas de total) ;
+  - LOW : **P2-10-2** (lu : `ExpensePieCard.svelte:74-92`) → `<desc>` à deux clés, M6 ; **P2-10-3** → règle pure de taille de
+    police, testée en Vitest ; **P2-10-4** → garde sans les `*.test.ts`, assertion par `querySelector`.
+  - CHANGELOG : *Changé* gardé (rendu d'une fonction existante modifié), cohérent avec la 34-3 (C-e342-22).
 
 ## Dev Agent Record
 

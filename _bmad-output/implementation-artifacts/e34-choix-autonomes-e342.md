@@ -192,3 +192,29 @@ Mise à jour par union, jamais par écrasement.*
 - **Retenu** : 34-4, deux clés `-one`/`-other` choisies par le Svelte ; 34-9, un résumé composé par segments, chacun au pluriel
   par « (s) » ; un test lit le catalogue réel.
 - **Réversible** : oui.
+
+## Ajouts de la validation P2 (2026-11-10)
+
+### C-e342-22 — Sections du CHANGELOG
+
+- **Contexte** : le prompt commun nomme *Ajouté* et *Corrigé* ; l'orchestrateur admet *Changé* pour un comportement modifié
+  (finding P2-X-1).
+- **Retenu** : 34-3 *Changé* (un geste existant change de nom et de portée) ; 34-10 *Changé* (le rendu d'une fonction existante
+  change) ; 34-4 *Ajouté* (un signal neuf) ; 34-9 *Corrigé* (#969, #974 : un défaut de signalement).
+- **Écartée** : tout en *Ajouté* (« Écriture manuelle » et les couleurs unies ne sont pas des fonctions neuves).
+- **Réversible** : oui, à l'intégration.
+
+### C-e342-23 — Ce que la 34-11b réécrit de la 34-4
+
+- **Contexte** : après la 34-11b, `matchedElsewhereCount ⊂ entryCount` ; le cas (b) de la 34-4 ne s'afficherait plus et (c)
+  dirait faux (finding P2-4-1).
+- **Retenu** : la condition d'affichage (a) / (b′) / (c′) et les textes (b′), (c′) sont écrits à l'AC-5 de la 34-4, à transmettre
+  par l'orchestrateur à l'agent de la 34-11b ; la fiche 34-11b n'est pas modifiée par ce groupe.
+- **Réversible** : oui.
+
+### C-e342-24 — Taille du total au centre de l'anneau : règle pure
+
+- **Contexte** : jsdom n'a pas de mise en page (finding P2-10-3).
+- **Retenu** : une fonction pure de la longueur du texte, testée en Vitest ; aucune mesure de rendu.
+- **Écartée** : une mesure en E2E (`boundingBox`), coûteuse pour un montant que le harnais n'atteint pas.
+- **Réversible** : oui.

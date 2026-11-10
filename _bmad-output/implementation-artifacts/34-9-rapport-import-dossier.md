@@ -4,7 +4,7 @@ Status: ready-for-dev
 
 *Fiche rédigée le 2026-11-10 en autonomie (Opus 5.5), worktree `/home/gcorbaz/devel/kesh-e34`, branche `chore/epic-34-kickoff`,
 numéros de ligne de `a75835db`. Release **0.17.6**, Epic 34. **Aucune migration** (extension additive du `details` d'un échec,
-décision de Guy). Registre : `e34-choix-autonomes-e342.md`, C-e342-10 à C-e342-14, C-e342-19 à C-e342-21. Commits en `refs #969`, `refs #974` ; à la PR :
+décision de Guy). Registre : `e34-choix-autonomes-e342.md`, C-e342-10 à C-e342-14, C-e342-19 à C-e342-22. Commits en `refs #969`, `refs #974` ; à la PR :
 `closes #969`, `closes #974` (#974, avertissements du rapport écrits en français par le serveur, intégrée à la validation P1).*
 
 ## Story
@@ -54,7 +54,9 @@ importé(s) ».
   `:856`) pour un échec d'avant (`:352-483`) : le nom sous lequel l'utilisateur retrouvera le fichier n'est **pas** son nom
   d'origine, et le rapport ne le dit pas.
 - **Les fichiers non traités** (instables, disparus en course, au-delà de la limite) sortent en `warnings` : des **chaînes
-  françaises** écrites par le serveur (`:396-399`, `:906-908`, `:321-324`), sans nom de fichier structuré (#974). Un fichier
+  françaises** écrites par le serveur — fichier instable `:397-399`, fichier disparu `:882-884` (dans `dispose_failed`),
+  troncature `:322-325` *(lignes corrigées à la validation P2, P2-9-2 ; vérifiées par `git show a75835db:… | sed -n`)* —,
+  sans nom de fichier structuré (#974). Un fichier
   instable ou disparu est un `FileOutcome::Skipped(String)` (`:139-157`, poussé en `warnings` à `:317`) ; la troncature n'est
   liée à aucun fichier.
 - **Les lignes du rapport sont lues par des tests** : `import-page.test.ts:183` (`inbox-import-accepted-row`),
@@ -105,7 +107,9 @@ importé(s) ».
    `discarded`) —, plus la course `UNIQUE` si elle se monte sans crochet de production (sinon le dire, comme la 33-6 pour sa
    fenêtre non reproductible) ; chacun asserte `existingDocumentId`, `existingStatus`, `supplierInvoiceId` et que `movedTo`
    désigne un fichier présent dans `failed/`. Un test `FILE_TOO_LARGE` asserte `byteSize`, `maxBytes` et `movedTo` ensemble.
-   Un test `skipped` (`UNSTABLE`, fichier modifié pendant le délai de stabilité si le montage le permet, sinon `VANISHED`) et
+   Un test `skipped` (`UNSTABLE`, fichier modifié pendant le délai de stabilité, `STABILITY_DELAY` de 25 ms `:87`, si le
+   montage le permet, sinon `VANISHED`) ; **s'il ne se monte pas sans crochet de production, le dire au Change Log** *(P2-9-3)*,
+   et un test unitaire de la conversion `FileOutcome::Skipped(code)` → `skipped[]` (et `warnings[]`), qui se monte toujours ;
    un test `truncatedAt` (limite basse par `Config`). Les tests existants passent, le contrat n'étant qu'étendu.
 
 ### Écran
@@ -143,14 +147,18 @@ importé(s) ».
    doublon `completed`, un refus `FILE_TOO_LARGE`, un fichier `UNSTABLE`, `truncatedAt` posé) : six lignes, dans l'ordre des
    noms, chacune avec son état, ses liens, `movedTo` et ses anciens testids ; le résumé ; la phrase de troncature traduite ;
    notification d'avertissement appelée une fois, avec `n = 4` ; rapport sans échec : notification de succès ; rapport vide :
-   aucune notification ; rechargement en échec : une notification. L'assertion de `:183` mise à jour au besoin (elle reste
-   valide si le testid demeure).
+   aucune notification ; rechargement en échec : une notification. *(P2-9-1)* Les assertions existantes de
+   `import-page.test.ts:182-186` sont **réécrites** : le résumé « 3 document(s) importé(s) » devient le résumé composé, et
+   `inbox-import-accepted-row` porte désormais **trois** lignes (le document avec QR compris), dans l'ordre des noms (`abime.png`
+   en tête). `supplier-documents.spec.ts:110`, filtré par nom, tient sans modification.
 7. **AC-7 — E2E** (`inbox-import.spec.ts`, deux cas neufs) :
    - **entre deux imports** : un premier import d'un document A ; puis **un même import** d'un document neuf B et d'une copie
      **identique** de A : le rapport porte deux lignes, B importé et A « déjà importé » avec le lien vers sa ligne dans
      « Documents à traiter », et la mention de `failed/` ; la notification d'avertissement est visible ;
-   - **dans le même import** (le constat d'origine de #969, F9-7) : un document neuf C et **deux copies identiques** C' de C
-     sous deux noms : une ligne *importé*, une ligne *déjà importé* (site `:581` sur une ligne née pendant le run).
+   - **dans le même import** (le constat d'origine de #969, F9-7) : **deux fichiers de mêmes octets**, `C-1` et `C-2`, neufs
+     tous deux : une ligne *importé*, une ligne *déjà importé* (site `:581` sur une ligne née pendant le run). `read_dir`
+     (`:255`) ne garantit aucun ordre : le test asserte **l'ensemble des états** (un *importé*, un *déjà importé*), non le nom
+     qui porte chacun *(P2-9-4)*.
    Les copies identiques demandent une aide neuve, `copieIdentique` dans `helpers/inbox.ts` (même octets, autre nom), à côté
    de celle qui rend chaque copie unique. Il rougit si la ligne du doublon disparaît (mutation M4). Nettoyage : documents
    retirés de la liste, fichiers de `failed/` supprimés par le test lui-même (dossier de la recette, jamais `~/kesh/`) ;
@@ -223,6 +231,11 @@ Aucun fichier commun avec les autres stories du groupe. `inbox_import.rs` n'est 
   site `:577`, M7 ; **F9-7** (lu : `helpers/inbox.ts:1-20`) → second cas E2E dans le même import, aide `copieIdentique` ;
   **F9-8** (lu : `+page.svelte:116-123`) → valeur de `n` et une seule notification. Transversal **X-1** : PDF à l'intégration
   (AC-8).
+- 2026-11-10 : Validation P2 (Opus), remédiation (Opus 5.5). Rapport `kesh-gate-logs/e34-validate-p2-e342.md`, pour cette
+  fiche 0 C, 0 H, 0 M, 4 LOW, tous retenus après lecture : **P2-9-1** (lu : `import-page.test.ts:182-186`, résumé et deux
+  lignes) → assertions à réécrire nommées (trois lignes, ordre, résumé) ; **P2-9-2** (lu : `git show a75835db:crates/kesh-api/src/inbox_import.rs`,
+  `:322-325`, `:397-399`, `:882-884`) → lignes de #974 corrigées ; **P2-9-3** (lu : `:87`, 25 ms) → sortie écrite et test de
+  conversion ; **P2-9-4** (lu : `:255`) → `C-1`/`C-2`, ensemble des états. CHANGELOG : *Corrigé* (C-e342-22).
 
 ## Dev Agent Record
 

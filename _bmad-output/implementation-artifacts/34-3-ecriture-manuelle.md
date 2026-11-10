@@ -4,7 +4,7 @@ Status: ready-for-dev
 
 *Fiche rédigée le 2026-11-10 en autonomie (Opus 5.5), worktree `/home/gcorbaz/devel/kesh-e34`, branche `chore/epic-34-kickoff`,
 numéros de ligne de `a75835db`. Release **0.17.6**, Epic 34. **Aucune migration.** Registre : `e34-choix-autonomes-e342.md`,
-C-e342-1 à C-e342-5, C-e342-20. Commits en `refs #967` ; à la PR : `closes #967`. **Précède 34-4, 34-11a et 34-11b** (fichiers communs et
+C-e342-1 à C-e342-5, C-e342-20, C-e342-22. Commits en `refs #967` ; à la PR : `closes #967`. **Précède 34-4, 34-11a et 34-11b** (fichiers communs et
 textes, § *Recoupements*).*
 
 ## Story
@@ -53,7 +53,8 @@ compte est écartée. Aucun rôle ne se déduit du numéro d'un compte (Story 14
     leurs replis de `failed-proposal-label.ts:327-352` ; le test `failed-proposal-label.test.ts:357` asserte
     `N’utilisez « Affecter manuellement » que si` ;
   - repli du bouton `ReconciliationProposals.svelte:585`, commentaires `:15`, `:298`, `:574` ; avis du lot de paiement
-    `reconciliation-labels-notice-supplier-invoice-in-batch` (« affectez la transaction à la main », `:503`) ;
+    `reconciliation-labels-notice-supplier-invoice-in-batch` (« affectez la transaction à la main » ; catalogue fr `:1433`,
+    de/en/it `:1367` ; repli `ReconciliationProposals.svelte:503`) ;
   - *(validation P1, F3-2)* trois autres messages renvoient au geste **sans** citer le libellé exact :
     `reconciliation-labels-more-capped` (« affectées manuellement », fr `:1441`, de/en/it `:1375`, repli
     `ReconciliationProposals.svelte:652`), `reconciliation-failed-supplier-invoice-in-batch` (« affectez la transaction à la
@@ -111,22 +112,41 @@ compte est écartée. Aucun rôle ne se déduit du numéro d'un compte (Story 14
    trois messages qui renvoient au geste sans le citer (`reconciliation-labels-more-capped`,
    `reconciliation-failed-supplier-invoice-in-batch`, `reconciliation-failed-supplier-payment-hold`) nomment « Écriture
    manuelle » (ou « passée par une écriture manuelle ») dans les quatre locales, et leurs replis Svelte/TS sont identiques au
-   catalogue fr (la garde `i18n-repli-divergent-actif.test.ts` le contrôle). **Garde de contrôle**, insensible à la casse et aux
-   formes verbales, sortie triée à la main et copiée au Change Log :
-   `git grep -niE 'affect(er|ation|ées?|ez)[^.]{0,20}(manuel|à la main)|manuell|assign(ed)?[^.]{0,12}manual|assegna[a-z]* (manual|a mano)' -- crates/kesh-i18n frontend/src frontend/tests docs/manual/fr/*.tex` ;
-   n'y restent que les historiques datés et le libellé d'audit (C-e342-3).
+   catalogue fr. ⚠️ *(Validation P2, P2-3-3)* `i18n-repli-divergent-actif.test.ts:142` **ne contrôle pas** cet écart : il ne
+   retient que les clés dont les replis divergent **entre plusieurs sites**, et chacun de ces replis n'a qu'un site. Le contrôle
+   est donc un test neuf, dans `failed-proposal-label.test.ts` (patron de `:357`) ou un test qui compare repli et catalogue fr
+   pour les clés touchées par `ecartsAuCatalogue` (`frontend/src/lib/shared/i18n-repli-catalogue.ts:82`, patron de
+   `mcp-prompts-i18n.test.ts`), sur les **huit** clés de cet AC (quatre `failed-rule-masked*`, l'avis du lot, trois de F3-2) et
+   celle du bouton.
+   **Garde de contrôle** *(P2-3-1 : la forme de la P1, avec `manuell`, captait « manuelle » et le libellé neuf lui-même, 197
+   lignes)*, insensible à la casse, sur le **geste**, non sur le mot :
+   `git grep -niE 'affect(er|ation|ée?s?|ez)[^.]{0,20}(manuel|à la main)|manuell zu(weisen|gewiesen)?\b|ordnen [^.]{0,30} manuell zu|manueller abgleich|assign(ed)?[^.]{0,12}manual|assegna[a-z]* (manual|a mano)|riconciliazione manuale|manual reconciliation|réconciliation manuelle' -- crates/kesh-i18n frontend/src frontend/tests 'docs/manual/fr/*.tex'`.
+   Au commit de rédaction elle rend **91 lignes** (catalogues fr 12, de 12, en 9, it 9 ; `user-manual.tex` 18 ;
+   `admin-manual.tex` 1 ; `frontend/src` 29 ; `frontend/tests` 1 ; recompté par `| cut -d: -f1 | sort | uniq -c`). **Survivants attendus après la story**, et eux seuls : le libellé d'audit
+   `audit-log-action-reconciliation-manual-matched` (C-e342-3, quatre locales) et son commentaire d'en-tête de catalogue ;
+   `admin-manual.tex:2100` (« n'en est pas affectée ; ce manuel », faux positif) ; les commentaires historiques datés
+   (« Story 8-5a-base FR45 — réconciliation manuelle », `reconciliation.api.ts`, `reconciliation.types.ts`,
+   `bank-accounts.api.ts`). Sortie et nombre résiduel copiés au Change Log. ⚠️ La garde est ligne à ligne : un libellé coupé
+   par la ligne (`user-manual.tex:2902-2903`, « \emph{Affecter » / « manuellement} ») lui échappe ; il est listé à l'AC-8.
 7. **AC-7 — E2E de bout en bout** (`reconciliation-manual-entry.spec.ts`, neuf) : relevé saisi par l'API, un débit d'un
    montant unique ; *Réconciliation* → *Écriture manuelle* sur la ligne → choix d'un compte **de classe 1 ou 2** autre que celui
-   de la banque : dans ce harnais, `1100 Banque CI` ou `2000 Capital CI` du seed (`scripts/seed-dev-db.sql:73-75`) — **pas**
-   `1000 Caisse CI`, que `wiredBankAccountViaApi` relie au compte bancaire (`helpers/api-fixtures.ts:229`) et que le dialogue
-   n'offre donc pas ; à confirmer à l'étape 0, jamais un numéro supposé → *Passer l'écriture* → la ligne quitte la liste ;
+   de la banque : dans ce harnais, **`2000 Capital CI`** du preset `with-company` (`POST /api/v1/_test/seed`,
+   `crates/kesh-db/src/test_fixtures.rs:127-131` ; *P2-3-4 : c'est lui que sèment les E2E, non `scripts/seed-dev-db.sql`*) —
+   **pas** `1000 Caisse CI`, que `wiredBankAccountViaApi` relie au compte bancaire (`helpers/api-fixtures.ts:229`) et que le
+   dialogue n'offre donc pas, ni `1100 Banque CI`, compte débiteurs par défaut des réglages (`test_fixtures.rs:163-164`), dont
+   l'emploi brouillerait le parcours. Le preset ne pose aucun `role` (`:135`) : l'avis AC-4 n'est **pas** exercé par cet E2E,
+   seulement par Vitest. À confirmer à l'étape 0, jamais un numéro supposé → *Passer l'écriture* → la ligne quitte la liste ;
    l'écriture existe au journal, sur ce compte, au montant (lu par l'API) ; le dialogue ne propose pas le compte de la banque.
    En `finally` : rapprochement annulé, import supprimé (patron de `reconciliation-link-entry.spec.ts`). Il rougit si le filtre
    de classes revient (mutation M1).
 8. **AC-8 — manuel utilisateur** : § *Réconciliation manuelle* (`user-manual.tex:2949-2961`) renommé et récrit : tout compte
    imputable sauf celui de la banque, exemples (intérêts reçus, virement vers un autre de vos comptes, apport privé), l'avis
-   débiteurs/créanciers et ses deux conduites ; `:2903`, `:2933`, `:2945`, `:2951` (légende), `:3004`, `:3008`, `:3010`
-   (étendu à *Éclater*), `:3034`, `:3546`, `:3947`, `:3949` alignés ; le motif de `:3947` (« ils ne proposent que les comptes
+   débiteurs/créanciers et ses deux conduites ; `:2860`, `:2874` (« affectez la transaction à la main », lot de paiement),
+   `:2902-2903` (libellé coupé par la ligne), `:2933`, `:2936` (« acceptées, affectées manuellement, éclatées ou rattachées »,
+   double de `reconciliation-labels-more-capped`), `:2941` (« utilisez \emph{Affecter manuellement} »), `:2942` (« acceptée,
+   affectée manuellement, éclatée ou rattachée »), `:2945`, `:2951` (légende), `:2956`, `:3004`, `:3008`, `:3010` (étendu à
+   *Éclater*), `:3034`, `:3546`, `:3947`, `:3949` alignés *(P2-3-2 : liste recomptée sur la sortie de la garde de l'AC-6, plus
+   `:2902-2903` qu'elle ne voit pas)* ; le motif de `:3947` (« ils ne proposent que les comptes
    des classes 5, 6 et 7 ») devient « la facture resterait due ». Le virement entre deux de vos comptes garde sa consigne : le
    second côté se rattache ou se rejette (`:2991`, issue #823), il ne reçoit pas une seconde écriture.
    **PDF** : le `.tex` change dans la story ; le PDF de `user-manual` est touché par 34-3, 34-4, 34-9 et 34-10, et un PDF ne
@@ -144,7 +164,9 @@ compte est écartée. Aucun rôle ne se déduit du numéro d'un compte (Story 14
   `TransactionSplitModal.test.ts:75`, `ReconciliationProposals.test.ts:260-285`, `failed-proposal-label.test.ts:341-357`.
   *(F3-3)* Les deux dialogues sont remplacés par `ModalSuccessStub.test.svelte` dans `ReconciliationProposals.test.ts:50-55` :
   ajouter au bloc 15-6d (`:600-660`, qui lit `data-bank-ledger-account-id` pour `manual-match-button`) un test
-  « *Éclater* reçoit le compte de la banque » qui clique `split-button` et lit la prop du stub.
+  « *Éclater* reçoit le compte de la banque » qui clique `split-button` et lit la prop du stub. *(P2-3-5)* L'en-tête de
+  `ModalSuccessStub.test.svelte` (« `"undefined"` si le parent ne la passe pas — cas de l'éclatement ») devient faux : le
+  corriger.
 - [ ] **T2** : fonction pure de filtrage partagée ; `ManualMatchModal`, `TransactionSplitModal` (nouvelle prop
   `bankLedgerAccountId`), `ReconciliationProposals` (passage de la prop) ; avis AC-4 ; doc-comments d'en-tête des deux dialogues.
 - [ ] **T3** : catalogues fr/de/en/it (bouton, titre, validation, deux avis, quatre messages `failed-rule-masked*`, avis du lot, trois messages de F3-2), replis ; `failed-proposal-label.ts`.
@@ -162,7 +184,8 @@ compte est écartée. Aucun rôle ne se déduit du numéro d'un compte (Story 14
   lui-même, reste vert et ne compte pas.
 - **M4** : avis conditionné à `Receivable` seul → rouge AC-4 (cas `Payable`).
 - **M4-bis** : texte client affiché pour `Payable` → rouge AC-4 (texte attendu du cas `Payable`).
-- **M5** : repli d'un message `failed-rule-masked` laissé à l'ancien libellé → rouge de la garde des replis.
+- **M5** : repli d'un message `failed-rule-masked` laissé à l'ancien libellé → rouge du test neuf repli/catalogue de l'AC-6
+  (non de `i18n-repli-divergent-actif.test.ts`, qui reste vert sur ce cas, P2-3-3).
 
 ## Gates
 
@@ -195,6 +218,20 @@ parallèle, ses textes nomment déjà « Écriture manuelle » (C-e342-5).
   `ReconciliationProposals.test.ts:50-55`, les dialogues y sont des stubs) → test au parent, M3 réécrite ; **F3-4** (lu :
   `user-manual.tex:3948`) → deux textes à l'AC-4, M4-bis ; **F3-5** (lu : `accounts.types.ts:10-20`) → hors périmètre écrit,
   issue TVA demandée. Transversal **X-1** : PDF régénéré à l'intégration (AC-8). L'issue des règles d'affectation est ouverte : #973.
+- 2026-11-10 : Validation P2 (Opus), remédiation (Opus 5.5). Rapport `kesh-gate-logs/e34-validate-p2-e342.md`, pour cette
+  fiche 0 C, 0 H, 3 M, 3 LOW, tous retenus après lecture :
+  - **P2-3-1** MEDIUM, **né de la remédiation P1** (F3-2) : la garde de l'AC-6 captait « manuelle », donc le libellé neuf.
+    Garde réécrite sur le geste ; lancée au commit de rédaction, 91 lignes (ventilation à l'AC-6) ; survivants attendus nommés ;
+  - **P2-3-2** MEDIUM, **défaut d'origine que la P1 n'a pas comblé** : lus `user-manual.tex:2874`, `:2936`, `:2941`, `:2942`
+    (et `:2860`, `:2956`, rendus par la garde neuve) ; liste de l'AC-8 recomptée sur la sortie de la garde, plus `:2902-2903`,
+    coupé par la ligne ;
+  - **P2-3-3** MEDIUM, **défaut d'origine** (AC-6 et M5 dès la création) : lu `i18n-repli-divergent-actif.test.ts:142`, la
+    garde ne voit que les replis divergents entre sites ; test neuf repli/catalogue nommé, AC-6 et M5 corrigés ;
+  - LOW : **P2-3-4** (lus : `test_fixtures.rs:127-135`, `:163-164`) → E2E sur `2000 Capital CI`, avis non exercé par l'E2E
+    dit ; **P2-3-5** (lu : en-tête de `ModalSuccessStub.test.svelte`) → T1 ; **P2-3-6** (lus : fr `:1433`, de `:1367`) →
+    citation.
+  - CHANGELOG : *Changé* gardé (comportement d'un geste existant modifié ; admis par l'orchestrateur), cohérent avec la 34-10 ;
+    la 34-4 en *Ajouté*, la 34-9 en *Corrigé* (C-e342-22).
 
 ## Dev Agent Record
 
