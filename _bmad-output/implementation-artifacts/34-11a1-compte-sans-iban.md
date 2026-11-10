@@ -61,7 +61,7 @@ inatteignable (justifié). Chaque site est résolu par un AC de **cette** fiche,
 | S8 | `routes/onboarding.rs:579`, `:603-604`, `:628` | l'assistant crée le **principal**, IBAN obligatoire | **A**, inchangé (C-e341-19) | — |
 | S9 | `routes/companies.rs:418`, `:431` | `GET /companies/current` | **B** | AC-3 |
 | S10 | `exports/csv_tables.rs:647`, `:664` | export `bank_accounts.csv` | **B** | AC-9 |
-| S11 | `repositories/bank_accounts.rs:54`, `:65-70`, `:254`, `:352-356`, `:382-387`, `:658-662` | lectures et écritures neutres | **B** | AC-3 |
+| S11 | `repositories/bank_accounts.rs:54`, `:65-70`, `:254`, `:352-356`, `:382-387` ; et `:658-662` (`update_for_company`, `iban = ?` depuis `NewBankAccount.iban: String`) | lectures et écritures neutres pour un compte bancaire ; `:658-662` est le chemin du `PUT` d'une carte | **B** | AC-3 ; `:658-662` : **34-11a2** (AC-4, T4) |
 | S12 | `frontend/…/bank-accounts/format.ts:16-18` `shortIban` | `iban.length` — **`TypeError` sur `null`** | **B** | AC-10 |
 | S13 | `format.ts:62`, `:87-92` `bankAccountOptionLabel` et ses sept appelants (`BankAccountJournalLinkForm.svelte:135`, `BankImportUpload.svelte:372`, `ManualStatementForm.svelte:346`, `SettleInvoiceDialog.svelte:249`, `payment-batches/+page.svelte:162`, `reconciliation/+page.svelte:68`, `supplier-invoices/[id]/+page.svelte:888`) | « Nom — IBAN » | **B** (+ **A** à l'écran : lots, CAMT) | AC-10, AC-5, AC-6 ; qui **propose** une carte (règlement client, fournisseur) : 34-11a2 |
 | S14 | `homepage/BankAccountsCard.svelte:39` | `shortIban` sur l'accueil | **B** | AC-10 |
@@ -198,6 +198,8 @@ migration de l'epic : aucun ordre à régler avec une autre story. La **34-11a2*
   (C-e341-19, 21). **3.2** : `NewBankAccount.iban` reste `String`, la carte lie son IBAN à part (C-e341-39 ; relus `entities/bank_account.rs:81`,
   `routes/bank_accounts.rs:642`). **3.3** : `accountKind`, `cardLast4` dans les réponses, et `invoice_pdf_service.rs:342` sur `None` (AC-3). **3.4** :
   ce que la montée constate, et le test de montée résolu par version (T5). **3.5** : `npm run check` comme filet de l'inventaire (AC-10).
+- 2026-11-10 : **validation P3 (Sonnet)** — pour cette fiche : 1 L (3.1). Remédiation (Opus 5.5) : S11 `:658-662` (`update_for_company`) renvoyé à la
+  34-11a2, chemin du `PUT` d'une carte (relu `repositories/bank_accounts.rs:600-612`).
 
 ## Dev Agent Record
 

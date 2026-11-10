@@ -90,7 +90,10 @@ achats tombent à leur date et que la dette de la carte figure juste au bilan.
   rangs 4 et 5) : **si un autre côté légitime existe, l'annulation de `t` est `unlinkOnly`, et seuls s'appliquent le rang 0 (transaction non
   rapprochée) et le compte clos** — aucun rang 1 à 5, puisqu'aucune écriture n'est touchée. Sinon, la chaîne d'aujourd'hui, inchangée.
   **Elle a besoin de `t`** : la transaction concernée — liée (annulation) ou **prospective** (candidate) — passe en argument
-  (`Option<&BankTransaction>` ou équivalent) de `entry_cancel_blocker` et de la garde de règlement. **`None` garde son sens strict, inchangé** : les
+  de `entry_cancel_blocker` et de la garde de règlement **en remplaçant** le paramètre existant `unlinking: Option<i64>` (`settlement_cancellation.rs:82-86`,
+  exemption étroite du rang 3) par `concerned: Option<&BankTransaction>` (validation P3, 5.3) : l'exemption étroite s'applique quand `concerned` est
+  liée à l'écriture (son identifiant est exclu, comme aujourd'hui), la décision « autre côté » lit son compte bancaire ; un seul paramètre, que M7 et
+  M7c désignent. **`None` garde son sens strict, inchangé** : les
   écrans de facture qui l'appellent ainsi (`invoice_settlements_write.rs:795`, `settlement_cancel_blocker_unlinking(…, None)` ; dévalidation
   fournisseur, `supplier_invoices.rs:2462`) contre-passent l'écriture et **doivent** garder le rang 3 strict. Appelants : `cancel_blocker`
   (`reconciliation_cancel.rs:250-262`, qui sert `cancel_in_tx` **et** `get_view`, `:410`) passe `Some(&bt)` ; les candidates
@@ -167,7 +170,12 @@ achats tombent à leur date et que la dette de la carte figure juste au bilan.
    `unlinkOnly` de la trace.
 10. **AC-10 — les textes du second côté** (C-e341-36 ; **transmission de la 34-4**, `kesh-gate-logs/e34-transmission-34-11b.md`, validation P2 du
    groupe e342, commit `73c365af`). Après la 34-11b, `matchedElsewhereCount` est un sous-ensemble de `entryCount` (même constructeur de requête, aucune
-   copie). Avec `k = settlementCount + entryCount` et `m = matchedElsewhereCount`, l'avis de la 34-4 devient :
+   copie). **Définition de `m`** (validation P3, 5.2 c) : `m` = le nombre d'écritures rendues par `find_entry_candidates` pour `t` dont **au moins une
+   transaction est déjà liée** — rien d'autre (la définition de la 34-4, « autre compte dont le grand livre diffère », compterait un compte relié
+   ailleurs que le cas (iii) refuse, et `k − m` pourrait devenir négatif). Les **clés** portent le préfixe de la 34-4, `reconciliation-labels-already-booked-…`
+   (5.2 a) ; les tests de la 34-4 qui assertent que le texte de `matchedElsewhereCount` ne diffère de celui des candidates que par ses prédicats, et ceux de
+   `matchedElsewhereCount` seul, sont **adaptés** à la nouvelle définition (5.2 b). Avec `k = settlementCount + entryCount` et `m` ainsi défini, l'avis de
+   la 34-4 devient :
    - (a) si `k − m > 0` et `m = 0` : le texte (a) de la 34-4, inchangé ;
    - (b′) si `m > 0` et `k − m = 0` : clé neuve `…-already-booked-transfer` — « Cette transaction est probablement l'autre côté d'un virement entre vos
      comptes : l'écriture de ce virement est déjà rapprochée d'une transaction d'un autre de vos comptes bancaires. Rattachez-la à cette écriture
@@ -216,6 +224,7 @@ achats tombent à leur date et que la dette de la carte figure juste au bilan.
 - **M7c** : `None` traité comme « autre côté possible » → rouge de la non-régression (facture client annulable depuis sa fiche).
 - **M8** : la condition (ii) sans le cas `NULL` → rouge AC-4c (compte délié) ; **M9** : sans (iii) → rouge AC-4c (compte relié).
 - **M10** : le retrait seul refusé par l'exercice clos → rouge AC-4 (exercice clos).
+- **M11** : la condition (b′) testée sur `m > 0` seul → rouge du cas (c′) (Vitest de l'AC-10).
 
 ## Gates
 
@@ -272,6 +281,10 @@ du rattachement à un règlement : une écriture de règlement n'a qu'une ligne 
   ordinaire des autres liens après le verrou de l'écriture (AC-4). **5.4** : champ `unlinkOnly` de la vue (AC-4b). **Transmission de la 34-4**
   (`kesh-gate-logs/e34-transmission-34-11b.md`) : conditions (a), (b′), (c′), clés neuves et retirées, Vitest à quatre cas, M11, textes (AC-10). Les
   fiches 34-3 et 34-4 ne sont pas touchées.
+- 2026-11-10 : **validation P3 (Sonnet)** — pour cette fiche : 3 L (5.1 à 5.3). Remédiation (Opus 5.5), tout appliqué. **5.1** : M11 ajoutée à la
+  liste. **5.2** : préfixe `reconciliation-labels-already-booked-…`, tests de la 34-4 à adapter, `m` défini en une phrase (relu
+  `34-4-transaction-deja-comptabilisee.md:97-113`). **5.3** : `unlinking: Option<i64>` remplacé par `concerned: Option<&BankTransaction>`, un seul
+  paramètre (relu `settlement_cancellation.rs:80-90`).
 
 ## Dev Agent Record
 

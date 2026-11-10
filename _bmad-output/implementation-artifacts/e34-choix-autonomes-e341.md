@@ -159,3 +159,18 @@ Réversible : oui.
 
 **C-e341-41 (34-11a2) — règlement client sur une carte refusé au serveur** (`SETTLEMENT_ACCOUNT_IS_CREDIT_CARD`) ; l'acceptation d'une proposition
 « facture » par la réconciliation d'une transaction de carte reste possible, angle mort écrit (validation P2, 4.3). Réversible : oui.
+
+## Précisions de la validation P3 (2026-11-10)
+
+**C-e341-15 (34-11a2), redéfini** — la « suite entière » de la P2 (« bornée par ce qui n'est ni chiffre, ni lettre, ni séparateur ») contredisait
+l'exemple « Visa 4111 1111 1111 1111 perso ». Définition retenue, algorithmique : une suite est une plus longue séquence de chiffres dont les groupes
+sont séparés par **un** séparateur (espace, espace insécable U+00A0 ou U+202F, tiret) ; elle est entière si le caractère avant son premier chiffre et
+celui après son dernier sont absents ou ne sont ni chiffre ni lettre. **Limites assumées** (protection contre la saisie accidentelle, non filtre de
+sécurité) : numéro suivi de sa date ou de son CVC, séparateurs autres (point, barre), Diners en 16 chiffres — tous passent ; écrits au manuel.
+
+**C-e341-39, étendu** — l'IBAN se lie en `Option` aussi au `PUT` (`update_for_company`) ; `BankAccountPutFields` reçoit `card_last4`. Les corps de
+`POST` et `PUT` portent `iban: Option<String>`.
+
+**C-e341-40, corrigé** — la route `PUT /accounts/{id}` rejouée reste `SansEcritureAuJournal` au registre des routes ; le point (vi) passe à vingt-cinq.
+
+**C-e341-35, précisé** — `concerned: Option<&BankTransaction>` **remplace** `unlinking: Option<i64>` : un seul paramètre.

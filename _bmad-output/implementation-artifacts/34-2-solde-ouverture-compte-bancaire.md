@@ -140,8 +140,13 @@ dupliqué. » Quatre points y sont « à trancher » ; ils le sont ici (C-e341-6
   actuel les confond dans un seul `filter`, `opening_complement.rs:590-592`) : `first = None` → `NoOpenFiscalYear` ; premier exercice présent →
   le test « la société a des écritures » est sauté. Pour le compte bancaire, `owned` est le seul compte lié, déjà contrôlé de la
   société par `validate_journal_account_id` (aucun verrou sur un compte d'autrui : la raison d'être d'`owned`, `:441-452`, reste tenue).
-  ⚠️ L'ordre des verrous change dans `create_once` : `companies` en exclusif (sentinelle) précède le partagé que demande le complément — déjà tenu,
-  sans effet ; puis `bank_accounts`, puis comptes et exercices. Le dire au doc-comment de `create_once` ; le rejeu couvre les cycles résiduels.
+  ⚠️ **Deux ordres de verrous, écrits aux doc-comments** (validation P3, 2.1 — l'ordre écrit avant la P2 ne vaut plus) : dans `create_once`,
+  `companies` (X, sentinelle) → réglages (S) → contrôle du type du compte lié (S, 34-11a2) → comptes et exercices (complément) → `bank_accounts`
+  (démotion, `INSERT`) ; dans la route de ligne (AC-6), `companies` (X) → `bank_accounts` (S) → comptes et exercices. La sentinelle sérialise les
+  deux gestes entre eux ; l'inversion `bank_accounts` / comptes ne joue que contre un geste sans sentinelle (un rapprochement, qui tient
+  `bank_accounts` en partagé puis écrit), et les deux routes sont rejouées sur interblocage. **Le contrôle de type précède le complément**
+  (validation P3, 2.3) : un refus de type ne passe aucune écriture ; la promotion S → X de la ligne `accounts` par le `FOR UPDATE` du complément peut
+  interbloquer contre un geste qui tient S (une écriture de journal par sa clé étrangère) : rejouée, sans perte.
   ⚠️ `kesh-db` touché : **gate complet même en cours de boucle**.
 - [ ] **T3 — routes** : corps `openingBalance` (forme partagée avec la route neuve), réponse augmentée (`#[serde(flatten)]` du compte),
   `create_once` appelle le complément **après le refus du compte de créance, avant la démotion et l'`INSERT`** (AC-10), puis démotion, `INSERT`,
@@ -168,7 +173,9 @@ dupliqué. » Quatre points y sont « à trancher » ; ils le sont ici (C-e341-6
 - **M6** : la route de ligne sans contrôle « clos » → rouge AC-6.
 - **M7** : `SingleBankLedger` qui ne distingue pas « aucun exercice » de « aucune écriture » → rouge AC-4 (sans exercice : refus attendu).
 - **M8** : le complément replacé après la démotion et l'`INSERT` (une lecture ordinaire avant lui) → rouge du test « écriture de journal croisée »
-  (AC-10) s'il est déterministe ; sinon écrite non tuée au Dev Agent Record. ⚠️ Un test de deux **créations** concurrentes ne la tue pas (la
+  (AC-10) s'il est déterministe ; sinon écrite non tuée au Dev Agent Record. ⚠️ **Montage obligatoire** (validation P3, 2.2) : une création
+  `isPrimary: true` **au-dessus d'un principal existant** — la relecture de la démotion (`repositories/bank_accounts.rs:1408-1412`) est la seule lecture
+  ordinaire qui précède l'`INSERT`, et elle n'a lieu que dans ce cas ; hors de lui, M8 est un mutant équivalent. ⚠️ Un test de deux **créations** concurrentes ne la tue pas (la
   sentinelle les sérialise : test muet, validation P2, 2.2).
 - **M9** : un refus du complément qui démote quand même l'ancien principal → rouge AC-5.
 
@@ -207,6 +214,10 @@ carte se crée avec son solde d'ouverture, sens *Dette*). `opening_complement.rs
   `bank_accounts.rs:1617`, `routes/bank_accounts.rs:595`) : phrase de l'interblocage retirée, le test croise une écriture de journal, M8 récrite.
   **2.3** : 409 et non 400 (relu `errors.rs:1557-1561`), message gardé (motif écrit). **2.4** : `skip_serializing_if`. **2.5** : ordre des verrous de la
   route de ligne. Au passage : « PDF régénéré, contrôlé aplati », déplacé par la remédiation P1 à la fin de l'AC-10, rendu à l'AC-9.
+- 2026-11-10 : **validation P3 (Sonnet)** — pour cette fiche : 3 L (2.1 à 2.3). Remédiation (Opus 5.5), tout appliqué. **2.1** : la T2 dit les deux
+  ordres de verrous d'après la P2 et l'inversion couverte par le rejeu. **2.2** : le montage de M8 exige une création principale au-dessus d'un
+  principal existant (relu `repositories/bank_accounts.rs:1404-1414`). **2.3** : le contrôle de type de la 34-11a2 précède le complément, promotion
+  S → X rejouée (T2).
 
 ## Dev Agent Record
 
