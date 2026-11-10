@@ -45,7 +45,9 @@ import { authState } from '$lib/app/stores/auth.svelte';
 // rendue que pour l'Administrateur ; les autres rôles ne lisent pas le réglage.
 describe('page Paramètres — section Session (Story v0172-session)', () => {
 	beforeEach(() => {
-		vi.clearAllMocks();
+		// Revue P3 (P3-B3, E3-3, A3-3) : `resetAllMocks` vide aussi les files `…Once` et les
+		// implémentations posées par un test, que `clearAllMocks` laissait au test suivant.
+		vi.resetAllMocks();
 		fetchSessionSettingsMock.mockResolvedValue({
 			sessionIdleMinutes: 60,
 			version: 0,
@@ -106,7 +108,9 @@ function reponse(description: string | null): CompanyCurrentResponse {
 
 describe('page Paramètres — nom des comptes bancaires (Story 26-2b, D9)', () => {
 	beforeEach(() => {
-		vi.clearAllMocks();
+		// Revue P3 (P3-B3, E3-3, A3-3) : `resetAllMocks` vide aussi les files `…Once` et les
+		// implémentations posées par un test, que `clearAllMocks` laissait au test suivant.
+		vi.resetAllMocks();
 	});
 
 	it('avec description : « UBS — Personnel »', async () => {
@@ -132,7 +136,9 @@ describe('page Paramètres — erreurs du verrou de période (Story 28-2, A1/A2)
 	};
 
 	beforeEach(() => {
-		vi.clearAllMocks();
+		// Revue P3 (P3-B3, E3-3, A3-3) : `resetAllMocks` vide aussi les files `…Once` et les
+		// implémentations posées par un test, que `clearAllMocks` laissait au test suivant.
+		vi.resetAllMocks();
 		vi.spyOn(console, 'error').mockImplementation(() => {});
 	});
 
@@ -222,7 +228,9 @@ describe('page Paramètres — adresse de la société (Story 33-5)', () => {
 	}
 
 	beforeEach(() => {
-		vi.clearAllMocks();
+		// Revue P3 (P3-B3, E3-3, A3-3) : `resetAllMocks` vide aussi les files `…Once` et les
+		// implémentations posées par un test, que `clearAllMocks` laissait au test suivant.
+		vi.resetAllMocks();
 		fetchSessionSettingsMock.mockResolvedValue({
 			sessionIdleMinutes: 60,
 			version: 0,
@@ -375,7 +383,9 @@ describe('page Paramètres — adresse de la société (Story 33-5)', () => {
 describe('page Paramètres — adresse : Annuler', () => {
 	it('Annuler n’envoie rien et Modifier repart des valeurs enregistrées', async () => {
 		authState.login({ userId: '1', username: 'u', role: 'Admin', expiresIn: 900 }, { broadcast: false });
-		vi.clearAllMocks();
+		// Revue P3 (P3-B3, E3-3, A3-3) : `resetAllMocks` vide aussi les files `…Once` et les
+		// implémentations posées par un test, que `clearAllMocks` laissait au test suivant.
+		vi.resetAllMocks();
 		fetchSessionSettingsMock.mockResolvedValue({ sessionIdleMinutes: 60, version: 0, min: 1, max: 1440 });
 		const base = reponse(null);
 		fetchCompanyCurrentMock.mockResolvedValue({
@@ -430,7 +440,9 @@ describe('page Paramètres — conflit de version des trois éditions (Story 34-
 	}
 
 	beforeEach(() => {
-		vi.clearAllMocks();
+		// Revue P3 (P3-B3, E3-3, A3-3) : `resetAllMocks` vide aussi les files `…Once` et les
+		// implémentations posées par un test, que `clearAllMocks` laissait au test suivant.
+		vi.resetAllMocks();
 		fetchSessionSettingsMock.mockResolvedValue({ sessionIdleMinutes: 60, version: 0, min: 1, max: 1440 });
 		authState.login({ userId: '1', username: 'u', role: 'Admin', expiresIn: 900 }, { broadcast: false });
 	});
@@ -821,7 +833,8 @@ describe('page Paramètres — conflit de version des trois éditions (Story 34-
 		});
 
 		// Revue P2 (B2) : en lecture seule et non désactivés, les champs gardent le focus.
-		it('les champs sont en lecture seule pendant l’envoi et la relecture, sans perdre le focus (E1-3, B2)', async () => {
+		// Revue P3 (B7) : le titre ne promet plus la relecture, que le corps n'exerce pas.
+		it('les champs sont en lecture seule pendant l’envoi, sans perdre le focus (E1-3, B2)', async () => {
 			fetchCompanyCurrentMock.mockResolvedValueOnce(societe());
 			let release: (v: unknown) => void = () => {};
 			updateCompanyEmailMock.mockReturnValueOnce(new Promise((r) => (release = r)));
@@ -893,9 +906,15 @@ describe('page Paramètres — conflit de version des trois éditions (Story 34-
 			).toContain('Avenue Neuve');
 		});
 
-		it('le verrou de période fait adopter la société rendue aux éditions inchangées (E2-3)', async () => {
+		// Revue P3 (P3-B4, A3-1) : `lock_books` ne change pas la version. La version 5 rendue
+		// ici est celle d'une écriture d'un AUTRE (sur un autre bloc) faite entre l'ouverture et
+		// le verrou : le verrou rend la société la plus récente. Le cas du verrou seul, à
+		// version égale, est le test suivant.
+		it('le verrou de période fait adopter la société rendue, écrite entre-temps par un autre, aux éditions inchangées (E2-3)', async () => {
 			fetchCompanyCurrentMock.mockResolvedValueOnce(societe());
-			lockBooksMock.mockResolvedValueOnce(societe({ version: 5, booksLockedThrough: '2026-01-31' }).company);
+			lockBooksMock.mockResolvedValueOnce(
+				societe({ version: 5, phone: '+41 22 999 99 99', booksLockedThrough: '2026-01-31' }).company,
+			);
 			updateCompanyEmailMock.mockResolvedValueOnce(societe({ version: 6, email: 'moi@test.ch' }).company);
 			const { findByTestId, getByTestId, container } = render(Page);
 			await fireEvent.click(await findByTestId('settings-company-email-edit'));
@@ -910,6 +929,99 @@ describe('page Paramètres — conflit de version des trois éditions (Story 34-
 			await fireEvent.click(getByTestId('settings-company-email-save'));
 			await vi.waitFor(() => expect(updateCompanyEmailMock).toHaveBeenCalledTimes(1));
 			expect(updateCompanyEmailMock.mock.calls[0][0].version).toBe(5);
+		});
+
+		// Revue P3 (P3-B1 = A3-1 ; C-e346-11) : le vrai comportement du serveur, un verrou qui
+		// rend la MÊME version. L'écran montre la borne (la mutation `<` → `<=` d'`adoptCompany`
+		// ferait ignorer la réponse), et l'édition ouverte garde sa version.
+		it('verrouillage à version égale : l’écran montre la borne, l’édition ouverte garde sa version', async () => {
+			fetchCompanyCurrentMock.mockResolvedValueOnce(societe());
+			lockBooksMock.mockResolvedValueOnce(societe({ booksLockedThrough: '2026-01-31' }).company);
+			updateCompanyEmailMock.mockResolvedValueOnce(societe({ version: 2, email: 'moi@test.ch' }).company);
+			const { findByTestId, getByTestId, queryByTestId, container } = render(Page);
+			await fireEvent.click(await findByTestId('settings-company-email-edit'));
+			expect(queryByTestId('books-lock-release-toggle')).toBeNull();
+			const date = container.querySelector('#books-lock-through') as HTMLInputElement;
+			await fireEvent.input(date, { target: { value: '2026-01-31' } });
+			await fireEvent.click(getByTestId('books-lock-submit'));
+			await findByTestId('books-lock-release-toggle');
+			await saisir(getByTestId, 'settings-company-email-input', 'moi@test.ch');
+			await fireEvent.click(getByTestId('settings-company-email-save'));
+			await vi.waitFor(() => expect(updateCompanyEmailMock).toHaveBeenCalledTimes(1));
+			expect(updateCompanyEmailMock.mock.calls[0][0].version).toBe(1);
+		});
+
+		// Revue P3 (P3-B1, E3-1, A3-2 ; C-e346-11) : à version égale, une relecture partie
+		// AVANT le verrou et revenue après ne fait pas reculer l'affichage du verrou.
+		it('une relecture partie avant le verrou et revenue après ne réaffiche pas l’ancienne borne', async () => {
+			fetchCompanyCurrentMock.mockResolvedValueOnce(societe());
+			let relire: (v: CompanyCurrentResponse) => void = () => {};
+			fetchCompanyCurrentMock.mockReturnValueOnce(new Promise((r) => (relire = r)));
+			updateCompanyEmailMock.mockRejectedValueOnce(CONFLIT);
+			lockBooksMock.mockResolvedValueOnce(societe({ booksLockedThrough: '2026-01-31' }).company);
+			const { findByTestId, getByTestId, queryByTestId, container } = render(Page);
+			await fireEvent.click(await findByTestId('settings-company-email-edit'));
+			// 1. L'e-mail reçoit un 409 : sa relecture part (version 1, sans verrou).
+			await fireEvent.click(getByTestId('settings-company-email-save'));
+			await vi.waitFor(() => expect(fetchCompanyCurrentMock).toHaveBeenCalledTimes(2));
+			// 2. L'Administrateur verrouille : même version, la borne est posée.
+			const date = container.querySelector('#books-lock-through') as HTMLInputElement;
+			await fireEvent.input(date, { target: { value: '2026-01-31' } });
+			await fireEvent.click(getByTestId('books-lock-submit'));
+			await findByTestId('books-lock-release-toggle');
+			// 3. La relecture revient, servie avant le verrou.
+			relire(societe());
+			await findByTestId('settings-company-email-error');
+			expect(queryByTestId('books-lock-release-toggle')).not.toBeNull();
+		});
+
+		// Revue P3 (P3-B2 ; C-e346-11) : une relecture plus ancienne que `data` ne juge pas le
+		// bloc. Il est jugé contre la société la plus récente, et ne se ferme pas sur « déjà
+		// enregistrées » quand un autre a changé la valeur depuis.
+		it('une relecture plus ancienne ne ferme pas l’édition sur « déjà enregistrées » à tort', async () => {
+			fetchCompanyCurrentMock.mockResolvedValueOnce(societe());
+			let relireEmail: (v: CompanyCurrentResponse) => void = () => {};
+			fetchCompanyCurrentMock.mockReturnValueOnce(new Promise((r) => (relireEmail = r)));
+			updateCompanyEmailMock.mockRejectedValueOnce(CONFLIT);
+			updateCompanyContactDetailsMock.mockRejectedValueOnce(CONFLIT);
+			const { findByTestId, getByTestId, queryByTestId } = render(Page);
+			await fireEvent.click(await findByTestId('settings-company-email-edit'));
+			await fireEvent.click(getByTestId('settings-company-contact-edit'));
+			await saisir(getByTestId, 'settings-company-email-input', 'moi@test.ch');
+			// 1. L'e-mail reçoit un 409 : sa relecture part.
+			await fireEvent.click(getByTestId('settings-company-email-save'));
+			await vi.waitFor(() => expect(fetchCompanyCurrentMock).toHaveBeenCalledTimes(2));
+			// 2. Les coordonnées reçoivent un 409 : leur relecture rend la version 7, où un autre
+			//    a mis l'e-mail à « autre@test.ch ».
+			fetchCompanyCurrentMock.mockResolvedValueOnce(societe({ version: 7, email: 'autre@test.ch' }));
+			await saisir(getByTestId, 'settings-company-website-input', 'https://moi.ch');
+			await fireEvent.click(getByTestId('settings-company-contact-save'));
+			await findByTestId('settings-company-contact-error');
+			// 3. La relecture de l'e-mail revient, plus ancienne (version 6), où l'e-mail valait
+			//    la saisie.
+			relireEmail(societe({ version: 6, email: 'moi@test.ch' }));
+			expect((await findByTestId('settings-company-email-conflict-changed-email')).textContent).toContain(
+				'autre@test.ch',
+			);
+			expect(queryByTestId('settings-company-email-input')).not.toBeNull();
+			expect(notifySuccessMock).not.toHaveBeenCalled();
+		});
+
+		// Revue P3 (P3-B6, E3-4) : l'avis est effacé au départ de l'envoi. Un refus d'une autre
+		// nature ne laisse pas un avis périmé, et un second conflit identique refait l'avis.
+		it('l’avis est effacé au départ du nouvel envoi', async () => {
+			fetchCompanyCurrentMock.mockResolvedValueOnce(societe());
+			fetchCompanyCurrentMock.mockResolvedValueOnce(relue({ email: 'autre@test.ch' }));
+			updateCompanyEmailMock.mockRejectedValueOnce(CONFLIT);
+			const { findByTestId, getByTestId, queryByTestId } = render(Page);
+			await fireEvent.click(await findByTestId('settings-company-email-edit'));
+			await saisir(getByTestId, 'settings-company-email-input', 'moi@test.ch');
+			await fireEvent.click(getByTestId('settings-company-email-save'));
+			await findByTestId('settings-company-email-conflict-notice');
+			updateCompanyEmailMock.mockRejectedValueOnce({ code: 'VALIDATION_ERROR', message: 'refus', status: 400 });
+			await fireEvent.click(getByTestId('settings-company-email-save'));
+			expect((await findByTestId('settings-company-email-error')).textContent).toBe('refus');
+			expect(queryByTestId('settings-company-email-conflict-notice')).toBeNull();
 		});
 	});
 
