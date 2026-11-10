@@ -1,6 +1,6 @@
 # Story 34-5 : un second envoi du même règlement n'écrit pas un second règlement (#951)
 
-Status: ready-for-dev
+Status: in-progress
 
 *Fiche rédigée le 2026-11-10 en autonomie (Opus 5.5), worktree `/home/gcorbaz/devel/kesh-e34`, branche `chore/epic-34-kickoff`,
 numéros de ligne de `a75835db`. Release **0.17.6**, Epic 34. **Aucune migration** : le kickoff la disait probable, la fiche
@@ -330,11 +330,111 @@ de la KF-029 se nomment un par un.
 - 2026-11-10 : **validation P4 ciblée (Haiku) : 1 L, remédié** (Opus 5.5). **F3** : relu, `^mod common` dans les huit
   appelants HTTP. Les deux ensembles sont distingués, repository (six fichiers) et route (huit fichiers). Prémisse du rapport
   nuancée : « six » désignait les appelants du repository, et c'était juste ; la liste des appelants HTTP manquait.
+- 2026-11-10/11 : **développement** (Opus 5.5, worktree `/home/gcorbaz/devel/kesh-e345`, base `665de151`, clé `e345` ; la
+  fiche disait `e343` pour les journaux, ils sont sous `kesh-gate-logs/e345/`). Commits `71beefe6` (développement),
+  `3224a199` (type d'une aide Vitest), `b8b749af` (borne des sites i18n), `0a886d6d` (`cargo fmt`). Choix neufs :
+  `e34-choix-autonomes-e345.md`, C-e345-1 à 9. Détail au Dev Agent Record.
 
 ## Dev Agent Record
 
 ### Agent Model Used
 
+Opus 5.5 (`claude-opus-5-5`), en autonomie.
+
 ### Completion Notes List
 
+**Étape 0.** Les deux LOW de la validation P5 (`e34-validate-p5-e343.md`) portent sur la 34-6 (F1) et la 34-8 (F2) :
+rien à traiter ici. Le point « à établir à l'étape 0 » de T4 (ce que rend `PROCESSLIST` sous le montage à deux
+requêtes) est **établi par le rouge** : sur le code d'avant, `attendre_des_requetes_en_cours(&pool, &["FROM invoices",
+"journal_entry_id", "FOR UPDATE"], 2, …)` a rendu vrai — l'assertion de montage est passée, l'échec portait sur les
+statuts (`[200, 200]`). M2 est donc prouvée, non déclarée. Inventaire des appelants recompté :
+`git grep -n "settle_invoice(" -- crates`, hors `src/` : **31 appels dans 14 fichiers** à la base (20 lignes à `HEAD`,
+l'aide `settle_at_current_version` en absorbant seize dans `invoice_settlement.rs`).
+
+**Rouges d'abord** (`kesh-gate-logs/e345/rouges.log`, journaux `rouge-ac2.log`, `rouge-ac4-compil.log`) :
+- HTTP, à l'exécution, sur le code de base : AC-1 (200 au lieu de 422), AC-2 (second envoi 200 au lieu de 409), AC-3
+  (`[200, 200]`) ; AC-6 vert, comme attendu.
+- `kesh-db`, à la compilation : six `E0061` (« takes 7 arguments but 8 arguments were supplied »).
+
+**Ce qui est fait.**
+- `settle_invoice(…, expected_version: i32)` : `version` lue dans le `SELECT … FOR UPDATE` de l'étape (1), comparée
+  après le statut, avant la date (`OptimisticLockConflict`). Doc-comment : ordre des refus avec la version, rejeu sûr.
+- Route : `SettleInvoiceRequest.version: i32` (obligatoire, `422` sans lui), passée au repository dans
+  `retry_on_deadlock`. Doc-comments récrits, et le commentaire voisin de `invoices.rs:986-991` qui disait encore « le
+  règlement ne prend pas de `version` » (trouvé par le grep du symptôme, hors liste de l'AC-9).
+- Tests : AC-1, AC-2, AC-3 (montage déterministe), AC-6 dans `invoice_settlement_response_e2e.rs` (C-e345-3) ; AC-4 en
+  deux tests dans `kesh-db/tests/invoice_settlement.rs` (version périmée sans rien écrire ; ordre statut → version →
+  date / contrepartie / trop-perçu). AC-5 : `settlement_is_replayed_when_it_is_the_deadlock_victim` passe avec la
+  version (gate). Aides : `kesh-db/tests/support/reglement_version.rs` et `kesh-api/tests/common/mod.rs`
+  (`invoice_version`, `settle_at_current_version`) ; lectures locales dans `lettering_documents.rs` et `kesh-report`
+  (C-e345-1, C-e345-2). `mod common;` ajouté à `invoice_echeancier_e2e.rs`, `invoice_send_email_e2e.rs`,
+  `reconciliation_e2e.rs`.
+- Frontend : la fiche envoie `invoice.version`, l'échéancier `cible.version` ; états `conflict` et `conflict-blocked`,
+  relecture paramétrée `rereadAfterSettle(blocking, arrival)` et `rereadFromBlocked()` ; encadrés `settle-conflict` et
+  `due-dates-settle-conflict` ; quatre clés aux quatre locales, replis identiques à `fr-CH` (C-e345-4, 5).
+- Playwright : `invoiceVersionViaApi` (C-e345-6) dans les huit specs qui postent un règlement ; spec neuve
+  `invoices-settle-version.spec.ts` (T6 : AC-2 à l'écran, avis de conflit sur la fiche et l'échéancier).
+- Textes : AC-9 (contrôle `git grep -nE "ne porte (pas de|aucune) version|Pas de .version|Aucun champ .version" --
+  frontend crates` : vide), manuel utilisateur § *Enregistrer et annuler un règlement*, manuel d'administration
+  § *Passer à la 0.17.6* (créée, C-e345-7), `docs/api-external.md` § *Enregistrer un règlement* (neuve, codes relus
+  dans `errors.rs` et `dates_recues.rs`), CHANGELOG `## [0.17.6] — Non publié` (*Corrigé* et *Modifié* ⚠️),
+  `scripts/recette-montee.sh` (C-e345-8 ; `scripts/tests/recette-montee.test.sh` vert, « aucune assertion en échec »).
+- Garde `i18n-keys.test.ts` : `sitesTotal` 2922 → 2928 (+6 : quatre avis, deux *Relire*), mesuré par la garde.
+
+**Mutations** (`kesh-gate-logs/e345/mut/M*.log`, `mutations.py`, `run.sh` ; motif unique vérifié, restauration
+`git checkout --` puis `touch`, « restauré : 0 fichier(s) modifié(s) » à chacune ; jouées sur `b8b749af`) :
+- M1 (comparaison retirée) : tuée — AC-2, AC-3 et les deux tests AC-4 rouges.
+- M2 (comparaison hors verrou, lecture ordinaire) : tuée — AC-3 `left: [200, 200]`, et le test d'ordre AC-4.
+- M3 (version d'ouverture de l'écran) : tuée — « deux acomptes successifs » (`expected 3 to be 4`) et le 409 (clic
+  suivant).
+- M4 fiche / M4 échéancier (409 traité comme un 4xx) : tuées, deux Vitest chacune.
+- M5 (numéro lu sur `markTarget` après relecture) : tuée — « expected 'Le règlement de la facture  n’a pas é…' to contain
+  'F-2026-005' ».
+- M6 (*Relire* depuis `conflict-blocked` → `verify`, fiche) : tuée. **Non jouée** : la M6 côté échéancier
+  (`rereadFromBlocked` jumeau), couverte par le test « 409 puis liste illisible… » sans mutation dédiée.
+
+**Gates** (au dernier commit de code `0a886d6d`, bases remises à neuf ; verrous de la station, `free -g` avant
+chaque commande, journaux `kesh-gate-logs/e345/gates-g2-*`, `front-*`) :
+- `scripts/test-fast.sh --ci` : **5144 passés, 12 ignorés** (fmt et clippy compris).
+- `cargo build --workspace --all-targets` : vert.
+- `scripts/gate-ci.sh kesh_ci_e345` : **5151 passés, 0 échec, 16 ignorés**.
+- Frontend : `npm run check` 0 erreur (r2, `3224a199`), `lint-i18n-ownership` vert, `npm run build` vert (r2) ;
+  `npm run test:unit` **2889 passés, 222 fichiers** (r3, `0a886d6d`). Entre r2 et `0a886d6d`, seuls un test et du
+  formatage Rust ont changé.
+- Gate ciblé intermédiaire (`cible-1.log`, 23 binaires touchés) : 753 passés.
+- ⚠️ Un premier `test-fast` (g1, `b8b749af`) a échoué sur `cargo fmt --check` (deux fichiers neufs) : corrigé par
+  `0a886d6d`, puis tout rejoué (g2).
+- **Différés par la pause des commandes lourdes** (décision de Guy du 2026-11-11, `kesh-gate-logs/PAUSE-HEAVY`) : le
+  `make fr` des manuels (PDF), l'E2E complet et les captures. Voir la suite de ce record.
+
+**Écarts à la consigne Edit.** Deux fichiers de test écrits par le shell, non par l'outil : les tests Vitest de la
+fiche ajoutés en fin de `invoice-settlements-page.test.ts` par `cat >>` (ajout, rien remplacé), et la spec neuve
+`invoices-settle-version.spec.ts` créée par `cat >` (l'outil Write convenait). Aucun `sed -i` ni `perl -pi`. `cargo fmt
+--all` a formaté quatre fichiers Rust (outil du projet). L'outil ne manquait de rien : c'est un écart de commodité.
+
+**Limites voisines.** Aucune nouvelle issue à ouvrir au développement.
+
 ### File List
+
+- `crates/kesh-db/src/repositories/invoice_settlements_write.rs`
+- `crates/kesh-api/src/routes/invoices.rs`
+- `crates/kesh-db/tests/support/reglement_version.rs` (neuf), `support/lettering_documents.rs`, `invoice_settlement.rs`,
+  `credit_notes_repository.rs`, `filet_bilan_clos.rs`, `invoice_amount_due_parity.rs`, `invoice_write_off.rs`,
+  `invoices_validate_vat.rs`
+- `crates/kesh-api/tests/common/mod.rs`, `invoice_settlement_response_e2e.rs`, `accounts_designated_archive_e2e.rs`,
+  `admin_full_import_e2e.rs`, `bank_accounts_closed_e2e.rs`, `dates_bornes_e2e.rs`, `invoice_echeancier_e2e.rs`,
+  `invoice_send_email_e2e.rs`, `reconciliation_e2e.rs`, `reconciliation_link_e2e.rs`, `reconciliation_link_entry_e2e.rs`,
+  `rejeu_interblocage_e2e.rs`, `services_rollout.rs`
+- `crates/kesh-report/tests/aged_receivables.rs`
+- `crates/kesh-i18n/locales/{fr-CH,de-CH,en-CH,it-CH}/messages.ftl`
+- `frontend/src/lib/features/invoices/invoices.api.ts`, `invoices.types.ts`, `frontend/src/lib/shared/utils/unknown-outcome.ts`
+- `frontend/src/routes/(app)/invoices/[id]/+page.svelte`, `invoice-settlements-page.test.ts`
+- `frontend/src/routes/(app)/invoices/due-dates/+page.svelte`, `due-dates-page.test.ts`
+- `frontend/src/lib/shared/i18n-keys.test.ts`
+- `frontend/tests/e2e/helpers/api-fixtures.ts`, `invoices-settle-version.spec.ts` (neuf), `invoices-settle-unknown-outcome.spec.ts`,
+  `invoices_echeancier.spec.ts`, `invoices-settlement-cancel.spec.ts`, `invoice-write-off.spec.ts`, `open-items.spec.ts`,
+  `reconciliation-amount-due.spec.ts`, `reconciliation-link.spec.ts`, `reconciliation-priority.spec.ts`, `reminders.spec.ts`
+- `docs/manual/fr/user-manual.tex`, `docs/manual/fr/admin-manual.tex`, `docs/api-external.md`, `CHANGELOG.md`
+- `scripts/recette-montee.sh`
+- `_bmad-output/implementation-artifacts/e34-choix-autonomes-e345.md` (neuf),
+  `34-5-reglement-idempotent-review-prompt-p1.md` (neuf), cette fiche, `sprint-status.yaml`
