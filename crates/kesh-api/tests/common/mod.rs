@@ -251,14 +251,7 @@ pub async fn settle_at_current_version(
 > {
     let version = invoice_version(pool, invoice_id).await;
     kesh_db::repositories::invoice_settlements_write::settle_invoice(
-        pool,
-        user_id,
-        company_id,
-        invoice_id,
-        choice,
-        amount,
-        settled_on,
-        version,
+        pool, user_id, company_id, invoice_id, choice, amount, settled_on, version,
     )
     .await
 }

@@ -312,7 +312,12 @@ async fn empreinte_reglement(pool: &MySqlPool, inv_id: i64) -> (i64, i64, i64, i
     .fetch_one(pool)
     .await
     .unwrap();
-    (reglements, ecritures, audits, version_de(pool, inv_id).await)
+    (
+        reglements,
+        ecritures,
+        audits,
+        version_de(pool, inv_id).await,
+    )
 }
 
 /// ⛔ Story 34-5 (#951), AC-4 : **une version périmée est refusée en
@@ -337,7 +342,11 @@ async fn une_version_perimee_est_refusee_sans_rien_ecrire(pool: MySqlPool) {
     )
     .await
     .expect("premier envoi");
-    assert_eq!(premier.invoice.version, ouverte + 1, "le règlement incrémente");
+    assert_eq!(
+        premier.invoice.version,
+        ouverte + 1,
+        "le règlement incrémente"
+    );
     let avant = empreinte_reglement(&pool, inv_id).await;
 
     let err = invoice_settlements_write::settle_invoice(
@@ -353,8 +362,15 @@ async fn une_version_perimee_est_refusee_sans_rien_ecrire(pool: MySqlPool) {
     .await
     .expect_err("le même règlement, à la même version, est refusé");
 
-    assert!(matches!(err, DbError::OptimisticLockConflict), "got {err:?}");
-    assert_eq!(empreinte_reglement(&pool, inv_id).await, avant, "rien n'est écrit");
+    assert!(
+        matches!(err, DbError::OptimisticLockConflict),
+        "got {err:?}"
+    );
+    assert_eq!(
+        empreinte_reglement(&pool, inv_id).await,
+        avant,
+        "rien n'est écrit"
+    );
     assert_eq!(avant.0, 1, "un seul règlement");
 }
 
@@ -385,7 +401,10 @@ async fn la_version_se_controle_apres_le_statut_et_avant_le_reste(pool: MySqlPoo
 
     // La version avant la date (règlement antérieur à la facture).
     let err = regler(par_caisse, dec!(10.00), ymd(2026, 1, 1)).await;
-    assert!(matches!(err, DbError::OptimisticLockConflict), "date : {err:?}");
+    assert!(
+        matches!(err, DbError::OptimisticLockConflict),
+        "date : {err:?}"
+    );
     // La version avant la contrepartie (compte inconnu).
     let err = regler(
         SettlementChoice::InternalAccount { account_id: -1 },
@@ -403,7 +422,11 @@ async fn la_version_se_controle_apres_le_statut_et_avant_le_reste(pool: MySqlPoo
         matches!(err, DbError::OptimisticLockConflict),
         "trop-perçu : {err:?}"
     );
-    assert_eq!(empreinte_reglement(&pool, inv_id).await, avant, "rien n'est écrit");
+    assert_eq!(
+        empreinte_reglement(&pool, inv_id).await,
+        avant,
+        "rien n'est écrit"
+    );
 
     // Le statut avant la version : annulée, puis brouillon.
     for statut in ["cancelled", "draft"] {

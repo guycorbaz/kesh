@@ -445,11 +445,12 @@ async fn a_partial_cancellation_returns_what_was_written(pool: MySqlPool) {
 /// Ce qu'un règlement laisse en base : lignes `invoice_settlements`, écritures
 /// de règlement distinctes, entrées d'audit `invoice.partially_settled`.
 async fn settlement_traces(pool: &MySqlPool, id: i64) -> (i64, i64, i64) {
-    let rows: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM invoice_settlements WHERE invoice_id = ?")
-        .bind(id)
-        .fetch_one(pool)
-        .await
-        .unwrap();
+    let rows: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM invoice_settlements WHERE invoice_id = ?")
+            .bind(id)
+            .fetch_one(pool)
+            .await
+            .unwrap();
     let entries: i64 = sqlx::query_scalar(
         "SELECT COUNT(DISTINCT journal_entry_id) FROM invoice_settlements WHERE invoice_id = ?",
     )

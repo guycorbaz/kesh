@@ -39,14 +39,7 @@ pub async fn settle_at_current_version(
 ) -> Result<SettlementOutcome, DbError> {
     let version = version_de(pool, invoice_id).await;
     invoice_settlements_write::settle_invoice(
-        pool,
-        user_id,
-        company_id,
-        invoice_id,
-        choice,
-        amount,
-        settled_on,
-        version,
+        pool, user_id, company_id, invoice_id, choice, amount, settled_on, version,
     )
     .await
 }
