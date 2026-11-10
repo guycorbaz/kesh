@@ -142,7 +142,7 @@ Les autres candidates du point (iv), sans cycle démontré : `PUT /invoices/{id}
     vérifié). Points à établir de l'AC-2, établis à l'exécution et non par lecture : la lecture
     `SELECT id FROM fiscal_years WHERE company_id = ? AND name = ? AND id <> ? FOR UPDATE`
     (`kesh-db/src/repositories/fiscal_years.rs:585-596`) attend bien la ligne insérée non validée par la lourde ; la route
-    est la victime (la lourde passe le `.expect` de `victime`, `rejeu_interblocage_e2e.rs:358-362`), rouge 500 avant le
+    est la victime (la lourde passe le `.expect` de `victime`, `rejeu_interblocage_e2e.rs:363`), rouge 500 avant le
     correctif, 200 et un rejeu capturé après. L'AC-2 n'a donc pas été réduit à l'AC-1.
   - **Écart à la consigne Edit.** Les deux tests neufs ont été ajoutés en fin de `rejeu_interblocage_e2e.rs` par un
     `cat >>` (ajout, sans remplacement de texte existant) ; la reprise de leur mise en forme `rustfmt` s'est faite par
