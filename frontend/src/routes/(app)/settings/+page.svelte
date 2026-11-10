@@ -16,6 +16,7 @@
 		ADDRESS_NORMALIZERS,
 		companyEditConflict,
 		conflictNotice,
+		sameBlockValues,
 		type CompanyConflictNoticeState,
 		type CompanyEditConflict,
 		type CompanyFieldNormalizer,
@@ -89,6 +90,8 @@
 				status: 'reloaded';
 				/** La nouvelle copie : les valeurs relues. */
 				base: Record<K, string>;
+				/** La version de la société relue, que la copie accompagne désormais. */
+				version: number;
 				conflict: CompanyEditConflict<K>;
 				notice: CompanyConflictNoticeState | null;
 		  };
@@ -111,9 +114,40 @@
 			return { status: 'reload-failed' };
 		}
 		data = fresh;
+		syncOpenBlocks(fresh.company);
 		const stored = valuesOf(fresh.company);
 		const conflict = companyEditConflict(base, stored, input, fields, normalizers);
-		return { status: 'reloaded', base: stored, conflict, notice: conflictNotice(conflict, stored) };
+		return {
+			status: 'reloaded',
+			base: stored,
+			version: fresh.company.version,
+			conflict,
+			notice: conflictNotice(conflict, stored),
+		};
+	}
+
+	/**
+	 * Revue de code P1 (B-1, E1-1 ; C-e346-8) — chaque édition ouverte envoie la version de
+	 * SA copie (`*Version`), non `data.company.version`. Quand la page reçoit une société plus
+	 * récente (le succès d'un bloc, ou la relecture après un 409), une édition ouverte n'adopte
+	 * la nouvelle version que si ses propres champs n'y ont pas bougé : les blocs portent des
+	 * champs disjoints, si bien que l'enregistrement d'un autre bloc ne provoque pas de
+	 * conflit parasite. Si ses champs ont bougé, elle garde l'ancienne version, et son
+	 * enregistrement reçoit son propre 409 : l'écriture concurrente lui est montrée.
+	 */
+	function syncOpenBlocks(company: CompanyJson) {
+		if (emailEditing && sameBlockValues(emailBase, emailValuesOf(company), EMAIL_FIELDS)) {
+			emailVersion = company.version;
+		}
+		if (contactEditing && sameBlockValues(contactBase, contactValuesOf(company), CONTACT_FIELDS)) {
+			contactVersion = company.version;
+		}
+		if (
+			addressEditing &&
+			sameBlockValues(addressBase, addressValuesOf(company), ADDRESS_FIELDS, ADDRESS_NORMALIZERS)
+		) {
+			addressVersion = company.version;
+		}
 	}
 
 	function alreadySavedMessage(): string {
@@ -126,11 +160,15 @@
 	let emailValue = $state('');
 	let emailSubmitting = $state(false);
 	let emailError = $state('');
-	let emailBase = $state(emailValuesOf({ email: null } as CompanyJson));
+	let emailBase = $state<Record<(typeof EMAIL_FIELDS)[number], string>>({ email: '' });
+	let emailVersion = $state(0);
 	let emailConflict = $state<CompanyConflictNoticeState | null>(null);
 
 	function startEmailEdit() {
-		if (data) emailBase = emailValuesOf(data.company);
+		if (data) {
+			emailBase = emailValuesOf(data.company);
+			emailVersion = data.company.version;
+		}
 		emailValue = emailBase.email;
 		emailError = '';
 		emailConflict = null;
@@ -156,10 +194,11 @@
 			// Champ vidé = effacement (Reply-To omis à l'envoi).
 			const updated = await updateCompanyEmail({
 				email: trimmed || null,
-				version: data.company.version,
+				version: emailVersion,
 			});
 			data = { ...data, company: updated };
 			closeEmailEdit();
+			syncOpenBlocks(updated);
 			notifySuccess(msg('settings-company-email-saved', 'E-mail de la société enregistré'));
 		} catch (err) {
 			if (isApiError(err)) {
@@ -186,6 +225,7 @@
 						notifySuccess(alreadySavedMessage());
 					} else {
 						emailBase = r.base;
+						emailVersion = r.version;
 						emailValue = r.conflict.input.email;
 						emailConflict = r.notice;
 						if (!r.notice) {
@@ -218,11 +258,15 @@
 	let websiteValue = $state('');
 	let contactSubmitting = $state(false);
 	let contactError = $state('');
-	let contactBase = $state(contactValuesOf({ phone: null, website: null } as CompanyJson));
+	let contactBase = $state<Record<(typeof CONTACT_FIELDS)[number], string>>({ phone: '', website: '' });
+	let contactVersion = $state(0);
 	let contactConflict = $state<CompanyConflictNoticeState | null>(null);
 
 	function startContactEdit() {
-		if (data) contactBase = contactValuesOf(data.company);
+		if (data) {
+			contactBase = contactValuesOf(data.company);
+			contactVersion = data.company.version;
+		}
 		phoneValue = contactBase.phone;
 		websiteValue = contactBase.website;
 		contactError = '';
@@ -245,10 +289,11 @@
 			const updated = await updateCompanyContactDetails({
 				phone: phoneValue.trim() || null,
 				website: websiteValue.trim() || null,
-				version: data.company.version,
+				version: contactVersion,
 			});
 			data = { ...data, company: updated };
 			closeContactEdit();
+			syncOpenBlocks(updated);
 			notifySuccess(msg('settings-company-contact-saved', 'Coordonnées enregistrées'));
 		} catch (err) {
 			if (isApiError(err)) {
@@ -277,6 +322,7 @@
 						notifySuccess(alreadySavedMessage());
 					} else {
 						contactBase = r.base;
+						contactVersion = r.version;
 						phoneValue = r.conflict.input.phone;
 						websiteValue = r.conflict.input.website;
 						contactConflict = r.notice;
@@ -301,15 +347,23 @@
 	// Story 33-5 (#909) — corriger l'adresse après l'assistant, sur le patron des
 	// deux éditions ci-dessus. Le pays reste un champ libre de deux lettres, comme
 	// aux contacts : le serveur juge, l'écran affiche son message.
+	/** Adresse vide d'une édition pas encore ouverte : le pays par défaut du serveur. */
+	function emptyAddress(): Record<(typeof ADDRESS_FIELDS)[number], string> {
+		return { street: '', building: '', postalCode: '', city: '', country: 'CH' };
+	}
 	let addressEditing = $state(false);
-	let addressForm = $state({ street: '', building: '', postalCode: '', city: '', country: 'CH' });
+	let addressForm = $state(emptyAddress());
 	let addressSubmitting = $state(false);
 	let addressError = $state('');
-	let addressBase = $state({ street: '', building: '', postalCode: '', city: '', country: 'CH' });
+	let addressBase = $state(emptyAddress());
+	let addressVersion = $state(0);
 	let addressConflict = $state<CompanyConflictNoticeState | null>(null);
 
 	function startAddressEdit() {
-		if (data) addressBase = addressValuesOf(data.company);
+		if (data) {
+			addressBase = addressValuesOf(data.company);
+			addressVersion = data.company.version;
+		}
 		addressForm = { ...addressBase };
 		addressError = '';
 		addressConflict = null;
@@ -329,10 +383,11 @@
 		try {
 			const updated = await updateCompanyAddress({
 				address: { ...addressForm },
-				version: data.company.version,
+				version: addressVersion,
 			});
 			data = { ...data, company: updated };
 			closeAddressEdit();
+			syncOpenBlocks(updated);
 			notifySuccess(msg('settings-company-address-saved', 'Adresse de la société enregistrée'));
 		} catch (err) {
 			if (isApiError(err)) {
@@ -356,6 +411,7 @@
 						notifySuccess(alreadySavedMessage());
 					} else {
 						addressBase = r.base;
+						addressVersion = r.version;
 						addressForm = { ...r.conflict.input };
 						addressConflict = r.notice;
 						if (!r.notice) {
@@ -524,27 +580,27 @@
 							<div class="grid grid-cols-3 gap-2">
 								<div class="col-span-2">
 									<label for="company-address-street" class="text-xs text-text-muted">{msg('field-street', 'Rue')}</label>
-									<Input id="company-address-street" type="text" bind:value={addressForm.street} maxlength={70} data-testid="settings-company-address-street-input" />
+									<Input id="company-address-street" type="text" bind:value={addressForm.street} disabled={addressSubmitting} maxlength={70} data-testid="settings-company-address-street-input" />
 									<CompanyConflictNotice notice={addressConflict} testid="settings-company-address-conflict" field="street" />
 								</div>
 								<div>
 									<label for="company-address-building" class="text-xs text-text-muted">{msg('field-building', 'N°')}</label>
-									<Input id="company-address-building" type="text" bind:value={addressForm.building} maxlength={16} data-testid="settings-company-address-building-input" />
+									<Input id="company-address-building" type="text" bind:value={addressForm.building} disabled={addressSubmitting} maxlength={16} data-testid="settings-company-address-building-input" />
 									<CompanyConflictNotice notice={addressConflict} testid="settings-company-address-conflict" field="building" />
 								</div>
 								<div>
 									<label for="company-address-postal-code" class="text-xs text-text-muted">{msg('field-postal-code', 'NPA')}</label>
-									<Input id="company-address-postal-code" type="text" bind:value={addressForm.postalCode} maxlength={16} data-testid="settings-company-address-postal-code-input" />
+									<Input id="company-address-postal-code" type="text" bind:value={addressForm.postalCode} disabled={addressSubmitting} maxlength={16} data-testid="settings-company-address-postal-code-input" />
 									<CompanyConflictNotice notice={addressConflict} testid="settings-company-address-conflict" field="postalCode" />
 								</div>
 								<div>
 									<label for="company-address-city" class="text-xs text-text-muted">{msg('field-city', 'Localité')}</label>
-									<Input id="company-address-city" type="text" bind:value={addressForm.city} maxlength={35} data-testid="settings-company-address-city-input" />
+									<Input id="company-address-city" type="text" bind:value={addressForm.city} disabled={addressSubmitting} maxlength={35} data-testid="settings-company-address-city-input" />
 									<CompanyConflictNotice notice={addressConflict} testid="settings-company-address-conflict" field="city" />
 								</div>
 								<div>
 									<label for="company-address-country" class="text-xs text-text-muted">{msg('field-country', 'Pays')}</label>
-									<Input id="company-address-country" type="text" bind:value={addressForm.country} maxlength={2} placeholder="CH" data-testid="settings-company-address-country-input" />
+									<Input id="company-address-country" type="text" bind:value={addressForm.country} disabled={addressSubmitting} maxlength={2} placeholder="CH" data-testid="settings-company-address-country-input" />
 									<CompanyConflictNotice notice={addressConflict} testid="settings-company-address-conflict" field="country" />
 								</div>
 							</div>
@@ -607,6 +663,7 @@
 								<Input
 									type="email"
 									bind:value={emailValue}
+								disabled={emailSubmitting}
 									maxlength={320}
 									data-testid="settings-company-email-input"
 								/>
@@ -659,6 +716,7 @@
 							<Input
 								type="text"
 								bind:value={phoneValue}
+							disabled={contactSubmitting}
 								maxlength={50}
 								placeholder={msg('settings-field-company-phone', 'Téléphone')}
 								data-testid="settings-company-phone-input"
@@ -667,6 +725,7 @@
 							<Input
 								type="text"
 								bind:value={websiteValue}
+							disabled={contactSubmitting}
 								maxlength={255}
 								placeholder={msg('settings-field-company-website', 'Site web')}
 								data-testid="settings-company-website-input"

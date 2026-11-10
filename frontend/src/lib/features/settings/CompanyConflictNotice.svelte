@@ -11,7 +11,8 @@
 	 *   a de fusionnés).
 	 *
 	 * Les `data-testid` se dérivent de `testid` : `<testid>-changed-<champ>`,
-	 * `<testid>-merged-<champ>` et `<testid>-notice`.
+	 * `<testid>-merged-<champ>` et `<testid>-notice`, le champ en kebab-case comme les autres
+	 * `data-testid` de la page (`postalCode` → `postal-code` ; revue P1, B-3).
 	 *
 	 * ⚠️ Les variables passent par le troisième argument d'`i18nMsg`, jamais par un
 	 * `.replace()` : le backend pré-résout Fluent sans arguments, et sa marque d'isolation
@@ -23,6 +24,8 @@
 	type Props = { notice: CompanyConflictNoticeState | null; testid: string; field?: string };
 	let { notice, testid, field }: Props = $props();
 
+	let slug = $derived(field?.replace(/[A-Z]/g, (c) => `-${c.toLowerCase()}`));
+
 	function shown(value: string): string {
 		return value === '' ? i18nMsg('settings-company-conflict-empty', '(vide)') : value;
 	}
@@ -31,13 +34,13 @@
 {#if notice}
 	{#if field !== undefined}
 		{#if notice.changed.includes(field)}
-			<p class="mt-1 text-xs text-warning" data-testid="{testid}-changed-{field}">
+			<p class="mt-1 text-xs text-warning" data-testid="{testid}-changed-{slug}">
 				{i18nMsg('settings-company-conflict-changed', 'Enregistré entre-temps : { $value }', {
 					value: shown(notice.stored[field] ?? ''),
 				})}
 			</p>
 		{:else if notice.merged.includes(field)}
-			<p class="mt-1 text-xs text-text-muted" data-testid="{testid}-merged-{field}">
+			<p class="mt-1 text-xs text-text-muted" data-testid="{testid}-merged-{slug}">
 				{i18nMsg('settings-company-conflict-merged', 'Repris de l’enregistrement entre-temps : { $value }', {
 					value: shown(notice.stored[field] ?? ''),
 				})}

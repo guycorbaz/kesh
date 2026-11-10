@@ -456,7 +456,7 @@ describe('page Paramètres — conflit de version des trois éditions (Story 34-
 			await fireEvent.click(getByTestId('settings-company-address-save'));
 			expect((await findByTestId('settings-company-address-error')).textContent).toContain('rechargées');
 			expect(queryByTestId('settings-company-address-conflict-notice')).toBeNull();
-			expect(queryByTestId('settings-company-address-conflict-changed-postalCode')).toBeNull();
+			expect(queryByTestId('settings-company-address-conflict-changed-postal-code')).toBeNull();
 
 			updateCompanyAddressMock.mockResolvedValue(societe({ version: 10 }).company);
 			await fireEvent.click(getByTestId('settings-company-address-save'));
@@ -465,6 +465,17 @@ describe('page Paramètres — conflit de version des trois éditions (Story 34-
 				address: { ...ADRESSE, postalCode: '1003' },
 				version: 9,
 			});
+		});
+
+		it('le NPA en conflit se nomme en kebab-case, comme les autres testids (revue P1, B-3)', async () => {
+			const { getByTestId, findByTestId } = await ouvrir(
+				relue({ addressStructured: { ...ADRESSE, postalCode: '1004' } }),
+			);
+			await saisir(getByTestId, 'settings-company-address-postal-code-input', '1003');
+			await fireEvent.click(getByTestId('settings-company-address-save'));
+			expect(
+				(await findByTestId('settings-company-address-conflict-changed-postal-code')).textContent,
+			).toContain('1004');
 		});
 
 		it('AC-3 — déjà enregistré : l’édition se ferme, la notification le dit, aucun second envoi (M3)', async () => {

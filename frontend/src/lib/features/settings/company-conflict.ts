@@ -115,6 +115,28 @@ export function companyEditConflict<K extends string>(
 }
 
 /**
+ * Vrai si les valeurs d'un bloc dans `stored` égalent sa copie `base`, champ par champ, aux
+ * mêmes normalisations que {@link companyEditConflict}.
+ *
+ * Revue de code P1 (B-1, E1-1 ; C-e346-8) : quand la page reçoit une société plus récente
+ * (succès ou relecture d'un AUTRE bloc), une édition ouverte n'adopte la nouvelle version que
+ * si ses propres champs n'ont pas bougé. Sinon elle garde la version de sa copie, et son
+ * enregistrement reçoit son propre 409 : l'écriture concurrente est alors montrée, au lieu
+ * d'être écrasée sous une version fraîche que l'écran n'a jamais affichée.
+ */
+export function sameBlockValues<K extends string>(
+	base: Record<K, CompanyFieldValue>,
+	stored: Record<K, CompanyFieldValue>,
+	fields: readonly K[],
+	normalizers: Partial<Record<K, CompanyFieldNormalizer>> = {},
+): boolean {
+	return fields.every((f) => {
+		const norm = normalizers[f] ?? normalizeCompanyValue;
+		return norm(base[f]) === norm(stored[f]);
+	});
+}
+
+/**
  * Ce que l'écran affiche d'un conflit : les champs nommés et les valeurs relues.
  * `null` quand rien n'est à montrer (aucun champ en conflit ni repris).
  */
