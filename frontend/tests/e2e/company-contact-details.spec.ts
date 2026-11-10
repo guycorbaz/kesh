@@ -216,10 +216,73 @@ test('écriture concurrente : le conflit de version est signalé et les données
 		await page.getByTestId('settings-company-phone-input').fill('+41 99 000 00 00');
 		await page.getByTestId('settings-company-contact-save').click();
 
+		// Story 34-6 (#953) : le conflit se dit par l'avis, et le téléphone de l'autre
+		// est montré sous le champ.
 		await expect(
-			page.getByTestId('settings-company-contact-error'),
+			page.getByTestId('settings-company-contact-conflict-notice'),
 			'le conflit doit être signalé à l’utilisateur, pas avalé'
 		).toContainText('Conflit de version');
+		await expect(page.getByTestId('settings-company-contact-conflict-changed-phone')).toContainText(
+			`+41 24 ${suffix.slice(-6)}`
+		);
+	} finally {
+		await disposeContextSafe(ctx);
+	}
+});
+
+// ===========================================================================
+// 4 bis — Story 34-6 (#953, AC-4) : un seul des deux champs a changé ailleurs.
+// ===========================================================================
+
+test('écriture concurrente sur le site seul : lui seul est montré, puis le second clic écrit les deux', async ({
+	page,
+}) => {
+	await login(page);
+	const ctx = await authedApiContext(page);
+
+	try {
+		await resetContactDetails(ctx);
+		const suffix = uniqSuffix();
+		const autreSite = `https://autre-${suffix}.ch`;
+		const monSite = `https://moi-${suffix}.ch`;
+		const monTel = `+41 25 ${suffix.slice(-6)}`;
+
+		await page.goto('/settings');
+		await page.getByTestId('settings-company-contact-edit').click();
+
+		const cur = await ctx.get('/api/v1/companies/current');
+		const { company } = (await cur.json()) as { company: { version: number } };
+		const concurrent = await ctx.put('/api/v1/companies/current/contact-details', {
+			data: { phone: null, website: autreSite, version: company.version },
+		});
+		expect(concurrent.ok(), 'l’écriture concurrente doit réussir').toBeTruthy();
+
+		await page.getByTestId('settings-company-phone-input').fill(monTel);
+		await page.getByTestId('settings-company-website-input').fill(monSite);
+		await page.getByTestId('settings-company-contact-save').click();
+
+		await expect(page.getByTestId('settings-company-contact-conflict-changed-website')).toContainText(
+			autreSite
+		);
+		await expect(page.getByTestId('settings-company-contact-conflict-changed-phone')).toHaveCount(0);
+		await expect(page.getByTestId('settings-company-website-input')).toHaveValue(monSite);
+
+		// Rien n'est écrit avant le second clic.
+		const entre = await ctx.get('/api/v1/companies/current');
+		const { company: avant } = (await entre.json()) as {
+			company: { phone: string | null; website: string | null };
+		};
+		expect(avant.website).toBe(autreSite);
+		expect(avant.phone).toBeNull();
+
+		await page.getByTestId('settings-company-contact-save').click();
+		await expect(page.getByTestId('settings-company-website')).toHaveText(monSite);
+		const relu = await ctx.get('/api/v1/companies/current');
+		const { company: apres } = (await relu.json()) as {
+			company: { phone: string | null; website: string | null };
+		};
+		expect(apres.phone).toBe(monTel);
+		expect(apres.website).toBe(monSite);
 	} finally {
 		await disposeContextSafe(ctx);
 	}
