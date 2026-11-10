@@ -250,12 +250,33 @@ Aucun fichier de code commun avec les autres stories de l'Epic 34. `user-manual.
   - Le manuel et le CHANGELOG disent la part élargie au dessin. Aucun finding reclassé ni laissé ouvert ; aucune issue à ouvrir.
   - Trend : P1 0 C / 0 H / 1 M / 7 L → P2 (passe complète Opus, prompt `34-10-graphiques-couleurs-unies-review-prompt-p2.md`) à
     lancer : la remédiation touche la production.
+  - *(Annoté le 2026-11-11, revue P2, A2-4 : la revue P1 et sa remédiation datent du 2026-11-10 — rapports vers 20 h 57, commits
+    `924bc54c` et `11af9624` — ; seul le compte rendu `111c808b` est du 2026-11-11.)*
+- 2026-11-11 : **Revue de code P2** (Opus, trois lentilles B, E, A, passe complète ; prompt
+  `34-10-graphiques-couleurs-unies-review-prompt-p2.md`, rapports `kesh-gate-logs/e3410-review-p2-{B,E,A}.md`) : **0 C, 0 H,
+  2 M distincts** (le premier, B2-1 = E2-1 = A2-1, aux trois lentilles ; le second, B2-2 = E2-2) **et des LOW** (B2-3, MEDIUM chez B,
+  LOW chez A et E ; B2-4 à B2-7 ; E2-3 à E2-5 ; A2-2 à A2-5). Les deux MEDIUM sont nés de la remédiation P1. Remédiation (Opus 5.5) :
+  - **B2-1 = E2-1 = A2-1** MEDIUM, retenu (lu : `homepage-charts.ts:362-369` et `:472` à `111c808b` ; capture
+    `anneau-apres-p1-minuscule.png`) : deux parts étroites voisines n'avaient aucun liseré entre elles. Corrigé par des **traits
+    radiaux peints au-dessus des parts, un par limite** (`pieSeparators`), parts sans contour, `MIN_SLICE_ANGLE` porté à 0,045 rad
+    pour qu'une part reste visible entre ses deux traits — C-e3410-12 ; `separated`, `SEPARATED_MIN_ANGLE` et `drawOrder` retirés.
+    **B2-4** (dent de 0,75 unité au bord) disparaît avec eux.
+  - **B2-2 = E2-2** MEDIUM, retenu : test à cinq parts minuscules (somme des écarts cédée par la plus grande, angles contigus,
+    dernière à 2π) et test de frontière à 0,99 × et 1,01 × `MIN_SLICE_ANGLE` ; la mutation `deficit +=` → `=` est jouée.
+  - **B2-3 / E2-4 / A2-2** : C-e3410-9 annotée (garde `full` retirée par `11af9624`, et geste (2) remplacé).
+  - LOW : **E2-3 / A2-3** manuel « moins de 0,7 % du tour environ », au nouveau seuil ; **E2-5** `centerSizes`, le libellé jamais
+    plus grand que le montant (C-e3410-13) ; **B2-5** commentaire de `SEPARATED_MIN_ANGLE` retiré avec lui ; **B2-6** ligne JSDoc
+    repliée ; **B2-7** le cas non discriminant de `drawOrder` est parti avec lui, et le test du centrage dit qu'il suit le modèle de
+    `centerLines` ; **A2-4** C-e3410-1 à -13 au Dev Agent Record, date de la P1 annotée ; **A2-5** MV1 rejouée sur l'arbre commité
+    avec les mutations de la P2.
+  - Trend : P1 0 C / 0 H / 1 M / 7 L → P2 0 C / 0 H / 2 M / LOW → P3 (passe complète Sonnet, prompt
+    `34-10-graphiques-couleurs-unies-review-prompt-p3.md`) à lancer : la remédiation touche la production.
 
 ## Dev Agent Record
 
 ### Agent Model Used
 
-Claude Opus 5.5, en autonomie. Registre des choix neufs : `e34-choix-autonomes-e3410.md`, C-e3410-1 à C-e3410-8.
+Claude Opus 5.5, en autonomie. Registre des choix neufs : `e34-choix-autonomes-e3410.md`, C-e3410-1 à C-e3410-13.
 
 ### Completion Notes List
 
@@ -350,6 +371,14 @@ et violet deux bleus, cyan un bleu clair ; le liseré blanc marque chaque limite
 - Captures de la part minuscule (scénario `minuscule` : un cinquième poste et « Autres » à 0,1 %) :
   `anneau-avant-p1-minuscule.png` (build de `b2eb42ec`) — les deux parts ne se voient pas, le violet touche le rouge ;
   `anneau-apres-p1-minuscule.png` — deux traits fins, cyan et gris, à midi, entre le violet et le rouge.
+  *(Annoté le 2026-11-11, revue P2, A2-1 : faux à sa date ; à cette résolution, la capture montre un seul filet bleu-gris — les
+  deux parts étroites voisines n'avaient pas de liseré entre elles.)*
+
+**Remédiation de la revue P2 (2026-11-11).** *(Vitest complet, build, E2E, mutations et captures différés par la pause des
+commandes lourdes ; complété ci-dessous à la levée de la pause.)*
+- Rouges (`rouges.log`, section « Remédiation P2 ») : 6 tests purs et 1 test de rendu, écrits sur `111c808b` avant le code
+  (fichiers Vitest isolés, sous `mem-guard`). Le test de frontière de `MIN_SLICE_ANGLE` passait déjà : il fixe un comportement
+  existant.
 
 ### File List
 
@@ -369,5 +398,6 @@ et violet deux bleus, cyan un bleu clair ; le liseré blanc marque chaque limite
 - `_bmad-output/implementation-artifacts/34-10-graphiques-couleurs-unies.md`
 - `_bmad-output/implementation-artifacts/34-10-graphiques-couleurs-unies-review-prompt-p1.md`
 - `_bmad-output/implementation-artifacts/34-10-graphiques-couleurs-unies-review-prompt-p2.md`
+- `_bmad-output/implementation-artifacts/34-10-graphiques-couleurs-unies-review-prompt-p3.md`
 - `_bmad-output/implementation-artifacts/e34-choix-autonomes-e3410.md`
 - `_bmad-output/implementation-artifacts/sprint-status.yaml`
