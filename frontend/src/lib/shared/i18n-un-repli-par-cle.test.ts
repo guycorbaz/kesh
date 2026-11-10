@@ -237,8 +237,11 @@ const PREFIXES = [
  * ⚠️ **Story 33-1b** (#926) : **401 → 407** (+6) : `supplier-invoices-col-internal-number`,
  * `-search-label`, `-empty-search`, `-internal-number-kept`, `-internal-number-pending`,
  * `-delete-confirm-number`. Aucune retirée.
+ *
+ * ⚠️ **Story 34-8** (#938) : **407 → 409** (+2) : `supplier-invoices-unknown-outcome` et
+ * `-unknown-outcome-reread-failed`, un repli chacune. Aucune retirée.
  */
-const CLES_RELEVEES = 407;
+const CLES_RELEVEES = 409;
 
 
 /** Relève, pour chaque clé du domaine, l'ensemble de ses replis littéraux distincts. */

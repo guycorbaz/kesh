@@ -1472,14 +1472,22 @@ async fn draft_migration_preserves_a_populated_base(pool: MySqlPool, frontiere: 
     let virement = SettlementChoice::BankTransfer {
         bank_account_id: bank_id,
     };
-    supplier_invoices::pay(&pool, company_id, d.paid_id, virement, day, user_id)
+    // Story 34-8 (#938) : le semis passe par les formes `_in_tx`. Les enveloppes
+    // `pay` et `cancel` lisent désormais la vue de la facture avant leur commit, dont
+    // le `SELECT *` sur `imported_supplier_invoices` : préparé ici, sur le schéma
+    // d'avant la montée, il resterait en cache sur la connexion du pool, sans les
+    // colonnes que la montée ajoute (`link_origin`), et les gestes d'après la montée
+    // rendraient `ColumnNotFound`. Les formes `_in_tx` écrivent ce qu'écrivaient
+    // les enveloppes de la 0.16, sans rien lire de plus.
+    let mut tx = pool.begin().await.unwrap();
+    supplier_invoices::pay_in_tx(&mut tx, company_id, d.paid_id, virement, day, user_id)
         .await
         .expect("payée (lettrage de pièce)");
-    supplier_invoices::cancel(&pool, company_id, d.cancelled_id, user_id)
+    supplier_invoices::cancel_in_tx(&mut tx, company_id, d.cancelled_id, user_id)
         .await
         .expect("annulée (contre-passation)");
-    supplier_invoices::pay(
-        &pool,
+    supplier_invoices::pay_in_tx(
+        &mut tx,
         company_id,
         d.paid_cancelled_id,
         virement,
@@ -1488,9 +1496,10 @@ async fn draft_migration_preserves_a_populated_base(pool: MySqlPool, frontiere: 
     )
     .await
     .expect("payée");
-    supplier_invoices::cancel(&pool, company_id, d.paid_cancelled_id, user_id)
+    supplier_invoices::cancel_in_tx(&mut tx, company_id, d.paid_cancelled_id, user_id)
         .await
         .expect("payée puis annulée (règlement détaché)");
+    tx.commit().await.unwrap();
     for (hash, invoice) in [("h-c", d.completed_id), ("h-j", d.attached_id)] {
         let id: i64 = sqlx::query_scalar(
             "INSERT INTO imported_supplier_invoices (company_id, file_hash, storage_path, \
