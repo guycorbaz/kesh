@@ -6,7 +6,7 @@
  *
  * `i18n-repli-divergent-actif.test.ts` ne retient que les clés dont les replis divergent
  * **entre plusieurs sites** ; chacune des clés ci-dessous n'en a qu'un, si bien qu'un repli
- * resté à l'ancien libellé (« Affecter manuellement ») n'y rougirait pas (validation P2 de la
+ * resté à l'ancien nom du geste n'y rougirait pas (validation P2 de la
  * fiche, P2-3-3). Cette garde compare, sur une **liste fermée**, le relevé des replis des sources
  * de l'écran au catalogue fr-CH, clé par clé, et asserte que chaque clé est **relevée** (un
  * site renommé ne la ferait pas disparaître en silence).

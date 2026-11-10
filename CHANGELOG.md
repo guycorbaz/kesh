@@ -8,6 +8,14 @@ Le contenu est rédigé en français à destination des **fiduciaires, PME, ind�
 
 ---
 
+## [0.17.6] — Non publié
+
+### Changé
+
+- **« Écriture manuelle » remplace « Affecter manuellement », sur tout compte imputable sauf celui de la banque** (refs [#967](https://github.com/guycorbaz/kesh/issues/967)) : dans *Réconciliation*, le bouton de chaque ligne dit qu'il passe une écriture, et son dialogue — comme celui d'*Éclater* — propose **tout compte actif et imputable**, de toute classe, et non plus les seules classes 5, 6 et 7 : intérêts reçus, virement vers un autre de vos comptes, apport ou prélèvement privé, achat de marchandise se passent désormais depuis le relevé. Le compte du grand livre relié au compte bancaire n'est jamais proposé, dans l'un ni l'autre dialogue (*Éclater* l'aurait proposé dès la levée du filtre de classes). Le compte débiteurs ou créanciers, désormais proposé, appelle un **avis non bloquant** quand son rôle est posé : une écriture manuelle n'y règle aucune facture, et l'avis rappelle le geste juste. Les messages qui renvoyaient à l'ancien geste le nomment désormais. Les règles d'affectation restent limitées aux comptes de charges et de produits ([#973](https://github.com/guycorbaz/kesh/issues/973)) ; un compte de TVA n'avertit pas ([#981](https://github.com/guycorbaz/kesh/issues/981)).
+
+---
+
 ## [0.17.5] — 2026-11-07
 
 ⚠️ **Avant la mise à jour, prenez une sauvegarde complète** — la base, le `.keshbackup` **et** le dossier des documents. Cette version porte **une migration** (non breaking), la première à passer par la sauvegarde que Kesh écrit lui-même avant de migrer ([#847](https://github.com/guycorbaz/kesh/issues/847)) : au démarrage, il dépose une sauvegarde complète dans `backup/pre-upgrade/`, et **refuse de migrer si elle échoue** (échappatoire : `KESH_SKIP_PRE_UPGRADE_BACKUP`). **La migration donne un numéro interne aux factures fournisseur déjà validées** (`FF-2025-001`, `FF-2026-001`…). **Le retour à la 0.17.4 passe uniquement par la sauvegarde d'avant la mise à jour** : la 0.17.4 ne démarre plus sur une base migrée, et elle refuse une sauvegarde prise en 0.17.5 ; les numéros écrits sur le papier depuis la mise à jour seraient alors à refaire (manuel d'administration, *Passer à la 0.17.5*).
