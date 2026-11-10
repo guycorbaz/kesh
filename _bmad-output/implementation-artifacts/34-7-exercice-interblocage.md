@@ -64,9 +64,18 @@ aboutisse, ou soit refusé pour son vrai motif. Il ne doit pas finir en erreur 5
    - Ne pas fabriquer une victime qui ne prouverait rien.
 3. **AC-3 — rien d'autre ne change.** Les tests existants du renommage passent sans modification : nom vide, trop long,
    doublon, exercice clos renommable, autre société → 404, audit `{before, after}`.
-4. **AC-4 — textes.** Le doc-comment de `update_fiscal_year` dit le rejeu et son motif, sur le modèle de `:398-406`. Le
-   registre (`audit_route_registry.rs`, (iv) et (vi), nombre recompté), `docs/api-external.md:1036` et le CHANGELOG
-   *Corrigé* (`refs #945`) sont mis à jour.
+4. **AC-4 — textes.**
+   - Le doc-comment de `update_fiscal_year` dit le rejeu et son motif, sur le modèle de `:398-406`.
+   - Le registre `audit_route_registry.rs` :
+     - le point (iv) (`:125-133`) ne nomme plus le renommage comme candidat ;
+     - le point (vi) (`:159`) l'ajoute aux routes rejouées, avec son test, comme la réouverture, et son nombre est recompté
+       à la source ;
+     - l'en-tête qui énumère les preuves dynamiques (`:88-95`, « tests 2 à 5, 7, 9 et 10 ») est relu ; s'il énumère les
+       routes `SansEcritureAuJournal` rejouées de la même manière, le test neuf s'y ajoute.
+     - ⚠️ **Ne pas toucher `assert_eq!(examinees, 25)`** (`:1291-1294`) : il compte la colonne `Rejouee`, que cette route ne
+       rejoint pas (elle reste `SansEcritureAuJournal`). Le nombre du point (vi) peut lui aussi devenir 25 : c'est une
+       coïncidence, et la règle « greper la valeur » ne doit pas propager l'un à l'autre (validation P1, 34-7-F1).
+   - `docs/api-external.md:1036` et le CHANGELOG *Corrigé* (`refs #945`) sont mis à jour.
 
 ## Tâches
 
@@ -104,6 +113,13 @@ Les autres candidates du point (iv), sans cycle démontré : `PUT /invoices/{id}
 ## Change Log
 
 - 2026-11-10 : fiche créée (Opus 5.5).
+- 2026-11-10 : **validation P1 (Sonnet) : 0 M, 2 L, tous remédiés** (Opus 5.5). Rapport
+  `kesh-gate-logs/e34-validate-p1-e343.md`.
+  - **F1** : `audit_route_registry.rs:1291-1294` lu (`examinees, 25`, colonne `Rejouee`). La mise en garde est à l'AC-4.
+  - **F2** : l'en-tête `:88-95` lu. Sa relecture est ajoutée à l'AC-4, au conditionnel : il énumère des tests de routes
+    `Rejouee` et deux routes d'exercice, sans la réouverture.
+  - Le rapport confirme M2 (`retry_on_deadlock` générique en `DbError` : sans objet si la forme ne compile pas), sans
+    changement.
 
 ## Dev Agent Record
 

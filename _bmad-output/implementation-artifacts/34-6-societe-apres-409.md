@@ -33,9 +33,15 @@ l'adresse qu'un collègue vient de corriger, ni ma propre correction déjà enre
   périmée (`crates/kesh-api/src/routes/companies.rs:112-170`, `:250-312`, `:344-380`). Chacune ne touche que ses champs
   (AC-7 de la 33-5, `tests/companies_e2e.rs:280`). Un no-op ne change pas la version (KF-004, `:164-165`, `:299-300`,
   `:373-374`).
-- **Pourquoi la version peut changer sans que le bloc ait changé.** Une autre route de la société l'incrémente : un autre
-  bloc, et probablement le verrou de période (`lock_company_books`, `:490`). **À établir au développement**, en lisant
-  `companies::lock_books`. Le cas « aucun champ du bloc n'a changé » existe dans tous les cas, par un autre bloc.
+- **Pourquoi la version peut changer sans que le bloc ait changé.** Une autre route de la société l'incrémente. Ce qui
+  incrémente, relu dans `crates/kesh-db/src/repositories/companies.rs` :
+  - les trois blocs (`update_in_tx`, `:909`) ;
+  - la levée du drapeau provisoire (`clear_stub`, `:800`) ;
+  - la remise à zéro (`:223`).
+
+  **Le verrou de période ne l'incrémente pas** (`lock_books`, `:1043`, et `:1171` : `UPDATE companies SET
+  books_locked_through = ? WHERE id = ?`). Le cas « aucun champ du bloc n'a changé » vient donc d'un autre bloc.
+  *(Corrigé à la validation P1, 34-6-F2 : la fiche disait « probablement le verrou de période ».)*
 - **Le cas de sa propre réponse perdue.** Une réponse qui n'arrive pas (erreur hors `ApiError` → `common-error`, `:93-97`)
   peut laisser la valeur écrite. Le second clic rend alors 409, et la valeur enregistrée égale la saisie. Aujourd'hui,
   l'écran le présente comme un conflit.
@@ -54,15 +60,24 @@ l'adresse qu'un collègue vient de corriger, ni ma propre correction déjà enre
   1. **Aucun n'a changé** depuis la copie : le message actuel. L'essai suivant est sans danger.
   2. **Tous égalent la saisie** : l'édition se ferme, `data` porte la société relue, et une notification dit « déjà
      enregistré ».
-  3. **Sinon** : sous chaque champ modifié, « Enregistré entre-temps : *valeur* », la valeur vide se disant « (vide) ». Un
+  3. **Sinon** : sous chaque champ en conflit, « Enregistré entre-temps : *valeur* », la valeur vide se disant « (vide) ». Un
      avis dit qu'enregistrer de nouveau remplacera ces valeurs. La saisie reste. La copie prend les valeurs relues, si bien
      qu'un second conflit se compare à elles.
+- **Les définitions, champ par champ** (validation P1, 34-6-F1) :
+  - `changed = { f : stored[f] ≠ base[f] ∧ stored[f] ≠ input[f] }`. Un champ modifié ailleurs **à la même valeur que la
+    saisie** n'est pas en conflit : enregistrer ne le remplacera pas, et l'avis ne le nomme pas ;
+  - `already-saved` si et seulement si `stored[f] = input[f]` pour tout champ du bloc ;
+  - `unchanged` si `changed = ∅` et que le bloc n'est pas `already-saved` ;
+  - `changed` sinon.
 - **Une fonction pure** `companyEditConflict(base, stored, input, fields)` dans
   `frontend/src/lib/features/settings/company-conflict.ts`, qui rend `{ kind: 'unchanged' | 'already-saved' | 'changed',
   changed: string[] }`, et **un composant** `CompanyConflictNotice.svelte`. Les trois blocs les emploient.
 - **Comparaison** sur les valeurs telles qu'envoyées : `trim()`, et chaîne vide ⇔ `null`, comme `saveEmail` et
-  `saveContactDetails` (`:63-66`, `:126-130`). Pour l'adresse, comparaison sur les cinq composants. Le pays se compare en
-  majuscules, comme le serveur le range (`to_ascii_uppercase`, 33-5) : **à vérifier** dans `address_input.rs`.
+  `saveContactDetails` (`:63-66`, `:126-130`). Pour l'adresse, comparaison sur les cinq composants. Le pays se compare
+  **normalisé comme le serveur le range** (`normalized_country`, `crates/kesh-api/src/address_input.rs:37-43`) : `trim`, ASCII
+  en majuscules, et vide ou absent valant `CH`. Un `stored.country = 'CH'` et une saisie vide sont donc égaux.
+  `addressStructured` peut être `null` après relecture, si l'adresse a été retirée ailleurs (`?.` déjà employé à `:174`) : la
+  copie et la comparaison le tolèrent, chaque composant valant alors vide.
 - **Rien ne change côté serveur.**
 
 ## Acceptance Criteria
@@ -80,7 +95,13 @@ l'adresse qu'un collègue vient de corriger, ni ma propre correction déjà enre
    avoir changé) et l'adresse (cinq composants).
 5. **AC-5 — second conflit.** Après l'avis de l'AC-1, une troisième écriture concurrente : le second 409 montre la nouvelle
    valeur, comparée à la copie relue au premier conflit, et non à celle d'origine.
+5 bis. **AC-5 bis — champ égal à la saisie** (34-6-F1). Bloc coordonnées : l'autre écrit le site `X`. L'Administrateur
+   avait saisi le téléphone `T`, différent de la copie, et le même site `X`. Seul le téléphone est en conflit, s'il a changé
+   ailleurs. Sinon le cas est `unchanged`. L'avis ne nomme jamais le site.
 6. **AC-6 — relecture impossible.** Le message `-conflict-reload-failed` reste, et la saisie aussi. Aucun avis de valeur.
+6 bis. **AC-6 bis — cycle de vie de l'avis** (34-6-F4). L'avis de conflit et les valeurs affichées sont remis à zéro par
+   `start*Edit`, par l'annulation de l'édition et par un enregistrement réussi. Un second conflit remplace l'avis, sans
+   l'empiler.
 7. **AC-7 — textes.** Les clés neuves (`settings-company-conflict-changed` avec la variable `$value`,
    `settings-company-conflict-will-replace`, `settings-company-conflict-already-saved`, à nommer au développement) aux
    **quatre** locales, avec un repli Svelte identique. `lint-i18n-ownership` et les gardes de replis
@@ -96,7 +117,8 @@ l'adresse qu'un collègue vient de corriger, ni ma propre correction déjà enre
   - Vitest de `company-conflict.ts` (rouge à l'import) ;
   - Vitest de `settings-page.test.ts` : le test `:289-310` récrit selon l'AC-1, et un test par bloc ;
   - E2E de l'AC-1.
-- [ ] **T2** : `company-conflict.ts` et ses tests (les trois cas, vide contre `null`, espaces, pays en minuscules).
+- [ ] **T2** : `company-conflict.ts` et ses tests. On couvre les trois cas, puis un champ égal à la saisie (AC-5 bis), vide
+  contre `null`, les espaces, un pays en minuscules, un pays vide contre `CH`, et `addressStructured` à `null`.
 - [ ] **T3** : `CompanyConflictNotice.svelte`, les trois blocs, la copie prise à `start*Edit` et mise à jour au conflit.
 - [ ] **T4** : i18n aux quatre locales, et les gardes de replis.
 - [ ] **T5** : E2E. `company-address.spec.ts:128-157` est récrit, et un cas « coordonnées, un seul champ changé » s'ajoute
@@ -121,9 +143,12 @@ Rust n'est touché, hormis les `.ftl` : `cargo test -p kesh-i18n` et `textes_coh
 ## Ce qui ne se traite pas ici
 
 - **Le verrou de période** (`submitLock`, `submitUnlock`, `:291` et `:306`) : il ne porte pas de saisie à écraser. Hors #953.
-- **Les autres écrans à version** qui rechargent puis renvoient la saisie (réglages de facturation, rappels) : même famille,
-  non relevée. **À établir** au développement par un `grep` de `OPTIMISTIC_LOCK_CONFLICT` dans `frontend/src/routes`. Ce qui
-  écrase de même sans montrer s'ouvre en issue, **une par écran** : la fiche ne le traite pas.
+- **Les autres écrans à version** : même famille, non jugée ici. Inventaire : `git grep -n OPTIMISTIC_LOCK_CONFLICT --
+  'frontend/src/routes' ':!*.test.ts'`, relevé à la validation P1. Il donne `settings/invoicing`, `settings/dunning`,
+  `settings/api-keys`, `contacts`, `products`, `accounts`, `users` et `bank-accounts` (qui relit, 28-4b). `invoices/[id]` et
+  `supplier-invoices/[id]` (et `/edit`) sont des fiches de pièce, hors de cette famille de formulaires. Le développeur lit
+  chacun de ces écrans. Ce qui relit puis renvoie la saisie sans la montrer s'ouvre en issue, **une par écran** : la fiche
+  ne le traite pas.
 
 ## Recoupements
 
@@ -133,6 +158,14 @@ Rust n'est touché, hormis les `.ftl` : `cargo test -p kesh-i18n` et `textes_coh
 ## Change Log
 
 - 2026-11-10 : fiche créée (Opus 5.5).
+- 2026-11-10 : **validation P1 (Sonnet) : 1 M, 4 L, tous remédiés** (Opus 5.5). Rapport
+  `kesh-gate-logs/e34-validate-p1-e343.md`. Chaque prémisse a été relue au code :
+  - **F1 (M)** : définitions de `changed`, `already-saved` et `unchanged` champ par champ, et AC-5 bis.
+  - **F2 (L)** : le verrou de période n'incrémente pas la version (`companies.rs:1043`, `:1171` lus). Prémisse et C-e343-6
+    rectifiées.
+  - **F3 (L)** : le pays normalisé comme le serveur (`address_input.rs:37-43` lu), et `addressStructured` à `null`.
+  - **F4 (L)** : cycle de vie de l'avis, AC-6 bis.
+  - **F5 (L)** : l'inventaire des écrans à version est donné, par sa commande.
 
 ## Dev Agent Record
 

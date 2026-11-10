@@ -59,8 +59,10 @@ une réponse perdue au lieu de se taire.
 - **La garde de structure de la 33-6** (`crates/kesh-api/tests/invoice_settlement_response_e2e.rs:395-516`) : `Around`,
   `around`, `expr_calls`. Elle est réutilisable telle quelle, à condition de la sortir du fichier (C-e343-11).
   `tests/common/` existe.
-- **Un couplage à prévoir.** `services_motif.rs:2480-2483` compte les fonctions de `routes/supplier_invoices.rs` (11 `pub async
-  fn`, 13 `async fn`). Retirer `load_with_settlement_cancellation` change ces nombres. Pour `imported_supplier_invoices.rs`
+- **Un couplage à prévoir.** `services_motif.rs:2480-2483` compte les fonctions de `routes/supplier_invoices.rs` : 11 `pub async
+  fn` en tête de ligne, et 13 `async fn` toutes visibilités et indentations comprises. `load_with_settlement_cancellation` est
+  une méthode indentée (`:268`). Son retrait fait **probablement** passer 13 à 12 sans toucher 11 : recompter à l'exécution,
+  sans supposer (validation P1, 34-8-F6). Pour `imported_supplier_invoices.rs`
   (`:2391-2394`, 9 et 12), la garde rougit si une signature change de visibilité. Recompter à la source, et mettre à jour
   avec la raison.
 - **L'écran** (commentaire de Guy sur #938, 2026-11-07). Fiche `frontend/src/routes/(app)/supplier-invoices/[id]/+page.svelte` :
@@ -85,11 +87,23 @@ une réponse perdue au lieu de se taire.
 1. **AC-1 — kesh-db.**
    - `get_settlement_view_in_tx(tx, company_id, id) -> Result<Option<SupplierInvoiceSettlementView>, DbError>`, réemployée par
      `get_settlement_view` (DRY).
-   - `commit_with_view(tx, company_id, id, result)` lit la vue après l'écriture et avant le commit. Une vue absente (`None`)
-     après une écriture réussie est une `DbError::Invariant` qui annule la transaction.
-   - `validate`, `unvalidate`, `pay`, `cancel` et `cancel_settlement` la terminent, et rendent la vue
-     (`SupplierSettlementCancellation.invoice` devient la vue).
-   - Les formes `_in_tx` ne changent pas.
+   - **Signature** (validation P1, 34-8-F4) : `async fn commit_with_view<T>(tx: Transaction<'_, MySql>, company_id: i64,
+     id: i64, result: Result<T, DbError>) -> Result<(SupplierInvoiceSettlementView, T), DbError>`. C'est une fonction
+     ordinaire, non une macro, pour que la garde `syn` la lise.
+     - Sur `Err`, elle annule la transaction et rend l'erreur.
+     - Sur `Ok`, elle lit la vue, puis valide la transaction.
+     - Une vue absente (`None`) après une écriture réussie est une `DbError::Invariant` qui annule la transaction.
+   - `validate`, `unvalidate`, `pay` et `cancel` la terminent, et rendent la vue.
+   - **`cancel_settlement` rend un type propre à l'enveloppe** (validation P1, 34-8-F1) :
+     `SupplierSettlementCancelled { invoice: SupplierInvoiceSettlementView, reversal_journal_entry_id: i64 }`. Elle est
+     construite à partir de la `SupplierSettlementCancellation` que rend `cancel_settlement_in_tx`.
+     - **`SupplierSettlementCancellation` ne change pas** : `cancel_settlement_in_tx` la construit (`supplier_invoices.rs:2941-2946`),
+       et l'annulation d'un rapprochement fournisseur l'appelle (`reconciliation_cancel.rs:608`). Lui faire porter la vue
+       ajouterait des lectures à ce chemin.
+     - Le champ garde le nom `invoice` : `done.invoice.invoice.status` se lit de même sur la vue.
+   - Les formes `_in_tx` ne changent pas, et ne lisent rien de plus.
+   - Un test qui passe le retour de `pay`, `cancel`, `validate` ou `unvalidate` à une fonction typée `SupplierInvoiceWithLines`
+     ne compile plus. Leur nombre n'est pas relevé : le compilateur les nomme, et chacun s'adapte (`.invoice`, `.lines`).
 2. **AC-2 — routes.**
    - Les six handlers de `supplier_invoices.rs` et les trois de `imported_supplier_invoices.rs` construisent leur réponse par
      `SupplierInvoiceResponse::from_view` sur la vue rendue par l'écriture.
@@ -113,9 +127,15 @@ une réponse perdue au lieu de se taire.
    la vue vient de la tentative qui a réussi.
 8. **AC-8 — écran** (C-e343-12).
    - Sur les cinq gestes de la fiche (payer, annuler le règlement, annuler, valider, repasser en brouillon),
-     `isSettlementOutcomeUnknown(err)` (réponse perdue, 5xx, erreur hors `ApiError`) mène à une relecture
-     (`reloadAfterRefusal`) et à un avis : « L'issue n'est pas connue : la facture a été relue, vérifiez-la avant de
-     réessayer. »
+     `isSettlementOutcomeUnknown(err)` (réponse perdue, 5xx, erreur hors `ApiError`) mène à une relecture.
+   - **Deux avis, selon la relecture** (validation P1, 34-8-F2). `reloadAfterRefusal` (`+page.svelte:477-483`) avale
+     aujourd'hui l'échec : il rend désormais un booléen.
+     - La relecture a réussi : « L'issue n'est pas connue : la facture a été relue, vérifiez-la avant de réessayer. »
+     - La relecture a échoué : « L'issue n'est pas connue, et la facture n'a pas pu être relue : rechargez la page avant de
+       réessayer. »
+
+     L'écran n'affirme jamais une relecture qui n'a pas eu lieu. C'est le défaut que la revue P1 de la 33-6 a corrigé
+     (`invoice-settle-unknown-reread-failed`).
    - Un 4xx garde son traitement actuel.
    - `pay()` n'est plus muet hors `ApiError`.
    - Pas d'état bloquant : un second envoi est refusé par le statut ou la version.
@@ -127,7 +147,15 @@ une réponse perdue au lieu de se taire.
      erreur entre la validation et la relecture de la facture) ». La parenthèse perd sa seconde branche, et le conseil de
      relire reste pour la coupure réseau. `:890` (détacher) ne parle que de la réponse perdue : il est gardé tel quel, après
      vérification.
-   - Le manuel d'administration ou d'utilisation : là où il décrit ce cas, aligné, et le PDF contrôlé aplati.
+   - **Le manuel utilisateur gagne une phrase** dans *Régler une facture fournisseur* (`sec:regler-facture-fournisseur`,
+     `docs/manual/fr/user-manual.tex:1923`). Elle dit que si la réponse se perd, la fiche relit la facture et le dit, et qu'il
+     faut vérifier avant de réessayer. Seul le règlement client (`:1367`) décrit ce cas aujourd'hui. Le PDF est régénéré et
+     contrôlé aplati (validation P1, 34-8-F3).
+   - **Le périmètre « lecture seule » des services** (34-8-F5). `crates/kesh-api/src/services/mod.rs:162-186` compte la
+     fermeture transitive des lectures des services, « cinquante-neuf éléments », en nommant `get_settlement_view`.
+     `get_settlement_view_in_tx` y entre : le nombre est recompté à la source et la prose mise à jour. La preuve
+     d'exécution sur connexion `READ ONLY` (`services_rollout.rs`) doit rester verte, ce que tient la règle « aucune lecture
+     verrouillante ».
    - CHANGELOG *Corrigé* (`refs #938`).
 
 ## Ce qui ne se reproduit pas, et ce qui le remplace
@@ -146,8 +174,8 @@ et de la compilation des tests `kesh-db` qui lisent un champ de la vue sur le re
     le retour de `pay`, rouges à la compilation ;
   - le Vitest de l'AC-8 pour `pay()` hors `ApiError`, rouge.
 - [ ] **T2 — `kesh-db`** : `get_settlement_view_in_tx`, `commit_with_view` et les cinq enveloppes.
-  - `validate` et `unvalidate` quittent `in_own_tx!`. La macro reste pour `create_draft` et `update_draft` si elle a encore
-    des usages ; sinon elle est retirée.
+  - `validate` et `unvalidate` quittent `in_own_tx!`. La macro reste : elle a d'autres usages (`create_draft`,
+    `create_validated`, `update_draft`, `delete_draft` ; six appels à `a75835db`, dont ces deux).
   - ⚠️ `kesh-db` est touché : **gate complet même en cours de boucle**.
 - [ ] **T3 — routes** : les neuf handlers et les quatre `_once`. `load_with_settlement_cancellation` est retirée. Les comptes
   de `services_motif.rs` sont recomptés.
@@ -155,10 +183,13 @@ et de la compilation des tests `kesh-db` qui lisent un champ de la vue sur le re
 - [ ] **T5 — égalités AC-4** dans `crates/kesh-api/tests/supplier_invoice_response_e2e.rs` (neuf), un test par geste. Les
   montages de `supplier_invoice_draft_e2e.rs` et de `supplier_settlement_cancel_e2e.rs` sont à réemployer, sans copie
   (règle DRY : aide commune si deux fichiers en ont besoin).
-- [ ] **T6 — écran** : AC-8, avec une clé i18n `supplier-invoices-unknown-outcome` aux quatre locales et un repli identique.
-  Vitest : un cas par geste (réponse perdue → relecture et avis ; 400 → message, sans relecture).
-- [ ] **T7 — E2E** : un paiement dont la réponse est coupée (`page.route(…).abort()`, patron de
-  `invoices-settle-unknown-outcome.spec.ts`). La fiche relue montre `payée` et l'avis. Un second clic sur *Payer* n'est pas
+- [ ] **T6 — écran** : AC-8, avec deux clés i18n, `supplier-invoices-unknown-outcome` et
+  `supplier-invoices-unknown-outcome-reread-failed`, aux quatre locales, chacune avec un repli identique. Vitest :
+  - un cas par geste : réponse perdue → relecture et avis ; 400 → message, sans relecture ;
+  - un cas où la relecture échoue → second avis.
+- [ ] **T7 — E2E** : un paiement dont la réponse est coupée. Le patron est `cutResponseAfterWrite`
+  (`invoices-settle-unknown-outcome.spec.ts:72-80`) : `route.fetch()`, **puis** `route.abort("connectionreset")`. Un
+  `abort()` seul n'enverrait pas la requête, et rien ne serait écrit (validation P1, 34-8-F7). La fiche relue montre `payée` et l'avis. Un second clic sur *Payer* n'est pas
   offert, puisque le statut a changé.
 - [ ] **T8 — textes** (AC-9) et **captures** de l'avis, en thème clair, dans `kesh-gate-logs/e343/captures/`.
 
@@ -195,10 +226,27 @@ aucune migration, aucun schéma.
 - `rejeu_interblocage_e2e.rs` : 34-5 et 34-7 y touchent d'autres tests.
 - `routes/supplier_invoices.rs` et `imported_supplier_invoices.rs` : **34-9** (#969, l'import du dossier) touche
   `post_inbox_import`, dans le même fichier mais une autre fonction. Union.
+- **34-11a** touche `kesh-db/src/repositories/supplier_invoices.rs` dans le bloc de `pay` (`:2010`, `:2268`), et
+  `invoice_settlements_write.rs:170`. 34-8 récrit les enveloppes de ce même fichier, dont `pay`. Fusion par union, avec
+  relecture de `pay`.
 
 ## Change Log
 
 - 2026-11-10 : fiche créée (Opus 5.5).
+- 2026-11-10 : **validation P1 (Sonnet) : 3 M, 5 L, tous remédiés** (Opus 5.5). Rapport
+  `kesh-gate-logs/e34-validate-p1-e343.md`. Chaque prémisse a été relue au code :
+  - **F1 (M)** : `supplier_invoices.rs:2941-2946` et `reconciliation_cancel.rs:608` lus. Un type propre à l'enveloppe,
+    `SupplierSettlementCancelled` ; `SupplierSettlementCancellation` inchangée. C-e343-9 corrigé de même.
+  - **F2 (M)** : `reloadAfterRefusal` (`:477-483`) avale l'échec. Deux avis, et un booléen rendu ; C-e343-12 corrigé.
+  - **F3 (M)** : seul `user-manual.tex:1367` décrit le cas, côté client. La phrase est obligatoire dans
+    `sec:regler-facture-fournisseur` (`:1923`).
+  - **F4 (L)** : signature de `commit_with_view` écrite.
+  - **F5 (L)** : `services/mod.rs` lu (« cinquante-neuf éléments », `get_settlement_view` nommée), recompte à l'AC-9.
+  - **F6 (L)** : les comptes de `services_motif.rs` sont précisés, au conditionnel.
+  - **F7 (L)** : `invoices-settle-unknown-outcome.spec.ts:72-80` lu, fetch puis abort.
+  - **F8 (L)** : recoupement avec 34-11a.
+  - **Hors du rapport** : la fiche disait que `in_own_tx!` pouvait n'avoir plus d'usage. Six appels sont relus, la macro
+    reste.
 
 ## Dev Agent Record
 

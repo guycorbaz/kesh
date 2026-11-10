@@ -84,11 +84,13 @@
   `company-address.spec.ts:128-157` affirment ce comportement.
 - **Retenu.** À l'ouverture de l'édition, l'écran garde une copie des valeurs enregistrées du bloc. Sur un 409, il relit et
   compare les valeurs du bloc à cette copie :
-  - **aucun champ du bloc n'a changé** (version incrémentée par un autre bloc, ou par le verrou de période) : le message
+  - **aucun champ du bloc n'a changé** (version incrémentée par un autre bloc ; le verrou de période ne l'incrémente pas,
+    `kesh-db/src/repositories/companies.rs:1043` — rectifié à la validation P1) : le message
     actuel, et l'essai suivant est sans danger ;
   - **la valeur enregistrée égale la saisie** (sa propre réponse perdue, ou la même correction faite ailleurs) : l'édition
     se ferme sur « déjà enregistré » ;
-  - **sinon** : chaque champ modifié montre sa valeur enregistrée entre-temps, la saisie reste, et un avis dit qu'enregistrer
+  - **sinon** : chaque champ **en conflit** montre sa valeur enregistrée entre-temps. Un champ est en conflit s'il a changé
+    depuis la copie **et** diffère de la saisie (validation P1, 34-6-F1), la saisie reste, et un avis dit qu'enregistrer
     de nouveau la remplacera. La copie prend les valeurs relues, si bien qu'un nouveau conflit se compare à elles.
 - **Écartées.**
   - Remplacer la saisie par les valeurs relues : le travail serait perdu sans le dire.
@@ -126,17 +128,22 @@
 - **Retenu.**
   - `get_settlement_view_in_tx(tx, company_id, id)` est extraite de `get_settlement_view` (`supplier_invoices.rs:3002-3038`),
     qui l'enveloppe (règle DRY).
-  - Une aide `commit_with_view(tx, company_id, id, result)` lit la vue, puis valide la transaction, ou l'annule si l'écriture
-    ou la lecture échoue. C'est une fonction ordinaire, non une macro, pour que la garde `syn` puisse la lire.
-  - Les cinq enveloppes `pool` qu'appellent les routes (`validate`, `unvalidate`, `pay`, `cancel`, `cancel_settlement`) rendent
-    `SupplierInvoiceSettlementView`. `SupplierSettlementCancellation.invoice` devient la vue.
+  - Une aide `commit_with_view<T>(tx, company_id, id, result: Result<T, DbError>) -> Result<(View, T), DbError>` lit la vue,
+    puis valide la transaction, ou l'annule si l'écriture ou la lecture échoue. C'est une fonction ordinaire, non une macro,
+    pour que la garde `syn` puisse la lire.
+  - Les quatre enveloppes `validate`, `unvalidate`, `pay` et `cancel` rendent `SupplierInvoiceSettlementView`.
+  - `cancel_settlement` rend un type propre, `SupplierSettlementCancelled { invoice: View, reversal_journal_entry_id }`.
+    `SupplierSettlementCancellation`, que construit `cancel_settlement_in_tx` et qu'emploie l'annulation d'un rapprochement
+    (`reconciliation_cancel.rs:608`), ne change pas. *(Rectifié à la validation P1, 34-8-F1 : ce point disait que
+    `SupplierSettlementCancellation.invoice` devenait la vue, ce qui aurait ajouté des lectures à la forme `_in_tx`.)*
   - Les quatre routes qui tiennent leur propre transaction (`update_supplier_invoice_once`, `complete_import_once`,
     `attach_source_document_once`, `detach_source_document_once`) lisent la vue avant leur `commit` et la rendent.
   - `SupplierInvoiceResponse::load_with_settlement_cancellation` (`routes/supplier_invoices.rs:268-277`) n'a plus d'appelant :
     elle est **retirée**, et ses mentions dans les doc-comments sont reprises.
 - **Pourquoi la vue en retour des enveloppes.** `SupplierInvoiceSettlementView` porte `invoice` et `lines` sous les mêmes noms
   que `SupplierInvoiceWithLines` (`:64`, `:2973`). Les appelants en test qui lisent `.invoice.status` ou `.lines` compilent
-  sans changement ; le compilateur nomme les autres. Les formes `_in_tx` (`pay_in_tx`, `cancel_in_tx`,
+  sans changement. Ceux qui passent le retour à une fonction typée `SupplierInvoiceWithLines` ne compilent plus : leur
+  nombre n'est pas relevé, le compilateur les nomme. Les formes `_in_tx` (`pay_in_tx`, `cancel_in_tx`,
   `cancel_settlement_in_tx`), réemployées par la confirmation d'un lot et le rapprochement, ne lisent rien de plus.
 - **Écartées.**
   - Des fonctions jumelles `*_with_view` : elles doublent cinq enveloppes.
@@ -171,8 +178,10 @@
   hors `ApiError`.
 - **Retenu.** Sur les cinq gestes de la fiche (payer, annuler le règlement, annuler la facture, valider, repasser en
   brouillon), `isSettlementOutcomeUnknown(err)` (5xx, réponse perdue, erreur hors `ApiError`) mène à une relecture
-  (`reloadAfterRefusal`, `:477-483`) et à un avis : « L'issue n'est pas connue : la facture a été relue, vérifiez-la avant
-  de réessayer. » Un 4xx garde son traitement. Le prédicat existe déjà, son doc-comment s'élargit au fournisseur.
+  (`reloadAfterRefusal`, `:477-483`, qui rend désormais un booléen) et à un avis. Si la relecture a réussi : « L'issue n'est
+  pas connue : la facture a été relue, vérifiez-la avant de réessayer. » Si elle a échoué : « … la facture n'a pas pu être
+  relue : rechargez la page avant de réessayer ». *(Le second avis est ajouté à la validation P1, 34-8-F2.)* Un 4xx garde
+  son traitement. Le prédicat existe déjà, son doc-comment s'élargit au fournisseur.
 - **Pas d'état bloquant**, contrairement à la 33-6 : chacun de ces gestes est gardé par le statut ou par la version, si
   bien qu'un second envoi est refusé, sans double écriture. Pour le paiement, la garde est
   `crates/kesh-db/src/repositories/supplier_invoices.rs:1980` (`inv.status != "open"`). #951 la citait à `:1747`, numéro
