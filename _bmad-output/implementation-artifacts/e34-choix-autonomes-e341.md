@@ -174,3 +174,13 @@ sécurité) : numéro suivi de sa date ou de son CVC, séparateurs autres (point
 **C-e341-40, corrigé** — la route `PUT /accounts/{id}` rejouée reste `SansEcritureAuJournal` au registre des routes ; le point (vi) passe à vingt-cinq.
 
 **C-e341-35, précisé** — `concerned: Option<&BankTransaction>` **remplace** `unlinking: Option<i64>` : un seul paramètre.
+
+## Précisions de la validation P4 ciblée (2026-11-10)
+
+**C-e341-15 (34-11a2)** — limite assumée (4) : un numéro précédé de chiffres sous un séparateur unique forme une suite non admise et passe.
+
+**C-e341-39 (34-11a2), précisé** — le porteur de l'IBAN `Option` jusqu'à `update_for_company` est `BankAccountPutFields.iban` (et
+`ValidatedBankInput.iban: Option<String>`) ; `NewBankAccount` inchangé ; le `PUT` n'a pas de court-circuit no-op.
+
+**C-e341-42 (34-11a2) — un compte bancaire refuse `cardLast4`** : `400 BANK_ACCOUNT_FIELD_NOT_ALLOWED` (`details.field`), au lieu du `500` du `CHECK`.
+Symétrique de `CREDIT_CARD_FIELD_NOT_ALLOWED`. Autre : ignorer le champ (une saisie perdue en silence). Réversible : oui.

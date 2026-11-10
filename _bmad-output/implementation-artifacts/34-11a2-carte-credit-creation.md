@@ -5,7 +5,7 @@ Status: ready-for-dev
 *Fiche rédigée le 2026-11-10 en autonomie (Opus 5.5), à la remédiation de la validation P1 du groupe e341 (découpe de l'ancienne 34-11a,
 arbitrage de l'orchestrateur), worktree `/home/gcorbaz/devel/kesh-e34`, branche `chore/epic-34-kickoff`, numéros de ligne de `a75835db`.
 Release **0.17.6**, Epic 34. **Aucune migration** : le schéma (IBAN facultatif, `account_kind`, `card_last4`, `CHECK`s) est posé par la
-**34-11a1** (C-e341-29). Registre : `e34-choix-autonomes-e341.md`, C-e341-15, 16, 19, 21, 30 à 33, 39 à 41. Suit **34-11a1**. Commits en `refs #972` ;
+**34-11a1** (C-e341-29). Registre : `e34-choix-autonomes-e341.md`, C-e341-15, 16, 19, 21, 30 à 33, 39 à 42. Suit **34-11a1**. Commits en `refs #972` ;
 à la PR : `refs #972` (la 34-11b ferme l'issue).*
 
 ## Story
@@ -68,7 +68,9 @@ lié serait un 2xxx (14-3a) ; rien ici n'apparie (« un appariement automatique 
   **Limites assumées** (validation P3, 4.3 ; la garde protège d'une **saisie accidentelle**, elle n'est pas un filtre de sécurité) : (1) un numéro suivi
   de sa date ou de son CVC séparés par une espace (« 4111 1111 1111 1111 12/28 ») forme la suite 4-4-4-4-2, groupement non admis : il passe ; (2) le
   point, la barre ou tout autre séparateur que ceux de (c) (« 4111.1111.1111.1111 ») découpent en groupes de quatre : il passe ; (3) Diners en
-  16 chiffres (`3056 9300 0902 0004`) : le préfixe `300`-`305` n'est admis qu'à 14 : il passe. Écrites au registre et au manuel.
+  16 chiffres (`3056 9300 0902 0004`) : le préfixe `300`-`305` n'est admis qu'à 14 : il passe ; (4) un numéro **précédé** de chiffres sous un séparateur
+  unique (« Facture 12 4111 1111 1111 1111 », « 2026-11-10 4111 1111 1111 1111 ») forme une seule suite de groupement non admis : il passe (validation
+  P4, F8). Écrites au registre et au manuel.
 - **C-e341-16 — une carte est toujours liée à un passif** : création et `PUT` exigent `journalAccountId` `Liability` ; `PATCH` qui délie une carte
   ou la relie à un non-passif : refusé.
 - **C-e341-30 — `PUT` d'une carte** (validation P1, 3.2) : `accountKind` facultatif au `PUT` ; **absent → le type courant** (un client 0.17.5 qui
@@ -107,17 +109,22 @@ lié serait un 2xxx (14-3a) ; rien ici n'apparie (« un appariement automatique 
 2. **AC-2 — refus à la création**, chacun sans écriture : IBAN ou QR-IBAN fourni ; `isPrimary: true` ; sans compte lié ; compte lié `Asset`
    (`400 CREDIT_CARD_LEDGER_MUST_BE_LIABILITY`) ; `cardLast4` autre que quatre chiffres (`"12345"`, `"12a4"`, `"123"`) ; un numéro de carte de la forme
    C-e341-15 valide au sens de Luhn dans le nom ou la description (`400 CARD_NUMBER_NOT_ALLOWED`). IBAN, QR-IBAN ou `isPrimary` fournis pour une
-   carte : `400 CREDIT_CARD_FIELD_NOT_ALLOWED` (`details.field`).
+   carte : `400 CREDIT_CARD_FIELD_NOT_ALLOWED` (`details.field`). **Compte bancaire** (validation P4, F3 et F4) : `POST` d'un compte `bank` (type absent,
+   puis `"bank"` explicite) avec `iban` absent, puis `null` → `400`, rien d'écrit (refus de `validate_bank_input`, comme en 0.17.5, et non `500` du
+   `CHECK` « `bank` ⇒ IBAN ») ; `cardLast4` fourni pour un compte `bank` → `400 BANK_ACCOUNT_FIELD_NOT_ALLOWED` (`details.field = "cardLast4"`, C-e341-42),
+   rien d'écrit, et non `500` du `CHECK` de `card_last4`.
 3. **AC-3 — Luhn, positifs et négatifs** (tests de table `kesh-core`) : **refusés** — numéros de test publics des réseaux : Visa 16 contigu et
    4-4-4-4 espacé, Mastercard 4-4-4-4 tiret, American Express 4-6-5 (`3782 822463 10005`) et contigu, Diners 4-6-4, et chacun entouré de texte
-   (« Visa 4111 1111 1111 1111 perso »). **Acceptés**, chacun **construit pour passer Luhn** sur ses chiffres (la table dit, pour chaque exemple,
-   qu'il passe Luhn, par une assertion — sans quoi le test négatif ne prouve rien) : un IBAN suisse contigu (`CH9500762008063608377`, synthétique,
-   relevé par la validation P2, Luhn vrai sur ses 19 chiffres, vérifié) et sa forme imprimée ; une référence QR de 27 chiffres, contiguë et imprimée
-   par cinq ; `0041791234564` (13 chiffres, Luhn vrai, vérifié) ; « 4111111111111111perso » (lettre collée) ; `+41 79 …` ; `2026-11-10` ; `20261110-0042` ; un montant `1'234.50` ; une suite de 16 chiffres valide au sens de Luhn mais sans préfixe
-   de réseau (`0…`). La garde atteint aussi l'assistant (`POST /onboarding/bank-account`, nom ou description).
+   (« Visa 4111 1111 1111 1111 perso »). **Acceptés**, en deux familles (validation P4, F5). (i) **Construits pour passer Luhn** — la table l'asserte pour
+   chacun, sans quoi le test négatif ne prouve rien : un IBAN suisse contigu (`CH9500762008063608377`, synthétique, Luhn vrai sur ses 19 chiffres,
+   vérifié) et sa forme imprimée ; la référence QR `210000000003139471430009016` (27 chiffres, synthétique, Luhn vrai, vérifié), contiguë et imprimée
+   par cinq ; `0041791234564` (13 chiffres, Luhn vrai, vérifié) ; « 4111111111111111perso » (lettre collée) ; une suite de 16 chiffres valide au sens
+   de Luhn mais sans préfixe de réseau (`0…`, construite par le dev). (ii) **Acceptés par la longueur ou le groupement**, sans exigence de Luhn :
+   `+41 79 123 45 67`, `2026-11-10`, `20261110-0042`, un montant `1'234.50`. La garde atteint aussi l'assistant (`POST /onboarding/bank-account`, nom ou description).
 4. **AC-4 — modifier une carte** (C-e341-30) : `PUT` sans `accountKind` modifie nom, description, `cardLast4`, lien (passif) — remplacement complet
    (C-26-2-8) : **`cardLast4` absent vaut effacé**, comme la description ; `PUT` avec
-   `accountKind: "bank"` → `400 BANK_ACCOUNT_KIND_IMMUTABLE` ; avec IBAN, QR-IBAN ou `isPrimary` → `400 CREDIT_CARD_FIELD_NOT_ALLOWED` ; avec un lien `Asset` ou sans lien → `400`.
+   `accountKind: "bank"` → `400 BANK_ACCOUNT_KIND_IMMUTABLE` ; avec IBAN, QR-IBAN ou `isPrimary` → `400 CREDIT_CARD_FIELD_NOT_ALLOWED` ; avec un lien `Asset` ou sans lien → `400`. `PUT` d'un compte `bank` avec `iban` absent ou `null` → `400`, et avec `cardLast4` →
+   `400 BANK_ACCOUNT_FIELD_NOT_ALLOWED`, rien d'écrit (validation P4, F3, F4).
    `PATCH` qui délie une carte ou la relie à un `Asset` → `400`. Un compte bancaire garde exactement ses règles d'avant (tests existants de
    `bank_accounts_e2e.rs` verts sans modification).
 5. **AC-5 — retypage** (C-e341-31) : retyper `Expense` le passif lié à une carte → `409 ACCOUNT_LINKED_TO_BANK_ACCOUNT`, rien d'écrit ; retyper
@@ -132,7 +139,7 @@ lié serait un 2xxx (14-3a) ; rien ici n'apparie (« un appariement automatique 
    complet », compte lié **obligatoire**, liste réduite aux passifs (C-e341-33). Le solde d'ouverture de la 34-2 s'y applique, sens *Dette*
    présélectionné. Sélecteurs (C-e341-32) : la carte est proposée au paiement fournisseur, pas au règlement client.
 8. **AC-8 — codes d'erreur** : `CARD_NUMBER_NOT_ALLOWED`, `CREDIT_CARD_LEDGER_MUST_BE_LIABILITY`, `BANK_ACCOUNT_KIND_IMMUTABLE`,
-   `ACCOUNT_LINKED_TO_BANK_ACCOUNT`, `CREDIT_CARD_FIELD_NOT_ALLOWED`, `SETTLEMENT_ACCOUNT_IS_CREDIT_CARD` : variantes `AppError`, `errors.rs`, messages aux quatre `messages.ftl`, libellés frontend, tableau d'erreurs
+   `ACCOUNT_LINKED_TO_BANK_ACCOUNT`, `CREDIT_CARD_FIELD_NOT_ALLOWED`, `BANK_ACCOUNT_FIELD_NOT_ALLOWED`, `SETTLEMENT_ACCOUNT_IS_CREDIT_CARD` : variantes `AppError`, `errors.rs`, messages aux quatre `messages.ftl`, libellés frontend, tableau d'erreurs
    de `docs/api-external.md`.
 9. **AC-9 — manuel** : utilisateur, *Comptes bancaires* : le type carte, les quatre chiffres, le refus d'un numéro complet, le lien à un passif, ce
    que la carte ne fait pas (QR-facture, `pain.001`, CAMT), où elle est proposée ; la phrase `user-manual.tex:2369` (« l'IBAN reste affiché à la
@@ -152,8 +159,12 @@ lié serait un 2xxx (14-3a) ; rien ici n'apparie (« un appariement automatique 
   retypage (C-e341-31) après lecture des comptes bancaires liés non archivés ; création, `PUT`, `PATCH` relisent le type du compte lié `LOCK IN SHARE
   MODE` dans leur transaction, **avant** le complément de la 34-2 (un refus de type n'écrit rien) ; route du plan rejouée, point (vi) du registre
   (C-e341-40). **`PUT` d'une carte** (validation P3, 4.1) : `update_for_company` (`repositories/bank_accounts.rs:606-…`, `UPDATE … iban = ?` depuis
-  `NewBankAccount.iban: String`, `:658-662`) lie l'IBAN en `Option` depuis l'entrée validée (C-e341-39 étendu au `PUT`) ; `BankAccountPutFields`
-  (`:560-575`) reçoit `card_last4: Option<&str>` (remplacement complet : `None` = effacé) et l'`UPDATE` l'écrit ; `is_no_op_change` le compare. Test :
+  `NewBankAccount.iban: String`, `:658-662`) lie l'IBAN en `Option` (C-e341-39 étendu au `PUT`) ; **porteur** (validation P4, F2) : `ValidatedBankInput.iban`
+  devient `Option<String>` (`routes/bank_accounts.rs:333-340`), et `BankAccountPutFields` (`:560-575`, `Copy, Default`) reçoit `iban: Option<&str>` et
+  `card_last4: Option<&str>` (remplacement complet : `None` = effacé), que l'`UPDATE` écrit à la place de `new.iban` ; `NewBankAccount` est inchangé. Le
+  `PUT` **n'a pas** de court-circuit no-op (son `UPDATE` incrémente toujours `version`) : `is_no_op_change` (`repositories/bank_accounts.rs:252-256`),
+  propre à l'assistant (`:347`), reste inchangé (validation P4, F1). Les chaînes d'attendus des extracteurs (`routes/bank_accounts.rs:204`, `:209` :
+  « `iban` str ») deviennent « `iban?` str » et nomment `accountKind?`, `cardLast4?`. Test :
   `PUT` d'une carte → `iban` `NULL` en base, quatre chiffres écrits, effacés s'ils sont absents. ⚠️ `kesh-db` touché : **gate complet même en cours de boucle**.
 - [ ] **T5 — écran** (AC-7), `linkableLedgerAccounts` à paramètre, sélecteurs (C-e341-32), i18n quatre locales, `lint-i18n-ownership`.
 - [ ] **T6 — codes** (AC-8).
@@ -173,6 +184,8 @@ lié serait un 2xxx (14-3a) ; rien ici n'apparie (« un appariement automatique 
 - **M5** : le refus de retypage retiré → rouge AC-5 ; **M5b** : appliqué aussi aux comptes bancaires archivés → rouge AC-5.
 - **M6** : `card_last4` écrit dans l'audit → rouge AC-6.
 - **M7** : la carte proposée au règlement client → rouge Vitest AC-7 ; **M7b** : refus serveur retiré → rouge AC-5 (règlement client).
+- **M10** : `validate_bank_input` accepte `None` pour un compte `bank` → rouge AC-2 et AC-4 (`400` attendu, `500` du `CHECK` sinon) ; **M10b** : `cardLast4`
+  non refusé pour un compte `bank` → rouge AC-2 et AC-4.
 - **M9** : `BankAccountPutFields` sans `card_last4` (non écrit au `PUT`) → rouge du test du `PUT` d'une carte ; **M9b** : l'IBAN du `PUT` lié depuis
   `NewBankAccount.iban` (chaîne vide) → rouge du même test (`CHECK` carte ⇒ IBAN nul).
 - **M8** : le `FOR UPDATE` de tête du retypage retiré → rouge du test croisé (AC-5), s'il est déterministe ; sinon écrite non tuée.
@@ -215,6 +228,14 @@ story de l'epic. La **34-11b** s'appuie sur celle-ci.
   chiffre), cas de table. **4.3** : limites assumées écrites (date ou CVC à la suite, séparateurs autres, Diners 16) ; les espaces insécables comptent
   comme séparateurs. **4.4** : la route du plan reste `SansEcritureAuJournal`, le point (vi) passe à vingt-cinq (relus `audit_route_registry.rs:155-162`,
   `:421`). **4.5** : `0041791234564`, Luhn vrai (vérifié par calcul), remplace `0041791234567`.
+- 2026-11-10 : **validation P4 ciblée (Sonnet)** — pour cette fiche : 3 M (F1, F3, F4), 3 L (F2, F5, F8). Remédiation (Opus 5.5), tout appliqué.
+  **F1** : `is_no_op_change` ne sert que l'assistant (relu `repositories/bank_accounts.rs:252`, `:347`) ; la clause est retirée de la T4, le `PUT` n'a pas
+  de no-op. *(L'entrée « validation P3 » ci-dessus cite encore `is_no_op_change` pour le `PUT` : relevé daté, faux à sa date, corrigé ici et non réécrit.)*
+  **F3** : refus d'un compte `bank` sans IBAN, `POST` et `PUT`, asserté (AC-2, AC-4), M10 ; chaînes d'attendus des extracteurs (relues
+  `routes/bank_accounts.rs:200-212`). **F4** : `cardLast4` sur un compte `bank` → `400 BANK_ACCOUNT_FIELD_NOT_ALLOWED`, M10b. **F2** : porteur de l'IBAN
+  `Option` nommé (`ValidatedBankInput.iban`, `BankAccountPutFields.iban`, relus `:333-340`). **F5** : deux familles d'exemples acceptés, QRR Luhn-vraie
+  fournie (calculée). **F8** : limite (4), numéro précédé de chiffres. F6 et F7 (34-11b, 34-2, closes) : laissés à leurs développeurs, transmis par
+  l'orchestrateur.
 
 ## Dev Agent Record
 
