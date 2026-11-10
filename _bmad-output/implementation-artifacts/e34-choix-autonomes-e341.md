@@ -134,3 +134,28 @@ après elles (ordre 34-3 → 34-4 → 34-11b), sans modifier les fiches d'un aut
 
 **C-e341-37 (34-11b) — #823 en partie** : la 34-11b résout le virement entre comptes propres, non le lot `pain.001` de plusieurs factures ni le
 paiement groupé ; `refs #823` à la PR, commentaire à demander. Réversible : oui.
+
+## Ajouts et précisions de la validation P2 (2026-11-10)
+
+**C-e341-15 (34-11a2), précisé** — la garde de Luhn est **gardée et restreinte** (validation P2, 4.1 et 4.4 ; arbitrage de l'orchestrateur : elle ne
+refuse jamais un IBAN, une référence QR ni un numéro de téléphone) : suite entière, bornée par ce qui n'est ni chiffre, ni lettre, ni séparateur ;
+groupements des réseaux seuls (contigu, 4-4-4-4, 4-4-4-4-3, 4-6-5 Amex, 4-6-4 Diners) ; 13 à 19 chiffres ; préfixe IIN cohérent avec la longueur ;
+puis Luhn ; tests négatifs construits pour passer Luhn. **Repli** : si une borne ne tient pas simplement, la garde est retirée du nom et de la
+description (la décision de Guy porte sur le champ du numéro), écrit au Change Log. Réversible : oui.
+
+**C-e341-35 (34-11b), récrit** — la décision « autre côté légitime » se prend **en tête**, avant les rangs 1 à 5 ; elle reçoit la transaction concernée,
+liée ou prospective ; `None` garde son sens strict (écrans de facture, dévalidation fournisseur). Validation P2, 5.1 et 5.2. Réversible : oui.
+
+**C-e341-38 (34-2) — le complément avant la démotion et l'`INSERT`** (validation P2, 2.1) : la démotion relit l'ancien principal sans verrou et
+ouvrirait l'instantané trop tôt ; le complément n'a pas besoin de la ligne `bank_accounts`. Autre : verrouiller la relecture de la démotion (fonction
+partagée avec le `PUT`). Réversible : oui.
+
+**C-e341-39 (34-11a1, 34-11a2) — `NewBankAccount.iban` reste `String`** ; la carte lie son IBAN (`NULL`) à part, comme la description (validation P2,
+3.2). Autre : `Option<String>` (68 sites). Réversible : oui.
+
+**C-e341-40 (34-11a2) — le verrou du type** : retypage `FOR UPDATE` en tête de `accounts::update`, relecture du type `LOCK IN SHARE MODE` dans la
+transaction du lien et de la création, route du plan rejouée (validation P2, 4.2). Autre : contrôle sur le pool seulement (course ouverte).
+Réversible : oui.
+
+**C-e341-41 (34-11a2) — règlement client sur une carte refusé au serveur** (`SETTLEMENT_ACCOUNT_IS_CREDIT_CARD`) ; l'acceptation d'une proposition
+« facture » par la réconciliation d'une transaction de carte reste possible, angle mort écrit (validation P2, 4.3). Réversible : oui.

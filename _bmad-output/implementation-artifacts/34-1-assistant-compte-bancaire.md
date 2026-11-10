@@ -4,7 +4,7 @@ Status: ready-for-dev
 
 *Fiche rédigée le 2026-11-10 en autonomie (Opus 5.5), worktree `/home/gcorbaz/devel/kesh-e34`, branche `chore/epic-34-kickoff`,
 numéros de ligne de `a75835db`. Release **0.17.6**, Epic 34. **Aucune migration.** Registre : `e34-choix-autonomes-e341.md`,
-C-e341-1 à C-e341-5. Commits en `refs #966` ; à la PR : `closes #966`.*
+C-e341-1 à C-e341-5, C-e341-33, C-e341-34. Commits en `refs #966` ; à la PR : `closes #966`.*
 
 ## Story
 
@@ -104,7 +104,10 @@ page et le manuel disent que ce choix est **modifiable après coup**. ⛔ **Aucu
   `None` = absent, donc **inchangé** (C-e341-34) —, l'enveloppe `upsert_primary` passant `PrimaryDetails::default()` (ses appelants de test restent
   inchangés, et ne touchent plus ces colonnes) ; l'`INSERT` écrit la valeur ou `NULL` ; l'`UPDATE` ne nomme une colonne que si elle est présente ;
   `is_no_op_change` ne compare que les champs présents. La route lit la double option par `#[serde(default, deserialize_with = …)]` (forme à
-  choisir au dev, un test de désérialisation pour absent, `null`, valeur). ⚠️ `kesh-db` touché : **gate complet même en cours de boucle**.
+  choisir au dev, un test de désérialisation pour absent, `null`, valeur). `BankAccountPutFields` (`repositories/bank_accounts.rs:560-575`) n'est
+  **pas** réemployé : il porte la sémantique du `PUT` (remplacement complet, `None` = effacé), contraire à celle-ci (absent = inchangé). Le
+  doc-comment de `BankAccount::description` (`entities/bank_account.rs:34-36`, « écrite **seulement** par la création de la route et par le `PUT` »)
+  est mis à jour : l'assistant l'écrit aussi. ⚠️ `kesh-db` touché : **gate complet même en cours de boucle**.
 - [ ] **T3 — route** : `BankAccountRequest` + `#[serde(default)]` ; `normalize_description` et `validate_journal_account_id` en
   `pub(crate)` dans `routes/bank_accounts.rs`, appelées par `set_bank_account` avant la transaction (même ordre de refus qu'à la création :
   banque, description, IBAN, QR-IBAN, compte lié) ; dans la transaction, après `lock_company`, si un lien est demandé : comptes de rôle
@@ -148,6 +151,12 @@ contre `docs/testing.md` § « Les échecs attendus » (KF-029 comprise : `onboa
 
 ## Ce qui ne se traite pas
 
+- ⚠️ **Angle mort, issue demandée** (validation P2, 1.2) : la garde de l'AC-4 ne vaut qu'à l'étape 6. Entre l'étape 6 et la finalisation,
+  `PUT /api/v1/accounts/{id}` (`lib.rs:525-528`, sans garde d'onboarding) peut poser le rôle `Receivable` ou `Payable` sur le compte qui vient
+  d'être lié ; la finalisation le désigne alors compte de créance (`INSERT IGNORE`, `company_invoice_settings.rs:1178-1185`) sans contrôle. Chemin par
+  l'API seulement, l'écran n'y mène pas. Issue : « Finalisation de l'assistant : refuser de désigner compte de créance un compte lié à un compte
+  bancaire ».
+
 - **Le solde d'ouverture à l'assistant** : il n'y a encore aucun exercice à l'étape 6 (il naît à la finalisation, `onboarding.rs:930`,
   `create_if_absent_in_tx`) ; la 34-2 le pose au formulaire *Comptes bancaires*. Rien à tracer : la 34-2 le dit au manuel.
 - **Le chemin A (démonstration)** : le seed crée ses comptes lui-même ; inchangé.
@@ -170,6 +179,9 @@ atteint l'assistant). Ordre : 34-1, puis 34-2, puis 34-11a1, 34-11a2.
   unique à verrou paramétré, sans verrou à l'assistant (motif écrit en T3) ; ordre des refus écrit à l'AC-4. **1.5** : test du compte renuméroté
   et du 1100 sans rôle (AC-4, M3b) ; la garde de Luhn à l'assistant relève de la 34-11a2. Axe 8 : `linkableLedgerAccounts` reçoit
   `liabilityOnly` (C-e341-33). Références à « 34-11a » portées à 34-11a1 / 34-11a2.
+- 2026-11-10 : **validation P2 (Opus)** — pour cette fiche : 3 L (1.1 à 1.3). Remédiation (Opus 5.5), tout appliqué. **1.1** : pourquoi
+  `BankAccountPutFields` n'est pas réemployé, et le doc-comment de l'entité à mettre à jour (relus `repositories/bank_accounts.rs:560-575`,
+  `entities/bank_account.rs:34-36`). **1.2** : angle mort écrit, issue demandée (relu `lib.rs:525-528`). **1.3** : en-tête complété (C-e341-33, 34).
 
 ## Dev Agent Record
 

@@ -83,12 +83,19 @@ achats tombent à leur date et que la dette de la carte figure juste au bilan.
   `reversalJournalEntryId: null`, en camelCase comme ses autres détails (`:671-676`) ; (4.2) la réponse `CancelReconciliationResponse` porte
   `reversalJournalEntryId: Option<i64>` (`routes/reconciliation.rs:5771`), `null` pour ce cas — additif en JSON, rupture de type côté TypeScript
   (`reconciliation.types.ts:199`), traitée.
-- **C-e341-35 — une seule définition de « l'autre côté empêche-t-il ? »** (validation P1, 4.1, HIGH) : une autre transaction liée à `e` n'empêche
-  l'annulation de `t` (rang 3, `MatchedBankTransaction`) que si elle tomberait sous (i), (ii) ou (iii) de C-e341-22 — c'est-à-dire si elle n'est
-  pas « l'autre côté légitime » ; sinon l'annulation de `t` est `unlinkOnly`. Cette définition est **une** fonction de `kesh-db`, appelée par
-  `cancel_blocker` (`reconciliation_cancel.rs:250-262`, qui sert `cancel_in_tx` **et** `get_view`, `:410`), par `entry_cancel_blocker(…, None)` des
-  candidates (`routes/reconciliation.rs:6468-6475` : une candidate dont l'autre côté est rapproché n'annonce plus de faux obstacle, et le
-  commentaire `reconciliation_cancel.rs:276-279` « le rang 3 ne peut pas sortir » est récrit) et par la garde `settlement_cancellation.rs:135-157`.
+- **C-e341-35 — une seule définition de « l'autre côté légitime »** (validation P1, 4.1, HIGH ; **récrite à la validation P2**, 5.1 et 5.2).
+  Une autre transaction liée à `e` est « l'autre côté légitime » de `t` si elle ne tombe sous aucun des cas (i), (ii), (iii) de C-e341-22. La
+  définition est **une** fonction de `kesh-db`, et elle **décide en tête**, avant les rangs 1 à 5 de `settlement_entry_cancel_blocker`
+  (`settlement_cancellation.rs:100-170` : rang 2 `FiscalYearClosed` `:108-113`, rang 2 bis lettrage figé `:118-127`, rang 3 `:133-157`, puis
+  rangs 4 et 5) : **si un autre côté légitime existe, l'annulation de `t` est `unlinkOnly`, et seuls s'appliquent le rang 0 (transaction non
+  rapprochée) et le compte clos** — aucun rang 1 à 5, puisqu'aucune écriture n'est touchée. Sinon, la chaîne d'aujourd'hui, inchangée.
+  **Elle a besoin de `t`** : la transaction concernée — liée (annulation) ou **prospective** (candidate) — passe en argument
+  (`Option<&BankTransaction>` ou équivalent) de `entry_cancel_blocker` et de la garde de règlement. **`None` garde son sens strict, inchangé** : les
+  écrans de facture qui l'appellent ainsi (`invoice_settlements_write.rs:795`, `settlement_cancel_blocker_unlinking(…, None)` ; dévalidation
+  fournisseur, `supplier_invoices.rs:2462`) contre-passent l'écriture et **doivent** garder le rang 3 strict. Appelants : `cancel_blocker`
+  (`reconciliation_cancel.rs:250-262`, qui sert `cancel_in_tx` **et** `get_view`, `:410`) passe `Some(&bt)` ; les candidates
+  (`routes/reconciliation.rs:6468-6475`) passent `Some(&t)`, la transaction dont on liste les candidates ; le commentaire
+  `reconciliation_cancel.rs:276-279` (« le rang 3 ne peut pas sortir ») est récrit.
 - **C-e341-36 — les textes devenus faux sont corrigés ici** (validation P1, 4.3 ; ordre 34-3 → 34-4 → 34-11b) : le manuel (`user-manual.tex:2915-2921`,
   `:2991`, et ce que la 34-3, AC-8, y aura écrit sur le second côté d'un virement), le message du cas (b) de la 34-4 (« rejetez-la » →
   « rattachez-la à cette écriture »), ses quatre locales et ses tests. Les fiches 34-3 et 34-4 (autre groupe) ne sont **pas** modifiées : la
@@ -122,13 +129,21 @@ achats tombent à leur date et que la dette de la carte figure juste au bilan.
    l'ordre inverse. La trace dit `unlinkOnly`. Le verrou : la transaction annulée `FOR UPDATE`, puis la ligne de l'écriture `FOR UPDATE` avant la
    lecture des autres liens (même discipline que `link_entry_in_tx`, `:303-330`) ; deux annulations simultanées des deux côtés ne laissent pas
    l'écriture contre-passée avec un lien vivant (test à deux connexions, ou raisonnement écrit au doc-comment s'il n'est pas déterministe — dit tel quel).
+   **Forme de la lecture des autres liens** (validation P2, 5.3) : après le `FOR UPDATE` de l'écriture, elle est **ordinaire**, jamais verrouillante :
+   une lecture `FOR UPDATE` de la ligne `bank_transactions` de l'autre côté attendrait l'annulation concurrente, qui la tient en exclusif (étape 1 de
+   `cancel_in_tx`) et attend l'écriture — un interblocage à chaque double annulation. Écrit au doc-comment.
    **Exercice clos** (C-e341-23, 4.6) : l'écriture du virement dans un exercice clos ; annuler le côté carte → accepté, `unlinkOnly` ; annuler ensuite
    le dernier côté → refusé `FiscalYearClosed` comme aujourd'hui. **Réponse** : `reversalJournalEntryId: null` pour un retrait seul.
 4b. **AC-4b — ce que l'écran voit** (C-e341-35, 4.1) : tests HTTP — `GET …/transactions/{id}` (vue d'annulation) d'un côté d'un virement rattaché
    des deux côtés rend `cancellable: true` et dit « seul le lien est retiré » ; `GET …/entry-candidates` de la transaction de la carte rend l'écriture
    de virement **sans** `cancelBlockedBy`. Vitest : `LinkSettlementModal.svelte` n'exige pas d'accusé pour elle (`:154`, `:159`) ;
    `CancelReconciliationDialog.svelte` affiche la confirmation (`:73`, `:155`) et un message de succès distinct (« le lien est retiré ; l'écriture
-   reste celle de l'autre côté »). Un cas encore bloqué (comptes qui partagent le grand livre) garde son motif.
+   reste celle de l'autre côté »). Un cas encore bloqué (comptes qui partagent le grand livre) garde son motif. **Exercice clos** (validation P2,
+   5.1) : l'écriture du virement dans un exercice clos ; la vue d'annulation du côté carte rend `cancellable: true` et `unlinkOnly: true` (et non
+   `FiscalYearClosed`) ; la candidate de la transaction de la carte rend `cancelBlockedBy: null`. **Le champ** (5.4) : la vue d'annulation porte
+   `unlinkOnly: boolean` à côté de `cancellable` (Rust, `reconciliation.types.ts`, `api-external.md`), et c'est lui qui choisit le texte de la
+   confirmation. **Non-régression** (5.2) : une facture client dont l'écriture de règlement est rapprochée reste **non annulable** depuis sa fiche
+   (rang 3 strict sous `None`), et la dévalidation fournisseur de même.
 4c. **AC-4c — les comptes reliés** (C-e341-22, 4.4) : compte bancaire A lié à L, une transaction de A rattachée à `e` ; A délié (`NULL`) → une
    transaction d'un compte B lié à L ne se rattache **pas** à `e` ; A relié à L2 (sans ligne dans `e`) → idem.
 5. **AC-5 — le relevé saisi d'une carte** (E2E, chemin principal) : sur une carte (34-11a2) avec solde d'ouverture *Dette* 1'000 (34-2), un relevé
@@ -150,20 +165,33 @@ achats tombent à leur date et que la dette de la carte figure juste au bilan.
    chiffré **synthétique**. PDF régénéré, aplati.
 9. **AC-9 — `api-external.md`** : la condition du rattachement, l'annulation d'un seul côté, `reversalJournalEntryId` nullable (`:691`), le détail
    `unlinkOnly` de la trace.
-10. **AC-10 — les textes du second côté** (C-e341-36) : `user-manual.tex:2915-2921` et `:2991` récrits (« le second côté d'un virement entre deux de
-   vos comptes se rattache à l'écriture du virement » ; #823 reste citée pour le lot de plusieurs factures et le paiement groupé) ; ce que la 34-3
-   (AC-8) y aura ajouté, aligné ; le message du cas (b) de la 34-4, ses quatre locales et son test Vitest : la consigne « rejetez-la » devient
-   « rattachez-la à cette écriture », et `matchedElsewhereCount` devient le sous-ensemble de `entryCount` dont l'autre côté est rapproché (même
-   constructeur de requête, aucune copie). Grep de la valeur après coup : `rejetez-la`, `#823`, `second côté` dans `docs/manual/`, `crates/kesh-i18n/`,
-   `frontend/src/`. PDF régénéré, aplati.
+10. **AC-10 — les textes du second côté** (C-e341-36 ; **transmission de la 34-4**, `kesh-gate-logs/e34-transmission-34-11b.md`, validation P2 du
+   groupe e342, commit `73c365af`). Après la 34-11b, `matchedElsewhereCount` est un sous-ensemble de `entryCount` (même constructeur de requête, aucune
+   copie). Avec `k = settlementCount + entryCount` et `m = matchedElsewhereCount`, l'avis de la 34-4 devient :
+   - (a) si `k − m > 0` et `m = 0` : le texte (a) de la 34-4, inchangé ;
+   - (b′) si `m > 0` et `k − m = 0` : clé neuve `…-already-booked-transfer` — « Cette transaction est probablement l'autre côté d'un virement entre vos
+     comptes : l'écriture de ce virement est déjà rapprochée d'une transaction d'un autre de vos comptes bancaires. Rattachez-la à cette écriture
+     (*Rattacher à une écriture existante*) plutôt que de passer une écriture : le virement serait compté deux fois. » ;
+   - (c′) si `m > 0` et `k − m > 0` : clé neuve `…-already-booked-transfer-among` — le texte (a), clé `-one` ou `-other`, puis « L'une d'elles est
+     l'écriture d'un virement déjà rapprochée sur un autre de vos comptes bancaires : c'est probablement celle-ci qu'il faut rattacher. » ;
+   - rien si `k = 0` ; la confirmation reste déclenchée par `k > 0`.
+   Les clés `…-already-booked-elsewhere` (b) et `…-already-booked-combined` (c) sont **retirées** des quatre locales et de leurs replis. Vitest : quatre
+   cas — aucun signal, (a), (b′), (c′) ; mutation **M11** : la condition (b′) testée sur `m > 0` seul → rouge du cas (c′).
+   Le manuel : `user-manual.tex:2915-2921` et `:2991` récrits (« le second côté d'un virement entre deux de vos comptes se rattache à l'écriture du
+   virement » ; #823 reste citée pour le lot de plusieurs factures et le paiement groupé) ; **`:2913-2914`** aussi (validation P2, 5.1 : « un paiement
+   d'un exercice clôturé se rattache aussi ; le dialogue dit alors que ce rattachement ne pourra pas être annulé tant que l'exercice reste clos » — faux
+   pour le second côté d'un virement, dont le lien se retire même dans un exercice clos) ; ce que la 34-4 y aura écrit, aligné, et ce que la 34-3 (AC-8)
+   y aura ajouté. La ligne « #823 » du § *Ce qui ne se traite pas* de la 34-4 n'est pas dans le dépôt (fiche d'un autre groupe, non modifiée) : son
+   contenu, s'il passe au manuel ou au CHANGELOG, est aligné. Grep de la valeur après coup : `rejetez-la`, `already-booked-elsewhere`,
+   `already-booked-combined`, `#823`, `second côté` dans `docs/manual/`, `crates/kesh-i18n/`, `frontend/src/`, `CHANGELOG.md`. PDF régénéré, aplati.
 
 ## Tâches
 
 - [ ] **T1 — rouges d'abord** (`kesh-gate-logs/e341/rouges.log`) : AC-2 (rouge aujourd'hui : l'écriture n'est pas candidate), AC-3, AC-4, AC-6.
-- [ ] **T2 — dépôt** : condition 4 (AC-1) ; `reconciliation_cancel::cancel_in_tx` : branche « autre côté » avant le classement, et la garde
-  `settlement_cancellation.rs:135-157` qui ne compte plus comme bloquant un lien d'un **autre** compte du grand livre dans ce seul cas (ou appelée
-  après le retrait du lien, au choix du dev, motivé au Change Log) — toutes trois par la définition unique de C-e341-35 ; `ReconciliationCancellation`
-  porte `reversal_journal_entry_id: Option<i64>`. ⚠️ `kesh-db` touché : **gate complet même en cours de boucle**.
+- [ ] **T2 — dépôt** : condition 4 (AC-1) ; la fonction unique de C-e341-35, **en tête** de la chaîne des rangs ; la signature de
+  `entry_cancel_blocker` et de la garde de règlement reçoit la transaction concernée (`None` strict inchangé) ; `cancel_in_tx` prend la branche
+  `unlinkOnly` quand elle le dit (seuls rang 0 et compte clos) ; `ReconciliationCancellation` porte `reversal_journal_entry_id: Option<i64>`.
+  ⚠️ `kesh-db` touché : **gate complet même en cours de boucle**.
 - [ ] **T3 — trace** : `unlinkOnly` et `reversalJournalEntryId: null` à `reconciliation.cancelled` ; vérifier le vocabulaire d'audit
   (`audit_log::vocabulary`) et l'écran d'audit, et les aligner s'ils lisent ces détails.
 - [ ] **T4 — écran** (AC-4b) : `reconciliation.types.ts:199` (`reversalJournalEntryId: number | null`), `CancelReconciliationDialog.svelte` (confirmation
@@ -183,7 +211,9 @@ achats tombent à leur date et que la dette de la carte figure juste au bilan.
 - **M4** : l'annulation « un côté » retire aussi le lien de l'autre → rouge AC-4.
 - **M5** : la lecture des autres liens déplacée avant le verrou de l'écriture → rouge du test à deux connexions s'il existe, sinon écrit non tuée.
 - **M6** : `get_view` garde l'ancienne garde (rang 3 sans exception) → rouge AC-4b (`cancellable: false`).
-- **M7** : `entry_cancel_blocker(None)` garde l'ancienne garde → rouge AC-4b (`cancelBlockedBy` non nul).
+- **M7** : les candidates appellent encore avec `None` → rouge AC-4b (`cancelBlockedBy` non nul).
+- **M7b** : la décision « autre côté » placée au rang 3 et non en tête → rouge AC-4b (exercice clos : `FiscalYearClosed` rendu).
+- **M7c** : `None` traité comme « autre côté possible » → rouge de la non-régression (facture client annulable depuis sa fiche).
 - **M8** : la condition (ii) sans le cas `NULL` → rouge AC-4c (compte délié) ; **M9** : sans (iii) → rouge AC-4c (compte relié).
 - **M10** : le retrait seul refusé par l'exercice clos → rouge AC-4 (exercice clos).
 
@@ -234,6 +264,14 @@ du rattachement à un règlement : une écriture de règlement n'a qu'une ligne 
   d'un lien modifiable (C-e341-22 précisé, AC-4c, M8, M9). **4.5** : inventaire élargi (Recoupements). **4.6** : retrait seul non refusé par
   l'exercice clos (relu `reconciliation_cancel.rs:540-557`), M10. **4.7** : `unlinkOnly` en camelCase (relu `:671-676`). **4.8** : `periodTo` fixé,
   la portée `SingleBankLedger` dite non exercée par cet E2E. Références à « 34-11a » portées à 34-11a1 / 34-11a2.
+- 2026-11-10 : **validation P2 (Opus)** — pour cette fiche : 2 M (5.1, 5.2), 2 L (5.3, 5.4), nés de la remédiation P1 ; plus la transmission de
+  la 34-4. Remédiation (Opus 5.5), tout appliqué. **5.1** : la décision « autre côté légitime » passe **en tête**, avant les rangs 1 à 5 (relus
+  `settlement_cancellation.rs:100-157`) ; tests de la vue et des candidates en exercice clos (AC-4b) ; `user-manual.tex:2913-2914` ajoutée à l'AC-10 ;
+  M7b. **5.2** : la transaction concernée passe en argument, `None` garde son sens strict (relus `invoice_settlements_write.rs:793-797`,
+  `supplier_invoices.rs:2460-2464`) ; l'alternative « au choix du dev » retirée de la T2 ; non-régression facture client ; M7, M7c. **5.3** : lecture
+  ordinaire des autres liens après le verrou de l'écriture (AC-4). **5.4** : champ `unlinkOnly` de la vue (AC-4b). **Transmission de la 34-4**
+  (`kesh-gate-logs/e34-transmission-34-11b.md`) : conditions (a), (b′), (c′), clés neuves et retirées, Vitest à quatre cas, M11, textes (AC-10). Les
+  fiches 34-3 et 34-4 ne sont pas touchées.
 
 ## Dev Agent Record
 

@@ -4,7 +4,7 @@ Status: ready-for-dev
 
 *Fiche rédigée le 2026-11-10 en autonomie (Opus 5.5), worktree `/home/gcorbaz/devel/kesh-e34`, branche `chore/epic-34-kickoff`,
 numéros de ligne de `a75835db`. Release **0.17.6**, Epic 34. **Aucune migration** (aucune colonne : l'écriture est une écriture
-ordinaire, son lien au compte bancaire n'est pas stocké). Registre : `e34-choix-autonomes-e341.md`, C-e341-6 à C-e341-12. Suit la
+ordinaire, son lien au compte bancaire n'est pas stocké). Registre : `e34-choix-autonomes-e341.md`, C-e341-6 à C-e341-12, C-e341-38. Suit la
 **34-1** (même formulaire). Commits en `refs #533` ; à la PR : `closes #533`.*
 
 ## Story
@@ -82,22 +82,27 @@ dupliqué. » Quatre points y sont « à trancher » ; ils le sont ici (C-e341-6
    départ* ne changent pas de comportement : les tests de `tests/opening_complement_repository.rs` et `tests/opening_balances_e2e.rs` passent
    **sans modification**.
 2. **AC-2 — création avec solde** : `POST /api/v1/bank-accounts` accepte `openingBalance: { amount, side: "debit" | "credit" }`, facultatif ;
-   absent, nul ou vide → comportement d'avant, octet pour octet. Présent : exige `journalAccountId` (`400 VALIDATION_ERROR` sinon, avant toute
+   absent, nul ou vide → comportement d'avant, octet pour octet (`openingEntry` porte
+   `#[serde(skip_serializing_if = "Option::is_none")]` : absent de la réponse quand rien n'est passé). Présent : exige `journalAccountId` (`400 VALIDATION_ERROR` sinon, avant toute
    écriture) ; contrôles de forme de `parse_complement_amount` (réemployé, non recopié). La réponse `201` est le compte, plus
-   `openingEntry: { id, entryNumber, entryDate, fiscalYearId } | null`.
+   `openingEntry: { id, entryNumber, entryDate, fiscalYearId }` quand une écriture est passée (champ additif, écrit à `api-external.md`).
 3. **AC-3 — l'écriture** : journal `OD`, libellé « Solde d'ouverture — UBS — Personnel » (C-e341-11), deux lignes : le compte lié au sens saisi,
    le compte de report à l'opposé, même montant ; date et exercice de `decide_date` ; `journal_entry.created` tracé ; `bank_account.created`
    porte `opening_entry_id`.
 4. **AC-4 — société sans écriture** (le cas nominal) : premier exercice ouvert, aucune écriture → l'écriture est passée, datée du premier jour
    du premier exercice ; l'écran *Soldes de départ* rend ensuite `ALREADY_HAS_ENTRIES` pour la génération et propose le mode *Compléter* (le
-   compte bancaire n'y figure plus : mouvementé). Sans aucun exercice → `400 OPENING_COMPLEMENT_NO_OPEN_FISCAL_YEAR`, rien d'écrit.
+   compte bancaire n'y figure plus : mouvementé). Sans aucun exercice → `409 OPENING_COMPLEMENT_NO_OPEN_FISCAL_YEAR` (statut du code, `errors.rs:1557-1561`), rien d'écrit ; son
+   message (« Aucun exercice ouvert ne couvre la date du jour ») est gardé : inexact au mot près pour « aucun exercice », il dit le remède (un
+   exercice ouvert), et une installation passée par l'assistant a toujours son premier exercice.
 5. **AC-5 — mêmes refus que *Compléter*, rien d'écrit** : compte lié déjà mouvementé (`ACCOUNT_MOVED`), compte de report absent ou non imputable,
    date verrouillée, aucun exercice ouvert : le refus du complément sort **tel quel** (code et message), et **ni le compte bancaire ni
    l'écriture** n'existent après (AC-9 de l'atomicité, compté en base : `bank_accounts` et `journal_entries` inchangés). L'ancien principal
    n'est pas démoté.
 6. **AC-6 — compte existant** : `POST /api/v1/bank-accounts/{id}/opening-balance` `{ amount, side }`, Comptable+, clé `read-write` admise :
    `404` compte absent, d'une autre société ou archivé ; `409 BANK_ACCOUNT_CLOSED` clos ; `412 BANK_ACCOUNT_NOT_CONFIGURED` sans compte lié
-   (code existant) ; puis les refus du complément. `201` avec l'écriture. Rejouée sur interblocage.
+   (code existant) ; puis les refus du complément. `201` avec l'écriture. Rejouée sur interblocage. **Ordre des verrous** (validation P2, 2.5),
+   celui du `PUT` : sentinelle `companies` en exclusif (`acquire_company_sentinel_lock`), puis la ligne `bank_accounts` `LOCK IN SHARE MODE`
+   (archivé, clos, lié lus sous ce verrou), puis le complément (son partagé sur `companies` est déjà couvert par l'exclusif ; comptes, exercices).
 7. **AC-7 — l'écran** : au formulaire de création, quand un compte lié est choisi, *Solde d'ouverture* (montant) et *Avoir / Dette* (C-e341-7),
    avec une aide qui dit la date (« daté du premier jour du premier exercice s'il est ouvert, sinon d'aujourd'hui ; contrepartie : Bénéfice/perte
    reporté ») **et la conséquence de C-e341-6** (« Après ce solde, les soldes de départ des autres comptes se saisissent un à un dans *Soldes de
@@ -109,15 +114,21 @@ dupliqué. » Quatre points y sont « à trancher » ; ils le sont ici (C-e341-6
    est satisfaite par les deux (`create_bank_account` l'appelle déjà, `bank_accounts.rs:563`).
 9. **AC-9 — manuel** : *Comptes bancaires* (le champ, le sens, la date, l'atomicité, l'action de ligne) et *Soldes de départ* (une écriture
    passée par un compte bancaire fait passer l'écran en mode *Compléter* ; le compte de la banque n'y figure plus) ; la phrase de l'AC-7, **avant**
-   le geste, dans les deux sections : qui veut saisir toute son ouverture d'un coup passe d'abord par *Soldes de départ*.
-10. **AC-10 — l'instantané** (validation P1, 2.1) : dans `create_once`, l'appel du complément précède **toute lecture ordinaire** de la transaction
-   (la relecture `find_by_id_in_tx` du compte inséré, `bank_accounts.rs:651-653`, passe **après** lui) ; les lectures qui le précèdent sont toutes
-   verrouillantes (sentinelle, réglages `LOCK IN SHARE MODE`, démotion `FOR UPDATE`) — le dev les relit et les liste au Dev Agent Record ; une
-   lecture ordinaire découverte avant le complément est déplacée. Raison : `create_in_open_tx` lit « jamais mouvementé » après ses verrous
-   (`opening_complement.rs:573-587`) ; un instantané ouvert plus tôt ne verrait pas une écriture commitée entre-temps. **Concurrence** : la clé
-   étrangère `journal_account_id` pose un verrou partagé sur la ligne `accounts` à l'`INSERT`, que le `FOR UPDATE` du complément promeut ; deux
-   créations liées au même compte neuf s'interbloquent, le rejeu tranche, et **le perdant reçoit `OPENING_COMPLEMENT_ACCOUNT_MOVED`** sans compte
-   créé — test à deux connexions, ou, s'il n'est pas déterministe, le raisonnement écrit au doc-comment et dit tel quel au Dev Agent Record. PDF régénéré, contrôlé aplati.
+   le geste, dans les deux sections : qui veut saisir toute son ouverture d'un coup passe d'abord par *Soldes de départ*. PDF régénéré, contrôlé
+   aplati.
+10. **AC-10 — l'instantané** (validation P1, 2.1 ; **récrit à la validation P2**, 2.1 et 2.2, C-e341-38) : dans `create_once`, le complément est
+   appelé **juste après le refus du compte de créance, avant la démotion de l'ancien principal et avant l'`INSERT`**. Raison : la démotion
+   (`flip_primary_off_for_company`) relit l'ancien principal par `FIND_BY_ID_SQL`, **sans verrou** (`repositories/bank_accounts.rs:1408-1412`, `:58`) —
+   une lecture ordinaire qui ouvrirait l'instantané avant le complément, et `create_in_open_tx` lit « jamais mouvementé » après ses verrous
+   (`opening_complement.rs:573-587`) : un instantané ouvert plus tôt ne verrait pas une écriture commitée entre-temps. Avant le complément ne restent
+   que des lectures **verrouillantes** : sentinelle `companies` `FOR UPDATE` (`:1617`), réglages `LOCK IN SHARE MODE` ; le numéro lu par
+   `refuse_if_ledger_is_claim_account` ne l'est que sur le chemin du refus. Le complément n'a pas besoin de la ligne `bank_accounts` ; son libellé se
+   forme de la banque et de la description saisies (`bank_account_display_name`). Un refus du complément ne démote rien et n'insère rien (AC-5).
+   **Concurrence** : deux créations de la même société sont **sérialisées** par la sentinelle (`routes/bank_accounts.rs:595`) — aucun interblocage
+   entre elles. Le cas à prouver est une **écriture de journal** (`POST /api/v1/journal-entries` sur le compte lié, qui ne prend pas la sentinelle)
+   commitée pendant la création : la création la voit et rend `OPENING_COMPLEMENT_ACCOUNT_MOVED`, sans compte créé. Montage : le compte du plan est
+   créé d'abord (jamais mouvementé), puis les deux requêtes se croisent ; test à deux connexions si un point de synchronisation est atteignable sans
+   crochet de production, sinon le raisonnement écrit au doc-comment de `create_once` et dit tel quel au Dev Agent Record.
 
 ## Tâches
 
@@ -133,7 +144,8 @@ dupliqué. » Quatre points y sont « à trancher » ; ils le sont ici (C-e341-6
   sans effet ; puis `bank_accounts`, puis comptes et exercices. Le dire au doc-comment de `create_once` ; le rejeu couvre les cycles résiduels.
   ⚠️ `kesh-db` touché : **gate complet même en cours de boucle**.
 - [ ] **T3 — routes** : corps `openingBalance` (forme partagée avec la route neuve), réponse augmentée (`#[serde(flatten)]` du compte),
-  `create_once` appelle le complément **juste après l'`INSERT`, avant la relecture du compte** (AC-10), puis les traces ; `parse_complement_amount`
+  `create_once` appelle le complément **après le refus du compte de créance, avant la démotion et l'`INSERT`** (AC-10), puis démotion, `INSERT`,
+  relecture, traces ; `parse_complement_amount`
   (`opening_balances.rs:509`, privée) passe `pub(crate)` ; route neuve dans `comptable_routes` (`lib.rs:~936-955`), bornée par
   `retry_app_on_deadlock`. Mapping des refus : celui d'`errors.rs:3414` (aucun nouveau code).
 - [ ] **T4 — registre** (AC-8).
@@ -155,7 +167,10 @@ dupliqué. » Quatre points y sont « à trancher » ; ils le sont ici (C-e341-6
 - **M5** : `openingBalance` accepté sans `journalAccountId` → rouge AC-2.
 - **M6** : la route de ligne sans contrôle « clos » → rouge AC-6.
 - **M7** : `SingleBankLedger` qui ne distingue pas « aucun exercice » de « aucune écriture » → rouge AC-4 (sans exercice : refus attendu).
-- **M8** : la relecture du compte remise avant le complément → rouge du test à deux connexions (AC-10), s'il est déterministe.
+- **M8** : le complément replacé après la démotion et l'`INSERT` (une lecture ordinaire avant lui) → rouge du test « écriture de journal croisée »
+  (AC-10) s'il est déterministe ; sinon écrite non tuée au Dev Agent Record. ⚠️ Un test de deux **créations** concurrentes ne la tue pas (la
+  sentinelle les sérialise : test muet, validation P2, 2.2).
+- **M9** : un refus du complément qui démote quand même l'ancien principal → rouge AC-5.
 
 ## Gates
 
@@ -186,6 +201,12 @@ carte se crée avec son solde d'ouverture, sens *Dette*). `opening_complement.rs
   conséquence exigée à l'écran (AC-7) et au manuel (AC-9). **2.3** : deux branches en T2, M7 (relu `opening_complement.rs:590-592`). **2.4** : totaux
   du registre (relu `audit_route_registry.rs:988`), `parse_complement_amount` `pub(crate)`, garde de l'enveloppe de rejeu. **2.5** : l'enveloppe
   garde sa signature (AC-1). Références à « 34-11a » portées à 34-11a2.
+- 2026-11-10 : **validation P2 (Opus)** — pour cette fiche : 2 M (2.1, 2.2), 3 L (2.3 à 2.5), nés de la remédiation P1. Remédiation (Opus 5.5),
+  tout appliqué. **2.1** : prémisse de l'AC-10 fausse (la démotion relit sans verrou, relu `repositories/bank_accounts.rs:1404-1414`, `:58`) : le
+  complément passe avant la démotion et l'`INSERT` (C-e341-38), AC-10 et T3 récrits, M9. **2.2** : la sentinelle sérialise deux créations (relu
+  `bank_accounts.rs:1617`, `routes/bank_accounts.rs:595`) : phrase de l'interblocage retirée, le test croise une écriture de journal, M8 récrite.
+  **2.3** : 409 et non 400 (relu `errors.rs:1557-1561`), message gardé (motif écrit). **2.4** : `skip_serializing_if`. **2.5** : ordre des verrous de la
+  route de ligne. Au passage : « PDF régénéré, contrôlé aplati », déplacé par la remédiation P1 à la fin de l'AC-10, rendu à l'AC-9.
 
 ## Dev Agent Record
 

@@ -5,7 +5,7 @@ Status: ready-for-dev
 *Fiche rédigée le 2026-11-10 en autonomie (Opus 5.5), worktree `/home/gcorbaz/devel/kesh-e34`, branche `chore/epic-34-kickoff`,
 numéros de ligne de `a75835db` (inchangés à `b85b8f05`, commit de fiches seules). Release **0.17.6**, Epic 34. **Une migration, breaking**
 (`kesh_version_min_required` → 0.17.6, C-e341-14) — **la seule de l'epic** (la 34-5 n'en porte pas, C-e343-1) : P1 à P8 du `CLAUDE.md`
-s'appliquent. Registre : `e34-choix-autonomes-e341.md`, C-e341-13, 14, 17, 18, 20, 29. Première moitié de l'ancienne 34-11a (découpée à la
+s'appliquent. Registre : `e34-choix-autonomes-e341.md`, C-e341-13, 14, 17, 18, 19, 20, 21, 29, 39. Première moitié de l'ancienne 34-11a (découpée à la
 validation P1, arbitrage de l'orchestrateur) ; la seconde est la **34-11a2** (`34-11a2-carte-credit-creation.md`), qui ouvre la création d'une
 carte. Vient après **34-3**, **34-1**, **34-2**. Commits en `refs #972` ; à la PR : `refs #972`.*
 
@@ -103,7 +103,11 @@ ne sont pas passés en revue ; (iii) **les tests** : ≈ 316 lignes Rust sous `c
    sites `"0.17.0"` listés en prémisse **triés** (gardés : état d'une base 0.17.0 ; portés à 0.17.6 : minimum courant), la sortie du tri au Dev
    Agent Record, `\b0\.17\.6\b` grepé après.
 3. **AC-3 — entité et dépôt** : `iban: Option<String>`, `account_kind: BankAccountKind`, `card_last4: Option<String>` ; `columns!()` les lit ;
-   `GET /bank-accounts` et `GET /companies/current` rendent `iban: null` pour une ligne forgée sans IBAN.
+   `GET /bank-accounts` et `GET /companies/current` rendent `iban: null` pour une ligne forgée sans IBAN, et **désormais `accountKind` et `cardLast4`
+   pour toute ligne** (le `Serialize` de l'entité les fait sortir, réponse du `POST` comprise) : changement additif, écrit à `api-external.md`.
+   `NewBankAccount.iban` **reste `String`** (C-e341-39 : il ne sert qu'aux créations de comptes bancaires, assistant, dépôt, 68 sites de test) ; la
+   34-11a2 lie l'IBAN d'une carte à part, comme la description. `invoice_pdf_service.rs:342`, sur un principal sans IBAN (inatteignable par le `CHECK`),
+   rend une erreur interne (`AppError::Internal`), jamais `unwrap()` ni `expect()`.
 4. **AC-4 — le principal** : une ligne forgée `credit_card` + `is_primary = TRUE` est refusée par la base ; une QR-facture ne peut donc pas lire
    un IBAN nul (test du `CHECK`).
 5. **AC-5 — pain.001** : `POST /payment-batches` sur un compte sans IBAN → `409 PAYMENT_BATCH_ACCOUNT_HAS_NO_IBAN`, rien d'écrit ;
@@ -118,6 +122,9 @@ ne sont pas passés en revue ; (iii) **les tests** : ≈ 316 lignes Rust sous `c
 9. **AC-9 — export** : `bank_accounts.csv` : `iban` vide pour un compte sans IBAN ; colonnes `account_kind` et `card_last4` **en fin de ligne**.
 10. **AC-10 — l'écran tolère** : tableau, accueil, *Paramètres* et les sept sélecteurs affichent un compte sans IBAN sans planter (« •••• 1234 » si
     `cardLast4`, le seul nom sinon) — **une** fonction de `format.ts` (C-e341-21) ; Vitest sur `shortIban` gardé et `bankAccountOptionLabel`.
+    **Le filet qui ferme l'inventaire côté écran** : `iban: string | null` dans `bank-accounts.api.ts:28` et `settings.types.ts:72` fait rougir
+    `npm run check` sur tout lecteur TypeScript ou Svelte non adapté — la seule preuve que l'écran n'a pas de lecteur hors de S12-S17 (le grep reste une
+    liste) ; `npm run check` vert est exigé et déclaré au Dev Agent Record.
 11. **AC-11 — rien ne crée encore un compte sans IBAN** : `POST /bank-accounts` sans IBAN → `400` comme en 0.17.5 ; un `accountKind:
     "credit_card"` envoyé ne crée pas de carte (refusé ou ignoré : le comportement constaté à l'étape 0 est asserté).
 12. **AC-12 — sauvegarde** : un `.keshbackup` 0.17.6 qui contient une ligne forgée sans IBAN se réimporte à l'identique dans une 0.17.6 neuve ; il
@@ -139,7 +146,11 @@ ne sont pas passés en revue ; (iii) **les tests** : ≈ 316 lignes Rust sous `c
 - [ ] **T3 — tolérance** : entité, dépôt, S1/S2, S4, S5, S6, S7, S9, S10 ; frontend S12 à S17.
 - [ ] **T4 — codes d'erreur** : `PAYMENT_BATCH_ACCOUNT_HAS_NO_IBAN`, `BANK_IMPORT_CAMT_NEEDS_IBAN` : variantes `AppError`, `errors.rs`, messages
   aux quatre `messages.ftl`, libellés frontend, tableau d'erreurs de `api-external.md`.
-- [ ] **T5 — montée** : `scripts/recette-montee.sh` depuis l'image 0.17.5 publiée, base peuplée (comptes, imports, lots, factures QR).
+- [ ] **T5 — montée** : `scripts/recette-montee.sh` depuis l'image 0.17.5 publiée, base peuplée (comptes, imports, lots, factures QR). La recette
+  constate (précédent de la 0.17.5) : le fichier `backup/pre-upgrade/` écrit par Kesh **avant** la migration (#847) ; l'image 0.17.5 qui **refuse**
+  de démarrer sur la base migrée ; le fichier `pre-upgrade/` importé dans une 0.17.5 neuve, empreintes identiques à l'avant ; un `.keshbackup` 0.17.5
+  importé dans une 0.17.6. Et un **test automatisé** dans `migrations_upgrade_path.rs` : lignes `bank_accounts` posées avant la migration, puis
+  `account_kind = 'bank'`, IBAN intact, `CHECK`s satisfaits — montage **résolu par version** (`.position(|m| m.version == …)`, P6), non par position.
 - [ ] **T6 — documentation** (AC-13), CHANGELOG (migration, avertissement de sauvegarde en tête), captures `kesh-gate-logs/e341/captures/34-11a1-*.png`
   (tableau et accueil avec une ligne forgée).
 
@@ -183,6 +194,10 @@ migration de l'epic : aucun ordre à régler avec une autre story. La **34-11a2*
   (recompté), blocs `#[cfg(test)]` ajoutés à l'angle mort (iii) ; **3.6** : refus CAMT placé entre détection et lecture (relu `bank_imports.rs:1040-1055`),
   mutation M3b ; **3.7** : tâche T4 des codes ; refus des sites A fondés sur `iban IS NULL` (C-e341-18 précisé). **3.2, 3.4, 3.8, 3.9** : en 34-11a2.
   LOW de la validation du groupe e343 (orchestrateur) : la fiche ne parle plus d'une migration à ordonner avec la 34-5, qui n'en porte pas (C-e343-1).
+- 2026-11-10 : **validation P2 (Opus)** — pour cette fiche : 0 M, 5 L (3.1 à 3.5). Remédiation (Opus 5.5), tout appliqué. **3.1** : en-tête complété
+  (C-e341-19, 21). **3.2** : `NewBankAccount.iban` reste `String`, la carte lie son IBAN à part (C-e341-39 ; relus `entities/bank_account.rs:81`,
+  `routes/bank_accounts.rs:642`). **3.3** : `accountKind`, `cardLast4` dans les réponses, et `invoice_pdf_service.rs:342` sur `None` (AC-3). **3.4** :
+  ce que la montée constate, et le test de montée résolu par version (T5). **3.5** : `npm run check` comme filet de l'inventaire (AC-10).
 
 ## Dev Agent Record
 
