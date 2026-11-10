@@ -2161,9 +2161,37 @@ L'import ne se déclenche pas tout seul~: vous le lancez depuis l'écran décrit
 \emph{Quotidien} → \emph{Documents à traiter}, puis \textbf{« Importer le dossier »}.
 Kesh lit chaque fichier, cherche un QR côté serveur, archive le document et le place dans
 la liste \textbf{« Documents à traiter »}. Le fichier \textbf{quitte le dossier dès
-l'import}~: il est conservé par Kesh, non plus dans le dossier. Un rapport indique les
-documents importés --- avec la mention \emph{aucune QR-facture exploitable} ou \emph{QR illisible} pour ceux
-qui entrent sans les données d'un QR ---, les fichiers en échec et les avertissements.
+l'import}~: il est conservé par Kesh, non plus dans le dossier.
+
+\paragraph{Le rapport d'import.} Depuis la version~0.17.6, le rapport commence par un
+résumé (« 2 document(s) importé(s), 1 déjà importé(s). ») puis donne \textbf{une ligne
+par fichier}, dans l'ordre des noms, avec ce qui lui est arrivé~:
+\begin{itemize}
+    \item \textbf{importé}~;
+    \item \textbf{importé sans les données du QR}, avec la mention \emph{aucune QR-facture
+          exploitable} ou \emph{QR illisible} et son motif~;
+    \item \textbf{déjà importé}~: un document au contenu identique est déjà dans Kesh, et
+          le fichier n'est pas importé une seconde fois. La ligne dit où se trouve le
+          document existant~: \emph{en attente dans Documents à traiter} (un lien mène à
+          sa ligne, plus bas sur la page), \emph{transformé en facture} (un lien ouvre la
+          facture), \emph{retiré de la liste} ou \emph{déjà traité} (sans lien)~;
+    \item \textbf{refusé}, avec son motif (voir \emph{Ce qui reste refusé}, ci-dessous)~;
+    \item \textbf{non traité}~: le fichier était \emph{en cours d'écriture} --- il reste
+          dans le dossier, relancez l'import une fois la copie terminée --- ou il a
+          \emph{disparu pendant l'import}.
+\end{itemize}
+Un fichier déjà importé ou refusé est \textbf{déplacé dans le sous-dossier
+\texttt{failed/}} du dossier d'import, sous un nom suffixé de huit caractères
+(\texttt{facture\_1a2b3c4d.pdf} pour \texttt{facture.pdf}), pour que deux fichiers
+homonymes ne s'écrasent pas~; sa ligne donne ce nom. Kesh ne vide jamais ce
+sous-dossier~: \textbf{supprimez-y les fichiers à la main} une fois la raison lue. Quand
+la limite de fichiers par import est atteinte, le rapport le dit~: relancez l'import pour
+traiter le reste.
+
+Dès qu'un fichier n'est pas importé (déjà importé, refusé ou non traité), ou que la
+limite est atteinte, une \textbf{notification d'avertissement} le signale~; sinon, une
+notification confirme le nombre de documents importés. \textbf{Le rapport n'est pas
+conservé}~: il disparaît en quittant la page, notez ce qui doit l'être avant.
 
 Chaque ligne de la liste porte le nom du fichier, sa date d'import et un badge~:
 \begin{itemize}
@@ -2280,7 +2308,9 @@ traiter. » et renvoie à la liste.
 \paragraph{Ce qui reste refusé.} Un fichier qui n'est ni un PDF ni une image PNG ou JPEG
 (ou dont le contenu ne correspond pas à l'extension), une image illisible, un fichier trop
 volumineux, un lien symbolique, un fichier déjà importé ou illisible~: il est déplacé dans
-le sous-dossier \texttt{failed/} du dossier d'import, et le rapport en donne la raison.
+le sous-dossier \texttt{failed/} du dossier d'import, sous un nom suffixé de huit
+caractères, et sa ligne du rapport en donne la raison et ce nom (\emph{Le rapport
+d'import}, ci-dessus). Le sous-dossier se vide à la main.
 Une image que Kesh ne sait pas décoder est refusée comme \emph{type non pris en charge},
 même si votre navigateur l'affiche~: c'est le cas d'une image de plus de 10\,000 pixels
 de côté, et de certaines variantes peu courantes du format JPEG. Convertissez-la (PNG,

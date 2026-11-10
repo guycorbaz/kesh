@@ -52,7 +52,8 @@ use crate::services::pieces;
 // ---------------------------------------------------------------------------
 
 /// Déclenche un run d'import du répertoire inbox (Comptable+). Retourne le
-/// rapport batch `{ accepted, failed, warnings }` (HTTP 200) ; `409` si un import
+/// rapport batch `{ accepted, failed, skipped, truncatedAt, warnings }` (HTTP 200,
+/// Story 34-9 pour `skipped` et `truncatedAt`) ; `409` si un import
 /// est déjà en cours (verrou de run F6).
 pub async fn post_inbox_import(
     State(state): State<AppState>,

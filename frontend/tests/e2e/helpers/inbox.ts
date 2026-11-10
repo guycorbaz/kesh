@@ -18,6 +18,7 @@
  */
 import { expect } from '@playwright/test';
 import type { Page } from '@playwright/test';
+import { createHash } from 'node:crypto';
 import { constants, promises as fs } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -71,6 +72,31 @@ export function token(): string {
 export function uniqueCopy(bytes: Buffer, kind: 'png' | 'pdf'): Buffer {
 	const suffix = kind === 'pdf' ? `\n% kesh-e2e-${token()}\n` : `kesh-e2e-${token()}`;
 	return Buffer.concat([bytes, Buffer.from(suffix, 'latin1')]);
+}
+
+/**
+ * Story 34-9 (#969, AC-7) — copie **identique** d'un document : mêmes octets, à déposer
+ * sous un autre nom. C'est le doublon que l'import doit refuser en le nommant — à
+ * l'inverse de {@link uniqueCopy}, qui rend chaque copie unique pour l'éviter.
+ */
+export function copieIdentique(bytes: Buffer): Buffer {
+	return Buffer.from(bytes);
+}
+
+/**
+ * Story 34-9 (AC-2) — le nom sous lequel un doublon est rangé dans `failed/` :
+ * `{stem}_{8 premiers caractères du SHA-256}.{ext}` (`move_to_failed`, côté serveur).
+ */
+export function nomDansFailed(fileName: string, bytes: Buffer): string {
+	const ext = path.extname(fileName);
+	const stem = path.basename(fileName, ext);
+	const hash8 = createHash('sha256').update(bytes).digest('hex').slice(0, 8);
+	return `${stem}_${hash8}${ext.toLowerCase()}`;
+}
+
+/** Story 34-9 — supprime un fichier rangé dans `failed/` par le test ; échoue s'il n'y est pas. */
+export async function retirerDeFailed(movedTo: string): Promise<void> {
+	await fs.unlink(path.join(INBOX_DIR, 'failed', movedTo));
 }
 
 /**

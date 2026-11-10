@@ -892,7 +892,9 @@ du QR~; l'IBAN et la référence de la facture se saisissent alors à la main, e
 contrôlent (manuel utilisateur, \emph{Saisir une facture fournisseur}). La facture se crée
 à côté du document, sur la page de saisie. Restent refusés (sous-dossier \texttt{failed/})~: un type hors
 PDF/PNG/JPEG ou dont le contenu ne correspond pas à l'extension, une image illisible, un
-fichier trop volumineux, un lien symbolique, un doublon, une erreur de lecture. Deux
+fichier trop volumineux, un lien symbolique, un doublon, une erreur de lecture~; depuis la
+0.17.6, le rapport d'import nomme chaque fichier, et pour un doublon le document déjà
+importé. Deux
 dossiers sont à configurer, montés en volumes persistants (cf. \texttt{docker-compose}) :
 
 \begin{itemize}
@@ -902,7 +904,12 @@ dossiers sont à configurer, montés en volumes persistants (cf. \texttt{docker-
     \texttt{./inbox:/data/inbox}) pour pouvoir y glisser vos factures. À l'import
     réussi, le fichier d'origine est \textbf{supprimé} de l'inbox (la copie
     archivée fait foi) ; les fichiers en échec sont déplacés dans le
-    sous-dossier \texttt{failed/}.
+    sous-dossier \texttt{failed/}, renommés \texttt{\{nom\}\_\{8 caractères\}.\{ext\}}
+    (huit caractères de l'empreinte du contenu, ou tirés au hasard pour un échec
+    survenu avant sa lecture) pour qu'un homonyme n'écrase pas le précédent. Kesh ne
+    vide \textbf{jamais} ce sous-dossier : il se vide à la main, et grossit sinon d'un
+    fichier par échec (il n'est pas dans le \texttt{.keshbackup},
+    \S\ref{sec:backup-ui-keshbackup}).
     \item \texttt{KESH\_DOCUMENTS\_DIR} (défaut \texttt{/data/documents}) — le
     dossier d'archivage des \textbf{documents fournisseur} (copies des fichiers
     importés, nommées \texttt{\{sha256\}.\{ext\}}~; depuis la 0.14.0, tout document

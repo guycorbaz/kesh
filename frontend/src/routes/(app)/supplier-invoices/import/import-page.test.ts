@@ -200,7 +200,7 @@ describe('Documents à traiter', () => {
 		expect(lines[0].textContent).toMatch(/Montant du QR hors des limites admises/);
 		// Story 30-2b : la saisie de l'IBAN et de la référence existe désormais.
 		expect(lines[0].textContent).toMatch(/saisissez l’IBAN et la référence à la main/);
-		expect(lines[1].textContent).toMatch(/avec\.png.*importé/s);
+		expect(lines[1].textContent).toMatch(/avec\.png.*Importé\./s);
 		expect(lines[2].textContent).toMatch(/sans\.png.*aucune QR-facture exploitable/s);
 	});
 
@@ -478,6 +478,8 @@ describe('les textes du rapport d’import aux catalogues (Story 34-9)', () => {
 		'imported-supplier-invoices-report-summary-refused',
 		'imported-supplier-invoices-report-summary-not-processed',
 		'imported-supplier-invoices-report-state-imported',
+		'imported-supplier-invoices-report-state-imported-no-qr',
+		'imported-supplier-invoices-report-state-not-processed',
 		'imported-supplier-invoices-report-duplicate',
 		'imported-supplier-invoices-report-duplicate-unknown',
 		'imported-supplier-invoices-report-duplicate-pending',

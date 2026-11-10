@@ -26,10 +26,16 @@
 		fetchImportedSourceDocument,
 	} from '$lib/features/imported-supplier-invoices/imported-supplier-invoices.api';
 	import {
+		duplicateOf,
 		hasQr,
 		importDateOf,
+		movedToOf,
+		reportCounts,
+		reportRows,
+		type ExistingDocument,
 		type ImportedSupplierInvoice,
 		type InboxImportReport,
+		type ReportRow,
 	} from '$lib/features/imported-supplier-invoices/imported-supplier-invoices.types';
 	import { importErrorLabel } from '$lib/features/imported-supplier-invoices/error-label';
 	import DocumentPreview from '$lib/features/imported-supplier-invoices/DocumentPreview.svelte';
@@ -41,6 +47,102 @@
 
 	let report = $state<InboxImportReport | null>(null);
 	let importing = $state(false);
+
+	// Story 34-9 (#969, #974, AC-4) — une ligne par fichier, dans l'ordre des noms. Le
+	// rapport n'est pas conservé : il vit le temps de la page (décision de Guy).
+	const rows = $derived(report ? reportRows(report) : []);
+	const reportHasProblem = $derived(
+		!!report && (report.failed.length > 0 || (report.skipped ?? []).length > 0),
+	);
+
+	/**
+	 * Story 34-9 (AC-4, F9-1, C-e342-21) — le résumé, composé ici segment par segment : le
+	 * client reçoit les messages pré-résolus, un sélecteur Fluent y arriverait figé. Les
+	 * segments nuls sont omis ; un import vide garde « 0 document(s) importé(s). ».
+	 */
+	function summaryOf(r: InboxImportReport): string {
+		const c = reportCounts(r);
+		const segments: string[] = [];
+		if (c.imported > 0 || c.duplicates + c.refused + c.notProcessed === 0) {
+			segments.push(
+				i18nMsg('imported-supplier-invoices-report-summary-imported', '{$n} document(s) importé(s)', {
+					n: c.imported,
+				}),
+			);
+		}
+		if (c.duplicates > 0) {
+			segments.push(
+				i18nMsg('imported-supplier-invoices-report-summary-duplicates', '{$n} déjà importé(s)', {
+					n: c.duplicates,
+				}),
+			);
+		}
+		if (c.refused > 0) {
+			segments.push(
+				i18nMsg('imported-supplier-invoices-report-summary-refused', '{$n} refusé(s)', {
+					n: c.refused,
+				}),
+			);
+		}
+		if (c.notProcessed > 0) {
+			segments.push(
+				i18nMsg('imported-supplier-invoices-report-summary-not-processed', '{$n} non traité(s)', {
+					n: c.notProcessed,
+				}),
+			);
+		}
+		return `${segments.join(', ')}.`;
+	}
+
+	/**
+	 * Story 34-9 (AC-5, C-e342-13) — la notification qui suit un import : un avertissement
+	 * dès qu'un fichier n'est pas importé (`failed` ou `skipped`) ou que la limite est
+	 * atteinte ; un succès sinon ; rien pour un import sans aucun fichier. Un document
+	 * importé sans les données du QR ne déclenche pas l'avertissement : sa ligne le dit.
+	 */
+	function noticeOf(r: InboxImportReport): { warning: boolean; message: string } | null {
+		const n = r.failed.length + (r.skipped ?? []).length;
+		if (n > 0) {
+			return {
+				warning: true,
+				message: i18nMsg(
+					'imported-supplier-invoices-notice-not-imported',
+					'Import terminé : {$n} fichier(s) non importé(s). Voir le rapport.',
+					{ n },
+				),
+			};
+		}
+		if (r.truncatedAt != null) {
+			return {
+				warning: true,
+				message: i18nMsg(
+					'imported-supplier-invoices-notice-truncated',
+					'Import terminé : la limite par import est atteinte. Voir le rapport.',
+				),
+			};
+		}
+		if (r.accepted.length > 0) {
+			return {
+				warning: false,
+				message: i18nMsg(
+					'imported-supplier-invoices-notice-imported',
+					'Import terminé : {$n} document(s) importé(s).',
+					{ n: r.accepted.length },
+				),
+			};
+		}
+		return null;
+	}
+
+	/** Le document existant d'une ligne « déjà importé », s'il est connu. */
+	function existingOf(row: ReportRow): ExistingDocument | null {
+		return row.state === 'duplicate' ? duplicateOf(row.failed) : null;
+	}
+
+	/** Le nom rangé dans `failed/` d'une ligne « déjà importé » ou « refusé ». */
+	function movedOf(row: ReportRow): string | null {
+		return row.state === 'duplicate' || row.state === 'refused' ? movedToOf(row.failed) : null;
+	}
 
 	// Aperçu : un document à la fois, sous sa ligne.
 	let previewId = $state<number | null>(null);
@@ -91,8 +193,10 @@
 	async function runImport() {
 		if (importing) return;
 		importing = true;
+		let fresh: InboxImportReport;
 		try {
-			report = await triggerInboxImport();
+			fresh = await triggerInboxImport();
+			report = fresh;
 		} catch (err) {
 			report = null;
 			if (isApiError(err) && err.code === 'INBOX_IMPORT_ALREADY_RUNNING') {
@@ -111,19 +215,38 @@
 			importing = false;
 			return;
 		}
+		const notice = noticeOf(fresh);
 		// Rechargement de la liste séparé du déclenchement (BH1/EC2) : un échec de
 		// `reloadList` ne doit PAS effacer le rapport d'import qui vient de réussir.
+		let reloadFailed = false;
 		try {
 			await reloadList();
 		} catch {
+			reloadFailed = true;
+		} finally {
+			importing = false;
+		}
+		// Story 34-9 (AC-5, F9-8) — une seule notification : si le rechargement échoue,
+		// un avertissement qui dit les deux.
+		if (reloadFailed && notice) {
+			notifyWarning(
+				notice.message,
+				i18nMsg(
+					'imported-supplier-invoices-reload-failed',
+					'La liste n’a pas pu être rechargée — actualisez la page.',
+				),
+			);
+		} else if (reloadFailed) {
 			notifyWarning(
 				i18nMsg(
 					'imported-supplier-invoices-completed-reload-failed',
 					'Import effectué, mais la liste n’a pas pu être rechargée — actualisez la page.',
 				),
 			);
-		} finally {
-			importing = false;
+		} else if (notice?.warning) {
+			notifyWarning(notice.message);
+		} else if (notice) {
+			notifySuccess(notice.message);
 		}
 	}
 
@@ -215,51 +338,121 @@
 </div>
 
 {#if report}
-	<div class="mb-6 rounded border border-border p-4" data-testid="inbox-import-report">
-		<p class="text-sm font-medium">
-			{i18nMsg('imported-supplier-invoices-report-accepted', '{$n} document(s) importé(s).', {
-				n: report.accepted.length,
-			})}
-		</p>
-		{#if report.accepted.some((a) => a.qr !== 'present')}
-			<ul class="mt-1 space-y-1 text-sm">
-				{#each report.accepted.filter((a) => a.qr !== 'present') as a (a.importedSupplierInvoiceId)}
-					<li data-testid="inbox-import-accepted-row">
-						<span class="font-mono">{a.fileName}</span> —
-						{#if a.qr === 'unreadable'}
-							{i18nMsg('imported-supplier-invoices-report-qr-unreadable', 'QR illisible')}{#if a.qrError}
-								({importErrorLabel(a.qrError)}){/if}.
-							{i18nMsg(
-								'imported-supplier-invoices-qr-unreadable-hint',
-								'Document accepté sans les données du QR : en créant la facture, saisissez l’IBAN et la référence à la main.',
-							)}
+	<!-- Story 34-9 (#969, #974, AC-4, AC-5) — un résumé, puis une ligne par fichier dans
+	     l'ordre des noms. Les anciens testids (`inbox-import-accepted-row`,
+	     `inbox-import-failed-row`) restent, portés par le contenu de la ligne. -->
+	<div
+		class="mb-6 rounded border p-4 {reportHasProblem ? 'border-2 border-warning' : 'border-border'}"
+		data-testid="inbox-import-report"
+	>
+		<p class="text-sm font-medium" data-testid="inbox-import-summary">{summaryOf(report)}</p>
+		{#if report.truncatedAt != null}
+			<p class="mt-1 text-sm font-medium" data-testid="inbox-import-truncated">
+				{i18nMsg(
+					'imported-supplier-invoices-report-truncated',
+					'La limite de {$n} fichiers par import est atteinte : relancez l’import pour traiter le reste.',
+					{ n: report.truncatedAt },
+				)}
+			</p>
+		{/if}
+		{#if rows.length > 0}
+			<ul class="mt-2 space-y-1 text-sm">
+				{#each rows as row, ri (ri)}
+					{@const existing = existingOf(row)}
+					{@const moved = movedOf(row)}
+					<li data-testid="inbox-import-file-row" data-state={row.state}>
+						{#if row.state === 'imported' || row.state === 'imported-no-qr'}
+							<div data-testid="inbox-import-accepted-row">
+								<span class="font-mono">{row.fileName}</span> —
+								{#if row.state === 'imported'}
+									{i18nMsg('imported-supplier-invoices-report-state-imported', 'Importé.')}
+								{:else}
+									{i18nMsg(
+										'imported-supplier-invoices-report-state-imported-no-qr',
+										'Importé sans les données du QR :',
+									)}
+									{#if row.accepted.qr === 'unreadable'}
+										{i18nMsg('imported-supplier-invoices-report-qr-unreadable', 'QR illisible')}{#if row.accepted.qrError}
+											({importErrorLabel(row.accepted.qrError)}){/if}.
+										{i18nMsg(
+											'imported-supplier-invoices-qr-unreadable-hint',
+											'Document accepté sans les données du QR : en créant la facture, saisissez l’IBAN et la référence à la main.',
+										)}
+									{:else}
+										{i18nMsg('imported-supplier-invoices-report-no-qr', 'aucune QR-facture exploitable')}
+									{/if}
+								{/if}
+							</div>
+						{:else if row.state === 'duplicate' || row.state === 'refused'}
+							<div data-testid="inbox-import-failed-row">
+								<span class="font-mono">{row.fileName}</span> —
+								{#if row.state === 'refused'}
+									<span class="font-medium text-destructive"
+										>{i18nMsg('imported-supplier-invoices-report-refused', 'Refusé :')}</span
+									>
+									{importErrorLabel(row.failed.errorCode)}.
+								{:else if existing}
+									<span class="font-medium"
+										>{i18nMsg('imported-supplier-invoices-report-duplicate', 'Déjà importé :')}</span
+									>
+									{#if existing.existingStatus === 'to_complete'}
+										<a
+											class="text-primary underline"
+											data-testid="inbox-import-duplicate-link"
+											href={`#imported-${existing.existingDocumentId}`}
+											>{i18nMsg(
+												'imported-supplier-invoices-report-duplicate-pending',
+												'en attente dans Documents à traiter',
+											)}</a
+										>.
+									{:else if existing.existingStatus === 'completed' && existing.supplierInvoiceId != null}
+										<a
+											class="text-primary underline"
+											data-testid="inbox-import-duplicate-link"
+											href={`/supplier-invoices/${existing.supplierInvoiceId}`}
+											>{i18nMsg(
+												'imported-supplier-invoices-report-duplicate-invoice',
+												'transformé en facture',
+											)}</a
+										>.
+									{:else if existing.existingStatus === 'discarded'}
+										{i18nMsg('imported-supplier-invoices-report-duplicate-discarded', 'retiré de la liste')}.
+									{:else}
+										{i18nMsg('imported-supplier-invoices-report-duplicate-processed', 'déjà traité')}.
+									{/if}
+								{:else}
+									<span class="font-medium"
+										>{i18nMsg('imported-supplier-invoices-report-duplicate-unknown', 'Déjà importé.')}</span
+									>
+								{/if}
+								{#if moved}
+									<span class="text-text-muted">
+										{i18nMsg(
+											'imported-supplier-invoices-report-moved-to',
+											'Le fichier a été déplacé dans failed/ sous le nom {$movedTo} ; supprimez-le à la main.',
+											{ movedTo: moved },
+										)}
+									</span>
+								{/if}
+							</div>
 						{:else}
-							{i18nMsg('imported-supplier-invoices-report-no-qr', 'aucune QR-facture exploitable')}
+							<span class="font-mono">{row.fileName}</span> —
+							<span>
+								<span class="font-medium"
+									>{i18nMsg('imported-supplier-invoices-report-state-not-processed', 'Non traité :')}</span
+								>
+								{row.skipped.reason === 'UNSTABLE'
+									? i18nMsg(
+											'imported-supplier-invoices-report-skipped-unstable',
+											'en cours d’écriture, laissé dans le dossier : relancez l’import',
+										)
+									: i18nMsg(
+											'imported-supplier-invoices-report-skipped-vanished',
+											'disparu pendant l’import',
+										)}.
+							</span>
 						{/if}
 					</li>
-				{/each}
-			</ul>
-		{/if}
-		{#if report.failed.length > 0}
-			<div class="mt-3">
-				<p class="text-sm font-medium text-destructive">
-					{i18nMsg('imported-supplier-invoices-report-failed', '{$n} échec(s) :', {
-						n: report.failed.length,
-					})}
-				</p>
-				<ul class="mt-1 space-y-1 text-sm">
-					{#each report.failed as f, fi (fi)}
-						<li data-testid="inbox-import-failed-row">
-							<span class="font-mono">{f.fileName}</span> — {importErrorLabel(f.errorCode)}
-						</li>
-					{/each}
-				</ul>
-			</div>
-		{/if}
-		{#if report.warnings.length > 0}
-			<ul class="mt-3 space-y-1 text-sm text-text-muted">
-				{#each report.warnings as w, wi (wi)}
-					<li>⚠️ {w}</li>
 				{/each}
 			</ul>
 		{/if}
@@ -281,7 +474,12 @@
 {:else}
 	<ul class="space-y-4" data-testid="imported-list">
 		{#each toComplete as row (row.id)}
-			<li class="rounded border border-border p-4" data-testid="imported-row">
+			<!-- Story 34-9 (AC-4, C-e342-14) — l'ancre que vise le lien d'un doublon en attente. -->
+			<li
+				id={`imported-${row.id}`}
+				class="scroll-mt-4 rounded border border-border p-4 target:ring-2 target:ring-primary"
+				data-testid="imported-row"
+			>
 				<div class="flex flex-wrap items-start justify-between gap-3">
 					<div class="text-sm">
 						<div class="font-medium" data-testid="imported-file-name">{row.originalFilename}</div>

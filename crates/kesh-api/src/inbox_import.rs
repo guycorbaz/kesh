@@ -20,10 +20,25 @@
 //! symbolique, doublon, erreur de lecture.
 //!
 //! ## Pattern batch (CLAUDE.md, §FailedProposal)
-//! Retourne `{ accepted, failed, warnings }` avec **HTTP 200** : aucune erreur
-//! per-fichier n'escalade en `AppError` global. Les seules `AppError` globales
-//! sont les exceptions amont : `401/403` (RBAC), `409` ([`AppError::InboxImportAlreadyRunning`]),
-//! `500` (catastrophe DB/IO).
+//! Retourne `{ accepted, failed, skipped, truncatedAt, warnings }` avec **HTTP
+//! 200** : aucune erreur per-fichier n'escalade en `AppError` global. Les seules
+//! `AppError` globales sont les exceptions amont : `401/403` (RBAC), `409`
+//! ([`AppError::InboxImportAlreadyRunning`]), `500` (catastrophe DB/IO).
+//!
+//! ## Un rapport qui nomme chaque fichier (Story 34-9, #969, #974)
+//! - Toute entrée `failed[]` porte `details.movedTo`, le nom sous lequel le
+//!   fichier a été rangé dans `failed/` ([`move_to_failed`]), **fusionné** aux
+//!   autres champs de `details` (`FILE_TOO_LARGE` garde `byteSize`, `maxBytes`).
+//! - Un `DUPLICATE` nomme le document déjà importé ([`duplicate_details`]) :
+//!   `existingDocumentId`, `existingStatus`, `supplierInvoiceId`. Aux deux sites
+//!   de **course** (réactivation manquée, `UNIQUE` à l'`INSERT`), le document est
+//!   **relu** par son empreinte après le `rollback` : l'état lu avant la course
+//!   serait périmé.
+//! - Un fichier non traité sort en `skipped[]` (`{ fileName, reason }`,
+//!   [`SkipReason`]) ; la limite de fichiers atteinte, en `truncatedAt`.
+//!   `warnings[]` garde ses messages en français pour les clients d'API
+//!   existants (déprécié) ; l'écran ne l'affiche plus. L'agrégation est une
+//!   fonction pure, [`push_outcome`] et [`mark_truncated`].
 //!
 //! ## Verrou de run (F6, Option A)
 //! `GET_LOCK` MariaDB sur une **connexion dédiée** (`pool.acquire()`) tenue
@@ -55,7 +70,7 @@ use crate::errors::AppError;
 use crate::qr_decode::{self, DecodeConfig, DecodeError};
 use kesh_db::entities::audit_log::NewAuditLogEntry;
 use kesh_db::entities::imported_supplier_invoice::{
-    NewImportedSupplierInvoice, QrColumns, check_scanned_fits_columns,
+    ImportedSupplierInvoice, NewImportedSupplierInvoice, QrColumns, check_scanned_fits_columns,
 };
 use kesh_db::errors::{DbError, map_db_error};
 use kesh_db::repositories::{audit_log, imported_supplier_invoices};
@@ -88,13 +103,43 @@ const STABILITY_DELAY: std::time::Duration = std::time::Duration::from_millis(25
 
 // --- Rapport batch -----------------------------------------------------------
 
-/// Rapport d'un run d'import (`{ accepted, failed, warnings }`, HTTP 200).
+/// Rapport d'un run d'import (`{ accepted, failed, skipped, truncatedAt,
+/// warnings }`, HTTP 200).
 #[derive(Debug, Default, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct InboxImportReport {
     pub accepted: Vec<AcceptedFile>,
     pub failed: Vec<FailedFile>,
+    /// Story 34-9 (#974) — fichiers ni importés ni déplacés, avec leur motif.
+    pub skipped: Vec<SkippedFile>,
+    /// Story 34-9 (#974) — la limite de fichiers par import, quand elle a été
+    /// atteinte (`null` sinon) : les fichiers au-delà restent dans le dossier.
+    pub truncated_at: Option<usize>,
+    /// Messages lisibles, en français, des fichiers non traités et de la
+    /// troncature. ⚠️ **Déprécié** (Story 34-9, #974) au profit de `skipped` et
+    /// `truncatedAt` : gardé, inchangé, pour les clients d'API existants.
     pub warnings: Vec<String>,
+}
+
+/// Story 34-9 (#974) — un fichier non traité : laissé ou disparu, jamais
+/// déplacé dans `failed/`.
+#[derive(Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SkippedFile {
+    pub file_name: String,
+    pub reason: SkipReason,
+}
+
+/// Story 34-9 (#974) — pourquoi un fichier n'a pas été traité.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+pub enum SkipReason {
+    /// En cours d'écriture (taille ou date changée pendant le délai de
+    /// stabilité) : laissé en place, repris au passage suivant.
+    #[serde(rename = "UNSTABLE")]
+    Unstable,
+    /// Disparu pendant le traitement (course avec un outil qui le déplace).
+    #[serde(rename = "VANISHED")]
+    Vanished,
 }
 
 /// Fichier importé avec succès (staging créé ou `discarded` réactivée).
@@ -148,9 +193,87 @@ enum FileOutcome {
         error_code: &'static str,
         details: Option<serde_json::Value>,
     },
-    /// Fichier instable (en cours d'écriture) : laissé en place, retenté au
-    /// prochain run. `warning` est un message borné (un par fichier instable).
-    Skipped(String),
+    /// Fichier non traité : instable (laissé en place, retenté au prochain run)
+    /// ou disparu. Le message de `warnings[]` se compose à l'agrégation
+    /// ([`push_outcome`]), un par fichier.
+    Skipped(SkipReason),
+}
+
+/// Story 34-9 (AC-3, P3-9-1) — range l'issue d'un fichier dans le rapport.
+/// Fonction pure, appelée par la boucle de [`process_inbox`] et testée seule :
+/// un fichier non traité va à `skipped[]` **et** à `warnings[]` (message en
+/// français, gardé pour les clients d'API).
+fn push_outcome(report: &mut InboxImportReport, file_name: String, outcome: FileOutcome) {
+    match outcome {
+        FileOutcome::Accepted { id, qr, qr_error } => report.accepted.push(AcceptedFile {
+            imported_supplier_invoice_id: id,
+            file_name,
+            qr,
+            qr_error,
+        }),
+        FileOutcome::Failed {
+            error_code,
+            details,
+        } => report.failed.push(FailedFile {
+            file_name,
+            error_code,
+            details,
+        }),
+        FileOutcome::Skipped(reason) => {
+            report.warnings.push(match reason {
+                SkipReason::Unstable => format!(
+                    "Fichier « {file_name} » en cours d'écriture — ignoré ce tour, relancez l'import."
+                ),
+                SkipReason::Vanished => format!(
+                    "Fichier « {file_name} » disparu pendant le traitement (race) — ignoré ce tour."
+                ),
+            });
+            report.skipped.push(SkippedFile { file_name, reason });
+        }
+    }
+}
+
+/// Story 34-9 (#974) — la limite de fichiers par import est atteinte : un SEUL
+/// message de troncature (borné), pas un par fichier excédentaire, et
+/// `truncatedAt`.
+fn mark_truncated(report: &mut InboxImportReport, limit: usize) {
+    report.truncated_at = Some(limit);
+    report.warnings.push(format!(
+        "Limite de {limit} fichiers par import atteinte — relancez l'import pour traiter le reste."
+    ));
+}
+
+/// Story 34-9 (AC-1) — le `details` d'un doublon : le document déjà importé,
+/// son état, et sa facture (`null` s'il n'en a pas). Une seule définition pour
+/// les trois sites du doublon. `None` (document introuvable à la relecture) ne
+/// laisse que `movedTo`.
+fn duplicate_details(existing: Option<&ImportedSupplierInvoice>) -> Option<serde_json::Value> {
+    existing.map(|e| {
+        serde_json::json!({
+            "existingDocumentId": e.id,
+            "existingStatus": e.status,
+            "supplierInvoiceId": e.supplier_invoice_id,
+        })
+    })
+}
+
+/// Story 34-9 (AC-1, C-e342-10) — relit le document d'un doublon par son
+/// empreinte, **hors transaction**, après le `rollback` d'une course : l'état lu
+/// avant la course serait périmé. Une erreur de relecture n'abat pas l'import
+/// (le fichier n'est pas encore rangé) : elle est journalisée, et la ligne du
+/// rapport dit « déjà importé » sans lien.
+async fn reread_duplicate(
+    pool: &MySqlPool,
+    company_id: i64,
+    file_hash: &str,
+) -> Option<ImportedSupplierInvoice> {
+    match imported_supplier_invoices::find_by_company_hash(pool, company_id, file_hash).await {
+        Ok(found) => found,
+        Err(e) => {
+            tracing::warn!("inbox import: relecture du doublon impossible: {e}");
+            None
+        }
+    }
 }
 
 // --- Entrée publique : run avec verrou ---------------------------------------
@@ -285,7 +408,7 @@ async fn process_inbox(
         }
         processed += 1;
 
-        match process_one_file(
+        let outcome = process_one_file(
             pool,
             config,
             &inbox_root,
@@ -298,32 +421,12 @@ async fn process_inbox(
             &file_name,
             &sym_meta,
         )
-        .await?
-        {
-            FileOutcome::Accepted { id, qr, qr_error } => report.accepted.push(AcceptedFile {
-                imported_supplier_invoice_id: id,
-                file_name,
-                qr,
-                qr_error,
-            }),
-            FileOutcome::Failed {
-                error_code,
-                details,
-            } => report.failed.push(FailedFile {
-                file_name,
-                error_code,
-                details,
-            }),
-            FileOutcome::Skipped(warning) => report.warnings.push(warning),
-        }
+        .await?;
+        push_outcome(&mut report, file_name, outcome);
     }
 
     if truncated {
-        // Un SEUL message de troncature (borné), pas un par fichier excédentaire.
-        report.warnings.push(format!(
-            "Limite de {} fichiers par import atteinte — relancez l'import pour traiter le reste.",
-            config.inbox_max_files_per_run
-        ));
+        mark_truncated(&mut report, config.inbox_max_files_per_run);
     }
 
     Ok(report)
@@ -394,9 +497,7 @@ async fn process_one_file(
     };
     if meta2.len() != len1 || meta2.modified().ok() != mtime1 {
         // Instable : laissé en place, retenté au prochain run (ni accepted ni failed).
-        return Ok(FileOutcome::Skipped(format!(
-            "Fichier « {file_name} » en cours d'écriture — ignoré ce tour, relancez l'import."
-        )));
+        return Ok(FileOutcome::Skipped(SkipReason::Unstable));
     }
 
     // (4-bis) Anti-TOCTOU symlink : re-vérifier juste avant lecture (le check (1)
@@ -574,11 +675,29 @@ async fn process_one_file(
             let _ = tx.rollback().await;
             // Race : la row n'est plus `discarded`, ou porte désormais un QR
             // (garde de `reactivate_to_complete_with_qr`) → traité comme doublon.
-            return dispose_failed(path, failed_dir, file_name, &disambig, ERR_DUPLICATE, None);
+            // Story 34-9 (AC-1, F9-6) — l'état lu avant la course (`discarded`)
+            // est périmé : le document est relu, hors transaction.
+            let relu = reread_duplicate(pool, company_id, &file_hash).await;
+            return dispose_failed(
+                path,
+                failed_dir,
+                file_name,
+                &disambig,
+                ERR_DUPLICATE,
+                duplicate_details(relu.as_ref()),
+            );
         }
-        Some(_) => {
-            // Row `to_complete` / `completed` existante → doublon.
-            return dispose_failed(path, failed_dir, file_name, &disambig, ERR_DUPLICATE, None);
+        Some(existing) => {
+            // Row `to_complete` / `completed` existante → doublon, qui la nomme
+            // (Story 34-9, AC-1 : la ligne vient d'être lue).
+            return dispose_failed(
+                path,
+                failed_dir,
+                file_name,
+                &disambig,
+                ERR_DUPLICATE,
+                duplicate_details(Some(&existing)),
+            );
         }
         None => {}
     }
@@ -655,7 +774,17 @@ async fn process_one_file(
                     // Race sur UNIQUE (company_id, file_hash) : le justificatif
                     // archivé est partagé (content-addressed) avec la row
                     // gagnante → NE PAS le supprimer.
-                    dispose_failed(path, failed_dir, file_name, &disambig, ERR_DUPLICATE, None)
+                    // Story 34-9 (AC-1, C-e342-10) — la ligne gagnante n'a pas
+                    // été lue : relue par l'empreinte, après le `rollback`.
+                    let relu = reread_duplicate(pool, company_id, &file_hash).await;
+                    dispose_failed(
+                        path,
+                        failed_dir,
+                        file_name,
+                        &disambig,
+                        ERR_DUPLICATE,
+                        duplicate_details(relu.as_ref()),
+                    )
                 }
                 DbError::DataLengthOrRange(_) => {
                     // FILET (Story 30-2a) : le contrôle pur des colonnes, fait
@@ -862,9 +991,13 @@ fn random_suffix() -> String {
 ///
 /// **Race fichier disparu (BH1)** : si le fichier s'est volatilisé entre sa
 /// détection (`read_dir`) et ici (un outil d'upload qui supprime la source après
-/// copie), `move_to_failed` renvoie `Ok(false)` (ENOENT) → l'issue est
-/// `Skipped` (comme la race `read_dir`), PAS un `failed[]` ni un 500 qui
-/// abattrait tout le run. Une autre erreur IO du `rename` reste une catastrophe → 500.
+/// copie), `move_to_failed` renvoie `Ok(None)` (ENOENT) → l'issue est
+/// `Skipped(Vanished)` (comme la race `read_dir`), PAS un `failed[]` ni un 500
+/// qui abattrait tout le run. Une autre erreur IO du `rename` reste une
+/// catastrophe → 500.
+///
+/// Story 34-9 (AC-2, C-e342-11) — le nom rangé dans `failed/` est **fusionné**
+/// au `details` reçu sous `movedTo` ([`with_moved_to`]).
 fn dispose_failed(
     path: &Path,
     failed_dir: &Path,
@@ -873,16 +1006,30 @@ fn dispose_failed(
     error_code: &'static str,
     details: Option<serde_json::Value>,
 ) -> Result<FileOutcome, AppError> {
-    if move_to_failed(path, failed_dir, file_name, disambig)? {
-        Ok(FileOutcome::Failed {
+    match move_to_failed(path, failed_dir, file_name, disambig)? {
+        Some(moved_to) => Ok(FileOutcome::Failed {
             error_code,
-            details,
-        })
-    } else {
-        Ok(FileOutcome::Skipped(format!(
-            "Fichier « {file_name} » disparu pendant le traitement (race) — ignoré ce tour."
-        )))
+            details: Some(with_moved_to(details, moved_to)),
+        }),
+        None => Ok(FileOutcome::Skipped(SkipReason::Vanished)),
     }
+}
+
+/// Story 34-9 (AC-2, F9-2) — ajoute `movedTo` à un `details` d'échec sans rien
+/// en retirer (`FILE_TOO_LARGE` garde `byteSize` et `maxBytes`). Un `details`
+/// qui ne serait pas un objet est gardé sous `detail`, jamais perdu.
+fn with_moved_to(details: Option<serde_json::Value>, moved_to: String) -> serde_json::Value {
+    let mut map = match details {
+        Some(serde_json::Value::Object(map)) => map,
+        Some(autre) => {
+            let mut map = serde_json::Map::new();
+            map.insert("detail".into(), autre);
+            map
+        }
+        None => serde_json::Map::new(),
+    };
+    map.insert("movedTo".into(), serde_json::Value::String(moved_to));
+    serde_json::Value::Object(map)
 }
 
 /// Déplace un fichier vers `failed/` sous `{stem}_{disambig}.{ext}`.
@@ -892,14 +1039,15 @@ fn dispose_failed(
 /// Le suffixe `{disambig}` (hash8 du contenu ou UUID8) évite qu'un 2ᵉ fichier
 /// homonyme écrase le 1ᵉʳ (`rename` POSIX écrase atomiquement une cible homonyme).
 ///
-/// Retour : `Ok(true)` = déplacé ; `Ok(false)` = source disparue (ENOENT, race) ;
-/// `Err` = autre erreur IO (catastrophe → 500).
+/// Retour : `Ok(Some(nom))` = déplacé, sous ce nom (sans chemin, Story 34-9) ;
+/// `Ok(None)` = source disparue (ENOENT, race) ; `Err` = autre erreur IO
+/// (catastrophe → 500).
 fn move_to_failed(
     path: &Path,
     failed_dir: &Path,
     file_name: &str,
     disambig: &str,
-) -> Result<bool, AppError> {
+) -> Result<Option<String>, AppError> {
     let p = Path::new(file_name);
     let stem = p
         .file_stem()
@@ -910,11 +1058,11 @@ fn move_to_failed(
         Some(ext) => format!("{stem}_{disambig}.{}", ext.to_ascii_lowercase()),
         None => format!("{stem}_{disambig}"),
     };
-    let target = failed_dir.join(target_name);
+    let target = failed_dir.join(&target_name);
     match std::fs::rename(path, &target) {
-        Ok(()) => Ok(true),
+        Ok(()) => Ok(Some(target_name)),
         // Source disparue entre détection et déplacement → race bénigne (skip).
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(false),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
         // Autre échec de disposal = IO catastrophe (le fichier resterait dans
         // l'inbox et serait re-traité en boucle) → 500.
         Err(e) => Err(AppError::Internal(format!(
@@ -929,5 +1077,125 @@ fn remove_inbox_file(path: &Path) {
         && e.kind() != std::io::ErrorKind::NotFound
     {
         tracing::warn!("inbox import: suppression du fichier traité échouée: {e}");
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    /// Story 34-9 (AC-3, P3-9-1, tue M9) — un fichier non traité va à
+    /// `skipped[]` avec son motif, ET à `warnings[]` (message gardé pour les
+    /// clients d'API), sans rien ajouter aux deux autres listes. Ce test se monte
+    /// toujours, même là où l'instabilité réelle ne se reproduit pas.
+    #[test]
+    fn push_outcome_routes_skipped_files_to_skipped_and_warnings() {
+        let mut report = InboxImportReport::default();
+        push_outcome(
+            &mut report,
+            "en-cours.pdf".into(),
+            FileOutcome::Skipped(SkipReason::Unstable),
+        );
+        push_outcome(
+            &mut report,
+            "parti.png".into(),
+            FileOutcome::Skipped(SkipReason::Vanished),
+        );
+        assert_eq!(
+            report.skipped,
+            vec![
+                SkippedFile {
+                    file_name: "en-cours.pdf".into(),
+                    reason: SkipReason::Unstable
+                },
+                SkippedFile {
+                    file_name: "parti.png".into(),
+                    reason: SkipReason::Vanished
+                },
+            ]
+        );
+        assert_eq!(report.warnings.len(), 2);
+        assert!(report.warnings[0].contains("« en-cours.pdf » en cours d'écriture"));
+        assert!(report.warnings[1].contains("« parti.png » disparu"));
+        assert!(report.accepted.is_empty() && report.failed.is_empty());
+        assert_eq!(report.truncated_at, None);
+        let v = serde_json::to_value(&report).unwrap();
+        assert_eq!(
+            v["skipped"],
+            json!([
+                { "fileName": "en-cours.pdf", "reason": "UNSTABLE" },
+                { "fileName": "parti.png", "reason": "VANISHED" },
+            ])
+        );
+        assert!(v["truncatedAt"].is_null() && v.get("truncatedAt").is_some());
+    }
+
+    /// Story 34-9 — les deux autres issues gardent leur place, `details` compris.
+    #[test]
+    fn push_outcome_keeps_accepted_and_failed() {
+        let mut report = InboxImportReport::default();
+        push_outcome(
+            &mut report,
+            "a.png".into(),
+            FileOutcome::Accepted {
+                id: 3,
+                qr: QrStatus::Absent,
+                qr_error: None,
+            },
+        );
+        push_outcome(
+            &mut report,
+            "b.png".into(),
+            FileOutcome::Failed {
+                error_code: ERR_DUPLICATE,
+                details: Some(json!({ "movedTo": "b_12345678.png" })),
+            },
+        );
+        assert_eq!(report.accepted.len(), 1);
+        assert_eq!(report.accepted[0].imported_supplier_invoice_id, 3);
+        assert_eq!(report.failed.len(), 1);
+        assert_eq!(
+            report.failed[0].details,
+            Some(json!({ "movedTo": "b_12345678.png" }))
+        );
+        assert!(report.skipped.is_empty() && report.warnings.is_empty());
+    }
+
+    /// Story 34-9 (#974) — la troncature pose `truncatedAt` et UN message.
+    #[test]
+    fn mark_truncated_sets_the_limit_and_one_warning() {
+        let mut report = InboxImportReport::default();
+        mark_truncated(&mut report, 200);
+        assert_eq!(report.truncated_at, Some(200));
+        assert_eq!(report.warnings.len(), 1);
+        assert!(report.warnings[0].contains("Limite de 200 fichiers"));
+    }
+
+    /// Story 34-9 (AC-2, F9-2, tue M6) — `movedTo` s'ajoute sans rien retirer.
+    #[test]
+    fn with_moved_to_merges_into_existing_details() {
+        assert_eq!(
+            with_moved_to(
+                Some(json!({ "byteSize": 30, "maxBytes": 10 })),
+                "gros_0f0f0f0f.png".into()
+            ),
+            json!({ "byteSize": 30, "maxBytes": 10, "movedTo": "gros_0f0f0f0f.png" })
+        );
+        assert_eq!(
+            with_moved_to(None, "x_1.png".into()),
+            json!({ "movedTo": "x_1.png" })
+        );
+        assert_eq!(
+            with_moved_to(Some(json!("brut")), "x_1.png".into()),
+            json!({ "detail": "brut", "movedTo": "x_1.png" })
+        );
+    }
+
+    /// Story 34-9 (AC-1) — le `details` d'un doublon, et son absence quand le
+    /// document n'a pas pu être relu.
+    #[test]
+    fn duplicate_details_names_the_document_or_nothing() {
+        assert_eq!(duplicate_details(None), None);
     }
 }

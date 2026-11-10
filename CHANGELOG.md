@@ -8,6 +8,13 @@ Le contenu est rédigé en français à destination des **fiduciaires, PME, ind�
 
 ---
 
+## [0.17.6] — Non publié
+
+### Corrigé
+
+- **Le rapport d'import du dossier nomme chaque fichier, et un doublon ne passe plus inaperçu** (refs [#969](https://github.com/guycorbaz/kesh/issues/969), refs [#974](https://github.com/guycorbaz/kesh/issues/974)) : *Documents à traiter → Importer le dossier* donne un résumé (« 2 document(s) importé(s), 1 déjà importé(s). ») puis une ligne par fichier, dans l'ordre des noms : *importé*, *importé sans les données du QR*, **déjà importé**, *refusé* ou *non traité*. Un doublon dit où est le document existant — en attente dans la liste (un lien mène à sa ligne), transformé en facture (un lien ouvre la facture), retiré de la liste ou déjà traité —, et tout fichier déjà importé ou refusé dit sous quel nom il a été rangé dans le sous-dossier `failed/`, que Kesh ne vide jamais : il se vide à la main. Une notification d'avertissement paraît dès qu'un fichier n'est pas importé ; une notification de succès sinon. Les fichiers en cours d'écriture ou disparus, et la limite de fichiers par import, sont désormais dits dans la langue de l'utilisateur, et non plus en français par le serveur. Le rapport n'est toujours pas conservé en quittant la page.
+  - **API** : sur `POST /api/v1/inbox-import`, toute entrée `failed[]` porte `details.movedTo` ; un `DUPLICATE` porte `details.existingDocumentId`, `existingStatus` et `supplierInvoiceId` ; le rapport gagne `skipped[]` (`{ fileName, reason }`, `UNSTABLE` ou `VANISHED`) et `truncatedAt`. `warnings[]` reste, inchangé, et devient déprécié (`docs/api-external.md`).
+
 ## [0.17.5] — 2026-11-07
 
 ⚠️ **Avant la mise à jour, prenez une sauvegarde complète** — la base, le `.keshbackup` **et** le dossier des documents. Cette version porte **une migration** (non breaking), la première à passer par la sauvegarde que Kesh écrit lui-même avant de migrer ([#847](https://github.com/guycorbaz/kesh/issues/847)) : au démarrage, il dépose une sauvegarde complète dans `backup/pre-upgrade/`, et **refuse de migrer si elle échoue** (échappatoire : `KESH_SKIP_PRE_UPGRADE_BACKUP`). **La migration donne un numéro interne aux factures fournisseur déjà validées** (`FF-2025-001`, `FF-2026-001`…). **Le retour à la 0.17.4 passe uniquement par la sauvegarde d'avant la mise à jour** : la 0.17.4 ne démarre plus sur une base migrée, et elle refuse une sauvegarde prise en 0.17.5 ; les numéros écrits sur le papier depuis la mise à jour seraient alors à refaire (manuel d'administration, *Passer à la 0.17.5*).
