@@ -929,4 +929,19 @@ describe('page Paramètres — conflit de version des trois éditions (Story 34-
 		expect((getByTestId('settings-company-address-country-input') as HTMLInputElement).value).toBe('CH');
 		expect(queryByTestId('settings-company-address-conflict-merged-country')).toBeNull();
 	});
+
+	// Revue P2 (B3, E2-4) : la région vive existe avant le conflit, vide ; l'avis s'y insère.
+	it('la région vive de l’avis est présente dès l’ouverture, et l’avis y entre au conflit', async () => {
+		fetchCompanyCurrentMock.mockResolvedValueOnce(societe());
+		fetchCompanyCurrentMock.mockResolvedValueOnce(relue({ email: 'autre@test.ch' }));
+		updateCompanyEmailMock.mockRejectedValueOnce(CONFLIT);
+		const { findByTestId, getByTestId, getAllByRole } = render(Page);
+		await fireEvent.click(await findByTestId('settings-company-email-edit'));
+		const regions = getAllByRole('status');
+		expect(regions.length).toBeGreaterThan(0);
+		await saisir(getByTestId, 'settings-company-email-input', 'moi@test.ch');
+		await fireEvent.click(getByTestId('settings-company-email-save'));
+		const avis = await findByTestId('settings-company-email-conflict-notice');
+		expect(regions.some((r) => r.contains(avis))).toBe(true);
+	});
 });

@@ -113,8 +113,10 @@
 		} catch {
 			return { status: 'reload-failed' };
 		}
-		data = fresh;
-		syncOpenBlocks(fresh.company);
+		adoptCompany(fresh.company, fresh);
+		// Le bloc en 409 juge, lui, contre la société relue, même plus ancienne qu'une autre
+		// déjà reçue : sa copie et sa version restent alors cohérentes entre elles, et le pire
+		// est un 409 de plus, jamais un écrasement (C-e346-10).
 		const stored = valuesOf(fresh.company);
 		const conflict = companyEditConflict(base, stored, input, fields, normalizers);
 		return {
@@ -136,18 +138,43 @@
 	 * enregistrement reçoit son propre 409 : l'écriture concurrente lui est montrée.
 	 */
 	function syncOpenBlocks(company: CompanyJson) {
-		if (emailEditing && sameBlockValues(emailBase, emailValuesOf(company), EMAIL_FIELDS)) {
-			emailVersion = company.version;
+		// Revue P2 (C-e346-10) : une version ne recule jamais.
+		const v = company.version;
+		if (emailEditing && v > emailVersion && sameBlockValues(emailBase, emailValuesOf(company), EMAIL_FIELDS)) {
+			emailVersion = v;
 		}
-		if (contactEditing && sameBlockValues(contactBase, contactValuesOf(company), CONTACT_FIELDS)) {
-			contactVersion = company.version;
+		if (
+			contactEditing &&
+			v > contactVersion &&
+			sameBlockValues(contactBase, contactValuesOf(company), CONTACT_FIELDS)
+		) {
+			contactVersion = v;
 		}
 		if (
 			addressEditing &&
+			v > addressVersion &&
 			sameBlockValues(addressBase, addressValuesOf(company), ADDRESS_FIELDS, ADDRESS_NORMALIZERS)
 		) {
-			addressVersion = company.version;
+			addressVersion = v;
 		}
+	}
+
+	/**
+	 * Revue de code P2 (P2-B1, E2-1, A2-5 ; C-e346-10) — toute société reçue (succès d'un bloc,
+	 * relecture après un 409, verrou de période) passe par ici. Les réponses peuvent arriver
+	 * dans le désordre : une relecture partie avant le succès d'un autre bloc et revenue après
+	 * porte une société plus ANCIENNE. Elle ne remplace alors ni `data` (l'écran garderait
+	 * l'ancienne valeur du bloc qui vient de réussir) ni les versions des éditions ouvertes
+	 * (`syncOpenBlocks`, qui ne fait de toute façon jamais reculer une version). À version
+	 * égale, elle remplace : le verrou de période ne change pas la version.
+	 *
+	 * @param full la réponse entière, comptes bancaires compris, quand on l'a (relecture)
+	 */
+	function adoptCompany(company: CompanyJson, full?: CompanyCurrentResponse) {
+		if (data && company.version < data.company.version) return;
+		if (full) data = full;
+		else if (data) data = { ...data, company };
+		syncOpenBlocks(company);
 	}
 
 	function alreadySavedMessage(): string {
@@ -196,9 +223,8 @@
 				email: trimmed || null,
 				version: emailVersion,
 			});
-			data = { ...data, company: updated };
 			closeEmailEdit();
-			syncOpenBlocks(updated);
+			adoptCompany(updated);
 			notifySuccess(msg('settings-company-email-saved', 'E-mail de la société enregistré'));
 		} catch (err) {
 			if (isApiError(err)) {
@@ -291,9 +317,8 @@
 				website: websiteValue.trim() || null,
 				version: contactVersion,
 			});
-			data = { ...data, company: updated };
 			closeContactEdit();
-			syncOpenBlocks(updated);
+			adoptCompany(updated);
 			notifySuccess(msg('settings-company-contact-saved', 'Coordonnées enregistrées'));
 		} catch (err) {
 			if (isApiError(err)) {
@@ -385,9 +410,8 @@
 				address: { ...addressForm },
 				version: addressVersion,
 			});
-			data = { ...data, company: updated };
 			closeAddressEdit();
-			syncOpenBlocks(updated);
+			adoptCompany(updated);
 			notifySuccess(msg('settings-company-address-saved', 'Adresse de la société enregistrée'));
 		} catch (err) {
 			if (isApiError(err)) {
@@ -504,7 +528,9 @@
 		lockError = null;
 		try {
 			const updated = await lockBooks(lockThrough);
-			if (data) data = { ...data, company: updated };
+			// Revue P2 (E2-3) : la société rendue est la plus récente ; les éditions ouvertes
+			// inchangées l'adoptent, comme après tout succès (C-e346-10).
+			adoptCompany(updated);
 			lockThrough = '';
 		} catch (e) {
 			lockError = errorMessageOf(e);
@@ -526,7 +552,7 @@
 		lockError = null;
 		try {
 			const updated = await releaseBooksLock(unlockThrough || null, unlockMotif);
-			if (data) data = { ...data, company: updated };
+			adoptCompany(updated);
 			unlockThrough = '';
 			unlockMotif = '';
 			showUnlock = false;
@@ -580,27 +606,27 @@
 							<div class="grid grid-cols-3 gap-2">
 								<div class="col-span-2">
 									<label for="company-address-street" class="text-xs text-text-muted">{msg('field-street', 'Rue')}</label>
-									<Input id="company-address-street" type="text" bind:value={addressForm.street} disabled={addressSubmitting} maxlength={70} data-testid="settings-company-address-street-input" />
+									<Input id="company-address-street" type="text" bind:value={addressForm.street} readonly={addressSubmitting} maxlength={70} data-testid="settings-company-address-street-input" />
 									<CompanyConflictNotice notice={addressConflict} testid="settings-company-address-conflict" field="street" />
 								</div>
 								<div>
 									<label for="company-address-building" class="text-xs text-text-muted">{msg('field-building', 'N°')}</label>
-									<Input id="company-address-building" type="text" bind:value={addressForm.building} disabled={addressSubmitting} maxlength={16} data-testid="settings-company-address-building-input" />
+									<Input id="company-address-building" type="text" bind:value={addressForm.building} readonly={addressSubmitting} maxlength={16} data-testid="settings-company-address-building-input" />
 									<CompanyConflictNotice notice={addressConflict} testid="settings-company-address-conflict" field="building" />
 								</div>
 								<div>
 									<label for="company-address-postal-code" class="text-xs text-text-muted">{msg('field-postal-code', 'NPA')}</label>
-									<Input id="company-address-postal-code" type="text" bind:value={addressForm.postalCode} disabled={addressSubmitting} maxlength={16} data-testid="settings-company-address-postal-code-input" />
+									<Input id="company-address-postal-code" type="text" bind:value={addressForm.postalCode} readonly={addressSubmitting} maxlength={16} data-testid="settings-company-address-postal-code-input" />
 									<CompanyConflictNotice notice={addressConflict} testid="settings-company-address-conflict" field="postalCode" />
 								</div>
 								<div>
 									<label for="company-address-city" class="text-xs text-text-muted">{msg('field-city', 'Localité')}</label>
-									<Input id="company-address-city" type="text" bind:value={addressForm.city} disabled={addressSubmitting} maxlength={35} data-testid="settings-company-address-city-input" />
+									<Input id="company-address-city" type="text" bind:value={addressForm.city} readonly={addressSubmitting} maxlength={35} data-testid="settings-company-address-city-input" />
 									<CompanyConflictNotice notice={addressConflict} testid="settings-company-address-conflict" field="city" />
 								</div>
 								<div>
 									<label for="company-address-country" class="text-xs text-text-muted">{msg('field-country', 'Pays')}</label>
-									<Input id="company-address-country" type="text" bind:value={addressForm.country} disabled={addressSubmitting} maxlength={2} placeholder="CH" data-testid="settings-company-address-country-input" />
+									<Input id="company-address-country" type="text" bind:value={addressForm.country} readonly={addressSubmitting} maxlength={2} placeholder="CH" data-testid="settings-company-address-country-input" />
 									<CompanyConflictNotice notice={addressConflict} testid="settings-company-address-conflict" field="country" />
 								</div>
 							</div>
@@ -663,12 +689,11 @@
 								<Input
 									type="email"
 									bind:value={emailValue}
-								disabled={emailSubmitting}
+									readonly={emailSubmitting}
 									maxlength={320}
 									data-testid="settings-company-email-input"
 								/>
 								<CompanyConflictNotice notice={emailConflict} testid="settings-company-email-conflict" field="email" />
-								<CompanyConflictNotice notice={emailConflict} testid="settings-company-email-conflict" />
 								{#if emailError}
 									<p class="mt-1 text-xs text-destructive" data-testid="settings-company-email-error">
 										{emailError}
@@ -686,6 +711,11 @@
 							>
 								{msg('common-cancel', 'Annuler')}
 							</Button>
+						</dd>
+						<!-- Revue P2 (B5) : l'avis du bloc sous la ligne entière, non plaqué à la
+						     largeur du seul champ. -->
+						<dd class="max-w-md">
+							<CompanyConflictNotice notice={emailConflict} testid="settings-company-email-conflict" />
 						</dd>
 					{:else}
 						<dd class="flex items-center gap-3">
@@ -716,7 +746,7 @@
 							<Input
 								type="text"
 								bind:value={phoneValue}
-							disabled={contactSubmitting}
+								readonly={contactSubmitting}
 								maxlength={50}
 								placeholder={msg('settings-field-company-phone', 'Téléphone')}
 								data-testid="settings-company-phone-input"
@@ -725,7 +755,7 @@
 							<Input
 								type="text"
 								bind:value={websiteValue}
-							disabled={contactSubmitting}
+								readonly={contactSubmitting}
 								maxlength={255}
 								placeholder={msg('settings-field-company-website', 'Site web')}
 								data-testid="settings-company-website-input"

@@ -31,8 +31,8 @@
 	}
 </script>
 
-{#if notice}
-	{#if field !== undefined}
+{#if field !== undefined}
+	{#if notice}
 		{#if notice.changed.includes(field)}
 			<p class="mt-1 text-xs text-warning" data-testid="{testid}-changed-{slug}">
 				{i18nMsg('settings-company-conflict-changed', 'Enregistré entre-temps : { $value }', {
@@ -46,24 +46,31 @@
 				})}
 			</p>
 		{/if}
-	{:else}
-		<div class="space-y-1 text-xs text-warning" role="status" data-testid="{testid}-notice">
-			{#if notice.changed.length > 0}
-				<p>
-					{i18nMsg(
-						'settings-company-conflict-will-replace',
-						'Conflit de version : la société a été modifiée entre-temps. Enregistrer de nouveau remplacera les valeurs enregistrées indiquées sous les champs.',
-					)}
-				</p>
-			{/if}
-			{#if notice.merged.length > 0}
-				<p>
-					{i18nMsg(
-						'settings-company-conflict-merged-notice',
-						'Conflit de version : les champs que vous n’aviez pas modifiés ont repris la valeur enregistrée entre-temps. Vérifiez, puis enregistrez de nouveau.',
-					)}
-				</p>
-			{/if}
-		</div>
 	{/if}
+{:else}
+	<!-- Revue P2 (B3, E2-4) : la région vive existe dès que l'édition est ouverte, vide ; seul
+	     son contenu apparaît au conflit. Une région créée avec son texte n'est pas annoncée par
+	     tous les lecteurs d'écran. -->
+	<div role="status" aria-live="polite">
+		{#if notice}
+			<div class="space-y-1 text-xs text-warning" data-testid="{testid}-notice">
+				{#if notice.changed.length > 0}
+					<p>
+						{i18nMsg(
+							'settings-company-conflict-will-replace',
+							'Conflit de version : la société a été modifiée entre-temps. Enregistrer de nouveau remplacera les valeurs enregistrées indiquées sous les champs.',
+						)}
+					</p>
+				{/if}
+				{#if notice.merged.length > 0}
+					<p>
+						{i18nMsg(
+							'settings-company-conflict-merged-notice',
+							'Conflit de version : les champs que vous n’aviez pas modifiés ont repris la valeur enregistrée entre-temps. Vérifiez, puis enregistrez de nouveau.',
+						)}
+					</p>
+				{/if}
+			</div>
+		{/if}
+	</div>
 {/if}
