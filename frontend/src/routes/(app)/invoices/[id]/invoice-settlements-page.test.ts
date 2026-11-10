@@ -393,7 +393,10 @@ describe("fiche facture — règlement à une version périmée", () => {
     message: "Conflit de version.",
   };
 
-  async function ouvrirEtRegler(r: ReturnType<typeof render>) {
+  async function ouvrirEtRegler(r: {
+    findByTestId: (id: string) => Promise<HTMLElement>;
+    getByTestId: (id: string) => HTMLElement;
+  }) {
     await fireEvent.click(await r.findByTestId("settle-open"));
     await fireEvent.change(await r.findByTestId("settle-type"), {
       target: { value: "internal_account" },
