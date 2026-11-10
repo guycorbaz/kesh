@@ -440,32 +440,50 @@ describe('34-10 (#970) — couleurs unies et anneau', () => {
 		expect(screen.queryByTestId('homepage-charts-pie-base-note')).toBeNull();
 	});
 
-	it('revue P1, B1-1 : une part de 0,2 % reste visible — sans liseré, peinte en dernier, une unité au moins', () => {
+	it('revues P1 B1-1, P2 B2-1 : deux parts étroites voisines, visibles, séparées par un trait radial', () => {
 		render(HomepageCharts, {
 			state: 'ready',
 			summary: summary({
-				// Une part minuscule AU MILIEU : « Autres » est plus gros que le dernier poste.
-				expensePosts: [post(6000, 'Loyer', '900', '90.0'), post(6100, 'Timbres', '2', '0.2')],
-				otherExpenses: { amount: '98', share: '9.8', accountCount: 6 },
+				// Deux parts minuscules VOISINES (rang 2 et « Autres »), le cas de la capture P1.
+				expensePosts: [post(6000, 'Loyer', '998', '99.8'), post(6100, 'Timbres', '1', '0.1')],
+				otherExpenses: { amount: '1', share: '0.1', accountCount: 2 },
 				expensePostsBase: '1000',
 				totalExpenses: '1000',
 			}),
 		});
-		const paths = Array.from(pieCard().querySelectorAll('svg[role="img"] path'));
+		const svg = pieCard().querySelector('svg[role="img"]')!;
+		const paths = Array.from(svg.querySelectorAll('path'));
+		// Les parts n'ont aucun contour : rien ne mord sur une part étroite par son propre trait.
+		for (const p of paths) expect(p.getAttribute('stroke')).toBeNull();
+		// Les séparateurs, un par limite, sont peints APRÈS toutes les parts.
+		const group = screen.getByTestId('homepage-chart-pie-separators');
+		const lines = Array.from(group.querySelectorAll('line'));
+		expect(lines).toHaveLength(3);
+		for (const p of paths) {
+			expect(p.compareDocumentPosition(group) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+		}
+		for (const l of lines) {
+			expect(l.getAttribute('stroke')).toBe('var(--color-surface)');
+			expect(l.getAttribute('stroke-width')).toBe('1.5');
+		}
+		// Un séparateur tombe sur la limite entre les deux parts étroites : le point intérieur de
+		// fin de la part « Timbres » est celui de début de « Autres », et un trait y part.
 		const tiny = screen.getAllByTestId('homepage-chart-post-mark')[1].querySelector('path')!;
-		// Rien ne se peint par-dessus elle : c'est le dernier `path` de l'image.
-		expect(paths[paths.length - 1]).toBe(tiny);
-		// Aucun liseré ne la recouvre : elle n'en porte pas, et ses voisines sont dessous.
-		expect(tiny.getAttribute('stroke')).toBeNull();
-		expect(paths[0].getAttribute('stroke')).toBe('var(--color-surface)');
-		// Sa largeur dessinée, à l'arc intérieur (le plus étroit), fait au moins une unité.
-		const m = /L(-?[\d.]+) (-?[\d.]+) A[\d.]+ [\d.]+ 0 [01] 0 (-?[\d.]+) (-?[\d.]+) Z$/.exec(
+		const inner = /L(-?[\d.]+) (-?[\d.]+) A[\d.]+ [\d.]+ 0 [01] 0 (-?[\d.]+) (-?[\d.]+) Z$/.exec(
 			tiny.getAttribute('d') ?? '',
 		);
-		expect(m).not.toBeNull();
-		const [x1, y1, x2, y2] = m!.slice(1).map(Number);
-		expect(Math.hypot(x2 - x1, y2 - y1)).toBeGreaterThanOrEqual(1);
-		// Elle reste un lien vers son grand livre.
+		expect(inner).not.toBeNull();
+		const [ex, ey, sx, sy] = inner!.slice(1).map(Number);
+		const at = (x: number, y: number) =>
+			lines.some(
+				(l) => Math.hypot(Number(l.getAttribute('x1')) - x, Number(l.getAttribute('y1')) - y) < 0.01,
+			);
+		expect(at(ex, ey), 'limite Timbres / Autres marquée').toBe(true);
+		expect(at(sx, sy), 'limite Loyer / Timbres marquée').toBe(true);
+		// Visible : la largeur intérieure moins les deux demi-séparateurs fait au moins une unité.
+		expect(Math.hypot(ex - sx, ey - sy) - 1.5).toBeGreaterThanOrEqual(1);
+		// Les séparateurs ne captent pas le clic : la part reste un lien vers son grand livre.
+		expect(group.getAttribute('pointer-events')).toBe('none');
 		expect(tiny.closest('[data-href]')?.getAttribute('data-href')).toContain('accountId=6100');
 	});
 });

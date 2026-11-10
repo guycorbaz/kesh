@@ -331,6 +331,20 @@ export function centerLines(
 }
 
 /**
+ * Les tailles des deux lignes du centre (revue P2, E2-5) : chacune par `centerFontSize`,
+ * puis le libellé ramené à la taille du montant s'il la dépasse — le montant, en gras, reste
+ * la ligne principale.
+ */
+export function centerSizes(
+	label: string,
+	amount: string,
+	holeDiameter: number,
+): { labelSize: number; amountSize: number } {
+	const amountSize = centerFontSize(amount, holeDiameter);
+	return { labelSize: Math.min(centerFontSize(label, holeDiameter), amountSize), amountSize };
+}
+
+/**
  * Deux montants décimaux diffèrent-ils en VALEUR ? `"30"` et `"30.00"` sont égaux : le
  * serveur ne promet pas la même écriture pour deux champs (P7-F2).
  */
@@ -355,40 +369,52 @@ export interface PieSlice {
 	/** `null` pour une part pleine (`full`) : un arc de 360° ne se dessine pas. */
 	path: string | null;
 	/**
-	 * La part fait le tour : ses extrémités extérieures, une fois écrites, se confondent. Un arc dont les extrémités sont égales est omis par le SVG. Avec l'angle
-	 * minimal, cela n'arrive qu'à une part seule.
+	 * La part fait le tour : ses extrémités extérieures, une fois écrites, se confondent. Un
+	 * arc dont les extrémités sont égales est omis par le SVG. Avec l'angle minimal, cela
+	 * n'arrive qu'à une part seule.
 	 */
 	full: boolean;
-	/**
-	 * La part porte le liseré blanc (C-e342-16). Une part plus étroite que
-	 * `SEPARATED_MIN_ANGLE` n'en porte pas et se dessine par-dessus ses voisines
-	 * (`drawOrder`) : leur liseré, qui mord de `SEPARATOR_WIDTH / 2` de chaque côté de la
-	 * limite, ne la recouvre pas, et la moitié qui reste chez la voisine marque encore la
-	 * limite.
-	 */
-	separated: boolean;
 	style: ChartStyle;
 }
 
-/** Largeur du liseré entre les parts, en unités du `viewBox`. */
+/**
+ * Largeur du liseré entre les parts, en unités du `viewBox` (C-e342-16). Il est tracé en
+ * traits radiaux AU-DESSUS des parts, un par limite (`pieSeparators`, C-e3410-12), et non
+ * comme contour de chaque part : chaque limite est marquée, celle de deux parts étroites
+ * voisines comprise, et aucune part ne dépasse ses voisines au bord (revue P2, B2-1, B2-4).
+ */
 export const SEPARATOR_WIDTH = 1.5;
 /**
- * Angle dessiné minimal d'une part non nulle (≈ 1,15°) : au moins une unité de `viewBox` à
- * l'arc intérieur, le plus étroit (57,6 × 0,02 = 1,15).
+ * Angle dessiné minimal d'une part non nulle (0,045 rad ≈ 2,6°, 0,72 % du tour). Ses deux
+ * séparateurs en mangent `SEPARATOR_WIDTH` en tout ; à l'arc intérieur, le plus étroit, il
+ * reste 57,6 × 0,045 − 1,5 ≈ 1,09 unité visible.
  */
-export const MIN_SLICE_ANGLE = 0.02;
-/**
- * En dessous de cet angle dessiné (≈ 3,4°), une part ne porte pas de liseré : à l'arc
- * intérieur, elle garderait moins de deux unités une fois ses deux demi-liserés retirés.
- */
-export const SEPARATED_MIN_ANGLE = 0.06;
+export const MIN_SLICE_ANGLE = 0.045;
+
+export interface PieSeparator {
+	/** Angle de la limite (sens horaire depuis midi) : le début dessiné d'une part. */
+	angle: number;
+	x1: number;
+	y1: number;
+	x2: number;
+	y2: number;
+}
 
 /**
- * L'ordre de peinture : les parts à liseré d'abord, puis les étroites, chacune dans
- * l'ordre des rangs. Une part étroite n'est ainsi recouverte par aucun liseré.
+ * Les séparateurs : un trait radial, du trou au bord extérieur, au début dessiné de chaque
+ * part — celui de midi ferme aussi la dernière. Une part seule n'en a pas.
  */
-export function drawOrder(slices: PieSlice[]): PieSlice[] {
-	return [...slices.filter((s) => s.separated), ...slices.filter((s) => !s.separated)];
+export function pieSeparators(slices: PieSlice[], geometry: PieGeometry): PieSeparator[] {
+	if (slices.length < 2) return [];
+	const { cx, cy, r, innerR } = geometry;
+	const round = (v: number) => Number(v.toFixed(3));
+	return slices.map(({ displayStart: angle }) => ({
+		angle,
+		x1: round(cx + innerR * Math.sin(angle)),
+		y1: round(cy - innerR * Math.cos(angle)),
+		x2: round(cx + r * Math.sin(angle)),
+		y2: round(cy - r * Math.cos(angle)),
+	}));
 }
 
 function pointAt({ cx, cy }: PieGeometry, r: number, angle: number): string {
@@ -428,8 +454,9 @@ export function pieSlices(
 		return { start, end: cumulated.div(baseBig).toNumber() * turn };
 	});
 
-	// Angles dessinés : chaque part étroite monte à MIN_SLICE_ANGLE ; la plus grande cède
-	// l'écart. Une seule part fait le tour, rien à céder.
+	// Angles dessinés : chaque part étroite monte à MIN_SLICE_ANGLE ; la plus grande cède la
+	// somme des écarts. Six parts au plus : la plus grande fait au moins un sixième du tour
+	// (≈ 1,05 rad) et cède au plus 5 × 0,045 = 0,225 rad. Une part seule fait le tour.
 	const spans = real.map(({ start, end }) => end - start);
 	if (spans.length > 1) {
 		const largest = spans.indexOf(Math.max(...spans));
@@ -458,7 +485,7 @@ export function pieSlices(
 		const innerTo = pointAt(geometry, innerR, end);
 		// Pleine quand l'arc extérieur a ses extrémités confondues : une part seule. Les
 		// extrémités intérieures ne peuvent pas l'être sans que les extérieures le soient : toute
-		// autre part fait au moins MIN_SLICE_ANGLE, soit plus d'une unité à l'arc intérieur
+		// autre part fait au moins MIN_SLICE_ANGLE, soit plus de deux unités à l'arc intérieur
 		// (revue P1, E1-2 ; une garde sur les points intérieurs était une mutation équivalente).
 		const full = large === 1 && from === to;
 		return {
@@ -469,7 +496,6 @@ export function pieSlices(
 			displayStart: start,
 			displayEnd: end,
 			full,
-			separated: end - start >= SEPARATED_MIN_ANGLE,
 			path: full
 				? null
 				: `M${from} A${r} ${r} 0 ${large} 1 ${to} L${innerTo} A${innerR} ${innerR} 0 ${large} 0 ${innerFrom} Z`,

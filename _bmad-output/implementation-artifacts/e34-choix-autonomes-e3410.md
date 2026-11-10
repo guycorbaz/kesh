@@ -94,6 +94,11 @@ union, jamais par écrasement.*
 - **Coût** : le dessin d'une part minuscule n'est plus proportionnel (au plus 0,32 % du tour ajoutés par part, pris sur la
   plus grande) ; dit au manuel et au CHANGELOG.
 - **Réversible** : oui, deux constantes.
+- *(Annoté le 2026-11-11, revue de code P2.)* **Faux à sa date sur deux points.** (a) « `full` teste aussi les extrémités
+  intérieures » : la garde, posée par `924bc54c`, a été retirée par `11af9624` (mutation MV4 équivalente) ; `full` ne lit que
+  l'arc extérieur (B2-3, E2-4, A2-2). (b) « celui qui reste chez la voisine marque encore la limite » ne vaut que si la voisine
+  porte un liseré : deux parts étroites voisines n'étaient séparées par rien (B2-1 = E2-1 = A2-1). Le geste (2) — pas de liseré
+  sous `SEPARATED_MIN_ANGLE`, `drawOrder` — est **remplacé** par C-e3410-12 ; le geste (1) reste, son angle porté à 0,045 rad.
 
 ### C-e3410-10 — Écart vertical du centre proportionnel au libellé
 
@@ -109,4 +114,30 @@ union, jamais par écrasement.*
   écrasé au plancher, un texte de trente caractères l'est (débordement assumé au-delà, non plausible), un montant court atteint
   le plafond. La largeur réelle des chiffres d'Inter n'est pas mesurée (jsdom) ; la capture la montre.
 - **Écartée** : une mesure `getBBox` en E2E (C-e342-24 l'avait écartée pour un montant que le harnais n'atteint pas).
+- **Réversible** : oui.
+
+## Ajouts de la revue de code P2 (2026-11-11)
+
+### C-e3410-12 — Le liseré en traits radiaux peints au-dessus des parts, un par limite
+
+- **Contexte** : B2-1 = E2-1 = A2-1 (MEDIUM, trois lentilles). Avec C-e3410-9, deux parts étroites voisines n'avaient aucun
+  liseré entre elles ; cyan et gris ne s'y séparaient qu'à 1,29:1 de clarté. B2-4 : une part sans contour dépassait ses
+  voisines de 0,75 unité au bord.
+- **Retenu** : les parts n'ont **plus de contour** ; le liseré est un `<line>` radial par limite, du trou au bord extérieur,
+  de la couleur de la carte, `SEPARATOR_WIDTH` = 1,5, peint **après** toutes les parts, dans un groupe
+  `homepage-chart-pie-separators` en `pointer-events="none"` (`pieSeparators`). Chaque limite est marquée quelle que soit la
+  largeur des parts ; aucune part ne dépasse au bord. Pour qu'une part reste visible entre ses deux traits, `MIN_SLICE_ANGLE`
+  passe de 0,02 à **0,045 rad** (≈ 2,6°, 0,72 % du tour) : à l'arc intérieur, 57,6 × 0,045 − 1,5 ≈ 1,09 unité visible. Une part
+  seule n'a pas de séparateur.
+- **Écartées** : un liseré sur un seul côté des parts étroites (règles par cas, et la dent du bord reste) ; un trait plus fin
+  entre deux étroites seulement (deux largeurs de liseré) ; dire l'exception au lieu de la corriger (contraire à l'AC-3,
+  « chaque limite »).
+- **Coût** : l'élargissement au dessin monte à 0,72 % du tour par part minuscule (au plus 0,225 rad pris sur la plus grande,
+  qui en a au moins 1,05) ; dit au manuel et au CHANGELOG.
+- **Réversible** : oui.
+
+### C-e3410-13 — Le libellé du centre jamais plus grand que le montant
+
+- **Contexte** : E2-5 (LOW) : « Gesamtaufwand » (12,6) dépassait un montant de quatorze caractères (11,7).
+- **Retenu** : `centerSizes` ramène la taille du libellé à celle du montant quand elle la dépasse.
 - **Réversible** : oui.

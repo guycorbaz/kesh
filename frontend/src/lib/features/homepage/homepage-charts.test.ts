@@ -12,7 +12,6 @@ import {
 	OTHERS_STYLE,
 	PIE_GEOMETRY,
 	PIE_PALETTE,
-	SEPARATED_MIN_ANGLE,
 	SEPARATOR_WIDTH,
 	axisLabels,
 	axisTicks,
@@ -20,14 +19,15 @@ import {
 	centerLines,
 	chartAmount,
 	chartWidth,
+	centerSizes,
 	differentAmounts,
-	drawOrder,
 	followMark,
 	fullRing,
 	markHref,
 	monthHref,
 	monthLabel,
 	monthlyBars,
+	pieSeparators,
 	pieSlices,
 	postStyle,
 	tickLabel,
@@ -302,8 +302,11 @@ describe('pieSlices', () => {
 		return Math.hypot(x2 - x1, y2 - y1);
 	};
 
-	it('une part minuscule reste VISIBLE : au moins MIN_SLICE_ANGLE, prise sur la plus grande (revue P1, B1-1)', () => {
-		const r = pieSlices([post(1, '999999', '100.0'), post(2, '0.0001', '0.0')], null, '999999.0001', geo);
+	/** La largeur qui reste visible d'une part, à l'arc intérieur, une fois ses deux séparateurs posés. */
+	const visibleInner = (path: string | null): number => chord(path, 'inner') - SEPARATOR_WIDTH;
+
+	it('une part minuscule reste VISIBLE entre ses deux séparateurs (revues P1 B1-1, P2 B2-1)', () => {
+		const r = pieSlices([post(1, '999999', '100.0'), post(2, '0.0001', '0.0')], null, '999999.0001', PIE_GEOMETRY);
 		expect(r).toHaveLength(2);
 		// Les angles vrais restent ceux du montant ; seuls les angles dessinés changent.
 		expect(r[1].endAngle).toBeCloseTo(2 * Math.PI, 6);
@@ -312,36 +315,79 @@ describe('pieSlices', () => {
 		// Plus de cercle ni de rayon blanc dégénéré (E1-3) : deux vrais secteurs.
 		expect(r[0].full).toBe(false);
 		expect(r[1].full).toBe(false);
-		// Visible : au moins une unité de `viewBox` à l'arc intérieur, le plus étroit.
-		expect(chord(r[1].path, 'inner')).toBeGreaterThanOrEqual(1);
-		expect(chord(r[1].path, 'outer')).toBeGreaterThanOrEqual(1);
+		// Visible : au moins une unité de `viewBox` à l'arc intérieur, le plus étroit, une fois
+		// retirés les deux demi-séparateurs qui mordent sur elle.
+		expect(visibleInner(r[1].path)).toBeGreaterThanOrEqual(1);
 	});
 
-	it('une part étroite n’a pas de liseré, et se dessine par-dessus ses voisines (B1-1)', () => {
+	it('un séparateur à chaque limite, deux parts étroites voisines comprises (revue P2, B2-1)', () => {
 		const r = pieSlices(
-			[post(1, '900', '99.4'), post(2, '2', '0.2')],
-			{ amount: '3', share: '0.3', accountCount: 2 },
-			'905',
-			geo,
+			[post(1, '900', '99.4'), post(2, '2', '0.2'), post(3, '1.5', '0.2')],
+			{ amount: '1', share: '0.1', accountCount: 2 },
+			'904.5',
+			PIE_GEOMETRY,
 		);
-		expect(r.map((s) => s.separated)).toEqual([true, false, false]);
-		// Ordre de dessin : les parts à liseré d'abord, puis les étroites, rang conservé.
-		expect(drawOrder(r).map((s) => s.rank)).toEqual([1, 2, 3]);
-		const mixed = pieSlices(
-			[post(1, '900', '90.0'), post(2, '2', '0.2')],
-			{ amount: '98', share: '9.8', accountCount: 6 },
-			'1000',
-			geo,
-		);
-		expect(mixed.map((s) => s.separated)).toEqual([true, false, true]);
-		expect(drawOrder(mixed).map((s) => s.rank)).toEqual([1, 3, 2]);
+		const lines = pieSeparators(r, PIE_GEOMETRY);
+		// Une limite par part : à son début (celle de midi ferme aussi la dernière).
+		expect(lines).toHaveLength(4);
+		expect(lines.map((l) => l.angle)).toEqual(r.map((s) => s.displayStart));
+		// La limite entre les deux parts étroites voisines (rangs 2 et 3) est marquée.
+		expect(lines.some((l) => Math.abs(l.angle - r[2].displayStart) < 1e-12)).toBe(true);
+		expect(r[1].displayEnd).toBeCloseTo(r[2].displayStart, 12);
+		// Chaque séparateur traverse tout l'anneau, du trou au bord.
+		for (const l of lines) {
+			expect(Math.hypot(l.x1 - 100, l.y1 - 100)).toBeCloseTo(PIE_GEOMETRY.innerR, 2);
+			expect(Math.hypot(l.x2 - 100, l.y2 - 100)).toBeCloseTo(PIE_GEOMETRY.r, 2);
+		}
+		// Et chacune des trois parts étroites reste visible entre ses deux séparateurs.
+		for (const s of r.slice(1)) expect(visibleInner(s.path)).toBeGreaterThanOrEqual(1);
 	});
 
-	it('une part assez large pour son liseré garde au moins une unité visible de chaque côté', () => {
-		// Le liseré mange SEPARATOR_WIDTH / 2 de chaque côté : à l'arc intérieur, une part
-		// séparée doit garder au moins une unité une fois les deux demi-liserés retirés.
-		expect(SEPARATED_MIN_ANGLE * PIE_GEOMETRY.innerR - SEPARATOR_WIDTH).toBeGreaterThanOrEqual(1);
-		expect(MIN_SLICE_ANGLE * PIE_GEOMETRY.innerR).toBeGreaterThanOrEqual(1);
+	it('une seule part : aucun séparateur', () => {
+		const r = pieSlices([post(1, '42.5', '100.0')], null, '42.5', PIE_GEOMETRY);
+		expect(pieSeparators(r, PIE_GEOMETRY)).toEqual([]);
+	});
+
+	it('plusieurs parts minuscules : chacune élargie, la plus grande cède la SOMME des écarts (revue P2, B2-2)', () => {
+		const amounts = ['5000', '3', '2', '1', '0.5'];
+		const base = '5006.9';
+		const r = pieSlices(
+			amounts.map((a, i) => post(i + 1, a, '0')),
+			{ amount: '0.4', share: '0', accountCount: 3 },
+			base,
+			PIE_GEOMETRY,
+		);
+		const turn = 2 * Math.PI;
+		const realSpans = [...amounts, '0.4'].map((a) => (Number(a) / Number(base)) * turn);
+		const deficit = realSpans.slice(1).reduce((acc, s) => acc + Math.max(0, MIN_SLICE_ANGLE - s), 0);
+		expect(realSpans.slice(1).every((s) => s < MIN_SLICE_ANGLE), 'montage : cinq parts sous le seuil').toBe(true);
+		for (const s of r) expect(s.displayEnd - s.displayStart).toBeGreaterThanOrEqual(MIN_SLICE_ANGLE - 1e-12);
+		for (let i = 1; i < r.length; i++) expect(r[i].displayStart).toBeCloseTo(r[i - 1].displayEnd, 12);
+		expect(r[0].displayStart).toBe(0);
+		expect(r[r.length - 1].displayEnd).toBe(turn);
+		expect(r[0].displayEnd - r[0].displayStart).toBeCloseTo(realSpans[0] - deficit, 9);
+		for (const s of r.slice(1)) expect(visibleInner(s.path)).toBeGreaterThanOrEqual(1);
+	});
+
+	it('frontière de MIN_SLICE_ANGLE : juste dessous, élargie ; juste dessus, inchangée (revue P2, E2-2)', () => {
+		const turn = 2 * Math.PI;
+		const at = (ratio: number) => ((ratio * MIN_SLICE_ANGLE) / turn * 1000).toFixed(9);
+		for (const [ratio, widened] of [
+			[0.99, true],
+			[1.01, false],
+		] as const) {
+			const tiny = at(ratio);
+			const base = (1000 + Number(tiny)).toFixed(9);
+			const r = pieSlices([post(1, '1000', '0'), post(2, tiny, '0')], null, base, PIE_GEOMETRY);
+			const span = r[1].displayEnd - r[1].displayStart;
+			const real = r[1].endAngle - r[1].startAngle;
+			if (widened) expect(span).toBeCloseTo(MIN_SLICE_ANGLE, 12);
+			else expect(span).toBeCloseTo(real, 9);
+		}
+	});
+
+	it('l’angle minimal dépasse la largeur des deux demi-séparateurs d’au moins une unité', () => {
+		expect(MIN_SLICE_ANGLE * PIE_GEOMETRY.innerR - SEPARATOR_WIDTH).toBeGreaterThanOrEqual(1);
 	});
 
 	it('20’000.00 et 0.01 : la grande part n’est plus un cercle, la petite se voit (E1-3)', () => {
@@ -529,7 +575,26 @@ describe('centerLines (revue P1, B1-4)', () => {
 		expect(big.amountY - big.labelY).toBeGreaterThan(small.amountY - small.labelY);
 	});
 
-	it('le bloc des deux lignes est centré sur le centre de l’anneau', () => {
+	it('centerSizes : le libellé n’est jamais plus grand que le montant (revue P2, E2-5)', () => {
+		const hole = 2 * PIE_GEOMETRY.innerR;
+		for (const [label, amount] of [
+			['Gesamtaufwand', '-12’345’678.90'],
+			['Total expenses', '1’234’567.8901'],
+			['Total des dépenses', '0.00'],
+			['Totale delle uscite', '999’999’999.99'],
+		]) {
+			const { labelSize, amountSize } = centerSizes(label, amount, hole);
+			expect(amountSize, amount).toBe(centerFontSize(amount, hole));
+			expect(labelSize, `${label} / ${amount}`).toBeLessThanOrEqual(amountSize);
+			expect(labelSize).toBeGreaterThanOrEqual(CENTER_FONT_MIN);
+		}
+		// Sans contrainte du montant, le libellé garde sa propre taille.
+		expect(centerSizes('Total des dépenses', '0.00', hole).labelSize).toBe(
+			centerFontSize('Total des dépenses', hole),
+		);
+	});
+
+	it('le bloc des deux lignes est centré sur le centre de l’anneau, au modèle de centerLines (0,75 em)', () => {
 		for (const [label, amount] of [
 			[9, 12],
 			[22, 22],
