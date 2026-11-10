@@ -4,7 +4,7 @@ Status: ready-for-dev
 
 *Fiche rédigée le 2026-11-10 en autonomie (Opus 5.5), worktree `/home/gcorbaz/devel/kesh-e34`, branche `chore/epic-34-kickoff`,
 numéros de ligne de `a75835db`. Release **0.17.6**, Epic 34. **Aucune migration** (lecture seule, champ additif). Registre :
-`e34-choix-autonomes-e342.md`, C-e342-5 à C-e342-9. Conception reprise de la fiche courte
+`e34-choix-autonomes-e342.md`, C-e342-5 à C-e342-9, C-e342-20, C-e342-21. Conception reprise de la fiche courte
 `v017-3c-avertissements-propositions.md` (présente sur `main` depuis la release 0.17.0, `910e5d5a` ; statut `backlog`, jamais
 développée) et de ses choix C-v017-3-7, -22, -23, -25 (`v017-3-choix-autonomes.md`). Commits en `refs #828` ; à la PR :
 `closes #828`, `refs #823`, `refs #671`. **Après 34-3** (§ *Recoupements*).*
@@ -66,13 +66,18 @@ une écriture manuelle ou que je l'éclate, afin de ne pas compter deux fois un 
    sinon les trois nombres, zéro compris. `settlementCount = find_link_candidates(…).len()` et
    `entryCount = find_entry_candidates(…).len()` : **les mêmes fonctions** que le dialogue, mêmes paramètres (tolérance
    `AMOUNT_TOLERANCE_HUNDREDTHS`), si bien qu'un compte positif garantit une liste non vide à l'ouverture du dialogue.
+   ⚠️ *(F4-3)* Chaque compte vaut **au plus 50** (`LINK_CANDIDATES_LIMIT`, `ENTRY_CANDIDATES_LIMIT`, `:76`, `:504`) et ne
+   porte aucune fenêtre de dates (`entry_candidates_sql` n'en a pas) : une écriture non rapprochée d'un montant récurrent (un
+   loyer saisi à la main) signalera chaque transaction suivante du même montant, et demandera une confirmation à *Accepter*.
+   Bruit attendu, dit au manuel ; une fenêtre de dates est hors périmètre (**issue demandée**).
    Test HTTP : pour un règlement client sur ce compte, une écriture saisie au journal, et aucun des deux, le champ égale la
    longueur des deux listes rendues par `GET …/link-candidates` et `GET …/entry-candidates` pour la même transaction.
 2. **AC-2 — le second côté** : `matchedElsewhereCount` compte les écritures dont le mouvement sur le compte du grand livre de
    `t` égale `t.amount`, ni contre-passées ni contre-passations, **rapprochées** (`bank_transactions.matched_entry_id`) d'une
    transaction d'un **autre** compte bancaire **dont le compte du grand livre diffère** de celui de `t`. Une requête dans
    `reconciliation_link.rs`, construite à partir du même texte que `entry_candidates_sql` (un mode de plus du constructeur, non
-   une copie) ; un test asserte que les deux textes ne diffèrent que par les prédicats voulus. Tests :
+   une copie) ; un test asserte que les deux textes ne diffèrent que par les prédicats voulus. Tests (ils n'assertent que
+   `matchedElsewhereCount`, jamais l'absence de candidate : la 34-11b rend cette écriture **candidate**, F4-2) :
    - virement de A vers B, côté A rapproché par une écriture manuelle `D 1021 / C 1020` : la transaction de B porte `1` ;
    - **comptes partagés** : deux comptes bancaires sur le même compte du grand livre, l'un rapproché : l'autre porte `0` ;
    - écriture contre-passée : `0`.
@@ -85,16 +90,28 @@ une écriture manuelle ou que je l'éclate, afin de ne pas compter deux fois un 
 
 5. **AC-5 — l'avertissement** : sur une ligne dont `settlementCount + entryCount > 0` ou `matchedElsewhereCount > 0`, un
    avertissement (`data-testid="already-booked-warning"`), sous la ligne, sans numéro d'issue :
-   - (a) si `settlementCount + entryCount > 0` : « Cette transaction semble déjà comptabilisée : { $count } écriture(s) non
-     rapprochée(s) du compte de la banque lui correspond(ent) — au même montant, ou, pour un règlement de facture client,
-     d'au plus 5 centimes de moins. Rattachez-la (*Rattacher à une écriture existante*) plutôt que de passer une écriture :
-     elle serait comptée deux fois. » (forme Fluent au pluriel par `{ $count ->}`, non « (s) », dans les quatre locales) ;
+   - (a) si `settlementCount + entryCount > 0` : **deux clés**, choisies par le Svelte selon le nombre —
+     `…-already-booked-one` : « Cette transaction semble déjà comptabilisée : une écriture non rapprochée du compte de la
+     banque lui correspond — au même montant, ou, pour un règlement de facture client, d'au plus 5 centimes de moins.
+     Rattachez-la (*Rattacher à une écriture existante*) plutôt que de passer une écriture : elle serait comptée deux fois. » ;
+     `…-already-booked-other` : la même au pluriel, « { $count } écritures non rapprochées […] lui correspondent ». ⛔ **Pas de
+     sélecteur Fluent** (`{ $count -> … }`) *(F4-1)* : le client reçoit les messages **pré-résolus sans arguments**
+     (`crates/kesh-i18n/src/loader.rs:130-165`, `all_messages`) et `i18nMsg` ne remplace que `{ $nom }`
+     (`frontend/src/lib/shared/utils/i18n.svelte.ts:19-27`) : un sélecteur arriverait figé sur sa variante par défaut. Patron
+     existant : `homepage-charts-credit-balance-note-one` / `-other` (`ExpensePieCard.svelte:170-178`). Un test lit le
+     **catalogue réel** (fr `messages.ftl`), non le seul repli, et vérifie qu'aucune des clés neuves ne porte `->` ;
    - (b) si `matchedElsewhereCount > 0` : « Une écriture du même montant est déjà rapprochée d'une transaction d'un autre de
      vos comptes bancaires : c'est probablement l'autre côté d'un virement entre vos comptes. Ne passez pas d'écriture pour
      elle : rejetez-la. » ;
    - (c) les deux : (a) puis (b), dans cet ordre, la consigne « rejetez-la » ne valant que pour (b) — texte du cas combiné :
      (a), puis « Si aucune de ces écritures ne lui correspond, elle est peut-être l'autre côté d'un virement entre vos
      comptes : une écriture du même montant est rapprochée sur un autre de vos comptes bancaires. » (C-e342-7) ;
+   - ⚠️ **(b) et (c) sont provisoires** *(F4-2)* : la 34-11b (C-e341-22) rend l'écriture d'un virement **candidate** de
+     l'autre côté (condition 4 « au plus une transaction par compte du grand livre ») ; la consigne « rejetez-la » devient alors
+     fausse dans la même release. **La 34-11b, seconde à s'intégrer, réécrit** les textes (b) et (c) (« rattachez-la à
+     l'écriture du virement »), leurs quatre locales, le manuel (`:2915-2921`, `:2991`) et le § *Ce qui ne se traite pas*
+     ci-dessous, et fait de `matchedElsewhereCount` un sous-ensemble de `entryCount` (sa fiche, § *Recoupements*). Si la 34-11b
+     ne part pas dans la 0.17.6, ces textes restent justes tels quels ;
    - aucune phrase pour un compte nul (jamais « 0 écriture ») ; `alreadyBooked: null` : rien.
    Vitest des quatre cas (aucun, a, b, c), texte attendu complet.
 6. **AC-6 — la confirmation** : *Accepter (N)*, *Écriture manuelle* et *Éclater* ouvrent d'abord un dialogue
@@ -110,9 +127,11 @@ une écriture manuelle ou que je l'éclate, afin de ne pas compter deux fois un 
 
 8. **AC-8 — la mesure précède le remède** (C-v017-3-23, C-e342-9) : un banc `#[ignore = "banc de coût (AC-8) : …"]` dans
    `crates/kesh-api/tests/`, sur un historique synthétique de **1 000, 5 000 et 20 000 écritures** sur le compte du grand livre
-   et **500 transactions en attente**, trois mesures par palier, profil `--release`, chiffres au Change Log et dans
+   et **500 transactions en attente**, page demandée à `limit=500` (`MAX_PROPOSALS_LIMIT`, `reconciliation.rs:74`), trois
+   mesures par palier, profil `--release`, chiffres au Change Log et dans
    `kesh-gate-logs/e342/`. **Mesuré avant et après** le champ neuf (le coût ajouté est la différence). « Mauvaise pente » :
-   plus de **3 s** pour la page à 20 000, ou croissance plus que linéaire du coût ajouté entre 5 000 et 20 000.
+   plus de **3 s** pour la page à 20 000, ou croissance plus que linéaire du coût ajouté entre 5 000 et 20 000. ⚠️ Sur la base
+   de dev en tmpfs, les chiffres sont un **plancher** (le NAS lit sur disque) : le Change Log le dit avec eux.
    - Pente bonne : rien de plus.
    - Pente mauvaise : le remède nommé est appliqué **dans cette story** — une lecture par page (une `SUM` par écriture filtrée
      `HAVING movement IN (…)` sur les montants de la page, appariement en Rust), pour les trois comptes —, à condition qu'il
@@ -120,7 +139,9 @@ une écriture manuelle ou que je l'éclate, afin de ne pas compter deux fois un 
      ne peut pas les rendre exactement, section *Performance debt* de cette fiche, chiffres, et **issue demandée**.
 9. **AC-9 — textes** : manuel utilisateur (§ *Réconciliation* : l'avertissement, ses deux formes, la confirmation ; le
    paragraphe `:2915-2921` dit désormais que l'écran signale ces cas), `docs/api-external.md` (le champ additif `alreadyBooked`,
-   « depuis la v0.17.6 », dans le § des propositions, `:631`), quatre catalogues i18n, PDF régénéré et contrôlé aplati.
+   « depuis la v0.17.6 », dans le § des propositions où figure `notice`, `:657`), quatre catalogues i18n ; le bruit d'un
+   montant récurrent (AC-1) dit au manuel. Le `.tex` change dans la story ; le PDF de `user-manual`, touché par quatre stories
+   de l'epic, se **régénère une fois à l'intégration** et s'y contrôle aplati (un PDF ne se fusionne pas).
 10. **AC-10 — E2E** (`reconciliation-already-booked.spec.ts`, neuf) : un Comptable saisit par l'API une écriture
     `D charge / C banque` d'un montant unique, puis un relevé dont un débit l'égale (`createManualDebitStatementViaApi`) ;
     *Réconciliation* : la ligne porte l'avertissement (a) ; *Écriture manuelle* → la confirmation nomme la transaction →
@@ -140,7 +161,7 @@ une écriture manuelle ou que je l'éclate, afin de ne pas compter deux fois un 
   `kesh-db` touché : **gate complet même en cours de boucle**.
 - [ ] **T4 — mesure d'après**, et le remède AC-8 si la pente l'exige.
 - [ ] **T5** : `reconciliation.types.ts` (`alreadyBooked`), `ReconciliationProposals.svelte` (avertissement, dialogue de
-  confirmation, gardes des trois gestes) ; i18n ; manuel, PDF ; `docs/api-external.md` ; CHANGELOG *Ajouté* (`refs #828`).
+  confirmation, gardes des trois gestes) ; i18n ; manuel (`.tex` ; PDF à l'intégration) ; `docs/api-external.md` ; CHANGELOG *Ajouté* (`refs #828`).
 - [ ] **T6** : captures (thème clair, base jetable) : ligne (a), ligne (b), cas (c), confirmation ouverte sur *Accepter (N)*.
 
 ### Mutations nommées
@@ -154,6 +175,7 @@ une écriture manuelle ou que je l'éclate, afin de ne pas compter deux fois un 
 | M5 (ex-M15) | confirmation sautée pour *Écriture manuelle* | Vitest AC-6 |
 | M6 | confirmation demandée aussi pour *Rejeter* | Vitest AC-6 |
 | M7 | phrase (a) affichée à compte nul | Vitest AC-5, cas (b) seul |
+| M8 | clé `-other` employée pour un compte de 1 | Vitest AC-5, cas (a) à une écriture |
 
 ## Gates
 
@@ -162,7 +184,9 @@ une écriture manuelle ou que je l'éclate, afin de ne pas compter deux fois un 
 
 ## Ce qui ne se traite pas
 
-- **Le rattachement des deux côtés d'un virement** à une même écriture, et d'une transaction à plusieurs écritures : #823.
+- **Le rattachement des deux côtés d'un virement** à une même écriture, et d'une transaction à plusieurs écritures : #823
+  (pour les deux côtés d'un virement, la 34-11b le traite, et réécrit alors cette ligne, AC-5).
+- Une fenêtre de dates pour le signal d'un montant récurrent (AC-1) : **issue demandée**.
 - Un paiement passé sur un autre compte du grand livre, ou un ancien : #827 (aucun signal possible sans lire les autres
   comptes ; hors périmètre de #828).
 - Une écriture **rapprochée** sur ce même compte bancaire (doublon d'import) n'est pas signalée ici : la détection des lignes
@@ -172,12 +196,21 @@ une écriture manuelle ou que je l'éclate, afin de ne pas compter deux fois un 
 
 `ReconciliationProposals.svelte` et le § *Réconciliation* du manuel avec **34-3** (libellés, avant) et **34-11b** (le
 prélèvement mensuel d'une carte est un virement entre deux comptes bancaires de grands livres distincts : exactement le cas
-(b) ; la 34-11b s'appuie sur ce signal). `reconciliation_link.rs` avec 34-11a si elle touche les comptes bancaires sans IBAN :
+(b) ; ordre recommandé par les deux fiches : 34-4, puis 34-11b, qui reprend le mode `matched_elsewhere` dans le même
+constructeur et réécrit les textes (b) et (c), AC-5). `reconciliation_link.rs` avec 34-11b (condition 4) ; avec 34-11a :
 aucune ligne commune prévue.
 
 ## Change Log
 
 - 2026-11-10 : fiche créée (Opus 5.5), sur la conception de la v017-3c.
+- 2026-11-10 : Validation P1 (Sonnet), remédiation (Opus 5.5). Rapport `kesh-gate-logs/e34-validate-p1-e342.md`, pour cette
+  fiche 0 C, 1 H, 1 M, 3 LOW, tous retenus après lecture : **F4-1** HIGH (lus : `i18n.svelte.ts:19-27`, `i18nMsg` ne remplace
+  que `{ $nom }` ; `loader.rs:130-165`, messages pré-résolus sans arguments) → deux clés `-one`/`-other`, contrôle au
+  catalogue réel, M8 ; **F4-2** (lu : `34-11b-carte-credit-releve.md`, C-e341-22 et § *Recoupements*) → textes (b)/(c)
+  provisoires, réécrits par la 34-11b, tests AC-2 sur `matchedElsewhereCount` seul ; **F4-3** (lus : `reconciliation_link.rs:76`,
+  `:504`) → plafond 50 et bruit d'un montant récurrent dits, fenêtre en issue demandée ; **F4-4** (lu : `api-external.md:631`
+  est `accept`, `:657` porte `notice`) → `:657` ; **F4-5** → `limit=500`, chiffres tmpfs = plancher. Transversal **X-1** : PDF à
+  l'intégration (AC-9).
 
 ## Dev Agent Record
 

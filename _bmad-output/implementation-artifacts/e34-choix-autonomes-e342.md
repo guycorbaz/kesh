@@ -15,6 +15,8 @@ Mise à jour par union, jamais par écrasement.*
   que personne ne lit au moment du geste) ; s'appuyer sur `letterable` (vrai pour tout actif ou passif hors banque : la caisse
   aussi, l'avis serait du bruit).
 - **Réversible** : oui, un composant d'affichage.
+- *(Précisé à la validation P1, F3-4 : **deux textes**, client et fournisseur, alignés sur `user-manual.tex:3947` et `:3948` —
+  pour un fournisseur, la facture se saisit et se valide sans être payée depuis sa fiche, puis s'accepte à la réconciliation.)*
 
 ### C-e342-2 — Éclater écarte aussi le compte de la banque
 
@@ -35,7 +37,7 @@ Mise à jour par union, jamais par écrasement.*
 ### C-e342-4 — Les règles d'affectation restent aux charges et produits
 
 - **Contexte** : `RuleFormModal.svelte:44-51` ne propose que `Expense` et `Revenue`.
-- **Retenu** : hors périmètre (la décision de Guy vise les deux dialogues) ; **issue demandée** à l'orchestrateur.
+- **Retenu** : hors périmètre (la décision de Guy vise les deux dialogues) ; issue ouverte : **#973**.
 - **Réversible** : sans objet.
 
 ### C-e342-5 — Ordre 34-3 puis 34-4, et textes de la 34-4 au nouveau libellé
@@ -86,12 +88,15 @@ Mise à jour par union, jamais par écrasement.*
 - **Retenu** : `find_by_company_hash` relu hors transaction, après le `rollback` ; s'il ne trouve rien, la ligne dit « déjà
   importé » sans lien.
 - **Écartée** : `details` vide pour ce site (un des trois cas de doublon resterait sans lien, contre la décision de Guy).
+- *(Étendu à la validation P1, F9-6 : la même relecture vaut au site `:577`, où l'état `discarded` lu avant la course est
+  périmé.)*
 - **Réversible** : oui.
 
 ### C-e342-11 — `details.movedTo` sur tout échec
 
 - **Contexte** : le fichier est renommé `{stem}_{hash8}.{ext}` dans `failed/` ; l'utilisateur le cherche sous son nom
-  d'origine.
+  d'origine. *(Annoté à la validation P1, F9-2 : le suffixe est l'empreinte ou un aléa de 8 caractères selon l'échec, et
+  `movedTo` se fusionne dans un `details` existant — `FILE_TOO_LARGE` porte déjà `byteSize`, `maxBytes`.)*
 - **Retenu** : le nom rangé, sans chemin absolu, sur toute entrée `failed[]` ; l'écran le cite pour tout refus et tout doublon.
 - **Écartée** : ne le dire que pour un doublon (les autres refus partent au même endroit, sous un autre nom).
 - **Réversible** : oui (champ additif).
@@ -112,6 +117,8 @@ Mise à jour par union, jamais par écrasement.*
 - **Écartée** : avertir aussi pour un import sans QR (fréquent pour des scans : l'avertissement deviendrait habituel et ne se
   lirait plus).
 - **Réversible** : oui, une condition. **Signalé à Guy** dans le rapport.
+- *(Précisé à la validation P1, F9-8 et #974 : `warnings` est remplacé, pour l'écran, par `skipped[]` et `truncatedAt` ;
+  `n = failed.length + skipped.length` ; une seule notification si le rechargement de la liste échoue aussi.)*
 
 ### C-e342-14 — Où mène le lien d'un doublon
 
@@ -131,6 +138,8 @@ Mise à jour par union, jamais par écrasement.*
 - **Écartées** : `--color-error` `#dc2626` pour les dépenses (1,47:1 seulement contre le vert : plus confondu en vision
   daltonienne) ; ambre ou orange en quatrième (plus proche du rouge en simulation de deutéranopie).
 - **Réversible** : oui, valeurs de jetons.
+- *(Précisé à la validation P1, F10-2 : jetons écrits en hexadécimal, non en alias ; le module TypeScript garde des
+  constantes hexadécimales, nécessaires aux tests de contraste et au rendu sous jsdom ; un test les tient égales.)*
 
 ### C-e342-16 — Liseré blanc entre les parts
 
@@ -151,3 +160,35 @@ Mise à jour par union, jamais par écrasement.*
 - **Retenu** : la fiche et le Change Log disent que la paire reste confondue par la teinte en vision deutéranope ou protanope,
   et ce qui la sépare (clarté, position, légende, tableau, survol) ; capture en simulation à l'appui.
 - **Réversible** : sans objet.
+
+## Ajouts de la validation P1 (2026-11-10)
+
+### C-e342-19 — #974 intégrée à la 34-9
+
+- **Contexte** : Guy veut « chaque fichier » au rapport ; un fichier instable ou disparu sortait en chaîne française
+  (`warnings[]`), sans nom structuré (#974, ouverte à la demande de la fiche). La correction est de la taille du `details`
+  déjà ajouté (finding F9-4).
+- **Retenu** : `skipped: [{ fileName, reason: UNSTABLE | VANISHED }]` et `truncatedAt: number | null`, additifs, traduits par
+  l'écran dans les quatre locales ; `warnings[]` gardé tel quel pour les clients d'API, déprécié. La PR porte `closes #974`.
+- **Écartées** : garder #974 à part (le rapport « chaque fichier » resterait incomplet dans la même release) ; retirer
+  `warnings[]` (changement de contrat d'une route documentée aux clés d'API).
+- **Réversible** : oui (champs additifs).
+
+### C-e342-20 — Le PDF du manuel se régénère à l'intégration
+
+- **Contexte** : 34-3, 34-4, 34-9 et 34-10 touchent `user-manual.tex` (34-9 aussi `admin-manual.tex`) ; un PDF ne se fusionne
+  pas (finding X-1).
+- **Retenu** : chaque story change le `.tex` ; le PDF se régénère **une fois à l'intégration**, et s'y contrôle aplati. Une
+  story peut le régénérer pour se relire, sans le commiter. Le `CLAUDE.md` (PDF à jour au push et à la release) est tenu par
+  la PR d'intégration.
+- **Écartée** : un PDF régénéré par story (conflits binaires à chaque fusion, PDF d'une story écrasé par la suivante).
+- **Réversible** : oui.
+
+### C-e342-21 — Pas de sélecteur Fluent dans les textes lus par l'écran
+
+- **Contexte** : le client reçoit les messages pré-résolus sans arguments (`crates/kesh-i18n/src/loader.rs:130-165`) et
+  `i18nMsg` ne remplace que `{ $nom }` (`frontend/src/lib/shared/utils/i18n.svelte.ts:19-27`) : un sélecteur arriverait figé
+  (findings F4-1, F9-1).
+- **Retenu** : 34-4, deux clés `-one`/`-other` choisies par le Svelte ; 34-9, un résumé composé par segments, chacun au pluriel
+  par « (s) » ; un test lit le catalogue réel.
+- **Réversible** : oui.
