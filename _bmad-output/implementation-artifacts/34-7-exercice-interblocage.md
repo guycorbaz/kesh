@@ -1,6 +1,6 @@
 # Story 34-7 : le renommage d'un exercice est rejoué sur interblocage (#945)
 
-Status: review
+Status: done
 
 *Fiche rédigée le 2026-11-10 en autonomie (Opus 5.5), worktree `/home/gcorbaz/devel/kesh-e34`, branche `chore/epic-34-kickoff`,
 numéros de ligne de `a75835db`. Release **0.17.6**, Epic 34. **Aucune migration.** Registre : `e34-choix-autonomes-e343.md`,
@@ -97,8 +97,8 @@ aboutisse, ou soit refusé pour son vrai motif. Il ne doit pas finir en erreur 5
 ### Mutations nommées
 
 - **M1** : l'enveloppe retirée → rouge AC-1 (500, pas de rejeu).
-- **M2** : `retry_on_deadlock_with("fiscal_years::update_name", 1, …)`, soit une seule tentative → rouge AC-1 (500, aucun rejeu
-  capturé) et AC-2. *(Remplace la M2 d'origine, `map_update_error` dans la fermeture, qui ne compile pas :
+- **M2** : `retry_on_deadlock_with("fiscal_years::update_name", 1, …)`, soit une seule tentative → rouge AC-1 (500) et AC-2. *(Revue
+  P1, A1-1 : « aucun rejeu capturé » retiré, l'assertion du statut levant avant le témoin, qui n'est donc pas évalué.)* *(Remplace la M2 d'origine, `map_update_error` dans la fermeture, qui ne compile pas :
   `retry_on_deadlock` exige un `Future` de `Result<T, DbError>`, `kesh-db/src/retry.rs:151-157`. Validation P2, 34-7-F2.)*
 
 ## Gates
@@ -149,6 +149,20 @@ Les autres candidates du point (iv), sans cycle démontré : `PUT /invoices/{id}
     Edit. L'outil ne manquait de rien : Edit exige un `old_string`, et ajouter en fin de fichier long en demande un qui
     soit unique, ce que le heredoc évitait. Les mutations passent par un script (motif vérifié unique, restauration
     `git checkout --` puis `touch`), comme la consigne l'autorise.
+
+- 2026-11-10 : **revue de code P1 (Sonnet, lentilles B, E et A) : 0 C, 0 H, 0 M, 3 L.** Boucle close sur cette passe,
+  aucune au-dessus de LOW (orchestrateur, Opus 5.5). Rapports `kesh-gate-logs/e347-review-p1-{B,E,A}.md`.
+  - **B1-1 (L)** : le recompte de « vingt-cinq » au point (vi), que B n'a pu rejouer, est fait par A : 25,
+    `assert_eq!(examinees, 25)` intact. Sans suite.
+  - **E1-1 (L)** : l'épuisement des trois tentatives n'est pas exercé pour cette route. Sans suite, sans issue : le chemin
+    est celui de `retry_on_deadlock`, commun à toutes les routes rejouées, dont la borne est éprouvée dans
+    `kesh-db/src/retry.rs` (`max_attempts_one_means_no_retry`, la M2 de cette story le confirmant pour la route) ; `map_update_error` laisse passer
+    l'erreur en `500`, comme le dit `docs/api-external.md`. Ce n'est pas un défaut de la route.
+  - **A1-1 (L)** : M2 à la § *Mutations nommées*, « aucun rejeu capturé » retiré (remédiation de la fiche seule).
+  - Axe non exercé par B (ouverture de la route aux clés) repris par l'orchestrateur : `PUT /fiscal-years/{id}` est au
+    routeur des mutations (`crates/kesh-api/src/lib.rs:817`), sans `ensure_not_pat` (réservé à la réouverture,
+    `routes/fiscal_years.rs:392`) ; `docs/api-external.md:235` le dit ouvert aux clés.
+  - Ouverte pendant le développement : #989 (KF-057), un test voisin intermittent. `Status: done`.
 
 ## Dev Agent Record
 
