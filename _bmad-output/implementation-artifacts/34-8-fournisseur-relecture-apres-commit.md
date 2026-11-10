@@ -214,22 +214,22 @@ et de la compilation des tests `kesh-db` qui lisent un champ de la vue sur le re
 
 ## Tâches
 
-- [ ] **T1 — rouges d'abord**, journalisés dans `kesh-gate-logs/e343/rouges.log` :
+- [x] **T1 — rouges d'abord**, journalisés dans `kesh-gate-logs/e343/rouges.log` :
   - la garde de l'AC-3, rouge à l'exécution sur les neuf handlers ;
   - les tests `kesh-db` (`supplier_invoices_repository.rs` ou un fichier neuf) qui lisent `view.settlement_cancel_blocker` sur
     le retour de `pay`, rouges à la compilation ;
   - le Vitest de l'AC-8 pour `pay()` hors `ApiError`, rouge.
-- [ ] **T2 — `kesh-db`** : `get_settlement_view_in_tx`, `commit_with_view` et les cinq enveloppes.
+- [x] **T2 — `kesh-db`** : `get_settlement_view_in_tx`, `commit_with_view` et les cinq enveloppes.
   - `validate` et `unvalidate` quittent `in_own_tx!`. La macro reste : elle a d'autres usages (`create_draft`,
     `create_validated`, `update_draft`, `delete_draft` ; six appels à `a75835db`, dont ces deux).
   - ⚠️ `kesh-db` est touché : **gate complet même en cours de boucle**.
-- [ ] **T3 — routes** : les neuf handlers et les quatre `_once`. `load_with_settlement_cancellation` est retirée. Les comptes
+- [x] **T3 — routes** : les neuf handlers et les quatre `_once`. `load_with_settlement_cancellation` est retirée. Les comptes
   de `services_motif.rs` sont recomptés.
-- [ ] **T4 — garde** : module commun, garde fournisseur, sonde positive, et la garde client rebranchée.
-- [ ] **T5 — égalités AC-4** dans `crates/kesh-api/tests/supplier_invoice_response_e2e.rs` (neuf), un test par geste. Les
+- [x] **T4 — garde** : module commun, garde fournisseur, sonde positive, et la garde client rebranchée.
+- [x] **T5 — égalités AC-4** dans `crates/kesh-api/tests/supplier_invoice_response_e2e.rs` (neuf), un test par geste. Les
   montages de `supplier_invoice_draft_e2e.rs` et de `supplier_settlement_cancel_e2e.rs` sont à réemployer, sans copie
   (règle DRY : aide commune si deux fichiers en ont besoin).
-- [ ] **T6 — écran** : AC-8, avec deux clés i18n, `supplier-invoices-unknown-outcome` et
+- [x] **T6 — écran** : AC-8, avec deux clés i18n, `supplier-invoices-unknown-outcome` et
   `supplier-invoices-unknown-outcome-reread-failed`, aux quatre locales, chacune avec un repli identique. Vitest :
   - un cas par geste, `attach` et `detach` compris : réponse perdue → relecture et avis ; 400 → message, sans relecture ;
   - un cas où la relecture échoue → second avis.
@@ -334,11 +334,101 @@ aucune migration, aucun schéma.
   - **F2** : le lieu des `include_str!` et l'emplacement des quatre `_once` sont écrits (`supplier_invoices.rs:805`,
     `imported_supplier_invoices.rs:159,607,712`).
   - **F4** : la valeur de `cycleOutcome` est donnée pour la branche « relecture sans document ».
+- 2026-11-10/11 : **développement** (Opus 5.5, worktree `/home/gcorbaz/devel/kesh-e348`, base `665de151`). Détail au Dev
+  Agent Record ci-dessous.
+  - **Étape 0.** Validation P5 : F1 porte sur la 34-6, hors de cette fiche ; **F2** (lieu de l'état `reread-failed` de
+    `attach`) tranché par C-e348-2 : le sélecteur se ferme, l'encadré dit de recharger (`+page.svelte`, `attach`, branche
+    `if (!(await reloadAfterRefusal()))`). Points à établir : comptes de `services_motif.rs` relevés à la source,
+    `grep -cE '^\s*(pub(\([a-z]+\))? )?async fn'` : `routes/supplier_invoices.rs` **12**, `^pub async fn` **11** (13 → 12,
+    `services_motif.rs` mis à jour) ; `routes/imported_supplier_invoices.rs` **12** et **9**, inchangés.
+  - **Écarts à la consigne « Edit seulement »** : (1) le bloc de trois tests ajouté en fin de
+    `crates/kesh-db/tests/supplier_invoices_repository.rs` l'a été par un `cat >>` (ajout, sans remplacement), par habitude ;
+    le reste du code par l'outil Edit ou Write ; (2) `cargo fmt --all`, le formateur, a reformaté les fichiers touchés ; (3)
+    les mutations par un script de remplacement à motif unique (`kesh-gate-logs/e348/mut/appliquer.py`), restaurées par
+    `git checkout --` puis `touch`, comme la consigne le permet ; (4) pour le rouge Vitest, la fiche corrigée a été mise de
+    côté par `cp`, la fiche de base restaurée par `git checkout --`, puis la copie remise par `cp`. L'outil Edit n'a manqué
+    de rien : la suppression du bloc de 117 lignes déplacé vers `common/autour_appel.rs` s'y est faite d'un tenant.
 
 ## Dev Agent Record
 
 ### Agent Model Used
 
+Opus 5.5 (claude-opus-5-5), en autonomie, sous le prompt `kesh-gate-logs/prompts/e34-dev-commun.md`.
+
 ### Completion Notes List
 
+- **Rouges d'abord** (`kesh-gate-logs/e348/rouges.log`) :
+  - (a) la garde AC-3 rouge à l'exécution : les **neuf** handlers nommés (« attendent encore après l'écriture »), les **neuf**
+    fonctions qui écrivent (« n'appelle pas commit_with_view »), `commit_with_view` introuvable ; la sonde positive verte ;
+  - (b) `kesh-db`, `supplier_invoices_repository` : **8** erreurs de compilation (`commit_with_view` absente ;
+    `settlement_cancel_blocker` et `invoice_cancel_blocker` absents de `SupplierInvoiceWithLines`) ;
+  - (c) Vitest AC-8 sur la fiche d'avant : **15** rouges sur 21. L'un d'eux (« repasser en brouillon : refus 400 ») venait du
+    test, le repassage traduisant le code ; corrigé dans le test (`refusalText`), noté au journal.
+- **Mutations** (`kesh-gate-logs/e348/mut/`, synthèse `SYNTHESE.log`), toutes rouges, toutes restaurées (0 ligne de diff) :
+  - **M1** (`pay` lit la vue avant d'écrire, puis `tx.commit()`) : rouge AC-4, `pay_returns_what_was_written` (`left:
+    "open"`, `right: "paid"`), `the_wrappers_return_the_view_of_what_they_wrote`, la garde (commit direct), et 21 autres
+    tests `kesh-db` (le mutant `unwrap()` la vue d'une facture absente) ; 24 rouges sur 76 ;
+  - **M2** (`validate`, même forme) : `validate_returns_what_was_written`, `unvalidate_returns_what_was_written` (version
+    d'avant), `the_wrappers…`, la garde ; 4 sur 76 ;
+  - **M3** (relecture remise après l'écriture dans `cancel_supplier_invoice`) : `the_nine_handlers_wait_for_nothing_after_the_write` ;
+  - **M4** (`attach_source_document_once` : `commit` puis relecture) : `the_nine_writers_end_with_commit_with_view` ;
+  - **M5** (`commit_with_view` valide malgré une vue `None`) : `commit_with_view_rolls_back_when_the_view_is_missing` ;
+  - **M6** (la fiche ne relit que sur `ApiError`) : le Vitest « payer : une erreur hors `ApiError` n'est plus muette ».
+- **Un rouge du gate complet, hors des fichiers de la story** : `migrations_upgrade_path`,
+  `draft_migration_preserves_a_populated_{016,rc1}_base`, `ColumnNotFound("link_origin")`. Le test semait par `pay` et
+  `cancel` sur le schéma d'avant la montée ; ces enveloppes lisent désormais la vue (`SELECT *` sur
+  `imported_supplier_invoices`), dont la requête préparée restait en cache sur la connexion du pool, sans la colonne que
+  la montée ajoute. Le semis passe désormais par `pay_in_tx` / `cancel_in_tx`, qui écrivent ce qu'écrivaient les
+  enveloppes de la 0.16 sans rien lire de plus. **En production**, les migrations tournent au démarrage, et la sauvegarde
+  d'avant migration ne lit pas `imported_supplier_invoices` par `query_as` (`git grep "SELECT \*"` : aucun site dans
+  `admin_backup/` ni `pre_upgrade_backup.rs`) : le défaut est propre au test.
+- **Gardes i18n recomptées** (Vitest complet) : `i18n-keys` 2922 → **2925** sites (les deux avis, le repli `common-error`
+  de `pay()`), `i18n-un-repli-par-cle` 407 → **409** clés du domaine, `i18n-libelle-en-dur` 85 → **86** candidates
+  (`unknownOutcomeText`, `conforme` 71 → 72).
+- **Deux tests Vitest de la 30-2c** passent de 500 à 403 (C-e348-4) : un 5xx est désormais une issue inconnue.
+- **Tests ajoutés**, comptés aux deux bornes (`665de151` → tête, `grep -cE '#\[(test|sqlx::test)'`) :
+  `kesh-api/tests/supplier_invoice_response_e2e.rs` 0 → **12** (8 égalités AC-4, dont joindre et détacher dans un même
+  test, et 4 gardes) ; `kesh-db/tests/supplier_invoices_repository.rs` 61 → **64** ;
+  `invoice_settlement_response_e2e.rs` 10 → 10 (garde déplacée, assertions inchangées) ; Vitest
+  `supplier-unknown-outcome-page.test.ts` neuf, **21** tests (7 gestes × 2, plus 7).
+- **Manuel** : `user-manual.tex`, *Régler une facture fournisseur*, paragraphe « Si la réponse se perd » ; PDF régénéré
+  (`make fr`, `user-manual.pdf` seul gardé : `admin-manual.pdf` et `marketing-brochure.pdf`, sans changement de source,
+  restaurés), contrôlé aplati : `pdftotext … | tr '\n' ' ' | tr -s ' ' | grep -o "Si la réponse se perd…"` rend le
+  paragraphe entier.
+- **Gates** — voir la section *Gates* ci-dessous, tels qu'ils ont tourné.
+
+### Gates
+
+- Gate ciblé (pendant la story) : 11 binaires (`supplier_invoices_repository`, `supplier_invoices_draft`,
+  `supplier_invoices_internal_number`, `supplier_invoice_response_e2e`, `invoice_settlement_response_e2e`, `services_motif`,
+  `supplier_invoice_draft_e2e`, `supplier_settlement_cancel_e2e`, `rejeu_interblocage_e2e`, `services_rollout`,
+  `supplier_document_attachment`) : **283/283**, dont les deux rejeux sur interblocage fournisseur (AC-7).
+- `cargo fmt --check` vert ; `cargo clippy --workspace --all-targets -D warnings` vert (au commit `2b5d7b2d`).
+- `scripts/test-fast.sh --ci`, bases remises à neuf : au commit `2b5d7b2d`, 5151/5153, 2 rouges (`migrations_upgrade_path`,
+  ci-dessus) ; **au commit `afb47235` (dernier commit de code : `1ec10969`) : 5153 exécutés, 5153 passés, 12 ignorés**.
+- Frontend au commit `2b5d7b2d` : `npm run check` 0 erreur, `lint-i18n-ownership` vert, `test:unit` 2898/2902 (les 4 rouges
+  des gardes i18n, recomptées au commit `1ec10969` : les trois fichiers 56/56), `npm run build` vert.
+- **Différés par la pause des commandes lourdes** (`kesh-gate-logs/PAUSE-HEAVY`, décision de Guy du 2026-11-11) : `cargo
+  build --workspace --all-targets`, `scripts/gate-ci.sh kesh_ci_e348`, le gate frontend complet et l'E2E complet au dernier
+  commit de code. Complétés ci-dessous à la levée de la pause.
+
 ### File List
+
+- `crates/kesh-db/src/repositories/supplier_invoices.rs` — `get_settlement_view_in_tx`, `commit_with_view`,
+  `SupplierSettlementCancelled`, les cinq enveloppes.
+- `crates/kesh-api/src/routes/supplier_invoices.rs`, `crates/kesh-api/src/routes/imported_supplier_invoices.rs` — les neuf
+  handlers, les quatre `_once`, `load_with_settlement_cancellation` retirée, doc-comments C-30-2-42 et C-30-2-52 récrits.
+- `crates/kesh-api/src/services/mod.rs` — périmètre « lecture seule », soixante éléments.
+- `crates/kesh-api/tests/common/autour_appel.rs` (neuf), `crates/kesh-api/tests/supplier_invoice_response_e2e.rs` (neuf),
+  `crates/kesh-api/tests/invoice_settlement_response_e2e.rs`, `crates/kesh-api/tests/services_motif.rs`,
+  `crates/kesh-api/tests/supplier_invoice_draft_e2e.rs`.
+- `crates/kesh-db/tests/supplier_invoices_repository.rs`, `supplier_invoices_draft.rs`,
+  `supplier_invoices_internal_number.rs`, `migrations_upgrade_path.rs`, `support/fournisseur_rapproche.rs`.
+- `crates/kesh-i18n/locales/{fr,de,en,it}-CH/messages.ftl` — deux clés.
+- `frontend/src/routes/(app)/supplier-invoices/[id]/+page.svelte`, `supplier-unknown-outcome-page.test.ts` (neuf),
+  `supplier-document-page.test.ts` ; `frontend/src/lib/shared/utils/unknown-outcome.ts` ;
+  `frontend/src/lib/shared/{i18n-keys,i18n-un-repli-par-cle,i18n-libelle-en-dur}.test.ts` ;
+  `frontend/tests/e2e/supplier-invoice-unknown-outcome.spec.ts` (neuf).
+- `docs/manual/fr/user-manual.tex`, `user-manual.pdf` ; `docs/api-external.md` ; `CHANGELOG.md`.
+- `_bmad-output/implementation-artifacts/e34-choix-autonomes-e348.md` (neuf),
+  `34-8-fournisseur-relecture-apres-commit-review-prompt-p1.md` (neuf).
