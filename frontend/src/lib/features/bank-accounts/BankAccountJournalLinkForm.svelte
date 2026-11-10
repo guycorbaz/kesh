@@ -60,12 +60,9 @@
 	// sens ne se déduit d'un numéro (Story 14-3a), le serveur ne le contrôle pas,
 	// et le formulaire de création de la même page ne l'appliquait pas — un
 	// compte d'actif numéroté hors des classes 1 et 2 se liait à la création,
-	// mais n'était pas proposé ici.
-	const eligibleAccounts = $derived(
-		linkableLedgerAccounts(accounts, claimAccountIds).sort((a, b) =>
-			a.number.localeCompare(b.number),
-		),
-	);
+	// mais n'était pas proposé ici. Le tri par numéro est fait par la fonction
+	// commune (revue P1, B-5).
+	const eligibleAccounts = $derived(linkableLedgerAccounts(accounts, claimAccountIds));
 
 	// Issue #271 : un compte lié AVANT de devenir non-postable — ou d'être
 	// archivé — disparaîtrait de ces options, laissant le champ vide alors que

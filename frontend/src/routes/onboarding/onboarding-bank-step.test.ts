@@ -130,8 +130,10 @@ beforeEach(() => {
 });
 
 describe('étape bancaire de l’assistant — compte lié (Story 34-1, AC-6)', () => {
-	it('ne propose que les comptes liables, et présélectionne le 1020', async () => {
-		fetchAccountsMock.mockResolvedValue(PLAN);
+	it('ne propose que les comptes liables, triés par numéro, et présélectionne le 1020', async () => {
+		// Revue P1 (B-5) : une liste reçue dans le désordre — l'ordre affiché ne
+		// dépend pas de celui du serveur.
+		fetchAccountsMock.mockResolvedValue([...PLAN].reverse());
 		await atBankStep();
 		const { unmount } = render(Page);
 		await waitFor(() => expect(select().selectedOptions[0]?.textContent).toContain('1020'));
@@ -185,6 +187,8 @@ describe('étape bancaire de l’assistant — compte lié (Story 34-1, AC-6)', 
 		const { unmount, findByTestId } = render(Page);
 		const motif = await findByTestId('onboarding-bank-ledger-error');
 		expect(motif.textContent).toContain('peut être lié plus tard');
+		// Une erreur sans message lisible n'ajoute pas de motif entre parenthèses.
+		expect(document.querySelector('[data-testid="onboarding-bank-ledger-motif"]')).toBeNull();
 		expect(i18nMsgMock).toHaveBeenCalledWith(
 			'onboarding-bank-ledger-load-error',
 			expect.stringContaining('pas pu être chargée')
@@ -198,6 +202,65 @@ describe('étape bancaire de l’assistant — compte lié (Story 34-1, AC-6)', 
 			journalAccountId: null,
 		});
 		expect(toastError).not.toHaveBeenCalled();
+		unmount();
+	});
+
+	it('la liste en échec par une ApiError (ce que lève le client réel) : la phrase de l’étape ET le motif (revue P1, E-1)', async () => {
+		fetchAccountsMock.mockRejectedValue({
+			code: 'NETWORK_ERROR',
+			message: 'Impossible de contacter le serveur. Vérifiez votre connexion.',
+			status: 0,
+		});
+		await atBankStep();
+		const { unmount, findByTestId } = render(Page);
+		const ligne = await findByTestId('onboarding-bank-ledger-error');
+		expect(ligne.textContent).toContain('peut être lié plus tard');
+		expect((await findByTestId('onboarding-bank-ledger-motif')).textContent).toContain(
+			'Impossible de contacter le serveur'
+		);
+		expect(select().selectedOptions[0]?.textContent?.trim()).toBe('Non configuré');
+		unmount();
+	});
+});
+
+describe('étape bancaire de l’assistant — pendant le chargement de la liste (revue P1, A-1, B-2)', () => {
+	/** Une liste dont la réponse se fait attendre jusqu'à `livrer()`. */
+	function listeEnAttente() {
+		let livrer: (v: AccountResponse[]) => void = () => {};
+		fetchAccountsMock.mockReturnValue(
+			new Promise<AccountResponse[]>((r) => {
+				livrer = r;
+			})
+		);
+		return () => livrer(PLAN);
+	}
+
+	it('l’étape ne s’envoie pas avant la fin du chargement (bouton désactivé, Entrée sans effet)', async () => {
+		const livrer = listeEnAttente();
+		await atBankStep();
+		const { unmount } = render(Page);
+		await waitFor(() => expect(fetchAccountsMock).toHaveBeenCalled());
+		const bouton = document.querySelector('form button[type="submit"]') as HTMLButtonElement;
+		expect(bouton.disabled).toBe(true);
+		await soumettre();
+		await new Promise((r) => setTimeout(r, 0));
+		expect(api.setBankAccount).not.toHaveBeenCalled();
+		livrer();
+		await waitFor(() => expect(bouton.disabled).toBe(false));
+		await waitFor(() => expect(select().selectedOptions[0]?.textContent).toContain('1020'));
+		unmount();
+	});
+
+	it('un choix fait pendant le chargement n’est pas écrasé par la présélection du 1020', async () => {
+		const livrer = listeEnAttente();
+		await atBankStep();
+		const { unmount } = render(Page);
+		await waitFor(() => expect(fetchAccountsMock).toHaveBeenCalled());
+		select().selectedIndex = 0;
+		await fireEvent.change(select());
+		livrer();
+		await waitFor(() => expect(optionLabels()).toContain('1020 — Banque'));
+		expect(select().selectedOptions[0]?.textContent?.trim()).toBe('Non configuré');
 		unmount();
 	});
 });

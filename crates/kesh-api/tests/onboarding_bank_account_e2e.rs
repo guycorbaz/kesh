@@ -438,6 +438,51 @@ async fn bank_step_replays(pool: MySqlPool) {
         200
     );
     assert_eq!(bank_rows(&pool).await, [(None, Some(bank_ledger), 4)]);
+
+    // (f) revue P1 (B-1, E-3, A-2) : une description PRÉSENTE mais faite
+    // d'espaces, ou vide, vaut `null` — elle EFFACE la description posée
+    // (C-e341-34 : seul un champ absent laisse inchangé). Mutation M12 :
+    // « blanc traité comme absent ».
+    for (blanc, version) in [("   ", 6), ("", 8)] {
+        set_step(&pool, 6).await;
+        assert_eq!(
+            post(
+                &app,
+                &token,
+                "bank-account",
+                Some(body(json!({ "description": "Personnel" })))
+            )
+            .await
+            .0,
+            200
+        );
+        assert_eq!(
+            bank_rows(&pool).await,
+            [(
+                Some("Personnel".to_string()),
+                Some(bank_ledger),
+                version - 1
+            )],
+            "avant le blanc {blanc:?}"
+        );
+        set_step(&pool, 6).await;
+        assert_eq!(
+            post(
+                &app,
+                &token,
+                "bank-account",
+                Some(body(json!({ "description": blanc })))
+            )
+            .await
+            .0,
+            200
+        );
+        assert_eq!(
+            bank_rows(&pool).await,
+            [(None, Some(bank_ledger), version)],
+            "description {blanc:?} : effacée"
+        );
+    }
 }
 
 /// Un corps de la 0.17.5 qui **change la banque** passe par l'`UPDATE` : la
@@ -677,6 +722,78 @@ async fn bank_step_accepts_an_1100_without_role(pool: MySqlPool) {
     .await;
     assert_eq!(status, 200, "{resp}");
     assert_eq!(bank_rows(&pool).await, [(None, Some(id_1100), 1)]);
+}
+
+/// Revue P1 (A-3) : le compte de rôle `Payable` renuméroté reste refusé, comme
+/// le `Receivable` (`bank_step_refuses_a_renumbered_receivable`).
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn bank_step_refuses_a_renumbered_payable(pool: MySqlPool) {
+    let (app, token, company_id) = at_bank_step(&pool).await;
+    let payable = account_id(&pool, company_id, "2000").await;
+    sqlx::query("UPDATE accounts SET number = '2005' WHERE id = ?")
+        .bind(payable)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let (status, resp) = post(
+        &app,
+        &token,
+        "bank-account",
+        Some(body(json!({ "journalAccountId": payable }))),
+    )
+    .await;
+    assert_eq!(status, 400, "{resp}");
+    assert_eq!(
+        resp["error"]["code"],
+        "BANK_ACCOUNT_LEDGER_IS_CLAIM_ACCOUNT"
+    );
+    let message = resp["error"]["message"].as_str().unwrap();
+    assert!(
+        message.contains("2005") && message.contains("créanciers"),
+        "{message}"
+    );
+    assert!(bank_rows(&pool).await.is_empty());
+}
+
+/// Revue P1 (A-3, mutation M11) : les rôles se lisent sur `singleton_role`, qui
+/// ne vaut que pour un compte **actif**. Un ancien compte débiteurs archivé
+/// garde sa colonne `role`, mais n'est plus le futur compte de créance : c'est
+/// le compte actif qui porte le rôle à sa suite qui doit être refusé. Une
+/// lecture sur `role` (`ORDER BY id`) trouverait l'archivé et laisserait passer
+/// le compte actif.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn bank_step_refuses_the_active_receivable_not_an_archived_one(pool: MySqlPool) {
+    let (app, token, company_id) = at_bank_step(&pool).await;
+    let old_receivable = account_id(&pool, company_id, "1100").await;
+    sqlx::query("UPDATE accounts SET active = FALSE WHERE id = ?")
+        .bind(old_receivable)
+        .execute(&pool)
+        .await
+        .unwrap();
+    // 1109 vient après 1100 dans le plan : son identifiant est plus grand.
+    let new_receivable = account_id(&pool, company_id, "1109").await;
+    sqlx::query("UPDATE accounts SET role = 'Receivable' WHERE id = ?")
+        .bind(new_receivable)
+        .execute(&pool)
+        .await
+        .unwrap();
+    assert!(
+        old_receivable < new_receivable,
+        "montage : l'archivé d'abord"
+    );
+    let (status, resp) = post(
+        &app,
+        &token,
+        "bank-account",
+        Some(body(json!({ "journalAccountId": new_receivable }))),
+    )
+    .await;
+    assert_eq!(status, 400, "{resp}");
+    assert_eq!(
+        resp["error"]["code"],
+        "BANK_ACCOUNT_LEDGER_IS_CLAIM_ACCOUNT"
+    );
+    assert!(bank_rows(&pool).await.is_empty());
 }
 
 /// Pool d'UNE connexion : la lecture des rôles se fait dans la transaction de

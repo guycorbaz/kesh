@@ -116,23 +116,27 @@ export interface LinkableLedgerOptions {
  *   bancaires*, Story 15-6c) ou les comptes de rôle `Receivable` / `Payable`
  *   (assistant, avant que les réglages n'existent, C-e341-3).
  *
- * La liste garde l'ordre reçu (le serveur rend le plan par numéro). Le refus du
- * serveur reste l'autorité : ce filtre n'évite qu'un aller-retour.
+ * La liste rendue est **triée par numéro** (`localeCompare`) — revue P1 (B-5) :
+ * l'ordre ne dépend plus de celui que rend le serveur, et les trois écrans
+ * l'affichent pareil. Le refus du serveur reste l'autorité : ce filtre n'évite
+ * qu'un aller-retour.
  */
 export function linkableLedgerAccounts(
 	accounts: AccountResponse[],
 	excludedIds: Set<number>,
 	options: LinkableLedgerOptions = {},
 ): AccountResponse[] {
-	return accounts.filter(
-		(a) =>
-			a.active &&
-			a.postable &&
-			(options.liabilityOnly
-				? a.accountType === 'Liability'
-				: a.accountType === 'Asset' || a.accountType === 'Liability') &&
-			!excludedIds.has(a.id),
-	);
+	return accounts
+		.filter(
+			(a) =>
+				a.active &&
+				a.postable &&
+				(options.liabilityOnly
+					? a.accountType === 'Liability'
+					: a.accountType === 'Asset' || a.accountType === 'Liability') &&
+				!excludedIds.has(a.id),
+		)
+		.sort((a, b) => a.number.localeCompare(b.number));
 }
 
 /**

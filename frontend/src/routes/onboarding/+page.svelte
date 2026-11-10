@@ -172,10 +172,28 @@
 	let bankDescription = $state('');
 	let bankJournalAccountId = $state<number | null>(null);
 	let bankLedgerOptions = $state<AccountResponse[]>([]);
-	let bankLedgerError = $state<string | null>(null);
+	// Revue P1 (E-1) : en cas d'échec, la phrase de l'étape s'affiche TOUJOURS ;
+	// le motif du client ou du serveur (« Impossible de contacter le serveur… »)
+	// la suit s'il en dit davantage.
+	let bankLedgerFailed = $state(false);
+	let bankLedgerMotif = $state<string | null>(null);
+	// Revue P1 (A-1, B-2) : tant que la liste se charge, l'étape ne s'envoie pas
+	// (le corps partirait sans le lien que l'écran va proposer) ; et un choix fait
+	// dans le sélecteur avant la fin du chargement n'est pas écrasé par la
+	// présélection (drapeau non réactif, posé par `onchange`).
+	let bankLedgerLoading = $state(false);
 	let bankLedgerRequested = false;
+	let bankLedgerTouched = false;
+
+	function bankLedgerLoadErrorText(): string {
+		return msg(
+			'onboarding-bank-ledger-load-error',
+			'La liste des comptes n’a pas pu être chargée : le compte bancaire peut être lié plus tard.'
+		);
+	}
 
 	async function loadBankLedgerOptions() {
+		bankLedgerLoading = true;
 		try {
 			const all = await fetchAccounts(false);
 			const roleIds = new Set([
@@ -183,7 +201,9 @@
 				...accountIdsWithRole(all, 'Payable'),
 			]);
 			bankLedgerOptions = linkableLedgerAccounts(all, roleIds);
-			bankJournalAccountId = preselectedBankLedgerId(bankLedgerOptions);
+			if (!bankLedgerTouched) {
+				bankJournalAccountId = preselectedBankLedgerId(bankLedgerOptions);
+			}
 		} catch (err) {
 			// Liste indisponible : le compte se crée sans lien, et se lie ensuite
 			// dans Administration → Comptes bancaires (AC-6). Le motif s'affiche
@@ -192,13 +212,11 @@
 			// `errorMessageOf`).
 			bankLedgerOptions = [];
 			bankJournalAccountId = null;
-			bankLedgerError = errorMessageOf(
-				err,
-				msg(
-					'onboarding-bank-ledger-load-error',
-					'La liste des comptes n’a pas pu être chargée : le compte bancaire peut être lié plus tard.'
-				)
-			);
+			bankLedgerFailed = true;
+			const motif = errorMessageOf(err, bankLedgerLoadErrorText());
+			bankLedgerMotif = motif === bankLedgerLoadErrorText() ? null : motif;
+		} finally {
+			bankLedgerLoading = false;
 		}
 	}
 
@@ -248,6 +266,9 @@
 	}
 
 	async function submitBankAccount() {
+		// Revue P1 (B-2) : pas d'envoi avant la fin du chargement de la liste (le
+		// bouton est désactivé ; ce garde couvre la touche Entrée).
+		if (bankLedgerLoading) return;
 		if (!bankName.trim() || !bankIban.trim()) {
 			toast.error(msg('onboarding-bank-required', 'Nom de banque et IBAN sont obligatoires'));
 			return;
@@ -509,6 +530,7 @@
 			<select
 				id="bank-journal-account"
 				bind:value={bankJournalAccountId}
+				onchange={() => (bankLedgerTouched = true)}
 				class="w-full rounded border border-border px-3 py-2 text-sm"
 				data-testid="onboarding-bank-journal-account"
 			>
@@ -517,9 +539,12 @@
 					<option value={acc.id}>{acc.number} — {acc.name}</option>
 				{/each}
 			</select>
-			{#if bankLedgerError}
+			{#if bankLedgerFailed}
 				<p class="mt-1 text-xs text-text-muted" data-testid="onboarding-bank-ledger-error">
-					{bankLedgerError}
+					{bankLedgerLoadErrorText()}
+					{#if bankLedgerMotif}
+						<span data-testid="onboarding-bank-ledger-motif">({bankLedgerMotif})</span>
+					{/if}
 				</p>
 			{/if}
 		</div>
@@ -534,7 +559,7 @@
 			<Button type="button" variant="outline" onclick={handleSkipBank} disabled={onboardingState.loading} class="flex-1">
 				{msg('onboarding-skip-bank', 'Configurer plus tard')}
 			</Button>
-			<Button type="submit" disabled={onboardingState.loading} class="flex-1">
+			<Button type="submit" disabled={onboardingState.loading || bankLedgerLoading} class="flex-1">
 				{msg('onboarding-save', 'Enregistrer')}
 			</Button>
 		</div>

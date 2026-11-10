@@ -2371,7 +2371,7 @@ Avec une description, Kesh nomme le compte « UBS --- Personnel » partout où i
 La description se saisit à l'assistant de démarrage, avec le compte comptable lié (le compte 1020 y est présélectionné s'il existe), ou ensuite, sur cette page~; l'une et l'autre restent modifiables ici après coup. Elle ne figure \textbf{ni sur la QR-facture ni dans le fichier de paiement} : la QR-facture porte le compte principal, et le fichier de paiement l'IBAN. Elle est dans l'export CSV (\texttt{bank\_accounts.csv}, juste après la banque) et dans la sauvegarde d'installation.
 
 \begin{keshnote}
-Pour qui modifie un compte par l'API : \texttt{PUT /bank-accounts/\{id\}} remplace tous les champs du compte --- un corps qui omet la description l'\textbf{efface}. Le lien au grand livre (\texttt{PATCH}) ne la touche pas. À l'assistant, au contraire, \texttt{POST /onboarding/bank-account} laisse \textbf{inchangés} la description et le compte lié qu'un corps omet, et efface ceux qu'il porte à \texttt{null}.
+Pour qui modifie un compte par l'API : \texttt{PUT /bank-accounts/\{id\}} remplace tous les champs du compte --- un corps qui omet la description l'\textbf{efface}. Le lien au grand livre (\texttt{PATCH}) ne la touche pas. À l'assistant, au contraire, \texttt{POST /onboarding/bank-account}, sur un compte \textbf{déjà créé}, laisse \textbf{inchangés} la description et le compte lié qu'un corps omet, et efface ceux qu'il porte à \texttt{null} --- une description vide ou faite d'espaces vaut \texttt{null}~; à la création, un champ omis laisse le compte sans description ni lien.
 \end{keshnote}
 
 \subsection{Clore un compte bancaire}\label{sec:clore-compte-bancaire}
