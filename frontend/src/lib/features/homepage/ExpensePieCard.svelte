@@ -141,7 +141,7 @@
 						<circle cx={GEOMETRY.cx} cy={GEOMETRY.cy} r={RING.r} fill="none" stroke={slice.style.color} stroke-width={RING.width} />
 					{:else}
 						<!-- Le liseré, de la couleur de la carte, marque chaque limite quelle que soit la paire de teintes (C-e342-16). -->
-						<path d={slice.path} fill={slice.style.color} stroke="var(--color-surface)" stroke-width="1.5" stroke-linejoin="round" />
+						<path d={slice.path} fill={slice.style.color} stroke="var(--color-surface)" stroke-width="1.5" />
 					{/if}
 				</g>
 			{/each}

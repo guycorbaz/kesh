@@ -33,7 +33,7 @@ union, jamais par écrasement.*
 
 - **Contexte** : l'AC-3 veut un trait de la couleur de fond de la carte, de 1 à 2 unités (C-e342-16).
 - **Retenu** : `stroke="var(--color-surface)"` (`#ffffff`, le fond `bg-white` de la carte), `stroke-width="1.5"`,
-  `stroke-linejoin="round"`, sur les seules parts en `path` ; une part pleine (`circle`) n'en a pas besoin, elle est seule.
+  sur les seules parts en `path` ; une part pleine (`circle`) n'en a pas besoin, elle est seule.
   L'attribut `var(…)` suit le patron existant de `MonthlyBarsCard.svelte` (`stroke="var(--color-border)"`).
 - **Écartée** : une constante `#ffffff` dans le module (une valeur de plus à tenir égale à un jeton, pour un trait non coloré).
 - **Réversible** : oui.
@@ -62,4 +62,14 @@ union, jamais par écrasement.*
   à neuf heures ; test 6b : au milieu de la première part (31,9 % du tour, angle 0,319 π).
 - **Écartée** : `mark.click({ position })` sur la boîte de la part (la boîte d'un secteur d'anneau ne contient pas toujours son
   milieu au même endroit relatif) ; importer `PIE_GEOMETRY` dans la spec (aucune spec E2E n'importe de `src/`).
+- **Réversible** : oui.
+
+### C-e3410-8 — Pas de `stroke-linejoin` sur le liseré
+
+- **Contexte** : le premier Vitest complet a rougi sur `jetons-non-definis.test.ts` : la garde lit tout le texte des `.svelte`, et
+  prend l'attribut SVG `stroke-linejoin` pour une classe de couleur `stroke-<nom>` au nom non défini (« faux rouge bruyant »,
+  angle mort documenté en tête de la garde).
+- **Retenu** : retirer l'attribut, dont le rendu (angles arrondis du trait blanc) n'apporte rien à 1,5 unité.
+- **Écartées** : inscrire `linejoin` à la table fermée `NON_DEFINIS` (elle tient des jetons à définir sous #645, non des attributs) ;
+  modifier la garde (hors de la zone de la story).
 - **Réversible** : oui.
