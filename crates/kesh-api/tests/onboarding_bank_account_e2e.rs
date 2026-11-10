@@ -317,7 +317,7 @@ async fn bank_step_blank_description_is_absent(pool: MySqlPool) {
 /// Rejeu identique → `Unchanged` (aucune trace de compte) ; corps 0.17.5 →
 /// `Unchanged`, description et lien intacts ; `journalAccountId: null` →
 /// `Updated`, lien effacé, description intacte ; description seule changée →
-/// `Updated` ; `description: null` → effacée (AC-1, AC-3, AC-5 ; M1, M7).
+/// `Updated` ; `description: null` → effacée (AC-1, AC-3, AC-5 ; M1).
 #[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn bank_step_replays(pool: MySqlPool) {
     let (app, token, company_id) = at_bank_step(&pool).await;
@@ -348,7 +348,8 @@ async fn bank_step_replays(pool: MySqlPool) {
         [(Some("Personnel".to_string()), Some(bank_ledger), 1)]
     );
 
-    // (b) corps 0.17.5, même banque et IBAN : inchangé, rien d'effacé (M7).
+    // (b) corps 0.17.5, même banque et IBAN : inchangé, rien d'effacé (le
+    // no-op ; l'UPDATE sans les champs : `bank_step_update_without_new_fields_keeps_them`).
     set_step(&pool, 6).await;
     let marker = max_audit_id(&pool).await;
     assert_eq!(
@@ -437,6 +438,40 @@ async fn bank_step_replays(pool: MySqlPool) {
         200
     );
     assert_eq!(bank_rows(&pool).await, [(None, Some(bank_ledger), 4)]);
+}
+
+/// Un corps de la 0.17.5 qui **change la banque** passe par l'`UPDATE` : la
+/// description et le lien, absents du corps, n'y sont pas nommés et restent
+/// tels quels (AC-1, C-e341-34 ; M7 — le cas « même banque » s'arrête au no-op
+/// et ne l'exerce pas).
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn bank_step_update_without_new_fields_keeps_them(pool: MySqlPool) {
+    let (app, token, company_id) = at_bank_step(&pool).await;
+    let bank_ledger = account_id(&pool, company_id, "1020").await;
+    let full = body(json!({ "description": "Personnel", "journalAccountId": bank_ledger }));
+    assert_eq!(post(&app, &token, "bank-account", Some(full)).await.0, 200);
+
+    set_step(&pool, 6).await;
+    let marker = max_audit_id(&pool).await;
+    let (status, resp) = post(
+        &app,
+        &token,
+        "bank-account",
+        Some(json!({ "bankName": "UBS Suisse", "iban": IBAN, "qrIban": null })),
+    )
+    .await;
+    assert_eq!(status, 200, "{resp}");
+    let all = entries_after(&pool, marker).await;
+    assert_eq!(
+        actions(&all),
+        ["bank_account.updated", "installation.step_completed"]
+    );
+    assert_eq!(
+        bank_rows(&pool).await,
+        [(Some("Personnel".to_string()), Some(bank_ledger), 2)]
+    );
+    assert_eq!(all[0].1["after"]["description"], "Personnel");
+    assert_eq!(all[0].1["after"]["journal_account_id"], bank_ledger);
 }
 
 // --- AC-2 : mêmes contrôles qu'à la création ---------------------------------
