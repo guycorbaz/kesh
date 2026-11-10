@@ -18,7 +18,6 @@ use chrono::{NaiveDate, TimeDelta};
 use kesh_api::auth::password::hash_password;
 use kesh_api::config::Config;
 use kesh_api::{AppState, build_router};
-use kesh_db::entities::imported_supplier_invoice::NewImportedSupplierInvoice;
 use kesh_db::entities::{NewUser, Role};
 use kesh_db::repositories::{imported_supplier_invoices, users};
 use kesh_db::test_fixtures::{SeededCompany, seed_accounting_company};
@@ -30,7 +29,7 @@ use sqlx::MySqlPool;
 #[path = "../../kesh-db/tests/support/fournisseur_rapproche.rs"]
 mod fournisseur_rapproche;
 
-use fournisseur_rapproche::Fournisseur;
+use fournisseur_rapproche::{Fournisseur, document};
 
 const TEST_JWT_SECRET: &[u8] = b"test-secret-32-bytes-minimum-test-secret-padding";
 const TEST_ADMIN_PASSWORD: &str = "admin123";
@@ -253,53 +252,8 @@ async fn nb_ecritures(pool: &MySqlPool, company_id: i64) -> i64 {
         .unwrap()
 }
 
-/// Un document à traiter, avec ou sans QR (IBAN classique, montant, devise).
-async fn document(
-    pool: &MySqlPool,
-    company_id: i64,
-    hash: &str,
-    qr: Option<(&str, Decimal, &str)>,
-) -> i64 {
-    let mut new = NewImportedSupplierInvoice {
-        company_id,
-        file_hash: hash.into(),
-        storage_path: format!("{hash}.png"),
-        original_filename: format!("{hash}.png"),
-        mime_type: "image/png".into(),
-        byte_size: 10,
-        creditor_iban: None,
-        is_qr_iban: None,
-        creditor_address_type: None,
-        creditor_name: None,
-        creditor_line1: None,
-        creditor_line2: None,
-        creditor_postal_code: None,
-        creditor_town: None,
-        creditor_country: None,
-        reference_type: None,
-        reference_value: None,
-        amount: None,
-        currency: None,
-        unstructured_message: None,
-        billing_information: None,
-    };
-    if let Some((iban, montant, devise)) = qr {
-        new.creditor_iban = Some(iban.into());
-        new.is_qr_iban = Some(false);
-        new.creditor_address_type = Some("K".into());
-        new.creditor_name = Some("Fournisseur rapproché SA".into());
-        new.creditor_line1 = Some("Rue 1".into());
-        new.creditor_line2 = Some("1000 Lausanne".into());
-        new.creditor_country = Some("CH".into());
-        new.reference_type = Some("NON".into());
-        new.amount = Some(montant);
-        new.currency = Some(devise.into());
-    }
-    imported_supplier_invoices::create(pool, &new)
-        .await
-        .expect("document")
-        .id
-}
+// Le document à traiter (`document`) vit dans `support/fournisseur_rapproche.rs`
+// depuis la Story 34-8 (#938), qui l'emploie aussi.
 
 // ---------------------------------------------------------------------------
 // AC-4, AC-6 — le contrat de la création

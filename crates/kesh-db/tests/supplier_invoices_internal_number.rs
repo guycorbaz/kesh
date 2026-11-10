@@ -13,9 +13,13 @@ mod fournisseur_rapproche;
 
 use chrono::NaiveDate;
 use fournisseur_rapproche::{Fournisseur, IBAN_CREANCIER};
-use kesh_db::entities::{NewSupplierInvoice, NewSupplierInvoiceLine, SettlementChoice};
+use kesh_db::entities::{
+    NewSupplierInvoice, NewSupplierInvoiceLine, SettlementChoice, SupplierInvoice,
+};
 use kesh_db::errors::DbError;
-use kesh_db::repositories::supplier_invoices::{self, SupplierInvoiceWithLines};
+use kesh_db::repositories::supplier_invoices::{
+    self, SupplierInvoiceSettlementView, SupplierInvoiceWithLines,
+};
 use kesh_db::test_fixtures::{
     SeededCompany, attendre_une_requete_en_cours, seed_accounting_company,
 };
@@ -92,26 +96,22 @@ impl Decor {
             .expect("brouillon")
     }
 
+    /// Valide l'en-tête `d` ; rend la vue de la facture validée (Story 34-8 : la
+    /// vue, et non plus `SupplierInvoiceWithLines`).
     async fn valider(
         &self,
         pool: &MySqlPool,
-        d: &SupplierInvoiceWithLines,
-    ) -> SupplierInvoiceWithLines {
-        supplier_invoices::validate(
-            pool,
-            self.company(),
-            d.invoice.id,
-            d.invoice.version,
-            self.user(),
-        )
-        .await
-        .expect("validation")
+        d: &SupplierInvoice,
+    ) -> SupplierInvoiceSettlementView {
+        supplier_invoices::validate(pool, self.company(), d.id, d.version, self.user())
+            .await
+            .expect("validation")
     }
 
     /// Crée et valide ; rend le numéro attribué.
-    async fn emettre(&self, pool: &MySqlPool, date: NaiveDate) -> SupplierInvoiceWithLines {
+    async fn emettre(&self, pool: &MySqlPool, date: NaiveDate) -> SupplierInvoiceSettlementView {
         let d = self.brouillon(pool, date).await;
-        self.valider(pool, &d).await
+        self.valider(pool, &d.invoice).await
     }
 
     async fn numero_emis(&self, pool: &MySqlPool, date: NaiveDate) -> String {
@@ -123,7 +123,7 @@ impl Decor {
     }
 
     /// La dernière facture émise repasse en brouillon et se supprime.
-    async fn supprimer(&self, pool: &MySqlPool, v: &SupplierInvoiceWithLines) {
+    async fn supprimer(&self, pool: &MySqlPool, v: &SupplierInvoiceSettlementView) {
         let d = supplier_invoices::unvalidate(
             pool,
             self.company(),
@@ -219,7 +219,7 @@ async fn validation_gives_the_first_number(pool: MySqlPool) {
     assert_eq!(b.invoice.internal_number, None);
     assert_eq!(compteur(&pool, d.a).await, 1);
 
-    let v = d.valider(&pool, &b).await;
+    let v = d.valider(&pool, &b.invoice).await;
     assert_eq!(v.invoice.internal_number.as_deref(), Some("FF-2026-001"));
     assert_eq!(compteur(&pool, d.a).await, 2);
 
@@ -294,7 +294,7 @@ async fn unvalidated_keeps_and_revalidated_takes_the_same_number(pool: MySqlPool
     assert_eq!(b.invoice.internal_number.as_deref(), Some("FF-2026-001"));
 
     d.format(&pool, "KF-{YEAR}-{SEQ:04}").await;
-    let r = d.valider(&pool, &b).await;
+    let r = d.valider(&pool, &b.invoice).await;
     assert_eq!(r.invoice.internal_number.as_deref(), Some("FF-2026-001"));
     assert_eq!(
         compteur(&pool, d.a).await,
@@ -421,7 +421,7 @@ async fn a_refused_validation_consumes_nothing(pool: MySqlPool) {
 
     // Le refus a laissé la voie libre : le premier numéro reste à prendre.
     assert_eq!(
-        d.valider(&pool, &b)
+        d.valider(&pool, &b.invoice)
             .await
             .invoice
             .internal_number
@@ -875,7 +875,7 @@ async fn purchase_and_settlement_labels_carry_the_internal_number(pool: MySqlPoo
         let b = supplier_invoices::create_draft(&pool, d.nouvelle(dans_a(), numero), d.user())
             .await
             .unwrap();
-        let v = d.valider(&pool, &b).await;
+        let v = d.valider(&pool, &b.invoice).await;
         assert_eq!(
             libelle_ecriture(&pool, v.invoice.purchase_journal_entry_id.unwrap()).await,
             format!("Facture fournisseur {attendu} - {nom}")
@@ -904,7 +904,7 @@ async fn settlement_label_falls_back_without_internal_number(pool: MySqlPool) {
         let b = supplier_invoices::create_draft(&pool, d.nouvelle(dans_a(), numero), d.user())
             .await
             .unwrap();
-        let v = d.valider(&pool, &b).await;
+        let v = d.valider(&pool, &b.invoice).await;
         sqlx::query("UPDATE supplier_invoices SET internal_number = NULL WHERE id = ?")
             .bind(v.invoice.id)
             .execute(&pool)
@@ -935,7 +935,7 @@ async fn the_refused_unvalidation_names_the_internal_number(pool: MySqlPool) {
     let b = supplier_invoices::create_draft(&pool, d.nouvelle(dans_a(), Some("ABC")), d.user())
         .await
         .unwrap();
-    let v = d.valider(&pool, &b).await;
+    let v = d.valider(&pool, &b.invoice).await;
     let payee = supplier_invoices::pay(
         &pool,
         d.company(),
@@ -974,7 +974,7 @@ async fn the_owner_keeps_its_number_and_names_the_internal_one(pool: MySqlPool) 
     let b = supplier_invoices::create_draft(&pool, d.nouvelle(dans_a(), Some("ABC")), d.user())
         .await
         .unwrap();
-    let v = d.valider(&pool, &b).await;
+    let v = d.valider(&pool, &b.invoice).await;
     let achat = v.invoice.purchase_journal_entry_id.unwrap();
     let mut conn = pool.acquire().await.unwrap();
     let owners = journal_entries::document_owners(&mut conn, d.company(), &[achat])
@@ -1036,7 +1036,7 @@ async fn the_lettering_audit_carries_the_long_form(pool: MySqlPool) {
         let b = supplier_invoices::create_draft(&pool, d.nouvelle(dans_a(), numero), d.user())
             .await
             .unwrap();
-        let v = d.valider(&pool, &b).await;
+        let v = d.valider(&pool, &b.invoice).await;
         supplier_invoices::pay(&pool, d.company(), v.invoice.id, compte, dans_a(), d.user())
             .await
             .unwrap();

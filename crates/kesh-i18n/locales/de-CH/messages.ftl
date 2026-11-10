@@ -2650,6 +2650,9 @@ supplier-invoices-doc-attached = Dokument an die Rechnung angehängt.
 supplier-invoices-doc-detach = Dokument lösen
 supplier-invoices-doc-detach-confirm = Dieses Dokument lösen? Es kehrt in die zu bearbeitenden Dokumente zurück; die Rechnung und ihre Buchung ändern sich nicht.
 supplier-invoices-doc-detached = Dokument gelöst: Es ist wieder bei den zu bearbeitenden Dokumenten.
+# Story 34-8 (#938, AC-8) — l'issue inconnue d'un geste de la fiche fournisseur.
+supplier-invoices-unknown-outcome = Der Ausgang ist nicht bekannt: Die Rechnung wurde neu gelesen, prüfen Sie sie, bevor Sie es erneut versuchen.
+supplier-invoices-unknown-outcome-reread-failed = Der Ausgang ist nicht bekannt, und die Rechnung konnte nicht neu gelesen werden: Laden Sie die Seite neu, bevor Sie es erneut versuchen.
 supplier-invoices-pay-account-ph = Gegenkonto
 supplier-invoices-pay-bank-ph = Belastungskonto
 supplier-invoices-pay-no-eligible-bank-account = Kein verwendbares Bankkonto: Das einzige verknüpfte Konto ist das Kreditorenkonto dieser Rechnung. Verknüpfen Sie ein Bankkonto mit seinem eigenen Bankkonto in der Buchhaltung, oder begleichen Sie über ein internes Konto.

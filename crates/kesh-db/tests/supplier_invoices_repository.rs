@@ -3206,3 +3206,167 @@ fn purchase_lines_form_orders_its_refusals() {
         Err(DbError::IllegalStateTransition(_))
     ));
 }
+
+// ---------------------------------------------------------------------------
+// Story 34-8 (#938) — les enveloppes rendent ce qu'elles ont écrit
+// ---------------------------------------------------------------------------
+
+/// AC-1 (Story 34-8, #938) — les cinq enveloppes rendent la **vue** lue dans leur
+/// transaction, avant le commit : elle égale, champ à champ, une relecture par
+/// [`supplier_invoices::get_settlement_view`] qui la suit. La vue porte les motifs
+/// de refus (`settlement_cancel_blocker`, `invoice_cancel_blocker`), que
+/// `SupplierInvoiceWithLines` n'avait pas.
+#[sqlx::test(migrations = "./test-schema")]
+async fn the_wrappers_return_the_view_of_what_they_wrote(pool: MySqlPool) {
+    let ctx = setup(&pool).await;
+    let c = ctx.seeded.company_id;
+    let u = ctx.seeded.admin_user_id;
+    let relue = |id: i64| {
+        let pool = pool.clone();
+        async move {
+            supplier_invoices::get_settlement_view(&pool, c, id)
+                .await
+                .unwrap()
+                .expect("facture")
+        }
+    };
+
+    let draft = supplier_invoices::create_draft(&pool, one_line(&ctx, dec!(100.00), dec!(0)), u)
+        .await
+        .unwrap();
+    let id = draft.invoice.id;
+
+    let validated = supplier_invoices::validate(&pool, c, id, draft.invoice.version, u)
+        .await
+        .unwrap();
+    assert_eq!(validated.invoice.status, "open");
+    assert!(validated.invoice.internal_number.is_some(), "numéro posé");
+    assert!(validated.invoice_cancel_blocker.is_none());
+    assert_eq!(format!("{validated:?}"), format!("{:?}", relue(id).await));
+
+    let unvalidated = supplier_invoices::unvalidate(&pool, c, id, validated.invoice.version, u)
+        .await
+        .unwrap();
+    assert_eq!(unvalidated.invoice.status, "draft");
+    assert_eq!(format!("{unvalidated:?}"), format!("{:?}", relue(id).await));
+
+    let validated = supplier_invoices::validate(&pool, c, id, unvalidated.invoice.version, u)
+        .await
+        .unwrap();
+    let paid = supplier_invoices::pay(
+        &pool,
+        c,
+        id,
+        SettlementChoice::InternalAccount {
+            account_id: ctx.seeded.accounts["1000"],
+        },
+        d(2026, 6, 20),
+        u,
+    )
+    .await
+    .unwrap();
+    assert_eq!(validated.invoice.status, "open");
+    assert_eq!(paid.invoice.status, "paid");
+    assert!(
+        paid.settlement_cancel_blocker.is_none(),
+        "{:?}",
+        paid.settlement_cancel_blocker
+    );
+    assert_eq!(format!("{paid:?}"), format!("{:?}", relue(id).await));
+
+    let done = supplier_invoices::cancel_settlement(&pool, c, id, u)
+        .await
+        .unwrap();
+    assert_eq!(done.invoice.invoice.status, "open");
+    assert!(matches!(
+        done.invoice.settlement_cancel_blocker,
+        Some((SettlementCancelBlocker::SupplierInvoiceNotPaid, None, None))
+    ));
+    assert!(done.reversal_journal_entry_id > 0);
+    assert_eq!(
+        format!("{:?}", done.invoice),
+        format!("{:?}", relue(id).await)
+    );
+
+    let cancelled = supplier_invoices::cancel(&pool, c, id, u).await.unwrap();
+    assert_eq!(cancelled.invoice.status, "cancelled");
+    assert!(cancelled.invoice_cancel_blocker.is_some(), "déjà annulée");
+    assert_eq!(format!("{cancelled:?}"), format!("{:?}", relue(id).await));
+}
+
+/// Un témoin écrit dans la transaction : un compte `9999` ; rend son nombre
+/// d'occurrences, une fois la transaction terminée.
+async fn temoins(pool: &MySqlPool, company_id: i64) -> i64 {
+    sqlx::query_scalar("SELECT COUNT(*) FROM accounts WHERE company_id = ? AND number = '9999'")
+        .bind(company_id)
+        .fetch_one(pool)
+        .await
+        .unwrap()
+}
+
+async fn ecrire_temoin(tx: &mut sqlx::Transaction<'_, sqlx::MySql>, company_id: i64) {
+    sqlx::query(
+        "INSERT INTO accounts (company_id, number, name, account_type) \
+         VALUES (?, '9999', 'Témoin 34-8', 'Asset')",
+    )
+    .bind(company_id)
+    .execute(&mut **tx)
+    .await
+    .unwrap();
+}
+
+/// AC-5 (Story 34-8, #938 ; mutation M5) — **pas de commit sans réponse** : une
+/// vue absente après une écriture réussie est un `DbError::Invariant`, et la
+/// transaction est annulée (le témoin écrit dedans n'a pas survécu).
+#[sqlx::test(migrations = "./test-schema")]
+async fn commit_with_view_rolls_back_when_the_view_is_missing(pool: MySqlPool) {
+    let ctx = setup(&pool).await;
+    let c = ctx.seeded.company_id;
+    let mut tx = pool.begin().await.unwrap();
+    ecrire_temoin(&mut tx, c).await;
+    let err = supplier_invoices::commit_with_view(tx, c, Ok::<(), DbError>(()), |_| 999_999_999)
+        .await
+        .expect_err("aucune facture : aucune vue");
+    assert!(matches!(err, DbError::Invariant(_)), "{err:?}");
+    assert_eq!(temoins(&pool, c).await, 0, "la transaction est annulée");
+}
+
+/// AC-1 (Story 34-8) — sur `Err`, la transaction est annulée, l'erreur rendue
+/// telle quelle, et `view_id` n'est pas appelée ; sur `Ok`, la vue est lue et la
+/// transaction validée.
+#[sqlx::test(migrations = "./test-schema")]
+async fn commit_with_view_rolls_back_on_error_and_commits_with_the_view(pool: MySqlPool) {
+    let ctx = setup(&pool).await;
+    let c = ctx.seeded.company_id;
+    let id = supplier_invoices::create_validated(
+        &pool,
+        one_line(&ctx, dec!(100.00), dec!(0)),
+        ctx.seeded.admin_user_id,
+    )
+    .await
+    .unwrap()
+    .invoice
+    .id;
+
+    let mut tx = pool.begin().await.unwrap();
+    ecrire_temoin(&mut tx, c).await;
+    let err = supplier_invoices::commit_with_view(
+        tx,
+        c,
+        Err::<(), DbError>(DbError::NotFound),
+        |_| -> i64 { panic!("view_id appelée sur Err") },
+    )
+    .await
+    .expect_err("l'erreur passe");
+    assert!(matches!(err, DbError::NotFound), "{err:?}");
+    assert_eq!(temoins(&pool, c).await, 0, "annulée sur Err");
+
+    let mut tx = pool.begin().await.unwrap();
+    ecrire_temoin(&mut tx, c).await;
+    let (view, rendu) = supplier_invoices::commit_with_view(tx, c, Ok::<_, DbError>(7), |_| id)
+        .await
+        .unwrap();
+    assert_eq!(rendu, 7);
+    assert_eq!(view.invoice.id, id);
+    assert_eq!(temoins(&pool, c).await, 1, "validée sur Ok");
+}
