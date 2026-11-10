@@ -105,3 +105,26 @@ Choix tranchés en autonomie au développement (Opus 5.5, 2026-11-10), à côté
   déjà. La saisie jugée est alors celle qui est partie.
 - **Écartée.** Capturer la saisie au clic : les frappes ultérieures seraient encore écrasées par la saisie fusionnée.
 - **Réversible.** Oui.
+- *(Amendé le 2026-11-10, revue de code P2, B2 : `readonly` au lieu de `disabled`. Un champ désactivé pendant qu'il a le
+  focus le perd, et ne le retrouve pas à la réactivation. En lecture seule, il le garde, et la frappe reste impossible.)*
+
+## C-e346-10 — `data` et les versions des éditions ouvertes ne reculent jamais
+
+- **Contexte.** Revue de code P2, P2-B1 = E2-1 = A2-5 (MEDIUM). Les réponses peuvent arriver dans le désordre. Une
+  relecture partie avant le succès d'un autre bloc et revenue après portait une société plus ancienne. Elle remplaçait
+  `data`, si bien que l'écran revenait à l'ancienne valeur du bloc qui venait de réussir. Elle faisait aussi adopter sa
+  version, plus ancienne, à une édition ouverte inchangée, d'où un 409 parasite. Aucune écriture n'était perdue.
+- **Retenu.**
+  - Toute société reçue passe par `adoptCompany` : les succès des trois blocs, la relecture après un 409, le verrouillage
+    et le déverrouillage de période (E2-3). Une société de version **inférieure** à celle de `data` est ignorée : elle ne
+    touche ni `data` ni les versions. À version égale, elle remplace, parce que le verrou de période ne change pas la
+    version.
+  - `syncOpenBlocks` n'adopte qu'une version **strictement supérieure** à celle du bloc. Cette garde est une défense en
+    profondeur : la version d'un bloc ne dépasse jamais celle de `data`, si bien que la mutation qui la retire (M14) est
+    équivalente.
+  - Le bloc en 409 garde sa logique : il juge contre la société relue et prend `r.base` et `r.version`, même quand
+    `data` est plus récente. Sa copie et sa version restent cohérentes entre elles, et le pire est un 409 de plus, jamais
+    un écrasement.
+- **Écartée.** Verrouiller les trois blocs pendant une relecture : la course resterait entre deux enregistrements réussis,
+  et l'Administrateur serait bloqué sans raison visible.
+- **Réversible.** Oui.

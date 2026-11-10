@@ -285,11 +285,58 @@ Rust n'est touché, hormis les `.ftl` : `cargo test -p kesh-i18n` et `textes_coh
     lignes sous les champs qui ne suivent pas la saisie modifiée après le 409 : **issue demandée** (P4).
   - **E1-4 (L), non traité, issue demandée** (P4) : `trim()` de JavaScript et `str::trim` de Rust ne retirent pas les
     mêmes caractères (U+0085, U+FEFF). Il faudrait aligner la normalisation sur le serveur, hors de cet écran.
+  - *(Annoté le 2026-11-10, revue P2 A2-2 : les issues ouvertes par l'orchestrateur sont **#991** pour B-2 et **#992**
+    pour E1-4. Celle de l'écran `bank-accounts` est **#984**.)*
 
   Gates au dernier commit de code `499e79d8` : `npm run check` 0 erreur, 29 avertissements ; `lint-i18n-ownership` PASS ;
   `test:unit` 223 fichiers, 2928 tests verts (2915 + 13) ; `build` vert ; E2E complet r4 (dossiers au runner), 386 passés,
   7 échecs (les sept de la KF-029), 18 ignorés ; `make user` et PDF contrôlé aplati. Ni Rust ni `.ftl` touchés :
   `test-fast` non relancé. Le prompt de la passe P2 est `34-6-societe-apres-409-review-prompt-p2.md`.
+- 2026-11-11 : **revue de code P2 (Sonnet, trois lentilles) : 0 C, 0 H, 1 M, 13 L** (B : 1 M, 5 L ; E : 1 M, 3 L ; A :
+  5 L ; P2-B1, E2-1 et A2-5 sont le même défaut, compté une fois). Rapports `kesh-gate-logs/e346-review-p2-{B,E,A}.md`.
+  Remédiation (Opus 5.5) : rouges `fd354737`, correctif `8ee97e5e`. Sort de chaque finding :
+  - **P2-B1 = E2-1 = A2-5 (M), traité** (**C-e346-10**). Toute société reçue passe par `adoptCompany`, qui ignore une
+    société plus ancienne que `data`. `syncOpenBlocks` n'adopte qu'une version strictement supérieure. Le bloc en 409
+    garde sa logique.
+    - Rouge d'abord, dans l'ordre relecture en vol, succès d'un autre bloc, retour de la relecture : l'écran revenait à
+      l'ancienne valeur.
+    - M13 (garde de `adoptCompany` retirée) et M16 (adresse non adoptée) le font rougir.
+    - M14 (garde de `syncOpenBlocks` retirée) est **équivalente** : la version d'un bloc ne dépasse jamais celle de
+      `data`, si bien que la garde de `adoptCompany` suffit.
+  - **A2-4 (L), traité** : la branche adresse de `syncOpenBlocks` est couverte par le test de monotonie (M16) et par un
+    test « adresse ouverte, champs bougés » (M15).
+  - **E2-3 (L), traité** : le verrouillage et le déverrouillage passent par `adoptCompany`. Les éditions ouvertes
+    inchangées adoptent la société rendue : test rouge d'abord, M17.
+  - **E2-2 (L), traité** : test « adresse relue absente ».
+  - **B2 (L), traité** : `readonly` au lieu de `disabled` sur les huit champs, pour qu'ils gardent le focus (C-e346-9
+    amendé) ; test rouge d'abord, M18.
+  - **B3 et E2-4 (L), traités** pour la région vive : `role="status"` et `aria-live="polite"` sont montés à l'ouverture
+    de l'édition, et l'avis s'y insère ; test, M19. **Non traité, issue demandée** (P4) : relier les lignes sous les
+    champs à leur champ par `aria-describedby`.
+  - **B4 (L), non traité, issue demandée** (P3) : `--color-warning` `#d97706` sur blanc mesure **3,19:1** (formule WCAG
+    de luminance relative), sous les 4,5:1 requis pour un texte de 12 px. Le jeton est partagé : 11 usages de
+    `text-warning` dans `frontend/src`.
+  - **B5 (L), traité** : l'avis du bloc e-mail passe sous la ligne entière (`max-w-md`), et n'est plus plaqué à la
+    largeur du champ.
+  - **B6 (L), traité** : indentation des attributs.
+  - **A2-1, A2-2 (L), traités** : annotations datées au Dev Agent Record (décomptes à `8ee97e5e`, mutations des
+    remédiations, File List) et à l'entrée P1 (#984, #991, #992), sans réécrire les entrées passées.
+  - **A2-3 (L), traité** : l'écart est dit au journal des rouges (`rouges.log`, section P2).
+
+  **Une pollution de tests sous mutation** : sous M17, le test de la région vive rougit aussi. La valeur
+  `mockResolvedValueOnce` du test du verrou n'est pas consommée quand celui-ci échoue, et `vi.clearAllMocks` ne vide pas
+  ces files. Ce n'est vu que sous mutation : trois exécutions sans mutation sont vertes.
+
+  **Gates au dernier commit de code `8ee97e5e`** (une session mybibli partageait la station ; `free -g` relevé avant
+  chaque prise) :
+  - `npm run check` : 0 erreur, 29 avertissements ; `lint-i18n-ownership` : PASS ;
+  - `test:unit` : 223 fichiers, 2933 tests verts (2928 + 5) ; `build` : vert ;
+  - E2E complet r5 (dossiers au runner) : 386 passés, 7 échecs, les sept de la KF-029 (`mode-expert:26`, `:41`,
+    `onboarding-path-b:65`, `:92`, `onboarding:57`, `:77`, `:150`), 18 ignorés.
+
+  Ni Rust, ni `.ftl`, ni manuel ne sont touchés : `test-fast` et `make` ne sont pas relancés. **Captures différées** par
+  la pause des commandes lourdes (`PAUSE-HEAVY`, décision de Guy du 2026-11-11, priorité à la release de mybibli) : elles
+  sont rejouées à la levée de la pause. Le prompt de la passe P3 est `34-6-societe-apres-409-review-prompt-p3.md`.
 
 ## Dev Agent Record
 
@@ -306,9 +353,15 @@ Opus 5.5 (claude-opus-5-5), en autonomie.
   l'AC-5 bis a) et l'AC-6. Le total de 12 rouges reste juste.)*
 - **Mutations** (`kesh-gate-logs/e346/mut/M1..M6.log`), toutes rouges : M1 9 tests, M2 1 (AC-5 de page), M3 1 (AC-3),
   M4 3, M5 1 (AC-4), M6 7. Aucune équivalente. Le fichier restauré n'a laissé aucune modification (`git status`).
+  *(Annoté le 2026-11-10, revue P2 A2-1 : les mutations des remédiations sont au même dossier. En P1 : M7 à M12, M2e,
+  M2c, M3c, M10e et M10c. En P2 : M13 à M19, dont M14 équivalente. Leur effet est donné à chaque entrée du Change Log.)*
 - **Tests**, recomptés à la source de `665de151` à `HEAD` : `company-conflict.test.ts` 0 → 19 `it(` ;
   `settings-page.test.ts` 16 → 31 `it(` (+15, et celui de `:289-310` récrit) ; E2E `company-address.spec.ts` 4 → 4 (un
-  récrit), `company-contact-details.spec.ts` 5 → 6 (le test 4 récrit, un 4 bis ajouté).
+  récrit), `company-contact-details.spec.ts` 5 → 6 (le test 4 récrit, un 4 bis ajouté). *(Annoté le 2026-11-10, revue
+  P2 A2-1 : ces chiffres valent à `e549552f`, fin du développement, et non à `HEAD`. Recompté à la source par
+  `/usr/bin/grep -cE '^\s*(it|test)\('`, de `665de151` à `8ee97e5e` (dernier commit de code de la remédiation P2) :
+  `company-conflict.test.ts` 0 → 21 ; `settings-page.test.ts` 16 → 44. Les E2E sont inchangés. Les tests exécutés et
+  les gates de chaque remédiation sont aux entrées « revue de code P1 » et « revue de code P2 » du Change Log.)*
 - **i18n** : six clés `settings-company-conflict-*` (`changed`, `merged`, `will-replace`, `merged-notice`,
   `already-saved`, `empty`) aux quatre locales (`/usr/bin/grep -c "^settings-company-conflict-"` : 6 par locale), repli
   identique ; `sitesTotal` 2922 → 2928 (+6, ventilé dans `i18n-keys.test.ts`).
@@ -330,7 +383,7 @@ Opus 5.5 (claude-opus-5-5), en autonomie.
 - **Captures** (thème clair, `kesh-gate-logs/e346/captures/`) : `e346-adresse-conflit-et-fusion.png`,
   `e346-coordonnees-un-champ-en-conflit.png`, `e346-email-vide-ailleurs.png`, `e346-coordonnees-autre-bloc.png`.
 - **Issue à ouvrir** : `bank-accounts/+page.svelte:413-421`, le second essai part avec la version relue sans montrer
-  l'écriture concurrente (symptôme de #953 sur un autre écran).
+  l'écriture concurrente (symptôme de #953 sur un autre écran). *(Ouverte par l'orchestrateur : #984.)*
 
 ### File List
 
@@ -346,4 +399,5 @@ Opus 5.5 (claude-opus-5-5), en autonomie.
 - `docs/manual/fr/user-manual.tex`, `docs/manual/fr/user-manual.pdf`
 - `CHANGELOG.md`
 - `_bmad-output/implementation-artifacts/34-6-societe-apres-409.md`, `34-6-societe-apres-409-review-prompt-p1.md`,
+  `34-6-societe-apres-409-review-prompt-p2.md`, `34-6-societe-apres-409-review-prompt-p3.md`,
   `e34-choix-autonomes-e346.md`, `sprint-status.yaml`
