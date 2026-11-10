@@ -2658,15 +2658,21 @@ async fn fiscal_year_valid_rename_succeeds_after_the_replay(pool: MySqlPool) {
 
     assert_eq!(status, 200, "⛔ l'interblocage doit être rejoué : {corps}");
     assert_eq!(corps["name"], vise, "{corps}");
-    let homonymes: i64 = sqlx::query_scalar(
-        "SELECT COUNT(*) FROM fiscal_years WHERE company_id = ? AND name = ?",
-    )
-    .bind(ctx.company_id())
-    .bind(vise)
-    .fetch_one(&pool)
-    .await
-    .unwrap();
-    assert_eq!(homonymes, 1, "seul M porte le nom : la ligne insérée a disparu");
-    assert_eq!(audits_renommage(&pool, m).await, 1, "une seule entrée d'audit");
+    let homonymes: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM fiscal_years WHERE company_id = ? AND name = ?")
+            .bind(ctx.company_id())
+            .bind(vise)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(
+        homonymes, 1,
+        "seul M porte le nom : la ligne insérée a disparu"
+    );
+    assert_eq!(
+        audits_renommage(&pool, m).await,
+        1,
+        "une seule entrée d'audit"
+    );
     capture.exiger_un_rejeu("fiscal_years::update_name");
 }

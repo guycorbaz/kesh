@@ -8,6 +8,14 @@ Le contenu est rédigé en français à destination des **fiduciaires, PME, ind�
 
 ---
 
+## [0.17.6] — Non publié
+
+### Corrigé
+
+- **Le renommage d'un exercice qui croise une clôture ou la validation d'une facture fournisseur aboutit, ou est refusé pour son vrai motif** (refs [#945](https://github.com/guycorbaz/kesh/issues/945)) : quand il se trouvait en interblocage avec l'une d'elles, il finissait en erreur interne, même pour un nom déjà pris que Kesh refuse d'ordinaire en le disant. Il est désormais rejoué : un nom libre est enregistré, un nom déjà pris est refusé avec « Un exercice avec ce nom existe déjà ». Aucune donnée n'était faussée : le renommage interrompu était annulé en entier. Pour l'API : `PUT /fiscal-years/{id}` rejoue l'interblocage comme la création et la clôture d'un exercice (`docs/api-external.md`).
+
+---
+
 ## [0.17.5] — 2026-11-07
 
 ⚠️ **Avant la mise à jour, prenez une sauvegarde complète** — la base, le `.keshbackup` **et** le dossier des documents. Cette version porte **une migration** (non breaking), la première à passer par la sauvegarde que Kesh écrit lui-même avant de migrer ([#847](https://github.com/guycorbaz/kesh/issues/847)) : au démarrage, il dépose une sauvegarde complète dans `backup/pre-upgrade/`, et **refuse de migrer si elle échoue** (échappatoire : `KESH_SKIP_PRE_UPGRADE_BACKUP`). **La migration donne un numéro interne aux factures fournisseur déjà validées** (`FF-2025-001`, `FF-2026-001`…). **Le retour à la 0.17.4 passe uniquement par la sauvegarde d'avant la mise à jour** : la 0.17.4 ne démarre plus sur une base migrée, et elle refuse une sauvegarde prise en 0.17.5 ; les numéros écrits sur le papier depuis la mise à jour seraient alors à refaire (manuel d'administration, *Passer à la 0.17.5*).

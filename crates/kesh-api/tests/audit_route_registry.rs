@@ -91,7 +91,9 @@
 //!   resterait vert. Ont une preuve dynamique : les huit routes des tests 2 à
 //!   5, 7, 9 et 10 de `rejeu_interblocage_e2e.rs` (dont `close_fiscal_year` et
 //!   `create_fiscal_year`, Story 15-12a) et de son test T-a14
-//!   (`create_payment_batch`, Story 30-1a), et `reconciliation::manual` (test 8 du
+//!   (`create_payment_batch`, Story 30-1a), la réouverture et le renommage d'un
+//!   exercice (`reopen_fiscal_year`, Story 33-1a ; `update_fiscal_year`, Story
+//!   34-7, ses deux tests du même fichier), et `reconciliation::manual` (test 8 du
 //!   même fichier, Story 15-5e2) ;
 //!   `accept_replays_the_batch_when_it_is_the_deadlock_victim`
 //!   (`reconciliation_e2e.rs`) pour `reconciliation::accept` ;
@@ -122,16 +124,10 @@
 //!   revue P1 de la 15-5e2 (L-5), sans cycle démontré : `PUT /invoices/{id}`
 //!   quand le projet change (sentinelle, projet, facture),
 //!   et `POST /projects/{id}/archive` — elle prend des verrous que les flux
-//!   rejoués prennent aussi. Et le **renommage**
-//!   (`PUT /fiscal-years/{id}`, Story 15-12a) : il tient l'exercice puis son
-//!   homonyme, la clôture tient ses antérieurs puis l'exercice — renommer un
-//!   exercice au nom d'un antérieur pendant sa clôture peut faire du renommage
-//!   la victime, en 500, sur un renommage que le pré-contrôle aurait refusé. Depuis
-//!   la Story 33-1a, la validation d'une facture fournisseur forme le même cycle
-//!   avec deux exercices d'une année : elle tient le sien, puis demande l'autre.
-//!   `POST /fiscal-years/{id}/close` et, depuis la Story 33-1a,
-//!   `POST /fiscal-years/{id}/reopen` ne sont plus de la liste : elles sont rejouées
-//!   (point (vi)). Le lot de **rejet** (`reconciliation::post_reject`, non
+//!   rejoués prennent aussi. `POST /fiscal-years/{id}/close`, depuis la Story
+//!   33-1a `POST /fiscal-years/{id}/reopen` et, depuis la Story 34-7 (#945), le
+//!   renommage `PUT /fiscal-years/{id}` ne sont plus de la liste : elles sont
+//!   rejouées (point (vi)). Le lot de **rejet** (`reconciliation::post_reject`, non
 //!   rejoué) verrouille ses transactions par identifiant croissant depuis la
 //!   Story 27-1 (AC4-bis), comme la suppression d'un import, ce qui ferme leur
 //!   cycle. L'**annulation d'un rejet**
@@ -156,8 +152,16 @@
 //!   `post`, `put`, `delete` et `patch`. Aucune route `GET` n'écrit au journal
 //!   aujourd'hui (remontée de l'AC1 : des `POST` et un `DELETE`) ; l'angle mort
 //!   est du même ordre que celui de l'audit (`GET /invoices/{id}/pdf`, plus bas).
-//! - **(vi)** **vingt-quatre routes `SansEcritureAuJournal` sont rejouées quand
-//!   même** : `fiscal_years::reopen_fiscal_year` (enveloppe `DbError`, Story 33-1a,
+//! - **(vi)** **vingt-cinq routes `SansEcritureAuJournal` sont rejouées quand
+//!   même** : `fiscal_years::update_fiscal_year` (enveloppe `DbError`, opération
+//!   `fiscal_years::update_name`, Story 34-7, #945 : le renommage tient l'exercice
+//!   puis son homonyme par la lecture de doublon, alors que la clôture tient ses
+//!   antérieurs puis l'exercice, et la validation d'une facture fournisseur le
+//!   sien puis les autres exercices de son année ; victime, il rendait 500 là où
+//!   le pré-contrôle refuse en 400 ; tenue par
+//!   `fiscal_year_rename_is_replayed_when_it_is_the_deadlock_victim` et
+//!   `fiscal_year_valid_rename_succeeds_after_the_replay`,
+//!   `rejeu_interblocage_e2e.rs`), `fiscal_years::reopen_fiscal_year` (enveloppe `DbError`, Story 33-1a,
 //!   #926 : la réouverture tient un exercice puis demande ses postérieurs, la
 //!   validation d'une facture fournisseur tient le sien puis demande ceux de son
 //!   année ; tenue par `fiscal_year_reopen_is_replayed_when_it_is_the_deadlock_victim`,
@@ -282,7 +286,12 @@
 //!   version 0 sur table vide s'interbloquent sur le verrou d'intervalle du
 //!   `SELECT … FOR UPDATE` ; tenue par `session_settings_e2e.rs` (rejeu
 //!   exigé). Vingt-trois avec elle — recompté le 2026-11-05 depuis la table
-//!   et le corps de chaque route (revue de la 0.17.3, #899 S2-A1).
+//!   et le corps de chaque route (revue de la 0.17.3, #899 S2-A1). Vingt-quatre
+//!   avec la réouverture (33-1a), vingt-cinq avec le renommage (34-7) — recompté
+//!   le 2026-11-10 depuis la table et le corps de chaque route : vingt-trois
+//!   handlers `SansEcritureAuJournal` de `src/routes/` portent une enveloppe,
+//!   plus `onboarding::seed_demo` et `onboarding::reset`, rejouées dans
+//!   `kesh-seed`.
 //! - **(vii)** — **angles morts assumés du volet (c bis)** (revue P1 de la
 //!   15-5e2, L-3 = B-4 = A5). Le volet reconnaît un appel au **dernier
 //!   segment** du chemin appelé (`retry_with`) dans un arbre `syn` ; il ne voit
