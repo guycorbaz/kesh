@@ -10,7 +10,21 @@ import {
 	normalizeCompanyValue,
 	normalizeCountry,
 	ADDRESS_NORMALIZERS,
+	sameBlockValues,
 } from './company-conflict';
+
+describe('sameBlockValues — un bloc ouvert adopte-t-il une version plus récente ? (revue P1, B-1)', () => {
+	it('mêmes valeurs, aux normalisations près : oui', () => {
+		expect(sameBlockValues({ phone: 'P', website: null }, { phone: ' P ', website: '' }, CONTACT)).toBe(true);
+		expect(
+			sameBlockValues({ country: 'CH' }, { country: null }, ['country'] as const, ADDRESS_NORMALIZERS),
+		).toBe(true);
+	});
+
+	it('un seul champ du bloc a bougé : non', () => {
+		expect(sameBlockValues({ phone: 'P', website: 'W' }, { phone: 'P', website: 'W2' }, CONTACT)).toBe(false);
+	});
+});
 
 const CONTACT = ['phone', 'website'] as const;
 const ADDRESS = ['street', 'building', 'postalCode', 'city', 'country'] as const;

@@ -607,6 +607,11 @@ describe('page Paramètres — conflit de version des trois éditions (Story 34-
 			await fireEvent.click(getByTestId('settings-company-email-save'));
 			expect((await findByTestId('settings-company-email-error')).textContent).toContain('rechargées');
 			expect(queryByTestId('settings-company-email-conflict-notice')).toBeNull();
+			// Revue P1 (A-7) : l'essai suivant aboutit, avec la version relue.
+			updateCompanyEmailMock.mockResolvedValue(societe({ version: 10, email: 'moi@test.ch' }).company);
+			await fireEvent.click(getByTestId('settings-company-email-save'));
+			await vi.waitFor(() => expect(updateCompanyEmailMock).toHaveBeenCalledTimes(2));
+			expect(updateCompanyEmailMock.mock.calls[1][0]).toEqual({ email: 'moi@test.ch', version: 9 });
 		});
 
 		it('AC-3 — déjà enregistré : l’édition se ferme sans second envoi', async () => {
@@ -667,6 +672,154 @@ describe('page Paramètres — conflit de version des trois éditions (Story 34-
 			expect(queryByTestId('settings-company-contact-conflict-notice')).not.toBeNull();
 			expect((getByTestId('settings-company-phone-input') as HTMLInputElement).value).toBe('U');
 			expect(notifySuccessMock).not.toHaveBeenCalled();
+		});
+
+		// Revue P1 (A-1) : l'AC-3 vaut aussi pour les coordonnées (AC-4).
+		it('AC-3 — déjà enregistré : l’édition se ferme sans second envoi', async () => {
+			const { getByTestId, queryByTestId } = await ouvrir(relue({ website: 'https://moi.ch' }));
+			await saisir(getByTestId, 'settings-company-website-input', 'https://moi.ch');
+			await fireEvent.click(getByTestId('settings-company-contact-save'));
+			await vi.waitFor(() => expect(queryByTestId('settings-company-website-input')).toBeNull());
+			expect(updateCompanyContactDetailsMock).toHaveBeenCalledTimes(1);
+			expect(notifySuccessMock).toHaveBeenCalledWith(expect.stringContaining('déjà enregistr'));
+		});
+	});
+
+	// ------------------------------------------- revue P1 : copie, avis, annulation
+	// E1-2, A-2, A-6 : la mise à jour de la copie, l'effacement de l'avis quand la relecture
+	// échoue, et la remise à zéro par l'annulation, bloc par bloc (chaque bloc a ses lignes).
+	describe('copie et avis, par bloc (revue P1)', () => {
+		const BLOCS = [
+			{
+				nom: 'e-mail',
+				edit: 'settings-company-email-edit',
+				save: 'settings-company-email-save',
+				input: 'settings-company-email-input',
+				saisie: 'moi@test.ch',
+				autre: { email: 'autre@test.ch' },
+				changed: 'settings-company-email-conflict-changed-email',
+				notice: 'settings-company-email-conflict-notice',
+				error: 'settings-company-email-error',
+				mock: () => updateCompanyEmailMock,
+				annuler: (getAllByText: (t: string) => HTMLElement[]) => getAllByText('Annuler')[0],
+			},
+			{
+				nom: 'coordonnées',
+				edit: 'settings-company-contact-edit',
+				save: 'settings-company-contact-save',
+				input: 'settings-company-website-input',
+				saisie: 'https://moi.ch',
+				autre: { website: 'https://autre.ch' },
+				changed: 'settings-company-contact-conflict-changed-website',
+				notice: 'settings-company-contact-conflict-notice',
+				error: 'settings-company-contact-error',
+				mock: () => updateCompanyContactDetailsMock,
+				annuler: (getAllByText: (t: string) => HTMLElement[]) => getAllByText('Annuler')[0],
+			},
+		] as const;
+
+		for (const b of BLOCS) {
+			async function premierConflit() {
+				fetchCompanyCurrentMock.mockResolvedValueOnce(societe());
+				fetchCompanyCurrentMock.mockResolvedValueOnce(relue(b.autre));
+				b.mock().mockRejectedValueOnce(CONFLIT);
+				const r = render(Page);
+				await fireEvent.click(await r.findByTestId(b.edit));
+				await saisir(r.getByTestId, b.input, b.saisie);
+				await fireEvent.click(r.getByTestId(b.save));
+				await r.findByTestId(b.changed);
+				return r;
+			}
+
+			it(`${b.nom} — second conflit : la copie a pris la valeur relue, le champ n’est plus en conflit (E1-2)`, async () => {
+				const { getByTestId, findByTestId, queryByTestId } = await premierConflit();
+				fetchCompanyCurrentMock.mockResolvedValueOnce(societe({ version: 11, ...b.autre }));
+				b.mock().mockRejectedValueOnce(CONFLIT);
+				await fireEvent.click(getByTestId(b.save));
+				expect((await findByTestId(b.error)).textContent).toContain('rechargées');
+				expect(queryByTestId(b.changed)).toBeNull();
+				expect((getByTestId(b.input) as HTMLInputElement).value).toBe(b.saisie);
+			});
+
+			it(`${b.nom} — relecture impossible après un premier avis : l’avis s’efface, la saisie reste (A-2)`, async () => {
+				const { getByTestId, findByTestId, queryByTestId } = await premierConflit();
+				fetchCompanyCurrentMock.mockRejectedValueOnce(new Error('réseau'));
+				b.mock().mockRejectedValueOnce(CONFLIT);
+				await fireEvent.click(getByTestId(b.save));
+				expect((await findByTestId(b.error)).textContent).toContain('rechargement impossible');
+				expect(queryByTestId(b.notice)).toBeNull();
+				expect(queryByTestId(b.changed)).toBeNull();
+				expect((getByTestId(b.input) as HTMLInputElement).value).toBe(b.saisie);
+			});
+
+			it(`${b.nom} — Annuler puis Modifier : l’avis est remis à zéro (A-6)`, async () => {
+				const { getByTestId, getAllByText, queryByTestId } = await premierConflit();
+				await fireEvent.click(b.annuler(getAllByText));
+				await fireEvent.click(getByTestId(b.edit));
+				expect(queryByTestId(b.notice)).toBeNull();
+				expect(queryByTestId(b.changed)).toBeNull();
+			});
+		}
+	});
+
+	// -------------------------------------- revue P1 (B-1, E1-1) : deux éditions ouvertes
+	// Un bloc resté ouvert ne doit jamais envoyer une version plus récente que les valeurs
+	// qu'il a montrées (C-e346-8).
+	describe('deux éditions ouvertes (revue P1, B-1)', () => {
+		it('la relecture d’un bloc ne fait pas partir l’autre avec la version relue si ses champs ont bougé', async () => {
+			fetchCompanyCurrentMock.mockResolvedValueOnce(societe());
+			// Relue au 409 de l'e-mail : le téléphone a été changé par un autre.
+			fetchCompanyCurrentMock.mockResolvedValueOnce(relue({ phone: '+41 22 999 99 99' }));
+			updateCompanyEmailMock.mockRejectedValueOnce(CONFLIT);
+			const { findByTestId, getByTestId } = render(Page);
+			await fireEvent.click(await findByTestId('settings-company-contact-edit'));
+			await fireEvent.click(getByTestId('settings-company-email-edit'));
+			await saisir(getByTestId, 'settings-company-website-input', 'https://moi.ch');
+			await saisir(getByTestId, 'settings-company-email-input', 'moi@test.ch');
+			await fireEvent.click(getByTestId('settings-company-email-save'));
+			await findByTestId('settings-company-email-error');
+
+			updateCompanyContactDetailsMock.mockRejectedValueOnce(CONFLIT);
+			fetchCompanyCurrentMock.mockResolvedValueOnce(relue({ phone: '+41 22 999 99 99' }));
+			await fireEvent.click(getByTestId('settings-company-contact-save'));
+			await vi.waitFor(() => expect(updateCompanyContactDetailsMock).toHaveBeenCalledTimes(1));
+			// La version des valeurs montrées (1), non la version relue par l'e-mail (9).
+			expect(updateCompanyContactDetailsMock.mock.calls[0][0].version).toBe(1);
+			// Son propre 409 montre alors la reprise du téléphone de l'autre.
+			expect(
+				(await findByTestId('settings-company-contact-conflict-merged-phone')).textContent,
+			).toContain('+41 22 999 99 99');
+		});
+
+		it('un autre bloc enregistré sur la page ne provoque pas de conflit parasite', async () => {
+			fetchCompanyCurrentMock.mockResolvedValueOnce(societe());
+			updateCompanyContactDetailsMock.mockResolvedValueOnce(
+				societe({ version: 2, website: 'https://moi.ch' }).company,
+			);
+			updateCompanyEmailMock.mockResolvedValueOnce(societe({ version: 3, email: 'moi@test.ch' }).company);
+			const { findByTestId, getByTestId } = render(Page);
+			await fireEvent.click(await findByTestId('settings-company-email-edit'));
+			await fireEvent.click(getByTestId('settings-company-contact-edit'));
+			await saisir(getByTestId, 'settings-company-website-input', 'https://moi.ch');
+			await fireEvent.click(getByTestId('settings-company-contact-save'));
+			await vi.waitFor(() => expect(updateCompanyContactDetailsMock).toHaveBeenCalledTimes(1));
+			await saisir(getByTestId, 'settings-company-email-input', 'moi@test.ch');
+			await fireEvent.click(getByTestId('settings-company-email-save'));
+			await vi.waitFor(() => expect(updateCompanyEmailMock).toHaveBeenCalledTimes(1));
+			expect(updateCompanyEmailMock.mock.calls[0][0]).toEqual({ email: 'moi@test.ch', version: 2 });
+		});
+
+		it('les champs sont inactifs pendant l’envoi et la relecture (E1-3)', async () => {
+			fetchCompanyCurrentMock.mockResolvedValueOnce(societe());
+			let release: (v: unknown) => void = () => {};
+			updateCompanyEmailMock.mockReturnValueOnce(new Promise((r) => (release = r)));
+			const { findByTestId, getByTestId } = render(Page);
+			await fireEvent.click(await findByTestId('settings-company-email-edit'));
+			await fireEvent.click(getByTestId('settings-company-email-save'));
+			await vi.waitFor(() =>
+				expect((getByTestId('settings-company-email-input') as HTMLInputElement).disabled).toBe(true),
+			);
+			release(societe({ version: 2 }).company);
 		});
 	});
 });
