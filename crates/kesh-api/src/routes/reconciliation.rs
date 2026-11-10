@@ -5317,8 +5317,9 @@ pub async fn post_split(
     // P2 (ECH-02 Pass 1 Sonnet) — interdire counterparty == bank_ledger_account_id.
     // Sinon le JE résultant aurait des lignes débit + crédit sur le même compte
     // (self-referential balance-sheet no-op) sans signification comptable. Le
-    // frontend filtre client-side classes 5/6/7 (le bank ledger est classe 1/2),
-    // donc en UX normal pas de collision possible — mais un client API direct
+    // frontend écarte le compte de la banque par son identifiant (Story 34-3 :
+    // tout compte imputable est proposé, de toute classe, sauf celui-là), donc en
+    // UX normal pas de collision possible — mais un client API direct
     // pourrait bypass. Defense-in-depth backend.
     //
     // Story 15-6d (AC3) : refus et comparaison partagés avec `post_manual`

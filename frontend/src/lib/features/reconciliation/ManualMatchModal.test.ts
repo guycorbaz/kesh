@@ -301,6 +301,9 @@ describe('ManualMatchModal — avis débiteurs / créanciers (Story 34-3, AC-4)'
 	async function choisir(r: ReturnType<typeof render>, numero: string): Promise<void> {
 		const champ = document.querySelector('input[aria-autocomplete="list"]') as HTMLInputElement;
 		await fireEvent.focus(champ);
+		// Saisir le numéro : une fois un compte choisi, le champ montre son libellé, qui filtre
+		// la liste ; l'utilisateur tape pour en changer.
+		await fireEvent.input(champ, { target: { value: numero } });
 		const options = await r.findAllByRole('option');
 		const option = options.find((o) => o.textContent?.includes(numero));
 		expect(option, `le compte ${numero} doit être proposé`).toBeTruthy();

@@ -1364,7 +1364,7 @@ reconciliation-labels-rejected-hint = A rejected transaction leaves this list. I
 # Story 29-3 (#527) — the priority of the candidates, stated above the list.
 reconciliation-labels-priority-hint = One proposal is shown per transaction: for a credit, the best-scored customer invoice, for a debit, the best-scored supplier invoice, if there is one, otherwise the matching reconciliation rule. A proposed invoice always comes before a rule.
 reconciliation-labels-supplier-invoice-badge = Supplier invoice
-reconciliation-labels-notice-supplier-invoice-in-batch = Supplier invoice { $invoice } for this amount is in payment batch no. { $batch }, pending on this account. If this transaction is the payment of that batch, cancel the batch: the invoice will then be proposed here. Otherwise, assign the transaction manually.
+reconciliation-labels-notice-supplier-invoice-in-batch = Supplier invoice { $invoice } for this amount is in payment batch no. { $batch }, pending on this account. If this transaction is the payment of that batch, cancel the batch: the invoice will then be proposed here. Otherwise, post the transaction as a manual entry.
 # Story 29-6 (#665, AC10) — shown in the button row when a line without a proposal is ticked.
 reconciliation-labels-unmatched-not-acceptable-hint = A transaction with no match cannot be accepted: untick it to accept the others.
 # Story 29-9 (#678, AC11) — accessible name of each line's checkbox: what the line shows.
@@ -1372,7 +1372,7 @@ reconciliation-labels-select-transaction = Select the transaction of { $date }, 
 reconciliation-labels-select-transaction-no-counterparty = Select the transaction of { $date }, { $amount } { $currency }
 # Story 29-9 (#649, AC1, AC3) — below the list, when older transactions remain.
 reconciliation-labels-more-hidden = Only the { $count } most recent pending transactions are shown: there are older ones.
-reconciliation-labels-more-capped = The { $max } most recent pending transactions are shown, the most this page shows at once. There are older ones: they will appear as these are accepted, assigned manually, split or linked to an existing entry.
+reconciliation-labels-more-capped = The { $max } most recent pending transactions are shown, the most this page shows at once. There are older ones: they will appear as these are accepted, posted as manual entries, split or linked to an existing entry.
 # Story 15-5c (#492) — labels for the refusals of a reconciliation batch (`failed[]`).
 reconciliation-failed-account-not-found = A counterpart account cannot be found or is archived.
 reconciliation-failed-account-not-postable = Non-postable account: { $numbers }. A grouping, result or closing account takes no entries: choose a postable account.
@@ -1404,13 +1404,13 @@ reconciliation-failed-rule-not-found = Rule not found or deactivated.
 reconciliation-failed-score-too-low = The invoice does not match the transaction closely enough to be reconciled.
 reconciliation-failed-transaction-not-credit = This transaction is not an incoming payment (debit or zero amount): it cannot settle a customer invoice.
 reconciliation-failed-transaction-not-debit = This transaction is not an outgoing payment (credit or zero amount): it cannot settle a supplier invoice.
-reconciliation-failed-supplier-invoice-in-batch = This supplier invoice is in a pending payment batch: cancel the batch if this transaction is its payment, otherwise assign the transaction manually.
+reconciliation-failed-supplier-invoice-in-batch = This supplier invoice is in a pending payment batch: cancel the batch if this transaction is its payment, otherwise post the transaction as a manual entry.
 reconciliation-failed-amount-mismatch = The transaction amount differs from the supplier invoice total: a supplier payment settles the exact total.
-reconciliation-failed-supplier-payment-hold = Another supplier invoice for this amount is in a pending payment batch on this account: this transaction may be its payment. Cancel the batch if so, otherwise assign the transaction manually.
-reconciliation-failed-rule-masked-payment-batch = The rule is not applied: a supplier invoice for this amount is in a pending payment batch on this account. If this transaction is its payment, cancel the batch, then accept the proposed invoice here. Use “Assign manually” only if this debit settles no recorded invoice.
-reconciliation-failed-rule-masked-invoice-candidate = The rule is not applied: a validated supplier invoice matches this transaction. Reload the page and accept the proposed invoice if this debit settles it. Use “Assign manually” only if this debit settles no recorded invoice.
-reconciliation-failed-rule-masked-overpaid = The rule is not applied: it matches a customer invoice that this payment exceeds by a few cents. Record the payment from the invoice page, then link the transaction to it. Use “Assign manually” only if this payment settles no invoice.
-reconciliation-failed-rule-masked = The rule is not applied: an invoice matches this transaction. Reload the page and handle the invoice. Use “Assign manually” only if this transaction settles no recorded invoice.
+reconciliation-failed-supplier-payment-hold = Another supplier invoice for this amount is in a pending payment batch on this account: this transaction may be its payment. Cancel the batch if so, otherwise post the transaction as a manual entry.
+reconciliation-failed-rule-masked-payment-batch = The rule is not applied: a supplier invoice for this amount is in a pending payment batch on this account. If this transaction is its payment, cancel the batch, then accept the proposed invoice here. Use “Manual entry” only if this debit settles no recorded invoice.
+reconciliation-failed-rule-masked-invoice-candidate = The rule is not applied: a validated supplier invoice matches this transaction. Reload the page and accept the proposed invoice if this debit settles it. Use “Manual entry” only if this debit settles no recorded invoice.
+reconciliation-failed-rule-masked-overpaid = The rule is not applied: it matches a customer invoice that this payment exceeds by a few cents. Record the payment from the invoice page, then link the transaction to it. Use “Manual entry” only if this payment settles no invoice.
+reconciliation-failed-rule-masked = The rule is not applied: an invoice matches this transaction. Reload the page and handle the invoice. Use “Manual entry” only if this transaction settles no recorded invoice.
 reconciliation-failed-transaction-not-pending = This transaction is no longer awaiting reconciliation.
 reconciliation-failed-unknown = Unrecognised refusal ({ $code }).
 reconciliation-cols-tx-date = Date
@@ -1437,18 +1437,21 @@ reconciliation-errors-entry-not-linkable = This entry cannot be linked to this t
 reconciliation-toast-accept-success = { $count } transaction(s) reconciled successfully.
 reconciliation-toast-reject-success = { $count } transaction(s) rejected successfully.
 
-# Story 8-5a-base FR45 — Manual reconciliation.
-reconciliation-manual-button-label = Assign manually
-reconciliation-manual-modal-title = Manual reconciliation
+# Story 8-5a-base FR45 — Manual entry (renamed by 34-3).
+reconciliation-manual-button-label = Manual entry
+reconciliation-manual-modal-title = Manual entry
 reconciliation-manual-counterparty-label = Counterparty account
 reconciliation-manual-description-label = Description
 reconciliation-manual-bank-account-not-configured = The bank account is not configured. Link a chart-of-accounts entry under /bank-accounts.
 reconciliation-manual-value-date-label = Value date
-reconciliation-manual-submit = Assign
+reconciliation-manual-submit = Post entry
 reconciliation-manual-error-no-proposal = No transaction selected
 reconciliation-manual-error-counterparty-required = Counterparty account required
 reconciliation-manual-error-description-too-long = Description too long (max { $max } characters)
 reconciliation-manual-description-placeholder = Bank fees May
+# Story 34-3 (#967, AC-4) — non-blocking notice when the counterparty holds the receivable or payable role.
+reconciliation-manual-claim-notice-receivable = This account is the accounts receivable account. A manual entry settles no customer invoice: it would remain due. For a customer payment, record the payment from the invoice page, then link the transaction to it.
+reconciliation-manual-claim-notice-payable = This account is the accounts payable account. A manual entry settles no supplier invoice: it would remain unpaid. For a supplier payment, enter and validate the invoice without paying it from its page: it will be proposed here, to accept. If it is already paid, link the transaction to that payment.
 
 # Story 8-5a-bis FR48 — split aggregated transaction.
 reconciliation-split-button-label = Split

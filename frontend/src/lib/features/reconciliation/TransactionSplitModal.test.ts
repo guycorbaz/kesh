@@ -338,6 +338,11 @@ describe('TransactionSplitModal — contreparties et avis (Story 34-3)', () => {
 	}
 
 	async function choisir(r: ReturnType<typeof render>, ligne: number, numero: string) {
+		const rang = await r.findByTestId(`split-row-${ligne}`);
+		const champ = rang.querySelector('input[aria-autocomplete="list"]') as HTMLInputElement;
+		await fireEvent.focus(champ);
+		// Saisir le numéro : le libellé d'un compte déjà choisi filtrerait la liste.
+		await fireEvent.input(champ, { target: { value: numero } });
 		const option = (await optionsDeLigne(r, ligne)).find((o) => o.textContent?.includes(numero));
 		expect(option, `le compte ${numero} doit être proposé`).toBeTruthy();
 		await fireEvent.mouseDown(option as HTMLElement);
