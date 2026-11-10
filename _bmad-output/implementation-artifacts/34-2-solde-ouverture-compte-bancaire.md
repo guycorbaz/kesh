@@ -47,14 +47,15 @@ dupliqué. » Quatre points y sont « à trancher » ; ils le sont ici (C-e341-6
 - **L'écran** : formulaire de création `routes/(app)/bank-accounts/+page.svelte:520-592`, `submitCreate` `:294-317`, `formJournalAccountId`
   `:79` ; liste des comptes liables `:157-168` (après la 34-1 : `linkableLedgerAccounts`).
 - **Le signe** : le complément reçoit débit **ou** crédit (`ComplementLine`, `opening_complement.rs:125-130`). Un compte bancaire est lié à un
-  compte `Asset` ou `Liability` (`validate_journal_account_id`, `bank_accounts.rs:382-390`) ; un découvert, ou une carte de crédit (34-11a),
+  compte `Asset` ou `Liability` (`validate_journal_account_id`, `bank_accounts.rs:382-390`) ; un découvert, ou une carte de crédit (34-11a2),
   porte un solde créditeur.
 - **Le manuel** : `user-manual.tex:951-990` (*Reprise de comptabilité — soldes de départ*, *Compléter un compte oublié* `:973-…`) et
   `:2355-2371` (*Comptes bancaires*).
 
 ## Choix (détail au registre)
 
-- **C-e341-6 — société sans écriture** : le mécanisme reçoit une **politique** (`ComplementScope::SingleBankLedger`) qui lève le seul refus
+- **C-e341-6 — société sans écriture** (gardé à la validation P1, 2.2, sur arbitrage de l'orchestrateur ; la conséquence est **dite à l'écran et
+  au manuel**, AC-7 et AC-9) : le mécanisme reçoit une **politique** (`ComplementScope::SingleBankLedger`) qui lève le seul refus
   `NoEntries` **quand un premier exercice existe** ; sans exercice, refus `NO_OPEN_FISCAL_YEAR` (message existant). Le complément de l'écran
   *Soldes de départ* garde `ComplementScope::Screen`, inchangé. Écartés : refuser et renvoyer à *Soldes de départ* (le cas nominal échouerait) ;
   passer par la génération générale (deux mécanismes, contraire à « réutilisé, non dupliqué »).
@@ -75,7 +76,9 @@ dupliqué. » Quatre points y sont « à trancher » ; ils le sont ici (C-e341-6
 
 1. **AC-1 — un seul mécanisme** : `opening_complement` expose une forme dans la transaction de l'appelant,
    `create_opening_complement_in_tx(tx, company_id, user_id, lines, owned, description, today, scope)`, que `create_opening_complement`
-   réemploie (DRY : un seul `decide_date`, un seul `check_lines`, un seul calcul de contrepartie). `complement_status` et l'écran *Soldes de
+   réemploie (DRY : un seul `decide_date`, un seul `check_lines`, un seul calcul de contrepartie). L'enveloppe `create_opening_complement` **garde
+   sa signature actuelle** et fixe `ComplementScope::Screen` en elle-même : ses appelants par position (`tests/opening_complement_repository.rs`,
+   `opening_balances_e2e.rs`) ne changent pas. `complement_status` et l'écran *Soldes de
    départ* ne changent pas de comportement : les tests de `tests/opening_complement_repository.rs` et `tests/opening_balances_e2e.rs` passent
    **sans modification**.
 2. **AC-2 — création avec solde** : `POST /api/v1/bank-accounts` accepte `openingBalance: { amount, side: "debit" | "credit" }`, facultatif ;
@@ -97,26 +100,41 @@ dupliqué. » Quatre points y sont « à trancher » ; ils le sont ici (C-e341-6
    (code existant) ; puis les refus du complément. `201` avec l'écriture. Rejouée sur interblocage.
 7. **AC-7 — l'écran** : au formulaire de création, quand un compte lié est choisi, *Solde d'ouverture* (montant) et *Avoir / Dette* (C-e341-7),
    avec une aide qui dit la date (« daté du premier jour du premier exercice s'il est ouvert, sinon d'aujourd'hui ; contrepartie : Bénéfice/perte
-   reporté ») ; sans compte lié, les champs sont masqués et rien n'est envoyé. Succès : un avis nomme l'écriture (numéro, date). Refus : le motif
+   reporté ») **et la conséquence de C-e341-6** (« Après ce solde, les soldes de départ des autres comptes se saisissent un à un dans *Soldes de
+   départ*, mode *Compléter* : l'ouverture générale n'est plus proposée ») ; sans compte lié, les champs sont masqués et rien n'est envoyé. Succès : un avis nomme l'écriture (numéro, date). Refus : le motif
    du serveur dans `form-error`. Action de ligne *Saisir le solde d'ouverture* sur un compte ouvert, lié — même dialogue.
 8. **AC-8 — garde du registre** : `create_bank_account` passe `Traced, Rejouee` ; la route neuve y est inscrite `Traced, Rejouee`
-   (`audit_route_registry.rs`).
+   (`audit_route_registry.rs`), et les totaux du registre suivent (`assert_eq!(traced + exempt + no_matter, LIB_ROUTES.len())`, `:988`, et le
+   compte des routes tracées codé en dur du même fichier, recomptés) ; la garde qui exige l'appel de l'enveloppe de rejeu dans le corps du handler
+   est satisfaite par les deux (`create_bank_account` l'appelle déjà, `bank_accounts.rs:563`).
 9. **AC-9 — manuel** : *Comptes bancaires* (le champ, le sens, la date, l'atomicité, l'action de ligne) et *Soldes de départ* (une écriture
-   passée par un compte bancaire fait passer l'écran en mode *Compléter* ; le compte de la banque n'y figure plus). PDF régénéré, contrôlé aplati.
+   passée par un compte bancaire fait passer l'écran en mode *Compléter* ; le compte de la banque n'y figure plus) ; la phrase de l'AC-7, **avant**
+   le geste, dans les deux sections : qui veut saisir toute son ouverture d'un coup passe d'abord par *Soldes de départ*.
+10. **AC-10 — l'instantané** (validation P1, 2.1) : dans `create_once`, l'appel du complément précède **toute lecture ordinaire** de la transaction
+   (la relecture `find_by_id_in_tx` du compte inséré, `bank_accounts.rs:651-653`, passe **après** lui) ; les lectures qui le précèdent sont toutes
+   verrouillantes (sentinelle, réglages `LOCK IN SHARE MODE`, démotion `FOR UPDATE`) — le dev les relit et les liste au Dev Agent Record ; une
+   lecture ordinaire découverte avant le complément est déplacée. Raison : `create_in_open_tx` lit « jamais mouvementé » après ses verrous
+   (`opening_complement.rs:573-587`) ; un instantané ouvert plus tôt ne verrait pas une écriture commitée entre-temps. **Concurrence** : la clé
+   étrangère `journal_account_id` pose un verrou partagé sur la ligne `accounts` à l'`INSERT`, que le `FOR UPDATE` du complément promeut ; deux
+   créations liées au même compte neuf s'interbloquent, le rejeu tranche, et **le perdant reçoit `OPENING_COMPLEMENT_ACCOUNT_MOVED`** sans compte
+   créé — test à deux connexions, ou, s'il n'est pas déterministe, le raisonnement écrit au doc-comment et dit tel quel au Dev Agent Record. PDF régénéré, contrôlé aplati.
 
 ## Tâches
 
 - [ ] **T1 — rouges d'abord** (`kesh-gate-logs/e341/rouges.log`) : `crates/kesh-db/tests/opening_complement_repository.rs` (portée
   `SingleBankLedger` sur société vide : passe ; portée `Screen` : `NoEntries` inchangé) ; `crates/kesh-api/tests/bank_accounts_e2e.rs` ou fichier
   neuf `bank_account_opening_balance_e2e.rs` : AC-2 à AC-6, dont l'atomicité comptée (AC-5) et un crédit sur un compte `Liability`.
-- [ ] **T2 — dépôt** : `create_opening_complement_in_tx` + `ComplementScope` ; `create_opening_complement` devient une enveloppe (lecture
-  `owned_account_ids` hors transaction **inchangée** pour l'écran). Pour le compte bancaire, `owned` est le seul compte lié, déjà contrôlé de la
+- [ ] **T2 — dépôt** : `create_opening_complement_in_tx` + `ComplementScope` ; `create_opening_complement` devient une enveloppe de même signature (lecture
+  `owned_account_ids` hors transaction **inchangée** pour l'écran). **Deux branches distinctes** pour `SingleBankLedger` (validation P1, 2.3 : le code
+  actuel les confond dans un seul `filter`, `opening_complement.rs:590-592`) : `first = None` → `NoOpenFiscalYear` ; premier exercice présent →
+  le test « la société a des écritures » est sauté. Pour le compte bancaire, `owned` est le seul compte lié, déjà contrôlé de la
   société par `validate_journal_account_id` (aucun verrou sur un compte d'autrui : la raison d'être d'`owned`, `:441-452`, reste tenue).
   ⚠️ L'ordre des verrous change dans `create_once` : `companies` en exclusif (sentinelle) précède le partagé que demande le complément — déjà tenu,
   sans effet ; puis `bank_accounts`, puis comptes et exercices. Le dire au doc-comment de `create_once` ; le rejeu couvre les cycles résiduels.
   ⚠️ `kesh-db` touché : **gate complet même en cours de boucle**.
 - [ ] **T3 — routes** : corps `openingBalance` (forme partagée avec la route neuve), réponse augmentée (`#[serde(flatten)]` du compte),
-  `create_once` appelle le complément après l'`INSERT`, avant les traces ; route neuve dans `comptable_routes` (`lib.rs:~936-955`), bornée par
+  `create_once` appelle le complément **juste après l'`INSERT`, avant la relecture du compte** (AC-10), puis les traces ; `parse_complement_amount`
+  (`opening_balances.rs:509`, privée) passe `pub(crate)` ; route neuve dans `comptable_routes` (`lib.rs:~936-955`), bornée par
   `retry_app_on_deadlock`. Mapping des refus : celui d'`errors.rs:3414` (aucun nouveau code).
 - [ ] **T4 — registre** (AC-8).
 - [ ] **T5 — écran** : `bank-accounts.api.ts` (`createBankAccount` rend `{ …, openingEntry }`, `enterOpeningBalance(id, …)`), formulaire et
@@ -136,6 +154,8 @@ dupliqué. » Quatre points y sont « à trancher » ; ils le sont ici (C-e341-6
 - **M4** : la contrepartie posée sur le compte lié lui-même (écriture nulle) → rouge AC-3 (deux comptes distincts).
 - **M5** : `openingBalance` accepté sans `journalAccountId` → rouge AC-2.
 - **M6** : la route de ligne sans contrôle « clos » → rouge AC-6.
+- **M7** : `SingleBankLedger` qui ne distingue pas « aucun exercice » de « aucune écriture » → rouge AC-4 (sans exercice : refus attendu).
+- **M8** : la relecture du compte remise avant le complément → rouge du test à deux connexions (AC-10), s'il est déterministe.
 
 ## Gates
 
@@ -154,12 +174,18 @@ et `api-external.md`**, PDF aplati.
 
 ## Recoupements
 
-`routes/(app)/bank-accounts/+page.svelte`, `bank-accounts.api.ts`, `routes/bank_accounts.rs` avec **34-1** (avant) et **34-11a** (après : une
+`routes/(app)/bank-accounts/+page.svelte`, `bank-accounts.api.ts`, `routes/bank_accounts.rs` avec **34-1** (avant) et **34-11a2** (après : une
 carte se crée avec son solde d'ouverture, sens *Dette*). `opening_complement.rs` : aucune autre story de l'epic.
 
 ## Change Log
 
 - 2026-11-10 : fiche créée (Opus 5.5).
+- 2026-11-10 : **validation P1 (Sonnet)** — pour cette fiche : 2 M (2.1, 2.2), 3 L (2.3 à 2.5). Remédiation (Opus 5.5), tout appliqué.
+  **2.1** : AC-10 neuf (le complément avant toute lecture ordinaire ; interblocage par la clé étrangère, le perdant reçoit `ACCOUNT_MOVED`), T3, M8
+  (relus `bank_accounts.rs:595-653`, `opening_complement.rs:503-587`). **2.2** : C-e341-6 gardé (arbitrage de l'orchestrateur), la phrase de la
+  conséquence exigée à l'écran (AC-7) et au manuel (AC-9). **2.3** : deux branches en T2, M7 (relu `opening_complement.rs:590-592`). **2.4** : totaux
+  du registre (relu `audit_route_registry.rs:988`), `parse_complement_amount` `pub(crate)`, garde de l'enveloppe de rejeu. **2.5** : l'enveloppe
+  garde sa signature (AC-1). Références à « 34-11a » portées à 34-11a2.
 
 ## Dev Agent Record
 

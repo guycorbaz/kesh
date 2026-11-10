@@ -20,11 +20,11 @@ page et le manuel disent que ce choix est **modifiable après coup**. ⛔ **Aucu
 
 ## Ce que le code dit (prémisses établies)
 
-- **Le plan est chargé avant l'étape bancaire** : `routes/onboarding.rs:353-411` (`accounting_language_in_tx`, étape 4→5) charge le
-  plan (`accounts::bulk_create_from_chart_in_tx`, `:384`) ; l'étape bancaire est l'étape 6→7 (`:583-646`). La question de #966
+- **Le plan est chargé avant l'étape bancaire** : `routes/onboarding.rs:432-490` (`accounting_language_in_tx`, étape 4→5) charge le
+  plan (`accounts::bulk_create_from_chart_in_tx`, `:463`) ; l'étape bancaire est l'étape 6→7 (`set_bank_account`, `:589-648`). La question de #966
   (« vérifier que le plan est choisi avant ») est donc réglée : il l'est, et `GET /api/v1/accounts` est servi à tout rôle authentifié
   (`lib.rs:1012`), assistant compris (le 423 ne vaut que sans utilisateur, `middleware/auth.rs:106-108`).
-- **Ce que l'assistant pose aujourd'hui** : `BankAccountRequest` (`onboarding.rs:575-581`) n'a que `bank_name`, `iban`, `qr_iban` ;
+- **Ce que l'assistant pose aujourd'hui** : `BankAccountRequest` (`onboarding.rs:577-581`) n'a que `bank_name`, `iban`, `qr_iban` ;
   `upsert_primary_in_tx` (`repositories/bank_accounts.rs:328-447`) n'écrit ni `description` ni `journal_account_id` (l'`INSERT` de `:382`
   et l'`UPDATE` de `:352` ne les nomment pas), et son court-circuit no-op (`is_no_op_change`, `:252-256`) ne compare que banque,
   IBAN, QR-IBAN. Le compte de l'assistant naît donc **toujours** sans lien : `journal_account_id = NULL`.
@@ -38,7 +38,7 @@ page et le manuel disent que ce choix est **modifiable après coup**. ⛔ **Aucu
   `repositories/bank_accounts.rs:1587-1602`). Les deux premiers sont des `fn` privées du module de route.
 - ⚠️ **Le compte de créance n'est pas encore désigné à l'étape 6** : les réglages de facturation naissent à la finalisation
   (`finalize_inner`, `onboarding.rs:853-884`, `insert_with_defaults_in_tx`), qui y pose les comptes de **rôle** `Receivable` et
-  `Payable` (`company_invoice_settings.rs:1132-1163`, `singleton_role`). À l'étape 6, `claim_accounts_in_share_mode`
+  `Payable` (`company_invoice_settings.rs:1132-1163`, `singleton_role`, trois lectures `FOR UPDATE` : `Receivable`, `DefaultRevenue`, `Payable`). À l'étape 6, `claim_accounts_in_share_mode`
   (`company_invoice_settings.rs:230-247`) rend donc `ClaimAccounts::default()` (aucune ligne), et un lien vers le compte de rôle
   `Receivable` passerait — puis la finalisation le désignerait compte de créance : un compte bancaire lié au compte débiteurs,
   l'état que la Story 15-6c interdit. La finalisation n'en contrôle rien (`INSERT IGNORE`). **C'est un trou que cette story ouvrirait** :
@@ -57,18 +57,25 @@ page et le manuel disent que ce choix est **modifiable après coup**. ⛔ **Aucu
 
 ## Acceptance Criteria
 
-1. **AC-1 — le contrat** : `POST /api/v1/onboarding/bank-account` accepte `description` (facultative, `null` ou absente) et
-   `journalAccountId` (facultatif). Absents, le comportement est exactement celui d'avant (un corps de la 0.17.5 passe inchangé).
+1. **AC-1 — le contrat** : `POST /api/v1/onboarding/bank-account` accepte `description` et `journalAccountId`, chacun facultatif.
+   **Absent = inchangé, `null` = effacé** (C-e341-34) : un corps de la 0.17.5 (champs absents) crée le compte sans description ni lien, et, sur un
+   compte principal existant, **laisse** description et lien tels qu'ils sont — l'`UPDATE` d'aujourd'hui ne les touche pas. L'écran envoie toujours
+   les deux champs (`null` pour « Aucun »).
 2. **AC-2 — mêmes contrôles qu'à la création** : description normalisée par **la même** fonction que `POST /bank-accounts`
    (`trim`, vide → absente, 60 caractères, caractères cachés refusés, même message) ; compte lié contrôlé par **la même** fonction
    (`404` inexistant ou inactif, `400 INVALID_ACCOUNT_TYPE` hors `Asset | Liability`, `400 ACCOUNT_NOT_POSTABLE`). Aucune copie :
    les deux fonctions passent `pub(crate)` et sont appelées (garde DRY : `git grep -n "fn normalize_description\|fn validate_journal_account_id" -- crates` rend une ligne chacune).
 3. **AC-3 — ce qui est écrit** : le compte créé porte la description et le lien saisis ; sans saisie, `NULL`. Un rejeu identique
    (même banque, IBAN, QR-IBAN, description, lien) est un no-op (`Unchanged`, aucune trace) ; un rejeu qui ne change que le lien ou la
-   description est un `Updated`.
+   description est un `Updated`. **Test du rejeu sans les champs** : compte principal existant portant une description et un lien, corps
+   0.17.5 (champs absents, même banque et IBAN) → `Unchanged`, description et lien intacts ; même corps avec `"journalAccountId": null` →
+   `Updated`, lien effacé.
 4. **AC-4 — pas de lien vers un futur compte de créance** : un `journalAccountId` qui porte le rôle `Receivable` ou `Payable` est refusé
    en `400 BANK_ACCOUNT_LEDGER_IS_CLAIM_ACCOUNT`, le même code et le même rendu qu'à `POST /bank-accounts`, avant toute écriture, l'étape
-   restant à 6. Les rôles sont lus dans la transaction, comme la finalisation les lira (`singleton_role`).
+   restant à 6. Les rôles sont lus dans la transaction, comme la finalisation les lira (`singleton_role`). **Le test prouve qu'on lit le rôle,
+   non le numéro** (14-3a) : un compte de rôle `Receivable` **renuméroté** (pas 1100) est refusé ; un compte numéroté 1100 **sans** rôle passe.
+   **Ordre des refus** : les contrôles de forme et `validate_journal_account_id` lisent sur le **pool**, avant la transaction (comme à la création) :
+   un 400 de forme précède le 409 d'étape ; le refus du compte de créance vient après `lock_state_at_step` et `lock_company`.
 5. **AC-5 — l'audit** : `bank_account.created` porte `description` et `journal_account_id` saisis (forme de `routes/bank_accounts.rs:666-673`) ;
    les instantanés de `bank_account.updated` portent `description` en plus. Jamais l'IBAN en clair.
 6. **AC-6 — l'écran** : sous le QR-IBAN, deux champs : *Description (optionnelle)* (même limite, même aide que la page *Comptes bancaires*)
@@ -93,19 +100,23 @@ page et le manuel disent que ce choix est **modifiable après coup**. ⛔ **Aucu
     « Aucun » ; 1020 non imputable → « Aucun » ; compte de rôle `Receivable` absent de la liste ; échec du chargement → « Aucun » et envoi
     possible ; le corps envoyé porte `description` et `journalAccountId` (ou `null`).
 - [ ] **T2 — dépôt** : `upsert_primary_in_tx` reçoit la description et le lien sans élargir `NewBankAccount` (C-e341-1) — forme
-  retenue : un second paramètre `PrimaryDetails { description: Option<String>, journal_account_id: Option<i64> }`, l'enveloppe
-  `upsert_primary` passant `PrimaryDetails::default()` (ses appelants de test restent inchangés) ; `INSERT` et `UPDATE` nomment les deux
-  colonnes ; `is_no_op_change` les compare. ⚠️ `kesh-db` touché : **gate complet même en cours de boucle**.
+  retenue : un second paramètre `PrimaryDetails { description: Option<Option<String>>, journal_account_id: Option<Option<i64>> }` — extérieur
+  `None` = absent, donc **inchangé** (C-e341-34) —, l'enveloppe `upsert_primary` passant `PrimaryDetails::default()` (ses appelants de test restent
+  inchangés, et ne touchent plus ces colonnes) ; l'`INSERT` écrit la valeur ou `NULL` ; l'`UPDATE` ne nomme une colonne que si elle est présente ;
+  `is_no_op_change` ne compare que les champs présents. La route lit la double option par `#[serde(default, deserialize_with = …)]` (forme à
+  choisir au dev, un test de désérialisation pour absent, `null`, valeur). ⚠️ `kesh-db` touché : **gate complet même en cours de boucle**.
 - [ ] **T3 — route** : `BankAccountRequest` + `#[serde(default)]` ; `normalize_description` et `validate_journal_account_id` en
   `pub(crate)` dans `routes/bank_accounts.rs`, appelées par `set_bank_account` avant la transaction (même ordre de refus qu'à la création :
   banque, description, IBAN, QR-IBAN, compte lié) ; dans la transaction, après `lock_company`, si un lien est demandé : comptes de rôle
-  `Receivable`/`Payable` lus (une fonction du dépôt, `company_invoice_settings::claim_accounts_by_role_in_tx`, que `insert_with_defaults_in_tx`
-  réemploie pour ses deux lectures — DRY), puis `refuse_if_ledger_is_claim_account`. Audit (AC-5).
+  `Receivable`/`Payable` lus par **une** fonction du dépôt, `accounts::find_singleton_role_in_tx(tx, company_id, role, lock)`, que
+  `insert_with_defaults_in_tx` réemploie pour ses **trois** lectures (`lock = ForUpdate`, inchangé) et que l'assistant appelle deux fois
+  **sans verrou** (`lock = None`) : l'étape est sérialisée par `lock_state_at_step` (`FOR UPDATE` sur `onboarding_state`), aucune finalisation ne
+  peut courir en même temps, et la finalisation reverrouille ces lignes ; puis `refuse_if_ledger_is_claim_account`. Audit (AC-5).
 - [ ] **T4 — écran** : `onboarding.api.ts` et `onboarding.svelte.ts` (signature à objet `{ bankName, iban, qrIban, description, journalAccountId }`) ;
   `+page.svelte` : chargement des comptes à l'entrée de l'étape 6, filtre (AC-6), présélection, deux champs, la phrase AC-7. Le filtre
   s'écrit **une fois** : extraire celui de `bank-accounts/+page.svelte:157-168` en fonction de `lib/features/bank-accounts/format.ts`
-  (`linkableLedgerAccounts(accounts, excludedIds)`), appelée par les deux écrans ; l'assistant passe les identifiants des comptes de rôle
-  `Receivable`/`Payable`.
+  (`linkableLedgerAccounts(accounts, excludedIds, options)`, `options.liabilityOnly` servant la 34-11a2, C-e341-33), appelée par les deux écrans ;
+  l'assistant passe les identifiants des comptes de rôle `Receivable`/`Payable`.
 - [ ] **T5 — i18n** : `onboarding-bank-editable-later` aux quatre locales ; libellés réutilisés (`bank-accounts-labels-description`,
   `bank-accounts-help-description`, `bank-accounts-labels-journal-account-id`, `bank-accounts-labels-not-configured`). `npm run lint-i18n-ownership`.
 - [ ] **T6 — E2E** : spec neuve `frontend/tests/e2e/onboarding-bank-account.spec.ts`, état amené à l'étape 6 **par l'API** (patron
@@ -118,7 +129,9 @@ page et le manuel disent que ce choix est **modifiable après coup**. ⛔ **Aucu
 
 - **M1** : `is_no_op_change` sans la comparaison du lien → rouge AC-3 (`Updated` attendu).
 - **M2** : l'`INSERT` d'`upsert_primary_in_tx` sans `journal_account_id` → rouge AC-3 et E2E.
-- **M3** : la lecture des rôles retirée (AC-4) → rouge sur `Receivable` et `Payable`.
+- **M3** : la lecture des rôles retirée (AC-4) → rouge sur `Receivable` et `Payable` ; **M3b** : rôle remplacé par le numéro `1100`/`2000` → rouge
+  « compte renuméroté ».
+- **M7** : l'`UPDATE` remet description et lien à `NULL` quand ils sont absents → rouge AC-3 (rejeu sans les champs).
 - **M4** : présélection sur le premier compte de la liste au lieu de `1020` → rouge Vitest « aucun 1020 → Aucun ».
 - **M5** : filtre sans `postable` → rouge Vitest « 1020 non imputable ».
 - **M6** : `journalAccountId` omis du corps envoyé → rouge Vitest et E2E.
@@ -143,12 +156,20 @@ contre `docs/testing.md` § « Les échecs attendus » (KF-029 comprise : `onboa
 ## Recoupements
 
 `routes/(app)/bank-accounts/+page.svelte` et `lib/features/bank-accounts/format.ts` avec **34-2** (même formulaire, après cette story) et
-**34-11a** (type de compte, IBAN facultatif) ; `routes/onboarding.rs` et `upsert_primary_in_tx` avec **34-11a** (l'IBAN y devient-il
-facultatif ? non : l'assistant ne crée qu'un compte bancaire, C-e341-9). Ordre : 34-1, puis 34-2, puis 34-11a.
+**34-11a1** (IBAN facultatif, tolérance) et **34-11a2** (type carte, filtre « passif seulement ») ; `routes/onboarding.rs` et `upsert_primary_in_tx`
+avec **34-11a1** (l'IBAN y devient-il facultatif ? non : l'assistant ne crée qu'un compte bancaire, C-e341-19) et **34-11a2** (la garde de Luhn
+atteint l'assistant). Ordre : 34-1, puis 34-2, puis 34-11a1, 34-11a2.
 
 ## Change Log
 
 - 2026-11-10 : fiche créée (Opus 5.5).
+- 2026-11-10 : **validation P1 (Sonnet)** — pour cette fiche : 1 M (1.1), 4 L (1.2 à 1.5). Remédiation (Opus 5.5), tout appliqué. **1.1** : la
+  sémantique d'absence est tranchée « absent = inchangé, `null` = effacé » (C-e341-34, relu `repositories/bank_accounts.rs:351-357`) : AC-1, AC-3
+  (test du rejeu sans les champs), T2, M7. **1.2** : numéros de ligne corrigés (relus : `onboarding.rs:432`, `:463`, `:577`, `:589`). **1.3** : le
+  renvoi va à C-e341-19. **1.4** : trois lectures de rôle et non deux, `FOR UPDATE` (relu `company_invoice_settings.rs:1132-1163`) ; fonction
+  unique à verrou paramétré, sans verrou à l'assistant (motif écrit en T3) ; ordre des refus écrit à l'AC-4. **1.5** : test du compte renuméroté
+  et du 1100 sans rôle (AC-4, M3b) ; la garde de Luhn à l'assistant relève de la 34-11a2. Axe 8 : `linkableLedgerAccounts` reçoit
+  `liabilityOnly` (C-e341-33). Références à « 34-11a » portées à 34-11a1 / 34-11a2.
 
 ## Dev Agent Record
 
