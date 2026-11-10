@@ -2542,6 +2542,13 @@ settings-company-contact-conflict-reload-failed = Conflit de version et recharge
 settings-company-address-saved = Adresse de la société enregistrée
 settings-company-address-conflict = Conflit de version — les données ont été rechargées, réessayez.
 settings-company-address-conflict-reload-failed = Conflit de version et rechargement impossible — rechargez la page.
+# Story 34-6 (#953) — l'avis d'un conflit de version, commun aux trois éditions de la société.
+settings-company-conflict-changed = Enregistré entre-temps : { $value }
+settings-company-conflict-merged = Repris de l’enregistrement entre-temps : { $value }
+settings-company-conflict-will-replace = Conflit de version : la société a été modifiée entre-temps. Enregistrer de nouveau remplacera les valeurs enregistrées indiquées sous les champs.
+settings-company-conflict-merged-notice = Conflit de version : les champs que vous n’aviez pas modifiés ont repris la valeur enregistrée entre-temps. Vérifiez, puis enregistrez de nouveau.
+settings-company-conflict-already-saved = Ces valeurs étaient déjà enregistrées.
+settings-company-conflict-empty = (vide)
 settings-company-address-country-unknown = Le code pays « { $code } » de la société n’est pas un code ISO connu : ses QR-factures ne peuvent pas être produites. Un administrateur peut corriger l’adresse ici (CH, FR, DE…).
 settings-company-address-help = Adresse de l’émetteur et du créancier sur vos factures et leurs QR-factures. NPA et localité obligatoires ; pays en code ISO à deux lettres. Un PDF déjà figé ne change pas.
 error-company-phone-too-long = Le numéro de téléphone de la société est trop long (50 caractères au plus).

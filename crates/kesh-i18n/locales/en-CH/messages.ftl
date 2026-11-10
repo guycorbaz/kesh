@@ -2423,6 +2423,13 @@ settings-company-contact-conflict-reload-failed = Version conflict and reload fa
 settings-company-address-saved = Company address saved
 settings-company-address-conflict = Version conflict — the data has been reloaded, try again.
 settings-company-address-conflict-reload-failed = Version conflict and reload failed — reload the page.
+# Story 34-6 (#953) — notice of a version conflict, shared by the three company edits.
+settings-company-conflict-changed = Saved in the meantime: { $value }
+settings-company-conflict-merged = Taken from what was saved in the meantime: { $value }
+settings-company-conflict-will-replace = Version conflict: the company was changed in the meantime. Saving again will replace the saved values shown under the fields.
+settings-company-conflict-merged-notice = Version conflict: the fields you had not changed have taken the value saved in the meantime. Check, then save again.
+settings-company-conflict-already-saved = These values were already saved.
+settings-company-conflict-empty = (empty)
 settings-company-address-country-unknown = The company's country code "{ $code }" is not a known ISO code: its QR-bills cannot be produced. An administrator can correct the address here (CH, FR, DE…).
 settings-company-address-help = Issuer and creditor address on your invoices and QR-bills. Postal code and town are required; country as a two-letter ISO code. A PDF already frozen does not change.
 error-company-phone-too-long = The company phone number is too long (50 characters maximum).
