@@ -56,12 +56,19 @@ aboutisse, ou soit refusé pour son vrai motif. Il ne doit pas finir en erreur 5
    - Attendu : **400** « Un exercice avec ce nom existe déjà » (`error-fiscal-year-name-duplicate`), aucune entrée d'audit
      `fiscal_year.updated`, un rejeu capturé sous `"fiscal_years::update_name"`.
    - **Rouge d'avant** : 500, et aucun rejeu.
-2. **AC-2 — un renommage valide rejoué aboutit.** Même montage, mais la route renomme M en un nom libre et la lourde tient M
-   d'abord.
-   - Si ce montage ne ferme pas le cycle de façon déterministe (un verrou d'intervalle sur un nom libre ne bloque pas un autre
-     verrou d'intervalle), **le dire au Change Log et s'en tenir à l'AC-1**. L'AC-1 prouve à lui seul que l'enveloppe est
-     posée.
-   - Ne pas fabriquer une victime qui ne prouverait rien.
+2. **AC-2 — un renommage valide rejoué aboutit**, par un montage déterministe (validation P2, 34-7-F1).
+   - La transaction lourde **insère**, sans la valider, un exercice au nom visé :
+     `INSERT INTO fiscal_years (company_id, name, start_date, end_date, status)`, avec des dates d'une autre année que M et N,
+     pour ne pas heurter `uq_fiscal_years_company_start_date`. Le schéma n'a aucun déclencheur sur `fiscal_years`, seulement
+     des `CHECK` (`test-schema/0001_schema_squash.sql:585-600`).
+   - La route tient M, puis sa lecture de doublon attend le verrou de la ligne insérée.
+   - La lourde demande M : cycle, et la route est la victime. La lourde **annule**, si bien que la ligne insérée disparaît.
+   - Au rejeu, aucun doublon : **200**, M renommé, **une seule** entrée d'audit `fiscal_year.updated`, un rejeu capturé.
+   - ⚠️ **À établir à l'étape 0** : qu'une lecture `FOR UPDATE` sur l'index unique attend bien la ligne insérée non validée,
+     et que la route est bien choisie comme victime, la lourde étant plus lourde. Si le montage ne ferme pas le cycle, le
+     dire au Change Log et s'en tenir à l'AC-1. Ne pas fabriquer une victime qui ne prouverait rien.
+   - *(Le montage d'origine, où la lourde tenait M d'abord, ne pouvait former aucun cycle : la route y attend son premier
+     verrou sans rien tenir.)*
 3. **AC-3 — rien d'autre ne change.** Les tests existants du renommage passent sans modification : nom vide, trop long,
    doublon, exercice clos renommable, autre société → 404, audit `{before, after}`.
 4. **AC-4 — textes.**
@@ -88,9 +95,9 @@ aboutisse, ou soit refusé pour son vrai motif. Il ne doit pas finir en erreur 5
 ### Mutations nommées
 
 - **M1** : l'enveloppe retirée → rouge AC-1 (500, pas de rejeu).
-- **M2** : `map_update_error` appliqué **dans** la fermeture, avant l'enveloppe : l'`Invariant` devient une `AppError`.
-  Vérifier que le prédicat `DbError` ne voit plus la 1213 → rouge AC-1. Si la forme ne compile pas, la mutation est sans
-  objet, et cela s'écrit au Change Log.
+- **M2** : `retry_on_deadlock_with("fiscal_years::update_name", 1, …)`, soit une seule tentative → rouge AC-1 (500, aucun rejeu
+  capturé) et AC-2. *(Remplace la M2 d'origine, `map_update_error` dans la fermeture, qui ne compile pas :
+  `retry_on_deadlock` exige un `Future` de `Result<T, DbError>`, `kesh-db/src/retry.rs:151-157`. Validation P2, 34-7-F2.)*
 
 ## Gates
 
@@ -120,6 +127,12 @@ Les autres candidates du point (iv), sans cycle démontré : `PUT /invoices/{id}
     `Rejouee` et deux routes d'exercice, sans la réouverture.
   - Le rapport confirme M2 (`retry_on_deadlock` générique en `DbError` : sans objet si la forme ne compile pas), sans
     changement.
+- 2026-11-10 : **validation P2 (Opus) : 1 M, 1 L, tous remédiés** (Opus 5.5). Rapport
+  `kesh-gate-logs/e34-validate-p2-e343.md`. Prémisses relues : `retry.rs:151-157`, schéma de `fiscal_years`
+  (`0001_schema_squash.sql:585-600`, aucun déclencheur).
+  - **F1 (M), neuf** : le montage de l'AC-2 ne pouvait former aucun cycle. Le montage déterministe proposé, par une ligne
+    insérée et non validée, est adopté (arbitrage de l'orchestrateur), avec ses points à établir à l'étape 0.
+  - **F2 (L)** : M2 remplacée par une mutation qui compile.
 
 ## Dev Agent Record
 

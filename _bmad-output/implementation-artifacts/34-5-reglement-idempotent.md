@@ -5,7 +5,7 @@ Status: ready-for-dev
 *Fiche rédigée le 2026-11-10 en autonomie (Opus 5.5), worktree `/home/gcorbaz/devel/kesh-e34`, branche `chore/epic-34-kickoff`,
 numéros de ligne de `a75835db`. Release **0.17.6**, Epic 34. **Aucune migration** : le kickoff la disait probable, la fiche
 tranche pour la version de la facture et non pour une clé d'idempotence (C-e343-1). Registre : `e34-choix-autonomes-e343.md`,
-C-e343-1 à 5. Commits en `refs #951` ; à la PR : `closes #951`.*
+C-e343-1 à 5 et 13. Commits en `refs #951` ; à la PR : `closes #951`.*
 
 ## Story
 
@@ -55,8 +55,8 @@ pas écrit deux fois au journal, et le reste dû ne baisse pas deux fois.
 - **Un corps JSON sans champ requis** est refusé par l'extracteur `Json` d'Axum : `422`, dit à `docs/api-external.md:294`.
 - **Appelants Rust du repository.** Commande : `git grep -n "settle_invoice(" -- crates`, hors
   `invoice_settlements_write.rs` et `src/routes`. Elle rend **31 appels dans 14 fichiers** à `a75835db` :
-  - `kesh-api/tests/` : sept fichiers ;
-  - `kesh-db/tests/` : six fichiers, dont `invoice_settlement.rs` (16 appels) et le module partagé
+  - `kesh-api/tests/` : six fichiers ;
+  - `kesh-db/tests/` : sept fichiers, dont `invoice_settlement.rs` (16 appels) et le module partagé
     `support/lettering_documents.rs`, qui touche tous ses utilisateurs ;
   - **`crates/kesh-report/tests/aged_receivables.rs`**, un autre crate.
 
@@ -94,7 +94,9 @@ au registre.
    route actuelle ignore le champ inconnu et rend 200 deux fois.
 3. **AC-3 — envois simultanés.** Deux envois lancés en parallèle avec la même version : exactement un 200 et un 409, quel que
    soit l'ordre d'arrivée. Une seule écriture.
-4. **AC-4 — ordre des refus** (C-e343-3). Statut d'abord : une facture annulée ou en brouillon rend
+4. **AC-4 — ordre des refus** (C-e343-3). Les refus de forme précèdent la transaction et ne changent pas : le corps à la
+   route (`into_parts`), puis le montant non positif (`amountMustBePositive`, `invoice_settlements_write.rs:108-110`).
+   **Parmi les refus lus sous le verrou de l'étape (1)**, le statut vient d'abord : une facture annulée ou en brouillon rend
    `ILLEGAL_STATE_TRANSITION`, même avec une version périmée. Puis la version, avant la date, la contrepartie, le trop-perçu et
    l'arrondi. Aucun refus n'écrit rien, et la version reste inchangée sur un refus.
 5. **AC-5 — le rejeu sur interblocage reste sûr.** `settlement_is_replayed_when_it_is_the_deadlock_victim`
@@ -105,13 +107,21 @@ au registre.
    - Le règlement part avec `invoice.version`.
    - Sur `409 OPTIMISTIC_LOCK_CONFLICT`, le dialogue se ferme, facture et règlements sont relus, et un avis dit que le
      règlement **n'a pas été enregistré** et que la facture a changé, avec la liste des règlements à vérifier.
-   - Si la relecture qui suit le 409 échoue, l'écran retombe sur l'état bloquant de la 33-6 (`blocked`, *Relire*). Sinon le
-     dialogue rouvert repartirait avec la version périmée, et rendrait 409 en boucle.
+   - Si la relecture qui suit le 409 échoue, l'écran passe dans un état bloquant **propre au conflit**,
+     `conflict-blocked`. Son texte : « Le règlement n'a pas été enregistré : la facture a changé, et elle n'a pas pu être
+     relue. Le règlement reste indisponible tant qu'elle n'a pas été relue. » Le règlement reste indisponible, et *Relire*
+     mène, s'il réussit, à `conflict` et non à `verify`.
+     - Sans ce blocage, le dialogue rouvert repartirait avec la version périmée et rendrait 409 en boucle.
+     - **Les états `blocked` et `verify` de la 33-6 ne servent pas ici** : leurs textes disent « l'issue n'est pas connue »
+       (`messages.ftl:827-828`, `invoices/[id]/+page.svelte:1142-1163`), ce qui est faux après un 409. Rien n'a été écrit
+       (validation P2, 34-5-F1).
    - Un autre 4xx garde le dialogue ouvert avec son message, comme avant.
    - L'issue inconnue de la 33-6 garde son comportement (C-e343-5).
 8. **AC-8 — échéancier.** Même chose, avec `cible.version` capturée avant l'envoi (`due-dates/+page.svelte:270-272`) et la liste
    rechargée. L'avis de conflit nomme la facture (`cible.invoiceNumber`, comme `settleUnknownNumber` à la 33-6) : la liste
-   montre plusieurs lignes, et le dialogue est fermé.
+   montre plusieurs lignes, et le dialogue est fermé. Les mêmes deux états, `conflict` et `conflict-blocked`, s'y
+   appliquent : le second dit que la **liste** n'a pas pu être relue, comme `due-dates-settle-unknown-reread-failed`
+   (`messages.ftl:831`).
 9. **AC-9 — textes vrais.** Ces textes ne disent plus qu'un second envoi écrit un second règlement :
    - le doc-comment de `SettleInvoiceRequest`, et celui de `settle_invoice` (qui gagne la version à son ordre des refus,
      doc-comment `:78-98`) ;
@@ -132,6 +142,12 @@ au registre.
 11. **AC-11 — CHANGELOG.** `## [0.17.6] — Non publié`, *Corrigé* (`refs #951`), et une ligne ⚠️ « **Changement de contrat de
     l'API** » sous *Modifié*. Le précédent est `CHANGELOG.md:202` (#849). C'est un écart voulu au prompt commun, qui ne
     prévoit qu'*Ajouté* et *Corrigé* : il est à dire au prompt de développement.
+11 bis. **AC-11 bis — manuel d'administration** (validation P2, 34-5-F4).
+    - Un paragraphe sous `\subsubsection{Passer à la 0.17.6}` de `admin-manual.tex`, sur le modèle de `:2659-2661` (#849,
+      « changement de contrat »). La section est à créer avant `Passer à la 0.17.5` (`:2531`) si elle n'existe pas encore,
+      et elle se fusionne par union avec les autres stories de l'epic.
+    - Le paragraphe nomme la route, le champ `version` exigé, le `422` sans lui, le `409` et la relecture par `GET`.
+    - Le PDF est régénéré et contrôlé aplati.
 12. **AC-12 — outillage de release.** `scripts/recette-montee.sh:507` lit `.version` sur `$R` (`jq -r '.version'`) et l'envoie
     dans le corps. La 0.17.5 accepte ce corps, faute de `deny_unknown_fields`. `scripts/tests/recette-montee.test.sh` reste
     vert.
@@ -146,26 +162,48 @@ au registre.
 - [ ] **T2 — `kesh-db`.**
   - `settle_invoice(…, expected_version: i32)`. La colonne `version` s'ajoute au `SELECT … FOR UPDATE` de l'étape (1), et la
     comparaison suit la garde de statut. `#[allow(clippy::too_many_arguments)]` si nécessaire, comme `write_off_invoice`.
-  - Les appelants en test passent la version lue, par **une aide de test unique** qui lit la version courante (par exemple
-    `settle_at_current_version`), et non par 31 lectures recopiées (règle DRY). Pour les règlements successifs, la version
-    vient de la réponse du précédent.
+  - Les appelants en test passent la version lue, par **une aide par crate de test** (C-e343-13), et non par 31 lectures
+    recopiées (règle DRY).
+    - `kesh-db/tests/support/` (le module existe) : `settle_at_current_version(pool, …)`, qui lit la version puis appelle
+      `settle_invoice`.
+    - `kesh-api/tests/common/` : la même aide, ou un réemploi si le module de `kesh-db` est visible.
+    - `kesh-report/tests/aged_receivables.rs` : un seul appel, avec une lecture locale.
+
+    Les dossiers `tests/` de crates différents ne partagent aucun module, et `kesh-db` n'a pas de feature de test
+    (validation P2, 34-5-F8). Pour les règlements successifs, la version vient de la réponse du précédent.
   - `kesh-report` est touché : le gate ciblé `kesh-db`/`kesh-api` ne le compile pas. Lancer
     `cargo build --workspace --all-targets`.
   - ⚠️ `kesh-db` est touché : **gate complet même en cours de boucle** (exception `kesh-db` du `CLAUDE.md`).
 - [ ] **T3 — route.** `SettleInvoiceRequest.version: i32`, passée à `into_parts` ou à côté, et doc-comments (AC-9). Les
   corps de test Rust qui postent un règlement (liste ci-dessus, recensée à nouveau) portent la version.
-- [ ] **T4 — AC-3.** Deux requêtes `tokio::spawn` sur la même version, contrôle « un 200, un 409, une écriture ».
+- [ ] **T4 — AC-3, montage déterministe** (validation P2, 34-5-F2), sur le patron de `victime`
+  (`rejeu_interblocage_e2e.rs:346-367`) :
+  1. une transaction de test tient la facture par `SELECT … FROM invoices WHERE id = ? FOR UPDATE` ;
+  2. les deux requêtes partent, avec la même version ;
+  3. on attend qu'elles soient **toutes deux** en attente sur le `FOR UPDATE` de l'étape (1)
+     (`attendre_une_requete_en_cours`, motif `FROM invoices` et `FOR UPDATE`, deux occurrences) ;
+  4. la transaction de test est annulée.
+
+  Code juste : un 200, un 409, une écriture. Sous M2, les deux lectures ordinaires de la version précèdent l'attente : deux
+  200. Sans ce montage, M2 ne rougit que si les deux lectures précèdent le premier commit, ce que rien ne garantit.
+  ⚠️ **À établir à l'étape 0** : qu'`attendre_une_requete_en_cours` sait attendre deux requêtes sur le même motif. Il faudra
+  peut-être l'élargir à un compte d'occurrences. Si le montage ne peut pas être tenu, le dire au Change Log, et M2 est
+  déclarée non prouvée.
 - [ ] **T5 — frontend.**
   - `SettleInvoiceRequest.version: number` ; la fiche et l'échéancier l'envoient.
-  - `settleOutcome` gagne un état `conflict` (relu, rien d'enregistré), avec une clé i18n
-    `invoice-settle-conflict` aux **quatre** locales et le repli Svelte identique.
+  - `settleOutcome` gagne deux états, `conflict` (relu, rien d'enregistré) et `conflict-blocked` (pas relu). Les clés i18n,
+    aux **quatre** locales, chacune avec un repli Svelte identique :
+    - fiche : `invoice-settle-conflict`, `invoice-settle-conflict-reread-failed` ;
+    - échéancier : `due-dates-settle-conflict` et `due-dates-settle-conflict-reread-failed`, avec `{ $number }`, passé par
+      le troisième argument d'`i18nMsg` (validation P2, 34-5-F7).
+  - Vitest de l'AC-7 : 409, relecture en échec, texte sans « n'est pas connue » ; puis *Relire* réussi, texte de conflit.
   - Tests Vitest : `invoice-settlements-page.test.ts`, et le test de l'échéancier. On vérifie la version envoyée, puis le 409
     (dialogue fermé, relecture, avis), puis un 400 (dialogue ouvert).
   - Les spécifications Playwright qui postent un règlement portent la version.
 - [ ] **T6 — E2E** de l'AC-2 à l'écran. On règle 100 depuis la fiche. Un second `POST` part par `authedApiContext` avec la
   version d'avant : il rend 409. La fiche affiche un seul règlement. Puis l'avis de conflit, provoqué par un règlement passé
   par l'API pendant que le dialogue est ouvert.
-- [ ] **T7 — textes et outillage** : AC-9 à AC-12 ; le PDF du manuel utilisateur est régénéré et contrôlé aplati
+- [ ] **T7 — textes et outillage** : AC-9 à AC-12 ; les PDF des deux manuels sont régénérés et contrôlé aplati
   (`pdftotext … | tr '\n' ' ' | tr -s ' '`, « Rien n'empêchant » absent).
 - [ ] **T8 — captures** : l'avis de conflit sur la fiche et sur l'échéancier, en thème clair, sur une base jetable, dans
   `kesh-gate-logs/e343/captures/`.
@@ -178,8 +216,11 @@ au registre.
 - **M3** : la fiche envoie la version rendue par le `GET` initial au lieu de celle de la réponse → rouge du test « deux
   acomptes successifs depuis le même écran » (AC-6, Vitest).
 - **M4** : le 409 traité comme un autre 4xx (dialogue ouvert) → rouge Vitest AC-7 et AC-8.
-- **M5** : l'échéancier envoie `markTarget.version` lu après l'envoi au lieu de `cible` → rouge Vitest (une autre ligne
-  ouverte pendant l'attente).
+- **M5** : l'avis de conflit de l'échéancier lit `markTarget?.invoiceNumber` **après** la relecture (où `markTarget` vaut
+  `null`, `due-dates/+page.svelte:292-293`) au lieu de `cible.invoiceNumber` → rouge du Vitest de l'AC-8 (numéro absent de
+  l'avis). *(Remplace la M5 d'origine, équivalente : `cible` et `markTarget` désignent le même objet au moment où le corps
+  se construit, sans `await` entre les deux, `:268-276`. Validation P2, 34-5-F3.)*
+- **M6** : *Relire* depuis `conflict-blocked` mène à `verify` → rouge du Vitest de l'AC-7 (texte « n'est pas connue »).
 
 ## Gates
 
@@ -197,9 +238,14 @@ de la KF-029 se nomment un par un.
 ## Recoupements
 
 - `routes/invoices.rs` et `invoices/[id]/+page.svelte` : aucune autre story de l'Epic 34 ne les touche.
-- **34-11a** modifie `settle_invoice` lui-même, la lecture du compte bancaire de l'étape (3)
-  (`invoice_settlements_write.rs:170`). C'est la **même fonction** que la comparaison de version de 34-5 : fusion par union,
-  avec relecture de l'ordre des refus. 34-11a n'a pas à ordonner de migration avec 34-5, qui n'en porte pas.
+- **34-11a1 et 34-11a2** (34-11a découpée) : elles ne touchent pas `settle_invoice`. La 34-11a1 range `:170` en classe C,
+  non touchée (`34-11a1-compte-sans-iban.md:76`, ligne C5). Elles touchent le dialogue de règlement,
+  `SettleInvoiceDialog.svelte:249` : libellé du compte (34-11a1, S13) et carte non proposée (34-11a2, `:38`).
+  - La 34-5 ne modifie pas ce dialogue : la version s'ajoute dans les pages (`{ ...payload, version }`), et le type
+    `SettlementPayload` reste sans version. Fusion sans conflit.
+  - Aucune migration à ordonner : la 34-5 n'en porte pas.
+
+  *(Rectifié à la validation P2, 34-5-F6 : la P1 avait écrit un recoupement sur `settle_invoice`, faux.)*
 - `reconciliation_e2e.rs` (appels `:5510`, `:7363`) : aussi touché par 34-3, 34-4 et 34-11b.
 - `unknown-outcome.ts` : 34-8 en élargit le doc-comment au fournisseur (C-e343-12) ; à fusionner par union.
 - `user-manual.tex` : 34-3, 34-4 et 34-11b touchent la réconciliation, d'autres sections.
@@ -225,6 +271,28 @@ de la KF-029 se nomment un par un.
   - **F4 (L)** : `invoice-settlements-page.test.ts:266-268` lu, ajouté à l'AC-9 avec le grep de contrôle.
   - **F5 (L)** : AC-7 (relecture en échec → `blocked`) et AC-8 (l'avis nomme la facture).
   - **F6 (L)** : *Modifié* tranché, précédent `CHANGELOG.md:202` lu.
+- 2026-11-10 : **validation P2 (Opus) : 4 M, 5 L, tous remédiés** (Opus 5.5). Rapport
+  `kesh-gate-logs/e34-validate-p2-e343.md`. Prémisses relues : `messages.ftl:827-831` ;
+  `invoice_settlements_write.rs:108-110` ; `34-11a1-compte-sans-iban.md:76` ; `34-11a2-carte-credit-creation.md:38` ;
+  `admin-manual.tex:2531,2659-2661` ; `kesh-db/Cargo.toml` sans `[features]` ; `attendre_une_requete_en_cours`
+  (`rejeu_interblocage_e2e.rs`).
+  - **La sévérité n'a pas baissé** : P1 2 M → P2 4 M. Signal de la règle de splitting, avec le constat de l'amendement D5,
+    à déclarer au Project Lead :
+    - **F1 (M), né de la remédiation P1** (F5) : l'état bloquant d'après un 409 affichait un texte d'issue inconnue. États
+      `conflict` et `conflict-blocked`, clés, M6.
+    - **F2 (M), neuf**, présent depuis la création : M2 dépendait d'une course. Montage déterministe à T4, à établir à
+      l'étape 0.
+    - **F3 (M), neuf** : la M5 d'origine était équivalente. Elle est remplacée.
+    - **F4 (M), neuf** : manuel d'administration, AC-11 bis.
+
+    Trois des quatre sont des défauts d'origine distincts, non un recyclage. Le seul né d'une remédiation est F1. La fiche
+    reste dans cinq modules au plus. Pas de découpage proposé.
+  - **LOW** :
+    - **F5** : six fichiers et sept fichiers, ventilation corrigée.
+    - **F6** : recoupement 34-11a récrit (34-11a1, 34-11a2, dialogue).
+    - **F7** : clés de l'échéancier.
+    - **F8** : aide par crate, C-e343-13.
+    - **F9** : ordre des refus, « sous le verrou ».
 
 ## Dev Agent Record
 

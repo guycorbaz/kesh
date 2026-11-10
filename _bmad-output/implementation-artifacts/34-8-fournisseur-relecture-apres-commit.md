@@ -4,7 +4,7 @@ Status: ready-for-dev
 
 *Fiche rédigée le 2026-11-10 en autonomie (Opus 5.5), worktree `/home/gcorbaz/devel/kesh-e34`, branche `chore/epic-34-kickoff`,
 numéros de ligne de `a75835db`. Release **0.17.6**, Epic 34. **Aucune migration.** C'est la ligne « Non traité, à tracer » de
-la fiche 33-6, qui fermait le même défaut côté client. Registre : `e34-choix-autonomes-e343.md`, C-e343-9 à 12. Commits en
+la fiche 33-6, qui fermait le même défaut côté client. Registre : `e34-choix-autonomes-e343.md`, C-e343-9 à 12 et 15. Commits en
 `refs #938` ; à la PR : `closes #938`.*
 
 ## Story
@@ -61,8 +61,9 @@ une réponse perdue au lieu de se taire.
   `tests/common/` existe.
 - **Un couplage à prévoir.** `services_motif.rs:2480-2483` compte les fonctions de `routes/supplier_invoices.rs` : 11 `pub async
   fn` en tête de ligne, et 13 `async fn` toutes visibilités et indentations comprises. `load_with_settlement_cancellation` est
-  une méthode indentée (`:268`). Son retrait fait **probablement** passer 13 à 12 sans toucher 11 : recompter à l'exécution,
-  sans supposer (validation P1, 34-8-F6). Pour `imported_supplier_invoices.rs`
+  une méthode indentée (`:268`), la seule `async fn` indentée du fichier. Son retrait donne **12 et 11** : 13 passe à 12,
+  11 ne bouge pas. Comptage : `grep -cE "^\s*(pub(\([a-z]+\))? )?async fn"` rend 13, et `^pub async fn` rend 11. La garde
+  le confirmera (validation P1, 34-8-F6 ; P2, 34-8-F5). Pour `imported_supplier_invoices.rs`
   (`:2391-2394`, 9 et 12), la garde rougit si une signature change de visibilité. Recompter à la source, et mettre à jour
   avec la raison.
 - **L'écran** (commentaire de Guy sur #938, 2026-11-07). Fiche `frontend/src/routes/(app)/supplier-invoices/[id]/+page.svelte` :
@@ -87,9 +88,14 @@ une réponse perdue au lieu de se taire.
 1. **AC-1 — kesh-db.**
    - `get_settlement_view_in_tx(tx, company_id, id) -> Result<Option<SupplierInvoiceSettlementView>, DbError>`, réemployée par
      `get_settlement_view` (DRY).
-   - **Signature** (validation P1, 34-8-F4) : `async fn commit_with_view<T>(tx: Transaction<'_, MySql>, company_id: i64,
-     id: i64, result: Result<T, DbError>) -> Result<(SupplierInvoiceSettlementView, T), DbError>`. C'est une fonction
-     ordinaire, non une macro, pour que la garde `syn` la lise.
+   - **Signature** (validation P1, 34-8-F4 ; P2, 34-8-F2 et F4 ; C-e343-15) :
+     `pub async fn commit_with_view<T, E: From<DbError>>(tx: Transaction<'_, MySql>, company_id: i64, id: i64,
+     result: Result<T, E>) -> Result<(SupplierInvoiceSettlementView, T), E>`.
+     - **Générique sur l'erreur**, pour servir aussi les quatre `_once` de `kesh-api`, qui travaillent en `AppError`
+       (`AppError: From<DbError>`). Une seule lecture-puis-commit, et non quatre copies.
+     - **`pub`**, parce que `kesh-api` l'appelle et que le test de M5 vit dans `kesh-db/tests/`. Une fonction
+       `pub(crate)` serait invisible de l'un et de l'autre : c'est le précédent de la 31-1, P6.
+     - C'est une fonction ordinaire, non une macro, pour que la garde `syn` la lise.
      - Sur `Err`, elle annule la transaction et rend l'erreur.
      - Sur `Ok`, elle lit la vue, puis valide la transaction.
      - Une vue absente (`None`) après une écriture réussie est une `DbError::Invariant` qui annule la transaction.
@@ -126,8 +132,14 @@ une réponse perdue au lieu de se taire.
    `supplier_invoice_unvalidation_is_replayed_when_it_is_the_deadlock_victim` (`rejeu_interblocage_e2e.rs:821-969`) passent :
    la vue vient de la tentative qui a réussi.
 8. **AC-8 — écran** (C-e343-12).
-   - Sur les cinq gestes de la fiche (payer, annuler le règlement, annuler, valider, repasser en brouillon),
-     `isSettlementOutcomeUnknown(err)` (réponse perdue, 5xx, erreur hors `ApiError`) mène à une relecture.
+   - Sur les **sept** gestes de la fiche (payer, annuler le règlement, annuler, valider, repasser en brouillon, **joindre et
+     détacher un document**), `isSettlementOutcomeUnknown(err)` (réponse perdue, 5xx, erreur hors `ApiError`) mène à une
+     relecture.
+     - `detach()` (`supplier-invoices/[id]/+page.svelte:522-553`) affiche aujourd'hui « Erreur inattendue » hors
+       `ApiError`, sans relire.
+     - `attach()` (`:492-520`) relance l'erreur au sélecteur, sans relire.
+     - Un second envoi y est refusé (`409 IMPORT_NOT_PENDING_COMPLETION`, `404 SOURCE_DOCUMENT_NOT_FOUND`) : un échec
+       affiché pour un geste réussi, le défaut de #938 (validation P2, 34-8-F1).
    - **Deux avis, selon la relecture** (validation P1, 34-8-F2). `reloadAfterRefusal` (`+page.svelte:477-483`) avale
      aujourd'hui l'échec : il rend désormais un booléen.
      - La relecture a réussi : « L'issue n'est pas connue : la facture a été relue, vérifiez-la avant de réessayer. »
@@ -185,7 +197,7 @@ et de la compilation des tests `kesh-db` qui lisent un champ de la vue sur le re
   (règle DRY : aide commune si deux fichiers en ont besoin).
 - [ ] **T6 — écran** : AC-8, avec deux clés i18n, `supplier-invoices-unknown-outcome` et
   `supplier-invoices-unknown-outcome-reread-failed`, aux quatre locales, chacune avec un repli identique. Vitest :
-  - un cas par geste : réponse perdue → relecture et avis ; 400 → message, sans relecture ;
+  - un cas par geste, `attach` et `detach` compris : réponse perdue → relecture et avis ; 400 → message, sans relecture ;
   - un cas où la relecture échoue → second avis.
 - [ ] **T7 — E2E** : un paiement dont la réponse est coupée. Le patron est `cutResponseAfterWrite`
   (`invoices-settle-unknown-outcome.spec.ts:72-80`) : `route.fetch()`, **puis** `route.abort("connectionreset")`. Un
@@ -215,8 +227,14 @@ aucune migration, aucun schéma.
   Une réponse perdue suivie d'un second clic crée un **second brouillon**. Il n'y a pas d'écriture au journal, et le doublon
   se voit dans la liste, mais l'opération est enregistrée et annoncée en échec. **Issue demandée** (P2 proposé). Elle n'est
   pas traitée ici : autre nature, la même question que #951.
-- **La page d'édition** (`[id]/edit`) : son `PUT` porte la version. Un rejeu rend 409, que la page traite déjà
-  (`describeSubmitError`). Rien à faire.
+- **La complétion d'un document** (`POST /imported-supplier-invoices/{id}/complete`, page `supplier-invoices/new`,
+  `save`, `:145-149`) : l'erreur remonte au formulaire, sans relecture. Après une réponse perdue, un second clic rend
+  `409 IMPORT_NOT_PENDING_COMPLETION`, affiché comme un échec alors que la facture est créée. C'est le symptôme de #938, sur
+  un autre écran. **Issue demandée** (validation P2, 34-8-F1).
+- **La page d'édition** (`[id]/edit`) : son `PUT` porte la version. Après une réponse perdue, un second clic rend 409, et
+  `describeSubmitError` invite à recharger (`edit/+page.svelte:22`). Pas de double écriture, mais un échec annoncé pour
+  une modification enregistrée, sans relecture. **Issue demandée.** *(La fiche disait « rien à faire » : c'était juger la
+  double écriture, non le symptôme.)*
 - **La confirmation d'un lot de paiement** et **l'acceptation d'un rapprochement** : elles passent par les formes `_in_tx` et
   ne relisent pas par `load_with_settlement_cancellation`. Hors de #938.
 
@@ -226,9 +244,13 @@ aucune migration, aucun schéma.
 - `rejeu_interblocage_e2e.rs` : 34-5 et 34-7 y touchent d'autres tests.
 - `routes/supplier_invoices.rs` et `imported_supplier_invoices.rs` : **34-9** (#969, l'import du dossier) touche
   `post_inbox_import`, dans le même fichier mais une autre fonction. Union.
-- **34-11a** touche `kesh-db/src/repositories/supplier_invoices.rs` dans le bloc de `pay` (`:2010`, `:2268`), et
-  `invoice_settlements_write.rs:170`. 34-8 récrit les enveloppes de ce même fichier, dont `pay`. Fusion par union, avec
-  relecture de `pay`.
+- **34-11a1 et 34-11a2** (34-11a découpée) ne touchent pas `pay` côté serveur. La 34-11a1 range `:2010`, `:2268` et
+  `invoice_settlements_write.rs:170` en classe C (`34-11a1-compte-sans-iban.md:76`). Le vrai recoupement est la fiche
+  fournisseur, `supplier-invoices/[id]/+page.svelte:888`, que la 34-8 modifie à l'AC-8 :
+  - la 34-11a1 y change le libellé du compte bancaire (S13) ;
+  - la 34-11a2 y propose la carte au paiement (`34-11a2-carte-credit-creation.md:39`).
+
+  Fusion par union. *(Rectifié à la validation P2, 34-8-F3 : le recoupement écrit à la P1 était faux.)*
 
 ## Change Log
 
@@ -247,6 +269,19 @@ aucune migration, aucun schéma.
   - **F8 (L)** : recoupement avec 34-11a.
   - **Hors du rapport** : la fiche disait que `in_own_tx!` pouvait n'avoir plus d'usage. Six appels sont relus, la macro
     reste.
+- 2026-11-10 : **validation P2 (Opus) : 1 M, 4 L, tous remédiés** (Opus 5.5). Rapport
+  `kesh-gate-logs/e34-validate-p2-e343.md`. Prémisses relues :
+  - `attach` et `detach` de la fiche (`:492-553`) ;
+  - `supplier-invoices/new/+page.svelte:145-149` et `edit/+page.svelte:22` ;
+  - `34-11a1-compte-sans-iban.md:76` et `34-11a2-carte-credit-creation.md:39`.
+  - **F1 (M), neuf** : `attach` et `detach` sont ajoutés à l'AC-8. L'inventaire part du symptôme (relecture absente après une
+    réponse perdue) : la complétion et l'édition vont à « Ce qui ne se traite pas ici », une issue demandée chacune, en plus
+    de la création.
+  - **LOW** :
+    - **F2** : `commit_with_view` générique sur l'erreur (C-e343-15).
+    - **F3** : recoupement 34-11a récrit (34-11a1, 34-11a2, page `:888`).
+    - **F4** : `pub`.
+    - **F5** : 12 et 11, comptés.
 
 ## Dev Agent Record
 

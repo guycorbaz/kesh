@@ -67,6 +67,9 @@
 - **Écartée.** Garder le dialogue ouvert après une relecture silencieuse : l'utilisateur relancerait sans avoir vu le
   règlement écrit par l'autre onglet.
 - **Réversible.** Oui.
+- **Précisé à la validation P2 (34-5-F1).** Si la relecture qui suit le 409 échoue, l'écran passe dans un état bloquant
+  propre, `conflict-blocked`, et non dans le `blocked` de la 33-6, dont le texte dit « l'issue n'est pas connue ». *Relire*
+  mène alors à `conflict`, et non à `verify`.
 
 ## C-e343-5 — #951 : la relecture d'issue inconnue de la 33-6 reste
 
@@ -91,7 +94,10 @@
     se ferme sur « déjà enregistré » ;
   - **sinon** : chaque champ **en conflit** montre sa valeur enregistrée entre-temps. Un champ est en conflit s'il a changé
     depuis la copie **et** diffère de la saisie (validation P1, 34-6-F1), la saisie reste, et un avis dit qu'enregistrer
-    de nouveau la remplacera. La copie prend les valeurs relues, si bien qu'un nouveau conflit se compare à elles.
+    de nouveau la remplacera.
+  - La copie prend les valeurs relues **après toute relecture réussie**, si bien qu'un nouveau conflit se compare à elles
+    (précisé à la validation P2, 34-6-F5).
+  - Les champs que l'Administrateur n'a pas modifiés sont fusionnés : C-e343-14.
 - **Écartées.**
   - Remplacer la saisie par les valeurs relues : le travail serait perdu sans le dire.
   - Un contrôle côté serveur : la version y est déjà. Le défaut est le seul écran.
@@ -176,8 +182,8 @@
 - **Contexte.** Le commentaire de Guy sur #938 (2026-11-07) : l'écran fournisseur ne relit pas après une réponse perdue, et
   n'affiche rien sur une erreur hors `ApiError`. Lu : `pay()` (`supplier-invoices/[id]/+page.svelte:215-217`) n'écrit rien
   hors `ApiError`.
-- **Retenu.** Sur les cinq gestes de la fiche (payer, annuler le règlement, annuler la facture, valider, repasser en
-  brouillon), `isSettlementOutcomeUnknown(err)` (5xx, réponse perdue, erreur hors `ApiError`) mène à une relecture
+- **Retenu.** Sur les sept gestes de la fiche (payer, annuler le règlement, annuler la facture, valider, repasser en
+  brouillon, et — validation P2, 34-8-F1 — joindre et détacher un document), `isSettlementOutcomeUnknown(err)` (5xx, réponse perdue, erreur hors `ApiError`) mène à une relecture
   (`reloadAfterRefusal`, `:477-483`, qui rend désormais un booléen) et à un avis. Si la relecture a réussi : « L'issue n'est
   pas connue : la facture a été relue, vérifiez-la avant de réessayer. » Si elle a échoué : « … la facture n'a pas pu être
   relue : rechargez la page avant de réessayer ». *(Le second avis est ajouté à la validation P1, 34-8-F2.)* Un 4xx garde
@@ -186,6 +192,42 @@
   bien qu'un second envoi est refusé, sans double écriture. Pour le paiement, la garde est
   `crates/kesh-db/src/repositories/supplier_invoices.rs:1980` (`inv.status != "open"`). #951 la citait à `:1747`, numéro
   d'avant la 33-1.
-- **Hors de la story.** Les pages de création et d'édition (`supplier-invoices/new`, `[id]/edit`). Issue demandée pour la
-  création, qui n'a ni version ni clé.
+- **Hors de la story.** Les pages de création, de complétion et d'édition (`supplier-invoices/new`, `[id]/edit`). Une
+  issue demandée pour chacune (complétion et édition ajoutées à la validation P2, 34-8-F1) :
+  - la création n'a ni version ni clé, d'où un second brouillon ;
+  - la complétion et l'édition annoncent un échec, 409, pour un geste réussi, sans relire.
+- **Réversible.** Oui.
+
+## C-e343-13 — #951 : où vit l'aide de test qui lit la version
+
+- **Contexte.** 31 appels de `settle_invoice` en test, dans trois crates (`kesh-api/tests`, `kesh-db/tests`,
+  `kesh-report/tests`). Les dossiers `tests/` de crates différents ne partagent aucun module, et `kesh-db` n'a pas de feature
+  de test (`Cargo.toml` sans `[features]`). Validation P2, 34-5-F8.
+- **Retenu.** Une aide par crate de test : `kesh-db/tests/support/` (`settle_at_current_version`) et
+  `kesh-api/tests/common/`. Pour `kesh-report`, qui n'a qu'un appel, une lecture locale.
+- **Écartée.** Une fonction `pub` `#[doc(hidden)]` dans le code de production de `kesh-db` : elle mettrait du code de test
+  dans la bibliothèque pour économiser une copie de cinq lignes.
+- **Réversible.** Oui.
+
+## C-e343-14 — #953 : fusion à trois voies des champs non modifiés
+
+- **Contexte.** Validation P2, 34-6-F2. Un champ resté à sa valeur d'ouverture (`input = base`) mais changé ailleurs
+  (`stored ≠ base`) gardait l'ancienne valeur dans la saisie : le second clic la rétablissait sur l'écriture du collègue.
+  C-e343-6 écartait « remplacer la saisie par les valeurs relues » à cause du travail perdu, ce qui ne vaut que pour les
+  champs modifiés.
+- **Retenu**, sur arbitrage de l'orchestrateur. Après la relecture, chaque champ tel que `input = base` prend `stored`.
+  Aucune saisie n'est perdue, et l'avis nomme les champs repris. Seuls les champs modifiés des deux côtés, à des valeurs
+  différentes, sont en conflit.
+- **Écartée.** Garder l'ancienne valeur et l'annoncer « rétablie » : le second clic écraserait encore un travail que
+  l'Administrateur n'a pas voulu toucher.
+- **Réversible.** Oui.
+
+## C-e343-15 — #938 : `commit_with_view`, générique sur l'erreur, et publique
+
+- **Contexte.** Validation P2, 34-8-F2 et F4. Les quatre `_once` de `kesh-api` travaillent en `AppError`. Le test de M5 vit
+  dans `kesh-db/tests/`.
+- **Retenu.** `pub async fn commit_with_view<T, E: From<DbError>>(…, result: Result<T, E>) -> Result<(View, T), E>` : une
+  seule lecture-puis-commit pour les cinq enveloppes et les quatre `_once`. Elle est `pub`, parce que `kesh-api` et les tests
+  d'intégration l'appellent.
+- **Écartée.** Une aide jumelle côté `kesh-api` : deux copies de la même règle.
 - **Réversible.** Oui.

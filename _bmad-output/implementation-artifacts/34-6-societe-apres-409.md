@@ -4,7 +4,7 @@ Status: ready-for-dev
 
 *Fiche rédigée le 2026-11-10 en autonomie (Opus 5.5), worktree `/home/gcorbaz/devel/kesh-e34`, branche `chore/epic-34-kickoff`,
 numéros de ligne de `a75835db`. Release **0.17.6**, Epic 34. **Aucune migration, aucun changement serveur.** Registre :
-`e34-choix-autonomes-e343.md`, C-e343-6 et 7. Commits en `refs #953` ; à la PR : `closes #953`.*
+`e34-choix-autonomes-e343.md`, C-e343-6, 7 et 14. Commits en `refs #953` ; à la PR : `closes #953`.*
 
 ## Story
 
@@ -56,22 +56,31 @@ l'adresse qu'un collègue vient de corriger, ni ma propre correction déjà enre
 
 - **La copie.** À l'ouverture de l'édition, chaque bloc garde une copie de ses valeurs enregistrées (`emailBase`,
   `contactBase`, `addressBase`).
-- **Sur un 409**, on relit, puis on compare les champs **du bloc** :
+- **Fusion à trois voies des champs non modifiés** (validation P2, 34-6-F2 ; C-e343-14). Après la relecture, chaque champ
+  que l'Administrateur n'a pas modifié (`input[f] = base[f]`) prend la valeur relue (`input[f] := stored[f]`). Aucun travail
+  n'est perdu, puisque rien n'y avait été saisi, et le second clic ne rétablit plus l'ancienne valeur sur l'écriture d'un
+  collègue.
+  - L'avis nomme ces champs « repris de l'enregistrement entre-temps : *valeur* », pour que la fusion se voie.
+  - Sans la fusion, un collègue corrige la rue, l'Administrateur corrige le NPA, et son second clic remet l'ancienne rue :
+    c'est le dommage de #953, déplacé du silence à un avertissement.
+- **Sur un 409**, on relit, on fusionne, puis on compare les champs **du bloc** :
   1. **Aucun n'a changé** depuis la copie : le message actuel. L'essai suivant est sans danger.
   2. **Tous égalent la saisie** : l'édition se ferme, `data` porte la société relue, et une notification dit « déjà
      enregistré ».
   3. **Sinon** : sous chaque champ en conflit, « Enregistré entre-temps : *valeur* », la valeur vide se disant « (vide) ». Un
-     avis dit qu'enregistrer de nouveau remplacera ces valeurs. La saisie reste. La copie prend les valeurs relues, si bien
-     qu'un second conflit se compare à elles.
+     avis dit qu'enregistrer de nouveau remplacera ces valeurs. La saisie modifiée reste.
+- **La copie prend les valeurs relues après toute relecture réussie**, quel que soit le cas, si bien qu'un second conflit se
+  compare à elles (validation P2, 34-6-F5).
 - **Les définitions, champ par champ** (validation P1, 34-6-F1) :
-  - `changed = { f : stored[f] ≠ base[f] ∧ stored[f] ≠ input[f] }`. Un champ modifié ailleurs **à la même valeur que la
-    saisie** n'est pas en conflit : enregistrer ne le remplacera pas, et l'avis ne le nomme pas ;
-  - `already-saved` si et seulement si `stored[f] = input[f]` pour tout champ du bloc ;
+  - `merged = { f : input[f] = base[f] ∧ stored[f] ≠ base[f] }` : la saisie y prend `stored[f]` (fusion, P2) ;
+  - `changed = { f : input[f] ≠ base[f] ∧ stored[f] ≠ base[f] ∧ stored[f] ≠ input[f] }`. Un champ modifié ailleurs **à la
+    même valeur que la saisie** n'est pas en conflit : enregistrer ne le remplacera pas, et l'avis ne le nomme pas ;
+  - `already-saved` si et seulement si `stored[f] = input[f]` pour tout champ du bloc, **après** la fusion ;
   - `unchanged` si `changed = ∅` et que le bloc n'est pas `already-saved` ;
   - `changed` sinon.
 - **Une fonction pure** `companyEditConflict(base, stored, input, fields)` dans
   `frontend/src/lib/features/settings/company-conflict.ts`, qui rend `{ kind: 'unchanged' | 'already-saved' | 'changed',
-  changed: string[] }`, et **un composant** `CompanyConflictNotice.svelte`. Les trois blocs les emploient.
+  changed: string[], merged: string[], input: … }` (la saisie fusionnée), et **un composant** `CompanyConflictNotice.svelte`. Les trois blocs les emploient.
 - **Comparaison** sur les valeurs telles qu'envoyées : `trim()`, et chaîne vide ⇔ `null`, comme `saveEmail` et
   `saveContactDetails` (`:63-66`, `:126-130`). Pour l'adresse, comparaison sur les cinq composants. Le pays se compare
   **normalisé comme le serveur le range** (`normalized_country`, `crates/kesh-api/src/address_input.rs:37-43`) : `trim`, ASCII
@@ -93,17 +102,28 @@ l'adresse qu'un collègue vient de corriger, ni ma propre correction déjà enre
    envoi.
 4. **AC-4 — les trois blocs.** AC-1 à AC-3 valent pour l'e-mail (un champ), les coordonnées (deux champs, dont un seul peut
    avoir changé) et l'adresse (cinq composants).
-5. **AC-5 — second conflit.** Après l'avis de l'AC-1, une troisième écriture concurrente : le second 409 montre la nouvelle
-   valeur, comparée à la copie relue au premier conflit, et non à celle d'origine.
-5 bis. **AC-5 bis — champ égal à la saisie** (34-6-F1). Bloc coordonnées : l'autre écrit le site `X`. L'Administrateur
-   avait saisi le téléphone `T`, différent de la copie, et le même site `X`. Seul le téléphone est en conflit, s'il a changé
-   ailleurs. Sinon le cas est `unchanged`. L'avis ne nomme jamais le site.
+5. **AC-5 — second conflit** (récrit à la validation P2, 34-6-F1). Premier conflit sur la ville (`Nyon` affiché). Puis une
+   troisième écriture concurrente sur **la rue seule**. Le second 409 montre la rue, et **la ville n'est plus dans l'avis**.
+   - Avec la copie relue, la ville est revenue à `stored = base`, si bien qu'elle n'est plus en conflit.
+   - Avec l'ancienne copie, elle le serait encore.
+   - C'est l'assertion que M2 fait rougir. Une troisième écriture sur la même ville ne la distinguerait pas.
+5 bis. **AC-5 bis — champ égal à la saisie**, en deux montages (validation P2, 34-6-F7). Bloc coordonnées : l'Administrateur
+   a saisi le téléphone `T` et le site `X`, tous deux différents de la copie.
+   - **a)** L'autre écrit le site `X` seul : cas `unchanged`, aucun champ nommé.
+   - **b)** L'autre écrit le site `X` et le téléphone `U` : seul le téléphone est nommé.
+
+   L'avis ne nomme jamais le site.
+5 ter. **AC-5 ter — fusion** (34-6-F2). Bloc adresse : l'Administrateur corrige le NPA, l'autre corrige la rue. Au 409, la
+   rue du formulaire prend la valeur de l'autre, et l'avis la dit reprise. Le NPA saisi reste. Le second clic écrit **les
+   deux**, et la rue de l'autre n'est pas rétablie à l'ancienne valeur.
 6. **AC-6 — relecture impossible.** Le message `-conflict-reload-failed` reste, et la saisie aussi. Aucun avis de valeur.
 6 bis. **AC-6 bis — cycle de vie de l'avis** (34-6-F4). L'avis de conflit et les valeurs affichées sont remis à zéro par
    `start*Edit`, par l'annulation de l'édition et par un enregistrement réussi. Un second conflit remplace l'avis, sans
    l'empiler.
 7. **AC-7 — textes.** Les clés neuves (`settings-company-conflict-changed` avec la variable `$value`,
-   `settings-company-conflict-will-replace`, `settings-company-conflict-already-saved`, à nommer au développement) aux
+   `settings-company-conflict-merged` avec `$value`, `settings-company-conflict-will-replace`,
+   `settings-company-conflict-already-saved` et `settings-company-conflict-empty` pour « (vide) », validation P2, 34-6-F4 ;
+   noms à fixer au développement) aux
    **quatre** locales, avec un repli Svelte identique. `lint-i18n-ownership` et les gardes de replis
    (`i18n-repli-divergent-actif.test.ts`, `i18n-keys.test.ts`) restent verts, et leurs compteurs sont recomptés. Les variables
    Fluent passent par le troisième argument de `msg` (`+page.svelte:23-34`), jamais par un `.replace()`.
@@ -118,8 +138,10 @@ l'adresse qu'un collègue vient de corriger, ni ma propre correction déjà enre
   - Vitest de `settings-page.test.ts` : le test `:289-310` récrit selon l'AC-1, et un test par bloc ;
   - E2E de l'AC-1.
 - [ ] **T2** : `company-conflict.ts` et ses tests. On couvre les trois cas, puis un champ égal à la saisie (AC-5 bis), vide
-  contre `null`, les espaces, un pays en minuscules, un pays vide contre `CH`, et `addressStructured` à `null`.
-- [ ] **T3** : `CompanyConflictNotice.svelte`, les trois blocs, la copie prise à `start*Edit` et mise à jour au conflit.
+  contre `null`, les espaces, un pays en minuscules, un pays vide contre `CH`, et `addressStructured` à `null`. Puis la
+  fusion (AC-5 ter) et les deux montages de l'AC-5 bis.
+- [ ] **T3** : `CompanyConflictNotice.svelte`, les trois blocs, la copie prise à `start*Edit` et mise à jour après toute
+  relecture réussie, la saisie fusionnée.
 - [ ] **T4** : i18n aux quatre locales, et les gardes de replis.
 - [ ] **T5** : E2E. `company-address.spec.ts:128-157` est récrit, et un cas « coordonnées, un seul champ changé » s'ajoute
   à `company-contact-details.spec.ts`.
@@ -133,7 +155,9 @@ l'adresse qu'un collègue vient de corriger, ni ma propre correction déjà enre
 - **M2** : la copie n'est pas mise à jour au conflit → rouge AC-5.
 - **M3** : le cas `already-saved` envoie quand même → rouge AC-3 (envoi compté par le mock).
 - **M4** : la comparaison sans `trim` → rouge du test « espaces ».
-- **M5** : le bloc des coordonnées ne compare que le téléphone → rouge AC-4 (site seul changé).
+- **M5** : le bloc des coordonnées ne compare que le téléphone → rouge AC-4 (site changé des deux côtés, à des valeurs
+  différentes).
+- **M6** : la fusion retirée (un champ non modifié reste à sa valeur d'ouverture) → rouge AC-5 ter.
 
 ## Gates
 
@@ -143,16 +167,31 @@ Rust n'est touché, hormis les `.ftl` : `cargo test -p kesh-i18n` et `textes_coh
 ## Ce qui ne se traite pas ici
 
 - **Le verrou de période** (`submitLock`, `submitUnlock`, `:291` et `:306`) : il ne porte pas de saisie à écraser. Hors #953.
-- **Les autres écrans à version** : même famille, non jugée ici. Inventaire : `git grep -n OPTIMISTIC_LOCK_CONFLICT --
-  'frontend/src/routes' ':!*.test.ts'`, relevé à la validation P1. Il donne `settings/invoicing`, `settings/dunning`,
-  `settings/api-keys`, `contacts`, `products`, `accounts`, `users` et `bank-accounts` (qui relit, 28-4b). `invoices/[id]` et
-  `supplier-invoices/[id]` (et `/edit`) sont des fiches de pièce, hors de cette famille de formulaires. Le développeur lit
-  chacun de ces écrans. Ce qui relit puis renvoie la saisie sans la montrer s'ouvre en issue, **une par écran** : la fiche
-  ne le traite pas.
+- **Les autres écrans à version** (validation P2, 34-6-F3). L'inventaire part du symptôme, non d'un nom de code. Commande :
+  `git grep -l "OPTIMISTIC_LOCK_CONFLICT\|status === 409" -- frontend/src ':!*.test.ts'`, plus large que celle de la P1, qui
+  ne lisait que `routes/`. Le traitement du 409 de chaque écran est lu, avec cette question : relit-il en gardant la saisie,
+  de sorte qu'un second clic écrase sans montrer ?
+  - **Oui, le symptôme de #953** : `routes/(app)/bank-accounts/+page.svelte:413-421`. Son doc-comment le dit : « le dialogue
+    reste ouvert avec son message, et le second essai part avec la version relue ». **Non traité ici, issue demandée.**
+  - **Non : la saisie est remplacée par la valeur relue** (perte de saisie, sans écrasement silencieux) :
+    `settings/invoicing:256-262`, `settings/email-templates:171-177` (`syncDraftFromTemplate`, `:131-139`),
+    `SessionIdleSection.svelte:75-81` (`apply`, `:29-32`), `JournalEntryForm.svelte:238-244`,
+    `McpSettingsSection.svelte:91-97`, `settings/dunning:124-127,169-171` (`load`).
+  - **Non : un dialogue de conflit, ou une fermeture** : `InvoiceForm.svelte:611-614`, `contacts:527-529,578-580`,
+    `products:389-394,432-435`, `AutoBackupSection.svelte:192-193`.
+  - **Non : « Rechargez la page », sans relecture**, où un second clic rend 409 de nouveau : `accounts:298,394,420`,
+    `users:182`. Pas de saisie gardée : `settings/api-keys:223` (révocation) et `McpKeysSection.svelte:181`.
+  - Les fiches de pièce (`invoices/[id]`, `supplier-invoices/[id]` et `/edit`) et les modules `.ts` de la liste (formats,
+    API) sont hors de cette famille.
+
+  ⚠️ **Lu au traitement du 409, non exécuté.** L'étape 0 du développement relit ce classement. Elle ferme l'ensemble par la
+  même commande, et ajoute les formulaires qui envoient une `version` sans reconnaître le 409 (`git grep -ln "version:" --
+  frontend/src ':!*.test.ts'`). Une issue s'ouvre par écran confirmé.
 
 ## Recoupements
 
-- `settings/+page.svelte` : aucune autre story de l'Epic 34.
+- `settings/+page.svelte` : **34-11a1** y change l'affichage du compte bancaire (`:607`, ligne S16, AC-10,
+  `34-11a1-compte-sans-iban.md:69`), dans un bloc distinct. Fusion par union (validation P2, 34-6-F6).
 - `messages.ftl` : toutes les stories qui ajoutent des clés ; à fusionner par union.
 
 ## Change Log
@@ -166,6 +205,27 @@ Rust n'est touché, hormis les `.ftl` : `cargo test -p kesh-i18n` et `textes_coh
   - **F3 (L)** : le pays normalisé comme le serveur (`address_input.rs:37-43` lu), et `addressStructured` à `null`.
   - **F4 (L)** : cycle de vie de l'avis, AC-6 bis.
   - **F5 (L)** : l'inventaire des écrans à version est donné, par sa commande.
+- 2026-11-10 : **validation P2 (Opus) : 3 M, 4 L, tous remédiés** (Opus 5.5). Rapport
+  `kesh-gate-logs/e34-validate-p2-e343.md`. Prémisses relues :
+  - le contrôle de version précède le no-op (`companies.rs:857-871`) ;
+  - le traitement du 409 de chaque écran de l'inventaire ;
+  - `34-11a1-compte-sans-iban.md:69`.
+  - **La sévérité n'a pas baissé** : P1 1 M → P2 3 M. Signal de la règle de splitting, à déclarer au Project Lead, avec le
+    constat de l'amendement D5 :
+    - **F1 (M), neuf** : présent depuis la création, la M2 et l'AC-5 d'origine ne se tenaient pas l'un l'autre. AC-5 récrit.
+    - **F2 (M), neuf** : préexistant, et conservé par les définitions de la P1 sans qu'elles l'aient créé. Le champ non
+      modifié écrasait l'écriture du collègue. Fusion à trois voies, sur arbitrage de l'orchestrateur, consignée à
+      C-e343-14 ; AC-5 ter, M6.
+    - **F3 (M), né de la remédiation P1** (F5) : l'inventaire partait d'un nom de code. Il part maintenant du symptôme, et il
+      est classé : un écran confirmé, `bank-accounts`, avec issue demandée.
+
+    Deux défauts d'origine distincts et un défaut né d'une remédiation : pas de recyclage, la fiche reste dans
+    `settings/`. Pas de découpage proposé.
+  - **LOW** :
+    - **F4** : clé « (vide) ».
+    - **F5** : la copie est mise à jour après toute relecture.
+    - **F6** : recoupement avec 34-11a1.
+    - **F7** : AC-5 bis en deux montages.
 
 ## Dev Agent Record
 
