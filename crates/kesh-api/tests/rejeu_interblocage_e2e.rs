@@ -2527,3 +2527,146 @@ async fn fiscal_year_reopen_is_replayed_when_it_is_the_deadlock_victim(pool: MyS
     assert_eq!(audits, 1, "une seule entrée d'audit");
     capture.exiger_un_rejeu("fiscal_years::reopen");
 }
+
+// ============================================================
+// Test 34-7 — renommage d'un exercice victime (Story 34-7, #945)
+// ============================================================
+
+/// Compte les entrées d'audit `fiscal_year.updated` de l'exercice `id`.
+async fn audits_renommage(pool: &MySqlPool, id: i64) -> i64 {
+    compter(
+        pool,
+        "SELECT COUNT(*) FROM audit_log WHERE action = 'fiscal_year.updated' AND entity_id = ?",
+        id,
+    )
+    .await
+}
+
+/// `PUT /fiscal-years/{M}`, victime, est **rejoué** et rend le refus de son vrai
+/// motif (AC-1 de la 34-7, #945).
+///
+/// Montage : M (2010) et N (2011), N nommé `"Exercice 2011 (rejeu)"`. La
+/// transaction lourde tient N ; le renommage de M au nom de N, lancé en tâche,
+/// tient M (`LOCK_IN_COMPANY_SQL`) puis est vu en attente sur sa lecture de
+/// doublon (motifs `AND name = ?` et `FOR UPDATE`, index
+/// `uq_fiscal_years_company_name`), qui demande N. La transaction demande M :
+/// cycle ; InnoDB annule le renommage, plus léger ; la transaction obtient M,
+/// annule ; la route rejoue, trouve l'homonyme et rend **400** « Un exercice avec
+/// ce nom existe déjà », sans entrée d'audit.
+///
+/// ⛔ **Tue les mutations M1** (l'enveloppe retirée) **et M2** (une seule
+/// tentative) : 500, et pas de témoin de rejeu.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn fiscal_year_rename_is_replayed_when_it_is_the_deadlock_victim(pool: MySqlPool) {
+    let ctx = monter(&pool).await;
+    let capture = CaptureRejeu::installer();
+    let m = exercice_sql(&pool, ctx.company_id(), 2010, "Open").await;
+    let n = exercice_sql(&pool, ctx.company_id(), 2011, "Open").await;
+
+    let mut lourde = transaction_lourde(&pool).await;
+    sqlx::query("SELECT id FROM fiscal_years WHERE id = ? FOR UPDATE")
+        .bind(n)
+        .fetch_one(&mut *lourde)
+        .await
+        .unwrap();
+
+    let route = requete_en_tache(
+        &ctx,
+        reqwest::Method::PUT,
+        &format!("/api/v1/fiscal-years/{m}"),
+        Some(json!({ "name": "Exercice 2011 (rejeu)" })),
+    );
+    let (status, corps) = victime(
+        &pool,
+        lourde,
+        route,
+        &["AND name = ?", "FOR UPDATE"],
+        "SELECT id FROM fiscal_years WHERE id = ? FOR UPDATE",
+        m,
+    )
+    .await;
+
+    assert_eq!(
+        status, 400,
+        "⛔ l'interblocage doit être rejoué, puis refusé pour son vrai motif : {corps}"
+    );
+    assert_eq!(corps["error"]["code"], "VALIDATION_ERROR", "{corps}");
+    assert!(
+        corps["error"]["message"]
+            .as_str()
+            .is_some_and(|msg| msg.contains("existe déjà")),
+        "le refus nomme le doublon de nom : {corps}"
+    );
+    let nom: String = sqlx::query_scalar("SELECT name FROM fiscal_years WHERE id = ?")
+        .bind(m)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(nom, "Exercice 2010 (rejeu)", "M n'est pas renommé");
+    assert_eq!(audits_renommage(&pool, m).await, 0, "aucune entrée d'audit");
+    capture.exiger_un_rejeu("fiscal_years::update_name");
+}
+
+/// `PUT /fiscal-years/{M}`, victime, est **rejoué** et un renommage valide
+/// aboutit (AC-2 de la 34-7, #945).
+///
+/// Montage : M (2010) et N (2011). La transaction lourde **insère**, sans la
+/// valider, une ligne au nom visé (`"Exercice libre (rejeu)"`, année 2012 : ni
+/// le nom ni la date de début ne heurtent M ou N). Le renommage de M à ce nom,
+/// lancé en tâche, tient M puis est vu en attente sur sa lecture de doublon, qui
+/// demande le verrou de la ligne insérée dans `uq_fiscal_years_company_name`. La
+/// transaction demande M : cycle ; InnoDB annule le renommage, plus léger ; la
+/// transaction obtient M, annule (la ligne insérée disparaît) ; la route rejoue,
+/// ne trouve plus d'homonyme et rend **200**, M renommé, une seule entrée
+/// d'audit.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn fiscal_year_valid_rename_succeeds_after_the_replay(pool: MySqlPool) {
+    let ctx = monter(&pool).await;
+    let capture = CaptureRejeu::installer();
+    let m = exercice_sql(&pool, ctx.company_id(), 2010, "Open").await;
+    let _n = exercice_sql(&pool, ctx.company_id(), 2011, "Open").await;
+    let vise = "Exercice libre (rejeu)";
+
+    let mut lourde = transaction_lourde(&pool).await;
+    sqlx::query(
+        "INSERT INTO fiscal_years (company_id, name, start_date, end_date, status) \
+         VALUES (?, ?, ?, ?, 'Open')",
+    )
+    .bind(ctx.company_id())
+    .bind(vise)
+    .bind(NaiveDate::from_ymd_opt(2012, 1, 1).unwrap())
+    .bind(NaiveDate::from_ymd_opt(2012, 12, 31).unwrap())
+    .execute(&mut *lourde)
+    .await
+    .unwrap();
+
+    let route = requete_en_tache(
+        &ctx,
+        reqwest::Method::PUT,
+        &format!("/api/v1/fiscal-years/{m}"),
+        Some(json!({ "name": vise })),
+    );
+    let (status, corps) = victime(
+        &pool,
+        lourde,
+        route,
+        &["AND name = ?", "FOR UPDATE"],
+        "SELECT id FROM fiscal_years WHERE id = ? FOR UPDATE",
+        m,
+    )
+    .await;
+
+    assert_eq!(status, 200, "⛔ l'interblocage doit être rejoué : {corps}");
+    assert_eq!(corps["name"], vise, "{corps}");
+    let homonymes: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM fiscal_years WHERE company_id = ? AND name = ?",
+    )
+    .bind(ctx.company_id())
+    .bind(vise)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(homonymes, 1, "seul M porte le nom : la ligne insérée a disparu");
+    assert_eq!(audits_renommage(&pool, m).await, 1, "une seule entrée d'audit");
+    capture.exiger_un_rejeu("fiscal_years::update_name");
+}
