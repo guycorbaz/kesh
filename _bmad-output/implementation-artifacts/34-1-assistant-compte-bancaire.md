@@ -195,6 +195,37 @@ atteint l'assistant). Ordre : 34-1, puis 34-2, puis 34-11a1, 34-11a2.
   sur le numéro (C-e3401-1) ; (5) M7 n'est exercée que par un corps 0.17.5 qui **change** la banque (le cas « même banque »
   s'arrête au no-op) : test ajouté, `bank_step_update_without_new_fields_keeps_them`. Choix : `e34-choix-autonomes-e3401.md`,
   C-e3401-1 à 7.
+- 2026-11-11 : **revue de code P1** (Sonnet, trois lentilles B, E, A ; rapports `kesh-gate-logs/e3401-review-p1-{B,E,A}.md`) :
+  **0 CRITICAL, 0 HIGH, 0 MEDIUM, 17 LOW** (B 8, E 6, A 3) ; AC-1 à AC-9 satisfaits (lentille A). Remédiation (Opus 5.5), un
+  seul commit de code, `7368944b` :
+  - **A-1 = B-2** (écran) : `bankLedgerLoading` désactive *Enregistrer* et garde `submitBankAccount` pendant le chargement de la
+    liste ; un `onchange` du sélecteur pose `bankLedgerTouched` (drapeau non réactif), et la présélection du 1020 n'écrase plus un
+    choix fait pendant le chargement. Deux Vitest (promesse retenue), mutations M13, M14.
+  - **B-5** : `linkableLedgerAccounts` trie par numéro ; le tri propre du formulaire *Lier* est retiré ; le Vitest reçoit une liste
+    inversée (M15).
+  - **E-1** : la liste en échec affiche toujours la phrase de l'étape (`onboarding-bank-ledger-load-error`), suivie du motif entre
+    parenthèses quand `errorMessageOf` en donne un autre (l'`ApiError` du client : « Impossible de contacter le serveur… ») ;
+    Vitest avec une `ApiError` ; capture 03 refaite.
+  - **B-1 = E-3 = A-2** : `bank_step_replays` (f) — rejeu à `"   "` puis `""` sur un compte décrit : effacée (C-e341-34) ;
+    mutation M12 « blanc traité comme absent ».
+  - **A-3** : `bank_step_refuses_a_renumbered_payable` ; `bank_step_refuses_the_active_receivable_not_an_archived_one` (un ancien
+    compte débiteurs archivé garde `role`, son successeur actif doit être refusé) pour M11 (lecture par `role`).
+  - **B-7 / A-3** : mutations proposées jouées — M8 (clause `description` d'`is_no_op_change`), M9 (`require_postable = false`),
+    M10 (`RoleLookupLock::ForUpdate` dans `refuse_future_claim_account`, attendue **équivalente** : aucun test n'observe un verrou
+    de plus), M11, M12 ; résultats au Dev Agent Record.
+  - **B-6** : manuel (`.tex`, note API) et CHANGELOG : « sur un compte déjà créé » ; à la création, un champ omis laisse le compte
+    sans description ni lien ; une description vide vaut `null`.
+  - **Non traités ici, issues demandées** (une par problème) : B-3 = E-4 (lien contrôlé sur le pool hors transaction ; un lien
+    inchangé devenu archivé ou non imputable est refusé, quand le `PUT` ne contrôle qu'un changement) ; E-2 (le message de
+    `BANK_ACCOUNT_LEDGER_IS_CLAIM_ACCOUNT` parle d'une désignation « dans Administration → Facturation » qui n'existe pas encore à
+    l'étape 6) ; E-5 (un rejeu par l'écran ne préremplit pas depuis un compte principal existant : description effacée, lien
+    remplacé) ; B-4 (`maxlength` compte des unités UTF-16, le serveur des caractères — préexistant, non tracé). E-6 : versé par
+    l'orchestrateur à #987. B-8 : sans défaut (C-e3401-1 assumé).
+  - Grep du symptôme : `inchangés`, `tels quels`, `restent tels` dans `docs/`, `CHANGELOG.md`, `crates/`, `frontend/src` — seuls
+    les deux sites corrigés portaient la phrase absolue.
+  - ⚠️ **Pause de la station** (décision de Guy du 2026-11-11, `kesh-gate-logs/PAUSE-HEAVY`) : le gate ciblé de la remédiation,
+    qui attendait encore le verrou, a été arrêté ; tests, mutations, PDF, gates et E2E sont **différés** à la levée de la pause
+    (script d'attente). Leurs chiffres s'écrivent au Dev Agent Record une fois tournés.
 
 ## Dev Agent Record
 
