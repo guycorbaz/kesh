@@ -1,6 +1,6 @@
 # Story 34-6 : après un 409, l'édition de la société montre l'écriture concurrente avant de l'écraser (#953)
 
-Status: ready-for-dev
+Status: review
 
 *Fiche rédigée le 2026-11-10 en autonomie (Opus 5.5), worktree `/home/gcorbaz/devel/kesh-e34`, branche `chore/epic-34-kickoff`,
 numéros de ligne de `a75835db`. Release **0.17.6**, Epic 34. **Aucune migration, aucun changement serveur.** Registre :
@@ -64,7 +64,9 @@ l'adresse qu'un collègue vient de corriger, ni ma propre correction déjà enre
   - Sans la fusion, un collègue corrige la rue, l'Administrateur corrige le NPA, et son second clic remet l'ancienne rue :
     c'est le dommage de #953, déplacé du silence à un avertissement.
 - **Sur un 409**, on relit, on fusionne, puis on compare les champs **du bloc** :
-  1. **Aucun n'a changé** depuis la copie : le message actuel. L'essai suivant est sans danger.
+  1. **Aucun n'a changé** depuis la copie : le message actuel. L'essai suivant est sans danger. *(Au développement, LOW
+     F1 de la validation P5 : ce cas lit `changed = ∅` **et** `merged = ∅` ; avec `merged ≠ ∅`, c'est l'avis de fusion du
+     paragraphe suivant, et l'édition reste ouverte.)*
   2. **Tous égalent la saisie, après la fusion, et au moins un champ avait été modifié avant elle** (définition
      d'`already-saved`, ci-dessous) : l'édition se ferme, `data` porte la société relue, et une notification dit « déjà
      enregistré ».
@@ -143,22 +145,22 @@ l'adresse qu'un collègue vient de corriger, ni ma propre correction déjà enre
 
 ## Tâches
 
-- [ ] **T1 — rouges d'abord**, journalisés dans `kesh-gate-logs/e343/rouges.log` :
+- [x] **T1 — rouges d'abord**, journalisés dans `kesh-gate-logs/e343/rouges.log` :
   - Vitest de `company-conflict.ts` (rouge à l'import) ;
   - Vitest de `settings-page.test.ts` : le test `:289-310` récrit selon l'AC-1, et un test par bloc ;
   - E2E de l'AC-1.
-- [ ] **T2** : `company-conflict.ts` et ses tests. On couvre les trois cas, puis un champ égal à la saisie (AC-5 bis), vide
+- [x] **T2** : `company-conflict.ts` et ses tests. On couvre les trois cas, puis un champ égal à la saisie (AC-5 bis), vide
   contre `null`, les espaces, un pays en minuscules, un pays vide contre `CH`, et `addressStructured` à `null`. Puis la
   fusion (AC-5 ter), le cas `kind = 'unchanged'` avec `merged ≠ ∅`, la saisie sans modification (jamais `already-saved` ; avis
   de fusion seulement si `merged ≠ ∅`, édition laissée ouverte), et les deux montages de l'AC-5 bis.
-- [ ] **T3** : `CompanyConflictNotice.svelte`, les trois blocs, la copie prise à `start*Edit` et mise à jour après toute
+- [x] **T3** : `CompanyConflictNotice.svelte`, les trois blocs, la copie prise à `start*Edit` et mise à jour après toute
   relecture réussie, la saisie fusionnée.
-- [ ] **T4** : i18n aux quatre locales, et les gardes de replis.
-- [ ] **T5** : E2E. `company-address.spec.ts:128-157` est récrit, et un cas « coordonnées, un seul champ changé » s'ajoute
+- [x] **T4** : i18n aux quatre locales, et les gardes de replis.
+- [x] **T5** : E2E. `company-address.spec.ts:128-157` est récrit, et un cas « coordonnées, un seul champ changé » s'ajoute
   à `company-contact-details.spec.ts`.
-- [ ] **T6** : manuel et PDF ; captures de l'avis pour l'adresse et pour les coordonnées, en thème clair, dans
+- [x] **T6** : manuel et PDF ; captures de l'avis pour l'adresse et pour les coordonnées, en thème clair, dans
   `kesh-gate-logs/e343/captures/`.
-- [ ] **T7** : CHANGELOG *Corrigé* (`refs #953`).
+- [x] **T7** : CHANGELOG *Corrigé* (`refs #953`).
 
 ### Mutations nommées
 
@@ -247,11 +249,68 @@ Rust n'est touché, hormis les `.ftl` : `cargo test -p kesh-i18n` et `textes_coh
   `kesh-gate-logs/e34-validate-p4-e343.md`. **F1 (M), né de la remédiation P3** (34-6-F2) : la précondition « au moins un
   champ modifié avant la fusion » est portée au cas 2 de « Sur un 409 » et à l'AC-3, et T2 est alignée sur la règle de
   l'avis de fusion.
+- 2026-11-10 : **développement** (Opus 5.5, worktree `kesh-e346`, base `665de151`). Choix neufs au registre
+  `e34-choix-autonomes-e346.md`, C-e346-1 à 7. Statut `review`.
+  - **Étape 0.** LOW F1 de la validation P5 : traité par un membre de phrase au cas 1 de « Sur un 409 » (ce cas lit
+    `changed = ∅` et `merged = ∅`). Lu au code : `+page.svelte` (base) `:78`, `:143`, `:203`, `data = await
+    fetchCompanyCurrent()` puis la saisie gardée — la prémisse tient. Le manuel ne décrivait pas le conflit : `git grep -n
+    "Conflit de version\|rechargées" -- 'docs/manual/*.tex'` ne rend rien. L'inventaire des écrans à version est relu par
+    ses deux commandes (C-e346-7) : seul `bank-accounts` porte le symptôme.
+  - **Écart à la consigne Edit** : les quinze tests ajoutés à la fin de `settings-page.test.ts` l'ont été par un `cat >>`
+    (ajout en fin de fichier, sans remplacement) ; le reste du code par Edit ou Write (fichiers neufs). Les mutations, par
+    un script à motif vérifié unique, restaurées par `git checkout --` et `touch`.
 
 ## Dev Agent Record
 
 ### Agent Model Used
 
+Opus 5.5 (claude-opus-5-5), en autonomie.
+
 ### Completion Notes List
 
+- **Rouges d'abord** (`kesh-gate-logs/e346/rouges.log`) : Vitest, `company-conflict.test.ts` rouge à l'import et 12 rouges
+  de page (les AC-2 et AC-5 bis a) étaient verts avant le correctif : ils fixent le message actuel) ; E2E sur le frontend
+  de base, 3 rouges (AC-1 adresse, conflit des coordonnées, AC-4), éléments introuvables.
+- **Mutations** (`kesh-gate-logs/e346/mut/M1..M6.log`), toutes rouges : M1 9 tests, M2 1 (AC-5 de page), M3 1 (AC-3),
+  M4 3, M5 1 (AC-4), M6 7. Aucune équivalente. Le fichier restauré n'a laissé aucune modification (`git status`).
+- **Tests**, recomptés à la source de `665de151` à `HEAD` : `company-conflict.test.ts` 0 → 19 `it(` ;
+  `settings-page.test.ts` 16 → 31 `it(` (+15, et celui de `:289-310` récrit) ; E2E `company-address.spec.ts` 4 → 4 (un
+  récrit), `company-contact-details.spec.ts` 5 → 6 (le test 4 récrit, un 4 bis ajouté).
+- **i18n** : six clés `settings-company-conflict-*` (`changed`, `merged`, `will-replace`, `merged-notice`,
+  `already-saved`, `empty`) aux quatre locales (`/usr/bin/grep -c "^settings-company-conflict-"` : 6 par locale), repli
+  identique ; `sitesTotal` 2922 → 2928 (+6, ventilé dans `i18n-keys.test.ts`).
+- **Gates au dernier commit de code** `91a2acf0` :
+  - `npm run check` : 0 erreur, 29 avertissements (30 avec celui que la story introduisait, corrigé par `91a2acf0`) ;
+    `lint-i18n-ownership` PASS ; `test:unit` 223 fichiers, 2915 tests verts ; `build` vert.
+  - Bases remises à neuf, `scripts/test-fast.sh --ci` : 5138 exécutés, 5138 passés, 12 ignorés (320 s) ;
+    `cargo build --workspace --all-targets` vert.
+  - `scripts/gate-ci.sh` **non lancé** : aucun fichier Rust touché ; les `.ftl` sont couverts par `test-fast` (parité
+    des locales, `textes_coherents`).
+  - **E2E complet**, base `kesh_e2e_e346` recréée vide, frontend construit à `91a2acf0` : run r3, **386 passés, 7 échecs,
+    18 ignorés** (17,6 min). Les sept sont ceux de la KF-029 (#97) nommés par `docs/testing.md` : `mode-expert:26`,
+    `:41`, `onboarding-path-b:65`, `:92`, `onboarding:57`, `:77`, `:150`. Les dix tests de `company-address` et
+    `company-contact-details` passent. Un run r2 antérieur (369 passés, 13 échecs, 11 non joués) est **écarté** : le
+    runner n'y recevait pas `KESH_INBOX_DIR` ni `KESH_DOCUMENTS_DIR`, et les six échecs hors KF-029 le disaient
+    (« répertoire absent ou non inscriptible par le runner », `ENOENT … /tmp/kesh-e2e/inbox`) ; r3 les passe au runner.
+- **Manuel** : § *Vos coordonnées sur la facture* du manuel utilisateur, PDF régénéré (`make user`, 3 passes) et contrôlé
+  aplati (`pdftotext … | tr '\n' ' '`, la phrase « Si quelqu'un a modifié la société entre-temps… » s'y lit entière).
+- **Captures** (thème clair, `kesh-gate-logs/e346/captures/`) : `e346-adresse-conflit-et-fusion.png`,
+  `e346-coordonnees-un-champ-en-conflit.png`, `e346-email-vide-ailleurs.png`, `e346-coordonnees-autre-bloc.png`.
+- **Issue à ouvrir** : `bank-accounts/+page.svelte:413-421`, le second essai part avec la version relue sans montrer
+  l'écriture concurrente (symptôme de #953 sur un autre écran).
+
 ### File List
+
+- `frontend/src/lib/features/settings/company-conflict.ts` (neuf)
+- `frontend/src/lib/features/settings/company-conflict.test.ts` (neuf)
+- `frontend/src/lib/features/settings/CompanyConflictNotice.svelte` (neuf)
+- `frontend/src/routes/(app)/settings/+page.svelte`
+- `frontend/src/routes/(app)/settings/settings-page.test.ts`
+- `frontend/src/lib/shared/i18n-keys.test.ts`
+- `frontend/tests/e2e/company-address.spec.ts`
+- `frontend/tests/e2e/company-contact-details.spec.ts`
+- `crates/kesh-i18n/locales/{fr-CH,de-CH,it-CH,en-CH}/messages.ftl`
+- `docs/manual/fr/user-manual.tex`, `docs/manual/fr/user-manual.pdf`
+- `CHANGELOG.md`
+- `_bmad-output/implementation-artifacts/34-6-societe-apres-409.md`, `34-6-societe-apres-409-review-prompt-p1.md`,
+  `e34-choix-autonomes-e346.md`, `sprint-status.yaml`
