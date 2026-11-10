@@ -85,6 +85,11 @@ chaque part, contraste contre le fond de la carte), et des teintes **dans les je
    parts (C-e342-17 ; *P4-F5 : la note existante ne le dit pas*). *(P5-5)* Elle est jointe **sous la même condition** que
    `homepage-charts-pie-desc-base` (`totalExpenses ≠ expensePostsBase`), **après** la note dans le DOM si celle-ci est rendue,
    seule sinon ; Vitest : présente, avec 30.00, dans le cas « différents » (fixture ci-dessous), absente dans le cas « égaux ».
+   *(Validation P6, F1)* La note des comptes créditeurs est **hors** de `{#if hasPosts}` (`ExpensePieCard.svelte:173-180`) :
+   la phrase de la base ne s'y accroche donc pas seule. Sa condition complète est **`hasPosts` et `totalExpenses ≠
+   expensePostsBase`** ; **sans poste**, elle est absente (pas d'anneau, pas de parts dont dire la base), même si les totaux
+   diffèrent — la carte montre alors « Aucun poste de charges… » et la note seule. Vitest : troisième cas, sans poste et totaux
+   différents (fixture `HomepageCharts.test.ts:108-119`, `totalExpenses: '-50'`, base `'0'`) : phrase absente.
    **`<desc>`** *(P2-10-2 : il dit aujourd'hui « pour un total de { $base } »,
    `ExpensePieCard.svelte:74-92`, qui contredirait le centre)*. **Tranché à la validation P3 (P3-10-1)** : le `<desc>` existe
    déjà en **deux clés**, choisies par le nombre de comptes — `homepage-charts-pie-desc-one` (« … un seul compte de charges,
@@ -164,6 +169,8 @@ chaque part, contraste contre le fond de la carte), et des teintes **dans les je
   à celle pour 4, et au moins égale au plancher lisible que la fonction déclare).
 - **M8** : `homepage-charts-pie-desc-base` (et la phrase `homepage-charts-pie-base-note`) jointe sans condition, ou sous la
   condition inversée → rouge AC-4 (Vitest, cas « égaux » et cas « différents »).
+- **M8-bis** : la phrase `homepage-charts-pie-base-note` conditionnée aux seuls totaux, sans `hasPosts` → rouge AC-4 (Vitest,
+  cas sans poste et totaux différents).
 - **M5** : `#facc15` (jaune, 1,5:1 sur blanc) en cinquième couleur → rouge AC-7.
 
 ## Gates
@@ -217,6 +224,10 @@ Aucun fichier de code commun avec les autres stories de l'Epic 34. `user-manual.
   cette fiche 2 LOW, retenus : **P5-4** → la sous-puce CHANGELOG de la P2, déplacée par les insertions P3 et P4, est remise
   sous son entrée, texte inchangé ; **P5-5** → phrase jointe spécifiée à l'AC-4 (place, condition, Vitest présente/absente),
   `homepage-charts-pie-base-note` ajoutée à C-e342-25.
+- 2026-11-10 : Validation P6 ciblée (Haiku), remédiation (Opus 5.5). Rapport `kesh-gate-logs/e34-validate-p6-e342.md`, pour
+  cette fiche 1 M, retenu, et 1 LOW au registre : **F1** MEDIUM, **né de la remédiation P5** (lu : `ExpensePieCard.svelte:167-180`,
+  la note des comptes créditeurs est hors de `{#if hasPosts}`) → condition `hasPosts` et totaux différents, absence sans poste
+  dite, troisième cas Vitest, M8-bis ; **F3** LOW → titre de C-e342-25 annoté au registre.
 
 ## Dev Agent Record
 

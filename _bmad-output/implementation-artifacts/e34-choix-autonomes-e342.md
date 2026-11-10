@@ -226,6 +226,9 @@ Mise à jour par union, jamais par écrasement.*
 
 ### C-e342-25 — Le `<desc>` de l'anneau : deux clés existantes au total, une clé jointe pour la base
 
+*(Annoté à la validation P6, F3 : l'état retenu compte **deux** clés jointes pour la base — `homepage-charts-pie-desc-base` dans
+le `<desc>`, `homepage-charts-pie-base-note` visible — sous la condition `hasPosts` et `totalExpenses ≠ expensePostsBase`.)*
+
 - **Contexte** : le `<desc>` existe en deux clés selon le nombre de comptes (`homepage-charts-pie-desc-one`,
   `homepage-charts-pie-desc`), toutes deux « pour un total de { $base } » ; la remédiation P2 en prescrivait deux autres sans
   dire ce qu'il advenait de celles-là (finding P3-10-1).
