@@ -100,16 +100,31 @@
 	let markError = $state('');
 	// Revue P1 de la 33-6 (E-4 = A-4) : même geste que la fiche facture. Tant que la liste
 	// n'a pas été relue, ses montants sont périmés : aucun « Régler » n'est offert.
+	// Story 34-5 (#951, C-e343-4) : après un 409 de version, rien n'a été écrit —
+	// `conflict` (liste relue) et `conflict-blocked` (pas relue). `settleUnknownNumber`
+	// nomme la facture dans les deux avis.
+	type SettleBlocking = 'blocked' | 'conflict-blocked';
 	let settleUnknownNumber = $state<string | null>(null);
-	let settleOutcome = $state<'known' | 'verify' | 'blocked'>('known');
+	let settleOutcome = $state<'known' | 'verify' | 'conflict' | SettleBlocking>('known');
 	let settleRereading = $state(false);
+	let settleBlocked = $derived(
+		settleOutcome === 'blocked' || settleOutcome === 'conflict-blocked',
+	);
 
-	async function rereadAfterUnknownOutcome() {
-		settleOutcome = 'blocked';
+	/** Relit la liste : `blocking` tant qu'elle n'a pas été relue, `arrival` ensuite. */
+	async function rereadAfterSettle(blocking: SettleBlocking, arrival: 'verify' | 'conflict') {
+		settleOutcome = blocking;
 		settleRereading = true;
 		const relue = await load();
 		settleRereading = false;
-		if (relue) settleOutcome = 'verify';
+		if (relue) settleOutcome = arrival;
+	}
+
+	/** « Relire » depuis un état bloquant : l'état d'arrivée suit celui d'origine. */
+	function rereadFromBlocked() {
+		return settleOutcome === 'conflict-blocked'
+			? rereadAfterSettle('conflict-blocked', 'conflict')
+			: rereadAfterSettle('blocked', 'verify');
 	}
 	// Chargés une fois : le dialogue de règlement en a besoin pour proposer une
 	// contrepartie (Story 24-3, #372).
@@ -273,7 +288,8 @@
 		markSubmitting = true;
 		markError = '';
 		try {
-			const res = await settleInvoice(cible.id, payload);
+			// Story 34-5 (#951) : la version de la ligne, lue avec la liste.
+			const res = await settleInvoice(cible.id, { ...payload, version: cible.version });
 			notifySuccess(
 				res.fullySettled
 					? i18nMsg('invoice-settle-success-full', 'Règlement enregistré — facture soldée')
@@ -291,7 +307,15 @@
 				settleUnknownNumber = cible.invoiceNumber;
 				markOpen = false;
 				markTarget = null;
-				await rereadAfterUnknownOutcome();
+				await rereadAfterSettle('blocked', 'verify');
+			} else if (isApiError(err) && err.code === 'OPTIMISTIC_LOCK_CONFLICT') {
+				// Story 34-5 (C-e343-4) : la facture a changé, rien n'a été écrit. Le
+				// dialogue se ferme et la liste est relue ; l'avis nomme la facture
+				// d'après `cible`, capturée avant l'envoi (`markTarget` vaut `null` ici).
+				settleUnknownNumber = cible.invoiceNumber;
+				markOpen = false;
+				markTarget = null;
+				await rereadAfterSettle('conflict-blocked', 'conflict');
 			} else if (isApiError(err)) {
 				markError = err.message;
 				notifyError(err.message);
@@ -359,7 +383,7 @@
 	</div>
 </div>
 
-{#if settleOutcome !== 'known'}
+{#if settleOutcome === 'verify' || settleOutcome === 'blocked'}
 	<div
 		class="mb-4 space-y-2 rounded-md border border-warning bg-warning/10 px-3 py-2 text-sm"
 		role="alert"
@@ -381,8 +405,38 @@
 		{#if settleOutcome === 'blocked' && !settleRereading}
 			<Button
 				variant="outline"
-				onclick={rereadAfterUnknownOutcome}
+				onclick={rereadFromBlocked}
 				data-testid="due-dates-settle-unknown-reread"
+			>
+				{i18nMsg('invoice-settle-unknown-reread', 'Relire')}
+			</Button>
+		{/if}
+	</div>
+{:else if settleOutcome === 'conflict' || settleOutcome === 'conflict-blocked'}
+	<!-- Story 34-5 (#951, C-e343-4) : un 409 de version, rien n'a été écrit. -->
+	<div
+		class="mb-4 space-y-2 rounded-md border border-warning bg-warning/10 px-3 py-2 text-sm"
+		role="alert"
+		data-testid="due-dates-settle-conflict"
+	>
+		<p>
+			{settleOutcome === 'conflict'
+				? i18nMsg(
+						'due-dates-settle-conflict',
+						'Le règlement de la facture { $number } n’a pas été enregistré : elle a été modifiée entre-temps. La liste a été relue : vérifiez son reste dû ci-dessous, ou sa fiche, avant de recommencer.',
+						{ number: settleUnknownNumber ?? '' },
+					)
+				: i18nMsg(
+						'due-dates-settle-conflict-reread-failed',
+						'Le règlement de la facture { $number } n’a pas été enregistré : elle a changé, et la liste n’a pas pu être relue. Les règlements restent indisponibles tant qu’elle n’a pas été relue.',
+						{ number: settleUnknownNumber ?? '' },
+					)}
+		</p>
+		{#if settleOutcome === 'conflict-blocked' && !settleRereading}
+			<Button
+				variant="outline"
+				onclick={rereadFromBlocked}
+				data-testid="due-dates-settle-conflict-reread"
 			>
 				{i18nMsg('invoice-settle-unknown-reread', 'Relire')}
 			</Button>
@@ -536,7 +590,7 @@
 								variant="outline"
 								size="sm"
 								onclick={() => openMark(inv)}
-								disabled={settleOutcome === 'blocked'}
+								disabled={settleBlocked}
 								data-testid="due-dates-settle-{inv.id}"
 							>
 								{i18nMsg('invoice-settle-button-short', 'Régler')}

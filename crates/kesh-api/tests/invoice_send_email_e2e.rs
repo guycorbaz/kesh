@@ -48,6 +48,8 @@ use rust_decimal_macros::dec;
 use serde_json::json;
 use sqlx::MySqlPool;
 
+mod common;
+
 const TEST_JWT_SECRET: &[u8] = b"test-secret-32-bytes-minimum-test-secret-padding";
 const TEST_ADMIN_PASSWORD: &str = "admin123";
 
@@ -2125,7 +2127,7 @@ async fn settle(
             .fetch_one(pool)
             .await
             .unwrap();
-    kesh_db::repositories::invoice_settlements_write::settle_invoice(
+    common::settle_at_current_version(
         pool,
         admin_id,
         company_id,

@@ -765,6 +765,8 @@ mod arrondi_5_centimes {
             },
             dec!(123.45),
             NaiveDate::from_ymd_opt(INVOICE_DATE.0, INVOICE_DATE.1, INVOICE_DATE.2).unwrap(),
+            // Story 34-5 : la version rendue par la validation.
+            v.invoice.version,
         )
         .await
         .expect("settle");

@@ -457,8 +457,10 @@ impl Ctx {
     }
 
     /// Règle une facture client depuis sa fiche (`corps` : le choix de
-    /// règlement) : `(règlement, écriture du règlement)`.
-    async fn regler_avec(&self, facture: i64, corps: Value) -> (i64, i64) {
+    /// règlement) : `(règlement, écriture du règlement)`. La version courante de
+    /// la facture s'y ajoute (Story 34-5, #951).
+    async fn regler_avec(&self, facture: i64, mut corps: Value) -> (i64, i64) {
+        corps["version"] = common::invoice_version(&self.pool, facture).await.into();
         let (s, b) = self
             .post(&format!("/api/v1/invoices/{facture}/settlements"), corps)
             .await;

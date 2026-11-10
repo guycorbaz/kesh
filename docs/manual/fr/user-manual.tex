@@ -1362,15 +1362,22 @@ Pour relancer les factures en retard, Kesh dispose d'un \textbf{écran de rappel
 
 \subsection{Enregistrer et annuler un règlement}\label{sec:reglement-client}
 
+\textbf{Un même règlement n'est écrit qu'une fois.} Kesh refuse un règlement lancé sur une facture
+qui a changé depuis que l'écran l'a lue~: un second envoi après une réponse perdue, le même
+règlement saisi dans un autre onglet, ou la relance d'une intégration par l'API. Rien n'est alors
+écrit~; la fiche et l'échéancier ferment le dialogue, relisent la facture et disent que le règlement
+\textbf{n'a pas été enregistré}~: vérifiez la liste des règlements avant de recommencer. Le refus
+vaut aussi pour un acompte légitime saisi dans un second onglet pendant qu'un autre l'était~: il
+suffit de le relancer après la relecture.
+
 \textbf{Si la réponse se perd.} Une coupure réseau ou une panne du serveur peut survenir une fois le
-règlement écrit. Rien n'empêchant d'enregistrer un second règlement partiel, la fiche et l'échéancier
-ferment alors le dialogue, relisent la facture et disent que l'issue n'est pas connue~: vérifiez ce
-qui est écrit avant de réessayer. Tant que la relecture n'a pas réussi, le règlement reste
-indisponible, et \emph{Relire} la relance. Cette protection ne vaut que dans l'onglet où le règlement
-a été lancé~: n'en relancez pas un depuis un autre onglet, ou après avoir rechargé la page, sans
-avoir vérifié la liste des règlements. Après un délai dépassé, le serveur peut encore écrire, sans
-que Kesh puisse dire jusqu'à quand~: laissez-lui du temps, relisez, et vérifiez la liste des
-règlements avant de réessayer.
+règlement écrit. La fiche et l'échéancier ferment alors le dialogue, relisent la facture et disent
+que l'issue n'est pas connue~: vérifiez ce qui est écrit avant de réessayer. Tant que la relecture
+n'a pas réussi, le règlement reste indisponible, et \emph{Relire} la relance. Une page rechargée, ou
+un onglet ouvert après coup, lit la facture telle qu'elle est~: un règlement qu'on y saisit est un
+\emph{nouveau} règlement, que Kesh accepte. Vérifiez donc la liste des règlements avant de le
+relancer. Après un délai dépassé, le serveur peut encore écrire, sans que Kesh puisse dire jusqu'à
+quand~: laissez-lui du temps, relisez, et vérifiez la liste des règlements avant de réessayer.
 
 \textbf{Enregistrer.} Sur la fiche d'une facture validée, \emph{Enregistrer un règlement}~: le
 mode (virement sur un compte bancaire, ou espèces et un autre compte de contrepartie), le montant

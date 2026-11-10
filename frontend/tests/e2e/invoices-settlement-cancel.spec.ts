@@ -5,6 +5,7 @@ import {
   authedApiContext,
   disposeContextSafe,
 } from "./helpers/test-state";
+import { invoiceVersionViaApi } from "./helpers/api-fixtures";
 
 /**
  * Tests E2E — Annuler un règlement client, Story 25-3-a-1 (#414).
@@ -104,6 +105,7 @@ async function settledInvoice(
         accountId: cash!.id,
         amount: "108.10",
         settledOn: today(),
+        version: await invoiceVersionViaApi(ctx, id),
       },
     });
     expect(settled.ok(), `règlement: ${settled.status()}`).toBeTruthy();

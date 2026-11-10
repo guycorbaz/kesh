@@ -8,6 +8,16 @@ Le contenu est rédigé en français à destination des **fiduciaires, PME, ind�
 
 ---
 
+## [0.17.6] — Non publié
+
+### Corrigé
+
+- **Un même règlement de facture client n'est plus écrit deux fois** (refs [#951](https://github.com/guycorbaz/kesh/issues/951)). Un second envoi du même règlement — réponse perdue puis nouveau clic, même règlement saisi dans un second onglet, relance automatique d'une intégration — écrivait un second règlement, une seconde écriture, et faisait baisser deux fois le reste dû. Kesh refuse désormais un règlement lancé sur une facture qui a changé depuis que l'écran l'a lue, sans rien écrire. La fiche de la facture et l'échéancier ferment alors le dialogue, relisent, et disent que le règlement **n'a pas été enregistré** : vérifiez la liste des règlements avant de recommencer. Deux acomptes successifs depuis le même écran restent possibles.
+
+### Modifié
+
+- ⚠️ **Changement de contrat de l'API : le règlement d'une facture client exige la version de la facture** (refs [#951](https://github.com/guycorbaz/kesh/issues/951)). `POST /invoices/{id}/settlements` exige le champ `version`, lu par `GET /invoices/{id}` ou dans la réponse du règlement précédent : sans lui, `422` ; une version périmée, `409 OPTIMISTIC_LOCK_CONFLICT`, sans rien écrire — relisez la facture avant de relancer. Une intégration qui enregistre des règlements est à adapter avant la mise à jour. Le détail est à `docs/api-external.md`, *Enregistrer un règlement*, et au manuel d'administration, *Passer à la 0.17.6*.
+
 ## [0.17.5] — 2026-11-07
 
 ⚠️ **Avant la mise à jour, prenez une sauvegarde complète** — la base, le `.keshbackup` **et** le dossier des documents. Cette version porte **une migration** (non breaking), la première à passer par la sauvegarde que Kesh écrit lui-même avant de migrer ([#847](https://github.com/guycorbaz/kesh/issues/847)) : au démarrage, il dépose une sauvegarde complète dans `backup/pre-upgrade/`, et **refuse de migrer si elle échoue** (échappatoire : `KESH_SKIP_PRE_UPGRADE_BACKUP`). **La migration donne un numéro interne aux factures fournisseur déjà validées** (`FF-2025-001`, `FF-2026-001`…). **Le retour à la 0.17.4 passe uniquement par la sauvegarde d'avant la mise à jour** : la 0.17.4 ne démarre plus sur une base migrée, et elle refuse une sauvegarde prise en 0.17.5 ; les numéros écrits sur le papier depuis la mise à jour seraient alors à refaire (manuel d'administration, *Passer à la 0.17.5*).

@@ -1707,6 +1707,7 @@ async fn lettering_pieces(pool: &MySqlPool, biz: &Business) -> LetteringPieces {
         SettlementChoice::InternalAccount { account_id: caisse },
         due,
         le,
+        common::invoice_version(pool, invoice).await,
     )
     .await
     .expect("règlement complet")

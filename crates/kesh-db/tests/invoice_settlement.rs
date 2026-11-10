@@ -27,6 +27,10 @@ use sqlx::MySqlPool;
 mod document_group;
 use document_group::{lignes_du_groupe, poser_groupe_document};
 
+#[path = "support/reglement_version.rs"]
+mod reglement_version;
+use reglement_version::{settle_at_current_version, version_de};
+
 fn ymd(y: i32, m: u32, d: u32) -> NaiveDate {
     NaiveDate::from_ymd_opt(y, m, d).expect("date valide")
 }
@@ -138,7 +142,7 @@ async fn un_reglement_en_especes_meut_la_caisse(pool: MySqlPool) {
     let creance = seeded.accounts["1100"];
     let inv_id = validated_invoice(&pool, &seeded, dec!(100.00), ymd(2026, 3, 1)).await;
 
-    let out = invoice_settlements_write::settle_invoice(
+    let out = settle_at_current_version(
         &pool,
         seeded.admin_user_id,
         seeded.company_id,
@@ -201,7 +205,7 @@ async fn une_facture_se_regle_en_especes_puis_en_banque(pool: MySqlPool) {
     .await
     .expect("compte bancaire");
 
-    let out1 = invoice_settlements_write::settle_invoice(
+    let out1 = settle_at_current_version(
         &pool,
         seeded.admin_user_id,
         seeded.company_id,
@@ -218,6 +222,7 @@ async fn une_facture_se_regle_en_especes_puis_en_banque(pool: MySqlPool) {
     );
     assert_eq!(out1.amount_due_after, dec!(40.00));
 
+    // Story 34-5 : la version du second vient de la sortie du premier.
     let out2 = invoice_settlements_write::settle_invoice(
         &pool,
         seeded.admin_user_id,
@@ -226,6 +231,7 @@ async fn une_facture_se_regle_en_especes_puis_en_banque(pool: MySqlPool) {
         SettlementChoice::BankTransfer { bank_account_id },
         dec!(40.00),
         ymd(2026, 3, 10),
+        out1.invoice.version,
     )
     .await
     .expect("solde par virement");
@@ -258,7 +264,7 @@ async fn le_trop_percu_est_refuse_sans_rien_ecrire(pool: MySqlPool) {
     let creance = seeded.accounts["1100"];
     let inv_id = validated_invoice(&pool, &seeded, dec!(100.00), ymd(2026, 3, 1)).await;
 
-    let err = invoice_settlements_write::settle_invoice(
+    let err = settle_at_current_version(
         &pool,
         seeded.admin_user_id,
         seeded.company_id,
@@ -286,6 +292,135 @@ async fn le_trop_percu_est_refuse_sans_rien_ecrire(pool: MySqlPool) {
     );
 }
 
+/// Ce qu'un refus laisse en base : règlements de la facture, écritures au
+/// journal, entrées d'audit sur la facture, et sa version.
+async fn empreinte_reglement(pool: &MySqlPool, inv_id: i64) -> (i64, i64, i64, i32) {
+    let reglements: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM invoice_settlements WHERE invoice_id = ?")
+            .bind(inv_id)
+            .fetch_one(pool)
+            .await
+            .unwrap();
+    let ecritures: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM journal_entries")
+        .fetch_one(pool)
+        .await
+        .unwrap();
+    let audits: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM audit_log WHERE entity_type = 'invoice' AND entity_id = ?",
+    )
+    .bind(inv_id)
+    .fetch_one(pool)
+    .await
+    .unwrap();
+    (reglements, ecritures, audits, version_de(pool, inv_id).await)
+}
+
+/// ⛔ Story 34-5 (#951), AC-4 : **une version périmée est refusée en
+/// `OptimisticLockConflict`, et rien n'est écrit** — ni règlement, ni écriture,
+/// ni audit ; la version reste celle d'avant. C'est ce qui refuse le second envoi
+/// d'un même règlement, dont le premier a incrémenté la version.
+#[sqlx::test(migrations = "./test-schema")]
+async fn une_version_perimee_est_refusee_sans_rien_ecrire(pool: MySqlPool) {
+    let seeded = seed_accounting_company(&pool).await.expect("seed");
+    let caisse = seeded.accounts["1000"];
+    let inv_id = validated_invoice(&pool, &seeded, dec!(300.00), ymd(2026, 3, 1)).await;
+    let ouverte = version_de(&pool, inv_id).await;
+    let premier = invoice_settlements_write::settle_invoice(
+        &pool,
+        seeded.admin_user_id,
+        seeded.company_id,
+        inv_id,
+        SettlementChoice::InternalAccount { account_id: caisse },
+        dec!(100.00),
+        ymd(2026, 3, 5),
+        ouverte,
+    )
+    .await
+    .expect("premier envoi");
+    assert_eq!(premier.invoice.version, ouverte + 1, "le règlement incrémente");
+    let avant = empreinte_reglement(&pool, inv_id).await;
+
+    let err = invoice_settlements_write::settle_invoice(
+        &pool,
+        seeded.admin_user_id,
+        seeded.company_id,
+        inv_id,
+        SettlementChoice::InternalAccount { account_id: caisse },
+        dec!(100.00),
+        ymd(2026, 3, 5),
+        ouverte,
+    )
+    .await
+    .expect_err("le même règlement, à la même version, est refusé");
+
+    assert!(matches!(err, DbError::OptimisticLockConflict), "got {err:?}");
+    assert_eq!(empreinte_reglement(&pool, inv_id).await, avant, "rien n'est écrit");
+    assert_eq!(avant.0, 1, "un seul règlement");
+}
+
+/// Story 34-5, AC-4 : **l'ordre des refus sous le verrou**. Le statut précède la
+/// version : une facture annulée ou en brouillon rend `IllegalStateTransition`,
+/// même avec une version périmée. La version précède la date, la contrepartie et
+/// le trop-perçu : une version périmée rend `OptimisticLockConflict` même quand
+/// le règlement serait refusé pour l'une de ces raisons.
+#[sqlx::test(migrations = "./test-schema")]
+async fn la_version_se_controle_apres_le_statut_et_avant_le_reste(pool: MySqlPool) {
+    let seeded = seed_accounting_company(&pool).await.expect("seed");
+    let caisse = seeded.accounts["1000"];
+    let inv_id = validated_invoice(&pool, &seeded, dec!(100.00), ymd(2026, 3, 1)).await;
+    let perimee = version_de(&pool, inv_id).await - 1;
+    let regler = |choice: SettlementChoice, amount: Decimal, le: NaiveDate| {
+        let pool = pool.clone();
+        let (user, company) = (seeded.admin_user_id, seeded.company_id);
+        async move {
+            invoice_settlements_write::settle_invoice(
+                &pool, user, company, inv_id, choice, amount, le, perimee,
+            )
+            .await
+            .expect_err("refusé")
+        }
+    };
+    let par_caisse = SettlementChoice::InternalAccount { account_id: caisse };
+    let avant = empreinte_reglement(&pool, inv_id).await;
+
+    // La version avant la date (règlement antérieur à la facture).
+    let err = regler(par_caisse, dec!(10.00), ymd(2026, 1, 1)).await;
+    assert!(matches!(err, DbError::OptimisticLockConflict), "date : {err:?}");
+    // La version avant la contrepartie (compte inconnu).
+    let err = regler(
+        SettlementChoice::InternalAccount { account_id: -1 },
+        dec!(10.00),
+        ymd(2026, 3, 5),
+    )
+    .await;
+    assert!(
+        matches!(err, DbError::OptimisticLockConflict),
+        "contrepartie : {err:?}"
+    );
+    // La version avant le trop-perçu.
+    let err = regler(par_caisse, dec!(150.00), ymd(2026, 3, 5)).await;
+    assert!(
+        matches!(err, DbError::OptimisticLockConflict),
+        "trop-perçu : {err:?}"
+    );
+    assert_eq!(empreinte_reglement(&pool, inv_id).await, avant, "rien n'est écrit");
+
+    // Le statut avant la version : annulée, puis brouillon.
+    for statut in ["cancelled", "draft"] {
+        sqlx::query("UPDATE invoices SET status = ? WHERE id = ?")
+            .bind(statut)
+            .bind(inv_id)
+            .execute(&pool)
+            .await
+            .unwrap();
+        let err = regler(par_caisse, dec!(10.00), ymd(2026, 3, 5)).await;
+        assert!(
+            matches!(err, DbError::IllegalStateTransition(_)),
+            "{statut} : {err:?}"
+        );
+    }
+}
+
 /// ⛔ **Un compte ARCHIVÉ est refusé.** Régler sur un compte qu'aucun écran ne
 /// montre plus produirait une écriture invisible.
 #[sqlx::test(migrations = "./test-schema")]
@@ -300,7 +435,7 @@ async fn un_compte_archive_est_refuse(pool: MySqlPool) {
         .await
         .unwrap();
 
-    let err = invoice_settlements_write::settle_invoice(
+    let err = settle_at_current_version(
         &pool,
         seeded.admin_user_id,
         seeded.company_id,
@@ -345,7 +480,7 @@ async fn un_compte_non_imputable_est_refuse(pool: MySqlPool) {
         .await
         .unwrap();
 
-    let err = invoice_settlements_write::settle_invoice(
+    let err = settle_at_current_version(
         &pool,
         seeded.admin_user_id,
         seeded.company_id,
@@ -393,7 +528,7 @@ async fn un_reglement_ne_precede_pas_sa_facture(pool: MySqlPool) {
     let caisse = seeded.accounts["1000"];
     let inv_id = validated_invoice(&pool, &seeded, dec!(100.00), ymd(2026, 3, 10)).await;
 
-    let err = invoice_settlements_write::settle_invoice(
+    let err = settle_at_current_version(
         &pool,
         seeded.admin_user_id,
         seeded.company_id,
@@ -412,7 +547,7 @@ async fn un_reglement_ne_precede_pas_sa_facture(pool: MySqlPool) {
     // ⚠️ La veille reste ACCEPTÉE : `settled_on` est une date de valeur bancaire
     // et `invoice.date` une date métier locale — l'écart de fuseau suffit à
     // faire apparaître un règlement « la veille » d'une facture du même jour.
-    invoice_settlements_write::settle_invoice(
+    settle_at_current_version(
         &pool,
         seeded.admin_user_id,
         seeded.company_id,
@@ -442,7 +577,7 @@ async fn settle_cash(
     amount: Decimal,
     on: NaiveDate,
 ) -> (i64, i64) {
-    let out = invoice_settlements_write::settle_invoice(
+    let out = settle_at_current_version(
         pool,
         seeded.admin_user_id,
         seeded.company_id,
@@ -1369,7 +1504,7 @@ mod contrepartie_distincte_de_la_creance {
         choice: SettlementChoice,
         amount: Decimal,
     ) -> Result<invoice_settlements_write::SettlementOutcome, DbError> {
-        invoice_settlements_write::settle_invoice(
+        settle_at_current_version(
             pool,
             seeded.admin_user_id,
             seeded.company_id,
@@ -2009,7 +2144,7 @@ mod compte_bancaire_clos {
             .unwrap();
         let ecritures = count(&pool, "SELECT COUNT(*) FROM journal_entries").await;
 
-        let err = invoice_settlements_write::settle_invoice(
+        let err = settle_at_current_version(
             &pool,
             seeded.admin_user_id,
             seeded.company_id,
@@ -2053,7 +2188,7 @@ mod compte_bancaire_clos {
         let seeded = seed_accounting_company(&pool).await.expect("seed");
         let bank = compte_bancaire(&pool, &seeded).await;
         let inv_id = validated_invoice(&pool, &seeded, dec!(100.00), ymd(2026, 3, 1)).await;
-        let out = invoice_settlements_write::settle_invoice(
+        let out = settle_at_current_version(
             &pool,
             seeded.admin_user_id,
             seeded.company_id,
@@ -2127,7 +2262,7 @@ mod compte_bancaire_clos {
         let bank = compte_bancaire(&pool, &seeded).await;
         let inv_id =
             validated_invoice(&pool, &seeded, dec!(100.00), d - chrono::Duration::days(20)).await;
-        let out = invoice_settlements_write::settle_invoice(
+        let out = settle_at_current_version(
             &pool,
             seeded.admin_user_id,
             seeded.company_id,
@@ -2225,7 +2360,7 @@ async fn la_sortie_du_reglement_porte_la_facture_relue(pool: MySqlPool) {
         account_id: seeded.accounts["1000"],
     };
 
-    let partiel = invoice_settlements_write::settle_invoice(
+    let partiel = settle_at_current_version(
         &pool,
         seeded.admin_user_id,
         seeded.company_id,
@@ -2243,6 +2378,7 @@ async fn la_sortie_du_reglement_porte_la_facture_relue(pool: MySqlPool) {
     assert_eq!(partiel.amount_settled, dec!(30.00));
     assert_eq!(partiel.lines.len(), 1);
 
+    // Story 34-5 : la version du second vient de la sortie du premier.
     let total = invoice_settlements_write::settle_invoice(
         &pool,
         seeded.admin_user_id,
@@ -2251,6 +2387,7 @@ async fn la_sortie_du_reglement_porte_la_facture_relue(pool: MySqlPool) {
         choice,
         dec!(70.00),
         ymd(2026, 3, 6),
+        partiel.invoice.version,
     )
     .await
     .expect("règlement du reste");
@@ -2266,7 +2403,7 @@ async fn la_sortie_du_reglement_porte_la_facture_relue(pool: MySqlPool) {
 async fn la_sortie_de_l_annulation_porte_la_facture_relue(pool: MySqlPool) {
     let seeded = seed_accounting_company(&pool).await.expect("seed");
     let inv = validated_invoice(&pool, &seeded, dec!(100.00), ymd(2026, 3, 1)).await;
-    let out = invoice_settlements_write::settle_invoice(
+    let out = settle_at_current_version(
         &pool,
         seeded.admin_user_id,
         seeded.company_id,

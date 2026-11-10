@@ -336,3 +336,90 @@ describe("échéancier — règlement à l'issue inconnue", () => {
     expect(r.queryByTestId("due-dates-settle-unknown")).toBeNull();
   });
 });
+
+// Story 34-5 (#951) — la version de la ligne part avec le règlement ; un 409 de version
+// ferme le dialogue, relit la liste, et dit que rien n'a été enregistré (C-e343-4).
+describe("échéancier — règlement à une version périmée", () => {
+  const conflit = { code: "OPTIMISTIC_LOCK_CONFLICT", status: 409, message: "Conflit." };
+
+  async function regler() {
+    const r = render(Page);
+    await fireEvent.click(await r.findByTestId("due-dates-settle-5"));
+    await fireEvent.change(await r.findByTestId("settle-type"), {
+      target: { value: "internal_account" },
+    });
+    await fireEvent.change(await r.findByTestId("settle-account"), { target: { value: "1" } });
+    await fireEvent.click(r.getByTestId("settle-confirm"));
+    return r;
+  }
+
+  beforeEach(() => {
+    settleMock.mockReset();
+  });
+
+  it("le règlement part avec la version de la ligne", async () => {
+    settleMock.mockResolvedValue({ invoice: {}, fullySettled: false });
+    await regler();
+    await waitFor(() => expect(settleMock).toHaveBeenCalledTimes(1));
+    expect(settleMock.mock.calls[0][0]).toBe(5);
+    expect(settleMock.mock.calls[0][1]).toMatchObject({ version: 3 });
+  });
+
+  it("409 : dialogue fermé, liste relue, l'avis nomme la facture et dit « non enregistré » (M4, M5)", async () => {
+    settleMock.mockRejectedValue(conflit);
+    const r = await regler();
+    const avis = await r.findByTestId("due-dates-settle-conflict");
+    expect(avis.getAttribute("role")).toBe("alert");
+    expect(avis.textContent).toContain("F-2026-005");
+    expect(avis.textContent).toContain("n’a pas été enregistré");
+    expect(avis.textContent).not.toContain("n’est pas connue");
+    expect(r.queryByTestId("due-dates-settle-unknown")).toBeNull();
+    await waitFor(() => expect(r.queryByTestId("settle-confirm")).toBeNull());
+    await waitFor(() => expect(listDueDatesMock.mock.calls.length).toBeGreaterThan(1));
+    await waitFor(() =>
+      expect((r.getByTestId("due-dates-settle-5") as HTMLButtonElement).disabled).toBe(false),
+    );
+    expect(r.queryByTestId("due-dates-settle-conflict-reread")).toBeNull();
+  });
+
+  it("409 puis liste illisible : `conflict-blocked`, puis « Relire » mène au conflit, non à l'issue inconnue", async () => {
+    settleMock.mockRejectedValue(conflit);
+    const r = render(Page);
+    await fireEvent.click(await r.findByTestId("due-dates-settle-5"));
+    listDueDatesMock.mockRejectedValue({ code: "NETWORK_ERROR", status: 0, message: "x" });
+    await fireEvent.change(await r.findByTestId("settle-type"), {
+      target: { value: "internal_account" },
+    });
+    await fireEvent.change(await r.findByTestId("settle-account"), { target: { value: "1" } });
+    await fireEvent.click(r.getByTestId("settle-confirm"));
+
+    await r.findByTestId("due-dates-settle-conflict-reread");
+    const bloque = r.getByTestId("due-dates-settle-conflict");
+    expect(bloque.textContent).toContain("F-2026-005");
+    expect(bloque.textContent).toContain("la liste n’a pas pu être relue");
+    expect(bloque.textContent).not.toContain("n’est pas connue");
+    expect(r.queryByTestId("due-dates-settle-unknown")).toBeNull();
+
+    listDueDatesMock.mockResolvedValue(response([item({ version: 4 })]));
+    await fireEvent.click(r.getByTestId("due-dates-settle-conflict-reread"));
+    await waitFor(() =>
+      expect((r.getByTestId("due-dates-settle-5") as HTMLButtonElement).disabled).toBe(false),
+    );
+    const relu = r.getByTestId("due-dates-settle-conflict");
+    expect(relu.textContent).toContain("La liste a été relue");
+    expect(relu.textContent).not.toContain("n’est pas connue");
+    expect(r.queryByTestId("due-dates-settle-conflict-reread")).toBeNull();
+
+    // Le règlement suivant part avec la version relue.
+    settleMock.mockReset();
+    settleMock.mockResolvedValue({ invoice: {}, fullySettled: false });
+    await fireEvent.click(r.getByTestId("due-dates-settle-5"));
+    await fireEvent.change(await r.findByTestId("settle-type"), {
+      target: { value: "internal_account" },
+    });
+    await fireEvent.change(await r.findByTestId("settle-account"), { target: { value: "1" } });
+    await fireEvent.click(r.getByTestId("settle-confirm"));
+    await waitFor(() => expect(settleMock).toHaveBeenCalledTimes(1));
+    expect(settleMock.mock.calls[0][1]).toMatchObject({ version: 4 });
+  });
+});

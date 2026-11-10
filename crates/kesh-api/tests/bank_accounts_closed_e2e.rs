@@ -498,6 +498,7 @@ impl Ctx {
                 "bankAccountId": bank,
                 "amount": "108.10",
                 "settledOn": Utc::now().date_naive().to_string(),
+                "version": common::invoice_version(&self.pool, invoice).await,
             }),
         )
         .await
@@ -1648,6 +1649,7 @@ async fn les_gestes_qui_creent_refusent_l_archive(pool: MySqlPool) {
                 "bankAccountId": a,
                 "amount": "108.10",
                 "settledOn": Utc::now().date_naive().to_string(),
+                "version": common::invoice_version(&ctx.pool, facture).await,
             })),
         )
         .await;

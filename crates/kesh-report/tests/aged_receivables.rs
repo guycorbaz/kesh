@@ -324,6 +324,12 @@ async fn settle(
     amount: Decimal,
     on: NaiveDate,
 ) {
+    // Story 34-5 (#951) : le règlement exige la version courante de la facture.
+    let version: i32 = sqlx::query_scalar("SELECT version FROM invoices WHERE id = ?")
+        .bind(invoice_id)
+        .fetch_one(pool)
+        .await
+        .expect("version de la facture");
     invoice_settlements_write::settle_invoice(
         pool,
         seeded.admin_user_id,
@@ -334,6 +340,7 @@ async fn settle(
         },
         amount,
         on,
+        version,
     )
     .await
     .expect("règlement");

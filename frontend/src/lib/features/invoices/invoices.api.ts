@@ -136,9 +136,11 @@ export async function listDueDates(query: DueDatesQuery = {}): Promise<DueDatesR
  * règlement qui produit son écriture s'annule par **contre-passation** —
  * `cancelInvoiceSettlement` (Story 25-3-a-1).
  *
- * ⚠️ Pas de `version` : enregistrer un règlement n'est pas modifier la facture,
- * c'est y ajouter un fait. Le garde qui compte est le refus du trop-perçu,
- * calculé côté serveur sous verrou.
+ * ⛔ **La `version` de la facture est exigée** (Story 34-5, #951) : le serveur la
+ * compare sous verrou et refuse en `409 OPTIMISTIC_LOCK_CONFLICT` un règlement
+ * lancé sur une facture qui a changé — second envoi après une réponse perdue,
+ * second onglet, relance d'une intégration. L'appelant relit alors la facture
+ * avant tout nouvel essai. Le refus du trop-perçu reste le garde de la somme.
  */
 export async function settleInvoice(
 	id: number,

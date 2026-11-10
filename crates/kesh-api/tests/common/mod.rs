@@ -220,6 +220,49 @@ pub async fn take_account_lock(
     name
 }
 
+// ---------------------------------------------------------------------------
+// Règlement d'une facture client à sa version courante — Story 34-5 (#951)
+// ---------------------------------------------------------------------------
+
+/// La version que la facture porte en base : celle qu'exigent
+/// `POST /invoices/{id}/settlements` et `invoice_settlements_write::settle_invoice`
+/// (C-e343-13). Les tests du contrôle de version passent la leur à la main.
+pub async fn invoice_version(pool: &MySqlPool, invoice_id: i64) -> i32 {
+    sqlx::query_scalar("SELECT version FROM invoices WHERE id = ?")
+        .bind(invoice_id)
+        .fetch_one(pool)
+        .await
+        .expect("version de la facture")
+}
+
+/// `invoice_settlements_write::settle_invoice` à la version courante de la
+/// facture : mêmes arguments, la version en moins.
+pub async fn settle_at_current_version(
+    pool: &MySqlPool,
+    user_id: i64,
+    company_id: i64,
+    invoice_id: i64,
+    choice: kesh_db::entities::SettlementChoice,
+    amount: rust_decimal::Decimal,
+    settled_on: chrono::NaiveDate,
+) -> Result<
+    kesh_db::repositories::invoice_settlements_write::SettlementOutcome,
+    kesh_db::errors::DbError,
+> {
+    let version = invoice_version(pool, invoice_id).await;
+    kesh_db::repositories::invoice_settlements_write::settle_invoice(
+        pool,
+        user_id,
+        company_id,
+        invoice_id,
+        choice,
+        amount,
+        settled_on,
+        version,
+    )
+    .await
+}
+
 /// Témoin du rejeu sur interblocage (Story 15-5e1, choix C74).
 pub mod capture_rejeu;
 

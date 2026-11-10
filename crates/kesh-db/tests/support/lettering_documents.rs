@@ -137,6 +137,12 @@ pub async fn regler_par(
     montant: Decimal,
     le: NaiveDate,
 ) -> (i64, i64) {
+    // Story 34-5 (#951) : le règlement exige la version courante de la facture.
+    let version: i32 = sqlx::query_scalar("SELECT version FROM invoices WHERE id = ?")
+        .bind(inv)
+        .fetch_one(pool)
+        .await
+        .expect("version de la facture");
     let out = invoice_settlements_write::settle_invoice(
         pool,
         seeded.admin_user_id,
@@ -145,6 +151,7 @@ pub async fn regler_par(
         choix,
         montant,
         le,
+        version,
     )
     .await
     .expect("règlement");
