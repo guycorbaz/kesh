@@ -184,3 +184,13 @@ sécurité) : numéro suivi de sa date ou de son CVC, séparateurs autres (point
 
 **C-e341-42 (34-11a2) — un compte bancaire refuse `cardLast4`** : `400 BANK_ACCOUNT_FIELD_NOT_ALLOWED` (`details.field`), au lieu du `500` du `CHECK`.
 Symétrique de `CREDIT_CARD_FIELD_NOT_ALLOWED`. Autre : ignorer le champ (une saisie perdue en silence). Réversible : oui.
+
+## Précisions de la validation P5 ciblée (2026-11-10)
+
+**C-e341-43 (34-11a2) — au `PUT`, le type courant se lit avant la validation** : lecture sur le pool, filtrée par société (type immuable, lecture hors
+transaction sûre) ; un id inconnu, étranger ou archivé rend `404` avant tout refus de forme dépendant du type. Autre : valider dans la transaction
+(refus de forme après la sentinelle). Réversible : oui.
+
+**C-e341-19, précisé** — l'assistant ignore `accountKind` et `cardLast4` (corps sans `deny_unknown_fields`) : client interne, angle mort assumé.
+
+**C-e341-42, précisé** — `cardLast4` absent, `null` ou vide valent absent, pour les deux types.
