@@ -65,7 +65,8 @@ l'adresse qu'un collègue vient de corriger, ni ma propre correction déjà enre
     c'est le dommage de #953, déplacé du silence à un avertissement.
 - **Sur un 409**, on relit, on fusionne, puis on compare les champs **du bloc** :
   1. **Aucun n'a changé** depuis la copie : le message actuel. L'essai suivant est sans danger.
-  2. **Tous égalent la saisie** : l'édition se ferme, `data` porte la société relue, et une notification dit « déjà
+  2. **Tous égalent la saisie, après la fusion, et au moins un champ avait été modifié avant elle** (définition
+     d'`already-saved`, ci-dessous) : l'édition se ferme, `data` porte la société relue, et une notification dit « déjà
      enregistré ».
   3. **Sinon** : sous chaque champ en conflit, « Enregistré entre-temps : *valeur* », la valeur vide se disant « (vide) ». Un
      avis dit qu'enregistrer de nouveau remplacera ces valeurs. La saisie modifiée reste.
@@ -104,8 +105,9 @@ l'adresse qu'un collègue vient de corriger, ni ma propre correction déjà enre
 2. **AC-2 — aucun champ du bloc n'a changé.** L'Administrateur a modifié au moins un champ de l'adresse. Un 409 dû à un autre
    bloc (le téléphone modifié pendant l'édition) donne le message actuel, sans valeur affichée. L'essai suivant aboutit. Cet
    AC vaut quand `merged = ∅` et `changed = ∅`. Avec `merged ≠ ∅`, c'est l'AC-5 ter.
-3. **AC-3 — déjà enregistré.** Valeur relue égale à la saisie : l'édition se ferme sur « déjà enregistré ». Aucun second
-   envoi.
+3. **AC-3 — déjà enregistré.** L'Administrateur a modifié au moins un champ, et la valeur relue égale sa saisie
+   (définition d'`already-saved`) : l'édition se ferme sur « déjà enregistré ». Aucun second envoi. Sans modification de sa
+   part, le cas n'est jamais `already-saved`.
 4. **AC-4 — les trois blocs.** AC-1 à AC-3 valent pour l'e-mail (un champ), les coordonnées (deux champs, dont un seul peut
    avoir changé) et l'adresse (cinq composants).
 5. **AC-5 — second conflit** (récrit à la validation P2, 34-6-F1). Premier conflit sur la ville (`Nyon` affiché). Puis une
@@ -147,8 +149,8 @@ l'adresse qu'un collègue vient de corriger, ni ma propre correction déjà enre
   - E2E de l'AC-1.
 - [ ] **T2** : `company-conflict.ts` et ses tests. On couvre les trois cas, puis un champ égal à la saisie (AC-5 bis), vide
   contre `null`, les espaces, un pays en minuscules, un pays vide contre `CH`, et `addressStructured` à `null`. Puis la
-  fusion (AC-5 ter), le cas `kind = 'unchanged'` avec `merged ≠ ∅`, la saisie sans modification (ni `already-saved` ni
-  avis), et les deux montages de l'AC-5 bis.
+  fusion (AC-5 ter), le cas `kind = 'unchanged'` avec `merged ≠ ∅`, la saisie sans modification (jamais `already-saved` ; avis
+  de fusion seulement si `merged ≠ ∅`, édition laissée ouverte), et les deux montages de l'AC-5 bis.
 - [ ] **T3** : `CompanyConflictNotice.svelte`, les trois blocs, la copie prise à `start*Edit` et mise à jour après toute
   relecture réussie, la saisie fusionnée.
 - [ ] **T4** : i18n aux quatre locales, et les gardes de replis.
@@ -241,6 +243,10 @@ Rust n'est touché, hormis les `.ftl` : `cargo test -p kesh-i18n` et `textes_coh
     `merged ≠ ∅`. L'AC-2 est borné à `merged = ∅` et `changed = ∅`, l'AC-5 reformulé (la rue reprise, et non en conflit),
     et T2 gagne un cas. La sévérité baisse : P2 3 M, P3 1 M.
   - **F2 (L)** : `already-saved` exige au moins un champ modifié avant la fusion.
+- 2026-11-10 : **validation P4 ciblée (Haiku) : 1 M, remédié** (Opus 5.5). Rapport
+  `kesh-gate-logs/e34-validate-p4-e343.md`. **F1 (M), né de la remédiation P3** (34-6-F2) : la précondition « au moins un
+  champ modifié avant la fusion » est portée au cas 2 de « Sur un 409 » et à l'AC-3, et T2 est alignée sur la règle de
+  l'avis de fusion.
 
 ## Dev Agent Record
 

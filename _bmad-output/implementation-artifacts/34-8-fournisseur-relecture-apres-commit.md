@@ -130,9 +130,14 @@ En tant que Comptable, je veux deux choses :
    - Pour les **neuf** handlers : aucun `.await` après l'appel d'écriture.
    - Pour les **cinq** enveloppes et les **quatre** fonctions `_once`, l'assertion qui mord est que la fonction **appelle
      `commit_with_view` et non `commit`** (`tx.commit()`). « Rien d'attendu après » est trivialement vrai de l'appel final.
-     Les enveloppes sont lues dans `crates/kesh-db/src/repositories/supplier_invoices.rs` par
-     `include_str!("../../kesh-db/src/…")`, comme la garde de la 33-6 lit déjà `invoice_settlements_write.rs`
-     (`invoice_settlement_response_e2e.rs:519`).
+     - Les enveloppes sont lues dans `crates/kesh-db/src/repositories/supplier_invoices.rs`.
+     - Les quatre `_once` sont lus dans `crates/kesh-api/src/routes/` : `update_supplier_invoice_once`
+       (`supplier_invoices.rs:805`), `complete_import_once`, `attach_source_document_once` et
+       `detach_source_document_once` (`imported_supplier_invoices.rs:159`, `:607`, `:712`).
+     - Les sources sont lues par `include_str!` dans le **fichier de test placé à `tests/`**, qui les passe au visiteur
+       commun. C'est le patron de `invoice_settlement_response_e2e.rs:519`, chemins `../../kesh-db/src/…` et `../src/routes/…`.
+       Un `include_str!` écrit dans `tests/common/` se résoudrait depuis ce dossier, et demanderait `../../../kesh-db/…`
+       (validation P4, 34-8-F2).
    - Pour `commit_with_view` elle-même : la vue lue avant le commit, rien d'attendu après.
    - Une **sonde positive** passe par le même découpage :
      - une relecture remise après le commit dans un handler factice rend la garde rouge ;
@@ -178,7 +183,8 @@ En tant que Comptable, je veux deux choses :
        page ;
      - pour `attach()` : si la relecture montre le document joint, le sélecteur se ferme et l'encadré `verify` s'affiche. Si
        elle ne le montre pas, l'erreur remonte au sélecteur avec le texte de l'issue inconnue, et le document reste
-       sélectionnable.
+       sélectionnable. `cycleOutcome` reste alors `known`, et l'encadré ne s'affiche pas : l'erreur est portée par le
+       sélecteur (validation P4, 34-8-F4). Si la relecture échoue, `cycleOutcome` vaut `reread-failed`.
 9. **AC-9 — textes.**
    - Les doc-comments C-30-2-42 et C-30-2-52 des trois routes de documents ne décrivent plus d'erreur entre le commit et la
      relecture.
@@ -324,6 +330,10 @@ aucune migration, aucun schéma.
     - **F4** : la garde lit `kesh-db` par `include_str!`, et l'assertion qui mord est « `commit_with_view`, non `commit` »,
       avec sa sonde. Prémisse du rapport nuancée : la garde de la 33-6 lit déjà un fichier de `kesh-db`.
     - **F5** : forme des mutants M1 et M2.
+- 2026-11-10 : **validation P4 ciblée (Haiku) : 2 L, remédiés** (Opus 5.5).
+  - **F2** : le lieu des `include_str!` et l'emplacement des quatre `_once` sont écrits (`supplier_invoices.rs:805`,
+    `imported_supplier_invoices.rs:159,607,712`).
+  - **F4** : la valeur de `cycleOutcome` est donnée pour la branche « relecture sans document ».
 
 ## Dev Agent Record
 

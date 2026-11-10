@@ -168,9 +168,15 @@ au registre.
     recopiées (règle DRY).
     - `kesh-db/tests/support/` (le module existe) : `settle_at_current_version(pool, …)`, qui lit la version puis appelle
       `settle_invoice`.
-    - `kesh-api/tests/common/` : la même aide, ou un réemploi si le module de `kesh-db` est visible. Trois des six fichiers
-      appelants ne déclarent pas `mod common;` : `invoice_echeancier_e2e.rs`, `invoice_send_email_e2e.rs` et
-      `reconciliation_e2e.rs` (`grep -c "^mod common"` = 0). Ils le déclarent, ce qui ne produit pas d'avertissement, le module
+    - `kesh-api/tests/common/` : la même aide, ou un réemploi si le module de `kesh-db` est visible. Deux ensembles sont
+      à distinguer (validation P4, 34-5-F3) :
+      - **les six fichiers qui appellent le repository** `settle_invoice`. Trois ne déclarent pas `mod common;` :
+        `invoice_echeancier_e2e.rs`, `invoice_send_email_e2e.rs` et `reconciliation_e2e.rs` ;
+      - **les huit qui postent la route** (liste des prémisses). Trois ne déclarent pas `mod common;` :
+        `invoice_echeancier_e2e.rs`, `invoice_settlement_response_e2e.rs` et `reconciliation_e2e.rs`.
+
+      Décomptes par `grep -c "^mod common"` = 0. `invoice_send_email_e2e.rs` n'appelle que le repository (`:2128`), sans
+      `POST`. Ils le déclarent, ce qui ne produit pas d'avertissement, le module
       portant `#![allow(dead_code)]` (`common/mod.rs:9`) ; ou ils gardent une lecture locale (validation P3, 34-5-F4).
     - `kesh-report/tests/aged_receivables.rs` : un seul appel, avec une lecture locale.
 
@@ -321,6 +327,9 @@ de la KF-029 se nomment un par un.
   - **F3** : câblage des états bloquants, relecture paramétrée, `data-testid` propre.
   - **F4** : `mod common;` dans trois fichiers.
   - **F5** : `:504`.
+- 2026-11-10 : **validation P4 ciblée (Haiku) : 1 L, remédié** (Opus 5.5). **F3** : relu, `^mod common` dans les huit
+  appelants HTTP. Les deux ensembles sont distingués, repository (six fichiers) et route (huit fichiers). Prémisse du rapport
+  nuancée : « six » désignait les appelants du repository, et c'était juste ; la liste des appelants HTTP manquait.
 
 ## Dev Agent Record
 
