@@ -232,6 +232,24 @@ Aucun fichier de code commun avec les autres stories de l'Epic 34. `user-manual.
 
 - 2026-11-10 : Développement (Opus 5.5), worktree `/home/gcorbaz/devel/kesh-e3410`, base `cdf13639`, commits `ddc1606f`
   (code), `7a2cebcd` (liseré), puis ce compte rendu. Détail au Dev Agent Record.
+- 2026-11-11 : **Revue de code P1** (Sonnet, trois lentilles B, E, A ; prompt `34-10-graphiques-couleurs-unies-review-prompt-p1.md`,
+  rapports `kesh-gate-logs/e3410-review-p1-{B,E,A}.md`) : **0 C, 0 H, 1 M, 7 L** (B : 1 M, 3 L ; E : 1 M, 2 L ; A : 2 L ; le
+  MEDIUM est commun à B et E, B1-1 = E1-1). Remédiation (Opus 5.5), commits `924bc54c`, `11af9624` :
+  - **B1-1 = E1-1** MEDIUM, retenu (lu : `ExpensePieCard.svelte:144` à `b2eb42ec`, `stroke="var(--color-surface)"
+    stroke-width="1.5"` sur toute part) : une part de moins d'environ 0,3 % disparaissait sous son liseré. Corrigé par un angle
+    dessiné minimal (`MIN_SLICE_ANGLE`, pris sur la plus grande part), pas de liseré sous `SEPARATED_MIN_ANGLE`, et la peinture des
+    parts étroites en dernier (`drawOrder`) — C-e3410-9. Rouge d'abord : visibilité prouvée par la corde de l'arc intérieur (au moins
+    une unité), l'absence de liseré et la place de dernier `path` ; mutations MV1 à MV3, MV6, MV7 tuées.
+  - **E1-2** LOW : rendu inatteignable par l'angle minimal (corde intérieure ≥ 1,15 unité) ; une garde sur les points intérieurs,
+    ajoutée puis retirée, survivait à sa mutation (MV4, équivalente) — test « aucun arc intérieur aux extrémités confondues ».
+  - **E1-3** LOW : plus de part pleine par arrondi à côté d'une part minuscule (même correctif), test réécrit.
+  - **B1-2** LOW : test de `centerFontSize` sans recopie de la formule (C-e3410-11). **B1-4** LOW : `centerLines`, écart
+    proportionnel au libellé, bloc centré (C-e3410-10), mutation MV5 tuée. **B1-3** LOW : CHANGELOG aligné sur le code (base
+    différente du total, « par exemple » un compte créditeur). **A1-1** LOW : M6-bis jouée sur la clé plurielle, tuée. **A1-2**
+    LOW : ligne du `.tex` coupée.
+  - Le manuel et le CHANGELOG disent la part élargie au dessin. Aucun finding reclassé ni laissé ouvert ; aucune issue à ouvrir.
+  - Trend : P1 0 C / 0 H / 1 M / 7 L → P2 (passe complète Opus, prompt `34-10-graphiques-couleurs-unies-review-prompt-p2.md`) à
+    lancer : la remédiation touche la production.
 
 ## Dev Agent Record
 
@@ -314,6 +332,25 @@ et violet deux bleus, cyan un bleu clair ; le liseré blanc marque chaque limite
   a été retouché par une ligne Python (hors dépôt, non du code).
 - `git rm` de `ChartPatterns.svelte` : prescrit par la fiche ; retrait suivi par git, réversible.
 
+**Remédiation de la revue P1 (2026-11-11).**
+- Rouges (`rouges.log`, section « Remédiation P1 ») : 7 tests purs et 1 test de rendu, écrits sur `b2eb42ec` avant le code.
+- Tests, de `b2eb42ec` à `HEAD` : `homepage-charts.test.ts` 41 → 45 `it(` ; `HomepageCharts.test.ts` 27 → 28.
+- Mutations (`mut/M6-bis.log`, `mut/MV*.log`) : 8 jouées, 7 tuées ; **MV4** (part pleine sur l'arc extérieur seul) a survécu
+  contre le code qui portait la garde intérieure : mutation équivalente, la garde a été retirée (`11af9624`). MV1 rejouée ensuite :
+  tuée, dont par le test E1-2.
+- Incident : MV1 a été rejouée alors que `homepage-charts.ts` portait des retouches non commitées ; le `git checkout --` de
+  restauration les a effacées. Elles ont été refaites à l'identique et commitées (`11af9624`) ; aucun effet sur le code livré, mais
+  une mutation se joue désormais sur un arbre propre.
+- Gates au dernier commit de code `11af9624` : `npm run check` 0 erreur (29 avertissements, aucun dans `homepage/`),
+  `lint-i18n-ownership` PASS, `npm run test:unit` **2903 passés, 222 fichiers**, `npm run build` vert (`*-p1.log`).
+  **E2E complet** (`e2e-r3.log`, base recréée vide, runner avec `KESH_INBOX_DIR` et `KESH_DOCUMENTS_DIR`) : **385 passés,
+  7 échecs, 18 ignorés** — exactement les sept KF-029 (#97) : `mode-expert.spec.ts:26`, `:41`, `onboarding-path-b.spec.ts:65`,
+  `:92`, `onboarding.spec.ts:57`, `:77`, `:150` ; les onze tests de `homepage-charts.spec.ts` passent. Aucun fichier Rust touché
+  par la remédiation : pas de gate backend.
+- Captures de la part minuscule (scénario `minuscule` : un cinquième poste et « Autres » à 0,1 %) :
+  `anneau-avant-p1-minuscule.png` (build de `b2eb42ec`) — les deux parts ne se voient pas, le violet touche le rouge ;
+  `anneau-apres-p1-minuscule.png` — deux traits fins, cyan et gris, à midi, entre le violet et le rouge.
+
 ### File List
 
 - `frontend/src/app.css`
@@ -331,5 +368,6 @@ et violet deux bleus, cyan un bleu clair ; le liseré blanc marque chaque limite
 - `CHANGELOG.md`
 - `_bmad-output/implementation-artifacts/34-10-graphiques-couleurs-unies.md`
 - `_bmad-output/implementation-artifacts/34-10-graphiques-couleurs-unies-review-prompt-p1.md`
+- `_bmad-output/implementation-artifacts/34-10-graphiques-couleurs-unies-review-prompt-p2.md`
 - `_bmad-output/implementation-artifacts/e34-choix-autonomes-e3410.md`
 - `_bmad-output/implementation-artifacts/sprint-status.yaml`
