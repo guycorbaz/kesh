@@ -118,7 +118,8 @@ compte est écartée. Aucun rôle ne se déduit du numéro d'un compte (Story 14
    sur la **liste fermée** des **huit** clés de cet AC (quatre `failed-rule-masked*`, l'avis du lot, trois de F3-2) et celle du
    bouton. *(Validation P3, P3-3-2)* `ecartsAuCatalogue` (`frontend/src/lib/shared/i18n-repli-catalogue.ts:82-104`) juge **par
    préfixe** et signale aussi les clés du préfixe qu'aucun site littéral ne demande : appelé tel quel sur les trois préfixes
-   (`reconciliation-labels-`, `-failed-`, `-manual-`), il signalerait des voisines sans rapport. Le test **filtre** son résultat
+   (`reconciliation-labels-`, `reconciliation-failed-`, `reconciliation-manual-` ; *P4-F4 : écrits en entier, `startsWith` ne
+   retenant rien d'un préfixe tronqué*), il signalerait des voisines sans rapport. Le test **filtre** son résultat
    sur la liste fermée (ou compare relevé des replis et catalogue clé par clé), et asserte aussi que chacune des neuf clés est
    **présente** dans le relevé.
    **Garde de contrôle** *(P2-3-1 : la forme de la P1, avec `manuell`, captait « manuelle » et le libellé neuf lui-même, 197
@@ -128,14 +129,22 @@ compte est écartée. Aucun rôle ne se déduit du numéro d'un compte (Story 14
    « manual » / « a mano » ; elle manquait « otherwise assign the transaction manually » et « assegnare la transazione a mano »,
    trois messages par locale en anglais et en italien.)* Au commit de rédaction elle rend **97 lignes** (catalogues fr 12, de 12,
    en 12, it 12 ; `user-manual.tex` 18 ; `admin-manual.tex` 1 ; `frontend/src` 29 ; `frontend/tests` 1 ; rejouée et recomptée
-   par `| cut -d: -f1 | sort | uniq -c` au commit `73c365af`). **Survivants attendus après la story**, et eux seuls : le libellé
-   d'audit `audit-log-action-reconciliation-manual-matched` (C-e342-3, quatre locales) et son commentaire d'en-tête de
-   catalogue ; `admin-manual.tex:2100` (« n'en est pas affectée ; ce manuel », faux positif) ; les commentaires historiques datés
-   (« Story 8-5a-base FR45 — réconciliation manuelle », `reconciliation.api.ts`, `reconciliation.types.ts`,
-   `bank-accounts.api.ts`). *(P3-3-3)* Les commentaires de code qui **décrivent le geste** se réécrivent avec lui :
-   `ReconciliationProposals.svelte:15`, `:115`, `:200`, `:298`, `:574`, `ReconciliationProposals.test.ts:260`, `:279`, `:553`,
-   `:556`, `:601`, `ManualMatchModal.svelte:2` ; ceux qui citent une story datée restent. Sortie, nombre résiduel et arbitrage de
-   chaque commentaire copiés au Change Log. ⚠️ La garde est ligne à ligne : un libellé coupé
+   par `| cut -d: -f1 | sort | uniq -c` au commit `73c365af`).
+   **Règle des commentaires** *(validation P4 ciblée, F1 : la P3 disait « ceux qui citent une story datée restent » tout en
+   listant à réécrire des lignes qui en citent une)* : **la citation de story reste, la phrase qui nomme le geste se réécrit**
+   (« Story 8-5a-base FR45 — réconciliation manuelle » devient « Story 8-5a-base FR45 — écriture manuelle (ex-réconciliation
+   manuelle, renommée par la 34-3) » ou une forme équivalente qui ne réponde plus à la garde). Elle s'applique à **tous** les
+   commentaires que la garde rend :
+   - qui citent la story 8-5a-base : `ReconciliationProposals.svelte:574`, `ReconciliationProposals.test.ts:260`,
+     `ManualMatchModal.svelte:2`, `reconciliation.api.ts:67`, `reconciliation.types.ts:142`, et l'**en-tête de catalogue**
+     `# Story 8-5a-base FR45 — Réconciliation manuelle.` (fr `messages.ftl:1507`, de/en/it `:1440`), qui coiffe le bouton et le
+     titre renommés *(F3 : c'est le seul en-tête que la garde rend ; le libellé d'audit n'en a pas)* ;
+   - qui n'en citent pas : `ReconciliationProposals.svelte:15`, `:115`, `:200`, `:298`, `ReconciliationProposals.test.ts:279`,
+     `:553`, `:556` (donnée de test, réécrite avec son assertion), `:601`, `bank-accounts.api.ts:2`, et *(F2)*
+     `failed-proposal-label.ts:298`, `:327`, `failed-proposal-label.test.ts:329`, `:341`.
+   **Survivants attendus après la story**, et eux seuls : le libellé d'audit `audit-log-action-reconciliation-manual-matched`
+   (C-e342-3 ; fr `:3150`, de `:3077`, en `:3083`, it `:3078`) et `admin-manual.tex:2100` (« n'en est pas affectée ; ce manuel »,
+   faux positif) — **cinq lignes**. Sortie et nombre résiduel copiés au Change Log. ⚠️ La garde est ligne à ligne : un libellé coupé
    par la ligne (`user-manual.tex:2902-2903`, « \emph{Affecter » / « manuellement} ») lui échappe ; il est listé à l'AC-8.
 7. **AC-7 — E2E de bout en bout** (`reconciliation-manual-entry.spec.ts`, neuf) : relevé saisi par l'API, un débit d'un
    montant unique ; *Réconciliation* → *Écriture manuelle* sur la ligne → choix d'un compte **de classe 1 ou 2** autre que celui
@@ -250,6 +259,15 @@ parallèle, ses textes nomment déjà « Écriture manuelle » (C-e342-5).
     assertée ;
   - **P3-3-3** LOW (lus : `ReconciliationProposals.svelte:15`, `:115`, `:200`, `:298`, `:574`, `.test.ts:260`, `:279`, `:553`,
     `:556`, `:601`, `ManualMatchModal.svelte:2`) → commentaires du geste listés, à réécrire.
+- 2026-11-10 : Validation P4 ciblée (Haiku), remédiation (Opus 5.5). Rapport `kesh-gate-logs/e34-validate-p4-e342.md`, pour
+  cette fiche 1 M, 3 LOW, tous retenus après lecture :
+  - **F1** MEDIUM, **né de la remédiation P3** (P3-3-3) : règle unique « citation de story gardée, phrase du geste réécrite » ;
+    les six lignes qui citent la 8-5a-base (dont l'en-tête de catalogue) et les autres commentaires classés explicitement ;
+    survivants réduits au libellé d'audit (quatre locales) et au faux positif `admin-manual.tex:2100`, cinq lignes ;
+  - **F2** (lus : `failed-proposal-label.ts:298`, `:327`, `.test.ts:329`, `:341`) → ajoutés à la liste ;
+  - **F3** (lus : fr `messages.ftl:1507`, de/en/it `:1440`, et le libellé d'audit fr `:3150`, de `:3077`, en `:3083`, it `:3078`,
+    sans en-tête) → « commentaire d'en-tête » du libellé d'audit retiré, en-tête réel classé ;
+  - **F4** (lu : `i18n-repli-catalogue.ts:82-104`, `startsWith`) → préfixes écrits en entier.
 
 ## Dev Agent Record
 

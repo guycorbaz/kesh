@@ -79,8 +79,10 @@ chaque part, contraste contre le fond de la carte), et des teintes **dans les je
    plausible (`999'999'999.99`). **Règle tranchée** *(P2-10-3 : jsdom n'a pas de mise en page, ni `getBBox` ni
    `getComputedTextLength`)* : une fonction pure `centerFontSize(label, holeDiameter)` (taille de police décroissante avec la
    longueur du texte, bornée), testée en Vitest pour 4 et 14 caractères ; aucune mesure de rendu exigée. Quand `totalExpenses`
-   diffère de `expensePostsBase`, la note existante des comptes au solde créditeur reste, et dit en plus que les parts portent
-   sur `{ $base }` (C-e342-17). **`<desc>`** *(P2-10-2 : il dit aujourd'hui « pour un total de { $base } »,
+   diffère de `expensePostsBase`, la note existante des comptes au solde créditeur (`homepage-charts-credit-balance-note-one` /
+   `-other`, fr `messages.ftl:3477-3478`, inchangée : elle ne dit que le nombre de comptes écartés) reste, et **une phrase jointe
+   après elle**, clé neuve `homepage-charts-pie-base-note` (« Les parts portent sur { $base }. »), dit sur quelle base portent les
+   parts (C-e342-17 ; *P4-F5 : la note existante ne le dit pas*). **`<desc>`** *(P2-10-2 : il dit aujourd'hui « pour un total de { $base } »,
    `ExpensePieCard.svelte:74-92`, qui contredirait le centre)*. **Tranché à la validation P3 (P3-10-1)** : le `<desc>` existe
    déjà en **deux clés**, choisies par le nombre de comptes — `homepage-charts-pie-desc-one` (« … un seul compte de charges,
    pour un total de { $base } : { $top }. ») et `homepage-charts-pie-desc` (« … pour un total de { $base }. Le plus gros : … ») ;
@@ -94,7 +96,7 @@ chaque part, contraste contre le fond de la carte), et des teintes **dans les je
    `totalExpenses: '-50'` **sans poste**, `expensePostsBase` y vaut `'0'` par défaut, `:36`, et la carte n'y dessine aucun
    anneau)* : fixture **neuve avec postes** — un poste à 30, un compte au solde créditeur à −80 : `totalExpenses: '-50'`,
    `expensePostsBase: '30'`, `creditBalanceExpenseAccounts: 1` ; le centre affiche « -50.00 », signe compris (c'est le total du
-   compte de résultat), et la note dit que les parts portent sur 30.00. **Sans poste** (`expensePosts` vide), pas d'anneau,
+   compte de résultat), et la phrase jointe (`homepage-charts-pie-base-note`) dit que les parts portent sur 30.00. **Sans poste** (`expensePosts` vide), pas d'anneau,
    donc pas de total au centre : la carte garde son message `homepage-charts-no-posts` et sa note ; le total reste lisible aux
    barres et au compte de résultat (C-e342-17).
 5. **AC-5 — couleurs unies au camembert** : rang 1 rouge, 2 vert, 3 bleu, 4 violet, 5 cyan, « Autres » gris ; la pastille de
@@ -139,7 +141,7 @@ chaque part, contraste contre le fond de la carte), et des teintes **dans les je
 - [ ] **T2** : jetons dans `app.css` ; `homepage-charts.ts` (styles réduits à une couleur, géométrie d'anneau, sans motif) ;
   `MonthlyBarsCard.svelte`, `ExpensePieCard.svelte` ; suppression de `ChartPatterns.svelte` (par `git rm`, dans le commit).
 - [ ] **T1-bis** : `homepage-charts.spec.ts`, les deux clics de l'AC-8 (`:105-113`, `:215`).
-- [ ] **T3** : i18n (« Total des dépenses », note des parts, `<desc>` avec l'ordre ; quatre locales, replis égaux) ; manuel
+- [ ] **T3** : i18n (« Total des dépenses », phrase `homepage-charts-pie-base-note`, `homepage-charts-pie-desc-base`, `<desc>` avec l'ordre ; quatre locales, replis égaux) ; manuel
   (`.tex` ; PDF à l'intégration) ; CHANGELOG *Changé*
   (`refs #970`).
 - [ ] **T4** : captures ; contrôle visuel en simulation de daltonisme (DevTools de Chromium, *Rendering → Emulate vision
@@ -157,6 +159,8 @@ chaque part, contraste contre le fond de la carte), et des teintes **dans les je
   (Vitest du `<desc>`, cas « différents » du nombre de comptes concerné).
 - **M7** : `centerFontSize` rend une taille constante → rouge AC-4 (la taille pour 14 caractères doit être strictement inférieure
   à celle pour 4, et au moins égale au plancher lisible que la fonction déclare).
+- **M8** : `homepage-charts-pie-desc-base` (et la phrase `homepage-charts-pie-base-note`) jointe sans condition, ou sous la
+  condition inversée → rouge AC-4 (Vitest, cas « égaux » et cas « différents »).
 - **M5** : `#facc15` (jaune, 1,5:1 sur blanc) en cinquième couleur → rouge AC-7.
 
 ## Gates
@@ -201,6 +205,10 @@ Aucun fichier de code commun avec les autres stories de l'Epic 34. `user-manual.
     quatre cas, M6 reformulée. Symptôme grepé (`git grep -F 'pour un total de { $base }'`) : 2 lignes de catalogue fr, 2 replis,
     tous nommés à l'AC-4 ;
   - **P3-10-2** LOW → M7 pour `centerFontSize`.
+- 2026-11-10 : Validation P4 ciblée (Haiku), remédiation (Opus 5.5). Rapport `kesh-gate-logs/e34-validate-p4-e342.md`, pour
+  cette fiche 2 LOW, retenus après lecture : **F5** (lu : fr `messages.ftl:3477-3478`, la note des comptes créditeurs ne dit
+  que leur nombre) → la base des parts se dit par une phrase jointe, clé neuve `homepage-charts-pie-base-note`, AC-4 et T3 ;
+  C-e342-17 annotée au registre ; **F6** → M8, la condition de jointure.
   - CHANGELOG : *Changé* gardé (rendu d'une fonction existante modifié), cohérent avec la 34-3 (C-e342-22).
 
 ## Dev Agent Record

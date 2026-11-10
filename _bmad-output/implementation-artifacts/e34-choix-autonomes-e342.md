@@ -151,7 +151,10 @@ Mise à jour par union, jamais par écrasement.*
 - **Contexte** : `totalExpenses` (compte de résultat, somme des barres) et `expensePostsBase` (somme des soldes positifs,
   base des parts) diffèrent quand un compte de charges est au solde créditeur.
 - **Retenu** : `totalExpenses`, qui est « le total des dépenses » que Guy demande et qui recoupe les barres ; la note
-  existante dit alors sur quelle base portent les parts.
+  existante dit alors sur quelle base portent les parts. *(Annoté à la validation P4 ciblée, F5 : prémisse fausse à sa date —
+  la note existante, `homepage-charts-credit-balance-note-one` / `-other`, ne dit que le nombre de comptes écartés. La base des
+  parts se dit par une phrase jointe après elle, clé neuve `homepage-charts-pie-base-note`, et dans le `<desc>` par
+  `homepage-charts-pie-desc-base` (C-e342-25).)*
 - **Écartée** : `expensePostsBase` (égale la somme des parts, mais ne recoupe ni les barres ni le compte de résultat).
 - **Réversible** : oui. **Signalé à Guy** dans le rapport.
 
