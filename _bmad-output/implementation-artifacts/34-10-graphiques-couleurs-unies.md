@@ -1,6 +1,6 @@
 # Story 34-10 : graphiques de l'accueil en couleurs unies, anneau avec le total des dépenses au centre (#970)
 
-Status: ready-for-dev
+Status: review
 
 *Fiche rédigée le 2026-11-10 en autonomie (Opus 5.5), worktree `/home/gcorbaz/devel/kesh-e34`, branche `chore/epic-34-kickoff`,
 numéros de ligne de `a75835db`. Release **0.17.6**, Epic 34. **Aucune migration** ; frontend seul. Registre :
@@ -144,16 +144,16 @@ chaque part, contraste contre le fond de la carte), et des teintes **dans les je
 
 ## Tâches
 
-- [ ] **T0 — étape 0** : relire les prémisses ; recalculer les contrastes de l'AC-1 par le test avant de les écrire.
-- [ ] **T1 — rouge** : tests AC-1, AC-3 (géométrie d'anneau), AC-4, AC-7, AC-8 ; rouges journalisés
+- [x] **T0 — étape 0** : relire les prémisses ; recalculer les contrastes de l'AC-1 par le test avant de les écrire.
+- [x] **T1 — rouge** : tests AC-1, AC-3 (géométrie d'anneau), AC-4, AC-7, AC-8 ; rouges journalisés
   (`kesh-gate-logs/e342/rouges.log`).
-- [ ] **T2** : jetons dans `app.css` ; `homepage-charts.ts` (styles réduits à une couleur, géométrie d'anneau, sans motif) ;
+- [x] **T2** : jetons dans `app.css` ; `homepage-charts.ts` (styles réduits à une couleur, géométrie d'anneau, sans motif) ;
   `MonthlyBarsCard.svelte`, `ExpensePieCard.svelte` ; suppression de `ChartPatterns.svelte` (par `git rm`, dans le commit).
-- [ ] **T1-bis** : `homepage-charts.spec.ts`, les deux clics de l'AC-8 (`:105-113`, `:215`).
-- [ ] **T3** : i18n (« Total des dépenses », phrase `homepage-charts-pie-base-note`, `homepage-charts-pie-desc-base`, `<desc>` avec l'ordre ; quatre locales, replis égaux) ; manuel
+- [x] **T1-bis** : `homepage-charts.spec.ts`, les deux clics de l'AC-8 (`:105-113`, `:215`).
+- [x] **T3** : i18n (« Total des dépenses », phrase `homepage-charts-pie-base-note`, `homepage-charts-pie-desc-base`, `<desc>` avec l'ordre ; quatre locales, replis égaux) ; manuel
   (`.tex` ; PDF à l'intégration) ; CHANGELOG *Changé*
   (`refs #970`).
-- [ ] **T4** : captures ; contrôle visuel en simulation de daltonisme (DevTools de Chromium, *Rendering → Emulate vision
+- [x] **T4** : captures ; contrôle visuel en simulation de daltonisme (DevTools de Chromium, *Rendering → Emulate vision
   deficiencies*, deutéranopie et protanopie), une capture chacune, et ce qu'on y lit dit au Change Log.
 
 ### Mutations nommées
@@ -230,10 +230,106 @@ Aucun fichier de code commun avec les autres stories de l'Epic 34. `user-manual.
   la note des comptes créditeurs est hors de `{#if hasPosts}`) → condition `hasPosts` et totaux différents, absence sans poste
   dite, troisième cas Vitest, M8-bis ; **F3** LOW → titre de C-e342-25 annoté au registre.
 
+- 2026-11-10 : Développement (Opus 5.5), worktree `/home/gcorbaz/devel/kesh-e3410`, base `cdf13639`, commits `ddc1606f`
+  (code), `7a2cebcd` (liseré), puis ce compte rendu. Détail au Dev Agent Record.
+
 ## Dev Agent Record
 
 ### Agent Model Used
 
+Claude Opus 5.5, en autonomie. Registre des choix neufs : `e34-choix-autonomes-e3410.md`, C-e3410-1 à C-e3410-8.
+
 ### Completion Notes List
 
+**Étape 0.**
+- **P7-F1** (LOW) : la phrase de l'AC-4 qui précède l'ajout P6 est qualifiée (« en valeur… et qu'il y a des postes »). Ligne
+  lue : `ExpensePieCard.svelte:62` (à `cdf13639`) `{#if hasPosts}`, et `:173-181`, la note des comptes créditeurs hors de ce bloc.
+- **P7-F2** (LOW) : comparaison en valeur par `differentAmounts(a, b)` (`!new Big(a).eq(new Big(b))`, `homepage-charts.ts`),
+  fixture « `100.00` / `100` » (`HomepageCharts.test.ts`, « un compte, totaux égaux en valeur ») et test pur (`'30'` / `'30.00'`).
+  Lu : `homepage-summary.api.ts:45,48`, les deux champs sont des `string`.
+- **T0, contrastes** recalculés (formule WCAG de `contrast.ts`) avant d'être écrits au commentaire d'`app.css` : sur blanc, vert
+  3,30, rouge 6,47, bleu 8,72, violet 5,70, cyan 3,68, gris 4,76 ; vert/rouge 1,96 — identiques à la fiche. Le test AC-7 les
+  borne (≥ 3, ≥ 1,5).
+- Journaux et captures sont sous `kesh-gate-logs/e3410/` (clé du prompt), non `e342/` comme l'écrit la fiche.
+
+**Rouges** (`/home/gcorbaz/devel/kesh-gate-logs/e3410/rouges.log`) : tests écrits sur `cdf13639` avant le code ;
+`HomepageCharts.test.ts` : 8 rouges (AC-4, AC-5, AC-8) ; `homepage-charts.test.ts` rouge au chargement du module
+(`PIE_GEOMETRY` absent : `Cannot read properties of undefined (reading 'innerR')`) — le rouge test par test de ce fichier n'a
+donc pas été relevé avant le code ; ce sont les mutations qui montrent que ses tests mordent.
+
+**Fait.**
+- `app.css` : `--color-chart-revenue`, `--color-chart-expense`, `--color-chart-1` à `-5`, en hexadécimal.
+- `homepage-charts.ts` : `ChartStyle = { color, token }`, palette de l'AC-1 ; `PIE_GEOMETRY` (trou à 60 %), `fullRing`,
+  `centerFontSize` (C-e3410-5), `differentAmounts` ; `pieSlices` rend des secteurs d'anneau ; `ChartPattern`, `patternId`,
+  `chartFill` retirés.
+- `MonthlyBarsCard.svelte` : barres et légende en couleurs unies. `ExpensePieCard.svelte` : anneau, liseré
+  `var(--color-surface)` de 1,5 (C-e3410-4, -8), part pleine en `circle` au rayon médian, centre `homepage-chart-pie-total`
+  (libellé et montant, `--color-text`), `<desc>` au total des dépenses avec l'ordre des parts (C-e3410-2, -3),
+  `homepage-charts-pie-desc-base` et `homepage-charts-pie-base-note` sous `hasPosts && differentAmounts(…)`.
+- `ChartPatterns.svelte` supprimé par `git rm` (prescrit par la fiche, T2).
+- i18n : trois clés neuves (`homepage-charts-pie-total-label`, `-pie-desc-base`, `-pie-base-note`), deux récrites, quatre
+  locales, replis égaux. `git grep -n -F` des quatre formes « { $base } » de l'AC-4 sur `frontend crates` : vide ;
+  `git grep -n 'ChartPatterns\|patternId\|chartFill\|<pattern' -- frontend/src ':!*.test.ts'` : vide.
+- Compteurs des gardes i18n recomptés à la source : `i18nMsg(` dans `ExpensePieCard.svelte` 15 (`cdf13639`) → 18, d'où
+  `sitesTotal` 2922 → 2925 ; candidate neuve `totalLabel`, d'où 85 → 86 et `conforme` 71 → 72.
+- E2E `homepage-charts.spec.ts` : aide `clickRing` (C-e3410-7), tests 3 et 6b.
+- Manuel utilisateur `.tex`, § *Revenus, dépenses et principaux postes* (barres, anneau, couleurs, ordre, total du centre égal
+  aux barres, base des parts). PDF non régénéré (C-e342-20, à l'intégration).
+- CHANGELOG : `## [0.17.6] — Non publié`, *Changé*.
+
+**Tests**, de `cdf13639` à `HEAD` : `homepage-charts.test.ts` 33 → 41 `it(` ; `HomepageCharts.test.ts` 18 → 27.
+
+**Mutations** (`/home/gcorbaz/devel/kesh-gate-logs/e3410/mut/*.log`) : 14 jouées, 14 tuées, aucune équivalente — M1, M2,
+M2-bis, M3 (`PIE_GEOMETRY.innerR` nul), M3-b (rayon intérieur nul dans `pieSlices`), M4, M5, M6 (repli Svelte), M6-ftl
+(catalogue fr, tuée par les gardes i18n de `src/lib/shared` : variables du repli et du catalogue, jeu de variables des quatre
+locales), M7, M8-inverse, M8-sans-condition, M8-bis, M9-chaines (P7-F2). Restauration par `git checkout --` puis `touch`.
+
+**Gates, au dernier commit de code `7a2cebcd`** (journaux `/home/gcorbaz/devel/kesh-gate-logs/e3410/`) :
+- `npm run check` : 0 erreur, 29 avertissements (aucun dans `homepage/`) ; `lint-i18n-ownership` : PASS ;
+  `npm run test:unit` : **2898 passés, 222 fichiers** ; `npm run build` : vert.
+- Premier Vitest complet, sur `ddc1606f` : 1 rouge, `jetons-non-definis.test.ts` (l'attribut SVG `stroke-linejoin` pris pour une
+  classe), corrigé par `7a2cebcd` (C-e3410-8).
+- Rust : aucun fichier `.rs` touché ; les catalogues `.ftl` le sont, d'où `cargo test -p kesh-i18n` (41 passés) et
+  `cargo test -p kesh-api --test textes_coherents` (23 passés), et `cargo build -p kesh-api` pour l'E2E. **Ni `test-fast.sh`, ni
+  `cargo build --workspace`, ni `gate-ci.sh`** (consigne de la story d'écran, disque partagé).
+- **E2E complet** (`e2e-r1.log`, `kesh_e2e_e3410` recréée vide, port 3350, runner avec `KESH_INBOX_DIR` et
+  `KESH_DOCUMENTS_DIR`) : **384 passés, 8 échecs, 18 ignorés**. Les sept KF-029 (#97) de `docs/testing.md` :
+  `mode-expert.spec.ts:26`, `:41`, `onboarding-path-b.spec.ts:65`, `:92`, `onboarding.spec.ts:57`, `:77`, `:150`. Le huitième,
+  `fiscal-year-closing-journey.spec.ts:169`, est un délai dépassé dans le `beforeEach` (`seedTestState`, 30 s) ; **rejoué seul**
+  avec `homepage-charts.spec.ts` (`e2e-r2.log`) : **13 passés, 0 échec** — le huitième, variable, de `docs/testing.md`.
+  Les tests de `homepage-charts.spec.ts` passent dans les deux runs.
+
+**Captures** (`/home/gcorbaz/devel/kesh-gate-logs/e3410/captures/`, thème clair, base jetable `kesh_e3410`, données
+synthétiques : revenus sur onze mois, sept comptes de charges, mars aux dépenses négatives, un compte au solde créditeur) :
+`barres-`, `anneau-`, `accueil-{avant,apres}.png` ; `graphiques-deuteranopia-apres.png`, `graphiques-protanopia-apres.png`
+(émulation CDP `Emulation.setEmulatedVisionDeficiency`, celle du panneau *Rendering* des DevTools). **Ce qu'on y lit**
+(C-e342-18) : en deutéranopie, revenus et dépenses deviennent deux olives, la plus sombre pour les dépenses — séparées par la
+clarté et la position, non par la teinte ; à l'anneau, rouge et vert (rangs 1 et 2) sont deux olives de clarté différente, bleu
+et violet deux bleus, cyan un bleu clair ; le liseré blanc marque chaque limite, et le tableau donne le rang. Le centre lit
+« Total des dépenses 25’125.00 », et la carte « Les parts portent sur 25’200.00. » après la note du compte créditeur.
+
+**Écarts.**
+- Consigne Edit : code, catalogues, manuel, CHANGELOG et fiche modifiés par l'outil Edit seulement. Le script de mutations
+  (Python, hors dépôt) écrit puis restaure les fichiers mutés, comme le permet la consigne ; le script E2E de `kesh-gate-logs`
+  a été retouché par une ligne Python (hors dépôt, non du code).
+- `git rm` de `ChartPatterns.svelte` : prescrit par la fiche ; retrait suivi par git, réversible.
+
 ### File List
+
+- `frontend/src/app.css`
+- `frontend/src/lib/features/homepage/homepage-charts.ts`
+- `frontend/src/lib/features/homepage/ExpensePieCard.svelte`
+- `frontend/src/lib/features/homepage/MonthlyBarsCard.svelte`
+- `frontend/src/lib/features/homepage/ChartPatterns.svelte` (supprimé)
+- `frontend/src/lib/features/homepage/homepage-charts.test.ts`
+- `frontend/src/lib/features/homepage/HomepageCharts.test.ts`
+- `frontend/src/lib/shared/i18n-keys.test.ts`
+- `frontend/src/lib/shared/i18n-libelle-en-dur.test.ts`
+- `frontend/tests/e2e/homepage-charts.spec.ts`
+- `crates/kesh-i18n/locales/{fr-CH,de-CH,it-CH,en-CH}/messages.ftl`
+- `docs/manual/fr/user-manual.tex`
+- `CHANGELOG.md`
+- `_bmad-output/implementation-artifacts/34-10-graphiques-couleurs-unies.md`
+- `_bmad-output/implementation-artifacts/34-10-graphiques-couleurs-unies-review-prompt-p1.md`
+- `_bmad-output/implementation-artifacts/e34-choix-autonomes-e3410.md`
+- `_bmad-output/implementation-artifacts/sprint-status.yaml`
