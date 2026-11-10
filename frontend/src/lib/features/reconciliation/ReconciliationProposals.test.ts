@@ -257,7 +257,7 @@ describe('ReconciliationProposals', () => {
 		]);
 	});
 
-	// Story 8-5a-base FR45 — bouton « Affecter manuellement » présent
+	// Story 8-5a-base FR45 — bouton « Écriture manuelle » (geste rebaptisé par la 34-3) présent
 	// sur toutes les rows pending (avec ou sans candidate). Décision
 	// Pass 1 code review P-M2 : override workflow utile pour frais
 	// bancaires (tx sans candidate) ET correction d'un match auto
@@ -276,9 +276,11 @@ describe('ReconciliationProposals', () => {
 		});
 
 		const buttons = await findAllByTestId('manual-match-button');
-		// 2 rows → 2 boutons « Affecter manuellement » (override workflow,
+		// 2 rows → 2 boutons « Écriture manuelle » (override workflow,
 		// même quand candidate auto-proposée existe — cf. L66 Pass 1).
 		expect(buttons).toHaveLength(2);
+		// Story 34-3 (#967, AC-1) — le nom dit qu'il passe une écriture.
+		expect(buttons[0].textContent?.trim()).toBe('Écriture manuelle');
 		// Présent sur la tx sans candidate ET sur la tx avec candidate.
 		expect(buttons[0].getAttribute('data-tx-id')).toBe('2');
 		expect(buttons[1].getAttribute('data-tx-id')).toBe('3');
@@ -550,10 +552,10 @@ describe('ReconciliationProposals — refus par lot lisibles (Story 15-5c, AC3)'
 		expect(queryByTestId('reconciliation-error')).toBeNull();
 	});
 
-	// Revue de code P1 (B1, E3) : une affectation manuelle ou un éclatement réussi ouvre un
+	// Revue de code P1 (B1, E3) : une écriture manuelle ou un éclatement réussi ouvre un
 	// nouveau bilan ; celui du lot précédent ne doit pas lui survivre.
 	it.each([
-		['une affectation manuelle', 'manual-match-button'],
+		['une écriture manuelle', 'manual-match-button'],
 		['un éclatement', 'split-button'],
 	])('efface le bilan du lot précédent après %s', async (_cas, bouton) => {
 		mockApi.getProposals
@@ -598,9 +600,11 @@ describe('ReconciliationProposals — refus par lot lisibles (Story 15-5c, AC3)'
 });
 
 // Story 15-6d (AC4, test 11, #524, choix C-15-6d-1) — le `journalAccountId` du compte bancaire
-// monté est passé à la modale d'affectation manuelle (`bankLedgerAccountId`), qui l'écarte des
+// monté est passé au dialogue d'écriture manuelle (`bankLedgerAccountId`), qui l'écarte des
 // contreparties (test 10, `ManualMatchModal.test.ts`). Repli : échec de l'appel, compte absent
 // ou non lié → `null`, aucun filtrage, aucune erreur affichée.
+// Story 34-3 (#967, AC-3, C-e342-2) — *Éclater* le reçoit aussi : le filtre des classes 5, 6 et
+// 7, qui l'écartait par accident, est retiré.
 describe('ReconciliationProposals — compte de la banque passé à la modale (Story 15-6d)', () => {
 	const mockBankAccounts = vi.mocked(bankAccountsApi);
 
@@ -628,11 +632,13 @@ describe('ReconciliationProposals — compte de la banque passé à la modale (S
 		} satisfies GetProposalsResponse);
 	});
 
-	async function ledgerPassedToModal(): Promise<{ value: string | null; errorShown: boolean }> {
+	async function ledgerPassedToModal(
+		bouton: 'manual-match-button' | 'split-button' = 'manual-match-button',
+	): Promise<{ value: string | null; errorShown: boolean }> {
 		const { findByTestId, queryByTestId, unmount } = render(ReconciliationProposals, {
 			bankAccountId: 17,
 		});
-		await fireEvent.click(await findByTestId('manual-match-button'));
+		await fireEvent.click(await findByTestId(bouton));
 		const stub = await findByTestId('stub-modal-success');
 		// Laisse se résoudre la promesse de `listBankAccounts` avant de lire la prop.
 		await vi.waitFor(() => expect(mockBankAccounts.listBankAccounts).toHaveBeenCalled());
@@ -648,6 +654,12 @@ describe('ReconciliationProposals — compte de la banque passé à la modale (S
 		const r = await ledgerPassedToModal();
 		expect(r.value).toBe('42');
 		expect(mockBankAccounts.listBankAccounts).toHaveBeenCalledTimes(1);
+	});
+
+	it('Story 34-3 (AC-3) — Éclater reçoit le compte de la banque', async () => {
+		mockBankAccounts.listBankAccounts.mockResolvedValue([bankAccount(18, 43), bankAccount(17, 42)]);
+		const r = await ledgerPassedToModal('split-button');
+		expect(r.value).toBe('42');
 	});
 
 	it('listBankAccounts en échec → null (aucun filtrage), aucune erreur affichée', async () => {

@@ -326,7 +326,7 @@ describe('failedProposalLabel', () => {
 		expect(calls).toEqual(['reconciliation-failed-counterparty-is-claim-account']);
 	});
 
-	it('T-b28 — supplier_invoice_in_payment_batch : annuler le lot ou affecter à la main, jamais « confirmer »', () => {
+	it('T-b28 — supplier_invoice_in_payment_batch : annuler le lot ou passer une écriture manuelle, jamais « confirmer »', () => {
 		const label = failedProposalLabel('RECONCILIATION_INVOICE_NOT_ELIGIBLE', {
 			reason: 'supplier_invoice_in_payment_batch',
 			paymentBatchId: 4,
@@ -338,8 +338,8 @@ describe('failedProposalLabel', () => {
 
 	// Revue de code P1 de la 30-1b (INFO de la lentille A) : le geste juste, raison par raison,
 	// est de traiter la facture — l'accepter (débit) ou rattacher la transaction à son règlement
-	// (crédit) ; « Affecter manuellement » n'est conseillé que sous condition, sans quoi il
-	// compterait la charge ou le produit deux fois (encadré L1 du manuel).
+	// (crédit) ; « Écriture manuelle » (geste rebaptisé par la 34-3) n'est conseillée que sous
+	// condition, sans quoi elle compterait la charge ou le produit deux fois (encadré L1 du manuel).
 	it.each([
 		['payment_batch', 'reconciliation-failed-rule-masked-payment-batch', 'lot de paiement', 'acceptez ici la facture proposée'],
 		// Story v017-4b (#849, décision Q4) : l'état `open` se nomme « validée ».
@@ -354,7 +354,7 @@ describe('failedProposalLabel', () => {
 		expect(calls).toEqual([key]);
 		expect(label).toContain(contenu);
 		expect(label).toContain(geste);
-		expect(label).toContain('N’utilisez « Affecter manuellement » que si');
+		expect(label).toContain('N’utilisez « Écriture manuelle » que si');
 		expect(label.toLowerCase()).not.toContain('confirm');
 	});
 
