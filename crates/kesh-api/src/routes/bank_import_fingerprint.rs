@@ -16,7 +16,10 @@
 //! 1. la balise de domaine [`DOMAIN_TAG`] ;
 //! 2. `company_id` ;
 //! 3. l'id du compte bancaire et son IBAN **normalisé** (espaces retirés,
-//!    majuscules — même normalisation que la sélection du relevé CAMT) ;
+//!    majuscules — même normalisation que la sélection du relevé CAMT). Story
+//!    34-11a1 (#972) : un compte **sans IBAN** y porte `null` JSON, distinct de
+//!    toute chaîne (même vide) ; un compte bancaire garde exactement l'empreinte
+//!    de la 0.17.5 (test à valeur figée) ;
 //! 4. le hash SHA-256 du fichier ;
 //! 5. le format détecté (`"csv"` / `"camt053"`) ;
 //! 6. pour un CSV, le **profil résolu** — tous ses champs sauf les deux
@@ -129,7 +132,9 @@ pub(crate) fn preview_fingerprint(
         DOMAIN_TAG,
         company_id,
         bank_account.id,
-        normalize_iban(&bank_account.iban),
+        // `Option<String>` → chaîne ou `null` JSON : un IBAN absent ne se
+        // confond avec aucune chaîne (Story 34-11a1, #972).
+        bank_account.iban.as_deref().map(normalize_iban),
         file_hash,
         format.as_str(),
         profile_json,
@@ -187,8 +192,10 @@ mod tests {
             company_id: 1,
             bank_name: "UBS".into(),
             description: None,
-            iban: "CH9300762011623852957".into(),
+            iban: Some("CH9300762011623852957".into()),
             qr_iban: None,
+            account_kind: kesh_db::entities::BankAccountKind::Bank,
+            card_last4: None,
             is_primary: true,
             journal_account_id: None,
             version: 1,
@@ -287,7 +294,7 @@ mod tests {
         acc.id = 8;
         assert_ne!(fp_csv(&acc, &profile()), base, "id du compte non couvert");
         let mut acc = account();
-        acc.iban = "CH5604835012345678009".into();
+        acc.iban = Some("CH5604835012345678009".into());
         assert_ne!(fp_csv(&acc, &profile()), base, "IBAN non couvert");
         let other_hash = "b".repeat(64);
         assert_ne!(
@@ -324,7 +331,7 @@ mod tests {
         assert_eq!(fp_csv(&account(), &p), base, "horodatages inclus à tort");
 
         let mut acc = account();
-        acc.iban = "ch93 0076 2011 6238 5295 7".into();
+        acc.iban = Some("ch93 0076 2011 6238 5295 7".into());
         assert_eq!(fp_csv(&acc, &profile()), base, "IBAN non normalisé");
         // Les champs du compte hors id et IBAN n'entrent pas non plus.
         let mut acc = account();
@@ -332,6 +339,42 @@ mod tests {
         acc.version = 9;
         acc.updated_at = ts(22);
         assert_eq!(fp_csv(&acc, &profile()), base);
+    }
+
+    /// U5 — Story 34-11a1 (#972, AC-7) : un compte bancaire garde **la même**
+    /// empreinte qu'en 0.17.5. Valeur figée : SHA-256 de
+    /// `["kesh-bank-import-preview/v1",1,7,"CH9300762011623852957","a…a","camt053",null]`,
+    /// forme compacte de `serde_json` (calculée hors de Kesh, le 2026-11-10).
+    /// Une modification de la forme du tableau pour un compte avec IBAN périme
+    /// les aperçus de tout client resté ouvert pendant une mise à jour : elle
+    /// doit être délibérée (changer [`DOMAIN_TAG`]), jamais accidentelle.
+    #[test]
+    fn u5_bank_account_fingerprint_is_frozen_since_0_17_5() {
+        assert_eq!(
+            preview_fingerprint(1, &account(), HASH, FingerprintFormat::Camt053, None),
+            "6bf3e8296ece020b9fe0c8c5c289f88d62929a451436864ed9559f56f700cb5e"
+        );
+    }
+
+    /// U6 — Story 34-11a1 (#972, AC-7) : un IBAN absent s'encode distinctement
+    /// de toute chaîne (vide, ou la chaîne `"null"`), et de façon stable.
+    #[test]
+    fn u6_absent_iban_is_distinct_from_every_string_and_stable() {
+        let mut sans = account();
+        sans.iban = None;
+        let fp_sans = fp_csv(&sans, &profile());
+        assert!(is_lower_hex_64(&fp_sans), "{fp_sans}");
+        assert_eq!(fp_csv(&sans, &profile()), fp_sans, "IBAN absent instable");
+        for chaine in ["", "null", "NULL"] {
+            let mut acc = account();
+            acc.iban = Some(chaine.into());
+            assert_ne!(
+                fp_csv(&acc, &profile()),
+                fp_sans,
+                "IBAN absent confondu avec la chaîne {chaine:?}"
+            );
+        }
+        assert_ne!(fp_csv(&account(), &profile()), fp_sans);
     }
 
     /// U4 — forme du champ multipart.

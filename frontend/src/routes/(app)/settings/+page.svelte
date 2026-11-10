@@ -13,7 +13,7 @@
 	} from '$lib/features/settings/settings.api';
 	import type { CompanyCurrentResponse } from '$lib/features/settings/settings.types';
 	import SessionIdleSection from '$lib/features/settings/SessionIdleSection.svelte';
-	import { bankAccountName } from '$lib/features/bank-accounts/format';
+	import { bankAccountFullId, bankAccountName } from '$lib/features/bank-accounts/format';
 	import { authState } from '$lib/app/stores/auth.svelte';
 	import { isApiError } from '$lib/shared/utils/api-client';
 	import { errorMessageOf } from '$lib/shared/utils/error-message';
@@ -604,7 +604,8 @@
 				{#each data.bankAccounts as account}
 					<div class="mt-3 text-sm">
 						<p class="font-medium" data-testid="settings-bank-name-{account.id}">{bankAccountName(account)}</p>
-						<p class="text-text-muted">{account.iban}</p>
+						<!-- Story 34-11a1 (#972) — IBAN, « •••• 1234 » d'une carte, ou rien. -->
+						<p class="text-text-muted">{bankAccountFullId(account) ?? ''}</p>
 						{#if account.qrIban}
 							<p class="text-text-muted">QR-IBAN: {account.qrIban}</p>
 						{/if}

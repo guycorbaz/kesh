@@ -671,7 +671,8 @@ async fn create_once(
             "bank_account_id": new_id,
             "description": inserted.description,
             "is_primary": inserted.is_primary,
-            "iban_present": true,
+            // Story 34-11a1 (#972, AC-8) — lu, non plus codé en dur.
+            "iban_present": inserted.iban.is_some(),
             "qr_iban_present": inserted.qr_iban.is_some(),
             "journal_account_id": inserted.journal_account_id,
         });
@@ -765,6 +766,25 @@ pub async fn update_bank_account(
     Ok(Json(updated))
 }
 
+/// État d'un compte tel que la trace `bank_account.updated` le consigne, avant
+/// et après le `PUT` (aucun IBAN en clair : sa seule présence).
+///
+/// Story 34-11a1 (#972, AC-8) — `iban_present` est **lu** (`iban.is_some()`),
+/// et non plus écrit `true` en dur : un compte sans IBAN (carte de crédit) y
+/// porte `false`. Extrait en fonction pour être vérifiable avant qu'aucune
+/// route ne permette de créer un tel compte (34-11a2).
+fn full_update_audit_state(b: &BankAccount) -> serde_json::Value {
+    serde_json::json!({
+        "bank_name": b.bank_name,
+        "description": b.description,
+        "iban_present": b.iban.is_some(),
+        "qr_iban_present": b.qr_iban.is_some(),
+        "is_primary": b.is_primary,
+        "journal_account_id": b.journal_account_id,
+        "version": b.version,
+    })
+}
+
 /// Une tentative du `PUT` : sentinelle `companies`, partagés des réglages
 /// (`claims_for_target`), démotion de l'ancien principal, `FOR UPDATE` et
 /// `UPDATE` du compte (`update_for_company`), traces — conclusion par
@@ -844,24 +864,8 @@ async fn update_once(
         let details = serde_json::json!({
             "bank_account_id": id,
             "trigger": "full_update",
-            "before": {
-                "bank_name": before.bank_name,
-                "description": before.description,
-                "iban_present": true,
-                "qr_iban_present": before.qr_iban.is_some(),
-                "is_primary": before.is_primary,
-                "journal_account_id": before.journal_account_id,
-                "version": before.version,
-            },
-            "after": {
-                "bank_name": updated.bank_name,
-                "description": updated.description,
-                "iban_present": true,
-                "qr_iban_present": updated.qr_iban.is_some(),
-                "is_primary": updated.is_primary,
-                "journal_account_id": updated.journal_account_id,
-                "version": updated.version,
-            },
+            "before": full_update_audit_state(&before),
+            "after": full_update_audit_state(&updated),
         });
         audit_log::insert_in_tx(
             &mut tx,
@@ -1416,6 +1420,48 @@ mod tests {
 
     // Le test `ensemble_refuse_borne_par_borne` de la 26-2a a déménagé en
     // `kesh-core` (`text::tests::ancienne_liste_reste_refusee`), Story 32-8b0.
+
+    /// Story 34-11a1 (#972, AC-8) — `iban_present` suit l'IBAN du compte : faux
+    /// pour une carte sans IBAN, vrai pour un compte bancaire ; jamais l'IBAN
+    /// lui-même dans la trace.
+    #[test]
+    fn audit_du_put_dit_si_l_iban_est_present() {
+        let now = chrono::NaiveDate::from_ymd_opt(2026, 11, 10)
+            .unwrap()
+            .and_hms_opt(8, 0, 0)
+            .unwrap();
+        let banque = BankAccount {
+            id: 1,
+            company_id: 1,
+            bank_name: "UBS".into(),
+            description: None,
+            iban: Some("CH9300762011623852957".into()),
+            qr_iban: None,
+            account_kind: kesh_db::entities::BankAccountKind::Bank,
+            card_last4: None,
+            is_primary: false,
+            journal_account_id: None,
+            version: 1,
+            archived: false,
+            closed_on: None,
+            created_at: now,
+            updated_at: now,
+        };
+        let carte = BankAccount {
+            bank_name: "Visa".into(),
+            iban: None,
+            account_kind: kesh_db::entities::BankAccountKind::CreditCard,
+            card_last4: Some("1234".into()),
+            ..banque.clone()
+        };
+        assert_eq!(full_update_audit_state(&banque)["iban_present"], true);
+        assert_eq!(full_update_audit_state(&carte)["iban_present"], false);
+        let texte = full_update_audit_state(&banque).to_string();
+        assert!(
+            !texte.contains("CH93"),
+            "IBAN en clair dans la trace : {texte}"
+        );
+    }
 
     /// Story 32-8b0 (AC-03) — un point **hors de l'ancienne liste fermée** pour
     /// chaque voie neuve du prédicat partagé : contrôle de format attribué

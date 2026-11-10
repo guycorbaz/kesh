@@ -8,6 +8,20 @@ Le contenu est rédigé en français à destination des **fiduciaires, PME, ind�
 
 ---
 
+## [0.17.6] — Non publié
+
+⚠️ **Avant la mise à jour, prenez une sauvegarde complète** — la base, le `.keshbackup` **et** le dossier des documents. Cette version porte **une migration breaking** (`20261110000001_bank_accounts_without_iban`) : elle relève la version minimale de la base à **0.17.6**. Kesh écrit en plus sa propre sauvegarde dans `backup/pre-upgrade/` avant de migrer, mais elle ne dispense pas de la vôtre. **Une 0.17.5 refuse de démarrer sur une base passée en 0.17.6, et refuse d'importer une sauvegarde 0.17.6 : le retour à la 0.17.5 passe uniquement par la sauvegarde d'avant la mise à jour.**
+
+### Ajouté
+
+- **Un compte peut exister sans IBAN** (refs [#972](https://github.com/guycorbaz/kesh/issues/972)) : premier pas vers la carte de crédit tenue comme un compte. Chaque compte porte désormais un type (*compte bancaire* ou *carte de crédit*) et, pour une carte, les quatre derniers chiffres seulement. Tous les comptes existants restent des comptes bancaires, avec leur IBAN ; aucun écran ne permet encore de créer une carte.
+  - Les écrans qui affichent un compte (tableau *Comptes bancaires*, accueil, *Paramètres*, sélecteurs) montrent « •••• 1234 » à la place de l'IBAN d'une carte, ou son seul nom.
+  - **Un compte sans IBAN ne débite pas un lot de paiement** : il n'est pas proposé à l'écran des lots, et le serveur refuse (`409 PAYMENT_BATCH_ACCOUNT_HAS_NO_IBAN`). **Il n'accepte pas de relevé CAMT.053**, qui se choisit par l'IBAN : l'écran d'import ne propose que le CSV, et le serveur refuse le CAMT (`422 BANK_IMPORT_CAMT_NEEDS_IBAN`) ; le CSV et la saisie manuelle restent ouverts. Il n'est jamais le compte principal, celui de la QR-facture.
+  - **Pour l'API** : `iban` peut valoir `null` dans les lectures des comptes ; `accountKind` et `cardLast4` s'ajoutent à chaque compte (`docs/api-external.md`, note ¹¹ du § 7).
+  - **Export CSV** : `bank_accounts.csv` gagne `account_kind` et `card_last4` **en fin de ligne** ; `iban` est vide pour un compte sans IBAN.
+
+---
+
 ## [0.17.5] — 2026-11-07
 
 ⚠️ **Avant la mise à jour, prenez une sauvegarde complète** — la base, le `.keshbackup` **et** le dossier des documents. Cette version porte **une migration** (non breaking), la première à passer par la sauvegarde que Kesh écrit lui-même avant de migrer ([#847](https://github.com/guycorbaz/kesh/issues/847)) : au démarrage, il dépose une sauvegarde complète dans `backup/pre-upgrade/`, et **refuse de migrer si elle échoue** (échappatoire : `KESH_SKIP_PRE_UPGRADE_BACKUP`). **La migration donne un numéro interne aux factures fournisseur déjà validées** (`FF-2025-001`, `FF-2026-001`…). **Le retour à la 0.17.4 passe uniquement par la sauvegarde d'avant la mise à jour** : la 0.17.4 ne démarre plus sur une base migrée, et elle refuse une sauvegarde prise en 0.17.5 ; les numéros écrits sur le papier depuis la mise à jour seraient alors à refaire (manuel d'administration, *Passer à la 0.17.5*).

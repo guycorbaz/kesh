@@ -1426,6 +1426,16 @@ pub enum DbError {
     #[error("Compte bancaire clos — lecture seule : id={bank_account_id}")]
     BankAccountClosed { bank_account_id: i64 },
 
+    /// Le compte source d'un lot de paiement n'a **pas d'IBAN** (carte de
+    /// crédit) — Story 34-11a1 (#972, C-e341-18). Un fichier `pain.001` exige
+    /// l'IBAN du débiteur : le lot est refusé à sa création
+    /// (`payment_batches::create_batch`, rien n'est écrit), et la génération
+    /// d'un lot forgé en base refuse au lieu d'échouer au décodage (500).
+    /// Fondé sur `iban IS NULL`, jamais sur le type du compte. Mappé vers HTTP
+    /// `409` `PAYMENT_BATCH_ACCOUNT_HAS_NO_IBAN`, `details.bankAccountId`.
+    #[error("Le compte bancaire source n'a pas d'IBAN : id={bank_account_id}")]
+    PaymentBatchAccountHasNoIban { bank_account_id: i64 },
+
     /// Pool épuisé ou timeout d'acquisition (retry-able côté API → 503).
     #[error("Pool de connexions épuisé ou timeout : {0}")]
     ConnectionUnavailable(String),
@@ -1620,6 +1630,7 @@ impl DbError {
             Self::OpeningComplementRefused { reason, .. } => reason.code(),
             Self::ConfigurationRequired(_) => "CONFIGURATION_REQUIRED",
             Self::BankAccountClosed { .. } => "BANK_ACCOUNT_CLOSED",
+            Self::PaymentBatchAccountHasNoIban { .. } => "PAYMENT_BATCH_ACCOUNT_HAS_NO_IBAN",
             Self::ConnectionUnavailable(_) => "CONNECTION_UNAVAILABLE",
             Self::InvalidInput(_) => "INVALID_INPUT",
             Self::Invariant(_) => "INVARIANT_VIOLATION",

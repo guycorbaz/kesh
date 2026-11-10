@@ -4,9 +4,50 @@ import {
 	BANK_ACCOUNT_DESCRIPTION_MAX,
 	bankAccountName,
 	bankAccountOptionLabel,
+	bankAccountShortId,
+	cardLast4Label,
+	shortIban,
 } from './format';
 
 const IBAN = 'CH9300762011623852957';
+
+// Story 34-11a1 (#972, AC-10) — un compte sans IBAN s'affiche sans planter.
+describe('compte sans IBAN', () => {
+	it('shortIban est gardé : null rend une chaîne vide, sans TypeError', () => {
+		expect(shortIban(null)).toBe('');
+		expect(shortIban(IBAN)).toBe('••••2957');
+	});
+
+	it('cardLast4Label : « •••• 1234 », null sans quatre chiffres', () => {
+		expect(cardLast4Label('1234')).toBe('•••• 1234');
+		expect(cardLast4Label(null)).toBeNull();
+		expect(cardLast4Label(undefined)).toBeNull();
+	});
+
+	it('bankAccountShortId : IBAN court, carte, ou rien', () => {
+		expect(bankAccountShortId({ iban: IBAN, cardLast4: null })).toBe('••••2957');
+		expect(bankAccountShortId({ iban: null, cardLast4: '1234' })).toBe('•••• 1234');
+		expect(bankAccountShortId({ iban: null, cardLast4: null })).toBe('');
+	});
+
+	it('bankAccountOptionLabel : « •••• 1234 » à la place de l’IBAN, dans les deux styles', () => {
+		const carte = { bankName: 'Visa', description: 'Pro', iban: null, cardLast4: '1234' };
+		expect(bankAccountOptionLabel(carte)).toBe('Visa — Pro — •••• 1234');
+		expect(bankAccountOptionLabel(carte, 'parens')).toBe('Visa — Pro (•••• 1234)');
+	});
+
+	it('bankAccountOptionLabel : le nom seul sans IBAN ni quatre chiffres (jamais « null »)', () => {
+		const nu = { bankName: 'Caisse', description: null, iban: null };
+		expect(bankAccountOptionLabel(nu)).toBe('Caisse');
+		expect(bankAccountOptionLabel(nu, 'parens')).toBe('Caisse');
+	});
+
+	it('bankAccountOptionLabel : un IBAN présent garde la priorité sur les quatre chiffres', () => {
+		expect(
+			bankAccountOptionLabel({ bankName: 'UBS', description: null, iban: IBAN, cardLast4: '1234' }),
+		).toBe(`UBS — ${IBAN}`);
+	});
+});
 
 describe('bankAccountName', () => {
 	it('avec description : « UBS — Personnel »', () => {

@@ -51,7 +51,7 @@ use crate::errors::{DbError, map_db_error};
 /// [`find_by_id_in_tx`].
 macro_rules! columns {
     () => {
-        "id, company_id, bank_name, iban, qr_iban, is_primary, journal_account_id, version, archived, description, closed_on, created_at, updated_at"
+        "id, company_id, bank_name, iban, qr_iban, account_kind, card_last4, is_primary, journal_account_id, version, archived, description, closed_on, created_at, updated_at"
     };
 }
 
@@ -251,7 +251,7 @@ pub async fn list_by_company(
 /// `upsert_primary` (`bank_name`, `iban`, `qr_iban`).
 fn is_no_op_change(existing: &BankAccount, new: &NewBankAccount) -> bool {
     existing.bank_name == new.bank_name
-        && existing.iban == new.iban
+        && existing.iban.as_deref() == Some(new.iban.as_str())
         && existing.qr_iban == new.qr_iban
 }
 

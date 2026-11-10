@@ -80,7 +80,10 @@
 	onMount(async () => {
 		try {
 			const [, , banks] = await Promise.all([reload(), loadOpenInvoices(), listBankAccounts()]);
-			bankAccounts = banks.filter((b) => b.journalAccountId !== null);
+			// Story 34-11a1 (#972, AC-5) — un compte sans IBAN ne peut pas débiter
+			// un `pain.001` : il n'est pas proposé (le serveur le refuse en 409
+			// PAYMENT_BATCH_ACCOUNT_HAS_NO_IBAN).
+			bankAccounts = banks.filter((b) => b.journalAccountId !== null && b.iban !== null);
 		} catch (err) {
 			if (isApiError(err)) errorMsg = err.message;
 		} finally {

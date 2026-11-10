@@ -1,6 +1,6 @@
 -- SQUASH DU SCHÉMA DE TEST — Story 22-5 (#251). GÉNÉRÉ, NE PAS ÉDITER.
 -- Régénérer : scripts/regen-test-schema.sh
--- Équivalent des 90 migrations de crates/kesh-db/migrations/,
+-- Équivalent des 91 migrations de crates/kesh-db/migrations/,
 -- rejouées en UN batch DDL par base éphémère de test.
 --
 -- Le garde-fou crates/kesh-db/tests/test_schema_guard.rs compare ce schéma
@@ -153,7 +153,7 @@ CREATE TABLE `bank_accounts` (
   `id` bigint(20) NOT NULL AUTO_INCREMENT,
   `company_id` bigint(20) NOT NULL,
   `bank_name` varchar(255) NOT NULL,
-  `iban` varchar(34) NOT NULL COMMENT 'IBAN normalisé sans espaces',
+  `iban` varchar(34) DEFAULT NULL COMMENT 'IBAN normalisé sans espaces ; NULL pour un compte sans IBAN (carte de crédit)',
   `qr_iban` varchar(34) DEFAULT NULL COMMENT 'QR-IBAN optionnel (QR-IID 30000-31999)',
   `journal_account_id` bigint(20) DEFAULT NULL,
   `is_primary` tinyint(1) NOT NULL DEFAULT 0,
@@ -163,13 +163,19 @@ CREATE TABLE `bank_accounts` (
   `archived` tinyint(1) NOT NULL DEFAULT 0,
   `description` varchar(60) DEFAULT NULL,
   `closed_on` date DEFAULT NULL,
+  `account_kind` varchar(20) NOT NULL DEFAULT 'bank' COMMENT 'Type du compte : bank (IBAN obligatoire) ou credit_card (sans IBAN)',
+  `card_last4` char(4) DEFAULT NULL COMMENT 'Quatre derniers chiffres d''une carte ; le numéro complet n''est jamais gardé',
   PRIMARY KEY (`id`),
   KEY `fk_bank_accounts_company` (`company_id`),
   KEY `idx_bank_accounts_journal_account` (`journal_account_id`),
   CONSTRAINT `fk_bank_accounts_company` FOREIGN KEY (`company_id`) REFERENCES `companies` (`id`),
   CONSTRAINT `chk_bank_accounts_bank_name_nonempty` CHECK (char_length(trim(`bank_name`)) > 0),
   CONSTRAINT `chk_bank_accounts_iban_nonempty` CHECK (char_length(trim(`iban`)) > 0),
-  CONSTRAINT `chk_bank_accounts_closed_not_primary` CHECK (`closed_on` is null or `is_primary` = 0)
+  CONSTRAINT `chk_bank_accounts_closed_not_primary` CHECK (`closed_on` is null or `is_primary` = 0),
+  CONSTRAINT `chk_bank_accounts_account_kind` CHECK (`account_kind` in ('bank','credit_card')),
+  CONSTRAINT `chk_bank_accounts_bank_has_iban` CHECK (`account_kind` <> 'bank' or `iban` is not null),
+  CONSTRAINT `chk_bank_accounts_card_shape` CHECK (`account_kind` <> 'credit_card' or `iban` is null and `qr_iban` is null and `is_primary` = 0),
+  CONSTRAINT `chk_bank_accounts_card_last4` CHECK (`card_last4` is null or `account_kind` = 'credit_card' and `card_last4` regexp '^[0-9]{4}$')
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 DROP TABLE IF EXISTS `bank_imports`;
@@ -1347,7 +1353,7 @@ CREATE TABLE `vat_rates` (
 -- Ligne d'installation, RELEVÉE dans la base migrée (jamais codée en dur :
 -- chaque bump P2 de kesh_version_min_required la déplace).
 INSERT INTO `_kesh_version` (`id`, `kesh_version_min_required`, `kesh_version_last_applied`)
-VALUES (1, '0.17.0', '0.1.0');
+VALUES (1, '0.17.6', '0.1.0');
 
 -- Réglage de la sauvegarde automatique, RELEVÉ dans la base migrée
 -- (Story 31-1c : défauts posés par la migration ; dump --no-data).

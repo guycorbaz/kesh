@@ -1602,3 +1602,80 @@ async fn confirming_a_batch_sets_paid_at_to_the_payment_date(pool: MySqlPool) {
         "paid_at = la date de paiement du lot, à minuit"
     );
 }
+
+// ===========================================================================
+// Story 34-11a1 (#972, AC-5) — un compte sans IBAN ne débite pas un pain.001
+// ===========================================================================
+
+/// Transforme le compte source du contexte en carte de crédit, **forgée en
+/// base** (aucune route ne crée encore de compte sans IBAN) : sans IBAN, ni
+/// principale, quatre chiffres.
+async fn forge_card(pool: &MySqlPool, ctx: &Ctx) {
+    sqlx::query(
+        "UPDATE bank_accounts SET account_kind = 'credit_card', iban = NULL, \
+         is_primary = FALSE, card_last4 = '1234' WHERE id = ?",
+    )
+    .bind(ctx.bank_id)
+    .execute(pool)
+    .await
+    .unwrap();
+}
+
+async fn batch_count(pool: &MySqlPool, ctx: &Ctx) -> i64 {
+    sqlx::query_scalar("SELECT COUNT(*) FROM payment_batches WHERE company_id = ?")
+        .bind(ctx.seeded.company_id)
+        .fetch_one(pool)
+        .await
+        .unwrap()
+}
+
+/// AC-5 — `create_batch` sur un compte sans IBAN : refus nommé, rien d'écrit.
+#[sqlx::test(migrations = "./test-schema")]
+async fn create_batch_refuses_an_account_without_iban(pool: MySqlPool) {
+    let ctx = setup(&pool).await;
+    let inv = make_invoice(&pool, &ctx, Some(IBAN_A), None, Some("R"), dec!(10.00)).await;
+    forge_card(&pool, &ctx).await;
+
+    let err =
+        payment_batches::create_batch(&pool, new_batch(&ctx, vec![inv]), ctx.seeded.admin_user_id)
+            .await
+            .expect_err("un compte sans IBAN ne débite pas un pain.001");
+    assert!(
+        matches!(err, DbError::PaymentBatchAccountHasNoIban { bank_account_id } if bank_account_id == ctx.bank_id),
+        "{err:?}"
+    );
+    assert_eq!(batch_count(&pool, &ctx).await, 0, "aucun lot écrit");
+    let (still_open, _) = supplier_invoices::get(&pool, ctx.seeded.company_id, inv)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        still_open.status, "open",
+        "la facture n'est pas verrouillée"
+    );
+}
+
+/// AC-5 — un lot **forgé** sur un compte devenu sans IBAN : la génération rend
+/// le refus nommé, et non un échec de décodage (le 500 d'avant la 34-11a1).
+#[sqlx::test(migrations = "./test-schema")]
+async fn generate_pain001_refuses_an_account_without_iban(pool: MySqlPool) {
+    let ctx = setup(&pool).await;
+    let inv = make_invoice(&pool, &ctx, Some(IBAN_A), None, Some("R"), dec!(10.00)).await;
+    let batch_id =
+        payment_batches::create_batch(&pool, new_batch(&ctx, vec![inv]), ctx.seeded.admin_user_id)
+            .await
+            .unwrap()
+            .batch
+            .unwrap()
+            .batch
+            .id;
+    forge_card(&pool, &ctx).await;
+
+    let err = payment_batches::generate_pain001_xml(&pool, ctx.seeded.company_id, batch_id)
+        .await
+        .expect_err("pas de pain.001 sans IBAN débiteur");
+    assert!(
+        matches!(err, DbError::PaymentBatchAccountHasNoIban { bank_account_id } if bank_account_id == ctx.bank_id),
+        "{err:?}"
+    );
+}

@@ -59,7 +59,10 @@ async fn create_and_find_primary(pool: MySqlPool) {
         .await
         .unwrap();
     assert!(found.is_some());
-    assert_eq!(found.unwrap().iban, "CH9300762011623852957");
+    assert_eq!(
+        found.unwrap().iban.as_deref(),
+        Some("CH9300762011623852957")
+    );
 }
 
 #[sqlx::test(migrations = "./test-schema")]
@@ -215,7 +218,7 @@ async fn upsert_primary_partial_change_bumps_version(pool: MySqlPool) {
     .await
     .unwrap();
     assert_eq!(updated.version, version_initial + 1);
-    assert_eq!(updated.iban, "CH1809000000306547981");
+    assert_eq!(updated.iban.as_deref(), Some("CH1809000000306547981"));
 }
 
 #[sqlx::test(migrations = "./test-schema")]
@@ -2868,4 +2871,179 @@ mod compte_clos {
             "⛔ la clôture devait voir le lot commité, sans interblocage — reçu {r:?}"
         );
     }
+}
+
+// ===========================================================================
+// Story 34-11a1 (#972) — un compte sans IBAN : schéma (AC-1, AC-4) et entité
+// (AC-3). Aucune route ne crée encore de compte sans IBAN : les cartes sont
+// forgées en base.
+// ===========================================================================
+
+/// `INSERT` brut d'une ligne `bank_accounts` ; rend le résultat (`Err` si la
+/// base refuse).
+async fn forge_row(
+    pool: &MySqlPool,
+    company_id: i64,
+    kind: &str,
+    iban: Option<&str>,
+    qr_iban: Option<&str>,
+    is_primary: bool,
+    card_last4: Option<&str>,
+) -> Result<i64, DbError> {
+    sqlx::query(
+        "INSERT INTO bank_accounts (company_id, bank_name, account_kind, iban, qr_iban, \
+         is_primary, card_last4) VALUES (?, 'Forgé', ?, ?, ?, ?, ?)",
+    )
+    .bind(company_id)
+    .bind(kind)
+    .bind(iban)
+    .bind(qr_iban)
+    .bind(is_primary)
+    .bind(card_last4)
+    .execute(pool)
+    .await
+    .map(|r| r.last_insert_id() as i64)
+    .map_err(kesh_db::errors::map_db_error)
+}
+
+fn assert_check(r: Result<i64, DbError>, contrainte: &str) {
+    match r {
+        Err(DbError::CheckConstraintViolation(msg)) => assert!(
+            msg.contains(contrainte),
+            "refus attendu par {contrainte}, reçu : {msg}"
+        ),
+        other => panic!("refus attendu par {contrainte}, reçu : {other:?}"),
+    }
+}
+
+/// AC-4 — une carte n'est jamais principale : la QR-facture, qui lit l'IBAN du
+/// principal, ne peut donc pas rencontrer un IBAN nul.
+#[sqlx::test(migrations = "./test-schema")]
+async fn sans_iban_une_carte_n_est_jamais_principale(pool: MySqlPool) {
+    let company_id = create_test_company(&pool).await;
+    assert_check(
+        forge_row(
+            &pool,
+            company_id,
+            "credit_card",
+            None,
+            None,
+            true,
+            Some("1234"),
+        )
+        .await,
+        "chk_bank_accounts_card_shape",
+    );
+    // La même carte, non principale, est admise.
+    forge_row(
+        &pool,
+        company_id,
+        "credit_card",
+        None,
+        None,
+        false,
+        Some("1234"),
+    )
+    .await
+    .expect("carte non principale admise");
+    assert!(
+        bank_accounts::find_primary(&pool, company_id)
+            .await
+            .unwrap()
+            .is_none()
+    );
+}
+
+/// AC-1 (C-e341-17) — les invariants du schéma, un par contrainte.
+#[sqlx::test(migrations = "./test-schema")]
+async fn sans_iban_les_invariants_du_schema(pool: MySqlPool) {
+    const IBAN: &str = "CH9300762011623852957";
+    const QR: &str = "CH4431999123000889012";
+    let c = create_test_company(&pool).await;
+    // Un compte bancaire a un IBAN.
+    assert_check(
+        forge_row(&pool, c, "bank", None, None, false, None).await,
+        "chk_bank_accounts_bank_has_iban",
+    );
+    // Une carte n'a ni IBAN ni QR-IBAN.
+    assert_check(
+        forge_row(&pool, c, "credit_card", Some(IBAN), None, false, None).await,
+        "chk_bank_accounts_card_shape",
+    );
+    assert_check(
+        forge_row(&pool, c, "credit_card", None, Some(QR), false, None).await,
+        "chk_bank_accounts_card_shape",
+    );
+    // Les quatre chiffres ne vont qu'à une carte, et sont quatre chiffres.
+    assert_check(
+        forge_row(&pool, c, "bank", Some(IBAN), None, false, Some("1234")).await,
+        "chk_bank_accounts_card_last4",
+    );
+    for mauvais in ["123", "12a4", "1234 "] {
+        assert_check(
+            forge_row(&pool, c, "credit_card", None, None, false, Some(mauvais)).await,
+            "chk_bank_accounts_card_last4",
+        );
+    }
+    // Le type est fermé.
+    assert_check(
+        forge_row(&pool, c, "paypal", None, None, false, None).await,
+        "chk_bank_accounts_account_kind",
+    );
+    // Un IBAN vide reste refusé (contrainte d'origine, inchangée).
+    assert_check(
+        forge_row(&pool, c, "bank", Some("  "), None, false, None).await,
+        "chk_bank_accounts_iban_nonempty",
+    );
+    // Une carte sans quatre chiffres est admise (le schéma ne les exige pas).
+    forge_row(&pool, c, "credit_card", None, None, false, None)
+        .await
+        .expect("carte sans quatre chiffres admise");
+}
+
+/// AC-3 — l'entité lit une carte : IBAN `None`, type, quatre chiffres ; et un
+/// compte créé par le dépôt est `bank` (défaut de la colonne).
+#[sqlx::test(migrations = "./test-schema")]
+async fn sans_iban_l_entite_lit_une_carte(pool: MySqlPool) {
+    use kesh_db::entities::BankAccountKind;
+    let company_id = create_test_company(&pool).await;
+    let banque = bank_accounts::create(
+        &pool,
+        NewBankAccount {
+            company_id,
+            bank_name: "UBS".into(),
+            iban: "CH9300762011623852957".into(),
+            qr_iban: None,
+            is_primary: true,
+        },
+    )
+    .await
+    .unwrap();
+    assert_eq!(banque.account_kind, BankAccountKind::Bank);
+    assert_eq!(banque.iban.as_deref(), Some("CH9300762011623852957"));
+    assert_eq!(banque.card_last4, None);
+
+    let carte_id = forge_row(
+        &pool,
+        company_id,
+        "credit_card",
+        None,
+        None,
+        false,
+        Some("1234"),
+    )
+    .await
+    .unwrap();
+    let carte = bank_accounts::find_by_id_for_company(&pool, company_id, carte_id)
+        .await
+        .unwrap()
+        .expect("carte lue");
+    assert_eq!(carte.iban, None);
+    assert_eq!(carte.account_kind, BankAccountKind::CreditCard);
+    assert_eq!(carte.card_last4.as_deref(), Some("1234"));
+
+    let liste = bank_accounts::list_by_company(&pool, company_id, Default::default())
+        .await
+        .unwrap();
+    assert_eq!(liste.len(), 2, "la carte est listée sans échec de décodage");
 }

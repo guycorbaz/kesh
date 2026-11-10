@@ -4646,7 +4646,8 @@ fn v0162a_manual_body(bank_account_id: i64, from: &str, to: &str) -> Value {
 
 /// AC-3 — l'aller-retour d'un relevé `MANUAL` : exporté, réimporté dans la
 /// même version, relevé et transactions identiques ; le manifeste porte
-/// `keshVersionMinRequired = "0.17.0"`.
+/// le `keshVersionMinRequired` courant (`"0.17.0"` à la v016-2a, `"0.17.6"`
+/// depuis la Story 34-11a1).
 #[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn full_import_round_trip_keeps_a_manual_statement(pool: MySqlPool) {
     let app = spawn_app(pool.clone()).await;
@@ -4666,7 +4667,7 @@ async fn full_import_round_trip_keeps_a_manual_statement(pool: MySqlPool) {
     assert_eq!(before[0][0]["sourceFormat"], "MANUAL", "montage");
     let backup = export_backup(&app, &admin.jwt).await;
     let (manifest, _) = unzip(&backup);
-    assert_eq!(manifest["keshVersionMinRequired"], "0.17.0");
+    assert_eq!(manifest["keshVersionMinRequired"], "0.17.6");
 
     // La base change après l'export ; l'import la remet à l'état sauvegardé.
     sqlx::query("UPDATE bank_imports SET statement_id = 'modifié'")
@@ -4813,7 +4814,7 @@ async fn full_import_accepts_a_0_16_backup(pool: MySqlPool) {
             .fetch_one(&pool)
             .await
             .unwrap();
-    assert_eq!(min_required, "0.17.0", "_kesh_version n'est pas restaurée");
+    assert_eq!(min_required, "0.17.6", "_kesh_version n'est pas restaurée");
 
     // Le relevé saisi suit le CAMT restauré (clôture 1050.00) : le solde de
     // départ y est confronté, preuve que le relevé restauré se relit aussi

@@ -41,6 +41,7 @@
 	import { todayLocal } from '$lib/features/open-items/open-items';
 	import {
 		BANK_ACCOUNT_DESCRIPTION_MAX,
+		bankAccountFullId,
 		bankAccountName,
 		formatChfBalance,
 	} from '$lib/features/bank-accounts/format';
@@ -206,7 +207,9 @@
 	function openEditFull(ba: BankAccountSummary) {
 		formBankName = ba.bankName;
 		formDescription = ba.description ?? '';
-		formIban = ba.iban;
+		// Story 34-11a1 (#972) — un compte sans IBAN n'est pas éditable avant la
+		// 34-11a2 (le `PUT` exige l'IBAN) ; le formulaire ne plante pas pour autant.
+		formIban = ba.iban ?? '';
 		formQrIban = ba.qrIban ?? '';
 		formIsPrimary = ba.isPrimary;
 		formJournalAccountId = ba.journalAccountId;
@@ -650,7 +653,8 @@
 									</span>
 								{/if}
 							</td>
-							<td class="py-2 pr-4 font-mono text-xs {dimClass(ba)}" title={ba.iban}>{ba.iban}</td>
+							<!-- Story 34-11a1 (#972) — IBAN, « •••• 1234 » d'une carte, ou vide. -->
+							<td class="py-2 pr-4 font-mono text-xs {dimClass(ba)}" title={bankAccountFullId(ba) ?? ''} data-testid="iban-cell-{ba.id}">{bankAccountFullId(ba) ?? ''}</td>
 							<td class="py-2 pr-4 text-right font-mono {dimClass(ba)}" data-testid="balance-cell-{ba.id}">
 								{formatBalance(ba.currentBalance)}
 							</td>

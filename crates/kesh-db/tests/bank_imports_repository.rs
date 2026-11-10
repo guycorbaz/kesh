@@ -372,7 +372,7 @@ async fn find_by_id_for_company_returns_account_when_owned(pool: MySqlPool) {
     assert!(found.is_some());
     let acc = found.unwrap();
     assert_eq!(acc.id, bank_id);
-    assert_eq!(acc.iban, "CH4431999123000889012");
+    assert_eq!(acc.iban.as_deref(), Some("CH4431999123000889012"));
 }
 
 // ---------------------------------------------------------------------------

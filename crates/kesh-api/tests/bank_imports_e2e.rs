@@ -4780,3 +4780,101 @@ async fn camt_a_une_annee_hors_plage_est_refuse_sans_rien_ecrire(pool: MySqlPool
         .unwrap();
     assert_eq!(lignes, 0, "rien d'écrit");
 }
+
+// =========================================================================
+// Story 34-11a1 (#972, AC-6, AC-7) — un compte sans IBAN : CAMT refusé, CSV
+// accepté. Aucune route ne crée encore un tel compte : la carte est forgée.
+// =========================================================================
+
+/// Une carte de crédit forgée en base (sans IBAN, non principale).
+async fn forge_card(pool: &MySqlPool, company_id: i64) -> i64 {
+    sqlx::query(
+        "INSERT INTO bank_accounts (company_id, bank_name, account_kind, iban, card_last4) \
+         VALUES (?, 'Visa', 'credit_card', NULL, '1234')",
+    )
+    .bind(company_id)
+    .execute(pool)
+    .await
+    .unwrap()
+    .last_insert_id() as i64
+}
+
+/// AC-6 — aperçu et import CAMT sur un compte sans IBAN : `422
+/// BANK_IMPORT_CAMT_NEEDS_IBAN`, rien d'écrit ; le CSV, sur le **même** compte,
+/// est accepté (aperçu `accountIban: null`, import 201). Le second volet tue
+/// un refus placé avant la détection du format (M3b).
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn compte_sans_iban_camt_refuse_csv_accepte(pool: MySqlPool) {
+    let s = setup(&pool).await;
+    let card_id = forge_card(&pool, s.company_id).await;
+    let profile_id = create_test_bank_profile_csv(&pool, s.company_id, s.user_id).await;
+    let app = spawn_app(pool.clone()).await;
+
+    for chemin in ["/api/v1/bank-imports/preview", "/api/v1/bank-imports"] {
+        let resp = app
+            .client
+            .post(app.url(chemin))
+            .bearer_auth(&s.jwt)
+            .multipart(build_multipart(
+                read_fixture("v04_minimal.xml"),
+                "v04_minimal.xml",
+                card_id,
+            ))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), 422, "{chemin}");
+        let body: Value = resp.json().await.unwrap();
+        assert_eq!(
+            body["error"]["code"], "BANK_IMPORT_CAMT_NEEDS_IBAN",
+            "{body}"
+        );
+        assert_eq!(body["error"]["details"]["bankAccountId"], card_id, "{body}");
+    }
+    let imports: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM bank_imports")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(imports, 0, "rien d'écrit par le CAMT refusé");
+
+    let resp = app
+        .client
+        .post(app.url("/api/v1/bank-imports/preview"))
+        .bearer_auth(&s.jwt)
+        .multipart(build_csv_multipart(
+            CSV_VALID_3_LINES.as_bytes().to_vec(),
+            "carte.csv",
+            card_id,
+            profile_id,
+            &[],
+        ))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 200, "aperçu CSV d'une carte");
+    let body: Value = resp.json().await.unwrap();
+    assert!(
+        body["selectedStatement"]["accountIban"].is_null(),
+        "AC-7 : accountIban null pour un compte sans IBAN : {body}"
+    );
+    let fingerprint = body["previewFingerprint"].as_str().unwrap().to_string();
+
+    let resp = app
+        .client
+        .post(app.url("/api/v1/bank-imports"))
+        .bearer_auth(&s.jwt)
+        .multipart(build_csv_multipart(
+            CSV_VALID_3_LINES.as_bytes().to_vec(),
+            "carte.csv",
+            card_id,
+            profile_id,
+            &[("previewFingerprint", fingerprint)],
+        ))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 201, "import CSV d'une carte");
+    let body: Value = resp.json().await.unwrap();
+    assert_eq!(body["bankAccountId"], card_id);
+    assert_eq!(body["transactionCount"], 3);
+}
