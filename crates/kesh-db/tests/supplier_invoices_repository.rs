@@ -3373,46 +3373,61 @@ async fn commit_with_view_rolls_back_on_error_and_commits_with_the_view(pool: My
 
 /// Revue P1 de la 34-8 (B-3 ; mutation M7) — **une lecture de vue en échec annule la
 /// transaction**, comme une vue absente. La lecture échoue sans que la facture
-/// manque : la transaction retire l'écriture d'achat d'une facture validée, ce que
-/// `supplier_invoice_cancel_blocker` refuse (`DbError::Invariant`). Le témoin et ce
-/// retrait n'ont pas survécu.
+/// manque : la transaction rattache l'écriture d'achat d'une facture validée à une
+/// autre société, si bien que `supplier_invoice_cancel_blocker` ne la trouve plus
+/// (`DbError::NotFound`, au rang 2 de `settlement_entry_cancel_blocker`). Le témoin et
+/// ce rattachement n'ont pas survécu.
+///
+/// ⚠️ Le montage ne retire pas l'écriture d'achat (`purchase_journal_entry_id = NULL`) :
+/// la contrainte `chk_supplier_invoices_entry_iff_not_draft` le refuse, ce qui a fait
+/// échouer le premier montage — et a rendu la première mesure de M7 vide, rouge pour
+/// une raison sans lien avec la mutation.
 #[sqlx::test(migrations = "./test-schema")]
 async fn commit_with_view_rolls_back_when_the_view_cannot_be_read(pool: MySqlPool) {
     let ctx = setup(&pool).await;
     let c = ctx.seeded.company_id;
-    let id = supplier_invoices::create_validated(
+    let created = supplier_invoices::create_validated(
         &pool,
         one_line(&ctx, dec!(100.00), dec!(0)),
         ctx.seeded.admin_user_id,
     )
     .await
+    .unwrap();
+    let id = created.invoice.id;
+    let achat = created
+        .invoice
+        .purchase_journal_entry_id
+        .expect("facture validée : écriture d'achat");
+    let autre = sqlx::query(
+        "INSERT INTO companies (name, address, org_type, accounting_language, instance_language) \
+         VALUES ('Autre 34-8', 'Rue 1\n1000 Lausanne', 'Independant', 'FR', 'FR')",
+    )
+    .execute(&pool)
+    .await
     .unwrap()
-    .invoice
-    .id;
+    .last_insert_id() as i64;
 
     let mut tx = pool.begin().await.unwrap();
     ecrire_temoin(&mut tx, c).await;
-    sqlx::query("UPDATE supplier_invoices SET purchase_journal_entry_id = NULL WHERE id = ?")
-        .bind(id)
+    let fait = sqlx::query("UPDATE journal_entries SET company_id = ? WHERE id = ?")
+        .bind(autre)
+        .bind(achat)
         .execute(&mut *tx)
         .await
-        .expect("montage : l'écriture d'achat retirée dans la transaction");
+        .expect("montage : l'écriture d'achat passée à une autre société");
+    assert_eq!(fait.rows_affected(), 1, "montage : une ligne");
     let err = supplier_invoices::commit_with_view(tx, c, Ok::<(), DbError>(()), |_| id)
         .await
         .expect_err("la vue ne se lit pas");
-    assert!(
-        matches!(&err, DbError::Invariant(m) if m.contains("sans écriture d'achat")),
-        "{err:?}"
-    );
+    assert!(matches!(err, DbError::NotFound), "{err:?}");
     assert_eq!(temoins(&pool, c).await, 0, "la transaction est annulée");
-    let achat: Option<i64> =
-        sqlx::query_scalar("SELECT purchase_journal_entry_id FROM supplier_invoices WHERE id = ?")
-            .bind(id)
-            .fetch_one(&pool)
-            .await
-            .unwrap();
-    assert!(
-        achat.is_some(),
-        "le retrait de l'écriture d'achat n'a pas survécu"
+    let societe: i64 = sqlx::query_scalar("SELECT company_id FROM journal_entries WHERE id = ?")
+        .bind(achat)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(
+        societe, c,
+        "le rattachement à l'autre société n'a pas survécu"
     );
 }

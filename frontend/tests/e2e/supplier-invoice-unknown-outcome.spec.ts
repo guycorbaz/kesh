@@ -155,11 +155,17 @@ test('fiche fournisseur : paiement coupé et relecture en échec, la fiche dit d
 		paid = true;
 		await route.abort('connectionreset');
 	});
-	// La relecture qui suit le paiement est coupée elle aussi ; le chargement de la
-	// fiche, avant, passe.
+	// La relecture qui suit le paiement échoue elle aussi ; le chargement de la fiche,
+	// avant, passe. Un `500` et non une coupure : le client rejoue un `GET` coupé
+	// (`NETWORK_ERROR`, retry exponentiel de ~14 s, bandeau « réessai automatique »),
+	// pas un `500`.
 	await page.route(`**/api/v1/supplier-invoices/${id}`, async (route) => {
 		if (route.request().method() !== 'GET' || !paid) return route.fallback();
-		await route.abort('connectionreset');
+		await route.fulfill({
+			status: 500,
+			contentType: 'application/json',
+			body: JSON.stringify({ error: { code: 'INTERNAL_ERROR', message: 'Relecture refusée' } }),
+		});
 	});
 	await page.goto(`/supplier-invoices/${id}`);
 	await page.getByTestId('supplier-invoice-pay').getByRole('radio').nth(1).check();
