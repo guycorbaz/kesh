@@ -1,6 +1,6 @@
 # Story 34-5 : un second envoi du même règlement n'écrit pas un second règlement (#951)
 
-Status: in-progress
+Status: review
 
 *Fiche rédigée le 2026-11-10 en autonomie (Opus 5.5), worktree `/home/gcorbaz/devel/kesh-e34`, branche `chore/epic-34-kickoff`,
 numéros de ligne de `a75835db`. Release **0.17.6**, Epic 34. **Aucune migration** : le kickoff la disait probable, la fiche
@@ -404,8 +404,25 @@ chaque commande, journaux `kesh-gate-logs/e345/gates-g2-*`, `front-*`) :
 - Gate ciblé intermédiaire (`cible-1.log`, 23 binaires touchés) : 753 passés.
 - ⚠️ Un premier `test-fast` (g1, `b8b749af`) a échoué sur `cargo fmt --check` (deux fichiers neufs) : corrigé par
   `0a886d6d`, puis tout rejoué (g2).
-- **Différés par la pause des commandes lourdes** (décision de Guy du 2026-11-11, `kesh-gate-logs/PAUSE-HEAVY`) : le
-  `make fr` des manuels (PDF), l'E2E complet et les captures. Voir la suite de ce record.
+- **Différés par la pause des commandes lourdes** (décision de Guy du 2026-11-11, `kesh-gate-logs/PAUSE-HEAVY`), puis
+  joués à sa levée (`final-head.log`) :
+  - `make fr` : vert ; PDF des deux manuels commités (`1648975a`), la brochure, régénérée sans changement de source,
+    restaurée. Contrôle aplati (`pdftotext … | tr '\n' ' ' | tr -s ' '`) : « Rien n'empêchant » absent du manuel
+    utilisateur, « Un même règlement n’est écrit qu’une fois » présent ; « Passer à la 0.17.6 », « exige désormais le
+    champ version » et « OPTIMISTIC_LOCK_CONFLICT, sans rien écrire » présents au manuel d'administration.
+  - **E2E complet** (`e2e-r2/playwright.log`, base `kesh_e2e_e345` neuve, port 3345, runner avec `KESH_INBOX_DIR` et
+    `KESH_DOCUMENTS_DIR` égaux à ceux du backend) : **388 passés, 7 échecs, 18 ignorés**. Les sept, nommés contre
+    `docs/testing.md` § *Les échecs attendus* : `mode-expert.spec.ts:26` et `:41`, `onboarding-path-b.spec.ts:65` et
+    `:92`, `onboarding.spec.ts:57`, `:77` et `:150` — les sept de la KF-029 (#97). Aucun autre. La spec neuve
+    `invoices-settle-version.spec.ts` : 3 passés ; les specs modifiées (échéancier, annulation, solde, postes ouverts,
+    réconciliation, rappels, issue inconnue) passent.
+  - **Captures** (`kesh-gate-logs/e345/captures/`, thème clair, base jetable, spec de travail hors dépôt
+    `zz-capture-e345.spec.ts.joue`) : `fiche-conflit.png`, `fiche-conflit-non-relu.png` (bouton désactivé, *Relire*),
+    `fiche-conflit-apres-relire.png`, `echeancier-conflit.png` (l'avis nomme la facture). La relecture en échec est
+    simulée par une coupure de `GET /invoices/{id}` : *Relire* n'apparaît qu'après les reprises du client HTTP, et le
+    bandeau global « Base de données temporairement indisponible » s'affiche pendant ce temps (comportement existant).
+    Sur `fiche-conflit-apres-relire.png`, *Enregistrer un règlement* paraît encore grisé alors que le test l'a vu
+    activé juste avant la prise : à regarder en revue.
 
 **Écarts à la consigne Edit.** Deux fichiers de test écrits par le shell, non par l'outil : les tests Vitest de la
 fiche ajoutés en fin de `invoice-settlements-page.test.ts` par `cat >>` (ajout, rien remplacé), et la spec neuve

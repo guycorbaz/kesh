@@ -1030,7 +1030,7 @@ development_status:
   34-2-solde-ouverture-compte-bancaire: ready-for-dev  # #533
   34-3-ecriture-manuelle: ready-for-dev  # #967
   34-4-transaction-deja-comptabilisee: ready-for-dev  # #828
-  34-5-reglement-idempotent: in-progress  # #951, P1 ; sans migration (version obligatoire, C-e343-1)
+  34-5-reglement-idempotent: review  # #951, P1 ; sans migration (version obligatoire, C-e343-1)
   34-6-societe-apres-409: ready-for-dev  # #953
   34-7-exercice-interblocage: ready-for-dev  # #945
   34-8-fournisseur-relecture-apres-commit: ready-for-dev  # #938
