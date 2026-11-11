@@ -381,6 +381,21 @@ Rust n'est touché, hormis les `.ftl` : `cargo test -p kesh-i18n` et `textes_coh
 
   Seuls les deux fichiers de test de la story ont tourné, isolés sous `mem-guard`, comme la pause le permet : 74 verts.
   Le manuel ne change pas. Le prompt de la passe P4 est `34-6-societe-apres-409-review-prompt-p4.md`.
+  - *(Complété le 2026-11-11, à la levée de la pause : joué au dernier commit de code `89397483`, une commande par prise
+    sous le verrou, journal `kesh-gate-logs/e346/suite4.out`.)*
+    - **Mutations** (`mut/M20..M24.log`), toutes rouges, chacune ayant restauré son fichier :
+      - M20, `<` → `<=` d'`adoptCompany` : 2 rouges (« verrouillage à version égale » et « une relecture partie avant
+        le verrou… ») ;
+      - M21, garde de séquence retirée : 1 rouge (« une relecture partie avant le verrou… ») ;
+      - M22, la relecture refusée jugée contre la société relue : 1 rouge (« une relecture plus ancienne… ») ;
+      - M23, l'avis non vidé au départ : 1 rouge (« l'avis est effacé au départ… ») ;
+      - M24, séquence du verrou à 0 : 1 rouge (« une relecture partie avant le verrou… »).
+    - `npm run check` : 0 erreur, 29 avertissements. `lint-i18n-ownership` : PASS.
+    - `test:unit` : 223 fichiers, 2937 tests verts (2933 + 4). `build` : vert.
+    - **E2E complet r6** (dossiers au runner) : 386 passés, 7 échecs, les sept de la KF-029 (`mode-expert:26`, `:41`,
+      `onboarding-path-b:65`, `:92`, `onboarding:57`, `:77`, `:150`), 18 ignorés.
+    - **Captures** refaites, toutes les cinq, dont `e346-email-vide-ailleurs.png` avec l'avis sous la ligne entière
+      (B5 de la P2).
 
 ## Dev Agent Record
 
