@@ -2979,7 +2979,9 @@ async fn sans_iban_les_invariants_du_schema(pool: MySqlPool) {
         forge_row(&pool, c, "bank", Some(IBAN), None, false, Some("1234")).await,
         "chk_bank_accounts_card_last4",
     );
-    for mauvais in ["123", "12a4", "1234 "] {
+    // ⚠️ Pas de `"1234 "` : MariaDB retire en silence l'espace final d'un
+    // `CHAR(4)`, la valeur stockée est `1234`, valide (constaté au gate).
+    for mauvais in ["123", "12a4", " 123"] {
         assert_check(
             forge_row(&pool, c, "credit_card", None, None, false, Some(mauvais)).await,
             "chk_bank_accounts_card_last4",
