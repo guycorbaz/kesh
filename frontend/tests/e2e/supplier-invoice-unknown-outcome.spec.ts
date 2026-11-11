@@ -309,7 +309,9 @@ test('fiche fournisseur : second rattachement refusé sur son propre document, l
 
 	page.once('dialog', (d) => void d.accept());
 	await row.getByTestId('attach-document-submit').click();
-	await expect(page.getByText('Document joint à la facture.')).toBeVisible();
+	// Une notification de succès, non d'avertissement (sélecteur sans libellé traduit, KF-043).
+	await expect(page.locator('[data-sonner-toast][data-type="success"]')).toBeVisible();
+	await expect(page.locator('[data-sonner-toast][data-type="warning"]')).toHaveCount(0);
 	await expect(page.getByTestId('supplier-invoice-document-name')).toHaveText(name);
 	await capture(page, testInfo, 'e348-propre-document-joint');
 });
