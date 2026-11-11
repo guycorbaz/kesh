@@ -1,6 +1,6 @@
 # Story 34-4 : la réconciliation signale une transaction qui semble déjà comptabilisée, et demande confirmation (#828)
 
-Status: in-progress
+Status: review
 
 *Fiche rédigée le 2026-11-10 en autonomie (Opus 5.5), worktree `/home/gcorbaz/devel/kesh-e34`, branche `chore/epic-34-kickoff`,
 numéros de ligne de `a75835db`. Release **0.17.6**, Epic 34. **Aucune migration** (lecture seule, champ additif). Registre :
@@ -177,18 +177,18 @@ une écriture manuelle ou que je l'éclate, afin de ne pas compter deux fois un 
 
 ## Tâches
 
-- [ ] **T0 — étape 0** : relire chaque prémisse au commit de départ ; vérifier que 34-3 est fusionnée (libellés) ou, sinon,
+- [x] **T0 — étape 0** : relire chaque prémisse au commit de départ ; vérifier que 34-3 est fusionnée (libellés) ou, sinon,
   écrire les textes avec « Écriture manuelle » et le dire au Change Log.
-- [ ] **T1 — mesure d'avant** : le banc AC-8, sans le champ ; chiffres journalisés.
-- [ ] **T2 — rouge** : tests `kesh-db` (les trois comptes, comptes partagés, contre-passation, égalité des textes SQL), test
+- [x] **T1 — mesure d'avant** : le banc AC-8, sans le champ ; chiffres journalisés.
+- [x] **T2 — rouge** : tests `kesh-db` (les trois comptes, comptes partagés, contre-passation, égalité des textes SQL), test
   HTTP AC-1, Vitest AC-5 et AC-6, E2E AC-10 ; rouges journalisés (`kesh-gate-logs/e342/rouges.log`).
-- [ ] **T3** : `reconciliation_link.rs` (mode `matched_elsewhere` du constructeur ; une fonction de comptage qui appelle les
+- [x] **T3** : `reconciliation_link.rs` (mode `matched_elsewhere` du constructeur ; une fonction de comptage qui appelle les
   deux fonctions existantes) ; `get_proposals` (le champ, dans la boucle Pass 2 ou après, avec le compte du grand livre déjà lu) ;
   `kesh-db` touché : **gate complet même en cours de boucle**.
-- [ ] **T4 — mesure d'après**, et le remède AC-8 si la pente l'exige.
-- [ ] **T5** : `reconciliation.types.ts` (`alreadyBooked`), `ReconciliationProposals.svelte` (avertissement, dialogue de
+- [x] **T4 — mesure d'après**, et le remède AC-8 si la pente l'exige.
+- [x] **T5** : `reconciliation.types.ts` (`alreadyBooked`), `ReconciliationProposals.svelte` (avertissement, dialogue de
   confirmation, gardes des trois gestes) ; i18n ; manuel (`.tex` ; PDF à l'intégration) ; `docs/api-external.md` ; CHANGELOG *Ajouté* (`refs #828`).
-- [ ] **T6** : captures (thème clair, base jetable) : ligne (a), ligne (b), cas (c), confirmation ouverte sur *Accepter (N)*.
+- [x] **T6** : captures (thème clair, base jetable) : ligne (a), ligne (b), cas (c), confirmation ouverte sur *Accepter (N)*.
 
 ### Mutations nommées
 
@@ -251,11 +251,120 @@ aucune ligne commune prévue.
   fiche 0 C, 0 H, 0 M, 1 LOW, retenu : **P3-4-1** (lu : `frontend/scripts/lint-i18n-ownership.js:1-20`, propriété par dossier
   de fonctionnalité) → préfixe `reconciliation-labels-already-booked-…` écrit à l'AC-5 ; il vaut aussi pour les clés que la
   34-11b ajoutera (`-transfer`, `-transfer-among`).
+- 2026-11-11 : développement (Opus 5.5, clé `e344`, worktree `kesh-e344`, base `f12ad73e` = tête de la 34-3). Commits
+  `ff7414d2` (code, manuel, catalogues, E2E), `c3bcbff8` (registre, prompt de revue), `dc4f72d6` (garde i18n), puis le commit
+  de clôture du développement. **Le remède de l'AC-8 a été appliqué** (C-e344-9). Détail au Dev Agent Record.
+
+## Performance
+
+Banc `banc_cout_propositions_deja_comptabilisees` (`#[ignore]`, `--release`, base de dev en **tmpfs** : ces chiffres sont un
+**plancher**, le NAS lit sur disque), 500 transactions en attente, `limit=500`, trois mesures par palier, en ms
+(journaux `kesh-gate-logs/e344/banc-avant.log`, `banc-apres.log`, `banc-apres-remede.log`) :
+
+| Palier (écritures) | avant le champ | trois lectures par transaction | après le remède (deux par page) |
+|---|---|---|---|
+| 1 000 | 392 · 432 · 385 | 2 780 · 2 200 · 1 681 | 340 · 427 · 284 |
+| 5 000 | 253 · 360 · 285 | 4 877 · 5 019 · 5 025 | 364 · 457 · 424 |
+| 20 000 | 537 · 181 · 245 | 18 809 · 18 812 · 18 605 | 365 · 338 · 279 |
+
+La première écriture (les fonctions du dialogue appelées par transaction) dépassait le seuil de 3 s à 20 000 écritures :
+« mauvaise pente ». Le coût ajouté croissait à peu près linéairement (≈ 4,7 s à 5 000, ≈ 18,4 s à 20 000), mais au-delà du
+seuil. Le remède nommé par l'AC-8 rend **les mêmes nombres** (test `s34_4_ac8_la_lecture_par_page_egale_les_fonctions_du_dialogue`,
+50 transactions variées) ; après lui, le coût ajouté se perd dans le bruit de la mesure. Aucune dette de performance.
 
 ## Dev Agent Record
 
 ### Agent Model Used
 
+Opus 5.5 (agent de développement, en autonomie).
+
 ### Completion Notes List
 
+**Étape 0.** Le dernier rapport de validation qui porte sur la fiche (`e34-validate-p4-e342.md`) n'a aucun finding sur elle
+(« P3-4-1 … Juste ») ; ceux de la P3 sont déjà remédiés. Prémisses relues au commit de départ :
+- `find_link_candidates` / `candidates_sql` et `find_entry_candidates` / `entry_candidates_sql`
+  (`crates/kesh-db/src/repositories/reconciliation_link.rs`, lus en entier) : conformes à la fiche, plafonds 50 (`:76`,
+  `:504` au départ), crédits seulement pour les règlements (`transaction_can_be_linked`).
+- `get_proposals` (`routes/reconciliation.rs:974`) : lit `ba_check.journal_account_id` ; `link_preflight` refuse un compte
+  clos (409) que `get_proposals` ne refuse pas — sans effet ici, un compte clos n'a pas de transaction en attente.
+- La 34-3 est la base : « Écriture manuelle » (`reconciliation-manual-button-label`), les textes la nomment.
+- Manuel : les lignes citées par la fiche ont glissé (la phrase « l'écran ne le signale pas » est à `:2901` à la base ;
+  « Restent sans écriture… » à `:2920-2925` ; le second côté à `:2970` et `:3000`).
+- L'issue « fenêtre de dates » demandée par la fiche existe : **#982** ; le manuel et le CHANGELOG la citent.
+
+**Rouges d'abord** (`kesh-gate-logs/e344/rouges.log`). Les tests neufs, joués contre les sources de la base (fichiers du serveur
+et composant remis temporairement à `f12ad73e` par `git restore --source`, puis restaurés) : backend 6/6 rouges (« champ
+alreadyBooked absent ») ; Vitest 9 rouges sur les 19 neufs (les 10 autres assertent une absence et ne peuvent rougir qu'à une
+mutation). ⚠️ **L'E2E AC-10 n'a pas été joué au rouge** : il aurait fallu reconstruire le serveur et le frontend de la base
+pour un seul spec ; il asserte le texte de l'avertissement servi par le vrai serveur, absent de la base.
+
+**Le remède de l'AC-8** (C-e344-9) : voir § *Performance*. La fonction par transaction de la première écriture est remplacée
+par `count_already_booked_for_page` ; les conditions SQL sont extraites en constantes partagées avec les requêtes du dialogue
+(aucune copie) ; `find_matched_elsewhere` reste le mode `MatchedElsewhere` du constructeur `entry_sql`, référence du second
+côté, comme l'AC-2 le demande. Le wrapper `entry_candidates_sql` est retiré (il n'avait plus d'appelant hors test).
+
+**Mutations** (`kesh-gate-logs/e344/mut/M1.log` à `M8.log`, résumé `mut/resume.log`) : les huit de la fiche sont tuées, chacune
+par le test que la fiche nomme. M1 et M2 sont jouées dans `count_already_booked_for_page` (le code qui sert la route depuis le
+remède). M3 et M4 mutent les constantes partagées : le test d'égalité AC-8 reste vert sous elles (les deux côtés lisent la même
+constante), ce sont les tests HTTP AC-2 qui rougissent. M6 est plus large que son intitulé (hors ligne signalée, elle lance
+*Accepter* au lieu de *Rejeter*) : six rouges sans rapport s'ajoutent à celui du test nommé.
+
+**Gates au dernier commit de code (`dc4f72d6`)** — ce qui a réellement tourné, journaux sous `kesh-gate-logs/e344/` :
+- base `kesh_e344` remise à neuf ; `scripts/test-fast.sh --ci` : **5146 passés, 13 ignorés** (`gate-test-fast.log`, joué au
+  commit `ff7414d2` — le commit `dc4f72d6` ne change qu'un test Vitest) ;
+- `cargo build --workspace --all-targets` : vert (`gate-build-workspace.log`, relancé hors verrou sous `mem-guard`, consigne de
+  l'orchestrateur) ;
+- `scripts/gate-ci.sh kesh_ci_e344` : **5153 passés, 0 échoué, 17 ignorés** (`gate-ci.log`) ;
+- frontend : `lint-i18n-ownership` vert ; `npm run check` 0 erreur, 29 avertissements, tous hors des fichiers de la story
+  (`gate-front-check.log`) ; Vitest complet : **premier passage 1 rouge** (`i18n-keys.test.ts`, garde du nombre de sites
+  littéraux 2924 → 2932, +8 : les quatre textes de `already-booked.ts` et les quatre du dialogue), corrigé au commit
+  `dc4f72d6`, rejoué : **2943 passés, 225 fichiers** (`gate-front-vitest-2.log`) ; `npm run build` vert ;
+- **E2E complet** sur `kesh_e2e_e344` recréée vide, au commit `dc4f72d6` : **388 passés, 7 échecs, 17 ignorés**
+  (`e2e-complet.log`). Les sept échecs sont les sept de la KF-029 (#97) de `docs/testing.md` § « Les échecs attendus » :
+  `mode-expert.spec.ts:26`, `:41`, `onboarding-path-b.spec.ts:65`, `:92`, `onboarding.spec.ts:57`, `:77`, `:150`. Le spec neuf
+  `reconciliation-already-booked.spec.ts` passe. Port 3344 libre avant et après, backend arrêté par son PID.
+- Tests ciblés entre les étapes (`verts-backend.log`, `remede-cible.log`) : binaire `reconciliation_link_entry_e2e` entier et
+  tests du module, 42/42 au commit `ff7414d2`. ⚠️ La consigne « `kesh-db` : gate complet même en cours de boucle » n'a pas été
+  tenue entre la première écriture et le remède (gates ciblés seulement) ; le gate complet a tourné sur le code final.
+
+**Décomptes** (recomptés à la source, de `f12ad73e` à `HEAD`) : `reconciliation_link_entry_e2e.rs` 31 → 39 attributs
+`sqlx::test` (+7 tests `s34_4_…`, +1 banc ignoré) ; `reconciliation_link.rs` 4 → 5 `#[test]` ; Vitest +19 tests neufs (14 dans
+`ReconciliationProposals.test.ts`, 5 dans `already-booked-i18n.test.ts`) ; huit clés i18n neuves par locale, quatre locales.
+
+**Captures** (thème clair, base E2E jetable, script `kesh-gate-logs/e344/scripts/captures-e344.mjs`), dans
+`kesh-gate-logs/e344/captures/` : `e344-1-ligne-a-deja-comptabilisee.png` (cas a, ligne à règle), `e344-2-3-lignes-b-et-c.png`
+(cas c puis cas b, compte d'épargne), `e344-4-confirmation-accepter.png` (confirmation ouverte sur *Accepter (1)*), et, prises
+par l'E2E, `e344-ligne-signalee.png`, `e344-confirmation-ecriture-manuelle.png`. Le dossier contient aussi les captures que
+d'autres specs écrivent pendant la suite complète (sans rapport).
+
+**Manuel** : le `.tex` change (paragraphe neuf `\label{sec:deja-comptabilisee}`, encadré « Dépense déjà réglée », « Restent sans
+écriture… », § *Un virement entre deux de vos comptes*) ; le PDF se régénère à l'intégration (C-e342-20), non régénéré ici.
+
+**Écarts** :
+- *Consigne Edit* : `cargo fmt --all` a reformaté les fichiers Rust (C-e344-10) ; les scripts de mutation remplacent un motif
+  vérifié unique (permis pour les mutations) ; les scripts de `kesh-gate-logs/` ont été corrigés par de petits scripts Python
+  (hors dépôt). Tout le code de fond est écrit par l'outil Edit ; l'outil ne manquait de rien.
+- *Restauration des mutations* : au premier passage (M5), `git diff --name-only` a aussi remis à `HEAD` le registre
+  `e34-choix-autonomes-e344.md`, non commité (C-e344-9, C-e344-10) ; texte repris du diff conservé au journal `mut/M5.log`,
+  puis commité. Le script refuse désormais de muter un arbre non propre. (Même faute que celle déclarée par la 34-3.)
+- *Verrous* : en cours de story, l'orchestrateur a ouvert une voie frontend (`.gate-front.lock`) et sorti les compilations
+  seules des verrous ; le gate a été arrêté puis repris dans ces voies (`gates.log`, `gates-suite.log`).
+
+**Limites voisines, non traitées (issues demandées, une par problème)** : voir le rapport final de l'agent.
+
 ### File List
+
+- `crates/kesh-db/src/repositories/reconciliation_link.rs` — mode `MatchedElsewhere`, constantes SQL partagées,
+  `find_matched_elsewhere`, `AlreadyBookedCounts`, `count_already_booked_for_page`, tests unitaires.
+- `crates/kesh-api/src/routes/reconciliation.rs` — champ `alreadyBooked` de `get_proposals`.
+- `crates/kesh-api/tests/reconciliation_link_entry_e2e.rs` — tests `s34_4_…` (AC-1, AC-2, AC-3, AC-8), banc ignoré.
+- `crates/kesh-i18n/locales/{fr-CH,de-CH,en-CH,it-CH}/messages.ftl` — huit clés `reconciliation-labels-already-booked-…`.
+- `frontend/src/lib/features/reconciliation/already-booked.ts` (neuf), `AlreadyBookedConfirmDialog.svelte` (neuf),
+  `ReconciliationProposals.svelte`, `reconciliation.types.ts`.
+- `frontend/src/lib/features/reconciliation/ReconciliationProposals.test.ts`, `already-booked-i18n.test.ts` (neuf), fixtures
+  de `LinkSettlementModal.test.ts`, `ManualMatchModal.test.ts`, `TransactionSplitModal.test.ts`.
+- `frontend/src/lib/shared/i18n-keys.test.ts` — garde des sites littéraux 2924 → 2932.
+- `frontend/tests/e2e/reconciliation-already-booked.spec.ts` (neuf).
+- `docs/manual/fr/user-manual.tex`, `docs/api-external.md`, `CHANGELOG.md`.
+- `_bmad-output/implementation-artifacts/e34-choix-autonomes-e344.md` (neuf), `sprint-status.yaml`, cette fiche, le prompt de
+  revue `34-4-transaction-deja-comptabilisee-review-prompt-p1.md`.

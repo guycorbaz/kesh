@@ -42,7 +42,9 @@ Fiche : `/home/gcorbaz/devel/kesh-e344/_bmad-output/implementation-artifacts/34-
 (lentille A ; B la lit **après** son examen à l'aveugle, pour classer). Registres : `e34-choix-autonomes-e342.md` (choix
 de la fiche, C-e342-5 à C-e342-9, C-e342-20 à C-e342-23) et `e34-choix-autonomes-e344.md` (choix du développement).
 Journaux, sous `/home/gcorbaz/devel/kesh-gate-logs/e344/` : rouges `rouges.log` (et `rouges-backend.log`,
-`rouges-vitest.log`), bancs `banc-avant.log` et `banc-apres.log`, mutations `mut/*.log`, gates `gate-*.log`, E2E
+`rouges-vitest.log`), bancs `banc-avant.log`, `banc-apres.log` (trois lectures par transaction) et
+`banc-apres-remede.log` (lecture par page, C-e344-9), mutations `mut/*.log` et leur résumé `mut/resume.log`, gates
+`gate-*.log`, `gates.log` et `gates-suite.log`, E2E
 `e2e-*.log`, captures `captures/*.png` (le Dev Agent Record de la fiche les cite et dit ce qui a tourné).
 
 ## ⛔ Hors périmètre — ne pas le demander
