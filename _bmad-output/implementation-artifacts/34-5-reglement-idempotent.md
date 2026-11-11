@@ -335,6 +335,33 @@ de la KF-029 se nomment un par un.
   fiche disait `e343` pour les journaux, ils sont sous `kesh-gate-logs/e345/`). Commits `71beefe6` (développement),
   `3224a199` (type d'une aide Vitest), `b8b749af` (borne des sites i18n), `0a886d6d` (`cargo fmt`). Choix neufs :
   `e34-choix-autonomes-e345.md`, C-e345-1 à 9. Détail au Dev Agent Record.
+- 2026-11-11 : **revue de code P1** (trois lentilles B, E, A ; rapports `kesh-gate-logs/e345-review-p1-{B,E,A}.md`) :
+  **0 C, 0 H, 3 M** (dont un convergent), **12 L** — B 1 M et 2 L, E 1 M et 6 L, A 2 M et 4 L. Remédiation
+  (Opus 5.5), commit `73d07696` (code), puis `e7442559` (PDF). Prémisse de chaque finding relue au code avant d'appliquer.
+  - **B1-1 = E1-1 = A1-1 (M)** : les textes promettaient qu'un clic après une réponse perdue serait refusé. Décision de
+    l'orchestrateur : **le comportement ne change pas** (l'écran relit, et un clic après la relecture est un nouveau
+    règlement, accepté ; la version refuse le renvoi **sans relecture**). Récrits : CHANGELOG, manuel utilisateur (titre
+    et deux paragraphes), manuel d'administration, `docs/api-external.md`, `unknown-outcome.ts`, doc-comments de la
+    route et du repository, commentaire de `settleOutcome`, commentaires du Vitest et de deux specs. Symptôme grepé sur
+    tout le dépôt (« second clic », « nouveau clic », « écrit qu'une fois », « ne peut donc plus être écrit »,
+    « réponse perdue puis ») : plus aucune promesse. PDF contrôlés aplatis, deux apostrophes.
+  - **A1-2 (M)** : établi au code que, sur l'échéancier, `conflict-blocked` ne coexiste jamais avec une ligne affichée
+    (`{#if loading}` masque la liste pendant la relecture, l'échec la vide, un succès lève l'état). Le test affirme donc
+    la garantie réelle, aucun « Régler » pendant la relecture ; la mutation demandée (M7) **survit, équivalente**.
+  - **E1-2 (L)** : version supérieure refusée (test ; M8 `!=` → `>` tuée). **E1-3 (L)** : facture inconnue ou d'une autre
+    société → `NotFound` / 404 (tests DB et HTTP). **A1-3 (L)** : montant nul et écart d'arrondi autour de la version
+    (témoin d'arrondi compris). **A1-6 (L)** : `NotFound` dans l'ordre des refus du doc-comment.
+  - **E1-4 (L)** : l'annulation en échec relit aussi la facture (Vitest ; M10 tuée). **E1-5 = B1-3 (L)** : tout chargement
+    réussi lève l'état bloquant de l'échéancier, C-e345-10 (Vitest ; M9 tuée). **E1-7 (L)** : les deux enchaînements
+    testés. **B1-2 (L)** : fondu dans B1-1.
+  - **E1-6 (L)** : commentaire corrigé ; la fermeture du dialogue d'une autre ligne, héritée de la 33-6 dans trois
+    branches, n'est pas changée (C-e345-11) : **issue demandée**.
+  - **A1-4 (L)** : T1 à T8 cochées, chemins `e345`. **A1-5 (L)** : bouton grisé expliqué (`transition-all` et
+    `disabled:opacity-50`, fondu saisi en cours), capture refaite après `opacity: 1` ; l'échec du premier essai `e2e-r3`
+    est dit au Dev Agent Record.
+  - **Tendance** : P1 3 M / 12 L. Aucun finding n'est né d'une remédiation précédente : tous sont d'origine. La
+    remédiation touche la production (fiche, échéancier, doc-comments) : une **P2 complète** suit (Sonnet), prompt
+    `34-5-reglement-idempotent-review-prompt-p2.md`.
 
 ## Dev Agent Record
 
@@ -424,13 +451,37 @@ chaque commande, journaux `kesh-gate-logs/e345/gates-g2-*`, `front-*`) :
     bandeau global « Base de données temporairement indisponible » s'affiche pendant ce temps (comportement existant).
     Sur `fiche-conflit-apres-relire.png`, *Enregistrer un règlement* paraît encore grisé alors que le test l'a vu
     activé juste avant la prise : à regarder en revue.
+  - ⚠️ *(Ajouté à la revue P1, A1-5.)* La première prise des captures (`e2e-r3`) a **échoué** sur le test « fiche,
+    conflit non relu puis Relire » : *Relire* n'était pas encore visible au bout des 5 s par défaut, la relecture coupée
+    n'ayant pas rendu la main. Rejouée seule en `e2e-r4` avec une attente de 90 s : passée. Le bouton grisé de la
+    première `fiche-conflit-apres-relire.png` s'explique par `transition-all` et `disabled:opacity-50` du composant
+    `Button` : le fondu était saisi en cours. La capture est refaite après `toHaveCSS("opacity", "1")`.
+
+**Revue de code P1 — remédiation** (commit `73d07696`, gates à ce commit, journaux `kesh-gate-logs/e345/chaine-p1-head.log`,
+`gates-p1g-*`, `p1-front-*`, `e2e-r5/`, `e2e-r6/`) :
+- `scripts/test-fast.sh --ci` : **5146 passés, 12 ignorés** ; `cargo build --workspace --all-targets` : vert ;
+  `gate-ci.sh kesh_ci_e345` : **5153 passés, 0 échec, 16 ignorés** ; `make fr` : vert, PDF commités (`e7442559`).
+- Frontend : `npm run check` 0 erreur, `lint-i18n-ownership` vert, Vitest **2894 passés, 222 fichiers**, `npm run build`
+  vert.
+- E2E complet (`e2e-r5`, base neuve) : **388 passés, 7 échecs, 18 ignorés** ; les sept sont ceux de la KF-029 (#97),
+  nommés comme au développement ; `invoices-settle-version.spec.ts` 3 passés.
+- Mutations de la remédiation (`mut/M7.log` à `M10.log`, `mut/campagne-p1.log`) : M7 (`conflict-blocked` retiré de
+  `settleBlocked`, échéancier) **survit, équivalente** (voir A1-2 au Change Log) ; M8 (`!=` → `>`) tuée par
+  `la_version_est_une_egalite_et_ses_voisins_gardent_leur_ordre` (la version future écrivait un règlement) — un premier
+  essai n'a pas pu s'appliquer, le motif figurant deux fois (le solde porte la même garde), et a été ancré sur le message
+  du statut ; M9 (le chargement ne lève plus l'état) tuée par le Vitest d'E1-5 ; M10 (l'annulation en échec ne relit
+  plus la facture) tuée par le Vitest d'E1-4.
+- Décomptes, de `992799e3` à `73d07696` : +2 tests Rust (`la_version_est_une_egalite_et_ses_voisins_gardent_leur_ordre`,
+  `an_unknown_invoice_is_not_found_whatever_the_version`), +5 Vitest (fiche 2, échéancier 3).
 
 **Écarts à la consigne Edit.** Deux fichiers de test écrits par le shell, non par l'outil : les tests Vitest de la
 fiche ajoutés en fin de `invoice-settlements-page.test.ts` par `cat >>` (ajout, rien remplacé), et la spec neuve
 `invoices-settle-version.spec.ts` créée par `cat >` (l'outil Write convenait). Aucun `sed -i` ni `perl -pi`. `cargo fmt
 --all` a formaté quatre fichiers Rust (outil du projet). L'outil ne manquait de rien : c'est un écart de commodité.
 
-**Limites voisines.** Aucune nouvelle issue à ouvrir au développement.
+**Limites voisines.** Aucune nouvelle issue à ouvrir au développement. À la revue P1, une issue est demandée : sur
+l'échéancier, un dialogue de règlement ouvert sur une autre ligne pendant l'envoi est fermé par la fin de l'envoi, dans
+les trois branches (succès, issue inconnue, 409), comportement hérité de la 33-6 (E1-6, C-e345-11).
 
 ### File List
 
