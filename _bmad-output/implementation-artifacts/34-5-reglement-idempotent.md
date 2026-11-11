@@ -497,6 +497,33 @@ chaque commande, journaux `kesh-gate-logs/e345/gates-g2-*`, `front-*`) :
 - Décomptes, de `992799e3` à `73d07696` : +2 tests Rust (`la_version_est_une_egalite_et_ses_voisins_gardent_leur_ordre`,
   `an_unknown_invoice_is_not_found_whatever_the_version`), +5 Vitest (fiche 2, échéancier 3).
 
+**Revue de code P2 — remédiation** (commit `73ad22b3`, dernier commit de code ; journal `kesh-gate-logs/e345/chaine-p2-head.log`).
+Deux voies de verrou, sur consigne de l'orchestrateur : frontend et mutations frontend par `.gate-front.lock`, cargo et
+E2E par `station-heavy` et `.gate.lock`.
+- **Rust** : seuls un doc-comment (`routes/invoices.rs`) et les quatre `.ftl` ont changé. Joués, comme l'orchestrateur le
+  permet : `cargo fmt --check` vert, `cargo clippy --workspace --all-targets -D warnings` vert, `cargo nextest -p
+  kesh-i18n` **41 passés**, `cargo build -p kesh-api` vert (binaire de l'E2E). **Non joués** à ce commit :
+  `test-fast --ci` et `gate-ci` (derniers verts à `73d07696` : 5146 et 5153).
+- **Frontend complet** : `check` 0 erreur, `lint-i18n-ownership` vert, Vitest **2895 passés, 222 fichiers**, `build` vert.
+- **E2E complet** (`e2e-r7`, base recréée) : **388 passés, 7 échecs, 18 ignorés** ; les sept de la KF-029 (#97), nommés
+  comme au développement ; `invoices-settle-version.spec.ts` 3 passés.
+- **Mutations rejouées au dernier commit de code** (A2-2 ; `mut/campagne-p2-front.log`, `mut/campagne-p2-rust.log`, en-têtes
+  `HEAD 73ad22b3`), toutes tuées, restauration « 0 fichier(s) modifié(s) » :
+  - M1 : cinq tests rouges (AC-2, AC-3, les trois tests AC-4) ; M2 : AC-3 `left: [200, 200]` et le test d'ordre.
+  - M3 : `expected 3 to be 4` ; M4f : quatre Vitest de la fiche ; M4e : cinq de l'échéancier ; M5 : numéro absent de
+    l'avis ; M6 : le Vitest de l'AC-7.
+  - **M6e** (jamais jouée jusqu'ici, *Relire* de l'échéancier mène à `verify`) : tuée par « 409 puis liste illisible ».
+  - **M11** (réserve d'E : `conflict-blocked` retiré du `settleBlocked` de la fiche) : **tuée**, deux Vitest
+    (`expected false to be true` sur `disabled`).
+  - **M12** et **M12e** (B2-1 : l'avis dit « échec » pendant la relecture, fiche et échéancier) : tuées par les Vitest
+    neuf et récrit.
+  - Une campagne a été arrêtée puis relancée dans un autre ordre (voie frontend d'abord), M1 ayant attendu trente minutes
+    la voie base ; le fichier muté a été restauré avant la relance, `git status` vide.
+- Captures non reprises : la remédiation ne change que l'avis **pendant** la relecture, que les captures ne montrent pas ;
+  `fiche-conflit-non-relu.png` montre l'état d'après l'échec, au texte inchangé.
+- Décomptes, de `73d07696` à `73ad22b3` : +1 Vitest (fiche, B2-1 ; celui de l'échéancier est récrit), 2895 − 2894 = 1 ;
+  i18n `sitesTotal` 2928 → 2930.
+
 **Écarts à la consigne Edit.** Deux fichiers de test écrits par le shell, non par l'outil : les tests Vitest de la
 fiche ajoutés en fin de `invoice-settlements-page.test.ts` par `cat >>` (ajout, rien remplacé), et la spec neuve
 `invoices-settle-version.spec.ts` créée par `cat >` (l'outil Write convenait). Aucun `sed -i` ni `perl -pi`. `cargo fmt
