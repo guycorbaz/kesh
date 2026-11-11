@@ -1,6 +1,6 @@
 # Story 34-11a1 : un compte sans IBAN — le schéma, et tous les sites qui lisent l'IBAN le tolèrent (#972)
 
-Status: ready-for-dev
+Status: review
 
 *Fiche rédigée le 2026-11-10 en autonomie (Opus 5.5), worktree `/home/gcorbaz/devel/kesh-e34`, branche `chore/epic-34-kickoff`,
 numéros de ligne de `a75835db` (inchangés à `b85b8f05`, commit de fiches seules). Release **0.17.6**, Epic 34. **Une migration, breaking**
@@ -135,23 +135,23 @@ ne sont pas passés en revue ; (iii) **les tests** : ≈ 316 lignes Rust sous `c
 
 ## Tâches
 
-- [ ] **T0 — étape 0** : constater ce que fait aujourd'hui un `accountKind` envoyé à `POST /bank-accounts` (AC-11), et relancer la commande de T1.
-- [ ] **T1 — rouges d'abord**, inventaire rejoué (sortie triée au Dev Agent Record ; tout site neuf classé avant le code) :
+- [x] **T0 — étape 0** : constater ce que fait aujourd'hui un `accountKind` envoyé à `POST /bank-accounts` (AC-11), et relancer la commande de T1.
+- [x] **T1 — rouges d'abord** (⚠️ rouges établis après coup par mutation de retour, voir Dev Agent Record), inventaire rejoué (sortie triée au Dev Agent Record ; tout site neuf classé avant le code) :
   ```
   git grep -n -E "(\.|\b)iban\b" -- 'crates/*/src/**' 'frontend/src/**' ':!*.test.ts' ':!crates/kesh-core/src/types/**' ':!crates/kesh-qrbill/src/**' ':!crates/kesh-import/src/**' ':!crates/kesh-reconciliation/src/**' | /usr/bin/grep -v -E "creditor_iban|counterparty_iban|qr_iban|qrIban|creditorIban|is_qr_iban|//|^\S+:[0-9]+:\s*\*"
   ```
   Rouges : AC-4, AC-5 (le 500 d'aujourd'hui), AC-6, AC-7 (valeur figée), AC-8, AC-12, Vitest AC-10.
-- [ ] **T2 — migration**, schéma de test, P5, P6, P7, bump Cargo, tri des `"0.17.0"` et compteur d'exemptions (AC-2). ⚠️ **gate complet même en
+- [x] **T2 — migration**, schéma de test, P5, P6, P7, bump Cargo, tri des `"0.17.0"` et compteur d'exemptions (AC-2). ⚠️ **gate complet même en
   cours de boucle** (`kesh-db`) ; démarrage réel sur une base persistante (P8).
-- [ ] **T3 — tolérance** : entité, dépôt, S1/S2, S4, S5, S6, S7, S9, S10 ; frontend S12 à S17.
-- [ ] **T4 — codes d'erreur** : `PAYMENT_BATCH_ACCOUNT_HAS_NO_IBAN`, `BANK_IMPORT_CAMT_NEEDS_IBAN` : variantes `AppError`, `errors.rs`, messages
+- [x] **T3 — tolérance** : entité, dépôt, S1/S2, S4, S5, S6, S7, S9, S10 ; frontend S12 à S17.
+- [x] **T4 — codes d'erreur** : `PAYMENT_BATCH_ACCOUNT_HAS_NO_IBAN`, `BANK_IMPORT_CAMT_NEEDS_IBAN` : variantes `AppError`, `errors.rs`, messages
   aux quatre `messages.ftl`, libellés frontend, tableau d'erreurs de `api-external.md`.
-- [ ] **T5 — montée** : `scripts/recette-montee.sh` depuis l'image 0.17.5 publiée, base peuplée (comptes, imports, lots, factures QR). La recette
+- [x] **T5 — montée** (recette et complément, voir Dev Agent Record) : `scripts/recette-montee.sh` depuis l'image 0.17.5 publiée, base peuplée (comptes, imports, lots, factures QR). La recette
   constate (précédent de la 0.17.5) : le fichier `backup/pre-upgrade/` écrit par Kesh **avant** la migration (#847) ; l'image 0.17.5 qui **refuse**
   de démarrer sur la base migrée ; le fichier `pre-upgrade/` importé dans une 0.17.5 neuve, empreintes identiques à l'avant ; un `.keshbackup` 0.17.5
   importé dans une 0.17.6. Et un **test automatisé** dans `migrations_upgrade_path.rs` : lignes `bank_accounts` posées avant la migration, puis
   `account_kind = 'bank'`, IBAN intact, `CHECK`s satisfaits — montage **résolu par version** (`.position(|m| m.version == …)`, P6), non par position.
-- [ ] **T6 — documentation** (AC-13), CHANGELOG (migration, avertissement de sauvegarde en tête), captures `kesh-gate-logs/e341/captures/34-11a1-*.png`
+- [x] **T6 — documentation** (AC-13), CHANGELOG (migration, avertissement de sauvegarde en tête), captures `kesh-gate-logs/e341/captures/34-11a1-*.png`
   (tableau et accueil avec une ligne forgée).
 
 ### Mutations nommées
@@ -200,11 +200,101 @@ migration de l'epic : aucun ordre à régler avec une autre story. La **34-11a2*
   ce que la montée constate, et le test de montée résolu par version (T5). **3.5** : `npm run check` comme filet de l'inventaire (AC-10).
 - 2026-11-10 : **validation P3 (Sonnet)** — pour cette fiche : 1 L (3.1). Remédiation (Opus 5.5) : S11 `:658-662` (`update_for_company`) renvoyé à la
   34-11a2, chemin du `PUT` d'une carte (relu `repositories/bank_accounts.rs:600-612`).
+- 2026-11-10/11 : **développement (Opus 5.5)**, worktree `/home/gcorbaz/devel/kesh-e34a1`, base `07f714a2`. Commits `194faa78` (migration, bump,
+  code, tests, documentation), `0d7aa7cc` (registre des checksums, prémisse du test des quatre chiffres), `661a2a01` (fixtures, Vitest des écrans,
+  compteurs des gardes i18n), `93e2642f` (manuel, PDF, test AC-12 à l'import), puis ce compte rendu. Choix : `e34-choix-autonomes-e34a1.md`,
+  C-e34a1-1 à 10. Statut `review`.
+  - **Étape 0 — lignes lues.** LOW de la dernière validation qui couvre la fiche (P3, 3.1) : déjà appliqué (S11 renvoyé à la 34-11a2). AC-11 :
+    `CreateBankAccountBody` (`routes/bank_accounts.rs:72-86`) n'a pas `deny_unknown_fields`, et l'extracteur (`extractors.rs:34-58`) rend
+    `AppError::Validation` sur un champ requis manquant : un `accountKind` envoyé est **ignoré** (asserté). T1 : la commande rend **135** lignes à
+    `07f714a2` (`kesh-gate-logs/e34a1/t1-inventaire-avant.txt`), **151** après (`…-apres.txt`) ; chaque ligne neuve tombe dans un site déjà classé
+    (gardes neuves de S1, S3, S4, S5, S7, S12, S13 ; tests `#[cfg(test)]` ; doc-comments d'`errors.rs` et de `post_restore.rs`) : aucun site neuf.
+  - **Écart à la consigne « rouges d'abord ».** Code et tests ont été écrits ensemble, avant toute exécution (verrou de la station tenu, puis pause
+    des commandes lourdes). Le rouge de chaque test d'AC a été établi **après**, par la mutation de retour qui retire le correctif (M1 à M8, toutes
+    tuées par le test attendu). Journal : `kesh-gate-logs/e34a1/rouges.log`.
+  - **Assertions du bump triées (AC-2)** : gardées `admin_full_import_e2e.rs:4845`, `:4848`, `:5106` (état d'une base ou d'une sauvegarde 0.17.0) ;
+    portées à `"0.17.6"` : `admin_full_import_e2e.rs:4649` (doc), `:4669`, `:4816`, `migrations_fresh_install.rs:248`, `migrations_upgrade_path.rs:549`,
+    `:565`, `:581`, `:600`, `:683`, `:1122`, `:1622` (minimum courant) ; ajouté `downgrade_protection_refuses_0_17_5`. `\b0\.17\.6\b` grepé après.
+  - **P5** : ligne ajoutée, `ls crates/kesh-db/migrations/*.sql | wc -l` = 91 = `grep -c '^| \`20'` ; partitions recomptées au tableau : 11 `yes` +
+    80 `tracked-by-sqlx` + 0 `no`. **P6** : `git grep -n "migrations.len()\|apply_migrations_up_to" crates/` (`kesh-gate-logs/e34a1/p6-grep.txt`) ; seul
+    site positionnel, `upgrade_path_preserves_data` : `total` 90 → 91 et soustracteur 56 → 57, frontière 34 inchangée (C-e34a1-9) ; les autres sont
+    résolus par version avec assertion de montage. **P7** : entrée `EXEMPT_MIGRATIONS` `Durable`, compteur 23 → 24 avec sa ligne d'historique.
+    **P8** : migration jamais modifiée après sa première application ; registre `crates/kesh-db/migrations.sha384` complété (rouge
+    `published_migrations_keep_their_checksums` au premier gate ciblé) ; démarrage réel sur base persistante peuplée : la recette de montée et son
+    complément (binaire neuf sur une base 0.17.5), et l'E2E (`kesh_e2e_e34a1` migrée par `sqlx migrate run`, puis démarrage du binaire).
+  - **Ce qui a été constaté au premier gate et corrigé** : `"1234 "` est admis par la base — MariaDB retire en silence l'espace final d'un
+    `CHAR(4)`, la valeur stockée est `1234`, valide (prémisse de test fausse, remplacée) ; le registre des checksums ; cinq fixtures Vitest sans
+    `accountKind`/`cardLast4` (`npm run check`, filet de l'AC-10 : **aucun lecteur de production** hors de S12-S17) ; les compteurs codés en dur
+    `i18n-keys` (`sitesTotal` 2922 → 2924, `BankImportUpload.svelte` 55 → 57 `i18nMsg(` recomptés) et `i18n-libelle-en-dur` (85 → 86, `cardLast4Label` ;
+    `conforme` 71 → 72).
+  - **T4** : les écrans affichent le `message` localisé du serveur (`errorMessageOf`) ; aucun libellé propre aux deux codes n'est nécessaire, et
+    les écrans évitent les deux refus (lots, import : C-e34a1-8).
+  - **Édition** : tout le code par l'outil Edit ; `cargo fmt --all` lancé une fois (cinq assertions reformatées) — le formateur du projet, non un
+    script de remplacement. Scripts seulement pour les mutations (`kesh-gate-logs/e34a1/mut-e34a1.py`, motif vérifié unique, restauration
+    `git checkout --` puis `touch`).
 
 ## Dev Agent Record
 
 ### Agent Model Used
 
+Opus 5.5 (`claude-opus-5-5`), en autonomie.
+
 ### Completion Notes List
 
+**Gates, tels qu'ils ont tourné** (journaux sous `/home/gcorbaz/devel/kesh-gate-logs/e34a1/`) :
+
+- `cargo fmt --all -- --check` vert ; `cargo clippy --workspace --all-targets -- -D warnings` vert (`clippy-1.log` au code, `clippy-2.log` au
+  dernier commit `93e2642f`).
+- `scripts/test-fast.sh --ci`, bases `kesh_e34a1` remises à neuf : **5154 passés, 12 ignorés** (`gate-test-fast-1.log`, arbre de `0d7aa7cc`).
+- `cargo build --workspace --all-targets` vert (`build-1.log`, `0d7aa7cc`).
+- `scripts/gate-ci.sh kesh_ci_e34a1` : **5161 passés, 0 échec, 16 ignorés** (`gate-ci-1.log`, `gate-ci-journal-1.log`, `0d7aa7cc`).
+- Frontend : `npm run check` **0 erreur** (29 avertissements préexistants, aucun dans les fichiers de la story ; `front-check-2.log`) ;
+  `npm run lint-i18n-ownership` vert ; `npm run test:unit` **2889 tests, 222 fichiers** (`front-unit-2.log`) ; `npm run build` vert.
+- **E2E complet** à `661a2a01`, base `kesh_e2e_e34a1` remise à neuf, port 3361 : **385 passés, 7 échecs, 18 ignorés** (`e2e-r1/playwright.log`) ;
+  les sept échecs sont exactement les sept KF-029 (#97) de `docs/testing.md` § *Les échecs attendus* (`mode-expert.spec.ts:26`, `:41`,
+  `onboarding-path-b.spec.ts:65`, `:92`, `onboarding.spec.ts:57`, `:77`, `:150`) ; aucun backend à l'écoute avant ni après.
+- ⚠️ **Dernier commit de code, `93e2642f`** : il n'ajoute qu'un `#[test]` à `admin_full_import_e2e.rs` (et le manuel) ; il est couvert par le binaire
+  ciblé `admin_full_import_e2e` (**71 passés**, le test neuf compris, `cible-2-admin-import.log`) et par `clippy` du workspace, **non** par un
+  nouveau gate complet ni un nouvel E2E.
+- **Mutations** (`mut/campagne.log`, `mut/M*.log`) : M1, M2, M3, M3b, M4, M5, M6, M7, M8 — **9 tuées sur 9**, chacune par le test attendu ; worktree
+  propre après la campagne. M6 aux sites de création et de l'assistant : **équivalente** dans la 34-11a1 (ces routes exigent l'IBAN, C-e34a1-5).
+- **Montée (T5)** : `scripts/recette-montee.sh --image gcorbaz/kesh:0.17.5` (image tirée de Docker Hub, `sha256:ca197b5b…`) ,
+  `--migrations-attendues 1 --diff-attendu migrations,bank_accounts,min_required --apres apres-sans-iban.sh --import` : **cinq phases vertes**
+  (`recette-montee-1.log`, journal copié dans `recette-montee-journal/`) — fichier `pre-upgrade/…-0.17.5-to-0.17.6.keshbackup` écrit avant la
+  migration ; crochet : colonnes d'avant de `bank_accounts` identiques, chaque compte `bank`, l'API rend `accountKind`/`cardLast4`, une carte forgée
+  reçoit `409 PAYMENT_BATCH_ACCOUNT_HAS_NO_IBAN` ; l'image 0.17.5 refuse la base migrée (« La base a été migrée par Kesh v0.17.6… ») ; retour par le
+  dump, empreinte identique ; `.keshbackup` 0.17.5 importé dans le binaire neuf. **Complément** (`recette-complement-e34a1.sh`, `recette-c/resume.txt`) :
+  0.17.5 neuve qui refuse le `.keshbackup` 0.17.6 (`409 IMPORT_VERSION_INCOMPATIBLE`) et importe le fichier `pre-upgrade/` (200), empreintes identiques
+  à l'avant, toutes colonnes. Données synthétiques seulement ; aucun conteneur restant.
+- **Captures** (thème clair, instance jetable, carte forgée) : `kesh-gate-logs/e34a1/captures/34-11a1-01-tableau-comptes.png`, `-02-accueil.png`,
+  `-03-parametres.png`, `-04-import-carte.png`, `-05-lot-sans-la-carte.png` (le compte bancaire de cette base n'étant pas lié au grand livre, le
+  sélecteur du lot n'y propose aucun compte : la capture prouve l'absence de la carte, non la présence de l'autre ; le Vitest le prouve).
+- **Tests neufs**, recomptés de `07f714a2` à l'arbre final : Rust **+17** (correspondances `#[test]`/`#[sqlx::test]` des fichiers touchés,
+  439 → 456 ; la ligne 799 d'`admin_full_import_e2e.rs`, un commentaire, compte aux deux bornes) ; Vitest **+8**
+  (`format.test.ts` 11 → 17, `BankImportUpload.test.ts` 30 → 31, `payment-batches-page.test.ts` 8 → 9).
+- **PDF** du manuel d'administration régénéré (`make admin`), contrôlé aplati (`flat-admin-manual.txt`) : « Passer à la 0.17.6 », le nom de la migration
+  entier (il débordait la marge avant un `\allowbreak`), le message FATAL relevé.
+
+**Limites voisines à tracer (issues demandées, une par problème)** :
+1. Import CAMT d'un relevé de compte sans IBAN (`Acct/Id/Othr`) — déjà demandée par la fiche.
+2. Tuile *Comptes bancaires* de l'accueil : à 1280 px, le lien « Solde non disponible — lier au plan comptable » chevauche le nom du compte
+   (capture `34-11a1-02-accueil.png`) ; préexistant, vrai d'un compte bancaire.
+
 ### File List
+
+- `crates/kesh-db/migrations/20261110000001_bank_accounts_without_iban.sql` (neuf), `crates/kesh-db/migrations.sha384`,
+  `crates/kesh-db/test-schema/0001_schema_squash.sql` (régénéré), `Cargo.lock`, `crates/*/Cargo.toml` (dix, 0.17.6)
+- `crates/kesh-db/src/entities/bank_account.rs`, `entities/mod.rs`, `errors.rs`, `post_restore.rs`, `repositories/bank_accounts.rs`,
+  `repositories/payment_batches.rs`
+- `crates/kesh-api/src/errors.rs`, `exports/csv_tables.rs`, `routes/bank_accounts.rs`, `routes/bank_import_fingerprint.rs`, `routes/bank_imports.rs`,
+  `routes/companies.rs`, `routes/invoice_pdf_service.rs`, `routes/onboarding.rs`
+- `crates/kesh-i18n/locales/{fr-CH,de-CH,en-CH,it-CH}/messages.ftl`
+- Tests : `crates/kesh-db/tests/{bank_accounts_repository,bank_imports_repository,migrations_fresh_install,migrations_upgrade_path,payment_batches_repository}.rs`,
+  `crates/kesh-api/tests/{admin_full_import_e2e,bank_accounts_e2e,bank_imports_e2e}.rs`
+- `frontend/src/lib/features/bank-accounts/{bank-accounts.api.ts,format.ts,format.test.ts,BankAccountJournalLinkForm.test.ts}`,
+  `bank-import/{BankImportUpload.svelte,BankImportUpload.test.ts,bank-import.types.ts}`, `homepage/{BankAccountsCard.svelte,HomepageCards.test.ts,homepage.test.ts}`,
+  `settings/settings.types.ts`, `shared/{i18n-keys.test.ts,i18n-libelle-en-dur.test.ts}`,
+  `frontend/src/routes/(app)/{bank-accounts/+page.svelte,bank-accounts/bank-accounts-page.test.ts,payment-batches/+page.svelte,payment-batches/payment-batches-page.test.ts,settings/+page.svelte}`
+- `docs/api-external.md`, `docs/migrations-idempotence-audit.md`, `docs/manual/fr/admin-manual.tex`, `docs/manual/fr/admin-manual.pdf`, `CHANGELOG.md`
+- `_bmad-output/implementation-artifacts/e34-choix-autonomes-e34a1.md` (neuf), cette fiche, `sprint-status.yaml`,
+  `34-11a1-compte-sans-iban-review-prompt-p1.md` (neuf)

@@ -1038,7 +1038,7 @@ development_status:
   34-9-rapport-import-dossier: ready-for-dev  # #969
   34-10-graphiques-couleurs-unies: ready-for-dev  # #970
   34-11a-carte-credit-compte: split  # 2026-11-10, validation P1 : découpée en 34-11a1 et 34-11a2
-  34-11a1-compte-sans-iban: ready-for-dev  # #972 ; migration breaking (min_required 0.17.6) ; après 34-3
+  34-11a1-compte-sans-iban: review  # #972 ; migration breaking (min_required 0.17.6) ; après 34-3 ; développée le 2026-11-11
   34-11a2-carte-credit-creation: ready-for-dev  # #972 ; après 34-11a1
   34-11b-carte-credit-releve: ready-for-dev  # #972 ; après 34-11a2 et 34-4
   epic-34-retrospective: optional
