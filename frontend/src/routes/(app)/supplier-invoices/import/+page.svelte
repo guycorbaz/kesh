@@ -411,10 +411,12 @@
 									<span class="font-medium"
 										>{i18nMsg('imported-supplier-invoices-report-duplicate', 'Déjà importé :')}</span
 									>
-									{#if existing.existingStatus === 'to_complete' && !toComplete.some((r) => r.id === existing.existingDocumentId)}
+									{#if existing.existingStatus === 'to_complete' && !importing && !toComplete.some((r) => r.id === existing.existingDocumentId)}
 										<!-- Revue de code P1, E-1 ≈ B-2 : la ligne visée n'est pas dans la liste
 										     affichée (liste non rechargée, ou document retiré ou transformé
-										     depuis) — aucun lien mort, la ligne le dit. -->
+										     depuis) — aucun lien mort, la ligne le dit. Pendant l'import
+										     (`importing`, jusqu'au rechargement de la liste), le lien reste :
+										     la liste n'est pas encore à jour, le texte clignoterait. -->
 										{i18nMsg(
 											'imported-supplier-invoices-report-duplicate-not-in-list',
 											'absent de la liste ci-dessous : actualisez la page',
