@@ -15,8 +15,12 @@
  * couvert par les tests HTTP (AC-2) et Vitest (AC-5) ; un E2E à deux comptes bancaires n'est pas
  * exigé (choix C-e342-8).
  *
+ * Depuis la revue P1 (B1-7) : *Écriture manuelle* → *Continuer quand même* ouvre le dialogue
+ * d'écriture, fermé sans rien passer, avant le rattachement.
+ *
  * ⚠️ Montant UNIQUE à chaque exécution (base partagée entre specs). En `finally` : rattachement
- * annulé (l'écriture saisie est contre-passée), import supprimé.
+ * annulé (l'écriture saisie est contre-passée) ou, si le test a échoué avant, écriture
+ * contre-passée directement (revue P1, E1-7) ; import supprimé.
  *
  * # Recette visuelle
  *
@@ -77,6 +81,8 @@ test('une transaction déjà comptabilisée est signalée, et Écriture manuelle
 	const ctx = await authedApiContext(page);
 	let importId: number | null = null;
 	let txId: number | null = null;
+	let journalEntryId: number | null = null;
+	let rattachee = false;
 	try {
 		const ba = (
 			(await (await ctx.get('/api/v1/bank-accounts')).json()) as Array<{
@@ -105,7 +111,7 @@ test('une transaction déjà comptabilisée est signalée, et Écriture manuelle
 			},
 		});
 		expect(entry.status(), await entry.text()).toBe(201);
-		const journalEntryId = ((await entry.json()) as { id: number }).id;
+		journalEntryId = ((await entry.json()) as { id: number }).id;
 
 		const counterparty = `Fournisseur 34-4 ${unique}`;
 		importId = await createManualDebitStatementViaApi(page, {
@@ -153,6 +159,19 @@ test('une transaction déjà comptabilisée est signalée, et Écriture manuelle
 		await expect(confirmation).toBeHidden();
 		await expect(page.getByTestId('manual-match-modal')).toHaveCount(0);
 
+		// Revue P1 (B1-7, E1-3) : Écriture manuelle → Continuer quand même → le dialogue
+		// d'écriture s'ouvre, en navigateur réel (deux dialogues qui se relaient) ; fermé sans rien
+		// passer.
+		await ligne.getByTestId('manual-match-button').click();
+		await expect(confirmation).toBeVisible();
+		await confirmation.getByTestId('already-booked-confirm-continue').click();
+		const ecriture = page.getByTestId('manual-match-modal');
+		await expect(ecriture).toBeVisible();
+		await expect(confirmation).toHaveCount(0);
+		await ecriture.getByTestId('manual-match-cancel').click();
+		await expect(ecriture).toHaveCount(0);
+		await expect(ligne).toBeVisible();
+
 		// Rattacher à une écriture existante, sans confirmation → l'écriture → la ligne part.
 		await ligne.getByTestId('link-settlement-button').click();
 		await expect(page.getByTestId('already-booked-confirm')).toHaveCount(0);
@@ -164,11 +183,17 @@ test('une transaction déjà comptabilisée est signalée, et Écriture manuelle
 		await choix.check();
 		await modal.getByTestId('link-submit').click();
 		await expect(modal).toBeHidden();
+		rattachee = true;
 		await expect(ligne).toHaveCount(0);
 		await expect(avertissement).toHaveCount(0);
 	} finally {
-		if (txId !== null) {
+		// Revue P1 (E1-7) : rattachée, l'annulation du rattachement contre-passe l'écriture ; sinon
+		// (échec avant le rattachement), l'écriture est contre-passée directement — non rapprochée,
+		// elle signalerait toute transaction de son montant dans les autres specs.
+		if (rattachee && txId !== null) {
 			await ctx.post(`/api/v1/reconciliation/transactions/${txId}/cancel`, { data: {} });
+		} else if (journalEntryId !== null) {
+			await ctx.post(`/api/v1/journal-entries/${journalEntryId}/reverse`);
 		}
 		if (importId !== null) await ctx.delete(`/api/v1/bank-imports/${importId}`);
 		await disposeContextSafe(ctx);

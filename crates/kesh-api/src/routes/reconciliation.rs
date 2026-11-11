@@ -118,18 +118,22 @@ pub struct ReconciliationProposal {
     pub notice: Option<ProposalNotice>,
     /// Story 34-4 (#828, AC-1) — ce qui, aux livres, ressemble déjà à la
     /// transaction (champ additif) : `null` quand elle n'a rien à quoi se
-    /// rattacher (hors CHF, montant nul) ou que le compte bancaire n'a pas de
-    /// compte du grand livre. L'écran en tire un avertissement et une
+    /// rattacher (hors CHF, montant nul), que le compte bancaire n'a pas de
+    /// compte du grand livre ou qu'il est clos (le dialogue de rattachement y
+    /// est refusé, revue P1 B1-3). L'écran en tire un avertissement et une
     /// confirmation ; le serveur ne refuse rien (AC-4).
     pub already_booked: Option<AlreadyBooked>,
 }
 
-/// Story 34-4 (#828, AC-1, AC-2) — les trois nombres du signal « déjà
-/// comptabilisée », lus par
-/// [`kesh_db::repositories::reconciliation_link::count_already_booked`] : les
-/// longueurs des deux listes du dialogue *Rattacher à une écriture existante*
-/// (mêmes fonctions, mêmes paramètres) et celle des écritures rapprochées sur
-/// un autre compte bancaire à grand livre distinct. Chacun vaut au plus 50.
+/// Story 34-4 (#828, AC-1, AC-2, AC-8) — les trois nombres du signal « déjà
+/// comptabilisée », lus pour toute la page par
+/// [`kesh_db::repositories::reconciliation_link::count_already_booked_for_page`] :
+/// deux lectures par page, sur les mêmes textes SQL que les requêtes du
+/// dialogue *Rattacher à une écriture existante* ; les deux premiers nombres
+/// **égalent** les longueurs de ses deux listes (même compte du grand livre,
+/// même tolérance ; égalité testée), le troisième compte les écritures
+/// rapprochées d'une transaction de sens contraire d'un autre compte bancaire.
+/// Chacun vaut au plus 50.
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AlreadyBooked {
@@ -1057,9 +1061,14 @@ pub async fn get_proposals(
     // page** (et non trois par transaction, AC-8), qui rendent les nombres
     // mêmes des fonctions du dialogue de rattachement, avec ses paramètres
     // (compte du grand livre lu ci-dessus, `link_amount_tolerance`). Sans compte
-    // du grand livre, ou pour une transaction non rattachable : absente de la
-    // table, d'où `null`. Une erreur de lecture fait échouer la route.
-    let mut already_booked_by_tx: HashMap<i64, AlreadyBooked> = match ba_check.journal_account_id {
+    // du grand livre, compte bancaire clos (le dialogue y est refusé en 409,
+    // `link_preflight` ; revue P1 B1-3), ou pour une transaction non
+    // rattachable : absente de la table, d'où `null`. Une erreur de lecture fait
+    // échouer la route.
+    let ledger_for_signal = ba_check
+        .journal_account_id
+        .filter(|_| !ba_check.is_closed());
+    let mut already_booked_by_tx: HashMap<i64, AlreadyBooked> = match ledger_for_signal {
         Some(ledger) => kesh_db::repositories::reconciliation_link::count_already_booked_for_page(
             &state.pool,
             current_user.company_id,

@@ -34,7 +34,7 @@
 			<Dialog.Title>
 				{i18nMsg(
 					'reconciliation-labels-already-booked-confirm-title',
-					'Transaction peut-être déjà comptabilisée',
+					'Confirmer malgré l’avertissement',
 				)}
 			</Dialog.Title>
 		</Dialog.Header>
@@ -42,7 +42,7 @@
 		<p class="text-sm">
 			{i18nMsg(
 				'reconciliation-labels-already-booked-confirm-intro',
-				'Kesh signale ces transactions comme semblant déjà comptabilisées (voir l’avertissement de leur ligne). Continuer passerait une écriture pour un mouvement qui est peut-être déjà aux livres : il serait compté deux fois.',
+				'Chaque transaction ci-dessous semble déjà comptabilisée (voir l’avertissement de sa ligne). Continuer passerait une écriture pour un mouvement qui est peut-être déjà aux livres : il serait compté deux fois.',
 			)}
 		</p>
 		<ul class="list-disc pl-6 text-sm">

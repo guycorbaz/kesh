@@ -97,3 +97,66 @@ groupe, `e34-choix-autonomes-e342.md` (C-e342-5 à C-e342-9, C-e342-20 à C-e342
 - **Retenu** : `cargo fmt --all` a reformaté les fichiers Rust touchés (le formateur du dépôt, exigé par la CI) ; toutes les
   modifications de fond sont faites par l'outil Edit. Écart déclaré au Change Log.
 - **Réversible** : oui.
+
+## Remédiation de la revue P1 (2026-11-11)
+
+### C-e344-11 — Le second côté se fonde sur le sens de la transaction rapprochée, non sur le lien actuel (amende C-e344-2)
+
+- **Contexte** : finding E1-1 (MEDIUM). Le prédicat `NOT (ba.journal_account_id <=> ?)` lisait le compte du grand livre
+  **actuel** de l'autre compte bancaire, modifiable après coup : A et C partagent le 1020, une recette de +400 est rapprochée
+  sur C, puis C est relié au 1022 (ou délié) ; un crédit **distinct** de +400 sur A était dit « l'autre côté d'un virement…
+  rejetez-la », et l'utilisateur qui suivait le conseil rejetait un encaissement réel, sans signal. L'orchestrateur a
+  arbitré : le prédicat ne dépend plus du lien actuel, il se fonde sur l'écriture elle-même — « l'écriture rapprochée d'une
+  transaction d'un autre compte bancaire n'est signalée que si elle porte une ligne sur le grand livre du compte courant ».
+- **Constat, consigné comme l'arbitrage le demande** : cette règle, prise à la lettre, ne corrige pas E1-1 : toute écriture
+  examinée porte **déjà** une ligne sur le grand livre du compte courant (la jointure `ENTRY_MOVEMENTS` et `M = t.amount`
+  l'imposent). La recette du scénario en porte une ; elle resterait signalée.
+- **Retenu** (proposé à la place, dans l'esprit de l'arbitrage — fondé sur l'écriture et ses transactions, non sur un lien
+  modifiable) : l'écriture est rapprochée d'une transaction d'un **autre** compte bancaire **de sens contraire** —
+  `bt.bank_account_id <> ? AND bt.amount = -m.movement`. Un virement de A vers B est un débit de A et un crédit de B : la
+  transaction rapprochée de l'autre côté est de montant **opposé** à celle qu'on affiche. Une recette rapprochée sur un autre
+  compte va dans le **même** sens : jamais signalée, quel que soit le lien actuel de ce compte. Le cas « comptes partagés »
+  reste à 0 pour cette raison (même sens), et un virement entre deux comptes qui partagent un grand livre ne touche pas ce
+  grand livre (mouvement nul). Plus aucune jointure sur `bank_accounts`. Tests : `s34_4_ac2_compte_relie_ailleurs_ne_fait_pas_rejeter`
+  (C relié au 1022, puis délié : 0) ; la mutation M3 vise désormais ce prédicat de sens. Même constante pour
+  `find_matched_elsewhere` (mode du constructeur) et la lecture par page ; le dialogue de rattachement n'en dépend pas.
+- **Écartées** : la règle de l'arbitrage à la lettre (sans effet) ; l'`EXISTS` d'une ligne sur le grand livre **actuel** de
+  l'autre compte (E1-1, proposition de la lentille) — il dépend encore du lien actuel, ce que l'arbitrage écarte.
+- **Réversible** : oui (une constante).
+
+### C-e344-12 — Compte bancaire clos : `alreadyBooked` nul
+
+- **Contexte** : B1-3. Les routes du dialogue refusent un compte clos (409) ; l'avertissement y renverrait à un geste refusé.
+- **Retenu** : `get_proposals` ne compte rien pour un compte clos (`null`) ; manuel et `api-external.md` le disent ; test dans
+  `s34_4_ac1_null_hors_chf_montant_nul_ou_sans_grand_livre`.
+- **Réversible** : oui.
+
+### C-e344-13 — Textes valables au singulier comme au pluriel
+
+- **Contexte** : B1-5, A1-10. « Si aucune de ces écritures » suivait « une écriture… lui correspond » ; la confirmation disait
+  « ces transactions » pour une seule.
+- **Retenu** : phrase du cas combiné neutre (« Si rien de ce que propose « Rattacher à une écriture existante » ne lui
+  correspond… ») ; titre « Confirmer malgré l'avertissement » ; introduction « Chaque transaction ci-dessous semble… ». Les
+  textes (b) et (c) disent désormais « une transaction de sens contraire » (C-e344-11). Quatre locales.
+- **Écartée** : des clés `-one`/`-other` de plus (deux textes de plus à tenir, pour un gain nul).
+- **Réversible** : oui.
+
+### C-e344-14 — Ligne qui porte l'avis du lot et l'avertissement
+
+- **Contexte** : E1-10. L'avis du lot conseille « sinon, passez une écriture manuelle » ; l'avertissement dit de rattacher.
+- **Retenu** : rien dans le code (la confirmation protège déjà *Écriture manuelle*) ; le manuel dit l'ordre : regarder d'abord
+  l'avertissement, le conseil de l'avis ne vaut que s'il n'y a aucune écriture à rattacher.
+- **Réversible** : oui.
+
+### C-e344-15 — Montant de la confirmation tel que la ligne l'affiche
+
+- **Contexte** : B1-8 (« -700 CHF », « -612.3 CHF »).
+- **Retenu** : la confirmation garde la forme de la colonne *Montant* de la ligne (la même chaîne) ; formater les montants de
+  toute la page (ligne, bilan, confirmation) sort de la story : **issue demandée**.
+- **Réversible** : oui.
+
+### C-e344-16 — Variante `One(i64)`
+
+- **Contexte** : B1-6. `query_entry_sql(mode, Option<id>)` admettait des combinaisons incohérentes.
+- **Retenu** : l'identifiant de l'écriture est porté par la variante `EntrySqlMode::One(i64)` ; une seule source.
+- **Réversible** : oui.

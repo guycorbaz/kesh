@@ -1368,11 +1368,11 @@ reconciliation-labels-notice-supplier-invoice-in-batch = La fattura fornitore { 
 # Story 34-4 (#828, AC-5) — sotto una riga che sembra già contabilizzata. Due chiavi -one / -other, scelte dallo schermo: nessun selettore (i messaggi arrivano già risolti).
 reconciliation-labels-already-booked-one = Questa transazione sembra già contabilizzata: le corrisponde una scrittura non riconciliata sul conto della banca. La colleghi («Collega a una scrittura esistente») anziché registrare una scrittura: sarebbe contata due volte.
 reconciliation-labels-already-booked-other = Questa transazione sembra già contabilizzata: le corrispondono { $count } scritture non riconciliate sul conto della banca. La colleghi («Collega a una scrittura esistente») anziché registrare una scrittura: sarebbe contata due volte.
-reconciliation-labels-already-booked-elsewhere = Una scrittura dello stesso importo è già riconciliata con una transazione di un altro dei suoi conti bancari: è probabilmente l’altro lato di un bonifico tra i suoi conti. Non registri una scrittura per essa: la rifiuti.
-reconciliation-labels-already-booked-combined = Se nessuna di queste scritture le corrisponde, è forse l’altro lato di un bonifico tra i suoi conti: una scrittura dello stesso importo è riconciliata su un altro dei suoi conti bancari.
+reconciliation-labels-already-booked-elsewhere = Una transazione di segno opposto, su un altro dei suoi conti bancari, è già riconciliata con una scrittura dello stesso importo: è probabilmente l’altro lato di un bonifico tra i suoi conti. Non registri una scrittura per essa: la rifiuti.
+reconciliation-labels-already-booked-combined = Se nulla di ciò che propone «Collega a una scrittura esistente» le corrisponde, è forse l’altro lato di un bonifico tra i suoi conti: una transazione di segno opposto, su un altro dei suoi conti bancari, è riconciliata con una scrittura dello stesso importo.
 # Story 34-4 (#828, AC-6) — conferma prima di Accettare, Registrazione manuale o Suddividi su una riga segnalata.
-reconciliation-labels-already-booked-confirm-title = Transazione forse già contabilizzata
-reconciliation-labels-already-booked-confirm-intro = Kesh segnala queste transazioni come apparentemente già contabilizzate (vedere l’avviso della loro riga). Continuare registrerebbe una scrittura per un movimento forse già nei libri: sarebbe contato due volte.
+reconciliation-labels-already-booked-confirm-title = Confermare nonostante l’avviso
+reconciliation-labels-already-booked-confirm-intro = Ogni transazione qui sotto sembra già contabilizzata (vedere l’avviso della sua riga). Continuare registrerebbe una scrittura per un movimento forse già nei libri: sarebbe contato due volte.
 reconciliation-labels-already-booked-confirm-cancel = Annulla
 reconciliation-labels-already-booked-confirm-continue = Continua comunque
 # Story 29-6 (#665, AC10) — mostrato nella riga dei pulsanti quando è selezionata una riga senza proposta.

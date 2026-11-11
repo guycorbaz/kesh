@@ -63,14 +63,14 @@ export function alreadyBookedWarning(p: ReconciliationProposal): string | null {
 		parts.push(
 			i18nMsg(
 				'reconciliation-labels-already-booked-elsewhere',
-				'Une écriture du même montant est déjà rapprochée d’une transaction d’un autre de vos comptes bancaires : c’est probablement l’autre côté d’un virement entre vos comptes. Ne passez pas d’écriture pour elle : rejetez-la.',
+				'Une transaction de sens contraire, sur un autre de vos comptes bancaires, est déjà rapprochée d’une écriture du même montant : c’est probablement l’autre côté d’un virement entre vos comptes. Ne passez pas d’écriture pour elle : rejetez-la.',
 			),
 		);
 	} else if (m > 0) {
 		parts.push(
 			i18nMsg(
 				'reconciliation-labels-already-booked-combined',
-				'Si aucune de ces écritures ne lui correspond, elle est peut-être l’autre côté d’un virement entre vos comptes : une écriture du même montant est rapprochée sur un autre de vos comptes bancaires.',
+				'Si rien de ce que propose « Rattacher à une écriture existante » ne lui correspond, elle est peut-être l’autre côté d’un virement entre vos comptes : une transaction de sens contraire, sur un autre de vos comptes bancaires, est rapprochée d’une écriture du même montant.',
 			),
 		);
 	}

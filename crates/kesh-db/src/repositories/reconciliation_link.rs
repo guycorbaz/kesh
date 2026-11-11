@@ -571,8 +571,10 @@ impl From<EntryCandidateRow> for EntryCandidate {
 enum EntrySqlMode {
     /// La liste des candidates ([`find_entry_candidates`]).
     List,
-    /// Restreinte à `e.id` : le geste ([`link_entry_in_tx`]).
-    One,
+    /// Restreinte à `e.id` — l'écriture désignée, que la variante porte (revue
+    /// P1, B1-6 : une seule source pour le texte et la liaison) : le geste
+    /// ([`link_entry_in_tx`]).
+    One(i64),
     /// Story 34-4 (#828, AC-2) — le **second côté** d'un virement : la
     /// condition 4 (« non rapprochée ») est remplacée par son contraire ciblé,
     /// [`MATCHED_ELSEWHERE`] ; toutes les autres conditions restent.
@@ -584,8 +586,8 @@ enum EntrySqlMode {
 ///
 /// Paramètres, dans l'ordre : date de paiement de `t` (proximité), compte du
 /// grand livre actuel, `company_id`, `t.amount`, — `MatchedElsewhere` —
-/// `t.bank_account_id` et le compte du grand livre ([`MATCHED_ELSEWHERE`]),
-/// `t.bank_account_id`, et — `One` — l'identifiant de l'écriture.
+/// `t.bank_account_id` ([`MATCHED_ELSEWHERE`]), `t.bank_account_id`, et —
+/// `One` — l'identifiant de l'écriture.
 ///
 /// Un seul texte : les variantes n'en diffèrent que par le prédicat de la
 /// condition 4 ou la restriction à `e.id` (tests
@@ -624,7 +626,7 @@ fn entry_sql(mode: EntrySqlMode) -> String {
            AND {ENTRY_NOT_REVERSED_NOR_SETTLEMENT}{} \
          ORDER BY days_apart, e.id \
          LIMIT {ENTRY_CANDIDATES_LIMIT}",
-        if mode == EntrySqlMode::One {
+        if matches!(mode, EntrySqlMode::One(_)) {
             " AND e.id = ?"
         } else {
             ""
@@ -637,21 +639,24 @@ const NOT_MATCHED: &str =
     "NOT EXISTS (SELECT 1 FROM bank_transactions bt WHERE bt.matched_entry_id = e.id)";
 
 /// Story 34-4 (#828, AC-2) — à la place de [`NOT_MATCHED`] : l'écriture est
-/// rapprochée d'une transaction d'un **autre** compte bancaire, dont le compte
-/// du grand livre **diffère** de celui de `t` (un compte sans compte du grand
-/// livre en diffère : `<=>` compare `NULL`). Paramètres : `t.bank_account_id`,
-/// puis le compte du grand livre actuel de `t`.
+/// rapprochée d'une transaction d'un **autre** compte bancaire, **de sens
+/// contraire** — de montant opposé au mouvement `M` de l'écriture sur le grand
+/// livre de `t`, donc à `t.amount`. Paramètre : `t.bank_account_id`.
 ///
-/// Le prédicat « grand livre distinct » est porteur : deux comptes bancaires
-/// peuvent partager un compte du grand livre (aucune contrainte `UNIQUE` sur
-/// `bank_accounts.journal_account_id`) ; sans lui, une transaction non
-/// comptabilisée d'un compte qui partage son grand livre serait dite « l'autre
-/// côté d'un virement » (finding R1 = F6 de la v017-3a ; mutation M3).
+/// ⛔ **Fondé sur l'écriture et ses transactions, jamais sur le lien actuel
+/// d'un compte bancaire à son grand livre** (revue P1, E1-1 ; choix
+/// C-e344-11, qui amende C-e344-2) : ce lien se modifie après coup. Un virement
+/// de A vers B est un débit de A et un crédit de B ; l'écriture qui le porte,
+/// rapprochée du débit de A, a sur le grand livre de B un mouvement égal au
+/// crédit de B — la transaction rapprochée est de montant opposé. Une recette
+/// rapprochée sur un autre compte (même grand livre partagé, ou relié ailleurs
+/// depuis) va dans le **même** sens : elle n'est jamais dite « l'autre côté
+/// d'un virement » (tests `s34_4_ac2_comptes_partages_ne_comptent_pas`,
+/// `s34_4_ac2_compte_relie_ailleurs_ne_fait_pas_rejeter` ; mutation M3).
 const MATCHED_ELSEWHERE: &str = "EXISTS (SELECT 1 FROM bank_transactions bt \
-     JOIN bank_accounts ba ON ba.id = bt.bank_account_id \
      WHERE bt.matched_entry_id = e.id \
        AND bt.bank_account_id <> ? \
-       AND NOT (ba.journal_account_id <=> ?))";
+       AND bt.amount = -m.movement)";
 
 /// La jointure qui donne `M`, le mouvement de chaque écriture sur le compte du
 /// grand livre actuel (conditions 3 de la règle, sans le test de montant).
@@ -673,16 +678,14 @@ const ENTRY_NOT_REVERSED_NOR_SETTLEMENT: &str = "e.reverses_entry_id IS NULL \
                         AND s.settlement_type = 'bank_transfer' \
                         AND s.settlement_bank_account_id = ?)";
 
-/// Exécute [`entry_sql`] pour `t`, dans le mode demandé. `journal_entry_id` :
-/// l'écriture de [`EntrySqlMode::One`], `None` dans les deux autres modes (les
-/// deux appelants l'assurent : le mode `One` se déduit de sa présence).
+/// Exécute [`entry_sql`] pour `t`, dans le mode demandé (l'écriture de
+/// [`EntrySqlMode::One`] est portée par la variante).
 async fn query_entry_sql<'e, E>(
     executor: E,
     company_id: i64,
     t: &BankTransaction,
     bank_ledger_account_id: i64,
     mode: EntrySqlMode,
-    journal_entry_id: Option<i64>,
 ) -> Result<Vec<EntryCandidate>, DbError>
 where
     E: sqlx::Executor<'e, Database = MySql>,
@@ -694,10 +697,10 @@ where
         .bind(company_id)
         .bind(t.amount);
     if mode == EntrySqlMode::MatchedElsewhere {
-        q = q.bind(t.bank_account_id).bind(bank_ledger_account_id);
+        q = q.bind(t.bank_account_id);
     }
     q = q.bind(t.bank_account_id);
-    if let Some(id) = journal_entry_id {
+    if let EntrySqlMode::One(id) = mode {
         q = q.bind(id);
     }
     let rows = q.fetch_all(executor).await.map_err(map_db_error)?;
@@ -716,20 +719,11 @@ async fn query_entry_candidates<'e, E>(
 where
     E: sqlx::Executor<'e, Database = MySql>,
 {
-    let mode = if journal_entry_id.is_some() {
-        EntrySqlMode::One
-    } else {
-        EntrySqlMode::List
+    let mode = match journal_entry_id {
+        Some(id) => EntrySqlMode::One(id),
+        None => EntrySqlMode::List,
     };
-    query_entry_sql(
-        executor,
-        company_id,
-        t,
-        bank_ledger_account_id,
-        mode,
-        journal_entry_id,
-    )
-    .await
+    query_entry_sql(executor, company_id, t, bank_ledger_account_id, mode).await
 }
 
 /// Les écritures rattachables à `t` — conditions 1 à 6 —, triées par jours
@@ -761,9 +755,9 @@ where
 /// Les écritures qui semblent être **l'autre côté** d'un virement de `t` entre
 /// deux comptes bancaires propres (Story 34-4, AC-2) : les conditions 2, 3, 5
 /// et 6 de la règle du rattachement, mais **rapprochées** d'une transaction
-/// d'un autre compte bancaire relié à un autre compte du grand livre
-/// ([`MATCHED_ELSEWHERE`]) ; [`ENTRY_CANDIDATES_LIMIT`] au plus. Vide, sans
-/// requête, si la condition 1 est fausse. Lecture non verrouillante.
+/// de sens contraire d'un autre compte bancaire ([`MATCHED_ELSEWHERE`]) ;
+/// [`ENTRY_CANDIDATES_LIMIT`] au plus. Vide, sans requête, si la condition 1
+/// est fausse. Lecture non verrouillante.
 pub async fn find_matched_elsewhere<'e, E>(
     executor: E,
     company_id: i64,
@@ -782,7 +776,6 @@ where
         t,
         bank_ledger_account_id,
         EntrySqlMode::MatchedElsewhere,
-        None,
     )
     .await
 }
@@ -878,9 +871,10 @@ pub async fn count_already_booked_for_page(
            AND m.movement IN ({placeholders}) \
            AND {ENTRY_NOT_REVERSED_NOR_SETTLEMENT}"
     );
+    // Ordre des `?` dans le texte : `MATCHED_ELSEWHERE` (compte bancaire),
+    // `ENTRY_MOVEMENTS` (grand livre), société, montants, condition 6 (compte bancaire).
     let mut q = sqlx::query_as::<_, (Decimal, i64, i64)>(&sql)
         .bind(bank_account_id)
-        .bind(bank_ledger_account_id)
         .bind(bank_ledger_account_id)
         .bind(company_id);
     for amount in &amounts {
@@ -1191,7 +1185,7 @@ mod tests {
     #[test]
     fn the_restricted_entry_query_is_the_list_query_plus_the_entry() {
         let all = entry_sql(EntrySqlMode::List);
-        let one = entry_sql(EntrySqlMode::One);
+        let one = entry_sql(EntrySqlMode::One(7));
         assert_eq!(one.replace(" AND e.id = ?", ""), all);
         assert_ne!(one, all);
         assert!(!all.contains("FOR UPDATE"), "lecture ordinaire");
@@ -1210,9 +1204,11 @@ mod tests {
         assert_eq!(elsewhere.matches(MATCHED_ELSEWHERE).count(), 1);
         assert!(!elsewhere.contains(NOT_MATCHED));
         assert_eq!(elsewhere.replace(MATCHED_ELSEWHERE, NOT_MATCHED), list);
-        // Les deux prédicats voulus : un autre compte bancaire, un autre grand livre.
+        // Les deux prédicats voulus (C-e344-11) : un autre compte bancaire, une
+        // transaction de sens contraire — et aucun lien actuel à un grand livre.
         assert!(MATCHED_ELSEWHERE.contains("bt.bank_account_id <> ?"));
-        assert!(MATCHED_ELSEWHERE.contains("NOT (ba.journal_account_id <=> ?)"));
+        assert!(MATCHED_ELSEWHERE.contains("bt.amount = -m.movement"));
+        assert!(!MATCHED_ELSEWHERE.contains("journal_account_id"));
         assert!(!elsewhere.contains("FOR UPDATE"), "lecture ordinaire");
     }
 }

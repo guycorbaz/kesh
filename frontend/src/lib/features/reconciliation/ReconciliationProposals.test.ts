@@ -47,15 +47,17 @@ vi.mock('$lib/features/bank-accounts/bank-accounts.api', () => ({
 // Revue de code P1 de la 15-5c (B1, E3) — les deux modales sont remplacées par une doublure
 // qui appelle `onSuccess` d'un clic : seul le bilan du parent est en cause ici, et les
 // modales ont leurs propres tests.
+// Story 34-4, revue P1 (E1-3) : une enveloppe par modale, qui marque la doublure
+// (`data-modal` = `manual`, `split`, `link`).
 vi.mock('./ManualMatchModal.svelte', async () => ({
-	default: (await import('./ModalSuccessStub.test.svelte')).default,
+	default: (await import('./ModalSuccessStubManual.test.svelte')).default,
 }));
 vi.mock('./TransactionSplitModal.svelte', async () => ({
-	default: (await import('./ModalSuccessStub.test.svelte')).default,
+	default: (await import('./ModalSuccessStubSplit.test.svelte')).default,
 }));
 // Story 29-8 (#670) — la modale de rattachement, même doublure.
 vi.mock('./LinkSettlementModal.svelte', async () => ({
-	default: (await import('./ModalSuccessStub.test.svelte')).default,
+	default: (await import('./ModalSuccessStubLink.test.svelte')).default,
 }));
 
 // Mock i18n util pour rendre le composant déterministe (renvoie le
@@ -1534,10 +1536,12 @@ describe('ReconciliationProposals — transaction déjà comptabilisée (Story 3
 		'Cette transaction semble déjà comptabilisée : une écriture non rapprochée du compte de la banque lui correspond. Rattachez-la (« Rattacher à une écriture existante ») plutôt que de passer une écriture : elle serait comptée deux fois.';
 	const texteDes = (n: number) =>
 		`Cette transaction semble déjà comptabilisée : ${n} écritures non rapprochées du compte de la banque lui correspondent. Rattachez-la (« Rattacher à une écriture existante ») plutôt que de passer une écriture : elle serait comptée deux fois.`;
+	// Revue P1 (E1-1, B1-5) : le second côté se dit par la transaction de sens contraire, et la
+	// phrase du cas combiné vaut au singulier comme au pluriel.
 	const TEXTE_AILLEURS =
-		'Une écriture du même montant est déjà rapprochée d’une transaction d’un autre de vos comptes bancaires : c’est probablement l’autre côté d’un virement entre vos comptes. Ne passez pas d’écriture pour elle : rejetez-la.';
+		'Une transaction de sens contraire, sur un autre de vos comptes bancaires, est déjà rapprochée d’une écriture du même montant : c’est probablement l’autre côté d’un virement entre vos comptes. Ne passez pas d’écriture pour elle : rejetez-la.';
 	const TEXTE_COMBINE =
-		'Si aucune de ces écritures ne lui correspond, elle est peut-être l’autre côté d’un virement entre vos comptes : une écriture du même montant est rapprochée sur un autre de vos comptes bancaires.';
+		'Si rien de ce que propose « Rattacher à une écriture existante » ne lui correspond, elle est peut-être l’autre côté d’un virement entre vos comptes : une transaction de sens contraire, sur un autre de vos comptes bancaires, est rapprochée d’une écriture du même montant.';
 
 	/** Une ligne avec candidate, et ses trois nombres (`null` : pas de champ). */
 	function signalee(
@@ -1656,12 +1660,15 @@ describe('ReconciliationProposals — transaction déjà comptabilisée (Story 3
 		expect(view.queryByTestId('already-booked-confirm')).toBeNull();
 	});
 
+	// Revue P1 (E1-3, A1-2) : chaque doublure porte le nom de sa modale (`data-modal`), si bien
+	// que *Continuer quand même* doit rouvrir **le** geste demandé (mutation M9 : `manual` et
+	// `split` intervertis dans `runGesture`).
 	it.each([
-		['manual-match-button', 'Écriture manuelle'],
-		['split-button', 'Éclater'],
+		['manual-match-button', 'manual'],
+		['split-button', 'split'],
 	])(
-		'AC-6 %s sur une ligne signalée ⇒ confirmation ; Annuler n’ouvre rien ; Continuer ouvre le dialogue (M5)',
-		async (bouton) => {
+		'AC-6 %s sur une ligne signalée ⇒ confirmation ; Annuler n’ouvre rien ; Continuer ouvre la modale « %s » (M5, M9)',
+		async (bouton, modale) => {
 			const view = await monter([signalee(1, [0, 0, 1])]);
 			await fireEvent.click(view.getByTestId(bouton));
 			await view.findByTestId('already-booked-confirm');
@@ -1673,20 +1680,36 @@ describe('ReconciliationProposals — transaction déjà comptabilisée (Story 3
 
 			await fireEvent.click(view.getByTestId(bouton));
 			await fireEvent.click(await view.findByTestId('already-booked-confirm-continue'));
-			await view.findByTestId('stub-modal-success');
+			const ouverte = await view.findByTestId('stub-modal-success');
+			expect(ouverte.getAttribute('data-modal')).toBe(modale);
 			expect(view.queryByTestId('already-booked-confirm')).toBeNull();
 		},
 	);
 
-	it.each(['manual-match-button', 'split-button'])(
-		'AC-6 %s sur une ligne non signalée ⇒ le dialogue s’ouvre aussitôt',
-		async (bouton) => {
-			const view = await monter([signalee(1, null)]);
-			await fireEvent.click(view.getByTestId(bouton));
-			await view.findByTestId('stub-modal-success');
-			expect(view.queryByTestId('already-booked-confirm')).toBeNull();
-		},
-	);
+	it.each([
+		['manual-match-button', 'manual'],
+		['split-button', 'split'],
+	])('AC-6 %s sur une ligne non signalée ⇒ la modale « %s » s’ouvre aussitôt', async (bouton, modale) => {
+		const view = await monter([signalee(1, null)]);
+		await fireEvent.click(view.getByTestId(bouton));
+		const ouverte = await view.findByTestId('stub-modal-success');
+		expect(ouverte.getAttribute('data-modal')).toBe(modale);
+		expect(view.queryByTestId('already-booked-confirm')).toBeNull();
+	});
+
+	// Revue P1 (E1-6) : fermer la confirmation par Échap vaut *Annuler* — rien n'est appelé, et
+	// le geste la rouvre ensuite (le geste en attente a bien été oublié).
+	it('AC-6 Échap ferme la confirmation comme Annuler, et le geste la rouvre ensuite', async () => {
+		const view = await monter([signalee(1, [0, 1, 0])]);
+		await fireEvent.click(view.getByTestId('manual-match-button'));
+		const dialogue = await view.findByTestId('already-booked-confirm');
+		await fireEvent.keyDown(dialogue, { key: 'Escape' });
+		await vi.waitFor(() => expect(view.queryByTestId('already-booked-confirm')).toBeNull());
+		expect(view.queryByTestId('stub-modal-success')).toBeNull();
+		expect(mockApi.manualMatchTransaction).not.toHaveBeenCalled();
+		await fireEvent.click(view.getByTestId('manual-match-button'));
+		await view.findByTestId('already-booked-confirm');
+	});
 
 	it('AC-6 Rejeter une ligne signalée ⇒ aucune confirmation (M6)', async () => {
 		const view = await monter([signalee(1, [0, 1, 1])]);
@@ -1699,7 +1722,8 @@ describe('ReconciliationProposals — transaction déjà comptabilisée (Story 3
 	it('AC-6 Rattacher à une écriture existante sur une ligne signalée ⇒ aucune confirmation', async () => {
 		const view = await monter([signalee(1, [0, 1, 0])]);
 		await fireEvent.click(view.getByTestId('link-settlement-button'));
-		await view.findByTestId('stub-modal-success');
+		const ouverte = await view.findByTestId('stub-modal-success');
+		expect(ouverte.getAttribute('data-modal')).toBe('link');
 		expect(view.queryByTestId('already-booked-confirm')).toBeNull();
 	});
 });

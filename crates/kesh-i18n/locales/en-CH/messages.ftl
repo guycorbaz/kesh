@@ -1368,11 +1368,11 @@ reconciliation-labels-notice-supplier-invoice-in-batch = Supplier invoice { $inv
 # Story 34-4 (#828, AC-5) — under a line that seems already booked. Two keys -one / -other, chosen by the screen: no selector (messages arrive pre-resolved).
 reconciliation-labels-already-booked-one = This transaction seems already booked: an unreconciled entry on the bank account matches it. Link it ("Link to an existing entry") rather than posting an entry: it would be counted twice.
 reconciliation-labels-already-booked-other = This transaction seems already booked: { $count } unreconciled entries on the bank account match it. Link it ("Link to an existing entry") rather than posting an entry: it would be counted twice.
-reconciliation-labels-already-booked-elsewhere = An entry for the same amount is already reconciled with a transaction of another of your bank accounts: this is probably the other side of a transfer between your accounts. Do not post an entry for it: reject it.
-reconciliation-labels-already-booked-combined = If none of these entries matches it, it may be the other side of a transfer between your accounts: an entry for the same amount is reconciled on another of your bank accounts.
+reconciliation-labels-already-booked-elsewhere = A transaction in the opposite direction, on another of your bank accounts, is already reconciled with an entry for the same amount: this is probably the other side of a transfer between your accounts. Do not post an entry for it: reject it.
+reconciliation-labels-already-booked-combined = If nothing that "Link to an existing entry" proposes matches it, it may be the other side of a transfer between your accounts: a transaction in the opposite direction, on another of your bank accounts, is reconciled with an entry for the same amount.
 # Story 34-4 (#828, AC-6) — confirmation before Accept, Manual entry or Split on a flagged line.
-reconciliation-labels-already-booked-confirm-title = Transaction possibly already booked
-reconciliation-labels-already-booked-confirm-intro = Kesh flags these transactions as seemingly already booked (see the warning on their line). Continuing would post an entry for a movement that may already be in the books: it would be counted twice.
+reconciliation-labels-already-booked-confirm-title = Confirm despite the warning
+reconciliation-labels-already-booked-confirm-intro = Each transaction below seems already booked (see the warning on its line). Continuing would post an entry for a movement that may already be in the books: it would be counted twice.
 reconciliation-labels-already-booked-confirm-cancel = Cancel
 reconciliation-labels-already-booked-confirm-continue = Continue anyway
 # Story 29-6 (#665, AC10) — shown in the button row when a line without a proposal is ticked.
