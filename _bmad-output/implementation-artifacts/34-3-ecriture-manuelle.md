@@ -1,6 +1,6 @@
 # Story 34-3 : « Écriture manuelle » sur tout compte imputable, sauf celui de la banque (#967)
 
-Status: review
+Status: done
 
 *Fiche rédigée le 2026-11-10 en autonomie (Opus 5.5), worktree `/home/gcorbaz/devel/kesh-e34`, branche `chore/epic-34-kickoff`,
 numéros de ligne de `a75835db`. Release **0.17.6**, Epic 34. **Aucune migration.** Registre : `e34-choix-autonomes-e342.md`,
@@ -399,14 +399,22 @@ fiche non commitée : ce Dev Agent Record a été réécrit ; le script ne resta
   - `npm run check` : 0 erreur, 29 avertissements (aucun dans un fichier de la story) — `p1/check.log` ;
   - Vitest complet : **224 fichiers, 2924 tests, tous verts** — `p1/vitest.log` ;
   - **M2 sur l'E2E** (`mut/M2-e2e.log`, `mut/M2-e2e-run.log`) : build muté, base vide, spec seule → **rouge**, tué par
-    l'ancre positive (`reconciliation-manual-entry.spec.ts:127`, l'option du compte de la banque présente après la saisie
-    de `1` : `Expected: 0, Received: 1`) ; fichier restauré puis `touch`, `git status` vide ;
+    l'assertion d'absence qui suit l'ancre positive (l'ancre `reconciliation-manual-entry.spec.ts:126`, `1100` proposé, a
+    passé ; `:127`, `toHaveCount(0)` sur le compte de la banque après la saisie de `1`, rougit : `Expected: 0,
+    Received: 1`) *(libellé corrigé à la passe ciblée P3, C3-1)* ; fichier restauré puis `touch`, `git status` vide ;
   - `npm run build` (frontend non muté) : vert — `p1/build.log` ;
   - **E2E complet** (base vide, sans dossier de captures, runner avec `KESH_INBOX_DIR` et `KESH_DOCUMENTS_DIR`) :
     **386 passés, 7 échecs, 18 ignorés** — `p1/e2e-complet.log`. Les sept sont ceux de la KF-029 (#97) :
     `mode-expert.spec.ts:26`, `:41`, `onboarding-path-b.spec.ts:65`, `:92`, `onboarding.spec.ts:57`, `:77`, `:150`.
     `reconciliation-manual-entry.spec.ts` vert ; `backup-restore-new-install.spec.ts:140` vert sans captures (#994).
   - Suite : passe ciblée P3, prompt `34-3-ecriture-manuelle-review-prompt-p3-ciblee.md`.
+- 2026-11-11 : **passe ciblée P3** (rapport `kesh-gate-logs/e3403-review-p3-ciblee.md`, sur `f5969619` et les journaux des
+  gates différés et de M2) : 0 au-dessus de LOW ; C3-1 LOW (le libellé de M2 ci-dessus attribuait le rouge à l'ancre
+  `:127`) corrigé, hors production. **Boucle de revue close.**
+  **Tendance finale des revues de code** : P1 (Opus, trois lentilles B, E, A) 0 C, 0 H, 0 M, 15 L → P2 ciblée (Haiku,
+  commit `584a1183`) 0 C, 0 H, 1 M, 1 L → P3 ciblée 0 C, 0 H, 0 M, 1 L. Le MEDIUM de P2 (M2 non rejouée sur l'E2E) a
+  été levé sans code neuf, par la mutation jouée ; aucune remédiation postérieure à P2 ne touche le code de production
+  (`f5969619` : manuel ; ensuite, fiche seule). Validation de la fiche : P1 à P6 (registre e342). `Status: done`.
 
 ### File List
 
