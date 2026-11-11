@@ -1204,15 +1204,21 @@
 		data-testid="settle-conflict"
 	>
 		<p>
+			<!-- Revue P2 (B2-1) : pendant la relecture, l'avis ne dit pas qu'elle a échoué. -->
 			{settleOutcome === 'conflict'
 				? i18nMsg(
 						'invoice-settle-conflict',
 						'Le règlement n’a pas été enregistré : la facture a été modifiée entre-temps, par exemple par un règlement saisi dans un autre onglet. Elle a été relue : vérifiez la liste des règlements ci-dessous avant de recommencer.',
 					)
-				: i18nMsg(
-						'invoice-settle-conflict-reread-failed',
-						'Le règlement n’a pas été enregistré : la facture a changé, et elle n’a pas pu être relue. Le règlement reste indisponible tant qu’elle n’a pas été relue.',
-					)}
+				: settleRereading
+					? i18nMsg(
+							'invoice-settle-conflict-rereading',
+							'Le règlement n’a pas été enregistré : la facture a changé. Relecture en cours…',
+						)
+					: i18nMsg(
+							'invoice-settle-conflict-reread-failed',
+							'Le règlement n’a pas été enregistré : la facture a changé, et elle n’a pas pu être relue. Le règlement reste indisponible tant qu’elle n’a pas été relue.',
+						)}
 		</p>
 		{#if settleOutcome === 'conflict-blocked' && !settleRereading}
 			<Button variant="outline" onclick={rereadFromBlocked} data-testid="settle-conflict-reread">

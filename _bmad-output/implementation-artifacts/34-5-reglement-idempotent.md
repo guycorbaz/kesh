@@ -355,13 +355,34 @@ de la KF-029 se nomment un par un.
     réussi lève l'état bloquant de l'échéancier, C-e345-10 (Vitest ; M9 tuée). **E1-7 (L)** : les deux enchaînements
     testés. **B1-2 (L)** : fondu dans B1-1.
   - **E1-6 (L)** : commentaire corrigé ; la fermeture du dialogue d'une autre ligne, héritée de la 33-6 dans trois
-    branches, n'est pas changée (C-e345-11) : **issue demandée**.
+    branches, n'est pas changée (C-e345-11) : **issue demandée** *(ouverte par l'orchestrateur : #1007 ; annoté le
+    2026-11-11 à la revue P2, A2-1)*.
   - **A1-4 (L)** : T1 à T8 cochées, chemins `e345`. **A1-5 (L)** : bouton grisé expliqué (`transition-all` et
     `disabled:opacity-50`, fondu saisi en cours), capture refaite après `opacity: 1` ; l'échec du premier essai `e2e-r3`
     est dit au Dev Agent Record.
   - **Tendance** : P1 3 M / 12 L. Aucun finding n'est né d'une remédiation précédente : tous sont d'origine. La
     remédiation touche la production (fiche, échéancier, doc-comments) : une **P2 complète** suit (Sonnet), prompt
     `34-5-reglement-idempotent-review-prompt-p2.md`.
+- 2026-11-11 : **revue de code P2** (complète, Sonnet, trois lentilles ; rapports
+  `kesh-gate-logs/e345-review-p2-{B,E,A}.md`) : **0 C, 0 H, 0 M, 8 L**. M7 confirmée équivalente par E et A. Remédiation
+  (Opus 5.5), prémisses relues au code :
+  - **B2-1 (L)** : pendant la relecture qui suit un 409, l'avis disait déjà « n'a pas pu être relue ». Il dit désormais
+    « Relecture en cours… » tant que `settleRereading` est vrai (fiche et échéancier ; deux clés neuves aux quatre
+    locales, `invoice-settle-conflict-rereading` et `due-dates-settle-conflict-rereading`). Le Vitest A1-2 de
+    l'échéancier, qui figeait le texte d'échec pendant l'attente, est récrit ; un Vitest neuf sur la fiche ; mutation M12.
+    L'avis d'issue inconnue (`blocked`, 33-6) porte la même tournure pendant sa relecture : non changé ici.
+  - **E2-2 (L)** : de-CH « bleibt nicht verfügbar » → « ist erst wieder verfügbar, wenn … », sur les deux clés de conflit
+    **et** les deux d'issue inconnue de la 33-6 (même tournure). en-CH (« stays unavailable ») et it-CH (« resta
+    indisponibile ») relus : sens juste.
+  - **B2-2 = E2-1 (L)** : doc-comment de `SettleInvoiceRequest` recoupé.
+  - **E2-3 (L)** : non corrigé ici ; l'avis de conflit ou d'issue inconnue reste affiché après un autre geste réussi :
+    **#1009**, ouverte par l'orchestrateur.
+  - **A2-1 (L)** : #1007 cité aux trois sites. **A2-3 (L)** : File List complétée.
+  - **A2-2 (L)** : M1 à M6 rejouées au dernier commit de code, M6 de l'échéancier jouée (M6e) ; réserve d'E sur la fiche :
+    M11 (`conflict-blocked` retiré du `settleBlocked` de la fiche). Résultats au Dev Agent Record.
+  - **Tendance** : P1 3 M / 12 L → P2 0 M / 8 L. La remédiation touche la production (deux pages, quatre locales) : une
+    **passe ciblée P3** (Haiku, une lentille, sur le seul commit de remédiation) suit, prompt
+    `34-5-reglement-idempotent-review-prompt-p3-ciblee.md`.
 
 ## Dev Agent Record
 
@@ -483,7 +504,9 @@ fiche ajoutés en fin de `invoice-settlements-page.test.ts` par `cat >>` (ajout,
 
 **Limites voisines.** Aucune nouvelle issue à ouvrir au développement. À la revue P1, une issue est demandée : sur
 l'échéancier, un dialogue de règlement ouvert sur une autre ligne pendant l'envoi est fermé par la fin de l'envoi, dans
-les trois branches (succès, issue inconnue, 409), comportement hérité de la 33-6 (E1-6, C-e345-11).
+les trois branches (succès, issue inconnue, 409), comportement hérité de la 33-6 (E1-6, C-e345-11). *(Ouverte : #1007 ;
+annoté le 2026-11-11 à la revue P2, A2-1.)* À la revue P2 : un avis de conflit ou d'issue inconnue reste affiché après
+un autre geste réussi de l'écran (E2-3) : **#1009**, ouverte par l'orchestrateur.
 
 ### File List
 
@@ -506,6 +529,8 @@ les trois branches (succès, issue inconnue, 409), comportement hérité de la 3
   `invoices_echeancier.spec.ts`, `invoices-settlement-cancel.spec.ts`, `invoice-write-off.spec.ts`, `open-items.spec.ts`,
   `reconciliation-amount-due.spec.ts`, `reconciliation-link.spec.ts`, `reconciliation-priority.spec.ts`, `reminders.spec.ts`
 - `docs/manual/fr/user-manual.tex`, `docs/manual/fr/admin-manual.tex`, `docs/api-external.md`, `CHANGELOG.md`
+- `docs/manual/fr/user-manual.pdf`, `docs/manual/fr/admin-manual.pdf` (régénérés)
 - `scripts/recette-montee.sh`
 - `_bmad-output/implementation-artifacts/e34-choix-autonomes-e345.md` (neuf),
-  `34-5-reglement-idempotent-review-prompt-p1.md` (neuf), cette fiche, `sprint-status.yaml`
+  `34-5-reglement-idempotent-review-prompt-p1.md`, `34-5-reglement-idempotent-review-prompt-p2.md` et
+  `34-5-reglement-idempotent-review-prompt-p3-ciblee.md` (neufs), cette fiche, `sprint-status.yaml`

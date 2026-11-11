@@ -433,11 +433,17 @@
 						'Le règlement de la facture { $number } n’a pas été enregistré : elle a été modifiée entre-temps. La liste a été relue : vérifiez son reste dû ci-dessous, ou sa fiche, avant de recommencer.',
 						{ number: settleUnknownNumber ?? '' },
 					)
-				: i18nMsg(
-						'due-dates-settle-conflict-reread-failed',
-						'Le règlement de la facture { $number } n’a pas été enregistré : elle a changé, et la liste n’a pas pu être relue. Les règlements restent indisponibles tant qu’elle n’a pas été relue.',
-						{ number: settleUnknownNumber ?? '' },
-					)}
+				: settleRereading
+					? i18nMsg(
+							'due-dates-settle-conflict-rereading',
+							'Le règlement de la facture { $number } n’a pas été enregistré : elle a changé. Relecture de la liste en cours…',
+							{ number: settleUnknownNumber ?? '' },
+						)
+					: i18nMsg(
+							'due-dates-settle-conflict-reread-failed',
+							'Le règlement de la facture { $number } n’a pas été enregistré : elle a changé, et la liste n’a pas pu être relue. Les règlements restent indisponibles tant qu’elle n’a pas été relue.',
+							{ number: settleUnknownNumber ?? '' },
+						)}
 		</p>
 		{#if settleOutcome === 'conflict-blocked' && !settleRereading}
 			<Button

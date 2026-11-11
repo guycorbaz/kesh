@@ -897,8 +897,9 @@ const ATTENDU = {
 	// **recompté à la source** par la garde elle-même après la fusion (non additionné) : **2922**.
 	// Story 34-5 (#951) : **2922 → 2928** (+6), l'avis de conflit d'un règlement — fiche et
 	// échéancier, deux clés chacun et leur *Relire* (`invoice-settle-unknown-reread`). Que des
-	// littéraux. À recompter à la fusion de l'Epic 34.
-	sitesTotal: 2928,
+	// littéraux. À recompter à la fusion de l'Epic 34. Revue P2 (B2-1) : **2928 → 2930** (+2),
+	// l'avis « relecture en cours » de la fiche et de l'échéancier.
+	sitesTotal: 2930,
 	sitesNonResolus: 31,
 	relais: 6,
 	// Story 26-1 (#620, AC3-bis) : **10 → 11** — `lib/features/bank-import/

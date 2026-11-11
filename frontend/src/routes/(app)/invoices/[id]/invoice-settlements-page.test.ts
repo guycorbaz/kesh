@@ -551,4 +551,27 @@ describe("fiche facture — règlement à une version périmée", () => {
     await waitFor(() => expect(cancelSettlementMock).toHaveBeenCalledTimes(1));
     await waitFor(() => expect(getInvoiceMock).toHaveBeenCalledTimes(2));
   });
+
+  it("revue P2 (B2-1) : pendant la relecture d'après un 409, l'avis dit « en cours », le geste est fermé, sans *Relire*", async () => {
+    settleMock.mockRejectedValue(conflit);
+    let rendre: (v: unknown) => void = () => {};
+    const r = render(Page);
+    await fireEvent.click(await r.findByTestId("settle-open"));
+    getInvoiceMock.mockReturnValue(new Promise((resolve) => (rendre = resolve)));
+    await fireEvent.change(await r.findByTestId("settle-type"), {
+      target: { value: "internal_account" },
+    });
+    await fireEvent.change(await r.findByTestId("settle-account"), { target: { value: "1" } });
+    await fireEvent.click(r.getByTestId("settle-confirm"));
+
+    const avis = await r.findByTestId("settle-conflict");
+    await waitFor(() => expect(avis.textContent).toContain("Relecture en cours"));
+    expect(avis.textContent).not.toContain("n’a pas pu être relue");
+    expect(r.queryByTestId("settle-conflict-reread")).toBeNull();
+    expect((r.getByTestId("settle-open") as HTMLButtonElement).disabled).toBe(true);
+
+    rendre(aRegler({ version: 4 }));
+    await waitFor(() => expect(r.getByTestId("settle-conflict").textContent).toContain("Elle a été relue"));
+    expect((r.getByTestId("settle-open") as HTMLButtonElement).disabled).toBe(false);
+  });
 });

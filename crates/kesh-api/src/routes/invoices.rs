@@ -1058,9 +1058,9 @@ pub async fn list_due_dates_handler(
 /// corps renvoyé après une réponse perdue, second onglet, relance d'une
 /// intégration — porte l'ancienne et rend `409 OPTIMISTIC_LOCK_CONFLICT` sans
 /// rien écrire. Le client relit alors la facture par `GET` avant de relancer ; un
-/// envoi à la version relue est un nouveau règlement, accepté. Un corps sans `version` est refusé par
-/// l'extracteur (422). Le refus du trop-perçu, calculé sous verrou, reste le
-/// garde de la somme de règlements successifs.
+/// envoi à la version relue est un nouveau règlement, accepté. Un corps sans
+/// `version` est refusé par l'extracteur (422). Le refus du trop-perçu, calculé
+/// sous verrou, reste le garde de la somme de règlements successifs.
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SettleInvoiceRequest {

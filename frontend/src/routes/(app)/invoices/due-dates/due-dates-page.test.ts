@@ -409,7 +409,7 @@ describe("échéancier — règlement à une version périmée", () => {
   // échoue, et un chargement réussi lève l'état (C-e345-10). La garantie qui compte — aucun
   // « Régler » sur une liste qui n'a pas été relue — se prouve donc par l'absence du geste ;
   // le `disabled` de `settleBlocked` n'y est pas observable (mutation M7, équivalente).
-  it("revue P1 (A1-2) : pendant la relecture d'après un 409, aucun « Régler » n'est offert", async () => {
+  it("revue P1 (A1-2) et P2 (B2-1) : pendant la relecture d'après un 409, aucun « Régler », et l'avis dit « en cours », non « échoué »", async () => {
     let rendre: (v: unknown) => void = () => {};
     listDueDatesMock
       .mockResolvedValueOnce(response([item()]))
@@ -418,9 +418,13 @@ describe("échéancier — règlement à une version périmée", () => {
     const r = await regler();
     await waitFor(() =>
       expect(r.getByTestId("due-dates-settle-conflict").textContent).toContain(
-        "la liste n’a pas pu être relue",
+        "Relecture de la liste en cours",
       ),
     );
+    const enCours = r.getByTestId("due-dates-settle-conflict").textContent ?? "";
+    expect(enCours).toContain("F-2026-005");
+    expect(enCours).not.toContain("n’a pas pu être relue");
+    expect(r.queryByTestId("due-dates-settle-conflict-reread")).toBeNull();
     expect(r.queryByTestId("due-dates-settle-5")).toBeNull();
     rendre(response([item({ version: 4 })]));
     await waitFor(() =>

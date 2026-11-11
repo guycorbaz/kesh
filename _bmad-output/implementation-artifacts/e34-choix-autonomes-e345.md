@@ -104,6 +104,6 @@ au registre du groupe, `e34-choix-autonomes-e343.md` (C-e343-1 à 5 et 13). Mise
   `markTarget = null` ferment le dialogue courant, même s'il a été rouvert sur une autre ligne pendant l'attente. Le
   comportement est hérité de la 33-6, et la 34-5 ne l'a fait que reprendre dans sa branche neuve.
 - **Retenu.** Corriger le commentaire inexact de la branche 409, sans changer le comportement des trois branches. Une
-  issue est demandée.
+  issue est demandée *(ouverte : #1007 ; annoté le 2026-11-11 à la revue P2, A2-1)*.
 - **Écartée.** Ne fermer que si `markTarget === cible` dans la seule branche 409 : les trois branches divergeraient.
 - **Réversible.** Oui.
