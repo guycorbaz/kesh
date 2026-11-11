@@ -1,6 +1,6 @@
 # Story 34-9 : le rapport d'import du dossier nomme chaque fichier, et un doublon ne passe plus inaperçu (#969)
 
-Status: review
+Status: done
 
 *Fiche rédigée le 2026-11-10 en autonomie (Opus 5.5), worktree `/home/gcorbaz/devel/kesh-e34`, branche `chore/epic-34-kickoff`,
 numéros de ligne de `a75835db`. Release **0.17.6**, Epic 34. **Aucune migration** (extension additive du `details` d'un échec,
@@ -347,6 +347,18 @@ Aucun fichier commun avec les autres stories du groupe. `inbox_import.rs` n'est 
   recréée (`e2e-r8`) : 387 réussis, 7 échecs, 18 ignorés — les sept de la KF-029 (#97) de `docs/testing.md`
   (`mode-expert:26`, `:41`, `onboarding-path-b:65`, `:92`, `onboarding:57`, `:77`, `:150`). Backend non rejoué : aucun
   fichier Rust touché depuis `7740ad67`. Le prompt P3 porte désormais sur `f1b8e65c` **et** `e071f051`.
+- 2026-11-11 : **Passe ciblée P3** (Sonnet, une lentille sur `7740ad67..e071f051` ; rapport
+  `kesh-gate-logs/e349-review-p3-ciblee.md`) : **0 C, 0 H, 0 M, 1 LOW**. Le LOW (un retrait fait pendant l'import est
+  effacé par le `finally` de `runImport`, qui vide `discardedHere`) touche la production : l'orchestrateur l'a ouvert
+  en **#1012** au lieu de le corriger, pour clore la boucle sur une passe sans finding au-dessus de LOW. Aucune ligne
+  de production touchée par cette clôture.
+  **Synthèse de la revue de code** — tendance : P1 complète, trois lentilles B, E, A (Sonnet) : 0 C / 0 H / 0 M / 13 LOW
+  (9 distincts, tous remédiés) → P2 ciblée (Opus) : 0 / 0 / 1 M / 3 LOW (introduits par la remédiation P1, remédiés ;
+  plus un défaut relevé par l'agent en écrivant le prompt P3, corrigé avant la passe) → P3 ciblée (Sonnet) : 0 / 0 / 0
+  / 1 LOW (#1012). Boucle close sur la P3, aucun finding au-dessus de LOW. Mutations jouées : M1 à M9 de la fiche,
+  M2-écran, M10 à M12 de la revue — toutes rougissent. Dernier commit de code : `e071f051`, gates frontend et E2E
+  complets verts (sept échecs connus de la KF-029) ; backend vert à `7740ad67`, aucun fichier Rust touché depuis.
+  Issue de suite : **#1012** (retrait pendant l'import).
 
 ## Dev Agent Record
 

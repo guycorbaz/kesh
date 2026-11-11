@@ -1034,7 +1034,7 @@ development_status:
   34-6-societe-apres-409: ready-for-dev  # #953
   34-7-exercice-interblocage: ready-for-dev  # #945
   34-8-fournisseur-relecture-apres-commit: ready-for-dev  # #938
-  34-9-rapport-import-dossier: review  # #969
+  34-9-rapport-import-dossier: done  # #969
   34-10-graphiques-couleurs-unies: ready-for-dev  # #970
   34-11a-carte-credit-compte: split  # 2026-11-10, validation P1 : découpée en 34-11a1 et 34-11a2
   34-11a1-compte-sans-iban: ready-for-dev  # #972 ; migration breaking (min_required 0.17.6) ; après 34-3
