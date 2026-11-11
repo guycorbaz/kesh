@@ -111,12 +111,18 @@
 		settleOutcome === 'blocked' || settleOutcome === 'conflict-blocked',
 	);
 
-	/** Relit la liste : `blocking` tant qu'elle n'a pas été relue, `arrival` ensuite. */
+	/**
+	 * Relit la liste : `blocking` tant qu'elle n'a pas été relue, `arrival` ensuite.
+	 *
+	 * `settleRereading` n'est remis à faux que par `load()`, à la fin du chargement le plus
+	 * récent (revue P3, C3-1) : une relecture supplantée par un filtre laisse la relecture
+	 * « en cours » jusqu'à l'issue du chargement qui l'emporte — sans quoi l'avis dirait
+	 * « n'a pas pu être relue » et offrirait *Relire* pendant ce chargement.
+	 */
 	async function rereadAfterSettle(blocking: SettleBlocking, arrival: 'verify' | 'conflict') {
 		settleOutcome = blocking;
 		settleRereading = true;
 		const relue = await load();
-		settleRereading = false;
 		if (relue) settleOutcome = arrival;
 	}
 
@@ -240,7 +246,13 @@
 			};
 			return false;
 		} finally {
-			if (seq === loadSeq) loading = false;
+			// Le chargement le plus récent clôt aussi la relecture d'après un règlement
+			// (C3-1) : réussi, il vient de lever l'état bloquant ; en échec, l'avis d'échec
+			// et *Relire* s'affichent seulement maintenant.
+			if (seq === loadSeq) {
+				loading = false;
+				settleRereading = false;
+			}
 		}
 	}
 

@@ -461,6 +461,34 @@ describe("échéancier — règlement à une version périmée", () => {
     );
   });
 
+  it("revue P3 (C3-1) : une relecture supplantée reste « en cours » jusqu'à l'issue du chargement qui l'emporte", async () => {
+    let rendreRelecture: (v: unknown) => void = () => {};
+    let rejeterFiltre: (e: unknown) => void = () => {};
+    listDueDatesMock
+      .mockResolvedValueOnce(response([item()]))
+      .mockReturnValueOnce(new Promise((resolve) => (rendreRelecture = resolve)))
+      .mockReturnValueOnce(new Promise((_, reject) => (rejeterFiltre = reject)));
+    settleMock.mockRejectedValue(conflit);
+    const r = await regler();
+    await r.findByTestId("due-dates-settle-conflict");
+    // Pendant la relecture, un filtre part : il la supplante, et reste en attente.
+    await fireEvent.click(r.getByRole("tab", { name: "Toutes" }));
+    await waitFor(() => expect(listDueDatesMock).toHaveBeenCalledTimes(3));
+    // La relecture supplantée rend sa réponse : la relecture n'est pas finie pour autant.
+    rendreRelecture(response([item({ version: 3 })]));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    const pendant = r.getByTestId("due-dates-settle-conflict").textContent ?? "";
+    expect(pendant).toContain("Relecture de la liste en cours");
+    expect(pendant).not.toContain("n’a pas pu être relue");
+    expect(r.queryByTestId("due-dates-settle-conflict-reread")).toBeNull();
+    // Le chargement qui l'emporte échoue : alors seulement, l'avis d'échec et *Relire*.
+    rejeterFiltre({ code: "NETWORK_ERROR", status: 0, message: "x" });
+    await r.findByTestId("due-dates-settle-conflict-reread");
+    expect(r.getByTestId("due-dates-settle-conflict").textContent).toContain(
+      "la liste n’a pas pu être relue",
+    );
+  });
+
   it("409 puis liste illisible : `conflict-blocked`, puis « Relire » mène au conflit, non à l'issue inconnue", async () => {
     settleMock.mockRejectedValue(conflit);
     const r = render(Page);
