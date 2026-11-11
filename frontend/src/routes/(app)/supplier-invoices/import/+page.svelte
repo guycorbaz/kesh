@@ -47,6 +47,12 @@
 
 	let report = $state<InboxImportReport | null>(null);
 	let importing = $state(false);
+	// Revue de code P2, P2-1 — ce que la ligne d'un doublon en attente dit quand sa ligne
+	// n'est pas dans la liste : la liste n'a pas pu être rechargée après l'import, ou cette
+	// page vient de retirer le document. Sinon, le fait seul, sans consigne d'actualiser
+	// (actualiser efface le rapport et ne ramène pas le document).
+	let listReloadFailed = $state(false);
+	let discardedHere = $state<number[]>([]);
 
 	// Story 34-9 (#969, #974, AC-4) — une ligne par fichier, dans l'ordre des noms. Le
 	// rapport n'est pas conservé : il vit le temps de la page (décision de Guy).
@@ -209,6 +215,10 @@
 	async function runImport() {
 		if (importing) return;
 		importing = true;
+		// Revue de code P2, P2-2 (C-e349-11) — l'ancien rapport est retiré dès le lancement :
+		// pendant l'import, ses lignes repasseraient au lien (`importing`) vers des ancres
+		// peut-être absentes. Le nouveau rapport le remplace de toute façon.
+		report = null;
 		let fresh: InboxImportReport;
 		try {
 			fresh = await triggerInboxImport();
@@ -240,6 +250,8 @@
 		} catch {
 			reloadFailed = true;
 		} finally {
+			listReloadFailed = reloadFailed;
+			discardedHere = [];
 			importing = false;
 		}
 		// Story 34-9 (AC-5, F9-8) — une seule notification : si le rechargement échoue,
@@ -281,6 +293,7 @@
 		try {
 			await discardImport(row.id);
 			toComplete = toComplete.filter((r) => r.id !== row.id);
+			discardedHere = [...discardedHere, row.id];
 			if (previewId === row.id) previewId = null;
 			notifySuccess(i18nMsg('imported-supplier-invoices-discarded', 'Document retiré de la liste.'));
 		} catch (err) {
@@ -416,11 +429,22 @@
 										     affichée (liste non rechargée, ou document retiré ou transformé
 										     depuis) — aucun lien mort, la ligne le dit. Pendant l'import
 										     (`importing`, jusqu'au rechargement de la liste), le lien reste :
-										     la liste n'est pas encore à jour, le texte clignoterait. -->
-										{i18nMsg(
-											'imported-supplier-invoices-report-duplicate-not-in-list',
-											'absent de la liste ci-dessous : actualisez la page',
-										)}.
+										     la liste n'est pas encore à jour, le texte clignoterait.
+										     Revue de code P2, P2-1 : le fait, sans consigne d'actualiser —
+										     sauf si la liste n'a pas pu être rechargée. -->
+										{#if discardedHere.includes(existing.existingDocumentId)}
+											{i18nMsg('imported-supplier-invoices-report-duplicate-discarded', 'retiré de la liste')}.
+										{:else if listReloadFailed}
+											{i18nMsg(
+												'imported-supplier-invoices-report-duplicate-not-in-list-reload-failed',
+												'pas dans la liste ci-dessous, qui n’a pas pu être rechargée : notez ce rapport, puis actualisez la page',
+											)}.
+										{:else}
+											{i18nMsg(
+												'imported-supplier-invoices-report-duplicate-not-in-list',
+												'n’est plus dans la liste ci-dessous',
+											)}.
+										{/if}
 									{:else if existing.existingStatus === 'to_complete'}
 										<a
 											class="text-primary underline"

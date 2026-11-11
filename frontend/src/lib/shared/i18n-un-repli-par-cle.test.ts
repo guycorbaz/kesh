@@ -243,9 +243,10 @@ const PREFIXES = [
  * `-report-state-*`, six `-report-duplicate*`, `-report-refused`, `-report-moved-to`, deux
  * `-report-skipped-*`, `-report-truncated`, trois `-notice-*`), et deux retirées
  * (`-report-accepted`, `-report-failed`). Revue de code P1 : **426 → 428** (+2),
- * `-notice-not-imported-truncated` et `-report-duplicate-not-in-list`.
+ * `-notice-not-imported-truncated` et `-report-duplicate-not-in-list`. Revue P2 : **428 → 429**
+ * (+1), `-report-duplicate-not-in-list-reload-failed`.
  */
-const CLES_RELEVEES = 428;
+const CLES_RELEVEES = 429;
 
 
 /** Relève, pour chaque clé du domaine, l'ensemble de ses replis littéraux distincts. */

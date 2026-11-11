@@ -900,8 +900,10 @@ const ATTENDU = {
 	// un second site de `imported-supplier-invoices-reload-failed`, moins les deux sites des
 	// clés retirées (`-report-accepted`, `-report-failed`). Que des littéraux ;
 	// `sitesNonResolus` et `relais` inchangés. Revue de code P1 de la 34-9 : **2942 → 2944**
-	// (+2), `-notice-not-imported-truncated` et `-report-duplicate-not-in-list`.
-	sitesTotal: 2944,
+	// (+2), `-notice-not-imported-truncated` et `-report-duplicate-not-in-list`. Revue P2 :
+	// **2944 → 2946** (+2), `-report-duplicate-not-in-list-reload-failed` et un second site de
+	// `-report-duplicate-discarded` (document retiré depuis la page).
+	sitesTotal: 2946,
 	sitesNonResolus: 31,
 	relais: 6,
 	// Story 26-1 (#620, AC3-bis) : **10 → 11** — `lib/features/bank-import/

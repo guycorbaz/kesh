@@ -442,29 +442,90 @@ describe('le rapport d’import nomme chaque fichier (Story 34-9)', () => {
 		expect(panel.className).toMatch(/border-warning/);
 	});
 
-	it('doublon en attente dont la ligne n’est pas dans la liste affichée : texte, sans lien mort', async () => {
+	/** Un rapport d'un seul doublon du document 7, en attente. */
+	const DOUBLON_7 = rapport({
+		failed: [
+			{
+				fileName: 'a.png',
+				errorCode: 'DUPLICATE',
+				details: {
+					existingDocumentId: 7,
+					existingStatus: 'to_complete',
+					supplierInvoiceId: null,
+					movedTo: 'a_11111111.png',
+				},
+			},
+		],
+	});
+
+	it('doublon en attente dont la ligne n’est pas dans la liste affichée : le fait, sans lien mort ni consigne d’actualiser', async () => {
 		listImportedMock.mockResolvedValue([]);
-		const { getAllByTestId } = await importer(
-			rapport({
-				failed: [
-					{
-						fileName: 'a.png',
-						errorCode: 'DUPLICATE',
-						details: {
-							existingDocumentId: 7,
-							existingStatus: 'to_complete',
-							supplierInvoiceId: null,
-							movedTo: 'a_11111111.png',
-						},
-					},
-				],
-			}),
-		);
+		const { getAllByTestId } = await importer(DOUBLON_7);
+		const [ligne] = getAllByTestId('inbox-import-file-row');
+		expect(ligne.textContent).toMatch(/Déjà importé :.*n’est plus dans la liste ci-dessous\./s);
+		// Revue de code P2, P2-1 : actualiser effacerait le rapport sans ramener le document.
+		expect(ligne.textContent).not.toMatch(/actualisez/);
+		expect(ligne.querySelector('a')).toBeNull();
+	});
+
+	it('liste non rechargée après l’import : la ligne le dit, et seule elle invite à actualiser', async () => {
+		listImportedMock.mockResolvedValueOnce([]).mockRejectedValueOnce(new Error('réseau'));
+		const { getAllByTestId } = await importer(DOUBLON_7);
 		const [ligne] = getAllByTestId('inbox-import-file-row');
 		expect(ligne.textContent).toMatch(
-			/Déjà importé :.*absent de la liste ci-dessous : actualisez la page/s,
+			/pas dans la liste ci-dessous, qui n’a pas pu être rechargée : notez ce rapport, puis actualisez la page/,
 		);
 		expect(ligne.querySelector('a')).toBeNull();
+	});
+
+	it('document retiré de la liste depuis cette page : « retiré de la liste », sans lien', async () => {
+		listImportedMock.mockResolvedValue([row({ id: 7, originalFilename: 'origine.png' })]);
+		discardMock.mockResolvedValue(undefined);
+		vi.spyOn(window, 'confirm').mockReturnValue(true);
+		const { getAllByTestId, findByTestId } = await importer(DOUBLON_7);
+		expect(getAllByTestId('inbox-import-file-row')[0].querySelector('a')?.getAttribute('href')).toBe(
+			'#imported-7',
+		);
+		await fireEvent.click(await findByTestId('imported-discard'));
+		await waitFor(() =>
+			expect(getAllByTestId('inbox-import-file-row')[0].textContent).toMatch(
+				/Déjà importé :.*retiré de la liste\./s,
+			),
+		);
+		expect(getAllByTestId('inbox-import-file-row')[0].querySelector('a')).toBeNull();
+	});
+
+	it('pendant le rechargement de la liste, le lien reste ; le texte ne paraît qu’après (garde `importing`, P2-3)', async () => {
+		let liberer: (v: ImportedSupplierInvoice[]) => void = () => {};
+		listImportedMock
+			.mockResolvedValueOnce([])
+			.mockImplementationOnce(() => new Promise((r) => (liberer = r)));
+		triggerMock.mockResolvedValue(DOUBLON_7);
+		const { findByTestId, getAllByTestId } = render(Page);
+		await fireEvent.click(await findByTestId('inbox-import-trigger'));
+		await findByTestId('inbox-import-report');
+		await waitFor(() => expect(listImportedMock).toHaveBeenCalledTimes(2));
+		// Liste pas encore rechargée : le lien, non le texte.
+		const avant = getAllByTestId('inbox-import-file-row')[0];
+		expect(avant.querySelector('a')?.getAttribute('href')).toBe('#imported-7');
+		expect(avant.textContent).not.toMatch(/n’est plus dans la liste/);
+		liberer([]);
+		await waitFor(() =>
+			expect(getAllByTestId('inbox-import-file-row')[0].textContent).toMatch(
+				/n’est plus dans la liste ci-dessous/,
+			),
+		);
+	});
+
+	it('un second import retire l’ancien rapport dès son lancement (P2-2)', async () => {
+		listImportedMock.mockResolvedValue([]);
+		const { queryByTestId, findByTestId } = await importer(DOUBLON_7);
+		let rendre: (r: InboxImportReport) => void = () => {};
+		triggerMock.mockImplementationOnce(() => new Promise((r) => (rendre = r)));
+		await fireEvent.click(await findByTestId('inbox-import-trigger'));
+		await waitFor(() => expect(queryByTestId('inbox-import-report')).toBeNull());
+		rendre(rapport({}));
+		expect(await findByTestId('inbox-import-report')).toBeTruthy();
 	});
 
 	it('rechargement de la liste en échec : une seule notification, qui dit les deux', async () => {
@@ -525,6 +586,7 @@ describe('les textes du rapport d’import aux catalogues (Story 34-9)', () => {
 		'imported-supplier-invoices-notice-imported',
 		'imported-supplier-invoices-notice-not-imported-truncated',
 		'imported-supplier-invoices-report-duplicate-not-in-list',
+		'imported-supplier-invoices-report-duplicate-not-in-list-reload-failed',
 	];
 	for (const locale of ['fr-CH', 'de-CH', 'it-CH', 'en-CH']) {
 		it(`${locale} : présentes, sans sélecteur`, () => {
