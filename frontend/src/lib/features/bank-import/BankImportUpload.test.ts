@@ -940,3 +940,30 @@ describe('BankImportUpload — lignes incertaines (Story 33-2)', () => {
 		expect(row.querySelector('td')?.textContent).toBe('1');
 	});
 });
+
+// Story 34-11a1 (#972, AC-6) — l'écran n'offre pas le CAMT pour un compte sans IBAN :
+// le champ fichier n'accepte que le CSV, et la zone de dépôt le dit.
+describe('BankImportUpload — compte sans IBAN', () => {
+	it('un compte sans IBAN n’accepte que le CSV ; un compte avec IBAN garde le XML', async () => {
+		const comptes = [
+			...ACCOUNTS,
+			{ id: 3, bankName: 'Visa', description: null, iban: null, cardLast4: '1234' },
+		];
+		const r = render(BankImportUpload, { props: { bankAccounts: comptes, onSuccess: vi.fn() } });
+		await flush();
+		const c = r.container;
+		const option = Array.from(c.querySelectorAll('#bank-account-select option')).find(
+			(o) => o.getAttribute('value') === '3',
+		);
+		expect(option?.textContent?.trim()).toBe('Visa (•••• 1234)');
+
+		await chooseAccount(c, 1);
+		expect(get<HTMLInputElement>(c, 'bank-import-file-input').accept).toContain('.xml');
+
+		await chooseAccount(c, 3);
+		const accept = get<HTMLInputElement>(c, 'bank-import-file-input').accept;
+		expect(accept).not.toContain('.xml');
+		expect(accept).toContain('.csv');
+		expect(get(c, 'bank-import-drop-zone-text').textContent).toContain('n’a pas d’IBAN');
+	});
+});

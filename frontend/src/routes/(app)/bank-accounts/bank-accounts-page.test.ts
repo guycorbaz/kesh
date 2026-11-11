@@ -100,6 +100,8 @@ const bankAccount: BankAccountSummary = {
 	description: null,
 	iban: 'CH9300762011623852957',
 	qrIban: null,
+	accountKind: 'bank',
+	cardLast4: null,
 	isPrimary: true,
 	journalAccountId: LINKED_NON_POSTABLE.id,
 	version: 2,

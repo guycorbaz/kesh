@@ -895,7 +895,11 @@ const ATTENDU = {
 	// Revue P4 : **2850 → 2849** (−1), la phrase du décompte TVA retirée.
 	// Fusion de la release 0.17.5 (2026-11-07) : les treize branches de l'Epic 33 réunies,
 	// **recompté à la source** par la garde elle-même après la fusion (non additionné) : **2922**.
-	sitesTotal: 2922,
+	// Story 34-11a1 (#972) : **2922 → 2924** (+2), `BankImportUpload.svelte` (55 → 57, recompté
+	// par `grep -o 'i18nMsg('`) : la zone de dépôt d'un compte sans IBAN, libellé et
+	// `aria-label` (`bank-import-labels-drop-zone-csv-only`). Que des littéraux ;
+	// `sitesNonResolus` et `relais` inchangés.
+	sitesTotal: 2924,
 	sitesNonResolus: 31,
 	relais: 6,
 	// Story 26-1 (#620, AC3-bis) : **10 → 11** — `lib/features/bank-import/
