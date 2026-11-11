@@ -534,7 +534,9 @@ Opus 5.5 (claude-opus-5-5), en autonomie, sous le prompt `kesh-gate-logs/prompts
   - **E2E complet**, base recréée vide : **388 passés, 8 échecs, 17 ignorés** (20,8 min). Sept échecs sont ceux de la
     KF-029 : `mode-expert.spec.ts:26`, `:41`, `onboarding-path-b.spec.ts:65`, `:92`, `onboarding.spec.ts:57`, `:77`,
     `:150`. Le huitième, `backup-restore-new-install.spec.ts:140` (`locator.click: Test timeout of 180000ms exceeded`, page
-    de restauration de l'assistant), est hors de la story : voir son rejeu isolé ci-dessous. Les trois tests de
+    de restauration de l'assistant), est hors de la story ; **rejouée seule** sur une base recréée (`e2e-r5/`), la spec
+    passe entière (3/3) : un échec qui change d'identité d'un run à l'autre, au sens de `docs/testing.md`, non une
+    régression. Les trois tests de
     `supplier-invoice-unknown-outcome.spec.ts` passent ;
   - mutations **M8** et **M9** rouges, restaurées (`mut/SYNTHESE.log`). Le manuel régénéré (`make user`), contrôlé aplati.
 - **Décomptes des tests**, aux deux bornes (`665de151` → `3f5d36c4`, `grep -cE '#\[(test|sqlx::test)'`) :
