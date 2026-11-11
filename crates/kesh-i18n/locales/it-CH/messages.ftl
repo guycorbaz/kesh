@@ -1578,6 +1578,23 @@ settings-bank-manage-hint = Per aggiungere, modificare, chiudere o archiviare un
 bank-accounts-toast-link-success = Conto bancario collegato con successo al piano dei conti.
 bank-accounts-toast-unlink-success = Conto bancario scollegato dal piano dei conti.
 
+# Story 34-2 (#533) — saldo di apertura inserito con il conto bancario.
+bank-accounts-opening-entry-description = Saldo di apertura — { $account }
+error-bank-account-opening-invalid-amount = Il saldo di apertura è un importo positivo con al massimo quattro decimali, al massimo 999’999’999’999’999.9999.
+bank-accounts-opening-label-amount = Saldo di apertura (facoltativo)
+bank-accounts-opening-label-amount-row = Importo del saldo
+bank-accounts-opening-label-side = Segno del saldo
+bank-accounts-opening-side-debit = Saldo attivo
+bank-accounts-opening-side-credit = Debito (scoperto)
+bank-accounts-opening-help = Il saldo letto sull'estratto conto all'inizio della tua contabilità. La registrazione è datata al primo giorno del primo esercizio se è aperto, altrimenti a oggi; la sua contropartita va sul conto Utile/perdita riportato. È rifiutata se il conto collegato ha già dei movimenti.
+bank-accounts-opening-consequence = Dopo questo saldo, i saldi iniziali degli altri conti si inseriscono uno per uno in Saldi iniziali, modalità Completare: l'apertura generale non è più proposta. Per inserire tutta la tua apertura in una volta, passa prima da Saldi iniziali.
+bank-accounts-toast-create-success-with-opening = Conto bancario creato, con la registrazione di apertura n. { $number } del { $date }.
+bank-accounts-actions-opening-balance = Inserire il saldo di apertura
+bank-accounts-opening-dialog-title = Saldo di apertura di questo conto
+bank-accounts-opening-dialog-confirm = Registra
+bank-accounts-opening-error-amount-required = Inserisci un importo positivo.
+bank-accounts-toast-opening-success = Registrazione di apertura n. { $number } del { $date } effettuata.
+
 # Story 8-5b — FR47 reconciliation rules. Traduzione IT da completare v0.2 (L51).
 reconciliation-rules-page-title = Regole di assegnazione
 reconciliation-rules-loading = Caricamento…

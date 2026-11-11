@@ -952,6 +952,10 @@ Pour rétablir l'ordre, \textbf{dans cet ordre}~:
 
 Si vous migrez vers Kesh depuis un autre logiciel comptable, l'écran \emph{Administration} → \emph{Soldes de départ} (réservé aux rôles Comptable et Administrateur) vous permet de reprendre le bilan de clôture de votre ancienne comptabilité en une seule saisie :
 
+\begin{keshwarning}
+\textbf{Saisissez l'ouverture ici avant tout solde d'ouverture de compte bancaire.} Un solde saisi avec un compte bancaire (\S\ref{sec:solde-ouverture-compte-bancaire}) passe une écriture~: l'écran passe alors en mode \emph{compléter}, l'ouverture générale n'est plus proposée, et les soldes de départ des autres comptes se saisissent un à un --- le compte de la banque n'y figure plus, il est mouvementé.
+\end{keshwarning}
+
 \begin{enumerate}
     \item \textbf{Préparez le bilan de clôture} de votre ancien logiciel (actifs, passifs, capitaux propres, report à-nouveau accumulé).
     \item \textbf{Ouvrez l'écran} : la grille liste vos comptes de bilan actifs et postables (actifs et passifs — jamais les comptes de produits ou de charges, qui fausseraient le résultat de l'exercice).
@@ -2361,7 +2365,8 @@ Les comptes bancaires de la société se gèrent dans \emph{Administration} → 
     \item une \textbf{description optionnelle}, de 60 caractères au plus --- « Personnel », « Épargne » --- pour distinguer deux comptes de la même banque ;
     \item l'\textbf{IBAN}, et un \textbf{QR-IBAN} éventuel ;
     \item le \textbf{compte comptable lié} (typiquement 1020 Banque) ;
-    \item la case \textbf{compte principal} : c'est ce compte que porte la QR-facture.
+    \item la case \textbf{compte principal} : c'est ce compte que porte la QR-facture~;
+    \item à la création, un \textbf{solde d'ouverture} facultatif, dès qu'un compte comptable est lié (\S\ref{sec:solde-ouverture-compte-bancaire}).
 \end{itemize}
 
 \subsection{La description d'un compte}
@@ -2372,6 +2377,24 @@ La description se saisit à l'assistant de démarrage, avec le compte comptable 
 
 \begin{keshnote}
 Pour qui modifie un compte par l'API : \texttt{PUT /bank-accounts/\{id\}} remplace tous les champs du compte --- un corps qui omet la description l'\textbf{efface}. Le lien au grand livre (\texttt{PATCH}) ne la touche pas. À l'assistant, au contraire, \texttt{POST /onboarding/bank-account}, sur un compte \textbf{déjà créé}, laisse \textbf{inchangés} la description et le compte lié qu'un corps omet, et efface ceux qu'il porte à \texttt{null} --- une description vide ou faite d'espaces vaut \texttt{null}~; à la création, un champ omis laisse le compte sans description ni lien.
+\end{keshnote}
+
+\subsection{Le solde d'ouverture d'un compte}\label{sec:solde-ouverture-compte-bancaire}
+
+\begin{keshwarning}
+\textbf{Ce solde fait passer l'écran \emph{Soldes de départ} en mode \emph{compléter}.} Après lui, les soldes de départ des autres comptes se saisissent un à un, dans \emph{Soldes de départ}, mode \emph{compléter}~: l'ouverture générale n'est plus proposée (\S\ref{sec:soldes-depart}). \textbf{Si vous voulez saisir toute votre ouverture d'un coup, passez d'abord par \emph{Soldes de départ}}, banque comprise~; n'utilisez pas ce champ ensuite pour la banque, qui sera déjà mouvementée.
+\end{keshwarning}
+
+À la création d'un compte, dès qu'un \textbf{compte comptable lié} est choisi, le formulaire propose le \textbf{solde d'ouverture} (facultatif)~: un montant positif, et son sens --- \emph{Avoir} (le solde du relevé est en votre faveur) ou \emph{Dette (découvert)} (un découvert, une carte de crédit). Le sens est présélectionné d'après le compte lié --- \emph{Avoir} pour un compte d'actif, \emph{Dette} pour un compte de passif --- et se change librement~: c'est le solde lu sur le relevé qui compte. Sans compte lié, le champ n'apparaît pas. Les séparateurs de milliers (\texttt{1'234.50}) et la virgule décimale sont acceptés.
+
+À l'enregistrement, Kesh passe \textbf{une écriture OD «~Solde d'ouverture --- \emph{nom du compte}~»} par le mécanisme du mode \emph{compléter} des soldes de départ~: le compte lié au débit (\emph{Avoir}) ou au crédit (\emph{Dette}), la contrepartie sur le compte de rôle \emph{Bénéfice/perte reporté}. Elle est \textbf{datée du premier jour du premier exercice} s'il est ouvert et hors période verrouillée, \textbf{sinon d'aujourd'hui}, dans l'exercice ouvert qui couvre cette date. Un avis nomme l'écriture (numéro et date)~; elle se retrouve dans le journal comme toute autre. Contrairement au mode \emph{compléter} de l'écran \emph{Soldes de départ}, le solde se saisit aussi dans une société \textbf{qui n'a encore aucune écriture} --- le cas d'une installation neuve.
+
+\textbf{Le compte et son écriture se créent ensemble, ou pas du tout.} L'écriture est refusée, avec le motif, dans les mêmes cas que le mode \emph{compléter}~: le compte lié a \textbf{déjà des mouvements}, aucun compte en service ne porte le rôle \emph{Bénéfice/perte reporté} (ou il n'est pas imputable), aucun exercice ouvert ne couvre la date, ou la date tombe dans la période verrouillée. Le compte bancaire n'est alors \textbf{pas créé}, et l'ancien compte principal reste principal~: corrigez, puis recommencez --- ou créez le compte sans solde.
+
+\paragraph{Un compte existant.} Sur la ligne d'un compte ouvert et lié, \emph{Saisir le solde d'ouverture} ouvre le même dialogue et passe la même écriture. C'est le geste d'un compte lié après coup (\emph{Modifier}, \emph{Lier})~: le lien seul ne passe aucune écriture. Il est refusé si le compte lié a déjà des mouvements --- en particulier une seconde fois.
+
+\begin{keshnote}
+\textbf{Une écriture d'ouverture passée ne se modifie pas depuis cette page.} On la corrige dans le journal, comme toute écriture~: en la modifiant tant que l'exercice est ouvert, ou en la contre-passant (\S\ref{sec:soldes-depart}). Le solde d'ouverture ne se saisit pas à l'assistant de démarrage~: aucun exercice n'y existe encore.
 \end{keshnote}
 
 \subsection{Clore un compte bancaire}\label{sec:clore-compte-bancaire}

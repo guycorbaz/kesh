@@ -1578,6 +1578,23 @@ settings-bank-manage-hint = To add, edit, close or archive a bank account, use t
 bank-accounts-toast-link-success = Bank account successfully linked to chart of accounts.
 bank-accounts-toast-unlink-success = Bank account unlinked from chart of accounts.
 
+# Story 34-2 (#533) — opening balance entered with the bank account.
+bank-accounts-opening-entry-description = Opening balance — { $account }
+error-bank-account-opening-invalid-amount = The opening balance is a positive amount with at most four decimals, at most 999’999’999’999’999.9999.
+bank-accounts-opening-label-amount = Opening balance (optional)
+bank-accounts-opening-label-amount-row = Balance amount
+bank-accounts-opening-label-side = Balance side
+bank-accounts-opening-side-debit = Credit balance (funds)
+bank-accounts-opening-side-credit = Debt (overdraft)
+bank-accounts-opening-help = The balance shown on the statement at the start of your bookkeeping. The entry is dated the first day of the first fiscal year if it is open, otherwise today; its counterpart goes to the Retained earnings account. It is refused if the linked account already has movements.
+bank-accounts-opening-consequence = After this balance, the opening balances of the other accounts are entered one by one in Opening balances, Complete mode: the general opening is no longer offered. To enter your whole opening at once, go through Opening balances first.
+bank-accounts-toast-create-success-with-opening = Bank account created, with opening entry no. { $number } of { $date }.
+bank-accounts-actions-opening-balance = Enter opening balance
+bank-accounts-opening-dialog-title = Opening balance of this account
+bank-accounts-opening-dialog-confirm = Post the entry
+bank-accounts-opening-error-amount-required = Enter a positive amount.
+bank-accounts-toast-opening-success = Opening entry no. { $number } of { $date } posted.
+
 # Story 8-5b — FR47 reconciliation rules.
 reconciliation-rules-page-title = Reconciliation rules
 reconciliation-rules-loading = Loading…

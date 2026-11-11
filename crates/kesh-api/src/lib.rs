@@ -954,6 +954,12 @@ pub fn build_router_avec_registre(
             "/api/v1/bank-accounts/{id}/reopen",
             post(routes::bank_accounts::reopen_bank_account),
         )
+        // Story 34-2 (#533) : saisir le solde d'ouverture d'un compte bancaire
+        // existant, lié (Comptable+, clés API d'écriture admises).
+        .route(
+            "/api/v1/bank-accounts/{id}/opening-balance",
+            post(routes::bank_accounts::enter_opening_balance),
+        )
         // Story 8-5b : CRUD règles d'affectation (Comptable+ mutations).
         .route(
             "/api/v1/reconciliation/rules",

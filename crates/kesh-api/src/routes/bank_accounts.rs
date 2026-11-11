@@ -34,15 +34,18 @@ use axum::Json;
 use axum::extract::Query;
 use axum::extract::{Path, State};
 use axum::http::StatusCode;
+use kesh_db::entities::JournalEntryWithLines;
 use kesh_db::entities::account::AccountType;
 use kesh_db::entities::audit_log::NewAuditLogEntry;
 use kesh_db::entities::bank_account::{
-    BANK_ACCOUNT_DESCRIPTION_MAX_CHARS, BankAccount, NewBankAccount,
+    BANK_ACCOUNT_DESCRIPTION_MAX_CHARS, BankAccount, NewBankAccount, bank_account_display_name,
 };
 use kesh_db::errors::{DbError, NonPostableAccount};
 use kesh_db::repositories::bank_accounts::BankAccountPutFields;
 use kesh_db::repositories::company_invoice_settings::{self, ClaimAccounts};
+use kesh_db::repositories::opening_complement::{self, ComplementLine, ComplementScope};
 use kesh_db::repositories::{accounts, audit_log, bank_accounts, onboarding};
+use kesh_i18n::Locale;
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use sqlx::{MySql, Transaction};
@@ -83,6 +86,72 @@ pub struct CreateBankAccountBody {
     pub is_primary: bool,
     #[serde(default)]
     pub journal_account_id: Option<i64>,
+    /// Story 34-2 (#533, AC-2) — solde d'ouverture, facultatif. Absent, `null`
+    /// ou de montant vide ou nul : aucune écriture, comportement d'avant.
+    /// Présent : exige `journalAccountId`.
+    #[serde(default)]
+    pub opening_balance: Option<OpeningBalanceBody>,
+}
+
+/// Sens d'un solde d'ouverture — Story 34-2 (#533, C-e341-7) : le solde **lu
+/// sur le relevé**. `debit` (*Avoir*) porte le montant au débit du compte lié,
+/// `credit` (*Dette*, un découvert ou une carte) au crédit — quel que soit le
+/// type du compte lié. La contrepartie va à l'opposé, au compte de report.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum OpeningBalanceSide {
+    Debit,
+    Credit,
+}
+
+/// Solde d'ouverture d'un compte bancaire — Story 34-2 (#533). Forme partagée
+/// par `POST /bank-accounts` (champ `openingBalance`) et `POST
+/// /bank-accounts/{id}/opening-balance` (corps entier).
+///
+/// `amount` : chaîne décimale positive, au plus quatre décimales (contrôles de
+/// `opening_balances::parse_complement_amount`, réemployés). `side` est exigé
+/// dès que le montant n'est pas nul.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OpeningBalanceBody {
+    #[serde(default)]
+    pub amount: Option<String>,
+    #[serde(default)]
+    pub side: Option<OpeningBalanceSide>,
+}
+
+/// Écriture d'ouverture passée avec un compte bancaire — Story 34-2 (#533,
+/// AC-2) : de quoi la nommer (numéro, date) et la retrouver.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OpeningEntrySummary {
+    pub id: i64,
+    pub entry_number: i64,
+    pub entry_date: chrono::NaiveDate,
+    pub fiscal_year_id: i64,
+}
+
+impl From<&JournalEntryWithLines> for OpeningEntrySummary {
+    fn from(e: &JournalEntryWithLines) -> Self {
+        Self {
+            id: e.entry.id,
+            entry_number: e.entry.entry_number,
+            entry_date: e.entry.entry_date,
+            fiscal_year_id: e.entry.fiscal_year_id,
+        }
+    }
+}
+
+/// Réponse `201` de `POST /bank-accounts` — Story 34-2 (#533, AC-2) : le
+/// compte, aplati comme avant, plus `openingEntry` **seulement** quand une
+/// écriture a été passée (absent sinon : la réponse d'avant, octet pour octet).
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CreatedBankAccountResponse {
+    #[serde(flatten)]
+    pub account: BankAccount,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub opening_entry: Option<OpeningEntrySummary>,
 }
 
 /// Body du PUT `/bank-accounts/{id}` — édition complète v014-1.
@@ -202,7 +271,12 @@ impl_validation_extractor!(
 impl_validation_extractor!(
     CreateBankAccountBodyExtractor,
     CreateBankAccountBody,
-    "`bankName` str, `description?` str, `iban` str, `qrIban?` str, `isPrimary?` bool, `journalAccountId?` i64"
+    "`bankName` str, `description?` str, `iban` str, `qrIban?` str, `isPrimary?` bool, `journalAccountId?` i64, `openingBalance?` { `amount` str, `side` \"debit\" | \"credit\" }"
+);
+impl_validation_extractor!(
+    OpeningBalanceBodyExtractor,
+    OpeningBalanceBody,
+    "`amount` str, `side` \"debit\" | \"credit\""
 );
 impl_validation_extractor!(
     UpdateBankAccountBodyExtractor,
@@ -429,6 +503,116 @@ async fn claims_for_target(
     }
 }
 
+/// Solde d'ouverture contrôlé, prêt pour le complément — Story 34-2 (#533).
+#[derive(Debug, Clone, Copy)]
+struct OpeningAmount {
+    amount: Decimal,
+    side: OpeningBalanceSide,
+}
+
+/// Refus de forme du montant d'un solde d'ouverture : même code que le
+/// complément (`OPENING_COMPLEMENT_INVALID_AMOUNT`), message propre au champ
+/// (le message du complément parle de « lignes » ; choix C-e341-44).
+fn invalid_opening_amount() -> AppError {
+    AppError::OpeningComplementInvalid {
+        error_code: "OPENING_COMPLEMENT_INVALID_AMOUNT",
+        message: crate::errors::t(
+            "error-bank-account-opening-invalid-amount",
+            "Le solde d'ouverture est un montant positif d'au plus quatre décimales, au plus 999’999’999’999’999.9999.",
+        ),
+    }
+}
+
+/// Contrôles de forme d'un solde d'ouverture — Story 34-2 (#533, AC-2).
+///
+/// `Ok(None)` : corps absent, montant absent, vide ou nul — rien à passer. Le
+/// montant passe par `opening_balances::parse_complement_amount` (positif, au
+/// plus quatre décimales, borne de `DECIMAL(19,4)`), réemployé ; un montant non
+/// nul exige `side`.
+fn parse_opening_balance(
+    body: Option<&OpeningBalanceBody>,
+) -> Result<Option<OpeningAmount>, AppError> {
+    let Some(body) = body else {
+        return Ok(None);
+    };
+    let amount = crate::routes::opening_balances::parse_complement_amount(body.amount.as_deref())
+        .map_err(|_| invalid_opening_amount())?;
+    if amount.is_zero() {
+        return Ok(None);
+    }
+    let side = body.side.ok_or_else(|| {
+        AppError::Validation(
+            "Le sens du solde d'ouverture est requis : « debit » (avoir) ou « credit » (dette)"
+                .into(),
+        )
+    })?;
+    Ok(Some(OpeningAmount { amount, side }))
+}
+
+/// La ligne du compte lié : *Avoir* au débit, *Dette* au crédit (C-e341-7).
+fn opening_line(journal_account_id: i64, opening: OpeningAmount) -> ComplementLine {
+    let (debit, credit) = match opening.side {
+        OpeningBalanceSide::Debit => (opening.amount, Decimal::ZERO),
+        OpeningBalanceSide::Credit => (Decimal::ZERO, opening.amount),
+    };
+    ComplementLine {
+        account_id: journal_account_id,
+        debit,
+        credit,
+    }
+}
+
+/// Libellé de l'écriture, dans la langue comptable : « Solde d'ouverture — UBS
+/// — Personnel » (C-e341-11). Les marques d'isolation BiDi que Fluent pose
+/// autour d'une variable sont retirées : le libellé est stocké et imprimé.
+fn opening_entry_description(
+    i18n: &kesh_i18n::I18nBundle,
+    locale: &Locale,
+    display_name: &str,
+) -> String {
+    let mut args = kesh_i18n::FluentArgs::new();
+    args.set("account", display_name.to_string());
+    i18n.format(
+        locale,
+        "bank-accounts-opening-entry-description",
+        Some(&args),
+    )
+    .replace(['\u{2068}', '\u{2069}'], "")
+}
+
+/// Ce que la création transmet au complément : montant et sens, libellé, date
+/// du jour (UTC, comme le complément de l'écran).
+struct OpeningRequest {
+    opening: OpeningAmount,
+    description: String,
+    today: chrono::NaiveDate,
+}
+
+/// Passe l'écriture d'ouverture d'un compte bancaire dans la transaction de
+/// l'appelant — portée [`ComplementScope::SingleBankLedger`], un seul compte
+/// (`owned` : le compte lié, déjà établi de la société).
+///
+/// ⚠️ Contrat : la transaction n'a fait que des lectures **verrouillantes**
+/// avant cet appel (AC-10 ; voir `create_opening_complement_in_tx`).
+async fn post_opening_entry_in_tx(
+    tx: &mut Transaction<'_, MySql>,
+    current_user: &CurrentUser,
+    journal_account_id: i64,
+    request: &OpeningRequest,
+) -> Result<JournalEntryWithLines, AppError> {
+    Ok(opening_complement::create_opening_complement_in_tx(
+        tx,
+        current_user.company_id,
+        current_user.user_id,
+        &[opening_line(journal_account_id, request.opening)],
+        &[journal_account_id],
+        request.description.clone(),
+        request.today,
+        ComplementScope::SingleBankLedger,
+    )
+    .await?)
+}
+
 /// Émet l'audit log `bank_account.updated` `trigger=primary_transition` sur
 /// l'ancien primary démoté (helper FINDING-3 Pass 3 Opus).
 ///
@@ -546,11 +730,22 @@ pub async fn list_bank_accounts(
 /// supposé ; T29a-15 joue un cycle synthétique, non la démotion. Les
 /// contrôles de forme, l'onboarding et
 /// `validate_journal_account_id` (sur le pool) restent devant l'enveloppe.
+///
+/// **Solde d'ouverture** (Story 34-2, #533, AC-2 à AC-5) : `openingBalance`
+/// facultatif ; présent et non nul, il exige `journalAccountId` (`400
+/// VALIDATION_ERROR`, avant toute écriture) et fait passer, **dans la même
+/// transaction**, l'écriture d'ouverture du compte lié par le mécanisme du mode
+/// *Compléter* (portée `SingleBankLedger`). Un refus du complément sort tel quel
+/// (code et message `OPENING_COMPLEMENT_*`) et n'écrit rien : ni compte, ni
+/// écriture, ni démotion. Ordre des erreurs : forme (dont le montant) → `400`
+/// sans compte lié → contrôles du compte lié → refus du compte de créance →
+/// refus du complément. La réponse porte `openingEntry` quand une écriture est
+/// passée.
 pub async fn create_bank_account(
     State(state): State<AppState>,
     Extension(current_user): Extension<CurrentUser>,
     CreateBankAccountBodyExtractor(body): CreateBankAccountBodyExtractor,
-) -> Result<(StatusCode, Json<BankAccount>), AppError> {
+) -> Result<(StatusCode, Json<CreatedBankAccountResponse>), AppError> {
     assert_onboarding_complete(&state.pool).await?;
 
     let input = validate_bank_input(
@@ -559,6 +754,12 @@ pub async fn create_bank_account(
         &body.iban,
         body.qr_iban.as_deref(),
     )?;
+    let opening = parse_opening_balance(body.opening_balance.as_ref())?;
+    if opening.is_some() && body.journal_account_id.is_none() {
+        return Err(AppError::Validation(
+            "Le solde d'ouverture exige un compte comptable lié (journalAccountId)".into(),
+        ));
+    }
     validate_journal_account_id(
         &state.pool,
         current_user.company_id,
@@ -567,31 +768,76 @@ pub async fn create_bank_account(
     )
     .await?;
 
+    let opening_request = match opening {
+        Some(opening) => {
+            let company = crate::helpers::get_company_for(&current_user, &state.pool).await?;
+            let locale = Locale::from(company.accounting_language.as_str());
+            let display_name =
+                bank_account_display_name(&input.bank_name, input.description.as_deref());
+            Some(OpeningRequest {
+                opening,
+                description: opening_entry_description(&state.i18n, &locale, &display_name),
+                today: chrono::Utc::now().date_naive(),
+            })
+        }
+        None => None,
+    };
+
     let (is_primary, journal_account_id) = (body.is_primary, body.journal_account_id);
-    let inserted = crate::retry::retry_app_on_deadlock("bank_accounts::create", || {
-        create_once(
-            &state.pool,
-            &current_user,
-            &input,
-            is_primary,
-            journal_account_id,
-        )
-    })
-    .await?;
-    Ok((StatusCode::CREATED, Json(inserted)))
+    let (account, opening_entry) =
+        crate::retry::retry_app_on_deadlock("bank_accounts::create", || {
+            create_once(
+                &state.pool,
+                &current_user,
+                &input,
+                is_primary,
+                journal_account_id,
+                opening_request.as_ref(),
+            )
+        })
+        .await?;
+    Ok((
+        StatusCode::CREATED,
+        Json(CreatedBankAccountResponse {
+            account,
+            opening_entry: opening_entry.as_ref().map(OpeningEntrySummary::from),
+        }),
+    ))
 }
 
 /// Une tentative de la création : sentinelle `companies`, refus du compte de
-/// créance, démotion de l'ancien principal, `INSERT`, traces — conclusion par
-/// [`conclure`] (`rollback` explicite sur refus). Chaque tentative clone ce
-/// qu'elle consomme de `input`.
+/// créance, **écriture d'ouverture** (Story 34-2), démotion de l'ancien
+/// principal, `INSERT`, traces — conclusion par [`conclure`] (`rollback`
+/// explicite sur refus). Chaque tentative clone ce qu'elle consomme de `input`.
+///
+/// **Ordre des verrous** (Story 34-2, T2) : `companies` (X, sentinelle) →
+/// réglages (S) → comptes et exercices (complément) → `bank_accounts`
+/// (démotion, `INSERT`). La sentinelle sérialise ce geste avec la route de
+/// ligne (`POST …/opening-balance`), qui prend `companies` (X) →
+/// `bank_accounts` (S) → comptes et exercices : l'inversion `bank_accounts` /
+/// comptes ne joue que contre un geste sans sentinelle (un rapprochement, qui
+/// tient `bank_accounts` en partagé puis écrit ; le retypage d'un compte du
+/// plan), et les deux routes sont rejouées sur interblocage.
+///
+/// **L'instantané** (Story 34-2, AC-10, C-e341-38) : le complément est appelé
+/// **avant** la démotion et l'`INSERT`. La démotion relit l'ancien principal
+/// par une lecture **ordinaire** (`flip_primary_off_for_company`), qui ouvrirait
+/// l'instantané REPEATABLE READ avant les verrous du complément : sa lecture
+/// « jamais mouvementé » ne verrait pas une ligne commitée entre-temps sur le
+/// compte lié (la modification d'une écriture, qui ne prend pas `companies`).
+/// Avant le complément ne restent que des lectures verrouillantes (sentinelle
+/// `FOR UPDATE`, réglages `LOCK IN SHARE MODE`) ; le numéro lu par
+/// `refuse_if_ledger_is_claim_account` ne l'est que sur le chemin du refus.
+/// Le libellé se forme de la banque et de la description saisies : le
+/// complément n'a pas besoin de la ligne `bank_accounts`.
 async fn create_once(
     pool: &sqlx::MySqlPool,
     current_user: &CurrentUser,
     input: &ValidatedBankInput,
     is_primary: bool,
     journal_account_id: Option<i64>,
-) -> Result<BankAccount, AppError> {
+    opening: Option<&OpeningRequest>,
+) -> Result<(BankAccount, Option<JournalEntryWithLines>), AppError> {
     let mut tx = pool
         .begin()
         .await
@@ -617,6 +863,22 @@ async fn create_once(
             )
             .await?;
         }
+
+        // Story 34-2 (#533, AC-10) — l'écriture d'ouverture, AVANT la démotion et
+        // l'INSERT : aucune lecture ordinaire ne l'a précédée (voir le
+        // doc-comment). Un refus abandonne tout — ni compte, ni démotion.
+        let opening_entry = match (opening, journal_account_id) {
+            (Some(request), Some(account_id)) => {
+                Some(post_opening_entry_in_tx(&mut tx, current_user, account_id, request).await?)
+            }
+            // Le handler refuse un solde sans compte lié avant l'enveloppe.
+            (Some(_), None) => {
+                return Err(AppError::Internal(
+                    "bank_accounts::create: solde d'ouverture sans compte lié".into(),
+                ));
+            }
+            (None, _) => None,
+        };
 
         // Si is_primary=true et un autre primary existe → flip silencieux atomique.
         // L'INSERT n'a pas encore d'id, on passe -1 comme excluded_id sentinel
@@ -675,7 +937,7 @@ async fn create_once(
             .await?;
         }
 
-        let details = serde_json::json!({
+        let mut details = serde_json::json!({
             "bank_account_id": new_id,
             "description": inserted.description,
             "is_primary": inserted.is_primary,
@@ -683,6 +945,11 @@ async fn create_once(
             "qr_iban_present": inserted.qr_iban.is_some(),
             "journal_account_id": inserted.journal_account_id,
         });
+        // Story 34-2 (AC-3) — la trace nomme l'écriture d'ouverture passée avec
+        // le compte ; sans solde, la trace d'avant, inchangée.
+        if let (Some(entry), serde_json::Value::Object(map)) = (&opening_entry, &mut details) {
+            map.insert("opening_entry_id".into(), serde_json::json!(entry.entry.id));
+        }
         audit_log::insert_in_tx(
             &mut tx,
             NewAuditLogEntry::from_current_user(
@@ -694,7 +961,99 @@ async fn create_once(
             ),
         )
         .await?;
-        Ok(inserted)
+        Ok((inserted, opening_entry))
+    }
+    .await;
+    conclure(tx, result).await
+}
+
+/// Handler `POST /api/v1/bank-accounts/{id}/opening-balance` — saisit le solde
+/// d'ouverture d'un compte bancaire **existant** (Story 34-2, #533, AC-6 ;
+/// C-e341-10). Comptable+, clés d'API `read-write` admises. Corps `{ amount,
+/// side }` ; `201` avec l'écriture (`{ id, entryNumber, entryDate,
+/// fiscalYearId }`).
+///
+/// Couvre la « liaison » de #533 : un compte lié après coup (*Modifier*,
+/// *Lier*) reçoit ici son solde, sans greffer une écriture sur le `PUT`
+/// (remplacement complet, rejouable) ni sur le `PATCH`.
+///
+/// **Ordre des refus** : forme (`400`, montant nul compris) → `404` (absent,
+/// d'une autre société, archivé) → `409 BANK_ACCOUNT_CLOSED` → `412
+/// BANK_ACCOUNT_NOT_CONFIGURED` (aucun compte lié) → refus du complément
+/// (`OPENING_COMPLEMENT_*`, tels quels).
+///
+/// ⚠️ **Rejouée sur interblocage** (opération `bank_accounts::opening_balance`).
+/// **Ordre des verrous**, celui du `PUT` : sentinelle `companies` en exclusif,
+/// puis la ligne `bank_accounts` `LOCK IN SHARE MODE` (archivé, clos et lien
+/// lus sous ce verrou — lecture verrouillante, qui n'ouvre pas l'instantané),
+/// puis le complément (son partagé sur `companies` est couvert par l'exclusif ;
+/// comptes, exercices).
+pub async fn enter_opening_balance(
+    State(state): State<AppState>,
+    Extension(current_user): Extension<CurrentUser>,
+    Path(id): Path<i64>,
+    OpeningBalanceBodyExtractor(body): OpeningBalanceBodyExtractor,
+) -> Result<(StatusCode, Json<OpeningEntrySummary>), AppError> {
+    assert_onboarding_complete(&state.pool).await?;
+    // Ici, un montant nul n'a pas de sens : c'est le seul objet de la requête.
+    let opening = parse_opening_balance(Some(&body))?.ok_or_else(invalid_opening_amount)?;
+    let company = crate::helpers::get_company_for(&current_user, &state.pool).await?;
+    let locale = Locale::from(company.accounting_language.as_str());
+    let today = chrono::Utc::now().date_naive();
+
+    let entry = crate::retry::retry_app_on_deadlock("bank_accounts::opening_balance", || {
+        enter_opening_balance_once(
+            &state.pool,
+            &state.i18n,
+            &current_user,
+            id,
+            opening,
+            &locale,
+            today,
+        )
+    })
+    .await?;
+    Ok((StatusCode::CREATED, Json(OpeningEntrySummary::from(&entry))))
+}
+
+/// Une tentative de [`enter_opening_balance`] : sentinelle, ligne du compte en
+/// partagé, gardes, complément ; conclusion par [`conclure`].
+async fn enter_opening_balance_once(
+    pool: &sqlx::MySqlPool,
+    i18n: &kesh_i18n::I18nBundle,
+    current_user: &CurrentUser,
+    id: i64,
+    opening: OpeningAmount,
+    locale: &Locale,
+    today: chrono::NaiveDate,
+) -> Result<JournalEntryWithLines, AppError> {
+    let mut tx = pool
+        .begin()
+        .await
+        .map_err(|e| AppError::Internal(format!("begin tx: {e}")))?;
+    let result = async {
+        bank_accounts::acquire_company_sentinel_lock(&mut tx, current_user.company_id).await?;
+        let account =
+            bank_accounts::find_by_id_locked_shared_in_tx(&mut tx, current_user.company_id, id)
+                .await?
+                .filter(|a| !a.archived)
+                .ok_or(AppError::BankAccountNotFound)?;
+        if account.is_closed() {
+            return Err(AppError::BankAccountClosed {
+                bank_account_id: id,
+            });
+        }
+        let Some(journal_account_id) = account.journal_account_id else {
+            return Err(AppError::BankAccountNotConfigured {
+                bank_account_id: id,
+            });
+        };
+        let request = OpeningRequest {
+            opening,
+            description: opening_entry_description(i18n, locale, &account.display_name()),
+            today,
+        };
+        post_opening_entry_in_tx(&mut tx, current_user, journal_account_id, &request).await
     }
     .await;
     conclure(tx, result).await

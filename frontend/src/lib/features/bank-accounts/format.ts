@@ -156,3 +156,28 @@ export const PRESELECTED_BANK_LEDGER_NUMBER = '1020';
 export function preselectedBankLedgerId(linkable: AccountResponse[]): number | null {
 	return linkable.find((a) => a.number === PRESELECTED_BANK_LEDGER_NUMBER)?.id ?? null;
 }
+
+/**
+ * Story 34-2 (#533, C-e341-7) — sens présélectionné du solde d'ouverture :
+ * *Avoir* (`debit`) pour un compte lié d'actif, *Dette* (`credit`) pour un
+ * passif (découvert, carte). Compte inconnu ou absent : *Avoir*. Une
+ * présélection seulement : l'utilisateur la change, le serveur ne déduit rien.
+ */
+export function defaultOpeningSide(
+	accounts: AccountResponse[],
+	ledgerId: number | null,
+): 'debit' | 'credit' {
+	const account = ledgerId === null ? undefined : accounts.find((a) => a.id === ledgerId);
+	return account?.accountType === 'Liability' ? 'credit' : 'debit';
+}
+
+/**
+ * Story 34-2 (#533) — le montant saisi, tel qu'envoyé : les séparateurs de
+ * milliers suisses (apostrophes droite ou typographique, espaces) retirés, la
+ * virgule décimale lue comme un point. `null` si le champ est vide : aucun solde.
+ * Le contrôle de forme reste celui du serveur (positif, quatre décimales).
+ */
+export function openingAmountPayload(raw: string): string | null {
+	const cleaned = raw.replace(/['’\s  ]/g, '').replace(',', '.');
+	return cleaned === '' ? null : cleaned;
+}

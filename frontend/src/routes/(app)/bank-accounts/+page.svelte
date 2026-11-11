@@ -10,7 +10,7 @@
   (date locale préremplie, avertissement d'un solde comptable non nul, C-28-4-6).
 -->
 <script lang="ts">
-	import { onMount } from 'svelte';
+	import { onMount, untrack } from 'svelte';
 	import Big from 'big.js';
 	import { i18nMsg } from '$lib/shared/utils/i18n.svelte';
 	import { errorMessageOf } from '$lib/shared/utils/error-message';
@@ -33,8 +33,11 @@
 		archiveBankAccount,
 		closeBankAccount,
 		reopenBankAccount,
+		enterOpeningBalance,
 		type BankAccountSummary,
 		type NewBankAccountPayload,
+		type OpeningBalanceSide,
+		type OpeningEntrySummary,
 		type UpdateBankAccountPayload,
 	} from '$lib/features/bank-accounts/bank-accounts.api';
 	import { formatSwissDate } from '$lib/features/reports/reports.api';
@@ -42,8 +45,10 @@
 	import {
 		BANK_ACCOUNT_DESCRIPTION_MAX,
 		bankAccountName,
+		defaultOpeningSide,
 		formatChfBalance,
 		linkableLedgerAccounts,
+		openingAmountPayload,
 	} from '$lib/features/bank-accounts/format';
 
 	let bankAccounts = $state<BankAccountSummary[]>([]);
@@ -67,7 +72,8 @@
 		| { kind: 'edit-journal'; id: number }
 		| { kind: 'archive-confirm'; id: number }
 		| { kind: 'close-confirm'; id: number }
-		| { kind: 'reopen-confirm'; id: number };
+		| { kind: 'reopen-confirm'; id: number }
+		| { kind: 'opening-balance'; id: number };
 	let mode = $state<Mode>({ kind: 'none' });
 	let submitting = $state(false);
 
@@ -80,6 +86,21 @@
 	let formJournalAccountId = $state<number | null>(null);
 	let formVersion = $state(0);
 	let formError = $state<string | null>(null);
+	// Story 34-2 (#533) — solde d'ouverture : formulaire de création et dialogue
+	// de ligne (« Saisir le solde d'ouverture »). Le sens est présélectionné par
+	// le type du compte lié (C-e341-7), l'utilisateur le change librement.
+	let formOpeningAmount = $state('');
+	let formOpeningSide = $state<OpeningBalanceSide>('debit');
+	let openingError = $state<string | null>(null);
+
+	// La présélection suit le compte lié choisi — elle ne relit pas `accounts`
+	// d'elle-même (un rechargement ne défait pas un choix fait à la main).
+	$effect(() => {
+		const ledgerId = formJournalAccountId;
+		untrack(() => {
+			formOpeningSide = defaultOpeningSide(accounts, ledgerId);
+		});
+	});
 
 	// Story 28-4b — dialogues de clôture et de réouverture. Le refus du serveur
 	// s'affiche DANS le dialogue (là où l'on a agi), par `errorMessageOf`.
@@ -191,6 +212,54 @@
 		formJournalAccountId = null;
 		formVersion = 0;
 		formError = null;
+		formOpeningAmount = '';
+		formOpeningSide = 'debit';
+		openingError = null;
+	}
+
+
+	/**
+	 * Story 34-2 (#533, AC-7) — ouvre le dialogue « Saisir le solde d'ouverture »
+	 * d'un compte ouvert et lié ; le sens est présélectionné par le type du compte lié.
+	 */
+	function openOpeningBalance(ba: BankAccountSummary) {
+		formOpeningAmount = '';
+		formOpeningSide = defaultOpeningSide(accounts, ba.journalAccountId);
+		openingError = null;
+		mode = { kind: 'opening-balance', id: ba.id };
+	}
+
+	/**
+	 * Story 34-2 (#533, AC-6, AC-7) — passe l'écriture d'ouverture d'un compte
+	 * existant. Le refus du serveur (compte mouvementé, aucun exercice ouvert…)
+	 * reste affiché dans le dialogue.
+	 */
+	async function confirmOpeningBalance(id: number) {
+		openingError = null;
+		const amount = openingAmountPayload(formOpeningAmount);
+		if (amount === null) {
+			openingError = i18nMsg('bank-accounts-opening-error-amount-required', 'Saisissez un montant positif.');
+			return;
+		}
+		submitting = true;
+		try {
+			const entry = await enterOpeningBalance(id, { amount, side: formOpeningSide });
+			toast.success(
+				i18nMsg(
+					'bank-accounts-toast-opening-success',
+					'Écriture d\'ouverture n° { $number } du { $date } passée.',
+					// Avis qui nomme l'écriture (numéro, date suisse) ; clé et arguments
+					// littéraux, lus par les gardes i18n.
+					{ number: String(entry.entryNumber), date: formatSwissDate(entry.entryDate) },
+				),
+			);
+			closeForm();
+			await reload();
+		} catch (err) {
+			openingError = errorMessageOf(err);
+		} finally {
+			submitting = false;
+		}
 	}
 
 	function openCreate() {
@@ -300,8 +369,26 @@
 				isPrimary: formIsPrimary,
 				journalAccountId: formJournalAccountId,
 			};
-			await createBankAccount(payload);
-			toast.success(i18nMsg('bank-accounts-toast-create-success', 'Compte bancaire créé.'));
+			// Story 34-2 (#533, AC-7) — sans compte lié, les champs du solde sont
+			// masqués et rien n'est envoyé ; un montant vide n'envoie rien non plus.
+			const openingAmount = openingAmountPayload(formOpeningAmount);
+			if (formJournalAccountId !== null && openingAmount !== null) {
+				payload.openingBalance = { amount: openingAmount, side: formOpeningSide };
+			}
+			const created = await createBankAccount(payload);
+			const openingEntry = created?.openingEntry ?? null;
+			toast.success(
+				openingEntry
+					? i18nMsg(
+							'bank-accounts-toast-create-success-with-opening',
+							'Compte bancaire créé, avec l\'écriture d\'ouverture n° { $number } du { $date }.',
+							{
+								number: String(openingEntry.entryNumber),
+								date: formatSwissDate(openingEntry.entryDate),
+							},
+						)
+					: i18nMsg('bank-accounts-toast-create-success', 'Compte bancaire créé.'),
+			);
 			await reload();
 			closeForm();
 		} catch (err) {
@@ -458,6 +545,50 @@
 	<title>{i18nMsg('bank-accounts-labels-page-title', 'Comptes bancaires')} - Kesh</title>
 </svelte:head>
 
+<!-- Story 34-2 (#533, AC-7) — les champs du solde d'ouverture, communs au formulaire
+     de création et au dialogue de ligne : montant, sens, l'aide qui dit la date et la
+     contrepartie, et la conséquence sur l'écran Soldes de départ, avant le geste. -->
+{#snippet openingFields(prefix: string)}
+	<label for="{prefix}-opening-amount" class="block text-sm font-medium text-text mb-1">
+		{prefix === 'form'
+			? i18nMsg('bank-accounts-opening-label-amount', "Solde d'ouverture (optionnel)")
+			: i18nMsg('bank-accounts-opening-label-amount-row', 'Montant du solde')}
+	</label>
+	<div class="flex items-center gap-2">
+		<Input
+			id="{prefix}-opening-amount"
+			bind:value={formOpeningAmount}
+			inputmode="decimal"
+			placeholder="0.00"
+			data-testid="{prefix}-opening-amount"
+		/>
+		<label for="{prefix}-opening-side" class="sr-only">
+			{i18nMsg('bank-accounts-opening-label-side', 'Sens du solde')}
+		</label>
+		<select
+			id="{prefix}-opening-side"
+			bind:value={formOpeningSide}
+			class="rounded border border-border px-3 py-2 text-sm"
+			data-testid="{prefix}-opening-side"
+		>
+			<option value="debit">{i18nMsg('bank-accounts-opening-side-debit', 'Avoir')}</option>
+			<option value="credit">{i18nMsg('bank-accounts-opening-side-credit', 'Dette (découvert)')}</option>
+		</select>
+	</div>
+	<p class="mt-1 text-xs text-text-muted" data-testid="{prefix}-opening-help">
+		{i18nMsg(
+			'bank-accounts-opening-help',
+			"Le solde lu sur le relevé au début de votre comptabilité. L'écriture est datée du premier jour du premier exercice s'il est ouvert, sinon d'aujourd'hui ; sa contrepartie va au compte Bénéfice/perte reporté. Elle est refusée si le compte lié a déjà des mouvements.",
+		)}
+	</p>
+	<p class="mt-1 rounded border border-warning bg-warning-soft p-2 text-xs text-text" role="note" data-testid="{prefix}-opening-consequence">
+		{i18nMsg(
+			'bank-accounts-opening-consequence',
+			"Après ce solde, les soldes de départ des autres comptes se saisissent un à un dans Soldes de départ, mode Compléter : l'ouverture générale n'est plus proposée. Pour saisir toute votre ouverture d'un coup, passez d'abord par Soldes de départ.",
+		)}
+	</p>
+{/snippet}
+
 <div class="flex items-center justify-between">
 	<div>
 		<h1 class="text-2xl font-semibold text-text" data-testid="bank-accounts-page-title">
@@ -561,6 +692,13 @@
 							)}
 						</p>
 					</div>
+					{#if formJournalAccountId !== null}
+						<!-- Story 34-2 (#533, AC-7) — le solde d'ouverture, actif dès qu'un compte
+						     du plan est lié ; masqué (et non envoyé) sans compte lié. -->
+						<div data-testid="form-opening-balance">
+							{@render openingFields('form')}
+						</div>
+					{/if}
 					<div class="col-span-2 flex items-center gap-2">
 						<input
 							id="form-is-primary"
@@ -680,6 +818,18 @@
 									>
 										{i18nMsg('bank-accounts-actions-edit', 'Modifier')}
 									</button>
+									{#if ba.journalAccountId !== null}
+										<!-- Story 34-2 (#533, AC-7) — compte ouvert et lié : saisir son solde
+										     d'ouverture (refusé par le serveur s'il est déjà mouvementé). -->
+										<button
+											type="button"
+											class="ml-1 rounded border border-border px-2 py-1 text-xs"
+											onclick={() => openOpeningBalance(ba)}
+											data-testid="opening-balance-button-{ba.id}"
+										>
+											{i18nMsg('bank-accounts-actions-opening-balance', "Saisir le solde d'ouverture")}
+										</button>
+									{/if}
 									<button
 										type="button"
 										class="ml-1 rounded border border-border px-2 py-1 text-xs text-red-600"
@@ -862,6 +1012,36 @@
 												{i18nMsg('bank-accounts-close-dialog-confirm', 'Clore le compte')}
 											</Button>
 											<Button type="button" variant="outline" onclick={closeForm} data-testid="close-cancel-button">
+												{i18nMsg('bank-accounts-actions-cancel', 'Annuler')}
+											</Button>
+										</div>
+									</div>
+								</td>
+							</tr>
+						{/if}
+						<!-- Story 34-2 (#533, AC-7) — dialogue du solde d'ouverture inline -->
+						{#if mode.kind === 'opening-balance' && mode.id === ba.id}
+							<tr>
+								<td colspan="5" class="py-3">
+									<div class="rounded border border-border bg-surface-alt p-4" data-testid="opening-balance-dialog">
+										<h2 class="mb-2 text-base font-semibold">
+											{i18nMsg('bank-accounts-opening-dialog-title', "Solde d'ouverture de ce compte")}
+										</h2>
+										<div class="max-w-xl">
+											{@render openingFields('row')}
+										</div>
+										{#if openingError}
+											<p class="mt-3 text-sm text-red-600" role="alert" data-testid="opening-error">{openingError}</p>
+										{/if}
+										<div class="mt-4 flex gap-2">
+											<Button
+												onclick={() => confirmOpeningBalance(ba.id)}
+												disabled={submitting}
+												data-testid="opening-confirm-button"
+											>
+												{i18nMsg('bank-accounts-opening-dialog-confirm', "Passer l'écriture")}
+											</Button>
+											<Button type="button" variant="outline" onclick={closeForm} data-testid="opening-cancel-button">
 												{i18nMsg('bank-accounts-actions-cancel', 'Annuler')}
 											</Button>
 										</div>

@@ -179,6 +179,37 @@ pub async fn find_by_id_in_tx(
     .ok_or(DbError::NotFound)
 }
 
+/// Lecture d'un compte bancaire **scopée par société**, sous **verrou partagé**
+/// (`LOCK IN SHARE MODE`), dans la transaction de l'appelant — Story 34-2
+/// (#533, AC-6).
+///
+/// Sert la saisie du solde d'ouverture d'un compte existant : l'état archivé,
+/// clos et le compte lié se lisent sous ce verrou, et la lecture, étant
+/// **verrouillante**, n'ouvre pas l'instantané REPEATABLE READ avant les
+/// verrous du complément qui la suit (contrat de
+/// [`super::opening_complement::create_opening_complement_in_tx`]). Ne filtre
+/// pas `archived` : l'appelant le refuse lui-même. `Ok(None)` : compte absent
+/// ou d'une autre société.
+///
+/// ⛔ `LOCK IN SHARE MODE`, jamais `FOR SHARE` (erreur de syntaxe sur MariaDB
+/// 10.11).
+pub async fn find_by_id_locked_shared_in_tx(
+    tx: &mut Transaction<'_, MySql>,
+    company_id: i64,
+    id: i64,
+) -> Result<Option<BankAccount>, DbError> {
+    sqlx::query_as::<_, BankAccount>(concat!(
+        "SELECT ",
+        columns!(),
+        " FROM bank_accounts WHERE company_id = ? AND id = ? LOCK IN SHARE MODE"
+    ))
+    .bind(company_id)
+    .bind(id)
+    .fetch_optional(&mut **tx)
+    .await
+    .map_err(map_db_error)
+}
+
 /// Filtre de [`list_by_company`] — Story 28-4a (#642).
 ///
 /// `Default` = les deux à `false` : comptes **ni archivés ni clos**, ceux où

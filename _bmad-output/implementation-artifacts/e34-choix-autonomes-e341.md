@@ -194,3 +194,35 @@ transaction sûre) ; un id inconnu, étranger ou archivé rend `404` avant tout 
 **C-e341-19, précisé** — l'assistant ignore `accountKind` et `cardLast4` (corps sans `deny_unknown_fields`) : client interne, angle mort assumé.
 
 **C-e341-42, précisé** — `cardLast4` absent, `null` ou vide valent absent, pour les deux types.
+
+## Développement de la 34-2 (2026-11-11, clé de travail e342)
+
+*Le prompt de développement nommait le registre `e34-choix-autonomes-e342.md` ; celui-ci est le registre d'un autre groupe (34-3, 34-4,
+34-9, 34-10). Les choix de la 34-2 restent ici, au registre que sa fiche cite (C-e341-6 à 12, 38) ; la clé e342 ne nomme que le
+worktree, le port, les bases et les journaux.*
+
+**C-e341-44 (34-2) — un montant mal formé : le code du complément, un message propre au champ.** `OPENING_COMPLEMENT_INVALID_AMOUNT` (aucun
+code neuf), message `error-bank-account-opening-invalid-amount` : celui du complément parle de « lignes » et de contrepartie, qu'un champ
+unique n'a pas. Autre : le message du complément tel quel. Réversible : oui.
+
+**C-e341-45 (34-2) — à la création, un montant vide ou nul vaut absent ; un montant non nul exige `side`.** `openingBalance: {}` ou
+`{ "amount": "0" }` : aucune écriture, la réponse d'avant. `side` est `Option` au désérialiseur pour qu'un montant vide n'exige pas de sens ;
+un sens inconnu reste un `400` de forme. À la route de ligne, dont c'est le seul objet, un montant nul est refusé
+`OPENING_COMPLEMENT_INVALID_AMOUNT`. Autres : `side` toujours exigé (`{}` en `400`) ; un montant nul passé tel quel (écriture nulle).
+Réversible : oui.
+
+**C-e341-46 (34-2) — la route de ligne n'écrit pas de trace `bank_account.*`.** Sa trace est `journal_entry.created`, écrite par le dépôt
+comme pour le complément de l'écran ; le registre la classe `Traced`. Autre : une action neuve (`bank_account.opening_balance_entered`), avec
+son libellé dans le vocabulaire d'audit et quatre traductions. Réversible : oui.
+
+**C-e341-47 (34-2) — la réponse de la route de ligne est le résumé `{ id, entryNumber, entryDate, fiscalYearId }`**, la forme de
+`openingEntry` à la création. Autre : l'écriture entière (`JournalEntryResponse`, celle du complément). Réversible : oui.
+
+**C-e341-48 (34-2) — l'écran retire les séparateurs de milliers et lit la virgule décimale** (`openingAmountPayload`, `format.ts`) avant
+l'envoi ; le contrôle de forme reste au serveur. Autre : envoyer la saisie brute (« 1'234.50 » refusé). Réversible : oui.
+
+**C-e341-49 (34-2) — les tests de la portée `SingleBankLedger` vivent dans un fichier neuf** (`crates/kesh-db/tests/opening_complement_bank_scope.rs`)
+: l'AC-1 veut `opening_complement_repository.rs` et `opening_balances_e2e.rs` **sans modification**. Réversible : oui.
+
+**C-e341-50 (34-2) — le libellé du montant change au dialogue de ligne** (« Montant du solde ») : « Solde d'ouverture (optionnel) » n'a pas de
+sens là où le montant est le seul objet. Une clé de plus par locale. Réversible : oui.

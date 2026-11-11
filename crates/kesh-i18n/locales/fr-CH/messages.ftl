@@ -1646,6 +1646,23 @@ settings-bank-manage-hint = Pour ajouter, modifier, clore ou archiver un compte 
 bank-accounts-toast-link-success = Compte bancaire lié avec succès au plan comptable.
 bank-accounts-toast-unlink-success = Compte bancaire délié du plan comptable.
 
+# Story 34-2 (#533) — solde d'ouverture saisi avec le compte bancaire.
+bank-accounts-opening-entry-description = Solde d'ouverture — { $account }
+error-bank-account-opening-invalid-amount = Le solde d'ouverture est un montant positif d'au plus quatre décimales, au plus 999’999’999’999’999.9999.
+bank-accounts-opening-label-amount = Solde d'ouverture (optionnel)
+bank-accounts-opening-label-amount-row = Montant du solde
+bank-accounts-opening-label-side = Sens du solde
+bank-accounts-opening-side-debit = Avoir
+bank-accounts-opening-side-credit = Dette (découvert)
+bank-accounts-opening-help = Le solde lu sur le relevé au début de votre comptabilité. L'écriture est datée du premier jour du premier exercice s'il est ouvert, sinon d'aujourd'hui ; sa contrepartie va au compte Bénéfice/perte reporté. Elle est refusée si le compte lié a déjà des mouvements.
+bank-accounts-opening-consequence = Après ce solde, les soldes de départ des autres comptes se saisissent un à un dans Soldes de départ, mode Compléter : l'ouverture générale n'est plus proposée. Pour saisir toute votre ouverture d'un coup, passez d'abord par Soldes de départ.
+bank-accounts-toast-create-success-with-opening = Compte bancaire créé, avec l'écriture d'ouverture n° { $number } du { $date }.
+bank-accounts-actions-opening-balance = Saisir le solde d'ouverture
+bank-accounts-opening-dialog-title = Solde d'ouverture de ce compte
+bank-accounts-opening-dialog-confirm = Passer l'écriture
+bank-accounts-opening-error-amount-required = Saisissez un montant positif.
+bank-accounts-toast-opening-success = Écriture d'ouverture n° { $number } du { $date } passée.
+
 # Story 8-5b — FR47 reconciliation rules (règles d'affectation).
 reconciliation-rules-page-title = Règles d'affectation
 reconciliation-rules-loading = Chargement…

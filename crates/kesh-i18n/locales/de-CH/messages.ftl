@@ -1578,6 +1578,23 @@ settings-bank-manage-hint = Um ein Bankkonto hinzuzufügen, zu ändern, aufzulö
 bank-accounts-toast-link-success = Bankkonto erfolgreich mit dem Kontorahmen verbunden.
 bank-accounts-toast-unlink-success = Bankkonto vom Kontorahmen getrennt.
 
+# Story 34-2 (#533) — Eröffnungssaldo mit dem Bankkonto erfasst.
+bank-accounts-opening-entry-description = Eröffnungssaldo — { $account }
+error-bank-account-opening-invalid-amount = Der Eröffnungssaldo ist ein positiver Betrag mit höchstens vier Dezimalstellen, höchstens 999’999’999’999’999.9999.
+bank-accounts-opening-label-amount = Eröffnungssaldo (optional)
+bank-accounts-opening-label-amount-row = Betrag des Saldos
+bank-accounts-opening-label-side = Art des Saldos
+bank-accounts-opening-side-debit = Guthaben
+bank-accounts-opening-side-credit = Schuld (Überziehung)
+bank-accounts-opening-help = Der Saldo laut Kontoauszug zu Beginn Ihrer Buchhaltung. Die Buchung wird auf den ersten Tag des ersten Geschäftsjahres datiert, wenn es offen ist, sonst auf heute; die Gegenbuchung geht auf das Konto Gewinn-/Verlustvortrag. Sie wird abgelehnt, wenn das verbundene Konto bereits Bewegungen hat.
+bank-accounts-opening-consequence = Nach diesem Saldo werden die Anfangssaldi der übrigen Konten einzeln unter Anfangssaldi, Modus Ergänzen, erfasst: Die allgemeine Eröffnung wird nicht mehr angeboten. Um Ihre ganze Eröffnung auf einmal zu erfassen, gehen Sie zuerst über Anfangssaldi.
+bank-accounts-toast-create-success-with-opening = Bankkonto angelegt, mit der Eröffnungsbuchung Nr. { $number } vom { $date }.
+bank-accounts-actions-opening-balance = Eröffnungssaldo erfassen
+bank-accounts-opening-dialog-title = Eröffnungssaldo dieses Kontos
+bank-accounts-opening-dialog-confirm = Buchung erfassen
+bank-accounts-opening-error-amount-required = Geben Sie einen positiven Betrag ein.
+bank-accounts-toast-opening-success = Eröffnungsbuchung Nr. { $number } vom { $date } erfasst.
+
 # Story 8-5b — FR47 reconciliation rules. Traduction DE à compléter v0.2 (L51).
 reconciliation-rules-page-title = Zuweisungsregeln
 reconciliation-rules-loading = Lädt…

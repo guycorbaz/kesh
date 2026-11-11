@@ -900,7 +900,11 @@ const ATTENDU = {
 	// `-labels-journal-account-id`, `-labels-not-configured`, `onboarding-bank-editable-later`,
 	// `onboarding-bank-ledger-load-error`. Que des littéraux ; `sitesNonResolus` et `relais`
 	// inchangés.
-	sitesTotal: 2928,
+	// Story 34-2 (#533) : **2928 → 2942** (+14), tous dans `routes/(app)/bank-accounts/+page.svelte`
+	// : le libellé du montant (deux branches, création et ligne), le sens et ses deux options,
+	// l'aide, la conséquence, l'action de ligne, le titre et la confirmation du dialogue, le
+	// montant requis, les deux avis. Que des littéraux ; `sitesNonResolus` et `relais` inchangés.
+	sitesTotal: 2942,
 	sitesNonResolus: 31,
 	relais: 6,
 	// Story 26-1 (#620, AC3-bis) : **10 → 11** — `lib/features/bank-import/
