@@ -4849,6 +4849,19 @@ fn a_0_17_backup_is_refused_by_a_0_16_1_binary() {
     assert!(kesh_db::version::check_import_version_compat("0.14.0", "0.17.0").is_ok());
 }
 
+/// Story 34-11a1 (#972, AC-12) — une sauvegarde 0.17.6 (manifeste `min_required`
+/// `0.17.6`, lu dans un vrai export par `full_import_round_trip_keeps_a_manual_statement`)
+/// est refusée par un binaire 0.17.5 ; une sauvegarde 0.17.5 (`min_required` `0.17.0`)
+/// s'importe dans la 0.17.6. Même limite que ci-dessus : le handler 0.17.5 n'est pas joué.
+#[test]
+fn a_0_17_6_backup_is_refused_by_a_0_17_5_binary() {
+    assert!(matches!(
+        kesh_db::version::check_import_version_compat("0.17.6", "0.17.5"),
+        Err(kesh_db::version::VersionError::DowngradeRefused { .. })
+    ));
+    assert!(kesh_db::version::check_import_version_compat("0.17.0", "0.17.6").is_ok());
+}
+
 // ============================================================
 // Story v017-4a (#849, AC-3) — les sauvegardes et les factures fournisseur
 // ============================================================
