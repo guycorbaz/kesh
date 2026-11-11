@@ -274,6 +274,26 @@ Aucun fichier de code commun avec les autres stories de l'Epic 34. `user-manual.
     avec les mutations de la P2.
   - Trend : P1 0 C / 0 H / 1 M / 7 L → P2 0 C / 0 H / 2 M / LOW → P3 (passe complète Sonnet, prompt
     `34-10-graphiques-couleurs-unies-review-prompt-p3.md`) à lancer : la remédiation touche la production.
+- 2026-11-11 : **Revue de code P3** (Sonnet, trois lentilles B, E, A, passe complète ; rapports
+  `kesh-gate-logs/e3410-review-p3-{B,E,A}.md`) : **0 C, 0 H, 0 M, 7 L** (B : 3, E : 2, A : 2). Plusieurs LOW touchant la production,
+  une passe ciblée suit. Remédiation (Opus 5.5), commit `ce42fd4a` :
+  - **B3-1** : les séparateurs ont pour clé leur indice, unique par construction.
+  - **B3-2** : `96 * 0.6` vaut `57.599999999999994` (établi par `node`) ; `PIE_GEOMETRY.innerR` s'écrit 57.6, testé sur le `d` réel.
+  - **B3-3** : rubrique `### Modifié` au CHANGELOG, comme la 34-5 (C-e3410-15) ; les mentions *Changé* plus haut dans la fiche
+    sont celles de leur date.
+  - **E3-1** : `pieSlices` ne dessine qu'une part de montant strictement positif, rang et couleur fixés avant le filtre
+    (C-e3410-14) ; test, mutations MV15 et MV16 tuées.
+  - **E3-2** : accepté, sans issue (C-e3410-16) : la page ne descend pas sous 1280 px, la carte garde ses 240 px.
+  - **A3-1**, **A3-2** : annotations datées de C-e3410-4 et de l'AC-3.
+  - Rouges (`rouges.log`, section « Remédiation P3 ») : 2 tests, écrits sur `65a4af7f`. Gates au dernier commit de code
+    `ce42fd4a`, chacun sous le verrou : gate ciblé `homepage-charts.test.ts` **63 passés** ; `npm run check` 0 erreur (29
+    avertissements, aucun dans `homepage/`) ; `lint-i18n-ownership` PASS ; `npm run test:unit` **2909 passés, 222 fichiers** ;
+    `npm run build` vert (`*-p3.log`). **E2E non rejoué** : le rendu ne change pour aucune donnée que le serveur peut rendre — la
+    clé d'`each` ne touche que la réconciliation du DOM, 57.6 et 57.599999999999994 donnent les mêmes points arrondis à trois
+    décimales, et le filtre ne retire que des montants nuls ou négatifs, que le serveur n'envoie pas. Le dernier E2E complet est
+    celui de `e982f7e8` (`e2e-r4.log` : 385 passés, les sept KF-029).
+  - Trend : P1 1 M / 7 L → P2 2 M / LOW → P3 0 M / 7 L → **P4 ciblée** (une lentille, sur `ce42fd4a` seul, prompt
+    `34-10-graphiques-couleurs-unies-review-prompt-p4-ciblee.md`, rapport `kesh-gate-logs/e3410-review-p4-ciblee.md`) à lancer.
 
 ## Dev Agent Record
 
@@ -418,5 +438,6 @@ commandes lourdes ; complété ci-dessous à la levée de la pause.)*
 - `_bmad-output/implementation-artifacts/34-10-graphiques-couleurs-unies-review-prompt-p1.md`
 - `_bmad-output/implementation-artifacts/34-10-graphiques-couleurs-unies-review-prompt-p2.md`
 - `_bmad-output/implementation-artifacts/34-10-graphiques-couleurs-unies-review-prompt-p3.md`
+- `_bmad-output/implementation-artifacts/34-10-graphiques-couleurs-unies-review-prompt-p4-ciblee.md`
 - `_bmad-output/implementation-artifacts/e34-choix-autonomes-e3410.md`
 - `_bmad-output/implementation-artifacts/sprint-status.yaml`
