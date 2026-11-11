@@ -762,7 +762,8 @@ pub async fn create_supplier_invoice(
 ///
 /// Refus : facture absente → `404` ; pas un brouillon → `409
 /// ILLEGAL_STATE_TRANSITION` ; version périmée → `409 OPTIMISTIC_LOCK_CONFLICT`
-/// ; puis ceux de la création. Réponse : la facture relue.
+/// ; puis ceux de la création. Réponse : la facture telle que le `PUT` l'a écrite,
+/// lue dans sa transaction avant le commit (Story 34-8, #938).
 ///
 /// ⚠️ **Rejouée sur interblocage** par l'enveloppe `AppError`
 /// [`crate::retry::retry_app_on_deadlock`] (C-v017-4-37, P4) : la transaction

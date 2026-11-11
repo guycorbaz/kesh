@@ -52,7 +52,8 @@ export async function createSupplierInvoice(
 
 /**
  * Remplace un brouillon (Story v017-4b, AC-23) : en-tête et toutes les lignes, avec la
- * `version` lue. Rend la facture relue.
+ * `version` lue. Rend la facture telle que le geste l'a écrite (lue avant le commit,
+ * Story 34-8).
  */
 export async function updateSupplierInvoice(
 	id: number,
@@ -68,7 +69,7 @@ export async function deleteSupplierInvoice(id: number): Promise<void> {
 
 /**
  * Valide un brouillon : l'écriture d'achat est passée (Story v017-4b, AC-22). Rend la
- * facture relue, `status: "open"` (affiché « Validée »).
+ * facture telle que le geste l'a écrite, `status: "open"` (affiché « Validée »).
  */
 export async function validateSupplierInvoice(
 	id: number,
@@ -80,7 +81,8 @@ export async function validateSupplierInvoice(
 /**
  * Repasse en brouillon une facture validée — ou, depuis la Story v0172-annulees (#868),
  * annulée : son écriture d'achat (et sa contre-passation) est **supprimée**, elle redevient
- * un brouillon modifiable (Story v017-4b, AC-22). Rend la facture relue.
+ * un brouillon modifiable (Story v017-4b, AC-22). Rend la facture telle que le geste l'a
+ * écrite.
  */
 export async function unvalidateSupplierInvoice(
 	id: number,
@@ -111,7 +113,7 @@ export async function cancelSupplierInvoiceSettlement(
 /**
  * Annule une facture fournisseur, validée ou payée (Story 25-3-c) : contre-passe
  * l'écriture d'achat ; payée, son règlement reste au grand livre, détaché.
- * Rend la facture relue avec ses champs de lecture.
+ * Rend la facture telle que le geste l'a écrite, avec ses champs de lecture.
  */
 export async function cancelSupplierInvoice(id: number): Promise<SupplierInvoiceResponse> {
 	return apiClient.post(`/api/v1/supplier-invoices/${id}/cancel`, {});

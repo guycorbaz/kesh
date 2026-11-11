@@ -20,6 +20,7 @@ import {
 	authedApiContext,
 	disposeContextSafe,
 } from './helpers/test-state';
+import { PNG_SANS_QR, deposit, importViaApi, token, uniqueCopy } from './helpers/inbox';
 
 test.beforeAll(async () => {
 	await seedTestState('with-company');
@@ -135,4 +136,74 @@ test('fiche fournisseur : paiement coupé après l’écriture, la fiche relue l
 	await expect(page.getByTestId('supplier-invoice-pay-submit')).toHaveCount(0);
 	await expect(page.getByTestId('supplier-invoice-pay-error')).toHaveCount(0);
 	await capture(page, testInfo, 'e348-paiement-issue-inconnue');
+});
+
+/**
+ * Revue P1 de la 34-8 (A-1) — le second avis : la réponse du paiement est coupée, puis
+ * la relecture de la facture aussi. L'écran ne dit pas « la facture a été relue ».
+ */
+test('fiche fournisseur : paiement coupé et relecture en échec, la fiche dit de recharger', async ({
+	page,
+}, testInfo) => {
+	await login(page);
+	const { id, cashId } = await validatedSupplierInvoice(page);
+	let paid = false;
+	await page.route(`**/api/v1/supplier-invoices/${id}/pay`, async (route) => {
+		if (route.request().method() !== 'POST') return route.fallback();
+		const response = await route.fetch();
+		expect(response.status(), 'le serveur a bien payé').toBe(200);
+		paid = true;
+		await route.abort('connectionreset');
+	});
+	// La relecture qui suit le paiement est coupée elle aussi ; le chargement de la
+	// fiche, avant, passe.
+	await page.route(`**/api/v1/supplier-invoices/${id}`, async (route) => {
+		if (route.request().method() !== 'GET' || !paid) return route.fallback();
+		await route.abort('connectionreset');
+	});
+	await page.goto(`/supplier-invoices/${id}`);
+	await page.getByTestId('supplier-invoice-pay').getByRole('radio').nth(1).check();
+	await page.getByTestId('pay-internal-account').selectOption(String(cashId));
+	await page.getByTestId('supplier-invoice-pay-submit').click();
+
+	const notice = page.getByTestId('supplier-unknown-outcome');
+	await expect(notice).toHaveText(
+		'L’issue n’est pas connue, et la facture n’a pas pu être relue : rechargez la page avant de réessayer.',
+	);
+	await expect(notice).toHaveAttribute('data-outcome', 'reread-failed');
+	await capture(page, testInfo, 'e348-relecture-en-echec');
+});
+
+/**
+ * Revue P1 de la 34-8 (A-1) — le sélecteur de document qui porte l'issue inconnue : la
+ * demande de rattachement est coupée **avant** d'arriver au serveur, si bien que la
+ * facture relue n'a pas de document. L'erreur reste dans le sélecteur, ouvert, et
+ * l'encadré ne s'affiche pas (C-e348-3).
+ */
+test('fiche fournisseur : rattachement coupé, le sélecteur dit que l’issue n’est pas connue', async ({
+	page,
+}, testInfo) => {
+	await login(page);
+	const { id } = await validatedSupplierInvoice(page);
+	const name = `e2e-e348-${token()}.png`;
+	await deposit(name, uniqueCopy(PNG_SANS_QR, 'png'));
+	const report = await importViaApi(page);
+	expect(report.accepted.map((a) => a.fileName)).toContain(name);
+	await page.route(`**/api/v1/supplier-invoices/${id}/source-document`, async (route) => {
+		if (route.request().method() !== 'POST') return route.fallback();
+		await route.abort('connectionreset');
+	});
+	await page.goto(`/supplier-invoices/${id}`);
+	await page.getByTestId('supplier-invoice-attach').click();
+	const row = page.getByTestId('attach-document-row').filter({ hasText: name });
+	await expect(row).toHaveCount(1);
+	page.once('dialog', (d) => void d.accept());
+	await row.getByTestId('attach-document-submit').click();
+
+	await expect(page.getByTestId('attach-document-error')).toHaveText(
+		'L’issue n’est pas connue : la facture a été relue, vérifiez-la avant de réessayer.',
+	);
+	await expect(page.getByTestId('attach-document-picker')).toBeVisible();
+	await expect(page.getByTestId('supplier-unknown-outcome')).toHaveCount(0);
+	await capture(page, testInfo, 'e348-selecteur-issue-inconnue');
 });

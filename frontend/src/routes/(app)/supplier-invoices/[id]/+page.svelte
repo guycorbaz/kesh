@@ -257,8 +257,10 @@
 			});
 		} catch (err) {
 			// Story 34-8 (AC-8) : une réponse perdue n'est plus muette — relecture et avis.
+			// Ce qui reste est une `ApiError` : `isSettlementOutcomeUnknown` rend vrai pour
+			// toute autre erreur (revue P1 de la 34-8, B-2 : le repli était inatteignable).
 			if (await rereadAfterUnknownOutcome(err)) return;
-			payError = isApiError(err) ? err.message : i18nMsg('common-error', 'Erreur inattendue');
+			if (isApiError(err)) payError = err.message;
 		} finally {
 			paying = false;
 		}
@@ -413,7 +415,8 @@
 
 	/**
 	 * Valide le brouillon (Story v017-4b, AC-22) : l'écriture d'achat est passée. La
-	 * réponse est la facture relue ; un refus s'affiche sous le bouton, par le message du
+	 * réponse est la facture telle que la validation l'a écrite ; un refus s'affiche sous le
+	 * bouton, par le message du
 	 * serveur (patron de la fiche client) ; un refus d'écran périmé relit la facture.
 	 */
 	async function confirmValidate() {
@@ -543,7 +546,8 @@
 
 	/**
 	 * Joint un document à traiter (Story 30-2c, AC19-AC20) ; la réponse est la
-	 * facture relue, `sourceDocument` calculé. Une erreur remonte au sélecteur, qui
+	 * facture telle que le geste l'a écrite, `sourceDocument` calculé. Une erreur remonte
+	 * au sélecteur, qui
 	 * l'affiche sans se fermer. Sur un refus `404`/`409`, la facture est relue
 	 * d'abord : si elle a désormais un document (joint ailleurs), le sélecteur se
 	 * ferme sur elle et le refus se dit par une notification.

@@ -170,6 +170,19 @@ pub async fn find_by_id_scoped_for_update(
 ///
 /// ⚠️ Lecture **ordinaire** (jamais `FOR UPDATE`) : dans la vue d'instantané, une
 /// lecture verrouillante lirait le dernier état validé, hors de l'instantané.
+///
+/// ⚠️ **`SELECT *` et le cache des requêtes préparées** (Story 34-8, #938, revue P1,
+/// B-4). `sqlx` garde, par connexion, la description des colonnes d'une requête
+/// préparée. Exécutée sur une connexion du pool **avant** une migration qui ajoute une
+/// colonne à `imported_supplier_invoices`, cette requête resterait décrite sans elle,
+/// et sa lecture d'après la migration rendrait `ColumnNotFound` — constaté sur
+/// `migrations_upgrade_path.rs`, dont le semis passe depuis par les formes `_in_tx`.
+/// Depuis la 34-8, chaque geste sur une facture fournisseur l'exécute (la vue lue
+/// avant le commit). **Hypothèse tenue par le démarrage** : `main.rs` applique les
+/// migrations avant de servir, et la sauvegarde d'avant migration
+/// (`pre_upgrade_backup`) ne passe pas par cette fonction. Un chemin qui l'exécuterait
+/// avant `MIGRATOR.run` rouvrirait le défaut : nommer les colonnes, ou recréer le pool
+/// après la migration.
 pub async fn find_by_supplier_invoice_id_scoped<'e, E>(
     executor: E,
     company_id: i64,

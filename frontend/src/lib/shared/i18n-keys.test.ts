@@ -898,8 +898,10 @@ const ATTENDU = {
 	// Story 34-8 (#938) : **2922 → 2925** (+3), `supplier-invoices/[id]/+page.svelte` : les deux
 	// avis d'issue inconnue (`supplier-invoices-unknown-outcome`, `-reread-failed`) et le repli
 	// `common-error` de `pay()`, qui n'était plus muet hors `ApiError`. Que des littéraux ;
-	// `sitesNonResolus` et `relais` inchangés.
-	sitesTotal: 2925,
+	// `sitesNonResolus` et `relais` inchangés. Revue P1 (B-2) : **2925 → 2924** (−1), ce repli
+	// de `pay()` retiré — inatteignable, `isSettlementOutcomeUnknown` prenant toute erreur
+	// hors `ApiError`.
+	sitesTotal: 2924,
 	sitesNonResolus: 31,
 	relais: 6,
 	// Story 26-1 (#620, AC3-bis) : **10 → 11** — `lib/features/bank-import/

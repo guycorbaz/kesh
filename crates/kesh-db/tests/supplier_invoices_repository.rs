@@ -3370,3 +3370,49 @@ async fn commit_with_view_rolls_back_on_error_and_commits_with_the_view(pool: My
     assert_eq!(view.invoice.id, id);
     assert_eq!(temoins(&pool, c).await, 1, "validée sur Ok");
 }
+
+/// Revue P1 de la 34-8 (B-3 ; mutation M7) — **une lecture de vue en échec annule la
+/// transaction**, comme une vue absente. La lecture échoue sans que la facture
+/// manque : la transaction retire l'écriture d'achat d'une facture validée, ce que
+/// `supplier_invoice_cancel_blocker` refuse (`DbError::Invariant`). Le témoin et ce
+/// retrait n'ont pas survécu.
+#[sqlx::test(migrations = "./test-schema")]
+async fn commit_with_view_rolls_back_when_the_view_cannot_be_read(pool: MySqlPool) {
+    let ctx = setup(&pool).await;
+    let c = ctx.seeded.company_id;
+    let id = supplier_invoices::create_validated(
+        &pool,
+        one_line(&ctx, dec!(100.00), dec!(0)),
+        ctx.seeded.admin_user_id,
+    )
+    .await
+    .unwrap()
+    .invoice
+    .id;
+
+    let mut tx = pool.begin().await.unwrap();
+    ecrire_temoin(&mut tx, c).await;
+    sqlx::query("UPDATE supplier_invoices SET purchase_journal_entry_id = NULL WHERE id = ?")
+        .bind(id)
+        .execute(&mut *tx)
+        .await
+        .expect("montage : l'écriture d'achat retirée dans la transaction");
+    let err = supplier_invoices::commit_with_view(tx, c, Ok::<(), DbError>(()), |_| id)
+        .await
+        .expect_err("la vue ne se lit pas");
+    assert!(
+        matches!(&err, DbError::Invariant(m) if m.contains("sans écriture d'achat")),
+        "{err:?}"
+    );
+    assert_eq!(temoins(&pool, c).await, 0, "la transaction est annulée");
+    let achat: Option<i64> =
+        sqlx::query_scalar("SELECT purchase_journal_entry_id FROM supplier_invoices WHERE id = ?")
+            .bind(id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert!(
+        achat.is_some(),
+        "le retrait de l'écriture d'achat n'a pas survécu"
+    );
+}

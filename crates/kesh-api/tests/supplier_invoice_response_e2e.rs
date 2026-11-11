@@ -307,18 +307,38 @@ async fn complete_returns_what_was_written(pool: MySqlPool) {
     c.assert_response_is_what_was_written(&r).await;
 }
 
+impl Ctx {
+    /// Une facture validée et un document à traiter ; rend le chemin du document de la
+    /// facture et l'identifiant du document.
+    async fn invoice_and_document(&self, pool: &MySqlPool, hash: &str) -> (String, i64) {
+        let o = self.open("FF-DOC").await;
+        let doc = document(pool, self.seeded.company_id, hash, None).await;
+        (
+            format!("/api/v1/supplier-invoices/{}/source-document", o["id"]),
+            doc,
+        )
+    }
+}
+
 #[sqlx::test(migrations = "../kesh-db/test-schema")]
-async fn attach_and_detach_return_what_was_written(pool: MySqlPool) {
+async fn attach_returns_what_was_written(pool: MySqlPool) {
     let c = setup(&pool).await;
-    let o = c.open("FF-DOC").await;
-    let doc = document(&pool, c.seeded.company_id, "e348-attach", None).await;
-    let path = format!("/api/v1/supplier-invoices/{}/source-document", o["id"]);
+    let (path, doc) = c.invoice_and_document(&pool, "e348-attach").await;
     let r = c
         .post(&path, json!({ "importedSupplierInvoiceId": doc }))
         .await;
     assert_eq!(r["sourceDocument"]["importedSupplierInvoiceId"], doc, "{r}");
     c.assert_response_is_what_was_written(&r).await;
+}
 
+/// Revue P1 (A-3) : séparé du rattachement, pour qu'un rouge de l'un ne masque pas
+/// l'autre. Le rattachement du montage passe par la route, contrôlé par son statut seul.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn detach_returns_what_was_written(pool: MySqlPool) {
+    let c = setup(&pool).await;
+    let (path, doc) = c.invoice_and_document(&pool, "e348-detach").await;
+    c.post(&path, json!({ "importedSupplierInvoiceId": doc }))
+        .await;
     let r = c.send(reqwest::Method::DELETE, &path, None).await;
     assert_eq!(r["sourceDocument"], Value::Null, "{r}");
     c.assert_response_is_what_was_written(&r).await;
