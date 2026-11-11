@@ -379,6 +379,22 @@ commandes lourdes ; complété ci-dessous à la levée de la pause.)*
 - Rouges (`rouges.log`, section « Remédiation P2 ») : 6 tests purs et 1 test de rendu, écrits sur `111c808b` avant le code
   (fichiers Vitest isolés, sous `mem-guard`). Le test de frontière de `MIN_SLICE_ANGLE` passait déjà : il fixe un comportement
   existant.
+- Tests, de `111c808b` à `HEAD` : `homepage-charts.test.ts` 45 → 49 `it(` ; `HomepageCharts.test.ts` 28 → 28 (le test de rendu
+  de la P1 récrit pour les séparateurs).
+- Mutations (`mut/MV1-angle-min-nul.log`, `MV8` à `MV14`), jouées à la levée de la pause sur l'arbre commité `031e1153` (A2-5) :
+  **8 jouées, 8 tuées** — MV1 (angle minimal nul), MV8 (`deficit +=` → `=`), MV9 (angle minimal ramené à 0,02, sous les deux
+  demi-traits), MV10 (limite de midi oubliée), MV11 (aucun séparateur), MV12 (séparateurs peints sous les parts), MV13 (libellé non
+  borné par le montant), MV14 (frontière de l'angle minimal élargie de 2 %).
+- Gates au dernier commit de code `e982f7e8` (journaux `*-p2.log`), joués à la levée de la pause : `npm run check` 0 erreur
+  (29 avertissements, aucun dans `homepage/`), `lint-i18n-ownership` PASS, `npm run test:unit` **2907 passés, 222 fichiers**,
+  `npm run build` vert. **E2E complet** (`e2e-r4.log`, base recréée vide, runner avec `KESH_INBOX_DIR` et `KESH_DOCUMENTS_DIR`) :
+  **385 passés, 7 échecs, 18 ignorés** — exactement les sept KF-029 (#97) : `mode-expert.spec.ts:26`, `:41`,
+  `onboarding-path-b.spec.ts:65`, `:92`, `onboarding.spec.ts:57`, `:77`, `:150` ; les onze tests de `homepage-charts.spec.ts`
+  passent. Aucun fichier Rust touché : pas de gate backend.
+- Captures (scénario `minuscule`), dont deux agrandies à quatre fois l'échelle sur le haut de l'anneau :
+  `anneau-avant-p2-minuscule-agrandi.png` (build de `11af9624`) — à midi, cyan et gris se touchent sans trait blanc entre eux ;
+  `anneau-apres-p2-minuscule-agrandi.png` — un trait blanc à chacune des trois limites (violet/cyan, cyan/gris, gris/rouge), les
+  deux parts étroites distinctes ; et les captures pleines `anneau-`, `barres-`, `accueil-{avant,apres}-p2-minuscule.png`.
 
 ### File List
 
