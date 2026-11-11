@@ -898,7 +898,11 @@ const ATTENDU = {
 	// Story 34-3 (#967) : **2922 → 2924** (+2), les deux avis débiteurs / créanciers de
 	// `reconciliation/CounterpartyClaimNotice.svelte`. Que des littéraux ; `sitesNonResolus` et
 	// `relais` inchangés.
-	sitesTotal: 2924,
+	// Story 34-4 (#828) : **2924 → 2932** (+8) : `reconciliation/already-booked.ts` +4 (les
+	// quatre textes de l'avertissement) et `reconciliation/AlreadyBookedConfirmDialog.svelte` +4
+	// (titre, introduction, Annuler, Continuer quand même). Que des littéraux ; `sitesNonResolus`
+	// et `relais` inchangés.
+	sitesTotal: 2932,
 	sitesNonResolus: 31,
 	relais: 6,
 	// Story 26-1 (#620, AC3-bis) : **10 → 11** — `lib/features/bank-import/
