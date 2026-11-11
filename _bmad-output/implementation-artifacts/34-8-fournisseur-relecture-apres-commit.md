@@ -348,6 +348,40 @@ aucune migration, aucun schéma.
     `git checkout --` puis `touch`, comme la consigne le permet ; (4) pour le rouge Vitest, la fiche corrigée a été mise de
     côté par `cp`, la fiche de base restaurée par `git checkout --`, puis la copie remise par `cp`. L'outil Edit n'a manqué
     de rien : la suppression du bloc de 117 lignes déplacé vers `common/autour_appel.rs` s'y est faite d'un tenant.
+- 2026-11-11 : **revue de code P1 (Sonnet, trois lentilles) : 2 MEDIUM, 7 LOW — tous traités** (Opus 5.5, commits `c7251f56`
+  et `69855016`). Rapports `kesh-gate-logs/e348-review-p1-{B,E,A}.md`. B : 1 M, 3 L ; E : 2 L ; A : 1 M, 2 L. Le cœur
+  Rust (`commit_with_view`, les enveloppes, les handlers) n'a rien rendu au-dessus de LOW. Prémisses relues au code :
+  - **B-1 (M), recoupé par E-1 et A-2** — « la facture relue » dans `docs/api-external.md` (le tableau des routes de la
+    0.17.0, le paragraphe des champs de lecture, `cancel`, la complétion, `sourceDocument`, le rattachement, le
+    détachement) et au doc-comment de `update_supplier_invoice`. Le paragraphe des champs de lecture promettait « l'état
+    courant — celui d'une écriture concurrente éventuelle » : récrit (la facture telle que le geste l'a écrite ; drapeaux
+    d'annulation et dernier lot indicatifs ; seul `GET` décrit l'état courant), et la liste des gestes qui portent
+    `settlementCancellable` passe aux neuf. Symptôme grepé (`git grep -n -iE "\brelue|relecture"`) : les doc-comments des
+    clients `supplier-invoices.api.ts` (quatre), `imported-supplier-invoices.api.ts` (deux),
+    `imported-supplier-invoices.types.ts` et deux de la fiche Svelte, récrits. Laissés tels quels : la relecture **de
+    l'écran** (la fiche relit vraiment par `GET`), les relectures **dans** la transaction (`cancel_settlement_in_tx`,
+    `SupplierSettlementCancellation`), les tests et textes de la 25-3-c (historiques), les deux avis de l'écran.
+  - **A-1 (M)** — deux captures neuves par la spec E2E : `e348-relecture-en-echec.png` (paiement coupé, puis relecture en
+    `500` : encadré « rechargez la page ») et `e348-selecteur-issue-inconnue.png` (rattachement coupé avant le serveur :
+    le sélecteur garde l'issue inconnue, sans encadré). Premier jet : la relecture était coupée par `abort`, que le client
+    rejoue (`NETWORK_ERROR`, réessai d'environ 14 s) ; l'E2E a rougi, d'où le `500`.
+  - **B-2 (L)** — le repli `common-error` de `pay()`, inatteignable, retiré ; `sitesTotal` **2925 → 2924**, annoté.
+  - **B-3 (L)** — test `commit_with_view_rolls_back_when_the_view_cannot_be_read` et mutation **M7** (le rollback du bras
+    « lecture en échec » remplacé par un commit). ⚠️ **Le premier montage était faux, et la première mesure de M7 vide** :
+    retirer l'écriture d'achat est refusé par `chk_supplier_invoices_entry_iff_not_draft`, si bien que le test échouait au
+    montage, mutation ou non (`mut/M7-montage-invalide.log`). C'est le gate ciblé suivant qui l'a montré. Second montage :
+    l'écriture d'achat passe à une autre société dans la transaction (`NotFound` au rang 2 de
+    `settlement_entry_cancel_blocker`). M7 rejouée : rouge sur le témoin (`left: 1`, `right: 0`).
+  - **B-4 (L)** — l'hypothèse du cache des requêtes préparées (`SELECT *`) est écrite au doc-comment de
+    `find_by_supplier_invoice_id_scoped`, avec ce qui la tient (`main.rs` migre avant de servir ;
+    `git grep` : ni `pre_upgrade_backup`, ni `admin_backup`, ni `auto_backup.rs` n'appellent cette lecture ni la vue).
+    Aucune issue demandée.
+  - **A-3 (L)** — `attach_returns_what_was_written` et `detach_returns_what_was_written`, séparés (aide `invoice_and_document`).
+  - **E-2 (L)** — observation (un 5xx certain se lit « issue inconnue »), choix C-e343-12 : rien à faire.
+  - **Tendance** : P1 2 M / 7 L → remédiation. Les deux défauts nés de la remédiation (montage de B-3, coupure de A-1) ont été
+    vus par le gate, non par une revue : la **P2 complète (Opus)** relit d'abord `c7251f56` et `69855016`, prompt
+    `34-8-fournisseur-relecture-apres-commit-review-prompt-p2.md`.
+  - Gates au commit `69855016`, voir *Gates de la remédiation P1* au Dev Agent Record.
 
 ## Dev Agent Record
 
@@ -426,7 +460,33 @@ Opus 5.5 (claude-opus-5-5), en autonomie, sous le prompt `kesh-gate-logs/prompts
 - **Capture** (thème clair) : `kesh-gate-logs/e348/captures/e348-paiement-issue-inconnue.png`, l'encadré `verify` après un
   paiement coupé, la fiche relue « Payée », sans *Payer*. ⚠️ L'état `reread-failed` n'a **pas** de capture : il n'est
   exercé que par Vitest. Le dossier reçoit aussi les captures des autres specs, la variable `KESH_E2E_CAPTURES_DIR` valant
-  pour toute la suite.
+  pour toute la suite. *(Relevé de la livraison du 2026-11-11 ; complété par la remédiation P1, ci-dessous.)*
+
+### Gates de la remédiation P1
+
+- Au commit `c7251f56` (`gates-p1.out`) : gate ciblé 135/136, `test-fast` 5154/5155, `gate-ci` 4572 passés et 1 échec — le
+  même test, `commit_with_view_rolls_back_when_the_view_cannot_be_read`, refusé au montage par
+  `chk_supplier_invoices_entry_iff_not_draft` ; frontend vert (2902/2902) ; E2E 387 passés, **9 échecs** : les sept de la
+  KF-029, la spec neuve `supplier-invoice-unknown-outcome.spec.ts:145` (relecture coupée, rejouée par le client) et
+  `date-filtre-frappe.spec.ts:86` (`locator.pressSequentially: Target crashed`, plantage du navigateur ; repasse au run
+  suivant, ci-dessous).
+- **Au commit `69855016`, dernier commit de code** (`gates-p1b.out`, puis la voie frontend) :
+  - gate ciblé (5 binaires) **136/136** ; `scripts/test-fast.sh --ci`, bases remises à neuf : **5155/5155**, 12 ignorés ;
+  - `cargo build --workspace --all-targets` vert ; `scripts/gate-ci.sh kesh_ci_e348` : **5162 passés, 0 échoué, 16 ignorés** ;
+  - frontend, par `.gate-front.lock` : `check` 0 erreur, `lint-i18n-ownership` vert, `test:unit` **2902/2902** (223
+    fichiers), `build` vert. Ma commande `npm run check` avait d'abord été mise en file dans la voie base ; je l'ai arrêtée
+    avant son démarrage pour la relancer dans la voie frontend ;
+  - **E2E complet**, base `kesh_e2e_e348` recréée vide : **389 passés, 7 échecs, 17 ignorés**. Les sept échecs, nommés un par
+    un : `mode-expert.spec.ts:26`, `:41`, `onboarding-path-b.spec.ts:65`, `:92`, `onboarding.spec.ts:57`, `:77`, `:150`,
+    ceux de la KF-029 (#97). Les trois tests de `supplier-invoice-unknown-outcome.spec.ts` passent. `ss` avant et après :
+    vides.
+- **Mutation M7** : rouge sur le témoin (`left: 1`, `right: 0`), restaurée (`mut/M7.log`).
+- **Captures** (thème clair), `kesh-gate-logs/e348/captures/` :
+  - `e348-paiement-issue-inconnue.png` : encadré « vérifiez », fiche relue « Payée » ;
+  - `e348-relecture-en-echec.png` : encadré « rechargez la page ». La fiche reste celle d'avant (« Validée », *Payer*
+    offert), et le bandeau « Base de données temporairement indisponible » vient de la coupure du `POST`. Un second clic
+    serait refusé (statut changé) : pas d'état bloquant, C-e343-12 ;
+  - `e348-selecteur-issue-inconnue.png` : le sélecteur reste ouvert sur l'issue inconnue, sans encadré.
 
 ### File List
 
