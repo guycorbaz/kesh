@@ -83,3 +83,27 @@ au registre du groupe, `e34-choix-autonomes-e343.md` (C-e343-1 à 5 et 13). Mise
 - **Retenu.** Un `GET /api/v1/invoices/{id}` avant le `POST`, comme un client. Les autres corps du fichier lisent la
   version en base par `common::invoice_version`.
 - **Réversible.** Oui.
+
+## C-e345-10 — échéancier : tout chargement réussi lève l'état bloquant (revue P1, E1-5 = B1-3)
+
+- **Contexte.** Une relecture d'après un règlement (issue inconnue ou 409) supplantée par un chargement de filtre rendait
+  `false` : l'écran restait bloqué et disait « la liste n'a pas pu être relue » sur une liste fraîche. Motif hérité de la
+  33-6 pour `blocked`.
+- **Retenu.** `load()`, sur un succès qui n'est pas supplanté, fait passer `blocked` à `verify` et `conflict-blocked` à
+  `conflict`. Une liste relue avec succès, quel qu'en soit le filtre, porte des montants et des versions frais : c'est la
+  condition que l'état bloquant attendait. `rereadAfterSettle` garde sa propre transition, désormais redondante.
+- **Conséquence.** Après une relecture en échec, un changement de filtre réussi rouvre aussi le geste, sans passer par
+  *Relire* ; jusqu'ici, *Relire* était le seul moyen.
+- **Écartée.** Un `load()` à trois issues (réussi, supplanté, en échec) : plus long, et il faudrait encore attendre le
+  chargement qui supplante.
+- **Réversible.** Oui.
+
+## C-e345-11 — échéancier : la fermeture d'un dialogue ouvert sur une autre ligne n'est pas changée ici (revue P1, E1-6)
+
+- **Contexte.** Dans les trois branches de `handleSettleConfirm` (succès, issue inconnue, 409), `markOpen = false` et
+  `markTarget = null` ferment le dialogue courant, même s'il a été rouvert sur une autre ligne pendant l'attente. Le
+  comportement est hérité de la 33-6, et la 34-5 ne l'a fait que reprendre dans sa branche neuve.
+- **Retenu.** Corriger le commentaire inexact de la branche 409, sans changer le comportement des trois branches. Une
+  issue est demandée.
+- **Écartée.** Ne fermer que si `markTarget === cible` dans la seule branche 409 : les trois branches divergeraient.
+- **Réversible.** Oui.

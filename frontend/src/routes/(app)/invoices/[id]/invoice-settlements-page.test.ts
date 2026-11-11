@@ -264,9 +264,10 @@ describe("fiche facture — créer un avoir sur une facture réglée (Story 25-4
   });
 });
 
-// Revue P1 de la 33-6 (E-4 = A-4) : sans réponse, le règlement a pu être écrit. Depuis la
-// Story 34-5 (#951), le serveur refuse un second envoi (le POST porte la version) ; l'écran
-// relit encore, pour montrer ce qui est écrit et tenir une version fraîche (C-e343-5).
+// Revue P1 de la 33-6 (E-4 = A-4) : sans réponse, le règlement a pu être écrit. L'écran relit
+// pour montrer ce qui est écrit ; un clic après la relecture part avec la version fraîche et
+// est un nouveau règlement, accepté. Le serveur ne refuse qu'un envoi sans relecture
+// (Story 34-5, #951 ; C-e343-5).
 describe("fiche facture — règlement à l'issue inconnue", () => {
   const aRegler = () => invoice({ paidAt: null, amountSettled: "0.00", amountDue: "100.00" });
 
@@ -514,5 +515,40 @@ describe("fiche facture — règlement à une version périmée", () => {
     expect(r.getByTestId("settle-confirm")).toBeTruthy();
     expect(r.queryByTestId("settle-conflict")).toBeNull();
     expect(getInvoiceMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("revue P1 (E1-7) : issue inconnue relue avant l'écriture, puis 409 au clic suivant : l'avis de conflit remplace l'issue inconnue", async () => {
+    settleMock
+      .mockRejectedValueOnce({ code: "TIMEOUT", status: 0, message: "Pas de réponse." })
+      .mockRejectedValueOnce(conflit);
+    const r = render(Page);
+    await ouvrirEtRegler(r);
+    // Relue avant que le serveur ait écrit : version inchangée, état `verify`.
+    await r.findByTestId("settle-unknown-outcome");
+    await waitFor(() =>
+      expect((r.getByTestId("settle-open") as HTMLButtonElement).disabled).toBe(false),
+    );
+    // Le serveur écrit entre-temps ; le clic suivant part avec la version relue (3), refusée.
+    getInvoiceMock.mockResolvedValue(aRegler({ version: 4 }));
+    await ouvrirEtRegler(r);
+    await r.findByTestId("settle-conflict");
+    expect(r.queryByTestId("settle-unknown-outcome")).toBeNull();
+    expect((settleMock.mock.calls[1][1] as { version: number }).version).toBe(3);
+    await waitFor(() =>
+      expect((r.getByTestId("settle-open") as HTMLButtonElement).disabled).toBe(false),
+    );
+  });
+
+  it("revue P1 (E1-4) : une annulation en échec relit aussi la facture, pour ne pas régler à une version périmée", async () => {
+    getInvoiceMock.mockResolvedValue(
+      aRegler({ amountSettled: "100.00", amountDue: "0.00", paidAt: "2026-03-05T00:00:00" }),
+    );
+    listSettlementsMock.mockResolvedValue([reglement]);
+    cancelSettlementMock.mockRejectedValue({ code: "INTERNAL_ERROR", status: 500, message: "x" });
+    const r = render(Page);
+    await fireEvent.click(await r.findByTestId("invoice-settlement-cancel"));
+    await fireEvent.click(r.getByTestId("invoice-settlement-cancel-confirm"));
+    await waitFor(() => expect(cancelSettlementMock).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(getInvoiceMock).toHaveBeenCalledTimes(2));
   });
 });

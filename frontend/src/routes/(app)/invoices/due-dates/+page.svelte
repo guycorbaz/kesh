@@ -217,6 +217,12 @@
 			items = res.items;
 			total = res.total;
 			summary = res.summary;
+			// Story 34-5 (revue P1, E1-5) : toute liste relue avec succès lève l'état
+			// bloquant, y compris le chargement d'un filtre qui a supplanté la relecture
+			// d'après un règlement — sans quoi l'avis dirait « n'a pas pu être relue » sur
+			// une liste fraîche. L'arrivée suit l'origine, comme `rereadFromBlocked`.
+			if (settleOutcome === 'blocked') settleOutcome = 'verify';
+			else if (settleOutcome === 'conflict-blocked') settleOutcome = 'conflict';
 			return true;
 		} catch (err) {
 			if (seq !== loadSeq) return false;
@@ -311,7 +317,8 @@
 			} else if (isApiError(err) && err.code === 'OPTIMISTIC_LOCK_CONFLICT') {
 				// Story 34-5 (C-e343-4) : la facture a changé, rien n'a été écrit. Le
 				// dialogue se ferme et la liste est relue ; l'avis nomme la facture
-				// d'après `cible`, capturée avant l'envoi (`markTarget` vaut `null` ici).
+				// d'après `cible`, capturée avant l'envoi : `markTarget` peut désigner une
+				// autre ligne ouverte pendant l'attente, et il est remis à `null` ci-dessous.
 				settleUnknownNumber = cible.invoiceNumber;
 				markOpen = false;
 				markTarget = null;

@@ -444,6 +444,81 @@ async fn la_version_se_controle_apres_le_statut_et_avant_le_reste(pool: MySqlPoo
     }
 }
 
+/// Story 34-5, revue P1 (E1-2, E1-3, A1-3) : les bornes de la comparaison et les
+/// refus qui l'entourent.
+/// - Une version **supérieure** à celle de la base est refusée comme une version
+///   périmée : la comparaison est une égalité, non un ordre.
+/// - Le montant non positif est refusé **avant** la transaction, même à une version
+///   périmée.
+/// - L'écart d'arrondi sans compte d'arrondi vient **après** la version.
+/// - Une facture inconnue, ou d'une autre société, rend `NotFound` et non un
+///   conflit, quelle que soit la version : un 409 dirait qu'elle existe.
+#[sqlx::test(migrations = "./test-schema")]
+async fn la_version_est_une_egalite_et_ses_voisins_gardent_leur_ordre(pool: MySqlPool) {
+    let seeded = seed_accounting_company(&pool).await.expect("seed");
+    let par_caisse = SettlementChoice::InternalAccount {
+        account_id: seeded.accounts["1000"],
+    };
+    let le = ymd(2026, 3, 5);
+    let regler = |inv: i64, company: i64, amount: Decimal, version: i32| {
+        let pool = pool.clone();
+        let user = seeded.admin_user_id;
+        async move {
+            invoice_settlements_write::settle_invoice(
+                &pool, user, company, inv, par_caisse, amount, le, version,
+            )
+            .await
+            .expect_err("refusé")
+        }
+    };
+    let inv_id = validated_invoice(&pool, &seeded, dec!(100.00), ymd(2026, 3, 1)).await;
+    let courante = version_de(&pool, inv_id).await;
+    let avant = empreinte_reglement(&pool, inv_id).await;
+
+    // E1-2 : une version future.
+    let err = regler(inv_id, seeded.company_id, dec!(10.00), courante + 1).await;
+    assert!(
+        matches!(err, DbError::OptimisticLockConflict),
+        "future : {err:?}"
+    );
+
+    // A1-3 : le montant nul, avant la transaction, à une version périmée.
+    let err = regler(inv_id, seeded.company_id, Decimal::ZERO, courante - 1).await;
+    assert!(
+        matches!(&err, DbError::InvalidInput(m) if m == "amountMustBePositive"),
+        "montant nul : {err:?}"
+    );
+
+    // E1-3 : facture inconnue, puis facture d'une autre société.
+    for (inv, company, cas) in [
+        (inv_id + 9999, seeded.company_id, "inconnue"),
+        (inv_id, seeded.company_id + 9999, "autre société"),
+    ] {
+        let err = regler(inv, company, dec!(10.00), 1).await;
+        assert!(matches!(err, DbError::NotFound), "{cas} : {err:?}");
+    }
+    assert_eq!(
+        empreinte_reglement(&pool, inv_id).await,
+        avant,
+        "rien n'est écrit"
+    );
+
+    // A1-3 : l'écart d'arrondi sans compte d'arrondi, refusé après la version.
+    // Témoin d'abord : à la bonne version, c'est bien ce refus-là.
+    let brut = validated_invoice(&pool, &seeded, dec!(10.0050), ymd(2026, 3, 1)).await;
+    let v = version_de(&pool, brut).await;
+    let err = regler(brut, seeded.company_id, dec!(10.01), v).await;
+    assert!(
+        matches!(err, DbError::RoundingAccountNotConfigured { .. }),
+        "témoin d'arrondi : {err:?}"
+    );
+    let err = regler(brut, seeded.company_id, dec!(10.01), v - 1).await;
+    assert!(
+        matches!(err, DbError::OptimisticLockConflict),
+        "arrondi à une version périmée : {err:?}"
+    );
+}
+
 /// ⛔ **Un compte ARCHIVÉ est refusé.** Régler sur un compte qu'aucun écran ne
 /// montre plus produirait une écriture invisible.
 #[sqlx::test(migrations = "./test-schema")]

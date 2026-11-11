@@ -156,12 +156,13 @@ au registre.
 
 ## Tâches
 
-- [ ] **T1 — rouge d'abord**, journalisé dans `kesh-gate-logs/e343/rouges.log`.
+- [x] **T1 — rouge d'abord**, journalisé dans `kesh-gate-logs/e345/rouges.log` (clé du développement ; la fiche disait
+  `e343`, corrigé à la revue P1, A1-4).
   - Test HTTP de l'AC-2 dans `crates/kesh-api/tests/invoice_settlement_response_e2e.rs`, ou dans un fichier neuf
     `invoice_settlement_idempotence_e2e.rs` : rouge **à l'exécution** (deux 200).
   - Test `kesh-db` de l'AC-4 dans `crates/kesh-db/tests/invoice_settlement.rs` : version périmée → `OptimisticLockConflict`,
     rien d'écrit, version inchangée. Rouge à la compilation, faute de paramètre.
-- [ ] **T2 — `kesh-db`.**
+- [x] **T2 — `kesh-db`.**
   - `settle_invoice(…, expected_version: i32)`. La colonne `version` s'ajoute au `SELECT … FOR UPDATE` de l'étape (1), et la
     comparaison suit la garde de statut. `#[allow(clippy::too_many_arguments)]` si nécessaire, comme `write_off_invoice`.
   - Les appelants en test passent la version lue, par **une aide par crate de test** (C-e343-13), et non par 31 lectures
@@ -185,9 +186,9 @@ au registre.
   - `kesh-report` est touché : le gate ciblé `kesh-db`/`kesh-api` ne le compile pas. Lancer
     `cargo build --workspace --all-targets`.
   - ⚠️ `kesh-db` est touché : **gate complet même en cours de boucle** (exception `kesh-db` du `CLAUDE.md`).
-- [ ] **T3 — route.** `SettleInvoiceRequest.version: i32`, passée à `into_parts` ou à côté, et doc-comments (AC-9). Les
+- [x] **T3 — route.** `SettleInvoiceRequest.version: i32`, passée à `into_parts` ou à côté, et doc-comments (AC-9). Les
   corps de test Rust qui postent un règlement (liste ci-dessus, recensée à nouveau) portent la version.
-- [ ] **T4 — AC-3, montage déterministe** (validation P2, 34-5-F2), sur le patron de `victime`
+- [x] **T4 — AC-3, montage déterministe** (validation P2, 34-5-F2), sur le patron de `victime`
   (`rejeu_interblocage_e2e.rs:346-367`) :
   1. une transaction de test tient la facture par `SELECT … FROM invoices WHERE id = ? FOR UPDATE` ;
   2. les deux requêtes partent, avec la même version ;
@@ -202,7 +203,7 @@ au registre.
   (Story 30-1a), visible de `kesh-api/tests` par `kesh_db::test_fixtures` (`rejeu_interblocage_e2e.rs:47`). Validation P3,
   34-5-F1. ⚠️ Reste **à établir à l'étape 0** : ce que rend `PROCESSLIST` sous ce montage à deux requêtes. Si le montage ne
   peut pas être tenu, le dire au Change Log, et M2 est déclarée non prouvée.
-- [ ] **T5 — frontend.**
+- [x] **T5 — frontend.**
   - `SettleInvoiceRequest.version: number` ; la fiche et l'échéancier l'envoient.
   - `settleOutcome` gagne deux états, `conflict` (relu, rien d'enregistré) et `conflict-blocked` (pas relu). Les clés i18n,
     aux **quatre** locales, chacune avec un repli Svelte identique :
@@ -221,13 +222,13 @@ au registre.
   - Tests Vitest : `invoice-settlements-page.test.ts`, et le test de l'échéancier. On vérifie la version envoyée, puis le 409
     (dialogue fermé, relecture, avis), puis un 400 (dialogue ouvert).
   - Les spécifications Playwright qui postent un règlement portent la version.
-- [ ] **T6 — E2E** de l'AC-2 à l'écran. On règle 100 depuis la fiche. Un second `POST` part par `authedApiContext` avec la
+- [x] **T6 — E2E** de l'AC-2 à l'écran. On règle 100 depuis la fiche. Un second `POST` part par `authedApiContext` avec la
   version d'avant : il rend 409. La fiche affiche un seul règlement. Puis l'avis de conflit, provoqué par un règlement passé
   par l'API pendant que le dialogue est ouvert.
-- [ ] **T7 — textes et outillage** : AC-9 à AC-12 ; les PDF des deux manuels sont régénérés et contrôlé aplati
+- [x] **T7 — textes et outillage** : AC-9 à AC-12 ; les PDF des deux manuels sont régénérés et contrôlé aplati
   (`pdftotext … | tr '\n' ' ' | tr -s ' '`, « Rien n'empêchant » absent).
-- [ ] **T8 — captures** : l'avis de conflit sur la fiche et sur l'échéancier, en thème clair, sur une base jetable, dans
-  `kesh-gate-logs/e343/captures/`.
+- [x] **T8 — captures** : l'avis de conflit sur la fiche et sur l'échéancier, en thème clair, sur une base jetable, dans
+  `kesh-gate-logs/e345/captures/` (clé du développement ; `e343` corrigé à la revue P1, A1-4).
 
 ### Mutations nommées
 

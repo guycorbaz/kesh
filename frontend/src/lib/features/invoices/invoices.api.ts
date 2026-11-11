@@ -138,9 +138,10 @@ export async function listDueDates(query: DueDatesQuery = {}): Promise<DueDatesR
  *
  * ⛔ **La `version` de la facture est exigée** (Story 34-5, #951) : le serveur la
  * compare sous verrou et refuse en `409 OPTIMISTIC_LOCK_CONFLICT` un règlement
- * lancé sur une facture qui a changé — second envoi après une réponse perdue,
- * second onglet, relance d'une intégration. L'appelant relit alors la facture
- * avant tout nouvel essai. Le refus du trop-perçu reste le garde de la somme.
+ * lancé sur une facture qui a changé sans relecture — corps renvoyé après une
+ * réponse perdue, second onglet, relance d'une intégration. L'appelant relit alors
+ * la facture avant tout nouvel essai ; un envoi à la version relue est un nouveau
+ * règlement, accepté. Le refus du trop-perçu reste le garde de la somme.
  */
 export async function settleInvoice(
 	id: number,

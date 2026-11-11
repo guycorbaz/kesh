@@ -382,6 +382,81 @@ describe("échéancier — règlement à une version périmée", () => {
     expect(r.queryByTestId("due-dates-settle-conflict-reread")).toBeNull();
   });
 
+  it("revue P1 (E1-7) : après un conflit relu, le règlement suivant part avec la version de la ligne relue", async () => {
+    listDueDatesMock
+      .mockResolvedValueOnce(response([item()]))
+      .mockResolvedValue(response([item({ version: 4 })]));
+    settleMock.mockRejectedValueOnce(conflit);
+    const r = await regler();
+    await r.findByTestId("due-dates-settle-conflict");
+    await waitFor(() =>
+      expect((r.getByTestId("due-dates-settle-5") as HTMLButtonElement).disabled).toBe(false),
+    );
+    settleMock.mockResolvedValueOnce({ invoice: {}, fullySettled: false });
+    await fireEvent.click(r.getByTestId("due-dates-settle-5"));
+    await fireEvent.change(await r.findByTestId("settle-type"), {
+      target: { value: "internal_account" },
+    });
+    await fireEvent.change(await r.findByTestId("settle-account"), { target: { value: "1" } });
+    await fireEvent.click(r.getByTestId("settle-confirm"));
+    await waitFor(() => expect(settleMock).toHaveBeenCalledTimes(2));
+    expect(settleMock.mock.calls[0][1]).toMatchObject({ version: 3 });
+    expect(settleMock.mock.calls[1][1]).toMatchObject({ version: 4 });
+  });
+
+  // Revue P1 (A1-2). Sur l'échéancier, `conflict-blocked` ne coexiste jamais avec une ligne
+  // affichée : la liste est masquée pendant la relecture (`{#if loading}`), vidée si elle
+  // échoue, et un chargement réussi lève l'état (C-e345-10). La garantie qui compte — aucun
+  // « Régler » sur une liste qui n'a pas été relue — se prouve donc par l'absence du geste ;
+  // le `disabled` de `settleBlocked` n'y est pas observable (mutation M7, équivalente).
+  it("revue P1 (A1-2) : pendant la relecture d'après un 409, aucun « Régler » n'est offert", async () => {
+    let rendre: (v: unknown) => void = () => {};
+    listDueDatesMock
+      .mockResolvedValueOnce(response([item()]))
+      .mockReturnValue(new Promise((resolve) => (rendre = resolve)));
+    settleMock.mockRejectedValue(conflit);
+    const r = await regler();
+    await waitFor(() =>
+      expect(r.getByTestId("due-dates-settle-conflict").textContent).toContain(
+        "la liste n’a pas pu être relue",
+      ),
+    );
+    expect(r.queryByTestId("due-dates-settle-5")).toBeNull();
+    rendre(response([item({ version: 4 })]));
+    await waitFor(() =>
+      expect((r.getByTestId("due-dates-settle-5") as HTMLButtonElement).disabled).toBe(false),
+    );
+    expect(r.getByTestId("due-dates-settle-conflict").textContent).toContain(
+      "La liste a été relue",
+    );
+  });
+
+  it("revue P1 (E1-5) : une relecture supplantée par un filtre réussi lève l'état bloquant", async () => {
+    let rendreRelecture: (v: unknown) => void = () => {};
+    listDueDatesMock
+      .mockResolvedValueOnce(response([item()]))
+      .mockReturnValueOnce(new Promise((resolve) => (rendreRelecture = resolve)))
+      .mockResolvedValue(response([item({ version: 4 })]));
+    settleMock.mockRejectedValue(conflit);
+    const r = await regler();
+    await r.findByTestId("due-dates-settle-conflict");
+    // Pendant la relecture, un autre filtre part et réussit : il la supplante.
+    await fireEvent.click(r.getByRole("tab", { name: "Toutes" }));
+    await waitFor(() =>
+      expect(r.getByTestId("due-dates-settle-conflict").textContent).toContain(
+        "La liste a été relue",
+      ),
+    );
+    expect((r.getByTestId("due-dates-settle-5") as HTMLButtonElement).disabled).toBe(false);
+    // La relecture supplantée qui rend enfin sa réponse ne change plus rien.
+    rendreRelecture(response([item({ version: 3 })]));
+    await waitFor(() =>
+      expect(r.getByTestId("due-dates-settle-conflict").textContent).toContain(
+        "La liste a été relue",
+      ),
+    );
+  });
+
   it("409 puis liste illisible : `conflict-blocked`, puis « Relire » mène au conflit, non à l'issue inconnue", async () => {
     settleMock.mockRejectedValue(conflit);
     const r = render(Page);

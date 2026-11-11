@@ -10,8 +10,9 @@ import {
  * Revue P1 de la Story 33-6 (E-4 = A-4) : la réponse d'un règlement coupée APRÈS
  * l'écriture. Le serveur écrit, le navigateur ne le sait pas : l'écran ne doit pas
  * laisser le même geste à portée de clic. Depuis la Story 34-5 (#951), le POST porte
- * la version et le serveur refuserait le second envoi (409) ; l'écran relit encore,
- * pour montrer ce qui est écrit (`invoices-settle-version.spec.ts`).
+ * la version et le serveur refuse un renvoi sans relecture (409) ; l'écran relit, pour
+ * montrer ce qui est écrit, et un clic après cette relecture est un nouveau règlement,
+ * accepté (`invoices-settle-version.spec.ts`).
  *
  * La coupure est réelle : `route.fetch()` envoie la requête au serveur, puis
  * `route.abort()` jette sa réponse.

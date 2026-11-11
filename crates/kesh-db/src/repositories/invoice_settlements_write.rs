@@ -87,18 +87,20 @@ async fn read_after_write_in_tx(
 /// — l'écriture serait `D 1100 / C 1100`, équilibrée, et le reste dû baisserait
 /// sans que rien ne bouge au grand livre.
 ///
-/// ⛔ **Un second envoi du même règlement est refusé** (Story 34-5, #951) :
-/// `expected_version` est la version de la facture que l'appelant a lue. Elle
-/// est comparée **sous le verrou** de l'étape (1), et tout règlement l'incrémente,
-/// partiel compris : un renvoi après une réponse perdue, un second onglet ou la
-/// relance d'une intégration portent l'ancienne version et sont refusés en
-/// `OptimisticLockConflict`, sans rien écrire. Un envoi concurrent attend le
+/// ⛔ **Un second envoi du même règlement sans relecture est refusé** (Story
+/// 34-5, #951) : `expected_version` est la version de la facture que l'appelant a
+/// lue. Elle est comparée **sous le verrou** de l'étape (1), et tout règlement
+/// l'incrémente, partiel compris : un renvoi aveugle après une réponse perdue, un
+/// second onglet ou la relance d'une intégration portent l'ancienne version et
+/// sont refusés en `OptimisticLockConflict`, sans rien écrire. Un envoi à la
+/// version relue est un nouveau règlement, accepté. Un envoi concurrent attend le
 /// verrou du premier, puis lit la version qu'il a validée. Le rejeu sur
 /// interblocage reste sûr : une tentative annulée laisse la version intacte. Le
 /// refus du trop-perçu, lui, reste le garde de la **somme** de règlements
 /// successifs et légitimes, chacun à la version rendue par le précédent.
 ///
-/// **Ordre des refus**, celui des lectures : statut ; **version** ; date ;
+/// **Ordre des refus**, celui des lectures : facture inconnue ou d'une autre
+/// société (`NotFound`, lue par le même verrou) ; statut ; **version** ; date ;
 /// créance (lue sur la vente) ; **contrepartie** — compte bancaire inconnu
 /// (404), sans compte lié (`CONFIGURATION_REQUIRED`), compte interne archivé ou
 /// inconnu (`INACTIVE_OR_INVALID_ACCOUNTS`), non imputable

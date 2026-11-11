@@ -8,8 +8,8 @@ import {
 import { invoiceVersionViaApi } from "./helpers/api-fixtures";
 
 /**
- * Story 34-5 (#951) — un second envoi du même règlement n'écrit pas un second
- * règlement. `POST /invoices/{id}/settlements` porte la version de la facture ; une
+ * Story 34-5 (#951) — un second envoi du même règlement sans relecture n'écrit pas un
+ * second règlement. `POST /invoices/{id}/settlements` porte la version de la facture ; une
  * version périmée rend `409 OPTIMISTIC_LOCK_CONFLICT`, sans rien écrire, et l'écran
  * ferme le dialogue, relit, et dit que le règlement n'a pas été enregistré.
  *

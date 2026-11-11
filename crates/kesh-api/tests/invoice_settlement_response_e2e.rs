@@ -581,6 +581,21 @@ async fn two_simultaneous_identical_settlements_write_one(pool: MySqlPool) {
     assert_one_settlement_of_100(&app, &pool, id).await;
 }
 
+/// Revue P1 (E1-3) : une facture inconnue rend `404`, et non `409`, quelle que soit la
+/// version envoyée — un conflit dirait au client que la facture existe.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn an_unknown_invoice_is_not_found_whatever_the_version(pool: MySqlPool) {
+    let (app, id) = setup(&pool, dec!(300.00)).await;
+    for version in [0, 1, 99] {
+        let (status, body) = app
+            .settle_with(id + 9999, "100.00", Some(json!(version)))
+            .await;
+        assert_eq!(status, 404, "version {version} : {body}");
+        assert_eq!(body["error"]["code"], "NOT_FOUND");
+    }
+    assert_eq!(settlement_traces(&pool, id).await, (0, 0, 0));
+}
+
 /// AC-6 : la réponse porte la version incrémentée, et un règlement qui la reprend
 /// passe — deux acomptes successifs depuis le même écran restent possibles. Le
 /// refus du trop-perçu borne toujours la somme.

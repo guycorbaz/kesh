@@ -42,11 +42,13 @@ export function isUnknownOutcome(err: unknown): boolean {
  * toute erreur qui n'est pas une `ApiError`.
  *
  * Une panne pendant le `COMMIT` remonte en 503 alors que la base a pu le valider. Depuis
- * la Story 34-5 (#951), le POST porte la version de la facture et le serveur refuse en
- * 409 un second envoi : un second clic n'écrit plus de second règlement. La relecture
- * reste due, pour tenir une version fraîche (sans elle, le clic suivant rendrait 409) et
- * montrer ce qui a été écrit (C-e343-5). Seul un 4xx, refus certain, laisse le dialogue
- * ouvert — sauf le 409 de version, que l'écran traite à part.
+ * la Story 34-5 (#951), le POST porte la version de la facture, et le serveur refuse en
+ * 409 un envoi à la version d'avant, c'est-à-dire un renvoi **sans relecture**. Après
+ * une issue inconnue, l'écran relit : il montre le règlement s'il est passé, et tient la
+ * version fraîche. Un clic après cette relecture est donc un nouveau règlement, que le
+ * serveur accepte : c'est l'avis d'issue inconnue qui protège alors, non la version
+ * (C-e343-5). Seul un 4xx, refus certain, laisse le dialogue ouvert — sauf le 409 de
+ * version, que l'écran traite à part.
  *
  * Une exception levée après un succès (P2-7) se lit donc aussi « issue inconnue » :
  * c'est sans danger, la relecture montre l'écriture.

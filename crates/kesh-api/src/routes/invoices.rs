@@ -987,7 +987,7 @@ pub struct DueDatesResponse {
 // supprimés avec leurs routes (Story 24-3, #372).** `validate_version` ne
 // servait qu'à ces deux-là. Depuis la Story 34-5 (#951), le règlement exige la
 // `version` de la facture (`SettleInvoiceRequest`), comparée sous verrou par le
-// repository : un second envoi du même règlement est refusé en 409.
+// repository : un second envoi du même règlement sans relecture est refusé en 409.
 
 /// La demande de l'échéancier, depuis les paramètres de la route — **une**
 /// conversion, partagée par la page et par l'export CSV (C-32-4b-4) ; la
@@ -1054,10 +1054,11 @@ pub async fn list_due_dates_handler(
 ///
 /// ⛔ **`version` est exigée** (Story 34-5, #951) : la version de la facture que
 /// le client a lue. Elle est comparée sous le verrou de la facture, et tout
-/// règlement l'incrémente : un second envoi du même règlement — réponse perdue,
-/// second onglet, relance d'une intégration — porte l'ancienne et rend
-/// `409 OPTIMISTIC_LOCK_CONFLICT` sans rien écrire. Le client relit alors la
-/// facture par `GET` avant de relancer. Un corps sans `version` est refusé par
+/// règlement l'incrémente : un second envoi du même règlement sans relecture —
+/// corps renvoyé après une réponse perdue, second onglet, relance d'une
+/// intégration — porte l'ancienne et rend `409 OPTIMISTIC_LOCK_CONFLICT` sans
+/// rien écrire. Le client relit alors la facture par `GET` avant de relancer ; un
+/// envoi à la version relue est un nouveau règlement, accepté. Un corps sans `version` est refusé par
 /// l'extracteur (422). Le refus du trop-perçu, calculé sous verrou, reste le
 /// garde de la somme de règlements successifs.
 #[derive(Deserialize)]

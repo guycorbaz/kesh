@@ -231,7 +231,15 @@
 			await loadSettlements();
 		} catch (err) {
 			cancelError = isApiError(err) ? err.message : i18nMsg('common-error', 'Erreur inattendue');
-			// L'état a pu changer (autre onglet, rapprochement entre-temps) : relire.
+			// L'état a pu changer (autre onglet, rapprochement entre-temps) : relire. La
+			// facture aussi (Story 34-5, revue P1, E1-4) : une annulation écrite malgré une
+			// réponse perdue a incrémenté la version, et le règlement suivant partirait
+			// avec l'ancienne (409). Un échec de cette relecture laisse la fiche telle quelle.
+			try {
+				invoice = await getInvoice(id);
+			} catch {
+				// La fiche garde la facture affichée ; un 409 ultérieur la relira.
+			}
 			await loadSettlements();
 		} finally {
 			cancelSubmitting = false;
@@ -459,9 +467,10 @@
 	let markOpen = $state(false);
 	let markSubmitting = $state(false);
 	let markError = $state('');
-	// Revue P1 de la 33-6 (E-4 = A-4) : sans réponse, le règlement a pu être écrit. Le
-	// serveur refuse un second envoi (Story 34-5, #951 : le POST porte la version), mais
-	// l'écran doit relire pour montrer ce qui est écrit et tenir une version fraîche.
+	// Revue P1 de la 33-6 (E-4 = A-4) : sans réponse, le règlement a pu être écrit. L'écran
+	// relit pour montrer ce qui est écrit, et tient alors la version fraîche : un clic après
+	// la relecture est un nouveau règlement, que le serveur accepte. Le serveur ne refuse
+	// qu'un envoi sans relecture (Story 34-5, #951 : le POST porte la version).
 	// `verify` : relu, à vérifier ; `blocked` : pas encore relu, le geste reste fermé.
 	// Story 34-5 — après un 409 de version, rien n'a été écrit : `conflict` (relu) et
 	// `conflict-blocked` (pas relu), dont les textes ne disent pas « issue inconnue ».
