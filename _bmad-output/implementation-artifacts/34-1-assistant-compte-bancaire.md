@@ -1,6 +1,6 @@
 # Story 34-1 : l'assistant de démarrage pose la description et le compte comptable du compte bancaire (#966)
 
-Status: review
+Status: done
 
 *Fiche rédigée le 2026-11-10 en autonomie (Opus 5.5), worktree `/home/gcorbaz/devel/kesh-e34`, branche `chore/epic-34-kickoff`,
 numéros de ligne de `a75835db`. Release **0.17.6**, Epic 34. **Aucune migration.** Registre : `e34-choix-autonomes-e341.md`,
@@ -244,6 +244,24 @@ atteint l'assistant). Ordre : 34-1, puis 34-2, puis 34-11a1, 34-11a2.
       7 échecs, 18 ignorés** — les sept de la KF-029 (#97), comme au premier run ; la spec neuve passe ; frontend construit à
       `db384e12` (même code que `c1ddc068`) ;
     - captures refaites (`captures-r2.log`) : la 03 montre la phrase de l'étape suivie du motif du client.
+  - *Annoté le 2026-11-12 (passe ciblée P2, C-3)* : M10 n'est pas « équivalente » au sens strict ; elle est **non observable par
+    les tests** — elle ajoute un verrou sur deux lignes que la finalisation reverrouille. Les deux mentions « équivalente » de cette
+    entrée, ci-dessus, sont à lire ainsi.
+  - *Annoté le 2026-11-12* : issues ouvertes par l'orchestrateur pour les renvois — B-3 = E-4 → **#1002**, E-2 → **#1003**,
+    E-5 → **#1004**, B-4 → **#1005** ; E-6 versé à **#987**.
+- 2026-11-12 : **revue de code P2, passe ciblée** (Sonnet, une lentille, sur le seul commit `7368944b` ; prompt
+  `34-1-assistant-compte-bancaire-review-prompt-p2-ciblee.md`, rapport `kesh-gate-logs/e3401-review-p2-ciblee.md`) :
+  **0 au-dessus de LOW** (C-1 à C-3, LOW). Remédiation sans aucune ligne de production :
+  - **C-1** : M14 scindée et rejouée sous le verrou (`mut/M14a.log`, `M14b.log`, restauration `git checkout --` + `touch`).
+    **M14a** (garde de la touche Entrée seule retirée) **tuée** par « l'étape ne s'envoie pas avant la fin du chargement »
+    (« expected vi.fn() to not be called ») ; **M14b** (`disabled` seul retiré) **tuée** par le même test, sur son assertion du
+    bouton (« expected false to be true »). Aucun test à ajouter.
+  - **C-2** : l'écran n'est pas touché ; Entrée ignorée sans retour visuel pendant le chargement → **#1006** (ouverte par
+    l'orchestrateur).
+  - **C-3** : annotation datée ci-dessus (M10).
+  - **Tendance de la boucle** : P1 (Sonnet, trois lentilles B, E, A) **0 C / 0 H / 0 M / 17 L** → remédiation `7368944b` → P2
+    ciblée (Sonnet) **0 C / 0 H / 0 M / 3 L**. Boucle **terminée** sur une passe sans finding au-dessus de LOW, dont la
+    remédiation ne touche aucune ligne de production. Story **done**.
 
 ## Dev Agent Record
 
