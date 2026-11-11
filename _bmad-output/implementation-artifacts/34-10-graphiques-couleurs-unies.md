@@ -298,6 +298,24 @@ Aucun fichier de code commun avec les autres stories de l'Epic 34. `user-manual.
     commit de code, voir l'entrée de la P4.)*
   - Trend : P1 1 M / 7 L → P2 2 M / LOW → P3 0 M / 7 L → **P4 ciblée** (une lentille, sur `ce42fd4a` seul, prompt
     `34-10-graphiques-couleurs-unies-review-prompt-p4-ciblee.md`, rapport `kesh-gate-logs/e3410-review-p4-ciblee.md`) à lancer.
+- 2026-11-11 : **Passe ciblée P4** (une lentille, sur `ce42fd4a` ; rapport `kesh-gate-logs/e3410-review-p4-ciblee.md`) :
+  **0 C, 0 H, 2 M, 1 L** ; le code de la remédiation P3 est jugé juste. Remédiation (Opus 5.5), commit `625eb797` :
+  - **C4-2** MEDIUM, décision de l'orchestrateur (règle D7, sans dérogation) : la dispense de l'E2E de la P3 est annotée,
+    remplacée par l'**E2E r5**, joué au dernier commit de code.
+  - **C4-1** MEDIUM, décision de l'orchestrateur : la rubrique de l'epic est *Modifié*. C-e342-22 est annotée (remplacée, la 34-3
+    suivra à l'intégration), C-e3410-15 reformulée, la ligne du CHANGELOG de la validation P2 annotée. La fiche 34-3 n'est pas
+    touchée.
+  - **C4-3** LOW : `hasPosts` exige au moins une part dessinable ; sans part, l'état vide existant s'affiche, jamais un anneau
+    vide. Test, mutation MV17 tuée.
+  - Rouge (`rouges.log`, section « Remédiation P4 ciblée ») : 1 test, écrit sur `01e6028d`. Gates au dernier commit de code
+    `625eb797`, chacun sous le verrou : `npm run check` 0 erreur (29 avertissements, aucun dans `homepage/`),
+    `lint-i18n-ownership` PASS, `npm run test:unit` **2910 passés, 222 fichiers**, `npm run build` vert (`*-p4.log`).
+    **E2E complet r5** (`e2e-r5.log`, `kesh_e2e_e3410` recréée vide, runner avec `KESH_INBOX_DIR` et `KESH_DOCUMENTS_DIR`) :
+    **385 passés, 7 échecs, 18 ignorés** — exactement les sept KF-029 (#97) : `mode-expert.spec.ts:26`, `:41`,
+    `onboarding-path-b.spec.ts:65`, `:92`, `onboarding.spec.ts:57`, `:77`, `:150` ; les onze tests de
+    `homepage-charts.spec.ts` passent. Aucun fichier Rust touché : pas de gate backend.
+  - Trend : P3 0 M / 7 L → P4 ciblée 2 M / 1 L → **P5 ciblée** (Sonnet, une lentille, sur `625eb797`, prompt
+    `34-10-graphiques-couleurs-unies-review-prompt-p5-ciblee.md`, rapport `kesh-gate-logs/e3410-review-p5-ciblee.md`) à lancer.
 
 ## Dev Agent Record
 
@@ -443,5 +461,6 @@ commandes lourdes ; complété ci-dessous à la levée de la pause.)*
 - `_bmad-output/implementation-artifacts/34-10-graphiques-couleurs-unies-review-prompt-p2.md`
 - `_bmad-output/implementation-artifacts/34-10-graphiques-couleurs-unies-review-prompt-p3.md`
 - `_bmad-output/implementation-artifacts/34-10-graphiques-couleurs-unies-review-prompt-p4-ciblee.md`
+- `_bmad-output/implementation-artifacts/34-10-graphiques-couleurs-unies-review-prompt-p5-ciblee.md`
 - `_bmad-output/implementation-artifacts/e34-choix-autonomes-e3410.md`
 - `_bmad-output/implementation-artifacts/sprint-status.yaml`
