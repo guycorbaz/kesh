@@ -1,6 +1,6 @@
 # Story 34-10 : graphiques de l'accueil en couleurs unies, anneau avec le total des dépenses au centre (#970)
 
-Status: review
+Status: done
 
 *Fiche rédigée le 2026-11-10 en autonomie (Opus 5.5), worktree `/home/gcorbaz/devel/kesh-e34`, branche `chore/epic-34-kickoff`,
 numéros de ligne de `a75835db`. Release **0.17.6**, Epic 34. **Aucune migration** ; frontend seul. Registre :
@@ -316,6 +316,21 @@ Aucun fichier de code commun avec les autres stories de l'Epic 34. `user-manual.
     `homepage-charts.spec.ts` passent. Aucun fichier Rust touché : pas de gate backend.
   - Trend : P3 0 M / 7 L → P4 ciblée 2 M / 1 L → **P5 ciblée** (Sonnet, une lentille, sur `625eb797`, prompt
     `34-10-graphiques-couleurs-unies-review-prompt-p5-ciblee.md`, rapport `kesh-gate-logs/e3410-review-p5-ciblee.md`) à lancer.
+- 2026-11-11 : **Passe ciblée P5** (Sonnet, une lentille, sur `625eb797` ; rapport `kesh-gate-logs/e3410-review-p5-ciblee.md`) :
+  **0 C, 0 H, 0 M, 2 L**. Remédiation sans aucune ligne de production (commit `941d782a` : un test ; puis registre et fiche) :
+  - **C5-1** : le test « revue P4, C4-3 » porte un total (150) différent de la base (100) ; mutation **MV18** (`hasPosts` retiré
+    de `baseDiffers`, la garde des postes gardée) tuée par ce seul test, **M8-bis** (`hasPosts &&` retiré) tuée par lui et par le
+    cas sans poste ; fichier restauré (`git checkout --`, `touch`). Gate ciblé `HomepageCharts.test.ts` et `npm run check` sous le
+    verrou (`front-cible-p5.log`, `front-check-p5.log`).
+  - **C5-2** : C-e342-22 annotée — aucun `### Changé` en français, trois `### Changed` anglais aux v0.1.7, 0.1.6 et 0.1.4.
+  - **Boucle de revue close** : la dernière passe ne rend rien au-dessus de LOW, et sa remédiation ne touche aucune ligne de
+    production. Le dernier commit de code reste `625eb797`, où les gates complets et l'E2E r5 ont tourné.
+- **Synthèse de la boucle de revue de code** (tendance, modèles) : P1 complète Sonnet 0 C / 0 H / 1 M / 7 L → P2 complète Opus
+  0 C / 0 H / 2 M distincts (6 MEDIUM bruts : B 3, E 2, A 1 ; B2-3, MEDIUM chez B, LOW chez A et E) / 11 LOW bruts → P3 complète
+  Sonnet 0 C / 0 H / 0 M / 7 L → P4 ciblée (modèle non nommé dans son rapport) 0 C / 0 H / 2 M / 1 L (MEDIUM de processus : E2E au
+  dernier commit de code, rubrique du CHANGELOG) → P5 ciblée Sonnet 0 C / 0 H / 0 M / 2 L. Remédiations : Opus 5.5. Décisions de
+  reclassement : aucune ; E3-2 accepté sans issue (C-e3410-16) ; rubrique *Modifié* et E2E au dernier commit de code arbitrés par
+  l'orchestrateur. Les MEDIUM de la P2 sont nés de la remédiation P1, ceux de la P4 de la remédiation P3. **Status : done.**
 
 ## Dev Agent Record
 
