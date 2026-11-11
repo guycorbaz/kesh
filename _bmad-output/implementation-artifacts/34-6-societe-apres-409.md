@@ -1,6 +1,6 @@
 # Story 34-6 : après un 409, l'édition de la société montre l'écriture concurrente avant de l'écraser (#953)
 
-Status: review
+Status: done
 
 *Fiche rédigée le 2026-11-10 en autonomie (Opus 5.5), worktree `/home/gcorbaz/devel/kesh-e34`, branche `chore/epic-34-kickoff`,
 numéros de ligne de `a75835db`. Release **0.17.6**, Epic 34. **Aucune migration, aucun changement serveur.** Registre :
@@ -466,6 +466,53 @@ Rust n'est touché, hormis les `.ftl` : `cargo test -p kesh-i18n` et `textes_coh
     - Ce qu'elle montre : pendant l'envoi, les champs ont un texte atténué et les boutons sont estompés.
     - Le signe reste discret : le fond `surface-alt` se distingue à peine du blanc. Il revient à la passe P5 d'en juger.
   - Le prompt de la passe P5 est `34-6-societe-apres-409-review-prompt-p5.md`.
+  - *(Annoté le 2026-11-11, revue P5 A5-1.) Les deux « issues demandées » de cette entrée existent : les jetons absents
+    du thème relèvent de **#645**, antérieure à la story, et B4-3 est **#1011**.*
+- 2026-11-11 : **revue de code P5 (Opus, trois lentilles) : 0 C, 0 H, 0 M, des LOW seulement. La boucle se clôt.**
+  - Rapports : `kesh-gate-logs/e346-review-p5-{B,E,A}.md`.
+  - La remédiation ne touche **aucune ligne de production** : seuls les tests, le manuel et les documents changent.
+    Le dernier commit de code reste `2c8c2241`.
+
+  **Sort des findings**, décidé par l'orchestrateur :
+  - **Renvoyés en issues**, parce qu'ils toucheraient la production :
+    - B5-1 = E5-1, « Aucun verrou » après trois requêtes croisées, une forme née du `Math.max` de la P4 : **#1013**.
+      Elle est écrite comme troisième forme de la limite de C-e346-11.
+    - E5-2, une relecture refusée jette aussi les comptes bancaires : **#1014**.
+    - B5-4 = A5-4, une valeur relue longue déborde à largeur de téléphone : **#1015**.
+  - **Corrigés dans les tests** (commit `2e5c1d82`) :
+    - B5-2 = E5-3 = A5-3, le contrôle des jetons du thème est durci. Il couvre tous les utilitaires de couleur
+      (`ring-`, `outline-`, `fill-`, `placeholder-`…) et le préfixe `!`, lit les noms à chiffre, et ne cherche les
+      jetons que dans le bloc `@theme`, commentaires retirés. Il ne rougit pas sur `bg-white`, `text-sm` ou `border-t`.
+      Ses propres cas sont épinglés.
+    - E5-4, `app.css` est lu depuis le fichier de test (`fileURLToPath(import.meta.url)`), non depuis le répertoire
+      courant.
+    - E5-5, la classe du champ en vol est vérifiée sur les huit champs, et la lecture seule pendant l'envoi pour les
+      coordonnées et l'adresse.
+    - Mutations, toutes rouges : M31 (`ring` retiré des utilitaires), M32 (jetons cherchés dans tout le fichier), M34
+      (noms à chiffre ignorés), M35 (classe retirée du champ Localité), M36 (lecture seule retirée du téléphone). Elles
+      ont été jouées par la voie frontend du verrou.
+  - **Documents** :
+    - B5-3, le manuel ne cite plus « une intégration » : aucune intégration ne peut écrire la société. PDF régénéré
+      (`make user` par la voie frontend) et contrôlé aplati : la phrase se lit « un autre administrateur, ou
+      vous-même dans un autre onglet » (`7c67293e`).
+    - A5-1, #645 et #1011 sont cités (annotations datées de l'entrée P4 et du Dev Agent Record).
+    - A5-5, la File List porte le prompt P5.
+    - A5-2, l'état en vol se voit, mais faiblement : seul le texte atténué le porte. Le signe est jugé **acceptable**.
+  - **Gates**, par la voie frontend : `npm run check` 0 erreur et 29 avertissements ; `test:unit` 223 fichiers, 2951
+    tests verts (2944 + 7). Le code de production n'a pas bougé depuis `2c8c2241`, dont l'E2E complet r7 a rendu 386
+    passés et les sept échecs de la KF-029. **L'E2E n'est donc pas rejoué.**
+
+  **Synthèse de la boucle de revue de code**, cinq passes :
+  - P1, Opus : 0 C, 0 H, 2 M, 12 L ;
+  - P2, Sonnet : 1 M, 12 L ;
+  - P3, Opus : 1 M, 11 L ;
+  - P4, Sonnet : 1 M, 9 L ;
+  - P5, Opus : 0 au-dessus de LOW.
+
+  Comme le décrit le `CLAUDE.md`, chaque MEDIUM à partir de la P2 est né de la remédiation précédente, ou d'une course
+  qu'elle avait rendue visible : la version commune, puis la monotonie, puis le verrou à version égale, puis le jeton
+  du thème. La passe de clôture ne rend que des LOW, et sa remédiation ne touche aucune ligne de production.
+  **Statut : `done`.**
 
 ## Dev Agent Record
 
@@ -520,6 +567,10 @@ Opus 5.5 (claude-opus-5-5), en autonomie.
     est équivalente (C-e346-10). M11 porte sur `disabled`, que M18 a remplacé.
   - **Captures** : six, avec `e346-deux-blocs-ouverts.png` (P1) et `e346-adresse-envoi-en-vol.png` (P4).
   - **Issues ouvertes depuis la story** : #984, #991, #992, #996, #997 et #1001.
+    - *(Annoté le 2026-11-11, revue P5 A5-1.)* S'y ajoutent **#1011** (B4-3, les valeurs hors de la région vive) et,
+      après la revue P5, **#1013**, **#1014** et **#1015**.
+    - Les jetons absents du thème (B4-1 de la P4) relèvent de **#645**. Cette issue, antérieure à la story, couvre
+      `input` et `background` ; elle tient lieu de l'« issue demandée » de l'entrée P4.
 - **Issue à ouvrir** : `bank-accounts/+page.svelte:413-421`, le second essai part avec la version relue sans montrer
   l'écriture concurrente (symptôme de #953 sur un autre écran). *(Ouverte par l'orchestrateur : #984.)*
 
@@ -538,5 +589,5 @@ Opus 5.5 (claude-opus-5-5), en autonomie.
 - `CHANGELOG.md`
 - `_bmad-output/implementation-artifacts/34-6-societe-apres-409.md`, `34-6-societe-apres-409-review-prompt-p1.md`,
   `34-6-societe-apres-409-review-prompt-p2.md`, `34-6-societe-apres-409-review-prompt-p3.md`,
-  `34-6-societe-apres-409-review-prompt-p4.md`,
+  `34-6-societe-apres-409-review-prompt-p4.md`, `34-6-societe-apres-409-review-prompt-p5.md`,
   `e34-choix-autonomes-e346.md`, `sprint-status.yaml`

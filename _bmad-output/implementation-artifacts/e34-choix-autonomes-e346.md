@@ -169,6 +169,17 @@ Choix tranchés en autonomie au développement (Opus 5.5, 2026-11-10), à côté
       le rechargement rétablit l'écran. Il faut deux clics du même Administrateur, dans le même onglet, à quelques
       millisecondes d'intervalle.
     - Rien ne départagerait ces cas sans un ordre fourni par le serveur, que la story ne change pas.
+  - *(Complété le 2026-11-11, revue P5, B5-1 = E5-1 : une **troisième forme** de la limite, née du `Math.max` de la P4.)*
+    - Trois requêtes partent dans cet ordre : l'enregistrement de l'e-mail (séquence 2), le verrou (séquence 3 ou 4),
+      puis une relecture après un 409 (séquence 5).
+    - Le serveur les traite autrement : il sert la relecture (v3), puis écrit l'e-mail (v4), puis le verrou (v4, avec la
+      borne).
+    - Les réponses arrivent dans un troisième ordre :
+      1. la relecture, adoptée, si bien que `dataSeq` vaut 5 ;
+      2. l'e-mail, de version supérieure, adopté, et `dataSeq` reste 5 par `Math.max` ;
+      3. le verrou, de même version mais de séquence inférieure à 5 : il est **refusé**.
+    - L'écran dit « Aucun verrou ». `dataSeq` n'est alors plus la séquence de la requête dont vient `data`.
+    - L'effet reste borné à l'affichage, comme les deux premières formes. Renvoyé à **#1013**.
 - **Version qui baisse** (E3-2, second cas de A3-2) : après la restauration d'un `.keshbackup` faite ailleurs, la version
   du serveur peut baisser, et un onglet resté ouvert garde l'ancien affichage jusqu'au rechargement. Adopter son propre
   succès quoi qu'il arrive est écarté : deux succès dont les réponses se croisent feraient alors reculer l'écran. **Issue
