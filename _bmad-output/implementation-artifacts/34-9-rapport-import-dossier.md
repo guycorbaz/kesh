@@ -1,6 +1,6 @@
 # Story 34-9 : le rapport d'import du dossier nomme chaque fichier, et un doublon ne passe plus inaperçu (#969)
 
-Status: ready-for-dev
+Status: review
 
 *Fiche rédigée le 2026-11-10 en autonomie (Opus 5.5), worktree `/home/gcorbaz/devel/kesh-e34`, branche `chore/epic-34-kickoff`,
 numéros de ligne de `a75835db`. Release **0.17.6**, Epic 34. **Aucune migration** (extension additive du `details` d'un échec,
@@ -194,7 +194,7 @@ importé(s) ».
   clés `imported-supplier-invoices-report-accepted` / `-failed` (garde `i18n-keys.test.ts`) — gardées ou retirées avec leur
   garde.
 - [x] **T4** : manuels (`.tex` ; PDF à l'intégration), `docs/api-external.md` ; CHANGELOG *Corrigé* (`refs #969`, `refs #974`).
-- [ ] **T5** : captures (thème clair, base jetable) : rapport mixte, notification d'avertissement, lien suivi jusqu'à la ligne.
+- [x] **T5** : captures (thème clair, base jetable) : rapport mixte, notification d'avertissement, lien suivi jusqu'à la ligne.
 
 ### Mutations nommées
 
@@ -308,9 +308,18 @@ Claude Opus 5.5 (agent de développement autonome de l'Epic 34).
   - frontend, au commit `de4e7514` : `npm run check` **rouge** (1 erreur de type, `row.skipped` dans le `{:else}`),
     `npm run test:unit` **rouge** (2 gardes i18n de décompte, 2892/2894), `npm run build` vert, `lint-i18n-ownership`
     vert — corrigés au commit `51709afd` ; depuis, `lint-i18n-ownership` vert, et les trois fichiers Vitest concernés
-    rejoués isolément, verts (11, 4 et 20 tests, `verts-vitest-gardes.log`). **En attente** (pause `PAUSE-HEAVY` de la
-    station, décision de Guy du 2026-11-11) : `npm run check`, `npm run test:unit` complet, `npm run build`, E2E complet
-    et captures « après », rejoués par `kesh-gate-logs/e349/gates2-e349.sh` à la levée de la pause.
+    rejoués isolément, verts (11, 4 et 20 tests, `verts-vitest-gardes.log`). Après la pause `PAUSE-HEAVY` de la station
+    (décision de Guy du 2026-11-11 ; la chaîne en attente du verrou a été arrêtée, puis reprise à la levée), au commit
+    `f05dc5bd` (même code que `51709afd`) : `npm run check` **0 erreur**, 29 avertissements préexistants hors de la story
+    (`front-check-2.log`) ; `npm run test:unit` **2894/2894, 222 fichiers** (`front-test-unit-2.log`) ; `npm run build`
+    vert ;
+  - **E2E complet**, base `kesh_e2e_e349` recréée vide, runner avec `KESH_INBOX_DIR` et `KESH_DOCUMENTS_DIR`
+    (`e2e-r2/playwright.log`) : **387 réussis, 7 échecs, 18 ignorés**. Les sept échecs sont, un par un, ceux de la KF-029
+    (#97) listés dans `docs/testing.md` : `mode-expert.spec.ts:26`, `:41`, `onboarding-path-b.spec.ts:65`, `:92`,
+    `onboarding.spec.ts:57`, `:77`, `:150`. Les deux cas neufs de `inbox-import.spec.ts` et `supplier-documents.spec.ts`
+    (sans modification) passent.
+- **Captures** (thème clair, base jetable, `kesh-gate-logs/e349/captures/`) : `avant-rapport-mixte.png` (commit de base),
+  `apres-rapport-mixte.png`, `apres-notification.png`, `apres-lien-suivi.png` (la ligne visée encadrée).
 
 ### File List
 
