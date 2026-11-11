@@ -334,6 +334,19 @@ Aucun fichier commun avec les autres stories du groupe. `inbox_import.rs` n'est 
   **Tendance** : P1 0/0/0/13 LOW → P2 ciblée 0/0/1 M/3 LOW. La remédiation touche le code de production : la boucle se
   poursuit par une **passe ciblée P3** (Sonnet ; prompt `34-9-rapport-import-dossier-review-prompt-p3-ciblee.md`,
   rapport attendu `kesh-gate-logs/e349-review-p3-ciblee.md`).
+- 2026-11-11 : **Correctif avant la P3** (Opus 5.5, à la demande de l'orchestrateur : le défaut relevé ci-dessus ne
+  reste pas soumis à la P3). Commit `e071f051` : `listReloadFailed` remis à `false` dans `reloadList`, commune aux trois
+  sites de rechargement, recensés par `git grep -n "reloadList\|listImported("` sur la page (`onMount`, `safeReloadList`,
+  `runImport`, dont le `finally` réaffecte ensuite l'issue du rechargement de l'import). Test Vitest neuf : rechargement
+  en échec à l'import, puis conflit de retrait suivi d'un rechargement réussi — la ligne passe de « … qui n'a pas pu
+  être rechargée … actualisez » à « n'est plus dans la liste ci-dessous » ; mutation **M12** (remise à faux retirée)
+  rougit ce test (`mut/M12-vitest.log`), fichier restauré et touché, worktree propre. Vitest de la page : 25 → 26 tests.
+  **Gates au dernier commit de code, `e071f051`** (`kesh-gate-logs/e349/gates5.log` ; voie `.gate-front.lock` pour le
+  frontend et la mutation, voie base pour l'E2E, consigne du 2026-11-11) : `npm run check` 0 erreur (29 avertissements
+  préexistants), `lint-i18n-ownership` vert, `test:unit` 2900/2900 (222 fichiers), `build` vert ; E2E complet sur base
+  recréée (`e2e-r8`) : 387 réussis, 7 échecs, 18 ignorés — les sept de la KF-029 (#97) de `docs/testing.md`
+  (`mode-expert:26`, `:41`, `onboarding-path-b:65`, `:92`, `onboarding:57`, `:77`, `:150`). Backend non rejoué : aucun
+  fichier Rust touché depuis `7740ad67`. Le prompt P3 porte désormais sur `f1b8e65c` **et** `e071f051`.
 
 ## Dev Agent Record
 
