@@ -289,8 +289,12 @@ export interface PieGeometry {
 	innerR: number;
 }
 
-/** L'anneau de l'accueil, dans un `viewBox` de 200 : trou à 60 % du rayon extérieur. */
-export const PIE_GEOMETRY: PieGeometry = { cx: 100, cy: 100, r: 96, innerR: 96 * 0.6 };
+/**
+ * L'anneau de l'accueil, dans un `viewBox` de 200 : trou à 60 % du rayon extérieur. Le rayon
+ * intérieur est écrit en clair : `96 * 0.6` vaut `57.599999999999994` en flottant, et ce bruit
+ * passerait tel quel dans le `d` des parts (revue P3, B3-2).
+ */
+export const PIE_GEOMETRY: PieGeometry = { cx: 100, cy: 100, r: 96, innerR: 57.6 };
 
 /**
  * La part qui fait le tour : un cercle au rayon médian, sans remplissage, dont le trait a
@@ -442,10 +446,21 @@ export function pieSlices(
 ): PieSlice[] {
 	const baseBig = new Big(base);
 	if (baseBig.lte(0)) return [];
+	// Rang et couleur sont ceux du tableau, fixés AVANT le filtre : seule une part de montant
+	// strictement positif est dessinée, si bien qu'une part nulle ou négative n'est ni élargie
+	// ni comptée dans le tour (revue P3, E3-1 ; le serveur ne range aujourd'hui que des soldes
+	// strictement positifs, `homepage_summary.rs`).
 	const items = [
-		...posts.map((p, i) => ({ amount: p.amount, accountId: p.accountId, style: postStyle(i) })),
-		...(others ? [{ amount: others.amount, accountId: null, style: OTHERS_STYLE }] : []),
-	];
+		...posts.map((p, i) => ({
+			amount: p.amount,
+			accountId: p.accountId,
+			rank: i + 1,
+			style: postStyle(i),
+		})),
+		...(others
+			? [{ amount: others.amount, accountId: null, rank: posts.length + 1, style: OTHERS_STYLE }]
+			: []),
+	].filter((item) => new Big(item.amount).gt(0));
 	const turn = 2 * Math.PI;
 	let cumulated = new Big(0);
 	const real = items.map((item) => {
@@ -489,7 +504,7 @@ export function pieSlices(
 		// (revue P1, E1-2 ; une garde sur les points intérieurs était une mutation équivalente).
 		const full = large === 1 && from === to;
 		return {
-			rank: i + 1,
+			rank: item.rank,
 			accountId: item.accountId,
 			startAngle: real[i].start,
 			endAngle: real[i].end,

@@ -154,7 +154,8 @@
 			     qui marque chaque limite quelle que soit la paire de teintes et la largeur des parts
 			     (C-e342-16, C-e3410-12). Il ne capte pas le clic : la part dessous reste un lien. -->
 			<g data-testid="homepage-chart-pie-separators" pointer-events="none">
-				{#each separators as line (line.angle)}
+				<!-- Clé par l'indice, unique par construction : deux angles égaux ne lèvent pas `each_key_duplicate` (revue P3, B3-1). -->
+				{#each separators as line, i (i)}
 					<line x1={line.x1} y1={line.y1} x2={line.x2} y2={line.y2} stroke="var(--color-surface)" stroke-width={SEPARATOR_WIDTH} />
 				{/each}
 			</g>

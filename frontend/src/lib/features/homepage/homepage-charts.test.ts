@@ -343,6 +343,31 @@ describe('pieSlices', () => {
 		for (const s of r.slice(1)) expect(visibleInner(s.path)).toBeGreaterThanOrEqual(1);
 	});
 
+	it('le rayon intérieur de l’accueil s’écrit 57.6 dans le `d`, sans bruit du flottant (revue P3, B3-2)', () => {
+		expect(PIE_GEOMETRY.innerR).toBe(57.6);
+		const r = pieSlices([post(1, '75', '75.0'), post(2, '25', '25.0')], null, '100', PIE_GEOMETRY);
+		for (const s of r) {
+			expect(s.path).toContain('A57.6 57.6 0 ');
+			expect(s.path).not.toMatch(/\d{7,}/);
+		}
+	});
+
+	it('une part de montant nul ou négatif n’est ni dessinée ni élargie ; rangs et couleurs restent ceux du tableau (revue P3, E3-1)', () => {
+		const r = pieSlices(
+			[post(1, '900', '90.0'), post(2, '0', '0.0'), post(3, '-5', '0.0'), post(4, '100', '10.0')],
+			{ amount: '0.00', share: '0.0', accountCount: 2 },
+			'1000',
+			PIE_GEOMETRY,
+		);
+		expect(r.map((s) => s.rank)).toEqual([1, 4]);
+		expect(r.map((s) => s.accountId)).toEqual([1, 4]);
+		expect(r[1].style).toBe(postStyle(3));
+		// Rien n'a été cédé : les angles dessinés sont les vrais.
+		expect(r[0].displayEnd - r[0].displayStart).toBeCloseTo((900 / 1000) * 2 * Math.PI, 9);
+		expect(r[r.length - 1].displayEnd).toBe(2 * Math.PI);
+		expect(pieSeparators(r, PIE_GEOMETRY)).toHaveLength(2);
+	});
+
 	it('une seule part : aucun séparateur', () => {
 		const r = pieSlices([post(1, '42.5', '100.0')], null, '42.5', PIE_GEOMETRY);
 		expect(pieSeparators(r, PIE_GEOMETRY)).toEqual([]);

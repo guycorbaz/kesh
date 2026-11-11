@@ -74,6 +74,9 @@ chaque part, contraste contre le fond de la carte), et des teintes **dans les je
    extérieur, segment, arc intérieur inverse). Le trou et le texte du centre ne sont **ni** des `path` ni dans un groupe
    `homepage-chart-post-mark` (le comptage de `homepage-charts.spec.ts:207`, six `path`, reste juste) ;
    `HomepageCharts.test.ts:133` (`circle` dans la part pleine) reste juste.
+   *(Annoté le 2026-11-11, revue de code P3, A3-2 : le liseré est réalisé par `pieSeparators` — un `<line>` radial par limite,
+   dans le groupe `homepage-chart-pie-separators`, peint au-dessus des parts, en `pointer-events="none"` —, et non par un
+   `stroke` des parts, qui n'en ont plus ; C-e3410-12. Une part dessinée fait au moins `MIN_SLICE_ANGLE`, C-e3410-9.)*
 4. **AC-4 — le centre** : au centre, sur deux lignes, « Total des dépenses » et le **total des dépenses de l'exercice**
    (`totalExpenses`), au format suisse (`chartAmount`), en `--color-text` ; il tient dans le trou pour le plus long montant
    plausible (`999'999'999.99`). **Règle tranchée** *(P2-10-3 : jsdom n'a pas de mise en page, ni `getBBox` ni

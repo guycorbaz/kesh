@@ -10,7 +10,7 @@ Le contenu est rédigé en français à destination des **fiduciaires, PME, ind�
 
 ## [0.17.6] — Non publié
 
-### Changé
+### Modifié
 
 - **Les graphiques de l'accueil en couleurs unies** ([#970](https://github.com/guycorbaz/kesh/issues/970)) : les hachures sont retirées. Les barres portent les revenus en vert, à gauche, et les dépenses en rouge, à droite. Le diagramme des postes de charges devient un **anneau**, avec **le total des dépenses de l'exercice au centre** — celui des barres et du compte de résultat ; ses parts sont rouge, vert, bleu, violet et cyan, puis gris pour « Autres », séparées par un trait blanc à chaque limite, et se suivent dans l'ordre du tableau, dans le sens horaire à partir de midi ; une part très petite (moins de 0,7 % du tour environ) est élargie au dessin pour rester visible entre ses deux traits, le tableau gardant son montant exact. Quand la base des parts diffère du total du centre (par exemple parce qu'un compte de charges est au solde créditeur), la carte dit sur quel montant portent les parts. La position des barres, la légende, le tableau des postes et les valeurs au survol disent ce que la couleur ne dit pas : en vision daltonienne, le rouge et le vert se distinguent par leur clarté, non par leur teinte.
 

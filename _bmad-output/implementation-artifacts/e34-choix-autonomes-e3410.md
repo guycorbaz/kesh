@@ -37,6 +37,10 @@ union, jamais par écrasement.*
   L'attribut `var(…)` suit le patron existant de `MonthlyBarsCard.svelte` (`stroke="var(--color-border)"`).
 - **Écartée** : une constante `#ffffff` dans le module (une valeur de plus à tenir égale à un jeton, pour un trait non coloré).
 - **Réversible** : oui.
+- *(Annoté le 2026-11-11, revue de code P3, A3-1.)* **Support remplacé par C-e3410-12** (`e982f7e8`) : le liseré n'est plus le
+  contour (`stroke`) des parts, qui n'en ont plus aucun, mais un `<line>` radial par limite, dans le groupe
+  `homepage-chart-pie-separators`, peint au-dessus des parts. La valeur reste : `var(--color-surface)`, 1,5 unité
+  (`SEPARATOR_WIDTH`).
 
 ### C-e3410-5 — `centerFontSize` : 0,6 em par caractère, 85 % du trou, bornes 8 et 22
 
@@ -140,4 +144,30 @@ union, jamais par écrasement.*
 
 - **Contexte** : E2-5 (LOW) : « Gesamtaufwand » (12,6) dépassait un montant de quatorze caractères (11,7).
 - **Retenu** : `centerSizes` ramène la taille du libellé à celle du montant quand elle la dépasse.
+- **Réversible** : oui.
+
+## Ajouts de la revue de code P3 (2026-11-11)
+
+### C-e3410-14 — Seule une part de montant strictement positif est dessinée
+
+- **Contexte** : E3-1 (LOW) : une part nulle ou négative était élargie à `MIN_SLICE_ANGLE`, et une négative gonflait le déficit.
+  Inatteignable aujourd'hui (le serveur ne range que des soldes strictement positifs).
+- **Retenu** : `pieSlices` filtre `amount > 0` après avoir fixé rang et couleur sur l'indice du tableau : les parts restantes
+  gardent le rang et la couleur de leur ligne.
+- **Écartée** : le dire dans la doc seulement (préférence de l'orchestrateur pour le filtre, testé).
+- **Réversible** : oui.
+
+### C-e3410-15 — Rubrique « Modifié » au CHANGELOG
+
+- **Contexte** : B3-3 (LOW) ; la 34-5 nomme la rubrique `### Modifié`, et les sections s'unissent à l'intégration.
+- **Retenu** : `### Modifié` (C-e342-22 disait *Changé* : même intention, autre mot).
+- **Réversible** : oui.
+
+### C-e3410-16 — Le libellé du centre au plancher sur un écran étroit : accepté, sans issue
+
+- **Contexte** : E3-2 (LOW, simple constat) : « Totale delle uscite » tombe à ≈ 8,6 unités, ≈ 10 px à la largeur ordinaire de
+  la carte (240 px), ≈ 7 px si la carte se réduit à 160 px. Le texte tient dans le trou à toute échelle.
+- **Retenu** : accepté. La page ne descend pas sous 1280 px (`min-w-[1280px]`, `(app)/+layout.svelte`, rappelé dans
+  `MonthlyBarsCard.svelte`) : la carte garde ses 240 px, et le montant, la ligne principale, est plus grand ; le libellé dit ce
+  que le tableau et le `<desc>` disent aussi.
 - **Réversible** : oui.
