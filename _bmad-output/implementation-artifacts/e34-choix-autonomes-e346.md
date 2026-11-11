@@ -155,10 +155,26 @@ Choix tranchés en autonomie au développement (Opus 5.5, 2026-11-10), à côté
   partie après le verrou, mais servie avant qu'il ne soit écrit, et revenue après sa réponse. Il faut deux requêtes
   envoyées à quelques millisecondes d'intervalle, et l'effet se limite à l'affichage : le serveur fait foi, et le
   rechargement de la page rétablit l'écran.
+  - *(Complété le 2026-11-11, revue P4, A4-6 et B4-2 : la limite vaut **dans les deux sens**.)*
+    - Requête partie après le verrou : décrit ci-dessus. La requête peut être une relecture ou l'enregistrement d'un
+      bloc. Par exemple, un verrou (séquence 4) et un enregistrement (séquence 5) partent à quelques millisecondes ; le
+      serveur écrit l'enregistrement d'abord (version v+1, sans borne), puis le verrou (v+1, avec borne). Si la réponse
+      du verrou arrive la première, celle de l'enregistrement est ensuite adoptée, et l'écran perd la borne.
+    - Requête partie avant le verrou : un verrou (séquence 3) et un enregistrement (séquence 5), avec le même ordre
+      d'écriture au serveur. Si la réponse de l'enregistrement arrive la première, celle du verrou, de même version et
+      de séquence plus basse, est refusée. L'écran dit alors « Aucun verrou », alors que l'Administrateur vient de le
+      poser.
+    - Dans les deux sens, l'effet est **borné à l'affichage**. Le verrou et le déverrouillage n'envoient aucune version,
+      et l'égalité de version ne fait avancer aucune `*Version` (`syncOpenBlocks` exige `v >`). Le serveur fait foi, et
+      le rechargement rétablit l'écran. Il faut deux clics du même Administrateur, dans le même onglet, à quelques
+      millisecondes d'intervalle.
+    - Rien ne départagerait ces cas sans un ordre fourni par le serveur, que la story ne change pas.
 - **Version qui baisse** (E3-2, second cas de A3-2) : après la restauration d'un `.keshbackup` faite ailleurs, la version
   du serveur peut baisser, et un onglet resté ouvert garde l'ancien affichage jusqu'au rechargement. Adopter son propre
   succès quoi qu'il arrive est écarté : deux succès dont les réponses se croisent feraient alors reculer l'écran. **Issue
-  demandée (P4).**
+  demandée (P4).** *(Ouverte par l'orchestrateur : **#1001**.)*
+- *(Complété le 2026-11-11, revue P4, E4-2 : la règle est extraite en fonction pure, `adoptionDecision`, dans
+  `company-conflict.ts`, où elle est testée seule. La séquence retenue ne recule jamais : `Math.max`.)*
 - **Écartées.**
   - Ne pas toucher `booksLockedThrough` lors des adoptions qui ne viennent pas du verrou : la même course vaudrait en
     sens inverse, pour un déverrouillage.

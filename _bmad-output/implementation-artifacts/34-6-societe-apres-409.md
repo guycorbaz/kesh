@@ -131,7 +131,9 @@ l'adresse qu'un collègue vient de corriger, ni ma propre correction déjà enre
 6. **AC-6 — relecture impossible.** Le message `-conflict-reload-failed` reste, et la saisie aussi. Aucun avis de valeur.
 6 bis. **AC-6 bis — cycle de vie de l'avis** (34-6-F4). L'avis de conflit et les valeurs affichées sont remis à zéro par
    `start*Edit`, par l'annulation de l'édition et par un enregistrement réussi. Un second conflit remplace l'avis, sans
-   l'empiler.
+   l'empiler. *(Annoté le 2026-11-11, revue P4 A4-4 : depuis la revue P3, C-e346-4 est renversé. L'avis est aussi
+   remis à zéro **au départ de chaque envoi**, si bien qu'un refus d'une autre nature, un 400 par exemple, ne le laisse
+   pas affiché à côté de son message. C'est testé pour les trois blocs.)*
 7. **AC-7 — textes.** Les clés neuves (`settings-company-conflict-changed` avec la variable `$value`,
    `settings-company-conflict-merged` avec `$value`, `settings-company-conflict-will-replace`,
    `settings-company-conflict-already-saved` et `settings-company-conflict-empty` pour « (vide) », validation P2, 34-6-F4 ;
@@ -341,6 +343,10 @@ Rust n'est touché, hormis les `.ftl` : `cargo test -p kesh-i18n` et `textes_coh
     et **#996**, pour le contraste. Le décompte de cette entrée est faux d'un LOW : l'A2-5 est absorbé par le MEDIUM
     commun, si bien que la passe rend **12 L**, et non 13.)*
 - 2026-11-11 : **revue de code P3 (Opus, trois lentilles) : 0 C, 0 H, 1 M, 13 L.**
+  - *(Annoté le 2026-11-11, revue P4 A4-2.) Le « 13 L » est faux. Des 15 LOW bruts, il faut retirer E3-1, absorbé
+    par le MEDIUM, puis deux pour P3-B3 = E3-3 = A3-3, et un pour P3-B6 = E3-4. Il en reste **11**, et non 13. Si l'on
+    absorbe aussi dans le MEDIUM son corollaire A3-2, il en reste 10, autant que de lignes « Sort de chaque finding ».
+    L'issue E3-2 est **#1001**.*
   - B rend 1 M et 6 L ; E rend 0 M et 4 L ; A rend 1 M et 5 L, soit 2 M et 15 L bruts.
   - Le MEDIUM (P3-B1 = A3-1) est un seul défaut : E le classe LOW (E3-1), et A3-2 en porte le corollaire. Il est compté une
     fois, sous M.
@@ -396,6 +402,43 @@ Rust n'est touché, hormis les `.ftl` : `cargo test -p kesh-i18n` et `textes_coh
       `onboarding-path-b:65`, `:92`, `onboarding:57`, `:77`, `:150`), 18 ignorés.
     - **Captures** refaites, toutes les cinq, dont `e346-email-vide-ailleurs.png` avec l'avis sous la ligne entière
       (B5 de la P2).
+- 2026-11-11 : **revue de code P4 (Sonnet, trois lentilles) : 0 C, 0 H, 1 M, 9 L.**
+  - B rend 1 M et 4 L ; E rend 1 M et 2 L ; A rend 1 M et 5 L, soit 3 M et 11 L bruts.
+  - Le MEDIUM est le même défaut relevé par les trois lentilles (B4-1 = E4-1 = A4-1), compté une fois.
+  - Deux LOW communs comptent une fois : B4-5 = E4-3, et B4-2 = A4-6. Il reste **9 L**.
+  - Rapports : `kesh-gate-logs/e346-review-p4-{B,E,A}.md`.
+
+  Remédiation (Opus 5.5) : rouges `e486b722`, correctif `2c8c2241`. Sort de chaque finding :
+  - **B4-1 = E4-1 = A4-1 (M), traité.**
+    - Le défaut : `bg-input` n'est pas un jeton du thème (`src/app.css`), et Tailwind 4 ne produisait aucune règle.
+    - La classe des champs en vol devient `read-only:bg-surface-alt read-only:text-text-muted read-only:cursor-progress`.
+      Le fond `surface-alt` seul ne se distingue guère du blanc (1,05:1, mesuré par la formule WCAG). Le texte atténué
+      mesure 4,55:1 sur ce fond, au-dessus du seuil AA.
+    - La classe vit maintenant avec la règle (`PENDING_FIELD_CLASS`, `company-conflict.ts`). Un test lit `src/app.css`
+      et rougit si une couleur nommée n'y est pas définie ; la mutation M30, qui remet `bg-input/50`, le fait rougir.
+    - Nouvelle capture de l'état en vol : `e346-adresse-envoi-en-vol.png`.
+    - Grep du symptôme sur tout le frontend. `bg-input` ne se trouve plus que dans les composants `ui/` d'origine
+      (`input`, `button`, `select-trigger`). Des jetons absents du thème, `border-input` et `bg-background`, servent
+      aussi dans dix sites hors `ui/` : `InvoiceForm`, `JournalEntryForm`, `SendEmailDialog`, `ReminderSendDialog`,
+      `contacts` (six). Ce défaut est antérieur et hors de la story : **issue demandée**.
+  - **E4-2 (L), traité** : la règle d'adoption devient une fonction pure, `adoptionDecision`, testée seule. La séquence
+    retenue ne recule jamais (`Math.max`). Rouge d'abord, à l'import ; mutations M27 à M29.
+  - **A4-5 (L), traité** : tests « l'avis est effacé au départ » pour les coordonnées et pour l'adresse ; mutations M25
+    et M26.
+  - **B4-5 = E4-3 (L), traité** : indentation.
+  - **A4-2 (L), traité** : annotation datée de l'entrée P3, où le décompte devient 11 L.
+  - **A4-3 (L), traité** : **#1001** est cité à l'entrée P3 et à C-e346-11.
+  - **A4-4 (L), traité** : l'AC-6 bis est annotée du renversement de C-e346-4. Le Dev Agent Record est complété par une
+    annotation datée.
+  - **A4-6 = B4-2 (L), traité** : la limite de C-e346-11 est écrite dans les deux sens, verrou et enregistrement, et
+    bornée à l'affichage.
+  - **B4-3 (L), non traité, issue demandée** (P4). Les valeurs « Enregistré entre-temps : … » sont hors de la région
+    vive : un lecteur d'écran n'entend que l'avis du bloc, qui renvoie « sous les champs ». Les y faire entrer demande de
+    nommer chaque champ dans l'avis, et donc de nouvelles clés aux quatre locales.
+    - Le `<dd>` du bloc e-mail qui porte la région vide est voulu. La région doit exister avant le conflit (C-e346-9 et
+      la P2 B3), et ce `<dd>` ne rend rien de visible tant qu'elle est vide.
+  - **B4-4 (L), non traité** : c'est le contraste de `--color-warning`, déjà tracé par **#996**.
+  - L'en-tête de `reloadAfterConflict`, faux depuis la P3, est corrigé (note de A, non comptée).
 
 ## Dev Agent Record
 
@@ -441,6 +484,15 @@ Opus 5.5 (claude-opus-5-5), en autonomie.
   aplati (`pdftotext … | tr '\n' ' '`, la phrase « Si quelqu'un a modifié la société entre-temps… » s'y lit entière).
 - **Captures** (thème clair, `kesh-gate-logs/e346/captures/`) : `e346-adresse-conflit-et-fusion.png`,
   `e346-coordonnees-un-champ-en-conflit.png`, `e346-email-vide-ailleurs.png`, `e346-coordonnees-autre-bloc.png`.
+- *(Annoté le 2026-11-11, revue P4 A4-4 : l'état de la story après les remédiations, les entrées passées n'étant pas
+  réécrites.)*
+  - **Dernier commit de code** : `2c8c2241`. Ses gates sont à l'entrée « revue de code P4 » du Change Log.
+  - **Décomptes**, recomptés à la source par `/usr/bin/grep -cE '^\s*(it|test)\('`, de `665de151` à `2c8c2241` :
+    `company-conflict.test.ts` 0 → 26, `settings-page.test.ts` 16 → 50.
+  - **Mutations** : M1 à M30, et les variantes M2e, M2c, M3c, M10e, M10c, toutes dans `kesh-gate-logs/e346/mut/`. M14
+    est équivalente (C-e346-10). M11 porte sur `disabled`, que M18 a remplacé.
+  - **Captures** : six, avec `e346-deux-blocs-ouverts.png` (P1) et `e346-adresse-envoi-en-vol.png` (P4).
+  - **Issues ouvertes depuis la story** : #984, #991, #992, #996, #997 et #1001.
 - **Issue à ouvrir** : `bank-accounts/+page.svelte:413-421`, le second essai part avec la version relue sans montrer
   l'écriture concurrente (symptôme de #953 sur un autre écran). *(Ouverte par l'orchestrateur : #984.)*
 
