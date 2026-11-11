@@ -8,6 +8,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, fireEvent } from '@testing-library/svelte';
 import type { CompanyCurrentResponse } from '$lib/features/settings/settings.types';
+import { PENDING_FIELD_CLASS } from '$lib/features/settings/company-conflict';
 
 vi.mock('$app/environment', () => ({ browser: true }));
 vi.mock('$lib/features/onboarding/onboarding.svelte', () => ({
@@ -1087,4 +1088,50 @@ describe('page Paramètres — conflit de version des trois éditions (Story 34-
 		const avis = await findByTestId('settings-company-email-conflict-notice');
 		expect(regions.some((r) => r.contains(avis))).toBe(true);
 	});
+
+	// Revue P5 (E5-5) : la classe du champ en vol est posée sur les huit champs, et la lecture
+	// seule vaut aussi pour les coordonnées et l'adresse (seul l'e-mail était exercé).
+	const CHAMPS_DES_BLOCS = {
+		email: ['settings-company-email-input'],
+		contact: ['settings-company-phone-input', 'settings-company-website-input'],
+		address: [
+			'settings-company-address-street-input',
+			'settings-company-address-building-input',
+			'settings-company-address-postal-code-input',
+			'settings-company-address-city-input',
+			'settings-company-address-country-input',
+		],
+	} as const;
+
+	it('les huit champs portent la classe du champ en vol', async () => {
+		fetchCompanyCurrentMock.mockResolvedValueOnce(societe());
+		const { findByTestId, getByTestId } = render(Page);
+		await fireEvent.click(await findByTestId('settings-company-email-edit'));
+		await fireEvent.click(getByTestId('settings-company-contact-edit'));
+		await fireEvent.click(getByTestId('settings-company-address-edit'));
+		for (const id of Object.values(CHAMPS_DES_BLOCS).flat()) {
+			const champ = getByTestId(id);
+			for (const classe of PENDING_FIELD_CLASS.split(' ')) {
+				expect(champ.classList.contains(classe), `${id} : ${classe}`).toBe(true);
+			}
+		}
+	});
+
+	for (const [bloc, mock] of [
+		['contact', () => updateCompanyContactDetailsMock],
+		['address', () => updateCompanyAddressMock],
+	] as const) {
+		it(`${bloc} : les champs sont en lecture seule pendant l’envoi`, async () => {
+			fetchCompanyCurrentMock.mockResolvedValueOnce(societe());
+			let release: (v: unknown) => void = () => {};
+			mock().mockReturnValueOnce(new Promise((r) => (release = r)));
+			const { findByTestId, getByTestId } = render(Page);
+			await fireEvent.click(await findByTestId(`settings-company-${bloc}-edit`));
+			await fireEvent.click(getByTestId(`settings-company-${bloc}-save`));
+			for (const id of CHAMPS_DES_BLOCS[bloc]) {
+				await vi.waitFor(() => expect((getByTestId(id) as HTMLInputElement).readOnly).toBe(true));
+			}
+			release(societe({ version: 2 }).company);
+		});
+	}
 });

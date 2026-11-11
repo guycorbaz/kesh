@@ -6,6 +6,8 @@
 
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
+import { dirname, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import {
 	companyEditConflict,
 	normalizeCompanyValue,
@@ -39,15 +41,82 @@ describe('adoptionDecision — adopter une société reçue ? (revue P3 et P4)',
 // Revue P4 (B4-1 = E4-1 = A4-1) : Tailwind 4 ne produit aucune règle pour une couleur qui
 // n'est pas un jeton du thème. Ce contrôle rougit si la classe du champ en vol en nomme un
 // qui n'existe pas dans `src/app.css` (le cas de `bg-input`, resté sans effet en P3).
+//
+// Revue P5 (B5-2 = E5-3 = A5-3, E5-4) : le contrôle couvre tous les utilitaires de couleur et
+// le préfixe `!`, accepte les noms à chiffre, ne cherche les jetons que dans le bloc `@theme`
+// sans ses commentaires, reconnaît les couleurs intégrées de Tailwind et les utilitaires
+// non colorés (`text-sm`, `border-t`), et lit `app.css` depuis ce fichier, non depuis le
+// répertoire courant. Ses cas sont épinglés ci-dessous.
+
+/** Les utilitaires Tailwind qui prennent une couleur. */
+const COLOR_UTILITIES = [
+	'bg', 'text', 'border', 'ring', 'outline', 'fill', 'stroke', 'placeholder', 'decoration',
+	'caret', 'accent', 'divide', 'from', 'via', 'to', 'shadow',
+];
+/** Valeurs qui ne sont pas des couleurs, par utilitaire (tailles, largeurs, styles). */
+const NON_COLOR =
+	/^(?:text-(?:xs|sm|base|lg|\d?xl|left|center|right|justify|start|end|wrap|nowrap|balance|pretty|clip|ellipsis)|border(?:-[trblxyse])?(?:-\d+)?|border-(?:solid|dashed|dotted|double|hidden|none|collapse|separate)|outline(?:-\d+)?|outline-(?:none|hidden|dashed|dotted|double|solid)|ring(?:-\d+)?|ring-inset|shadow(?:-(?:2xs|xs|sm|md|lg|xl|2xl|none|inner))?|divide-[xy](?:-\d+)?|divide-(?:solid|dashed|dotted|double|none)|decoration-(?:solid|double|dotted|dashed|wavy|\d+|auto|from-font)|stroke-\d+|fill-none|stroke-none|from-\d+%|via-\d+%|to-\d+%)$/;
+/** Couleurs que Tailwind 4 fournit sans jeton du thème (la palette n'est pas remise à zéro). */
+const BUILTIN = /^(?:white|black|transparent|current|inherit|(?:slate|gray|zinc|neutral|stone|red|orange|amber|yellow|lime|green|emerald|teal|cyan|sky|blue|indigo|violet|purple|fuchsia|pink|rose)-(?:50|[1-9]00|950))$/;
+
+/** Les jetons `--color-…` déclarés dans le bloc `@theme`, commentaires retirés. */
+function themeColorTokens(css: string): Set<string> {
+	const sansCommentaires = css.replace(/\/\*[\s\S]*?\*\//g, '');
+	const theme = /@theme\s*\{([\s\S]*?)\n\}/.exec(sansCommentaires)?.[1] ?? '';
+	return new Set([...theme.matchAll(/--color-([a-z0-9-]+)\s*:/g)].map((m) => m[1]));
+}
+
+/** Les couleurs nommées par `classes` qui ne sont ni intégrées ni des jetons de `css`. */
+function missingThemeColors(classes: string, css: string): string[] {
+	const tokens = themeColorTokens(css);
+	const manquants: string[] = [];
+	for (const brute of classes.split(/\s+/).filter(Boolean)) {
+		const classe = (brute.split(':').pop() ?? '').replace(/^!/, '');
+		if (NON_COLOR.test(classe)) continue;
+		const m = new RegExp(`^(?:${COLOR_UTILITIES.join('|')})-(.+?)(?:\\/\\d+)?$`).exec(classe);
+		if (!m) continue;
+		const nom = m[1];
+		if (nom.startsWith('[') || (!BUILTIN.test(nom) && !tokens.has(nom))) manquants.push(classe);
+	}
+	return manquants;
+}
+
 describe('PENDING_FIELD_CLASS — chaque couleur nommée est un jeton du thème', () => {
-	it('bg-, text- et border- renvoient à un --color-… défini', () => {
-		const css = readFileSync('src/app.css', 'utf-8');
-		const couleurs = PENDING_FIELD_CLASS.split(/\s+/)
-			.map((c) => c.split(':').pop() ?? '')
-			.map((c) => /^(?:bg|text|border)-([a-z-]+?)(?:\/\d+)?$/.exec(c)?.[1])
-			.filter((n): n is string => n !== undefined);
-		expect(couleurs.length).toBeGreaterThan(0);
-		for (const nom of couleurs) expect(css, `--color-${nom}`).toContain(`--color-${nom}:`);
+	// `app.css` est résolu depuis CE fichier, et non depuis le répertoire courant (E5-4).
+	// `import.meta.url` est une chaîne `file:` ; on la convertit par `fileURLToPath`, car le
+	// `URL` global de jsdom n'est pas accepté par `readFileSync`, et `?raw` rend une chaîne
+	// vide pour un `.css` sous Vitest.
+	const appCss = readFileSync(resolve(dirname(fileURLToPath(import.meta.url)), '../../../app.css'), 'utf-8');
+
+	it('la classe des champs en vol ne nomme que des jetons définis', () => {
+		expect(PENDING_FIELD_CLASS).toMatch(/read-only:/);
+		expect(missingThemeColors(PENDING_FIELD_CLASS, appCss)).toEqual([]);
+	});
+
+	describe('le contrôle lui-même (revue P5)', () => {
+		const theme = '@theme {\n  --color-surface-alt: #f8fafc;\n  --color-brand-2: #000;\n}\n';
+
+		it('repère un jeton absent, quel que soit l’utilitaire ou le préfixe', () => {
+			expect(missingThemeColors('read-only:bg-input/50', theme)).toEqual(['bg-input/50']);
+			expect(missingThemeColors('read-only:ring-input', theme)).toEqual(['ring-input']);
+			expect(missingThemeColors('outline-x fill-x placeholder-x', theme)).toEqual(['outline-x', 'fill-x', 'placeholder-x']);
+			expect(missingThemeColors('hover:!bg-absent', theme)).toEqual(['bg-absent']);
+			expect(missingThemeColors('bg-[--x]', theme)).toEqual(['bg-[--x]']);
+		});
+
+		it('lit les noms à chiffre', () => {
+			expect(missingThemeColors('bg-brand-2', theme)).toEqual([]);
+			expect(missingThemeColors('bg-surface-2', theme)).toEqual(['bg-surface-2']);
+		});
+
+		it('ne cherche les jetons que dans @theme, commentaires retirés', () => {
+			const ailleurs = `/* --color-x: red; */\n:root { --color-y: blue; }\n${theme}`;
+			expect(missingThemeColors('bg-x text-y', ailleurs)).toEqual(['bg-x', 'text-y']);
+		});
+
+		it('ne rougit pas sur les couleurs intégrées ni sur les utilitaires non colorés', () => {
+			expect(missingThemeColors('bg-white text-sm border-t border-2 text-black bg-slate-500 ring-2 shadow-sm', theme)).toEqual([]);
+		});
 	});
 });
 
