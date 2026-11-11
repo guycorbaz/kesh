@@ -391,6 +391,22 @@ fiche non commitée : ce Dev Agent Record a été réécrit ; le script ne resta
     lourdes** (`PAUSE-HEAVY`, priorité à mybibli, 2026-11-11) : `npm run check` sous verrou, Vitest complet, `npm run
     build`, M2 sur l'E2E, E2E complet — à jouer à la levée de la pause, au commit `584a1183`.
   - Suite : passe ciblée P2 (Haiku), prompt `34-3-ecriture-manuelle-review-prompt-p2-ciblee.md`.
+- 2026-11-11 : **passe ciblée P2** (Haiku, commit `584a1183` ; rapport `kesh-gate-logs/e3403-review-p2-ciblee.md`) :
+  0 C, 0 H, **1 M**, 1 L. **C2-1** MEDIUM (M2 non rejouée sur l'E2E, différée par la pause) : jouée ci-dessous, sans code
+  neuf. **C2-2** LOW : la FAQ fournisseur (`user-manual.tex:3957`) alignée sur C-e3403-8, commit `f5969619`.
+  **Gates différés, joués après la levée de la pause** (script `scripts/gates-p1-reprise-e3403.sh`, une commande par prise
+  de verrou, au commit `fcb70f11`) :
+  - `npm run check` : 0 erreur, 29 avertissements (aucun dans un fichier de la story) — `p1/check.log` ;
+  - Vitest complet : **224 fichiers, 2924 tests, tous verts** — `p1/vitest.log` ;
+  - **M2 sur l'E2E** (`mut/M2-e2e.log`, `mut/M2-e2e-run.log`) : build muté, base vide, spec seule → **rouge**, tué par
+    l'ancre positive (`reconciliation-manual-entry.spec.ts:127`, l'option du compte de la banque présente après la saisie
+    de `1` : `Expected: 0, Received: 1`) ; fichier restauré puis `touch`, `git status` vide ;
+  - `npm run build` (frontend non muté) : vert — `p1/build.log` ;
+  - **E2E complet** (base vide, sans dossier de captures, runner avec `KESH_INBOX_DIR` et `KESH_DOCUMENTS_DIR`) :
+    **386 passés, 7 échecs, 18 ignorés** — `p1/e2e-complet.log`. Les sept sont ceux de la KF-029 (#97) :
+    `mode-expert.spec.ts:26`, `:41`, `onboarding-path-b.spec.ts:65`, `:92`, `onboarding.spec.ts:57`, `:77`, `:150`.
+    `reconciliation-manual-entry.spec.ts` vert ; `backup-restore-new-install.spec.ts:140` vert sans captures (#994).
+  - Suite : passe ciblée P3, prompt `34-3-ecriture-manuelle-review-prompt-p3-ciblee.md`.
 
 ### File List
 
