@@ -5,13 +5,51 @@
 // saisie (`input`). Les définitions sont celles de la fiche, § Conception.
 
 import { describe, it, expect } from 'vitest';
+import { readFileSync } from 'node:fs';
 import {
 	companyEditConflict,
 	normalizeCompanyValue,
 	normalizeCountry,
 	ADDRESS_NORMALIZERS,
 	sameBlockValues,
+	adoptionDecision,
+	PENDING_FIELD_CLASS,
 } from './company-conflict';
+
+// Revue P4 (E4-2 ; C-e346-11) : l'ordre d'adoption d'une société reçue, en fonction pure.
+describe('adoptionDecision — adopter une société reçue ? (revue P3 et P4)', () => {
+	it('aucune société encore : adopter', () => {
+		expect(adoptionDecision(null, { version: 1, seq: 4 })).toEqual({ adopt: true, seq: 4 });
+	});
+
+	it('version inférieure : refuser, quelle que soit la séquence', () => {
+		expect(adoptionDecision({ version: 3, seq: 1 }, { version: 2, seq: 9 })).toEqual({ adopt: false, seq: 1 });
+	});
+
+	it('version égale : la séquence de départ départage', () => {
+		expect(adoptionDecision({ version: 3, seq: 5 }, { version: 3, seq: 4 })).toEqual({ adopt: false, seq: 5 });
+		expect(adoptionDecision({ version: 3, seq: 5 }, { version: 3, seq: 6 })).toEqual({ adopt: true, seq: 6 });
+	});
+
+	it('version supérieure partie plus tôt : adopter, sans faire reculer la séquence (E4-2)', () => {
+		expect(adoptionDecision({ version: 3, seq: 5 }, { version: 4, seq: 2 })).toEqual({ adopt: true, seq: 5 });
+	});
+});
+
+// Revue P4 (B4-1 = E4-1 = A4-1) : Tailwind 4 ne produit aucune règle pour une couleur qui
+// n'est pas un jeton du thème. Ce contrôle rougit si la classe du champ en vol en nomme un
+// qui n'existe pas dans `src/app.css` (le cas de `bg-input`, resté sans effet en P3).
+describe('PENDING_FIELD_CLASS — chaque couleur nommée est un jeton du thème', () => {
+	it('bg-, text- et border- renvoient à un --color-… défini', () => {
+		const css = readFileSync('src/app.css', 'utf-8');
+		const couleurs = PENDING_FIELD_CLASS.split(/\s+/)
+			.map((c) => c.split(':').pop() ?? '')
+			.map((c) => /^(?:bg|text|border)-([a-z-]+?)(?:\/\d+)?$/.exec(c)?.[1])
+			.filter((n): n is string => n !== undefined);
+		expect(couleurs.length).toBeGreaterThan(0);
+		for (const nom of couleurs) expect(css, `--color-${nom}`).toContain(`--color-${nom}:`);
+	});
+});
 
 describe('sameBlockValues — un bloc ouvert adopte-t-il une version plus récente ? (revue P1, B-1)', () => {
 	it('mêmes valeurs, aux normalisations près : oui', () => {

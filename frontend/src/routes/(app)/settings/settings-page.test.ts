@@ -1023,6 +1023,37 @@ describe('page Paramètres — conflit de version des trois éditions (Story 34-
 			expect((await findByTestId('settings-company-email-error')).textContent).toBe('refus');
 			expect(queryByTestId('settings-company-email-conflict-notice')).toBeNull();
 		});
+
+		// Revue P4 (A4-5) : la même remise à zéro, pour les coordonnées et pour l'adresse.
+		it('coordonnées : l’avis est effacé au départ du nouvel envoi', async () => {
+			fetchCompanyCurrentMock.mockResolvedValueOnce(societe());
+			fetchCompanyCurrentMock.mockResolvedValueOnce(relue({ website: 'https://autre.ch' }));
+			updateCompanyContactDetailsMock.mockRejectedValueOnce(CONFLIT);
+			const { findByTestId, getByTestId, queryByTestId } = render(Page);
+			await fireEvent.click(await findByTestId('settings-company-contact-edit'));
+			await saisir(getByTestId, 'settings-company-website-input', 'https://moi.ch');
+			await fireEvent.click(getByTestId('settings-company-contact-save'));
+			await findByTestId('settings-company-contact-conflict-notice');
+			updateCompanyContactDetailsMock.mockRejectedValueOnce({ code: 'VALIDATION_ERROR', message: 'refus', status: 400 });
+			await fireEvent.click(getByTestId('settings-company-contact-save'));
+			expect((await findByTestId('settings-company-contact-error')).textContent).toBe('refus');
+			expect(queryByTestId('settings-company-contact-conflict-notice')).toBeNull();
+		});
+
+		it('adresse : l’avis est effacé au départ du nouvel envoi', async () => {
+			fetchCompanyCurrentMock.mockResolvedValueOnce(societe());
+			fetchCompanyCurrentMock.mockResolvedValueOnce(relue({ addressStructured: { ...ADRESSE, city: 'Nyon' } }));
+			updateCompanyAddressMock.mockRejectedValueOnce(CONFLIT);
+			const { findByTestId, getByTestId, queryByTestId } = render(Page);
+			await fireEvent.click(await findByTestId('settings-company-address-edit'));
+			await saisir(getByTestId, 'settings-company-address-city-input', 'Morges');
+			await fireEvent.click(getByTestId('settings-company-address-save'));
+			await findByTestId('settings-company-address-conflict-notice');
+			updateCompanyAddressMock.mockRejectedValueOnce({ code: 'VALIDATION_ERROR', message: 'refus', status: 400 });
+			await fireEvent.click(getByTestId('settings-company-address-save'));
+			expect((await findByTestId('settings-company-address-error')).textContent).toBe('refus');
+			expect(queryByTestId('settings-company-address-conflict-notice')).toBeNull();
+		});
 	});
 
 	// Revue P2 (E2-2) : l'adresse retirée ailleurs pendant l'édition.
