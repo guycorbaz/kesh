@@ -1,6 +1,6 @@
 # Story 34-8 : une facture fournisseur n'est plus annoncée en échec après son commit (#938)
 
-Status: ready-for-dev
+Status: review
 
 *Fiche rédigée le 2026-11-10 en autonomie (Opus 5.5), worktree `/home/gcorbaz/devel/kesh-e34`, branche `chore/epic-34-kickoff`,
 numéros de ligne de `a75835db`. Release **0.17.6**, Epic 34. **Aucune migration.** C'est la ligne « Non traité, à tracer » de
@@ -233,11 +233,11 @@ et de la compilation des tests `kesh-db` qui lisent un champ de la vue sur le re
   `supplier-invoices-unknown-outcome-reread-failed`, aux quatre locales, chacune avec un repli identique. Vitest :
   - un cas par geste, `attach` et `detach` compris : réponse perdue → relecture et avis ; 400 → message, sans relecture ;
   - un cas où la relecture échoue → second avis.
-- [ ] **T7 — E2E** : un paiement dont la réponse est coupée. Le patron est `cutResponseAfterWrite`
+- [x] **T7 — E2E** : un paiement dont la réponse est coupée. Le patron est `cutResponseAfterWrite`
   (`invoices-settle-unknown-outcome.spec.ts:72-80`) : `route.fetch()`, **puis** `route.abort("connectionreset")`. Un
   `abort()` seul n'enverrait pas la requête, et rien ne serait écrit (validation P1, 34-8-F7). La fiche relue montre `payée` et l'avis. Un second clic sur *Payer* n'est pas
   offert, puisque le statut a changé.
-- [ ] **T8 — textes** (AC-9) et **captures** de l'avis, en thème clair, dans `kesh-gate-logs/e343/captures/`.
+- [x] **T8 — textes** (AC-9) et **captures** de l'avis, en thème clair, dans `kesh-gate-logs/e343/captures/`.
 
 ### Mutations nommées
 
@@ -410,7 +410,23 @@ Opus 5.5 (claude-opus-5-5), en autonomie, sous le prompt `kesh-gate-logs/prompts
   des gardes i18n, recomptées au commit `1ec10969` : les trois fichiers 56/56), `npm run build` vert.
 - **Différés par la pause des commandes lourdes** (`kesh-gate-logs/PAUSE-HEAVY`, décision de Guy du 2026-11-11) : `cargo
   build --workspace --all-targets`, `scripts/gate-ci.sh kesh_ci_e348`, le gate frontend complet et l'E2E complet au dernier
-  commit de code. Complétés ci-dessous à la levée de la pause.
+  commit de code. Le build en attente du verrou a été arrêté avant d'avoir démarré ; tous ont tourné à la levée de la
+  pause, au commit `59d64250` (dernier commit de code : `1ec10969`) :
+  - `cargo build --workspace --all-targets` : vert ;
+  - `scripts/gate-ci.sh kesh_ci_e348` (base de CI recréée, un processus par binaire) : **5160 passés, 0 échoué, 16 ignorés**
+    (`kesh-gate-logs/e348/final-gate-ci.log`) ;
+  - frontend : `npm run check` 0 erreur (29 avertissements, aucun sous `supplier-invoices`), `lint-i18n-ownership` vert,
+    `test:unit` **2902/2902** (223 fichiers), `npm run build` vert ;
+  - **E2E complet**, base `kesh_e2e_e348` recréée vide, backend sur 3348, `KESH_INBOX_DIR` et `KESH_DOCUMENTS_DIR` passés
+    aussi au runner : **387 passés, 7 échecs, 17 ignorés** (17,7 min). Les sept échecs, nommés un par un contre
+    `docs/testing.md` § « Les échecs attendus » : `mode-expert.spec.ts:26`, `:41`, `onboarding-path-b.spec.ts:65`, `:92`,
+    `onboarding.spec.ts:57`, `:77`, `:150` — les sept de la KF-029 (#97). Aucun autre. La spec neuve
+    `supplier-invoice-unknown-outcome.spec.ts` passe (`kesh-gate-logs/e348/e2e-r1/playwright.log`). Aucun backend ni port
+    3348 restant (`ss-avant.log`, `ss-apres.log` vides).
+- **Capture** (thème clair) : `kesh-gate-logs/e348/captures/e348-paiement-issue-inconnue.png`, l'encadré `verify` après un
+  paiement coupé, la fiche relue « Payée », sans *Payer*. ⚠️ L'état `reread-failed` n'a **pas** de capture : il n'est
+  exercé que par Vitest. Le dossier reçoit aussi les captures des autres specs, la variable `KESH_E2E_CAPTURES_DIR` valant
+  pour toute la suite.
 
 ### File List
 
