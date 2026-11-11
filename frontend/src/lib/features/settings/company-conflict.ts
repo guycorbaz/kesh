@@ -136,6 +136,45 @@ export function sameBlockValues<K extends string>(
 	});
 }
 
+/** La version d'une société et la séquence de départ de la requête qui l'a rendue. */
+export interface CompanyStamp {
+	version: number;
+	seq: number;
+}
+
+/**
+ * Faut-il adopter une société reçue, et quelle séquence la page retient-elle ensuite ?
+ * Fonction pure (revues P3 et P4 ; C-e346-10, C-e346-11).
+ *
+ * - Version inférieure à celle de la page : refusée, quelle que soit la séquence.
+ * - Version égale : adoptée seulement si sa requête est partie après celle dont vient la
+ *   page. Le verrou de période ne change pas la version, si bien que l'égalité ne départage
+ *   pas deux réponses.
+ * - Version supérieure : toujours adoptée.
+ *
+ * La séquence retenue ne recule jamais (`Math.max`, revue P4 E4-2) : une société de version
+ * supérieure partie plus tôt ne rouvre pas la porte à une réponse de même version partie
+ * entre les deux.
+ */
+export function adoptionDecision(current: CompanyStamp | null, incoming: CompanyStamp): { adopt: boolean; seq: number } {
+	if (current === null) return { adopt: true, seq: incoming.seq };
+	if (incoming.version < current.version) return { adopt: false, seq: current.seq };
+	if (incoming.version === current.version && incoming.seq < current.seq) {
+		return { adopt: false, seq: current.seq };
+	}
+	return { adopt: true, seq: Math.max(current.seq, incoming.seq) };
+}
+
+/**
+ * Classe des champs d'une édition de la société pendant l'envoi et la relecture, où ils sont
+ * en lecture seule (C-e346-9). Revue P4 (B4-1 = E4-1 = A4-1) : `bg-input` n'est pas un jeton
+ * du thème (`src/app.css`), et Tailwind 4 ne produit aucune règle pour lui. Le fond
+ * `surface-alt` seul ne se distingue guère du blanc (1,05:1) ; le texte passe donc aussi en
+ * `text-muted` (4,55:1 sur `surface-alt`, au-dessus du seuil AA). Un test vérifie que chaque
+ * couleur nommée ici est un jeton défini.
+ */
+export const PENDING_FIELD_CLASS = 'read-only:bg-surface-alt read-only:text-text-muted read-only:cursor-progress';
+
 /**
  * Ce que l'écran affiche d'un conflit : les champs nommés et les valeurs relues.
  * `null` quand rien n'est à montrer (aucun champ en conflit ni repris).

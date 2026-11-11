@@ -14,8 +14,10 @@
 	import type { CompanyCurrentResponse, CompanyJson } from '$lib/features/settings/settings.types';
 	import {
 		ADDRESS_NORMALIZERS,
+		adoptionDecision,
 		companyEditConflict,
 		conflictNotice,
+		PENDING_FIELD_CLASS,
 		sameBlockValues,
 		type CompanyConflictNoticeState,
 		type CompanyEditConflict,
@@ -98,7 +100,8 @@
 
 	/**
 	 * Relit la société après un 409 et juge le conflit d'un bloc. `data` prend la société
-	 * relue. Seul un échec de la relecture rend `reload-failed`.
+	 * relue si `adoptCompany` l'adopte ; sinon (plus ancienne que `data`), le bloc est jugé
+	 * contre `data`. Seul un échec de la relecture rend `reload-failed`.
 	 */
 	async function reloadAfterConflict<K extends string>(
 		base: Record<K, string>,
@@ -196,13 +199,15 @@
 	 * @returns vrai si la société a été adoptée
 	 */
 	function adoptCompany(company: CompanyJson, seq: number, full?: CompanyCurrentResponse): boolean {
-		if (data) {
-			if (company.version < data.company.version) return false;
-			if (company.version === data.company.version && seq < dataSeq) return false;
-		}
+		// La règle est une fonction pure, testée seule (`adoptionDecision`, revue P4).
+		const decision = adoptionDecision(
+			data ? { version: data.company.version, seq: dataSeq } : null,
+			{ version: company.version, seq },
+		);
+		if (!decision.adopt) return false;
 		if (full) data = full;
 		else if (data) data = { ...data, company };
-		dataSeq = seq;
+		dataSeq = decision.seq;
 		syncOpenBlocks(company);
 		return true;
 	}
@@ -210,9 +215,10 @@
 	/**
 	 * Revue P3 (P3-B5) : un champ en lecture seule pendant l'envoi et la relecture
 	 * (C-e346-9) se voit. Le composant `Input` n'a de style que pour `disabled:`, et il est
-	 * partagé (d'autres écrans emploient `readonly` à demeure) : le signe est posé ici.
+	 * partagé (d'autres écrans emploient `readonly` à demeure) : le signe est posé ici. La
+	 * classe vit avec la règle (`PENDING_FIELD_CLASS`), où un test contrôle ses jetons (P4).
 	 */
-	const PENDING_FIELD = 'read-only:bg-input/50 read-only:cursor-progress';
+	const PENDING_FIELD = PENDING_FIELD_CLASS;
 
 	function alreadySavedMessage(): string {
 		return msg('settings-company-conflict-already-saved', 'Ces valeurs étaient déjà enregistrées.');
@@ -738,7 +744,7 @@
 									type="email"
 									bind:value={emailValue}
 									readonly={emailSubmitting}
-								class={PENDING_FIELD}
+									class={PENDING_FIELD}
 									maxlength={320}
 									data-testid="settings-company-email-input"
 								/>
@@ -796,7 +802,7 @@
 								type="text"
 								bind:value={phoneValue}
 								readonly={contactSubmitting}
-							class={PENDING_FIELD}
+								class={PENDING_FIELD}
 								maxlength={50}
 								placeholder={msg('settings-field-company-phone', 'Téléphone')}
 								data-testid="settings-company-phone-input"
@@ -806,7 +812,7 @@
 								type="text"
 								bind:value={websiteValue}
 								readonly={contactSubmitting}
-							class={PENDING_FIELD}
+								class={PENDING_FIELD}
 								maxlength={255}
 								placeholder={msg('settings-field-company-website', 'Site web')}
 								data-testid="settings-company-website-input"
