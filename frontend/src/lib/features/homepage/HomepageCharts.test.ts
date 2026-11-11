@@ -440,6 +440,21 @@ describe('34-10 (#970) — couleurs unies et anneau', () => {
 		expect(screen.queryByTestId('homepage-charts-pie-base-note')).toBeNull();
 	});
 
+	it('revue P4, C4-3 : des postes, mais aucune part dessinable — l’état vide, jamais un anneau vide', () => {
+		render(HomepageCharts, {
+			state: 'ready',
+			summary: summary({
+				expensePosts: [post(6000, 'Loyer', '0', '0.0')],
+				expensePostsBase: '100',
+				totalExpenses: '100',
+			}),
+		});
+		expect(screen.getByTestId('homepage-charts-no-posts')).toBeTruthy();
+		expect(pieCard().querySelector('svg[role="img"]')).toBeNull();
+		expect(screen.queryByTestId('homepage-chart-pie-total')).toBeNull();
+		expect(screen.queryByTestId('homepage-charts-pie-base-note')).toBeNull();
+	});
+
 	it('revues P1 B1-1, P2 B2-1 : deux parts étroites voisines, visibles, séparées par un trait radial', () => {
 		render(HomepageCharts, {
 			state: 'ready',

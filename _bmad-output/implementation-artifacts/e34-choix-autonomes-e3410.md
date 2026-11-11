@@ -160,7 +160,10 @@ union, jamais par écrasement.*
 ### C-e3410-15 — Rubrique « Modifié » au CHANGELOG
 
 - **Contexte** : B3-3 (LOW) ; la 34-5 nomme la rubrique `### Modifié`, et les sections s'unissent à l'intégration.
-- **Retenu** : `### Modifié` (C-e342-22 disait *Changé* : même intention, autre mot).
+- **Retenu** : `### Modifié`. *(Formule corrigée le 2026-11-11, passe ciblée P4, C4-1 : elle disait « C-e342-22 disait *Changé* :
+  même intention, autre mot », ce qui taisait un changement de décision.)* C-e342-22 **retenait *Changé*** pour la 34-3 et la
+  34-10 ; ce choix est **remplacé** par la rubrique *Modifié*, celle du CHANGELOG existant (aucun `### Changé`), sur décision de
+  l'orchestrateur du 2026-11-11 ; C-e342-22 est annotée en ce sens, et la 34-3 suivra à l'intégration.
 - **Réversible** : oui.
 
 ### C-e3410-16 — Le libellé du centre au plancher sur un écran étroit : accepté, sans issue

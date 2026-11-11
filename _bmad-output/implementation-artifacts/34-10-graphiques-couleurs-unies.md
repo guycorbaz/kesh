@@ -212,6 +212,8 @@ Aucun fichier de code commun avec les autres stories de l'Epic 34. `user-manual.
   - LOW : **P2-10-2** (lu : `ExpensePieCard.svelte:74-92`) → `<desc>` à deux clés, M6 ; **P2-10-3** → règle pure de taille de
     police, testée en Vitest ; **P2-10-4** → garde sans les `*.test.ts`, assertion par `querySelector`.
   - CHANGELOG : *Changé* gardé (rendu d'une fonction existante modifié), cohérent avec la 34-3 (C-e342-22).
+    *(Annoté le 2026-11-11, passe ciblée P4, C4-1 : remplacé — la rubrique de l'epic est *Modifié*, décision de l'orchestrateur
+    du 2026-11-11 ; C-e342-22 annotée, C-e3410-15 ; la 34-3 suivra à l'intégration.)*
 - 2026-11-10 : Validation P3 (Sonnet), remédiation (Opus 5.5). Rapport `kesh-gate-logs/e34-validate-p3-e342.md`, pour cette
   fiche 0 C, 0 H, 1 M, 1 LOW, tous retenus :
   - **P3-10-1** MEDIUM, **né de la remédiation P2** (P2-10-2 ne disait rien des deux clés existantes du `<desc>`) : lus
@@ -291,7 +293,9 @@ Aucun fichier de code commun avec les autres stories de l'Epic 34. `user-manual.
     `npm run build` vert (`*-p3.log`). **E2E non rejoué** : le rendu ne change pour aucune donnée que le serveur peut rendre — la
     clé d'`each` ne touche que la réconciliation du DOM, 57.6 et 57.599999999999994 donnent les mêmes points arrondis à trois
     décimales, et le filtre ne retire que des montants nuls ou négatifs, que le serveur n'envoie pas. Le dernier E2E complet est
-    celui de `e982f7e8` (`e2e-r4.log` : 385 passés, les sept KF-029).
+    celui de `e982f7e8` (`e2e-r4.log` : 385 passés, les sept KF-029). *(Annoté le 2026-11-11, passe ciblée P4, C4-2 :
+    **dispense remplacée par l'E2E r5** — la règle D7 du `CLAUDE.md` est sans dérogation ; l'E2E complet a été joué au dernier
+    commit de code, voir l'entrée de la P4.)*
   - Trend : P1 1 M / 7 L → P2 2 M / LOW → P3 0 M / 7 L → **P4 ciblée** (une lentille, sur `ce42fd4a` seul, prompt
     `34-10-graphiques-couleurs-unies-review-prompt-p4-ciblee.md`, rapport `kesh-gate-logs/e3410-review-p4-ciblee.md`) à lancer.
 

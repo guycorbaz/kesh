@@ -35,7 +35,9 @@
 	let slices = $derived(
 		pieSlices(summary.expensePosts, summary.otherExpenses, summary.expensePostsBase, GEOMETRY),
 	);
-	let hasPosts = $derived(summary.expensePosts.length > 0);
+	// Des postes ET au moins une part dessinable : sinon l'état vide, jamais un anneau vide
+	// (revue P4, C4-3 ; `pieSlices` écarte les montants nuls ou négatifs).
+	let hasPosts = $derived(summary.expensePosts.length > 0 && slices.length > 0);
 	let creditCount = $derived(summary.creditBalanceExpenseAccounts);
 
 	/** Le total des dépenses de l'exercice, celui des barres et du compte de résultat. */
