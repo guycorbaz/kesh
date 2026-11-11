@@ -446,7 +446,9 @@ describe('34-10 (#970) — couleurs unies et anneau', () => {
 			summary: summary({
 				expensePosts: [post(6000, 'Loyer', '0', '0.0')],
 				expensePostsBase: '100',
-				totalExpenses: '100',
+				// Total différent de la base : l'absence de la phrase de la base prouve alors que
+				// `baseDiffers` lit `hasPosts` (revue P5, C5-1).
+				totalExpenses: '150',
 			}),
 		});
 		expect(screen.getByTestId('homepage-charts-no-posts')).toBeTruthy();
