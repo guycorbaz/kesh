@@ -64,3 +64,36 @@
   plus des assertions de montage : `settlementCancellable` et `cancellable` booléens, `sourceDocument` et
   `lastConfirmedBatch` présents, lignes non vides. L'égalité entière couvre les champs nommés et ceux qu'on oublierait.
 - **Réversible.** Oui.
+
+## C-e348-7 — le second clic refusé relit la facture (revue P2, E-1)
+
+- **Contexte.** Réponse perdue, puis relecture en échec : la fiche reste celle d'avant le geste. Au second clic, le
+  serveur refuse (statut changé) ; payer, annuler le règlement et annuler affichaient ce refus en rouge sur la fiche
+  d'avant, sans relire — un geste écrit annoncé en échec, le défaut de #938.
+- **Retenu.** Une aide `reloadAfterStaleRefusal(err)` : sur un refus d'écran périmé (`isStaleState`, qui gagne
+  `SUPPLIER_INVOICE_NOT_PAID`, `SUPPLIER_INVOICE_CANCELLED` et `SUPPLIER_INVOICE_DRAFT`), la fiche relit ; si la relecture
+  échoue, l'encadré `reread-failed` revient. Employée par payer, annuler le règlement, annuler, valider et repasser en
+  brouillon (les deux derniers relisaient déjà, sans l'encadré). La suppression garde son traitement.
+- **Écartée.** Garder l'encadré `reread-failed` jusqu'à une relecture réussie (option b de la revue) : un geste réussi
+  ensuite le laisserait à tort, et le refus resterait affiché sur la fiche d'avant.
+- **Réversible.** Oui.
+
+## C-e348-8 — la relecture sans rejeu (revue P2, E-2)
+
+- **Contexte.** La relecture (`GET`) se rejouait ~14 s sur une coupure (`api-client.ts`, délais 300 ms à 10 s), pendant
+  lesquelles les autres gestes restaient offerts sur la fiche d'avant.
+- **Retenu.** `reloadAfterRefusal` lit avec `{ retry: false }` : `apiClient.get` et `getSupplierInvoice` acceptent les
+  options d'appel (`CallOptions`). Un échec est aussitôt `reread-failed`, que l'écran traite. Le chargement initial de la
+  fiche garde son rejeu.
+- **Écartée.** Un drapeau « relecture en cours » qui désactive les sept gestes : plus large, pour une fenêtre que le
+  rejeu seul ouvrait.
+- **Réversible.** Oui.
+
+## C-e348-9 — joindre : le refus « déjà traité » sur son propre document (revue P2, B-4)
+
+- **Contexte.** Un rattachement dont la requête expire côté client alors que le serveur l'écrit encore : la relecture ne
+  montre pas de document, un second clic reçoit `409 IMPORT_NOT_PENDING_COMPLETION` ; la facture relue montre alors ce
+  document, et la fiche notifiait un avertissement « déjà traité ».
+- **Retenu.** Si le document relu est celui qu'on joignait, la fiche dit « Document joint à la facture. » ; sinon,
+  l'avertissement d'avant. Court, dans la zone de la story : traité ici, sans issue.
+- **Réversible.** Oui.

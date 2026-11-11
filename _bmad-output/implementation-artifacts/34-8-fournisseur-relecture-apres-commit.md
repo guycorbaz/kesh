@@ -262,15 +262,16 @@ aucune migration, aucun schéma.
 
 - **La création d'une facture fournisseur** (`POST /supplier-invoices`, page `supplier-invoices/new`) n'a ni version ni clé.
   Une réponse perdue suivie d'un second clic crée un **second brouillon**. Il n'y a pas d'écriture au journal, et le doublon
-  se voit dans la liste, mais l'opération est enregistrée et annoncée en échec. **Issue demandée** (P2 proposé). Elle n'est
+  se voit dans la liste, mais l'opération est enregistrée et annoncée en échec. **Issue demandée** (P2 proposé) : ouverte,
+  **#975**. Elle n'est
   pas traitée ici : autre nature, la même question que #951.
 - **La complétion d'un document** (`POST /imported-supplier-invoices/{id}/complete`, page `supplier-invoices/new`,
   `save`, `:145-149`) : l'erreur remonte au formulaire, sans relecture. Après une réponse perdue, un second clic rend
   `409 IMPORT_NOT_PENDING_COMPLETION`, affiché comme un échec alors que la facture est créée. C'est le symptôme de #938, sur
-  un autre écran. **Issue demandée** (validation P2, 34-8-F1).
+  un autre écran. **Issue demandée** (validation P2, 34-8-F1) : ouverte, **#985**.
 - **La page d'édition** (`[id]/edit`) : son `PUT` porte la version. Après une réponse perdue, un second clic rend 409, et
   `describeSubmitError` invite à recharger (`edit/+page.svelte:22`). Pas de double écriture, mais un échec annoncé pour
-  une modification enregistrée, sans relecture. **Issue demandée.** *(La fiche disait « rien à faire » : c'était juger la
+  une modification enregistrée, sans relecture. **Issue demandée** : ouverte, **#986**. *(La fiche disait « rien à faire » : c'était juger la
   double écriture, non le symptôme.)*
 - **La confirmation d'un lot de paiement** et **l'acceptation d'un rapprochement** : elles passent par les formes `_in_tx` et
   ne relisent pas par `load_with_settlement_cancellation`. Hors de #938.
@@ -382,6 +383,41 @@ aucune migration, aucun schéma.
     vus par le gate, non par une revue : la **P2 complète (Opus)** relit d'abord `c7251f56` et `69855016`, prompt
     `34-8-fournisseur-relecture-apres-commit-review-prompt-p2.md`.
   - Gates au commit `69855016`, voir *Gates de la remédiation P1* au Dev Agent Record.
+- 2026-11-11 : **revue de code P2 (Opus, trois lentilles) : 0 C, 0 H, 2 MEDIUM distincts, 9 LOW — tous traités** (Opus 5.5,
+  commit de code `3f5d36c4`). Rapports `kesh-gate-logs/e348-review-p2-{B,E,A}.md`. Prémisses relues au code :
+  - **E-1 (M)** — après une réponse perdue puis une relecture en échec, le second clic sur *Payer*, *Annuler le règlement*
+    ou *Annuler* recevait un refus de statut affiché en rouge sur la fiche d'avant, sans relecture : un geste écrit annoncé
+    en échec. Codes relus (`crates/kesh-db/src/errors.rs` : `SUPPLIER_INVOICE_NOT_PAID`, `SUPPLIER_INVOICE_CANCELLED`,
+    `SUPPLIER_INVOICE_DRAFT` ; `ILLEGAL_STATE_TRANSITION` pour `pay_in_tx`). Retenu C-e348-7 : `reloadAfterStaleRefusal`,
+    `isStaleState` étendu, encadré `reread-failed` si la relecture échoue encore ; employé aussi par valider et repasser en
+    brouillon. Vitest : les trois gestes, la relecture encore en échec ; mutations **M8** (payer sans relecture : 2 rouges)
+    et **M9** (l'aide sans effet : 4 rouges, les trois gestes).
+  - **B-1 = A-1 = E-3 (M)** — l'historique écrit à `docs/api-external.md:609` par la remédiation P1 était faux : à `665de151`,
+    les neuf handlers passaient déjà par `load_with_settlement_cancellation` (`git show 665de151:…`, relu). L'incise
+    est retirée ; `:623` passe aux neuf gestes ; le doc-comment de `supplier-invoices.types.ts` aligné ; `:884` vérifié
+    (exact : `PUT`, `validate`, `unvalidate` depuis la v0.17.0). Symptôme grepé
+    (`git grep -n -iE "pay. et l'annulation|jusque-là .pay"`) : plus rien.
+  - **LOW** :
+    - **E-2** — relecture sans rejeu (C-e348-8) : `apiClient.get` et `getSupplierInvoice` prennent les options d'appel ;
+      Vitest `retry: false`.
+    - **B-2 = A-2** — les quatre autres replis `common-error` inatteignables retirés (`cancelSettlement`, `cancel`,
+      `confirmValidate`, `detach`) et le `else` mort de `confirmUnvalidate` ; `sitesTotal` **2924 → 2921** (−4, puis +1
+      pour B-4), recompté par la garde. `confirmDelete` garde le sien : il ne passe pas par l'issue inconnue.
+    - **B-3** — la règle du cache des requêtes préparées passe au doc-comment du module `imported_supplier_invoices.rs`
+      (« aucune requête `SELECT *` sur le pool avant `MIGRATOR.run` »), la fonction y renvoie.
+    - **B-4** — « gardé par le statut, la version ou l'état du document » (`unknown-outcome.ts`, la fiche). Le faux « déjà
+      traité » sur son propre rattachement était court : corrigé ici (C-e348-9), Vitest dédié ; pas d'issue.
+    - **A-3** — File List et décomptes au Dev Agent Record (ci-dessous).
+    - **A-4** — #975, #985 et #986 cités à « Ce qui ne se traite pas ici ».
+    - **A-5** — le bandeau jugé au Dev Agent Record ; issue demandée.
+    - **E-2 de la P1** (observation) : rien.
+  - Manuel : la phrase du second envoi dit que la fiche relit ; PDF régénéré (`make user`) et contrôlé aplati.
+  - ⚠️ **Incident pendant la remédiation** : la première mesure de M8 a été jouée sur la remédiation **non commitée** ; le
+    script de mutation restaure par `git checkout --`, qui a effacé les changements de `+page.svelte`. Ils ont été refaits
+    à l'identique, vérifiés (Vitest 464/464, `check` 0 erreur), commités (`3f5d36c4`), puis M8 rejouée sur le code commité
+    (`mut/M8.log` ; la première mesure est gardée dans `mut/M8-avant-commit.log`). Leçon : commiter avant toute mutation.
+  - **Tendance** : P1 2 M / 7 L → P2 2 M / 9 L (distincts : E-1 vient de la story, B-1 de la remédiation P1). La P3
+    complète (Sonnet) relit d'abord `3f5d36c4` : `34-8-fournisseur-relecture-apres-commit-review-prompt-p3.md`.
 
 ## Dev Agent Record
 
@@ -488,6 +524,30 @@ Opus 5.5 (claude-opus-5-5), en autonomie, sous le prompt `kesh-gate-logs/prompts
     serait refusé (statut changé) : pas d'état bloquant, C-e343-12 ;
   - `e348-selecteur-issue-inconnue.png` : le sélecteur reste ouvert sur l'issue inconnue, sans encadré.
 
+### Gates de la remédiation P2
+
+- **Au commit `3f5d36c4`, dernier commit de code** (`gates-p2.out`) :
+  - frontend, par `.gate-front.lock` : `check` 0 erreur, `lint-i18n-ownership` vert, `test:unit` **2908/2908** (223
+    fichiers), `build` vert ;
+  - `scripts/test-fast.sh --ci`, bases remises à neuf : **5155/5155**, 12 ignorés ; `cargo build --workspace --all-targets`
+    vert ; `scripts/gate-ci.sh kesh_ci_e348` : **5162 passés, 0 échoué, 16 ignorés** ;
+  - **E2E complet**, base recréée vide : **388 passés, 8 échecs, 17 ignorés** (20,8 min). Sept échecs sont ceux de la
+    KF-029 : `mode-expert.spec.ts:26`, `:41`, `onboarding-path-b.spec.ts:65`, `:92`, `onboarding.spec.ts:57`, `:77`,
+    `:150`. Le huitième, `backup-restore-new-install.spec.ts:140` (`locator.click: Test timeout of 180000ms exceeded`, page
+    de restauration de l'assistant), est hors de la story : voir son rejeu isolé ci-dessous. Les trois tests de
+    `supplier-invoice-unknown-outcome.spec.ts` passent ;
+  - mutations **M8** et **M9** rouges, restaurées (`mut/SYNTHESE.log`). Le manuel régénéré (`make user`), contrôlé aplati.
+- **Décomptes des tests**, aux deux bornes (`665de151` → `3f5d36c4`, `grep -cE '#\[(test|sqlx::test)'`) :
+  `kesh-api/tests/supplier_invoice_response_e2e.rs` 0 → **13** (9 égalités AC-4, une par geste, et 4 gardes) ;
+  `kesh-db/tests/supplier_invoices_repository.rs` 61 → **65** ; Vitest `supplier-unknown-outcome-page.test.ts` **27**
+  (21 de la livraison, 6 de la P2) ; E2E `supplier-invoice-unknown-outcome.spec.ts` **3**. Totaux : nextest 5153 → 5155,
+  Vitest 2902 → 2908.
+- **A-5, le bandeau de la capture `e348-relecture-en-echec.png`** : « Base de données temporairement indisponible —
+  réessai automatique en cours » vient du client commun, qui pose l'état dégradé au premier échec réseau, même d'un `POST`
+  qu'il ne rejoue pas (`api-client.ts`, `setDegraded()`), et ne le lève qu'au premier succès. Sur cette capture, il dit
+  « réessai automatique » alors que rien n'est réessayé, à côté de l'encadré qui dit de recharger : l'écran se contredit.
+  Antérieur à la story et commun à tout l'écran : **issue demandée** (une, P4 proposé), sans correction ici.
+
 ### File List
 
 - `crates/kesh-db/src/repositories/supplier_invoices.rs` — `get_settlement_view_in_tx`, `commit_with_view`,
@@ -508,3 +568,9 @@ Opus 5.5 (claude-opus-5-5), en autonomie, sous le prompt `kesh-gate-logs/prompts
 - `docs/manual/fr/user-manual.tex`, `user-manual.pdf` ; `docs/api-external.md` ; `CHANGELOG.md`.
 - `_bmad-output/implementation-artifacts/e34-choix-autonomes-e348.md` (neuf),
   `34-8-fournisseur-relecture-apres-commit-review-prompt-p1.md` (neuf).
+- *Ajoutés par les remédiations P1 et P2 (revue P2, A-3)* : `crates/kesh-db/src/repositories/imported_supplier_invoices.rs`
+  (règle du cache, au module) ; `frontend/src/lib/features/supplier-invoices/supplier-invoices.api.ts` et
+  `supplier-invoices.types.ts` ; `frontend/src/lib/features/imported-supplier-invoices/imported-supplier-invoices.api.ts`
+  et `.types.ts` ; `frontend/src/lib/shared/utils/api-client.ts` (`get` et ses options d'appel) ;
+  `_bmad-output/implementation-artifacts/sprint-status.yaml` ;
+  `34-8-fournisseur-relecture-apres-commit-review-prompt-p2.md` et `…-review-prompt-p3.md` (neufs).
