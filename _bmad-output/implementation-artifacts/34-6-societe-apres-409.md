@@ -440,6 +440,30 @@ Rust n'est touché, hormis les `.ftl` : `cargo test -p kesh-i18n` et `textes_coh
   - **B4-4 (L), non traité** : c'est le contraste de `--color-warning`, déjà tracé par **#996**.
   - L'en-tête de `reloadAfterConflict`, faux depuis la P3, est corrigé (note de A, non comptée).
 
+  **Gates au dernier commit de code `2c8c2241`** : une commande par prise sous le verrou ; journal
+  `kesh-gate-logs/e346/suite5.out`.
+  - **Mutations** (`mut/M23..M30.log`), toutes rouges, chacune ayant restauré son fichier :
+    - M25, avis des coordonnées non vidé au départ : 1 rouge ;
+    - M26, de même pour l'adresse : 1 rouge ;
+    - M23, de même pour l'e-mail, rejouée : 1 rouge ;
+    - M24, séquence du verrou à 0, rejouée : 1 rouge ;
+    - M27, `<` → `<=` dans `adoptionDecision` : 3 rouges (le cas unitaire « version égale », « verrouillage à version
+      égale », « une relecture partie avant le verrou… ») ;
+    - M28, garde de séquence retirée : 2 rouges ;
+    - M29, `Math.max` retiré : 1 rouge (« version supérieure partie plus tôt ») ;
+    - M30, `bg-input/50` remis : 1 rouge (le contrôle des jetons du thème).
+
+    M20 à M22 visaient les lignes d'`adoptCompany` que la règle extraite a remplacées ; M27 à M29 les remplacent.
+  - `npm run check` : 0 erreur, 29 avertissements. `lint-i18n-ownership` : PASS.
+  - `test:unit` : 223 fichiers, 2944 tests verts (2937 + 7). `build` : vert.
+  - Le CSS construit (`build/_app/immutable/assets/0.*.css`) contient les trois règles :
+    - `read-only\:bg-surface-alt:read-only{background-color:var(--color-surface-alt)}` ;
+    - `read-only\:text-text-muted:read-only{color:var(--color-text-muted)}` ;
+    - `read-only\:cursor-progress:read-only{cursor:progress}`.
+  - **E2E complet r7**, base E2E recréée vide, dossiers passés au runner : 386 passés, 7 échecs, les sept de la KF-029
+    (`mode-expert:26`, `:41`, `onboarding-path-b:65`, `:92`, `onboarding:57`, `:77`, `:150`), 18 ignorés.
+  - Le prompt de la passe P5 est `34-6-societe-apres-409-review-prompt-p5.md`.
+
 ## Dev Agent Record
 
 ### Agent Model Used
