@@ -261,6 +261,47 @@ Aucun fichier commun avec les autres stories du groupe. `inbox_import.rs` n'est 
   (le formateur du projet, non un script de remplacement) sur `inbox_import_e2e.rs`, commit `de4e7514`. Les mutations
   passent par un script (`kesh-gate-logs/e349/mut-e349.py`, motif vérifié unique, restauration `git checkout --` + `touch`),
   comme le permet la consigne.
+- 2026-11-11 : **Revue de code P1** (trois lentilles B, E, A ; rapports `kesh-gate-logs/e349-review-p1-{B,E,A}.md`) :
+  **0 C, 0 H, 0 M** ; LOW : B 5, E 4, A 4, soit neuf points une fois dédoublonnés, tous traités dans la story, aucune
+  issue à ouvrir. Remédiation (Opus 5.5), commits `8ddeee5c` et `7740ad67` :
+  1. **A-1 = B-5** — `duplicate_details_names_the_document_or_nothing` exerce aussi la branche `Some` (fixture,
+     `to_complete` sans facture, `completed` avec facture 42) ;
+  2. **A-2 ≈ B-1** — `docs/api-external.md` : `existingStatus` est « l'état lu par l'import, relu après l'échec quand le
+     doublon naît d'une course » (au site `:581` la ligne est celle déjà lue) ; l'absence des trois champs vient d'un
+     « document disparu entre-temps, ou relecture en erreur » (C-e349-1), non d'« aucun chemin » ;
+  3. **E-1 ≈ B-2** — un doublon `to_complete` dont la ligne n'est pas dans la liste affichée ne porte plus de lien mort :
+     « absent de la liste ci-dessous : actualisez la page » (clé `-report-duplicate-not-in-list`) ; ⚠️ cette
+     remédiation faisait clignoter le texte entre l'arrivée du rapport et le rechargement de la liste — relevé en
+     écrivant le prompt P2, corrigé au commit `7740ad67` (`!importing`) ;
+  4. **E-2** — toast « {$n} fichier(s) non importé(s), et la limite par import est atteinte » quand les deux arrivent
+     ensemble (clé `-notice-not-imported-truncated`) ;
+  5. **B-3** — le cadre est bordé d'avertissement aussi à la seule troncature ;
+  6. **A-3** — manuel utilisateur : la notification de succès ne paraît que si des documents ont été importés ; le
+     lien « tant que la ligne figure dans la liste » ; le cadre bordé ;
+  7. **E-3** — `with_moved_to(Some(null))` vaut `None` (garde, et cas ajouté au test unitaire) ;
+  8. **E-4 ≈ B-4** — test d'instabilité : fil arrêté et rejoint par un garde `Drop`, panique comprise ; cinq essais au
+     plus, à fichiers distincts, si l'ordonnanceur prive le fil de la fenêtre de 25 ms ; il échoue si aucun essai
+     n'exerce l'instabilité ;
+  9. **Double cadre derrière le toast** (A, capture `apres-notification.png`) : **un empilement de sonner, non deux
+     notifications**. Le script de captures lançait deux imports à moins d'une seconde, et le toast de succès du
+     premier dure 4 s. Journal de la capture reprise (`e2e-r5/capture.log`) : 1 toast après le premier import, 0 avant
+     le second, 1 après le second ; la capture reprise n'en montre qu'un.
+  Textes : deux clés neuves aux quatre catalogues ; gardes recomptées, `i18n-keys` 2942 → 2944 sites,
+  `i18n-un-repli-par-cle` 426 → 428 clés. Vitest de la page : 20 → 21 tests (un neuf, trois ajustés : la liste du cas
+  mixte porte le document 7, le toast mixte dit la limite, le cas du rechargement en échec sans troncature).
+  **Gates au dernier commit de code, `7740ad67`** (`kesh-gate-logs/e349/gates3.log`) :
+  - gate ciblé `binary(inbox_import_e2e)` + unitaires : 54/54 ;
+  - bases remises à neuf, `test-fast --ci` 5149/5149, 12 ignorés ; `cargo build --workspace --all-targets` vert ;
+    `gate-ci.sh kesh_ci_e349` 5156 passés, 0 échoué, 16 ignorés ;
+  - `npm run check` 0 erreur (29 avertissements préexistants), `lint-i18n-ownership` vert, `test:unit` 2895/2895
+    (222 fichiers), `build` vert ;
+  - E2E complet, base vide, runner avec `KESH_INBOX_DIR` et `KESH_DOCUMENTS_DIR` (`e2e-r4`) : 387 réussis, 7 échecs,
+    18 ignorés ; les sept échecs sont ceux de la KF-029 (#97) de `docs/testing.md` (`mode-expert:26`, `:41`,
+    `onboarding-path-b:65`, `:92`, `onboarding:57`, `:77`, `:150`) ; les deux cas de la 34-9 passent ;
+  - captures reprises (`e2e-r5`).
+  **Tendance** : P1 0 C / 0 H / 0 M / 13 LOW (9 distincts). La remédiation touche le code de production (Svelte,
+  `with_moved_to`) : la boucle se poursuit par une **passe ciblée P2** (prompt
+  `34-9-rapport-import-dossier-review-prompt-p2-ciblee.md`, rapport attendu `kesh-gate-logs/e349-review-p2-ciblee.md`).
 
 ## Dev Agent Record
 
