@@ -224,8 +224,26 @@ atteint l'assistant). Ordre : 34-1, puis 34-2, puis 34-11a1, 34-11a2.
   - Grep du symptôme : `inchangés`, `tels quels`, `restent tels` dans `docs/`, `CHANGELOG.md`, `crates/`, `frontend/src` — seuls
     les deux sites corrigés portaient la phrase absolue.
   - ⚠️ **Pause de la station** (décision de Guy du 2026-11-11, `kesh-gate-logs/PAUSE-HEAVY`) : le gate ciblé de la remédiation,
-    qui attendait encore le verrou, a été arrêté ; tests, mutations, PDF, gates et E2E sont **différés** à la levée de la pause
-    (script d'attente). Leurs chiffres s'écrivent au Dev Agent Record une fois tournés.
+    qui attendait encore le verrou, a été arrêté ; tests, mutations, PDF, gates et E2E ont été **différés** à la levée de la
+    pause, puis joués (journal `kesh-gate-logs/e3401/apres-pause.txt`) :
+    - gate ciblé `binary(onboarding_bank_account_e2e)` : 13 passés (`cible-api-rem1.log`) ;
+    - mutations M8 à M15 (`mut/M8.log` … `M15.log`) : **7 tuées, M10 survit, équivalente** (un `FOR UPDATE` de plus sur deux
+      lignes que la finalisation reverrouille : aucun test ne l'observe, aucun comportement ne change). M8 → `bank_step_replays` ;
+      M9 → `bank_step_validates_like_the_creation` ; M11 → `bank_step_refuses_the_active_receivable_not_an_archived_one` ;
+      M12 → `bank_step_replays` (f) ; M13 → « un choix fait pendant le chargement » ; M14 → « l'étape ne s'envoie pas avant la fin
+      du chargement » ; M15 → « … triés par numéro » ;
+    - PDF régénéré (`manuel-rem1.log`, commit `db384e12`), aplati : « déjà créé » ×1, « présélectionné s’il existe » ×2,
+      « se modifient ensuite » ×1 ;
+    - backend à `5000486a` (dernier commit de code de production : `7368944b`), base recréée : `test-fast.sh --ci` **5152 passés,
+      12 ignorés** ; `cargo build --workspace --all-targets` vert ; `gate-ci.sh kesh_ci_e3401` **5159 passés, 0 échec, 16 ignorés** ;
+    - frontend à `db384e12` : `check` 0 erreur, `lint-i18n-ownership` vert, `build` vert ; `test:unit` 2 rouges, la garde
+      `i18n-libelle-en-dur.test.ts` (la fonction neuve `bankLedgerLoadErrorText` est une candidate `*Text`, conforme) — compteurs
+      85 → 86 et `conforme` 71 → 72 au commit `c1ddc068` (test seul) ; **Vitest complet rejoué à `c1ddc068` : 2896 passés,
+      224 fichiers** (`front-test-unit-3.log`) ;
+    - **E2E complet** (`e2e-r2.*`, base recréée, recette entière, `KESH_INBOX_DIR`/`KESH_DOCUMENTS_DIR` au runner) : **386 passés,
+      7 échecs, 18 ignorés** — les sept de la KF-029 (#97), comme au premier run ; la spec neuve passe ; frontend construit à
+      `db384e12` (même code que `c1ddc068`) ;
+    - captures refaites (`captures-r2.log`) : la 03 montre la phrase de l'étape suivie du motif du client.
 
 ## Dev Agent Record
 
