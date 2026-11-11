@@ -72,3 +72,28 @@ groupe, `e34-choix-autonomes-e342.md` (C-e342-5 à C-e342-9, C-e342-20 à C-e342
   (`kesh-gate-logs/e344/scripts/rouges-et-bancs-e344.sh`).
 - **Écartée** : écritures par la route (des minutes par palier) ; un second worktree pour l'« avant » (20 à 50 Go de cible).
 - **Réversible** : oui.
+
+### C-e344-9 — Le remède de l'AC-8 : deux lectures par page, sur les mêmes textes SQL
+
+- **Contexte** : le banc a mesuré, avec trois lectures par transaction (première écriture du code), ≈ 18,7 s pour 500
+  transactions à 20 000 écritures (≈ 0,3 s avant le champ) : « mauvaise pente » au sens de l'AC-8 (plus de 3 s). Chaque
+  lecture agrège toutes les lignes du compte du grand livre.
+- **Retenu** : `count_already_booked_for_page` — une lecture des règlements rattachables du compte (leur seul `M`), une
+  lecture des écritures dont `M` est l'un des montants de la page (`m.movement IN (…)`), avec deux colonnes « non
+  rapprochée » et « rapprochée ailleurs » ; les tests de montant, la tolérance et le plafond de 50 passent en Rust, en
+  décimal exact. Les conditions SQL ne sont pas recopiées : elles sont extraites en constantes partagées avec les requêtes du
+  dialogue (`LINKABLE_SETTLEMENTS`, `ENTRY_MOVEMENTS`, `NOT_MATCHED`, `MATCHED_ELSEWHERE`,
+  `ENTRY_NOT_REVERSED_NOR_SETTLEMENT`). Le test `s34_4_ac8_la_lecture_par_page_egale_les_fonctions_du_dialogue` compare,
+  pour 50 transactions variées, les trois nombres aux longueurs des trois fonctions par transaction. Banc après remède :
+  ≈ 0,3 s à 20 000 écritures. `find_matched_elsewhere` (le mode du constructeur) reste la référence du second côté ; la
+  fonction par transaction est retirée.
+- **Écartées** : garder trois lectures par transaction (mauvaise pente) ; une dette de performance (le remède rend les
+  nombres exacts).
+- **Réversible** : oui.
+
+### C-e344-10 — Formatage par `cargo fmt`
+
+- **Contexte** : la consigne « l'outil Edit seulement » vise les remplacements par script.
+- **Retenu** : `cargo fmt --all` a reformaté les fichiers Rust touchés (le formateur du dépôt, exigé par la CI) ; toutes les
+  modifications de fond sont faites par l'outil Edit. Écart déclaré au Change Log.
+- **Réversible** : oui.
