@@ -53,8 +53,8 @@ export interface SupplierInvoiceResponse {
 	/**
 	 * Story 25-3-a-2 (#414) — le règlement peut-il être annulé ?
 	 *
-	 * ⚠️ **`null` veut dire « non calculé », jamais « non »** : seuls le GET,
-	 * `pay` et l'annulation du règlement le calculent. Calculé par la fonction
+	 * ⚠️ **`null` veut dire « non calculé », jamais « non »** : seuls le GET et les
+	 * neuf gestes qui écrivent le calculent (la création, non). Calculé par la fonction
 	 * même qui refuse l'annulation ; ne tient pas compte du rôle.
 	 */
 	settlementCancellable: boolean | null;

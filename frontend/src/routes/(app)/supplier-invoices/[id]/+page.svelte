@@ -155,9 +155,10 @@
 	 *   lieu (le défaut que la revue P1 de la 33-6 a corrigé côté client).
 	 *
 	 * Pas d'état bloquant (contrairement au règlement client) : chacun des sept gestes
-	 * est gardé par le statut ou par la version, si bien qu'un second envoi est refusé
-	 * sans rien écrire deux fois. L'encadré disparaît au geste suivant
-	 * (`clearCycleErrors`) ou à une relecture réussie lancée par la page.
+	 * est gardé par le statut, la version ou l'état du document (joindre, détacher), si
+	 * bien qu'un second envoi est refusé sans rien écrire deux fois — et ce refus relit la
+	 * facture (`reloadAfterStaleRefusal`, `isStaleDocumentRefusal`). L'encadré disparaît
+	 * au geste suivant (`clearCycleErrors`) ou à une relecture réussie lancée par la page.
 	 */
 	let cycleOutcome = $state<'known' | 'verify' | 'reread-failed'>('known');
 
@@ -261,6 +262,9 @@
 			// toute autre erreur (revue P1 de la 34-8, B-2 : le repli était inatteignable).
 			if (await rereadAfterUnknownOutcome(err)) return;
 			if (isApiError(err)) payError = err.message;
+			// Revue P2 de la 34-8 (E-1) : un refus qui dit l'écran périmé — la facture payée
+			// par un envoi précédent dont la réponse s'était perdue — relit la facture.
+			await reloadAfterStaleRefusal(err);
 		} finally {
 			paying = false;
 		}
@@ -304,10 +308,10 @@
 				),
 			);
 		} catch (err) {
-			if (await rereadAfterUnknownOutcome(err)) return; // Story 34-8 (AC-8)
-			settlementCancelError = isApiError(err)
-				? err.message
-				: i18nMsg('common-error', 'Erreur inattendue');
+			// Story 34-8 (AC-8) ; ce qui reste est une `ApiError` (revue P2, B-2 = A-2).
+			if (await rereadAfterUnknownOutcome(err)) return;
+			if (isApiError(err)) settlementCancelError = err.message;
+			await reloadAfterStaleRefusal(err); // revue P2 (E-1)
 		} finally {
 			cancellingSettlement = false;
 		}
@@ -345,8 +349,10 @@
 				),
 			);
 		} catch (err) {
-			if (await rereadAfterUnknownOutcome(err)) return; // Story 34-8 (AC-8)
-			cancelError = isApiError(err) ? err.message : i18nMsg('common-error', 'Erreur inattendue');
+			// Story 34-8 (AC-8) ; ce qui reste est une `ApiError` (revue P2, B-2 = A-2).
+			if (await rereadAfterUnknownOutcome(err)) return;
+			if (isApiError(err)) cancelError = err.message;
+			await reloadAfterStaleRefusal(err); // revue P2 (E-1)
 		} finally {
 			cancelling = false;
 		}
@@ -358,7 +364,9 @@
 		// entre-temps) et `SUPPLIER_INVOICE_MUST_BE_UNVALIDATED_FIRST` (supprimer un
 		// « brouillon » validé entre-temps) disent eux aussi l'écran périmé. Story
 		// v0172-annulees (AC-12) : les deux refus neufs relisent la facture comme
-		// `SUPPLIER_INVOICE_PAID`.
+		// `SUPPLIER_INVOICE_PAID`. Revue P2 de la 34-8 (E-1) : les refus de statut des deux
+		// annulations — règlement d'une facture qui n'est plus payée, facture déjà annulée ou
+		// repassée en brouillon — disent eux aussi l'écran périmé.
 		return (
 			isApiError(err) &&
 			(err.code === 'ILLEGAL_STATE_TRANSITION' ||
@@ -366,8 +374,23 @@
 				err.code === 'SUPPLIER_INVOICE_PAID' ||
 				err.code === 'SUPPLIER_INVOICE_PAID_RECONCILED' ||
 				err.code === 'SUPPLIER_INVOICE_DETACHED_PAYMENT' ||
-				err.code === 'SUPPLIER_INVOICE_MUST_BE_UNVALIDATED_FIRST')
+				err.code === 'SUPPLIER_INVOICE_MUST_BE_UNVALIDATED_FIRST' ||
+				err.code === 'SUPPLIER_INVOICE_NOT_PAID' ||
+				err.code === 'SUPPLIER_INVOICE_CANCELLED' ||
+				err.code === 'SUPPLIER_INVOICE_DRAFT')
 		);
+	}
+
+	/**
+	 * Revue P2 de la 34-8 (E-1, C-e348-7) — relit la facture après un refus qui dit l'écran
+	 * périmé. C'est le second clic après une réponse perdue puis une relecture en échec : le
+	 * geste est écrit, le serveur refuse le second envoi, et l'écran montrait encore l'état
+	 * d'avant. Si cette relecture échoue aussi, l'encadré `reread-failed` revient : l'écran
+	 * n'affiche pas un refus sur une facture qu'il n'a pas pu relire sans le dire.
+	 */
+	async function reloadAfterStaleRefusal(err: unknown) {
+		if (!isStaleState(err)) return;
+		if (!(await reloadAfterRefusal())) cycleOutcome = 'reread-failed';
 	}
 
 	/**
@@ -434,9 +457,10 @@
 			);
 		} catch (err) {
 			validateOpen = false;
-			if (await rereadAfterUnknownOutcome(err)) return; // Story 34-8 (AC-8)
-			validateError = isApiError(err) ? err.message : i18nMsg('common-error', 'Erreur inattendue');
-			if (isStaleState(err)) await reloadAfterRefusal();
+			// Story 34-8 (AC-8) ; ce qui reste est une `ApiError` (revue P2, B-2 = A-2).
+			if (await rereadAfterUnknownOutcome(err)) return;
+			if (isApiError(err)) validateError = err.message;
+			await reloadAfterStaleRefusal(err); // revue P2 (E-1)
 		} finally {
 			validating = false;
 		}
@@ -484,7 +508,8 @@
 			);
 		} catch (err) {
 			unvalidateOpen = false;
-			if (await rereadAfterUnknownOutcome(err)) return; // Story 34-8 (AC-8)
+			// Story 34-8 (AC-8) ; ce qui reste est une `ApiError` (revue P2, B-2 = A-2).
+			if (await rereadAfterUnknownOutcome(err)) return;
 			if (isApiError(err)) {
 				// `details` : le lot, la transaction, l'écriture de paiement (AC-8) ; ou,
 				// revue P1 (E-4), le nom de l'exercice postérieur clos.
@@ -492,10 +517,8 @@
 					err.code,
 					(err.details as SupplierInvoiceUnvalidateDetails | undefined) ?? null,
 				);
-			} else {
-				unvalidateError = supplierInvoiceUnvalidateMessage('', null);
 			}
-			if (isStaleState(err)) await reloadAfterRefusal();
+			await reloadAfterStaleRefusal(err); // revue P2 (E-1)
 		} finally {
 			unvalidating = false;
 		}
@@ -535,7 +558,10 @@
 	 */
 	async function reloadAfterRefusal(): Promise<boolean> {
 		try {
-			await load();
+			// Revue P2 de la 34-8 (E-2, C-e348-8) : sans rejeu. Un `GET` coupé se rejouait
+			// ~14 s, pendant lesquels les autres gestes restaient offerts sur l'écran d'avant ;
+			// un échec est ici déjà traité (`reread-failed`).
+			invoice = await getSupplierInvoice(id, { retry: false });
 			cycleOutcome = 'known';
 			return true;
 		} catch {
@@ -591,7 +617,16 @@
 					// La facture relue montre un document : un message de
 					// détachement antérieur serait faux sous lui (revue P2, T1).
 					detachError = '';
-					notifyWarning(err.message);
+					// Revue P2 de la 34-8 (B-4) : si c'est CE document, le refus vient d'un
+					// envoi précédent dont la réponse s'était perdue — le rattachement est
+					// fait, et le dire « déjà traité » annoncerait un échec.
+					if (invoice.sourceDocument.importedSupplierInvoiceId === importedSupplierInvoiceId) {
+						notifySuccess(
+							i18nMsg('supplier-invoices-doc-attached', 'Document joint à la facture.'),
+						);
+					} else {
+						notifyWarning(err.message);
+					}
 					return;
 				}
 			}
@@ -643,7 +678,8 @@
 				await rereadAfterUnknownOutcome(err);
 				return;
 			}
-			detachError = isApiError(err) ? err.message : i18nMsg('common-error', 'Erreur inattendue');
+			// Ce qui reste est une `ApiError` (revue P2 de la 34-8, B-2 = A-2).
+			if (isApiError(err)) detachError = err.message;
 			if (isStaleDocumentRefusal(err)) {
 				showPreview = false;
 				await reloadAfterRefusal();

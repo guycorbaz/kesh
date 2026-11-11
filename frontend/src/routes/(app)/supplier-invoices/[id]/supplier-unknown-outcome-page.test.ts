@@ -50,7 +50,7 @@ const cancelSettlementMock = vi.fn();
 const validateMock = vi.fn();
 const unvalidateMock = vi.fn();
 vi.mock('$lib/features/supplier-invoices/supplier-invoices.api', () => ({
-	getSupplierInvoice: (id: number) => getMock(id),
+	getSupplierInvoice: (id: number, call?: unknown) => getMock(id, call),
 	paySupplierInvoice: (id: number, req: unknown) => payMock(id, req),
 	cancelSupplierInvoice: (id: number) => cancelMock(id),
 	cancelSupplierInvoiceSettlement: (id: number) => cancelSettlementMock(id),
@@ -82,6 +82,7 @@ vi.mock('$lib/features/imported-supplier-invoices/imported-supplier-invoices.api
 }));
 
 import Page from './+page.svelte';
+import { notifySuccess, notifyWarning } from '$lib/shared/utils/notify';
 
 const VERIFY = 'L’issue n’est pas connue : la facture a été relue, vérifiez-la avant de réessayer.';
 const REREAD_FAILED =
@@ -405,5 +406,82 @@ describe('fiche fournisseur — une réponse perdue relit la facture et le dit (
 		await v.findByTestId('supplier-invoice-validate-dialog');
 		await fireEvent.click(v.getByTestId('supplier-invoice-validate-confirm'));
 		await waitFor(() => expect(v.queryByTestId('supplier-unknown-outcome')).toBeNull());
+	});
+});
+
+/**
+ * Revue P2 de la 34-8 (E-1 ; mutation M8) — le second clic après une réponse perdue puis une
+ * relecture en échec. Le geste était écrit : le serveur refuse le second envoi par un refus
+ * de statut. L'écran relit alors la facture, et n'affiche pas un échec sur la fiche d'avant.
+ */
+describe('fiche fournisseur — le second clic après une relecture en échec (revue P2, E-1)', () => {
+	const STALE: Array<[Gesture, string]> = [
+		[GESTURES[0], 'ILLEGAL_STATE_TRANSITION'],
+		[GESTURES[1], 'SUPPLIER_INVOICE_NOT_PAID'],
+		[GESTURES[2], 'SUPPLIER_INVOICE_CANCELLED'],
+	];
+	for (const [g, code] of STALE) {
+		it(`${g.name} : le refus « ${code} » du second clic relit la facture (mutation M8 : aucune relecture)`, async () => {
+			getMock
+				.mockResolvedValueOnce(g.start)
+				.mockRejectedValueOnce(LOST)
+				.mockResolvedValueOnce(g.written);
+			g.mock
+				.mockRejectedValueOnce(LOST)
+				.mockRejectedValueOnce({ code, status: 409, message: 'Transition d’état interdite.' });
+			const v = render(Page);
+			await g.act(v);
+			expect((await v.findByTestId('supplier-unknown-outcome')).textContent?.trim()).toBe(
+				REREAD_FAILED,
+			);
+			await g.act(v);
+			await waitFor(() => expect(getMock).toHaveBeenCalledTimes(3));
+			// La fiche relue montre l'état écrit : ni l'encadré, ni le refus sur la fiche d'avant.
+			await waitFor(() => expect(v.queryByTestId(g.refusal)).toBeNull());
+			expect(v.queryByTestId('supplier-unknown-outcome')).toBeNull();
+		});
+	}
+
+	it('payer : le second clic refusé et une relecture encore en échec ⇒ l’encadré « rechargez » revient', async () => {
+		getMock.mockResolvedValueOnce(inv()).mockRejectedValueOnce(LOST).mockRejectedValueOnce(LOST);
+		payMock
+			.mockRejectedValueOnce(LOST)
+			.mockRejectedValueOnce({ code: 'ILLEGAL_STATE_TRANSITION', status: 409, message: 'Refus.' });
+		const v = render(Page);
+		await GESTURES[0].act(v);
+		await v.findByTestId('supplier-unknown-outcome');
+		await GESTURES[0].act(v);
+		await waitFor(() => expect(getMock).toHaveBeenCalledTimes(3));
+		expect((await v.findByTestId('supplier-unknown-outcome')).textContent?.trim()).toBe(
+			REREAD_FAILED,
+		);
+	});
+
+	it('joindre : le second clic refusé « déjà traité » sur SON document se dit joint, non en avertissement (revue P2, B-4)', async () => {
+		getMock
+			.mockResolvedValueOnce(inv())
+			.mockResolvedValueOnce(inv())
+			.mockResolvedValueOnce(inv({ sourceDocument: DOC }));
+		attachMock.mockRejectedValueOnce(LOST).mockRejectedValueOnce({
+			code: 'IMPORT_NOT_PENDING_COMPLETION',
+			status: 409,
+			message: 'Ce document a déjà été traité.',
+		});
+		const v = render(Page);
+		await GESTURES[5].act(v);
+		await v.findByTestId('attach-document-error');
+		await fireEvent.click(v.getByTestId('attach-document-submit'));
+		await waitFor(() => expect(v.queryByTestId('attach-document-picker')).toBeNull());
+		expect(notifySuccess).toHaveBeenCalledWith('Document joint à la facture.');
+		expect(notifyWarning).not.toHaveBeenCalled();
+	});
+
+	it('la relecture se fait sans rejeu (`retry: false`, revue P2, E-2)', async () => {
+		getMock.mockResolvedValueOnce(inv()).mockResolvedValueOnce(inv(PAID));
+		payMock.mockRejectedValue(LOST);
+		const v = render(Page);
+		await GESTURES[0].act(v);
+		await v.findByTestId('supplier-unknown-outcome');
+		expect(getMock).toHaveBeenLastCalledWith(9, { retry: false });
 	});
 });

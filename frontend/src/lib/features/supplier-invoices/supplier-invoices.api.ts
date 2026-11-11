@@ -2,7 +2,7 @@
  * Client API typé pour les factures fournisseurs & règlement — Story 12.2 (#191).
  */
 
-import { apiClient } from '$lib/shared/utils/api-client';
+import { apiClient, type CallOptions } from '$lib/shared/utils/api-client';
 import type {
 	CancelSupplierSettlementResponse,
 	CreateSupplierInvoiceRequest,
@@ -35,8 +35,15 @@ export async function listSupplierInvoices(
 	return apiClient.get(`/api/v1/supplier-invoices${buildQueryString(query)}`);
 }
 
-export async function getSupplierInvoice(id: number): Promise<SupplierInvoiceResponse> {
-	return apiClient.get(`/api/v1/supplier-invoices/${id}`);
+/**
+ * Lit une facture fournisseur. `call` : options d'appel, `{ retry: false }` pour la
+ * relecture d'après un geste (Story 34-8, revue P2, E-2).
+ */
+export async function getSupplierInvoice(
+	id: number,
+	call?: CallOptions,
+): Promise<SupplierInvoiceResponse> {
+	return apiClient.get(`/api/v1/supplier-invoices/${id}`, call);
 }
 
 /**

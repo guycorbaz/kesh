@@ -4,6 +4,19 @@
 //! logique d'orchestration de l'import (verrou de run, réactivation `discarded`,
 //! déplacement `failed/`) et la complétion atomique (`create_in_tx`, DC6) vivent
 //! en **12-5c** ; ce module n'expose que le CRUD de base, scopé multi-tenant.
+//!
+//! ⚠️ **`SELECT *` et le cache des requêtes préparées** (Story 34-8, #938, revues P1 B-4
+//! et P2 B-3). Les lectures de ce module sont des `SELECT *`. `sqlx` garde, par connexion,
+//! la description des colonnes d'une requête préparée : exécutée sur une connexion du
+//! pool **avant** une migration qui ajoute une colonne à `imported_supplier_invoices`, une
+//! telle requête resterait décrite sans elle, et sa lecture d'après la migration rendrait
+//! `ColumnNotFound` — constaté sur `migrations_upgrade_path.rs`, dont le semis passe depuis
+//! par les formes `_in_tx`. **La règle : aucune requête `SELECT *` sur le pool avant
+//! `MIGRATOR.run`.** Elle est tenue par le démarrage : `main.rs` lance la sauvegarde d'avant
+//! migration (qui ne lit pas ce module), puis applique les migrations, puis seulement sert
+//! les routes. Un chemin qui exécuterait une lecture de ce module — ou de toute table lue
+//! en `SELECT *` — avant `MIGRATOR.run` rouvrirait le défaut : nommer les colonnes, ou
+//! recréer le pool après la migration.
 
 use crate::entities::imported_supplier_invoice::{
     ImportedSupplierInvoice, LinkOrigin, NewImportedSupplierInvoice, QrColumns,
@@ -171,18 +184,9 @@ pub async fn find_by_id_scoped_for_update(
 /// ⚠️ Lecture **ordinaire** (jamais `FOR UPDATE`) : dans la vue d'instantané, une
 /// lecture verrouillante lirait le dernier état validé, hors de l'instantané.
 ///
-/// ⚠️ **`SELECT *` et le cache des requêtes préparées** (Story 34-8, #938, revue P1,
-/// B-4). `sqlx` garde, par connexion, la description des colonnes d'une requête
-/// préparée. Exécutée sur une connexion du pool **avant** une migration qui ajoute une
-/// colonne à `imported_supplier_invoices`, cette requête resterait décrite sans elle,
-/// et sa lecture d'après la migration rendrait `ColumnNotFound` — constaté sur
-/// `migrations_upgrade_path.rs`, dont le semis passe depuis par les formes `_in_tx`.
-/// Depuis la 34-8, chaque geste sur une facture fournisseur l'exécute (la vue lue
-/// avant le commit). **Hypothèse tenue par le démarrage** : `main.rs` applique les
-/// migrations avant de servir, et la sauvegarde d'avant migration
-/// (`pre_upgrade_backup`) ne passe pas par cette fonction. Un chemin qui l'exécuterait
-/// avant `MIGRATOR.run` rouvrirait le défaut : nommer les colonnes, ou recréer le pool
-/// après la migration.
+/// ⚠️ `SELECT *` : la règle du cache des requêtes préparées est au doc-comment du
+/// module (aucune lecture en `SELECT *` sur le pool avant `MIGRATOR.run`). Chaque geste
+/// sur une facture fournisseur exécute cette lecture, par la vue qu'il rend.
 pub async fn find_by_supplier_invoice_id_scoped<'e, E>(
     executor: E,
     company_id: i64,

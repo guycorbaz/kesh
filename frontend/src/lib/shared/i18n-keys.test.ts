@@ -900,8 +900,12 @@ const ATTENDU = {
 	// `common-error` de `pay()`, qui n'était plus muet hors `ApiError`. Que des littéraux ;
 	// `sitesNonResolus` et `relais` inchangés. Revue P1 (B-2) : **2925 → 2924** (−1), ce repli
 	// de `pay()` retiré — inatteignable, `isSettlementOutcomeUnknown` prenant toute erreur
-	// hors `ApiError`.
-	sitesTotal: 2924,
+	// hors `ApiError`. Revue P2 (B-2 = A-2) : **2924 → 2920** (−4), les replis `common-error`
+	// devenus inatteignables de `cancelSettlement()`, `cancel()`, `confirmValidate()` et
+	// `detach()`, retirés pour la même raison (`confirmDelete()` garde le sien : il ne passe
+	// pas par l'issue inconnue) ; et **+1**, `supplier-invoices-doc-attached` dit au second clic
+	// refusé sur son propre document (B-4) : **2921**.
+	sitesTotal: 2921,
 	sitesNonResolus: 31,
 	relais: 6,
 	// Story 26-1 (#620, AC3-bis) : **10 → 11** — `lib/features/bank-import/

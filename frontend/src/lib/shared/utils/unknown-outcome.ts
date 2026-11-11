@@ -52,8 +52,9 @@ export function isUnknownOutcome(err: unknown): boolean {
  * Story 34-8 (#938, AC-8) — la **fiche d'une facture fournisseur** l'emploie aussi,
  * pour ses sept gestes (payer, annuler le règlement, annuler, valider, repasser en
  * brouillon, joindre et détacher un document) : une issue inconnue relit la facture
- * et le dit. Là, pas d'état bloquant : chacun de ces gestes est gardé par le statut
- * ou par la version, si bien qu'un second envoi est refusé sans rien écrire deux fois.
+ * et le dit. Là, pas d'état bloquant : chacun de ces gestes est gardé par le statut, la
+ * version ou l'état du document (joindre, détacher), si bien qu'un second envoi est
+ * refusé sans rien écrire deux fois — refus qui relit la facture.
  */
 export function isSettlementOutcomeUnknown(err: unknown): boolean {
 	if (!isApiError(err)) return true;
