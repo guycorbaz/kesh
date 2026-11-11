@@ -461,6 +461,8 @@ chaque commande, journaux `kesh-gate-logs/e345/gates-g2-*`, `front-*`) :
 `gates-p1g-*`, `p1-front-*`, `e2e-r5/`, `e2e-r6/`) :
 - `scripts/test-fast.sh --ci` : **5146 passés, 12 ignorés** ; `cargo build --workspace --all-targets` : vert ;
   `gate-ci.sh kesh_ci_e345` : **5153 passés, 0 échec, 16 ignorés** ; `make fr` : vert, PDF commités (`e7442559`).
+- Captures reprises (`e2e-r6`, 3 passés) : les quatre images de `captures/` sont refaites ; sur
+  `fiche-conflit-apres-relire.png`, *Enregistrer un règlement* paraît désormais actif.
 - Frontend : `npm run check` 0 erreur, `lint-i18n-ownership` vert, Vitest **2894 passés, 222 fichiers**, `npm run build`
   vert.
 - E2E complet (`e2e-r5`, base neuve) : **388 passés, 7 échecs, 18 ignorés** ; les sept sont ceux de la KF-029 (#97),
