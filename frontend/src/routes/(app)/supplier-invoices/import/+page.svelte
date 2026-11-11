@@ -185,6 +185,10 @@
 
 	async function reloadList() {
 		toComplete = await listImported('to_complete');
+		// Revue de code P2 (relevé en écrivant le prompt P3) — tout rechargement réussi, quel
+		// que soit son site (`onMount`, `safeReloadList`, `runImport`), rend la liste à jour :
+		// la ligne d'un doublon ne doit plus inviter à actualiser.
+		listReloadFailed = false;
 	}
 
 	/** Rechargement « best-effort » : ne propage jamais (évite une rejection non

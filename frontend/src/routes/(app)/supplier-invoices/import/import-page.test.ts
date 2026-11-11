@@ -478,6 +478,33 @@ describe('le rapport d’import nomme chaque fichier (Story 34-9)', () => {
 		expect(ligne.querySelector('a')).toBeNull();
 	});
 
+	it('un rechargement réussi après coup (conflit de retrait) ôte l’invitation à actualiser', async () => {
+		// Ouverture : la ligne 8 ; import : rechargement en échec ; conflit de retrait :
+		// `safeReloadList` recharge avec succès.
+		listImportedMock
+			.mockResolvedValueOnce([SANS_QR])
+			.mockRejectedValueOnce(new Error('réseau'))
+			.mockResolvedValueOnce([SANS_QR]);
+		discardMock.mockRejectedValue({
+			code: 'IMPORT_NOT_PENDING_COMPLETION',
+			status: 409,
+			message: 'x',
+		});
+		vi.spyOn(window, 'confirm').mockReturnValue(true);
+		const { getAllByTestId, findByTestId } = await importer(DOUBLON_7);
+		expect(getAllByTestId('inbox-import-file-row')[0].textContent).toMatch(
+			/qui n’a pas pu être rechargée/,
+		);
+		await fireEvent.click(await findByTestId('imported-discard'));
+		await waitFor(() => expect(listImportedMock).toHaveBeenCalledTimes(3));
+		await waitFor(() =>
+			expect(getAllByTestId('inbox-import-file-row')[0].textContent).toMatch(
+				/n’est plus dans la liste ci-dessous\./,
+			),
+		);
+		expect(getAllByTestId('inbox-import-file-row')[0].textContent).not.toMatch(/actualisez/);
+	});
+
 	it('document retiré de la liste depuis cette page : « retiré de la liste », sans lien', async () => {
 		listImportedMock.mockResolvedValue([row({ id: 7, originalFilename: 'origine.png' })]);
 		discardMock.mockResolvedValue(undefined);
