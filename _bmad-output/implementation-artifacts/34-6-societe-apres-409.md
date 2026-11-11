@@ -462,6 +462,9 @@ Rust n'est touché, hormis les `.ftl` : `cargo test -p kesh-i18n` et `textes_coh
     - `read-only\:cursor-progress:read-only{cursor:progress}`.
   - **E2E complet r7**, base E2E recréée vide, dossiers passés au runner : 386 passés, 7 échecs, les sept de la KF-029
     (`mode-expert:26`, `:41`, `onboarding-path-b:65`, `:92`, `onboarding:57`, `:77`, `:150`), 18 ignorés.
+  - **Captures** : les six sont refaites, dont la neuve `e346-adresse-envoi-en-vol.png`.
+    - Ce qu'elle montre : pendant l'envoi, les champs ont un texte atténué et les boutons sont estompés.
+    - Le signe reste discret : le fond `surface-alt` se distingue à peine du blanc. Il revient à la passe P5 d'en juger.
   - Le prompt de la passe P5 est `34-6-societe-apres-409-review-prompt-p5.md`.
 
 ## Dev Agent Record
