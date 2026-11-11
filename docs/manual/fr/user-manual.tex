@@ -2173,7 +2173,8 @@ par fichier}, dans l'ordre des noms, avec ce qui lui est arrivé~:
     \item \textbf{déjà importé}~: un document au contenu identique est déjà dans Kesh, et
           le fichier n'est pas importé une seconde fois. La ligne dit où se trouve le
           document existant~: \emph{en attente dans Documents à traiter} (un lien mène à
-          sa ligne, plus bas sur la page), \emph{transformé en facture} (un lien ouvre la
+          sa ligne, plus bas sur la page, tant qu'elle y figure~; si le document a
+          quitté la liste depuis, la ligne le dit, sans lien), \emph{transformé en facture} (un lien ouvre la
           facture), \emph{retiré de la liste} ou \emph{déjà traité} (sans lien)~;
     \item \textbf{refusé}, avec son motif (voir \emph{Ce qui reste refusé}, ci-dessous)~;
     \item \textbf{non traité}~: le fichier était \emph{en cours d'écriture} --- il reste
@@ -2189,8 +2190,9 @@ la limite de fichiers par import est atteinte, le rapport le dit~: relancez l'im
 traiter le reste.
 
 Dès qu'un fichier n'est pas importé (déjà importé, refusé ou non traité), ou que la
-limite est atteinte, une \textbf{notification d'avertissement} le signale~; sinon, une
-notification confirme le nombre de documents importés. \textbf{Le rapport n'est pas
+limite est atteinte, une \textbf{notification d'avertissement} le signale, et le cadre du
+rapport est bordé d'orange~; sinon, si des documents ont été importés, une notification
+confirme leur nombre (un import qui ne trouve aucun fichier n'en affiche pas). \textbf{Le rapport n'est pas
 conservé}~: il disparaît en quittant la page, notez ce qui doit l'être avant.
 
 Chaque ligne de la liste porte le nom du fichier, sa date d'import et un badge~:

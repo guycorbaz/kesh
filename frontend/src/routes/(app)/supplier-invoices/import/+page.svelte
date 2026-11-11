@@ -51,8 +51,12 @@
 	// Story 34-9 (#969, #974, AC-4) — une ligne par fichier, dans l'ordre des noms. Le
 	// rapport n'est pas conservé : il vit le temps de la page (décision de Guy).
 	const rows = $derived(report ? reportRows(report) : []);
+	// Revue de code P1, B-3 : le cadre suit la notification — la limite atteinte compte aussi.
 	const reportHasProblem = $derived(
-		!!report && (report.failed.length > 0 || (report.skipped ?? []).length > 0),
+		!!report &&
+			(report.failed.length > 0 ||
+				(report.skipped ?? []).length > 0 ||
+				report.truncatedAt != null),
 	);
 
 	/**
@@ -102,6 +106,18 @@
 	 */
 	function noticeOf(r: InboxImportReport): { warning: boolean; message: string } | null {
 		const n = r.failed.length + (r.skipped ?? []).length;
+		// Revue de code P1, E-2 : des fichiers non importés ET la limite atteinte — le
+		// toast dit les deux.
+		if (n > 0 && r.truncatedAt != null) {
+			return {
+				warning: true,
+				message: i18nMsg(
+					'imported-supplier-invoices-notice-not-imported-truncated',
+					'Import terminé : {$n} fichier(s) non importé(s), et la limite par import est atteinte. Voir le rapport.',
+					{ n },
+				),
+			};
+		}
 		if (n > 0) {
 			return {
 				warning: true,
@@ -395,7 +411,15 @@
 									<span class="font-medium"
 										>{i18nMsg('imported-supplier-invoices-report-duplicate', 'Déjà importé :')}</span
 									>
-									{#if existing.existingStatus === 'to_complete'}
+									{#if existing.existingStatus === 'to_complete' && !toComplete.some((r) => r.id === existing.existingDocumentId)}
+										<!-- Revue de code P1, E-1 ≈ B-2 : la ligne visée n'est pas dans la liste
+										     affichée (liste non rechargée, ou document retiré ou transformé
+										     depuis) — aucun lien mort, la ligne le dit. -->
+										{i18nMsg(
+											'imported-supplier-invoices-report-duplicate-not-in-list',
+											'absent de la liste ci-dessous : actualisez la page',
+										)}.
+									{:else if existing.existingStatus === 'to_complete'}
 										<a
 											class="text-primary underline"
 											data-testid="inbox-import-duplicate-link"

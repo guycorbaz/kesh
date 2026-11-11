@@ -242,9 +242,10 @@ const PREFIXES = [
  * d'import, toutes `imported-supplier-invoices-` (quatre `-report-summary-*`, trois
  * `-report-state-*`, six `-report-duplicate*`, `-report-refused`, `-report-moved-to`, deux
  * `-report-skipped-*`, `-report-truncated`, trois `-notice-*`), et deux retirées
- * (`-report-accepted`, `-report-failed`).
+ * (`-report-accepted`, `-report-failed`). Revue de code P1 : **426 → 428** (+2),
+ * `-notice-not-imported-truncated` et `-report-duplicate-not-in-list`.
  */
-const CLES_RELEVEES = 426;
+const CLES_RELEVEES = 428;
 
 
 /** Relève, pour chaque clé du domaine, l'ensemble de ses replis littéraux distincts. */

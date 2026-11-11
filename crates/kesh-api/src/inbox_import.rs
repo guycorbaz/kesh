@@ -1017,16 +1017,18 @@ fn dispose_failed(
 
 /// Story 34-9 (AC-2, F9-2) — ajoute `movedTo` à un `details` d'échec sans rien
 /// en retirer (`FILE_TOO_LARGE` garde `byteSize` et `maxBytes`). Un `details`
-/// qui ne serait pas un objet est gardé sous `detail`, jamais perdu.
+/// qui ne serait pas un objet est gardé sous `detail`, jamais perdu ; un
+/// `Some(null)` vaut `None` (revue de code P1, E-3 : aucun site ne le passe
+/// aujourd'hui, mais `{"detail": null}` ne dirait rien).
 fn with_moved_to(details: Option<serde_json::Value>, moved_to: String) -> serde_json::Value {
     let mut map = match details {
         Some(serde_json::Value::Object(map)) => map,
+        None | Some(serde_json::Value::Null) => serde_json::Map::new(),
         Some(autre) => {
             let mut map = serde_json::Map::new();
             map.insert("detail".into(), autre);
             map
         }
-        None => serde_json::Map::new(),
     };
     map.insert("movedTo".into(), serde_json::Value::String(moved_to));
     serde_json::Value::Object(map)
@@ -1190,12 +1192,72 @@ mod tests {
             with_moved_to(Some(json!("brut")), "x_1.png".into()),
             json!({ "detail": "brut", "movedTo": "x_1.png" })
         );
+        // Revue de code P1, E-3 — `Some(null)` vaut `None`.
+        assert_eq!(
+            with_moved_to(Some(serde_json::Value::Null), "x_1.png".into()),
+            json!({ "movedTo": "x_1.png" })
+        );
     }
 
-    /// Story 34-9 (AC-1) — le `details` d'un doublon, et son absence quand le
-    /// document n'a pas pu être relu.
+    /// Un document importé de fixture, état et facture au choix.
+    fn document(status: &str, supplier_invoice_id: Option<i64>) -> ImportedSupplierInvoice {
+        let t = chrono::NaiveDate::from_ymd_opt(2026, 11, 10)
+            .unwrap()
+            .and_hms_opt(8, 0, 0)
+            .unwrap();
+        ImportedSupplierInvoice {
+            id: 7,
+            company_id: 1,
+            status: status.into(),
+            supplier_invoice_id,
+            file_hash: "h".into(),
+            storage_path: "h.png".into(),
+            original_filename: "a.png".into(),
+            mime_type: "image/png".into(),
+            byte_size: 10,
+            creditor_iban: None,
+            is_qr_iban: None,
+            creditor_address_type: None,
+            creditor_name: None,
+            creditor_line1: None,
+            creditor_line2: None,
+            creditor_postal_code: None,
+            creditor_town: None,
+            creditor_country: None,
+            reference_type: None,
+            reference_value: None,
+            amount: None,
+            currency: None,
+            unstructured_message: None,
+            billing_information: None,
+            version: 1,
+            created_at: t,
+            updated_at: t,
+            link_origin: None,
+        }
+    }
+
+    /// Story 34-9 (AC-1) — le `details` d'un doublon nomme le document, son état
+    /// et sa facture (`null` sans facture) ; rien quand le document n'a pas pu
+    /// être relu. Revue de code P1, A-1 = B-5 : la branche `Some` est exercée.
     #[test]
     fn duplicate_details_names_the_document_or_nothing() {
         assert_eq!(duplicate_details(None), None);
+        assert_eq!(
+            duplicate_details(Some(&document("to_complete", None))),
+            Some(json!({
+                "existingDocumentId": 7,
+                "existingStatus": "to_complete",
+                "supplierInvoiceId": null,
+            }))
+        );
+        assert_eq!(
+            duplicate_details(Some(&document("completed", Some(42)))),
+            Some(json!({
+                "existingDocumentId": 7,
+                "existingStatus": "completed",
+                "supplierInvoiceId": 42,
+            }))
+        );
     }
 }

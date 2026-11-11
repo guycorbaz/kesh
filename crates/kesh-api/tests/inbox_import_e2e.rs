@@ -1681,51 +1681,84 @@ async fn duplicate_on_the_unique_race_names_the_winning_document(pool: MySqlPool
 /// `warnings[]` garde son message (compatibilité), le fichier reste en place.
 /// Montage sans crochet : un fil y ajoute un octet chaque milliseconde pendant
 /// l'import, si bien que sa taille change entre les deux lectures (25 ms).
+///
+/// Revue de code P1 (E-4 ≈ B-4) : le fil est arrêté par un garde, même si
+/// l'import panique ; et, sur un poste assez chargé pour que le fil manque toute
+/// la fenêtre de 25 ms, le fichier paraîtrait stable et serait importé — l'essai
+/// est alors repris avec un fichier neuf, cinq fois au plus. Un rapport qui
+/// nomme le fichier instable est toujours asserté en entier : aucun passage à
+/// vide (le test échoue si aucun essai n'exerce l'instabilité).
 #[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn unstable_file_is_skipped_with_its_reason(pool: MySqlPool) {
     use std::io::Write;
     use std::sync::atomic::{AtomicBool, Ordering};
+
+    /// Fil qui écrit dans le fichier tant qu'il vit ; arrêté et rejoint à sa
+    /// destruction, panique comprise.
+    struct Ecrivain {
+        stop: Arc<AtomicBool>,
+        fil: Option<std::thread::JoinHandle<()>>,
+    }
+    impl Ecrivain {
+        fn demarrer(path: PathBuf) -> Self {
+            let stop = Arc::new(AtomicBool::new(false));
+            let arret = stop.clone();
+            let fil = std::thread::spawn(move || {
+                while !arret.load(Ordering::Relaxed) {
+                    if let Ok(mut f) = std::fs::OpenOptions::new().append(true).open(&path) {
+                        let _ = f.write_all(b"x");
+                    }
+                    std::thread::sleep(std::time::Duration::from_millis(1));
+                }
+            });
+            Self {
+                stop,
+                fil: Some(fil),
+            }
+        }
+    }
+    impl Drop for Ecrivain {
+        fn drop(&mut self) {
+            self.stop.store(true, Ordering::Relaxed);
+            if let Some(fil) = self.fil.take() {
+                let _ = fil.join();
+            }
+        }
+    }
+
     let ctx = setup(&pool).await;
     let app = spawn_app(pool.clone(), 25 * 1024 * 1024).await;
-    let path = app.inbox.join("en-cours.png");
-    std::fs::write(&path, blank_png()).unwrap();
-    let stop = Arc::new(AtomicBool::new(false));
-    let ecrivain = {
-        let stop = stop.clone();
-        let path = path.clone();
-        std::thread::spawn(move || {
-            while !stop.load(Ordering::Relaxed) {
-                let mut f = std::fs::OpenOptions::new()
-                    .append(true)
-                    .open(&path)
-                    .unwrap();
-                f.write_all(b"x").unwrap();
-                drop(f);
-                std::thread::sleep(std::time::Duration::from_millis(1));
-            }
-        })
-    };
-    let report = run_import(&app, &ctx.jwt).await;
-    stop.store(true, Ordering::Relaxed);
-    ecrivain.join().unwrap();
-
-    assert_eq!(
-        report["skipped"],
-        json!([{ "fileName": "en-cours.png", "reason": "UNSTABLE" }]),
-        "{report}"
-    );
-    let warnings = report["warnings"].as_array().unwrap();
-    assert_eq!(warnings.len(), 1, "{report}");
-    assert!(
-        warnings[0].as_str().unwrap().contains("en-cours.png"),
-        "{report}"
-    );
-    assert!(
-        report["accepted"].as_array().unwrap().is_empty(),
-        "{report}"
-    );
-    assert!(report["failed"].as_array().unwrap().is_empty(), "{report}");
-    assert!(path.exists(), "le fichier instable reste dans le dossier");
+    for essai in 0..5u64 {
+        let name = format!("en-cours-{essai}.png");
+        let path = app.inbox.join(&name);
+        // Contenu distinct à chaque essai : un essai importé ne fait pas du
+        // suivant un doublon.
+        std::fs::write(&path, noise_png(64, 100 + essai)).unwrap();
+        let report = {
+            let _ecrivain = Ecrivain::demarrer(path.clone());
+            run_import(&app, &ctx.jwt).await
+        };
+        if report["skipped"].as_array().unwrap().is_empty() {
+            eprintln!("essai {essai} : le fil n'a pas écrit dans la fenêtre — {report}");
+            continue;
+        }
+        assert_eq!(
+            report["skipped"],
+            json!([{ "fileName": name, "reason": "UNSTABLE" }]),
+            "{report}"
+        );
+        let warnings = report["warnings"].as_array().unwrap();
+        assert_eq!(warnings.len(), 1, "{report}");
+        assert!(warnings[0].as_str().unwrap().contains(&name), "{report}");
+        assert!(
+            report["accepted"].as_array().unwrap().is_empty(),
+            "{report}"
+        );
+        assert!(report["failed"].as_array().unwrap().is_empty(), "{report}");
+        assert!(path.exists(), "le fichier instable reste dans le dossier");
+        return;
+    }
+    panic!("aucun des cinq essais n'a exercé l'instabilité");
 }
 
 /// AC-2-bis, AC-3 (#974) — la limite par import atteinte se dit par

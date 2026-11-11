@@ -290,7 +290,8 @@ describe('le rapport d’import nomme chaque fichier (Story 34-9)', () => {
 	}
 
 	it('rapport mixte : six lignes dans l’ordre des noms, états, liens, failed/, résumé, troncature, un avertissement (n = 4)', async () => {
-		listImportedMock.mockResolvedValue([]);
+		// Le document 7 est dans la liste rechargée : le lien de son doublon mène à sa ligne.
+		listImportedMock.mockResolvedValue([row({ id: 7, originalFilename: 'dup-attente-origine.png' })]);
 		const { panel, getAllByTestId } = await importer(MIXTE);
 		const rows = getAllByTestId('inbox-import-file-row');
 		expect(rows.map((r) => r.querySelector('.font-mono')?.textContent)).toEqual([
@@ -342,9 +343,10 @@ describe('le rapport d’import nomme chaque fichier (Story 34-9)', () => {
 		expect(panel.textContent).not.toMatch(/message du serveur/);
 		expect(panel.className).toMatch(/border-warning/);
 
+		// Revue de code P1, E-2 : des fichiers non importés ET la limite — le toast dit les deux.
 		expect(notifyWarning).toHaveBeenCalledTimes(1);
 		expect(vi.mocked(notifyWarning).mock.calls[0][0]).toBe(
-			'Import terminé : 4 fichier(s) non importé(s). Voir le rapport.',
+			'Import terminé : 4 fichier(s) non importé(s), et la limite par import est atteinte. Voir le rapport.',
 		);
 		expect(notifySuccess).not.toHaveBeenCalled();
 	});
@@ -423,9 +425,9 @@ describe('le rapport d’import nomme chaque fichier (Story 34-9)', () => {
 		expect(panel.textContent).toMatch(/0 document\(s\) importé\(s\)\./);
 	});
 
-	it('limite atteinte seule : avertissement « la limite par import est atteinte »', async () => {
+	it('limite atteinte seule : avertissement « la limite par import est atteinte », cadre d’avertissement', async () => {
 		listImportedMock.mockResolvedValue([]);
-		await importer(
+		const { panel } = await importer(
 			rapport({
 				accepted: [{ importedSupplierInvoiceId: 1, fileName: 'a.png', qr: 'none' }],
 				truncatedAt: 1,
@@ -436,11 +438,38 @@ describe('le rapport d’import nomme chaque fichier (Story 34-9)', () => {
 			'Import terminé : la limite par import est atteinte. Voir le rapport.',
 		);
 		expect(notifySuccess).not.toHaveBeenCalled();
+		// Revue de code P1, B-3 : le cadre suit le toast.
+		expect(panel.className).toMatch(/border-warning/);
+	});
+
+	it('doublon en attente dont la ligne n’est pas dans la liste affichée : texte, sans lien mort', async () => {
+		listImportedMock.mockResolvedValue([]);
+		const { getAllByTestId } = await importer(
+			rapport({
+				failed: [
+					{
+						fileName: 'a.png',
+						errorCode: 'DUPLICATE',
+						details: {
+							existingDocumentId: 7,
+							existingStatus: 'to_complete',
+							supplierInvoiceId: null,
+							movedTo: 'a_11111111.png',
+						},
+					},
+				],
+			}),
+		);
+		const [ligne] = getAllByTestId('inbox-import-file-row');
+		expect(ligne.textContent).toMatch(
+			/Déjà importé :.*absent de la liste ci-dessous : actualisez la page/s,
+		);
+		expect(ligne.querySelector('a')).toBeNull();
 	});
 
 	it('rechargement de la liste en échec : une seule notification, qui dit les deux', async () => {
 		listImportedMock.mockResolvedValueOnce([]).mockRejectedValueOnce(new Error('réseau'));
-		await importer(MIXTE);
+		await importer(rapport({ ...MIXTE, truncatedAt: null }));
 		expect(notifyWarning).toHaveBeenCalledTimes(1);
 		const [titre, description] = vi.mocked(notifyWarning).mock.calls[0];
 		expect(titre).toBe('Import terminé : 4 fichier(s) non importé(s). Voir le rapport.');
@@ -494,6 +523,8 @@ describe('les textes du rapport d’import aux catalogues (Story 34-9)', () => {
 		'imported-supplier-invoices-notice-not-imported',
 		'imported-supplier-invoices-notice-truncated',
 		'imported-supplier-invoices-notice-imported',
+		'imported-supplier-invoices-notice-not-imported-truncated',
+		'imported-supplier-invoices-report-duplicate-not-in-list',
 	];
 	for (const locale of ['fr-CH', 'de-CH', 'it-CH', 'en-CH']) {
 		it(`${locale} : présentes, sans sélecteur`, () => {
