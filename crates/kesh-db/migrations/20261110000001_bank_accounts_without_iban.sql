@@ -14,8 +14,16 @@
 --    un IBAN vide ou fait d'espaces, et laisse passer NULL.
 -- 2. account_kind : le type du compte se déclare (bank | credit_card), il ne se
 --    déduit pas d'un IBAN nul. Les comptes existants prennent 'bank' par le
---    DEFAULT, c'est-à-dire exactement leur nature d'avant.
--- 3. card_last4 : les quatre derniers chiffres d'une carte, seuls gardés.
+--    DEFAULT, c'est-à-dire exactement leur nature d'avant. Le domaine est fermé
+--    À L'OCTET (BINARY) : sous la collation de la table (utf8mb4_unicode_ci,
+--    insensible à la casse et PAD SPACE), 'BANK' ou 'bank ' satisferaient un
+--    IN ordinaire, et le décodage exact de Kesh échouerait ensuite sur toute
+--    liste de comptes. La valeur exacte rend aussi exacts les deux CHECK qui
+--    comparent account_kind sans BINARY.
+-- 3. card_last4 : les quatre derniers chiffres d'une carte, seuls gardés. Le
+--    REGEXP est exact sous cette collation (chiffres ASCII seuls ; une espace
+--    finale est retirée par CHAR(4) à l'écriture, la valeur stockée reste
+--    quatre chiffres).
 -- 4. Invariants au schéma (C-e341-17) :
 --    - un compte bancaire a un IBAN ;
 --    - une carte n'a ni IBAN, ni QR-IBAN, et n'est jamais le compte principal
@@ -36,7 +44,7 @@ ALTER TABLE bank_accounts
     ADD COLUMN card_last4 CHAR(4) NULL
         COMMENT 'Quatre derniers chiffres d''une carte ; le numéro complet n''est jamais gardé',
     ADD CONSTRAINT chk_bank_accounts_account_kind
-        CHECK (account_kind IN ('bank', 'credit_card')),
+        CHECK (BINARY account_kind IN ('bank', 'credit_card')),
     ADD CONSTRAINT chk_bank_accounts_bank_has_iban
         CHECK (account_kind <> 'bank' OR iban IS NOT NULL),
     ADD CONSTRAINT chk_bank_accounts_card_shape

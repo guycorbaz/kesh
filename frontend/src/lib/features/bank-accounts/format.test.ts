@@ -10,6 +10,8 @@ import {
 } from './format';
 
 const IBAN = 'CH9300762011623852957';
+/** « •••• 1234 », l'espace insécable (U+00A0) comprise (revue P1, A7). */
+const CARTE = '•••• 1234';
 
 // Story 34-11a1 (#972, AC-10) — un compte sans IBAN s'affiche sans planter.
 describe('compte sans IBAN', () => {
@@ -19,21 +21,23 @@ describe('compte sans IBAN', () => {
 	});
 
 	it('cardLast4Label : « •••• 1234 », null sans quatre chiffres', () => {
-		expect(cardLast4Label('1234')).toBe('•••• 1234');
+		expect(cardLast4Label('1234')).toBe(CARTE);
+		// L'espace est insécable : la forme ne se coupe pas en colonne étroite.
+		expect(cardLast4Label('1234')).not.toContain(' ');
 		expect(cardLast4Label(null)).toBeNull();
 		expect(cardLast4Label(undefined)).toBeNull();
 	});
 
 	it('bankAccountShortId : IBAN court, carte, ou rien', () => {
 		expect(bankAccountShortId({ iban: IBAN, cardLast4: null })).toBe('••••2957');
-		expect(bankAccountShortId({ iban: null, cardLast4: '1234' })).toBe('•••• 1234');
+		expect(bankAccountShortId({ iban: null, cardLast4: '1234' })).toBe(CARTE);
 		expect(bankAccountShortId({ iban: null, cardLast4: null })).toBe('');
 	});
 
 	it('bankAccountOptionLabel : « •••• 1234 » à la place de l’IBAN, dans les deux styles', () => {
 		const carte = { bankName: 'Visa', description: 'Pro', iban: null, cardLast4: '1234' };
-		expect(bankAccountOptionLabel(carte)).toBe('Visa — Pro — •••• 1234');
-		expect(bankAccountOptionLabel(carte, 'parens')).toBe('Visa — Pro (•••• 1234)');
+		expect(bankAccountOptionLabel(carte)).toBe(`Visa — Pro — ${CARTE}`);
+		expect(bankAccountOptionLabel(carte, 'parens')).toBe(`Visa — Pro (${CARTE})`);
 	});
 
 	it('bankAccountOptionLabel : le nom seul sans IBAN ni quatre chiffres (jamais « null »)', () => {

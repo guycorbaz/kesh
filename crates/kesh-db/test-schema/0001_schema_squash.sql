@@ -172,7 +172,7 @@ CREATE TABLE `bank_accounts` (
   CONSTRAINT `chk_bank_accounts_bank_name_nonempty` CHECK (char_length(trim(`bank_name`)) > 0),
   CONSTRAINT `chk_bank_accounts_iban_nonempty` CHECK (char_length(trim(`iban`)) > 0),
   CONSTRAINT `chk_bank_accounts_closed_not_primary` CHECK (`closed_on` is null or `is_primary` = 0),
-  CONSTRAINT `chk_bank_accounts_account_kind` CHECK (`account_kind` in ('bank','credit_card')),
+  CONSTRAINT `chk_bank_accounts_account_kind` CHECK (cast(`account_kind` as char charset binary) in ('bank','credit_card')),
   CONSTRAINT `chk_bank_accounts_bank_has_iban` CHECK (`account_kind` <> 'bank' or `iban` is not null),
   CONSTRAINT `chk_bank_accounts_card_shape` CHECK (`account_kind` <> 'credit_card' or `iban` is null and `qr_iban` is null and `is_primary` = 0),
   CONSTRAINT `chk_bank_accounts_card_last4` CHECK (`card_last4` is null or `account_kind` = 'credit_card' and `card_last4` regexp '^[0-9]{4}$')

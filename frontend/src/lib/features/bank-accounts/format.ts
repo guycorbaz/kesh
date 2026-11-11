@@ -22,12 +22,17 @@ export function shortIban(iban: string | null): string {
 	return `••••${iban.slice(-4)}`;
 }
 
+/** Espace insécable (U+00A0) entre `••••` et les quatre chiffres d'une carte. */
+export const CARD_LAST4_SEPARATOR = ' ';
+
 /**
  * Story 34-11a1 (#972, C-e341-21) — **seule** forme d'affichage des quatre
- * chiffres d'une carte : `"•••• 1234"`. `null` sans quatre chiffres.
+ * chiffres d'une carte : `"•••• 1234"`, séparés par une espace **insécable**
+ * ({@link CARD_LAST4_SEPARATOR}, revue P1 A7) pour que la forme ne se coupe
+ * jamais en colonne étroite. `null` sans quatre chiffres.
  */
 export function cardLast4Label(cardLast4: string | null | undefined): string | null {
-	return cardLast4 ? `•••• ${cardLast4}` : null;
+	return cardLast4 ? `••••${CARD_LAST4_SEPARATOR}${cardLast4}` : null;
 }
 
 /** Ce qui identifie un compte au-delà de son nom : l'IBAN, ou les quatre chiffres d'une carte. */

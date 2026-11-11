@@ -2987,11 +2987,24 @@ async fn sans_iban_les_invariants_du_schema(pool: MySqlPool) {
             "chk_bank_accounts_card_last4",
         );
     }
-    // Le type est fermé.
-    assert_check(
-        forge_row(&pool, c, "paypal", None, None, false, None).await,
-        "chk_bank_accounts_account_kind",
-    );
+    // Le type est fermé, À L'OCTET (revue P1, E1) : sous `utf8mb4_unicode_ci`,
+    // insensible à la casse et PAD SPACE, un `IN` ordinaire admettrait `BANK` ou
+    // `bank ` — que le décodage exact de l'entité refuserait ensuite (500 sur toute
+    // liste de comptes).
+    for mauvais in [
+        "paypal",
+        "BANK",
+        "Bank",
+        "bank ",
+        "Credit_Card",
+        "credit_card ",
+    ] {
+        let iban = (mauvais.trim().eq_ignore_ascii_case("bank")).then_some(IBAN);
+        assert_check(
+            forge_row(&pool, c, mauvais, iban, None, false, None).await,
+            "chk_bank_accounts_account_kind",
+        );
+    }
     // Un IBAN vide reste refusé (contrainte d'origine, inchangée).
     assert_check(
         forge_row(&pool, c, "bank", Some("  "), None, false, None).await,

@@ -955,7 +955,11 @@ describe('BankImportUpload — compte sans IBAN', () => {
 		const option = Array.from(c.querySelectorAll('#bank-account-select option')).find(
 			(o) => o.getAttribute('value') === '3',
 		);
-		expect(option?.textContent?.trim()).toBe('Visa (•••• 1234)');
+		expect(option?.textContent?.trim()).toBe('Visa (•••• 1234)');
+
+		// Revue P1 (B3) — avant tout choix, le texte et le filtre génériques.
+		expect(get(c, 'bank-import-drop-zone-text').textContent).toContain('CAMT.053 ou CSV');
+		expect(get<HTMLInputElement>(c, 'bank-import-file-input').accept).toContain('.xml');
 
 		await chooseAccount(c, 1);
 		expect(get<HTMLInputElement>(c, 'bank-import-file-input').accept).toContain('.xml');
@@ -965,5 +969,18 @@ describe('BankImportUpload — compte sans IBAN', () => {
 		expect(accept).not.toContain('.xml');
 		expect(accept).toContain('.csv');
 		expect(get(c, 'bank-import-drop-zone-text').textContent).toContain('n’a pas d’IBAN');
+	});
+
+	// Revue P1 (B4) — l'aperçu CSV d'un compte sans IBAN : `accountIban: null` s'affiche
+	// en tiret, jamais en case vide ni en « null ».
+	it('l’aperçu d’un compte sans IBAN affiche un tiret à la place de l’IBAN', async () => {
+		const { c } = await mount();
+		await chooseAccount(c, 1);
+		const reponse = previewResp({ tag: 'A', profileId: A });
+		reponse.selectedStatement.accountIban = null;
+		mockApi.previewBankImport.mockResolvedValueOnce(reponse);
+		await chooseProfile(c, A);
+		await chooseFile(c);
+		expect(get(c, 'preview-iban').textContent?.trim()).toBe('—');
 	});
 });

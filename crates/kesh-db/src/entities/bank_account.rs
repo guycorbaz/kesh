@@ -11,8 +11,10 @@ use sqlx::{Decode, Encode, MySql, Type, encode::IsNull, error::BoxDynError, mysq
 
 /// Type d'un compte de `bank_accounts` — Story 34-11a1 (#972, C-e341-13).
 ///
-/// Mappé en `VARCHAR(20)` (`account_kind`), domaine fermé par
-/// `chk_bank_accounts_account_kind`. Sérialisé en JSON `"bank"` /
+/// Mappé en `VARCHAR(20)` (`account_kind`), domaine fermé **à l'octet** par
+/// `chk_bank_accounts_account_kind` (`BINARY … IN`) : la collation de la table
+/// admettrait sinon `BANK` ou `bank `, que [`std::str::FromStr`] refuse — et le
+/// décodage de toute liste de comptes échouerait. Sérialisé en JSON `"bank"` /
 /// `"credit_card"` (champ `accountKind`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]

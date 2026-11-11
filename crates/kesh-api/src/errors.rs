@@ -720,8 +720,9 @@ pub enum AppError {
     /// IBAN** (carte de crédit) → `422 BANK_IMPORT_CAMT_NEEDS_IBAN`,
     /// `details.bankAccountId`. Le relevé CAMT se choisit par l'IBAN du compte :
     /// sans IBAN, aucun relevé n'est le sien. Refus placé après la détection du
-    /// format (un CSV sur le même compte est accepté) et avant toute lecture du
-    /// fichier. Fondé sur `iban IS NULL`, jamais sur le type du compte.
+    /// format (un CSV sur le même compte est accepté ; la détection flaire déjà les
+    /// octets) et avant le hash, l'empreinte et l'analyse du fichier. Fondé sur
+    /// `iban IS NULL`, jamais sur le type du compte.
     #[error("Import CAMT impossible : le compte n'a pas d'IBAN (id={bank_account_id})")]
     BankImportCamtNeedsIban { bank_account_id: i64 },
 

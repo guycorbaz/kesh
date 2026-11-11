@@ -528,7 +528,8 @@
 			</h2>
 			<dl class="mt-2 grid grid-cols-2 gap-2 text-sm">
 				<dt>{i18nMsg('bank-import-labels-iban', 'IBAN')}</dt>
-				<!-- Story 34-11a1 (#972) — un compte sans IBAN : un tiret, jamais « null ». -->
+				<!-- Story 34-11a1 (#972) — un compte sans IBAN : un tiret plutôt qu'une case vide
+				     (Svelte rend `null` en chaîne vide). -->
 				<dd data-testid="preview-iban">{preview.selectedStatement.accountIban ?? '—'}</dd>
 				<dt>{i18nMsg('bank-import-labels-period', 'Période')}</dt>
 				<dd>

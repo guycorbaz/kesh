@@ -942,8 +942,10 @@ struct StatementSelection {
 /// (#972, C-e341-18). Fondé sur `iban IS NULL`, jamais sur le type du compte.
 ///
 /// ⚠️ Appelée **après** la détection du format (un CSV sur le même compte est
-/// accepté) et **avant** toute lecture du fichier : l'aperçu ([`preview`]) et
-/// la création ([`create`]) la placent juste après l'aiguillage CSV.
+/// accepté ; la détection flaire déjà les octets) et **avant** le hash,
+/// l'empreinte et l'analyse du fichier : l'aperçu ([`preview`]) et la création
+/// ([`create`]) la placent juste après l'aiguillage CSV — dans la création, avant
+/// le contrôle de l'empreinte (test `compte_sans_iban_le_refus_camt_precede_l_empreinte`).
 fn camt_target_iban(bank_account: &kesh_db::entities::BankAccount) -> Result<&str, AppError> {
     bank_account
         .iban
@@ -1064,7 +1066,7 @@ pub async fn preview(
         return preview_csv(&state, current_user.company_id, &bank_account, &fields).await;
     }
     // Story 34-11a1 (#972) — CAMT sur un compte sans IBAN : refus nommé, après
-    // la détection du format (le CSV vient de partir) et avant toute lecture.
+    // la détection du format (le CSV vient de partir) et avant le hash et l'analyse.
     let target_iban = camt_target_iban(&bank_account)?;
 
     // Hash + parse CAMT.053.

@@ -2529,6 +2529,11 @@ La session ouverte doit être \textbf{rouverte} --- reconnexion, ou au plus la d
 \textbf{Limite} : les données de démonstration laissées par une réinitialisation antérieure (taux de TVA, réglages de facturation, contacts, articles, factures, avoirs) qui désignent la société effacée restent en base, invisibles et inertes (\#546).
 
 \subsubsection{Passer à la 0.17.6}\label{sec:maj-0-17-6}
+% Revue P1 (A1) : les commandes et chemins insécables de cette section débordaient
+% la marge du PDF (la valeur de l'échappatoire y perdait son dernier chiffre).
+% \sloppy autorise l'espacement large plutôt que le débordement ; \fussy le
+% rétablit avant la section suivante.
+\sloppy
 
 \textbf{Prenez avant la mise à jour une sauvegarde manuelle complète} --- la base, un \keshcommand{.keshbackup} et le dossier des documents. \textbf{Le retour à la 0.17.5 passe uniquement par la sauvegarde d'avant la mise à jour.}
 
@@ -2539,6 +2544,8 @@ La 0.17.6 se pose sur la 0.17.5 : elle n'exige ni nouveau compose ni nouvelle va
 \paragraph{Le retour à la 0.17.5.} La 0.17.5 \textbf{ne démarre plus} sur la base migrée --- le journal porte « \emph{FATAL : La base a été migrée par Kesh v0.17.6, le binaire courant v0.17.5 ne peut pas la downgrader sans risque} » --- et elle \textbf{refuse} une sauvegarde prise en 0.17.6 (\texttt{IMPORT\_VERSION\_INCOMPATIBLE}, \texttt{409}). Le retour se fait donc sur une base neuve, par la sauvegarde d'avant la mise à jour --- celle de \keshpath{backup/pre-upgrade/}, ou la vôtre --- que la 0.17.5 importe : vidage de sécurité de la base actuelle, puis installation 0.17.5 neuve (\texttt{image: gcorbaz/kesh:0.17.5}) sur une base vide, et import du fichier depuis l'assistant, lien \emph{Restaurer une sauvegarde}, comme au \S\ref{sec:revenir-version-precedente}. Tout ce qui a été saisi depuis la mise à jour est perdu. Une sauvegarde de la 0.17.5 s'importe, elle, dans la 0.17.6 : ses comptes y deviennent des comptes bancaires.
 
 \paragraph{Un compte sans IBAN.} La 0.17.6 prépare la carte de crédit tenue comme un compte. Un compte sans IBAN ne peut pas débiter un lot de paiement (\texttt{pain.001}) ni recevoir un relevé CAMT.053, qui se choisit par l'IBAN ; il reçoit un relevé CSV ou saisi à la main, et n'est jamais le compte principal, celui de la QR-facture. L'export \keshpath{bank\_accounts.csv} gagne deux colonnes en fin de ligne, \texttt{account\_kind} et \texttt{card\_last4} : un tableur ou un script qui lit ce fichier par position ne voit aucune colonne bouger.
+
+\fussy
 
 \subsubsection{Passer à la 0.17.5}\label{sec:maj-0-17-5}
 

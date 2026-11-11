@@ -1679,3 +1679,39 @@ async fn generate_pain001_refuses_an_account_without_iban(pool: MySqlPool) {
         "{err:?}"
     );
 }
+
+/// Revue P1 (B1, E3) — le refus « sans IBAN » vient **après** « archivé » et
+/// « clos » : une carte close rend `BankAccountClosed`, une carte archivée
+/// `IllegalStateTransition`, comme un compte bancaire.
+#[sqlx::test(migrations = "./test-schema")]
+async fn create_batch_refuses_a_closed_or_archived_card_by_its_state_first(pool: MySqlPool) {
+    let ctx = setup(&pool).await;
+    let inv = make_invoice(&pool, &ctx, Some(IBAN_A), None, Some("R"), dec!(10.00)).await;
+    forge_card(&pool, &ctx).await;
+
+    sqlx::query("UPDATE bank_accounts SET closed_on = '2026-01-31' WHERE id = ?")
+        .bind(ctx.bank_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let err =
+        payment_batches::create_batch(&pool, new_batch(&ctx, vec![inv]), ctx.seeded.admin_user_id)
+            .await
+            .expect_err("carte close");
+    assert!(
+        matches!(err, DbError::BankAccountClosed { bank_account_id } if bank_account_id == ctx.bank_id),
+        "{err:?}"
+    );
+
+    sqlx::query("UPDATE bank_accounts SET closed_on = NULL, archived = TRUE WHERE id = ?")
+        .bind(ctx.bank_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let err =
+        payment_batches::create_batch(&pool, new_batch(&ctx, vec![inv]), ctx.seeded.admin_user_id)
+            .await
+            .expect_err("carte archivée");
+    assert!(matches!(err, DbError::IllegalStateTransition(_)), "{err:?}");
+    assert_eq!(batch_count(&pool, &ctx).await, 0, "aucun lot écrit");
+}

@@ -4878,3 +4878,94 @@ async fn compte_sans_iban_camt_refuse_csv_accepte(pool: MySqlPool) {
     assert_eq!(body["bankAccountId"], card_id);
     assert_eq!(body["transactionCount"], 3);
 }
+
+/// Revue P1 (E2, A10) — le refus CAMT de la création précède l'empreinte : l'aperçu
+/// CSV d'une carte, puis le **même** fichier renommé `.xml` envoyé avec cette
+/// empreinte, rend `422 BANK_IMPORT_CAMT_NEEDS_IBAN` et non `409
+/// BANK_IMPORT_PREVIEW_STALE`. Le refus de `create_camt_under_lock`, lui, viendrait
+/// après le contrôle d'empreinte : seul le refus précoce donne ce code.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn compte_sans_iban_le_refus_camt_precede_l_empreinte(pool: MySqlPool) {
+    let s = setup(&pool).await;
+    let card_id = forge_card(&pool, s.company_id).await;
+    let profile_id = create_test_bank_profile_csv(&pool, s.company_id, s.user_id).await;
+    let app = spawn_app(pool.clone()).await;
+
+    let resp = app
+        .client
+        .post(app.url("/api/v1/bank-imports/preview"))
+        .bearer_auth(&s.jwt)
+        .multipart(build_csv_multipart(
+            CSV_VALID_3_LINES.as_bytes().to_vec(),
+            "carte.csv",
+            card_id,
+            profile_id,
+            &[],
+        ))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 200);
+    let body: Value = resp.json().await.unwrap();
+    let fingerprint = body["previewFingerprint"].as_str().unwrap().to_string();
+
+    let form = build_multipart(CSV_VALID_3_LINES.as_bytes().to_vec(), "carte.xml", card_id)
+        .text("previewFingerprint", fingerprint);
+    let resp = app
+        .client
+        .post(app.url("/api/v1/bank-imports"))
+        .bearer_auth(&s.jwt)
+        .multipart(form)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 422);
+    let body: Value = resp.json().await.unwrap();
+    assert_eq!(
+        body["error"]["code"], "BANK_IMPORT_CAMT_NEEDS_IBAN",
+        "{body}"
+    );
+}
+
+/// Revue P1 (B2, E3) — le refus CAMT vient **après** les refus du compte : une carte
+/// archivée rend `404 BANK_IMPORT_BANK_ACCOUNT_NOT_FOUND` (anti-énumération), une
+/// carte close `409 BANK_ACCOUNT_CLOSED`, à l'aperçu comme à la création.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn compte_sans_iban_archive_ou_clos_garde_son_refus_d_abord(pool: MySqlPool) {
+    let s = setup(&pool).await;
+    let archivee = forge_card(&pool, s.company_id).await;
+    let close = forge_card(&pool, s.company_id).await;
+    sqlx::query("UPDATE bank_accounts SET archived = TRUE WHERE id = ?")
+        .bind(archivee)
+        .execute(&pool)
+        .await
+        .unwrap();
+    sqlx::query("UPDATE bank_accounts SET closed_on = '2026-01-31' WHERE id = ?")
+        .bind(close)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let app = spawn_app(pool.clone()).await;
+    for chemin in ["/api/v1/bank-imports/preview", "/api/v1/bank-imports"] {
+        for (carte, statut, code) in [
+            (archivee, 404, "BANK_IMPORT_BANK_ACCOUNT_NOT_FOUND"),
+            (close, 409, "BANK_ACCOUNT_CLOSED"),
+        ] {
+            let resp = app
+                .client
+                .post(app.url(chemin))
+                .bearer_auth(&s.jwt)
+                .multipart(build_multipart(
+                    read_fixture("v04_minimal.xml"),
+                    "v04_minimal.xml",
+                    carte,
+                ))
+                .send()
+                .await
+                .unwrap();
+            assert_eq!(resp.status(), statut, "{chemin} {code}");
+            let body: Value = resp.json().await.unwrap();
+            assert_eq!(body["error"]["code"], code, "{chemin} : {body}");
+        }
+    }
+}

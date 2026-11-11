@@ -218,6 +218,20 @@ Utilisateur (AC-9), `api-external.md`. **Prompt de revue : les nommer**, PDF apl
 - **PayPal, caisse** : l'énumération est prête, le type ne l'est pas — rien à tracer tant que Guy ne le demande pas.
 - **Un relevé CAMT de carte** : issue demandée par la 34-11a1.
 
+## Points hérités de la revue P1 de la 34-11a1 (renvoyés ici par l'orchestrateur, 2026-11-11)
+
+Rapports : `/home/gcorbaz/devel/kesh-gate-logs/e34a1-review-p1-{B,E}.md`. Non corrigés dans la 34-11a1 ; à traiter ou à écarter par écrit ici.
+
+- **E5 = B7 (LOW)** — l'écran *Comptes bancaires* ouvre l'édition complète d'une carte (`routes/(app)/bank-accounts/+page.svelte`, `formIban = ba.iban ?? ''`) ;
+  l'enregistrement finit en `400 CHECK_CONSTRAINT_VIOLATION` « Valeur invalide » (`chk_bank_accounts_card_shape`), ou en refus de l'IBAN vide : refus non
+  nommé. Le `PUT` d'une carte de cette fiche (AC-4, T4) le règle ; vérifier que *Modifier* d'une carte n'envoie plus d'IBAN, ou nomme son refus.
+- **B5 (LOW)** — l'invariant « le principal a un IBAN » repose sur le **type** (`chk_bank_accounts_card_shape` : `is_primary = FALSE` pour une carte), non
+  sur `iban IS NULL`, contrairement au principe de C-e341-18. Remède proposé : `CHECK (is_primary = FALSE OR iban IS NOT NULL)` — mais la 34-11a2 ne porte
+  pas de migration (C-e341-29) : l'écrire en dette (prochaine migration de `bank_accounts`), ou borner la promesse du doc-comment de `BankAccount::iban`.
+- **E6 (LOW)** — `accept` ne filtre pas le **glisser-déposer** (`BankImportUpload.svelte`, `handleDrop` → `handleFileSelect`, sans contrôle d'extension) :
+  un `.xml` déposé sur une carte part au serveur, qui rend `422 BANK_IMPORT_CAMT_NEEDS_IBAN`, affiché par `setError`. Correct ; aucun test front ne montre
+  ce refus affiché après un dépôt.
+
 ## Recoupements
 
 `routes/bank_accounts.rs`, `bank-accounts/+page.svelte`, `format.ts` avec **34-1**, **34-2**, **34-11a1** ; `repositories/accounts.rs` : aucune autre

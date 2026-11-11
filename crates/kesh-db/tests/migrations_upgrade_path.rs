@@ -2523,15 +2523,33 @@ async fn sans_iban_la_montee_garde_chaque_compte_bancaire(pool: MySqlPool) {
         && a.account_kind == kesh_db::entities::BankAccountKind::Bank));
     // Les contraintes neuves sont actives : un compte bancaire sans IBAN est
     // refusé, une carte sans IBAN est admise.
+    // Revue P1 (E7) : le refus nomme sa contrainte — ce test est le seul à tourner
+    // sur la base MIGRÉE et non sur le squash.
+    let refus = sqlx::query(
+        "INSERT INTO bank_accounts (company_id, bank_name, iban) VALUES (?, 'X', NULL)",
+    )
+    .bind(company_id)
+    .execute(&pool)
+    .await
+    .expect_err("un compte bancaire sans IBAN doit être refusé");
     assert!(
-        sqlx::query(
-            "INSERT INTO bank_accounts (company_id, bank_name, iban) VALUES (?, 'X', NULL)"
-        )
-        .bind(company_id)
-        .execute(&pool)
-        .await
-        .is_err(),
-        "un compte bancaire sans IBAN doit être refusé"
+        refus
+            .to_string()
+            .contains("chk_bank_accounts_bank_has_iban"),
+        "refus attendu par chk_bank_accounts_bank_has_iban : {refus}"
+    );
+    // Le domaine du type est fermé à l'octet sur la base migrée aussi (E1).
+    let refus = sqlx::query(
+        "INSERT INTO bank_accounts (company_id, bank_name, account_kind, iban) \
+         VALUES (?, 'X', 'BANK', 'CH5604835012345678009')",
+    )
+    .bind(company_id)
+    .execute(&pool)
+    .await
+    .expect_err("'BANK' doit être refusé");
+    assert!(
+        refus.to_string().contains("chk_bank_accounts_account_kind"),
+        "refus attendu par chk_bank_accounts_account_kind : {refus}"
     );
     sqlx::query(
         "INSERT INTO bank_accounts (company_id, bank_name, account_kind, iban, card_last4) \
