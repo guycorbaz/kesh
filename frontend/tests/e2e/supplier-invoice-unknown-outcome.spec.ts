@@ -213,3 +213,103 @@ test('fiche fournisseur : rattachement coupé, le sélecteur dit que l’issue n
 	await expect(page.getByTestId('supplier-unknown-outcome')).toHaveCount(0);
 	await capture(page, testInfo, 'e348-selecteur-issue-inconnue');
 });
+
+/**
+ * Revue P3 de la 34-8 (A-5, B-3 = E-2) — le second clic après une relecture en échec : le
+ * serveur refuse le second paiement (la facture est payée), et la relecture qui suit ce refus
+ * échoue aussi. L'encadré dit que la facture n'a pas pu être relue, sans « l'issue n'est pas
+ * connue », le refus, lui, étant connu.
+ */
+test('fiche fournisseur : second paiement refusé et relecture en échec, l’encadré dit de recharger', async ({
+	page,
+}, testInfo) => {
+	await login(page);
+	const { id, cashId } = await validatedSupplierInvoice(page);
+	let paid = false;
+	await page.route(`**/api/v1/supplier-invoices/${id}/pay`, async (route) => {
+		if (route.request().method() !== 'POST') return route.fallback();
+		if (paid) return route.fallback(); // le second envoi va au serveur, qui refuse
+		const response = await route.fetch();
+		expect(response.status(), 'le serveur a bien payé').toBe(200);
+		paid = true;
+		await route.abort('connectionreset');
+	});
+	await page.route(`**/api/v1/supplier-invoices/${id}`, async (route) => {
+		if (route.request().method() !== 'GET' || !paid) return route.fallback();
+		await route.fulfill({
+			status: 500,
+			contentType: 'application/json',
+			body: JSON.stringify({ error: { code: 'INTERNAL_ERROR', message: 'Relecture refusée' } }),
+		});
+	});
+	await page.goto(`/supplier-invoices/${id}`);
+	await page.getByTestId('supplier-invoice-pay').getByRole('radio').nth(1).check();
+	await page.getByTestId('pay-internal-account').selectOption(String(cashId));
+	await page.getByTestId('supplier-invoice-pay-submit').click();
+	await expect(page.getByTestId('supplier-unknown-outcome')).toHaveAttribute(
+		'data-outcome',
+		'reread-failed',
+	);
+	await page.getByTestId('supplier-invoice-pay-submit').click();
+
+	const notice = page.getByTestId('supplier-unknown-outcome');
+	await expect(notice).toHaveAttribute('data-outcome', 'refused-reread-failed');
+	await expect(notice).toHaveText(
+		'La facture n’a pas pu être relue : rechargez la page avant de réessayer.',
+	);
+	await expect(page.getByTestId('supplier-invoice-pay-error')).toBeVisible();
+	await capture(page, testInfo, 'e348-refus-relecture-en-echec');
+});
+
+/**
+ * Revue P3 de la 34-8 (A-5 ; revue P2, B-4) — le second clic refusé « déjà traité » sur SON
+ * document : le rattachement est écrit, la réponse perdue, et la relecture qui suit ne montre
+ * pas encore le document (servie ici depuis la fiche d'avant). Au second clic, le serveur
+ * refuse ; la fiche relit, trouve ce document, et le dit joint, non en avertissement.
+ */
+test('fiche fournisseur : second rattachement refusé sur son propre document, la fiche le dit joint', async ({
+	page,
+}, testInfo) => {
+	await login(page);
+	const { id } = await validatedSupplierInvoice(page);
+	const name = `e2e-e348-own-${token()}.png`;
+	await deposit(name, uniqueCopy(PNG_SANS_QR, 'png'));
+	const report = await importViaApi(page);
+	expect(report.accepted.map((a) => a.fileName)).toContain(name);
+	let before: string | null = null;
+	let attached = false;
+	let rereadServed = false;
+	await page.route(`**/api/v1/supplier-invoices/${id}`, async (route) => {
+		if (route.request().method() !== 'GET') return route.fallback();
+		if (before === null) {
+			const response = await route.fetch();
+			before = await response.text();
+			return route.fulfill({ response, body: before });
+		}
+		if (attached && !rereadServed) {
+			rereadServed = true; // la relecture d'après la réponse perdue : la fiche d'avant
+			return route.fulfill({ status: 200, contentType: 'application/json', body: before });
+		}
+		return route.fallback();
+	});
+	await page.route(`**/api/v1/supplier-invoices/${id}/source-document`, async (route) => {
+		if (route.request().method() !== 'POST' || attached) return route.fallback();
+		const response = await route.fetch();
+		expect(response.status(), 'le serveur a bien joint').toBe(200);
+		attached = true;
+		await route.abort('connectionreset');
+	});
+	await page.goto(`/supplier-invoices/${id}`);
+	await page.getByTestId('supplier-invoice-attach').click();
+	const row = page.getByTestId('attach-document-row').filter({ hasText: name });
+	await expect(row).toHaveCount(1);
+	page.once('dialog', (d) => void d.accept());
+	await row.getByTestId('attach-document-submit').click();
+	await expect(page.getByTestId('attach-document-error')).toBeVisible();
+
+	page.once('dialog', (d) => void d.accept());
+	await row.getByTestId('attach-document-submit').click();
+	await expect(page.getByText('Document joint à la facture.')).toBeVisible();
+	await expect(page.getByTestId('supplier-invoice-document-name')).toHaveText(name);
+	await capture(page, testInfo, 'e348-propre-document-joint');
+});
