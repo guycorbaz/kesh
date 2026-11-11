@@ -116,6 +116,26 @@ pub struct ReconciliationProposal {
     /// quand c'est une décision et non une absence : `null` sinon (champ
     /// additif). Posée, elle va de pair avec `candidates` vide.
     pub notice: Option<ProposalNotice>,
+    /// Story 34-4 (#828, AC-1) — ce qui, aux livres, ressemble déjà à la
+    /// transaction (champ additif) : `null` quand elle n'a rien à quoi se
+    /// rattacher (hors CHF, montant nul) ou que le compte bancaire n'a pas de
+    /// compte du grand livre. L'écran en tire un avertissement et une
+    /// confirmation ; le serveur ne refuse rien (AC-4).
+    pub already_booked: Option<AlreadyBooked>,
+}
+
+/// Story 34-4 (#828, AC-1, AC-2) — les trois nombres du signal « déjà
+/// comptabilisée », lus par
+/// [`kesh_db::repositories::reconciliation_link::count_already_booked`] : les
+/// longueurs des deux listes du dialogue *Rattacher à une écriture existante*
+/// (mêmes fonctions, mêmes paramètres) et celle des écritures rapprochées sur
+/// un autre compte bancaire à grand livre distinct. Chacun vaut au plus 50.
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AlreadyBooked {
+    pub settlement_count: usize,
+    pub entry_count: usize,
+    pub matched_elsewhere_count: usize,
 }
 
 /// Story 30-1b (#686, AC-b5) — l'avis d'une ligne qui ne propose rien. Un
@@ -1032,6 +1052,37 @@ pub async fn get_proposals(
         Vec::with_capacity(transactions.len());
     let mut distinct_contact_ids: std::collections::HashSet<i64> = std::collections::HashSet::new();
     let underpayment_tolerance = Decimal::new(AMOUNT_TOLERANCE_HUNDREDTHS, 2);
+    // Story 34-4 (#828, AC-1, AC-3, AC-8) — pour chaque transaction de la page,
+    // ce qui ressemble déjà à elle aux livres : deux lectures ordinaires **par
+    // page** (et non trois par transaction, AC-8), qui rendent les nombres
+    // mêmes des fonctions du dialogue de rattachement, avec ses paramètres
+    // (compte du grand livre lu ci-dessus, `link_amount_tolerance`). Sans compte
+    // du grand livre, ou pour une transaction non rattachable : absente de la
+    // table, d'où `null`. Une erreur de lecture fait échouer la route.
+    let mut already_booked_by_tx: HashMap<i64, AlreadyBooked> = match ba_check.journal_account_id {
+        Some(ledger) => kesh_db::repositories::reconciliation_link::count_already_booked_for_page(
+            &state.pool,
+            current_user.company_id,
+            query.bank_account_id,
+            ledger,
+            &transactions,
+            link_amount_tolerance(),
+        )
+        .await?
+        .into_iter()
+        .map(|(id, c)| {
+            (
+                id,
+                AlreadyBooked {
+                    settlement_count: c.settlement_count,
+                    entry_count: c.entry_count,
+                    matched_elsewhere_count: c.matched_elsewhere_count,
+                },
+            )
+        })
+        .collect(),
+        None => HashMap::new(),
+    };
     for tx in transactions {
         // A6-2 Pass 6 — currency tx-side guard (mono-CHF v0.1, cf. L38).
         // Skip transactions non-CHF. Défense en profondeur : depuis la
@@ -1421,6 +1472,7 @@ pub async fn get_proposals(
                 },
                 candidates,
                 notice,
+                already_booked: already_booked_by_tx.remove(&tx.id),
             }
         })
         .collect();

@@ -40,6 +40,12 @@
   « Accepter » reste grisé pour elle, comme pour toute ligne sans candidate.
   Le texte de l'avis ne conseille jamais de confirmer le lot (qui compterait la
   dépense deux fois) et ne cite aucun numéro d'issue.
+
+  Story 34-4 (#828, AC-5, AC-6) — une ligne qui semble déjà comptabilisée
+  (`alreadyBooked`, `already-booked.ts`) porte un avertissement sous elle ; *Accepter (N)*,
+  *Écriture manuelle* et *Éclater* demandent alors confirmation
+  (`AlreadyBookedConfirmDialog`) ; *Rejeter* et *Rattacher à une écriture existante*, non.
+  Rien n'est refusé : *Continuer quand même* reprend le geste tel quel.
 -->
 <script lang="ts">
 	import { errorMessageOf } from '$lib/shared/utils/error-message';
@@ -66,6 +72,8 @@
 	import ManualMatchModal from './ManualMatchModal.svelte';
 	import TransactionSplitModal from './TransactionSplitModal.svelte';
 	import LinkSettlementModal from './LinkSettlementModal.svelte';
+	import AlreadyBookedConfirmDialog from './AlreadyBookedConfirmDialog.svelte';
+	import { alreadyBookedWarning, describeTransaction, isAlreadyBooked } from './already-booked';
 	import { fetchAccounts } from '$lib/features/accounts/accounts.api';
 	import type { AccountResponse } from '$lib/features/accounts/accounts.types';
 	import { listBankAccounts } from '$lib/features/bank-accounts/bank-accounts.api';
@@ -130,9 +138,8 @@
 	function describeTx(id: number): string {
 		const t = failedTx.get(id);
 		if (!t) return `TX #${id}`;
-		return [formatSwissDate(t.bookingDate), `${t.amount} ${t.currency}`, t.counterpartyName]
-			.filter((v) => v !== null && v !== undefined && v !== '')
-			.join(' · ');
+		// Story 34-4 : la désignation est partagée avec la confirmation (`describeTransaction`).
+		return describeTransaction(t);
 	}
 
 	// H7 Pass 1 code review — generation tag pour drop les responses
@@ -273,6 +280,64 @@
 		await load();
 	}
 
+	/**
+	 * Story 34-4 (#828, AC-6) — le geste qui attend la confirmation d'une ligne signalée « déjà
+	 * comptabilisée », et les lignes signalées qu'il concerne (relevées à la demande). Seuls
+	 * *Accepter*, *Écriture manuelle* et *Éclater* passent par là : ils passeraient une écriture.
+	 */
+	type GuardedGesture =
+		| { kind: 'accept' }
+		| { kind: 'manual'; proposal: ReconciliationProposal }
+		| { kind: 'split'; proposal: ReconciliationProposal };
+	let pendingGesture = $state<GuardedGesture | null>(null);
+	let confirmTransactions = $state<ReconciliationProposal[]>([]);
+
+	/** Demande confirmation si `flagged` n'est pas vide ; sinon, exécute le geste aussitôt. */
+	function guard(gesture: GuardedGesture, flagged: ReconciliationProposal[]): void {
+		if (flagged.length === 0) {
+			runGesture(gesture);
+			return;
+		}
+		confirmTransactions = flagged;
+		pendingGesture = gesture;
+	}
+
+	function runGesture(gesture: GuardedGesture): void {
+		if (gesture.kind === 'accept') void onAccept();
+		else if (gesture.kind === 'manual') openManualMatch(gesture.proposal);
+		else openSplit(gesture.proposal);
+	}
+
+	/** *Accepter (N)* : confirmation si la sélection contient une ligne signalée ; lot entier. */
+	function requestAccept(): void {
+		guard(
+			{ kind: 'accept' },
+			proposals.filter((p) => selected.has(p.bankTransactionId) && isAlreadyBooked(p)),
+		);
+	}
+
+	function requestManualMatch(p: ReconciliationProposal): void {
+		guard({ kind: 'manual', proposal: p }, isAlreadyBooked(p) ? [p] : []);
+	}
+
+	function requestSplit(p: ReconciliationProposal): void {
+		guard({ kind: 'split', proposal: p }, isAlreadyBooked(p) ? [p] : []);
+	}
+
+	/** *Continuer quand même* : le geste reprend tel quel. */
+	function confirmGesture(): void {
+		const gesture = pendingGesture;
+		pendingGesture = null;
+		confirmTransactions = [];
+		if (gesture) runGesture(gesture);
+	}
+
+	/** *Annuler* : rien n'est fait. */
+	function cancelGesture(): void {
+		pendingGesture = null;
+		confirmTransactions = [];
+	}
+
 	// Story 29-6 (#665, AC10) — une ligne sans proposition se coche (pour
 	// « Rejeter ») ; « Accepter » ne la traite pas : grisé, gardé, et dit.
 	const selectionHasUnmatched = $derived(
@@ -389,7 +454,7 @@
 				type="button"
 				class="rounded bg-primary px-4 py-2 text-white disabled:opacity-50"
 				disabled={busy || selected.size === 0 || selectionHasUnmatched}
-				onclick={onAccept}
+				onclick={requestAccept}
 				data-testid="reconciliation-accept-btn"
 			>
 				{i18nMsg('reconciliation-actions-accept', 'Accepter')} ({selected.size})
@@ -453,6 +518,7 @@
 			</thead>
 			<tbody>
 				{#each proposals as p (p.bankTransactionId)}
+					{@const warning = alreadyBookedWarning(p)}
 					<tr data-testid="reconciliation-row" data-tx-id={p.bankTransactionId}>
 						<td>
 							<!-- Story 29-6 (#665, AC10) — une case sur toute ligne, avec ou sans proposition. -->
@@ -579,7 +645,7 @@
 								type="button"
 								class="text-xs text-primary underline disabled:opacity-50"
 								disabled={busy}
-								onclick={() => openManualMatch(p)}
+								onclick={() => requestManualMatch(p)}
 								data-testid="manual-match-button"
 								data-tx-id={p.bankTransactionId}
 							>
@@ -591,7 +657,7 @@
 								type="button"
 								class="ml-2 text-xs text-primary underline disabled:opacity-50"
 								disabled={busy}
-								onclick={() => openSplit(p)}
+								onclick={() => requestSplit(p)}
 								data-testid="split-button"
 								data-tx-id={p.bankTransactionId}
 							>
@@ -614,6 +680,22 @@
 							{/if}
 						</td>
 					</tr>
+					<!-- Story 34-4 (#828, AC-5) — sous la ligne, l'avertissement d'une transaction qui
+					     semble déjà comptabilisée ; aucun numéro d'issue, rien pour un compte nul. -->
+					{#if warning}
+						<tr data-testid="already-booked-row" data-tx-id={p.bankTransactionId}>
+							<td></td>
+							<td colspan="6" class="pb-2">
+								<p
+									class="rounded border border-amber-300 bg-amber-50 px-2 py-1 text-xs text-amber-900"
+									data-testid="already-booked-warning"
+									data-tx-id={p.bankTransactionId}
+								>
+									{warning}
+								</p>
+							</td>
+						</tr>
+					{/if}
 				{/each}
 			</tbody>
 		</table>
@@ -690,6 +772,13 @@
 			}}
 			proposal={linkProposal}
 			onSuccess={onLinkSuccess}
+		/>
+
+		<AlreadyBookedConfirmDialog
+			open={pendingGesture !== null}
+			transactions={confirmTransactions}
+			onContinue={confirmGesture}
+			onCancel={cancelGesture}
 		/>
 	{/if}
 

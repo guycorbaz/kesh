@@ -1,6 +1,6 @@
 # Story 34-4 : la réconciliation signale une transaction qui semble déjà comptabilisée, et demande confirmation (#828)
 
-Status: ready-for-dev
+Status: in-progress
 
 *Fiche rédigée le 2026-11-10 en autonomie (Opus 5.5), worktree `/home/gcorbaz/devel/kesh-e34`, branche `chore/epic-34-kickoff`,
 numéros de ligne de `a75835db`. Release **0.17.6**, Epic 34. **Aucune migration** (lecture seule, champ additif). Registre :
