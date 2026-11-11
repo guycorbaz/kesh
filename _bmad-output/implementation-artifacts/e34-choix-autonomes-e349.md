@@ -88,3 +88,27 @@ le 2026-11-10 (Opus 5.5). Tous signalés à Guy dans le rapport de l'agent.
 - **Retenu** : `localeCompare(…, 'fr', { numeric: true, sensitivity: 'base' })`, puis l'ordre des points de code pour
   départager — « facture-2 » avant « facture-10 », sans égard à la casse.
 - **Réversible** : oui.
+
+## Ajouts des revues de code (2026-11-11)
+
+### C-e349-11 — Un second import retire l'ancien rapport dès son lancement
+
+- **Contexte** : revue P2 ciblée, P2-2 : pendant un second import (`importing`), les lignes de l'ancien rapport
+  repassaient au lien `#imported-<id>`, peut-être vers une ancre absente.
+- **Retenu** : `report = null` au lancement de `runImport` ; le nouveau rapport le remplace à son arrivée. Le rapport
+  n'est de toute façon pas conservé (décision de Guy), et un import en échec le vidait déjà.
+- **Écartée** : figer l'ancien rapport (un drapeau `listStale` propre au nouveau rapport) — plus d'état pour garder à
+  l'écran un rapport que le suivant va remplacer.
+- **Réversible** : oui.
+
+### C-e349-12 — Ce que dit la ligne d'un doublon dont le document n'est plus dans la liste
+
+- **Contexte** : revue P2 ciblée, P2-1 (MEDIUM) : « actualisez la page » efface le rapport, non conservé, sans ramener
+  le document.
+- **Retenu** : trois textes, sans lien — « retiré de la liste » si cette page vient de retirer le document ; « pas
+  dans la liste ci-dessous, qui n'a pas pu être rechargée : notez ce rapport, puis actualisez la page » si le
+  rechargement de la liste après l'import a échoué (le seul cas où actualiser sert) ; sinon « n'est plus dans la liste
+  ci-dessous ». Les notifications existantes d'un rechargement en échec (« actualisez la page ») sont gardées : c'est
+  le cas légitime.
+- **Écartée** : relire l'état du document au clic (une requête par ligne, pour un rapport éphémère).
+- **Réversible** : oui (textes).

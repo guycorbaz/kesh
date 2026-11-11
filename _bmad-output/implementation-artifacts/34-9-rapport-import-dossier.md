@@ -302,6 +302,38 @@ Aucun fichier commun avec les autres stories du groupe. `inbox_import.rs` n'est 
   **Tendance** : P1 0 C / 0 H / 0 M / 13 LOW (9 distincts). La remédiation touche le code de production (Svelte,
   `with_moved_to`) : la boucle se poursuit par une **passe ciblée P2** (prompt
   `34-9-rapport-import-dossier-review-prompt-p2-ciblee.md`, rapport attendu `kesh-gate-logs/e349-review-p2-ciblee.md`).
+- 2026-11-11 : **Passe ciblée P2** (Opus 5.5, une lentille sur `e74f55f6..7740ad67` ; rapport
+  `kesh-gate-logs/e349-review-p2-ciblee.md`) : **0 C, 0 H, 1 M, 3 LOW**, tous introduits ou laissés par la remédiation
+  P1. Remédiation (Opus 5.5), commit `f1b8e65c` :
+  - **P2-1 MEDIUM** — « absent de la liste ci-dessous : actualisez la page » poussait à effacer le rapport, non
+    conservé, sans ramener le document. La ligne dit désormais « retiré de la liste » si cette page vient de retirer
+    le document (`discardedHere`), « pas dans la liste ci-dessous, qui n'a pas pu être rechargée : notez ce rapport,
+    puis actualisez la page » si le rechargement de la liste a échoué (`listReloadFailed`), et sinon « n'est plus dans
+    la liste ci-dessous » (C-e349-12). Quatre catalogues (valeur de `-report-duplicate-not-in-list` changée, clé neuve
+    `-report-duplicate-not-in-list-reload-failed`), replis Svelte, manuel utilisateur. Symptôme grepé sur tout le dépôt
+    (`git grep` de `absent de la liste`, `actualisez la page`, `aktualisieren Sie die Seite`, `aggiorna la pagina`,
+    `refresh the page`) : restent les seules notifications d'un rechargement en échec, le cas légitime ;
+  - **P2-2 LOW** — un second import retire l'ancien rapport dès son lancement (`report = null`, C-e349-11) ;
+  - **P2-3 LOW** — tests Vitest : la garde `!importing` (second `listImported` en suspens : lien avant, texte après),
+    le second import, le retrait depuis la page, la liste non rechargée ; mutations **M10** (garde retirée) et **M11**
+    (`report = null` retiré) — chacune rougit son test (`mut/M10-vitest.log`, `mut/M11-vitest.log`), worktree restauré ;
+  - **P2-4 LOW** — captures des trois états neufs : `p2-limite-seule.png` (cadre bordé, toast de la limite),
+    `p2-toast-combine.png` (toast « … non importé(s), et la limite … »), `p2-doublon-retire.png` (« retiré de la
+    liste », sans lien) ; backend à `KESH_INBOX_MAX_FILES_PER_RUN=2`, un seul toast à chaque capture
+    (`e2e-r7/capture-p2.log`).
+  Gardes recomptées par leur exécution : `i18n-keys` 2944 → 2946 sites, `i18n-un-repli-par-cle` 428 → 429 clés.
+  Vitest de la page : 21 → 25 tests.
+  **Gates au dernier commit de code, `f1b8e65c`** (frontend seul touché ; `kesh-gate-logs/e349/gates4.log`) :
+  `npm run check` 0 erreur (29 avertissements préexistants), `lint-i18n-ownership` vert, `test:unit` 2899/2899
+  (222 fichiers), `build` vert ; E2E complet sur base recréée (`e2e-r6`) : 387 réussis, 7 échecs, 18 ignorés — les sept
+  de la KF-029 (#97), nommés dans `docs/testing.md` (`mode-expert:26`, `:41`, `onboarding-path-b:65`, `:92`,
+  `onboarding:57`, `:77`, `:150`). Backend non rejoué : aucun fichier Rust touché depuis `7740ad67`, où il est vert.
+  ⚠️ **Relevé en écrivant le prompt P3, non corrigé** (la chaîne des gates mutait alors le fichier) : un rechargement
+  réussi par `safeReloadList` (après un conflit de retrait) ne remet pas `listReloadFailed` à `false` ; la ligne peut
+  alors inviter à actualiser alors que la liste est à jour. Soumis à la passe P3 (axe 1).
+  **Tendance** : P1 0/0/0/13 LOW → P2 ciblée 0/0/1 M/3 LOW. La remédiation touche le code de production : la boucle se
+  poursuit par une **passe ciblée P3** (Sonnet ; prompt `34-9-rapport-import-dossier-review-prompt-p3-ciblee.md`,
+  rapport attendu `kesh-gate-logs/e349-review-p3-ciblee.md`).
 
 ## Dev Agent Record
 
