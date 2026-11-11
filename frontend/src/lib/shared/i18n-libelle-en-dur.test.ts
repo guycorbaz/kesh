@@ -300,8 +300,13 @@ const SUFFIXES = ['Label', 'Text', 'Display'];
  *
  * Fusion de la release 0.17.5 (2026-11-07) : les trois stories réunies, **85** candidates,
  * `conforme` **71**, recomptés par la garde après la fusion (non additionnés).
+ *
+ * **85 → 86** (Story 34-1, #966, remédiation de la revue P1) : `bankLedgerLoadErrorText`
+ * (`routes/onboarding/+page.svelte`, tout par le relais `msg` de `i18nMsg`, clé
+ * `onboarding-bank-ledger-load-error`) : aucun littéral rendu, donc `conforme` **71 → 72** ;
+ * `ecartee` ne bouge pas.
  */
-const CANDIDATES_ATTENDUES = 85;
+const CANDIDATES_ATTENDUES = 86;
 
 /** Les trois délimiteurs de littéral en JS/TS. */
 const QUOTES = ["'", '"', '`'];
@@ -818,7 +823,7 @@ describe('libellés en dur — l’angle mort #255', () => {
 			else if (c.retours.length > 0) classes.ecartee += 1;
 			else classes.conforme += 1;
 		}
-		expect(classes).toEqual({ nonAnalysee: 0, enViolation: 0, ecartee: 14, conforme: 71 });
+		expect(classes).toEqual({ nonAnalysee: 0, enViolation: 0, ecartee: 14, conforme: 72 });
 		// La somme est recalculée depuis les classes, jamais depuis le total qu'elle contrôle.
 		const somme = Object.values(classes).reduce((a, b) => a + b, 0);
 		expect(somme).toBe(CANDIDATES_ATTENDUES);
