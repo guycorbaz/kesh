@@ -239,9 +239,10 @@ const PREFIXES = [
  * `-delete-confirm-number`. Aucune retirée.
  *
  * ⚠️ **Story 34-8** (#938) : **407 → 409** (+2) : `supplier-invoices-unknown-outcome` et
- * `-unknown-outcome-reread-failed`, un repli chacune. Aucune retirée.
+ * `-unknown-outcome-reread-failed`, un repli chacune. Aucune retirée. Revue de code P3 :
+ * **409 → 410** (+1), `supplier-invoices-reread-failed`.
  */
-const CLES_RELEVEES = 409;
+const CLES_RELEVEES = 410;
 
 
 /** Relève, pour chaque clé du domaine, l'ensemble de ses replis littéraux distincts. */

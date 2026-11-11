@@ -904,8 +904,9 @@ const ATTENDU = {
 	// devenus inatteignables de `cancelSettlement()`, `cancel()`, `confirmValidate()` et
 	// `detach()`, retirés pour la même raison (`confirmDelete()` garde le sien : il ne passe
 	// pas par l'issue inconnue) ; et **+1**, `supplier-invoices-doc-attached` dit au second clic
-	// refusé sur son propre document (B-4) : **2921**.
-	sitesTotal: 2921,
+	// refusé sur son propre document (B-4) : **2921**. Revue P3 (B-3 = E-2) : **2921 → 2922**
+	// (+1), `supplier-invoices-reread-failed`, l'avis d'une relecture en échec après un refus.
+	sitesTotal: 2922,
 	sitesNonResolus: 31,
 	relais: 6,
 	// Story 26-1 (#620, AC3-bis) : **10 → 11** — `lib/features/bank-import/

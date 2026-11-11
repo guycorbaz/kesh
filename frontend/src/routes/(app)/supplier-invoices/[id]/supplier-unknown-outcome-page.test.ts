@@ -87,6 +87,8 @@ import { notifySuccess, notifyWarning } from '$lib/shared/utils/notify';
 const VERIFY = 'L’issue n’est pas connue : la facture a été relue, vérifiez-la avant de réessayer.';
 const REREAD_FAILED =
 	'L’issue n’est pas connue, et la facture n’a pas pu être relue : rechargez la page avant de réessayer.';
+/** Revue P3 (B-3 = E-2) : après un refus connu, la relecture en échec n'a pas le texte de l'issue inconnue. */
+const REFUSED_REREAD_FAILED = 'La facture n’a pas pu être relue : rechargez la page avant de réessayer.';
 
 const DOC = {
 	importedSupplierInvoiceId: 31,
@@ -442,7 +444,7 @@ describe('fiche fournisseur — le second clic après une relecture en échec (r
 		});
 	}
 
-	it('payer : le second clic refusé et une relecture encore en échec ⇒ l’encadré « rechargez » revient', async () => {
+	it('payer : le second clic refusé et une relecture encore en échec ⇒ l’encadré « rechargez », sans « issue inconnue » (revue P3, B-3 = E-2)', async () => {
 		getMock.mockResolvedValueOnce(inv()).mockRejectedValueOnce(LOST).mockRejectedValueOnce(LOST);
 		payMock
 			.mockRejectedValueOnce(LOST)
@@ -452,9 +454,87 @@ describe('fiche fournisseur — le second clic après une relecture en échec (r
 		await v.findByTestId('supplier-unknown-outcome');
 		await GESTURES[0].act(v);
 		await waitFor(() => expect(getMock).toHaveBeenCalledTimes(3));
-		expect((await v.findByTestId('supplier-unknown-outcome')).textContent?.trim()).toBe(
-			REREAD_FAILED,
+		const notice = await v.findByTestId('supplier-unknown-outcome');
+		await waitFor(() => expect(notice.textContent?.trim()).toBe(REFUSED_REREAD_FAILED));
+		expect(notice.getAttribute('data-outcome')).toBe('refused-reread-failed');
+	});
+
+	/**
+	 * Revue P3 de la 34-8 (A-1 = B-1 = E-1 ; mutation M10) — la séquence entière, en DOM visible :
+	 * le refus du second clic, relu « Payée », ne reparaît pas sous le formulaire de paiement
+	 * quand l'annulation du règlement le rouvre.
+	 */
+	it('payer : le refus relu ne reparaît pas quand l’annulation du règlement rouvre le paiement (mutation M10)', async () => {
+		getMock
+			.mockResolvedValueOnce(inv())
+			.mockRejectedValueOnce(LOST)
+			.mockResolvedValueOnce(inv(PAID));
+		payMock
+			.mockRejectedValueOnce(LOST)
+			.mockRejectedValueOnce({
+				code: 'ILLEGAL_STATE_TRANSITION',
+				status: 409,
+				message: 'Transition d’état interdite.',
+			});
+		cancelSettlementMock.mockResolvedValue({ invoice: inv(), reversalJournalEntryId: 77 });
+		const v = render(Page);
+		await GESTURES[0].act(v);
+		await v.findByTestId('supplier-unknown-outcome');
+		await GESTURES[0].act(v);
+		await waitFor(() =>
+			expect(v.getByTestId('supplier-invoice-status').textContent?.trim()).toBe('Payée'),
 		);
+		await fireEvent.click(await v.findByTestId('supplier-invoice-settlement-cancel'));
+		// Le formulaire de paiement est rendu de nouveau, visible : aucun refus sous lui.
+		expect(await v.findByTestId('supplier-invoice-pay-submit')).toBeTruthy();
+		expect(v.queryByTestId('supplier-invoice-pay-error')).toBeNull();
+	});
+
+	/** Revue P3 de la 34-8 (A-2 ; mutations M11, M12) — valider et repasser en brouillon. */
+	const CYCLE: Array<[Gesture, string]> = [
+		[GESTURES[3], 'ILLEGAL_STATE_TRANSITION'],
+		[GESTURES[4], 'OPTIMISTIC_LOCK_CONFLICT'],
+	];
+	for (const [g, code] of CYCLE) {
+		it(`${g.name} : refus « ${code} » après une relecture en échec ⇒ relecture, et l’encadré si elle échoue encore`, async () => {
+			getMock.mockResolvedValueOnce(g.start).mockRejectedValueOnce(LOST).mockRejectedValueOnce(LOST);
+			g.mock
+				.mockRejectedValueOnce(LOST)
+				.mockRejectedValueOnce({ code, status: 409, message: 'Refus.' });
+			const v = render(Page);
+			await g.act(v);
+			await v.findByTestId('supplier-unknown-outcome');
+			await g.act(v);
+			await waitFor(() => expect(getMock).toHaveBeenCalledTimes(3));
+			const notice = await v.findByTestId('supplier-unknown-outcome');
+			await waitFor(() => expect(notice.getAttribute('data-outcome')).toBe('refused-reread-failed'));
+		});
+	}
+
+	it('payer : un champ manquant n’efface pas l’encadré d’une issue inconnue (revue P3, B-2)', async () => {
+		getMock.mockResolvedValueOnce(inv()).mockRejectedValueOnce(LOST);
+		payMock.mockRejectedValue(LOST);
+		const v = render(Page);
+		await GESTURES[0].act(v);
+		await v.findByTestId('supplier-unknown-outcome');
+		const select = v.getByTestId('pay-internal-account') as HTMLSelectElement;
+		select.value = select.options[0].value;
+		await fireEvent.change(select);
+		await fireEvent.click(v.getByTestId('supplier-invoice-pay-submit'));
+		expect(await v.findByTestId('supplier-invoice-pay-error')).toBeTruthy();
+		expect(v.getByTestId('supplier-unknown-outcome')).toBeTruthy();
+	});
+
+	it('détacher : une confirmation refusée n’efface pas l’encadré (revue P3, B-2)', async () => {
+		getMock.mockResolvedValueOnce(inv({ sourceDocument: DOC })).mockRejectedValueOnce(LOST);
+		detachMock.mockRejectedValue(LOST);
+		const v = render(Page);
+		await GESTURES[6].act(v);
+		await v.findByTestId('supplier-unknown-outcome');
+		(window.confirm as unknown as ReturnType<typeof vi.fn>).mockReturnValue(false);
+		await fireEvent.click(v.getByTestId('supplier-invoice-detach'));
+		expect(v.getByTestId('supplier-unknown-outcome')).toBeTruthy();
+		expect(detachMock).toHaveBeenCalledTimes(1);
 	});
 
 	it('joindre : le second clic refusé « déjà traité » sur SON document se dit joint, non en avertissement (revue P2, B-4)', async () => {

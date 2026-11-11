@@ -152,7 +152,10 @@
 	 *   été relue ; l'encadré dit de la vérifier avant de réessayer ;
 	 * - `reread-failed` : la réponse s'est perdue et la relecture a échoué ; l'encadré
 	 *   dit de recharger la page. L'écran n'affirme jamais une relecture qui n'a pas eu
-	 *   lieu (le défaut que la revue P1 de la 33-6 a corrigé côté client).
+	 *   lieu (le défaut que la revue P1 de la 33-6 a corrigé côté client) ;
+	 * - `refused-reread-failed` (revue P3, B-3 = E-2) : le serveur a **refusé** le geste —
+	 *   l'issue est connue —, mais la relecture qui suivait ce refus d'écran périmé a échoué ;
+	 *   l'encadré dit seulement que la facture n'a pas pu être relue, et de recharger.
 	 *
 	 * Pas d'état bloquant (contrairement au règlement client) : chacun des sept gestes
 	 * est gardé par le statut, la version ou l'état du document (joindre, détacher), si
@@ -160,19 +163,28 @@
 	 * facture (`reloadAfterStaleRefusal`, `isStaleDocumentRefusal`). L'encadré disparaît
 	 * au geste suivant (`clearCycleErrors`) ou à une relecture réussie lancée par la page.
 	 */
-	let cycleOutcome = $state<'known' | 'verify' | 'reread-failed'>('known');
+	let cycleOutcome = $state<'known' | 'verify' | 'reread-failed' | 'refused-reread-failed'>(
+		'known',
+	);
 
-	/** Le texte de l'encadré d'issue inconnue (AC-8, deux avis selon la relecture). */
-	function unknownOutcomeText(kind: 'verify' | 'reread-failed'): string {
-		return kind === 'verify'
-			? i18nMsg(
-					'supplier-invoices-unknown-outcome',
-					'L’issue n’est pas connue : la facture a été relue, vérifiez-la avant de réessayer.',
-				)
-			: i18nMsg(
-					'supplier-invoices-unknown-outcome-reread-failed',
-					'L’issue n’est pas connue, et la facture n’a pas pu être relue : rechargez la page avant de réessayer.',
-				);
+	/** Le texte de l'encadré (AC-8, deux avis selon la relecture ; revue P3, un troisième). */
+	function unknownOutcomeText(kind: 'verify' | 'reread-failed' | 'refused-reread-failed'): string {
+		if (kind === 'verify') {
+			return i18nMsg(
+				'supplier-invoices-unknown-outcome',
+				'L’issue n’est pas connue : la facture a été relue, vérifiez-la avant de réessayer.',
+			);
+		}
+		if (kind === 'reread-failed') {
+			return i18nMsg(
+				'supplier-invoices-unknown-outcome-reread-failed',
+				'L’issue n’est pas connue, et la facture n’a pas pu être relue : rechargez la page avant de réessayer.',
+			);
+		}
+		return i18nMsg(
+			'supplier-invoices-reread-failed',
+			'La facture n’a pas pu être relue : rechargez la page avant de réessayer.',
+		);
 	}
 
 	/**
@@ -235,10 +247,9 @@
 	});
 
 	async function pay() {
-		payError = '';
 		// Revue P2 (B2-2 = A2-2 = E2-1) : un geste qui change le statut périme les refus du
-		// cycle, rendus hors des blocs de statut.
-		clearCycleErrors();
+		// cycle, rendus hors des blocs de statut — dès le clic, contrôle des champs compris.
+		clearRefusals();
 		if (settlementType === 'bank_transfer' && !payBankAccountId) {
 			payError = i18nMsg('supplier-invoices-pay-err-bank', 'Sélectionnez un compte bancaire.');
 			return;
@@ -247,6 +258,9 @@
 			payError = i18nMsg('supplier-invoices-pay-err-account', 'Sélectionnez un compte.');
 			return;
 		}
+		// Revue P3 de la 34-8 (B-2) : l'encadré d'issue, lui, après les contrôles des champs —
+		// un champ manquant ne l'efface pas sans qu'aucun envoi ait eu lieu.
+		cycleOutcome = 'known';
 		paying = true;
 		try {
 			invoice = await paySupplierInvoice(id, {
@@ -385,26 +399,48 @@
 	 * Revue P2 de la 34-8 (E-1, C-e348-7) — relit la facture après un refus qui dit l'écran
 	 * périmé. C'est le second clic après une réponse perdue puis une relecture en échec : le
 	 * geste est écrit, le serveur refuse le second envoi, et l'écran montrait encore l'état
-	 * d'avant. Si cette relecture échoue aussi, l'encadré `reread-failed` revient : l'écran
-	 * n'affiche pas un refus sur une facture qu'il n'a pas pu relire sans le dire.
+	 * d'avant. Si cette relecture échoue aussi, l'encadré le dit : l'écran n'affiche pas un
+	 * refus sur une facture qu'il n'a pas pu relire sans le dire. Revue P3 (B-3 = E-2) : avec
+	 * son propre texte (`refused-reread-failed`), le refus étant, lui, connu.
 	 */
 	async function reloadAfterStaleRefusal(err: unknown) {
 		if (!isStaleState(err)) return;
-		if (!(await reloadAfterRefusal())) cycleOutcome = 'reread-failed';
+		if (!(await reloadAfterRefusal())) cycleOutcome = 'refused-reread-failed';
+	}
+
+	/**
+	 * Revue P3 de la 34-8 (A-1 = B-1 = E-1) — vide les refus de paiement et d'annulation, rendus
+	 * **dans** les blocs de statut. Une relecture peut changer le statut sans geste de
+	 * l'utilisateur : un refus resté en mémoire sous un bloc masqué reparaîtrait, faux, quand
+	 * un geste suivant rouvre ce bloc. Appelée par `clearCycleErrors` et par toute relecture
+	 * réussie (`reloadAfterRefusal`).
+	 */
+	function clearBlockErrors() {
+		payError = '';
+		settlementCancelError = '';
+		cancelError = '';
 	}
 
 	/**
 	 * Efface les refus des gestes du cycle (revue P1, B-2) : au début de **tout geste qui
 	 * change le statut** — valider, repasser en brouillon, supprimer, et (revue P2, B2-2 = A2-2 = E2-1)
-	 * payer, annuler le règlement, annuler la facture. Les refus sont rendus hors des blocs
-	 * de statut : rien d'autre ne les masque. Story 34-8 (AC-8) : l'encadré d'issue
+	 * payer, annuler le règlement, annuler la facture —, après sa confirmation et le contrôle
+	 * de ses champs (revue P3 de la 34-8, B-2). Les refus du cycle sont rendus hors des blocs
+	 * de statut ; ceux du paiement et des annulations, dedans, sont vidés aussi
+	 * (`clearBlockErrors`, revue P3 de la 34-8). Story 34-8 (AC-8) : l'encadré d'issue
 	 * inconnue part avec eux.
 	 */
 	function clearCycleErrors() {
+		clearRefusals();
+		cycleOutcome = 'known';
+	}
+
+	/** Les refus seuls, sans l'encadré d'issue (revue P3 de la 34-8, B-2 : `pay()`). */
+	function clearRefusals() {
 		validateError = '';
 		unvalidateError = '';
 		deleteError = '';
-		cycleOutcome = 'known';
+		clearBlockErrors();
 	}
 
 	/**
@@ -563,6 +599,9 @@
 			// un échec est ici déjà traité (`reread-failed`).
 			invoice = await getSupplierInvoice(id, { retry: false });
 			cycleOutcome = 'known';
+			// Revue P3 de la 34-8 (A-1 = B-1 = E-1) : l'écran est à jour, les refus rendus dans
+			// les blocs de statut n'ont plus d'objet.
+			clearBlockErrors();
 			return true;
 		} catch {
 			// L'écran reste celui d'avant ; le message du refus suffit.
@@ -650,7 +689,6 @@
 		// `disabled={detaching}` (revue P1) ; la garde ne dépend pas du rendu.
 		if (detaching) return;
 		detachError = '';
-		cycleOutcome = 'known';
 		if (
 			!confirm(
 				i18nMsg(
@@ -660,6 +698,9 @@
 			)
 		)
 			return;
+		// Revue P3 de la 34-8 (B-2) : après la confirmation — une boîte annulée n'efface pas
+		// l'encadré d'une issue inconnue.
+		cycleOutcome = 'known';
 		detaching = true;
 		try {
 			invoice = await detachSourceDocument(id);

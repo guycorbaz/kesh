@@ -2659,6 +2659,7 @@ supplier-invoices-doc-detached = Document detached: it is back among the documen
 # Story 34-8 (#938, AC-8) — l'issue inconnue d'un geste de la fiche fournisseur.
 supplier-invoices-unknown-outcome = The outcome is not known: the invoice has been read again, check it before trying again.
 supplier-invoices-unknown-outcome-reread-failed = The outcome is not known, and the invoice could not be read again: reload the page before trying again.
+supplier-invoices-reread-failed = The invoice could not be read again: reload the page before trying again.
 supplier-invoices-pay-account-ph = Counterparty account
 supplier-invoices-pay-bank-ph = Source bank account
 supplier-invoices-pay-no-eligible-bank-account = No usable bank account: the only linked account is this invoice's payables account. Link a bank account to its own bank ledger account, or pay through an internal account.
