@@ -968,7 +968,31 @@ describe('BankImportUpload — compte sans IBAN', () => {
 		const accept = get<HTMLInputElement>(c, 'bank-import-file-input').accept;
 		expect(accept).not.toContain('.xml');
 		expect(accept).toContain('.csv');
-		expect(get(c, 'bank-import-drop-zone-text').textContent).toContain('n’a pas d’IBAN');
+		expect(get(c, 'bank-import-drop-zone-text').textContent).toContain("n'a pas d'IBAN");
+	});
+
+	// Story 34-11a2 (point hérité E6 de la revue P1 de la 34-11a1) — `accept` ne filtre
+	// pas un glisser-déposer : un `.xml` déposé sur un compte sans IBAN part au serveur,
+	// dont le refus `422 BANK_IMPORT_CAMT_NEEDS_IBAN` s'affiche.
+	it('un .xml déposé sur un compte sans IBAN affiche le refus du serveur', async () => {
+		const comptes = [
+			...ACCOUNTS,
+			{ id: 3, bankName: 'Visa', description: null, iban: null, cardLast4: '1234' },
+		];
+		const r = render(BankImportUpload, { props: { bankAccounts: comptes, onSuccess: vi.fn() } });
+		await flush();
+		const c = r.container;
+		await chooseAccount(c, 3);
+		mockApi.previewBankImport.mockRejectedValueOnce(
+			apiError('BANK_IMPORT_CAMT_NEEDS_IBAN', 422, { bankAccountId: 3 }),
+		);
+		const xml = new File(['<Document/>'], 'releve.xml', { type: 'application/xml' });
+		await fireEvent.drop(get(c, 'bank-import-drop-zone'), { dataTransfer: { files: [xml] } });
+		await flush();
+		expect(mockApi.previewBankImport).toHaveBeenCalled();
+		expect(get(c, 'bank-import-error').textContent).toContain(
+			'message BANK_IMPORT_CAMT_NEEDS_IBAN',
+		);
 	});
 
 	// Revue P1 (B4) — l'aperçu CSV d'un compte sans IBAN : `accountIban: null` s'affiche

@@ -21,6 +21,7 @@
 	import type { AccountResponse } from '$lib/features/accounts/accounts.types';
 	import type { BankAccountSummary } from '$lib/features/bank-accounts/bank-accounts.api';
 	import { bankAccountOptionLabel } from '$lib/features/bank-accounts/format';
+	import { withoutCreditCards } from '$lib/features/bank-accounts/credit-card';
 	import { dueToCentime } from './invoice-helpers';
 	import { todayLocal } from '$lib/shared/utils/local-date';
 	import {
@@ -104,12 +105,18 @@
 	// `active && postable` (un compte bancaire lié à un 1100 devenu non imputable
 	// doit être écarté aussi). La garde serveur reste l'autorité.
 	let receivableIds = $derived(accountIdsWithRole(accounts, 'Receivable'));
-	let eligibleBankAccounts = $derived(bankAccountsNotLinkedTo(bankAccounts, receivableIds));
+	// Story 34-11a2 (#972, C-e341-32) — une carte de crédit n'est jamais proposée
+	// au règlement d'une facture client (refus serveur
+	// `SETTLEMENT_ACCOUNT_IS_CREDIT_CARD`). Écartée AVANT le filtre du compte
+	// débiteurs : le message ci-dessous, qui accuse ce dernier, ne compte pas les
+	// cartes.
+	let nonCardBankAccounts = $derived(withoutCreditCards(bankAccounts));
+	let eligibleBankAccounts = $derived(bankAccountsNotLinkedTo(nonCardBankAccounts, receivableIds));
 	// Liste vide PARCE QUE le filtre a écarté un compte : le dire. Une société
 	// sans aucun compte bancaire n'a rien d'écarté, et le message, qui accuse le
 	// compte débiteurs, y serait faux.
 	let noEligibleBankAccount = $derived(
-		eligibleBankAccounts.length === 0 && bankAccounts.length > eligibleBankAccounts.length,
+		eligibleBankAccounts.length === 0 && nonCardBankAccounts.length > eligibleBankAccounts.length,
 	);
 
 	// Présélection du compte bancaire, DANS la liste filtrée : le primaire, sinon

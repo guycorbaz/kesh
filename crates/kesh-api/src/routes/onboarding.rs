@@ -597,6 +597,11 @@ pub async fn set_bank_account(
             "Le nom de la banque ne peut pas être vide".into(),
         ));
     }
+    // Story 34-11a2 (#972, C-e341-15, C-e341-19) — la garde du numéro de carte
+    // complet atteint l'assistant : il ne passe pas par `validate_bank_input`.
+    // ⚠️ La description de l'assistant (Story 34-1) doit recevoir le même
+    // appel, `refuse_card_number("description", …)`, à l'intégration.
+    crate::routes::bank_accounts::refuse_card_number("bankName", &bank_name)?;
 
     // Validate IBAN via kesh-core — message servi tel quel, il nomme déjà le
     // champ (Story v017-6, #832).

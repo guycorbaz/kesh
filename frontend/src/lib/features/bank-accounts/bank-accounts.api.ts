@@ -225,10 +225,15 @@ export interface NewBankAccountPayload {
 	bankName: string;
 	/** Story 26-2a — optionnel : l'omettre crée un compte sans description. */
 	description?: string | null;
-	iban: string;
+	/** Story 34-11a2 (#972) — obligatoire pour un compte bancaire, omis pour une carte. */
+	iban?: string | null;
 	qrIban?: string | null;
 	isPrimary?: boolean;
 	journalAccountId?: number | null;
+	/** Story 34-11a2 — absent = compte bancaire ; immuable ensuite. */
+	accountKind?: BankAccountKind;
+	/** Story 34-11a2 — quatre derniers chiffres d'une carte (facultatifs). */
+	cardLast4?: string | null;
 }
 
 /**
@@ -254,10 +259,17 @@ export interface UpdateBankAccountPayload {
 	 * **efface** la description (C-26-2-19). `null` pour l'effacer exprès.
 	 */
 	description: string | null;
-	iban: string;
+	/**
+	 * Story 34-11a2 (#972) — obligatoire pour un compte bancaire ; **omis** pour
+	 * une carte (le serveur refuse un IBAN sur une carte : revue P1 de la 34-11a1,
+	 * E5/B7). Le type n'est pas envoyé : absent, il vaut le type courant.
+	 */
+	iban?: string | null;
 	qrIban?: string | null;
 	isPrimary?: boolean;
 	journalAccountId?: number | null;
+	/** Story 34-11a2 — **absents ⇒ effacés** (remplacement complet). */
+	cardLast4?: string | null;
 	version: number;
 }
 

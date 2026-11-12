@@ -156,7 +156,7 @@
 //!   `post`, `put`, `delete` et `patch`. Aucune route `GET` n'écrit au journal
 //!   aujourd'hui (remontée de l'AC1 : des `POST` et un `DELETE`) ; l'angle mort
 //!   est du même ordre que celui de l'audit (`GET /invoices/{id}/pdf`, plus bas).
-//! - **(vi)** **vingt-quatre routes `SansEcritureAuJournal` sont rejouées quand
+//! - **(vi)** **vingt-cinq routes `SansEcritureAuJournal` sont rejouées quand
 //!   même** : `fiscal_years::reopen_fiscal_year` (enveloppe `DbError`, Story 33-1a,
 //!   #926 : la réouverture tient un exercice puis demande ses postérieurs, la
 //!   validation d'une facture fournisseur tient le sien puis demande ceux de son
@@ -282,7 +282,17 @@
 //!   version 0 sur table vide s'interbloquent sur le verrou d'intervalle du
 //!   `SELECT … FOR UPDATE` ; tenue par `session_settings_e2e.rs` (rejeu
 //!   exigé). Vingt-trois avec elle — recompté le 2026-11-05 depuis la table
-//!   et le corps de chaque route (revue de la 0.17.3, #899 S2-A1).
+//!   et le corps de chaque route (revue de la 0.17.3, #899 S2-A1). Et — Story
+//!   34-11a2, #972, choix C-e341-40 — `accounts::update_account` (enveloppe
+//!   `AppError` `crate::retry::retry_app_on_deadlock`, opération
+//!   `accounts::update`) : le retypage prend la ligne `accounts` `FOR UPDATE`
+//!   puis lit les comptes bancaires liés sous verrou partagé, contre une
+//!   création, un `PUT` ou un `PATCH` de compte bancaire qui relit le type du
+//!   compte lié sous verrou partagé ; tenue par
+//!   `retypage_croise_avec_la_creation_d_une_carte`
+//!   (`crates/kesh-db/tests/credit_card_repository.rs`, sérialisation, non
+//!   rejeu) — **aucune preuve dynamique du rejeu**. Vingt-cinq avec elle (le
+//!   compte de vingt-quatre comprenait déjà `reopen_fiscal_year`).
 //! - **(vii)** — **angles morts assumés du volet (c bis)** (revue P1 de la
 //!   15-5e2, L-3 = B-4 = A5). Le volet reconnaît un appel au **dernier
 //!   segment** du chemin appelé (`retry_with`) dans un arbre `syn` ; il ne voit

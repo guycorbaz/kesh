@@ -13,6 +13,7 @@
 	import type { AccountResponse } from '$lib/features/accounts/accounts.types';
 	import { withCurrentAccount, withoutAccountIds } from '$lib/features/accounts/account-options';
 	import { bankAccountOptionLabel } from '$lib/features/bank-accounts/format';
+	import { admitsLedgerType } from './credit-card';
 	import {
 		updateBankAccountJournalLink,
 		type BankAccountSummary,
@@ -57,7 +58,8 @@
 				(a) =>
 					a.active &&
 					a.postable && // 14-3b : compte lié posté à la réconciliation
-					(a.accountType === 'Asset' || a.accountType === 'Liability') &&
+					// Story 34-11a2 (#972, C-e341-33) — passifs seulement pour une carte.
+					admitsLedgerType(bankAccount.accountKind, a.accountType) &&
 					(a.number.startsWith('1') || a.number.startsWith('2')),
 			),
 			claimAccountIds,
@@ -173,7 +175,8 @@
 		>
 			{i18nMsg('bank-accounts-actions-submit', 'Lier')}
 		</button>
-		{#if bankAccount.journalAccountId !== null}
+		<!-- Story 34-11a2 (C-e341-16) — une carte ne se délie pas (refus serveur). -->
+		{#if bankAccount.journalAccountId !== null && bankAccount.accountKind !== 'credit_card'}
 			<button
 				type="button"
 				class="rounded border border-border px-4 py-2 text-sm font-medium text-text disabled:opacity-50"

@@ -35,6 +35,22 @@ impl BankAccountKind {
             Self::CreditCard => "credit_card",
         }
     }
+
+    /// Les types de compte du plan auxquels un compte de ce type peut être lié
+    /// — Story 34-11a2 (#972, C-e341-16, C-e341-31).
+    ///
+    /// Compte bancaire : actif ou passif (règle d'avant, 8-5a-zero). Carte de
+    /// crédit : **passif seulement** — la carte est une dette. Seule définition
+    /// de la règle : la création, le `PUT` et le `PATCH` d'un compte bancaire la
+    /// lisent, et le retypage d'un compte du plan (`accounts::update`) refuse un
+    /// type qu'elle n'admet plus pour un compte bancaire lié non archivé.
+    pub fn admits_ledger_type(&self, account_type: super::account::AccountType) -> bool {
+        use super::account::AccountType;
+        match self {
+            Self::Bank => matches!(account_type, AccountType::Asset | AccountType::Liability),
+            Self::CreditCard => matches!(account_type, AccountType::Liability),
+        }
+    }
 }
 
 impl std::fmt::Display for BankAccountKind {
@@ -229,6 +245,25 @@ mod tests {
             ligne.contains("DEFAULT NULL"),
             "la colonne doit être nullable : {ligne}"
         );
+    }
+
+    /// Story 34-11a2 (C-e341-16) — une carte n'admet qu'un passif ; un compte
+    /// bancaire, un actif ou un passif.
+    #[test]
+    fn types_de_compte_admis_par_type_de_compte_bancaire() {
+        use crate::entities::account::AccountType::*;
+        for t in [Asset, Liability, Revenue, Expense] {
+            assert_eq!(
+                BankAccountKind::Bank.admits_ledger_type(t),
+                matches!(t, Asset | Liability),
+                "bank / {t:?}"
+            );
+            assert_eq!(
+                BankAccountKind::CreditCard.admits_ledger_type(t),
+                matches!(t, Liability),
+                "credit_card / {t:?}"
+            );
+        }
     }
 
     #[test]

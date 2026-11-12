@@ -41,6 +41,14 @@ const COLUMNS: &str = columns!();
 /// duplication que le `format!` cherchait à éviter.
 const FIND_BY_ID_SQL: &str = concat!("SELECT ", columns!(), " FROM accounts WHERE id = ?");
 
+/// [`FIND_BY_ID_SQL`] sous verrou exclusif — tête du retypage (Story 34-11a2,
+/// C-e341-40).
+const FIND_BY_ID_FOR_UPDATE_SQL: &str = concat!(
+    "SELECT ",
+    columns!(),
+    " FROM accounts WHERE id = ? FOR UPDATE"
+);
+
 /// Snapshot JSON d'un compte pour l'audit log (Story 3.5).
 ///
 /// Contient les champs essentiels pour reconstituer l'état du compte
@@ -379,6 +387,67 @@ pub async fn number_in_company(
         .map_err(map_db_error)
 }
 
+/// Le **type** et l'état actif d'un compte de la société, lus dans la
+/// transaction de l'appelant **sous verrou partagé** (`LOCK IN SHARE MODE`) —
+/// Story 34-11a2 (#972, C-e341-40). `None` si la ligne est absente.
+///
+/// Sert la création, le `PUT` et le `PATCH` d'un compte bancaire : ils relisent
+/// le type du compte lié dans leur transaction, **après** les réglages et
+/// **avant** la ligne `bank_accounts` (ordre global `companies` → réglages →
+/// `accounts` → `bank_accounts`). Le retypage (`update`) prend la même ligne
+/// `FOR UPDATE` en tête : les deux gestes se sérialisent sur elle, et aucun ne
+/// laisse une carte liée à un compte qui n'est plus un passif.
+///
+/// ⚠️ `LOCK IN SHARE MODE`, pas `FOR SHARE` (erreur de syntaxe sur MariaDB 10.11).
+pub async fn type_in_share_mode(
+    conn: &mut sqlx::MySqlConnection,
+    company_id: i64,
+    account_id: i64,
+) -> Result<Option<(AccountType, bool)>, DbError> {
+    sqlx::query_as(
+        "SELECT account_type, active FROM accounts WHERE id = ? AND company_id = ? LOCK IN SHARE MODE",
+    )
+    .bind(account_id)
+    .bind(company_id)
+    .fetch_optional(conn)
+    .await
+    .map_err(map_db_error)
+}
+
+/// Le premier compte bancaire **non archivé** lié au compte `account_id` dont le
+/// type n'admet pas `new_type`, par `id` — `(id, nom d'affichage)` — Story
+/// 34-11a2 (#972, C-e341-31). Lecture `LOCK IN SHARE MODE` : elle voit la
+/// dernière version commitée (un lien posé pendant que le retypage attendait la
+/// ligne `accounts`). Un compte bancaire **archivé** ne compte pas : il ne se
+/// modifie plus et ne sert plus. Un compte **clos** compte : il se rouvre.
+async fn first_linked_bank_account_refusing(
+    tx: &mut sqlx::Transaction<'_, sqlx::MySql>,
+    company_id: i64,
+    account_id: i64,
+    new_type: AccountType,
+) -> Result<Option<(i64, String)>, DbError> {
+    use crate::entities::{BankAccountKind, bank_account::bank_account_display_name};
+    let rows: Vec<(i64, BankAccountKind, String, Option<String>)> = sqlx::query_as(
+        "SELECT id, account_kind, bank_name, description FROM bank_accounts \
+         WHERE company_id = ? AND journal_account_id = ? AND archived = FALSE \
+         ORDER BY id LOCK IN SHARE MODE",
+    )
+    .bind(company_id)
+    .bind(account_id)
+    .fetch_all(&mut **tx)
+    .await
+    .map_err(map_db_error)?;
+    Ok(rows
+        .into_iter()
+        .find(|(_, kind, _, _)| !kind.admits_ledger_type(new_type))
+        .map(|(id, _, bank_name, description)| {
+            (
+                id,
+                bank_account_display_name(&bank_name, description.as_deref()),
+            )
+        }))
+}
+
 /// `include_archived` : si `false`, seuls les comptes actifs sont retournés.
 /// Pas de pagination — un plan comptable est borné à ~200-400 comptes.
 pub async fn list_by_company(
@@ -485,6 +554,20 @@ where
 /// changement est refusé par [`DbError::AccountHasEntries`], qui en nomme
 /// l'ampleur. ⚠️ Il ne dispense d'**aucune** autre garde — ni du verrou
 /// optimiste, ni de l'interdit sur compte archivé.
+///
+/// Story 34-11a2 (#972, C-e341-31, C-e341-40) — la ligne `accounts` est prise
+/// **`FOR UPDATE` en tête** (elle était lue sans verrou), puis un changement de
+/// type est refusé par [`DbError::AccountLinkedToBankAccount`] si un compte
+/// bancaire **non archivé** lié à ce compte n'admet plus le nouveau type (carte :
+/// passif seulement ; compte bancaire : actif ou passif), avant la garde des
+/// écritures. La création, le `PUT` et le `PATCH` d'un compte bancaire relisent
+/// le type du compte lié `LOCK IN SHARE MODE` dans leur transaction
+/// ([`type_in_share_mode`]) : les deux gestes se sérialisent sur cette ligne.
+/// Un retypage qui passe le premier fait refuser le lien ; un lien qui passe le
+/// premier est vu ici, sa transaction commitée avant que le `FOR UPDATE` ne
+/// rende la main (la lecture des comptes bancaires est elle-même verrouillante,
+/// donc la dernière version commitée). Ordre des verrous : `accounts` puis
+/// `bank_accounts`, celui des routes bancaires.
 pub async fn update(
     pool: &MySqlPool,
     id: i64,
@@ -497,8 +580,9 @@ pub async fn update(
 
     let mut tx = pool.begin().await.map_err(map_db_error)?;
 
-    // Snapshot "before" AVANT l'UPDATE, dans la même transaction.
-    let before_opt = sqlx::query_as::<_, Account>(FIND_BY_ID_SQL)
+    // Snapshot "before" AVANT l'UPDATE, dans la même transaction — sous
+    // `FOR UPDATE` depuis la Story 34-11a2 (C-e341-40).
+    let before_opt = sqlx::query_as::<_, Account>(FIND_BY_ID_FOR_UPDATE_SQL)
         .bind(id)
         .fetch_optional(&mut *tx)
         .await
@@ -573,6 +657,19 @@ pub async fn update(
     // différence pour qui relira le journal.
     let mut retype_trace: Option<(i64, Vec<String>)> = None;
     if before.account_type != changes.account_type {
+        // Story 34-11a2 (C-e341-31) — un compte bancaire non archivé lié à ce
+        // compte doit admettre le nouveau type ; sinon refus, qu'aucune
+        // confirmation ne lève. Avant la garde des écritures.
+        if let Some((bank_account_id, bank_account_name)) =
+            first_linked_bank_account_refusing(&mut tx, before.company_id, id, changes.account_type)
+                .await?
+        {
+            tx.rollback().await.map_err(map_db_error)?;
+            return Err(DbError::AccountLinkedToBankAccount {
+                bank_account_id,
+                bank_account_name,
+            });
+        }
         let (entry_count, closed_fiscal_years) =
             retype_impact(&mut *tx, before.company_id, id).await?;
         if entry_count > 0 {

@@ -33,10 +33,16 @@
 		archiveBankAccount,
 		closeBankAccount,
 		reopenBankAccount,
+		type BankAccountKind,
 		type BankAccountSummary,
 		type NewBankAccountPayload,
 		type UpdateBankAccountPayload,
 	} from '$lib/features/bank-accounts/bank-accounts.api';
+	import {
+		admitsLedgerType,
+		cardLast4Payload,
+		isValidCardLast4,
+	} from '$lib/features/bank-accounts/credit-card';
 	import { formatSwissDate } from '$lib/features/reports/reports.api';
 	import { todayLocal } from '$lib/features/open-items/open-items';
 	import {
@@ -80,6 +86,11 @@
 	let formJournalAccountId = $state<number | null>(null);
 	let formVersion = $state(0);
 	let formError = $state<string | null>(null);
+	// Story 34-11a2 (#972) — type du compte (choisi à la création, affiché et figé
+	// en édition) et quatre derniers chiffres d'une carte.
+	let formKind = $state<BankAccountKind>('bank');
+	let formCardLast4 = $state('');
+	let isCard = $derived(formKind === 'credit_card');
 
 	// Story 28-4b — dialogues de clôture et de réouverture. Le refus du serveur
 	// s'affiche DANS le dialogue (là où l'on a agi), par `errorMessageOf`.
@@ -157,13 +168,16 @@
 	// Story 15-6c (#474, AC7) : le compte débiteurs et le compte créanciers
 	// désignés sont écartés AVANT `withCurrentAccount` — un lien existant vers
 	// l'un d'eux (donnée antérieure) reste affiché, mais n'est plus proposé.
+	//
+	// Story 34-11a2 (#972, C-e341-33) : pour une carte, la liste se réduit aux
+	// passifs (`admitsLedgerType`, miroir de la règle serveur).
 	let linkableAccounts = $derived(
 		withoutAccountIds(
 			accounts.filter(
 				(a) =>
 					a.active &&
 					a.postable && // 14-3b : compte lié posté à la réconciliation
-					(a.accountType === 'Asset' || a.accountType === 'Liability'),
+					admitsLedgerType(formKind, a.accountType),
 			),
 			claimAccountIds,
 		),
@@ -197,6 +211,49 @@
 		formJournalAccountId = null;
 		formVersion = 0;
 		formError = null;
+		formKind = 'bank';
+		formCardLast4 = '';
+	}
+
+	/**
+	 * Story 34-11a2 — changer le type à la création : un compte lié que le
+	 * nouveau type n'admet pas (un actif pour une carte) est retiré, et le
+	 * « principal » d'une carte décoché.
+	 */
+	function setFormKind(kind: BankAccountKind) {
+		formKind = kind;
+		if (kind === 'credit_card') formIsPrimary = false;
+		const linked = accounts.find((a) => a.id === formJournalAccountId);
+		if (linked && !admitsLedgerType(kind, linked.accountType)) formJournalAccountId = null;
+	}
+
+	/**
+	 * Story 34-11a2 — contrôles de l'écran propres à une carte : quatre chiffres
+	 * ou rien, compte lié obligatoire. Le serveur reste l'autorité.
+	 */
+	function validateCardFields(): boolean {
+		if (!isCard) return true;
+		if (!isValidCardLast4(formCardLast4)) {
+			formError = i18nMsg(
+				'bank-accounts-error-card-last4',
+				'Saisissez exactement quatre chiffres, ou laissez le champ vide.',
+			);
+			return false;
+		}
+		if (formJournalAccountId === null) {
+			formError = i18nMsg(
+				'bank-accounts-error-card-ledger-required',
+				'Choisissez le compte de passif lié à la carte.',
+			);
+			return false;
+		}
+		return true;
+	}
+
+	function kindLabel(kind: BankAccountKind): string {
+		return kind === 'credit_card'
+			? i18nMsg('bank-accounts-kind-credit-card', 'Carte de crédit')
+			: i18nMsg('bank-accounts-kind-bank', 'Compte bancaire');
 	}
 
 	function openCreate() {
@@ -207,14 +264,16 @@
 	function openEditFull(ba: BankAccountSummary) {
 		formBankName = ba.bankName;
 		formDescription = ba.description ?? '';
-		// Story 34-11a1 (#972) — un compte sans IBAN n'est pas éditable avant la
-		// 34-11a2 (le `PUT` exige l'IBAN) ; le formulaire ne plante pas pour autant.
+		// Story 34-11a2 (#972, points hérités E5/B7) — une carte s'édite sans
+		// IBAN : le payload d'une carte n'en porte pas (`submitUpdateFull`).
 		formIban = ba.iban ?? '';
 		formQrIban = ba.qrIban ?? '';
 		formIsPrimary = ba.isPrimary;
 		formJournalAccountId = ba.journalAccountId;
 		formVersion = ba.version;
 		formError = null;
+		formKind = ba.accountKind;
+		formCardLast4 = ba.cardLast4 ?? '';
 		mode = { kind: 'edit-full', id: ba.id };
 	}
 
@@ -297,17 +356,28 @@
 	async function submitCreate(e: Event) {
 		e.preventDefault();
 		formError = null;
-		if (!validateQrIbanField()) return;
+		if (!isCard && !validateQrIbanField()) return;
+		if (!validateCardFields()) return;
 		submitting = true;
 		try {
-			const payload: NewBankAccountPayload = {
-				bankName: formBankName,
-				description: descriptionPayload(),
-				iban: formIban,
-				qrIban: formQrIban.trim() === '' ? null : formQrIban,
-				isPrimary: formIsPrimary,
-				journalAccountId: formJournalAccountId,
-			};
+			// Story 34-11a2 — une carte n'envoie ni IBAN, ni QR-IBAN, ni
+			// « principal » ; un compte bancaire garde le payload de la 0.17.5.
+			const payload: NewBankAccountPayload = isCard
+				? {
+						accountKind: 'credit_card',
+						bankName: formBankName,
+						description: descriptionPayload(),
+						cardLast4: cardLast4Payload(formCardLast4),
+						journalAccountId: formJournalAccountId,
+					}
+				: {
+						bankName: formBankName,
+						description: descriptionPayload(),
+						iban: formIban,
+						qrIban: formQrIban.trim() === '' ? null : formQrIban,
+						isPrimary: formIsPrimary,
+						journalAccountId: formJournalAccountId,
+					};
 			await createBankAccount(payload);
 			toast.success(i18nMsg('bank-accounts-toast-create-success', 'Compte bancaire créé.'));
 			await reload();
@@ -322,18 +392,30 @@
 	async function submitUpdateFull(e: Event, id: number) {
 		e.preventDefault();
 		formError = null;
-		if (!validateQrIbanField()) return;
+		if (!isCard && !validateQrIbanField()) return;
+		if (!validateCardFields()) return;
 		submitting = true;
 		try {
-			const payload: UpdateBankAccountPayload = {
-				bankName: formBankName,
-				description: descriptionPayload(),
-				iban: formIban,
-				qrIban: formQrIban.trim() === '' ? null : formQrIban,
-				isPrimary: formIsPrimary,
-				journalAccountId: formJournalAccountId,
-				version: formVersion,
-			};
+			// Story 34-11a2 (points hérités E5/B7) — le `PUT` d'une carte n'envoie
+			// ni IBAN ni type ; ses quatre chiffres sont toujours présents (`null`
+			// pour les effacer).
+			const payload: UpdateBankAccountPayload = isCard
+				? {
+						bankName: formBankName,
+						description: descriptionPayload(),
+						cardLast4: cardLast4Payload(formCardLast4),
+						journalAccountId: formJournalAccountId,
+						version: formVersion,
+					}
+				: {
+						bankName: formBankName,
+						description: descriptionPayload(),
+						iban: formIban,
+						qrIban: formQrIban.trim() === '' ? null : formQrIban,
+						isPrimary: formIsPrimary,
+						journalAccountId: formJournalAccountId,
+						version: formVersion,
+					};
 			await updateBankAccount(id, payload);
 			toast.success(i18nMsg('bank-accounts-toast-update-success', 'Compte bancaire modifié.'));
 			await reload();
@@ -530,9 +612,23 @@
 				<h2 class="mb-3 text-base font-semibold">
 					{i18nMsg('bank-accounts-actions-create', 'Nouveau compte bancaire')}
 				</h2>
+				<!-- Story 34-11a2 (#972) — le type se choisit à la création, et seulement là. -->
+				<fieldset class="mb-3" data-testid="form-kind">
+					<legend class="block text-sm font-medium text-text mb-1">{i18nMsg('bank-accounts-labels-kind', 'Type de compte')}</legend>
+					<div class="flex gap-4 text-sm">
+						<label class="flex items-center gap-1">
+							<input type="radio" name="form-kind" value="bank" checked={formKind === 'bank'} onchange={() => setFormKind('bank')} data-testid="form-kind-bank" />
+							{i18nMsg('bank-accounts-kind-bank', 'Compte bancaire')}
+						</label>
+						<label class="flex items-center gap-1">
+							<input type="radio" name="form-kind" value="credit_card" checked={formKind === 'credit_card'} onchange={() => setFormKind('credit_card')} data-testid="form-kind-credit-card" />
+							{i18nMsg('bank-accounts-kind-credit-card', 'Carte de crédit')}
+						</label>
+					</div>
+				</fieldset>
 				<div class="grid grid-cols-2 gap-3">
 					<div>
-						<label for="form-bank-name" class="block text-sm font-medium text-text mb-1">{i18nMsg('bank-accounts-labels-bank-name', 'Banque')}</label>
+						<label for="form-bank-name" class="block text-sm font-medium text-text mb-1">{isCard ? i18nMsg('bank-accounts-labels-card-issuer', 'Émetteur de la carte') : i18nMsg('bank-accounts-labels-bank-name', 'Banque')}</label>
 						<Input id="form-bank-name" bind:value={formBankName} required data-testid="form-bank-name" />
 					</div>
 					<div>
@@ -540,17 +636,25 @@
 						<Input id="form-description" bind:value={formDescription} maxlength={BANK_ACCOUNT_DESCRIPTION_MAX} data-testid="form-description" />
 						<p class="mt-1 text-xs text-text-muted" data-testid="form-description-help">{i18nMsg('bank-accounts-help-description', 'Par exemple « Personnel » ou « Épargne » : pour distinguer deux comptes de la même banque. 60 caractères au plus.')}</p>
 					</div>
+					{#if isCard}
+						<div>
+							<label for="form-card-last4" class="block text-sm font-medium text-text mb-1">{i18nMsg('bank-accounts-labels-card-last4', 'Quatre derniers chiffres (facultatif)')}</label>
+							<Input id="form-card-last4" bind:value={formCardLast4} maxlength={4} inputmode="numeric" autocomplete="off" placeholder="1234" data-testid="form-card-last4" />
+							<p class="mt-1 text-xs text-text-muted" data-testid="form-card-last4-help">{i18nMsg('bank-accounts-help-card-last4', 'Kesh ne garde jamais le numéro complet de la carte : seulement ses quatre derniers chiffres, pour la reconnaître.')}</p>
+						</div>
+					{:else}
+						<div>
+							<label for="form-iban" class="block text-sm font-medium text-text mb-1">{i18nMsg('bank-accounts-labels-iban', 'IBAN')}</label>
+							<Input id="form-iban" bind:value={formIban} required placeholder="CH..." data-testid="form-iban" />
+						</div>
+						<div>
+							<label for="form-qr-iban" class="block text-sm font-medium text-text mb-1">{i18nMsg('bank-accounts-labels-qr-iban', 'QR-IBAN (optionnel)')}</label>
+							<Input id="form-qr-iban" bind:value={formQrIban} placeholder="CH..." data-testid="form-qr-iban" />
+							<p class="mt-1 text-xs text-text-muted" data-testid="form-qr-iban-help">{i18nMsg('bank-accounts-help-qr-iban', 'À remplir uniquement si votre banque vous a fourni un QR-IBAN dédié aux QR-factures (numéro spécial avec un identifiant 30000–31999). Sinon, laissez ce champ vide : votre IBAN normal suffit pour générer des QR-factures.')}</p>
+						</div>
+					{/if}
 					<div>
-						<label for="form-iban" class="block text-sm font-medium text-text mb-1">{i18nMsg('bank-accounts-labels-iban', 'IBAN')}</label>
-						<Input id="form-iban" bind:value={formIban} required placeholder="CH..." data-testid="form-iban" />
-					</div>
-					<div>
-						<label for="form-qr-iban" class="block text-sm font-medium text-text mb-1">{i18nMsg('bank-accounts-labels-qr-iban', 'QR-IBAN (optionnel)')}</label>
-						<Input id="form-qr-iban" bind:value={formQrIban} placeholder="CH..." data-testid="form-qr-iban" />
-						<p class="mt-1 text-xs text-text-muted" data-testid="form-qr-iban-help">{i18nMsg('bank-accounts-help-qr-iban', 'À remplir uniquement si votre banque vous a fourni un QR-IBAN dédié aux QR-factures (numéro spécial avec un identifiant 30000–31999). Sinon, laissez ce champ vide : votre IBAN normal suffit pour générer des QR-factures.')}</p>
-					</div>
-					<div>
-						<label for="form-journal-account" class="block text-sm font-medium text-text mb-1">{i18nMsg('bank-accounts-labels-journal-account-id', 'Compte comptable lié')}</label>
+						<label for="form-journal-account" class="block text-sm font-medium text-text mb-1">{isCard ? i18nMsg('bank-accounts-labels-card-ledger', 'Compte de dette lié') : i18nMsg('bank-accounts-labels-journal-account-id', 'Compte comptable lié')}</label>
 						<select
 							id="form-journal-account"
 							bind:value={formJournalAccountId}
@@ -562,22 +666,31 @@
 								<option value={acc.id}>{acc.number} — {acc.name}</option>
 							{/each}
 						</select>
-						<p class="mt-1 text-xs text-text-muted">
-							{i18nMsg(
-								'bank-accounts-tooltip-journal-account',
-								'Lie ce compte bancaire à un compte du plan comptable (typiquement 1010 Poste, 1020 Banque). Permet à la réconciliation automatique de créer les écritures vers le bon compte, et l\'affichage du solde sur la page d\'accueil. Note multi-comptes : si plusieurs comptes courants distincts, lier au sous-compte spécifique (1020.001 BCV CHF), pas au parent 1020.',
-							)}
+						<p class="mt-1 text-xs text-text-muted" data-testid="form-journal-account-help">
+							{#if isCard}
+								{i18nMsg(
+									'bank-accounts-help-card-ledger',
+									'Obligatoire : un compte de passif, la dette de la carte (par exemple 2030 Carte de crédit).',
+								)}
+							{:else}
+								{i18nMsg(
+									'bank-accounts-tooltip-journal-account',
+									'Lie ce compte bancaire à un compte du plan comptable (typiquement 1010 Poste, 1020 Banque). Permet à la réconciliation automatique de créer les écritures vers le bon compte, et l\'affichage du solde sur la page d\'accueil. Note multi-comptes : si plusieurs comptes courants distincts, lier au sous-compte spécifique (1020.001 BCV CHF), pas au parent 1020.',
+								)}
+							{/if}
 						</p>
 					</div>
-					<div class="col-span-2 flex items-center gap-2">
-						<input
-							id="form-is-primary"
-							type="checkbox"
-							bind:checked={formIsPrimary}
-							data-testid="form-is-primary"
-						/>
-						<label for="form-is-primary" class="block text-sm font-medium text-text mb-1">{i18nMsg('bank-accounts-labels-is-primary', 'Compte principal')}</label>
-					</div>
+					{#if !isCard}
+						<div class="col-span-2 flex items-center gap-2">
+							<input
+								id="form-is-primary"
+								type="checkbox"
+								bind:checked={formIsPrimary}
+								data-testid="form-is-primary"
+							/>
+							<label for="form-is-primary" class="block text-sm font-medium text-text mb-1">{i18nMsg('bank-accounts-labels-is-primary', 'Compte principal')}</label>
+						</div>
+					{/if}
 				</div>
 				{#if formError}
 					<p class="mt-3 text-sm text-red-600" role="alert" data-testid="form-error">{formError}</p>
@@ -743,9 +856,15 @@
 										<h2 class="mb-3 text-base font-semibold">
 											{i18nMsg('bank-accounts-actions-edit', 'Modifier')}
 										</h2>
+										<!-- Story 34-11a2 (#972) — le type est affiché, non modifiable. -->
+										<p class="mb-3 text-sm" data-testid="edit-kind">
+											<span class="font-medium">{i18nMsg('bank-accounts-labels-kind', 'Type de compte')} :</span>
+											{kindLabel(formKind)}
+											<span class="ml-2 text-xs text-text-muted">{i18nMsg('bank-accounts-help-kind-fixed', "Le type d'un compte ne se change pas après sa création.")}</span>
+										</p>
 										<div class="grid grid-cols-2 gap-3">
 											<div>
-												<label for="edit-bank-name" class="block text-sm font-medium text-text mb-1">{i18nMsg('bank-accounts-labels-bank-name', 'Banque')}</label>
+												<label for="edit-bank-name" class="block text-sm font-medium text-text mb-1">{isCard ? i18nMsg('bank-accounts-labels-card-issuer', 'Émetteur de la carte') : i18nMsg('bank-accounts-labels-bank-name', 'Banque')}</label>
 												<Input id="edit-bank-name" bind:value={formBankName} required data-testid="edit-bank-name" />
 											</div>
 											<div>
@@ -753,17 +872,25 @@
 												<Input id="edit-description" bind:value={formDescription} maxlength={BANK_ACCOUNT_DESCRIPTION_MAX} data-testid="edit-description" />
 												<p class="mt-1 text-xs text-text-muted" data-testid="edit-description-help">{i18nMsg('bank-accounts-help-description', 'Par exemple « Personnel » ou « Épargne » : pour distinguer deux comptes de la même banque. 60 caractères au plus.')}</p>
 											</div>
+											{#if isCard}
+												<div>
+													<label for="edit-card-last4" class="block text-sm font-medium text-text mb-1">{i18nMsg('bank-accounts-labels-card-last4', 'Quatre derniers chiffres (facultatif)')}</label>
+													<Input id="edit-card-last4" bind:value={formCardLast4} maxlength={4} inputmode="numeric" autocomplete="off" data-testid="edit-card-last4" />
+													<p class="mt-1 text-xs text-text-muted" data-testid="edit-card-last4-help">{i18nMsg('bank-accounts-help-card-last4', 'Kesh ne garde jamais le numéro complet de la carte : seulement ses quatre derniers chiffres, pour la reconnaître.')}</p>
+												</div>
+											{:else}
+												<div>
+													<label for="edit-iban" class="block text-sm font-medium text-text mb-1">{i18nMsg('bank-accounts-labels-iban', 'IBAN')}</label>
+													<Input id="edit-iban" bind:value={formIban} required data-testid="edit-iban" />
+												</div>
+												<div>
+													<label for="edit-qr-iban" class="block text-sm font-medium text-text mb-1">{i18nMsg('bank-accounts-labels-qr-iban', 'QR-IBAN (optionnel)')}</label>
+													<Input id="edit-qr-iban" bind:value={formQrIban} data-testid="edit-qr-iban" />
+													<p class="mt-1 text-xs text-text-muted" data-testid="edit-qr-iban-help">{i18nMsg('bank-accounts-help-qr-iban', 'À remplir uniquement si votre banque vous a fourni un QR-IBAN dédié aux QR-factures (numéro spécial avec un identifiant 30000–31999). Sinon, laissez ce champ vide : votre IBAN normal suffit pour générer des QR-factures.')}</p>
+												</div>
+											{/if}
 											<div>
-												<label for="edit-iban" class="block text-sm font-medium text-text mb-1">{i18nMsg('bank-accounts-labels-iban', 'IBAN')}</label>
-												<Input id="edit-iban" bind:value={formIban} required data-testid="edit-iban" />
-											</div>
-											<div>
-												<label for="edit-qr-iban" class="block text-sm font-medium text-text mb-1">{i18nMsg('bank-accounts-labels-qr-iban', 'QR-IBAN (optionnel)')}</label>
-												<Input id="edit-qr-iban" bind:value={formQrIban} data-testid="edit-qr-iban" />
-												<p class="mt-1 text-xs text-text-muted" data-testid="edit-qr-iban-help">{i18nMsg('bank-accounts-help-qr-iban', 'À remplir uniquement si votre banque vous a fourni un QR-IBAN dédié aux QR-factures (numéro spécial avec un identifiant 30000–31999). Sinon, laissez ce champ vide : votre IBAN normal suffit pour générer des QR-factures.')}</p>
-											</div>
-											<div>
-												<label for="edit-journal-account" class="block text-sm font-medium text-text mb-1">{i18nMsg('bank-accounts-labels-journal-account-id', 'Compte comptable lié')}</label>
+												<label for="edit-journal-account" class="block text-sm font-medium text-text mb-1">{isCard ? i18nMsg('bank-accounts-labels-card-ledger', 'Compte de dette lié') : i18nMsg('bank-accounts-labels-journal-account-id', 'Compte comptable lié')}</label>
 												<select
 													id="edit-journal-account"
 													bind:value={formJournalAccountId}
@@ -776,15 +903,17 @@
 													{/each}
 												</select>
 											</div>
-											<div class="col-span-2 flex items-center gap-2">
-												<input
-													id="edit-is-primary"
-													type="checkbox"
-													bind:checked={formIsPrimary}
-													data-testid="edit-is-primary"
-												/>
-												<label for="edit-is-primary" class="block text-sm font-medium text-text mb-1">{i18nMsg('bank-accounts-labels-is-primary', 'Compte principal')}</label>
-											</div>
+											{#if !isCard}
+												<div class="col-span-2 flex items-center gap-2">
+													<input
+														id="edit-is-primary"
+														type="checkbox"
+														bind:checked={formIsPrimary}
+														data-testid="edit-is-primary"
+													/>
+													<label for="edit-is-primary" class="block text-sm font-medium text-text mb-1">{i18nMsg('bank-accounts-labels-is-primary', 'Compte principal')}</label>
+												</div>
+											{/if}
 										</div>
 										{#if formError}
 											<p class="mt-3 text-sm text-red-600" role="alert" data-testid="edit-form-error">{formError}</p>

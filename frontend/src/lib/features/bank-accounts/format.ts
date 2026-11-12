@@ -23,7 +23,7 @@ export function shortIban(iban: string | null): string {
 }
 
 /** Espace insécable (U+00A0) entre `••••` et les quatre chiffres d'une carte. */
-export const CARD_LAST4_SEPARATOR = ' ';
+export const CARD_LAST4_SEPARATOR = '\u00a0';
 
 /**
  * Story 34-11a1 (#972, C-e341-21) — **seule** forme d'affichage des quatre

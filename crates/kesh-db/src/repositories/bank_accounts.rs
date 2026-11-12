@@ -559,6 +559,11 @@ pub async fn set_journal_account_id_for_company(
 /// (`clippy::too_many_arguments`) sans élargir `NewBankAccount`, que
 /// l'onboarding et la création par le dépôt partagent et qui ne connaissent
 /// pas la description (C-26-2-7).
+///
+/// ⚠️ **`Default` : `iban` vaut `None`, donc `NULL` en base — réservé aux
+/// cartes de crédit** (Story 34-11a2). Un `PUT` d'un compte bancaire qui
+/// partirait de `..Default::default()` sans `iban` heurterait
+/// `chk_bank_accounts_bank_has_iban`.
 #[derive(Debug, Clone, Copy, Default)]
 pub struct BankAccountPutFields<'a> {
     /// Compte du plan comptable lié (`None` = délier).
@@ -566,16 +571,26 @@ pub struct BankAccountPutFields<'a> {
     /// Description **déjà normalisée** par la route (`None` = effacée :
     /// remplacement complet, comme `qr_iban`).
     pub description: Option<&'a str>,
+    /// Story 34-11a2 (#972, C-e341-39) — IBAN **déjà normalisé** écrit par le
+    /// `PUT` : `Some` pour un compte bancaire, `None` (`NULL`) pour une carte.
+    /// Remplace `NewBankAccount::iban`, que le `PUT` ne lit plus.
+    pub iban: Option<&'a str>,
+    /// Story 34-11a2 — quatre derniers chiffres d'une carte, déjà validés ;
+    /// `None` = effacés (remplacement complet) ; toujours `None` pour un compte
+    /// bancaire.
+    pub card_last4: Option<&'a str>,
 }
 
 /// Met à jour TOUS les champs métier d'un bank_account (PUT v014-1).
 ///
 /// Différent de [`set_journal_account_id_for_company`] qui ne touche que
 /// `journal_account_id` (PATCH legacy 8-5a-zero) : ce helper écrit
-/// `bank_name`, `iban`, `qr_iban`, `is_primary`, et, depuis `fields`
+/// `bank_name`, `qr_iban`, `is_primary`, et, depuis `fields`
 /// ([`BankAccountPutFields`]), `journal_account_id` et `description` (Story
-/// 26-2a). **Remplacement complet** : une description `None` efface celle en
-/// base.
+/// 26-2a), `iban` et `card_last4` (Story 34-11a2 : `new.iban` n'est plus lu).
+/// **Remplacement complet** : une description ou des quatre chiffres `None`
+/// effacent ceux en base. Le type du compte (`account_kind`) n'est jamais
+/// écrit : il est immuable.
 ///
 /// La transition `is_primary` (un compte devient primary alors qu'un autre
 /// l'était) est **déléguée au caller** : ce repo flippe simplement
@@ -655,15 +670,16 @@ pub async fn update_for_company(
     }
 
     let rows = sqlx::query(
-        "UPDATE bank_accounts SET bank_name = ?, iban = ?, qr_iban = ?, is_primary = ?, journal_account_id = ?, description = ?, version = version + 1 \
+        "UPDATE bank_accounts SET bank_name = ?, iban = ?, qr_iban = ?, is_primary = ?, journal_account_id = ?, description = ?, card_last4 = ?, version = version + 1 \
          WHERE id = ? AND company_id = ? AND version = ?",
     )
     .bind(&new.bank_name)
-    .bind(&new.iban)
+    .bind(fields.iban)
     .bind(&new.qr_iban)
     .bind(new.is_primary)
     .bind(new_journal_account_id)
     .bind(fields.description)
+    .bind(fields.card_last4)
     .bind(id)
     .bind(company_id)
     .bind(expected_version)
