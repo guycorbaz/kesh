@@ -238,6 +238,25 @@ carte se crée avec son solde d'ouverture, sens *Dette*). `opening_complement.rs
   **Consigne Edit** : deux blocs de tests ajoutés en fin de fichier par `cat >>` (`bank-accounts.api.test.ts`, `format.test.ts`) au lieu de
   l'outil Edit — par commodité, l'outil ne manquait de rien ; `cargo fmt --all` appliqué (outil de formatage, non un remplacement de texte) ;
   mutations par le script `mut-run-e342.sh` (remplacements vérifiés uniques, permis). Tout le reste du code par l'outil Edit.
+  *(Annoté le 2026-11-12, revue P1 E-1 : l'écart (3) était **faux** — M9 n'était pas équivalente. Une erreur **après** un complément réussi
+  laissait, sous M9, une écriture orpheline et un ancien principal démoté ; aucun test ne le gardait. Voir l'entrée suivante.)*
+- 2026-11-12 : **revue de code P1** (Sonnet, B/E/A) — 0 CRITICAL, 0 HIGH, **2 MEDIUM** (E-1, A MEDIUM-1), 19 LOW. **Remédiation** (Opus 5.5,
+  commits `9d7bb03c`, `7b49f237`, `191d4aeb`, `2342ce45`), tout traité sauf E-3 (renvoyée à **#1022**) :
+  **E-1** : témoin `un_echec_apres_le_complement_n_ecrit_rien` (déclencheur de test `SIGNAL` sur l'`INSERT` du compte, création principale
+  au-dessus d'un principal ; les quatre constats relevés ensemble), M9 rejouée et **tuée** (`(true, false, false, false)`) ; nom de banque borné
+  à 255 caractères (création, `PUT`, assistant ; refus traduit ; borne confrontée au schéma). **A MEDIUM-1** : la ligne E2E du Dev Agent
+  Record récrite avec les lignes du journal du serveur et **#1021** (KF-059) ; l'E2E complet rejoué au dernier commit de code : les sept
+  KF-029 seules. **B-1 = E-6** : « 1,234 » refusé comme ambigu à l'écran ; montant écrit affiché sous le champ et dans l'avis, **exact**
+  jusqu'à quatre décimales (`formatChfExact`, `191d4aeb` : `formatChfBalance` arrondissait au centime ce que le serveur écrit à quatre).
+  **B-2** : aide (période verrouillée, solde à la date). **B-3** : deux refus traduits. **B-4** : trace `bank_account.opening_balance_entered`
+  (C-e341-46 remplacé). **B-5 = E-4**, **A LOW-4** : codes `ACCOUNT_INVALID`, `NOT_BALANCE_ACCOUNT`, `BANK_ACCOUNT_LEDGER_IS_CLAIM_ACCOUNT`,
+  `400 LATER_FISCAL_YEAR_CLOSED` à `api-external.md` ; manuel : compte de report lui-même, exercice suivant clôturé, compte lié hors service,
+  compte de créance. **B-6** : conséquence au conditionnel (C-e341-55). **B-7** : le dialogue nomme le compte. **B-8** : corps entier comparé à
+  la sérialisation du compte relu. **E-2** : garde du compte de créance à la route de ligne (M10). **E-5** : action masquée sur un compte lié
+  mouvementé (C-e341-54). **A LOW-1** : AC-4 annotée. **A LOW-2** : `DATE_LOCKED` et report non imputable exercés. **A LOW-3** : la ligne
+  « ancien principal » vue rouge sous M9. **A LOW-5** : code du sens inconnu vérifié. **A LOW-6** : écart `cat >>` déclaré, non refait.
+  **E-3** (jour UTC) : non corrigé, #1022, cité au manuel. Au passage, la garde `textes_coherents` a lu « 1234 » d'un message neuf comme un
+  numéro de compte : messages récrits (`2342ce45`). Choix C-e341-51 à 55.
 
 ## Dev Agent Record
 
@@ -276,20 +295,40 @@ Opus 5.5 (Claude Code), en autonomie, 2026-11-11 → 2026-11-12.
   (`bank_account_opening_balance_e2e.rs`), 15 Vitest (page 10, API 3, format 2), 2 E2E Playwright (`bank-account-opening-balance.spec.ts`).
 - **Rouges d'abord** (`kesh-gate-logs/e342/rouges.log`) : Vitest 8 rouges / 2 verts attendus sur l'écran d'avant ; HTTP 11 rouges / 1 vert
   attendu sur le code de production d'avant (`git stash` des cinq fichiers) ; kesh-db : rouge de compilation.
-- **Mutations** (`mut/M*.log`, `mut/resume.txt`) : M1 à M8 tuées ; M9 équivalente (expliquée). M8 tuée par
-  `ecriture_croisee_pendant_la_creation_est_vue`, déterministe.
-- **Gates au dernier commit de code `8db6fb7b`** (HEAD `76bcdf53`, PDF seuls en plus) : base `kesh_e342` recréée ;
-  `scripts/test-fast.sh --ci` **5169 passés, 12 ignorés**, rc 0 ; `cargo build --workspace --all-targets` rc 0 ; `scripts/gate-ci.sh kesh_ci_e342`
-  **5176 passés, 0 échoué, 16 ignorés**, rc 0 ; `cargo fmt --check` et `cargo clippy -p kesh-db -p kesh-api --all-targets -D warnings` verts
-  (le clippy workspace tourne dans `test-fast.sh`). Frontend : `npm run check` 0 erreur (29 avertissements, aucun dans les fichiers de la
-  story), `lint-i18n-ownership` PASS, `test:unit` **2911 passés (224 fichiers)**, `npm run build` rc 0.
-- **E2E complet** sur `kesh_e2e_e342` recréée vide (`e2e-r1.log`) : **384 passés, 11 échoués, 18 ignorés**. Sept échecs de la KF-029 (#97,
-  liste de `docs/testing.md`) ; **quatre hors liste**, tous en dépassement de 30 s dans le `beforeEach` qui appelle `seedTestState` :
-  `fiscal-year-closing-journey.spec.ts:169`, `:320`, `fiscal-years.spec.ts:47`, `:53` — plus que les « 0 à 2 » de pollution que prévoit
-  `docs/testing.md`. Rejoués seuls avec la spec neuve (`e2e-r2.log`) : **13 passés**. Station chargée (autres agents en gate) ; pas de
-  régression établie, mais le dépassement de la borne est à noter. Les deux tests neufs passent dans les deux runs.
-- **Captures** (thème clair, `kesh-gate-logs/e342/captures/`) : `34-2-01-formulaire-avec-solde.png`, `-02-avis-de-succes-et-solde.png`,
-  `-03-refus-compte-mouvemente.png`, `-04-dialogue-de-ligne-dette.png`, `-05-dialogue-de-ligne-succes.png`.
+- **Mutations**, rejouées après la remédiation (`mut/resume.txt`, `mut/M*.log` ; ceux du développement dans `mut/p0/`) : **M1 à M11
+  tuées**. M8 par `ecriture_croisee_pendant_la_creation_est_vue`, déterministe. **M9** (commit même sur erreur) par
+  `un_echec_apres_le_complement_n_ecrit_rien` — la déclaration « équivalente » du développement était fausse (revue P1, E-1). M10 (garde du
+  compte de créance de la route de ligne neutralisée), M11 (trace de la route de ligne sous une autre action) : neuves.
+- **Rouges de la remédiation** (`rouges.log`, section « Remédiation ») : Vitest 7 rouges / 1 vert attendu ; HTTP 3 rouges / 13 verts, dont le
+  témoin de M9, vert sur le code d'avant **parce que le code était juste** (le défaut était dans le témoin), et les refus déjà produits.
+- **Gates de la remédiation au dernier commit de code `2342ce45`** (HEAD `13302c2b`, PDF seul en plus) : base `kesh_e342` recréée ;
+  `scripts/test-fast.sh --ci` **5174 passés, 12 ignorés**, rc 0 ; `cargo build --workspace --all-targets` rc 0 ; `scripts/gate-ci.sh
+  kesh_ci_e342` **5181 passés, 0 échoué, 16 ignorés**, rc 0 (`rem2-gates-back.txt`). Le premier tour de gates, à `7b49f237`, avait rendu
+  **1 rouge** (`textes_coherents::les_comptes_cites_en_exemple_existent_dans_les_plans_livres` : « 1234 » d'un message neuf lu comme un
+  compte ; corrigé par `2342ce45`). Frontend au même commit : `npm run check` 0 erreur (29 avertissements, aucun dans les fichiers de la
+  story), `lint-i18n-ownership` PASS, `test:unit` **2918 passés (224 fichiers)**, `npm run build` rc 0 (`rem2-gates-front.txt`).
+  *(Gates du développement, au commit `8db6fb7b` : test-fast 5169 passés, gate-ci 5176, Vitest 2911.)*
+- **E2E complet de la remédiation** au dernier commit de code, sur `kesh_e2e_e342` recréée vide (`e2e-r3.log`) : **388 passés, 7 échoués,
+  18 ignorés**. Les sept échecs sont, un par un, ceux de la KF-029 (#97) au tableau de `docs/testing.md` : `mode-expert.spec.ts:26`, `:41`,
+  `onboarding-path-b.spec.ts:65`, `:92`, `onboarding.spec.ts:57`, `:77`, `:150`. Aucune requête lente au journal du serveur
+  (`backend-e2e-r3.log`). Les deux tests de la story passent.
+- **E2E du développement** (`e2e-r1.log`, au commit `8db6fb7b`) : 384 passés, 11 échoués, 18 ignorés — les sept KF-029 et **quatre hors
+  liste** (`fiscal-year-closing-journey.spec.ts:169`, `:320`, `fiscal-years.spec.ts:47`, `:53`), tous en dépassement de 30 s dans le
+  `beforeEach` qui appelle `seedTestState`. **La cause n'était pas la charge de la station**, comme ce record l'affirmait : le journal du
+  serveur (`backend-e2e-r1.log:441-448`) montre un **verrou tenu près de deux minutes** après `export-global.spec.ts` —
+  `SELECT id FROM companies WHERE id = ? FOR UPDATE` 30,1 s, `DO RELEASE_ALL_LOCKS()` 19,9 s puis
+  `1205 (HY000): Lock wait timeout exceeded` à `after_release`, `TRUNCATE TABLE credit_note_lines` 30,2 s trois fois,
+  `DO RELEASE_ALL_LOCKS()` 61,6 s. Ouvert par l'orchestrateur : **#1021 (KF-059)**. La spec neuve passe en n° 30-31, bien avant ; le
+  rejeu isolé (`e2e-r2.log`) rendait 13 passés.
+- **Captures** refaites à la remédiation (thème clair, `kesh-gate-logs/e342/captures/`, `capture-r3.log`) :
+  `34-2-01-formulaire-avec-solde.png` (aperçu « Montant qui sera écrit »), `-02-avis-de-succes-et-solde.png` (montant dans l'avis),
+  `-03-refus-compte-mouvemente.png`, `-04-dialogue-de-ligne-dette.png` (le dialogue nomme le compte), `-05-dialogue-de-ligne-succes.png`
+  (action masquée après la saisie), `-06-montant-ambigu-refuse.png`.
+- **Remédiation P1, le reste** : nom de banque borné (`refuse_too_long_bank_name`, `BANK_ACCOUNT_BANK_NAME_MAX_CHARS`, trois appelants) ;
+  garde du compte de créance et trace `bank_account.opening_balance_entered` à la route de ligne ; deux refus traduits ; i18n : clés neuves
+  `error-bank-account-opening-side-required`, `-ledger-required`, `error-bank-account-bank-name-too-long`, `bank-accounts-opening-preview`,
+  `-error-amount-ambiguous`, `audit-log-action-bank-account-opening-balance-entered`, et cinq textes récrits, quatre locales ; `sitesTotal`
+  2942 → 2944. Tests ajoutés par la remédiation (recomptés, `dbdb807c..HEAD`) : 4 HTTP, 1 kesh-db (borne du schéma), 7 Vitest.
 - **Aucune migration.** #1002 à #1006 (étape bancaire de l'assistant) non touchées : la story ne passe pas par l'assistant (C-e341-12).
 
 ### File List
@@ -297,6 +336,8 @@ Opus 5.5 (Claude Code), en autonomie, 2026-11-11 → 2026-11-12.
 - `crates/kesh-db/src/repositories/opening_complement.rs`, `crates/kesh-db/src/repositories/bank_accounts.rs`
 - `crates/kesh-db/tests/opening_complement_bank_scope.rs` (neuf)
 - `crates/kesh-api/src/routes/bank_accounts.rs`, `crates/kesh-api/src/routes/opening_balances.rs`, `crates/kesh-api/src/lib.rs`
+- (remédiation P1) `crates/kesh-api/src/routes/onboarding.rs`, `crates/kesh-api/src/audit_labels.rs`, `crates/kesh-db/src/entities/bank_account.rs`,
+  `_bmad-output/implementation-artifacts/34-2-solde-ouverture-compte-bancaire-review-prompt-p2.md` (neuf)
 - `crates/kesh-api/tests/bank_account_opening_balance_e2e.rs` (neuf), `crates/kesh-api/tests/audit_route_registry.rs`
 - `crates/kesh-i18n/locales/{fr,de,it,en}-CH/messages.ftl`
 - `frontend/src/lib/features/bank-accounts/bank-accounts.api.ts`, `format.ts`, `bank-accounts.api.test.ts`, `format.test.ts`
