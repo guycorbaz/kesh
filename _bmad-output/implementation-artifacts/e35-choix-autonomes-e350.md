@@ -483,6 +483,9 @@ retenue, options écartées, réversibilité. Lignes citées sur `release/0.17.6
 - **Écartée** : réécrire les formats sans compteur par migration : une migration, donc l'arrêt de l'epic (C-e350-5), pour un
   cas que Guy n'a pas.
 - **Réversible** : oui.
+- *(Annoté le 2026-11-13, validation P1 de la 35-1, V1-1 : la règle vaut **aussi pour le miroir d'écran** — `NoSeq` ne
+  bloque l'enregistrement que si le champ diffère de la valeur chargée ; un format chargé sans compteur s'affiche avec une
+  aide non bloquante.)*
 
 ### C-e350-44 — 35-1 : le format des avoirs devient visible à l'écran
 
@@ -500,6 +503,9 @@ retenue, options écartées, réversibilité. Lignes citées sur `release/0.17.6
   `DesignatedAccountsNotPostable`, message i18n qui nomme le format, l'exercice et la cause ; rien d'écrit.
 - **Écartée** : compter `{FY}` pour 50 à la validation du format : refuserait des formats valides aujourd'hui.
 - **Réversible** : oui.
+- *(Annoté le 2026-11-13, validation P1 de la 35-1 : statut **`400`**, `details { document, cause }` ; changement de contrat
+  500 → 400 pour les routes ouvertes aux clés (validation d'une facture, création d'un avoir), écrit à `api-external.md` et
+  au CHANGELOG ; la cause `duplicate` s'ajoute par **C-e350-47**.)*
 
 ### C-e350-46 — 35-2b : le message du refus pour les trois causes du code, par une construction commune
 
@@ -512,4 +518,15 @@ retenue, options écartées, réversibilité. Lignes citées sur `release/0.17.6
   par phrase ; `details.message` pour les trois causes. Simple : deux fonctions sans état, statut et code inchangés.
 - **Écartée** : voie (b) — limite écrite, issue, `refs #955` : laisse le lot muet pour deux causes que l'utilisateur peut
   corriger.
+- **Réversible** : oui.
+
+### C-e350-47 — 35-1 : un numéro déjà attribué par un format sans compteur est le même refus typé
+
+- **Contexte** : validation P1 de la 35-1, V1-5. Un format sans compteur déjà enregistré (C-e350-43 ne le réécrit pas) fait
+  heurter `uq_invoices_number` à la deuxième validation de l'exercice (`invoices.rs:2418-2430`) : `409 RESOURCE_CONFLICT`
+  générique (`errors.rs:3673`), et toute validation suivante échoue de même, sans cause nommée.
+- **Retenu** : à ce site et à l'`INSERT` de l'avoir (`uq_credit_notes_number`), une violation qui nomme la contrainte
+  devient `NumberFormatUnrenderable { cause: Duplicate }` (« ajoutez-y un compteur ») ; test d'API inconditionnel (AC4).
+- **Écartée** : écrire la limite et ouvrir une issue : laisserait un refus muet que la story sait nommer pour quelques
+  lignes.
 - **Réversible** : oui.
