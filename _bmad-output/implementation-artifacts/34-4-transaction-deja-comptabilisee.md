@@ -454,7 +454,7 @@ hash) :
   vert ; **E2E complet** sur `kesh_e2e_e344` recréée vide : **388 passés, 7 échecs, 17 ignorés**, les sept de la KF-029
   (#97) ; le spec neuf passe. Port 3344 libre avant et après.
 - **Captures** : l'écran français ne change pas (seul le texte allemand change) ; le script les a reprises dans
-  `kesh-gate-logs/e344/captures-p2/`, identiques en contenu à `captures-p1/`.
+  `kesh-gate-logs/e344/captures-p2/` (non comparées une à une à `captures-p1/`).
 - **Décomptes** (de `4152d337` à `cf585bff`) : `reconciliation_link_entry_e2e.rs` 40 → 42 attributs `sqlx::test` ; Vitest
   2944 → 2945 (+1, B2-5) ; trois textes allemands reformulés ; aucune clé ajoutée.
 
