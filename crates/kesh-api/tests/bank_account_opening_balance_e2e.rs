@@ -510,7 +510,9 @@ async fn creation_sans_solde_comportement_d_avant(pool: MySqlPool) {
         assert_eq!(resp, serde_json::to_value(&account).unwrap());
         // Revue P2 (B2-8) — et contre une liste écrite à la main, indépendante
         // du `Serialize` de `BankAccount` : les treize clés du compte d'avant la
-        // 34-2, ni plus ni moins.
+        // 34-2, ni plus ni moins — quinze depuis la 34-11a1 (#972), qui ajoute
+        // `accountKind` et `cardLast4` à tout compte (intégration de la 0.17.6 :
+        // les deux stories, écrites en parallèle, se rencontrent ici).
         let mut cles: Vec<&str> = resp
             .as_object()
             .unwrap()
@@ -521,8 +523,10 @@ async fn creation_sans_solde_comportement_d_avant(pool: MySqlPool) {
         assert_eq!(
             cles,
             [
+                "accountKind",
                 "archived",
                 "bankName",
+                "cardLast4",
                 "closedOn",
                 "companyId",
                 "createdAt",
