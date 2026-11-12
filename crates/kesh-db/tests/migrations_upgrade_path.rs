@@ -2538,19 +2538,41 @@ async fn sans_iban_la_montee_garde_chaque_compte_bancaire(pool: MySqlPool) {
             .contains("chk_bank_accounts_bank_has_iban"),
         "refus attendu par chk_bank_accounts_bank_has_iban : {refus}"
     );
-    // Le domaine du type est fermé à l'octet sur la base migrée aussi (E1).
-    let refus = sqlx::query(
-        "INSERT INTO bank_accounts (company_id, bank_name, account_kind, iban) \
-         VALUES (?, 'X', 'BANK', 'CH5604835012345678009')",
-    )
-    .bind(company_id)
-    .execute(&pool)
-    .await
-    .expect_err("'BANK' doit être refusé");
-    assert!(
-        refus.to_string().contains("chk_bank_accounts_account_kind"),
-        "refus attendu par chk_bank_accounts_account_kind : {refus}"
-    );
+    // Le domaine du type est fermé à l'octet sur la base migrée aussi (E1) — par la
+    // migration elle-même, non par le squash : ce test rougit si `BINARY` disparaît du
+    // fichier de migration (revue P2, B2 ; mutation M14). Casse, espace, tabulation,
+    // NUL et accent : tous égaux à `bank` sous `utf8mb4_unicode_ci`.
+    for mauvais in ["BANK", "bank ", "bank\t", "bank\0", "bänk"] {
+        let refus = sqlx::query(
+            "INSERT INTO bank_accounts (company_id, bank_name, account_kind, iban) \
+             VALUES (?, 'X', ?, 'CH5604835012345678009')",
+        )
+        .bind(company_id)
+        .bind(mauvais)
+        .execute(&pool)
+        .await
+        .expect_err("type hors domaine refusé");
+        assert!(
+            refus.to_string().contains("chk_bank_accounts_account_kind"),
+            "{mauvais:?} : refus attendu par chk_bank_accounts_account_kind : {refus}"
+        );
+    }
+    // Les quatre chiffres non ASCII sont refusés sur la base migrée aussi (B1, E1).
+    for mauvais in ["１２３４", "١٢٣٤"] {
+        let refus = sqlx::query(
+            "INSERT INTO bank_accounts (company_id, bank_name, account_kind, iban, card_last4) \
+             VALUES (?, 'Visa', 'credit_card', NULL, ?)",
+        )
+        .bind(company_id)
+        .bind(mauvais)
+        .execute(&pool)
+        .await
+        .expect_err("chiffres non ASCII refusés");
+        assert!(
+            refus.to_string().contains("chk_bank_accounts_card_last4"),
+            "{mauvais:?} : refus attendu par chk_bank_accounts_card_last4 : {refus}"
+        );
+    }
     sqlx::query(
         "INSERT INTO bank_accounts (company_id, bank_name, account_kind, iban, card_last4) \
          VALUES (?, 'Visa', 'credit_card', NULL, '1234')",

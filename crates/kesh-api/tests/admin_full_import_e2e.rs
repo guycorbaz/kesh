@@ -5803,3 +5803,41 @@ async fn full_import_of_a_0_17_5_backup_makes_every_account_a_bank_account(pool:
     assert_eq!(apres[0].3, "bank");
     assert_eq!(apres[0].4, None);
 }
+
+/// Revue P2 (E2) — un `.keshbackup` retouché à la main, `account_kind = "BANK"`
+/// (empreinte recalculée) : l'`INSERT` du restore heurte
+/// `chk_bank_accounts_account_kind`, la transaction est annulée — refus
+/// `500 ADMIN_FULL_IMPORT_FAILED`, comme tout `INSERT` invalide
+/// (`full_import_rolls_back_on_insert_failure`) — et la base reste telle qu'avant
+/// l'import, sans rien de la sauvegarde.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn full_import_refuses_a_forged_account_kind_and_keeps_the_base(pool: MySqlPool) {
+    let app = spawn_app(pool.clone()).await;
+    let admin = seed_admin(&pool, "Type forgé").await;
+    sans_iban_decor(&pool, admin.company_id).await;
+    let backup = export_backup(&app, &admin.jwt).await;
+    let (mut manifest, mut data, fichiers) = ouvrir_tout(&backup);
+    recrire_table(&mut manifest, &mut data, "bank_accounts", |o| {
+        if o.get("account_kind") == Some(&Value::from("bank")) {
+            o.insert("account_kind".into(), Value::from("BANK"));
+        }
+    });
+    let forgee = rezip_tout(&manifest, &data, &fichiers);
+
+    // La base change après l'export : c'est cet état qui doit survivre au refus.
+    sqlx::query("UPDATE bank_accounts SET bank_name = 'Après export' WHERE iban IS NOT NULL")
+        .execute(&pool)
+        .await
+        .unwrap();
+    let avant = sans_iban_comptes(&pool, admin.company_id).await;
+
+    let resp = post_import(&app, &admin.jwt, forgee).await;
+    assert_eq!(resp.status(), 500, "un type hors domaine ne s'importe pas");
+    let body: Value = resp.json().await.unwrap();
+    assert_eq!(body["error"]["code"], "ADMIN_FULL_IMPORT_FAILED", "{body}");
+    assert_eq!(
+        sans_iban_comptes(&pool, admin.company_id).await,
+        avant,
+        "la base est intacte après le refus"
+    );
+}

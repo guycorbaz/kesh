@@ -955,7 +955,8 @@ describe('BankImportUpload — compte sans IBAN', () => {
 		const option = Array.from(c.querySelectorAll('#bank-account-select option')).find(
 			(o) => o.getAttribute('value') === '3',
 		);
-		expect(option?.textContent?.trim()).toBe('Visa (•••• 1234)');
+		// Revue P2 (B3) : l'espace insécable par son code, jamais en littéral invisible.
+		expect(option?.textContent?.trim()).toBe(`Visa (••••${String.fromCharCode(0xa0)}1234)`);
 
 		// Revue P1 (B3) — avant tout choix, le texte et le filtre génériques.
 		expect(get(c, 'bank-import-drop-zone-text').textContent).toContain('CAMT.053 ou CSV');
