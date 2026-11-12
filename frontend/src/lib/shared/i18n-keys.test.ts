@@ -911,7 +911,12 @@ const ATTENDU = {
 	// et `relais` inchangés.
 	// Fusion de la 34-4 (et de la 34-3) dans la 34-11b : 2942 + 2 + 8 = **2952**, recompté par la
 	// garde elle-même après la fusion.
-	sitesTotal: 2952,
+	// Story 34-11b (#972) : **2952 → 2956** (+4) : `CancelReconciliationDialog.svelte` +1 (la
+	// confirmation du retrait seul), `reconciliation-cancel.ts` +2 (les deux messages de succès,
+	// `reconciliationCancelDoneMessage`), `LinkSettlementModal.svelte` +1 (le retrait seul d'une
+	// écriture de virement) ; `already-booked.ts` inchangé (4 → 4 : deux clés remplacées). Que des
+	// littéraux ; `sitesNonResolus` et `relais` inchangés.
+	sitesTotal: 2956,
 	sitesNonResolus: 31,
 	relais: 6,
 	// Story 26-1 (#620, AC3-bis) : **10 → 11** — `lib/features/bank-import/

@@ -857,6 +857,8 @@ reconciliation-cancel-confirm-supplier-invoice = Eine Gegenbuchung mit heutigem 
 reconciliation-cancel-confirm-submit = Aufhebung bestätigen
 reconciliation-cancel-dismiss = Schliessen
 reconciliation-cancel-done = Abgleich aufgehoben.
+reconciliation-cancel-confirm-unlink-only = Nur die Zuordnung dieser Transaktion zur Buchung der Überweisung wird entfernt: Die Buchung bleibt der anderen Seite der Überweisung auf Ihrem anderen Konto zugeordnet, und es wird keine Gegenbuchung erfasst. Die Transaktion wird wieder abzugleichen sein.
+reconciliation-cancel-done-unlink-only = Die Zuordnung ist entfernt; die Buchung bleibt jene der anderen Seite der Überweisung.
 reconciliation-cancel-entry-link = Buchung anzeigen
 reconciliation-cancel-column = Abgleich
 # Story 28-5b (#526) — annuler le rejet d'une transaction, depuis le détail de son import.
@@ -1371,8 +1373,8 @@ reconciliation-labels-notice-supplier-invoice-in-batch = Die Lieferantenrechnung
 # Story 34-4 (#828, AC-5) — unter einer Zeile, die bereits verbucht scheint. Zwei Schlüssel -one / -other, vom Bildschirm gewählt: kein Selektor (die Meldungen kommen vorab aufgelöst an).
 reconciliation-labels-already-booked-one = Diese Transaktion scheint bereits verbucht: Eine nicht abgeglichene Buchung auf dem Bankkonto entspricht ihr. Ordnen Sie die Transaktion zu („Einer bestehenden Buchung zuordnen“), statt eine Buchung zu erfassen: Die Bewegung würde sonst doppelt gezählt werden.
 reconciliation-labels-already-booked-other = Diese Transaktion scheint bereits verbucht: { $count } nicht abgeglichene Buchungen auf dem Bankkonto entsprechen ihr. Ordnen Sie die Transaktion zu („Einer bestehenden Buchung zuordnen“), statt eine Buchung zu erfassen: Die Bewegung würde sonst doppelt gezählt werden.
-reconciliation-labels-already-booked-elsewhere = Eine Transaktion in Gegenrichtung auf einem anderen Ihrer Bankkonten ist bereits einer Buchung über denselben Betrag zugeordnet: Dies ist wahrscheinlich die andere Seite einer Überweisung zwischen Ihren Konten. Erfassen Sie keine Buchung dafür: Lehnen Sie die Transaktion ab.
-reconciliation-labels-already-booked-combined = Entspricht ihr nichts von dem, was „Einer bestehenden Buchung zuordnen“ vorschlägt, ist sie vielleicht die andere Seite einer Überweisung zwischen Ihren Konten: Eine Transaktion in Gegenrichtung auf einem anderen Ihrer Bankkonten ist einer Buchung über denselben Betrag zugeordnet.
+reconciliation-labels-already-booked-transfer = Diese Transaktion ist wahrscheinlich die andere Seite einer Überweisung zwischen Ihren Konten: Die Buchung dieser Überweisung ist bereits einer Transaktion auf einem anderen Ihrer Bankkonten zugeordnet. Ordnen Sie die Transaktion dieser Buchung zu („Einer bestehenden Buchung zuordnen“), statt eine Buchung zu erfassen: Die Überweisung würde sonst doppelt gezählt werden.
+reconciliation-labels-already-booked-transfer-among = Eine davon ist die Buchung einer Überweisung, die bereits auf einem anderen Ihrer Bankkonten zugeordnet ist: Wahrscheinlich ist es diese, der Sie die Transaktion zuordnen sollten.
 # Story 34-4 (#828, AC-6) — Bestätigung vor Akzeptieren, Manuelle Buchung oder Aufteilen bei einer markierten Zeile.
 reconciliation-labels-already-booked-confirm-title = Trotz des Hinweises bestätigen
 reconciliation-labels-already-booked-confirm-intro = Jede der folgenden Transaktionen scheint bereits verbucht (siehe den Hinweis in ihrer Zeile). Fortfahren würde eine Buchung für eine Bewegung erfassen, die vielleicht schon in den Büchern steht; sie würde dann doppelt gezählt werden.
@@ -1489,6 +1491,7 @@ reconciliation-link-col-journal = Journal
 reconciliation-link-col-description = Text
 reconciliation-link-choose-entry = Diese Buchung wählen
 reconciliation-link-entry-cancel-today = Heute sieht Kesh kein Hindernis: Den Abgleich aufzuheben, würde diese Buchung stornieren (oder die Zahlung aufheben, die sie trägt). Ein Jahresabschluss, eine gesperrte Periode oder ein abgeschlossenes späteres Geschäftsjahr könnten es verhindern, schon heute, ohne dass Kesh es sieht, oder später.
+reconciliation-link-entry-cancel-unlink-only = Diese Buchung ist jene einer Überweisung, die auf der anderen Seite bereits einem anderen Ihrer Bankkonten zugeordnet ist: Die Transaktion wird ihr ebenfalls zugeordnet, ohne zweite Buchung. Diese Zuordnung aufzuheben, würde nur ihre Verknüpfung entfernen; die Buchung bliebe jene der anderen Seite.
 reconciliation-link-entry-cancel-blocked-intro = Diese Zuordnung kann nicht aufgehoben werden, solange das folgende Hindernis besteht.
 reconciliation-link-entry-cancel-blocked-ack = Verstanden: Solange dieses Hindernis besteht, kann diese Zuordnung nicht aufgehoben werden.
 reconciliation-link-col-invoice = Rechnung

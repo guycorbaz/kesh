@@ -13,7 +13,9 @@
   `onSuccess`, et masque le bouton selon le rôle.
 
   Il montre SOIT le motif qui refuse l'annulation, SOIT la confirmation — qui
-  dit ce qui va se passer selon le genre du rapprochement.
+  dit ce qui va se passer selon le genre du rapprochement, ou, pour un côté d'un
+  virement rattaché des deux côtés (Story 34-11b, `unlinkOnly`), que seul le
+  lien est retiré.
 -->
 <script lang="ts">
 	import { Button } from '$lib/components/ui/button';
@@ -77,6 +79,15 @@
 	});
 
 	const confirmText = $derived.by(() => {
+		// Story 34-11b (#972, AC-4b) — un côté d'un virement rattaché des deux côtés : seul le lien
+		// de cette transaction est retiré, l'écriture reste celle de l'autre côté. Avant le genre :
+		// aucune contre-passation, aucun règlement retiré.
+		if (view?.unlinkOnly) {
+			return i18nMsg(
+				'reconciliation-cancel-confirm-unlink-only',
+				'Seul le lien de cette transaction à l’écriture du virement sera retiré : l’écriture reste rapprochée de l’autre côté du virement, sur votre autre compte, et aucune écriture inverse n’est passée. La transaction redeviendra à rapprocher.',
+			);
+		}
 		if (view?.kind === 'invoice_settlement') {
 			return i18nMsg(
 				'reconciliation-cancel-confirm-invoice',

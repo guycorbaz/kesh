@@ -11,10 +11,26 @@ vi.mock('$lib/shared/utils/i18n.svelte', () => ({
 
 import {
 	isReconciliationCancelCode,
+	reconciliationCancelDoneMessage,
 	reconciliationCancelErrorMessage,
 	reconciliationCancelMessage,
 } from './reconciliation-cancel';
 import type { ReconciliationCancelCode } from './reconciliation.types';
+
+// Story 34-11b (#972, AC-4b) — le message de succès du retrait seul.
+describe('reconciliationCancelDoneMessage', () => {
+	const base = {
+		bankTransaction: { id: 42, status: 'pending', matchedEntryId: null },
+		invoiceId: null,
+		supplierInvoiceId: null,
+	};
+	it('retrait seul (`reversalJournalEntryId: null`) ⇒ « le lien est retiré », distinct de l’annulation (mutation : un seul message)', () => {
+		const seul = reconciliationCancelDoneMessage({ ...base, reversalJournalEntryId: null });
+		const annule = reconciliationCancelDoneMessage({ ...base, reversalJournalEntryId: 9 });
+		expect(seul).toBe('Le lien est retiré ; l’écriture reste celle de l’autre côté du virement.');
+		expect(annule).toBe('Rapprochement annulé.');
+	});
+});
 
 describe('reconciliationCancelMessage', () => {
 	it('un texte par motif, qui parle de RAPPROCHEMENT et jamais de « ce règlement » (mutation : famille du règlement réemployée)', () => {

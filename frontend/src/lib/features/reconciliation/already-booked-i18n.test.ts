@@ -27,8 +27,10 @@ const PREFIXE = 'reconciliation-labels-already-booked-';
 const CLES = [
 	'reconciliation-labels-already-booked-one',
 	'reconciliation-labels-already-booked-other',
-	'reconciliation-labels-already-booked-elsewhere',
-	'reconciliation-labels-already-booked-combined',
+	// Story 34-11b (#972, AC-10) : `-elsewhere` (b) et `-combined` (c) retirées, remplacées par
+	// `-transfer` (b′) et `-transfer-among` (c′).
+	'reconciliation-labels-already-booked-transfer',
+	'reconciliation-labels-already-booked-transfer-among',
 	'reconciliation-labels-already-booked-confirm-title',
 	'reconciliation-labels-already-booked-confirm-intro',
 	'reconciliation-labels-already-booked-confirm-cancel',

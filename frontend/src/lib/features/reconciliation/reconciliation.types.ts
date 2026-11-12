@@ -208,6 +208,12 @@ export interface ReconciliationTransactionResponse {
 	supplierInvoiceNumber: string | null;
 	internalNumber: string | null;
 	cancellable: boolean;
+	/**
+	 * Story 34-11b (#972, AC-4b) — `true` quand l'écriture est aussi rapprochée de l'**autre
+	 * côté** d'un virement entre deux comptes propres : l'annulation ne retire que le lien de
+	 * cette transaction, sans contre-passer l'écriture.
+	 */
+	unlinkOnly: boolean;
 	cancelBlockedBy: ReconciliationCancelCode | null;
 	/** Numéro du compte archivé (rang 4). */
 	cancelBlockedLabel: string | null;
@@ -218,7 +224,11 @@ export interface ReconciliationTransactionResponse {
 /** `POST /api/v1/reconciliation/transactions/{id}/cancel`. */
 export interface CancelReconciliationResponse {
 	bankTransaction: { id: number; status: string; matchedEntryId: number | null };
-	reversalJournalEntryId: number;
+	/**
+	 * L'écriture inverse, datée du jour — `null` quand seul le lien a été retiré (Story 34-11b :
+	 * l'autre côté d'un virement reste rapproché de l'écriture).
+	 */
+	reversalJournalEntryId: number | null;
 	invoiceId: number | null;
 	/** Story 30-1a — la facture fournisseur dont le paiement a été retiré. */
 	supplierInvoiceId: number | null;
@@ -278,6 +288,12 @@ export interface EntryCandidate {
 	cancelBlockedBy: ReconciliationCancelCode | null;
 	/** Numéro du compte archivé (rang 4). */
 	cancelBlockedLabel: string | null;
+	/**
+	 * Story 34-11b (#972, AC-4b) — l'écriture d'un virement déjà rapprochée de l'**autre côté**
+	 * (transaction de sens contraire d'un autre compte bancaire) : annuler ce rattachement ne
+	 * retirerait que son lien. `cancelBlockedBy` est alors `null`.
+	 */
+	unlinkOnly: boolean;
 }
 
 /** `GET /api/v1/reconciliation/transactions/{id}/entry-candidates`. */

@@ -89,6 +89,7 @@ function entry(
 		daysApart: 1,
 		cancelBlockedBy,
 		cancelBlockedLabel,
+		unlinkOnly: false,
 	};
 }
 
@@ -487,6 +488,34 @@ describe('LinkSettlementModal — écritures existantes (Story v017-3a)', () => 
 		await waitFor(() => expect(onSuccess).toHaveBeenCalledTimes(1));
 		expect(mockApi.linkEntry).toHaveBeenCalledWith(42, 7);
 		expect(mockApi.linkTransaction).not.toHaveBeenCalled();
+	});
+
+	// Story 34-11b (#972, AC-4b, AC-7) — l'écriture d'un virement, déjà rapprochée de l'autre côté.
+	it('l’écriture d’un virement (unlinkOnly) : listée, rien de présélectionné, aucune case à cocher, le texte du retrait seul ; Rattacher appelle linkEntry', async () => {
+		mockApi.getEntryCandidates.mockResolvedValue({
+			bankTransactionId: 42,
+			candidates: [{ ...entry(7, null, null, '500.00'), unlinkOnly: true }],
+		});
+		mockApi.linkEntry.mockResolvedValue({ bankTransactionId: 42, journalEntryId: 7 });
+		const credit = proposal(42, '2026-05-31', '2026-05-31', '500.00');
+		const { findAllByTestId, getByTestId, findByTestId, queryByTestId, onSuccess } = mount(
+			vi.fn(),
+			vi.fn(),
+			credit,
+		);
+		const [radio] = (await findAllByTestId('entry-candidate-radio')) as HTMLInputElement[];
+		expect(radio.checked).toBe(false);
+		expect(mockApi.linkEntry).not.toHaveBeenCalled();
+		await fireEvent.click(radio);
+		expect((await findByTestId('entry-cancel-unlink-only')).textContent).toContain(
+			'ne retirerait que son lien',
+		);
+		expect(queryByTestId('entry-cancel-today')).toBeNull();
+		expect(queryByTestId('entry-cancel-blocked-ack')).toBeNull();
+		expect((getByTestId('link-submit') as HTMLButtonElement).disabled).toBe(false);
+		await fireEvent.click(getByTestId('link-submit'));
+		await waitFor(() => expect(onSuccess).toHaveBeenCalledTimes(1));
+		expect(mockApi.linkEntry).toHaveBeenCalledWith(42, 7);
 	});
 
 	it('une écriture d’exercice clôturé : l’introduction datée, le motif, et Rattacher inactif tant que la case n’est pas cochée (M25, M29)', async () => {
