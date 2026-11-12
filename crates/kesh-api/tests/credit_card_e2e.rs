@@ -1036,6 +1036,10 @@ async fn reglements_et_carte(pool: MySqlPool) {
         )
         .await;
     assert_eq!(s, 200, "validation : {b}");
+    // Intégration de la 0.17.6 : depuis la 34-5 (#951), le règlement exige la
+    // version de la facture (`422` sans elle) ; celle que rend la validation.
+    let version = b["version"].clone();
+    assert!(version.is_i64(), "version de la facture validée : {b}");
 
     let ecritures = ctx
         .count("SELECT COUNT(*) FROM journal_entries WHERE company_id = ?")
@@ -1048,6 +1052,7 @@ async fn reglements_et_carte(pool: MySqlPool) {
                 "bankAccountId": carte_id,
                 "amount": "108.10",
                 "settledOn": Utc::now().date_naive().to_string(),
+                "version": version,
             }),
         )
         .await;
