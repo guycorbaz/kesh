@@ -47,6 +47,7 @@
 		bankAccountName,
 		defaultOpeningSide,
 		formatChfBalance,
+		formatChfExact,
 		linkableLedgerAccounts,
 		openingAmountAmbiguous,
 		openingAmountPayload,
@@ -267,7 +268,7 @@
 					{
 						number: String(entry.entryNumber),
 						date: formatSwissDate(entry.entryDate),
-						amount: formatChfBalance(amount),
+						amount: formatChfExact(amount),
 					},
 				),
 			);
@@ -408,7 +409,7 @@
 							{
 								number: String(openingEntry.entryNumber),
 								date: formatSwissDate(openingEntry.entryDate),
-								amount: formatChfBalance(payload.openingBalance?.amount ?? '0'),
+								amount: formatChfExact(payload.openingBalance?.amount ?? '0'),
 							},
 						)
 					: i18nMsg('bank-accounts-toast-create-success', 'Compte bancaire créé.'),

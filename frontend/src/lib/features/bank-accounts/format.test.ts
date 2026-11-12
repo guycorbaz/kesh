@@ -7,6 +7,7 @@ import {
 	bankAccountOptionLabel,
 	defaultOpeningSide,
 	formatChfBalance,
+	formatChfExact,
 	openingAmountAmbiguous,
 	openingAmountPayload,
 	openingAmountPreview,
@@ -120,5 +121,12 @@ describe("solde d'ouverture", () => {
 		for (const rien of ['', '1,234', 'abc', '-5', '1.00001', '1.2.3']) {
 			expect(openingAmountPreview(rien), rien).toBeNull();
 		}
+	});
+
+	// L'aperçu dit ce que le serveur écrit (quatre décimales), sans l'arrondir au centime.
+	it('l’aperçu garde jusqu’à quatre décimales, sans arrondi', () => {
+		expect(openingAmountPreview('1.2345')).toContain('1.2345');
+		expect(openingAmountPreview('1.005')).toContain('1.005');
+		expect(formatChfExact('1234.5')).toBe(formatChfBalance('1234.50'));
 	});
 });

@@ -206,5 +206,24 @@ export function openingAmountPreview(raw: string): string | null {
 	if (openingAmountAmbiguous(raw)) return null;
 	const amount = openingAmountPayload(raw);
 	if (amount === null || !/^\d+(\.\d{1,4})?$/.test(amount)) return null;
-	return formatChfBalance(amount);
+	return formatChfExact(amount);
+}
+
+/** Formateur CHF à deux décimales au moins, quatre au plus (la précision de la colonne). */
+const CHF_EXACT = new Intl.NumberFormat('fr-CH', {
+	style: 'currency',
+	currency: 'CHF',
+	minimumFractionDigits: 2,
+	maximumFractionDigits: 4,
+});
+
+/**
+ * Story 34-2 — un montant décimal (chaîne) au format suisse, **sans arrondi**
+ * jusqu'à quatre décimales : l'aperçu et l'avis disent ce que le serveur écrit
+ * (`DECIMAL(19,4)`), là où {@link formatChfBalance} arrondit au centime.
+ * La chaîne est passée telle quelle à `Intl.NumberFormat` (format exact des
+ * décimaux sous forme de chaîne), sans passer par un `number`.
+ */
+export function formatChfExact(amount: string): string {
+	return (CHF_EXACT.format as (value: string) => string)(amount);
 }
