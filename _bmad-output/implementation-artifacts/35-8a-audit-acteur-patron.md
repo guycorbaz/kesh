@@ -1,6 +1,12 @@
 # Story 35-8a : l'audit attribue à la clé d'API ce qu'elle a fait — le type `Acteur`, la garde des sites non résolus, les écritures et le retour en brouillon d'une facture fournisseur (#431, #892 item 11)
 
-Status: ready-for-dev
+Status: split
+
+> **Découpée le 2026-11-13** (C-e350-50, décision de l'orchestrateur : petites stories) en
+> **`35-8a1-audit-acteur-mecanisme.md`** (lot 1 : `Acteur`, `par`, la garde, le retour en brouillon d'une facture
+> fournisseur ; AC3, AC5) et **`35-8a2-audit-acteur-ecritures.md`** (lot 2 : les écritures ; AC1, AC2, AC4). Cette fiche
+> est gardée telle quelle ; elle fait foi pour l'inventaire détaillé, la table des raisons et le rayon, que les deux
+> fiches reprennent sans en réécrire le fond.
 
 *Fiche rédigée le 2026-11-12 par l'agent de rédaction des fiches de l'Epic 35 (Opus 5.5), worktree `kesh-e35`, par le
 workflow `bmad-create-story`. Née du **découpage préventif** de la 35-8 (C-e350-38) : la story touchait seize dépôts de

@@ -536,6 +536,9 @@ retenue, options écartées, réversibilité. Lignes citées sur `release/0.17.6
 - **Écartée** : écrire la limite et ouvrir une issue : laisserait un refus muet que la story sait nommer pour quelques
   lignes.
 - **Réversible** : oui.
+- *(Annoté le 2026-11-13, validation P2 de la 35-1 : la collision n'est pas propre aux formats sans compteur — `FACT{SEQ}`
+  au deuxième exercice ; le message ne suppose pas la cause ; le passage `409 RESOURCE_CONFLICT` → `400` est un changement
+  de contrat écrit comme le `500` → `400`. Voir C-e350-51.)*
 
 ### C-e350-48 — 35-8b : reportée à l'Epic 36, découpée là-bas en lots par domaine
 
@@ -572,4 +575,16 @@ retenue, options écartées, réversibilité. Lignes citées sur `release/0.17.6
   ne découpe pas : plus de 70 fichiers à l'étape 0, ou lot 1 non convergé.
 - **Écartées** : (a) découper sans décision de l'orchestrateur : contredit sa consigne ; (b) garder les signatures
   `user_id` des écritures avec une enveloppe : les appelants sortiraient de la vue de la garde.
+- **Réversible** : oui.
+
+### C-e350-51 — 35-1 : le format n'est pas tenu de porter l'année ou l'exercice (décision de l'orchestrateur)
+
+- **Contexte** : validation P2 de la 35-1, V2-1. Le compteur repart à chaque exercice, l'unicité vaut pour la société :
+  `FACT{SEQ}`, accepté par D1, heurte l'unicité au deuxième exercice ; `F-{YEAR}-{SEQ:04}` aussi quand deux exercices
+  commencent la même année civile.
+- **Retenu** : D1 n'exige que le compteur ; la collision est nommée à la validation (`duplicate`, C-e350-47), par un message
+  qui ne suppose pas l'absence de compteur ; une issue est rédigée dans la fiche (« un format sans année ni exercice heurte
+  l'unicité au deuxième exercice ») pour l'orchestrateur.
+- **Écartée** : exiger `{YEAR}` ou `{FY}` dans D1 : hors du périmètre de #932 et #948, et refuserait des formats enregistrés
+  dès qu'on les touche.
 - **Réversible** : oui.
