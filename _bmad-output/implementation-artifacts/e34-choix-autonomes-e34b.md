@@ -77,11 +77,13 @@ ou s'en écartent, et le disent.*
   d'ouverture » de la carte (34-11a2) et aux soldes de départ.
 - **Réversible** : oui — à l'intégration, l'E2E peut passer par la 34-2.
 
-### C-e34b-7 — Le compte de dette de l'exemple : 2101 sous 2100
+### C-e34b-7 — Le compte de dette de l'exemple : un sous-compte de 2100, sans numéro
 
 - **Contexte** : la fiche (AC-8) proposait « 2030 sous le 20 » ; la 34-11a2 a retenu 2100 *Dettes bancaires à court terme*
   des plans livrés (`9a3904f5`).
-- **Retenu** : « par exemple 2101 *Carte de crédit*, sous 2100 », pour un exemple cohérent avec l'écran.
+- **Retenu** : « par exemple *Carte de crédit*, sous-compte à créer de 2100 », pour un exemple cohérent avec l'écran. Un numéro
+  (« 2101 ») a d'abord été écrit : la garde `textes_coherents::les_comptes_cites_en_exemple_existent_dans_les_plans_livres` l'a refusé
+  (absent des plans livrés) au gate complet ; retiré.
 - **Réversible** : oui.
 
 ### C-e34b-8 — Le retrait seul ne lit pas le genre de l'écriture

@@ -286,10 +286,75 @@ du rattachement à un règlement : une écriture de règlement n'a qu'une ligne 
   `34-4-transaction-deja-comptabilisee.md:97-113`). **5.3** : `unlinking: Option<i64>` remplacé par `concerned: Option<&BankTransaction>`, un seul
   paramètre (relu `settlement_cancellation.rs:80-90`).
 
+- 2026-11-12 : **développement (Opus 5.5)**, worktree `kesh-e34b`, base `3c1510d8` + fusion de la 34-4 close (`a8dce4a9`). Étape 0 : LOW F6 de la
+  validation P4 (les deux `…_unlinking`) traité par C-e34b-3 — relu `reconciliation_cancel.rs:287-318` (avant) et
+  `invoice_settlements_write.rs:806` (`settlement_cancel_blocker_unlinking(conn, company_id, settlement_id, None)`) ; inventaire des lecteurs :
+  `journal_entries.rs:2339-2340` (doc-comment ajouté, un motif suffit), `routes/reconciliation.rs:4688` (`matched_entry_id IS NULL` du rejet,
+  garde d'une transaction en attente : sain). Noms de la fiche alignés sur ceux de la 34-4 (`entry_sql(EntrySqlMode)`, `MATCHED_ELSEWHERE` →
+  `HAS_LINK`, `NOT_MATCHED` → `linkable_side()`, `count_already_booked_for_page`). Écarts consignés au registre `e34-choix-autonomes-e34b.md`
+  (C-e34b-1 à 8).
+
 ## Dev Agent Record
 
 ### Agent Model Used
 
+Claude Opus 5.5 (agent de développement en autonomie, clé e34b).
+
 ### Completion Notes List
 
+- **Fusion** de `story/34-4-transaction-deja-comptabilisee` (`0276a3ed`) en `a8dce4a9` : conflits `CHANGELOG.md` (sections unies) et
+  `i18n-keys.test.ts` (`sitesTotal` 2942 + 2 + 8 = **2952**, recompté par la garde) ; gate ciblé après fusion :
+  `reconciliation_link_entry_e2e` 40/40 (2 ignorés), Vitest `i18n-keys` 11/11.
+- **La règle** (AC-1, C-e34b-1) : condition 4 = `linkable_side()` — aucune transaction liée autre que l'autre côté (autre compte bancaire,
+  montant opposé à `M`, `other_side_predicate`), et une au plus ; `transfer_other_side` en est la lecture pour une transaction donnée.
+  `MatchedElsewhere` = liste + `HAS_LINK` (C-e34b-2) ; `count_already_booked_for_page` lit les mêmes textes.
+- **L'annulation** (AC-4, AC-4b) : `entry_cancel_blocker(…, &BankTransaction)` décide l'autre côté en tête (C-e34b-3) ; `get_view` porte
+  `unlink_only` ; `cancel_in_tx` étape 3 bis : lecture **ordinaire** après le verrou de l'écriture, retrait du seul lien, `recheck_open_locked_in_tx`,
+  trace `unlinkOnly: true`, `reversalJournalEntryId: null` ; le chemin ordinaire écrit `unlinkOnly: false`.
+  `ReconciliationCancellation.reversal_journal_entry_id: Option<i64>`, réponse HTTP nullable.
+- **Écrans** : `already-booked.ts` (b′)/(c′), clés `-transfer`, `-transfer-among` (quatre locales ; `-elsewhere`, `-combined` retirées) ;
+  `CancelReconciliationDialog` (confirmation du retrait seul) ; `reconciliationCancelDoneMessage` + toast du détail d'import (C-e34b-5) ;
+  `LinkSettlementModal` (texte du retrait seul, sans case, C-e34b-4). `sitesTotal` 2952 → **2956** (+4, recompté par la garde).
+- **Tests ajoutés** (périmètre `a8dce4a9` → `HEAD`, recomptés par `grep -cE '#\[(sqlx::)?test'` / `^\s*it(\.each)?\(` aux deux bornes) :
+  `reconciliation_link_entry_e2e.rs` 42 → 50 (+8 `s34_11b_*`), `bank_imports_e2e.rs` 89 → 90 (+1, AC-6), `reconciliation_link.rs` (unitaires)
+  5 → 6 (+1 ; un récrit) ; Vitest `ReconciliationProposals.test.ts` 67 → 68 (deux cas (b), (c) remplacés par trois), `CancelReconciliationDialog.test.ts`
+  9 → 10, `reconciliation-cancel.test.ts` 6 → 7, `LinkSettlementModal.test.ts` 28 → 29 ; E2E neuf `credit-card-statement.spec.ts`.
+- **Rouges** (`kesh-gate-logs/e34b/rouges.log`, tests neufs contre le code `2fafcb49`, sources de la story retirées puis rendues) : **7 rouges**
+  (AC-2 ×2, AC-3, AC-4 ×3 dont la course, AC-4 exercice clos) ; **2 verts dès le départ, attendus** : `s34_11b_ac4c_comptes_relies` (l'ancienne
+  condition 4 refusait déjà tout lien : il garde la règle neuve, tué par M2) et `s34_11b_ac6_releve_csv_d_une_carte` (le CSV d'une carte est
+  ouvert depuis la 34-11a1 : la fiche le croyait rouge). Vitest : 8 rouges contre l'`already-booked.ts` et les catalogues d'avant
+  (`rouges-front.log`).
+- **Mutations** (`kesh-gate-logs/e34b/mut/`, script `scripts/mut-e34b.py`, une par prise de verrou, restaurées par `git checkout` + `touch`), toutes
+  **tuées** : M1 (11 rouges), M2 = M8 = M9 (sens non contrôlé : 5, dont `s34_11b_ac4c_comptes_relies`, `s34_11b_ac3`, deux tests de la 34-4),
+  Macc (compte non contrôlé : `s34_4_ac2_rapprochee_sur_le_meme_compte_ne_compte_pas` et le test du texte), M3 (4), M4 (4), **M5** (la course
+  `s34_11b_ac4_deux_annulations_simultanees`, et elle seule), M6 = M7 (3), M7b (`s34_11b_ac4_exercice_clos`), M7c (rejouée comme « rang 3 sauté
+  sous `None` », C-e34b-3 : `reconciliation_e2e::cancelling_a_reconciled_settlement_is_refused`), M10 (`s34_11b_ac4_exercice_clos`), M11 (Vitest
+  (c′) seul). **M2b** (plafond « un seul lien » levé) n'est tué que par le test du texte : **équivalente** dans les états atteignables — deux liens
+  d'autres comptes et de sens opposé exigeraient un second rattachement que la condition refuse déjà ; le plafond est une défense.
+- **Gates au dernier commit de code** : voir *Gates* ci-dessous.
+- **Captures** (thème clair, E2E) : `kesh-gate-logs/e34b/captures/34-11b-*.png`.
+- **Manuel** : `user-manual.tex` § *Tenir une carte de crédit, pas à pas* (neuf, `sec:tenir-carte`), textes du second côté récrits (encadré « Dépense
+  déjà réglée », *Une transaction qui semble déjà comptabilisée*, *Écriture manuelle*, *Rattacher …*, *Annuler un rapprochement*). **PDF non
+  régénéré** (consigne de l'epic : à l'intégration). `api-external.md`, `CHANGELOG.md` (*Ajouté*, *Corrigé* ; l'entrée de la 34-4 alignée).
+- **Écarts à la consigne Edit** : `python3 -I` sur la fiche (cocher sept tâches, artefact `_bmad-output`) ; `prettier --write` sur la spec E2E
+  neuve (`daf8459c`), puis la mise en forme rendue au style du dépôt par une réécriture complète (Write) de ce fichier neuf (`d7bc0fd6`) ; un
+  `sed -i` sur un script de `kesh-gate-logs` (pas du code du dépôt), qui a laissé `gates-e34b.sh.bak` (non supprimé : `rm` interdit).
+- **Issues à demander** (fiche, § *Ce qui ne se traite pas*, une par problème) : inversion d'une colonne de montant unique d'un profil CSV ;
+  joindre un PDF à un relevé saisi ; lire un relevé de carte en PDF ; proposer l'appariement des deux côtés d'un virement. Plus : signaler
+  l'écriture rapprochée de ses deux côtés vue d'une troisième transaction (C-e34b-2, non signalée).
+
 ### File List
+
+- `crates/kesh-db/src/repositories/reconciliation_link.rs`, `reconciliation_cancel.rs`, `journal_entries.rs` (doc-comment) ;
+  `crates/kesh-db/tests/reconciliation_cancel.rs`
+- `crates/kesh-api/src/routes/reconciliation.rs` ; `crates/kesh-api/tests/reconciliation_link_entry_e2e.rs`, `bank_imports_e2e.rs`,
+  `fixtures/releve-carte-synthetique.csv`
+- `crates/kesh-i18n/locales/{fr,de,en,it}-CH/messages.ftl`
+- `frontend/src/lib/features/reconciliation/already-booked.ts`, `already-booked-i18n.test.ts`, `CancelReconciliationDialog.svelte` (+ test),
+  `LinkSettlementModal.svelte` (+ test), `reconciliation-cancel.ts` (+ test), `ReconciliationProposals.test.ts`, `reconciliation.types.ts` ;
+  `frontend/src/lib/shared/i18n-keys.test.ts` ; `frontend/src/routes/(app)/bank-import/[id]/+page.svelte` ;
+  `frontend/tests/e2e/credit-card-statement.spec.ts`
+- `docs/manual/fr/user-manual.tex`, `docs/api-external.md`, `CHANGELOG.md`
+- `_bmad-output/implementation-artifacts/e34-choix-autonomes-e34b.md`, `34-11b-carte-credit-releve-review-prompt-p1.md`, cette fiche
+
+### Gates

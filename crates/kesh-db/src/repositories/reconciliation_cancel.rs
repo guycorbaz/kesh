@@ -506,7 +506,7 @@ pub struct ReconciliationCancellation {
 ///
 ///    3 bis. (Story 34-11b, #972) l'autre côté d'un virement, par une lecture
 ///    **ordinaire** après ce verrou : s'il existe, seul le lien est retiré
-///    (étapes 5, 6 bis, 7, sans contre-passation), `reversal_journal_entry_id`
+///    (étapes 4 et 6 sautées, 5, 6 bis, 7 communes), `reversal_journal_entry_id`
 ///    vaut `None` et la trace porte `unlinkOnly: true` ;
 /// 4. les motifs, par [`cancel_blocker`] **exempté** pour cette transaction :
 ///    le geste refuse lui-même les rangs 0, 2 et 2 bis — le lettrage de pièce
@@ -592,7 +592,10 @@ pub async fn cancel_in_tx(
     //     virement : si l'écriture est aussi rapprochée d'une transaction d'un
     //     autre compte bancaire, de montant opposé, seul le lien de `bt` est
     //     retiré — aucune contre-passation, aucun rang 1 à 5 (rien n'est écrit
-    //     au journal ; le compte clos vient d'être contrôlé). ⛔ Lecture
+    //     au journal ; le compte clos vient d'être contrôlé) : les étapes (4)
+    //     et (6) sont sautées, (5), (6 bis) et (7) restent — un seul `UPDATE`,
+    //     une seule revérification, une seule trace pour les deux chemins
+    //     (inventaire `bank_account_closed_inventory`). ⛔ Lecture
     //     ORDINAIRE, APRÈS le verrou de l'écriture (3) : la vue naît ici, après
     //     l'attente ; deux annulations simultanées des deux côtés se
     //     sérialisent sur l'écriture, et la seconde voit le lien que la première
@@ -605,66 +608,21 @@ pub async fn cancel_in_tx(
         super::reconciliation_link::transfer_other_side(tx, company_id, entry_id, &bt)
             .await?
             .is_some();
-    if unlink_only {
-        let updated = sqlx::query(
-            "UPDATE bank_transactions \
-             SET matched_entry_id = NULL, status = 'pending', auto_match_rejected_at = NULL, \
-                 version = version + 1, updated_at = NOW(3) \
-             WHERE id = ? AND company_id = ? AND status = 'reconciled' AND version = ?",
-        )
-        .bind(bank_transaction_id)
-        .bind(company_id)
-        .bind(bt.version)
-        .execute(&mut **tx)
-        .await
-        .map_err(map_db_error)?;
-        if updated.rows_affected() != 1 {
-            return Err(DbError::OptimisticLockConflict);
-        }
-        super::bank_accounts::recheck_open_locked_in_tx(tx, company_id, bt.bank_account_id).await?;
-        audit_log::insert_in_tx(
-            tx,
-            NewAuditLogEntry::for_actor(
-                user_id,
-                actor_api_key_id,
-                "reconciliation.cancelled",
-                "bank_transaction",
-                bank_transaction_id,
-                Some(serde_json::json!({
-                    "kind": kind.code(),
-                    "matchedEntryId": entry_id,
-                    "reversalJournalEntryId": serde_json::Value::Null,
-                    "unlinkOnly": true,
-                    "invoiceId": serde_json::Value::Null,
-                    "settlementId": serde_json::Value::Null,
-                    "supplierInvoiceId": serde_json::Value::Null,
-                    "amount": bt.amount,
-                    "wasPreviouslyRejected": bt.auto_match_rejected_at.is_some(),
-                })),
-            ),
-        )
-        .await?;
-        let bank_transaction = find(tx, company_id, bank_transaction_id, false).await?;
-        return Ok(ReconciliationCancellation {
-            bank_transaction,
-            reversal_journal_entry_id: None,
-            invoice_id: None,
-            supplier_invoice_id: None,
-        });
-    }
 
     // (4) Les motifs — forme EXEMPTÉE : le lien existe encore, et la forme
     //     non exemptée refuserait chaque dé-rapprochement sur son propre lien.
     //     Motif LIÉ (`blocker @`), jamais écrit en dur dans l'erreur : le rang
     //     2 bis (Story 15-1a2-0) est refusé ici, dans SA famille, AVANT que le
     //     lien soit défait — sans lui, il remonterait de
-    //     `cancel_settlement_in_tx` sous le texte « ce règlement ».
-    if let Some((
-        blocker @ (SettlementCancelBlocker::FiscalYearClosed
-        | SettlementCancelBlocker::DocumentLetteringInClosedPeriods),
-        _,
-        _,
-    )) = cancel_blocker(tx, company_id, &bt).await?
+    //     `cancel_settlement_in_tx` sous le texte « ce règlement ». Sautés pour
+    //     un retrait seul (3 bis) : rien n'est écrit au journal.
+    if !unlink_only
+        && let Some((
+            blocker @ (SettlementCancelBlocker::FiscalYearClosed
+            | SettlementCancelBlocker::DocumentLetteringInClosedPeriods),
+            _,
+            _,
+        )) = cancel_blocker(tx, company_id, &bt).await?
     {
         return Err(DbError::ReconciliationNotCancellable { blocker });
     }
@@ -688,14 +646,16 @@ pub async fn cancel_in_tx(
 
     // (6) Le règlement annulé — geste de la 25-3-a-1 (client) ou de la
     //     25-3-a-2 (fournisseur, Story 30-1a), appelé —, ou l'écriture
-    //     contre-passée.
+    //     contre-passée. Rien pour un retrait seul (3 bis) : l'écriture reste
+    //     celle de l'autre côté.
     let supplier_invoice_id = match kind {
         ReconciliationKind::SupplierSettlement {
             supplier_invoice_id,
-        } => Some(supplier_invoice_id),
+        } if !unlink_only => Some(supplier_invoice_id),
         _ => None,
     };
     let (reversal_journal_entry_id, invoice_id, settlement_id) = match kind {
+        _ if unlink_only => (None, None, None),
         ReconciliationKind::InvoiceSettlement {
             invoice_id,
             settlement_id,
@@ -709,7 +669,7 @@ pub async fn cancel_in_tx(
             )
             .await?;
             (
-                done.reversal_journal_entry_id,
+                Some(done.reversal_journal_entry_id),
                 Some(invoice_id),
                 Some(settlement_id),
             )
@@ -719,12 +679,12 @@ pub async fn cancel_in_tx(
         } => {
             let done =
                 supplier_invoices::cancel_settlement_in_tx(tx, company_id, id, user_id).await?;
-            (done.reversal_journal_entry_id, None, None)
+            (Some(done.reversal_journal_entry_id), None, None)
         }
         ReconciliationKind::Entry => {
             let reversal =
                 journal_entries::reverse_in_tx(tx, company_id, entry_id, user_id).await?;
-            (reversal.entry.id, None, None)
+            (Some(reversal.entry.id), None, None)
         }
     };
 
@@ -782,7 +742,7 @@ pub async fn cancel_in_tx(
                 "kind": kind.code(),
                 "matchedEntryId": entry_id,
                 "reversalJournalEntryId": reversal_journal_entry_id,
-                "unlinkOnly": false,
+                "unlinkOnly": unlink_only,
                 "invoiceId": invoice_id,
                 "settlementId": settlement_id,
                 "supplierInvoiceId": supplier_invoice_id,
@@ -796,7 +756,7 @@ pub async fn cancel_in_tx(
     let bank_transaction = find(tx, company_id, bank_transaction_id, false).await?;
     Ok(ReconciliationCancellation {
         bank_transaction,
-        reversal_journal_entry_id: Some(reversal_journal_entry_id),
+        reversal_journal_entry_id,
         invoice_id,
         supplier_invoice_id,
     })
