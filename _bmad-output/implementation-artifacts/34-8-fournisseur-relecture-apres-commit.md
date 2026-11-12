@@ -1,6 +1,6 @@
 # Story 34-8 : une facture fournisseur n'est plus annoncée en échec après son commit (#938)
 
-Status: review
+Status: done
 
 *Fiche rédigée le 2026-11-10 en autonomie (Opus 5.5), worktree `/home/gcorbaz/devel/kesh-e34`, branche `chore/epic-34-kickoff`,
 numéros de ligne de `a75835db`. Release **0.17.6**, Epic 34. **Aucune migration.** C'est la ligne « Non traité, à tracer » de
@@ -470,6 +470,30 @@ aucune migration, aucun schéma.
     restauré (`git status` vide) avant la remédiation.
   - **Tendance** : P3 1 M / 9 L → P4 ciblée 1 M / 2 L (né de la remédiation P3). Passe ciblée **P5** (Sonnet) sur
     `c0ec8440` : `34-8-fournisseur-relecture-apres-commit-review-prompt-p5-ciblee.md`.
+- 2026-11-12 : **passe ciblée P5 (Sonnet) : 0 au-dessus de LOW** (rapport `kesh-gate-logs/e348-review-p5-ciblee.md`) — la
+  remédiation `c0ec8440` n'a rien cassé. La boucle se clôt, **sans toucher aucune ligne de production** :
+  - **S-1 (L)** — après un refus périmé, une relecture qui change le statut fait basculer l'écran sans aucun avis : ouvert
+    par l'orchestrateur, **#1019**.
+  - **S-2 (L)** — la survie de la forme « suppression » de M14 n'était justifiée que pour un test. Ajouté (fichier de test
+    seul, commit `67ffa45f`) : « refus de détachement, puis détachement réussi ⇒ le refus d'avant disparaît ». **M14s**
+    (forme « suppression ») rejouée sur ce commit : rouge (`expected <p> to be null`), restaurée. `mut/SYNTHESE.log` corrigé
+    (« survivait faute de test, non à juste titre »).
+  - Vitest du fichier **36/36** ; Vitest complet et `npm run check` au commit `67ffa45f`, voir le Dev Agent Record.
+- 2026-11-12 : **clôture de la boucle de revue de code.** Tendance P1 → P5 :
+
+  | Passe | Modèle | Portée | Résultat | Remédiation |
+  |---|---|---|---|---|
+  | P1 | Sonnet | complète, trois lentilles | 0 C, 0 H, 2 M, 7 L | `c7251f56`, `69855016` |
+  | P2 | Opus | complète, trois lentilles | 0 C, 0 H, 2 M, 9 L | `3f5d36c4` |
+  | P3 | Sonnet | complète, trois lentilles | 0 C, 0 H, 1 M (convergent), 9 L | `7840aab2`, `cf5883e1`, `610f72c4` |
+  | P4 | Haiku | ciblée, une lentille (`7840aab2`) | 0 C, 0 H, 1 M, 2 L | `b01229f6`, `c0ec8440` |
+  | P5 | Sonnet | ciblée, une lentille (`c0ec8440`) | 0 au-dessus de LOW, 2 L | `67ffa45f` (test seul) |
+
+  Le motif connu s'est vérifié : chaque MEDIUM d'après la P1 est né de la remédiation précédente (P2 B-1 de la P1 ; P3 A-1
+  de la P2 ; P4 C-1 de la P3), sauf P2 E-1, défaut de la story. La boucle se clôt sur une passe sans rien au-dessus de LOW,
+  dont la remédiation ne touche que des tests. Mutations M1 à M14s : toutes rouges, sauf la forme « suppression » de M14,
+  tuée à la P5 (`mut/SYNTHESE.log`). Issues ouvertes pendant la story : #975, #985, #986 (gestes hors de la fiche), #1017
+  (bandeau de réessai), #1018 (ordre des relectures), #1019 (S-1) ; #931 (KF-056) a reçu une occurrence.
 
 ## Dev Agent Record
 
@@ -640,6 +664,14 @@ Opus 5.5 (claude-opus-5-5), en autonomie, sous le prompt `kesh-gate-logs/prompts
   rejoué ici.
 - Mutations **M10b** (rejouée), **M10c**, **M13**, **M14** rouges ; tout le relevé dans `mut/SYNTHESE.log`.
 - Décomptes : Vitest `supplier-unknown-outcome-page.test.ts` **35** (32 + M10b + C-1 + C-2) ; Vitest total 2913 → 2916.
+
+### Gates de la clôture (revue P5 ciblée)
+
+- Au commit `67ffa45f` (test seul : aucune ligne de production depuis `c0ec8440`, dont les gates backend et E2E
+  valent) : `npm run check` 0 erreur ; Vitest du fichier **36/36** ; Vitest complet **2917/2917** (223 fichiers), par
+  `.gate-front.lock`. Mutation **M14s** rouge, restaurée.
+- Nettoyage : bases `kesh_e348`, `kesh_e2e_e348`, `kesh_ci_e348` supprimées (story `done`) ; aucun backend, aucun verrou ;
+  le worktree est gardé.
 
 ### File List
 
