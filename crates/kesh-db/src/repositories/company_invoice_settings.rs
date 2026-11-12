@@ -26,7 +26,8 @@ use crate::entities::{
     AccountRole, AccountType, CompanyInvoiceSettings, CompanyInvoiceSettingsUpdate, Journal,
 };
 use crate::errors::{
-    ClaimSide, DbError, NonPostableAccount, NonPostableAccounts, RoundingContext, map_db_error,
+    ClaimSide, DbError, DesignatedSetting, NonPostableAccount, NonPostableAccounts,
+    RoundingContext, WrongTypeDesignatedAccount, WrongTypeDesignatedAccounts, map_db_error,
 };
 use crate::repositories::audit_log;
 
@@ -769,6 +770,30 @@ impl DesignatedRole {
         }
     }
 
+    /// Le type que le **réglage** exige (Story 35-3, #537, D4) : lu dans les
+    /// deux constantes publiques que lit aussi la route de désignation —
+    /// [`CLAIM_SETTING_ACCOUNT_TYPES`] pour la créance et les créanciers,
+    /// [`VAT_SETTING_ACCOUNT_TYPES`] pour la TVA due et la TVA récupérable.
+    pub(in crate::repositories) fn expected_type(self) -> AccountType {
+        match self {
+            DesignatedRole::Receivable => CLAIM_SETTING_ACCOUNT_TYPES.receivable,
+            DesignatedRole::VatPayable => VAT_SETTING_ACCOUNT_TYPES.payable,
+            DesignatedRole::Payable => CLAIM_SETTING_ACCOUNT_TYPES.payable,
+            DesignatedRole::VatRecoverable => VAT_SETTING_ACCOUNT_TYPES.recoverable,
+        }
+    }
+
+    /// Le réglage, sous sa forme publique ([`DesignatedSetting`]), que nomme le
+    /// refus [`DbError::DesignatedAccountsWrongType`].
+    pub(in crate::repositories) fn setting(self) -> DesignatedSetting {
+        match self {
+            DesignatedRole::Receivable => DesignatedSetting::Receivable,
+            DesignatedRole::VatPayable => DesignatedSetting::VatPayable,
+            DesignatedRole::Payable => DesignatedSetting::Payable,
+            DesignatedRole::VatRecoverable => DesignatedSetting::VatRecoverable,
+        }
+    }
+
     /// Les identifiants désignés pour `roles` — les **candidats** d'un flux,
     /// qu'il les écrive ou non ; un champ vide n'y entre pas.
     pub(in crate::repositories) fn candidate_ids(
@@ -809,6 +834,10 @@ pub struct LockedDesignatedAccount {
     pub number: String,
     pub active: bool,
     pub postable: bool,
+    /// Le type, lu dans la même requête verrouillante (Story 35-3, #537, D5) :
+    /// la garde à l'usage le compare au type qu'exige le réglage. L'avoir, qui
+    /// lit aussi ces lignes, ne s'en sert pas.
+    pub account_type: AccountType,
 }
 
 /// L'instantané **verrouillé** des comptes candidats d'un flux, rendu par
@@ -839,14 +868,18 @@ pub struct DesignatedAccountsSnapshot(Vec<LockedDesignatedAccount>);
 ///
 /// # Le verrou : partagé, une requête, `ORDER BY id`
 ///
-/// `SELECT id, number, active, postable FROM accounts FORCE INDEX (PRIMARY)
-/// WHERE company_id = ? AND id IN (…) ORDER BY id LOCK IN SHARE MODE` (syntaxe
-/// MariaDB 10.11 : pas de `FOR SHARE`). L'ordre de verrouillage entre les comptes est celui des
-/// identifiants.
+/// `SELECT id, number, active, postable, account_type FROM accounts FORCE INDEX
+/// (PRIMARY) WHERE company_id = ? AND id IN (…) ORDER BY id LOCK IN SHARE MODE`
+/// (syntaxe MariaDB 10.11 : pas de `FOR SHARE`). L'ordre de verrouillage entre les comptes est celui des
+/// identifiants. Le type (`account_type`, en dernière colonne, Story 35-3) est
+/// lu dans **cette** requête : une lecture séparée, non verrouillante, lirait
+/// l'instantané REPEATABLE READ de l'appelant, ouvert avant le verrou, et
+/// manquerait un retypage validé entre-temps.
 ///
 /// **Pourquoi partagé suffit** (C87) : le verrou n'a qu'un but, qu'aucun
-/// archivage ni passage à non imputable ne s'insère entre le contrôle et
-/// l'insertion de l'écriture. Or ces gestes **écrivent** la ligne du compte —
+/// archivage, passage à non imputable ni **retypage** (Story 35-3, #537) ne
+/// s'insère entre le contrôle et l'insertion de l'écriture. Or ces gestes
+/// **écrivent** la ligne du compte —
 /// `accounts::update` (case *imputable*, rôle, retypage), `accounts::archive`,
 /// la création d'un sous-compte (`UPDATE accounts SET postable = FALSE` sur le
 /// parent) — et tout `UPDATE` prend un verrou **exclusif** de ligne, qui attend
@@ -899,9 +932,14 @@ pub struct DesignatedAccountsSnapshot(Vec<LockedDesignatedAccount>);
 ///
 /// # Ce qui n'est pas contrôlé ici
 ///
-/// - le **type** du compte (angle mort assumé, préexistant — un compte désigné
-///   retypé après sa désignation reste utilisé ; le compte d'arrondi, lui,
-///   contrôle son type) ;
+/// - le **type** du compte est lu ici mais **jugé** au second temps
+///   ([`DesignatedAccountsSnapshot::check_written`], Story 35-3, #537) : cet
+///   angle mort, assumé depuis la 15-5d — un compte désigné retypé après sa
+///   désignation restait utilisé —, est fermé pour les quatre comptes de cette
+///   garde. Le refus vient **après** le verrou : un compte désigné retypé en
+///   charge et imputé par une ligne prend toujours ses deux verrous avant d'être
+///   refusé (le compte d'arrondi, lui, contrôle son type dans son propre
+///   accesseur) ;
 /// - le **compte bancaire** (D-A0, C6), le **compte de produit par défaut**
 ///   (D3-bis de la 16-1a), le compte de **décompte TVA** (lu par aucun flux
 ///   d'écriture) ;
@@ -958,7 +996,7 @@ pub async fn lock_designated_accounts_in_tx(
     // `company_id` (`uq_accounts_company_number`,
     // `uq_accounts_company_singleton_role`) et y poser des verrous d'intervalle.
     let mut qb: QueryBuilder<MySql> = QueryBuilder::new(
-        "SELECT id, number, active, postable FROM accounts FORCE INDEX (PRIMARY) WHERE company_id = ",
+        "SELECT id, number, active, postable, account_type FROM accounts FORCE INDEX (PRIMARY) WHERE company_id = ",
     );
     qb.push_bind(company_id).push(" AND id IN (");
     {
@@ -991,17 +1029,33 @@ impl DesignatedAccountsSnapshot {
     /// identifiants par les réglages qui ont servi à la génération.
     ///
     /// Appelé **entre** la génération des lignes et
-    /// `journal_entries::create_in_tx`. Refuse, dans cet ordre :
+    /// `journal_entries::create_in_tx`. Parcourt **tous** les rôles écrits en
+    /// accumulant les fautes, puis refuse, dans cet ordre de priorité :
     ///
     /// 1. un compte d'un rôle écrit **absent de l'instantané** (inexistant, ou
     ///    d'une autre société) **ou inactif** (archivé) →
     ///    [`DbError::InactiveOrInvalidAccounts`] — le refus que `create_in_tx`
     ///    rend pour ce cas, sans nommer le compte (anti-énumération) ;
-    /// 2. sinon, les comptes de la société, actifs et **non imputables** →
+    /// 2. sinon, les comptes de la société, actifs, dont le **type** n'est pas
+    ///    celui que leur réglage exige ([`DesignatedRole::expected_type`] :
+    ///    un compte retypé après sa désignation, Story 35-3, #537) →
+    ///    [`DbError::DesignatedAccountsWrongType`], un seul refus qui les nomme
+    ///    tous, par numéro ([`WrongTypeDesignatedAccounts::new`]). Un compte à la
+    ///    fois retypé et non imputable n'est nommé que là ;
+    /// 3. sinon, les comptes **non imputables** →
     ///    [`DbError::DesignatedAccountsNotPostable`], un seul refus qui les nomme
     ///    tous. La liste est construite par [`NonPostableAccounts::new`], qui
     ///    **dédoublonne par identifiant** : un même compte désigné pour deux
-    ///    rôles est nommé une fois (C40).
+    ///    rôles est nommé une fois (C40). Depuis la Story 35-3, ce cas ne
+    ///    s'atteint plus que par un montage incohérent : dans un même flux, les
+    ///    deux rôles attendent des types opposés (créance actif et TVA due
+    ///    passif ; créanciers passif et TVA récupérable actif), si bien qu'un
+    ///    compte commun est d'abord refusé pour son type.
+    ///
+    /// Pourquoi accumuler et non rendre au premier compte fautif : un retour
+    /// anticipé sur le type masquerait un compte archivé visité plus tard dans
+    /// l'ordre `Receivable < VatPayable < Payable < VatRecoverable` — et
+    /// l'archivé doit primer.
     ///
     /// Pourquoi ici et non le contrôle de `create_in_tx` : ce dernier est une
     /// lecture **non verrouillante**, qui lit l'instantané REPEATABLE READ ouvert
@@ -1012,6 +1066,7 @@ impl DesignatedAccountsSnapshot {
         roles: &BTreeSet<DesignatedRole>,
         settings: &CompanyInvoiceSettings,
     ) -> Result<(), DbError> {
+        let mut wrong_type: Vec<WrongTypeDesignatedAccount> = Vec::new();
         let mut non_postable: Vec<NonPostableAccount> = Vec::new();
         for role in roles {
             // Un rôle écrit a forcément un compte : le générateur a refusé
@@ -1021,14 +1076,31 @@ impl DesignatedAccountsSnapshot {
                     "rôle de réglage {role:?} écrit par le générateur sans compte désigné"
                 ))
             })?;
+            let expected = role.expected_type();
             match self.0.iter().find(|a| a.id == id) {
-                Some(a) if a.active && a.postable => {}
-                Some(a) if a.active => non_postable.push(NonPostableAccount {
+                // Absent ou archivé : la cause la plus forte, rien ne la masque.
+                Some(a) if !a.active => return Err(DbError::InactiveOrInvalidAccounts),
+                None => return Err(DbError::InactiveOrInvalidAccounts),
+                Some(a) if a.account_type != expected => {
+                    wrong_type.push(WrongTypeDesignatedAccount {
+                        account_id: a.id,
+                        account_number: a.number.clone(),
+                        setting: role.setting(),
+                        expected_type: expected,
+                        actual_type: a.account_type,
+                    })
+                }
+                Some(a) if !a.postable => non_postable.push(NonPostableAccount {
                     account_id: a.id,
                     account_number: a.number.clone(),
                 }),
-                _ => return Err(DbError::InactiveOrInvalidAccounts),
+                Some(_) => {}
             }
+        }
+        if !wrong_type.is_empty() {
+            return Err(DbError::DesignatedAccountsWrongType(
+                WrongTypeDesignatedAccounts::new(wrong_type),
+            ));
         }
         if non_postable.is_empty() {
             Ok(())

@@ -1520,8 +1520,9 @@ async fn matched_transaction_locked(
 /// tiennent puis demandent l'exclusif s'interbloquent), et l'insertion des
 /// lignes reprend les comptes après l'exercice. Les comptes désignés de
 /// `(2, désignés)` (passif, actif) et les comptes de charge (`Expense`) sont
-/// disjoints **tant que les types désignés sont respectés** — ce qui n'est pas
-/// contrôlé après la désignation (angle mort assumé, revue de code P1, B-3) :
+/// disjoints **tant que les types désignés sont respectés** — ce que la garde à
+/// l'usage refuse désormais (Story 35-3, #537), mais **après** les verrous (revue
+/// de code P1, B-3) :
 /// un compte désigné retypé en charge et imputé par une ligne prend un verrou
 /// exclusif en `(2, suite)` puis partagé en `(2, désignés)`, et deux saisies
 /// croisées sur deux tels comptes peuvent s'interbloquer ; ce cycle étroit
@@ -1722,7 +1723,8 @@ pub async fn validate_in_tx(
     // Story 15-5d (#429) — la garde à l'usage : les seuls comptes de réglage
     // écrits (la TVA récupérable seulement si la TVA totale est positive), sur
     // l'instantané verrouillé en (2, désignés). Absent ou archivé →
-    // `InactiveOrInvalidAccounts` ; non imputable →
+    // `InactiveOrInvalidAccounts` ; sinon, type contraire au réglage →
+    // `DesignatedAccountsWrongType` (Story 35-3) ; sinon, non imputable →
     // `DesignatedAccountsNotPostable`.
     designated.check_written(&generated.roles, &settings)?;
     let entry_lines = generated.lines;

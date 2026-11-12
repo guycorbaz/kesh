@@ -2004,9 +2004,11 @@ pub(in crate::repositories) fn generate_invoice_journal_lines_rounded(
 /// `(2 quater)` sont tous deux verrouillés **en partagé** : deux verrous
 /// partagés sont compatibles, leur ordre relatif n'ouvre donc aucun cycle entre
 /// eux, **quel que soit le type** des comptes. Ce n'est pas une disjonction de
-/// types qui le garantit — le type d'un compte désigné n'est pas contrôlé après
-/// sa désignation ([`super::company_invoice_settings`], angle mort assumé), et
-/// un compte retypé peut se retrouver des deux côtés (revue de code P1, B-3).
+/// types qui le garantit : le type d'un compte désigné est désormais refusé à
+/// l'usage (Story 35-3, #537), mais **après** le verrou
+/// ([`super::company_invoice_settings::DesignatedAccountsSnapshot`]), si bien
+/// qu'un compte retypé peut encore se retrouver des deux côtés au moment où les
+/// verrous se prennent (revue de code P1, B-3).
 /// Le verrou des comptes désignés est
 /// **partagé** : il suffit contre l'archivage et le passage à non imputable,
 /// qui écrivent la ligne du compte, et il reste compatible avec les verrous
@@ -2047,6 +2049,9 @@ pub(in crate::repositories) fn generate_invoice_journal_lines_rounded(
 /// seulement si `total_vat > 0`) :
 /// - [`DbError::InactiveOrInvalidAccounts`] : un compte désigné écrit absent,
 ///   d'une autre société ou archivé ;
+/// - [`DbError::DesignatedAccountsWrongType`] : sinon, les comptes désignés
+///   écrits dont le type n'est plus celui de leur réglage, tous nommés (400
+///   `DESIGNATED_ACCOUNT_WRONG_TYPE`, Story 35-3) ;
 /// - [`DbError::DesignatedAccountsNotPostable`] : sinon, les comptes désignés
 ///   écrits non imputables, tous nommés (400 `ACCOUNT_NOT_POSTABLE`).
 pub async fn validate_invoice(
@@ -2381,7 +2386,8 @@ pub async fn validate_invoice(
         // Story 15-5d (#429) — la garde à l'usage : les seuls comptes de réglage
         // que l'écriture écrit (la TVA due seulement si `total_vat > 0`), sur
         // l'instantané verrouillé en (2 bis', suite). Absent ou archivé →
-        // `InactiveOrInvalidAccounts` ; non imputable →
+        // `InactiveOrInvalidAccounts` ; sinon, type contraire au réglage →
+        // `DesignatedAccountsWrongType` (Story 35-3) ; sinon, non imputable →
         // `DesignatedAccountsNotPostable`.
         designated.check_written(&generated.roles, &settings)?;
         let entry_lines = generated.lines;
