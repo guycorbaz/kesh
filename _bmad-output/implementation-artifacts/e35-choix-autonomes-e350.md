@@ -576,6 +576,10 @@ retenue, options écartées, réversibilité. Lignes citées sur `release/0.17.6
 - **Écartées** : (a) découper sans décision de l'orchestrateur : contredit sa consigne ; (b) garder les signatures
   `user_id` des écritures avec une enveloppe : les appelants sortiraient de la vue de la garde.
 - **Réversible** : oui.
+- *(Annoté le 2026-11-13 : **découpé**, sur décision de l'orchestrateur — Guy veut de petites stories. La 35-8a passe à
+  `split` ; **35-8a1** (`35-8a1-audit-acteur-mecanisme.md` : mécanisme, garde et sondes, retour en brouillon fournisseur ;
+  AC3, AC5 ; `refs #431`, `refs #892`) et **35-8a2** (`35-8a2-audit-acteur-ecritures.md` : les écritures ; AC1, AC2, AC4 ;
+  après la 35-8a1 et la 35-5a0 ; `refs #431`), tirées sans réécriture du fond.)*
 
 ### C-e350-51 — 35-1 : le format n'est pas tenu de porter l'année ou l'exercice (décision de l'orchestrateur)
 
