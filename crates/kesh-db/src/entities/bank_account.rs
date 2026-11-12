@@ -131,6 +131,13 @@ pub struct BankAccount {
     /// besoin d'un IBAN (lot `pain.001`, import CAMT, QR-facture) refusent sur
     /// `iban.is_none()`, jamais sur le type (C-e341-18) : un futur type sans
     /// IBAN y tombe sans changement.
+    ///
+    /// ⚠️ Story 34-11a2 (revue P1 de la 34-11a1, B5) — « le compte principal a
+    /// un IBAN » tient **par le type** (`chk_bank_accounts_card_shape` : une
+    /// carte n'est jamais principale ; `chk_bank_accounts_bank_has_iban`), non
+    /// par une contrainte sur `iban IS NULL`. Vrai pour les deux types
+    /// d'aujourd'hui ; un futur type sans IBAN devra ajouter
+    /// `CHECK (is_primary = FALSE OR iban IS NOT NULL)` à sa migration.
     pub iban: Option<String>,
     /// QR-IBAN optionnel (plage QR-IID 30000-31999).
     pub qr_iban: Option<String>,

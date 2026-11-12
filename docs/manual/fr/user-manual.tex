@@ -449,6 +449,8 @@ C'est pourquoi Kesh \textbf{refuse le changement au premier essai} et vous indiq
 \textbf{Si l'historique est important et que le type est faux}, préférez un compte neuf correctement typé : le reclassement rétroactif d'un exercice clos est difficile à justifier devant un contrôleur.
 \end{keshwarning}
 
+\paragraph{Un compte lié à un compte bancaire ou à une carte.} Un compte du plan lié à un compte bancaire \textbf{non archivé} ne change pas de type vers un type que ce lien n'admet plus : un compte bancaire se lie à un actif ou à un passif, une carte de crédit à un \textbf{passif} seulement (\S\ref{sec:carte-credit}). Le refus nomme le compte bancaire (\texttt{ACCOUNT\_LINKED\_TO\_BANK\_ACCOUNT}) et aucune confirmation ne le lève : changez d'abord le compte lié du compte bancaire, sur la page \emph{Comptes bancaires}. Un compte lié à un compte bancaire \textbf{archivé} se retype comme les autres.
+
 \subsection{Suppression d'un compte}
 
 Un compte ne peut être supprimé que s'il n'a aucune écriture ni sous-compte. Sinon, vous pouvez l'\textbf{archiver} (le compte reste visible dans les écritures historiques mais n'est plus proposé à la saisie).
@@ -2366,13 +2368,35 @@ Les comptes bancaires de la société se gèrent dans \emph{Administration} → 
 
 \subsection{La description d'un compte}
 
-Avec une description, Kesh nomme le compte « UBS --- Personnel » partout où il le montre : dans \textbf{les listes de comptes} (cette page, la tuile des comptes de l'accueil, \emph{Paramètres}) et dans \textbf{les sélecteurs} --- import bancaire, réconciliation, règlement d'une facture, règlement d'une facture fournisseur, lot de paiement ---, où l'IBAN reste affiché à la suite. Un compte \textbf{sans description} s'affiche exactement comme avant. Deux comptes peuvent porter la même description : l'IBAN les distingue.
+Avec une description, Kesh nomme le compte « UBS --- Personnel » partout où il le montre : dans \textbf{les listes de comptes} (cette page, la tuile des comptes de l'accueil, \emph{Paramètres}) et dans \textbf{les sélecteurs} --- import bancaire, réconciliation, règlement d'une facture, règlement d'une facture fournisseur, lot de paiement ---, où l'IBAN reste affiché à la suite ; pour une carte de crédit, ce sont ses quatre derniers chiffres, « Visa --- Personnel (\textbullet\textbullet\textbullet\textbullet~1234) » (\S\ref{sec:carte-credit}). Un compte \textbf{sans description} s'affiche exactement comme avant. Deux comptes peuvent porter la même description : l'IBAN les distingue, ou, pour deux cartes, leurs quatre derniers chiffres.
 
 La description ne se saisit pas à l'onboarding, mais ensuite, sur cette page. Elle ne figure \textbf{ni sur la QR-facture ni dans le fichier de paiement} : la QR-facture porte le compte principal, et le fichier de paiement l'IBAN. Elle est dans l'export CSV (\texttt{bank\_accounts.csv}, juste après la banque) et dans la sauvegarde d'installation.
 
 \begin{keshnote}
 Pour qui modifie un compte par l'API : \texttt{PUT /bank-accounts/\{id\}} remplace tous les champs du compte --- un corps qui omet la description l'\textbf{efface}. Le lien au grand livre (\texttt{PATCH}) ne la touche pas.
 \end{keshnote}
+
+\subsection{Une carte de crédit}\label{sec:carte-credit}
+
+Une carte de crédit se tient \textbf{comme un compte}, sur cette même page : à la création, choisissez \emph{Carte de crédit} au lieu de \emph{Compte bancaire}. Le type se choisit \textbf{une fois} : il s'affiche ensuite dans le formulaire de modification, mais ne se change plus --- pour changer de type, créez un autre compte. Une carte porte :
+
+\begin{itemize}
+    \item l'\textbf{émetteur} (« Visa », « Mastercard ») et une \textbf{description} éventuelle, comme un compte bancaire ;
+    \item ses \textbf{quatre derniers chiffres}, facultatifs, pour la reconnaître dans les listes (« \textbullet\textbullet\textbullet\textbullet~1234 ») ;
+    \item un \textbf{compte de dette lié}, \textbf{obligatoire} : un compte de \textbf{passif} (par exemple 2030 \emph{Carte de crédit}). La liste n'en propose pas d'autres, et le serveur refuse une carte sans compte lié, ou liée à un actif (\texttt{CREDIT\_CARD\_LEDGER\_MUST\_BE\_LIABILITY}) ; le lien d'une carte se change, il ne se retire pas.
+\end{itemize}
+
+Une carte n'a \textbf{ni IBAN, ni QR-IBAN}, et n'est \textbf{jamais} le compte principal : les champs ne s'affichent pas pour elle.
+
+\begin{keshwarning}
+\textbf{Kesh ne garde jamais le numéro complet d'une carte} --- seulement les quatre derniers chiffres que vous saisissez. Un nom ou une description qui contient un numéro de carte complet est \textbf{refusé} (« ressemble à un numéro de carte complet ») : retirez le numéro et gardez, au besoin, les quatre derniers chiffres dans leur champ. La garde vaut pour les deux types de compte et à l'onboarding. Elle reconnaît un numéro de 13 à 19 chiffres, écrit d'un bloc ou par groupes (par quatre, ou à la manière d'American Express et de Diners), séparés par des espaces ou des tirets, dont le préfixe est celui d'un réseau et dont la clé de contrôle est juste : un IBAN, une référence QR, un numéro de téléphone ou une date ne sont pas refusés. Elle protège d'une \textbf{saisie accidentelle}, elle n'est pas un filtre : un numéro suivi de sa date d'expiration, écrit avec des points, ou précédé d'autres chiffres, n'est pas reconnu. Un compte existant dont le nom porterait un tel numéro serait refusé à sa prochaine modification --- il faut alors l'en retirer.
+\end{keshwarning}
+
+\paragraph{Ce que la carte ne fait pas.} Elle ne porte pas de QR-facture (c'est le compte principal qui la porte), ne débite pas de lot de paiement \texttt{pain.001} (elle n'est pas proposée comme compte source) et n'accepte pas de relevé CAMT.053, qui se choisit par l'IBAN : l'import ne lui offre que le CSV, et la saisie manuelle du relevé reste ouverte.
+
+\paragraph{Où elle est proposée.} Au \textbf{paiement d'une facture fournisseur} payée avec la carte (l'écriture débite les créanciers et crédite la dette de la carte), à l'import CSV, au relevé saisi, à la réconciliation et au lien au plan comptable. Elle n'est \textbf{pas} proposée au \textbf{règlement d'une facture client} --- un client ne paie pas sur votre carte --- et le serveur le refuse (\texttt{SETTLEMENT\_ACCOUNT\_IS\_CREDIT\_CARD}). Seule exception, assumée : à la réconciliation, une transaction de la carte peut solder une facture client par sa proposition « facture » (un remboursement reçu sur la carte).
+
+\paragraph{Solde d'ouverture.} Une carte qui porte déjà une dette à sa création se saisit comme un compte bancaire, avec le sens \emph{Dette}.
 
 \subsection{Clore un compte bancaire}\label{sec:clore-compte-bancaire}
 
