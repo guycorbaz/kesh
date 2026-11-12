@@ -187,13 +187,14 @@ retenue, options écartées, réversibilité. Lignes citées sur `release/0.17.6
   les quatre gestes ; rien n'est envoyé. Pas par `errorMsg`, qui remplace la liste.
 - **Réversible** : oui.
 - *(Annoté le 2026-11-12, validation P1 de la 35-4 : **révisé par C-e350-18** — garde défensive, sans cause nommée.)*
+- *(Annoté le 2026-11-12, validation P2 de la 35-4 : **remplacé par C-e350-20** — plus d'avis.)*
 
 ### C-e350-8, extension du 2026-11-12 — fichiers communs des stories 35-4, 35-5a, 35-5b, 35-6
 
 - **`messages.ftl` ×4** : chaque story écrit ses clés **à côté de son bloc** : 35-4 près de
   `reconciliation-labels-already-booked-confirm-*` ; 35-6 près de `bank-accounts-opening-*` ; 35-5a/35-5b, s'il leur en
   faut, près de la clé qu'elles touchent. Jamais en fin de fichier.
-- **`user-manual.tex`** : 35-4 `:3107` ; 35-6 `:2456` (et `:2462` si touché) ; 35-5a les phrases « aujourd'hui » du solde
+- **`user-manual.tex`** : 35-4 `:3097`, `:3107` *(`:3097` ajouté le 2026-11-12, validation P2 de la 35-4)* ; 35-6 `:2456` (et `:2462` si touché) ; 35-5a les phrases « aujourd'hui » du solde
   d'ouverture et du verrou de période ; 35-5b les autres. Paragraphes distincts ; le PDF se régénère après l'union.
 - **`crates/kesh-api/src/routes/opening_balances.rs`** : 35-6 `parse_complement_amount` (`:515-530`) ; 35-5a la date du
   jour (`:244`, `:604`). Hunks distincts ; si les deux sont en vol, 35-6 fusionne d'abord (plus courte).
@@ -280,6 +281,7 @@ retenue, options écartées, réversibilité. Lignes citées sur `release/0.17.6
   source, l'intégration le recompte après chaque fusion, sans additionner.
 - **Écartées** : (a) promettre un avis et une capture inatteignables ; (b) fermer #1024 sans rien changer : le silence reste
   possible sous un futur déclencheur de relecture.
+- *(Annoté le 2026-11-12, validation P2 de la 35-4 : le point (1) est **remplacé par C-e350-20**.)*
 - **Réversible** : oui.
 
 ### C-e350-19 — 35-6 : ce qui est accepté aujourd'hui reste accepté (principe posé par l'orchestrateur)
@@ -297,3 +299,14 @@ retenue, options écartées, réversibilité. Lignes citées sur `release/0.17.6
 - **Réversible** : oui.
 - **Commentaires déjà rédigés pour #1050 et #1051** (validation P1) : ils disaient que la 0.17.7 ferait refuser `1_000` au
   complément ; c'est faux depuis ce choix — correction à poster par l'orchestrateur.
+
+### C-e350-20 — 35-4 : une relecture de la liste referme la confirmation (décision demandée par l'orchestrateur)
+
+- **Contexte** : validation P2 de la 35-4, V2-2. La cause du silence de #1024 est que `load()` ne referme pas la
+  confirmation : le dialogue, dans la branche de la liste, est démonté puis remonté **ouvert** sur des transactions périmées.
+  L'avis de C-e350-18 ne venait qu'après le clic.
+- **Retenu** : `load()` pose `pendingGesture = null` : une confirmation ouverte sur des lignes périmées ne peut jamais être
+  validée. Plus d'avis, de clé ni de région de statut. La PR porte `refs #1024` ; l'orchestrateur ferme l'issue à la main
+  avec le commentaire de la fiche (D5).
+- **Écartée** : l'avis après le clic : plus de code, une confirmation périmée encore affichée, un texte sans cause.
+- **Réversible** : oui.
