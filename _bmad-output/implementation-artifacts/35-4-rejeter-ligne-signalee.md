@@ -98,8 +98,9 @@ Tout est dans `frontend/src/lib/features/reconciliation/` :
 - **D3 — #1024 : une relecture referme la confirmation** (C-e350-20, remplace l'avis de C-e350-18). `load()` pose
   `pendingGesture = null;` en tête, **sans lire `pendingGesture` auparavant** (pas de `if (pendingGesture) …`) : `load()` est
   appelé par un `$effect`, qui suit ce que la fonction lit avant son premier `await` (`:164-165`) ; une lecture ferait de
-  chaque `guard` le déclencheur d'une relecture, qui refermerait aussitôt la confirmation (AC1 le verrait) ; `confirmTransactions` n'est pas vidé (le dialogue garde sa liste pendant sa transition de
-  fermeture). Une confirmation ouverte sur des lignes périmées **ne peut jamais** être validée ; il n'y a plus de clic sans
+  chaque `guard` le déclencheur d'une relecture, qui refermerait aussitôt la confirmation (AC1 le verrait).
+- **D3 (suite) — ce que la relecture laisse.** `confirmTransactions` n'est pas vidé (le dialogue garde sa liste pendant sa
+  transition de fermeture). Une confirmation ouverte sur des lignes périmées **ne peut jamais** être validée ; il n'y a plus de clic sans
   effet à signaler, donc **aucun avis**, aucune clé, aucune région `role="status"`. `if (!current) return;` (`:347`) et les
   gardes `selected.size === 0` restent, défensives. Les findings de l'avis (V2-1, V2-9) sont sans objet.
 - **D4 — Clés**, sous le préfixe `reconciliation-labels-already-booked-` : `…-confirm-intro-reject-one`,
@@ -292,3 +293,11 @@ M7 le compte de l'intro pris sur les signalées (AC1) ; M8 `-one` et `-other` in
   - Aucun choix nouveau au registre (les corrections sont des faits relus au code).
   - Symptômes greppés (fiche, registre, fichier d'epic) : `1757-1781`, « autre onglet », `failed[]`, « elle rend », `:805` —
     remplacés dans la fiche, annotés au registre (C-e350-18) ; fichier d'epic : rien.
+- 2026-11-12 — **Validation P4, passe ciblée** (Sonnet) sur la remédiation P3 : 0 finding au-dessus de LOW, 1 LOW
+  (`kesh-gate-logs/e35-4-validation-p4-ciblee.md`). V4-1 appliqué : la puce D3 coupée en deux (« D3 (suite) »), sans
+  changement de fond.
+- 2026-11-12 — **Validation terminée.** Série des findings au-dessus de LOW : P1 9 MEDIUM → P2 3 → P3 2 → P4 0 (CRITICAL et
+  HIGH : 0 à chaque passe). Modèles : Opus (P1), Sonnet (P2), Opus (P3), Sonnet en passe ciblée (P4). La boucle se clôt sur
+  une passe sans finding au-dessus de LOW ; la remédiation de V4-1 ne touche que la rédaction. Choix retenus : **C-e350-18**
+  (point (3), `sitesTotal` sous la règle d'union ; points (1) remplacé et (2) l'issue #1052) et **C-e350-20** (une relecture
+  referme la confirmation). Statut : `ready-for-dev`.
