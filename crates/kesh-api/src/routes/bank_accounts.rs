@@ -1094,6 +1094,10 @@ async fn create_once(
         // Story 34-2 (#533, AC-10) — l'écriture d'ouverture, AVANT la démotion et
         // l'INSERT : aucune lecture ordinaire ne l'a précédée (voir le
         // doc-comment). Un refus abandonne tout — ni compte, ni démotion.
+        // Intégration de la 0.17.6 (C-e34a2-1, raccord 4) : elle vient APRÈS
+        // `recheck_ledger_type_in_tx` (une lecture verrouillante) — un refus de
+        // type n'écrit aucune écriture d'ouverture. Tenu par
+        // `carte_refusee_par_la_relecture_du_type_n_ecrit_aucune_ouverture`.
         let opening_entry = match (opening, journal_account_id) {
             (Some(request), Some(account_id)) => {
                 Some(post_opening_entry_in_tx(&mut tx, current_user, account_id, request).await?)

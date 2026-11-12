@@ -910,6 +910,111 @@ async fn ecriture_croisee_pendant_la_creation_est_vue(pool: MySqlPool) {
 }
 
 // ===========================================================================
+// Carte de crédit et solde d'ouverture — raccords d'intégration de la 0.17.6
+// (fiche 34-11a2, C-e34a2-1)
+// ===========================================================================
+
+fn card_body(journal_account_id: i64) -> Value {
+    json!({
+        "bankName": "Visa",
+        "accountKind": "credit_card",
+        "journalAccountId": journal_account_id,
+    })
+}
+
+/// Raccord (2) — une carte, liée à un passif, se crée avec son solde
+/// d'ouverture au sens `credit` (*Dette*) : le compte de dette au crédit, le
+/// report au débit.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn carte_creee_avec_son_solde_d_ouverture(pool: MySqlPool) {
+    let ctx = setup(&pool).await;
+    let (status, body) = ctx
+        .post(
+            "/api/v1/bank-accounts",
+            with_opening(card_body(ctx.overdraft), "120.50", "credit"),
+        )
+        .await;
+    assert_eq!(status, 201, "{body}");
+    assert_eq!(body["accountKind"], json!("credit_card"));
+    let entry_id = body["openingEntry"]["id"].as_i64().expect("openingEntry");
+    assert_eq!(
+        lines_of(&pool, entry_id).await,
+        sorted(vec![
+            (ctx.overdraft, Decimal::ZERO, dec!(120.50)),
+            (ctx.retained, dec!(120.50), Decimal::ZERO),
+        ])
+    );
+}
+
+/// Raccord (4) — le complément de la 34-2 passe **après** la relecture du type
+/// (`recheck_ledger_type_in_tx`) : une carte dont le compte lié devient un actif
+/// pendant la création (retypage commité pendant que la création attend la
+/// ligne `accounts`) est refusée `CREDIT_CARD_LEDGER_MUST_BE_LIABILITY` par la
+/// relecture, et **aucune écriture d'ouverture** n'est écrite, ni compte.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn carte_refusee_par_la_relecture_du_type_n_ecrit_aucune_ouverture(pool: MySqlPool) {
+    let ctx = setup(&pool).await;
+    let banks = bank_account_count(&pool).await;
+    let entries = entry_count(&pool).await;
+
+    // Le retypage : la ligne du compte lié tenue `FOR UPDATE`, son type changé
+    // en actif, non commité. Le pré-vol de la création lit le pool sans verrou
+    // (il voit encore un passif) ; la relecture attend la ligne.
+    let mut tx = pool.begin().await.unwrap();
+    sqlx::query("SELECT id FROM accounts WHERE id = ? FOR UPDATE")
+        .bind(ctx.overdraft)
+        .execute(&mut *tx)
+        .await
+        .unwrap();
+    sqlx::query("UPDATE accounts SET account_type = 'Asset' WHERE id = ?")
+        .bind(ctx.overdraft)
+        .execute(&mut *tx)
+        .await
+        .unwrap();
+
+    let task = {
+        let client = ctx.app.client.clone();
+        let url = ctx.app.url("/api/v1/bank-accounts");
+        let token = ctx.token.clone();
+        let body = with_opening(card_body(ctx.overdraft), "50", "credit");
+        tokio::spawn(async move {
+            let resp = client
+                .post(url)
+                .header("Authorization", format!("Bearer {token}"))
+                .json(&body)
+                .send()
+                .await
+                .unwrap();
+            let status = resp.status().as_u16();
+            (status, resp.json::<Value>().await.unwrap())
+        })
+    };
+    assert!(
+        attendre_une_requete_en_cours(
+            &pool,
+            &["account_type, active FROM accounts", "LOCK IN SHARE MODE"],
+            || task.is_finished(),
+        )
+        .await,
+        "la création doit attendre la ligne du compte lié à la relecture du type"
+    );
+    tx.commit().await.unwrap();
+
+    let (status, body) = task.await.unwrap();
+    assert_eq!(status, 400, "{body}");
+    assert_eq!(
+        body["error"]["code"],
+        json!("CREDIT_CARD_LEDGER_MUST_BE_LIABILITY")
+    );
+    assert_eq!(
+        entry_count(&pool).await,
+        entries,
+        "aucune écriture d'ouverture"
+    );
+    assert_eq!(bank_account_count(&pool).await, banks, "aucun compte créé");
+}
+
+// ===========================================================================
 // Compte existant : POST /bank-accounts/{id}/opening-balance (AC-6)
 // ===========================================================================
 
