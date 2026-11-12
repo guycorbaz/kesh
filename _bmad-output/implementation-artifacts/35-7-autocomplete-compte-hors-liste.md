@@ -112,8 +112,10 @@ restauré **avec** `allowClear`. `ManualMatchModal.test.ts:183` (bouton désacti
    dans le même sélecteur que l'écriture manuelle ») ; `:3186` (« La contrepartie n'est jamais le compte de la banque » :
    « Ce filtrage n'est toutefois pas complet »). Contrôle sur `:3105-3190`
    (`sed -n 3105,3190p docs/manual/fr/user-manual.tex | /usr/bin/grep -nE "vide|effac|quitt|tap|filtrage"`). **Tranché**
-   (validation P2) : `:3186` gagne une demi-phrase après « pas complet » — « ; un compte de la banque choisi avant que Kesh
-   l'ait identifié est ensuite retiré du champ, qui se vide » —, `:3121` et `:3180` restent tels quels (ils ne disent rien du
+   (validation P2, placement précisé en P3) : `:3186` gagne une demi-phrase **après** « c'est le refus qui protège le grand
+   livre », la proposition d'origine gardée entière — « … pas complet~: c'est le refus qui protège le grand livre~; un compte
+   de la banque choisi avant que Kesh l'ait identifié est ensuite retiré du champ, qui se vide. » —, `:3121` et `:3180`
+   restent tels quels (ils ne disent rien du
    champ quand on le quitte, que D2 change). PDF régénéré, contrôlé aplati (`pdftotext … | tr '\n' ' ' | tr -s ' '`) :
    présence de « retiré du champ » (sans ligature). CHANGELOG `## [0.17.7] — Non
    publié`, *Corrigé*, un point `refs #1000` (C-e350-8).
@@ -144,7 +146,8 @@ l'`$effect` d'*Écriture manuelle* retiré (AC3) ; M1 est aussi tuée par AC7, �
 - [ ] Étape 0 : relire les lignes citées sur `main` ; `git grep -n "<AccountAutocomplete" -- frontend/src` (sept sites) ;
       le grep des « 4 consommateurs » de D2, sortie citée au Change Log.
 - [ ] Tests, rouges consignés ; `AccountAutocomplete.svelte` (D2, avec ses commentaires) et son test ;
-      `reconciliation-counterparties.ts` (D1), les deux dialogues ; l'E2E d'AC7 ; CHANGELOG ; captures.
+      `reconciliation-counterparties.ts` (D1), les deux dialogues ; l'E2E d'AC7 ; manuel (`user-manual.tex:3186`) et PDF
+      régénéré, contrôlé aplati (AC5) ; CHANGELOG ; captures.
 - [ ] Gates : frontend complet (`npm run check`, `lint-i18n-ownership`, `test:unit`, `build`) ; E2E complet au dernier
       commit de code (`reconciliation-manual.spec.ts`, `reconciliation-manual-entry.spec.ts`, `reconciliation-split.spec.ts`, `journal-entries.spec.ts` en particulier).
       Backend : rien ne change côté Rust ; le gate backend complet n'est dû qu'au push de la branche d'intégration.
@@ -221,3 +224,12 @@ fait que la rejouer. Écrit aussi au fichier d'epic (validation P1, V1-6).
   - LOW : V2-2 (AC3 : ligne 1 avec compte et montant) ; V2-3 (AC4 : `VatPurchaseAssistant` sans suite de composant) ;
     V2-4 (AC1 : mode dégradé avec `onSelect` simulé, `value` non mise à jour).
   - Symptôme greppé : `3105-3135` — ne reste que dans l'entrée passée de P1.
+- 2026-11-13 — **Validation P3, passe ciblée** (Sonnet) sur la remédiation P2 : 0 finding au-dessus de LOW, 2 LOW
+  (`kesh-gate-logs/e35-7-validation-p3-ciblee.md`). Appliqués : V3-1 (manuel `:3186` et PDF aux *Tâches* ;
+  `user-manual.tex` à la ligne 35-7 du fichier d'epic) ; V3-2 (la demi-phrase placée après « c'est le refus qui protège le
+  grand livre », la proposition d'origine gardée entière). Rédaction seule.
+- 2026-11-13 — **Validation terminée.** Série des findings au-dessus de LOW : P1 2 MEDIUM → P2 1 → P3 0 (CRITICAL et HIGH :
+  0). Modèles : Sonnet (P1), Opus (P2), Sonnet en passe ciblée (P3). La boucle se clôt sur une passe sans finding au-dessus
+  de LOW ; la remédiation de P3 ne touche que la rédaction. Choix retenus : **C-e350-36** (un compte que le dialogue ne
+  propose plus est retiré de la sélection) et **C-e350-37** (sur un champ obligatoire, quitter le champ jette le brouillon).
+  Statut : `ready-for-dev`.
