@@ -1,3 +1,6 @@
+# last_updated: 2026-11-10 (Epic 34 : validation des treize fiches terminée — e343 en P5, e342 en P7 (34-10), e341 en P6 (34-11a2) ; huit stories en développement)
+# last_updated: 2026-11-10 (Epic 34 : douze fiches écrites en autonomie, ready-for-dev ; issues #973 à #980 ouvertes ; validation P1 à lancer)
+# last_updated: 2026-11-10 (Epic 34 ouvert, kickoff : epic-34-reconciliation-comptes-bancaires.md ; douze stories au backlog, cible v0.17.6)
 # last_updated: 2026-11-10 (rétrospective de l'Epic 33 tenue avec Guy, epic-33-retro-2026-11-10.md ; epic-33 done)
 # last_updated: 2026-11-07 (release 0.17.5 : treize branches de l'Epic 33 fusionnées sur release/0.17.5, gates et recettes de montée jouées ; 33-11 reste review, AC-6 sur la PR ; epic-33 in-progress jusqu'à la rétrospective)
 # last_updated: 2026-11-07 (Epic 33 : 33-12a et 33-12b done, #941 ; validation close au plafond de huit passes, revue de code P1 à P4 close sur 0 au-dessus de LOW ; dernier gate complet à 80bc4363)
@@ -1022,3 +1025,20 @@ development_status:
   33-12a-jeu-caracteres-qr: done  # 2026-11-07 : #941, P1, trouvée à la revue de la 33-5
   33-12b-adresse-imprimee-qr: done  # 2026-11-07 : #941, NPA et localité absents du reçu et de la partie paiement
   epic-33-retrospective: done
+  epic-34: in-progress
+  34-0-kickoff: done  # 2026-11-10 : epic-34-reconciliation-comptes-bancaires.md ; 261 issues et 109 bugs au tag v0.17.5 ; objectif : moins de chacun au tag v0.17.6.
+  34-1-assistant-compte-bancaire: ready-for-dev  # #966
+  34-2-solde-ouverture-compte-bancaire: ready-for-dev  # #533
+  34-3-ecriture-manuelle: ready-for-dev  # #967
+  34-4-transaction-deja-comptabilisee: ready-for-dev  # #828
+  34-5-reglement-idempotent: ready-for-dev  # #951, P1 ; sans migration (version obligatoire, C-e343-1)
+  34-6-societe-apres-409: ready-for-dev  # #953
+  34-7-exercice-interblocage: ready-for-dev  # #945
+  34-8-fournisseur-relecture-apres-commit: ready-for-dev  # #938
+  34-9-rapport-import-dossier: ready-for-dev  # #969
+  34-10-graphiques-couleurs-unies: ready-for-dev  # #970
+  34-11a-carte-credit-compte: split  # 2026-11-10, validation P1 : découpée en 34-11a1 et 34-11a2
+  34-11a1-compte-sans-iban: ready-for-dev  # #972 ; migration breaking (min_required 0.17.6) ; après 34-3
+  34-11a2-carte-credit-creation: ready-for-dev  # #972 ; après 34-11a1
+  34-11b-carte-credit-releve: ready-for-dev  # #972 ; après 34-11a2 et 34-4
+  epic-34-retrospective: optional
