@@ -648,6 +648,7 @@ async fn archived_rounding_refuses_what_writes_a_rounding(pool: MySqlPool) {
         },
         dec!(10.01),
         NaiveDate::from_ymd_opt(2026, 4, 2).unwrap(),
+        common::invoice_version(&pool, invoice).await,
     )
     .await
     .expect_err("l'écart d'arrondi n'a plus de compte");
@@ -764,7 +765,7 @@ async fn archived_receivable_refuses_the_settlement_of_a_validated_invoice_until
         .await
         .expect("validée sur ce compte");
     let settle = |amount: Decimal| {
-        invoice_settlements_write::settle_invoice(
+        common::settle_at_current_version(
             &pool,
             seeded.admin_user_id,
             seeded.company_id,

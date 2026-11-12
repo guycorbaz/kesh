@@ -120,6 +120,29 @@ impl OpeningComplementRefusal {
     }
 }
 
+/// Portée d'un complément — Story 34-2 (#533, C-e341-6).
+///
+/// Le mécanisme est **un** (date, contrepartie, refus, écriture) ; seule la
+/// portée décide du refus [`OpeningComplementRefusal::NoEntries`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ComplementScope {
+    /// L'écran *Soldes de départ*, mode *Compléter* (Story 25-7) : une société
+    /// sans écriture est refusée `NoEntries` — la génération générale de
+    /// l'ouverture s'y applique. Comportement d'avant la 34-2, inchangé.
+    Screen,
+    /// Le solde d'ouverture d'**un** compte bancaire, saisi à sa création ou
+    /// depuis sa ligne (Story 34-2) : le refus `NoEntries` est levé, puisque le
+    /// cas nominal est une installation neuve, sans écriture. Deux branches
+    /// distinctes : **aucun exercice** → `NoOpenFiscalYear` ; un premier
+    /// exercice → le test « la société a des écritures » n'est pas fait. Le reste
+    /// (date, refus par compte, contrepartie) est celui de `Screen`.
+    ///
+    /// Conséquence assumée : une fois cette écriture passée, la génération
+    /// générale est refusée (`ALREADY_HAS_ENTRIES`) et l'écran *Soldes de
+    /// départ* passe en mode *Compléter*.
+    SingleBankLedger,
+}
+
 /// Une ligne saisie : montants déjà validés par le handler (strictement
 /// positifs, une seule colonne non nulle, au plus quatre décimales).
 #[derive(Debug, Clone)]
@@ -430,6 +453,10 @@ fn refused(reason: OpeningComplementRefusal, account: Option<(i64, Option<String
 /// 6. contrepartie sur le compte de report ;
 /// 7. `accounting::validate`, puis `create_in_tx` (qui reverrouille l'exercice
 ///    déjà tenu, numérote, audite `journal_entry.created`).
+///
+/// Enveloppe de [`create_opening_complement_in_tx`] en portée
+/// [`ComplementScope::Screen`] — signature inchangée depuis la 25-7 (Story
+/// 34-2, AC-1).
 pub async fn create_opening_complement(
     pool: &MySqlPool,
     company_id: i64,
@@ -455,7 +482,7 @@ pub async fn create_opening_complement(
     }
     let owned = owned_account_ids(pool, company_id, lines).await?;
     let mut tx = pool.begin().await.map_err(map_db_error)?;
-    match create_in_open_tx(
+    match create_opening_complement_in_tx(
         &mut tx,
         company_id,
         user_id,
@@ -463,6 +490,7 @@ pub async fn create_opening_complement(
         &owned,
         description,
         today,
+        ComplementScope::Screen,
     )
     .await
     {
@@ -499,8 +527,28 @@ async fn owned_account_ids(
         .map_err(map_db_error)
 }
 
+/// Le complément **dans la transaction de l'appelant** — Story 34-2 (#533,
+/// AC-1). Seule implémentation : [`create_opening_complement`] l'enveloppe
+/// (portée `Screen`), la création d'un compte bancaire et sa route de ligne
+/// l'appellent en portée [`ComplementScope::SingleBankLedger`].
+///
+/// `owned` : les identifiants, parmi ceux des lignes, des comptes **de la
+/// société**, établis par l'appelant **hors** de la transaction (aucun verrou
+/// n'est pris sur le compte d'une autre société). Pour un compte bancaire, le
+/// compte lié, déjà contrôlé de la société (`validate_journal_account_id` à la
+/// création ; lien posé sous ce contrôle pour la route de ligne — un compte ne
+/// change jamais de société).
+///
+/// ⚠️ **Contrat de l'appelant** : avant cet appel, la transaction n'a fait
+/// **que des lectures verrouillantes** (`FOR UPDATE`, `LOCK IN SHARE MODE`) ou
+/// aucune lecture. Une lecture ordinaire ouvrirait l'instantané REPEATABLE READ
+/// avant les verrous du complément, et la lecture « jamais mouvementé » ne
+/// verrait pas une ligne commitée entre-temps (Story 34-2, AC-10).
+///
+/// L'appelant conclut la transaction (commit ou rollback) ; sur refus, rien
+/// n'a été écrit par cette fonction.
 #[allow(clippy::too_many_arguments)]
-async fn create_in_open_tx(
+pub async fn create_opening_complement_in_tx(
     tx: &mut Transaction<'_, MySql>,
     company_id: i64,
     user_id: i64,
@@ -508,7 +556,12 @@ async fn create_in_open_tx(
     owned: &[i64],
     description: String,
     today: NaiveDate,
+    scope: ComplementScope,
 ) -> Result<JournalEntryWithLines, DbError> {
+    // Au moins une ligne : la lecture « jamais mouvementé » construit un `IN`.
+    if lines.is_empty() {
+        return Err(DbError::InvalidInput("opening-complement:no-lines".into()));
+    }
     // --- 1. La société, en partagé. -------------------------------------
     let company: Option<(Option<NaiveDate>,)> = sqlx::query_as(
         "SELECT books_locked_through FROM companies WHERE id = ? LOCK IN SHARE MODE",
@@ -585,10 +638,23 @@ async fn create_in_open_tx(
         .fetch_all(&mut **tx)
         .await
         .map_err(map_db_error)?;
-    let entries = has_entries(&mut **tx, company_id).await?;
+    // « La société a des écritures » : lue pour la seule portée `Screen`.
+    let entries = match scope {
+        ComplementScope::Screen => has_entries(&mut **tx, company_id).await?,
+        ComplementScope::SingleBankLedger => true,
+    };
 
     // --- 5. Les refus, dans l'ordre de priorité. --------------------------
-    let Some(first) = first.filter(|_| entries) else {
+    // Deux branches distinctes pour `SingleBankLedger` (Story 34-2, M7) :
+    // sans exercice, `NoOpenFiscalYear` — jamais `NoEntries`, qui renverrait à
+    // la génération générale ; avec un premier exercice, aucun test d'écritures.
+    let first = match (scope, first) {
+        (ComplementScope::SingleBankLedger, None) => {
+            return Err(refused(OpeningComplementRefusal::NoOpenFiscalYear, None));
+        }
+        (_, first) => first.filter(|_| entries),
+    };
+    let Some(first) = first else {
         return Err(refused(OpeningComplementRefusal::NoEntries, None));
     };
     let date = decide_date(&first, candidate.as_ref(), locked_through, today)

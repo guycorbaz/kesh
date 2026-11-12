@@ -1576,3 +1576,29 @@ async fn refusals_come_in_order_file_lines_gap(pool: MySqlPool) {
     );
     assert_eq!(d["expected_opening_balance"], "900.00");
 }
+
+/// Story 34-11a1 (#972, AC-6 ; revue P1, A9) — un relevé saisi à la main est
+/// accepté sur un compte **sans IBAN** (carte forgée en base, liée à un compte de
+/// dette) : la saisie ne lit que `counterparty_iban`, jamais l'IBAN du compte.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn create_accepts_an_account_without_iban(pool: MySqlPool) {
+    let c = setup(&pool).await;
+    let dette = create_account(&pool, c.company_id, "2051", "Liability").await;
+    let carte = sqlx::query(
+        "INSERT INTO bank_accounts (company_id, bank_name, account_kind, iban, card_last4, \
+         journal_account_id) VALUES (?, 'Visa', 'credit_card', NULL, '1234', ?)",
+    )
+    .bind(c.company_id)
+    .bind(dette)
+    .execute(&pool)
+    .await
+    .unwrap()
+    .last_insert_id() as i64;
+    let app = spawn_app(pool.clone()).await;
+    let (status, b) = preview(&app, &c.jwt, &body(carte)).await;
+    assert_eq!(status, 200, "aperçu : {b}");
+    let (status, b) = create(&app, &c.jwt, &body(carte)).await;
+    assert_eq!(status, 201, "création : {b}");
+    assert_eq!(b["bankAccountId"], carte);
+    assert_eq!(b["sourceFormat"], "MANUAL");
+}

@@ -4,6 +4,8 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { authState } from '$lib/app/stores/auth.svelte';
 import {
 	closeBankAccount,
+	createBankAccount,
+	enterOpeningBalance,
 	listBankAccounts,
 	reopenBankAccount,
 	updateBankAccountJournalLink,
@@ -280,5 +282,74 @@ describe('bank-accounts.api — comptes clos (28-4b)', () => {
 		expect(init.method).toBe('POST');
 		expect(JSON.parse(init.body as string)).toEqual({ version: 3 });
 		expect(a.closedOn).toBeNull();
+	});
+});
+
+// Story 34-2 (#533) — le solde d'ouverture : la création rend l'écriture passée
+// avec le compte, et la route de ligne envoie le montant et le sens.
+describe("bank-accounts.api — solde d'ouverture (34-2)", () => {
+	let mockFetch: ReturnType<typeof vi.fn>;
+	const COMPTE = {
+		id: 8,
+		bankName: 'UBS',
+		description: 'Personnel',
+		iban: 'CH9300762011623852957',
+		qrIban: null,
+		isPrimary: false,
+		journalAccountId: 40,
+		version: 1,
+		archived: false,
+		closedOn: null,
+	};
+	const ENTREE = { id: 3, entryNumber: 12, entryDate: '2026-01-01', fiscalYearId: 2 };
+
+	function reponse(body: unknown) {
+		return {
+			ok: true,
+			status: 201,
+			json: () => Promise.resolve(body),
+			headers: new Headers(),
+		} as Response;
+	}
+
+	beforeEach(() => {
+		authState.clearSession();
+		authState.login({ userId: '1', username: 'test', role: 'Admin', expiresIn: 900 });
+		mockFetch = vi.fn();
+		vi.stubGlobal('fetch', mockFetch);
+	});
+	afterEach(() => {
+		vi.unstubAllGlobals();
+		authState.clearSession();
+	});
+
+	it('la création rend le compte et openingEntry', async () => {
+		mockFetch.mockResolvedValue(reponse({ ...COMPTE, openingEntry: ENTREE }));
+		const r = await createBankAccount({
+			bankName: 'UBS',
+			iban: COMPTE.iban,
+			journalAccountId: 40,
+			openingBalance: { amount: '100', side: 'debit' },
+		});
+		expect(r.account.id).toBe(8);
+		expect(r.openingEntry).toEqual(ENTREE);
+		const [, init] = mockFetch.mock.calls[0] as [string, RequestInit];
+		expect(JSON.parse(init.body as string).openingBalance).toEqual({ amount: '100', side: 'debit' });
+	});
+
+	it('sans écriture, openingEntry vaut null', async () => {
+		mockFetch.mockResolvedValue(reponse(COMPTE));
+		const r = await createBankAccount({ bankName: 'UBS', iban: COMPTE.iban });
+		expect(r.openingEntry).toBeNull();
+	});
+
+	it('la route de ligne poste le montant et le sens', async () => {
+		mockFetch.mockResolvedValue(reponse(ENTREE));
+		const e = await enterOpeningBalance(8, { amount: '75.25', side: 'credit' });
+		expect(e).toEqual(ENTREE);
+		const [url, init] = mockFetch.mock.calls[0] as [string, RequestInit];
+		expect(url).toContain('/api/v1/bank-accounts/8/opening-balance');
+		expect(init.method).toBe('POST');
+		expect(JSON.parse(init.body as string)).toEqual({ amount: '75.25', side: 'credit' });
 	});
 });

@@ -125,7 +125,9 @@ test('un pays inconnu est refusé à l’écran, avec le code, et rien n’est �
 	}
 });
 
-test('écriture concurrente : le conflit de version est signalé, puis l’essai suivant passe', async ({
+// Story 34-6 (#953, AC-1) — récrit : ce test affirmait le défaut. La ville `Nyon`, écrite
+// par l'autre, était écrasée au second clic sans avoir été montrée.
+test('écriture concurrente : la valeur enregistrée entre-temps est montrée avant d’être remplacée', async ({
 	page,
 }) => {
 	await login(page);
@@ -143,13 +145,23 @@ test('écriture concurrente : le conflit de version est signalé, puis l’essai
 
 		await page.getByTestId('settings-company-address-city-input').fill('Morges');
 		await page.getByTestId('settings-company-address-save').click();
-		await expect(page.getByTestId('settings-company-address-error')).toContainText(
-			'Conflit de version',
-		);
 
-		// Les données rechargées portent la nouvelle version : le nouvel essai aboutit.
+		// La ville relue est affichée sous son champ, la saisie reste, l'avis le dit.
+		await expect(page.getByTestId('settings-company-address-conflict-changed-city')).toContainText(
+			'Nyon',
+		);
+		await expect(page.getByTestId('settings-company-address-conflict-notice')).toContainText(
+			'remplacera',
+		);
+		await expect(page.getByTestId('settings-company-address-city-input')).toHaveValue('Morges');
+
+		// Rien n'est écrit tant que l'Administrateur n'a pas cliqué de nouveau.
+		expect((await readCompany(ctx)).addressStructured.city).toBe('Nyon');
+
+		// Second clic : `Morges` est écrit.
 		await page.getByTestId('settings-company-address-save').click();
 		await expect(page.getByTestId('settings-company-address')).toContainText('Morges');
+		expect((await readCompany(ctx)).addressStructured.city).toBe('Morges');
 	} finally {
 		await restoreAddress(ctx, initial);
 		await disposeContextSafe(ctx);

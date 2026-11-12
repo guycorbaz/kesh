@@ -410,10 +410,13 @@ describe("fiche facture fournisseur — joindre (AC20)", () => {
     expect(queryByTestId("supplier-invoice-detach-error")).toBeNull();
   });
 
-  it("revue P1 : un refus qui ne dit rien des données (500) ne relit rien", async () => {
+  // Story 34-8 (#938, AC-8) : un 5xx n'est plus un refus mais une issue inconnue,
+  // qui relit (`supplier-unknown-outcome-page.test.ts`) ; le refus qui ne dit rien
+  // des données est désormais un 403.
+  it("revue P1 : un refus qui ne dit rien des données (403) ne relit rien", async () => {
     getMock.mockResolvedValue(inv({ sourceDocument: null }));
     listImportedMock.mockResolvedValue([staged()]);
-    attachMock.mockRejectedValue(apiError("INTERNAL_ERROR", 500, "Panne."));
+    attachMock.mockRejectedValue(apiError("FORBIDDEN", 403, "Panne."));
     const { findByTestId } = render(Page);
     await fireEvent.click(await findByTestId("supplier-invoice-attach"));
     await fireEvent.click(await findByTestId("attach-document-submit"));
@@ -486,8 +489,10 @@ describe("fiche facture fournisseur — détacher (AC24)", () => {
 
   it("revue P1 (B1 = E1 = A2) : refus non lié aux données ⇒ message, le document reste, le bouton redevient actif et un second essai part (mutation M-c24)", async () => {
     getMock.mockResolvedValue(inv({ sourceDocument: DOC }));
+    // Story 34-8 (#938, AC-8) : 403 et non plus 500, qui se lit désormais « issue
+    // inconnue » et relit la facture.
     detachMock
-      .mockRejectedValueOnce(apiError("INTERNAL_ERROR", 500, "Panne."))
+      .mockRejectedValueOnce(apiError("FORBIDDEN", 403, "Panne."))
       .mockResolvedValueOnce(inv({ sourceDocument: null }));
     const { findByTestId, getByTestId } = render(Page);
     const button = await findByTestId("supplier-invoice-detach");

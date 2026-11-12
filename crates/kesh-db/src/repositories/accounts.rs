@@ -41,6 +41,14 @@ const COLUMNS: &str = columns!();
 /// duplication que le `format!` cherchait à éviter.
 const FIND_BY_ID_SQL: &str = concat!("SELECT ", columns!(), " FROM accounts WHERE id = ?");
 
+/// [`FIND_BY_ID_SQL`] sous verrou exclusif — tête du retypage (Story 34-11a2,
+/// C-e341-40).
+const FIND_BY_ID_FOR_UPDATE_SQL: &str = concat!(
+    "SELECT ",
+    columns!(),
+    " FROM accounts WHERE id = ? FOR UPDATE"
+);
+
 /// Snapshot JSON d'un compte pour l'audit log (Story 3.5).
 ///
 /// Contient les champs essentiels pour reconstituer l'état du compte
@@ -379,6 +387,118 @@ pub async fn number_in_company(
         .map_err(map_db_error)
 }
 
+/// Verrou d'une lecture de compte par rôle singleton
+/// ([`find_singleton_role_in_tx`]) — Story 34-1 (#966).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RoleLookupLock {
+    /// Lecture ordinaire, sans verrou de ligne : l'appelant tient déjà de quoi
+    /// sérialiser (l'étape bancaire de l'assistant tient `onboarding_state` en
+    /// `FOR UPDATE`, et la finalisation reverrouille ces lignes).
+    None,
+    /// `FOR UPDATE` : la ligne du compte (et l'entrée d'index du rôle, ou
+    /// l'intervalle où elle serait) reste verrouillée jusqu'à la fin de la
+    /// transaction — la finalisation de l'assistant
+    /// (`company_invoice_settings::insert_with_defaults_in_tx`).
+    ForUpdate,
+}
+
+/// L'identifiant du compte **actif** qui porte le rôle singleton `role`, lu dans
+/// la transaction de l'appelant — `None` si aucun compte actif ne le porte
+/// (Story 34-1, #966, T3).
+///
+/// Interroge la colonne générée `singleton_role` (le rôle si le compte est actif
+/// et le rôle singleton, `NULL` sinon), donc l'index unique
+/// `uq_accounts_company_singleton_role` : au plus une ligne, et le filtre
+/// `active` est déjà encodé. ⛔ Lit le **rôle**, jamais le numéro (Story 14-3a) :
+/// un plan renuméroté est suivi.
+///
+/// Source unique de cette lecture : la finalisation de l'assistant
+/// (`insert_with_defaults_in_tx`, trois rôles, [`RoleLookupLock::ForUpdate`]) et
+/// l'étape bancaire de l'assistant (comptes `Receivable` et `Payable` qu'un
+/// compte bancaire ne peut pas lier, [`RoleLookupLock::None`]).
+pub async fn find_singleton_role_in_tx(
+    tx: &mut sqlx::Transaction<'_, sqlx::MySql>,
+    company_id: i64,
+    role: AccountRole,
+    lock: RoleLookupLock,
+) -> Result<Option<i64>, DbError> {
+    let sql = match lock {
+        RoleLookupLock::None => {
+            "SELECT id FROM accounts WHERE company_id = ? AND singleton_role = ? ORDER BY id LIMIT 1"
+        }
+        RoleLookupLock::ForUpdate => {
+            "SELECT id FROM accounts WHERE company_id = ? AND singleton_role = ? ORDER BY id LIMIT 1 FOR UPDATE"
+        }
+    };
+    sqlx::query_scalar::<_, i64>(sql)
+        .bind(company_id)
+        .bind(role)
+        .fetch_optional(&mut **tx)
+        .await
+        .map_err(map_db_error)
+}
+
+/// Le **type** et l'état actif d'un compte de la société, lus dans la
+/// transaction de l'appelant **sous verrou partagé** (`LOCK IN SHARE MODE`) —
+/// Story 34-11a2 (#972, C-e341-40). `None` si la ligne est absente.
+///
+/// Sert la création, le `PUT` et le `PATCH` d'un compte bancaire : ils relisent
+/// le type du compte lié dans leur transaction, **après** les réglages et
+/// **avant** la ligne `bank_accounts` (ordre global `companies` → réglages →
+/// `accounts` → `bank_accounts`). Le retypage (`update`) prend la même ligne
+/// `FOR UPDATE` en tête : les deux gestes se sérialisent sur elle, et aucun ne
+/// laisse une carte liée à un compte qui n'est plus un passif.
+///
+/// ⚠️ `LOCK IN SHARE MODE`, pas `FOR SHARE` (erreur de syntaxe sur MariaDB 10.11).
+pub async fn type_in_share_mode(
+    conn: &mut sqlx::MySqlConnection,
+    company_id: i64,
+    account_id: i64,
+) -> Result<Option<(AccountType, bool)>, DbError> {
+    sqlx::query_as(
+        "SELECT account_type, active FROM accounts WHERE id = ? AND company_id = ? LOCK IN SHARE MODE",
+    )
+    .bind(account_id)
+    .bind(company_id)
+    .fetch_optional(conn)
+    .await
+    .map_err(map_db_error)
+}
+
+/// Le premier compte bancaire **non archivé** lié au compte `account_id` dont le
+/// type n'admet pas `new_type`, par `id` — `(id, nom d'affichage)` — Story
+/// 34-11a2 (#972, C-e341-31). Lecture `LOCK IN SHARE MODE` : elle voit la
+/// dernière version commitée (un lien posé pendant que le retypage attendait la
+/// ligne `accounts`). Un compte bancaire **archivé** ne compte pas : il ne se
+/// modifie plus et ne sert plus. Un compte **clos** compte : il se rouvre.
+async fn first_linked_bank_account_refusing(
+    tx: &mut sqlx::Transaction<'_, sqlx::MySql>,
+    company_id: i64,
+    account_id: i64,
+    new_type: AccountType,
+) -> Result<Option<(i64, String)>, DbError> {
+    use crate::entities::{BankAccountKind, bank_account::bank_account_display_name};
+    let rows: Vec<(i64, BankAccountKind, String, Option<String>)> = sqlx::query_as(
+        "SELECT id, account_kind, bank_name, description FROM bank_accounts \
+         WHERE company_id = ? AND journal_account_id = ? AND archived = FALSE \
+         ORDER BY id LOCK IN SHARE MODE",
+    )
+    .bind(company_id)
+    .bind(account_id)
+    .fetch_all(&mut **tx)
+    .await
+    .map_err(map_db_error)?;
+    Ok(rows
+        .into_iter()
+        .find(|(_, kind, _, _)| !kind.admits_ledger_type(new_type))
+        .map(|(id, _, bank_name, description)| {
+            (
+                id,
+                bank_account_display_name(&bank_name, description.as_deref()),
+            )
+        }))
+}
+
 /// `include_archived` : si `false`, seuls les comptes actifs sont retournés.
 /// Pas de pagination — un plan comptable est borné à ~200-400 comptes.
 pub async fn list_by_company(
@@ -485,6 +605,20 @@ where
 /// changement est refusé par [`DbError::AccountHasEntries`], qui en nomme
 /// l'ampleur. ⚠️ Il ne dispense d'**aucune** autre garde — ni du verrou
 /// optimiste, ni de l'interdit sur compte archivé.
+///
+/// Story 34-11a2 (#972, C-e341-31, C-e341-40) — la ligne `accounts` est prise
+/// **`FOR UPDATE` en tête** (elle était lue sans verrou), puis un changement de
+/// type est refusé par [`DbError::AccountLinkedToBankAccount`] si un compte
+/// bancaire **non archivé** lié à ce compte n'admet plus le nouveau type (carte :
+/// passif seulement ; compte bancaire : actif ou passif), avant la garde des
+/// écritures. La création, le `PUT` et le `PATCH` d'un compte bancaire relisent
+/// le type du compte lié `LOCK IN SHARE MODE` dans leur transaction
+/// ([`type_in_share_mode`]) : les deux gestes se sérialisent sur cette ligne.
+/// Un retypage qui passe le premier fait refuser le lien ; un lien qui passe le
+/// premier est vu ici, sa transaction commitée avant que le `FOR UPDATE` ne
+/// rende la main (la lecture des comptes bancaires est elle-même verrouillante,
+/// donc la dernière version commitée). Ordre des verrous : `accounts` puis
+/// `bank_accounts`, celui des routes bancaires.
 pub async fn update(
     pool: &MySqlPool,
     id: i64,
@@ -497,8 +631,9 @@ pub async fn update(
 
     let mut tx = pool.begin().await.map_err(map_db_error)?;
 
-    // Snapshot "before" AVANT l'UPDATE, dans la même transaction.
-    let before_opt = sqlx::query_as::<_, Account>(FIND_BY_ID_SQL)
+    // Snapshot "before" AVANT l'UPDATE, dans la même transaction — sous
+    // `FOR UPDATE` depuis la Story 34-11a2 (C-e341-40).
+    let before_opt = sqlx::query_as::<_, Account>(FIND_BY_ID_FOR_UPDATE_SQL)
         .bind(id)
         .fetch_optional(&mut *tx)
         .await
@@ -534,11 +669,11 @@ pub async fn update(
         ..changes
     };
 
-    // KF-004 : court-circuit no-op AVANT toute mutation.
-    // NOTE concurrence (KF-004): sous REPEATABLE READ + plain SELECT, si une tx
-    // parallèle commit entre notre BEGIN et ce check, on retourne notre snapshot
-    // stale au lieu d'un 409. Race acceptée v0.1 (cf. spec 7-3 §race-condition).
-    // Mitigation future: SELECT FOR UPDATE partout (non v0.1).
+    // KF-004 : court-circuit no-op AVANT toute mutation. Depuis la Story
+    // 34-11a2 (C-e341-40), `before` est lu sous `FOR UPDATE` : la course que
+    // décrivait ici la note KF-004 (snapshot périmé d'un `SELECT` sans verrou,
+    // cf. spec 7-3 §race-condition) n'existe plus — une transaction concurrente
+    // commitée est vue, et sa version rend 409 plus haut.
     if is_no_op_change(&before, &changes) {
         tx.rollback().await.map_err(map_db_error)?;
         return Ok(before);
@@ -573,6 +708,19 @@ pub async fn update(
     // différence pour qui relira le journal.
     let mut retype_trace: Option<(i64, Vec<String>)> = None;
     if before.account_type != changes.account_type {
+        // Story 34-11a2 (C-e341-31) — un compte bancaire non archivé lié à ce
+        // compte doit admettre le nouveau type ; sinon refus, qu'aucune
+        // confirmation ne lève. Avant la garde des écritures.
+        if let Some((bank_account_id, bank_account_name)) =
+            first_linked_bank_account_refusing(&mut tx, before.company_id, id, changes.account_type)
+                .await?
+        {
+            tx.rollback().await.map_err(map_db_error)?;
+            return Err(DbError::AccountLinkedToBankAccount {
+                bank_account_id,
+                bank_account_name,
+            });
+        }
         let (entry_count, closed_fiscal_years) =
             retype_impact(&mut *tx, before.company_id, id).await?;
         if entry_count > 0 {

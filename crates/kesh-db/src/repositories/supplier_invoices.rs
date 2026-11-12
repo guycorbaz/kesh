@@ -1049,32 +1049,39 @@ async fn attribute_internal_number_in_tx(
     )))
 }
 
-/// Valide un brouillon, transaction comprise — cf. [`validate_in_tx`].
+/// Valide un brouillon, transaction comprise — cf. [`validate_in_tx`]. Rend la
+/// **vue** de la facture validée, lue dans la transaction avant son commit
+/// ([`commit_with_view`], Story 34-8, #938).
+///
+/// ⚠️ N'emploie plus `in_own_tx!` : la garde de structure de la 34-8 lit cette
+/// fonction par `syn`, qui ne voit pas les jetons d'une macro.
 pub async fn validate(
     pool: &MySqlPool,
     company_id: i64,
     id: i64,
     version: i32,
     user_id: i64,
-) -> Result<SupplierInvoiceWithLines, DbError> {
-    in_own_tx!(pool, |tx| validate_in_tx(
-        &mut tx, company_id, id, version, user_id
-    )
-    .await)
+) -> Result<SupplierInvoiceSettlementView, DbError> {
+    let mut tx = pool.begin().await.map_err(map_db_error)?;
+    let result = validate_in_tx(&mut tx, company_id, id, version, user_id).await;
+    let (view, _) = commit_with_view(tx, company_id, result, |_| id).await?;
+    Ok(view)
 }
 
-/// Dévalide une facture, transaction comprise — cf. [`unvalidate_in_tx`].
+/// Dévalide une facture, transaction comprise — cf. [`unvalidate_in_tx`]. Rend
+/// la vue de la facture repassée en brouillon, lue avant le commit
+/// ([`commit_with_view`], Story 34-8).
 pub async fn unvalidate(
     pool: &MySqlPool,
     company_id: i64,
     id: i64,
     version: i32,
     user_id: i64,
-) -> Result<SupplierInvoiceWithLines, DbError> {
-    in_own_tx!(pool, |tx| unvalidate_in_tx(
-        &mut tx, company_id, id, version, user_id
-    )
-    .await)
+) -> Result<SupplierInvoiceSettlementView, DbError> {
+    let mut tx = pool.begin().await.map_err(map_db_error)?;
+    let result = unvalidate_in_tx(&mut tx, company_id, id, version, user_id).await;
+    let (view, _) = commit_with_view(tx, company_id, result, |_| id).await?;
+    Ok(view)
 }
 
 /// **Dévalide** une facture fournisseur validée (Story v017-4a, #849, AC-11 ;
@@ -1887,6 +1894,8 @@ pub async fn purchase_payable_line(
 
 /// Règle une facture fournisseur `open` (choix binaire). Poste l'écriture de
 /// règlement et passe en `paid`. Refuse si la facture est dans un lot `generated`.
+/// Rend la vue de la facture payée, lue avant le commit ([`commit_with_view`],
+/// Story 34-8, #938).
 pub async fn pay(
     pool: &MySqlPool,
     company_id: i64,
@@ -1894,7 +1903,7 @@ pub async fn pay(
     choice: SettlementChoice,
     payment_date: chrono::NaiveDate,
     user_id: i64,
-) -> Result<SupplierInvoiceWithLines, DbError> {
+) -> Result<SupplierInvoiceSettlementView, DbError> {
     let mut tx = pool.begin().await.map_err(map_db_error)?;
     let result = async {
         // Guard lot-membership dans le wrapper (JAMAIS dans pay_in_tx — H-FRESH-1).
@@ -1902,17 +1911,8 @@ pub async fn pay(
         pay_in_tx(&mut tx, company_id, id, choice, payment_date, user_id).await
     }
     .await;
-
-    match result {
-        Ok(v) => {
-            tx.commit().await.map_err(map_db_error)?;
-            Ok(v)
-        }
-        Err(e) => {
-            let _ = tx.rollback().await;
-            Err(e)
-        }
-    }
+    let (view, _) = commit_with_view(tx, company_id, result, |_| id).await?;
+    Ok(view)
 }
 
 /// Cœur du règlement d'une facture, **tx-aware et GUARD-FREE** pour la
@@ -2675,23 +2675,18 @@ pub async fn cancel_in_tx(
 }
 
 /// Annule une facture fournisseur, transaction comprise — cf. [`cancel_in_tx`].
+/// Rend la vue de la facture annulée, lue avant le commit ([`commit_with_view`],
+/// Story 34-8, #938).
 pub async fn cancel(
     pool: &MySqlPool,
     company_id: i64,
     id: i64,
     user_id: i64,
-) -> Result<SupplierInvoiceWithLines, DbError> {
+) -> Result<SupplierInvoiceSettlementView, DbError> {
     let mut tx = pool.begin().await.map_err(map_db_error)?;
-    match cancel_in_tx(&mut tx, company_id, id, user_id).await {
-        Ok(done) => {
-            tx.commit().await.map_err(map_db_error)?;
-            Ok(done)
-        }
-        Err(e) => {
-            let _ = tx.rollback().await;
-            Err(e)
-        }
-    }
+    let result = cancel_in_tx(&mut tx, company_id, id, user_id).await;
+    let (view, _) = commit_with_view(tx, company_id, result, |_| id).await?;
+    Ok(view)
 }
 
 // ---------------------------------------------------------------------------
@@ -2947,24 +2942,37 @@ pub async fn cancel_settlement_in_tx(
     })
 }
 
-/// Annule le règlement d'une facture fournisseur, transaction comprise.
+/// Ce que rend l'**enveloppe** [`cancel_settlement`] (Story 34-8, #938) : la vue
+/// de la facture revenue à `open`, lue dans la transaction avant son commit, et
+/// l'écriture inverse.
+///
+/// ⚠️ Type propre à l'enveloppe : [`SupplierSettlementCancellation`], que rend
+/// [`cancel_settlement_in_tx`] et qu'emploie l'annulation d'un rapprochement, ne
+/// change pas — lui faire porter la vue ajouterait des lectures à ce chemin. Le
+/// champ garde le nom `invoice` : `done.invoice.invoice.status` se lit de même.
+#[derive(Debug, Clone)]
+pub struct SupplierSettlementCancelled {
+    /// La vue de la facture, revenue à `open`.
+    pub invoice: SupplierInvoiceSettlementView,
+    /// L'écriture inverse, datée du jour.
+    pub reversal_journal_entry_id: i64,
+}
+
+/// Annule le règlement d'une facture fournisseur, transaction comprise. Rend la
+/// vue de la facture, lue avant le commit ([`commit_with_view`], Story 34-8).
 pub async fn cancel_settlement(
     pool: &MySqlPool,
     company_id: i64,
     id: i64,
     user_id: i64,
-) -> Result<SupplierSettlementCancellation, DbError> {
+) -> Result<SupplierSettlementCancelled, DbError> {
     let mut tx = pool.begin().await.map_err(map_db_error)?;
-    match cancel_settlement_in_tx(&mut tx, company_id, id, user_id).await {
-        Ok(done) => {
-            tx.commit().await.map_err(map_db_error)?;
-            Ok(done)
-        }
-        Err(e) => {
-            let _ = tx.rollback().await;
-            Err(e)
-        }
-    }
+    let result = cancel_settlement_in_tx(&mut tx, company_id, id, user_id).await;
+    let (view, done) = commit_with_view(tx, company_id, result, |_| id).await?;
+    Ok(SupplierSettlementCancelled {
+        invoice: view,
+        reversal_journal_entry_id: done.reversal_journal_entry_id,
+    })
 }
 
 /// Une facture fournisseur, ses lignes, et ce qui décide de l'annulation de
@@ -2999,34 +3007,61 @@ pub struct SupplierInvoiceSettlementView {
 /// `SUPPLIER_INVOICE_NOT_PAID`. ⚠️ Aucune de ces lectures ne doit devenir
 /// verrouillante (`FOR UPDATE`) : une lecture verrouillante lit le dernier état
 /// validé, **hors** de l'instantané.
+///
+/// La lecture elle-même est [`get_settlement_view_in_tx`] (Story 34-8, #938) ;
+/// cette forme lui ouvre une transaction de lecture et la valide.
 pub async fn get_settlement_view(
     pool: &MySqlPool,
     company_id: i64,
     id: i64,
 ) -> Result<Option<SupplierInvoiceSettlementView>, DbError> {
     let mut tx = pool.begin().await.map_err(map_db_error)?;
+    let view = get_settlement_view_in_tx(&mut tx, company_id, id).await?;
+    tx.commit().await.map_err(map_db_error)?;
+    Ok(view)
+}
+
+/// [`get_settlement_view`] **dans une transaction fournie**, sans `BEGIN` ni
+/// `COMMIT` (Story 34-8, #938) : la vue d'une facture, ou `None` si elle n'existe
+/// pas pour cette société.
+///
+/// ⛔ **Aucune de ces lectures ne doit devenir verrouillante** (règle de
+/// [`get_settlement_view`]) : la preuve d'exécution du périmètre « lecture
+/// seule » des services (`kesh-api/tests/services_rollout.rs`) passe par elle.
+///
+/// ⚠️ **Lue dans la transaction d'écriture** ([`commit_with_view`], C-e343-10) :
+/// une lecture ordinaire y voit l'instantané pris à la **première** lecture
+/// ordinaire de cette transaction, plus ses propres écritures. Ce que la
+/// transaction a écrit — facture, lignes, statut, version, document — est donc
+/// juste. Ce qui vient d'autres lignes (lot confirmé, rapprochement, période
+/// close par une autre écriture) peut dater du début de la transaction : les
+/// drapeaux d'annulation (`settlement_cancel_blocker`, `invoice_cancel_blocker`)
+/// sont **indicatifs**, et le geste suivant les recalcule sous verrou.
+pub async fn get_settlement_view_in_tx(
+    tx: &mut sqlx::Transaction<'_, sqlx::MySql>,
+    company_id: i64,
+    id: i64,
+) -> Result<Option<SupplierInvoiceSettlementView>, DbError> {
     let Some(invoice) = sqlx::query_as::<_, SupplierInvoice>(FIND_SCOPED_SQL)
         .bind(id)
         .bind(company_id)
-        .fetch_optional(&mut *tx)
+        .fetch_optional(&mut **tx)
         .await
         .map_err(map_db_error)?
     else {
         return Ok(None);
     };
-    let lines = fetch_lines(&mut tx, invoice.id).await?;
-    let settlement_cancel_blocker =
-        supplier_settlement_cancel_blocker(&mut tx, company_id, id).await?;
-    let invoice_cancel_blocker = supplier_invoice_cancel_blocker(&mut tx, company_id, id).await?;
+    let lines = fetch_lines(tx, invoice.id).await?;
+    let settlement_cancel_blocker = supplier_settlement_cancel_blocker(tx, company_id, id).await?;
+    let invoice_cancel_blocker = supplier_invoice_cancel_blocker(tx, company_id, id).await?;
     let last_confirmed_batch =
-        super::payment_batches::last_confirmed_batch_for_invoice(&mut *tx, company_id, id).await?;
+        super::payment_batches::last_confirmed_batch_for_invoice(&mut **tx, company_id, id).await?;
     // Story 30-2c (AC18) — le document, lu dans le même instantané (lecture
     // ordinaire : la seule lecture du staging de ce fichier, jamais verrouillante).
     let source_document = super::imported_supplier_invoices::find_by_supplier_invoice_id_scoped(
-        &mut *tx, company_id, id,
+        &mut **tx, company_id, id,
     )
     .await?;
-    tx.commit().await.map_err(map_db_error)?;
     Ok(Some(SupplierInvoiceSettlementView {
         invoice,
         lines,
@@ -3035,6 +3070,58 @@ pub async fn get_settlement_view(
         last_confirmed_batch,
         source_document,
     }))
+}
+
+/// Termine une transaction d'écriture sur une facture fournisseur **en lisant sa
+/// vue avant de la valider** (Story 34-8, #938, C-e343-15) : la réponse d'un geste
+/// dit ce qui a été écrit, sans relecture après le commit — celle qui rendait 404
+/// ou 500 pour un geste réussi.
+///
+/// - Sur `Err`, annule la transaction et rend l'erreur ; `view_id` n'est pas
+///   appelée.
+/// - Sur `Ok`, lit la vue de la facture `view_id(&résultat)` par
+///   [`get_settlement_view_in_tx`], **puis** valide. L'identifiant vient d'une
+///   fermeture parce que la complétion d'un document **crée** la facture : il
+///   n'existe qu'au retour de l'écriture.
+/// - ⛔ **Pas de commit sans réponse** (AC-5) : une lecture de vue en échec, ou
+///   une vue absente (`None`) après une écriture réussie — un
+///   [`DbError::Invariant`] —, annule la transaction. Rien n'est écrit dont la
+///   réponse ne pourrait pas être rendue.
+///
+/// Générique sur l'erreur (`E: From<DbError>`) pour servir aussi les tentatives
+/// `_once` de `kesh-api`, qui travaillent en `AppError` : une seule
+/// lecture-puis-commit. Une fonction ordinaire, non une macro, pour que la garde
+/// de structure (`kesh-api/tests/supplier_invoice_response_e2e.rs`) la lise.
+pub async fn commit_with_view<T, E: From<DbError>>(
+    mut tx: sqlx::Transaction<'_, sqlx::MySql>,
+    company_id: i64,
+    result: Result<T, E>,
+    view_id: impl FnOnce(&T) -> i64,
+) -> Result<(SupplierInvoiceSettlementView, T), E> {
+    let done = match result {
+        Ok(done) => done,
+        Err(e) => {
+            let _ = tx.rollback().await;
+            return Err(e);
+        }
+    };
+    let id = view_id(&done);
+    let view = match get_settlement_view_in_tx(&mut tx, company_id, id).await {
+        Ok(Some(view)) => view,
+        Ok(None) => {
+            let _ = tx.rollback().await;
+            return Err(DbError::Invariant(format!(
+                "facture fournisseur {id} introuvable après son écriture"
+            ))
+            .into());
+        }
+        Err(e) => {
+            let _ = tx.rollback().await;
+            return Err(e.into());
+        }
+    };
+    tx.commit().await.map_err(map_db_error)?;
+    Ok((view, done))
 }
 
 // ---------------------------------------------------------------------------

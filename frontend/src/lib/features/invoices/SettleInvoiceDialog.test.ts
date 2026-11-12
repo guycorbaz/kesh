@@ -169,6 +169,22 @@ describe('SettleInvoiceDialog — la contrepartie n’est pas le compte débiteu
 		expect((document.getElementById('settle-bank') as HTMLSelectElement).value).toBe('2');
 	});
 
+	// Story 34-11a2 (#972, C-e341-32, M7) — un client ne paie pas sur la carte du titulaire.
+	it('une carte de crédit n’est pas proposée au règlement client, sans accuser le compte débiteurs (mutation M7 : filtre des cartes retiré)', async () => {
+		const carte = {
+			...compte(3, 2030),
+			accountKind: 'credit_card',
+			iban: null,
+			cardLast4: '4821',
+		} as BankAccountSummary;
+		monter([CAISSE, DEBITEURS], [compte(2, 1020, true), carte]);
+		await waitFor(() => expect(options('settle-bank')).toEqual(['2']));
+		cleanup();
+		monter([CAISSE, DEBITEURS], [carte]);
+		await waitFor(() => expect(options('settle-bank')).toEqual([]));
+		expect(document.body.textContent).not.toContain(EMPTY);
+	});
+
 	it('`accounts` arrivé APRÈS l’ouverture ne réinitialise pas la saisie (mutation : présélection dans l’effet de réinitialisation)', async () => {
 		// Hôte qui passe les props une à une (cf. son en-tête : `rerender` les changerait toutes).
 		const { getByTestId } = render(SettleInvoiceDialogHost, {

@@ -1508,7 +1508,7 @@ async fn repasser(
     pool: &MySqlPool,
     seeded: &SeededCompany,
     a: Annulee,
-) -> Result<supplier_invoices::SupplierInvoiceWithLines, DbError> {
+) -> Result<supplier_invoices::SupplierInvoiceSettlementView, DbError> {
     supplier_invoices::unvalidate(
         pool,
         seeded.company_id,

@@ -245,7 +245,8 @@ async fn migrations_kesh_version_initial_row(pool: MySqlPool) {
         .await
         .expect("SELECT _kesh_version failed");
 
-    assert_eq!(min_required, "0.17.0");
+    // Story 34-11a1 (#972) : dernier bump, 0.17.6 (compte sans IBAN).
+    assert_eq!(min_required, "0.17.6");
     assert_eq!(last_applied, "0.1.0");
     // last_boot_at reste NULL tant que record_boot_version() n'a pas été
     // appelé (le test n'invoque pas la boot integration de main.rs).

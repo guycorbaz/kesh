@@ -50,6 +50,11 @@ vi.mock('$lib/shared/utils/i18n.svelte', () => ({
 }));
 vi.mock('$app/navigation', () => ({ goto: vi.fn() }));
 vi.mock('svelte-sonner', () => ({ toast: { success: vi.fn(), error: toastError } }));
+// Story 34-1 : l'étape 6 lit le plan pour proposer le compte lié ; une liste vide
+// garde ces scénarios hors réseau (et sans `console.error` d'un échec de chargement).
+vi.mock('$lib/features/accounts/accounts.api', () => ({
+	fetchAccounts: vi.fn().mockResolvedValue([]),
+}));
 
 import * as api from '$lib/features/onboarding/onboarding.api';
 import { onboardingState } from '$lib/features/onboarding/onboarding.svelte';

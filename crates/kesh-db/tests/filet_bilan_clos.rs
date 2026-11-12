@@ -33,6 +33,9 @@ use kesh_db::test_fixtures::{SeededCompany, seed_accounting_company};
 use rust_decimal_macros::dec;
 use sqlx::MySqlPool;
 
+#[path = "support/reglement_version.rs"]
+mod reglement_version;
+
 fn d(y: i32, m: u32, day: u32) -> NaiveDate {
     NaiveDate::from_ymd_opt(y, m, day).unwrap()
 }
@@ -352,6 +355,7 @@ async fn le_reglement_d_une_facture_est_refuse(pool: MySqlPool) {
         },
         dec!(500.00),
         d(2026, 7, 1),
+        reglement_version::version_de(&pool, inv).await,
     )
     .await;
     assert_posterieur_clos(r, n1, "Exercice 2027");

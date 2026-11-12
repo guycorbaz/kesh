@@ -49,6 +49,8 @@ mod document_group;
 #[path = "../../kesh-db/tests/support/fournisseur_rapproche.rs"]
 mod fournisseur_rapproche;
 
+mod common;
+
 const TEST_JWT_SECRET: &[u8] = b"test-secret-32-bytes-minimum-test-secret-padding";
 const TEST_ADMIN_PASSWORD: &str = "e2e-test-admin-password";
 
@@ -4596,6 +4598,7 @@ async fn cancelling_one_of_two_settlements_keeps_the_other(pool: MySqlPool) {
             "bankAccountId": ctx.bank_account_id,
             "amount": "250.00",
             "settledOn": "2026-05-20",
+            "version": common::invoice_version(&pool, inv_id).await,
         }))
         .send()
         .await
@@ -5517,6 +5520,7 @@ async fn accept_refuses_when_a_partial_manual_settlement_lands_meanwhile(pool: M
         },
         dec!(400.00),
         day,
+        common::invoice_version(&pool, inv_id).await,
     )
     .await
     .expect("règlement manuel partiel");
@@ -7370,6 +7374,7 @@ async fn accept_race_refuses_before_any_lettering(pool: MySqlPool) {
         },
         dec!(1000.00),
         day,
+        common::invoice_version(&pool, inv_id).await,
     )
     .await
     .expect("règlement manuel");

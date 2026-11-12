@@ -8,7 +8,7 @@ use axum::extract::State;
 use serde::{Deserialize, Serialize};
 
 use kesh_db::entities::audit_log::NewAuditLogEntry;
-use kesh_db::entities::{BankAccount, Company, CompanyUpdate};
+use kesh_db::entities::{BankAccount, BankAccountKind, Company, CompanyUpdate};
 use kesh_db::errors::map_db_error;
 use kesh_db::repositories::{audit_log, bank_accounts, companies};
 
@@ -415,8 +415,13 @@ pub struct BankAccountJson {
     /// du nom des comptes de *Paramètres*, de l'import bancaire et de la
     /// réconciliation.
     pub description: Option<String>,
-    pub iban: String,
+    /// Story 34-11a1 (#972) — `null` pour un compte sans IBAN (carte de crédit).
+    pub iban: Option<String>,
     pub qr_iban: Option<String>,
+    /// Story 34-11a1 (#972) — `"bank"` ou `"credit_card"`.
+    pub account_kind: BankAccountKind,
+    /// Story 34-11a1 (#972) — quatre derniers chiffres d'une carte, `null` sinon.
+    pub card_last4: Option<String>,
     pub is_primary: bool,
     /// Story 8-5a-zero — compte du plan comptable lié (None = non configuré).
     pub journal_account_id: Option<i64>,
@@ -430,6 +435,8 @@ impl From<BankAccount> for BankAccountJson {
             description: b.description,
             iban: b.iban,
             qr_iban: b.qr_iban,
+            account_kind: b.account_kind,
+            card_last4: b.card_last4,
             is_primary: b.is_primary,
             journal_account_id: b.journal_account_id,
         }

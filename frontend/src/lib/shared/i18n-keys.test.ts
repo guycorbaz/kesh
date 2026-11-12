@@ -895,7 +895,81 @@ const ATTENDU = {
 	// Revue P4 : **2850 → 2849** (−1), la phrase du décompte TVA retirée.
 	// Fusion de la release 0.17.5 (2026-11-07) : les treize branches de l'Epic 33 réunies,
 	// **recompté à la source** par la garde elle-même après la fusion (non additionné) : **2922**.
-	sitesTotal: 2922,
+	// Story 34-1 (#966) : **2922 → 2928** (+6), tous dans `routes/onboarding/+page.svelte`
+	// (relais `msg`) : `bank-accounts-labels-description`, `-help-description`,
+	// `-labels-journal-account-id`, `-labels-not-configured`, `onboarding-bank-editable-later`,
+	// `onboarding-bank-ledger-load-error`. Que des littéraux ; `sitesNonResolus` et `relais`
+	// inchangés.
+	// Story 34-2 (#533) : **2928 → 2942** (+14), tous dans `routes/(app)/bank-accounts/+page.svelte`
+	// : le libellé du montant (deux branches, création et ligne), le sens et ses deux options,
+	// l'aide, la conséquence, l'action de ligne, le titre et la confirmation du dialogue, le
+	// montant requis, les deux avis. Que des littéraux ; `sitesNonResolus` et `relais` inchangés.
+	// Revue P1 de la 34-2 : **2942 → 2944** (+2), même fichier : l'aperçu du montant écrit et le
+	// refus d'un montant ambigu. Que des littéraux.
+	// Story 34-3 (#967) : **2922 → 2924** (+2), les deux avis débiteurs / créanciers de
+	// `reconciliation/CounterpartyClaimNotice.svelte`. Que des littéraux ; `sitesNonResolus` et
+	// `relais` inchangés.
+	// Story 34-4 (#828) : **2924 → 2932** (+8) : `reconciliation/already-booked.ts` +4 (les
+	// quatre textes de l'avertissement) et `reconciliation/AlreadyBookedConfirmDialog.svelte` +4
+	// (titre, introduction, Annuler, Continuer quand même). Que des littéraux ; `sitesNonResolus`
+	// et `relais` inchangés.
+	// Story 34-5 (#951) : **2922 → 2928** (+6), l'avis de conflit d'un règlement — fiche et
+	// échéancier, deux clés chacun et leur *Relire* (`invoice-settle-unknown-reread`). Que des
+	// littéraux. À recompter à la fusion de l'Epic 34. Revue P2 (B2-1) : **2928 → 2930** (+2),
+	// l'avis « relecture en cours » de la fiche et de l'échéancier.
+	// Story 34-6 (#953) : **2922 → 2928** (+6) : `CompanyConflictNotice.svelte` +5 (« Enregistré
+	// entre-temps », « Repris », l'avis de remplacement, l'avis de fusion, « (vide) »),
+	// `settings/+page.svelte` +1 (« déjà enregistrées »). Que des littéraux ; `sitesNonResolus`
+	// et `relais` inchangés.
+	// Story 34-8 (#938) : **2922 → 2925** (+3), `supplier-invoices/[id]/+page.svelte` : les deux
+	// avis d'issue inconnue (`supplier-invoices-unknown-outcome`, `-reread-failed`) et le repli
+	// `common-error` de `pay()`, qui n'était plus muet hors `ApiError`. Que des littéraux ;
+	// `sitesNonResolus` et `relais` inchangés. Revue P1 (B-2) : **2925 → 2924** (−1), ce repli
+	// de `pay()` retiré — inatteignable, `isSettlementOutcomeUnknown` prenant toute erreur
+	// hors `ApiError`. Revue P2 (B-2 = A-2) : **2924 → 2920** (−4), les replis `common-error`
+	// devenus inatteignables de `cancelSettlement()`, `cancel()`, `confirmValidate()` et
+	// `detach()`, retirés pour la même raison (`confirmDelete()` garde le sien : il ne passe
+	// pas par l'issue inconnue) ; et **+1**, `supplier-invoices-doc-attached` dit au second clic
+	// refusé sur son propre document (B-4) : **2921**. Revue P3 (B-3 = E-2) : **2921 → 2922**
+	// (+1), `supplier-invoices-reread-failed`, l'avis d'une relecture en échec après un refus.
+	// Story 34-9 (#969, #974) : **2922 → 2942** (+20), tous dans
+	// `supplier-invoices/import/+page.svelte` — vingt et un sites des clés neuves du rapport,
+	// un second site de `imported-supplier-invoices-reload-failed`, moins les deux sites des
+	// clés retirées (`-report-accepted`, `-report-failed`). Que des littéraux ;
+	// `sitesNonResolus` et `relais` inchangés. Revue de code P1 de la 34-9 : **2942 → 2944**
+	// (+2), `-notice-not-imported-truncated` et `-report-duplicate-not-in-list`. Revue P2 :
+	// **2944 → 2946** (+2), `-report-duplicate-not-in-list-reload-failed` et un second site de
+	// `-report-duplicate-discarded` (document retiré depuis la page).
+	// Story 34-10 (#970) : **2922 → 2925** (+3), tous dans `homepage/ExpensePieCard.svelte`
+	// (15 → 18, `grep -o 'i18nMsg('` à `cdf13639` et à l'arbre) — « Total des dépenses » au
+	// centre de l'anneau, la base des parts au `<desc>` et sous la note. Que des littéraux ;
+	// `sitesNonResolus` et `relais` inchangés.
+	// Story 34-11a1 (#972) : **2922 → 2924** (+2), `BankImportUpload.svelte` (55 → 57, recompté
+	// par `grep -o 'i18nMsg('`) : la zone de dépôt d'un compte sans IBAN, libellé et
+	// `aria-label` (`bank-import-labels-drop-zone-csv-only`). Que des littéraux ;
+	// `sitesNonResolus` et `relais` inchangés.
+	// Story 34-11a2 (#972) : **2924 → 2942** (+18), `bank-accounts/+page.svelte` (73 → 91, recompté
+	// par `grep -o 'i18nMsg('`) : type du compte, champs et aides d'une carte, refus d'écran,
+	// `kindLabel`. Que des littéraux ; `sitesNonResolus` et `relais` inchangés.
+	// Story 34-11b (#972), sur sa branche (qui portait la 34-11a2, la 34-3 et la 34-4 : 2952
+	// recompté) : **2952 → 2956** (+4) : `CancelReconciliationDialog.svelte` +1 (la
+	// confirmation du retrait seul), `reconciliation-cancel.ts` +2 (les deux messages de succès,
+	// `reconciliationCancelDoneMessage`), `LinkSettlementModal.svelte` +1 (le retrait seul d'une
+	// écriture de virement) ; `already-booked.ts` inchangé (4 → 4 : deux clés remplacées). Que des
+	// littéraux ; `sitesNonResolus` et `relais` inchangés.
+	// Remédiation P1 de la 34-11b (B1-1) : **2956 → 2957** (+1), `already-booked.ts` 4 → 5
+	// (`-transfer-among` scindée en `-one` et `-other`). Recompté par `grep -o 'i18nMsg('`.
+	// Remédiation P2 de la 34-11b (E2-3) : **2957 → 2958** (+1), `already-booked.ts` 5 → 6
+	// (`-transfer-other`, (b′) au pluriel).
+	// Intégration de la release 0.17.6 (2026-11-12), **recompté à la source** par la garde
+	// elle-même après chaque fusion (non additionné) : 2946 après la 34-3 (34-1, 34-2, 34-3),
+	// 2954 après la 34-4, 2962 après la 34-5, 2968 après la 34-6, 2968 après la 34-8 (solde
+	// nul de la 34-8), 2992 après la 34-9, 2995 après la 34-10, 2997 après la 34-11a1,
+	// 3015 après la 34-11a2, 3021 après la 34-11b.
+	// Passe de textes de l'intégration (#1037, #1040, #1027) : **3021 → 3026** (+5), tous dans
+	// `bank-accounts/+page.svelte` : titre d'une carte, ses deux avis de création, le sens
+	// « Dette (solde dû) », l'aperçu d'un montant nul. Que des littéraux ; recompté par la garde.
+	sitesTotal: 3026,
 	sitesNonResolus: 31,
 	relais: 6,
 	// Story 26-1 (#620, AC3-bis) : **10 → 11** — `lib/features/bank-import/

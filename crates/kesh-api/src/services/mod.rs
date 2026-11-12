@@ -166,13 +166,16 @@
 //!    open_period_rule, books_locked_through}`,
 //!    `journal_entries::{reversal_blocker, reversal_blockers, reversed_by,
 //!    document_owners}`, `fiscal_years::{has_open_covering_date,
-//!    find_later_closed}`, `supplier_invoices::{fetch_lines,
-//!    supplier_settlement_cancel_blocker, supplier_invoice_cancel_blocker,
-//!    in_generated_batch}`, `payment_batches::last_confirmed_batch_for_invoice`,
+//!    find_later_closed}`, `supplier_invoices::{get_settlement_view_in_tx,
+//!    fetch_lines, supplier_settlement_cancel_blocker,
+//!    supplier_invoice_cancel_blocker, in_generated_batch}`,
+//!    `payment_batches::last_confirmed_batch_for_invoice`,
 //!    `imported_supplier_invoices::find_by_supplier_invoice_id_scoped`, les aides
 //!    pures de `util::search` et `invoices::push_where_clauses`), textes SQL en
 //!    `const` et les deux macros SQL (`invoice_columns!`, `line_ttc_sql!`)
-//!    compris — cinquante-neuf éléments —, **aucune** écriture, aucun
+//!    compris — soixante éléments : les cinquante-neuf du relevé de la 32-4b,
+//!    plus `get_settlement_view_in_tx`, extraite de `get_settlement_view` par la
+//!    Story 34-8 (#938), qui en reprend les lectures sans en ajouter —, **aucune** écriture, aucun
 //!    `get_or_create`, aucun `FOR UPDATE` ni verrou partagé. Établi par lecture
 //!    statique (relevé de l'AC14 de la 32-4b, sur le code des fichiers de
 //!    dépôts tronqué à leurs tests, commentaires écartés) ; confirmé à

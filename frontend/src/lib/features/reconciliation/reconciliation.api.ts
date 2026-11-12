@@ -64,7 +64,7 @@ export async function rejectProposals(
 }
 
 /**
- * Story 8-5a-base FR45 — réconciliation manuelle.
+ * Story 8-5a-base FR45 — écriture manuelle (geste rebaptisé par la 34-3).
  *
  * Le compte ledger banque est résolu **serveur-side** via
  * `bank_account.journal_account_id` (foundation 8-5a-zero) — donc le
@@ -139,13 +139,19 @@ export async function getReconciliationTransaction(
  * Story 25-3-b (#418) — annule un rapprochement : l'écriture est
  * contre-passée (datée du jour), la transaction redevient à rapprocher, et le
  * règlement d'une facture est retiré.
+ *
+ * Story 34-11b (#972, revue P1 E1-1) — `expectUnlinkOnly` : la décision que la confirmation a
+ * montrée (`unlinkOnly` de la vue). Si elle ne vaut plus au geste — l'autre côté du virement a
+ * été rattaché ou annulé entre-temps —, le serveur refuse `409 RECONCILIATION_CANCEL_CHANGED`
+ * et n'écrit rien.
  */
 export async function cancelReconciliation(
 	bankTransactionId: number,
+	expectUnlinkOnly?: boolean,
 ): Promise<CancelReconciliationResponse> {
 	return apiClient.post<CancelReconciliationResponse>(
 		`/api/v1/reconciliation/transactions/${bankTransactionId}/cancel`,
-		{},
+		expectUnlinkOnly === undefined ? {} : { expectUnlinkOnly },
 	);
 }
 

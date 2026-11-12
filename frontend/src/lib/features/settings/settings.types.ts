@@ -69,8 +69,15 @@ export interface BankAccountJson {
 	 * **Obligatoire** : `npm run check` refuse une réponse simulée qui l'omet.
 	 */
 	description: string | null;
-	iban: string;
+	/** Story 34-11a1 (#972) — `null` pour un compte sans IBAN (carte de crédit). */
+	iban: string | null;
 	qrIban: string | null;
+	/**
+	 * Story 34-11a1 (#972) — type et quatre chiffres d'une carte ; facultatifs
+	 * dans le type (absents d'un serveur antérieur à la 0.17.6).
+	 */
+	accountKind?: 'bank' | 'credit_card';
+	cardLast4?: string | null;
 	isPrimary: boolean;
 }
 

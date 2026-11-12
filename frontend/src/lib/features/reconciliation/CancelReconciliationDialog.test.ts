@@ -36,6 +36,7 @@ function view(partial: Partial<ReconciliationTransactionResponse>): Reconciliati
 		supplierInvoiceNumber: null,
 		internalNumber: null,
 		cancellable: true,
+		unlinkOnly: false,
 		cancelBlockedBy: null,
 		cancelBlockedLabel: null,
 		cancelBlockedDocumentId: null,
@@ -73,7 +74,8 @@ describe('CancelReconciliationDialog', () => {
 		expect(mockApi.getReconciliationTransaction).toHaveBeenCalledWith(42);
 		await fireEvent.click(await findByTestId('reconciliation-cancel-submit'));
 		await waitFor(() => expect(onSuccess).toHaveBeenCalledWith(result));
-		expect(mockApi.cancelReconciliation).toHaveBeenCalledWith(42);
+		// Story 34-11b (revue P1 E1-1) : le geste porte la décision montrée (`unlinkOnly: false`).
+		expect(mockApi.cancelReconciliation).toHaveBeenCalledWith(42, false);
 	});
 
 	it('règlement de facture ⇒ la confirmation NOMME la facture (mutation : texte de l’écriture propre)', async () => {
@@ -185,5 +187,55 @@ describe('CancelReconciliationDialog — règlement fournisseur (Story 30-1b, T-
 		});
 		const ecriture = await texte({ kind: 'entry' });
 		expect(new Set([client, fournisseur, ecriture]).size).toBe(3);
+	});
+
+	// Story 34-11b (#972, AC-4b) — un côté d'un virement rattaché des deux côtés.
+	it('unlinkOnly ⇒ la confirmation dit que seul le lien est retiré, sans écriture inverse (mutation : `unlinkOnly` ignoré)', async () => {
+		mockApi.getReconciliationTransaction.mockResolvedValue(view({ unlinkOnly: true }));
+		const result = {
+			bankTransaction: { id: 42, status: 'pending', matchedEntryId: null },
+			reversalJournalEntryId: null,
+			invoiceId: null,
+			supplierInvoiceId: null,
+		};
+		mockApi.cancelReconciliation.mockResolvedValue(result);
+		const onSuccess = vi.fn();
+		const { findByTestId, queryByTestId } = monter(onSuccess);
+		const t = (await findByTestId('reconciliation-cancel-confirm-text')).textContent ?? '';
+		expect(t).toContain('Seul le lien de cette transaction');
+		expect(t).toContain('aucune écriture inverse');
+		expect(t).not.toContain("Une écriture inverse datée d'aujourd'hui sera passée");
+		expect(queryByTestId('reconciliation-cancel-motif')).toBeNull();
+		await fireEvent.click(await findByTestId('reconciliation-cancel-submit'));
+		await waitFor(() => expect(onSuccess).toHaveBeenCalledWith(result));
+		expect(mockApi.cancelReconciliation).toHaveBeenCalledWith(42, true);
+	});
+
+	// Story 34-11b (revue P1 E1-1) — la décision a changé entre la lecture et le geste.
+	it('409 RECONCILIATION_CANCEL_CHANGED ⇒ la vue est relue, la confirmation juste remontrée, le refus affiché, rien de réussi (mutation : pas de relecture)', async () => {
+		mockApi.getReconciliationTransaction
+			.mockResolvedValueOnce(view({ unlinkOnly: true }))
+			.mockResolvedValueOnce(view({ unlinkOnly: false }));
+		mockApi.cancelReconciliation.mockRejectedValue({
+			code: 'RECONCILIATION_CANCEL_CHANGED',
+			message: 'Ce rapprochement a changé depuis l’ouverture de la fenêtre.',
+			status: 409,
+		});
+		const onSuccess = vi.fn();
+		const { findByTestId } = monter(onSuccess);
+		expect((await findByTestId('reconciliation-cancel-confirm-text')).textContent).toContain(
+			'Seul le lien',
+		);
+		await fireEvent.click(await findByTestId('reconciliation-cancel-submit'));
+		await waitFor(() =>
+			expect((document.querySelector('[data-testid="reconciliation-cancel-confirm-text"]')?.textContent ?? '')).toContain(
+				'écriture inverse',
+			),
+		);
+		expect(mockApi.getReconciliationTransaction).toHaveBeenCalledTimes(2);
+		expect((await findByTestId('reconciliation-cancel-error')).textContent).toContain(
+			'a changé depuis',
+		);
+		expect(onSuccess).not.toHaveBeenCalled();
 	});
 });

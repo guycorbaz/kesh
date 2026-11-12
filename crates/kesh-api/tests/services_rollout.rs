@@ -311,6 +311,7 @@ async fn regler(
         },
         montant,
         jour,
+        common::invoice_version(pool, facture_id).await,
     )
     .await
     .expect("règlement synthétique");

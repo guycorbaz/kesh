@@ -1,5 +1,6 @@
 import { expect, test } from '@playwright/test';
 import { seedTestState, clearAuthStorage, authedApiContext, disposeContextSafe } from './helpers/test-state';
+import { invoiceVersionViaApi } from './helpers/api-fixtures';
 
 test.beforeAll(async () => {
 	// Story 6.4 : preset `with-data` (= with-company + 1 contact + 1 product,
@@ -230,6 +231,7 @@ test.describe('Échéancier factures — Story 5.4', () => {
 					accountId: cash!.id,
 					amount: '40.00',
 					settledOn: daysFromToday(0),
+					version: await invoiceVersionViaApi(ctx, id),
 				},
 			});
 			expect(settled.ok(), `règlement: ${settled.status()}`).toBeTruthy();

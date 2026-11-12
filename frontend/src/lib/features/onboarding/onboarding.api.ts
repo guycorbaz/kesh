@@ -60,15 +60,30 @@ export async function setCoordinates(
 	});
 }
 
-export async function setBankAccount(
-	bankName: string,
-	iban: string,
-	qrIban: string | null
-): Promise<OnboardingState> {
+/**
+ * Le compte bancaire de l'étape 6 de l'assistant — Story 34-1 (#966).
+ *
+ * `description` et `journalAccountId` sont **toujours** envoyés, `null`
+ * compris : côté serveur, un champ absent vaut « inchangé » et `null` vaut
+ * « effacé » (C-e341-34). L'écran envoie donc ce qu'il affiche.
+ */
+export interface BankAccountStepPayload {
+	bankName: string;
+	iban: string;
+	qrIban: string | null;
+	/** Description normalisée par l'appelant (`trim`, vide → `null`). */
+	description: string | null;
+	/** Compte comptable lié, `null` pour « Non configuré ». */
+	journalAccountId: number | null;
+}
+
+export async function setBankAccount(payload: BankAccountStepPayload): Promise<OnboardingState> {
 	return apiClient.post<OnboardingState>('/api/v1/onboarding/bank-account', {
-		bankName,
-		iban,
-		qrIban,
+		bankName: payload.bankName,
+		iban: payload.iban,
+		qrIban: payload.qrIban,
+		description: payload.description,
+		journalAccountId: payload.journalAccountId,
 	});
 }
 

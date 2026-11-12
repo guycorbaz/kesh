@@ -2296,7 +2296,10 @@ pub async fn document_owners(
         // Chaque bloc : une dérivée `entry_id → MIN(id)` bornée par la liste,
         // jointe en retour sur `id` (numéro de la même ligne), puis sur
         // l'écriture de la société. Colonnes typées par CAST pour que
-        // l'`UNION ALL` ne dépende pas du premier bloc.
+        // l'`UNION ALL` ne dépende pas du premier bloc. Story 34-11b (#972) :
+        // l'écriture d'un virement porte deux transactions, une de chaque
+        // côté ; le motif `MATCHED_BANK_TRANSACTION` n'en nomme qu'une (la
+        // plus petite) — une suffit à refuser.
         let sql = format!(
             "SELECT d.entry_id, CAST({inv} AS SIGNED) AS kind, i.id, \
                     CAST(i.invoice_number AS CHAR) AS number, \

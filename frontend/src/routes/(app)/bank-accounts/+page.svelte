@@ -10,7 +10,7 @@
   (date locale préremplie, avertissement d'un solde comptable non nul, C-28-4-6).
 -->
 <script lang="ts">
-	import { onMount } from 'svelte';
+	import { onMount, untrack } from 'svelte';
 	import Big from 'big.js';
 	import { i18nMsg } from '$lib/shared/utils/i18n.svelte';
 	import { errorMessageOf } from '$lib/shared/utils/error-message';
@@ -20,7 +20,7 @@
 	import { qrIbanHasValidQrIid } from '$lib/shared/utils/iban';
 	import { fetchAccounts } from '$lib/features/accounts/accounts.api';
 	import type { AccountResponse } from '$lib/features/accounts/accounts.types';
-	import { withCurrentAccount, withoutAccountIds } from '$lib/features/accounts/account-options';
+	import { withCurrentAccount } from '$lib/features/accounts/account-options';
 	import { getInvoiceSettings } from '$lib/features/invoices/invoices.api';
 	import { Button } from '$lib/components/ui/button';
 	import { Input } from '$lib/components/ui/input';
@@ -33,16 +33,32 @@
 		archiveBankAccount,
 		closeBankAccount,
 		reopenBankAccount,
+		enterOpeningBalance,
+		type BankAccountKind,
 		type BankAccountSummary,
 		type NewBankAccountPayload,
+		type OpeningBalanceSide,
+		type OpeningEntrySummary,
 		type UpdateBankAccountPayload,
 	} from '$lib/features/bank-accounts/bank-accounts.api';
+	import {
+		admitsLedgerType,
+		cardLast4Payload,
+		isValidCardLast4,
+	} from '$lib/features/bank-accounts/credit-card';
 	import { formatSwissDate } from '$lib/features/reports/reports.api';
 	import { todayLocal } from '$lib/features/open-items/open-items';
 	import {
 		BANK_ACCOUNT_DESCRIPTION_MAX,
+		bankAccountFullId,
 		bankAccountName,
+		defaultOpeningSide,
 		formatChfBalance,
+		formatChfExact,
+		linkableLedgerAccounts,
+		openingAmountAmbiguous,
+		openingAmountPayload,
+		openingAmountPreview,
 	} from '$lib/features/bank-accounts/format';
 
 	let bankAccounts = $state<BankAccountSummary[]>([]);
@@ -66,7 +82,8 @@
 		| { kind: 'edit-journal'; id: number }
 		| { kind: 'archive-confirm'; id: number }
 		| { kind: 'close-confirm'; id: number }
-		| { kind: 'reopen-confirm'; id: number };
+		| { kind: 'reopen-confirm'; id: number }
+		| { kind: 'opening-balance'; id: number };
 	let mode = $state<Mode>({ kind: 'none' });
 	let submitting = $state(false);
 
@@ -79,6 +96,34 @@
 	let formJournalAccountId = $state<number | null>(null);
 	let formVersion = $state(0);
 	let formError = $state<string | null>(null);
+	// Story 34-2 (#533) — solde d'ouverture : formulaire de création et dialogue
+	// de ligne (« Saisir le solde d'ouverture »). Le sens est présélectionné par
+	// le type du compte lié (C-e341-7), l'utilisateur le change librement.
+	let formOpeningAmount = $state('');
+	let formOpeningSide = $state<OpeningBalanceSide>('debit');
+	let openingError = $state<string | null>(null);
+
+	// La présélection suit le compte lié choisi — elle ne relit pas `accounts`
+	// d'elle-même (un rechargement ne défait pas un choix fait à la main).
+	$effect(() => {
+		const ledgerId = formJournalAccountId;
+		untrack(() => {
+			formOpeningSide = defaultOpeningSide(accounts, ledgerId);
+		});
+	});
+	// Story 34-11a2 (#972) — type du compte (choisi à la création, affiché et figé
+	// en édition) et quatre derniers chiffres d'une carte.
+	let formKind = $state<BankAccountKind>('bank');
+	let formCardLast4 = $state('');
+	let isCard = $derived(formKind === 'credit_card');
+	// Passe de textes de la 0.17.6 (#1040) — le solde d'ouverture porte-t-il sur une
+	// carte ? Au formulaire de création, le type choisi ; au dialogue de ligne, celui du
+	// compte de la ligne. Sert au seul libellé du sens « Dette ».
+	let openingForCard = $derived.by(() => {
+		const m = mode;
+		if (m.kind !== 'opening-balance') return isCard;
+		return bankAccounts.find((b) => b.id === m.id)?.accountKind === 'credit_card';
+	});
 
 	// Story 28-4b — dialogues de clôture et de réouverture. Le refus du serveur
 	// s'affiche DANS le dialogue (là où l'on a agi), par `errorMessageOf`.
@@ -156,16 +201,16 @@
 	// Story 15-6c (#474, AC7) : le compte débiteurs et le compte créanciers
 	// désignés sont écartés AVANT `withCurrentAccount` — un lien existant vers
 	// l'un d'eux (donnée antérieure) reste affiché, mais n'est plus proposé.
+	//
+	// Story 34-1 (#966, C-e341-5) : le filtre vit dans `linkableLedgerAccounts`
+	// (`format.ts`), source unique partagée avec l'étape bancaire de l'assistant
+	// et le formulaire de lien.
+	// Story 34-11a2 (#972, C-e341-33) : pour une carte, la liste se réduit aux
+	// passifs (`admitsLedgerType`, miroir de la règle serveur).
 	let linkableAccounts = $derived(
-		withoutAccountIds(
-			accounts.filter(
-				(a) =>
-					a.active &&
-					a.postable && // 14-3b : compte lié posté à la réconciliation
-					(a.accountType === 'Asset' || a.accountType === 'Liability'),
-			),
-			claimAccountIds,
-		),
+		linkableLedgerAccounts(accounts, claimAccountIds, {
+			liabilityOnly: formKind === 'credit_card',
+		}),
 	);
 
 	function accountLabel(journalAccountId: number | null): string {
@@ -196,6 +241,113 @@
 		formJournalAccountId = null;
 		formVersion = 0;
 		formError = null;
+		formKind = 'bank';
+		formCardLast4 = '';
+		formOpeningAmount = '';
+		formOpeningSide = 'debit';
+		openingError = null;
+	}
+
+
+	/** Story 34-2 (revue P1, B-1) — le refus d'un montant ambigu (« 1,234 »). */
+	function ambiguousAmountMessage(): string {
+		return i18nMsg(
+			'bank-accounts-opening-error-amount-ambiguous',
+			"Montant ambigu : une virgule suivie de trois chiffres peut être un séparateur de milliers. Écrivez 1'234 pour mille deux cent trente-quatre, 1.234 pour un franc et vingt-trois centimes et quatre dixièmes de centime.",
+		);
+	}
+
+	/**
+	 * Story 34-2 (#533, AC-7) — ouvre le dialogue « Saisir le solde d'ouverture »
+	 * d'un compte ouvert et lié ; le sens est présélectionné par le type du compte lié.
+	 */
+	function openOpeningBalance(ba: BankAccountSummary) {
+		formOpeningAmount = '';
+		formOpeningSide = defaultOpeningSide(accounts, ba.journalAccountId);
+		openingError = null;
+		mode = { kind: 'opening-balance', id: ba.id };
+	}
+
+	/**
+	 * Story 34-2 (#533, AC-6, AC-7) — passe l'écriture d'ouverture d'un compte
+	 * existant. Le refus du serveur (compte mouvementé, aucun exercice ouvert…)
+	 * reste affiché dans le dialogue.
+	 */
+	async function confirmOpeningBalance(id: number) {
+		openingError = null;
+		const amount = openingAmountPayload(formOpeningAmount);
+		if (amount === null) {
+			openingError = i18nMsg('bank-accounts-opening-error-amount-required', 'Saisissez un montant positif.');
+			return;
+		}
+		if (openingAmountAmbiguous(formOpeningAmount)) {
+			openingError = ambiguousAmountMessage();
+			return;
+		}
+		submitting = true;
+		try {
+			const entry = await enterOpeningBalance(id, { amount, side: formOpeningSide });
+			toast.success(
+				i18nMsg(
+					'bank-accounts-toast-opening-success',
+					'Écriture d\'ouverture n° { $number } du { $date } passée : { $amount }.',
+					// Avis qui nomme l'écriture (numéro, date suisse) et le montant écrit
+					// (revue P1, B-1) ; clé et arguments littéraux, lus par les gardes i18n.
+					{
+						number: String(entry.entryNumber),
+						date: formatSwissDate(entry.entryDate),
+						amount: formatChfExact(amount),
+					},
+				),
+			);
+			closeForm();
+			await reload();
+		} catch (err) {
+			openingError = errorMessageOf(err);
+		} finally {
+			submitting = false;
+		}
+	}
+
+	/**
+	 * Story 34-11a2 — changer le type à la création : un compte lié que le
+	 * nouveau type n'admet pas (un actif pour une carte) est retiré, et le
+	 * « principal » d'une carte décoché.
+	 */
+	function setFormKind(kind: BankAccountKind) {
+		formKind = kind;
+		if (kind === 'credit_card') formIsPrimary = false;
+		const linked = accounts.find((a) => a.id === formJournalAccountId);
+		if (linked && !admitsLedgerType(kind, linked.accountType)) formJournalAccountId = null;
+	}
+
+	/**
+	 * Story 34-11a2 — contrôles de l'écran propres à une carte : quatre chiffres
+	 * ou rien, compte lié obligatoire. Le serveur reste l'autorité.
+	 */
+	function validateCardFields(): boolean {
+		if (!isCard) return true;
+		if (!isValidCardLast4(formCardLast4)) {
+			formError = i18nMsg(
+				'bank-accounts-error-card-last4',
+				'Saisissez exactement quatre chiffres, ou laissez le champ vide.',
+			);
+			return false;
+		}
+		if (formJournalAccountId === null) {
+			formError = i18nMsg(
+				'bank-accounts-error-card-ledger-required',
+				'Choisissez le compte de passif lié à la carte.',
+			);
+			return false;
+		}
+		return true;
+	}
+
+	function kindLabel(kind: BankAccountKind): string {
+		return kind === 'credit_card'
+			? i18nMsg('bank-accounts-kind-credit-card', 'Carte de crédit')
+			: i18nMsg('bank-accounts-kind-bank', 'Compte bancaire');
 	}
 
 	function openCreate() {
@@ -206,12 +358,16 @@
 	function openEditFull(ba: BankAccountSummary) {
 		formBankName = ba.bankName;
 		formDescription = ba.description ?? '';
-		formIban = ba.iban;
+		// Story 34-11a2 (#972, points hérités E5/B7) — une carte s'édite sans
+		// IBAN : le payload d'une carte n'en porte pas (`submitUpdateFull`).
+		formIban = ba.iban ?? '';
 		formQrIban = ba.qrIban ?? '';
 		formIsPrimary = ba.isPrimary;
 		formJournalAccountId = ba.journalAccountId;
 		formVersion = ba.version;
 		formError = null;
+		formKind = ba.accountKind;
+		formCardLast4 = ba.cardLast4 ?? '';
 		mode = { kind: 'edit-full', id: ba.id };
 	}
 
@@ -294,19 +450,68 @@
 	async function submitCreate(e: Event) {
 		e.preventDefault();
 		formError = null;
-		if (!validateQrIbanField()) return;
+		if (!isCard && !validateQrIbanField()) return;
+		if (!validateCardFields()) return;
+		// Story 34-2 (revue P1, B-1) — « 1,234 » ne part pas : mille ou un franc ?
+		if (formJournalAccountId !== null && openingAmountAmbiguous(formOpeningAmount)) {
+			formError = ambiguousAmountMessage();
+			return;
+		}
 		submitting = true;
 		try {
-			const payload: NewBankAccountPayload = {
-				bankName: formBankName,
-				description: descriptionPayload(),
-				iban: formIban,
-				qrIban: formQrIban.trim() === '' ? null : formQrIban,
-				isPrimary: formIsPrimary,
-				journalAccountId: formJournalAccountId,
-			};
-			await createBankAccount(payload);
-			toast.success(i18nMsg('bank-accounts-toast-create-success', 'Compte bancaire créé.'));
+			// Story 34-11a2 — une carte n'envoie ni IBAN, ni QR-IBAN, ni
+			// « principal » ; un compte bancaire garde le payload de la 0.17.5.
+			const payload: NewBankAccountPayload = isCard
+				? {
+						accountKind: 'credit_card',
+						bankName: formBankName,
+						description: descriptionPayload(),
+						cardLast4: cardLast4Payload(formCardLast4),
+						journalAccountId: formJournalAccountId,
+					}
+				: {
+						bankName: formBankName,
+						description: descriptionPayload(),
+						iban: formIban,
+						qrIban: formQrIban.trim() === '' ? null : formQrIban,
+						isPrimary: formIsPrimary,
+						journalAccountId: formJournalAccountId,
+					};
+			// Story 34-2 (#533, AC-7) — sans compte lié, les champs du solde sont
+			// masqués et rien n'est envoyé ; un montant vide n'envoie rien non plus.
+			const openingAmount = openingAmountPayload(formOpeningAmount);
+			if (formJournalAccountId !== null && openingAmount !== null) {
+				payload.openingBalance = { amount: openingAmount, side: formOpeningSide };
+			}
+			const created = await createBankAccount(payload);
+			const openingEntry = created?.openingEntry ?? null;
+			// Passe de textes de la 0.17.6 (#1040) : une carte a ses propres avis.
+			// Clés et arguments littéraux à chaque appel, lus par les gardes i18n.
+			toast.success(
+				isCard
+					? openingEntry
+						? i18nMsg(
+								'bank-accounts-toast-create-card-success-with-opening',
+								'Carte de crédit créée, avec l\'écriture d\'ouverture n° { $number } du { $date } : { $amount }.',
+								{
+									number: String(openingEntry.entryNumber),
+									date: formatSwissDate(openingEntry.entryDate),
+									amount: formatChfExact(payload.openingBalance?.amount ?? '0'),
+								},
+							)
+						: i18nMsg('bank-accounts-toast-create-card-success', 'Carte de crédit créée.')
+					: openingEntry
+						? i18nMsg(
+								'bank-accounts-toast-create-success-with-opening',
+								'Compte bancaire créé, avec l\'écriture d\'ouverture n° { $number } du { $date } : { $amount }.',
+								{
+									number: String(openingEntry.entryNumber),
+									date: formatSwissDate(openingEntry.entryDate),
+									amount: formatChfExact(payload.openingBalance?.amount ?? '0'),
+								},
+							)
+						: i18nMsg('bank-accounts-toast-create-success', 'Compte bancaire créé.'),
+			);
 			await reload();
 			closeForm();
 		} catch (err) {
@@ -319,18 +524,30 @@
 	async function submitUpdateFull(e: Event, id: number) {
 		e.preventDefault();
 		formError = null;
-		if (!validateQrIbanField()) return;
+		if (!isCard && !validateQrIbanField()) return;
+		if (!validateCardFields()) return;
 		submitting = true;
 		try {
-			const payload: UpdateBankAccountPayload = {
-				bankName: formBankName,
-				description: descriptionPayload(),
-				iban: formIban,
-				qrIban: formQrIban.trim() === '' ? null : formQrIban,
-				isPrimary: formIsPrimary,
-				journalAccountId: formJournalAccountId,
-				version: formVersion,
-			};
+			// Story 34-11a2 (points hérités E5/B7) — le `PUT` d'une carte n'envoie
+			// ni IBAN ni type ; ses quatre chiffres sont toujours présents (`null`
+			// pour les effacer).
+			const payload: UpdateBankAccountPayload = isCard
+				? {
+						bankName: formBankName,
+						description: descriptionPayload(),
+						cardLast4: cardLast4Payload(formCardLast4),
+						journalAccountId: formJournalAccountId,
+						version: formVersion,
+					}
+				: {
+						bankName: formBankName,
+						description: descriptionPayload(),
+						iban: formIban,
+						qrIban: formQrIban.trim() === '' ? null : formQrIban,
+						isPrimary: formIsPrimary,
+						journalAccountId: formJournalAccountId,
+						version: formVersion,
+					};
 			await updateBankAccount(id, payload);
 			toast.success(i18nMsg('bank-accounts-toast-update-success', 'Compte bancaire modifié.'));
 			await reload();
@@ -463,6 +680,71 @@
 	<title>{i18nMsg('bank-accounts-labels-page-title', 'Comptes bancaires')} - Kesh</title>
 </svelte:head>
 
+<!-- Story 34-2 (#533, AC-7) — les champs du solde d'ouverture, communs au formulaire
+     de création et au dialogue de ligne : montant, sens, l'aide qui dit la date et la
+     contrepartie, et la conséquence sur l'écran Soldes de départ, avant le geste. -->
+{#snippet openingFields(prefix: string)}
+	<label for="{prefix}-opening-amount" class="block text-sm font-medium text-text mb-1">
+		{prefix === 'form'
+			? i18nMsg('bank-accounts-opening-label-amount', "Solde d'ouverture (optionnel)")
+			: i18nMsg('bank-accounts-opening-label-amount-row', 'Montant du solde')}
+	</label>
+	<div class="flex items-center gap-2">
+		<Input
+			id="{prefix}-opening-amount"
+			bind:value={formOpeningAmount}
+			inputmode="decimal"
+			placeholder="0.00"
+			data-testid="{prefix}-opening-amount"
+		/>
+		<label for="{prefix}-opening-side" class="sr-only">
+			{i18nMsg('bank-accounts-opening-label-side', 'Sens du solde')}
+		</label>
+		<select
+			id="{prefix}-opening-side"
+			bind:value={formOpeningSide}
+			class="rounded border border-border px-3 py-2 text-sm"
+			data-testid="{prefix}-opening-side"
+		>
+			<option value="debit">{i18nMsg('bank-accounts-opening-side-debit', 'Avoir')}</option>
+			<option value="credit">
+				<!-- Passe de textes de la 0.17.6 (#1040) : « découvert » n'a pas de sens pour une carte. -->
+				{openingForCard
+					? i18nMsg('bank-accounts-opening-side-credit-card', 'Dette (solde dû)')
+					: i18nMsg('bank-accounts-opening-side-credit', 'Dette (découvert)')}
+			</option>
+		</select>
+	</div>
+	{#if openingAmountPreview(formOpeningAmount) !== null}
+		<!-- Revue P1 (B-1) — le montant tel qu'il sera écrit, avant le geste. Passe de textes
+		     de la 0.17.6 (#1027) : un montant nul n'écrit rien, et l'aperçu le dit. -->
+		<p class="mt-1 text-sm font-medium text-text" data-testid="{prefix}-opening-preview">
+			{#if /^0+(\.0+)?$/.test(openingAmountPayload(formOpeningAmount) ?? '')}
+				{i18nMsg(
+					'bank-accounts-opening-preview-zero',
+					"Montant nul : aucune écriture d'ouverture ne sera passée.",
+				)}
+			{:else}
+				{i18nMsg('bank-accounts-opening-preview', 'Montant qui sera écrit : { $amount }', {
+					amount: openingAmountPreview(formOpeningAmount) ?? '',
+				})}
+			{/if}
+		</p>
+	{/if}
+	<p class="mt-1 text-xs text-text-muted" data-testid="{prefix}-opening-help">
+		{i18nMsg(
+			'bank-accounts-opening-help',
+			"L'écriture est datée du premier jour du premier exercice s'il est ouvert et hors période verrouillée, sinon d'aujourd'hui : saisissez le solde du relevé à cette date. Sa contrepartie va au compte Bénéfice/perte reporté. Elle est refusée si le compte lié a déjà des mouvements.",
+		)}
+	</p>
+	<p class="mt-1 rounded border border-warning bg-warning-soft p-2 text-xs text-text" role="note" data-testid="{prefix}-opening-consequence">
+		{i18nMsg(
+			'bank-accounts-opening-consequence',
+			"Si l'ouverture générale de Soldes de départ est encore proposée, ce solde la retire : les soldes de départ des autres comptes se saisiront un à un, mode Compléter. Pour saisir toute votre ouverture d'un coup, passez d'abord par Soldes de départ.",
+		)}
+	</p>
+{/snippet}
+
 <div class="flex items-center justify-between">
 	<div>
 		<h1 class="text-2xl font-semibold text-text" data-testid="bank-accounts-page-title">
@@ -524,12 +806,29 @@
 				class="mb-6 rounded border border-border bg-surface-alt p-4"
 				data-testid="create-bank-account-form"
 			>
-				<h2 class="mb-3 text-base font-semibold">
-					{i18nMsg('bank-accounts-actions-create', 'Nouveau compte bancaire')}
+				<h2 class="mb-3 text-base font-semibold" data-testid="create-bank-account-title">
+					<!-- Passe de textes de la 0.17.6 (#1037) : le titre suit le type choisi. -->
+					{isCard
+						? i18nMsg('bank-accounts-form-title-create-card', 'Nouvelle carte de crédit')
+						: i18nMsg('bank-accounts-actions-create', 'Nouveau compte bancaire')}
 				</h2>
+				<!-- Story 34-11a2 (#972) — le type se choisit à la création, et seulement là. -->
+				<fieldset class="mb-3" data-testid="form-kind">
+					<legend class="block text-sm font-medium text-text mb-1">{i18nMsg('bank-accounts-labels-kind', 'Type de compte')}</legend>
+					<div class="flex gap-4 text-sm">
+						<label class="flex items-center gap-1">
+							<input type="radio" name="form-kind" value="bank" checked={formKind === 'bank'} onchange={() => setFormKind('bank')} data-testid="form-kind-bank" />
+							{i18nMsg('bank-accounts-kind-bank', 'Compte bancaire')}
+						</label>
+						<label class="flex items-center gap-1">
+							<input type="radio" name="form-kind" value="credit_card" checked={formKind === 'credit_card'} onchange={() => setFormKind('credit_card')} data-testid="form-kind-credit-card" />
+							{i18nMsg('bank-accounts-kind-credit-card', 'Carte de crédit')}
+						</label>
+					</div>
+				</fieldset>
 				<div class="grid grid-cols-2 gap-3">
 					<div>
-						<label for="form-bank-name" class="block text-sm font-medium text-text mb-1">{i18nMsg('bank-accounts-labels-bank-name', 'Banque')}</label>
+						<label for="form-bank-name" class="block text-sm font-medium text-text mb-1">{isCard ? i18nMsg('bank-accounts-labels-card-issuer', 'Émetteur de la carte') : i18nMsg('bank-accounts-labels-bank-name', 'Banque')}</label>
 						<Input id="form-bank-name" bind:value={formBankName} required data-testid="form-bank-name" />
 					</div>
 					<div>
@@ -537,17 +836,27 @@
 						<Input id="form-description" bind:value={formDescription} maxlength={BANK_ACCOUNT_DESCRIPTION_MAX} data-testid="form-description" />
 						<p class="mt-1 text-xs text-text-muted" data-testid="form-description-help">{i18nMsg('bank-accounts-help-description', 'Par exemple « Personnel » ou « Épargne » : pour distinguer deux comptes de la même banque. 60 caractères au plus.')}</p>
 					</div>
+					{#if isCard}
+						<div>
+							<label for="form-card-last4" class="block text-sm font-medium text-text mb-1">{i18nMsg('bank-accounts-labels-card-last4', 'Quatre derniers chiffres (facultatif)')}</label>
+							<!-- Revue P1 (E5) : pas de `maxlength` — un numéro complet collé ici serait
+							     tronqué à ses quatre PREMIERS chiffres sans refus ; il est refusé à l'envoi. -->
+							<Input id="form-card-last4" bind:value={formCardLast4} inputmode="numeric" autocomplete="off" placeholder="1234" data-testid="form-card-last4" />
+							<p class="mt-1 text-xs text-text-muted" data-testid="form-card-last4-help">{i18nMsg('bank-accounts-help-card-last4', 'Kesh ne garde jamais le numéro complet de la carte : seulement ses quatre derniers chiffres, pour la reconnaître.')}</p>
+						</div>
+					{:else}
+						<div>
+							<label for="form-iban" class="block text-sm font-medium text-text mb-1">{i18nMsg('bank-accounts-labels-iban', 'IBAN')}</label>
+							<Input id="form-iban" bind:value={formIban} required placeholder="CH..." data-testid="form-iban" />
+						</div>
+						<div>
+							<label for="form-qr-iban" class="block text-sm font-medium text-text mb-1">{i18nMsg('bank-accounts-labels-qr-iban', 'QR-IBAN (optionnel)')}</label>
+							<Input id="form-qr-iban" bind:value={formQrIban} placeholder="CH..." data-testid="form-qr-iban" />
+							<p class="mt-1 text-xs text-text-muted" data-testid="form-qr-iban-help">{i18nMsg('bank-accounts-help-qr-iban', 'À remplir uniquement si votre banque vous a fourni un QR-IBAN dédié aux QR-factures (numéro spécial avec un identifiant 30000–31999). Sinon, laissez ce champ vide : votre IBAN normal suffit pour générer des QR-factures.')}</p>
+						</div>
+					{/if}
 					<div>
-						<label for="form-iban" class="block text-sm font-medium text-text mb-1">{i18nMsg('bank-accounts-labels-iban', 'IBAN')}</label>
-						<Input id="form-iban" bind:value={formIban} required placeholder="CH..." data-testid="form-iban" />
-					</div>
-					<div>
-						<label for="form-qr-iban" class="block text-sm font-medium text-text mb-1">{i18nMsg('bank-accounts-labels-qr-iban', 'QR-IBAN (optionnel)')}</label>
-						<Input id="form-qr-iban" bind:value={formQrIban} placeholder="CH..." data-testid="form-qr-iban" />
-						<p class="mt-1 text-xs text-text-muted" data-testid="form-qr-iban-help">{i18nMsg('bank-accounts-help-qr-iban', 'À remplir uniquement si votre banque vous a fourni un QR-IBAN dédié aux QR-factures (numéro spécial avec un identifiant 30000–31999). Sinon, laissez ce champ vide : votre IBAN normal suffit pour générer des QR-factures.')}</p>
-					</div>
-					<div>
-						<label for="form-journal-account" class="block text-sm font-medium text-text mb-1">{i18nMsg('bank-accounts-labels-journal-account-id', 'Compte comptable lié')}</label>
+						<label for="form-journal-account" class="block text-sm font-medium text-text mb-1">{isCard ? i18nMsg('bank-accounts-labels-card-ledger', 'Compte de dette lié') : i18nMsg('bank-accounts-labels-journal-account-id', 'Compte comptable lié')}</label>
 						<select
 							id="form-journal-account"
 							bind:value={formJournalAccountId}
@@ -559,22 +868,38 @@
 								<option value={acc.id}>{acc.number} — {acc.name}</option>
 							{/each}
 						</select>
-						<p class="mt-1 text-xs text-text-muted">
-							{i18nMsg(
-								'bank-accounts-tooltip-journal-account',
-								'Lie ce compte bancaire à un compte du plan comptable (typiquement 1010 Poste, 1020 Banque). Permet à la réconciliation automatique de créer les écritures vers le bon compte, et l\'affichage du solde sur la page d\'accueil. Note multi-comptes : si plusieurs comptes courants distincts, lier au sous-compte spécifique (1020.001 BCV CHF), pas au parent 1020.',
-							)}
+						<p class="mt-1 text-xs text-text-muted" data-testid="form-journal-account-help">
+							{#if isCard}
+								{i18nMsg(
+									'bank-accounts-help-card-ledger',
+									'Obligatoire : un compte de passif, la dette de la carte (par exemple un sous-compte de 2100 Dettes bancaires à court terme).',
+								)}
+							{:else}
+								{i18nMsg(
+									'bank-accounts-tooltip-journal-account',
+									'Lie ce compte bancaire à un compte du plan comptable (typiquement 1010 Poste, 1020 Banque). Permet à la réconciliation automatique de créer les écritures vers le bon compte, et l\'affichage du solde sur la page d\'accueil. Note multi-comptes : si plusieurs comptes courants distincts, lier au sous-compte spécifique (1020.001 BCV CHF), pas au parent 1020.',
+								)}
+							{/if}
 						</p>
 					</div>
-					<div class="col-span-2 flex items-center gap-2">
-						<input
-							id="form-is-primary"
-							type="checkbox"
-							bind:checked={formIsPrimary}
-							data-testid="form-is-primary"
-						/>
-						<label for="form-is-primary" class="block text-sm font-medium text-text mb-1">{i18nMsg('bank-accounts-labels-is-primary', 'Compte principal')}</label>
-					</div>
+					{#if formJournalAccountId !== null}
+						<!-- Story 34-2 (#533, AC-7) — le solde d'ouverture, actif dès qu'un compte
+						     du plan est lié ; masqué (et non envoyé) sans compte lié. -->
+						<div data-testid="form-opening-balance">
+							{@render openingFields('form')}
+						</div>
+					{/if}
+					{#if !isCard}
+						<div class="col-span-2 flex items-center gap-2">
+							<input
+								id="form-is-primary"
+								type="checkbox"
+								bind:checked={formIsPrimary}
+								data-testid="form-is-primary"
+							/>
+							<label for="form-is-primary" class="block text-sm font-medium text-text mb-1">{i18nMsg('bank-accounts-labels-is-primary', 'Compte principal')}</label>
+						</div>
+					{/if}
 				</div>
 				{#if formError}
 					<p class="mt-3 text-sm text-red-600" role="alert" data-testid="form-error">{formError}</p>
@@ -650,7 +975,8 @@
 									</span>
 								{/if}
 							</td>
-							<td class="py-2 pr-4 font-mono text-xs {dimClass(ba)}" title={ba.iban}>{ba.iban}</td>
+							<!-- Story 34-11a1 (#972) — IBAN, « •••• 1234 » d'une carte, ou vide. -->
+							<td class="py-2 pr-4 font-mono text-xs {dimClass(ba)}" title={bankAccountFullId(ba) ?? ''} data-testid="iban-cell-{ba.id}">{bankAccountFullId(ba) ?? ''}</td>
 							<td class="py-2 pr-4 text-right font-mono {dimClass(ba)}" data-testid="balance-cell-{ba.id}">
 								{formatBalance(ba.currentBalance)}
 							</td>
@@ -685,6 +1011,19 @@
 									>
 										{i18nMsg('bank-accounts-actions-edit', 'Modifier')}
 									</button>
+									{#if ba.journalAccountId !== null && ba.lastTransactionDate === null}
+										<!-- Story 34-2 (#533, AC-7) — compte ouvert, lié, et dont le compte du
+										     plan n'a encore aucune ligne (revue P1, E-5 : `lastTransactionDate`
+										     est la date de sa dernière ligne). Le serveur reste l'autorité. -->
+										<button
+											type="button"
+											class="ml-1 rounded border border-border px-2 py-1 text-xs"
+											onclick={() => openOpeningBalance(ba)}
+											data-testid="opening-balance-button-{ba.id}"
+										>
+											{i18nMsg('bank-accounts-actions-opening-balance', "Saisir le solde d'ouverture")}
+										</button>
+									{/if}
 									<button
 										type="button"
 										class="ml-1 rounded border border-border px-2 py-1 text-xs text-red-600"
@@ -739,9 +1078,15 @@
 										<h2 class="mb-3 text-base font-semibold">
 											{i18nMsg('bank-accounts-actions-edit', 'Modifier')}
 										</h2>
+										<!-- Story 34-11a2 (#972) — le type est affiché, non modifiable. -->
+										<p class="mb-3 text-sm" data-testid="edit-kind">
+											<span class="font-medium">{i18nMsg('bank-accounts-labels-kind', 'Type de compte')} :</span>
+											{kindLabel(formKind)}
+											<span class="ml-2 text-xs text-text-muted">{i18nMsg('bank-accounts-help-kind-fixed', "Le type d'un compte ne se change pas après sa création.")}</span>
+										</p>
 										<div class="grid grid-cols-2 gap-3">
 											<div>
-												<label for="edit-bank-name" class="block text-sm font-medium text-text mb-1">{i18nMsg('bank-accounts-labels-bank-name', 'Banque')}</label>
+												<label for="edit-bank-name" class="block text-sm font-medium text-text mb-1">{isCard ? i18nMsg('bank-accounts-labels-card-issuer', 'Émetteur de la carte') : i18nMsg('bank-accounts-labels-bank-name', 'Banque')}</label>
 												<Input id="edit-bank-name" bind:value={formBankName} required data-testid="edit-bank-name" />
 											</div>
 											<div>
@@ -749,17 +1094,25 @@
 												<Input id="edit-description" bind:value={formDescription} maxlength={BANK_ACCOUNT_DESCRIPTION_MAX} data-testid="edit-description" />
 												<p class="mt-1 text-xs text-text-muted" data-testid="edit-description-help">{i18nMsg('bank-accounts-help-description', 'Par exemple « Personnel » ou « Épargne » : pour distinguer deux comptes de la même banque. 60 caractères au plus.')}</p>
 											</div>
+											{#if isCard}
+												<div>
+													<label for="edit-card-last4" class="block text-sm font-medium text-text mb-1">{i18nMsg('bank-accounts-labels-card-last4', 'Quatre derniers chiffres (facultatif)')}</label>
+													<Input id="edit-card-last4" bind:value={formCardLast4} inputmode="numeric" autocomplete="off" data-testid="edit-card-last4" />
+													<p class="mt-1 text-xs text-text-muted" data-testid="edit-card-last4-help">{i18nMsg('bank-accounts-help-card-last4', 'Kesh ne garde jamais le numéro complet de la carte : seulement ses quatre derniers chiffres, pour la reconnaître.')}</p>
+												</div>
+											{:else}
+												<div>
+													<label for="edit-iban" class="block text-sm font-medium text-text mb-1">{i18nMsg('bank-accounts-labels-iban', 'IBAN')}</label>
+													<Input id="edit-iban" bind:value={formIban} required data-testid="edit-iban" />
+												</div>
+												<div>
+													<label for="edit-qr-iban" class="block text-sm font-medium text-text mb-1">{i18nMsg('bank-accounts-labels-qr-iban', 'QR-IBAN (optionnel)')}</label>
+													<Input id="edit-qr-iban" bind:value={formQrIban} data-testid="edit-qr-iban" />
+													<p class="mt-1 text-xs text-text-muted" data-testid="edit-qr-iban-help">{i18nMsg('bank-accounts-help-qr-iban', 'À remplir uniquement si votre banque vous a fourni un QR-IBAN dédié aux QR-factures (numéro spécial avec un identifiant 30000–31999). Sinon, laissez ce champ vide : votre IBAN normal suffit pour générer des QR-factures.')}</p>
+												</div>
+											{/if}
 											<div>
-												<label for="edit-iban" class="block text-sm font-medium text-text mb-1">{i18nMsg('bank-accounts-labels-iban', 'IBAN')}</label>
-												<Input id="edit-iban" bind:value={formIban} required data-testid="edit-iban" />
-											</div>
-											<div>
-												<label for="edit-qr-iban" class="block text-sm font-medium text-text mb-1">{i18nMsg('bank-accounts-labels-qr-iban', 'QR-IBAN (optionnel)')}</label>
-												<Input id="edit-qr-iban" bind:value={formQrIban} data-testid="edit-qr-iban" />
-												<p class="mt-1 text-xs text-text-muted" data-testid="edit-qr-iban-help">{i18nMsg('bank-accounts-help-qr-iban', 'À remplir uniquement si votre banque vous a fourni un QR-IBAN dédié aux QR-factures (numéro spécial avec un identifiant 30000–31999). Sinon, laissez ce champ vide : votre IBAN normal suffit pour générer des QR-factures.')}</p>
-											</div>
-											<div>
-												<label for="edit-journal-account" class="block text-sm font-medium text-text mb-1">{i18nMsg('bank-accounts-labels-journal-account-id', 'Compte comptable lié')}</label>
+												<label for="edit-journal-account" class="block text-sm font-medium text-text mb-1">{isCard ? i18nMsg('bank-accounts-labels-card-ledger', 'Compte de dette lié') : i18nMsg('bank-accounts-labels-journal-account-id', 'Compte comptable lié')}</label>
 												<select
 													id="edit-journal-account"
 													bind:value={formJournalAccountId}
@@ -772,15 +1125,17 @@
 													{/each}
 												</select>
 											</div>
-											<div class="col-span-2 flex items-center gap-2">
-												<input
-													id="edit-is-primary"
-													type="checkbox"
-													bind:checked={formIsPrimary}
-													data-testid="edit-is-primary"
-												/>
-												<label for="edit-is-primary" class="block text-sm font-medium text-text mb-1">{i18nMsg('bank-accounts-labels-is-primary', 'Compte principal')}</label>
-											</div>
+											{#if !isCard}
+												<div class="col-span-2 flex items-center gap-2">
+													<input
+														id="edit-is-primary"
+														type="checkbox"
+														bind:checked={formIsPrimary}
+														data-testid="edit-is-primary"
+													/>
+													<label for="edit-is-primary" class="block text-sm font-medium text-text mb-1">{i18nMsg('bank-accounts-labels-is-primary', 'Compte principal')}</label>
+												</div>
+											{/if}
 										</div>
 										{#if formError}
 											<p class="mt-3 text-sm text-red-600" role="alert" data-testid="edit-form-error">{formError}</p>
@@ -867,6 +1222,38 @@
 												{i18nMsg('bank-accounts-close-dialog-confirm', 'Clore le compte')}
 											</Button>
 											<Button type="button" variant="outline" onclick={closeForm} data-testid="close-cancel-button">
+												{i18nMsg('bank-accounts-actions-cancel', 'Annuler')}
+											</Button>
+										</div>
+									</div>
+								</td>
+							</tr>
+						{/if}
+						<!-- Story 34-2 (#533, AC-7) — dialogue du solde d'ouverture inline -->
+						{#if mode.kind === 'opening-balance' && mode.id === ba.id}
+							<tr>
+								<td colspan="5" class="py-3">
+									<div class="rounded border border-border bg-surface-alt p-4" data-testid="opening-balance-dialog">
+										<h2 class="mb-2 text-base font-semibold">
+											{i18nMsg('bank-accounts-opening-dialog-title', "Solde d'ouverture — { $account }", {
+												account: bankAccountName(ba),
+											})}
+										</h2>
+										<div class="max-w-xl">
+											{@render openingFields('row')}
+										</div>
+										{#if openingError}
+											<p class="mt-3 text-sm text-red-600" role="alert" data-testid="opening-error">{openingError}</p>
+										{/if}
+										<div class="mt-4 flex gap-2">
+											<Button
+												onclick={() => confirmOpeningBalance(ba.id)}
+												disabled={submitting}
+												data-testid="opening-confirm-button"
+											>
+												{i18nMsg('bank-accounts-opening-dialog-confirm', "Passer l'écriture")}
+											</Button>
+											<Button type="button" variant="outline" onclick={closeForm} data-testid="opening-cancel-button">
 												{i18nMsg('bank-accounts-actions-cancel', 'Annuler')}
 											</Button>
 										</div>

@@ -51,7 +51,7 @@ use crate::errors::{DbError, map_db_error};
 /// [`find_by_id_in_tx`].
 macro_rules! columns {
     () => {
-        "id, company_id, bank_name, iban, qr_iban, is_primary, journal_account_id, version, archived, description, closed_on, created_at, updated_at"
+        "id, company_id, bank_name, iban, qr_iban, account_kind, card_last4, is_primary, journal_account_id, version, archived, description, closed_on, created_at, updated_at"
     };
 }
 
@@ -179,6 +179,37 @@ pub async fn find_by_id_in_tx(
     .ok_or(DbError::NotFound)
 }
 
+/// Lecture d'un compte bancaire **scopée par société**, sous **verrou partagé**
+/// (`LOCK IN SHARE MODE`), dans la transaction de l'appelant — Story 34-2
+/// (#533, AC-6).
+///
+/// Sert la saisie du solde d'ouverture d'un compte existant : l'état archivé,
+/// clos et le compte lié se lisent sous ce verrou, et la lecture, étant
+/// **verrouillante**, n'ouvre pas l'instantané REPEATABLE READ avant les
+/// verrous du complément qui la suit (contrat de
+/// [`super::opening_complement::create_opening_complement_in_tx`]). Ne filtre
+/// pas `archived` : l'appelant le refuse lui-même. `Ok(None)` : compte absent
+/// ou d'une autre société.
+///
+/// ⛔ `LOCK IN SHARE MODE`, jamais `FOR SHARE` (erreur de syntaxe sur MariaDB
+/// 10.11).
+pub async fn find_by_id_locked_shared_in_tx(
+    tx: &mut Transaction<'_, MySql>,
+    company_id: i64,
+    id: i64,
+) -> Result<Option<BankAccount>, DbError> {
+    sqlx::query_as::<_, BankAccount>(concat!(
+        "SELECT ",
+        columns!(),
+        " FROM bank_accounts WHERE company_id = ? AND id = ? LOCK IN SHARE MODE"
+    ))
+    .bind(company_id)
+    .bind(id)
+    .fetch_optional(&mut **tx)
+    .await
+    .map_err(map_db_error)
+}
+
 /// Filtre de [`list_by_company`] — Story 28-4a (#642).
 ///
 /// `Default` = les deux à `false` : comptes **ni archivés ni clos**, ceux où
@@ -248,11 +279,46 @@ pub async fn list_by_company(
 /// Compare le compte existant au payload — `true` si aucun champ métier ne diffère
 /// (KF-004 : court-circuit no-op pour ne pas bumper version inutilement).
 /// Compare uniquement les champs effectivement écrits par l'UPDATE de
-/// `upsert_primary` (`bank_name`, `iban`, `qr_iban`).
-fn is_no_op_change(existing: &BankAccount, new: &NewBankAccount) -> bool {
+/// `upsert_primary_in_tx` : `bank_name`, `iban`, `qr_iban`, et — Story 34-1 —
+/// la description et le compte lié **s'ils sont présents** dans `details` (un
+/// champ absent n'est pas écrit, il ne peut donc rien changer).
+fn is_no_op_change(existing: &BankAccount, new: &NewBankAccount, details: &PrimaryDetails) -> bool {
     existing.bank_name == new.bank_name
-        && existing.iban == new.iban
+        && existing.iban.as_deref() == Some(new.iban.as_str())
         && existing.qr_iban == new.qr_iban
+        && details
+            .description
+            .as_ref()
+            .is_none_or(|d| *d == existing.description)
+        && details
+            .journal_account_id
+            .is_none_or(|j| j == existing.journal_account_id)
+}
+
+/// Description et compte lié du compte bancaire **principal** que pose
+/// l'assistant d'installation — Story 34-1 (#966, C-e341-1, C-e341-34).
+///
+/// Second paramètre d'[`upsert_primary_in_tx`] plutôt qu'un élargissement de
+/// [`NewBankAccount`], construit en une soixantaine de sites. Chaque champ est
+/// une **double option** :
+///
+/// - `None` — champ **absent** : **inchangé** (l'`UPDATE` ne nomme pas la
+///   colonne ; l'`INSERT` écrit `NULL`). C'est ce que passe un corps de la
+///   0.17.5, et [`upsert_primary`] (défaut) ;
+/// - `Some(None)` — présent à `null` : **effacé** ;
+/// - `Some(Some(v))` — la valeur, déjà normalisée et contrôlée par la route
+///   (description : `trim`, borne, caractères ; compte : existe, actif,
+///   `Asset | Liability`, imputable, hors comptes de rôle `Receivable` /
+///   `Payable`). Le dépôt ne contrôle rien.
+///
+/// ⚠️ Sémantique **contraire** à celle de `BankAccountPutFields` (le `PUT`,
+/// remplacement complet : `None` = effacé) : d'où un type distinct.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct PrimaryDetails {
+    /// Description du compte (`None` = inchangée).
+    pub description: Option<Option<String>>,
+    /// Compte du plan lié (`None` = inchangé).
+    pub journal_account_id: Option<Option<i64>>,
 }
 
 /// Issue de [`upsert_primary_in_tx`] : ce que l'upsert a **réellement** fait
@@ -293,10 +359,14 @@ impl UpsertPrimaryOutcome {
 ///   UPDATE` tient un X-lock que `rollback` libère comme `commit`) ;
 /// - erreur (dont `OptimisticLockConflict`) → rollback *best-effort*, puis
 ///   l'erreur d'origine.
+///
+/// Passe [`PrimaryDetails::default`] (Story 34-1) : la description et le compte
+/// lié d'un compte existant restent tels quels, ceux d'un compte créé sont
+/// `NULL`.
 pub async fn upsert_primary(pool: &MySqlPool, new: NewBankAccount) -> Result<BankAccount, DbError> {
     let mut tx = pool.begin().await.map_err(map_db_error)?;
 
-    match upsert_primary_in_tx(&mut tx, new).await {
+    match upsert_primary_in_tx(&mut tx, new, PrimaryDetails::default()).await {
         Ok(UpsertPrimaryOutcome::Unchanged(account)) => {
             tx.rollback().await.map_err(map_db_error)?;
             Ok(account)
@@ -325,9 +395,16 @@ pub async fn upsert_primary(pool: &MySqlPool, new: NewBankAccount) -> Result<Ban
 ///   `Err(OptimisticLockConflict)`, **sans annuler**.
 ///
 /// **Ne commite ni n'annule jamais** : c'est l'appelant qui décide.
+///
+/// `details` (Story 34-1, #966) : description et compte lié, **absent =
+/// inchangé** ([`PrimaryDetails`]). L'`INSERT` écrit la valeur présente ou
+/// `NULL` ; l'`UPDATE` ne nomme une colonne que si elle est présente ; le
+/// court-circuit no-op ne compare que les champs présents. Les valeurs sont
+/// déjà contrôlées par l'appelant (route de l'assistant).
 pub async fn upsert_primary_in_tx(
     tx: &mut Transaction<'_, MySql>,
     new: NewBankAccount,
+    details: PrimaryDetails,
 ) -> Result<UpsertPrimaryOutcome, DbError> {
     let existing = sqlx::query_as::<_, BankAccount>(
         concat!(
@@ -344,23 +421,39 @@ pub async fn upsert_primary_in_tx(
     match existing {
         Some(account) => {
             // KF-004 : court-circuit no-op AVANT toute mutation.
-            if is_no_op_change(&account, &new) {
+            if is_no_op_change(&account, &new, &details) {
                 return Ok(UpsertPrimaryOutcome::Unchanged(account));
             }
 
-            let rows = sqlx::query(
-                "UPDATE bank_accounts SET bank_name = ?, iban = ?, qr_iban = ?, version = version + 1 \
-                 WHERE id = ? AND version = ?",
-            )
-            .bind(&new.bank_name)
-            .bind(&new.iban)
-            .bind(&new.qr_iban)
-            .bind(account.id)
-            .bind(account.version)
-            .execute(&mut **tx)
-            .await
-            .map_err(map_db_error)?
-            .rows_affected();
+            // Story 34-1 (C-e341-34) : une colonne absente de `details` n'est
+            // pas nommée — un corps de la 0.17.5 n'efface ni description ni
+            // lien posés entre-temps.
+            let mut sql =
+                String::from("UPDATE bank_accounts SET bank_name = ?, iban = ?, qr_iban = ?");
+            if details.description.is_some() {
+                sql.push_str(", description = ?");
+            }
+            if details.journal_account_id.is_some() {
+                sql.push_str(", journal_account_id = ?");
+            }
+            sql.push_str(", version = version + 1 WHERE id = ? AND version = ?");
+            let mut query = sqlx::query(&sql)
+                .bind(&new.bank_name)
+                .bind(&new.iban)
+                .bind(&new.qr_iban);
+            if let Some(description) = &details.description {
+                query = query.bind(description);
+            }
+            if let Some(journal_account_id) = details.journal_account_id {
+                query = query.bind(journal_account_id);
+            }
+            let rows = query
+                .bind(account.id)
+                .bind(account.version)
+                .execute(&mut **tx)
+                .await
+                .map_err(map_db_error)?
+                .rows_affected();
 
             if rows == 0 {
                 return Err(DbError::OptimisticLockConflict);
@@ -379,14 +472,17 @@ pub async fn upsert_primary_in_tx(
         }
         None => {
             let result = sqlx::query(
-                "INSERT INTO bank_accounts (company_id, bank_name, iban, qr_iban, is_primary) \
-                 VALUES (?, ?, ?, ?, ?)",
+                "INSERT INTO bank_accounts \
+                 (company_id, bank_name, description, iban, qr_iban, is_primary, journal_account_id) \
+                 VALUES (?, ?, ?, ?, ?, ?, ?)",
             )
             .bind(new.company_id)
             .bind(&new.bank_name)
+            .bind(details.description.flatten())
             .bind(&new.iban)
             .bind(&new.qr_iban)
             .bind(new.is_primary)
+            .bind(details.journal_account_id.flatten())
             .execute(&mut **tx)
             .await
             .map_err(map_db_error)?;
@@ -559,6 +655,11 @@ pub async fn set_journal_account_id_for_company(
 /// (`clippy::too_many_arguments`) sans élargir `NewBankAccount`, que
 /// l'onboarding et la création par le dépôt partagent et qui ne connaissent
 /// pas la description (C-26-2-7).
+///
+/// ⚠️ **`Default` : `iban` vaut `None`, donc `NULL` en base — réservé aux
+/// cartes de crédit** (Story 34-11a2). Un `PUT` d'un compte bancaire qui
+/// partirait de `..Default::default()` sans `iban` heurterait
+/// `chk_bank_accounts_bank_has_iban`.
 #[derive(Debug, Clone, Copy, Default)]
 pub struct BankAccountPutFields<'a> {
     /// Compte du plan comptable lié (`None` = délier).
@@ -566,16 +667,26 @@ pub struct BankAccountPutFields<'a> {
     /// Description **déjà normalisée** par la route (`None` = effacée :
     /// remplacement complet, comme `qr_iban`).
     pub description: Option<&'a str>,
+    /// Story 34-11a2 (#972, C-e341-39) — IBAN **déjà normalisé** écrit par le
+    /// `PUT` : `Some` pour un compte bancaire, `None` (`NULL`) pour une carte.
+    /// Remplace `NewBankAccount::iban`, que le `PUT` ne lit plus.
+    pub iban: Option<&'a str>,
+    /// Story 34-11a2 — quatre derniers chiffres d'une carte, déjà validés ;
+    /// `None` = effacés (remplacement complet) ; toujours `None` pour un compte
+    /// bancaire.
+    pub card_last4: Option<&'a str>,
 }
 
 /// Met à jour TOUS les champs métier d'un bank_account (PUT v014-1).
 ///
 /// Différent de [`set_journal_account_id_for_company`] qui ne touche que
 /// `journal_account_id` (PATCH legacy 8-5a-zero) : ce helper écrit
-/// `bank_name`, `iban`, `qr_iban`, `is_primary`, et, depuis `fields`
+/// `bank_name`, `qr_iban`, `is_primary`, et, depuis `fields`
 /// ([`BankAccountPutFields`]), `journal_account_id` et `description` (Story
-/// 26-2a). **Remplacement complet** : une description `None` efface celle en
-/// base.
+/// 26-2a), `iban` et `card_last4` (Story 34-11a2 : `new.iban` n'est plus lu).
+/// **Remplacement complet** : une description ou des quatre chiffres `None`
+/// effacent ceux en base. Le type du compte (`account_kind`) n'est jamais
+/// écrit : il est immuable.
 ///
 /// La transition `is_primary` (un compte devient primary alors qu'un autre
 /// l'était) est **déléguée au caller** : ce repo flippe simplement
@@ -655,15 +766,16 @@ pub async fn update_for_company(
     }
 
     let rows = sqlx::query(
-        "UPDATE bank_accounts SET bank_name = ?, iban = ?, qr_iban = ?, is_primary = ?, journal_account_id = ?, description = ?, version = version + 1 \
+        "UPDATE bank_accounts SET bank_name = ?, iban = ?, qr_iban = ?, is_primary = ?, journal_account_id = ?, description = ?, card_last4 = ?, version = version + 1 \
          WHERE id = ? AND company_id = ? AND version = ?",
     )
     .bind(&new.bank_name)
-    .bind(&new.iban)
+    .bind(fields.iban)
     .bind(&new.qr_iban)
     .bind(new.is_primary)
     .bind(new_journal_account_id)
     .bind(fields.description)
+    .bind(fields.card_last4)
     .bind(id)
     .bind(company_id)
     .bind(expected_version)

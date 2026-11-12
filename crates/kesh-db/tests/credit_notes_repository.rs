@@ -21,6 +21,9 @@ use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
 use sqlx::MySqlPool;
 
+#[path = "support/reglement_version.rs"]
+mod reglement_version;
+
 fn d(y: i32, m: u32, day: u32) -> NaiveDate {
     NaiveDate::from_ymd_opt(y, m, day).unwrap()
 }
@@ -449,6 +452,7 @@ async fn settle(pool: &MySqlPool, seeded: &SeededCompany, invoice_id: i64, amoun
         },
         amount,
         d(2026, 6, 20),
+        reglement_version::version_de(pool, invoice_id).await,
     )
     .await
     .expect("règlement");

@@ -24,6 +24,7 @@ import {
 import {
 	createContactWithAddressViaApi,
 	createAndValidateInvoiceViaApi,
+	invoiceVersionViaApi,
 } from './helpers/api-fixtures';
 
 test.beforeAll(async () => {
@@ -85,6 +86,7 @@ test('solder le reste en escompte depuis la fiche, puis annuler le solde', async
 					accountId: caisse!.id,
 					amount: '500.00',
 					settledOn: new Date().toISOString().slice(0, 10),
+					version: await invoiceVersionViaApi(ctx, invoiceId),
 				},
 			});
 			expect(settled.ok(), `règlement : ${settled.status()}`).toBeTruthy();

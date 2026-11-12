@@ -2,16 +2,16 @@
 	// Story 33-3b (#918) — les revenus et les dépenses de chaque mois de l'exercice.
 	// Le SVG est une image (`role="img"`), sans aucun élément focalisable ; le clavier
 	// et le lecteur d'écran passent par le vrai tableau voisin (C-e332-16).
+	// Story 34-10 (#970) : couleurs unies, revenus en vert à gauche, dépenses en rouge à
+	// droite ; la position et la légende portent ce que la couleur ne porte pas.
 	import { goto } from '$app/navigation';
 	import { i18nLocale, i18nMsg } from '$lib/shared/utils/i18n.svelte';
-	import ChartPatterns from './ChartPatterns.svelte';
 	import {
 		BAR_EXPENSE,
 		BAR_REVENUE,
 		FULL_WIDTH_ABOVE_MONTHS,
 		axisLabels,
 		chartAmount,
-		chartFill,
 		chartWidth,
 		followMark,
 		monthHref,
@@ -26,9 +26,6 @@
 		summary: Extract<HomepageSummary, { state: 'open' }>;
 	}
 	let { summary }: Props = $props();
-
-	const PREFIX = 'homepage-bars';
-	const expenseFill = chartFill(PREFIX, BAR_EXPENSE);
 
 	let n = $derived(summary.months.length);
 	let wide = $derived(n > FULL_WIDTH_ABOVE_MONTHS);
@@ -66,7 +63,7 @@
 			{i18nMsg('homepage-charts-legend-revenues', 'Revenus')}
 		</li>
 		<li class="flex items-center gap-2">
-			<svg aria-hidden="true" width="14" height="14"><rect width="14" height="14" fill={expenseFill} stroke={BAR_EXPENSE.color} /></svg>
+			<svg aria-hidden="true" width="14" height="14"><rect width="14" height="14" fill={BAR_EXPENSE.color} /></svg>
 			{i18nMsg('homepage-charts-legend-expenses', 'Dépenses')}
 		</li>
 	</ul>
@@ -95,7 +92,6 @@
 						months: n,
 					})}
 		</desc>
-		<ChartPatterns prefix={PREFIX} styles={[BAR_EXPENSE]} size={wide ? 12 : 10} />
 
 		{#each chart.ticks as tick (tick.value.toString())}
 			<line x1={box.marginLeft} x2={width - box.marginRight} y1={tick.y} y2={tick.y} stroke="var(--color-border)" />
@@ -121,7 +117,7 @@
 					<rect data-bar="revenue" x={group.revenue.x} y={group.revenue.y} width={group.revenue.width} height={group.revenue.height} fill={BAR_REVENUE.color} />
 				{/if}
 				{#if group.expense}
-					<rect data-bar="expense" x={group.expense.x} y={group.expense.y} width={group.expense.width} height={group.expense.height} fill={expenseFill} stroke={BAR_EXPENSE.color} />
+					<rect data-bar="expense" x={group.expense.x} y={group.expense.y} width={group.expense.width} height={group.expense.height} fill={BAR_EXPENSE.color} />
 				{/if}
 			</g>
 		{/each}

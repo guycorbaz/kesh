@@ -460,7 +460,7 @@ async fn unreconciling_a_supplier_settlement_undoes_it(pool: MySqlPool) {
         "la dette est de nouveau ouverte"
     );
     let paiement = ligne(r.settlement_entry_id).await;
-    let miroir = ligne(done.reversal_journal_entry_id).await;
+    let miroir = ligne(done.reversal_journal_entry_id.expect("contre-passation")).await;
     assert!(paiement.0.is_some(), "{paiement:?}");
     assert_eq!(paiement.1.as_deref(), Some("reversal"));
     assert_eq!(miroir, paiement, "le paiement est lettré avec son miroir");

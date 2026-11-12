@@ -343,6 +343,7 @@ impl Ctx {
                     "bankAccountId": bank,
                     "amount": montant,
                     "settledOn": le,
+                    "version": common::invoice_version(&self.pool, facture).await,
                 }),
             )
             .await;
@@ -728,6 +729,7 @@ async fn t7_un_reglement_par_compte_interne_est_refuse(pool: MySqlPool) {
                 "accountId": ctx.seeded.accounts["1000"],
                 "amount": "108.10",
                 "settledOn": "2026-06-20",
+                "version": common::invoice_version(&ctx.pool, facture).await,
             }),
         )
         .await;

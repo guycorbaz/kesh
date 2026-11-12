@@ -33,6 +33,7 @@ use kesh_qrbill::{Address, AddressType, Currency, QrBillData, Reference, build_p
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
 use serde_json::{Value, json};
+use sha2::{Digest, Sha256};
 use sqlx::MySqlPool;
 
 const TEST_JWT_SECRET: &[u8] = b"test-secret-32-bytes-minimum-test-secret-padding";
@@ -80,9 +81,20 @@ fn test_config(inbox: &Path, documents: &Path, max_file_bytes: u64) -> Config {
 }
 
 async fn spawn_app(pool: MySqlPool, max_file_bytes: u64) -> TestApp {
+    spawn_app_with(pool, max_file_bytes, |_| {}).await
+}
+
+/// [`spawn_app`] dont la configuration se règle avant le démarrage — Story 34-9
+/// (#974, AC-3) : la limite de fichiers par import, abaissée pour la troncature.
+async fn spawn_app_with(
+    pool: MySqlPool,
+    max_file_bytes: u64,
+    adjust: impl FnOnce(&mut Config),
+) -> TestApp {
     let inbox = unique_dir("inbox");
     let documents = unique_dir("documents");
-    let config = test_config(&inbox, &documents, max_file_bytes);
+    let mut config = test_config(&inbox, &documents, max_file_bytes);
+    adjust(&mut config);
     let rate_limiter = kesh_api::middleware::rate_limit::RateLimiter::new(&config);
     let i18n = Arc::new(
         kesh_i18n::I18nBundle::load(
@@ -1378,6 +1390,400 @@ async fn import_file_too_large_and_directory_ignored(pool: MySqlPool) {
     assert_eq!(failed.len(), 1);
     assert_eq!(failed[0]["errorCode"], "FILE_TOO_LARGE");
     assert_eq!(failed[0]["fileName"], "big.png");
+    // Story 34-9 (AC-2, AC-3, M6) — `movedTo` se FUSIONNE dans le `details` du
+    // refus : la taille et la limite restent, à côté du nom rangé (suffixe aléa).
+    let size = qr_invoice_png(dec!(10.00), "Big SA").len() as u64;
+    assert_eq!(
+        failed[0]["details"]["byteSize"].as_u64(),
+        Some(size),
+        "{body}"
+    );
+    assert_eq!(
+        failed[0]["details"]["maxBytes"].as_u64(),
+        Some(10),
+        "{body}"
+    );
+    assert_moved_to(&app, &failed[0], "big.png", None);
+}
+
+// ============================================================
+// Story 34-9 (#969, #974) — le rapport nomme chaque fichier
+// ============================================================
+
+/// SHA-256 hexadécimal des octets — l'empreinte qui suffixe le nom rangé dans
+/// `failed/` d'un échec survenu après le hachage.
+fn sha256_hex(bytes: &[u8]) -> String {
+    format!("{:x}", Sha256::digest(bytes))
+}
+
+/// L'entrée `failed[]` d'un fichier, désignée par son nom (jamais un index).
+fn failed_entry<'a>(report: &'a Value, file_name: &str) -> &'a Value {
+    report["failed"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|f| f["fileName"] == file_name)
+        .unwrap_or_else(|| panic!("{file_name} absent de failed[] : {report}"))
+}
+
+/// AC-2 — `details.movedTo` est un nom de fichier seul (aucun chemin), de la
+/// forme `{stem}_{8 caractères}.{ext}`, **présent** dans `<inbox>/failed/`. Avec
+/// `hash8`, le suffixe est exactement celui de l'empreinte. Rend le nom.
+fn assert_moved_to(app: &TestApp, entry: &Value, file_name: &str, hash8: Option<&str>) -> String {
+    let moved = entry["details"]["movedTo"]
+        .as_str()
+        .unwrap_or_else(|| panic!("details.movedTo absent : {entry}"))
+        .to_string();
+    assert!(!moved.contains('/'), "movedTo sans chemin : {moved}");
+    let p = Path::new(file_name);
+    let stem = p.file_stem().unwrap().to_str().unwrap();
+    let ext = p.extension().unwrap().to_str().unwrap();
+    let suffix = moved
+        .strip_prefix(&format!("{stem}_"))
+        .and_then(|s| s.strip_suffix(&format!(".{ext}")))
+        .unwrap_or_else(|| panic!("movedTo hors de la forme {stem}_XXXXXXXX.{ext} : {moved}"));
+    assert_eq!(suffix.len(), 8, "suffixe de 8 caractères : {moved}");
+    if let Some(h) = hash8 {
+        assert_eq!(suffix, h, "suffixe = 8 caractères de l'empreinte : {moved}");
+    }
+    assert!(
+        app.inbox.join("failed").join(&moved).is_file(),
+        "{moved} absent de failed/"
+    );
+    assert!(
+        !app.inbox.join(file_name).exists(),
+        "{file_name} est resté dans le dossier"
+    );
+    moved
+}
+
+/// Attend qu'une autre connexion de la base du test exécute une requête qui
+/// commence par `debut` — c'est-à-dire, dans les montages de course ci-dessous,
+/// qu'elle soit bloquée sur le verrou de ligne tenu par le test. Lu dans
+/// `information_schema.PROCESSLIST`, qui montre ses propres sessions sans le droit
+/// `PROCESS`.
+async fn attendre_requete_bloquee(pool: &MySqlPool, debut: &str) {
+    let motif = format!("{debut}%");
+    let limite = std::time::Instant::now() + std::time::Duration::from_secs(30);
+    loop {
+        let n: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM information_schema.PROCESSLIST \
+             WHERE DB = DATABASE() AND ID <> CONNECTION_ID() AND INFO LIKE ?",
+        )
+        .bind(&motif)
+        .fetch_one(pool)
+        .await
+        .unwrap();
+        if n > 0 {
+            return;
+        }
+        assert!(
+            std::time::Instant::now() < limite,
+            "aucune requête « {debut} » en cours après 30 s : le montage n'exerce rien"
+        );
+        tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+    }
+}
+
+/// Lance un import dans une tâche à part (le test garde la main pour libérer un
+/// verrou pendant que l'import l'attend) ; rend la poignée du rapport.
+fn spawn_import(app: &TestApp, jwt: &str) -> tokio::task::JoinHandle<Value> {
+    let client = app.client.clone();
+    let url = app.url("/api/v1/inbox-import");
+    let jwt = jwt.to_string();
+    tokio::spawn(async move {
+        let resp = client.post(url).bearer_auth(jwt).send().await.unwrap();
+        assert_eq!(resp.status(), 200);
+        resp.json().await.unwrap()
+    })
+}
+
+/// Les trois champs du document existant d'un doublon (AC-1).
+fn assert_existing(entry: &Value, id: i64, status: &str, invoice: Option<i64>) {
+    assert_eq!(entry["errorCode"], "DUPLICATE", "{entry}");
+    let d = &entry["details"];
+    assert_eq!(d["existingDocumentId"].as_i64(), Some(id), "{entry}");
+    assert_eq!(d["existingStatus"], status, "{entry}");
+    // La clé est présente, à `null` quand le document n'a pas de facture.
+    assert_eq!(
+        d.get("supplierInvoiceId"),
+        Some(&invoice.map(Value::from).unwrap_or(Value::Null)),
+        "{entry}"
+    );
+}
+
+/// AC-1, AC-3 (site `to_complete`) — un doublon d'un document en attente dit
+/// lequel, et où le fichier a été rangé. Le rapport porte aussi `skipped: []` et
+/// `truncatedAt: null` (AC-2-bis).
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn duplicate_names_the_pending_document(pool: MySqlPool) {
+    let ctx = setup(&pool).await;
+    let app = spawn_app(pool.clone(), 25 * 1024 * 1024).await;
+    let png = blank_png();
+    std::fs::write(app.inbox.join("a.png"), &png).unwrap();
+    let b1 = run_import(&app, &ctx.jwt).await;
+    let id = accepted_entry(&b1, "a.png")["importedSupplierInvoiceId"]
+        .as_i64()
+        .unwrap();
+
+    std::fs::write(app.inbox.join("b.png"), &png).unwrap();
+    let b2 = run_import(&app, &ctx.jwt).await;
+    let entry = failed_entry(&b2, "b.png");
+    assert_existing(entry, id, "to_complete", None);
+    assert_moved_to(&app, entry, "b.png", Some(&sha256_hex(&png)[..8]));
+    assert_eq!(b2["skipped"], json!([]), "{b2}");
+    assert!(b2["truncatedAt"].is_null(), "{b2}");
+    assert!(
+        b2.get("truncatedAt").is_some(),
+        "la clé est toujours là : {b2}"
+    );
+}
+
+/// AC-1, AC-3 (site `completed`) — un doublon d'un document transformé en
+/// facture donne l'identifiant de la facture (tue M1 et M2).
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn duplicate_names_the_invoice_of_a_completed_document(pool: MySqlPool) {
+    let ctx = setup(&pool).await;
+    let app = spawn_app(pool.clone(), 25 * 1024 * 1024).await;
+    let png = blank_png();
+    std::fs::write(app.inbox.join("c.png"), &png).unwrap();
+    let b1 = run_import(&app, &ctx.jwt).await;
+    let id = accepted_entry(&b1, "c.png")["importedSupplierInvoiceId"]
+        .as_i64()
+        .unwrap();
+    let (status, invoice) = post_complete(
+        &app,
+        &ctx.jwt,
+        id,
+        &complete_body(
+            ctx.supplier_id,
+            ctx.seeded.accounts["4000"],
+            dec!(1),
+            dec!(42.00),
+            dec!(0),
+        ),
+    )
+    .await;
+    assert_eq!(status, 200, "{invoice}");
+    let invoice_id = invoice["id"].as_i64().unwrap();
+
+    std::fs::write(app.inbox.join("c-bis.png"), &png).unwrap();
+    let b2 = run_import(&app, &ctx.jwt).await;
+    let entry = failed_entry(&b2, "c-bis.png");
+    assert_existing(entry, id, "completed", Some(invoice_id));
+    assert_moved_to(&app, entry, "c-bis.png", Some(&sha256_hex(&png)[..8]));
+}
+
+/// AC-1, AC-3 (course au site de la réactivation manquée, tue M7) — la ligne est
+/// `discarded` quand l'import la lit, mais une transaction concurrente la tient
+/// verrouillée et la repasse `to_complete` : la réactivation de l'import attend,
+/// puis ne change rien. Le doublon rend l'état **relu** après la course
+/// (`to_complete`), jamais le `discarded` lu avant. Montage sans crochet de
+/// production : le verrou de ligne du test, libéré une fois l'`UPDATE` de
+/// l'import en attente.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn duplicate_after_a_missed_reactivation_reports_the_reread_state(pool: MySqlPool) {
+    let ctx = setup(&pool).await;
+    let app = spawn_app(pool.clone(), 25 * 1024 * 1024).await;
+    let png = blank_png();
+    std::fs::write(app.inbox.join("r.png"), &png).unwrap();
+    let b1 = run_import(&app, &ctx.jwt).await;
+    let id = accepted_entry(&b1, "r.png")["importedSupplierInvoiceId"]
+        .as_i64()
+        .unwrap();
+    sqlx::query("UPDATE imported_supplier_invoices SET status = 'discarded' WHERE id = ?")
+        .bind(id)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+    let mut concurrente = pool.begin().await.unwrap();
+    sqlx::query("UPDATE imported_supplier_invoices SET status = 'to_complete' WHERE id = ?")
+        .bind(id)
+        .execute(&mut *concurrente)
+        .await
+        .unwrap();
+    std::fs::write(app.inbox.join("r-bis.png"), &png).unwrap();
+    let import = spawn_import(&app, &ctx.jwt);
+    attendre_requete_bloquee(&pool, "UPDATE imported_supplier_invoices").await;
+    concurrente.commit().await.unwrap();
+    let report = import.await.unwrap();
+
+    let entry = failed_entry(&report, "r-bis.png");
+    assert_existing(entry, id, "to_complete", None);
+    assert_moved_to(&app, entry, "r-bis.png", Some(&sha256_hex(&png)[..8]));
+    // Aucune réactivation tracée : la course l'a emporté.
+    let n: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM audit_log WHERE entity_type = 'imported_supplier_invoice' \
+         AND entity_id = ? AND action = 'imported_supplier_invoice.reactivated'",
+    )
+    .bind(id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(n, 0, "{report}");
+}
+
+/// AC-1, AC-3 (course sur `UNIQUE (company_id, file_hash)`) — une transaction
+/// concurrente insère le même contenu sans valider : l'import ne la voit pas à
+/// sa recherche, puis son `INSERT` attend et échoue en doublon une fois la
+/// transaction validée. Le document est relu par son empreinte après le
+/// `rollback`. Montage sans crochet de production.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn duplicate_on_the_unique_race_names_the_winning_document(pool: MySqlPool) {
+    let ctx = setup(&pool).await;
+    let app = spawn_app(pool.clone(), 25 * 1024 * 1024).await;
+    let png = blank_png();
+    let hash = sha256_hex(&png);
+    let mut concurrente = pool.begin().await.unwrap();
+    let gagnante = imported_supplier_invoices::create_in_tx(
+        &mut concurrente,
+        &NewImportedSupplierInvoice {
+            company_id: ctx.seeded.company_id,
+            file_hash: hash.clone(),
+            storage_path: format!("{hash}.png"),
+            original_filename: "autre-session.png".into(),
+            mime_type: "image/png".into(),
+            byte_size: png.len() as i64,
+            creditor_iban: None,
+            is_qr_iban: None,
+            creditor_address_type: None,
+            creditor_name: None,
+            creditor_line1: None,
+            creditor_line2: None,
+            creditor_postal_code: None,
+            creditor_town: None,
+            creditor_country: None,
+            reference_type: None,
+            reference_value: None,
+            amount: None,
+            currency: None,
+            unstructured_message: None,
+            billing_information: None,
+        },
+    )
+    .await
+    .unwrap();
+
+    std::fs::write(app.inbox.join("u.png"), &png).unwrap();
+    let import = spawn_import(&app, &ctx.jwt);
+    attendre_requete_bloquee(&pool, "INSERT INTO imported_supplier_invoices").await;
+    concurrente.commit().await.unwrap();
+    let report = import.await.unwrap();
+
+    let entry = failed_entry(&report, "u.png");
+    assert_existing(entry, gagnante.id, "to_complete", None);
+    assert_moved_to(&app, entry, "u.png", Some(&hash[..8]));
+}
+
+/// AC-2-bis, AC-3 (#974) — un fichier en cours d'écriture pendant le délai de
+/// stabilité est **non traité** : `skipped[]` le nomme avec le motif `UNSTABLE`,
+/// `warnings[]` garde son message (compatibilité), le fichier reste en place.
+/// Montage sans crochet : un fil y ajoute un octet chaque milliseconde pendant
+/// l'import, si bien que sa taille change entre les deux lectures (25 ms).
+///
+/// Revue de code P1 (E-4 ≈ B-4) : le fil est arrêté par un garde, même si
+/// l'import panique ; et, sur un poste assez chargé pour que le fil manque toute
+/// la fenêtre de 25 ms, le fichier paraîtrait stable et serait importé — l'essai
+/// est alors repris avec un fichier neuf, cinq fois au plus. Un rapport qui
+/// nomme le fichier instable est toujours asserté en entier : aucun passage à
+/// vide (le test échoue si aucun essai n'exerce l'instabilité).
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn unstable_file_is_skipped_with_its_reason(pool: MySqlPool) {
+    use std::io::Write;
+    use std::sync::atomic::{AtomicBool, Ordering};
+
+    /// Fil qui écrit dans le fichier tant qu'il vit ; arrêté et rejoint à sa
+    /// destruction, panique comprise.
+    struct Ecrivain {
+        stop: Arc<AtomicBool>,
+        fil: Option<std::thread::JoinHandle<()>>,
+    }
+    impl Ecrivain {
+        fn demarrer(path: PathBuf) -> Self {
+            let stop = Arc::new(AtomicBool::new(false));
+            let arret = stop.clone();
+            let fil = std::thread::spawn(move || {
+                while !arret.load(Ordering::Relaxed) {
+                    if let Ok(mut f) = std::fs::OpenOptions::new().append(true).open(&path) {
+                        let _ = f.write_all(b"x");
+                    }
+                    std::thread::sleep(std::time::Duration::from_millis(1));
+                }
+            });
+            Self {
+                stop,
+                fil: Some(fil),
+            }
+        }
+    }
+    impl Drop for Ecrivain {
+        fn drop(&mut self) {
+            self.stop.store(true, Ordering::Relaxed);
+            if let Some(fil) = self.fil.take() {
+                let _ = fil.join();
+            }
+        }
+    }
+
+    let ctx = setup(&pool).await;
+    let app = spawn_app(pool.clone(), 25 * 1024 * 1024).await;
+    for essai in 0..5u64 {
+        let name = format!("en-cours-{essai}.png");
+        let path = app.inbox.join(&name);
+        // Contenu distinct à chaque essai : un essai importé ne fait pas du
+        // suivant un doublon.
+        std::fs::write(&path, noise_png(64, 100 + essai)).unwrap();
+        let report = {
+            let _ecrivain = Ecrivain::demarrer(path.clone());
+            run_import(&app, &ctx.jwt).await
+        };
+        if report["skipped"].as_array().unwrap().is_empty() {
+            eprintln!("essai {essai} : le fil n'a pas écrit dans la fenêtre — {report}");
+            continue;
+        }
+        assert_eq!(
+            report["skipped"],
+            json!([{ "fileName": name, "reason": "UNSTABLE" }]),
+            "{report}"
+        );
+        let warnings = report["warnings"].as_array().unwrap();
+        assert_eq!(warnings.len(), 1, "{report}");
+        assert!(warnings[0].as_str().unwrap().contains(&name), "{report}");
+        assert!(
+            report["accepted"].as_array().unwrap().is_empty(),
+            "{report}"
+        );
+        assert!(report["failed"].as_array().unwrap().is_empty(), "{report}");
+        assert!(path.exists(), "le fichier instable reste dans le dossier");
+        return;
+    }
+    panic!("aucun des cinq essais n'a exercé l'instabilité");
+}
+
+/// AC-2-bis, AC-3 (#974) — la limite par import atteinte se dit par
+/// `truncatedAt` (la limite), et `warnings[]` garde son message.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn truncation_reports_the_limit(pool: MySqlPool) {
+    let ctx = setup(&pool).await;
+    let app = spawn_app_with(pool.clone(), 25 * 1024 * 1024, |c| {
+        c.inbox_max_files_per_run = 1;
+    })
+    .await;
+    std::fs::write(app.inbox.join("un.png"), blank_png()).unwrap();
+    std::fs::write(app.inbox.join("deux.png"), noise_png(64, 7)).unwrap();
+    let report = run_import(&app, &ctx.jwt).await;
+    assert_eq!(report["truncatedAt"].as_u64(), Some(1), "{report}");
+    assert_eq!(report["accepted"].as_array().unwrap().len(), 1, "{report}");
+    assert_eq!(report["skipped"], json!([]), "{report}");
+    let warnings = report["warnings"].as_array().unwrap();
+    assert_eq!(warnings.len(), 1, "{report}");
+    assert!(warnings[0].as_str().unwrap().contains('1'), "{report}");
+    assert_eq!(
+        inbox_files(&app).len(),
+        1,
+        "un fichier reste pour le prochain import"
+    );
 }
 
 #[sqlx::test(migrations = "../kesh-db/test-schema")]

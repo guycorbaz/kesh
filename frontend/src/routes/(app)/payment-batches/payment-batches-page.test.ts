@@ -54,6 +54,8 @@ function compte(id: number, description: string | null): BankAccountSummary {
 		description,
 		iban: `CH93007620116238529${50 + id}`,
 		qrIban: null,
+		accountKind: 'bank',
+		cardLast4: null,
 		isPrimary: id === 1,
 		journalAccountId: 1020,
 		version: 1,
@@ -84,6 +86,28 @@ describe('page des lots de virements — compte source (Story 26-2b, D4)', () =>
 		);
 		expect(labels).toContain(`UBS — Personnel — ${compte(1, null).iban}`);
 		expect(labels).toContain(`UBS — ${compte(2, null).iban}`);
+	});
+
+	// Story 34-11a1 (#972, AC-5) — un compte sans IBAN ne débite pas un pain.001 : il
+	// n'est pas proposé comme compte source.
+	it('un compte sans IBAN n’est pas proposé', async () => {
+		const carte: BankAccountSummary = {
+			...compte(3, null),
+			bankName: 'Visa',
+			iban: null,
+			accountKind: 'credit_card',
+			cardLast4: '1234',
+			isPrimary: false,
+		};
+		listBankAccountsMock.mockResolvedValue([compte(1, 'Personnel'), carte]);
+		const { findByTestId } = render(Page);
+		await fireEvent.click(await findByTestId('payment-batch-new'));
+		const form = await findByTestId('payment-batch-form');
+		const labels = Array.from(form.querySelectorAll('select option')).map(
+			(o) => o.textContent?.trim() ?? '',
+		);
+		expect(labels).toContain(`UBS — Personnel — ${compte(1, null).iban}`);
+		expect(labels.some((l) => l.includes('Visa'))).toBe(false);
 	});
 });
 

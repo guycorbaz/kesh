@@ -48,6 +48,7 @@ import {
 import {
 	createContactWithAddressViaApi,
 	createAndValidateInvoiceViaApi,
+	invoiceVersionViaApi,
 } from './helpers/api-fixtures';
 
 const FIXTURE = path.join(
@@ -284,6 +285,7 @@ for (const [colorScheme, suffixe] of [
 						accountId: cash.id,
 						amount: '972.89',
 						settledOn: '2026-05-15',
+						version: await invoiceVersionViaApi(ctx, invoiceId),
 					},
 				});
 				ok(settled, 'règlement de secours');

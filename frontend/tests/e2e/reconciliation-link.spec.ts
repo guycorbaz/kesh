@@ -45,6 +45,7 @@ import {
 	createContactWithAddressViaApi,
 	createAndValidateInvoiceViaApi,
 	wiredBankAccountViaApi,
+	invoiceVersionViaApi,
 } from './helpers/api-fixtures';
 
 const FIXTURE = path.join(
@@ -100,6 +101,7 @@ async function settledFromTheInvoice(
 				bankAccountId,
 				amount: settled,
 				settledOn: '2026-05-16',
+				version: await invoiceVersionViaApi(ctx, invoiceId),
 			},
 		});
 		expect(res.ok(), `règlement : ${res.status()} ${await res.text()}`).toBeTruthy();

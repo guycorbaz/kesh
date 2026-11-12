@@ -23,6 +23,7 @@ import {
 	ensurePrimaryBankAccountViaApi,
 	createAndValidateInvoiceViaApi,
 	overdueDate,
+	invoiceVersionViaApi,
 } from './helpers/api-fixtures';
 
 test.beforeAll(async () => {
@@ -107,6 +108,7 @@ test.describe('Page Rappels (Story 21-6b)', () => {
 					accountId: cash!.id,
 					amount: '400.00',
 					settledOn: new Date().toISOString().slice(0, 10),
+					version: await invoiceVersionViaApi(ctx, invoiceId),
 				},
 			});
 			expect(settled.ok(), `règlement: ${settled.status()}`).toBeTruthy();

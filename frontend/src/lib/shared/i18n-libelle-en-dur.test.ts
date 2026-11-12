@@ -300,8 +300,36 @@ const SUFFIXES = ['Label', 'Text', 'Display'];
  *
  * Fusion de la release 0.17.5 (2026-11-07) : les trois stories réunies, **85** candidates,
  * `conforme` **71**, recomptés par la garde après la fusion (non additionnés).
+ *
+ * **85 → 86** (Story 34-1, #966, remédiation de la revue P1) : `bankLedgerLoadErrorText`
+ * (`routes/onboarding/+page.svelte`, tout par le relais `msg` de `i18nMsg`, clé
+ * `onboarding-bank-ledger-load-error`) : aucun littéral rendu, donc `conforme` **71 → 72** ;
+ * `ecartee` ne bouge pas.
+ *
+ * **85 → 86** (Story 34-8, #938) : `unknownOutcomeText` (`supplier-invoices/[id]/+page.svelte`),
+ * les deux avis d'issue inconnue, tout par `i18nMsg` : aucun littéral affiché, donc `conforme`
+ * **71 → 72** ; `ecartee` ne bouge pas.
+ *
+ * **85 → 86** (Story 34-10, #970) : `totalLabel` (`lib/features/homepage/ExpensePieCard.svelte`),
+ * « Total des dépenses » au centre de l'anneau, par `i18nMsg` (`homepage-charts-pie-total-label`) :
+ * aucun littéral, donc `conforme` **71 → 72** ; `ecartee` ne bouge pas.
+ *
+ * Intégration de la release 0.17.6 (2026-11-12), recomptés par la garde après chaque fusion
+ * (non additionnés) : 87 candidates et `conforme` 73 après la 34-8 (34-1, 34-8), **88**
+ * candidates et `conforme` 74 après la 34-10, **89** candidates et `conforme` **75** après la
+ * 34-11a1.
+ *
+ * **85 → 86** (Story 34-11a1, #972) : `cardLast4Label` (`bank-accounts/format.ts`), la forme
+ * « •••• 1234 » des quatre derniers chiffres d'une carte — une donnée, aucun littéral à
+ * traduire : `conforme` **71 → 72** ; `ecartee` ne bouge pas.
+ *
+ * **86 → 87** (Story 34-11a2, #972) : `kindLabel` (`bank-accounts/+page.svelte`), le libellé du
+ * type d'un compte, tout par `i18nMsg` : `conforme` **72 → 73** ; `ecartee` ne bouge pas.
+ *
+ * Intégration de la 34-11a2 dans la 0.17.6 (2026-11-12), recomptés par la garde après la
+ * fusion (non additionnés) : **90** candidates, `conforme` **76**.
  */
-const CANDIDATES_ATTENDUES = 85;
+const CANDIDATES_ATTENDUES = 90;
 
 /** Les trois délimiteurs de littéral en JS/TS. */
 const QUOTES = ["'", '"', '`'];
@@ -818,7 +846,7 @@ describe('libellés en dur — l’angle mort #255', () => {
 			else if (c.retours.length > 0) classes.ecartee += 1;
 			else classes.conforme += 1;
 		}
-		expect(classes).toEqual({ nonAnalysee: 0, enViolation: 0, ecartee: 14, conforme: 71 });
+		expect(classes).toEqual({ nonAnalysee: 0, enViolation: 0, ecartee: 14, conforme: 76 });
 		// La somme est recalculée depuis les classes, jamais depuis le total qu'elle contrôle.
 		const somme = Object.values(classes).reduce((a, b) => a + b, 0);
 		expect(somme).toBe(CANDIDATES_ATTENDUES);

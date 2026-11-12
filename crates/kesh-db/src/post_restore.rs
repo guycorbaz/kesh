@@ -642,6 +642,15 @@ pub const EXEMPT_MIGRATIONS: &[(i64, ExemptionBasis, &str)] = &[
         "UPDATE sur _kesh_version (bump kesh_version_min_required, valeur inchangée 0.17.0), \
          table système jamais restaurée. Les autres instructions sont du DDL (ALTER TABLE).",
     ),
+    (
+        20261110000001,
+        ExemptionBasis::Durable,
+        "UPDATE sur _kesh_version (bump kesh_version_min_required à 0.17.6), table système \
+         jamais restaurée. Le reste de la migration est du DDL pur (iban nullable, colonnes \
+         account_kind et card_last4, contraintes CHECK, Story 34-11a1) : aucune valeur n'est à \
+         recalculer. Une sauvegarde 0.17.5 importée prend account_kind à son DEFAULT 'bank' et \
+         card_last4 à NULL, exactement la nature de ses comptes.",
+    ),
 ];
 
 /// Rejoue les backfills du registre canonique dans la transaction de restore.
@@ -1237,9 +1246,12 @@ mod tests {
         // ⚠️ **22 → 23 (Story v017-4a, #849)** : `20261031000001`, le bump
         // `kesh_version_min_required` (valeur inchangée 0.17.0) du brouillon des
         // factures fournisseur — `Durable` ; ses autres instructions sont du DDL.
+        // ⚠️ **23 → 24 (Story 34-11a1, #972)** : `20261110000001`, le bump
+        // `kesh_version_min_required` à 0.17.6 du compte sans IBAN — `Durable`,
+        // patron de `20261011000001` (table système jamais restaurée, DDL pur sinon).
         assert_eq!(
             EXEMPT_MIGRATIONS.len(),
-            23,
+            24,
             "le registre d'exemptions a changé de taille : déclarer le fondement de l'entrée \
              neuve (Durable, ou PerishableSince(<borne>) si elle argumente sur un fait daté), \
              puis bumper ce nombre."

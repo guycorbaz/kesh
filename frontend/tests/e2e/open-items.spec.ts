@@ -8,6 +8,7 @@ import {
 import {
 	createAndValidateInvoiceViaApi,
 	createContactWithAddressViaApi,
+	invoiceVersionViaApi,
 } from './helpers/api-fixtures';
 
 /**
@@ -150,6 +151,7 @@ test.describe('Postes ouverts', () => {
 					accountId: caisse.id,
 					amount: '972.90',
 					settledOn: todayZurich(),
+					version: await invoiceVersionViaApi(ctx, invoiceId),
 				},
 			});
 			expect(settled.ok(), `règlement : ${settled.status()}`).toBeTruthy();

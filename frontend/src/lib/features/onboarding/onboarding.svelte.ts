@@ -131,10 +131,11 @@ export const onboardingState = {
 		}
 	},
 
-	async setBankAccount(bankName: string, iban: string, qrIban: string | null) {
+	/** Story 34-1 (#966) : signature à objet, description et compte lié compris. */
+	async setBankAccount(payload: api.BankAccountStepPayload) {
 		_loading = true;
 		try {
-			_state = await api.setBankAccount(bankName, iban, qrIban);
+			_state = await api.setBankAccount(payload);
 		} finally {
 			_loading = false;
 		}

@@ -26,6 +26,8 @@ use sqlx::MySqlPool;
 #[path = "../../kesh-db/tests/support/document_group.rs"]
 mod document_group;
 
+mod common;
+
 const TEST_JWT_SECRET: &[u8] = b"test-secret-32-bytes-minimum-test-secret-padding";
 /// Password du user `admin` seedé par `seed_accounting_company`
 /// (cf. `kesh_db::test_fixtures::ADMIN_PASSWORD_HASH`).
@@ -422,7 +424,8 @@ async fn settle_in_cash_returns_200_and_settles(pool: MySqlPool) {
             "settlementType": "internal_account",
             "accountId": caisse,
             "amount": "108.10",
-            "settledOn": "2026-04-15"
+            "settledOn": "2026-04-15",
+            "version": common::invoice_version(&pool, id).await
         }))
         .send()
         .await
@@ -484,7 +487,8 @@ async fn settle_on_draft_invoice_returns_409(pool: MySqlPool) {
             "settlementType": "internal_account",
             "accountId": caisse,
             "amount": "50.00",
-            "settledOn": "2026-04-15"
+            "settledOn": "2026-04-15",
+            "version": inv.version
         }))
         .send()
         .await
@@ -520,7 +524,8 @@ async fn settle_rejects_settled_on_before_invoice_date(pool: MySqlPool) {
             "settlementType": "internal_account",
             "accountId": caisse,
             "amount": "108.10",
-            "settledOn": "2026-04-01"
+            "settledOn": "2026-04-01",
+            "version": common::invoice_version(&pool, id).await
         }))
         .send()
         .await
@@ -585,7 +590,8 @@ async fn settled_invoice(pool: &MySqlPool, app: &TestApp, token: &str) -> (i64, 
             "settlementType": "internal_account",
             "accountId": caisse,
             "amount": "108.10",
-            "settledOn": "2026-04-15"
+            "settledOn": "2026-04-15",
+            "version": common::invoice_version(pool, id).await
         }))
         .send()
         .await
@@ -872,7 +878,8 @@ async fn credit_note_on_partially_settled_invoice_is_409(pool: MySqlPool) {
             "settlementType": "internal_account",
             "accountId": caisse,
             "amount": "40.00",
-            "settledOn": "2026-04-15"
+            "settledOn": "2026-04-15",
+            "version": common::invoice_version(&pool, id).await
         }))
         .send()
         .await
@@ -925,7 +932,8 @@ async fn partially_settled_invoice(
             "settlementType": "internal_account",
             "accountId": caisse,
             "amount": "40.00",
-            "settledOn": "2026-04-15"
+            "settledOn": "2026-04-15",
+            "version": common::invoice_version(pool, id).await
         }))
         .send()
         .await
@@ -1064,6 +1072,17 @@ async fn post_settle(
     caisse: i64,
     amount: &str,
 ) -> reqwest::Response {
+    // Story 34-5 (#951) : la version, lue comme le ferait un client, par `GET`.
+    let invoice: serde_json::Value = app
+        .client
+        .get(app.url(&format!("/api/v1/invoices/{id}")))
+        .header("Authorization", format!("Bearer {token}"))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
     app.client
         .post(app.url(&format!("/api/v1/invoices/{id}/settlements")))
         .header("Authorization", format!("Bearer {token}"))
@@ -1071,7 +1090,8 @@ async fn post_settle(
             "settlementType": "internal_account",
             "accountId": caisse,
             "amount": amount,
-            "settledOn": "2026-04-15"
+            "settledOn": "2026-04-15",
+            "version": invoice["version"]
         }))
         .send()
         .await
@@ -1215,6 +1235,7 @@ async fn a_three_decimal_amount_is_refused_at_both_layers(pool: MySqlPool) {
         kesh_db::entities::SettlementChoice::InternalAccount { account_id: caisse },
         dec!(10.008),
         NaiveDate::from_ymd_opt(2026, 4, 15).unwrap(),
+        common::invoice_version(&pool, id).await,
     )
     .await
     .expect_err("entre le brut et l'arrondi : trop-perçu, jamais un partiel");

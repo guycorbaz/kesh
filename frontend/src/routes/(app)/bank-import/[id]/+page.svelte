@@ -20,6 +20,7 @@
 	// v0172-correctifs (#880) : dates en forme suisse, horodatage à l'heure de Zurich.
 	import { formatSwissDate, formatSwissDateTime } from '$lib/features/reports/reports.api';
 	import CancelReconciliationDialog from '$lib/features/reconciliation/CancelReconciliationDialog.svelte';
+	import { reconciliationCancelDoneMessage } from '$lib/features/reconciliation/reconciliation-cancel';
 	import DeleteBankImportAction from '$lib/features/bank-import/DeleteBankImportAction.svelte';
 	import UnrejectTransactionAction from '$lib/features/reconciliation/UnrejectTransactionAction.svelte';
 	import { notifySuccess } from '$lib/shared/utils/notify';
@@ -217,8 +218,11 @@
 		bankTransactionId={cancelTxId}
 		open={cancelTxId !== null}
 		onClose={() => (cancelTxId = null)}
-		onSuccess={() => {
+		onSuccess={(result) => {
 			cancelTxId = null;
+			// Story 34-11b (#972, AC-4b) : le retrait seul d'un côté d'un virement se dit autrement
+			// qu'une annulation par contre-passation.
+			notifySuccess(reconciliationCancelDoneMessage(result));
 			void load();
 		}}
 	/>

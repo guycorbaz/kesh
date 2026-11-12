@@ -632,6 +632,11 @@ pub fn serialize_invoice_lines_csv<W: Write>(
 ///
 /// Story 28-4a (#642) — `closed_on` **juste après** `archived` : date de
 /// clôture `AAAA-MM-JJ`, vide pour un compte ouvert.
+///
+/// Story 34-11a1 (#972, AC-9) — `iban` vide pour un compte sans IBAN ;
+/// `account_kind` (`bank` / `credit_card`) et `card_last4` (vide sinon)
+/// **en fin de ligne**, pour qu'un lecteur positionnel de l'export d'avant ne
+/// voie aucune colonne bouger.
 pub fn serialize_bank_accounts_csv<W: Write>(
     rows: &[BankAccount],
     writer: W,
@@ -653,6 +658,8 @@ pub fn serialize_bank_accounts_csv<W: Write>(
         "version",
         "created_at",
         "updated_at",
+        "account_kind",
+        "card_last4",
     ])
     .map_err(|e| map_csv_err("bank_accounts", e))?;
     for b in rows {
@@ -661,7 +668,7 @@ pub fn serialize_bank_accounts_csv<W: Write>(
             b.company_id.to_string(),
             txt(b.bank_name.clone()),
             fmt_opt_str(&b.description),
-            txt(b.iban.clone()),
+            fmt_opt_str(&b.iban),
             fmt_opt_str(&b.qr_iban),
             fmt_bool(b.is_primary),
             fmt_opt_i64(b.journal_account_id),
@@ -670,6 +677,8 @@ pub fn serialize_bank_accounts_csv<W: Write>(
             b.version.to_string(),
             fmt_dt(b.created_at),
             fmt_dt(b.updated_at),
+            b.account_kind.as_str().to_string(),
+            fmt_opt_str(&b.card_last4),
         ])
         .map_err(|e| map_csv_err("bank_accounts", e))?;
     }
@@ -1822,8 +1831,10 @@ mod tests {
             company_id: 1,
             bank_name: "UBS".into(),
             description: Some("Épargne".into()),
-            iban: "CH9300762011623852957".into(),
+            iban: Some("CH9300762011623852957".into()),
             qr_iban: None,
+            account_kind: kesh_db::entities::BankAccountKind::Bank,
+            card_last4: None,
             is_primary: false,
             journal_account_id: None,
             version: 1,
@@ -1843,14 +1854,25 @@ mod tests {
             description: Some("=1+1".into()),
             ..base.clone()
         };
+        // Story 34-11a1 (#972, AC-9) — une carte sans IBAN.
+        let carte = BankAccount {
+            id: 10,
+            bank_name: "Visa".into(),
+            description: None,
+            iban: None,
+            account_kind: kesh_db::entities::BankAccountKind::CreditCard,
+            card_last4: Some("1234".into()),
+            ..base.clone()
+        };
         let mut buf = Vec::new();
-        serialize_bank_accounts_csv(&[base, sans, formule], &mut buf).expect("serialize ok");
+        serialize_bank_accounts_csv(&[base, sans, formule, carte], &mut buf).expect("serialize ok");
         let text = String::from_utf8(buf[3..].to_vec()).expect("utf8");
         let mut lines = text.lines();
         assert_eq!(
             lines.next().unwrap(),
             "id;company_id;bank_name;description;iban;qr_iban;is_primary;\
-             journal_account_id;archived;closed_on;version;created_at;updated_at",
+             journal_account_id;archived;closed_on;version;created_at;updated_at;\
+             account_kind;card_last4",
             "en-tête complet"
         );
         // T-a10 (Story 28-4a) — `closed_on` vide pour un compte ouvert,
@@ -1858,6 +1880,10 @@ mod tests {
         let ouvert = lines.next().unwrap();
         assert!(ouvert.starts_with("7;1;UBS;Épargne;CH9300762011623852957;"));
         assert!(ouvert.contains(";false;;1;"), "closed_on vide : {ouvert}");
+        assert!(
+            ouvert.ends_with(";bank;"),
+            "type en fin de ligne : {ouvert}"
+        );
         let clos = lines.next().unwrap();
         assert!(clos.starts_with("8;1;UBS;;CH9300762011623852957;"));
         assert!(
@@ -1870,6 +1896,15 @@ mod tests {
             "formule non neutralisée : {ligne_formule}"
         );
         assert!(ligne_formule.contains("=1+1"), "{ligne_formule}");
+        let ligne_carte = lines.next().unwrap();
+        assert!(
+            ligne_carte.starts_with("10;1;Visa;;;;false;"),
+            "IBAN vide pour une carte : {ligne_carte}"
+        );
+        assert!(
+            ligne_carte.ends_with(";credit_card;1234"),
+            "type et quatre chiffres en fin de ligne : {ligne_carte}"
+        );
     }
 
     // ----- #262 — invoices serializer : complétude des colonnes souveraineté -----

@@ -33,7 +33,8 @@ import type {
 export const INBOX_IMPORT_TIMEOUT_MS = 300_000;
 
 /**
- * Déclenche un run d'import du dossier inbox. HTTP 200 `{accepted, failed, warnings}` ; 409 si
+ * Déclenche un run d'import du dossier inbox. HTTP 200 `{accepted, failed, skipped, truncatedAt,
+ * warnings}` (Story 34-9) ; 409 si
  * déjà en cours. Délai de cinq minutes, aucun rejeu : un import abandonné s'arrête au fichier en
  * cours, et le relancer aussitôt pourrait trouver son verrou pas encore rendu.
  */
@@ -114,7 +115,8 @@ export async function fetchSupplierInvoiceSourceDocument(id: number): Promise<Bl
 
 /**
  * Joint le document à traiter `importedSupplierInvoiceId` à la facture `invoiceId`
- * (Story 30-2c, AC19, Comptable+). Rend la facture relue, `sourceDocument` calculé.
+ * (Story 30-2c, AC19, Comptable+). Rend la facture telle que le geste l'a écrite
+ * (Story 34-8), `sourceDocument` calculé.
  * Refus : `404 IMPORTED_INVOICE_NOT_FOUND`, `404 NOT_FOUND`,
  * `409 IMPORT_NOT_PENDING_COMPLETION`, `409 SOURCE_DOCUMENT_ALREADY_ATTACHED`.
  */
@@ -129,7 +131,8 @@ export async function attachSourceDocument(
 
 /**
  * Détache le document de la facture (Story 30-2c, AC24, Comptable+) : il revient dans
- * « Documents à traiter ». Rend la facture relue, `sourceDocument: null`.
+ * « Documents à traiter ». Rend la facture telle que le geste l'a laissée,
+ * `sourceDocument: null`.
  */
 export async function detachSourceDocument(invoiceId: number): Promise<SupplierInvoiceResponse> {
 	return apiClient.delete<SupplierInvoiceResponse>(

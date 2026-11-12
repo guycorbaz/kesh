@@ -13,7 +13,10 @@
  */
 import type { ApiError } from '$lib/shared/types/api';
 import { i18nMsg } from '$lib/shared/utils/i18n.svelte';
-import type { ReconciliationCancelCode } from './reconciliation.types';
+import type {
+	CancelReconciliationResponse,
+	ReconciliationCancelCode,
+} from './reconciliation.types';
 
 const MOTIFS: readonly ReconciliationCancelCode[] = [
 	'BANK_TRANSACTION_NOT_RECONCILED',
@@ -89,6 +92,21 @@ export function reconciliationCancelMessage(
 			return exhaustive;
 		}
 	}
+}
+
+/**
+ * Story 34-11b (#972, AC-4b) — le message de succès d'une annulation : distinct quand seul le
+ * lien a été retiré (`reversalJournalEntryId: null`, l'autre côté d'un virement reste
+ * rapproché de l'écriture).
+ */
+export function reconciliationCancelDoneMessage(result: CancelReconciliationResponse): string {
+	if (result.reversalJournalEntryId === null) {
+		return i18nMsg(
+			'reconciliation-cancel-done-unlink-only',
+			'Le lien est retiré ; l’écriture reste celle de l’autre côté du virement.',
+		);
+	}
+	return i18nMsg('reconciliation-cancel-done', 'Rapprochement annulé.');
 }
 
 /**

@@ -19,8 +19,8 @@ use sqlx::{MySql, MySqlPool, Transaction};
 use crate::entities::NewAuditLogEntry;
 use crate::entities::invoice::{Invoice, InvoiceLine};
 use crate::entities::{
-    Journal, NewInvoiceSettlement, NewJournalEntry, SettlementChoice, SettlementKind,
-    SettlementWriteOffNature,
+    BankAccountKind, Journal, NewInvoiceSettlement, NewJournalEntry, SettlementChoice,
+    SettlementKind, SettlementWriteOffNature,
 };
 use crate::errors::{
     ClaimSide, DbError, NonPostableAccount, SettlementCancelBlocker, map_db_error,
@@ -87,15 +87,32 @@ async fn read_after_write_in_tx(
 /// — l'écriture serait `D 1100 / C 1100`, équilibrée, et le reste dû baisserait
 /// sans que rien ne bouge au grand livre.
 ///
-/// **Ordre des refus**, celui des lectures : statut et date ; créance (lue sur
-/// la vente) ; **contrepartie** — compte bancaire inconnu (404), sans compte lié
-/// (`CONFIGURATION_REQUIRED`), compte interne archivé ou inconnu
-/// (`INACTIVE_OR_INVALID_ACCOUNTS`), non imputable (`ACCOUNT_NOT_POSTABLE`),
-/// **puis** contrepartie = créance (`SETTLEMENT_COUNTERPARTY_IS_CLAIM_ACCOUNT`,
-/// `role: counterparty`) ; **trop-perçu** ; **compte d'arrondi** —
-/// `ROUNDING_ACCOUNT_NOT_CONFIGURED`, puis compte d'arrondi = créance
-/// (`role: rounding`). Trop-perçu et écart d'arrondi sont exclusifs. Aucun de
-/// ces refus n'écrit rien.
+/// ⛔ **Un second envoi du même règlement sans relecture est refusé** (Story
+/// 34-5, #951) : `expected_version` est la version de la facture que l'appelant a
+/// lue. Elle est comparée **sous le verrou** de l'étape (1), et tout règlement
+/// l'incrémente, partiel compris : un renvoi aveugle après une réponse perdue, un
+/// second onglet ou la relance d'une intégration portent l'ancienne version et
+/// sont refusés en `OptimisticLockConflict`, sans rien écrire. Un envoi à la
+/// version relue est un nouveau règlement, accepté. Un envoi concurrent attend le
+/// verrou du premier, puis lit la version qu'il a validée. Le rejeu sur
+/// interblocage reste sûr : une tentative annulée laisse la version intacte. Le
+/// refus du trop-perçu, lui, reste le garde de la **somme** de règlements
+/// successifs et légitimes, chacun à la version rendue par le précédent.
+///
+/// **Ordre des refus**, celui des lectures : facture inconnue ou d'une autre
+/// société (`NotFound`, lue par le même verrou) ; statut ; **version** ; date ;
+/// créance (lue sur la vente) ; **contrepartie** — par virement : compte
+/// bancaire inconnu, d'une autre société ou archivé (404), clos
+/// (`BANK_ACCOUNT_CLOSED`), carte de crédit (`SETTLEMENT_ACCOUNT_IS_CREDIT_CARD`,
+/// Story 34-11a2), sans compte lié (`CONFIGURATION_REQUIRED`) ; compte interne archivé ou
+/// inconnu (`INACTIVE_OR_INVALID_ACCOUNTS`), non imputable
+/// (`ACCOUNT_NOT_POSTABLE`), **puis** contrepartie = créance
+/// (`SETTLEMENT_COUNTERPARTY_IS_CLAIM_ACCOUNT`, `role: counterparty`) ;
+/// **trop-perçu** ; **compte d'arrondi** — `ROUNDING_ACCOUNT_NOT_CONFIGURED`,
+/// puis compte d'arrondi = créance (`role: rounding`). Trop-perçu et écart
+/// d'arrondi sont exclusifs. Le montant non positif est refusé avant la
+/// transaction. Aucun de ces refus n'écrit rien, et la version reste inchangée.
+#[allow(clippy::too_many_arguments)]
 pub async fn settle_invoice(
     pool: &MySqlPool,
     user_id: i64,
@@ -104,6 +121,7 @@ pub async fn settle_invoice(
     choice: SettlementChoice,
     amount: Decimal,
     settled_on: NaiveDate,
+    expected_version: i32,
 ) -> Result<SettlementOutcome, DbError> {
     if amount <= Decimal::ZERO {
         return Err(DbError::InvalidInput("amountMustBePositive".into()));
@@ -111,16 +129,20 @@ pub async fn settle_invoice(
 
     let mut tx = pool.begin().await.map_err(map_db_error)?;
 
-    // (1) Verrou facture + garde de statut.
-    let (status, sale_entry_id, project_id, invoice_number, invoice_date): (
+    // (1) Verrou facture + gardes : statut, puis version (Story 34-5, #951).
+    //     La version est lue DANS la lecture verrouillante : lue avant, par une
+    //     lecture ordinaire, deux envois simultanés liraient tous deux l'ancienne
+    //     et passeraient l'un après l'autre.
+    let (status, sale_entry_id, project_id, invoice_number, invoice_date, version): (
         String,
         Option<i64>,
         Option<i64>,
         Option<String>,
         NaiveDate,
+        i32,
     ) = sqlx::query_as(
-        "SELECT status, journal_entry_id, project_id, invoice_number, date FROM invoices \
-         WHERE id = ? AND company_id = ? FOR UPDATE",
+        "SELECT status, journal_entry_id, project_id, invoice_number, date, version \
+         FROM invoices WHERE id = ? AND company_id = ? FOR UPDATE",
     )
     .bind(invoice_id)
     .bind(company_id)
@@ -133,6 +155,9 @@ pub async fn settle_invoice(
         return Err(DbError::IllegalStateTransition(format!(
             "seule une facture validée peut être réglée (statut actuel : '{status}')"
         )));
+    }
+    if version != expected_version {
+        return Err(DbError::OptimisticLockConflict);
     }
     let sale_entry_id = sale_entry_id
         .ok_or_else(|| DbError::Invariant("facture validée sans écriture de vente".into()))?;
@@ -166,21 +191,32 @@ pub async fn settle_invoice(
             // commitée, sans fenêtre. Ordre : absent, autre société ou archivé
             // → `NotFound` ; clos → `BankAccountClosed` ; sans compte lié →
             // `ConfigurationRequired`.
-            let row: Option<(Option<i64>, Option<NaiveDate>, bool)> = sqlx::query_as(
-                "SELECT journal_account_id, closed_on, archived FROM bank_accounts \
-                 WHERE id = ? AND company_id = ? FOR UPDATE",
-            )
-            .bind(bank_account_id)
-            .bind(company_id)
-            .fetch_optional(&mut *tx)
-            .await
-            .map_err(map_db_error)?;
-            let (journal_account_id, closed_on, archived) = row.ok_or(DbError::NotFound)?;
+            //
+            // Story 34-11a2 (#972, C-e341-41) — `account_kind` lu dans la même
+            // instruction : une carte de crédit → `SettlementAccountIsCreditCard`,
+            // après « clos » (un client ne paie pas sur la carte du titulaire).
+            // ⚠️ Angle mort assumé : l'acceptation d'une proposition « facture »
+            // par la réconciliation d'une transaction de carte ne passe pas ici
+            // (un remboursement reçu sur la carte peut solder une facture).
+            let row: Option<(Option<i64>, Option<NaiveDate>, bool, BankAccountKind)> =
+                sqlx::query_as(
+                    "SELECT journal_account_id, closed_on, archived, account_kind FROM bank_accounts \
+                     WHERE id = ? AND company_id = ? FOR UPDATE",
+                )
+                .bind(bank_account_id)
+                .bind(company_id)
+                .fetch_optional(&mut *tx)
+                .await
+                .map_err(map_db_error)?;
+            let (journal_account_id, closed_on, archived, kind) = row.ok_or(DbError::NotFound)?;
             if archived {
                 return Err(DbError::NotFound);
             }
             if closed_on.is_some() {
                 return Err(DbError::BankAccountClosed { bank_account_id });
+            }
+            if kind == BankAccountKind::CreditCard {
+                return Err(DbError::SettlementAccountIsCreditCard { bank_account_id });
             }
             journal_account_id.ok_or_else(|| {
                 DbError::ConfigurationRequired("bank_account.journal_account_id".into())

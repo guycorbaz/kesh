@@ -116,6 +116,31 @@ pub struct ReconciliationProposal {
     /// quand c'est une décision et non une absence : `null` sinon (champ
     /// additif). Posée, elle va de pair avec `candidates` vide.
     pub notice: Option<ProposalNotice>,
+    /// Story 34-4 (#828, AC-1) — ce qui, aux livres, ressemble déjà à la
+    /// transaction (champ additif) : `null` quand elle n'a rien à quoi se
+    /// rattacher (hors CHF, montant nul), que le compte bancaire n'a pas de
+    /// compte du grand livre ou qu'il est clos (le dialogue de rattachement y
+    /// est refusé, revue P1 B1-3). L'écran en tire un avertissement et une
+    /// confirmation ; le serveur ne refuse rien (AC-4).
+    pub already_booked: Option<AlreadyBooked>,
+}
+
+/// Story 34-4 (#828, AC-1, AC-2, AC-8) — les trois nombres du signal « déjà
+/// comptabilisée », lus pour toute la page par
+/// [`kesh_db::repositories::reconciliation_link::count_already_booked_for_page`] :
+/// deux lectures par page, sur les mêmes textes SQL que les requêtes du
+/// dialogue *Rattacher à une écriture existante* ; les deux premiers nombres
+/// **égalent** les longueurs de ses deux listes (même compte du grand livre,
+/// même tolérance ; égalité testée), le troisième compte, **parmi** les
+/// écritures candidates (Story 34-11b), celles déjà rapprochées — forcément
+/// d'une transaction de sens contraire d'un autre compte bancaire : l'écriture
+/// d'un virement. Chacun vaut au plus 50.
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AlreadyBooked {
+    pub settlement_count: usize,
+    pub entry_count: usize,
+    pub matched_elsewhere_count: usize,
 }
 
 /// Story 30-1b (#686, AC-b5) — l'avis d'une ligne qui ne propose rien. Un
@@ -1032,6 +1057,42 @@ pub async fn get_proposals(
         Vec::with_capacity(transactions.len());
     let mut distinct_contact_ids: std::collections::HashSet<i64> = std::collections::HashSet::new();
     let underpayment_tolerance = Decimal::new(AMOUNT_TOLERANCE_HUNDREDTHS, 2);
+    // Story 34-4 (#828, AC-1, AC-3, AC-8) — pour chaque transaction de la page,
+    // ce qui ressemble déjà à elle aux livres : deux lectures ordinaires **par
+    // page** (et non trois par transaction, AC-8), qui rendent les nombres
+    // mêmes des fonctions du dialogue de rattachement, avec ses paramètres
+    // (compte du grand livre lu ci-dessus, `link_amount_tolerance`). Sans compte
+    // du grand livre, compte bancaire clos (le dialogue y est refusé en 409,
+    // `link_preflight` ; revue P1 B1-3), ou pour une transaction non
+    // rattachable : absente de la table, d'où `null`. Une erreur de lecture fait
+    // échouer la route.
+    let ledger_for_signal = ba_check
+        .journal_account_id
+        .filter(|_| !ba_check.is_closed());
+    let mut already_booked_by_tx: HashMap<i64, AlreadyBooked> = match ledger_for_signal {
+        Some(ledger) => kesh_db::repositories::reconciliation_link::count_already_booked_for_page(
+            &state.pool,
+            current_user.company_id,
+            query.bank_account_id,
+            ledger,
+            &transactions,
+            link_amount_tolerance(),
+        )
+        .await?
+        .into_iter()
+        .map(|(id, c)| {
+            (
+                id,
+                AlreadyBooked {
+                    settlement_count: c.settlement_count,
+                    entry_count: c.entry_count,
+                    matched_elsewhere_count: c.matched_elsewhere_count,
+                },
+            )
+        })
+        .collect(),
+        None => HashMap::new(),
+    };
     for tx in transactions {
         // A6-2 Pass 6 — currency tx-side guard (mono-CHF v0.1, cf. L38).
         // Skip transactions non-CHF. Défense en profondeur : depuis la
@@ -1421,6 +1482,7 @@ pub async fn get_proposals(
                 },
                 candidates,
                 notice,
+                already_booked: already_booked_by_tx.remove(&tx.id),
             }
         })
         .collect();
@@ -5317,8 +5379,9 @@ pub async fn post_split(
     // P2 (ECH-02 Pass 1 Sonnet) — interdire counterparty == bank_ledger_account_id.
     // Sinon le JE résultant aurait des lignes débit + crédit sur le même compte
     // (self-referential balance-sheet no-op) sans signification comptable. Le
-    // frontend filtre client-side classes 5/6/7 (le bank ledger est classe 1/2),
-    // donc en UX normal pas de collision possible — mais un client API direct
+    // frontend écarte le compte de la banque par son identifiant (Story 34-3 :
+    // tout compte imputable est proposé, de toute classe, sauf celui-là), donc en
+    // UX normal pas de collision possible — mais un client API direct
     // pourrait bypass. Defense-in-depth backend.
     //
     // Story 15-6d (AC3) : refus et comparaison partagés avec `post_manual`
@@ -5711,6 +5774,9 @@ pub struct ReconciliationTransactionResponse {
     /// Story 33-1b (#926) — son numéro interne, que dit la confirmation.
     pub internal_number: Option<String>,
     pub cancellable: bool,
+    /// Story 34-11b (#972, AC-4b) — l'écriture est aussi rapprochée de
+    /// l'**autre côté** d'un virement : l'annulation ne retirera que le lien.
+    pub unlink_only: bool,
     /// Code du premier motif qui refuse l'annulation.
     pub cancel_blocked_by: Option<&'static str>,
     /// Le numéro du compte archivé (rang 4).
@@ -5755,6 +5821,7 @@ pub async fn get_reconciliation_transaction(
         supplier_invoice_number: view.supplier_invoice_number,
         internal_number: view.internal_number,
         cancellable: hit.is_none(),
+        unlink_only: view.unlink_only,
         cancel_blocked_by: hit.as_ref().map(|h| h.0.code()),
         cancel_blocked_label: hit.as_ref().and_then(|h| h.2.clone()),
         cancel_blocked_document_id: hit.as_ref().and_then(|h| h.1),
@@ -5767,13 +5834,45 @@ pub async fn get_reconciliation_transaction(
 pub struct CancelReconciliationResponse {
     /// La transaction relue, revenue « à rapprocher ».
     pub bank_transaction: crate::routes::bank_imports::TransactionResponse,
-    /// L'écriture inverse, datée du jour.
-    pub reversal_journal_entry_id: i64,
+    /// L'écriture inverse, datée du jour — `null` quand seul le lien a été
+    /// retiré (Story 34-11b, #972 : l'autre côté d'un virement reste
+    /// rapproché de l'écriture).
+    pub reversal_journal_entry_id: Option<i64>,
     /// La facture dont le règlement a été retiré, pour un règlement client.
     pub invoice_id: Option<i64>,
     /// La facture fournisseur dont le paiement a été retiré, pour un
     /// règlement fournisseur (Story 30-1a, AC-a5 : champ ajouté).
     pub supplier_invoice_id: Option<i64>,
+}
+
+/// Corps **facultatif** de `POST …/cancel` (Story 34-11b, revue P1 E1-1) : un
+/// seul champ, `expectUnlinkOnly` — la décision que l'écran a montrée
+/// (`unlinkOnly` de la vue) ; si elle ne vaut plus au geste,
+/// `409 RECONCILIATION_CANCEL_CHANGED`, rien d'écrit ; absent, aucun contrôle.
+///
+/// Lit `expectUnlinkOnly` du corps **brut** de `POST …/cancel` (Story 34-11b,
+/// revue P2 B2-1 : un extracteur `Json` refusait un corps vide accompagné d'un
+/// `Content-Type: application/json` en `400`, et tout autre type en `415`,
+/// là où la route acceptait n'importe quel corps avant la 0.17.6).
+///
+/// Choix C-e34b-13, sans regarder le `Content-Type` :
+/// - corps vide (ou d'espaces), `null`, `{}`, objet sans le champ, ou corps
+///   **qui n'est pas du JSON** (formulaire vide, texte) → `None`, aucun
+///   contrôle : le comportement d'avant ;
+/// - objet JSON portant `expectUnlinkOnly` booléen → `Some` ; `null` → `None` ;
+/// - objet JSON portant `expectUnlinkOnly` d'un autre type → `400` : le client
+///   a voulu déclarer une attente, l'ignorer en silence la rendrait muette.
+pub fn parse_cancel_expectation(body: &[u8]) -> Result<Option<bool>, AppError> {
+    let Ok(value) = serde_json::from_slice::<serde_json::Value>(body) else {
+        return Ok(None);
+    };
+    match value.get("expectUnlinkOnly") {
+        None | Some(serde_json::Value::Null) => Ok(None),
+        Some(serde_json::Value::Bool(b)) => Ok(Some(*b)),
+        Some(_) => Err(AppError::Validation(
+            "expectUnlinkOnly doit être un booléen (true ou false), ou absent.".into(),
+        )),
+    }
 }
 
 /// `POST /api/v1/reconciliation/transactions/{id}/cancel` — annule un
@@ -5793,12 +5892,22 @@ pub async fn post_cancel_reconciliation(
     State(state): State<AppState>,
     Extension(current_user): Extension<CurrentUser>,
     axum::extract::Path(id): axum::extract::Path<i64>,
+    body: axum::body::Bytes,
 ) -> Result<Json<CancelReconciliationResponse>, AppError> {
     let company_id = current_user.company_id;
     let user_id = current_user.user_id;
     let actor_api_key_id = current_user.api_key_id;
+    // Revue P2 (B2-1) : corps brut, jamais refusé pour sa forme ou son type.
+    let expect_unlink_only = parse_cancel_expectation(&body)?;
     crate::retry::retry_app_on_deadlock("reconciliation::cancel", || {
-        cancel_reconciliation_once(&state.pool, company_id, id, user_id, actor_api_key_id)
+        cancel_reconciliation_once(
+            &state.pool,
+            company_id,
+            id,
+            user_id,
+            actor_api_key_id,
+            expect_unlink_only,
+        )
     })
     .await
     .map(Json)
@@ -5811,6 +5920,7 @@ async fn cancel_reconciliation_once(
     bank_transaction_id: i64,
     user_id: i64,
     actor_api_key_id: Option<i64>,
+    expect_unlink_only: Option<bool>,
 ) -> Result<CancelReconciliationResponse, AppError> {
     let bank_account_id =
         bank_account_of_transaction(pool, company_id, bank_transaction_id).await?;
@@ -5831,6 +5941,7 @@ async fn cancel_reconciliation_once(
                 bank_transaction_id,
                 user_id,
                 actor_api_key_id,
+                expect_unlink_only,
             )
             .await?)
         },
@@ -6392,7 +6503,7 @@ pub struct EntryCandidateResponse {
     /// d'annuler ce rattachement — ceux de `SettlementCancelBlocker::code()`
     /// —, ou `null`. Un instantané (angle mort L9 de la fiche) : calculé par
     /// **la** fonction de blocage de l'annulation
-    /// (`reconciliation_cancel::entry_cancel_blocker`), sans seconde
+    /// (`reconciliation_cancel::entry_cancel_outlook`), sans seconde
     /// précédence. Les trois codes fournisseur de tête ne sortent pas pour une
     /// candidate (le classement exige une facture `paid`, qu'aucun lot
     /// `generated` ne contient).
@@ -6400,6 +6511,10 @@ pub struct EntryCandidateResponse {
     /// Le numéro du compte archivé (rang 4), comme
     /// `GET /reconciliation/transactions/{id}`.
     pub cancel_blocked_label: Option<String>,
+    /// Story 34-11b (#972, AC-4b) — l'écriture d'un virement déjà rapprochée
+    /// de l'**autre côté** : annuler ce rattachement ne retirerait que son
+    /// lien (`cancel_blocked_by` vaut alors `None`).
+    pub unlink_only: bool,
 }
 
 /// Réponse de `GET …/entry-candidates`.
@@ -6465,13 +6580,18 @@ pub async fn get_entry_candidates(
     .await?;
     let mut candidates = Vec::with_capacity(found.len());
     for c in found {
-        let hit = kesh_db::repositories::reconciliation_cancel::entry_cancel_blocker(
+        // Story 34-11b (C-e341-35) : la transaction prospective `t` est la
+        // transaction concernée — la décision « autre côté » la lit.
+        // Revue P1 (B1-4) : une seule lecture de l'autre côté, d'où sortent le
+        // motif et le retrait seul.
+        let outlook = kesh_db::repositories::reconciliation_cancel::entry_cancel_outlook(
             &mut tx,
             company_id,
             c.journal_entry_id,
-            None,
+            &t,
         )
         .await?;
+        let (hit, unlink_only) = (outlook.blocker, outlook.unlink_only);
         candidates.push(EntryCandidateResponse {
             journal_entry_id: c.journal_entry_id,
             entry_number: c.entry_number,
@@ -6483,6 +6603,7 @@ pub async fn get_entry_candidates(
             days_apart: c.days_apart,
             cancel_blocked_by: hit.as_ref().map(|h| h.0.code()),
             cancel_blocked_label: hit.and_then(|h| h.2),
+            unlink_only,
         });
     }
     tx.commit()

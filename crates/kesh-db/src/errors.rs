@@ -911,6 +911,39 @@ pub enum DbError {
         settings: Vec<&'static str>,
     },
 
+    /// Retypage refusé d'un compte du plan **lié à un compte bancaire non
+    /// archivé**, vers un type que ce lien n'admet plus — Story 34-11a2 (#972,
+    /// C-e341-31) : hors passif pour une carte de crédit, hors actif ou passif
+    /// pour un compte bancaire
+    /// ([`BankAccountKind::admits_ledger_type`](crate::entities::BankAccountKind::admits_ledger_type)).
+    ///
+    /// Levé par `accounts::update` sous le `FOR UPDATE` de la ligne `accounts`,
+    /// avant la garde des écritures : une confirmation de retypage n'y change
+    /// rien. Nomme le premier compte bancaire lié qui refuse, par `id`. Mappé
+    /// vers HTTP **409** `ACCOUNT_LINKED_TO_BANK_ACCOUNT` : la demande est
+    /// valide, c'est l'état du compte qui s'y oppose.
+    #[error("Le compte est lié au compte bancaire {bank_account_id} : ce type n'y est pas admis")]
+    AccountLinkedToBankAccount {
+        /// Le compte bancaire lié.
+        bank_account_id: i64,
+        /// Son nom d'affichage (`bank_account_display_name`).
+        bank_account_name: String,
+    },
+
+    /// Règlement d'une facture **client** par virement sur un compte de type
+    /// carte de crédit — Story 34-11a2 (#972, C-e341-41). Un client ne paie pas
+    /// sur la carte du titulaire. Levé par
+    /// `invoice_settlements_write::settle_invoice`, sur la ligne du compte lue
+    /// sous verrou, avant toute écriture. Mappé vers HTTP **400**
+    /// `SETTLEMENT_ACCOUNT_IS_CREDIT_CARD`.
+    #[error(
+        "Le compte {bank_account_id} est une carte de crédit : un règlement client n'y entre pas"
+    )]
+    SettlementAccountIsCreditCard {
+        /// Le compte bancaire choisi.
+        bank_account_id: i64,
+    },
+
     /// Un rôle de compte **singleton** est déjà porté par un autre compte actif
     /// de la même société (Story 14-3a).
     ///
@@ -1052,6 +1085,15 @@ pub enum DbError {
     /// par la contre-passation.
     #[error("Rapprochement non annulable ({})", .blocker.code())]
     ReconciliationNotCancellable { blocker: SettlementCancelBlocker },
+
+    /// Story 34-11b (#972, revue P1 E1-1, E1-2) — l'annulation a été confirmée
+    /// sur une décision (retrait du seul lien, ou contre-passation) qui ne vaut
+    /// plus au geste : l'autre côté du virement a été rattaché ou annulé
+    /// entre-temps. Conflit d'état → HTTP **409**, rien n'est écrit ; l'écran
+    /// relit la vue et remontre la confirmation juste. `unlink_only` : la
+    /// décision **au geste**.
+    #[error("Le rapprochement a changé depuis sa lecture (retrait seul : {unlink_only})")]
+    ReconciliationCancelChanged { unlink_only: bool },
 
     /// La facture fournisseur ne peut pas être annulée (Story 25-3-c, #454).
     ///
@@ -1426,6 +1468,16 @@ pub enum DbError {
     #[error("Compte bancaire clos — lecture seule : id={bank_account_id}")]
     BankAccountClosed { bank_account_id: i64 },
 
+    /// Le compte source d'un lot de paiement n'a **pas d'IBAN** (carte de
+    /// crédit) — Story 34-11a1 (#972, C-e341-18). Un fichier `pain.001` exige
+    /// l'IBAN du débiteur : le lot est refusé à sa création
+    /// (`payment_batches::create_batch`, rien n'est écrit), et la génération
+    /// d'un lot forgé en base refuse au lieu d'échouer au décodage (500).
+    /// Fondé sur `iban IS NULL`, jamais sur le type du compte. Mappé vers HTTP
+    /// `409` `PAYMENT_BATCH_ACCOUNT_HAS_NO_IBAN`, `details.bankAccountId`.
+    #[error("Le compte bancaire source n'a pas d'IBAN : id={bank_account_id}")]
+    PaymentBatchAccountHasNoIban { bank_account_id: i64 },
+
     /// Pool épuisé ou timeout d'acquisition (retry-able côté API → 503).
     #[error("Pool de connexions épuisé ou timeout : {0}")]
     ConnectionUnavailable(String),
@@ -1571,6 +1623,8 @@ impl DbError {
             Self::DateOutsideFiscalYear => "DATE_OUTSIDE_FISCAL_YEAR",
             Self::AccountHasEntries { .. } => "ACCOUNT_HAS_ENTRIES",
             Self::AccountDesignatedInSettings { .. } => "ACCOUNT_DESIGNATED_IN_SETTINGS",
+            Self::AccountLinkedToBankAccount { .. } => "ACCOUNT_LINKED_TO_BANK_ACCOUNT",
+            Self::SettlementAccountIsCreditCard { .. } => "SETTLEMENT_ACCOUNT_IS_CREDIT_CARD",
             Self::AccountRoleAlreadyAssigned { .. } => "ACCOUNT_ROLE_ALREADY_ASSIGNED",
             Self::AccountParentArchived { .. } => "ACCOUNT_PARENT_ARCHIVED",
             Self::AccountRoleInvalidForType { .. } => "ACCOUNT_ROLE_INVALID_FOR_TYPE",
@@ -1590,6 +1644,7 @@ impl DbError {
             Self::InvoiceNotUnvalidatable { blocker, .. } => blocker.code(),
             Self::SettlementNotCancellable { blocker } => blocker.code(),
             Self::ReconciliationNotCancellable { blocker } => blocker.code(),
+            Self::ReconciliationCancelChanged { .. } => "RECONCILIATION_CANCEL_CHANGED",
             Self::SupplierInvoiceNotCancellable { blocker } => blocker.code(),
             Self::InvoiceNumberFiscalYearMismatch => "INVOICE_NUMBER_FISCAL_YEAR_MISMATCH",
             Self::InvoiceMustBeUnvalidatedFirst => "INVOICE_MUST_BE_UNVALIDATED_FIRST",
@@ -1620,6 +1675,7 @@ impl DbError {
             Self::OpeningComplementRefused { reason, .. } => reason.code(),
             Self::ConfigurationRequired(_) => "CONFIGURATION_REQUIRED",
             Self::BankAccountClosed { .. } => "BANK_ACCOUNT_CLOSED",
+            Self::PaymentBatchAccountHasNoIban { .. } => "PAYMENT_BATCH_ACCOUNT_HAS_NO_IBAN",
             Self::ConnectionUnavailable(_) => "CONNECTION_UNAVAILABLE",
             Self::InvalidInput(_) => "INVALID_INPUT",
             Self::Invariant(_) => "INVARIANT_VIOLATION",

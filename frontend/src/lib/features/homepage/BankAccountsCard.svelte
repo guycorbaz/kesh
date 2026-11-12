@@ -4,7 +4,7 @@
 	// relevé dont la période se termine le plus tard (et non le dernier importé) et l'écart, corrigé des dates de valeur côté
 	// serveur, le confrontent à la banque.
 	import { i18nMsg } from '$lib/shared/utils/i18n.svelte';
-	import { bankAccountName, shortIban, formatChfBalance } from '$lib/features/bank-accounts/format';
+	import { bankAccountName, bankAccountShortId, formatChfBalance } from '$lib/features/bank-accounts/format';
 	import { formatSwissDate } from '$lib/features/reports/reports.api';
 	import type { BankAccountSummary } from '$lib/features/bank-accounts/bank-accounts.api';
 	import { ledgerTotal, statementGap } from './homepage';
@@ -36,7 +36,8 @@
 			<div class="flex items-start justify-between border-b border-border pb-2 last:border-b-0 last:pb-0">
 				<div class="min-w-0 flex-1">
 					<p class="font-medium" data-testid="homepage-bank-name-{account.id}">{bankAccountName(account)}</p>
-					<p class="font-mono text-xs text-text-muted">{shortIban(account.iban)}</p>
+					<!-- Story 34-11a1 (#972) — IBAN court, « •••• 1234 » d'une carte, ou rien. -->
+					<p class="font-mono text-xs text-text-muted">{bankAccountShortId(account)}</p>
 				</div>
 				<div class="text-right">
 					{#if account.currentBalance !== null}

@@ -237,8 +237,27 @@ const PREFIXES = [
  * ⚠️ **Story 33-1b** (#926) : **401 → 407** (+6) : `supplier-invoices-col-internal-number`,
  * `-search-label`, `-empty-search`, `-internal-number-kept`, `-internal-number-pending`,
  * `-delete-confirm-number`. Aucune retirée.
+ *
+ * ⚠️ **Story 34-1** (#966) : **407 → 409** (+2) : `onboarding-bank-editable-later` et
+ * `onboarding-bank-ledger-load-error` (relais `msg` de `routes/onboarding/+page.svelte`).
+ * Les quatre `bank-accounts-*` réemployées ne sont pas d'un préfixe relevé. Aucune retirée.
+ *
+ * ⚠️ **Story 34-8** (#938) : **407 → 409** (+2) : `supplier-invoices-unknown-outcome` et
+ * `-unknown-outcome-reread-failed`, un repli chacune. Aucune retirée. Revue de code P3 :
+ * **409 → 410** (+1), `supplier-invoices-reread-failed`.
+ *
+ * ⚠️ **Story 34-9** (#969, #974) : **407 → 426** (+19) : vingt et une clés neuves du rapport
+ * d'import, toutes `imported-supplier-invoices-` (quatre `-report-summary-*`, trois
+ * `-report-state-*`, six `-report-duplicate*`, `-report-refused`, `-report-moved-to`, deux
+ * `-report-skipped-*`, `-report-truncated`, trois `-notice-*`), et deux retirées
+ * (`-report-accepted`, `-report-failed`). Revue de code P1 : **426 → 428** (+2),
+ * `-notice-not-imported-truncated` et `-report-duplicate-not-in-list`. Revue P2 : **428 → 429**
+ * (+1), `-report-duplicate-not-in-list-reload-failed`.
+ *
+ * Intégration de la release 0.17.6 (2026-11-12), recompté par la garde après chaque fusion
+ * (non additionné) : 412 après la 34-8 (34-1, 34-8), **434** après la 34-9.
  */
-const CLES_RELEVEES = 407;
+const CLES_RELEVEES = 434;
 
 
 /** Relève, pour chaque clé du domaine, l'ensemble de ses replis littéraux distincts. */

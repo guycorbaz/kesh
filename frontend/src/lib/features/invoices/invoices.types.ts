@@ -258,6 +258,10 @@ export interface DueDatesQuery {
  * ⚠️ **Forme PLATE, et non un objet imbriqué** : c'est le contrat du backend
  * (`SettleInvoiceRequest`), lui-même calqué sur `PaySupplierInvoiceRequest`.
  * Exactement l'une des deux références de contrepartie est renseignée.
+ *
+ * ⛔ **`version` est exigée** (Story 34-5, #951) : celle de la facture telle que
+ * l'écran l'a lue, ou rendue par le geste précédent. Un serveur qui ne la reçoit
+ * pas rend 422 ; une version périmée, 409 — rien n'est écrit.
  */
 export interface SettleInvoiceRequest {
 	settlementType: 'bank_transfer' | 'internal_account';
@@ -265,6 +269,7 @@ export interface SettleInvoiceRequest {
 	accountId?: number;
 	amount: string;
 	settledOn: string;
+	version: number;
 }
 
 export interface SettleInvoiceResponse {

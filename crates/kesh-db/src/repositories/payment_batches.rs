@@ -154,16 +154,24 @@ pub async fn create_batch(
         //     factures (Story 30-1a, AC-a9). Une clôture ou un archivage commité
         //     après la naissance de la vue est revérifié sous le verrou de clé
         //     étrangère, après l'`INSERT` du lot (Story 29-4, AC2), étape (2).
-        let bank: Option<(Option<i64>, bool, Option<chrono::NaiveDate>)> = sqlx::query_as(
-            "SELECT journal_account_id, archived, closed_on FROM bank_accounts \
-             WHERE id = ? AND company_id = ?",
-        )
-        .bind(bank_account_id)
-        .bind(company_id)
-        .fetch_optional(&mut *tx)
-        .await
-        .map_err(map_db_error)?;
-        let (journal_account_id, archived, closed_on) = bank.ok_or(DbError::NotFound)?;
+        //     Story 34-11a1 (#972, C-e341-18) — l'IBAN lu ici aussi : un compte
+        //     sans IBAN (carte de crédit) ne peut pas débiter un `pain.001`, le
+        //     lot est refusé avant toute écriture. Pas de revérification sous
+        //     verrou : l'IBAN d'un compte ne devient jamais nul (un compte
+        //     `bank` en exige un, `chk_bank_accounts_bank_has_iban`, et le type
+        //     ne change pas).
+        #[allow(clippy::type_complexity)]
+        let bank: Option<(Option<i64>, bool, Option<chrono::NaiveDate>, Option<String>)> =
+            sqlx::query_as(
+                "SELECT journal_account_id, archived, closed_on, iban FROM bank_accounts \
+                 WHERE id = ? AND company_id = ?",
+            )
+            .bind(bank_account_id)
+            .bind(company_id)
+            .fetch_optional(&mut *tx)
+            .await
+            .map_err(map_db_error)?;
+        let (journal_account_id, archived, closed_on, iban) = bank.ok_or(DbError::NotFound)?;
         if archived {
             return Err(DbError::IllegalStateTransition(
                 "le compte bancaire source est archivé".into(),
@@ -171,6 +179,9 @@ pub async fn create_batch(
         }
         if closed_on.is_some() {
             return Err(DbError::BankAccountClosed { bank_account_id });
+        }
+        if iban.is_none() {
+            return Err(DbError::PaymentBatchAccountHasNoIban { bank_account_id });
         }
         let Some(bank_ledger_account_id) = journal_account_id else {
             return Err(DbError::ConfigurationRequired(
@@ -858,8 +869,11 @@ pub async fn generate_pain001_xml(
         return Err(DbError::NotFound);
     };
 
-    // Débiteur : compte bancaire source.
-    let (debtor_iban,): (String,) =
+    // Débiteur : compte bancaire source. Story 34-11a1 (#972) — l'IBAN se lit
+    // en `Option` : un compte sans IBAN rend le refus nommé, et non un échec de
+    // décodage (500). Un tel lot n'est atteignable que forgé en base
+    // (`create_batch` le refuse).
+    let (debtor_iban,): (Option<String>,) =
         sqlx::query_as("SELECT iban FROM bank_accounts WHERE id = ? AND company_id = ?")
             .bind(batch.bank_account_id)
             .bind(company_id)
@@ -867,6 +881,9 @@ pub async fn generate_pain001_xml(
             .await
             .map_err(map_db_error)?
             .ok_or(DbError::NotFound)?;
+    let debtor_iban = debtor_iban.ok_or(DbError::PaymentBatchAccountHasNoIban {
+        bank_account_id: batch.bank_account_id,
+    })?;
     // Société : nom (partie initiatrice + débiteur).
     let (company_name,): (String,) = sqlx::query_as("SELECT name FROM companies WHERE id = ?")
         .bind(company_id)

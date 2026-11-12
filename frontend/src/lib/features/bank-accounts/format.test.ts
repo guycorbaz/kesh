@@ -1,12 +1,71 @@
 // Story 26-2a (#622, AC6) — nom et libellé d'un compte bancaire.
 import { describe, expect, it } from 'vitest';
+import type { AccountResponse } from '$lib/features/accounts/accounts.types';
 import {
 	BANK_ACCOUNT_DESCRIPTION_MAX,
 	bankAccountName,
 	bankAccountOptionLabel,
+	bankAccountShortId,
+	cardLast4Label,
+	defaultOpeningSide,
+	formatChfBalance,
+	formatChfExact,
+	linkableLedgerAccounts,
+	openingAmountAmbiguous,
+	openingAmountPayload,
+	openingAmountPreview,
+	shortIban,
 } from './format';
+import { admitsLedgerType } from './credit-card';
 
 const IBAN = 'CH9300762011623852957';
+/**
+ * « •••• 1234 », l'espace insécable (U+00A0) comprise (revue P1, A7). Écrite par son
+ * code, jamais en littéral invisible (revue P2, B3) : un éditeur qui normaliserait les
+ * espaces ne peut pas la changer en espace ordinaire sans que ce test rougisse.
+ */
+const NBSP = String.fromCharCode(0xa0);
+const CARTE = `••••${NBSP}1234`;
+
+// Story 34-11a1 (#972, AC-10) — un compte sans IBAN s'affiche sans planter.
+describe('compte sans IBAN', () => {
+	it('shortIban est gardé : null rend une chaîne vide, sans TypeError', () => {
+		expect(shortIban(null)).toBe('');
+		expect(shortIban(IBAN)).toBe('••••2957');
+	});
+
+	it('cardLast4Label : « •••• 1234 », null sans quatre chiffres', () => {
+		expect(cardLast4Label('1234')).toBe(CARTE);
+		// L'espace est insécable : la forme ne se coupe pas en colonne étroite.
+		expect(cardLast4Label('1234')).not.toContain(' ');
+		expect(cardLast4Label(null)).toBeNull();
+		expect(cardLast4Label(undefined)).toBeNull();
+	});
+
+	it('bankAccountShortId : IBAN court, carte, ou rien', () => {
+		expect(bankAccountShortId({ iban: IBAN, cardLast4: null })).toBe('••••2957');
+		expect(bankAccountShortId({ iban: null, cardLast4: '1234' })).toBe(CARTE);
+		expect(bankAccountShortId({ iban: null, cardLast4: null })).toBe('');
+	});
+
+	it('bankAccountOptionLabel : « •••• 1234 » à la place de l’IBAN, dans les deux styles', () => {
+		const carte = { bankName: 'Visa', description: 'Pro', iban: null, cardLast4: '1234' };
+		expect(bankAccountOptionLabel(carte)).toBe(`Visa — Pro — ${CARTE}`);
+		expect(bankAccountOptionLabel(carte, 'parens')).toBe(`Visa — Pro (${CARTE})`);
+	});
+
+	it('bankAccountOptionLabel : le nom seul sans IBAN ni quatre chiffres (jamais « null »)', () => {
+		const nu = { bankName: 'Caisse', description: null, iban: null };
+		expect(bankAccountOptionLabel(nu)).toBe('Caisse');
+		expect(bankAccountOptionLabel(nu, 'parens')).toBe('Caisse');
+	});
+
+	it('bankAccountOptionLabel : un IBAN présent garde la priorité sur les quatre chiffres', () => {
+		expect(
+			bankAccountOptionLabel({ bankName: 'UBS', description: null, iban: IBAN, cardLast4: '1234' }),
+		).toBe(`UBS — ${IBAN}`);
+	});
+});
 
 describe('bankAccountName', () => {
 	it('avec description : « UBS — Personnel »', () => {
@@ -75,5 +134,81 @@ describe('bankAccountOptionLabel', () => {
 describe('BANK_ACCOUNT_DESCRIPTION_MAX', () => {
 	it('vaut 60, la borne de la colonne et du serveur', () => {
 		expect(BANK_ACCOUNT_DESCRIPTION_MAX).toBe(60);
+	});
+});
+
+// Story 34-2 (#533, C-e341-7) — la présélection du sens et le montant envoyé.
+describe("solde d'ouverture", () => {
+	const actif = { id: 1, accountType: 'Asset' } as AccountResponse;
+	const passif = { id: 2, accountType: 'Liability' } as AccountResponse;
+
+	it('le sens suit le type du compte lié : actif → debit, passif → credit', () => {
+		expect(defaultOpeningSide([actif, passif], 1)).toBe('debit');
+		expect(defaultOpeningSide([actif, passif], 2)).toBe('credit');
+		expect(defaultOpeningSide([actif, passif], null)).toBe('debit');
+		expect(defaultOpeningSide([actif, passif], 99)).toBe('debit');
+	});
+
+	it('le montant perd ses séparateurs suisses ; vide → null', () => {
+		expect(openingAmountPayload("1'234.50")).toBe('1234.50');
+		expect(openingAmountPayload('1’234,5')).toBe('1234.5');
+		expect(openingAmountPayload(' 12 000 ')).toBe('12000');
+		expect(openingAmountPayload('   ')).toBeNull();
+		expect(openingAmountPayload('')).toBeNull();
+	});
+
+	// Revue P1 (B-1 = E-6) — une virgule suivie d'exactement trois chiffres est ambiguë.
+	it("« 1,234 » est ambigu ; « 1,23 », « 1,2345 », « 1'234,50 », « 1.234 » ne le sont pas", () => {
+		for (const ambigu of ['1,234', '12,500', "1'000,000", ' 9,999 ']) {
+			expect(openingAmountAmbiguous(ambigu), ambigu).toBe(true);
+		}
+		for (const clair of ['1,23', '1,2345', "1'234,50", '1.234', '1234', '', '1,2']) {
+			expect(openingAmountAmbiguous(clair), clair).toBe(false);
+		}
+	});
+
+	it('l’aperçu donne le montant écrit au format suisse, rien sinon', () => {
+		expect(openingAmountPreview("1'234.50")).toBe(formatChfBalance('1234.50'));
+		expect(openingAmountPreview('75,25')).toBe(formatChfBalance('75.25'));
+		for (const rien of ['', '1,234', 'abc', '-5', '1.00001', '1.2.3']) {
+			expect(openingAmountPreview(rien), rien).toBeNull();
+		}
+	});
+
+	// L'aperçu dit ce que le serveur écrit (quatre décimales), sans l'arrondir au centime.
+	it('l’aperçu garde jusqu’à quatre décimales, sans arrondi', () => {
+		expect(openingAmountPreview('1.2345')).toContain('1.2345');
+		expect(openingAmountPreview('1.005')).toContain('1.005');
+		expect(formatChfExact('1234.5')).toBe(formatChfBalance('1234.50'));
+	});
+});
+
+// Intégration de la 0.17.6 (C-e34a2-1, raccord 1) — le filtre du lien reprend la règle
+// `admitsLedgerType` : passifs seuls pour une carte, actifs ou passifs sinon.
+describe('linkableLedgerAccounts — type du compte bancaire', () => {
+	const compte = (id: number, number: string, accountType: string) =>
+		({ id, number, accountType, active: true, postable: true }) as AccountResponse;
+	const plan = [
+		compte(1, '1020', 'Asset'),
+		compte(2, '2100', 'Liability'),
+		compte(3, '6500', 'Expense'),
+		compte(4, '3000', 'Revenue'),
+	];
+
+	it('compte bancaire : actifs et passifs ; carte (liabilityOnly) : passifs seuls', () => {
+		expect(linkableLedgerAccounts(plan, new Set()).map((a) => a.id)).toEqual([1, 2]);
+		expect(
+			linkableLedgerAccounts(plan, new Set(), { liabilityOnly: true }).map((a) => a.id),
+		).toEqual([2]);
+	});
+
+	it('le filtre suit admitsLedgerType pour chaque type de compte du plan', () => {
+		for (const kind of ['bank', 'credit_card'] as const) {
+			const attendu = plan.filter((a) => admitsLedgerType(kind, a.accountType)).map((a) => a.id);
+			const rendu = linkableLedgerAccounts(plan, new Set(), {
+				liabilityOnly: kind === 'credit_card',
+			}).map((a) => a.id);
+			expect(rendu, kind).toEqual(attendu);
+		}
 	});
 });

@@ -129,6 +129,8 @@ function account(over: Partial<BankAccountSummary> = {}): BankAccountSummary {
 		description: null,
 		iban: 'CH4431999123000889012',
 		qrIban: null,
+		accountKind: 'bank',
+		cardLast4: null,
 		isPrimary: true,
 		journalAccountId: 10,
 		version: 1,

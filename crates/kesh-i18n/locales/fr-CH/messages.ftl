@@ -829,6 +829,12 @@ invoice-settle-unknown-reread-failed = L’issue du règlement n’est pas connu
 invoice-settle-unknown-reread = Relire
 due-dates-settle-unknown = L’issue du règlement de la facture { $number } n’est pas connue : le serveur ne l’a pas confirmé, et il a pu être enregistré. Vérifiez son reste dû ci-dessous, ou sa fiche, avant de réessayer.
 due-dates-settle-unknown-reread-failed = L’issue du règlement de la facture { $number } n’est pas connue, et la liste n’a pas pu être relue. Les règlements restent indisponibles tant qu’elle n’a pas été relue.
+invoice-settle-conflict = Le règlement n’a pas été enregistré : la facture a été modifiée entre-temps, par exemple par un règlement saisi dans un autre onglet. Elle a été relue : vérifiez la liste des règlements ci-dessous avant de recommencer.
+invoice-settle-conflict-reread-failed = Le règlement n’a pas été enregistré : la facture a changé, et elle n’a pas pu être relue. Le règlement reste indisponible tant qu’elle n’a pas été relue.
+due-dates-settle-conflict = Le règlement de la facture { $number } n’a pas été enregistré : elle a été modifiée entre-temps. La liste a été relue : vérifiez son reste dû ci-dessous, ou sa fiche, avant de recommencer.
+due-dates-settle-conflict-reread-failed = Le règlement de la facture { $number } n’a pas été enregistré : elle a changé, et la liste n’a pas pu être relue. Les règlements restent indisponibles tant qu’elle n’a pas été relue.
+invoice-settle-conflict-rereading = Le règlement n’a pas été enregistré : la facture a changé. Relecture en cours…
+due-dates-settle-conflict-rereading = Le règlement de la facture { $number } n’a pas été enregistré : elle a changé. Relecture de la liste en cours…
 mcp-sends-error-unknown-outcome = La réponse du serveur n’est pas parvenue : la décision a pu être enregistrée. Rechargez pour le savoir.
 mcp-sends-edit-not-kept = L’envoi a changé : votre texte modifié n’a pas été repris. Le voici, si vous en avez besoin :
 invoice-settle-dialog-title = Enregistrer un règlement
@@ -908,6 +914,11 @@ reconciliation-cancel-confirm-supplier-invoice = Une écriture inverse datée d'
 reconciliation-cancel-confirm-submit = Confirmer l'annulation
 reconciliation-cancel-dismiss = Fermer
 reconciliation-cancel-done = Rapprochement annulé.
+# Story 34-11b (#972, AC-4b) — un côté d'un virement rattaché des deux côtés : seul le lien est retiré.
+reconciliation-cancel-confirm-unlink-only = Seul le lien de cette transaction à l’écriture du virement sera retiré : l’écriture reste rapprochée de l’autre côté du virement, sur votre autre compte, et aucune écriture inverse n’est passée. La transaction redeviendra à rapprocher.
+reconciliation-cancel-done-unlink-only = Le lien est retiré ; l’écriture reste celle de l’autre côté du virement.
+# Story 34-11b (#972, revue P1 E1-1) — la décision confirmée ne vaut plus au geste (409 RECONCILIATION_CANCEL_CHANGED).
+reconciliation-cancel-changed = Ce rapprochement a changé depuis l’ouverture de la fenêtre : l’autre côté du virement a été rattaché ou annulé entre-temps. Rien n’a été annulé ; relisez ce qui va se passer, puis confirmez de nouveau.
 reconciliation-cancel-entry-link = Voir l'écriture
 reconciliation-cancel-column = Rapprochement
 # Story 28-5b (#526) — annuler le rejet d'une transaction, depuis le détail de son import.
@@ -1151,7 +1162,7 @@ error-opening-complement-date-locked = La date du jour tombe dans la période ve
 error-opening-complement-no-retained-earnings = Aucun compte en service ne porte le rôle « Bénéfice/perte reporté » : attribuez-le dans le plan comptable, la contrepartie du complément y est portée.
 error-opening-complement-retained-earnings-not-postable = Le compte de bénéfice reporté n’est pas imputable : rendez-le imputable dans le plan comptable.
 error-opening-complement-account-invalid = Le compte { $account } est inconnu, archivé ou non imputable.
-error-opening-complement-retained-earnings-line = Le compte { $account } est le compte de bénéfice reporté : sa contrepartie est calculée par Kesh, ne le saisissez pas.
+error-opening-complement-retained-earnings-line = Le compte { $account } est le compte de bénéfice reporté : Kesh y passe lui-même la contrepartie des soldes d'ouverture, il ne reçoit pas de solde saisi.
 error-opening-complement-not-balance-account = Le compte { $account } est un compte de résultat : seuls les comptes de bilan se complètent.
 error-opening-complement-account-moved = Le compte { $account } a déjà des mouvements : corrigez-le dans le journal, en modifiant l’écriture, par une contre-passation ou une écriture de correction.
 error-opening-complement-no-lines = Saisissez au moins un compte à compléter.
@@ -1176,6 +1187,8 @@ bank-import-errors-invalid-date = Une date est invalide dans le fichier.
 bank-import-errors-balance-mismatch = Le solde de clôture ne correspond pas à la somme des transactions. Cochez « Confirmer malgré l'écart » pour importer quand même.
 bank-import-errors-unsupported-currency = Devise non supportée. Seul le franc suisse (CHF) est pris en charge dans cette version.
 bank-import-errors-no-matching-statement = Aucun statement du fichier ne correspond au compte bancaire sélectionné.
+bank-import-errors-camt-needs-iban = Ce compte n'a pas d'IBAN : un relevé CAMT.053 ne peut pas lui être attribué. Importez un fichier CSV ou saisissez le relevé à la main.
+payment-batches-errors-account-has-no-iban = Ce compte n'a pas d'IBAN : il ne peut pas servir de compte débité d'un lot de paiement.
 bank-import-errors-legacy-reread-failed = Kesh ne peut pas vérifier que ce relevé ne reprend pas des lignes déjà importées par une version antérieure : il n'a rien enregistré. Demandez à votre banque un nouvel export de ce relevé ; à défaut, vérifiez dans la liste des transactions du compte quelles lignes y figurent déjà, et saisissez les autres avec un relevé saisi à la main.
 bank-import-errors-duplicate-file = Ce fichier a déjà été importé pour cette entreprise.
 bank-import-errors-has-reconciled-transactions = { $count } transaction(s) de cet import sont rapprochées : annulez d'abord leur rapprochement pour pouvoir le supprimer.
@@ -1199,6 +1212,7 @@ bank-import-warnings-encoding-mismatch = L'encodage détecté diffère du profil
 bank-import-labels-page-title = Import de relevés bancaires
 bank-import-labels-bank-account-selector = Compte bancaire cible
 bank-import-labels-drop-zone = Glissez votre fichier CAMT.053 ou CSV ici ou cliquez pour parcourir
+bank-import-labels-drop-zone-csv-only = Ce compte n'a pas d'IBAN : glissez un fichier CSV ici ou cliquez pour parcourir
 bank-import-labels-preview-title = Prévisualisation
 bank-import-labels-confirm-import = Confirmer l'import
 bank-import-labels-cancel = Annuler
@@ -1430,7 +1444,20 @@ reconciliation-labels-rejected-hint = Une transaction rejetée quitte cette list
 # Story 29-3 (#527) — la priorité des candidates, dite au-dessus de la liste.
 reconciliation-labels-priority-hint = Une seule proposition est affichée par transaction : pour un crédit, la facture client la mieux notée, pour un débit, la facture fournisseur la mieux notée, s’il y en a une, sinon la règle d’affectation qui correspond. Une facture proposée passe toujours devant une règle.
 reconciliation-labels-supplier-invoice-badge = Facture fournisseur
-reconciliation-labels-notice-supplier-invoice-in-batch = La facture fournisseur { $invoice } de ce montant figure dans le lot de paiement n° { $batch } en cours sur ce compte. Si cette transaction est le paiement de ce lot, annulez le lot : la facture vous sera alors proposée ici. Sinon, affectez la transaction à la main.
+reconciliation-labels-notice-supplier-invoice-in-batch = La facture fournisseur { $invoice } de ce montant figure dans le lot de paiement n° { $batch } en cours sur ce compte. Si cette transaction est le paiement de ce lot, annulez le lot : la facture vous sera alors proposée ici. Sinon, passez la transaction par une écriture manuelle.
+# Story 34-4 (#828, AC-5) — sous une ligne qui semble déjà comptabilisée. Deux clés -one / -other, choisies par l'écran : pas de sélecteur (les messages arrivent pré-résolus).
+reconciliation-labels-already-booked-one = Cette transaction semble déjà comptabilisée : une écriture non rapprochée du compte de la banque lui correspond. Rattachez-la (« Rattacher à une écriture existante ») plutôt que de passer une écriture : elle serait comptée deux fois.
+reconciliation-labels-already-booked-other = Cette transaction semble déjà comptabilisée : { $count } écritures non rapprochées du compte de la banque lui correspondent. Rattachez-la (« Rattacher à une écriture existante ») plutôt que de passer une écriture : elle serait comptée deux fois.
+# Story 34-11b (#972, AC-10) — le second côté d'un virement : l'écriture du virement, déjà rapprochée sur un autre compte bancaire, est candidate ; on la rattache.
+reconciliation-labels-already-booked-transfer = Cette transaction est probablement l’autre côté d’un virement entre vos comptes : l’écriture de ce virement est déjà rapprochée d’une transaction d’un autre de vos comptes bancaires. Rattachez-la à cette écriture (« Rattacher à une écriture existante ») plutôt que de passer une écriture : le virement serait compté deux fois.
+reconciliation-labels-already-booked-transfer-other = Cette transaction est probablement l’autre côté d’un virement entre vos comptes : { $count } écritures de virement sont déjà rapprochées de transactions d’autres de vos comptes bancaires. Rattachez-la à celle de son virement (« Rattacher à une écriture existante ») plutôt que de passer une écriture : le virement serait compté deux fois.
+reconciliation-labels-already-booked-transfer-among-one = S’y ajoute l’écriture d’un virement, déjà rapprochée d’une transaction d’un autre de vos comptes bancaires : si cette transaction est l’autre côté de ce virement, c’est à elle qu’il faut la rattacher.
+reconciliation-labels-already-booked-transfer-among-other = S’y ajoutent { $count } écritures de virement, déjà rapprochées de transactions d’autres de vos comptes bancaires : si cette transaction est l’autre côté de l’un de ces virements, c’est à son écriture qu’il faut la rattacher.
+# Story 34-4 (#828, AC-6) — confirmation avant Accepter, Écriture manuelle ou Éclater sur une ligne signalée.
+reconciliation-labels-already-booked-confirm-title = Confirmer malgré l’avertissement
+reconciliation-labels-already-booked-confirm-intro = Chaque transaction ci-dessous semble déjà comptabilisée (voir l’avertissement de sa ligne). Continuer passerait une écriture pour un mouvement qui est peut-être déjà aux livres : il serait compté deux fois.
+reconciliation-labels-already-booked-confirm-cancel = Annuler
+reconciliation-labels-already-booked-confirm-continue = Continuer quand même
 # Story 29-6 (#665, AC10) — rendue dans la rangée des boutons quand une ligne sans proposition est cochée.
 reconciliation-labels-unmatched-not-acceptable-hint = Une transaction sans correspondance ne peut pas être acceptée : décochez-la pour accepter les autres.
 # Story 29-9 (#678, AC11) — nom accessible de la case de chaque ligne : ce que la ligne affiche.
@@ -1438,7 +1465,7 @@ reconciliation-labels-select-transaction = Sélectionner la transaction du { $da
 reconciliation-labels-select-transaction-no-counterparty = Sélectionner la transaction du { $date }, { $amount } { $currency }
 # Story 29-9 (#649, AC1, AC3) — sous la liste, s'il reste des transactions plus anciennes.
 reconciliation-labels-more-hidden = Seules les { $count } transactions en attente les plus récentes sont affichées : il en reste de plus anciennes.
-reconciliation-labels-more-capped = Les { $max } transactions en attente les plus récentes sont affichées, le maximum que cette page montre à la fois. Il en reste de plus anciennes : elles apparaîtront à mesure que celles-ci seront acceptées, affectées manuellement, éclatées ou rattachées à une écriture existante.
+reconciliation-labels-more-capped = Les { $max } transactions en attente les plus récentes sont affichées, le maximum que cette page montre à la fois. Il en reste de plus anciennes : elles apparaîtront à mesure que celles-ci seront acceptées, passées par une écriture manuelle, éclatées ou rattachées à une écriture existante.
 # Story 15-5c (#492) — libellés des refus d'un lot de rapprochement (`failed[]`).
 reconciliation-failed-account-not-found = Un compte de contrepartie est introuvable ou archivé.
 reconciliation-failed-account-not-postable = Compte non imputable : { $numbers }. Un compte de regroupement, de résultat ou de clôture ne reçoit pas d’écriture : choisissez un compte imputable.
@@ -1470,13 +1497,13 @@ reconciliation-failed-rule-not-found = Règle introuvable ou désactivée.
 reconciliation-failed-score-too-low = La facture ne correspond pas assez à la transaction pour être rapprochée.
 reconciliation-failed-transaction-not-credit = Cette transaction n’est pas une entrée d’argent (débit ou montant nul) : elle ne peut pas régler une facture client.
 reconciliation-failed-transaction-not-debit = Cette transaction n’est pas une sortie d’argent (crédit ou montant nul) : elle ne peut pas régler une facture fournisseur.
-reconciliation-failed-supplier-invoice-in-batch = Cette facture fournisseur figure dans un lot de paiement en cours : annulez le lot si cette transaction en est le paiement, sinon affectez la transaction à la main.
+reconciliation-failed-supplier-invoice-in-batch = Cette facture fournisseur figure dans un lot de paiement en cours : annulez le lot si cette transaction en est le paiement, sinon passez la transaction par une écriture manuelle.
 reconciliation-failed-amount-mismatch = Le montant de la transaction diffère du total de la facture fournisseur : un paiement fournisseur règle le total exact.
-reconciliation-failed-supplier-payment-hold = Une autre facture fournisseur de ce montant figure dans un lot de paiement en cours sur ce compte : cette transaction en est peut-être le paiement. Annulez le lot si c’est le cas, sinon affectez la transaction à la main.
-reconciliation-failed-rule-masked-payment-batch = La règle n’est pas appliquée : une facture fournisseur de ce montant figure dans un lot de paiement en cours sur ce compte. Si cette transaction en est le paiement, annulez le lot, puis acceptez ici la facture proposée. N’utilisez « Affecter manuellement » que si ce débit ne règle aucune facture saisie.
-reconciliation-failed-rule-masked-invoice-candidate = La règle n’est pas appliquée : une facture fournisseur validée correspond à cette transaction. Rechargez la page et acceptez la facture proposée si ce débit la règle. N’utilisez « Affecter manuellement » que si ce débit ne règle aucune facture saisie.
-reconciliation-failed-rule-masked-overpaid = La règle n’est pas appliquée : une facture client que ce paiement dépasse de quelques centimes lui correspond. Enregistrez le règlement depuis la fiche de la facture, puis rattachez-y la transaction. N’utilisez « Affecter manuellement » que si ce paiement ne règle aucune facture.
-reconciliation-failed-rule-masked = La règle n’est pas appliquée : une facture correspond à cette transaction. Rechargez la page et traitez la facture. N’utilisez « Affecter manuellement » que si cette transaction ne règle aucune facture saisie.
+reconciliation-failed-supplier-payment-hold = Une autre facture fournisseur de ce montant figure dans un lot de paiement en cours sur ce compte : cette transaction en est peut-être le paiement. Annulez le lot si c’est le cas, sinon passez la transaction par une écriture manuelle.
+reconciliation-failed-rule-masked-payment-batch = La règle n’est pas appliquée : une facture fournisseur de ce montant figure dans un lot de paiement en cours sur ce compte. Si cette transaction en est le paiement, annulez le lot, puis acceptez ici la facture proposée. N’utilisez « Écriture manuelle » que si ce débit ne règle aucune facture saisie.
+reconciliation-failed-rule-masked-invoice-candidate = La règle n’est pas appliquée : une facture fournisseur validée correspond à cette transaction. Rechargez la page et acceptez la facture proposée si ce débit la règle. N’utilisez « Écriture manuelle » que si ce débit ne règle aucune facture saisie.
+reconciliation-failed-rule-masked-overpaid = La règle n’est pas appliquée : une facture client que ce paiement dépasse de quelques centimes lui correspond. Enregistrez le règlement depuis la fiche de la facture, puis rattachez-y la transaction. N’utilisez « Écriture manuelle » que si ce paiement ne règle aucune facture.
+reconciliation-failed-rule-masked = La règle n’est pas appliquée : une facture correspond à cette transaction. Rechargez la page et traitez la facture. N’utilisez « Écriture manuelle » que si cette transaction ne règle aucune facture saisie.
 reconciliation-failed-transaction-not-pending = Cette transaction n’est plus en attente de rapprochement.
 reconciliation-failed-unknown = Refus non reconnu ({ $code }).
 reconciliation-cols-tx-date = Date
@@ -1504,18 +1531,21 @@ reconciliation-errors-entry-not-linkable = Cette écriture ne peut pas être rat
 reconciliation-toast-accept-success = { $count } transaction(s) réconciliée(s) avec succès.
 reconciliation-toast-reject-success = { $count } transaction(s) rejetée(s) avec succès.
 
-# Story 8-5a-base FR45 — Réconciliation manuelle.
-reconciliation-manual-button-label = Affecter manuellement
-reconciliation-manual-modal-title = Réconciliation manuelle
+# Story 8-5a-base FR45 — écriture manuelle (geste rebaptisé par la 34-3).
+reconciliation-manual-button-label = Écriture manuelle
+reconciliation-manual-modal-title = Écriture manuelle
 reconciliation-manual-counterparty-label = Compte de contrepartie
 reconciliation-manual-description-label = Description
 reconciliation-manual-bank-account-not-configured = Le compte bancaire n'est pas configuré. Configurer le compte comptable lié dans /bank-accounts.
 reconciliation-manual-value-date-label = Date de valeur
-reconciliation-manual-submit = Affecter
+reconciliation-manual-submit = Passer l'écriture
 reconciliation-manual-error-no-proposal = Aucune transaction sélectionnée
 reconciliation-manual-error-counterparty-required = Compte de contrepartie obligatoire
 reconciliation-manual-error-description-too-long = Description trop longue (max { $max } caractères)
 reconciliation-manual-description-placeholder = Frais bancaires mai
+# Story 34-3 (#967, AC-4) — avis non bloquant quand la contrepartie porte le rôle débiteurs ou créanciers.
+reconciliation-manual-claim-notice-receivable = Ce compte est celui des débiteurs. Une écriture manuelle ne règle aucune facture client : elle resterait due. Pour un paiement de client, enregistrez le règlement depuis la fiche de la facture, puis rattachez-y la transaction.
+reconciliation-manual-claim-notice-payable = Ce compte est celui des créanciers. Une écriture manuelle ne règle aucune facture fournisseur : elle resterait à payer. Pour le paiement d'un fournisseur, saisissez la facture et validez-la depuis sa fiche, sans y enregistrer de paiement : le paiement est cette transaction, et la facture vous sera proposée ici, à accepter. Si elle est déjà payée, rattachez la transaction à ce paiement.
 
 # Story 8-5a-bis FR48 — éclatement de transaction agrégée.
 reconciliation-split-button-label = Éclater
@@ -1540,6 +1570,7 @@ reconciliation-link-col-journal = Journal
 reconciliation-link-col-description = Libellé
 reconciliation-link-choose-entry = Choisir cette écriture
 reconciliation-link-entry-cancel-today = Aujourd'hui, Kesh ne voit aucun obstacle : annuler ce rapprochement contre-passerait cette écriture (ou annulerait le règlement qu'elle porte). Une clôture d'exercice, une période verrouillée ou un exercice postérieur clos pourraient l'empêcher, dès aujourd'hui sans que Kesh le voie, ou plus tard.
+reconciliation-link-entry-cancel-unlink-only = Cette écriture est celle d’un virement, déjà rapprochée de l’autre côté sur un autre de vos comptes bancaires : la transaction s’y rattache aussi, sans seconde écriture. Aujourd’hui, annuler ce rattachement ne retirerait que son lien ; l’écriture resterait celle de l’autre côté. Si l’autre côté est annulé d’abord, ce rattachement devient le dernier : son annulation contre-passerait l’écriture, et un exercice clôturé l’empêcherait.
 reconciliation-link-entry-cancel-blocked-intro = Ce rattachement ne pourra pas être annulé tant que dure l'obstacle suivant.
 reconciliation-link-entry-cancel-blocked-ack = J'ai compris : tant que cet obstacle dure, ce rattachement ne pourra pas être annulé.
 reconciliation-link-col-invoice = Facture
@@ -1574,6 +1605,25 @@ bank-accounts-actions-cancel = Annuler
 bank-accounts-actions-submit = Lier
 bank-accounts-errors-account-not-found = Compte du plan comptable non trouvé.
 bank-accounts-errors-invalid-account-type = Type de compte invalide (Actif ou Passif requis).
+# Story 34-11a2 (#972) — la carte de crédit.
+bank-accounts-errors-card-number-not-allowed = Ce texte ressemble à un numéro de carte complet : Kesh ne garde que les quatre derniers chiffres. Retirez le numéro.
+bank-accounts-errors-credit-card-ledger-must-be-liability = Une carte de crédit se lie à un compte de passif (sa dette), obligatoirement.
+bank-accounts-errors-kind-immutable = Le type d'un compte ne se change pas : créez un nouveau compte.
+bank-accounts-errors-credit-card-field-not-allowed = Une carte de crédit n'a ni IBAN, ni QR-IBAN, et n'est jamais le compte principal.
+bank-accounts-errors-bank-account-field-not-allowed = Les quatre derniers chiffres ne concernent qu'une carte de crédit.
+error-account-linked-to-bank-account = Ce compte est lié au compte bancaire « { $name } », qui n'admet pas ce type. Changez d'abord le compte lié de « { $name } ».
+error-settlement-account-is-credit-card = Un règlement client n'entre pas sur une carte de crédit : choisissez un compte bancaire.
+bank-accounts-labels-kind = Type de compte
+bank-accounts-kind-bank = Compte bancaire
+bank-accounts-kind-credit-card = Carte de crédit
+bank-accounts-labels-card-issuer = Émetteur de la carte
+bank-accounts-labels-card-last4 = Quatre derniers chiffres (facultatif)
+bank-accounts-help-card-last4 = Kesh ne garde jamais le numéro complet de la carte : seulement ses quatre derniers chiffres, pour la reconnaître.
+bank-accounts-labels-card-ledger = Compte de dette lié
+bank-accounts-help-card-ledger = Obligatoire : un compte de passif, la dette de la carte (par exemple un sous-compte de 2100 Dettes bancaires à court terme).
+bank-accounts-help-kind-fixed = Le type d'un compte ne se change pas après sa création.
+bank-accounts-error-card-last4 = Saisissez exactement quatre chiffres, ou laissez le champ vide.
+bank-accounts-error-card-ledger-required = Choisissez le compte de passif lié à la carte.
 # Story v014-1 — CRUD bank_accounts post-onboarding
 bank-accounts-errors-has-transactions = Le compte bancaire contient des transactions — archivage refusé pour préserver l'audit comptable. Les imports dont aucune transaction n'est rapprochée peuvent être supprimés (Quotidien → Importer des relevés). Sinon, pour retirer le compte de l'usage, clore le compte : il passe en lecture seule et garde son historique.
 bank-accounts-errors-cannot-archive-primary = Le compte principal ne peut pas être archivé tant qu'un autre compte ni archivé ni clos existe. Définissez d'abord un autre compte comme principal, puis archivez celui-ci.
@@ -1645,6 +1695,34 @@ settings-bank-manage = Gérer dans Administration → Comptes bancaires
 settings-bank-manage-hint = Pour ajouter, modifier, clore ou archiver un compte bancaire, utilisez la page dédiée Administration → Comptes bancaires.
 bank-accounts-toast-link-success = Compte bancaire lié avec succès au plan comptable.
 bank-accounts-toast-unlink-success = Compte bancaire délié du plan comptable.
+
+# Story 34-2 (#533) — solde d'ouverture saisi avec le compte bancaire.
+bank-accounts-opening-entry-description = Solde d'ouverture — { $account }
+error-bank-account-opening-invalid-amount = Le solde d'ouverture est un montant positif d'au plus quatre décimales, au plus 999’999’999’999’999.9999.
+error-bank-account-opening-side-required = Le sens du solde d'ouverture est requis : « debit » (avoir) ou « credit » (dette).
+error-bank-account-opening-ledger-required = Le solde d'ouverture exige un compte comptable lié (journalAccountId).
+error-bank-account-bank-name-too-long = Le nom de la banque ne peut pas dépasser 255 caractères.
+bank-accounts-opening-label-amount = Solde d'ouverture (optionnel)
+bank-accounts-opening-label-amount-row = Montant du solde
+bank-accounts-opening-label-side = Sens du solde
+bank-accounts-opening-side-debit = Avoir
+bank-accounts-opening-side-credit = Dette (découvert)
+bank-accounts-opening-help = L'écriture est datée du premier jour du premier exercice s'il est ouvert et hors période verrouillée, sinon d'aujourd'hui : saisissez le solde du relevé à cette date. Sa contrepartie va au compte Bénéfice/perte reporté. Elle est refusée si le compte lié a déjà des mouvements.
+bank-accounts-opening-consequence = Si l'ouverture générale de Soldes de départ est encore proposée, ce solde la retire : les soldes de départ des autres comptes se saisiront un à un, mode Compléter. Pour saisir toute votre ouverture d'un coup, passez d'abord par Soldes de départ.
+bank-accounts-opening-preview = Montant qui sera écrit : { $amount }
+bank-accounts-opening-error-amount-ambiguous = Montant ambigu : une virgule suivie de trois chiffres peut être un séparateur de milliers. Écrivez 1'234 pour mille deux cent trente-quatre, 1.234 pour un franc et vingt-trois centimes et quatre dixièmes de centime.
+bank-accounts-toast-create-success-with-opening = Compte bancaire créé, avec l'écriture d'ouverture n° { $number } du { $date } : { $amount }.
+# Intégration de la 0.17.6 — passe de textes (#1037, #1040, #1027) : la carte de crédit et le montant nul.
+bank-accounts-form-title-create-card = Nouvelle carte de crédit
+bank-accounts-toast-create-card-success = Carte de crédit créée.
+bank-accounts-toast-create-card-success-with-opening = Carte de crédit créée, avec l'écriture d'ouverture n° { $number } du { $date } : { $amount }.
+bank-accounts-opening-side-credit-card = Dette (solde dû)
+bank-accounts-opening-preview-zero = Montant nul : aucune écriture d'ouverture ne sera passée.
+bank-accounts-actions-opening-balance = Saisir le solde d'ouverture
+bank-accounts-opening-dialog-title = Solde d'ouverture — { $account }
+bank-accounts-opening-dialog-confirm = Passer l'écriture
+bank-accounts-opening-error-amount-required = Saisissez un montant positif.
+bank-accounts-toast-opening-success = Écriture d'ouverture n° { $number } du { $date } passée : { $amount }.
 
 # Story 8-5b — FR47 reconciliation rules (règles d'affectation).
 reconciliation-rules-page-title = Règles d'affectation
@@ -2542,6 +2620,13 @@ settings-company-contact-conflict-reload-failed = Conflit de version et recharge
 settings-company-address-saved = Adresse de la société enregistrée
 settings-company-address-conflict = Conflit de version — les données ont été rechargées, réessayez.
 settings-company-address-conflict-reload-failed = Conflit de version et rechargement impossible — rechargez la page.
+# Story 34-6 (#953) — l'avis d'un conflit de version, commun aux trois éditions de la société.
+settings-company-conflict-changed = Enregistré entre-temps : { $value }
+settings-company-conflict-merged = Repris de l’enregistrement entre-temps : { $value }
+settings-company-conflict-will-replace = Conflit de version : la société a été modifiée entre-temps. Enregistrer de nouveau remplacera les valeurs enregistrées indiquées sous les champs.
+settings-company-conflict-merged-notice = Conflit de version : les champs que vous n’aviez pas modifiés ont repris la valeur enregistrée entre-temps. Vérifiez, puis enregistrez de nouveau.
+settings-company-conflict-already-saved = Ces valeurs étaient déjà enregistrées.
+settings-company-conflict-empty = (vide)
 settings-company-address-country-unknown = Le code pays « { $code } » de la société n’est pas un code ISO connu : ses QR-factures ne peuvent pas être produites. Un administrateur peut corriger l’adresse ici (CH, FR, DE…).
 settings-company-address-help = Adresse de l’émetteur et du créancier sur vos factures et leurs QR-factures. NPA et localité obligatoires ; pays en code ISO à deux lettres. Un PDF déjà figé ne change pas.
 error-company-phone-too-long = Le numéro de téléphone de la société est trop long (50 caractères au plus).
@@ -2576,8 +2661,32 @@ imported-supplier-invoices-importing = Import en cours…
 imported-supplier-invoices-no-source-doc = Cette facture n’a pas de document.
 imported-supplier-invoices-reference = Réf.
 imported-supplier-invoices-reload-failed = La liste n’a pas pu être rechargée — actualisez la page.
-imported-supplier-invoices-report-accepted = {$n} document(s) importé(s).
-imported-supplier-invoices-report-failed = {$n} échec(s) :
+# Story 34-9 (#969, #974) — le rapport nomme chaque fichier. Résumé composé par l'écran,
+# segment par segment (aucun sélecteur : le client reçoit les messages pré-résolus).
+imported-supplier-invoices-report-summary-imported = {$n} document(s) importé(s)
+imported-supplier-invoices-report-summary-duplicates = {$n} déjà importé(s)
+imported-supplier-invoices-report-summary-refused = {$n} refusé(s)
+imported-supplier-invoices-report-summary-not-processed = {$n} non traité(s)
+imported-supplier-invoices-report-state-imported = Importé.
+imported-supplier-invoices-report-state-imported-no-qr = Importé sans les données du QR :
+imported-supplier-invoices-report-state-not-processed = Non traité :
+imported-supplier-invoices-report-duplicate = Déjà importé :
+imported-supplier-invoices-report-duplicate-unknown = Déjà importé.
+imported-supplier-invoices-report-duplicate-pending = en attente dans Documents à traiter
+imported-supplier-invoices-report-duplicate-invoice = transformé en facture
+imported-supplier-invoices-report-duplicate-discarded = retiré de la liste
+imported-supplier-invoices-report-duplicate-processed = déjà traité
+imported-supplier-invoices-report-duplicate-not-in-list = n’est plus dans la liste ci-dessous
+imported-supplier-invoices-report-duplicate-not-in-list-reload-failed = pas dans la liste ci-dessous, qui n’a pas pu être rechargée : notez ce rapport, puis actualisez la page
+imported-supplier-invoices-report-refused = Refusé :
+imported-supplier-invoices-report-moved-to = Le fichier a été déplacé dans failed/ sous le nom {$movedTo} ; supprimez-le à la main.
+imported-supplier-invoices-report-skipped-unstable = en cours d’écriture, laissé dans le dossier : relancez l’import
+imported-supplier-invoices-report-skipped-vanished = disparu pendant l’import
+imported-supplier-invoices-report-truncated = La limite de {$n} fichiers par import est atteinte : relancez l’import pour traiter le reste.
+imported-supplier-invoices-notice-not-imported = Import terminé : {$n} fichier(s) non importé(s). Voir le rapport.
+imported-supplier-invoices-notice-not-imported-truncated = Import terminé : {$n} fichier(s) non importé(s), et la limite par import est atteinte. Voir le rapport.
+imported-supplier-invoices-notice-truncated = Import terminé : la limite par import est atteinte. Voir le rapport.
+imported-supplier-invoices-notice-imported = Import terminé : {$n} document(s) importé(s).
 imported-supplier-invoices-save = Créer une facture
 imported-supplier-invoices-source-doc-failed = Téléchargement impossible.
 imported-supplier-invoices-source-doc-gone = Le document n’a pas été restauré.
@@ -2683,6 +2792,10 @@ supplier-invoices-doc-attached = Document joint à la facture.
 supplier-invoices-doc-detach = Détacher le document
 supplier-invoices-doc-detach-confirm = Détacher ce document ? Il reviendra dans les documents à traiter ; la facture et son écriture ne changent pas.
 supplier-invoices-doc-detached = Document détaché : il est de nouveau dans les documents à traiter.
+# Story 34-8 (#938, AC-8) — l'issue inconnue d'un geste de la fiche fournisseur.
+supplier-invoices-unknown-outcome = L’issue n’est pas connue : la facture a été relue, vérifiez-la avant de réessayer.
+supplier-invoices-unknown-outcome-reread-failed = L’issue n’est pas connue, et la facture n’a pas pu être relue : rechargez la page avant de réessayer.
+supplier-invoices-reread-failed = La facture n’a pas pu être relue : rechargez la page avant de réessayer.
 supplier-invoices-pay-account-ph = Compte de contrepartie
 supplier-invoices-pay-bank-ph = Compte bancaire source
 supplier-invoices-pay-no-eligible-bank-account = Aucun compte bancaire utilisable : le seul compte lié est le compte créanciers de cette facture. Reliez un compte bancaire à son propre compte de banque, ou réglez par un compte interne.
@@ -2939,6 +3052,9 @@ onboarding-finalize-error = Finalisation échouée — réessayez.
 onboarding-bank-required = Nom de banque et IBAN sont obligatoires
 onboarding-bank-save-error = Erreur lors de la sauvegarde du compte bancaire
 onboarding-bank-skip-error = Erreur lors du saut du compte bancaire
+# Story 34-1 (#966) — l'étape bancaire pose la description et le compte comptable lié.
+onboarding-bank-editable-later = La description et le compte comptable lié se modifient ensuite dans Administration → Comptes bancaires.
+onboarding-bank-ledger-load-error = La liste des comptes n’a pas pu être chargée : le compte bancaire peut être lié plus tard.
 onboarding-save = Enregistrer
 payment-batches-cancel = Annuler le lot
 payment-batches-cancel-confirm = Annuler ce lot ? Les factures redeviennent réglables.
@@ -3132,6 +3248,7 @@ audit-log-action-payment-batch-generated = Lot de paiement créé
 audit-log-action-payment-batch-confirmed = Lot de paiement confirmé
 audit-log-action-payment-batch-cancelled = Lot de paiement annulé
 audit-log-action-bank-account-created = Compte bancaire créé
+audit-log-action-bank-account-opening-balance-entered = Solde d'ouverture d'un compte bancaire saisi
 audit-log-action-bank-account-updated = Compte bancaire modifié
 audit-log-action-bank-account-archived = Compte bancaire archivé
 audit-log-action-bank-account-closed = Compte bancaire clos
@@ -3461,8 +3578,11 @@ homepage-charts-bars-title = Revenus et dépenses par mois
 homepage-charts-bars-desc = { $year } : revenus { $revenues }, dépenses { $expenses }, sur { $months } mois.
 homepage-charts-pie-title = Principaux postes de charges
 homepage-charts-bars-desc-one = { $year } : revenus { $revenues }, dépenses { $expenses }, sur un mois.
-homepage-charts-pie-desc = { $year } : { $count } comptes de charges, pour un total de { $base }. Le plus gros : { $top }, { $share } %.
-homepage-charts-pie-desc-one = { $year } : un seul compte de charges, pour un total de { $base } : { $top }.
+homepage-charts-pie-desc = { $year } : { $count } comptes de charges, total des dépenses { $total }. Le plus gros : { $top }, { $share } %. Les parts suivent l’ordre du tableau, dans le sens horaire à partir de midi.
+homepage-charts-pie-desc-one = { $year } : un seul compte de charges, { $top } ; total des dépenses { $total }.
+homepage-charts-pie-desc-base = Parts calculées sur { $base }.
+homepage-charts-pie-total-label = Total des dépenses
+homepage-charts-pie-base-note = Les parts portent sur { $base }.
 homepage-charts-legend-revenues = Revenus
 homepage-charts-legend-expenses = Dépenses
 homepage-charts-months-summary = Détail par mois

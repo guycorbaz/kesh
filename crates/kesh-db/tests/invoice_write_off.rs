@@ -28,6 +28,9 @@ use sqlx::MySqlPool;
 mod document_group;
 use document_group::{lignes_du_groupe, poser_groupe_document};
 
+#[path = "support/reglement_version.rs"]
+mod reglement_version;
+
 fn ymd(y: i32, m: u32, d: u32) -> NaiveDate {
     NaiveDate::from_ymd_opt(y, m, d).expect("date valide")
 }
@@ -183,6 +186,7 @@ async fn settle_cash(pool: &MySqlPool, seeded: &SeededCompany, inv: i64, amount:
         },
         amount,
         D(),
+        reglement_version::version_de(pool, inv).await,
     )
     .await
     .expect("règlement");

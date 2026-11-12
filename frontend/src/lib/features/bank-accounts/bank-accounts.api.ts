@@ -1,5 +1,5 @@
 // Story 8-5a-zero — Client API pour les bank_accounts (foundation
-// `journal_account_id` link). Aucun call de réconciliation manuelle ici.
+// `journal_account_id` link). Aucun appel d'écriture manuelle ici.
 //
 // Story v014-1 — étendu avec CRUD complet post-onboarding :
 // - `createBankAccount`, `updateBankAccount`, `archiveBankAccount`.
@@ -16,6 +16,9 @@
 
 import { apiClient } from '$lib/shared/utils/api-client';
 
+/** Story 34-11a1 (#972, C-e341-13) — type d'un compte : bancaire (IBAN) ou carte (sans IBAN). */
+export type BankAccountKind = 'bank' | 'credit_card';
+
 export interface BankAccountSummary {
 	id: number;
 	bankName: string;
@@ -25,8 +28,18 @@ export interface BankAccountSummary {
 	 * qui l'oublierait. S'affiche par `bankAccountName` (`format.ts`).
 	 */
 	description: string | null;
-	iban: string;
+	/**
+	 * Story 34-11a1 (#972) — `null` pour un compte **sans IBAN** (carte de
+	 * crédit). Nullable dans le type : `npm run check` signale tout lecteur qui
+	 * le traiterait comme une chaîne. S'affiche par `bankAccountShortId` ou
+	 * `bankAccountOptionLabel` (`format.ts`).
+	 */
+	iban: string | null;
 	qrIban: string | null;
+	/** Story 34-11a1 (#972) — type du compte, déclaré par le serveur. */
+	accountKind: BankAccountKind;
+	/** Story 34-11a1 (#972) — quatre derniers chiffres d'une carte, `null` sinon. */
+	cardLast4: string | null;
 	isPrimary: boolean;
 	journalAccountId: number | null;
 	version: number;
@@ -80,8 +93,11 @@ interface BankAccountSummaryRaw {
 	id: number;
 	bankName: string;
 	description: string | null;
-	iban: string;
+	iban: string | null;
 	qrIban: string | null;
+	// Story 34-11a1 — absents d'un serveur antérieur à la 0.17.6 : `bank`, `null`.
+	accountKind?: BankAccountKind;
+	cardLast4?: string | null;
 	isPrimary: boolean;
 	journalAccountId: number | null;
 	version: number;
@@ -102,8 +118,10 @@ function parseBankAccount(raw: BankAccountSummaryRaw): BankAccountSummary {
 		id: raw.id,
 		bankName: raw.bankName,
 		description: raw.description ?? null,
-		iban: raw.iban,
+		iban: raw.iban ?? null,
 		qrIban: raw.qrIban,
+		accountKind: raw.accountKind ?? 'bank',
+		cardLast4: raw.cardLast4 ?? null,
 		isPrimary: raw.isPrimary,
 		journalAccountId: raw.journalAccountId,
 		version: raw.version,
@@ -201,44 +219,145 @@ export async function updateBankAccountJournalLink(
 }
 
 /**
+ * Story 34-2 (#533, C-e341-7) — sens d'un solde d'ouverture, **lu sur le
+ * relevé** : `debit` (*Avoir*) le porte au débit du compte lié, `credit`
+ * (*Dette* : un découvert, une carte) au crédit.
+ */
+export type OpeningBalanceSide = 'debit' | 'credit';
+
+/** Story 34-2 (#533) — un solde d'ouverture : montant décimal positif (chaîne) et sens. */
+export interface OpeningBalancePayload {
+	amount: string;
+	side: OpeningBalanceSide;
+}
+
+/**
+ * Story 34-2 (#533) — l'écriture d'ouverture passée avec un compte bancaire :
+ * de quoi la nommer (numéro, date `AAAA-MM-JJ`).
+ */
+export interface OpeningEntrySummary {
+	id: number;
+	entryNumber: number;
+	entryDate: string;
+	fiscalYearId: number;
+}
+
+/**
  * Payload de création — POST /api/v1/bank-accounts (Story v014-1).
  */
-export interface NewBankAccountPayload {
+export type NewBankAccountPayload = NewBankAccountFields & BankOrCardFields;
+
+/** Champs communs aux deux types de compte. */
+interface NewBankAccountFields {
 	bankName: string;
 	/** Story 26-2a — optionnel : l'omettre crée un compte sans description. */
 	description?: string | null;
-	iban: string;
-	qrIban?: string | null;
-	isPrimary?: boolean;
 	journalAccountId?: number | null;
+	/**
+	 * Story 34-2 (#533) — solde d'ouverture, facultatif ; exige
+	 * `journalAccountId`. L'écran ne l'envoie que si un montant est saisi.
+	 */
+	openingBalance?: OpeningBalancePayload;
 }
+
+/** Story 34-2 (#533) — le compte créé, et l'écriture d'ouverture passée avec lui (`null` sans solde). */
+export interface CreatedBankAccount {
+	account: BankAccountSummary;
+	openingEntry: OpeningEntrySummary | null;
+}
+
+/**
+ * Story 34-11a2 (#972 ; revue P1, B10) — union discriminée par le type : un
+ * compte bancaire porte **obligatoirement** son IBAN (type absent = compte
+ * bancaire, payload de la 0.17.5) ; une carte n'a ni IBAN, ni QR-IBAN, ni
+ * « principal », et peut porter ses quatre derniers chiffres.
+ */
+type BankOrCardFields =
+	| {
+			accountKind?: 'bank';
+			iban: string;
+			qrIban?: string | null;
+			isPrimary?: boolean;
+			cardLast4?: never;
+	  }
+	| {
+			accountKind: 'credit_card';
+			cardLast4?: string | null;
+			iban?: never;
+			qrIban?: never;
+			isPrimary?: never;
+	  };
 
 /**
  * POST /api/v1/bank-accounts — crée un nouveau compte bancaire post-onboarding
  * (Comptable+). Transition primary silencieuse symétrique au PUT — si
  * `isPrimary=true` et un autre primary existe, l'ancien est démoté
  * silencieusement dans la même transaction.
+ *
+ * Story 34-2 (#533) : avec `openingBalance`, le serveur passe l'écriture
+ * d'ouverture dans la même transaction ; un refus (`OPENING_COMPLEMENT_*`) ne
+ * crée rien. La réponse porte alors `openingEntry`.
  */
 export async function createBankAccount(
 	payload: NewBankAccountPayload,
-): Promise<BankAccountSummary> {
-	const raw = await apiClient.post<BankAccountSummaryRaw>('/api/v1/bank-accounts', payload);
-	return parseBankAccount({ ...raw, currentBalance: raw.currentBalance ?? null, lastTransactionDate: raw.lastTransactionDate ?? null });
+): Promise<CreatedBankAccount> {
+	const raw = await apiClient.post<BankAccountSummaryRaw & { openingEntry?: OpeningEntrySummary }>(
+		'/api/v1/bank-accounts',
+		payload,
+	);
+	return {
+		account: parseBankAccount({ ...raw, currentBalance: raw.currentBalance ?? null, lastTransactionDate: raw.lastTransactionDate ?? null }),
+		openingEntry: raw.openingEntry ?? null,
+	};
+}
+
+/**
+ * POST /api/v1/bank-accounts/{id}/opening-balance — Story 34-2 (#533, AC-6) :
+ * saisit le solde d'ouverture d'un compte existant, lié (Comptable+). Refus :
+ * `404`, `409 BANK_ACCOUNT_CLOSED`, `412 BANK_ACCOUNT_NOT_CONFIGURED`, puis
+ * ceux du complément (`OPENING_COMPLEMENT_*`, dont `ACCOUNT_MOVED`).
+ */
+export async function enterOpeningBalance(
+	id: number,
+	payload: OpeningBalancePayload,
+): Promise<OpeningEntrySummary> {
+	return apiClient.post<OpeningEntrySummary>(`/api/v1/bank-accounts/${id}/opening-balance`, payload);
 }
 
 /**
  * Payload d'édition complète — PUT /api/v1/bank-accounts/{id} (Story v014-1).
  */
-export interface UpdateBankAccountPayload {
+export type UpdateBankAccountPayload = UpdateBankAccountFields &
+	(
+		| {
+				/** IBAN obligatoire d'un compte bancaire. */
+				iban: string;
+				qrIban?: string | null;
+				isPrimary?: boolean;
+				cardLast4?: never;
+		  }
+		| {
+				/**
+				 * Story 34-11a2 (#972) — une carte : ni IBAN (le serveur le refuse :
+				 * revue P1 de la 34-11a1, E5/B7), ni QR-IBAN, ni « principal » ; ses
+				 * quatre chiffres, **absents ⇒ effacés** (remplacement complet). Le
+				 * type n'est pas envoyé : absent, il vaut le type courant.
+				 */
+				cardLast4: string | null;
+				iban?: never;
+				qrIban?: never;
+				isPrimary?: never;
+		  }
+	);
+
+/** Champs communs du `PUT`. */
+interface UpdateBankAccountFields {
 	bankName: string;
 	/**
 	 * Story 26-2a — **obligatoire** : le `PUT` remplace tout, l'omettre
 	 * **efface** la description (C-26-2-19). `null` pour l'effacer exprès.
 	 */
 	description: string | null;
-	iban: string;
-	qrIban?: string | null;
-	isPrimary?: boolean;
 	journalAccountId?: number | null;
 	version: number;
 }
