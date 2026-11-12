@@ -76,7 +76,7 @@ Tout est dans `frontend/src/lib/features/reconciliation/` :
     sélecteur : deux clés, `-one` et `-other`, comme `already-booked.ts` le fait (V1-11, V1-14) ;
   - bouton : *Rejeter quand même*.
   Il nomme les transactions signalées (`describeTransaction`), non l'écriture à laquelle elles ressemblent : le serveur n'en
-  donne que le nombre. Cette part de #1023 part en issue (C-e350-18).
+  donne que le nombre. Cette part de #1023 part en issue : **#1052** (C-e350-18).
 - **D3 — #1024 : une garde défensive, sans promesse inatteignable** (C-e350-13, révisé par C-e350-18). Si la confirmation
   trouve la ligne absente de la liste courante, ou la sélection vide, un **avis** s'affiche : « Rien n'a été fait : la liste a
   changé depuis l'ouverture de la confirmation ; vérifiez-la avant de recommencer. » — sans nommer de cause, que le client
@@ -124,8 +124,8 @@ Tout est dans `frontend/src/lib/features/reconciliation/` :
      pour échouer lisiblement si une écriture d'une autre spec les signale, plutôt que de rester bloqués sur le dialogue.
 10. **AC10 — Manuel et CHANGELOG.** `user-manual.tex:3097` (puce *Rejeter* : confirmation sur une ligne signalée) et `:3107`
     (*Rejeter* demande confirmation ; la phrase « sans message (issue \#1024) » **retirée**, sans décrire l'avis si l'étape 0
-    ne trouve aucun chemin réel ; la limite de D2 écrite, avec le numéro de l'issue). PDF régénéré, contrôlé aplati.
-    CHANGELOG `## [0.17.7] — Non publié`, *Corrigé*, un point par issue (C-e350-8) ; celui de #1023 cite l'issue de D2.
+    ne trouve aucun chemin réel ; la limite de D2 écrite, avec le numéro de l'issue, #1052). PDF régénéré, contrôlé aplati.
+    CHANGELOG `## [0.17.7] — Non publié`, *Corrigé*, un point par issue (C-e350-8) ; celui de #1023 cite #1052 (l'écriture ressemblante, à venir).
 11. **AC11 — Captures** (thème clair, base jetable, `kesh-gate-logs/e354/captures/`) : le dialogue de *Rejeter*. L'avis de D3
     seulement si l'étape 0 en trouve un chemin réel.
 
@@ -155,7 +155,7 @@ pour *Accepter*/*Rejeter* à sélection vide (AC5) ; M8 `rejectProposals` appel�
 
 ### Hors périmètre
 
-- **Nommer l'écriture ressemblante** dans le dialogue : issue à ouvrir par l'orchestrateur (C-e350-18), citée au CHANGELOG et
+- **Nommer l'écriture ressemblante** dans le dialogue : **#1052** (C-e350-18), citée au CHANGELOG et
   dans la PR ; #1023 se ferme avec cette limite dite.
 - **#1034**, **#76**, **#993** : autres stories.
 
