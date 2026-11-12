@@ -297,3 +297,83 @@ retenue, options écartées, réversibilité. Lignes citées sur `release/0.17.6
 - **Réversible** : oui.
 - **Commentaires déjà rédigés pour #1050 et #1051** (validation P1) : ils disaient que la 0.17.7 ferait refuser `1_000` au
   complément ; c'est faux depuis ce choix — correction à poster par l'orchestrateur.
+
+*(C-e350-20 est pris par la 35-4, sur `chore/epic-35-kickoff` ; les entrées suivantes, de l'agent des fiches 35-5a à 35-5c
+sur `chore/epic-35-fiches-355`, commencent à C-e350-21 et s'unissent à la fusion.)*
+
+### C-e350-21 — 35-5 : l'horloge vit dans `AppState` et dans `Lecture`
+
+- **Contexte** : validations P1 de la 35-5a (V1-6) et de la 35-5b (V1-1, HIGH). Une horloge dans le seul `AppState` n'atteint
+  ni les services, qui ne reçoivent qu'une `Lecture` (`services/rapports.rs:726-732`, `:870`, `services/factures.rs:534`), ni
+  le serveur MCP, qui construit sa propre `Lecture` au câblage (`lib.rs:1403`) et dont l'état ne voit pas l'`AppState`
+  (`mcp/mod.rs:105-107`). Les fonctions pures (`InvoiceResponse::from_parts`, `routes/invoices.rs:333` ; la conversion d'un
+  élément de liste, `:425` ; `parse_as_of`, `services/postes_ouverts.rs:61-74`) n'ont aucun contexte.
+- **Retenu** : `Lecture` porte l'horloge — `Lecture::new(pool, horloge: Arc<dyn Horloge>)`, **sans valeur par défaut**,
+  `Lecture::aujourd_hui()`. `AppState::lecture()` passe `self.horloge` ; le câblage du MCP, `state.horloge`. Les routes lisent
+  `state.horloge.aujourd_hui()`, les services `lecture.aujourd_hui()` ; les fonctions pures, `kesh-db` et `kesh-seed` reçoivent
+  une `NaiveDate`. Une lecture de l'horloge par requête. Posé par la 35-5a (qui en a besoin pour
+  `services::factures::reglements`, rang 5) ; la 35-5b ne fait qu'en user. Trait `Horloge: Send + Sync` et `HorlogeFixe`
+  (`pub`) dans `kesh-core` ; `HorlogeSysteme` dans `kesh-api`.
+- **Coût** : 43 constructions `Lecture::new(` dans 10 fichiers de tests ; 16 littéraux d'`AppState` dans 9 fichiers ; la
+  ligne figée par `mcp_gardes_lexicales.rs:169`, `:575` et `services_motif.rs` (`FABRIQUES_V2`, `:2071`, `:2083`) — changements
+  mécaniques, que le compilateur et les gardes énumèrent.
+- **Écartées** : (a) la date en paramètre de chaque service, et un champ d'`EtatMcp` / `ContexteMcp` pour le MCP : change la
+  signature de chaque service servi par le MCP et de tous leurs appelants de tests (`services_rollout.rs`…), plus le contexte
+  du MCP, pour le même effet ; (b) `Lecture::new(pool)` gardé, à horloge système par défaut, avec un second constructeur :
+  laisse le MCP sur l'horloge système dans un test qui fixe celle de l'`AppState` (un appelant hors d'atteinte des tests), et
+  ouvre un contournement de la garde (v-2), qui ne reconnaît que `Lecture::new(` ; (c) l'horloge dans le seul `AppState` :
+  le défaut même de la validation.
+- **Réversible** : oui ; une poignée et deux lignes de câblage.
+
+### C-e350-23 — 35-5a : la création du premier exercice par l'assistant passe à la 35-5a
+
+- **Contexte** : validation P1 de la 35-5a, V1-5. `routes/onboarding.rs:1043-1056` crée « Exercice {année} » par
+  `fiscal_years::create_if_absent_in_tx`, ligne de `fiscal_years` tracée à l'audit : la nuit du 1er janvier, l'exercice de
+  l'année passée, et les soldes de départ datés du 1er janvier de cette année-là. C-e350-14 confie à la 35-5a « ce qui écrit
+  dans les livres ou les borne ».
+- **Retenu** : le site 17 passe à la 35-5a (AC5 de sa fiche) ; partage 9 / 19.
+- **Écartée** : le laisser à la 35-5b en écrivant pourquoi un exercice n'est pas « dans les livres » : il l'est (il borne
+  toutes les écritures).
+- **Réversible** : oui.
+
+### C-e350-24 — 35-5 : la garde de la date du jour, par fichier, en égalité stricte, sur les sources et les tests
+
+- **Contexte** : validations P1 de la 35-5a (V1-3, V1-4) et de la 35-5b (V1-4). La garde écrite au kickoff comptait les
+  commentaires (8 dans `src`), ne disait pas ce qu'est un compte « qui ne baisse pas comme prévu », énumérait des formes,
+  ne voyait pas les 5 sites coupés sur plusieurs lignes, et ne lisait pas `crates/*/tests`, où un oubli ne rougit que la
+  nuit.
+- **Retenu** : `crates/kesh-api/tests/date_du_jour_garde.rs`, dès la 35-5a, sur `crates/*/src/**/*.rs` **et**
+  `crates/*/tests/**/*.rs` ; lignes de commentaire (`//`, `///`, `//!` en tête) écartées, blancs réduits autour des `.` d'une
+  chaîne de méthodes (formes coupées vues) ; formes relevées sur **tout récepteur** (`.date_naive()`, `.naive_utc().date()`,
+  `.naive_local()`, `Utc::today`, `Local::`, `UTC_DATE`, `CURDATE`, `CURRENT_DATE`, `DATE(NOW`) ; liste d'exemptions
+  `{ fichier, nombre, story, motif }` en **égalité stricte** — un fichier absent compte 0, un écart dans un sens ou dans
+  l'autre rougit, la liste se ramène au compte réel à chaque conversion. Entrée permanente : `jour_suisse` (`kesh-core`, 1).
+  La 35-5c la ferme. Côté écran, `local-date-guard.test.ts` s'étend aux specs à la 35-5c.
+- **Écartées** : (a) un compte « décroissant » (`<=`) : ne voit pas une exemption gardée après conversion (M5) ; (b) des
+  commentaires comptés, comme `local-date-guard.test.ts` : rougirait pour des phrases vraies (`aged_receivables.rs:27`) ; (c)
+  une garde restreinte à `src` jusqu'à la 35-5b : un test converti pourrait revenir en arrière sans bruit.
+- **Réversible** : oui.
+
+### C-e350-25 — 35-5 : le jour d'un instant enregistré
+
+- **Contexte** : validations P1 de la 35-5a (V1-7) et de la 35-5b (V1-2). Des horodatages UTC sont ramenés à un jour par
+  `.date()` ou `DATE(…)` : `dunning_eligibility.rs:128` (`lr.date()`, comparé au jour du serveur : une fois ce jour suisse,
+  le niveau suivant d'un rappel envoyé entre minuit et 1 h devient éligible un jour trop tôt), `routes/invoices.rs:1525`
+  (`paid_at` du CSV de l'échéancier), `reconciliation.rs:237` (`DATE(rmd.last_sent_at)` dans la date d'exigibilité, en
+  SQL), `reconciliation.rs:435` (contrainte `chk_invoices_paid_at_after_date`, `DATE(paid_at) >= date - INTERVAL 1 DAY`).
+- **Retenu** : `dunning_eligibility.rs:128` et `routes/invoices.rs:1525` passent à `jour_suisse(x.and_utc())` dans la 35-5b
+  (sites 22 bis et 16 bis) ; `reconciliation.rs:237` s'ouvre en issue (SQL : le jour suisse d'un horodatage demande soit les
+  tables de fuseaux de MariaDB, soit un calcul hors SQL ; hors de la limite courte) ; `:435` reste tel quel, sans issue : la
+  tolérance d'un jour absorbe l'écart, et la changer demanderait une migration (règle d'arrêt).
+- **Écartée** : laisser toute la classe en UTC : le mélange des deux horloges dans une même comparaison (`:128`) est le
+  défaut contre lequel `companies.rs:986-989` met en garde.
+- **Réversible** : oui.
+
+### C-e350-8, extension du 2026-11-12 (suite) — 35-3 et 35-5a
+
+- `kesh-db/src/repositories/supplier_invoices.rs` (35-3 `:1521-1530`, `:1698-1727` ; 35-5a, signatures `:2462`, `:2600`,
+  `:2750`, `:2871`), `invoice_settlements_write.rs` (35-3 `:679-680` ; 35-5a `:878`, `:1023`),
+  `crates/kesh-db/tests/supplier_invoices_repository.rs` (35-3 `:2250-2257` ; 35-5a, ses dates du jour) : hunks distincts ; la
+  seconde fusionnée se rebase sur la première et recompile (la 35-5a ajoute un argument aux fonctions que la 35-3 appelle
+  peut-être). `user-manual.tex` : 35-5a et 35-6 aussi, paragraphes distincts. `routes/invoices.rs`,
+  `routes/supplier_invoices.rs`, `routes/reconciliation.rs` : 35-5a (chaîne des appelants), 35-5b (`routes/invoices.rs`).
