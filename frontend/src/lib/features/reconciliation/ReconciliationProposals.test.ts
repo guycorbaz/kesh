@@ -1540,6 +1540,8 @@ describe('ReconciliationProposals — transaction déjà comptabilisée (Story 3
 	// candidate — `matchedElsewhereCount` en est une partie ; le conseil est de la rattacher.
 	const TEXTE_VIREMENT =
 		'Cette transaction est probablement l’autre côté d’un virement entre vos comptes : l’écriture de ce virement est déjà rapprochée d’une transaction d’un autre de vos comptes bancaires. Rattachez-la à cette écriture (« Rattacher à une écriture existante ») plutôt que de passer une écriture : le virement serait compté deux fois.';
+	const texteVirementDes = (n: number) =>
+		`Cette transaction est probablement l’autre côté d’un virement entre vos comptes : ${n} écritures de virement sont déjà rapprochées de transactions d’autres de vos comptes bancaires. Rattachez-la à celle de son virement (« Rattacher à une écriture existante ») plutôt que de passer une écriture : le virement serait compté deux fois.`;
 	// Revue P1 (B1-1) : (c′) compte à part les non rapprochées et les écritures de virement.
 	const TEXTE_PARMI_UNE =
 		'S’y ajoute l’écriture d’un virement, déjà rapprochée d’une transaction d’un autre de vos comptes bancaires : si cette transaction est l’autre côté de ce virement, c’est à elle qu’il faut la rattacher.';
@@ -1612,9 +1614,11 @@ describe('ReconciliationProposals — transaction déjà comptabilisée (Story 3
 
 	// Story 34-11b (#972, AC-10) — les cas (b′) et (c′), qui remplacent (b) et (c) de la 34-4.
 	it('AC-10 (b′) toutes les candidates sont l’écriture d’un virement ⇒ la phrase du virement seule', async () => {
-		const view = await monter([signalee(1, [0, 1, 1]), signalee(2, [0, 2, 2])]);
+		const view = await monter([signalee(1, [0, 1, 1]), signalee(2, [0, 2, 2]), signalee(3, [1, 2, 3])]);
 		expect(avertissement(view, 1)).toBe(TEXTE_VIREMENT);
-		expect(avertissement(view, 2)).toBe(TEXTE_VIREMENT);
+		// Revue P2 (E2-3) : au pluriel quand plusieurs écritures de virement sont proposées.
+		expect(avertissement(view, 2)).toBe(texteVirementDes(2));
+		expect(avertissement(view, 3)).toBe(texteVirementDes(3));
 		expect(avertissement(view, 1)).not.toContain('rejetez-la');
 	});
 

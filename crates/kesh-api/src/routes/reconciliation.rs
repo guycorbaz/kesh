@@ -5845,14 +5845,34 @@ pub struct CancelReconciliationResponse {
     pub supplier_invoice_id: Option<i64>,
 }
 
-/// Corps **facultatif** de `POST …/cancel` (Story 34-11b, revue P1 E1-1).
-#[derive(Debug, Default, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct CancelReconciliationRequest {
-    /// La décision que l'écran a montrée (`unlinkOnly` de la vue) : si elle ne
-    /// vaut plus au geste, `409 RECONCILIATION_CANCEL_CHANGED`, rien d'écrit.
-    /// Absent : aucun contrôle (clients d'avant la 0.17.6).
-    pub expect_unlink_only: Option<bool>,
+/// Corps **facultatif** de `POST …/cancel` (Story 34-11b, revue P1 E1-1) : un
+/// seul champ, `expectUnlinkOnly` — la décision que l'écran a montrée
+/// (`unlinkOnly` de la vue) ; si elle ne vaut plus au geste,
+/// `409 RECONCILIATION_CANCEL_CHANGED`, rien d'écrit ; absent, aucun contrôle.
+///
+/// Lit `expectUnlinkOnly` du corps **brut** de `POST …/cancel` (Story 34-11b,
+/// revue P2 B2-1 : un extracteur `Json` refusait un corps vide accompagné d'un
+/// `Content-Type: application/json` en `400`, et tout autre type en `415`,
+/// là où la route acceptait n'importe quel corps avant la 0.17.6).
+///
+/// Choix C-e34b-13, sans regarder le `Content-Type` :
+/// - corps vide (ou d'espaces), `null`, `{}`, objet sans le champ, ou corps
+///   **qui n'est pas du JSON** (formulaire vide, texte) → `None`, aucun
+///   contrôle : le comportement d'avant ;
+/// - objet JSON portant `expectUnlinkOnly` booléen → `Some` ; `null` → `None` ;
+/// - objet JSON portant `expectUnlinkOnly` d'un autre type → `400` : le client
+///   a voulu déclarer une attente, l'ignorer en silence la rendrait muette.
+pub fn parse_cancel_expectation(body: &[u8]) -> Result<Option<bool>, AppError> {
+    let Ok(value) = serde_json::from_slice::<serde_json::Value>(body) else {
+        return Ok(None);
+    };
+    match value.get("expectUnlinkOnly") {
+        None | Some(serde_json::Value::Null) => Ok(None),
+        Some(serde_json::Value::Bool(b)) => Ok(Some(*b)),
+        Some(_) => Err(AppError::Validation(
+            "expectUnlinkOnly doit être un booléen (true ou false), ou absent.".into(),
+        )),
+    }
 }
 
 /// `POST /api/v1/reconciliation/transactions/{id}/cancel` — annule un
@@ -5872,12 +5892,13 @@ pub async fn post_cancel_reconciliation(
     State(state): State<AppState>,
     Extension(current_user): Extension<CurrentUser>,
     axum::extract::Path(id): axum::extract::Path<i64>,
-    body: Option<Json<CancelReconciliationRequest>>,
+    body: axum::body::Bytes,
 ) -> Result<Json<CancelReconciliationResponse>, AppError> {
     let company_id = current_user.company_id;
     let user_id = current_user.user_id;
     let actor_api_key_id = current_user.api_key_id;
-    let expect_unlink_only = body.and_then(|Json(b)| b.expect_unlink_only);
+    // Revue P2 (B2-1) : corps brut, jamais refusé pour sa forme ou son type.
+    let expect_unlink_only = parse_cancel_expectation(&body)?;
     crate::retry::retry_app_on_deadlock("reconciliation::cancel", || {
         cancel_reconciliation_once(
             &state.pool,

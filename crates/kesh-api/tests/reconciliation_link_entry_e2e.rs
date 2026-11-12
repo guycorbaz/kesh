@@ -3316,7 +3316,104 @@ async fn s34_11b_e1_3_une_ecriture_de_reglement_n_a_pas_d_autre_cote(pool: MySql
     assert!(ctx.ids_candidates(credit_b).await.is_empty());
     let (s, corps) = ctx.rattacher(credit_b, e).await;
     assert_non_rattachable(s, &corps);
-    assert_eq!(ctx.vue(debit_a).await["unlinkOnly"], false);
+    let vue = ctx.vue(debit_a).await;
+    assert_eq!(vue["unlinkOnly"], false, "{vue}");
+    // Revue P2 (B2-3) : l'écriture exclue est bien celle que le classement dit règlement.
+    assert_eq!(vue["kind"], "supplier_settlement", "{vue}");
+}
+
+/// Revue P2 (B2-2) — le bras **règlement client** de l'exclusion : un règlement
+/// par compte interne dont la contrepartie est la banque A, rapproché du crédit
+/// de A ; un compte B relié (état forgé) au compte débiteurs porte un débit du
+/// même montant — pas candidat, pas rattachable ; la vue de A dit le genre
+/// `invoice_settlement` et `unlinkOnly: false`. Tue M13b.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn s34_11b_b2_2_un_reglement_client_n_a_pas_d_autre_cote(pool: MySqlPool) {
+    let ctx = monter(&pool).await;
+    let a = ctx.banque(IBAN_A).await;
+    let f = ctx.facture("2026-06-02").await;
+    let (_, e) = ctx
+        .regler_interne(f, ctx.ledger, "54.05", "2026-06-21")
+        .await;
+    let credit_a = ctx.transaction(a, "54.05", "2026-06-21").await;
+    assert_eq!(ctx.rattacher(credit_a, e).await.0, 200);
+    let debiteurs: i64 = sqlx::query_scalar(
+        "SELECT account_id FROM journal_entry_lines WHERE entry_id = ? AND account_id <> ?",
+    )
+    .bind(e)
+    .bind(ctx.ledger)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    let b = ctx.banque_liee(IBAN_B, debiteurs).await;
+    let debit_b = ctx.transaction(b, "-54.05", "2026-06-21").await;
+    assert!(ctx.ids_candidates(debit_b).await.is_empty());
+    let (s, corps) = ctx.rattacher(debit_b, e).await;
+    assert_non_rattachable(s, &corps);
+    let vue = ctx.vue(credit_a).await;
+    assert_eq!(vue["kind"], "invoice_settlement", "{vue}");
+    assert_eq!(vue["unlinkOnly"], false, "{vue}");
+}
+
+/// Revue P2 (B2-1) — le corps de `POST …/cancel` reste **facultatif pour tous
+/// les clients** : sans corps, corps vide en `application/json`, `-d ''` en
+/// `application/x-www-form-urlencoded`, `null`, `{}`, et un corps qui n'est pas
+/// du JSON — tous acceptés (`200`), comme avant la 0.17.6. Seul un
+/// `expectUnlinkOnly` d'un autre type que booléen est refusé (`400`). Tue M14.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn s34_11b_b2_1_le_corps_de_l_annulation_reste_facultatif(pool: MySqlPool) {
+    let ctx = monter(&pool).await;
+    let bank = ctx.banque(IBAN_A).await;
+    let cas: [(&str, Option<&str>, &str); 6] = [
+        ("sans corps", None, ""),
+        ("vide en JSON", Some("application/json"), ""),
+        (
+            "vide en formulaire",
+            Some("application/x-www-form-urlencoded"),
+            "",
+        ),
+        ("null", Some("application/json"), "null"),
+        ("objet vide", Some("application/json"), "{}"),
+        ("texte", Some("text/plain"), "annuler"),
+    ];
+    for (k, (nom, type_, corps)) in cas.iter().enumerate() {
+        let montant = format!("{}.00", 300 + k);
+        let e = ctx.depense("2026-06-18", &montant).await;
+        let t = ctx
+            .transaction(bank, &format!("-{montant}"), "2026-06-18")
+            .await;
+        assert_eq!(ctx.rattacher(t, e).await.0, 200, "{nom}");
+        let mut r = ctx
+            .app
+            .client
+            .post(
+                ctx.app
+                    .url(&format!("/api/v1/reconciliation/transactions/{t}/cancel")),
+            )
+            .bearer_auth(&ctx.jwt);
+        if let Some(ct) = type_ {
+            r = r
+                .header(reqwest::header::CONTENT_TYPE, *ct)
+                .body(corps.to_string());
+        }
+        let resp = r.send().await.unwrap();
+        let st = resp.status().as_u16();
+        let b: Value = resp.json().await.unwrap_or(Value::Null);
+        assert_eq!(st, 200, "{nom} : {b}");
+        assert_eq!(ctx.etat(t).await, ("pending".to_string(), None), "{nom}");
+    }
+    // Une attente déclarée d'un mauvais type : refusée, rien d'annulé.
+    let e = ctx.depense("2026-06-18", "399.00").await;
+    let t = ctx.transaction(bank, "-399.00", "2026-06-18").await;
+    assert_eq!(ctx.rattacher(t, e).await.0, 200);
+    let (s, b) = ctx
+        .post(
+            &format!("/api/v1/reconciliation/transactions/{t}/cancel"),
+            json!({ "expectUnlinkOnly": "true" }),
+        )
+        .await;
+    assert_eq!(s, 400, "{b}");
+    assert_eq!(ctx.etat(t).await, ("reconciled".to_string(), Some(e)));
 }
 
 /// Revue P1 (A1-2) — (iii), la forme **admise** : A rapproche son débit de

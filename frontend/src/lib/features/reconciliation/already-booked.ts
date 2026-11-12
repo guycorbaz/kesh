@@ -35,7 +35,8 @@ import type { ReconciliationProposal, TransactionSummary } from './reconciliatio
  * - (a) `k > 0`, `m = 0` : la phrase « déjà comptabilisée », au singulier si `k = 1` ;
  * - (b′) `m > 0`, `k − m ≤ 0` : « l'autre côté d'un virement », avec la consigne de
  *   rattacher la transaction à l'écriture du virement (`≤` et non `=` : un `k < m` que le
- *   serveur ne rend pas se lit comme (b′), jamais comme une ligne muette) ;
+ *   serveur ne rend pas se lit comme (b′), jamais comme une ligne muette) ; au pluriel si
+ *   `m ≥ 2` (clé `-transfer-other`, revue P2 E2-3) ;
  * - (c′) `m > 0`, `k − m > 0` : (a) **pour les `k − m` non rapprochées seules**, puis les `m`
  *   écritures de virement déjà rapprochées de l'autre côté, au singulier ou au pluriel (revue
  *   P1, B1-1 : « N non rapprochées … l'une d'elles est déjà rapprochée » se contredisait) ;
@@ -48,6 +49,14 @@ export function alreadyBookedWarning(p: ReconciliationProposal): string | null {
 	if (!counts) return null;
 	const k = counts.settlementCount + counts.entryCount;
 	const m = counts.matchedElsewhereCount;
+	// Revue P2 (E2-3) : (b′) au pluriel quand plusieurs écritures de virement sont proposées.
+	if (m > 1 && k - m <= 0) {
+		return i18nMsg(
+			'reconciliation-labels-already-booked-transfer-other',
+			'Cette transaction est probablement l’autre côté d’un virement entre vos comptes : { $count } écritures de virement sont déjà rapprochées de transactions d’autres de vos comptes bancaires. Rattachez-la à celle de son virement (« Rattacher à une écriture existante ») plutôt que de passer une écriture : le virement serait compté deux fois.',
+			{ count: m },
+		);
+	}
 	if (m > 0 && k - m <= 0) {
 		return i18nMsg(
 			'reconciliation-labels-already-booked-transfer',

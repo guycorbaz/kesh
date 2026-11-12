@@ -244,6 +244,29 @@ Utilisateur (AC-8), `api-external.md` (AC-9). **Prompt de revue : nommer le manu
 4. **Proposer l'appariement des deux côtés d'un virement** (même montant, dates proches) dans les propositions de réconciliation — « à terme » dans
    #972 ; la liste des candidats en tient lieu aujourd'hui (C-e341-24).
 
+*Ouvertes par l'orchestrateur : #977 (1), #978 (2), #979 (3), #980 (4) ; s'y ajoutent #1034 (l'écriture rapprochée de ses deux côtés n'est
+plus signalée, C-e34b-2) et #1038 (deux comptes qui partagent un grand livre, indiscernables pour le conseil (b′), revue P1 B1-2).*
+
+## Écarts à la fiche (lire le registre `e34-choix-autonomes-e34b.md`)
+
+*Ajouté à la remédiation P2 (A2-5).* AC-1 (« au plus une transaction par compte du grand livre »), AC-4c et les mutations **M2, M8, M9** dans
+leur forme ci-dessus ne décrivent plus la règle livrée : lire **C-e34b-1** (règle de sens contraire de la 34-4 : au plus une transaction par
+côté, de comptes et de sens opposés ; jamais une écriture de règlement). **M8 et M9 sont couvertes par M2** : sous cette règle, le compte délié
+(cas `NULL`) et le compte relié ailleurs sont refusés par le contrôle du **sens**, que M2 retire ; il n'y a pas de site distinct à muter. AC-4b
+(non-régression de la dévalidation fournisseur) est tenue par une **seconde défense** (la garde de suppression de l'écriture d'achat refuse une
+écriture rapprochée) : M7c, qui retire le rang 3 sous `None`, ne la fait pas rougir — voir le Dev Agent Record.
+
+## Renvois à l'intégration (la 34-2 et la régénération du PDF sont dans la release)
+
+*Ajouté à la remédiation P2 (A2-6) ; l'intégration de l'Epic 34 les reprend.*
+
+1. **Le pas à pas *Dette*** : `user-manual.tex`, § *Tenir une carte de crédit, pas à pas*, étape 2, renvoie au paragraphe « Solde d'ouverture »
+   de la carte (§ *Une carte de crédit*), que la 34-11a2 a laissé en commentaire jusqu'à la 34-2 — à rétablir, et à relire contre l'écran de
+   la 34-2 (sens *Dette*).
+2. **L'E2E** `credit-card-statement.spec.ts` pose la dette d'ouverture par une écriture (C-e34b-6) : à repasser par la 34-2 si elle le permet.
+3. **Le PDF du manuel utilisateur**, à régénérer : y greper (aplati) `rejetez-la` (absent attendu), `Tenir une carte` et `#823` (présent pour le
+   lot de plusieurs factures seulement).
+
 ## Recoupements
 
 `reconciliation_link.rs`, `reconciliation_cancel.rs`, `settlement_cancellation.rs` : ⚠️ **34-4** (#828, fiche
@@ -425,3 +448,17 @@ Journaux sous `/home/gcorbaz/devel/kesh-gate-logs/e34b/`, tels qu'ils ont tourn�
 - **Écarts à la consigne Edit** (remédiation) : un `sed -i` lancé par erreur sur `crates/kesh-api/src/routes/reconciliation.rs` (une ligne de
   doc-comment, juste) — sa sauvegarde `.unused`, sortie du dépôt, est sous `kesh-gate-logs/e34b/reconciliation.rs.sed-backup-a-ignorer` ;
   `python3 -I` pour dériver un script de gates dans `kesh-gate-logs`.
+
+#### Annotations de la remédiation P2 (2026-11-12)
+
+- **A2-2 — décomptes recomptés au HEAD `8781e150`** (périmètre `a8dce4a9` → `8781e150`, les entrées ci-dessus restent datées) :
+  `reconciliation_link_entry_e2e.rs` 42 → **56** (+14 : 8 du développement, 6 de la remédiation P1), `CancelReconciliationDialog.test.ts` 9 → **11**,
+  `sitesTotal` **2957**. Les autres lignes tiennent. Les chiffres de la remédiation P2 sont plus bas.
+- **A2-3** : le huitième échec E2E au commit de fusion, `backup-restore-new-install.spec.ts:140`, est la pollution tracée en **#931** ; vert
+  rejoué seul. `e2e rc=0` dans `gates-4.txt` est le code du **script enveloppe**, non de Playwright (`playwright rc=1` à la fin de
+  `e2e-r4/playwright.log`, ses 8 échecs étant nommés ci-dessus).
+- **A2-4** : voir § *Écarts à la fiche* — la dévalidation fournisseur est gardée par une seconde défense ; M7c ne la vise pas.
+- **A2-7 — T3, vérification consignée** : le vocabulaire d'audit (`crates/kesh-api/src/audit_labels.rs:184`, `reconciliation.cancelled`) et
+  l'écran du journal d'audit ne lisent pas les détails : le libellé reste « Rapprochement annulé » pour les deux chemins, `unlinkOnly` et
+  `reversalJournalEntryId` ne se lisent que dans le détail JSON (le manuel le dit). Rien à aligner ; un libellé distinct serait une demande à
+  Guy.

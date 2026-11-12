@@ -140,3 +140,26 @@ ou s'en écartent, et le disent.*
 - **Retenu** : `credit-card-statement.spec.ts` crée (une fois par base) un compte bancaire à IBAN synthétique réservé
   (`CH7600762341100249817`, clé juste) relié à un actif propre : aucune écriture d'une autre spec ne peut signaler le débit.
 - **Réversible** : oui.
+
+### C-e34b-13 — Le corps de `POST …/cancel` se lit brut (remédiation P2, B2-1)
+
+- **Contexte** : `Option<Json<…>>` refusait un corps vide accompagné d'un `Content-Type: application/json` (400), `null` (400) et tout autre
+  type (415, `curl -d ''`) — la route acceptait tout avant la 0.17.6.
+- **Retenu** : `body: Bytes`, `parse_cancel_expectation` : corps vide, `null`, `{}`, champ absent ou `null`, ou corps qui n'est pas du JSON →
+  aucun contrôle ; `expectUnlinkOnly` booléen → contrôle ; `expectUnlinkOnly` d'un autre type → `400 VALIDATION_ERROR` (une attente mal formée
+  ne doit pas devenir muette). `null` vaut absent. Test `s34_11b_b2_1_…` (six formes acceptées, une refusée), mutation M14.
+- **Écartée** : refuser un corps non JSON (rupture du contrat des clés d'API).
+- **Réversible** : oui.
+
+### C-e34b-14 — (b′) au pluriel (remédiation P2, E2-3)
+
+- **Retenu** : clé `reconciliation-labels-already-booked-transfer-other` quand `m ≥ 2` et `k − m ≤ 0` ; quatre locales ; Vitest ; mutation F5.
+- **Réversible** : oui.
+
+### C-e34b-15 — L'exclusion des règlements bornée par société et rapprochée du classement (remédiation P2, B2-3, E2-4)
+
+- **Retenu** : les sous-requêtes de `other_side_predicate` portent `company_id = bt.company_id` ; un test unitaire rapproche leurs critères de
+  `SUPPLIER_SETTLEMENT_CLASSIFY_SQL` (mêmes colonnes, même statut, même nombre de critères), et les tests HTTP `s34_11b_e1_3_…` (fournisseur)
+  et `s34_11b_b2_2_…` (client) vérifient que l'écriture exclue est celle que la vue classe règlement. Le texte n'est pas partagé : la constante
+  du classement porte des paramètres `?` que le prédicat corrélé ne peut pas reprendre tel quel.
+- **Réversible** : oui.

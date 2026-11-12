@@ -30,6 +30,8 @@ const CLES = [
 	// Story 34-11b (#972, AC-10) : `-elsewhere` (b) et `-combined` (c) retirées, remplacées par
 	// `-transfer` (b′) et `-transfer-among-one` / `-other` (c′ ; revue P1, B1-1).
 	'reconciliation-labels-already-booked-transfer',
+	// Revue P2 (E2-3) : (b′) au pluriel.
+	'reconciliation-labels-already-booked-transfer-other',
 	'reconciliation-labels-already-booked-transfer-among-one',
 	'reconciliation-labels-already-booked-transfer-among-other',
 	'reconciliation-labels-already-booked-confirm-title',
@@ -46,7 +48,7 @@ describe('Déjà comptabilisée — catalogues (Story 34-4)', () => {
 		for (const cle of CLES) expect(releve.has(cle), cle).toBe(true);
 	});
 
-	it.each(LOCALES)('%s : les neuf clés existent, sans sélecteur Fluent', (locale) => {
+	it.each(LOCALES)('%s : les dix clés existent, sans sélecteur Fluent', (locale) => {
 		const catalogue = catalogueDe(RACINE_FTL, locale);
 		const duPrefixe = [...catalogue.keys()].filter((c) => c.startsWith(PREFIXE)).sort();
 		expect(duPrefixe).toEqual([...CLES].sort());
