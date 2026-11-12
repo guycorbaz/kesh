@@ -38,7 +38,7 @@ caractère** corriger, afin de corriger la bonne fiche sans chercher à l'aveugl
 - `:338` passe la **clé nue** `"qrbill-error-qrr-generation"`, absente de tout catalogue ; le commentaire `:334-335` dit à
   tort que `errors.rs` la résout. Ce cas est une **panne interne**, non corrigeable par l'utilisateur.
 - Les replis Rust des refus d'adresse ne sont pas ceux du catalogue (`:289` contre fr-CH `messages.ftl:969`) ; aucun n'est
-  dans **G9** (`crates/kesh-api/tests/textes_coherents.rs:723`, `TABLE` à 8 entrées). `invoice-pdf-error-client-address-empty`
+  dans **G9** (`crates/kesh-api/tests/textes_coherents.rs:734`, `TABLE` à 8 entrées). `invoice-pdf-error-client-address-empty`
   (`:971`) n'est employée nulle part. `credit_notes.rs:295-297` passe la clé de la **facture** avec un repli qui dit
   « l'avoir ». Le bloc `invoice-pdf-error-*` dit « entreprise » (`:968-969`).
 - **État i18n global** : `errors::t`/`t_args` (`errors.rs:21-64`) rendent le repli tant que `init_error_i18n` n'a pas été
@@ -125,8 +125,9 @@ désormais un tel NPA à la saisie.
 - **D7 — Le pays** : `build_qrbill_inputs` contrôle le pays de chaque partie par `kesh_qrbill::is_iso_3166_alpha2`
   (`validation.rs:285`) avant `kesh-qrbill`, et rend la partie et le code : « Le pays de l'entreprise (« SU ») n'est pas un
   code ISO valide. ». Le bras `InvalidCountry` de `map_qrbill_error` (`:507-509`) reste, défensif : phrase sans partie, avec
-  le code (V3-6 b). Le code est montré **tel que stocké** : une saisie en minuscules (`ch`), refusée aujourd'hui, le reste,
-  avec cette phrase (V5-8) ; la normaliser serait un changement de la saisie, hors de la story.
+  le code (V3-6 b). Le code est montré **tel que stocké** : une valeur **stockée** en minuscules (`ch`, posée en SQL — la saisie la met en
+  majuscules, `address_input.rs:37-41`) est refusée par le PDF aujourd'hui ; elle reste refusée, avec cette phrase (V5-8,
+  V6-1) ; la normaliser serait un changement de la saisie, hors de la story.
 - **D8 — L'avoir a sa clé** : `credit-note-pdf-error-contact-missing` ×4, repli égal à fr-CH ; sa clé et son repli sont
   rendus par la fonction pure, qui vit dans `invoice_pdf_service.rs` : son entrée G9 est donc dans ce fichier (V5-1).
 - **D9 — La communication** (V3-13) : un caractère refusé dans `unstructured_message` vient du **numéro de facture**, qu'une
@@ -200,7 +201,7 @@ désormais un tel NPA à la saisie.
    G9 : **une entrée neuve en fin de table**, `crates/kesh-api/src/routes/invoice_pdf_service.rs`, qui porte les 39 clés
    neuves (celle de l'avoir comprise, D8) et les trois reprises : **42** clés ; aucune entrée pour `credit_notes.rs`, qui
    ne porte plus de repli ; la table passe de 8 à **9** entrées (V5-1). Les replis des trois clés reprises sont **réécrits
-   égaux à leur valeur fr-CH** (`:227` dit « cette company », `:325` « obligatoire et complète (NPA et localité) », V5-6).
+   égaux à leur valeur fr-CH** (`:228` dit « cette company », `:326` « obligatoire et complète (NPA et localité) », V5-6, V6-3).
    `max` et `got` passent à Fluent **en chaînes** (comme le point de code, D4), pour ne pas être formatés selon la locale
    (V5-8). Paramètres : `("{ $car }", "{car}")`, `("{ $point }", "{point}")` pour un caractère ;
    `("{ $max }", "{max}")`, `("{ $got }", "{got}")` pour une longueur ; `("{ $code }", "{code}")` pour un pays. Aucune clé
@@ -236,13 +237,15 @@ désormais un tel NPA à la saisie.
 14. **AC14 — Garde des constructions** (V5-7) : un test de `textes_coherents.rs`, sur le modèle d'AC13, exige dans
     `crates/kesh-api/src` hors `errors.rs` et hors modules `#[cfg(test)]` **exactement deux** occurrences de
     `InvoiceNotPdfReady(` : la fonction de construction (D3) et le motif de `classify_render_error`
-    (`invoice_email.rs:1030`) ; le doc-comment `:491` se reformule sans parenthèse. Sonde positive au Change Log (M14).
+    (`invoice_email.rs:1030`) ; le doc-comment `:491` ne porte pas le motif (un backtick suit le nom) : aucune
+    reformulation requise (V6-4). Sonde positive au Change Log (M14).
 
 ## Tests à écrire, et la preuve du rouge
 
 Écrire d'abord, lancer sur le code de départ, garder le journal (`kesh-gate-logs/e352a/rouges.log`) : AC1, AC4, AC5, AC6
 (`invoice_pdf_e2e.rs`, `company_address_e2e.rs`) ; AC2 (`mod tests`, bundle local) ; AC7 et AC9 (`pdf-error.test.ts`) ;
-AC11 ; AC13 (vert au départ : sa sonde M12 tient lieu de rouge) ; AC12. Un test vert sous `nextest` doit l'être sous
+AC11 ; AC13 (vert au départ : sa sonde M12 tient lieu de rouge) ; AC14 (rouge au départ : 14 occurrences hors tests,
+dont `invoice_email.rs:1030`, V6-2) ; AC12. Un test vert sous `nextest` doit l'être sous
 `cargo test` : `scripts/gate-ci.sh` au dernier commit de code.
 
 **Mutations** : M1 le bras `INVOICE_NOT_PDF_READY` de `pdfErrorMessage` retiré ; M2 deux clés de champ échangées dans la
@@ -258,7 +261,7 @@ retirée du catalogue (AC2) ; M14 une construction `InvoiceNotPdfReady(…)` ajo
 - [ ] Étape 0, **sur `release/0.17.6`** (les lignes citées sont celles de cette branche ; le worktree du kickoff est sur
       `main`) : recompter l'inventaire, le tableau des routes et les lignes citées ; Change Log.
 - [ ] Tests, rouges consignés.
-- [ ] Serveur : fonction pure, phrases ×4, adresse (D6), pays (D7), avoir (D8), communication (D9), `:338`, G9 ; garde AC13.
+- [ ] Serveur : fonction pure, phrases ×4, adresse (D6), pays (D7), avoir (D8), communication (D9), `:338`, G9 ; gardes AC13 et AC14.
 - [ ] Écran : `pdf-error.ts` (D1).
 - [ ] Tests existants (AC9) ; manuel, CHANGELOG, `api-external.md` ; captures ; E2E.
 - [ ] Gates : `test-fast.sh --ci` et `scripts/gate-ci.sh`, frontend complet, E2E complet au dernier commit de code, échecs
@@ -363,4 +366,10 @@ Avec la 35-3 : `messages.ftl` ×4, G9 (ici une entrée neuve en fin de table ; l
     `errors.rs:5715-5723` (V4-3).
   - Symptômes greppés (fiche, 35-3, 35-2b, fichier d'epic, registre) : `41`, `\b10\b` près de G9, `credit_notes` —
     restes traités ; les entrées passées du Change Log gardent leurs chiffres.
+- 2026-11-12 — **Validation P6** (Haiku, passe ciblée sur `ae2c9fd8`) : 0 CRITICAL, 0 HIGH, 1 MEDIUM, 3 LOW, plus un écart
+  hors remédiation (`kesh-gate-logs/e35-2a-validation-p6-ciblee.md`). Appliqués après lecture au code de `release/0.17.6` :
+  V6-1 (D7 : la saisie met le pays en majuscules, `address_input.rs:37-41` lu ; seule une valeur stockée en minuscules est
+  refusée) ; V6-2 (AC14 aux tests, rouge au départ, et à la tâche Serveur) ; V6-3 (`:228`, `:326`, lus) ; V6-4 (`:491` lu :
+  « `InvoiceNotPdfReady` (400) », sans le motif ; consigne retirée) ; H-1 (table G9 à `textes_coherents.rs:734`, lue ; 1
+  renvoi(s) corrigé(s) ici, et dans la 35-3). Aucune autre modification.
 
