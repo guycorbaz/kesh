@@ -86,7 +86,8 @@ retenue, options écartées, réversibilité. Lignes citées sur `release/0.17.6
 - **Contexte** : validation P1 de la 35-3, V1-1. Le solde du reste d'un règlement relit la TVA due par
   `vat_payable_account_for_write` (`company_invoice_settings.rs:661-691`, « sans contrainte de type », `:663-664`),
   appelé à `invoice_settlements_write.rs:679-680` ; un compte de TVA due retypé y reçoit la correction de TVA.
-- **Retenu** : hors de la 35-3 ; issue à ouvrir par l'orchestrateur.
+- **Retenu** : hors de la 35-3 ; issue à ouvrir par l'orchestrateur. *(Annoté le 2026-11-12, validation P2 de la 35-3 :
+  ouverte, **#1044**.)*
 - **Raisons** : ce n'est pas la même garde — une relecture `FOR UPDATE` dont le refus est `ConfigurationRequired`, et
   non l'instantané de `check_written` ; poser le refus nommé y change le contrat d'une autre route (règlement) et son
   écran, dans un fichier que la 0.17.6 vient de remanier (34-5) ; le chemin n'existe que pour une facture **à TVA**, et

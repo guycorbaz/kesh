@@ -61,7 +61,7 @@ les comptes désignés candidats, puis contrôlent ceux que l'écriture écrit :
 |---|---|---|---|
 | validation facture, `invoices.rs:2194` / `:2386` | créance, TVA due | non | **oui** |
 | validation fournisseur, `supplier_invoices.rs:1698` / `:1727` | créanciers, TVA récupérable | non | **oui** |
-| solde du reste d'un règlement, `invoice_settlements_write.rs:679-680` → `vat_payable_account_for_write` (`company_invoice_settings.rs:661-691`) | TVA due | non (« sans contrainte de type », `:663-664`) | **non** : C-e350-7, issue à ouvrir |
+| solde du reste d'un règlement, `invoice_settlements_write.rs:679-680` → `vat_payable_account_for_write` (`company_invoice_settings.rs:661-691`) | TVA due | non (« sans contrainte de type », `:663-664`) | **non** : C-e350-7, **#1044** |
 | avoir, `credit_notes.rs:502`, `:518`, `:666` | TVA due (créance lue sur l'écriture de vente) | non | non (#525, P1 TVA reportés) |
 | règlements client, rapprochement | créance lue sur l'écriture de vente | sans objet | — |
 | règlement et annulation fournisseur, lots de paiement | créanciers lus sur l'écriture d'achat | sans objet | — |
@@ -91,7 +91,10 @@ L'import (CAMT, factures importées) et le MCP n'écrivent pas d'écriture sur c
     pourra être relancée telle quelle. » ;
   - les libellés des quatre réglages (« compte débiteurs », « compte de TVA due », « compte créanciers », « compte de TVA
     récupérable ») et des types au singulier (« compte d'actif », « compte de passif », « compte de charge », « compte de
-    produit ») sont des clés ×4 ; les `account-type-*` du catalogue (« Actif »…) ne se déclinent pas dans la phrase.
+    produit ») sont des clés ×4 ; les `account-type-*` du catalogue (« Actif »…) ne se déclinent pas dans la phrase ;
+  - **ordre et séparateur** (V2-10) : les comptes sont rangés **par numéro**, comme `details.rejected` de
+    `ACCOUNT_NOT_POSTABLE` ; chaque phrase se termine par un point, et les phrases se joignent par **une espace** ; la
+    phrase d'action vient en dernier. `details.rejected` suit le même ordre.
 - **D3 — Ordre des refus, par accumulation** (V1-8) : `check_written` parcourt tous les rôles écrits, accumule les
   comptes de mauvais type comme il accumule les non imputables, puis choisit : **absent ou archivé**
   (`InactiveOrInvalidAccounts`, inchangé) > **type** (tous les comptes de mauvais type) > **non imputable**. Un retour
@@ -103,29 +106,40 @@ L'import (CAMT, factures importées) et le MCP n'écrivent pas d'écriture sur c
   (ou une constante qui porte les quatre). `check_written` la lit par un lecteur interne (`DesignatedRole::expected_type`,
   qui reste `pub(in crate::repositories)`) ; la route des réglages la lit à la place de `AccountType::Asset` (`:350`) et
   `AccountType::Liability` (`:407`). Précédent : C-31-5-19.
-- **D5 — Le type se lit sous le même verrou**, dans la même requête : ajouter `account_type` à la liste des colonnes
-  de `:961` et à `LockedDesignatedAccount` (`:806-812`). Les motifs qui reconnaissent la requête restent vrais
+- **D5 — Le type se lit sous le même verrou**, dans la même requête : ajouter `account_type` **en dernière colonne**
+  (`SELECT id, number, active, postable, account_type FROM …`, V2-8) de `:961` et à `LockedDesignatedAccount` (`:806-812`). Les motifs qui reconnaissent la requête restent vrais
   (`ACCESSEUR = ["FROM accounts FORCE INDEX (PRIMARY) WHERE company_id", "LOCK IN SHARE MODE"]`,
   `crates/kesh-db/tests/invoices_validate_vat.rs:1259-1262`, `supplier_invoices_repository.rs:2254-2257` ;
-  `rejeu_interblocage_e2e.rs:1306`) ; aucun test ne cherche `number, active, postable`. Le plan (`FORCE INDEX (PRIMARY)`)
+  `rejeu_interblocage_e2e.rs:1306`) ; aucun test ne cherche `number, active, postable`. Deux sondes cherchent `account_type, active FROM accounts` (relecture du
+  type d'un compte lié : `bank_account_opening_balance_e2e.rs:1001`, `credit_card_e2e.rs:805`) : la place en dernière colonne
+  garantit qu'elles ne reconnaissent pas l'accesseur. Le plan (`FORCE INDEX (PRIMARY)`)
   ne change pas. `LockedDesignatedAccount` est public et lu par l'avoir (`credit_notes.rs:518`) : un champ ajouté ne doit
   rien y changer.
 - **D6 — Le message de la page des réglages** (V1-4, limite voisine courte, même route que D4) : « type de compte
   incompatible (attendu Asset) » (`:224-229`) dit le type **en mots** (« attendu : actif »), puisque c'est là que
   l'administrateur corrige. Le message reste en français en dur, comme les autres refus de cette route (#710).
+  `validate_account_of` sert aussi l'arrondi et les natures (`resolve_designated_account`, `:259-266`) : leur message
+  devient « attendu : charge ou produit ». Le début de phrase « type de compte incompatible » est **gardé** : le test
+  `accounts_designated_archive_e2e.rs:1249-1254` l'asserte. La page contrôle les champs en série (`:345-414`) et ne nomme
+  que **le premier** fautif : avec deux comptes retypés, il faut enregistrer deux fois (V2-7) — à dire au manuel.
 
 ## Critères d'acceptation
 
 1. **AC1 — Créance retypée en passif, rôle gardé.** Montage `seed_accounting_company` (créance `1100`), facture
-   brouillon ; `accounts::update` retype `1100` en `Liability` **en gardant son rôle** (`confirm_retype = true` s'il est
+   brouillon. ⚠️ Le montage **ne pose aucun rôle** (`test_fixtures.rs:130-136`) : le test pose d'abord le rôle
+   `Receivable` sur `1100` par `accounts::update`, vérifie qu'il est posé (V2-3) ; puis `accounts::update` retype `1100` en `Liability` **en gardant son rôle** (`confirm_retype = true` s'il est
    mouvementé) ; `validate_invoice` rend la variante de D2, nomme `1100`, `setting = receivable`,
    `expectedType = Asset`, `actualType = Liability` ; **rien n'est écrit** (facture en brouillon, aucune écriture,
-   séquence de numérotation inchangée : le numéro, attribué à `invoices.rs:2329`, part avec le rollback).
-2. **AC2 — Créance retypée en charge, rôle retiré** dans la même requête : même refus, `actualType = Expense`.
+   séquence de numérotation inchangée : le numéro, attribué à `invoices.rs:2329`, part avec le rollback). Après le
+   retypage, le rôle `Receivable` est **toujours** posé : c'est le chemin que #537 décrit (`accepts_account_type` admet
+   le passif pour ce rôle).
+2. **AC2 — Créance retypée en charge, rôle retiré** dans la même requête : rôle `Receivable` posé d'abord et vérifié,
+   puis un seul `accounts::update` (type `Expense`, rôle `None`) ; le rôle n'est plus posé ; même refus,
+   `actualType = Expense`.
    **AC2-bis — Compte sans rôle** désigné comme créance, retypé seul en charge : même refus.
 3. **AC3 — TVA due** retypée en actif, facture **avec** TVA : refus, `setting = vatPayable`. Facture **sans** TVA : la
    validation passe (la TVA due n'est pas écrite, `check_written` ne juge que les rôles écrits).
-4. **AC4 — Facture fournisseur** : créanciers (`2000`) retypés en actif → refus à la validation, `setting = payable` ;
+4. **AC4 — Facture fournisseur** : rôle `Payable` posé d'abord sur `2000` et vérifié ; créanciers retypés en actif → refus à la validation, `setting = payable` ;
    TVA récupérable (`1171`) retypée en passif, facture à TVA → refus, `setting = vatRecoverable` ; sans TVA, la
    validation passe. Rien n'est écrit.
 5. **AC5 — Ordre** (D3) : un compte retypé **et** archivé rend `InactiveOrInvalidAccounts` ; **créance retypée et TVA due
@@ -133,7 +147,14 @@ L'import (CAMT, factures importées) et le MCP n'écrivent pas d'écriture sur c
    non imputable, le refus de type seul ; deux comptes retypés (créance et TVA due), un refus qui les nomme tous les deux.
 6. **AC6 — Le chemin nominal ne bouge pas** : comptes au bon type, la validation passe et écrit la même écriture
    qu'avant (tests existants de `invoices_validate_vat.rs` et `supplier_invoices_repository.rs` verts sans retouche
-   de leurs attendus).
+   de leurs attendus), **à une exception près, nommée** (V2-2) : `one_account_for_two_roles_is_named_once`
+   (`invoices_validate_vat.rs:1417-1443`) désigne l'actif `1100` à la fois créance et TVA due ; D3 faisant primer le
+   type, il rend désormais le refus de type, `1100` nommé, `setting = vatPayable`, et son attendu change en ce sens.
+   Dans un même flux, les deux rôles attendent des types opposés : le dédoublonnage C40 des non imputables désignés
+   (`NonPostableAccounts::new`, doc de `check_written`, `company_invoice_settings.rs:1000-1004`) ne s'atteint plus que par
+   un montage incohérent ; le doc-comment le dit. Étape 0 : recenser les montages qui désignent un compte d'un type
+   contraire au réglage (`git grep -n "SET default_\(receivable\|payable\|vat_payable\|vat_recoverable\)_account_id" --
+   'crates/*/tests/*'`, 38 sites sur `release/0.17.6`) et écrire le verdict de chacun au Change Log.
 7. **AC7 — HTTP.** `POST /api/v1/invoices/{id}/validate` et `POST /api/v1/supplier-invoices/{id}/validate` rendent
    400, le code de D2, les `details` de D2, et un message fr-CH qui contient le numéro du compte, le réglage en mots,
    « Administration → Facturation », le type attendu en mots et la phrase d'action. **Cas à deux comptes de types
@@ -147,7 +168,8 @@ L'import (CAMT, factures importées) et le MCP n'écrivent pas d'écriture sur c
 9. **AC9 — Une source** (D4) : test d'intégration par `PUT /api/v1/company/invoice-settings` (`validate_account_of`
    est privé, `:200`) : pour chacun des quatre champs, un compte du type que donne la constante passe et un compte d'un
    autre type est refusé — la route et `check_written` lisant la même constante, AC1–AC4 et ce test rougissent
-   ensemble si l'une diverge.
+   ensemble si l'une diverge. Pour un champ au moins, le message du refus est asserté **en mots** (« attendu : actif »,
+   D6) : rouge sur le code de départ par l'assertion, et non par la seule compilation.
 10. **AC10 — Quatre langues et G9.** Clés neuves dans `fr-CH`, `de-CH`, `it-CH`, `en-CH` (`parity_between_locales`),
     placées **à côté de `error-designated-account-not-postable`** (C-e350-8) ; aucun sélecteur de pluriel (D2), donc
     rien à `SELECTEURS_RESOLUS_COTE_SERVEUR`. Les replis Rust des clés neuves égalent leur valeur fr-CH et s'inscrivent à
@@ -163,13 +185,21 @@ L'import (CAMT, factures importées) et le MCP n'écrivent pas d'écriture sur c
     `400 DESIGNATED_ACCOUNT_WRONG_TYPE`. `docs/api-external.md` : une ligne neuve du tableau des erreurs **juste après
     `ACCOUNT_NOT_POSTABLE`** (`:1048`), qui dit sa place (après absent ou archivé, avant non imputable — la ligne de
     `ACCOUNT_NOT_POSTABLE` dit aujourd'hui que le refus des comptes désignés « vient après tous les autres » : à
-    ajuster) ; refus de la validation fournisseur (`:628`) et de la validation facture étendus.
+    ajuster). Deux phrases voisines disent le contraire de D3 pour un compte désigné et sont corrigées (V2-4) : `:1047`
+    (`INACTIVE_OR_INVALID_ACCOUNTS`, « d'un mauvais type » : hors comptes désignés des réglages) et la dernière phrase
+    de `:1048` (« un compte à la fois … d'un mauvais type **et** non imputable rend `INACTIVE_OR_INVALID_ACCOUNTS` »). La
+    ligne neuve dit l'ordre complet (absent ou archivé > type > imputabilité) et les deux routes ; les refus de la
+    validation fournisseur (`:628`) s'étendent ; le guide n'a pas de liste des refus de la validation facture : la ligne
+    neuve suffit.
 12. **AC12 — Doc-comments.** Les trois passages qui disent le type non contrôlé sont **reformulés, non effacés** (V1-3) :
     `company_invoice_settings.rs:902-904`, `invoices.rs:2005-2010`, `supplier_invoices.rs:1521-1530`. Le type est
     désormais refusé à l'usage, **mais après le verrou** : un compte désigné retypé en charge et imputé par une ligne
     prend toujours ses deux verrous, et le cycle étroit de `supplier_invoices.rs:1521-1530` reste couvert par le rejeu
-    des routes. Greper `angle mort` et `retypé` sur `crates/kesh-db/src` et écrire au Change Log le verdict de chaque
-    occurrence.
+    des routes. Les listes d'ordre des refus deviennent fausses et sont mises à jour (V2-6) : le doc de `check_written`
+    (« Refuse, dans cet ordre », `company_invoice_settings.rs:996-1004`), les commentaires d'appel `invoices.rs:2381-2385`
+    et `supplier_invoices.rs:1722-1726`, et le doc de `validate_invoice` (`invoices.rs:2040-2051`). Greper `angle mort`,
+    `retypé`, `dans cet ordre` et `InactiveOrInvalidAccounts\` ; non imputable` sur `crates/kesh-db/src`, et écrire au
+    Change Log le verdict de chaque occurrence.
 13. **AC13 — Manuel** (`docs/manual/fr/user-manual.tex`), PDF régénéré et contrôlé aplati :
     - un paragraphe voisin de « Un compte des réglages devenu non imputable » (`:1169`) : le refus, sa cause, et **la
       marche à suivre en deux voies** — désigner dans *Administration → Facturation* un compte du bon type, **ou** rendre
@@ -178,7 +208,9 @@ L'import (CAMT, factures importées) et le MCP n'écrivent pas d'écriture sur c
     - la validation fournisseur (`:1788-1796`), même chose pour les créanciers et la TVA récupérable ;
     - « Changer le type d'un compte qui porte des écritures » (`:452-461`) : un compte désigné aux réglages de facturation ne se retype pas sans
       reprendre la désignation — faute d'avertissement à l'écran (D1), c'est le seul avertissement ;
-    - relire la liste « Trois cas échappent encore » (`:493`), qui ne parle que d'imputabilité.
+    - la note *Rôles des comptes* (`:491`), qui décrit la garde à l'usage par la seule imputabilité : le type y entre ;
+      relire la liste « Trois cas échappent encore » (`:493`) ;
+    - « recommencez l'enregistrement jusqu'à ce qu'il passe » : la page ne nomme qu'un champ fautif à la fois (D6).
 14. **AC14 — Captures** (thème clair, base de démonstration jetable, `kesh-gate-logs/e353/captures/`) : le refus à la
     validation d'une facture client ; à celle d'une facture fournisseur ; le refus de la page des réglages (D6).
 
@@ -214,16 +246,20 @@ pas, s'arrêter et le dire avant d'écrire l'avertissement.
   AC3, AC5, AC6. **Rouge attendu** : la validation **réussit** et écrit la créance sur le compte retypé — le test
   l'affirme en commentaire, avec l'identifiant de l'écriture produite au journal du rouge.
 - `crates/kesh-db/tests/supplier_invoices_repository.rs`, même module (`:2250`) : AC4.
-- **Le type se lit sous verrou** (V1-9) : un test tient la validation en pause après l'accesseur
-  (`attendre_une_requete_en_cours`, `sonde_verrou_nowait`, déjà importés, `invoices_validate_vat.rs:1252-1254`) et
-  vérifie que la sonde `SELECT id FROM accounts WHERE id = ? FOR UPDATE NOWAIT` sur le compte désigné échoue pendant
-  l'attente — un retypage concurrent (`accounts::update`, `FOR UPDATE`, `accounts.rs:630-640`) attend donc la fin de la
-  validation.
+- **Le type se lit frais, sous verrou** (V2-1, patron `retypage_tenu`, `crates/kesh-api/tests/credit_card_e2e.rs:805-822`) :
+  une transaction de test prend `1100` `FOR UPDATE` et le retype en `Liability` **sans commit** ; la validation, lancée
+  en tâche, est vue en attente sur l'accesseur (`attendre_une_requete_en_cours`, motifs `ACCESSEUR`) ; la transaction
+  commite ; la validation rend le refus de type. Rouge au départ (elle réussit), rouge sous M7 (une lecture séparée,
+  non verrouillante, lit l'instantané REPEATABLE READ ouvert avant le retypage — `:937-951` — et voit encore un actif).
+  Le test précédent (« la sonde `FOR UPDATE NOWAIT` échoue pendant l'attente ») est retiré : ce verrou existe depuis la
+  15-5d, le test était vert au départ et ne tuait pas M7.
 - `crates/kesh-api/tests/` (fichier existant de la validation, ou neuf) : AC7, AC9.
 - Vitest de `invoices/[id]/+page.svelte` : AC8.
 - Le retypage passe par `accounts::update`, **le chemin réel**, et non par un `UPDATE accounts SET account_type` posé
   en SQL : c'est le chemin que #537 décrit, et il confirme que le défaut est atteignable (sinon, le dire au Change Log
-  avant de continuer).
+  avant de continuer). **Exception écrite** : le test du retypage tenu ci-dessus retype en SQL dans une transaction tenue
+  ouverte, parce que `accounts::update` commite lui-même et ne peut pas être tenu ; il ne prouve pas l'atteignabilité,
+  que AC1 et AC2 prouvent, mais la fraîcheur de la lecture.
 
 **Mutations à jouer et consigner** : M1 le contrôle de type retiré de `check_written` ; M2 l'ordre D3 inversé (type
 après non imputable) ; M2-bis un retour anticipé sur le type (AC5, cas archivé après retypé) ; M3 `Receivable` attendu
@@ -246,7 +282,8 @@ dialogue (AC8) ; M7 le type lu par une requête séparée, hors de la requête v
 
 ### Hors périmètre
 
-- **Le solde du reste** (TVA due, `invoice_settlements_write.rs:679-680`) : C-e350-7, issue demandée à l'orchestrateur.
+- **Le solde du reste** (TVA due, `invoice_settlements_write.rs:679-680`) : C-e350-7, **#1044**, qui reprendra la
+  constante et le code de cette story.
 - **L'avoir** (C35 de la 15-5d, #525 pour la TVA due de l'avoir, l'un des P1 de la TVA reportés).
 - **Le compte de produit par défaut** et les comptes de produit des lignes : déjà rejugés au posting, type compris
   (`validate_line_revenue_accounts_in_tx`, `invoices.rs:2201-2238`).
@@ -259,7 +296,7 @@ dialogue (AC8) ; M7 le type lu par une requête séparée, hors de la requête v
 
 - Avec la **35-2** : `crates/kesh-api/src/errors.rs` (ici un bras `DbError` neuf, voisin de `:4571`),
   `messages.ftl` ×4 (ici à côté de `error-designated-account-not-postable`), `textes_coherents.rs` (G9 : ici en fin du
-  bloc `errors.rs`), `user-manual.tex` (ici `:452-461`, `:1169`, `:1788-1796`), `CHANGELOG.md` (section `[0.17.7]`),
+  bloc `errors.rs`), `user-manual.tex` (ici `:452-461`, `:491`, `:493`, `:1169`, `:1788-1796`), `CHANGELOG.md` (section `[0.17.7]`),
   `docs/api-external.md` (ici après `ACCOUNT_NOT_POSTABLE`). La règle d'union est celle de C-e350-8, recopiée au
   fichier d'epic.
 - Avec la **35-8** (#431, plus tard) : `repositories/company_invoice_settings.rs`. La 35-8 attend la fusion de celle-ci.
@@ -319,3 +356,25 @@ dialogue (AC8) ; M7 le type lu par une requête séparée, hors de la requête v
   - V1-11 : M5 rendue vérifiable par AC9 ; pas de M8, le solde du reste étant hors périmètre.
   - Symptômes greppés dans la fiche et le fichier d'epic : « deux chemins », « méthode `DesignatedRole::expected_type` »,
     `invoices.rs:2040-2051`, « ne disent plus que le type est un angle mort » — aucune occurrence restante.
+- 2026-11-12 — **Validation P2** (Opus) : 0 CRITICAL, 0 HIGH, 4 MEDIUM, 6 LOW (`kesh-gate-logs/e35-3-validation-p2.md`).
+  Prémisses relues au code de `release/0.17.6` ; aucune réfutée (`test_fixtures.rs:130-136`, montage sans rôle ;
+  `credit_card_e2e.rs:805-808`, patron `retypage_tenu` ; `invoices_validate_vat.rs:1422` ; sondes
+  `bank_account_opening_balance_e2e.rs:1001`, `credit_card_e2e.rs:805` ; `accounts_designated_archive_e2e.rs:1253`). Appliqués :
+  - V2-1 : le test du verrou, vert au départ et aveugle à M7, est remplacé par le patron `retypage_tenu` ; exception écrite à
+    la règle « retypage par `accounts::update` » ;
+  - V2-2 : AC6 nomme l'exception `one_account_for_two_roles_is_named_once` et son nouvel attendu (refus de type, `1100`,
+    `setting = vatPayable`) ; C40 dit inatteignable hors montage incohérent ; recensement des 38 montages à l'étape 0 ;
+  - V2-3 : AC1, AC2 et AC4 posent d'abord le rôle (`Receivable`, `Payable`) et le vérifient avant et après le retypage ;
+  - V2-4 : `api-external.md:1047` et la dernière phrase de `:1048` corrigées ; « validation facture étendus » retiré ;
+  - V2-5 : #1044 nommée (tableau, hors périmètre, registre C-e350-7 annoté) ; V2-6 : listes d'ordre des refus à AC12 ;
+    V2-7 : D6 étendu (arrondi et natures, début de phrase gardé pour `:1253`, un champ à la fois) et AC9 asserte le message
+    en mots ; V2-8 : `account_type` en dernière colonne ; V2-9 : manuel `:491` ; V2-10 : ordre par numéro, phrases jointes
+    par une espace.
+  - **Signal de découpage** (`CLAUDE.md`, § *Règle de splitting préventif*) : P1 5 MEDIUM → P2 4 MEDIUM, **sévérité en
+    baisse** ; trois des quatre MEDIUM naissent de la remédiation P1 (le test du verrou, AC6 face à un test existant, le
+    contrat écrit pour l'intégrateur) et le quatrième (V2-3, montage sans rôle) est d'origine. Le critère de sévérité n'est
+    pas atteint, et le périmètre reste à cinq modules (`kesh-db` dépôt et erreurs, `kesh-api` erreurs et route,
+    `kesh-i18n`, fiche facture) : **pas de découpage** ; la boucle continue. Constat à déclarer à Guy par l'orchestrateur.
+  - Symptômes greppés (fiche, registre, fichier d'epic) : « issue à ouvrir », « issue demandée », « verts sans retouche »
+    sans exception, le test de la sonde `NOWAIT`, `postable, account_type, active` — aucun reste hors des entrées du Change Log.
+
