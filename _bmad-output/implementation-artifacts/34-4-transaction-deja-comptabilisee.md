@@ -313,6 +313,22 @@ aucune ligne commune prévue.
     préfixés du commit ; **A1-7** → chiffres ci-dessus ; **A1-8** → plafonds des règlements et du second côté exercés ;
     **A1-9** → déclaré au Dev Agent Record (le test unitaire d'égalité des textes n'a pas été joué au rouge : il ne compile pas
     contre la base). **E1-8** : déclaré, rien d'autre.
+- 2026-11-12 : revue de code P2 (Sonnet, trois lentilles, passe complète ; rapports `kesh-gate-logs/e344-review-p2-{B,E,A}.md`) :
+  0 C, 0 H, **2 MEDIUM**, ≈ 14 LOW. Les trois lentilles jugent C-e344-11 juste pour les cas de la fiche ; l'orchestrateur la
+  retient. Remédiation (Opus 5.5), commit `cf585bff` ; tous retenus après lecture :
+  - **A2-1 = E2-5 = B2-3** MEDIUM : AC-1 (compte clos, lecture par page), AC-2 (règle de sens contraire) et AC-5 (textes en
+    vigueur) annotés, l'énoncé d'origine laissé lisible.
+  - **E2-1 = B2-4** MEDIUM, **A2-2** : `kesh-gate-logs/e34-transmission-34-11b.md` mis à jour (hors dépôt) : « `m` ⊂
+    `entryCount` » n'est plus garanti tant que la condition 4 de la 34-11b lit le lien actuel ; deux voies écrites (aligner la
+    condition 4 sur le sens contraire, recommandée ; ou des conditions sans soustraction avec l'intersection) ; noms
+    `entry_sql(EntrySqlMode)`, `NOT_MATCHED`, `MATCHED_ELSEWHERE`, `count_already_booked_for_page`. La fiche 34-11b n'est pas
+    touchée.
+  - LOW : **B2-1 = A2-4** → `s34_4_ac2_rapprochee_sur_le_meme_compte_ne_compte_pas` (forgé) et **M10**, tuée (C-e344-18) ;
+    **E2-4** → `s34_4_ac2_le_second_cote_d_un_debit` ; **E2-2 = A2-3, E2-3, B2-2** → manuel (règle de sens, faux négatifs des
+    frais, de l'arrondi et du virement en plusieurs écritures, doublon de deux transactions du même montant) ; **B2-5** →
+    C-e344-17, *Continuer* relit la ligne dans la liste courante, la liste du dialogue n'est plus vidée à la fermeture ;
+    **B2-6** → description de M8 ; **B2-7** → allemand sans « Sie würde » ambigu (« Die Bewegung würde sonst doppelt
+    gezählt », « Lehnen Sie die Transaktion ab »). Note d'E sur *Rejeter* sans confirmation : issue demandée (P3).
 
 ## Performance
 
@@ -422,6 +438,25 @@ du hash du commit joué) :
   ligne exécutable ; contrôlés par `cargo fmt --check`, `cargo build -p kesh-api --tests` et `npm run check` (0 erreur)
   — `p1/build-commentaires.log`, `p1/check-commentaires.log`. Le gate complet et l'E2E de `e29a85ca` n'ont pas été rejoués :
   le dernier commit **de code exécutable** reste `e29a85ca`.
+
+**Remédiation de la revue P2** (commit **`cf585bff`**, 2026-11-12 ; journaux sous `kesh-gate-logs/e344/p2/`, préfixés du
+hash) :
+- **Rouges** (`rouges.log`, entrée de la remédiation P2 ; `p2/rouges-vitest.log`) : 1 rouge Vitest pour la bonne raison
+  (B2-5 : la modale s'ouvrait sur une ligne sortie de la liste). Les deux tests Rust neufs (E2-4, B2-1) sont des témoins.
+- **Tests ciblés** (`p2/verts-cible.log`) : binaire `reconciliation_link_entry_e2e` et tests du module, **45/45**.
+- **Mutations rejouées** au commit `cf585bff` (`mut-p2/`) : **M5** (3 rouges, dont le test de B2-5), **M9** (4 rouges),
+  **M3** (`compte_relie_ailleurs`, `comptes_partages`), **M10** neuve (`rapprochee_sur_le_meme_compte`) — toutes tuées. Non
+  rejouées : M1, M2, M4 (fonction de comptage et constante non touchées), M6 à M8 (`already-booked.ts` et le bouton
+  *Rejeter* non touchés) — leurs journaux restent ceux de `mut-p1/`.
+- **Gate complet au commit `cf585bff`**, arbre propre : base remise à neuf ; `test-fast --ci` **5149 passés, 13 ignorés** ;
+  build du workspace vert ; `gate-ci.sh kesh_ci_e344` **5156 passés, 0 échoué, 17 ignorés** ; `lint-i18n-ownership` vert ;
+  `npm run check` 0 erreur (29 avertissements préexistants) ; Vitest complet **2945 passés, 225 fichiers** ; `npm run build`
+  vert ; **E2E complet** sur `kesh_e2e_e344` recréée vide : **388 passés, 7 échecs, 17 ignorés**, les sept de la KF-029
+  (#97) ; le spec neuf passe. Port 3344 libre avant et après.
+- **Captures** : l'écran français ne change pas (seul le texte allemand change) ; le script les a reprises dans
+  `kesh-gate-logs/e344/captures-p2/`, identiques en contenu à `captures-p1/`.
+- **Décomptes** (de `4152d337` à `cf585bff`) : `reconciliation_link_entry_e2e.rs` 40 → 42 attributs `sqlx::test` ; Vitest
+  2944 → 2945 (+1, B2-5) ; trois textes allemands reformulés ; aucune clé ajoutée.
 
 **Décomptes** (recomptés à la source, de `f12ad73e` à `HEAD`) : `reconciliation_link_entry_e2e.rs` 31 → 39 attributs
 `sqlx::test` (+7 tests `s34_4_…`, +1 banc ignoré) ; `reconciliation_link.rs` 4 → 5 `#[test]` ; Vitest +19 tests neufs (14 dans
