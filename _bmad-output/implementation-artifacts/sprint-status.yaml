@@ -1,3 +1,4 @@
+# last_updated: 2026-11-12 (rétrospective de l'Epic 34 tenue en autonomie, epic-34-retro-2026-11-12.md ; epic-34 done ; v0.17.6 publiée)
 # last_updated: 2026-11-12 (Epic 34, intégration de la 0.17.6 : 34-1 à 34-11a2 done et réunies sur release/0.17.6 ; 34-11b en revue, à fusionner)
 # last_updated: 2026-11-10 (Epic 34 : validation des treize fiches terminée — e343 en P5, e342 en P7 (34-10), e341 en P6 (34-11a2) ; huit stories en développement)
 # last_updated: 2026-11-10 (Epic 34 : douze fiches écrites en autonomie, ready-for-dev ; issues #973 à #980 ouvertes ; validation P1 à lancer)
@@ -1026,7 +1027,7 @@ development_status:
   33-12a-jeu-caracteres-qr: done  # 2026-11-07 : #941, P1, trouvée à la revue de la 33-5
   33-12b-adresse-imprimee-qr: done  # 2026-11-07 : #941, NPA et localité absents du reçu et de la partie paiement
   epic-33-retrospective: done
-  epic-34: in-progress
+  epic-34: done
   34-0-kickoff: done  # 2026-11-10 : epic-34-reconciliation-comptes-bancaires.md ; 261 issues et 109 bugs au tag v0.17.5 ; objectif : moins de chacun au tag v0.17.6.
   34-1-assistant-compte-bancaire: done  # #966
   34-2-solde-ouverture-compte-bancaire: done  # #533 ; 2026-11-12 : revue P1 (0/0/2M/19L) remédiée, revue P2 0 au-dessus de LOW, boucle close (worktree kesh-e342)
@@ -1042,4 +1043,4 @@ development_status:
   34-11a1-compte-sans-iban: done  # #972 ; migration breaking (min_required 0.17.6) ; après 34-3 ; revue de code P1 → P2 (0 au-dessus de LOW), 2026-11-12
   34-11a2-carte-credit-creation: done  # #972 ; après 34-11a1 ; revue de code P1 (Opus) → P2 (Sonnet, 0 au-dessus de LOW), 2026-11-12
   34-11b-carte-credit-releve: done  # #972 ; après 34-11a2 et 34-4 ; développée le 2026-11-12 (34-4 et 34-11a2 fusionnées) ; revue P1 → P2 → P3 ciblée close le 2026-11-12
-  epic-34-retrospective: optional
+  epic-34-retrospective: done  # 2026-11-12 : epic-34-retro-2026-11-12.md, en autonomie ; 330 issues et 163 bugs au tag v0.17.6
