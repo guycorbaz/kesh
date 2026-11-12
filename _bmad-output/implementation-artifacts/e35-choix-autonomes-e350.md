@@ -584,6 +584,9 @@ retenue, options écartées, réversibilité. Lignes citées sur `release/0.17.6
   `split` ; **35-8a1** (`35-8a1-audit-acteur-mecanisme.md` : mécanisme, garde et sondes, retour en brouillon fournisseur ;
   AC3, AC5 ; `refs #431`, `refs #892`) et **35-8a2** (`35-8a2-audit-acteur-ecritures.md` : les écritures ; AC1, AC2, AC4 ;
   après la 35-8a1 et la 35-5a0 ; `refs #431`), tirées sans réécriture du fond.)*
+- *(Annoté le 2026-11-13, validation P2 de la 35-8a1, V2-1 : la **35-8a1** part elle aussi **après la 35-5a0** — même
+  signature d'`unvalidate`, même appel de route, mêmes 30 appels de tests —, et après la 35-3 et la 35-1 ; elle n'en dépend
+  pas pour son contenu.)*
 
 ### C-e350-51 — 35-1 : le format n'est pas tenu de porter l'année ou l'exercice (décision de l'orchestrateur)
 
@@ -595,4 +598,18 @@ retenue, options écartées, réversibilité. Lignes citées sur `release/0.17.6
   l'unicité au deuxième exercice ») pour l'orchestrateur — ouverte : **#1058**.
 - **Écartée** : exiger `{YEAR}` ou `{FY}` dans D1 : hors du périmètre de #932 et #948, et refuserait des formats enregistrés
   dès qu'on les touche.
+- **Réversible** : oui.
+
+### C-e350-52 — 35-8a1 : la garde compte aussi le `None` positionnel passé à `delete_in_tx`, et écrit ses angles morts
+
+- **Contexte** : validation P2 de la 35-8a1, V2-4. Les quatre motifs de la garde ne lisent pas un `None` passé en position
+  de clé : `invoices.rs:1689` (et la mutation M4, sur `delete_in_tx`) passaient. Le rejeu de la passe trouve aussi
+  `reconciliation_cancel.rs:811` et `kesh-seed/src/pieges.rs:570`, sur d'autres fonctions qui prennent
+  `actor_api_key_id: Option<i64>` (28 dans `src`).
+- **Retenu** : un cinquième motif, un appel de `delete_in_tx(` portant un argument `None`, clé `(fichier, fonction)` ;
+  `invoices.rs:1689` en `A_CONVERTIR` jusqu'à la 35-8a2 ; les autres fonctions à `Option<i64>` écrites en **angle mort** au
+  doc-comment de la garde, à reprendre au déploiement (Epic 36). Et la garde ne réécrit pas de parseur : elle partage
+  `source_assainie` avec `audit_label_registry.rs`, extraite vers `tests/common/`.
+- **Écartées** : (a) un motif générique `None` en position de clé : il faudrait la signature de chaque fonction, donc un
+  parseur ; (b) taire l'angle mort : « ensemble clos » serait faux.
 - **Réversible** : oui.

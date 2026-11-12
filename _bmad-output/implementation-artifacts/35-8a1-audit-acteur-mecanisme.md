@@ -8,7 +8,7 @@ de rédaction des fiches de l'Epic 35 (Opus 5.5), worktree `kesh-e35`, sur déci
 critères sont ceux de la 35-8a, répartis entre la **35-8a1** (le mécanisme et le pilote fournisseur, lot 1) et la
 **35-8a2** (les écritures, lot 2). Release **0.17.7**. **Aucune migration** (colonnes `actor_type`, `actor_api_key_id`
 depuis la migration `20260605000002`, Story 17-2a). **`kesh-db` touché : gate complet à chaque commit.** Code lu sur
-**`main`** (`67efc51f`). Registres : `e35-choix-autonomes-e350.md` (C-e350-8, -38 à -40, -48 à -50) ;
+**`main`** (`67efc51f`). Registres : `e35-choix-autonomes-e350.md` (C-e350-8, -38 à -40, -48 à -50, -52) ;
 `e35-choix-autonomes-e358a1.md` pour la story, à créer au premier choix. Validation P2 à lancer (la P1 a porté sur la
 35-8a entière : `kesh-gate-logs/e35-8a-validation-p1.md`).*
 
@@ -25,8 +25,15 @@ dépôt dispose d'un type et d'une garde qui rendent impossible d'oublier la cl�
 ## Ordre et dépendances
 
 - **Ne touche pas `repositories/journal_entries.rs`** : `delete_in_tx` a déjà le paramètre `actor_api_key_id`
-  (`journal_entries.rs:1858`) et reçoit `acteur.api_key_id`. Elle ne dépend donc ni des 35-5a0 à 35-5c ni de la 35-3, et
-  peut partir de `main` dès maintenant.
+  (`journal_entries.rs:1858`) et reçoit `acteur.api_key_id`. Elle ne dépend d'aucune story **pour son contenu**.
+- **Mais elle part après la 35-5a0 fusionnée** (validation P2, V2-1) : la 35-5a0 ajoute la date du jour à **la même
+  signature** d'`unvalidate` (`supplier_invoices.rs:1074`, fiche 35-5a0 l. 34-38 : `commit_with_view` et « toutes les
+  écritures qui se terminent par lui — `validate`, `unvalidate`, … »), au même appel de la route
+  (`routes/supplier_invoices.rs:903-904`) et aux **30 mêmes appels de tests** dans les six fichiers cités ci-dessous : chaque
+  appel gagne un argument chez l'une et change son `user_id` chez l'autre. La plomberie de la 35-5a0, « sans rien changer »,
+  passe la première ; la 35-8a1 relit et recompte ces appels sur sa base (le compilateur en donne la liste close). Elle part
+  aussi **après la 35-3** (`supplier_invoices.rs`, comptes désignés, autre fonction) et **après la 35-1** (`invoices.rs`,
+  `credit_notes.rs`, que la garde compte ; `supplier_invoices.rs:1017`, numéro interne, autre hunk).
 - **Sa garde compte des sites dans des fichiers que d'autres stories touchent** (`company_invoice_settings.rs` — 35-3 ;
   `invoices.rs`, `credit_notes.rs` — 35-1 ; `journal_entries.rs` — 35-5x) : la table se **recompte depuis la source**
   après toute fusion qui précède la sienne (règle d'union C-e350-8 ; une story fusionnée après elle qui ajoute un site
@@ -52,7 +59,11 @@ sa production), `kesh-gate-logs/e358a/inventaire.py`, sortie `inventaire-main-67
 1. `NewAuditLogEntry::user(` : **80 sites** dans 30 fichiers (`kesh-db` 48, `kesh-api` 32 ; ventilation à la fiche 35-8a) ;
 2. `api_key_id: None` : **11 sites** (neuf `letterings::Actor` de `kesh-db`, dont `supplier_invoices.rs:1377` — le
    lettrage dissous au retour en brouillon — et deux définitions : `middleware/auth.rs:179`, `entities/audit_log.rs:187`) ;
-3. le `None` positionnel passé à `delete_in_tx` : `invoices.rs:1689`, `supplier_invoices.rs:1410`, `:1412` ;
+3. le `None` positionnel passé à une fonction qui attend la clé : à `delete_in_tx`, `invoices.rs:1689`,
+   `supplier_invoices.rs:1410`, `:1412` ; **et ailleurs** (rejeu de la validation P2, V2-4, sur les 28 fonctions de `src`
+   qui prennent `actor_api_key_id: Option<i64>`) : `reconciliation_cancel.rs:811` (`cancel` passe `user_id, None, None` à
+   `cancel_in_tx`, enveloppe sans appelant de production) et `kesh-seed/src/pieges.rs:570` (`invoices::mark_emailed(…,
+   None)`) — **au moins cinq** sites, dont deux hors `delete_in_tx`, ni l'un ni l'autre de cette story ;
 4. `for_actor(<user_id>, None, …)` : 0 site.
 
 **La restauration d'une sauvegarde** signe délibérément par `audit_uid` (`routes/admin.rs:534`, `:553-557`, `:593`,
@@ -75,19 +86,69 @@ la plupart des actions).
 ## Décisions
 
 - **D1 — Le type `Acteur`** (C-e350-39) — repris de la 35-8a, D1 : `pub struct Acteur { pub user_id: i64, pub api_key_id:
-  Option<i64> }` (`Copy`) dans `entities/audit_log.rs` ; `NewAuditLogEntry::par(acteur, action, entity_type, entity_id,
-  details)` (délègue à `for_actor`) ; un seul constructeur sans clé, `Acteur::utilisateur(user_id)` ; `letterings::Actor`
-  devient un alias (`pub type Actor = Acteur;`) ou est remplacé, sans changer ses appelants autrement que par le nom ;
-  `impl From<&CurrentUser> for Acteur` dans `kesh-api/src/audit.rs`. Une fonction **convertie** prend `acteur: Acteur` à
-  la place de `user_id: i64`.
-- **D2 — La garde des sites non résolus** (C-e350-40, C-e350-49) — reprise **intégralement** de la 35-8a, D2 :
-  `crates/kesh-api/tests/audit_acteur_garde.rs` ; items `#[cfg(test)]` retirés (jamais une coupe au premier attribut) ;
-  quatre motifs sur le texte joint (`NewAuditLogEntry::user\s*\(`, `Acteur::utilisateur\s*\(`, `api_key_id:\s*None\b`,
-  `for_actor\(\s*[^,()]+,\s*None\b`) ; table close `(fichier, fonction englobante, motif) → (nombre, raison)` ; raisons
-  `PRE_AUTH`, `SYSTEME`, `RESTAURATION`, `DEFINITION`, `PONT`, `FIXTURE`, `MCP` (#1057), `ADMIN_SANS_CLE`, `A_CONVERTIR` —
-  chaque site compté en a une, chaque raison finale cite l'appelant qui l'établit (le détail, ligne par ligne, est à la
-  fiche 35-8a, D2, qui fait foi) ; sondes (a) à (f). À la fin de cette story, les sites des écritures (`journal_entries.rs`,
-  dont le lettrage `reversal` `:3068`, et leurs appelants) restent sous `A_CONVERTIR` : la 35-8a2 les convertit.
+  Option<i64> }`, dérivant **`Debug, Clone, Copy, PartialEq, Eq`** comme `letterings::Actor` (sinon les tests qui comparent
+  des `Actor` cassent quand il devient un alias ; validation P2, V2-7), dans `entities/audit_log.rs` ;
+  `NewAuditLogEntry::par(acteur, action, entity_type, entity_id, details)` (délègue à `for_actor`) ; un seul constructeur
+  sans clé, `Acteur::utilisateur(user_id)` ; `letterings::Actor` devient un alias (`pub type Actor = Acteur;`) ou est
+  remplacé, sans changer ses appelants autrement que par le nom ; `impl From<&CurrentUser> for Acteur` dans
+  `kesh-api/src/audit.rs`, et `AuditActor::from_current_user` (`audit.rs:33-58`, qui refait le `match` de `for_actor`)
+  devient `par(Acteur::from(user), …)` — le site `PONT` (`audit.rs:51`) disparaît de la garde. Une fonction **convertie**
+  prend `acteur: Acteur` à la place de `user_id: i64`.
+- **D2 — La garde des sites non résolus** (C-e350-40, C-e350-49, C-e350-52), `crates/kesh-api/tests/audit_acteur_garde.rs`
+  (neuve). **Cette fiche fait foi** (validation P2, V2-3 ; elle se lit seule) :
+  - **Ce qu'elle lit** : le code de production de `crates/*/src` (`kesh-seed/src` compris : `pieges.rs` est derrière la
+    fonctionnalité `pieges`, non sous `#[cfg(test)]`), **items attribués `#[cfg(test)]` retirés** — jamais une coupe au
+    premier attribut, qui cacherait la production de `auth/bootstrap.rs` (`:46-48`, puis `:195`, `:332`) ; commentaires
+    retirés. **Pas de parseur neuf** (V2-2, DRY) : `source_assainie` et `accolades_hors_chaines`
+    (`crates/kesh-api/tests/audit_label_registry.rs:238`, `:298`), qui retirent déjà les items `#[cfg(test)]` par
+    appariement d'accolades, sont **extraites** vers `crates/kesh-api/tests/common/source_assainie.rs`, incluses par
+    `#[path]` (patron de `tests/common/autour_appel.rs`) dans les deux gardes. La fonction englobante d'un site : le dernier
+    `fn <nom>` ouvert avant lui, par balayage textuel à profondeur d'accolades suivie (pas `syn` : un site dans une macro y
+    serait invisible).
+  - **Ce qu'elle compte**, sur le texte joint (blancs et retours à la ligne tolérés) : **cinq motifs** —
+    `NewAuditLogEntry::user\s*\(`, `Acteur::utilisateur\s*\(`, `api_key_id:\s*None\b` (`actor_api_key_id: None` compris),
+    `for_actor\(\s*[^,()]+,\s*None\b`, et (V2-4) `delete_in_tx\s*\(` **dont un argument est `None`** — le `None`
+    positionnel de la suppression d'une écriture, qui donne à `invoices.rs:1689` une ligne `A_CONVERTIR` jusqu'à la 35-8a2.
+  - **Sa clé : le site, non le fichier.** Table close `(fichier, fonction englobante, motif) → (nombre, raison)`. Tout
+    écart rougit en nommant fichier, fonction et motif — un site neuf, un site converti sans que la table suive, un site qui
+    change de fonction (un compte par fichier resterait vert quand on ajoute un `::user` dans `lock_books` en convertissant
+    `unlock_books`, `companies.rs:1002`, `:1079`).
+  - **Les raisons** sont des constantes ; chaque site compté en a une, et chaque entrée cite l'appelant qui l'établit (route
+    et ligne de `lib.rs`, ou appelant non HTTP) ; une fonction appelée aussi par une route comptable n'entre dans aucune
+    raison finale :
+    - `PRE_AUTH` — avant toute authentification : `routes/setup.rs`, les fonctions de `routes/auth.rs` atteintes sans session
+      (connexion, vol de session détecté `:600`, demande `:1116` et fin `:1288` de réinitialisation du mot de passe) ;
+    - `SYSTEME` — le démarrage, sans requête : `auth/bootstrap.rs:195`, `:332` ; `companies::repair_installation_in_tx`
+      (`companies.rs:768`), appelé au démarrage (`bootstrap.rs:411`) et à la restauration (`admin.rs:553`), l'acteur
+      **choisi** par l'appelant ;
+    - `RESTAURATION` — `routes/admin.rs:593` (`books.restored`) et `:654` (`admin.full_import`) : `user_id = audit_uid`
+      (`admin.rs:534`), l'administrateur du jeu restauré, délibérément ; route sous `require_not_pat` ;
+    - `DEFINITION` — ce qui construit un acteur sans être une trace : `entities/audit_log.rs:187` (corps de `::user`), le
+      corps d'`Acteur::utilisateur`, `middleware/auth.rs:179` (le `CurrentUser` d'une session JWT) ;
+    - `FIXTURE` — `kesh-seed/src/pieges.rs` (`:511`) : pas de requête, pas de clé. **N'apparaît qu'à la 35-8a2** (V2-6) :
+      à la fin de cette story, `pieges.rs:511` n'entre dans aucun motif ; la constante n'est pas déclarée ici ;
+    - `MCP` — le serveur MCP (`services/serveur_mcp.rs`) : une clé MCP n'est pas une clé REST ; suivi à **#1057** ;
+    - `ADMIN_SANS_CLE` — atteint seulement par `admin_routes` sous `require_not_pat` ou par un handler qui refuse une clé :
+      `users.rs`, `api_keys.rs`, `mcp_*`, `companies.rs` des routes adresse/e-mail/coordonnées, `routes/auth.rs:694`
+      (`PUT /api/v1/auth/password`, `lib.rs:1139`, handler qui refuse une clé, `auth.rs:635`), et les dépôts qu'ils seuls
+      appellent : `backup_schedule`, `installation_settings`, `unlock_books`, `company_invoice_settings::update`,
+      `company_dunning_settings::update`, `invoices::delete`, `supplier_invoices::delete_draft_in_tx` ;
+    - `A_CONVERTIR` — tout le reste, au compte exact (dont les sites des écritures : `journal_entries.rs`, le lettrage
+      `reversal` `:3068`, leurs appelants ; la 35-8a2 les convertit ; le reste au déploiement, Epic 36).
+    (`PONT` disparaît, D1.)
+  - **Sondes** au Change Log, chacune rouge attendue puis rétablie : (a) un `NewAuditLogEntry::user(` ajouté dans une
+    fonction non listée ; (b) un site converti sans que la table suive ; (c) la forme coupée sur deux lignes
+    (`NewAuditLogEntry::user\n(`) ; (d) un site ajouté dans un fichier dont un `#[cfg(test)] mod …;` précède la production
+    (modèle `bootstrap.rs`) ; (e) l'échange : un site ajouté dans `lock_books`, un autre retiré de `unlock_books` ; (f) un
+    `for_actor(user_id, None, …)` ; (g) un site sous `#[cfg(not(test))]` (modèle `config.rs:591`) **reste compté** ; (h) un
+    `delete_in_tx(…, None, …)` ajouté dans une fonction non listée.
+  - **Angles morts, écrits au doc-comment de la garde** : (1) le `None` positionnel passé à une fonction autre que
+    `delete_in_tx` qui prend `actor_api_key_id: Option<i64>` (28 fonctions de `src` ; `reconciliation_cancel.rs:811`,
+    `pieges.rs:570` aujourd'hui) — à reprendre au déploiement (Epic 36) ; (2) un fichier de `src` **entièrement** sous
+    `#[cfg(test)]` par un `mod x;` ou un `#[path]` de son parent (`pre_upgrade_backup/tests.rs`,
+    `kesh-core/src/bank_imports/manual_tests.rs`, `kesh-api/src/qr_decode_synthetique.rs`, `kesh-db/src/test_fixtures.rs`) :
+    lu comme de la production ; **aucun site aujourd'hui** (vérifié en P2), donc pas de faux rouge, mais un site futur y serait
+    compté.
 - **D3 — Le pilote du retour en brouillon** (#892 item 11) : `unvalidate` et `unvalidate_in_tx` prennent `acteur: Acteur`
   à la place de `user_id` ; la route passe `Acteur::from(&current_user)` ; `supplier_invoice.unvalidated` par
   `NewAuditLogEntry::par` ; le lettrage dissous (`:1377`) reçoit l'`acteur` ; les deux `delete_in_tx` (`:1410`, `:1412`)
@@ -109,11 +170,14 @@ la plupart des actions).
    simple (validée → brouillon, un `journal_entry.deleted`), et le même geste par session → `'user'`. Les traces de
    l'annulation elle-même (`supplier_invoice.cancelled`, son `lettering.created`) ne sont pas de cette story : non
    assertées, dites au Change Log.
-2. **AC5 — La garde** : verte sur la branche ; ses six sondes (a) à (f) consignées au Change Log ; sa table recomptée
+2. **AC5 — La garde** : verte sur la branche ; ses huit sondes (a) à (h) consignées au Change Log ; sa table recomptée
    depuis la source à l'étape finale, ventilation par raison et total cohérents écrits au Change Log.
    `audit_label_registry.rs` connaît `NewAuditLogEntry::par(` (action en position 1, entité en 2), avec une sonde.
 3. **AC6a — Manuel et CHANGELOG** : `admin-manual.tex:3193` dit que le retour en brouillon d'une facture fournisseur est
-   désormais attribué à la clé, que le reste ne l'est pas encore (renvoi à #431), et que **les entrées écrites avant la
+   désormais attribué à la clé, et qu'**une partie des dépôts** (factures, avoirs, règlements, comptes, contacts, produits,
+   lots de paiement, règles de rapprochement…) inscrivent encore `'user'` (renvoi à #431) — non « le reste » : la
+   modification et la suppression d'une écriture (`:3194`) et vingt-huit autres sites (`for_actor`) attribuent déjà la clé
+   (validation P2, V2-5) ; `docs/api-external.md:404` relu à l'étape 0, dit au Change Log ; et que **les entrées écrites avant la
    0.17.7 par une clé gardent la marque « utilisateur »**, sans correction possible ; `user-manual.tex:3959-3960` nuancé de
    même ; les deux PDF régénérés, contrôlés aplatis. CHANGELOG `## [0.17.7] — Non publié`, *Corrigé*, `refs #431`,
    `refs #892`, avec la phrase sur les entrées antérieures. (La 35-8a2 complète les mêmes paragraphes pour les écritures.)
@@ -124,15 +188,17 @@ AC3 écrit d'abord, sur la base de la branche : rouge par l'`actor_type = 'user'
 La garde naît verte avec sa table — sa preuve est la sonde.
 
 **Mutations** : M1 `From<&CurrentUser> for Acteur` qui jette la clé (AC3) ; M2 `par` qui appelle `::user` (AC3) ; M4
-`unvalidate_in_tx` qui passe `None` pour la clé à `delete_in_tx` ou au lettrage `:1377` (AC3 — et la garde) ; M5 une
+`unvalidate_in_tx` qui passe `None` pour la clé à `delete_in_tx` (AC3, et la garde par son cinquième motif) ou au lettrage
+`:1377` (AC3, et la garde par `api_key_id: None`) ; M5 une
 entrée de la table de la garde décrémentée (AC5) ; M6 `par(` retiré de `FORMES` (AC5). (M3 et M7 vont à la 35-8a2.)
 
 ## Tâches
 
 - [ ] Étape 0 : relire les lignes citées sur la base réelle ; relancer l'inventaire (`kesh-gate-logs/e358a/inventaire.py
       <worktree>`), sortie au Change Log ; fonction englobante et raison de chaque site, appelant de chaque raison finale.
-- [ ] Rouges d'AC3 ; `Acteur`, `par`, `From<&CurrentUser>`, alias `letterings::Actor` ; pilote ; garde et sa table ;
-      `audit_label_registry.rs` ; manuels (deux `.tex`, deux PDF) ; CHANGELOG.
+- [ ] Rouges d'AC3 ; `Acteur`, `par`, `From<&CurrentUser>`, alias `letterings::Actor` ; pilote ; extraction de
+      `source_assainie` vers `tests/common/source_assainie.rs` ; garde et sa table ; `audit_label_registry.rs` ; manuels
+      (deux `.tex`, deux PDF) ; CHANGELOG.
 - [ ] Gates : backend complet à chaque commit (`kesh-db`) ; frontend : rien ne change ; E2E complet au dernier commit de
       code.
 
@@ -146,7 +212,10 @@ Production ≈ 8 fichiers : `kesh-db` `entities/audit_log.rs`, `repositories/{le
 
 ### Fichiers communs — règle d'union C-e350-8
 
-`repositories/supplier_invoices.rs` (35-3 y touche les comptes désignés, autre fonction) ; `CHANGELOG.md` ;
+`repositories/supplier_invoices.rs`, `routes/supplier_invoices.rs` et les six fichiers de tests des appels
+d'`unvalidate` avec la **35-5a0** (même signature, mêmes appels : la 35-8a1 part après elle) ; `supplier_invoices.rs` aussi
+avec la **35-3** (comptes désignés, autre fonction) et la **35-1** (`:1017`, autre hunk) ; `invoices.rs`, `credit_notes.rs`
+avec la 35-1 (sites que la garde compte) ; `CHANGELOG.md` ;
 `admin-manual.tex:3193` et `user-manual.tex:3959-3960` (la 35-8a2 y écrit après elle) ; `audit_label_registry.rs`
 (`FORMES`) ; la table de la garde (recomptée après chaque fusion antérieure).
 
@@ -156,7 +225,7 @@ Production ≈ 8 fichiers : `kesh-db` `entities/audit_log.rs`, `repositories/{le
 
 ### Références
 
-- Fiche `35-8a-audit-acteur-patron.md` (`split`), qui fait foi pour l'inventaire détaillé et la table des raisons ;
+- Fiche `35-8a-audit-acteur-patron.md` (`split`) : origine ; **en cas d'écart, cette fiche fait foi** (validation P2, V2-3) ;
   `kesh-gate-logs/e35-8a-validation-p1.md`.
 - Issues #431, #892 (item 11), #1057 ; Story 17-2a ; Story 25-1b ; `CLAUDE.md` § *Inventorier les sites NON RÉSOLUS*.
 
@@ -175,3 +244,20 @@ Production ≈ 8 fichiers : `kesh-db` `entities/audit_log.rs`, `repositories/{le
 - 2026-11-13 — Fiche tirée de la 35-8a (lot 1), sur décision de l'orchestrateur (C-e350-50, « découpé »), sans réécriture
   du fond. La validation P1 de la 35-8a (1 HIGH, 7 MEDIUM, 2 LOW) est remédiée dans la fiche d'origine ; P2 à lancer sur
   celle-ci.
+- 2026-11-13 — **Validation P2** (Sonnet) : 0 CRITICAL, 0 HIGH, 4 MEDIUM, 4 LOW (`kesh-gate-logs/e35-8a1-validation-p2.md`).
+  Remédiée par l'agent de rédaction des fiches (Opus 5.5). Prémisses relues sur `main` (`67efc51f`) :
+  `audit_label_registry.rs:238` (`source_assainie`), `:298` (`accolades_hors_chaines`) ; `tests/common/autour_appel.rs` ;
+  `kesh-api/Cargo.toml:117` (`syn`) ; `reconciliation_cancel.rs:811` ; `kesh-seed/src/pieges.rs:570` ; `config.rs:591-592` ;
+  fiche 35-5a0 (branche `chore/epic-35-fiches-355`, l. 34-38 : `unvalidate` reçoit la date). Confirmées.
+  - V2-1 (MEDIUM) : la 35-8a1 part **après la 35-5a0** (même signature, mêmes 30 appels de tests), la 35-3 et la 35-1 ;
+    *Ordre*, *Fichiers communs*, `sprint-status.yaml`, ligne du fichier d'epic et annotation de C-e350-50 corrigés.
+  - V2-2 (MEDIUM) : pas de parseur neuf — `source_assainie` extraite vers `tests/common/` et partagée ; fonction englobante
+    par balayage textuel ; sonde (g) `#[cfg(not(test))]` ; fichiers entièrement sous `cfg(test)` écrits en angle mort.
+  - V2-3 (MEDIUM) : sondes et raisons **recopiées** dans D2 ; cette fiche fait foi ; en tête de la 35-8a, la même phrase.
+  - V2-4 (MEDIUM) : cinquième motif `delete_in_tx(…, None, …)` (C-e350-52), sonde (h), M4 précisée ; inventaire complété
+    (`reconciliation_cancel.rs:811`, `pieges.rs:570`) et angle mort des 28 fonctions écrit.
+  - LOW : V2-5 (AC6a : « une partie des dépôts », non « le reste ») ; V2-6 (`FIXTURE` à la 35-8a2 seulement) ; V2-7
+    (dérivations d'`Acteur`, `from_current_user` par `par`, `PONT` disparaît) ; V2-8 (numérotation de la 35-8a conservée :
+    dit en tête d'AC3 déjà, rien de plus).
+  - Symptômes greppés (fiches 35-8a, 35-8a1, 35-8a2, epic, registre) : « peut partir de `main` », « ligne par ligne »,
+    « six sondes », « le reste ne l'est pas » — remplacés ou annotés.

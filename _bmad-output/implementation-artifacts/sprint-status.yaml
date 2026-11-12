@@ -1038,7 +1038,7 @@ development_status:
   35-7-autocomplete-compte-hors-liste: ready-for-dev  # #1000 ; fiche 2026-11-12 (code de main), validation terminée en P3 (2 → 1 → 0 MEDIUM)
   35-8-audit-cle-api: split  # 2026-11-12, découpage préventif (C-e350-38) en 35-8a et 35-8b
   35-8a-audit-acteur-patron: split  # 2026-11-13, découpée (C-e350-50) en 35-8a1 et 35-8a2 ; P1 remédiée (1 HIGH, 7 MEDIUM) dans cette fiche, qui fait foi pour l'inventaire
-  35-8a1-audit-acteur-mecanisme: ready-for-dev  # refs #431, refs #892 item 11 ; Acteur, par, garde, retour en brouillon fournisseur ; ne touche pas journal_entries.rs, part de main ; P2 à lancer
+  35-8a1-audit-acteur-mecanisme: ready-for-dev  # refs #431, refs #892 item 11 ; Acteur, par, garde, retour en brouillon fournisseur ; ne touche pas journal_entries.rs ; après 35-5a0 (même signature d'unvalidate), 35-3 et 35-1 ; P2 remédiée (4 MEDIUM), P3 à lancer
   35-8a2-audit-acteur-ecritures: ready-for-dev  # refs #431 ; les écritures ; après 35-8a1, 35-5a0, 35-5a, 35-5b, 35-5c et 35-3 ; P2 à lancer
   35-8b-audit-acteur-deploiement: backlog  # #431 ; reportée à l'Epic 36 le 2026-11-13 (C-e350-48), à découper en lots par domaine ; findings de sa P1 à traiter au découpage (kesh-gate-logs/e35-8b-validation-p1.md)
   epic-35-retrospective: optional
