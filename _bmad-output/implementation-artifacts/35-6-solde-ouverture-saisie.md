@@ -115,11 +115,11 @@ lisible part au serveur.
 
 ## Dev Notes
 
-### Hors périmètre, issues à demander à l'orchestrateur (une par écran)
+### Hors périmètre, une issue par écran
 
-- *Soldes de départ* (`routes/(app)/settings/opening-balances/+page.svelte:199-200`, `:245-246`) : `1.234` y part tel quel,
+- **#1050** — *Soldes de départ* (`routes/(app)/settings/opening-balances/+page.svelte:199-200`, `:245-246`) : `1.234` y part tel quel,
   lu 1,234 franc, et `1'234` est refusé par le serveur — même risque d'un solde mille fois trop petit.
-- *Écriture manuelle* (`features/journal-entries/JournalEntryForm.svelte:208-209`, `balance.ts:70`) : même lecture.
+- **#1051** — *Écriture manuelle* (`features/journal-entries/JournalEntryForm.svelte:208-209`, `balance.ts:70`) : même lecture.
 
 ### Fichiers communs — règle d'union C-e350-8
 
