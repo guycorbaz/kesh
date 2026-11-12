@@ -167,7 +167,7 @@ L'import (CAMT, factures importées) et le MCP n'écrivent pas d'écriture sur c
    d'action, valable aux deux nombres (« le réglage concerné »). **Cas à deux comptes côté achat** (créanciers `2000`
    retypé en actif, TVA récupérable `1171` retypée en passif) : l'ordre se lit — par numéro `1171` puis `2000`, alors que
    l'ordre des rôles donnerait `2000` puis `1171` (V3-3). Tests dans `crates/kesh-api/tests/` ; ces tests montent l'application, donc le catalogue (les libellés fr-CH
-   ne s'assertent qu'ici, jamais dans un test unitaire qui lirait l'état i18n global, cf. 35-2 (fiche parente) V1-1).
+   ne s'assertent qu'ici, jamais dans un test unitaire qui lirait l'état i18n global, cf. 35-2a, D10).
 8. **AC8 — Les écrans.** Fiche facture : le dialogue de validation se **ferme** sur ce code, comme sur
    `ACCOUNT_NOT_POSTABLE` (`frontend/src/routes/(app)/invoices/[id]/+page.svelte:449-456`), et le message s'affiche
    tel quel. Fiche facture fournisseur : le message s'affiche (`supplier-invoices/[id]/+page.svelte:499`, déjà

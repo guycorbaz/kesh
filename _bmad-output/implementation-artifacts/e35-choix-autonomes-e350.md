@@ -117,6 +117,8 @@ retenue, options écartées, réversibilité. Lignes citées sur `release/0.17.6
      *(Annoté le 2026-11-12, validation P3 de la 35-2a : la 35-2a ajoute **deux** entrées, `invoice_pdf_service.rs` et
      `credit_notes.rs`, et aucune clé à `errors.rs` : la table passe de 8 à **10**. Les ajouts de la 35-3 au bloc
      `errors.rs` ne se heurtent plus à ceux de la 35-2.)*
+     *(Annoté le 2026-11-12, validation P5 de la 35-2a : **une** entrée seulement, `invoice_pdf_service.rs` (42 clés) — le
+     repli de l'avoir est rendu par la fonction pure de ce fichier ; la table passe de 8 à **9**.)*
   4. **`crates/kesh-api/src/errors.rs`** : 35-2, le bras `InvoiceNotPdfReady` et ce qu'il appelle ; 35-3, un bras `DbError`
      neuf juste après `DesignatedAccountsNotPostable` (`:4571`). Aucun reformatage hors des passages touchés.
      *(Annoté le 2026-11-12, validation P4 de la 35-2a : pour la 35-2, **suspendu par C-e350-11** — la 35-2a ne touche plus

@@ -125,8 +125,10 @@ désormais un tel NPA à la saisie.
 - **D7 — Le pays** : `build_qrbill_inputs` contrôle le pays de chaque partie par `kesh_qrbill::is_iso_3166_alpha2`
   (`validation.rs:285`) avant `kesh-qrbill`, et rend la partie et le code : « Le pays de l'entreprise (« SU ») n'est pas un
   code ISO valide. ». Le bras `InvalidCountry` de `map_qrbill_error` (`:507-509`) reste, défensif : phrase sans partie, avec
-  le code (V3-6 b).
-- **D8 — L'avoir a sa clé** : `credit-note-pdf-error-contact-missing` ×4, repli égal à fr-CH, G9.
+  le code (V3-6 b). Le code est montré **tel que stocké** : une saisie en minuscules (`ch`), refusée aujourd'hui, le reste,
+  avec cette phrase (V5-8) ; la normaliser serait un changement de la saisie, hors de la story.
+- **D8 — L'avoir a sa clé** : `credit-note-pdf-error-contact-missing` ×4, repli égal à fr-CH ; sa clé et son repli sont
+  rendus par la fonction pure, qui vit dans `invoice_pdf_service.rs` : son entrée G9 est donc dans ce fichier (V5-1).
 - **D9 — La communication** (V3-13) : un caractère refusé dans `unstructured_message` vient du **numéro de facture**, qu'une
   facture validée ne corrige pas : la phrase le dit (« le numéro de facture contient … : vérifiez le format de numérotation
   dans Administration → Facturation »).
@@ -157,9 +159,15 @@ désormais un tel NPA à la saisie.
    (`I18nBundle::load` sur `crates/kesh-i18n/locales`, comme `audit_labels.rs:277`) **dans les quatre locales** : le rendu
    n'est pas la clé elle-même, hors fr-CH il n'est pas la valeur fr-CH (précédent
    `qr_message_prefix_is_translated_in_all_four_locales`, `invoice_pdf_service.rs:1082`, V4-7), et il ne contient ni `{`,
-   ni `$`, ni « Champ », ni nom technique. Jamais `init_error_i18n`. Ce test tue M2 sur toutes les causes ; M9 se joue
-   sur la fonction de construction unique (D3) et AC1 la tue. Le rendu de `bundle.format` garde les marques d'isolation
-   U+2068/U+2069 que `t_args` retire (`errors.rs:44-55`) : les assertions de sous-chaîne n'enjambent pas un argument.
+   ni `$`, ni « Champ », ni nom technique ; (c) **une table écrite à part dans le test** (V5-2), « champ → (partie, mot du
+   champ) » — `creditor.*` → « entreprise », `debtor.*` → « client » ; `name` → « nom », `line1` → « rue », `line2` →
+   « numéro », `postal_code` → « NPA », `town` → « localité » ; `unstructured_message` → « numéro de facture » — : le rendu
+   **fr-CH** de chacune des 27 clés par champ contient le mot de la partie et le mot du champ ; en de-CH, it-CH et en-CH, au
+   moins le mot de la partie (table par locale dans le test). Le repli se compare au rendu fr-CH de `bundle.format`, marques
+   U+2068/U+2069 retirées, **jamais à un littéral** dans `mod tests` : un second littéral ferait rougir G9, qui compte les
+   littéraux dans tout le fichier (V5-5) ; le caractère d'essai ne contient ni `{` ni `$`. Jamais `init_error_i18n`. Ce test
+   tue M2 ; M9 se joue sur la fonction de construction unique (D3) et AC1 la tue. Le rendu de `bundle.format` garde les
+   marques d'isolation que `t_args` retire (`errors.rs:44-55`) : les assertions de sous-chaîne n'enjambent pas un argument.
 3. **AC3 — Inventaire clos** : seize lignes de `git grep -n 'InvoiceNotPdfReady' -- crates` hors `errors.rs`, soit
    **quatorze constructions** — treize en production (`credit_notes.rs:295` ; `invoice_pdf_service.rs:216, 226, 288, 324,
    338, 497, 499, 502, 505, 508, 510, 540`) et une de test (`invoice_email.rs:1754`) — et deux non-constructions
@@ -170,7 +178,8 @@ désormais un tel NPA à la saisie.
    contrôle de Kesh ou de `kesh-qrbill`, si bien que M3 et M4 sont **équivalentes** pour le message ; ce qui tient #964,
    c'est cette phrase, qu'AC4 asserte, et `champ_vide_pour_qr` reste par cohérence avec la saisie) : entreprise au NPA `"\u{AD}"` (**posé en SQL** : la saisie le refuse depuis la 0.17.5,
    `address_input.rs:110`) → « adresse de l'entreprise incomplète » et « NPA » ; client à la localité `"\u{200B}"` (SQL)
-   → « adresse du client incomplète » et « localité » ; client sans adresse → la phrase de
+   → « adresse du client incomplète » et « localité » — comparaisons **en minuscules** (la phrase commence par une
+   majuscule, V5-4 ; de même pour « nom de l'entreprise » d'AC1) ; client sans adresse → la phrase de
    `invoice-pdf-error-client-address-required`.
 5. **AC5 — Le pays** (D7) : entreprise au pays `SU` → « pays de l'entreprise » et « SU » ; contact au pays hors liste
    (SQL, cas d'avant la 0.17.4) → « pays du client ».
@@ -188,9 +197,12 @@ désormais un tel NPA à la saisie.
    - soit **39 clés neuves** ; trois existantes reprises (`invoice-pdf-error-client-address-required`,
      `-contact-missing`, `-no-primary-bank`) ; deux retirées (`-company-address-empty`, `-client-address-empty`, D6).
 
-   G9 : **deux entrées neuves en fin de table**, `crates/kesh-api/src/routes/invoice_pdf_service.rs` (les 39 − 1 clés
-   neuves de ce fichier et les trois reprises : **41** clés) et `crates/kesh-api/src/routes/credit_notes.rs` (**1**) ; la
-   table passe de 8 à **10** entrées. Paramètres : `("{ $car }", "{car}")`, `("{ $point }", "{point}")` pour un caractère ;
+   G9 : **une entrée neuve en fin de table**, `crates/kesh-api/src/routes/invoice_pdf_service.rs`, qui porte les 39 clés
+   neuves (celle de l'avoir comprise, D8) et les trois reprises : **42** clés ; aucune entrée pour `credit_notes.rs`, qui
+   ne porte plus de repli ; la table passe de 8 à **9** entrées (V5-1). Les replis des trois clés reprises sont **réécrits
+   égaux à leur valeur fr-CH** (`:227` dit « cette company », `:325` « obligatoire et complète (NPA et localité) », V5-6).
+   `max` et `got` passent à Fluent **en chaînes** (comme le point de code, D4), pour ne pas être formatés selon la locale
+   (V5-8). Paramètres : `("{ $car }", "{car}")`, `("{ $point }", "{point}")` pour un caractère ;
    `("{ $max }", "{max}")`, `("{ $got }", "{got}")` pour une longueur ; `("{ $code }", "{code}")` pour un pays. Aucune clé
    dans `errors.rs` (D3) : le bloc `errors.rs` de G9 n'est pas touché.
 9. **AC9 — Tests existants réécrits sans perdre leur preuve** : `company_address_e2e.rs:583-589` (« Pays invalide » →
@@ -221,6 +233,10 @@ désormais un tel NPA à la saisie.
     `pub fn init_error_i18n(` d'`errors.rs` et l'appel de `main.rs` ; toute autre occurrence, `mod tests` compris, rougit.
     Mutation M12 jouée **dans le `mod tests` d'`errors.rs`**. Le garde compte toute occurrence du nom, alias
     (`use … init_error_i18n as …`) compris.
+14. **AC14 — Garde des constructions** (V5-7) : un test de `textes_coherents.rs`, sur le modèle d'AC13, exige dans
+    `crates/kesh-api/src` hors `errors.rs` et hors modules `#[cfg(test)]` **exactement deux** occurrences de
+    `InvoiceNotPdfReady(` : la fonction de construction (D3) et le motif de `classify_render_error`
+    (`invoice_email.rs:1030`) ; le doc-comment `:491` se reformule sans parenthèse. Sonde positive au Change Log (M14).
 
 ## Tests à écrire, et la preuve du rouge
 
@@ -229,14 +245,18 @@ désormais un tel NPA à la saisie.
 AC11 ; AC13 (vert au départ : sa sonde M12 tient lieu de rouge) ; AC12. Un test vert sous `nextest` doit l'être sous
 `cargo test` : `scripts/gate-ci.sh` au dernier commit de code.
 
-**Mutations** : M1 le bras `INVOICE_NOT_PDF_READY` de `pdfErrorMessage` retiré ; M2 un libellé de champ retiré ; M3
-`trim().is_empty()` rétabli à `:287` ; M4 idem à `:310` ; M7 `escape_debug` retiré ; M9 `t` au lieu de `t_args` ; M11 le
+**Mutations** : M1 le bras `INVOICE_NOT_PDF_READY` de `pdfErrorMessage` retiré ; M2 deux clés de champ échangées dans la
+fonction pure, et un mot de partie changé dans une phrase du catalogue (AC2 c) ; M3 `trim().is_empty()` rétabli à `:287` et
+M4 idem à `:310` : **équivalentes, non jouées** (AC4 : #964 est tenu par la phrase, `champ_vide_pour_qr` est de
+cohérence, V5-3) ; M7 `escape_debug` retiré ; M9 `t` au lieu de `t_args` ; M11 le
 contrôle du pays retiré ; M12 un appel d'`init_error_i18n` dans le `mod tests` d'`errors.rs` ; M13 la clé de la QRR
-retirée du catalogue (AC2).
+retirée du catalogue (AC2) ; M14 une construction `InvoiceNotPdfReady(…)` ajoutée hors de la fonction de construction
+(AC14).
 
 ## Tâches
 
-- [ ] Étape 0 : recompter l'inventaire, le tableau des routes et les lignes citées ; Change Log.
+- [ ] Étape 0, **sur `release/0.17.6`** (les lignes citées sont celles de cette branche ; le worktree du kickoff est sur
+      `main`) : recompter l'inventaire, le tableau des routes et les lignes citées ; Change Log.
 - [ ] Tests, rouges consignés.
 - [ ] Serveur : fonction pure, phrases ×4, adresse (D6), pays (D7), avoir (D8), communication (D9), `:338`, G9 ; garde AC13.
 - [ ] Écran : `pdf-error.ts` (D1).
@@ -258,9 +278,8 @@ La PR de la 35-2a porte `closes #964` et `refs #955` ; celle de la 35-2b, `close
 
 ### Fichiers communs — règle d'union C-e350-8
 
-Avec la 35-3 : `messages.ftl` ×4, G9 (ici deux entrées neuves en fin de table ; la 35-3, des clés en fin du bloc
-`errors.rs`), `user-manual.tex`, `CHANGELOG.md`, `docs/api-external.md`. `errors.rs` : cette story n'y touche que le test
-`:5715-5723`. Avec la 35-2b, qui part de celle-ci fusionnée : `user-manual.tex:1251`, `api-external.md`, `CHANGELOG.md`.
+Avec la 35-3 : `messages.ftl` ×4, G9 (ici une entrée neuve en fin de table ; la 35-3, des clés en fin du bloc
+`errors.rs`), `user-manual.tex`, `CHANGELOG.md`, `docs/api-external.md`. `errors.rs` : cette story n'y touche pas (V4-3). Avec la 35-2b, qui part de celle-ci fusionnée : `user-manual.tex:1251`, `api-external.md`, `CHANGELOG.md`.
 
 ### Ce qui doit rester vrai
 
@@ -329,4 +348,19 @@ Avec la 35-3 : `messages.ftl` ×4, G9 (ici deux entrées neuves en fin de table 
   - Symptômes greppés dans la fiche, la 35-2b, la 35-3, le fichier d'epic et le registre : « porte en plus `message` »,
     « le seul test `:5715-5723` », « n'y touche qu'un test », « 35-2a `:949` », « bras `InvoiceNotPdfReady` et ce qu'il
     appelle » — restes traités ou annotés.
+- 2026-11-12 — **Validation P5** (Sonnet) : 0 CRITICAL, 0 HIGH, 2 MEDIUM, 7 LOW (`kesh-gate-logs/e35-2a-validation-p5.md`).
+  **Série 5 → 5 → 8 → 4 → 2** ; les deux MEDIUM sont d'origine (décompte de P4, conception), aucun signal de recyclage.
+  Prémisses relues au code de `release/0.17.6` ; aucune réfutée (G9 compte le littéral dans le fichier de l'entrée,
+  `textes_coherents.rs:896-913` ; replis `:227`, `:325`). Appliqués :
+  - V5-1 : recommandation (a) : le repli de l'avoir est dans la fonction pure ; G9 **42 / 0 / 9** (une entrée,
+    `invoice_pdf_service.rs`, 42 clés ; aucune pour `credit_notes.rs` ; table 8 → 9) ; propagé au fichier d'epic, au
+    registre (C-e350-8, point 3, annotation datée) ; la fiche 35-3 ne portait pas ce décompte (vérifié) ;
+  - V5-2 : AC2 (c), table « champ → (partie, mot) » écrite à part ; M2 réécrite ;
+  - LOW : V5-3 (M3/M4 équivalentes, non jouées) ; V5-4 (comparaisons en minuscules) ; V5-5 (repli comparé au rendu
+    fr-CH, jamais à un littéral) ; V5-6 (replis des trois reprises alignés) ; V5-7 (AC14, garde des constructions, M14) ;
+    V5-8 (`max`/`got` en chaînes ; code du pays tel que stocké) ; V5-9 (renvoi de la 35-3 vers « 35-2a, D10 »). Étape 0
+    sur `release/0.17.6`. Reste corrigé au passage : « Fichiers communs » disait encore que la story touche
+    `errors.rs:5715-5723` (V4-3).
+  - Symptômes greppés (fiche, 35-3, 35-2b, fichier d'epic, registre) : `41`, `\b10\b` près de G9, `credit_notes` —
+    restes traités ; les entrées passées du Change Log gardent leurs chiffres.
 
