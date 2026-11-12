@@ -200,7 +200,8 @@ retenue, options écartées, réversibilité. Lignes citées sur `release/0.17.6
   *(Annoté le 2026-11-12, validation P2 de la 35-6 : la 35-6 ne touche plus ce fichier, C-e350-19.)*
 - **`crates/kesh-api/src/routes/bank_accounts.rs`** : 35-5a (`:1007`, `:1252`) ; 35-5b (`:1802`). 35-5b part de 35-5a fusionnée.
 - **`docs/api-external.md`** : 35-5a la phrase « UTC » du solde d'ouverture ; 35-6 la grammaire du montant ; lignes
-  distinctes.
+  distinctes. *(Annoté le 2026-11-12, validation P2 de la 35-5a : la 35-6 ne touche plus `api-external.md`, ni
+  `opening_balances.rs` hors de son `mod tests` (un test de parité), C-e350-19 ; la 35-5b y écrit `:252`, `:292`, `:443`.)*
 - **`CHANGELOG.md`** : un point par issue sous `### Corrigé`, dans l'ordre des numéros de story.
 
 ### C-e350-15 — 35-6 : point et virgule ambigus, grammaire commune, #1025 intégrée
@@ -327,6 +328,10 @@ sur `chore/epic-35-fiches-355`, commencent à C-e350-21 et s'unissent à la fusi
   ouvre un contournement de la garde (v-2), qui ne reconnaît que `Lecture::new(` ; (c) l'horloge dans le seul `AppState` :
   le défaut même de la validation.
 - **Réversible** : oui ; une poignée et deux lignes de câblage.
+- *(Annoté le 2026-11-12, validations P2 des 35-5a et 35-5b : les littéraux d'`AppState` sont **9 dans 7 fichiers**, non 16
+  dans 9 ; le câblage du MCP s'écrit en trois lignes courtes (`horloge_outils`, `lecture_pool`, `lecture_outils`), la ligne
+  d'un seul tenant dépassant 100 caractères ; `Lecture` expose aussi `horloge()`, pour le squelette de la 35-5b ; le service
+  de l'échéancier rend la date qu'il a employée, que la route réemploie — une lecture par requête.)*
 
 ### C-e350-22 — La 35-5b se découpe : la 35-5c prend les tests restants et ferme les gardes
 
@@ -372,6 +377,36 @@ sur `chore/epic-35-fiches-355`, commencent à C-e350-21 et s'unissent à la fusi
 - **Écartées** : (a) un compte « décroissant » (`<=`) : ne voit pas une exemption gardée après conversion (M5) ; (b) des
   commentaires comptés, comme `local-date-guard.test.ts` : rougirait pour des phrases vraies (`aged_receivables.rs:27`) ; (c)
   une garde restreinte à `src` jusqu'à la 35-5b : un test converti pourrait revenir en arrière sans bruit.
+- **Réversible** : oui.
+- *(Annoté le 2026-11-12, validation P2 de la 35-5a et P1 de la 35-5c : motifs bornés `\b…\(` (le relevé « casse ignorée »
+  de `UTC_DATE` prenait `Utc.from_utc_datetime(`) ; formes `Utc::now().year(`/`month(`/`day(`/`format(` et
+  `DATE(UTC_TIMESTAMP`/`DATE(CURRENT_TIMESTAMP` ajoutées ; entrée permanente `admin.rs:722` (horodatage) ; le fichier de la
+  garde est exclu nommément, une sonde le prouve ; angle mort assumé : le jour tiré d'une variable d'instant.)*
+
+### C-e350-26 — 35-5 : la preuve de nuit par `KESH_TEST_INSTANT`
+
+- **Contexte** : validation P1 de la 35-5c (V1-7) — aucun critère n'établissait qu'un test converti passe « à 00 h 30 » ; les
+  tests de montage prennent `aujourd_hui_suisse()`, qui lit l'horloge réelle. `faketime` n'est pas installé sur la station
+  (`command -v faketime` vide, aucune `libfaketime`).
+- **Retenu** : `AppState::new_for_tests` et les helpers `aujourd_hui_suisse()` prennent une `HorlogeFixe` à l'instant de la
+  variable `KESH_TEST_INSTANT` (RFC 3339) si elle est posée, l'horloge système sinon ; lue à chaque appel, sans `static` ni
+  `OnceLock`. `main.rs` ne la lit jamais (il construit `HorlogeSysteme`), et la garde de la date du jour vérifie qu'elle
+  n'apparaît que dans ces trois fonctions. Chaque story (35-5a, 35-5b, 35-5c) lance une fois les binaires de tests qu'elle
+  convertit à `2025-12-31T23:30:00Z` et à `2026-03-10T23:30:00Z` ; journal `nuit.log` ; un rouge qui vient d'un horodatage
+  MariaDB (`NOW(3)`, heure réelle) se nomme, il n'est pas un défaut de nuit. Posé par la 35-5a.
+- **Écartées** : (a) installer `faketime` : un paquet sur la station, et un `LD_PRELOAD` sous `cargo test` peu sûr ; (b) une
+  heure de nuit fixée dans chaque test : 112 sites réécrits pour une preuve qu'une variable donne ; (c) ne rien prouver : la
+  règle « on ne déclare que ce qui a tourné ».
+- **Réversible** : oui ; trois fonctions de test.
+
+### C-e350-27 — 35-5a : dérogation à la règle de découpage préventif
+
+- **Contexte** : validation P2 de la 35-5a, V2-8 : la story touche plus de cinq modules.
+- **Retenu** : pas de nouveau découpage ; section *Dérogation règle de splitting* dans la fiche. Le mécanisme ne se coupe
+  pas — les signatures de D2 et de `Lecture::new` obligent tous leurs appelants, production et tests, dans le même commit — et
+  la sûreté de nuit non plus (une story qui convertirait les sites sans les tests qui les atteignent rougirait la nuit). Ce
+  qui pouvait partir est parti : 35-5b (sites restants), 35-5c (tests sans lien), la dévalidation (V2-10).
+- **Écartée** : isoler les appelants sans site de jour dans la 35-5c : la compilation de la 35-5a l'interdit.
 - **Réversible** : oui.
 
 ### C-e350-25 — 35-5 : le jour d'un instant enregistré
