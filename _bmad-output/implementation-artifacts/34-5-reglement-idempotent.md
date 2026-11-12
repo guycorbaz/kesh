@@ -383,6 +383,19 @@ de la KF-029 se nomment un par un.
   - **Tendance** : P1 3 M / 12 L → P2 0 M / 8 L. La remédiation touche la production (deux pages, quatre locales) : une
     **passe ciblée P3** (Haiku, une lentille, sur le seul commit de remédiation) suit, prompt
     `34-5-reglement-idempotent-review-prompt-p3-ciblee.md`.
+- 2026-11-12 : **passe ciblée P3** (Haiku, sur `73ad22b3` ; rapport `kesh-gate-logs/e345-review-p3-ciblee.md`) :
+  **0 C, 0 H, 1 M, 1 L**. Remédiation (Opus 5.5), commit `59a90ed7`, prémisses relues au code :
+  - **C3-1 (M)** : sur l'échéancier, une relecture supplantée par un chargement de filtre remettait `settleRereading` à
+    faux pendant que ce chargement était en vol : l'avis disait « n'a pas pu être relue » et offrait *Relire* pendant une
+    relecture en cours. Défaut préexistant, que B2-1 ne couvrait pas. Désormais, seul le chargement le plus récent
+    (`load()`, `finally`, `seq === loadSeq`) clôt la relecture ; `rereadAfterSettle` ne la clôt plus. Vitest neuf
+    (relecture, puis filtre avant sa réponse, puis échec du filtre) ; mutation M13 tuée. Remédiée plutôt que tracée sur
+    décision de l'orchestrateur, la story étant le P1 de l'epic.
+  - **C3-2 (L)** : de-CH, l'espace avant « … » est retirée (usage du fichier).
+  - **Tendance** : P1 3 M / 12 L → P2 0 M / 8 L → P3 1 M / 1 L. Le MEDIUM de la P3 n'est pas né de la remédiation P2 :
+    il est préexistant, dans une zone que la P2 avait touchée. La remédiation touche la production (une page) : une
+    **passe ciblée P4** (Sonnet, une lentille, sur `59a90ed7`) suit, prompt
+    `34-5-reglement-idempotent-review-prompt-p4-ciblee.md`.
 
 ## Dev Agent Record
 
@@ -523,6 +536,23 @@ E2E par `station-heavy` et `.gate.lock`.
   `fiche-conflit-non-relu.png` montre l'état d'après l'échec, au texte inchangé.
 - Décomptes, de `73d07696` à `73ad22b3` : +1 Vitest (fiche, B2-1 ; celui de l'échéancier est récrit), 2895 − 2894 = 1 ;
   i18n `sitesTotal` 2928 → 2930.
+- *(Ajouté le 2026-11-12.)* Le gate backend complet de `73ad22b3`, demandé par l'orchestrateur pendant la P3 (les `.ftl`
+  sont lus par des tests d'autres crates), a été **arrêté avant d'avoir démarré** (il attendait le verrou) : un commit de
+  code suivait. Il est joué au commit suivant, ci-dessous.
+
+**Passe ciblée P3 — remédiation** (commit `59a90ed7`, **dernier commit de code** ; journal
+`kesh-gate-logs/e345/chaine-p3-head.log`), deux voies de verrou :
+- **Backend complet**, bases remises à neuf : `scripts/test-fast.sh --ci` **5146 passés, 12 ignorés** ;
+  `scripts/gate-ci.sh kesh_ci_e345` **5153 passés, 0 échec, 16 ignorés** ; `cargo build -p kesh-api` vert.
+- **Frontend complet** : `check` 0 erreur, `lint-i18n-ownership` vert, Vitest **2896 passés, 222 fichiers**, `build` vert.
+- **E2E complet** (`e2e-r8`, base recréée) : **388 passés, 7 échecs, 18 ignorés** ; les sept de la KF-029 (#97), nommés
+  comme au développement ; `invoices-settle-version.spec.ts` 3 passés.
+- **Mutations** à `59a90ed7` (`mut/campagne-p3.log`) : **M13** (la relecture remet `settleRereading` à faux dès son propre
+  retour) tuée par le Vitest de C3-1 (`expected … to contain 'Relecture de la liste en cours'`) ; rejouées et toujours
+  tuées : M4e (6 Vitest), M5 (3), M6e (1), M9 (1), M12e (2). Restauration « 0 fichier(s) modifié(s) » à chacune. Les
+  mutations de la fiche (M3, M4f, M6, M11, M12) et du backend (M1, M2) restent celles de `73ad22b3`, ce commit ne
+  touchant ni la fiche ni le Rust.
+- Décomptes, de `73ad22b3` à `59a90ed7` : +1 Vitest (échéancier, C3-1), 2896 − 2895 = 1.
 
 **Écarts à la consigne Edit.** Deux fichiers de test écrits par le shell, non par l'outil : les tests Vitest de la
 fiche ajoutés en fin de `invoice-settlements-page.test.ts` par `cat >>` (ajout, rien remplacé), et la spec neuve
@@ -559,5 +589,6 @@ un autre geste réussi de l'écran (E2-3) : **#1009**, ouverte par l'orchestrate
 - `docs/manual/fr/user-manual.pdf`, `docs/manual/fr/admin-manual.pdf` (régénérés)
 - `scripts/recette-montee.sh`
 - `_bmad-output/implementation-artifacts/e34-choix-autonomes-e345.md` (neuf),
-  `34-5-reglement-idempotent-review-prompt-p1.md`, `34-5-reglement-idempotent-review-prompt-p2.md` et
-  `34-5-reglement-idempotent-review-prompt-p3-ciblee.md` (neufs), cette fiche, `sprint-status.yaml`
+  `34-5-reglement-idempotent-review-prompt-p1.md`, `34-5-reglement-idempotent-review-prompt-p2.md`,
+  `34-5-reglement-idempotent-review-prompt-p3-ciblee.md` et `34-5-reglement-idempotent-review-prompt-p4-ciblee.md`
+  (neufs), cette fiche, `sprint-status.yaml`
