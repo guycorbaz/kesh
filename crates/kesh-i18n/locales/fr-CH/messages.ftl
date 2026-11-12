@@ -338,6 +338,17 @@ error-designated-account-not-postable = { $count ->
     [one] Le compte { $numbers }, désigné dans Administration → Facturation, n’est pas imputable (compte de regroupement, de résultat ou de clôture) : un administrateur doit y désigner à sa place un compte imputable.
    *[other] Les comptes { $numbers }, désignés dans Administration → Facturation, ne sont pas imputables (comptes de regroupement, de résultat ou de clôture) : un administrateur doit y désigner à leur place des comptes imputables.
 }
+# Story 35-3 (#537) — un compte désigné retypé depuis sa désignation : une phrase par compte, puis la phrase d’action.
+error-designated-account-wrong-type = Le compte { $account }, désigné comme { $setting } dans Administration → Facturation, est un { $actual } ; ce réglage demande un { $expected }.
+error-designated-account-wrong-type-action = Rien n’a été enregistré. Un administrateur doit corriger le réglage concerné — désigner un compte du bon type, ou rendre au compte son type d’origine —, puis la validation pourra être relancée telle quelle.
+error-designated-account-setting-receivable = compte créance client
+error-designated-account-setting-vat-payable = compte TVA due
+error-designated-account-setting-payable = compte créanciers
+error-designated-account-setting-vat-recoverable = compte TVA récupérable
+error-designated-account-type-asset = compte d’actif
+error-designated-account-type-liability = compte de passif
+error-designated-account-type-revenue = compte de produit
+error-designated-account-type-expense = compte de charge
 error-rounding-account-not-configured = Ce paiement solde la facture au centime, mais aucun compte de différences d'arrondi utilisable n'est désigné : choisissez-en un dans Administration → Facturation.
 error-rounding-account-not-configured-issuance = Le total de cette pièce est arrondi à 5 centimes, mais aucun compte de différences d'arrondi utilisable n'est désigné : choisissez-en un dans Administration → Facturation.
 error-write-off-account-not-configured-discount = Aucun compte d'escompte utilisable n'est désigné : choisissez-en un dans Administration → Facturation, section Solde du reste.

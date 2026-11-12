@@ -827,6 +827,28 @@ fn les_replis_rust_suivent_le_catalogue() {
                     1,
                     &[("{ $line }", "{line}"), ("{ $lineTotal }", "{line_total}")],
                 ),
+                // Story 35-3 (#537) — le compte désigné retypé : la phrase par
+                // compte, la phrase d'action, et les huit libellés qu'elle insère
+                // (réglage, type), chacun avec son littéral de repli.
+                (
+                    "error-designated-account-wrong-type",
+                    1,
+                    &[
+                        ("{ $account }", "{compte}"),
+                        ("{ $setting }", "{reglage}"),
+                        ("{ $actual }", "{reel}"),
+                        ("{ $expected }", "{attendu}"),
+                    ],
+                ),
+                ("error-designated-account-wrong-type-action", 1, &[]),
+                ("error-designated-account-setting-receivable", 1, &[]),
+                ("error-designated-account-setting-vat-payable", 1, &[]),
+                ("error-designated-account-setting-payable", 1, &[]),
+                ("error-designated-account-setting-vat-recoverable", 1, &[]),
+                ("error-designated-account-type-asset", 1, &[]),
+                ("error-designated-account-type-liability", 1, &[]),
+                ("error-designated-account-type-revenue", 1, &[]),
+                ("error-designated-account-type-expense", 1, &[]),
             ],
         ),
         (

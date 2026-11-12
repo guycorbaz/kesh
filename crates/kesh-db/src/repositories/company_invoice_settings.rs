@@ -1275,11 +1275,37 @@ pub struct VatSettingAccountTypes {
 /// rôles de TVA), lue par [`lock_vat_role_accounts_in_tx`] et par la route
 /// `PUT /api/v1/company/invoice-settings` (`update_invoice_settings`). Écrite une
 /// seule fois (Story 31-5, C-31-5-19) : la route et la démonstration ne peuvent
-/// plus diverger.
+/// plus diverger. Story 35-3 (#537) : la garde à l'usage la lit aussi, pour la
+/// TVA due et la TVA récupérable (`DesignatedRole::expected_type`).
 pub const VAT_SETTING_ACCOUNT_TYPES: VatSettingAccountTypes = VatSettingAccountTypes {
     payable: AccountType::Liability,
     recoverable: AccountType::Asset,
     settlement: AccountType::Liability,
+};
+
+/// Le type de compte qu'exigent les deux réglages de **tiers** : le compte
+/// débiteurs et le compte créanciers (Story 35-3, #537).
+#[derive(Debug, Clone, Copy)]
+pub struct ClaimSettingAccountTypes {
+    /// Compte débiteurs (`default_receivable_account_id`).
+    pub receivable: AccountType,
+    /// Compte créanciers (`default_payable_account_id`).
+    pub payable: AccountType,
+}
+
+/// Règle des réglages débiteurs et créanciers, écrite **une seule fois**
+/// (Story 35-3, #537, D4 ; patron de [`VAT_SETTING_ACCOUNT_TYPES`],
+/// C-31-5-19) : la route `PUT /api/v1/company/invoice-settings` la lit à la
+/// désignation, et la garde à l'usage ([`DesignatedAccountsSnapshot`]) à la
+/// validation d'une facture ou d'une facture fournisseur — la règle de la
+/// désignation et celle de l'usage ne peuvent plus diverger.
+///
+/// Règle du **réglage**, non du rôle : `accepts_account_type` de
+/// `kesh_core::chart_of_accounts` admet `Asset` ou `Liability` pour les rôles
+/// *Créances clients* et *Dettes fournisseurs*.
+pub const CLAIM_SETTING_ACCOUNT_TYPES: ClaimSettingAccountTypes = ClaimSettingAccountTypes {
+    receivable: AccountType::Asset,
+    payable: AccountType::Liability,
 };
 
 /// Lit et **verrouille** (`FOR UPDATE`) les comptes qui portent les trois rôles
