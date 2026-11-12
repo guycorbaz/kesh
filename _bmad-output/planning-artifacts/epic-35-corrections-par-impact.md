@@ -102,8 +102,10 @@ chacune de ses actions est aujourd'hui attribuée à Guy dans la piste de contr�
 2. Puis par impact, I1 d'abord : **35-4**, **35-6**, **35-5a0**, **35-5a**, **35-5b** puis **35-5c** (découpage préventif,
    C-e350-14, C-e350-22, C-e350-28 ; chacune part de la précédente fusionnée) ; puis **35-7**, **35-8**, **35-1**.
    **Règle d'ordre 35-3 / 35-5a0** (C-e350-28) : la 35-5a0 change la signature de `supplier_invoices::{validate, unvalidate,
-   pay, cancel, cancel_settlement}` et des bloqueurs, que les tests neufs de la 35-3 appellent (`supplier_invoices_repository.rs`
-   `:2250-2257`) — un **conflit de compilation**, non de texte. Ordre préféré : **35-3 d'abord** (tête d'epic) ; la 35-5a0,
+   pay, cancel, cancel_settlement}` et des bloqueurs. À ce jour, les tests neufs de la 35-3 n'en appellent aucune (ils
+   appellent `create_validated`, hors de la fermeture ; validation P1 de la 35-5a0, V1-7), mais le module qu'elle touche
+   (`supplier_invoices_repository.rs:2250-2257`) en porte déjà : un **conflit de compilation**, non de texte, reste possible —
+   **à constater à l'intégration**. Ordre préféré : **35-3 d'abord** (tête d'epic) ; la 35-5a0,
    fusionnée ensuite, ajoute la date aux appels de la 35-3 (`aujourd_hui_test()`) et passe le gate complet avant fusion. Si la
    35-5a0 fusionne la première, c'est la 35-3 qui ajoute la date, sous la même règle. Les autres fichiers communs
    (`supplier_invoices.rs`, `invoice_settlements_write.rs`) ont des hunks distincts (C-e350-8, suite).

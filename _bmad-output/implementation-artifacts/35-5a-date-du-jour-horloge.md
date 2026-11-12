@@ -502,9 +502,11 @@ de nuit. La sûreté de nuit reste d'un seul tenant, dans la 35-5a.
 **avec la 35-3** : `kesh-db/src/repositories/supplier_invoices.rs` (35-3 `:1521-1530`, `:1698-1727` ; ici les signatures
 `:2462`, `:2600`, `:2750`, `:2871`), `invoice_settlements_write.rs` (35-3 `:679-680` ; ici `:878`, `:1023`),
 `crates/kesh-db/tests/supplier_invoices_repository.rs` (35-3 `:2250-2257` ; ici `:1586`, `:1862`, `:2700`, `:2795`) — hunks
-distincts, la seconde fusionnée se rebase sur la première. ⚠️ **Conflit de compilation** (validation P3, V3-2) : les tests neufs
-de la 35-3 qui appellent `supplier_invoices::validate` / `pay` ne compilent plus après la **35-5a0**, qui change ces signatures ;
-la règle d'ordre est à l'epic et dans la fiche 35-5a0 (la seconde fusionnée ajoute la date aux appels de l'autre, gate complet) ;
+distincts, la seconde fusionnée se rebase sur la première. ⚠️ **Conflit de compilation possible** (validation P3, V3-2) : un test
+neuf de la 35-3 qui appellerait `supplier_invoices::validate` / `pay` ne compilerait plus après la **35-5a0** ; à ce jour ses
+tests neufs appellent `create_validated`, hors de la fermeture (validation P1 de la 35-5a0, V1-7) : à constater à
+l'intégration ; la règle d'ordre est à l'epic et dans la fiche 35-5a0 (la seconde fusionnée ajoute la date aux appels de
+l'autre, gate complet) ;
 `routes/invoices.rs`, `routes/supplier_invoices.rs`,
 `routes/imported_supplier_invoices.rs`, `routes/reconciliation.rs`, `services/factures_fournisseur.rs` (chaîne des
 appelants) ; `docs/api-external.md:272` : 35-5a seule pour cette ligne (la 35-6 ne touche plus `api-external.md`, C-e350-19 ;
