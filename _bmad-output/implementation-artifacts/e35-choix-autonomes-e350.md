@@ -230,6 +230,9 @@ retenue, options écartées, réversibilité. Lignes citées sur `release/0.17.6
   restants et vide la liste d'exemptions, puis les specs E2E.
 - **Écartée** : une seule story : boucle complète sur quatre crates et 200 sites de tests.
 - **Réversible** : oui.
+- *(Annoté le 2026-11-12, validations P1 des 35-5a et 35-5b : le site 17 passe à la 35-5a, 9 / 19 (C-e350-23) ; la 35-5b se
+  découpe à son tour, la conversion des tests restants et la fermeture des gardes passant à une **35-5c** (C-e350-22) ;
+  les décomptes « 36 » des specs E2E et « 107 » des tests valent 35 (34 + 1 coupé) et 112 (107 + 5 coupés).)*
 
 ### C-e350-16 — Le fuseau est Europe/Zurich, constant ; l'horloge s'injecte
 
@@ -324,6 +327,23 @@ sur `chore/epic-35-fiches-355`, commencent à C-e350-21 et s'unissent à la fusi
   ouvre un contournement de la garde (v-2), qui ne reconnaît que `Lecture::new(` ; (c) l'horloge dans le seul `AppState` :
   le défaut même de la validation.
 - **Réversible** : oui ; une poignée et deux lignes de câblage.
+
+### C-e350-22 — La 35-5b se découpe : la 35-5c prend les tests restants et ferme les gardes
+
+- **Contexte** : validation P1 de la 35-5b, V1-8. Après la plomberie de C-e350-21, la story portait 19 sites de production,
+  le SQL de trois sites, la graine, le MCP, puis 168 sites de tests Rust et 35 de specs E2E, l'extension de deux gardes et la
+  doc ; `kesh-db` touché impose le gate complet à chaque commit, sur un diff de plus de cent fichiers. Plus de cinq modules :
+  la règle de découpage préventif s'applique une seconde fois.
+- **Retenu** : **35-5b** = production, SQL, graine, plomberie des signatures, MCP, docs, **et** les tests dont l'attendu
+  change avec un de ses sites (sinon le gate rougit à son propre commit) ; **35-5c** = les tests restants (`src`,
+  `crates/*/tests`, specs E2E), la garde Rust fermée, la garde frontend étendue aux specs. **Chaque story reste sûre la
+  nuit à elle seule** : la 35-5a convertit les tests qui atteignent ses sites (verdict des 38 fichiers dans sa fiche), la
+  35-5b ceux des siens ; ce qui reste à la 35-5c ne compare pas son jour à celui du serveur. Ordre : 35-5a → 35-5b → 35-5c ;
+  la **35-8** attend la 35-5c (`journal_entries.rs`, `mod tests`).
+- **Écartées** : (a) 35-5b entière : une boucle d'environ une heure par passe sur plus de cent fichiers ; (b) la 35-5b emporte
+  les 50 sites de `journal_entries.rs` pour libérer la 35-8 plus tôt : la 35-8 est en bas de l'ordre de l'epic, rien ne
+  presse.
+- **Réversible** : oui.
 
 ### C-e350-23 — 35-5a : la création du premier exercice par l'assistant passe à la 35-5a
 
