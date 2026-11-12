@@ -1,6 +1,6 @@
 # Story 35-2a : le refus du PDF dit, dans un message localisé, quoi corriger — champ, caractère, adresse, pays (#955, #964)
 
-Status: ready-for-dev
+Status: in-progress
 
 *Validation terminée (P1 à P7, 2026-11-12).*
 
@@ -384,4 +384,26 @@ Avec la 35-3 : `messages.ftl` ×4, G9 (ici une entrée neuve en fin de table ; l
   de recyclage), **recadrage C-e350-11** à la P3 (message localisé, sans contrat `details` ; contrat renvoyé à #1045) ;
   fonction pure et fonction de construction uniques, une clé par champ et par raison (G9 42 / 9), ensemble clos des causes,
   gardes AC13 et AC14 ; #944 hors (C-e350-1) ; #1046 pour le format de numérotation.
+- 2026-11-12 — **Étape 0 du développement** (Opus 5.5, worktree `kesh-e352a`, branche `story/35-2a-refus-pdf` partie de
+  `epic-35/base` = `049b0466` ; `git diff release/0.17.6 HEAD -- crates frontend` vide : le code est celui de la 0.17.6).
+  Recompté, **aucun écart** ; la fiche n'est pas corrigée.
+  - **AC3** : `git grep -n 'InvoiceNotPdfReady' -- crates | grep -v errors.rs` rend **16 lignes** : `credit_notes.rs:295`,
+    `invoice_email.rs:1030` (classement), `:1754` (test), `invoice_pdf_service.rs:216, 226, 288, 324, 338, 491`
+    (doc-comment : « map to `InvoiceNotPdfReady` (400) »), `497, 499, 502, 505, 508, 510, 540` — soit 13 constructions de
+    production, 1 de test, 2 non-constructions ; `errors.rs` : `:34` (doc), `:429` (variante), `:2073` (bras), `:5717`
+    (test). Verdicts par site : à l'entrée du développement.
+  - **Routes** : `invoice_pdf.rs:50` (`get_or_freeze(…, Usage::Download)`), `:88` (`refreeze`) ;
+    `issued_invoice_pdf.rs:151` et `:256` (`render_document(`), `:240-249` (`InvoicePdfNotFrozen`, `InvoicePdfPresent`,
+    `FrozenFile::Missing => {}`) ; `invoice_email.rs:560` (`render_document(`, rappel seul), `:808` (`get_or_freeze(…,
+    Usage::Send)`), `:1023-1036` (`classify_render_error`), `:1260-1269` (lot) ; `credit_notes.rs:295`, `:363`
+    (`generate_credit_note_pdf(…).map_err(map_qrbill_error)`). Conformes au tableau.
+  - **Champs** (`kesh-qrbill/src/validation.rs:314-407`, `:469-474`) : charset sur `name`, `line1`, `line2`,
+    `postal_code`, `town` × 2 parties + `unstructured_message` = 11 ; vide sur `name`, `postal_code`, `town` × 2 = 6 (le
+    `line2` vide du type K est inatteignable : Kesh ne construit que des adresses `Structured`) ; trop long sur les cinq
+    champs × 2 = 10 ; **27** ; + 3 replis par raison + 9 causes sans champ = **39** clés neuves, 42 avec les trois reprises.
+  - **Catalogue** fr-CH `:967-971` (`invoice-pdf-error-*`, « entreprise » à `:968`) ; `textes_coherents.rs:734`
+    (`const TABLE: [(&str, Cles); 8]`) ; `pdf-error.ts:36` et `:43` ; `pdf-error.test.ts:35-38` ;
+    `company_address_e2e.rs:583-589` (« Pays invalide »), `:667-675` (« adresse de l'entreprise est vide »), `:375-376` ;
+    `user-manual.tex:1251` ; `api-external.md:1058` (`SUPPLIER_INVOICE_DUE_BEFORE_INVOICE_DATE`) ;
+    `api-fixtures.ts:73-79` (`createContactWithAddressViaApi`, sans `city`). Conformes.
 
