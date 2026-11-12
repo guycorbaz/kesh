@@ -12,7 +12,7 @@
   checkbox au niveau tx. Si la transaction n'a aucune candidate,
   on affiche « Aucune correspondance », avec une checkbox comme les
   autres lignes (Story 29-6, #665, AC10) : elle se coche pour être
-  rejetée, ou avant « Affecter manuellement » / « Éclater » ;
+  rejetée, ou avant « Écriture manuelle » / « Éclater » ;
   « Accepter » ne la traite pas — il est grisé tant qu'une telle ligne
   est cochée, et la rangée des boutons le dit. Erreurs partielles
   affichées en bas via `failed`.
@@ -40,6 +40,12 @@
   « Accepter » reste grisé pour elle, comme pour toute ligne sans candidate.
   Le texte de l'avis ne conseille jamais de confirmer le lot (qui compterait la
   dépense deux fois) et ne cite aucun numéro d'issue.
+
+  Story 34-4 (#828, AC-5, AC-6) — une ligne qui semble déjà comptabilisée
+  (`alreadyBooked`, `already-booked.ts`) porte un avertissement sous elle ; *Accepter (N)*,
+  *Écriture manuelle* et *Éclater* demandent alors confirmation
+  (`AlreadyBookedConfirmDialog`) ; *Rejeter* et *Rattacher à une écriture existante*, non.
+  Rien n'est refusé : *Continuer quand même* reprend le geste tel quel.
 -->
 <script lang="ts">
 	import { errorMessageOf } from '$lib/shared/utils/error-message';
@@ -66,6 +72,8 @@
 	import ManualMatchModal from './ManualMatchModal.svelte';
 	import TransactionSplitModal from './TransactionSplitModal.svelte';
 	import LinkSettlementModal from './LinkSettlementModal.svelte';
+	import AlreadyBookedConfirmDialog from './AlreadyBookedConfirmDialog.svelte';
+	import { alreadyBookedWarning, describeTransaction, isAlreadyBooked } from './already-booked';
 	import { fetchAccounts } from '$lib/features/accounts/accounts.api';
 	import type { AccountResponse } from '$lib/features/accounts/accounts.types';
 	import { listBankAccounts } from '$lib/features/bank-accounts/bank-accounts.api';
@@ -112,8 +120,9 @@
 	 * Efface le bilan du dernier lot — compteur, *Échecs partiels* et transactions relevées.
 	 *
 	 * Revue de code P1 de la 15-5c (B1, E3) : le bilan est rendu hors des branches de la liste
-	 * (C38) ; sans remise à zéro, celui d'un lot ancien survivait à une affectation manuelle ou
-	 * à un éclatement. Appelée à l'ouverture de tout nouveau bilan — lot, affectation, éclatement.
+	 * (C38) ; sans remise à zéro, celui d'un lot ancien survivait à une écriture manuelle ou
+	 * à un éclatement. Appelée à l'ouverture de tout nouveau bilan — lot, écriture manuelle,
+	 * éclatement.
 	 */
 	function clearBatchReport(): void {
 		failed = [];
@@ -129,9 +138,8 @@
 	function describeTx(id: number): string {
 		const t = failedTx.get(id);
 		if (!t) return `TX #${id}`;
-		return [formatSwissDate(t.bookingDate), `${t.amount} ${t.currency}`, t.counterpartyName]
-			.filter((v) => v !== null && v !== undefined && v !== '')
-			.join(' · ');
+		// Story 34-4 : la désignation est partagée avec la confirmation (`describeTransaction`).
+		return describeTransaction(t);
 	}
 
 	// H7 Pass 1 code review — generation tag pour drop les responses
@@ -196,14 +204,14 @@
 		})();
 	});
 
-	// Story 15-6d (AC4, #524) — compte comptable du compte bancaire monté, que la modale
-	// d'affectation manuelle écarte des contreparties (une écriture `D banque / C banque` est
-	// nulle). Résolu UNE fois, au montage : la page remonte ce composant à chaque changement de
+	// Story 15-6d (AC4, #524) — compte comptable du compte bancaire monté, que les dialogues
+	// *Écriture manuelle* et *Éclater* (Story 34-3, AC-3) écartent des contreparties (une écriture
+	// `D banque / C banque` est nulle). Résolu UNE fois, au montage : la page remonte ce composant à chaque changement de
 	// compte bancaire (`{#key selectedId}`, `routes/(app)/reconciliation/+page.svelte`), si bien
 	// qu'une réponse ne peut pas arriver pour un autre `bankAccountId` que celui du montage —
 	// d'où l'absence de garde de génération (choix C-15-6-28). ⚠️ Retirer ce `{#key}` exigerait
 	// la garde. Repli `null` — aucun filtrage, la garde serveur de `POST /reconciliation/manual`
-	// tranche — pendant le chargement, en cas d'échec (ignoré sans message, comme le chargement
+	// (ou `/split`) tranche — pendant le chargement, en cas d'échec (ignoré sans message, comme le chargement
 	// des comptes ci-dessus), et si le compte bancaire est absent de la liste (archivé, ou
 	// clos depuis la Story 28-4b : `listBankAccounts()` n'en rend aucun des deux) ou non lié.
 	let bankLedgerAccountId = $state<number | null>(null);
@@ -272,6 +280,83 @@
 		await load();
 	}
 
+	/**
+	 * Story 34-4 (#828, AC-6) — le geste qui attend la confirmation d'une ligne signalée « déjà
+	 * comptabilisée », et les lignes signalées qu'il concerne (relevées à la demande). Seuls
+	 * *Accepter*, *Écriture manuelle* et *Éclater* passent par là : ils passeraient une écriture.
+	 */
+	type GuardedGesture =
+		| { kind: 'accept' }
+		| { kind: 'manual'; proposal: ReconciliationProposal }
+		| { kind: 'split'; proposal: ReconciliationProposal };
+	let pendingGesture = $state<GuardedGesture | null>(null);
+	let confirmTransactions = $state<ReconciliationProposal[]>([]);
+
+	/** Demande confirmation si `flagged` n'est pas vide ; sinon, exécute le geste aussitôt. */
+	function guard(gesture: GuardedGesture, flagged: ReconciliationProposal[]): void {
+		if (flagged.length === 0) {
+			runGesture(gesture);
+			return;
+		}
+		confirmTransactions = flagged;
+		pendingGesture = gesture;
+	}
+
+	function runGesture(gesture: GuardedGesture): void {
+		if (gesture.kind === 'accept') void onAccept();
+		else if (gesture.kind === 'manual') openManualMatch(gesture.proposal);
+		else openSplit(gesture.proposal);
+	}
+
+	/** *Accepter (N)* : confirmation si la sélection contient une ligne signalée ; lot entier. */
+	function requestAccept(): void {
+		guard(
+			{ kind: 'accept' },
+			proposals.filter((p) => selected.has(p.bankTransactionId) && isAlreadyBooked(p)),
+		);
+	}
+
+	function requestManualMatch(p: ReconciliationProposal): void {
+		guard({ kind: 'manual', proposal: p }, isAlreadyBooked(p) ? [p] : []);
+	}
+
+	function requestSplit(p: ReconciliationProposal): void {
+		guard({ kind: 'split', proposal: p }, isAlreadyBooked(p) ? [p] : []);
+	}
+
+	/**
+	 * *Continuer quand même* : le geste reprend tel quel. Revue P2 (B2-5) — *Écriture manuelle* et
+	 * *Éclater* relisent leur ligne dans la liste **courante** (elle a pu être relue pendant la
+	 * confirmation) : sortie de la liste, rien ne s'ouvre ; présente, la modale reçoit la ligne
+	 * relue. *Accepter* relit déjà la sélection et la liste (`onAccept`).
+	 *
+	 * `confirmTransactions` n'est pas vidé ici ni à *Annuler* : le dialogue garde sa liste pendant
+	 * sa transition de fermeture ; la demande suivante la remplace (`guard`).
+	 */
+	function confirmGesture(): void {
+		const gesture = pendingGesture;
+		pendingGesture = null;
+		if (!gesture) return;
+		if (gesture.kind === 'accept') {
+			runGesture(gesture);
+			return;
+		}
+		const current = proposals.find(
+			(p) => p.bankTransactionId === gesture.proposal.bankTransactionId,
+		);
+		if (!current) return;
+		runGesture(
+			gesture.kind === 'manual'
+				? { kind: 'manual', proposal: current }
+				: { kind: 'split', proposal: current },
+		);
+	}
+
+	/** *Annuler* : rien n'est fait. */
+	function cancelGesture(): void {
+		pendingGesture = null;
+	}
+
 	// Story 29-6 (#665, AC10) — une ligne sans proposition se coche (pour
 	// « Rejeter ») ; « Accepter » ne la traite pas : grisé, gardé, et dit.
 	const selectionHasUnmatched = $derived(
@@ -295,7 +380,7 @@
 			// γ refactor — pour chaque txId sélectionné, retrouver la
 			// candidate top-1 (candidates[0]) dans la proposal courante.
 			// Une tx sans candidate peut être sélectionnée (pour « Rejeter »,
-			// ou avant « Affecter manuellement » / « Éclater » ; Story 29-6) :
+			// ou avant « Écriture manuelle » / « Éclater » ; Story 29-6) :
 			// « Accepter » est alors grisé et la garde de tête l'arrête ; le
 			// `throw` ci-dessous reste le dernier rempart.
 			const items = Array.from(selected).map((txId) => {
@@ -388,7 +473,7 @@
 				type="button"
 				class="rounded bg-primary px-4 py-2 text-white disabled:opacity-50"
 				disabled={busy || selected.size === 0 || selectionHasUnmatched}
-				onclick={onAccept}
+				onclick={requestAccept}
 				data-testid="reconciliation-accept-btn"
 			>
 				{i18nMsg('reconciliation-actions-accept', 'Accepter')} ({selected.size})
@@ -452,6 +537,7 @@
 			</thead>
 			<tbody>
 				{#each proposals as p (p.bankTransactionId)}
+					{@const warning = alreadyBookedWarning(p)}
 					<tr data-testid="reconciliation-row" data-tx-id={p.bankTransactionId}>
 						<td>
 							<!-- Story 29-6 (#665, AC10) — une case sur toute ligne, avec ou sans proposition. -->
@@ -500,7 +586,7 @@
 							>
 								{i18nMsg(
 									'reconciliation-labels-notice-supplier-invoice-in-batch',
-									'La facture fournisseur { $invoice } de ce montant figure dans le lot de paiement n° { $batch } en cours sur ce compte. Si cette transaction est le paiement de ce lot, annulez le lot : la facture vous sera alors proposée ici. Sinon, affectez la transaction à la main.',
+									'La facture fournisseur { $invoice } de ce montant figure dans le lot de paiement n° { $batch } en cours sur ce compte. Si cette transaction est le paiement de ce lot, annulez le lot : la facture vous sera alors proposée ici. Sinon, passez la transaction par une écriture manuelle.',
 									{
 										invoice: supplierInvoiceShortLabel({
 											id: p.notice.supplierInvoiceId,
@@ -571,18 +657,18 @@
 							</td>
 						{/if}
 						<td>
-							<!-- Story 8-5a-base FR45 — bouton « Affecter manuellement »
-							     disponible sur toutes les rows pending (avec ou sans
-							     candidate auto-matchée). -->
+							<!-- Story 8-5a-base FR45 — bouton « Écriture manuelle » (geste
+							     rebaptisé par la 34-3) disponible sur toutes les rows pending
+							     (avec ou sans candidate auto-matchée). -->
 							<button
 								type="button"
 								class="text-xs text-primary underline disabled:opacity-50"
 								disabled={busy}
-								onclick={() => openManualMatch(p)}
+								onclick={() => requestManualMatch(p)}
 								data-testid="manual-match-button"
 								data-tx-id={p.bankTransactionId}
 							>
-								{i18nMsg('reconciliation-manual-button-label', 'Affecter manuellement')}
+								{i18nMsg('reconciliation-manual-button-label', 'Écriture manuelle')}
 							</button>
 							<!-- Story 8-5a-bis FR48 — bouton « Éclater » disponible sur
 							     toutes les rows pending (cf. AC #93). -->
@@ -590,7 +676,7 @@
 								type="button"
 								class="ml-2 text-xs text-primary underline disabled:opacity-50"
 								disabled={busy}
-								onclick={() => openSplit(p)}
+								onclick={() => requestSplit(p)}
 								data-testid="split-button"
 								data-tx-id={p.bankTransactionId}
 							>
@@ -613,6 +699,22 @@
 							{/if}
 						</td>
 					</tr>
+					<!-- Story 34-4 (#828, AC-5) — sous la ligne, l'avertissement d'une transaction qui
+					     semble déjà comptabilisée ; aucun numéro d'issue, rien pour un compte nul. -->
+					{#if warning}
+						<tr data-testid="already-booked-row" data-tx-id={p.bankTransactionId}>
+							<td></td>
+							<td colspan="6" class="pb-2">
+								<p
+									class="rounded border border-amber-300 bg-amber-50 px-2 py-1 text-xs text-amber-900"
+									data-testid="already-booked-warning"
+									data-tx-id={p.bankTransactionId}
+								>
+									{warning}
+								</p>
+							</td>
+						</tr>
+					{/if}
 				{/each}
 			</tbody>
 		</table>
@@ -649,7 +751,7 @@
 			<p class="mt-3 text-sm text-text-muted" data-testid="reconciliation-more-capped">
 				{i18nMsg(
 					'reconciliation-labels-more-capped',
-					'Les { $max } transactions en attente les plus récentes sont affichées, le maximum que cette page montre à la fois. Il en reste de plus anciennes : elles apparaîtront à mesure que celles-ci seront acceptées, affectées manuellement, éclatées ou rattachées à un règlement.',
+					'Les { $max } transactions en attente les plus récentes sont affichées, le maximum que cette page montre à la fois. Il en reste de plus anciennes : elles apparaîtront à mesure que celles-ci seront acceptées, passées par une écriture manuelle, éclatées ou rattachées à une écriture existante.',
 					{ max: PROPOSALS_MAX_LIMIT },
 				)}
 			</p>
@@ -677,6 +779,7 @@
 			{bankAccountId}
 			proposal={splitProposal}
 			{accounts}
+			{bankLedgerAccountId}
 			onSuccess={onSplitSuccess}
 		/>
 
@@ -688,6 +791,13 @@
 			}}
 			proposal={linkProposal}
 			onSuccess={onLinkSuccess}
+		/>
+
+		<AlreadyBookedConfirmDialog
+			open={pendingGesture !== null}
+			transactions={confirmTransactions}
+			onContinue={confirmGesture}
+			onCancel={cancelGesture}
 		/>
 	{/if}
 

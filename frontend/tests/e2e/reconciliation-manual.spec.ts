@@ -51,7 +51,7 @@ test('reconciliation page exposes the manual match button structure', async ({
 
 	if (await accountSelect.isVisible()) {
 		// Empty state attendu sur compte fraîchement seedé. Le bouton
-		// « Affecter manuellement » est rendu par row tx pending — sans
+		// « Écriture manuelle » est rendu par row tx pending — sans
 		// fixtures de tx pending, aucun bouton ne sera visible mais le
 		// composant doit avoir monté correctement (smoke test : pas
 		// d'erreur JS, état empty stable).

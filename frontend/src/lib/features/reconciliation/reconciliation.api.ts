@@ -64,7 +64,7 @@ export async function rejectProposals(
 }
 
 /**
- * Story 8-5a-base FR45 — réconciliation manuelle.
+ * Story 8-5a-base FR45 — écriture manuelle (geste rebaptisé par la 34-3).
  *
  * Le compte ledger banque est résolu **serveur-side** via
  * `bank_account.journal_account_id` (foundation 8-5a-zero) — donc le

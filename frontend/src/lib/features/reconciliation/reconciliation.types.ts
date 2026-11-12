@@ -62,12 +62,34 @@ export interface ProposalNotice {
 	paymentBatchId: number;
 }
 
+/**
+ * Story 34-4 (#828, AC-1, AC-2) — ce qui, aux livres, ressemble déjà à la transaction. Chaque
+ * nombre vaut au plus 50 (le plafond des listes du dialogue de rattachement).
+ *
+ * - `settlementCount` : les règlements de factures clients par virement sur ce compte bancaire,
+ *   non rapprochés, que le dialogue *Rattacher à une écriture existante* proposerait ;
+ * - `entryCount` : les écritures non rapprochées que ce même dialogue proposerait ;
+ * - `matchedElsewhereCount` : les écritures du même montant déjà rapprochées d'une transaction
+ *   de sens contraire d'un autre compte bancaire (le second côté probable d'un virement entre
+ *   deux comptes propres ; choix C-e344-11).
+ */
+export interface AlreadyBooked {
+	settlementCount: number;
+	entryCount: number;
+	matchedElsewhereCount: number;
+}
+
 export interface ReconciliationProposal {
 	bankTransactionId: number;
 	transaction: TransactionSummary;
 	candidates: ReconciliationCandidate[];
 	/** Story 30-1b — posée, elle va de pair avec `candidates` vide. */
 	notice: ProposalNotice | null;
+	/**
+	 * Story 34-4 (#828) — `null` quand la transaction n'a rien à quoi se rattacher (hors CHF,
+	 * montant nul) ou que le compte bancaire n'est relié à aucun compte du grand livre.
+	 */
+	alreadyBooked: AlreadyBooked | null;
 }
 
 export interface GetProposalsResponse {
@@ -139,7 +161,7 @@ export interface RejectResponse {
 	failed: FailedProposal[];
 }
 
-// Story 8-5a-base FR45 — réconciliation manuelle.
+// Story 8-5a-base FR45 — écriture manuelle (geste rebaptisé par la 34-3).
 export interface ManualMatchResponse {
 	bankTransactionId: number;
 	journalEntryId: number;

@@ -28,8 +28,9 @@ use rust_decimal::Decimal;
 /// - `bank_account_journal_id` : compte comptable banque résolu via
 ///   `bank_account.journal_account_id` (foundation 8-5a-zero).
 /// - `counterparty_account_id` : compte de contrepartie choisi par
-///   l'utilisateur (typiquement classe 5/6/7 — mais pas d'invariant
-///   serveur, le frontend filtre côté UX).
+///   l'utilisateur — tout compte imputable de la société, de toute classe,
+///   sauf le compte de la banque (Story 34-3) ; ce dernier est refusé par le
+///   handler, le frontend l'écarte déjà de la liste.
 /// - `description` : description de la journal_entry (max 200 chars,
 ///   validation handler).
 /// - `entry_date` : `valueDate ?? tx.booking_date` (résolu côté

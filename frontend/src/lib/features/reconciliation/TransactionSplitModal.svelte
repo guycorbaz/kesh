@@ -13,6 +13,13 @@
 
   Gestion erreur 412 BANK_ACCOUNT_NOT_CONFIGURED : message + lien vers
   `/bank-accounts` pour configurer le journal_account_id manquant.
+
+  Story 34-3 (#967, AC-3, C-e342-2) : chaque ligne propose la même liste que
+  l'écriture manuelle — tout compte actif et imputable, de toute classe, sauf
+  le compte comptable du compte bancaire (`bankLedgerAccountId`, désormais
+  reçu du parent ; le filtre des classes 5, 6 et 7 l'écartait jusque-là par
+  accident). Règle partagée : `counterpartyAccounts`. Un compte au rôle
+  débiteurs ou créanciers appelle un avis sous sa ligne (AC-4).
 -->
 <script lang="ts">
 	import { Button } from '$lib/components/ui/button';
@@ -29,6 +36,8 @@
 	import type { ProjectResponse } from '$lib/features/projects/projects.types';
 	import type { ReconciliationProposal, SplitProposalLine } from './reconciliation.types';
 	import { splitTransaction } from './reconciliation.api';
+	import { claimRoleOfId, counterpartyAccounts } from './reconciliation-counterparties';
+	import CounterpartyClaimNotice from './CounterpartyClaimNotice.svelte';
 
 	type Props = {
 		open: boolean;
@@ -37,10 +46,24 @@
 		proposal: ReconciliationProposal | null;
 		/** Pré-chargé par le parent (cohérent pattern ManualMatchModal). */
 		accounts: AccountResponse[];
+		/**
+		 * Story 34-3 (AC-3) — compte comptable du compte bancaire, écarté des contreparties de
+		 * chaque ligne, comme dans `ManualMatchModal`. `null` (défaut) : aucun filtrage — la
+		 * garde serveur de `POST /reconciliation/split` refuse en 400.
+		 */
+		bankLedgerAccountId?: number | null;
 		onSuccess: () => void;
 	};
 
-	let { open, onOpenChange, bankAccountId, proposal, accounts, onSuccess }: Props = $props();
+	let {
+		open,
+		onOpenChange,
+		bankAccountId,
+		proposal,
+		accounts,
+		bankLedgerAccountId = null,
+		onSuccess,
+	}: Props = $props();
 
 	const MIN_SPLITS = 2;
 	const MAX_SPLITS = 50;
@@ -71,9 +94,8 @@
 			.catch(() => (projects = []));
 	});
 
-	const filteredAccounts = $derived(
-		accounts.filter((a) => ['5', '6', '7'].some((c) => a.number.startsWith(c))),
-	);
+	// Story 34-3 (AC-3) : même règle que l'écriture manuelle, écrite une fois.
+	const filteredAccounts = $derived(counterpartyAccounts(accounts, bankLedgerAccountId));
 
 	// Reset à l'ouverture + pré-remplissage valueDate.
 	$effect(() => {
@@ -319,6 +341,18 @@
 									</Button>
 								</td>
 							</tr>
+							<!-- Story 34-3 (AC-4) — l'avis débiteurs / créanciers, sous la ligne concernée. -->
+							{#if claimRoleOfId(filteredAccounts, line.counterpartyAccountId) !== null}
+								<tr data-testid={`split-row-notice-${i}`}>
+									<td colspan={projects.length > 0 ? 5 : 4} class="pb-1">
+										<CounterpartyClaimNotice
+											accounts={filteredAccounts}
+											accountId={line.counterpartyAccountId}
+											line={i}
+										/>
+									</td>
+								</tr>
+							{/if}
 						{/each}
 					</tbody>
 				</table>

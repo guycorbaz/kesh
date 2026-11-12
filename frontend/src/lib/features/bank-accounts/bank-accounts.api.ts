@@ -1,5 +1,5 @@
 // Story 8-5a-zero — Client API pour les bank_accounts (foundation
-// `journal_account_id` link). Aucun call de réconciliation manuelle ici.
+// `journal_account_id` link). Aucun appel d'écriture manuelle ici.
 //
 // Story v014-1 — étendu avec CRUD complet post-onboarding :
 // - `createBankAccount`, `updateBankAccount`, `archiveBankAccount`.

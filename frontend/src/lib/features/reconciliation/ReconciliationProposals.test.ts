@@ -8,7 +8,7 @@
 // onAccept top-1.
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, fireEvent } from '@testing-library/svelte';
+import { render, fireEvent, cleanup } from '@testing-library/svelte';
 import { tick } from 'svelte';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -47,15 +47,17 @@ vi.mock('$lib/features/bank-accounts/bank-accounts.api', () => ({
 // Revue de code P1 de la 15-5c (B1, E3) — les deux modales sont remplacées par une doublure
 // qui appelle `onSuccess` d'un clic : seul le bilan du parent est en cause ici, et les
 // modales ont leurs propres tests.
+// Story 34-4, revue P1 (E1-3) : une enveloppe par modale, qui marque la doublure
+// (`data-modal` = `manual`, `split`, `link`).
 vi.mock('./ManualMatchModal.svelte', async () => ({
-	default: (await import('./ModalSuccessStub.test.svelte')).default,
+	default: (await import('./ModalSuccessStubManual.test.svelte')).default,
 }));
 vi.mock('./TransactionSplitModal.svelte', async () => ({
-	default: (await import('./ModalSuccessStub.test.svelte')).default,
+	default: (await import('./ModalSuccessStubSplit.test.svelte')).default,
 }));
 // Story 29-8 (#670) — la modale de rattachement, même doublure.
 vi.mock('./LinkSettlementModal.svelte', async () => ({
-	default: (await import('./ModalSuccessStub.test.svelte')).default,
+	default: (await import('./ModalSuccessStubLink.test.svelte')).default,
 }));
 
 // Mock i18n util pour rendre le composant déterministe (renvoie le
@@ -116,6 +118,7 @@ function makeProposalWithCandidate(
 			},
 		],
 		notice: null,
+		alreadyBooked: null,
 	};
 }
 
@@ -135,6 +138,7 @@ function makeProposalWithoutCandidate(
 		},
 		candidates: [],
 		notice: null,
+		alreadyBooked: null,
 	};
 }
 
@@ -257,7 +261,7 @@ describe('ReconciliationProposals', () => {
 		]);
 	});
 
-	// Story 8-5a-base FR45 — bouton « Affecter manuellement » présent
+	// Story 8-5a-base FR45 — bouton « Écriture manuelle » (geste rebaptisé par la 34-3) présent
 	// sur toutes les rows pending (avec ou sans candidate). Décision
 	// Pass 1 code review P-M2 : override workflow utile pour frais
 	// bancaires (tx sans candidate) ET correction d'un match auto
@@ -276,9 +280,11 @@ describe('ReconciliationProposals', () => {
 		});
 
 		const buttons = await findAllByTestId('manual-match-button');
-		// 2 rows → 2 boutons « Affecter manuellement » (override workflow,
+		// 2 rows → 2 boutons « Écriture manuelle » (override workflow,
 		// même quand candidate auto-proposée existe — cf. L66 Pass 1).
 		expect(buttons).toHaveLength(2);
+		// Story 34-3 (#967, AC-1) — le nom dit qu'il passe une écriture.
+		expect(buttons[0].textContent?.trim()).toBe('Écriture manuelle');
 		// Présent sur la tx sans candidate ET sur la tx avec candidate.
 		expect(buttons[0].getAttribute('data-tx-id')).toBe('2');
 		expect(buttons[1].getAttribute('data-tx-id')).toBe('3');
@@ -550,10 +556,10 @@ describe('ReconciliationProposals — refus par lot lisibles (Story 15-5c, AC3)'
 		expect(queryByTestId('reconciliation-error')).toBeNull();
 	});
 
-	// Revue de code P1 (B1, E3) : une affectation manuelle ou un éclatement réussi ouvre un
+	// Revue de code P1 (B1, E3) : une écriture manuelle ou un éclatement réussi ouvre un
 	// nouveau bilan ; celui du lot précédent ne doit pas lui survivre.
 	it.each([
-		['une affectation manuelle', 'manual-match-button'],
+		['une écriture manuelle', 'manual-match-button'],
 		['un éclatement', 'split-button'],
 	])('efface le bilan du lot précédent après %s', async (_cas, bouton) => {
 		mockApi.getProposals
@@ -598,9 +604,11 @@ describe('ReconciliationProposals — refus par lot lisibles (Story 15-5c, AC3)'
 });
 
 // Story 15-6d (AC4, test 11, #524, choix C-15-6d-1) — le `journalAccountId` du compte bancaire
-// monté est passé à la modale d'affectation manuelle (`bankLedgerAccountId`), qui l'écarte des
+// monté est passé au dialogue d'écriture manuelle (`bankLedgerAccountId`), qui l'écarte des
 // contreparties (test 10, `ManualMatchModal.test.ts`). Repli : échec de l'appel, compte absent
 // ou non lié → `null`, aucun filtrage, aucune erreur affichée.
+// Story 34-3 (#967, AC-3, C-e342-2) — *Éclater* le reçoit aussi : le filtre des classes 5, 6 et
+// 7, qui l'écartait par accident, est retiré.
 describe('ReconciliationProposals — compte de la banque passé à la modale (Story 15-6d)', () => {
 	const mockBankAccounts = vi.mocked(bankAccountsApi);
 
@@ -628,11 +636,13 @@ describe('ReconciliationProposals — compte de la banque passé à la modale (S
 		} satisfies GetProposalsResponse);
 	});
 
-	async function ledgerPassedToModal(): Promise<{ value: string | null; errorShown: boolean }> {
+	async function ledgerPassedToModal(
+		bouton: 'manual-match-button' | 'split-button' = 'manual-match-button',
+	): Promise<{ value: string | null; errorShown: boolean }> {
 		const { findByTestId, queryByTestId, unmount } = render(ReconciliationProposals, {
 			bankAccountId: 17,
 		});
-		await fireEvent.click(await findByTestId('manual-match-button'));
+		await fireEvent.click(await findByTestId(bouton));
 		const stub = await findByTestId('stub-modal-success');
 		// Laisse se résoudre la promesse de `listBankAccounts` avant de lire la prop.
 		await vi.waitFor(() => expect(mockBankAccounts.listBankAccounts).toHaveBeenCalled());
@@ -648,6 +658,12 @@ describe('ReconciliationProposals — compte de la banque passé à la modale (S
 		const r = await ledgerPassedToModal();
 		expect(r.value).toBe('42');
 		expect(mockBankAccounts.listBankAccounts).toHaveBeenCalledTimes(1);
+	});
+
+	it('Story 34-3 (AC-3) — Éclater reçoit le compte de la banque', async () => {
+		mockBankAccounts.listBankAccounts.mockResolvedValue([bankAccount(18, 43), bankAccount(17, 42)]);
+		const r = await ledgerPassedToModal('split-button');
+		expect(r.value).toBe('42');
 	});
 
 	it('listBankAccounts en échec → null (aucun filtrage), aucune erreur affichée', async () => {
@@ -1510,5 +1526,230 @@ describe('ReconciliationProposals — date de la transaction en forme suisse (v0
 		const cells = Array.from(row.querySelectorAll('td')).map((td) => td.textContent?.trim());
 		expect(cells).toContain('15.05.2026');
 		expect(row.textContent).not.toContain('2026-05-15');
+	});
+});
+
+// Story 34-4 (#828, AC-5, AC-6) — la transaction qui semble déjà comptabilisée : l'avertissement
+// sous la ligne, puis la confirmation avant Accepter, Écriture manuelle et Éclater.
+describe('ReconciliationProposals — transaction déjà comptabilisée (Story 34-4, #828)', () => {
+	const TEXTE_UNE =
+		'Cette transaction semble déjà comptabilisée : une écriture non rapprochée du compte de la banque lui correspond. Rattachez-la (« Rattacher à une écriture existante ») plutôt que de passer une écriture : elle serait comptée deux fois.';
+	const texteDes = (n: number) =>
+		`Cette transaction semble déjà comptabilisée : ${n} écritures non rapprochées du compte de la banque lui correspondent. Rattachez-la (« Rattacher à une écriture existante ») plutôt que de passer une écriture : elle serait comptée deux fois.`;
+	// Revue P1 (E1-1, B1-5) : le second côté se dit par la transaction de sens contraire, et la
+	// phrase du cas combiné vaut au singulier comme au pluriel.
+	const TEXTE_AILLEURS =
+		'Une transaction de sens contraire, sur un autre de vos comptes bancaires, est déjà rapprochée d’une écriture du même montant : c’est probablement l’autre côté d’un virement entre vos comptes. Ne passez pas d’écriture pour elle : rejetez-la.';
+	const TEXTE_COMBINE =
+		'Si rien de ce que propose « Rattacher à une écriture existante » ne lui correspond, elle est peut-être l’autre côté d’un virement entre vos comptes : une transaction de sens contraire, sur un autre de vos comptes bancaires, est rapprochée d’une écriture du même montant.';
+
+	/** Une ligne avec candidate, et ses trois nombres (`null` : pas de champ). */
+	function signalee(
+		id: number,
+		compte: [number, number, number] | null,
+		counterpartyName = 'ACME GMBH',
+	): GetProposalsResponse['proposals'][number] {
+		const p = makeProposalWithCandidate(id, 100 + id, 1.0);
+		return {
+			...p,
+			transaction: { ...p.transaction, counterpartyName },
+			alreadyBooked: compte
+				? { settlementCount: compte[0], entryCount: compte[1], matchedElsewhereCount: compte[2] }
+				: null,
+		};
+	}
+
+	async function monter(proposals: GetProposalsResponse['proposals']) {
+		mockApi.getProposals.mockResolvedValue({ proposals, hasMore: false } satisfies GetProposalsResponse);
+		const view = render(ReconciliationProposals, { bankAccountId: 17 });
+		await view.findAllByTestId('reconciliation-row');
+		return view;
+	}
+
+	/** Le texte de l'avertissement de la transaction `id`, ou `null`. */
+	function avertissement(view: Awaited<ReturnType<typeof monter>>, id: number): string | null {
+		const el = view
+			.queryAllByTestId('already-booked-warning')
+			.find((e) => e.getAttribute('data-tx-id') === String(id));
+		return el ? (el.textContent ?? '').trim() : null;
+	}
+
+	beforeEach(() => {
+		vi.clearAllMocks();
+		mockApi.acceptProposals.mockResolvedValue({ accepted: [], failed: [] } satisfies AcceptResponse);
+		mockApi.rejectProposals.mockResolvedValue({ rejected: [], failed: [] } satisfies RejectResponse);
+	});
+
+	afterEach(() => cleanup());
+
+	// ---------- AC-5 : l'avertissement, quatre cas ----------
+
+	it('AC-5 aucun : alreadyBooked null ou trois zéros ⇒ aucun avertissement, jamais « 0 écriture »', async () => {
+		const view = await monter([signalee(1, null), signalee(2, [0, 0, 0])]);
+		expect(view.queryAllByTestId('already-booked-warning')).toHaveLength(0);
+		expect(view.queryAllByTestId('already-booked-row')).toHaveLength(0);
+		expect(document.body.textContent).not.toContain('0 écriture');
+	});
+
+	it('AC-5 (a) une écriture ⇒ la clé -one, texte complet, sous la ligne (M8)', async () => {
+		const view = await monter([signalee(1, [0, 1, 0])]);
+		expect(avertissement(view, 1)).toBe(TEXTE_UNE);
+		// Sous la ligne : la rangée d'avertissement suit immédiatement celle de la transaction.
+		const [ligne] = view.getAllByTestId('reconciliation-row');
+		expect(ligne.nextElementSibling?.getAttribute('data-testid')).toBe('already-booked-row');
+		expect(avertissement(view, 1)).not.toMatch(/#\d/);
+	});
+
+	it('AC-5 (a) plusieurs ⇒ la clé -other, avec le total règlements + écritures', async () => {
+		const view = await monter([signalee(1, [1, 2, 0]), signalee(2, [1, 0, 0])]);
+		expect(avertissement(view, 1)).toBe(texteDes(3));
+		// Un seul règlement compte comme une seule écriture.
+		expect(avertissement(view, 2)).toBe(TEXTE_UNE);
+	});
+
+	it('AC-5 (b) le second côté seul ⇒ la phrase du virement, sans la phrase (a) (M7)', async () => {
+		const view = await monter([signalee(1, [0, 0, 2])]);
+		expect(avertissement(view, 1)).toBe(TEXTE_AILLEURS);
+	});
+
+	it('AC-5 (c) les deux ⇒ (a) puis la phrase combinée, sans « rejetez-la »', async () => {
+		const view = await monter([signalee(1, [0, 1, 1]), signalee(2, [2, 0, 3])]);
+		expect(avertissement(view, 1)).toBe(`${TEXTE_UNE} ${TEXTE_COMBINE}`);
+		expect(avertissement(view, 2)).toBe(`${texteDes(2)} ${TEXTE_COMBINE}`);
+		expect(avertissement(view, 1)).not.toContain('rejetez-la');
+	});
+
+	// ---------- AC-6 : la confirmation ----------
+
+	it('AC-6 Accepter, sélection avec une ligne signalée ⇒ confirmation qui la nomme ; Annuler n’appelle rien', async () => {
+		const view = await monter([signalee(1, [0, 1, 0], 'Dubarde SàRL'), signalee(2, null)]);
+		const cases = view.getAllByTestId('tx-checkbox');
+		await fireEvent.click(cases[0]);
+		await fireEvent.click(cases[1]);
+		await fireEvent.click(view.getByTestId('reconciliation-accept-btn'));
+		await view.findByTestId('already-booked-confirm');
+		const items = view.getAllByTestId('already-booked-confirm-item');
+		expect(items.map((i) => i.getAttribute('data-tx-id'))).toEqual(['1']);
+		expect(items[0].textContent?.trim()).toBe('15.05.2026 · 100.00 CHF · Dubarde SàRL');
+		expect(mockApi.acceptProposals).not.toHaveBeenCalled();
+
+		await fireEvent.click(view.getByTestId('already-booked-confirm-cancel'));
+		await vi.waitFor(() => expect(view.queryByTestId('already-booked-confirm')).toBeNull());
+		expect(mockApi.acceptProposals).not.toHaveBeenCalled();
+		expect(mockApi.rejectProposals).not.toHaveBeenCalled();
+		expect(mockApi.manualMatchTransaction).not.toHaveBeenCalled();
+	});
+
+	it('AC-6 Accepter, Continuer quand même ⇒ le lot entier part, la ligne non signalée comprise', async () => {
+		const view = await monter([signalee(1, [0, 1, 0]), signalee(2, null)]);
+		const cases = view.getAllByTestId('tx-checkbox');
+		await fireEvent.click(cases[0]);
+		await fireEvent.click(cases[1]);
+		await fireEvent.click(view.getByTestId('reconciliation-accept-btn'));
+		await fireEvent.click(await view.findByTestId('already-booked-confirm-continue'));
+		await vi.waitFor(() => expect(mockApi.acceptProposals).toHaveBeenCalledTimes(1));
+		const [, items] = mockApi.acceptProposals.mock.calls[0];
+		expect(items.map((i) => i.bankTransactionId).sort()).toEqual([1, 2]);
+	});
+
+	it('AC-6 Accepter sans ligne signalée ⇒ aucun dialogue, le lot part aussitôt', async () => {
+		const view = await monter([signalee(1, [0, 0, 0]), signalee(2, null)]);
+		await fireEvent.click(view.getAllByTestId('tx-checkbox')[0]);
+		await fireEvent.click(view.getByTestId('reconciliation-accept-btn'));
+		await vi.waitFor(() => expect(mockApi.acceptProposals).toHaveBeenCalledTimes(1));
+		expect(view.queryByTestId('already-booked-confirm')).toBeNull();
+	});
+
+	// Revue P1 (E1-3, A1-2) : chaque doublure porte le nom de sa modale (`data-modal`), si bien
+	// que *Continuer quand même* doit rouvrir **le** geste demandé (mutation M9 : `manual` et
+	// `split` intervertis dans `runGesture`).
+	it.each([
+		['manual-match-button', 'manual'],
+		['split-button', 'split'],
+	])(
+		'AC-6 %s sur une ligne signalée ⇒ confirmation ; Annuler n’ouvre rien ; Continuer ouvre la modale « %s » (M5, M9)',
+		async (bouton, modale) => {
+			const view = await monter([signalee(1, [0, 0, 1])]);
+			await fireEvent.click(view.getByTestId(bouton));
+			await view.findByTestId('already-booked-confirm');
+			expect(view.queryByTestId('stub-modal-success')).toBeNull();
+			await fireEvent.click(view.getByTestId('already-booked-confirm-cancel'));
+			await vi.waitFor(() => expect(view.queryByTestId('already-booked-confirm')).toBeNull());
+			expect(view.queryByTestId('stub-modal-success')).toBeNull();
+			expect(mockApi.manualMatchTransaction).not.toHaveBeenCalled();
+
+			await fireEvent.click(view.getByTestId(bouton));
+			await fireEvent.click(await view.findByTestId('already-booked-confirm-continue'));
+			const ouverte = await view.findByTestId('stub-modal-success');
+			expect(ouverte.getAttribute('data-modal')).toBe(modale);
+			expect(view.queryByTestId('already-booked-confirm')).toBeNull();
+		},
+	);
+
+	it.each([
+		['manual-match-button', 'manual'],
+		['split-button', 'split'],
+	])('AC-6 %s sur une ligne non signalée ⇒ la modale « %s » s’ouvre aussitôt', async (bouton, modale) => {
+		const view = await monter([signalee(1, null)]);
+		await fireEvent.click(view.getByTestId(bouton));
+		const ouverte = await view.findByTestId('stub-modal-success');
+		expect(ouverte.getAttribute('data-modal')).toBe(modale);
+		expect(view.queryByTestId('already-booked-confirm')).toBeNull();
+	});
+
+	// Revue P1 (E1-6) : fermer la confirmation par Échap vaut *Annuler* — rien n'est appelé, et
+	// le geste la rouvre ensuite (le geste en attente a bien été oublié).
+	it('AC-6 Échap ferme la confirmation comme Annuler, et le geste la rouvre ensuite', async () => {
+		const view = await monter([signalee(1, [0, 1, 0])]);
+		await fireEvent.click(view.getByTestId('manual-match-button'));
+		const dialogue = await view.findByTestId('already-booked-confirm');
+		await fireEvent.keyDown(dialogue, { key: 'Escape' });
+		await vi.waitFor(() => expect(view.queryByTestId('already-booked-confirm')).toBeNull());
+		expect(view.queryByTestId('stub-modal-success')).toBeNull();
+		expect(mockApi.manualMatchTransaction).not.toHaveBeenCalled();
+		await fireEvent.click(view.getByTestId('manual-match-button'));
+		await view.findByTestId('already-booked-confirm');
+	});
+
+	it('AC-6 Rejeter une ligne signalée ⇒ aucune confirmation (M6)', async () => {
+		const view = await monter([signalee(1, [0, 1, 1])]);
+		await fireEvent.click(view.getAllByTestId('tx-checkbox')[0]);
+		await fireEvent.click(view.getByTestId('reconciliation-reject-btn'));
+		await vi.waitFor(() => expect(mockApi.rejectProposals).toHaveBeenCalledWith(17, [1]));
+		expect(view.queryByTestId('already-booked-confirm')).toBeNull();
+	});
+
+	it('AC-6 Rattacher à une écriture existante sur une ligne signalée ⇒ aucune confirmation', async () => {
+		const view = await monter([signalee(1, [0, 1, 0])]);
+		await fireEvent.click(view.getByTestId('link-settlement-button'));
+		const ouverte = await view.findByTestId('stub-modal-success');
+		expect(ouverte.getAttribute('data-modal')).toBe('link');
+		expect(view.queryByTestId('already-booked-confirm')).toBeNull();
+	});
+
+	// Revue P2 (B2-5) : la liste est relue pendant la confirmation (ici, « Afficher aussi les plus
+	// anciennes ») et la ligne en a disparu — traitée dans un autre onglet, par exemple. *Continuer
+	// quand même* relit la ligne dans la liste courante : absente, rien ne s'ouvre (jamais la
+	// modale d'une ligne périmée).
+	it('AC-6 Continuer ne rouvre pas le geste d’une ligne sortie de la liste pendant la confirmation', async () => {
+		mockApi.getProposals
+			.mockResolvedValueOnce({
+				proposals: [signalee(1, [0, 1, 0])],
+				hasMore: true,
+			} satisfies GetProposalsResponse)
+			.mockResolvedValue({ proposals: [signalee(2, null)], hasMore: false } satisfies GetProposalsResponse);
+		const view = render(ReconciliationProposals, { bankAccountId: 17 });
+		await view.findAllByTestId('reconciliation-row');
+		await fireEvent.click(view.getByTestId('manual-match-button'));
+		await view.findByTestId('already-booked-confirm');
+		await fireEvent.click(view.getByTestId('reconciliation-show-older-btn'));
+		await vi.waitFor(() =>
+			expect(view.getAllByTestId('reconciliation-row').map((r) => r.getAttribute('data-tx-id'))).toEqual([
+				'2',
+			]),
+		);
+		await fireEvent.click(view.getByTestId('already-booked-confirm-continue'));
+		await vi.waitFor(() => expect(view.queryByTestId('already-booked-confirm')).toBeNull());
+		expect(view.queryByTestId('stub-modal-success')).toBeNull();
 	});
 });

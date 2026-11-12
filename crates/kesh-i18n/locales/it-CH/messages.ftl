@@ -1367,7 +1367,17 @@ reconciliation-labels-rejected-hint = Una transazione rifiutata lascia questo el
 # Story 29-3 (#527) — la priorità delle proposte, indicata sopra l'elenco.
 reconciliation-labels-priority-hint = Per ogni transazione è mostrata una sola proposta: per un accredito, la fattura cliente con il punteggio migliore, per un addebito, la fattura fornitore con il punteggio migliore, se ce n’è una, altrimenti la regola di assegnazione corrispondente. Una fattura proposta precede sempre una regola.
 reconciliation-labels-supplier-invoice-badge = Fattura fornitore
-reconciliation-labels-notice-supplier-invoice-in-batch = La fattura fornitore { $invoice } di questo importo figura nel lotto di pagamento n. { $batch } in corso su questo conto. Se questa transazione è il pagamento di tale lotto, annullare il lotto: la fattura verrà allora proposta qui. Altrimenti, assegnare la transazione a mano.
+reconciliation-labels-notice-supplier-invoice-in-batch = La fattura fornitore { $invoice } di questo importo figura nel lotto di pagamento n. { $batch } in corso su questo conto. Se questa transazione è il pagamento di tale lotto, annullare il lotto: la fattura verrà allora proposta qui. Altrimenti, contabilizzare la transazione con una registrazione manuale.
+# Story 34-4 (#828, AC-5) — sotto una riga che sembra già contabilizzata. Due chiavi -one / -other, scelte dallo schermo: nessun selettore (i messaggi arrivano già risolti).
+reconciliation-labels-already-booked-one = Questa transazione sembra già contabilizzata: le corrisponde una scrittura non riconciliata sul conto della banca. La colleghi («Collega a una scrittura esistente») anziché registrare una scrittura: sarebbe contata due volte.
+reconciliation-labels-already-booked-other = Questa transazione sembra già contabilizzata: le corrispondono { $count } scritture non riconciliate sul conto della banca. La colleghi («Collega a una scrittura esistente») anziché registrare una scrittura: sarebbe contata due volte.
+reconciliation-labels-already-booked-elsewhere = Una transazione di segno opposto, su un altro dei suoi conti bancari, è già riconciliata con una scrittura dello stesso importo: è probabilmente l’altro lato di un bonifico tra i suoi conti. Non registri una scrittura per essa: la rifiuti.
+reconciliation-labels-already-booked-combined = Se nulla di ciò che propone «Collega a una scrittura esistente» le corrisponde, è forse l’altro lato di un bonifico tra i suoi conti: una transazione di segno opposto, su un altro dei suoi conti bancari, è riconciliata con una scrittura dello stesso importo.
+# Story 34-4 (#828, AC-6) — conferma prima di Accettare, Registrazione manuale o Suddividi su una riga segnalata.
+reconciliation-labels-already-booked-confirm-title = Confermare nonostante l’avviso
+reconciliation-labels-already-booked-confirm-intro = Ogni transazione qui sotto sembra già contabilizzata (vedere l’avviso della sua riga). Continuare registrerebbe una scrittura per un movimento forse già nei libri: sarebbe contato due volte.
+reconciliation-labels-already-booked-confirm-cancel = Annulla
+reconciliation-labels-already-booked-confirm-continue = Continua comunque
 # Story 29-6 (#665, AC10) — mostrato nella riga dei pulsanti quando è selezionata una riga senza proposta.
 reconciliation-labels-unmatched-not-acceptable-hint = Una transazione senza corrispondenza non può essere accettata: tolga la selezione per accettare le altre.
 # Story 29-9 (#678, AC11) — nome accessibile della casella di ogni riga: ciò che la riga mostra.
@@ -1375,7 +1385,7 @@ reconciliation-labels-select-transaction = Selezionare la transazione del { $dat
 reconciliation-labels-select-transaction-no-counterparty = Selezionare la transazione del { $date }, { $amount } { $currency }
 # Story 29-9 (#649, AC1, AC3) — sotto l'elenco, se restano transazioni più vecchie.
 reconciliation-labels-more-hidden = Sono mostrate solo le { $count } transazioni in sospeso più recenti: ne restano di più vecchie.
-reconciliation-labels-more-capped = Sono mostrate le { $max } transazioni in sospeso più recenti, il massimo che questa pagina mostra alla volta. Ne restano di più vecchie: appariranno man mano che queste saranno accettate, assegnate manualmente, suddivise o collegate a una scrittura esistente.
+reconciliation-labels-more-capped = Sono mostrate le { $max } transazioni in sospeso più recenti, il massimo che questa pagina mostra alla volta. Ne restano di più vecchie: appariranno man mano che queste saranno accettate, contabilizzate con una registrazione manuale, suddivise o collegate a una scrittura esistente.
 # Story 15-5c (#492) — etichette dei rifiuti di un lotto di riconciliazione (`failed[]`).
 reconciliation-failed-account-not-found = Un conto di contropartita è introvabile o archiviato.
 reconciliation-failed-account-not-postable = Conto non registrabile: { $numbers }. Un conto di raggruppamento, di risultato o di chiusura non riceve scritture: scegliere un conto registrabile.
@@ -1407,13 +1417,13 @@ reconciliation-failed-rule-not-found = Regola introvabile o disattivata.
 reconciliation-failed-score-too-low = La fattura non corrisponde abbastanza alla transazione per essere riconciliata.
 reconciliation-failed-transaction-not-credit = Questa transazione non è un’entrata di denaro (addebito o importo nullo): non può saldare una fattura cliente.
 reconciliation-failed-transaction-not-debit = Questa transazione non è un’uscita di denaro (accredito o importo nullo): non può saldare una fattura fornitore.
-reconciliation-failed-supplier-invoice-in-batch = Questa fattura fornitore figura in un lotto di pagamento in corso: annullare il lotto se questa transazione ne è il pagamento, altrimenti assegnare la transazione a mano.
+reconciliation-failed-supplier-invoice-in-batch = Questa fattura fornitore figura in un lotto di pagamento in corso: annullare il lotto se questa transazione ne è il pagamento, altrimenti contabilizzare la transazione con una registrazione manuale.
 reconciliation-failed-amount-mismatch = L’importo della transazione differisce dal totale della fattura fornitore: un pagamento fornitore salda il totale esatto.
-reconciliation-failed-supplier-payment-hold = Un’altra fattura fornitore di questo importo figura in un lotto di pagamento in corso su questo conto: questa transazione ne è forse il pagamento. In tal caso annullare il lotto, altrimenti assegnare la transazione a mano.
-reconciliation-failed-rule-masked-payment-batch = La regola non è applicata: una fattura fornitore di questo importo figura in un lotto di pagamento in corso su questo conto. Se questa transazione ne è il pagamento, annullare il lotto, poi accettare qui la fattura proposta. Usare «Assegna manualmente» solo se questo addebito non salda alcuna fattura registrata.
-reconciliation-failed-rule-masked-invoice-candidate = La regola non è applicata: una fattura fornitore convalidata corrisponde a questa transazione. Ricaricare la pagina e accettare la fattura proposta se questo addebito la salda. Usare «Assegna manualmente» solo se questo addebito non salda alcuna fattura registrata.
-reconciliation-failed-rule-masked-overpaid = La regola non è applicata: le corrisponde una fattura cliente che questo pagamento supera di alcuni centesimi. Registrare il pagamento dalla scheda della fattura, poi collegarvi la transazione. Usare «Assegna manualmente» solo se questo pagamento non salda alcuna fattura.
-reconciliation-failed-rule-masked = La regola non è applicata: una fattura corrisponde a questa transazione. Ricaricare la pagina e trattare la fattura. Usare «Assegna manualmente» solo se questa transazione non salda alcuna fattura registrata.
+reconciliation-failed-supplier-payment-hold = Un’altra fattura fornitore di questo importo figura in un lotto di pagamento in corso su questo conto: questa transazione ne è forse il pagamento. In tal caso annullare il lotto, altrimenti contabilizzare la transazione con una registrazione manuale.
+reconciliation-failed-rule-masked-payment-batch = La regola non è applicata: una fattura fornitore di questo importo figura in un lotto di pagamento in corso su questo conto. Se questa transazione ne è il pagamento, annullare il lotto, poi accettare qui la fattura proposta. Usare «Registrazione manuale» solo se questo addebito non salda alcuna fattura registrata.
+reconciliation-failed-rule-masked-invoice-candidate = La regola non è applicata: una fattura fornitore convalidata corrisponde a questa transazione. Ricaricare la pagina e accettare la fattura proposta se questo addebito la salda. Usare «Registrazione manuale» solo se questo addebito non salda alcuna fattura registrata.
+reconciliation-failed-rule-masked-overpaid = La regola non è applicata: le corrisponde una fattura cliente che questo pagamento supera di alcuni centesimi. Registrare il pagamento dalla scheda della fattura, poi collegarvi la transazione. Usare «Registrazione manuale» solo se questo pagamento non salda alcuna fattura.
+reconciliation-failed-rule-masked = La regola non è applicata: una fattura corrisponde a questa transazione. Ricaricare la pagina e trattare la fattura. Usare «Registrazione manuale» solo se questa transazione non salda alcuna fattura registrata.
 reconciliation-failed-transaction-not-pending = Questa transazione non è più in attesa di riconciliazione.
 reconciliation-failed-unknown = Rifiuto non riconosciuto ({ $code }).
 reconciliation-cols-tx-date = Data
@@ -1440,18 +1450,21 @@ reconciliation-errors-entry-not-linkable = Questa scrittura non può essere coll
 reconciliation-toast-accept-success = { $count } transazione/i riconciliata/e con successo.
 reconciliation-toast-reject-success = { $count } transazione/i rifiutata/e con successo.
 
-# Story 8-5a-base FR45 — Riconciliazione manuale.
-reconciliation-manual-button-label = Assegna manualmente
-reconciliation-manual-modal-title = Riconciliazione manuale
+# Story 8-5a-base FR45 — Registrazione manuale (rinominata dalla 34-3).
+reconciliation-manual-button-label = Registrazione manuale
+reconciliation-manual-modal-title = Registrazione manuale
 reconciliation-manual-counterparty-label = Conto controparte
 reconciliation-manual-description-label = Descrizione
 reconciliation-manual-bank-account-not-configured = Il conto bancario non è configurato. Configurare il conto contabile collegato in /bank-accounts.
 reconciliation-manual-value-date-label = Data valuta
-reconciliation-manual-submit = Assegna
+reconciliation-manual-submit = Registra
 reconciliation-manual-error-no-proposal = Nessuna transazione selezionata
 reconciliation-manual-error-counterparty-required = Conto controparte obbligatorio
 reconciliation-manual-error-description-too-long = Descrizione troppo lunga (max { $max } caratteri)
 reconciliation-manual-description-placeholder = Spese bancarie maggio
+# Story 34-3 (#967, AC-4) — avviso non bloccante quando la contropartita ha il ruolo debitori o creditori.
+reconciliation-manual-claim-notice-receivable = Questo conto è quello dei debitori. Una registrazione manuale non salda alcuna fattura cliente: resterebbe dovuta. Per il pagamento di un cliente, registrare il pagamento dalla scheda della fattura, poi collegarvi la transazione.
+reconciliation-manual-claim-notice-payable = Questo conto è quello dei creditori. Una registrazione manuale non salda alcuna fattura fornitore: resterebbe da pagare. Per il pagamento di un fornitore, registrare la fattura e convalidarla dalla sua scheda, senza registrarvi alcun pagamento: il pagamento è questa transazione, e la fattura verrà proposta qui, da accettare. Se è già pagata, collegare la transazione a tale pagamento.
 
 # Story 8-5a-bis FR48 — suddivisione di una transazione aggregata.
 reconciliation-split-button-label = Suddividi
