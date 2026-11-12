@@ -453,6 +453,12 @@ sur `chore/epic-35-fiches-355`, commencent à C-e350-21 et s'unissent à la fusi
   features = [...] }`) — plus de mécanique pour la même garantie ; (b) garder le nom `aujourd_hui_suisse` : faux entre les
   deux stories.
 - **Réversible** : oui.
+- *(Annoté le 2026-11-12, validation P1 de la 35-5a0 et P4 de la 35-5a : le nom de la variable est porté par une constante
+  unique `kesh_core::horloge::NOM_VARIABLE_INSTANT` ; `horloge_de_test()` délègue à la fonction pure `horloge_depuis(Option<&str>)`,
+  testée sans `set_var` ; `HorlogeSysteme`, `horloge_depuis` et `horloge_de_test` vivent dans `kesh-api/src/horloge.rs` ; la
+  chaîne vide vaut absente ; `Horloge::aujourd_hui()` appelle une fonction privée `jour()` (jour UTC), que la 35-5a remplace par
+  `jour_suisse` — le compte de la garde du fichier reste 1 ; `kesh-report/tests` reçoit son `support/jour.rs`, qui lit la
+  variable ; `middleware/auth.rs:285`, dans un `mod tests` de `src`, prend `HorlogeFixe(Utc::now())`.)*
 
 ### C-e350-25 — 35-5 : le jour d'un instant enregistré
 
@@ -477,3 +483,18 @@ sur `chore/epic-35-fiches-355`, commencent à C-e350-21 et s'unissent à la fusi
   seconde fusionnée se rebase sur la première et recompile (la 35-5a ajoute un argument aux fonctions que la 35-3 appelle
   peut-être). `user-manual.tex` : 35-5a et 35-6 aussi, paragraphes distincts. `routes/invoices.rs`,
   `routes/supplier_invoices.rs`, `routes/reconciliation.rs` : 35-5a (chaîne des appelants), 35-5b (`routes/invoices.rs`).
+- *(Annoté le 2026-11-12, validations P1 de la 35-5a0, P4 de la 35-5a et P4 ciblée de la 35-5b : la chaîne des appelants est
+  à la **35-5a0** ; les numéros `:2462`, `:2600`, `:2750`, `:2871`, `:878` sont des **appels**, les définitions étant
+  `supplier_invoices.rs:2426`, `:2510`, `:2706`, `:2778`, `:3013`, `:3040`, `:3095` et `invoice_settlements_write.rs:826`, `:838`,
+  `:912` ; les tests neufs de la 35-3 appellent `create_validated`, hors de la fermeture (conflit « à constater à
+  l'intégration ») ; avec la 35-6, `opening_balances.rs` (son `mod tests`) et `user-manual.tex` `:2456`, **contigu** au `:2458`
+  que la 35-5a réécrit ; avec la 35-4, `reconciliation.rs` (`:1540` contre `:5799`, `:5938`, `:6587`).)*
+
+### C-e350-8, extension du 2026-11-12 (suite) — 35-5b avec 35-2a et 35-2b
+
+- `crates/kesh-api/src/routes/invoice_email.rs` : 35-5b `:206`, `:381`, `:904` ; 35-2a `:808`, `:1023-1036` (`:1754` est un
+  appel que la 35-2a dit laisser inchangé : à constater) ; 35-2b `:1260-1269` — hunks distincts. `docs/api-external.md` : 35-5b
+  `:252`, `:292`, `:443`, et la 35-2b. `routes/onboarding.rs` (35-5a0/35-5a `:1043`, `finalize_inner` ; 35-5b `:258`),
+  `services/factures.rs` (35-5a0 `reglements` ; 35-5b `echeances`, `lister`), `tests/services_motif.rs`,
+  `tests/onboarding_audit_e2e.rs`, `fiscal_years_e2e.rs`, `bank_accounts_closed_e2e.rs` : ordre 35-5a0 → 35-5a → 35-5b → 35-5c,
+  chacune partant de la précédente fusionnée.
