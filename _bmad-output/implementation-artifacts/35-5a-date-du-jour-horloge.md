@@ -237,7 +237,11 @@ et deviennent fausses à la fusion. Partout ailleurs (`:259-261`, `:355`, `:709`
   deviennent faux sont réécrits : `bank_accounts.rs:794-795` (« date du jour (UTC, comme le complément de l'écran) »),
   `opening_complement.rs:22` (« aujourd'hui (date UTC, passée en paramètre) ») ; `companies.rs:986-989` est réécrit par la
   35-5a0 (V4-8 ; le relevé `git grep -nE '^\s*//.*(Utc::now|UTC)'` sur les fichiers des neuf sites ne rend que ces cinq
-  lignes, `bank_accounts.rs:228` et `:1757` étant à la 35-5b) ; puis `/usr/bin/grep -n UTC` sur chaque fichier touché, résultat
+  lignes, `bank_accounts.rs:228` et `:1757` étant à la 35-5b) ; **et** le doc-comment de `synthese_accueil`,
+  `kesh-api/src/services/rapports.rs:862-864` (« ⚠️ La date est celle de l'horloge en UTC, **comme à la contre-passation** »,
+  lu ; validation P5, hors remédiation) : il devient faux **ici**, la contre-passation passant à Zurich quand l'accueil reste
+  en UTC jusqu'à la 35-5b ; la 35-5a en retire la seule clause « comme à la contre-passation », et la 35-5b réécrit le reste
+  avec le site 21 (sa fiche le liste déjà) ; puis `/usr/bin/grep -n UTC` sur chaque fichier touché, résultat
   au Change Log (greper la valeur, non la formulation). **Le manuel** (V4-1) : les deux phrases « en temps universel » sont
   réécrites — `user-manual.tex:995`, l'item devient « \textbf{Le jour est celui de Zurich}, même entre minuit et deux heures du
   matin » (ou disparaît au profit de la définition unique) ; `:2458`, la phrase « Le jour est celui du serveur, en temps
@@ -339,14 +343,18 @@ et deviennent fausses à la fusion. Partout ailleurs (`:259-261`, `:355`, `:709`
    - **Hors passage d'année, sans risque** (V4-10) : la nuit reproduite de jour vaut pour la nuit du jour où l'on lance ; les
      montages par année du jour (`Utc::now()…year()`) sont tous dans des fichiers 35-5a — `bank_account_opening_balance_e2e.rs:172`,
      `kesh-db/tests/filet_bilan_clos.rs:66`, `letterings.rs:1458`, `opening_complement_repository.rs:878`,
-     `fiscal_years_repository.rs:1863` —, plus `fiscal_years_e2e.rs:1284` (35-5b, `seed_demo`) ; les autres s'appuient sur
+     `fiscal_years_repository.rs:1863`, et `kesh-db/src/repositories/journal_entries.rs:4457` (`mod tests` de `src`, binaire que la
+     variable n'atteint pas : preuve par la valeur ; validation P5, V5-2) —, plus `fiscal_years_e2e.rs:1284` (35-5b, `seed_demo`) ; les autres s'appuient sur
      l'exercice 2020-2030 de `seed_accounting_company` (`kesh-db/src/test_fixtures.rs:71`). Relevé à confirmer à l'étape 0.
 10. **AC10 — Le chemin de jour ne change pas** : en journée (`2026-06-15T10:00:00Z`), les dates écrites sont celles d'avant ;
     tests existants verts sans retouche de leurs attendus, hors AC9 et **hors le test d'AC2 de la 35-5a0** (V4-3), dont
-    l'attendu à `HorlogeFixe(2025-12-31T23:30:00Z)` passe de `2025-12-31` à `2026-01-01`, dans l'exercice 2026 : c'est le test
+    l'attendu à `HorlogeFixe(2025-12-31T23:30:00Z)` passe de `2025-12-31` à `2026-01-01`, dans l'exercice ouvert de son
+    montage (`seed_accounting_company`, 2020-2030, nommé par la 35-5a0 ; validation P5, V5-3) : c'est le test
     que la 35-5a retourne, nommé aux *Tâches*.
-11. **AC11 — Docs, manuel, CHANGELOG, PR** : D6 ; **`/usr/bin/grep -n 'temps universel' docs/manual/fr/user-manual.tex` vide, et
-    le même contrôle sur le PDF aplati** (`pdftotext user-manual.pdf - | tr '\n' ' ' | tr -s ' '`), au Change Log (V4-1) ; PDF
+11. **AC11 — Docs, manuel, CHANGELOG, PR** : D6 ; **`/usr/bin/grep -nE 'temps universel|encore la veille'
+    docs/manual/fr/user-manual.tex` vide, et le même contrôle sur le PDF aplati** (`pdftotext user-manual.pdf - | tr '\n' ' ' |
+    tr -s ' '`, puis les deux motifs), au Change Log (V4-1 ; validation P5, V5-1 : « encore la veille » porte l'énoncé faux
+    même si les trois mots « en temps universel » sont retirés seuls) ; PDF
     régénéré, contrôlé aplati ; CHANGELOG `## [0.17.7] — Non publié`,
     *Corrigé* : un point pour #1022, un pour #907, et la 35-5a **ouvre** le point #929 (contre-passation, annulation,
     premier exercice) que la 35-5b **complète** sans en écrire un second (C-e350-8, comme 35-2a / 35-2b). La PR porte
@@ -453,7 +461,7 @@ garde rougit sur le compte) ; M7 la contre-passation de l'annulation relit l'hor
 - [ ] Squelette `jour_suisse`, tests, rouges consignés.
 - [ ] `kesh-core` : `jour_suisse`, bascule de `Horloge::aujourd_hui()`. Écran du verrou (D7). Garde ramenée aux comptes réels.
 - [ ] Retourner le test d'AC2 de la 35-5a0 : à `HorlogeFixe(2025-12-31T23:30:00Z)`, contre-passation au `2026-01-01`, dans
-      l'exercice 2026 (exception nommée à AC10).
+      l'exercice 2020-2030 de son montage (exception nommée à AC10).
 - [ ] Tests convertis (AC9), inventaire des `HorlogeFixe(…Utc::now…)` (D5), et les preuves de nuit ; commentaires, docs, manuel
       (`:995`, `:2458`), CHANGELOG.
 - [ ] Gates : `test-fast.sh --ci` **complet à chaque commit de code** (exception `kesh-db`), `scripts/gate-ci.sh` au dernier
@@ -548,7 +556,8 @@ d'exemptions éditée ensuite par la 35-5a, la 35-5b puis la 35-5c (hunks de la 
 
 *Attendue (à confirmer ; la plomberie est à la 35-5a0)* : `crates/kesh-core/{Cargo.toml,src/horloge.rs}` (`jour_suisse`,
 bascule) ; `kesh-db/src/repositories/{companies,opening_complement}.rs` et `kesh-api/src/routes/bank_accounts.rs`
-(commentaires, D6) ; `crates/kesh-api/tests/date_du_jour_garde.rs` (comptes), `tests/common/horloge.rs`, les fichiers
+(commentaires, D6) ; `kesh-api/src/services/rapports.rs` (doc-comment de `synthese_accueil`, `:862-864`, D6) ;
+`crates/kesh-api/tests/date_du_jour_garde.rs` (comptes), `tests/common/horloge.rs`, les fichiers
 **35-5a** du tableau de verdict et le `mod tests` de `journal_entries.rs` ; les tests neufs d'AC1 à AC7 ;
 `frontend/src/routes/(app)/settings/+page.svelte`, `frontend/src/lib/shared/utils/local-date-guard.test.ts`, les specs E2E
 qui assertent une date d'un site de la 35-5a ; `docs/api-external.md`, `docs/manual/fr/user-manual.{tex,pdf}`, `CHANGELOG.md`.
@@ -645,3 +654,22 @@ qui assertent une date d'un site de la 35-5a ; `docs/api-external.md`, `docs/man
     par année du jour, tous 35-5a ou 35-5b : AC9).
   - Aucun finding réfuté. Signal de découpage : non levé (MEDIUM neufs, aucun recyclage). Aucune migration. Statut
     `ready-for-dev`.
+- 2026-11-12 — **Validation P5, passe ciblée** (Sonnet, sur la remédiation `330a5780` et `9702ea6d` ;
+  `kesh-gate-logs/e35-5a-validation-p5-ciblee.md` : 0 CRITICAL, 0 HIGH, 0 MEDIUM, 3 LOW), LOW appliqués par l'agent de
+  rédaction (worktree `kesh-e355`) ; prémisses lues au code de `release/0.17.6`.
+  - **V5-1** : AC11 contrôle aussi `encore la veille` (`.tex` et PDF aplati) — `user-manual.tex:995` et `:2458`, dans la même
+    phrase que « en temps universel ».
+  - **V5-2** : `kesh-db/src/repositories/journal_entries.rs:4457` (`chrono::Utc::now().naive_utc().date().year()`, `mod tests` de
+    `src`) ajouté au relevé V4-10 d'AC9.
+  - **V5-3** : le montage d'AC2 est nommé dans la 35-5a0 (`seed_accounting_company`, exercice 2020-2030 ouvert,
+    `test_fixtures.rs:71`, `:119`) ; AC10 et la tâche de retournement disent « l'exercice 2020-2030 de son montage » au lieu
+    de « l'exercice 2026 ».
+  - Hors remédiation : le doc-comment `services/rapports.rs:862-864` (« comme à la contre-passation ») devient faux à la 35-5a ;
+    D6 en retire cette clause, la 35-5b réécrit le reste avec le site 21 ; *File List*.
+  - **Synthèse de la validation** (`CLAUDE.md` § *Review Iteration Rule*) : cinq passes, **7 → 5 → 4 → 2 → 0 MEDIUM** au-dessus
+    de LOW (aucun CRITICAL ; P1 à P4 complètes, P5 ciblée sur la dernière remédiation, qui ne touche aucun code de
+    production : la fiche seule). Modèles : P1 Opus, P2 Sonnet, P3 Opus, P4 Opus, P5 Sonnet (ciblée). Décisions de
+    reclassement : aucune ; aucun finding réfuté sur la série. Découpage : la dérogation C-e350-27 est tombée en P3 au profit
+    du découpage **C-e350-28** (35-5a0 pour la plomberie, comportement inchangé ; la 35-5a pour la bascule au jour suisse).
+    **Validation terminée** sur une passe qui ne rend aucun finding au-dessus de LOW. Aucune migration. Statut
+    `ready-for-dev`, après la fusion de la 35-5a0.
