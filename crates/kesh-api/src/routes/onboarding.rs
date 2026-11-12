@@ -617,6 +617,8 @@ pub async fn set_bank_account(
             "Le nom de la banque ne peut pas être vide".into(),
         ));
     }
+    // Story 34-2 (revue P1 E-1) : la borne de la colonne, comme à la création.
+    super::bank_accounts::refuse_too_long_bank_name(&bank_name)?;
 
     // Story 34-1 (AC-2) : la fonction de la création, même borne, même message.
     // Une description présente mais vide ou faite d'espaces vaut `null`.

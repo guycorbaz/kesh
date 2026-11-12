@@ -94,6 +94,9 @@ dupliqué. » Quatre points y sont « à trancher » ; ils le sont ici (C-e341-6
    compte bancaire n'y figure plus : mouvementé). Sans aucun exercice → `409 OPENING_COMPLEMENT_NO_OPEN_FISCAL_YEAR` (statut du code, `errors.rs:1557-1561`), rien d'écrit ; son
    message (« Aucun exercice ouvert ne couvre la date du jour ») est gardé : inexact au mot près pour « aucun exercice », il dit le remède (un
    exercice ouvert), et une installation passée par l'assistant a toujours son premier exercice.
+   *(Annoté au développement, 2026-11-12, revue P1 A LOW-1 : « rend `ALREADY_HAS_ENTRIES` pour la génération » se lit ainsi au code —
+   `POST /opening-balances` → `409 ILLEGAL_STATE_TRANSITION` ; `GET /opening-balances/status` → `reason: ALREADY_HAS_ENTRIES`,
+   `completeReason: READY`. Le test et `api-external.md` disent les deux.)*
 5. **AC-5 — mêmes refus que *Compléter*, rien d'écrit** : compte lié déjà mouvementé (`ACCOUNT_MOVED`), compte de report absent ou non imputable,
    date verrouillée, aucun exercice ouvert : le refus du complément sort **tel quel** (code et message), et **ni le compte bancaire ni
    l'écriture** n'existent après (AC-9 de l'atomicité, compté en base : `bank_accounts` et `journal_entries` inchangés). L'ancien principal

@@ -6,7 +6,10 @@ import {
 	bankAccountName,
 	bankAccountOptionLabel,
 	defaultOpeningSide,
+	formatChfBalance,
+	openingAmountAmbiguous,
 	openingAmountPayload,
+	openingAmountPreview,
 } from './format';
 
 const IBAN = 'CH9300762011623852957';
@@ -99,5 +102,23 @@ describe("solde d'ouverture", () => {
 		expect(openingAmountPayload(' 12 000 ')).toBe('12000');
 		expect(openingAmountPayload('   ')).toBeNull();
 		expect(openingAmountPayload('')).toBeNull();
+	});
+
+	// Revue P1 (B-1 = E-6) — une virgule suivie d'exactement trois chiffres est ambiguë.
+	it("« 1,234 » est ambigu ; « 1,23 », « 1,2345 », « 1'234,50 », « 1.234 » ne le sont pas", () => {
+		for (const ambigu of ['1,234', '12,500', "1'000,000", ' 9,999 ']) {
+			expect(openingAmountAmbiguous(ambigu), ambigu).toBe(true);
+		}
+		for (const clair of ['1,23', '1,2345', "1'234,50", '1.234', '1234', '', '1,2']) {
+			expect(openingAmountAmbiguous(clair), clair).toBe(false);
+		}
+	});
+
+	it('l’aperçu donne le montant écrit au format suisse, rien sinon', () => {
+		expect(openingAmountPreview("1'234.50")).toBe(formatChfBalance('1234.50'));
+		expect(openingAmountPreview('75,25')).toBe(formatChfBalance('75.25'));
+		for (const rien of ['', '1,234', 'abc', '-5', '1.00001', '1.2.3']) {
+			expect(openingAmountPreview(rien), rien).toBeNull();
+		}
 	});
 });

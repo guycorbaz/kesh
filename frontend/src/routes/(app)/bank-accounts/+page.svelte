@@ -48,7 +48,9 @@
 		defaultOpeningSide,
 		formatChfBalance,
 		linkableLedgerAccounts,
+		openingAmountAmbiguous,
 		openingAmountPayload,
+		openingAmountPreview,
 	} from '$lib/features/bank-accounts/format';
 
 	let bankAccounts = $state<BankAccountSummary[]>([]);
@@ -218,6 +220,14 @@
 	}
 
 
+	/** Story 34-2 (revue P1, B-1) — le refus d'un montant ambigu (« 1,234 »). */
+	function ambiguousAmountMessage(): string {
+		return i18nMsg(
+			'bank-accounts-opening-error-amount-ambiguous',
+			"Montant ambigu : une virgule suivie de trois chiffres peut être un séparateur de milliers. Écrivez 1234 ou 1'234 pour mille deux cent trente-quatre, 1.234 pour un franc et vingt-trois centimes et quatre dixièmes de centime.",
+		);
+	}
+
 	/**
 	 * Story 34-2 (#533, AC-7) — ouvre le dialogue « Saisir le solde d'ouverture »
 	 * d'un compte ouvert et lié ; le sens est présélectionné par le type du compte lié.
@@ -241,16 +251,24 @@
 			openingError = i18nMsg('bank-accounts-opening-error-amount-required', 'Saisissez un montant positif.');
 			return;
 		}
+		if (openingAmountAmbiguous(formOpeningAmount)) {
+			openingError = ambiguousAmountMessage();
+			return;
+		}
 		submitting = true;
 		try {
 			const entry = await enterOpeningBalance(id, { amount, side: formOpeningSide });
 			toast.success(
 				i18nMsg(
 					'bank-accounts-toast-opening-success',
-					'Écriture d\'ouverture n° { $number } du { $date } passée.',
-					// Avis qui nomme l'écriture (numéro, date suisse) ; clé et arguments
-					// littéraux, lus par les gardes i18n.
-					{ number: String(entry.entryNumber), date: formatSwissDate(entry.entryDate) },
+					'Écriture d\'ouverture n° { $number } du { $date } passée : { $amount }.',
+					// Avis qui nomme l'écriture (numéro, date suisse) et le montant écrit
+					// (revue P1, B-1) ; clé et arguments littéraux, lus par les gardes i18n.
+					{
+						number: String(entry.entryNumber),
+						date: formatSwissDate(entry.entryDate),
+						amount: formatChfBalance(amount),
+					},
 				),
 			);
 			closeForm();
@@ -359,6 +377,11 @@
 		e.preventDefault();
 		formError = null;
 		if (!validateQrIbanField()) return;
+		// Story 34-2 (revue P1, B-1) — « 1,234 » ne part pas : mille ou un franc ?
+		if (formJournalAccountId !== null && openingAmountAmbiguous(formOpeningAmount)) {
+			formError = ambiguousAmountMessage();
+			return;
+		}
 		submitting = true;
 		try {
 			const payload: NewBankAccountPayload = {
@@ -381,10 +404,11 @@
 				openingEntry
 					? i18nMsg(
 							'bank-accounts-toast-create-success-with-opening',
-							'Compte bancaire créé, avec l\'écriture d\'ouverture n° { $number } du { $date }.',
+							'Compte bancaire créé, avec l\'écriture d\'ouverture n° { $number } du { $date } : { $amount }.',
 							{
 								number: String(openingEntry.entryNumber),
 								date: formatSwissDate(openingEntry.entryDate),
+								amount: formatChfBalance(payload.openingBalance?.amount ?? '0'),
 							},
 						)
 					: i18nMsg('bank-accounts-toast-create-success', 'Compte bancaire créé.'),
@@ -575,16 +599,24 @@
 			<option value="credit">{i18nMsg('bank-accounts-opening-side-credit', 'Dette (découvert)')}</option>
 		</select>
 	</div>
+	{#if openingAmountPreview(formOpeningAmount) !== null}
+		<!-- Revue P1 (B-1) — le montant tel qu'il sera écrit, avant le geste. -->
+		<p class="mt-1 text-sm font-medium text-text" data-testid="{prefix}-opening-preview">
+			{i18nMsg('bank-accounts-opening-preview', 'Montant qui sera écrit : { $amount }', {
+				amount: openingAmountPreview(formOpeningAmount) ?? '',
+			})}
+		</p>
+	{/if}
 	<p class="mt-1 text-xs text-text-muted" data-testid="{prefix}-opening-help">
 		{i18nMsg(
 			'bank-accounts-opening-help',
-			"Le solde lu sur le relevé au début de votre comptabilité. L'écriture est datée du premier jour du premier exercice s'il est ouvert, sinon d'aujourd'hui ; sa contrepartie va au compte Bénéfice/perte reporté. Elle est refusée si le compte lié a déjà des mouvements.",
+			"L'écriture est datée du premier jour du premier exercice s'il est ouvert et hors période verrouillée, sinon d'aujourd'hui : saisissez le solde du relevé à cette date. Sa contrepartie va au compte Bénéfice/perte reporté. Elle est refusée si le compte lié a déjà des mouvements.",
 		)}
 	</p>
 	<p class="mt-1 rounded border border-warning bg-warning-soft p-2 text-xs text-text" role="note" data-testid="{prefix}-opening-consequence">
 		{i18nMsg(
 			'bank-accounts-opening-consequence',
-			"Après ce solde, les soldes de départ des autres comptes se saisissent un à un dans Soldes de départ, mode Compléter : l'ouverture générale n'est plus proposée. Pour saisir toute votre ouverture d'un coup, passez d'abord par Soldes de départ.",
+			"Si l'ouverture générale de Soldes de départ est encore proposée, ce solde la retire : les soldes de départ des autres comptes se saisiront un à un, mode Compléter. Pour saisir toute votre ouverture d'un coup, passez d'abord par Soldes de départ.",
 		)}
 	</p>
 {/snippet}
@@ -818,9 +850,10 @@
 									>
 										{i18nMsg('bank-accounts-actions-edit', 'Modifier')}
 									</button>
-									{#if ba.journalAccountId !== null}
-										<!-- Story 34-2 (#533, AC-7) — compte ouvert et lié : saisir son solde
-										     d'ouverture (refusé par le serveur s'il est déjà mouvementé). -->
+									{#if ba.journalAccountId !== null && ba.lastTransactionDate === null}
+										<!-- Story 34-2 (#533, AC-7) — compte ouvert, lié, et dont le compte du
+										     plan n'a encore aucune ligne (revue P1, E-5 : `lastTransactionDate`
+										     est la date de sa dernière ligne). Le serveur reste l'autorité. -->
 										<button
 											type="button"
 											class="ml-1 rounded border border-border px-2 py-1 text-xs"
@@ -1025,7 +1058,9 @@
 								<td colspan="5" class="py-3">
 									<div class="rounded border border-border bg-surface-alt p-4" data-testid="opening-balance-dialog">
 										<h2 class="mb-2 text-base font-semibold">
-											{i18nMsg('bank-accounts-opening-dialog-title', "Solde d'ouverture de ce compte")}
+											{i18nMsg('bank-accounts-opening-dialog-title', "Solde d'ouverture — { $account }", {
+												account: bankAccountName(ba),
+											})}
 										</h2>
 										<div class="max-w-xl">
 											{@render openingFields('row')}

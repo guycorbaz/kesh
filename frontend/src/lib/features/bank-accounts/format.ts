@@ -181,3 +181,30 @@ export function openingAmountPayload(raw: string): string | null {
 	const cleaned = raw.replace(/['’\s  ]/g, '').replace(',', '.');
 	return cleaned === '' ? null : cleaned;
 }
+
+/** Séparateurs de milliers retirés avant les contrôles (apostrophes, espaces). */
+const THOUSANDS_SEPARATORS = /['’\s  ]/g;
+
+/**
+ * Story 34-2 (revue P1, B-1 = E-6) — vrai si la saisie est **ambiguë** : un
+ * nombre, une virgule, puis exactement trois chiffres (« 1,234 »), qui peut être
+ * un millier à l'anglaise (1234) ou une virgule décimale (1.234). Lue comme
+ * décimale, elle écrirait une écriture d'ouverture mille fois trop petite, sans
+ * signal ; l'écran la refuse et demande une forme sans équivoque.
+ */
+export function openingAmountAmbiguous(raw: string): boolean {
+	return /^\d+,\d{3}$/.test(raw.replace(THOUSANDS_SEPARATORS, ''));
+}
+
+/**
+ * Story 34-2 (revue P1, B-1) — le montant **tel qu'il sera écrit**, au format
+ * suisse (`CHF 1’234.50`), pour le montrer avant le geste ; `null` si la saisie
+ * est vide, ambiguë ou n'est pas un nombre positif bien formé (le serveur en
+ * rendra le refus).
+ */
+export function openingAmountPreview(raw: string): string | null {
+	if (openingAmountAmbiguous(raw)) return null;
+	const amount = openingAmountPayload(raw);
+	if (amount === null || !/^\d+(\.\d{1,4})?$/.test(amount)) return null;
+	return formatChfBalance(amount);
+}

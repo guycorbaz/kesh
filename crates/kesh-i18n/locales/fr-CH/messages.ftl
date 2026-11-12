@@ -1649,19 +1649,24 @@ bank-accounts-toast-unlink-success = Compte bancaire délié du plan comptable.
 # Story 34-2 (#533) — solde d'ouverture saisi avec le compte bancaire.
 bank-accounts-opening-entry-description = Solde d'ouverture — { $account }
 error-bank-account-opening-invalid-amount = Le solde d'ouverture est un montant positif d'au plus quatre décimales, au plus 999’999’999’999’999.9999.
+error-bank-account-opening-side-required = Le sens du solde d'ouverture est requis : « debit » (avoir) ou « credit » (dette).
+error-bank-account-opening-ledger-required = Le solde d'ouverture exige un compte comptable lié (journalAccountId).
+error-bank-account-bank-name-too-long = Le nom de la banque ne peut pas dépasser 255 caractères.
 bank-accounts-opening-label-amount = Solde d'ouverture (optionnel)
 bank-accounts-opening-label-amount-row = Montant du solde
 bank-accounts-opening-label-side = Sens du solde
 bank-accounts-opening-side-debit = Avoir
 bank-accounts-opening-side-credit = Dette (découvert)
-bank-accounts-opening-help = Le solde lu sur le relevé au début de votre comptabilité. L'écriture est datée du premier jour du premier exercice s'il est ouvert, sinon d'aujourd'hui ; sa contrepartie va au compte Bénéfice/perte reporté. Elle est refusée si le compte lié a déjà des mouvements.
-bank-accounts-opening-consequence = Après ce solde, les soldes de départ des autres comptes se saisissent un à un dans Soldes de départ, mode Compléter : l'ouverture générale n'est plus proposée. Pour saisir toute votre ouverture d'un coup, passez d'abord par Soldes de départ.
-bank-accounts-toast-create-success-with-opening = Compte bancaire créé, avec l'écriture d'ouverture n° { $number } du { $date }.
+bank-accounts-opening-help = L'écriture est datée du premier jour du premier exercice s'il est ouvert et hors période verrouillée, sinon d'aujourd'hui : saisissez le solde du relevé à cette date. Sa contrepartie va au compte Bénéfice/perte reporté. Elle est refusée si le compte lié a déjà des mouvements.
+bank-accounts-opening-consequence = Si l'ouverture générale de Soldes de départ est encore proposée, ce solde la retire : les soldes de départ des autres comptes se saisiront un à un, mode Compléter. Pour saisir toute votre ouverture d'un coup, passez d'abord par Soldes de départ.
+bank-accounts-opening-preview = Montant qui sera écrit : { $amount }
+bank-accounts-opening-error-amount-ambiguous = Montant ambigu : une virgule suivie de trois chiffres peut être un séparateur de milliers. Écrivez 1234 ou 1'234 pour mille deux cent trente-quatre, 1.234 pour un franc et vingt-trois centimes et quatre dixièmes de centime.
+bank-accounts-toast-create-success-with-opening = Compte bancaire créé, avec l'écriture d'ouverture n° { $number } du { $date } : { $amount }.
 bank-accounts-actions-opening-balance = Saisir le solde d'ouverture
-bank-accounts-opening-dialog-title = Solde d'ouverture de ce compte
+bank-accounts-opening-dialog-title = Solde d'ouverture — { $account }
 bank-accounts-opening-dialog-confirm = Passer l'écriture
 bank-accounts-opening-error-amount-required = Saisissez un montant positif.
-bank-accounts-toast-opening-success = Écriture d'ouverture n° { $number } du { $date } passée.
+bank-accounts-toast-opening-success = Écriture d'ouverture n° { $number } du { $date } passée : { $amount }.
 
 # Story 8-5b — FR47 reconciliation rules (règles d'affectation).
 reconciliation-rules-page-title = Règles d'affectation
@@ -3152,6 +3157,7 @@ audit-log-action-payment-batch-generated = Lot de paiement créé
 audit-log-action-payment-batch-confirmed = Lot de paiement confirmé
 audit-log-action-payment-batch-cancelled = Lot de paiement annulé
 audit-log-action-bank-account-created = Compte bancaire créé
+audit-log-action-bank-account-opening-balance-entered = Solde d'ouverture d'un compte bancaire saisi
 audit-log-action-bank-account-updated = Compte bancaire modifié
 audit-log-action-bank-account-archived = Compte bancaire archivé
 audit-log-action-bank-account-closed = Compte bancaire clos

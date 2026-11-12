@@ -1581,19 +1581,24 @@ bank-accounts-toast-unlink-success = Bank account unlinked from chart of account
 # Story 34-2 (#533) — opening balance entered with the bank account.
 bank-accounts-opening-entry-description = Opening balance — { $account }
 error-bank-account-opening-invalid-amount = The opening balance is a positive amount with at most four decimals, at most 999’999’999’999’999.9999.
+error-bank-account-opening-side-required = The side of the opening balance is required: “debit” (funds) or “credit” (debt).
+error-bank-account-opening-ledger-required = The opening balance requires a linked chart-of-accounts account (journalAccountId).
+error-bank-account-bank-name-too-long = The bank name cannot exceed 255 characters.
 bank-accounts-opening-label-amount = Opening balance (optional)
 bank-accounts-opening-label-amount-row = Balance amount
 bank-accounts-opening-label-side = Balance side
 bank-accounts-opening-side-debit = Credit balance (funds)
 bank-accounts-opening-side-credit = Debt (overdraft)
-bank-accounts-opening-help = The balance shown on the statement at the start of your bookkeeping. The entry is dated the first day of the first fiscal year if it is open, otherwise today; its counterpart goes to the Retained earnings account. It is refused if the linked account already has movements.
-bank-accounts-opening-consequence = After this balance, the opening balances of the other accounts are entered one by one in Opening balances, Complete mode: the general opening is no longer offered. To enter your whole opening at once, go through Opening balances first.
-bank-accounts-toast-create-success-with-opening = Bank account created, with opening entry no. { $number } of { $date }.
+bank-accounts-opening-help = The entry is dated the first day of the first fiscal year if it is open and outside the locked period, otherwise today: enter the statement balance at that date. Its counterpart goes to the Retained earnings account. It is refused if the linked account already has movements.
+bank-accounts-opening-consequence = If the general opening in Opening balances is still offered, this balance removes it: the opening balances of the other accounts will be entered one by one, Complete mode. To enter your whole opening at once, go through Opening balances first.
+bank-accounts-opening-preview = Amount to be posted: { $amount }
+bank-accounts-opening-error-amount-ambiguous = Ambiguous amount: a comma followed by three digits may be a thousands separator. Write 1234 or 1'234 for one thousand two hundred thirty-four, 1.234 for one franc and 23.4 centimes.
+bank-accounts-toast-create-success-with-opening = Bank account created, with opening entry no. { $number } of { $date }: { $amount }.
 bank-accounts-actions-opening-balance = Enter opening balance
-bank-accounts-opening-dialog-title = Opening balance of this account
+bank-accounts-opening-dialog-title = Opening balance — { $account }
 bank-accounts-opening-dialog-confirm = Post the entry
 bank-accounts-opening-error-amount-required = Enter a positive amount.
-bank-accounts-toast-opening-success = Opening entry no. { $number } of { $date } posted.
+bank-accounts-toast-opening-success = Opening entry no. { $number } of { $date } posted: { $amount }.
 
 # Story 8-5b — FR47 reconciliation rules.
 reconciliation-rules-page-title = Reconciliation rules
@@ -3085,6 +3090,7 @@ audit-log-action-payment-batch-generated = Payment batch created
 audit-log-action-payment-batch-confirmed = Payment batch confirmed
 audit-log-action-payment-batch-cancelled = Payment batch cancelled
 audit-log-action-bank-account-created = Bank account created
+audit-log-action-bank-account-opening-balance-entered = Bank account opening balance entered
 audit-log-action-bank-account-updated = Bank account updated
 audit-log-action-bank-account-archived = Bank account archived
 audit-log-action-bank-account-closed = Bank account closed

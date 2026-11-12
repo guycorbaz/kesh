@@ -904,7 +904,9 @@ const ATTENDU = {
 	// : le libellé du montant (deux branches, création et ligne), le sens et ses deux options,
 	// l'aide, la conséquence, l'action de ligne, le titre et la confirmation du dialogue, le
 	// montant requis, les deux avis. Que des littéraux ; `sitesNonResolus` et `relais` inchangés.
-	sitesTotal: 2942,
+	// Revue P1 de la 34-2 : **2942 → 2944** (+2), même fichier : l'aperçu du montant écrit et le
+	// refus d'un montant ambigu. Que des littéraux.
+	sitesTotal: 2944,
 	sitesNonResolus: 31,
 	relais: 6,
 	// Story 26-1 (#620, AC3-bis) : **10 → 11** — `lib/features/bank-import/

@@ -38,7 +38,8 @@ use kesh_db::entities::JournalEntryWithLines;
 use kesh_db::entities::account::AccountType;
 use kesh_db::entities::audit_log::NewAuditLogEntry;
 use kesh_db::entities::bank_account::{
-    BANK_ACCOUNT_DESCRIPTION_MAX_CHARS, BankAccount, NewBankAccount, bank_account_display_name,
+    BANK_ACCOUNT_BANK_NAME_MAX_CHARS, BANK_ACCOUNT_DESCRIPTION_MAX_CHARS, BankAccount,
+    NewBankAccount, bank_account_display_name,
 };
 use kesh_db::errors::{DbError, NonPostableAccount};
 use kesh_db::repositories::bank_accounts::BankAccountPutFields;
@@ -375,10 +376,26 @@ pub(crate) fn normalize_description(description: Option<&str>) -> Result<Option<
     Ok(Some(trimmed.to_string()))
 }
 
+/// Refuse un nom de banque plus long que la colonne
+/// ([`BANK_ACCOUNT_BANK_NAME_MAX_CHARS`], en caractères Unicode) — Story 34-2
+/// (#533, revue P1 E-1). Sans ce contrôle, l'`INSERT` échouait en `500` («
+/// Data too long ») ; avec un solde d'ouverture, **après** l'écriture du
+/// complément, que seul le `rollback` défaisait. `pub(crate)` : l'étape
+/// bancaire de l'assistant l'appelle aussi.
+pub(crate) fn refuse_too_long_bank_name(bank_name: &str) -> Result<(), AppError> {
+    if bank_name.chars().count() > BANK_ACCOUNT_BANK_NAME_MAX_CHARS {
+        return Err(AppError::Validation(crate::errors::t(
+            "error-bank-account-bank-name-too-long",
+            "Le nom de la banque ne peut pas dépasser 255 caractères.",
+        )));
+    }
+    Ok(())
+}
+
 /// Valide et normalise les champs métier d'un payload create/update.
 ///
-/// **Ordre des refus de forme** (Story 26-2a, AC3) : banque vide → description
-/// → IBAN → QR-IBAN.
+/// **Ordre des refus de forme** (Story 26-2a, AC3) : banque vide → banque trop
+/// longue (Story 34-2) → description → IBAN → QR-IBAN.
 fn validate_bank_input(
     bank_name: &str,
     description: Option<&str>,
@@ -391,6 +408,7 @@ fn validate_bank_input(
             "Le nom de la banque ne peut pas être vide".into(),
         ));
     }
+    refuse_too_long_bank_name(&bank_name)?;
 
     let description = normalize_description(description)?;
 
@@ -541,10 +559,10 @@ fn parse_opening_balance(
         return Ok(None);
     }
     let side = body.side.ok_or_else(|| {
-        AppError::Validation(
-            "Le sens du solde d'ouverture est requis : « debit » (avoir) ou « credit » (dette)"
-                .into(),
-        )
+        AppError::Validation(crate::errors::t(
+            "error-bank-account-opening-side-required",
+            "Le sens du solde d'ouverture est requis : « debit » (avoir) ou « credit » (dette).",
+        ))
     })?;
     Ok(Some(OpeningAmount { amount, side }))
 }
@@ -756,9 +774,10 @@ pub async fn create_bank_account(
     )?;
     let opening = parse_opening_balance(body.opening_balance.as_ref())?;
     if opening.is_some() && body.journal_account_id.is_none() {
-        return Err(AppError::Validation(
-            "Le solde d'ouverture exige un compte comptable lié (journalAccountId)".into(),
-        ));
+        return Err(AppError::Validation(crate::errors::t(
+            "error-bank-account-opening-ledger-required",
+            "Le solde d'ouverture exige un compte comptable lié (journalAccountId).",
+        )));
     }
     validate_journal_account_id(
         &state.pool,
@@ -979,15 +998,23 @@ async fn create_once(
 ///
 /// **Ordre des refus** : forme (`400`, montant nul compris) → `404` (absent,
 /// d'une autre société, archivé) → `409 BANK_ACCOUNT_CLOSED` → `412
-/// BANK_ACCOUNT_NOT_CONFIGURED` (aucun compte lié) → refus du complément
-/// (`OPENING_COMPLEMENT_*`, tels quels).
+/// BANK_ACCOUNT_NOT_CONFIGURED` (aucun compte lié) → `400
+/// BANK_ACCOUNT_LEDGER_IS_CLAIM_ACCOUNT` (compte lié = compte de créance
+/// désigné, revue P1 E-2) → refus du complément (`OPENING_COMPLEMENT_*`, tels
+/// quels — dont `ACCOUNT_INVALID` et `NOT_BALANCE_ACCOUNT` pour un compte lié
+/// devenu inactif, non imputable ou retypé, que le lien tolère ; et
+/// `LATER_FISCAL_YEAR_CLOSED` de `create_in_tx`). Trace
+/// `bank_account.opening_balance_entered` (`opening_entry_id`), en plus de
+/// `journal_entry.created` (revue P1 B-4).
 ///
 /// ⚠️ **Rejouée sur interblocage** (opération `bank_accounts::opening_balance`).
-/// **Ordre des verrous**, celui du `PUT` : sentinelle `companies` en exclusif,
-/// puis la ligne `bank_accounts` `LOCK IN SHARE MODE` (archivé, clos et lien
-/// lus sous ce verrou — lecture verrouillante, qui n'ouvre pas l'instantané),
-/// puis le complément (son partagé sur `companies` est couvert par l'exclusif ;
-/// comptes, exercices).
+/// **Ordre des verrous** : sentinelle `companies` en exclusif, puis la ligne
+/// `bank_accounts` `LOCK IN SHARE MODE` (archivé, clos et lien lus sous ce
+/// verrou — lecture verrouillante, qui n'ouvre pas l'instantané), puis les
+/// réglages de facturation en partagé, puis le complément (son partagé sur
+/// `companies` est couvert par l'exclusif ; comptes, exercices). La création
+/// prend les réglages avant `bank_accounts` : les deux tiennent d'abord la
+/// sentinelle, qui les sérialise.
 pub async fn enter_opening_balance(
     State(state): State<AppState>,
     Extension(current_user): Extension<CurrentUser>,
@@ -1048,12 +1075,48 @@ async fn enter_opening_balance_once(
                 bank_account_id: id,
             });
         };
+        // Revue P1 (E-2) — la garde de la création : un compte bancaire lié au
+        // compte débiteurs ou créanciers désigné (lien antérieur à la 15-6c, que
+        // le `PUT` tolère s'il ne change pas) ne reçoit pas de solde d'ouverture
+        // sur le compte collectif. Lecture verrouillante des réglages : elle
+        // n'ouvre pas l'instantané avant le complément.
+        let claims = company_invoice_settings::claim_accounts_in_share_mode(
+            &mut tx,
+            current_user.company_id,
+        )
+        .await?;
+        bank_accounts::refuse_if_ledger_is_claim_account(
+            &mut tx,
+            current_user.company_id,
+            journal_account_id,
+            &claims,
+        )
+        .await?;
         let request = OpeningRequest {
             opening,
             description: opening_entry_description(i18n, locale, &account.display_name()),
             today,
         };
-        post_opening_entry_in_tx(&mut tx, current_user, journal_account_id, &request).await
+        let entry =
+            post_opening_entry_in_tx(&mut tx, current_user, journal_account_id, &request).await?;
+        // Revue P1 (B-4) — la trace qui relie l'écriture au compte bancaire, comme
+        // `bank_account.created` le fait à la création (`opening_entry_id`).
+        audit_log::insert_in_tx(
+            &mut tx,
+            NewAuditLogEntry::from_current_user(
+                current_user,
+                "bank_account.opening_balance_entered",
+                "bank_account",
+                id,
+                Some(serde_json::json!({
+                    "bank_account_id": id,
+                    "journal_account_id": journal_account_id,
+                    "opening_entry_id": entry.entry.id,
+                })),
+            ),
+        )
+        .await?;
+        Ok(entry)
     }
     .await;
     conclure(tx, result).await

@@ -500,6 +500,14 @@ async fn creation_sans_solde_comportement_d_avant(pool: MySqlPool) {
             "aucune clé openingEntry : {resp}"
         );
         let id = resp["id"].as_i64().unwrap();
+        // Revue P1 (B-8) — la réponse est, au champ près, la sérialisation du
+        // compte seul (celle d'avant la 34-2) : aucune clé de plus ni de moins.
+        let account =
+            kesh_db::repositories::bank_accounts::find_by_id_for_company(&pool, ctx.company_id, id)
+                .await
+                .unwrap()
+                .expect("compte créé");
+        assert_eq!(resp, serde_json::to_value(&account).unwrap());
         let details = common::audit_details(&pool, "bank_account", id, "bank_account.created")
             .await
             .expect("details");
@@ -544,21 +552,143 @@ async fn creation_avec_solde_mal_forme_refusee(pool: MySqlPool) {
         (status, body["error"]["code"].clone()),
         (400, json!("VALIDATION_ERROR"))
     );
-    let (status, _) = ctx
+    let (status, body) = ctx
         .create(with_opening(base_body(Some(ctx.bank)), "10", "sideways"))
         .await;
-    assert_eq!(status, 400, "sens inconnu");
+    assert_eq!(
+        (status, body["error"]["code"].clone()),
+        (400, json!("VALIDATION_ERROR")),
+        "sens inconnu : {body}"
+    );
+    // Revue P1 (E-1) — un nom de banque plus long que la colonne : `400`, et non
+    // plus un `500` de l'`INSERT` après le complément.
+    let mut trop_long = with_opening(base_body(Some(ctx.bank)), "10", "debit");
+    trop_long["bankName"] = json!("B".repeat(256));
+    let (status, body) = ctx.create(trop_long).await;
+    assert_eq!(
+        (status, body["error"]["code"].clone()),
+        (400, json!("VALIDATION_ERROR")),
+        "nom trop long : {body}"
+    );
     assert_eq!(bank_account_count(&pool).await, 0);
     assert_eq!(entry_count(&pool).await, 0);
+}
+
+/// Revue P1 (E-1) — la borne est celle de la colonne, en caractères : 255
+/// caractères de deux octets passent, avec leur solde.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn nom_de_banque_a_la_borne_accepte(pool: MySqlPool) {
+    let ctx = setup(&pool).await;
+    let mut body = with_opening(base_body(Some(ctx.bank)), "10", "debit");
+    body["bankName"] = json!("é".repeat(255));
+    body["description"] = json!(null);
+    let (status, resp) = ctx.create(body).await;
+    assert_eq!(status, 201, "{resp}");
+    assert!(resp["openingEntry"]["id"].as_i64().is_some(), "{resp}");
 }
 
 // ===========================================================================
 // Refus du complément : rien d'écrit (AC-4, AC-5)
 // ===========================================================================
 
+/// Revue P1 (E-1, A LOW-3) — un échec **après** un complément réussi : l'écriture
+/// est déjà dans la transaction quand l'`INSERT` du compte échoue (déclencheur
+/// de test, déterministe). Rien ne doit rester : ni compte, ni écriture, ni
+/// trace, et l'ancien principal, démoté dans la transaction, l'est toujours.
+/// Tue M9 (commit sur erreur) — la ligne « ancien principal » vue rouge.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn un_echec_apres_le_complement_n_ecrit_rien(pool: MySqlPool) {
+    let ctx = setup(&pool).await;
+    let primary = insert_bank_account(&pool, ctx.company_id, IBAN_B, true, None).await;
+    sqlx::raw_sql(
+        "CREATE TRIGGER t_echec_insert_bank_account BEFORE INSERT ON bank_accounts \
+         FOR EACH ROW BEGIN \
+           IF NEW.bank_name = 'Echec apres complement' THEN \
+             SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'echec de test'; \
+           END IF; \
+         END",
+    )
+    .execute(&pool)
+    .await
+    .unwrap();
+    let (banks, entries, traces) = (
+        bank_account_count(&pool).await,
+        entry_count(&pool).await,
+        common::audit_count(&pool).await,
+    );
+
+    let mut body = with_opening(base_body(Some(ctx.bank)), "50", "debit");
+    body["bankName"] = json!("Echec apres complement");
+    body["isPrimary"] = json!(true);
+    let (status, resp) = ctx.create(body).await;
+    assert_eq!(status, 500, "{resp}");
+
+    assert_eq!(bank_account_count(&pool).await, banks, "aucun compte");
+    assert_eq!(
+        entry_count(&pool).await,
+        entries,
+        "aucune écriture orpheline"
+    );
+    assert_eq!(common::audit_count(&pool).await, traces, "aucune trace");
+    let still_primary: bool =
+        sqlx::query_scalar("SELECT is_primary FROM bank_accounts WHERE id = ?")
+            .bind(primary)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert!(still_primary, "l'ancien principal n'est pas démoté");
+}
+
+/// AC-5 (revue P1 A LOW-2) — date verrouillée et compte de report non imputable,
+/// sur la route bancaire : le refus sort tel quel, rien d'écrit.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn creation_date_verrouillee_ou_report_non_imputable_refusee(pool: MySqlPool) {
+    let ctx = setup(&pool).await;
+    // Premier jour et jour même dans la période verrouillée.
+    sqlx::query("UPDATE companies SET books_locked_through = ? WHERE id = ?")
+        .bind(Utc::now().date_naive())
+        .bind(ctx.company_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let (status, body) = ctx
+        .create(with_opening(base_body(Some(ctx.bank)), "50", "debit"))
+        .await;
+    assert_eq!(
+        (status, body["error"]["code"].clone()),
+        (409, json!("OPENING_COMPLEMENT_DATE_LOCKED")),
+        "{body}"
+    );
+    sqlx::query("UPDATE companies SET books_locked_through = NULL WHERE id = ?")
+        .bind(ctx.company_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+    sqlx::query("UPDATE accounts SET postable = FALSE WHERE id = ?")
+        .bind(ctx.retained)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let (status, body) = ctx
+        .create(with_opening(base_body(Some(ctx.bank)), "50", "debit"))
+        .await;
+    assert_eq!(
+        (status, body["error"]["code"].clone()),
+        (
+            409,
+            json!("OPENING_COMPLEMENT_RETAINED_EARNINGS_NOT_POSTABLE")
+        ),
+        "{body}"
+    );
+    assert_eq!(bank_account_count(&pool).await, 0);
+    assert_eq!(entry_count(&pool).await, 0);
+}
+
 /// AC-5 — compte lié déjà mouvementé : `409 OPENING_COMPLEMENT_ACCOUNT_MOVED`
 /// tel quel ; ni compte bancaire, ni écriture ; l'ancien principal n'est pas
-/// démoté. Tue M2 (complément après le commit) et M9 (démotion malgré le refus).
+/// démoté. Tue M2 (refus du complément avalé : compte créé sans écriture). M9
+/// (commit sur erreur) n'est pas tuée ici — le refus sort avant toute écriture —
+/// mais par `un_echec_apres_le_complement_n_ecrit_rien`.
 #[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn creation_sur_un_compte_mouvemente_n_ecrit_rien(pool: MySqlPool) {
     let ctx = setup(&pool).await;
@@ -736,6 +866,17 @@ async fn compte_existant_recoit_son_solde(pool: MySqlPool) {
             (ctx.retained, Decimal::ZERO, dec!(75.25)),
         ])
     );
+    // Revue P1 (B-4) — la trace relie l'écriture au compte bancaire.
+    let details = common::audit_details(
+        &pool,
+        "bank_account",
+        id,
+        "bank_account.opening_balance_entered",
+    )
+    .await
+    .expect("details");
+    assert_eq!(details["opening_entry_id"], json!(entry_id), "{details}");
+    assert_eq!(details["journal_account_id"], json!(ctx.bank), "{details}");
 
     let (status, body) = ctx
         .post(&opening_path(id), json!({ "amount": "1", "side": "debit" }))
@@ -819,6 +960,46 @@ async fn compte_existant_refus_de_la_route(pool: MySqlPool) {
     );
 
     assert_eq!(entry_count(&pool).await, 0, "aucun refus n'écrit");
+}
+
+/// Revue P1 (E-2) — un compte bancaire lié au compte débiteurs désigné (lien
+/// antérieur à la 15-6c) ne reçoit pas de solde par la route de ligne :
+/// `400 BANK_ACCOUNT_LEDGER_IS_CLAIM_ACCOUNT`, comme à la création ; rien d'écrit.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn compte_existant_lie_au_compte_de_creance_refuse(pool: MySqlPool) {
+    let ctx = setup(&pool).await;
+    let receivable = create_acc(
+        &pool,
+        ctx.user_id,
+        ctx.company_id,
+        "1100",
+        AccountType::Asset,
+        None,
+    )
+    .await;
+    let id = insert_bank_account(&pool, ctx.company_id, IBAN_A, true, Some(receivable)).await;
+    sqlx::query(
+        "INSERT INTO company_invoice_settings (company_id, default_receivable_account_id) \
+         VALUES (?, ?) \
+         ON DUPLICATE KEY UPDATE default_receivable_account_id = VALUES(default_receivable_account_id)",
+    )
+    .bind(ctx.company_id)
+    .bind(receivable)
+    .execute(&pool)
+    .await
+    .unwrap();
+    let (status, body) = ctx
+        .post(
+            &opening_path(id),
+            json!({ "amount": "10", "side": "debit" }),
+        )
+        .await;
+    assert_eq!(
+        (status, body["error"]["code"].clone()),
+        (400, json!("BANK_ACCOUNT_LEDGER_IS_CLAIM_ACCOUNT")),
+        "{body}"
+    );
+    assert_eq!(entry_count(&pool).await, 0);
 }
 
 /// AC-6 — une clé d'API `read-write` est admise.
