@@ -494,3 +494,16 @@ retenue, options écartées, réversibilité. Lignes citées sur `release/0.17.6
   `DesignatedAccountsNotPostable`, message i18n qui nomme le format, l'exercice et la cause ; rien d'écrit.
 - **Écartée** : compter `{FY}` pour 50 à la validation du format : refuserait des formats valides aujourd'hui.
 - **Réversible** : oui.
+
+### C-e350-46 — 35-2b : le message du refus pour les trois causes du code, par une construction commune
+
+- **Contexte** : validation P1 de la 35-2b, V1-1. `classify_render_error` rend `INVOICE_NOT_PDF_READY` pour
+  `InvoiceNotPdfReady`, `InvoiceTooManyLinesForPdf` et `InvoicePdfHeaderOverflow` ; la fiche ne donnait `details.message`
+  qu'à la première, alors que la PR ferme #955. Les deux autres ont une phrase sur la route unitaire, construite dans le bras
+  de `IntoResponse` (`errors.rs:2144-2168`).
+- **Retenu** : voie (a) de l'orchestrateur — deux fonctions `pub(crate)` extraites d'`errors.rs`
+  (`message_trop_de_lignes_pdf`, `message_entete_pdf_deborde`), appelées par `IntoResponse` et par le lot : une seule source
+  par phrase ; `details.message` pour les trois causes. Simple : deux fonctions sans état, statut et code inchangés.
+- **Écartée** : voie (b) — limite écrite, issue, `refs #955` : laisse le lot muet pour deux causes que l'utilisateur peut
+  corriger.
+- **Réversible** : oui.
