@@ -1,16 +1,24 @@
-# Story 35-5a : la date du jour est celle de Zurich pour ce qui écrit dans les livres ou les borne — solde d'ouverture, contre-passation, annulation de règlement, verrou de période, premier exercice de l'assistant — par une horloge injectable (#1022, #907, #929)
+# Story 35-5a : la date du jour est celle de Zurich pour ce qui écrit dans les livres ou les borne — solde d'ouverture, contre-passation, annulation de règlement, verrou de période, premier exercice de l'assistant (#1022, #907, #929)
 
 Status: ready-for-dev
 
 *Fiche rédigée le 2026-11-12 par l'agent de kickoff de l'Epic 35 (Opus 5.5), worktree `kesh-e35`, par le workflow
-`bmad-create-story` ; remédiée après la validation P1 le même jour (worktree `kesh-e355`, Change Log). Née du **découpage
-préventif** de la 35-5 (C-e350-14) : la 35-5a pose le motif — horloge, fonction du jour suisse, horloge dans `AppState` **et
-dans `Lecture`** (C-e350-21), garde de l'inventaire — et convertit les sites qui écrivent dans les livres ou les bornent ;
-la **35-5b** convertit les sites restants de la production, la **35-5c** les tests restants (C-e350-22). Release **0.17.7**.
-**Aucune migration** (C-e350-16). Boucle complète : règle comptable, `kesh-db` touché (gate complet même en cours de
-boucle). Code lu sur **`release/0.17.6`** (`4e1c768a` ; vérifié identique à `5e2a5818` pour `crates/` et `frontend/`).
-Registres : `e35-choix-autonomes-e350.md` (C-e350-8, -14, -16, -21 à -25) ; `e35-choix-autonomes-e355a.md` pour la story,
-à créer au premier choix.*
+`bmad-create-story` ; remédiée après les validations P1 à P3 le même jour (worktree `kesh-e355`, Change Log). Née du
+**découpage préventif** de la 35-5 (C-e350-14), **découpée à nouveau** à la validation P3 (C-e350-28, décision de
+l'orchestrateur) : la **35-5a0** pose la plomberie — `Horloge`, `HorlogeFixe`, `AppState.horloge`, `Lecture` à horloge
+(C-e350-21), la date passée à `kesh-db` et tous ses appelants, la garde de l'inventaire, `KESH_TEST_INSTANT` — **sans rien
+changer** (le jour reste UTC) ; la **35-5a** part de la 35-5a0 fusionnée et **bascule le jour sur Zurich** : `jour_suisse`,
+les critères de nuit des neuf sites qui écrivent dans les livres ou les bornent, l'écran du verrou, les tests qui atteignent
+ces sites, les preuves de nuit. La **35-5b** convertit les sites restants de la production, la **35-5c** les tests restants
+(C-e350-22). Release **0.17.7**. **Aucune migration** (C-e350-16). Boucle complète : règle comptable, `kesh-db` touché (gate
+complet même en cours de boucle). Code lu sur **`release/0.17.6`** (`4e1c768a` ; vérifié identique à `8424e36e` pour
+`crates/` et `frontend/`). Registres : `e35-choix-autonomes-e350.md` (C-e350-8, -14, -16, -21 à -26, -28, -29) ;
+`e35-choix-autonomes-e355a.md` pour la story, à créer au premier choix.*
+
+**Ce qui est à la 35-5a0 et non ici** : D2, D3, la pose de la garde (D4) et des helpers (D5, `aujourd_hui_test()`), les
+critères « `kesh-db` sans horloge » et « l'horloge atteint les services et le MCP » (anciens AC6, AC7), la fermeture des
+appelants (§ *Ce qui se lit* ci-dessous, second tableau). Ces passages restent écrits ici pour l'inventaire ; **la fiche
+35-5a0 fait foi** pour ce qu'elle porte.
 
 ## Story
 
@@ -94,9 +102,12 @@ la 35-5a). Le compilateur donne la liste close ; homonymes non concernés : `inv
 `unlock_books`), `lettering_documents_backfill.rs:289-772` (`unlock_books`, `reverse` ×6), `migrations_upgrade_path.rs:1508`,
 `:1521`, `:1640` (`supplier_invoices::cancel_in_tx`, `get_settlement_view`) ; **dans** les 38, `admin_full_import_e2e.rs:1809`
 (`journal_entries::reverse`). Gardes lexicales sur ces noms, indifférentes à un argument de plus : `bank_account_closed_inventory.rs:862-870`,
-`kesh-db/tests/letterings_lexical.rs:445-547` (à constater). Ces fichiers changent **dans la 35-5a** (la compilation l'impose) :
-chaque appel reçoit une date fixe, ou `aujourd_hui_suisse()` si le montage veut « aujourd'hui » ; le verdict de nuit de chacun se
-lit comme pour les 38 (second tableau ci-dessous).
+`kesh-db/tests/letterings_lexical.rs:445-547` (à constater). Ces fichiers changent **dans la 35-5a0** (la compilation l'impose) :
+chaque appel reçoit la date qu'il tient, ou `aujourd_hui_test()`. **La validation P3 (V3-2) a montré que cette liste n'est
+pas close** : la vue des factures fournisseur termine toutes leurs écritures (`validate`, `unvalidate`, `pay`, `cancel`,
+`cancel_settlement` par `commit_with_view`), et `reconciliation_cancel::*`, `invoice_settlements_write::cancel_settlement`
+s'y ajoutent — 158 appels dans 23 fichiers pour les seules écritures fournisseur. **La fermeture complète est dans la fiche
+35-5a0**, qui fait foi. Le verdict de nuit de ces fichiers se prouve ici par l'exécution d'AC9 (tous les binaires).
 
 **La poignée `Lecture`** (`crates/kesh-api/src/services/poignees.rs:33-48`) : `pub struct Lecture(MySqlPool)`, `Lecture::new(pool)`.
 Construite par `AppState::lecture()` (`lib.rs:159-161`) et, pour les outils du MCP, au câblage
@@ -129,55 +140,30 @@ pas.
 le fuseau (`user-manual.tex:259-261`, `:355`, `:709`, `:722`, `:994`, `:1449-1482`, `:1900`, `:2011`, `:2085`) ; il ne dit
 nulle part « date du poste » (`/usr/bin/grep -n 'du poste' docs/manual/fr/user-manual.tex` : vide).
 
-## Décisions (C-e350-16, C-e350-21 à -25)
+## Décisions (C-e350-16, C-e350-21 à -26, -28, -29)
 
-- **D1 — Europe/Zurich, constante unique**, dans `kesh-core` : `pub fn jour_suisse(instant: DateTime<Utc>) -> NaiveDate`,
-  pure, écrite `instant.with_timezone(&chrono_tz::Europe::Zurich).date_naive()` — jamais ambiguë dans ce sens (un instant
-  UTC a une seule heure locale), contrairement à `from_local_datetime`. `chrono-tz` 0.10.4 est déjà au `Cargo.lock` (par
-  `rxing` 0.7.1, features par défaut, base IANA 2025b précompilée : ni `/usr/share/zoneinfo` ni `TZ` dans l'image) :
-  ajouté aux dépendances de `kesh-core` à la même version, features par défaut, sans nouveau paquet (constater par
-  `cargo tree -p kesh-core -e features` à l'étape 0). Pas de `TZ`, pas de `chrono::Local`.
-- **D2 — `kesh-db` ne lit plus l'horloge** pour une date : `reverse_in_tx`, `reverse_owned_in_tx`, `reverse`,
-  `settlement_entry_cancel_blocker`, `settlement_cancel_blocker`, `lock_books`, `unlock_books` (et leurs intermédiaires,
-  dont `cancel_in_tx`, `cancel_settlement_in_tx` et les lectures qui calculent le bloqueur) reçoivent `aujourd_hui:
-  NaiveDate`, ajouté **en dernier argument**. `ReversalDating::Today` porte la date ou la reçoit. **Une lecture de l'horloge
-  par requête**, hors de toute boucle de rejeu : la valeur lue est passée **à la fois** au bloqueur (rang 5,
-  `settlement_cancellation.rs:172`) et à la contre-passation (`journal_entries.rs:2935`) — aujourd'hui deux lectures, qui
-  peuvent différer à minuit (le refus nommé du rang 5 se tait, `FiscalYearInvalid` sort plus loin).
-- **D3 — L'horloge vit dans `AppState` et dans `Lecture`** (C-e350-21) :
-  - **`kesh-core`** : trait `pub trait Horloge: Send + Sync { fn maintenant(&self) -> DateTime<Utc>; fn aujourd_hui(&self)
-    -> NaiveDate { jour_suisse(self.maintenant()) } }` et **`HorlogeFixe(pub DateTime<Utc>)`**, `pub` (non `#[cfg(test)]`)
-    pour les tests d'intégration de toutes les crates ; aucune I/O.
-  - **`kesh-api`** : `HorlogeSysteme` (le seul `Utc::now()` qui sert une date), champ `pub horloge: Arc<dyn Horloge>` de
-    `AppState` — `HorlogeSysteme` dans `main.rs` ; dans `new_for_tests`, défaut dans le corps (D5 : `KESH_TEST_INSTANT`) ;
-    les **9 littéraux** ci-dessus reçoivent le champ (un test qui date quelque chose y met `HorlogeFixe`).
-  - **`Lecture` porte l'horloge** : `pub struct Lecture { pool, horloge: Arc<dyn Horloge> }`, `Lecture::new(pool, horloge)`
-    **sans valeur par défaut** (le compilateur donne la liste close des constructions), `pub fn aujourd_hui(&self) ->
-    NaiveDate` et `pub fn horloge(&self) -> &dyn Horloge` (l'instant, pour le squelette de la 35-5b).
-  - **Les lignes de câblage, courtes** (V2-1 de la validation P2 : la ligne d'un seul tenant ferait 115 caractères, et
-    `cargo fmt` la couperait, ce qu'aucune garde ligne à ligne ne peut plus égaler). `AppState::lecture()` :
-    `services::poignees::Lecture::new(self.pool.clone(), self.horloge.clone())` (≈ 80 caractères, tient). Câblage du MCP
-    (`lib.rs:1401-1403`), trois lignes, chacune sous 100 caractères :
-    ```
-    let horloge_outils = state.horloge.clone();
-    let lecture_pool = services::poignees::Lecture::new(pool_outils.clone(), horloge_outils);
-    let lecture_outils = mcp::LectureOutils::nouvelle(lecture_pool);
-    ```
-    Les gardes se réécrivent sur ces lignes : `mcp_gardes_lexicales.rs:169` et `:575` (ligne de `LectureOutils::nouvelle`),
-    `services_motif.rs` `FABRIQUES_V2` **`:2071`** (ligne d'`AppState::lecture()`) et **`:2083`** (ligne de `Lecture::new(` du
-    câblage) ; une garde de plus (dans `mcp_gardes_lexicales.rs`, liste `LIB_NOMME_MCP` ou voisine) exige la ligne
-    `let horloge_outils = state.horloge.clone();` dans `lib.rs`. **M6 n'est attrapée que par ces gardes** : aucun outil du
-    MCP n'expose un site de la 35-5a (le rang 5 de `kesh_facture_fournisseur` est calculé puis jeté,
-    `services/factures_fournisseur.rs:227-237`) ; l'AC fonctionnel du MCP est à la 35-5b.
-    Ainsi les routes lisent `state.horloge`, les services `lecture.aujourd_hui()`, et le MCP — qui n'a que sa `Lecture` —
-    reçoit la même horloge que l'API sans champ neuf dans `EtatMcp` ni `ContexteMcp`.
-  - Les **fonctions pures** (conversion en réponse, analyse d'un paramètre) et `kesh-db` reçoivent une `NaiveDate`.
-  - `services::factures::reglements` (`services/factures.rs:534-558`) lit `lecture.aujourd_hui()` **une fois** et la passe à
-    `settlement_cancel_blocker` pour chaque règlement.
-  - Les **43** constructions de tests passent une horloge : `HorlogeSysteme` (ou `HorlogeFixe` si elles datent quelque
-    chose). C'est un changement mécanique, dans le même commit que la signature.
-- **D4 — La garde de l'inventaire** (C-e350-24) : un test, `crates/kesh-api/tests/date_du_jour_garde.rs` (sur le modèle de
-  `local-date-guard.test.ts`), parcourt **`crates/*/src/**/*.rs` et `crates/*/tests/**/*.rs`** :
+- **D1 — Europe/Zurich, constante unique, et la bascule** : `pub fn jour_suisse(instant: DateTime<Utc>) -> NaiveDate`, pure,
+  dans `kesh-core/src/horloge.rs` (le module de la 35-5a0), écrite `instant.with_timezone(&chrono_tz::Europe::Zurich).date_naive()`
+  — jamais ambiguë dans ce sens (un instant UTC a une seule heure locale), contrairement à `from_local_datetime`. **La
+  bascule** : le corps de `Horloge::aujourd_hui()`, `self.maintenant().date_naive()` depuis la 35-5a0, devient
+  `jour_suisse(self.maintenant())` — le serveur, le MCP, et les tests qui passent par `aujourd_hui_test()` changent de jour
+  ensemble (C-e350-29). `chrono-tz` 0.10.4 est déjà au `Cargo.lock` (par `rxing` 0.7.1, features par défaut, base IANA 2025b
+  précompilée : ni `/usr/share/zoneinfo` ni `TZ` dans l'image) : ajouté aux dépendances de `kesh-core` à la même version,
+  features par défaut, sans nouveau paquet (constater par `cargo tree -p kesh-core -e features` à l'étape 0). Pas de `TZ`,
+  pas de `chrono::Local`. Le compte de la garde de `horloge.rs` reste 1 (un `.date_naive()` dans le fichier, avant et après).
+- **D2 — `kesh-db` ne lit plus l'horloge** pour une date : **posé par la 35-5a0** (sa fiche, D2 et la fermeture des
+  appelants). Rappel : une lecture de l'horloge par requête, passée **à la fois** au bloqueur (rang 5,
+  `settlement_cancellation.rs:172`) et à la contre-passation (`journal_entries.rs:2935`).
+- **D3 — L'horloge vit dans `AppState` et dans `Lecture`** (C-e350-21) : **posé par la 35-5a0** — trait `Horloge`,
+  `HorlogeFixe`, `HorlogeSysteme` (construit dans `main.rs` et `horloge_de_test()` seulement), `horloge_de_test()` partagée par
+  `new_for_tests` et les littéraux de test, `Lecture::new(pool, horloge)`, câblage du MCP en trois lignes courtes et ses
+  gardes (une garde de la ligne `horloge_outils` dans une liste **voisine, non `LIB_NOMME_MCP`**), les neuf sites de la 35-5a
+  déjà branchés sur l'horloge, `services::factures::reglements` qui lit la date une fois. M6 (câblage du MCP sur
+  `HorlogeSysteme`) est tuée par la garde de construction de `HorlogeSysteme` de la 35-5a0.
+- **D4 — La garde de l'inventaire** (C-e350-24), **posée par la 35-5a0** et décrite ici : un test,
+  `crates/kesh-api/tests/date_du_jour_garde.rs` (sur le modèle de `local-date-guard.test.ts`), parcourt
+  **`crates/*/src/**/*.rs` et `crates/*/tests/**/*.rs`** ; l'unité du compte est **l'occurrence** après réduction des
+  blancs (validation P3, V3-7), les comptes s'écrivent **depuis l'exécution de la garde**, non depuis les tableaux :
   - **Texte lu** : lignes dont le début, espaces retirés, est `//` (`//`, `///`, `//!`) **écartées** ; puis tout blanc (saut de
     ligne compris) entre `)` et `.`, et autour de `.` dans une chaîne de méthodes, réduit — si bien qu'une forme coupée sur
     plusieurs lignes est vue (les 5 sites ci-dessus). Un commentaire **de fin de ligne** reste compté : s'il en paraît un, il
@@ -196,12 +182,12 @@ nulle part « date du poste » (`/usr/bin/grep -n 'du poste' docs/manual/fr/user
     légitimes (`NaiveDateTime` des montages).
   - **Liste close d'exemptions, par fichier, en égalité stricte (`==`)** : chaque entrée `{ fichier, nombre, story, motif }`.
     Un fichier absent de la liste doit compter **0**. Un compte qui diffère du nombre écrit, **dans un sens ou dans l'autre**,
-    rougit : la liste se ramène au compte réel à chaque conversion, comme un cliquet. **Entrées permanentes** : le fichier de
-    `jour_suisse` dans `kesh-core` (1, son `.date_naive()`) ; `kesh-api/src/routes/admin.rs` pour sa ligne `:722` (1,
+    rougit : la liste se ramène au compte réel à chaque conversion, comme un cliquet. **Entrées permanentes** :
+    `kesh-core/src/horloge.rs` (1, le `.date_naive()` du jour) ; `kesh-api/src/routes/admin.rs` pour sa ligne `:722` (1,
     horodatage du nom de sauvegarde, un instant), à côté de ses entrées 35-5b. **Le fichier de la garde est exclu nommément**
     du balayage (ses sondes et ses motifs contiennent les formes) ; une sonde prouve qu'un autre fichier du même dossier est
     bien lu.
-  - **Fichiers communs** : la liste d'exemptions est éditée par la 35-5a, puis la 35-5b, puis la 35-5c, dans cet ordre (chaque
+  - **Fichiers communs** : la liste d'exemptions est éditée par la 35-5a0, la 35-5a, la 35-5b, la 35-5c, dans cet ordre (chaque
     story part de la précédente fusionnée) ; une story sœur qui ajoute un test (35-2a, 35-3, 35-4, 35-6, 35-8) n'y écrit pas de
     date UTC (règle aux *Fichiers communs*), et l'intégration relance la garde après chaque fusion.
   - **Après la 35-5a**, la liste porte : les 19 sites de production de la 35-5b et ses commentaires restants ; les modules de
@@ -212,21 +198,22 @@ nulle part « date du poste » (`/usr/bin/grep -n 'du poste' docs/manual/fr/user
     coupée sur deux lignes aussi) et de compte (une exemption portée à `nombre + 1` rougit).
 - **D5 — Les tests ne dépendent plus de l'heure réelle** pour les sites convertis : un test de `kesh-db` passe la date qu'il
   asserte ; un test HTTP qui asserte une date fixe l'horloge de son `AppState` (`HorlogeFixe`). Un montage qui veut « un
-  exercice qui couvre aujourd'hui » prend le jour suisse par **un helper partagé par crate de tests**, posé dès cette story :
-  `crates/kesh-api/tests/common/jour.rs` et `crates/kesh-db/tests/support/jour.rs`, `pub fn aujourd_hui_suisse() ->
-  NaiveDate` (la forme `jour_suisse(Utc::now())` n'est pas relevée par la garde ; `kesh-report/tests` l'écrit en ligne, un
-  seul site ; les `mod tests` de `src` l'écrivent en ligne, `kesh_core::jour_suisse(Utc::now())`). La nuit se teste par
-  instants fixés.
+  exercice qui couvre aujourd'hui » prend le jour du serveur par **`aujourd_hui_test()`**, helper partagé par crate de tests
+  **posé par la 35-5a0** (`crates/kesh-api/tests/common/jour.rs`, `crates/kesh-db/tests/support/jour.rs`) : il rend
+  l'`aujourd_hui()` de l'horloge de test, donc le jour UTC jusqu'à la bascule et le jour suisse après, sans retouche
+  (C-e350-29) ; `kesh-report/tests` et les `mod tests` de `src` écrivent en ligne `HorlogeFixe(Utc::now()).aujourd_hui()` ou une
+  date fixe. La nuit se teste par instants fixés.
   - **Fixer l'horloge d'un `AppState` de test** (V2-7) : le champ est `pub` — `let mut state = AppState::new_for_tests(…);
     state.horloge = Arc::new(HorlogeFixe(instant));` ; un helper `crates/kesh-api/tests/common/horloge.rs`,
     `pub fn avec_horloge(state: AppState, instant: DateTime<Utc>) -> AppState`, évite de le réécrire dans chaque `spawn_app`.
-  - **La preuve de nuit** (C-e350-26) : `new_for_tests` et les deux `aujourd_hui_suisse()` prennent, **si** la variable
-    d'environnement `KESH_TEST_INSTANT` (RFC 3339) est posée, une `HorlogeFixe` à cet instant, sinon l'horloge système ; lue
-    à chaque appel, **aucun `static` ni `OnceLock`** qui mémorise le jour. `main.rs` construit `HorlogeSysteme` directement et
-    ne lit jamais cette variable ; la garde D4 vérifie que `KESH_TEST_INSTANT` n'apparaît que dans `new_for_tests` et dans les
-    helpers. Elle permet de lancer un binaire de tests « à minuit et demie » sans `faketime` (absent de la station : `command -v
-    faketime` vide, aucune `libfaketime`). Les horodatages écrits par MariaDB (`NOW(3)`) restent l'heure réelle : un rouge
-    de cette exécution qui en vient se nomme au Change Log, il n'est pas un défaut de nuit.
+  - **La preuve de nuit** (C-e350-26, mécanisme **posé par la 35-5a0**) : `horloge_de_test()` — donc `new_for_tests`, les
+    littéraux de test et `aujourd_hui_test()` — prend une `HorlogeFixe` à l'instant de `KESH_TEST_INSTANT` (RFC 3339) si la
+    variable est posée ; lue à chaque appel, sans `static` ni `OnceLock` ; `main.rs` ne la lit jamais ; gardes de
+    durcissement (fiche 35-5a0, D5). Ici, deux usages (AC9) : **la nuit réelle reproduite de jour**,
+    `KESH_TEST_INSTANT="$(date -u +%F)T23:30:00Z"` — les montages non convertis et MariaDB restent au jour UTC D, le serveur et
+    les montages convertis passent au jour suisse D+1, exactement comme à 00 h 30 ; et **deux instants fixés** pour les
+    fichiers 35-5a (passage d'année, heure d'hiver). `faketime` est absent de la station (`command -v faketime` vide, aucune
+    `libfaketime`).
 - **D6 — Docs et commentaires** : `api-external.md:272` dit « du jour, à Zurich » ; les commentaires qui deviennent faux sont
   réécrits : `bank_accounts.rs:794-795` (« date du jour (UTC, comme le complément de l'écran) »),
   `opening_complement.rs:22` (« aujourd'hui (date UTC, passée en paramètre) »), `companies.rs:986-989` (« `Utc::now().date_naive()`,
@@ -240,8 +227,11 @@ nulle part « date du poste » (`/usr/bin/grep -n 'du poste' docs/manual/fr/user
   rendant une chaîne : `new Date(y, m − 1, d − 1)` sur ses champs, remise en `AAAA-MM-JJ` par `todayLocal(…)` ; l'entrée
   d'allowlist `local-date-guard.test.ts:55-58` est retirée, et le commentaire de ce fichier qui compte ses entrées passe de
   « huit » à « sept » (à recompter). `maxLockDate` est une constante évaluée à l'initialisation du script : le Vitest
-  (`settings-page.test.ts`) pose `vi.setSystemTime(new Date(2026, 2, 11, 0, 30))` **avant** le rendu et lit l'attribut `max`
-  du champ.
+  (`settings-page.test.ts`) **fixe le fuseau** par `pinTimeZone('Europe/Zurich')` (précédent `local-date.test.ts:8`,
+  `pin-time-zone.test-helper.ts` ; Vitest n'a pas de fuseau global et la CI tourne en UTC), puis pose
+  `vi.setSystemTime(new Date('2026-03-10T23:30:00Z'))` — le même instant que l'AC4 serveur — **avant** le rendu, et lit
+  l'attribut `max` du champ : `2026-03-10` (le code de départ, veille UTC, rend `2026-03-09`). Sans le fuseau fixé, une date
+  construite en champs locaux rendait le test vert avant correction sous TZ=UTC (validation P3, V3-3).
 
 ## Critères d'acceptation
 
@@ -290,34 +280,31 @@ nulle part « date du poste » (`/usr/bin/grep -n 'du poste' docs/manual/fr/user
    - `unlock_books` : borne courante au `2026-03-10` (posée par `lock_books` à la même heure fixée), cible `2026-03-10` →
      **acceptée** (le code de départ refuse : `2026-03-10 >= ` jour UTC) ; cible `2026-03-11` → refusée, même réponse. Une
      cible au `2026-03-09` passe déjà sur le code de départ : elle ne prouve rien.
-   - Écran (D7) : `maxLockDate` vaut `2026-03-10` quand le poste est au `2026-03-11T00:30` local (Vitest,
-     `vi.setSystemTime` sur une date construite en champs locaux) ; l'allowlist n'a plus l'entrée du verrou.
+   - Écran (D7) : fuseau fixé à `Europe/Zurich` (`pinTimeZone`), instant `2026-03-10T23:30:00Z` : `maxLockDate` vaut
+     `2026-03-10` (le code de départ : `2026-03-09`) ; l'allowlist n'a plus l'entrée du verrou.
 5. **AC5 — Premier exercice de l'assistant** (site 17, C-e350-23) : finalisation du chemin B
    (`routes/onboarding.rs:1043`) à `2025-12-31T23:30:00Z` → l'exercice créé s'appelle « Exercice 2026 » et couvre 2026 (le
    code de départ : « Exercice 2025 »).
-6. **AC6 — `kesh-db` sans horloge** : les fonctions de D2 reçoivent la date ; leurs tests passent une date fixe ; aucun
-   `Utc::now()` qui sert une date dans **la production** des fichiers de `kesh-db` touchés (garde ; le `mod tests` de
-   `journal_entries.rs` reste exempté à son compte exact).
-7. **AC7 — L'horloge atteint les services et le MCP** (C-e350-21) : `Lecture::new` exige une horloge ; `AppState::lecture()`
-   et le câblage du MCP passent `state.horloge`, en lignes courtes (D3) — les gardes lexicales (`mcp_gardes_lexicales.rs:169`,
-   `:575` ; `services_motif.rs`, `FABRIQUES_V2` `:2071` et `:2083` ; et la garde neuve de `let horloge_outils =
-   state.horloge.clone();`) portent les lignes nouvelles, restent vertes, et sont **le** contrôle de M6 ; un test construit un `AppState` à
-   `HorlogeFixe(2025-12-31T23:30:00Z)` et constate `state.lecture().aujourd_hui() == 2026-01-01` ; `services::factures::reglements`
-   rend, pour un règlement dont l'exercice du jour suisse est clos, le motif du rang 5 (route `GET /invoices/{id}/settlements`).
-   L'AC fonctionnel par un outil du MCP est à la 35-5b (`kesh_balance_agee`), qui convertit le premier service servi par le MCP.
-8. **AC8 — La garde** (D4) : rouge sur le code de départ (les 9 sites de la 35-5a et les fichiers de tests qu'elle convertit
-   ne sont pas exemptés) ; verte après, liste ramenée au compte exact de chaque fichier ; sondes du Change Log (positive,
-   multi-ligne, compte + 1).
-9. **AC9 — Tests sûrs la nuit, verdict par fichier** (C-e350-22) : après cette story, aucun test ne rougit entre minuit et
-   1 h (2 h en été) à Zurich du fait d'un site de la 35-5a. Le verdict des **38 fichiers** de `crates/*/tests` est tenu au
-   Change Log (tableau ci-dessous, à confirmer ligne lue citée) ; les fichiers marqués **35-5a** sont convertis (date fixe,
-   horloge fixée, ou helper `aujourd_hui_suisse`) et comptent 0 à la garde ; ceux qui restent sont à leur compte exact.
-   Le module `mod tests` de `kesh-db/src/repositories/journal_entries.rs` convertit dans cette story les tests qui appellent
-   une fonction de D2 ou assertent une date de contre-passation ; les autres vont à la 35-5c. Les **neuf appelants hors des
-   38** (second tableau) changent ici, la compilation l'imposant. **Preuve de nuit** (C-e350-26) : les binaires de tests des
-   fichiers 35-5a des deux tableaux, lancés une fois avec `KESH_TEST_INSTANT=2025-12-31T23:30:00Z` puis
-   `KESH_TEST_INSTANT=2026-03-10T23:30:00Z`, sont verts ; journal `kesh-gate-logs/e355a/nuit.log`, chaque rouge nommé (un
-   horodatage MariaDB n'est pas un défaut de nuit).
+6. **AC6 — (à la 35-5a0)** `kesh-db` sans horloge : sa fiche, AC2.
+7. **AC7 — Les services et le MCP au jour suisse** (C-e350-21, plomberie de la 35-5a0) : un `AppState` à
+   `HorlogeFixe(2025-12-31T23:30:00Z)` donne `state.lecture().aujourd_hui() == 2026-01-01` (la 35-5a0 : `2025-12-31`) ;
+   `services::factures::reglements` rend, pour un règlement dont l'exercice du jour suisse est clos, le motif du rang 5 (route
+   `GET /invoices/{id}/settlements`) ; de même `GET` des candidats au rattachement (`routes/reconciliation.rs:6587`,
+   `get_entry_candidates` → `entry_cancel_outlook`, rang 5). L'AC fonctionnel par un outil du MCP est à la 35-5b.
+8. **AC8 — La garde** (D4) : la liste se ramène aux comptes réels après les conversions de cette story (relevés par
+   l'exécution de la garde) ; sondes du Change Log (positive, multi-ligne, compte + 1).
+9. **AC9 — Tests sûrs la nuit** (C-e350-22, C-e350-26) : après cette story, aucun test ne rougit entre minuit et 1 h (2 h en
+   été) à Zurich du fait d'un site de la 35-5a. Les fichiers marqués **35-5a** au tableau ci-dessous sont convertis (date
+   fixe, horloge fixée, ou `aujourd_hui_test()`) et comptent 0 à la garde ; le `mod tests` de `journal_entries.rs` convertit
+   les tests qui assertent une date de contre-passation. **Deux preuves, au Change Log** (`kesh-gate-logs/e355a/nuit.log`) :
+   - **la nuit réelle reproduite de jour, sur tous les binaires de tests** (validation P3, V3-1) :
+     `KESH_TEST_INSTANT="$(date -u +%F)T23:30:00Z"` — montages non convertis et MariaDB au jour UTC D, serveur et montages
+     convertis au jour suisse D+1. **Chaque rouge** se rattache à un fichier classé 35-5b ou 35-5c, avec son motif ; un rouge
+     dans un fichier 35-5a, dans un appelant de la fermeture de la 35-5a0, ou dû à un site 1–9, est un **défaut** de cette
+     story. Le verdict « 35-5c » des fichiers « à lire » (`credit_card_e2e.rs`, `reconciliation_link_e2e.rs`, les lignes du
+     second tableau) s'établit par cette exécution, non par affirmation ;
+   - **deux instants fixés** pour les binaires des fichiers 35-5a : `KESH_TEST_INSTANT=2025-12-31T23:30:00Z` (passage
+     d'année) puis `2026-03-10T23:30:00Z` (heure d'hiver) : verts.
 10. **AC10 — Le chemin de jour ne change pas** : en journée (`2026-06-15T10:00:00Z`), les dates écrites sont celles d'avant ;
     tests existants verts sans retouche de leurs attendus, hors AC9.
 11. **AC11 — Docs, manuel, CHANGELOG, PR** : D6 ; PDF régénéré, contrôlé aplati ; CHANGELOG `## [0.17.7] — Non publié`,
@@ -334,6 +321,7 @@ qu'il calcule, ou appelle une fonction de D2 ; **35-5b** si son attendu change a
 (jour du montage sans comparaison avec le jour du serveur, ou marge de plusieurs jours). Un appel **direct** à une fonction
 de D2 lui passe la date que le test tient déjà : sans risque la nuit, puisque le test la fournit. Un fichier qui atteint à
 la fois un site de la 35-5a et un de la 35-5b fixe l'horloge, faute de quoi il ne peut être juste la nuit dans l'intervalle.
+Le verdict est **provisoire** ; l'exécution « nuit réelle » d'AC9 le tranche.
 
 | Fichier (sites) | Verdict | Motif (indice relevé) |
 |---|---|---|
@@ -380,51 +368,49 @@ Décompte provisoire (validation P2) : **23** fichiers en 35-5a (dont deux en pa
 `fiscal_years_e2e.rs`), **8** en 35-5b (plus leurs parts), **7** en 35-5c (dont `admin_full_import_e2e.rs`, dont l'appel de
 `:1809` change ici) — 38. À recompter.
 
-**Second tableau — appelants des fonctions de D2 sans site de jour** (hors des 38 ; la compilation impose leur changement ici) :
+**Second tableau — appelants des fonctions de D2 sans site de jour**, **adaptés par la 35-5a0** (la compilation l'impose ; la
+fermeture complète, avec les 158 appels des écritures fournisseur, est dans sa fiche). Leur verdict de nuit se tranche ici,
+par l'exécution « nuit réelle » d'AC9 :
 
-| Fichier | Appel | Action | Nuit |
+| Fichier | Appel | Action (35-5a0) | Nuit (35-5a) |
 |---|---|---|---|
-| `kesh-api/tests/invoice_echeancier_e2e.rs` | `lock_books` `:2014` | date fixe ou `aujourd_hui_suisse()` | à lire : borne comparée au jour ? |
+| `kesh-api/tests/invoice_echeancier_e2e.rs` | `lock_books` `:2014` | date fixe ou `aujourd_hui_test()` | à lire : borne comparée au jour ? |
 | `supplier_settlement_cancel_e2e.rs` | `lock_books` `:749` | idem | à lire (annulation au jour) |
 | `supplier_invoice_response_e2e.rs` | `commit_with_view`, `get_settlement_view_in_tx` `:434-496` | date passée | à lire |
 | `kesh-db/tests/invoice_write_off.rs` | `settlement_cancel_blocker`, `lock_books`, `get_view` `:649-1558` | date passée | à lire |
 | `journal_entries_modification.rs` | `reverse_in_tx` `:365`, `:473` | date fixe | sûr (date fournie) |
-| `lettering_documents.rs` | `lock_books`, `unlock_books` `:755-1040` | date fixe ou `aujourd_hui_suisse()` | à lire |
+| `lettering_documents.rs` | `lock_books`, `unlock_books` `:755-1040` | date fixe ou `aujourd_hui_test()` | à lire |
 | `lettering_documents_backfill.rs` | `unlock_books`, `reverse` ×6 `:289-772` | idem | à lire |
 | `migrations_upgrade_path.rs` | `supplier_invoices::cancel_in_tx` `:1508`, `:1521` ; `get_settlement_view` `:1640` | date fixe | sûr (date fournie) |
 | `bank_account_closed_inventory.rs`, `letterings_lexical.rs` | gardes lexicales sur les noms | aucune, à constater vertes | — |
+| les 23 fichiers des appels `supplier_invoices::{validate,…}`, ceux de `cancel_settlement(` et de `reconciliation_cancel::*` | voir la fiche 35-5a0 | `aujourd_hui_test()` ou date tenue | par AC9 |
 
-Règle de nuit pour ces fichiers : un appel qui reçoit `aujourd_hui_suisse()` alors que le montage du même test date ses pièces
-en UTC peut se désaccorder la nuit ; un tel montage passe aussi au helper, dans la 35-5a.
+Règle de nuit pour ces fichiers : un appel qui reçoit `aujourd_hui_test()` suit le jour du serveur ; si le montage du même test
+date ses pièces par `Utc::now()`, il se désaccorde la nuit après la bascule — un tel montage passe aussi au helper, dans la
+35-5a.
 
 ## Tests à écrire, et la preuve du rouge
 
-Écrire d'abord, lancer sur le code de départ, journal `kesh-gate-logs/e355a/rouges.log`.
-
-**Le squelette compilable** est commité d'abord : `jour_suisse` déclarée **et qui rend encore le jour UTC**
-(`instant.date_naive()`, c'est-à-dire M1), le trait `Horloge`, `HorlogeFixe`, `HorlogeSysteme`, `AppState.horloge`,
-`Lecture` à horloge, et **les neuf sites déjà branchés** sur `state.horloge.aujourd_hui()` / `lecture.aujourd_hui()`, la date
-passée à `kesh-db` (D2). Ainsi les rouges sont **déterministes** et disent le défaut, non l'absence de branchement :
-AC1 (`2025-12-31` attendu `2026-01-01`), AC2, AC3 et AC5 (la veille, et l'exercice précédent), AC4 (`2026-03-10` refusé). Ils
-ne dépendent pas du jour réel où on les lance. L'implémentation de `jour_suisse` les met au vert. AC8 rouge sur la garde.
+Écrire d'abord, lancer **sur la 35-5a0 fusionnée**, journal `kesh-gate-logs/e355a/rouges.log`. La 35-5a0 est le squelette : les
+neuf sites lisent déjà l'horloge, et `Horloge::aujourd_hui()` rend le jour UTC (`maintenant().date_naive()`). Les rouges sont
+donc **déterministes** et disent le défaut : AC1 (`jour_suisse` n'existe pas : squelette `jour_suisse` qui rend le jour UTC,
+commité d'abord, puis rouge par attendu — `2025-12-31` attendu `2026-01-01`), AC2, AC3 et AC5 (la veille, et l'exercice
+précédent), AC4 (`2026-03-10` refusé ; le Vitest, `2026-03-09`), AC7 (`2025-12-31`). Ils ne dépendent pas du jour réel où on
+les lance. La bascule (D1) les met au vert.
 
 **Mutations** : M1 `jour_suisse` rend le jour UTC ; M2 l'été sans +2 h (fuseau fixe +1) ; M3 un site de la 35-5a qui lit
-`Utc::now()` ; M4 `lock_books` comparé au jour UTC ; M5 une exemption de la garde ajoutée sans site (la garde rougit sur le
-compte) ; M6 le câblage du MCP construit sa `Lecture` avec `HorlogeSysteme` au lieu de `state.horloge` (AC7 : les gardes
-lexicales seules, aucun outil du MCP n'exposant un site de la 35-5a) ; M7 la contre-passation de l'annulation relit l'horloge
-au lieu de recevoir la date du bloqueur (AC3 : les cas d'acceptation par chemin) ; M8 `new_for_tests` ignore
-`KESH_TEST_INSTANT` (la preuve de nuit d'AC9 rougit sur les tests qui comparent un jour du montage à celui du serveur).
+`Utc::now()` (garde, et AC2 à AC5) ; M4 `lock_books` comparé au jour UTC ; M5 une exemption de la garde ajoutée sans site (la
+garde rougit sur le compte) ; M7 la contre-passation de l'annulation relit l'horloge au lieu de recevoir la date du bloqueur
+(AC3 : les cas d'acceptation par chemin) ; M9 `maxLockDate` remis à la veille UTC (AC4, Vitest au fuseau fixé). M6 et M8
+(câblage du MCP, `KESH_TEST_INSTANT`) sont à la 35-5a0.
 
 ## Tâches
 
-- [ ] Étape 0 : recompter l'inventaire (28 / 56 / 112 / 35, 8 commentaires), les appelants (production et tests, avec les
-      fonctions de vue), les 43 constructions de `Lecture` et les 9 littéraux d'`AppState` ; confirmer les deux tableaux de
-      verdict, ligne lue citée ; `cargo tree` pour `chrono-tz` ; Change Log.
-- [ ] Squelette compilable branché (ci-dessus), tests, rouges consignés.
-- [ ] `kesh-core` : `jour_suisse`, trait `Horloge`, `HorlogeFixe`. `kesh-db` : date en paramètre (D2). `kesh-api` :
-      `AppState.horloge`, `HorlogeSysteme`, `Lecture` à horloge, câblage du MCP et ses gardes lexicales, sites 1–8 et 17,
-      `services::factures::reglements` ; helpers `aujourd_hui_suisse` ; garde D4. Écran du verrou (D7).
-- [ ] Tests convertis (AC9) ; commentaires, docs, manuel, CHANGELOG.
+- [ ] Étape 0 : partir de la 35-5a0 fusionnée ; recompter les sites et les tests ; confirmer les deux tableaux de verdict,
+      ligne lue citée ; `cargo tree` pour `chrono-tz` ; Change Log.
+- [ ] Squelette `jour_suisse`, tests, rouges consignés.
+- [ ] `kesh-core` : `jour_suisse`, bascule de `Horloge::aujourd_hui()`. Écran du verrou (D7). Garde ramenée aux comptes réels.
+- [ ] Tests convertis (AC9) et les deux preuves de nuit ; commentaires, docs, manuel, CHANGELOG.
 - [ ] Gates : `test-fast.sh --ci` **complet à chaque commit de code** (exception `kesh-db`), `scripts/gate-ci.sh` au dernier
       commit de code, frontend complet, E2E complet au dernier commit de code.
 
@@ -440,7 +426,7 @@ au lieu de recevoir la date du bloqueur (AC3 : les cas d'acceptation par chemin)
 - **Le jour d'un instant enregistré** (C-e350-25) — un horodatage UTC ramené à un jour par `.date()` ou `DATE(…)` — reste en
   UTC dans cette story. Sites relevés : `dunning_eligibility.rs:128` (`lr.date()`, le jour du dernier rappel comparé au jour
   du serveur) et `routes/invoices.rs:1525` (`paid_at` du CSV de l'échéancier) : **35-5b** ; `reconciliation.rs:237`
-  (`DATE(rmd.last_sent_at)` dans la date d'exigibilité, en SQL) : issue à ouvrir ; `reconciliation.rs:435` (la contrainte
+  (`DATE(rmd.last_sent_at)` dans la date d'exigibilité, en SQL) : **#1053** ; `reconciliation.rs:435` (la contrainte
   `chk_invoices_paid_at_after_date`, `DATE(paid_at) >= date - INTERVAL 1 DAY`) : sa tolérance d'un jour absorbe l'écart, et
   la changer demanderait une migration — hors périmètre, sans issue.
 
@@ -454,19 +440,14 @@ confirmer à l'étape 0 : `invoices-settlement-cancel.spec.ts`, `journal-entries
 `supplier-invoice-draft-cycle.spec.ts` ; liste écrite au Change Log, la 35-5c part d'elle. Un rouge d'une autre spec à cette
 heure n'est pas une régression : le nommer contre cette note.
 
-### Dérogation règle de splitting (C-e350-27)
+### Découpage (C-e350-28) — la dérogation C-e350-27 tombe
 
-La 35-5a touche plus de cinq modules (`kesh-core`, `kesh-db`, `kesh-api` routes, services et câblage du MCP, les tests de trois
-crates, l'écran du verrou, les manuels) : le critère de découpage préventif s'applique. **Il n'est pas suivi**, pour une raison
-de compilation et une raison de sûreté :
-- **le mécanisme ne se coupe pas** : changer la signature des fonctions de D2 et de `Lecture::new` oblige, dans le même
-  commit, tous leurs appelants — production et tests (les deux tableaux) — à compiler ; une story « plomberie » sans les
-  appelants ne compile pas, une story « appelants » sans la plomberie n'a rien à appeler ;
-- **la sûreté de nuit ne se coupe pas non plus** : une story qui convertirait les sites sans les tests qui les atteignent
-  rougirait la nuit, ce qu'AC9 interdit. Ce que l'on pouvait retirer sans casser l'une ou l'autre l'a été : les 19 autres
-  sites (35-5b), les tests sans lien avec un site (35-5c), la dévalidation (V2-10).
-Risque accepté : un diff large, revu par passes complètes ; atténuation : le squelette branché d'abord (rouges
-déterministes), le gate complet à chaque commit (exception `kesh-db`), la preuve de nuit par `KESH_TEST_INSTANT`.
+La validation P2 avait levé le signal (plus de cinq modules) et la fiche y répondait par une dérogation : « le mécanisme ne se
+coupe pas ». **La validation P3 (V3-4) a montré la prémisse fausse** : la fiche prescrivait elle-même un squelette compilable
+— plomberie et appelants, comportement inchangé —, c'est-à-dire exactement le *story-zero* de `CLAUDE.md`. Décision de
+l'orchestrateur : la plomberie part à la **35-5a0** (comportement strictement inchangé, jour UTC, tests verts sans retouche,
+garde posée) ; la **35-5a** garde la bascule sur Zurich, ses critères, les conversions de tests qu'elle impose et les preuves
+de nuit. La sûreté de nuit reste d'un seul tenant, dans la 35-5a.
 
 ### Fichiers communs — règle d'union C-e350-8
 
@@ -476,19 +457,22 @@ déterministes), le gate complet à chaque commit (exception `kesh-db`), la preu
 **avec la 35-3** : `kesh-db/src/repositories/supplier_invoices.rs` (35-3 `:1521-1530`, `:1698-1727` ; ici les signatures
 `:2462`, `:2600`, `:2750`, `:2871`), `invoice_settlements_write.rs` (35-3 `:679-680` ; ici `:878`, `:1023`),
 `crates/kesh-db/tests/supplier_invoices_repository.rs` (35-3 `:2250-2257` ; ici `:1586`, `:1862`, `:2700`, `:2795`) — hunks
-distincts, la seconde fusionnée se rebase sur la première ; `routes/invoices.rs`, `routes/supplier_invoices.rs`,
+distincts, la seconde fusionnée se rebase sur la première. ⚠️ **Conflit de compilation** (validation P3, V3-2) : les tests neufs
+de la 35-3 qui appellent `supplier_invoices::validate` / `pay` ne compilent plus après la **35-5a0**, qui change ces signatures ;
+la règle d'ordre est à l'epic et dans la fiche 35-5a0 (la seconde fusionnée ajoute la date aux appels de l'autre, gate complet) ;
+`routes/invoices.rs`, `routes/supplier_invoices.rs`,
 `routes/imported_supplier_invoices.rs`, `routes/reconciliation.rs`, `services/factures_fournisseur.rs` (chaîne des
 appelants) ; `docs/api-external.md:272` : 35-5a seule pour cette ligne (la 35-6 ne touche plus `api-external.md`, C-e350-19 ;
 la 35-5b y a `:252`, `:292`, `:443`) ; `user-manual.tex` avec la **35-4** (`:3107`), la **35-6** (`:2456`), la **35-3** et la
 **35-2a** (paragraphes distincts) ; `frontend/src/lib/shared/utils/local-date-guard.test.ts` avec la **35-5c** (qui l'étend
 aux specs, partant de celle-ci fusionnée) ; `settings/+page.svelte` (35-5a seule) ; `CHANGELOG.md`. `lib.rs`,
-`services/poignees.rs`, `mcp_gardes_lexicales.rs`, `services_motif.rs` : 35-5a seule ; `tests/common/mcp.rs` avec la **35-5b**
-(qui y ajoute une entrée à horloge fixée). `crates/kesh-api/tests/date_du_jour_garde.rs` : créé ici, sa liste d'exemptions
-éditée ensuite par la 35-5b puis la 35-5c (hunks de la même table, dans cet ordre).
+`services/poignees.rs`, `mcp_gardes_lexicales.rs`, `services_motif.rs` : 35-5a0 ; `tests/common/mcp.rs` avec la 35-5a0 et la
+**35-5b** (qui y ajoute une entrée à horloge fixée). `crates/kesh-api/tests/date_du_jour_garde.rs` : créé par la 35-5a0, sa liste
+d'exemptions éditée ensuite par la 35-5a, la 35-5b puis la 35-5c (hunks de la même table, dans cet ordre).
 **Tests neufs des stories sœurs** (35-2a, 35-2b, 35-3, 35-4, 35-6, 35-8 — V2-14) : la garde à égalité stricte lit
 `crates/*/tests/**` ; un test neuf qui écrit `Utc::now().date_naive()` dans un fichier à compte 0 (ex.
 `supplier_invoices_repository.rs`, où la 35-3 ajoute `:2250-2257`) la fait rougir. Règle : tout test neuf prend
-`aujourd_hui_suisse()` ou une date fixe ; à l'union, l'intégration relance la garde et corrige le test, non la liste.
+`aujourd_hui_test()` ou une date fixe ; à l'union, l'intégration relance la garde et corrige le test, non la liste.
 
 ### Ce qui doit rester vrai
 
@@ -514,15 +498,10 @@ aux specs, partant de celle-ci fusionnée) ; `settings/+page.svelte` (35-5a seul
 
 ### File List
 
-*Attendue (à confirmer)* : `crates/kesh-core/Cargo.toml`, `crates/kesh-core/src/` (module du jour et de l'horloge, `lib.rs`) ;
-`crates/kesh-db/src/repositories/{journal_entries,settlement_cancellation,companies,invoice_settlements_write,reconciliation_cancel,supplier_invoices,opening_complement}.rs` ;
-`crates/kesh-api/src/{lib,main}.rs`, `middleware/auth.rs`, `services/{poignees,factures,factures_fournisseur}.rs`,
-`routes/{bank_accounts,opening_balances,companies,journal_entries,onboarding,invoices,supplier_invoices,imported_supplier_invoices,reconciliation}.rs` ;
-`crates/kesh-api/tests/date_du_jour_garde.rs`, `tests/common/{jour,horloge}.rs`, `mcp_gardes_lexicales.rs`,
-`services_motif.rs`, les 10 fichiers des constructions de `Lecture`, les 7 fichiers des littéraux d'`AppState`, les fichiers
-**35-5a** des deux tableaux de verdict (dont `supplier_invoice_response_e2e.rs`, `invoice_echeancier_e2e.rs`,
-`supplier_settlement_cancel_e2e.rs`) ; `crates/kesh-db/tests/support/jour.rs` et les fichiers `kesh-db/tests` du second
-tableau ; `crates/kesh-report/tests/open_items_invariant.rs` ;
+*Attendue (à confirmer ; la plomberie est à la 35-5a0)* : `crates/kesh-core/{Cargo.toml,src/horloge.rs}` (`jour_suisse`,
+bascule) ; `kesh-db/src/repositories/{companies,opening_complement}.rs` et `kesh-api/src/routes/bank_accounts.rs`
+(commentaires, D6) ; `crates/kesh-api/tests/date_du_jour_garde.rs` (comptes), `tests/common/horloge.rs`, les fichiers
+**35-5a** du tableau de verdict et le `mod tests` de `journal_entries.rs` ; les tests neufs d'AC1 à AC7 ;
 `frontend/src/routes/(app)/settings/+page.svelte`, `frontend/src/lib/shared/utils/local-date-guard.test.ts`, les specs E2E
 qui assertent une date d'un site de la 35-5a ; `docs/api-external.md`, `docs/manual/fr/user-manual.{tex,pdf}`, `CHANGELOG.md`.
 
@@ -583,3 +562,23 @@ qui assertent une date d'un site de la 35-5a ; `docs/api-external.md`, `docs/man
   - Ajout : preuve de nuit par `KESH_TEST_INSTANT` (C-e350-26 ; `faketime` absent de la station), AC9 et M8.
   - Aucun finding réfuté. Signal de découpage : levé (plus de cinq modules) et **non suivi**, motivé par la dérogation
     (C-e350-27) ; les défauts de P2 sont distincts de ceux de P1, aucun recyclage. Aucune migration. Statut `ready-for-dev`.
+- 2026-11-12 — **Validation P3** (Opus, `kesh-gate-logs/e35-5a-validation-p3.md` : 0 CRITICAL, 0 HIGH, 4 MEDIUM, 3 LOW ;
+  série 7 → 5 → 4 MEDIUM) remédiée par l'agent de rédaction (worktree `kesh-e355`). Prémisses lues au code de `release/0.17.6`.
+  - **V3-4 → découpage** (décision de l'orchestrateur, C-e350-28) : la dérogation C-e350-27 tombe, sa prémisse étant fausse ; la
+    plomberie part à la **35-5a0** (fiche neuve, comportement inchangé, jour UTC, garde posée) ; ici restent la bascule
+    (`jour_suisse`, corps d'`Horloge::aujourd_hui()`, C-e350-29), AC1 à AC5, AC7 au jour suisse, l'écran, les conversions et les
+    preuves de nuit. AC6 renvoie à la 35-5a0.
+  - **V3-1** : AC9 porte une exécution de **tous** les binaires avec `KESH_TEST_INSTANT="$(date -u +%F)T23:30:00Z"`, lancée de
+    jour, chaque rouge rattaché à 35-5b ou 35-5c ; les littéraux d'`AppState` de test prennent `horloge_de_test()` (35-5a0).
+  - **V3-2** : la fermeture des appelants (écritures fournisseur par `commit_with_view`, `cancel_settlement`,
+    `reconciliation_cancel::*`, routes `supplier_invoices.rs:829-990`, `invoices.rs:1361`, `reconciliation.rs:5938`, `:6587` ;
+    158 appels dans 23 fichiers, `git grep` relu) passe à la fiche 35-5a0 ; `from_view` (`:272`) n'est pas un appelant ; le
+    conflit de compilation avec la 35-3 est écrit (fiche 35-5a0, epic).
+  - **V3-3** : Vitest du verrou à fuseau fixé (`pinTimeZone`, `local-date.test.ts:8` lu) et à l'instant de l'AC4 serveur.
+  - **LOW** : V3-5 (durcissement — gardes de compte de `KESH_TEST_INSTANT`, des appels de `new_for_tests`/`horloge_de_test`
+    et des constructions de `HorlogeSysteme`, `panic!` sur valeur invalide, ligne de `docs/testing.md` — porté à la 35-5a0 ;
+    une feature `test-support` écartée, C-e350-29) ; V3-6 (garde `horloge_outils` dans une liste voisine, non
+    `LIB_NOMME_MCP`, `mcp_gardes_lexicales.rs:207-211` lu) ; V3-7 (unité : l'occurrence ; comptes écrits depuis l'exécution).
+  - Helper de test renommé `aujourd_hui_test()` (il rend le jour UTC dans la 35-5a0, suisse après la bascule : le nom
+    `aujourd_hui_suisse` aurait menti entre les deux). `reconciliation.rs:237` : **#1053**.
+  - Aucun finding réfuté. Signal de découpage : suivi (C-e350-28). Aucune migration. Statut `ready-for-dev`.
