@@ -435,13 +435,14 @@ aucune migration, aucun schéma.
       d'où la séparation `clearRefusals` / encadré. Deux Vitest neufs.
     - **B-3 = E-2** — un troisième avis, `refused-reread-failed` (C-e348-11), clé `supplier-invoices-reread-failed` aux
       quatre locales.
-    - **E-3** — pas de garde d'ordre ici, issue demandée (C-e348-12).
+    - **E-3** — pas de garde d'ordre ici, issue demandée (C-e348-12) *(ouverte : #1018)*.
     - **A-2** — Vitest de valider et repasser en brouillon (refus après relecture en échec, relecture, encadré) ; mutations
       **M11** et **M12** rouges.
     - **A-3** — CHANGELOG : la fiche relit sur le refus d'un second envoi ; la page de modification n'est pas couverte (#986).
     - **B-4** — même précision au manuel (phrase neuve, PDF régénéré) et au commentaire d'`isSettlementOutcomeUnknown`
       (#986, #985, #975).
-    - **A-4** — l'échec instable de `backup-restore-new-install.spec.ts:140` : issue KF demandée, à l'orchestrateur.
+    - **A-4** — l'échec instable de `backup-restore-new-install.spec.ts:140` : issue KF demandée, à l'orchestrateur
+      *(déjà tracé : #931, KF-056, où l'occurrence a été versée)*.
     - **A-5** — deux tests E2E neufs, avec leurs captures (`e348-refus-relecture-en-echec.png`,
       `e348-propre-document-joint.png`).
   - **Gardes i18n** : `sitesTotal` 2921 → **2922**, clés du domaine 409 → **410**.
@@ -449,6 +450,26 @@ aucune migration, aucun schéma.
   - **Tendance** : P1 2 M / 7 L → P2 2 M / 9 L → P3 1 M / 9 L. Le MEDIUM de la P3 est né de la remédiation P2 : la P4 est
     une **passe ciblée** (Haiku) sur le commit `7840aab2` et les tests E2E qui suivent,
     `34-8-fournisseur-relecture-apres-commit-review-prompt-p4-ciblee.md`.
+- 2026-11-12 : **M10b tuée** (commit de test `b01229f6`) : un refus de paiement certain, puis deux gestes de document dont
+  la réponse se perd ; la première relecture montre la facture payée ailleurs, la seconde de nouveau validée, et le bloc
+  de paiement rouvert par la relecture ne montre plus le refus. M10b rejouée : rouge sur le refus visible.
+- 2026-11-12 : **passe ciblée P4 (Haiku) : 1 MEDIUM, 2 LOW — traités** (Opus 5.5, commit de code `c0ec8440`). Rapport
+  `kesh-gate-logs/e348-review-p4-ciblee.md`. Le MEDIUM est confirmé au code par l'orchestrateur ; les prémisses relues :
+  - **C-1 (M), régression de la remédiation P3** — `clearBlockErrors` sans condition dans `reloadAfterRefusal` effaçait le
+    refus que `pay()`, `cancelSettlement()` ou `cancel()` venait de poser, dès que la relecture qui suit un refus d'écran
+    périmé réussissait. Quand elle rendait le **même** statut (`OPTIMISTIC_LOCK_CONFLICT`, facture toujours validée), le
+    bloc restait affiché sans message. Corrigé : les refus des blocs ne sont vidés que si le statut a changé
+    (`statusBefore`). `validateError` et `unvalidateError`, rendus hors des blocs, n'étaient pas touchés et ne le sont
+    pas : cohérent. Vitest « refus périmé relu au même statut » ; mutation **M13** (sans condition) rouge ; **M10c**
+    (condition retirée) rouge sur le test de M10b.
+  - **C-2 (L)** — `detachError` n'est plus vidé avant la confirmation. Vitest ; **M14** rouge sous sa forme juste (vider
+    avant la confirmation, le défaut d'origine). Sa première forme, la ligne simplement retirée, survivait, et ne pouvait
+    que survivre : sans vidage du tout, le test d'une boîte annulée ne rougit pas.
+  - **C-3 (L)** — le commentaire de `clearCycleErrors` ne range plus *Payer* parmi ses gestes.
+  - La P4 avait vu `+page.svelte` modifié pendant sa lecture : c'était la mutation M10b en cours. Le worktree était
+    restauré (`git status` vide) avant la remédiation.
+  - **Tendance** : P3 1 M / 9 L → P4 ciblée 1 M / 2 L (né de la remédiation P3). Passe ciblée **P5** (Sonnet) sur
+    `c0ec8440` : `34-8-fournisseur-relecture-apres-commit-review-prompt-p5-ciblee.md`.
 
 ## Dev Agent Record
 
@@ -579,7 +600,8 @@ Opus 5.5 (claude-opus-5-5), en autonomie, sous le prompt `kesh-gate-logs/prompts
   réessai automatique en cours » vient du client commun, qui pose l'état dégradé au premier échec réseau, même d'un `POST`
   qu'il ne rejoue pas (`api-client.ts`, `setDegraded()`), et ne le lève qu'au premier succès. Sur cette capture, il dit
   « réessai automatique » alors que rien n'est réessayé, à côté de l'encadré qui dit de recharger : l'écran se contredit.
-  Antérieur à la story et commun à tout l'écran : **issue demandée** (une, P4 proposé), sans correction ici.
+  Antérieur à la story et commun à tout l'écran : **issue demandée** (une, P4 proposé), sans correction ici *(ouverte :
+  #1017)*.
 
 ### Gates de la remédiation P3
 
@@ -602,6 +624,22 @@ Opus 5.5 (claude-opus-5-5), en autonomie, sous le prompt `kesh-gate-logs/prompts
   affiché, notification « Document joint à la facture. ».
 - Décomptes : Vitest `supplier-unknown-outcome-page.test.ts` **32** (27 + 5 de la P3) ; E2E de la story **5** ; Vitest total
   2908 → 2913.
+
+### Gates de la remédiation P4 ciblée
+
+- **Au commit `c0ec8440`, dernier commit de code** (`gates-p4.out`), demandés aussi parce que les `.ftl` changés à la P3
+  sont lus par des tests Rust d'autres crates :
+  - frontend, par `.gate-front.lock` : `check` 0 erreur, `lint-i18n-ownership` vert, `test:unit` **2916/2916** (223
+    fichiers), `build` vert ;
+  - `scripts/test-fast.sh --ci`, bases remises à neuf : **5155/5155**, 12 ignorés ; `scripts/gate-ci.sh kesh_ci_e348` :
+    **5162 passés, 0 échoué, 16 ignorés** ;
+  - **E2E complet**, base recréée vide : **391 passés, 7 échecs, 17 ignorés** (17,9 min), aucun `pool timed out`. Les
+    sept échecs sont ceux de la KF-029 : `mode-expert.spec.ts:26`, `:41`, `onboarding-path-b.spec.ts:65`, `:92`,
+    `onboarding.spec.ts:57`, `:77`, `:150`. `ss` avant et après : vides.
+- Le gate backend lancé d'abord au commit `610f72c4`, encore en attente du verrou, a été arrêté avant son démarrage et
+  rejoué ici.
+- Mutations **M10b** (rejouée), **M10c**, **M13**, **M14** rouges ; tout le relevé dans `mut/SYNTHESE.log`.
+- Décomptes : Vitest `supplier-unknown-outcome-page.test.ts` **35** (32 + M10b + C-1 + C-2) ; Vitest total 2913 → 2916.
 
 ### File List
 

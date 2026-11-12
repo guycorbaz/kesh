@@ -123,5 +123,6 @@
 - **Contexte.** Une relecture lente peut revenir après la réponse d'un geste lancé entre-temps et l'écraser.
 - **Retenu.** Pas de garde d'ordre dans cette story : `reloadAfterRefusal` a cinq appelants dont la valeur rendue pilote
   l'encadré, et un compteur d'époque demande un troisième état (« relecture dépassée ») à chacun d'eux. Ce n'est pas court.
-  `retry: false` (C-e348-8) réduit déjà la fenêtre ; le geste suivant est refusé et relit (C-e348-7). **Issue demandée.**
+  `retry: false` (C-e348-8) réduit déjà la fenêtre ; le geste suivant est refusé et relit (C-e348-7). **Issue demandée** :
+  ouverte, **#1018**.
 - **Réversible.** Oui.
