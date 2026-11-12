@@ -111,6 +111,9 @@ retenue, options écartées, réversibilité. Lignes citées sur `release/0.17.6
      de table** pour `crates/kesh-api/src/routes/invoice_pdf_service.rs` (longueur 9), et ses éventuelles clés
      d'`errors.rs` en fin du même bloc, **après un commentaire `// Story 35-2`** (la 35-3 met `// Story 35-3`). À l'union,
      la longueur est recomptée.
+     *(Annoté le 2026-11-12, validation P3 de la 35-2a : la 35-2a ajoute **deux** entrées, `invoice_pdf_service.rs` et
+     `credit_notes.rs`, et aucune clé à `errors.rs` : la table passe de 8 à **10**. Les ajouts de la 35-3 au bloc
+     `errors.rs` ne se heurtent plus à ceux de la 35-2.)*
   4. **`crates/kesh-api/src/errors.rs`** : 35-2, le bras `InvoiceNotPdfReady` et ce qu'il appelle ; 35-3, un bras `DbError`
      neuf juste après `DesignatedAccountsNotPostable` (`:4571`). Aucun reformatage hors des passages touchés.
   5. **`docs/api-external.md`** : 35-3, une ligne juste après `ACCOUNT_NOT_POSTABLE` ; 35-2, sa ligne juste après
@@ -142,3 +145,18 @@ retenue, options écartées, réversibilité. Lignes citées sur `release/0.17.6
 - **Écartée** : `details` pour les seuls refus de champ, les autres restant à lire dans le message — écrit comme limite,
   ce serait un contrat que l'API dit elle-même de ne pas lire (`api-external.md`, « Fiez-vous au champ `code` »).
 - **Réversible** : ajouter une raison l'est ; en retirer une ne l'est plus une fois publiée.
+- *(Annoté le 2026-11-12, validation P3 de la 35-2a : **suspendu** par C-e350-11 ; la proposition part dans une issue.)*
+
+### C-e350-11 — La 35-2a revient au message, sans contrat `details` (décision de l'orchestrateur)
+
+- **Contexte** : validation P3 de la 35-2a, série 5 → 5 → 8 MEDIUM ; la moitié des MEDIUM de la P3 naissent du contrat
+  public de `details` ajouté en P2 (V3-4 : onze raisons sans source unique ; V3-5 : noms de champs qui ne sont pas ceux de
+  l'API ; V3-6 : une raison qui mêle trois causes). C'est le recyclage que vise la règle de découpage.
+- **Retenu** : la 35-2a sert le besoin de Guy — le **message localisé** rendu par le serveur nomme le champ et le caractère,
+  l'écran l'affiche —, **sans publier** de `details.reason` ni `details.field` ; `AppError::InvoiceNotPdfReady(String)` reste.
+  Sont gardés : le pays nommé avec sa partie et son code, #964 (le champ vide nommé), le caractère échappé, la clé de la QRR.
+  La 35-2b ne porte au lot que `details.message`, une phrase destinée à l'utilisateur. Aucun `details` n'existait sur ce code
+  avant : rien n'est cassé.
+- **Écarté** : fixer le contrat maintenant : public et irréversible, il ne se décide pas sous l'échéance du 30 novembre.
+- **Suite** : issue « Contrat d'API lisible par machine pour INVOICE_NOT_PDF_READY », à ouvrir par l'orchestrateur.
+- **Réversible** : oui.

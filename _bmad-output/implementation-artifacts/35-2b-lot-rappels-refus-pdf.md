@@ -3,8 +3,8 @@
 Status: ready-for-dev
 
 *Fiche née le 2026-11-12 du découpage de la 35-2 à la validation P2 (C-e350-9), par l'agent de kickoff de l'Epic 35
-(Opus 5.5), worktree `kesh-e35`. Elle **part de la 35-2a fusionnée**, dont elle consomme le contrat `details` (D2 de la
-35-2a, C-e350-10). Release **0.17.7** ; Guy n'emploie pas encore les rappels (première facture client avant le
+(Opus 5.5), worktree `kesh-e35`. Elle **part de la 35-2a fusionnée**, dont elle reprend le message localisé (la 35-2a garde
+`AppError::InvoiceNotPdfReady(String)`, D3 ; aucun contrat `details` lisible par machine, C-e350-11). Release **0.17.7** ; Guy n'emploie pas encore les rappels (première facture client avant le
 2026-11-30) : elle suit la 35-2a sans échéance propre. **Aucune migration.** Code lu sur **`release/0.17.6`** (`4e1c768a`).
 Registre de la story : `e35-choix-autonomes-e352b.md`, à créer au premier choix.*
 
@@ -29,10 +29,10 @@ PDF » seul.
 
 ## Décisions
 
-- **D1 — Même objet que la route, plus `message`.** Un échec né d'un `InvoiceNotPdfReady` porte les `details` du contrat
-  de la 35-2a (D2 : `reason` toujours, `field` et le reste selon la raison) **plus** `message`, la phrase résolue au
-  serveur ; ceux nés de `InvoiceTooManyLinesForPdf` et `InvoicePdfHeaderOverflow`, qui partagent le code, n'en portent
-  pas (inchangé).
+- **D1 — Le message, seul.** `classify_render_error` rend, pour `AppError::InvoiceNotPdfReady(msg)`,
+  `BatchItemError::failed_with("INVOICE_NOT_PDF_READY", json!({ "message": msg }))` : `details.message` est une phrase
+  **destinée à l'utilisateur**, non un contrat lisible par machine (C-e350-11). Ceux nés de `InvoiceTooManyLinesForPdf` et
+  `InvoicePdfHeaderOverflow`, qui partagent le code, restent sans `details`.
 - **D2 — L'écran** affiche « Facture non imprimable en PDF — *message* » quand `details.message` est là, le libellé seul
   sinon. Le séparateur suit le patron existant du rapport ; aucune clé frontend neuve sauf nécessité (`lint-i18n-ownership`).
 
@@ -40,20 +40,20 @@ PDF » seul.
 
 1. **AC1 — Par HTTP** (`crates/kesh-api/tests/invoice_send_email_e2e.rs`, sur le modèle de
    `send_reminder_batch_partial_success`, `:2019`) : un lot de deux factures, l'une au client de localité `Ve–vey`, l'autre
-   au client **sans adresse** : deux `failed[]` en `INVOICE_NOT_PDF_READY`, `details.reason` `INVALID_CHARSET` (avec
-   `field`, `char`, `codepoint`) et `CLIENT_ADDRESS_MISSING`, chacun avec `details.message` non vide en fr-CH. Rouge sur
-   le code de départ (`details` à `null`).
-2. **AC2 — Pas de fausse panne** : `classify_render_error` classe toute forme du refus de la 35-2a en
-   `INVOICE_NOT_PDF_READY`, jamais `DATABASE_ERROR` ; le test `:1749` s'étend à elle.
+   au client **sans adresse** : deux `failed[]` en `INVOICE_NOT_PDF_READY`, chacun avec `details.message` — le premier
+   contient « localité du client » et « U+2013 », le second la phrase de `invoice-pdf-error-client-address-required` —,
+   et rien d'autre dans `details`. Rouge sur le code de départ (`details` à `null`).
+2. **AC2 — Pas de fausse panne** : le refus reste `INVOICE_NOT_PDF_READY`, jamais `DATABASE_ERROR` ; le test `:1749`
+   asserte en plus `details.message` (frontière : la 35-2a ne change ni la variante ni ce test, D3 de la 35-2a).
 3. **AC3 — Les deux autres codes** : un échec `InvoiceTooManyLinesForPdf` reste sans `details`.
 4. **AC4 — Écran** : Vitest de `ReminderBatchReport.svelte`, avec et sans `details.message`.
 5. **AC5 — Documentation** : `docs/api-external.md`, la ligne de la 35-2a dit que, dans `failed[]` du lot, `details` porte
    en plus `message` ; manuel `:1251` complété, PDF régénéré, contrôlé aplati ; CHANGELOG `[0.17.7]`, *Corrigé*, refs #955
-   (règle C-e350-8 : un point, après celui de la 35-2a).
+   (règle C-e350-8 : un point, après celui de la 35-2a). La PR porte `closes #955` (la 35-2a, `refs #955`).
 6. **AC6 — Capture** : la ligne du rapport d'un lot (thème clair, base jetable, `kesh-gate-logs/e352b/captures/`).
 
-**Mutations** : M1 `details.message` omis pour un refus sans champ ; M2 `details.message` non lu par le composant ; M3 la
-variante de la 35-2a retirée de `classify_render_error`.
+**Mutations** : M1 `details.message` omis pour un refus sans champ ; M2 `details.message` non lu par le composant ; M3 le
+bras `InvoiceNotPdfReady` de `classify_render_error` rendu à `failed` sans `details`.
 
 ## Tâches
 
@@ -80,3 +80,5 @@ variante de la 35-2a retirée de `classify_render_error`.
 ## Change Log
 
 - 2026-11-12 — Née du découpage de la 35-2 à la validation P2 (C-e350-9). Validation à lancer.
+- 2026-11-12 — Réajustée au recadrage de la 35-2a (validation P3, C-e350-11) : `details` du lot réduit à `message`,
+  phrase destinée à l'utilisateur ; aucune `reason` ni `field` ; frontière avec la 35-2a écrite (AC2) ; `closes #955` ici.
