@@ -1235,7 +1235,8 @@ async fn carte_vers_un_passif_non_imputable_ou_creanciers(pool: MySqlPool) {
 }
 
 /// Revue P2 (A8) — au `PUT`, `version < 1` passe **avant** le `404` d'un id
-/// inconnu (ordre écrit au doc-comment, à la note ¹¹ et au CHANGELOG).
+/// inconnu (ordre écrit au doc-comment, à la note ¹² — ¹¹ dans la branche de la
+/// story, renumérotée à l'intégration de la 0.17.6 — et au CHANGELOG).
 #[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn put_version_zero_avant_le_404(pool: MySqlPool) {
     let ctx = monter(&pool).await;
