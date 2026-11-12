@@ -1699,7 +1699,7 @@ impl Annulation {
         use kesh_db::repositories::{invoice_settlements_write, reconciliation_cancel};
         match self {
             Annulation::Rapprochement(t) => {
-                reconciliation_cancel::cancel_in_tx(tx, company_id, t, user_id, None)
+                reconciliation_cancel::cancel_in_tx(tx, company_id, t, user_id, None, None)
                     .await
                     .map(|_| ())
             }

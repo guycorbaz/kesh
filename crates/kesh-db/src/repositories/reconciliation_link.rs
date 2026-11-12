@@ -20,12 +20,19 @@
 //! posent `matched_entry_id` (`routes/reconciliation.rs` : acceptation
 //! facture, acceptation facture fournisseur, proposition éclatée, règle,
 //! manuel, éclatement manuel) lient une écriture **qu'ils viennent de créer**.
-//! L'invariant « une écriture, une transaction » — qu'aucune contrainte
-//! `UNIQUE` ne défend et que supposent
-//! `bank_accounts::list_by_company_with_balances` et `reconciliation_cancel`
-//! (rang 3) — est tenu par la condition « non rapprochée » de chaque règle,
-//! lue sous le verrou de ligne de l'objet lié : le règlement pour
-//! [`link_in_tx`], l'écriture pour [`link_entry_in_tx`].
+//! L'invariant — qu'aucune contrainte `UNIQUE` ne défend — est, depuis la
+//! Story 34-11b (#972), « **au plus une transaction par côté** » : une
+//! écriture porte une transaction, ou **deux** quand elle est l'écriture d'un
+//! virement entre deux comptes bancaires propres — une transaction de chaque
+//! côté, de comptes bancaires différents et de montants opposés
+//! ([`transfer_other_side`]). `bank_accounts::list_by_company_with_balances`
+//! (solde par compte bancaire) le supporte ; `reconciliation_cancel` ne
+//! retire alors que le lien du côté annulé, sans contre-passer. Il est tenu
+//! par la condition « non rapprochée » de chaque règle — la condition 4 de
+//! [`link_entry_in_tx`] admettant l'autre côté d'un virement —, lue sous le
+//! verrou de ligne de l'objet lié : le règlement pour [`link_in_tx`] (qui
+//! reste « une écriture, une transaction » : une écriture de règlement n'a
+//! qu'une ligne de banque), l'écriture pour [`link_entry_in_tx`].
 //!
 //! # La règle (une seule définition)
 //!
@@ -496,7 +503,15 @@ pub async fn link_in_tx(
 //    bancaire de `t` (`SUM(debit) − SUM(credit)` de ses lignes sur ce compte)
 //    **égale** `t.amount`, en décimal exact — un crédit de la banque appelle
 //    `M > 0`, un débit `M < 0` ;
-// 4. `e` n'est rapprochée d'aucune transaction ;
+// 4. `e` n'est rapprochée d'aucune transaction — **ou** d'une seule, qui est
+//    l'**autre côté d'un virement** de `t` : une transaction d'un **autre**
+//    compte bancaire, de montant **opposé** à `M` (Story 34-11b, #972 ;
+//    [`linkable_side`], qui suit la règle de sens contraire de la 34-4,
+//    C-e344-11, et ne lit aucun lien de compte bancaire à un grand livre autre
+//    que celui de `t`). Au plus **deux** transactions par écriture, une de
+//    chaque côté ; jamais deux du même compte bancaire ni deux du même sens —
+//    deux comptes bancaires qui partagent un compte du grand livre ne
+//    rapprochent donc pas deux fois le même mouvement ;
 // 5. `e` ne contre-passe rien et n'est contre-passée par rien ;
 // 6. `e` n'est pas l'écriture d'un règlement client par virement **sur le
 //    compte bancaire de `t`** — celle-là relève de la Story 29-8
@@ -575,9 +590,10 @@ enum EntrySqlMode {
     /// P1, B1-6 : une seule source pour le texte et la liaison) : le geste
     /// ([`link_entry_in_tx`]).
     One(i64),
-    /// Story 34-4 (#828, AC-2) — le **second côté** d'un virement : la
-    /// condition 4 (« non rapprochée ») est remplacée par son contraire ciblé,
-    /// [`MATCHED_ELSEWHERE`] ; toutes les autres conditions restent.
+    /// Story 34-4 (#828, AC-2), redéfinie par la Story 34-11b (#972, AC-10) —
+    /// le **second côté** d'un virement : les conditions de la liste, **plus**
+    /// [`HAS_LINK`] (l'écriture est déjà rapprochée). Une partie de la liste par
+    /// construction : `matchedElsewhereCount ≤ entryCount`.
     MatchedElsewhere,
 }
 
@@ -585,14 +601,14 @@ enum EntrySqlMode {
 /// ([`EntrySqlMode`]) — `One` : restreinte à `e.id`.
 ///
 /// Paramètres, dans l'ordre : date de paiement de `t` (proximité), compte du
-/// grand livre actuel, `company_id`, `t.amount`, — `MatchedElsewhere` —
-/// `t.bank_account_id` ([`MATCHED_ELSEWHERE`]), `t.bank_account_id`, et —
+/// grand livre actuel, `company_id`, `t.amount`, `t.bank_account_id`
+/// (condition 4, [`linkable_side`]), `t.bank_account_id` (condition 6), et —
 /// `One` — l'identifiant de l'écriture.
 ///
-/// Un seul texte : les variantes n'en diffèrent que par le prédicat de la
-/// condition 4 ou la restriction à `e.id` (tests
+/// Un seul texte : les variantes n'en diffèrent que par l'ajout de
+/// [`HAS_LINK`] ou la restriction à `e.id` (tests
 /// `the_restricted_entry_query_is_the_list_query_plus_the_entry`,
-/// `the_matched_elsewhere_query_differs_only_by_the_matched_predicate`).
+/// `the_matched_elsewhere_query_is_the_list_query_plus_the_link`).
 ///
 /// - Le mouvement `M` se somme dans une **table dérivée par écriture**, en
 ///   jointure interne sur les lignes du compte lié actuel. ⚠️ Ici la jointure
@@ -603,18 +619,14 @@ enum EntrySqlMode {
 ///   porteur : sans lui la somme couvrirait toutes les lignes d'une écriture
 ///   équilibrée, `M = 0` (mutation M2bis).
 /// - ⛔ `bank_transactions` n'entre **jamais** dans le `FROM` de la somme (le
-///   produit multiplierait les lignes) : la condition 4 est un `NOT EXISTS`.
+///   produit multiplierait les lignes) : la condition 4 est faite de
+///   sous-requêtes.
 /// - La proximité lit la date de paiement **liée en paramètre**
 ///   ([`payment_date`]) : la requête ne réécrit jamais
 ///   `COALESCE(value_date, booking_date)`.
 /// - Tri par jours d'écart, puis identifiant ; [`ENTRY_CANDIDATES_LIMIT`] au
 ///   plus, filtre et tri **avant** `LIMIT`.
 fn entry_sql(mode: EntrySqlMode) -> String {
-    let matched = if mode == EntrySqlMode::MatchedElsewhere {
-        MATCHED_ELSEWHERE
-    } else {
-        NOT_MATCHED
-    };
     format!(
         "SELECT e.id AS journal_entry_id, e.entry_number, e.fiscal_year_id, e.entry_date, \
                 e.journal, e.description, m.movement AS amount, \
@@ -622,10 +634,16 @@ fn entry_sql(mode: EntrySqlMode) -> String {
          {ENTRY_MOVEMENTS} \
          WHERE e.company_id = ? \
            AND m.movement = ? \
-           AND {matched} \
-           AND {ENTRY_NOT_REVERSED_NOR_SETTLEMENT}{} \
+           AND {} \
+           AND {ENTRY_NOT_REVERSED_NOR_SETTLEMENT}{}{} \
          ORDER BY days_apart, e.id \
          LIMIT {ENTRY_CANDIDATES_LIMIT}",
+        linkable_side(),
+        if mode == EntrySqlMode::MatchedElsewhere {
+            format!(" AND {HAS_LINK}")
+        } else {
+            String::new()
+        },
         if matches!(mode, EntrySqlMode::One(_)) {
             " AND e.id = ?"
         } else {
@@ -634,29 +652,146 @@ fn entry_sql(mode: EntrySqlMode) -> String {
     )
 }
 
-/// Condition 4 de la liste : l'écriture n'est rapprochée d'aucune transaction.
-const NOT_MATCHED: &str =
-    "NOT EXISTS (SELECT 1 FROM bank_transactions bt WHERE bt.matched_entry_id = e.id)";
-
-/// Story 34-4 (#828, AC-2) — à la place de [`NOT_MATCHED`] : l'écriture est
-/// rapprochée d'une transaction d'un **autre** compte bancaire, **de sens
-/// contraire** — de montant opposé au mouvement `M` de l'écriture sur le grand
-/// livre de `t`, donc à `t.amount`. Paramètre : `t.bank_account_id`.
+/// **L'autre côté d'un virement** (Story 34-11b, #972 ; règle de sens contraire
+/// de la Story 34-4, C-e344-11) — le prédicat, sur une transaction `bt` liée à
+/// l'écriture, qui la reconnaît comme l'autre côté de la transaction `t` : un
+/// **autre** compte bancaire (paramètre : `t.bank_account_id`), et un montant
+/// **opposé** à `movement` — le mouvement de l'écriture sur le grand livre de
+/// `t`, égal à `t.amount` (`m.movement` dans la liste, `?` = `t.amount` dans
+/// [`transfer_other_side`]).
+///
+/// ⛔ **Une seule définition** (choix C-e341-35, C-e34b-3) : la condition 4 de
+/// la liste et du geste ([`linkable_side`]), le second côté compté par la page
+/// ([`count_already_booked_for_page`]) et la décision « retrait du seul lien »
+/// de l'annulation ([`transfer_other_side`], lue par
+/// [`super::reconciliation_cancel::entry_cancel_outlook`], qui sert la vue,
+/// les candidates et `cancel_in_tx`) en dérivent toutes.
 ///
 /// ⛔ **Fondé sur l'écriture et ses transactions, jamais sur le lien actuel
-/// d'un compte bancaire à son grand livre** (revue P1, E1-1 ; choix
-/// C-e344-11, qui amende C-e344-2) : ce lien se modifie après coup. Un virement
-/// de A vers B est un débit de A et un crédit de B ; l'écriture qui le porte,
-/// rapprochée du débit de A, a sur le grand livre de B un mouvement égal au
-/// crédit de B — la transaction rapprochée est de montant opposé. Une recette
-/// rapprochée sur un autre compte (même grand livre partagé, ou relié ailleurs
-/// depuis) va dans le **même** sens : elle n'est jamais dite « l'autre côté
-/// d'un virement » (tests `s34_4_ac2_comptes_partages_ne_comptent_pas`,
-/// `s34_4_ac2_compte_relie_ailleurs_ne_fait_pas_rejeter` ; mutation M3).
-const MATCHED_ELSEWHERE: &str = "EXISTS (SELECT 1 FROM bank_transactions bt \
-     WHERE bt.matched_entry_id = e.id \
-       AND bt.bank_account_id <> ? \
-       AND bt.amount = -m.movement)";
+/// d'un autre compte bancaire à son grand livre** : ce lien se modifie après
+/// coup. Un virement de A vers B est un débit de A et un crédit de B ;
+/// l'écriture qui le porte, rapprochée du débit de A, a sur le grand livre de
+/// B un mouvement égal au crédit de B — la transaction rapprochée est de
+/// montant opposé. Une recette rapprochée sur un autre compte (même grand livre
+/// partagé, ou relié ailleurs depuis) va dans le **même** sens : elle n'est
+/// jamais l'autre côté (tests `s34_4_ac2_comptes_partages_ne_comptent_pas`,
+/// `s34_4_ac2_compte_relie_ailleurs_ne_fait_pas_rejeter`,
+/// `s34_11b_ac4c_comptes_relies`).
+///
+/// **Jamais une écriture de règlement** (revue P1, E1-3 ; choix C-e34b-8,
+/// récrit) : une écriture qui règle une facture client
+/// (`invoice_settlements`) ou une facture fournisseur **payée**
+/// (`supplier_invoices.settlement_journal_entry_id`, le classement de
+/// `reconciliation_cancel`) n'a pas d'« autre côté ». Atteignable seulement
+/// par un compte bancaire relié au compte débiteurs ou créanciers ; sans
+/// cette garde, le retrait seul laisserait la facture payée sans transaction
+/// de son compte. Le retrait seul ne vaut donc que pour le genre `Entry`.
+///
+/// Revue P2 (B2-3, E2-4) : les deux sous-requêtes reprennent **les mêmes
+/// critères** que le classement (`reconciliation_cancel::classify` : ligne
+/// `invoice_settlements` de l'écriture ; facture fournisseur `paid` qui la
+/// porte, `SUPPLIER_SETTLEMENT_CLASSIFY_SQL`), bornées comme lui par la
+/// société de la transaction. Un test (`the_settlement_exclusion_matches_the_classification`)
+/// rapproche les deux textes ; les tests HTTP `s34_11b_e1_3_…` et
+/// `s34_11b_b2_2_…` vérifient qu'une écriture classée règlement n'a pas
+/// d'autre côté.
+fn other_side_predicate(movement: &str) -> String {
+    format!(
+        "(bt.bank_account_id <> ? AND bt.amount = -({movement}) \
+          AND NOT EXISTS (SELECT 1 FROM invoice_settlements s2 \
+                           WHERE s2.company_id = bt.company_id \
+                             AND s2.journal_entry_id = bt.matched_entry_id) \
+          AND NOT EXISTS (SELECT 1 FROM supplier_invoices si2 \
+                           WHERE si2.company_id = bt.company_id \
+                             AND si2.settlement_journal_entry_id = bt.matched_entry_id \
+                             AND si2.status = 'paid'))"
+    )
+}
+
+/// Condition 4 de la règle (Story 34-11b) : **aucune** transaction liée à `e`
+/// n'est autre que l'autre côté d'un virement de `t`
+/// ([`other_side_predicate`]), et **une** au plus est liée. Paramètre :
+/// `t.bank_account_id`.
+///
+/// Remplace « `e` n'est rapprochée d'aucune transaction » (v017-3a), qui
+/// refusait le second côté d'un virement (fiche 34-11b, « le blocage »).
+/// Ce que refuse encore la condition, sans lire aucun lien de compte à un
+/// grand livre : une transaction déjà liée du **même** compte bancaire
+/// (mutation M1 de la fiche : l'ancienne forme), une transaction liée du
+/// **même** sens — un compte bancaire qui partage le grand livre de `t`, ou un
+/// compte délié ou relié ailleurs depuis, pour une transaction du même grand
+/// livre (mutations M2, M8, M9) —, une écriture de règlement déjà rapprochée,
+/// et une troisième transaction. Ce qu'elle admet : l'autre mouvement d'une
+/// écriture de virement à deux lignes de banque, même si le compte rapproché
+/// a été relié ailleurs depuis (le signe de sa transaction prouve le
+/// mouvement). Un virement éclaté sur plus de deux comptes n'a plus de second
+/// côté rattachable : aucun montant n'est opposé à celui du premier.
+///
+/// ⚠️ **Le plafond `<= 1` est une défense en profondeur, inerte aujourd'hui**
+/// (revue P1, E1-4, B1-3 ; mutation M2b **équivalente**) : deux liens sont
+/// forcément de comptes différents et de montants opposés (le second n'est
+/// entré qu'en étant l'autre côté du premier) ; une troisième transaction
+/// devrait être l'autre côté **des deux** — `bt₁.amount = −M = bt₂.amount`,
+/// impossible puisque `bt₁.amount = −bt₂.amount ≠ 0` (condition 1). Le
+/// `NOT EXISTS` suffit. Il deviendrait porteur le jour où le prédicat
+/// tolérerait un écart (frais, arrondi) : un test de comportement devra alors
+/// le garder.
+fn linkable_side() -> String {
+    format!(
+        "NOT EXISTS (SELECT 1 FROM bank_transactions bt \
+                      WHERE bt.matched_entry_id = e.id AND NOT {}) \
+         AND (SELECT COUNT(*) FROM bank_transactions bt \
+               WHERE bt.matched_entry_id = e.id) <= 1",
+        other_side_predicate("m.movement")
+    )
+}
+
+/// L'écriture est déjà rapprochée d'au moins une transaction — ajoutée aux
+/// conditions de la liste, elle donne le second côté
+/// ([`EntrySqlMode::MatchedElsewhere`]). Sans paramètre.
+const HAS_LINK: &str =
+    "EXISTS (SELECT 1 FROM bank_transactions bt WHERE bt.matched_entry_id = e.id)";
+
+/// L'**autre côté** de la transaction `t` sur l'écriture `entry_id` : une
+/// transaction **autre que `t`**, liée à l'écriture, d'un **autre** compte
+/// bancaire et de montant **opposé** à `t.amount`
+/// ([`other_side_predicate`]) — son identifiant, ou `None`.
+///
+/// Story 34-11b (#972, C-e341-35) — la seule définition de « l'autre côté
+/// légitime », pour une transaction **liée** (l'annulation : retirer le seul
+/// lien, `reconciliation_cancel::cancel_in_tx`, et sa vue) comme pour une
+/// transaction **prospective** (la candidate : `entry_cancel_outlook` depuis
+/// `GET …/entry-candidates`). Pour une transaction liée, `t.amount` égalait `M`
+/// au rattachement ; le prédicat ne relit pas `M`, qui dépend du lien actuel
+/// du compte de `t` à son grand livre.
+///
+/// Lecture **ordinaire**, jamais verrouillante : l'annulation la fait après
+/// le verrou de l'écriture (`cancel_in_tx`, étape 3) — une lecture
+/// verrouillante de la ligne de l'autre côté attendrait l'annulation
+/// concurrente de cet autre côté, qui la tient en exclusif et attend
+/// l'écriture : un interblocage à chaque double annulation.
+pub async fn transfer_other_side(
+    conn: &mut sqlx::MySqlConnection,
+    company_id: i64,
+    entry_id: i64,
+    t: &BankTransaction,
+) -> Result<Option<i64>, DbError> {
+    sqlx::query_scalar::<_, i64>(&format!(
+        "SELECT bt.id FROM bank_transactions bt \
+          WHERE bt.company_id = ? AND bt.matched_entry_id = ? AND bt.id <> ? \
+            AND {} \
+          ORDER BY bt.id LIMIT 1",
+        other_side_predicate("?")
+    ))
+    .bind(company_id)
+    .bind(entry_id)
+    .bind(t.id)
+    .bind(t.bank_account_id)
+    .bind(t.amount)
+    .fetch_optional(&mut *conn)
+    .await
+    .map_err(map_db_error)
+}
 
 /// La jointure qui donne `M`, le mouvement de chaque écriture sur le compte du
 /// grand livre actuel (conditions 3 de la règle, sans le test de montant).
@@ -695,11 +830,10 @@ where
         .bind(payment_date(t))
         .bind(bank_ledger_account_id)
         .bind(company_id)
-        .bind(t.amount);
-    if mode == EntrySqlMode::MatchedElsewhere {
-        q = q.bind(t.bank_account_id);
-    }
-    q = q.bind(t.bank_account_id);
+        .bind(t.amount)
+        // Condition 4 (`linkable_side`), puis condition 6.
+        .bind(t.bank_account_id)
+        .bind(t.bank_account_id);
     if let EntrySqlMode::One(id) = mode {
         q = q.bind(id);
     }
@@ -753,11 +887,12 @@ where
 // ─────────────────────────────────────────────────────────────────────────────
 
 /// Les écritures qui semblent être **l'autre côté** d'un virement de `t` entre
-/// deux comptes bancaires propres (Story 34-4, AC-2) : les conditions 2, 3, 5
-/// et 6 de la règle du rattachement, mais **rapprochées** d'une transaction
-/// de sens contraire d'un autre compte bancaire ([`MATCHED_ELSEWHERE`]) ;
-/// [`ENTRY_CANDIDATES_LIMIT`] au plus. Vide, sans requête, si la condition 1
-/// est fausse. Lecture non verrouillante.
+/// deux comptes bancaires propres (Story 34-4, AC-2 ; redéfinies par la Story
+/// 34-11b, AC-10) : parmi les candidates de [`find_entry_candidates`], celles
+/// qui sont **déjà rapprochées** ([`HAS_LINK`]) — la condition 4 n'admettant
+/// qu'un lien, celui de l'autre côté. Une partie des candidates, par
+/// construction ; [`ENTRY_CANDIDATES_LIMIT`] au plus. Vide, sans requête, si
+/// la condition 1 est fausse. Lecture non verrouillante.
 pub async fn find_matched_elsewhere<'e, E>(
     executor: E,
     company_id: i64,
@@ -804,9 +939,12 @@ pub struct AlreadyBookedCounts {
 /// [`find_entry_candidates`] et [`find_matched_elsewhere`] — test d'égalité
 /// `s34_4_ac8_la_lecture_par_page_egale_les_fonctions_du_dialogue`. Les
 /// conditions SQL sont les **mêmes textes** ([`LINKABLE_SETTLEMENTS`],
-/// [`ENTRY_MOVEMENTS`], [`NOT_MATCHED`], [`MATCHED_ELSEWHERE`],
+/// [`ENTRY_MOVEMENTS`], [`linkable_side`], [`HAS_LINK`],
 /// [`ENTRY_NOT_REVERSED_NOR_SETTLEMENT`]) ; seuls les tests de montant et le
-/// plafond de 50 passent en Rust, sur des décimaux exacts.
+/// plafond de 50 passent en Rust, sur des décimaux exacts. Depuis la Story
+/// 34-11b, la condition 4 lit `t.bank_account_id` — commun à toute la page,
+/// d'où une seule colonne par écriture —, et `matched_elsewhere_count` compte
+/// les candidates **et** rapprochées.
 ///
 /// **Pourquoi par page** (AC-8) : trois lectures par transaction coûtaient,
 /// mesuré, ≈ 18,5 s pour 500 transactions sur un historique de 20 000
@@ -856,22 +994,23 @@ pub async fn count_already_booked_for_page(
             .map_err(map_db_error)?;
 
     // Les écritures dont `M` égale le montant d'une transaction de la page
-    // (conditions 2, 3, 5, 6), avec la condition 4 de la liste (non rapprochée)
-    // et celle du second côté (rapprochée ailleurs), chacune en colonne.
+    // (conditions 2, 3, 5, 6), avec la condition 4 de la liste (Story 34-11b :
+    // `linkable_side`) et le lien existant (`HAS_LINK`), chacune en colonne.
     let mut amounts: Vec<Decimal> = linkable.iter().map(|t| t.amount).collect();
     amounts.sort();
     amounts.dedup();
     let placeholders = vec!["?"; amounts.len()].join(", ");
     let sql = format!(
         "SELECT m.movement, \
-                CAST({NOT_MATCHED} AS SIGNED) AS unmatched, \
-                CAST({MATCHED_ELSEWHERE} AS SIGNED) AS elsewhere \
+                CAST(({}) AS SIGNED) AS candidate, \
+                CAST({HAS_LINK} AS SIGNED) AS linked \
          {ENTRY_MOVEMENTS} \
          WHERE e.company_id = ? \
            AND m.movement IN ({placeholders}) \
-           AND {ENTRY_NOT_REVERSED_NOR_SETTLEMENT}"
+           AND {ENTRY_NOT_REVERSED_NOR_SETTLEMENT}",
+        linkable_side()
     );
-    // Ordre des `?` dans le texte : `MATCHED_ELSEWHERE` (compte bancaire),
+    // Ordre des `?` dans le texte : condition 4 (compte bancaire),
     // `ENTRY_MOVEMENTS` (grand livre), société, montants, condition 6 (compte bancaire).
     let mut q = sqlx::query_as::<_, (Decimal, i64, i64)>(&sql)
         .bind(bank_account_id)
@@ -899,9 +1038,11 @@ pub async fn count_already_booked_for_page(
         } else {
             0
         };
-        let same_amount = entries.iter().filter(|(m, _, _)| *m == t.amount);
-        let entry_count = same_amount.clone().filter(|(_, u, _)| *u != 0).count();
-        let matched_elsewhere_count = same_amount.filter(|(_, _, e)| *e != 0).count();
+        let candidates = entries
+            .iter()
+            .filter(|(m, candidate, _)| *m == t.amount && *candidate != 0);
+        let entry_count = candidates.clone().count();
+        let matched_elsewhere_count = candidates.filter(|(_, _, linked)| *linked != 0).count();
         counts.insert(
             t.id,
             AlreadyBookedCounts {
@@ -1192,23 +1333,72 @@ mod tests {
         assert!(!one.contains("FOR UPDATE"), "lecture ordinaire");
     }
 
-    /// Story 34-4 (#828, AC-2) : la requête du second côté est le **même**
-    /// texte que la liste des candidates, au seul prédicat de la condition 4
-    /// près (« rapprochée ailleurs » au lieu de « non rapprochée ») — un mode du
-    /// constructeur, non une copie.
+    /// Story 34-4 (#828, AC-2), redéfinie par la Story 34-11b (#972, AC-10) :
+    /// la requête du second côté est le **même** texte que la liste des
+    /// candidates, plus le seul prédicat [`HAS_LINK`] — une partie de la liste,
+    /// un mode du constructeur, non une copie.
     #[test]
-    fn the_matched_elsewhere_query_differs_only_by_the_matched_predicate() {
+    fn the_matched_elsewhere_query_is_the_list_query_plus_the_link() {
         let list = entry_sql(EntrySqlMode::List);
         let elsewhere = entry_sql(EntrySqlMode::MatchedElsewhere);
-        assert_eq!(list.matches(NOT_MATCHED).count(), 1);
-        assert_eq!(elsewhere.matches(MATCHED_ELSEWHERE).count(), 1);
-        assert!(!elsewhere.contains(NOT_MATCHED));
-        assert_eq!(elsewhere.replace(MATCHED_ELSEWHERE, NOT_MATCHED), list);
-        // Les deux prédicats voulus (C-e344-11) : un autre compte bancaire, une
-        // transaction de sens contraire — et aucun lien actuel à un grand livre.
-        assert!(MATCHED_ELSEWHERE.contains("bt.bank_account_id <> ?"));
-        assert!(MATCHED_ELSEWHERE.contains("bt.amount = -m.movement"));
-        assert!(!MATCHED_ELSEWHERE.contains("journal_account_id"));
+        let side = linkable_side();
+        assert_eq!(list.matches(side.as_str()).count(), 1);
+        assert_eq!(elsewhere.matches(side.as_str()).count(), 1);
+        assert!(!list.contains(HAS_LINK));
+        assert_eq!(elsewhere.replace(&format!(" AND {HAS_LINK}"), ""), list);
         assert!(!elsewhere.contains("FOR UPDATE"), "lecture ordinaire");
+    }
+
+    /// Story 34-11b (#972, AC-1) : la condition 4 et l'autre côté de
+    /// l'annulation dérivent du **même** prédicat (C-e341-35) — un autre compte
+    /// bancaire, un montant opposé —, sans aucun lien de compte à un grand livre.
+    #[test]
+    fn the_linkable_side_and_the_cancel_side_share_one_predicate() {
+        let side = linkable_side();
+        assert!(side.contains(&other_side_predicate("m.movement")));
+        assert!(side.contains("bt.bank_account_id <> ?"));
+        assert!(side.contains("bt.amount = -(m.movement)"));
+        // Le plafond : défense en profondeur, mutation M2b équivalente (revue P1, E1-4).
+        assert!(side.contains("<= 1"), "au plus une transaction déjà liée");
+        assert!(!side.contains("journal_account_id"));
+        let cancel = other_side_predicate("?");
+        assert!(cancel.starts_with("(bt.bank_account_id <> ? AND bt.amount = -(?)"));
+        // Revue P1 (E1-3) : jamais une écriture de règlement.
+        assert!(cancel.contains("FROM invoice_settlements s2"));
+        assert!(cancel.contains("FROM supplier_invoices si2"));
+        assert_eq!(
+            cancel.matches('?').count(),
+            2,
+            "deux paramètres : compte, montant"
+        );
+    }
+
+    /// Revue P2 (B2-3, E2-4) : l'exclusion des règlements suit le classement de
+    /// `reconciliation_cancel` — mêmes tables, mêmes colonnes, même statut
+    /// `paid` que `SUPPLIER_SETTLEMENT_CLASSIFY_SQL`, même borne par société.
+    /// Un critère ajouté au classement sans l'être ici rougit.
+    #[test]
+    fn the_settlement_exclusion_matches_the_classification() {
+        use crate::repositories::reconciliation_cancel::SUPPLIER_SETTLEMENT_CLASSIFY_SQL as FOURNISSEUR;
+        let p = other_side_predicate("?");
+        assert!(FOURNISSEUR.contains("FROM supplier_invoices"));
+        for critere in [
+            "settlement_journal_entry_id",
+            "status = 'paid'",
+            "company_id",
+        ] {
+            assert!(FOURNISSEUR.contains(critere), "classement : {critere}");
+            assert!(
+                p.contains(&format!("si2.{critere}")),
+                "prédicat : {critere}"
+            );
+        }
+        assert_eq!(
+            FOURNISSEUR.matches(" AND ").count(),
+            2,
+            "le classement fournisseur a changé : reporter ses critères dans other_side_predicate"
+        );
+        assert!(p.contains("s2.company_id = bt.company_id"));
+        assert!(p.contains("s2.journal_entry_id = bt.matched_entry_id"));
     }
 }

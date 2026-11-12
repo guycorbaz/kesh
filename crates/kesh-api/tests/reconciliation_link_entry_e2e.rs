@@ -2828,3 +2828,670 @@ async fn banc_cout_propositions_deja_comptabilisees(pool: MySqlPool) {
         }
     }
 }
+
+// ============================================================
+// Story 34-11b (#972) — le virement entre deux comptes propres se réconcilie
+// des deux côtés : une écriture, une transaction de chaque côté.
+// ============================================================
+
+impl Ctx {
+    /// Un compte du plan de type **passif** (`Liability`), imputable.
+    async fn passif(&self, numero: &str, nom: &str) -> i64 {
+        sqlx::query_scalar(
+            "INSERT INTO accounts (company_id, number, name, account_type, active, postable) \
+             VALUES (?, ?, ?, 'Liability', 1, 1) RETURNING id",
+        )
+        .bind(self.company_id())
+        .bind(numero)
+        .bind(nom)
+        .fetch_one(&self.pool)
+        .await
+        .unwrap()
+    }
+
+    /// Une carte de crédit **par la route** (Story 34-11a2), liée au passif `ledger`.
+    async fn carte(&self, ledger: i64, quatre: &str) -> i64 {
+        let (s, b) = self
+            .post(
+                "/api/v1/bank-accounts",
+                json!({
+                    "accountKind": "credit_card",
+                    "bankName": "Visa",
+                    "cardLast4": quatre,
+                    "journalAccountId": ledger,
+                }),
+            )
+            .await;
+        assert_eq!(s, 201, "carte : {b}");
+        b["id"].as_i64().unwrap()
+    }
+
+    /// « Écriture manuelle » (`POST /reconciliation/manual`) de la transaction
+    /// `tx` du compte `bank`, contrepartie `compte` ; rend l'écriture créée.
+    async fn ecriture_manuelle(&self, bank: i64, tx: i64, compte: i64) -> i64 {
+        let (s, b) = self
+            .post(
+                "/api/v1/reconciliation/manual",
+                json!({
+                    "bankAccountId": bank,
+                    "bankTransactionId": tx,
+                    "counterpartyAccountId": compte,
+                    "description": "Prélèvement de la carte",
+                }),
+            )
+            .await;
+        assert_eq!(s, 200, "écriture manuelle : {b}");
+        let (statut, e) = self.etat(tx).await;
+        assert_eq!(statut, "reconciled");
+        e.expect("écriture liée")
+    }
+
+    /// Le solde `débit − crédit` d'un compte du grand livre.
+    async fn solde(&self, compte: i64) -> Decimal {
+        sqlx::query_scalar(
+            "SELECT COALESCE(SUM(debit) - SUM(credit), 0) FROM journal_entry_lines WHERE account_id = ?",
+        )
+        .bind(compte)
+        .fetch_one(&self.pool)
+        .await
+        .unwrap()
+    }
+
+    /// La vue d'annulation (`GET /reconciliation/transactions/{id}`).
+    async fn vue(&self, tx: i64) -> Value {
+        let (s, b) = self
+            .get(&format!("/api/v1/reconciliation/transactions/{tx}"))
+            .await;
+        assert_eq!(s, 200, "vue : {b}");
+        b
+    }
+
+    /// Les détails de la dernière trace `reconciliation.cancelled` de `tx`.
+    async fn trace_annulation(&self, tx: i64) -> Value {
+        sqlx::query_scalar(
+            "SELECT details_json FROM audit_log WHERE action = 'reconciliation.cancelled' \
+             AND entity_id = ? ORDER BY id DESC LIMIT 1",
+        )
+        .bind(tx)
+        .fetch_one(&self.pool)
+        .await
+        .unwrap()
+    }
+}
+
+/// Le montage d'un prélèvement : la banque A (1020) paie la carte (2030, passif).
+/// Rend `(banque, carte, passif, débit de la banque, crédit de la carte)`.
+async fn prelevement(ctx: &Ctx, le: &str) -> (i64, i64, i64, i64, i64) {
+    let passif = ctx.passif("2030", "Carte de crédit").await;
+    let banque = ctx.banque(IBAN_A).await;
+    let carte = ctx.carte(passif, "4821").await;
+    let debit = ctx.transaction(banque, "-500.00", le).await;
+    let credit = ctx.transaction(carte, "500.00", le).await;
+    (banque, carte, passif, debit, credit)
+}
+
+/// AC-2 — banque d'abord : le débit de la banque passé par « Écriture
+/// manuelle » sur le passif de la carte ; le crédit de la carte liste cette
+/// écriture (sans motif d'annulation, AC-4b) et s'y rattache. Deux transactions
+/// `reconciled`, **une** écriture, banque −500, carte +500 (dette réduite).
+/// Avant le rattachement, l'avertissement de la 34-4 compte l'écriture parmi
+/// les candidates et parmi celles déjà rapprochées (AC-10 : `(0, 1, 1)`).
+/// Tue M1.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn s34_11b_ac2_banque_puis_carte(pool: MySqlPool) {
+    let ctx = monter(&pool).await;
+    let (banque, carte, passif, debit, credit) = prelevement(&ctx, "2026-05-31").await;
+    let avant = ctx.ecritures().await;
+    let e = ctx.ecriture_manuelle(banque, debit, passif).await;
+    assert_eq!(ctx.ecritures().await, avant + 1);
+
+    let (s, b) = ctx.candidates(credit).await;
+    assert_eq!(s, 200, "{b}");
+    assert_eq!(b["candidates"].as_array().unwrap().len(), 1, "{b}");
+    assert_eq!(b["candidates"][0]["journalEntryId"], e);
+    assert_eq!(b["candidates"][0]["amount"], "500.00");
+    assert!(b["candidates"][0]["cancelBlockedBy"].is_null(), "{b}");
+    // Revue P1 (A1-7) : le retrait seul annoncé à la candidate, par la route.
+    assert_eq!(b["candidates"][0]["unlinkOnly"], true, "{b}");
+    assert_eq!(
+        ctx.deja_comptabilisee(carte, credit).await,
+        json!({ "settlementCount": 0, "entryCount": 1, "matchedElsewhereCount": 1 })
+    );
+
+    let (s, b) = ctx.rattacher(credit, e).await;
+    assert_eq!(s, 200, "{b}");
+    assert_eq!(ctx.etat(debit).await, ("reconciled".to_string(), Some(e)));
+    assert_eq!(ctx.etat(credit).await, ("reconciled".to_string(), Some(e)));
+    assert_eq!(ctx.ecritures().await, avant + 1, "une seule écriture");
+    assert_eq!(ctx.liens_vers(e).await, 2);
+    assert_eq!(ctx.solde(ctx.ledger).await, dec("-500.00"));
+    assert_eq!(ctx.solde(passif).await, dec("500.00"));
+}
+
+/// AC-2 — carte d'abord : le crédit de la carte passé par « Écriture
+/// manuelle » sur le compte de la banque (1020) ; le débit de la banque liste
+/// l'écriture et s'y rattache. Même état final.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn s34_11b_ac2_carte_puis_banque(pool: MySqlPool) {
+    let ctx = monter(&pool).await;
+    let (banque, carte, passif, debit, credit) = prelevement(&ctx, "2026-05-31").await;
+    let avant = ctx.ecritures().await;
+    let e = ctx.ecriture_manuelle(carte, credit, ctx.ledger).await;
+    assert_eq!(ctx.ids_candidates(debit).await, vec![e]);
+    let (s, b) = ctx.rattacher(debit, e).await;
+    assert_eq!(s, 200, "{b}");
+    assert_eq!(ctx.etat(debit).await, ("reconciled".to_string(), Some(e)));
+    assert_eq!(ctx.etat(credit).await, ("reconciled".to_string(), Some(e)));
+    assert_eq!(ctx.ecritures().await, avant + 1);
+    assert_eq!(ctx.solde(ctx.ledger).await, dec("-500.00"));
+    assert_eq!(ctx.solde(passif).await, dec("500.00"));
+    let _ = banque;
+}
+
+/// AC-3 — ce qui reste refusé, une fois le virement rattaché des deux côtés :
+/// une troisième transaction de la banque (même compte), d'un compte B qui
+/// **partage** le 1020, ou d'une seconde carte qui partage le 2030 ne s'y
+/// rattache pas (liste vide, `409`). Avant le second côté : une transaction de
+/// B (même grand livre que A, même sens) ne s'y rattache pas non plus (tue M2).
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn s34_11b_ac3_ce_qui_reste_refuse(pool: MySqlPool) {
+    let ctx = monter(&pool).await;
+    let (banque, carte, passif, debit, credit) = prelevement(&ctx, "2026-05-31").await;
+    let b_partage = ctx.banque(IBAN_B).await;
+    let carte2 = ctx.carte(passif, "7360").await;
+    let e = ctx.ecriture_manuelle(banque, debit, passif).await;
+
+    // Un seul côté rapproché : B, sur le même grand livre que A, dans le même sens.
+    let debit_b = ctx.transaction(b_partage, "-500.00", "2026-05-31").await;
+    assert!(ctx.ids_candidates(debit_b).await.is_empty(), "M2");
+    let (s, b) = ctx.rattacher(debit_b, e).await;
+    assert_non_rattachable(s, &b);
+
+    assert_eq!(ctx.rattacher(credit, e).await.0, 200);
+    let troisieme = ctx.transaction(banque, "-500.00", "2026-06-01").await;
+    let credit2 = ctx.transaction(carte2, "500.00", "2026-06-01").await;
+    for t in [troisieme, debit_b, credit2] {
+        assert!(ctx.ids_candidates(t).await.is_empty(), "transaction {t}");
+        let (s, b) = ctx.rattacher(t, e).await;
+        assert_non_rattachable(s, &b);
+        assert_eq!(ctx.etat(t).await, ("pending".to_string(), None));
+    }
+    assert_eq!(ctx.liens_vers(e).await, 2);
+    let _ = carte;
+}
+
+/// AC-4 et AC-4b — annuler un côté d'un virement rattaché des deux côtés : la
+/// vue dit `cancellable` et `unlinkOnly` ; l'annulation rend
+/// `reversalJournalEntryId: null`, la transaction revient `pending`, l'autre
+/// reste `reconciled`, **aucune** contre-passation, la trace dit `unlinkOnly`.
+/// Puis le dernier côté : le chemin d'aujourd'hui (contre-passation). L'ordre
+/// inverse a son test (`s34_11b_ac4_annuler_la_banque_d_abord`). Tue M3, M4, M6.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn s34_11b_ac4_annuler_un_cote_puis_l_autre(pool: MySqlPool) {
+    let ctx = monter(&pool).await;
+    let (banque, _carte, passif, debit, credit) = prelevement(&ctx, "2026-05-31").await;
+    let e = ctx.ecriture_manuelle(banque, debit, passif).await;
+    assert_eq!(ctx.rattacher(credit, e).await.0, 200);
+
+    let vue = ctx.vue(credit).await;
+    assert_eq!(vue["cancellable"], true, "{vue}");
+    assert_eq!(vue["unlinkOnly"], true, "{vue}");
+    assert!(vue["cancelBlockedBy"].is_null(), "{vue}");
+    let ecritures = ctx.ecritures().await;
+    let (s, b) = ctx.annuler_rapprochement(credit).await;
+    assert_eq!(s, 200, "{b}");
+    assert!(b["reversalJournalEntryId"].is_null(), "{b}");
+    assert_eq!(ctx.etat(credit).await, ("pending".to_string(), None));
+    assert_eq!(ctx.etat(debit).await, ("reconciled".to_string(), Some(e)));
+    assert_eq!(
+        ctx.contre_passations_de(e).await,
+        0,
+        "aucune contre-passation"
+    );
+    assert_eq!(ctx.ecritures().await, ecritures, "rien d'écrit au journal");
+    let trace = ctx.trace_annulation(credit).await;
+    assert_eq!(trace["unlinkOnly"], true, "{trace}");
+    assert!(trace["reversalJournalEntryId"].is_null(), "{trace}");
+    assert_eq!(trace["matchedEntryId"], e, "{trace}");
+    // L'écriture reste candidate du côté défait : il se rattache de nouveau.
+    assert_eq!(ctx.ids_candidates(credit).await, vec![e]);
+
+    let vue = ctx.vue(debit).await;
+    assert_eq!(vue["cancellable"], true, "{vue}");
+    assert_eq!(vue["unlinkOnly"], false, "{vue}");
+    let (s, b) = ctx.annuler_rapprochement(debit).await;
+    assert_eq!(s, 200, "{b}");
+    assert!(b["reversalJournalEntryId"].as_i64().is_some(), "{b}");
+    assert_eq!(ctx.etat(debit).await, ("pending".to_string(), None));
+    assert_eq!(ctx.contre_passations_de(e).await, 1);
+    let trace = ctx.trace_annulation(debit).await;
+    assert_eq!(trace["unlinkOnly"], false, "{trace}");
+}
+
+/// AC-4 — l'ordre inverse : la banque d'abord (retrait seul), puis la carte
+/// (contre-passation).
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn s34_11b_ac4_annuler_la_banque_d_abord(pool: MySqlPool) {
+    let ctx = monter(&pool).await;
+    let (banque, _carte, passif, debit, credit) = prelevement(&ctx, "2026-05-31").await;
+    let e = ctx.ecriture_manuelle(banque, debit, passif).await;
+    assert_eq!(ctx.rattacher(credit, e).await.0, 200);
+    let (s, b) = ctx.annuler_rapprochement(debit).await;
+    assert_eq!(s, 200, "{b}");
+    assert!(b["reversalJournalEntryId"].is_null(), "{b}");
+    assert_eq!(ctx.etat(debit).await, ("pending".to_string(), None));
+    assert_eq!(ctx.etat(credit).await, ("reconciled".to_string(), Some(e)));
+    assert_eq!(ctx.contre_passations_de(e).await, 0);
+    let (s, b) = ctx.annuler_rapprochement(credit).await;
+    assert_eq!(s, 200, "{b}");
+    assert!(b["reversalJournalEntryId"].as_i64().is_some(), "{b}");
+    assert_eq!(ctx.contre_passations_de(e).await, 1);
+}
+
+/// AC-4, AC-4b — exercice clos : l'écriture du virement est dans un exercice
+/// clôturé. La candidate de la carte rend `cancelBlockedBy: null` (tue M7) ; la
+/// vue du côté carte rend `cancellable` et `unlinkOnly`, non `FISCAL_YEAR_CLOSED`
+/// (tue M7b) ; le retrait seul passe (tue M10) ; le dernier côté est refusé
+/// `FISCAL_YEAR_CLOSED` comme aujourd'hui.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn s34_11b_ac4_exercice_clos(pool: MySqlPool) {
+    let ctx = monter(&pool).await;
+    ctx.scinder_l_exercice().await;
+    let (banque, _carte, passif, debit, credit) = prelevement(&ctx, "2025-12-20").await;
+    let e = ctx.ecriture_manuelle(banque, debit, passif).await;
+    ctx.clore_exercice_sql(ctx.seeded.fiscal_year_id).await;
+
+    let (s, b) = ctx.candidates(credit).await;
+    assert_eq!(s, 200, "{b}");
+    assert_eq!(b["candidates"][0]["journalEntryId"], e, "{b}");
+    assert!(b["candidates"][0]["cancelBlockedBy"].is_null(), "M7 : {b}");
+    assert_eq!(ctx.rattacher(credit, e).await.0, 200);
+
+    let vue = ctx.vue(credit).await;
+    assert_eq!(vue["cancellable"], true, "M7b : {vue}");
+    assert_eq!(vue["unlinkOnly"], true, "{vue}");
+    let vue_banque = ctx.vue(debit).await;
+    assert_eq!(vue_banque["unlinkOnly"], true, "{vue_banque}");
+
+    let (s, b) = ctx.annuler_rapprochement(credit).await;
+    assert_eq!(s, 200, "M10 : {b}");
+    assert!(b["reversalJournalEntryId"].is_null());
+    assert_eq!(ctx.etat(debit).await, ("reconciled".to_string(), Some(e)));
+
+    let vue_banque = ctx.vue(debit).await;
+    assert_eq!(vue_banque["cancellable"], false, "{vue_banque}");
+    assert_eq!(vue_banque["unlinkOnly"], false, "{vue_banque}");
+    assert_eq!(vue_banque["cancelBlockedBy"], "FISCAL_YEAR_CLOSED");
+    let (s, b) = ctx.annuler_rapprochement(debit).await;
+    assert_refus(s, &b, 409, "FISCAL_YEAR_CLOSED");
+    assert_eq!(ctx.etat(debit).await, ("reconciled".to_string(), Some(e)));
+}
+
+/// AC-4c — les comptes reliés : A (1020) a son débit rattaché à une dépense
+/// `D 4000 / C 1020` ; A est ensuite délié, puis relié au 1021 (sans ligne
+/// dans l'écriture) ; un compte B lié au 1020, même montant, même sens, ne se
+/// rattache **pas** à l'écriture (liste vide, `409`). Tue M8, M9.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn s34_11b_ac4c_comptes_relies(pool: MySqlPool) {
+    let ctx = monter(&pool).await;
+    let ledger_1021 = compte_du_grand_livre(&pool, ctx.company_id(), "1021", "Banque 2").await;
+    let a = ctx.banque(IBAN_A).await;
+    let b = ctx.banque(IBAN_B).await;
+    let e = ctx.depense("2026-05-02", "80.00").await;
+    let debit_a = ctx.transaction(a, "-80.00", "2026-05-02").await;
+    assert_eq!(ctx.rattacher(debit_a, e).await.0, 200);
+    let debit_b = ctx.transaction(b, "-80.00", "2026-05-03").await;
+    // Revue P1 (B1-8) : refusé AVANT tout relien aussi — le relien ne change rien à la
+    // réponse, qui tient au sens des deux transactions (le cas admis après relien, l'autre
+    // mouvement d'un virement, est `s34_11b_a1_2_relie_ailleurs_l_autre_mouvement_admis`).
+    assert!(ctx.ids_candidates(debit_b).await.is_empty(), "avant relien");
+    for relien in [None, Some(ledger_1021)] {
+        sqlx::query("UPDATE bank_accounts SET journal_account_id = ? WHERE id = ?")
+            .bind(relien)
+            .bind(a)
+            .execute(&pool)
+            .await
+            .unwrap();
+        assert!(
+            ctx.ids_candidates(debit_b).await.is_empty(),
+            "A relié à {relien:?}"
+        );
+        let (s, corps) = ctx.rattacher(debit_b, e).await;
+        assert_non_rattachable(s, &corps);
+    }
+    assert_eq!(ctx.liens_vers(e).await, 1);
+}
+
+/// AC-4 — deux annulations **simultanées** des deux côtés : une connexion
+/// `tenue` prend la ligne de l'écriture `FOR UPDATE` ; les deux annulations
+/// sont vues en attente sur ce verrou (sonde `PROCESSLIST`) ; `tenue` rend la
+/// main. La première à passer ne retire que son lien ; la seconde, dont la vue
+/// naît **après** l'attente, voit l'autre côté défait et contre-passe :
+/// **une** contre-passation, aucun lien vivant. Tue M5 (lecture des autres
+/// liens avant le verrou de l'écriture : les deux voient l'autre côté, aucune
+/// contre-passation).
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn s34_11b_ac4_deux_annulations_simultanees(pool: MySqlPool) {
+    let ctx = monter(&pool).await;
+    let (banque, _carte, passif, debit, credit) = prelevement(&ctx, "2026-05-31").await;
+    let e = ctx.ecriture_manuelle(banque, debit, passif).await;
+    assert_eq!(ctx.rattacher(credit, e).await.0, 200);
+
+    let mut tenue = pool.begin().await.unwrap();
+    let pris: Option<i64> =
+        sqlx::query_scalar("SELECT id FROM journal_entries WHERE id = ? FOR UPDATE")
+            .bind(e)
+            .fetch_optional(&mut *tenue)
+            .await
+            .unwrap();
+    assert_eq!(pris, Some(e));
+
+    let lancer = |tx: i64| {
+        let client = ctx.app.client.clone();
+        let url = ctx
+            .app
+            .url(&format!("/api/v1/reconciliation/transactions/{tx}/cancel"));
+        let jwt = ctx.jwt.clone();
+        tokio::spawn(async move {
+            let r = client
+                .post(url)
+                .bearer_auth(jwt)
+                .json(&json!({}))
+                .send()
+                .await
+                .unwrap();
+            let st = r.status().as_u16();
+            (st, r.json::<Value>().await.unwrap_or(Value::Null))
+        })
+    };
+    let a = lancer(debit);
+    let b = lancer(credit);
+    let vu = kesh_db::test_fixtures::attendre_des_requetes_en_cours(
+        &pool,
+        &[
+            "JOIN fiscal_years fy ON fy.id = je.fiscal_year_id",
+            "FOR UPDATE",
+        ],
+        2,
+        || a.is_finished() || b.is_finished(),
+    )
+    .await;
+    assert!(
+        vu,
+        "les deux annulations n'ont pas attendu le verrou de l'écriture"
+    );
+    tenue.commit().await.unwrap();
+
+    let (sa, ba) = a.await.unwrap();
+    let (sb, bb) = b.await.unwrap();
+    assert_eq!((sa, sb), (200, 200), "{ba} / {bb}");
+    let retraits = [&ba, &bb]
+        .iter()
+        .filter(|r| r["reversalJournalEntryId"].is_null())
+        .count();
+    assert_eq!(
+        retraits, 1,
+        "un retrait seul, une contre-passation : {ba} / {bb}"
+    );
+    assert_eq!(ctx.etat(debit).await, ("pending".to_string(), None));
+    assert_eq!(ctx.etat(credit).await, ("pending".to_string(), None));
+    assert_eq!(ctx.contre_passations_de(e).await, 1);
+    assert_eq!(ctx.liens_vers(e).await, 0);
+}
+
+// ============================================================
+// Story 34-11b — remédiation de la revue de code P1
+// ============================================================
+
+impl Ctx {
+    /// `POST …/cancel` avec la décision attendue (`expectUnlinkOnly`).
+    async fn annuler_en_attendant(&self, tx: i64, retrait_seul: bool) -> (u16, Value) {
+        self.post(
+            &format!("/api/v1/reconciliation/transactions/{tx}/cancel"),
+            json!({ "expectUnlinkOnly": retrait_seul }),
+        )
+        .await
+    }
+}
+
+/// Revue P1 (E1-1) — la vue a dit « retrait seul » ; l'autre côté est annulé
+/// entre-temps : le geste qui attendait le retrait seul est **refusé** `409
+/// RECONCILIATION_CANCEL_CHANGED`, rien n'est écrit (aucune contre-passation,
+/// le lien reste). Relu, il contre-passe quand il l'attend. Tue M12.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn s34_11b_e1_1_retrait_seul_attendu_mais_dernier_cote(pool: MySqlPool) {
+    let ctx = monter(&pool).await;
+    let (banque, _carte, passif, debit, credit) = prelevement(&ctx, "2026-05-31").await;
+    let e = ctx.ecriture_manuelle(banque, debit, passif).await;
+    assert_eq!(ctx.rattacher(credit, e).await.0, 200);
+    assert_eq!(ctx.vue(credit).await["unlinkOnly"], true, "lu avant");
+    // L'autre côté, annulé entre la lecture et le geste.
+    let (s, b) = ctx.annuler_en_attendant(debit, true).await;
+    assert_eq!(s, 200, "{b}");
+    let ecritures = ctx.ecritures().await;
+    let (s, b) = ctx.annuler_en_attendant(credit, true).await;
+    assert_refus(s, &b, 409, "RECONCILIATION_CANCEL_CHANGED");
+    assert_eq!(ctx.ecritures().await, ecritures, "rien d'écrit");
+    assert_eq!(ctx.contre_passations_de(e).await, 0);
+    assert_eq!(ctx.etat(credit).await, ("reconciled".to_string(), Some(e)));
+    let (s, b) = ctx.annuler_en_attendant(credit, false).await;
+    assert_eq!(s, 200, "{b}");
+    assert!(b["reversalJournalEntryId"].as_i64().is_some(), "{b}");
+}
+
+/// Revue P1 (E1-2) — sens inverse : la vue a dit « contre-passation » ; l'autre
+/// côté est rattaché entre-temps : le geste qui attendait la contre-passation est
+/// refusé `409 RECONCILIATION_CANCEL_CHANGED`, les deux liens restent. Sans
+/// corps, le geste ne contrôle rien (clients d'avant la 0.17.6). Tue M12.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn s34_11b_e1_2_contre_passation_attendue_mais_autre_cote_rattache(pool: MySqlPool) {
+    let ctx = monter(&pool).await;
+    let (banque, _carte, passif, debit, credit) = prelevement(&ctx, "2026-05-31").await;
+    let e = ctx.ecriture_manuelle(banque, debit, passif).await;
+    assert_eq!(ctx.vue(debit).await["unlinkOnly"], false, "lu avant");
+    assert_eq!(ctx.rattacher(credit, e).await.0, 200);
+    let (s, b) = ctx.annuler_en_attendant(debit, false).await;
+    assert_refus(s, &b, 409, "RECONCILIATION_CANCEL_CHANGED");
+    assert_eq!(ctx.liens_vers(e).await, 2);
+    assert_eq!(ctx.contre_passations_de(e).await, 0);
+    // Sans attente déclarée : le geste d'aujourd'hui (retrait seul).
+    let (s, b) = ctx.annuler_rapprochement(debit).await;
+    assert_eq!(s, 200, "{b}");
+    assert!(b["reversalJournalEntryId"].is_null(), "{b}");
+}
+
+/// Revue P1 (E1-3) — une écriture de **règlement** n'a pas d'autre côté : le
+/// paiement d'une facture fournisseur, rapproché du débit de A ; un compte B
+/// relié (état forgé : la route le refuse) au compte créanciers porte un crédit
+/// du même montant — il n'est pas candidat, ne se rattache pas, et l'annulation
+/// du côté A reste le chemin du règlement (`unlinkOnly: false`). Tue M13.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn s34_11b_e1_3_une_ecriture_de_reglement_n_a_pas_d_autre_cote(pool: MySqlPool) {
+    let ctx = monter(&pool).await;
+    let a = ctx.banque(IBAN_A).await;
+    let fi = ctx.facture_fournisseur("FF-E13", "100.00").await;
+    let e = ctx.payer_fournisseur(fi, a, "2026-06-20").await;
+    let debit_a = ctx.transaction(a, "-100.00", "2026-06-20").await;
+    assert_eq!(ctx.rattacher(debit_a, e).await.0, 200);
+    let b = ctx.banque_liee(IBAN_B, ctx.compte("2000")).await;
+    let credit_b = ctx.transaction(b, "100.00", "2026-06-20").await;
+    assert!(ctx.ids_candidates(credit_b).await.is_empty());
+    let (s, corps) = ctx.rattacher(credit_b, e).await;
+    assert_non_rattachable(s, &corps);
+    let vue = ctx.vue(debit_a).await;
+    assert_eq!(vue["unlinkOnly"], false, "{vue}");
+    // Revue P2 (B2-3) : l'écriture exclue est bien celle que le classement dit règlement.
+    assert_eq!(vue["kind"], "supplier_settlement", "{vue}");
+}
+
+/// Revue P2 (B2-2) — le bras **règlement client** de l'exclusion : un règlement
+/// par compte interne dont la contrepartie est la banque A, rapproché du crédit
+/// de A ; un compte B relié (état forgé) au compte débiteurs porte un débit du
+/// même montant — pas candidat, pas rattachable ; la vue de A dit le genre
+/// `invoice_settlement` et `unlinkOnly: false`. Tue M13b.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn s34_11b_b2_2_un_reglement_client_n_a_pas_d_autre_cote(pool: MySqlPool) {
+    let ctx = monter(&pool).await;
+    let a = ctx.banque(IBAN_A).await;
+    let f = ctx.facture("2026-06-02").await;
+    let (_, e) = ctx
+        .regler_interne(f, ctx.ledger, "54.05", "2026-06-21")
+        .await;
+    let credit_a = ctx.transaction(a, "54.05", "2026-06-21").await;
+    assert_eq!(ctx.rattacher(credit_a, e).await.0, 200);
+    let debiteurs: i64 = sqlx::query_scalar(
+        "SELECT account_id FROM journal_entry_lines WHERE entry_id = ? AND account_id <> ?",
+    )
+    .bind(e)
+    .bind(ctx.ledger)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    let b = ctx.banque_liee(IBAN_B, debiteurs).await;
+    let debit_b = ctx.transaction(b, "-54.05", "2026-06-21").await;
+    assert!(ctx.ids_candidates(debit_b).await.is_empty());
+    let (s, corps) = ctx.rattacher(debit_b, e).await;
+    assert_non_rattachable(s, &corps);
+    let vue = ctx.vue(credit_a).await;
+    assert_eq!(vue["kind"], "invoice_settlement", "{vue}");
+    assert_eq!(vue["unlinkOnly"], false, "{vue}");
+}
+
+/// Revue P2 (B2-1) — le corps de `POST …/cancel` reste **facultatif pour tous
+/// les clients** : sans corps, corps vide en `application/json`, `-d ''` en
+/// `application/x-www-form-urlencoded`, `null`, `{}`, et un corps qui n'est pas
+/// du JSON — tous acceptés (`200`), comme avant la 0.17.6. Seul un
+/// `expectUnlinkOnly` d'un autre type que booléen est refusé (`400`). Tue M14.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn s34_11b_b2_1_le_corps_de_l_annulation_reste_facultatif(pool: MySqlPool) {
+    let ctx = monter(&pool).await;
+    let bank = ctx.banque(IBAN_A).await;
+    let cas: [(&str, Option<&str>, &str); 6] = [
+        ("sans corps", None, ""),
+        ("vide en JSON", Some("application/json"), ""),
+        (
+            "vide en formulaire",
+            Some("application/x-www-form-urlencoded"),
+            "",
+        ),
+        ("null", Some("application/json"), "null"),
+        ("objet vide", Some("application/json"), "{}"),
+        ("texte", Some("text/plain"), "annuler"),
+    ];
+    for (k, (nom, type_, corps)) in cas.iter().enumerate() {
+        let montant = format!("{}.00", 300 + k);
+        let e = ctx.depense("2026-06-18", &montant).await;
+        let t = ctx
+            .transaction(bank, &format!("-{montant}"), "2026-06-18")
+            .await;
+        assert_eq!(ctx.rattacher(t, e).await.0, 200, "{nom}");
+        let mut r = ctx
+            .app
+            .client
+            .post(
+                ctx.app
+                    .url(&format!("/api/v1/reconciliation/transactions/{t}/cancel")),
+            )
+            .bearer_auth(&ctx.jwt);
+        if let Some(ct) = type_ {
+            r = r
+                .header(reqwest::header::CONTENT_TYPE, *ct)
+                .body(corps.to_string());
+        }
+        let resp = r.send().await.unwrap();
+        let st = resp.status().as_u16();
+        let b: Value = resp.json().await.unwrap_or(Value::Null);
+        assert_eq!(st, 200, "{nom} : {b}");
+        assert_eq!(ctx.etat(t).await, ("pending".to_string(), None), "{nom}");
+    }
+    // Une attente déclarée d'un mauvais type : refusée, rien d'annulé.
+    let e = ctx.depense("2026-06-18", "399.00").await;
+    let t = ctx.transaction(bank, "-399.00", "2026-06-18").await;
+    assert_eq!(ctx.rattacher(t, e).await.0, 200);
+    let (s, b) = ctx
+        .post(
+            &format!("/api/v1/reconciliation/transactions/{t}/cancel"),
+            json!({ "expectUnlinkOnly": "true" }),
+        )
+        .await;
+    assert_eq!(s, 400, "{b}");
+    assert_eq!(ctx.etat(t).await, ("reconciled".to_string(), Some(e)));
+}
+
+/// Revue P1 (A1-2) — (iii), la forme **admise** : A rapproche son débit de
+/// l'écriture d'un virement vers la carte, puis A est relié au 1021 (aucune ligne
+/// dans l'écriture) ; le crédit de la carte reste candidat — le signe de la
+/// transaction de A prouve le mouvement qu'elle a rapproché.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn s34_11b_a1_2_relie_ailleurs_l_autre_mouvement_admis(pool: MySqlPool) {
+    let ctx = monter(&pool).await;
+    let ledger_1021 = compte_du_grand_livre(&pool, ctx.company_id(), "1021", "Banque 2").await;
+    let (banque, _carte, passif, debit, credit) = prelevement(&ctx, "2026-05-31").await;
+    let e = ctx.ecriture_manuelle(banque, debit, passif).await;
+    sqlx::query("UPDATE bank_accounts SET journal_account_id = ? WHERE id = ?")
+        .bind(ledger_1021)
+        .bind(banque)
+        .execute(&pool)
+        .await
+        .unwrap();
+    assert_eq!(ctx.ids_candidates(credit).await, vec![e]);
+    assert_eq!(ctx.rattacher(credit, e).await.0, 200);
+}
+
+/// Revue P1 (A1-2) — un virement **éclaté** sur trois lignes de banque
+/// (`C 1020 500 / D 1021 300 / D 1022 200`), débit de A rapproché : le crédit de
+/// +300 de B n'est **pas** candidat — aucun montant n'est opposé à celui du
+/// premier côté (C-e34b-1, désormais refusé ; la fiche l'admettait).
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn s34_11b_a1_2_virement_eclate_sur_trois_comptes_refuse(pool: MySqlPool) {
+    let ctx = monter(&pool).await;
+    let ledger_b = compte_du_grand_livre(&pool, ctx.company_id(), "1021", "Banque 2").await;
+    let ledger_c = compte_du_grand_livre(&pool, ctx.company_id(), "1022", "Banque 3").await;
+    let a = ctx.banque(IBAN_A).await;
+    let b = ctx.banque_liee(IBAN_B, ledger_b).await;
+    let e = ctx
+        .ecriture(
+            "2026-05-02",
+            "Virement éclaté",
+            &[
+                (ledger_b, "300.00", "0"),
+                (ledger_c, "200.00", "0"),
+                (ctx.ledger, "0", "500.00"),
+            ],
+        )
+        .await;
+    let debit_a = ctx.transaction(a, "-500.00", "2026-05-02").await;
+    assert_eq!(ctx.rattacher(debit_a, e).await.0, 200);
+    let credit_b = ctx.transaction(b, "300.00", "2026-05-02").await;
+    assert!(ctx.ids_candidates(credit_b).await.is_empty());
+    let (s, corps) = ctx.rattacher(credit_b, e).await;
+    assert_non_rattachable(s, &corps);
+}
+
+/// Revue P1 (A1-11) — un cas encore bloqué garde son motif : deux comptes qui
+/// partagent le 1020 rapprochent la même dépense (état **forgé** : la condition 4
+/// le refuse, une donnée héritée le porterait) ; la vue de l'un dit
+/// `MATCHED_BANK_TRANSACTION`, et `unlinkOnly: false` (même sens : pas l'autre côté).
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn s34_11b_a1_11_deux_liens_du_meme_sens_restent_bloques(pool: MySqlPool) {
+    let ctx = monter(&pool).await;
+    let a = ctx.banque(IBAN_A).await;
+    let c = ctx.banque(IBAN_C).await;
+    let e = ctx.depense("2026-05-02", "70.00").await;
+    let debit_a = ctx.transaction(a, "-70.00", "2026-05-02").await;
+    let debit_c = ctx.transaction(c, "-70.00", "2026-05-02").await;
+    assert_eq!(ctx.rattacher(debit_a, e).await.0, 200);
+    sqlx::query(
+        "UPDATE bank_transactions SET status = 'reconciled', matched_entry_id = ? WHERE id = ?",
+    )
+    .bind(e)
+    .bind(debit_c)
+    .execute(&pool)
+    .await
+    .unwrap();
+    let vue = ctx.vue(debit_a).await;
+    assert_eq!(vue["cancellable"], false, "{vue}");
+    assert_eq!(vue["unlinkOnly"], false, "{vue}");
+    assert_eq!(vue["cancelBlockedBy"], "MATCHED_BANK_TRANSACTION", "{vue}");
+    assert_eq!(vue["cancelBlockedDocumentId"], debit_c, "{vue}");
+}

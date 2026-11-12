@@ -1536,12 +1536,17 @@ describe('ReconciliationProposals — transaction déjà comptabilisée (Story 3
 		'Cette transaction semble déjà comptabilisée : une écriture non rapprochée du compte de la banque lui correspond. Rattachez-la (« Rattacher à une écriture existante ») plutôt que de passer une écriture : elle serait comptée deux fois.';
 	const texteDes = (n: number) =>
 		`Cette transaction semble déjà comptabilisée : ${n} écritures non rapprochées du compte de la banque lui correspondent. Rattachez-la (« Rattacher à une écriture existante ») plutôt que de passer une écriture : elle serait comptée deux fois.`;
-	// Revue P1 (E1-1, B1-5) : le second côté se dit par la transaction de sens contraire, et la
-	// phrase du cas combiné vaut au singulier comme au pluriel.
-	const TEXTE_AILLEURS =
-		'Une transaction de sens contraire, sur un autre de vos comptes bancaires, est déjà rapprochée d’une écriture du même montant : c’est probablement l’autre côté d’un virement entre vos comptes. Ne passez pas d’écriture pour elle : rejetez-la.';
-	const TEXTE_COMBINE =
-		'Si rien de ce que propose « Rattacher à une écriture existante » ne lui correspond, elle est peut-être l’autre côté d’un virement entre vos comptes : une transaction de sens contraire, sur un autre de vos comptes bancaires, est rapprochée d’une écriture du même montant.';
+	// Story 34-11b (#972, AC-10) : l'écriture du virement, rapprochée sur un autre compte, est
+	// candidate — `matchedElsewhereCount` en est une partie ; le conseil est de la rattacher.
+	const TEXTE_VIREMENT =
+		'Cette transaction est probablement l’autre côté d’un virement entre vos comptes : l’écriture de ce virement est déjà rapprochée d’une transaction d’un autre de vos comptes bancaires. Rattachez-la à cette écriture (« Rattacher à une écriture existante ») plutôt que de passer une écriture : le virement serait compté deux fois.';
+	const texteVirementDes = (n: number) =>
+		`Cette transaction est probablement l’autre côté d’un virement entre vos comptes : ${n} écritures de virement sont déjà rapprochées de transactions d’autres de vos comptes bancaires. Rattachez-la à celle de son virement (« Rattacher à une écriture existante ») plutôt que de passer une écriture : le virement serait compté deux fois.`;
+	// Revue P1 (B1-1) : (c′) compte à part les non rapprochées et les écritures de virement.
+	const TEXTE_PARMI_UNE =
+		'S’y ajoute l’écriture d’un virement, déjà rapprochée d’une transaction d’un autre de vos comptes bancaires : si cette transaction est l’autre côté de ce virement, c’est à elle qu’il faut la rattacher.';
+	const texteParmiDes = (n: number) =>
+		`S’y ajoutent ${n} écritures de virement, déjà rapprochées de transactions d’autres de vos comptes bancaires : si cette transaction est l’autre côté de l’un de ces virements, c’est à son écriture qu’il faut la rattacher.`;
 
 	/** Une ligne avec candidate, et ses trois nombres (`null` : pas de champ). */
 	function signalee(
@@ -1607,15 +1612,33 @@ describe('ReconciliationProposals — transaction déjà comptabilisée (Story 3
 		expect(avertissement(view, 2)).toBe(TEXTE_UNE);
 	});
 
-	it('AC-5 (b) le second côté seul ⇒ la phrase du virement, sans la phrase (a) (M7)', async () => {
-		const view = await monter([signalee(1, [0, 0, 2])]);
-		expect(avertissement(view, 1)).toBe(TEXTE_AILLEURS);
+	// Story 34-11b (#972, AC-10) — les cas (b′) et (c′), qui remplacent (b) et (c) de la 34-4.
+	it('AC-10 (b′) toutes les candidates sont l’écriture d’un virement ⇒ la phrase du virement seule', async () => {
+		const view = await monter([signalee(1, [0, 1, 1]), signalee(2, [0, 2, 2]), signalee(3, [1, 2, 3])]);
+		expect(avertissement(view, 1)).toBe(TEXTE_VIREMENT);
+		// Revue P2 (E2-3) : au pluriel quand plusieurs écritures de virement sont proposées.
+		expect(avertissement(view, 2)).toBe(texteVirementDes(2));
+		expect(avertissement(view, 3)).toBe(texteVirementDes(3));
+		expect(avertissement(view, 1)).not.toContain('rejetez-la');
 	});
 
-	it('AC-5 (c) les deux ⇒ (a) puis la phrase combinée, sans « rejetez-la »', async () => {
-		const view = await monter([signalee(1, [0, 1, 1]), signalee(2, [2, 0, 3])]);
-		expect(avertissement(view, 1)).toBe(`${TEXTE_UNE} ${TEXTE_COMBINE}`);
-		expect(avertissement(view, 2)).toBe(`${texteDes(2)} ${TEXTE_COMBINE}`);
+	it('AC-10 (b′) k = 0, m = 1 (que le serveur ne rend pas) ⇒ la phrase du virement, jamais une ligne muette', async () => {
+		const view = await monter([signalee(1, [0, 0, 1])]);
+		expect(avertissement(view, 1)).toBe(TEXTE_VIREMENT);
+	});
+
+	// Revue P1 (B1-1) : (a) ne compte que les `k − m` non rapprochées ; les `m` écritures de
+	// virement se disent à part, au singulier ou au pluriel — jamais « N non rapprochées » dont
+	// « l'une » serait rapprochée.
+	it('AC-10 (c′) d’autres candidates aussi ⇒ (a) des seules non rapprochées, puis les écritures de virement (M11)', async () => {
+		const view = await monter([
+			signalee(1, [0, 2, 1]),
+			signalee(2, [1, 2, 2]),
+			signalee(3, [0, 3, 1]),
+		]);
+		expect(avertissement(view, 1)).toBe(`${TEXTE_UNE} ${TEXTE_PARMI_UNE}`);
+		expect(avertissement(view, 2)).toBe(`${TEXTE_UNE} ${texteParmiDes(2)}`);
+		expect(avertissement(view, 3)).toBe(`${texteDes(2)} ${TEXTE_PARMI_UNE}`);
 		expect(avertissement(view, 1)).not.toContain('rejetez-la');
 	});
 

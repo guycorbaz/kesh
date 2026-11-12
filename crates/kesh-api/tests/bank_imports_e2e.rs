@@ -4879,6 +4879,83 @@ async fn compte_sans_iban_camt_refuse_csv_accepte(pool: MySqlPool) {
     assert_eq!(body["transactionCount"], 3);
 }
 
+/// Story 34-11b (#972, AC-6) — le relevé CSV d'une carte, à colonnes débit et
+/// crédit **séparées** (fixture synthétique
+/// `crates/kesh-api/tests/fixtures/releve-carte-synthetique.csv`), s'importe
+/// sur la carte par un profil créé par la route (`debitSign: positive` : la
+/// colonne Débit porte des montants positifs) : les deux achats arrivent en
+/// **débit** (−120.00, −80.00), le paiement reçu en crédit (+1000.00).
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn s34_11b_ac6_releve_csv_d_une_carte(pool: MySqlPool) {
+    let s = setup(&pool).await;
+    let card_id = forge_card(&pool, s.company_id).await;
+    let app = spawn_app(pool.clone()).await;
+    let res = app
+        .client
+        .post(app.url("/api/v1/bank-profiles"))
+        .bearer_auth(&s.jwt)
+        .json(&serde_json::json!({
+            "bankName": "Carte synthétique",
+            "filenamePattern": null,
+            "columnMapping": {"date": 0, "debit_credit_split": [2, 3], "details": 1},
+            "dateFormat": "%Y-%m-%d",
+            "decimalSeparator": ".",
+            "fieldSeparator": ";",
+            "encoding": null,
+            "headerRowCount": 1,
+            "debitSign": "positive"
+        }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(res.status(), 201);
+    let profile_id = res.json::<Value>().await.unwrap()["id"].as_i64().unwrap();
+    let fichier = std::fs::read(
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/releve-carte-synthetique.csv"),
+    )
+    .expect("fixture du relevé de carte");
+
+    let (st, body) = send_csv(
+        &app,
+        &s.jwt,
+        true,
+        fichier.clone(),
+        card_id,
+        profile_id,
+        &[],
+    )
+    .await;
+    assert_eq!(st, 200, "aperçu : {body}");
+    let fingerprint = body["previewFingerprint"].as_str().unwrap().to_string();
+    let (st, body) = send_csv(
+        &app,
+        &s.jwt,
+        false,
+        fichier,
+        card_id,
+        profile_id,
+        &[("previewFingerprint", fingerprint)],
+    )
+    .await;
+    assert_eq!(st, 201, "import : {body}");
+    assert_eq!(body["bankAccountId"], card_id);
+    let montants: Vec<(rust_decimal::Decimal, String)> = sqlx::query_as(
+        "SELECT amount, details FROM bank_transactions WHERE bank_account_id = ? ORDER BY booking_date",
+    )
+    .bind(card_id)
+    .fetch_all(&pool)
+    .await
+    .unwrap();
+    assert_eq!(
+        montants
+            .iter()
+            .map(|(m, _)| m.to_string())
+            .collect::<Vec<_>>(),
+        vec!["-120.00", "-80.00", "1000.00"],
+        "achats au débit, paiement au crédit : {montants:?}"
+    );
+}
+
 /// Revue P1 (E2, A10) — le refus CAMT de la création précède l'empreinte : l'aperçu
 /// CSV d'une carte, puis le **même** fichier renommé `.xml` envoyé avec cette
 /// empreinte, rend `422 BANK_IMPORT_CAMT_NEEDS_IBAN` et non `409

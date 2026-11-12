@@ -863,6 +863,9 @@ reconciliation-cancel-confirm-supplier-invoice = Verrà registrata una scrittura
 reconciliation-cancel-confirm-submit = Conferma l'annullamento
 reconciliation-cancel-dismiss = Chiudi
 reconciliation-cancel-done = Riconciliazione annullata.
+reconciliation-cancel-confirm-unlink-only = Verrà rimosso solo il collegamento di questa transazione alla scrittura del bonifico: la scrittura resta riconciliata con l’altro lato del bonifico, sull’altro suo conto, e non viene registrata alcuna scrittura di storno. La transazione tornerà da riconciliare.
+reconciliation-cancel-done-unlink-only = Il collegamento è rimosso; la scrittura resta quella dell’altro lato del bonifico.
+reconciliation-cancel-changed = Questa riconciliazione è cambiata dall’apertura della finestra: l’altro lato del bonifico è stato collegato o annullato nel frattempo. Nulla è stato annullato; rilegga ciò che accadrà, poi confermi di nuovo.
 reconciliation-cancel-entry-link = Vedi la scrittura
 reconciliation-cancel-column = Riconciliazione
 # Story 28-5b (#526) — annuler le rejet d'une transaction, depuis le détail de son import.
@@ -1377,8 +1380,10 @@ reconciliation-labels-notice-supplier-invoice-in-batch = La fattura fornitore { 
 # Story 34-4 (#828, AC-5) — sotto una riga che sembra già contabilizzata. Due chiavi -one / -other, scelte dallo schermo: nessun selettore (i messaggi arrivano già risolti).
 reconciliation-labels-already-booked-one = Questa transazione sembra già contabilizzata: le corrisponde una scrittura non riconciliata sul conto della banca. La colleghi («Collega a una scrittura esistente») anziché registrare una scrittura: sarebbe contata due volte.
 reconciliation-labels-already-booked-other = Questa transazione sembra già contabilizzata: le corrispondono { $count } scritture non riconciliate sul conto della banca. La colleghi («Collega a una scrittura esistente») anziché registrare una scrittura: sarebbe contata due volte.
-reconciliation-labels-already-booked-elsewhere = Una transazione di segno opposto, su un altro dei suoi conti bancari, è già riconciliata con una scrittura dello stesso importo: è probabilmente l’altro lato di un bonifico tra i suoi conti. Non registri una scrittura per essa: la rifiuti.
-reconciliation-labels-already-booked-combined = Se nulla di ciò che propone «Collega a una scrittura esistente» le corrisponde, è forse l’altro lato di un bonifico tra i suoi conti: una transazione di segno opposto, su un altro dei suoi conti bancari, è riconciliata con una scrittura dello stesso importo.
+reconciliation-labels-already-booked-transfer = Questa transazione è probabilmente l’altro lato di un bonifico tra i suoi conti: la scrittura di questo bonifico è già riconciliata con una transazione di un altro dei suoi conti bancari. La colleghi a questa scrittura («Collega a una scrittura esistente») anziché registrare una scrittura: il bonifico sarebbe contato due volte.
+reconciliation-labels-already-booked-transfer-other = Questa transazione è probabilmente l’altro lato di un bonifico tra i suoi conti: { $count } scritture di bonifici sono già riconciliate con transazioni di altri suoi conti bancari. La colleghi alla scrittura del suo bonifico («Collega a una scrittura esistente») anziché registrare una scrittura: il bonifico sarebbe contato due volte.
+reconciliation-labels-already-booked-transfer-among-one = Si aggiunge la scrittura di un bonifico, già riconciliata con una transazione di un altro dei suoi conti bancari: se questa transazione è l’altro lato di quel bonifico, la colleghi a quella scrittura.
+reconciliation-labels-already-booked-transfer-among-other = Si aggiungono { $count } scritture di bonifici, già riconciliate con transazioni di altri suoi conti bancari: se questa transazione è l’altro lato di uno di quei bonifici, la colleghi alla sua scrittura.
 # Story 34-4 (#828, AC-6) — conferma prima di Accettare, Registrazione manuale o Suddividi su una riga segnalata.
 reconciliation-labels-already-booked-confirm-title = Confermare nonostante l’avviso
 reconciliation-labels-already-booked-confirm-intro = Ogni transazione qui sotto sembra già contabilizzata (vedere l’avviso della sua riga). Continuare registrerebbe una scrittura per un movimento forse già nei libri: sarebbe contato due volte.
@@ -1495,6 +1500,7 @@ reconciliation-link-col-journal = Giornale
 reconciliation-link-col-description = Descrizione
 reconciliation-link-choose-entry = Scegli questa scrittura
 reconciliation-link-entry-cancel-today = Oggi Kesh non vede alcun ostacolo: annullare questa riconciliazione stornerebbe questa scrittura (o annullerebbe il pagamento che porta). Una chiusura d'esercizio, un periodo bloccato o un esercizio successivo chiuso potrebbero impedirlo, già oggi senza che Kesh lo veda, o più tardi.
+reconciliation-link-entry-cancel-unlink-only = Questa scrittura è quella di un bonifico, già riconciliata dall’altro lato su un altro dei suoi conti bancari: la transazione vi si collega anch’essa, senza seconda scrittura. Oggi, annullare questo collegamento rimuoverebbe solo il collegamento; la scrittura resterebbe quella dell’altro lato. Se l’altro lato viene annullato per primo, questo collegamento diventa l’ultimo: annullarlo stornerebbe la scrittura, e un esercizio chiuso lo impedirebbe.
 reconciliation-link-entry-cancel-blocked-intro = Questo collegamento non potrà essere annullato finché dura l'ostacolo seguente.
 reconciliation-link-entry-cancel-blocked-ack = Ho capito: finché questo ostacolo dura, questo collegamento non potrà essere annullato.
 reconciliation-link-col-invoice = Fattura
