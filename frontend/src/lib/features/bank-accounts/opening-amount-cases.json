@@ -78,6 +78,8 @@
 		{ "raw": "1\t234", "kind": "clear", "payload": "1234" },
 		{ "raw": "1\u2009234", "kind": "clear", "payload": "1234" },
 		{ "raw": "12'34", "kind": "clear", "payload": "1234" },
+		{ "raw": "1 2.345", "kind": "clear", "payload": "12.345" },
+		{ "raw": "12'3.456", "kind": "clear", "payload": "123.456" },
 
 		{ "raw": "1_000", "kind": "clear", "payload": "1000" },
 		{ "raw": "1__0", "kind": "clear", "payload": "10" },

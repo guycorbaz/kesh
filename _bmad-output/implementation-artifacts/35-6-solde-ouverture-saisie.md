@@ -111,6 +111,7 @@ qu'un chiffre a été lu, avant comme après le point ; `:325`, refusé avant) :
   | `1 234,50` (U+0020) · `1 234,50` (U+00A0) · `1 234.50` (U+202F) · `1'234.50` · `1'234,50` | claire | `1234.50` |
   | `12.50` · `12,5` · `1,23` · `1,2345` · `1234` · `1.2345` · `1.2340` · `75,25` · `+12.50` | claire | `12.50`, `12.5`, `1.23`, `1.2345`, `1234`, `1.2345`, `1.2340`, `75.25`, `12.50` |
   | `1'2345` · `1234'567` · `1  234` · `1<TAB>234` · `1 234` (U+2009) · `12'34` | claire (acceptées aujourd'hui, même valeur) | `12345`, `1234567`, `1234`, `1234`, `1234`, `1234` |
+  | `1 2.345` · `12'3.456` | claire (E groupée de moins de quatre chiffres : seul le groupement l'écarte de la règle ; acceptées aujourd'hui, même valeur ; ligne ajoutée au développement, M8) | `12.345`, `123.456` |
   | `1_000` · `1__0` · `1.2_5` · `1_` · `1_.5` | claire (#1028 ; acceptées aujourd'hui par le serveur, même valeur) | `1000`, `10`, `1.25`, `1`, `1.5` |
   | `.5` · `,5` · `5.` | claire | `0.5`, `0.5`, `5` |
   | `1.50000` · `1.23450` | claire (zéros au-delà de la quatrième décimale) | `1.5000`, `1.2345` |
@@ -249,7 +250,7 @@ départ, et dits comme tels : le vide (AC2), les lignes claires d'aujourd'hui qu
 **Mutations** : M1 la règle du point retirée (`1.234` redevient clair) ; M2 `0,500` redevient ambigu ; M3 le `+` en tête
 contourne la règle ; M4 l'avis formate la chaîne brute ; M5 `_` retiré de l'ensemble des séparateurs (`1_000` non lisible,
 AC1) ; M6 la saisie non lisible part au serveur — sur **chacun** des deux formulaires ; M7 la borne « 1 à 3 chiffres » retirée
-(`1234.567` devient ambigu) ; M8 le classement fait après le retrait des séparateurs (`1'234,567` redevient ambigu) ; M9
+(`1234.567` devient ambigu) ; M8 le classement fait après le retrait des séparateurs (`1 2.345` et `12'3.456` deviennent ambigus ; *corrigé au développement : `1'234,567`, annoncé ici, garde ses quatre chiffres et reste clair sous la borne de un à trois*) ; M9
 l'ensemble des séparateurs réduit à l'espace ASCII et aux apostrophes (U+00A0, U+202F, tabulation : AC1) ; M10 le vide
 classé non lisible (AC2, création sans solde) ; M11 le rognage retiré (` 9,999 ` cesse d'être ambiguë) ; M12 les zéros
 au-delà de la quatrième décimale non retirés (`1.50000` devient non lisible) ; M13 un `+` hors de la tête accepté (`1+2`) ;

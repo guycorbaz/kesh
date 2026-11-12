@@ -831,7 +831,7 @@ mod tests {
         }
         assert_eq!(
             (a, b, c, d, e),
-            (56, 1, 24, 13, 4),
+            (58, 1, 24, 13, 4),
             "lignes exercées (a, b, c, d, e)"
         );
     }
