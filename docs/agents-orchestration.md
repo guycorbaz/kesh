@@ -185,6 +185,49 @@ tranche utilisateur, et `systemd-oomd` a tué la session — GNOME Shell compris
 ⚠️ Le verrou sérialise les gates, il ne les rend pas plus courts : une file de trois gates complets
 attend. C'est le prix, et il est bas devant une session perdue.
 
+### 5.1 Trois voies de verrou (depuis le 2026-11-11)
+
+Décision de Guy du 2026-11-11 (« tu peux augmenter un peu le parallélisme »), appliquée sur tout
+l'Epic 34 et l'intégration de la 0.17.6. Le travail lourd passe par **une commande par prise**, dans
+l'une de trois voies :
+
+| Voie | Ce qui y passe | Prise |
+|---|---|---|
+| **Base et Rust** | tout ce qui lance des tests contre MariaDB ou un backend : `scripts/test-fast.sh`, `scripts/gate-ci.sh`, `cargo nextest` / `cargo test`, mutations Rust, **E2E** (backend lancé dans la prise, descripteurs de verrou fermés, arrêté par son PID), `docker run` d'une image Kesh, recettes de montée | `flock /tmp/station-heavy.lock flock "$GATE_LOGS/.gate.lock" scripts/mem-guard.sh <commande>` |
+| **Frontend et manuels** | sans base ni cargo : `npm run check`, `lint-i18n-ownership`, `test:unit` (ou un Vitest ciblé), `npm run build`, `make` des manuels, mutations frontend | `flock "$GATE_LOGS/.gate-front.lock" scripts/mem-guard.sh <commande>` |
+| **Compilation seule** | ce qui ne touche pas MariaDB : `cargo build`, `cargo check`, `cargo clippy`, `cargo fmt` | **aucun verrou** : `scripts/mem-guard.sh <commande>` seul |
+
+Les deux premières voies tournent ensemble ; `mem-guard` borne la station à trois exécutions de 8 Go,
+si bien qu'une place reste libre pour une recette ou une mesure. `npm run build`, qui précède l'E2E,
+passe par la voie frontend ; l'E2E lui-même reste dans la voie base. On lance `free -g` avant chaque
+étape lourde, et on ne garde jamais une prise entre deux commandes.
+
+### 5.2 Les fichiers que partagent des stories parallèles (C3)
+
+Des stories développées en parallèle, chacune dans son worktree, écrivent dans les **mêmes fichiers**.
+Chacune n'y écrit que **sa part** ; l'intégration les réunit, et c'est là que naissent les défauts.
+Règles, tirées de l'intégration de la 0.17.6 :
+
+- **`CHANGELOG.md`** : chaque story ajoute **une entrée** à la section `## [x.y.z] — Non publié`, sous
+  *Ajouté*, *Modifié* ou *Corrigé* (jamais « Changé »). L'intégration garde **une seule section**,
+  ces trois rubriques dans cet ordre, une entrée par story, l'avertissement de sauvegarde en tête —
+  et relit la section après chaque résolution : une résolution de conflit peut **souder** deux
+  lignes en une sans que rien ne rougisse (revue P1 de la 0.17.6, A-1).
+- **`sprint-status.yaml`** : chaque story à son état **le plus avancé** ; une ligne `last_updated`
+  neuve en tête, les anciennes gardées.
+- **Registres de choix** (`e34-choix-autonomes-<clé>.md`) : mis à jour **par union**, jamais par
+  écrasement ; un numéro en double se renumérote.
+- **Compteurs de gardes** (`sitesTotal`, `CANDIDATES_ATTENDUES`, `conforme`, `CLES_RELEVEES`, point
+  (vi) d'`audit_route_registry.rs`, tableau d'audit des migrations) : **recomptés depuis la source**
+  après chaque fusion — valeur posée à zéro, garde lancée, valeur lue —, **jamais additionnés** de
+  confiance. Une assertion fusionnée **sans conflit** peut être fausse après la fusion.
+- **Notes et numéros partagés** (notes de bas de page d'`api-external.md`, numéros de migration) :
+  deux stories peuvent prendre le même ; l'intégration renumérote et suit **tous** les renvois
+  (`git grep` de la valeur), y compris dans les branches à venir.
+- **PDF des manuels** : en conflit, garder l'un des deux sans valeur et les **régénérer à l'étape
+  finale** ; seuls les `.tex` se fusionnent.
+- Chaque résolution non triviale s'écrit au journal de l'intégration (`kesh-gate-logs/<clé>/fusions.md`).
+
 ## 6. Lentilles de revue
 
 - **Lecture seule** : aucune commande qui écrit, compile ou exécute, sauf mention contraire du
