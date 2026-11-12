@@ -25,12 +25,14 @@ suisse — ou une date fixée, afin qu'aucun ne rougisse selon l'heure à laquel
   **jours de montage** (sous plusieurs formes : `let today`, `let jour` `:3849`, `:3971`, `:4203`, `:4266`, le `.bind(…)` d'une
   borne de verrou `:4384`, un `.year()` `:4457`) : aucun verdict à lire un par un, sauf pour un test qui asserte une date
   produite par le code. **Pourquoi ils sont sûrs la nuit** (validation P2, V2-1), et non par `KESH_TEST_INSTANT`, que ce
-  binaire (`lib` de `kesh-db`) ne lit pas : `kesh-db` ne lit plus l'horloge (ses fonctions reçoivent la date, 35-5a0), et
-  chaque test fabrique lui-même son exercice et ses pièces depuis le même jour — il est cohérent avec lui-même à toute heure.
-  **Reste une course**, non une faute de nuit : `setup()` lit l'horloge (`:3219`, exercice « couvrant aujourd'hui ») puis des
-  tests la relisent (`lettrer_dans` `:4266`, `:4384`, `:4457`) ; une exécution qui chevauche minuit le 31 décembre crée
-  l'exercice d'une année et une pièce de la suivante. **Fermée ici** (D1) : `setup()` rend le jour qu'elle a lu, et les tests
-  le réemploient au lieu de relire l'horloge. Les 6 de `invoices.rs` sont à la 35-5b. Aucun autre module de tests de
+  binaire (`lib` de `kesh-db`) ne lit pas : `kesh-db` ne lit plus l'horloge (ses fonctions reçoivent la date, de la 35-5a0 à
+  la 35-5b), et, **une fois la course ci-dessous fermée**, chaque test fabrique son exercice et ses pièces depuis un seul jour —
+  il est alors cohérent avec lui-même à toute heure. **La course**, non une faute de nuit : `setup()` lit l'horloge (`:3219`,
+  `ensure_open_fiscal_year(pool, company_id, today)`, exercice « couvrant aujourd'hui »), puis **chaque** test relit sa propre
+  date (ex. `test_create_writes_audit_log`, `:3324`) ; les **51** appels de `setup(&pool)` sont concernés, et `lettrer_dans`
+  aussi (`:4266`) ; une exécution qui chevauche minuit le 31 décembre crée l'exercice d'une année et une pièce de la suivante.
+  **Fermée ici** (D1) : `setup()` rend le jour qu'elle a lu (sa signature `(i64, i64, i64)` s'étend), et les 51 tests et
+  `lettrer_dans` le réemploient au lieu de relire l'horloge (V3-2 de la validation P3). Les 6 de `invoices.rs` sont à la 35-5b. Aucun autre module de tests de
   `crates/*/src` ne porte de forme.
 - **`crates/*/tests`** : les fichiers marqués **35-5c** au verdict de la fiche 35-5a (après sa validation P2) —
   `kesh-api/tests/accounts_e2e.rs` (1 + 1 coupé, `:243-245`), `admin_full_import_e2e.rs` (4 ; son appel de `:1809` est
@@ -134,8 +136,9 @@ suisse — ou une date fixée, afin qu'aucun ne rougisse selon l'heure à laquel
    relevé ; `ajouterJoursIso('2026-03-10', 1)` ne rougit pas.
 5. **AC5 — La nuit, chiffrée** (C-e350-26) : les **binaires d'intégration** (`crates/*/tests`) que la story touche, lancés une
    fois avec `KESH_TEST_INSTANT=2025-12-31T23:30:00Z` puis `KESH_TEST_INSTANT=2026-03-10T23:30:00Z`, sont **verts** ; puis
-   **tous** les binaires avec `KESH_TEST_INSTANT="$(date -u +%F)T23:30:00Z"`, de jour (la nuit réelle reproduite) : **plus
-   aucun rouge**, l'epic étant close sur ce point ; journal `kesh-gate-logs/e355c/nuit.log`. Le binaire `lib` de `kesh-db`
+   **tous** les binaires avec `KESH_TEST_INSTANT="$(date -u +%F)T23:30:00Z"`, de jour (la nuit réelle reproduite) : aucun rouge
+   **dû au jour** ne doit rester, l'epic étant close sur ce point ; chaque rouge est nommé avec son motif (un horodatage MariaDB
+   `NOW(3)`, heure réelle, n'est pas un défaut de nuit : V3-3) ; journal `kesh-gate-logs/e355c/nuit.log`. Le binaire `lib` de `kesh-db`
    (`mod tests` de `journal_entries.rs`) ne lit pas la variable : son vert n'y prouve rien, et sa sûreté de nuit tient à
    l'argument écrit plus haut (ligne lue citée au Change Log). Côté specs, la conversion à `todayInZurich()` / `ajouterJoursIso`
    est la preuve (le jour suisse ne dépend plus du fuseau du processus Node).
@@ -156,11 +159,14 @@ AC1, AC3 : les gardes, rouges sur la 35-5b fusionnée ; `helpers/dates.test.ts` 
 **Mutations** : M1 un test remis à `Utc::now().date_naive()` (garde Rust) ; M2 la même forme coupée sur deux lignes ; M3
 `todayInZurich` remplacé par `toISOString().slice(0, 10)` dans une spec (garde frontend) ; M4 `ajouterJoursIso` qui part de
 `new Date()` au lieu du jour reçu (garde frontend : relevé de `new Date()` sans argument ; et `dates.test.ts`) ; M5 un helper
-de montage qui mémorise le jour dans un `OnceLock` — tuée par la **garde** de la 35-5a0 (aucun `static`/`OnceLock`/`LazyLock`
-dans les fichiers de l'horloge et des helpers), **non** par AC5 : chaque exécution est un processus neuf, où la mémoire rend
-la même valeur que la version sans mémoire (validation P2, V2-2) ; M6 un test de `journal_entries.rs` qui relit l'horloge au
-lieu du jour de `setup()` — non attrapable par un test (la course ne se produit qu'à minuit) : contrôle par lecture, au Change
-Log, `/usr/bin/grep -n 'Utc::now' ` sur le `mod tests` ne rendant que la ligne de `setup()`.
+de montage qui mémorise le jour dans un `OnceLock` — tuée par la **garde** de la 35-5a0 **dans les fichiers qu'elle nomme**
+(`kesh-core/src/horloge.rs`, `kesh-api/src/horloge.rs`, `tests/common/jour.rs`, les deux `tests/support/jour.rs` ; un
+`OnceLock` dans un autre helper de montage lui échappe : la règle de D1 s'y contrôle en revue), **non** par AC5 : chaque
+exécution est un processus neuf, où la mémoire rend la même valeur que la version sans mémoire (validation P2, V2-2) ; M6 un
+test de `journal_entries.rs` qui relit l'horloge au lieu du jour de `setup()` — non attrapable par un test (la course ne se
+produit qu'à minuit) : contrôle par lecture, au Change Log, `/usr/bin/grep -nE 'Utc::now\(\)\s*\.(date_naive|naive_utc)'` sur le
+`mod tests` ne rendant que la ligne de `setup()` (le motif nu `Utc::now` rend aussi `:5125`,
+`timestamp_nanos_opt`, un suffixe d'unicité : V3-1).
 
 ## Tâches
 
@@ -251,3 +257,12 @@ découpage Rust / E2E reste possible s'il le fallait, sans dépendance entre les
   - Découpage de la 35-5a répercuté (35-5a0, C-e350-28) ; helper `aujourd_hui_test()` (C-e350-29) ; AC5 ajoute l'exécution
     « nuit réelle » sur tous les binaires, sans plus aucun rouge à la fin de l'epic.
   - Aucun finding réfuté. Signal de découpage : non levé. Aucune migration. Statut `ready-for-dev`.
+- 2026-11-12 — **Validation P3 ciblée** (`kesh-gate-logs/e35-5c-validation-p3-ciblee.md`, lentille unique sur `a1923051` :
+  0 HIGH, 0 MEDIUM, 3 LOW). LOW appliqués : V3-1 (contrôle de M6 par le motif `Utc::now\(\)\s*\.(date_naive|naive_utc)`, le motif
+  nu rendant aussi `:5125`, `timestamp_nanos_opt`, lu) ; V3-2 (la course touche les 51 appels de `setup(&pool)` et
+  `lettrer_dans`, non trois sites ; l'argument de cohérence vaut après la fermeture) ; V3-3 (M5 tuée par la garde dans les seuls
+  fichiers qu'elle nomme ; AC5 : aucun rouge dû au jour, chaque rouge nommé ; « `kesh-db` ne lit plus l'horloge » de la 35-5a0 à
+  la 35-5b). Aucun finding réfuté.
+  **Validation terminée.** Série : P1 5 MEDIUM → P2 2 MEDIUM → P3 ciblée 0 au-dessus de LOW. Modèles : P1 Sonnet, P2 Opus, P3
+  ciblée. Les remédiations n'ont touché que la fiche, le registre et le `sprint-status.yaml`. Aucune migration. Statut
+  `ready-for-dev`.
