@@ -956,6 +956,12 @@ async fn carte_refusee_par_la_relecture_du_type_n_ecrit_aucune_ouverture(pool: M
     let ctx = setup(&pool).await;
     let banks = bank_account_count(&pool).await;
     let entries = entry_count(&pool).await;
+    // Revue P1 de l'intégration (E-3) — une assertion de comportement, en plus
+    // de l'attente de verrou : le compteur `AUTO_INCREMENT` de
+    // `journal_entries` n'avance pas. Un `INSERT` défait par le `rollback`
+    // l'avancerait (InnoDB ne rend pas les valeurs consommées) : le complément
+    // n'a donc jamais été tenté, et non seulement défait.
+    let auto_increment_avant = journal_entries_auto_increment(&pool).await;
 
     // Le retypage : la ligne du compte lié tenue `FOR UPDATE`, son type changé
     // en actif, non commité. Le pré-vol de la création lit le pool sans verrou
@@ -1011,7 +1017,56 @@ async fn carte_refusee_par_la_relecture_du_type_n_ecrit_aucune_ouverture(pool: M
         entries,
         "aucune écriture d'ouverture"
     );
+    assert_eq!(
+        journal_entries_auto_increment(&pool).await,
+        auto_increment_avant,
+        "aucun INSERT d'écriture tenté avant la relecture du type"
+    );
     assert_eq!(bank_account_count(&pool).await, banks, "aucun compte créé");
+}
+
+/// Le prochain `AUTO_INCREMENT` de `journal_entries`, lu à la source
+/// (`information_schema`, lecture directe sous MariaDB).
+async fn journal_entries_auto_increment(pool: &MySqlPool) -> Option<u64> {
+    sqlx::query_scalar(
+        "SELECT AUTO_INCREMENT FROM information_schema.TABLES \
+         WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'journal_entries'",
+    )
+    .fetch_one(pool)
+    .await
+    .unwrap()
+}
+
+/// Revue P1 de l'intégration (A-3) — une carte avec un solde d'ouverture non
+/// nul et **sans** compte lié reçoit d'abord le refus du solde (`400
+/// VALIDATION_ERROR`), avant le refus propre à la carte
+/// (`CREDIT_CARD_LEDGER_MUST_BE_LIABILITY`) ; sans solde, c'est ce dernier.
+/// Rien n'est écrit.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn carte_avec_solde_sans_compte_lie_refus_du_solde_d_abord(pool: MySqlPool) {
+    let ctx = setup(&pool).await;
+    let banks = bank_account_count(&pool).await;
+    let entries = entry_count(&pool).await;
+    let sans_lien = json!({ "bankName": "Visa", "accountKind": "credit_card" });
+
+    let (status, body) = ctx
+        .post(
+            "/api/v1/bank-accounts",
+            with_opening(sans_lien.clone(), "50", "credit"),
+        )
+        .await;
+    assert_eq!(status, 400, "{body}");
+    assert_eq!(body["error"]["code"], json!("VALIDATION_ERROR"), "{body}");
+
+    let (status, body) = ctx.post("/api/v1/bank-accounts", sans_lien).await;
+    assert_eq!(status, 400, "{body}");
+    assert_eq!(
+        body["error"]["code"],
+        json!("CREDIT_CARD_LEDGER_MUST_BE_LIABILITY"),
+        "{body}"
+    );
+    assert_eq!(entry_count(&pool).await, entries);
+    assert_eq!(bank_account_count(&pool).await, banks);
 }
 
 // ===========================================================================
