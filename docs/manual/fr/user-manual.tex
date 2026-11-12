@@ -2383,7 +2383,7 @@ Une carte de crédit se tient \textbf{comme un compte}, sur cette même page : �
 \begin{itemize}
     \item l'\textbf{émetteur} (« Visa », « Mastercard ») et une \textbf{description} éventuelle, comme un compte bancaire ;
     \item ses \textbf{quatre derniers chiffres}, facultatifs, pour la reconnaître dans les listes (« \textbullet\textbullet\textbullet\textbullet~2041 ») ;
-    \item un \textbf{compte de dette lié}, \textbf{obligatoire} : un compte de \textbf{passif} (par exemple un sous-compte, à créer, de 2100 \emph{Dettes bancaires à court terme}). La liste n'en propose pas d'autres, et le serveur refuse une carte sans compte lié, ou liée à un actif, une charge ou un produit, à la création comme à la modification et au lien (\texttt{CREDIT\_CARD\_LEDGER\_\allowbreak MUST\_BE\_LIABILITY}) ; le lien d'une carte se change, il ne se retire pas.
+    \item un \textbf{compte de dette lié}, \textbf{obligatoire} : un compte de \textbf{passif} (par exemple un sous-compte, à créer, de 2100 \emph{Dettes bancaires à court terme}). La liste n'en propose pas d'autres, et le serveur refuse une carte sans compte lié, ou liée à un actif, une charge ou un produit, à la création comme à la modification et au lien (\texttt{CREDIT\_CARD\_LEDGER\_\allowbreak MUST\_BE\_LIABILITY}) ; le lien d'une carte se change, il ne se retire pas. Comme pour un compte bancaire, un passif non imputable (un compte de regroupement) ou le compte créanciers désigné dans les réglages de facturation est refusé.
 \end{itemize}
 
 Une carte n'a \textbf{ni IBAN, ni QR-IBAN}, et n'est \textbf{jamais} le compte principal : les champs ne s'affichent pas pour elle.

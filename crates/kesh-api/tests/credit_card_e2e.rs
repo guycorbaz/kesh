@@ -452,6 +452,10 @@ async fn compte_bancaire_sans_iban_ou_avec_quatre_chiffres(pool: MySqlPool) {
         let (s, b) = ctx.post("/api/v1/bank-accounts", corps.clone()).await;
         assert_eq!(s, 400, "{corps} : {b}");
         assert_eq!(code(&b), "VALIDATION_ERROR", "{corps} : {b}");
+        // Revue P2 (B4) — le motif est celui d'un IBAN vide (`kesh-core`), même
+        // code qu'en 0.17.5 ; le message, lui, n'est plus celui de l'extracteur.
+        let message = b["error"]["message"].as_str().unwrap_or("");
+        assert!(message.contains("IBAN invalide"), "{corps} : {b}");
     }
     let (s, b) = ctx
         .post(
@@ -1093,4 +1097,154 @@ async fn reglements_et_carte(pool: MySqlPool) {
         )
         .await;
     assert_eq!(s, 200, "paiement fournisseur depuis la carte : {b}");
+}
+
+// ============================================================
+// Revue P2 — branches sans témoin (E3, A8)
+// ============================================================
+
+/// Revue P2 (E3-1, E3-2) — le `PUT` d'une carte traverse la garde du numéro
+/// complet (nom, description, quatre chiffres) ; `"1234 5678"` n'est pas une
+/// carte : `VALIDATION_ERROR`, sans écho de la saisie.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn put_d_une_carte_et_numero_complet(pool: MySqlPool) {
+    let ctx = monter(&pool).await;
+    let carte = ctx.carte(ctx.passif).await;
+    let id = carte["id"].as_i64().unwrap();
+    let base =
+        json!({ "bankName": "Visa", "journalAccountId": ctx.passif, "version": carte["version"] });
+    let with = |k: &str, v: Value| {
+        let mut b = base.clone();
+        b[k] = v;
+        b
+    };
+    for (corps, champ) in [
+        (
+            with("bankName", json!("Visa 4111 1111 1111 1111")),
+            "bankName",
+        ),
+        (
+            with("description", json!("perso 4111111111111111")),
+            "description",
+        ),
+        (with("cardLast4", json!("4111-1111-1111-1111")), "cardLast4"),
+    ] {
+        let (s, b) = ctx
+            .put(&format!("/api/v1/bank-accounts/{id}"), corps.clone())
+            .await;
+        assert_eq!(s, 400, "{corps} : {b}");
+        assert_eq!(code(&b), "CARD_NUMBER_NOT_ALLOWED", "{corps} : {b}");
+        assert_eq!(b["error"]["details"]["field"], champ);
+        assert!(!b.to_string().contains("1111"), "{b}");
+    }
+    let (s, b) = ctx
+        .put(
+            &format!("/api/v1/bank-accounts/{id}"),
+            with("cardLast4", json!("1234 5678")),
+        )
+        .await;
+    assert_eq!(s, 400, "{b}");
+    assert_eq!(code(&b), "VALIDATION_ERROR");
+    assert!(!b.to_string().contains("5678"), "{b}");
+    let version: i32 = sqlx::query_scalar("SELECT version FROM bank_accounts WHERE id = ?")
+        .bind(id)
+        .fetch_one(&ctx.pool)
+        .await
+        .unwrap();
+    assert_eq!(json!(version), carte["version"], "rien d'écrit");
+}
+
+/// Revue P2 (E3-3 ; M19) — `PATCH` d'une carte vers son passif courant :
+/// no-op (200, version inchangée) ; d'une carte **archivée** vers un actif :
+/// `404` (le pré-vol garde la règle d'un compte bancaire, la transaction rend
+/// le `404`) ; d'une carte **close** : `409 BANK_ACCOUNT_CLOSED`.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn patch_d_une_carte_inchangee_archivee_ou_close(pool: MySqlPool) {
+    let ctx = monter(&pool).await;
+    let carte = ctx.carte(ctx.passif).await;
+    let id = carte["id"].as_i64().unwrap();
+    let (s, b) = ctx
+        .patch(
+            &format!("/api/v1/bank-accounts/{id}"),
+            json!({ "journalAccountId": ctx.passif, "version": carte["version"] }),
+        )
+        .await;
+    assert_eq!(s, 200, "{b}");
+    assert_eq!(b["version"], carte["version"], "no-op : version inchangée");
+
+    let close = ctx.carte(ctx.passif).await;
+    let close_id = close["id"].as_i64().unwrap();
+    sqlx::query("UPDATE bank_accounts SET closed_on = '2026-06-30' WHERE id = ?")
+        .bind(close_id)
+        .execute(&ctx.pool)
+        .await
+        .unwrap();
+    let (s, b) = ctx
+        .patch(
+            &format!("/api/v1/bank-accounts/{close_id}"),
+            json!({ "journalAccountId": ctx.passif2, "version": close["version"] }),
+        )
+        .await;
+    assert_eq!(s, 409, "{b}");
+    assert_eq!(code(&b), "BANK_ACCOUNT_CLOSED", "{b}");
+
+    sqlx::query("UPDATE bank_accounts SET archived = TRUE WHERE id = ?")
+        .bind(id)
+        .execute(&ctx.pool)
+        .await
+        .unwrap();
+    let (s, b) = ctx
+        .patch(
+            &format!("/api/v1/bank-accounts/{id}"),
+            json!({ "journalAccountId": ctx.actif, "version": carte["version"] }),
+        )
+        .await;
+    assert_eq!(s, 404, "carte archivée : {b}");
+}
+
+/// Revue P2 (E3-4) — une carte vers un passif **non imputable** ou vers le
+/// **compte créanciers désigné** : les règles d'un compte bancaire s'appliquent
+/// (`ACCOUNT_NOT_POSTABLE`, `BANK_ACCOUNT_LEDGER_IS_CLAIM_ACCOUNT`), rien d'écrit.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn carte_vers_un_passif_non_imputable_ou_creanciers(pool: MySqlPool) {
+    let ctx = monter(&pool).await;
+    let non_imputable = account(&ctx.pool, ctx.seeded.company_id, "2090", "Liability").await;
+    sqlx::query("UPDATE accounts SET postable = FALSE WHERE id = ?")
+        .bind(non_imputable)
+        .execute(&ctx.pool)
+        .await
+        .unwrap();
+    let avant = ctx.bank_accounts().await;
+    for (ledger, attendu) in [
+        (non_imputable, "ACCOUNT_NOT_POSTABLE"),
+        (
+            ctx.seeded.accounts["2000"],
+            "BANK_ACCOUNT_LEDGER_IS_CLAIM_ACCOUNT",
+        ),
+    ] {
+        let (s, b) = ctx
+            .post(
+                "/api/v1/bank-accounts",
+                json!({ "accountKind": "credit_card", "bankName": "Visa", "journalAccountId": ledger }),
+            )
+            .await;
+        assert_eq!(s, 400, "{b}");
+        assert_eq!(code(&b), attendu, "{b}");
+    }
+    assert_eq!(ctx.bank_accounts().await, avant, "rien d'écrit");
+}
+
+/// Revue P2 (A8) — au `PUT`, `version < 1` passe **avant** le `404` d'un id
+/// inconnu (ordre écrit au doc-comment, à la note ¹¹ et au CHANGELOG).
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn put_version_zero_avant_le_404(pool: MySqlPool) {
+    let ctx = monter(&pool).await;
+    let (s, b) = ctx
+        .put(
+            "/api/v1/bank-accounts/999999",
+            json!({ "bankName": "UBS", "iban": "CH9300762011623852957", "version": 0 }),
+        )
+        .await;
+    assert_eq!(s, 400, "{b}");
+    assert_eq!(code(&b), "VALIDATION_ERROR", "{b}");
 }
