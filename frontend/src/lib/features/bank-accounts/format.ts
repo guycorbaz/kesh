@@ -3,6 +3,7 @@
 // optionnelle), source unique de leur forme côté frontend ; même règle que
 // `bank_account_display_name` côté serveur (`kesh_db::entities::bank_account`).
 import Big from 'big.js';
+import type { AccountResponse } from '$lib/features/accounts/accounts.types';
 // F17 Pass 1 code review : factoriser `shortIban` entre `+page.svelte`
 // homepage et `bank-accounts/+page.svelte` pour éviter la divergence de
 // seuil (4 vs 8 caractères).
@@ -90,4 +91,68 @@ export function bankAccountOptionLabel(
 ): string {
 	const name = bankAccountName(a);
 	return ibanStyle === 'parens' ? `${name} (${a.iban})` : `${name}${SEPARATOR}${a.iban}`;
+}
+
+/** Options de {@link linkableLedgerAccounts}. */
+export interface LinkableLedgerOptions {
+	/**
+	 * Ne garder que les comptes de passif (`Liability`) — pour le compte de dette
+	 * d'une carte de crédit (Story 34-11a2, C-e341-33). Faux par défaut : actif
+	 * ou passif.
+	 */
+	liabilityOnly?: boolean;
+}
+
+/**
+ * Les comptes du plan auxquels un compte bancaire peut être **lié** — source
+ * unique du filtre, pour l'écran *Comptes bancaires* et l'étape bancaire de
+ * l'assistant (Story 34-1, #966, C-e341-5) :
+ *
+ * - actifs ;
+ * - imputables (`postable`, Story 14-3b : le compte lié est posté à la
+ *   réconciliation) ;
+ * - de type actif ou passif (seulement passif avec `liabilityOnly`) ;
+ * - hors `excludedIds` — les comptes de créance désignés (écran *Comptes
+ *   bancaires*, Story 15-6c) ou les comptes de rôle `Receivable` / `Payable`
+ *   (assistant, avant que les réglages n'existent, C-e341-3).
+ *
+ * La liste rendue est **triée par numéro** (`localeCompare`) — revue P1 (B-5) :
+ * l'ordre ne dépend plus de celui que rend le serveur, et les trois écrans
+ * l'affichent pareil. Le refus du serveur reste l'autorité : ce filtre n'évite
+ * qu'un aller-retour.
+ */
+export function linkableLedgerAccounts(
+	accounts: AccountResponse[],
+	excludedIds: Set<number>,
+	options: LinkableLedgerOptions = {},
+): AccountResponse[] {
+	return accounts
+		.filter(
+			(a) =>
+				a.active &&
+				a.postable &&
+				(options.liabilityOnly
+					? a.accountType === 'Liability'
+					: a.accountType === 'Asset' || a.accountType === 'Liability') &&
+				!excludedIds.has(a.id),
+		)
+		.sort((a, b) => a.number.localeCompare(b.number));
+}
+
+/**
+ * Numéro du compte que l'assistant **présélectionne** pour le compte bancaire
+ * (décision de Guy, #966). ⛔ Une présélection d'écran, rien d'autre : aucun
+ * rôle ne se déduit d'un numéro (Story 14-3a), le serveur ne connaît pas cette
+ * valeur et l'utilisateur la change ou la retire librement.
+ */
+export const PRESELECTED_BANK_LEDGER_NUMBER = '1020';
+
+/**
+ * L'identifiant à présélectionner dans une liste **déjà filtrée** par
+ * {@link linkableLedgerAccounts} : le compte numéroté
+ * {@link PRESELECTED_BANK_LEDGER_NUMBER} s'il y figure, `null` (« Non
+ * configuré ») sinon — jamais un autre compte à sa place.
+ */
+export function preselectedBankLedgerId(linkable: AccountResponse[]): number | null {
+	return linkable.find((a) => a.number === PRESELECTED_BANK_LEDGER_NUMBER)?.id ?? null;
 }

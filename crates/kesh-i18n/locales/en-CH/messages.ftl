@@ -2873,6 +2873,9 @@ onboarding-finalize-error = Finalisation failed — please try again.
 onboarding-bank-required = Bank name and IBAN are required
 onboarding-bank-save-error = Error while saving the bank account
 onboarding-bank-skip-error = Error while skipping the bank account
+# Story 34-1 (#966) — l'étape bancaire pose la description et le compte comptable lié.
+onboarding-bank-editable-later = The description and the linked ledger account can be changed later in Administration → Bank accounts.
+onboarding-bank-ledger-load-error = The list of accounts could not be loaded: the bank account can be linked later.
 onboarding-save = Save
 payment-batches-cancel = Cancel batch
 payment-batches-cancel-confirm = Cancel this batch? The invoices become payable again.

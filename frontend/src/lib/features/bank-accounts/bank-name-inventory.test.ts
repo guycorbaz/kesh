@@ -74,11 +74,16 @@ const ATTENDU: Record<string, { n: number; motif: string }> = {
 		motif: 'E1 — préremplissage et payloads du formulaire (saisie, pas affichage)',
 	},
 	'routes/onboarding/+page.svelte': {
-		n: 4,
-		motif: 'E2 — saisie de la banque à l’onboarding, sans description (C-26-2-2)',
+		n: 5,
+		motif:
+			'E2 — saisie de la banque à l’onboarding (C-26-2-2) ; depuis la 34-1, la description se saisit à côté, et le corps envoyé porte la clé `bankName:` (saisie, pas affichage)',
 	},
-	'lib/features/onboarding/onboarding.svelte.ts': { n: 2, motif: 'E2 — idem, état de l’onboarding' },
-	'lib/features/onboarding/onboarding.api.ts': { n: 2, motif: 'E2 — idem, appel de l’API' },
+	// Story 34-1 : `onboarding.svelte.ts` ne porte plus le jeton (signature à
+	// objet, `BankAccountStepPayload`) ; l'API le porte trois fois (type et corps).
+	'lib/features/onboarding/onboarding.api.ts': {
+		n: 3,
+		motif: 'E2 — idem, type du corps (`BankAccountStepPayload`) et appel de l’API',
+	},
 	'lib/features/bank-import/BankProfileForm.svelte': {
 		n: 4,
 		motif: 'E3 — homonyme : nom d’un profil d’import CSV, pas un compte bancaire',

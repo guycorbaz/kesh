@@ -1,7 +1,8 @@
 // Story 8-5a-zero — Tests Vitest pour `BankAccountJournalLinkForm.svelte`.
 //
 // Couvre :
-// - Filtre dropdown classe 1/2 actifs Asset|Liability.
+// - Filtre dropdown actifs Asset|Liability (Story 34-1 : plus de filtre sur le
+//   numéro, `linkableLedgerAccounts`).
 // - Submit désactivé sur no-op (selection identique à valeur initiale).
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
@@ -74,15 +75,18 @@ describe('BankAccountJournalLinkForm', () => {
 		vi.resetAllMocks();
 	});
 
-	it('filters dropdown to Asset|Liability accounts class 1 or 2', () => {
+	it('filters dropdown to active Asset|Liability accounts, whatever their number', () => {
 		const accounts: AccountResponse[] = [
 			makeAccount(1, '1020', 'Caisse banque', 'Asset'),
 			makeAccount(2, '1030', 'Banque', 'Asset'),
 			makeAccount(3, '2100', 'Banque (découvert)', 'Liability'),
+			// Story 34-1 (C-e3401-1) : un compte d'ACTIF numéroté hors des
+			// classes 1 et 2 est proposé — le numéro ne dit rien (14-3a), et le
+			// formulaire de création de la page le proposait déjà.
+			makeAccount(6, '5000', 'Compte renuméroté', 'Asset'),
 			// Ne devrait PAS apparaître :
 			makeAccount(4, '3000', 'Ventes', 'Revenue'), // Revenue
 			makeAccount(5, '4000', 'Achats', 'Expense'), // Expense
-			makeAccount(6, '5000', 'Charges', 'Asset'), // class 5 (pas 1 ou 2)
 			makeAccount(7, '1099', 'Archived asset', 'Asset', false), // archivé
 		];
 
@@ -101,14 +105,14 @@ describe('BankAccountJournalLinkForm', () => {
 		) as HTMLSelectElement;
 		expect(select).not.toBeNull();
 		const optionTexts = Array.from(select.options).map((o) => o.textContent ?? '');
-		// Une option « Non configuré » + 3 comptes éligibles.
-		expect(select.options.length).toBe(4);
+		// Une option « Non configuré » + 4 comptes éligibles.
+		expect(select.options.length).toBe(5);
 		expect(optionTexts.some((t) => t.includes('1020'))).toBe(true);
 		expect(optionTexts.some((t) => t.includes('1030'))).toBe(true);
 		expect(optionTexts.some((t) => t.includes('2100'))).toBe(true);
+		expect(optionTexts.some((t) => t.includes('5000'))).toBe(true);
 		expect(optionTexts.some((t) => t.includes('3000'))).toBe(false);
 		expect(optionTexts.some((t) => t.includes('4000'))).toBe(false);
-		expect(optionTexts.some((t) => t.includes('5000'))).toBe(false);
 		expect(optionTexts.some((t) => t.includes('1099'))).toBe(false);
 	});
 

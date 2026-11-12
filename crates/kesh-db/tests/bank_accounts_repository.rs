@@ -1172,7 +1172,7 @@ async fn upsert_primary_in_tx_reports_created_updated_unchanged(pool: MySqlPool)
 
     // Rollback après `Created` ⇒ aucune ligne (aucun commit interne).
     let mut tx = pool.begin().await.unwrap();
-    let outcome = bank_accounts::upsert_primary_in_tx(&mut tx, payload("UBS"))
+    let outcome = bank_accounts::upsert_primary_in_tx(&mut tx, payload("UBS"), Default::default())
         .await
         .unwrap();
     assert!(
@@ -1190,21 +1190,26 @@ async fn upsert_primary_in_tx_reports_created_updated_unchanged(pool: MySqlPool)
 
     // Created, commité.
     let mut tx = pool.begin().await.unwrap();
-    let created = match bank_accounts::upsert_primary_in_tx(&mut tx, payload("UBS"))
-        .await
-        .unwrap()
-    {
-        UpsertPrimaryOutcome::Created(a) => a,
-        other => panic!("Created attendu, obtenu {other:?}"),
-    };
+    let created =
+        match bank_accounts::upsert_primary_in_tx(&mut tx, payload("UBS"), Default::default())
+            .await
+            .unwrap()
+        {
+            UpsertPrimaryOutcome::Created(a) => a,
+            other => panic!("Created attendu, obtenu {other:?}"),
+        };
     tx.commit().await.unwrap();
     assert_eq!(created.bank_name, "UBS");
 
     // Updated { before, after }.
     let mut tx = pool.begin().await.unwrap();
-    let (before, after) = match bank_accounts::upsert_primary_in_tx(&mut tx, payload("PostFinance"))
-        .await
-        .unwrap()
+    let (before, after) = match bank_accounts::upsert_primary_in_tx(
+        &mut tx,
+        payload("PostFinance"),
+        Default::default(),
+    )
+    .await
+    .unwrap()
     {
         UpsertPrimaryOutcome::Updated { before, after } => (before, after),
         other => panic!("Updated attendu, obtenu {other:?}"),
@@ -1217,9 +1222,13 @@ async fn upsert_primary_in_tx_reports_created_updated_unchanged(pool: MySqlPool)
 
     // Unchanged : version inchangée, transaction toujours utilisable.
     let mut tx = pool.begin().await.unwrap();
-    let unchanged = match bank_accounts::upsert_primary_in_tx(&mut tx, payload("PostFinance"))
-        .await
-        .unwrap()
+    let unchanged = match bank_accounts::upsert_primary_in_tx(
+        &mut tx,
+        payload("PostFinance"),
+        Default::default(),
+    )
+    .await
+    .unwrap()
     {
         UpsertPrimaryOutcome::Unchanged(a) => a,
         other => panic!("Unchanged attendu, obtenu {other:?}"),
@@ -1258,9 +1267,10 @@ async fn upsert_primary_in_tx_updated_is_not_committed(pool: MySqlPool) {
         .expect("compte principal initial");
 
     let mut tx = pool.begin().await.unwrap();
-    let outcome = bank_accounts::upsert_primary_in_tx(&mut tx, payload("PostFinance"))
-        .await
-        .unwrap();
+    let outcome =
+        bank_accounts::upsert_primary_in_tx(&mut tx, payload("PostFinance"), Default::default())
+            .await
+            .unwrap();
     assert!(
         matches!(outcome, UpsertPrimaryOutcome::Updated { .. }),
         "{outcome:?}"
@@ -1716,6 +1726,8 @@ async fn upsert_primary_conserve_la_description(pool: MySqlPool) {
             qr_iban: None,
             is_primary: true,
         },
+        // Story 34-1 : champs absents — la description posée reste (C-e341-34).
+        bank_accounts::PrimaryDetails::default(),
     )
     .await
     .unwrap();

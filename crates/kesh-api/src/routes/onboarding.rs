@@ -578,6 +578,18 @@ pub struct BankAccountRequest {
     pub bank_name: String,
     pub iban: String,
     pub qr_iban: Option<String>,
+    /// Story 34-1 (#966) — description du compte. **Absent : inchangée** (un
+    /// corps de la 0.17.5 n'efface rien) ; **`null` : effacée** ; sinon
+    /// normalisée par la même fonction que `POST /bank-accounts`
+    /// (C-e341-34, C-e341-2).
+    #[serde(default, deserialize_with = "crate::helpers::double_option")]
+    pub description: Option<Option<String>>,
+    /// Story 34-1 (#966) — compte du plan lié. **Absent : inchangé** ;
+    /// **`null` : effacé** ; sinon contrôlé comme à la création (existe, actif,
+    /// `Asset | Liability`, imputable) et refusé s'il porte le rôle
+    /// `Receivable` ou `Payable` (C-e341-3).
+    #[serde(default, deserialize_with = "crate::helpers::double_option")]
+    pub journal_account_id: Option<Option<i64>>,
 }
 
 /// POST /api/v1/onboarding/bank-account — step 6→7
@@ -586,6 +598,14 @@ pub struct BankAccountRequest {
 /// bank_accounts` ; `bank_account.created`, `bank_account.updated` ou rien
 /// selon [`UpsertPrimaryOutcome`], puis l'étape. Aucun IBAN en clair dans la
 /// trace : seulement `iban_present` / `iban_changed` (AC 9).
+///
+/// Story 34-1 (#966) — description et compte lié, facultatifs (absent =
+/// inchangé, `null` = effacé). **Ordre des refus** : comme à la création
+/// (`routes::bank_accounts`), les contrôles de forme et du compte lié lisent
+/// sur le **pool**, avant la transaction — banque, description, IBAN,
+/// QR-IBAN, compte lié ; un 400 de forme précède donc le 409 d'étape. Dans la
+/// transaction, après `lock_state_at_step` et `lock_company`, le refus d'un
+/// compte de rôle `Receivable` / `Payable` (AC-4).
 pub async fn set_bank_account(
     State(state): State<AppState>,
     Extension(current_user): Extension<CurrentUser>,
@@ -597,6 +617,13 @@ pub async fn set_bank_account(
             "Le nom de la banque ne peut pas être vide".into(),
         ));
     }
+
+    // Story 34-1 (AC-2) : la fonction de la création, même borne, même message.
+    // Une description présente mais vide ou faite d'espaces vaut `null`.
+    let description = match &body.description {
+        None => None,
+        Some(d) => Some(super::bank_accounts::normalize_description(d.as_deref())?),
+    };
 
     // Validate IBAN via kesh-core — message servi tel quel, il nomme déjà le
     // champ (Story v017-6, #832).
@@ -612,6 +639,22 @@ pub async fn set_bank_account(
         _ => None,
     };
 
+    // Story 34-1 (AC-2) : la fonction de la création — 404 inexistant ou
+    // inactif, 400 hors `Asset | Liability`, 400 non imputable. Sur le pool,
+    // avant la transaction, comme `create_bank_account`.
+    let requested_ledger = body.journal_account_id.flatten();
+    super::bank_accounts::validate_journal_account_id(
+        &state.pool,
+        current_user.company_id,
+        requested_ledger,
+        true,
+    )
+    .await?;
+    let details = bank_accounts::PrimaryDetails {
+        description,
+        journal_account_id: body.journal_account_id,
+    };
+
     get_or_init_state(&state).await?;
     let mut tx = state.pool.begin().await.map_err(map_db_error)?;
     let result = async {
@@ -620,6 +663,9 @@ pub async fn set_bank_account(
         // bank_accounts) — et non lue sur le pool : un prélèvement du pool pendant
         // que la transaction tient sa connexion attendrait sous un pool saturé.
         let company = lock_company(&mut tx).await?;
+        if let Some(ledger) = requested_ledger {
+            refuse_future_claim_account(&mut tx, company.id, ledger).await?;
+        }
         let outcome = bank_accounts::upsert_primary_in_tx(
             &mut tx,
             NewBankAccount {
@@ -629,6 +675,7 @@ pub async fn set_bank_account(
                 qr_iban: normalized_qr,
                 is_primary: true,
             },
+            details,
         )
         .await?;
         audit_bank_account_upsert(&mut tx, &current_user, &outcome).await?;
@@ -645,10 +692,65 @@ pub async fn set_bank_account(
     conclude_step(&state.pool, tx, result).await
 }
 
+/// Refuse de lier le compte bancaire de l'assistant à un **futur compte de
+/// créance** — Story 34-1 (#966, AC-4, C-e341-3).
+///
+/// À l'étape 6, les réglages de facturation n'existent pas encore : la
+/// finalisation les créera en y désignant comme comptes débiteurs et
+/// créanciers les comptes de **rôle** `Receivable` et `Payable`
+/// (`insert_with_defaults_in_tx`). Les comptes de créance que lirait
+/// `claim_accounts_in_share_mode` sont donc vides, et un lien vers le futur
+/// compte débiteurs passerait — puis la finalisation produirait l'état que la
+/// Story 15-6c interdit. Les rôles sont lus ici **comme la finalisation les
+/// lira** (`accounts::find_singleton_role_in_tx`, source unique), puis
+/// `refuse_if_ledger_is_claim_account` rend le refus de `POST /bank-accounts`
+/// (`400 BANK_ACCOUNT_LEDGER_IS_CLAIM_ACCOUNT`, même rendu).
+///
+/// ⛔ Lit le **rôle**, jamais le numéro (Story 14-3a).
+///
+/// **Sans verrou** (`RoleLookupLock::None`) : l'étape est sérialisée par
+/// `lock_state_at_step` (`FOR UPDATE` sur `onboarding_state`), aucune
+/// finalisation ne peut courir en même temps (elle attend l'étape 7), et la
+/// finalisation reverrouille ces lignes en `FOR UPDATE`. Lu dans la
+/// transaction, jamais sur le pool.
+///
+/// ⚠️ Angle mort (validation P2 de la fiche, issue demandée) : entre l'étape 6
+/// et la finalisation, `PUT /api/v1/accounts/{id}` peut poser le rôle sur le
+/// compte qui vient d'être lié ; la finalisation ne le contrôle pas.
+async fn refuse_future_claim_account(
+    tx: &mut Tx<'_>,
+    company_id: i64,
+    ledger: i64,
+) -> Result<(), AppError> {
+    use kesh_db::entities::AccountRole;
+    use kesh_db::repositories::accounts::{RoleLookupLock, find_singleton_role_in_tx};
+    use kesh_db::repositories::company_invoice_settings::ClaimAccounts;
+
+    let receivable = find_singleton_role_in_tx(
+        tx,
+        company_id,
+        AccountRole::Receivable,
+        RoleLookupLock::None,
+    )
+    .await?;
+    let payable =
+        find_singleton_role_in_tx(tx, company_id, AccountRole::Payable, RoleLookupLock::None)
+            .await?;
+    let claims = ClaimAccounts {
+        receivable,
+        payable,
+    };
+    bank_accounts::refuse_if_ledger_is_claim_account(tx, company_id, ledger, &claims).await?;
+    Ok(())
+}
+
 /// Trace l'upsert du compte bancaire principal de l'onboarding : créé, modifié
 /// ou rien (`Unchanged`, AC 3). Formes de `routes/bank_accounts.rs` (création,
 /// modification), avec `"trigger": "onboarding"` et les booléens
 /// `iban_changed` / `qr_iban_changed` — jamais l'IBAN lui-même.
+///
+/// Story 34-1 (AC-5) : `description` dans la création (forme de
+/// `create_bank_account`) et dans les deux instantanés de la modification.
 async fn audit_bank_account_upsert(
     tx: &mut Tx<'_>,
     user: &CurrentUser,
@@ -665,6 +767,7 @@ async fn audit_bank_account_upsert(
                     created.id,
                     Some(json!({
                         "bank_account_id": created.id,
+                        "description": created.description,
                         "is_primary": created.is_primary,
                         "iban_present": true,
                         "qr_iban_present": created.qr_iban.is_some(),
@@ -678,6 +781,7 @@ async fn audit_bank_account_upsert(
             let snapshot = |b: &BankAccount| {
                 json!({
                     "bank_name": b.bank_name,
+                    "description": b.description,
                     "iban_present": true,
                     "qr_iban_present": b.qr_iban.is_some(),
                     "is_primary": b.is_primary,
@@ -1371,4 +1475,36 @@ async fn update_company_coordinates_in_tx(
         .await?;
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::BankAccountRequest;
+
+    /// Story 34-1 (#966, AC-1, C-e341-34) — la double option du corps de
+    /// l'étape bancaire : **absent** → `None` (inchangé), **`null`** →
+    /// `Some(None)` (effacé), valeur → `Some(Some(_))`. Sans
+    /// `double_option`, serde replierait `null` sur l'absence.
+    #[test]
+    fn bank_account_request_distinguishes_absent_null_and_value() {
+        let absent: BankAccountRequest =
+            serde_json::from_str(r#"{"bankName":"UBS","iban":"X","qrIban":null}"#).unwrap();
+        assert_eq!(absent.description, None);
+        assert_eq!(absent.journal_account_id, None);
+
+        let nuls: BankAccountRequest = serde_json::from_str(
+            r#"{"bankName":"UBS","iban":"X","description":null,"journalAccountId":null}"#,
+        )
+        .unwrap();
+        assert_eq!(nuls.description, Some(None));
+        assert_eq!(nuls.journal_account_id, Some(None));
+
+        let valeurs: BankAccountRequest = serde_json::from_str(
+            r#"{"bankName":"UBS","iban":"X","description":"Personnel","journalAccountId":24}"#,
+        )
+        .unwrap();
+        assert_eq!(valeurs.description, Some(Some("Personnel".to_string())));
+        assert_eq!(valeurs.journal_account_id, Some(Some(24)));
+        assert_eq!(valeurs.qr_iban, None);
+    }
 }

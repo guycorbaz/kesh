@@ -2868,6 +2868,9 @@ onboarding-finalize-error = Finalizzazione non riuscita — riprovare.
 onboarding-bank-required = Nome della banca e IBAN sono obbligatori
 onboarding-bank-save-error = Errore durante il salvataggio del conto bancario
 onboarding-bank-skip-error = Errore durante l'omissione del conto bancario
+# Story 34-1 (#966) — l'étape bancaire pose la description et le compte comptable lié.
+onboarding-bank-editable-later = La descrizione e il conto contabile collegato si modificano in seguito in Amministrazione → Conti bancari.
+onboarding-bank-ledger-load-error = Non è stato possibile caricare l'elenco dei conti: il conto bancario potrà essere collegato in seguito.
 onboarding-save = Salva
 payment-batches-cancel = Annulla il lotto
 payment-batches-cancel-confirm = Annullare questo lotto? Le fatture tornano pagabili.

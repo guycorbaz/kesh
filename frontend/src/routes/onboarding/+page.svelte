@@ -9,6 +9,14 @@
 	import { isApiError } from '$lib/shared/utils/api-client';
 	import { errorMessageOf } from '$lib/shared/utils/error-message';
 	import { toast } from 'svelte-sonner';
+	import { fetchAccounts } from '$lib/features/accounts/accounts.api';
+	import type { AccountResponse } from '$lib/features/accounts/accounts.types';
+	import { accountIdsWithRole } from '$lib/features/accounts/account-options';
+	import {
+		BANK_ACCOUNT_DESCRIPTION_MAX,
+		linkableLedgerAccounts,
+		preselectedBankLedgerId,
+	} from '$lib/features/bank-accounts/format';
 
 	function msg(key: string, fallback: string): string {
 		return i18nMsg(key, fallback);
@@ -148,6 +156,77 @@
 	let bankIban = $state('');
 	let bankQrIban = $state('');
 
+	// Story 34-1 (#966) — description et compte comptable lié du compte bancaire.
+	//
+	// Le plan est chargé à l'étape 4→5 : à l'étape 6, la liste des comptes est
+	// lue (`GET /api/v1/accounts`, servi à tout utilisateur authentifié) et
+	// filtrée par `linkableLedgerAccounts` — la même fonction que l'écran
+	// *Comptes bancaires* —, sans les comptes de RÔLE `Receivable` et `Payable` :
+	// les réglages de facturation, qui désignent les comptes de créance, ne
+	// naissent qu'à la finalisation, et c'est sur ces rôles qu'ils les poseront
+	// (C-e341-3 ; le serveur refuse de toute façon, AC-4).
+	//
+	// ⛔ La présélection du `1020` est un geste d'écran (décision de Guy, Story
+	// 14-3a) : le serveur ne connaît aucun numéro. Si la liste ne se charge pas,
+	// le champ reste « Non configuré » et l'étape reste utilisable (AC-6).
+	let bankDescription = $state('');
+	let bankJournalAccountId = $state<number | null>(null);
+	let bankLedgerOptions = $state<AccountResponse[]>([]);
+	// Revue P1 (E-1) : en cas d'échec, la phrase de l'étape s'affiche TOUJOURS ;
+	// le motif du client ou du serveur (« Impossible de contacter le serveur… »)
+	// la suit s'il en dit davantage.
+	let bankLedgerFailed = $state(false);
+	let bankLedgerMotif = $state<string | null>(null);
+	// Revue P1 (A-1, B-2) : tant que la liste se charge, l'étape ne s'envoie pas
+	// (le corps partirait sans le lien que l'écran va proposer) ; et un choix fait
+	// dans le sélecteur avant la fin du chargement n'est pas écrasé par la
+	// présélection (drapeau non réactif, posé par `onchange`).
+	let bankLedgerLoading = $state(false);
+	let bankLedgerRequested = false;
+	let bankLedgerTouched = false;
+
+	function bankLedgerLoadErrorText(): string {
+		return msg(
+			'onboarding-bank-ledger-load-error',
+			'La liste des comptes n’a pas pu être chargée : le compte bancaire peut être lié plus tard.'
+		);
+	}
+
+	async function loadBankLedgerOptions() {
+		bankLedgerLoading = true;
+		try {
+			const all = await fetchAccounts(false);
+			const roleIds = new Set([
+				...accountIdsWithRole(all, 'Receivable'),
+				...accountIdsWithRole(all, 'Payable'),
+			]);
+			bankLedgerOptions = linkableLedgerAccounts(all, roleIds);
+			if (!bankLedgerTouched) {
+				bankJournalAccountId = preselectedBankLedgerId(bankLedgerOptions);
+			}
+		} catch (err) {
+			// Liste indisponible : le compte se crée sans lien, et se lie ensuite
+			// dans Administration → Comptes bancaires (AC-6). Le motif s'affiche
+			// SOUS le champ, non en toast : l'étape reste utilisable (garde
+			// `onboarding-catch-guard.test.ts` : tout `catch` passe par
+			// `errorMessageOf`).
+			bankLedgerOptions = [];
+			bankJournalAccountId = null;
+			bankLedgerFailed = true;
+			const motif = errorMessageOf(err, bankLedgerLoadErrorText());
+			bankLedgerMotif = motif === bankLedgerLoadErrorText() ? null : motif;
+		} finally {
+			bankLedgerLoading = false;
+		}
+	}
+
+	$effect(() => {
+		if (onboardingState.stepCompleted === 6 && !bankLedgerRequested) {
+			bankLedgerRequested = true;
+			void loadBankLedgerOptions();
+		}
+	});
+
 	// P9: distinguish bank-step errors from finalize() errors so the user gets an
 	// actionable message and doesn't end up stuck at /onboarding step 7 with the
 	// bank account already saved.
@@ -187,16 +266,23 @@
 	}
 
 	async function submitBankAccount() {
+		// Revue P1 (B-2) : pas d'envoi avant la fin du chargement de la liste (le
+		// bouton est désactivé ; ce garde couvre la touche Entrée).
+		if (bankLedgerLoading) return;
 		if (!bankName.trim() || !bankIban.trim()) {
 			toast.error(msg('onboarding-bank-required', 'Nom de banque et IBAN sont obligatoires'));
 			return;
 		}
 		try {
-			await onboardingState.setBankAccount(
-				bankName.trim(),
-				bankIban.trim(),
-				bankQrIban.trim() || null
-			);
+			// Story 34-1 (AC-1) : description et compte lié toujours envoyés, `null`
+			// compris — un champ absent vaudrait « inchangé » côté serveur.
+			await onboardingState.setBankAccount({
+				bankName: bankName.trim(),
+				iban: bankIban.trim(),
+				qrIban: bankQrIban.trim() || null,
+				description: bankDescription.trim() || null,
+				journalAccountId: bankJournalAccountId,
+			});
 		} catch (err) {
 			toast.error(
 				errorMessageOf(err, msg('onboarding-bank-save-error', 'Erreur lors de la sauvegarde du compte bancaire'))
@@ -418,11 +504,62 @@
 			</label>
 			<Input id="bank-qr-iban" bind:value={bankQrIban} placeholder="CH44 3199 9123 0008 8901 2" />
 		</div>
+		<!-- Story 34-1 (#966, AC-6) : les libellés, la limite et l'aide sont ceux de
+		     la page Comptes bancaires (clés réutilisées, mêmes locales). -->
+		<div>
+			<label for="bank-description" class="mb-1 block text-sm font-medium">
+				{msg('bank-accounts-labels-description', 'Description (optionnelle)')}
+			</label>
+			<Input
+				id="bank-description"
+				bind:value={bankDescription}
+				maxlength={BANK_ACCOUNT_DESCRIPTION_MAX}
+				aria-describedby="bank-description-help"
+			/>
+			<p id="bank-description-help" class="mt-1 text-xs text-text-muted">
+				{msg(
+					'bank-accounts-help-description',
+					'Par exemple « Personnel » ou « Épargne » : pour distinguer deux comptes de la même banque. 60 caractères au plus.'
+				)}
+			</p>
+		</div>
+		<div>
+			<label for="bank-journal-account" class="mb-1 block text-sm font-medium">
+				{msg('bank-accounts-labels-journal-account-id', 'Compte comptable lié')}
+			</label>
+			<select
+				id="bank-journal-account"
+				bind:value={bankJournalAccountId}
+				onchange={() => (bankLedgerTouched = true)}
+				class="w-full rounded border border-border px-3 py-2 text-sm"
+				data-testid="onboarding-bank-journal-account"
+			>
+				<option value={null}>{msg('bank-accounts-labels-not-configured', 'Non configuré')}</option>
+				{#each bankLedgerOptions as acc (acc.id)}
+					<option value={acc.id}>{acc.number} — {acc.name}</option>
+				{/each}
+			</select>
+			{#if bankLedgerFailed}
+				<p class="mt-1 text-xs text-text-muted" data-testid="onboarding-bank-ledger-error">
+					{bankLedgerLoadErrorText()}
+					{#if bankLedgerMotif}
+						<span data-testid="onboarding-bank-ledger-motif">({bankLedgerMotif})</span>
+					{/if}
+				</p>
+			{/if}
+		</div>
+		<!-- Story 34-1 (AC-7) : le choix n'est pas définitif (décision de Guy). -->
+		<p class="text-sm text-text-muted" data-testid="onboarding-bank-editable-later">
+			{msg(
+				'onboarding-bank-editable-later',
+				'La description et le compte comptable lié se modifient ensuite dans Administration → Comptes bancaires.'
+			)}
+		</p>
 		<div class="flex gap-3">
 			<Button type="button" variant="outline" onclick={handleSkipBank} disabled={onboardingState.loading} class="flex-1">
 				{msg('onboarding-skip-bank', 'Configurer plus tard')}
 			</Button>
-			<Button type="submit" disabled={onboardingState.loading} class="flex-1">
+			<Button type="submit" disabled={onboardingState.loading || bankLedgerLoading} class="flex-1">
 				{msg('onboarding-save', 'Enregistrer')}
 			</Button>
 		</div>
