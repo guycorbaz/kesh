@@ -192,7 +192,7 @@ compte est écartée. Aucun rôle ne se déduit du numéro d'un compte (Story 14
   `bankLedgerAccountId`), `ReconciliationProposals` (passage de la prop) ; avis AC-4 ; doc-comments d'en-tête des deux dialogues.
 - [ ] **T3** : catalogues fr/de/en/it (bouton, titre, validation, deux avis, quatre messages `failed-rule-masked*`, avis du lot, trois messages de F3-2), replis ; `failed-proposal-label.ts`.
 - [ ] **T4** : commentaires `reconciliation.rs:5320`, `manual.rs:31` (sans changement exécutable).
-- [ ] **T5** : manuel utilisateur (`.tex` ; PDF à l'intégration, AC-8) ; CHANGELOG `## [0.17.6] — Non publié`, *Changé* (`refs #967`).
+- [ ] **T5** : manuel utilisateur (`.tex` ; PDF à l'intégration, AC-8) ; CHANGELOG `## [0.17.6] — Non publié`, *Changé* (`refs #967`). *(Annoté le 2026-11-12, à l'intégration de la 0.17.6 : la rubrique est **Modifié**, depuis C-e342-22 amendée ; l'entrée y est rangée.)*
 - [ ] **T6** : captures (thème clair, base jetable) : dialogue *Écriture manuelle* ouvert sur un compte de classe 2 ; avis
   débiteurs ; *Éclater* avec une ligne sur un compte de produits. Dans `kesh-gate-logs/e342/captures/`.
 
@@ -253,7 +253,8 @@ parallèle, ses textes nomment déjà « Écriture manuelle » (C-e342-5).
     dit ; **P2-3-5** (lu : en-tête de `ModalSuccessStub.test.svelte`) → T1 ; **P2-3-6** (lus : fr `:1433`, de `:1367`) →
     citation.
   - CHANGELOG : *Changé* gardé (comportement d'un geste existant modifié ; admis par l'orchestrateur), cohérent avec la 34-10 ;
-    la 34-4 en *Ajouté*, la 34-9 en *Corrigé* (C-e342-22).
+    la 34-4 en *Ajouté*, la 34-9 en *Corrigé* (C-e342-22). *(Annoté le 2026-11-12, à l'intégration de la 0.17.6 : *Changé*
+    n'est plus une rubrique de l'epic — C-e342-22 amendée dit **Modifié**, où l'entrée de la 34-3 est rangée.)*
 - 2026-11-10 : Validation P3 (Sonnet), remédiation (Opus 5.5). Rapport `kesh-gate-logs/e34-validate-p3-e342.md`, pour cette
   fiche 0 C, 0 H, 1 M, 2 LOW, tous retenus :
   - **P3-3-1** MEDIUM, **défaut d'origine non vu par la P2** (motifs anglais et italien hérités de la P1) : garde élargie,
@@ -433,6 +434,6 @@ fiche non commitée : ce Dev Agent Record a été réécrit ; le script ne resta
 - `crates/kesh-i18n/locales/{fr,de,en,it}-CH/messages.ftl`
 - `crates/kesh-api/src/routes/reconciliation.rs`, `crates/kesh-reconciliation/src/manual.rs` (commentaires seuls)
 - `docs/manual/fr/user-manual.tex` (PDF non régénéré : à l'intégration, AC-8)
-- `CHANGELOG.md` (`## [0.17.6] — Non publié`, *Changé*)
+- `CHANGELOG.md` (`## [0.17.6] — Non publié`, *Changé* — *annoté le 2026-11-12, à l'intégration de la 0.17.6 : **Modifié**, C-e342-22 amendée*)
 - `_bmad-output/implementation-artifacts/e34-choix-autonomes-e3403.md` (neuf), `34-3-ecriture-manuelle-review-prompt-p1.md`
   (neuf), cette fiche, `sprint-status.yaml`
