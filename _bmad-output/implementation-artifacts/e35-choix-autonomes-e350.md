@@ -398,6 +398,12 @@ sur `chore/epic-35-fiches-355`, commencent à C-e350-21 et s'unissent à la fusi
   heure de nuit fixée dans chaque test : 112 sites réécrits pour une preuve qu'une variable donne ; (c) ne rien prouver : la
   règle « on ne déclare que ce qui a tourné ».
 - **Réversible** : oui ; trois fonctions de test.
+- *(Annoté le 2026-11-12, validation P3 de la 35-5a, V3-1, et C-e350-29 : la variable est lue par **une** fonction,
+  `horloge_de_test()` (`kesh-api`), qui sert `new_for_tests`, les littéraux d'`AppState` de test et le helper renommé
+  `aujourd_hui_test()` — et par le helper de `kesh-db/tests`, par `kesh_core::horloge::instant_de_test` ; posée par la
+  **35-5a0**. La preuve de la 35-5a s'ajoute une exécution qui reproduit la nuit réelle de jour sur **tous** les binaires,
+  `KESH_TEST_INSTANT="$(date -u +%F)T23:30:00Z"` (montages non convertis et MariaDB au jour UTC D, serveur au jour suisse
+  D+1), chaque rouge rattaché à 35-5b ou 35-5c.)*
 
 ### C-e350-27 — 35-5a : dérogation à la règle de découpage préventif
 
@@ -407,6 +413,45 @@ sur `chore/epic-35-fiches-355`, commencent à C-e350-21 et s'unissent à la fusi
   la sûreté de nuit non plus (une story qui convertirait les sites sans les tests qui les atteignent rougirait la nuit). Ce
   qui pouvait partir est parti : 35-5b (sites restants), 35-5c (tests sans lien), la dévalidation (V2-10).
 - **Écartée** : isoler les appelants sans site de jour dans la 35-5c : la compilation de la 35-5a l'interdit.
+- **Réversible** : oui.
+- *(Annoté le 2026-11-12 : **tombé**, remplacé par C-e350-28. La validation P3 de la 35-5a (V3-4) a montré la prémisse fausse :
+  la fiche prescrivait elle-même un squelette compilable, plomberie et appelants, à comportement inchangé.)*
+
+### C-e350-28 — La 35-5a se découpe : 35-5a0 (plomberie, comportement inchangé), puis 35-5a (le jour suisse) — décision de l'orchestrateur
+
+- **Contexte** : validation P3 de la 35-5a, V3-4 : la dérogation C-e350-27 reposait sur « le mécanisme ne se coupe pas », alors
+  que la fiche décrivait déjà le squelette compilable qui le coupe ; `CLAUDE.md` n'admet de dérogation que pour un cycle de
+  dépendances ou des fusions intermédiaires impossibles à tester, ni l'un ni l'autre ici ; V3-2 élargit encore le diff
+  mécanique (158 appels dans 23 fichiers pour les seules écritures fournisseur).
+- **Retenu** : **35-5a0** — `Horloge`, `HorlogeFixe`, `HorlogeSysteme`, `horloge_de_test()`, `AppState.horloge`,
+  `Lecture::new(pool, horloge)`, câblage du MCP, la date passée à `kesh-db` et **toute** la fermeture de ses appelants
+  (production et tests), les neuf sites de la 35-5a branchés sur l'horloge, `aujourd_hui_test()`, `KESH_TEST_INSTANT`, la garde
+  et ses gardes de durcissement — **avec un jour égal au jour UTC**, si bien que rien ne change et que les tests existants
+  restent verts sans retouche ; puis **35-5a** — `jour_suisse`, la bascule, les critères de nuit, l'écran, les tests convertis
+  et les preuves de nuit. **Ordre de fusion avec la 35-3** : conflit de compilation (ses tests neufs appellent `validate` /
+  `pay`) ; la seconde des deux fusionnée ajoute la date aux appels de l'autre et passe le gate complet ; ordre préféré : la 35-3
+  d'abord (tête d'epic, avant le 2026-11-30).
+- **Écartée** : garder la story unique avec une dérogation réécrite (motif réel : le coût d'une revue de plus) et le signal
+  déclaré à Guy : le découpage coûte moins qu'une boucle sur un diff de plus de 200 appels de tests mêlés à un changement de
+  règle.
+- **Réversible** : oui (deux fiches qui se réunissent).
+
+### C-e350-29 — 35-5a0 : la bascule tient dans `Horloge::aujourd_hui()`, le helper de test la suit ; durcissement par gardes
+
+- **Contexte** : C-e350-28 ; validation P3 de la 35-5a, V3-1 (les littéraux d'`AppState` ne lisaient pas `KESH_TEST_INSTANT`)
+  et V3-5 (`new_for_tests` compilé dans le binaire servi, sans rien qui empêche un appel de production).
+- **Retenu** : dans la 35-5a0, `Horloge::aujourd_hui()` rend `maintenant().date_naive()` ; la 35-5a change ce seul corps en
+  `jour_suisse(…)`. Le helper de test `aujourd_hui_test()` (renommé : `aujourd_hui_suisse` aurait menti dans la 35-5a0) rend
+  l'`aujourd_hui()` de l'horloge de test : serveur et montages convertis basculent ensemble. `horloge_de_test()` (`kesh-api`,
+  `#[doc(hidden)]`) sert `new_for_tests` et les littéraux de test ; `kesh_core::horloge::instant_de_test` (pur, `panic!` sur
+  valeur invalide) sert le helper de `kesh-db/tests`. Durcissement **par gardes** (dans `date_du_jour_garde.rs`) : comptes
+  exacts de `KESH_TEST_INSTANT`, aucun appel de `new_for_tests(` / `horloge_de_test(` dans `crates/*/src` hors leurs
+  définitions, `HorlogeSysteme` construit dans `main.rs` et `horloge_de_test()` seulement, aucun `static`/`OnceLock`/
+  `LazyLock` dans les fichiers de l'horloge et des helpers ; une ligne dans `docs/testing.md`.
+- **Écartées** : (a) `new_for_tests` sous `#[cfg(any(test, feature = "test-support"))]` : les tests d'intégration d'une crate
+  ne voient pas son `cfg(test)`, et la feature exigerait une auto-dépendance de développement (`kesh-api = { path = ".",
+  features = [...] }`) — plus de mécanique pour la même garantie ; (b) garder le nom `aujourd_hui_suisse` : faux entre les
+  deux stories.
 - **Réversible** : oui.
 
 ### C-e350-25 — 35-5 : le jour d'un instant enregistré
