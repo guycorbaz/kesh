@@ -206,6 +206,11 @@ Mise à jour par union, jamais par écrasement.*
   change) ; 34-4 *Ajouté* (un signal neuf) ; 34-9 *Corrigé* (#969, #974 : un défaut de signalement).
 - **Écartée** : tout en *Ajouté* (« Écriture manuelle » et les couleurs unies ne sont pas des fonctions neuves).
 - **Réversible** : oui, à l'intégration.
+- *(Annoté le 2026-11-11, worktree de la 34-10, passe ciblée P4, C4-1.)* **Remplacé : rubrique *Modifié***, décision de
+  l'orchestrateur du 2026-11-11 — celle du CHANGELOG existant (dix-sept `### Modifié` jusqu'à la 0.17.5, aucun `### Changé`), sous laquelle l'union
+  se fera à l'intégration. La 34-10 l'applique (C-e3410-15) ; la 34-3 suivra à l'intégration.
+- *(Annoté le 2026-11-11, passe ciblée P5, C5-2.)* Précision au décompte ci-dessus : aucun `### Changé` **en français** ; le
+  CHANGELOG porte trois `### Changed` **anglais**, aux entrées des v0.1.x (0.1.7, 0.1.6, 0.1.4).
 
 ### C-e342-23 — Ce que la 34-11b réécrit de la 34-4
 

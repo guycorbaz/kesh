@@ -310,10 +310,15 @@ const SUFFIXES = ['Label', 'Text', 'Display'];
  * les deux avis d'issue inconnue, tout par `i18nMsg` : aucun littéral affiché, donc `conforme`
  * **71 → 72** ; `ecartee` ne bouge pas.
  *
- * Intégration de la release 0.17.6 (2026-11-12), fusion de la 34-8 sur la 34-1 : **87**
- * candidates, `conforme` **73**, recomptés par la garde après la fusion (non additionnés).
+ * **85 → 86** (Story 34-10, #970) : `totalLabel` (`lib/features/homepage/ExpensePieCard.svelte`),
+ * « Total des dépenses » au centre de l'anneau, par `i18nMsg` (`homepage-charts-pie-total-label`) :
+ * aucun littéral, donc `conforme` **71 → 72** ; `ecartee` ne bouge pas.
+ *
+ * Intégration de la release 0.17.6 (2026-11-12), recomptés par la garde après chaque fusion
+ * (non additionnés) : 87 candidates et `conforme` 73 après la 34-8 (34-1, 34-8), **88**
+ * candidates et `conforme` **74** après la 34-10.
  */
-const CANDIDATES_ATTENDUES = 87;
+const CANDIDATES_ATTENDUES = 88;
 
 /** Les trois délimiteurs de littéral en JS/TS. */
 const QUOTES = ["'", '"', '`'];
@@ -830,7 +835,7 @@ describe('libellés en dur — l’angle mort #255', () => {
 			else if (c.retours.length > 0) classes.ecartee += 1;
 			else classes.conforme += 1;
 		}
-		expect(classes).toEqual({ nonAnalysee: 0, enViolation: 0, ecartee: 14, conforme: 73 });
+		expect(classes).toEqual({ nonAnalysee: 0, enViolation: 0, ecartee: 14, conforme: 74 });
 		// La somme est recalculée depuis les classes, jamais depuis le total qu'elle contrôle.
 		const somme = Object.values(classes).reduce((a, b) => a + b, 0);
 		expect(somme).toBe(CANDIDATES_ATTENDUES);

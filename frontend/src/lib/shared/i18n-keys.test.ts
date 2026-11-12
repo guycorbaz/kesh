@@ -940,11 +940,15 @@ const ATTENDU = {
 	// (+2), `-notice-not-imported-truncated` et `-report-duplicate-not-in-list`. Revue P2 :
 	// **2944 → 2946** (+2), `-report-duplicate-not-in-list-reload-failed` et un second site de
 	// `-report-duplicate-discarded` (document retiré depuis la page).
+	// Story 34-10 (#970) : **2922 → 2925** (+3), tous dans `homepage/ExpensePieCard.svelte`
+	// (15 → 18, `grep -o 'i18nMsg('` à `cdf13639` et à l'arbre) — « Total des dépenses » au
+	// centre de l'anneau, la base des parts au `<desc>` et sous la note. Que des littéraux ;
+	// `sitesNonResolus` et `relais` inchangés.
 	// Intégration de la release 0.17.6 (2026-11-12), **recompté à la source** par la garde
 	// elle-même après chaque fusion (non additionné) : 2946 après la 34-3 (34-1, 34-2, 34-3),
 	// 2954 après la 34-4, 2962 après la 34-5, 2968 après la 34-6, 2968 après la 34-8 (solde
-	// nul de la 34-8), **2992** après la 34-9.
-	sitesTotal: 2992,
+	// nul de la 34-8), 2992 après la 34-9, **2995** après la 34-10.
+	sitesTotal: 2995,
 	sitesNonResolus: 31,
 	relais: 6,
 	// Story 26-1 (#620, AC3-bis) : **10 → 11** — `lib/features/bank-import/

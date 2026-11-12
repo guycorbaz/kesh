@@ -6,17 +6,28 @@ import { contrastRatio } from '../../../../tests/e2e/helpers/contrast';
 import {
 	BAR_EXPENSE,
 	BAR_REVENUE,
+	CENTER_FONT_MAX,
+	CENTER_FONT_MIN,
+	MIN_SLICE_ANGLE,
 	OTHERS_STYLE,
+	PIE_GEOMETRY,
 	PIE_PALETTE,
+	SEPARATOR_WIDTH,
 	axisLabels,
 	axisTicks,
+	centerFontSize,
+	centerLines,
 	chartAmount,
 	chartWidth,
+	centerSizes,
+	differentAmounts,
 	followMark,
+	fullRing,
 	markHref,
 	monthHref,
 	monthLabel,
 	monthlyBars,
+	pieSeparators,
 	pieSlices,
 	postStyle,
 	tickLabel,
@@ -212,7 +223,7 @@ describe('pieSlices', () => {
 		amount,
 		share,
 	});
-	const geo = { cx: 100, cy: 100, r: 90 };
+	const geo = { cx: 100, cy: 100, r: 90, innerR: 54 };
 
 	it('trois parts : sens horaire depuis midi, angles depuis amount / base et non depuis share', () => {
 		// 1/3 : `share` vaut 33.3, ce qui donnerait 119,88° ; le vrai angle est 120°.
@@ -226,8 +237,29 @@ describe('pieSlices', () => {
 		expect(r[0].startAngle).toBeCloseTo(0, 6);
 		expect(r[0].endAngle).toBeCloseTo((2 * Math.PI) / 3, 6);
 		expect(r[2].endAngle).toBeCloseTo(2 * Math.PI, 6);
-		expect(r[0].path).toMatch(/^M100 100 L100(\.0+)? 10(\.0+)? A90 90 0 0 1 /);
+		// Secteur d'anneau (34-10, AC-3) : arc extérieur depuis midi, segment, arc intérieur
+		// à rebours, refermé sur le point intérieur de midi.
+		expect(r[0].path).toMatch(
+			/^M100 10 A90 90 0 0 1 [\d.]+ [\d.]+ L[\d.]+ [\d.]+ A54 54 0 0 0 100 46 Z$/,
+		);
 		expect(r.map((s) => s.rank)).toEqual([1, 2, 3]);
+	});
+
+	it('un anneau, non un camembert : aucune part ne passe par le centre (34-10, AC-3)', () => {
+		const r = pieSlices([post(1, '75', '75.0'), post(2, '25', '25.0')], null, '100', geo);
+		for (const s of r) {
+			expect(s.path).not.toContain('100 100');
+			expect(s.path).toContain('A54 54 ');
+		}
+	});
+
+	it('la géométrie de l’accueil : rayon intérieur à 60 % du rayon extérieur (AC-3)', () => {
+		expect(PIE_GEOMETRY.innerR / PIE_GEOMETRY.r).toBeCloseTo(0.6, 6);
+		expect(PIE_GEOMETRY.innerR).toBeGreaterThan(0);
+	});
+
+	it('la part pleine : un cercle au rayon médian, trait de l’épaisseur de l’anneau (AC-3)', () => {
+		expect(fullRing(geo)).toEqual({ r: 72, width: 36 });
 	});
 
 	it('« Autres » vient en dernier, sans compte', () => {
@@ -245,8 +277,10 @@ describe('pieSlices', () => {
 
 	it('une part de plus de la moitié porte le grand arc', () => {
 		const r = pieSlices([post(1, '75', '75.0'), post(2, '25', '25.0')], null, '100', geo);
-		expect(r[0].path).toContain(' 0 1 1 ');
-		expect(r[1].path).toContain(' 0 0 1 ');
+		expect(r[0].path).toContain('A90 90 0 1 1 ');
+		expect(r[0].path).toContain('A54 54 0 1 0 ');
+		expect(r[1].path).toContain('A90 90 0 0 1 ');
+		expect(r[1].path).toContain('A54 54 0 0 0 ');
 	});
 
 	it('une part à 100 % : un cercle, aucun arc de 360°', () => {
@@ -256,35 +290,158 @@ describe('pieSlices', () => {
 		expect(r[0].path).toBeNull();
 	});
 
-	it('une part minuscule reste rendue, et la grande part se dessine : un cercle (B-1, E-1)', () => {
-		const r = pieSlices([post(1, '999999', '100.0'), post(2, '0.0001', '0.0')], null, '999999.0001', geo);
+	/** Les deux extrémités d'un arc du `path` (extérieur ou intérieur), et leur corde. */
+	const chord = (path: string | null, which: 'outer' | 'inner'): number => {
+		const re =
+			which === 'outer'
+				? /^M(-?[\d.]+) (-?[\d.]+) A[\d.]+ [\d.]+ 0 [01] 1 (-?[\d.]+) (-?[\d.]+) L/
+				: /L(-?[\d.]+) (-?[\d.]+) A[\d.]+ [\d.]+ 0 [01] 0 (-?[\d.]+) (-?[\d.]+) Z$/;
+		const m = re.exec(path ?? '');
+		expect(m, path ?? 'path nul').not.toBeNull();
+		const [x1, y1, x2, y2] = m!.slice(1).map(Number);
+		return Math.hypot(x2 - x1, y2 - y1);
+	};
+
+	/** La largeur qui reste visible d'une part, à l'arc intérieur, une fois ses deux séparateurs posés. */
+	const visibleInner = (path: string | null): number => chord(path, 'inner') - SEPARATOR_WIDTH;
+
+	it('une part minuscule reste VISIBLE entre ses deux séparateurs (revues P1 B1-1, P2 B2-1)', () => {
+		const r = pieSlices([post(1, '999999', '100.0'), post(2, '0.0001', '0.0')], null, '999999.0001', PIE_GEOMETRY);
 		expect(r).toHaveLength(2);
-		expect(r[1].path).not.toContain('NaN');
-		expect(r[1].full).toBe(false);
+		// Les angles vrais restent ceux du montant ; seuls les angles dessinés changent.
 		expect(r[1].endAngle).toBeCloseTo(2 * Math.PI, 6);
-		expect(r[0].full, 'extrémités confondues : le SVG omettrait l’arc').toBe(true);
-		expect(r[0].path).toBeNull();
+		expect(r[1].displayEnd - r[1].displayStart).toBeCloseTo(MIN_SLICE_ANGLE, 9);
+		expect(r[0].displayEnd - r[0].displayStart).toBeCloseTo(2 * Math.PI - MIN_SLICE_ANGLE, 9);
+		// Plus de cercle ni de rayon blanc dégénéré (E1-3) : deux vrais secteurs.
+		expect(r[0].full).toBe(false);
+		expect(r[1].full).toBe(false);
+		// Visible : au moins une unité de `viewBox` à l'arc intérieur, le plus étroit, une fois
+		// retirés les deux demi-séparateurs qui mordent sur elle.
+		expect(visibleInner(r[1].path)).toBeGreaterThanOrEqual(1);
 	});
 
-	it('20’000.00 et 0.01 : le cas réaliste du disque blanc', () => {
+	it('un séparateur à chaque limite, deux parts étroites voisines comprises (revue P2, B2-1)', () => {
+		const r = pieSlices(
+			[post(1, '900', '99.4'), post(2, '2', '0.2'), post(3, '1.5', '0.2')],
+			{ amount: '1', share: '0.1', accountCount: 2 },
+			'904.5',
+			PIE_GEOMETRY,
+		);
+		const lines = pieSeparators(r, PIE_GEOMETRY);
+		// Une limite par part : à son début (celle de midi ferme aussi la dernière).
+		expect(lines).toHaveLength(4);
+		expect(lines.map((l) => l.angle)).toEqual(r.map((s) => s.displayStart));
+		// La limite entre les deux parts étroites voisines (rangs 2 et 3) est marquée.
+		expect(lines.some((l) => Math.abs(l.angle - r[2].displayStart) < 1e-12)).toBe(true);
+		expect(r[1].displayEnd).toBeCloseTo(r[2].displayStart, 12);
+		// Chaque séparateur traverse tout l'anneau, du trou au bord.
+		for (const l of lines) {
+			expect(Math.hypot(l.x1 - 100, l.y1 - 100)).toBeCloseTo(PIE_GEOMETRY.innerR, 2);
+			expect(Math.hypot(l.x2 - 100, l.y2 - 100)).toBeCloseTo(PIE_GEOMETRY.r, 2);
+		}
+		// Et chacune des trois parts étroites reste visible entre ses deux séparateurs.
+		for (const s of r.slice(1)) expect(visibleInner(s.path)).toBeGreaterThanOrEqual(1);
+	});
+
+	it('le rayon intérieur de l’accueil s’écrit 57.6 dans le `d`, sans bruit du flottant (revue P3, B3-2)', () => {
+		expect(PIE_GEOMETRY.innerR).toBe(57.6);
+		const r = pieSlices([post(1, '75', '75.0'), post(2, '25', '25.0')], null, '100', PIE_GEOMETRY);
+		for (const s of r) {
+			expect(s.path).toContain('A57.6 57.6 0 ');
+			expect(s.path).not.toMatch(/\d{7,}/);
+		}
+	});
+
+	it('une part de montant nul ou négatif n’est ni dessinée ni élargie ; rangs et couleurs restent ceux du tableau (revue P3, E3-1)', () => {
+		const r = pieSlices(
+			[post(1, '900', '90.0'), post(2, '0', '0.0'), post(3, '-5', '0.0'), post(4, '100', '10.0')],
+			{ amount: '0.00', share: '0.0', accountCount: 2 },
+			'1000',
+			PIE_GEOMETRY,
+		);
+		expect(r.map((s) => s.rank)).toEqual([1, 4]);
+		expect(r.map((s) => s.accountId)).toEqual([1, 4]);
+		expect(r[1].style).toBe(postStyle(3));
+		// Rien n'a été cédé : les angles dessinés sont les vrais.
+		expect(r[0].displayEnd - r[0].displayStart).toBeCloseTo((900 / 1000) * 2 * Math.PI, 9);
+		expect(r[r.length - 1].displayEnd).toBe(2 * Math.PI);
+		expect(pieSeparators(r, PIE_GEOMETRY)).toHaveLength(2);
+	});
+
+	it('une seule part : aucun séparateur', () => {
+		const r = pieSlices([post(1, '42.5', '100.0')], null, '42.5', PIE_GEOMETRY);
+		expect(pieSeparators(r, PIE_GEOMETRY)).toEqual([]);
+	});
+
+	it('plusieurs parts minuscules : chacune élargie, la plus grande cède la SOMME des écarts (revue P2, B2-2)', () => {
+		const amounts = ['5000', '3', '2', '1', '0.5'];
+		const base = '5006.9';
+		const r = pieSlices(
+			amounts.map((a, i) => post(i + 1, a, '0')),
+			{ amount: '0.4', share: '0', accountCount: 3 },
+			base,
+			PIE_GEOMETRY,
+		);
+		const turn = 2 * Math.PI;
+		const realSpans = [...amounts, '0.4'].map((a) => (Number(a) / Number(base)) * turn);
+		const deficit = realSpans.slice(1).reduce((acc, s) => acc + Math.max(0, MIN_SLICE_ANGLE - s), 0);
+		expect(realSpans.slice(1).every((s) => s < MIN_SLICE_ANGLE), 'montage : cinq parts sous le seuil').toBe(true);
+		for (const s of r) expect(s.displayEnd - s.displayStart).toBeGreaterThanOrEqual(MIN_SLICE_ANGLE - 1e-12);
+		for (let i = 1; i < r.length; i++) expect(r[i].displayStart).toBeCloseTo(r[i - 1].displayEnd, 12);
+		expect(r[0].displayStart).toBe(0);
+		expect(r[r.length - 1].displayEnd).toBe(turn);
+		expect(r[0].displayEnd - r[0].displayStart).toBeCloseTo(realSpans[0] - deficit, 9);
+		for (const s of r.slice(1)) expect(visibleInner(s.path)).toBeGreaterThanOrEqual(1);
+	});
+
+	it('frontière de MIN_SLICE_ANGLE : juste dessous, élargie ; juste dessus, inchangée (revue P2, E2-2)', () => {
+		const turn = 2 * Math.PI;
+		const at = (ratio: number) => ((ratio * MIN_SLICE_ANGLE) / turn * 1000).toFixed(9);
+		for (const [ratio, widened] of [
+			[0.99, true],
+			[1.01, false],
+		] as const) {
+			const tiny = at(ratio);
+			const base = (1000 + Number(tiny)).toFixed(9);
+			const r = pieSlices([post(1, '1000', '0'), post(2, tiny, '0')], null, base, PIE_GEOMETRY);
+			const span = r[1].displayEnd - r[1].displayStart;
+			const real = r[1].endAngle - r[1].startAngle;
+			if (widened) expect(span).toBeCloseTo(MIN_SLICE_ANGLE, 12);
+			else expect(span).toBeCloseTo(real, 9);
+		}
+	});
+
+	it('l’angle minimal dépasse la largeur des deux demi-séparateurs d’au moins une unité', () => {
+		expect(MIN_SLICE_ANGLE * PIE_GEOMETRY.innerR - SEPARATOR_WIDTH).toBeGreaterThanOrEqual(1);
+	});
+
+	it('20’000.00 et 0.01 : la grande part n’est plus un cercle, la petite se voit (E1-3)', () => {
 		const r = pieSlices([post(1, '20000.00', '100.0'), post(2, '0.01', '0.0')], null, '20000.01', geo);
-		expect(r[0].full).toBe(true);
-		expect(r[0].path).toBeNull();
+		expect(r[0].full).toBe(false);
+		expect(r[0].path).not.toBeNull();
+		expect(chord(r[1].path, 'inner')).toBeGreaterThanOrEqual(1);
+	});
+
+	it('aucun arc intérieur aux extrémités confondues : le trou n’est jamais rempli (E1-2)', () => {
+		// Un reste de 2e-12 du tour : sans angle minimal, les extrémités se confondraient. Toute
+		// part non nulle fait au moins MIN_SLICE_ANGLE, si bien que les deux arcs de chaque
+		// part ont des extrémités distinctes, l'intérieur compris.
+		const r = pieSlices([post(1, '1000000', '100.0'), post(2, '0.000002', '0.0')], null, '1000000.000002', geo);
+		for (const s of r) {
+			expect(s.full).toBe(false);
+			expect(chord(s.path, 'inner')).toBeGreaterThanOrEqual(1);
+			expect(chord(s.path, 'outer')).toBeGreaterThanOrEqual(1);
+		}
 	});
 
 	it('99,9 % : un vrai arc, grand, aux extrémités distinctes', () => {
 		const r = pieSlices([post(1, '999', '99.9'), post(2, '1', '0.1')], null, '1000', geo);
 		expect(r[0].full).toBe(false);
-		const m = /L([\d.]+ [\d.]+) A90 90 0 1 1 ([\d.]+ [\d.]+) Z$/.exec(r[0].path ?? '');
+		const m = /^M([\d.]+ [\d.]+) A90 90 0 1 1 ([\d.]+ [\d.]+) L/.exec(r[0].path ?? '');
 		expect(m, r[0].path ?? '').not.toBeNull();
 		expect(m![1]).not.toBe(m![2]);
 	});
 
-	it('une petite part aux extrémités confondues n’est pas un cercle', () => {
-		const r = pieSlices([post(1, '20000.00', '100.0'), post(2, '0.01', '0.0')], null, '20000.01', geo);
-		expect(r[1].full).toBe(false);
-		expect(r[1].path).not.toBeNull();
-	});
 
 	it('aucune part : aucun dessin, et une base nulle ne divise pas', () => {
 		expect(pieSlices([], null, '0', geo)).toEqual([]);
@@ -341,35 +498,145 @@ describe('monthHref, monthLabel, markHref', () => {
 	});
 });
 
-describe('palette (AC14)', () => {
-	const white = '#ffffff';
-	it('revenus et « Autres » gardent la valeur de leur jeton d’`app.css`', () => {
-		const css = readFileSync('src/app.css', 'utf-8');
-		expect(css).toContain(`--color-primary: ${BAR_REVENUE.color};`);
-		expect(css).toContain(`--color-text-muted: ${OTHERS_STYLE.color};`);
+describe('jetons des graphiques (34-10, AC-1)', () => {
+	const css = readFileSync('src/app.css', 'utf-8');
+	/** La valeur hexadécimale d'un jeton, `undefined` s'il est absent ou écrit en alias. */
+	const tokenValue = (name: string): string | undefined =>
+		new RegExp(`${name}:\\s*(#[0-9a-f]{6});`, 'i').exec(css)?.[1];
+
+	it('chaque constante égale son jeton, nom par nom, en hexadécimal', () => {
+		expect(BAR_REVENUE.token).toBe('--color-chart-revenue');
+		expect(BAR_EXPENSE.token).toBe('--color-chart-expense');
+		expect(PIE_PALETTE.map((s) => s.token)).toEqual([
+			'--color-chart-1',
+			'--color-chart-2',
+			'--color-chart-3',
+			'--color-chart-4',
+			'--color-chart-5',
+		]);
+		expect(OTHERS_STYLE.token).toBe('--color-text-muted');
+		for (const s of [BAR_REVENUE, BAR_EXPENSE, ...PIE_PALETTE, OTHERS_STYLE]) {
+			expect(css, s.token).toContain(`${s.token}: ${s.color};`);
+		}
 	});
+
+	it('revenus = succès, dépenses = destructif ; postes rouge, vert, bleu, violet, cyan', () => {
+		expect(tokenValue('--color-chart-revenue')).toBe(tokenValue('--color-success'));
+		expect(tokenValue('--color-chart-expense')).toBe(tokenValue('--color-destructive'));
+		expect(BAR_REVENUE.color).toBe('#16a34a');
+		expect(BAR_EXPENSE.color).toBe('#b91c1c');
+		expect(PIE_PALETTE.map((s) => s.color)).toEqual(['#b91c1c', '#16a34a', '#1e40af', '#7c3aed', '#0891b2']);
+		expect(OTHERS_STYLE.color).toBe('#64748b');
+	});
+});
+
+describe('palette (34-10, AC-7)', () => {
+	const white = '#ffffff';
 
 	it('postStyle : la palette par rang, « Autres » au-delà', () => {
 		expect(postStyle(0)).toBe(PIE_PALETTE[0]);
 		expect(postStyle(5)).toBe(OTHERS_STYLE);
 	});
 
-	it('chaque remplissage a un contraste d’au moins 3:1 sur blanc', () => {
+	it('chaque couleur a un contraste d’au moins 3:1 sur blanc', () => {
 		for (const s of [BAR_REVENUE, BAR_EXPENSE, OTHERS_STYLE, ...PIE_PALETTE]) {
 			expect(contrastRatio(s.color, white), s.color).toBeGreaterThanOrEqual(3);
 		}
 	});
 
-	it('revenus pleins, dépenses tramées', () => {
-		expect(BAR_REVENUE.pattern).toBe('solid');
-		expect(BAR_EXPENSE.pattern).not.toBe('solid');
+	it('revenus et dépenses : deux couleurs, d’au moins 1,5:1 entre elles (la clarté les sépare)', () => {
+		expect(BAR_REVENUE.color).not.toBe(BAR_EXPENSE.color);
+		expect(contrastRatio(BAR_REVENUE.color, BAR_EXPENSE.color)).toBeGreaterThanOrEqual(1.5);
 	});
 
-	it('six motifs distincts au camembert, « Autres » en gris comprise', () => {
+	it('six couleurs distinctes à l’anneau, « Autres » en gris comprise', () => {
 		const all = [...PIE_PALETTE, OTHERS_STYLE];
 		expect(PIE_PALETTE).toHaveLength(5);
-		expect(new Set(all.map((s) => s.pattern)).size).toBe(6);
 		expect(new Set(all.map((s) => s.color)).size).toBe(6);
-		expect(OTHERS_STYLE.color).toBe('#64748b');
+	});
+
+	it('aucun motif dans le module : couleurs unies seulement', () => {
+		const source = readFileSync('src/lib/features/homepage/homepage-charts.ts', 'utf-8');
+		expect(source).not.toMatch(/ChartPattern|chartFill|patternId|pattern/i);
+	});
+});
+
+describe('centerFontSize (34-10, AC-4, C-e342-24)', () => {
+	const hole = 2 * PIE_GEOMETRY.innerR;
+
+	it('décroît avec la longueur du texte, bornée par un plancher et un plafond', () => {
+		const short = centerFontSize('1.00', hole);
+		const long = centerFontSize('999’999’999.99', hole);
+		expect(short).toBeLessThanOrEqual(CENTER_FONT_MAX);
+		expect(long).toBeLessThan(short);
+		expect(long).toBeGreaterThanOrEqual(CENTER_FONT_MIN);
+		expect(CENTER_FONT_MIN).toBeGreaterThan(0);
+	});
+
+	it('le plus long montant plausible reste au-dessus du plancher ; au-delà, le plancher tient (revue P1, B1-2)', () => {
+		// La règle (0,6 em, 85 % du trou) n'est pas recopiée ici : ce qui se vérifie sans mise
+		// en page, c'est que le montant plausible le plus long n'est PAS écrasé au plancher
+		// — la règle s'applique, elle n'est pas bornée — et qu'un texte hors de toute plausibilité
+		// (trente caractères) reste au plancher : son débordement est assumé, non silencieux.
+		expect(centerFontSize('-999’999’999.9999', hole)).toBeGreaterThan(CENTER_FONT_MIN);
+		expect(centerFontSize('x'.repeat(30), hole)).toBe(CENTER_FONT_MIN);
+		// Le plafond est atteint par un montant court : il n'y a pas de croissance sans fin.
+		expect(centerFontSize('0.00', hole)).toBe(CENTER_FONT_MAX);
+	});
+});
+
+describe('centerLines (revue P1, B1-4)', () => {
+	it('l’écart entre le libellé et le montant suit la taille du libellé', () => {
+		const small = centerLines(100, 8, 11);
+		const big = centerLines(100, 22, 22);
+		// La ligne de base du libellé laisse au moins ses jambages (≈ 0,25 em) et une unité
+		// avant le haut du montant (`hanging`).
+		for (const [lines, label] of [
+			[small, 8],
+			[big, 22],
+		] as const) {
+			expect(lines.amountY - lines.labelY).toBeGreaterThanOrEqual(0.25 * label + 1);
+		}
+		expect(big.amountY - big.labelY).toBeGreaterThan(small.amountY - small.labelY);
+	});
+
+	it('centerSizes : le libellé n’est jamais plus grand que le montant (revue P2, E2-5)', () => {
+		const hole = 2 * PIE_GEOMETRY.innerR;
+		for (const [label, amount] of [
+			['Gesamtaufwand', '-12’345’678.90'],
+			['Total expenses', '1’234’567.8901'],
+			['Total des dépenses', '0.00'],
+			['Totale delle uscite', '999’999’999.99'],
+		]) {
+			const { labelSize, amountSize } = centerSizes(label, amount, hole);
+			expect(amountSize, amount).toBe(centerFontSize(amount, hole));
+			expect(labelSize, `${label} / ${amount}`).toBeLessThanOrEqual(amountSize);
+			expect(labelSize).toBeGreaterThanOrEqual(CENTER_FONT_MIN);
+		}
+		// Sans contrainte du montant, le libellé garde sa propre taille.
+		expect(centerSizes('Total des dépenses', '0.00', hole).labelSize).toBe(
+			centerFontSize('Total des dépenses', hole),
+		);
+	});
+
+	it('le bloc des deux lignes est centré sur le centre de l’anneau, au modèle de centerLines (0,75 em)', () => {
+		for (const [label, amount] of [
+			[9, 12],
+			[22, 22],
+			[8, 8],
+		]) {
+			const { labelY, amountY } = centerLines(100, label, amount);
+			const top = labelY - 0.75 * label;
+			const bottom = amountY + 0.75 * amount;
+			expect((top + bottom) / 2).toBeCloseTo(100, 6);
+		}
+	});
+});
+
+describe('differentAmounts (34-10, AC-4, P7-F2)', () => {
+	it('compare des valeurs, non des chaînes', () => {
+		expect(differentAmounts('30', '30.00')).toBe(false);
+		expect(differentAmounts('-50', '30')).toBe(true);
+		expect(differentAmounts('300.0000', '300')).toBe(false);
 	});
 });

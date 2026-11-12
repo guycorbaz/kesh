@@ -260,8 +260,10 @@ n'y figure pas, et une facture validée y figure à sa date même si elle n'est 
 exercice ne couvre ce jour, ou si celui qui le couvre est clos, l'accueil dit qu'aucun
 exercice n'est ouvert à la date du jour, sans montrer un autre exercice à la place.
 
-\paragraph{Les barres.} Pour chaque mois, les revenus (pleins) et les dépenses (tramées),
-sans résultat ni cumul. Le graphique a \textbf{autant de mois que l'exercice}, et non douze :
+\paragraph{Les barres.} Pour chaque mois, les revenus en vert, à gauche, et les dépenses en
+rouge, à droite, sans résultat ni cumul. La position et la légende disent laquelle est
+laquelle, sans la couleur ; au survol, chaque mois donne ses deux montants.
+Le graphique a \textbf{autant de mois que l'exercice}, et non douze :
 treize pour un exercice du 15 mars au 14 mars suivant. Sur un exercice long, tous les mois
 restent dessinés mais leurs étiquettes se clairsèment (au-delà de douze mois, un par
 trimestre ; au-delà de trente-six, chaque janvier) ; le tableau \emph{Détail par mois} les
@@ -288,12 +290,20 @@ de les recouper. Le grand livre d'un poste ou les écritures d'un mois peuvent e
 montrer des lignes que le graphique n'a pas retenues : les deux écritures d'une paire écartée,
 dont la somme est nulle.
 
-\paragraph{Les postes de charges.} Le diagramme montre les cinq comptes de charges au plus
+\paragraph{Les postes de charges.} L'anneau montre les cinq comptes de charges au plus
 gros solde, puis \textbf{Autres}, qui réunit les suivants et n'ouvre aucun détail, faute d'un
-compte unique. Seuls comptent les soldes positifs : un compte de charges au \textbf{solde
+compte unique. Les parts sont en couleurs unies --- rouge, vert, bleu, violet, cyan, et gris
+pour \emph{Autres} ---, séparées par un trait blanc à chaque limite, et se suivent \textbf{dans l'ordre du tableau, dans le sens horaire à
+partir de midi} ; le tableau voisin donne le rang, le compte, le montant et la part de
+chacune, et c'est lui qui relie une part à son compte sans la couleur. Au centre de l'anneau,
+le \textbf{total des dépenses} de l'exercice : c'est le même que celui des barres et du compte
+de résultat. Seuls les soldes positifs font des parts : un compte de charges au \textbf{solde
 créditeur} n'y figure pas, une note dit combien de comptes sont dans ce cas, et les
 pourcentages se calculent sans eux. Un compte à solde nul n'y paraît pas, comme au compte de
-résultat. Pour cette raison, la somme des parts peut dépasser le total des dépenses des barres.
+résultat. Pour cette raison, la base des parts peut différer du total du centre ; la carte
+dit alors sur quel montant les parts portent. Une part très petite --- moins de 0,7\,\% du
+tour environ --- est élargie au dessin pour rester visible entre ses deux traits, au
+détriment de la plus grande ; le tableau garde son montant et sa part exacts.
 Les pourcentages sont arrondis à une décimale, sans redressement : avec six parts, leur somme
 peut s'écarter de 100 de trois dixièmes au plus.
 

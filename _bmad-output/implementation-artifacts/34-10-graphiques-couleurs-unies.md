@@ -1,6 +1,6 @@
 # Story 34-10 : graphiques de l'accueil en couleurs unies, anneau avec le total des dépenses au centre (#970)
 
-Status: ready-for-dev
+Status: done
 
 *Fiche rédigée le 2026-11-10 en autonomie (Opus 5.5), worktree `/home/gcorbaz/devel/kesh-e34`, branche `chore/epic-34-kickoff`,
 numéros de ligne de `a75835db`. Release **0.17.6**, Epic 34. **Aucune migration** ; frontend seul. Registre :
@@ -74,12 +74,16 @@ chaque part, contraste contre le fond de la carte), et des teintes **dans les je
    extérieur, segment, arc intérieur inverse). Le trou et le texte du centre ne sont **ni** des `path` ni dans un groupe
    `homepage-chart-post-mark` (le comptage de `homepage-charts.spec.ts:207`, six `path`, reste juste) ;
    `HomepageCharts.test.ts:133` (`circle` dans la part pleine) reste juste.
+   *(Annoté le 2026-11-11, revue de code P3, A3-2 : le liseré est réalisé par `pieSeparators` — un `<line>` radial par limite,
+   dans le groupe `homepage-chart-pie-separators`, peint au-dessus des parts, en `pointer-events="none"` —, et non par un
+   `stroke` des parts, qui n'en ont plus ; C-e3410-12. Une part dessinée fait au moins `MIN_SLICE_ANGLE`, C-e3410-9.)*
 4. **AC-4 — le centre** : au centre, sur deux lignes, « Total des dépenses » et le **total des dépenses de l'exercice**
    (`totalExpenses`), au format suisse (`chartAmount`), en `--color-text` ; il tient dans le trou pour le plus long montant
    plausible (`999'999'999.99`). **Règle tranchée** *(P2-10-3 : jsdom n'a pas de mise en page, ni `getBBox` ni
    `getComputedTextLength`)* : une fonction pure `centerFontSize(label, holeDiameter)` (taille de police décroissante avec la
    longueur du texte, bornée), testée en Vitest pour 4 et 14 caractères ; aucune mesure de rendu exigée. Quand `totalExpenses`
-   diffère de `expensePostsBase`, la note existante des comptes au solde créditeur (`homepage-charts-credit-balance-note-one` /
+   diffère de `expensePostsBase` **en valeur** (`"30"` et `"30.00"` sont égaux, P7-F2) **et qu'il y a des postes** (P7-F1,
+   cf. la condition complète ci-dessous), la note existante des comptes au solde créditeur (`homepage-charts-credit-balance-note-one` /
    `-other`, fr `messages.ftl:3477-3478`, inchangée : elle ne dit que le nombre de comptes écartés) reste, et **une phrase jointe
    après elle**, clé neuve `homepage-charts-pie-base-note` (« Les parts portent sur { $base }. »), dit sur quelle base portent les
    parts (C-e342-17 ; *P4-F5 : la note existante ne le dit pas*). *(P5-5)* Elle est jointe **sous la même condition** que
@@ -143,16 +147,16 @@ chaque part, contraste contre le fond de la carte), et des teintes **dans les je
 
 ## Tâches
 
-- [ ] **T0 — étape 0** : relire les prémisses ; recalculer les contrastes de l'AC-1 par le test avant de les écrire.
-- [ ] **T1 — rouge** : tests AC-1, AC-3 (géométrie d'anneau), AC-4, AC-7, AC-8 ; rouges journalisés
+- [x] **T0 — étape 0** : relire les prémisses ; recalculer les contrastes de l'AC-1 par le test avant de les écrire.
+- [x] **T1 — rouge** : tests AC-1, AC-3 (géométrie d'anneau), AC-4, AC-7, AC-8 ; rouges journalisés
   (`kesh-gate-logs/e342/rouges.log`).
-- [ ] **T2** : jetons dans `app.css` ; `homepage-charts.ts` (styles réduits à une couleur, géométrie d'anneau, sans motif) ;
+- [x] **T2** : jetons dans `app.css` ; `homepage-charts.ts` (styles réduits à une couleur, géométrie d'anneau, sans motif) ;
   `MonthlyBarsCard.svelte`, `ExpensePieCard.svelte` ; suppression de `ChartPatterns.svelte` (par `git rm`, dans le commit).
-- [ ] **T1-bis** : `homepage-charts.spec.ts`, les deux clics de l'AC-8 (`:105-113`, `:215`).
-- [ ] **T3** : i18n (« Total des dépenses », phrase `homepage-charts-pie-base-note`, `homepage-charts-pie-desc-base`, `<desc>` avec l'ordre ; quatre locales, replis égaux) ; manuel
+- [x] **T1-bis** : `homepage-charts.spec.ts`, les deux clics de l'AC-8 (`:105-113`, `:215`).
+- [x] **T3** : i18n (« Total des dépenses », phrase `homepage-charts-pie-base-note`, `homepage-charts-pie-desc-base`, `<desc>` avec l'ordre ; quatre locales, replis égaux) ; manuel
   (`.tex` ; PDF à l'intégration) ; CHANGELOG *Changé*
   (`refs #970`).
-- [ ] **T4** : captures ; contrôle visuel en simulation de daltonisme (DevTools de Chromium, *Rendering → Emulate vision
+- [x] **T4** : captures ; contrôle visuel en simulation de daltonisme (DevTools de Chromium, *Rendering → Emulate vision
   deficiencies*, deutéranopie et protanopie), une capture chacune, et ce qu'on y lit dit au Change Log.
 
 ### Mutations nommées
@@ -208,6 +212,8 @@ Aucun fichier de code commun avec les autres stories de l'Epic 34. `user-manual.
   - LOW : **P2-10-2** (lu : `ExpensePieCard.svelte:74-92`) → `<desc>` à deux clés, M6 ; **P2-10-3** → règle pure de taille de
     police, testée en Vitest ; **P2-10-4** → garde sans les `*.test.ts`, assertion par `querySelector`.
   - CHANGELOG : *Changé* gardé (rendu d'une fonction existante modifié), cohérent avec la 34-3 (C-e342-22).
+    *(Annoté le 2026-11-11, passe ciblée P4, C4-1 : remplacé — la rubrique de l'epic est *Modifié*, décision de l'orchestrateur
+    du 2026-11-11 ; C-e342-22 annotée, C-e3410-15 ; la 34-3 suivra à l'intégration.)*
 - 2026-11-10 : Validation P3 (Sonnet), remédiation (Opus 5.5). Rapport `kesh-gate-logs/e34-validate-p3-e342.md`, pour cette
   fiche 0 C, 0 H, 1 M, 1 LOW, tous retenus :
   - **P3-10-1** MEDIUM, **né de la remédiation P2** (P2-10-2 ne disait rien des deux clés existantes du `<desc>`) : lus
@@ -229,10 +235,247 @@ Aucun fichier de code commun avec les autres stories de l'Epic 34. `user-manual.
   la note des comptes créditeurs est hors de `{#if hasPosts}`) → condition `hasPosts` et totaux différents, absence sans poste
   dite, troisième cas Vitest, M8-bis ; **F3** LOW → titre de C-e342-25 annoté au registre.
 
+- 2026-11-10 : Développement (Opus 5.5), worktree `/home/gcorbaz/devel/kesh-e3410`, base `cdf13639`, commits `ddc1606f`
+  (code), `7a2cebcd` (liseré), puis ce compte rendu. Détail au Dev Agent Record.
+- 2026-11-11 : **Revue de code P1** (Sonnet, trois lentilles B, E, A ; prompt `34-10-graphiques-couleurs-unies-review-prompt-p1.md`,
+  rapports `kesh-gate-logs/e3410-review-p1-{B,E,A}.md`) : **0 C, 0 H, 1 M, 7 L** (B : 1 M, 3 L ; E : 1 M, 2 L ; A : 2 L ; le
+  MEDIUM est commun à B et E, B1-1 = E1-1). Remédiation (Opus 5.5), commits `924bc54c`, `11af9624` :
+  - **B1-1 = E1-1** MEDIUM, retenu (lu : `ExpensePieCard.svelte:144` à `b2eb42ec`, `stroke="var(--color-surface)"
+    stroke-width="1.5"` sur toute part) : une part de moins d'environ 0,3 % disparaissait sous son liseré. Corrigé par un angle
+    dessiné minimal (`MIN_SLICE_ANGLE`, pris sur la plus grande part), pas de liseré sous `SEPARATED_MIN_ANGLE`, et la peinture des
+    parts étroites en dernier (`drawOrder`) — C-e3410-9. Rouge d'abord : visibilité prouvée par la corde de l'arc intérieur (au moins
+    une unité), l'absence de liseré et la place de dernier `path` ; mutations MV1 à MV3, MV6, MV7 tuées.
+  - **E1-2** LOW : rendu inatteignable par l'angle minimal (corde intérieure ≥ 1,15 unité) ; une garde sur les points intérieurs,
+    ajoutée puis retirée, survivait à sa mutation (MV4, équivalente) — test « aucun arc intérieur aux extrémités confondues ».
+  - **E1-3** LOW : plus de part pleine par arrondi à côté d'une part minuscule (même correctif), test réécrit.
+  - **B1-2** LOW : test de `centerFontSize` sans recopie de la formule (C-e3410-11). **B1-4** LOW : `centerLines`, écart
+    proportionnel au libellé, bloc centré (C-e3410-10), mutation MV5 tuée. **B1-3** LOW : CHANGELOG aligné sur le code (base
+    différente du total, « par exemple » un compte créditeur). **A1-1** LOW : M6-bis jouée sur la clé plurielle, tuée. **A1-2**
+    LOW : ligne du `.tex` coupée.
+  - Le manuel et le CHANGELOG disent la part élargie au dessin. Aucun finding reclassé ni laissé ouvert ; aucune issue à ouvrir.
+  - Trend : P1 0 C / 0 H / 1 M / 7 L → P2 (passe complète Opus, prompt `34-10-graphiques-couleurs-unies-review-prompt-p2.md`) à
+    lancer : la remédiation touche la production.
+  - *(Annoté le 2026-11-11, revue P2, A2-4 : la revue P1 et sa remédiation datent du 2026-11-10 — rapports vers 20 h 57, commits
+    `924bc54c` et `11af9624` — ; seul le compte rendu `111c808b` est du 2026-11-11.)*
+- 2026-11-11 : **Revue de code P2** (Opus, trois lentilles B, E, A, passe complète ; prompt
+  `34-10-graphiques-couleurs-unies-review-prompt-p2.md`, rapports `kesh-gate-logs/e3410-review-p2-{B,E,A}.md`) : **0 C, 0 H,
+  2 M distincts** (le premier, B2-1 = E2-1 = A2-1, aux trois lentilles ; le second, B2-2 = E2-2) **et des LOW** (B2-3, MEDIUM chez B,
+  LOW chez A et E ; B2-4 à B2-7 ; E2-3 à E2-5 ; A2-2 à A2-5). Les deux MEDIUM sont nés de la remédiation P1. Remédiation (Opus 5.5) :
+  - **B2-1 = E2-1 = A2-1** MEDIUM, retenu (lu : `homepage-charts.ts:362-369` et `:472` à `111c808b` ; capture
+    `anneau-apres-p1-minuscule.png`) : deux parts étroites voisines n'avaient aucun liseré entre elles. Corrigé par des **traits
+    radiaux peints au-dessus des parts, un par limite** (`pieSeparators`), parts sans contour, `MIN_SLICE_ANGLE` porté à 0,045 rad
+    pour qu'une part reste visible entre ses deux traits — C-e3410-12 ; `separated`, `SEPARATED_MIN_ANGLE` et `drawOrder` retirés.
+    **B2-4** (dent de 0,75 unité au bord) disparaît avec eux.
+  - **B2-2 = E2-2** MEDIUM, retenu : test à cinq parts minuscules (somme des écarts cédée par la plus grande, angles contigus,
+    dernière à 2π) et test de frontière à 0,99 × et 1,01 × `MIN_SLICE_ANGLE` ; la mutation `deficit +=` → `=` est jouée.
+  - **B2-3 / E2-4 / A2-2** : C-e3410-9 annotée (garde `full` retirée par `11af9624`, et geste (2) remplacé).
+  - LOW : **E2-3 / A2-3** manuel « moins de 0,7 % du tour environ », au nouveau seuil ; **E2-5** `centerSizes`, le libellé jamais
+    plus grand que le montant (C-e3410-13) ; **B2-5** commentaire de `SEPARATED_MIN_ANGLE` retiré avec lui ; **B2-6** ligne JSDoc
+    repliée ; **B2-7** le cas non discriminant de `drawOrder` est parti avec lui, et le test du centrage dit qu'il suit le modèle de
+    `centerLines` ; **A2-4** C-e3410-1 à -13 au Dev Agent Record, date de la P1 annotée ; **A2-5** MV1 rejouée sur l'arbre commité
+    avec les mutations de la P2.
+  - Trend : P1 0 C / 0 H / 1 M / 7 L → P2 0 C / 0 H / 2 M / LOW → P3 (passe complète Sonnet, prompt
+    `34-10-graphiques-couleurs-unies-review-prompt-p3.md`) à lancer : la remédiation touche la production.
+- 2026-11-11 : **Revue de code P3** (Sonnet, trois lentilles B, E, A, passe complète ; rapports
+  `kesh-gate-logs/e3410-review-p3-{B,E,A}.md`) : **0 C, 0 H, 0 M, 7 L** (B : 3, E : 2, A : 2). Plusieurs LOW touchant la production,
+  une passe ciblée suit. Remédiation (Opus 5.5), commit `ce42fd4a` :
+  - **B3-1** : les séparateurs ont pour clé leur indice, unique par construction.
+  - **B3-2** : `96 * 0.6` vaut `57.599999999999994` (établi par `node`) ; `PIE_GEOMETRY.innerR` s'écrit 57.6, testé sur le `d` réel.
+  - **B3-3** : rubrique `### Modifié` au CHANGELOG, comme la 34-5 (C-e3410-15) ; les mentions *Changé* plus haut dans la fiche
+    sont celles de leur date.
+  - **E3-1** : `pieSlices` ne dessine qu'une part de montant strictement positif, rang et couleur fixés avant le filtre
+    (C-e3410-14) ; test, mutations MV15 et MV16 tuées.
+  - **E3-2** : accepté, sans issue (C-e3410-16) : la page ne descend pas sous 1280 px, la carte garde ses 240 px.
+  - **A3-1**, **A3-2** : annotations datées de C-e3410-4 et de l'AC-3.
+  - Rouges (`rouges.log`, section « Remédiation P3 ») : 2 tests, écrits sur `65a4af7f`. Gates au dernier commit de code
+    `ce42fd4a`, chacun sous le verrou : gate ciblé `homepage-charts.test.ts` **63 passés** ; `npm run check` 0 erreur (29
+    avertissements, aucun dans `homepage/`) ; `lint-i18n-ownership` PASS ; `npm run test:unit` **2909 passés, 222 fichiers** ;
+    `npm run build` vert (`*-p3.log`). **E2E non rejoué** : le rendu ne change pour aucune donnée que le serveur peut rendre — la
+    clé d'`each` ne touche que la réconciliation du DOM, 57.6 et 57.599999999999994 donnent les mêmes points arrondis à trois
+    décimales, et le filtre ne retire que des montants nuls ou négatifs, que le serveur n'envoie pas. Le dernier E2E complet est
+    celui de `e982f7e8` (`e2e-r4.log` : 385 passés, les sept KF-029). *(Annoté le 2026-11-11, passe ciblée P4, C4-2 :
+    **dispense remplacée par l'E2E r5** — la règle D7 du `CLAUDE.md` est sans dérogation ; l'E2E complet a été joué au dernier
+    commit de code, voir l'entrée de la P4.)*
+  - Trend : P1 1 M / 7 L → P2 2 M / LOW → P3 0 M / 7 L → **P4 ciblée** (une lentille, sur `ce42fd4a` seul, prompt
+    `34-10-graphiques-couleurs-unies-review-prompt-p4-ciblee.md`, rapport `kesh-gate-logs/e3410-review-p4-ciblee.md`) à lancer.
+- 2026-11-11 : **Passe ciblée P4** (une lentille, sur `ce42fd4a` ; rapport `kesh-gate-logs/e3410-review-p4-ciblee.md`) :
+  **0 C, 0 H, 2 M, 1 L** ; le code de la remédiation P3 est jugé juste. Remédiation (Opus 5.5), commit `625eb797` :
+  - **C4-2** MEDIUM, décision de l'orchestrateur (règle D7, sans dérogation) : la dispense de l'E2E de la P3 est annotée,
+    remplacée par l'**E2E r5**, joué au dernier commit de code.
+  - **C4-1** MEDIUM, décision de l'orchestrateur : la rubrique de l'epic est *Modifié*. C-e342-22 est annotée (remplacée, la 34-3
+    suivra à l'intégration), C-e3410-15 reformulée, la ligne du CHANGELOG de la validation P2 annotée. La fiche 34-3 n'est pas
+    touchée.
+  - **C4-3** LOW : `hasPosts` exige au moins une part dessinable ; sans part, l'état vide existant s'affiche, jamais un anneau
+    vide. Test, mutation MV17 tuée.
+  - Rouge (`rouges.log`, section « Remédiation P4 ciblée ») : 1 test, écrit sur `01e6028d`. Gates au dernier commit de code
+    `625eb797`, chacun sous le verrou : `npm run check` 0 erreur (29 avertissements, aucun dans `homepage/`),
+    `lint-i18n-ownership` PASS, `npm run test:unit` **2910 passés, 222 fichiers**, `npm run build` vert (`*-p4.log`).
+    **E2E complet r5** (`e2e-r5.log`, `kesh_e2e_e3410` recréée vide, runner avec `KESH_INBOX_DIR` et `KESH_DOCUMENTS_DIR`) :
+    **385 passés, 7 échecs, 18 ignorés** — exactement les sept KF-029 (#97) : `mode-expert.spec.ts:26`, `:41`,
+    `onboarding-path-b.spec.ts:65`, `:92`, `onboarding.spec.ts:57`, `:77`, `:150` ; les onze tests de
+    `homepage-charts.spec.ts` passent. Aucun fichier Rust touché : pas de gate backend.
+  - Trend : P3 0 M / 7 L → P4 ciblée 2 M / 1 L → **P5 ciblée** (Sonnet, une lentille, sur `625eb797`, prompt
+    `34-10-graphiques-couleurs-unies-review-prompt-p5-ciblee.md`, rapport `kesh-gate-logs/e3410-review-p5-ciblee.md`) à lancer.
+- 2026-11-11 : **Passe ciblée P5** (Sonnet, une lentille, sur `625eb797` ; rapport `kesh-gate-logs/e3410-review-p5-ciblee.md`) :
+  **0 C, 0 H, 0 M, 2 L**. Remédiation sans aucune ligne de production (commit `941d782a` : un test ; puis registre et fiche) :
+  - **C5-1** : le test « revue P4, C4-3 » porte un total (150) différent de la base (100) ; mutation **MV18** (`hasPosts` retiré
+    de `baseDiffers`, la garde des postes gardée) tuée par ce seul test, **M8-bis** (`hasPosts &&` retiré) tuée par lui et par le
+    cas sans poste ; fichier restauré (`git checkout --`, `touch`). Gate ciblé `HomepageCharts.test.ts` et `npm run check` sous le
+    verrou (`front-cible-p5.log`, `front-check-p5.log`).
+  - **C5-2** : C-e342-22 annotée — aucun `### Changé` en français, trois `### Changed` anglais aux v0.1.7, 0.1.6 et 0.1.4.
+  - **Boucle de revue close** : la dernière passe ne rend rien au-dessus de LOW, et sa remédiation ne touche aucune ligne de
+    production. Le dernier commit de code reste `625eb797`, où les gates complets et l'E2E r5 ont tourné.
+- **Synthèse de la boucle de revue de code** (tendance, modèles) : P1 complète Sonnet 0 C / 0 H / 1 M / 7 L → P2 complète Opus
+  0 C / 0 H / 2 M distincts (6 MEDIUM bruts : B 3, E 2, A 1 ; B2-3, MEDIUM chez B, LOW chez A et E) / 11 LOW bruts → P3 complète
+  Sonnet 0 C / 0 H / 0 M / 7 L → P4 ciblée (modèle non nommé dans son rapport) 0 C / 0 H / 2 M / 1 L (MEDIUM de processus : E2E au
+  dernier commit de code, rubrique du CHANGELOG) → P5 ciblée Sonnet 0 C / 0 H / 0 M / 2 L. Remédiations : Opus 5.5. Décisions de
+  reclassement : aucune ; E3-2 accepté sans issue (C-e3410-16) ; rubrique *Modifié* et E2E au dernier commit de code arbitrés par
+  l'orchestrateur. Les MEDIUM de la P2 sont nés de la remédiation P1, ceux de la P4 de la remédiation P3. **Status : done.**
+
 ## Dev Agent Record
 
 ### Agent Model Used
 
+Claude Opus 5.5, en autonomie. Registre des choix neufs : `e34-choix-autonomes-e3410.md`, C-e3410-1 à C-e3410-13.
+
 ### Completion Notes List
 
+**Étape 0.**
+- **P7-F1** (LOW) : la phrase de l'AC-4 qui précède l'ajout P6 est qualifiée (« en valeur… et qu'il y a des postes »). Ligne
+  lue : `ExpensePieCard.svelte:62` (à `cdf13639`) `{#if hasPosts}`, et `:173-181`, la note des comptes créditeurs hors de ce bloc.
+- **P7-F2** (LOW) : comparaison en valeur par `differentAmounts(a, b)` (`!new Big(a).eq(new Big(b))`, `homepage-charts.ts`),
+  fixture « `100.00` / `100` » (`HomepageCharts.test.ts`, « un compte, totaux égaux en valeur ») et test pur (`'30'` / `'30.00'`).
+  Lu : `homepage-summary.api.ts:45,48`, les deux champs sont des `string`.
+- **T0, contrastes** recalculés (formule WCAG de `contrast.ts`) avant d'être écrits au commentaire d'`app.css` : sur blanc, vert
+  3,30, rouge 6,47, bleu 8,72, violet 5,70, cyan 3,68, gris 4,76 ; vert/rouge 1,96 — identiques à la fiche. Le test AC-7 les
+  borne (≥ 3, ≥ 1,5).
+- Journaux et captures sont sous `kesh-gate-logs/e3410/` (clé du prompt), non `e342/` comme l'écrit la fiche.
+
+**Rouges** (`/home/gcorbaz/devel/kesh-gate-logs/e3410/rouges.log`) : tests écrits sur `cdf13639` avant le code ;
+`HomepageCharts.test.ts` : 8 rouges (AC-4, AC-5, AC-8) ; `homepage-charts.test.ts` rouge au chargement du module
+(`PIE_GEOMETRY` absent : `Cannot read properties of undefined (reading 'innerR')`) — le rouge test par test de ce fichier n'a
+donc pas été relevé avant le code ; ce sont les mutations qui montrent que ses tests mordent.
+
+**Fait.**
+- `app.css` : `--color-chart-revenue`, `--color-chart-expense`, `--color-chart-1` à `-5`, en hexadécimal.
+- `homepage-charts.ts` : `ChartStyle = { color, token }`, palette de l'AC-1 ; `PIE_GEOMETRY` (trou à 60 %), `fullRing`,
+  `centerFontSize` (C-e3410-5), `differentAmounts` ; `pieSlices` rend des secteurs d'anneau ; `ChartPattern`, `patternId`,
+  `chartFill` retirés.
+- `MonthlyBarsCard.svelte` : barres et légende en couleurs unies. `ExpensePieCard.svelte` : anneau, liseré
+  `var(--color-surface)` de 1,5 (C-e3410-4, -8), part pleine en `circle` au rayon médian, centre `homepage-chart-pie-total`
+  (libellé et montant, `--color-text`), `<desc>` au total des dépenses avec l'ordre des parts (C-e3410-2, -3),
+  `homepage-charts-pie-desc-base` et `homepage-charts-pie-base-note` sous `hasPosts && differentAmounts(…)`.
+- `ChartPatterns.svelte` supprimé par `git rm` (prescrit par la fiche, T2).
+- i18n : trois clés neuves (`homepage-charts-pie-total-label`, `-pie-desc-base`, `-pie-base-note`), deux récrites, quatre
+  locales, replis égaux. `git grep -n -F` des quatre formes « { $base } » de l'AC-4 sur `frontend crates` : vide ;
+  `git grep -n 'ChartPatterns\|patternId\|chartFill\|<pattern' -- frontend/src ':!*.test.ts'` : vide.
+- Compteurs des gardes i18n recomptés à la source : `i18nMsg(` dans `ExpensePieCard.svelte` 15 (`cdf13639`) → 18, d'où
+  `sitesTotal` 2922 → 2925 ; candidate neuve `totalLabel`, d'où 85 → 86 et `conforme` 71 → 72.
+- E2E `homepage-charts.spec.ts` : aide `clickRing` (C-e3410-7), tests 3 et 6b.
+- Manuel utilisateur `.tex`, § *Revenus, dépenses et principaux postes* (barres, anneau, couleurs, ordre, total du centre égal
+  aux barres, base des parts). PDF non régénéré (C-e342-20, à l'intégration).
+- CHANGELOG : `## [0.17.6] — Non publié`, *Changé*.
+
+**Tests**, de `cdf13639` à `HEAD` : `homepage-charts.test.ts` 33 → 41 `it(` ; `HomepageCharts.test.ts` 18 → 27.
+
+**Mutations** (`/home/gcorbaz/devel/kesh-gate-logs/e3410/mut/*.log`) : 14 jouées, 14 tuées, aucune équivalente — M1, M2,
+M2-bis, M3 (`PIE_GEOMETRY.innerR` nul), M3-b (rayon intérieur nul dans `pieSlices`), M4, M5, M6 (repli Svelte), M6-ftl
+(catalogue fr, tuée par les gardes i18n de `src/lib/shared` : variables du repli et du catalogue, jeu de variables des quatre
+locales), M7, M8-inverse, M8-sans-condition, M8-bis, M9-chaines (P7-F2). Restauration par `git checkout --` puis `touch`.
+
+**Gates, au dernier commit de code `7a2cebcd`** (journaux `/home/gcorbaz/devel/kesh-gate-logs/e3410/`) :
+- `npm run check` : 0 erreur, 29 avertissements (aucun dans `homepage/`) ; `lint-i18n-ownership` : PASS ;
+  `npm run test:unit` : **2898 passés, 222 fichiers** ; `npm run build` : vert.
+- Premier Vitest complet, sur `ddc1606f` : 1 rouge, `jetons-non-definis.test.ts` (l'attribut SVG `stroke-linejoin` pris pour une
+  classe), corrigé par `7a2cebcd` (C-e3410-8).
+- Rust : aucun fichier `.rs` touché ; les catalogues `.ftl` le sont, d'où `cargo test -p kesh-i18n` (41 passés) et
+  `cargo test -p kesh-api --test textes_coherents` (23 passés), et `cargo build -p kesh-api` pour l'E2E. **Ni `test-fast.sh`, ni
+  `cargo build --workspace`, ni `gate-ci.sh`** (consigne de la story d'écran, disque partagé).
+- **E2E complet** (`e2e-r1.log`, `kesh_e2e_e3410` recréée vide, port 3350, runner avec `KESH_INBOX_DIR` et
+  `KESH_DOCUMENTS_DIR`) : **384 passés, 8 échecs, 18 ignorés**. Les sept KF-029 (#97) de `docs/testing.md` :
+  `mode-expert.spec.ts:26`, `:41`, `onboarding-path-b.spec.ts:65`, `:92`, `onboarding.spec.ts:57`, `:77`, `:150`. Le huitième,
+  `fiscal-year-closing-journey.spec.ts:169`, est un délai dépassé dans le `beforeEach` (`seedTestState`, 30 s) ; **rejoué seul**
+  avec `homepage-charts.spec.ts` (`e2e-r2.log`) : **13 passés, 0 échec** — le huitième, variable, de `docs/testing.md`.
+  Les tests de `homepage-charts.spec.ts` passent dans les deux runs.
+
+**Captures** (`/home/gcorbaz/devel/kesh-gate-logs/e3410/captures/`, thème clair, base jetable `kesh_e3410`, données
+synthétiques : revenus sur onze mois, sept comptes de charges, mars aux dépenses négatives, un compte au solde créditeur) :
+`barres-`, `anneau-`, `accueil-{avant,apres}.png` ; `graphiques-deuteranopia-apres.png`, `graphiques-protanopia-apres.png`
+(émulation CDP `Emulation.setEmulatedVisionDeficiency`, celle du panneau *Rendering* des DevTools). **Ce qu'on y lit**
+(C-e342-18) : en deutéranopie, revenus et dépenses deviennent deux olives, la plus sombre pour les dépenses — séparées par la
+clarté et la position, non par la teinte ; à l'anneau, rouge et vert (rangs 1 et 2) sont deux olives de clarté différente, bleu
+et violet deux bleus, cyan un bleu clair ; le liseré blanc marque chaque limite, et le tableau donne le rang. Le centre lit
+« Total des dépenses 25’125.00 », et la carte « Les parts portent sur 25’200.00. » après la note du compte créditeur.
+
+**Écarts.**
+- Consigne Edit : code, catalogues, manuel, CHANGELOG et fiche modifiés par l'outil Edit seulement. Le script de mutations
+  (Python, hors dépôt) écrit puis restaure les fichiers mutés, comme le permet la consigne ; le script E2E de `kesh-gate-logs`
+  a été retouché par une ligne Python (hors dépôt, non du code).
+- `git rm` de `ChartPatterns.svelte` : prescrit par la fiche ; retrait suivi par git, réversible.
+
+**Remédiation de la revue P1 (2026-11-11).**
+- Rouges (`rouges.log`, section « Remédiation P1 ») : 7 tests purs et 1 test de rendu, écrits sur `b2eb42ec` avant le code.
+- Tests, de `b2eb42ec` à `HEAD` : `homepage-charts.test.ts` 41 → 45 `it(` ; `HomepageCharts.test.ts` 27 → 28.
+- Mutations (`mut/M6-bis.log`, `mut/MV*.log`) : 8 jouées, 7 tuées ; **MV4** (part pleine sur l'arc extérieur seul) a survécu
+  contre le code qui portait la garde intérieure : mutation équivalente, la garde a été retirée (`11af9624`). MV1 rejouée ensuite :
+  tuée, dont par le test E1-2.
+- Incident : MV1 a été rejouée alors que `homepage-charts.ts` portait des retouches non commitées ; le `git checkout --` de
+  restauration les a effacées. Elles ont été refaites à l'identique et commitées (`11af9624`) ; aucun effet sur le code livré, mais
+  une mutation se joue désormais sur un arbre propre.
+- Gates au dernier commit de code `11af9624` : `npm run check` 0 erreur (29 avertissements, aucun dans `homepage/`),
+  `lint-i18n-ownership` PASS, `npm run test:unit` **2903 passés, 222 fichiers**, `npm run build` vert (`*-p1.log`).
+  **E2E complet** (`e2e-r3.log`, base recréée vide, runner avec `KESH_INBOX_DIR` et `KESH_DOCUMENTS_DIR`) : **385 passés,
+  7 échecs, 18 ignorés** — exactement les sept KF-029 (#97) : `mode-expert.spec.ts:26`, `:41`, `onboarding-path-b.spec.ts:65`,
+  `:92`, `onboarding.spec.ts:57`, `:77`, `:150` ; les onze tests de `homepage-charts.spec.ts` passent. Aucun fichier Rust touché
+  par la remédiation : pas de gate backend.
+- Captures de la part minuscule (scénario `minuscule` : un cinquième poste et « Autres » à 0,1 %) :
+  `anneau-avant-p1-minuscule.png` (build de `b2eb42ec`) — les deux parts ne se voient pas, le violet touche le rouge ;
+  `anneau-apres-p1-minuscule.png` — deux traits fins, cyan et gris, à midi, entre le violet et le rouge.
+  *(Annoté le 2026-11-11, revue P2, A2-1 : faux à sa date ; à cette résolution, la capture montre un seul filet bleu-gris — les
+  deux parts étroites voisines n'avaient pas de liseré entre elles.)*
+
+**Remédiation de la revue P2 (2026-11-11).** *(Vitest complet, build, E2E, mutations et captures différés par la pause des
+commandes lourdes ; complété ci-dessous à la levée de la pause.)*
+- Rouges (`rouges.log`, section « Remédiation P2 ») : 6 tests purs et 1 test de rendu, écrits sur `111c808b` avant le code
+  (fichiers Vitest isolés, sous `mem-guard`). Le test de frontière de `MIN_SLICE_ANGLE` passait déjà : il fixe un comportement
+  existant.
+- Tests, de `111c808b` à `HEAD` : `homepage-charts.test.ts` 45 → 49 `it(` ; `HomepageCharts.test.ts` 28 → 28 (le test de rendu
+  de la P1 récrit pour les séparateurs).
+- Mutations (`mut/MV1-angle-min-nul.log`, `MV8` à `MV14`), jouées à la levée de la pause sur l'arbre commité `031e1153` (A2-5) :
+  **8 jouées, 8 tuées** — MV1 (angle minimal nul), MV8 (`deficit +=` → `=`), MV9 (angle minimal ramené à 0,02, sous les deux
+  demi-traits), MV10 (limite de midi oubliée), MV11 (aucun séparateur), MV12 (séparateurs peints sous les parts), MV13 (libellé non
+  borné par le montant), MV14 (frontière de l'angle minimal élargie de 2 %).
+- Gates au dernier commit de code `e982f7e8` (journaux `*-p2.log`), joués à la levée de la pause : `npm run check` 0 erreur
+  (29 avertissements, aucun dans `homepage/`), `lint-i18n-ownership` PASS, `npm run test:unit` **2907 passés, 222 fichiers**,
+  `npm run build` vert. **E2E complet** (`e2e-r4.log`, base recréée vide, runner avec `KESH_INBOX_DIR` et `KESH_DOCUMENTS_DIR`) :
+  **385 passés, 7 échecs, 18 ignorés** — exactement les sept KF-029 (#97) : `mode-expert.spec.ts:26`, `:41`,
+  `onboarding-path-b.spec.ts:65`, `:92`, `onboarding.spec.ts:57`, `:77`, `:150` ; les onze tests de `homepage-charts.spec.ts`
+  passent. Aucun fichier Rust touché : pas de gate backend.
+- Captures (scénario `minuscule`), dont deux agrandies à quatre fois l'échelle sur le haut de l'anneau :
+  `anneau-avant-p2-minuscule-agrandi.png` (build de `11af9624`) — à midi, cyan et gris se touchent sans trait blanc entre eux ;
+  `anneau-apres-p2-minuscule-agrandi.png` — un trait blanc à chacune des trois limites (violet/cyan, cyan/gris, gris/rouge), les
+  deux parts étroites distinctes ; et les captures pleines `anneau-`, `barres-`, `accueil-{avant,apres}-p2-minuscule.png`.
+
 ### File List
+
+- `frontend/src/app.css`
+- `frontend/src/lib/features/homepage/homepage-charts.ts`
+- `frontend/src/lib/features/homepage/ExpensePieCard.svelte`
+- `frontend/src/lib/features/homepage/MonthlyBarsCard.svelte`
+- `frontend/src/lib/features/homepage/ChartPatterns.svelte` (supprimé)
+- `frontend/src/lib/features/homepage/homepage-charts.test.ts`
+- `frontend/src/lib/features/homepage/HomepageCharts.test.ts`
+- `frontend/src/lib/shared/i18n-keys.test.ts`
+- `frontend/src/lib/shared/i18n-libelle-en-dur.test.ts`
+- `frontend/tests/e2e/homepage-charts.spec.ts`
+- `crates/kesh-i18n/locales/{fr-CH,de-CH,it-CH,en-CH}/messages.ftl`
+- `docs/manual/fr/user-manual.tex`
+- `CHANGELOG.md`
+- `_bmad-output/implementation-artifacts/34-10-graphiques-couleurs-unies.md`
+- `_bmad-output/implementation-artifacts/34-10-graphiques-couleurs-unies-review-prompt-p1.md`
+- `_bmad-output/implementation-artifacts/34-10-graphiques-couleurs-unies-review-prompt-p2.md`
+- `_bmad-output/implementation-artifacts/34-10-graphiques-couleurs-unies-review-prompt-p3.md`
+- `_bmad-output/implementation-artifacts/34-10-graphiques-couleurs-unies-review-prompt-p4-ciblee.md`
+- `_bmad-output/implementation-artifacts/34-10-graphiques-couleurs-unies-review-prompt-p5-ciblee.md`
+- `_bmad-output/implementation-artifacts/e34-choix-autonomes-e3410.md`
+- `_bmad-output/implementation-artifacts/sprint-status.yaml`

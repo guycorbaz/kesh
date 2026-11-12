@@ -12,6 +12,7 @@ vi.mock('$lib/shared/utils/i18n.svelte', () => ({
 }));
 
 import HomepageCharts from './HomepageCharts.svelte';
+import { BAR_EXPENSE, BAR_REVENUE, OTHERS_STYLE, PIE_PALETTE } from './homepage-charts';
 import type { HomepageSummary } from './homepage-summary.api';
 
 function months(amounts: Array<[string, string]>) {
@@ -297,5 +298,209 @@ describe('AC2 — un exercice long', () => {
 		const card = screen.getByTestId('homepage-card-monthly-bars');
 		expect(card.className).not.toContain('lg:col-span-2');
 		expect(card.querySelector('svg[role="img"]')?.getAttribute('viewBox')).toMatch(/^0 0 720 /);
+	});
+});
+
+describe('34-10 (#970) — couleurs unies et anneau', () => {
+	/** Un poste à 30, un compte au solde créditeur à −80 : total −50, base 30 (AC-4). */
+	const creditCase = (): HomepageSummary =>
+		summary({
+			months: months([['0', '-50'], ...zero12.slice(1)]),
+			totalExpenses: '-50',
+			expensePosts: [post(6000, 'Loyer', '30', '100.0')],
+			expensePostsBase: '30',
+			creditBalanceExpenseAccounts: 1,
+		});
+
+	const pieCard = () => screen.getByTestId('homepage-card-expense-pie');
+	const pieDesc = () => pieCard().querySelector('desc')?.textContent ?? '';
+
+	it('AC-8 : aucun motif, barres et légende aux couleurs de leurs jetons', () => {
+		render(HomepageCharts, { state: 'ready', summary: populated() });
+		expect(document.querySelector('pattern')).toBeNull();
+		expect(document.querySelector('[data-bar="revenue"]')?.getAttribute('fill')).toBe(BAR_REVENUE.color);
+		expect(document.querySelector('[data-bar="expense"]')?.getAttribute('fill')).toBe(BAR_EXPENSE.color);
+		const legend = Array.from(
+			screen.getByTestId('homepage-card-monthly-bars').querySelectorAll('ul svg rect'),
+		).map((r) => r.getAttribute('fill'));
+		expect(legend).toEqual([BAR_REVENUE.color, BAR_EXPENSE.color]);
+	});
+
+	it('AC-5 : la part et la pastille de son rang portent la même couleur unie', () => {
+		render(HomepageCharts, {
+			state: 'ready',
+			summary: summary({
+				expensePosts: [post(6000, 'Loyer', '50', '50.0'), post(6100, 'Assurances', '30', '30.0')],
+				otherExpenses: { amount: '20', share: '20.0', accountCount: 3 },
+				expensePostsBase: '100',
+				totalExpenses: '100',
+			}),
+		});
+		const marks = screen.getAllByTestId('homepage-chart-post-mark');
+		expect(marks[0].querySelector('path')?.getAttribute('fill')).toBe(PIE_PALETTE[0].color);
+		expect(marks[1].querySelector('path')?.getAttribute('fill')).toBe(PIE_PALETTE[1].color);
+		expect(
+			screen.getByTestId('homepage-chart-others-mark').querySelector('path')?.getAttribute('fill'),
+		).toBe(OTHERS_STYLE.color);
+		const swatches = Array.from(pieCard().querySelectorAll('tbody svg rect')).map((r) => r.getAttribute('fill'));
+		expect(swatches).toEqual([PIE_PALETTE[0].color, PIE_PALETTE[1].color, OTHERS_STYLE.color]);
+		// Le rang reste écrit : il relie la part à son compte sans la couleur.
+		expect(pieCard().querySelector('tbody tr td')?.textContent?.trim()).toBe('1');
+		// Le centre n'est ni une part ni un `path` : trois parts, trois `path`.
+		expect(pieCard().querySelectorAll('svg[role="img"] path')).toHaveLength(3);
+		expect(
+			screen.getByTestId('homepage-chart-pie-total').closest('[data-testid$="-mark"]'),
+		).toBeNull();
+	});
+
+	it('AC-4 : le centre porte le total des dépenses de l’exercice', () => {
+		render(HomepageCharts, { state: 'ready', summary: populated() });
+		const total = screen.getByTestId('homepage-chart-pie-total');
+		expect(total.textContent).toContain('Total des dépenses');
+		expect(total.textContent).toContain('300.00');
+	});
+
+	it('AC-4 : un poste plein reste un cercle, et le centre s’y écrit', () => {
+		render(HomepageCharts, {
+			state: 'ready',
+			summary: summary({
+				expensePosts: [post(6000, 'Loyer', '100', '100.0')],
+				expensePostsBase: '100',
+				totalExpenses: '100',
+			}),
+		});
+		const circle = document.querySelector('[data-testid="homepage-chart-post-mark"] circle');
+		expect(circle?.getAttribute('fill')).toBe('none');
+		expect(circle?.getAttribute('stroke')).toBe(PIE_PALETTE[0].color);
+		expect(screen.getByTestId('homepage-chart-pie-total').textContent).toContain('100.00');
+	});
+
+	it('AC-4 : un compte, totaux différents — centre −50, phrase de la base après la note', () => {
+		render(HomepageCharts, { state: 'ready', summary: creditCase() });
+		expect(screen.getByTestId('homepage-chart-pie-total').textContent).toContain('-50.00');
+		const note = screen.getByTestId('homepage-charts-credit-note');
+		const base = screen.getByTestId('homepage-charts-pie-base-note');
+		expect(base.textContent).toBe('Les parts portent sur 30.00.');
+		expect(note.compareDocumentPosition(base) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+		expect(pieDesc()).toContain('un seul compte de charges');
+		expect(pieDesc()).toContain('total des dépenses -50.00');
+		expect(pieDesc()).toContain('Parts calculées sur 30.00.');
+		expect(pieDesc()).not.toContain('pour un total de');
+	});
+
+	it('AC-4 : un compte, totaux égaux en valeur (« 100.00 » et « 100 ») — ni phrase ni base au desc', () => {
+		render(HomepageCharts, {
+			state: 'ready',
+			summary: summary({
+				expensePosts: [post(6000, 'Loyer', '100', '100.0')],
+				expensePostsBase: '100',
+				totalExpenses: '100.00',
+			}),
+		});
+		expect(screen.queryByTestId('homepage-charts-pie-base-note')).toBeNull();
+		expect(pieDesc()).toContain('total des dépenses 100.00');
+		expect(pieDesc()).not.toContain('Parts calculées');
+	});
+
+	it('AC-4 : plusieurs comptes, totaux différents — total au desc, base jointe', () => {
+		render(HomepageCharts, {
+			state: 'ready',
+			summary: { ...populated(), totalExpenses: '250', creditBalanceExpenseAccounts: 1 },
+		});
+		expect(screen.getByTestId('homepage-chart-pie-total').textContent).toContain('250.00');
+		expect(screen.getByTestId('homepage-charts-pie-base-note').textContent).toBe(
+			'Les parts portent sur 300.00.',
+		);
+		expect(pieDesc()).toContain('2 comptes de charges');
+		expect(pieDesc()).toContain('total des dépenses 250.00');
+		expect(pieDesc()).toContain('Parts calculées sur 300.00.');
+		expect(pieDesc()).not.toContain('pour un total de');
+	});
+
+	it('AC-4, AC-6 : plusieurs comptes, totaux égaux — pas de base, l’ordre des parts au desc', () => {
+		render(HomepageCharts, { state: 'ready', summary: populated() });
+		expect(screen.queryByTestId('homepage-charts-pie-base-note')).toBeNull();
+		expect(pieDesc()).toContain('total des dépenses 300.00');
+		expect(pieDesc()).not.toContain('Parts calculées');
+		expect(pieDesc()).toContain('dans le sens horaire à partir de midi');
+	});
+
+	it('AC-4 : sans poste et totaux différents — ni anneau, ni centre, ni phrase de la base', () => {
+		render(HomepageCharts, {
+			state: 'ready',
+			summary: summary({
+				months: months([['0', '-50'], ...zero12.slice(1)]),
+				totalExpenses: '-50',
+				creditBalanceExpenseAccounts: 1,
+			}),
+		});
+		expect(screen.getByTestId('homepage-charts-no-posts')).toBeTruthy();
+		expect(screen.getByTestId('homepage-charts-credit-note')).toBeTruthy();
+		expect(screen.queryByTestId('homepage-chart-pie-total')).toBeNull();
+		expect(screen.queryByTestId('homepage-charts-pie-base-note')).toBeNull();
+	});
+
+	it('revue P4, C4-3 : des postes, mais aucune part dessinable — l’état vide, jamais un anneau vide', () => {
+		render(HomepageCharts, {
+			state: 'ready',
+			summary: summary({
+				expensePosts: [post(6000, 'Loyer', '0', '0.0')],
+				expensePostsBase: '100',
+				// Total différent de la base : l'absence de la phrase de la base prouve alors que
+				// `baseDiffers` lit `hasPosts` (revue P5, C5-1).
+				totalExpenses: '150',
+			}),
+		});
+		expect(screen.getByTestId('homepage-charts-no-posts')).toBeTruthy();
+		expect(pieCard().querySelector('svg[role="img"]')).toBeNull();
+		expect(screen.queryByTestId('homepage-chart-pie-total')).toBeNull();
+		expect(screen.queryByTestId('homepage-charts-pie-base-note')).toBeNull();
+	});
+
+	it('revues P1 B1-1, P2 B2-1 : deux parts étroites voisines, visibles, séparées par un trait radial', () => {
+		render(HomepageCharts, {
+			state: 'ready',
+			summary: summary({
+				// Deux parts minuscules VOISINES (rang 2 et « Autres »), le cas de la capture P1.
+				expensePosts: [post(6000, 'Loyer', '998', '99.8'), post(6100, 'Timbres', '1', '0.1')],
+				otherExpenses: { amount: '1', share: '0.1', accountCount: 2 },
+				expensePostsBase: '1000',
+				totalExpenses: '1000',
+			}),
+		});
+		const svg = pieCard().querySelector('svg[role="img"]')!;
+		const paths = Array.from(svg.querySelectorAll('path'));
+		// Les parts n'ont aucun contour : rien ne mord sur une part étroite par son propre trait.
+		for (const p of paths) expect(p.getAttribute('stroke')).toBeNull();
+		// Les séparateurs, un par limite, sont peints APRÈS toutes les parts.
+		const group = screen.getByTestId('homepage-chart-pie-separators');
+		const lines = Array.from(group.querySelectorAll('line'));
+		expect(lines).toHaveLength(3);
+		for (const p of paths) {
+			expect(p.compareDocumentPosition(group) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+		}
+		for (const l of lines) {
+			expect(l.getAttribute('stroke')).toBe('var(--color-surface)');
+			expect(l.getAttribute('stroke-width')).toBe('1.5');
+		}
+		// Un séparateur tombe sur la limite entre les deux parts étroites : le point intérieur de
+		// fin de la part « Timbres » est celui de début de « Autres », et un trait y part.
+		const tiny = screen.getAllByTestId('homepage-chart-post-mark')[1].querySelector('path')!;
+		const inner = /L(-?[\d.]+) (-?[\d.]+) A[\d.]+ [\d.]+ 0 [01] 0 (-?[\d.]+) (-?[\d.]+) Z$/.exec(
+			tiny.getAttribute('d') ?? '',
+		);
+		expect(inner).not.toBeNull();
+		const [ex, ey, sx, sy] = inner!.slice(1).map(Number);
+		const at = (x: number, y: number) =>
+			lines.some(
+				(l) => Math.hypot(Number(l.getAttribute('x1')) - x, Number(l.getAttribute('y1')) - y) < 0.01,
+			);
+		expect(at(ex, ey), 'limite Timbres / Autres marquée').toBe(true);
+		expect(at(sx, sy), 'limite Loyer / Timbres marquée').toBe(true);
+		// Visible : la largeur intérieure moins les deux demi-séparateurs fait au moins une unité.
+		expect(Math.hypot(ex - sx, ey - sy) - 1.5).toBeGreaterThanOrEqual(1);
+		// Les séparateurs ne captent pas le clic : la part reste un lien vers son grand livre.
+		expect(group.getAttribute('pointer-events')).toBe('none');
+		expect(tiny.closest('[data-href]')?.getAttribute('data-href')).toContain('accountId=6100');
 	});
 });
