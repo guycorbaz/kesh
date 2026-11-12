@@ -62,3 +62,15 @@ sauvegarde de la rc1). Portées à `"0.17.6"`, parce qu'elles lisent le minimum 
 `admin_full_import_e2e.rs:4649` (doc), `:4669`, `:4816` ; `migrations_fresh_install.rs:248` ; `migrations_upgrade_path.rs:549`
 (binaire aligné, le test passe à `"0.17.6"`), `:565`, `:581`, `:600`, `:683`, `:1122`, `:1622`. Ajouté : `downgrade_protection_refuses_0_17_5`.
 Réversible : oui.
+
+## Remédiation de la revue P1 (2026-11-11)
+
+**C-e34a1-11 — le domaine d'`account_kind` fermé à l'octet par `CHECK (BINARY account_kind IN …)`** (revue P1, E1). Contexte : la table est en
+`utf8mb4_unicode_ci`, insensible à la casse et `PAD SPACE` : `'BANK'`, `'bank '` passaient le `CHECK` et faisaient échouer le décodage exact de
+`BankAccountKind` sur toute liste de comptes. Éprouvé sur MariaDB 10.11.19 (table jetable dans `kesh_e34a1`) : une colonne `CHARACTER SET ascii
+COLLATE ascii_bin` refuse `'BANK'` mais **admet** `'bank '` (`ascii_bin` est `PAD SPACE`) ; `BINARY … IN` refuse les deux. Retenu : `BINARY`, colonne
+inchangée. Les deux autres `CHECK`, qui comparent sans `BINARY`, deviennent exacts puisque la valeur l'est. `card_last4` : `REGEXP '^[0-9]{4}$'` est
+déjà exact sous cette collation (chiffres pleine chasse et arabes refusés, essayé) ; une espace finale est retirée par `CHAR(4)` à l'écriture, la
+valeur stockée reste quatre chiffres. Autres : colonne `ascii_nopad_bin` (plus lourde à lire, même effet) ; `Decode` tolérant (masquerait la donnée
+fautive). Migration non publiée, corrigée en place : bases de dev reconstruites (P8), squash et `migrations.sha384` régénérés. Réversible : oui,
+avant publication.

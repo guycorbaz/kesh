@@ -232,6 +232,31 @@ migration de l'epic : aucun ordre à régler avec une autre story. La **34-11a2*
   - **Édition** : tout le code par l'outil Edit ; `cargo fmt --all` lancé une fois (cinq assertions reformatées) — le formateur du projet, non un
     script de remplacement. Scripts seulement pour les mutations (`kesh-gate-logs/e34a1/mut-e34a1.py`, motif vérifié unique, restauration
     `git checkout --` puis `touch`).
+- 2026-11-11/12 : **revue de code P1 (Sonnet, trois lentilles)** — 0 CRITICAL, 0 HIGH, **3 MEDIUM** (E1, A1, A2), 21 LOW, recomptés depuis les trois
+  rapports (`kesh-gate-logs/e34a1-review-p1-{B,E,A}.md` : B1 à B7, E1 à E7, A1 à A10). **Remédiation (Opus 5.5)**, commit `75ab21ae`, puis ce compte rendu :
+  - **E1 (MEDIUM)** — `CHECK (BINARY account_kind IN …)`, la migration non publiée **corrigée en place** (C-e34a1-11) : sous `utf8mb4_unicode_ci`,
+    `'BANK'` et `'bank '` passaient le `CHECK` et faisaient échouer le décodage. Éprouvé à la main sur MariaDB 10.11.19 : `ascii_bin` est `PAD SPACE`
+    (admet `'bank '`), seul `BINARY` ferme à l'octet ; `card_last4` déjà exact sous la collation de la table (chiffres non ASCII refusés). ⚠️ **P8** :
+    la migration change après sa première application aux bases de dev — bases `kesh_e34a1`, `kesh_e2e_e34a1`, `kesh_ci_e34a1` **reconstruites**,
+    squash régénéré, `migrations.sha384` porté au nouveau checksum (`9339ac2b…`, `sha384sum` du fichier). Aucune base persistante hors des miennes
+    ne l'a appliquée (migration jamais poussée). Cas refusés ajoutés (`BANK`, `Bank`, `bank `, `Credit_Card`, `credit_card `) ; témoin sur la base
+    **migrée** (`sans_iban_la_montee_garde_chaque_compte_bancaire`).
+  - **A1 (MEDIUM)** — § *Passer à la 0.17.6* en `\sloppy`, `\fussy` rétabli avant la section suivante : `KESH_SKIP_PRE_UPGRADE_BACKUP=0.17.6 dans` est
+    entier dans le PDF aplati, plus aucun `Overfull` aux lignes 2531-2552 du `.tex` (`admin-manual.log` ; les 178 autres `Overfull` du manuel sont
+    antérieurs). Ma déclaration d'avant, « PDF contrôlé aplati », n'avait pas contrôlé la phrase qui porte la valeur.
+  - **A2 (MEDIUM) + E4** — `full_import_round_trip_keeps_a_card_without_iban` (export d'une carte, base modifiée, import, colonnes relues à
+    l'identique) et `full_import_of_a_0_17_5_backup_makes_every_account_a_bank_account` (sauvegarde sans `account_kind` ni `card_last4`). ⚠️ La
+    sauvegarde est générique (C2) : aucune mutation de production propre à la carte n'existe pour les voir rouges ; leur preuve est le montage
+    (carte présente avant, modifiée entre l'export et l'import).
+  - **LOW traités** : E2 = A10 (`compte_sans_iban_le_refus_camt_precede_l_empreinte`, mutation M9) ; E3 = B1 = B2 (carte close et archivée au lot,
+    `create_batch_refuses_a_closed_or_archived_card_by_its_state_first`, M10 ; au CAMT, `compte_sans_iban_archive_ou_clos_garde_son_refus_d_abord`) ;
+    E7 (contrainte nommée) ; B3, B4 (Vitest, M12, M13 ; commentaire corrigé) ; B6 (« avant le hash, l'empreinte et l'analyse », trois sites :
+    `errors.rs`, `bank_imports.rs`, `api-external.md`) ; A5 (aucun conteneur ne restait : il était en `--rm`, en cours de suppression au moment de
+    la liste ; le script attend désormais) ; A6 (motif nommé ci-dessous) ; A7 (U+00A0, `CARD_LAST4_SEPARATOR`) ; A8 (ligne `422` rangée) ; A9
+    (`create_accepts_an_account_without_iban`, `compte_sans_iban_le_put_ignore_le_type`) ; A4 (crochet de la recette : QR-facture et lot relus après
+    la montée) ; A3 (gates complets et E2E au dernier commit de code `75ab21ae`).
+  - **LOW renvoyés à la 34-11a2** (fiche `34-11a2-carte-credit-creation.md`, § *Points hérités*) : E5 = B7, B5, E6.
+  - Mutation M11 ajoutée (`BINARY` retiré du squash). Toutes les modifications de code par l'outil Edit ; `cargo fmt --all` une fois (cinq tests).
 
 ## Dev Agent Record
 
@@ -241,7 +266,29 @@ Opus 5.5 (`claude-opus-5-5`), en autonomie.
 
 ### Completion Notes List
 
-**Gates, tels qu'ils ont tourné** (journaux sous `/home/gcorbaz/devel/kesh-gate-logs/e34a1/`) :
+**Gates de la remédiation P1, au dernier commit de code `75ab21ae`** (journaux sous `/home/gcorbaz/devel/kesh-gate-logs/e34a1/`) :
+
+- `cargo fmt --all -- --check` vert (`test-fast.sh`) ; gate ciblé avant commit : **810 passés** (`cible-r1.log`), Vitest ciblé 49 (`vitest-cible-r1.log`).
+- `scripts/test-fast.sh --ci`, bases remises à neuf : **5162 passés, 12 ignorés** (`gate-test-fast-r1.log`) ; `cargo build --workspace --all-targets`
+  vert (`build-r1.log`) ; `scripts/gate-ci.sh kesh_ci_e34a1` : **5169 passés, 0 échec, 16 ignorés** (`gate-ci-r1.log`).
+- Frontend (voie `.gate-front.lock`) : `npm run check` **0 erreur** (29 avertissements préexistants), `lint-i18n-ownership` vert, Vitest
+  **2890 tests, 222 fichiers**, `npm run build` vert (`front-*-r1.log`).
+- **E2E complet** à `75ab21ae` (`e2e-r2/playwright.log`) : **385 passés, 7 échecs, 18 ignorés** — les sept KF-029 (#97) de `docs/testing.md`, aucun autre.
+- **Mutations** : M1 à M8 rejouées, M9 à M13 neuves — **14 tuées sur 14**, chacune par le test attendu (`mut/campagne-r1-rust.log`,
+  `mut/campagne-r1-front.log`, `mut/M*.log`) ; worktree propre ensuite (hors le registre et le prompt P2, non commités à ce moment).
+- **Montée rejouée** (la migration a changé) : premier passage `recette-montee-r1.log` **en échec au crochet** — l'IBAN d'exemple de la recette est un
+  QR-IBAN, que la QR-facture refuse sans référence QRR (comportement antérieur) ; crochet corrigé (IBAN ordinaire synthétique sur la ligne 0.17.5),
+  second passage `recette-montee-r2.log` : **cinq phases vertes** ; crochet (`recette-montee-journal-r2/apres.log`) : colonnes d'avant identiques,
+  comptes `bank`, carte forgée refusée au lot, **QR-facture produite** (71 301 octets) et **lot généré avec son `pain.001`** (débiteur relu) après
+  la montée. Complément (`recette-complement-r1.log`, `recette-c/resume.txt`) : `pre-upgrade/` écrit avant la migration, aucun écart des colonnes
+  0.17.5, 0.17.5 neuve qui refuse le `.keshbackup` 0.17.6 (409) et importe le fichier `pre-upgrade/` (200), empreintes identiques ; « conteneurs
+  restants : » vide.
+- **Tests neufs**, recomptés de `07f714a2` à `75ab21ae`, motif `^\s*#\[(sqlx::test|test|tokio::test)\b` sur les fichiers `crates/*.rs` touchés :
+  **452 → 476, +24** (+17 au développement, +7 à la remédiation) ; Vitest (`^\s*it\(`) **+9** (`format.test.ts` 11 → 17, `BankImportUpload.test.ts`
+  30 → 32, `payment-batches-page.test.ts` 8 → 9). *(Annoté le 2026-11-12, revue P1 A6 : le décompte « 439 → 456 » ci-dessous mêlait `#[tokio::test]` et
+  une ligne de commentaire ; le delta +17 restait juste.)*
+
+**Gates du développement (avant la revue P1)**, tels qu'ils ont tourné :
 
 - `cargo fmt --all -- --check` vert ; `cargo clippy --workspace --all-targets -- -D warnings` vert (`clippy-1.log` au code, `clippy-2.log` au
   dernier commit `93e2642f`).
@@ -265,7 +312,8 @@ Opus 5.5 (`claude-opus-5-5`), en autonomie.
   reçoit `409 PAYMENT_BATCH_ACCOUNT_HAS_NO_IBAN` ; l'image 0.17.5 refuse la base migrée (« La base a été migrée par Kesh v0.17.6… ») ; retour par le
   dump, empreinte identique ; `.keshbackup` 0.17.5 importé dans le binaire neuf. **Complément** (`recette-complement-e34a1.sh`, `recette-c/resume.txt`) :
   0.17.5 neuve qui refuse le `.keshbackup` 0.17.6 (`409 IMPORT_VERSION_INCOMPATIBLE`) et importe le fichier `pre-upgrade/` (200), empreintes identiques
-  à l'avant, toutes colonnes. Données synthétiques seulement ; aucun conteneur restant.
+  à l'avant, toutes colonnes. Données synthétiques seulement ; aucun conteneur restant *(annoté le 2026-11-12, revue P1 A5 : le journal du complément
+  en listait un, `kesh-e34a1c-db2-…`, en cours de suppression `--rm` ; constaté absent ensuite par `docker ps -a`)*.
 - **Captures** (thème clair, instance jetable, carte forgée) : `kesh-gate-logs/e34a1/captures/34-11a1-01-tableau-comptes.png`, `-02-accueil.png`,
   `-03-parametres.png`, `-04-import-carte.png`, `-05-lot-sans-la-carte.png` (le compte bancaire de cette base n'étant pas lié au grand livre, le
   sélecteur du lot n'y propose aucun compte : la capture prouve l'absence de la carte, non la présence de l'autre ; le Vitest le prouve).
@@ -298,3 +346,5 @@ Opus 5.5 (`claude-opus-5-5`), en autonomie.
 - `docs/api-external.md`, `docs/migrations-idempotence-audit.md`, `docs/manual/fr/admin-manual.tex`, `docs/manual/fr/admin-manual.pdf`, `CHANGELOG.md`
 - `_bmad-output/implementation-artifacts/e34-choix-autonomes-e34a1.md` (neuf), cette fiche, `sprint-status.yaml`,
   `34-11a1-compte-sans-iban-review-prompt-p1.md` (neuf)
+- Remédiation P1 : en plus, `crates/kesh-api/tests/bank_statements_manual_e2e.rs`, `34-11a2-carte-credit-creation.md` (§ *Points hérités*),
+  `34-11a1-compte-sans-iban-review-prompt-p2.md` (neuf)
