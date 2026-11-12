@@ -21,9 +21,18 @@ second côté ; un manuel pas à pas pour tenir une carte de crédit.
   tests neufs (A1-2, A1-7, A1-11), M2b déclarée équivalente (B1-3, E1-4), M7c rejouée avec la dévalidation fournisseur (A1-8).
 - **Renvoyé à l'intégration** (consigne) : le PDF du manuel (A1-9, B1-7) et le pas à pas *Dette* (A1-4, la 34-2 est dans la release).
 
-Worktree `/home/gcorbaz/devel/kesh-e34b`, branche `story/34-11b-carte-credit-releve`. Diff **aplati** de la story :
-`git -C /home/gcorbaz/devel/kesh-e34b diff a8dce4a9 <dernier commit de code>` (`a8dce4a9` = fusion de la 34-4 dans la base ; le dernier commit
-de code est nommé au Dev Agent Record de la fiche). Diff de la seule remédiation : `git diff 96f8ee70 <dernier commit de code>`.
+Worktree `/home/gcorbaz/devel/kesh-e34b`, branche `story/34-11b-carte-credit-releve`. Diff **aplati** de la story, avant la fusion de
+la 34-11a2 : `git -C /home/gcorbaz/devel/kesh-e34b diff a8dce4a9 1b83c157` (`a8dce4a9` = fusion de la 34-4 dans la base ; `1b83c157` =
+dernier commit de code de la story). Diff de la seule remédiation : `git diff 96f8ee70 1b83c157`. Puis la fusion, ci-dessous.
+
+**La fusion de la 34-11a2 close** (`2dbcc102`, `merge --no-ff` de `story/34-11a2-carte-credit-creation` à `09aaaf09`) est **dans le
+périmètre** : `git show --stat 2dbcc102`, `git diff 2dbcc102^1 2dbcc102` (ce que la fusion a apporté à la 34-11b) et
+`git diff 2dbcc102^2 2dbcc102` (ce que la 34-11b ajoute à la 34-11a2 close). Conflits résolus à la main : `CHANGELOG.md` (ligne « Pour
+l'API » de la 34-11a2 reprise, ordre des refus du `PUT`) et `sprint-status.yaml` (34-11a2 `done`, 34-11b `review`) ; le reste fusionné par
+git (dont `docs/api-external.md`, `errors.rs`, `user-manual.tex`, les locales). Cherche : une interaction entre la remédiation P1 de la
+34-11a2 (`PATCH` d'une carte, relecture du type, `mask_ibans`, `cardLast4`, union TS) et le relevé de carte, la réconciliation ou l'E2E de
+la 34-11b ; des doublons ou contradictions dans le CHANGELOG, `api-external.md` (notes ¹¹/¹²) et le manuel ; un compteur (`sitesTotal`,
+gardes de textes) faux après fusion. Les gates du Dev Agent Record ont été rejoués **au commit de fusion**.
 
 ⚠️ **Les propriétés centrales.**
 1. **Jamais deux écritures pour un virement, jamais un virement compté deux fois, jamais une écriture contre-passée avec un lien vivant, jamais
