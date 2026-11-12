@@ -2,6 +2,8 @@
 
 Status: ready-for-dev
 
+*Validation terminée (P1 à P4, 2026-11-12).*
+
 *Fiche rédigée le 2026-11-12 par l'agent de kickoff de l'Epic 35 (Opus 5.5), worktree `kesh-e35`, par le workflow
 `bmad-create-story`. Release **0.17.7**, tête d'epic : à livrer avant la première facture client de Guy (au plus tard le
 2026-11-30). **Aucune migration.** Boucle complète : règle comptable, `kesh-db` touché (gate complet même en cours de
@@ -165,7 +167,7 @@ L'import (CAMT, factures importées) et le MCP n'écrivent pas d'écriture sur c
    d'action, valable aux deux nombres (« le réglage concerné »). **Cas à deux comptes côté achat** (créanciers `2000`
    retypé en actif, TVA récupérable `1171` retypée en passif) : l'ordre se lit — par numéro `1171` puis `2000`, alors que
    l'ordre des rôles donnerait `2000` puis `1171` (V3-3). Tests dans `crates/kesh-api/tests/` ; ces tests montent l'application, donc le catalogue (les libellés fr-CH
-   ne s'assertent qu'ici, jamais dans un test unitaire qui lirait l'état i18n global, cf. 35-2 V1-1).
+   ne s'assertent qu'ici, jamais dans un test unitaire qui lirait l'état i18n global, cf. 35-2 (fiche parente) V1-1).
 8. **AC8 — Les écrans.** Fiche facture : le dialogue de validation se **ferme** sur ce code, comme sur
    `ACCOUNT_NOT_POSTABLE` (`frontend/src/routes/(app)/invoices/[id]/+page.svelte:449-456`), et le message s'affiche
    tel quel. Fiche facture fournisseur : le message s'affiche (`supplier-invoices/[id]/+page.svelte:499`, déjà
@@ -206,14 +208,14 @@ L'import (CAMT, factures importées) et le MCP n'écrivent pas d'écriture sur c
     des routes. Les listes d'ordre des refus deviennent fausses et sont mises à jour (V2-6) : le doc de `check_written`
     (« Refuse, dans cet ordre », `company_invoice_settings.rs:996-1004`), les commentaires d'appel `invoices.rs:2381-2385`
     et `supplier_invoices.rs:1722-1726`, et le doc de `validate_invoice` (`invoices.rs:2040-2051`). S'y ajoutent (V3-5) la
-    requête recopiée au doc-comment (`company_invoice_settings.rs:842`) et « Pourquoi partagé suffit » (`:850-866`) : le
+    requête recopiée au doc-comment (`company_invoice_settings.rs:842`) et « Pourquoi partagé suffit » (`:847-864`) : le
     verrou garde désormais aussi le **type** lu. Greper `angle mort`, `retypé`, `dans cet ordre`,
     `InactiveOrInvalidAccounts\` ; non imputable` et `number, active, postable` sur `crates/kesh-db/src`, et écrire au
     Change Log le verdict de chaque occurrence.
 13. **AC13 — Manuels**, PDF régénérés et contrôlés aplatis. **Manuel d'administration** (`docs/manual/fr/admin-manual.tex`,
     V3-1), le lecteur que le message envoie corriger :
     - `:3816` (« Chacun doit être un compte actif du bon type et imputable … ») : un compte désigné **retypé** depuis fait
-      refuser la validation (`400 DESIGNATED_ACCOUNT_WRONG_TYPE`, message qui nomme le compte) ; la phrase « Après une mise à
+      refuser la validation (`400` et le code de D2, nom à confirmer au registre `e353`, message qui nomme le compte) ; `:3818` : la phrase « Après une mise à
       jour vers la v0.13.0, vérifiez … » reçoit son pendant pour la 0.17.7 : ouvrir *Facturation* et cliquer *Enregistrer*
       sans rien changer ; « les avoirs ne sont pas soumis à ce contrôle » reste ;
     - `:3822` (« voient leur type contrôlé à chaque enregistrement, même reconduits ») : la page ne nomme que le premier
@@ -324,7 +326,7 @@ rangée par rôle et non par numéro (AC7, côté achat).
   bloc `errors.rs`), `user-manual.tex` (ici `:452-461`, `:491`, `:493`, `:1169`, `:1788-1796`), `CHANGELOG.md` (section `[0.17.7]`),
   `docs/api-external.md` (ici après `ACCOUNT_NOT_POSTABLE`), `frontend/src/routes/(app)/invoices/[id]/+page.svelte` et son
   dossier de tests (ici la liste de fermeture du dialogue, `:449-456` ; la 35-2a, `pdfErrorMessage`, `:949` : hunks
-  distincts). `admin-manual.tex` (ici `:3816`, `:3822`) n'est touché que par cette story. La règle d'union est celle de
+  distincts). `admin-manual.tex` (ici `:3816`, `:3818`, `:3822`) n'est touché que par cette story. La règle d'union est celle de
   C-e350-8, recopiée au fichier d'epic.
 - Avec la **35-8** (#431, plus tard) : `repositories/company_invoice_settings.rs`. La 35-8 attend la fusion de celle-ci.
 
@@ -417,4 +419,16 @@ rangée par rôle et non par numéro (AC7, côté achat).
   - Symptômes greppés (fiche, registre, fichier d'epic) : « Avec la **35-2** », « ce réglage — », « Validation P1 remédiée »
     à l'en-tête, `d'actif` dans les exemples de message (gardés : ce sont des exemples ; le littéral suit le catalogue,
     AC10) — aucun autre reste.
+- 2026-11-12 — **Validation P4** (Haiku, passe ciblée sur `dd9d2517` et `7936e372`) : 0 CRITICAL, 0 HIGH, 0 MEDIUM, 4 LOW
+  (`kesh-gate-logs/e35-3-validation-p4-ciblee.md`). Appliqués après lecture au code : V4-1 (`company_invoice_settings.rs` relu :
+  « Pourquoi partagé suffit » commence à `:847` et finit à `:864`, `:866` ouvre la section suivante : AC12 cite `:847-864`) ;
+  V4-2 (AC13 ne fige plus le nom du code avant le registre `e353`) ; V4-3 (`admin-manual.tex:3818`, « Après une mise à jour vers
+  la v0.13.0 », relu, ajouté à AC13 et à la liste d'union) ; V4-4 (« 35-2 (fiche parente) »). Remédiation hors code de
+  production, sur une passe sans rien au-dessus de LOW.
+- 2026-11-12 — **Validation terminée.** Série des MEDIUM : P1 5 → P2 4 → P3 1 → P4 0 (CRITICAL/HIGH à 0 sur les quatre
+  passes ; LOW : 6, 6, 8, 4). Modèles : P1 Sonnet, P2 Opus, P3 Sonnet (complètes), P4 Haiku (ciblée). Décisions : garde
+  du type à l'usage dans `check_written` (C-e350-2), solde du reste hors périmètre (C-e350-7, #1044), refus nommé
+  `DESIGNATED_ACCOUNT_WRONG_TYPE` (nom à confirmer, `e353`) sans sélecteur, ordre par accumulation, constante publique des
+  types, avertissement au CHANGELOG et aux deux manuels pour des livres réels, avertissement au retypage tracé par #1047,
+  règle d'union C-e350-8. **Signal de découpage non levé** : sévérité décroissante à chaque passe, cinq modules.
 
