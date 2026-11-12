@@ -80,3 +80,40 @@ retenue, options écartées, réversibilité. Lignes citées sur `release/0.17.6
 - **Retenu** : 35-4, 35-6, 35-5 (I1), puis 35-7, 35-8, 35-1 (I2), 35-1 en dernier (format par défaut gardé, probabilité
   basse), 35-8 après 35-5 et 35-3 (fichiers communs).
 - **Réversible** : oui.
+
+### C-e350-7 — Le solde du reste reste hors de la 35-3, avec une issue
+
+- **Contexte** : validation P1 de la 35-3, V1-1. Le solde du reste d'un règlement relit la TVA due par
+  `vat_payable_account_for_write` (`company_invoice_settings.rs:661-691`, « sans contrainte de type », `:663-664`),
+  appelé à `invoice_settlements_write.rs:679-680` ; un compte de TVA due retypé y reçoit la correction de TVA.
+- **Retenu** : hors de la 35-3 ; issue à ouvrir par l'orchestrateur.
+- **Raisons** : ce n'est pas la même garde — une relecture `FOR UPDATE` dont le refus est `ConfigurationRequired`, et
+  non l'instantané de `check_written` ; poser le refus nommé y change le contrat d'une autre route (règlement) et son
+  écran, dans un fichier que la 0.17.6 vient de remanier (34-5) ; le chemin n'existe que pour une facture **à TVA**, et
+  Guy n'est pas assujetti (famille des P1 de la TVA reportés, comme #525).
+- **Écartée** : l'inclure, ce qui allonge une story qui doit sortir avant le 2026-11-30.
+- **Réversible** : oui ; la constante publique de la 35-3 (D4) servira à cette issue.
+
+### C-e350-8 — Règle d'union des fichiers communs à la 35-2 et à la 35-3
+
+- **Contexte** : validations P1 des deux fiches (35-2 V1-13, 35-3 V1-7). Les deux stories, en parallèle, écrivent aux
+  mêmes fichiers ; « clés distinctes » ne protège pas d'un conflit si les deux ajoutent au même endroit.
+- **Retenu**, recopié dans les deux fiches et au fichier d'epic :
+  1. **`CHANGELOG.md`** : chaque branche crée, si elle manque, la section `## [0.17.7] — Non publié` juste au-dessus de la
+     première section `## [` existante, avec la seule rubrique `### Corrigé` ; elle y écrit **un** point par issue. À
+     l'intégration, une seule section et une seule rubrique sont gardées, les points dans l'ordre des stories (35-2 puis
+     35-3), l'avertissement de la 35-3 en tête de son point.
+  2. **`messages.ftl` ×4** : jamais en fin de fichier. 35-2 : à côté du bloc `invoice-pdf-error-*` (fr-CH `:967-983` sur
+     `release/0.17.6`) ; 35-3 : juste après `error-designated-account-not-postable`.
+  3. **G9** (`crates/kesh-api/tests/textes_coherents.rs`, `TABLE: [(&str, Cles); 8]`) : la 35-3 ajoute ses clés **en fin
+     du bloc `crates/kesh-api/src/errors.rs`** existant, sans changer la longueur ; la 35-2 ajoute une **entrée neuve en fin
+     de table** pour `crates/kesh-api/src/routes/invoice_pdf_service.rs` (longueur 9), et ses éventuelles clés
+     d'`errors.rs` en fin du même bloc, **après un commentaire `// Story 35-2`** (la 35-3 met `// Story 35-3`). À l'union,
+     la longueur est recomptée.
+  4. **`crates/kesh-api/src/errors.rs`** : 35-2, le bras `InvoiceNotPdfReady` et ce qu'il appelle ; 35-3, un bras `DbError`
+     neuf juste après `DesignatedAccountsNotPostable` (`:4571`). Aucun reformatage hors des passages touchés.
+  5. **`docs/api-external.md`** : 35-3, une ligne juste après `ACCOUNT_NOT_POSTABLE` ; 35-2, sa ligne juste après
+     `SUPPLIER_INVOICE_DUE_BEFORE_INVOICE_DATE` (`:1058` sur `release/0.17.6`), en fin du premier groupe des `400`.
+  6. **`user-manual.tex`** : paragraphes distincts ; chaque branche régénère son PDF pour ses contrôles, mais à l'union le
+     PDF n'est **jamais fusionné** : il est régénéré depuis le `.tex` uni, puis contrôlé aplati.
+- **Réversible** : oui.

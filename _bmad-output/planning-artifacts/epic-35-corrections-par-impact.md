@@ -75,13 +75,22 @@ chacune de ses actions est aujourd'hui attribuée à Guy dans la piste de contr�
 
 ## Ordre et dépendances
 
-1. **35-2 et 35-3 en tête, en parallèle** : la première facture client de Guy part avant le 2026-11-30. Elles partagent
-   trois fichiers, à des passages distincts (C-e350-4) :
-   - `crates/kesh-api/src/errors.rs` : bras `InvoiceNotPdfReady` pour 35-2, bras du nouveau `DbError` pour 35-3 ;
-   - `messages.ftl` ×4 : clés distinctes ;
-   - `docs/manual/fr/user-manual.tex` : § *Les caractères d'une QR-facture* (l. 1251) pour 35-2, le paragraphe voisin
-     de *Un compte des réglages devenu non imputable* (l. 1169) pour 35-3.
-   L'intégration les unit ; le PDF du manuel se régénère une fois, après l'union.
+1. **35-2 et 35-3 en tête, en parallèle** : la première facture client de Guy part avant le 2026-11-30 (C-e350-4).
+   Elles partagent six fichiers, et s'unissent par la **règle d'union C-e350-8**, recopiée ici :
+   - **`CHANGELOG.md`** : chaque branche crée, si elle manque, `## [0.17.7] — Non publié` juste au-dessus de la première
+     section `## [` existante, avec la seule rubrique `### Corrigé`, un point par issue ; à l'intégration, une section,
+     une rubrique, les points dans l'ordre des stories (35-2 puis 35-3), l'avertissement de la 35-3 en tête de son point ;
+   - **`messages.ftl` ×4** : jamais en fin de fichier ; 35-2 à côté du bloc `invoice-pdf-error-*`, 35-3 juste après
+     `error-designated-account-not-postable` ;
+   - **G9** (`crates/kesh-api/tests/textes_coherents.rs`, `TABLE: [(&str, Cles); 8]`) : 35-3 en fin du bloc `errors.rs`,
+     sous `// Story 35-3` ; 35-2 une entrée neuve en fin de table pour `invoice_pdf_service.rs`, et ses éventuelles clés
+     d'`errors.rs` en fin du même bloc sous `// Story 35-2` ; la longueur se recompte à l'union ;
+   - **`crates/kesh-api/src/errors.rs`** : 35-2 le bras `InvoiceNotPdfReady` ; 35-3 un bras `DbError` neuf juste après
+     `DesignatedAccountsNotPostable` ; aucun reformatage hors des passages touchés ;
+   - **`docs/api-external.md`** : 35-3 une ligne juste après `ACCOUNT_NOT_POSTABLE` ; 35-2 juste après
+     `SUPPLIER_INVOICE_DUE_BEFORE_INVOICE_DATE` ;
+   - **`docs/manual/fr/user-manual.tex`** : paragraphes distincts (35-2 l. 1251 ; 35-3 l. 452-461, 1169, 1788-1796) ; le
+     PDF n'est jamais fusionné, il se régénère depuis le `.tex` uni puis se contrôle aplati.
 2. Puis par impact, I1 d'abord : **35-4**, **35-6**, **35-5** ; puis **35-7**, **35-8**, **35-1**.
 3. **35-8 après la fusion de 35-5** (`repositories/journal_entries.rs`) **et de 35-3**
    (`repositories/company_invoice_settings.rs`).
