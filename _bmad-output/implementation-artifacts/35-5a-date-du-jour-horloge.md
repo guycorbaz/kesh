@@ -65,7 +65,8 @@ Partage : **9 sites en 35-5a** (1–8 et 17), **19 en 35-5b**.
 **Les 8 commentaires** que rend la même commande : `kesh-api/src/routes/invoice_email.rs:206`,
 `kesh-api/src/services/postes_ouverts.rs:55`, `kesh-db/src/repositories/companies.rs:988`, `dunning_eligibility.rs:9`,
 `invoices.rs:378`, `:396`, `:5040` (module de tests), `kesh-report/src/aged_receivables.rs:27`. La garde les masque (D4) ;
-ceux qui deviennent faux se réécrivent (D6) : `companies.rs:986-989` ici, les autres à la 35-5b. `aged_receivables.rs:27`
+ceux qui deviennent faux se réécrivent : `companies.rs:986-989` à la **35-5a0** (faux dès qu'elle passe la date, V4-8), les
+autres à la 35-5b. `aged_receivables.rs:27`
 (« `as_of` bindé (pas `UTC_DATE()` en dur) ») reste vrai et ne change pas.
 
 Hors production : **56** sites dans les modules de tests de `src` (`journal_entries.rs` 50, à partir de `mod tests` `:3178`,
@@ -82,10 +83,11 @@ les `toISOString` de `frontend/tests/e2e/`, dans 27 fichiers).
 `journal_entries.rs` (3, dont 2 dans les tests), `reconciliation_cancel.rs` (2), `supplier_invoices.rs` (4) ; plus
 `lock_books`, `unlock_books`, `settlement_cancel_blocker` et ses lecteurs (`services/factures.rs:552`,
 `supplier_invoices` : `fetch_lines`, `supplier_settlement_cancel_blocker`, lus par `routes/supplier_invoices.rs:272`).
-Les signatures de `cancel_in_tx`, `cancel_settlement_in_tx` et des bloqueurs changent dans `supplier_invoices.rs` (`:2462`,
-`:2600`, `:2750`, `:2871`) et `invoice_settlements_write.rs` (`:878`, `:1023`), ainsi que les fonctions de **vue** qui
-calculent un bloqueur : `supplier_invoices::{get_settlement_view, get_settlement_view_in_tx, commit_with_view,
-supplier_invoice_cancel_blocker}` (`supplier_invoices.rs:3023-3068`) et `reconciliation_cancel::get_view`. La chaîne de
+Les signatures de `cancel_in_tx` (`supplier_invoices.rs:2510`), `cancel_settlement_in_tx` (`:2778`) et des bloqueurs (`:2426`,
+`:2706`, `:2724` ; `invoice_settlements_write.rs:826`, `:838`, `:912`) changent — `:2462`, `:2750` (bloqueur), `:2600`, `:2871`
+(`reverse_owned_in_tx`) et `invoice_settlements_write.rs:878` sont des **appels** —, ainsi que les fonctions de **vue** qui
+calculent un bloqueur : `supplier_invoices::{get_settlement_view (:3013), get_settlement_view_in_tx (:3040), commit_with_view
+(:3095)}` et `reconciliation_cancel::get_view` (définitions citées par la fiche 35-5a0, qui fait foi ; V4-6). La chaîne de
 production remonte à `routes/invoices.rs`, `routes/supplier_invoices.rs`, `routes/imported_supplier_invoices.rs` (`:230`,
 `:646`, `:723`), `routes/reconciliation.rs` (`:5799`), `services/factures.rs:552` et `services/factures_fournisseur.rs:206`
 (dont le motif du rang 5 est calculé puis jeté par `detail_sans_fichier`, `:227-237` : aucun outil du MCP n'expose un site de
@@ -136,21 +138,30 @@ commentaire, deux signatures et trois chaînes de garde) — le `Self {` de `new
 pas.
 
 **Les docs qui disent UTC ou « du jour »** : `docs/api-external.md:272` (« sinon du jour **UTC** »), 35-5a ; `:252`
-(`closedOn`), `:292` (accueil), `:443` (postes ouverts), 35-5b. Le manuel utilisateur parle de « la date du jour » sans dire
-le fuseau (`user-manual.tex:259-261`, `:355`, `:709`, `:722`, `:994`, `:1449-1482`, `:1900`, `:2011`, `:2085`) ; il ne dit
-nulle part « date du poste » (`/usr/bin/grep -n 'du poste' docs/manual/fr/user-manual.tex` : vide).
+(`closedOn`), `:292` (accueil), `:443` (postes ouverts), 35-5b. **Le manuel utilisateur dit déjà « en temps universel » deux
+fois** (validation P4, V4-1 ; `/usr/bin/grep -n 'temps universel' docs/manual/fr/user-manual.tex` → `:995`, `:2458`, lus) : `:995`
+(complément des soldes de départ : « \textbf{Le jour est celui du serveur, en temps universel}~: entre minuit et une ou deux
+heures du matin, heure suisse, c'est encore la veille --- le 1\textsuperscript{er} janvier, une régularisation peut tomber
+dans l'exercice précédent… ») et `:2458` (solde d'ouverture d'un compte bancaire : « … Le jour est celui du serveur, en temps
+universel… (#1022, comme pour le mode compléter) ») ; le PDF publié les porte aussi. Ces deux phrases décrivent les sites 1 à 4
+et deviennent fausses à la fusion. Partout ailleurs (`:259-261`, `:355`, `:709`, `:722`, `:994`, `:1449-1482`, `:1900`, `:2011`,
+`:2085`), il dit « la date du jour » sans fuseau ; il ne dit nulle part « date du poste »
+(`/usr/bin/grep -n 'du poste' docs/manual/fr/user-manual.tex` : vide).
 
 ## Décisions (C-e350-16, C-e350-21 à -26, -28, -29)
 
 - **D1 — Europe/Zurich, constante unique, et la bascule** : `pub fn jour_suisse(instant: DateTime<Utc>) -> NaiveDate`, pure,
   dans `kesh-core/src/horloge.rs` (le module de la 35-5a0), écrite `instant.with_timezone(&chrono_tz::Europe::Zurich).date_naive()`
   — jamais ambiguë dans ce sens (un instant UTC a une seule heure locale), contrairement à `from_local_datetime`. **La
-  bascule** : le corps de `Horloge::aujourd_hui()`, `self.maintenant().date_naive()` depuis la 35-5a0, devient
-  `jour_suisse(self.maintenant())` — le serveur, le MCP, et les tests qui passent par `aujourd_hui_test()` changent de jour
-  ensemble (C-e350-29). `chrono-tz` 0.10.4 est déjà au `Cargo.lock` (par `rxing` 0.7.1, features par défaut, base IANA 2025b
+  bascule** : `Horloge::aujourd_hui()` appelait depuis la 35-5a0 la fonction privée `jour()` (jour UTC) ; `jour()` est remplacée
+  par `jour_suisse`, et `aujourd_hui()` devient `jour_suisse(self.maintenant())` — le serveur, le MCP, et les tests qui passent
+  par `aujourd_hui_test()` changent de jour ensemble (C-e350-29). `chrono-tz` 0.10.4 est déjà au `Cargo.lock` (par `rxing` 0.7.1, features par défaut, base IANA 2025b
   précompilée : ni `/usr/share/zoneinfo` ni `TZ` dans l'image) : ajouté aux dépendances de `kesh-core` à la même version,
   features par défaut, sans nouveau paquet (constater par `cargo tree -p kesh-core -e features` à l'étape 0). Pas de `TZ`,
-  pas de `chrono::Local`. Le compte de la garde de `horloge.rs` reste 1 (un `.date_naive()` dans le fichier, avant et après).
+  pas de `chrono::Local`. Le compte de la garde de `horloge.rs` reste 1 **à chaque étape** (V4-4) : le squelette d'AC1 déclare
+  `jour_suisse` avec le corps de `jour()` (`instant.date_naive()`, toujours le jour UTC), supprime `jour()` et fait appeler
+  `jour_suisse` par `aujourd_hui()` ; la bascule ne change ensuite que le corps de `jour_suisse`. Les tests d'AC1 comparent à des
+  `NaiveDate::from_ymd_opt` fixes, sans `.date_naive()`.
 - **D2 — `kesh-db` ne lit plus l'horloge** pour une date : **posé par la 35-5a0** (sa fiche, D2 et la fermeture des
   appelants). Rappel : une lecture de l'horloge par requête, passée **à la fois** au bloqueur (rang 5,
   `settlement_cancellation.rs:172`) et à la contre-passation (`journal_entries.rs:2935`).
@@ -199,10 +210,18 @@ nulle part « date du poste » (`/usr/bin/grep -n 'du poste' docs/manual/fr/user
 - **D5 — Les tests ne dépendent plus de l'heure réelle** pour les sites convertis : un test de `kesh-db` passe la date qu'il
   asserte ; un test HTTP qui asserte une date fixe l'horloge de son `AppState` (`HorlogeFixe`). Un montage qui veut « un
   exercice qui couvre aujourd'hui » prend le jour du serveur par **`aujourd_hui_test()`**, helper partagé par crate de tests
-  **posé par la 35-5a0** (`crates/kesh-api/tests/common/jour.rs`, `crates/kesh-db/tests/support/jour.rs`) : il rend
-  l'`aujourd_hui()` de l'horloge de test, donc le jour UTC jusqu'à la bascule et le jour suisse après, sans retouche
-  (C-e350-29) ; `kesh-report/tests` et les `mod tests` de `src` écrivent en ligne `HorlogeFixe(Utc::now()).aujourd_hui()` ou une
-  date fixe. La nuit se teste par instants fixés.
+  **posé par la 35-5a0** (`crates/kesh-api/tests/common/jour.rs`, `crates/kesh-db/tests/support/jour.rs`,
+  `crates/kesh-report/tests/support/jour.rs`) : il rend l'`aujourd_hui()` de l'horloge de test, donc le jour UTC jusqu'à la
+  bascule et le jour suisse après, sans retouche (C-e350-29). Les `mod tests` de `src` écrivent en ligne
+  `HorlogeFixe(Utc::now()).aujourd_hui()` ou une date fixe ; **ils ne lisent pas `KESH_TEST_INSTANT`** (V4-2) : la forme en
+  ligne n'y est admise que si le test ne date rien lui-même ; sinon l'appel reçoit **la date que le montage tient** (ne jamais
+  placer `HorlogeFixe(Utc::now()).aujourd_hui()`, jour suisse après la bascule, à côté d'un montage en `Utc::now().date_naive()` :
+  deux horloges mêlées). Inventaire à l'étape 0, au Change Log, ligne par ligne :
+  `git grep -nE 'HorlogeFixe\(\s*(chrono::)?Utc::now' -- 'crates/*/src/*' 'crates/*/tests/*'`. La nuit se teste par instants
+  fixés.
+  - **Fichiers mixtes** (un site 35-5a et un site 35-5b, V4-7) : la partie 35-5a passe à l'horloge fixée ou à
+    `aujourd_hui_test()` ; la partie 35-5b garde l'heure réelle jusqu'à la 35-5b (ses sites lisent encore `Utc::now()`, que
+    `HorlogeFixe` n'atteint pas : `bank_accounts_closed_e2e.rs:677-687`, `closedOn`, en est l'exemple).
   - **Fixer l'horloge d'un `AppState` de test** (V2-7) : le champ est `pub` — `let mut state = AppState::new_for_tests(…);
     state.horloge = Arc::new(HorlogeFixe(instant));` ; un helper `crates/kesh-api/tests/common/horloge.rs`,
     `pub fn avec_horloge(state: AppState, instant: DateTime<Utc>) -> AppState`, évite de le réécrire dans chaque `spawn_app`.
@@ -214,21 +233,26 @@ nulle part « date du poste » (`/usr/bin/grep -n 'du poste' docs/manual/fr/user
     les montages convertis passent au jour suisse D+1, exactement comme à 00 h 30 ; et **deux instants fixés** pour les
     fichiers 35-5a (passage d'année, heure d'hiver). `faketime` est absent de la station (`command -v faketime` vide, aucune
     `libfaketime`).
-- **D6 — Docs et commentaires** : `api-external.md:272` dit « du jour, à Zurich » ; les commentaires qui deviennent faux sont
-  réécrits : `bank_accounts.rs:794-795` (« date du jour (UTC, comme le complément de l'écran) »),
-  `opening_complement.rs:22` (« aujourd'hui (date UTC, passée en paramètre) »), `companies.rs:986-989` (« `Utc::now().date_naive()`,
-  la même horloge que la contre-passation » : dire que le verrou et la contre-passation reçoivent la même date, celle de
-  l'horloge de la requête) ; puis `/usr/bin/grep -n UTC` sur chaque fichier touché, résultat au Change Log (greper la
-  valeur, non la formulation). Le manuel dit une fois, à l'endroit où il définit les écritures datées du jour, que « la
-  date du jour est celle de Zurich, même la nuit », renvoyé depuis le solde d'ouverture et le verrou de période ; il
-  distingue l'écran (la date du **poste**, `todayLocal`, #889) du serveur (Zurich), qui coïncident pour un poste réglé sur
-  la Suisse.
+- **D6 — Docs et commentaires** : `api-external.md:272` dit « du jour, à Zurich » ; les commentaires qui disent UTC et
+  deviennent faux sont réécrits : `bank_accounts.rs:794-795` (« date du jour (UTC, comme le complément de l'écran) »),
+  `opening_complement.rs:22` (« aujourd'hui (date UTC, passée en paramètre) ») ; `companies.rs:986-989` est réécrit par la
+  35-5a0 (V4-8 ; le relevé `git grep -nE '^\s*//.*(Utc::now|UTC)'` sur les fichiers des neuf sites ne rend que ces cinq
+  lignes, `bank_accounts.rs:228` et `:1757` étant à la 35-5b) ; puis `/usr/bin/grep -n UTC` sur chaque fichier touché, résultat
+  au Change Log (greper la valeur, non la formulation). **Le manuel** (V4-1) : les deux phrases « en temps universel » sont
+  réécrites — `user-manual.tex:995`, l'item devient « \textbf{Le jour est celui de Zurich}, même entre minuit et deux heures du
+  matin » (ou disparaît au profit de la définition unique) ; `:2458`, la phrase « Le jour est celui du serveur, en temps
+  universel… (#1022, comme pour le mode compléter) » est retirée ou réécrite de même. Puis le manuel dit une fois, à l'endroit
+  où il définit les écritures datées du jour, que « la date du jour est celle de Zurich, même la nuit », renvoyé depuis le
+  solde d'ouverture et le verrou de période ; il distingue l'écran (la date du **poste**, `todayLocal`, #889) du serveur
+  (Zurich), qui coïncident pour un poste réglé sur la Suisse.
 - **D7 — L'écran du verrou suit** (`settings/+page.svelte:563-567`) : `maxLockDate` = la veille du jour local, `todayLocal`
   rendant une chaîne : `new Date(y, m − 1, d − 1)` sur ses champs, remise en `AAAA-MM-JJ` par `todayLocal(…)` ; l'entrée
   d'allowlist `local-date-guard.test.ts:55-58` est retirée, et le commentaire de ce fichier qui compte ses entrées passe de
   « huit » à « sept » (à recompter). `maxLockDate` est une constante évaluée à l'initialisation du script : le Vitest
   (`settings-page.test.ts`) **fixe le fuseau** par `pinTimeZone('Europe/Zurich')` (précédent `local-date.test.ts:8`,
-  `pin-time-zone.test-helper.ts` ; Vitest n'a pas de fuseau global et la CI tourne en UTC), puis pose
+  `pin-time-zone.test-helper.ts` ; Vitest n'a pas de fuseau global et la CI tourne en UTC), active des faux minuteurs **sur la
+  seule `Date`** — `vi.useFakeTimers({ toFake: ['Date'] })`, comme `local-date.test.ts:19-20`, `vi.useRealTimers()` en
+  `afterEach` (V4-9 : des minuteurs entièrement factices bloqueraient `findByTestId`) —, puis pose
   `vi.setSystemTime(new Date('2026-03-10T23:30:00Z'))` — le même instant que l'AC4 serveur — **avant** le rendu, et lit
   l'attribut `max` du champ : `2026-03-10` (le code de départ, veille UTC, rend `2026-03-09`). Sans le fuseau fixé, une date
   construite en champs locaux rendait le test vert avant correction sous TZ=UTC (validation P3, V3-3).
@@ -277,7 +301,9 @@ nulle part « date du poste » (`/usr/bin/grep -n 'du poste' docs/manual/fr/user
    - `lock_books` jusqu'au `2026-03-10` : **accepté** (le code de départ refuse) ; jusqu'au `2026-03-11` : refusé —
      réponse `400 INVALID_INPUT`, clé `settings-books-lock-bound-not-past` (constante Rust `BOOKS_LOCK_BOUND_NOT_PAST`,
      `companies.rs:972` ; `errors.rs:4778-4795`).
-   - `unlock_books` : borne courante au `2026-03-10` (posée par `lock_books` à la même heure fixée), cible `2026-03-10` →
+   - `unlock_books` : borne courante au `2026-03-10` **posée en SQL**, comme à l'AC2 (V4-5 : sur la 35-5a0, `lock_books` la
+     refuserait et le test tomberait au montage ; `unlock_books` contrôle la date, `companies.rs:1099-1100`, avant la garde
+     `vise > avant`, `:1128-1131`), cible `2026-03-10` — un retrait sans effet, qui écrit tout de même `books.unlocked` —
      **acceptée** (le code de départ refuse : `2026-03-10 >= ` jour UTC) ; cible `2026-03-11` → refusée, même réponse. Une
      cible au `2026-03-09` passe déjà sur le code de départ : elle ne prouve rien.
    - Écran (D7) : fuseau fixé à `Europe/Zurich` (`pinTimeZone`), instant `2026-03-10T23:30:00Z` : `maxLockDate` vaut
@@ -285,7 +311,7 @@ nulle part « date du poste » (`/usr/bin/grep -n 'du poste' docs/manual/fr/user
 5. **AC5 — Premier exercice de l'assistant** (site 17, C-e350-23) : finalisation du chemin B
    (`routes/onboarding.rs:1043`) à `2025-12-31T23:30:00Z` → l'exercice créé s'appelle « Exercice 2026 » et couvre 2026 (le
    code de départ : « Exercice 2025 »).
-6. **AC6 — (à la 35-5a0)** `kesh-db` sans horloge : sa fiche, AC2.
+6. **AC6 — (à la 35-5a0)** `kesh-db` sans horloge : sa fiche, D2 et AC5 (V4-3).
 7. **AC7 — Les services et le MCP au jour suisse** (C-e350-21, plomberie de la 35-5a0) : un `AppState` à
    `HorlogeFixe(2025-12-31T23:30:00Z)` donne `state.lecture().aujourd_hui() == 2026-01-01` (la 35-5a0 : `2025-12-31`) ;
    `services::factures::reglements` rend, pour un règlement dont l'exercice du jour suisse est clos, le motif du rang 5 (route
@@ -305,9 +331,23 @@ nulle part « date du poste » (`/usr/bin/grep -n 'du poste' docs/manual/fr/user
      second tableau) s'établit par cette exécution, non par affirmation ;
    - **deux instants fixés** pour les binaires des fichiers 35-5a : `KESH_TEST_INSTANT=2025-12-31T23:30:00Z` (passage
      d'année) puis `2026-03-10T23:30:00Z` (heure d'hiver) : verts.
+   - **Binaires que la variable n'atteint pas** (V4-2) : le `lib` de chaque crate (`mod tests` de `src`, dont
+     `journal_entries.rs`, qui appelle `reverse_in_tx` à `:3984` et `:5824`). Pour eux, **la preuve se fait par la valeur** :
+     une date de nuit fixée là où l'attendu en dépend (comme la 35-5b, D9), et l'inventaire des `HorlogeFixe(…Utc::now…)` de
+     D5. `kesh-report/tests` (`open_items_invariant.rs:182`, `:218` ; `aged_receivables.rs:609`, `vat_report_write_off.rs:291`)
+     est atteint par son `support/jour.rs` (35-5a0).
+   - **Hors passage d'année, sans risque** (V4-10) : la nuit reproduite de jour vaut pour la nuit du jour où l'on lance ; les
+     montages par année du jour (`Utc::now()…year()`) sont tous dans des fichiers 35-5a — `bank_account_opening_balance_e2e.rs:172`,
+     `kesh-db/tests/filet_bilan_clos.rs:66`, `letterings.rs:1458`, `opening_complement_repository.rs:878`,
+     `fiscal_years_repository.rs:1863` —, plus `fiscal_years_e2e.rs:1284` (35-5b, `seed_demo`) ; les autres s'appuient sur
+     l'exercice 2020-2030 de `seed_accounting_company` (`kesh-db/src/test_fixtures.rs:71`). Relevé à confirmer à l'étape 0.
 10. **AC10 — Le chemin de jour ne change pas** : en journée (`2026-06-15T10:00:00Z`), les dates écrites sont celles d'avant ;
-    tests existants verts sans retouche de leurs attendus, hors AC9.
-11. **AC11 — Docs, manuel, CHANGELOG, PR** : D6 ; PDF régénéré, contrôlé aplati ; CHANGELOG `## [0.17.7] — Non publié`,
+    tests existants verts sans retouche de leurs attendus, hors AC9 et **hors le test d'AC2 de la 35-5a0** (V4-3), dont
+    l'attendu à `HorlogeFixe(2025-12-31T23:30:00Z)` passe de `2025-12-31` à `2026-01-01`, dans l'exercice 2026 : c'est le test
+    que la 35-5a retourne, nommé aux *Tâches*.
+11. **AC11 — Docs, manuel, CHANGELOG, PR** : D6 ; **`/usr/bin/grep -n 'temps universel' docs/manual/fr/user-manual.tex` vide, et
+    le même contrôle sur le PDF aplati** (`pdftotext user-manual.pdf - | tr '\n' ' ' | tr -s ' '`), au Change Log (V4-1) ; PDF
+    régénéré, contrôlé aplati ; CHANGELOG `## [0.17.7] — Non publié`,
     *Corrigé* : un point pour #1022, un pour #907, et la 35-5a **ouvre** le point #929 (contre-passation, annulation,
     premier exercice) que la 35-5b **complète** sans en écrire un second (C-e350-8, comme 35-2a / 35-2b). La PR porte
     `closes #1022`, `closes #907`, `refs #929`. **Aucune clé i18n** ajoutée ni modifiée, les quatre locales inchangées : le
@@ -320,7 +360,8 @@ Critère : **35-5a** si le fichier fait dater ou juger par le serveur (route, se
 qu'il calcule, ou appelle une fonction de D2 ; **35-5b** si son attendu change avec un site de la 35-5b ; **35-5c** sinon
 (jour du montage sans comparaison avec le jour du serveur, ou marge de plusieurs jours). Un appel **direct** à une fonction
 de D2 lui passe la date que le test tient déjà : sans risque la nuit, puisque le test la fournit. Un fichier qui atteint à
-la fois un site de la 35-5a et un de la 35-5b fixe l'horloge, faute de quoi il ne peut être juste la nuit dans l'intervalle.
+la fois un site de la 35-5a et un de la 35-5b : la partie 35-5a passe à l'horloge fixée ou à `aujourd_hui_test()`, la partie
+35-5b garde l'heure réelle jusqu'à la 35-5b (D5, V4-7).
 Le verdict est **provisoire** ; l'exécution « nuit réelle » d'AC9 le tranche.
 
 | Fichier (sites) | Verdict | Motif (indice relevé) |
@@ -392,9 +433,10 @@ date ses pièces par `Utc::now()`, il se désaccorde la nuit après la bascule �
 ## Tests à écrire, et la preuve du rouge
 
 Écrire d'abord, lancer **sur la 35-5a0 fusionnée**, journal `kesh-gate-logs/e355a/rouges.log`. La 35-5a0 est le squelette : les
-neuf sites lisent déjà l'horloge, et `Horloge::aujourd_hui()` rend le jour UTC (`maintenant().date_naive()`). Les rouges sont
-donc **déterministes** et disent le défaut : AC1 (`jour_suisse` n'existe pas : squelette `jour_suisse` qui rend le jour UTC,
-commité d'abord, puis rouge par attendu — `2025-12-31` attendu `2026-01-01`), AC2, AC3 et AC5 (la veille, et l'exercice
+neuf sites lisent déjà l'horloge, et `Horloge::aujourd_hui()` rend le jour UTC (fonction privée `jour()`). Les rouges sont
+donc **déterministes** et disent le défaut : AC1 (`jour_suisse` n'existe pas : squelette commité d'abord — `jour_suisse` reprend
+le corps de `jour()`, qui disparaît, et `aujourd_hui()` l'appelle : un seul `.date_naive()` dans `horloge.rs`, la garde reste
+verte (V4-4) — puis rouge par attendu — `2025-12-31` attendu `2026-01-01`), AC2, AC3 et AC5 (la veille, et l'exercice
 précédent), AC4 (`2026-03-10` refusé ; le Vitest, `2026-03-09`), AC7 (`2025-12-31`). Ils ne dépendent pas du jour réel où on
 les lance. La bascule (D1) les met au vert.
 
@@ -410,7 +452,10 @@ garde rougit sur le compte) ; M7 la contre-passation de l'annulation relit l'hor
       ligne lue citée ; `cargo tree` pour `chrono-tz` ; Change Log.
 - [ ] Squelette `jour_suisse`, tests, rouges consignés.
 - [ ] `kesh-core` : `jour_suisse`, bascule de `Horloge::aujourd_hui()`. Écran du verrou (D7). Garde ramenée aux comptes réels.
-- [ ] Tests convertis (AC9) et les deux preuves de nuit ; commentaires, docs, manuel, CHANGELOG.
+- [ ] Retourner le test d'AC2 de la 35-5a0 : à `HorlogeFixe(2025-12-31T23:30:00Z)`, contre-passation au `2026-01-01`, dans
+      l'exercice 2026 (exception nommée à AC10).
+- [ ] Tests convertis (AC9), inventaire des `HorlogeFixe(…Utc::now…)` (D5), et les preuves de nuit ; commentaires, docs, manuel
+      (`:995`, `:2458`), CHANGELOG.
 - [ ] Gates : `test-fast.sh --ci` **complet à chaque commit de code** (exception `kesh-db`), `scripts/gate-ci.sh` au dernier
       commit de code, frontend complet, E2E complet au dernier commit de code.
 
@@ -463,8 +508,9 @@ la règle d'ordre est à l'epic et dans la fiche 35-5a0 (la seconde fusionnée a
 `routes/invoices.rs`, `routes/supplier_invoices.rs`,
 `routes/imported_supplier_invoices.rs`, `routes/reconciliation.rs`, `services/factures_fournisseur.rs` (chaîne des
 appelants) ; `docs/api-external.md:272` : 35-5a seule pour cette ligne (la 35-6 ne touche plus `api-external.md`, C-e350-19 ;
-la 35-5b y a `:252`, `:292`, `:443`) ; `user-manual.tex` avec la **35-4** (`:3107`), la **35-6** (`:2456`), la **35-3** et la
-**35-2a** (paragraphes distincts) ; `frontend/src/lib/shared/utils/local-date-guard.test.ts` avec la **35-5c** (qui l'étend
+la 35-5b y a `:252`, `:292`, `:443`) ; `user-manual.tex` avec la **35-4** (`:3107`), la **35-6** (`:2456` — **contigu** au
+`:2458` que la 35-5a réécrit, V4-1 : hunks distincts mais voisins, union à la main), la **35-3** et la **35-2a** (paragraphes
+distincts) ; `frontend/src/lib/shared/utils/local-date-guard.test.ts` avec la **35-5c** (qui l'étend
 aux specs, partant de celle-ci fusionnée) ; `settings/+page.svelte` (35-5a seule) ; `CHANGELOG.md`. `lib.rs`,
 `services/poignees.rs`, `mcp_gardes_lexicales.rs`, `services_motif.rs` : 35-5a0 ; `tests/common/mcp.rs` avec la 35-5a0 et la
 **35-5b** (qui y ajoute une entrée à horloge fixée). `crates/kesh-api/tests/date_du_jour_garde.rs` : créé par la 35-5a0, sa liste
@@ -582,3 +628,18 @@ qui assertent une date d'un site de la 35-5a ; `docs/api-external.md`, `docs/man
   - Helper de test renommé `aujourd_hui_test()` (il rend le jour UTC dans la 35-5a0, suisse après la bascule : le nom
     `aujourd_hui_suisse` aurait menti entre les deux). `reconciliation.rs:237` : **#1053**.
   - Aucun finding réfuté. Signal de découpage : suivi (C-e350-28). Aucune migration. Statut `ready-for-dev`.
+- 2026-11-12 — **Validation P4** (Opus, `kesh-gate-logs/e35-5a-validation-p4.md` : 0 CRITICAL, 0 HIGH, 2 MEDIUM, 8 LOW ; série
+  7 → 5 → 4 → 2 MEDIUM) remédiée par l'agent de rédaction (worktree `kesh-e355`). Prémisses lues au code de `release/0.17.6`.
+  - **V4-1** : le manuel dit déjà « en temps universel » à `user-manual.tex:995` et `:2458` (`/usr/bin/grep -n 'temps universel'`,
+    lu) ; § *Ce qui se lit* corrigé, D6 réécrit ces deux phrases, AC11 contrôle `.tex` et PDF aplati, union avec la 35-6 au
+    `:2456` (contigu).
+  - **V4-2** : binaires que `KESH_TEST_INSTANT` n'atteint pas nommés (`lib` de chaque crate) et prouvés par la valeur ;
+    `kesh-report/tests` reçoit son `support/jour.rs` (porté à la 35-5a0) ; règle et inventaire des `HorlogeFixe(…Utc::now…)` (D5).
+  - **LOW** : V4-3 (test d'AC2 de la 35-5a0 retourné, exception d'AC10, tâche ; AC6 → D2 et AC5 de la 35-5a0) ; V4-4 (fonction
+    privée `jour()` posée par la 35-5a0, remplacée par `jour_suisse` : compte 1 à chaque étape ; tests d'AC1 sans `.date_naive()`) ;
+    V4-5 (borne d'`unlock_books` posée en SQL ; cible égale = retrait sans effet, accepté, `companies.rs:1099-1100`, `:1128-1131`
+    lus) ; V4-6 (définitions et appels distingués, ici et à la 35-5a0) ; V4-7 (fichiers mixtes) ; V4-8 (`companies.rs:986-989`
+    réécrit par la 35-5a0) ; V4-9 (`vi.useFakeTimers({ toFake: ['Date'] })`, `useRealTimers` en `afterEach`) ; V4-10 (montages
+    par année du jour, tous 35-5a ou 35-5b : AC9).
+  - Aucun finding réfuté. Signal de découpage : non levé (MEDIUM neufs, aucun recyclage). Aucune migration. Statut
+    `ready-for-dev`.
