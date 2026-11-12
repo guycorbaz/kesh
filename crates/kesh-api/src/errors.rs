@@ -716,6 +716,16 @@ pub enum AppError {
     #[error("Aucun statement ne correspond au compte sélectionné")]
     BankImportNoMatchingStatement { found_ibans: Vec<String> },
 
+    /// Story 34-11a1 (#972, C-e341-18) — relevé CAMT.053 sur un compte **sans
+    /// IBAN** (carte de crédit) → `422 BANK_IMPORT_CAMT_NEEDS_IBAN`,
+    /// `details.bankAccountId`. Le relevé CAMT se choisit par l'IBAN du compte :
+    /// sans IBAN, aucun relevé n'est le sien. Refus placé après la détection du
+    /// format (un CSV sur le même compte est accepté ; la détection flaire déjà les
+    /// octets) et avant le hash, l'empreinte et l'analyse du fichier. Fondé sur
+    /// `iban IS NULL`, jamais sur le type du compte.
+    #[error("Import CAMT impossible : le compte n'a pas d'IBAN (id={bank_account_id})")]
+    BankImportCamtNeedsIban { bank_account_id: i64 },
+
     /// Story 33-2 (#922, C-e332-6) — un relevé CAMT.053 que Kesh ne sait pas relire
     /// comme la 0.17.3 : impossible de vérifier qu'il ne reprend pas une ligne déjà
     /// importée → `422`, sans écriture ni confirmation possible. `cause` :
@@ -2426,6 +2436,20 @@ impl IntoResponse for AppError {
                 (StatusCode::UNPROCESSABLE_ENTITY, Json(body)).into_response()
             }
 
+            AppError::BankImportCamtNeedsIban { bank_account_id } => {
+                let body = serde_json::json!({
+                    "error": {
+                        "code": "BANK_IMPORT_CAMT_NEEDS_IBAN",
+                        "message": t(
+                            "bank-import-errors-camt-needs-iban",
+                            "Ce compte n'a pas d'IBAN : un relevé CAMT.053 ne peut pas lui être attribué. Importez un fichier CSV ou saisissez le relevé à la main.",
+                        ),
+                        "details": { "bankAccountId": bank_account_id }
+                    }
+                });
+                (StatusCode::UNPROCESSABLE_ENTITY, Json(body)).into_response()
+            }
+
             AppError::BankImportLegacyRereadFailed { cause } => {
                 // La cause seule : aucun contenu du fichier dans les journaux.
                 tracing::warn!(
@@ -3431,6 +3455,22 @@ impl IntoResponse for AppError {
                 // compte clos ; même rendu que le pré-vol de route.
                 DbError::BankAccountClosed { bank_account_id } => {
                     bank_account_closed_response(bank_account_id)
+                }
+                // Story 34-11a1 (#972, C-e341-18) — **409** : la requête est
+                // valide, c'est le compte (sans IBAN) qui ne peut pas débiter un
+                // `pain.001`. Rendu à la création du lot comme à sa génération.
+                DbError::PaymentBatchAccountHasNoIban { bank_account_id } => {
+                    let body = serde_json::json!({
+                        "error": {
+                            "code": "PAYMENT_BATCH_ACCOUNT_HAS_NO_IBAN",
+                            "message": t(
+                                "payment-batches-errors-account-has-no-iban",
+                                "Ce compte n'a pas d'IBAN : il ne peut pas servir de compte débité d'un lot de paiement.",
+                            ),
+                            "details": { "bankAccountId": bank_account_id }
+                        }
+                    });
+                    (StatusCode::CONFLICT, Json(body)).into_response()
                 }
                 DbError::OptimisticLockConflict => build_response(
                     StatusCode::CONFLICT,

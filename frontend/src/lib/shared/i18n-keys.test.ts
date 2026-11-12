@@ -944,11 +944,15 @@ const ATTENDU = {
 	// (15 → 18, `grep -o 'i18nMsg('` à `cdf13639` et à l'arbre) — « Total des dépenses » au
 	// centre de l'anneau, la base des parts au `<desc>` et sous la note. Que des littéraux ;
 	// `sitesNonResolus` et `relais` inchangés.
+	// Story 34-11a1 (#972) : **2922 → 2924** (+2), `BankImportUpload.svelte` (55 → 57, recompté
+	// par `grep -o 'i18nMsg('`) : la zone de dépôt d'un compte sans IBAN, libellé et
+	// `aria-label` (`bank-import-labels-drop-zone-csv-only`). Que des littéraux ;
+	// `sitesNonResolus` et `relais` inchangés.
 	// Intégration de la release 0.17.6 (2026-11-12), **recompté à la source** par la garde
 	// elle-même après chaque fusion (non additionné) : 2946 après la 34-3 (34-1, 34-2, 34-3),
 	// 2954 après la 34-4, 2962 après la 34-5, 2968 après la 34-6, 2968 après la 34-8 (solde
-	// nul de la 34-8), 2992 après la 34-9, **2995** après la 34-10.
-	sitesTotal: 2995,
+	// nul de la 34-8), 2992 après la 34-9, 2995 après la 34-10, **2997** après la 34-11a1.
+	sitesTotal: 2997,
 	sitesNonResolus: 31,
 	relais: 6,
 	// Story 26-1 (#620, AC3-bis) : **10 → 11** — `lib/features/bank-import/

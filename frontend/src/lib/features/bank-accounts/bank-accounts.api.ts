@@ -16,6 +16,9 @@
 
 import { apiClient } from '$lib/shared/utils/api-client';
 
+/** Story 34-11a1 (#972, C-e341-13) — type d'un compte : bancaire (IBAN) ou carte (sans IBAN). */
+export type BankAccountKind = 'bank' | 'credit_card';
+
 export interface BankAccountSummary {
 	id: number;
 	bankName: string;
@@ -25,8 +28,18 @@ export interface BankAccountSummary {
 	 * qui l'oublierait. S'affiche par `bankAccountName` (`format.ts`).
 	 */
 	description: string | null;
-	iban: string;
+	/**
+	 * Story 34-11a1 (#972) — `null` pour un compte **sans IBAN** (carte de
+	 * crédit). Nullable dans le type : `npm run check` signale tout lecteur qui
+	 * le traiterait comme une chaîne. S'affiche par `bankAccountShortId` ou
+	 * `bankAccountOptionLabel` (`format.ts`).
+	 */
+	iban: string | null;
 	qrIban: string | null;
+	/** Story 34-11a1 (#972) — type du compte, déclaré par le serveur. */
+	accountKind: BankAccountKind;
+	/** Story 34-11a1 (#972) — quatre derniers chiffres d'une carte, `null` sinon. */
+	cardLast4: string | null;
 	isPrimary: boolean;
 	journalAccountId: number | null;
 	version: number;
@@ -80,8 +93,11 @@ interface BankAccountSummaryRaw {
 	id: number;
 	bankName: string;
 	description: string | null;
-	iban: string;
+	iban: string | null;
 	qrIban: string | null;
+	// Story 34-11a1 — absents d'un serveur antérieur à la 0.17.6 : `bank`, `null`.
+	accountKind?: BankAccountKind;
+	cardLast4?: string | null;
 	isPrimary: boolean;
 	journalAccountId: number | null;
 	version: number;
@@ -102,8 +118,10 @@ function parseBankAccount(raw: BankAccountSummaryRaw): BankAccountSummary {
 		id: raw.id,
 		bankName: raw.bankName,
 		description: raw.description ?? null,
-		iban: raw.iban,
+		iban: raw.iban ?? null,
 		qrIban: raw.qrIban,
+		accountKind: raw.accountKind ?? 'bank',
+		cardLast4: raw.cardLast4 ?? null,
 		isPrimary: raw.isPrimary,
 		journalAccountId: raw.journalAccountId,
 		version: raw.version,

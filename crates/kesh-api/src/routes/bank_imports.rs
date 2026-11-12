@@ -244,7 +244,9 @@ pub struct CsvProfileMatch {
 #[serde(rename_all = "camelCase")]
 pub struct PreviewStatement {
     pub statement_id: Option<String>,
-    pub account_iban: String,
+    /// IBAN du relevé (CAMT) ou du compte choisi (CSV). Story 34-11a1 (#972) —
+    /// `null` pour l'aperçu CSV d'un compte sans IBAN ; toujours présent en CAMT.
+    pub account_iban: Option<String>,
     pub currency: String,
     pub period_from: chrono::NaiveDate,
     pub period_to: chrono::NaiveDate,
@@ -935,6 +937,24 @@ struct StatementSelection {
     ignored: Vec<ImportedStatement>,
 }
 
+/// L'IBAN par lequel un relevé CAMT.053 se choisit, ou le refus nommé
+/// `422 BANK_IMPORT_CAMT_NEEDS_IBAN` pour un compte sans IBAN — Story 34-11a1
+/// (#972, C-e341-18). Fondé sur `iban IS NULL`, jamais sur le type du compte.
+///
+/// ⚠️ Appelée **après** la détection du format (un CSV sur le même compte est
+/// accepté ; la détection flaire déjà les octets) et **avant** le hash,
+/// l'empreinte et l'analyse du fichier : l'aperçu ([`preview`]) et la création
+/// ([`create`]) la placent juste après l'aiguillage CSV — dans la création, avant
+/// le contrôle de l'empreinte (test `compte_sans_iban_le_refus_camt_precede_l_empreinte`).
+fn camt_target_iban(bank_account: &kesh_db::entities::BankAccount) -> Result<&str, AppError> {
+    bank_account
+        .iban
+        .as_deref()
+        .ok_or(AppError::BankImportCamtNeedsIban {
+            bank_account_id: bank_account.id,
+        })
+}
+
 /// Filtre `Vec<ImportedStatement>` par IBAN du `bank_account` sélectionné
 /// (§multi-stmt + AC #3b/3c).
 fn select_statement_by_iban(
@@ -1045,6 +1065,9 @@ pub async fn preview(
     if format == ImportFormat::Csv {
         return preview_csv(&state, current_user.company_id, &bank_account, &fields).await;
     }
+    // Story 34-11a1 (#972) — CAMT sur un compte sans IBAN : refus nommé, après
+    // la détection du format (le CSV vient de partir) et avant le hash et l'analyse.
+    let target_iban = camt_target_iban(&bank_account)?;
 
     // Hash + parse CAMT.053.
     let file_hash = compute_sha256_hex(&fields.file_bytes);
@@ -1057,7 +1080,7 @@ pub async fn preview(
         None,
     );
     let stmts = parse_camt053(&fields.file_bytes).map_err(map_camt_error)?;
-    let selection = select_statement_by_iban(stmts, &bank_account.iban)?;
+    let selection = select_statement_by_iban(stmts, target_iban)?;
     let stmt = selection.selected;
 
     // Warnings non-bloquants — structurés (Story 8-3).
@@ -1109,7 +1132,7 @@ pub async fn preview(
         // l'aperçu suit l'ordre de la création, « déjà importé » d'abord.
         let aliases = match legacy_0173_aliases(
             &fields.file_bytes,
-            &bank_account.iban,
+            target_iban,
             selection.position,
             &stmt.transactions,
             fields.bank_account_id,
@@ -1171,7 +1194,7 @@ pub async fn preview(
         source_format: source_format.as_str().to_string(),
         selected_statement: PreviewStatement {
             statement_id: stmt.statement_id.clone(),
-            account_iban: stmt.account_iban.clone(),
+            account_iban: Some(stmt.account_iban.clone()),
             currency: stmt.currency.clone(),
             period_from: stmt.period_from,
             period_to: stmt.period_to,
@@ -1227,6 +1250,9 @@ pub async fn create(
     if format == ImportFormat::Csv {
         return create_csv(&state, &current_user, &bank_account, &fields).await;
     }
+    // Story 34-11a1 (#972) — CAMT sur un compte sans IBAN : refus nommé, avant
+    // le hash, l'empreinte, le verrou et l'analyse du fichier (rien n'est écrit).
+    camt_target_iban(&bank_account)?;
 
     let file_hash = compute_sha256_hex(&fields.file_bytes);
 
@@ -1309,8 +1335,10 @@ async fn create_camt_under_lock(
         modifiers.push("duplicate_file");
     }
 
+    // Story 34-11a1 (#972) — refusé déjà par `create` ; relu ici sans `unwrap`.
+    let target_iban = camt_target_iban(bank_account)?;
     let stmts = parse_camt053(&fields.file_bytes).map_err(map_camt_error)?;
-    let selection = select_statement_by_iban(stmts, &bank_account.iban)?;
+    let selection = select_statement_by_iban(stmts, target_iban)?;
     let stmt = selection.selected;
 
     // Validation devise (always blocking — pas de bypass v0.1).
@@ -1373,7 +1401,7 @@ async fn create_camt_under_lock(
     // confirmation possible ; la transaction s'annule en sortant.
     let aliases = legacy_0173_aliases(
         &fields.file_bytes,
-        &bank_account.iban,
+        target_iban,
         selection.position,
         &stmt.transactions,
         fields.bank_account_id,

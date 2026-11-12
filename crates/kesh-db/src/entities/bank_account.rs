@@ -7,6 +7,77 @@
 
 use chrono::{NaiveDate, NaiveDateTime};
 use serde::{Deserialize, Serialize};
+use sqlx::{Decode, Encode, MySql, Type, encode::IsNull, error::BoxDynError, mysql::MySqlTypeInfo};
+
+/// Type d'un compte de `bank_accounts` — Story 34-11a1 (#972, C-e341-13).
+///
+/// Mappé en `VARCHAR(20)` (`account_kind`), domaine fermé **à l'octet** par
+/// `chk_bank_accounts_account_kind` (`BINARY … IN`) : la collation de la table
+/// admettrait sinon `BANK` ou `bank `, que [`std::str::FromStr`] refuse — et le
+/// décodage de toute liste de comptes échouerait. Sérialisé en JSON `"bank"` /
+/// `"credit_card"` (champ `accountKind`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum BankAccountKind {
+    /// Compte bancaire : IBAN obligatoire.
+    #[default]
+    Bank,
+    /// Carte de crédit : sans IBAN, ni QR-IBAN, jamais principale ; seuls les
+    /// quatre derniers chiffres sont gardés. Créée par la Story 34-11a2.
+    CreditCard,
+}
+
+impl BankAccountKind {
+    /// Valeur persistée (colonne `account_kind`).
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::Bank => "bank",
+            Self::CreditCard => "credit_card",
+        }
+    }
+}
+
+impl std::fmt::Display for BankAccountKind {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+impl std::str::FromStr for BankAccountKind {
+    type Err = String;
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "bank" => Ok(Self::Bank),
+            "credit_card" => Ok(Self::CreditCard),
+            other => Err(format!("BankAccountKind inconnu : {other}")),
+        }
+    }
+}
+
+impl Type<MySql> for BankAccountKind {
+    fn type_info() -> MySqlTypeInfo {
+        <String as Type<MySql>>::type_info()
+    }
+    fn compatible(ty: &MySqlTypeInfo) -> bool {
+        <String as Type<MySql>>::compatible(ty) || <str as Type<MySql>>::compatible(ty)
+    }
+}
+
+impl<'q> Encode<'q, MySql> for BankAccountKind {
+    fn encode_by_ref(
+        &self,
+        buf: &mut <MySql as sqlx::Database>::ArgumentBuffer<'q>,
+    ) -> Result<IsNull, BoxDynError> {
+        <&str as Encode<MySql>>::encode_by_ref(&self.as_str(), buf)
+    }
+}
+
+impl<'r> Decode<'r, MySql> for BankAccountKind {
+    fn decode(value: <MySql as sqlx::Database>::ValueRef<'r>) -> Result<Self, BoxDynError> {
+        let s = <String as Decode<MySql>>::decode(value)?;
+        s.parse().map_err(Into::into)
+    }
+}
 
 /// Compte bancaire persisté en base.
 ///
@@ -37,9 +108,24 @@ pub struct BankAccount {
     /// absent = inchangé) ; aucun autre écrivain du dépôt ne la touche.
     pub description: Option<String>,
     /// IBAN normalisé sans espaces.
-    pub iban: String,
+    ///
+    /// Story 34-11a1 (#972) — `None` pour un compte **sans IBAN** (carte de
+    /// crédit). Le schéma garantit `Some` pour un compte
+    /// [`BankAccountKind::Bank`] (`chk_bank_accounts_bank_has_iban`) et `None`
+    /// pour une carte (`chk_bank_accounts_card_shape`). Les sites qui ont
+    /// besoin d'un IBAN (lot `pain.001`, import CAMT, QR-facture) refusent sur
+    /// `iban.is_none()`, jamais sur le type (C-e341-18) : un futur type sans
+    /// IBAN y tombe sans changement.
+    pub iban: Option<String>,
     /// QR-IBAN optionnel (plage QR-IID 30000-31999).
     pub qr_iban: Option<String>,
+    /// Story 34-11a1 (#972, C-e341-13) — type du compte, déclaré et non déduit
+    /// d'un IBAN nul. `bank` pour tout compte d'avant la migration
+    /// `20261110000001_bank_accounts_without_iban` (valeur par défaut).
+    pub account_kind: BankAccountKind,
+    /// Story 34-11a1 (#972) — quatre derniers chiffres d'une carte, seuls
+    /// gardés ; `None` pour un compte bancaire (`chk_bank_accounts_card_last4`).
+    pub card_last4: Option<String>,
     pub is_primary: bool,
     /// Compte du plan comptable lié à ce bank_account (classe 1 typique).
     /// `None` = non configuré → FR45/FR48 retourneront 412 BANK_ACCOUNT_NOT_CONFIGURED
@@ -203,8 +289,10 @@ mod tests {
             company_id: 1,
             bank_name: "UBS".into(),
             description: Some("Épargne".into()),
-            iban: "CH9300762011623852957".into(),
+            iban: Some("CH9300762011623852957".into()),
             qr_iban: None,
+            account_kind: BankAccountKind::Bank,
+            card_last4: None,
             is_primary: false,
             journal_account_id: None,
             version: 1,

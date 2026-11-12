@@ -316,9 +316,14 @@ const SUFFIXES = ['Label', 'Text', 'Display'];
  *
  * Intégration de la release 0.17.6 (2026-11-12), recomptés par la garde après chaque fusion
  * (non additionnés) : 87 candidates et `conforme` 73 après la 34-8 (34-1, 34-8), **88**
- * candidates et `conforme` **74** après la 34-10.
+ * candidates et `conforme` 74 après la 34-10, **89** candidates et `conforme` **75** après la
+ * 34-11a1.
+ *
+ * **85 → 86** (Story 34-11a1, #972) : `cardLast4Label` (`bank-accounts/format.ts`), la forme
+ * « •••• 1234 » des quatre derniers chiffres d'une carte — une donnée, aucun littéral à
+ * traduire : `conforme` **71 → 72** ; `ecartee` ne bouge pas.
  */
-const CANDIDATES_ATTENDUES = 88;
+const CANDIDATES_ATTENDUES = 89;
 
 /** Les trois délimiteurs de littéral en JS/TS. */
 const QUOTES = ["'", '"', '`'];
@@ -835,7 +840,7 @@ describe('libellés en dur — l’angle mort #255', () => {
 			else if (c.retours.length > 0) classes.ecartee += 1;
 			else classes.conforme += 1;
 		}
-		expect(classes).toEqual({ nonAnalysee: 0, enViolation: 0, ecartee: 14, conforme: 74 });
+		expect(classes).toEqual({ nonAnalysee: 0, enViolation: 0, ecartee: 14, conforme: 75 });
 		// La somme est recalculée depuis les classes, jamais depuis le total qu'elle contrôle.
 		const somme = Object.values(classes).reduce((a, b) => a + b, 0);
 		expect(somme).toBe(CANDIDATES_ATTENDUES);

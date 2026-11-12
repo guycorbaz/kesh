@@ -13,10 +13,49 @@ import type { AccountResponse } from '$lib/features/accounts/accounts.types';
  * Pour les IBAN < 4 chars (cas pathologique de fixture), retourne tel quel.
  *
  * Exemple : `CH4431999123000889012` → `••••9012`.
+ *
+ * Story 34-11a1 (#972) — gardé : `null` (compte sans IBAN) rend `''`, jamais
+ * de `TypeError`.
  */
-export function shortIban(iban: string): string {
+export function shortIban(iban: string | null): string {
+	if (iban === null) return '';
 	if (iban.length < 4) return iban;
 	return `••••${iban.slice(-4)}`;
+}
+
+/** Espace insécable (U+00A0) entre `••••` et les quatre chiffres d'une carte. */
+export const CARD_LAST4_SEPARATOR = ' ';
+
+/**
+ * Story 34-11a1 (#972, C-e341-21) — **seule** forme d'affichage des quatre
+ * chiffres d'une carte : `"•••• 1234"`, séparés par une espace **insécable**
+ * ({@link CARD_LAST4_SEPARATOR}, revue P1 A7) pour que la forme ne se coupe
+ * jamais en colonne étroite. `null` sans quatre chiffres.
+ */
+export function cardLast4Label(cardLast4: string | null | undefined): string | null {
+	return cardLast4 ? `••••${CARD_LAST4_SEPARATOR}${cardLast4}` : null;
+}
+
+/** Ce qui identifie un compte au-delà de son nom : l'IBAN, ou les quatre chiffres d'une carte. */
+export type BankAccountIdSource = { iban: string | null; cardLast4?: string | null };
+
+/**
+ * Identifiant **court** d'un compte, pour les listes qui le montrent à part
+ * (tableau *Comptes bancaires*, accueil, *Paramètres*) — Story 34-11a1 (#972) :
+ * `"••••9012"` pour un IBAN, `"•••• 1234"` pour une carte, `''` pour un compte
+ * sans IBAN ni quatre chiffres (le nom seul s'affiche alors).
+ */
+export function bankAccountShortId(a: BankAccountIdSource): string {
+	return a.iban !== null ? shortIban(a.iban) : (cardLast4Label(a.cardLast4) ?? '');
+}
+
+/**
+ * Identifiant **complet** d'un compte, après son nom (sélecteurs, colonne IBAN
+ * du tableau) — Story 34-11a1 (#972) : l'IBAN entier, sinon `"•••• 1234"` pour
+ * une carte, sinon `null` (le nom seul s'affiche).
+ */
+export function bankAccountFullId(a: BankAccountIdSource): string | null {
+	return a.iban ?? cardLast4Label(a.cardLast4);
 }
 
 /**
@@ -59,8 +98,12 @@ const SEPARATOR = ' \u2014 ';
  */
 export type BankAccountLabelSource = { bankName: string; description: string | null };
 
-/** Ce qu'il faut pour le libellé d'option d'un sélecteur : le nom et l'IBAN. */
-export type BankAccountOptionSource = BankAccountLabelSource & { iban: string };
+/**
+ * Ce qu'il faut pour le libellé d'option d'un sélecteur : le nom et l'IBAN
+ * (`null` pour un compte sans IBAN, Story 34-11a1), et les quatre chiffres
+ * d'une carte s'ils sont connus.
+ */
+export type BankAccountOptionSource = BankAccountLabelSource & BankAccountIdSource;
 
 /**
  * Nom d'affichage d'un compte bancaire : `"UBS — Personnel"` avec
@@ -84,13 +127,18 @@ export function bankAccountName(a: BankAccountLabelSource): string {
  * - `'parens'` : `"UBS — Personnel (CH93…)"`, `"UBS (CH93…)"` sans — pour le
  *   **seul** sélecteur de l'import bancaire, qui garde ainsi exactement son
  *   affichage d'avant la description (C-26-2-26).
+ *
+ * Story 34-11a1 (#972) — un compte sans IBAN montre `"•••• 1234"` à la place de
+ * l'IBAN si ses quatre chiffres sont connus, et son **nom seul** sinon.
  */
 export function bankAccountOptionLabel(
 	a: BankAccountOptionSource,
 	ibanStyle: 'dash' | 'parens' = 'dash',
 ): string {
 	const name = bankAccountName(a);
-	return ibanStyle === 'parens' ? `${name} (${a.iban})` : `${name}${SEPARATOR}${a.iban}`;
+	const id = bankAccountFullId(a);
+	if (id === null) return name;
+	return ibanStyle === 'parens' ? `${name} (${id})` : `${name}${SEPARATOR}${id}`;
 }
 
 /** Options de {@link linkableLedgerAccounts}. */

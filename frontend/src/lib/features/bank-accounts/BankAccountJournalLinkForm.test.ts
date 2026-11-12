@@ -52,6 +52,8 @@ function makeBankAccount(journalAccountId: number | null): BankAccountSummary {
 		description: null,
 		iban: 'CH4431999123000889012',
 		qrIban: null,
+		accountKind: 'bank',
+		cardLast4: null,
 		isPrimary: true,
 		journalAccountId,
 		version: 3,

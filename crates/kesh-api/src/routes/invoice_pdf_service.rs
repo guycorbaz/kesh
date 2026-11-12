@@ -339,7 +339,19 @@ fn build_qrbill_inputs(
             })?;
             (normalize_iban(qr), Reference::Qrr(qrr))
         }
-        _ => (normalize_iban(&primary_bank.iban), Reference::None),
+        _ => {
+            // Story 34-11a1 (#972, AC-3) — un principal sans IBAN est exclu par
+            // le schéma (`chk_bank_accounts_card_shape` : une carte n'est jamais
+            // principale ; `chk_bank_accounts_bank_has_iban`). Si le schéma
+            // venait à le permettre, erreur interne, jamais de panique.
+            let iban = primary_bank.iban.as_deref().ok_or_else(|| {
+                AppError::Internal(format!(
+                    "compte bancaire principal {} sans IBAN : QR-facture impossible",
+                    primary_bank.id
+                ))
+            })?;
+            (normalize_iban(iban), Reference::None)
+        }
     };
 
     // #246 (Story 21-2a) : le montant réclamé par le QR et affiché sous
@@ -679,8 +691,10 @@ mod tests {
             company_id: 1,
             bank_name: "Banque Démo".into(),
             description: None,
-            iban: "CH9300762011623852957".into(),
+            iban: Some("CH9300762011623852957".into()),
             qr_iban: None,
+            account_kind: kesh_db::entities::BankAccountKind::Bank,
+            card_last4: None,
             is_primary: true,
             journal_account_id: None,
             version: 1,
@@ -889,6 +903,29 @@ mod tests {
             "Facture",
         )
         .expect("montage exploitable")
+    }
+
+    /// Story 34-11a1 (#972, AC-3) — un principal sans IBAN (inatteignable : le
+    /// schéma l'exclut) rend une erreur interne, jamais une panique.
+    #[test]
+    fn principal_sans_iban_rend_une_erreur_interne() {
+        let bank = kesh_db::entities::BankAccount {
+            iban: None,
+            ..primary_bank()
+        };
+        let res = build_qrbill_inputs(
+            &invoice(),
+            &lines_1081(),
+            &contact_with_structured_address(),
+            &company_with_contact_details(),
+            &bank,
+            "CH",
+            "CH",
+            PdfDocument::Invoice,
+            "Facture",
+        );
+        let err = res.err();
+        assert!(matches!(err, Some(AppError::Internal(_))), "{err:?}");
     }
 
     /// Story 31-5 (#504, AC9 a) — la communication de la QR porte le préfixe

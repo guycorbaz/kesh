@@ -2568,3 +2568,191 @@ async fn deleting_a_statement_recomputes_the_last_statement(pool: MySqlPool) {
         "plus de relevé exposé : {balance} {date}"
     );
 }
+
+// =========================================================================
+// Story 34-11a1 (#972) — un compte sans IBAN : les lecteurs le tolèrent, les
+// sites qui exigent un IBAN le refusent, et rien ne permet encore d'en créer.
+// =========================================================================
+
+/// Une carte de crédit forgée en base (aucune route ne la crée avant la 34-11a2).
+async fn forge_card(pool: &MySqlPool, company_id: i64) -> i64 {
+    sqlx::query(
+        "INSERT INTO bank_accounts (company_id, bank_name, account_kind, iban, card_last4) \
+         VALUES (?, 'Visa', 'credit_card', NULL, '1234')",
+    )
+    .bind(company_id)
+    .execute(pool)
+    .await
+    .unwrap()
+    .last_insert_id() as i64
+}
+
+/// AC-3 — `GET /bank-accounts` et `GET /companies/current` rendent la carte :
+/// `iban: null`, `accountKind`, `cardLast4` ; un compte bancaire porte
+/// désormais `accountKind: "bank"` et `cardLast4: null`.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn compte_sans_iban_les_lectures_le_rendent(pool: MySqlPool) {
+    let ctx = setup_full(&pool, "Acme", "CH4431999123000889012", Role::Comptable).await;
+    let card_id = forge_card(&pool, ctx.company_id).await;
+    let app = spawn_app(pool.clone()).await;
+
+    let check = |arr: &Vec<Value>| {
+        let carte = arr
+            .iter()
+            .find(|a| a["id"] == card_id)
+            .expect("carte listée");
+        assert!(carte["iban"].is_null(), "{carte}");
+        assert_eq!(carte["accountKind"], "credit_card", "{carte}");
+        assert_eq!(carte["cardLast4"], "1234", "{carte}");
+        let banque = arr
+            .iter()
+            .find(|a| a["id"] == ctx.bank_account_id)
+            .expect("compte bancaire listé");
+        assert_eq!(banque["iban"], "CH4431999123000889012", "{banque}");
+        assert_eq!(banque["accountKind"], "bank", "{banque}");
+        assert!(banque["cardLast4"].is_null(), "{banque}");
+    };
+
+    let resp = app
+        .client
+        .get(app.url("/api/v1/bank-accounts"))
+        .bearer_auth(&ctx.jwt)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 200);
+    let body: Value = resp.json().await.unwrap();
+    check(body.as_array().expect("liste"));
+
+    let resp = app
+        .client
+        .get(app.url("/api/v1/companies/current"))
+        .bearer_auth(&ctx.jwt)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 200);
+    let body: Value = resp.json().await.unwrap();
+    check(body["bankAccounts"].as_array().expect("bankAccounts"));
+}
+
+/// AC-11 — rien ne crée encore un compte sans IBAN : `POST` sans IBAN → `400`
+/// comme en 0.17.5 ; un `accountKind: "credit_card"` envoyé est **ignoré**
+/// (constaté à l'étape 0 : le corps n'a pas `deny_unknown_fields`) — le
+/// compte créé est bancaire, avec son IBAN.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn compte_sans_iban_aucune_route_ne_le_cree(pool: MySqlPool) {
+    complete_onboarding(&pool).await;
+    let ctx = setup_full(&pool, "Acme", "CH4431999123000889012", Role::Comptable).await;
+    let app = spawn_app(pool.clone()).await;
+
+    let resp = app
+        .client
+        .post(app.url("/api/v1/bank-accounts"))
+        .bearer_auth(&ctx.jwt)
+        .json(&json!({ "bankName": "Visa", "accountKind": "credit_card", "cardLast4": "1234" }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 400, "IBAN toujours exigé");
+    let body: Value = resp.json().await.unwrap();
+    assert_eq!(body["error"]["code"], "VALIDATION_ERROR", "{body}");
+
+    let resp = app
+        .client
+        .post(app.url("/api/v1/bank-accounts"))
+        .bearer_auth(&ctx.jwt)
+        .json(&json!({
+            "bankName": "PostFinance",
+            "iban": "CH3908704016075473007",
+            "accountKind": "credit_card",
+            "cardLast4": "1234",
+        }))
+        .send()
+        .await
+        .unwrap();
+    let status = resp.status();
+    let body: Value = resp.json().await.unwrap();
+    assert_eq!(status, 201, "{body}");
+    assert_eq!(body["accountKind"], "bank", "type ignoré : {body}");
+    assert!(
+        body["cardLast4"].is_null(),
+        "quatre chiffres ignorés : {body}"
+    );
+    assert_eq!(body["iban"], "CH3908704016075473007");
+
+    let cartes: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM bank_accounts WHERE account_kind <> 'bank'")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(cartes, 0, "aucune carte créée");
+}
+
+/// Revue P1 (A9) — le `PUT` d'un compte bancaire ignore `accountKind` et
+/// `cardLast4` comme le `POST` : le compte reste bancaire, avec son IBAN
+/// (`docs/api-external.md`, note ¹² du § 7 — ¹¹ dans la branche de la story,
+/// renumérotée à l'intégration de la 0.17.6, la 34-2 y ayant pris ¹¹). La 34-11a2
+/// changera ce contrat.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn compte_sans_iban_le_put_ignore_le_type(pool: MySqlPool) {
+    complete_onboarding(&pool).await;
+    let ctx = setup_full(&pool, "Acme", "CH4431999123000889012", Role::Comptable).await;
+    let app = spawn_app(pool.clone()).await;
+    let version = read_bank_account_version(&pool, ctx.bank_account_id).await;
+    let resp = app
+        .client
+        .put(app.url(&format!("/api/v1/bank-accounts/{}", ctx.bank_account_id)))
+        .bearer_auth(&ctx.jwt)
+        .json(&json!({
+            "bankName": "UBS",
+            "iban": "CH4431999123000889012",
+            "isPrimary": true,
+            "accountKind": "credit_card",
+            "cardLast4": "1234",
+            "version": version,
+        }))
+        .send()
+        .await
+        .unwrap();
+    let status = resp.status();
+    let body: Value = resp.json().await.unwrap();
+    assert_eq!(status, 200, "{body}");
+    assert_eq!(body["accountKind"], "bank", "{body}");
+    assert!(body["cardLast4"].is_null(), "{body}");
+    assert_eq!(body["iban"], "CH4431999123000889012");
+}
+
+/// AC-5 — `POST /payment-batches` sur un compte sans IBAN : `409
+/// PAYMENT_BATCH_ACCOUNT_HAS_NO_IBAN`, rien d'écrit.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn compte_sans_iban_le_lot_de_paiement_est_refuse(pool: MySqlPool) {
+    let ctx = setup_full(&pool, "Acme", "CH4431999123000889012", Role::Comptable).await;
+    let card_id = forge_card(&pool, ctx.company_id).await;
+    let app = spawn_app(pool.clone()).await;
+
+    let resp = app
+        .client
+        .post(app.url("/api/v1/payment-batches"))
+        .bearer_auth(&ctx.jwt)
+        .json(&json!({
+            "bankAccountId": card_id,
+            "requestedExecutionDate": "2026-07-01",
+            "supplierInvoiceIds": [],
+        }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 409);
+    let body: Value = resp.json().await.unwrap();
+    assert_eq!(
+        body["error"]["code"], "PAYMENT_BATCH_ACCOUNT_HAS_NO_IBAN",
+        "{body}"
+    );
+    assert_eq!(body["error"]["details"]["bankAccountId"], card_id, "{body}");
+    let lots: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM payment_batches")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(lots, 0, "aucun lot écrit");
+}

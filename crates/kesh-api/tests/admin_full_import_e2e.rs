@@ -4647,7 +4647,8 @@ fn v0162a_manual_body(bank_account_id: i64, from: &str, to: &str) -> Value {
 
 /// AC-3 — l'aller-retour d'un relevé `MANUAL` : exporté, réimporté dans la
 /// même version, relevé et transactions identiques ; le manifeste porte
-/// `keshVersionMinRequired = "0.17.0"`.
+/// le `keshVersionMinRequired` courant (`"0.17.0"` à la v016-2a, `"0.17.6"`
+/// depuis la Story 34-11a1).
 #[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn full_import_round_trip_keeps_a_manual_statement(pool: MySqlPool) {
     let app = spawn_app(pool.clone()).await;
@@ -4667,7 +4668,7 @@ async fn full_import_round_trip_keeps_a_manual_statement(pool: MySqlPool) {
     assert_eq!(before[0][0]["sourceFormat"], "MANUAL", "montage");
     let backup = export_backup(&app, &admin.jwt).await;
     let (manifest, _) = unzip(&backup);
-    assert_eq!(manifest["keshVersionMinRequired"], "0.17.0");
+    assert_eq!(manifest["keshVersionMinRequired"], "0.17.6");
 
     // La base change après l'export ; l'import la remet à l'état sauvegardé.
     sqlx::query("UPDATE bank_imports SET statement_id = 'modifié'")
@@ -4814,7 +4815,7 @@ async fn full_import_accepts_a_0_16_backup(pool: MySqlPool) {
             .fetch_one(&pool)
             .await
             .unwrap();
-    assert_eq!(min_required, "0.17.0", "_kesh_version n'est pas restaurée");
+    assert_eq!(min_required, "0.17.6", "_kesh_version n'est pas restaurée");
 
     // Le relevé saisi suit le CAMT restauré (clôture 1050.00) : le solde de
     // départ y est confronté, preuve que le relevé restauré se relit aussi
@@ -4847,6 +4848,19 @@ fn a_0_17_backup_is_refused_by_a_0_16_1_binary() {
         Err(kesh_db::version::VersionError::DowngradeRefused { .. })
     ));
     assert!(kesh_db::version::check_import_version_compat("0.14.0", "0.17.0").is_ok());
+}
+
+/// Story 34-11a1 (#972, AC-12) — une sauvegarde 0.17.6 (manifeste `min_required`
+/// `0.17.6`, lu dans un vrai export par `full_import_round_trip_keeps_a_manual_statement`)
+/// est refusée par un binaire 0.17.5 ; une sauvegarde 0.17.5 (`min_required` `0.17.0`)
+/// s'importe dans la 0.17.6. Même limite que ci-dessus : le handler 0.17.5 n'est pas joué.
+#[test]
+fn a_0_17_6_backup_is_refused_by_a_0_17_5_binary() {
+    assert!(matches!(
+        kesh_db::version::check_import_version_compat("0.17.6", "0.17.5"),
+        Err(kesh_db::version::VersionError::DowngradeRefused { .. })
+    ));
+    assert!(kesh_db::version::check_import_version_compat("0.17.0", "0.17.6").is_ok());
 }
 
 // ============================================================
@@ -5661,5 +5675,170 @@ async fn full_import_of_a_0_17_5_backup_keeps_the_numbers(pool: MySqlPool) {
         suivante.invoice.internal_number.as_deref(),
         Some("FF-2020-004"),
         "le numéro supprimé n'est pas repris"
+    );
+}
+
+// ===========================================================================
+// Story 34-11a1 (#972, AC-12) — un compte sans IBAN dans une sauvegarde
+// ===========================================================================
+
+/// Les comptes de la société, relus colonne par colonne (l'IBAN nul compris).
+async fn sans_iban_comptes(
+    pool: &MySqlPool,
+    company_id: i64,
+) -> Vec<(i64, String, Option<String>, String, Option<String>, bool)> {
+    sqlx::query_as(
+        "SELECT id, bank_name, iban, account_kind, card_last4, is_primary FROM bank_accounts \
+         WHERE company_id = ? ORDER BY id",
+    )
+    .bind(company_id)
+    .fetch_all(pool)
+    .await
+    .unwrap()
+}
+
+/// Un compte bancaire principal et une carte de crédit forgée en base (aucune
+/// route ne la crée avant la 34-11a2).
+async fn sans_iban_decor(pool: &MySqlPool, company_id: i64) {
+    sqlx::query(
+        "INSERT INTO bank_accounts (company_id, bank_name, iban, is_primary) \
+         VALUES (?, 'Banque Exemple', 'CH9300762011623852957', TRUE)",
+    )
+    .bind(company_id)
+    .execute(pool)
+    .await
+    .unwrap();
+    sqlx::query(
+        "INSERT INTO bank_accounts (company_id, bank_name, account_kind, iban, card_last4) \
+         VALUES (?, 'Visa', 'credit_card', NULL, '1234')",
+    )
+    .bind(company_id)
+    .execute(pool)
+    .await
+    .unwrap();
+}
+
+/// AC-12, premier volet (revue P1, A2) — un `.keshbackup` 0.17.6 qui porte une
+/// carte sans IBAN se réimporte à l'identique : `iban` nul, `account_kind`,
+/// `card_last4` ; la base modifiée entre l'export et l'import est remise à l'état
+/// sauvegardé.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn full_import_round_trip_keeps_a_card_without_iban(pool: MySqlPool) {
+    let app = spawn_app(pool.clone()).await;
+    let admin = seed_admin(&pool, "Carte").await;
+    sans_iban_decor(&pool, admin.company_id).await;
+    let avant = sans_iban_comptes(&pool, admin.company_id).await;
+    assert_eq!(avant.len(), 2, "montage : un compte et une carte");
+    assert!(
+        avant
+            .iter()
+            .any(|c| c.2.is_none() && c.3 == "credit_card" && c.4.as_deref() == Some("1234"))
+    );
+
+    let backup = export_backup(&app, &admin.jwt).await;
+    let (manifest, data) = unzip(&backup);
+    assert_eq!(manifest["keshVersionMinRequired"], "0.17.6");
+    let lignes = std::str::from_utf8(&data["bank_accounts"]).unwrap();
+    assert!(
+        lignes.contains("\"credit_card\"") && lignes.contains("\"1234\""),
+        "la carte est exportée avec son type et ses quatre chiffres : {lignes}"
+    );
+
+    sqlx::query(
+        "UPDATE bank_accounts SET card_last4 = '9999', bank_name = 'Modifiée' WHERE iban IS NULL",
+    )
+    .execute(&pool)
+    .await
+    .unwrap();
+    let resp = post_import(&app, &admin.jwt, backup).await;
+    assert_eq!(resp.status(), 200, "{}", resp.text().await.unwrap());
+    assert_eq!(
+        sans_iban_comptes(&pool, admin.company_id).await,
+        avant,
+        "chaque compte relu à l'identique, la carte comprise"
+    );
+}
+
+/// AC-12, troisième volet (revue P1, E4) — une sauvegarde de forme 0.17.5, sans
+/// `account_kind` ni `card_last4`, s'importe dans la 0.17.6 : ses comptes
+/// deviennent `bank`, sans quatre chiffres, l'IBAN intact (`DEFAULT` et `NULL`
+/// de la colonne — la justification de l'exemption P7).
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn full_import_of_a_0_17_5_backup_makes_every_account_a_bank_account(pool: MySqlPool) {
+    let app = spawn_app(pool.clone()).await;
+    let admin = seed_admin(&pool, "Forme 0175").await;
+    sqlx::query(
+        "INSERT INTO bank_accounts (company_id, bank_name, iban, is_primary) \
+         VALUES (?, 'Banque Exemple', 'CH9300762011623852957', TRUE)",
+    )
+    .bind(admin.company_id)
+    .execute(&pool)
+    .await
+    .unwrap();
+    let backup = export_backup(&app, &admin.jwt).await;
+    let (mut manifest, mut data, fichiers) = ouvrir_tout(&backup);
+    manifest["keshVersion"] = Value::from("0.17.5");
+    manifest["keshVersionMinRequired"] = Value::from("0.17.0");
+    recrire_table(&mut manifest, &mut data, "bank_accounts", |o| {
+        o.remove("account_kind");
+        o.remove("card_last4");
+    });
+    strip_column(&mut manifest, "bank_accounts", "account_kind");
+    strip_column(&mut manifest, "bank_accounts", "card_last4");
+    let ancienne = rezip_tout(&manifest, &data, &fichiers);
+
+    // La base porte une carte avant l'import : l'import la remplace.
+    sqlx::query(
+        "INSERT INTO bank_accounts (company_id, bank_name, account_kind, iban, card_last4) \
+         VALUES (?, 'Visa', 'credit_card', NULL, '1234')",
+    )
+    .bind(admin.company_id)
+    .execute(&pool)
+    .await
+    .unwrap();
+    let resp = post_import(&app, &admin.jwt, ancienne).await;
+    assert_eq!(resp.status(), 200, "{}", resp.text().await.unwrap());
+    let apres = sans_iban_comptes(&pool, admin.company_id).await;
+    assert_eq!(apres.len(), 1, "{apres:?}");
+    assert_eq!(apres[0].2.as_deref(), Some("CH9300762011623852957"));
+    assert_eq!(apres[0].3, "bank");
+    assert_eq!(apres[0].4, None);
+}
+
+/// Revue P2 (E2) — un `.keshbackup` retouché à la main, `account_kind = "BANK"`
+/// (empreinte recalculée) : l'`INSERT` du restore heurte
+/// `chk_bank_accounts_account_kind`, la transaction est annulée — refus
+/// `500 ADMIN_FULL_IMPORT_FAILED`, comme tout `INSERT` invalide
+/// (`full_import_rolls_back_on_insert_failure`) — et la base reste telle qu'avant
+/// l'import, sans rien de la sauvegarde.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn full_import_refuses_a_forged_account_kind_and_keeps_the_base(pool: MySqlPool) {
+    let app = spawn_app(pool.clone()).await;
+    let admin = seed_admin(&pool, "Type forgé").await;
+    sans_iban_decor(&pool, admin.company_id).await;
+    let backup = export_backup(&app, &admin.jwt).await;
+    let (mut manifest, mut data, fichiers) = ouvrir_tout(&backup);
+    recrire_table(&mut manifest, &mut data, "bank_accounts", |o| {
+        if o.get("account_kind") == Some(&Value::from("bank")) {
+            o.insert("account_kind".into(), Value::from("BANK"));
+        }
+    });
+    let forgee = rezip_tout(&manifest, &data, &fichiers);
+
+    // La base change après l'export : c'est cet état qui doit survivre au refus.
+    sqlx::query("UPDATE bank_accounts SET bank_name = 'Après export' WHERE iban IS NOT NULL")
+        .execute(&pool)
+        .await
+        .unwrap();
+    let avant = sans_iban_comptes(&pool, admin.company_id).await;
+
+    let resp = post_import(&app, &admin.jwt, forgee).await;
+    assert_eq!(resp.status(), 500, "un type hors domaine ne s'importe pas");
+    let body: Value = resp.json().await.unwrap();
+    assert_eq!(body["error"]["code"], "ADMIN_FULL_IMPORT_FAILED", "{body}");
+    assert_eq!(
+        sans_iban_comptes(&pool, admin.company_id).await,
+        avant,
+        "la base est intacte après le refus"
     );
 }

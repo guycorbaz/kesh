@@ -65,6 +65,12 @@
 	};
 
 	let selectedAccountId = $state<number | null>(null);
+	// Story 34-11a1 (#972, AC-6) — un compte sans IBAN n'accepte que le CSV : le
+	// relevé CAMT se choisit par l'IBAN (le serveur le refuse en 422
+	// BANK_IMPORT_CAMT_NEEDS_IBAN). Vrai tant qu'aucun compte n'est choisi.
+	const camtAllowed = $derived(
+		bankAccounts.find((a) => a.id === selectedAccountId)?.iban !== null,
+	);
 	let selectedFile = $state<File | null>(null);
 	let preview = $state<BankImportPreviewResponse | null>(null);
 	let confirmBalanceMismatch = $state(false);
@@ -392,10 +398,15 @@
 			data-testid="bank-import-drop-zone"
 			role="button"
 			tabindex="0"
-			aria-label={i18nMsg(
-				'bank-import-labels-drop-zone',
-				'Glissez votre fichier CAMT.053 ou CSV ici ou cliquez pour parcourir',
-			)}
+			aria-label={camtAllowed
+				? i18nMsg(
+						'bank-import-labels-drop-zone',
+						'Glissez votre fichier CAMT.053 ou CSV ici ou cliquez pour parcourir',
+					)
+				: i18nMsg(
+						'bank-import-labels-drop-zone-csv-only',
+						'Ce compte n’a pas d’IBAN : glissez un fichier CSV ici ou cliquez pour parcourir',
+					)}
 			class="mt-4 flex h-48 cursor-pointer items-center justify-center rounded border-2 border-dashed p-4 transition-colors"
 			class:border-border={!dragActive}
 			class:border-primary={dragActive}
@@ -413,16 +424,23 @@
 				id="bank-import-file-input"
 				data-testid="bank-import-file-input"
 				type="file"
-				accept=".xml,application/xml,.csv,text/csv,.txt"
+				accept={camtAllowed ? '.xml,application/xml,.csv,text/csv,.txt' : '.csv,text/csv,.txt'}
 				class="hidden"
 				onchange={handleFileInput}
 				disabled={!selectedAccountId}
 			/>
-			<p class="text-text-muted">
-				{i18nMsg(
-					'bank-import-labels-drop-zone',
-					'Glissez votre fichier CAMT.053 ou CSV ici ou cliquez pour parcourir',
-				)}
+			<p class="text-text-muted" data-testid="bank-import-drop-zone-text">
+				{#if camtAllowed}
+					{i18nMsg(
+						'bank-import-labels-drop-zone',
+						'Glissez votre fichier CAMT.053 ou CSV ici ou cliquez pour parcourir',
+					)}
+				{:else}
+					{i18nMsg(
+						'bank-import-labels-drop-zone-csv-only',
+						'Ce compte n’a pas d’IBAN : glissez un fichier CSV ici ou cliquez pour parcourir',
+					)}
+				{/if}
 			</p>
 		</div>
 		<p class="mt-2 text-xs text-text-muted">
@@ -510,7 +528,9 @@
 			</h2>
 			<dl class="mt-2 grid grid-cols-2 gap-2 text-sm">
 				<dt>{i18nMsg('bank-import-labels-iban', 'IBAN')}</dt>
-				<dd data-testid="preview-iban">{preview.selectedStatement.accountIban}</dd>
+				<!-- Story 34-11a1 (#972) — un compte sans IBAN : un tiret plutôt qu'une case vide
+				     (Svelte rend `null` en chaîne vide). -->
+				<dd data-testid="preview-iban">{preview.selectedStatement.accountIban ?? '—'}</dd>
 				<dt>{i18nMsg('bank-import-labels-period', 'Période')}</dt>
 				<dd>
 					{formatSwissDate(preview.selectedStatement.periodFrom)} → {formatSwissDate(

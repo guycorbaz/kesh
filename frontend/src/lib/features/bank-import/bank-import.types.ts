@@ -2,7 +2,8 @@
 
 export interface PreviewStatement {
 	statementId: string | null;
-	accountIban: string;
+	/** Story 34-11a1 (#972) — `null` pour l'aperçu CSV d'un compte sans IBAN. */
+	accountIban: string | null;
 	currency: string;
 	periodFrom: string;
 	periodTo: string;

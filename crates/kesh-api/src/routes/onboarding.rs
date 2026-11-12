@@ -771,7 +771,9 @@ async fn audit_bank_account_upsert(
                         "bank_account_id": created.id,
                         "description": created.description,
                         "is_primary": created.is_primary,
-                        "iban_present": true,
+                        // Story 34-11a1 (#972, AC-8) — lu ; vrai par construction
+                        // (l'assistant exige l'IBAN, C-e341-19).
+                        "iban_present": created.iban.is_some(),
                         "qr_iban_present": created.qr_iban.is_some(),
                         "journal_account_id": created.journal_account_id,
                     })),
@@ -784,7 +786,7 @@ async fn audit_bank_account_upsert(
                 json!({
                     "bank_name": b.bank_name,
                     "description": b.description,
-                    "iban_present": true,
+                    "iban_present": b.iban.is_some(),
                     "qr_iban_present": b.qr_iban.is_some(),
                     "is_primary": b.is_primary,
                     "journal_account_id": b.journal_account_id,

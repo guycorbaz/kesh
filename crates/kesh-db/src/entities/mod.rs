@@ -48,7 +48,7 @@ pub mod vat_rate;
 pub use account::{Account, AccountRole, AccountType, AccountUpdate, NewAccount};
 pub use api_key::{ApiKey, ApiKeyScope, NewApiKey};
 pub use audit_log::{AUDIT_ENTITY_ID_NONE, ActorType, AuditLogEntry, NewAuditLogEntry};
-pub use bank_account::{BankAccount, NewBankAccount};
+pub use bank_account::{BankAccount, BankAccountKind, NewBankAccount};
 pub use bank_import::{BankImport, BankImportSourceFormat, NewBankImport};
 pub use bank_profile::{BankProfile, NewBankProfile};
 pub use bank_transaction::{BankTransaction, BankTransactionStatus, NewBankTransaction};

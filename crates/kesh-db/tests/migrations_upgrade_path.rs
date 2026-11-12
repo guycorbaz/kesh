@@ -41,9 +41,9 @@ async fn apply_migrations_up_to(
     assert!(
         n <= all.len(),
         "apply_migrations_up_to: n={} > total={} — vérifier que le calcul \
-         `total - 56` (fenêtre d'upgrade, FRONTIÈRE figée à 34) reste \
+         `total - 57` (fenêtre d'upgrade, FRONTIÈRE figée à 34) reste \
          cohérent avec l'ajout de migrations futures. Si une migration a été ajoutée à \
-         la branche, l'assertion `total == 90` du test upgrade_path_preserves_data \
+         la branche, l'assertion `total == 91` du test upgrade_path_preserves_data \
          doit également échouer, c'est son rôle : elle signale qu'il faut décider \
          explicitement si la fenêtre s'élargit (bumper `total` seul) ou si la \
          frontière doit rester à 34 (bumper `total` ET la fenêtre). Cf. garde-fou \
@@ -60,8 +60,8 @@ async fn apply_migrations_up_to(
     sub.run(pool).await
 }
 
-/// AC #15a — cas générique upgrade path : `total - 56` migrations appliquées
-/// (**34** à ce jour) + seed + `MIGRATOR.run()` final, qui applique les **56**
+/// AC #15a — cas générique upgrade path : `total - 57` migrations appliquées
+/// (**34** à ce jour) + seed + `MIGRATOR.run()` final, qui applique les **57**
 /// dernières. Assertion : seed préservé à travers la fenêtre d'upgrade.
 ///
 /// ⚠️ Les nombres ci-dessus se recomptent, ils ne se relisent pas — cf. le
@@ -123,13 +123,14 @@ async fn upgrade_path_preserves_data(pool: MySqlPool) {
     // + supplier_invoices_draft (Story v017-4a, refs #849) = 88.
     // + installation_settings (Story v0172-session, refs #876, refs #891) = 89.
     // + supplier_invoice_internal_number (Story 33-1a, refs #926) = 90.
+    // + bank_accounts_without_iban (Story 34-11a1, refs #972) = 91.
     let total = kesh_db::MIGRATOR.migrations.len();
     assert_eq!(
-        total, 90,
-        "90 migrations attendues (89 précédentes + Story 33-1a : supplier_invoice_internal_number)"
+        total, 91,
+        "91 migrations attendues (90 précédentes + Story 34-11a1 : bank_accounts_without_iban)"
     );
 
-    // Étape 1 : applique toutes les migrations sauf les 56 dernières. La
+    // Étape 1 : applique toutes les migrations sauf les 57 dernières. La
     // fenêtre d'upgrade démarre donc à la 35ᵉ, `20260614000001_vat_accounts_config`
     // (Story 18-1a), et court jusqu'à la dernière du dépôt. Ne pas ré-énumérer
     // ici les migrations de la fenêtre : une liste nominative se périme à chaque
@@ -137,17 +138,17 @@ async fn upgrade_path_preserves_data(pool: MySqlPool) {
     // plus bas. Le seul nombre qui fait foi est celui du `total - N` ci-dessous.
     //
     // Note `total - N` : expression relative à la longueur totale, tandis que
-    // l'assertion `total == 90` ci-dessus est INTENTIONNELLEMENT codée en dur
+    // l'assertion `total == 91` ci-dessus est INTENTIONNELLEMENT codée en dur
     // pour fail-loud sur toute évolution non revue. À chaque migration ajoutée,
     // le mainteneur doit (1) bumper ce compte (2) incrémenter `N` du même pas,
     // de sorte que `total - N` — la frontière — reste **constant**.
     //
     // Frontière actuelle : **34**. Le test applique donc les 34 premières
     // migrations (jusqu'à `20260613000001_vat_rates_crud` incluse), seede des
-    // données, puis joue les 56 restantes comme « fenêtre d’upgrade ».
+    // données, puis joue les 57 restantes comme « fenêtre d’upgrade ».
     //
-    // ⚠️ `N` DOIT être incrémenté en même temps que `total`. Le laisser à 55
-    // avec `total = 90` porterait la frontière à 35 : le test continuerait de
+    // ⚠️ `N` DOIT être incrémenté en même temps que `total`. Le laisser à 56
+    // avec `total = 91` porterait la frontière à 35 : le test continuerait de
     // passer en testant une fenêtre plus étroite d'une migration.
     // Story 16-1a : 21 → 22, frontière inchangée (56 - 22 = 55 - 21 = 34).
     // Story 16-1a-bis : 22 → 23, frontière inchangée (57 - 23 = 34).
@@ -212,16 +213,17 @@ async fn upgrade_path_preserves_data(pool: MySqlPool) {
     // Story v017-4a : 53 → 54, frontière inchangée (88 - 54 = 34).
     // Story v0172-session : 54 → 55, frontière inchangée (89 - 55 = 34).
     // Story 33-1a : 55 → 56, frontière inchangée (90 - 56 = 34).
+    // Story 34-11a1 : 56 → 57, frontière inchangée (91 - 57 = 34).
     //
     // ⚠️ J'ai d'abord porté `total` à 69 SANS toucher à ce soustracteur : le socle
     // est alors passé de 34 à 35 migrations, la fenêtre a glissé d'un cran, et le
     // test a rougi non plus sur son compteur mais sur `COUNT(accounts) : expected
     // 4, got 2` — un échec qui ne ressemble en rien à sa cause. *Les deux nombres
     // se bougent du même pas, et le commentaire ci-dessus le disait.*
-    let n_before_upgrade_window = total - 56;
+    let n_before_upgrade_window = total - 57;
     apply_migrations_up_to(&pool, n_before_upgrade_window)
         .await
-        .expect("apply_migrations_up_to(total - 56) failed");
+        .expect("apply_migrations_up_to(total - 57) failed");
 
     // Étape 2 : seed 1 company + 1 user + 2 accounts + 1 invoice + 1 contact.
     let company_id: i64 = sqlx::query_scalar(
@@ -290,7 +292,7 @@ async fn upgrade_path_preserves_data(pool: MySqlPool) {
     .await
     .expect("INSERT invoice failed");
 
-    // Étape 3 : appliquer les 56 migrations restantes via MIGRATOR.run().
+    // Étape 3 : appliquer les 57 migrations restantes via MIGRATOR.run().
     kesh_db::MIGRATOR
         .run(&pool)
         .await
@@ -546,12 +548,27 @@ async fn downgrade_protection_aligned_when_binary_equals_min(pool: MySqlPool) {
     // (bank_imports_manual_source.sql — 6e bump du repo, après '0.7.0' en
     // 21-3, '0.10.0' en 22-1, '0.13.0' en 15-1a-i, '0.13.1' en 26-1 et
     // '0.14.0' en 30-2a). Binary == db_min → Aligned.
-    let result = check_downgrade_protection(&pool, "0.17.0").await;
+    // Story 34-11a1 (#972) : 7e bump, '0.17.6' (compte sans IBAN).
+    let result = check_downgrade_protection(&pool, "0.17.6").await;
     assert_eq!(
         result.unwrap(),
         DowngradeCheckOutcome::Aligned,
-        "binary 0.17.0 == db_min 0.17.0 → Aligned"
+        "binary 0.17.6 == db_min 0.17.6 → Aligned"
     );
+}
+
+/// Story 34-11a1 (#972, AC-12) : un binaire 0.17.5 est **refusé** — il lit
+/// `bank_accounts.iban` en `String`, et un seul compte sans IBAN ferait échouer
+/// toute liste de comptes ; il ignorerait `account_kind` à l'import.
+#[sqlx::test(migrator = "kesh_db::MIGRATOR")]
+async fn downgrade_protection_refuses_0_17_5(pool: MySqlPool) {
+    match check_downgrade_protection(&pool, "0.17.5").await {
+        Err(VersionError::DowngradeRefused { db_min, binary }) => {
+            assert_eq!(db_min.to_string(), "0.17.6");
+            assert_eq!(binary.to_string(), "0.17.5");
+        }
+        other => panic!("Expected DowngradeRefused for 0.17.5, got {other:?}"),
+    }
 }
 
 /// Story v016-2a (#816, AC-2) : un binaire 0.16.1 — la candidate
@@ -562,7 +579,8 @@ async fn downgrade_protection_aligned_when_binary_equals_min(pool: MySqlPool) {
 async fn downgrade_protection_refuses_0_16_1(pool: MySqlPool) {
     match check_downgrade_protection(&pool, "0.16.1").await {
         Err(VersionError::DowngradeRefused { db_min, binary }) => {
-            assert_eq!(db_min.to_string(), "0.17.0");
+            // Story 34-11a1 : le seuil est passé à 0.17.6 ; 0.16.1 reste refusé.
+            assert_eq!(db_min.to_string(), "0.17.6");
             assert_eq!(binary.to_string(), "0.16.1");
         }
         other => panic!("Expected DowngradeRefused for 0.16.1, got {other:?}"),
@@ -578,7 +596,8 @@ async fn downgrade_protection_refuses_0_13_4(pool: MySqlPool) {
     match check_downgrade_protection(&pool, "0.13.4").await {
         Err(VersionError::DowngradeRefused { db_min, binary }) => {
             // Story v016-2a : le seuil est passé à 0.17.0 ; 0.13.4 reste refusé.
-            assert_eq!(db_min.to_string(), "0.17.0");
+            // Story 34-11a1 : puis à 0.17.6.
+            assert_eq!(db_min.to_string(), "0.17.6");
             assert_eq!(binary.to_string(), "0.13.4");
         }
         other => panic!("Expected DowngradeRefused for 0.13.4, got {other:?}"),
@@ -597,7 +616,8 @@ async fn downgrade_protection_binary_ahead_when_binary_greater(pool: MySqlPool) 
     let result = check_downgrade_protection(&pool, "0.18.0").await;
     match result.unwrap() {
         DowngradeCheckOutcome::BinaryAhead { db_min, binary } => {
-            assert_eq!(db_min.to_string(), "0.17.0");
+            // Story 34-11a1 : seuil 0.17.6, 0.18.0 reste en avance.
+            assert_eq!(db_min.to_string(), "0.17.6");
             assert_eq!(binary.to_string(), "0.18.0");
         }
         other => panic!("Expected BinaryAhead, got {:?}", other),
@@ -679,8 +699,9 @@ async fn bank_profiles_debit_sign_defaults_existing_profiles(pool: MySqlPool) {
             .await
             .unwrap();
     // Toutes les migrations ont tourné : la valeur est celle du DERNIER bump
-    // (Story v016-2a), non plus celui de cette migration-ci (0.13.1).
-    assert_eq!(min_required, "0.17.0");
+    // (Story v016-2a), non plus celui de cette migration-ci (0.13.1) — puis
+    // celui de la Story 34-11a1 (0.17.6).
+    assert_eq!(min_required, "0.17.6");
 }
 
 /// Story 30-2a (#685, AC4) — la migration `imported_documents_without_qr`
@@ -1119,7 +1140,8 @@ async fn bank_imports_manual_source_preserves_existing_rows(pool: MySqlPool) {
     .fetch_one(&pool)
     .await
     .unwrap();
-    assert_eq!(min_after, "0.17.0");
+    // Toutes les migrations ont tourné : le dernier bump (Story 34-11a1).
+    assert_eq!(min_after, "0.17.6");
     assert_eq!(last_applied_after, last_applied_before);
 }
 
@@ -1628,7 +1650,8 @@ async fn draft_migration_preserves_a_populated_base(pool: MySqlPool, frontiere: 
             .fetch_one(&pool)
             .await
             .unwrap();
-    assert_eq!(min, "0.17.0");
+    // Toutes les migrations ont tourné : le dernier bump (Story 34-11a1).
+    assert_eq!(min, "0.17.6");
     let origins: Vec<Option<String>> =
         sqlx::query_scalar("SELECT link_origin FROM imported_supplier_invoices ORDER BY id")
             .fetch_all(&pool)
@@ -2355,6 +2378,231 @@ async fn internal_number_migration_keeps_the_thousandth(pool: MySqlPool) {
 #[sqlx::test(migrations = false)]
 async fn internal_number_migration_adds_no_table(pool: MySqlPool) {
     let n = common::migrations_before(NUMERO_INTERNE_VERSION, NUMERO_INTERNE_LABEL);
+    apply_migrations_up_to(&pool, n).await.unwrap();
+    let before = application_tables(&pool).await;
+    apply_migrations_up_to(&pool, n + 1).await.unwrap();
+    assert_eq!(application_tables(&pool).await, before);
+}
+
+// ===========================================================================
+// Story 34-11a1 (#972, AC-1, AC-12) — `20261110000001_bank_accounts_without_iban`
+// ===========================================================================
+
+const SANS_IBAN_VERSION: i64 = 20261110000001;
+const SANS_IBAN_LABEL: &str = "bank_accounts_without_iban";
+
+/// Les colonnes de `bank_accounts` d'avant la migration, lues ligne à ligne
+/// (horodatages compris) : l'« empreinte » que la montée ne doit pas toucher.
+async fn bank_accounts_avant_colonnes(pool: &MySqlPool) -> Vec<String> {
+    sqlx::query_scalar(
+        "SELECT CONCAT_WS('|', id, company_id, bank_name, iban, COALESCE(qr_iban, '∅'), \
+         COALESCE(journal_account_id, '∅'), is_primary, version, archived, \
+         COALESCE(description, '∅'), COALESCE(closed_on, '∅'), created_at, updated_at) \
+         FROM bank_accounts ORDER BY id",
+    )
+    .fetch_all(pool)
+    .await
+    .unwrap()
+}
+
+/// AC-1 — une base 0.17.5 **peuplée** monte sans écart : chaque compte garde
+/// ses colonnes d'avant à l'identique, devient `bank` sans quatre chiffres, et
+/// les contraintes neuves sont actives après la montée. Montage **résolu par
+/// version** (P6), assertion de montage sur la colonne `account_kind` absente.
+#[sqlx::test(migrations = false)]
+async fn sans_iban_la_montee_garde_chaque_compte_bancaire(pool: MySqlPool) {
+    use kesh_db::entities::address::StructuredAddress;
+    use kesh_db::entities::{Language, NewCompany, OrgType};
+
+    apply_migrations_up_to(
+        &pool,
+        common::migrations_before(SANS_IBAN_VERSION, SANS_IBAN_LABEL),
+    )
+    .await
+    .expect("apply_migrations_up_to(avant bank_accounts_without_iban) failed");
+    let colonne: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() \
+         AND TABLE_NAME = 'bank_accounts' AND COLUMN_NAME = 'account_kind'",
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(
+        colonne, 0,
+        "assertion de montage : la migration n'a pas tourné"
+    );
+
+    let company_id = kesh_db::repositories::companies::create(
+        &pool,
+        NewCompany {
+            name: "Montée SA".into(),
+            first_name: None,
+            last_name: None,
+            address_structured: StructuredAddress {
+                street: "Rue Test".into(),
+                building: "1".into(),
+                postal_code: "1000".into(),
+                city: "Lausanne".into(),
+                country: "CH".into(),
+            },
+            ide_number: None,
+            org_type: OrgType::Pme,
+            accounting_language: Language::Fr,
+            instance_language: Language::Fr,
+        },
+    )
+    .await
+    .unwrap()
+    .id;
+    // Trois comptes de forme 0.17.5 : principal avec QR-IBAN, secondaire avec
+    // description, clos et archivé.
+    for (iban, qr, primaire, description, clos, archive) in [
+        (
+            "CH9300762011623852957",
+            Some("CH4431999123000889012"),
+            true,
+            None,
+            None,
+            false,
+        ),
+        (
+            "CH5604835012345678009",
+            None,
+            false,
+            Some("Épargne"),
+            None,
+            false,
+        ),
+        (
+            "CH3908704016075473007",
+            None,
+            false,
+            None,
+            Some("2026-01-31"),
+            true,
+        ),
+    ] {
+        sqlx::query(
+            "INSERT INTO bank_accounts (company_id, bank_name, iban, qr_iban, is_primary, \
+             description, closed_on, archived) VALUES (?, 'Banque', ?, ?, ?, ?, ?, ?)",
+        )
+        .bind(company_id)
+        .bind(iban)
+        .bind(qr)
+        .bind(primaire)
+        .bind(description)
+        .bind(clos)
+        .bind(archive)
+        .execute(&pool)
+        .await
+        .unwrap();
+    }
+    let avant = bank_accounts_avant_colonnes(&pool).await;
+    assert_eq!(avant.len(), 3, "assertion de montage : trois comptes");
+
+    kesh_db::MIGRATOR
+        .run(&pool)
+        .await
+        .expect("MIGRATOR.run() final failed — la montée doit passer sur une base peuplée");
+
+    assert_eq!(
+        bank_accounts_avant_colonnes(&pool).await,
+        avant,
+        "les colonnes d'avant sont intactes, IBAN compris"
+    );
+    let neuves: Vec<(String, Option<String>)> =
+        sqlx::query_as("SELECT account_kind, card_last4 FROM bank_accounts ORDER BY id")
+            .fetch_all(&pool)
+            .await
+            .unwrap();
+    assert_eq!(neuves, vec![("bank".to_string(), None); 3]);
+    // L'entité relit chaque compte (décodage de l'IBAN `Option`, du type).
+    let lus = kesh_db::repositories::bank_accounts::list_by_company(
+        &pool,
+        company_id,
+        kesh_db::repositories::bank_accounts::BankAccountListFilter {
+            include_archived: true,
+            include_closed: true,
+        },
+    )
+    .await
+    .unwrap();
+    assert_eq!(lus.len(), 3);
+    assert!(lus.iter().all(|a| a.iban.is_some()
+        && a.account_kind == kesh_db::entities::BankAccountKind::Bank));
+    // Les contraintes neuves sont actives : un compte bancaire sans IBAN est
+    // refusé, une carte sans IBAN est admise.
+    // Revue P1 (E7) : le refus nomme sa contrainte — ce test est le seul à tourner
+    // sur la base MIGRÉE et non sur le squash.
+    let refus = sqlx::query(
+        "INSERT INTO bank_accounts (company_id, bank_name, iban) VALUES (?, 'X', NULL)",
+    )
+    .bind(company_id)
+    .execute(&pool)
+    .await
+    .expect_err("un compte bancaire sans IBAN doit être refusé");
+    assert!(
+        refus
+            .to_string()
+            .contains("chk_bank_accounts_bank_has_iban"),
+        "refus attendu par chk_bank_accounts_bank_has_iban : {refus}"
+    );
+    // Le domaine du type est fermé à l'octet sur la base migrée aussi (E1) — par la
+    // migration elle-même, non par le squash : ce test rougit si `BINARY` disparaît du
+    // fichier de migration (revue P2, B2 ; mutation M14). Casse, espace, tabulation,
+    // NUL et accent : tous égaux à `bank` sous `utf8mb4_unicode_ci`.
+    for mauvais in ["BANK", "bank ", "bank\t", "bank\0", "bänk"] {
+        let refus = sqlx::query(
+            "INSERT INTO bank_accounts (company_id, bank_name, account_kind, iban) \
+             VALUES (?, 'X', ?, 'CH5604835012345678009')",
+        )
+        .bind(company_id)
+        .bind(mauvais)
+        .execute(&pool)
+        .await
+        .expect_err("type hors domaine refusé");
+        assert!(
+            refus.to_string().contains("chk_bank_accounts_account_kind"),
+            "{mauvais:?} : refus attendu par chk_bank_accounts_account_kind : {refus}"
+        );
+    }
+    // Les quatre chiffres non ASCII sont refusés sur la base migrée aussi (B1, E1).
+    for mauvais in ["１２３４", "١٢٣٤"] {
+        let refus = sqlx::query(
+            "INSERT INTO bank_accounts (company_id, bank_name, account_kind, iban, card_last4) \
+             VALUES (?, 'Visa', 'credit_card', NULL, ?)",
+        )
+        .bind(company_id)
+        .bind(mauvais)
+        .execute(&pool)
+        .await
+        .expect_err("chiffres non ASCII refusés");
+        assert!(
+            refus.to_string().contains("chk_bank_accounts_card_last4"),
+            "{mauvais:?} : refus attendu par chk_bank_accounts_card_last4 : {refus}"
+        );
+    }
+    sqlx::query(
+        "INSERT INTO bank_accounts (company_id, bank_name, account_kind, iban, card_last4) \
+         VALUES (?, 'Visa', 'credit_card', NULL, '1234')",
+    )
+    .bind(company_id)
+    .execute(&pool)
+    .await
+    .expect("une carte sans IBAN est admise après la montée");
+    let min: String =
+        sqlx::query_scalar("SELECT kesh_version_min_required FROM _kesh_version WHERE id = 1")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(min, "0.17.6");
+}
+
+/// AC-12 — la migration n'ajoute aucune table : l'inventaire des tables d'une
+/// sauvegarde 0.17.5 reste celui de la 0.17.6, qui l'importe donc.
+#[sqlx::test(migrations = false)]
+async fn sans_iban_la_migration_n_ajoute_aucune_table(pool: MySqlPool) {
+    let n = common::migrations_before(SANS_IBAN_VERSION, SANS_IBAN_LABEL);
     apply_migrations_up_to(&pool, n).await.unwrap();
     let before = application_tables(&pool).await;
     apply_migrations_up_to(&pool, n + 1).await.unwrap();
