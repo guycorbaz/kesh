@@ -9,7 +9,7 @@ carte, sept codes d'erreur, traces sans les chiffres, écran *Comptes bancaires*
 celui de la 34-11a1).
 
 Worktree `/home/gcorbaz/devel/kesh-e34a2`, branche `story/34-11a2-carte-credit-creation`. Le diff à relire, **aplati** :
-`git -C /home/gcorbaz/devel/kesh-e34a2 diff 27ca0bd9 <DERNIER_COMMIT_DE_CODE>` (`27ca0bd9` = base, tête de la 34-11a1). Langue du rapport :
+`git -C /home/gcorbaz/devel/kesh-e34a2 diff 27ca0bd9 9a3904f5` (`27ca0bd9` = base, tête de la 34-11a1 au départ ; `9a3904f5` = dernier commit de code ; la fusion `86da9022` de la 34-11a1 `done` y est comprise : `git diff 580675bb 9a3904f5` isole le travail de la story après la fusion). Journaux des gates : `gates-2.txt`, `gate-test-fast-2.log`, `build-2.log`, `gate-ci-2.log`, `gate-ci-journal-2.log`, `front-*-2.log`, `e2e-r2/` ; premier passage `gates-1.txt` (un rouge, corrigé par `9a3904f5`). Langue du rapport :
 français. Modèle : **Sonnet ou Opus** (première passe : jamais Haiku). Contexte frais.
 
 ⚠️ **La base ne porte ni la 34-1 ni la 34-2** (C-e34a2-1) : `linkableLedgerAccounts` et le solde d'ouverture n'y existent pas. Ce qui en
