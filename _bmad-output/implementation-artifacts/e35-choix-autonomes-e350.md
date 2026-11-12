@@ -44,8 +44,13 @@ retenue, options écartées, réversibilité. Lignes citées sur `release/0.17.6
   (`invoices/[id]/+page.svelte:866`).
 - **Retenu** : le refus porte des `details` structurés (champ, raison, caractère et son point de code) et un message
   **résolu au serveur** dans la langue de l'installation, qui nomme le champ en mots de l'utilisateur (« la localité du
-  client ») ; l'écran reprend ce message quand les `details` sont là, comme il le fait déjà pour les codes de
+  client »). **Tous** les messages de ce code passent par une clé (inventaire clos des sites, fiche 35-2), si bien que
+  l'écran peut reprendre le message du serveur pour `INVOICE_NOT_PDF_READY`, comme il le fait déjà pour les codes de
   `SERVER_RESOLVED_CODES` (`pdf-error.ts:36`). Le lot de rappels montre la même phrase. Forme exacte : la fiche 35-2.
+  *(Précisé à la rédaction de la fiche 35-2 : la première rédaction réservait le message du serveur au cas où les
+  `details` sont là ; or les refus sans champ — adresse incomplète, compte bancaire principal absent — sont eux aussi
+  remplacés aujourd'hui par la phrase fixe, et l'un d'eux, `"qrbill-error-qrr-generation"`
+  (`invoice_pdf_service.rs:338`), envoie une clé nue en guise de message.)*
 - **Écartées** : (a) afficher le message brut du serveur tel qu'il est : technique et non traduit ; (b) résoudre au
   frontend à partir des `details` seuls : deux tables de libellés de champ à tenir (serveur et écran) pour un même
   message.
