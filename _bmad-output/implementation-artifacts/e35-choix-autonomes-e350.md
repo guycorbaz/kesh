@@ -117,3 +117,27 @@ retenue, options écartées, réversibilité. Lignes citées sur `release/0.17.6
   6. **`user-manual.tex`** : paragraphes distincts ; chaque branche régénère son PDF pour ses contrôles, mais à l'union le
      PDF n'est **jamais fusionné** : il est régénéré depuis le `.tex` uni, puis contrôlé aplati.
 - **Réversible** : oui.
+
+### C-e350-9 — La 35-2 se découpe en 35-2a et 35-2b
+
+- **Contexte** : validation P2 de la 35-2, P1 5 MEDIUM → P2 5 MEDIUM, dont quatre nés de la remédiation P1 (recyclage) ;
+  le contrat `details` grossit (onze raisons) sur plus de cinq modules. Le `CLAUDE.md` (§ *Règle de splitting
+  préventif*, amendement D5) fait découper le recyclage.
+- **Retenu** : **35-2a** (routes unitaires, contrat `details`, adresse, pays, écran, manuel, E2E ; échéance du
+  2026-11-30) et **35-2b** (lot de rappels, partant de la 35-2a fusionnée). La fiche 35-2 passe en `split`.
+- **Écartées** : (a) élargir la 35-2 : la règle l'interdit sur un signal de recyclage ; (b) découper par couche
+  (serveur, écran) : le contrat se prouverait sans son écran.
+- **Réversible** : oui. Signal à déclarer à Guy par l'orchestrateur.
+
+### C-e350-10 — Contrat de `details` des refus `INVOICE_NOT_PDF_READY`
+
+- **Contexte** : validation P2, V2-2 et V2-4 : la forme n'était fixée que pour les refus de champ ; un agent qui écrit par
+  une clé REST ne distinguait pas « compte principal absent » d'« adresse du client incomplète » sans lire le message.
+- **Retenu** : `details` **toujours** présent, `reason` toujours présent, en SCREAMING_SNAKE : `INVALID_CHARSET`,
+  `EMPTY`, `TOO_LONG`, `INVALID_COUNTRY` (avec `field` et leurs membres), `CLIENT_ADDRESS_MISSING`, `CONTACT_MISSING`,
+  `NO_PRIMARY_BANK`, `INVALID_BANK_DATA`, `INVALID_AMOUNT`, `INVALID_CURRENCY`, `INTERNAL_PAYLOAD`. Le lot (35-2b) ajoute
+  `message` au même objet. Une adresse incomplète nomme son champ (`EMPTY`, `debtor.town`…) ; le pays nomme sa partie.
+  Tableau complet : D2 de la 35-2a.
+- **Écartée** : `details` pour les seuls refus de champ, les autres restant à lire dans le message — écrit comme limite,
+  ce serait un contrat que l'API dit elle-même de ne pas lire (`api-external.md`, « Fiez-vous au champ `code` »).
+- **Réversible** : ajouter une raison l'est ; en retirer une ne l'est plus une fois publiée.

@@ -53,7 +53,8 @@ toujours** : un point qu'une story ne traite pas s'ouvre en issue, une par probl
 | Story | Issues | Impact | Objet | Fichiers principaux (lus sur `release/0.17.6`) | Taille |
 |---|---|---|---|---|---|
 | **35-1** | #932, #948 | I2 | Numérotation : un format sans `{SEQ}` est refusé aux réglages ; un rendu impossible ne finit plus en 500 à la validation | `crates/kesh-core/src/invoice_format.rs` (`validate_template`), `crates/kesh-api/src/routes/company_invoice_settings.rs`, `frontend/src/routes/(app)/settings/invoicing/+page.svelte` ; peut-être `crates/kesh-db/src/repositories/invoices.rs:2334-2340` (le `map_err` en `DbError::Invariant`) | petite |
-| **35-2** | #955, #964 | I2, I4 | Le refus du PDF nomme le champ et le caractère, au téléchargement comme au lot de rappels ; une adresse sans rien de visible reçoit « adresse incomplète » | `crates/kesh-api/src/errors.rs`, `crates/kesh-api/src/routes/invoice_pdf_service.rs`, `crates/kesh-api/src/routes/invoice_email.rs` (`classify_render_error`), `frontend/src/lib/shared/utils/pdf-error.ts`, `frontend/src/lib/features/reminders/`, `messages.ftl` ×4, manuel utilisateur | petite |
+| **35-2a** | #955, #964 | I2, I4 | Le refus du PDF dit quoi corriger — champ, caractère, adresse incomplète (champ nommé), pays — avec un contrat `details` à discriminant `reason` stable, sur les routes unitaires (téléchargement, refigeage, envoi, rappel seul, avoir) | `crates/kesh-api/src/errors.rs`, `crates/kesh-api/src/routes/invoice_pdf_service.rs`, `crates/kesh-api/src/routes/credit_notes.rs`, `frontend/src/lib/shared/utils/pdf-error.ts`, `messages.ftl` ×4, `textes_coherents.rs` (G9), `api-external.md`, manuel utilisateur | petite à moyenne |
+| **35-2b** | #955 | I3 | Le rapport d'un lot de rappels porte le même `details`, plus `message`, et l'affiche | `crates/kesh-api/src/routes/invoice_email.rs` (`classify_render_error`), `frontend/src/lib/features/reminders/ReminderBatchReport.svelte` | petite |
 | **35-3** | #537 | I1 | Les comptes désignés aux réglages de facturation (créance, TVA due, créanciers, TVA récupérable) sont revérifiés **par leur type** au moment où une facture ou une facture fournisseur y écrit | `crates/kesh-db/src/repositories/company_invoice_settings.rs` (`lock_designated_accounts_in_tx`, `check_written`), `crates/kesh-db/src/errors.rs`, `crates/kesh-api/src/errors.rs`, `frontend/src/routes/(app)/invoices/[id]/+page.svelte`, `messages.ftl` ×4, manuel utilisateur | boucle complète (règle comptable) |
 | **35-4** | #1023, #1024 | I1, I3 | Réconciliation : *Rejeter* une ligne signalée « déjà comptabilisée » demande confirmation ; *Continuer quand même* dit pourquoi rien ne se passe | `frontend/src/lib/features/reconciliation/ReconciliationProposals.svelte`, `AlreadyBookedConfirmDialog.svelte`, `already-booked.ts`, `messages.ftl` | petite |
 | **35-5** | #929, #1022, #907 | I1, I1, I3 | La date du jour est celle de l'installation, côté serveur (contre-passation, annulation, solde d'ouverture, verrou de période, rapports) | un helper unique, puis les sites `Utc::now().date_naive()` de #929 (treize au classement, **à recompter**) : `routes/{bank_accounts,opening_balances,exports,admin}.rs`, `services/rapports.rs`, `repositories/{companies,dunning_eligibility,journal_entries,settlement_cancellation}.rs` | boucle complète |
@@ -68,15 +69,16 @@ défaut ne touche pas. Le défaut reste I2, mais sa probabilité tombe à basse.
 chacune de ses actions est aujourd'hui attribuée à Guy dans la piste de contrôle.
 
 **Hors de l'epic** :
-- **#944** (QR-facture : ligne verticale, ciseaux, « Payable by », largeurs, type K…), proposé en option à la 35-2 : **non
+- **#944** (QR-facture : ligne verticale, ciseaux, « Payable by », largeurs, type K…), proposé en option à la 35-2 (devenue 35-2a et 35-2b) : **non
   retenu**, C-e350-1. Il reste ouvert, pour l'Epic 36.
 - **#911** et **#725** (sauvegarde) : sortis au § 8.4 du classement (probabilité nulle à court terme ; I3).
 - **#669** : I3, en attente du relevé SQL du NAS. **#709** : en attente de l'arbitrage du critère par Guy.
 
 ## Ordre et dépendances
 
-1. **35-2 et 35-3 en tête, en parallèle** : la première facture client de Guy part avant le 2026-11-30 (C-e350-4).
-   Elles partagent six fichiers, et s'unissent par la **règle d'union C-e350-8**, recopiée ici :
+1. **35-2a et 35-3 en tête, en parallèle** : la première facture client de Guy part avant le 2026-11-30 (C-e350-4). La
+   35-2 a été découpée à sa validation P2 (C-e350-9) ; la **35-2b** part de la 35-2a fusionnée. Ci-dessous, « 35-2 » vaut
+   pour la 35-2a et la 35-2b. Les deux têtes partagent six fichiers, et s'unissent par la **règle d'union C-e350-8**, recopiée ici :
    - **`CHANGELOG.md`** : chaque branche crée, si elle manque, `## [0.17.7] — Non publié` juste au-dessus de la première
      section `## [` existante, avec la seule rubrique `### Corrigé`, un point par issue ; à l'intégration, une section,
      une rubrique, les points dans l'ordre des stories (35-2 puis 35-3), l'avertissement de la 35-3 en tête de son point ;
@@ -104,7 +106,7 @@ Une story qui découvre un fichier commun non listé ici le dit dans son rapport
 ## Règles de cet epic
 
 - **Calendrier** : si, **au 2026-11-26**, toutes les stories ne sont pas terminées, la 0.17.7 se publie avec celles qui
-  le sont (décision de Guy). 35-2 et 35-3 doivent y être.
+  le sont (décision de Guy). 35-2a et 35-3 doivent y être ; la 35-2b, si elle est finie.
 - **Règle d'arrêt — migration** : une migration qui empêche le retour à la 0.17.6 fait **s'arrêter l'orchestrateur**, qui
   attend Guy. ⚠️ Lu à la lettre du `CLAUDE.md` (§ *Migration breaking policy*, P1), **toute** migration, breaking ou non,
   empêche le binaire précédent de démarrer (`sqlx` refuse une migration appliquée qu'il ne connaît pas) : **toute**

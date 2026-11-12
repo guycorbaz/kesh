@@ -1,6 +1,10 @@
 # Story 35-2 : le refus du PDF dit quel champ et quel caractère corriger ; une adresse sans rien de visible est dite incomplète (#955, #964)
 
-Status: ready-for-dev
+Status: split
+
+> **Découpée à la validation P2 (2026-11-12, C-e350-9)** en **35-2a** (`35-2a-refus-pdf-contrat-details.md` : routes
+> unitaires, contrat `details`, #964, pays, écran, manuel, E2E) et **35-2b** (`35-2b-lot-rappels-refus-pdf.md` : lot de
+> rappels). Le corps ci-dessous est l'état remédié en P1, gardé comme historique ; les fiches filles font foi.
 
 *Fiche rédigée le 2026-11-12 par l'agent de kickoff de l'Epic 35 (Opus 5.5), worktree `kesh-e35`, par le workflow
 `bmad-create-story`. Release **0.17.7**, tête d'epic : à livrer avant la première facture client de Guy (au plus tard le
@@ -273,3 +277,21 @@ fusionné : il se régénère depuis le `.tex` uni. Ne pas réordonner ni reform
     C-e350-8, clés jamais en fin de fichier.
   - Symptômes greppés dans la fiche et le fichier d'epic : `:288` comme site du contrôle, « quatre écrans »,
     `"charset" | "empty" | "tooLong"`, « si le code y figure » — aucune occurrence restante hors de cette entrée.
+- 2026-11-12 — **Validation P2** (Opus) : 0 CRITICAL, 0 HIGH, 5 MEDIUM, 6 LOW (`kesh-gate-logs/e35-2-validation-p2.md`).
+  Prémisses relues au code de `release/0.17.6` ; aucune réfutée (`init_error_i18n` : `main.rs:340` seul hors définition ;
+  `messages.ftl:970` ; `credit_notes.rs:295-297` ; `invoice_pdf_service.rs:404-410` ; `validation.rs:10`, `:259`, `:285`).
+  - **Signal de découpage** (`CLAUDE.md`, § *Règle de splitting préventif*) : P1 5 MEDIUM → P2 5 MEDIUM, sévérité égale. Constat :
+    **recyclage** — quatre des cinq MEDIUM naissent de la remédiation P1 (V2-1 : l'échappatoire « verrou et bundle » écrite pour
+    V1-1 ; V2-2 : D6 écrit pour V1-8 ; V2-4 : la forme de `details` fixée pour les seuls refus de champ en P1 ; V2-5 : M9 ajoutée
+    en P1 sans test qui la tue) ; seul V2-3 (pays) est un défaut d'origine. Et le contrat grossit (onze raisons) sur plus de cinq
+    modules (`routes/invoice_pdf_service`, `routes/invoice_email`, `routes/credit_notes`, `errors`, `kesh-i18n`, `shared/utils`,
+    `features/reminders`, E2E). **Décision : découper** (C-e350-9) en 35-2a et 35-2b, la 35-2b partant de la 35-2a fusionnée.
+    Signal à déclarer à Guy par l'orchestrateur.
+  - Remédiés dans la **35-2a** : V2-1 (D9, AC2 sans état global, garde AC13) ; V2-2 (D6 : le champ vide est nommé, adresse
+    « incomplète ») ; V2-3 (D7 : pays nommé, `INVALID_COUNTRY`) ; V2-4 (D2 : contrat unique, `reason` toujours présent, onze
+    raisons) ; V2-5 (AC1 : `\n`, `TOO_LONG` à 71, `EMPTY` sur le nom de la société, M9 par raison) ; V2-6 (onze champs
+    atteignables, fixture `F–1`) ; V2-7 (D8, clé de l'avoir) ; V2-8 (aperçus nommés) ; V2-9 (D4, variables nommées pour G9) ;
+    V2-11 (AC7, `message: ""`). Dans la **35-2b** : V2-10 (modèle `send_reminder_batch_partial_success`, `:2019`).
+  - Symptômes greppés (fiches 35-2, 35-2a, 35-2b, fichier d'epic) : « prend le verrou et initialise le bundle »,
+    « douze champs », `client-address-required` pour une adresse partielle, « adresse incomplète » au fichier d'epic.
+
