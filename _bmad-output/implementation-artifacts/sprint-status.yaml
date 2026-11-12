@@ -1025,7 +1025,7 @@ development_status:
   epic-33-retrospective: done
   epic-35: in-progress  # 2026-11-12 KICKOFF en autonomie (planning-artifacts/epic-35-corrections-par-impact.md ; registre e35-choix-autonomes-e350.md). Corrections triées par impact, cible v0.17.7. Au kickoff, avant le tag v0.17.6 : 335 issues, 166 bugs, 14 P1 ; au tag v0.17.6 : à mesurer au tag. Objectif : solde net en baisse au tag v0.17.7. Les clés de l'Epic 34 vivent sur release/0.17.6 et s'uniront ici à sa fusion.
   35-0-kickoff: done  # 2026-11-12 : fichier d'epic, clés, fiches 35-2 et 35-3 (validation à lancer par l'orchestrateur).
-  35-1-numerotation-sans-seq: ready-for-dev  # #932, #948 ; descend (format par défaut gardé par Guy) ; après 35-3, 35-2a et 35-2b ; fiche 2026-11-12 (code de main), validation en cours (P1, P2 remédiées, 1 HIGH/4 MEDIUM → 3 MEDIUM ; passe ciblée P3 à lancer)
+  35-1-numerotation-sans-seq: ready-for-dev  # #932, #948 ; descend (format par défaut gardé par Guy) ; après 35-3, 35-2a et 35-2b ; fiche 2026-11-12 (code de main), validation en cours (P1 à P3 remédiées, 1 HIGH/4 MEDIUM → 3 → 2 MEDIUM ; passe ciblée P4 à lancer)
   35-2-refus-pdf-nomme-le-champ: split  # 2026-11-12, validation P2 : découpée en 35-2a et 35-2b (C-e350-9)
   35-2a-refus-pdf-contrat-details: ready-for-dev  # #955, #964 ; tête d’epic, avant le 2026-11-30 ; recadrée en P3 (message seul, C-e350-11) ; validation à poursuivre
   35-2b-lot-rappels-refus-pdf: ready-for-dev  # #955 ; après la fusion de 35-2a ; validation terminée en P2 (3 → 0 MEDIUM)

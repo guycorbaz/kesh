@@ -212,6 +212,10 @@ retenue, options écartées, réversibilité. Lignes citées sur `release/0.17.6
   distinctes.
   *(Annoté le 2026-11-12, validation P3 de la 35-6 : la 35-6 ne touche plus ce fichier, C-e350-19 ; seule la 35-5a y écrit.)*
 - **`CHANGELOG.md`** : un point par issue sous `### Corrigé`, dans l'ordre des numéros de story.
+- *(Annoté le 2026-11-13, validation P3 de la 35-1 : avec la 35-3, la 35-1 partage
+  `frontend/src/routes/(app)/invoices/[id]/+page.svelte:449-456` (la liste des codes non rejouables, **même hunk** : la
+  seconde fusionnée ajoute son code) et `crates/kesh-api/src/routes/company_invoice_settings.rs` (35-3 `:345-414`, 35-1
+  `:317-331`, hunks distincts) ; écrit au fichier d'epic.)*
 
 ### C-e350-15 — 35-6 : point et virgule ambigus, grammaire commune, #1025 intégrée
 

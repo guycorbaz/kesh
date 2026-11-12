@@ -106,8 +106,12 @@ chacune de ses actions est aujourd'hui attribuée à Guy dans la piste de contr�
    - **`frontend/src/lib/shared/i18n-keys.test.ts`** (`sitesTotal`, compte exact des sites `i18nMsg(`) : chaque branche le
      recompte à la source ; l'intégration le recompte après chaque fusion, sans additionner (toutes les stories, C-e350-18) ;
    - **`docs/manual/fr/user-manual.tex`** : paragraphes distincts (35-2a l. 1251 ; 35-3 l. 452-461, 491, 493, 1169, 1788-1796) ; `admin-manual.tex`, 35-3 seule (l. 3816, 3822) ;
-     `invoices/[id]/+page.svelte` : 35-3 seule (`:449-456`) ; la 35-2a ne touche que `pdf-error.ts` (V4-9) ; le
-     PDF n'est jamais fusionné, il se régénère depuis le `.tex` uni puis se contrôle aplati.
+     `invoices/[id]/+page.svelte` : 35-3, puis 35-1 (`:449-456`, la liste des codes non rejouables : **même hunk**, la
+     seconde fusionnée ajoute son code à la liste de la première ; annoté le 2026-11-13, validation P3 de la 35-1) ; la 35-2a
+     ne touche que `pdf-error.ts` (V4-9) ; le PDF n'est jamais fusionné, il se régénère depuis le `.tex` uni puis se contrôle
+     aplati ;
+   - **`crates/kesh-api/src/routes/company_invoice_settings.rs`** (ajouté le 2026-11-13, validation P3 de la 35-1) : 35-3 la
+     validation des comptes (`:345-414`) ; 35-1 le jugement des formats (`:317-331`) : hunks distincts.
 2. Puis par impact, I1 d'abord : **35-4**, **35-6**, **35-5a** puis **35-5b** (découpage préventif, C-e350-14) ; puis
    **35-7**, **35-8**, **35-1**.
 3. **35-8 après la fusion de 35-5a et 35-5b** (`repositories/journal_entries.rs`) **et de 35-3**

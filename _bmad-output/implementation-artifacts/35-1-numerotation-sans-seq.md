@@ -70,9 +70,11 @@ clés : `:969`).
   bloquerait l'enregistrement sans moyen de corriger »). **Le miroir d'écran suit la même règle** (validation P1, V1-1,
   HIGH) : **une seule valeur dérivée par champ** (validation P2, V2-3), `formatBlocks` (« ce format bloque-t-il
   l'enregistrement ? » : refus de `validateFormatTemplate`, sauf `NoSeq` sur une valeur égale à celle chargée,
-  `invoiceNumberFormat` / `creditNoteNumberFormat`), lue aux **trois** sites qui lisent aujourd'hui `formatValidation.ok`
-  (`+page.svelte:146`) : `save()` (`:209-214`), le bouton d'enregistrement (`:616-619`, `disabled`), le champ (`:326-332` :
-  aperçu, message en `text-destructive`). Un format chargé sans compteur, laissé tel quel : bouton actif, **aperçu affiché**,
+  `invoiceNumberFormat` / `creditNoteNumberFormat`), lue aux **quatre** sites qui lisent aujourd'hui `formatValidation.ok`
+  (`+page.svelte:146`) : le dérivé de l'aperçu `formatPreview` (`:147-148`), `save()` (`:209-214`), le bouton
+  d'enregistrement (`:616-619`, `disabled`), le champ (`:326-332` : aperçu, message en `text-destructive`). Pour reconnaître
+  `NoSeq` sans comparer de textes traduits, `FormatValidationResult` (`invoice-number-format.ts:17-20`, aujourd'hui
+  `{ ok, error? }`) gagne un champ `code?: 'NO_SEQ' | …` (validation P3, V3-5). Un format chargé sans compteur, laissé tel quel : bouton actif, **aperçu affiché**,
   et sous le champ une aide **non bloquante** (la clé de D1, en texte d'avertissement, non destructif). Les autres refus
   d'écran (caractère, accolade, longueur) restent inconditionnels, comme aujourd'hui. Aucune migration ne réécrit un format
   enregistré.
@@ -81,8 +83,9 @@ clés : `:969`).
   format-label`, `-help`), à côté de `settings-invoicing-supplier-format-*`. La phrase `user-manual.tex:1561` devient vraie.
 - **D4 — Un numéro impossible à produire est un refus typé** (C-e350-45) : à la validation d'une facture
   (`invoices.rs:2334-2340`) et à la création d'un avoir (`credit_notes.rs:572-577`), une erreur de `render` devient
-  `DbError::NumberFormatUnrenderable { document: Invoice | CreditNote, cause }` (`cause` : rendu trop long, accolade dans le
-  nom d'exercice, numéro déjà attribué — D5), mappée comme `DesignatedAccountsNotPostable` (même famille : une configuration
+  `DbError::NumberFormatUnrenderable { document: Invoice | CreditNote, cause }` — **quatre causes**, écrites ici seulement
+  (validation P3, V3-3) : `too_long` (rendu > 64), `brace_in_fiscal_year_name`, `duplicate` (D5), `invalid_format` (ci-dessous)
+  —, mappée comme `DesignatedAccountsNotPostable` (même famille : une configuration
   qui refuse à l'usage), **`400`**, code `NUMBER_FORMAT_UNRENDERABLE`, `details` `{ document, cause }`, message i18n ×4 qui
   nomme le format, l'exercice et la cause, et renvoie à *Administration → Facturation* (ou au nom de l'exercice). Rien n'est
   écrit : la transaction est annulée, aucun numéro consommé (`next_number_for` est dans la même transaction :
@@ -106,8 +109,9 @@ clés : `:969`).
   `NumberFormatUnrenderable { cause: Duplicate }` — le format et le nom d'exercice sont à la main. La collision n'est **pas**
   propre aux formats sans compteur (validation P2, V2-1) : `FACT{SEQ}` la heurte au deuxième exercice, `F-{YEAR}-{SEQ:04}`
   quand deux exercices commencent la même année civile. Le message ne suppose donc pas la cause : « ce format produit un
-  numéro déjà attribué : il doit distinguer chaque facture — un compteur, et l'exercice ({FY}) ou l'année ({YEAR}) si le
-  compteur repart à chaque exercice ». La correction est possible à l'écran grâce à D2 et D3.
+  numéro déjà attribué : il doit distinguer chaque facture — un compteur, qui repart à chaque exercice, et l'exercice ({FY}) ;
+  l'année ({YEAR}) ne suffit pas si deux exercices commencent la même année » (validation P3, V3-4 : le compteur repart
+  toujours, `uq_ins_company_fy`). La correction est possible à l'écran grâce à D2 et D3.
 - **D6 — `{FY}` compté à sa vraie borne ?** Non : porter `{FY}` à 50 dans le pire cas refuserait des formats valides
   aujourd'hui (`{FY}/{SEQ:06}`) ; le refus de D4 couvre l'exercice au nom trop long, à l'usage.
 - **D7 — Hors périmètre** : **#1046** (jeu de caractères de la QR-facture). Constat pour son commentaire : `is_allowed_char`
@@ -151,7 +155,7 @@ clés : `:969`).
    réécrit, et sa correction) ; `:1561` (vrai désormais : le champ existe) ; une phrase sur le refus de D4 ; PDF régénéré,
    contrôlé aplati (sondes positives : « Format des avoirs », le code ; négative : aucune).
    `docs/api-external.md` : (a) une ligne au tableau des erreurs (`:1040-1052`, à la règle d'union) :
-   `400 NUMBER_FORMAT_UNRENDERABLE`, ses `details` `{ document, cause }` et ses causes *(depuis la v0.17.7 ; jusqu'à la
+   `400 NUMBER_FORMAT_UNRENDERABLE`, ses `details` `{ document, cause }` et ses quatre causes (D4) *(depuis la v0.17.7 ; jusqu'à la
    v0.17.6 : `500`, ou `409 RESOURCE_CONFLICT` pour un numéro déjà attribué)* ; (b) les
    descriptions de `POST /invoices/{id}/validate` et de `POST /credit-notes` renvoient à ce code ; (c) le refus `NoSeq` de
    `PUT /company/invoice-settings` n'y est pas décrit pour les clés : route d'administration fermée aux clés (`:79`).
@@ -295,3 +299,13 @@ avoirs lu mais non envoyé (AC5) ; M6 le miroir d'écran sans `NoSeq` (AC5) ; **
     worktree ; le choix de cette passe est **C-e350-51**.
   - Symptômes greppés : « ajoutez-y un compteur », « passage 500 → 400 », `save()` seul — remplacés ; registre : C-e350-47
     annoté.
+- 2026-11-13 — **Validation P3, passe ciblée** (Sonnet) sur la remédiation P2 : 0 CRITICAL, 0 HIGH, 2 MEDIUM, 3 LOW
+  (`kesh-gate-logs/e35-1-validation-p3-ciblee.md`). Remédiée au plus court. Prémisses relues sur `main` : `+page.svelte:147-148`
+  (`formatPreview` lit `formatValidation.ok`) ; `invoice-number-format.ts:17-20` (`{ ok, error? }`) ;
+  `20260417000001_invoice_validation.sql:31` (`uq_ins_company_fy`) ; fichier d'epic `:109`. Confirmées.
+  - V3-1 (MEDIUM) : **quatre** sites de `formatBlocks`, `formatPreview` (`:147-148`) nommé.
+  - V3-2 (MEDIUM) : fichier d'epic (`invoices/[id]/+page.svelte` : 35-3 puis 35-1, même hunk ; `company_invoice_settings.rs`
+    ajouté) et registre (C-e350-8, extension annotée).
+  - LOW : V3-3 (les quatre causes écrites à D4 seul, AC7 y renvoie) ; V3-4 (message de `duplicate` juste : le compteur
+    repart toujours, `{FY}` seul distingue deux exercices de même année) ; V3-5 (`code?: 'NO_SEQ'` à `FormatValidationResult`).
+  - Symptômes greppés : « trois sites », « ou l'année ({YEAR}) si le », « 35-3 seule » — remplacés hors des entrées passées.
