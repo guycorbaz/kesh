@@ -106,3 +106,30 @@ choix se consignent aux registres `e34-choix-autonomes-<clé>.md`.
 - la sauvegarde d'avant la mise à jour s'écrit en tête des notes de version et au manuel d'administration ;
 - Kesh écrit en plus sa propre sauvegarde dans `backup/pre-upgrade/` (#847) ;
 - la montée se répète d'abord sur une base peuplée par l'image 0.17.5 publiée (`scripts/recette-montee.sh`).
+
+## Raccords d'intégration (2026-11-12)
+
+La 34-11a2 a été écrite à partir de la 34-11a1 seule, sans la 34-1 ni la 34-2. Sa fiche
+(`34-11a2-carte-credit-creation.md`, § *Raccords d'intégration*, C-e34a2-1) laissait quatre raccords à
+faire quand les trois stories se rejoindraient. Ils ont été faits sur la branche d'intégration `release/0.17.6`,
+un commit chacun, avec le test qu'attendait la fiche :
+
+1. **Le filtre du compte lié** (34-1) : `linkableLedgerAccounts({ liabilityOnly })` décide du type par
+   `admitsLedgerType`. L'écran *Comptes bancaires* et le formulaire *Lier* passent par lui ; pour une carte,
+   seuls les passifs sont proposés. Tests : `format.test.ts`, et `bank-accounts-page-credit-card.test.ts`
+   reste vert.
+2. **Le solde d'ouverture d'une carte** (34-2) : une carte, liée à un passif, ouvre son solde d'ouverture avec
+   le sens *Dette* présélectionné. Le paragraphe *Solde d'ouverture* revient au manuel utilisateur
+   (§ *Une carte de crédit*), et le CHANGELOG le dit. Tests : un Vitest « carte → *Dette* présélectionné »,
+   et `carte_creee_avec_son_solde_d_ouverture` côté serveur.
+3. **Le numéro complet dans la description de l'assistant** (34-1) : `onboarding::set_bank_account` refuse
+   aussi la description (`CARD_NUMBER_NOT_ALLOWED`, `details.field = "description"`). Sont mis à jour en
+   conséquence : `docs/api-external.md` (note ¹² et tableau des erreurs), le manuel utilisateur et le CHANGELOG.
+   Test : `garde_du_numero_a_l_assistant`, étendu à la description.
+4. **L'ordre de la relecture du type et du complément** (34-2) : le complément du solde d'ouverture reste
+   **après** `recheck_ledger_type_in_tx` dans `create_once`. La fusion avait déjà posé cet ordre ; le
+   raccord y ajoute le commentaire et le test. Test : `carte_refusee_par_la_relecture_du_type_n_ecrit_aucune_ouverture`,
+   un retypage concurrent refusé par la relecture, sans écriture d'ouverture ni compte.
+
+À la même intégration, la note « compte sans IBAN » d'`api-external.md` est devenue **¹²** (la 34-2 a la ¹¹),
+et les renvois de la 34-11a2 ont suivi.
