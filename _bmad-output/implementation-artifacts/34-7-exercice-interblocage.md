@@ -1,6 +1,6 @@
 # Story 34-7 : le renommage d'un exercice est rejoué sur interblocage (#945)
 
-Status: ready-for-dev
+Status: done
 
 *Fiche rédigée le 2026-11-10 en autonomie (Opus 5.5), worktree `/home/gcorbaz/devel/kesh-e34`, branche `chore/epic-34-kickoff`,
 numéros de ligne de `a75835db`. Release **0.17.6**, Epic 34. **Aucune migration.** Registre : `e34-choix-autonomes-e343.md`,
@@ -88,17 +88,17 @@ aboutisse, ou soit refusé pour son vrai motif. Il ne doit pas finir en erreur 5
 
 ## Tâches
 
-- [ ] **T1 — rouge d'abord** : le test de l'AC-1, `fiscal_year_rename_is_replayed_when_it_is_the_deadlock_victim`, dans
+- [x] **T1 — rouge d'abord** : le test de l'AC-1, `fiscal_year_rename_is_replayed_when_it_is_the_deadlock_victim`, dans
   `rejeu_interblocage_e2e.rs`. Il est rouge (500) avant le correctif ; à journaliser dans `kesh-gate-logs/e343/rouges.log`.
-- [ ] **T2** : l'enveloppe dans `update_fiscal_year`, avec `map_update_error` appliqué au résultat de l'enveloppe.
-- [ ] **T3** : AC-2, tenté et dit.
-- [ ] **T4** : AC-4.
+- [x] **T2** : l'enveloppe dans `update_fiscal_year`, avec `map_update_error` appliqué au résultat de l'enveloppe.
+- [x] **T3** : AC-2, tenté et dit.
+- [x] **T4** : AC-4.
 
 ### Mutations nommées
 
 - **M1** : l'enveloppe retirée → rouge AC-1 (500, pas de rejeu).
-- **M2** : `retry_on_deadlock_with("fiscal_years::update_name", 1, …)`, soit une seule tentative → rouge AC-1 (500, aucun rejeu
-  capturé) et AC-2. *(Remplace la M2 d'origine, `map_update_error` dans la fermeture, qui ne compile pas :
+- **M2** : `retry_on_deadlock_with("fiscal_years::update_name", 1, …)`, soit une seule tentative → rouge AC-1 (500) et AC-2. *(Revue
+  P1, A1-1 : « aucun rejeu capturé » retiré, l'assertion du statut levant avant le témoin, qui n'est donc pas évalué.)* *(Remplace la M2 d'origine, `map_update_error` dans la fermeture, qui ne compile pas :
   `retry_on_deadlock` exige un `Future` de `Result<T, DbError>`, `kesh-db/src/retry.rs:151-157`. Validation P2, 34-7-F2.)*
 
 ## Gates
@@ -137,11 +137,89 @@ Les autres candidates du point (iv), sans cycle démontré : `PUT /invoices/{id}
   - **F2 (L)** : M2 remplacée par une mutation qui compile.
 - 2026-11-10 : **validation P3 (Sonnet) : 0 M, 1 L, remédié** (Opus 5.5). **F1** : l'AC-2 nomme `transaction_lourde`
   (`:217-233` lu).
+- 2026-11-10 : **développement** (Opus 5.5, worktree `kesh-e347`, base `665de151`). `Status: review`.
+  - **Étape 0.** Les rapports P4 et P5 ne portent aucun LOW sur la 34-7 (P5 : fiches 34-5, 34-6, 34-8 ; P4 : 34-7 F1
+    vérifié). Points à établir de l'AC-2, établis à l'exécution et non par lecture : la lecture
+    `SELECT id FROM fiscal_years WHERE company_id = ? AND name = ? AND id <> ? FOR UPDATE`
+    (`kesh-db/src/repositories/fiscal_years.rs:585-596`) attend bien la ligne insérée non validée par la lourde ; la route
+    est la victime (la lourde passe le `.expect` de `victime`, `rejeu_interblocage_e2e.rs:363`), rouge 500 avant le
+    correctif, 200 et un rejeu capturé après. L'AC-2 n'a donc pas été réduit à l'AC-1.
+  - **Écart à la consigne Edit.** Les deux tests neufs ont été ajoutés en fin de `rejeu_interblocage_e2e.rs` par un
+    `cat >>` (ajout, sans remplacement de texte existant) ; la reprise de leur mise en forme `rustfmt` s'est faite par
+    Edit. L'outil ne manquait de rien : Edit exige un `old_string`, et ajouter en fin de fichier long en demande un qui
+    soit unique, ce que le heredoc évitait. Les mutations passent par un script (motif vérifié unique, restauration
+    `git checkout --` puis `touch`), comme la consigne l'autorise.
+
+- 2026-11-10 : **revue de code P1 (Sonnet, lentilles B, E et A) : 0 C, 0 H, 0 M, 3 L.** Boucle close sur cette passe,
+  aucune au-dessus de LOW (orchestrateur, Opus 5.5). Rapports `kesh-gate-logs/e347-review-p1-{B,E,A}.md`.
+  - **B1-1 (L)** : le recompte de « vingt-cinq » au point (vi), que B n'a pu rejouer, est fait par A : 25,
+    `assert_eq!(examinees, 25)` intact. Sans suite.
+  - **E1-1 (L)** : l'épuisement des trois tentatives n'est pas exercé pour cette route. Sans suite, sans issue : le chemin
+    est celui de `retry_on_deadlock`, commun à toutes les routes rejouées, dont la borne est éprouvée dans
+    `kesh-db/src/retry.rs` (`max_attempts_one_means_no_retry`, la M2 de cette story le confirmant pour la route) ; `map_update_error` laisse passer
+    l'erreur en `500`, comme le dit `docs/api-external.md`. Ce n'est pas un défaut de la route.
+  - **A1-1 (L)** : M2 à la § *Mutations nommées*, « aucun rejeu capturé » retiré (remédiation de la fiche seule).
+  - Axe non exercé par B (ouverture de la route aux clés) repris par l'orchestrateur : `PUT /fiscal-years/{id}` est au
+    routeur des mutations (`crates/kesh-api/src/lib.rs:817`), sans `ensure_not_pat` (réservé à la réouverture,
+    `routes/fiscal_years.rs:392`) ; `docs/api-external.md:235` le dit ouvert aux clés.
+  - Ouverte pendant le développement : #989 (KF-057), un test voisin intermittent. `Status: done`.
 
 ## Dev Agent Record
 
 ### Agent Model Used
 
+Opus 5.5 (`claude-opus-5-5`), en autonomie.
+
 ### Completion Notes List
 
+- **T1, rouges d'abord** (`kesh-gate-logs/e347/rouges.log`, journal `rouges-run.log`) : avec les tests seuls, au-dessus de
+  `665de151`, `fiscal_year_rename_is_replayed_when_it_is_the_deadlock_victim` (AC-1) et
+  `fiscal_year_valid_rename_succeeds_after_the_replay` (AC-2) rendent **500** (`INTERNAL_ERROR`) au lieu de 400 et 200.
+  *(La fiche nommait `kesh-gate-logs/e343/rouges.log` ; le prompt de développement fixe la clé `e347` : journal sous
+  `e347/`.)*
+- **T2** : `update_fiscal_year` (`crates/kesh-api/src/routes/fiscal_years.rs`) appelle `fiscal_years::update_name` dans
+  `kesh_db::retry::retry_on_deadlock("fiscal_years::update_name", …)`, nom cloné à chaque tentative, `map_update_error`
+  appliqué au résultat de l'enveloppe. Doc-comment sur le modèle de la réouverture. Le pré-contrôle 404
+  (`find_by_id_in_company`) reste hors de l'enveloppe, comme aux routes voisines.
+- **T3 (AC-2)** : tenu par un montage déterministe (voir l'étape 0 au Change Log ; choix C-e347-2).
+- **T4 (AC-4)** : registre des routes — point (iv) sans le renommage, point (vi) à **vingt-cinq**, recompté depuis la table
+  et le corps des handlers (C-e347-3 : 22 handlers de `src/routes/` avant la story, deux faux positifs `_once` écartés, plus
+  `seed_demo` et `reset` ; 25 avec le renommage), en-tête (iii bis) complété (C-e347-1). `assert_eq!(examinees, 25)`
+  **non touché** (`/usr/bin/grep -nF "examinees, 25"` inchangé). `docs/api-external.md` (paragraphe « Interblocages ») et
+  CHANGELOG `[0.17.6] — Non publié`, *Corrigé*, `refs #945`.
+- **AC-3** : `fiscal_years_e2e` entier vert sans modification (gate ciblé, `gate-cible-2.log`, et gate complet).
+- **Mutations** (`kesh-gate-logs/e347/mut/`) : **M1** (enveloppe retirée, `(|| {…})()`) — les deux tests rouges, 500 ;
+  **M2** (`retry_on_deadlock_with(…, 1, …)`) — les deux tests rouges, 500. Chaque fichier restauré (`git checkout --`,
+  `touch`, « restauré » au journal).
+- **Gates, au dernier commit de code `bea2b917`** (bases `kesh_e347` et `kesh_e2e_e347` recréées à neuf avant) :
+  - `scripts/test-fast.sh --ci` : **5140 exécutés, 5140 passés, 12 ignorés** (`gate-test-fast.log`) ;
+  - `cargo build --workspace --all-targets` : vert (`gate-build.log`) ;
+  - `scripts/gate-ci.sh kesh_ci_e347` : **5147 passés, 0 échec, 16 ignorés** (`gate-ci.log`) ;
+  - `cargo fmt --all -- --check` et `cargo clippy --workspace --all-targets -- -D warnings` : verts (`clippy-cible.log`) ;
+  - frontend : non touché par la story ; seul `npm run build` a tourné, pour servir l'E2E (`front-build.log`). `npm run check`,
+    `lint-i18n-ownership` et `test:unit` ne sont pas lancés : aucun fichier de `frontend/` ne change.
+  - **E2E complet**, base `kesh_e2e_e347` recréée : **385 passés, 7 échecs, 18 ignorés** (`e2e-run.log`). Les sept échecs
+    sont ceux de la KF-029 (#97) au tableau de `docs/testing.md` : `mode-expert.spec.ts:26`, `:41`,
+    `onboarding-path-b.spec.ts:65`, `:92`, `onboarding.spec.ts:57`, `:77`, `:150`. Un premier run (archivé sous
+    `e347/e2e-r1/`, 13 échecs) avait un **défaut de montage de ma part** : `KESH_INBOX_DIR` et `KESH_DOCUMENTS_DIR`
+    n'étaient passés qu'au backend, alors que le runner les lit aussi (`/tmp/kesh-e2e/…` par défaut) ; six specs à pièces
+    rougissaient avec ce message explicite. Corrigé et rejoué.
+- **Hors story, observé** : `fiscal_year_creation_is_replayed_when_it_is_the_deadlock_victim` a rougi une fois au gate
+  ciblé (« témoin du rejeu : aucun warn! … fiscal_years::create »), vert à la relance sans changement et dans les deux gates
+  complets. Route non touchée. Issue demandée (instabilité de montage, motifs larges `["fiscal_years", "FOR UPDATE"]`).
+- **Manuels** : aucun changement. La story ne change aucun écran ni rien de ce qu'ils décrivent
+  (`/usr/bin/grep -niF "interblocage" docs/manual/fr/*.tex` : seul le commentaire de configuration MariaDB de
+  l'admin-manual, `:1013-1017`).
+- **Captures** : aucune ; aucun contrôle visible n'est ajouté ni modifié.
+- **Aucune migration**, aucun bump de version.
+
 ### File List
+
+- `crates/kesh-api/src/routes/fiscal_years.rs` — enveloppe de rejeu, doc-comment.
+- `crates/kesh-api/tests/rejeu_interblocage_e2e.rs` — deux tests, aide `audits_renommage`.
+- `crates/kesh-api/tests/audit_route_registry.rs` — prose des points (iii bis), (iv), (vi).
+- `docs/api-external.md` — paragraphe « Interblocages ».
+- `CHANGELOG.md` — section `[0.17.6] — Non publié`.
+- `_bmad-output/implementation-artifacts/e34-choix-autonomes-e347.md` — C-e347-1 à 3.
+- `_bmad-output/implementation-artifacts/34-7-exercice-interblocage-review-prompt-p1.md` — prompt de la revue P1.
+- `_bmad-output/implementation-artifacts/34-7-exercice-interblocage.md`, `sprint-status.yaml` — statut `review`.

@@ -299,6 +299,14 @@ pub async fn create_fiscal_year(
 /// Seul le `name` est mutable. Les dates et le statut ne peuvent pas être
 /// modifiés via cette route. Renommage autorisé même si `status='Closed'`
 /// (le CO protège les montants/dates, pas un libellé descriptif).
+///
+/// Rejouée sur interblocage (Story 34-7, #945) : le renommage tient l'exercice,
+/// puis demande son homonyme par la lecture verrouillante de doublon ; la
+/// clôture tient ses antérieurs puis l'exercice, et la validation d'une facture
+/// fournisseur le sien puis les autres exercices de son année. Victime, il
+/// rendait 500 là où le pré-contrôle refuse en 400. Transaction unique, audit
+/// compris, sûre à relancer ; un refus métier sort en `DbError::Invariant`, qui
+/// ne se rejoue pas (preuve : `rejeu_interblocage_e2e.rs`).
 pub async fn update_fiscal_year(
     State(state): State<AppState>,
     Extension(current_user): Extension<CurrentUser>,
@@ -310,13 +318,20 @@ pub async fn update_fiscal_year(
         .await?
         .ok_or(AppError::Database(DbError::NotFound))?;
 
-    let fy = fiscal_years::update_name(
-        &state.pool,
-        current_user.user_id,
-        current_user.company_id,
-        id,
-        req.name,
-    )
+    let fy = kesh_db::retry::retry_on_deadlock("fiscal_years::update_name", || {
+        let name = req.name.clone();
+        let pool = state.pool.clone();
+        async move {
+            fiscal_years::update_name(
+                &pool,
+                current_user.user_id,
+                current_user.company_id,
+                id,
+                name,
+            )
+            .await
+        }
+    })
     .await
     .map_err(map_update_error)?;
 
