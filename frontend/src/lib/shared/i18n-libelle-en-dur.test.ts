@@ -304,8 +304,11 @@ const SUFFIXES = ['Label', 'Text', 'Display'];
  * **85 → 86** (Story 34-11a1, #972) : `cardLast4Label` (`bank-accounts/format.ts`), la forme
  * « •••• 1234 » des quatre derniers chiffres d'une carte — une donnée, aucun littéral à
  * traduire : `conforme` **71 → 72** ; `ecartee` ne bouge pas.
+ *
+ * **86 → 87** (Story 34-11a2, #972) : `kindLabel` (`bank-accounts/+page.svelte`), le libellé du
+ * type d'un compte, tout par `i18nMsg` : `conforme` **72 → 73** ; `ecartee` ne bouge pas.
  */
-const CANDIDATES_ATTENDUES = 86;
+const CANDIDATES_ATTENDUES = 87;
 
 /** Les trois délimiteurs de littéral en JS/TS. */
 const QUOTES = ["'", '"', '`'];
@@ -822,7 +825,7 @@ describe('libellés en dur — l’angle mort #255', () => {
 			else if (c.retours.length > 0) classes.ecartee += 1;
 			else classes.conforme += 1;
 		}
-		expect(classes).toEqual({ nonAnalysee: 0, enViolation: 0, ecartee: 14, conforme: 72 });
+		expect(classes).toEqual({ nonAnalysee: 0, enViolation: 0, ecartee: 14, conforme: 73 });
 		// La somme est recalculée depuis les classes, jamais depuis le total qu'elle contrôle.
 		const somme = Object.values(classes).reduce((a, b) => a + b, 0);
 		expect(somme).toBe(CANDIDATES_ATTENDUES);
