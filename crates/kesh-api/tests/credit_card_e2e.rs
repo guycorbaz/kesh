@@ -516,6 +516,50 @@ async fn garde_du_numero_a_l_assistant(pool: MySqlPool) {
     assert_eq!(s, 400, "{b}");
     assert_eq!(code(&b), "CARD_NUMBER_NOT_ALLOWED");
     assert_eq!(b["error"]["details"]["field"], "bankName");
+
+    // Intégration de la 0.17.6 (C-e34a2-1, raccord 3) — la description de
+    // l'assistant (Story 34-1) est gardée de même ; rien n'est écrit.
+    let avant: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM bank_accounts")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    let (s, b) = ctx
+        .post(
+            "/api/v1/onboarding/bank-account",
+            json!({
+                "bankName": "UBS",
+                "iban": "CH9300762011623852957",
+                "description": "carte 4111-1111-1111-1111",
+            }),
+        )
+        .await;
+    assert_eq!(s, 400, "{b}");
+    assert_eq!(code(&b), "CARD_NUMBER_NOT_ALLOWED");
+    assert_eq!(b["error"]["details"]["field"], "description");
+    let ecrits: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM bank_accounts")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(
+        ecrits, avant,
+        "aucun compte écrit par un refus de l'assistant"
+    );
+
+    // Une description sans numéro passe la garde : l'assistant, déjà terminé
+    // ici, la refuse ensuite pour l'étape (`ONBOARDING_STEP_ALREADY_COMPLETED`),
+    // non pour un numéro de carte.
+    let (s, b) = ctx
+        .post(
+            "/api/v1/onboarding/bank-account",
+            json!({
+                "bankName": "UBS",
+                "iban": "CH9300762011623852957",
+                "description": "Compte courant",
+            }),
+        )
+        .await;
+    assert_eq!(s, 400, "{b}");
+    assert_eq!(code(&b), "ONBOARDING_STEP_ALREADY_COMPLETED", "{b}");
 }
 
 // ============================================================

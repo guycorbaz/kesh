@@ -621,8 +621,6 @@ pub async fn set_bank_account(
     super::bank_accounts::refuse_too_long_bank_name(&bank_name)?;
     // Story 34-11a2 (#972, C-e341-15, C-e341-19) — la garde du numéro de carte
     // complet atteint l'assistant : il ne passe pas par `validate_bank_input`.
-    // ⚠️ La description de l'assistant (Story 34-1) doit recevoir le même
-    // appel, `refuse_card_number("description", …)`, à l'intégration.
     crate::routes::bank_accounts::refuse_card_number("bankName", &bank_name)?;
 
     // Story 34-1 (AC-2) : la fonction de la création, même borne, même message.
@@ -631,6 +629,12 @@ pub async fn set_bank_account(
         None => None,
         Some(d) => Some(super::bank_accounts::normalize_description(d.as_deref())?),
     };
+    // Intégration de la 0.17.6 (C-e34a2-1, raccord 3) — la description de
+    // l'assistant (Story 34-1) reçoit la garde du numéro complet, comme à la
+    // création (`validate_bank_input`), après sa normalisation.
+    if let Some(Some(d)) = description.as_ref() {
+        crate::routes::bank_accounts::refuse_card_number("description", d)?;
+    }
 
     // Validate IBAN via kesh-core — message servi tel quel, il nomme déjà le
     // champ (Story v017-6, #832).
