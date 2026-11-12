@@ -252,6 +252,20 @@ export function openingAmountAmbiguous(raw: string): boolean {
 	return /^\d+,\d{3}$/.test(raw.replace(THOUSANDS_SEPARATORS, ''));
 }
 
+/** Story 35-6 — l'issue du classement d'une saisie de solde d'ouverture. */
+export type OpeningAmountKind = 'empty' | 'ambiguous' | 'clear' | 'unreadable' | 'negative';
+
+/**
+ * Story 35-6 — ADAPTATEUR PROVISOIRE de la lecture d'aujourd'hui, pour consigner les
+ * rouges ; remplacé par le pipeline de la fiche (D2).
+ */
+export function openingAmountKind(raw: string): { kind: OpeningAmountKind; payload?: string } {
+	if (openingAmountAmbiguous(raw)) return { kind: 'ambiguous' };
+	const payload = openingAmountPayload(raw);
+	if (payload === null) return { kind: 'empty' };
+	return { kind: 'clear', payload };
+}
+
 /**
  * Story 34-2 (revue P1, B-1) — le montant **tel qu'il sera écrit**, au format
  * suisse de `Intl` pour `fr-CH` (`1 234.50 CHF`, le séparateur de milliers est une

@@ -1,0 +1,137 @@
+{
+	"_doc": "Story 35-6 (#1026, #1028, #1025) — la table D3 de la fiche, écrite une seule fois. Lue par format.test.ts (classement et charge de l'écran) et par le test de parité de crates/kesh-api/src/routes/opening_balances.rs (lecture du serveur). kind : empty | ambiguous | clear | unreadable | negative ; payload : la charge envoyée, pour une saisie claire seulement ; serverRejects : claire à l'écran, refusée par le serveur (borne) ; serverAccepts : refusée à l'écran, acceptée par le serveur (familles D et E). Espaces spéciales par échappement.",
+	"cases": [
+		{ "raw": "", "kind": "empty" },
+		{ "raw": "   ", "kind": "empty" },
+
+		{ "raw": "1.234", "kind": "ambiguous" },
+		{ "raw": "12.500", "kind": "ambiguous" },
+		{ "raw": "999.999", "kind": "ambiguous" },
+		{ "raw": "1.005", "kind": "ambiguous" },
+		{ "raw": "1.000", "kind": "ambiguous" },
+		{ "raw": "100.250", "kind": "ambiguous" },
+		{ "raw": "+1.234", "kind": "ambiguous" },
+		{ "raw": "01.234", "kind": "ambiguous" },
+		{ "raw": "'1.234", "kind": "ambiguous" },
+		{ "raw": "1 .234", "kind": "ambiguous" },
+		{ "raw": "1_.234", "kind": "ambiguous" },
+
+		{ "raw": "+1,234", "kind": "ambiguous" },
+		{ "raw": "+ 1,234", "kind": "ambiguous" },
+		{ "raw": "+01,234", "kind": "ambiguous" },
+		{ "raw": "1_,234", "kind": "ambiguous" },
+		{ "raw": "1,234_", "kind": "ambiguous" },
+		{ "raw": "1,00_0", "kind": "ambiguous" },
+
+		{ "raw": "1,234", "kind": "ambiguous" },
+		{ "raw": "12,500", "kind": "ambiguous" },
+		{ "raw": "100,000", "kind": "ambiguous" },
+		{ "raw": " 9,999 ", "kind": "ambiguous" },
+		{ "raw": "01,234", "kind": "ambiguous" },
+		{ "raw": "012,345", "kind": "ambiguous" },
+		{ "raw": "1 ,234", "kind": "ambiguous" },
+
+		{ "raw": "1. 234", "kind": "unreadable" },
+		{ "raw": "1.2 5", "kind": "unreadable" },
+		{ "raw": "1.5'0", "kind": "unreadable" },
+
+		{ "raw": "1,23 4", "kind": "unreadable" },
+
+		{ "raw": "1'000,000", "kind": "clear", "payload": "1000.000" },
+		{ "raw": "1'234,567", "kind": "clear", "payload": "1234.567" },
+		{ "raw": "1 234,567", "kind": "clear", "payload": "1234.567" },
+		{ "raw": "1\u00a0234,567", "kind": "clear", "payload": "1234.567" },
+		{ "raw": "1'234.567", "kind": "clear", "payload": "1234.567" },
+		{ "raw": "12'34,567", "kind": "clear", "payload": "1234.567" },
+
+		{ "raw": "0,500", "kind": "clear", "payload": "0.500" },
+		{ "raw": "0.500", "kind": "clear", "payload": "0.500" },
+		{ "raw": "0,123", "kind": "clear", "payload": "0.123" },
+		{ "raw": "0.999", "kind": "clear", "payload": "0.999" },
+		{ "raw": ".500", "kind": "clear", "payload": "0.500" },
+		{ "raw": ",500", "kind": "clear", "payload": "0.500" },
+		{ "raw": "00,500", "kind": "clear", "payload": "00.500" },
+
+		{ "raw": "1234,567", "kind": "clear", "payload": "1234.567" },
+		{ "raw": "1234.567", "kind": "clear", "payload": "1234.567" },
+		{ "raw": "1000.000", "kind": "clear", "payload": "1000.000" },
+
+		{ "raw": "1 234,50", "kind": "clear", "payload": "1234.50" },
+		{ "raw": "1\u00a0234,50", "kind": "clear", "payload": "1234.50" },
+		{ "raw": "1\u202f234.50", "kind": "clear", "payload": "1234.50" },
+		{ "raw": "1'234.50", "kind": "clear", "payload": "1234.50" },
+		{ "raw": "1'234,50", "kind": "clear", "payload": "1234.50" },
+
+		{ "raw": "12.50", "kind": "clear", "payload": "12.50" },
+		{ "raw": "12,5", "kind": "clear", "payload": "12.5" },
+		{ "raw": "1,23", "kind": "clear", "payload": "1.23" },
+		{ "raw": "1,2345", "kind": "clear", "payload": "1.2345" },
+		{ "raw": "1234", "kind": "clear", "payload": "1234" },
+		{ "raw": "1.2345", "kind": "clear", "payload": "1.2345" },
+		{ "raw": "1.2340", "kind": "clear", "payload": "1.2340" },
+		{ "raw": "75,25", "kind": "clear", "payload": "75.25" },
+		{ "raw": "+12.50", "kind": "clear", "payload": "12.50" },
+
+		{ "raw": "1'2345", "kind": "clear", "payload": "12345" },
+		{ "raw": "1234'567", "kind": "clear", "payload": "1234567" },
+		{ "raw": "1  234", "kind": "clear", "payload": "1234" },
+		{ "raw": "1\t234", "kind": "clear", "payload": "1234" },
+		{ "raw": "1\u2009234", "kind": "clear", "payload": "1234" },
+		{ "raw": "12'34", "kind": "clear", "payload": "1234" },
+
+		{ "raw": "1_000", "kind": "clear", "payload": "1000" },
+		{ "raw": "1__0", "kind": "clear", "payload": "10" },
+		{ "raw": "1.2_5", "kind": "clear", "payload": "1.25" },
+		{ "raw": "1_", "kind": "clear", "payload": "1" },
+		{ "raw": "1_.5", "kind": "clear", "payload": "1.5" },
+
+		{ "raw": ".5", "kind": "clear", "payload": "0.5" },
+		{ "raw": ",5", "kind": "clear", "payload": "0.5" },
+		{ "raw": "5.", "kind": "clear", "payload": "5" },
+
+		{ "raw": "1.50000", "kind": "clear", "payload": "1.5000" },
+		{ "raw": "1.23450", "kind": "clear", "payload": "1.2345" },
+
+		{ "raw": "0", "kind": "clear", "payload": "0" },
+		{ "raw": "0,00", "kind": "clear", "payload": "0.00" },
+		{ "raw": "0.000", "kind": "clear", "payload": "0.000" },
+		{ "raw": "+0", "kind": "clear", "payload": "0" },
+		{ "raw": "-0", "kind": "clear", "payload": "0" },
+		{ "raw": "-0.00", "kind": "clear", "payload": "0.00" },
+
+		{ "raw": "-5", "kind": "negative" },
+		{ "raw": "-0,5", "kind": "negative" },
+		{ "raw": "-1.234", "kind": "negative" },
+
+		{ "raw": "1.23456", "kind": "unreadable" },
+		{ "raw": "-1.23456", "kind": "unreadable" },
+		{ "raw": "1.234.567", "kind": "unreadable" },
+		{ "raw": "1,234,567", "kind": "unreadable" },
+		{ "raw": "1,234.56", "kind": "unreadable" },
+		{ "raw": "1.234,56", "kind": "unreadable" },
+		{ "raw": "_1", "kind": "unreadable" },
+		{ "raw": "+_5", "kind": "unreadable" },
+		{ "raw": "\u0661\u0662\u0663", "kind": "unreadable" },
+		{ "raw": "abc", "kind": "unreadable" },
+		{ "raw": "1.2.3", "kind": "unreadable" },
+		{ "raw": "+", "kind": "unreadable" },
+		{ "raw": ".", "kind": "unreadable" },
+		{ "raw": "1-2", "kind": "unreadable" },
+		{ "raw": "1+2", "kind": "unreadable" },
+		{ "raw": "++1", "kind": "unreadable" },
+
+		{ "raw": "1e3", "kind": "unreadable", "serverAccepts": "1000" },
+		{ "raw": "1E3", "kind": "unreadable", "serverAccepts": "1000" },
+		{ "raw": "1,5e2", "kind": "unreadable", "serverAccepts": "150" },
+		{ "raw": "5e-1", "kind": "unreadable", "serverAccepts": "0.5" },
+
+		{ "raw": "0.00000000000000000000000000001", "kind": "unreadable", "serverAccepts": "0" },
+
+		{ "raw": "'+5", "kind": "clear", "payload": "5" },
+		{ "raw": "''+5", "kind": "clear", "payload": "5" },
+		{ "raw": "'-0", "kind": "clear", "payload": "0" },
+		{ "raw": "1.5'", "kind": "clear", "payload": "1.5" },
+
+		{ "raw": "1234567890123456", "kind": "clear", "payload": "1234567890123456", "serverRejects": true }
+	]
+}
