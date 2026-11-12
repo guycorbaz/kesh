@@ -225,7 +225,7 @@
 	function ambiguousAmountMessage(): string {
 		return i18nMsg(
 			'bank-accounts-opening-error-amount-ambiguous',
-			"Montant ambigu : une virgule suivie de trois chiffres peut être un séparateur de milliers. Écrivez 1234 ou 1'234 pour mille deux cent trente-quatre, 1.234 pour un franc et vingt-trois centimes et quatre dixièmes de centime.",
+			"Montant ambigu : une virgule suivie de trois chiffres peut être un séparateur de milliers. Écrivez 1'234 pour mille deux cent trente-quatre, 1.234 pour un franc et vingt-trois centimes et quatre dixièmes de centime.",
 		);
 	}
 
