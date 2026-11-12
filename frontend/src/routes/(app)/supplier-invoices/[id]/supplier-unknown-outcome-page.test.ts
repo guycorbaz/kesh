@@ -478,6 +478,23 @@ describe('fiche fournisseur — le second clic après une relecture en échec (r
 		);
 	});
 
+	/** Revue P5 ciblée (S-2 ; M14, forme « suppression ») — un détachement réussi efface le refus d'avant. */
+	it('détacher : refus, puis détachement réussi ⇒ le refus d’avant disparaît (M14, forme « suppression »)', async () => {
+		getMock.mockResolvedValue(inv({ sourceDocument: DOC }));
+		detachMock
+			.mockRejectedValueOnce({ code: 'FORBIDDEN', status: 403, message: 'Refus d’avant.' })
+			.mockResolvedValueOnce(inv());
+		const v = render(Page);
+		await GESTURES[6].act(v);
+		expect((await v.findByTestId('supplier-invoice-detach-error')).textContent).toContain(
+			'Refus d’avant.',
+		);
+		await fireEvent.click(v.getByTestId('supplier-invoice-detach'));
+		await waitFor(() => expect(detachMock).toHaveBeenCalledTimes(2));
+		expect(await v.findByTestId('supplier-invoice-attach')).toBeTruthy();
+		expect(v.queryByTestId('supplier-invoice-detach-error')).toBeNull();
+	});
+
 	it('détacher : une confirmation refusée garde le refus d’avant (revue P4 ciblée, C-2)', async () => {
 		getMock.mockResolvedValue(inv({ sourceDocument: DOC }));
 		detachMock.mockRejectedValue({ code: 'FORBIDDEN', status: 403, message: 'Refus d’avant.' });
