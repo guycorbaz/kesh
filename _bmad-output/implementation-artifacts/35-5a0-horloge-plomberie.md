@@ -122,7 +122,7 @@ binaires (`lettering_documents_backfill.rs:43`, `lettering_documents.rs:29`, `le
   pièce comme `aujourd_hui` changerait le jour du bloqueur ou de la contre-passation, donc ce que le test exerce, sans
   qu'aucun `assert` ne bouge. Les pièges relevés (validation P2, V2-7 ; validation P3, V3-6 ; lus) : `payer_par`
   (`support/lettering_documents.rs:863`, appel de `pay` à `:870`) reçoit `le`, date du paiement, et `payer` (`:879`) la lui
-  transmet (`:885-893`) — `payer_par` prend `aujourd_hui_test()`, `payer` ne change pas (validation P4, V4-4) ; `facture_payee`
+  transmet (`:886-894`) — `payer_par` prend `aujourd_hui_test()`, `payer` ne change pas (validation P4, V4-4) ; `facture_payee`
   (`fournisseur_rapproche.rs:120-127`, appel de `pay` à `:155-162`) reçoit **`jour`**, date de la facture **et** du paiement —
   un nom qui invite à la passer comme `aujourd_hui`, et prend aussi `aujourd_hui_test()` (le module `jour` du helper et
   la variable locale `jour` vivent dans des espaces de noms distincts, à constater à la compilation). S'ils n'en tiennent pas, **`aujourd_hui_test()`**, helper partagé par crate de tests :
@@ -171,7 +171,8 @@ binaires (`lettering_documents_backfill.rs:43`, `lettering_documents.rs:29`, `le
     (dans `horloge_depuis`, import compris), les deux `support/jour.rs` : comptes relevés ; 0 ailleurs ;
   - les occurrences de **`horloge_depuis`** dans `crates/*/src` : `kesh-api/src/horloge.rs` (définition, appel par
     `horloge_de_test`, tests du module : compte relevé) ; 0 ailleurs ;
-  - `new_for_tests(` (méthode, non importable seule) et **`horloge_de_test`** dans `crates/*/src` : `lib.rs` (définition de
+  - **`new_for_tests`** (mot entier, validation P5, V5-1 : `let f = AppState::new_for_tests;` ne contient pas
+    `new_for_tests(`) et **`horloge_de_test`** dans `crates/*/src` : `lib.rs` (définition de
     `new_for_tests`, appel et import éventuel de `horloge_de_test` : compte relevé), `kesh-api/src/horloge.rs` (définition de
     `horloge_de_test` : 1) ; 0 ailleurs — aucun appel ni import de production, ni de `mod tests` de `src` ;
   - `HorlogeSysteme` **construit** : instructions `use` retirées (ci-dessus, pour ce seul compte), puis la ligne `pub struct HorlogeSysteme` et la
@@ -266,7 +267,8 @@ lisent deux fois l'horloge (un test du dépôt donne deux dates distinctes au ch
 compile pas, ou la garde le voit) ; M5 `instant_de_test(Some(""))` qui panique (AC4) ; M6 (validation P2, V2-4) `main.rs`
 construit son horloge par `match instant_de_test(std::env::var(NOM_VARIABLE_INSTANT).ok().as_deref()) { Some(i) =>
 Arc::new(HorlogeFixe(i)), None => Arc::new(HorlogeSysteme) }` — `HorlogeSysteme` y reste construit une fois et le littéral
-absent : tuée par les gardes de `NOM_VARIABLE_INSTANT`, d'`instant_de_test(` et d'`HorlogeFixe(` (trois rouges attendus).
+absent : tuée par les gardes de `NOM_VARIABLE_INSTANT`, d'`instant_de_test` et d'`HorlogeFixe`, en mots entiers (trois rouges
+attendus).
 
 ## Tâches
 
@@ -400,7 +402,7 @@ la fermeture reçoit `aujourd_hui_test()` ou une date fixe ; toute construction 
 
 ### Completion Notes List
 
-- Fiche rédigée au découpage de la 35-5a (C-e350-28) ; validation à lancer.
+- Fiche rédigée au découpage de la 35-5a (C-e350-28) ; validation terminée en P5 ciblée (Change Log).
 
 ### File List
 
@@ -505,3 +507,20 @@ concernés ; `docs/testing.md`.
     est insécable par la règle D2, non par la compilation).
   - Aucun finding réfuté. Recyclage déclaré (V4-1 né de V3-2). Aucune migration. Statut `ready-for-dev` ; passe ciblée P5 à
     lancer.
+- 2026-11-12 — **Validation P5, passe ciblée** (Sonnet, sur la remédiation `eb52ac22` ;
+  `kesh-gate-logs/e35-5a0-validation-p5-ciblee.md` : 0 CRITICAL, 0 HIGH, 0 MEDIUM, 2 LOW), LOW appliqués par l'agent de
+  rédaction : **V5-1** (`new_for_tests` compté en mot entier, `\bnew_for_tests\b`) ; **V5-2** (`payer` transmet `le` à
+  `payer_par` par l'appel `:886-894`, relu ; M6 décrite aux gardes en mots entiers). Les citations de l'historique (entrées
+  P3, P4) restent telles quelles.
+  - **Synthèse de la validation** (`CLAUDE.md` § *Review Iteration Rule*) : cinq passes, **3 → 4 → 2 → 1 → 0 MEDIUM**
+    au-dessus de LOW (aucun CRITICAL ni HIGH). Modèles : P1 Sonnet, P2 Opus, P3 Sonnet (complètes), P4 Opus (ciblée), P5 Sonnet
+    (ciblée, sur une remédiation qui ne touche que la fiche). Aucun finding réfuté sur la série, aucun reclassement.
+  - **Dérogation et découpage** : la 35-5a0 est le *story-zero* né du découpage de la 35-5a (**C-e350-28**). Elle reste **une
+    story en quatre commits** — `kesh-core`, plomberie `kesh-api`, noyau D2 avec tous ses appelants, garde et docs —, chacun
+    compilable ; la chaîne contre-passation → bloqueurs → vues est insécable par la règle D2 ; `lock_books` / `unlock_books` et
+    les commits (1), (2), (4) seraient séparables et restent pour un **motif de coût, assumé par l'orchestrateur** (annotations
+    de C-e350-28, validations P2 et P3). Risque accepté écrit à la *Dérogation*.
+  - **Recyclage déclaré** au Project Lead à chaque passe : les MEDIUM de P2 (V2-1 à V2-4), de P3 (V3-1, V3-2) et de P4 (V4-1)
+    sont tous nés de la remédiation précédente, aucun de la conception D1-D3 ; la sévérité a décru de P2 à P5.
+  - **Validation terminée** sur une passe qui ne rend aucun finding au-dessus de LOW. Aucune migration. Statut
+    `ready-for-dev`.
