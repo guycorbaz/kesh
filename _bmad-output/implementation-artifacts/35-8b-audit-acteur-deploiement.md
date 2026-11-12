@@ -74,7 +74,7 @@ trace `reconciliation_rule.deleted` par `::user` quand la règle était active (
   `PRE_AUTH` sinon — l'étape 0 relit la garde de la route et l'écrit au Change Log.
 - **D3 — `reconciliation_rule.deleted`** porte le même acteur dans ses deux cas.
 - **D4 — Fermeture** : la PR porte `closes #431` ; le motif de fermeture dit ce qui reste hors de #431 (le serveur MCP, sa
-  limite écrite au manuel).
+  limite écrite au manuel, suivie à **#1057**).
 
 ## Critères d'acceptation
 

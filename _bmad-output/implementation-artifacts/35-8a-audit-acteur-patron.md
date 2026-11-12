@@ -130,8 +130,8 @@ API » » — hors de cette story, D5).
 - **D4 — Ce qui ne change pas** : le `user_id` d'une entrée par clé reste le **créateur de la clé** (imputabilité, Story
   17-2a) ; le vocabulaire des actions ; le schéma ; l'affichage du journal d'audit (qui montre déjà `actor_type`). Aucune
   route nouvelle, aucune réponse d'API changée.
-- **D5 — Hors de la story** : le serveur MCP (raison `MCP` de la garde ; une issue est demandée à l'orchestrateur si
-  aucune ne suit déjà la limite du manuel `admin-manual.tex:3392`) ; le reste des dépôts (35-8b).
+- **D5 — Hors de la story** : le serveur MCP (raison `MCP` de la garde ; limite du manuel `admin-manual.tex:3392`, suivie à
+  **#1057**) ; le reste des dépôts (35-8b).
 
 ## Critères d'acceptation
 

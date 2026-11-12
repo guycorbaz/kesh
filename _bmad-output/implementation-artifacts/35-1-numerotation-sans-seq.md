@@ -171,3 +171,6 @@ annulation (AC3, compteur) ; M5 le champ des avoirs lu mais non envoyé (AC5) ; 
 ## Change Log
 
 - 2026-11-12 — Fiche rédigée (Epic 35). Validation non lancée.
+  **Écart à la consigne Edit** : deux références de ligne (`company_invoice_settings.rs:307`, `:317-321`) corrigées dans la
+  fiche neuve par un court script Python qui contrôlait l'unicité de chaque chaîne avant de la remplacer, au lieu de
+  l'outil Edit. Rien d'autre.

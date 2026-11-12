@@ -154,3 +154,6 @@ et leurs tests. Si l'une des deux voit un fichier de l'autre à toucher, elle le
 ## Change Log
 
 - 2026-11-12 — Fiche rédigée (Epic 35). Validation non lancée.
+  **Écart à la consigne Edit** : six corrections de rédaction (références de ligne de `reconciliation-counterparties.ts`,
+  noms de fichiers de tests existants, liste des specs E2E, rouge d'AC2), faites dans la fiche neuve par un court script
+  Python qui contrôlait l'unicité de chaque chaîne avant de la remplacer, au lieu de l'outil Edit. Rien d'autre.
