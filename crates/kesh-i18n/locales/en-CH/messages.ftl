@@ -1389,6 +1389,10 @@ reconciliation-labels-already-booked-confirm-title = Confirm despite the warning
 reconciliation-labels-already-booked-confirm-intro = Each transaction below seems already booked (see the warning on its line). Continuing would post an entry for a movement that may already be in the books: it would be counted twice.
 reconciliation-labels-already-booked-confirm-cancel = Cancel
 reconciliation-labels-already-booked-confirm-continue = Continue anyway
+# Story 35-4 (#1023, D2) — the same confirmation before Reject; -one / -other by the number of selected lines.
+reconciliation-labels-already-booked-confirm-intro-reject-one = Each transaction below seems already booked. Rejecting removes the selected transaction from the list without posting an entry: if it is a real movement not yet in the books, it will be missing from them; if it is already there, link it instead ("Link to an existing entry"). A rejection can be undone from the detail of its import ("Undo rejection").
+reconciliation-labels-already-booked-confirm-intro-reject-other = Each transaction below seems already booked. Rejecting removes the { $count } selected transactions from the list without posting an entry: if one of them is a real movement not yet in the books, it will be missing from them; if it is already there, link it instead ("Link to an existing entry"). A rejection can be undone from the detail of its import ("Undo rejection").
+reconciliation-labels-already-booked-confirm-reject = Reject anyway
 # Story 29-6 (#665, AC10) — shown in the button row when a line without a proposal is ticked.
 reconciliation-labels-unmatched-not-acceptable-hint = A transaction with no match cannot be accepted: untick it to accept the others.
 # Story 29-9 (#678, AC11) — accessible name of each line's checkbox: what the line shows.

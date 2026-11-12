@@ -9,7 +9,8 @@
  * 2. Aucune de ces clés ne porte de sélecteur Fluent (`->`), dans aucune locale : le client
  *    reçoit les messages pré-résolus, un sélecteur y arriverait figé sur sa variante par défaut
  *    (choix C-e342-21).
- * 3. Les huit clés existent dans les quatre locales, et `-other` porte `{ $count }`.
+ * 3. Les treize clés de `CLES` (dix de la 34-4 et de la 34-11b, trois de la 35-4) existent dans
+ *    les quatre locales, et chaque `-other` porte `{ $count }`.
  */
 import { describe, it, expect } from 'vitest';
 import {
@@ -38,6 +39,10 @@ const CLES = [
 	'reconciliation-labels-already-booked-confirm-intro',
 	'reconciliation-labels-already-booked-confirm-cancel',
 	'reconciliation-labels-already-booked-confirm-continue',
+	// Story 35-4 (#1023, D4) : la confirmation de *Rejeter*.
+	'reconciliation-labels-already-booked-confirm-intro-reject-one',
+	'reconciliation-labels-already-booked-confirm-intro-reject-other',
+	'reconciliation-labels-already-booked-confirm-reject',
 ] as const;
 
 describe('Déjà comptabilisée — catalogues (Story 34-4)', () => {
@@ -48,7 +53,7 @@ describe('Déjà comptabilisée — catalogues (Story 34-4)', () => {
 		for (const cle of CLES) expect(releve.has(cle), cle).toBe(true);
 	});
 
-	it.each(LOCALES)('%s : les dix clés existent, sans sélecteur Fluent', (locale) => {
+	it.each(LOCALES)('%s : les treize clés existent, sans sélecteur Fluent', (locale) => {
 		const catalogue = catalogueDe(RACINE_FTL, locale);
 		const duPrefixe = [...catalogue.keys()].filter((c) => c.startsWith(PREFIXE)).sort();
 		expect(duPrefixe).toEqual([...CLES].sort());
@@ -64,6 +69,12 @@ describe('Déjà comptabilisée — catalogues (Story 34-4)', () => {
 		).toContain('{ $count }');
 		expect(
 			catalogue.get('reconciliation-labels-already-booked-transfer-among-one'),
+		).not.toContain('{ $count }');
+		expect(
+			catalogue.get('reconciliation-labels-already-booked-confirm-intro-reject-other'),
+		).toContain('{ $count }');
+		expect(
+			catalogue.get('reconciliation-labels-already-booked-confirm-intro-reject-one'),
 		).not.toContain('{ $count }');
 	});
 });

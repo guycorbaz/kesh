@@ -1389,6 +1389,10 @@ reconciliation-labels-already-booked-confirm-title = Confermare nonostante l’a
 reconciliation-labels-already-booked-confirm-intro = Ogni transazione qui sotto sembra già contabilizzata (vedere l’avviso della sua riga). Continuare registrerebbe una scrittura per un movimento forse già nei libri: sarebbe contato due volte.
 reconciliation-labels-already-booked-confirm-cancel = Annulla
 reconciliation-labels-already-booked-confirm-continue = Continua comunque
+# Story 35-4 (#1023, D2) — la stessa conferma prima di Rifiutare; -one / -other secondo il numero di righe selezionate.
+reconciliation-labels-already-booked-confirm-intro-reject-one = Ogni transazione qui sotto sembra già contabilizzata. Rifiutare toglie la transazione selezionata dall’elenco senza registrare una scrittura: se è un movimento reale non ancora nei libri, vi mancherà; se vi è già, la colleghi piuttosto («Collega a una scrittura esistente»). Un rifiuto si annulla dal dettaglio della sua importazione («Annulla il rifiuto»).
+reconciliation-labels-already-booked-confirm-intro-reject-other = Ogni transazione qui sotto sembra già contabilizzata. Rifiutare toglie le { $count } transazioni selezionate dall’elenco senza registrare una scrittura: se una di esse è un movimento reale non ancora nei libri, vi mancherà; se vi è già, la colleghi piuttosto («Collega a una scrittura esistente»). Un rifiuto si annulla dal dettaglio della sua importazione («Annulla il rifiuto»).
+reconciliation-labels-already-booked-confirm-reject = Rifiuta comunque
 # Story 29-6 (#665, AC10) — mostrato nella riga dei pulsanti quando è selezionata una riga senza proposta.
 reconciliation-labels-unmatched-not-acceptable-hint = Una transazione senza corrispondenza non può essere accettata: tolga la selezione per accettare le altre.
 # Story 29-9 (#678, AC11) — nome accessibile della casella di ogni riga: ciò che la riga mostra.

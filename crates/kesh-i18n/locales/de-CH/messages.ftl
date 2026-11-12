@@ -1389,6 +1389,10 @@ reconciliation-labels-already-booked-confirm-title = Trotz des Hinweises bestät
 reconciliation-labels-already-booked-confirm-intro = Jede der folgenden Transaktionen scheint bereits verbucht (siehe den Hinweis in ihrer Zeile). Fortfahren würde eine Buchung für eine Bewegung erfassen, die vielleicht schon in den Büchern steht; sie würde dann doppelt gezählt werden.
 reconciliation-labels-already-booked-confirm-cancel = Abbrechen
 reconciliation-labels-already-booked-confirm-continue = Trotzdem fortfahren
+# Story 35-4 (#1023, D2) — dieselbe Bestätigung vor Ablehnen; -one / -other nach der Zahl der ausgewählten Zeilen.
+reconciliation-labels-already-booked-confirm-intro-reject-one = Jede der folgenden Transaktionen scheint bereits verbucht. Ablehnen entfernt die ausgewählte Transaktion aus der Liste, ohne eine Buchung zu erfassen: Ist sie eine reale Bewegung, die noch nicht in den Büchern steht, fehlt sie dort; steht sie bereits darin, ordnen Sie sie besser zu („Einer bestehenden Buchung zuordnen“). Eine Ablehnung lässt sich im Detail ihres Imports aufheben („Ablehnung aufheben“).
+reconciliation-labels-already-booked-confirm-intro-reject-other = Jede der folgenden Transaktionen scheint bereits verbucht. Ablehnen entfernt die { $count } ausgewählten Transaktionen aus der Liste, ohne eine Buchung zu erfassen: Ist eine davon eine reale Bewegung, die noch nicht in den Büchern steht, fehlt sie dort; steht sie bereits darin, ordnen Sie sie besser zu („Einer bestehenden Buchung zuordnen“). Eine Ablehnung lässt sich im Detail ihres Imports aufheben („Ablehnung aufheben“).
+reconciliation-labels-already-booked-confirm-reject = Trotzdem ablehnen
 # Story 29-6 (#665, AC10) — in der Schaltflächenzeile angezeigt, wenn eine Zeile ohne Vorschlag markiert ist.
 reconciliation-labels-unmatched-not-acceptable-hint = Eine Transaktion ohne Übereinstimmung kann nicht akzeptiert werden: Entfernen Sie die Markierung, um die übrigen zu akzeptieren.
 # Story 29-9 (#678, AC11) — zugänglicher Name des Kontrollkästchens jeder Zeile: was die Zeile anzeigt.

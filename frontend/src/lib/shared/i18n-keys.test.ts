@@ -969,7 +969,10 @@ const ATTENDU = {
 	// Passe de textes de l'intégration (#1037, #1040, #1027) : **3021 → 3026** (+5), tous dans
 	// `bank-accounts/+page.svelte` : titre d'une carte, ses deux avis de création, le sens
 	// « Dette (solde dû) », l'aperçu d'un montant nul. Que des littéraux ; recompté par la garde.
-	sitesTotal: 3026,
+	// Story 35-4 (#1023, D4) : **3026 → 3029** (+3), `AlreadyBookedConfirmDialog.svelte` 4 → 7
+	// (intro de *Rejeter* `-one` et `-other`, bouton *Rejeter quand même*). Que des littéraux ;
+	// recompté à la source par la garde (règle d'union C-e350-8 : l'intégration recompte).
+	sitesTotal: 3029,
 	sitesNonResolus: 31,
 	relais: 6,
 	// Story 26-1 (#620, AC3-bis) : **10 → 11** — `lib/features/bank-import/
