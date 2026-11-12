@@ -2368,7 +2368,7 @@ Les comptes bancaires de la société se gèrent dans \emph{Administration} → 
 
 \subsection{La description d'un compte}
 
-Avec une description, Kesh nomme le compte « UBS --- Personnel » partout où il le montre : dans \textbf{les listes de comptes} (cette page, la tuile des comptes de l'accueil, \emph{Paramètres}) et dans \textbf{les sélecteurs} --- import bancaire, réconciliation, règlement d'une facture, règlement d'une facture fournisseur, lot de paiement ---, où l'IBAN reste affiché à la suite ; pour une carte de crédit, ce sont ses quatre derniers chiffres, « Visa --- Personnel (\textbullet\textbullet\textbullet\textbullet~1234) » (\S\ref{sec:carte-credit}). Un compte \textbf{sans description} s'affiche exactement comme avant. Deux comptes peuvent porter la même description : l'IBAN les distingue, ou, pour deux cartes, leurs quatre derniers chiffres.
+Avec une description, Kesh nomme le compte « UBS --- Personnel » partout où il le montre : dans \textbf{les listes de comptes} (cette page, la tuile des comptes de l'accueil, \emph{Paramètres}) et dans \textbf{les sélecteurs} --- import bancaire, réconciliation, règlement d'une facture, règlement d'une facture fournisseur, lot de paiement ---, où l'IBAN reste affiché à la suite ; pour une carte de crédit, ce sont ses quatre derniers chiffres, « Visa --- Personnel (\textbullet\textbullet\textbullet\textbullet~2041) » (\S\ref{sec:carte-credit}). Un compte \textbf{sans description} s'affiche exactement comme avant. Deux comptes peuvent porter la même description : l'IBAN les distingue, ou, pour deux cartes, leurs quatre derniers chiffres.
 
 La description ne se saisit pas à l'onboarding, mais ensuite, sur cette page. Elle ne figure \textbf{ni sur la QR-facture ni dans le fichier de paiement} : la QR-facture porte le compte principal, et le fichier de paiement l'IBAN. Elle est dans l'export CSV (\texttt{bank\_accounts.csv}, juste après la banque) et dans la sauvegarde d'installation.
 
@@ -2382,7 +2382,7 @@ Une carte de crédit se tient \textbf{comme un compte}, sur cette même page : �
 
 \begin{itemize}
     \item l'\textbf{émetteur} (« Visa », « Mastercard ») et une \textbf{description} éventuelle, comme un compte bancaire ;
-    \item ses \textbf{quatre derniers chiffres}, facultatifs, pour la reconnaître dans les listes (« \textbullet\textbullet\textbullet\textbullet~1234 ») ;
+    \item ses \textbf{quatre derniers chiffres}, facultatifs, pour la reconnaître dans les listes (« \textbullet\textbullet\textbullet\textbullet~2041 ») ;
     \item un \textbf{compte de dette lié}, \textbf{obligatoire} : un compte de \textbf{passif} (par exemple 2030 \emph{Carte de crédit}). La liste n'en propose pas d'autres, et le serveur refuse une carte sans compte lié, ou liée à un actif (\texttt{CREDIT\_CARD\_LEDGER\_\allowbreak MUST\_BE\_LIABILITY}) ; le lien d'une carte se change, il ne se retire pas.
 \end{itemize}
 
