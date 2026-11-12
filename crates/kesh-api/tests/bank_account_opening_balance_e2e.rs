@@ -623,20 +623,25 @@ async fn un_echec_apres_le_complement_n_ecrit_rien(pool: MySqlPool) {
     let (status, resp) = ctx.create(body).await;
     assert_eq!(status, 500, "{resp}");
 
-    assert_eq!(bank_account_count(&pool).await, banks, "aucun compte");
-    assert_eq!(
-        entry_count(&pool).await,
-        entries,
-        "aucune écriture orpheline"
-    );
-    assert_eq!(common::audit_count(&pool).await, traces, "aucune trace");
+    // Les quatre constats sont relevés avant d'être assertés, pour que M9 rende
+    // rouge chacun d'eux et non le premier seul (revue P1, A LOW-3).
     let still_primary: bool =
         sqlx::query_scalar("SELECT is_primary FROM bank_accounts WHERE id = ?")
             .bind(primary)
             .fetch_one(&pool)
             .await
             .unwrap();
-    assert!(still_primary, "l'ancien principal n'est pas démoté");
+    let constats = (
+        bank_account_count(&pool).await == banks,
+        entry_count(&pool).await == entries,
+        common::audit_count(&pool).await == traces,
+        still_primary,
+    );
+    assert_eq!(
+        constats,
+        (true, true, true, true),
+        "(aucun compte, aucune écriture orpheline, aucune trace, ancien principal intact)"
+    );
 }
 
 /// AC-5 (revue P1 A LOW-2) — date verrouillée et compte de report non imputable,
