@@ -201,6 +201,7 @@ retenue, options écartées, réversibilité. Lignes citées sur `release/0.17.6
 - **`user-manual.tex`** : 35-4 `:3049-3050`, `:3097`, `:3107` *(`:3097` ajouté le 2026-11-12, validation P2 de la 35-4 ;
   `:3049-3050` le même jour, validation P3)* ; 35-6 `:2456` (et `:2462` si touché) ; 35-5a les phrases « aujourd'hui » du solde
   d'ouverture et du verrou de période ; 35-5b les autres. Paragraphes distincts ; le PDF se régénère après l'union.
+  *(Annoté le 2026-11-13, validation P2 de la 35-7 : 35-7 `:3186` (une demi-phrase), voisin des paragraphes de la 35-4.)*
 - **`crates/kesh-api/src/routes/opening_balances.rs`** : 35-6 `parse_complement_amount` (`:515-530`) ; 35-5a la date du
   jour (`:244`, `:604`). Hunks distincts ; si les deux sont en vol, 35-6 fusionne d'abord (plus courte).
   *(Annoté le 2026-11-12, validation P2 de la 35-6 : la 35-6 ne touche plus ce fichier, C-e350-19.)*

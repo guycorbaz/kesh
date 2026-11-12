@@ -86,7 +86,9 @@ restauré **avec** `allowClear`. `ManualMatchModal.test.ts:183` (bouton désacti
 
 1. **AC1 — Chemin 2, le composant** (`AccountAutocomplete.test.ts`) : sans `allowClear`, valeur `1` résolue : vider le champ
    puis `blur` → le champ affiche `1000 — Caisse`, `onSelect` jamais appelé ; taper `zzz` puis `blur` → idem ; valeur
-   `null` : taper `zzz` puis `blur` → champ vide. Mode dégradé (`loadError`) : taper `7` puis `blur` → le champ garde `7`.
+   `null` : taper `zzz` puis `blur` → champ vide. Mode dégradé (`loadError`) : taper `7` puis `blur` → le champ garde `7`
+   (`onSelect` simulé par un `vi.fn()` nu, `value` **non** mise à jour — sinon l'effet `:185-190` réaffiche `7` avec ou sans
+   M3, qui survivrait).
    Avec `allowClear` : les tests `:121-264` restent verts, inchangés.
 2. **AC2 — Chemin 1, la fonction** (`reconciliation-counterparties.test.ts`, existant) : `null` → `null` ;
    compte absent de la liste → l'identifiant ; compte de la banque → `null` ; compte archivé ou non imputable → `null` ;
@@ -95,18 +97,25 @@ restauré **avec** `allowClear`. `ManualMatchModal.test.ts:183` (bouton désacti
    `bankLedgerAccountId: null`, le compte de la banque choisi, puis le prop passé à son identifiant (`rerender`) → le champ
    est vide, la valeur nulle — *Écriture manuelle* : bouton de validation désactivé, message « Compte de contrepartie
    obligatoire » ; *Éclater* : la ligne concernée seule vidée, l'autre intacte ; la ligne 1 vidée → « Ligne 1 : compte
-   requis » ; la ligne 2 vidée seule, la ligne 1 remplie → « Ligne 2 : compte requis » (aucune ligne antérieure ne masque le
+   requis » ; la ligne 2 vidée seule, la ligne 1 remplie (compte **et** montant > 0 : `clientError` teste, ligne par ligne,
+   le compte puis le montant, `TransactionSplitModal.svelte:166-182`) → « Ligne 2 : compte requis » (aucune ligne antérieure ne masque le
    message). Un compte resté proposé n'est pas touché. Aucun appel serveur.
-4. **AC4 — Consommateurs stricts, non-régression** : les suites de `JournalEntryForm`, `VatPurchaseAssistant`,
-   `ManualMatchModal`, `TransactionSplitModal` restent vertes ; une ligne d'écriture dont on vide le compte puis qu'on quitte
+4. **AC4 — Consommateurs stricts, non-régression** : les suites de `JournalEntryForm`, `ManualMatchModal`,
+   `TransactionSplitModal` restent vertes ; `VatPurchaseAssistant` n'a **pas** de suite de composant (`vat-purchase.test.ts`
+   ne teste que ses fonctions pures) : la couverture de ses deux champs stricts (`:159`, `:204`) est celle du composant seul
+   (AC1), écrit au Change Log ; une ligne d'écriture dont on vide le compte puis qu'on quitte
    réaffiche son compte (un test ajouté dans `JournalEntryForm.edit.test.ts`, ou constat que le composant seul suffit, écrit au
    Change Log).
 5. **AC5 — Textes et docs** : aucune clé i18n ajoutée ni changée (`sitesTotal` de `i18n-keys.test.ts` inchangé, recompté) ;
-   le manuel ne décrit pas le comportement du champ au clavier. Les seules lignes qui décrivent le champ de contrepartie sont
-   `user-manual.tex:3121` (*Écriture manuelle* : ce que le sélecteur propose ; « Ouverte sans rien taper, la liste ne montre
-   que les premiers comptes ») et le paragraphe d'*Éclater* voisin — contrôle restreint à `:3105-3135`
-   (`sed -n 3105,3135p docs/manual/fr/user-manual.tex | /usr/bin/grep -nE "vide|effac|quitt|tap"`). Aucune ne dit ce que fait le
-   champ quand on le quitte : le Change Log le constate, lignes citées ; une phrase qui le contredirait est corrigée. CHANGELOG `## [0.17.7] — Non
+   le manuel ne décrit pas le comportement du champ au clavier. Trois sites décrivent le champ de contrepartie
+   (`user-manual.tex`, sur `main`) : `:3121` (*Écriture manuelle* : ce que le sélecteur propose) ; `:3180` (*Éclater* : « choisi
+   dans le même sélecteur que l'écriture manuelle ») ; `:3186` (« La contrepartie n'est jamais le compte de la banque » :
+   « Ce filtrage n'est toutefois pas complet »). Contrôle sur `:3105-3190`
+   (`sed -n 3105,3190p docs/manual/fr/user-manual.tex | /usr/bin/grep -nE "vide|effac|quitt|tap|filtrage"`). **Tranché**
+   (validation P2) : `:3186` gagne une demi-phrase après « pas complet » — « ; un compte de la banque choisi avant que Kesh
+   l'ait identifié est ensuite retiré du champ, qui se vide » —, `:3121` et `:3180` restent tels quels (ils ne disent rien du
+   champ quand on le quitte, que D2 change). PDF régénéré, contrôlé aplati (`pdftotext … | tr '\n' ' ' | tr -s ' '`) :
+   présence de « retiré du champ » (sans ligature). CHANGELOG `## [0.17.7] — Non
    publié`, *Corrigé*, un point `refs #1000` (C-e350-8).
 6. **AC6 — Captures** (thème clair, base jetable, `kesh-gate-logs/e357/captures/`) : *Écriture manuelle*, champ vidé puis
    quitté (le compte réaffiché) ; *Éclater*, même geste.
@@ -149,7 +158,9 @@ l'`$effect` d'*Écriture manuelle* retiré (AC3) ; M1 est aussi tuée par AC7, �
 
 ### Fichiers communs — règle d'union C-e350-8
 
-`CHANGELOG.md` (un point sous `### Corrigé`). Aucun autre : `features/reconciliation/` est aussi touché par la **35-4**
+`CHANGELOG.md` (un point sous `### Corrigé`) et `docs/manual/fr/user-manual.tex` (`:3186`, avec la **35-4**, qui touche
+`:3049-3050`, `:3097` et `:3107` — paragraphes distincts, voisins ; le PDF se régénère après l'union, règle C-e350-8 point 6).
+Pour le code, aucun autre : `features/reconciliation/` est aussi touché par la **35-4**
 (`ReconciliationProposals.svelte`, `AlreadyBookedConfirmDialog.svelte`, `already-booked.ts`) — **fichiers distincts**, pas
 de hunk commun ; la 35-7 touche `ManualMatchModal.svelte`, `TransactionSplitModal.svelte`, `reconciliation-counterparties.ts`
 et leurs tests. Si l'une des deux voit un fichier de l'autre à toucher, elle le dit avant de l'écrire. ⚠️ La fiche 35-4
@@ -201,3 +212,12 @@ fait que la rejouer. Écrit aussi au fichier d'epic (validation P1, V1-6).
   - Symptômes greppés (fiche, fichier d'epic, registre) : « 4 consommateurs », « Compte de contrepartie obligatoire » (dit
     désormais pour *Écriture manuelle* seule), « manuel inchangé, grep cité » — remplacés ; registre : C-e350-36 dit « le
     message existant « Compte de contrepartie obligatoire » s'applique », annoté.
+- 2026-11-13 — **Validation P2** (Opus) : 0 CRITICAL, 0 HIGH, 1 MEDIUM, 3 LOW (`kesh-gate-logs/e35-7-validation-p2.md`) ;
+  série 2 → 1 MEDIUM, né de la remédiation P1. Remédiée au plus court. Prémisses relues sur `main` : `user-manual.tex:3180`,
+  `:3186` ; `TransactionSplitModal.svelte:166-182` ; `git grep -ln VatPurchaseAssistant -- 'frontend/src/**/*.test.ts'`
+  (aucune suite de composant). Confirmées.
+  - V2-1 (MEDIUM) : AC5 nomme les trois sites (`:3121`, `:3180`, `:3186`), contrôle sur `:3105-3190`, PDF aplati ; tranché :
+    `:3186` gagne une demi-phrase ; union avec la 35-4 écrite (Fichiers communs, C-e350-8 annoté).
+  - LOW : V2-2 (AC3 : ligne 1 avec compte et montant) ; V2-3 (AC4 : `VatPurchaseAssistant` sans suite de composant) ;
+    V2-4 (AC1 : mode dégradé avec `onSelect` simulé, `value` non mise à jour).
+  - Symptôme greppé : `3105-3135` — ne reste que dans l'entrée passée de P1.
