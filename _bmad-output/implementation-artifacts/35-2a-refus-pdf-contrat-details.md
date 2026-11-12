@@ -2,6 +2,8 @@
 
 Status: ready-for-dev
 
+*Validation terminée (P1 à P7, 2026-11-12).*
+
 *Fiche née le 2026-11-12 du découpage de la 35-2 à la validation P2 (C-e350-9), par l'agent de kickoff de l'Epic 35
 (Opus 5.5), worktree `kesh-e35` ; **recadrée à la validation P3** (C-e350-11) : elle ne publie plus de contrat `details`
 lisible par machine. Le lot de rappels est la **35-2b**. Release **0.17.7**, tête d'epic : à livrer avant la première
@@ -371,5 +373,15 @@ Avec la 35-3 : `messages.ftl` ×4, G9 (ici une entrée neuve en fin de table ; l
   V6-1 (D7 : la saisie met le pays en majuscules, `address_input.rs:37-41` lu ; seule une valeur stockée en minuscules est
   refusée) ; V6-2 (AC14 aux tests, rouge au départ, et à la tâche Serveur) ; V6-3 (`:228`, `:326`, lus) ; V6-4 (`:491` lu :
   « `InvoiceNotPdfReady` (400) », sans le motif ; consigne retirée) ; H-1 (table G9 à `textes_coherents.rs:734`, lue ; 1
-  renvoi(s) corrigé(s) ici, et dans la 35-3). Aucune autre modification.
+  renvoi corrigé ici ; dans la 35-3, le renvoi vise la fonction `les_replis_rust_suivent_le_catalogue`, à `:723`, et le
+  reste — corrigé en P7, V7-1). Aucune autre modification.
+- 2026-11-12 — **Validation P7** (Sonnet, passe ciblée sur `1694f215`) : 0 CRITICAL, 0 HIGH, 0 MEDIUM, 1 LOW
+  (`kesh-gate-logs/e35-2a-validation-p7-ciblee.md`). V7-1 appliqué : la 35-3 renvoie à la fonction (`:723`), la 35-2a à la
+  table (`:734`). Hors code de production, sur une passe sans rien au-dessus de LOW.
+- 2026-11-12 — **Validation terminée.** Série des MEDIUM : P1 5 → P2 5 (sur la 35-2) → P3 8 → **recadrage C-e350-11** →
+  P4 4 → P5 2 → P6 1 → P7 0 ; CRITICAL et HIGH à 0 sur toutes les passes. Modèles : P1 Sonnet, P2 Opus, P3 Sonnet, P4 Opus,
+  P5 Sonnet (complètes), P6 Haiku et P7 Sonnet (ciblées). Décisions : **découpage C-e350-9** à la P2 (35-2a et 35-2b, signal
+  de recyclage), **recadrage C-e350-11** à la P3 (message localisé, sans contrat `details` ; contrat renvoyé à #1045) ;
+  fonction pure et fonction de construction uniques, une clé par champ et par raison (G9 42 / 9), ensemble clos des causes,
+  gardes AC13 et AC14 ; #944 hors (C-e350-1) ; #1046 pour le format de numérotation.
 

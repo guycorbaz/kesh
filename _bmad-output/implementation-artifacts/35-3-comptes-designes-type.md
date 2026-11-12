@@ -180,7 +180,7 @@ L'import (CAMT, factures importées) et le MCP n'écrivent pas d'écriture sur c
 10. **AC10 — Quatre langues et G9.** Clés neuves dans `fr-CH`, `de-CH`, `it-CH`, `en-CH` (`parity_between_locales`),
     placées **à côté de `error-designated-account-not-postable`** (C-e350-8) ; aucun sélecteur de pluriel (D2), donc
     rien à `SELECTEURS_RESOLUS_COTE_SERVEUR`. Les replis Rust des clés neuves égalent leur valeur fr-CH et s'inscrivent à
-    la table fermée **G9** (`crates/kesh-api/tests/textes_coherents.rs:734`, `les_replis_rust_suivent_le_catalogue`),
+    la table fermée **G9** (`crates/kesh-api/tests/textes_coherents.rs:723`, `les_replis_rust_suivent_le_catalogue`),
     dans le bloc `errors.rs` existant, en fin de bloc (C-e350-8). **Chacune** des dix clés (deux phrases, quatre libellés
     de réglage, quatre libellés de type) porte son littéral de repli, écrit avec l'apostrophe typographique du catalogue
     (`’`), et s'inscrit avec ses constantes de substitution (`{ $account }` → `{compte}`…) : un libellé tiré d'une table
