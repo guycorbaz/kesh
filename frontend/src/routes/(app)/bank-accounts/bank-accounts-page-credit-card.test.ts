@@ -219,6 +219,33 @@ describe('page des comptes bancaires — la carte de crédit (Story 34-11a2, AC-
 		expect(payload.journalAccountId).toBe(30);
 	});
 
+	// Intégration de la 0.17.6 (C-e34a2-1, raccord 2 ; Story 34-2, C-e341-7) — une carte, liée
+	// à un passif, ouvre son solde d'ouverture avec le sens « Dette » présélectionné ; le
+	// payload le porte tel quel. Un compte bancaire lié à un actif garde « Avoir ».
+	it('carte → « Dette » présélectionné au solde d’ouverture, et envoyé avec le montant', async () => {
+		const r = render(Page);
+		await fireEvent.click(await r.findByTestId('create-bank-account-button'));
+		await fireEvent.change(await r.findByTestId('form-journal-account'), {
+			target: { value: '20' },
+		});
+		expect(((await r.findByTestId('form-opening-side')) as HTMLSelectElement).value).toBe('debit');
+
+		await fireEvent.click(await r.findByTestId('form-kind-credit-card'));
+		await fill(await r.findByTestId('form-bank-name'), 'Visa');
+		await fireEvent.change(await r.findByTestId('form-journal-account'), {
+			target: { value: '30' },
+		});
+		await waitFor(() =>
+			expect((r.getByTestId('form-opening-side') as HTMLSelectElement).value).toBe('credit'),
+		);
+		await fill(await r.findByTestId('form-opening-amount'), '250.40');
+		await fireEvent.click(await r.findByTestId('form-submit'));
+		await waitFor(() => expect(createBankAccountMock).toHaveBeenCalledTimes(1));
+		const payload = createBankAccountMock.mock.calls[0][0] as Record<string, unknown>;
+		expect(payload.accountKind).toBe('credit_card');
+		expect(payload.openingBalance).toEqual({ amount: '250.40', side: 'credit' });
+	});
+
 	it('la liste montre « •••• 4821 » pour la carte', async () => {
 		const r = render(Page);
 		expect((await r.findByTestId('iban-cell-7')).textContent).toContain('4821');

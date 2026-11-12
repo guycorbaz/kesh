@@ -2488,8 +2488,9 @@ Elle protège d'une \textbf{saisie accidentelle}, elle n'est pas un filtre : ne 
 \paragraph{Où elle est proposée.} Au \textbf{paiement d'une facture fournisseur} payée avec la carte (l'écriture débite les créanciers et crédite la dette de la carte), à l'import CSV, au relevé saisi, à la réconciliation et au lien au plan comptable. Elle n'est \textbf{pas} proposée au \textbf{règlement d'une facture client} --- un client ne paie pas sur votre carte --- et le serveur le refuse (\texttt{SETTLEMENT\_ACCOUNT\_\allowbreak IS\_CREDIT\_CARD}). Seule exception, assumée : à la réconciliation, une transaction de la carte peut solder une facture client par sa proposition « facture » (un remboursement reçu sur la carte).
 
 % Story 34-11a2 (revue P1, A1) — le paragraphe « Solde d'ouverture » d'une carte (sens
-% Dette présélectionné) s'écrit à l'intégration avec la 34-2, qui porte le solde
-% d'ouverture saisi avec le compte : raccord d'intégration (2) de la fiche 34-11a2.
+% Dette présélectionné), écrit à l'intégration avec la 34-2 : raccord d'intégration (2)
+% de la fiche 34-11a2 (C-e34a2-1), 2026-11-12.
+\paragraph{Solde d'ouverture.} Une carte se crée avec son \textbf{solde d'ouverture}, comme un compte bancaire (\S\ref{sec:solde-ouverture-compte-bancaire}) : son compte lié étant un passif, le sens \emph{Dette} est \textbf{présélectionné} --- le montant dû sur la carte à la date de l'écriture, que Kesh porte au crédit du compte de dette, la contrepartie au compte \emph{Bénéfice/perte reporté}. Une carte au solde en votre faveur (un remboursement en attente) se saisit en choisissant \emph{Avoir}. Une carte existante, liée et sans mouvement, reçoit son solde par \emph{Saisir le solde d'ouverture} sur sa ligne, avec le même sens présélectionné.
 
 \subsection{Clore un compte bancaire}\label{sec:clore-compte-bancaire}
 
