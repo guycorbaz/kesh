@@ -195,20 +195,20 @@ achats tombent à leur date et que la dette de la carte figure juste au bilan.
 
 ## Tâches
 
-- [ ] **T1 — rouges d'abord** (`kesh-gate-logs/e341/rouges.log`) : AC-2 (rouge aujourd'hui : l'écriture n'est pas candidate), AC-3, AC-4, AC-6.
-- [ ] **T2 — dépôt** : condition 4 (AC-1) ; la fonction unique de C-e341-35, **en tête** de la chaîne des rangs ; la signature de
+- [x] **T1 — rouges d'abord** (`kesh-gate-logs/e341/rouges.log`) : AC-2 (rouge aujourd'hui : l'écriture n'est pas candidate), AC-3, AC-4, AC-6.
+- [x] **T2 — dépôt** : condition 4 (AC-1) ; la fonction unique de C-e341-35, **en tête** de la chaîne des rangs ; la signature de
   `entry_cancel_blocker` et de la garde de règlement reçoit la transaction concernée (`None` strict inchangé) ; `cancel_in_tx` prend la branche
   `unlinkOnly` quand elle le dit (seuls rang 0 et compte clos) ; `ReconciliationCancellation` porte `reversal_journal_entry_id: Option<i64>`.
   ⚠️ `kesh-db` touché : **gate complet même en cours de boucle**.
-- [ ] **T3 — trace** : `unlinkOnly` et `reversalJournalEntryId: null` à `reconciliation.cancelled` ; vérifier le vocabulaire d'audit
+- [x] **T3 — trace** : `unlinkOnly` et `reversalJournalEntryId: null` à `reconciliation.cancelled` ; vérifier le vocabulaire d'audit
   (`audit_log::vocabulary`) et l'écran d'audit, et les aligner s'ils lisent ces détails.
-- [ ] **T4 — écran** (AC-4b) : `reconciliation.types.ts:199` (`reversalJournalEntryId: number | null`), `CancelReconciliationDialog.svelte` (confirmation
+- [x] **T4 — écran** (AC-4b) : `reconciliation.types.ts:199` (`reversalJournalEntryId: number | null`), `CancelReconciliationDialog.svelte` (confirmation
   et message de succès du retrait seul), `LinkSettlementModal.svelte` (aucun faux obstacle), i18n quatre locales.
-- [ ] **T4b — textes du second côté** (AC-10), après la fusion de 34-3 et 34-4 dans la branche.
-- [ ] **T5 — E2E** `credit-card-statement.spec.ts` (AC-5, AC-7), données créées par l'API sur la base E2E, montants synthétiques.
-- [ ] **T6 — manuel** (AC-8), `api-external.md` (AC-9), captures `kesh-gate-logs/e341/captures/34-11b-*.png` (relevé saisi, rattachement du
+- [x] **T4b — textes du second côté** (AC-10), après la fusion de 34-3 et 34-4 dans la branche.
+- [x] **T5 — E2E** `credit-card-statement.spec.ts` (AC-5, AC-7), données créées par l'API sur la base E2E, montants synthétiques.
+- [x] **T6 — manuel** (AC-8), `api-external.md` (AC-9), captures `kesh-gate-logs/e341/captures/34-11b-*.png` (relevé saisi, rattachement du
   prélèvement, liste des comptes).
-- [ ] **T7 — CHANGELOG** : *Ajouté* (tenir une carte), *Corrigé* (un virement entre deux comptes de Kesh se réconcilie des deux côtés), `refs #972`.
+- [x] **T7 — CHANGELOG** : *Ajouté* (tenir une carte), *Corrigé* (un virement entre deux comptes de Kesh se réconcilie des deux côtés), `refs #972`.
 
 ### Mutations nommées
 
