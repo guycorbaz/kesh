@@ -119,7 +119,9 @@ chacune de ses actions est aujourd'hui attribuée à Guy dans la piste de contr�
 2. Puis par impact, I1 d'abord : **35-4**, **35-6**, **35-5a** puis **35-5b** (découpage préventif, C-e350-14) ; puis
    **35-7**, **35-8**, **35-1**.
 3. **35-8 après la fusion de 35-5a et 35-5b** (`repositories/journal_entries.rs`) **et de 35-3**
-   (`repositories/company_invoice_settings.rs`).
+   (`repositories/company_invoice_settings.rs`). *(Précisé le 2026-11-13, validations P2 des 35-8a1 et 35-8a2 : la
+   **35-8a1** part après la 35-5a0, la 35-3 et la 35-1 ; la **35-8a2** après la 35-8a1, les 35-5a0, 35-5a, 35-5b, 35-5c et la
+   35-3 ; la 35-8b est reportée à l'Epic 36, C-e350-48.)*
 4. **35-1 après 35-3** si son correctif du 500 touche `repositories/invoices.rs` (le `map_err` de `:2334-2340`) ;
    sinon indépendante.
 5. Les autres stories n'ont aucun fichier commun et peuvent avancer en parallèle, dans les limites des voies de la

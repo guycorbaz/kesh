@@ -43,7 +43,10 @@ trace `journal_entry.created` `:562`) ; `reverse` (`:3097`), `reverse_in_tx` (`:
 `:2820` (`accept_one_invoice`, `actor_api_key_id` `:2377`), `:3812` (`accept_one_split`, `:3523`), `:4260`
 (`accept_one_rule`, `:3951`), `:5130` (`post_manual_once`, `current_user` `:5039`), `:5596` (`post_split_once`,
 `current_user` `:5499`) — et `reconciliation_cancel.rs:723` (`reverse_in_tx`). Un rapprochement par clé écrit aujourd'hui
-`reconciliation.accepted` à la clé et `journal_entry.created` à l'utilisateur.
+`reconciliation.accepted` à la clé et `journal_entry.created` à l'utilisateur. **Le dé-rapprochement** (`cancel_in_tx`,
+`reconciliation_cancel.rs:564-723`, qui a `actor_api_key_id`) appelle, selon le genre, `invoice_settlements_write::
+cancel_settlement_in_tx(…, user_id)` (`:705`) et `supplier_invoices::cancel_settlement_in_tx(…, user_id)` (`:718`) — non
+convertis par cette story (déploiement, Epic 36) — et `journal_entries::reverse_in_tx(…, user_id)` (`:723`) — converti ici.
 
 **Les autres appelants de production** (`Acteur::utilisateur(user_id)`, sites `A_CONVERTIR` de la garde) :
 `credit_notes.rs:697`, `invoice_settlements_write.rs:337`, `:700`, `:1023`, `invoices.rs:1689`, `:2389`,
@@ -76,19 +79,31 @@ trace `journal_entry.created` `:562`) ; `reverse` (`:3097`), `reverse_in_tx` (`:
    `user_id` = son créateur ; par session → `'user'`, clé nulle. **Et un rapprochement par clé** :
    `POST /api/v1/reconciliation/manual` (`lib.rs:887`) → `journal_entry.created` porte la clé, comme
    `reconciliation.accepted` ; un cas de `POST /api/v1/reconciliation/accept` (`lib.rs:878`) si le montage d'une proposition
-   tient dans le test, sinon les trois sites d'`accept_*` couverts par la garde et nommés au Change Log.
+   tient dans le test, sinon les trois sites d'`accept_*` couverts par la garde (AC5b) et nommés au Change Log.
 2. **AC2 — Une contre-passation par clé** (`POST /api/v1/journal-entries/{id}/reverse`, et
-   `…/reverse-at-next-fiscal-year-start`) : l'écriture contre-passée porte **obligatoirement** une ligne sur un compte
-   lettrable (`letterings::is_letterable_account`, `letterings.rs:421`) ; `journal_entry.reversed` **et** le
-   `lettering.created` d'origine `reversal` portent la clé. Modification et suppression par clé (`update`,
+   `…/reverse-at-next-fiscal-year-start`, qui exige un **exercice suivant ouvert** dans le montage) : l'écriture
+   contre-passée porte **obligatoirement** une ligne sur le compte **créanciers ou débiteurs** des fixtures — un compte
+   lettrable (`letterings::is_letterable_account`, `letterings.rs:421`), non lié à un compte bancaire (`:405-415`), ni de
+   charge ni de produit (`api-external.md:404`) ; le test asserte d'abord qu'un `lettering.created` d'origine `reversal`
+   **existe**, puis que lui et `journal_entry.reversed` portent la clé (sans quoi M3 survivrait sur un montage qui ne lettre
+   rien). Modification et suppression par clé (`update`,
    `delete_by_id`) : la trace porte la clé (déjà vrai, à garder vert).
 3. **AC4 — Non-régression** : la validation d'une facture client par session reste `'user'` ; un appelant converti en
    `Acteur::utilisateur` écrit exactement l'entrée d'avant (tests de dépôt existants verts) ; l'AC3 de la 35-8a1 reste vert.
+   **Limite connue, rendue vérifiable** (validation P2, V2-1) : la validation d'une facture **par clé** écrit encore
+   `journal_entry.created` à `'user'` — asserté tel quel, renvoyé à #431 (déploiement, Epic 36).
 4. **AC5b — La garde** : table recomptée depuis la source à l'étape finale (les sites des écritures sortis de
-   `A_CONVERTIR` ou y restant au compte exact), ventilation et total cohérents au Change Log.
-5. **AC6b — Manuel et CHANGELOG** : les paragraphes posés par la 35-8a1 (`admin-manual.tex:3193`,
-   `user-manual.tex:3959-3960`) ajoutent les écritures — saisie, modification, suppression, contre-passation, rapprochement
-   bancaire — à ce qui est attribué à la clé ; PDF régénérés, contrôlés aplatis. CHANGELOG, *Corrigé*, `refs #431`.
+   `A_CONVERTIR` ou y restant au compte exact), ventilation et total cohérents au Change Log. **La table ne porte aucune
+   entrée `Acteur::utilisateur` pour `routes/reconciliation.rs`, `routes/journal_entries.rs` et
+   `repositories/reconciliation_cancel.rs`** : c'est ce qui couvre les cinq sites qui ont la clé dans `reconciliation.rs` et
+   le dé-rapprochement (`:723`), que les tests HTTP n'exercent pas tous (V2-2).
+5. **AC6b — Manuel et CHANGELOG** (périmètre exact, V2-1) : les paragraphes posés par la 35-8a1 (`admin-manual.tex:3193`,
+   `user-manual.tex:3959-3960`) disent : « les écritures saisies, modifiées, supprimées ou contre-passées par les routes du
+   journal, et celles qu'un rapprochement bancaire passe, sont attribuées à la clé ; **celles que Kesh passe pour une
+   facture (validation, dévalidation), un avoir, un règlement, une facture fournisseur (validation, paiement, annulation)
+   ou un solde d'ouverture restent au nom du créateur de la clé** ; un dé-rapprochement par clé contre-passe l'écriture
+   rapprochée au nom de la clé, mais annule un règlement au nom de l'utilisateur » (renvoi à #431) ; même phrase au
+   CHANGELOG, *Corrigé*, `refs #431` ; PDF régénérés, contrôlés aplatis.
 
 ## Tests à écrire, et la preuve du rouge
 
@@ -97,7 +112,10 @@ AC1 et AC2 écrits d'abord, sur la base de la branche : rouges par l'`actor_type
 
 **Mutations** : M2' `create_in_tx_inner` qui trace par `::user` (AC1) ; M3 le lettrage `reversal` rendu à
 `api_key_id: None` (AC2, dont le montage lettre obligatoirement — et la garde) ; M7 `post_manual_once` qui passe
-`Acteur::utilisateur(user_id)` (AC1). Toute mutation survivante est écrite au Change Log avec sa raison.
+`Acteur::utilisateur(user_id)` (AC1) ; **M8** `reconciliation_cancel.rs:723` qui passe `Acteur::utilisateur(user_id)` à
+`reverse_in_tx` (AC5b, la garde) ; **M9** un `accept_one_*` de `routes/reconciliation.rs` qui passe
+`Acteur::utilisateur(user_id)` (AC5b, la garde ; AC1 si le cas d'`accept` est monté). Toute mutation survivante est écrite au
+Change Log avec sa raison.
 
 ## Tâches
 
@@ -115,7 +133,15 @@ AC1 et AC2 écrits d'abord, sur la base de la branche : rouges par l'`actor_type
 `repositories/journal_entries.rs` (35-5a0 à 35-5c avant elle) ; les appelants (`invoices.rs` — 35-1 ;
 `supplier_invoices.rs`, `invoice_settlements_write.rs`, `credit_notes.rs`, `opening_complement.rs`,
 `reconciliation*.rs`) : elle part **après** toutes les autres stories de l'epic qui les touchent ; `CHANGELOG.md` ;
-`admin-manual.tex:3193`, `user-manual.tex:3959-3960` (après la 35-8a1) ; la table de la garde.
+`admin-manual.tex:3193`, `user-manual.tex:3959-3960` (après la 35-8a1) ; la table de la garde ;
+`supplier_invoices.rs:1410-1412` (retour en brouillon), **même hunk** que la 35-8a1, réécrit ici après elle (de
+`acteur.user_id, acteur.api_key_id` à `acteur`).
+
+### Taille (validation P2, V2-6)
+
+≈ 60 fichiers, ≈ 240 appels, trois natures de travail : les signatures (mécaniques, revue fichier par fichier) ; les six
+sites qui ont la clé et le dé-rapprochement ; deux E2E d'API neufs (le rapprochement exige un import bancaire monté). La
+revue fichier par fichier ne vaut que pour les signatures ; les six sites et les E2E restent à la boucle complète.
 
 ### Ce qui doit rester vrai
 
@@ -141,3 +167,15 @@ AC1 et AC2 écrits d'abord, sur la base de la branche : rouges par l'`actor_type
 
 - 2026-11-13 — Fiche tirée de la 35-8a (lot 2), sur décision de l'orchestrateur (C-e350-50, « découpé »), sans réécriture
   du fond. P2 à lancer.
+- 2026-11-13 — **Validation P2** : 0 CRITICAL, 0 HIGH, 2 MEDIUM, 4 LOW (`kesh-gate-logs/e35-8a2-validation-p2.md`). Remédiée
+  par l'agent de rédaction des fiches (Opus 5.5). Prémisses relues sur `main` (`67efc51f`) : `reconciliation_cancel.rs:700-724`
+  (`:705`, `:718` passent `user_id`, `:723` `reverse_in_tx`) ; point 3 du fichier d'epic. Confirmées.
+  - V2-1 (MEDIUM) : AC6b dit le périmètre exact (ce qui reste au nom de l'utilisateur, dont le dé-rapprochement à moitié),
+    même phrase au CHANGELOG ; AC4 rend la limite vérifiable (validation d'une facture par clé → `'user'`).
+  - V2-2 (MEDIUM) : le dé-rapprochement décrit ; AC5b écrit que l'absence d'entrée `Acteur::utilisateur` couvre les sites
+    de `reconciliation.rs` et `reconciliation_cancel.rs:723` ; mutations M8, M9.
+  - LOW : V2-3 (dépendances alignées : point 3 du fichier d'epic précisé ; fiche et `sprint-status.yaml` déjà justes) ; V2-4
+    (`supplier_invoices.rs:1410-1412`, même hunk que la 35-8a1) ; V2-5 (AC2 : exercice suivant ouvert, compte créanciers ou
+    débiteurs, `lettering.created` asserté d'abord) ; V2-6 (taille et nature de la revue, Dev Notes).
+  - Symptômes greppés (fiches 35-8a1, 35-8a2, epic, registre) : « saisie, modification, suppression, contre-passation,
+    rapprochement bancaire — à ce qui est attribué » — remplacé ; « 35-8 après » — précisé.
