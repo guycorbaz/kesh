@@ -508,6 +508,16 @@ pub(crate) async fn validate_journal_account_id(
 /// ⛔ **À appeler avant tout `FOR UPDATE` sur `bank_accounts`** (ordre global
 /// `companies` → réglages → `bank_accounts`) : juste après la sentinelle à la
 /// création et au remplacement, en première instruction au lien.
+///
+/// Dérogation écrite (Story 34-2, revue P2 A LOW-5) : la saisie du solde
+/// d'ouverture d'un compte existant (`enter_opening_balance_once`) lit les
+/// réglages **après** la ligne `bank_accounts`, toutes deux en **partagé**, et
+/// sous la sentinelle `companies` exclusive : aucun `FOR UPDATE` sur
+/// `bank_accounts` n'y suit. Les écrivains des réglages
+/// (`company_invoice_settings::update`, réglages en exclusif puis
+/// `bank_accounts` en partagé) ne forment donc pas de cycle avec elle, deux
+/// partagés étant compatibles ; elle est rejouée sur interblocage. Non testé
+/// par un entrelacement : raisonné ici.
 async fn claims_for_target(
     tx: &mut Transaction<'_, MySql>,
     company_id: i64,

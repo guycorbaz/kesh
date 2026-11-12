@@ -69,7 +69,7 @@ vi.mock('$lib/features/invoices/invoices.api', () => ({
 }));
 
 import { toast } from 'svelte-sonner';
-import { formatChfBalance } from '$lib/features/bank-accounts/format';
+import { formatChfBalance, formatChfExact } from '$lib/features/bank-accounts/format';
 import Page from './+page.svelte';
 
 function account(overrides: Partial<AccountResponse>): AccountResponse {
@@ -891,6 +891,25 @@ describe("page des comptes bancaires — solde d'ouverture (Story 34-2, AC-7)", 
 				`Compte bancaire créé, avec l'écriture d'ouverture n° 12 du 01.01.2026 : ${formatChfBalance('1234.50')}.`,
 			),
 		);
+	});
+
+	// Revue P2 (A LOW-8) — l'avis dit le montant exact, quatre décimales comprises :
+	// `formatChfBalance` l'arrondirait au centime (« 1.23 »).
+	it('l’avis garde les quatre décimales du montant écrit', async () => {
+		createBankAccountMock.mockResolvedValue({
+			account: LIE,
+			openingEntry: { id: 1, entryNumber: 7, entryDate: '2026-01-01', fiscalYearId: 3 },
+		});
+		const r = await openCreate();
+		await link(r, BANQUE.id);
+		await fill(r.getByTestId('form-opening-amount'), '1.2345');
+		await submitted(r);
+		await waitFor(() =>
+			expect(toast.success).toHaveBeenCalledWith(
+				`Compte bancaire créé, avec l'écriture d'ouverture n° 7 du 01.01.2026 : ${formatChfExact('1.2345')}.`,
+			),
+		);
+		expect(formatChfExact('1.2345')).toContain('1.2345');
 	});
 
 	// Revue P1 (B-1 = E-6) — « 1,234 » : mille ou un franc ? Refusé, rien n'est envoyé.

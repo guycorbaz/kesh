@@ -198,9 +198,12 @@ export function openingAmountAmbiguous(raw: string): boolean {
 
 /**
  * Story 34-2 (revue P1, B-1) — le montant **tel qu'il sera écrit**, au format
- * suisse (`CHF 1’234.50`), pour le montrer avant le geste ; `null` si la saisie
+ * suisse de `Intl` pour `fr-CH` (`1 234.50 CHF`, le séparateur de milliers est une
+ * espace fine insécable, U+202F), exact jusqu'à quatre décimales
+ * ({@link formatChfExact}), pour le montrer avant le geste ; `null` si la saisie
  * est vide, ambiguë ou n'est pas un nombre positif bien formé (le serveur en
- * rendra le refus).
+ * rendra le refus). Limites suivies : « 0.00 CHF » pour un montant nul (#1027),
+ * « 1_000 » (#1028), moteur sans `Intl.NumberFormat` v3 (#1031).
  */
 export function openingAmountPreview(raw: string): string | null {
 	if (openingAmountAmbiguous(raw)) return null;

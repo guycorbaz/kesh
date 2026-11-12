@@ -106,11 +106,19 @@ dupliqué. » Quatre points y sont « à trancher » ; ils le sont ici (C-e341-6
    (code existant) ; puis les refus du complément. `201` avec l'écriture. Rejouée sur interblocage. **Ordre des verrous** (validation P2, 2.5),
    celui du `PUT` : sentinelle `companies` en exclusif (`acquire_company_sentinel_lock`), puis la ligne `bank_accounts` `LOCK IN SHARE MODE`
    (archivé, clos, lié lus sous ce verrou), puis le complément (son partagé sur `companies` est déjà couvert par l'exclusif ; comptes, exercices).
+   *(Annoté le 2026-11-12, revue P2 A LOW-4 : depuis la remédiation P1 (E-2, B-4), un refus de plus après le `412` —
+   `400 BANK_ACCOUNT_LEDGER_IS_CLAIM_ACCOUNT` — et une lecture de plus, les réglages de facturation en partagé, entre la ligne `bank_accounts` et
+   le complément ; trace `bank_account.opening_balance_entered`. Dérogation à l'ordre global écrite au doc-comment de `claims_for_target`.)*
 7. **AC-7 — l'écran** : au formulaire de création, quand un compte lié est choisi, *Solde d'ouverture* (montant) et *Avoir / Dette* (C-e341-7),
    avec une aide qui dit la date (« daté du premier jour du premier exercice s'il est ouvert, sinon d'aujourd'hui ; contrepartie : Bénéfice/perte
    reporté ») **et la conséquence de C-e341-6** (« Après ce solde, les soldes de départ des autres comptes se saisissent un à un dans *Soldes de
    départ*, mode *Compléter* : l'ouverture générale n'est plus proposée ») ; sans compte lié, les champs sont masqués et rien n'est envoyé. Succès : un avis nomme l'écriture (numéro, date). Refus : le motif
    du serveur dans `form-error`. Action de ligne *Saisir le solde d'ouverture* sur un compte ouvert, lié — même dialogue.
+   *(Annoté le 2026-11-12, revue P2 A LOW-4 : la remédiation P1 a changé l'écran — aide « … s'il est ouvert et hors période verrouillée, sinon
+   d'aujourd'hui : saisissez le solde du relevé à cette date » (B-2) ; conséquence au conditionnel, « Si l'ouverture générale de *Soldes de
+   départ* est encore proposée, ce solde la retire … » (B-6, C-e341-55) — c'est désormais « la phrase de l'AC-7 » à laquelle renvoie l'AC-9 ;
+   montant écrit affiché sous le champ et dans l'avis, « 1,234 » refusé (B-1, C-e341-53) ; dialogue qui nomme le compte (B-7) ; action masquée
+   dès que le compte lié a un mouvement (E-5, C-e341-54).)*
 8. **AC-8 — garde du registre** : `create_bank_account` passe `Traced, Rejouee` ; la route neuve y est inscrite `Traced, Rejouee`
    (`audit_route_registry.rs`), et les totaux du registre suivent (`assert_eq!(traced + exempt + no_matter, LIB_ROUTES.len())`, `:988`, et le
    compte des routes tracées codé en dur du même fichier, recomptés) ; la garde qui exige l'appel de l'enveloppe de rejeu dans le corps du handler
@@ -150,6 +158,9 @@ dupliqué. » Quatre points y sont « à trancher » ; ils le sont ici (C-e341-6
   `bank_accounts` en partagé puis écrit), et les deux routes sont rejouées sur interblocage. **Le contrôle de type précède le complément**
   (validation P3, 2.3) : un refus de type ne passe aucune écriture ; la promotion S → X de la ligne `accounts` par le `FOR UPDATE` du complément peut
   interbloquer contre un geste qui tient S (une écriture de journal par sa clé étrangère) : rejouée, sans perte.
+  *(Annoté le 2026-11-12, revue P2 A LOW-4 et LOW-5 : la route de ligne prend désormais `companies` (X) → `bank_accounts` (S) → réglages (S) →
+  comptes et exercices ; les deux partagés ne forment pas de cycle avec un écrivain des réglages — raisonné au doc-comment de `claims_for_target`,
+  non testé par un entrelacement.)*
   ⚠️ `kesh-db` touché : **gate complet même en cours de boucle**.
 - [x] **T3 — routes** : corps `openingBalance` (forme partagée avec la route neuve), réponse augmentée (`#[serde(flatten)]` du compte),
   `create_once` appelle le complément **après le refus du compte de créance, avant la démotion et l'`INSERT`** (AC-10), puis démotion, `INSERT`,

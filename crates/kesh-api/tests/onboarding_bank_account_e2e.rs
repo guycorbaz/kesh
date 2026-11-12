@@ -828,3 +828,36 @@ async fn bank_step_with_link_on_a_single_connection_pool(pool: MySqlPool) {
         [(Some("Courant".to_string()), Some(bank_ledger), 1)]
     );
 }
+
+/// Story 34-2 (revue P2, B2-3 = E2-5 = A LOW-6) — l'étape bancaire borne le nom
+/// de la banque comme la création : 256 caractères de deux octets → `400
+/// VALIDATION_ERROR`, rien d'écrit ; 255 passent (la borne est en caractères).
+/// Tue M12 (appel de `refuse_too_long_bank_name` retiré de l'assistant).
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn bank_step_bounds_the_bank_name_in_characters(pool: MySqlPool) {
+    let (app, token, _) = at_bank_step(&pool).await;
+
+    let (status, resp) = post(
+        &app,
+        &token,
+        "bank-account",
+        Some(body(json!({ "bankName": "é".repeat(256) }))),
+    )
+    .await;
+    assert_eq!(
+        (status, resp["error"]["code"].clone()),
+        (400, json!("VALIDATION_ERROR")),
+        "{resp}"
+    );
+    assert!(bank_rows(&pool).await.is_empty(), "rien d'écrit");
+
+    let (status, resp) = post(
+        &app,
+        &token,
+        "bank-account",
+        Some(body(json!({ "bankName": "é".repeat(255) }))),
+    )
+    .await;
+    assert_eq!(status, 200, "255 caractères, à la borne : {resp}");
+    assert_eq!(bank_rows(&pool).await.len(), 1);
+}

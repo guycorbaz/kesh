@@ -508,6 +508,34 @@ async fn creation_sans_solde_comportement_d_avant(pool: MySqlPool) {
                 .unwrap()
                 .expect("compte créé");
         assert_eq!(resp, serde_json::to_value(&account).unwrap());
+        // Revue P2 (B2-8) — et contre une liste écrite à la main, indépendante
+        // du `Serialize` de `BankAccount` : les treize clés du compte d'avant la
+        // 34-2, ni plus ni moins.
+        let mut cles: Vec<&str> = resp
+            .as_object()
+            .unwrap()
+            .keys()
+            .map(String::as_str)
+            .collect();
+        cles.sort_unstable();
+        assert_eq!(
+            cles,
+            [
+                "archived",
+                "bankName",
+                "closedOn",
+                "companyId",
+                "createdAt",
+                "description",
+                "iban",
+                "id",
+                "isPrimary",
+                "journalAccountId",
+                "qrIban",
+                "updatedAt",
+                "version",
+            ]
+        );
         let details = common::audit_details(&pool, "bank_account", id, "bank_account.created")
             .await
             .expect("details");
@@ -572,6 +600,51 @@ async fn creation_avec_solde_mal_forme_refusee(pool: MySqlPool) {
     );
     assert_eq!(bank_account_count(&pool).await, 0);
     assert_eq!(entry_count(&pool).await, 0);
+}
+
+/// Revue P2 (B2-3 = E2-5) — le `PUT` borne le nom de la banque comme la
+/// création : 256 caractères de deux octets → `400 VALIDATION_ERROR`, le compte
+/// inchangé ; 255 passent.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn put_borne_le_nom_de_banque(pool: MySqlPool) {
+    let ctx = setup(&pool).await;
+    let id = insert_bank_account(&pool, ctx.company_id, IBAN_A, true, None).await;
+    let put = |name: String| {
+        let client = ctx.app.client.clone();
+        let url = ctx.app.url(&format!("/api/v1/bank-accounts/{id}"));
+        let token = ctx.token.clone();
+        async move {
+            let resp = client
+                .put(url)
+                .header("Authorization", format!("Bearer {token}"))
+                .json(&json!({
+                    "bankName": name,
+                    "description": null,
+                    "iban": IBAN_A,
+                    "isPrimary": true,
+                    "version": 1,
+                }))
+                .send()
+                .await
+                .unwrap();
+            let status = resp.status().as_u16();
+            (status, resp.json::<Value>().await.unwrap_or(Value::Null))
+        }
+    };
+    let (status, body) = put("é".repeat(256)).await;
+    assert_eq!(
+        (status, body["error"]["code"].clone()),
+        (400, json!("VALIDATION_ERROR")),
+        "{body}"
+    );
+    let name: String = sqlx::query_scalar("SELECT bank_name FROM bank_accounts WHERE id = ?")
+        .bind(id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(name, "Banque Test", "compte inchangé");
+    let (status, body) = put("é".repeat(255)).await;
+    assert_eq!(status, 200, "255 caractères, à la borne : {body}");
 }
 
 /// Revue P1 (E-1) — la borne est celle de la colonne, en caractères : 255
