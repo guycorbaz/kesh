@@ -209,6 +209,8 @@ retenue, options écartées, réversibilité. Lignes citées sur `release/0.17.6
 - **Écartées** : (a) signaler sans refuser `1.234` : la virgule est déjà refusée, deux comportements pour le même risque ;
   (b) juger l'ambiguïté au serveur : un appelant de l'API envoie un nombre, non une saisie.
 - **Réversible** : oui ; le refus du souligné au serveur est un changement de contrat, écrit.
+- *(Annoté le 2026-11-12, validation P1 de la 35-6 : précisé par C-e350-17 — classement avant le retrait des
+  séparateurs, #1025 fermée en entier, le serveur garde `.5`, `5.` et `1.50000`.)*
 
 ### C-e350-14 — La 35-5 se découpe préventivement en 35-5a et 35-5b (accord de l'orchestrateur)
 
@@ -242,3 +244,16 @@ retenue, options écartées, réversibilité. Lignes citées sur `release/0.17.6
 - **Réversible** : oui ; un réglage peut remplacer la constante en un seul endroit.
 - **Migration** : aucune ; rien ne change dans le schéma ni dans les données écrites, seule la date choisie pour les écritures
   à venir.
+
+### C-e350-17 — 35-6 : classer avant de retirer les séparateurs ; rien d'accepté aujourd'hui n'est refusé sans être annoncé
+
+- **Contexte** : validation P1 de la 35-6. La règle « une virgule suivie de trois chiffres » appliquée **après** le retrait
+  des séparateurs laissait `1'234,567` ambigu (#1025) et donnait deux verdicts à une même valeur (`1234,567` / `1234.567`) ;
+  `D3` aurait fait refuser au serveur `.5` et `5.`, acceptés aujourd'hui, sans l'annoncer.
+- **Retenu** : la partie entière groupée (`1'234`) rend le séparateur suivant décimal ; non groupée, 1 à 3 chiffres sans
+  zéro de tête suivis d'un séparateur et de trois chiffres : ambigu. `[0-9]` partout. Le serveur ne refuse de neuf que le
+  souligné (et les chiffres non ASCII). L'écran normalise la charge (`.5` → `0.5`, sans `+`). #1025 fermée en entier.
+  `opening_balances.rs:363` et `journal_entries.rs:542` (autres fonctions de lecture) restent à #1050 et #1051.
+- **Écartées** : (a) #1025 en partie : laisserait la moitié de l'issue ; (b) une grammaire serveur commune aux trois routes
+  dès cette story : touche l'écriture manuelle, hors de l'objet.
+- **Réversible** : oui.
