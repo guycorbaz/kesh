@@ -161,3 +161,35 @@ retenue, options écartées, réversibilité. Lignes citées sur `release/0.17.6
 - **Suite** : **#1045**, « Contrat d'API lisible par machine pour INVOICE_NOT_PDF_READY » ; voisines : #1046 (jeu de
   caractères du format de numérotation), #1047 (avertissement au retypage d'un compte désigné, 35-3).
 - **Réversible** : oui.
+
+### C-e350-12 — 35-4 : *Rejeter* confirmé sur les seules lignes signalées, avec un texte propre au rejet
+
+- **Contexte** : #1023 ; la garde de la 34-4 couvre *Accepter*, *Écriture manuelle* et *Éclater*
+  (`ReconciliationProposals.svelte:288-291`), et l'intro du dialogue parle d'une écriture passée deux fois.
+- **Retenu** : *Rejeter* passe par la même garde, **seulement** si la sélection contient une ligne signalée ; le dialogue
+  reçoit le geste et dit ce que le rejet fait (rien n'est écrit ; un mouvement réel manquerait aux livres ; *Annuler le
+  rejet* le défait). Il ne nomme pas l'écriture ressemblante : le serveur n'en donne que le nombre.
+- **Écartées** : (a) confirmer tout rejet : friction sur le cas courant, sans signal ; (b) exposer l'écriture ressemblante :
+  contrat d'API, hors d'une story d'écran.
+- **Réversible** : oui.
+
+### C-e350-13 — 35-4 : un geste confirmé sur une ligne partie affiche un avis, sans masquer la liste
+
+- **Contexte** : #1024 et son commentaire : *Continuer quand même* sort en silence (`:347`, `:374`).
+- **Retenu** : un avis au-dessus de la liste (« n'est plus à traiter … la liste est à jour »), effacé au geste suivant, pour
+  les quatre gestes ; rien n'est envoyé. Pas par `errorMsg`, qui remplace la liste.
+- **Réversible** : oui.
+
+### C-e350-8, extension du 2026-11-12 — fichiers communs des stories 35-4, 35-5a, 35-5b, 35-6
+
+- **`messages.ftl` ×4** : chaque story écrit ses clés **à côté de son bloc** : 35-4 près de
+  `reconciliation-labels-already-booked-confirm-*` ; 35-6 près de `bank-accounts-opening-*` ; 35-5a/35-5b, s'il leur en
+  faut, près de la clé qu'elles touchent. Jamais en fin de fichier.
+- **`user-manual.tex`** : 35-4 `:3107` ; 35-6 `:2456` (et `:2462` si touché) ; 35-5a les phrases « aujourd'hui » du solde
+  d'ouverture et du verrou de période ; 35-5b les autres. Paragraphes distincts ; le PDF se régénère après l'union.
+- **`crates/kesh-api/src/routes/opening_balances.rs`** : 35-6 `parse_complement_amount` (`:515-530`) ; 35-5a la date du
+  jour (`:244`, `:604`). Hunks distincts ; si les deux sont en vol, 35-6 fusionne d'abord (plus courte).
+- **`crates/kesh-api/src/routes/bank_accounts.rs`** : 35-5a (`:1007`, `:1252`) ; 35-5b (`:1802`). 35-5b part de 35-5a fusionnée.
+- **`docs/api-external.md`** : 35-5a la phrase « UTC » du solde d'ouverture ; 35-6 la grammaire du montant ; lignes
+  distinctes.
+- **`CHANGELOG.md`** : un point par issue sous `### Corrigé`, dans l'ordre des numéros de story.
