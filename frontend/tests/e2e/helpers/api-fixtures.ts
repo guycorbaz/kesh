@@ -68,7 +68,9 @@ export function overdueDate(days = 25): string {
  * Contact `Personne` PDF-ready (adresse structurée #213, firstName/lastName
  * obligatoires). `email`/`salutation` optionnels (Story 20-4 : le round-trip
  * d'envoi exige un contact AVEC e-mail et civilité genrée — le backend
- * refuse l'envoi sans e-mail, 400 CONTACT_EMAIL_MISSING).
+ * refuse l'envoi sans e-mail, 400 CONTACT_EMAIL_MISSING). `city` remplace la
+ * localité (Story 35-2a : une localité que la QR-facture refuse ; la saisie d'un
+ * contact ne contrôle que les longueurs).
  */
 export async function createContactWithAddressViaApi(
 	page: Page,
@@ -76,6 +78,7 @@ export async function createContactWithAddressViaApi(
 	email?: string,
 	salutation?: 'Monsieur' | 'Madame' | 'Neutre',
 	paymentTermsDays?: number,
+	city?: string,
 ): Promise<number> {
 	const ctx = await authedApiContext(page);
 	try {
@@ -91,7 +94,7 @@ export async function createContactWithAddressViaApi(
 					street: 'Marktgasse',
 					building: '28',
 					postalCode: '9400',
-					city: 'Rorschach',
+					city: city ?? 'Rorschach',
 					country: 'CH',
 				},
 				defaultPaymentTerms: '30 jours net',

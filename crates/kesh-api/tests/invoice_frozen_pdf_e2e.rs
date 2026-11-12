@@ -1078,3 +1078,31 @@ async fn un_envoi_n_adopte_pas_le_gel_d_une_facture_annulee_entre_temps(pool: My
         .unwrap();
     assert!(matches!(res, PoseOutcome::Adopted(_)), "{res:?}");
 }
+
+/// Story 35-2a (#955, AC11) — le refigeage refusé nomme le champ et le
+/// caractère. Montage (V4-8) : un PDF figé dont le fichier manque — sinon le
+/// refigeage répond `INVOICE_PDF_NOT_FROZEN` ou `INVOICE_PDF_PRESENT` avant de
+/// rendre, et le test rougirait pour une autre raison.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn refiger_refuse_nomme_le_champ_et_le_caractere(pool: MySqlPool) {
+    let s = seed(&pool, None).await;
+    let id = seed_invoice(&pool, &s, 1).await;
+    let app = spawn_app(pool.clone(), MockMailer::new(), unique_dir("documents")).await;
+    let token = login(&app, "admin", TEST_ADMIN_PASSWORD).await;
+    pdf_bytes(&app, &token, id).await;
+    std::fs::remove_file(frozen_file(&app, &invoice(&pool, &s, id).await)).unwrap();
+    sqlx::query("UPDATE contacts SET address_city = ? WHERE id = ?")
+        .bind("Ve\u{2013}vey")
+        .bind(s.contact_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+    let resp = refreeze(&app, &token, id).await;
+    assert_eq!(resp.status(), 400);
+    let body: serde_json::Value = resp.json().await.unwrap();
+    assert_eq!(body["error"]["code"], "INVOICE_NOT_PDF_READY", "{body}");
+    let m = body["error"]["message"].as_str().unwrap();
+    assert!(m.contains("localité du client"), "{m}");
+    assert!(m.contains("U+2013"), "{m}");
+}

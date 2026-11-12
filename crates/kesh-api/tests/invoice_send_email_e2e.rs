@@ -2340,3 +2340,71 @@ async fn send_reminder_refuses_amounts_changed_since_preview(pool: MySqlPool) {
     assert_eq!(send(apres).await.unwrap().status(), 201);
     assert_eq!(mock.sent_emails().len(), 1);
 }
+
+// ─── Story 35-2a (#955, AC11) — le refus du PDF nomme le champ ───────────
+
+/// Une facture prête à l'envoi dont le client habite `Ve–vey` (tiret
+/// demi-cadratin, refusé par la QR-facture) ; la facture n'est jamais figée.
+async fn seed_sendable_ve_vey(pool: &MySqlPool) -> (i64, i64) {
+    let (_, company_id, invoice_id) = seed_sendable(pool).await;
+    sqlx::query(
+        "UPDATE contacts SET address_city = ? \
+         WHERE id = (SELECT contact_id FROM invoices WHERE id = ?)",
+    )
+    .bind("Ve\u{2013}vey")
+    .bind(invoice_id)
+    .execute(pool)
+    .await
+    .unwrap();
+    (company_id, invoice_id)
+}
+
+/// Le 400 `INVOICE_NOT_PDF_READY`, dont le message nomme la localité du client
+/// et le point de code ; rien n'est parti.
+async fn assert_refus_nomme_la_localite(resp: reqwest::Response, mock: &MockMailer) {
+    assert_eq!(resp.status(), 400);
+    let body: serde_json::Value = resp.json().await.unwrap();
+    assert_eq!(body["error"]["code"], "INVOICE_NOT_PDF_READY", "{body}");
+    let m = body["error"]["message"].as_str().unwrap();
+    assert!(m.contains("localité du client"), "{m}");
+    assert!(m.contains("U+2013"), "{m}");
+    assert_eq!(mock.sent_emails().len(), 0, "rien n'est parti");
+}
+
+/// L'envoi de la facture par e-mail.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn send_email_refus_pdf_nomme_le_champ(pool: MySqlPool) {
+    let mock = MockMailer::new();
+    let (_, invoice_id) = seed_sendable_ve_vey(&pool).await;
+    let app = spawn_app(pool.clone(), mock.clone(), true, 20).await;
+    let token = login(&app, "admin", TEST_ADMIN_PASSWORD).await;
+    let resp = app
+        .client
+        .post(app.url(&format!("/api/v1/invoices/{invoice_id}/send-email")))
+        .bearer_auth(&token)
+        .json(&json!({ "subject": "Facture", "body": "Corps." }))
+        .send()
+        .await
+        .unwrap();
+    assert_refus_nomme_la_localite(resp, &mock).await;
+}
+
+/// Le rappel seul.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn send_reminder_refus_pdf_nomme_le_champ(pool: MySqlPool) {
+    let mock = MockMailer::new();
+    let (company_id, invoice_id) = seed_sendable_ve_vey(&pool).await;
+    seed_dunning(&pool, company_id).await;
+    let app = spawn_app(pool.clone(), mock.clone(), true, 20).await;
+    let token = login(&app, "admin", TEST_ADMIN_PASSWORD).await;
+    let resp = app
+        .client
+        .post(app.url(&format!("/api/v1/invoices/{invoice_id}/reminders/send")))
+        .bearer_auth(&token)
+        .json(&json!({ "levelNumber": 1, "subject": "Rappel", "body": "Corps du rappel." }))
+        .send()
+        .await
+        .unwrap();
+    assert_refus_nomme_la_localite(resp, &mock).await;
+    assert_eq!(reminder_count(&pool, invoice_id).await, 0);
+}

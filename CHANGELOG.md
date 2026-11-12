@@ -8,6 +8,15 @@ Le contenu est rédigé en français à destination des **fiduciaires, PME, ind�
 
 ---
 
+## [0.17.7] — Non publié
+
+### Corrigé
+
+- **Le refus du PDF d'une facture nomme le champ et le caractère à corriger** (refs [#955](https://github.com/guycorbaz/kesh/issues/955)) : quand la QR-facture refuse un caractère, une longueur, un champ vide ou un code pays, le téléchargement, le refigeage, l'envoi par e-mail et le rappel seul affichent une phrase localisée qui dit quel champ (nom, rue, numéro, NPA, localité ou pays du client ou de l'entreprise, numéro de facture), quel caractère — échappé, suivi de son point de code, par exemple « – » (U+2013) — et où le corriger ; un caractère refusé dans le numéro de facture renvoie au format de numérotation, une facture validée ne se corrigeant pas. Jusqu'ici, l'écran de la facture et de l'avoir montrait « La facture n'est pas prête pour la génération PDF. », et les autres un texte technique en français (« Champ debtor.town contient … »). L'IBAN ou le QR-IBAN invalides, le montant et la devise ont aussi leur phrase ; une panne interne (référence QRR) le dit, sans rien à corriger à l'écran. Le PDF d'un avoir dont le contact manque parle de l'avoir, non plus de la facture. ⚠️ **Pour qui appelle l'API**, le code `INVOICE_NOT_PDF_READY` et le statut 400 ne changent pas, mais **le texte du message a changé** : il est destiné à l'utilisateur, dans la langue de l'installation, et ne se lit pas par machine (aucun `details`). Le lot de rappels montre encore « Facture non imprimable en PDF ».
+- **Un NPA ou une localité qui ne porte qu'un caractère invisible est dit vide, et nommé** (refs [#964](https://github.com/guycorbaz/kesh/issues/964)) : le contrôle de l'adresse avant la QR-facture juge un champ vide par la même règle que la saisie de l'adresse de l'entreprise (un trait d'union conditionnel ou une espace de largeur nulle ne compte pas), et le refus dit « Adresse du client incomplète : la localité est vide. » plutôt qu'un texte technique ; de même pour l'entreprise et pour le NPA.
+
+---
+
 ## [0.17.6] — 2026-11-12
 
 ⚠️ **Avant la mise à jour, prenez une sauvegarde complète** — la base, le `.keshbackup` **et** le dossier des documents. Cette version porte **une migration breaking** (`20261110000001_bank_accounts_without_iban`) : elle relève la version minimale de la base à **0.17.6**. Kesh écrit en plus sa propre sauvegarde dans `backup/pre-upgrade/` avant de migrer, mais elle ne dispense pas de la vôtre. **Une 0.17.5 refuse de démarrer sur une base passée en 0.17.6, et refuse d'importer une sauvegarde 0.17.6 : le retour à la 0.17.5 passe uniquement par la sauvegarde d'avant la mise à jour.**

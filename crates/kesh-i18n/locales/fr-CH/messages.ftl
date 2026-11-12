@@ -966,9 +966,49 @@ echeancier-export-error-too-large = Trop de résultats (> { $limit }). Veuillez 
 invoice-qr-message-prefix = Facture
 invoice-pdf-error-contact-missing = Le contact lié à la facture est introuvable.
 invoice-pdf-error-no-primary-bank = Aucun compte bancaire principal n'est configuré pour cette entreprise.
-invoice-pdf-error-company-address-empty = L'adresse de l'entreprise est vide — renseignez-la avant de générer un PDF.
 invoice-pdf-error-client-address-required = L'adresse du client est obligatoire pour la génération du PDF.
-invoice-pdf-error-client-address-empty = L'adresse du client est vide — renseignez-la avant de générer un PDF.
+# Story 35-2a (#955, #964) — le refus du PDF nomme le champ et le caractère à corriger. Une clé par
+# champ et par raison (G9 compare un littéral par clé) ; `$car` est le caractère échappé, `$point` son
+# point de code (`U+2013`), `$max` et `$got` des longueurs, `$code` un code pays tel que stocké.
+invoice-pdf-error-charset-company-name = Le nom de l'entreprise contient un caractère refusé par la QR-facture : « { $car } » ({ $point }). Corrigez-le dans Paramètres → Organisation.
+invoice-pdf-error-charset-company-street = La rue de l'entreprise contient un caractère refusé par la QR-facture : « { $car } » ({ $point }). Corrigez-la dans Paramètres → Organisation.
+invoice-pdf-error-charset-company-building = Le numéro de bâtiment de l'entreprise contient un caractère refusé par la QR-facture : « { $car } » ({ $point }). Corrigez-le dans Paramètres → Organisation.
+invoice-pdf-error-charset-company-postal-code = Le NPA de l'entreprise contient un caractère refusé par la QR-facture : « { $car } » ({ $point }). Corrigez-le dans Paramètres → Organisation.
+invoice-pdf-error-charset-company-city = La localité de l'entreprise contient un caractère refusé par la QR-facture : « { $car } » ({ $point }). Corrigez-la dans Paramètres → Organisation.
+invoice-pdf-error-charset-client-name = Le nom du client contient un caractère refusé par la QR-facture : « { $car } » ({ $point }). Corrigez la fiche du client dans le carnet d'adresses.
+invoice-pdf-error-charset-client-street = La rue du client contient un caractère refusé par la QR-facture : « { $car } » ({ $point }). Corrigez la fiche du client dans le carnet d'adresses.
+invoice-pdf-error-charset-client-building = Le numéro de bâtiment du client contient un caractère refusé par la QR-facture : « { $car } » ({ $point }). Corrigez la fiche du client dans le carnet d'adresses.
+invoice-pdf-error-charset-client-postal-code = Le NPA du client contient un caractère refusé par la QR-facture : « { $car } » ({ $point }). Corrigez la fiche du client dans le carnet d'adresses.
+invoice-pdf-error-charset-client-city = La localité du client contient un caractère refusé par la QR-facture : « { $car } » ({ $point }). Corrigez la fiche du client dans le carnet d'adresses.
+invoice-pdf-error-charset-invoice-number = Le numéro de facture contient un caractère refusé par la QR-facture : « { $car } » ({ $point }). Une facture validée ne se corrige pas : vérifiez le format de numérotation dans Administration → Facturation.
+invoice-pdf-error-charset-other = Un champ de la QR-facture contient un caractère refusé : « { $car } » ({ $point }). Vérifiez les fiches du client et de l'entreprise.
+invoice-pdf-error-empty-company-name = Le nom de l'entreprise est vide. Complétez-le dans Paramètres → Organisation.
+invoice-pdf-error-empty-company-postal-code = Adresse de l'entreprise incomplète : le NPA est vide. Complétez-la dans Paramètres → Organisation (NPA et localité sont exigés par la QR-facture).
+invoice-pdf-error-empty-company-city = Adresse de l'entreprise incomplète : la localité est vide. Complétez-la dans Paramètres → Organisation (NPA et localité sont exigés par la QR-facture).
+invoice-pdf-error-empty-client-name = Le nom du client est vide. Complétez la fiche du client dans le carnet d'adresses.
+invoice-pdf-error-empty-client-postal-code = Adresse du client incomplète : le NPA est vide. Complétez la fiche du client dans le carnet d'adresses (NPA et localité sont exigés par la QR-facture).
+invoice-pdf-error-empty-client-city = Adresse du client incomplète : la localité est vide. Complétez la fiche du client dans le carnet d'adresses (NPA et localité sont exigés par la QR-facture).
+invoice-pdf-error-empty-other = Un champ obligatoire de la QR-facture est vide. Vérifiez les fiches du client et de l'entreprise.
+invoice-pdf-error-too-long-company-name = Le nom de l'entreprise dépasse { $max } caractères ({ $got }). Raccourcissez-le dans Paramètres → Organisation.
+invoice-pdf-error-too-long-company-street = La rue de l'entreprise dépasse { $max } caractères ({ $got }). Raccourcissez-la dans Paramètres → Organisation.
+invoice-pdf-error-too-long-company-building = Le numéro de bâtiment de l'entreprise dépasse { $max } caractères ({ $got }). Raccourcissez-le dans Paramètres → Organisation.
+invoice-pdf-error-too-long-company-postal-code = Le NPA de l'entreprise dépasse { $max } caractères ({ $got }). Raccourcissez-le dans Paramètres → Organisation.
+invoice-pdf-error-too-long-company-city = La localité de l'entreprise dépasse { $max } caractères ({ $got }). Raccourcissez-la dans Paramètres → Organisation.
+invoice-pdf-error-too-long-client-name = Le nom du client dépasse { $max } caractères ({ $got }). Raccourcissez-le dans la fiche du client, au carnet d'adresses.
+invoice-pdf-error-too-long-client-street = La rue du client dépasse { $max } caractères ({ $got }). Raccourcissez-la dans la fiche du client, au carnet d'adresses.
+invoice-pdf-error-too-long-client-building = Le numéro de bâtiment du client dépasse { $max } caractères ({ $got }). Raccourcissez-le dans la fiche du client, au carnet d'adresses.
+invoice-pdf-error-too-long-client-postal-code = Le NPA du client dépasse { $max } caractères ({ $got }). Raccourcissez-le dans la fiche du client, au carnet d'adresses.
+invoice-pdf-error-too-long-client-city = La localité du client dépasse { $max } caractères ({ $got }). Raccourcissez-la dans la fiche du client, au carnet d'adresses.
+invoice-pdf-error-too-long-other = Un champ de la QR-facture dépasse { $max } caractères ({ $got }). Vérifiez les fiches du client et de l'entreprise.
+invoice-pdf-error-iban-invalid = L'IBAN du compte bancaire principal n'est pas valable pour la QR-facture. Corrigez-le dans Administration → Comptes bancaires.
+invoice-pdf-error-qr-iban-invalid = Le QR-IBAN du compte bancaire principal n'est pas valable pour la QR-facture. Corrigez-le dans Administration → Comptes bancaires.
+invoice-pdf-error-internal = La QR-facture n'a pas pu être construite (erreur interne, non corrigeable depuis l'écran). Contactez l'administrateur.
+invoice-pdf-error-amount-invalid = Le montant à payer est hors des bornes admises par la QR-facture (de 0.01 à 999 999 999.99).
+invoice-pdf-error-currency-invalid = La devise n'est pas admise par la QR-facture (CHF ou EUR).
+invoice-pdf-error-country-invalid = Le code pays « { $code } » n'est pas un code ISO valide.
+invoice-pdf-error-country-invalid-company = Le pays de l'entreprise (« { $code } ») n'est pas un code ISO valide. Corrigez-le dans Paramètres → Organisation.
+invoice-pdf-error-country-invalid-client = Le pays du client (« { $code } ») n'est pas un code ISO valide. Corrigez la fiche du client dans le carnet d'adresses.
+credit-note-pdf-error-contact-missing = Le contact lié à l'avoir est introuvable.
 
 # Commons
 common-loading = Chargement…

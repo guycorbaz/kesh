@@ -11,6 +11,7 @@ const CATALOGUE: Record<string, string> = {
 	'error-invoice-too-many-lines-for-pdf': 'La facture contient ⁨{ $count }⁩ lignes.',
 	'error-invoice-pdf-gone': 'Le fichier ⁨{ $sha256 }⁩.pdf manque.',
 	'invoice-pdf-error-invoice-not-pdf-ready': 'Facture pas prête pour le PDF.',
+	'invoice-pdf-error-invoice-not-validated': 'Facture non validée.',
 	'invoice-pdf-error-generic': 'Erreur PDF.',
 };
 vi.mock('$lib/shared/utils/i18n.svelte', () => ({
@@ -33,9 +34,24 @@ describe('pdfErrorMessage', () => {
 	});
 
 	it('un code sans variable : la clé du catalogue', () => {
-		expect(pdfErrorMessage(err('INVOICE_NOT_PDF_READY', 'serveur'))).toBe(
-			'Facture pas prête pour le PDF.',
+		expect(pdfErrorMessage(err('INVOICE_NOT_VALIDATED', 'serveur'))).toBe(
+			'Facture non validée.',
 		);
+	});
+
+	// Story 35-2a (#955, AC7) — le serveur résout le message, qui nomme le champ
+	// et le caractère ; la phrase fixe le tairait (mutation M1 : bras retiré).
+	it('« pas prête » : le message du serveur, qui nomme le champ', () => {
+		const serveur = 'La localité du client contient un caractère refusé : « – » (U+2013).';
+		expect(pdfErrorMessage(err('INVOICE_NOT_PDF_READY', serveur))).toBe(serveur);
+	});
+
+	it('« pas prête » au message vide ou blanc : la clé du catalogue', () => {
+		for (const vide of ['', '   ']) {
+			expect(pdfErrorMessage(err('INVOICE_NOT_PDF_READY', vide))).toBe(
+				'Facture pas prête pour le PDF.',
+			);
+		}
 	});
 
 	it('un code inconnu : le générique', () => {

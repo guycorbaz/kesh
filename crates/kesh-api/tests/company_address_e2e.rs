@@ -372,8 +372,8 @@ async fn a_character_the_qr_bill_refuses_is_refused_here(pool: MySqlPool) {
         address
     };
     for (address, field, code) in [
-        // ⚠️ Des caractères que SIX exclut aussi : la liste de `kesh-qrbill` va être
-        // recalée sur la directive (33-12), et ces tests ne doivent pas l'épingler.
+        // ⚠️ Des caractères que SIX exclut aussi : la liste de `kesh-qrbill` est
+        // recalée sur la directive depuis la 33-12, et ces tests ne l'épinglent pas.
         (with("street", "Rue \u{2603} Cie"), "rue", "U+2603"),
         (with("building", "1\n2"), "numéro", "U+000A"),
         (with("postalCode", "18\u{2603}00"), "NPA", "U+2603"),
@@ -502,11 +502,10 @@ async fn a_lowercase_stored_country_is_not_known(pool: MySqlPool) {
         "le PDF le refuse bien : l'avis dit vrai"
     );
     let body: Value = resp.json().await.unwrap();
+    // Story 35-2a (D7) — le refus nomme la partie et montre le code tel que stocké.
+    let message = body["error"]["message"].as_str().unwrap();
     assert!(
-        body["error"]["message"]
-            .as_str()
-            .unwrap()
-            .contains("Pays invalide"),
+        message.contains("pays de l'entreprise") && message.contains("« ch »"),
         "le refus vient bien du pays : {body}"
     );
 }
@@ -581,11 +580,10 @@ async fn correcting_the_country_restores_the_qr_invoice(pool: MySqlPool) {
     assert_eq!(resp.status(), 400);
     let body: Value = resp.json().await.unwrap();
     assert_eq!(body["error"]["code"], "INVOICE_NOT_PDF_READY");
+    // Story 35-2a (D7) — le refus nomme la partie et le code tel que stocké.
+    let message = body["error"]["message"].as_str().unwrap();
     assert!(
-        body["error"]["message"]
-            .as_str()
-            .unwrap()
-            .contains("Pays invalide"),
+        message.contains("pays de l'entreprise") && message.contains("SU"),
         "{body}"
     );
 
@@ -665,11 +663,11 @@ async fn a_free_text_only_company_gets_its_components(pool: MySqlPool) {
     assert_eq!(resp.status(), 400);
     let refused: Value = resp.json().await.unwrap();
     assert_eq!(refused["error"]["code"], "INVOICE_NOT_PDF_READY");
+    // Story 35-2a (#964, D6) — l'adresse est dite incomplète, et le premier champ
+    // vide (le NPA) est nommé.
+    let message = refused["error"]["message"].as_str().unwrap().to_lowercase();
     assert!(
-        refused["error"]["message"]
-            .as_str()
-            .unwrap()
-            .contains("adresse de l'entreprise est vide"),
+        message.contains("adresse de l'entreprise incomplète") && message.contains("npa"),
         "{refused}"
     );
 
