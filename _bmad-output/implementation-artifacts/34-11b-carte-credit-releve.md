@@ -1,6 +1,6 @@
 # Story 34-11b : le relevé d'une carte de crédit, sa réconciliation et son prélèvement mensuel (#972)
 
-Status: review
+Status: done
 
 *Fiche rédigée le 2026-11-10 en autonomie (Opus 5.5), worktree `/home/gcorbaz/devel/kesh-e34`, branche `chore/epic-34-kickoff`,
 numéros de ligne de `a75835db`. Release **0.17.6**, Epic 34. **Aucune migration.** Registre : `e34-choix-autonomes-e341.md`,
@@ -265,7 +265,11 @@ côté, de comptes et de sens opposés ; jamais une écriture de règlement). **
    la 34-2 (sens *Dette*).
 2. **L'E2E** `credit-card-statement.spec.ts` pose la dette d'ouverture par une écriture (C-e34b-6) : à repasser par la 34-2 si elle le permet.
 3. **Le PDF du manuel utilisateur**, à régénérer : y greper (aplati) `rejetez-la` (absent attendu), `Tenir une carte` et `#823` (présent pour le
-   lot de plusieurs factures seulement).
+   lot de plusieurs factures seulement). **Non régénéré par la story**, sur consigne de l'orchestrateur : l'intégration le fait à l'étape
+   finale — y greper aussi `celle de son virement` (le pluriel de (b′), ajouté au `.tex` à la clôture, C3-6).
+4. **Les LOW de production de la passe P3**, tracés par l'orchestrateur, non traités ici : C3-2 → refs #1041 (une attente déclarée dans un JSON
+   illisible est ignorée sans rien dire), C3-3 → refs #1042 (limite de taille du corps lu par `…/cancel`, `413` natif non documenté), C3-5 →
+   refs #1043 (test de non-dérive textuel ; bras client non comparé).
 
 ## Recoupements
 
@@ -349,8 +353,8 @@ du rattachement à un règlement : une écriture de règlement n'a qu'une ligne 
   - **B2-2** : bras **règlement client** de l'exclusion testé (`s34_11b_b2_2_un_reglement_client_n_a_pas_d_autre_cote`) ; M13 scindée en M13a
     (fournisseur payée) et M13b (règlement client).
   - **B2-3, E2-4** : les deux sous-requêtes d'`other_side_predicate` bornées par `company_id = bt.company_id` (aucun paramètre lié ajouté) ; test
-    unitaire `the_settlement_exclusion_matches_the_classification` (C-e34b-14).
-  - **E2-3** : (b′) au pluriel (`-transfer-other`, quatre locales, repli fr-CH, Vitest, `sitesTotal` 2958), mutation F5 (C-e34b-15).
+    unitaire `the_settlement_exclusion_matches_the_classification` (C-e34b-15).
+  - **E2-3** : (b′) au pluriel (`-transfer-other`, quatre locales, repli fr-CH, Vitest, `sitesTotal` 2958), mutation F5 (C-e34b-14).
   - **B2-4** : `docs/api-external.md` — tableau des refus de `…/cancel`, corps facultatif. **E2-2** : liens rustdoc.
   - **A2-2 à A2-7** : fiche (§ *Écarts à la fiche*, § *Renvois à l'intégration*, *Annotations de la remédiation P2*).
   - **B1-2** de la P1 : issue **#1038** (comptes qui partagent un grand livre). Hors périmètre, déjà ouvertes : #977 (signe du CSV), #978 (PDF
@@ -361,6 +365,24 @@ du rattachement à un règlement : une écriture de règlement n'a qu'une ligne 
     `225a90de`. Le prompt P3 le dit.
   - Correction d'un compte rendu antérieur : le commit du Change Log de la remédiation P1 est **`418efd46`** (et non « ff0b2a0b », écrit par
     erreur dans un rapport à l'orchestrateur, hors dépôt).
+- 2026-11-12 : **passe ciblée P3** (Opus, une lentille, sur la seule remédiation P2 `a9c7b967`/`225a90de` ; prompt
+  `34-11b-carte-credit-releve-review-prompt-p3-ciblee.md`, rapport `kesh-gate-logs/e34b-review-p3-ciblee.md`, six axes déclarés exercés) :
+  **0 CRITICAL, 0 HIGH, 0 MEDIUM, 6 LOW**. **Clôture (Opus 5.5)**, sans une ligne de code de production :
+  - **C3-1** : renvois C-e34b-14 et C-e34b-15 permutés dans l'entrée P2 ci-dessus (corrigés : la borne par société est C-e34b-15, (b′) au
+    pluriel C-e34b-14 ; relu `e34-choix-autonomes-e34b.md:154`, `:159`).
+  - **C3-4** : `docs/api-external.md`, la ligne `400 VALIDATION_ERROR` remontée en tête du tableau des refus de `…/cancel`, « contrôlé avant tout
+    autre refus, `404` compris » (`parse_cancel_expectation(&body)?` parle en premier dans le handler).
+  - **C3-6** : `user-manual.tex`, (b′) au pluriel décrit (« N écritures de virement sont déjà rapprochées… », rattacher à celle de son
+    virement). **PDF non régénéré** : l'intégration le fait à l'étape finale (§ *Renvois à l'intégration*, 3).
+  - **C3-2, C3-3, C3-5** (production) : tracés par l'orchestrateur — refs #1041, refs #1042, refs #1043 (§ *Renvois à l'intégration*, 4).
+  - Pas de gate relancé : commit sans code (documentation, fiche, registre de sprint).
+- **Synthèse de la boucle de revue de code** (trend au-dessus de LOW) : **P1** (Opus, trois lentilles) 0 C / 0 H / **2 M** (B1-1, E1-1+E1-2) et
+  une vingtaine de LOW → **P2** (Sonnet, trois lentilles) 0 C / 0 H / **2 M** (B2-1, né de la remédiation E1-1 ; B2-2, couverture du bras client
+  de la remédiation E1-3) → **P3** (Opus, passe ciblée, une lentille) **0 au-dessus de LOW**, 6 LOW. Boucle close sur une passe sans MEDIUM.
+  Décisions : M2b reclassée **équivalente** (le plafond ≤ 1 est une défense inerte, P1) ; le corps de `…/cancel` reste facultatif pour tout client
+  plutôt qu'un contrat strict (C-e34b-13) ; les LOW de production de P3 tracés et non traités (consigne de l'orchestrateur : boucle close) ;
+  B1-2 tracé en #1038 ; le pas à pas *Dette*, l'E2E de la dette d'ouverture et le PDF renvoyés à l'intégration. Signal de découpage : non levé
+  (aucune passe n'a recyclé un défaut d'une passe antérieure sous une autre forme au-delà de B2-1, né de la remédiation et corrigé en P2).
 
 ## Dev Agent Record
 

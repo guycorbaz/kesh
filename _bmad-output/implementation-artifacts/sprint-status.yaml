@@ -1040,5 +1040,5 @@ development_status:
   34-11a-carte-credit-compte: split  # 2026-11-10, validation P1 : découpée en 34-11a1 et 34-11a2
   34-11a1-compte-sans-iban: done  # #972 ; migration breaking (min_required 0.17.6) ; après 34-3 ; revue de code P1 → P2 (0 au-dessus de LOW), 2026-11-12
   34-11a2-carte-credit-creation: done  # #972 ; après 34-11a1 ; revue de code P1 (Opus) → P2 (Sonnet, 0 au-dessus de LOW), 2026-11-12
-  34-11b-carte-credit-releve: review  # #972 ; après 34-11a2 et 34-4 ; développée le 2026-11-12 (34-4 et 34-11a2 fusionnées)
+  34-11b-carte-credit-releve: done  # #972 ; après 34-11a2 et 34-4 ; développée le 2026-11-12 (34-4 et 34-11a2 fusionnées) ; revue P1 → P2 → P3 ciblée close le 2026-11-12
   epic-34-retrospective: optional

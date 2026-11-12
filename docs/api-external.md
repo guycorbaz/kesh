@@ -707,6 +707,7 @@ Aucune garde de score : le score est recalculé pour la réponse (≥ `0.5`, le 
 
 | Refus | Code | Statut |
 |---|---|---|
+| `expectUnlinkOnly` présent mais ni booléen ni `null` — contrôlé **avant tout autre refus**, `404` compris *(depuis la v0.17.6)* | `VALIDATION_ERROR` | `400` |
 | La transaction n'est pas rapprochée | `BANK_TRANSACTION_NOT_RECONCILED` | `409` |
 | Le compte bancaire de la transaction est **clos** — rouvrir d'abord le compte ; vient avant les motifs qui suivent *(depuis la v0.13.3)* | `BANK_ACCOUNT_CLOSED` | `409`, `details.bankAccountId` |
 | Facture créditée par un avoir — son règlement reste ouvert au compte débiteurs | `INVOICE_CREDITED` | `409` |
@@ -714,7 +715,6 @@ Aucune garde de score : le score est recalculé pour la réponse (≥ `0.5`, le 
 | Rapprochement lettré avec sa facture dans une période close — un administrateur fait reculer le verrou avant la date la plus récente du lettrage et/ou rouvre les exercices clôturés jusqu'à celui de cette date, selon la cause *(depuis la v0.13.0)* ; refusé **avant** que le lien soit défait | `LETTERING_ALL_LINES_IN_CLOSED_PERIODS` | `409` |
 | Une autre transaction pointe la même écriture | `MATCHED_BANK_TRANSACTION` | `409` |
 | `expectUnlinkOnly` ne vaut plus : l'autre côté du virement a été rattaché ou annulé depuis la lecture — relire et redemander ; vient après le compte clos, avant les motifs d'exercice et de lettrage *(depuis la v0.17.6)* | `RECONCILIATION_CANCEL_CHANGED` | `409` |
-| `expectUnlinkOnly` présent mais ni booléen ni `null` *(depuis la v0.17.6)* | `VALIDATION_ERROR` | `400` |
 | Compte de l'écriture archivé | `ACCOUNT_ARCHIVED` | `400`, `details.rejected[]` nomme les comptes |
 | Aucun exercice ouvert ne couvre la date du jour | `FISCAL_YEAR_INVALID` | `400` |
 | L'exercice du jour est suivi d'un exercice clôturé — la contre-passation y changerait son bilan *(depuis la v0.13.0)* | `LATER_FISCAL_YEAR_CLOSED` | `400`, `details.fiscalYearId` / `fiscalYearName` |
