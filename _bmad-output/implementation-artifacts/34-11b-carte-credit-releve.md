@@ -339,6 +339,28 @@ du rattachement à un règlement : une écriture de règlement n'a qu'une ligne 
   - **A1-8** : M7c décrite telle qu'elle est jouée, et rejouée avec `supplier_invoice_draft_e2e`.
   - **A1-4, A1-9, B1-7 — renvoyés à l'intégration** : le pas à pas *Dette* (la 34-2 est dans la release : à vérifier contre elle) et le PDF du
     manuel (régénéré à la release ; y greper `rejetez-la`, `Tenir une carte`, `#823`). Rien d'autre n'est changé pour eux.
+- 2026-11-12 : **fusion de la 34-11a2** (`2dbcc102`), gates rejoués au commit de fusion (§ *Gates*).
+- 2026-11-12 : **revue de code P2** (Sonnet, trois lentilles, rapports `kesh-gate-logs/e34b-review-p2-{B,E,A}.md`) : 0 CRITICAL, 0 HIGH,
+  2 MEDIUM (B2-1, B2-2), LOW B2-3/E2-4, B2-4, E2-2, E2-3, A2-2 à A2-7. **Remédiation (Opus 5.5)**, commit de code `a9c7b967`, **rétabli à
+  l'identique par `225a90de`** (incident ci-dessous) ; dernier commit de code : `225a90de` :
+  - **B2-1** : le corps de `POST …/cancel` reste facultatif pour tout client — lu brut (`axum::body::Bytes`), `parse_cancel_expectation` : vide,
+    `null`, `{}`, champ absent ou `null`, corps non JSON → aucun contrôle ; booléen → contrôle ; autre type → `400 VALIDATION_ERROR` ; test
+    `s34_11b_b2_1_le_corps_de_l_annulation_reste_facultatif` (six formes acceptées, mauvais type refusé), mutation M14 (C-e34b-13).
+  - **B2-2** : bras **règlement client** de l'exclusion testé (`s34_11b_b2_2_un_reglement_client_n_a_pas_d_autre_cote`) ; M13 scindée en M13a
+    (fournisseur payée) et M13b (règlement client).
+  - **B2-3, E2-4** : les deux sous-requêtes d'`other_side_predicate` bornées par `company_id = bt.company_id` (aucun paramètre lié ajouté) ; test
+    unitaire `the_settlement_exclusion_matches_the_classification` (C-e34b-14).
+  - **E2-3** : (b′) au pluriel (`-transfer-other`, quatre locales, repli fr-CH, Vitest, `sitesTotal` 2958), mutation F5 (C-e34b-15).
+  - **B2-4** : `docs/api-external.md` — tableau des refus de `…/cancel`, corps facultatif. **E2-2** : liens rustdoc.
+  - **A2-2 à A2-7** : fiche (§ *Écarts à la fiche*, § *Renvois à l'intégration*, *Annotations de la remédiation P2*).
+  - **B1-2** de la P1 : issue **#1038** (comptes qui partagent un grand livre). Hors périmètre, déjà ouvertes : #977 (signe du CSV), #978 (PDF
+    joint), #979 (lecture du PDF), #980 (appariement), #1034.
+  - ⚠️ **Incident** : le script de rouges (`rouges-rem2.sh`) avait remis à l'index les fichiers de `8781e150` ; le commit suivant, `8abf9b50`
+    (prompt P3), les a emportés et a **retiré le code de `a9c7b967`**. Rétabli à l'identique par `225a90de` (`git diff a9c7b967 225a90de` ne rend
+    que le prompt) ; les mutations du jeu 4 jouées avant le rétablissement, sur l'ancien code, ont été **invalidées et rejouées** sur
+    `225a90de`. Le prompt P3 le dit.
+  - Correction d'un compte rendu antérieur : le commit du Change Log de la remédiation P1 est **`418efd46`** (et non « ff0b2a0b », écrit par
+    erreur dans un rapport à l'orchestrateur, hors dépôt).
 
 ## Dev Agent Record
 
@@ -462,3 +484,24 @@ Journaux sous `/home/gcorbaz/devel/kesh-gate-logs/e34b/`, tels qu'ils ont tourn�
   l'écran du journal d'audit ne lisent pas les détails : le libellé reste « Rapprochement annulé » pour les deux chemins, `unlinkOnly` et
   `reversalJournalEntryId` ne se lisent que dans le détail JSON (le manuel le dit). Rien à aligner ; un libellé distinct serait une demande à
   Guy.
+
+#### Remédiation P2 — rouges, mutations, gates (2026-11-12)
+
+- **Rouges** (`rouges-rem2.log`, tests neufs contre le code de `8781e150`) : backend **1 rouge**, `s34_11b_b2_1_…` (corps facultatif) ;
+  `s34_11b_b2_2_…` et `s34_11b_e1_3_…` **verts dès le départ, attendus** — l'exclusion des deux bras existait depuis la P1 ; c'est la
+  mutation qui prouve qu'ils la tiennent (M13a, M13b ci-dessous). Vitest **6 rouges** (catalogues des quatre locales et replis : clé
+  `-transfer-other` ; (b′) au pluriel).
+- **Mutations, jeu 4**, au code rétabli `225a90de` (`mut/resume-j4.log`, journaux `mut/*-j3.log` — le lanceur suffixe `-j3`) : **toutes
+  tuées** — M1 (14), M2 (7), Macc (2), **M13a** (1, `s34_11b_e1_3_…`), **M13b** (1, `s34_11b_b2_2_…`), **M14** (1, `s34_11b_b2_1_…`), **F5**
+  (1, Vitest (b′)). Les mutations du jeu 4 jouées avant le rétablissement (sur le code de `8abf9b50`) sont invalides et ne sont pas comptées.
+- **Gates** au commit `aa8d7fc9` (code identique à `225a90de` : `git diff --stat 225a90de aa8d7fc9` ne nomme que le prompt P3) — `gates-6.txt`,
+  `front-6.txt` :
+  - `scripts/test-fast.sh --ci` : **5228 exécutés, 5228 passés, 13 ignorés** (`gate-test-fast-6.log`) ;
+  - `cargo build --workspace --all-targets` : vert ;
+  - `scripts/gate-ci.sh kesh_ci_e34b` : **5235 passés, 0 échec, 17 ignorés** (somme des `test result` de `gate-ci-6.log`) ;
+  - frontend : `check` 0 erreur, `lint-i18n-ownership` vert, `test:unit` **228 fichiers, 2974 tests**, `build` vert ;
+  - **E2E** (`e2e-r6/`) : **390 passés, 7 échecs, 17 ignorés** (`playwright rc=1`) — les sept de la KF-029 (#97), nommés contre
+    `docs/testing.md:394-400` : `mode-expert.spec.ts:26`, `:41`, `onboarding-path-b.spec.ts:65`, `:92`, `onboarding.spec.ts:57`, `:77`, `:150` ;
+    `credit-card-statement.spec.ts:128` et `bank-accounts-credit-card.spec.ts:33` verts ; aucun port tenu après (3382 libre).
+- **Écarts à la consigne Edit** (remédiation P2) : aucun fichier de code écrit autrement que par Edit ; le script de chaîne `chaine-rem2b.sh`
+  a été dérivé par `sed` dans `kesh-gate-logs` (hors dépôt). L'incident `8abf9b50` est au Change Log.
