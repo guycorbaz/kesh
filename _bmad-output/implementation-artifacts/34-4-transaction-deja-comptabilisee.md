@@ -173,6 +173,10 @@ une écriture manuelle ou que je l'éclate, afin de ne pas compter deux fois un 
    ne fait rien. *Continuer quand même* reprend le geste tel quel (lot entier pour *Accepter* ; ouverture du dialogue pour les
    deux autres). *Rejeter* et *Rattacher à une écriture existante* ne demandent rien (C-e342-8). Vitest : chacun des trois gestes,
    avec et sans ligne signalée ; *Annuler* n'appelle aucune API.
+   *(Annoté le 2026-11-12, revue P3 ciblée C3-1, choix C-e344-17 : « reprend le geste tel quel » ne vaut plus à la lettre pour
+   *Écriture manuelle* et *Éclater* — *Continuer quand même* relit la ligne dans la liste courante ; si elle a quitté la liste
+   pendant la confirmation (relue entre-temps), rien ne s'ouvre, et rien n'est dit (issue #1024). *Accepter* reprend le lot
+   tel qu'il est sélectionné au moment du clic. Fermer le dialogue (Échap, clic hors) vaut *Annuler*.)*
 7. **AC-7 — après coup** : la liste est relue après chaque geste (comportement actuel) ; une ligne rattachée disparaît, et
    l'avertissement de l'autre côté d'un virement apparaît à la relecture suivante.
 
