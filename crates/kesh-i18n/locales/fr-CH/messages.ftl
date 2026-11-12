@@ -1431,6 +1431,16 @@ reconciliation-labels-rejected-hint = Une transaction rejetée quitte cette list
 reconciliation-labels-priority-hint = Une seule proposition est affichée par transaction : pour un crédit, la facture client la mieux notée, pour un débit, la facture fournisseur la mieux notée, s’il y en a une, sinon la règle d’affectation qui correspond. Une facture proposée passe toujours devant une règle.
 reconciliation-labels-supplier-invoice-badge = Facture fournisseur
 reconciliation-labels-notice-supplier-invoice-in-batch = La facture fournisseur { $invoice } de ce montant figure dans le lot de paiement n° { $batch } en cours sur ce compte. Si cette transaction est le paiement de ce lot, annulez le lot : la facture vous sera alors proposée ici. Sinon, passez la transaction par une écriture manuelle.
+# Story 34-4 (#828, AC-5) — sous une ligne qui semble déjà comptabilisée. Deux clés -one / -other, choisies par l'écran : pas de sélecteur (les messages arrivent pré-résolus).
+reconciliation-labels-already-booked-one = Cette transaction semble déjà comptabilisée : une écriture non rapprochée du compte de la banque lui correspond. Rattachez-la (« Rattacher à une écriture existante ») plutôt que de passer une écriture : elle serait comptée deux fois.
+reconciliation-labels-already-booked-other = Cette transaction semble déjà comptabilisée : { $count } écritures non rapprochées du compte de la banque lui correspondent. Rattachez-la (« Rattacher à une écriture existante ») plutôt que de passer une écriture : elle serait comptée deux fois.
+reconciliation-labels-already-booked-elsewhere = Une transaction de sens contraire, sur un autre de vos comptes bancaires, est déjà rapprochée d’une écriture du même montant : c’est probablement l’autre côté d’un virement entre vos comptes. Ne passez pas d’écriture pour elle : rejetez-la.
+reconciliation-labels-already-booked-combined = Si rien de ce que propose « Rattacher à une écriture existante » ne lui correspond, elle est peut-être l’autre côté d’un virement entre vos comptes : une transaction de sens contraire, sur un autre de vos comptes bancaires, est rapprochée d’une écriture du même montant.
+# Story 34-4 (#828, AC-6) — confirmation avant Accepter, Écriture manuelle ou Éclater sur une ligne signalée.
+reconciliation-labels-already-booked-confirm-title = Confirmer malgré l’avertissement
+reconciliation-labels-already-booked-confirm-intro = Chaque transaction ci-dessous semble déjà comptabilisée (voir l’avertissement de sa ligne). Continuer passerait une écriture pour un mouvement qui est peut-être déjà aux livres : il serait compté deux fois.
+reconciliation-labels-already-booked-confirm-cancel = Annuler
+reconciliation-labels-already-booked-confirm-continue = Continuer quand même
 # Story 29-6 (#665, AC10) — rendue dans la rangée des boutons quand une ligne sans proposition est cochée.
 reconciliation-labels-unmatched-not-acceptable-hint = Une transaction sans correspondance ne peut pas être acceptée : décochez-la pour accepter les autres.
 # Story 29-9 (#678, AC11) — nom accessible de la case de chaque ligne : ce que la ligne affiche.

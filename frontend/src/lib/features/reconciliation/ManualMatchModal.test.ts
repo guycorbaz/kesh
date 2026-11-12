@@ -45,6 +45,7 @@ function makeProposal(): ReconciliationProposal {
 		},
 		candidates: [],
 		notice: null,
+		alreadyBooked: null,
 	};
 }
 

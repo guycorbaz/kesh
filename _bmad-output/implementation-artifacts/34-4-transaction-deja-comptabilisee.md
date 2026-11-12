@@ -1,6 +1,6 @@
 # Story 34-4 : la réconciliation signale une transaction qui semble déjà comptabilisée, et demande confirmation (#828)
 
-Status: ready-for-dev
+Status: done
 
 *Fiche rédigée le 2026-11-10 en autonomie (Opus 5.5), worktree `/home/gcorbaz/devel/kesh-e34`, branche `chore/epic-34-kickoff`,
 numéros de ligne de `a75835db`. Release **0.17.6**, Epic 34. **Aucune migration** (lecture seule, champ additif). Registre :
@@ -77,6 +77,12 @@ une écriture manuelle ou que je l'éclate, afin de ne pas compter deux fois un 
    tolérance), un règlement inférieur de **6 centimes** (non compté), une écriture saisie au journal, et aucun des deux, le
    champ égale la longueur des deux listes rendues par `GET …/link-candidates` et `GET …/entry-candidates` pour la même
    transaction *(P2-4-2 : les cas de la mutation M2)*.
+   *(Annoté le 2026-11-12, revues de code P1 et P2, C-e344-9 et C-e344-12 : le champ est aussi `null` quand le compte
+   bancaire est **clos** — les routes du dialogue le refusent en 409. Depuis le remède de l'AC-8, les deux premiers nombres ne
+   sont plus obtenus en appelant les fonctions du dialogue, mais par `count_already_booked_for_page`, deux lectures par page
+   sur les **mêmes textes SQL** ; ils les égalent, ce que vérifie
+   `s34_4_ac8_la_lecture_par_page_egale_les_fonctions_du_dialogue`. `entry_candidates_sql` est devenu
+   `entry_sql(EntrySqlMode)`.)*
 2. **AC-2 — le second côté** : `matchedElsewhereCount` compte les écritures dont le mouvement sur le compte du grand livre de
    `t` égale `t.amount`, ni contre-passées ni contre-passations, **rapprochées** (`bank_transactions.matched_entry_id`) d'une
    transaction d'un **autre** compte bancaire **dont le compte du grand livre diffère** de celui de `t`. Une requête dans
@@ -86,6 +92,17 @@ une écriture manuelle ou que je l'éclate, afin de ne pas compter deux fois un 
    - virement de A vers B, côté A rapproché par une écriture manuelle `D 1021 / C 1020` : la transaction de B porte `1` ;
    - **comptes partagés** : deux comptes bancaires sur le même compte du grand livre, l'un rapproché : l'autre porte `0` ;
    - écriture contre-passée : `0`.
+
+   *(Annoté le 2026-11-12, revues de code P1 et P2, choix C-e344-11 qui amende C-e344-2. L'énoncé ci-dessus, « d'un **autre**
+   compte bancaire **dont le compte du grand livre diffère** de celui de `t` », n'est **plus** la règle : il dépendait du lien
+   actuel d'un compte bancaire à son grand livre, modifiable après coup (finding E1-1). **Règle en vigueur** :
+   `matchedElsewhereCount` compte les écritures dont le mouvement `M` sur le compte du grand livre de `t` égale `t.amount`, ni
+   contre-passées ni contre-passations, **rapprochées d'une transaction d'un autre compte bancaire, de sens contraire** — de
+   montant `−M` (`bt.bank_account_id <> ? AND bt.amount = -m.movement`, constante `MATCHED_ELSEWHERE`, mode
+   `EntrySqlMode::MatchedElsewhere`). Aucun lien de compte au grand livre n'y entre. Tests ajoutés :
+   `s34_4_ac2_compte_relie_ailleurs_ne_fait_pas_rejeter` (E1-1), `s34_4_ac2_le_second_cote_d_un_debit` (E2-4),
+   `s34_4_ac2_rapprochee_sur_le_meme_compte_ne_compte_pas` (B2-1, M10). Le cas « comptes partagés » vaut toujours `0`, parce
+   que les deux transactions vont dans le même sens.)*
 3. **AC-3 — lecture seule** : `get_proposals` n'écrit rien et ne prend aucun verrou de plus ; un échec de lecture du champ
    fait échouer la route (500), comme les autres lectures de la boucle — jamais un champ silencieusement à zéro.
 4. **AC-4 — aucun refus serveur** : `POST /reconciliation/accept`, `/manual`, `/split` ne changent pas ; leurs tests passent
@@ -140,12 +157,29 @@ une écriture manuelle ou que je l'éclate, afin de ne pas compter deux fois un 
      Si la 34-11b ne part pas dans la 0.17.6, les textes (b) et (c) de cette story restent justes tels quels ;
    - aucune phrase pour un compte nul (jamais « 0 écriture ») ; `alreadyBooked: null` : rien.
    Vitest des quatre cas (aucun, a, b, c), texte attendu complet.
+
+   *(Annoté le 2026-11-12, revues de code P1 et P2, C-e344-3, C-e344-11 et C-e344-13 : les textes **en vigueur** ne sont plus
+   ceux cités ci-dessus. Le bouton est nommé entre guillemets : « Rattacher à une écriture existante ». (b) : « Une transaction
+   de sens contraire, sur un autre de vos comptes bancaires, est déjà rapprochée d'une écriture du même montant : c'est
+   probablement l'autre côté d'un virement entre vos comptes. Ne passez pas d'écriture pour elle : rejetez-la. » ; (c), après
+   (a) : « Si rien de ce que propose « Rattacher à une écriture existante » ne lui correspond, elle est peut-être l'autre côté
+   d'un virement entre vos comptes : une transaction de sens contraire, sur un autre de vos comptes bancaires, est rapprochée
+   d'une écriture du même montant. » La condition d'affichage ne change pas. Ce que la 34-11b doit réécrire (le point 1
+   ci-dessus et sa prémisse « `m ≤ entryCount` ») ne tient plus tel quel : voir `kesh-gate-logs/e34-transmission-34-11b.md`,
+   mis à jour le 2026-11-12.)*
 6. **AC-6 — la confirmation** : *Accepter (N)*, *Écriture manuelle* et *Éclater* ouvrent d'abord un dialogue
    (`data-testid="already-booked-confirm"`) quand la sélection (ou la ligne) contient au moins une ligne signalée. Il nomme
    chaque transaction signalée (date suisse, montant, contrepartie) et propose *Continuer quand même* et *Annuler*. *Annuler*
    ne fait rien. *Continuer quand même* reprend le geste tel quel (lot entier pour *Accepter* ; ouverture du dialogue pour les
    deux autres). *Rejeter* et *Rattacher à une écriture existante* ne demandent rien (C-e342-8). Vitest : chacun des trois gestes,
    avec et sans ligne signalée ; *Annuler* n'appelle aucune API.
+   *(Annoté le 2026-11-12, revue P3 ciblée C3-1, choix C-e344-17 : « reprend le geste tel quel » ne vaut plus à la lettre pour
+   *Écriture manuelle* et *Éclater* — *Continuer quand même* relit la ligne dans la liste courante ; si elle a quitté la liste
+   pendant la confirmation (relue entre-temps), rien ne s'ouvre, et rien n'est dit (issue #1024). *Accepter* reprend le lot
+   tel qu'il est sélectionné au moment du clic. Fermer le dialogue (Échap, clic hors) vaut *Annuler*.)*
+   *(Annoté le 2026-11-12, revue P4 ciblée C4-1 : la réserve vaut aussi pour *Accepter* — une relecture de la liste pendant la
+   confirmation vide la sélection (`load()`), et *Continuer* n'envoie alors rien, sans message ; #1024 complétée en ce sens.
+   Manuel aligné.)*
 7. **AC-7 — après coup** : la liste est relue après chaque geste (comportement actuel) ; une ligne rattachée disparaît, et
    l'avertissement de l'autre côté d'un virement apparaît à la relecture suivante.
 
@@ -177,18 +211,18 @@ une écriture manuelle ou que je l'éclate, afin de ne pas compter deux fois un 
 
 ## Tâches
 
-- [ ] **T0 — étape 0** : relire chaque prémisse au commit de départ ; vérifier que 34-3 est fusionnée (libellés) ou, sinon,
+- [x] **T0 — étape 0** : relire chaque prémisse au commit de départ ; vérifier que 34-3 est fusionnée (libellés) ou, sinon,
   écrire les textes avec « Écriture manuelle » et le dire au Change Log.
-- [ ] **T1 — mesure d'avant** : le banc AC-8, sans le champ ; chiffres journalisés.
-- [ ] **T2 — rouge** : tests `kesh-db` (les trois comptes, comptes partagés, contre-passation, égalité des textes SQL), test
+- [x] **T1 — mesure d'avant** : le banc AC-8, sans le champ ; chiffres journalisés.
+- [x] **T2 — rouge** : tests `kesh-db` (les trois comptes, comptes partagés, contre-passation, égalité des textes SQL), test
   HTTP AC-1, Vitest AC-5 et AC-6, E2E AC-10 ; rouges journalisés (`kesh-gate-logs/e342/rouges.log`).
-- [ ] **T3** : `reconciliation_link.rs` (mode `matched_elsewhere` du constructeur ; une fonction de comptage qui appelle les
+- [x] **T3** : `reconciliation_link.rs` (mode `matched_elsewhere` du constructeur ; une fonction de comptage qui appelle les
   deux fonctions existantes) ; `get_proposals` (le champ, dans la boucle Pass 2 ou après, avec le compte du grand livre déjà lu) ;
   `kesh-db` touché : **gate complet même en cours de boucle**.
-- [ ] **T4 — mesure d'après**, et le remède AC-8 si la pente l'exige.
-- [ ] **T5** : `reconciliation.types.ts` (`alreadyBooked`), `ReconciliationProposals.svelte` (avertissement, dialogue de
+- [x] **T4 — mesure d'après**, et le remède AC-8 si la pente l'exige.
+- [x] **T5** : `reconciliation.types.ts` (`alreadyBooked`), `ReconciliationProposals.svelte` (avertissement, dialogue de
   confirmation, gardes des trois gestes) ; i18n ; manuel (`.tex` ; PDF à l'intégration) ; `docs/api-external.md` ; CHANGELOG *Ajouté* (`refs #828`).
-- [ ] **T6** : captures (thème clair, base jetable) : ligne (a), ligne (b), cas (c), confirmation ouverte sur *Accepter (N)*.
+- [x] **T6** : captures (thème clair, base jetable) : ligne (a), ligne (b), cas (c), confirmation ouverte sur *Accepter (N)*.
 
 ### Mutations nommées
 
@@ -201,7 +235,13 @@ une écriture manuelle ou que je l'éclate, afin de ne pas compter deux fois un 
 | M5 (ex-M15) | confirmation sautée pour *Écriture manuelle* | Vitest AC-6 |
 | M6 | confirmation demandée aussi pour *Rejeter* | Vitest AC-6 |
 | M7 | phrase (a) affichée à compte nul | Vitest AC-5, cas (b) seul |
-| M8 | clé `-other` employée pour un compte de 1 | Vitest AC-5, cas (a) à une écriture |
+| M8 | clé `-other` employée pour un compte de 1 *(jouée : `if (k === 1 && false)` et `k > 1` → `k >= 1` — la phrase `-one` n'est plus jamais choisie, `-other` prend le compte de 1 ; description précisée à la revue P2, B2-6)* | Vitest AC-5, cas (a) à une écriture |
+| M10 (revue P2, B2-1) | prédicat `bt.bank_account_id <> ?` neutralisé (`? IS NOT NULL`) | `s34_4_ac2_rapprochee_sur_le_meme_compte_ne_compte_pas` |
+| M9 (revue P1, E1-3) | `manual` et `split` intervertis dans `runGesture` | Vitest AC-6, doublures distinctes (`data-modal`) |
+
+*(Annoté à la remédiation P1, 2026-11-12 : depuis C-e344-11, M3 vise le prédicat « transaction de sens contraire »
+(`bt.amount = -m.movement` → `TRUE`) qui remplace le prédicat « grand livre différent » ; elle rougit « comptes partagés » et
+« compte relié ailleurs ».)*
 
 ## Gates
 
@@ -251,11 +291,238 @@ aucune ligne commune prévue.
   fiche 0 C, 0 H, 0 M, 1 LOW, retenu : **P3-4-1** (lu : `frontend/scripts/lint-i18n-ownership.js:1-20`, propriété par dossier
   de fonctionnalité) → préfixe `reconciliation-labels-already-booked-…` écrit à l'AC-5 ; il vaut aussi pour les clés que la
   34-11b ajoutera (`-transfer`, `-transfer-among`).
+- 2026-11-11 : développement (Opus 5.5, clé `e344`, worktree `kesh-e344`, base `f12ad73e` = tête de la 34-3). Commits
+  `ff7414d2` (code, manuel, catalogues, E2E), `c3bcbff8` (registre, prompt de revue), `dc4f72d6` (garde i18n), puis le commit
+  de clôture du développement. **Le remède de l'AC-8 a été appliqué** (C-e344-9). Détail au Dev Agent Record.
+  Banc (journaux `kesh-gate-logs/e344/banc-*.log`, `--release`, tmpfs = plancher) : environ 0,2 à 0,5 s avant le champ ;
+  **mauvaise pente** avec trois lectures par transaction (≈ 18,7 s à 20 000 écritures, 500 transactions) ; ≈ 0,3 s après le
+  remède — chiffres au § *Performance*. Les chiffres vont dans `kesh-gate-logs/e344/` (la clé de développement), non
+  `e342/` comme l'écrit l'AC-8 (clé de la spécification).
+- 2026-11-12 : revue de code P1 (Opus, trois lentilles ; rapports `kesh-gate-logs/e344-review-p1-{B,E,A}.md`) : 0 C, 0 H,
+  **3 MEDIUM distincts**, ≈ 20 LOW. Remédiation (Opus 5.5), commit `e29a85ca` ; tous retenus après lecture :
+  - **E1-1** MEDIUM (lu : `reconciliation_link.rs:654` à `46c9d755`, `NOT (ba.journal_account_id <=> ?)` ; rouge reproduit,
+    `matchedElsewhereCount = 1` pour un compte relié au 1022 après coup) → **C-e344-11**, qui amende C-e344-2 et le texte de
+    l'AC-2 (« dont le compte du grand livre diffère ») : la règle de l'arbitrage, prise à la lettre (« une ligne sur le grand
+    livre du compte courant »), est déjà vraie de toute écriture examinée et ne corrige rien — c'est consigné ; le second
+    côté se fonde désormais sur la transaction rapprochée **de sens contraire** d'un autre compte bancaire
+    (`bt.amount = -m.movement`), sans lien actuel à un grand livre. Test `s34_4_ac2_compte_relie_ailleurs_ne_fait_pas_rejeter`
+    (relié au 1022, puis délié) ; manuel, `api-external.md`, textes (b) et (c) dans les quatre locales suivent.
+  - **B1-1 = E1-2 = A1-1** MEDIUM, **B1-2 = E1-4 = A1-3** : `api-external.md` et le doc-comment de `AlreadyBooked` décrivent la
+    lecture par page (deux lectures, mêmes textes SQL, égalité testée) ; lien rustdoc corrigé.
+  - **E1-3 = A1-2** MEDIUM : une doublure par modale (`ModalSuccessStub{Manual,Split,Link}.test.svelte`, `data-modal`) ; les
+    tests de *Continuer* et des lignes non signalées assertent la modale ouverte ; **M9** (branches interverties) tuée.
+  - LOW : **B1-3** → C-e344-12, compte clos `null` ; **B1-4 = A1-5** → manuel (« chaque liste s'arrête à 50, le nombre affiché
+    les additionne ») ; **B1-5, A1-10** → C-e344-13, textes neutres en nombre ; **B1-6** → C-e344-16, `One(i64)` ;
+    **B1-7** → E2E *Continuer* puis le dialogue d'écriture, en navigateur ; **B1-8** → C-e344-15, montant laissé à la forme
+    de la ligne, **issue demandée** ; **E1-5** → autre société dans le test d'égalité ; **E1-6** → Vitest Échap ; **E1-7** →
+    nettoyage de l'E2E robuste ; **E1-9** → le banc rapproche la moitié de l'historique (`banc-p1-apres.log`) ; **E1-10** →
+    C-e344-14, ordre écrit au manuel ; **A1-4** → manuel ; **A1-6** → hash au Dev Agent Record, journaux de la remédiation
+    préfixés du commit ; **A1-7** → chiffres ci-dessus ; **A1-8** → plafonds des règlements et du second côté exercés ;
+    **A1-9** → déclaré au Dev Agent Record (le test unitaire d'égalité des textes n'a pas été joué au rouge : il ne compile pas
+    contre la base). **E1-8** : déclaré, rien d'autre.
+- 2026-11-12 : revue de code P2 (Sonnet, trois lentilles, passe complète ; rapports `kesh-gate-logs/e344-review-p2-{B,E,A}.md`) :
+  0 C, 0 H, **2 MEDIUM**, ≈ 14 LOW. Les trois lentilles jugent C-e344-11 juste pour les cas de la fiche ; l'orchestrateur la
+  retient. Remédiation (Opus 5.5), commit `cf585bff` ; tous retenus après lecture :
+  - **A2-1 = E2-5 = B2-3** MEDIUM : AC-1 (compte clos, lecture par page), AC-2 (règle de sens contraire) et AC-5 (textes en
+    vigueur) annotés, l'énoncé d'origine laissé lisible.
+  - **E2-1 = B2-4** MEDIUM, **A2-2** : `kesh-gate-logs/e34-transmission-34-11b.md` mis à jour (hors dépôt) : « `m` ⊂
+    `entryCount` » n'est plus garanti tant que la condition 4 de la 34-11b lit le lien actuel ; deux voies écrites (aligner la
+    condition 4 sur le sens contraire, recommandée ; ou des conditions sans soustraction avec l'intersection) ; noms
+    `entry_sql(EntrySqlMode)`, `NOT_MATCHED`, `MATCHED_ELSEWHERE`, `count_already_booked_for_page`. La fiche 34-11b n'est pas
+    touchée.
+  - LOW : **B2-1 = A2-4** → `s34_4_ac2_rapprochee_sur_le_meme_compte_ne_compte_pas` (forgé) et **M10**, tuée (C-e344-18) ;
+    **E2-4** → `s34_4_ac2_le_second_cote_d_un_debit` ; **E2-2 = A2-3, E2-3, B2-2** → manuel (règle de sens, faux négatifs des
+    frais, de l'arrondi et du virement en plusieurs écritures, doublon de deux transactions du même montant) ; **B2-5** →
+    C-e344-17, *Continuer* relit la ligne dans la liste courante, la liste du dialogue n'est plus vidée à la fermeture ;
+    **B2-6** → description de M8 ; **B2-7** → allemand sans « Sie würde » ambigu (« Die Bewegung würde sonst doppelt
+    gezählt », « Lehnen Sie die Transaktion ab »). Note d'E sur *Rejeter* sans confirmation : issue demandée (P3), ouverte
+    par l'orchestrateur : **#1023**.
+- 2026-11-12 : passe ciblée **P3** (Haiku, une lentille, commit `cf585bff` ; rapport `kesh-gate-logs/e344-review-p3-ciblee.md`) :
+  0 C, 0 H, 1 MEDIUM (documentaire), 3 LOW. Remédiation `1005d74a` (texte seulement) : **C3-1** → AC-6 annotée et manuel
+  (*Continuer* ne rouvre pas une ligne sortie de la liste) ; **C3-2** → issue **#1024**, non corrigée ; **C3-3** → de-CH
+  « doppelt gezählt werden » ; **C3-4** → manuel, ce qui fonde le signal.
+- 2026-11-12 : passe ciblée **P4** (Sonnet, une lentille, commit `1005d74a` ; rapport `kesh-gate-logs/e344-review-p4-ciblee.md`) :
+  **0 au-dessus de LOW**. **C4-1** → réserve étendue à *Accepter* (une relecture vide la sélection) au manuel et à l'AC-6 ;
+  #1024 complétée par l'orchestrateur. **C4-2** (« sie würde … » de `-confirm-intro`) : **arbitrage rédactionnel laissé en
+  l'état**, le `.ftl` n'est plus touché. Remédiation hors production (manuel et fiche).
+- 2026-11-12 : **clôture**. Tendance des revues de code : **P1** (Opus, trois lentilles) 0 C / 0 H / 3 M / ≈ 20 L →
+  **P2** (Sonnet, trois lentilles, passe complète) 0 / 0 / 2 M / ≈ 14 L → **P3 ciblée** (Haiku, une lentille) 0 / 0 / 1 M
+  documentaire / 3 L → **P4 ciblée** (Sonnet, une lentille) **0 au-dessus de LOW**. Reclassements : aucun ; C-e344-11
+  (second côté par le sens contraire) a remplacé la règle de l'arbitrage P1, qui ne corrigeait rien, et a été retenue par
+  l'orchestrateur à la P2. Gates au dernier commit de code exécutable (`cf585bff`) : `test-fast --ci` 5149 / 13 ignorés,
+  `gate-ci` 5156 / 0 / 17, Vitest 2945 (225 fichiers), check, lint et build verts, E2E complet 388 passés et 7 échecs (les
+  sept de la KF-029, #97). Au commit de texte `1005d74a` (catalogue allemand, manuel, fiche), tous rejoués sauf l'E2E :
+  `test-fast --ci` 5149 / 13, `gate-ci` 5156 / 0 / 17, Vitest 2945, check, lint et build verts (`kesh-gate-logs/e344/p3/`).
+  `16e12b43` ne touche que le manuel et la fiche. Mutations M1 à M10 tuées (`mut-p1/`, `mut-p2/`). Issues ouvertes pendant la
+  story : #1023 (*Rejeter* sans confirmation), #1024 (*Continuer* sans effet ni message). PDF du manuel : régénéré à
+  l'intégration (C-e342-20). Bases `kesh_e344*` supprimées.
+
+## Performance
+
+Banc `banc_cout_propositions_deja_comptabilisees` (`#[ignore]`, `--release`, base de dev en **tmpfs** : ces chiffres sont un
+**plancher**, le NAS lit sur disque), 500 transactions en attente, `limit=500`, trois mesures par palier, en ms
+(journaux `kesh-gate-logs/e344/banc-avant.log`, `banc-apres.log`, `banc-apres-remede.log`) :
+
+| Palier (écritures) | avant le champ | trois lectures par transaction | après le remède (deux par page) |
+|---|---|---|---|
+| 1 000 | 392 · 432 · 385 | 2 780 · 2 200 · 1 681 | 340 · 427 · 284 |
+| 5 000 | 253 · 360 · 285 | 4 877 · 5 019 · 5 025 | 364 · 457 · 424 |
+| 20 000 | 537 · 181 · 245 | 18 809 · 18 812 · 18 605 | 365 · 338 · 279 |
+
+La première écriture (les fonctions du dialogue appelées par transaction) dépassait le seuil de 3 s à 20 000 écritures :
+« mauvaise pente ». Le coût ajouté croissait à peu près linéairement (≈ 4,7 s à 5 000, ≈ 18,4 s à 20 000), mais au-delà du
+seuil. Le remède nommé par l'AC-8 rend **les mêmes nombres** (test `s34_4_ac8_la_lecture_par_page_egale_les_fonctions_du_dialogue`,
+50 transactions variées) ; après lui, le coût ajouté se perd dans le bruit de la mesure. Aucune dette de performance.
 
 ## Dev Agent Record
 
 ### Agent Model Used
 
+Opus 5.5 (agent de développement, en autonomie).
+
 ### Completion Notes List
 
+**Étape 0.** Le dernier rapport de validation qui porte sur la fiche (`e34-validate-p4-e342.md`) n'a aucun finding sur elle
+(« P3-4-1 … Juste ») ; ceux de la P3 sont déjà remédiés. Prémisses relues au commit de départ :
+- `find_link_candidates` / `candidates_sql` et `find_entry_candidates` / `entry_candidates_sql`
+  (`crates/kesh-db/src/repositories/reconciliation_link.rs`, lus en entier) : conformes à la fiche, plafonds 50 (`:76`,
+  `:504` au départ), crédits seulement pour les règlements (`transaction_can_be_linked`).
+- `get_proposals` (`routes/reconciliation.rs:974`) : lit `ba_check.journal_account_id` ; `link_preflight` refuse un compte
+  clos (409) que `get_proposals` ne refuse pas — sans effet ici, un compte clos n'a pas de transaction en attente.
+- La 34-3 est la base : « Écriture manuelle » (`reconciliation-manual-button-label`), les textes la nomment.
+- Manuel : les lignes citées par la fiche ont glissé (la phrase « l'écran ne le signale pas » est à `:2901` à la base ;
+  « Restent sans écriture… » à `:2920-2925` ; le second côté à `:2970` et `:3000`).
+- L'issue « fenêtre de dates » demandée par la fiche existe : **#982** ; le manuel et le CHANGELOG la citent.
+
+**Rouges d'abord** (`kesh-gate-logs/e344/rouges.log`). Les tests neufs, joués contre les sources de la base (fichiers du serveur
+et composant remis temporairement à `f12ad73e` par `git restore --source`, puis restaurés) : backend 6/6 rouges (« champ
+alreadyBooked absent ») ; Vitest 9 rouges sur les 19 neufs (les 10 autres assertent une absence et ne peuvent rougir qu'à une
+mutation). ⚠️ **L'E2E AC-10 n'a pas été joué au rouge** : il aurait fallu reconstruire le serveur et le frontend de la base
+pour un seul spec ; il asserte le texte de l'avertissement servi par le vrai serveur, absent de la base.
+
+**Le remède de l'AC-8** (C-e344-9) : voir § *Performance*. La fonction par transaction de la première écriture est remplacée
+par `count_already_booked_for_page` ; les conditions SQL sont extraites en constantes partagées avec les requêtes du dialogue
+(aucune copie) ; `find_matched_elsewhere` reste le mode `MatchedElsewhere` du constructeur `entry_sql`, référence du second
+côté, comme l'AC-2 le demande. Le wrapper `entry_candidates_sql` est retiré (il n'avait plus d'appelant hors test).
+
+**Mutations** (`kesh-gate-logs/e344/mut/M1.log` à `M8.log`, résumé `mut/resume.log`) : les huit de la fiche sont tuées, chacune
+par le test que la fiche nomme. M1 et M2 sont jouées dans `count_already_booked_for_page` (le code qui sert la route depuis le
+remède). M3 et M4 mutent les constantes partagées : le test d'égalité AC-8 reste vert sous elles (les deux côtés lisent la même
+constante), ce sont les tests HTTP AC-2 qui rougissent. M6 est plus large que son intitulé (hors ligne signalée, elle lance
+*Accepter* au lieu de *Rejeter*) : six rouges sans rapport s'ajoutent à celui du test nommé.
+
+**Gates au dernier commit de code (`dc4f72d6`)** — ce qui a réellement tourné, journaux sous `kesh-gate-logs/e344/` :
+- base `kesh_e344` remise à neuf ; `scripts/test-fast.sh --ci` : **5146 passés, 13 ignorés** (`gate-test-fast.log`, joué au
+  commit `ff7414d2` — le commit `dc4f72d6` ne change qu'un test Vitest) ;
+- `cargo build --workspace --all-targets` : vert (`gate-build-workspace.log`, relancé hors verrou sous `mem-guard`, consigne de
+  l'orchestrateur) ;
+- `scripts/gate-ci.sh kesh_ci_e344` : **5153 passés, 0 échoué, 17 ignorés** (`gate-ci.log`) ;
+- frontend : `lint-i18n-ownership` vert ; `npm run check` 0 erreur, 29 avertissements, tous hors des fichiers de la story
+  (`gate-front-check.log`) ; Vitest complet : **premier passage 1 rouge** (`i18n-keys.test.ts`, garde du nombre de sites
+  littéraux 2924 → 2932, +8 : les quatre textes de `already-booked.ts` et les quatre du dialogue), corrigé au commit
+  `dc4f72d6`, rejoué : **2943 passés, 225 fichiers** (`gate-front-vitest-2.log`) ; `npm run build` vert ;
+- **E2E complet** sur `kesh_e2e_e344` recréée vide, au commit `dc4f72d6` : **388 passés, 7 échecs, 17 ignorés**
+  (`e2e-complet.log`). Les sept échecs sont les sept de la KF-029 (#97) de `docs/testing.md` § « Les échecs attendus » :
+  `mode-expert.spec.ts:26`, `:41`, `onboarding-path-b.spec.ts:65`, `:92`, `onboarding.spec.ts:57`, `:77`, `:150`. Le spec neuf
+  `reconciliation-already-booked.spec.ts` passe. Port 3344 libre avant et après, backend arrêté par son PID.
+- Tests ciblés entre les étapes (`verts-backend.log`, `remede-cible.log`) : binaire `reconciliation_link_entry_e2e` entier et
+  tests du module, 42/42 au commit `ff7414d2`. ⚠️ La consigne « `kesh-db` : gate complet même en cours de boucle » n'a pas été
+  tenue entre la première écriture et le remède (gates ciblés seulement) ; le gate complet a tourné sur le code final.
+
+*(Annoté le 2026-11-12, revue P1 A1-6 : les journaux `gates.log` et `gates-suite.log` portent le commit **`c3bcbff8`**, et non
+`ff7414d2` ni `dc4f72d6` comme écrit ci-dessus : test-fast, gate-ci et l'E2E ont tourné à `c3bcbff8`, dont le code est celui de
+`ff7414d2` (`c3bcbff8` n'ajoute que des artefacts) ; `dc4f72d6` ne change qu'un test Vitest, rejoué seul. Revue P1 A1-9 : le
+test unitaire `the_matched_elsewhere_query_differs_only_by_the_matched_predicate` et le test d'égalité AC-8 n'ont pas été joués
+au rouge — ils ne compilent pas contre la base, le mode et la fonction n'y existant pas.)*
+
+**Remédiation de la revue P1** (commit **`e29a85ca`**, 2026-11-12 ; journaux sous `kesh-gate-logs/e344/p1/`, chacun préfixé
+du hash du commit joué) :
+- **Rouges** (`rouges.log`, entrée de la remédiation ; `p1/rouges-backend.log`, `p1/rouges-vitest.log`) : contre le code de
+  `46c9d755`, 2 rouges backend pour la bonne raison (E1-1 reproduit, `matchedElsewhereCount` 1 au lieu de 0 ; B1-3, champ non
+  nul sur un compte clos) ; 3 rouges Vitest (textes reformulés, garde des replis). Les tests `data-modal` (E1-3) et Échap
+  (E1-6), et le test d'égalité enrichi (E1-5, A1-8), passent sur l'ancien code : ils ne rougissent que sous mutation.
+- **Mutations rejouées** au commit `e29a85ca` (`mut-p1/M1.log` à `M9.log`) : les neuf tuées. M1 et M2 : tests AC-1 et AC-8 ;
+  M3 (redéfinie, sens contraire neutralisé) : `comptes_partages` et `compte_relie_ailleurs` ; M4 : contre-passée ; M5 : Vitest
+  de *Écriture manuelle* et Échap ; M6 : le test nommé, plus six sans rapport (inchangé) ; M7, M8 : cas AC-5 ; **M9** : les
+  quatre tests qui assertent `data-modal`.
+- **Banc** avec la moitié de l'historique rapprochée (`banc-p1-apres.log`, commit `e29a85ca`) : 207 · 193 · 208 ms à 1 000,
+  223 · 230 · 209 ms à 5 000, 240 · 253 · 266 ms à 20 000. Bonne pente.
+- **Gate complet au commit `e29a85ca`**, arbre propre : base `kesh_e344` remise à neuf ; `test-fast --ci` **5147 passés,
+  13 ignorés** ; `cargo build --workspace --all-targets` vert ; `gate-ci.sh kesh_ci_e344` **5154 passés, 0 échoué,
+  17 ignorés** ; `lint-i18n-ownership` vert ; `npm run check` 0 erreur (29 avertissements préexistants) ; Vitest complet
+  **2944 passés, 225 fichiers** ; `npm run build` vert ; **E2E complet** sur `kesh_e2e_e344` recréée vide : **388 passés,
+  7 échecs, 17 ignorés**, les sept de la KF-029 (#97) déjà nommés ; le spec neuf passe, *Continuer* puis le dialogue d'écriture
+  compris. Port 3344 libre avant et après.
+- **Captures refaites** (textes changés) dans `kesh-gate-logs/e344/captures-p1/` : `e344-1-ligne-a-deja-comptabilisee.png`,
+  `e344-2-3-lignes-b-et-c.png` (textes (c) et (b) neufs), `e344-4-confirmation-accepter.png` (titre et introduction neufs),
+  `e344-ligne-signalee.png`, `e344-confirmation-ecriture-manuelle.png`.
+- **Décomptes de la remédiation** (de `46c9d755` à `e29a85ca`) : `reconciliation_link_entry_e2e.rs` 39 → 40 attributs
+  `sqlx::test` (+1 : `s34_4_ac2_compte_relie_ailleurs_ne_fait_pas_rejeter`) ; Vitest 2943 → 2944 (+1, Échap) ; trois
+  doublures neuves ; aucune clé i18n ajoutée, quatre textes reformulés par locale.
+- **Après le gate**, le grep de l'ancienne règle (`grand livre distinct`, `relié à un autre compte du grand livre`) a trouvé
+  trois restes : la phrase du CHANGELOG, le commentaire TSDoc de `AlreadyBooked` (`reconciliation.types.ts`) et un commentaire
+  du test d'égalité. Corrigés au commit de clôture de la remédiation : **commentaires et documentation seulement**, aucune
+  ligne exécutable ; contrôlés par `cargo fmt --check`, `cargo build -p kesh-api --tests` et `npm run check` (0 erreur)
+  — `p1/build-commentaires.log`, `p1/check-commentaires.log`. Le gate complet et l'E2E de `e29a85ca` n'ont pas été rejoués :
+  le dernier commit **de code exécutable** reste `e29a85ca`.
+
+**Remédiation de la revue P2** (commit **`cf585bff`**, 2026-11-12 ; journaux sous `kesh-gate-logs/e344/p2/`, préfixés du
+hash) :
+- **Rouges** (`rouges.log`, entrée de la remédiation P2 ; `p2/rouges-vitest.log`) : 1 rouge Vitest pour la bonne raison
+  (B2-5 : la modale s'ouvrait sur une ligne sortie de la liste). Les deux tests Rust neufs (E2-4, B2-1) sont des témoins.
+- **Tests ciblés** (`p2/verts-cible.log`) : binaire `reconciliation_link_entry_e2e` et tests du module, **45/45**.
+- **Mutations rejouées** au commit `cf585bff` (`mut-p2/`) : **M5** (3 rouges, dont le test de B2-5), **M9** (4 rouges),
+  **M3** (`compte_relie_ailleurs`, `comptes_partages`), **M10** neuve (`rapprochee_sur_le_meme_compte`) — toutes tuées. Non
+  rejouées : M1, M2, M4 (fonction de comptage et constante non touchées), M6 à M8 (`already-booked.ts` et le bouton
+  *Rejeter* non touchés) — leurs journaux restent ceux de `mut-p1/`.
+- **Gate complet au commit `cf585bff`**, arbre propre : base remise à neuf ; `test-fast --ci` **5149 passés, 13 ignorés** ;
+  build du workspace vert ; `gate-ci.sh kesh_ci_e344` **5156 passés, 0 échoué, 17 ignorés** ; `lint-i18n-ownership` vert ;
+  `npm run check` 0 erreur (29 avertissements préexistants) ; Vitest complet **2945 passés, 225 fichiers** ; `npm run build`
+  vert ; **E2E complet** sur `kesh_e2e_e344` recréée vide : **388 passés, 7 échecs, 17 ignorés**, les sept de la KF-029
+  (#97) ; le spec neuf passe. Port 3344 libre avant et après.
+- **Captures** : l'écran français ne change pas (seul le texte allemand change) ; le script les a reprises dans
+  `kesh-gate-logs/e344/captures-p2/` (non comparées une à une à `captures-p1/`).
+- **Décomptes** (de `4152d337` à `cf585bff`) : `reconciliation_link_entry_e2e.rs` 40 → 42 attributs `sqlx::test` ; Vitest
+  2944 → 2945 (+1, B2-5) ; trois textes allemands reformulés ; aucune clé ajoutée.
+
+**Décomptes** (recomptés à la source, de `f12ad73e` à `HEAD`) : `reconciliation_link_entry_e2e.rs` 31 → 39 attributs
+`sqlx::test` (+7 tests `s34_4_…`, +1 banc ignoré) ; `reconciliation_link.rs` 4 → 5 `#[test]` ; Vitest +19 tests neufs (14 dans
+`ReconciliationProposals.test.ts`, 5 dans `already-booked-i18n.test.ts`) ; huit clés i18n neuves par locale, quatre locales.
+
+**Captures** (thème clair, base E2E jetable, script `kesh-gate-logs/e344/scripts/captures-e344.mjs`), dans
+`kesh-gate-logs/e344/captures/` : `e344-1-ligne-a-deja-comptabilisee.png` (cas a, ligne à règle), `e344-2-3-lignes-b-et-c.png`
+(cas c puis cas b, compte d'épargne), `e344-4-confirmation-accepter.png` (confirmation ouverte sur *Accepter (1)*), et, prises
+par l'E2E, `e344-ligne-signalee.png`, `e344-confirmation-ecriture-manuelle.png`. Le dossier contient aussi les captures que
+d'autres specs écrivent pendant la suite complète (sans rapport).
+
+**Manuel** : le `.tex` change (paragraphe neuf `\label{sec:deja-comptabilisee}`, encadré « Dépense déjà réglée », « Restent sans
+écriture… », § *Un virement entre deux de vos comptes*) ; le PDF se régénère à l'intégration (C-e342-20), non régénéré ici.
+
+**Écarts** :
+- *Consigne Edit* : `cargo fmt --all` a reformaté les fichiers Rust (C-e344-10) ; les scripts de mutation remplacent un motif
+  vérifié unique (permis pour les mutations) ; les scripts de `kesh-gate-logs/` ont été corrigés par de petits scripts Python
+  (hors dépôt). Tout le code de fond est écrit par l'outil Edit ; l'outil ne manquait de rien.
+- *Restauration des mutations* : au premier passage (M5), `git diff --name-only` a aussi remis à `HEAD` le registre
+  `e34-choix-autonomes-e344.md`, non commité (C-e344-9, C-e344-10) ; texte repris du diff conservé au journal `mut/M5.log`,
+  puis commité. Le script refuse désormais de muter un arbre non propre. (Même faute que celle déclarée par la 34-3.)
+- *Verrous* : en cours de story, l'orchestrateur a ouvert une voie frontend (`.gate-front.lock`) et sorti les compilations
+  seules des verrous ; le gate a été arrêté puis repris dans ces voies (`gates.log`, `gates-suite.log`).
+
+**Limites voisines, non traitées (issues demandées, une par problème)** : voir le rapport final de l'agent.
+
 ### File List
+
+- `crates/kesh-db/src/repositories/reconciliation_link.rs` — mode `MatchedElsewhere`, constantes SQL partagées,
+  `find_matched_elsewhere`, `AlreadyBookedCounts`, `count_already_booked_for_page`, tests unitaires.
+- `crates/kesh-api/src/routes/reconciliation.rs` — champ `alreadyBooked` de `get_proposals`.
+- `crates/kesh-api/tests/reconciliation_link_entry_e2e.rs` — tests `s34_4_…` (AC-1, AC-2, AC-3, AC-8), banc ignoré.
+- `crates/kesh-i18n/locales/{fr-CH,de-CH,en-CH,it-CH}/messages.ftl` — huit clés `reconciliation-labels-already-booked-…`.
+- `frontend/src/lib/features/reconciliation/already-booked.ts` (neuf), `AlreadyBookedConfirmDialog.svelte` (neuf),
+  `ReconciliationProposals.svelte`, `reconciliation.types.ts`.
+- `frontend/src/lib/features/reconciliation/ReconciliationProposals.test.ts`, `already-booked-i18n.test.ts` (neuf), fixtures
+  de `LinkSettlementModal.test.ts`, `ManualMatchModal.test.ts`, `TransactionSplitModal.test.ts`.
+- `frontend/src/lib/shared/i18n-keys.test.ts` — garde des sites littéraux 2924 → 2932.
+- `frontend/tests/e2e/reconciliation-already-booked.spec.ts` (neuf).
+- `docs/manual/fr/user-manual.tex`, `docs/api-external.md`, `CHANGELOG.md`.
+- `_bmad-output/implementation-artifacts/e34-choix-autonomes-e344.md` (neuf), `sprint-status.yaml`, cette fiche, le prompt de
+  revue `34-4-transaction-deja-comptabilisee-review-prompt-p1.md`.

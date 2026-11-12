@@ -909,9 +909,14 @@ const ATTENDU = {
 	// Story 34-3 (#967) : **2922 → 2924** (+2), les deux avis débiteurs / créanciers de
 	// `reconciliation/CounterpartyClaimNotice.svelte`. Que des littéraux ; `sitesNonResolus` et
 	// `relais` inchangés.
-	// Intégration de la release 0.17.6 (2026-11-12), fusion de la 34-3 sur 34-1 et 34-2,
-	// **recompté à la source** par la garde elle-même (non additionné) : **2946**.
-	sitesTotal: 2946,
+	// Story 34-4 (#828) : **2924 → 2932** (+8) : `reconciliation/already-booked.ts` +4 (les
+	// quatre textes de l'avertissement) et `reconciliation/AlreadyBookedConfirmDialog.svelte` +4
+	// (titre, introduction, Annuler, Continuer quand même). Que des littéraux ; `sitesNonResolus`
+	// et `relais` inchangés.
+	// Intégration de la release 0.17.6 (2026-11-12), **recompté à la source** par la garde
+	// elle-même après chaque fusion (non additionné) : 2946 après la 34-3 (34-1, 34-2, 34-3),
+	// **2954** après la 34-4.
+	sitesTotal: 2954,
 	sitesNonResolus: 31,
 	relais: 6,
 	// Story 26-1 (#620, AC3-bis) : **10 → 11** — `lib/features/bank-import/

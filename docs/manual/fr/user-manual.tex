@@ -2921,7 +2921,11 @@ paiement, écriture saisie au journal, ou facture payée puis annulée dont le p
 grand livre~---, même quand il porte la référence de la facture payée~: celle-ci n'est plus
 à payer, et n'est donc pas proposée. Pour ce débit, la réconciliation peut alors proposer la
 \textbf{règle} d'affectation, ou une \textbf{autre facture du même montant} (la mensualité
-suivante, typiquement), et l'écran ne le signale pas. N'acceptez \textbf{rien} de ce qu'elle
+suivante, typiquement). Depuis la version~0.17.6, la page le \textbf{signale}~: quand le
+paiement figure, au montant exact, sur le compte du grand livre de la banque sans être rapproché,
+un avertissement s'affiche sous la ligne, et \emph{Accepter}, \emph{Écriture manuelle} et
+\emph{Éclater} demandent confirmation (paragraphe «~Une transaction qui semble déjà
+comptabilisée~», \S\ref{sec:deja-comptabilisee}). N'acceptez \textbf{rien} de ce qu'elle
 propose pour ce débit~: ni la règle, ni l'autre facture~; n'utilisez pas non plus \emph{Écriture
 manuelle} ni \emph{Éclater}, qui passeraient une seconde écriture. Dans chacun de ces cas, la
 dépense ou le paiement seraient comptés deux fois.
@@ -2942,6 +2946,10 @@ bancaire~: un lot de \textbf{plusieurs} factures que la banque débite en une se
 second côté d'un virement entre deux de vos comptes bancaires (issue \#823)~; un paiement passé
 sur un \textbf{ancien} compte du grand livre de la banque, ou sur un \textbf{autre} compte
 bancaire relié à un autre compte du grand livre (issue \#827)~; un paiement qui inclut des frais de rappel (issue \#401).
+Le second côté d'un virement est signalé sur sa ligne dès que l'autre côté --- une transaction de
+sens contraire, sur un autre de vos comptes bancaires --- est rapproché de l'écriture du virement, si
+les deux côtés sont du même montant (\S\ref{sec:deja-comptabilisee})~; les autres cas de ce
+paragraphe ne le sont pas.
 \end{keshwarning}
 
 \subsubsection{Accepter ou rejeter les propositions}
@@ -2967,6 +2975,15 @@ Cochez les transactions à traiter, puis cliquez sur l'un des deux boutons plac�
 
 Pour imputer une transaction autrement qu'à la candidate affichée, utilisez les boutons de sa ligne~: \emph{Écriture manuelle} ou \emph{Éclater} (ci-dessous) --- ou, pour une transaction déjà comptabilisée par un autre chemin, \emph{Rattacher à une écriture existante} (\S\ref{sec:rattacher-reglement}).
 
+\paragraph{Une transaction qui semble déjà comptabilisée.}\label{sec:deja-comptabilisee} Depuis la version~0.17.6, la page \textbf{signale} une transaction en attente qui ressemble à un mouvement déjà aux livres, par un avertissement placé \textbf{sous sa ligne}. Il prend deux formes, qui peuvent se suivre~:
+\begin{itemize}
+    \item «~\emph{Cette transaction semble déjà comptabilisée}~»~: le dialogue \emph{Rattacher à une écriture existante} lui proposerait au moins une écriture --- une écriture \textbf{non rapprochée} dont le mouvement sur le compte du grand livre de la banque égale le montant de la transaction, ou, pour un crédit, le règlement par virement sur ce compte d'une facture client, au montant ou d'au plus 5~centimes de moins (\S\ref{sec:rattacher-reglement}). L'avertissement dit combien. Rattachez-la plutôt que de passer une écriture~: le mouvement serait compté deux fois~;
+    \item «~\emph{c'est probablement l'autre côté d'un virement entre vos comptes}~»~: une écriture du même montant sur le compte du grand livre de la banque est \textbf{déjà rapprochée} d'une transaction \textbf{de sens contraire} d'un \textbf{autre} de vos comptes bancaires --- le débit du compte courant vers l'épargne, par exemple, une fois rapproché, signale le crédit du relevé de l'épargne. Ne passez pas d'écriture pour elle~: rejetez-la (\S\ref{sec:rattacher-reglement}, «~Ce qui ne se rattache pas~»). Le signal se fonde sur l'écriture et sur les deux transactions, non sur le compte du grand livre auquel l'autre compte bancaire est relié aujourd'hui~: une recette rapprochée sur un autre compte, dans le \textbf{même} sens, n'est jamais dite l'autre côté d'un virement, même si ce compte a été relié ailleurs depuis. Quand les deux formes se suivent, la seconde ne conseille pas le rejet~: si rien de ce que propose \emph{Rattacher à une écriture existante} ne correspond, la transaction est peut-être l'autre côté d'un virement.
+\end{itemize}
+Sur une ligne signalée, \emph{Accepter} --- si la sélection en contient au moins une ---, \emph{Écriture manuelle} et \emph{Éclater} ouvrent d'abord une \textbf{confirmation}, qui nomme chaque transaction signalée (date, montant, contrepartie)~: \emph{Continuer quand même} reprend le geste (le lot entier, pour \emph{Accepter})~; si la liste a été relue pendant la confirmation, \emph{Accepter} ne traite rien --- la relecture vide la sélection --- et, si la ligne a quitté la liste, \emph{Écriture manuelle} et \emph{Éclater} ne s'ouvrent pas~; dans les deux cas, sans message (issue \#1024)~; \emph{Annuler} ne fait rien. \emph{Rejeter} et \emph{Rattacher à une écriture existante}, les gestes que l'avertissement recommande, ne demandent rien. Kesh ne refuse rien et ne rattache rien d'office~: le signal se fonde sur le \textbf{montant} --- et, pour l'autre côté d'un virement, sur une transaction de sens contraire déjà rapprochée sur un autre de vos comptes bancaires ---, jamais sur la date ni sur le libellé~; c'est à vous d'en juger. La page est relue après chaque geste~: une ligne rattachée disparaît, et l'autre côté d'un virement est signalé à la relecture suivante.
+
+Le signal ne regarde \textbf{aucune date}~: une écriture non rapprochée d'un \textbf{montant récurrent} --- un loyer saisi à la main, un abonnement --- signale chaque transaction suivante du même montant, et l'\textbf{écriture d'ouverture} qui porte le solde de départ de la banque (\S\ref{sec:soldes-depart}), qui n'est jamais rapprochée, signale toute transaction de son montant (issue \#982). Un paiement passé sur un autre compte du grand livre, ou sur un ancien, n'est pas signalé (issue \#827), ni une transaction en double d'une autre déjà rapprochée sur ce même compte, que l'import écarte. Le second côté d'un virement n'est signalé que si les deux côtés sont \textbf{du même montant}, rapprochés d'une seule écriture~: un virement amputé de frais, dont les deux côtés diffèrent d'un arrondi, ou passé en plusieurs écritures, n'est pas signalé. À l'inverse, une écriture de virement rapprochée d'un côté signale \textbf{chaque} transaction en attente de même montant et de sens contraire sur vos autres comptes bancaires~: si deux crédits de ce montant attendent sur le compte d'épargne --- le virement et, par exemple, un loyer encaissé ---, les deux sont signalés, et un seul est l'autre côté du virement~; ne rejetez pas l'autre. Les deux listes du dialogue de rattachement s'arrêtent chacune à 50~: le nombre que donne l'avertissement les additionne, et vaut donc 100 au plus. Un compte bancaire \textbf{clos} n'affiche aucun avertissement~: le rattachement y est refusé. Si une ligne porte à la fois l'avis d'un lot de paiement en cours et l'avertissement, regardez d'abord l'avertissement~: si une écriture déjà passée correspond au débit, rattachez-le à elle~; le conseil de l'avis --- annuler le lot, ou passer une écriture manuelle --- ne vaut que s'il n'y en a aucune.
+
 \paragraph{Un refus n'empêche pas les autres.} Chaque ligne cochée est traitée pour elle-même~: les transactions acceptées le sont, même si d'autres sont refusées. Kesh affiche le nombre d'opérations réussies puis, sous le titre \emph{Échecs partiels}, chaque transaction refusée --- désignée par sa date, son montant et sa contrepartie --- avec le motif du refus en clair~: période verrouillée, exercice fermé, facture déjà réglée entre-temps, compte non imputable, transaction supprimée avec son import, rapprochée ou rejetée entre-temps (dans un autre onglet, par exemple), etc. Il en va de même pour \emph{Rejeter}. Ce bilan reste affiché même quand le lot a vidé la liste.
 
 \subsection{Écriture manuelle}\label{sec:ecriture-manuelle}
@@ -2990,7 +3007,7 @@ Kesh passe \textbf{une} écriture entre le compte de la banque et ce compte de c
 \end{itemize}
 L'avis ne suit que le \textbf{rôle} du compte, jamais son numéro~: un compte de créances ou de dettes auquel ce rôle n'est pas attribué n'avertit pas. Un compte de \textbf{TVA} n'avertit pas non plus, alors qu'une écriture manuelle y fausse le décompte de TVA (issue \#981).
 
-\paragraph{Un virement entre deux de vos comptes.} Le débit du compte courant vers l'épargne, par exemple, se passe par une écriture manuelle sur le compte du grand livre de l'épargne. Le \textbf{second côté} --- le crédit du relevé de l'épargne --- ne reçoit pas de seconde écriture~: rejetez-le (\S\ref{sec:rattacher-reglement}, «~Ce qui ne se rattache pas~»~; issue \#823).
+\paragraph{Un virement entre deux de vos comptes.} Le débit du compte courant vers l'épargne, par exemple, se passe par une écriture manuelle sur le compte du grand livre de l'épargne. Le \textbf{second côté} --- le crédit du relevé de l'épargne --- ne reçoit pas de seconde écriture~: rejetez-le (\S\ref{sec:rattacher-reglement}, «~Ce qui ne se rattache pas~»~; issue \#823). Une fois le premier côté rapproché de l'écriture manuelle, la page signale le second sur sa ligne~: il est de sens contraire et du même montant (\S\ref{sec:deja-comptabilisee}).
 
 \subsection{Rattacher une transaction à une écriture déjà passée}\label{sec:rattacher-reglement}
 

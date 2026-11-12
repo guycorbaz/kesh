@@ -42,6 +42,7 @@ function makeProposal(amount: string = '-10700.00'): ReconciliationProposal {
 		},
 		candidates: [],
 		notice: null,
+		alreadyBooked: null,
 	};
 }
 

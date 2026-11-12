@@ -1365,6 +1365,16 @@ reconciliation-labels-rejected-hint = Eine abgelehnte Transaktion verlässt dies
 reconciliation-labels-priority-hint = Pro Transaktion wird ein einziger Vorschlag angezeigt: bei einer Gutschrift die am besten bewertete Kundenrechnung, bei einer Belastung die am besten bewertete Lieferantenrechnung, falls es eine gibt, sonst die passende Zuordnungsregel. Eine vorgeschlagene Rechnung geht einer Regel immer vor.
 reconciliation-labels-supplier-invoice-badge = Lieferantenrechnung
 reconciliation-labels-notice-supplier-invoice-in-batch = Die Lieferantenrechnung { $invoice } über diesen Betrag ist im laufenden Zahlungslauf Nr. { $batch } dieses Kontos enthalten. Ist diese Transaktion die Zahlung dieses Laufs, stornieren Sie den Lauf: Die Rechnung wird Ihnen dann hier vorgeschlagen. Andernfalls erfassen Sie die Transaktion als manuelle Buchung.
+# Story 34-4 (#828, AC-5) — unter einer Zeile, die bereits verbucht scheint. Zwei Schlüssel -one / -other, vom Bildschirm gewählt: kein Selektor (die Meldungen kommen vorab aufgelöst an).
+reconciliation-labels-already-booked-one = Diese Transaktion scheint bereits verbucht: Eine nicht abgeglichene Buchung auf dem Bankkonto entspricht ihr. Ordnen Sie die Transaktion zu („Einer bestehenden Buchung zuordnen“), statt eine Buchung zu erfassen: Die Bewegung würde sonst doppelt gezählt werden.
+reconciliation-labels-already-booked-other = Diese Transaktion scheint bereits verbucht: { $count } nicht abgeglichene Buchungen auf dem Bankkonto entsprechen ihr. Ordnen Sie die Transaktion zu („Einer bestehenden Buchung zuordnen“), statt eine Buchung zu erfassen: Die Bewegung würde sonst doppelt gezählt werden.
+reconciliation-labels-already-booked-elsewhere = Eine Transaktion in Gegenrichtung auf einem anderen Ihrer Bankkonten ist bereits einer Buchung über denselben Betrag zugeordnet: Dies ist wahrscheinlich die andere Seite einer Überweisung zwischen Ihren Konten. Erfassen Sie keine Buchung dafür: Lehnen Sie die Transaktion ab.
+reconciliation-labels-already-booked-combined = Entspricht ihr nichts von dem, was „Einer bestehenden Buchung zuordnen“ vorschlägt, ist sie vielleicht die andere Seite einer Überweisung zwischen Ihren Konten: Eine Transaktion in Gegenrichtung auf einem anderen Ihrer Bankkonten ist einer Buchung über denselben Betrag zugeordnet.
+# Story 34-4 (#828, AC-6) — Bestätigung vor Akzeptieren, Manuelle Buchung oder Aufteilen bei einer markierten Zeile.
+reconciliation-labels-already-booked-confirm-title = Trotz des Hinweises bestätigen
+reconciliation-labels-already-booked-confirm-intro = Jede der folgenden Transaktionen scheint bereits verbucht (siehe den Hinweis in ihrer Zeile). Fortfahren würde eine Buchung für eine Bewegung erfassen, die vielleicht schon in den Büchern steht; sie würde dann doppelt gezählt werden.
+reconciliation-labels-already-booked-confirm-cancel = Abbrechen
+reconciliation-labels-already-booked-confirm-continue = Trotzdem fortfahren
 # Story 29-6 (#665, AC10) — in der Schaltflächenzeile angezeigt, wenn eine Zeile ohne Vorschlag markiert ist.
 reconciliation-labels-unmatched-not-acceptable-hint = Eine Transaktion ohne Übereinstimmung kann nicht akzeptiert werden: Entfernen Sie die Markierung, um die übrigen zu akzeptieren.
 # Story 29-9 (#678, AC11) — zugänglicher Name des Kontrollkästchens jeder Zeile: was die Zeile anzeigt.

@@ -53,6 +53,7 @@ function proposal(
 		},
 		candidates: [],
 		notice: null,
+		alreadyBooked: null,
 	};
 }
 
