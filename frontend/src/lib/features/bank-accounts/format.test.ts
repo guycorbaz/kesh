@@ -10,8 +10,13 @@ import {
 } from './format';
 
 const IBAN = 'CH9300762011623852957';
-/** « •••• 1234 », l'espace insécable (U+00A0) comprise (revue P1, A7). */
-const CARTE = '•••• 1234';
+/**
+ * « •••• 1234 », l'espace insécable (U+00A0) comprise (revue P1, A7). Écrite par son
+ * code, jamais en littéral invisible (revue P2, B3) : un éditeur qui normaliserait les
+ * espaces ne peut pas la changer en espace ordinaire sans que ce test rougisse.
+ */
+const NBSP = String.fromCharCode(0xa0);
+const CARTE = `••••${NBSP}1234`;
 
 // Story 34-11a1 (#972, AC-10) — un compte sans IBAN s'affiche sans planter.
 describe('compte sans IBAN', () => {

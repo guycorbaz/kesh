@@ -1251,7 +1251,7 @@ pub async fn create(
         return create_csv(&state, &current_user, &bank_account, &fields).await;
     }
     // Story 34-11a1 (#972) — CAMT sur un compte sans IBAN : refus nommé, avant
-    // l'empreinte, le verrou et la lecture du fichier (rien n'est écrit).
+    // le hash, l'empreinte, le verrou et l'analyse du fichier (rien n'est écrit).
     camt_target_iban(&bank_account)?;
 
     let file_hash = compute_sha256_hex(&fields.file_bytes);

@@ -2997,7 +2997,9 @@ async fn sans_iban_les_invariants_du_schema(pool: MySqlPool) {
     );
     // ⚠️ Pas de `"1234 "` : MariaDB retire en silence l'espace final d'un
     // `CHAR(4)`, la valeur stockée est `1234`, valide (constaté au gate).
-    for mauvais in ["123", "12a4", " 123"] {
+    // Revue P2 (B1, E1, A5) : les chiffres non ASCII — pleine chasse, arabo-indiens —
+    // sont refusés sous la collation de la table (REGEXP à l'octet).
+    for mauvais in ["123", "12a4", " 123", "１２３４", "١٢٣٤"] {
         assert_check(
             forge_row(&pool, c, "credit_card", None, None, false, Some(mauvais)).await,
             "chk_bank_accounts_card_last4",
@@ -3007,15 +3009,22 @@ async fn sans_iban_les_invariants_du_schema(pool: MySqlPool) {
     // insensible à la casse et PAD SPACE, un `IN` ordinaire admettrait `BANK` ou
     // `bank ` — que le décodage exact de l'entité refuserait ensuite (500 sur toute
     // liste de comptes).
-    for mauvais in [
-        "paypal",
-        "BANK",
-        "Bank",
-        "bank ",
-        "Credit_Card",
-        "credit_card ",
+    // Revue P2 (B1, B2, E1) : aussi la tabulation et le NUL finaux, la chaîne vide, et
+    // l'accent (`bänk` = `bank` sous `utf8mb4_unicode_ci`). Une valeur « bancaire » à la
+    // collation près reçoit un IBAN, pour que seul le domaine du type la refuse.
+    for (mauvais, bancaire) in [
+        ("paypal", false),
+        ("BANK", true),
+        ("Bank", true),
+        ("bank ", true),
+        ("bank\t", true),
+        ("bank\0", true),
+        ("bänk", true),
+        ("", false),
+        ("Credit_Card", false),
+        ("credit_card ", false),
     ] {
-        let iban = (mauvais.trim().eq_ignore_ascii_case("bank")).then_some(IBAN);
+        let iban = bancaire.then_some(IBAN);
         assert_check(
             forge_row(&pool, c, mauvais, iban, None, false, None).await,
             "chk_bank_accounts_account_kind",
