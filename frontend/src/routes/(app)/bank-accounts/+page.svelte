@@ -670,7 +670,7 @@
 							{#if isCard}
 								{i18nMsg(
 									'bank-accounts-help-card-ledger',
-									'Obligatoire : un compte de passif, la dette de la carte (par exemple 2030 Carte de crédit).',
+									'Obligatoire : un compte de passif, la dette de la carte (par exemple un sous-compte de 2100 Dettes bancaires à court terme).',
 								)}
 							{:else}
 								{i18nMsg(
