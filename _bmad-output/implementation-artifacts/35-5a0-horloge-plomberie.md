@@ -56,9 +56,18 @@ la lit sur `state.horloge`. Homonyme non concerné : `invoice_reminders::cancel_
 rend **158 appels dans 23 fichiers** ; s'y ajoutent les appelants de `cancel_settlement(` (dont
 `kesh-db/tests/{credit_notes_repository,invoice_amount_due_parity}.rs`, `kesh-report/tests/{aged_receivables,vat_report_write_off}.rs`),
 de `reverse*`, des bloqueurs, de `lock_books`/`unlock_books` (dont deux dans `admin_full_import_e2e.rs`, outre `:1809`), de la
-vue (`supplier_invoice_response_e2e.rs:434-496`) et de `reconciliation_cancel::*` ; une première passe sur l'ensemble des
-noms de la fermeture rend **56 fichiers** (`src` compris). **Le compilateur donne la liste close** ; l'étape 0 la recompte
-par `git grep` sur les noms ci-dessus et l'écrit au Change Log.
+vue (`supplier_invoice_response_e2e.rs:434-496`) et de `reconciliation_cancel::*`. Recompté à la validation P2 (V2-8),
+`git grep -lE "$P" -- 'crates/*'`, où `$P` est l'alternative des noms de la fermeture ci-dessus suivis de `\s*\(` : **50
+fichiers, dont 36 de tests** ; **68** avec ceux qui portent `Lecture::new(` ou un littéral `AppState {` (union triée). Ces
+deux nombres sont les seuls que la fiche emploie. **Le compilateur donne la liste close** ; l'étape 0 la recompte par la même
+commande et l'écrit au Change Log.
+
+**Fichiers `support/` de `kesh-db/tests` qui appellent la fermeture** (validation P2, V2-7 ; lus) : `support/lettering_documents.rs`
+— `:445` (`invoice_settlements_write::cancel_settlement(`), `:545` (`companies::lock_books(`), `:870`
+(`supplier_invoices::pay(…, le, …)` dans `payer_par`, où **`le` est la date du paiement**, non le jour) —, inclus par quatre
+binaires (`lettering_documents_backfill.rs:43`, `lettering_documents.rs:29`, `letterings.rs:31`, `open_items.rs:32`) ; et
+`support/fournisseur_rapproche.rs:155` (`supplier_invoices::pay(`), inclus par quatre autres (`reconciliation_cancel.rs:31`,
+`supplier_document_attachment.rs:21`, `supplier_invoices_draft.rs:23`, `supplier_invoices_internal_number.rs:11`).
 
 ## Décisions (C-e350-21, -24, -26, -28, -29)
 
@@ -85,7 +94,7 @@ par `git grep` sur les noms ci-dessus et l'écrit au Change Log.
   - `pub fn horloge_depuis(valeur: Option<&str>) -> Arc<dyn Horloge>` (pure, V1-2) : `HorlogeFixe` à `instant_de_test(valeur)`
     s'il y en a un, `HorlogeSysteme` sinon ; et `pub fn horloge_de_test() -> Arc<dyn Horloge>` (`#[doc(hidden)]`) =
     `horloge_depuis(std::env::var(NOM_VARIABLE_INSTANT).ok().as_deref())`, lue à chaque appel, **sans `static`, `OnceLock`,
-    `LazyLock`**. Le test porte sur `horloge_depuis` : **aucun `set_var`** (`unsafe` en édition 2024, `Cargo.toml:17`, interdit
+    `LazyLock`**. Le test porte sur `horloge_depuis` : **aucun `set_var`** (`unsafe` en édition 2024, `Cargo.toml:16`, interdit
     hors tests par `lib.rs:9`, et qui changerait la variable sous les pieds des autres tests du binaire). « Lue à chaque appel »
     tient à la garde (aucune mémoire) et à la forme de `horloge_de_test` (une ligne) ;
   - champ `pub horloge: Arc<dyn Horloge>` d'`AppState` : `HorlogeSysteme` dans `main.rs:439` ; `horloge_de_test()` dans
@@ -107,18 +116,27 @@ par `git grep` sur les noms ci-dessus et l'écrit au Change Log.
     horloge que la contre-passation ») devient faux dès cette story et se réécrit ici : « la date reçue, lue une fois sur
     l'horloge de la requête et passée aussi à la contre-passation » (validation P4 de la 35-5a, V4-8).
   - Les 43 constructions `Lecture::new(` des tests passent `horloge_de_test()`.
-- **D4 — Les appelants de tests** passent la date qu'ils tiennent déjà ; s'ils n'en tiennent pas, **`aujourd_hui_test()`**,
-  helper partagé par crate de tests :
+- **D4 — Les appelants de tests** passent la date **du jour** qu'ils tiennent déjà (une variable `today` / `aujourd_hui` du
+  montage, tirée de l'horloge), **jamais une date de pièce** (date d'écriture, de facture, de paiement) : passer une date de
+  pièce comme `aujourd_hui` changerait le jour du bloqueur ou de la contre-passation, donc ce que le test exerce, sans
+  qu'aucun `assert` ne bouge (validation P2, V2-7 : `payer_par`, `lettering_documents.rs:870`, reçoit `le`, date du paiement,
+  et prend `aujourd_hui_test()`). S'ils n'en tiennent pas, **`aujourd_hui_test()`**, helper partagé par crate de tests :
   - `crates/kesh-api/tests/common/jour.rs` : `horloge_de_test().aujourd_hui()` ;
   - `crates/kesh-db/tests/support/jour.rs` et **`crates/kesh-report/tests/support/jour.rs`** (neuf : V1-6 ; validation P4 de la
     35-5a, V4-2) :
     `HorlogeFixe(instant_de_test(std::env::var(NOM_VARIABLE_INSTANT).ok().as_deref()).unwrap_or_else(Utc::now)).aujourd_hui()`.
     `tests/support/` n'a pas de `mod.rs` : chaque binaire qui l'emploie l'inclut par `#[path = "support/jour.rs"] mod jour;` avec
     `#[allow(dead_code)]` (précédents : `kesh-db/tests/companies_repository.rs:13`, `credit_notes_repository.rs:24`) ; la liste
-    des binaires concernés s'écrit au Change Log.
+    des binaires concernés s'écrit au Change Log. Les deux fichiers `support/` qui appellent la fermeture
+    (`lettering_documents.rs`, `fournisseur_rapproche.rs`, § *Ce qui se lit*) incluent eux-mêmes le helper par un
+    `#[path = "jour.rs"] mod jour;` **imbriqué** (un `#[path]` placé dans un fichier chargé par `#[path]` se résout depuis le
+    dossier de ce fichier, soit `tests/support/`), si bien que leurs huit binaires n'ont rien à déclarer ; un binaire qui
+    inclut aussi `jour.rs` au premier niveau en a deux copies, sans conflit (deux modules distincts). Règle non vérifiée au
+    compilateur à la rédaction : l'étape 0 la constate ; à défaut, ces fichiers reçoivent la date du jour en paramètre de
+    leurs helpers, et leurs appelants la passent.
   Un `mod tests` de `src` écrit `HorlogeFixe(Utc::now()).aujourd_hui()` en ligne ou passe une date fixe : il ne lit pas la
   variable, sa nuit se prouve par une date fixe (35-5a). Le helper rend le jour de l'horloge du serveur : UTC ici, Zurich après
-  la 35-5a, **sans retouche**. Aucun attendu de test ne change.
+  la 35-5a, **sans retouche**. Aucun attendu **de comportement** ne change (AC1).
 - **D5 — La garde** (C-e350-24) : `crates/kesh-api/tests/date_du_jour_garde.rs`, telle que la fiche 35-5a la décrit (D4 de
   sa fiche : sources et tests, motifs bornés, commentaires écartés, formes coupées, égalité stricte par fichier, fichier de
   la garde exclu), **posée ici**, ses comptes **écrits depuis son exécution** : l'unité est **l'occurrence** après réduction
@@ -126,16 +144,39 @@ par `git grep` sur les noms ci-dessus et l'écrit au Change Log.
   `kesh-db invoices.rs:4379` deux `CURDATE(`). Les 9 sites de la 35-5a sortent de la liste (leur forme a disparu) ; entrées
   permanentes : `kesh-core/src/horloge.rs` (1 en production, le `.date_naive()` de `jour` ; ses tests sans forme relevée),
   `admin.rs:722` (1, horodatage). S'y ajoutent les **gardes de durcissement** (validation P3 de la 35-5a, V3-5), leurs
-  comptes écrits **depuis l'exécution** (V1-1) :
+  comptes écrits **depuis l'exécution** (V1-1). Toutes sont des **listes closes en égalité stricte par fichier** sur
+  `crates/*/src` et `crates/*/tests` — un fichier absent de la liste compte 0 —, le fichier de la garde exclu nommément, et
+  **les lignes dont le début, blancs ôtés, est `//` (donc `///` et `//!`) écartées, comme pour la garde de date** (validation
+  P2, V2-5 : sans cela, les comptes dépendraient de la rédaction des doc-comments de `new_for_tests`, `horloge_de_test`,
+  `horloge_depuis`) :
   - le littéral `"KESH_TEST_INSTANT"` : 2, dans `kesh-core/src/horloge.rs` (la constante, et l'attribut `should_panic` de son
-    test, qui exige un littéral) ; 0 ailleurs (fichier de la garde exclu) ; les lecteurs de `NOM_VARIABLE_INSTANT` (`kesh-api/src/horloge.rs`, les deux `support/jour.rs`) à leurs comptes
-    relevés ;
+    test, qui exige un littéral) ; 0 ailleurs ;
+  - les occurrences de **`NOM_VARIABLE_INSTANT`** (validation P2, V2-4) : `kesh-core/src/horloge.rs` (définition, message de
+    panique, tests : compte relevé), `kesh-api/src/horloge.rs` (dans `horloge_de_test`, et son `use` s'il en a un : compte
+    relevé), `kesh-db/tests/support/jour.rs`, `kesh-report/tests/support/jour.rs` (comptes relevés) ; **0 ailleurs, `main.rs` et
+    `lib.rs` compris** ;
+  - les occurrences de **`instant_de_test(`** (définition comprise) : `kesh-core/src/horloge.rs` (définition et tests : compte
+    relevé), `kesh-api/src/horloge.rs` (dans `horloge_depuis`, 1), les deux `support/jour.rs` (1 chacun) ; 0 ailleurs ;
+  - les occurrences de **`horloge_depuis(`** dans `crates/*/src` : `kesh-api/src/horloge.rs` (définition, appel par
+    `horloge_de_test`, tests du module : compte relevé) ; 0 ailleurs ;
   - appels `new_for_tests(` et `horloge_de_test(` dans `crates/*/src` : uniquement leurs définitions et l'appel de
     `horloge_de_test()` par `new_for_tests` (`lib.rs`) — aucun appel de production, ni de `mod tests` de `src` ;
   - `HorlogeSysteme` **construit** (lignes qui le nomment hors `pub struct`, `impl`, `use`) : `main.rs` 1,
     `kesh-api/src/horloge.rs` 1 (dans `horloge_depuis`), 0 ailleurs ;
+  - `HorlogeFixe(` dans `crates/*/src` (V2-5) : `kesh-api/src/horloge.rs` (dans `horloge_depuis`, 1),
+    `kesh-api/src/middleware/auth.rs` (1, `test_state()` du `mod tests`), `kesh-core/src/horloge.rs` (tests : compte relevé),
+    et les fichiers de `src` dont le `mod tests` date par `HorlogeFixe(Utc::now())` (D4 ; `journal_entries.rs`, qui appelle
+    `reverse_in_tx` à `:3984` et `:5824`, en est un si son test n'a pas de date fixe) : comptes relevés, en égalité stricte —
+    une construction ajoutée en production dans l'un d'eux fait `+ 1` et rougit ; **0 dans `main.rs`, `lib.rs` et tout autre
+    fichier de `src`** — une `HorlogeFixe(Utc::now())` de production figerait le jour au démarrage ;
   - aucun `static`, `OnceLock`, `LazyLock`, `lazy_static!`, `thread_local!` dans les **fichiers** `kesh-core/src/horloge.rs`,
     `kesh-api/src/horloge.rs`, `tests/common/jour.rs` et les deux `tests/support/jour.rs`.
+
+  Ce que ces listes ferment, ensemble : `main.rs` ne peut lire la variable ni par son littéral, ni par la constante, ni par
+  `instant_de_test`, `horloge_depuis`, `horloge_de_test` ou `new_for_tests`, ni figer une `HorlogeFixe` ; il construit
+  `HorlogeSysteme` une fois. **Angle mort assumé** : un autre nom de variable d'environnement, lu en production et converti
+  à la main en `DateTime` passé à une horloge écrite pour l'occasion — ce n'est plus `KESH_TEST_INSTANT`, et ce code
+  n'aurait plus rien de la plomberie de test ; la revue fichier par fichier de `main.rs` et de `lib.rs` le voit.
 - **D6 — Docs** : une ligne dans `docs/testing.md` — `KESH_TEST_INSTANT` est une variable **de tests**, lue par
   `horloge_de_test()` et les helpers, sans effet sur le binaire servi (`main.rs` construit `HorlogeSysteme`) ; vide, elle vaut
   absente ; invalide, elle arrête le test. Aucun texte d'interface, aucun manuel, aucun CHANGELOG (aucun changement visible).
@@ -148,26 +189,45 @@ fenêtre de quelques secondes autour de minuit UTC, et va dans le sens voulu.
 ## Critères d'acceptation
 
 1. **AC1 — Rien ne change** : le gate complet (`test-fast.sh --ci`), `scripts/gate-ci.sh`, Vitest et l'E2E complet sont verts
-   **sans qu'aucun attendu de test ne change**. Contrôle (V1-3), au Change Log : `git diff -U0 <base> -- 'crates/*/tests/*'
-   'crates/*/src/*' | /usr/bin/grep -E '^[-+]' | /usr/bin/grep -vE '^(\+\+\+|---)'` trié à la main — les seules lignes de
-   test modifiées sont des **arguments ajoutés** (date, horloge) et des constructions (`Lecture::new`, champ `horloge`) ;
-   aucune ligne `assert…` ne change (`… | /usr/bin/grep -E 'assert'` : vide, ou chaque ligne commentée).
-2. **AC2 — L'horloge fixe atteint les sites** : un `AppState` à `HorlogeFixe(2026-06-15T10:00:00Z)` date une contre-passation du
+   **sans qu'aucun attendu de comportement ne change** — date, montant, statut, code d'erreur, refus. Seuls changent,
+   **nommément**, les attendus **lexicaux** des gardes que D3 réécrit : `mcp_gardes_lexicales.rs:169` et `:575` (la ligne
+   `mcp::LectureOutils::nouvelle(…)` du câblage, qui passe à trois lignes), `services_motif.rs:2071` et `:2083`
+   (`FABRIQUES_V2`, `Lecture::new(self.pool.clone())` qui prend l'horloge) ; et une entrée neuve (la ligne `horloge_outils`,
+   liste voisine de `LIB_NOMME_MCP`). Contrôle en deux temps (validation P2, V2-3), au Change Log :
+   - **fichiers modifiés**, lignes retirées seulement : `git diff -U0 --diff-filter=M <base> -- 'crates/*/tests/*' 'crates/*/src/*'
+     | /usr/bin/grep -E '^-' | /usr/bin/grep -vE '^---' | /usr/bin/grep -E 'assert|from_ymd_opt|expect_err|StatusCode::'` —
+     chaque ligne rendue est **listée** au Change Log avec sa ligne `+` correspondante et sa raison, parmi trois : un argument
+     ajouté (date, horloge) ; un reflux de rustfmt (même expression recoupée, sens inchangé) ; un attendu de garde lexicale
+     de la liste ci-dessus. Toute autre raison est un défaut de cette story ;
+   - **fichiers neufs** (`--diff-filter=A` : `date_du_jour_garde.rs`, les helpers `jour.rs`, `kesh-core/src/horloge.rs`,
+     `kesh-api/src/horloge.rs`, tests d'AC2 et d'AC3) : listés à part ; leurs `assert` sont neufs par construction et ne
+     relèvent pas de ce contrôle.
+2. **AC2 — L'horloge fixe atteint les sites** : montage `seed_accounting_company` (exercice unique **2020-2030 ouvert**,
+   `kesh-db/src/test_fixtures.rs:71`, `:119`, lu), qui couvre le `2025-12-31`, le `2026-01-01` et le `2026-06-15`, si bien que
+   le test que la 35-5a retourne reste une écriture et ne devient pas un refus d'exercice (validation P5 de la 35-5a,
+   V5-3) ; l'écriture contre-passée est datée d'un jour antérieur (par exemple `2025-06-01`). Un `AppState` à
+   `HorlogeFixe(2026-06-15T10:00:00Z)` date une contre-passation du
    `2026-06-15` et refuse un verrou au `2026-06-15` ; à `HorlogeFixe(2025-12-31T23:30:00Z)`, la contre-passation est datée du
    `2025-12-31` (**le jour UTC** : comportement d'avant, voulu ici) — ce test est celui que la 35-5a retourne. AC2 n'exerce
    que **2 des 9 sites** ; les sept autres (soldes d'ouverture ×4, rang 5, `unlock_books`, assistant) ne sont tenus ici que par
    la garde de forme (D5), et par les critères de la 35-5a (V1-8).
-3. **AC3 — Le MCP reçoit la même horloge** : `state.lecture().aujourd_hui() == state.horloge.aujourd_hui()` ; les gardes
+3. **AC3 — Le MCP reçoit la même horloge** : sur un état de `new_for_tests` dont on remplace l'horloge par
+   `state.horloge = Arc::new(HorlogeFixe(2025-06-15T10:00:00Z))` — un jour distinct du jour réel, pour que l'égalité ne tienne
+   pas par deux horloges système (validation P2, V2-6) —, `state.lecture().aujourd_hui() == 2025-06-15` ; les gardes
    lexicales du câblage sont vertes ; la mutation « câblage du MCP sur `HorlogeSysteme` » est tuée par la garde de
    construction de `HorlogeSysteme` (D5). Aucun outil du MCP n'expose un site de jour (`factures_fournisseur.rs:206` jette le
    motif) : la garde est **le seul filet** du câblage dans cette story.
 4. **AC4 — `KESH_TEST_INSTANT`** : `instant_de_test(Some("2025-12-31T23:30:00Z"))` rend l'instant ; `None` et `Some("")`
    rendent `None` ; une valeur invalide `panic!` en citant la constante (`#[should_panic(expected = "KESH_TEST_INSTANT")]`,
    l'attribut exigeant un littéral : le second et dernier littéral admis, dans le `mod tests` de `horloge.rs`) ; `horloge_depuis(Some("2025-12-31T23:30:00Z")).maintenant()` rend l'instant,
-   `horloge_depuis(None)` une horloge système (deux lectures croissantes).
+   `horloge_depuis(None)` une horloge système : deux lectures encadrant un `std::thread::sleep(Duration::from_millis(5))`
+   sont **strictement** croissantes (V2-6 : une `HorlogeFixe(Utc::now())` rendrait deux lectures égales) — la garde de
+   construction de `HorlogeSysteme` (D5) reste le filet de la forme.
 5. **AC5 — La garde** : verte avec les comptes de son exécution ; sondes au Change Log (forme ajoutée, forme coupée, compte
    + 1, `KESH_TEST_INSTANT` dans un fichier de plus, `HorlogeSysteme` construit ailleurs, `OnceLock` dans un helper de jour,
-   appel de `new_for_tests(` dans `src`).
+   appel de `new_for_tests(` dans `src`, **`NOM_VARIABLE_INSTANT` nommé dans `main.rs`**, `instant_de_test(` ou
+   `horloge_depuis(` appelé dans `main.rs`, `HorlogeFixe(` construit dans `main.rs`, et une ligne `// NOM_VARIABLE_INSTANT`
+   ajoutée qui, elle, **ne** rougit **pas** — commentaires écartés).
 6. **AC6 — Aucune migration** ; `crates/kesh-db/migrations/` intact.
 
 ## Tests à écrire, et la preuve du rouge
@@ -179,15 +239,41 @@ de rouge. Journal `kesh-gate-logs/e355a0/rouges.log`.
 un compte non nul ; par AC2 aussi pour la contre-passation et le verrou) ; M2 le câblage du MCP sur `HorlogeSysteme` (garde de
 construction, AC3) ; M3 `horloge_de_test` mémorisée dans un `OnceLock` (garde D5) ; M4 le bloqueur et la contre-passation qui
 lisent deux fois l'horloge (un test du dépôt donne deux dates distinctes au chemin qui n'en devrait recevoir qu'une : il ne
-compile pas, ou la garde le voit) ; M5 `instant_de_test(Some(""))` qui panique (AC4).
+compile pas, ou la garde le voit) ; M5 `instant_de_test(Some(""))` qui panique (AC4) ; M6 (validation P2, V2-4) `main.rs`
+construit son horloge par `match instant_de_test(std::env::var(NOM_VARIABLE_INSTANT).ok().as_deref()) { Some(i) =>
+Arc::new(HorlogeFixe(i)), None => Arc::new(HorlogeSysteme) }` — `HorlogeSysteme` y reste construit une fois et le littéral
+absent : tuée par les gardes de `NOM_VARIABLE_INSTANT`, d'`instant_de_test(` et d'`HorlogeFixe(` (trois rouges attendus).
 
 ## Tâches
 
 - [ ] Étape 0 : recompter la fermeture des appelants (production, tests) par `git grep` sur les noms de D2 ; les 43
       constructions de `Lecture`, les 9 littéraux ; Change Log.
-- [ ] Commits internes, **dans cet ordre** (chacun compile et passe le gate complet) : (1) `kesh-core` (`horloge.rs`) ;
-      (2) `kesh-db` (D2) **avec** ses appelants de tests de `kesh-db` et de `kesh-report`, qui doivent compiler ensemble ;
-      (3) `kesh-api` (D3) avec ses appelants et ses tests, helpers (D4) ; (4) garde (D5) et `docs/testing.md` (D6).
+- [ ] Commits internes, **dans cet ordre** (validation P2, V2-1 : l'ordre précédent mettait `kesh-db` avant `kesh-api`, qui
+      appelle la fermeture — `routes/companies.rs:505`, `journal_entries.rs:456`, `services/factures.rs:552`,
+      `supplier_invoices.rs:829`, lus — et ne compilait pas). Chacun compile et passe le gate complet ; le raisonnement est
+      écrit ici, et l'étape le constate (`cargo build --workspace --all-targets` puis gate complet, au Change Log) :
+      1. **`kesh-core`** : `horloge.rs` (D1) et `pub mod horloge;`. Rien ne l'appelle encore ; `chrono` est déjà une
+         dépendance de `kesh-core`. Compile seul.
+      2. **Plomberie `kesh-api`, sans toucher `kesh-db`** (D3, hors les neuf sites) : `kesh-api/src/horloge.rs`
+         (`HorlogeSysteme`, `horloge_depuis`, `horloge_de_test`) ; le champ `AppState.horloge` et **ses 9 littéraux dans le même
+         commit** (un littéral de structure sans le champ ne compile pas : `main.rs:439`, le `Self {` de `new_for_tests`,
+         `middleware/auth.rs:285`, et les six des tests d'intégration) ; `Lecture { pool, horloge }` et **toutes** ses
+         constructions (`AppState::lecture()`, câblage du MCP, les 43 des tests) ; les attendus lexicaux des gardes que ces
+         lignes changent (`mcp_gardes_lexicales.rs:169`, `:575`, `services_motif.rs:2071`, `:2083`, ligne `horloge_outils`),
+         sans quoi le gate rougit ; les tests d'AC3 et d'AC4. `Lecture::aujourd_hui()` / `horloge()` sont `pub`, donc sans
+         avertissement `dead_code` ; les neuf sites lisent encore l'horloge dans `kesh-db`, inchangé. Compile, car aucune
+         signature de `kesh-db` ne bouge.
+      3. **Le noyau D2, avec tous ses appelants** : les signatures de la fermeture (`aujourd_hui: NaiveDate` en dernier
+         argument) ; ses appelants internes à `kesh-db` ; les appelants de production de `kesh-api` (les neuf sites lisent
+         `state.horloge` / `lecture`, `finalize_inner` reçoit la date, `services::factures::reglements` la lit une fois) ; les
+         appelants de **tests des trois crates** (`kesh-db`, `kesh-api`, `kesh-report`) et des `mod tests` de `src` ; les
+         helpers `aujourd_hui_test()` (`common/jour.rs` et `pub mod jour;` dans `common/mod.rs`, les deux `support/jour.rs`,
+         les inclusions `#[path]`), posés **avec leurs premiers appelants** — un fichier qu'aucun binaire n'inclut n'est pas
+         compilé, et l'y mettre plus tôt ne prouverait rien ; le commentaire `companies.rs:986-989` ; le test d'AC2.
+         Compile une fois tous les appelants à jour (le compilateur donne la liste close). Aucun commit plus fin n'est
+         possible ici : une signature changée oblige tous ses appelants (Dérogation).
+      4. **Garde (D5) et `docs/testing.md` (D6)** : fichier de test neuf qui lit les sources, sondes de l'AC5, mutations ;
+         ses comptes supposent les neuf sites déjà convertis, d'où sa place après (3).
 - [ ] Gates : `test-fast.sh --ci` complet à chaque commit, `scripts/gate-ci.sh`, Vitest, E2E complet au dernier commit de code.
 - [ ] Revue : **fichier par fichier** pour les appelants (rollout mécanique, `CLAUDE.md` § *Règle de splitting préventif*),
       passes adversariales sur `kesh-core/src/horloge.rs`, `kesh-api/src/horloge.rs`, D2 et la garde.
@@ -196,14 +282,33 @@ compile pas, ou la garde le voit) ; M5 `instant_de_test(Some(""))` qui panique (
 
 ### Dérogation règle de splitting
 
-La 35-5a0 touche plus de cinq modules (`kesh-core`, une dizaine de dépôts de `kesh-db`, `kesh-api` — routes, services,
-middleware, `lib.rs`, `main.rs` —, les tests de `kesh-db`, `kesh-api` et `kesh-report`, des gardes lexicales) et un diff
-mécanique de l'ordre de 70 fichiers (V1-3). **Elle n'est pas redécoupée**, au titre de l'exception de `CLAUDE.md` : un
-changement de signature (D2, `Lecture::new`) oblige **tous** ses appelants, production et tests, dans le même commit ; un
-découpage plus fin laisserait un état intermédiaire qui ne compile pas, donc qu'on ne peut ni tester ni fusionner. Elle est
-déjà le *story-zero* de la 35-5a (C-e350-28) : elle ne porte aucune règle métier et ne change aucun comportement. Atténuations :
-l'ordre des commits internes ci-dessus (chacun compile), la revue fichier par fichier des appelants, le contrôle de l'AC1 (aucune
-assertion modifiée), le gate complet à chaque commit.
+*(Récrite à la validation P2, V2-2 : la version précédente disait la story entière indivisible, alors que son propre plan de
+commits la montrait divisible.)*
+
+**Ce qui est indivisible, et seulement cela** : le **noyau D2** — le commit (3) des *Tâches* —, c'est-à-dire les signatures de
+la fermeture et **tous** leurs appelants. Une signature changée oblige chacun de ses appelants, production et tests, dans le
+même commit ; couper ce noyau laisserait un état qui ne compile pas. Sa taille : la quasi-totalité des **50 fichiers** de
+la fermeture (dont **36 de tests**, § *Ce qui se lit*), dans `kesh-db` (une dizaine de dépôts), `kesh-api` (routes, services)
+et les tests de trois crates — plus de cinq modules à lui seul.
+
+**Ce qui serait séparable** : (1) `kesh-core` et (2) la plomberie de `kesh-api` (les **18** fichiers de `Lecture::new(` et des
+littéraux d'`AppState {` hors fermeture, 68 − 50) compilent et se testent sans le noyau ; ils pourraient faire une story à part,
+et la garde (4) une autre. **Choix : la story reste unique**, en quatre commits. Raisons : (a) (1) et (2) seuls livrent une
+horloge que personne ne lit — leur seule preuve serait AC3 et AC4, et leur revue séparée ne réduit pas le noyau, qui reste le
+diff à relire ; (b) la garde (4) n'a de comptes qu'une fois les neuf sites convertis, donc après (3) ; (c) chaque story de
+plus coûte une boucle de validation, un cycle de CI complet et un E2E, pour un diff qui, lui, ne diminue pas. Les quatre
+commits se relisent séparément (revue fichier par fichier, commit par commit). Réversible : la story se coupe entre (2) et
+(3) sans réécriture, les commits étant déjà ceux de deux stories.
+
+**Risque accepté** (exigé par `CLAUDE.md`) : un commit (3) d'environ cinquante fichiers, où l'erreur la plus probable est
+**muette** — un appel de test qui passe comme `aujourd_hui` une date de pièce au lieu du jour (V2-7) compile, reste vert, et
+change seulement ce que le test exerce ; le contrôle de l'AC1 ne le voit pas (il ne lit que les lignes retirées). Ce risque
+est accepté, avec trois filets : la règle de D4 (jamais une date de pièce) ; un relevé au Change Log, après (3), du **dernier
+argument** de chaque appel de la fermeture ajouté ou modifié dans les tests (`git diff -U0 --diff-filter=M <base> --
+'crates/*/tests/*' 'crates/*/src/*' | /usr/bin/grep -E '^\+'` filtré sur les noms de la fermeture), chaque argument qui n'est ni
+`aujourd_hui_test()`, ni une variable du jour du montage, ni une date fixe de test justifiée, listé et motivé ; la revue
+fichier par fichier. Une régression de comportement (date, refus) reste visible au gate et aux gardes. Le signal de
+découpage est déclaré au Project Lead (Change Log, validation P2).
 
 ### Ordre de fusion avec la 35-3 (validation P3 de la 35-5a, V3-2 ; validation P1, V1-7)
 
@@ -284,3 +389,36 @@ concernés ; `docs/testing.md`.
     `companies.rs:986-989` réécrit ici) ; V4-2 (helper `kesh-report`).
   - Aucun finding réfuté. Signal de découpage : levé (plus de cinq modules) et **non suivi**, au titre de l'exception de
     `CLAUDE.md` (dérogation écrite). Aucune migration. Statut `ready-for-dev`.
+- 2026-11-12 — **Validation P2** (Opus, `kesh-gate-logs/e35-5a0-validation-p2.md` : 0 CRITICAL, 0 HIGH, 4 MEDIUM, 4 LOW ;
+  série 3 → 4 MEDIUM) remédiée par l'agent de rédaction (worktree `kesh-e355`, relève de l'agent précédent). Prémisses lues
+  au code de `release/0.17.6` (`92ccb6ef`).
+  - **V2-1** : ordre des commits refait — (1) `kesh-core`, (2) plomberie `kesh-api` sans toucher `kesh-db` (9 littéraux,
+    43 + 2 constructions de `Lecture`, attendus des gardes lexicales, AC3, AC4), (3) noyau D2 avec **tous** ses appelants
+    (production, tests des trois crates, `mod tests` de `src`, helpers posés avec leurs premiers appelants), (4) garde et
+    docs ; la compilation de chaque étape est raisonnée sur les appels (*Tâches*). Prémisse lue : `routes/companies.rs:505`,
+    `journal_entries.rs:456`, `services/factures.rs:552`, `supplier_invoices.rs:829` appellent la fermeture.
+  - **V2-2** : *Dérogation* récrite — seul le noyau D2 est indivisible (≈ 50 fichiers, dont 36 de tests) ; (1), (2) et (4)
+    seraient séparables ; choix motivé de garder la story unique en quatre commits ; **risque accepté** écrit (date de pièce
+    passée comme jour, muette), avec un relevé des derniers arguments au Change Log de dev.
+  - **V2-3** : AC1 — « aucun attendu **de comportement** » ; les attendus lexicaux des gardes de D3 nommés un à un ; contrôle
+    en deux temps (`--diff-filter=M`, lignes `-` seulement, chaque ligne listée avec sa raison ; fichiers neufs à part).
+  - **V2-4** : gardes de D5 en listes closes à égalité stricte, `0 ailleurs` : `NOM_VARIABLE_INSTANT`, `instant_de_test(`,
+    `horloge_depuis(`, `HorlogeFixe(` (0 dans `main.rs` et `lib.rs`) ; sondes de l'AC5 dans `main.rs` ; **M6** (`main.rs` lit
+    la variable par la constante, `HorlogeSysteme` en repli : trois gardes rougissent).
+  - **LOW** : V2-5 (lignes `//` écartées pour toutes les gardes de D5 ; `HorlogeFixe` de production tenu par sa garde) ;
+    V2-6 (AC3 sur `HorlogeFixe(2025-06-15T10:00:00Z)`, AC4 strictement croissant autour d'un `sleep` de 5 ms) ; V2-7 (fichiers
+    `support/` qui appellent la fermeture nommés, avec leurs huit binaires ; inclusion `#[path]` imbriquée, à constater à
+    l'étape 0, repli par paramètre ; D4 : « la date **du jour**, jamais une date de pièce » — `lettering_documents.rs:870`,
+    où `le` est la date du paiement, prend `aujourd_hui_test()`) ; V2-8 (`Cargo.toml:16`, lu ; un seul décompte de fichiers,
+    recompté : 50 dont 36 de tests, 68 avec `Lecture::new(` / `AppState {` — la passe en donnait 67, écart d'un fichier
+    laissé au recompte de l'étape 0, commande écrite).
+  - Depuis la validation P5 de la 35-5a, **V5-3** : AC2 nomme son montage, `seed_accounting_company`, exercice 2020-2030
+    ouvert (`test_fixtures.rs:71`, `:119`, lus) : le test que la 35-5a retourne reste une écriture au `2026-01-01`.
+  - Aucun finding réfuté.
+  - **Signal de découpage** : levé — sévérité égale ou supérieure (3 → 4 MEDIUM) **et recyclage** : les quatre MEDIUM naissent
+    tous de la remédiation de P1 (V2-1, V2-2, V2-3 de celle de V1-3 — ordre des commits, dérogation, commande de l'AC1 ; V2-4 de
+    celle de V1-1 — garde de la constante), aucun ne vient de la conception D1-D3. **Non suivi** au-delà du découpage en
+    commits, motivé à la *Dérogation* (C-e350-28, annoté) : les défauts recyclés sont dans la prose de contrôle de la fiche,
+    qu'un découpage en stories ne supprimerait pas. **Déclaré au Project Lead** par le rapport à l'orchestrateur, qui peut
+    couper entre les commits (2) et (3). La passe suivante, sur cette remédiation, est à lancer. Aucune migration. Statut
+    `ready-for-dev`.

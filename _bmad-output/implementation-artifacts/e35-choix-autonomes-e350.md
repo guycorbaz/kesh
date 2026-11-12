@@ -435,6 +435,14 @@ sur `chore/epic-35-fiches-355`, commencent à C-e350-21 et s'unissent à la fusi
   déclaré à Guy : le découpage coûte moins qu'une boucle sur un diff de plus de 200 appels de tests mêlés à un changement de
   règle.
 - **Réversible** : oui (deux fiches qui se réunissent).
+- *(Annoté le 2026-11-12, validation P2 de la 35-5a0, V2-1 et V2-2 : la 35-5a0 n'est **pas** redécoupée. Seul son noyau — les
+  signatures de la fermeture et tous leurs appelants, ≈ 50 fichiers dont 36 de tests — est indivisible ; `kesh-core` et la
+  plomberie de `kesh-api` (≈ 18 fichiers) seraient séparables, la garde aussi. Retenu : une story, quatre commits qui
+  compilent chacun — `kesh-core`, plomberie `kesh-api` sans `kesh-db`, noyau D2 avec tous ses appelants, garde et docs —,
+  relus séparément, avec un risque accepté écrit (date de pièce passée comme jour). Écarté : deux stories coupées entre la
+  plomberie et le noyau — une horloge que personne ne lit, une boucle et un cycle de CI de plus, sans réduire le diff du
+  noyau. Le signal de découpage de P2 (3 → 4 MEDIUM, recyclage de la remédiation de P1) est déclaré au Project Lead.
+  Réversible : la coupe se fait entre les commits (2) et (3) sans réécriture.)*
 
 ### C-e350-29 — 35-5a0 : la bascule tient dans `Horloge::aujourd_hui()`, le helper de test la suit ; durcissement par gardes
 
