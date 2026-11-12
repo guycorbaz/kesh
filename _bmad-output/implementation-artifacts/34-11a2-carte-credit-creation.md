@@ -232,6 +232,13 @@ Rapports : `/home/gcorbaz/devel/kesh-gate-logs/e34a1-review-p1-{B,E}.md`. Non co
   un `.xml` déposé sur une carte part au serveur, qui rend `422 BANK_IMPORT_CAMT_NEEDS_IBAN`, affiché par `setError`. Correct ; aucun test front ne montre
   ce refus affiché après un dépôt.
 
+*Ajoutés le 2026-11-12 par l'orchestrateur, revue P2 de la 34-11a1 (deux LOW de production) :*
+
+- **E3 (LOW)** — la clé fr-CH `bank-import-labels-drop-zone-csv-only` et son repli Svelte emploient l'apostrophe typographique U+2019,
+  alors que le fichier emploie l'apostrophe droite.
+- **B3 (LOW)** — `frontend/src/lib/features/bank-accounts/format.ts:26` écrit l'espace insécable de `CARD_LAST4_SEPARATOR` en littéral
+  invisible : l'écrire `' '`.
+
 ## Recoupements
 
 `routes/bank_accounts.rs`, `bank-accounts/+page.svelte`, `format.ts` avec **34-1**, **34-2**, **34-11a1** ; `repositories/accounts.rs` : aucune autre
