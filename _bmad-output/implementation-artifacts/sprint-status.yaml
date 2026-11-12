@@ -1031,8 +1031,10 @@ development_status:
   35-2b-lot-rappels-refus-pdf: ready-for-dev  # #955 ; après la fusion de 35-2a ; validation à lancer
   35-3-comptes-designes-type: ready-for-dev  # fiche 2026-11-12, validation à lancer ; #537 ; tête d'epic, avant le 2026-11-30
   35-4-rejeter-ligne-signalee: ready-for-dev  # fiche 2026-11-12, validation à lancer ; #1023, #1024
-  35-5-date-du-jour-installation: backlog  # #929, #1022, #907
+  35-5-date-du-jour-installation: split  # 2026-11-12, découpage préventif (C-e350-14) en 35-5a et 35-5b
+  35-5a-date-du-jour-horloge: ready-for-dev  # #1022, #907, #929 en partie ; fiche 2026-11-12, validation à lancer
+  35-5b-date-du-jour-reste: backlog  # #929 ; après la fusion de 35-5a
   35-6-solde-ouverture-saisie: ready-for-dev  # fiche 2026-11-12, validation à lancer ; #1025 intégrée (C-e350-15) ; #1026, #1028
   35-7-autocomplete-compte-hors-liste: backlog  # #1000
-  35-8-audit-cle-api: backlog  # #431 ; après 35-5 et 35-3
+  35-8-audit-cle-api: backlog  # #431 ; après 35-5a, 35-5b et 35-3
   epic-35-retrospective: optional

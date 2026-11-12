@@ -209,3 +209,36 @@ retenue, options écartées, réversibilité. Lignes citées sur `release/0.17.6
 - **Écartées** : (a) signaler sans refuser `1.234` : la virgule est déjà refusée, deux comportements pour le même risque ;
   (b) juger l'ambiguïté au serveur : un appelant de l'API envoie un nombre, non une saisie.
 - **Réversible** : oui ; le refus du souligné au serveur est un changement de contrat, écrit.
+
+### C-e350-14 — La 35-5 se découpe préventivement en 35-5a et 35-5b (accord de l'orchestrateur)
+
+- **Contexte** : #929, #1022, #907. L'inventaire de `release/0.17.6` compte **28 sites de production** qui prennent la date
+  du jour en UTC, dans 17 fichiers de 4 crates (`kesh-api` routes et services, `kesh-db` dépôts, `kesh-seed`), plus 56 sites
+  dans les modules de tests de `src`, 107 dans `crates/*/tests` et 36 dans les specs E2E. Plus de cinq modules : la règle
+  de découpage préventif s'applique (`CLAUDE.md`, story-zéro puis rollout).
+- **Retenu** : **35-5a** pose l'horloge, la fonction pure du jour suisse, la garde qui inventorie les sites restants (liste
+  close d'exemptions), et convertit les sites qui **écrivent dans les livres ou les bornent** (solde d'ouverture,
+  contre-passation, annulation de règlement, verrou de période : 8 sites) avec leurs tests. **35-5b** convertit les 20 sites
+  restants et vide la liste d'exemptions, puis les specs E2E.
+- **Écartée** : une seule story : boucle complète sur quatre crates et 200 sites de tests.
+- **Réversible** : oui.
+
+### C-e350-16 — Le fuseau est Europe/Zurich, constant ; l'horloge s'injecte
+
+- **Contexte** : il faut une date du jour « de l'installation ». Trois sources possibles : une constante, un réglage (variable
+  d'environnement ou paramètre), le `TZ` du conteneur. L'image Docker tourne en UTC par défaut, et rien ne garantit que le
+  `TZ` du conteneur de Guy soit posé ; l'écran a choisi le fuseau du poste (#889, `todayLocal`), réglé sur la Suisse.
+- **Retenu** : **Europe/Zurich, constante unique** dans `kesh-core` (le jour civil suisse d'un instant UTC, par
+  `chrono-tz`, déjà au `Cargo.lock` par `rxing`, version 0.10.4). Kesh est un logiciel de comptabilité suisse ; une
+  installation hors de Suisse n'est pas un cas d'usage. Pas de lecture de `TZ` ni de `chrono::Local`.
+- **Horloge injectable** : `kesh-core` porte la fonction **pure** `jour_suisse(instant: DateTime<Utc>) -> NaiveDate` ; `kesh-db`
+  ne lit plus l'horloge : ses fonctions reçoivent la date du jour en paramètre ; `kesh-api` tient une horloge dans `AppState`
+  (horloge système en production, horloge fixe dans les tests qui datent quelque chose), seule à appeler `Utc::now()` pour
+  une date. Les tests ne dépendent plus de l'heure réelle : ils passent une date ou fixent l'horloge, et la nuit se teste
+  par des instants fixés (00 h 30 le 1er janvier, heure d'hiver et d'été).
+- **Écartées** : (a) variable `KESH_TIMEZONE` : une surface de configuration, une validation au démarrage et une ligne de
+  manuel pour un besoin qui n'existe pas ; ajoutable plus tard sans casser la constante ; (b) `TZ` du conteneur : silencieux
+  s'il manque (UTC), c'est le défaut même de #929.
+- **Réversible** : oui ; un réglage peut remplacer la constante en un seul endroit.
+- **Migration** : aucune ; rien ne change dans le schéma ni dans les données écrites, seule la date choisie pour les écritures
+  à venir.
