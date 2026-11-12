@@ -402,3 +402,26 @@ Journaux sous `/home/gcorbaz/devel/kesh-gate-logs/e34b/`, tels qu'ils ont tourn�
   `lint-i18n-ownership` vert, `test:unit` **227 fichiers, 2968 tests**, `build` vert (`front-*-2.log`).
 - ⚠️ `KESH_E2E_CAPTURES_DIR` pointait sur `e34b/captures/` pour toute la suite : les captures des autres specs s'y sont ajoutées ; celles de la
   story sont les cinq `34-11b-*.png`.
+
+#### Remédiation P1 et fusion de la 34-11a2
+
+- **Rouges** (`rouges-rem1.log`, tests neufs contre le code de `96f8ee70`) : backend 3 rouges (`s34_11b_e1_1_…`, `e1_2_…`, `e1_3_…`) ;
+  3 verts dès le départ, attendus — `a1_2` ×2 et `a1_11` documentent la règle (cas admis, cas refusé, cas bloqué), ils ne corrigent rien ;
+  Vitest 9 rouges (catalogues des clés `-transfer-among-*`, (c′), confirmation et relecture du dialogue, `expectUnlinkOnly`).
+- **Mutations, 3e jeu** au code de la remédiation (`mut/resume-j3.log`, journaux `mut/*-j3.log`) : **toutes tuées** — M1 (14), M2 (7), Macc (2),
+  M3 (6), M4 (5), M5 (1, la course), M6 (7), M7b (1, `s34_11b_ac4_exercice_clos` ; un premier jet ne compilait pas, rejoué), M7c (1,
+  `reconciliation_e2e::cancelling_a_reconciled_settlement_is_refused` ; avec `supplier_invoice_draft_e2e` dans le lot, **la dévalidation
+  fournisseur ne rougit pas** : son refus `MATCHED_BANK_TRANSACTION` vient de la garde de suppression de l'écriture d'achat, pas de la queue
+  commune — seconde défense, pas un trou), M10 (1), M12 (2, les deux sens), M13 (1), F1 (2), F2 (1), F3 (1), F4 (1), M11 (1).
+  **M2b** non rejouée : déclarée **équivalente** (doc-comment de `linkable_side`).
+- **Au commit de fusion `2dbcc102`** (`gates-4.txt`, `front-4.txt`) : `test-fast --ci` **5225/5225**, 13 ignorés ; `cargo build` vert ;
+  `gate-ci.sh kesh_ci_e34b` **5232 passés, 0 échec, 17 ignorés** ; frontend : `check` 0 erreur, `lint-i18n-ownership` vert, `test:unit`
+  **228 fichiers, 2974 tests**, `build` vert ; **E2E** (`e2e-r4/`) **389 passés, 8 échecs, 17 ignorés** — les sept de la KF-029
+  (`docs/testing.md:394-400`) et **un de pollution** : `backup-restore-new-install.spec.ts:140` (élément `admin-restore-files-restored`
+  absent au bout de 60 s), **vert rejoué seul** (`e2e-r5/` : 3/3), dans la plage « 7 à 9 » de `docs/testing.md` ; `credit-card-statement.spec.ts`
+  et `bank-accounts-credit-card.spec.ts` verts. Aucun port tenu après.
+- Un passage intermédiaire (`gates-3.txt`, `25a7d4dd`) avait rendu `test-fast` 5213/5213, `build`, `check`, `lint` verts ; interrompu pour la
+  fusion.
+- **Écarts à la consigne Edit** (remédiation) : un `sed -i` lancé par erreur sur `crates/kesh-api/src/routes/reconciliation.rs` (une ligne de
+  doc-comment, juste) — sa sauvegarde `.unused`, sortie du dépôt, est sous `kesh-gate-logs/e34b/reconciliation.rs.sed-backup-a-ignorer` ;
+  `python3 -I` pour dériver un script de gates dans `kesh-gate-logs`.
