@@ -1,6 +1,15 @@
 # Story 35-8b : l'audit attribue à la clé d'API ce qu'elle a fait — partout ailleurs (#431)
 
-Status: ready-for-dev
+Status: backlog
+
+> ⚠️ **Reportée à l'Epic 36 le 2026-11-13** (C-e350-48, décision de l'orchestrateur ; Guy veut des epics courtes à petites
+> stories, et celle-ci touche ≈ 140 fichiers et ≈ 1000 appels). Elle y sera **découpée en lots par domaine**. La fiche est
+> gardée telle quelle ; ses numéros de ligne et la release « 0.17.7 » ci-dessous ne valent plus. **Au découpage, traiter
+> d'abord les findings de sa validation P1** (`kesh-gate-logs/e35-8b-validation-p1.md` : V1-1 la restauration, qui signe
+> délibérément par `audit_uid` — raison finale `RESTAURATION` déjà posée par la 35-8a ; V1-2 la table finale ; V1-3 les
+> deux documents de l'attribution ; V1-4 le rayon ; LOW V1-5 à V1-7), et repartir de la garde de la 35-8a telle que
+> fusionnée : clé par site, raison `A_CONVERTIR` (non plus `A_CONVERTIR_35_8B`), raisons `SYSTEME`, `RESTAURATION`,
+> `DEFINITION`, `FIXTURE` (C-e350-49).
 
 *Fiche rédigée le 2026-11-12 par l'agent de rédaction des fiches de l'Epic 35 (Opus 5.5), worktree `kesh-e35`, par le
 workflow `bmad-create-story`. Seconde des deux stories du découpage de la 35-8 (C-e350-38) : le **déploiement** du motif

@@ -45,7 +45,9 @@ et ceux du tag ; c'est le compte **au tag v0.17.6** qui sert de référence.
 
 **Objectif** (règle de release, objectif à terme et non barrière) : **solde net en baisse** — moins d'issues ouvertes
 au tag v0.17.7 qu'au tag v0.17.6, et moins de bugs, **issues ouvertes pendant l'epic comprises**. L'epic vise quatorze
-issues (#431, #537, #907, #929, #932, #948, #955, #964, #1000, #1022, #1023, #1024, #1026, #1028). **On trace
+issues (#431, #537, #907, #929, #932, #948, #955, #964, #1000, #1022, #1023, #1024, #1026, #1028). *(Annoté le
+2026-11-13 : #431 ne se ferme plus dans l'epic — la 35-8b, qui la fermait, est reportée à l'Epic 36 (C-e350-48) ; la
+35-8a porte `refs #431`. L'epic en vise donc treize.)* **On trace
 toujours** : un point qu'une story ne traite pas s'ouvre en issue, une par problème, même s'il fait remonter le compte.
 
 ## Stories
@@ -61,8 +63,13 @@ toujours** : un point qu'une story ne traite pas s'ouvre en issue, une par probl
 | **35-5b** | #929 | I1, I3 | Les 20 autres sites (accueil, échéances, rappels, noms de fichiers, exercice de l'assistant, démonstration), les tests de `src` et des specs E2E ; la liste d'exemptions de la garde vidée | `routes/{admin,audit_log,bank_accounts,exports,invoice_email,invoices,onboarding}.rs`, `services/{postes_ouverts,rapports}.rs`, `repositories/{dunning_eligibility,invoices}.rs`, `kesh-seed`, specs E2E | boucle complète |
 | **35-6** | #1026, #1028, #1025 | I1, I3, I3 | Solde d'ouverture : « 1.234 » à l'allemande n'est plus lu 1,234 franc en silence ; « 1_000 » est lu et affiché comme le serveur le lit, jamais « NaN CHF » ; écran seul (C-e350-19), plus un test de parité (C-e350-33) | `frontend/src/lib/features/bank-accounts/format.ts`, `frontend/src/routes/(app)/bank-accounts/+page.svelte`, fixture `opening-amount-cases.json`, test de `opening_balances.rs` | petite |
 | **35-7** | #1000 | I2 | `AccountAutocomplete` : un compte sorti de la liste n'est plus envoyé quand le champ paraît vide (C-e350-36, -37) | `frontend/src/lib/features/journal-entries/AccountAutocomplete.svelte`, `frontend/src/lib/features/reconciliation/{ManualMatchModal,TransactionSplitModal}.svelte`, `reconciliation-counterparties.ts`, leurs tests, `tests/e2e/reconciliation-manual-entry.spec.ts` | petite |
-| **35-8a** | #431, #892 (item 11) | I2 | L'audit attribue à la clé d'API ce qu'elle a fait : le type `Acteur`, `NewAuditLogEntry::par`, la garde des sites non résolus (C-e350-38 à -40) ; pilotes : les écritures et le retour en brouillon d'une facture fournisseur ; serveur MCP hors périmètre (#1057) | `kesh-db` `entities/audit_log.rs`, `repositories/{journal_entries,supplier_invoices,letterings}.rs` ; `kesh-api` `audit.rs`, `routes/{journal_entries,supplier_invoices}.rs`, `tests/audit_acteur_garde.rs`, `tests/audit_label_registry.rs` ; `admin-manual.tex` | boucle complète |
-| **35-8b** | #431 | I2 | Déploiement : tout site atteint par un handler authentifié prend l'acteur de la requête, administration comprise (C-e350-41) ; `closes #431` | les autres dépôts qui tracent (accounts, bank_profiles, companies, contacts, credit_notes, fiscal_years, invoice_settlements_write, invoices, payment_batches, products, reconciliation_rules, supplier_invoices, réglages) et leurs routes | boucle complète (rollout) |
+| **35-8a** | #431 (`refs`), #892 (item 11) | I2 | L'audit attribue à la clé d'API ce qu'elle a fait : le type `Acteur`, `NewAuditLogEntry::par`, la garde des sites non résolus, par site et par raison (C-e350-38 à -40, -49) ; pilotes : les écritures (rapprochements par clé compris) et le retour en brouillon d'une facture fournisseur ; serveur MCP hors périmètre (#1057) ; découpage 35-8a1 / 35-8a2 proposé (C-e350-50) | `kesh-db` `entities/audit_log.rs`, `repositories/{journal_entries,supplier_invoices,letterings}.rs` ; `kesh-api` `audit.rs`, `routes/{journal_entries,supplier_invoices,reconciliation}.rs`, `tests/audit_acteur_garde.rs`, `tests/audit_label_registry.rs` ; appelants et tests des écritures (≈ 60 fichiers, mécanique) ; `admin-manual.tex`, `user-manual.tex` | boucle complète ; moyenne (≈ 60 fichiers) |
+
+**Reporté à l'Epic 36** (C-e350-48, 2026-11-13, décision de l'orchestrateur : epics courtes, petites stories) :
+
+| Story | Issues | Impact | Objet | Fichiers principaux | Taille |
+|---|---|---|---|---|---|
+| ~~35-8b~~ | #431 | I2 | Déploiement : tout site atteint par un handler authentifié prend l'acteur de la requête, administration comprise (C-e350-41) ; à **découper en lots par domaine** à l'Epic 36, findings de sa validation P1 traités au découpage (`kesh-gate-logs/e35-8b-validation-p1.md`) ; c'est elle qui portera `closes #431` | les autres dépôts qui tracent (accounts, bank_profiles, companies, contacts, credit_notes, fiscal_years, invoice_settlements_write, invoices, payment_batches, products, reconciliation_rules, supplier_invoices, réglages) et leurs routes ; ≈ 140 fichiers, ≈ 1000 appels | grande (rollout) |
 
 **35-1 descend** (décision de Guy du 2026-11-12) : il garde le format de numéro par défaut, `F-{YEAR}-{SEQ:04}`, que le
 défaut ne touche pas. Le défaut reste I2, mais sa probabilité tombe à basse.

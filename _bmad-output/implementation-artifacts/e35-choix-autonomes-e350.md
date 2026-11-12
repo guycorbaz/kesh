@@ -432,6 +432,9 @@ retenue, options écartées, réversibilité. Lignes citées sur `release/0.17.6
   **35-8b** convertit le reste et vide la raison `A_CONVERTIR_35_8B` de la garde. La clé de sprint `35-8` passe à `split`.
 - **Écartée** : une seule story : une boucle de revue sur seize dépôts.
 - **Réversible** : oui.
+- *(Annoté le 2026-11-13, validation P1 de la 35-8a, V1-1 : **80** sites dans **30** fichiers, non 78 dans 29 — la coupe au
+  premier `#[cfg(test)]` cachait `auth/bootstrap.rs:195`, `:332`. La 35-8b sort de l'Epic 35 : **C-e350-48** ; raison
+  renommée `A_CONVERTIR`.)*
 
 ### C-e350-39 — 35-8 : un type `Acteur` dans `kesh-db`, à la place du `user_id` nu
 
@@ -454,6 +457,8 @@ retenue, options écartées, réversibilité. Lignes citées sur `release/0.17.6
   hors de #431 : une clé MCP n'est pas une clé REST, et le manuel écrit déjà la limite (`admin-manual.tex:3392`).
 - **Écartée** : un test par route : couvre les routes écrites, non celles qui viendront.
 - **Réversible** : oui.
+- *(Annoté le 2026-11-13, validation P1 de la 35-8a : la garde compte par **site** et non par fichier, retire les items
+  `#[cfg(test)]` au lieu de couper le fichier, compte un quatrième motif et donne une raison à chaque site : **C-e350-49**.)*
 
 ### C-e350-41 — 35-8b : l'`Acteur` partout où un handler authentifié trace, administration comprise
 
@@ -529,4 +534,41 @@ retenue, options écartées, réversibilité. Lignes citées sur `release/0.17.6
   devient `NumberFormatUnrenderable { cause: Duplicate }` (« ajoutez-y un compteur ») ; test d'API inconditionnel (AC4).
 - **Écartée** : écrire la limite et ouvrir une issue : laisserait un refus muet que la story sait nommer pour quelques
   lignes.
+- **Réversible** : oui.
+
+### C-e350-48 — 35-8b : reportée à l'Epic 36, découpée là-bas en lots par domaine
+
+- **Contexte** : décision de l'orchestrateur du 2026-11-13, sur la demande de Guy d'epics courtes à petites stories. La
+  35-8b touche ≈ 140 fichiers et ≈ 1000 appels (validation P1 de la 35-8b, V1-4) : ce n'est pas une petite story.
+- **Retenu** : la 35-8b sort de l'Epic 35 — statut `backlog` au `sprint-status.yaml`, ligne du fichier d'epic déplacée en
+  « reporté à l'Epic 36 », fiche gardée telle quelle avec une note en tête qui renvoie aux findings de sa P1
+  (`kesh-gate-logs/e35-8b-validation-p1.md`, 4 MEDIUM, 3 LOW) à traiter au découpage. La 35-8a reste (mécanisme et deux
+  pilotes) ; sa PR porte `refs #431`, non `closes` ; #431 reste ouverte à la 0.17.7.
+- **Écartée** : garder la 35-8b dans l'Epic 35 et la valider en l'état : une boucle de revue sur un rayon de cette taille.
+- **Réversible** : oui (la fiche est intacte).
+
+### C-e350-49 — 35-8a : la garde compte par site, retire les items de test, et donne une raison à chaque site
+
+- **Contexte** : validation P1 de la 35-8a, V1-1 à V1-4, V1-10, et la restauration (35-8b V1-1). Couper au premier
+  `#[cfg(test)]` cache `auth/bootstrap.rs` ; un compte par fichier reste vert sur un échange site ajouté / site converti ;
+  `for_actor(user_id, None, …)` est une sortie muette ; des sites comptés n'avaient aucune raison.
+- **Retenu** : items `#[cfg(test)]` retirés (accolades appariées) ; clé `(fichier, fonction englobante, motif)` ; quatrième
+  motif `for_actor(…, None` ; raisons `PRE_AUTH`, `SYSTEME`, `RESTAURATION`, `DEFINITION`, `PONT`, `FIXTURE`, `MCP`,
+  `ADMIN_SANS_CLE`, `A_CONVERTIR` (renommée depuis `A_CONVERTIR_35_8B`) ; six sondes. La restauration garde son
+  `user_id = audit_uid` : la 35-8a ne la touche pas.
+- **Écartées** : (a) clé par ligne de code normalisée : rougit au moindre reformatage ; (b) rendre `for_actor`
+  `pub(crate)` tout de suite : `kesh-api` l'appelle (`inbox_import.rs:647`, `routes/bank_accounts.rs:851`, …), à
+  reprendre au déploiement.
+- **Réversible** : oui (un test).
+
+### C-e350-50 — 35-8a : la story n'est pas petite ; découpage en 35-8a1 / 35-8a2 proposé, non appliqué
+
+- **Contexte** : validation P1 de la 35-8a, V1-7. Rayon recompté sur `main` `67efc51f` : le lot des écritures touche
+  ≈ 60 fichiers et ≈ 240 appels, presque tous dans les tests, mécaniques.
+- **Retenu** : la fiche reste une story (décision de l'orchestrateur du même jour : « la 35-8a reste ») mais ordonne ses
+  tâches en deux lots, et **propose** à l'orchestrateur un découpage : 35-8a1 (mécanisme, garde, retour en brouillon
+  fournisseur, ≈ 8 fichiers de production) puis 35-8a2 (les écritures, rollout mécanique). Seuil écrit pour le cas où il
+  ne découpe pas : plus de 70 fichiers à l'étape 0, ou lot 1 non convergé.
+- **Écartées** : (a) découper sans décision de l'orchestrateur : contredit sa consigne ; (b) garder les signatures
+  `user_id` des écritures avec une enveloppe : les appelants sortiraient de la vue de la garde.
 - **Réversible** : oui.
