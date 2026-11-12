@@ -917,10 +917,14 @@ const ATTENDU = {
 	// échéancier, deux clés chacun et leur *Relire* (`invoice-settle-unknown-reread`). Que des
 	// littéraux. À recompter à la fusion de l'Epic 34. Revue P2 (B2-1) : **2928 → 2930** (+2),
 	// l'avis « relecture en cours » de la fiche et de l'échéancier.
+	// Story 34-6 (#953) : **2922 → 2928** (+6) : `CompanyConflictNotice.svelte` +5 (« Enregistré
+	// entre-temps », « Repris », l'avis de remplacement, l'avis de fusion, « (vide) »),
+	// `settings/+page.svelte` +1 (« déjà enregistrées »). Que des littéraux ; `sitesNonResolus`
+	// et `relais` inchangés.
 	// Intégration de la release 0.17.6 (2026-11-12), **recompté à la source** par la garde
 	// elle-même après chaque fusion (non additionné) : 2946 après la 34-3 (34-1, 34-2, 34-3),
-	// 2954 après la 34-4, **2962** après la 34-5.
-	sitesTotal: 2962,
+	// 2954 après la 34-4, 2962 après la 34-5, **2968** après la 34-6.
+	sitesTotal: 2968,
 	sitesNonResolus: 31,
 	relais: 6,
 	// Story 26-1 (#620, AC3-bis) : **10 → 11** — `lib/features/bank-import/

@@ -11,7 +11,19 @@
 		updateCompanyContactDetails,
 		updateCompanyEmail
 	} from '$lib/features/settings/settings.api';
-	import type { CompanyCurrentResponse } from '$lib/features/settings/settings.types';
+	import type { CompanyCurrentResponse, CompanyJson } from '$lib/features/settings/settings.types';
+	import {
+		ADDRESS_NORMALIZERS,
+		adoptionDecision,
+		companyEditConflict,
+		conflictNotice,
+		PENDING_FIELD_CLASS,
+		sameBlockValues,
+		type CompanyConflictNoticeState,
+		type CompanyEditConflict,
+		type CompanyFieldNormalizer,
+	} from '$lib/features/settings/company-conflict';
+	import CompanyConflictNotice from '$lib/features/settings/CompanyConflictNotice.svelte';
 	import SessionIdleSection from '$lib/features/settings/SessionIdleSection.svelte';
 	import { bankAccountName } from '$lib/features/bank-accounts/format';
 	import { authState } from '$lib/app/stores/auth.svelte';
@@ -36,17 +48,207 @@
 	let data = $state<CompanyCurrentResponse | null>(null);
 	let loading = $state(true);
 
+	// --- Story 34-6 (#953) : le conflit de version des trois éditions de la société ---
+	//
+	// Chaque bloc garde, à l'ouverture de l'édition, une copie de ses valeurs enregistrées
+	// (`*Base`). Sur un 409, `reloadAfterConflict` relit la société et la juge contre cette
+	// copie et la saisie (`companyEditConflict`) : les champs non modifiés reprennent la
+	// valeur relue, ceux modifiés des deux côtés sont montrés, et la copie prend les valeurs
+	// relues, si bien qu'un second conflit se compare à elles. Avant, la saisie restait et
+	// le second clic remplaçait, sans l'avoir montrée, l'écriture concurrente.
+
+	/** Valeurs du bloc e-mail, telles que le formulaire les porte. */
+	const EMAIL_FIELDS = ['email'] as const;
+	function emailValuesOf(c: CompanyJson): Record<(typeof EMAIL_FIELDS)[number], string> {
+		return { email: c.email ?? '' };
+	}
+
+	/** Valeurs du bloc téléphone et site. */
+	const CONTACT_FIELDS = ['phone', 'website'] as const;
+	function contactValuesOf(c: CompanyJson): Record<(typeof CONTACT_FIELDS)[number], string> {
+		return { phone: c.phone ?? '', website: c.website ?? '' };
+	}
+
+	/**
+	 * Valeurs du bloc adresse. `addressStructured` peut manquer après relecture (adresse
+	 * retirée ailleurs) : chaque composant vaut alors vide.
+	 */
+	const ADDRESS_FIELDS = ['street', 'building', 'postalCode', 'city', 'country'] as const;
+	function addressValuesOf(c: CompanyJson): Record<(typeof ADDRESS_FIELDS)[number], string> {
+		const current = c.addressStructured;
+		return {
+			street: current?.street ?? '',
+			building: current?.building ?? '',
+			postalCode: current?.postalCode ?? '',
+			city: current?.city ?? '',
+			// Une société d'avant les composants n'a pas de pays : CH est le défaut du serveur.
+			country: current?.country?.trim() || 'CH',
+		};
+	}
+
+	type ConflictOutcome<K extends string> =
+		| { status: 'reload-failed' }
+		| {
+				status: 'reloaded';
+				/** La nouvelle copie : les valeurs relues. */
+				base: Record<K, string>;
+				/** La version de la société relue, que la copie accompagne désormais. */
+				version: number;
+				conflict: CompanyEditConflict<K>;
+				notice: CompanyConflictNoticeState | null;
+		  };
+
+	/**
+	 * Relit la société après un 409 et juge le conflit d'un bloc. `data` prend la société
+	 * relue si `adoptCompany` l'adopte ; sinon (plus ancienne que `data`), le bloc est jugé
+	 * contre `data`. Seul un échec de la relecture rend `reload-failed`.
+	 */
+	async function reloadAfterConflict<K extends string>(
+		base: Record<K, string>,
+		input: Record<K, string>,
+		fields: readonly K[],
+		valuesOf: (c: CompanyJson) => Record<K, string>,
+		normalizers: Partial<Record<K, CompanyFieldNormalizer>> = {},
+	): Promise<ConflictOutcome<K>> {
+		const seq = nextSeq();
+		let fresh: CompanyCurrentResponse;
+		try {
+			fresh = await fetchCompanyCurrent();
+		} catch {
+			return { status: 'reload-failed' };
+		}
+		// Revue P3 (P3-B2 ; C-e346-11) : si la société relue est plus ancienne que celle que la
+		// page porte déjà (une autre réponse l'a dépassée pendant le vol), le bloc est jugé
+		// contre la plus récente, `data`, copie et version prises ensemble. Juger contre la
+		// relue pouvait fermer l'édition sur « déjà enregistrées » alors qu'un autre avait
+		// changé la valeur depuis.
+		const adopted = adoptCompany(fresh.company, seq, fresh);
+		const current = adopted || !data ? fresh.company : data.company;
+		const stored = valuesOf(current);
+		const conflict = companyEditConflict(base, stored, input, fields, normalizers);
+		return {
+			status: 'reloaded',
+			base: stored,
+			version: current.version,
+			conflict,
+			notice: conflictNotice(conflict, stored),
+		};
+	}
+
+	/**
+	 * Revue de code P3 (P3-B1, A3-1, E3-1 ; C-e346-11) — un numéro de séquence client,
+	 * attribué au DÉPART de chaque requête qui rend la société (relecture, enregistrement d'un
+	 * bloc, verrou de période). Le verrou ne change pas la version (`lock_books`) : deux
+	 * sociétés de même version ne sont donc pas ordonnées par elle, et la séquence les départage.
+	 */
+	let requestSeq = 0;
+	/** Séquence de la requête dont vient `data` (0 : le chargement initial). */
+	let dataSeq = 0;
+	function nextSeq(): number {
+		requestSeq += 1;
+		return requestSeq;
+	}
+
+	/**
+	 * Revue de code P1 (B-1, E1-1 ; C-e346-8) — chaque édition ouverte envoie la version de
+	 * SA copie (`*Version`), non `data.company.version`. Quand la page reçoit une société plus
+	 * récente (le succès d'un bloc, ou la relecture après un 409), une édition ouverte n'adopte
+	 * la nouvelle version que si ses propres champs n'y ont pas bougé : les blocs portent des
+	 * champs disjoints, si bien que l'enregistrement d'un autre bloc ne provoque pas de
+	 * conflit parasite. Si ses champs ont bougé, elle garde l'ancienne version, et son
+	 * enregistrement reçoit son propre 409 : l'écriture concurrente lui est montrée.
+	 */
+	function syncOpenBlocks(company: CompanyJson) {
+		// Revue P2 (C-e346-10) : une version ne recule jamais.
+		const v = company.version;
+		if (emailEditing && v > emailVersion && sameBlockValues(emailBase, emailValuesOf(company), EMAIL_FIELDS)) {
+			emailVersion = v;
+		}
+		if (
+			contactEditing &&
+			v > contactVersion &&
+			sameBlockValues(contactBase, contactValuesOf(company), CONTACT_FIELDS)
+		) {
+			contactVersion = v;
+		}
+		if (
+			addressEditing &&
+			v > addressVersion &&
+			sameBlockValues(addressBase, addressValuesOf(company), ADDRESS_FIELDS, ADDRESS_NORMALIZERS)
+		) {
+			addressVersion = v;
+		}
+	}
+
+	/**
+	 * Revue de code P2 (P2-B1, E2-1, A2-5 ; C-e346-10) — toute société reçue (succès d'un bloc,
+	 * relecture après un 409, verrou de période) passe par ici. Les réponses peuvent arriver
+	 * dans le désordre : une relecture partie avant le succès d'un autre bloc et revenue après
+	 * porte une société plus ANCIENNE. Elle ne remplace alors ni `data` (l'écran garderait
+	 * l'ancienne valeur du bloc qui vient de réussir) ni les versions des éditions ouvertes
+	 * (`syncOpenBlocks`, qui ne fait de toute façon jamais reculer une version).
+	 *
+	 * Revue P3 (C-e346-11) : à version ÉGALE, l'ordre vient de la séquence de départ. Le verrou
+	 * de période ne change pas la version : une relecture partie avant le verrou et revenue
+	 * après porte la même version que lui, sans la borne. Elle n'est adoptée que si sa requête
+	 * est partie après celle dont vient `data`. À version supérieure, la société est toujours
+	 * adoptée, quelle que soit sa séquence.
+	 *
+	 * @param seq  la séquence de la requête qui a rendu `company` ({@link nextSeq})
+	 * @param full la réponse entière, comptes bancaires compris, quand on l'a (relecture)
+	 * @returns vrai si la société a été adoptée
+	 */
+	function adoptCompany(company: CompanyJson, seq: number, full?: CompanyCurrentResponse): boolean {
+		// La règle est une fonction pure, testée seule (`adoptionDecision`, revue P4).
+		const decision = adoptionDecision(
+			data ? { version: data.company.version, seq: dataSeq } : null,
+			{ version: company.version, seq },
+		);
+		if (!decision.adopt) return false;
+		if (full) data = full;
+		else if (data) data = { ...data, company };
+		dataSeq = decision.seq;
+		syncOpenBlocks(company);
+		return true;
+	}
+
+	/**
+	 * Revue P3 (P3-B5) : un champ en lecture seule pendant l'envoi et la relecture
+	 * (C-e346-9) se voit. Le composant `Input` n'a de style que pour `disabled:`, et il est
+	 * partagé (d'autres écrans emploient `readonly` à demeure) : le signe est posé ici. La
+	 * classe vit avec la règle (`PENDING_FIELD_CLASS`), où un test contrôle ses jetons (P4).
+	 */
+	const PENDING_FIELD = PENDING_FIELD_CLASS;
+
+	function alreadySavedMessage(): string {
+		return msg('settings-company-conflict-already-saved', 'Ces valeurs étaient déjà enregistrées.');
+	}
+
 	// Story 20-3b2 — édition inline de l'e-mail société (Reply-To), Admin-only.
 	let isAdmin = $derived(authState.currentUser?.role === 'Admin');
 	let emailEditing = $state(false);
 	let emailValue = $state('');
 	let emailSubmitting = $state(false);
 	let emailError = $state('');
+	let emailBase = $state<Record<(typeof EMAIL_FIELDS)[number], string>>({ email: '' });
+	let emailVersion = $state(0);
+	let emailConflict = $state<CompanyConflictNoticeState | null>(null);
 
 	function startEmailEdit() {
-		emailValue = data?.company.email ?? '';
+		if (data) {
+			emailBase = emailValuesOf(data.company);
+			emailVersion = data.company.version;
+		}
+		emailValue = emailBase.email;
 		emailError = '';
+		emailConflict = null;
 		emailEditing = true;
+	}
+
+	function closeEmailEdit() {
+		emailEditing = false;
+		emailError = '';
+		emailConflict = null;
 	}
 
 	async function saveEmail() {
@@ -58,33 +260,53 @@
 		}
 		emailSubmitting = true;
 		emailError = '';
+		// Revue P3 (P3-B6, E3-4) : l'avis se vide au départ de l'envoi. Un refus d'une autre
+		// nature ne garde pas un avis périmé, et un second conflit refait la région vive.
+		emailConflict = null;
+		const seq = nextSeq();
 		try {
 			// Champ vidé = effacement (Reply-To omis à l'envoi).
 			const updated = await updateCompanyEmail({
 				email: trimmed || null,
-				version: data.company.version,
+				version: emailVersion,
 			});
-			data = { ...data, company: updated };
-			emailEditing = false;
+			closeEmailEdit();
+			adoptCompany(updated, seq);
 			notifySuccess(msg('settings-company-email-saved', 'E-mail de la société enregistré'));
 		} catch (err) {
 			if (isApiError(err)) {
 				if (err.code === 'OPTIMISTIC_LOCK_CONFLICT') {
-					// Conflit de version : recharger et laisser l'admin recommencer.
-					// Si le reload échoue aussi (review P3 BH), ne pas prétendre
-					// « rechargées » — la version locale reste périmée, re-cliquer
-					// redonnerait le même 409 : inviter à recharger la page.
-					try {
-						data = await fetchCompanyCurrent();
-						emailError = msg(
-							'settings-company-email-conflict',
-							'Conflit de version — les données ont été rechargées, réessayez.',
-						);
-					} catch {
+					// Conflit de version : relire et juger (Story 34-6). Si la relecture
+					// échoue (review P3 BH), ne pas prétendre « rechargées » — la version
+					// locale reste périmée, re-cliquer redonnerait le même 409 : inviter à
+					// recharger la page.
+					const r = await reloadAfterConflict(
+						emailBase,
+						{ email: emailValue },
+						EMAIL_FIELDS,
+						emailValuesOf,
+					);
+					if (r.status === 'reload-failed') {
+						emailConflict = null;
 						emailError = msg(
 							'settings-company-email-conflict-reload-failed',
 							'Conflit de version et rechargement impossible — rechargez la page.',
 						);
+					} else if (r.conflict.kind === 'already-saved') {
+						emailBase = r.base;
+						closeEmailEdit();
+						notifySuccess(alreadySavedMessage());
+					} else {
+						emailBase = r.base;
+						emailVersion = r.version;
+						emailValue = r.conflict.input.email;
+						emailConflict = r.notice;
+						if (!r.notice) {
+							emailError = msg(
+								'settings-company-email-conflict',
+								'Conflit de version — les données ont été rechargées, réessayez.',
+							);
+						}
 					}
 				} else {
 					emailError = err.message;
@@ -109,27 +331,43 @@
 	let websiteValue = $state('');
 	let contactSubmitting = $state(false);
 	let contactError = $state('');
+	let contactBase = $state<Record<(typeof CONTACT_FIELDS)[number], string>>({ phone: '', website: '' });
+	let contactVersion = $state(0);
+	let contactConflict = $state<CompanyConflictNoticeState | null>(null);
 
 	function startContactEdit() {
-		phoneValue = data?.company.phone ?? '';
-		websiteValue = data?.company.website ?? '';
+		if (data) {
+			contactBase = contactValuesOf(data.company);
+			contactVersion = data.company.version;
+		}
+		phoneValue = contactBase.phone;
+		websiteValue = contactBase.website;
 		contactError = '';
+		contactConflict = null;
 		contactEditing = true;
+	}
+
+	function closeContactEdit() {
+		contactEditing = false;
+		contactError = '';
+		contactConflict = null;
 	}
 
 	async function saveContactDetails() {
 		if (!data) return;
 		contactSubmitting = true;
 		contactError = '';
+		contactConflict = null;
+		const seq = nextSeq();
 		try {
 			// Champ vidé = effacement : la ligne disparaît du PDF (D2).
 			const updated = await updateCompanyContactDetails({
 				phone: phoneValue.trim() || null,
 				website: websiteValue.trim() || null,
-				version: data.company.version,
+				version: contactVersion,
 			});
-			data = { ...data, company: updated };
-			contactEditing = false;
+			closeContactEdit();
+			adoptCompany(updated, seq);
 			notifySuccess(msg('settings-company-contact-saved', 'Coordonnées enregistrées'));
 		} catch (err) {
 			if (isApiError(err)) {
@@ -138,18 +376,36 @@
 					// e-mail : les deux libellés sont génériques aujourd'hui, mais
 					// les partager ferait s'afficher ici toute reformulation
 					// destinée au contexte e-mail, sans qu'aucun test ne le voie.
-					// (Passe 6 de revue.)
-					try {
-						data = await fetchCompanyCurrent();
-						contactError = msg(
-							'settings-company-contact-conflict',
-							'Conflit de version — les données ont été rechargées, réessayez.',
-						);
-					} catch {
+					// (Passe 6 de revue.) L'avis de valeurs, lui, est commun aux trois
+					// blocs : il nomme le champ (Story 34-6, C-e343-7).
+					const r = await reloadAfterConflict(
+						contactBase,
+						{ phone: phoneValue, website: websiteValue },
+						CONTACT_FIELDS,
+						contactValuesOf,
+					);
+					if (r.status === 'reload-failed') {
+						contactConflict = null;
 						contactError = msg(
 							'settings-company-contact-conflict-reload-failed',
 							'Conflit de version et rechargement impossible — rechargez la page.',
 						);
+					} else if (r.conflict.kind === 'already-saved') {
+						contactBase = r.base;
+						closeContactEdit();
+						notifySuccess(alreadySavedMessage());
+					} else {
+						contactBase = r.base;
+						contactVersion = r.version;
+						phoneValue = r.conflict.input.phone;
+						websiteValue = r.conflict.input.website;
+						contactConflict = r.notice;
+						if (!r.notice) {
+							contactError = msg(
+								'settings-company-contact-conflict',
+								'Conflit de version — les données ont été rechargées, réessayez.',
+							);
+						}
 					}
 				} else {
 					contactError = err.message;
@@ -165,51 +421,80 @@
 	// Story 33-5 (#909) — corriger l'adresse après l'assistant, sur le patron des
 	// deux éditions ci-dessus. Le pays reste un champ libre de deux lettres, comme
 	// aux contacts : le serveur juge, l'écran affiche son message.
+	/** Adresse vide d'une édition pas encore ouverte : le pays par défaut du serveur. */
+	function emptyAddress(): Record<(typeof ADDRESS_FIELDS)[number], string> {
+		return { street: '', building: '', postalCode: '', city: '', country: 'CH' };
+	}
 	let addressEditing = $state(false);
-	let addressForm = $state({ street: '', building: '', postalCode: '', city: '', country: 'CH' });
+	let addressForm = $state(emptyAddress());
 	let addressSubmitting = $state(false);
 	let addressError = $state('');
+	let addressBase = $state(emptyAddress());
+	let addressVersion = $state(0);
+	let addressConflict = $state<CompanyConflictNoticeState | null>(null);
 
 	function startAddressEdit() {
-		const current = data?.company.addressStructured;
-		addressForm = {
-			street: current?.street ?? '',
-			building: current?.building ?? '',
-			postalCode: current?.postalCode ?? '',
-			city: current?.city ?? '',
-			// Une société d'avant les composants n'a pas de pays : CH est le défaut du serveur.
-			country: current?.country?.trim() || 'CH',
-		};
+		if (data) {
+			addressBase = addressValuesOf(data.company);
+			addressVersion = data.company.version;
+		}
+		addressForm = { ...addressBase };
 		addressError = '';
+		addressConflict = null;
 		addressEditing = true;
+	}
+
+	function closeAddressEdit() {
+		addressEditing = false;
+		addressError = '';
+		addressConflict = null;
 	}
 
 	async function saveAddress() {
 		if (!data) return;
 		addressSubmitting = true;
 		addressError = '';
+		addressConflict = null;
+		const seq = nextSeq();
 		try {
 			const updated = await updateCompanyAddress({
 				address: { ...addressForm },
-				version: data.company.version,
+				version: addressVersion,
 			});
-			data = { ...data, company: updated };
-			addressEditing = false;
+			closeAddressEdit();
+			adoptCompany(updated, seq);
 			notifySuccess(msg('settings-company-address-saved', 'Adresse de la société enregistrée'));
 		} catch (err) {
 			if (isApiError(err)) {
 				if (err.code === 'OPTIMISTIC_LOCK_CONFLICT') {
-					try {
-						data = await fetchCompanyCurrent();
-						addressError = msg(
-							'settings-company-address-conflict',
-							'Conflit de version — les données ont été rechargées, réessayez.',
-						);
-					} catch {
+					const r = await reloadAfterConflict(
+						addressBase,
+						{ ...addressForm },
+						ADDRESS_FIELDS,
+						addressValuesOf,
+						ADDRESS_NORMALIZERS,
+					);
+					if (r.status === 'reload-failed') {
+						addressConflict = null;
 						addressError = msg(
 							'settings-company-address-conflict-reload-failed',
 							'Conflit de version et rechargement impossible — rechargez la page.',
 						);
+					} else if (r.conflict.kind === 'already-saved') {
+						addressBase = r.base;
+						closeAddressEdit();
+						notifySuccess(alreadySavedMessage());
+					} else {
+						addressBase = r.base;
+						addressVersion = r.version;
+						addressForm = { ...r.conflict.input };
+						addressConflict = r.notice;
+						if (!r.notice) {
+							addressError = msg(
+								'settings-company-address-conflict',
+								'Conflit de version — les données ont été rechargées, réessayez.',
+							);
+						}
 					}
 				} else {
 					addressError = err.message;
@@ -292,9 +577,13 @@
 		if (!lockThrough || lockBusy) return;
 		lockBusy = true;
 		lockError = null;
+		const seq = nextSeq();
 		try {
 			const updated = await lockBooks(lockThrough);
-			if (data) data = { ...data, company: updated };
+			// Revue P2 (E2-3) : la société rendue est la plus récente ; les éditions ouvertes
+			// inchangées l'adoptent, comme après tout succès (C-e346-10). Revue P3 : à version
+			// égale, la séquence de départ ordonne (C-e346-11).
+			adoptCompany(updated, seq);
 			lockThrough = '';
 		} catch (e) {
 			lockError = errorMessageOf(e);
@@ -314,9 +603,10 @@
 		}
 		lockBusy = true;
 		lockError = null;
+		const seq = nextSeq();
 		try {
 			const updated = await releaseBooksLock(unlockThrough || null, unlockMotif);
-			if (data) data = { ...data, company: updated };
+			adoptCompany(updated, seq);
 			unlockThrough = '';
 			unlockMotif = '';
 			showUnlock = false;
@@ -370,25 +660,31 @@
 							<div class="grid grid-cols-3 gap-2">
 								<div class="col-span-2">
 									<label for="company-address-street" class="text-xs text-text-muted">{msg('field-street', 'Rue')}</label>
-									<Input id="company-address-street" type="text" bind:value={addressForm.street} maxlength={70} data-testid="settings-company-address-street-input" />
+									<Input id="company-address-street" type="text" bind:value={addressForm.street} readonly={addressSubmitting} class={PENDING_FIELD} maxlength={70} data-testid="settings-company-address-street-input" />
+									<CompanyConflictNotice notice={addressConflict} testid="settings-company-address-conflict" field="street" />
 								</div>
 								<div>
 									<label for="company-address-building" class="text-xs text-text-muted">{msg('field-building', 'N°')}</label>
-									<Input id="company-address-building" type="text" bind:value={addressForm.building} maxlength={16} data-testid="settings-company-address-building-input" />
+									<Input id="company-address-building" type="text" bind:value={addressForm.building} readonly={addressSubmitting} class={PENDING_FIELD} maxlength={16} data-testid="settings-company-address-building-input" />
+									<CompanyConflictNotice notice={addressConflict} testid="settings-company-address-conflict" field="building" />
 								</div>
 								<div>
 									<label for="company-address-postal-code" class="text-xs text-text-muted">{msg('field-postal-code', 'NPA')}</label>
-									<Input id="company-address-postal-code" type="text" bind:value={addressForm.postalCode} maxlength={16} data-testid="settings-company-address-postal-code-input" />
+									<Input id="company-address-postal-code" type="text" bind:value={addressForm.postalCode} readonly={addressSubmitting} class={PENDING_FIELD} maxlength={16} data-testid="settings-company-address-postal-code-input" />
+									<CompanyConflictNotice notice={addressConflict} testid="settings-company-address-conflict" field="postalCode" />
 								</div>
 								<div>
 									<label for="company-address-city" class="text-xs text-text-muted">{msg('field-city', 'Localité')}</label>
-									<Input id="company-address-city" type="text" bind:value={addressForm.city} maxlength={35} data-testid="settings-company-address-city-input" />
+									<Input id="company-address-city" type="text" bind:value={addressForm.city} readonly={addressSubmitting} class={PENDING_FIELD} maxlength={35} data-testid="settings-company-address-city-input" />
+									<CompanyConflictNotice notice={addressConflict} testid="settings-company-address-conflict" field="city" />
 								</div>
 								<div>
 									<label for="company-address-country" class="text-xs text-text-muted">{msg('field-country', 'Pays')}</label>
-									<Input id="company-address-country" type="text" bind:value={addressForm.country} maxlength={2} placeholder="CH" data-testid="settings-company-address-country-input" />
+									<Input id="company-address-country" type="text" bind:value={addressForm.country} readonly={addressSubmitting} class={PENDING_FIELD} maxlength={2} placeholder="CH" data-testid="settings-company-address-country-input" />
+									<CompanyConflictNotice notice={addressConflict} testid="settings-company-address-conflict" field="country" />
 								</div>
 							</div>
+							<CompanyConflictNotice notice={addressConflict} testid="settings-company-address-conflict" />
 							{#if addressError}
 								<p class="text-xs text-destructive" data-testid="settings-company-address-error">
 									{addressError}
@@ -401,10 +697,7 @@
 								<Button
 									size="sm"
 									variant="outline"
-									onclick={() => {
-										addressEditing = false;
-										addressError = '';
-									}}
+									onclick={closeAddressEdit}
 									disabled={addressSubmitting}
 									data-testid="settings-company-address-cancel"
 								>
@@ -450,9 +743,12 @@
 								<Input
 									type="email"
 									bind:value={emailValue}
+									readonly={emailSubmitting}
+									class={PENDING_FIELD}
 									maxlength={320}
 									data-testid="settings-company-email-input"
 								/>
+								<CompanyConflictNotice notice={emailConflict} testid="settings-company-email-conflict" field="email" />
 								{#if emailError}
 									<p class="mt-1 text-xs text-destructive" data-testid="settings-company-email-error">
 										{emailError}
@@ -465,14 +761,16 @@
 							<Button
 								size="sm"
 								variant="outline"
-								onclick={() => {
-									emailEditing = false;
-									emailError = '';
-								}}
+								onclick={closeEmailEdit}
 								disabled={emailSubmitting}
 							>
 								{msg('common-cancel', 'Annuler')}
 							</Button>
+						</dd>
+						<!-- Revue P2 (B5) : l'avis du bloc sous la ligne entière, non plaqué à la
+						     largeur du seul champ. -->
+						<dd class="max-w-md">
+							<CompanyConflictNotice notice={emailConflict} testid="settings-company-email-conflict" />
 						</dd>
 					{:else}
 						<dd class="flex items-center gap-3">
@@ -503,17 +801,24 @@
 							<Input
 								type="text"
 								bind:value={phoneValue}
+								readonly={contactSubmitting}
+								class={PENDING_FIELD}
 								maxlength={50}
 								placeholder={msg('settings-field-company-phone', 'Téléphone')}
 								data-testid="settings-company-phone-input"
 							/>
+							<CompanyConflictNotice notice={contactConflict} testid="settings-company-contact-conflict" field="phone" />
 							<Input
 								type="text"
 								bind:value={websiteValue}
+								readonly={contactSubmitting}
+								class={PENDING_FIELD}
 								maxlength={255}
 								placeholder={msg('settings-field-company-website', 'Site web')}
 								data-testid="settings-company-website-input"
 							/>
+							<CompanyConflictNotice notice={contactConflict} testid="settings-company-contact-conflict" field="website" />
+							<CompanyConflictNotice notice={contactConflict} testid="settings-company-contact-conflict" />
 							{#if contactError}
 								<p class="text-xs text-destructive" data-testid="settings-company-contact-error">
 									{contactError}
@@ -531,10 +836,7 @@
 								<Button
 									size="sm"
 									variant="outline"
-									onclick={() => {
-										contactEditing = false;
-										contactError = '';
-									}}
+									onclick={closeContactEdit}
 									disabled={contactSubmitting}
 								>
 									{msg('common-cancel', 'Annuler')}
