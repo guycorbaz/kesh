@@ -83,8 +83,8 @@ convertis par cette story (déploiement, Epic 36) — et `journal_entries::rever
 2. **AC2 — Une contre-passation par clé** (`POST /api/v1/journal-entries/{id}/reverse`, et
    `…/reverse-at-next-fiscal-year-start`, qui exige un **exercice suivant ouvert** dans le montage) : l'écriture
    contre-passée porte **obligatoirement** une ligne sur le compte **créanciers ou débiteurs** des fixtures — un compte
-   lettrable (`letterings::is_letterable_account`, `letterings.rs:421`), non lié à un compte bancaire (`:405-415`), ni de
-   charge ni de produit (`api-external.md:404`) ; le test asserte d'abord qu'un `lettering.created` d'origine `reversal`
+   lettrable (`letterings.rs:363`, `is_letterable` : `Asset` ou `Liability`, non lié à un compte bancaire — définition
+   `BANK_LINKED_SQL`, `:351-356` ; côté documentation, `api-external.md:408`) ; le test asserte d'abord qu'un `lettering.created` d'origine `reversal`
    **existe**, puis que lui et `journal_entry.reversed` portent la clé (sans quoi M3 survivrait sur un montage qui ne lettre
    rien). Modification et suppression par clé (`update`,
    `delete_by_id`) : la trace porte la clé (déjà vrai, à garder vert).
@@ -96,14 +96,20 @@ convertis par cette story (déploiement, Epic 36) — et `journal_entries::rever
    `A_CONVERTIR` ou y restant au compte exact), ventilation et total cohérents au Change Log. **La table ne porte aucune
    entrée `Acteur::utilisateur` pour `routes/reconciliation.rs`, `routes/journal_entries.rs` et
    `repositories/reconciliation_cancel.rs`** : c'est ce qui couvre les cinq sites qui ont la clé dans `reconciliation.rs` et
-   le dé-rapprochement (`:723`), que les tests HTTP n'exercent pas tous (V2-2).
+   le dé-rapprochement (`:723`), que les tests HTTP n'exercent pas tous (V2-2). Le **cinquième motif** de la garde
+   (`delete_in_tx(…, None, …)`, 35-8a1) **tombe à zéro** : `delete_in_tx` prend l'`acteur` ; l'entrée de `invoices.rs:1689`
+   (`invoices::unvalidate`) passe du motif 5 au motif `Acteur::utilisateur`, toujours `A_CONVERTIR` (validation P3 de la
+   35-8a1, V3-4).
 5. **AC6b — Manuel et CHANGELOG** (périmètre exact, V2-1) : les paragraphes posés par la 35-8a1 (`admin-manual.tex:3193`,
    `user-manual.tex:3959-3960`) disent : « les écritures saisies, modifiées, supprimées ou contre-passées par les routes du
    journal, et celles qu'un rapprochement bancaire passe, sont attribuées à la clé ; **celles que Kesh passe pour une
-   facture (validation, dévalidation), un avoir, un règlement, une facture fournisseur (validation, paiement, annulation)
-   ou un solde d'ouverture restent au nom du créateur de la clé** ; un dé-rapprochement par clé contre-passe l'écriture
-   rapprochée au nom de la clé, mais annule un règlement au nom de l'utilisateur » (renvoi à #431) ; même phrase au
-   CHANGELOG, *Corrigé*, `refs #431` ; PDF régénérés, contrôlés aplatis.
+   facture (validation, dévalidation), un avoir, un règlement, le solde de son reste ou leur annulation, une facture
+   fournisseur (validation, paiement, annulation) ou un solde d'ouverture restent au nom du créateur de la clé** ; un
+   dé-rapprochement par clé contre-passe au nom de la clé une écriture rapprochée seule ; celui d'un règlement de facture
+   (client ou fournisseur) l'annule, contre-passation comprise, au nom du créateur de la clé ; un simple détachement ne
+   contre-passe rien » (renvoi à #431 ; validation P3, V3-1, V3-2 : genre par genre, `reconciliation_cancel.rs:694-725` ;
+   `write_off_invoice`, `invoice_settlements_write.rs:700` ; « le créateur de la clé » partout, non « l'utilisateur ») ;
+   même phrase au CHANGELOG, *Corrigé*, `refs #431` ; PDF régénérés, contrôlés aplatis.
 
 ## Tests à écrire, et la preuve du rouge
 
@@ -149,7 +155,8 @@ revue fichier par fichier ne vaut que pour les signatures ; les six sites et les
 
 ### Références
 
-- Fiche `35-8a-audit-acteur-patron.md` (`split`), qui fait foi pour le rayon détaillé ; `35-8a1-audit-acteur-mecanisme.md` ;
+- Fiche `35-8a-audit-acteur-patron.md` (`split`) : origine ; **en cas d'écart, cette fiche fait foi** (validation P3 de la
+  35-8a1, V3-5) ; `35-8a1-audit-acteur-mecanisme.md` ;
   `kesh-gate-logs/e35-8a-validation-p1.md`.
 - Issues #431 ; Story 17-2a ; Story 15-8 (modification et suppression d'écriture par clé).
 
@@ -179,3 +186,12 @@ revue fichier par fichier ne vaut que pour les signatures ; les six sites et les
     débiteurs, `lettering.created` asserté d'abord) ; V2-6 (taille et nature de la revue, Dev Notes).
   - Symptômes greppés (fiches 35-8a1, 35-8a2, epic, registre) : « saisie, modification, suppression, contre-passation,
     rapprochement bancaire — à ce qui est attribué » — remplacé ; « 35-8 après » — précisé.
+- 2026-11-13 — **Validation P3, passe ciblée** (Opus) sur la remédiation P2 : 0 CRITICAL, 0 HIGH, 1 MEDIUM, 2 LOW
+  (`kesh-gate-logs/e35-8a2-validation-p3-ciblee.md`). Remédiée au plus court. Prémisse relue sur `main` :
+  `reconciliation_cancel.rs:694-725` (genre `unlink_only` : rien ; règlement client ou fournisseur : `cancel_settlement_in_tx`
+  avec `user_id`, contre-passation comprise ; `Entry` : `reverse_in_tx`) ; `letterings.rs:363` (`is_letterable`). Confirmées.
+  - V3-1 (MEDIUM) : la phrase du manuel et du CHANGELOG (AC6b) dit le dé-rapprochement genre par genre.
+  - LOW : V3-2 (le solde du reste et l'annulation d'un règlement nommés ; « le créateur de la clé » partout) ; V3-3 (AC2 cite
+    `letterings.rs:363`, `:351-356`, `api-external.md:408`) ; et, de la P3 de la 35-8a1, V3-4 (le cinquième motif tombe à
+    zéro, AC5b) et V3-5 (cette fiche fait foi, *Références*).
+  - Symptôme greppé : « annule un règlement au nom de l'utilisateur », « qui fait foi pour le rayon » — remplacés.
