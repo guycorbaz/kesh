@@ -298,7 +298,8 @@ Aucun fichier de code commun avec les autres stories de l'Epic 34. `user-manual.
     commit de code, voir l'entrée de la P4.)*
   - Trend : P1 1 M / 7 L → P2 2 M / LOW → P3 0 M / 7 L → **P4 ciblée** (une lentille, sur `ce42fd4a` seul, prompt
     `34-10-graphiques-couleurs-unies-review-prompt-p4-ciblee.md`, rapport `kesh-gate-logs/e3410-review-p4-ciblee.md`) à lancer.
-- 2026-11-11 : **Passe ciblée P4** (une lentille, sur `ce42fd4a` ; rapport `kesh-gate-logs/e3410-review-p4-ciblee.md`) :
+- 2026-11-11 : **Passe ciblée P4** (une lentille, sur `ce42fd4a` ; rapport `kesh-gate-logs/e3410-review-p4-ciblee.md` ;
+  *annoté le 2026-11-12, à l'intégration de la 0.17.6 : modèle **Haiku***) :
   **0 C, 0 H, 2 M, 1 L** ; le code de la remédiation P3 est jugé juste. Remédiation (Opus 5.5), commit `625eb797` :
   - **C4-2** MEDIUM, décision de l'orchestrateur (règle D7, sans dérogation) : la dispense de l'E2E de la P3 est annotée,
     remplacée par l'**E2E r5**, joué au dernier commit de code.
@@ -327,7 +328,8 @@ Aucun fichier de code commun avec les autres stories de l'Epic 34. `user-manual.
     production. Le dernier commit de code reste `625eb797`, où les gates complets et l'E2E r5 ont tourné.
 - **Synthèse de la boucle de revue de code** (tendance, modèles) : P1 complète Sonnet 0 C / 0 H / 1 M / 7 L → P2 complète Opus
   0 C / 0 H / 2 M distincts (6 MEDIUM bruts : B 3, E 2, A 1 ; B2-3, MEDIUM chez B, LOW chez A et E) / 11 LOW bruts → P3 complète
-  Sonnet 0 C / 0 H / 0 M / 7 L → P4 ciblée (modèle non nommé dans son rapport) 0 C / 0 H / 2 M / 1 L (MEDIUM de processus : E2E au
+  Sonnet 0 C / 0 H / 0 M / 7 L → P4 ciblée (modèle non nommé dans son rapport ; *annoté le 2026-11-12, à l'intégration de la
+  0.17.6 : c'était **Haiku**, la lentille ciblée de fin de boucle*) 0 C / 0 H / 2 M / 1 L (MEDIUM de processus : E2E au
   dernier commit de code, rubrique du CHANGELOG) → P5 ciblée Sonnet 0 C / 0 H / 0 M / 2 L. Remédiations : Opus 5.5. Décisions de
   reclassement : aucune ; E3-2 accepté sans issue (C-e3410-16) ; rubrique *Modifié* et E2E au dernier commit de code arbitrés par
   l'orchestrateur. Les MEDIUM de la P2 sont nés de la remédiation P1, ceux de la P4 de la remédiation P3. **Status : done.**
