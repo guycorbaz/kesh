@@ -1,6 +1,6 @@
 # Story 34-11a2 : créer et modifier une carte de crédit — type, quatre derniers chiffres, lien à un passif (#972)
 
-Status: ready-for-dev
+Status: done
 
 *Fiche rédigée le 2026-11-10 en autonomie (Opus 5.5), à la remédiation de la validation P1 du groupe e341 (découpe de l'ancienne 34-11a,
 arbitrage de l'orchestrateur), worktree `/home/gcorbaz/devel/kesh-e34`, branche `chore/epic-34-kickoff`, numéros de ligne de `a75835db`.
@@ -125,6 +125,7 @@ lié serait un 2xxx (14-3a) ; rien ici n'apparie (« un appariement automatique 
    calculés), contiguë et imprimée par cinq ; « 41 1111 1111 1111 11 » (Visa 16, Luhn vrai, groupement 2-4-4-4-2 non admis : tue M2b) ; `0041791234564` (13 chiffres, Luhn vrai, vérifié) ; « 4111111111111111perso » (lettre collée) ; une suite de 16 chiffres valide au sens
    de Luhn mais sans préfixe de réseau (`0…`, construite par le dev). (ii) **Acceptés par la longueur ou le groupement**, sans exigence de Luhn :
    `+41 79 123 45 67`, `2026-11-10`, `20261110-0042`, un montant `1'234.50`. La garde atteint aussi l'assistant (`POST /onboarding/bank-account`, nom ou description).
+   *(Écart, revue P2 A2 : à l'assistant, le **nom** seulement — la description de l'assistant vient de la 34-1, raccord d'intégration (3).)*
 4. **AC-4 — modifier une carte** (C-e341-30) : `PUT` sans `accountKind` modifie nom, description, `cardLast4`, lien (passif) — remplacement complet
    (C-26-2-8) : **`cardLast4` absent vaut effacé**, comme la description ; `PUT` avec
    `accountKind: "bank"` → `400 BANK_ACCOUNT_KIND_IMMUTABLE` ; avec IBAN, QR-IBAN ou `isPrimary` → `400 CREDIT_CARD_FIELD_NOT_ALLOWED` ; avec un lien `Asset` ou sans lien → `400`. `PUT` sur un id inconnu ou archivé, `iban` absent → `404` (et non `400`), C-e341-43 ; `PUT` d'un compte `bank` avec `iban` absent ou `null` → `400`, et avec `cardLast4` →
@@ -142,9 +143,13 @@ lié serait un 2xxx (14-3a) ; rien ici n'apparie (« un appariement automatique 
    pour une carte : IBAN, QR-IBAN et *principal* masqués, *Quatre derniers chiffres (facultatif)* avec l'aide « Kesh ne garde jamais le numéro
    complet », compte lié **obligatoire**, liste réduite aux passifs (C-e341-33). Le solde d'ouverture de la 34-2 s'y applique, sens *Dette*
    présélectionné. Sélecteurs (C-e341-32) : la carte est proposée au paiement fournisseur, pas au règlement client.
+   *(Écarts, revue P2 A2 : liste des passifs par `admitsLedgerType`, non `linkableLedgerAccounts` — raccord (1) ; sens *Dette* du solde
+   d'ouverture non livré — raccord (2). Titre « Nouveau compte bancaire » sur le formulaire d'une carte : #1037.)*
 8. **AC-8 — codes d'erreur** : `CARD_NUMBER_NOT_ALLOWED`, `CREDIT_CARD_LEDGER_MUST_BE_LIABILITY`, `BANK_ACCOUNT_KIND_IMMUTABLE`,
    `ACCOUNT_LINKED_TO_BANK_ACCOUNT`, `CREDIT_CARD_FIELD_NOT_ALLOWED`, `BANK_ACCOUNT_FIELD_NOT_ALLOWED`, `SETTLEMENT_ACCOUNT_IS_CREDIT_CARD` : variantes `AppError`, `errors.rs`, messages aux quatre `messages.ftl`, libellés frontend, tableau d'erreurs
    de `docs/api-external.md`.
+   *(Écart, revue P2 A2 : « libellés frontend » — les écrans affichent le message du serveur, déjà traduit ; aucun libellé propre par code,
+   C-e34a2-14.)*
 9. **AC-9 — manuel** : utilisateur, *Comptes bancaires* : le type carte, les quatre chiffres, le refus d'un numéro complet, le lien à un passif, ce
    que la carte ne fait pas (QR-facture, `pain.001`, CAMT), où elle est proposée ; la phrase `user-manual.tex:2369` (« l'IBAN reste affiché à la
    suite … Deux comptes peuvent porter la même description : l'IBAN les distingue ») récrite pour une carte (les quatre chiffres en tiennent lieu) ;
@@ -153,16 +158,17 @@ lié serait un 2xxx (14-3a) ; rien ici n'apparie (« un appariement automatique 
 
 ## Tâches
 
-- [ ] **T1 — rouges d'abord** (`kesh-gate-logs/e341/rouges.log`) : AC-1 à AC-6, Vitest AC-7.
-- [ ] **T2 — `kesh-core`** : `looks_like_card_number(&str) -> bool` (bornes, groupements, longueur, préfixe, Luhn — C-e341-15), tests de table (AC-3).
-- [ ] **T3 — routes** : corps (`accountKind`, `cardLast4`), et **`iban: Option<String>` avec `#[serde(default)]` dans `CreateBankAccountBody` et
+- [x] **T1 — rouges d'abord** (`kesh-gate-logs/e341/rouges.log`) : AC-1 à AC-6, Vitest AC-7. *(Écart : tests écrits avec le code, journal
+  réel `kesh-gate-logs/e34a2/rouges.log` ; la campagne de mutations en tient lieu — Dev Agent Record.)*
+- [x] **T2 — `kesh-core`** : `looks_like_card_number(&str) -> bool` (bornes, groupements, longueur, préfixe, Luhn — C-e341-15), tests de table (AC-3).
+- [x] **T3 — routes** : corps (`accountKind`, `cardLast4`), et **`iban: Option<String>` avec `#[serde(default)]` dans `CreateBankAccountBody` et
   `UpdateBankAccountBody`** (`routes/bank_accounts.rs:79`, `:99`, `String` aujourd'hui ; validation P3, 4.1) — un compte **bancaire** sans IBAN rend
   `400` par `validate_bank_input`, comme en 0.17.5 ; `validate_bank_input` par type — **au `PUT`, le type courant est lu avant** (validation P5, F2) :
   lecture du compte sur le pool, filtrée par société (`find_by_id_for_company`), avant `validate_bank_input` et `validate_journal_account_id` (le type
   est immuable, la lecture hors transaction est sûre) ; un id inconnu, d'une autre société ou archivé rend `404` **avant** tout refus de forme qui
   dépend du type ; au `POST`, le type est celui du corps (absent = `bank`) —, garde de Luhn, contrôles C-e341-16 et C-e341-30 (`POST`, `PUT`,
   `PATCH`), `set_bank_account` (Luhn seulement), audit (AC-6).
-- [ ] **T4 — dépôt** : `accounts::update` prend la ligne `accounts` `FOR UPDATE` en tête (C-e341-40 — elle ne l'est pas aujourd'hui), puis refuse le
+- [x] **T4 — dépôt** : `accounts::update` prend la ligne `accounts` `FOR UPDATE` en tête (C-e341-40 — elle ne l'est pas aujourd'hui), puis refuse le
   retypage (C-e341-31) après lecture des comptes bancaires liés non archivés ; création, `PUT`, `PATCH` relisent le type du compte lié `LOCK IN SHARE
   MODE` dans leur transaction, **avant** le complément de la 34-2 (un refus de type n'écrit rien) ; route du plan rejouée, point (vi) du registre
   (C-e341-40). **`PUT` d'une carte** (validation P3, 4.1) : `update_for_company` (`repositories/bank_accounts.rs:606-…`, `UPDATE … iban = ?` depuis
@@ -179,11 +185,14 @@ lié serait un 2xxx (14-3a) ; rien ici n'apparie (« un appariement automatique 
   propre à l'assistant (`:347`), reste inchangé (validation P4, F1). Les chaînes d'attendus des extracteurs (`routes/bank_accounts.rs:204`, `:209` :
   « `iban` str ») deviennent « `iban?` str » et nomment `accountKind?`, `cardLast4?`. Test :
   `PUT` d'une carte → `iban` `NULL` en base, quatre chiffres écrits, effacés s'ils sont absents. ⚠️ `kesh-db` touché : **gate complet même en cours de boucle**.
-- [ ] **T5 — écran** (AC-7), `linkableLedgerAccounts` à paramètre, sélecteurs (C-e341-32), i18n quatre locales, `lint-i18n-ownership`.
-- [ ] **T6 — codes** (AC-8).
-- [ ] **T7 — E2E** `bank-accounts-credit-card.spec.ts` : créer une carte liée à un passif créé par l'API, `•••• 1234` dans la liste et dans le
+  *(Écart : « avant le complément de la 34-2 » non livré, la 34-2 étant absente de la base — raccord d'intégration (4).)*
+- [x] **T5 — écran** (AC-7), `linkableLedgerAccounts` à paramètre, sélecteurs (C-e341-32), i18n quatre locales, `lint-i18n-ownership`.
+  *(Écart : `linkableLedgerAccounts` n'existe pas dans la base ; `admitsLedgerType` en tient lieu — raccord d'intégration (1) ; le sens *Dette*
+  du solde d'ouverture — raccord (2).)*
+- [x] **T6 — codes** (AC-8).
+- [x] **T7 — E2E** `bank-accounts-credit-card.spec.ts` : créer une carte liée à un passif créé par l'API, `•••• 1234` dans la liste et dans le
   sélecteur de l'import, CAMT absent pour elle, lot refusé, numéro complet refusé avec son motif ; modifier sa description.
-- [ ] **T8 — manuel** (AC-9), captures `kesh-gate-logs/e341/captures/34-11a2-*.png` (création carte, refus d'un numéro complet, liste), CHANGELOG
+- [x] **T8 — manuel** (AC-9), captures `kesh-gate-logs/e341/captures/34-11a2-*.png` (création carte, refus d'un numéro complet, liste), CHANGELOG
   *Ajouté*, `refs #972`.
 
 ### Mutations nommées
@@ -204,6 +213,22 @@ lié serait un 2xxx (14-3a) ; rien ici n'apparie (« un appariement automatique 
 - **M9** : `BankAccountPutFields` sans `card_last4` (non écrit au `PUT`) → rouge du test du `PUT` d'une carte ; **M9b** : l'IBAN du `PUT` lié depuis
   `NewBankAccount.iban` (chaîne vide) → rouge du même test (`CHECK` carte ⇒ IBAN nul).
 - **M8** : le `FOR UPDATE` de tête du retypage retiré → rouge du test croisé (AC-5), s'il est déterministe ; sinon écrite non tuée.
+
+*Ajoutées au développement et aux revues (journaux `kesh-gate-logs/e34a2/mut/M*.log` ; passe 1 dans `mut-p1/`) :*
+
+- **M11**, **M11b** : `recheck_ledger_type_in_tx` retiré de la création, du `PUT` → rouges des tests croisés par les routes (revue P1, B2).
+- **M12** : le `PATCH` d'une carte prépare son contrôle à la règle d'un compte bancaire → rouge `patch_d_une_carte` (revue P1, B1).
+- **M13**, **M13b** : *Délier* rendu à une carte ; la liste du lien rendue à la règle d'un compte bancaire → rouges Vitest du formulaire de lien.
+- **M14** : un actif choisi n'est plus retiré au passage à *Carte* → rouge Vitest de la page (revue P1, B9).
+- **M15** : les cartes closes écartées du refus de retypage → rouge `retypage_carte_close_et_lien_partage` (revue P1, E7).
+- **M16** : plus de masquage des IBAN → rouge `un_iban_valide_n_est_jamais_un_numero_de_carte` (revue P1, B7).
+- **M17** : un numéro complet dans `cardLast4` n'est plus nommé → rouge `numero_complet_dans_les_quatre_chiffres` (revue P1, E5).
+- **M18** : `maxlength={4}` rétabli → rouge Vitest « numéro complet collé » (revue P1, E5).
+- **M19** : le pré-vol du `PATCH` ne filtre plus les comptes archivés → rouge `patch_d_une_carte_inchangee_archivee_ou_close` (revue P2, E4 (c)).
+- **Non jouées, ordre non témoigné** (revue P2, E4 (a), (b)) : déplacer `recheck_ledger_type_in_tx` **après** `update_for_company`, ou
+  `locked_ledger_type` après `set_journal_account_id_for_company`. Le refus et la sonde resteraient les mêmes (le rollback défait l'écriture) ;
+  seul un cycle avec un écrivain concurrent de la ligne `bank_accounts` le montrerait, et le rejeu sur interblocage le masquerait. Aucun
+  test sans toucher la production ne le distingue : ordre tenu par la revue et le doc-comment, mutations écrites non tuées.
 
 ## Gates
 
@@ -231,6 +256,31 @@ Rapports : `/home/gcorbaz/devel/kesh-gate-logs/e34a1-review-p1-{B,E}.md`. Non co
 - **E6 (LOW)** — `accept` ne filtre pas le **glisser-déposer** (`BankImportUpload.svelte`, `handleDrop` → `handleFileSelect`, sans contrôle d'extension) :
   un `.xml` déposé sur une carte part au serveur, qui rend `422 BANK_IMPORT_CAMT_NEEDS_IBAN`, affiché par `setError`. Correct ; aucun test front ne montre
   ce refus affiché après un dépôt.
+
+*Ajoutés le 2026-11-12 par l'orchestrateur, revue P2 de la 34-11a1 (deux LOW de production) :*
+
+- **E3 (LOW)** — la clé fr-CH `bank-import-labels-drop-zone-csv-only` et son repli Svelte emploient l'apostrophe typographique U+2019,
+  alors que le fichier emploie l'apostrophe droite.
+- **B3 (LOW)** — `frontend/src/lib/features/bank-accounts/format.ts:26` écrit l'espace insécable de `CARD_LAST4_SEPARATOR` en littéral
+  invisible : l'écrire `' '`.
+
+## Raccords d'intégration (C-e34a2-1 ; revue P1, A1) — porteur : **l'orchestrateur, à l'intégration**
+
+La branche part de la 34-11a1 sans la 34-1 ni la 34-2. Quatre raccords restent à faire quand elles se rejoignent ; chacun a son test attendu.
+
+1. **`linkableLedgerAccounts({ liabilityOnly })`** (34-1, C-e341-5, C-e341-33) : la fonction de la 34-1 reçoit le paramètre, ou appelle
+   `admitsLedgerType(kind, accountType)` (`frontend/src/lib/features/bank-accounts/credit-card.ts`) ; les deux listes de
+   `routes/(app)/bank-accounts/+page.svelte` passent par elle. Test : `bank-accounts-page-credit-card.test.ts` reste vert (passifs seuls).
+2. **Le sens *Dette* présélectionné du solde d'ouverture d'une carte** (34-2, C-e341-7) : une carte liée à un passif ouvre le solde
+   d'ouverture avec *Dette* ; le paragraphe *Solde d'ouverture* du manuel utilisateur s'écrit alors (§ *Une carte de crédit*, commentaire
+   LaTeX en place). Test attendu : un Vitest « carte → *Dette* présélectionné ».
+3. **La garde du numéro complet sur la description de l'assistant** (34-1) : `onboarding::set_bank_account` ajoute
+   `refuse_card_number("description", …)` (commentaire au site) ; `docs/api-external.md` (note ¹¹ et tableau des erreurs), le manuel
+   utilisateur (§ *Une carte de crédit*, « à l'onboarding, pour le nom de la banque ») **et son PDF**, et le CHANGELOG (« le nom de la banque à
+   l'onboarding ») disent alors « nom ou description » à l'assistant. Test attendu : `garde_du_numero_a_l_assistant` étendu à la description.
+4. **L'ordre de la relecture du type et du complément de la 34-2** : le complément (solde d'ouverture saisi à la création d'un compte) se
+   place **après** `recheck_ledger_type_in_tx` dans `create_once` (un refus de type n'écrit rien). Test attendu : une carte refusée par la
+   relecture n'écrit aucune écriture d'ouverture.
 
 ## Recoupements
 
@@ -273,11 +323,153 @@ story de l'epic. La **34-11b** s'appuie sur celle-ci.
   d'`update_for_company`. **F5** : la référence QR proposée en P4 avait une clé fausse (modulo 10 récursif : 7 attendu, 6 écrit) ; remplacée par
   `210000000003139471430009313`, clé juste et Luhn vrai, calculés. **F6** : `cardLast4` vide ou `null` vaut absent. **F7** : l'assistant ignore
   `accountKind` et `cardLast4`, écrit à C-e341-19.
+- 2026-11-12 : **développement** (Opus 5.5, clé e34a2, worktree `/home/gcorbaz/devel/kesh-e34a2`, base `27ca0bd9`). Étape 0, LOW de la validation
+  P6 relus au code : **F1** — `find_by_id_for_company` ne filtre pas `archived` (relu `repositories/bank_accounts.rs:136-150`) : le `PUT` filtre
+  `.filter(|b| !b.archived)` avant `BankAccountNotFound` (`routes/bank_accounts.rs`, `update_bank_account`) ; **F2** — doc-comment de l'ordre des
+  erreurs du `PUT` récrit (C-e341-43) ; **F3** — huit littéraux de test plus celui d'`update_once` : les huit portent `iban: Some(…)`, celui
+  d'`update_once` passe `input.iban` ; **F4** — négatif Visa 19 en 4-4-4-4-3 (`4111 1111 1111 1111 110`) et Amex en 16 chiffres
+  (`3782246310005001`, Luhn vrai, accepté) ajoutés à la table. Choix C-e34a2-1 à 9 au registre `e34-choix-autonomes-e34a2.md`. **Fusion de la
+  34-11a1 `done`** (`580675bb`) par `git merge --no-ff` : commit `86da9022`, sans conflit ; deux témoins transitoires de la 34-11a1
+  (`compte_sans_iban_aucune_route_ne_le_cree`, `compte_sans_iban_le_put_ignore_le_type`, `bank_accounts_e2e.rs`), qui disaient « la 34-11a2
+  changera ce contrat », récrits au contrat de la carte (`81b56bfa`) : seule modification de `bank_accounts_e2e.rs`, ses autres tests verts
+  sans modification (AC-4). Écart à la consigne Edit : C-e34a2-9 (B3, espace insécable, script Python d'une ligne).
+- 2026-11-12 : **revue de code P1 (Opus, trois lentilles)** — 0 CRITICAL, 0 HIGH, 3 MEDIUM distincts (B1 = E1, B2 = E2, A1), ~27 LOW
+  (`kesh-gate-logs/e34a2-review-p1-{B,E,A}.md`). **Remédiation** (Opus 5.5, commit de code `b27c3ea1`, registre C-e34a2-10 à 15) :
+  **B1 = E1, B8 = E6** — le `PATCH` lit le type du compte sur le pool avant le pré-vol (un id inconnu ou archivé garde la règle d'un compte
+  bancaire, l'ordre d'avant) ; une carte vers un actif (débiteurs, non imputable), une charge, un produit ou délier rend
+  `CREDIT_CARD_LEDGER_MUST_BE_LIABILITY` ; ordre écrit au doc-comment et à la note ¹¹ ; tests étendus. **B2 = E2, E8, A12** — trois tests
+  croisés par les **routes** (création, `PUT`, `PATCH`) pendant un retypage tenu, attente constatée par la sonde `PROCESSLIST` ; le test croisé
+  du dépôt sonde au lieu d'attendre 400 ms ; M11, M11b, M4 et M8 tuées par eux. **A1** — paragraphe *Solde d'ouverture* retiré du manuel
+  (commentaire LaTeX), note ¹¹ : l'assistant ne garde que le nom ; section **Raccords d'intégration** (quatre raccords, porteur
+  l'orchestrateur). **E5** — plus de `maxlength` sur les quatre chiffres ; refus à l'écran ; `CARD_NUMBER_NOT_ALLOWED`
+  (`details.field = "cardLast4"`) côté serveur ; tests. **B7 = E4** — IBAN valides masqués avant la garde (`mask_ibans`, test sur un IBAN
+  suisse dont les chiffres font un Visa 19, M16). **E3** — faux négatifs écrits (module, manuel, note ¹¹), portée « séparateur unique, même
+  différent ». **B3** — CHANGELOG : ordre `404` du `PUT`. **B4 = E9** — commentaire KF-004 annoté. **B5 = A3** — témoins renommés
+  (`compte_sans_iban_carte_refusee_sans_lien_ou_avec_iban`, `compte_sans_iban_le_put_refuse_un_autre_type`). **A4** — deux commentaires
+  périmés. **A5** — décompte précisé (voir le Dev Agent Record, annotation). **A6** — cases T1, T4, T5 annotées. **A7** — captures 05 (lien
+  d'une carte) et 06 (règlement client sans la carte). **A8, B9** — Vitest du formulaire de lien (M13, M13b) et du retrait d'un actif (M14).
+  **A9** — Vitest du `409` sur l'écran du plan, C-e34a2-14. **A10 = E10** — manuel : « nom ou description », formulaire *Modifier* seul.
+  **A11** — « avant tout refus de forme qui dépend du type », `version < 1` d'abord. **B10** — union discriminée des payloads. **E7** — carte
+  close comptée, carte et compte bancaire sur le même passif, refus avant `AccountHasEntries` (tests, M15). **A2** — PDF régénéré dans la
+  branche, écart à X-1 déclaré (C-e34a2-15). Issues ouvertes par l'orchestrateur : B5 de la 34-11a1 → **#1032**, angle mort de la
+  réconciliation → **#1033**.
+- 2026-11-12 : **revue de code P2 (Sonnet, trois lentilles, passe complète)** — `kesh-gate-logs/e34a2-review-p2-{B,E,A}.md` : **0 au-dessus de
+  LOW** une fois réfuté le seul MEDIUM. **B1 réfuté** (interblocage retypage / règlement client « non rejoué ») : le règlement client est
+  rejoué, `crates/kesh-api/tests/audit_route_registry.rs:513` : `("post", "invoices::settle_invoice_handler", Traced, Rejouee),` — et le
+  retypage l'est aussi (`accounts::update`, C-e341-40). **Renvoyés en issues** : faux négatif de `mask_ibans` (deux lettres de pays devant un
+  numéro de carte) → **#1035** ; nom non borné avant la garde → **#1036** ; titre « Nouveau compte bancaire » sur le formulaire d'une carte →
+  **#1037**. **Remédiation, tests et documents seulement, aucune ligne de production** (commit de tests `175d1ef5`) : E3 (`PUT` d'une carte
+  avec un numéro complet dans le nom, la description, les quatre chiffres ; `cardLast4 = "1234 5678"` ; `PATCH` vers le passif courant, d'une
+  carte archivée, d'une carte close ; carte vers un passif non imputable ou le compte créanciers désigné — phrase au manuel) ; E4 : mutation
+  (c) jouée (M19, tuée), (a) et (b) écrites non tuées, ordre non témoigné, avec la raison (liste des mutations nommées) ; A8 (`version < 1`
+  avant le `404` au `PUT`) ; B4 (code et message d'un compte bancaire sans `iban`) ; A1 (M11 à M19 nommées) ; A2 (AC-3, AC-7, AC-8 annotées) ;
+  A3 (raccord (3) : manuel, PDF, CHANGELOG) ; A5 (renvoi `mut-p1/`) ; A6 (code du script E2E précisé) ; A7 (captures 01 à 06 reprises : toast
+  fermé, la 06 avec un compte bancaire ordinaire proposé et la carte absente). A4 (raccords au fichier d'epic) : l'orchestrateur, à
+  l'intégration. **Tendance de la boucle** : P1 (Opus) 0 CRITICAL, 0 HIGH, 3 MEDIUM, ~27 LOW → P2 (Sonnet) 0 au-dessus de LOW (un MEDIUM
+  réfuté). **Validation terminée**, sur une passe sans finding au-dessus de LOW, et une remédiation qui ne touche aucune ligne de production.
 
 ## Dev Agent Record
 
 ### Agent Model Used
 
+Opus 5.5 (claude-opus-5-5), en autonomie, 2026-11-12.
+
 ### Completion Notes List
 
+- **Livré** : garde `kesh_core::card_number::looks_like_card_number` (C-e341-15 (c)-(g), table de tests, deux familles d'acceptés dont la
+  famille (i) asserte Luhn) ; corps `accountKind`, `cardLast4`, `iban` facultatif ; `validate_bank_input` par type ; lien obligatoire à un
+  passif (pré-vol sur le pool, relecture sous `LOCK IN SHARE MODE` dans la transaction de la création, du `PUT` et du `PATCH`) ; `PUT` qui lit
+  le type courant avant toute forme (`404` d'abord) ; `BankAccountPutFields.iban`/`card_last4` ; retypage refusé (`accounts::update`
+  `FOR UPDATE` en tête, `409 ACCOUNT_LINKED_TO_BANK_ACCOUNT`, route rejouée, point (vi) du registre à vingt-cinq) ; règlement client refusé
+  (`400 SETTLEMENT_ACCOUNT_IS_CREDIT_CARD`) ; garde à l'assistant (nom) ; traces `account_kind`/`card_last4_present` ; sept codes, quatre
+  locales ; écran (type à la création, champs d'une carte, liste réduite aux passifs, payload sans IBAN, type figé en édition), formulaire de
+  lien et dialogue de règlement ; manuels utilisateur et administrateur, `api-external.md`, CHANGELOG ; points hérités E5/B7, B5, E6, E3, B3.
+- **Non livré ici, renvoyé à l'intégration** (C-e34a2-1) : le sens *Dette* présélectionné du solde d'ouverture d'une carte (34-2 absente de
+  la base ; le manuel l'annonce) ; le paramètre `liabilityOnly` de `linkableLedgerAccounts` (34-1 absente : `admitsLedgerType` en tient lieu) ;
+  la garde sur la **description** de l'assistant (34-1) ; l'ordre « relecture du type avant le complément de la 34-2 ».
+- **Rouges d'abord : écart** — tests écrits avec le code ; la preuve qu'ils mordent est la campagne de mutations (`kesh-gate-logs/e34a2/rouges.log`).
+- **Mutations** (`kesh-gate-logs/e34a2/mut/M*.log`, `mut/campagne.log` — *annotation, revue P2 A5 : les journaux de cette passe, écrasés
+  par la passe 2, sont copiés dans `mut-p1/`*) : **18 jouées, 18 tuées** — M1, M1b, M2, M2b, M2c, M2e, M3, M4, M5, M5b,
+  M6, M7, M7b, M8, M9, M9b, M10, M10b ; aucune erreur de compilation dans les journaux. M8 tuée par
+  `retypage_croise_avec_la_creation_d_une_carte`. M2d déclarée équivalente par la fiche, non jouée.
+- **Gates au dernier commit de code `9a3904f5`** (journaux `kesh-gate-logs/e34a2/`, joués au commit `167c8c4e` = `9a3904f5` + le PDF) :
+  `scripts/test-fast.sh --ci` 5186 exécutés, 5186 passés, 12 ignorés (`gate-test-fast-2.log`) ; `cargo build --workspace --all-targets` vert
+  (`build-2.log`) ; `scripts/gate-ci.sh kesh_ci_e34a2` 5193 passés, 0 échoué, 16 ignorés (`gate-ci-2.log`) ; frontend `npm run check` 0 erreur
+  (29 avertissements, aucun dans un fichier touché), `lint-i18n-ownership` vert, Vitest 2900 passés (224 fichiers), `npm run build` vert
+  (`front-*-2.log`) ; `cargo fmt` et `cargo clippy --workspace --all-targets -D warnings` verts. **E2E complet** (base `kesh_e2e_e34a2` recréée,
+  port 3372, `e2e-r2/playwright.log`) : 386 passés, 18 ignorés, **7 échecs, les sept de la KF-029 (#97)** nommés un par un contre
+  `docs/testing.md` (`mode-expert.spec.ts:26`, `:41`, `onboarding-path-b.spec.ts:65`, `:92`, `onboarding.spec.ts:57`, `:77`, `:150`) ;
+  `bank-accounts-credit-card.spec.ts` vert. Aucun backend vivant après (`e2e-r2/ss-apres.txt` vide).
+- **Gate du premier passage** (`gates-1.txt`, commit `81b56bfa`) : un rouge, `textes_coherents::les_comptes_cites_en_exemple_existent_dans_les_plans_livres`
+  (« 2030 \emph{Carte de crédit} » au manuel, compte absent des plans livrés ; avant lui, « 1234 ») : exemple remplacé par un sous-compte de
+  2100 *Dettes bancaires à court terme* (manuel, quatre locales, repli Svelte), quatre chiffres d'exemple « 2041 ».
+- **Captures** (thème clair, `kesh-gate-logs/e34a2/captures/`) : `34-11a2-01-creation-carte.png`, `-02-refus-numero-complet.png`, `-03-liste.png`,
+  `-04-modification-carte.png`, prises après l'E2E r2 sur la base jetable.
+- **Décomptes** (de `27ca0bd9` à `9a3904f5`, fusion comprise ; recomptés par `grep -c`) : tests Rust neufs 23 (`card_number.rs` 5,
+  `credit_card_repository.rs` 5, `credit_card_e2e.rs` 12, `bank_account.rs` 1), deux récrits (`bank_accounts_e2e.rs`) ; Vitest neufs 10
+  (`credit-card.test.ts` 3, `bank-accounts-page-credit-card.test.ts` 5, `SettleInvoiceDialog.test.ts` 1, `BankImportUpload.test.ts` 1) ; une
+  spec Playwright neuve. Compteurs des gardes : `sitesTotal` 2924 → 2942, candidates 86 → 87, `conforme` 72 → 73, inventaire `bankName` de la page 3 → 5.
+- **Issues demandées** (une par problème) : (1) B5 — `CHECK (is_primary = FALSE OR iban IS NOT NULL)` à poser à la prochaine migration de
+  `bank_accounts` (l'invariant tient aujourd'hui par le type) ; (2) la proposition « facture » de la réconciliation accepte une transaction de
+  carte comme règlement client (angle mort assumé de C-e341-41, si Guy veut le fermer). *(Ouvertes : #1032, #1033.)*
+- *(Annotation du 2026-11-12, revue P1 A5 : le décompte « 23 tests Rust neufs » vaut **hors fusion**, `580675bb..9a3904f5` ; de `27ca0bd9` à
+  `9a3904f5`, fusion comprise, il y en a 24 — un test de la 34-11a1 entré par la fusion, `admin_full_import_e2e.rs`.)*
+
+#### Remédiation de la revue P1 (2026-11-12)
+
+- **Dernier commit de code : `b27c3ea1`.** Gates joués au commit `b16920ae` (= `b27c3ea1` + registre et PDF), journaux `kesh-gate-logs/e34a2/` :
+  `scripts/test-fast.sh --ci` 5194 exécutés, 5194 passés, 12 ignorés (`gate-test-fast-3.log`) ; `cargo build --workspace --all-targets` vert
+  (`build-3.log`) ; `scripts/gate-ci.sh kesh_ci_e34a2` **tué par `mem-guard` au plafond** (code 137, `gate-ci-3.log`, sans échec de test au
+  moment de l'arrêt), **rejoué** : 5201 passés, 0 échoué, 16 ignorés (`gate-ci-4.log`) ; frontend `npm run check` 0 erreur (29 avertissements,
+  aucun dans un fichier touché), `lint-i18n-ownership` vert, Vitest 2905 passés (225 fichiers), `npm run build` vert (`front-*-3.log`) ;
+  `cargo fmt`, `cargo clippy --workspace --all-targets -D warnings` verts.
+- **E2E complet** (`e2e-r3/playwright.log`, base recréée, port 3372) : 384 passés, 18 ignorés, **9 échecs** — les sept de la KF-029 (#97),
+  nommés contre `docs/testing.md`, et **deux variables** (`reports.spec.ts:422`, `sidebar-navigation.spec.ts:397`), sans rapport avec la
+  story ; **rejoués seuls** sur base recréée (`e2e-r4/`) : 3 passés, 0 échec — pollution d'état entre specs, comme le décrit `docs/testing.md`.
+  `bank-accounts-credit-card.spec.ts` vert. Aucun backend vivant après (`ss-apres.txt` vides).
+- **Mutations, passe 2** (`mut/campagne-2.log`, `mut/M*.log` ; ceux de la passe 1 copiés dans `mut-p1/`) : **28 jouées, 28 tuées** — Rust :
+  M1, M1b, M2, M2b, M2c, M2e, M3, M4, M5, M5b, M6, M7b, M8, M9, M9b, M10, M10b, M11, M11b, M12, M15, M16, M17 ; frontend : M7, M13, M13b, M14,
+  M18. Le `FAIL` de chaque journal nomme le test attendu (M4 par `patch_croise_avec_un_retypage` : le pré-vol couvre désormais les cas
+  séquentiels ; M8 par la sonde du test croisé du dépôt ; M11 par `creation_croisee_avec_un_retypage`). Aucune erreur de compilation.
+- **Tests neufs de la remédiation** (de `3c1510d8` à `b27c3ea1`, recomptés par `grep -c`) : Rust 8 (`card_number.rs` 5 → 6,
+  `credit_card_repository.rs` 5 → 6, `credit_card_e2e.rs` 12 → 18) ; Vitest 5 (`bank-accounts-page-credit-card.test.ts` 5 → 7,
+  `accounts-page.test.ts` 13 → 14, `BankAccountJournalLinkForm-credit-card.test.ts` 2, neuf) ; `patch_d_une_carte` étendu (quatre cibles de plus).
+- **Captures** : 01 à 04 reprises, 05 (formulaire de lien d'une carte : passifs seuls, pas de *Délier*) et 06 (dialogue de règlement d'une
+  facture client : la carte n'est pas proposée ; la base E2E n'avait aucun autre compte bancaire, la liste est vide), prises après l'E2E r3.
+- **Écarts** : le PDF régénéré dans la branche (C-e34a2-15) ; aucun nouvel écart à la consigne Edit.
+- *(Annotation, revue P2 A6 : « `e2e rc=0` » de `gates-3.txt` est le code de sortie du **script** `e2e-e34a2.sh` ; celui de Playwright est
+  `playwright rc=1` dans `e2e-r3/playwright.log`, pour les neuf échecs nommés ci-dessus.)*
+
+#### Remédiation de la revue P2 (2026-11-12)
+
+- **Aucune ligne de production touchée.** Commits : `175d1ef5` (tests, une phrase du manuel), puis documents et PDF.
+- **Tests neufs** (de `eed314a9` à `175d1ef5`, recomptés) : `credit_card_e2e.rs` 18 → 22 (`put_d_une_carte_et_numero_complet`,
+  `patch_d_une_carte_inchangee_archivee_ou_close`, `carte_vers_un_passif_non_imputable_ou_creanciers`, `put_version_zero_avant_le_404`) ;
+  `compte_bancaire_sans_iban_ou_avec_quatre_chiffres` étendu (message).
+- **Gates**, voie base : ciblé `credit_card_e2e`, `credit_card_repository`, `bank_accounts_e2e` 76 passés sur 76 (`cible-5.log`) ;
+  `scripts/test-fast.sh --ci` 5198 passés sur 5198, 12 ignorés (`gate-test-fast-5.log`) ; `scripts/gate-ci.sh kesh_ci_e34a2` 5205 passés,
+  0 échoué, 16 ignorés (`gate-ci-5.log`) ; `cargo fmt`, `cargo clippy --workspace --all-targets -D warnings` verts. **Mutation M19** jouée,
+  tuée par `patch_d_une_carte_inchangee_archivee_ou_close` (`mut/M19.log`). **E2E complet non rejoué** : seuls des tests Rust et des documents
+  ont changé depuis l'E2E complet de `b27c3ea1` ; la spec de la carte a tourné seule (`e2e-r5/`, 1 passée) pour reprendre les captures.
+  Vitest non rejoué : aucun fichier frontend touché.
+
 ### File List
+
+- `crates/kesh-core/src/card_number.rs` (neuf), `crates/kesh-core/src/lib.rs`
+- `crates/kesh-db/src/entities/bank_account.rs`, `crates/kesh-db/src/errors.rs`, `crates/kesh-db/src/repositories/accounts.rs`,
+  `crates/kesh-db/src/repositories/bank_accounts.rs`, `crates/kesh-db/src/repositories/invoice_settlements_write.rs`
+- `crates/kesh-db/tests/bank_accounts_repository.rs`, `crates/kesh-db/tests/credit_card_repository.rs` (neuf)
+- `crates/kesh-api/src/errors.rs`, `crates/kesh-api/src/routes/accounts.rs`, `crates/kesh-api/src/routes/bank_accounts.rs`,
+  `crates/kesh-api/src/routes/onboarding.rs`
+- `crates/kesh-api/tests/audit_route_registry.rs`, `crates/kesh-api/tests/bank_accounts_e2e.rs`, `crates/kesh-api/tests/credit_card_e2e.rs` (neuf)
+- `crates/kesh-i18n/locales/{fr,de,it,en}-CH/messages.ftl`
+- `frontend/src/lib/features/bank-accounts/credit-card.ts` (neuf), `credit-card.test.ts` (neuf), `bank-accounts.api.ts`, `format.ts`,
+  `BankAccountJournalLinkForm.svelte`, `BankAccountJournalLinkForm-credit-card.test.ts` (neuf), `bank-name-inventory.test.ts`
+- `frontend/src/routes/(app)/accounts/accounts-page.test.ts` ; `crates/kesh-db/tests/payment_batches_repository.rs` (commentaire)
+- `frontend/src/lib/features/bank-import/BankImportUpload.svelte`, `BankImportUpload.test.ts`
+- `frontend/src/lib/features/invoices/SettleInvoiceDialog.svelte`, `SettleInvoiceDialog.test.ts`
+- `frontend/src/lib/shared/i18n-keys.test.ts`, `frontend/src/lib/shared/i18n-libelle-en-dur.test.ts`
+- `frontend/src/routes/(app)/bank-accounts/+page.svelte`, `bank-accounts-page-credit-card.test.ts` (neuf)
+- `frontend/tests/e2e/bank-accounts-credit-card.spec.ts` (neuf)
+- `docs/manual/fr/user-manual.tex` et `.pdf`, `docs/manual/fr/admin-manual.tex` et `.pdf`, `docs/api-external.md`, `CHANGELOG.md`
+- `_bmad-output/implementation-artifacts/e34-choix-autonomes-e34a2.md` (neuf), cette fiche, son prompt de revue P1, `sprint-status.yaml`

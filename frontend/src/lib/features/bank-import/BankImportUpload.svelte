@@ -405,7 +405,7 @@
 					)
 				: i18nMsg(
 						'bank-import-labels-drop-zone-csv-only',
-						'Ce compte n’a pas d’IBAN : glissez un fichier CSV ici ou cliquez pour parcourir',
+						"Ce compte n'a pas d'IBAN : glissez un fichier CSV ici ou cliquez pour parcourir",
 					)}
 			class="mt-4 flex h-48 cursor-pointer items-center justify-center rounded border-2 border-dashed p-4 transition-colors"
 			class:border-border={!dragActive}
@@ -438,7 +438,7 @@
 				{:else}
 					{i18nMsg(
 						'bank-import-labels-drop-zone-csv-only',
-						'Ce compte n’a pas d’IBAN : glissez un fichier CSV ici ou cliquez pour parcourir',
+						"Ce compte n'a pas d'IBAN : glissez un fichier CSV ici ou cliquez pour parcourir",
 					)}
 				{/if}
 			</p>

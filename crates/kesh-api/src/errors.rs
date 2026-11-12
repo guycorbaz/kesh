@@ -796,6 +796,38 @@ pub enum AppError {
         account_type: String,
     },
 
+    // ----- Story 34-11a2 (#972) — la carte de crédit -----
+    /// Le nom ou la description d'un compte bancaire porte un **numéro de carte
+    /// complet** (`kesh_core::card_number`, C-e341-15) → `400
+    /// CARD_NUMBER_NOT_ALLOWED`, `details.field` (`bankName` | `description` |
+    /// `cardLast4` — un numéro complet collé dans le champ des quatre chiffres).
+    /// Kesh ne garde que les quatre derniers chiffres.
+    #[error("Numéro de carte complet refusé dans le champ {field}")]
+    CardNumberNotAllowed { field: &'static str },
+
+    /// Une carte de crédit sans compte lié, ou liée à un compte qui n'est pas un
+    /// **passif** (C-e341-16) → `400 CREDIT_CARD_LEDGER_MUST_BE_LIABILITY`,
+    /// `details.accountId` (`null` sans lien). Création, `PUT`, `PATCH`.
+    #[error("Une carte de crédit se lie à un compte de passif")]
+    CreditCardLedgerMustBeLiability { account_id: Option<i64> },
+
+    /// `PUT` qui demande un autre type que celui du compte (C-e341-30) → `400
+    /// BANK_ACCOUNT_KIND_IMMUTABLE`. Un `accountKind` absent vaut le type
+    /// courant.
+    #[error("Le type d'un compte bancaire ne se change pas")]
+    BankAccountKindImmutable,
+
+    /// IBAN, QR-IBAN ou `isPrimary` fournis pour une carte de crédit → `400
+    /// CREDIT_CARD_FIELD_NOT_ALLOWED`, `details.field`.
+    #[error("Champ refusé pour une carte de crédit : {field}")]
+    CreditCardFieldNotAllowed { field: &'static str },
+
+    /// `cardLast4` fourni pour un compte bancaire (C-e341-42) → `400
+    /// BANK_ACCOUNT_FIELD_NOT_ALLOWED`, `details.field` — au lieu du `500` du
+    /// `CHECK` de `card_last4`.
+    #[error("Champ refusé pour un compte bancaire : {field}")]
+    BankAccountFieldNotAllowed { field: &'static str },
+
     // ----- Story 8-2 — Bank profiles + CSV import -----
     /// Profil CSV introuvable / cross-tenant (pattern KF-002) → `404`.
     /// Aussi utilisé pour `auto-match aucun profil ne matche le filename`
@@ -2569,6 +2601,71 @@ impl IntoResponse for AppError {
                 (StatusCode::BAD_REQUEST, Json(body)).into_response()
             }
 
+            // ----- Story 34-11a2 (#972) — la carte de crédit -----
+            AppError::CardNumberNotAllowed { field } => {
+                let body = serde_json::json!({
+                    "error": {
+                        "code": "CARD_NUMBER_NOT_ALLOWED",
+                        "message": t(
+                            "bank-accounts-errors-card-number-not-allowed",
+                            "Ce texte ressemble à un numéro de carte complet : Kesh ne garde que les quatre derniers chiffres. Retirez le numéro.",
+                        ),
+                        "details": { "field": field }
+                    }
+                });
+                (StatusCode::BAD_REQUEST, Json(body)).into_response()
+            }
+            AppError::CreditCardLedgerMustBeLiability { account_id } => {
+                let body = serde_json::json!({
+                    "error": {
+                        "code": "CREDIT_CARD_LEDGER_MUST_BE_LIABILITY",
+                        "message": t(
+                            "bank-accounts-errors-credit-card-ledger-must-be-liability",
+                            "Une carte de crédit se lie à un compte de passif (sa dette), obligatoirement.",
+                        ),
+                        "details": {
+                            "accountId": account_id,
+                            "allowedTypes": ["Liability"],
+                        }
+                    }
+                });
+                (StatusCode::BAD_REQUEST, Json(body)).into_response()
+            }
+            AppError::BankAccountKindImmutable => build_response(
+                StatusCode::BAD_REQUEST,
+                "BANK_ACCOUNT_KIND_IMMUTABLE",
+                &t(
+                    "bank-accounts-errors-kind-immutable",
+                    "Le type d'un compte ne se change pas : créez un nouveau compte.",
+                ),
+            ),
+            AppError::CreditCardFieldNotAllowed { field } => {
+                let body = serde_json::json!({
+                    "error": {
+                        "code": "CREDIT_CARD_FIELD_NOT_ALLOWED",
+                        "message": t(
+                            "bank-accounts-errors-credit-card-field-not-allowed",
+                            "Une carte de crédit n'a ni IBAN, ni QR-IBAN, et n'est jamais le compte principal.",
+                        ),
+                        "details": { "field": field }
+                    }
+                });
+                (StatusCode::BAD_REQUEST, Json(body)).into_response()
+            }
+            AppError::BankAccountFieldNotAllowed { field } => {
+                let body = serde_json::json!({
+                    "error": {
+                        "code": "BANK_ACCOUNT_FIELD_NOT_ALLOWED",
+                        "message": t(
+                            "bank-accounts-errors-bank-account-field-not-allowed",
+                            "Les quatre derniers chiffres ne concernent qu'une carte de crédit.",
+                        ),
+                        "details": { "field": field }
+                    }
+                });
+                (StatusCode::BAD_REQUEST, Json(body)).into_response()
+            }
+
             // ----- Story 8-2 — bank profiles + CSV import -----
             AppError::BankCsvProfileNotFound { available_profiles } => {
                 let body = serde_json::json!({
@@ -3494,6 +3591,45 @@ impl IntoResponse for AppError {
                         }
                     });
                     (StatusCode::CONFLICT, Json(body)).into_response()
+                }
+                // Story 34-11a2 (#972, C-e341-31) — 409 : l'état du compte (son
+                // lien à un compte bancaire) s'oppose au retypage ; le refus nomme
+                // le compte bancaire.
+                DbError::AccountLinkedToBankAccount {
+                    bank_account_id,
+                    bank_account_name,
+                } => {
+                    let fallback = format!(
+                        "Ce compte est lié au compte bancaire « {bank_account_name} », qui n'admet pas ce type. Changez d'abord le compte lié de « {bank_account_name} »."
+                    );
+                    let mut args = FluentArgs::new();
+                    args.set("name", bank_account_name.clone());
+                    let msg = t_args("error-account-linked-to-bank-account", &fallback, &args);
+                    let body = serde_json::json!({
+                        "error": {
+                            "code": "ACCOUNT_LINKED_TO_BANK_ACCOUNT",
+                            "message": msg,
+                            "details": {
+                                "bankAccountId": bank_account_id,
+                                "bankAccountName": bank_account_name,
+                            }
+                        }
+                    });
+                    (StatusCode::CONFLICT, Json(body)).into_response()
+                }
+                // Story 34-11a2 (#972, C-e341-41).
+                DbError::SettlementAccountIsCreditCard { bank_account_id } => {
+                    let body = serde_json::json!({
+                        "error": {
+                            "code": "SETTLEMENT_ACCOUNT_IS_CREDIT_CARD",
+                            "message": t(
+                                "error-settlement-account-is-credit-card",
+                                "Un règlement client n'entre pas sur une carte de crédit : choisissez un compte bancaire.",
+                            ),
+                            "details": { "bankAccountId": bank_account_id }
+                        }
+                    });
+                    (StatusCode::BAD_REQUEST, Json(body)).into_response()
                 }
                 // Story 25-2-a ([#382], [#274]) — **409 et non 400** : le payload
                 // est valide, c'est l'ÉTAT du compte qui s'y oppose. Même lecture

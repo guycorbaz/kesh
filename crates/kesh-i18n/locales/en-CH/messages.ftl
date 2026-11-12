@@ -1529,6 +1529,25 @@ bank-accounts-actions-cancel = Cancel
 bank-accounts-actions-submit = Link
 bank-accounts-errors-account-not-found = Ledger account not found.
 bank-accounts-errors-invalid-account-type = Invalid account type (Asset or Liability required).
+# Story 34-11a2 (#972) — credit card.
+bank-accounts-errors-card-number-not-allowed = This text looks like a full card number: Kesh keeps only the last four digits. Remove the number.
+bank-accounts-errors-credit-card-ledger-must-be-liability = A credit card must be linked to a liability account (its debt).
+bank-accounts-errors-kind-immutable = An account's type cannot be changed: create a new account.
+bank-accounts-errors-credit-card-field-not-allowed = A credit card has no IBAN, no QR-IBAN, and is never the primary account.
+bank-accounts-errors-bank-account-field-not-allowed = The last four digits only apply to a credit card.
+error-account-linked-to-bank-account = This account is linked to the bank account “{ $name }”, which does not accept this type. First change the linked account of “{ $name }”.
+error-settlement-account-is-credit-card = A customer payment cannot be received on a credit card: choose a bank account.
+bank-accounts-labels-kind = Account type
+bank-accounts-kind-bank = Bank account
+bank-accounts-kind-credit-card = Credit card
+bank-accounts-labels-card-issuer = Card issuer
+bank-accounts-labels-card-last4 = Last four digits (optional)
+bank-accounts-help-card-last4 = Kesh never keeps the full card number: only its last four digits, to recognise it.
+bank-accounts-labels-card-ledger = Linked debt account
+bank-accounts-help-card-ledger = Required: a liability account, the card's debt (for example a sub-account of 2100 Short-term bank debt).
+bank-accounts-help-kind-fixed = An account's type cannot be changed after it is created.
+bank-accounts-error-card-last4 = Enter exactly four digits, or leave the field empty.
+bank-accounts-error-card-ledger-required = Choose the liability account linked to the card.
 # Story v014-1 — CRUD bank_accounts post-onboarding
 bank-accounts-errors-has-transactions = Bank account has transactions — archive refused to preserve accounting audit. Bank imports with no reconciled transaction can be deleted (Daily → Import statements). Otherwise, to withdraw the account from use, close the account: it becomes read-only and keeps its history.
 bank-accounts-errors-cannot-archive-primary = The primary account cannot be archived while another account that is neither archived nor closed exists. First set another account as primary, then archive this one.

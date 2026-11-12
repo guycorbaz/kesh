@@ -948,11 +948,15 @@ const ATTENDU = {
 	// par `grep -o 'i18nMsg('`) : la zone de dépôt d'un compte sans IBAN, libellé et
 	// `aria-label` (`bank-import-labels-drop-zone-csv-only`). Que des littéraux ;
 	// `sitesNonResolus` et `relais` inchangés.
+	// Story 34-11a2 (#972) : **2924 → 2942** (+18), `bank-accounts/+page.svelte` (73 → 91, recompté
+	// par `grep -o 'i18nMsg('`) : type du compte, champs et aides d'une carte, refus d'écran,
+	// `kindLabel`. Que des littéraux ; `sitesNonResolus` et `relais` inchangés.
 	// Intégration de la release 0.17.6 (2026-11-12), **recompté à la source** par la garde
 	// elle-même après chaque fusion (non additionné) : 2946 après la 34-3 (34-1, 34-2, 34-3),
 	// 2954 après la 34-4, 2962 après la 34-5, 2968 après la 34-6, 2968 après la 34-8 (solde
-	// nul de la 34-8), 2992 après la 34-9, 2995 après la 34-10, **2997** après la 34-11a1.
-	sitesTotal: 2997,
+	// nul de la 34-8), 2992 après la 34-9, 2995 après la 34-10, 2997 après la 34-11a1,
+	// **3015** après la 34-11a2.
+	sitesTotal: 3015,
 	sitesNonResolus: 31,
 	relais: 6,
 	// Story 26-1 (#620, AC3-bis) : **10 → 11** — `lib/features/bank-import/

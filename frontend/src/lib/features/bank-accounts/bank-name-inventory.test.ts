@@ -70,7 +70,9 @@ const ATTENDU: Record<string, { n: number; motif: string }> = {
 		motif: 'porteur : `BankAccountJson` de `GET /companies/current`',
 	},
 	'routes/(app)/bank-accounts/+page.svelte': {
-		n: 3,
+		// Story 34-11a2 : 3 → 5, les payloads d'une carte (création, `PUT`) en
+		// plus de ceux d'un compte bancaire.
+		n: 5,
 		motif: 'E1 — préremplissage et payloads du formulaire (saisie, pas affichage)',
 	},
 	'routes/onboarding/+page.svelte': {

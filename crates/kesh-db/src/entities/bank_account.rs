@@ -35,6 +35,22 @@ impl BankAccountKind {
             Self::CreditCard => "credit_card",
         }
     }
+
+    /// Les types de compte du plan auxquels un compte de ce type peut être lié
+    /// — Story 34-11a2 (#972, C-e341-16, C-e341-31).
+    ///
+    /// Compte bancaire : actif ou passif (règle d'avant, 8-5a-zero). Carte de
+    /// crédit : **passif seulement** — la carte est une dette. Seule définition
+    /// de la règle : la création, le `PUT` et le `PATCH` d'un compte bancaire la
+    /// lisent, et le retypage d'un compte du plan (`accounts::update`) refuse un
+    /// type qu'elle n'admet plus pour un compte bancaire lié non archivé.
+    pub fn admits_ledger_type(&self, account_type: super::account::AccountType) -> bool {
+        use super::account::AccountType;
+        match self {
+            Self::Bank => matches!(account_type, AccountType::Asset | AccountType::Liability),
+            Self::CreditCard => matches!(account_type, AccountType::Liability),
+        }
+    }
 }
 
 impl std::fmt::Display for BankAccountKind {
@@ -116,6 +132,13 @@ pub struct BankAccount {
     /// besoin d'un IBAN (lot `pain.001`, import CAMT, QR-facture) refusent sur
     /// `iban.is_none()`, jamais sur le type (C-e341-18) : un futur type sans
     /// IBAN y tombe sans changement.
+    ///
+    /// ⚠️ Story 34-11a2 (revue P1 de la 34-11a1, B5) — « le compte principal a
+    /// un IBAN » tient **par le type** (`chk_bank_accounts_card_shape` : une
+    /// carte n'est jamais principale ; `chk_bank_accounts_bank_has_iban`), non
+    /// par une contrainte sur `iban IS NULL`. Vrai pour les deux types
+    /// d'aujourd'hui ; un futur type sans IBAN devra ajouter
+    /// `CHECK (is_primary = FALSE OR iban IS NOT NULL)` à sa migration.
     pub iban: Option<String>,
     /// QR-IBAN optionnel (plage QR-IID 30000-31999).
     pub qr_iban: Option<String>,
@@ -256,6 +279,25 @@ mod tests {
             ligne.contains(&format!("varchar({BANK_ACCOUNT_BANK_NAME_MAX_CHARS})")),
             "la colonne doit être varchar({BANK_ACCOUNT_BANK_NAME_MAX_CHARS}), trouvé : {ligne}"
         );
+    }
+
+    /// Story 34-11a2 (C-e341-16) — une carte n'admet qu'un passif ; un compte
+    /// bancaire, un actif ou un passif.
+    #[test]
+    fn types_de_compte_admis_par_type_de_compte_bancaire() {
+        use crate::entities::account::AccountType::*;
+        for t in [Asset, Liability, Revenue, Expense] {
+            assert_eq!(
+                BankAccountKind::Bank.admits_ledger_type(t),
+                matches!(t, Asset | Liability),
+                "bank / {t:?}"
+            );
+            assert_eq!(
+                BankAccountKind::CreditCard.admits_ledger_type(t),
+                matches!(t, Liability),
+                "credit_card / {t:?}"
+            );
+        }
     }
 
     #[test]

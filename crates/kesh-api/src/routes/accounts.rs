@@ -322,14 +322,27 @@ pub async fn update_account(
     // Story 25-2-a : le dépôt refuse en 409 `ACCOUNT_HAS_ENTRIES` si le compte
     // porte des écritures et que le client n'a pas confirmé. L'écran n'a rien à
     // pré-vérifier — il réagit au refus, qui lui dit l'ampleur.
-    let account = accounts::update(
-        &state.pool,
-        id,
+    //
+    // ⚠️ **Rejouée sur interblocage** (Story 34-11a2, #972, C-e341-40 ; opération
+    // `accounts::update`) : le retypage prend la ligne `accounts` `FOR UPDATE`
+    // puis lit les comptes bancaires liés sous verrou partagé ; une création,
+    // un `PUT` ou un `PATCH` de compte bancaire tient le type en partagé et
+    // l'écrivain d'un `INSERT` concurrent peut fermer un cycle avec lui. Le
+    // dépôt ouvre et conclut sa propre transaction à chaque tentative.
+    let (version, user_id, confirm) = (
         req.version,
         current_user.user_id,
-        changes,
         req.confirm_account_retype,
-    )
+    );
+    let account = crate::retry::retry_app_on_deadlock("accounts::update", || {
+        let changes = changes.clone();
+        let pool = state.pool.clone();
+        async move {
+            accounts::update(&pool, id, version, user_id, changes, confirm)
+                .await
+                .map_err(AppError::from)
+        }
+    })
     .await?;
     Ok(Json(response(&state, account).await?))
 }

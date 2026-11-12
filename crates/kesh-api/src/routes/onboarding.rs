@@ -619,6 +619,11 @@ pub async fn set_bank_account(
     }
     // Story 34-2 (revue P1 E-1) : la borne de la colonne, comme à la création.
     super::bank_accounts::refuse_too_long_bank_name(&bank_name)?;
+    // Story 34-11a2 (#972, C-e341-15, C-e341-19) — la garde du numéro de carte
+    // complet atteint l'assistant : il ne passe pas par `validate_bank_input`.
+    // ⚠️ La description de l'assistant (Story 34-1) doit recevoir le même
+    // appel, `refuse_card_number("description", …)`, à l'intégration.
+    crate::routes::bank_accounts::refuse_card_number("bankName", &bank_name)?;
 
     // Story 34-1 (AC-2) : la fonction de la création, même borne, même message.
     // Une description présente mais vide ou faite d'espaces vaut `null`.
@@ -645,9 +650,12 @@ pub async fn set_bank_account(
     // inactif, 400 hors `Asset | Liability`, 400 non imputable. Sur le pool,
     // avant la transaction, comme `create_bank_account`.
     let requested_ledger = body.journal_account_id.flatten();
+    // Story 34-11a2 (#972) : l'assistant ne crée qu'un compte bancaire — la
+    // règle d'avant (actif ou passif, lien facultatif).
     super::bank_accounts::validate_journal_account_id(
         &state.pool,
         current_user.company_id,
+        kesh_db::entities::BankAccountKind::Bank,
         requested_ledger,
         true,
     )

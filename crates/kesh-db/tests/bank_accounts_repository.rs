@@ -921,6 +921,8 @@ async fn archived_invariants_update_for_company_on_archived_returns_not_found(po
         BankAccountPutFields {
             journal_account_id: None,
             description: None,
+            iban: Some("CH4431999123000889012"),
+            card_last4: None,
         },
         1,
         &ClaimAccounts::default(),
@@ -1092,6 +1094,8 @@ async fn update_for_company_guards_only_a_changed_account(pool: MySqlPool) {
         BankAccountPutFields {
             journal_account_id: Some(linked),
             description: None,
+            iban: Some("CH9300762011623852957"),
+            card_last4: None,
         },
         1,
         &ClaimAccounts::default(),
@@ -1112,6 +1116,8 @@ async fn update_for_company_guards_only_a_changed_account(pool: MySqlPool) {
         BankAccountPutFields {
             journal_account_id: Some(target),
             description: None,
+            iban: Some("CH9300762011623852957"),
+            card_last4: None,
         },
         after.version + 7,
         &ClaimAccounts::default(),
@@ -1132,6 +1138,8 @@ async fn update_for_company_guards_only_a_changed_account(pool: MySqlPool) {
         BankAccountPutFields {
             journal_account_id: Some(target),
             description: None,
+            iban: Some("CH9300762011623852957"),
+            card_last4: None,
         },
         after.version,
         &ClaimAccounts::default(),
@@ -1149,6 +1157,8 @@ async fn update_for_company_guards_only_a_changed_account(pool: MySqlPool) {
         BankAccountPutFields {
             journal_account_id: Some(linked),
             description: None,
+            iban: Some("CH9300762011623852957"),
+            card_last4: None,
         },
         after.version,
         &ClaimAccounts::default(),
@@ -1470,6 +1480,8 @@ async fn already_linked_claim_account_is_exempt_in_the_repository(pool: MySqlPoo
         BankAccountPutFields {
             journal_account_id: Some(receivable),
             description: None,
+            iban: Some("CH9300762011623852957"),
+            card_last4: None,
         },
         2,
         &claims,
@@ -1679,6 +1691,8 @@ async fn update_for_company_ecrit_puis_efface_la_description(pool: MySqlPool) {
         BankAccountPutFields {
             journal_account_id: None,
             description: Some("Épargne"),
+            iban: Some("CH9300762011623852957"),
+            card_last4: None,
         },
         1,
         &ClaimAccounts::default(),
@@ -1699,6 +1713,8 @@ async fn update_for_company_ecrit_puis_efface_la_description(pool: MySqlPool) {
         BankAccountPutFields {
             journal_account_id: None,
             description: None,
+            iban: Some("CH9300762011623852957"),
+            card_last4: None,
         },
         after.version,
         &ClaimAccounts::default(),

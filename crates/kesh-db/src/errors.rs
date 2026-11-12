@@ -911,6 +911,39 @@ pub enum DbError {
         settings: Vec<&'static str>,
     },
 
+    /// Retypage refusé d'un compte du plan **lié à un compte bancaire non
+    /// archivé**, vers un type que ce lien n'admet plus — Story 34-11a2 (#972,
+    /// C-e341-31) : hors passif pour une carte de crédit, hors actif ou passif
+    /// pour un compte bancaire
+    /// ([`BankAccountKind::admits_ledger_type`](crate::entities::BankAccountKind::admits_ledger_type)).
+    ///
+    /// Levé par `accounts::update` sous le `FOR UPDATE` de la ligne `accounts`,
+    /// avant la garde des écritures : une confirmation de retypage n'y change
+    /// rien. Nomme le premier compte bancaire lié qui refuse, par `id`. Mappé
+    /// vers HTTP **409** `ACCOUNT_LINKED_TO_BANK_ACCOUNT` : la demande est
+    /// valide, c'est l'état du compte qui s'y oppose.
+    #[error("Le compte est lié au compte bancaire {bank_account_id} : ce type n'y est pas admis")]
+    AccountLinkedToBankAccount {
+        /// Le compte bancaire lié.
+        bank_account_id: i64,
+        /// Son nom d'affichage (`bank_account_display_name`).
+        bank_account_name: String,
+    },
+
+    /// Règlement d'une facture **client** par virement sur un compte de type
+    /// carte de crédit — Story 34-11a2 (#972, C-e341-41). Un client ne paie pas
+    /// sur la carte du titulaire. Levé par
+    /// `invoice_settlements_write::settle_invoice`, sur la ligne du compte lue
+    /// sous verrou, avant toute écriture. Mappé vers HTTP **400**
+    /// `SETTLEMENT_ACCOUNT_IS_CREDIT_CARD`.
+    #[error(
+        "Le compte {bank_account_id} est une carte de crédit : un règlement client n'y entre pas"
+    )]
+    SettlementAccountIsCreditCard {
+        /// Le compte bancaire choisi.
+        bank_account_id: i64,
+    },
+
     /// Un rôle de compte **singleton** est déjà porté par un autre compte actif
     /// de la même société (Story 14-3a).
     ///
@@ -1581,6 +1614,8 @@ impl DbError {
             Self::DateOutsideFiscalYear => "DATE_OUTSIDE_FISCAL_YEAR",
             Self::AccountHasEntries { .. } => "ACCOUNT_HAS_ENTRIES",
             Self::AccountDesignatedInSettings { .. } => "ACCOUNT_DESIGNATED_IN_SETTINGS",
+            Self::AccountLinkedToBankAccount { .. } => "ACCOUNT_LINKED_TO_BANK_ACCOUNT",
+            Self::SettlementAccountIsCreditCard { .. } => "SETTLEMENT_ACCOUNT_IS_CREDIT_CARD",
             Self::AccountRoleAlreadyAssigned { .. } => "ACCOUNT_ROLE_ALREADY_ASSIGNED",
             Self::AccountParentArchived { .. } => "ACCOUNT_PARENT_ARCHIVED",
             Self::AccountRoleInvalidForType { .. } => "ACCOUNT_ROLE_INVALID_FOR_TYPE",

@@ -1529,6 +1529,25 @@ bank-accounts-actions-cancel = Abbrechen
 bank-accounts-actions-submit = Verbinden
 bank-accounts-errors-account-not-found = Buchhaltungskonto nicht gefunden.
 bank-accounts-errors-invalid-account-type = Ungültiger Kontotyp (Aktiv- oder Passivkonto erforderlich).
+# Story 34-11a2 (#972) — Kreditkarte.
+bank-accounts-errors-card-number-not-allowed = Dieser Text sieht wie eine vollständige Kartennummer aus: Kesh speichert nur die letzten vier Ziffern. Entfernen Sie die Nummer.
+bank-accounts-errors-credit-card-ledger-must-be-liability = Eine Kreditkarte wird zwingend mit einem Passivkonto (ihrer Schuld) verknüpft.
+bank-accounts-errors-kind-immutable = Der Typ eines Kontos lässt sich nicht ändern: Legen Sie ein neues Konto an.
+bank-accounts-errors-credit-card-field-not-allowed = Eine Kreditkarte hat weder IBAN noch QR-IBAN und ist nie das Hauptkonto.
+bank-accounts-errors-bank-account-field-not-allowed = Die letzten vier Ziffern betreffen nur eine Kreditkarte.
+error-account-linked-to-bank-account = Dieses Konto ist mit dem Bankkonto «{ $name }» verknüpft, das diesen Typ nicht zulässt. Ändern Sie zuerst das verknüpfte Konto von «{ $name }».
+error-settlement-account-is-credit-card = Eine Kundenzahlung geht nicht auf eine Kreditkarte ein: Wählen Sie ein Bankkonto.
+bank-accounts-labels-kind = Kontotyp
+bank-accounts-kind-bank = Bankkonto
+bank-accounts-kind-credit-card = Kreditkarte
+bank-accounts-labels-card-issuer = Kartenherausgeber
+bank-accounts-labels-card-last4 = Letzte vier Ziffern (optional)
+bank-accounts-help-card-last4 = Kesh speichert nie die vollständige Kartennummer: nur ihre letzten vier Ziffern, um sie zu erkennen.
+bank-accounts-labels-card-ledger = Verknüpftes Schuldkonto
+bank-accounts-help-card-ledger = Pflichtfeld: ein Passivkonto, die Schuld der Karte (zum Beispiel ein Unterkonto von 2100 Kurzfristige Bankverbindlichkeiten).
+bank-accounts-help-kind-fixed = Der Typ eines Kontos lässt sich nach der Erstellung nicht ändern.
+bank-accounts-error-card-last4 = Geben Sie genau vier Ziffern ein oder lassen Sie das Feld leer.
+bank-accounts-error-card-ledger-required = Wählen Sie das mit der Karte verknüpfte Passivkonto.
 # Story v014-1 — CRUD bank_accounts post-onboarding
 bank-accounts-errors-has-transactions = Das Bankkonto enthält Transaktionen — Archivierung verweigert, um die Buchhaltungsprüfung zu wahren. Bankimporte, von denen keine Transaktion abgeglichen ist, können gelöscht werden (Täglich → Kontoauszüge importieren). Andernfalls, um das Konto aus der Nutzung zu nehmen, das Konto auflösen: Es wird schreibgeschützt und behält seine Historie.
 bank-accounts-errors-cannot-archive-primary = Das Hauptkonto kann nicht archiviert werden, solange ein anderes weder archiviertes noch aufgelöstes Konto besteht. Setzen Sie zuerst ein anderes Konto als Hauptkonto und archivieren Sie dieses dann.

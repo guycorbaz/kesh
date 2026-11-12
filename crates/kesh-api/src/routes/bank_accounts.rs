@@ -39,7 +39,7 @@ use kesh_db::entities::account::AccountType;
 use kesh_db::entities::audit_log::NewAuditLogEntry;
 use kesh_db::entities::bank_account::{
     BANK_ACCOUNT_BANK_NAME_MAX_CHARS, BANK_ACCOUNT_DESCRIPTION_MAX_CHARS, BankAccount,
-    NewBankAccount, bank_account_display_name,
+    BankAccountKind, NewBankAccount, bank_account_display_name,
 };
 use kesh_db::errors::{DbError, NonPostableAccount};
 use kesh_db::repositories::bank_accounts::BankAccountPutFields;
@@ -80,13 +80,25 @@ pub struct CreateBankAccountBody {
     /// pas de description.
     #[serde(default)]
     pub description: Option<String>,
-    pub iban: String,
+    /// Story 34-11a2 (#972, validation P3, 4.1) — facultatif au niveau du
+    /// corps : obligatoire pour un compte bancaire (`400` de
+    /// [`validate_bank_input`], comme en 0.17.5), refusé pour une carte.
+    #[serde(default)]
+    pub iban: Option<String>,
     #[serde(default)]
     pub qr_iban: Option<String>,
     #[serde(default)]
     pub is_primary: bool,
     #[serde(default)]
     pub journal_account_id: Option<i64>,
+    /// Story 34-11a2 — type du compte ; absent = compte bancaire (un corps
+    /// 0.17.5 passe inchangé). Immuable ensuite.
+    #[serde(default)]
+    pub account_kind: Option<BankAccountKind>,
+    /// Story 34-11a2 — quatre derniers chiffres d'une carte (facultatif).
+    /// Absent, `null` ou vide valent absent (C-e341-42).
+    #[serde(default)]
+    pub card_last4: Option<String>,
     /// Story 34-2 (#533, AC-2) — solde d'ouverture, facultatif. Absent, `null`
     /// ou de montant vide ou nul : aucune écriture, comportement d'avant.
     /// Présent : exige `journalAccountId`.
@@ -158,7 +170,8 @@ pub struct CreatedBankAccountResponse {
 /// Body du PUT `/bank-accounts/{id}` — édition complète v014-1.
 ///
 /// **Remplacement complet** : un champ optionnel absent est effacé — `qrIban`
-/// comme `description` (Story 26-2a, C-26-2-8, C-26-2-19).
+/// comme `description` (Story 26-2a, C-26-2-8, C-26-2-19), et `cardLast4`
+/// (Story 34-11a2).
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct UpdateBankAccountBody {
@@ -166,13 +179,22 @@ pub struct UpdateBankAccountBody {
     /// Story 26-2a (#622) — description optionnelle ; **absente ⇒ effacée**.
     #[serde(default)]
     pub description: Option<String>,
-    pub iban: String,
+    /// Story 34-11a2 — voir [`CreateBankAccountBody::iban`].
+    #[serde(default)]
+    pub iban: Option<String>,
     #[serde(default)]
     pub qr_iban: Option<String>,
     #[serde(default)]
     pub is_primary: bool,
     #[serde(default)]
     pub journal_account_id: Option<i64>,
+    /// Story 34-11a2 (C-e341-30) — absent = le type courant ; présent et
+    /// différent → `400 BANK_ACCOUNT_KIND_IMMUTABLE`.
+    #[serde(default)]
+    pub account_kind: Option<BankAccountKind>,
+    /// Story 34-11a2 — **absents ⇒ effacés** (remplacement complet).
+    #[serde(default)]
+    pub card_last4: Option<String>,
     /// Optimistic lock.
     pub version: i32,
 }
@@ -272,7 +294,7 @@ impl_validation_extractor!(
 impl_validation_extractor!(
     CreateBankAccountBodyExtractor,
     CreateBankAccountBody,
-    "`bankName` str, `description?` str, `iban` str, `qrIban?` str, `isPrimary?` bool, `journalAccountId?` i64, `openingBalance?` { `amount` str, `side` \"debit\" | \"credit\" }"
+    "`bankName` str, `description?` str, `iban?` str, `qrIban?` str, `isPrimary?` bool, `journalAccountId?` i64, `accountKind?` (`bank` | `credit_card`), `cardLast4?` str, `openingBalance?` { `amount` str, `side` \"debit\" | \"credit\" }"
 );
 impl_validation_extractor!(
     OpeningBalanceBodyExtractor,
@@ -282,7 +304,7 @@ impl_validation_extractor!(
 impl_validation_extractor!(
     UpdateBankAccountBodyExtractor,
     UpdateBankAccountBody,
-    "`bankName` str, `description?` str, `iban` str, `qrIban?` str, `isPrimary?` bool, `journalAccountId?` i64, `version` i32"
+    "`bankName` str, `description?` str, `iban?` str, `qrIban?` str, `isPrimary?` bool, `journalAccountId?` i64, `accountKind?` (`bank` | `credit_card`), `cardLast4?` str, `version` i32"
 );
 impl_validation_extractor!(
     ArchiveBankAccountBodyExtractor,
@@ -324,11 +346,124 @@ async fn assert_onboarding_complete(pool: &sqlx::MySqlPool) -> Result<(), AppErr
 /// Champs métier d'un payload create/update, **normalisés** par
 /// [`validate_bank_input`].
 struct ValidatedBankInput {
+    /// Story 34-11a2 — le type du compte (celui du corps au `POST`, le type
+    /// courant au `PUT`).
+    kind: BankAccountKind,
     bank_name: String,
     /// Story 26-2a — `None` si absente, vide ou faite d'espaces.
     description: Option<String>,
-    iban: String,
+    /// Story 34-11a2 (C-e341-39) — `Some` pour un compte bancaire, `None` pour
+    /// une carte.
+    iban: Option<String>,
     qr_iban: Option<String>,
+    /// Story 34-11a2 — quatre chiffres ASCII d'une carte, ou `None`.
+    card_last4: Option<String>,
+}
+
+/// Les champs d'un corps de création ou de `PUT`, tels que reçus, que
+/// [`validate_bank_input`] contrôle — Story 34-11a2 (regroupés pour garder la
+/// fonction lisible).
+struct BankInputFields<'a> {
+    kind: BankAccountKind,
+    bank_name: &'a str,
+    description: Option<&'a str>,
+    iban: Option<&'a str>,
+    qr_iban: Option<&'a str>,
+    is_primary: bool,
+    card_last4: Option<&'a str>,
+}
+
+/// Un champ facultatif **fourni** : présent et non vide après `trim` —
+/// Story 34-11a2 (C-e341-42) : absent, `null` et `""` valent absent.
+fn provided(value: Option<&str>) -> Option<&str> {
+    value.map(str::trim).filter(|v| !v.is_empty())
+}
+
+/// Refuse un texte qui porte un numéro de carte complet — Story 34-11a2 (#972,
+/// C-e341-15) : `400 CARD_NUMBER_NOT_ALLOWED`, `details.field`. Appelée sur le
+/// nom et la description, pour les deux types, par [`validate_bank_input`]
+/// (création, `PUT`) **et** par l'assistant (`onboarding::set_bank_account`).
+pub(crate) fn refuse_card_number(field: &'static str, text: &str) -> Result<(), AppError> {
+    if kesh_core::card_number::looks_like_card_number(text) {
+        Err(AppError::CardNumberNotAllowed { field })
+    } else {
+        Ok(())
+    }
+}
+
+/// Le refus d'un compte lié dont le type n'est pas admis par `kind` — Story
+/// 34-11a2 (C-e341-16) : `400 CREDIT_CARD_LEDGER_MUST_BE_LIABILITY` pour une
+/// carte, `400 INVALID_ACCOUNT_TYPE` (règle d'avant) pour un compte bancaire.
+fn ledger_type_refusal(
+    kind: BankAccountKind,
+    account_id: i64,
+    account_type: AccountType,
+) -> AppError {
+    match kind {
+        BankAccountKind::CreditCard => AppError::CreditCardLedgerMustBeLiability {
+            account_id: Some(account_id),
+        },
+        BankAccountKind::Bank => AppError::InvalidAccountType {
+            account_id,
+            account_type: account_type.as_str().to_string(),
+        },
+    }
+}
+
+/// Le type du compte lié, relu **dans la transaction** sous verrou partagé
+/// (`accounts::type_in_share_mode`), puis contrôlé contre `kind` — Story
+/// 34-11a2 (C-e341-16, C-e341-40). Une carte sans compte lié est refusée.
+///
+/// ⛔ À appeler **après** les réglages (`claims_for_target`) et **avant** tout
+/// verrou sur `bank_accounts` : ordre `companies` → réglages → `accounts` →
+/// `bank_accounts`. Le retypage d'un compte du plan prend la même ligne
+/// `FOR UPDATE` : un retypage commité avant cette lecture est vu ici et refusé ;
+/// un retypage qui attend derrière elle voit le lien commité et se refuse.
+async fn recheck_ledger_type_in_tx(
+    tx: &mut Transaction<'_, MySql>,
+    company_id: i64,
+    kind: BankAccountKind,
+    journal_account_id: Option<i64>,
+) -> Result<(), AppError> {
+    let linked_type = locked_ledger_type(tx, company_id, journal_account_id).await?;
+    ensure_kind_admits(kind, journal_account_id, linked_type)
+}
+
+/// Lit sous verrou partagé le type du compte lié (`None` sans lien) ; absent ou
+/// archivé → `404`, comme au pré-vol.
+async fn locked_ledger_type(
+    tx: &mut Transaction<'_, MySql>,
+    company_id: i64,
+    journal_account_id: Option<i64>,
+) -> Result<Option<AccountType>, AppError> {
+    let Some(account_id) = journal_account_id else {
+        return Ok(None);
+    };
+    match accounts::type_in_share_mode(tx, company_id, account_id).await? {
+        Some((account_type, true)) => Ok(Some(account_type)),
+        _ => Err(AppError::AccountNotFound {
+            account_id,
+            missing_account_ids: None,
+        }),
+    }
+}
+
+/// Le type du compte lié (déjà lu) est-il admis par `kind` ? Une carte exige un
+/// compte lié (C-e341-16).
+fn ensure_kind_admits(
+    kind: BankAccountKind,
+    journal_account_id: Option<i64>,
+    linked_type: Option<AccountType>,
+) -> Result<(), AppError> {
+    match (journal_account_id, linked_type) {
+        (Some(account_id), Some(account_type)) if !kind.admits_ledger_type(account_type) => {
+            Err(ledger_type_refusal(kind, account_id, account_type))
+        }
+        (None, _) if kind == BankAccountKind::CreditCard => {
+            Err(AppError::CreditCardLedgerMustBeLiability { account_id: None })
+        }
+        _ => Ok(()),
+    }
 }
 
 /// Caractères refusés dans une description de compte bancaire — Story 26-2a
@@ -394,45 +529,90 @@ pub(crate) fn refuse_too_long_bank_name(bank_name: &str) -> Result<(), AppError>
 
 /// Valide et normalise les champs métier d'un payload create/update.
 ///
-/// **Ordre des refus de forme** (Story 26-2a, AC3) : banque vide → banque trop
-/// longue (Story 34-2) → description → IBAN → QR-IBAN.
-fn validate_bank_input(
-    bank_name: &str,
-    description: Option<&str>,
-    iban: &str,
-    qr_iban: Option<&str>,
-) -> Result<ValidatedBankInput, AppError> {
-    let bank_name = bank_name.trim().to_string();
+/// **Ordre des refus de forme** (Story 26-2a, AC3 ; Story 34-2 ; Story 34-11a2) :
+/// banque vide → banque trop longue (Story 34-2) → numéro de carte dans le nom →
+/// description → numéro de carte dans la
+/// description → par type. Compte bancaire : `cardLast4` fourni (`400
+/// BANK_ACCOUNT_FIELD_NOT_ALLOWED`) → IBAN (absent ou invalide : `400`, comme
+/// en 0.17.5) → QR-IBAN. Carte : IBAN, QR-IBAN, `isPrimary` (`400
+/// CREDIT_CARD_FIELD_NOT_ALLOWED`) → quatre chiffres.
+fn validate_bank_input(f: BankInputFields<'_>) -> Result<ValidatedBankInput, AppError> {
+    let bank_name = f.bank_name.trim().to_string();
     if bank_name.is_empty() {
         return Err(AppError::Validation(
             "Le nom de la banque ne peut pas être vide".into(),
         ));
     }
     refuse_too_long_bank_name(&bank_name)?;
+    refuse_card_number("bankName", &bank_name)?;
 
-    let description = normalize_description(description)?;
+    let description = normalize_description(f.description)?;
+    if let Some(d) = description.as_deref() {
+        refuse_card_number("description", d)?;
+    }
 
-    // Le message de `kesh-core` nomme déjà le champ : servi tel quel, sans
-    // second préfixe ; le QR-IBAN passe par le helper commun, qui étiquette du
-    // bon champ l'erreur d'IBAN que `QrIban::new` propage (Story v017-6, #832).
-    let iban_normalized = kesh_core::types::Iban::new(iban)
-        .map_err(|e| AppError::Validation(e.to_string()))?
-        .as_str()
-        .to_string();
-
-    let qr_iban_normalized = match qr_iban {
-        Some(qr) if !qr.trim().is_empty() => {
-            let qr_obj = kesh_core::types::QrIban::new(qr).map_err(crate::util::refus_qr_iban)?;
-            Some(qr_obj.as_iban().as_str().to_string())
+    let (iban, qr_iban, card_last4) = match f.kind {
+        BankAccountKind::Bank => {
+            if provided(f.card_last4).is_some() {
+                return Err(AppError::BankAccountFieldNotAllowed { field: "cardLast4" });
+            }
+            // Le message de `kesh-core` nomme déjà le champ : servi tel quel,
+            // sans second préfixe ; le QR-IBAN passe par le helper commun, qui
+            // étiquette du bon champ l'erreur d'IBAN que `QrIban::new` propage
+            // (Story v017-6, #832). Un IBAN absent ou `null` (Story 34-11a2) est
+            // refusé comme un IBAN vide.
+            let iban_normalized = kesh_core::types::Iban::new(f.iban.unwrap_or(""))
+                .map_err(|e| AppError::Validation(e.to_string()))?
+                .as_str()
+                .to_string();
+            let qr_iban_normalized = match provided(f.qr_iban) {
+                Some(qr) => {
+                    let qr_obj =
+                        kesh_core::types::QrIban::new(qr).map_err(crate::util::refus_qr_iban)?;
+                    Some(qr_obj.as_iban().as_str().to_string())
+                }
+                None => None,
+            };
+            (Some(iban_normalized), qr_iban_normalized, None)
         }
-        _ => None,
+        BankAccountKind::CreditCard => {
+            if provided(f.iban).is_some() {
+                return Err(AppError::CreditCardFieldNotAllowed { field: "iban" });
+            }
+            if provided(f.qr_iban).is_some() {
+                return Err(AppError::CreditCardFieldNotAllowed { field: "qrIban" });
+            }
+            if f.is_primary {
+                return Err(AppError::CreditCardFieldNotAllowed { field: "isPrimary" });
+            }
+            let card_last4 = match provided(f.card_last4) {
+                Some(d) if d.len() == 4 && d.bytes().all(|b| b.is_ascii_digit()) => {
+                    Some(d.to_string())
+                }
+                // Revue P1 (E5) — un numéro complet collé dans le champ des quatre
+                // chiffres est nommé comme tel ; rien n'en est gardé ni tronqué.
+                Some(d) if kesh_core::card_number::looks_like_card_number(d) => {
+                    return Err(AppError::CardNumberNotAllowed { field: "cardLast4" });
+                }
+                Some(_) => {
+                    return Err(AppError::Validation(
+                        "cardLast4 : exactement quatre chiffres (les quatre derniers de la carte)"
+                            .into(),
+                    ));
+                }
+                None => None,
+            };
+            (None, None, card_last4)
+        }
     };
 
     Ok(ValidatedBankInput {
+        kind: f.kind,
         bank_name,
         description,
-        iban: iban_normalized,
-        qr_iban: qr_iban_normalized,
+        iban,
+        qr_iban,
+        card_last4,
     })
 }
 
@@ -447,17 +627,26 @@ fn validate_bank_input(
 /// la ligne et **seulement si la valeur change** (choix C10) — un compte lié
 /// devenu non imputable après coup reste accepté tel quel (D-A0, choix C6).
 ///
+/// `kind` (Story 34-11a2, C-e341-16) : une carte exige un compte lié, et un
+/// **passif** (`400 CREDIT_CARD_LEDGER_MUST_BE_LIABILITY`) ; un compte bancaire
+/// garde la règle d'avant (actif ou passif, lien facultatif). Ce pré-vol lit le
+/// pool ; la transaction relit le type sous verrou
+/// ([`recheck_ledger_type_in_tx`]). Le `PATCH`, qui ne connaît pas le type du
+/// compte avant sa transaction, passe `Bank` ici et contrôle la carte dedans.
+///
 /// `pub(crate)` depuis la Story 34-1 (#966, C-e341-2) : l'étape bancaire de
-/// l'assistant l'appelle comme la création (`require_postable = true`), sur le
-/// pool et avant sa transaction.
+/// l'assistant l'appelle comme la création (`require_postable = true`, `kind`
+/// [`BankAccountKind::Bank`] — l'assistant ne crée pas de carte), sur le pool
+/// et avant sa transaction.
 pub(crate) async fn validate_journal_account_id(
     pool: &sqlx::MySqlPool,
     company_id: i64,
+    kind: BankAccountKind,
     journal_account_id: Option<i64>,
     require_postable: bool,
 ) -> Result<(), AppError> {
     let Some(account_id) = journal_account_id else {
-        return Ok(());
+        return ensure_kind_admits(kind, None, None);
     };
 
     if account_id <= 0 {
@@ -479,14 +668,8 @@ pub(crate) async fn validate_journal_account_id(
         });
     }
 
-    match account.account_type {
-        AccountType::Asset | AccountType::Liability => {}
-        other => {
-            return Err(AppError::InvalidAccountType {
-                account_id,
-                account_type: other.as_str().to_string(),
-            });
-        }
+    if !kind.admits_ledger_type(account.account_type) {
+        return Err(ledger_type_refusal(kind, account_id, account.account_type));
     }
 
     if require_postable && !account.postable {
@@ -776,12 +959,17 @@ pub async fn create_bank_account(
 ) -> Result<(StatusCode, Json<CreatedBankAccountResponse>), AppError> {
     assert_onboarding_complete(&state.pool).await?;
 
-    let input = validate_bank_input(
-        &body.bank_name,
-        body.description.as_deref(),
-        &body.iban,
-        body.qr_iban.as_deref(),
-    )?;
+    // Story 34-11a2 — le type vient du corps ; absent = compte bancaire.
+    let kind = body.account_kind.unwrap_or_default();
+    let input = validate_bank_input(BankInputFields {
+        kind,
+        bank_name: &body.bank_name,
+        description: body.description.as_deref(),
+        iban: body.iban.as_deref(),
+        qr_iban: body.qr_iban.as_deref(),
+        is_primary: body.is_primary,
+        card_last4: body.card_last4.as_deref(),
+    })?;
     let opening = parse_opening_balance(body.opening_balance.as_ref())?;
     if opening.is_some() && body.journal_account_id.is_none() {
         return Err(AppError::Validation(crate::errors::t(
@@ -792,6 +980,7 @@ pub async fn create_bank_account(
     validate_journal_account_id(
         &state.pool,
         current_user.company_id,
+        kind,
         body.journal_account_id,
         true,
     )
@@ -892,6 +1081,15 @@ async fn create_once(
             )
             .await?;
         }
+        // Story 34-11a2 (C-e341-40) — le type du compte lié, relu sous verrou
+        // partagé après les réglages, avant la démotion et l'`INSERT`.
+        recheck_ledger_type_in_tx(
+            &mut tx,
+            current_user.company_id,
+            input.kind,
+            journal_account_id,
+        )
+        .await?;
 
         // Story 34-2 (#533, AC-10) — l'écriture d'ouverture, AVANT la démotion et
         // l'INSERT : aucune lecture ordinaire ne l'a précédée (voir le
@@ -922,26 +1120,23 @@ async fn create_once(
             None
         };
 
-        // INSERT du nouveau compte.
-        let new = NewBankAccount {
-            company_id: current_user.company_id,
-            bank_name: input.bank_name.clone(),
-            iban: input.iban.clone(),
-            qr_iban: input.qr_iban.clone(),
-            is_primary,
-        };
-
+        // INSERT du nouveau compte. Story 34-11a2 (C-e341-39) : l'IBAN (`NULL`
+        // pour une carte), le type et les quatre chiffres se lient depuis
+        // l'entrée validée, comme la description — `NewBankAccount` reste
+        // inchangé.
         let result = sqlx::query(
-            "INSERT INTO bank_accounts (company_id, bank_name, description, iban, qr_iban, is_primary, journal_account_id) \
-             VALUES (?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO bank_accounts (company_id, bank_name, description, iban, qr_iban, is_primary, journal_account_id, account_kind, card_last4) \
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
         )
-        .bind(new.company_id)
-        .bind(&new.bank_name)
+        .bind(current_user.company_id)
+        .bind(&input.bank_name)
         .bind(&input.description)
-        .bind(&new.iban)
-        .bind(&new.qr_iban)
-        .bind(new.is_primary)
+        .bind(&input.iban)
+        .bind(&input.qr_iban)
+        .bind(is_primary)
         .bind(journal_account_id)
+        .bind(input.kind)
+        .bind(&input.card_last4)
         .execute(&mut *tx)
         .await
         .map_err(|e| AppError::Database(kesh_db::errors::map_db_error(e)))?;
@@ -974,6 +1169,10 @@ async fn create_once(
             "iban_present": inserted.iban.is_some(),
             "qr_iban_present": inserted.qr_iban.is_some(),
             "journal_account_id": inserted.journal_account_id,
+            // Story 34-11a2 (AC-6) — le type, et la seule présence des quatre
+            // chiffres : jamais les chiffres eux-mêmes.
+            "account_kind": inserted.account_kind,
+            "card_last4_present": inserted.card_last4.is_some(),
         });
         // Story 34-2 (AC-3) — la trace nomme l'écriture d'ouverture passée avec
         // le compte ; sans solde, la trace d'avant, inchangée.
@@ -1141,9 +1340,15 @@ async fn enter_opening_balance_once(
 /// Changement de contrat pour une intégration par clé d'API écrite pour la
 /// 0.13.0 : un corps sans `description` efface celle saisie à l'écran.
 ///
-/// **Ordre des erreurs** (Story 15-5b, AC12 ; Story 15-6c, AC6) : forme (400)
-/// → 404 / 400 type du compte lié (`validate_journal_account_id`, hors
-/// transaction) → 404 compte bancaire → 409 version → 400
+/// **Ordre des erreurs** (Story 15-5b, AC12 ; Story 15-6c, AC6 ; Story 34-11a2,
+/// C-e341-43) : `version < 1` (400) → 404 compte bancaire (inconnu, autre
+/// société, archivé : lu sur le pool pour connaître son type) → 400
+/// `BANK_ACCOUNT_KIND_IMMUTABLE` → forme selon le type (400, dont
+/// `CARD_NUMBER_NOT_ALLOWED`, `CREDIT_CARD_FIELD_NOT_ALLOWED`,
+/// `BANK_ACCOUNT_FIELD_NOT_ALLOWED`) → 404 / 400 type du compte lié
+/// (`validate_journal_account_id`, hors transaction ; carte :
+/// `CREDIT_CARD_LEDGER_MUST_BE_LIABILITY`) → dans la transaction, type relu sous
+/// verrou → 404 compte bancaire (archivé entre-temps) → 409 version → 400
 /// `ACCOUNT_NOT_POSTABLE` (compte lié **changé** vers un compte non imputable,
 /// contrôlé par le dépôt sous verrou) → 400 `BANK_ACCOUNT_LEDGER_IS_CLAIM_ACCOUNT`
 /// (compte lié **changé** vers le compte débiteurs ou créanciers désigné). Un
@@ -1174,15 +1379,37 @@ pub async fn update_bank_account(
         return Err(AppError::Validation("version doit être >= 1".to_string()));
     }
 
-    let input = validate_bank_input(
-        &body.bank_name,
-        body.description.as_deref(),
-        &body.iban,
-        body.qr_iban.as_deref(),
-    )?;
+    // Story 34-11a2 (C-e341-43) — le type courant se lit **avant** tout refus de
+    // forme qui en dépend : sur le pool, filtré par société (le type est
+    // immuable, la lecture hors transaction est sûre). Inconnu, d'une autre
+    // société ou archivé → `404`. Un archivage commité ensuite est refusé par
+    // `update_for_company`, sous le verrou de la ligne.
+    let current = bank_accounts::find_by_id_for_company(&state.pool, current_user.company_id, id)
+        .await?
+        .filter(|b| !b.archived)
+        .ok_or(AppError::BankAccountNotFound)?;
+    // C-e341-30 — `accountKind` absent = le type courant ; présent et différent
+    // → refus : un compte ne change pas de type.
+    if let Some(kind) = body.account_kind
+        && kind != current.account_kind
+    {
+        return Err(AppError::BankAccountKindImmutable);
+    }
+    let kind = current.account_kind;
+
+    let input = validate_bank_input(BankInputFields {
+        kind,
+        bank_name: &body.bank_name,
+        description: body.description.as_deref(),
+        iban: body.iban.as_deref(),
+        qr_iban: body.qr_iban.as_deref(),
+        is_primary: body.is_primary,
+        card_last4: body.card_last4.as_deref(),
+    })?;
     validate_journal_account_id(
         &state.pool,
         current_user.company_id,
+        kind,
         body.journal_account_id,
         // Postabilité contrôlée dans le dépôt, sous verrou, si changée (AC12).
         false,
@@ -1222,6 +1449,9 @@ fn full_update_audit_state(b: &BankAccount) -> serde_json::Value {
         "is_primary": b.is_primary,
         "journal_account_id": b.journal_account_id,
         "version": b.version,
+        // Story 34-11a2 (AC-6) — jamais les quatre chiffres : leur présence.
+        "account_kind": b.account_kind,
+        "card_last4_present": b.card_last4.is_some(),
     })
 }
 
@@ -1251,6 +1481,15 @@ async fn update_once(
         // ligne, seulement si le compte lié change.
         let claims =
             claims_for_target(&mut tx, current_user.company_id, journal_account_id).await?;
+        // Story 34-11a2 (C-e341-40) — le type du compte lié relu sous verrou
+        // partagé, après les réglages, avant la démotion et la ligne du compte.
+        recheck_ledger_type_in_tx(
+            &mut tx,
+            current_user.company_id,
+            input.kind,
+            journal_account_id,
+        )
+        .await?;
 
         // Si l'utilisateur veut promouvoir ce compte primary, flip l'éventuel
         // ancien (avant l'UPDATE de notre row, dans la même tx).
@@ -1262,10 +1501,12 @@ async fn update_once(
             None
         };
 
+        // Story 34-11a2 (C-e341-39) — `NewBankAccount::iban` n'est plus lu par
+        // le `PUT` : l'IBAN passe par `BankAccountPutFields`.
         let new = NewBankAccount {
             company_id: current_user.company_id,
             bank_name: input.bank_name.clone(),
-            iban: input.iban.clone(),
+            iban: String::new(),
             qr_iban: input.qr_iban.clone(),
             is_primary,
         };
@@ -1278,6 +1519,8 @@ async fn update_once(
             BankAccountPutFields {
                 journal_account_id,
                 description: input.description.as_deref(),
+                iban: input.iban.as_deref(),
+                card_last4: input.card_last4.as_deref(),
             },
             version,
             &claims,
@@ -1747,6 +1990,20 @@ async fn reopen_once(
 /// `BANK_ACCOUNT_LEDGER_IS_CLAIM_ACCOUNT` (compte lié **changé** vers le compte
 /// débiteurs ou créanciers désigné).
 ///
+/// **Carte de crédit** (Story 34-11a2, revue P1 B1 = E1, B8 = E6) : le type du
+/// compte bancaire est lu sur le pool **avant** le pré-vol (il est immuable) ;
+/// pour une carte, le pré-vol applique la règle de la carte, si bien que délier
+/// une carte, ou la lier à un actif, une charge ou un produit — le compte
+/// débiteurs et un actif non imputable compris — rend `400
+/// CREDIT_CARD_LEDGER_MUST_BE_LIABILITY` **avant** les refus de la transaction,
+/// comme au `POST` et au `PUT`. Un id inconnu, d'une autre société ou archivé ne
+/// change rien à l'ordre d'avant : le pré-vol garde alors la règle d'un compte
+/// bancaire, et la transaction rend son `404`. Dans la transaction, le type du
+/// compte lié est relu sous verrou partagé avant la ligne du compte bancaire, et
+/// la carte contrôlée encore une fois (une course avec un retypage) — ce dernier
+/// refus vient alors après la version (`409`) et la clôture (`409
+/// BANK_ACCOUNT_CLOSED`).
+///
 /// ⚠️ **Rejouée sur interblocage** (opération `bank_accounts::patch`, Story
 /// 29-4a, #651, AC4) ; la transaction vit dans [`patch_once`]. Sa demande
 /// exclusive de la ligne du compte (`set_journal_account_id_for_company`), en
@@ -1769,9 +2026,17 @@ pub async fn patch_bank_account_journal_link(
         return Err(AppError::Validation("version doit être >= 1".to_string()));
     }
 
+    // Story 34-11a2 (revue P1, B1 = E1) — le type du compte, lu sur le pool
+    // (immuable) ; inconnu ou archivé : la règle d'un compte bancaire, et le
+    // `404` de la transaction, comme avant.
+    let kind = bank_accounts::find_by_id_for_company(&state.pool, current_user.company_id, id)
+        .await?
+        .filter(|b| !b.archived)
+        .map_or(BankAccountKind::Bank, |b| b.account_kind);
     validate_journal_account_id(
         &state.pool,
         current_user.company_id,
+        kind,
         body.journal_account_id,
         // Postabilité contrôlée dans le dépôt, sous verrou, si changée (AC12).
         false,
@@ -1807,6 +2072,11 @@ async fn patch_once(
         // lien ne prend pas la sentinelle), avant le `FOR UPDATE` de la ligne.
         let claims =
             claims_for_target(&mut tx, current_user.company_id, journal_account_id).await?;
+        // Story 34-11a2 (C-e341-40) — le type du compte lié, relu sous verrou
+        // partagé avant la ligne du compte bancaire ; contrôlé contre le type
+        // de ce compte, lu sous son `FOR UPDATE` (immuable), après l'appel.
+        let linked_type =
+            locked_ledger_type(&mut tx, current_user.company_id, journal_account_id).await?;
 
         let (updated, before) = match bank_accounts::set_journal_account_id_for_company(
             &mut tx,
@@ -1822,6 +2092,9 @@ async fn patch_once(
             Err(DbError::NotFound) => return Err(AppError::BankAccountNotFound),
             Err(e) => return Err(AppError::Database(e)),
         };
+        // C-e341-16 — une carte ne se délie pas et ne se lie qu'à un passif. Le
+        // refus annule la transaction (`conclure`) : rien n'est écrit.
+        ensure_kind_admits(before.account_kind, journal_account_id, linked_type)?;
 
         if updated.version != before.version {
             let details = serde_json::json!({

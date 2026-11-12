@@ -19,8 +19,8 @@ use sqlx::{MySql, MySqlPool, Transaction};
 use crate::entities::NewAuditLogEntry;
 use crate::entities::invoice::{Invoice, InvoiceLine};
 use crate::entities::{
-    Journal, NewInvoiceSettlement, NewJournalEntry, SettlementChoice, SettlementKind,
-    SettlementWriteOffNature,
+    BankAccountKind, Journal, NewInvoiceSettlement, NewJournalEntry, SettlementChoice,
+    SettlementKind, SettlementWriteOffNature,
 };
 use crate::errors::{
     ClaimSide, DbError, NonPostableAccount, SettlementCancelBlocker, map_db_error,
@@ -189,21 +189,32 @@ pub async fn settle_invoice(
             // commitée, sans fenêtre. Ordre : absent, autre société ou archivé
             // → `NotFound` ; clos → `BankAccountClosed` ; sans compte lié →
             // `ConfigurationRequired`.
-            let row: Option<(Option<i64>, Option<NaiveDate>, bool)> = sqlx::query_as(
-                "SELECT journal_account_id, closed_on, archived FROM bank_accounts \
-                 WHERE id = ? AND company_id = ? FOR UPDATE",
-            )
-            .bind(bank_account_id)
-            .bind(company_id)
-            .fetch_optional(&mut *tx)
-            .await
-            .map_err(map_db_error)?;
-            let (journal_account_id, closed_on, archived) = row.ok_or(DbError::NotFound)?;
+            //
+            // Story 34-11a2 (#972, C-e341-41) — `account_kind` lu dans la même
+            // instruction : une carte de crédit → `SettlementAccountIsCreditCard`,
+            // après « clos » (un client ne paie pas sur la carte du titulaire).
+            // ⚠️ Angle mort assumé : l'acceptation d'une proposition « facture »
+            // par la réconciliation d'une transaction de carte ne passe pas ici
+            // (un remboursement reçu sur la carte peut solder une facture).
+            let row: Option<(Option<i64>, Option<NaiveDate>, bool, BankAccountKind)> =
+                sqlx::query_as(
+                    "SELECT journal_account_id, closed_on, archived, account_kind FROM bank_accounts \
+                     WHERE id = ? AND company_id = ? FOR UPDATE",
+                )
+                .bind(bank_account_id)
+                .bind(company_id)
+                .fetch_optional(&mut *tx)
+                .await
+                .map_err(map_db_error)?;
+            let (journal_account_id, closed_on, archived, kind) = row.ok_or(DbError::NotFound)?;
             if archived {
                 return Err(DbError::NotFound);
             }
             if closed_on.is_some() {
                 return Err(DbError::BankAccountClosed { bank_account_id });
+            }
+            if kind == BankAccountKind::CreditCard {
+                return Err(DbError::SettlementAccountIsCreditCard { bank_account_id });
             }
             journal_account_id.ok_or_else(|| {
                 DbError::ConfigurationRequired("bank_account.journal_account_id".into())

@@ -1608,7 +1608,7 @@ async fn confirming_a_batch_sets_paid_at_to_the_payment_date(pool: MySqlPool) {
 // ===========================================================================
 
 /// Transforme le compte source du contexte en carte de crédit, **forgée en
-/// base** (aucune route ne crée encore de compte sans IBAN) : sans IBAN, ni
+/// base** (écrit avant la 34-11a2, qui ouvre la création d'une carte) : sans IBAN, ni
 /// principale, quatre chiffres.
 async fn forge_card(pool: &MySqlPool, ctx: &Ctx) {
     sqlx::query(

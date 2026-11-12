@@ -17,6 +17,7 @@
 		bankAccountOptionLabel,
 		linkableLedgerAccounts,
 	} from '$lib/features/bank-accounts/format';
+	import { admitsLedgerType } from './credit-card';
 	import {
 		updateBankAccountJournalLink,
 		type BankAccountSummary,
@@ -62,7 +63,12 @@
 	// compte d'actif numéroté hors des classes 1 et 2 se liait à la création,
 	// mais n'était pas proposé ici. Le tri par numéro est fait par la fonction
 	// commune (revue P1, B-5).
-	const eligibleAccounts = $derived(linkableLedgerAccounts(accounts, claimAccountIds));
+	// Story 34-11a2 (#972, C-e341-33) — passifs seulement pour une carte.
+	const eligibleAccounts = $derived(
+		linkableLedgerAccounts(accounts, claimAccountIds).filter((a) =>
+			admitsLedgerType(bankAccount.accountKind, a.accountType),
+		),
+	);
 
 	// Issue #271 : un compte lié AVANT de devenir non-postable — ou d'être
 	// archivé — disparaîtrait de ces options, laissant le champ vide alors que
@@ -173,7 +179,8 @@
 		>
 			{i18nMsg('bank-accounts-actions-submit', 'Lier')}
 		</button>
-		{#if bankAccount.journalAccountId !== null}
+		<!-- Story 34-11a2 (C-e341-16) — une carte ne se délie pas (refus serveur). -->
+		{#if bankAccount.journalAccountId !== null && bankAccount.accountKind !== 'credit_card'}
 			<button
 				type="button"
 				class="rounded border border-border px-4 py-2 text-sm font-medium text-text disabled:opacity-50"

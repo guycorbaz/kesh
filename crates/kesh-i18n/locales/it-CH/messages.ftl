@@ -1529,6 +1529,25 @@ bank-accounts-actions-cancel = Annulla
 bank-accounts-actions-submit = Collega
 bank-accounts-errors-account-not-found = Conto contabile non trovato.
 bank-accounts-errors-invalid-account-type = Tipo di conto non valido (Attivo o Passivo richiesto).
+# Story 34-11a2 (#972) — carta di credito.
+bank-accounts-errors-card-number-not-allowed = Questo testo sembra un numero di carta completo: Kesh conserva solo le ultime quattro cifre. Tolga il numero.
+bank-accounts-errors-credit-card-ledger-must-be-liability = Una carta di credito va collegata obbligatoriamente a un conto del passivo (il suo debito).
+bank-accounts-errors-kind-immutable = Il tipo di un conto non si cambia: crei un nuovo conto.
+bank-accounts-errors-credit-card-field-not-allowed = Una carta di credito non ha né IBAN né QR-IBAN e non è mai il conto principale.
+bank-accounts-errors-bank-account-field-not-allowed = Le ultime quattro cifre riguardano solo una carta di credito.
+error-account-linked-to-bank-account = Questo conto è collegato al conto bancario « { $name } », che non ammette questo tipo. Cambi prima il conto collegato di « { $name } ».
+error-settlement-account-is-credit-card = Un pagamento di un cliente non entra su una carta di credito: scelga un conto bancario.
+bank-accounts-labels-kind = Tipo di conto
+bank-accounts-kind-bank = Conto bancario
+bank-accounts-kind-credit-card = Carta di credito
+bank-accounts-labels-card-issuer = Emittente della carta
+bank-accounts-labels-card-last4 = Ultime quattro cifre (facoltativo)
+bank-accounts-help-card-last4 = Kesh non conserva mai il numero completo della carta: solo le sue ultime quattro cifre, per riconoscerla.
+bank-accounts-labels-card-ledger = Conto di debito collegato
+bank-accounts-help-card-ledger = Obbligatorio: un conto del passivo, il debito della carta (ad esempio un sottoconto di 2100 Debiti bancari a breve termine).
+bank-accounts-help-kind-fixed = Il tipo di un conto non si cambia dopo la sua creazione.
+bank-accounts-error-card-last4 = Inserisca esattamente quattro cifre, o lasci vuoto il campo.
+bank-accounts-error-card-ledger-required = Scelga il conto del passivo collegato alla carta.
 # Story v014-1 — CRUD bank_accounts post-onboarding
 bank-accounts-errors-has-transactions = Il conto bancario contiene transazioni — archiviazione rifiutata per preservare l'audit contabile. Le importazioni bancarie di cui nessuna transazione è riconciliata possono essere eliminate (Quotidiano → Importa estratti conto). Altrimenti, per ritirare il conto dall'uso, chiudere il conto: passa in sola lettura e conserva il suo storico.
 bank-accounts-errors-cannot-archive-primary = Il conto principale non può essere archiviato finché esiste un altro conto né archiviato né chiuso. Definire prima un altro conto come principale, poi archiviare questo.
