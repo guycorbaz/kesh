@@ -1,6 +1,6 @@
 # Story 34-4 : la réconciliation signale une transaction qui semble déjà comptabilisée, et demande confirmation (#828)
 
-Status: review
+Status: done
 
 *Fiche rédigée le 2026-11-10 en autonomie (Opus 5.5), worktree `/home/gcorbaz/devel/kesh-e34`, branche `chore/epic-34-kickoff`,
 numéros de ligne de `a75835db`. Release **0.17.6**, Epic 34. **Aucune migration** (lecture seule, champ additif). Registre :
@@ -345,6 +345,17 @@ aucune ligne commune prévue.
   **0 au-dessus de LOW**. **C4-1** → réserve étendue à *Accepter* (une relecture vide la sélection) au manuel et à l'AC-6 ;
   #1024 complétée par l'orchestrateur. **C4-2** (« sie würde … » de `-confirm-intro`) : **arbitrage rédactionnel laissé en
   l'état**, le `.ftl` n'est plus touché. Remédiation hors production (manuel et fiche).
+- 2026-11-12 : **clôture**. Tendance des revues de code : **P1** (Opus, trois lentilles) 0 C / 0 H / 3 M / ≈ 20 L →
+  **P2** (Sonnet, trois lentilles, passe complète) 0 / 0 / 2 M / ≈ 14 L → **P3 ciblée** (Haiku, une lentille) 0 / 0 / 1 M
+  documentaire / 3 L → **P4 ciblée** (Sonnet, une lentille) **0 au-dessus de LOW**. Reclassements : aucun ; C-e344-11
+  (second côté par le sens contraire) a remplacé la règle de l'arbitrage P1, qui ne corrigeait rien, et a été retenue par
+  l'orchestrateur à la P2. Gates au dernier commit de code exécutable (`cf585bff`) : `test-fast --ci` 5149 / 13 ignorés,
+  `gate-ci` 5156 / 0 / 17, Vitest 2945 (225 fichiers), check, lint et build verts, E2E complet 388 passés et 7 échecs (les
+  sept de la KF-029, #97). Au commit de texte `1005d74a` (catalogue allemand, manuel, fiche), tous rejoués sauf l'E2E :
+  `test-fast --ci` 5149 / 13, `gate-ci` 5156 / 0 / 17, Vitest 2945, check, lint et build verts (`kesh-gate-logs/e344/p3/`).
+  `16e12b43` ne touche que le manuel et la fiche. Mutations M1 à M10 tuées (`mut-p1/`, `mut-p2/`). Issues ouvertes pendant la
+  story : #1023 (*Rejeter* sans confirmation), #1024 (*Continuer* sans effet ni message). PDF du manuel : régénéré à
+  l'intégration (C-e342-20). Bases `kesh_e344*` supprimées.
 
 ## Performance
 
