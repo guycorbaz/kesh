@@ -1110,6 +1110,36 @@ async fn reglements_et_carte(pool: MySqlPool) {
         "rien d'écrit"
     );
 
+    // Intégration de la 0.17.6, revue P1 (E-4) — l'ordre de la 34-5 et de la
+    // 34-11a2 dans `invoice_settlements_write` : la version est contrôlée sur
+    // la facture verrouillée (étape 1), le type du compte à la contrepartie
+    // (étape 3). Une version périmée sur une carte rend donc
+    // `409 OPTIMISTIC_LOCK_CONFLICT`, non le refus de la carte, et rien n'est
+    // écrit ; relue, elle rend le refus de la carte (ci-dessus).
+    // Une version qui n'est pas celle de la facture (la suivante : un entier
+    // valide, quel que soit le numéro rendu par la validation).
+    let perimee = version.as_i64().unwrap() + 1;
+    let (s, b) = ctx
+        .post(
+            &format!("/api/v1/invoices/{invoice}/settlements"),
+            json!({
+                "settlementType": "bank_transfer",
+                "bankAccountId": carte_id,
+                "amount": "108.10",
+                "settledOn": Utc::now().date_naive().to_string(),
+                "version": perimee,
+            }),
+        )
+        .await;
+    assert_eq!(s, 409, "{b}");
+    assert_eq!(code(&b), "OPTIMISTIC_LOCK_CONFLICT");
+    assert_eq!(
+        ctx.count("SELECT COUNT(*) FROM journal_entries WHERE company_id = ?")
+            .await,
+        ecritures,
+        "rien d'écrit sur une version périmée"
+    );
+
     // Facture fournisseur payée depuis la carte : passe.
     let fournisseur = ctx.contact("Fournisseur SA", true).await;
     let ff = supplier_invoices::create_validated(
