@@ -531,8 +531,8 @@ pub(crate) fn refuse_too_long_bank_name(bank_name: &str) -> Result<(), AppError>
 ///
 /// **Ordre des refus de forme** (Story 26-2a, AC3 ; Story 34-2 ; Story 34-11a2) :
 /// banque vide → banque trop longue (Story 34-2) → numéro de carte dans le nom →
-/// description → numéro de carte dans la
-/// description → par type. Compte bancaire : `cardLast4` fourni (`400
+/// description → numéro de carte dans la description → par type. Compte
+/// bancaire : `cardLast4` fourni (`400
 /// BANK_ACCOUNT_FIELD_NOT_ALLOWED`) → IBAN (absent ou invalide : `400`, comme
 /// en 0.17.5) → QR-IBAN. Carte : IBAN, QR-IBAN, `isPrimary` (`400
 /// CREDIT_CARD_FIELD_NOT_ALLOWED`) → quatre chiffres.
@@ -952,6 +952,15 @@ pub async fn list_bank_accounts(
 /// sans compte lié → contrôles du compte lié → refus du compte de créance →
 /// refus du complément. La réponse porte `openingEntry` quand une écriture est
 /// passée.
+///
+/// **Carte de crédit** (Story 34-11a2, C-e341-16) : une carte exige un compte
+/// lié, un passif (`400 CREDIT_CARD_LEDGER_MUST_BE_LIABILITY`, contrôlé par
+/// [`validate_journal_account_id`] puis relu dans la transaction). Une carte
+/// **avec** un solde d'ouverture non nul **et sans** `journalAccountId` reçoit
+/// d'abord le refus du solde (`400 VALIDATION_ERROR`, « le solde d'ouverture
+/// exige un compte comptable lié ») : la forme du solde passe avant les
+/// contrôles du compte lié (intégration de la 0.17.6, revue P1, A-3 ; tenu par
+/// `carte_avec_solde_sans_compte_lie_refus_du_solde_d_abord`).
 pub async fn create_bank_account(
     State(state): State<AppState>,
     Extension(current_user): Extension<CurrentUser>,

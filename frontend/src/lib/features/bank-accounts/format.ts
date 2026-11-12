@@ -148,6 +148,13 @@ export interface LinkableLedgerOptions {
 	 * Ne garder que les comptes de passif (`Liability`) — pour le compte de dette
 	 * d'une carte de crédit (Story 34-11a2, C-e341-33). Faux par défaut : actif
 	 * ou passif.
+	 *
+	 * ⚠️ `liabilityOnly` est l'autre nom du type de compte bancaire : vrai pour une
+	 * carte (`'credit_card'`), faux pour un compte bancaire (`'bank'`). La règle
+	 * elle-même vit dans `admitsLedgerType` (`credit-card.ts`), appelée avec ce
+	 * type ; un appelant qui connaît le type passe donc
+	 * `liabilityOnly: kind === 'credit_card'`, jamais un filtre à lui
+	 * (intégration de la 0.17.6, raccord 1, revue P1 B-3).
 	 */
 	liabilityOnly?: boolean;
 }

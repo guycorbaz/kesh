@@ -602,8 +602,11 @@ pub struct BankAccountRequest {
 /// Story 34-1 (#966) — description et compte lié, facultatifs (absent =
 /// inchangé, `null` = effacé). **Ordre des refus** : comme à la création
 /// (`routes::bank_accounts`), les contrôles de forme et du compte lié lisent
-/// sur le **pool**, avant la transaction — banque, description, IBAN,
-/// QR-IBAN, compte lié ; un 400 de forme précède donc le 409 d'étape. Dans la
+/// sur le **pool**, avant la transaction — banque vide, banque trop longue
+/// (Story 34-2), numéro de carte complet dans le nom (Story 34-11a2), description,
+/// numéro de carte complet dans la description (intégration de la 0.17.6,
+/// raccord 3), IBAN, QR-IBAN, compte lié (règle d'un compte bancaire) ; un 400
+/// de forme précède donc le refus d'étape. Dans la
 /// transaction, après `lock_state_at_step` et `lock_company`, le refus d'un
 /// compte de rôle `Receivable` / `Payable` (AC-4).
 pub async fn set_bank_account(

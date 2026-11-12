@@ -285,19 +285,10 @@
 //!   `session_settings::update_session_settings`) : deux `PUT` simultanés à
 //!   version 0 sur table vide s'interbloquent sur le verrou d'intervalle du
 //!   `SELECT … FOR UPDATE` ; tenue par `session_settings_e2e.rs` (rejeu
-//!   exigé). Vingt-trois avec elle — recompté le 2026-11-05 depuis la table
-//!   et le corps de chaque route (revue de la 0.17.3, #899 S2-A1). Vingt-quatre
-//!   avec la réouverture (33-1a), vingt-cinq avec le renommage (34-7) — recompté
-//!   le 2026-11-10 depuis la table et le corps de chaque route : vingt-trois
-//!   handlers `SansEcritureAuJournal` de `src/routes/` portent une enveloppe,
-//!   plus `onboarding::seed_demo` et `onboarding::reset`, rejouées dans
-//!   `kesh-seed`. Story 34-2 (#533) : `bank_accounts::create_bank_account` en
-//!   **sort** — elle écrit au journal quand elle porte un solde d'ouverture, et
-//!   passe `Rejouee` ; ce qui est dit d'elle plus haut (cycle de la démotion,
-//!   T29a-15) reste vrai. **Vingt-quatre** — recompté le 2026-11-12, à
-//!   l'intégration de la 0.17.6, depuis la table et le corps de chaque route :
-//!   vingt-deux handlers `SansEcritureAuJournal` de `src/routes/` portent une
-//!   enveloppe, plus `onboarding::seed_demo` et `onboarding::reset`. Et — Story
+//!   exigé). Story 34-2 (#533) : `bank_accounts::create_bank_account` **sort**
+//!   de ce point — elle écrit au journal quand elle porte un solde d'ouverture,
+//!   et passe `Rejouee` ; ce qui est dit d'elle plus haut (cycle de la
+//!   démotion, T29a-15) reste vrai. Et — Story
 //!   34-11a2, #972, choix C-e341-40 — `accounts::update_account` (enveloppe
 //!   `AppError` `crate::retry::retry_app_on_deadlock`, opération
 //!   `accounts::update`) : le retypage prend la ligne `accounts` `FOR UPDATE`
@@ -306,11 +297,16 @@
 //!   compte lié sous verrou partagé ; tenue par
 //!   `retypage_croise_avec_la_creation_d_une_carte`
 //!   (`crates/kesh-db/tests/credit_card_repository.rs`, sérialisation, non
-//!   rejeu) — **aucune preuve dynamique du rejeu**. Vingt-cinq avec elle (le
-//!   compte de vingt-quatre comprenait déjà `reopen_fiscal_year`) — recompté le
-//!   2026-11-12, à l'intégration de la 34-11a2 dans la 0.17.6, depuis la table
-//!   et le corps de chaque route : vingt-trois handlers de `src/routes/` portent
-//!   une enveloppe, plus `onboarding::seed_demo` et `onboarding::reset`.
+//!   rejeu) — **aucune preuve dynamique du rejeu**.
+//!
+//!   **Décompte : vingt-cinq**, recompté le 2026-11-12 à l'intégration de la
+//!   0.17.6 (34-2, 34-7, 34-11a2 réunies) depuis la table et le corps de chaque
+//!   route : vingt-trois handlers `SansEcritureAuJournal` de `src/routes/`
+//!   portent une enveloppe, plus `onboarding::seed_demo` et `onboarding::reset`,
+//!   rejouées dans `kesh-seed`. *(Relevés antérieurs, datés : vingt-trois le
+//!   2026-11-05, revue de la 0.17.3, #899 S2-A1 ; vingt-cinq dans la branche
+//!   de la 34-7 le 2026-11-10 ; vingt-quatre à l'intégration de la 34-7 sur la
+//!   34-2, avant la 34-11a2.)*
 //! - **(vii)** — **angles morts assumés du volet (c bis)** (revue P1 de la
 //!   15-5e2, L-3 = B-4 = A5). Le volet reconnaît un appel au **dernier
 //!   segment** du chemin appelé (`retry_with`) dans un arbre `syn` ; il ne voit
