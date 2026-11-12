@@ -5,7 +5,9 @@ Epic 34, #972) : **`a9c7b967`**, la remédiation de la revue de code P2. Modèle
 Rapport : `/home/gcorbaz/devel/kesh-gate-logs/e34b-review-p3-ciblee.md`.
 
 Worktree `/home/gcorbaz/devel/kesh-e34b`. Le diff : `git -C /home/gcorbaz/devel/kesh-e34b show a9c7b967` (et, pour le contexte, les fichiers
-touchés à ce commit). Les rapports P2 qu'il remédie : `/home/gcorbaz/devel/kesh-gate-logs/e34b-review-p2-{B,E,A}.md`. Le registre :
+touchés à ce commit). ⚠️ Le commit suivant, `8abf9b50` (prompt P3), a **retiré par erreur** le code de `a9c7b967` (un script de rouges
+avait remis à l'index des fichiers d'avant) ; `225a90de` le **rétablit à l'identique** — vérifie-le : `git diff a9c7b967 225a90de` ne doit
+rendre que ce prompt. Le dernier commit de code est donc `225a90de`, et les gates s'y rapportent. Les rapports P2 qu'il remédie : `/home/gcorbaz/devel/kesh-gate-logs/e34b-review-p2-{B,E,A}.md`. Le registre :
 `_bmad-output/implementation-artifacts/e34-choix-autonomes-e34b.md` (C-e34b-13 à 15, nouveaux). La fiche :
 `_bmad-output/implementation-artifacts/34-11b-carte-credit-releve.md` (§ *Écarts à la fiche*, § *Renvois à l'intégration*, *Annotations de
 la remédiation P2*, Dev Agent Record).
