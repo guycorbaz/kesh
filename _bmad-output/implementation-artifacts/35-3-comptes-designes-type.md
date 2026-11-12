@@ -7,7 +7,7 @@ Status: ready-for-dev
 2026-11-30). **Aucune migration.** Boucle complète : règle comptable, `kesh-db` touché (gate complet même en cours de
 boucle, `CLAUDE.md` § *Exception `kesh-db`*). Code lu sur **`release/0.17.6`** (`4e1c768a`). Registre du kickoff :
 `e35-choix-autonomes-e350.md` (C-e350-2, C-e350-4, C-e350-7, C-e350-8) ; registre de la story :
-`e35-choix-autonomes-e353.md`, à créer au premier choix. Validation P1 remédiée (Change Log).*
+`e35-choix-autonomes-e353.md`, à créer au premier choix. Validations P1, P2 et P3 remédiées (Change Log).*
 
 ## Story
 
@@ -87,7 +87,7 @@ L'import (CAMT, factures importées) et le MCP n'écrivent pas d'écriture sur c
     `{ $expected }`, par exemple : « Le compte 1100, désigné comme compte débiteurs dans Administration → Facturation,
     est un compte de passif ; ce réglage demande un compte d'actif. » ;
   - puis une fois, clé `error-designated-account-wrong-type-action` : « Rien n'a été enregistré. Un administrateur doit
-    corriger ce réglage — désigner un compte du bon type, ou rendre au compte son type d'origine —, puis la validation
+    corriger le réglage concerné — désigner un compte du bon type, ou rendre au compte son type d'origine —, puis la validation
     pourra être relancée telle quelle. » ;
   - les libellés des quatre réglages (« compte débiteurs », « compte de TVA due », « compte créanciers », « compte de TVA
     récupérable ») et des types au singulier (« compte d'actif », « compte de passif », « compte de charge », « compte de
@@ -154,12 +154,17 @@ L'import (CAMT, factures importées) et le MCP n'écrivent pas d'écriture sur c
    (`NonPostableAccounts::new`, doc de `check_written`, `company_invoice_settings.rs:1000-1004`) ne s'atteint plus que par
    un montage incohérent ; le doc-comment le dit. Étape 0 : recenser les montages qui désignent un compte d'un type
    contraire au réglage (`git grep -n "SET default_\(receivable\|payable\|vat_payable\|vat_recoverable\)_account_id" --
-   'crates/*/tests/*'`, 38 sites sur `release/0.17.6`) et écrire le verdict de chacun au Change Log.
+   'crates/*/tests/*'`, 38 sites sur `release/0.17.6`) et écrire le verdict de chacun au Change Log. Le recensement couvre
+   aussi les deux autres formes (V3-4) : `INSERT INTO company_invoice_settings (… default_…)` (quatorze sites de
+   `kesh-api/tests`, plus `test_fixtures.rs:157`, `:315`) et `UPDATE accounts SET account_type` (douze tests, dont
+   `invoice_write_off.rs:1205`, `reconciliation_e2e.rs:6776`) : pour chacun, dire s'il valide une facture après le retypage.
 7. **AC7 — HTTP.** `POST /api/v1/invoices/{id}/validate` et `POST /api/v1/supplier-invoices/{id}/validate` rendent
    400, le code de D2, les `details` de D2, et un message fr-CH qui contient le numéro du compte, le réglage en mots,
    « Administration → Facturation », le type attendu en mots et la phrase d'action. **Cas à deux comptes de types
    attendus différents** (créance retypée en passif, TVA due retypée en actif) : deux phrases justes, une phrase
-   d'action. Tests dans `crates/kesh-api/tests/` ; ces tests montent l'application, donc le catalogue (les libellés fr-CH
+   d'action, valable aux deux nombres (« le réglage concerné »). **Cas à deux comptes côté achat** (créanciers `2000`
+   retypé en actif, TVA récupérable `1171` retypée en passif) : l'ordre se lit — par numéro `1171` puis `2000`, alors que
+   l'ordre des rôles donnerait `2000` puis `1171` (V3-3). Tests dans `crates/kesh-api/tests/` ; ces tests montent l'application, donc le catalogue (les libellés fr-CH
    ne s'assertent qu'ici, jamais dans un test unitaire qui lirait l'état i18n global, cf. 35-2 V1-1).
 8. **AC8 — Les écrans.** Fiche facture : le dialogue de validation se **ferme** sur ce code, comme sur
    `ACCOUNT_NOT_POSTABLE` (`frontend/src/routes/(app)/invoices/[id]/+page.svelte:449-456`), et le message s'affiche
@@ -174,7 +179,10 @@ L'import (CAMT, factures importées) et le MCP n'écrivent pas d'écriture sur c
     placées **à côté de `error-designated-account-not-postable`** (C-e350-8) ; aucun sélecteur de pluriel (D2), donc
     rien à `SELECTEURS_RESOLUS_COTE_SERVEUR`. Les replis Rust des clés neuves égalent leur valeur fr-CH et s'inscrivent à
     la table fermée **G9** (`crates/kesh-api/tests/textes_coherents.rs:723`, `les_replis_rust_suivent_le_catalogue`),
-    dans le bloc `errors.rs` existant, en fin de bloc (C-e350-8). Étape 0 : écrire au Change Log pourquoi
+    dans le bloc `errors.rs` existant, en fin de bloc (C-e350-8). **Chacune** des dix clés (deux phrases, quatre libellés
+    de réglage, quatre libellés de type) porte son littéral de repli, écrit avec l'apostrophe typographique du catalogue
+    (`’`), et s'inscrit avec ses constantes de substitution (`{ $account }` → `{compte}`…) : un libellé tiré d'une table
+    dynamique ou d'un `format!` de clé ne serait jamais comparé par G9 (`textes_coherents.rs:883-913`) (V3-9). Étape 0 : écrire au Change Log pourquoi
     `error-designated-account-not-postable` n'y figure pas (clé à sélecteur), pour confirmer que les clés neuves, elles,
     y entrent.
 11. **AC11 — CHANGELOG et contrat.** Section `## [0.17.7] — Non publié` (règle d'union C-e350-8), *Corrigé*, refs #537,
@@ -197,17 +205,28 @@ L'import (CAMT, factures importées) et le MCP n'écrivent pas d'écriture sur c
     prend toujours ses deux verrous, et le cycle étroit de `supplier_invoices.rs:1521-1530` reste couvert par le rejeu
     des routes. Les listes d'ordre des refus deviennent fausses et sont mises à jour (V2-6) : le doc de `check_written`
     (« Refuse, dans cet ordre », `company_invoice_settings.rs:996-1004`), les commentaires d'appel `invoices.rs:2381-2385`
-    et `supplier_invoices.rs:1722-1726`, et le doc de `validate_invoice` (`invoices.rs:2040-2051`). Greper `angle mort`,
-    `retypé`, `dans cet ordre` et `InactiveOrInvalidAccounts\` ; non imputable` sur `crates/kesh-db/src`, et écrire au
+    et `supplier_invoices.rs:1722-1726`, et le doc de `validate_invoice` (`invoices.rs:2040-2051`). S'y ajoutent (V3-5) la
+    requête recopiée au doc-comment (`company_invoice_settings.rs:842`) et « Pourquoi partagé suffit » (`:850-866`) : le
+    verrou garde désormais aussi le **type** lu. Greper `angle mort`, `retypé`, `dans cet ordre`,
+    `InactiveOrInvalidAccounts\` ; non imputable` et `number, active, postable` sur `crates/kesh-db/src`, et écrire au
     Change Log le verdict de chaque occurrence.
-13. **AC13 — Manuel** (`docs/manual/fr/user-manual.tex`), PDF régénéré et contrôlé aplati :
+13. **AC13 — Manuels**, PDF régénérés et contrôlés aplatis. **Manuel d'administration** (`docs/manual/fr/admin-manual.tex`,
+    V3-1), le lecteur que le message envoie corriger :
+    - `:3816` (« Chacun doit être un compte actif du bon type et imputable … ») : un compte désigné **retypé** depuis fait
+      refuser la validation (`400 DESIGNATED_ACCOUNT_WRONG_TYPE`, message qui nomme le compte) ; la phrase « Après une mise à
+      jour vers la v0.13.0, vérifiez … » reçoit son pendant pour la 0.17.7 : ouvrir *Facturation* et cliquer *Enregistrer*
+      sans rien changer ; « les avoirs ne sont pas soumis à ce contrôle » reste ;
+    - `:3822` (« voient leur type contrôlé à chaque enregistrement, même reconduits ») : la page ne nomme que le premier
+      champ fautif ; recommencer jusqu'à ce que l'enregistrement passe.
+
+    **Manuel utilisateur** (`docs/manual/fr/user-manual.tex`) :
     - un paragraphe voisin de « Un compte des réglages devenu non imputable » (`:1169`) : le refus, sa cause, et **la
       marche à suivre en deux voies** — désigner dans *Administration → Facturation* un compte du bon type, **ou** rendre
       au compte retypé son type (avec la confirmation demandée s'il porte des écritures) —, puis relancer la validation ;
       et le contrôle préventif d'AC11 (*Enregistrer* sans rien changer) ;
     - la validation fournisseur (`:1788-1796`), même chose pour les créanciers et la TVA récupérable ;
     - « Changer le type d'un compte qui porte des écritures » (`:452-461`) : un compte désigné aux réglages de facturation ne se retype pas sans
-      reprendre la désignation — faute d'avertissement à l'écran (D1), c'est le seul avertissement ;
+      reprendre la désignation — faute d'avertissement à l'écran (D1, issue à ouvrir, V3-6), c'est le seul avertissement ;
     - la note *Rôles des comptes* (`:491`), qui décrit la garde à l'usage par la seule imputabilité : le type y entre ;
       relire la liste « Trois cas échappent encore » (`:493`) ;
     - « recommencez l'enregistrement jusqu'à ce qu'il passe » : la page ne nomme qu'un champ fautif à la fois (D6).
@@ -240,7 +259,10 @@ pas, s'arrêter et le dire avant d'écrire l'avertissement.
 
 ## Tests à écrire, et la preuve du rouge
 
-Écrire d'abord, lancer sur le code de départ, garder le journal (`kesh-gate-logs/e353/rouges.log`) :
+Écrire d'abord, lancer sur le code de départ, garder le journal (`kesh-gate-logs/e353/rouges.log`). La variante de D2 et
+la constante de D4 n'existent pas au départ : les rouges se prennent sur un **squelette compilable** commité d'abord —
+variante, code, bras HTTP, clés et constante déclarés, `check_written` **inchangé** —, si bien que les tests rougissent
+par leur attendu, non par la compilation (V3-2) :
 
 - `crates/kesh-db/tests/invoices_validate_vat.rs`, module `garde_usage_comptes_reglage` (`:1236`) : AC1, AC2, AC2-bis,
   AC3, AC5, AC6. **Rouge attendu** : la validation **réussit** et écrit la créance sur le compte retypé — le test
@@ -265,7 +287,8 @@ pas, s'arrêter et le dire avant d'écrire l'avertissement.
 après non imputable) ; M2-bis un retour anticipé sur le type (AC5, cas archivé après retypé) ; M3 `Receivable` attendu
 `Liability` dans la constante ; M4 un des quatre rôles absent du contrôle ; M5 la route qui revient à son
 `AccountType::Asset` en dur pendant que la constante change (AC9 rougit) ; M6 le code retiré de la liste de fermeture du
-dialogue (AC8) ; M7 le type lu par une requête séparée, hors de la requête verrouillante (test du verrou).
+dialogue (AC8) ; M7 le type lu par une requête séparée, hors de la requête verrouillante (test du verrou) ; M8 la liste
+rangée par rôle et non par numéro (AC7, côté achat).
 
 ## Tâches
 
@@ -274,7 +297,9 @@ dialogue (AC8) ; M7 le type lu par une requête séparée, hors de la requête v
 - [ ] Tests ci-dessus, rouges consignés.
 - [ ] `kesh-db` : colonne lue sous verrou, contrôle par accumulation, variante d'erreur et son code, constante publique.
 - [ ] `kesh-api` : réponse 400 nommée, clés ×4 et G9, route des réglages sur la constante et message en mots (D6).
-- [ ] Écran de la fiche facture ; doc-comments ; documentation, manuel, CHANGELOG ; captures.
+- [ ] Écran de la fiche facture ; doc-comments ; documentation, deux manuels, CHANGELOG ; captures.
+- [ ] L'issue « avertir au retypage d'un compte désigné » est ouverte par l'orchestrateur avant le développement ; son
+      numéro s'écrit au Change Log, au registre `e353` et à AC13 (V3-6).
 - [ ] Gates : `test-fast.sh --ci` **complet à chaque commit de code** (exception `kesh-db`), frontend complet, E2E
       complet au dernier commit de code, échecs nommés contre `docs/testing.md`.
 
@@ -294,11 +319,14 @@ dialogue (AC8) ; M7 le type lu par une requête séparée, hors de la requête v
 
 ### Fichiers communs — règle d'union (C-e350-8)
 
-- Avec la **35-2** : `crates/kesh-api/src/errors.rs` (ici un bras `DbError` neuf, voisin de `:4571`),
+- Avec la **35-2a** (et la 35-2b, qui part d'elle) : `crates/kesh-api/src/errors.rs` (ici un bras `DbError` neuf, voisin
+  de `:4571` ; la 35-2a n'y touche qu'un test),
   `messages.ftl` ×4 (ici à côté de `error-designated-account-not-postable`), `textes_coherents.rs` (G9 : ici en fin du
   bloc `errors.rs`), `user-manual.tex` (ici `:452-461`, `:491`, `:493`, `:1169`, `:1788-1796`), `CHANGELOG.md` (section `[0.17.7]`),
-  `docs/api-external.md` (ici après `ACCOUNT_NOT_POSTABLE`). La règle d'union est celle de C-e350-8, recopiée au
-  fichier d'epic.
+  `docs/api-external.md` (ici après `ACCOUNT_NOT_POSTABLE`), `frontend/src/routes/(app)/invoices/[id]/+page.svelte` et son
+  dossier de tests (ici la liste de fermeture du dialogue, `:449-456` ; la 35-2a, `pdfErrorMessage`, `:949` : hunks
+  distincts). `admin-manual.tex` (ici `:3816`, `:3822`) n'est touché que par cette story. La règle d'union est celle de
+  C-e350-8, recopiée au fichier d'epic.
 - Avec la **35-8** (#431, plus tard) : `repositories/company_invoice_settings.rs`. La 35-8 attend la fusion de celle-ci.
 
 ### Ce qui doit rester vrai
@@ -377,4 +405,17 @@ dialogue (AC8) ; M7 le type lu par une requête séparée, hors de la requête v
     `kesh-i18n`, fiche facture) : **pas de découpage** ; la boucle continue. Constat à déclarer à Guy par l'orchestrateur.
   - Symptômes greppés (fiche, registre, fichier d'epic) : « issue à ouvrir », « issue demandée », « verts sans retouche »
     sans exception, le test de la sonde `NOWAIT`, `postable, account_type, active` — aucun reste hors des entrées du Change Log.
+- 2026-11-12 — **Validation P3** (Sonnet) : 0 CRITICAL, 0 HIGH, 1 MEDIUM, 8 LOW (`kesh-gate-logs/e35-3-validation-p3.md`).
+  **Série 5 → 4 → 1** : la boucle converge ; le MEDIUM est une omission d'origine, non un produit de la remédiation P2.
+  Prémisses relues au code de `release/0.17.6` ; aucune réfutée (`admin-manual.tex:3816`, `:3822` ;
+  `company_invoice_settings.rs:842`, `:850-852`). Appliqués :
+  - V3-1 : le manuel d'administration entre à AC13 (`:3816`, `:3822`), au PDF et à la liste d'union ; le paragraphe « Pour
+    les intégrations » de la section de version relève de la préparation de release (noté, non fait ici) ;
+  - V3-2 : rouges pris sur un squelette compilable ; V3-3 : cas à deux comptes côté achat, M8 ; V3-4 : recensement des trois
+    formes de montage ; V3-5 : `:842` et `:850-866` à AC12, grep de `number, active, postable` ; V3-6 : tâche d'issue,
+    issue rédigée pour l'orchestrateur ; V3-7 : 35-2a/35-2b, en-tête, fiche facture à la liste d'union ; V3-8 : « le réglage
+    concerné » ; V3-9 : dix littéraux de repli, apostrophe typographique.
+  - Symptômes greppés (fiche, registre, fichier d'epic) : « Avec la **35-2** », « ce réglage — », « Validation P1 remédiée »
+    à l'en-tête, `d'actif` dans les exemples de message (gardés : ce sont des exemples ; le littéral suit le catalogue,
+    AC10) — aucun autre reste.
 
