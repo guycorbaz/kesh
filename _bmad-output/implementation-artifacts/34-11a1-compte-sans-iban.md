@@ -1,6 +1,6 @@
 # Story 34-11a1 : un compte sans IBAN — le schéma, et tous les sites qui lisent l'IBAN le tolèrent (#972)
 
-Status: review
+Status: done
 
 *Fiche rédigée le 2026-11-10 en autonomie (Opus 5.5), worktree `/home/gcorbaz/devel/kesh-e34`, branche `chore/epic-34-kickoff`,
 numéros de ligne de `a75835db` (inchangés à `b85b8f05`, commit de fiches seules). Release **0.17.6**, Epic 34. **Une migration, breaking**
@@ -232,7 +232,7 @@ migration de l'epic : aucun ordre à régler avec une autre story. La **34-11a2*
   - **Édition** : tout le code par l'outil Edit ; `cargo fmt --all` lancé une fois (cinq assertions reformatées) — le formateur du projet, non un
     script de remplacement. Scripts seulement pour les mutations (`kesh-gate-logs/e34a1/mut-e34a1.py`, motif vérifié unique, restauration
     `git checkout --` puis `touch`).
-- 2026-11-11/12 : **revue de code P1 (Sonnet, trois lentilles)** — 0 CRITICAL, 0 HIGH, **3 MEDIUM** (E1, A1, A2), 21 LOW, recomptés depuis les trois
+- 2026-11-11/12 : **revue de code P1 (Sonnet, trois lentilles)** *(annoté le 2026-11-12 : Opus, selon l'orchestrateur qui l'a lancée)* — 0 CRITICAL, 0 HIGH, **3 MEDIUM** (E1, A1, A2), 21 LOW, recomptés depuis les trois
   rapports (`kesh-gate-logs/e34a1-review-p1-{B,E,A}.md` : B1 à B7, E1 à E7, A1 à A10). **Remédiation (Opus 5.5)**, commit `75ab21ae`, puis ce compte rendu :
   - **E1 (MEDIUM)** — `CHECK (BINARY account_kind IN …)`, la migration non publiée **corrigée en place** (C-e34a1-11) : sous `utf8mb4_unicode_ci`,
     `'BANK'` et `'bank '` passaient le `CHECK` et faisaient échouer le décodage. Éprouvé à la main sur MariaDB 10.11.19 : `ascii_bin` est `PAD SPACE`
@@ -243,7 +243,9 @@ migration de l'epic : aucun ordre à régler avec une autre story. La **34-11a2*
     **migrée** (`sans_iban_la_montee_garde_chaque_compte_bancaire`).
   - **A1 (MEDIUM)** — § *Passer à la 0.17.6* en `\sloppy`, `\fussy` rétabli avant la section suivante : `KESH_SKIP_PRE_UPGRADE_BACKUP=0.17.6 dans` est
     entier dans le PDF aplati, plus aucun `Overfull` aux lignes 2531-2552 du `.tex` (`admin-manual.log` ; les 178 autres `Overfull` du manuel sont
-    antérieurs). Ma déclaration d'avant, « PDF contrôlé aplati », n'avait pas contrôlé la phrase qui porte la valeur.
+    antérieurs). Ma déclaration d'avant, « PDF contrôlé aplati », n'avait pas contrôlé la phrase qui porte la valeur. *(Annoté le 2026-11-12, revue
+    P2 A1 : le journal du PDF livré porte **173** `Overfull` — `grep -c "^Overfull" fr/admin-manual.log` ; « 178 » venait du journal précédant
+    le `\sloppy`.)*
   - **A2 (MEDIUM) + E4** — `full_import_round_trip_keeps_a_card_without_iban` (export d'une carte, base modifiée, import, colonnes relues à
     l'identique) et `full_import_of_a_0_17_5_backup_makes_every_account_a_bank_account` (sauvegarde sans `account_kind` ni `card_last4`). ⚠️ La
     sauvegarde est générique (C2) : aucune mutation de production propre à la carte n'existe pour les voir rouges ; leur preuve est le montage
@@ -257,6 +259,30 @@ migration de l'epic : aucun ordre à régler avec une autre story. La **34-11a2*
     la montée) ; A3 (gates complets et E2E au dernier commit de code `75ab21ae`).
   - **LOW renvoyés à la 34-11a2** (fiche `34-11a2-carte-credit-creation.md`, § *Points hérités*) : E5 = B7, B5, E6.
   - Mutation M11 ajoutée (`BINARY` retiré du squash). Toutes les modifications de code par l'outil Edit ; `cargo fmt --all` une fois (cinq tests).
+- 2026-11-12 : **revue de code P2 (Sonnet, trois lentilles)** — **0 au-dessus de LOW** (rapports `kesh-gate-logs/e34a1-review-p2-{B,E,A}.md` :
+  B1 à B3, E1 à E3, A1 à A6, tous LOW). La boucle se clôt sur cette passe. **Remédiation (Opus 5.5), sans aucune ligne de code de production**
+  (un commentaire seul, A6), commit `3875ffca` :
+  - **Tests** : B1 = E1 = A5 (quatre chiffres pleine chasse et arabo-indiens refusés ; type `bank` + tabulation, `bank` + NUL, chaîne vide,
+    `bänk` refusés — sur le squash et sur la base migrée par le vrai `MIGRATOR`) ; B2 (le témoin sur la base migrée rougit si `BINARY` quitte le
+    **fichier de migration** : mutation M14, jouée puis restaurée, bases reconstruites) ; E2 (`full_import_refuses_a_forged_account_kind_and_keeps_the_base`) ;
+    B3 côté tests (U+00A0 par `String.fromCharCode(0xa0)`).
+  - **Commentaire** : A6 (`bank_imports.rs:1253-1254`, « avant le hash, l'empreinte, le verrou et l'analyse »).
+  - **Documents** : A1 (173, annotation datée ci-dessus) ; A2 — la recette `r2` ne journalise pas le binaire qu'elle a joué : `target/debug/kesh-api`
+    construit à `75ab21ae` (`build-r1.log`), et la recette **se rejouera à l'intégration** sur la branche de release ; A3 — captures reprises (thème
+    clair, base de démonstration jetable), l'espace insécable changeant l'affichage ; A4 — sans objet : la 34-11a2 part de `27ca0bd9`, qui porte déjà
+    le nouveau checksum (`9339ac2b…`), et aucune autre base persistante n'a appliqué la migration.
+  - **Renvoyés à la 34-11a2** (transmis par l'orchestrateur) : E3 (apostrophe typographique de `bank-import-labels-drop-zone-csv-only`), B3 côté
+    production (`format.ts:26`, U+00A0 en littéral invisible).
+  - ⚠️ **Écart de l'outil Edit**, à signaler : un `' '` écrit dans `new_string` est **converti** en U+00A0 littéral dans le fichier (octets
+    `C2 A0`) — c'est l'origine de B3 ; `'\\u00a0'` est écrit avec deux barres obliques. D'où `String.fromCharCode(0xa0)`, sans séquence d'échappement.
+- **Tendance de la boucle de revue de code** : P1 (Opus) 0 C / 0 H / 3 M / 21 L → P2 (Sonnet) 0 C / 0 H / 0 M / 12 L. Développement et
+  remédiations : Opus 5.5. La P2 n'a rien trouvé qui vienne de la remédiation P1 au-dessus de LOW.
+- **Gates de clôture, à `3875ffca`** (dernier commit qui touche du code — des tests et un commentaire) : `fmt` et `clippy` du workspace verts
+  (`clippy-r2.log`) ; gate ciblé 243 passés (`cible-r2.log`) ; `test-fast.sh --ci` **5163 passés, 12 ignorés** (`gate-test-fast-r2.log`) ;
+  `gate-ci.sh` **5170 passés, 0 échec, 16 ignorés** (`gate-ci-r2.log`) ; Vitest **2890** (`front-unit-r2.log`) ; mutation **M14** tuée par
+  `sans_iban_la_montee_garde_chaque_compte_bancaire` (`mut/M14.log`), fichier restauré (`sha384sum` `9339ac2b…`), bases reconstruites. L'E2E
+  complet n'est pas rejoué : aucune ligne de production n'a changé depuis `75ab21ae`, où il a tourné. Captures reprises (`captures-r2.log`).
+  **Statut `done`.**
 
 ## Dev Agent Record
 
