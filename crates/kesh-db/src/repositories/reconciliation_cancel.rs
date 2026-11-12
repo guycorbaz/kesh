@@ -259,7 +259,7 @@ async fn cancel_blocker(
             None,
         )));
     }
-    entry_cancel_blocker(conn, company_id, matched_entry(bt)?, Some(bt.id)).await
+    entry_cancel_blocker(conn, company_id, matched_entry(bt)?, bt).await
 }
 
 /// Le premier motif qui empêcherait d'annuler un rapprochement **dont
@@ -267,17 +267,34 @@ async fn cancel_blocker(
 /// fournisseur ou écriture propre, rangs 1 à 5 (Story v017-3a, D14 : extraite
 /// de [`cancel_blocker`], qui l'appelle après le rang 0).
 ///
-/// `unlinking` : la transaction dont on défait le lien (exemption étroite du
-/// rang 3, cf. `settlement_entry_cancel_blocker`). ⛔ **Une seule précédence**
-/// : la liste des écritures candidates au rattachement
-/// (`GET …/entry-candidates`) l'appelle avec `unlinking = None` pour annoncer,
-/// **au moment de la lecture**, le motif qui empêcherait d'annuler le
-/// rattachement — l'écriture n'étant rapprochée d'aucune transaction
-/// (condition 4 de la règle), le rang 3 ne peut pas sortir. Les trois motifs
-/// fournisseur de tête (`SUPPLIER_INVOICE_NOT_PAID`, `…_CANCELLED`,
-/// `…_IN_PAYMENT_BATCH`) ne sortent pas non plus pour une candidate : le
-/// classement exige une facture `paid` ([`SUPPLIER_SETTLEMENT_CLASSIFY_SQL`]),
-/// et une facture payée n'est dans aucun lot `generated`.
+/// `concerned` : la transaction **concernée** — celle dont on défait le lien
+/// (`cancel_blocker`, qui sert `cancel_in_tx` et `get_view`), ou la
+/// transaction **prospective** dont on liste les candidates
+/// (`GET …/entry-candidates`). ⛔ **Une seule précédence**, et, depuis la
+/// Story 34-11b (#972, C-e341-35, choix C-e34b-3), **en tête** :
+///
+/// 0. si l'écriture est aussi rapprochée de l'**autre côté** d'un virement de
+///    `concerned` ([`super::reconciliation_link::transfer_other_side`]),
+///    l'annulation ne retire que le lien de `concerned` — aucune écriture
+///    n'est touchée, **aucun** rang 1 à 5 ne s'applique : `None` (le compte
+///    bancaire clos, seul refus restant, se contrôle au geste,
+///    `ensure_open_in_tx`) ;
+/// 1. sinon, la chaîne d'aujourd'hui, avec l'**exemption étroite** du rang 3
+///    pour `concerned.id` (cf. `settlement_entry_cancel_blocker`) : pour une
+///    transaction liée, c'est celle qu'on défait ; pour une prospective, non
+///    liée, l'exemption n'exclut rien, et toute transaction liée à une
+///    candidate qui n'est pas l'autre côté l'aurait écartée de la liste
+///    (condition 4).
+///
+/// ⚠️ **`None` strict, hors d'ici** : les écrans de facture (annulation d'un
+/// règlement client, dévalidation fournisseur) appellent directement
+/// `settlement_cancel_blocker_unlinking(…, None)` ou la queue commune — ils
+/// contre-passent l'écriture et gardent le rang 3 strict ; la décision « autre
+/// côté » ne les atteint jamais. Les trois motifs fournisseur de tête
+/// (`SUPPLIER_INVOICE_NOT_PAID`, `…_CANCELLED`, `…_IN_PAYMENT_BATCH`) ne
+/// sortent pas pour une candidate : le classement exige une facture `paid`
+/// ([`SUPPLIER_SETTLEMENT_CLASSIFY_SQL`]), et une facture payée n'est dans
+/// aucun lot `generated`.
 ///
 /// ⚠️ **Un instantané** : le motif peut apparaître après la lecture (clôture
 /// d'exercice) ou disparaître (réouverture, compte réactivé) ; s'y ajoutent
@@ -288,8 +305,16 @@ pub async fn entry_cancel_blocker(
     conn: &mut MySqlConnection,
     company_id: i64,
     entry_id: i64,
-    unlinking: Option<i64>,
+    concerned: &BankTransaction,
 ) -> Result<Option<SettlementCancelHit>, DbError> {
+    // 0 — en tête : l'autre côté d'un virement (Story 34-11b, C-e341-35).
+    if super::reconciliation_link::transfer_other_side(conn, company_id, entry_id, concerned)
+        .await?
+        .is_some()
+    {
+        return Ok(None);
+    }
+    let unlinking = Some(concerned.id);
     match classify(conn, company_id, entry_id, false).await? {
         ReconciliationKind::InvoiceSettlement { settlement_id, .. } => {
             invoice_settlements_write::settlement_cancel_blocker_unlinking(
@@ -334,6 +359,11 @@ pub struct ReconciliationView {
     pub internal_number: Option<String>,
     /// Le premier motif qui refuse l'annulation, ou `None`.
     pub cancel_blocker: Option<SettlementCancelHit>,
+    /// Story 34-11b (#972, AC-4b) — l'écriture est aussi rapprochée de
+    /// l'**autre côté** d'un virement : l'annulation ne retirera que le lien
+    /// de cette transaction ([`cancel_in_tx`]). `false` si elle n'est pas
+    /// rapprochée.
+    pub unlink_only: bool,
 }
 
 /// Le numéro (nullable) d'une pièce, par `sql` (`… WHERE id = ? AND
@@ -408,6 +438,17 @@ pub async fn get_view(
             (None, None, None, None)
         };
     let blocker = cancel_blocker(&mut tx, company_id, &bt).await?;
+    let unlink_only = match (
+        bt.status == BankTransactionStatus::Reconciled,
+        bt.matched_entry_id,
+    ) {
+        (true, Some(entry_id)) => {
+            super::reconciliation_link::transfer_other_side(&mut tx, company_id, entry_id, &bt)
+                .await?
+                .is_some()
+        }
+        _ => false,
+    };
     tx.commit().await.map_err(map_db_error)?;
     Ok(Some(ReconciliationView {
         bank_transaction: bt,
@@ -416,6 +457,7 @@ pub async fn get_view(
         supplier_invoice_number,
         internal_number,
         cancel_blocker: blocker,
+        unlink_only,
     }))
 }
 
@@ -424,8 +466,9 @@ pub async fn get_view(
 pub struct ReconciliationCancellation {
     /// La transaction relue, revenue à `pending`.
     pub bank_transaction: BankTransaction,
-    /// L'écriture inverse, datée du jour.
-    pub reversal_journal_entry_id: i64,
+    /// L'écriture inverse, datée du jour — `None` quand seul le lien a été
+    /// retiré (Story 34-11b : l'autre côté d'un virement reste rapproché).
+    pub reversal_journal_entry_id: Option<i64>,
     /// La facture dont le règlement a été retiré, pour un règlement client.
     pub invoice_id: Option<i64>,
     /// La facture fournisseur dont le paiement a été retiré, pour un règlement
@@ -460,6 +503,11 @@ pub struct ReconciliationCancellation {
 /// 3. verrou de l'écriture **et de son exercice** avant de juger — sans lui,
 ///    une clôture validée entre la lecture du rang 2 et la contre-passation
 ///    passerait inaperçue (leçon de la revue de la 25-3-a-1) ;
+///
+///    3 bis. (Story 34-11b, #972) l'autre côté d'un virement, par une lecture
+///    **ordinaire** après ce verrou : s'il existe, seul le lien est retiré
+///    (étapes 5, 6 bis, 7, sans contre-passation), `reversal_journal_entry_id`
+///    vaut `None` et la trace porte `unlinkOnly: true` ;
 /// 4. les motifs, par [`cancel_blocker`] **exempté** pour cette transaction :
 ///    le geste refuse lui-même les rangs 0, 2 et 2 bis — le lettrage de pièce
 ///    figé par la période, Story 15-1a2-0
@@ -539,6 +587,71 @@ pub async fn cancel_in_tx(
     // `bank_accounts::ensure_open_in_tx`. Ne lit pas `archived`. Revérifiée sous
     // verrou après l'étape (6) (Story 29-4b, #651).
     super::bank_accounts::ensure_open_in_tx(tx, company_id, bt.bank_account_id).await?;
+
+    // (3 bis) Story 34-11b (#972, C-e341-23, C-e341-35) — l'autre côté d'un
+    //     virement : si l'écriture est aussi rapprochée d'une transaction d'un
+    //     autre compte bancaire, de montant opposé, seul le lien de `bt` est
+    //     retiré — aucune contre-passation, aucun rang 1 à 5 (rien n'est écrit
+    //     au journal ; le compte clos vient d'être contrôlé). ⛔ Lecture
+    //     ORDINAIRE, APRÈS le verrou de l'écriture (3) : la vue naît ici, après
+    //     l'attente ; deux annulations simultanées des deux côtés se
+    //     sérialisent sur l'écriture, et la seconde voit le lien que la première
+    //     a retiré — elle contre-passe (test
+    //     `s34_11b_ac4_deux_annulations_simultanees`, mutation M5). Une lecture
+    //     VERROUILLANTE de la ligne de l'autre côté attendrait l'annulation
+    //     concurrente, qui la tient en exclusif (étape 1) et attend l'écriture :
+    //     un interblocage à chaque double annulation.
+    let unlink_only =
+        super::reconciliation_link::transfer_other_side(tx, company_id, entry_id, &bt)
+            .await?
+            .is_some();
+    if unlink_only {
+        let updated = sqlx::query(
+            "UPDATE bank_transactions \
+             SET matched_entry_id = NULL, status = 'pending', auto_match_rejected_at = NULL, \
+                 version = version + 1, updated_at = NOW(3) \
+             WHERE id = ? AND company_id = ? AND status = 'reconciled' AND version = ?",
+        )
+        .bind(bank_transaction_id)
+        .bind(company_id)
+        .bind(bt.version)
+        .execute(&mut **tx)
+        .await
+        .map_err(map_db_error)?;
+        if updated.rows_affected() != 1 {
+            return Err(DbError::OptimisticLockConflict);
+        }
+        super::bank_accounts::recheck_open_locked_in_tx(tx, company_id, bt.bank_account_id).await?;
+        audit_log::insert_in_tx(
+            tx,
+            NewAuditLogEntry::for_actor(
+                user_id,
+                actor_api_key_id,
+                "reconciliation.cancelled",
+                "bank_transaction",
+                bank_transaction_id,
+                Some(serde_json::json!({
+                    "kind": kind.code(),
+                    "matchedEntryId": entry_id,
+                    "reversalJournalEntryId": serde_json::Value::Null,
+                    "unlinkOnly": true,
+                    "invoiceId": serde_json::Value::Null,
+                    "settlementId": serde_json::Value::Null,
+                    "supplierInvoiceId": serde_json::Value::Null,
+                    "amount": bt.amount,
+                    "wasPreviouslyRejected": bt.auto_match_rejected_at.is_some(),
+                })),
+            ),
+        )
+        .await?;
+        let bank_transaction = find(tx, company_id, bank_transaction_id, false).await?;
+        return Ok(ReconciliationCancellation {
+            bank_transaction,
+            reversal_journal_entry_id: None,
+            invoice_id: None,
+            supplier_invoice_id: None,
+        });
+    }
 
     // (4) Les motifs — forme EXEMPTÉE : le lien existe encore, et la forme
     //     non exemptée refuserait chaque dé-rapprochement sur son propre lien.
@@ -669,6 +782,7 @@ pub async fn cancel_in_tx(
                 "kind": kind.code(),
                 "matchedEntryId": entry_id,
                 "reversalJournalEntryId": reversal_journal_entry_id,
+                "unlinkOnly": false,
                 "invoiceId": invoice_id,
                 "settlementId": settlement_id,
                 "supplierInvoiceId": supplier_invoice_id,
@@ -682,7 +796,7 @@ pub async fn cancel_in_tx(
     let bank_transaction = find(tx, company_id, bank_transaction_id, false).await?;
     Ok(ReconciliationCancellation {
         bank_transaction,
-        reversal_journal_entry_id,
+        reversal_journal_entry_id: Some(reversal_journal_entry_id),
         invoice_id,
         supplier_invoice_id,
     })

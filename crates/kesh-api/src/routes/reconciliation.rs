@@ -5773,6 +5773,9 @@ pub struct ReconciliationTransactionResponse {
     /// Story 33-1b (#926) — son numéro interne, que dit la confirmation.
     pub internal_number: Option<String>,
     pub cancellable: bool,
+    /// Story 34-11b (#972, AC-4b) — l'écriture est aussi rapprochée de
+    /// l'**autre côté** d'un virement : l'annulation ne retirera que le lien.
+    pub unlink_only: bool,
     /// Code du premier motif qui refuse l'annulation.
     pub cancel_blocked_by: Option<&'static str>,
     /// Le numéro du compte archivé (rang 4).
@@ -5817,6 +5820,7 @@ pub async fn get_reconciliation_transaction(
         supplier_invoice_number: view.supplier_invoice_number,
         internal_number: view.internal_number,
         cancellable: hit.is_none(),
+        unlink_only: view.unlink_only,
         cancel_blocked_by: hit.as_ref().map(|h| h.0.code()),
         cancel_blocked_label: hit.as_ref().and_then(|h| h.2.clone()),
         cancel_blocked_document_id: hit.as_ref().and_then(|h| h.1),
@@ -5829,8 +5833,10 @@ pub async fn get_reconciliation_transaction(
 pub struct CancelReconciliationResponse {
     /// La transaction relue, revenue « à rapprocher ».
     pub bank_transaction: crate::routes::bank_imports::TransactionResponse,
-    /// L'écriture inverse, datée du jour.
-    pub reversal_journal_entry_id: i64,
+    /// L'écriture inverse, datée du jour — `null` quand seul le lien a été
+    /// retiré (Story 34-11b, #972 : l'autre côté d'un virement reste
+    /// rapproché de l'écriture).
+    pub reversal_journal_entry_id: Option<i64>,
     /// La facture dont le règlement a été retiré, pour un règlement client.
     pub invoice_id: Option<i64>,
     /// La facture fournisseur dont le paiement a été retiré, pour un
@@ -6462,6 +6468,10 @@ pub struct EntryCandidateResponse {
     /// Le numéro du compte archivé (rang 4), comme
     /// `GET /reconciliation/transactions/{id}`.
     pub cancel_blocked_label: Option<String>,
+    /// Story 34-11b (#972, AC-4b) — l'écriture d'un virement déjà rapprochée
+    /// de l'**autre côté** : annuler ce rattachement ne retirerait que son
+    /// lien (`cancel_blocked_by` vaut alors `None`).
+    pub unlink_only: bool,
 }
 
 /// Réponse de `GET …/entry-candidates`.
@@ -6527,13 +6537,23 @@ pub async fn get_entry_candidates(
     .await?;
     let mut candidates = Vec::with_capacity(found.len());
     for c in found {
+        // Story 34-11b (C-e341-35) : la transaction prospective `t` est la
+        // transaction concernée — la décision « autre côté » la lit.
         let hit = kesh_db::repositories::reconciliation_cancel::entry_cancel_blocker(
             &mut tx,
             company_id,
             c.journal_entry_id,
-            None,
+            &t,
         )
         .await?;
+        let unlink_only = kesh_db::repositories::reconciliation_link::transfer_other_side(
+            &mut tx,
+            company_id,
+            c.journal_entry_id,
+            &t,
+        )
+        .await?
+        .is_some();
         candidates.push(EntryCandidateResponse {
             journal_entry_id: c.journal_entry_id,
             entry_number: c.entry_number,
@@ -6545,6 +6565,7 @@ pub async fn get_entry_candidates(
             days_apart: c.days_apart,
             cancel_blocked_by: hit.as_ref().map(|h| h.0.code()),
             cancel_blocked_label: hit.and_then(|h| h.2),
+            unlink_only,
         });
     }
     tx.commit()

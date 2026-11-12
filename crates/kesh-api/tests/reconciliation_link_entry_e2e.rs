@@ -3200,12 +3200,18 @@ async fn s34_11b_ac4_deux_annulations_simultanees(pool: MySqlPool) {
     let b = lancer(credit);
     let vu = kesh_db::test_fixtures::attendre_des_requetes_en_cours(
         &pool,
-        &["JOIN fiscal_years fy ON fy.id = je.fiscal_year_id", "FOR UPDATE"],
+        &[
+            "JOIN fiscal_years fy ON fy.id = je.fiscal_year_id",
+            "FOR UPDATE",
+        ],
         2,
         || a.is_finished() || b.is_finished(),
     )
     .await;
-    assert!(vu, "les deux annulations n'ont pas attendu le verrou de l'écriture");
+    assert!(
+        vu,
+        "les deux annulations n'ont pas attendu le verrou de l'écriture"
+    );
     tenue.commit().await.unwrap();
 
     let (sa, ba) = a.await.unwrap();
@@ -3215,7 +3221,10 @@ async fn s34_11b_ac4_deux_annulations_simultanees(pool: MySqlPool) {
         .iter()
         .filter(|r| r["reversalJournalEntryId"].is_null())
         .count();
-    assert_eq!(retraits, 1, "un retrait seul, une contre-passation : {ba} / {bb}");
+    assert_eq!(
+        retraits, 1,
+        "un retrait seul, une contre-passation : {ba} / {bb}"
+    );
     assert_eq!(ctx.etat(debit).await, ("pending".to_string(), None));
     assert_eq!(ctx.etat(credit).await, ("pending".to_string(), None));
     assert_eq!(ctx.contre_passations_de(e).await, 1);
