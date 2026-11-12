@@ -193,3 +193,14 @@ retenue, options écartées, réversibilité. Lignes citées sur `release/0.17.6
 - **`docs/api-external.md`** : 35-5a la phrase « UTC » du solde d'ouverture ; 35-6 la grammaire du montant ; lignes
   distinctes.
 - **`CHANGELOG.md`** : un point par issue sous `### Corrigé`, dans l'ordre des numéros de story.
+
+### C-e350-15 — 35-6 : point et virgule ambigus, grammaire commune, #1025 intégrée
+
+- **Contexte** : #1026 (`1.234` lu un franc en silence, `+1,234` non reconnu), #1028 (`1_000` accepté par le serveur,
+  « NaN CHF » à l'écran), #1025 (`0,500` refusé à tort), toutes dans `format.ts` et `parse_complement_amount`.
+- **Retenu** : un séparateur (point ou virgule) suivi de trois chiffres, partie entière de 1 à 3 chiffres sans zéro de
+  tête, est ambigu et refusé avec la forme à écrire (`1'234` ou `1.2340`) ; une saisie hors grammaire est refusée à l'écran ;
+  le serveur refuse le souligné et l'exposant, garde le point et le `+`. #1025 entre dans la story (même règle).
+- **Écartées** : (a) signaler sans refuser `1.234` : la virgule est déjà refusée, deux comportements pour le même risque ;
+  (b) juger l'ambiguïté au serveur : un appelant de l'API envoie un nombre, non une saisie.
+- **Réversible** : oui ; le refus du souligné au serveur est un changement de contrat, écrit.
