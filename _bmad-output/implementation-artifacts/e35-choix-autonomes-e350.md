@@ -335,6 +335,8 @@ retenue, options écartées, réversibilité. Lignes citées sur `release/0.17.6
 - **Écartées** : (a) retirer les séparateurs partout puis classer : rouvre `1'234,567` (#1025) ; (b) retirer les blancs de la
   fraction : laisse `1. 234` lu 1,234 franc ; (c) annoncer une liste d'exemples : trompe sur l'étendue du refus.
 - **Réversible** : oui.
+- *(Annoté le 2026-11-12, validation P4 de la 35-6 : B élargie au `_`, L1 qui rogne aussi les apostrophes, familles D et E
+  ajoutées — **C-e350-34** et **C-e350-35**.)*
 
 ### C-e350-31 — 35-6 : le souligné suit la règle du serveur, non « entre deux chiffres »
 
@@ -365,4 +367,30 @@ retenue, options écartées, réversibilité. Lignes citées sur `release/0.17.6
   Fichier commun avec la 35-5a (C-e350-8, annoté) : hunk de test distinct.
 - **Écartées** : (a) reformuler sans tester : l'affirmation reste crue sur parole ; (b) recopier la table en Rust : deux
   tables qui dérivent ; (c) `include_str!` : lierait la compilation de `kesh-api` à l'arborescence du frontend.
+- **Réversible** : oui.
+
+### C-e350-34 — 35-6 : la notation à exposant refusée à l'écran seulement (décision de l'orchestrateur)
+
+- **Contexte** : validation P4 de la 35-6, V4-1. `Decimal::from_str` se rabat sur `from_scientific_lossy` quand la saisie porte
+  un `e` ou un `E` (`rust_decimal` 1.43.0 `decimal.rs:2108-2117`) : `1e3` vaut 1000, accepté aujourd'hui par le serveur ;
+  l'écran l'envoie tel quel. La fiche le disait refusé.
+- **Retenu** : **famille D** nouvellement refusée **par l'écran seulement** (non lisible) ; le serveur, inchangé, l'accepte
+  toujours pour un client d'API. **Écart assumé au principe C-e350-19**, motivé par l'improbabilité d'une telle saisie à
+  l'écran et le risque d'une lecture inattendue (l'aperçu ne l'a jamais montrée ; `1.234e0` échapperait à la règle
+  d'ambiguïté). Annoncée au CHANGELOG et au manuel ; ligne de table ; le test de parité épingle la lecture du serveur
+  (AC8 (e)).
+- **Écartée** : accepter l'exposant à l'écran : une règle d'ambiguïté de plus, sur la mantisse, pour une saisie que personne
+  ne fait.
+- **Réversible** : oui.
+
+### C-e350-35 — 35-6 : la virgule masquée par un `_`, les apostrophes de bord, plus de 28 décimales
+
+- **Contexte** : validation P4 de la 35-6, V4-2. Le balayage de la passe trouve, acceptées aujourd'hui et refusées par le
+  pipeline hors des familles écrites : `1_,234` (le `_` cachait la virgule à l'écran ; lue 1,234), `'+5` et `'-0`
+  (l'apostrophe était retirée partout), et plus de 28 décimales (le serveur arrondit).
+- **Retenu** : (1) famille B élargie au `_` : ambiguë, nouvellement refusée ; (2) L1 et la reprise de L2 rognent aussi les
+  apostrophes de tête et de queue : `'+5`, `'-0`, `1.5'` restent acceptées avec leur valeur ; (3) **famille E**, plus de
+  28 décimales dont l'une au-delà de la quatrième n'est pas nulle : non lisible, limite assumée, dite au CHANGELOG.
+- **Écartées** : (a) une famille « apostrophe avant le signe » : refuserait sans raison une saisie lue juste ;
+  (b) arrondir comme le serveur au-delà de 28 décimales : une règle pour un cas pathologique.
 - **Réversible** : oui.

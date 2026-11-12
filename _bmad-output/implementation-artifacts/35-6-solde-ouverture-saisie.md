@@ -5,7 +5,7 @@ Status: ready-for-dev
 *Fiche rédigée le 2026-11-12 par l'agent de kickoff de l'Epic 35 (Opus 5.5), worktree `kesh-e35`, par le workflow
 `bmad-create-story`. Release **0.17.7**. **Aucune migration** ; depuis la validation P2, **aucun changement du code
 serveur ni d'API** (C-e350-19) : la story est de l'écran, plus un test de parité côté serveur (C-e350-33, test seul). Code lu
-sur **`release/0.17.6`** (`4e1c768a`). Registres : `e35-choix-autonomes-e350.md` (C-e350-8, -15, -17, -18, -19, -30 à -33) ;
+sur **`release/0.17.6`** (`4e1c768a`). Registres : `e35-choix-autonomes-e350.md` (C-e350-8, -15, -17, -18, -19, -30 à -35) ;
 `e35-choix-autonomes-e356.md` pour la story, à créer au premier choix. Validations P1, P2 et P3 remédiées (Change Log).*
 
 ## Story
@@ -44,8 +44,12 @@ valeur différente de celle que l'utilisateur voulait : le cas « 1.234 ». Les 
 `Decimal::from_str` (`rust_decimal` 1.43.0), puis positif, quatre décimales après normalisation (`:524`), borne de quinze
 chiffres. D'après la source du crate (validation P2, relue en P3 : `str.rs:245`, `b'_' if HAS`, le souligné est permis dès
 qu'un chiffre a été lu, avant comme après le point ; `:325`, refusé avant) : accepte `1_000`, `1__0`, `1.2_5`, `1_`, `1_.5`,
-`1._5`, `+`, `.5`, `5.`, `-0` et `-0.00` (zéro, le signe effacé) ; refuse `_1`, `+_5`, `._5`, `1e3`, les chiffres non ASCII,
-`1,5`, tout négatif non nul. Il rogne la saisie (`str::trim`, `:517`).
+`1._5`, `.5`, `5.`, `-0` et `-0.00` (zéro, le signe effacé) ; refuse `_1`, `+_5`, `._5`, `+` et `.` seuls (`str.rs:244`,
+`:478`, `tail_no_has`), les chiffres non ASCII, `1,5`, tout négatif non nul. **Il accepte la notation à exposant** :
+`Decimal::from_str` se rabat sur `from_scientific_lossy` dès que la saisie porte un `e` ou un `E` (`decimal.rs:2108-2117`,
+`:687-735`) — `1e3` et `1E3` valent 1000, `1.5e2` 150, `5e-1` 0,5 (validation P4). Au-delà de 28 décimales, il arrondit
+(`maybe_round`, `str.rs`). Il rogne la saisie (`str::trim`, `:517`). Aujourd'hui, l'écran envoie `1e3` tel quel : 1000 est
+écrit, sans aperçu.
 
 **Les docs** — `docs/manual/fr/user-manual.tex:2456` (`1,234` ambigu ; `1.234` « toujours lu ainsi … (\#1026) » ; `0,500` refusé
 « (\#1025) ») ; `:2462` (compte existant). Le PDF aplati porte « (#1026) », « (#1025) » et des ligatures (« aﬀiché »).
@@ -54,7 +58,7 @@ qu'un chiffre a été lu, avant comme après le point ; `:325`, refusé avant) :
 (`:162`) ; `1.234` non ambigu (`:165`) ; `1.005` dans l'aperçu (`:181`). `bank-accounts-page.test.ts:917-998`.
 `frontend/src/lib/shared/i18n-keys.test.ts:972` : `sitesTotal`.
 
-## Décisions (C-e350-15, -17, -19, -30 à -33)
+## Décisions (C-e350-15, -17, -19, -30 à -35)
 
 - **D1 — Les séparateurs.** Séparateurs **de groupe** : ceux de `:242` d'aujourd'hui (apostrophes `'` `’`, tout blanc `\s`,
   Unicode en JavaScript : espace, U+00A0, U+202F, U+2009, tabulation). Ils sont permis **dans la partie entière seulement**,
@@ -65,9 +69,10 @@ qu'un chiffre a été lu, avant comme après le point ; `:325`, refusé avant) :
   « entre deux chiffres » proposée en P3 aurait refusé `1_` et `1_.5`, que le serveur lit 1 et 1,5 aujourd'hui.)*
 - **D2 — La lecture, un pipeline ordonné** (C-e350-30). Une fonction, `openingAmountKind(raw)`, rend `{ kind, payload? }` ; les
   étapes s'appliquent dans cet ordre, la première qui conclut l'emporte :
-  1. **L1 — Rognage** : blancs Unicode de tête et de queue retirés (`String.prototype.trim`). Reste vide → `empty`.
-  2. **L2 — Signe** : un `+` ou un `-` en premier caractère est ôté et retenu, puis le reste est **rogné à nouveau**
-     (`+ 1,234` → `1,234`). Reste vide (`+`, `-`), ou portant encore un `+` ou un `-` (`++1`, `+-1`, `1+2`, `1-2`) →
+  1. **L1 — Rognage** : blancs Unicode **et apostrophes** (`'`, `’`) de tête et de queue retirés (C-e350-35 : `'+5`, `'-0`,
+     `1.5'` restent acceptées, comme aujourd'hui où l'écran retirait toute apostrophe). Reste vide → `empty`.
+  2. **L2 — Signe** : un `+` ou un `-` en premier caractère est ôté et retenu, puis le reste est **rogné à nouveau**, comme
+     en L1 (`+ 1,234` → `1,234`). Reste vide (`+`, `-`), ou portant encore un `+` ou un `-` (`++1`, `+-1`, `1+2`, `1-2`) →
      `unreadable`.
   3. **L3 — Souligné** (D1) : un `_` avant le premier chiffre → `unreadable` ; les autres sont retirés.
   4. **L4 — Découpe** : plus d'un `.` ou `,` au total (`1.234.567`, `1,234,567`, `1,234.56`, `1.234,56`, `1.2.3`) →
@@ -76,7 +81,8 @@ qu'un chiffre a été lu, avant comme après le point ; `:325`, refusé avant) :
      (`1,23 4`, `1. 234`, `1.2 5`, `1.5'0`) → `unreadable` : un séparateur de groupe n'a pas de lecture sûre après la décimale.
   6. **L6 — Partie entière** : E est dite **groupée** si un ou plusieurs séparateurs de groupe y sont placés **entre deux
      chiffres** ; les séparateurs de groupe de E sont retirés ; E ne doit plus contenir que `[0-9]` (vide permis si F ne l'est
-     pas : `.5`) — sinon → `unreadable` (`1e3`, `abc`, `١٢٣`, `.`).
+     pas : `.5`) — sinon → `unreadable` (`1e3`, `abc`, `١٢٣`, `.`). Un `e` ou un `E` n'est donc jamais lu (famille D) : il
+     tombe en L2 (`5e-1`), L5 (`1.5e2`) ou L6 (`1e3`).
   7. **L7 — Classement**, dans cet ordre :
      - F, ses zéros au-delà de la quatrième décimale retirés, garde plus de quatre chiffres (`1.23456`, `-1.23456`) →
        `unreadable` ;
@@ -89,13 +95,13 @@ qu'un chiffre a été lu, avant comme après le point ; `:325`, refusé avant) :
   « Clair » se définit ainsi : `kind === 'clear'` ; sa charge suit `^[0-9]+(\.[0-9]{1,4})?$` (AC1).
 - **D3 — La table**, que le test écrit telle quelle (AC1), chaque ligne vérifiée contre le pipeline de D2 (validation P3) ;
   « aujourd'hui » désigne l'écran et le serveur de `release/0.17.6`. Les espaces spéciales s'écrivent par échappement dans le test
-  (`'1 234,50'`, `'1 234.50'`).
+  (`'1\u00a0234,50'`, `'1\u202f234.50'`, `'1\u2009234'`) ; la table ci-dessous les nomme entre parenthèses (U+00A0, …).
 
   | Saisie | Issue | Charge |
   |---|---|---|
   | `''` · `'   '` | vide (L1) : création sans solde ; compte existant `amount-required` (inchangé) | — |
   | `1.234` · `12.500` · `999.999` · `1.005` · `1.000` · `100.250` · `+1.234` · `01.234` · `'1.234` · `1 .234` · `1_.234` | **ambiguë — nouvellement refusée** (D4, famille A ; lues aujourd'hui 1,234 franc, 12,5, …, 1, 100,25) | — |
-  | `+1,234` · `+ 1,234` · `+01,234` | **ambiguë — nouvellement refusée** (D4, famille B : le `+` masquait la virgule ; lues aujourd'hui 1,234 franc) | — |
+  | `+1,234` · `+ 1,234` · `+01,234` · `1_,234` · `1,234_` · `1,00_0` | **ambiguë — nouvellement refusée** (D4, famille B : le `+` ou le `_` masquait la virgule à l'écran d'aujourd'hui ; lues 1,234 franc, 1,234, 1) | — |
   | `1,234` · `12,500` · `100,000` · ` 9,999 ` · `01,234` · `012,345` · `1 ,234` | ambiguë (déjà refusées aujourd'hui à l'écran par `^\d+,\d{3}$` : rien de nouveau) | — |
   | `1. 234` · `1.2 5` · `1.5'0` | **non lisible — nouvellement refusée** (D4, famille C ; lues aujourd'hui 1,234, 1,25, 1,5) | — |
   | `1,23 4` | non lisible (déjà refusée aujourd'hui : après retrait, `1,234` était ambiguë) | — |
@@ -110,22 +116,33 @@ qu'un chiffre a été lu, avant comme après le point ; `:325`, refusé avant) :
   | `1.50000` · `1.23450` | claire (zéros au-delà de la quatrième décimale) | `1.5000`, `1.2345` |
   | `0` · `0,00` · `0.000` · `+0` · `-0` · `-0.00` | claire, montant nul (#1027 : l'avis « aucune écriture ») | `0`, `0.00`, `0.000`, `0`, `0`, `0.00` |
   | `-5` · `-0,5` · `-1.234` | négative : `amount-required` (refusées aujourd'hui par le serveur) | — |
-  | `1.23456` · `-1.23456` · `1.234.567` · `1,234,567` · `1,234.56` · `1.234,56` · `1e3` · `_1` · `+_5` · `١٢٣` · `abc` · `1.2.3` · `+` · `1-2` · `1+2` · `++1` | non lisible (toutes refusées aujourd'hui, par le serveur : rien de nouveau) | — |
+  | `1.23456` · `-1.23456` · `1.234.567` · `1,234,567` · `1,234.56` · `1.234,56` · `_1` · `+_5` · `١٢٣` · `abc` · `1.2.3` · `+` · `.` · `1-2` · `1+2` · `++1` | non lisible (toutes refusées aujourd'hui, par le serveur : rien de nouveau) | — |
+  | `1e3` · `1E3` · `1,5e2` · `5e-1` | **non lisible — nouvellement refusée, à l'écran seulement** (D4, famille D, C-e350-34 ; lues aujourd'hui 1000, 1000, 150, 0,5 ; le serveur les accepte toujours : `serverAccepts`) | — |
+  | `0.` suivi de 28 zéros et d'un `1` (29 décimales) | **non lisible — nouvellement refusée** (D4, famille E, C-e350-35 ; le serveur l'arrondit aujourd'hui à 0 : `serverAccepts`) | — |
+  | `'+5` · `''+5` · `'-0` · `1.5'` | claire (L1 rogne les apostrophes ; acceptées aujourd'hui, même valeur) | `5`, `5`, `0`, `1.5` |
   | `1234567890123456` (seize chiffres) | claire à l'écran ; refusée par le serveur (borne), comme aujourd'hui | `1234567890123456` |
 
-- **D4 — Nouvellement refusées : trois familles, par règle** (C-e350-30, -32), non une liste finie. Justification commune :
-  Kesh les lit aujourd'hui avec une valeur que l'utilisateur n'a peut-être pas voulue (mille fois plus petite pour une saisie
-  à l'allemande ou à l'anglaise), sans signal.
+- **D4 — Nouvellement refusées : cinq familles, par règle** (C-e350-30, -32, -34, -35), non une liste finie. Justification
+  commune à A, B, C : Kesh les lit aujourd'hui avec une valeur que l'utilisateur n'a peut-être pas voulue (mille fois plus
+  petite pour une saisie à l'allemande ou à l'anglaise), sans signal. D et E ont leur propre justification, ci-dessous.
   - **A — un point suivi de trois chiffres après une partie entière courte** : après L1 à L3, la partie entière sans
     séparateur de groupe entre deux chiffres, et `^0*[1-9][0-9]{0,2}\.[0-9]{3}$` sur ses chiffres, le point et la fraction.
     Exemples : `1.234`, `1.000`, `100.250`, `999.999`, `+1.234`, `01.234`. **Bornes, claires** : `1000.000` (quatre chiffres),
     `0.999` et `0.500` (partie entière nulle : le zéro seul n'est pas un zéro de tête), `1'234.567` (groupée), `1.2340`, `1.23`.
-  - **B — la même règle avec la virgule, masquée par un `+`** (`+1,234`, `+ 1,234`, `+01,234`) ; sans `+`, la virgule était déjà
-    refusée.
-  - **C — un blanc ou une apostrophe après le séparateur décimal** (`1. 234`, `1.2 5`, `1.5'0`) : non lisibles.
+  - **B — la même règle avec la virgule, que l'écran d'aujourd'hui ne voyait pas à cause d'un `+` ou d'un `_`** (`+1,234`,
+    `+ 1,234`, `+01,234`, `1_,234`, `1,234_`, `1,00_0`) ; sans eux, la virgule était déjà refusée.
+  - **C — un blanc ou une apostrophe après le séparateur décimal**, avant le dernier chiffre (`1. 234`, `1.2 5`, `1.5'0`) :
+    non lisibles. Une apostrophe ou un blanc **en queue** est rogné (L1) : `1.5'` reste claire.
+  - **D — la notation à exposant** : toute saisie qui porte un `e` ou un `E` (`1e3`, `1E3`, `1,5e2`, `5e-1`), non lisible
+    **à l'écran seulement** ; le serveur, inchangé, continue de l'accepter pour un client d'API (C-e350-34, décision de
+    l'orchestrateur). **Écart assumé au principe C-e350-19** : la valeur lue n'est pas fausse, mais une telle saisie est
+    improbable à l'écran d'un titulaire suisse, l'aperçu ne l'a jamais montrée, et l'accepter ferait passer `1.234e0` à côté
+    de la règle d'ambiguïté.
+  - **E — plus de 28 décimales** dont l'une, au-delà de la quatrième, n'est pas nulle (`0.` suivi de 28 zéros et d'un `1`) :
+    non lisible ; le serveur l'arrondit aujourd'hui (`maybe_round`) et l'accepte. Limite assumée, pathologique (C-e350-35).
 
   Le CHANGELOG et le manuel annoncent **la règle** (point comme virgule), avec `1.234` et `1.000` en exemples et `1000.000`,
-  `0.500` en bornes (AC6). Les saisies citées aux rouges de départ (« Tests à écrire ») ne sont **que** des rouges, non
+  `0.500` en bornes, puis les familles C et D (E n'est dite qu'au CHANGELOG, d'une phrase) (AC6). Les saisies citées aux rouges de départ (« Tests à écrire ») ne sont **que** des rouges, non
   l'ensemble du refus.
 - **D5 — La charge** (saisie claire) : E, séparateurs de groupe et soulignés retirés, `0` si E est vide (`.5` → `0.5`) ; puis,
   si F n'est pas vide, `.` et F, ses zéros au-delà de la quatrième décimale retirés (`1.50000` → `1.5000`) ; point final
@@ -145,7 +162,8 @@ qu'un chiffre a été lu, avant comme après le point ; `:325`, refusé avant) :
     celles que l'écran refusait déjà.
   - **#1026** fermée (`closes #1026`) — motif : *« Corrigé à l'écran du solde d'ouverture (création et compte existant) :
     `1.234` et `+1,234` sont refusés comme ambigus (règle de D4). L'API garde sa lecture : un client qui envoie `"1.234"`
-    écrit toujours 1,234 franc, ce qui est le sens d'un nombre décimal, et l'API ne lit pas la virgule. Les autres écrans de
+    écrit toujours 1,234 franc, ce qui est le sens d'un nombre décimal, et l'API ne lit pas la virgule. La notation à
+    exposant (`1e3`) est désormais refusée à l'écran ; l'API l'accepte toujours. Les autres écrans de
     saisie d'un montant sont suivis à #1050 et #1051. »*
   - **#1028** fermée (`closes #1028`) — motif : *« L'écran lit `1_000` comme le serveur (1000) et l'affiche juste, jamais
     « NaN CHF ». Écran et serveur ne partagent pas pour autant une grammaire : l'écran retire les apostrophes et les blancs de
@@ -155,8 +173,8 @@ qu'un chiffre a été lu, avant comme après le point ; `:325`, refusé avant) :
 ## Critères d'acceptation
 
 1. **AC1 — La table de D3**, écrite **une fois** dans la fixture `frontend/src/lib/features/bank-accounts/opening-amount-cases.json`
-   (`{ raw, kind, payload?, serverRejects? }` par saisie ; espaces spéciales par échappement JSON ` `, ` `,
-   ` `, `\t`), et lue par `format.test.ts` et par le test de parité (AC8). Une seule fonction de classement,
+   (`{ raw, kind, payload?, serverRejects?, serverAccepts? }` par saisie ; espaces spéciales par échappement JSON `\u00a0`,
+   `\u202f`, `\u2009`, `\t`), et lue par `format.test.ts` et par le test de parité (AC8). Une seule fonction de classement,
    **`openingAmountKind(raw) → { kind: 'empty' | 'ambiguous' | 'clear' | 'unreadable' | 'negative', payload?: string }`**,
    suit le pipeline de D2 ; `openingAmountPayload` (D5), `openingAmountPreview` s'y adossent, et `openingAmountAmbiguous`
    disparaît ou s'y adosse. Chaque ligne : son issue **et sa charge** ; les bornes de D4 (`1.000`, `100.250` ambiguës ;
@@ -166,7 +184,7 @@ qu'un chiffre a été lu, avant comme après le point ; `:325`, refusé avant) :
    `formError` ; compte existant : `openingError`), avec le message de D6, sans appel au serveur. À la création, le
    classement n'est joué **que si un compte lié est choisi**, comme aujourd'hui ; compte lié et montant vide →
    `createBankAccount` appelé sans `openingBalance` (Vitest de la page).
-3. **AC3 — L'aperçu** : présent pour une saisie claire (`1_000` → 1'000.00 au format suisse ; `1 234.50` ; `0.500`) ;
+3. **AC3 — L'aperçu** : présent pour une saisie claire (`1_000` → `formatChfBalance('1000')`, « 1 000.00 CHF » à l'espace fine U+202F, non une apostrophe ; `1\u202f234.50` ; `0.500`) ;
    l'avis du montant nul pour `+0`, `-0.00`, `0,00` ; absent sinon ; jamais « NaN ».
 4. **AC4 — L'avis de succès** formate la charge ; jamais « NaN ».
 5. **AC5 — Quatre langues et gardes.** La clé d'ambiguïté réécrite et la clé neuve `bank-accounts-opening-error-amount-unreadable`
@@ -178,27 +196,40 @@ qu'un chiffre a été lu, avant comme après le point ; `:325`, refusé avant) :
    - `user-manual.tex:2456` : **la règle de D4** (un point ou une virgule suivis d'exactement trois chiffres, après une partie
      entière de un à trois chiffres sans séparateur de milliers — zéros de tête non comptés, zéro seul exclu —, est ambigu ;
      exemples `1.234`, `1.000` ; bornes claires `1000.000`, `0.500`, `1'234,567` ; écrire `1'234` ou `1.2340`) ; un blanc ou une
-     apostrophe après le séparateur décimal est refusé ; `1_000` lu 1000 ; les renvois « (\#1026) » et « (\#1025) » retirés.
-     PDF régénéré ; contrôle au PDF aplati : **absence** de « (#1026) » et « (#1025) » (sans barre oblique), **présence** de
-     « 1.2340 » et de « 1000.000 » (sondes positives) ; greper des mots sans `ff`/`fi`/`fl` (ligatures).
+     apostrophe après le séparateur décimal est refusé ; la notation à exposant (`1e3`) est refusée à l'écran (famille D) ;
+     `1_000` lu 1000 ; les renvois « (\#1026) » et « (\#1025) » retirés. PDF régénéré ; contrôle au PDF aplati : **absence**
+     de « (#1026) », « (#1025) » (sans barre oblique), « toujours lu ainsi » et « écrivez-les avec un point » (les deux phrases
+     devenues fausses), **présence** de « 1.2340 » et de « 1000.000 » (sondes positives) ; greper des mots sans
+     `ff`/`fi`/`fl` (ligatures).
    - CHANGELOG `## [0.17.7] — Non publié`, *Corrigé*, un point par issue (C-e350-8) ; sous #1026, **la règle de D4** (familles
-     A, B, C), avec ses exemples et ses bornes, non une liste.
+     A à E), avec ses exemples et ses bornes, non une liste ; la famille D dite « refusée à l'écran, toujours acceptée par
+     l'API ».
    - `docs/api-external.md` : **inchangé** (le serveur ne change pas).
 7. **AC7 — Captures** (thème clair, base jetable, `kesh-gate-logs/e356/captures/`) : `1.234` refusé ; `1_000` accepté avec
    son aperçu ; `1'234,567` accepté avec son aperçu.
 8. **AC8 — Parité écran/serveur** (C-e350-33, test seul, `kesh-api`) : dans le `mod tests` de
    `crates/kesh-api/src/routes/opening_balances.rs` (`:630`), un test lit la fixture d'AC1 **à l'exécution**
    (`env!("CARGO_MANIFEST_DIR")` puis `std::fs::read_to_string`, pour ne pas lier la compilation au frontend) et vérifie :
-   (a) pour chaque ligne `clear` sans `serverRejects`, `parse_complement_amount(Some(payload))` vaut `Decimal::from_str(payload)`
-   — la valeur que l'aperçu a montrée ; (b) pour la ligne `serverRejects`, le refus ; (c) pour chaque ligne `clear` dont la
-   saisie brute n'emploie que l'alphabet du serveur (`[0-9._+-]`, rognée : `1_000`, `1__0`, `1.2_5`, `1_`, `1_.5`, `-0`,
-   `+12.50`, `.5`, `5.`, `1.50000`), `parse_complement_amount(Some(raw))` vaut la même valeur que la charge ; (d) pour chaque
-   ligne `unreadable` ou `negative` de cet alphabet (`_1`, `+_5`, `1+2`, `++1`, `1.23456`, `1.2.3`, `+`, `1-2`, `-5`), le refus
-   du serveur. Aucune ligne de production du serveur ne change.
+   (a) pour chaque ligne `clear` sans `serverRejects`, `parse_complement_amount(Some(payload))` réussit et vaut
+   `Decimal::from_str(payload)` (l'acceptation de la charge ; la parité elle-même est portée par (c)) ; (b) pour la ligne
+   `serverRejects`, le refus ; (c) pour chaque ligne `clear` **sans `serverRejects`** dont la saisie brute n'emploie que
+   l'alphabet du serveur (`[0-9._+-]`, rognée ; par exemple `1_000`, `1__0`, `1.2_5`, `1_`, `1_.5`, `-0`, `+12.50`, `.5`, `5.`,
+   `1.50000`), `parse_complement_amount(Some(raw))` vaut la même valeur que la charge ; (d) pour chaque ligne `unreadable` ou
+   `negative` de cet alphabet **sans `serverAccepts`** (par exemple `_1`, `+_5`, `1+2`, `++1`, `1.23456`, `1.2.3`, `+`, `.`,
+   `1-2`, `-5`), le refus du serveur ; (e) pour chaque ligne `serverAccepts` dont la saisie brute n'emploie que
+   `[0-9._+eE-]` (familles D et E, `1,5e2` exclue par sa virgule), l'acceptation par le serveur et sa valeur, **épinglée**
+   (`1e3` → 1000, `1E3` → 1000, `5e-1` → 0,5, la ligne E → 0) : une montée de `rust_decimal` qui changerait cette lecture
+   rougit. Nombres attendus, sur la table de la validation P4 : (c) 24, (d) 13, (e) 4 — recomptés au développement et
+   affirmés en dur. Aucune ligne de production du
+   serveur ne change.
 
 ## Tests à écrire, et la preuve du rouge
 
 `format.test.ts` (AC1, AC3) et Vitest de la page (AC2, AC4) — écrits d'abord, journal `kesh-gate-logs/e356/rouges.log`.
+Pour que chaque rouge prouve un comportement et non une absence d'export, `openingAmountKind` est d'abord écrit comme
+**adaptateur de la lecture d'aujourd'hui** (`ambiguous` si `openingAmountAmbiguous(raw)`, `empty` si
+`openingAmountPayload(raw) === null`, sinon `clear` avec `openingAmountPayload(raw)`) ; les rouges se consignent contre lui,
+ligne par ligne, puis il est remplacé par le pipeline de D2.
 Rouges au départ : `1.234`, `1.000`, `01.234`, `+1,234` et `1. 234` clairs, `1'234,567` et `0,500` ambigus, `1_000` sans aperçu (« NaN » à l'avis), `-0`
 sans l'avis du montant nul, les lignes « non lisible » envoyées au serveur au lieu d'être refusées à l'écran. Verts au
 départ, et dits comme tels : le vide (AC2), les lignes claires d'aujourd'hui qui gardent leur valeur. Le test de parité
@@ -208,6 +239,7 @@ départ, et dits comme tels : le vide (AC2), les lignes claires d'aujourd'hui qu
 - `:160-167` : `1'000,000` (`:162`) passe d'ambigu à clair ; `1.234` (`:165`) de clair à ambigu ; les autres entrées de `:165`
   (`'1,23'`, `'1,2345'`, `"1'234,50"`, `'1234'`, `''`, `'1,2'`) restent non ambiguës — si `openingAmountAmbiguous` disparaît,
   ces deux boucles sont ré-adossées à `openingAmountKind` (même attendu, `kind !== 'ambiguous'`) ;
+- `:170-177` (aperçu `null` pour `''`, `'1,234'`, `'abc'`, `'-5'`, `'1.00001'`, `'1.2.3'`) : inchangé, vert au pipeline ;
 - `:181` (`1.005`) : la preuve des quatre décimales passe à `1.0050` ;
 - `bank-accounts-page.test.ts:924` (`1,234` à la création) et `:998` (`12,500`, compte existant) : leur attendu « Montant
   ambigu » reste vrai (D6), cités pour mémoire ;
@@ -221,7 +253,9 @@ l'ensemble des séparateurs réduit à l'espace ASCII et aux apostrophes (U+00A0
 classé non lisible (AC2, création sans solde) ; M11 le rognage retiré (` 9,999 ` cesse d'être ambiguë) ; M12 les zéros
 au-delà de la quatrième décimale non retirés (`1.50000` devient non lisible) ; M13 un `+` hors de la tête accepté (`1+2`) ;
 M14 un `_` avant le premier chiffre accepté (`_1`, `+_5`) ; M15 un séparateur de groupe dans la fraction retiré au lieu de
-refusé (`1. 234` devient ambiguë ou claire) ; M16 les zéros de tête comptés (`01,234` devient claire) ; M17 (AC8) la charge
+refusé (`1. 234` devient ambiguë ou claire) ; M16 les zéros de tête comptés (`0,500`, `00,500`, `0.999` deviennent
+ambiguës) ; M16-bis le `0*` retiré du motif (`01,234` devient claire) ; M18 l'exposant lu (`1e3` devient claire, famille D) ;
+M19 les apostrophes de tête non rognées (`'+5` devient non lisible) ; M17 (AC8) la charge
 de `1_000` portée à `100` dans la fixture : l'assertion (c) du test de parité rougit. Le test de parité affirme en dur le
 nombre de lignes qu'exerce chacune de ses assertions (a) à (d), pour qu'un filtre d'alphabet trop étroit ne le fasse pas
 passer à vide.
@@ -254,8 +288,9 @@ n'ajoute qu'un test au `mod tests` (`:630` et suivantes), hunk distinct de la da
 
 ### Ce qui doit rester vrai
 
-- Aucune saisie acceptée aujourd'hui n'est refusée, hors les familles de D4 ; aucune ne change de valeur. Le sens présélectionné,
-  l'aperçu du montant nul (#1027) et les refus du serveur ne changent pas. Fixtures synthétiques seulement.
+- Aucune saisie acceptée aujourd'hui n'est refusée, hors ce que L7 classe ambigu (familles A et B) et les familles C, D et E
+  de D4 ; aucune ne change de valeur. Le sens présélectionné, l'aperçu du montant nul (#1027) et les refus et acceptations du
+  serveur ne changent pas (la famille D reste acceptée par l'API). Fixtures synthétiques seulement.
 
 ### Références
 
@@ -330,3 +365,28 @@ n'ajoute qu'un test au `mod tests` (`:630` et suivantes), hunk distinct de la da
   - Symptômes greppés (fiche, fichier d'epic, registre) : « liste close », « six saisies », « la liste de D4 », la liste des
     six refusées de C-e350-19 — remplacés dans la fiche, annotés au registre (C-e350-19, C-e350-8) ; fichier d'epic : la
     colonne des fichiers complétée.
+- 2026-11-12 — **Validation P4** (Opus) : 0 CRITICAL, 0 HIGH, 1 MEDIUM, 9 LOW (`kesh-gate-logs/e35-6-validation-p4.md`) ; série
+  5 → 5 → 3 → 1 MEDIUM. Remédiée par l'agent de relève (Opus 5.5). Prémisses relues : `rust_decimal` 1.43.0
+  `decimal.rs:2108-2117` (`from_str` se rabat sur `from_scientific_lossy` quand la saisie porte `e`/`E`), `str.rs:244`, `:478`
+  (`+` seul refusé) — confirmées.
+  - V4-1 (MEDIUM), **décision de l'orchestrateur** (C-e350-34) : la notation à exposant devient la **famille D**,
+    nouvellement refusée à l'écran seulement ; le serveur l'accepte toujours. Écart assumé à C-e350-19, motivé. Corrigés :
+    « Ce qui se lit au code » (le serveur lit l'exposant), la ligne des non lisibles (`1e3` en sort), « Ce qui doit rester
+    vrai » ; ligne de table propre (`1e3`, `1E3`, `1,5e2`, `5e-1`) ; AC6 (manuel, CHANGELOG) ; AC8 (e) épingle la lecture du
+    serveur ; mutation M18 ; motif de fermeture de #1026 complété.
+  - V4-2 : famille B élargie au `_` (`1_,234`, `1,234_`, `1,00_0`) ; L1 rogne aussi les apostrophes de bord (`'+5`, `''+5`,
+    `'-0`, `1.5'` restent claires, M19) ; **famille E**, plus de 28 décimales, limite assumée (C-e350-35).
+  - LOW : V4-3 (`+` et `.` seuls rangés aux refus du serveur) ; V4-4 (AC8 : « par exemple », sans `serverRejects` en (c),
+    sans `serverAccepts` en (d), nombres attendus 24, 13 et 4, champ `serverAccepts`) ; V4-5 (AC3 : `formatChfBalance('1000')`,
+    espace fine U+202F) ; V4-6 (M16 récrite, M16-bis) ; V4-7 (échappements écrits en clair, `\u00a0`, `\u202f`, `\u2009`) ;
+    V4-8 (sondes d'absence « toujours lu ainsi », « écrivez-les avec un point ») ; V4-9 (adaptateur de la lecture
+    d'aujourd'hui avant le pipeline ; `format.test.ts:170-177` cité). V4-10 (fiche 35-5a, autre branche) : **non traité
+    ici**, transmis par l'orchestrateur.
+  - **Écart à la consigne Edit** : trois lignes portant des espaces spéciales brutes (U+00A0, U+202F, U+2009 : D3 `:92`, AC1
+    `:158-159`, AC3) n'ont pas pu être visées par l'outil Edit, qui ne retrouvait pas la chaîne malgré la copie exacte ; elles
+    ont été remplacées par un court script Python qui contrôle le début de chaque ligne avant de l'écrire (artefact
+    `_bmad-output`, non du code). L'outil manque d'une façon de viser une espace insécable ; en sens inverse, il convertit
+    en caractère une séquence d'échappement Unicode écrite dans le texte de remplacement (constaté sur la ligne V4-7 de
+    cette entrée, corrigée par le même script avant le commit).
+  - Symptômes greppés (fiche, registre, fichier d'epic) : `1e3`, « trois familles », « A, B, C », espaces spéciales brutes
+    (aucune ne reste) ; registre C-e350-30 annoté ; entrées passées du Change Log et du registre laissées telles quelles.
