@@ -338,6 +338,17 @@ error-designated-account-not-postable = { $count ->
     [one] Il conto { $numbers }, designato in Amministrazione → Fatturazione, non è registrabile (conto di raggruppamento, di risultato o di chiusura): un amministratore deve designarvi al suo posto un conto registrabile.
    *[other] I conti { $numbers }, designati in Amministrazione → Fatturazione, non sono registrabili (conti di raggruppamento, di risultato o di chiusura): un amministratore deve designarvi al loro posto conti registrabili.
 }
+# Story 35-3 (#537) — un conto designato e poi cambiato di tipo: una frase per conto, poi la frase d’azione.
+error-designated-account-wrong-type = Il conto { $account }, designato come { $setting } in Amministrazione → Fatturazione, è un { $actual }; questa impostazione richiede un { $expected }.
+error-designated-account-wrong-type-action = Nulla è stato registrato. Un amministratore deve correggere l’impostazione interessata — designare un conto del tipo giusto, oppure restituire al conto il suo tipo d’origine —, poi la convalida potrà essere rilanciata così com’è.
+error-designated-account-setting-receivable = conto crediti verso clienti
+error-designated-account-setting-vat-payable = conto IVA dovuta
+error-designated-account-setting-payable = conto debiti verso fornitori
+error-designated-account-setting-vat-recoverable = conto IVA recuperabile
+error-designated-account-type-asset = conto dell’attivo
+error-designated-account-type-liability = conto del passivo
+error-designated-account-type-revenue = conto di ricavo
+error-designated-account-type-expense = conto di costo
 error-rounding-account-not-configured = Questo pagamento salda la fattura al centesimo, ma non è designato alcun conto utilizzabile per le differenze di arrotondamento: sceglierne uno in Amministrazione → Fatturazione.
 error-rounding-account-not-configured-issuance = Il totale di questo documento è arrotondato a 5 centesimi, ma non è designato alcun conto utilizzabile per le differenze di arrotondamento: sceglierne uno in Amministrazione → Fatturazione.
 error-write-off-account-not-configured-discount = Nessun conto sconti utilizzabile è designato: sceglietene uno in Amministrazione → Fatturazione, sezione Saldo del residuo.
