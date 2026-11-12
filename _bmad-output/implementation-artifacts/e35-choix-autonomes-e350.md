@@ -197,6 +197,7 @@ retenue, options écartées, réversibilité. Lignes citées sur `release/0.17.6
   d'ouverture et du verrou de période ; 35-5b les autres. Paragraphes distincts ; le PDF se régénère après l'union.
 - **`crates/kesh-api/src/routes/opening_balances.rs`** : 35-6 `parse_complement_amount` (`:515-530`) ; 35-5a la date du
   jour (`:244`, `:604`). Hunks distincts ; si les deux sont en vol, 35-6 fusionne d'abord (plus courte).
+  *(Annoté le 2026-11-12, validation P2 de la 35-6 : la 35-6 ne touche plus ce fichier, C-e350-19.)*
 - **`crates/kesh-api/src/routes/bank_accounts.rs`** : 35-5a (`:1007`, `:1252`) ; 35-5b (`:1802`). 35-5b part de 35-5a fusionnée.
 - **`docs/api-external.md`** : 35-5a la phrase « UTC » du solde d'ouverture ; 35-6 la grammaire du montant ; lignes
   distinctes.
@@ -214,6 +215,8 @@ retenue, options écartées, réversibilité. Lignes citées sur `release/0.17.6
 - **Réversible** : oui ; le refus du souligné au serveur est un changement de contrat, écrit.
 - *(Annoté le 2026-11-12, validation P1 de la 35-6 : précisé par C-e350-17 — classement avant le retrait des
   séparateurs, #1025 fermée en entier, le serveur garde `.5`, `5.` et `1.50000`.)*
+- *(Annoté le 2026-11-12, validation P2 de la 35-6 : **remplacé par C-e350-19** pour le serveur — il n'est plus touché ;
+  `1_000` reste accepté et l'écran le lit comme lui.)*
 
 ### C-e350-14 — La 35-5 se découpe préventivement en 35-5a et 35-5b (accord de l'orchestrateur)
 
@@ -257,6 +260,8 @@ retenue, options écartées, réversibilité. Lignes citées sur `release/0.17.6
   zéro de tête suivis d'un séparateur et de trois chiffres : ambigu. `[0-9]` partout. Le serveur ne refuse de neuf que le
   souligné (et les chiffres non ASCII). L'écran normalise la charge (`.5` → `0.5`, sans `+`). #1025 fermée en entier.
   `opening_balances.rs:363` et `journal_entries.rs:542` (autres fonctions de lecture) restent à #1050 et #1051.
+- *(Annoté le 2026-11-12, validation P2 de la 35-6 : la part serveur — refus du souligné et des chiffres non ASCII — est
+  **retirée par C-e350-19** ; la règle d'écran reste.)*
 - **Écartées** : (a) #1025 en partie : laisserait la moitié de l'issue ; (b) une grammaire serveur commune aux trois routes
   dès cette story : touche l'écriture manuelle, hors de l'objet.
 - **Réversible** : oui.
@@ -276,3 +281,19 @@ retenue, options écartées, réversibilité. Lignes citées sur `release/0.17.6
 - **Écartées** : (a) promettre un avis et une capture inatteignables ; (b) fermer #1024 sans rien changer : le silence reste
   possible sous un futur déclencheur de relecture.
 - **Réversible** : oui.
+
+### C-e350-19 — 35-6 : ce qui est accepté aujourd'hui reste accepté (principe posé par l'orchestrateur)
+
+- **Contexte** : validation P2 de la 35-6, P1 5 → P2 5 MEDIUM, dont quatre nés de la grammaire écrite en P1 (contrôle du
+  serveur, groupement fermé, `\d`) : la grammaire débordait de l'objet des issues.
+- **Retenu** : ce qui est accepté aujourd'hui reste accepté avec la même valeur, **sauf** une saisie que Kesh lit avec une
+  valeur différente de celle que l'utilisateur voulait (le cas « 1.234 ») ; chaque saisie nouvellement refusée est listée,
+  justifiée et annoncée (CHANGELOG, manuel ; `api-external.md` avec « *Depuis la v0.17.7* » si l'API change). Pour la 35-6 :
+  séparateurs d'aujourd'hui gardés, plus `_` (lu comme le serveur le lit) ; `-0` lu zéro ; vide inchangé ; **serveur non
+  touché**, donc aucun changement de contrat ; nouvellement refusées : `1.234`, `12.500`, `999.999`, `1.005`, `+1.234`,
+  `+1,234`. La story devient de l'écran seul : c'est la réponse au signal de découpage, plutôt qu'un découpage.
+- **Écartée** : une grammaire fermée commune écran/serveur : changement de contrat sans demande, et refus nouveaux
+  (`-0.00` d'un client d'API, groupements irréguliers) sans valeur pour Guy.
+- **Réversible** : oui.
+- **Commentaires déjà rédigés pour #1050 et #1051** (validation P1) : ils disaient que la 0.17.7 ferait refuser `1_000` au
+  complément ; c'est faux depuis ce choix — correction à poster par l'orchestrateur.
