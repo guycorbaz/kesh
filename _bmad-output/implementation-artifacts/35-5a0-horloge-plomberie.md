@@ -121,9 +121,10 @@ binaires (`lettering_documents_backfill.rs:43`, `lettering_documents.rs:29`, `le
   montage, tirée de l'horloge), **jamais une date de pièce** (date d'écriture, de facture, de paiement) : passer une date de
   pièce comme `aujourd_hui` changerait le jour du bloqueur ou de la contre-passation, donc ce que le test exerce, sans
   qu'aucun `assert` ne bouge. Les pièges relevés (validation P2, V2-7 ; validation P3, V3-6 ; lus) : `payer_par`
-  (`lettering_documents.rs:870`) et `payer` (`:880`) reçoivent `le`, date du paiement ; `facture_payee`
+  (`support/lettering_documents.rs:863`, appel de `pay` à `:870`) reçoit `le`, date du paiement, et `payer` (`:879`) la lui
+  transmet (`:885-893`) — `payer_par` prend `aujourd_hui_test()`, `payer` ne change pas (validation P4, V4-4) ; `facture_payee`
   (`fournisseur_rapproche.rs:120-127`, appel de `pay` à `:155-162`) reçoit **`jour`**, date de la facture **et** du paiement —
-  un nom qui invite à la passer comme `aujourd_hui`. Tous trois prennent `aujourd_hui_test()` (le module `jour` du helper et
+  un nom qui invite à la passer comme `aujourd_hui`, et prend aussi `aujourd_hui_test()` (le module `jour` du helper et
   la variable locale `jour` vivent dans des espaces de noms distincts, à constater à la compilation). S'ils n'en tiennent pas, **`aujourd_hui_test()`**, helper partagé par crate de tests :
   - `crates/kesh-api/tests/common/jour.rs` : `horloge_de_test().aujourd_hui()` ;
   - `crates/kesh-db/tests/support/jour.rs` et **`crates/kesh-report/tests/support/jour.rs`** (neuf : V1-6 ; validation P4 de la
@@ -152,31 +153,32 @@ binaires (`lettering_documents_backfill.rs:43`, `lettering_documents.rs:29`, `le
   `crates/*/src` et `crates/*/tests` — un fichier absent de la liste compte 0 —, le fichier de la garde exclu nommément, et
   **les lignes dont le début, blancs ôtés, est `//` (donc `///` et `//!`) écartées, comme pour la garde de date** (validation
   P2, V2-5 : sans cela, les comptes dépendraient de la rédaction des doc-comments de `new_for_tests`, `horloge_de_test`,
-  `horloge_depuis`). **L'unité est l'instruction, non la ligne** (validation P3, V3-2) : avant de compter, la garde retire
-  les **instructions `use … ;` entières**, du `use` au `;`, multi-lignes comprises — rustfmt écrit un import groupé une
-  entrée par ligne (`main.rs:41-49`, `use kesh_api::{` … `};`, lu), et la ligne `horloge::HorlogeSysteme,` d'un tel groupe ne
-  commence pas par `use` ; une garde par ligne la compterait comme une construction et rougirait sur le code correct. Les
-  motifs en `nom(` (`instant_de_test(`, `horloge_depuis(`, `new_for_tests(`, `horloge_de_test(`, `HorlogeFixe(`) comptent
-  **la définition comprise** (`fn nom(`, `pub struct HorlogeFixe(`), écrite dans les comptes ci-dessous ; aucune ligne `fn`
-  n'est retirée :
+  `horloge_depuis`). **Le retrait des instructions `use` ne vaut que pour le compte de `HorlogeSysteme` construit**
+  (validation P3, V3-2, restreint à la validation P4, V4-1) : rustfmt écrit un import groupé une entrée par ligne
+  (`main.rs:41-49`, `use kesh_api::{` … `};`, lu), et la ligne `horloge::HorlogeSysteme,` d'un tel groupe compterait sinon
+  comme une construction. Le retrait est **borné** (V4-2) : une instruction qui commence, blancs ôtés, par `use `, `pub use `
+  ou `pub(…) use `, jusqu'au premier `;` hors commentaire, les lignes `//` étant écartées avant. **Toutes les autres gardes
+  comptent les `use` compris**, et leurs noms **comme mots** (`\bnom\b`, non `nom(`) : un import, même renommé par `as`, nomme
+  le symbole et compte — sans quoi `use … ::horloge_de_test as h;` puis `h()` passerait. Leurs comptes incluent donc la
+  définition, les appels et les imports :
   - le littéral `"KESH_TEST_INSTANT"` : 2, dans `kesh-core/src/horloge.rs` (la constante, et l'attribut `should_panic` de son
     test, qui exige un littéral) ; 0 ailleurs ;
   - les occurrences de **`NOM_VARIABLE_INSTANT`** (validation P2, V2-4) : `kesh-core/src/horloge.rs` (définition, message de
-    panique, tests : compte relevé), `kesh-api/src/horloge.rs` (dans `horloge_de_test` : 1, son import
-    étant retiré avec les instructions `use`), `kesh-db/tests/support/jour.rs`, `kesh-report/tests/support/jour.rs` (comptes relevés) ; **0 ailleurs, `main.rs` et
+    panique, tests : compte relevé), `kesh-api/src/horloge.rs` (dans `horloge_de_test`, son import
+    compris : compte relevé), `kesh-db/tests/support/jour.rs`, `kesh-report/tests/support/jour.rs` (comptes relevés) ; **0 ailleurs, `main.rs` et
     `lib.rs` compris** ;
-  - les occurrences de **`instant_de_test(`** (définition comprise) : `kesh-core/src/horloge.rs` (définition et tests : compte
-    relevé), `kesh-api/src/horloge.rs` (dans `horloge_depuis`, 1), les deux `support/jour.rs` (1 chacun) ; 0 ailleurs ;
-  - les occurrences de **`horloge_depuis(`** dans `crates/*/src` : `kesh-api/src/horloge.rs` (définition, appel par
+  - les occurrences de **`instant_de_test`** : `kesh-core/src/horloge.rs` (définition et tests), `kesh-api/src/horloge.rs`
+    (dans `horloge_depuis`, import compris), les deux `support/jour.rs` : comptes relevés ; 0 ailleurs ;
+  - les occurrences de **`horloge_depuis`** dans `crates/*/src` : `kesh-api/src/horloge.rs` (définition, appel par
     `horloge_de_test`, tests du module : compte relevé) ; 0 ailleurs ;
-  - `new_for_tests(` et `horloge_de_test(` dans `crates/*/src` : `lib.rs` (définition de `new_for_tests`, appel de
-    `horloge_de_test()` par elle : 2), `kesh-api/src/horloge.rs` (définition de `horloge_de_test` : 1) ; 0 ailleurs — aucun
-    appel de production, ni de `mod tests` de `src` ;
-  - `HorlogeSysteme` **construit** : instructions `use` retirées (ci-dessus), puis la ligne `pub struct HorlogeSysteme` et la
+  - `new_for_tests(` (méthode, non importable seule) et **`horloge_de_test`** dans `crates/*/src` : `lib.rs` (définition de
+    `new_for_tests`, appel et import éventuel de `horloge_de_test` : compte relevé), `kesh-api/src/horloge.rs` (définition de
+    `horloge_de_test` : 1) ; 0 ailleurs — aucun appel ni import de production, ni de `mod tests` de `src` ;
+  - `HorlogeSysteme` **construit** : instructions `use` retirées (ci-dessus, pour ce seul compte), puis la ligne `pub struct HorlogeSysteme` et la
     ligne d'en-tête `impl … for HorlogeSysteme` ; ce qui reste nomme une construction : `main.rs` 1, `kesh-api/src/horloge.rs`
     1 (dans `horloge_depuis` ; ses tests ne le nomment pas, sinon compte relevé), 0 ailleurs ;
-  - `HorlogeFixe(` dans `crates/*/src` (V2-5) : `kesh-core/src/horloge.rs` (définition `pub struct HorlogeFixe(` et tests :
-    compte relevé), `kesh-api/src/horloge.rs` (dans `horloge_depuis`, 1),
+  - **`HorlogeFixe`** dans `crates/*/src` (V2-5) : `kesh-core/src/horloge.rs` (définition `pub struct HorlogeFixe(` et tests :
+    compte relevé), `kesh-api/src/horloge.rs` (dans `horloge_depuis`, import compris : compte relevé),
     `kesh-api/src/middleware/auth.rs` (1, `test_state()` du `mod tests`), et les fichiers de `src` dont le `mod tests` date par `HorlogeFixe(Utc::now())` (D4 ; `journal_entries.rs`, qui appelle
     `reverse_in_tx` à `:3984` et `:5824`, en est un si son test n'a pas de date fixe) : comptes relevés, en égalité stricte —
     une construction ajoutée en production dans l'un d'eux fait `+ 1` et rougit ; **0 dans `main.rs`, `lib.rs` et tout autre
@@ -184,9 +186,10 @@ binaires (`lettering_documents_backfill.rs:43`, `lettering_documents.rs:29`, `le
   - aucun `static`, `OnceLock`, `LazyLock`, `lazy_static!`, `thread_local!` dans les **fichiers** `kesh-core/src/horloge.rs`,
     `kesh-api/src/horloge.rs`, `tests/common/jour.rs` et les deux `tests/support/jour.rs`.
 
-  Ce que ces listes ferment, ensemble : `main.rs` ne peut lire la variable ni par son littéral, ni par la constante, ni par
-  `instant_de_test`, `horloge_depuis`, `horloge_de_test` ou `new_for_tests`, ni figer une `HorlogeFixe` ; il construit
-  `HorlogeSysteme` une fois. **Angle mort assumé** : un autre nom de variable d'environnement, lu en production et converti
+  Ce que ces listes ferment, ensemble : `main.rs` ne peut **ni importer ni nommer** — alias `as` compris, puisque l'import
+  compte — le littéral, la constante, `instant_de_test`, `horloge_depuis`, `horloge_de_test` ou `HorlogeFixe`, ni appeler
+  `new_for_tests` ; il construit `HorlogeSysteme` une fois (seul compte où les `use` sont retirés, et un alias de
+  `HorlogeSysteme` n'ouvre rien : c'est l'horloge de production). **Angle mort assumé** : un autre nom de variable d'environnement, lu en production et converti
   à la main en `DateTime` passé à une horloge écrite pour l'occasion — ce n'est plus `KESH_TEST_INSTANT`, et ce code
   n'aurait plus rien de la plomberie de test ; la revue fichier par fichier de `main.rs` et de `lib.rs` le voit.
 - **D6 — Docs** : une ligne dans `docs/testing.md` — `KESH_TEST_INSTANT` est une variable **de tests**, lue par
@@ -236,18 +239,19 @@ fenêtre de quelques secondes autour de minuit UTC, et va dans le sens voulu.
 4. **AC4 — `KESH_TEST_INSTANT`** : `instant_de_test(Some("2025-12-31T23:30:00Z"))` rend l'instant ; `None` et `Some("")`
    rendent `None` ; une valeur invalide `panic!` en citant la constante (`#[should_panic(expected = "KESH_TEST_INSTANT")]`,
    l'attribut exigeant un littéral : le second et dernier littéral admis, dans le `mod tests` de `horloge.rs`) ; `horloge_depuis(Some("2025-12-31T23:30:00Z")).maintenant()` rend l'instant,
-   et `horloge_depuis(None)` est l'horloge système. Ce dernier point **ne se teste pas par l'horloge murale** (validation
-   P3, V3-7 : deux lectures de `Utc::now()` peuvent reculer sous un réglage NTP, et une horloge monotone n'est pas
-   comparable à un `DateTime<Utc>`) : il est tenu par les gardes de D5 — dans `kesh-api/src/horloge.rs`, `HorlogeSysteme`
-   construit 1 fois et `HorlogeFixe(` 1 fois, toutes deux dans `horloge_depuis` ; une branche `None` qui rendrait une
-   `HorlogeFixe` y ferait 2 et rougirait. La comparaison « strictement croissantes » de la validation P2 (V2-6) est retirée.
+   et `horloge_depuis(None)` n'est pas figée : deux lectures de `maintenant()` séparées par un
+   `std::thread::sleep(Duration::from_millis(10))` sont **différentes** (`assert_ne!`) — une horloge figée rend deux valeurs
+   égales ; un réglage NTP peut faire reculer la seconde, non la rendre égale (validation P4, V4-3 ; l'ordre, lui, n'est pas
+   asserté, V3-7). La garde de construction de `HorlogeSysteme` (D5) reste le filet de la forme : une branche `None` qui
+   rendrait une `HorlogeFixe` ferait, dans `kesh-api/src/horloge.rs`, `HorlogeSysteme` 0 ou `HorlogeFixe` un de plus.
 5. **AC5 — La garde** : verte avec les comptes de son exécution ; sondes au Change Log (forme ajoutée, forme coupée, compte
    + 1, `KESH_TEST_INSTANT` dans un fichier de plus, `HorlogeSysteme` construit ailleurs, `OnceLock` dans un helper de jour,
    appel de `new_for_tests(` dans `src`, **`NOM_VARIABLE_INSTANT` nommé dans `main.rs`**, `instant_de_test(` ou
    `horloge_depuis(` appelé dans `main.rs`, `HorlogeFixe(` construit dans `main.rs`, et une ligne `// NOM_VARIABLE_INSTANT`
    ajoutée qui, elle, **ne** rougit **pas** — commentaires écartés ; et, **verte** aussi, un import groupé sur plusieurs
    lignes ajouté à `main.rs`, `use kesh_api::{` / `horloge::HorlogeSysteme,` / `};`, qui ne compte pas comme construction —
-   instructions `use` retirées, validation P3, V3-2).
+   instructions `use` retirées pour ce seul compte, validation P3, V3-2 ; et, **rouge**, un import renommé dans `main.rs`,
+   `use kesh_api::horloge::horloge_de_test as h;` — l'import compte, validation P4, V4-1).
 6. **AC6 — Aucune migration** ; `crates/kesh-db/migrations/` intact.
 
 ## Tests à écrire, et la preuve du rouge
@@ -291,7 +295,8 @@ absent : tuée par les gardes de `NOM_VARIABLE_INSTANT`, d'`instant_de_test(` et
          les inclusions `#[path]`), posés **avec leurs premiers appelants** — un fichier qu'aucun binaire n'inclut n'est pas
          compilé, et l'y mettre plus tôt ne prouverait rien ; le commentaire `companies.rs:986-989` ; le test d'AC2.
          Compile une fois tous les appelants à jour (le compilateur donne la liste close). Une signature changée oblige
-         tous ses appelants ; seule la chaîne contre-passation → bloqueurs → vues est insécable. `lock_books` /
+         tous ses appelants ; seule la chaîne contre-passation → bloqueurs → vues est insécable, **par la règle D2** (une lecture
+         par requête, passée au bloqueur et à la contre-passation). `lock_books` /
          `unlock_books`, qui ne sont appelées par aucune fonction de cette chaîne, pourraient faire un commit (3a) avant
          elle ; elles restent dans (3) par économie (Dérogation).
       4. **Garde (D5) et `docs/testing.md` (D6)** : fichier de test neuf qui lit les sources, sondes de l'AC5, mutations ;
@@ -311,7 +316,9 @@ commits la montrait divisible.)*
 « aucun commit plus fin n'est possible », ce qui est faux) : la **chaîne contre-passation → bloqueurs → vues** du noyau D2 —
 `journal_entries`, `settlement_cancellation`, `invoice_settlements_write`, `reconciliation_cancel`, `supplier_invoices` et
 leurs routes —, avec **tous** ses appelants. Une signature changée oblige chacun de ses appelants, production et tests, dans
-le même commit ; couper cette chaîne laisserait un état qui ne compile pas. Elle dépasse seule cinq modules. Le noyau (3)
+le même commit. La chaîne, elle, se couperait encore à la compilation (bloqueurs dans un commit, contre-passation dans un
+autre) : c'est **la règle D2** qui la rend insécable — une coupe laisserait un état qui ne compile pas, **ou** qui lit
+l'horloge deux fois par requête, contraire à D2 (validation P4, V4-5). Elle dépasse seule cinq modules. Le noyau (3)
 pèse la quasi-totalité des **50 fichiers** de la fermeture (dont **36 de tests**, § *Ce qui se lit*).
 
 **Ce qui serait séparable** : (1) `kesh-core` et (2) la plomberie de `kesh-api` (les **18** fichiers de `Lecture::new(` et des
@@ -487,3 +494,14 @@ concernés ; `docs/testing.md`.
   - Aucun finding réfuté. Signal de découpage : sévérité en baisse (4 → 2 MEDIUM), mais les deux MEDIUM sont encore **nés de
     la remédiation P2** (le filet du risque accepté, les gardes à listes closes) : recyclage, déclaré ; découpage tranché par
     l'orchestrateur (V3-5). Aucune migration. Statut `ready-for-dev` ; la passe suivante est à lancer.
+- 2026-11-12 — **Validation P4, passe ciblée** (Opus, `kesh-gate-logs/e35-5a0-validation-p4-ciblee.md` : 0 CRITICAL, 0 HIGH,
+  1 MEDIUM, 4 LOW ; série 3 → 4 → 2 → 1 MEDIUM) remédiée au plus court par l'agent de rédaction (worktree `kesh-e355`).
+  - **V4-1** (né de la remédiation P3) : le retrait des `use` ne vaut que pour le compte de `HorlogeSysteme` construit ; les
+    autres gardes comptent les `use` compris, noms comme mots ; sonde de l'AC5 « import renommé `as` dans `main.rs` = rouge » ;
+    « Ce que ces listes ferment » récrit.
+  - **LOW** : V4-2 (retrait borné : début de ligne, `use` / `pub use` / `pub(…) use`, jusqu'au premier `;` hors commentaire,
+    lignes `//` écartées avant) ; V4-3 (AC4 : deux lectures séparées par un `sleep` de 10 ms, `assert_ne!`) ; V4-4 (`payer_par`
+    `support/lettering_documents.rs:863`, appel `:870` ; `payer` `:879` transmet `le` et ne change pas — lus) ; V4-5 (la chaîne
+    est insécable par la règle D2, non par la compilation).
+  - Aucun finding réfuté. Recyclage déclaré (V4-1 né de V3-2). Aucune migration. Statut `ready-for-dev` ; passe ciblée P5 à
+    lancer.
