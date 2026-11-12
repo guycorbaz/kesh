@@ -77,7 +77,7 @@ désormais un tel NPA à la saisie.
   `SERVER_RESOLVED_CODES`, qui garde son comportement pour `INVOICE_TOO_MANY_LINES_FOR_PDF` et `INVOICE_PDF_GONE` (V3-3).
 - **D2 — Pas de contrat lisible par machine** (C-e350-11). Le refus ne gagne **pas** de `details.reason` ni de
   `details.field` : un contrat public, irréversible, ne se fixe pas sous l'échéance du 30 novembre. La proposition
-  (C-e350-10) et les findings V2-4, V3-4, V3-5, V3-6 partent dans une issue pour une epic ultérieure. Le code
+  (C-e350-10) et les findings V2-4, V3-4, V3-5, V3-6 partent dans **#1045**, pour une epic ultérieure. Le code
   `INVOICE_NOT_PDF_READY` et le 400 ne changent pas.
 - **D3 — Une fonction pure de correspondance** (V3-1) : `refus_pdf(…) -> (clé, arguments)` (nom au choix), sans résolution,
   appelée par `map_qrbill_error` et par les contrôles de `build_qrbill_inputs` ; la construction résout par `t_args` (ou `t`
@@ -202,8 +202,8 @@ retirée du catalogue (AC2).
 
 ### Hors périmètre
 
-- **Le contrat lisible par machine** (`details.reason`, `details.field`) : C-e350-11, issue à ouvrir par l'orchestrateur.
-- **Le jeu de caractères du format de numérotation** (`validate_template` ne le contrôle pas) : issue à ouvrir (V3-13).
+- **Le contrat lisible par machine** (`details.reason`, `details.field`) : C-e350-11, **#1045**.
+- **Le jeu de caractères du format de numérotation** (`validate_template` ne le contrôle pas) : **#1046** (V3-13).
 - **Le lot de rappels** : 35-2b. **#944** : C-e350-1. **#942**, **#952** : ce qui est admis ne change pas.
 
 ### Fermeture des issues (V3-11)

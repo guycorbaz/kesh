@@ -72,7 +72,7 @@ L'import (CAMT, factures importées) et le MCP n'écrivent pas d'écriture sur c
 ## Décisions (C-e350-2)
 
 - **D1 — La garde se met à l'usage**, dans `check_written`, pour les quatre rôles ; le retypage n'est pas refusé.
-  Un avertissement au retypage d'un compte désigné est demandé **en issue** au rapport (précédent exact à y nommer :
+  Un avertissement au retypage d'un compte désigné est tracé par **#1047** (précédent exact à y nommer :
   l'archivage gardé de la 33-8, `accounts::archive_guarded`, `accounts.rs:859`, et
   `company_invoice_settings::designations_of_account`, `:62`).
 - **D2 — Un refus nommé, typé et traduit**, compréhensible par le **Comptable** qui le rencontre (la validation lui est
@@ -226,7 +226,7 @@ L'import (CAMT, factures importées) et le MCP n'écrivent pas d'écriture sur c
       et le contrôle préventif d'AC11 (*Enregistrer* sans rien changer) ;
     - la validation fournisseur (`:1788-1796`), même chose pour les créanciers et la TVA récupérable ;
     - « Changer le type d'un compte qui porte des écritures » (`:452-461`) : un compte désigné aux réglages de facturation ne se retype pas sans
-      reprendre la désignation — faute d'avertissement à l'écran (D1, issue à ouvrir, V3-6), c'est le seul avertissement ;
+      reprendre la désignation — faute d'avertissement à l'écran (D1, **#1047**, V3-6), c'est le seul avertissement ;
     - la note *Rôles des comptes* (`:491`), qui décrit la garde à l'usage par la seule imputabilité : le type y entre ;
       relire la liste « Trois cas échappent encore » (`:493`) ;
     - « recommencez l'enregistrement jusqu'à ce qu'il passe » : la page ne nomme qu'un champ fautif à la fois (D6).
@@ -298,8 +298,7 @@ rangée par rôle et non par numéro (AC7, côté achat).
 - [ ] `kesh-db` : colonne lue sous verrou, contrôle par accumulation, variante d'erreur et son code, constante publique.
 - [ ] `kesh-api` : réponse 400 nommée, clés ×4 et G9, route des réglages sur la constante et message en mots (D6).
 - [ ] Écran de la fiche facture ; doc-comments ; documentation, deux manuels, CHANGELOG ; captures.
-- [ ] L'issue « avertir au retypage d'un compte désigné » est ouverte par l'orchestrateur avant le développement ; son
-      numéro s'écrit au Change Log, au registre `e353` et à AC13 (V3-6).
+- [ ] L'avertissement au retypage d'un compte désigné est tracé par **#1047** (V3-6) : le rappeler au registre `e353`.
 - [ ] Gates : `test-fast.sh --ci` **complet à chaque commit de code** (exception `kesh-db`), frontend complet, E2E
       complet au dernier commit de code, échecs nommés contre `docs/testing.md`.
 

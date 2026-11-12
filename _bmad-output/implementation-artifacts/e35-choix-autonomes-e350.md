@@ -145,7 +145,7 @@ retenue, options écartées, réversibilité. Lignes citées sur `release/0.17.6
 - **Écartée** : `details` pour les seuls refus de champ, les autres restant à lire dans le message — écrit comme limite,
   ce serait un contrat que l'API dit elle-même de ne pas lire (`api-external.md`, « Fiez-vous au champ `code` »).
 - **Réversible** : ajouter une raison l'est ; en retirer une ne l'est plus une fois publiée.
-- *(Annoté le 2026-11-12, validation P3 de la 35-2a : **suspendu** par C-e350-11 ; la proposition part dans une issue.)*
+- *(Annoté le 2026-11-12, validation P3 de la 35-2a : **suspendu** par C-e350-11 ; la proposition part dans **#1045**.)*
 
 ### C-e350-11 — La 35-2a revient au message, sans contrat `details` (décision de l'orchestrateur)
 
@@ -158,5 +158,6 @@ retenue, options écartées, réversibilité. Lignes citées sur `release/0.17.6
   La 35-2b ne porte au lot que `details.message`, une phrase destinée à l'utilisateur. Aucun `details` n'existait sur ce code
   avant : rien n'est cassé.
 - **Écarté** : fixer le contrat maintenant : public et irréversible, il ne se décide pas sous l'échéance du 30 novembre.
-- **Suite** : issue « Contrat d'API lisible par machine pour INVOICE_NOT_PDF_READY », à ouvrir par l'orchestrateur.
+- **Suite** : **#1045**, « Contrat d'API lisible par machine pour INVOICE_NOT_PDF_READY » ; voisines : #1046 (jeu de
+  caractères du format de numérotation), #1047 (avertissement au retypage d'un compte désigné, 35-3).
 - **Réversible** : oui.
