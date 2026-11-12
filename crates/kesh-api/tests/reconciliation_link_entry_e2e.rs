@@ -2295,6 +2295,68 @@ async fn s34_4_ac2_le_second_cote_d_un_virement(pool: MySqlPool) {
     );
 }
 
+/// AC-2, revue P2 (E2-4) — le second côté d'un virement vu d'un **débit** : B
+/// (1021) paie A (1020) ; le crédit de A est rapproché de l'écriture
+/// `D 1020 / C 1021` ; le débit de B porte `matchedElsewhereCount = 1` (la
+/// règle de sens contraire vaut dans les deux sens).
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn s34_4_ac2_le_second_cote_d_un_debit(pool: MySqlPool) {
+    let ctx = monter(&pool).await;
+    let ledger_b = compte_du_grand_livre(&pool, ctx.company_id(), "1021", "Banque 2").await;
+    let a = ctx.banque(IBAN_A).await;
+    let b = ctx.banque_liee(IBAN_B, ledger_b).await;
+    let credit_a = ctx.transaction(a, "300.00", "2026-05-04").await;
+    let debit_b = ctx.transaction(b, "-300.00", "2026-05-04").await;
+    let virement = ctx
+        .ecriture(
+            "2026-05-04",
+            "Virement depuis l'épargne",
+            &[(ctx.ledger, "300.00", "0"), (ledger_b, "0", "300.00")],
+        )
+        .await;
+    let (s, corps) = ctx.rattacher(credit_a, virement).await;
+    assert_eq!(s, 200, "{corps}");
+    assert_eq!(
+        ctx.deja_comptabilisee(b, debit_b).await["matchedElsewhereCount"],
+        1
+    );
+}
+
+/// AC-2, revue P2 (B2-1, A2-4) — une transaction rapprochée sur le **même**
+/// compte bancaire ne compte jamais comme l'autre côté (tue M10, prédicat
+/// `bt.bank_account_id <> ?`). État **forgé** par SQL : A, relié au 1020, a son
+/// débit de −500 rapproché de `D 1021 / C 1020` ; A est ensuite relié au 1021 —
+/// sur ce grand livre, l'écriture a un mouvement de +500, opposé au débit
+/// rapproché ; un crédit de +500 sur A n'est pas l'autre côté de son propre
+/// débit.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn s34_4_ac2_rapprochee_sur_le_meme_compte_ne_compte_pas(pool: MySqlPool) {
+    let ctx = monter(&pool).await;
+    let ledger_1021 = compte_du_grand_livre(&pool, ctx.company_id(), "1021", "Banque 2").await;
+    let a = ctx.banque(IBAN_A).await;
+    let debit_a = ctx.transaction(a, "-500.00", "2026-05-02").await;
+    let ecriture = ctx
+        .ecriture(
+            "2026-05-02",
+            "Virement vers l'épargne",
+            &[(ledger_1021, "500.00", "0"), (ctx.ledger, "0", "500.00")],
+        )
+        .await;
+    let (s, corps) = ctx.rattacher(debit_a, ecriture).await;
+    assert_eq!(s, 200, "{corps}");
+    sqlx::query("UPDATE bank_accounts SET journal_account_id = ? WHERE id = ?")
+        .bind(ledger_1021)
+        .bind(a)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let credit_a = ctx.transaction(a, "500.00", "2026-05-03").await;
+    assert_eq!(
+        ctx.deja_comptabilisee(a, credit_a).await["matchedElsewhereCount"],
+        0
+    );
+}
+
 /// AC-2 — comptes partagés : deux comptes bancaires sur le **même** compte du
 /// grand livre, l'un rapproché ; l'autre porte `0` (tue M3).
 #[sqlx::test(migrations = "../kesh-db/test-schema")]

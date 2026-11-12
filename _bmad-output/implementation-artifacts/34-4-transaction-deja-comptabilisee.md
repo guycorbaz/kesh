@@ -77,6 +77,12 @@ une écriture manuelle ou que je l'éclate, afin de ne pas compter deux fois un 
    tolérance), un règlement inférieur de **6 centimes** (non compté), une écriture saisie au journal, et aucun des deux, le
    champ égale la longueur des deux listes rendues par `GET …/link-candidates` et `GET …/entry-candidates` pour la même
    transaction *(P2-4-2 : les cas de la mutation M2)*.
+   *(Annoté le 2026-11-12, revues de code P1 et P2, C-e344-9 et C-e344-12 : le champ est aussi `null` quand le compte
+   bancaire est **clos** — les routes du dialogue le refusent en 409. Depuis le remède de l'AC-8, les deux premiers nombres ne
+   sont plus obtenus en appelant les fonctions du dialogue, mais par `count_already_booked_for_page`, deux lectures par page
+   sur les **mêmes textes SQL** ; ils les égalent, ce que vérifie
+   `s34_4_ac8_la_lecture_par_page_egale_les_fonctions_du_dialogue`. `entry_candidates_sql` est devenu
+   `entry_sql(EntrySqlMode)`.)*
 2. **AC-2 — le second côté** : `matchedElsewhereCount` compte les écritures dont le mouvement sur le compte du grand livre de
    `t` égale `t.amount`, ni contre-passées ni contre-passations, **rapprochées** (`bank_transactions.matched_entry_id`) d'une
    transaction d'un **autre** compte bancaire **dont le compte du grand livre diffère** de celui de `t`. Une requête dans
@@ -86,6 +92,17 @@ une écriture manuelle ou que je l'éclate, afin de ne pas compter deux fois un 
    - virement de A vers B, côté A rapproché par une écriture manuelle `D 1021 / C 1020` : la transaction de B porte `1` ;
    - **comptes partagés** : deux comptes bancaires sur le même compte du grand livre, l'un rapproché : l'autre porte `0` ;
    - écriture contre-passée : `0`.
+
+   *(Annoté le 2026-11-12, revues de code P1 et P2, choix C-e344-11 qui amende C-e344-2. L'énoncé ci-dessus, « d'un **autre**
+   compte bancaire **dont le compte du grand livre diffère** de celui de `t` », n'est **plus** la règle : il dépendait du lien
+   actuel d'un compte bancaire à son grand livre, modifiable après coup (finding E1-1). **Règle en vigueur** :
+   `matchedElsewhereCount` compte les écritures dont le mouvement `M` sur le compte du grand livre de `t` égale `t.amount`, ni
+   contre-passées ni contre-passations, **rapprochées d'une transaction d'un autre compte bancaire, de sens contraire** — de
+   montant `−M` (`bt.bank_account_id <> ? AND bt.amount = -m.movement`, constante `MATCHED_ELSEWHERE`, mode
+   `EntrySqlMode::MatchedElsewhere`). Aucun lien de compte au grand livre n'y entre. Tests ajoutés :
+   `s34_4_ac2_compte_relie_ailleurs_ne_fait_pas_rejeter` (E1-1), `s34_4_ac2_le_second_cote_d_un_debit` (E2-4),
+   `s34_4_ac2_rapprochee_sur_le_meme_compte_ne_compte_pas` (B2-1, M10). Le cas « comptes partagés » vaut toujours `0`, parce
+   que les deux transactions vont dans le même sens.)*
 3. **AC-3 — lecture seule** : `get_proposals` n'écrit rien et ne prend aucun verrou de plus ; un échec de lecture du champ
    fait échouer la route (500), comme les autres lectures de la boucle — jamais un champ silencieusement à zéro.
 4. **AC-4 — aucun refus serveur** : `POST /reconciliation/accept`, `/manual`, `/split` ne changent pas ; leurs tests passent
@@ -140,6 +157,16 @@ une écriture manuelle ou que je l'éclate, afin de ne pas compter deux fois un 
      Si la 34-11b ne part pas dans la 0.17.6, les textes (b) et (c) de cette story restent justes tels quels ;
    - aucune phrase pour un compte nul (jamais « 0 écriture ») ; `alreadyBooked: null` : rien.
    Vitest des quatre cas (aucun, a, b, c), texte attendu complet.
+
+   *(Annoté le 2026-11-12, revues de code P1 et P2, C-e344-3, C-e344-11 et C-e344-13 : les textes **en vigueur** ne sont plus
+   ceux cités ci-dessus. Le bouton est nommé entre guillemets : « Rattacher à une écriture existante ». (b) : « Une transaction
+   de sens contraire, sur un autre de vos comptes bancaires, est déjà rapprochée d'une écriture du même montant : c'est
+   probablement l'autre côté d'un virement entre vos comptes. Ne passez pas d'écriture pour elle : rejetez-la. » ; (c), après
+   (a) : « Si rien de ce que propose « Rattacher à une écriture existante » ne lui correspond, elle est peut-être l'autre côté
+   d'un virement entre vos comptes : une transaction de sens contraire, sur un autre de vos comptes bancaires, est rapprochée
+   d'une écriture du même montant. » La condition d'affichage ne change pas. Ce que la 34-11b doit réécrire (le point 1
+   ci-dessus et sa prémisse « `m ≤ entryCount` ») ne tient plus tel quel : voir `kesh-gate-logs/e34-transmission-34-11b.md`,
+   mis à jour le 2026-11-12.)*
 6. **AC-6 — la confirmation** : *Accepter (N)*, *Écriture manuelle* et *Éclater* ouvrent d'abord un dialogue
    (`data-testid="already-booked-confirm"`) quand la sélection (ou la ligne) contient au moins une ligne signalée. Il nomme
    chaque transaction signalée (date suisse, montant, contrepartie) et propose *Continuer quand même* et *Annuler*. *Annuler*
@@ -201,7 +228,8 @@ une écriture manuelle ou que je l'éclate, afin de ne pas compter deux fois un 
 | M5 (ex-M15) | confirmation sautée pour *Écriture manuelle* | Vitest AC-6 |
 | M6 | confirmation demandée aussi pour *Rejeter* | Vitest AC-6 |
 | M7 | phrase (a) affichée à compte nul | Vitest AC-5, cas (b) seul |
-| M8 | clé `-other` employée pour un compte de 1 | Vitest AC-5, cas (a) à une écriture |
+| M8 | clé `-other` employée pour un compte de 1 *(jouée : `if (k === 1 && false)` et `k > 1` → `k >= 1` — la phrase `-one` n'est plus jamais choisie, `-other` prend le compte de 1 ; description précisée à la revue P2, B2-6)* | Vitest AC-5, cas (a) à une écriture |
+| M10 (revue P2, B2-1) | prédicat `bt.bank_account_id <> ?` neutralisé (`? IS NOT NULL`) | `s34_4_ac2_rapprochee_sur_le_meme_compte_ne_compte_pas` |
 | M9 (revue P1, E1-3) | `manual` et `split` intervertis dans `runGesture` | Vitest AC-6, doublures distinctes (`data-modal`) |
 
 *(Annoté à la remédiation P1, 2026-11-12 : depuis C-e344-11, M3 vise le prédicat « transaction de sens contraire »

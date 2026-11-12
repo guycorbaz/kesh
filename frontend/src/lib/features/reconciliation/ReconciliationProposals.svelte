@@ -324,18 +324,37 @@
 		guard({ kind: 'split', proposal: p }, isAlreadyBooked(p) ? [p] : []);
 	}
 
-	/** *Continuer quand même* : le geste reprend tel quel. */
+	/**
+	 * *Continuer quand même* : le geste reprend tel quel. Revue P2 (B2-5) — *Écriture manuelle* et
+	 * *Éclater* relisent leur ligne dans la liste **courante** (elle a pu être relue pendant la
+	 * confirmation) : sortie de la liste, rien ne s'ouvre ; présente, la modale reçoit la ligne
+	 * relue. *Accepter* relit déjà la sélection et la liste (`onAccept`).
+	 *
+	 * `confirmTransactions` n'est pas vidé ici ni à *Annuler* : le dialogue garde sa liste pendant
+	 * sa transition de fermeture ; la demande suivante la remplace (`guard`).
+	 */
 	function confirmGesture(): void {
 		const gesture = pendingGesture;
 		pendingGesture = null;
-		confirmTransactions = [];
-		if (gesture) runGesture(gesture);
+		if (!gesture) return;
+		if (gesture.kind === 'accept') {
+			runGesture(gesture);
+			return;
+		}
+		const current = proposals.find(
+			(p) => p.bankTransactionId === gesture.proposal.bankTransactionId,
+		);
+		if (!current) return;
+		runGesture(
+			gesture.kind === 'manual'
+				? { kind: 'manual', proposal: current }
+				: { kind: 'split', proposal: current },
+		);
 	}
 
 	/** *Annuler* : rien n'est fait. */
 	function cancelGesture(): void {
 		pendingGesture = null;
-		confirmTransactions = [];
 	}
 
 	// Story 29-6 (#665, AC10) — une ligne sans proposition se coche (pour

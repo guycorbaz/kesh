@@ -160,3 +160,27 @@ groupe, `e34-choix-autonomes-e342.md` (C-e342-5 à C-e342-9, C-e342-20 à C-e342
 - **Contexte** : B1-6. `query_entry_sql(mode, Option<id>)` admettait des combinaisons incohérentes.
 - **Retenu** : l'identifiant de l'écriture est porté par la variante `EntrySqlMode::One(i64)` ; une seule source.
 - **Réversible** : oui.
+
+## Remédiation de la revue P2 (2026-11-12)
+
+*(C-e344-11 est retenue par l'orchestrateur : les trois lentilles de la P2 la jugent juste pour les cas de la fiche.)*
+
+### C-e344-17 — *Continuer quand même* relit la ligne dans la liste courante
+
+- **Contexte** : B2-5. `runGesture` rejouait la ligne retenue au clic ; si la liste était relue pendant la confirmation, la
+  modale s'ouvrait sur une ligne périmée ou sortie de la liste. Et la liste du dialogue se vidait pendant sa transition de
+  fermeture.
+- **Retenu** : `confirmGesture` relit la ligne par son identifiant dans `proposals` ; absente, rien ne s'ouvre ; présente, la
+  modale reçoit la ligne relue. *Accepter* relisait déjà la sélection. `confirmTransactions` n'est plus vidé à la fermeture ;
+  la demande suivante le remplace. Test Vitest (rouge avant le correctif).
+- **Écartée** : bloquer la relecture pendant la confirmation (le bouton « Afficher aussi les plus anciennes » reste actif).
+- **Réversible** : oui.
+
+### C-e344-18 — Les deux prédicats du second côté ont chacun un témoin
+
+- **Contexte** : B2-1, A2-4, E2-4. Seul le prédicat de sens avait une mutation (M3) ; `bt.bank_account_id <> ?` n'avait ni
+  test d'effet ni mutation, et seul un crédit était exercé.
+- **Retenu** : `s34_4_ac2_rapprochee_sur_le_meme_compte_ne_compte_pas` (état forgé : un compte relié à un autre grand livre
+  après le rapprochement de son propre débit), mutation **M10** ; `s34_4_ac2_le_second_cote_d_un_debit` (le second côté vu
+  d'un débit).
+- **Réversible** : oui.

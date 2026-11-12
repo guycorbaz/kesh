@@ -1726,4 +1726,30 @@ describe('ReconciliationProposals — transaction déjà comptabilisée (Story 3
 		expect(ouverte.getAttribute('data-modal')).toBe('link');
 		expect(view.queryByTestId('already-booked-confirm')).toBeNull();
 	});
+
+	// Revue P2 (B2-5) : la liste est relue pendant la confirmation (ici, « Afficher aussi les plus
+	// anciennes ») et la ligne en a disparu — traitée dans un autre onglet, par exemple. *Continuer
+	// quand même* relit la ligne dans la liste courante : absente, rien ne s'ouvre (jamais la
+	// modale d'une ligne périmée).
+	it('AC-6 Continuer ne rouvre pas le geste d’une ligne sortie de la liste pendant la confirmation', async () => {
+		mockApi.getProposals
+			.mockResolvedValueOnce({
+				proposals: [signalee(1, [0, 1, 0])],
+				hasMore: true,
+			} satisfies GetProposalsResponse)
+			.mockResolvedValue({ proposals: [signalee(2, null)], hasMore: false } satisfies GetProposalsResponse);
+		const view = render(ReconciliationProposals, { bankAccountId: 17 });
+		await view.findAllByTestId('reconciliation-row');
+		await fireEvent.click(view.getByTestId('manual-match-button'));
+		await view.findByTestId('already-booked-confirm');
+		await fireEvent.click(view.getByTestId('reconciliation-show-older-btn'));
+		await vi.waitFor(() =>
+			expect(view.getAllByTestId('reconciliation-row').map((r) => r.getAttribute('data-tx-id'))).toEqual([
+				'2',
+			]),
+		);
+		await fireEvent.click(view.getByTestId('already-booked-confirm-continue'));
+		await vi.waitFor(() => expect(view.queryByTestId('already-booked-confirm')).toBeNull());
+		expect(view.queryByTestId('stub-modal-success')).toBeNull();
+	});
 });
