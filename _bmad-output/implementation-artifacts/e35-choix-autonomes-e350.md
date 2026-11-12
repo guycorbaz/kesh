@@ -123,6 +123,10 @@ retenue, options écartées, réversibilité. Lignes citées sur `release/0.17.6
      neuf juste après `DesignatedAccountsNotPostable` (`:4571`). Aucun reformatage hors des passages touchés.
      *(Annoté le 2026-11-12, validation P4 de la 35-2a : pour la 35-2, **suspendu par C-e350-11** — la 35-2a ne touche plus
      `errors.rs`.)*
+     *(Annoté le 2026-11-13, validation P2 de la 35-2b : la **35-2b** y touche — deux fonctions neuves à côté des bras
+     `InvoiceTooManyLinesForPdf` et `InvoicePdfHeaderOverflow` (`:2144-2168` sur `main`), appelées par ces bras et par le lot
+     (C-e350-46) ; hunks distincts du bras de la 35-3. La **35-1** y ajoute aussi un bras `NumberFormatUnrenderable`, après
+     celui de la 35-3 (C-e350-45).)*
   5. **`docs/api-external.md`** : 35-3, une ligne juste après `ACCOUNT_NOT_POSTABLE` ; 35-2, sa ligne juste après
      `SUPPLIER_INVOICE_DUE_BEFORE_INVOICE_DATE` (`:1058` sur `release/0.17.6`), en fin du premier groupe des `400`.
   6. **`user-manual.tex`** : paragraphes distincts ; chaque branche régénère son PDF pour ses contrôles, mais à l'union le
