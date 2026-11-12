@@ -99,16 +99,19 @@ la plupart des actions).
   - **Ce qu'elle lit** : le code de production de `crates/*/src` (`kesh-seed/src` compris : `pieges.rs` est derrière la
     fonctionnalité `pieges`, non sous `#[cfg(test)]`), **items attribués `#[cfg(test)]` retirés** — jamais une coupe au
     premier attribut, qui cacherait la production de `auth/bootstrap.rs` (`:46-48`, puis `:195`, `:332`) ; commentaires
-    retirés. **Pas de parseur neuf** (V2-2, DRY) : `source_assainie` et `accolades_hors_chaines`
-    (`crates/kesh-api/tests/audit_label_registry.rs:238`, `:298`), qui retirent déjà les items `#[cfg(test)]` par
-    appariement d'accolades, sont **extraites** vers `crates/kesh-api/tests/common/source_assainie.rs`, incluses par
+    retirés. **Pas de parseur neuf** (V2-2, DRY) : `strip_line_comments`, `source_assainie` et `accolades_hors_chaines`
+    (`crates/kesh-api/tests/audit_label_registry.rs:186`, `:238`, `:298` ; `source_assainie` appelle la première), qui retirent
+    déjà les items `#[cfg(test)]` par appariement d'accolades, sont **extraites** vers
+    `crates/kesh-api/tests/common/source_assainie.rs` (`#![allow(dead_code)]`, comme `autour_appel.rs`), incluses par
     `#[path]` (patron de `tests/common/autour_appel.rs`) dans les deux gardes. La fonction englobante d'un site : le dernier
     `fn <nom>` ouvert avant lui, par balayage textuel à profondeur d'accolades suivie (pas `syn` : un site dans une macro y
     serait invisible).
   - **Ce qu'elle compte**, sur le texte joint (blancs et retours à la ligne tolérés) : **cinq motifs** —
     `NewAuditLogEntry::user\s*\(`, `Acteur::utilisateur\s*\(`, `api_key_id:\s*None\b` (`actor_api_key_id: None` compris),
     `for_actor\(\s*[^,()]+,\s*None\b`, et (V2-4) `delete_in_tx\s*\(` **dont un argument est `None`** — le `None`
-    positionnel de la suppression d'une écriture, qui donne à `invoices.rs:1689` une ligne `A_CONVERTIR` jusqu'à la 35-8a2.
+    positionnel de la suppression d'une écriture, qui donne à `invoices.rs:1689` (`invoices::unvalidate`) une ligne
+    `A_CONVERTIR` (motif 5) ; à la 35-8a2, `delete_in_tx` prend l'`acteur` : le motif 5 tombe à zéro et l'entrée passe sous
+    `Acteur::utilisateur`, toujours `A_CONVERTIR`.
   - **Sa clé : le site, non le fichier.** Table close `(fichier, fonction englobante, motif) → (nombre, raison)`. Tout
     écart rougit en nommant fichier, fonction et motif — un site neuf, un site converti sans que la table suive, un site qui
     change de fonction (un compte par fichier resterait vert quand on ajoute un `::user` dans `lock_books` en convertissant
@@ -143,12 +146,16 @@ la plupart des actions).
     `for_actor(user_id, None, …)` ; (g) un site sous `#[cfg(not(test))]` (modèle `config.rs:591`) **reste compté** ; (h) un
     `delete_in_tx(…, None, …)` ajouté dans une fonction non listée.
   - **Angles morts, écrits au doc-comment de la garde** : (1) le `None` positionnel passé à une fonction autre que
-    `delete_in_tx` qui prend `actor_api_key_id: Option<i64>` (28 fonctions de `src` ; `reconciliation_cancel.rs:811`,
-    `pieges.rs:570` aujourd'hui) — à reprendre au déploiement (Epic 36) ; (2) un fichier de `src` **entièrement** sous
-    `#[cfg(test)]` par un `mod x;` ou un `#[path]` de son parent (`pre_upgrade_backup/tests.rs`,
-    `kesh-core/src/bank_imports/manual_tests.rs`, `kesh-api/src/qr_decode_synthetique.rs`, `kesh-db/src/test_fixtures.rs`) :
-    lu comme de la production ; **aucun site aujourd'hui** (vérifié en P2), donc pas de faux rouge, mais un site futur y serait
-    compté.
+    `delete_in_tx` qui prend `actor_api_key_id: Option<i64>` (**27 fonctions** de `src`, 26 hors `delete_in_tx`, recompté en
+    P3 : `git grep -nE 'actor_api_key_id:\s*Option<i64>'` rend 34 lignes, moins 6 champs de struct et un doc-comment ;
+    `reconciliation_cancel.rs:811`, `pieges.rs:570` aujourd'hui) — à reprendre au déploiement (Epic 36) ; (2) un fichier de
+    `src` **entièrement** sous `#[cfg(test)]` par un `mod x;` ou un `#[path]` de son parent (`pre_upgrade_backup/tests.rs`,
+    `kesh-core/src/bank_imports/manual_tests.rs`, `kesh-api/src/qr_decode_synthetique.rs` — **trois** ;
+    `kesh-db/src/test_fixtures.rs` n'en est pas, module public compilé en production, `kesh-db/src/lib.rs:19`) : lu comme de
+    la production ; **aucun site aujourd'hui** (vérifié en P2), donc pas de faux rouge, mais un site futur y serait compté ;
+    (3) **les limites héritées de `source_assainie`**, écrites à son doc-comment (`audit_label_registry.rs:225-232`) : un `//`
+    dans une chaîne qui tronque la ligne, les commentaires de bloc non retirés, les chaînes brutes — elles deviennent celles
+    de la garde, par renvoi.
 - **D3 — Le pilote du retour en brouillon** (#892 item 11) : `unvalidate` et `unvalidate_in_tx` prennent `acteur: Acteur`
   à la place de `user_id` ; la route passe `Acteur::from(&current_user)` ; `supplier_invoice.unvalidated` par
   `NewAuditLogEntry::par` ; le lettrage dissous (`:1377`) reçoit l'`acteur` ; les deux `delete_in_tx` (`:1410`, `:1412`)
@@ -176,7 +183,8 @@ la plupart des actions).
 3. **AC6a — Manuel et CHANGELOG** : `admin-manual.tex:3193` dit que le retour en brouillon d'une facture fournisseur est
    désormais attribué à la clé, et qu'**une partie des dépôts** (factures, avoirs, règlements, comptes, contacts, produits,
    lots de paiement, règles de rapprochement…) inscrivent encore `'user'` (renvoi à #431) — non « le reste » : la
-   modification et la suppression d'une écriture (`:3194`) et vingt-huit autres sites (`for_actor`) attribuent déjà la clé
+   modification et la suppression d'une écriture (`:3194`) et une cinquantaine d'autres sites de production (`for_actor`, recompté en P3 : ≈ 50 appels, à recompter à
+   l'étape 0 ; le manuel ne chiffre pas) attribuent déjà la clé
    (validation P2, V2-5) ; `docs/api-external.md:404` relu à l'étape 0, dit au Change Log ; et que **les entrées écrites avant la
    0.17.7 par une clé gardent la marque « utilisateur »**, sans correction possible ; `user-manual.tex:3959-3960` nuancé de
    même ; les deux PDF régénérés, contrôlés aplatis. CHANGELOG `## [0.17.7] — Non publié`, *Corrigé*, `refs #431`,
@@ -197,7 +205,7 @@ entrée de la table de la garde décrémentée (AC5) ; M6 `par(` retiré de `FOR
 - [ ] Étape 0 : relire les lignes citées sur la base réelle ; relancer l'inventaire (`kesh-gate-logs/e358a/inventaire.py
       <worktree>`), sortie au Change Log ; fonction englobante et raison de chaque site, appelant de chaque raison finale.
 - [ ] Rouges d'AC3 ; `Acteur`, `par`, `From<&CurrentUser>`, alias `letterings::Actor` ; pilote ; extraction de
-      `source_assainie` vers `tests/common/source_assainie.rs` ; garde et sa table ; `audit_label_registry.rs` ; manuels
+      `strip_line_comments`, `source_assainie` et `accolades_hors_chaines` vers `tests/common/source_assainie.rs` ; garde et sa table ; `audit_label_registry.rs` ; manuels
       (deux `.tex`, deux PDF) ; CHANGELOG.
 - [ ] Gates : backend complet à chaque commit (`kesh-db`) ; frontend : rien ne change ; E2E complet au dernier commit de
       code.
@@ -261,3 +269,15 @@ avec la 35-1 (sites que la garde compte) ; `CHANGELOG.md` ;
     dit en tête d'AC3 déjà, rien de plus).
   - Symptômes greppés (fiches 35-8a, 35-8a1, 35-8a2, epic, registre) : « peut partir de `main` », « ligne par ligne »,
     « six sondes », « le reste ne l'est pas » — remplacés ou annotés.
+- 2026-11-13 — **Validation P3, passe ciblée** (Opus) sur la remédiation P2 : 0 finding au-dessus de LOW, 5 LOW
+  (`kesh-gate-logs/e35-8a1-validation-p3-ciblee.md`). Appliqués : V3-1 (`strip_line_comments` extraite avec les deux autres ;
+  limites héritées de `source_assainie` en angle mort (3)) ; V3-2 (`test_fixtures.rs` retiré de l'angle mort (2) : module
+  public, compilé en production) ; V3-3 (27 fonctions, 26 hors `delete_in_tx` ; « une cinquantaine » de sites `for_actor`) ;
+  V3-4 (`invoices.rs:1689` : motif 5 ici, `Acteur::utilisateur` à la 35-8a2, toujours `A_CONVERTIR` ; dit aussi dans la
+  35-8a2) ; V3-5 (renvoi d'autorité de la 35-8a2 aligné ; C-e350-52 à la ligne du fichier d'epic). Rédaction seule.
+- 2026-11-13 — **Validation terminée.** Série des findings au-dessus de LOW : P1 (sur la 35-8a entière) 1 HIGH + 7 MEDIUM →
+  découpage en 35-8a1 et 35-8a2 (C-e350-50) → P2 4 MEDIUM → P3 0 (CRITICAL : 0). Modèles : Opus (P1), Sonnet (P2), Opus en
+  passe ciblée (P3). La boucle se clôt sur une passe sans finding au-dessus de LOW ; la remédiation de P3 ne touche que la
+  rédaction. Choix retenus : **C-e350-38** (découpage de la 35-8), **-39** (`Acteur`), **-40** (garde par raison), **-48**
+  (35-8b à l'Epic 36), **-49** (garde par site), **-50** (découpage de la 35-8a), **-52** (cinquième motif, angles morts).
+  Statut : `ready-for-dev`.
