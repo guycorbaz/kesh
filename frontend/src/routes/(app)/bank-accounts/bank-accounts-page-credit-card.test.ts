@@ -46,6 +46,7 @@ vi.mock('$lib/features/invoices/invoices.api', () => ({
 }));
 
 import Page from './+page.svelte';
+import { toast } from 'svelte-sonner';
 
 function account(overrides: Partial<AccountResponse>): AccountResponse {
 	return {
@@ -222,6 +223,39 @@ describe('page des comptes bancaires — la carte de crédit (Story 34-11a2, AC-
 	// Intégration de la 0.17.6 (C-e34a2-1, raccord 2 ; Story 34-2, C-e341-7) — une carte, liée
 	// à un passif, ouvre son solde d'ouverture avec le sens « Dette » présélectionné ; le
 	// payload le porte tel quel. Un compte bancaire lié à un actif garde « Avoir ».
+	// Passe de textes de l'intégration 0.17.6 (#1037, #1040, #1027).
+	it('le titre, le sens « Dette » et l’avis de création suivent le type ; un montant nul est dit', async () => {
+		const r = render(Page);
+		await fireEvent.click(await r.findByTestId('create-bank-account-button'));
+		const titre = await r.findByTestId('create-bank-account-title');
+		expect(titre.textContent).toContain('Nouveau compte bancaire');
+		await fireEvent.change(await r.findByTestId('form-journal-account'), {
+			target: { value: '20' },
+		});
+		const credit = () =>
+			(r.getByTestId('form-opening-side') as HTMLSelectElement).querySelector(
+				'option[value="credit"]',
+			)?.textContent ?? '';
+		expect(credit()).toContain('Dette (découvert)');
+
+		await fireEvent.click(await r.findByTestId('form-kind-credit-card'));
+		expect(titre.textContent).toContain('Nouvelle carte de crédit');
+		await fill(await r.findByTestId('form-bank-name'), 'Visa');
+		await fireEvent.change(await r.findByTestId('form-journal-account'), {
+			target: { value: '30' },
+		});
+		await waitFor(() => expect(credit()).toContain('Dette (solde dû)'));
+
+		await fill(await r.findByTestId('form-opening-amount'), '0,00');
+		expect((await r.findByTestId('form-opening-preview')).textContent).toContain(
+			"Montant nul : aucune écriture d'ouverture ne sera passée.",
+		);
+		await fill(await r.findByTestId('form-opening-amount'), '');
+		await fireEvent.click(await r.findByTestId('form-submit'));
+		await waitFor(() => expect(createBankAccountMock).toHaveBeenCalledTimes(1));
+		await waitFor(() => expect(toast.success).toHaveBeenCalledWith('Carte de crédit créée.'));
+	});
+
 	it('carte → « Dette » présélectionné au solde d’ouverture, et envoyé avec le montant', async () => {
 		const r = render(Page);
 		await fireEvent.click(await r.findByTestId('create-bank-account-button'));

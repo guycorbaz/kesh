@@ -116,6 +116,14 @@
 	let formKind = $state<BankAccountKind>('bank');
 	let formCardLast4 = $state('');
 	let isCard = $derived(formKind === 'credit_card');
+	// Passe de textes de la 0.17.6 (#1040) — le solde d'ouverture porte-t-il sur une
+	// carte ? Au formulaire de création, le type choisi ; au dialogue de ligne, celui du
+	// compte de la ligne. Sert au seul libellé du sens « Dette ».
+	let openingForCard = $derived.by(() => {
+		const m = mode;
+		if (m.kind !== 'opening-balance') return isCard;
+		return bankAccounts.find((b) => b.id === m.id)?.accountKind === 'credit_card';
+	});
 
 	// Story 28-4b — dialogues de clôture et de réouverture. Le refus du serveur
 	// s'affiche DANS le dialogue (là où l'on a agi), par `errorMessageOf`.
@@ -477,18 +485,32 @@
 			}
 			const created = await createBankAccount(payload);
 			const openingEntry = created?.openingEntry ?? null;
+			// Passe de textes de la 0.17.6 (#1040) : une carte a ses propres avis.
+			// Clés et arguments littéraux à chaque appel, lus par les gardes i18n.
 			toast.success(
-				openingEntry
-					? i18nMsg(
-							'bank-accounts-toast-create-success-with-opening',
-							'Compte bancaire créé, avec l\'écriture d\'ouverture n° { $number } du { $date } : { $amount }.',
-							{
-								number: String(openingEntry.entryNumber),
-								date: formatSwissDate(openingEntry.entryDate),
-								amount: formatChfExact(payload.openingBalance?.amount ?? '0'),
-							},
-						)
-					: i18nMsg('bank-accounts-toast-create-success', 'Compte bancaire créé.'),
+				isCard
+					? openingEntry
+						? i18nMsg(
+								'bank-accounts-toast-create-card-success-with-opening',
+								'Carte de crédit créée, avec l\'écriture d\'ouverture n° { $number } du { $date } : { $amount }.',
+								{
+									number: String(openingEntry.entryNumber),
+									date: formatSwissDate(openingEntry.entryDate),
+									amount: formatChfExact(payload.openingBalance?.amount ?? '0'),
+								},
+							)
+						: i18nMsg('bank-accounts-toast-create-card-success', 'Carte de crédit créée.')
+					: openingEntry
+						? i18nMsg(
+								'bank-accounts-toast-create-success-with-opening',
+								'Compte bancaire créé, avec l\'écriture d\'ouverture n° { $number } du { $date } : { $amount }.',
+								{
+									number: String(openingEntry.entryNumber),
+									date: formatSwissDate(openingEntry.entryDate),
+									amount: formatChfExact(payload.openingBalance?.amount ?? '0'),
+								},
+							)
+						: i18nMsg('bank-accounts-toast-create-success', 'Compte bancaire créé.'),
 			);
 			await reload();
 			closeForm();
@@ -685,15 +707,28 @@
 			data-testid="{prefix}-opening-side"
 		>
 			<option value="debit">{i18nMsg('bank-accounts-opening-side-debit', 'Avoir')}</option>
-			<option value="credit">{i18nMsg('bank-accounts-opening-side-credit', 'Dette (découvert)')}</option>
+			<option value="credit">
+				<!-- Passe de textes de la 0.17.6 (#1040) : « découvert » n'a pas de sens pour une carte. -->
+				{openingForCard
+					? i18nMsg('bank-accounts-opening-side-credit-card', 'Dette (solde dû)')
+					: i18nMsg('bank-accounts-opening-side-credit', 'Dette (découvert)')}
+			</option>
 		</select>
 	</div>
 	{#if openingAmountPreview(formOpeningAmount) !== null}
-		<!-- Revue P1 (B-1) — le montant tel qu'il sera écrit, avant le geste. -->
+		<!-- Revue P1 (B-1) — le montant tel qu'il sera écrit, avant le geste. Passe de textes
+		     de la 0.17.6 (#1027) : un montant nul n'écrit rien, et l'aperçu le dit. -->
 		<p class="mt-1 text-sm font-medium text-text" data-testid="{prefix}-opening-preview">
-			{i18nMsg('bank-accounts-opening-preview', 'Montant qui sera écrit : { $amount }', {
-				amount: openingAmountPreview(formOpeningAmount) ?? '',
-			})}
+			{#if /^0+(\.0+)?$/.test(openingAmountPayload(formOpeningAmount) ?? '')}
+				{i18nMsg(
+					'bank-accounts-opening-preview-zero',
+					"Montant nul : aucune écriture d'ouverture ne sera passée.",
+				)}
+			{:else}
+				{i18nMsg('bank-accounts-opening-preview', 'Montant qui sera écrit : { $amount }', {
+					amount: openingAmountPreview(formOpeningAmount) ?? '',
+				})}
+			{/if}
 		</p>
 	{/if}
 	<p class="mt-1 text-xs text-text-muted" data-testid="{prefix}-opening-help">
@@ -771,8 +806,11 @@
 				class="mb-6 rounded border border-border bg-surface-alt p-4"
 				data-testid="create-bank-account-form"
 			>
-				<h2 class="mb-3 text-base font-semibold">
-					{i18nMsg('bank-accounts-actions-create', 'Nouveau compte bancaire')}
+				<h2 class="mb-3 text-base font-semibold" data-testid="create-bank-account-title">
+					<!-- Passe de textes de la 0.17.6 (#1037) : le titre suit le type choisi. -->
+					{isCard
+						? i18nMsg('bank-accounts-form-title-create-card', 'Nouvelle carte de crédit')
+						: i18nMsg('bank-accounts-actions-create', 'Nouveau compte bancaire')}
 				</h2>
 				<!-- Story 34-11a2 (#972) — le type se choisit à la création, et seulement là. -->
 				<fieldset class="mb-3" data-testid="form-kind">

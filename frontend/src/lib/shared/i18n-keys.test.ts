@@ -965,8 +965,11 @@ const ATTENDU = {
 	// elle-même après chaque fusion (non additionné) : 2946 après la 34-3 (34-1, 34-2, 34-3),
 	// 2954 après la 34-4, 2962 après la 34-5, 2968 après la 34-6, 2968 après la 34-8 (solde
 	// nul de la 34-8), 2992 après la 34-9, 2995 après la 34-10, 2997 après la 34-11a1,
-	// 3015 après la 34-11a2, **3021** après la 34-11b.
-	sitesTotal: 3021,
+	// 3015 après la 34-11a2, 3021 après la 34-11b.
+	// Passe de textes de l'intégration (#1037, #1040, #1027) : **3021 → 3026** (+5), tous dans
+	// `bank-accounts/+page.svelte` : titre d'une carte, ses deux avis de création, le sens
+	// « Dette (solde dû) », l'aperçu d'un montant nul. Que des littéraux ; recompté par la garde.
+	sitesTotal: 3026,
 	sitesNonResolus: 31,
 	relais: 6,
 	// Story 26-1 (#620, AC3-bis) : **10 → 11** — `lib/features/bank-import/

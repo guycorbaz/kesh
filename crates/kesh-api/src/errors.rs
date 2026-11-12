@@ -1624,7 +1624,9 @@ fn opening_complement_refusal_response(
         R::RetainedEarningsLine => (
             StatusCode::BAD_REQUEST,
             "error-opening-complement-retained-earnings-line",
-            format!("Le compte {account} est le compte de bénéfice reporté : sa contrepartie est calculée par Kesh, ne le saisissez pas."),
+            // Passe de textes de la 0.17.6 (#1029) : une phrase vraie sur les deux
+            // routes qui la rendent (Soldes de départ, solde d'un compte bancaire).
+            format!("Le compte {account} est le compte de bénéfice reporté : Kesh y passe lui-même la contrepartie des soldes d'ouverture, il ne reçoit pas de solde saisi."),
         ),
         R::NotBalanceAccount => (
             StatusCode::BAD_REQUEST,
