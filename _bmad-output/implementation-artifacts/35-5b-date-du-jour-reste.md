@@ -49,37 +49,57 @@ Deux sites de la classe « jour d'un instant enregistré » (C-e350-25), attribu
 | 22 bis | `kesh-db/src/repositories/dunning_eligibility.rs:127-128` | `today >= lr.date() + délai` : le jour **UTC** du dernier rappel (`MAX(sent_at)`, `NaiveDateTime` UTC : `invoice_email.rs:661`, session `time_zone = '+00:00'`, `pool.rs:43`) comparé au jour du serveur |
 | 16 bis | `kesh-api/src/routes/invoices.rs:1525` | `paid_at` du CSV de l'échéancier, `format_date(&d.date())` : jour UTC du paiement |
 
-**Les signatures qui changent** (le compilateur donne la liste close) : `InvoiceResponse::from_parts(invoice, lines)`
-(`routes/invoices.rs:333` ; appelée notamment par `invoice_email.rs:904`, `invoice_pdf.rs:93`, `credit_notes.rs`,
-`payment_batches.rs`, `mcp/sortie.rs`) reçoit `aujourd_hui` ; `impl From<InvoiceListItem> for InvoiceListItemResponse`
-(`:425`) devient une fonction à paramètre ; `services/postes_ouverts.rs:61-74` `parse_as_of(as_of)` reçoit `aujourd_hui` ;
-dans `kesh-db`, la fonction de la liste paginée des factures et `due_dates_summary` (les trois `UTC_DATE()`), la liste des
-candidats aux rappels (`dunning_eligibility.rs`), et `kesh_seed::seed_demo` (`lib.rs:187` ; appelée par
-`auth/bootstrap.rs:1394` et `routes/onboarding.rs:258`) et les pièges (`pieges.rs:378`, `:461`) reçoivent une `NaiveDate`.
-Les services `rapports::balance_agee` (`:726-732`), le rapport de projet (`:780`), `synthese_accueil` (`:870`) et
-`postes_ouverts::lister` lisent `lecture.aujourd_hui()` (C-e350-21) — **sans** paramètre neuf : le MCP, qui les appelle
-(`mcp/outils/balance_agee.rs:107`, `postes_ouverts.rs:247`, `factures.rs:100` → `services/factures.rs:267`, `:514-515`), reçoit
-ainsi l'horloge de l'`AppState`.
+**Les signatures qui changent** (le compilateur donne la liste close) :
+- `InvoiceResponse::from_parts(invoice, lines)` (`routes/invoices.rs:333`) reçoit `aujourd_hui` ; ses **dix** appelants,
+  toutes des routes (`state` disponible) : `invoice_email.rs:904`, `invoice_pdf.rs:93`, `routes/invoices.rs:644`, `:735`,
+  `:799`, `:835`, `:892`, `:1176`, `:1248`, `:1373` (`git grep -n 'InvoiceResponse::from_parts'` ; les `from_parts` de
+  `credit_notes.rs:96`, `payment_batches.rs:66`, `mcp/sortie.rs:631` sont d'autres fonctions).
+- `impl From<InvoiceListItem> for InvoiceListItemResponse` (`:425`) devient une fonction à paramètre ; ses emplois :
+  `routes/invoices.rs:622` (liste) et `:1035` (échéancier).
+- `services/postes_ouverts.rs:61-74` `parse_as_of(as_of)` reçoit `aujourd_hui`.
+- `kesh-db invoices.rs` : `:404` vit dans `push_where_clauses` (`:327`), partagé par `list_by_company_paginated` (`:877`,
+  `:897`) **et** `list_for_export` (`:2930`, appelée par `routes/invoices.rs:1435`, `kesh-db/tests/invoice_amount_due_parity.rs:406`,
+  `:458`) ; `kf005_fulltext_index_e2e.rs:578` appelle la liste paginée ; `due_dates_summary` (`:960-978`) écrit ses deux
+  `UTC_DATE()` dans le `format!` passé à `QueryBuilder::new`, **avant** les `push_bind` du `WHERE`. Toutes reçoivent la date.
+- La liste des candidats aux rappels (`dunning_eligibility.rs`) reçoit la date.
+- `kesh_seed::seed_demo` (`lib.rs:187`) : **un seul appelant de production**, `routes/onboarding.rs:258` (route,
+  `lib.rs:1167`) ; `auth/bootstrap.rs:1394` est dans `mod tests` (`:464`), un test (validation P2, V2-1). Les pièges
+  (`pieges.rs:378`, `:461`, `semer`) ne sont appelés que par les tests (`tests/common/mcp_pieges.rs:50`, `:53`).
+Les services `rapports::balance_agee` (`:726-732`), le rapport de projet (`:780`), `synthese_accueil` (`:870`),
+`postes_ouverts::lister` et `factures::echeances` lisent `lecture.aujourd_hui()` (C-e350-21) — **sans** paramètre neuf : le
+MCP, qui les appelle (`mcp/outils/balance_agee.rs:107`, `postes_ouverts.rs:247`, et `kesh_echeancier`, `SCHEMA_ECHEANCIER`
+`mcp/outils/factures.rs:296`, `paymentStatus` `overdue`, résumé `echues_nombre`, `echues_total` `:426-427`, par
+`services/factures.rs:513-515`), reçoit ainsi l'horloge de l'`AppState`. `kesh_factures` (`SCHEMA_LISTE`, `:294`) n'a **pas**
+de filtre « échues ». Le banc MCP construit son état lui-même (`tests/common/mcp.rs:215-217` `etat()` →
+`AppState::new_for_tests`, `routeur_nu` `:221-226`, `common/mcp_pieges.rs:81-93` `banc_avec`) : aucun point d'entrée ne pose
+une `HorlogeFixe` aujourd'hui.
 
 Les commentaires qui justifient l'UTC deviennent faux : `dunning_eligibility.rs:9` (« **UTC** via `chrono::Utc`, cohérent
 avec `UTC_DATE()` »), `invoices.rs:378` et `:396`, `invoice_email.rs:206`, `services/postes_ouverts.rs:44` et `:55`,
 `services/rapports.rs:724-725` (« arrêtée à aujourd'hui (UTC) ») et `:862-866` (« ⚠️ La date est celle de l'horloge en UTC,
 comme à la contre-passation… l'accueil lit encore l'exercice précédent »), `routes/invoices.rs:1029-1031` (« `Utc::now()` à
 l'instant de la conversion… race midnight »), `routes/bank_accounts.rs:228` et `:1757-1759` (`closedOn` absent → « date du
-jour **UTC** »). `kesh-report/src/aged_receivables.rs:27` (« `as_of` bindé (pas `UTC_DATE()` en dur) ») reste vrai.
+jour **UTC** »), `routes/exports.rs:7` (« `kesh-export-{slug}-{YYYY-MM-DD}.zip` (UTC) »), `:57` (« (UTC, L13) »), `:118` (« La
+date est en **UTC** (L13) »), `services/postes_ouverts.rs:55-56` (« l'écart UTC/heure suisse la nuit est hérité »),
+`kesh-seed/src/lib.rs:278` (« un seul appel Utc::now() »). Restent vrais, à ne pas toucher : `audit_log.rs:89`, `:279`
+(« Date (UTC) » : les lignes), `invoices.rs:109` (instant `paidAt`), `kesh-report/src/aged_receivables.rs:27` (« `as_of` bindé
+(pas `UTC_DATE()` en dur) »).
 `docs/api-external.md:252` (`closedOn` absent → « date du jour **UTC** du serveur »), `:292` (accueil, « la date du serveur,
 en UTC »), `:443` (`asOf` par défaut « la date du jour, en UTC ») ; les descriptions des outils du MCP disent « arrêtée à
 aujourd'hui » (`mcp/outils/balance_agee.rs:81`, `postes_ouverts.rs:215`), sans fuseau : vraies, à contrôler contre le manuel.
 
 **Tests dont l'attendu change avec un site de cette story** (C-e350-22 : ils restent ici, sinon le gate rougit à son propre
-commit) : le module de tests de `kesh-db/src/repositories/invoices.rs` (6 : `fn today()` `:3498`, cinq `CURDATE()` de
-montage `:4379`, `:4393`, `:4418`, `:4679`, `:4745`) ; les fichiers de `crates/*/tests` marqués **35-5b** au verdict de la
-fiche 35-5a (`dunning_reminders_e2e.rs`, `fiscal_years_e2e.rs`, `homepage_summary_e2e.rs`, `mcp_outils_e2e.rs`,
+commit) : le module de tests de `kesh-db/src/repositories/invoices.rs` (6 : `fn today()` `:3498`, son `Utc::now()` à
+`:3499`, cinq `CURDATE()` de montage `:4379`, `:4393`, `:4418`, `:4679`, `:4745`) ; les fichiers de `crates/*/tests` marqués
+**35-5b** au verdict de la fiche 35-5a (`dunning_reminders_e2e.rs`, `homepage_summary_e2e.rs`, `mcp_outils_e2e.rs`,
 `onboarding_audit_e2e.rs`, `onboarding_e2e.rs`, `open_items_e2e.rs`, `services_motif.rs`, `kesh-db/tests/dunning_eligibility.rs`,
-et `bank_accounts_closed_e2e.rs:678`, `:685`), plus les appelants de tests des fonctions à paramètre neuf (forcés par le
-compilateur ; `kesh-db/tests/dunning_eligibility.rs`, `invoice_amount_due_parity.rs`, `invoice_ttc_parity.rs`, … : recompter) ;
-les specs E2E qui assertent une date d'un site de cette story (accueil, échéances, rappels, postes ouverts, balance âgée,
-noms de fichiers). Les autres tests vont à la **35-5c**.
+et les parts `fiscal_years_e2e.rs:1284`, `bank_accounts_closed_e2e.rs:678`, `:685`), plus les appelants de tests des
+fonctions à paramètre neuf (forcés par le compilateur ; `kesh-db/tests/dunning_eligibility.rs`, `invoice_amount_due_parity.rs`,
+`invoice_ttc_parity.rs`, `kf005_fulltext_index_e2e.rs`, `auth/bootstrap.rs:1394` (`mod tests`), `tests/common/mcp_pieges.rs`, … :
+recompter). **Specs E2E : aucune** n'asserte une date d'un site de cette story (relevé de la validation P2, V2-6 :
+`open-items.spec.ts:39` et `homepage-charts.spec.ts:52` lisent déjà Zurich ; `overdueDate` et `daysFromToday` prennent des
+marges de 1 à 40 jours ; `export-global.spec.ts:103` ne teste qu'un motif ; `audit-log.spec.ts:56-59` doit **rester** au jour
+UTC, son filtre comparant des horodatages UTC) — à reconfirmer à l'étape 0. Les autres tests vont à la **35-5c**.
 
 **Le précédent de l'écran** : `frontend/src/lib/shared/utils/local-date-guard.test.ts` (#889) relève
 `toISOString().slice(0, 10)` dans `src/**` hors tests, contre une allowlist d'entrées `{ fichier, fragment, motif }`. Le
@@ -91,39 +111,55 @@ helper E2E du jour suisse **existe déjà** : `frontend/tests/e2e/helpers/api-fi
 - **D1 — Où naît la date** (C-e350-21, posé par la 35-5a) : les routes lisent `state.horloge.aujourd_hui()` ; les services
   `lecture.aujourd_hui()` ; les fonctions pures (`from_parts`, la conversion d'un élément de liste, `parse_as_of`) et
   `kesh-db` reçoivent une `NaiveDate` ; `kesh-seed` aussi. **Une lecture de l'horloge par requête** : une route ou un
-  service lit la date une fois et la passe à tout ce qu'il appelle (la liste d'une requête juge toutes ses factures au
-  même jour, ce qui ferme la « race midnight » de `routes/invoices.rs:1029-1031`). Aucun champ neuf dans `AppState`,
-  `Lecture`, `EtatMcp` ou `ContexteMcp`.
-- **D2 — Le SQL ne lit plus `UTC_DATE()`** : `invoices.rs:404`, `:970`, `:971` lient la date du jour en paramètre (`?`),
-  reçue par la fonction du dépôt.
-- **D3 — `kesh-seed`** reçoit la date de son appelant : `routes/onboarding.rs:258` (l'`AppState`) et `auth/bootstrap.rs:1394`
-  (l'horloge de `main.rs`, passée à l'amorçage). `crates/kesh-seed` n'a ni binaire ni `[[bin]]` (`src/lib.rs`, `src/pieges.rs`) :
-  **aucune exemption** de la garde pour la graine. Les pièges (`pieges.rs:378`, `:461`) reçoivent une `NaiveDate`.
+  service lit la date une fois et la passe à tout ce qu'il appelle. **Quand une route convertit ce qu'un service a rendu,
+  elle emploie la date du service** (V2-4 de la validation P2) : `Echeancier` (`services/factures.rs:160`) porte un champ
+  `pub aujourd_hui: NaiveDate`, la date employée pour le filtre « échues » et pour le résumé ; la route de l'échéancier
+  (`routes/invoices.rs:1018-1036`) convertit ses éléments avec elle, sans relire l'horloge — de même pour la liste
+  (`:622`) si son service lit la date. Le CSV de l'échéancier (`:1435`, `:1459`) lit la date **une fois** dans la route et la
+  passe à `list_for_export` et à la mise en forme. C'est ce qui ferme la « race midnight » de `routes/invoices.rs:1029-1031`
+  (le commentaire est réécrit en ce sens). Aucun champ neuf dans `AppState`, `Lecture`, `EtatMcp` ou `ContexteMcp`.
+- **D2 — Le SQL ne lit plus `UTC_DATE()`** : `invoices.rs:404`, `:970`, `:971` lient la date du jour **par `push_bind`**, dans
+  l'ordre des arguments — les deux du `SELECT` de `due_dates_summary` avant ceux du `WHERE` (le `format!` d'aujourd'hui passé
+  à `QueryBuilder::new` ne reçoit aucun lien : il se réécrit en `push` + `push_bind`) ; `:404` dans `push_where_clauses` sert
+  à la fois la liste paginée et `list_for_export`.
+- **D3 — `kesh-seed`** reçoit la date de son **seul appelant de production**, `routes/onboarding.rs:258`
+  (`state.horloge.aujourd_hui()`) ; `auth/bootstrap.rs:1394`, dans `mod tests`, passe une date fixe ou `aujourd_hui_suisse()`
+  et se range parmi les appelants de tests ; `ensure_admin_user` ne change pas. `crates/kesh-seed` n'a ni binaire ni
+  `[[bin]]` (`src/lib.rs`, `src/pieges.rs`) : **aucune exemption** de la garde pour la graine. Les pièges (`pieges.rs:378`,
+  `:461`) reçoivent une `NaiveDate` de leurs appelants de tests (`tests/common/mcp_pieges.rs:50`, `:53`).
 - **D4 — Les deux sites « jour d'un instant »** (C-e350-25) : `dunning_eligibility.rs:128` compare `jour_suisse(lr.and_utc())`
   au jour du serveur, la même fonction des deux côtés ; `routes/invoices.rs:1525` écrit `jour_suisse(d.and_utc())`.
 - **D5 — La garde se resserre** : sa liste d'exemptions ne porte plus **aucune** entrée de production (seule reste
   l'entrée permanente de `jour_suisse`), ni les modules de tests de `invoices.rs`, ni les fichiers 35-5b ; il reste les
   entrées 35-5c, à leur compte exact (égalité stricte, C-e350-24).
-- **D6 — Les specs E2E** dont l'attendu vient d'un site de cette story prennent la date par `todayInZurich()` (aucun second
-  helper) ; les autres, et l'extension de `local-date-guard.test.ts` à `tests/e2e/**`, vont à la 35-5c.
+- **D6 — Les specs E2E** : aucune n'est à la 35-5b (relevé ci-dessus, à reconfirmer à l'étape 0 ; si une le devient, elle
+  prend `todayInZurich()`, sans second helper). Les specs, et l'extension de `local-date-guard.test.ts` à `tests/e2e/**`,
+  vont à la 35-5c — `audit-log.spec.ts` y garde un jour UTC, motivé.
+- **D8 — Le banc MCP reçoit une horloge** (V2-2) : `tests/common/mcp.rs` gagne une entrée à horloge fixée
+  (`routeur_avec_horloge(pool, instant)`, ou un paramètre `horloge` d'`etat`), et `common/mcp_pieges.rs` une
+  `banc_avec_horloge` ; les entrées existantes gardent `new_for_tests` (donc `KESH_TEST_INSTANT`, C-e350-26).
 - **D7 — Les commentaires et la doc qui disaient UTC** sont réécrits (liste ci-dessus), puis `/usr/bin/grep -n UTC` sur
   chaque fichier touché, résultat au Change Log ; `api-external.md:252`, `:292`, `:443` disent « la date du jour, à Zurich »
   (hunks distincts de `:272`, 35-5a). Le manuel renvoie, pour l'accueil et les échéances, à la phrase « la date du jour est
   celle de Zurich » de la 35-5a ; il ajoute, au journal d'audit (`user-manual.tex:3955`), que le **nom** du CSV porte la date
-  de Zurich alors que ses lignes restent en UTC (#669).
+  de Zurich alors que ses lignes et ses filtres restent en UTC (#669).
 
 ## Critères d'acceptation
 
 1. **AC1 — Accueil la nuit du 1er janvier** (#929) : horloge fixée à `2025-12-31T23:30:00Z`, exercices 2025 et 2026 ouverts :
-   `GET /reports/homepage-summary` lit l'exercice **2026** (rouge sur la 35-5a fusionnée : 2025).
+   `GET /reports/homepage-summary` lit l'exercice **2026** (rouge sur le squelette : 2025).
 2. **AC2 — Échéances** : facture échue le `2026-03-10`. Horloge à `2026-03-10T23:30:00Z` (00 h 30 le 11 mars) : la fiche
-   (`is_overdue` vrai) et la liste la disent échue ; le filtre « échues » la rend et la synthèse de l'échéancier la compte
-   (D2) ; le CSV de l'échéancier la porte comme échue. À `2026-03-10T22:30:00Z` (23 h 30 le 10) : non échue partout.
+   (`is_overdue` vrai) et la liste la disent échue ; le filtre « échues » la rend, **avec `isOverdue: true`**, et la synthèse
+   de l'échéancier la compte (D1, D2 : même date pour le filtre, le résumé et la conversion) ; le CSV de l'échéancier la
+   porte comme échue. À `2026-03-10T22:30:00Z` (23 h 30 le 10) : non échue partout. **Paiement** (16 bis) : une facture
+   réglée à `2026-03-10T23:30:00Z` (`paid_at`) porte `11.03.2026` dans la colonne de paiement du CSV (le squelette :
+   `10.03.2026`).
 3. **AC3 — Rappels** (chiffré) :
    - `days_overdue` (`invoice_email.rs:381`) d'une facture échue le `2026-03-01` vaut **9** à `2026-03-10T22:30:00Z` et **10**
-     à `2026-03-10T23:30:00Z` (la 35-5a fusionnée : 9 aux deux).
+     à `2026-03-10T23:30:00Z` (le squelette : 9 aux deux), lu par `GET /invoices/{id}/reminder-preview`
+     (`invoice_email.rs:409`).
    - Éligibilité au niveau suivant : dernier rappel envoyé à `2026-03-10T23:30:00Z` (le 11 à Zurich), délai du niveau
-     suivant **7** jours. À `2026-03-17T22:30:00Z` (23 h 30 le 17) : **non** éligible (la 35-5a fusionnée : éligible, `17 >=
+     suivant **7** jours. À `2026-03-17T22:30:00Z` (23 h 30 le 17) : **non** éligible (le squelette : éligible, `17 >=
      10 + 7`) ; à `2026-03-17T23:30:00Z` (00 h 30 le 18) : éligible. Vérifier l'arithmétique à l'écriture du test ; le point
      est que les deux jours sortent de `jour_suisse`.
    - Il n'y a **pas d'envoi automatique** (`list_reminder_candidates` n'est lu que par `GET`, `dunning_reminders.rs:166`) :
@@ -131,38 +167,53 @@ helper E2E du jour suisse **existe déjà** : `frontend/tests/e2e/helpers/api-fi
 4. **AC4 — Noms de fichiers et défauts**, à `2025-12-31T23:30:00Z` : la sauvegarde (`kesh-installation-2026-01-01.keshbackup`),
    l'export de souveraineté et le CSV d'audit portent `2026-01-01` ; `closedOn` par défaut vaut `2026-01-01` ; `asOf` par
    défaut des postes ouverts et `as_of` de la balance âgée valent `2026-01-01` ; le rapport de projet en `ModeProjet::Cumule`
-   d'un projet sans date de fin, avec une écriture datée `2026-01-01`, **l'inclut** (fin = `2026-01-01` ; la 35-5a fusionnée
+   d'un projet sans date de fin, avec une écriture datée `2026-01-01`, **l'inclut** (fin = `2026-01-01` ; le squelette
    l'exclut, fin = `2025-12-31`).
-5. **AC5 — Le serveur MCP** (C-e350-21) : `AppState` à `HorlogeFixe(2025-12-31T23:30:00Z)`, banc MCP (`tests/common/mcp.rs`) :
-   `kesh_balance_agee` rend `au` = `2026-01-01` ; `kesh_postes_ouverts` sans `asOf` lit au `2026-01-01` ; `kesh_factures`
-   filtré sur les échues, à `2026-03-10T23:30:00Z`, rend la facture échue le `2026-03-10`.
-6. **AC6 — La démonstration** : `seed_demo` à `2025-12-31T23:30:00Z` crée l'exercice « Exercice 2026 » et des pièces de 2026.
+5. **AC5 — Le serveur MCP** (C-e350-21, D8) : banc MCP à `HorlogeFixe(2025-12-31T23:30:00Z)` : `kesh_balance_agee` rend
+   `au` = `2026-01-01` ; `kesh_postes_ouverts` sans `asOf` lit au `2026-01-01`. Banc à `HorlogeFixe(2026-03-10T23:30:00Z)` :
+   `kesh_echeancier` avec `paymentStatus: overdue` rend la facture échue le `2026-03-10`, et `echuesNombre = 1` ; à
+   `2026-03-10T22:30:00Z`, aucune, `echuesNombre = 0`.
+6. **AC6 — La démonstration** : `seed_demo` (par `POST /onboarding/seed-demo`, `routes/onboarding.rs:258`) à
+   `2025-12-31T23:30:00Z` crée l'exercice « Exercice 2026 », du `2026-01-01` au `2026-12-31` (la graine ne crée aucune
+   pièce : `kesh-seed/src/lib.rs:21-23` n'importe ni `invoices` ni `journal_entries`).
 7. **AC7 — La garde** (D5) : aucune exemption de production hors l'entrée de `jour_suisse` ; les fichiers 35-5b à 0 ;
    sondes (positive, multi-ligne).
-8. **AC8 — Le jour ne change rien** : à `2026-06-15T10:00:00Z`, mêmes résultats qu'avant ; tests existants verts.
+8. **AC8 — Le jour ne change rien, et la nuit non plus** : à `2026-06-15T10:00:00Z`, mêmes résultats qu'avant ; tests
+   existants verts. **Preuve de nuit** (C-e350-26) : les binaires de tests 35-5b, lancés une fois avec
+   `KESH_TEST_INSTANT=2025-12-31T23:30:00Z` puis `2026-03-10T23:30:00Z`, sont verts ; journal `kesh-gate-logs/e355b/nuit.log`,
+   chaque rouge nommé.
 9. **AC9 — Docs, CHANGELOG, PR** : D7 ; PDF régénéré, contrôlé aplati ; CHANGELOG `## [0.17.7] — Non publié`, *Corrigé* :
    la 35-5b **complète** le point #929 ouvert par la 35-5a, sans en écrire un second (C-e350-8). La PR porte `closes #929`.
    **Aucune clé i18n** ajoutée ni modifiée (`i18n-keys.test.ts` non touché) ; seul `docs/manual/fr` est régénéré —
-   l'étape 0 constate que `docs/manual/{de,en,it}` ne portent aucune phrase « date du jour » à aligner.
+   `docs/manual/{de,en,it}` ne contiennent que leur `README.md` (constaté à la validation P2).
 10. **AC10 — Aucune migration**.
 
 ## Tests à écrire, et la preuve du rouge
 
-AC1 à AC6 avec l'horloge fixée, rouges sur la 35-5a fusionnée (les sites lisent encore le jour UTC, les services du MCP
-aussi) ; AC7 rouge sur la garde de la 35-5a (entrées de production encore présentes, comptes changés). Le squelette
-commité d'abord branche les sites sur l'horloge et la date passée, les fonctions de calcul encore au jour UTC
-(`d.date()`, `lr.date()`), de sorte que les rouges ne dépendent pas du jour réel. Journal `kesh-gate-logs/e355b/rouges.log`.
+Sur la 35-5a fusionnée, ces sites lisent encore `Utc::now()` — l'horloge **réelle**, que `HorlogeFixe` n'atteint pas : les
+tests d'AC1 à AC6 n'y rougissent pas pour la bonne raison (lancés le 2026-11-12, l'accueil lit 2026, `days_overdue` vaut ≈ 256…),
+et ceux de `kesh-db` n'y compilent pas (validation P2, V2-3). D'où **le squelette, commité d'abord** : chaque site est
+branché sur l'horloge de sa requête et la date passée, mais reçoit **le jour UTC de l'instant de l'horloge**
+(`state.horloge.maintenant().date_naive()`, `lecture.horloge().maintenant().date_naive()` — `Lecture::horloge()` posé par la
+35-5a), et 16 bis / 22 bis gardent `d.date()`, `lr.date()`. Le compte de la garde ne bouge pas (une forme relevée en remplace
+une autre dans le même fichier). Les rouges sont alors **déterministes** et justes : AC1 lit 2025 ; AC3 : 9 aux deux,
+éligible au 17 ; AC4 : écriture du 1er janvier exclue ; AC2 : non échue à 23:30Z, paiement au `10.03.2026` ; AC5, AC6 de même.
+L'implémentation remplace ces jours par `aujourd_hui()` et `jour_suisse(…and_utc())`. AC7 rouge sur la garde (entrées de
+production encore présentes). Journal `kesh-gate-logs/e355b/rouges.log`.
 
 **Mutations** : M1 un site remis à `Utc::now().date_naive()` (la garde) ; M2 `UTC_DATE()` rétabli à `:404` (AC2) ; M3
 `lr.date()` rétabli à `dunning_eligibility.rs:128` (AC3) ; M4 `synthese_accueil` sur `Utc::now()` (AC1, AC5 par le MCP) ;
-M5 `seed_demo` sur l'année UTC (AC6).
+M5 `seed_demo` sur l'année UTC (AC6) ; M6 `d.date()` rétabli à `routes/invoices.rs:1525` (AC2, paiement) ; M7 la conversion
+de l'échéancier prend une autre date que `Echeancier::aujourd_hui`. Pour que M7 soit attrapable, la conversion est une
+fonction **de l'`Echeancier` seul** (sans paramètre de date) ; un test unitaire lui donne un `Echeancier` daté du
+`2026-03-11` dont un élément échoit le `2026-03-10`, et attend `isOverdue: true` quel que soit le jour réel.
 
 ## Tâches
 
 - [ ] Étape 0 : partir de la 35-5a fusionnée ; recompter les sites restants, les tests 35-5b et les appelants des fonctions
-      à paramètre neuf ; contrôler `docs/manual/{de,en,it}` ; Change Log.
-- [ ] Squelette branché, tests, rouges consignés ; sites 9–16, 18–28, 16 bis, 22 bis ; SQL ; graine ; tests 35-5b ; specs E2E
-      des sites de cette story.
+      à paramètre neuf ; reconfirmer qu'aucune spec E2E n'est à cette story ; Change Log.
+- [ ] Squelette branché au jour UTC de l'instant de l'horloge, tests, rouges consignés ; sites 9–16, 18–28, 16 bis, 22 bis ;
+      SQL ; graine ; banc MCP à horloge (D8) ; tests 35-5b.
 - [ ] Commentaires, docs, manuel, CHANGELOG.
 - [ ] Gates : `test-fast.sh --ci` complet à chaque commit de code, `scripts/gate-ci.sh` au dernier, frontend complet, E2E
       complet au dernier commit de code.
@@ -182,8 +233,9 @@ M5 `seed_demo` sur l'année UTC (AC6).
 `bank_accounts.rs` avec la 35-5a (ici `:1802`, `:228`, `:1757`) ; `journal_entries.rs` (tests) avec la **35-5c** et la **35-8**,
 qui attend la 35-5c ; `invoices.rs` (`kesh-db`) avec la **35-1** si son correctif touche `:2334-2340` (hunks distincts) ;
 `routes/invoices.rs` avec la 35-5a (chaîne des appelants) ; `docs/api-external.md` (ici `:252`, `:292`, `:443` ; la 35-5a
-`:272`, la 35-6 la grammaire du montant) ; `user-manual.tex` ; `CHANGELOG.md` ; `frontend/tests/e2e/helpers/api-fixtures.ts`
-avec la **35-2a** (qui y ajoute un paramètre `city`) : hunks distincts.
+`:272` ; la 35-6 n'y touche plus, C-e350-19) ; `user-manual.tex` ; `CHANGELOG.md` ; `tests/common/mcp.rs` et
+`common/mcp_pieges.rs` avec la 35-5a (qui touche déjà `mcp.rs` pour l'horloge de l'`AppState`) ;
+`crates/kesh-api/tests/date_du_jour_garde.rs` (liste d'exemptions : 35-5a, puis ici, puis 35-5c).
 
 ### Ce qui doit rester vrai
 
@@ -234,3 +286,24 @@ avec la **35-2a** (qui y ajoute un paramètre `city`) : hunks distincts.
   - **LOW** : V1-9 (aucun binaire dans `kesh-seed` : pas d'exemption, D3) ; V1-10 (référence `5e2a5818` ; 35 specs) ; V1-11
     (nom du CSV d'audit au manuel, D7) ; V1-12 (aucune clé i18n ; manuels DE/EN/IT à constater à l'étape 0).
   - Aucune migration. Statut `ready-for-dev` ; la validation P2 est à lancer par l'orchestrateur, après celle de la 35-5a.
+- 2026-11-12 — **Validation P2** (Opus, `kesh-gate-logs/e35-5b-validation-p2.md` : 0 HIGH, 6 MEDIUM, 5 LOW ; série P1 → P2 :
+  1 HIGH + 7 MEDIUM → 6 MEDIUM) remédiée par l'agent de rédaction (worktree `kesh-e355`). Prémisses lues au code de
+  `release/0.17.6`.
+  - **V2-1** : `auth/bootstrap.rs:1394` est dans `mod tests` (`:464`, lu) ; `seed_demo` n'a qu'un appelant de production,
+    `routes/onboarding.rs:258` (D3) ; « passée à l'amorçage » retiré.
+  - **V2-2** : AC5 sur `kesh_echeancier` (`SCHEMA_ECHEANCIER`, `paymentStatus`, lu à `mcp/outils/factures.rs:296`) ;
+    `kesh_factures` n'a pas de filtre « échues » ; banc MCP à horloge fixée (D8), `tests/common/mcp.rs` et `mcp_pieges.rs` aux
+    fichiers communs.
+  - **V2-3** : le squelette passe le jour UTC de l'instant de l'horloge (`Lecture::horloge()` ajouté à la 35-5a) ; « rouge
+    sur la 35-5a fusionnée » remplacé par « rouge sur le squelette » dans AC1 à AC4.
+  - **V2-4** : `Echeancier` porte la date employée, la route la réemploie ; le CSV lit une fois ; M7 (D1).
+  - **V2-5** : AC2 pour `paid_at` (16 bis), M6.
+  - **V2-6** : aucune spec E2E à la 35-5b (relevé de la validation, à reconfirmer) ; `audit-log.spec.ts` reste au jour UTC,
+    porté à la 35-5c.
+  - **LOW** : V2-7 (dix appelants de `InvoiceResponse::from_parts`) ; V2-8 (`push_where_clauses` partagé avec
+    `list_for_export`, `push_bind` dans l'ordre) ; V2-9 (la graine ne crée que l'exercice) ; V2-10 (commentaires UTC de
+    `exports.rs`, `postes_ouverts.rs:55-56`, `kesh-seed/src/lib.rs:278`) ; V2-11 (`:3499` ; manuels DE/EN/IT : `README.md`
+    seul).
+  - Ajout : preuve de nuit par `KESH_TEST_INSTANT` à AC8 (C-e350-26) ; la 35-6 ne touche plus `api-external.md`.
+  - Aucun finding réfuté. Signal de découpage : non levé (trois crates de production, docs ; la validation juge la story
+    tenable après C-e350-22) ; défauts distincts de ceux de P1. Aucune migration. Statut `ready-for-dev`.

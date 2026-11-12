@@ -1033,7 +1033,7 @@ development_status:
   35-4-rejeter-ligne-signalee: ready-for-dev  # fiche 2026-11-12, validation à lancer ; #1023, #1024
   35-5-date-du-jour-installation: split  # 2026-11-12, découpage préventif (C-e350-14) en 35-5a et 35-5b, puis 35-5c (C-e350-22)
   35-5a-date-du-jour-horloge: ready-for-dev  # #1022, #907, #929 en partie ; fiche 2026-11-12 ; validations P1 et P2 remédiées (horloge dans AppState et Lecture C-e350-21, site 17 C-e350-23, garde C-e350-24, preuve de nuit C-e350-26, dérogation C-e350-27) ; P3 à lancer
-  35-5b-date-du-jour-reste: ready-for-dev  # #929 ; après la fusion de 35-5a ; fiche 2026-11-12 ; validation P1 remédiée et recadrée (production, SQL, graine, MCP, docs ; C-e350-22) ; P2 à lancer
+  35-5b-date-du-jour-reste: ready-for-dev  # #929 ; après la fusion de 35-5a ; fiche 2026-11-12 ; validations P1 (recadrée : production, SQL, graine, MCP, docs ; C-e350-22) et P2 remédiées (échéancier daté, squelette au jour UTC de l'horloge, banc MCP à horloge) ; P3 à lancer
   35-5c-date-du-jour-tests: ready-for-dev  # #929 (refs) ; après la fusion de 35-5b ; fiche 2026-11-12 (découpage de la 35-5b, C-e350-22) ; tests restants et gardes fermées ; validation à lancer
   35-6-solde-ouverture-saisie: ready-for-dev  # fiche 2026-11-12, validation à lancer ; #1025 intégrée (C-e350-15) ; #1026, #1028
   35-7-autocomplete-compte-hors-liste: backlog  # #1000
