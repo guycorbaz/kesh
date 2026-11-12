@@ -2249,6 +2249,9 @@ async fn cancel_keeps_the_project_on_every_line(pool: MySqlPool) {
 /// désigné **avant** d'être rendu non imputable.
 mod garde_usage_comptes_reglage {
     use super::*;
+    use kesh_db::entities::{AccountRole, AccountType, AccountUpdate};
+    use kesh_db::errors::DesignatedSetting;
+    use kesh_db::repositories::accounts;
     use kesh_db::test_fixtures::{attendre_une_requete_en_cours, sonde_verrou_nowait};
 
     const ACCESSEUR: &[&str] = &[
@@ -2473,6 +2476,181 @@ mod garde_usage_comptes_reglage {
             .await
             .expect("tâche")
             .expect("la saisie réussit une fois l'exercice rendu");
+    }
+
+    // -----------------------------------------------------------------------
+    // Story 35-3 (#537) — le TYPE des comptes désignés, revérifié à l'usage
+    // -----------------------------------------------------------------------
+
+    /// Modifie un compte par `accounts::update` (le chemin réel), avec
+    /// `confirm_retype`.
+    async fn update_account(
+        pool: &MySqlPool,
+        ctx: &Ctx,
+        account_id: i64,
+        account_type: AccountType,
+        role: Option<AccountRole>,
+    ) {
+        let a = accounts::find_by_id(pool, account_id)
+            .await
+            .unwrap()
+            .expect("compte");
+        accounts::update(
+            pool,
+            account_id,
+            a.version,
+            ctx.seeded.admin_user_id,
+            AccountUpdate {
+                name: a.name,
+                account_type,
+                role,
+                postable: a.postable,
+            },
+            true,
+        )
+        .await
+        .expect("accounts::update : le retypage d'un compte désigné passe");
+    }
+
+    fn wrong_type(err: DbError) -> Vec<(i64, String, DesignatedSetting, AccountType, AccountType)> {
+        match err {
+            DbError::DesignatedAccountsWrongType(list) => list
+                .iter()
+                .map(|a| {
+                    (
+                        a.account_id,
+                        a.account_number.clone(),
+                        a.setting,
+                        a.expected_type,
+                        a.actual_type,
+                    )
+                })
+                .collect(),
+            other => panic!("attendu DesignatedAccountsWrongType, obtenu {other:?}"),
+        }
+    }
+
+    /// AC4 — les créanciers portent le rôle *Dettes fournisseurs*, sont retypés
+    /// en ACTIF en le gardant : la saisie est refusée, rien n'est écrit.
+    #[sqlx::test(migrations = "./test-schema")]
+    async fn ac4_payable_retyped_asset_is_refused(pool: MySqlPool) {
+        let ctx = setup(&pool).await;
+        let payable = ctx.seeded.accounts["2000"];
+        update_account(
+            &pool,
+            &ctx,
+            payable,
+            AccountType::Liability,
+            Some(AccountRole::Payable),
+        )
+        .await;
+        update_account(
+            &pool,
+            &ctx,
+            payable,
+            AccountType::Asset,
+            Some(AccountRole::Payable),
+        )
+        .await;
+        let role = accounts::find_by_id(&pool, payable)
+            .await
+            .unwrap()
+            .unwrap()
+            .role;
+        assert_eq!(role, Some(AccountRole::Payable), "le rôle reste posé");
+
+        let err = supplier_invoices::create_validated(
+            &pool,
+            one_line(&ctx, dec!(100.00), dec!(0)),
+            ctx.seeded.admin_user_id,
+        )
+        .await
+        .expect_err("refusée");
+        assert_eq!(err.error_code(), "DESIGNATED_ACCOUNT_WRONG_TYPE");
+        assert_eq!(
+            wrong_type(err),
+            vec![(
+                payable,
+                "2000".to_string(),
+                DesignatedSetting::Payable,
+                AccountType::Liability,
+                AccountType::Asset,
+            )]
+        );
+        assert_nothing_written(&pool, &ctx).await;
+    }
+
+    /// AC4 — la TVA récupérable retypée en PASSIF : refusée avec TVA ; sans
+    /// TVA, elle n'est pas écrite et la saisie passe.
+    #[sqlx::test(migrations = "./test-schema")]
+    async fn ac4_vat_recoverable_retyped_liability_is_refused_only_when_vat_is_written(
+        pool: MySqlPool,
+    ) {
+        let ctx = setup(&pool).await;
+        update_account(
+            &pool,
+            &ctx,
+            ctx.recoverable_id,
+            AccountType::Liability,
+            None,
+        )
+        .await;
+
+        let err = supplier_invoices::create_validated(
+            &pool,
+            one_line(&ctx, dec!(100.00), dec!(8.10)),
+            ctx.seeded.admin_user_id,
+        )
+        .await
+        .expect_err("avec TVA : refusée");
+        assert_eq!(
+            wrong_type(err),
+            vec![(
+                ctx.recoverable_id,
+                "1171".to_string(),
+                DesignatedSetting::VatRecoverable,
+                AccountType::Asset,
+                AccountType::Liability,
+            )]
+        );
+        assert_nothing_written(&pool, &ctx).await;
+
+        supplier_invoices::create_validated(
+            &pool,
+            one_line(&ctx, dec!(100.00), dec!(0)),
+            ctx.seeded.admin_user_id,
+        )
+        .await
+        .expect("sans TVA : la TVA récupérable n'est pas écrite, la saisie passe");
+    }
+
+    /// AC4, AC7 (V3-3, M8) — créanciers `2000` retypés en actif ET TVA
+    /// récupérable `1171` retypée en passif : un refus, rangé PAR NUMÉRO (`1171`
+    /// puis `2000`) alors que l'ordre des rôles donnerait `2000` puis `1171`.
+    #[sqlx::test(migrations = "./test-schema")]
+    async fn ac4_two_retyped_purchase_accounts_are_ordered_by_number(pool: MySqlPool) {
+        let ctx = setup(&pool).await;
+        let payable = ctx.seeded.accounts["2000"];
+        update_account(&pool, &ctx, payable, AccountType::Asset, None).await;
+        update_account(
+            &pool,
+            &ctx,
+            ctx.recoverable_id,
+            AccountType::Liability,
+            None,
+        )
+        .await;
+
+        let err = supplier_invoices::create_validated(
+            &pool,
+            one_line(&ctx, dec!(100.00), dec!(8.10)),
+            ctx.seeded.admin_user_id,
+        )
+        .await
+        .expect_err("refusée");
+        let numeros: Vec<String> = wrong_type(err).into_iter().map(|r| r.1).collect();
+        assert_eq!(numeros, vec!["1171".to_string(), "2000".to_string()]);
+        assert_nothing_written(&pool, &ctx).await;
     }
 }
 
