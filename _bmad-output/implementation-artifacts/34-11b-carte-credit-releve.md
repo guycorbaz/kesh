@@ -1,6 +1,6 @@
 # Story 34-11b : le relevé d'une carte de crédit, sa réconciliation et son prélèvement mensuel (#972)
 
-Status: ready-for-dev
+Status: review
 
 *Fiche rédigée le 2026-11-10 en autonomie (Opus 5.5), worktree `/home/gcorbaz/devel/kesh-e34`, branche `chore/epic-34-kickoff`,
 numéros de ligne de `a75835db`. Release **0.17.6**, Epic 34. **Aucune migration.** Registre : `e34-choix-autonomes-e341.md`,
@@ -358,3 +358,24 @@ Claude Opus 5.5 (agent de développement en autonomie, clé e34b).
 - `_bmad-output/implementation-artifacts/e34-choix-autonomes-e34b.md`, `34-11b-carte-credit-releve-review-prompt-p1.md`, cette fiche
 
 ### Gates
+
+Journaux sous `/home/gcorbaz/devel/kesh-gate-logs/e34b/`, tels qu'ils ont tourné.
+
+- **Premier passage** (`gates-1.txt`, commit `7ab06dce`) : `test-fast.sh --ci` **rouge** — 5207 exécutés, 5204 passés, **3 échecs réels** :
+  `bank_account_closed_inventory` ×2 (un second `UPDATE bank_transactions` dans `cancel_in_tx` ; revérification plus la dernière acquisition)
+  et `textes_coherents::les_comptes_cites_en_exemple_existent_dans_les_plans_livres` (compte 2101 du manuel). Corrigés par `52dc7ba1` : un
+  seul chemin d'annulation (étapes 4 et 6 sautées pour le retrait seul ; `UPDATE`, revérification et trace communs) ; exemple sans numéro.
+  Les mutations M3, M4, M5, M10 ont été **rejouées** sur `52dc7ba1` (2e jeu, `mut/resume.log`, premiers journaux gardés en `M*-jeu1.log`) :
+  toutes tuées, par les mêmes tests.
+- **Au dernier commit de code `52dc7ba1`** (`gates-2.txt`) :
+  - `scripts/test-fast.sh --ci` : premier lancement **tué au plafond mem-guard** (8 Go, code 137, à la compilation de `kesh-api`) ; relancé
+    (`gate-test-fast-2b.log`, base remise à neuf) : **5207 exécutés, 5207 passés, 13 ignorés** ;
+  - `cargo build --workspace --all-targets` : vert ;
+  - `scripts/gate-ci.sh kesh_ci_e34b` : **5214 passés, 0 échec, 17 ignorés** ;
+  - E2E complet (port 3382, `kesh_e2e_e34b` recréée vide, `e2e-r2/`) : **390 passés, 7 échecs, 17 ignorés** — les sept de la KF-029 (#97),
+    nommés un par un contre `docs/testing.md:394-400` (`mode-expert.spec.ts:26`, `:41`, `onboarding-path-b.spec.ts:65`, `:92`,
+    `onboarding.spec.ts:57`, `:77`, `:150`) ; `credit-card-statement.spec.ts` vert ; aucun port tenu après (`ss-apres.txt` vide).
+- **Frontend** (sources inchangées depuis `63b540b6`, hors la spec E2E) : `npm run check` 0 erreur (29 avertissements préexistants),
+  `lint-i18n-ownership` vert, `test:unit` **227 fichiers, 2968 tests**, `build` vert (`front-*-2.log`).
+- ⚠️ `KESH_E2E_CAPTURES_DIR` pointait sur `e34b/captures/` pour toute la suite : les captures des autres specs s'y sont ajoutées ; celles de la
+  story sont les cinq `34-11b-*.png`.
